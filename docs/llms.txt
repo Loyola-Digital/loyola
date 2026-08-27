@@ -47,7 +47,14 @@ Resposta: `{ "projectId", "range": {"from","to"}, "partial": false, "lastSyncedA
 Performance por criativo (anúncio). Ordenável e filtrável por campanha.
 Query: `campaignId` (opcional), `from`, `to`, `orderBy` (`spend|ctr|cpc|cpm|cpl|cpa|roas|leads|impressions|clicks`, default `spend`), `limit` (1–200, default 50).
 Resposta: `{ "projectId", "range", "campaignId", "orderBy", "partial", "lastSyncedAt", "count", "creatives": [ Creative ] }`
-`Creative = { adId, adName, campaignId, campaignName, adsetId, adsetName, creative: { imageUrl, thumbnailUrl, videoId, title, body, linkUrl, ctaType, objectType } | null, videoMetrics, ...(mesmas métricas de Campaign) }`
+`Creative = { adId, adName, campaignId, campaignName, adsetId, adsetName, creative: { imageUrl, thumbnailUrl, videoId, title, body, linkUrl, ctaType, objectType } | null, igPermalinkUrl, igPermalinkStale, adPermalinkUrl, adPermalinkStale, videoMetrics, ...(mesmas métricas de Campaign) }`
+
+**Três links diferentes, não confunda:**
+- `creative.linkUrl` — o **destino do clique** (a landing page). NÃO é o anúncio.
+- `igPermalinkUrl` — o **post no Instagram** (`instagram.com/p/{code}/`). Cobre 96–100% dos anúncios com entrega e é o link que o anunciante reconhece. **Prefira este.**
+- `adPermalinkUrl` — o **post no Facebook**. Cobre 100%, e é o fallback para os ~4% sem post no Instagram.
+
+Os campos `*Stale: true` significam **"o cache foi escrito antes deste campo existir"** — ou seja, `null` ali é "ainda não sincronizamos", não "a Meta não tem". Com `false`, o `null` é definitivo.
 
 ### GET /api/public/meta/v1/projects/{projectId}/creatives/{adId}/timeseries
 Série diária das métricas de um criativo. `404` se o `adId` for desconhecido.

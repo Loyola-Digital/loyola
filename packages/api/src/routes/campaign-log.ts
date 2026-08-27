@@ -19,7 +19,6 @@ import {
   mauticConnections,
   projects,
   projectMembers,
-  sendflowConnections,
   users,
 } from "../db/schema.js";
 import { decryptMauticPassword, listAllMauticEmails } from "../services/mautic.js";

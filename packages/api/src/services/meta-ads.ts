@@ -372,6 +372,8 @@ export interface MetaAdCreative {
    * `permalinkUrl` de `fetchVideoSource`, que é o permalink **do vídeo**.
    */
   adPermalinkUrl: string | null;
+  /** Story 29.63: permalink do post no Instagram (`/p/{shortcode}/`). */
+  igPermalinkUrl: string | null;
 }
 
 // ============================================================
@@ -1211,6 +1213,8 @@ interface MetaCreativeRaw {
   video_id?: string;
   /** Story 36.8: `{pageId}_{postId}` do post que o anúncio veicula. */
   effective_object_story_id?: string;
+  /** Story 29.63: `https://www.instagram.com/p/{shortcode}/`, pronto da Meta. */
+  instagram_permalink_url?: string;
   object_story_spec?: {
     link_data?: { link?: string };
     video_data?: { call_to_action?: { value?: { link?: string } } };
@@ -1290,6 +1294,45 @@ export function resolveAdPermalinkUrl(c: MetaCreativeRaw | undefined): string | 
   return `https://www.facebook.com/${pageId}/posts/${postId}`;
 }
 
+/**
+ * Story 29.63 — carimbo do resolver do permalink do Instagram.
+ *
+ * Mesmo mecanismo e mesmo motivo do `AD_PERMALINK_RESOLVER_VERSION`: sem ele,
+ * `igPermalinkUrl: null` escrito por código que ainda não perguntava pelo campo
+ * é indistinguível de "este anúncio não tem post no Instagram" — e os dois casos
+ * pedem reações opostas (esperar o sync × parar de esperar).
+ *
+ * A distinção não é teórica: em 2026-08-26 o cache tinha 27% das linhas do
+ * `DG & CPDF` carimbadas pela 36.8 e 73% escritas antes dela.
+ *
+ * **Ao mudar `resolveIgPermalinkUrl`, incremente este número.**
+ */
+export const IG_PERMALINK_RESOLVER_VERSION = 1;
+
+/**
+ * Story 29.63 — permalink do post do Instagram que o anúncio veicula.
+ *
+ * A Meta devolve a URL **pronta** em `instagram_permalink_url`; não há nada a
+ * montar, e por isso este resolver não constrói string nenhuma. Ele existe para
+ * duas coisas que um acesso direto ao campo não daria: normalizar o vazio para
+ * `null` (a Meta às vezes devolve `""`) e ser o ponto único que o carimbo acima
+ * versiona.
+ *
+ * **Cobertura medida em 2026-08-26** (Graph API v21.0, anúncios com entrega):
+ * BBE 150/150, PP 120/125 (96,0%), Lyrio 54/56 (96,4%). Os que faltam são todos
+ * `object_type: VIDEO` e **todos têm** `effective_object_story_id` — por isso a
+ * cascata do consumidor cai para `adPermalinkUrl`, e não para `—`.
+ *
+ * **Acesso público verificado**, deslogado, em 5 contas distintas: os 5 posts
+ * renderizaram; um shortcode inventado devolveu "Post não está disponível". É o
+ * teste que o `preview_shareable_link` da 36.8 não passou.
+ */
+export function resolveIgPermalinkUrl(c: MetaCreativeRaw | undefined): string | null {
+  const raw = c?.instagram_permalink_url;
+  if (!raw || raw.trim().length === 0) return null;
+  return raw;
+}
+
 export function resolveCreativeLinkUrl(c: MetaCreativeRaw | undefined): string | null {
   if (!c) return null;
   const oss = c.object_story_spec;
@@ -1347,13 +1390,16 @@ export async function fetchAdCreatives(
         // Mesmo request, mesmo lote de 50 — nenhum custo de rate limit a mais.
         // Story 36.8: `effective_object_story_id` entra no MESMO `fields=`, no
         // mesmo lote de 50 — zero requisição a mais (ver resolveAdPermalinkUrl).
+        // Story 29.63: `instagram_permalink_url` entra no mesmo lugar, pelo mesmo
+        // motivo. O MCP do Meta Ads não cataloga esse campo (ele volta em
+        // `unknown_fields`), mas a Graph API direta devolve — medido em 2026-08-26.
         // O tamanho da miniatura vai como MODIFICADOR DO CAMPO
         // (`creative.thumbnail_width(400)`), não como parâmetro no topo da URL.
         // Medido nesta conta: no topo a Meta ignora e devolve 64x64 (1,5 KB),
         // que serve de ícone e não de preview; como modificador vem 400x400
         // (20 KB). Mesmo request, mesmo lote — nenhuma chamada a mais.
         `/?ids=${idsParam}&fields=id,creative.thumbnail_width(${THUMBNAIL_PX}).thumbnail_height(${THUMBNAIL_PX})` +
-          `{id,thumbnail_url,image_url,effective_instagram_media_id,title,body,link_url,call_to_action_type,object_type,video_id,object_story_spec,asset_feed_spec,effective_object_story_id}`,
+          `{id,thumbnail_url,image_url,effective_instagram_media_id,title,body,link_url,call_to_action_type,object_type,video_id,object_story_spec,asset_feed_spec,effective_object_story_id,instagram_permalink_url}`,
         accessToken
       );
       for (const adId of batch) {
@@ -1370,6 +1416,7 @@ export async function fetchAdCreatives(
           objectType: c?.object_type ?? null,
           videoId: c?.video_id ?? null,
           adPermalinkUrl: resolveAdPermalinkUrl(c),
+          igPermalinkUrl: resolveIgPermalinkUrl(c),
         };
         // Store IDs temporarily for hi-res fetch
         const extra = creative as unknown as Record<string, unknown>;
@@ -1383,7 +1430,7 @@ export async function fetchAdCreatives(
         batchResults.push({
           adId, thumbnailUrl: null, imageUrl: null, title: null,
           body: null, linkUrl: null, ctaType: null, objectType: null, videoId: null,
-          adPermalinkUrl: null,
+          adPermalinkUrl: null, igPermalinkUrl: null,
         });
       }
     }

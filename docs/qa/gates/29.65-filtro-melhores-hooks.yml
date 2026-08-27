@@ -1,0 +1,114 @@
+schema: 1
+story: '29.65'
+gate: PASS
+iteration: 1
+status_reason: >-
+  PASS — os sete ACs estao atendidos e o AC2, que era o coracao da story, esta
+  protegido por teste diferencial que eu mesmo verifiquei: revertendo `hookRate`
+  para `leader.videoMetrics`, 3 dos 6 testes caem. Fixture de grupo com UM
+  anuncio nao distinguiria as duas implementacoes, e o @dev evitou essa
+  armadilha — todos os casos diferenciais tem 2+ anuncios de tamanhos diferentes.
+  O @dev foi alem do que o @po pediu no denominador: soma apenas as impressoes
+  dos anuncios que TEM a metrica. O @po havia medido que isso nao muda o
+  resultado hoje (0 de 10 grupos divergem) e liberado a simplificacao; fazer
+  certo custou uma linha e removeu a dependencia de uma coincidencia.
+  Tres observacoes low, nenhuma acionavel antes do merge.
+reviewer: 'Quinn'
+updated: '2026-08-26T00:00:00Z'
+
+verificacoes:
+  code_review: PASS           # agregacao correta, campos novos preservados no enrich (spread)
+  unit_tests: PASS            # 6 testes; 3 caem ao reverter o defeito — verificado por mutacao
+  acceptance_criteria: PASS   # AC1-AC7; D1 confirmada pelo gestor antes da implementacao
+  no_regressions: PASS        # 618/618 no web; backend intocado (ordenacao e local)
+  performance: PASS           # nenhuma chamada nova; 3 filtros O(n) sobre <=100 itens
+  security: PASS              # nao ha entrada de usuario nem dado sensivel neste caminho
+  documentation: PASS         # o comentario da agregacao carrega a medicao que decidiu o design
+
+verificacoes_manuais_executadas:
+  - o: 'O teste do AC2 pega o defeito, ou passa com ele de volta?'
+    como: >-
+      Reverti `hookRate` para `leader.videoMetrics` / `impressions` e rodei a
+      suite.
+    resultado: >-
+      3 de 6 falham — "soma views3s e impressoes do grupo", "um grupo com hook
+      acima da meta NAO pode aparecer abaixo dela" e "anuncio sem a metrica nao
+      infla o denominador". Restaurado e reconfirmado verde.
+
+  - o: 'O filtro de elegiveis pode esvaziar a tela sem explicacao?'
+    como: >-
+      O estado vazio do componente so dispara com `sorted.length === 0 &&
+      hiddenCount > 0` — nao cobre "0 elegiveis ao ranking de hook". Em vez de
+      supor, medi ao vivo (Graph API, 30 dias, as 5 contas) quantos grupos
+      passam por ter `views3s` E pelo piso de 50 reproducoes.
+    resultado: >-
+      Nenhuma conta chega a zero. BBE 40 de 63, DG & CPDF 30 de 62, FZ & MFB
+      16 de 27, Lyrio 16 de 19, PP 5 de 17 (o pior caso). O caminho existe no
+      codigo, mas nao se realiza com os dados de hoje — LOW, nao MEDIUM. Eu ia
+      reportar como MEDIUM antes de medir.
+
+  - o: 'Os campos novos sobrevivem a cadeia agregacao -> enrich?'
+    como: 'Inspecao do `enrichWithPaidLeads` — `return { ...c, ... }`.'
+    resultado: 'Spread preserva `hookRate`, `views3s` e `amostraBaixa`.'
+
+  - o: '`semHook` e `hookAmostraBaixa` contam o mesmo criativo duas vezes?'
+    como: 'Leitura dos predicados.'
+    resultado: >-
+      Nao. `semHook` filtra `hookRate === null`; `hookAmostraBaixa` filtra
+      `hookRate !== null && amostraBaixa`. Conjuntos disjuntos — a soma exibida
+      no aviso nao infla.
+
+top_issues:
+  - id: 'QA-65-01'
+    severity: low
+    finding: >-
+      A meta de 25% agora tem TRES literais: `META_HOOK_VERDE` no gallery,
+      `rateGoalClass(row.hookRate, 25)` inline no Detalhamento e o texto do
+      tooltip. O AC5 esta satisfeito no comportamento — os numeros batem hoje —
+      mas nao ha fonte unica, que era exatamente o risco que o AC citava
+      ("duas telas com o mesmo nome de metrica e faixas diferentes").
+    suggested_action: >-
+      Promover a meta a constante no `shared`, junto de `PISO_DE_REPRODUCOES`.
+      Nao antes do merge: hoje os valores concordam.
+    refs:
+      - 'packages/web/components/funnels/top-creatives-gallery.tsx:90'
+      - 'packages/web/components/funnels/perpetual-dashboard.tsx:3042'
+
+  - id: 'QA-65-02'
+    severity: low
+    finding: >-
+      O filtro de elegiveis (AC3/AC4) vive no componente, fora do alcance do
+      runner — o vitest do web cobre so `lib/utils`, sem jsdom. A logica que ele
+      usa (`hookRate === null`, `amostraBaixa`) TEM teste; a aplicacao dela, nao.
+    suggested_action: >-
+      Nenhuma acao agora. E limitacao declarada e deliberada desde a 29.35, nao
+      descuido desta story. Ligar testes de componente vale uma story propria.
+
+  - id: 'QA-65-03'
+    severity: low
+    finding: >-
+      Com 0 criativos elegiveis, a grade fica vazia e a unica explicacao e o
+      texto pequeno "N fora do ranking de hook" no cabecalho — o bloco de estado
+      vazio nao cobre esse caso.
+    suggested_action: >-
+      Estender a condicao do estado vazio quando `metric === "hook"`. Medido: nao
+      acontece com os dados de hoje em nenhuma das 5 contas.
+    refs: ['packages/web/components/funnels/top-creatives-gallery.tsx:918']
+
+waiver: { active: false }
+
+o_que_merece_registro:
+  - >-
+    A story descobriu que a implementacao obvia estaria errada e provou com
+    numero em vez de argumentar. `videoMetrics: leader.videoMetrics` ao lado de
+    `impressions` somado e o tipo de inconsistencia que passa por code review e
+    por teste, porque o codigo parece certo — so medindo aparece. O erro chega a
+    -70%, e o criativo que o gestor usou de exemplo bate a meta de 25% e
+    apareceria com 11,55%.
+  - >-
+    Ausencia tratada como ausencia, nao como zero. Num filtro chamado "Melhores
+    Hooks", `hookRate: 0` para quem nao tem metrica seria uma acusacao falsa
+    contra 25% a 50% dos criativos, dependendo da conta.
+
+pendencias_operacionais:
+  - 'Validacao visual — conferir que o topo de "Melhores Hooks" bate com a coluna Hook do Detalhamento para os mesmos criativos.'

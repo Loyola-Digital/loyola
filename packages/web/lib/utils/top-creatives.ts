@@ -6,6 +6,10 @@ import type {
 import type { FunnelSpreadsheetRow } from "@/lib/types/funnel-spreadsheet";
 import { PAID_SOURCES, safeDivide } from "@/lib/utils/funnel-metrics";
 import { normalizeNumericId } from "@/lib/utils/normalize-answer";
+// Story 29.65 (AC4): o piso de amostra é o MESMO da 43.8. Um terceiro critério
+// de "amostra suficiente" no painel seria uma terceira resposta para a mesma
+// pergunta — e nenhuma delas ganharia a confiança de quem lê.
+import { PISO_DE_REPRODUCOES } from "@loyola-x/shared/src/video-camadas";
 
 /**
  * Representa um criativo agregado — vários `TopPerformerAd` com o mesmo
@@ -26,7 +30,27 @@ export interface AggregatedCreative {
   cpc: number;
   creative: MetaAdCreative | null;
   parentInfo?: string;
+  /**
+   * ⚠️ Métricas de vídeo do anúncio LÍDER (maior investimento do grupo) — NÃO
+   * do grupo inteiro. Mantido como estava para não mudar quem já lia isto.
+   *
+   * **Não derive taxa daqui.** O numerador seria de 1 anúncio e o denominador
+   * (`impressions`, logo acima) é a soma de N. Use `hookRate`.
+   */
   videoMetrics?: VideoMetrics | null;
+  /**
+   * Story 29.65 — gancho do grupo: `Σ views3s ÷ Σ impressões × 100`.
+   *
+   * `null` quando NENHUM anúncio do grupo tem `views3s` — nunca `0`. A 43.3
+   * deixa o campo `undefined` de propósito para "não medimos" não se passar por
+   * "ninguém assistiu", e num filtro chamado *Melhores Hooks* essa diferença é
+   * a diferença entre omitir e acusar.
+   */
+  hookRate: number | null;
+  /** Σ views3s do grupo. `null` = nenhum anúncio trouxe a métrica. */
+  views3s: number | null;
+  /** Story 29.65 (AC4): abaixo do piso de reproduções — fora do ranking. */
+  amostraBaixa: boolean;
 
   /** Leads pagos cruzados com a planilha (utm_content ∈ ids && utm_source ∈ PAID_SOURCES) */
   leadsPagos: number;
@@ -96,6 +120,37 @@ export function aggregateCreativesByName(
       0,
     );
 
+    // Story 29.65 — o gancho do grupo sai dos SOMATÓRIOS, não do líder.
+    //
+    // `videoMetrics` abaixo é do anúncio de maior investimento; `impressions`
+    // acima é a soma de todos. Dividir um pelo outro mistura numerador de 1 com
+    // denominador de N — e não erra pouco. Medido ao vivo no BBE (2026-08-26,
+    // 30 dias), pelo caminho que esta tela usa:
+    //
+    //   ADS 5 V3 REEDITADO   4 ads   25,59% real  →   7,75% pelo líder  (−70%)
+    //   ADS 3 V4             8 ads   21,96% real  →   8,24% pelo líder  (−62%)
+    //   ADS 5 V1 REEDITADO   4 ads   25,47% real  →  11,55% pelo líder  (−55%)
+    //
+    // 96,8% dos grupos do BBE têm mais de um anúncio, então isso não é caso de
+    // borda: é o caso comum. O terceiro exemplo bate a meta de 25% e apareceria
+    // entre os piores do funil.
+    //
+    // Só os anúncios que TÊM a métrica entram nas duas pontas. Somar as
+    // impressões de quem não tem infla o denominador — o erro estrutural que a
+    // 43.8 documentou. (Medido: nos 10 maiores grupos do BBE isso não muda o
+    // resultado, porque o anúncio sem `views3s` tem impressões desprezíveis.
+    // Fazer certo custa uma linha e para de depender dessa coincidência.)
+    const comVideo = sorted.filter((a) => a.videoMetrics?.views3s != null);
+    const views3s =
+      comVideo.length > 0
+        ? comVideo.reduce((s, a) => s + (a.videoMetrics!.views3s ?? 0), 0)
+        : null;
+    const impressoesDeVideo = comVideo.reduce((s, a) => s + a.impressions, 0);
+    const hookRate =
+      views3s === null || impressoesDeVideo <= 0
+        ? null
+        : (views3s / impressoesDeVideo) * 100;
+
     result.push({
       name,
       ids: sorted.map((a) => a.campaignId),
@@ -108,6 +163,12 @@ export function aggregateCreativesByName(
       creative: leader.creative ?? null,
       parentInfo: `${leader.parentCampaignName} › ${leader.adsetName}`,
       videoMetrics: leader.videoMetrics,
+      hookRate,
+      views3s,
+      // Story 29.65 (AC4): mesmo piso da 43.8, não um terceiro critério novo.
+      // Um criativo com 200 impressões e 3 reproduções mostra 1,5% ou 60%
+      // dependendo do dia; sem piso, o topo de "Melhores Hooks" vira ruído.
+      amostraBaixa: (views3s ?? 0) < PISO_DE_REPRODUCOES,
 
       // Preenchidos depois pelo enrichWithPaidLeads
       leadsPagos: 0,

@@ -18,6 +18,7 @@ import {
   dateRangeFromDays,
   LINK_URL_RESOLVER_VERSION,
   AD_PERMALINK_RESOLVER_VERSION,
+  IG_PERMALINK_RESOLVER_VERSION,
   type AdCreativeCacheAdapter,
   type MetaAdCreative,
   type MetaDailyInsight,
@@ -65,9 +66,17 @@ export function makeAdCreativeCacheAdapter(
         objectType: r.creative?.objectType ?? null,
         videoId: r.creative?.videoId ?? null,
         // Story 36.8: sem esta linha o cache-hit devolveria o criativo SEM o
-        // permalink, e o `as MetaAdCreative[]` abaixo esconderia a ausência.
+        // permalink do Facebook.
         adPermalinkUrl: r.creative?.adPermalinkUrl ?? null,
-      })) as MetaAdCreative[];
+        // Story 29.63: idem para o permalink do Instagram.
+        igPermalinkUrl: r.creative?.igPermalinkUrl ?? null,
+      }));
+      // Story 29.63 (QA-34 da 36.8, resolvido): o `as MetaAdCreative[]` que
+      // fechava este map foi REMOVIDO. Ele aceitava objeto sem campo novo com o
+      // `tsc` limpo — ou seja, adicionar um campo ao criativo e esquecer desta
+      // função devolvia cache-hit incompleto em silêncio, que é o modo de falha
+      // mais caro que existe: correto na Meta, errado na tela, verde no CI.
+      // Sem o cast, esquecer vira erro de compilação.
     },
     async saveToCache(creatives) {
       if (creatives.length === 0) return;
@@ -94,6 +103,11 @@ export function makeAdCreativeCacheAdapter(
               // motivo — `null` sem carimbo é "não perguntamos", não "não tem".
               adPermalinkUrl: c.adPermalinkUrl,
               adPermalinkResolver: AD_PERMALINK_RESOLVER_VERSION,
+              // Story 29.63: o permalink do Instagram segue o mesmo par
+              // valor+carimbo. Escrever num só dos dois caminhos deixaria
+              // metade do cache sem carimbo — foi o que aconteceu com a 36.8.
+              igPermalinkUrl: c.igPermalinkUrl,
+              igPermalinkResolver: IG_PERMALINK_RESOLVER_VERSION,
             },
             lastSyncedAt: new Date(),
           })),

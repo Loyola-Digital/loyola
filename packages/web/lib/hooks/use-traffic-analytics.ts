@@ -90,12 +90,30 @@ export interface AdSetAnalyticsResponse {
   hasSales: boolean;
 }
 
+/**
+ * Contagens de eventos de vídeo no período — NÃO são taxas.
+ *
+ * Espelha o tipo da API (`meta-ads.ts`). Ver lá as definições oficiais da Meta:
+ * `p25..p100` incluem quem PULOU até o ponto (por isso `p25` não serve de proxy
+ * de gancho), e `thruplay` já é a métrica de 15s.
+ */
 export interface VideoMetrics {
   p25: number;
   p50: number;
   p75: number;
   p100: number;
   thruplay: number;
+  /**
+   * Story 29.65 (AC7): reproduções de 3s — o `video_view` de `actions[]`, base
+   * do Hook. Existe na API desde a 43.3 e sempre trafegou neste payload; só não
+   * era declarado aqui, e por isso era invisível para o frontend.
+   *
+   * **Opcional de propósito:** ausente ≠ zero. A 43.3 deixa `undefined` quando
+   * a métrica não veio, para "não medimos" não se passar por "ninguém assistiu".
+   */
+  views3s?: number;
+  /** Reproduções iniciadas, sem replays. Mesma regra de ausência do `views3s`. */
+  plays?: number;
 }
 
 export interface MetaAdCreative {
@@ -104,11 +122,36 @@ export interface MetaAdCreative {
   imageUrl: string | null;
   title: string | null;
   body: string | null;
+  /**
+   * URL de DESTINO do clique — a landing page (Story 29.40, de
+   * `object_story_spec`). **Não é o criativo.** Confundir os dois foi o defeito
+   * que a Story 29.63 corrigiu: a coluna "Link" do Detalhamento apontava para
+   * cá e por isso nunca abria o anúncio.
+   */
   linkUrl: string | null;
   ctaType: string | null;
   objectType: string | null;
   videoId: string | null;
+  /**
+   * Story 29.63: permalink do post no **Instagram** (`/p/{shortcode}/`) — o
+   * link do criativo em si. Cobre 96–100% dos anúncios com entrega e abre sem
+   * sessão (verificado deslogado em 5 contas).
+   */
+  igPermalinkUrl?: string | null;
+  /**
+   * Story 36.8: permalink do post no **Facebook**, montado a partir do
+   * `effective_object_story_id`. Cobre 100%, e por isso é o degrau seguinte da
+   * cascata quando o Instagram não tem. Persistido desde a 36.8 — só faltava
+   * ser declarado aqui, e é por isso que o "fallback permalink" prometido no
+   * cabeçalho da coluna nunca chegou à tela.
+   */
+  adPermalinkUrl?: string | null;
 }
+
+// Story 29.63: a cascata do link do criativo vive em `lib/utils` (lógica pura,
+// e é o único lugar que o runner de teste do web enxerga). Reexportada aqui
+// para que os consumidores importem tipo e helper do mesmo lugar.
+export { creativePermalink } from "@/lib/utils/creative-permalink";
 
 export interface AdAnalyticsResponse {
   ads: (CampaignAnalytics & { creative: MetaAdCreative | null; videoMetrics: VideoMetrics | null })[];
@@ -390,6 +433,14 @@ export interface AdCreativesResponse {
    */
   requested?: number;
   limit?: number;
+  /**
+   * Story 29.63 (AC6): ad_ids cujo cache foi escrito ANTES de o permalink do
+   * Instagram existir. Um `—` nessa lista significa "ainda não sincronizado" e
+   * se resolve sozinho; um `—` fora dela significa "a Meta não tem post para
+   * este anúncio", que não se resolve esperando. Opcional: backend anterior a
+   * esta story não manda o campo, e aí a UI não afirma nem uma coisa nem outra.
+   */
+  igPermalinkStale?: string[];
 }
 
 export function useAdCreatives(

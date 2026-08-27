@@ -10,6 +10,7 @@ import {
   Maximize2,
   AlertTriangle,
   ImageOff,
+  Instagram,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +26,10 @@ import {
   useVideoSource,
   type MetaAdCreative,
 } from "@/lib/hooks/use-traffic-analytics";
+// Story 29.66: cascata e rótulo vêm do módulo (é o que o runner de teste
+// enxerga). O hook reexporta a cascata, mas importar da fonte deixa claro de
+// onde ela vem.
+import { creativePermalink, rotuloDoPermalink } from "@/lib/utils/creative-permalink";
 import {
   useFunnelSpreadsheets,
   useFunnelSpreadsheetData,
@@ -38,6 +43,7 @@ import {
 } from "@/lib/formulas/funnels";
 import type { MetricFormula } from "@/lib/types/metric-formula";
 import { filterSheetRowsByDays } from "@/lib/utils/spreadsheet-filters";
+import { PISO_DE_REPRODUCOES } from "@loyola-x/shared/src/video-camadas";
 import {
   aggregateCreativesByName,
   enrichWithPaidLeads,
@@ -59,7 +65,7 @@ import { useDriveCreatives } from "@/lib/hooks/use-drive-creatives";
 // Tipos locais e formatters
 // ============================================================
 
-type LocalMetric = "cpl" | "cplQualified" | "leads" | "ctr" | "spend";
+type LocalMetric = "cpl" | "cplQualified" | "leads" | "ctr" | "spend" | "hook";
 
 interface MetricOption {
   value: LocalMetric;
@@ -74,7 +80,23 @@ const METRIC_OPTIONS: MetricOption[] = [
   { value: "leads", label: "Leads", sortLabel: "Mais Leads" },
   { value: "ctr", label: "CTR", sortLabel: "Maior CTR" },
   { value: "spend", label: "Investimento", sortLabel: "Maior Investimento" },
+  // Story 29.65: gancho do vídeo. Ordena DESC e só entram criativos com a
+  // métrica — ver `sortByMetric` e o aviso de omitidos.
+  { value: "hook", label: "Hook", sortLabel: "Melhores Hooks" },
 ];
+
+/**
+ * Story 29.65 (AC5) — mesma meta de cor da coluna "Hook" do Detalhamento
+ * (`perpetual-dashboard.tsx`) e da Captação (18.65). Duas telas com o mesmo
+ * nome de métrica e faixas de cor diferentes é como se perde a confiança no
+ * painel inteiro.
+ */
+const META_HOOK_VERDE = 25;
+
+function hookColorClass(val: number | null): string {
+  if (val === null) return "text-muted-foreground";
+  return val >= META_HOOK_VERDE ? "text-emerald-500" : "text-foreground";
+}
 
 function fmtCurrency(val: number | null): string {
   if (val === null || val === 0) return "—";
@@ -326,6 +348,10 @@ function sortByMetric(
     sorted.sort((a, b) => b.leadsPagos - a.leadsPagos);
   } else if (metric === "spend") {
     sorted.sort((a, b) => b.spend - a.spend);
+  } else if (metric === "hook") {
+    // Story 29.65 (AC3): quem não tem a métrica NÃO entra no ranking — é
+    // filtrado antes de chegar aqui. O sort só ordena o que sobrou, DESC.
+    sorted.sort((a, b) => (b.hookRate ?? 0) - (a.hookRate ?? 0));
   } else {
     sorted.sort((a, b) => b.ctr - a.ctr);
   }
@@ -459,20 +485,28 @@ function CreativeLightbox({
               allow="autoplay; encrypted-media; fullscreen"
               allowFullScreen
             />
-          ) : isVideo && videoData?.permalinkUrl ? (
+          /* Story 29.66 (AC2/AC5) — o link do POST vem do criativo, não do
+               vídeo. `videoData.permalinkUrl` é o permalink do VÍDEO no
+               Facebook (rota `/video-source`, que só conhece o `videoId` e não
+               sabe de que anúncio ele é). O criativo é quem carrega o post
+               publicado, e é ele que o gestor reconhece.
+               O permalink do vídeo fica como última reserva: melhor levar ao
+               vídeo no Facebook do que não oferecer nada. O botão some por
+               completo quando não há nenhum dos três. */
+            ) : isVideo && (creativePermalink(item.creative) || videoData?.permalinkUrl) ? (
             <div className="text-center p-8">
               <CreativeThumbnail
-                src={srcDoCriativo(item.creative, item.name, criativoDoDrive) || videoData.picture || ""}
+                src={srcDoCriativo(item.creative, item.name, criativoDoDrive) || videoData?.picture || ""}
                 alt={item.name}
                 className="max-h-[40vh] object-contain mx-auto rounded-lg mb-4"
               />
               <a
-                href={videoData.permalinkUrl}
+                href={(creativePermalink(item.creative) || videoData?.permalinkUrl)!}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
               >
-                <Play className="h-4 w-4" /> Assistir no Facebook
+                <Play className="h-4 w-4" /> {rotuloDoPermalink(creativePermalink(item.creative) || videoData?.permalinkUrl)}
               </a>
             </div>
           ) : !isVideo ? (
@@ -556,27 +590,47 @@ function CreativeLightbox({
             <p className="text-xs text-muted-foreground line-clamp-3">{item.creative.body}</p>
           )}
 
-          {item.creative?.linkUrl && (
-            <a
-              href={item.creative.linkUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline truncate max-w-full"
-            >
-              <ExternalLink className="h-3 w-3 shrink-0" />
-              {(() => {
-                try {
-                  const u = new URL(item.creative!.linkUrl!);
-                  return (
-                    u.hostname +
-                    (u.pathname.length > 1 ? u.pathname.split("/").slice(0, 3).join("/") : "")
-                  );
-                } catch {
-                  return item.creative!.linkUrl;
-                }
-              })()}
-            </a>
-          )}
+          {/* Story 29.63 (AC5): dois links que respondem a perguntas diferentes
+              — "que peça é essa" (o post) e "para onde ela manda" (a LP). Ficam
+              visualmente distintos de propósito: dois links iguais lado a lado
+              abrindo coisas diferentes é o defeito que esta story corrigiu. */}
+          <div className="flex flex-col gap-1">
+            {creativePermalink(item.creative) && (
+              <a
+                href={creativePermalink(item.creative)!}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                title={creativePermalink(item.creative)!}
+              >
+                <Instagram className="h-3 w-3 shrink-0" />
+                Ver criativo publicado
+              </a>
+            )}
+
+            {item.creative?.linkUrl && (
+              <a
+                href={item.creative.linkUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:underline truncate max-w-full"
+                title={`Destino do clique: ${item.creative.linkUrl}`}
+              >
+                <ExternalLink className="h-3 w-3 shrink-0" />
+                {(() => {
+                  try {
+                    const u = new URL(item.creative!.linkUrl!);
+                    return (
+                      u.hostname +
+                      (u.pathname.length > 1 ? u.pathname.split("/").slice(0, 3).join("/") : "")
+                    );
+                  } catch {
+                    return item.creative!.linkUrl;
+                  }
+                })()}
+              </a>
+            )}
+          </div>
 
           {item.parentInfo && (
             <p className="text-[10px] text-muted-foreground">{item.parentInfo}</p>
@@ -728,9 +782,44 @@ export function TopCreativesGallery({
     if (showAll) return { visible: aggregated, hiddenCount: 0 };
     return applyRelevanceFilter(aggregated, relevanceThreshold);
   }, [aggregated, relevanceThreshold, showAll]);
-  const sorted = useMemo(
-    () => sortByMetric(relevantCreatives, metric),
+  /**
+   * Story 29.65 (AC3/AC4) — quem não pode disputar "Melhores Hooks".
+   *
+   * Duas exclusões, com motivos diferentes:
+   *
+   * - **sem `hookRate`**: nenhum anúncio do grupo trouxe `views3s`. Pode ser
+   *   criativo estático (correto não ter gancho) ou vídeo cuja métrica a Meta
+   *   não devolveu no período. Tratar isso como `0` jogaria o criativo para o
+   *   fim da lista *como se fosse o pior gancho do funil* — uma acusação falsa.
+   *   Medido ao vivo em 2026-08-26: 25% dos grupos no BBE, 50% no DG & CPDF.
+   * - **`amostraBaixa`**: tem a métrica, mas abaixo do piso da 43.8. Um
+   *   criativo com 3 reproduções e 60% de gancho lideraria o ranking sendo
+   *   ruído estatístico.
+   *
+   * A contagem vira aviso na tela: um ranking que encolhe de 63 para 47 sem
+   * dizer nada parece perda de dado.
+   */
+  const semHook = useMemo(
+    () => (metric === "hook" ? relevantCreatives.filter((c) => c.hookRate === null).length : 0),
     [relevantCreatives, metric],
+  );
+  const hookAmostraBaixa = useMemo(
+    () =>
+      metric === "hook"
+        ? relevantCreatives.filter((c) => c.hookRate !== null && c.amostraBaixa).length
+        : 0,
+    [relevantCreatives, metric],
+  );
+  const elegiveis = useMemo(
+    () =>
+      metric === "hook"
+        ? relevantCreatives.filter((c) => c.hookRate !== null && !c.amostraBaixa)
+        : relevantCreatives,
+    [relevantCreatives, metric],
+  );
+  const sorted = useMemo(
+    () => sortByMetric(elegiveis, metric),
+    [elegiveis, metric],
   );
 
   if (isLoading) {
@@ -791,6 +880,31 @@ export function TopCreativesGallery({
                 >
                   {hiddenCount} {hiddenCount === 1 ? "oculto" : "ocultos"} por baixo gasto (&lt; {brlFormatter.format(relevanceThreshold.threshold)})
                 </button>
+              </>
+            )}
+            {/* Story 29.65 (AC3): quem ficou de fora do ranking de hook, e por
+                quê. Sem isto, a lista encolhe em silêncio e parece dado perdido
+                — em vez de critério aplicado. Os dois motivos aparecem
+                separados porque pedem ações diferentes: um é natureza do
+                criativo, o outro é volume insuficiente (que o tempo resolve). */}
+            {metric === "hook" && (semHook > 0 || hookAmostraBaixa > 0) && (
+              <>
+                {" · "}
+                <span
+                  className="cursor-help underline decoration-dotted underline-offset-2"
+                  title={[
+                    semHook > 0
+                      ? `${semHook} sem métrica de vídeo no período (estático, ou a Meta não devolveu reproduções). Ausência não é zero — por isso ficam fora do ranking em vez de aparecer como piores.`
+                      : null,
+                    hookAmostraBaixa > 0
+                      ? `${hookAmostraBaixa} com menos de ${PISO_DE_REPRODUCOES} reproduções — amostra pequena demais para comparar.`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join("\n\n")}
+                >
+                  {semHook + hookAmostraBaixa} fora do ranking de hook
+                </span>
               </>
             )}
           </p>
@@ -930,12 +1044,27 @@ export function TopCreativesGallery({
                 )}
 
                 <div className="absolute top-1.5 right-1.5 flex items-center gap-1">
+                  {/* Story 29.63 (AC5): o post publicado. A URL da imagem é
+                      assinada e expira; o permalink não — é por isso que o
+                      gestor pediu "assim o anúncio nunca se perderá". */}
+                  {creativePermalink(c.creative) && (
+                    <a
+                      href={creativePermalink(c.creative)!}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity rounded bg-black/50 p-1 text-white hover:bg-black/70 backdrop-blur-sm"
+                      title="Ver o criativo publicado no Instagram"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Instagram className="h-3 w-3" />
+                    </a>
+                  )}
                   <a
                     href={srcDoCriativo(c.creative, c.name, criativoDoDrive)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="opacity-0 group-hover:opacity-100 transition-opacity rounded bg-black/50 p-1 text-white hover:bg-black/70 backdrop-blur-sm"
-                    title="Abrir em nova guia"
+                    title="Abrir a imagem em nova guia"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <ExternalLink className="h-3 w-3" />
@@ -988,6 +1117,28 @@ export function TopCreativesGallery({
                     </div>
                   </MetricTooltip>
                 </div>
+
+                {/* Story 29.65: o gancho só aparece quando o filtro é dele — nas
+                    outras ordenações seria mais um número disputando um card já
+                    cheio. `—` quando não há métrica; nunca 0,00%. */}
+                {metric === "hook" && (
+                  <div
+                    className="text-[10px] text-center pt-1 border-t border-border/20 cursor-help"
+                    onClick={(e) => e.stopPropagation()}
+                    title={
+                      c.hookRate === null
+                        ? "Sem métrica de vídeo no período — este criativo não entra no ranking de hook."
+                        : `${c.views3s?.toLocaleString("pt-BR")} reproduções de 3s ÷ impressões dos anúncios com vídeo${
+                            c.ids.length > 1 ? ` · somado dos ${c.ids.length} anúncios com este nome` : ""
+                          }. Meta: ${META_HOOK_VERDE}%`
+                    }
+                  >
+                    <span className="text-muted-foreground">Hook: </span>
+                    <span className={`font-semibold ${hookColorClass(c.hookRate)}`}>
+                      {fmtPercent(c.hookRate)}
+                    </span>
+                  </div>
+                )}
 
                 {/* Breakdown de leads por origem (Story 21.2 — Task 6) */}
                 {(c.leadsPagos > 0 || c.leadsOrg > 0 || c.leadsSemTrack > 0) && (

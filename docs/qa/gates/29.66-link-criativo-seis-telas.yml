@@ -1,0 +1,180 @@
+schema: 1
+story: '29.66'
+gate: PASS
+iteration: 2
+status_reason: >-
+  PASS na iteracao 2 — o QA-66-01 foi resolvido na RAIZ, e o @dev foi alem do que
+  o gate pediu. Eu sugeri normalizar na chamada; ele transformou a traducao entre
+  os dois formatos em funcao nomeada (`permalinkDaRotaDeVideo`), com o argumento
+  correto: um literal montado na chamada resolveria este caso e deixaria o
+  proximo consumidor da rota repetindo o mesmo risco, sem ajuda do compilador.
+  Reverifiquei por EXECUCAO, com o mesmo payload que produziu o FAIL: o link do
+  Facebook volta e o rotulo diz "Assistir no Facebook".
+  O QA-66-02 nao virou so cobertura: o @dev escreveu um caso DIFERENCIAL que
+  afirma `creativePermalink(payloadDaRota) === null`. O teste documenta que
+  passar o objeto direto esta errado — "simplificar" de volta quebra a suite.
+  QA-66-03 corrigido. Nenhuma observacao aberta.
+
+  --- iteracao 1 (FAIL), mantida para historico ---
+  FAIL — uma REGRESSAO real, provada por execucao, e de correcao curta.
+  Seis dos sete ACs estao bem resolvidos, e a story melhorou a propria premissa:
+  descobriu que `useVideoSource` chama outra rota (`/video-source?videoId=`),
+  cujo permalink e do VIDEO e nao do anuncio, e trocou a fonte para
+  `item.creative` — que os tres componentes ja tinham em maos.
+  O problema esta no quarto ponto de consumo. No `CreativeThumb`, a chamada
+  `creativePermalink(video)` recebe o objeto de `useCreativeVideo`, que carrega
+  `permalinkUrl` — nao `adPermalinkUrl`. A cascata le um campo que aquele objeto
+  nao tem, e o `tsc` nao reclama porque os dois campos da interface sao
+  OPCIONAIS. Resultado: para os ~4% de anuncios sem post no Instagram, o link
+  que existia some da tela do Lyrio.
+  Isso viola o AC6 ("nada regride") de forma direta. O conserto e de uma linha.
+reviewer: 'Quinn'
+updated: '2026-08-27T00:00:00Z'
+
+verificacoes:
+  code_review: PASS           # traducao de formato isolada em funcao nomeada
+  unit_tests: PASS            # 18 testes; o payload da rota entrou, com caso diferencial
+  acceptance_criteria: PASS   # AC1-AC7
+  no_regressions: PASS        # o link do Facebook volta — reverificado por execucao
+  performance: PASS           # nenhuma chamada nova; a rota ja era consultada
+  security: PASS              # href dinamico, React 19 bloqueia `javascript:`
+  documentation: PASS         # llms.txt corrigido, inclusive a divida da 36.8
+
+verificacoes_manuais_executadas:
+  - o: 'O `creativePermalink(video)` do CreativeThumb funciona com o objeto que recebe?'
+    como: >-
+      Escrevi um teste com o payload EXATO que `/creative-video` devolve para um
+      anuncio sem post no Instagram (`permalinkUrl` preenchido, `igPermalinkUrl`
+      null) e rodei.
+    resultado: >-
+      `creativePermalink(...)` devolve **null**, e o link do Facebook — que
+      existe e funciona — e ignorado. Nao e leitura de codigo: e execucao. Teste
+      removido apos a prova.
+
+  - o: 'O defeito atinge os outros tres pontos?'
+    como: 'Contei os usos da cascata com fallback explicito nos componentes.'
+    resultado: >-
+      Nao. Os tres botoes usam
+      `creativePermalink(item.creative) || videoData?.permalinkUrl` — o
+      `item.creative` tem os dois campos com os nomes certos, e o fallback do
+      video e explicito. So o `CreativeThumb` esta errado.
+
+  - o: 'Quando nao ha link nenhum, a tela quebra?'
+    como: 'Li a cadeia ternaria completa dos tres blocos.'
+    resultado: >-
+      Nao. Cai no ramo final (icone de Play), que ja existia. O AC5 esta
+      cumprido.
+
+  - o: 'O tipo deveria ter pego isso?'
+    como: 'Inspecao da interface `CreativeComPermalink`.'
+    resultado: >-
+      Os dois campos sao opcionais, entao um objeto sem `adPermalinkUrl` e
+      valido para o compilador. Mesma familia do QA-34 da 36.8: a assinatura
+      aceita o incompleto em silencio. Ver QA-66-02.
+
+verificacoes_da_iteracao_2:
+  - o: 'O fix funciona, ou so parece?'
+    como: >-
+      Rodei o payload EXATO que produziu o FAIL (`permalinkUrl` do Facebook,
+      `igPermalinkUrl: null`) contra `permalinkDaRotaDeVideo`.
+    resultado: >-
+      Devolve o link do Facebook, e `rotuloDoPermalink` diz "Assistir no
+      Facebook". O caso que sumia da tela voltou. Teste removido apos a prova.
+
+  - o: 'Sobrou algum consumidor passando o objeto da rota direto?'
+    como: 'Busca por `creativePermalink(video…` / `creativePermalink(data…` fora de testes.'
+    resultado: 'Nenhum. A unica ocorrencia e dentro de um comentario explicativo.'
+
+  - o: 'Os tres botoes regrediram com a mudanca?'
+    como: 'Contagem do padrao com fallback explicito nos tres arquivos.'
+    resultado: '3 usos em cada, intactos. O fix ficou contido no quarto ponto.'
+
+  - o: 'O escopo do fix e o declarado?'
+    como: '`git diff --stat` da iteracao.'
+    resultado: >-
+      4 arquivos: o modulo, o `CreativeThumb`, o teste e a story. A API nao foi
+      tocada nesta iteracao — logo o baseline dela segue valendo do gate anterior.
+
+top_issues_resolvidos_na_iteracao_2:
+  - id: 'QA-66-01'
+    severity: high
+    status: RESOLVIDO
+    finding: >-
+      `creativePermalink(video)` no `CreativeThumb` le `adPermalinkUrl`, mas o
+      objeto de `useCreativeVideo` chama esse campo de `permalinkUrl`. Para os
+      ~4% de anuncios sem post no Instagram (PP 5 de 125, Lyrio 2 de 56, medido
+      na 29.63), o link some — onde antes havia "Abrir o anuncio na Meta"
+      apontando para o Facebook. Regressao no Lyrio, que e justamente quem usa
+      este componente.
+    suggested_action: >-
+      Normalizar na chamada — `creativePermalink({ igPermalinkUrl:
+      video?.igPermalinkUrl, adPermalinkUrl: video?.permalinkUrl })` — ou alinhar
+      o nome do campo na resposta da rota. A primeira opcao nao mexe em contrato.
+    refs: ['packages/web/components/traffic/creative-thumb.tsx:200-207']
+    resolucao: >-
+      Nasceu `permalinkDaRotaDeVideo`. Reverificado por execucao.
+
+  - id: 'QA-66-02'
+    severity: medium
+    status: RESOLVIDO
+    finding: >-
+      Nenhum teste cobre o formato que vem de `useCreativeVideo`. Os 14 testes do
+      arquivo usam sempre objetos com `igPermalinkUrl`/`adPermalinkUrl` — o
+      formato que o `MetaAdCreative` tem. O payload da rota nunca aparece, e por
+      isso o QA-66-01 passou por implementacao, `tsc`, lint e suite.
+    suggested_action: >-
+      Ao corrigir o QA-66-01, adicionar um caso com o payload REAL da rota
+      (`{ sourceUrl, origem, permalinkUrl, igPermalinkUrl }`) e um anuncio sem
+      Instagram. Sem ele, a correcao nao fica presa.
+    resolucao: >-
+      4 casos com o payload real, e um deles e DIFERENCIAL: afirma
+      `creativePermalink(payloadDaRota) === null`. O @dev provou por reversao que
+      reintroduzir o defeito derruba 2 de 18.
+
+  - id: 'QA-66-03'
+    severity: low
+    finding: >-
+      O rotulo generico para host desconhecido e "Assistir o criativo". Em
+      pt-BR normativo o verbo pede preposicao ("assistir AO criativo"). Texto
+      visivel ao usuario.
+    suggested_action: 'Ajustar quando tocar no arquivo. Nao bloqueia.'
+    status: RESOLVIDO
+    resolucao: '"Assistir ao criativo".'
+    refs: ['packages/web/lib/utils/creative-permalink.ts:124']
+
+waiver: { active: false }
+
+o_que_merece_registro:
+  - >-
+    A story melhorou a propria premissa em vez de segui-la. Ela mandava trocar
+    `videoData.permalinkUrl` pela cascata; o @dev descobriu que `useVideoSource`
+    chama `/video-source?videoId=`, que so conhece o videoId e devolve o
+    permalink do VIDEO — e trocou a fonte para `item.creative`, que os
+    componentes ja tinham. A rota nem precisou mudar.
+  - >-
+    `redeDoPermalink` casa pelo HOST e nao por `includes`. Uma landing page
+    `meusite.com/curso-de-instagram` casaria por substring e mandaria o rotulo
+    errado. Tem teste, e o teste falha se alguem trocar por substring.
+  - >-
+    O `tsc` pegou tres acessos a `videoData.picture` que perderam o narrowing —
+    e o @dev leu isso corretamente como comportamento novo (o botao passa a
+    aparecer antes de o video carregar), nao como erro a silenciar.
+  - >-
+    Divida da 36.8 fechada: o `llms.txt` nao documentava NENHUM dos permalinks.
+    Agora documenta os dois, a distincao para `linkUrl` e o significado de
+    `*Stale`.
+
+aprendizado_da_story:
+  - >-
+    O defeito nasceu ao PROPAGAR uma boa decisao. Trocar a fonte para
+    `item.creative` foi acerto; ao levar a mesma ideia para o quarto ponto, o
+    formato divergente do payload passou despercebido — e os campos opcionais da
+    interface deixaram o compilador calado. Vale lembrar: interface com todos os
+    campos opcionais aceita QUALQUER objeto, inclusive o errado.
+  - >-
+    O gate propos o remendo; o @dev entregou a correcao. Registrado porque o
+    caminho inverso (fazer o minimo que o gate pediu) teria deixado a armadilha
+    montada para o proximo campo.
+
+pendencias_operacionais:
+  - 'Validacao visual: abrir um criativo de video que nao toca e conferir a rede no rotulo. Em PP ou Lyrio da para ver o caso do Facebook (os ~4%).'
