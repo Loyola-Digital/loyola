@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Brain, MessageSquare, CheckSquare, Settings, Plus, Eye, EyeOff, LayoutGrid, Radar, Library , Target, Map as MapIcon } from "lucide-react";
+import { Brain, MessageSquare, CheckSquare, Settings, Plus, Eye, EyeOff, LayoutGrid, Radar, Library , Target, Map as MapIcon, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/lib/stores/ui-store";
 import { useHiddenProjectsStore } from "@/lib/stores/hidden-projects-store";
@@ -32,6 +32,9 @@ import { useAutoCloseSidebarOnNavigation } from "@/lib/hooks/use-auto-close-side
 const navItems = [
   // PDI abre primeiro: quando a pessoa tem um, é a tela inicial do app.
   { label: "PDI", href: "/pdi", icon: Target },
+  // Ficha, férias e PDI de cada pessoa. Admin vê o time; os demais caem na
+  // própria ficha (o guard e o recorte de campos são do servidor).
+  { label: "Pessoal", href: "/pessoal", icon: Users },
   { label: "Minds", href: "/minds", icon: Brain },
   { label: "Conversations", href: "/conversations", icon: MessageSquare },
   { label: "Tasks", href: "/tasks", icon: CheckSquare },

@@ -3368,3 +3368,101 @@ export const sendflowConnections = pgTable("sendflow_connections", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// ============================================================
+// PESSOAL (RH) — ficha da pessoa, férias e ausências
+// ============================================================
+// A ficha é 1:1 com `users`: quem trabalha aqui já tem conta, e uma segunda
+// tabela de pessoas criaria dois cadastros para o mesmo ser humano — com dois
+// nomes divergindo no dia em que alguém corrigir só um.
+//
+// Só o que NÃO cabe em `users` mora aqui. Nome de exibição e e-mail de login
+// continuam lá; `nome_completo` existe porque documento de RH pede o nome
+// inteiro, e ninguém quer "Maria Aparecida da Silva Santos" no topo do menu.
+
+export const absenceKindEnum = pgEnum("absence_kind", [
+  "ferias",
+  "folga",
+  "ausencia",
+  "licenca",
+]);
+
+export const absenceStatusEnum = pgEnum("absence_status", [
+  "programada",
+  "aprovada",
+  "concluida",
+  "cancelada",
+]);
+
+export const peopleRecords = pgTable("people_records", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id")
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: "cascade" }),
+  nomeCompleto: text("nome_completo"),
+  /**
+   * Retrato como data: URI.
+   *
+   * Sem bucket de arquivos configurado neste ambiente, e a alternativa seria
+   * travar a ficha esperando infra. O front reduz para 256px antes de enviar,
+   * então são dezenas de KB — a mesma ordem das fotos que já vêm dentro dos
+   * PDIs. O CHECK de tamanho está na migration.
+   */
+  foto: text("foto"),
+  nascimento: date("nascimento"),
+  telefone: varchar("telefone", { length: 40 }),
+  /** E-mail de contato, quando difere do de login (que fica em `users`). */
+  emailContato: varchar("email_contato", { length: 255 }),
+  emergenciaNome: varchar("emergencia_nome", { length: 255 }),
+  emergenciaTelefone: varchar("emergencia_telefone", { length: 40 }),
+  /** "Mãe", "Cônjuge" — quem atende do outro lado. */
+  emergenciaParentesco: varchar("emergencia_parentesco", { length: 80 }),
+  cargo: varchar("cargo", { length: 120 }),
+  entradaEm: date("entrada_em"),
+  /**
+   * Correção manual do saldo de férias, em dias.
+   *
+   * O saldo é calculado a partir da entrada e do histórico, mas nenhum cálculo
+   * automático cobre acordo, venda de dias ou período anterior ao sistema. Sem
+   * uma válvula, o número apareceria errado e sem como consertar.
+   */
+  ajusteSaldoDias: integer("ajuste_saldo_dias").notNull().default(0),
+  observacoes: text("observacoes"),
+  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const peopleAbsences = pgTable(
+  "people_absences",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: absenceKindEnum("kind").notNull().default("ferias"),
+    status: absenceStatusEnum("status").notNull().default("programada"),
+    inicio: date("inicio").notNull(),
+    fim: date("fim").notNull(),
+    /**
+     * Quem segura as demandas durante a ausência.
+     *
+     * `set null`: se essa pessoa sai da empresa, o registro de férias de quem
+     * viajou não pode sumir junto.
+     */
+    coberturaUserId: uuid("cobertura_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    observacao: text("observacao"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // A consulta quente é "as ausências desta pessoa, da mais recente pra trás".
+    index("idx_people_absences_user").on(table.userId, table.inicio),
+    // E a do painel: "quem está fora nesta janela".
+    index("idx_people_absences_periodo").on(table.inicio, table.fim),
+  ]
+);
