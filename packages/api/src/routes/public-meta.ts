@@ -11,7 +11,10 @@ import {
 import { requireScope } from "../middleware/api-key-auth.js";
 import { PUBLIC_READ_SCOPE } from "./public-discovery.js";
 import { somarVideoMetrics } from "../services/video-metrics-agg.js";
-import { AD_PERMALINK_RESOLVER_VERSION } from "../services/meta-ads.js";
+import {
+  AD_PERMALINK_RESOLVER_VERSION,
+  IG_PERMALINK_RESOLVER_VERSION,
+} from "../services/meta-ads.js";
 import { safeDiv, round } from "../utils/meta-metrics.js";
 import {
   accumulate,
@@ -374,6 +377,13 @@ export default fp(async function publicMetaRoutes(fastify) {
           // seria lido como "a Meta não tem post para este anúncio". Mesmo
           // mecanismo do `linkUrlResolver` da 29.43.
           adPermalinkStale: (creative?.adPermalinkResolver ?? 0) < AD_PERMALINK_RESOLVER_VERSION,
+          // Story 29.66 (AC4) — o permalink do INSTAGRAM entra como campo NOVO,
+          // nunca substituindo o do Facebook: este feed é contrato de máquina
+          // (MCP), e consumidor que só lê `adPermalinkUrl` tem de seguir
+          // funcionando. Quem quiser o comportamento da tela aplica a mesma
+          // precedência que o front usa: Instagram, depois Facebook.
+          igPermalinkUrl: creative?.igPermalinkUrl ?? null,
+          igPermalinkStale: (creative?.igPermalinkResolver ?? 0) < IG_PERMALINK_RESOLVER_VERSION,
           videoMetrics: somarVideoMetrics(acc.videoMetricsDiarios),
           ...deriveMetrics(acc),
         };

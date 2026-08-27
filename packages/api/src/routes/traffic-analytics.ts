@@ -1486,7 +1486,16 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
 
       const doCache = linha?.creative?.imageUrl ?? null;
       if (doCache && (await aindaVale(doCache))) {
-        return { sourceUrl: doCache, origem: "cache" as const, permalinkUrl: linha?.creative?.adPermalinkUrl ?? null };
+        // Story 29.66 (AC1): os DOIS permalinks. `permalinkUrl` mantém o
+        // significado que sempre teve (Facebook) porque há telas lendo ele; o do
+        // Instagram entra como campo novo, e quem consome decide a precedência
+        // com `creativePermalink`.
+        return {
+          sourceUrl: doCache,
+          origem: "cache" as const,
+          permalinkUrl: linha?.creative?.adPermalinkUrl ?? null,
+          igPermalinkUrl: linha?.creative?.igPermalinkUrl ?? null,
+        };
       }
 
       // URL morta (ou ausente): uma consulta à Meta para renovar.
@@ -1513,11 +1522,19 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
           // Reaproveita o caminho normal de persistência: além de renovar a URL,
           // ele já baixa a miniatura se ela tiver mudado.
           await upsertAdCreatives(fastify.db, params.data.projectId, [fresco]);
-          return { sourceUrl: fresco.imageUrl, origem: "meta" as const, permalinkUrl: fresco.adPermalinkUrl ?? null };
+          return {
+            sourceUrl: fresco.imageUrl,
+            origem: "meta" as const,
+            permalinkUrl: fresco.adPermalinkUrl ?? null,
+            igPermalinkUrl: fresco.igPermalinkUrl ?? null,
+          };
         }
+        // O 404 também leva os dois: é justamente aqui que a tela oferece
+        // "assistir no post" como alternativa a um vídeo que não toca.
         return reply.code(404).send({
           error: "Este criativo não tem vídeo acessível",
           permalinkUrl: fresco?.adPermalinkUrl ?? linha?.creative?.adPermalinkUrl ?? null,
+          igPermalinkUrl: fresco?.igPermalinkUrl ?? linha?.creative?.igPermalinkUrl ?? null,
         });
       } catch (err) {
         request.log.warn({ err, adId: params.data.adId }, "[creative-video] renovação falhou");

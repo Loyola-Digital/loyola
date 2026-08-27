@@ -24,9 +24,12 @@ import {
 import {
   useTopPerformers,
   useVideoSource,
-  creativePermalink,
   type MetaAdCreative,
 } from "@/lib/hooks/use-traffic-analytics";
+// Story 29.66: cascata e rótulo vêm do módulo (é o que o runner de teste
+// enxerga). O hook reexporta a cascata, mas importar da fonte deixa claro de
+// onde ela vem.
+import { creativePermalink, rotuloDoPermalink } from "@/lib/utils/creative-permalink";
 import {
   useFunnelSpreadsheets,
   useFunnelSpreadsheetData,
@@ -482,20 +485,28 @@ function CreativeLightbox({
               allow="autoplay; encrypted-media; fullscreen"
               allowFullScreen
             />
-          ) : isVideo && videoData?.permalinkUrl ? (
+          /* Story 29.66 (AC2/AC5) — o link do POST vem do criativo, não do
+               vídeo. `videoData.permalinkUrl` é o permalink do VÍDEO no
+               Facebook (rota `/video-source`, que só conhece o `videoId` e não
+               sabe de que anúncio ele é). O criativo é quem carrega o post
+               publicado, e é ele que o gestor reconhece.
+               O permalink do vídeo fica como última reserva: melhor levar ao
+               vídeo no Facebook do que não oferecer nada. O botão some por
+               completo quando não há nenhum dos três. */
+            ) : isVideo && (creativePermalink(item.creative) || videoData?.permalinkUrl) ? (
             <div className="text-center p-8">
               <CreativeThumbnail
-                src={srcDoCriativo(item.creative, item.name, criativoDoDrive) || videoData.picture || ""}
+                src={srcDoCriativo(item.creative, item.name, criativoDoDrive) || videoData?.picture || ""}
                 alt={item.name}
                 className="max-h-[40vh] object-contain mx-auto rounded-lg mb-4"
               />
               <a
-                href={videoData.permalinkUrl}
+                href={(creativePermalink(item.creative) || videoData?.permalinkUrl)!}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
               >
-                <Play className="h-4 w-4" /> Assistir no Facebook
+                <Play className="h-4 w-4" /> {rotuloDoPermalink(creativePermalink(item.creative) || videoData?.permalinkUrl)}
               </a>
             </div>
           ) : !isVideo ? (

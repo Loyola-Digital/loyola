@@ -37,3 +37,53 @@ export function creativePermalink(
 ): string | null {
   return c?.igPermalinkUrl || c?.adPermalinkUrl || null;
 }
+
+/**
+ * Story 29.66 — a rede social de um permalink, para o rótulo do botão.
+ *
+ * ## Por que o rótulo não pode ser fixo
+ *
+ * Três telas diziam **"Assistir no Facebook"** com o texto escrito no código.
+ * Trocar só a URL para a cascata acima faria o botão afirmar um destino e
+ * entregar outro — e não em teoria: **~4% dos anúncios não têm post no
+ * Instagram** (PP 5 de 125, Lyrio 2 de 56, medido em 2026-08-26) e caem
+ * legitimamente no Facebook.
+ *
+ * Um texto fixo estará errado numa das duas pontas, sempre. Por isso o rótulo
+ * sai da URL resolvida, e sai de um lugar só.
+ *
+ * `null` quando não há link: quem consome não renderiza botão nenhum, em vez de
+ * oferecer um que não leva a lugar algum.
+ */
+export type RedeDoPermalink = "instagram" | "facebook" | null;
+
+export function redeDoPermalink(url: string | null | undefined): RedeDoPermalink {
+  if (!url) return null;
+  // Casa pelo HOST, não por `includes` na string inteira: uma landing page
+  // chamada `meusite.com/curso-de-instagram` casaria por substring e mandaria o
+  // rótulo errado. O host é o que de fato decide para onde o clique vai.
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+  if (host === "instagram.com" || host.endsWith(".instagram.com")) return "instagram";
+  if (host === "facebook.com" || host.endsWith(".facebook.com")) return "facebook";
+  return null;
+}
+
+/**
+ * Story 29.66 — o texto do botão que oferece o post como alternativa ao player.
+ *
+ * O verbo é "Assistir" porque estes botões são o fallback de quem não conseguiu
+ * ver o vídeo tocar — e o post do Instagram toca o Reels.
+ */
+export function rotuloDoPermalink(url: string | null | undefined): string | null {
+  const rede = redeDoPermalink(url);
+  if (rede === "instagram") return "Assistir no Instagram";
+  if (rede === "facebook") return "Assistir no Facebook";
+  // URL de host desconhecido existe (nunca vimos, mas o dado vem da Meta):
+  // melhor um rótulo genérico e honesto que afirmar a rede errada.
+  return url ? "Assistir o criativo" : null;
+}

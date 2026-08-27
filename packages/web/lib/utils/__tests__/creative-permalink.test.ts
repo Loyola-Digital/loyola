@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { creativePermalink } from "@/lib/utils/creative-permalink";
+import {
+  creativePermalink,
+  redeDoPermalink,
+  rotuloDoPermalink,
+} from "@/lib/utils/creative-permalink";
 
 /**
  * Story 29.63 (AC8) — o link do criativo.
@@ -64,5 +68,60 @@ describe("creativePermalink", () => {
     // precedência não derrubaria nenhum teste de cobertura — entregaria o link
     // errado em silêncio. Este caso prende a ordem.
     expect(creativePermalink({ igPermalinkUrl: IG, adPermalinkUrl: FB })).not.toBe(FB);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// Story 29.66 (AC7) — o rótulo do botão
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("rotuloDoPermalink", () => {
+  it("link do Instagram NUNCA produz um rótulo que diga Facebook", () => {
+    // O defeito que esta story corrigiu: três telas tinham "Assistir no
+    // Facebook" fixo no código. Trocar só a URL faria o botão mentir.
+    const rotulo = rotuloDoPermalink(IG);
+    expect(rotulo).toBe("Assistir no Instagram");
+    expect(rotulo).not.toMatch(/facebook/i);
+  });
+
+  it("link do Facebook NUNCA produz um rótulo que diga Instagram", () => {
+    // A direção inversa importa igual: ~4% dos anúncios não têm post no
+    // Instagram (PP 5 de 125, Lyrio 2 de 56) e caem legitimamente aqui.
+    // Um rótulo fixo em "Instagram" estaria errado exatamente nesses.
+    const rotulo = rotuloDoPermalink(FB);
+    expect(rotulo).toBe("Assistir no Facebook");
+    expect(rotulo).not.toMatch(/instagram/i);
+  });
+
+  it("sem link, não há rótulo — quem consome não renderiza botão", () => {
+    expect(rotuloDoPermalink(null)).toBeNull();
+    expect(rotuloDoPermalink(undefined)).toBeNull();
+    expect(rotuloDoPermalink("")).toBeNull();
+  });
+
+  it("host desconhecido não é rotulado como rede nenhuma", () => {
+    // O dado vem da Meta; nunca vimos outro host, mas afirmar a rede errada é
+    // pior do que ser genérico.
+    const rotulo = rotuloDoPermalink("https://exemplo.com/algo");
+    expect(rotulo).not.toMatch(/instagram|facebook/i);
+    expect(rotulo).toBeTruthy();
+  });
+});
+
+describe("redeDoPermalink", () => {
+  it("casa pelo HOST, não por substring na URL inteira", () => {
+    // Uma landing page com "instagram" no caminho casaria por `includes` e
+    // mandaria o rótulo errado. O host é o que decide para onde o clique vai.
+    expect(redeDoPermalink("https://meusite.com.br/curso-de-instagram")).toBeNull();
+    expect(redeDoPermalink("https://meusite.com.br/?utm=facebook")).toBeNull();
+  });
+
+  it("reconhece subdomínios legítimos", () => {
+    expect(redeDoPermalink("https://www.instagram.com/p/abc/")).toBe("instagram");
+    expect(redeDoPermalink("https://web.facebook.com/1/posts/2")).toBe("facebook");
+  });
+
+  it("URL malformada devolve null em vez de estourar", () => {
+    expect(redeDoPermalink("nao-e-url")).toBeNull();
   });
 });
