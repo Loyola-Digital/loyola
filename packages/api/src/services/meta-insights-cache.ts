@@ -16,7 +16,12 @@
 
 import { eq, and, inArray, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
-import { LINK_URL_RESOLVER_VERSION, AD_PERMALINK_RESOLVER_VERSION, IG_PERMALINK_RESOLVER_VERSION } from "./meta-ads.js";
+import {
+  LINK_URL_RESOLVER_VERSION,
+  AD_PERMALINK_RESOLVER_VERSION,
+  IG_PERMALINK_RESOLVER_VERSION,
+  precisaRecarimbar,
+} from "./meta-ads.js";
 import {
   metaCampaignInsightsDaily,
   metaAdInsightsDaily,
@@ -625,4 +630,98 @@ function caminhoDaUrl(url: string | null | undefined): string {
   } catch {
     return url;
   }
+}
+
+// ============================================================
+// Story 29.67 — quais criativos precisam ser (re)buscados
+// ============================================================
+
+/**
+ * Teto de criativos por execução.
+ *
+ * Existe por causa do regime de TRANSIÇÃO, não do permanente: no dia em que
+ * alguém incrementa a versão de um resolver, todo o cache fica desatualizado de
+ * uma vez — 2.444 linhas hoje, ~49 lotes de 50 na Graph API num único sync.
+ * É o perfil de pico que causou o estouro de rate limit de 2026-07-16.
+ *
+ * Com teto, o campo novo entra em rampa: algumas execuções em vez de uma
+ * rajada. Em regime, quase nada casa e o teto nunca morde.
+ */
+export const TETO_CRIATIVOS_POR_EXECUCAO = 300;
+
+export interface SelecaoDeCriativos {
+  /** Os ad_ids a buscar nesta execução (já limitados pelo teto). */
+  adIds: string[];
+  /** Quantos casaram a condição ao todo — antes do teto. */
+  candidatos: number;
+  /** Quantos ficaram para a próxima execução. `0` em regime permanente. */
+  adiados: number;
+}
+
+/**
+ * Story 29.67 (AC1) — a lista sai do BANCO, não do retorno vivo da Meta.
+ *
+ * ## O que isto corrige
+ *
+ * `meta-perf-sync` montava a lista a partir de `adRows` — o que a Meta acabara
+ * de devolver. Quem caísse fora daquela janela ficava com o criativo velho, e o
+ * tooltip da tela prometia um sync que nunca vinha.
+ *
+ * Provado em 2026-08-27: 18 anúncios do DG & CPDF ficaram sem o campo da 29.63,
+ * e a Meta **tinha** o dado (10 de 10 conferidos). Todos pararam de rodar em
+ * 28/07 — um dia antes do início da janela que `--days=30` monta, porque
+ * `dateRangeFromDays` usa `days - 1`.
+ *
+ * A janela era o gatilho **daquele** caso. A fragilidade é depender do retorno
+ * vivo: falha de página, rate limit e mudança de fuso produzem o mesmo sintoma.
+ * Partindo do banco, nenhum deles esconde criativo.
+ *
+ * ## Por que é barato
+ *
+ * O filtro por carimbo (`precisaRecarimbar`) faz o trabalho: em regime
+ * permanente quase nada casa, e a função devolve lista vazia sem custo de rede.
+ * É o AC2 — rodar duas vezes seguidas busca zero na segunda.
+ */
+export async function adIdsParaAtualizarCriativo(
+  db: Database,
+  projectId: string,
+  since: string,
+  teto: number = TETO_CRIATIVOS_POR_EXECUCAO,
+): Promise<SelecaoDeCriativos> {
+  const linhas = await db
+    .select({
+      adId: metaAdInsightsDaily.adId,
+      gasto: sql<string>`SUM(${metaAdInsightsDaily.spend})`,
+      creative: sql<Record<string, unknown> | null>`MAX(${metaAdCreativesCache.creative}::text)::jsonb`,
+    })
+    .from(metaAdInsightsDaily)
+    .leftJoin(
+      metaAdCreativesCache,
+      and(
+        eq(metaAdCreativesCache.projectId, metaAdInsightsDaily.projectId),
+        eq(metaAdCreativesCache.adId, metaAdInsightsDaily.adId),
+      ),
+    )
+    .where(
+      and(
+        eq(metaAdInsightsDaily.projectId, projectId),
+        sql`${metaAdInsightsDaily.dateStart} >= ${since}`,
+      ),
+    )
+    .groupBy(metaAdInsightsDaily.adId);
+
+  // O filtro de carimbo roda AQUI, não no SQL: a regra de "está desatualizado"
+  // vive em `precisaRecarimbar`, e duplicá-la em SQL criaria duas verdades que
+  // divergem no dia em que alguém adicionar o quarto resolver — que é
+  // exatamente o defeito que esta story corrige.
+  const candidatos = linhas
+    .filter((l) => parseFloat(l.gasto ?? "0") > 0)
+    .filter((l) => precisaRecarimbar(l.creative))
+    .map((l) => l.adId);
+
+  return {
+    adIds: candidatos.slice(0, teto),
+    candidatos: candidatos.length,
+    adiados: Math.max(0, candidatos.length - teto),
+  };
 }

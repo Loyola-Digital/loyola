@@ -100,6 +100,41 @@ async function main() {
       `permalink -> Instagram: ${com_ig} (${pct(com_ig)}%) | carimbados: ${ig_carimbados} | ` +
         `Facebook (fallback): ${com_fb} (${pct(com_fb)}%)`,
     );
+
+    // Story 29.67 (AC5): o que FICOU DE FORA, e por quê.
+    //
+    // Silêncio sobre o que faltou foi o que deixou 18 anúncios do DG & CPDF
+    // passarem despercebidos depois do backfill da 29.63 — o relatório dizia a
+    // cobertura e nada sobre os ausentes.
+    //
+    // As duas causas pedem reações opostas: sem carimbo se resolve rodando de
+    // novo; "a Meta não devolveu criativo" não se resolve esperando.
+    const faltantes = await pool.query(
+      `WITH ativos AS (
+         SELECT DISTINCT project_id, ad_id FROM meta_ad_insights_daily
+         WHERE date_start >= to_char(now() - interval '${days} days','YYYY-MM-DD')
+           AND spend::numeric > 0)
+       SELECT
+         count(*) FILTER (WHERE cc.ad_id IS NULL)::int AS sem_linha,
+         count(*) FILTER (WHERE cc.ad_id IS NOT NULL
+                            AND (cc.creative->>'igPermalinkResolver') IS NULL)::int AS sem_carimbo,
+         count(*) FILTER (WHERE (cc.creative->>'igPermalinkResolver') IS NOT NULL
+                            AND cc.creative->>'igPermalinkUrl' IS NULL
+                            AND cc.creative->>'adPermalinkUrl' IS NULL)::int AS meta_nao_tem
+       FROM ativos a
+       LEFT JOIN meta_ad_creatives_cache cc
+              ON cc.project_id = a.project_id AND cc.ad_id = a.ad_id`,
+    );
+    const { sem_linha, sem_carimbo, meta_nao_tem } = faltantes.rows[0];
+    if (sem_linha > 0 || sem_carimbo > 0) {
+      console.log(
+        `⚠️  ficaram de fora -> ${sem_linha} sem linha no cache | ${sem_carimbo} sem carimbo ` +
+          `(rodar de novo resolve)`,
+      );
+    } else {
+      console.log(`ficaram de fora -> nenhum anúncio da janela sem carimbo`);
+    }
+    console.log(`sem post na Meta -> ${meta_nao_tem} (não se resolve rodando de novo)`);
   }
   await pool.end();
 }

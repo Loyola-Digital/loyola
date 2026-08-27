@@ -6,12 +6,14 @@ import {
   fetchCampaignDailyInsightsForIds,
   fetchPlacementDailyInsights,
   fetchAdCreatives,
+  dateRangeFromDays,
 } from "./meta-ads.js";
 import {
   upsertAdDailyInsights,
   upsertCampaignInsights,
   upsertPlacementInsights,
   upsertAdCreatives,
+  adIdsParaAtualizarCriativo,
 } from "./meta-insights-cache.js";
 import { recordSyncRun, type MetaSyncKind } from "./meta-sync-state.js";
 import { singleFlight } from "../utils/single-flight.js";
@@ -183,15 +185,30 @@ export async function syncMetaPerformance(
         return upsertPlacementInsights(db, projectId, plRows);
       });
 
-      // 4. Creatives (só na cadência diária — `opts.creatives`). Limita aos ads
-      //    com gasto no período pra não buscar criativo de anúncio inativo.
+      // 4. Creatives (só na cadência diária — `opts.creatives`).
+      //
+      // Story 29.67: a lista sai do BANCO, não de `adRows`.
+      //
+      // Antes partia do que a Meta acabara de devolver, e quem caísse fora
+      // daquela janela ficava com o criativo velho — enquanto a tela prometia
+      // "o próximo sync resolve". Provado em 2026-08-27: 18 anúncios do
+      // DG & CPDF sem o campo da 29.63, com o dado disponível na Meta o tempo
+      // todo. Tinham parado de rodar UM DIA antes do início da janela, porque
+      // `dateRangeFromDays` usa `days - 1`.
+      //
+      // O filtro por carimbo mantém o custo baixo: em regime quase nada casa.
       if (opts.creatives) {
-        const activeAdIds = uniqueStrings(
-          adRows.filter((r) => parseFloat(r.spend ?? "0") > 0).map((r) => r.ad_id),
-        );
-        if (activeAdIds.length > 0) {
+        const { since } = dateRangeFromDays(days);
+        const selecao = await adIdsParaAtualizarCriativo(db, projectId, since);
+        if (selecao.adiados > 0) {
+          log(
+            `[meta-perf] ${projectId}: ${selecao.candidatos} criativos a atualizar, ` +
+              `${selecao.adIds.length} nesta execução (${selecao.adiados} adiados pelo teto)`,
+          );
+        }
+        if (selecao.adIds.length > 0) {
           summary.creativesUpserted += await step("creatives", async () => {
-            const creatives = await fetchAdCreatives(metaAccountId, accessToken, activeAdIds);
+            const creatives = await fetchAdCreatives(metaAccountId, accessToken, selecao.adIds);
             return upsertAdCreatives(db, projectId, creatives);
           });
         }

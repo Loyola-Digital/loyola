@@ -1333,6 +1333,53 @@ export function resolveIgPermalinkUrl(c: MetaCreativeRaw | undefined): string | 
   return raw;
 }
 
+/**
+ * Story 29.67 (AC3) — TODOS os carimbos de resolver, num lugar só.
+ *
+ * ## Por que uma lista e não três constantes soltas
+ *
+ * Quem precisa saber "este criativo está desatualizado?" tinha de lembrar dos
+ * três carimbos e escrever a comparação de cada um. Já falhou duas vezes:
+ *
+ * - a **36.8** adicionou `adPermalinkResolver` e deixou 27% do cache do
+ *   DG & CPDF sem carimbo;
+ * - a **29.63** adicionou `igPermalinkResolver` e deixou 18 anúncios de fora,
+ *   com o dado disponível na Meta o tempo todo.
+ *
+ * Nos dois casos o defeito foi silencioso: o campo fica `null`, a tela mostra
+ * "—", e ninguém distingue "não temos" de "não perguntamos".
+ *
+ * **Adicionar um campo novo passa a ser adicionar uma linha aqui.** Quem
+ * consome — sync, backfill, feed público — herda sem tocar em query nenhuma.
+ * É o AC3 da 29.67, e é a razão de a story existir em vez de um patch.
+ */
+export const CREATIVE_RESOLVERS = [
+  { carimbo: "linkUrlResolver", versao: LINK_URL_RESOLVER_VERSION },
+  { carimbo: "adPermalinkResolver", versao: AD_PERMALINK_RESOLVER_VERSION },
+  { carimbo: "igPermalinkResolver", versao: IG_PERMALINK_RESOLVER_VERSION },
+] as const;
+
+/** O que a checagem de carimbo precisa ler do jsonb persistido. */
+export type CreativeCarimbado = Partial<Record<string, unknown>> | null | undefined;
+
+/**
+ * Story 29.67 — este criativo foi escrito por código anterior a algum resolver?
+ *
+ * `true` também para criativo **ausente** do cache: nunca escrito é o caso mais
+ * desatualizado que existe.
+ *
+ * Ausência de carimbo conta como versão 0 — é o que distingue "gravado por
+ * código que não perguntava" de "a Meta não tem". A distinção não é teórica: os
+ * dois produzem `null` no mesmo campo, e só o carimbo separa.
+ */
+export function precisaRecarimbar(creative: CreativeCarimbado): boolean {
+  if (!creative) return true;
+  return CREATIVE_RESOLVERS.some(({ carimbo, versao }) => {
+    const atual = Number(creative[carimbo] ?? 0);
+    return !Number.isFinite(atual) || atual < versao;
+  });
+}
+
 export function resolveCreativeLinkUrl(c: MetaCreativeRaw | undefined): string | null {
   if (!c) return null;
   const oss = c.object_story_spec;
