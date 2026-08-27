@@ -227,6 +227,41 @@ export function registerTools(server: McpServer, client: LoyolaClient): void {
       )
   );
 
+  // ---- Panorama do PROJETO (Story 44.20) — o ponto de partida diário ----
+  server.registerTool(
+    "get_project_panorama",
+    {
+      title: "Panorama do projeto (Cadeia de CAC)",
+      description:
+        "O panorama de UM projeto numa chamada: as etapas com campanha, quanto gastaram nas janelas curta (7d) e longa (30d), o número principal de cada uma, o gargalo da cadeia, as campanhas órfãs e as pendências de configuração (Story 44.20). " +
+        "COMECE POR AQUI todo dia, ANTES de get_stage_cadeia_cac: esta tool diz quais etapas valem uma leitura profunda; a outra abre a etapa escolhida. Sem ela são de 6 a 10 chamadas (list_funnels, list_stages por funil, get_stage_daily por etapa) para a mesma resposta. " +
+        "`spend` JÁ inclui o imposto Meta de 12,15%, aplicado como gross-up (spend ÷ (1 − 0,1215) = ×1,1382, NÃO ×1,1215): não reaplicar nem tentar reverter. " +
+        "`noAr` é MEDIDO por gasto na janela curta, não por status — campanha pausada no meio da janela gastou e conta. " +
+        "`effectiveStatus: null` NÃO é 'pausada': é entidade que o backfill de nomes ainda não resolveu. Nunca escreva 'Pausado' por ausência de dado. " +
+        "`familia: null` é etapa fora da aba (lyrio/comercial/debriefing), não erro — ela aparece na lista, com gargalo null, e fica fora de totais.etapasNoAr. " +
+        "`pendencias` são fatos de CONFIGURAÇÃO, não falhas da consulta, e cada `codigo` pede uma ação diferente (semDados=conectar fonte, syncPendente=esperar o sync, leituraFalhou=checar permissão). O campo `origem` diz se o item foi apurado pelo backend (`cadeia`) ou concluído pelo panorama (`panorama`) — só o primeiro é fato de origem. " +
+        "`campanhasOrfas` é dinheiro gasto fora de toda etapa: não entra em CAC nem em ROAS de lugar nenhum, e não deve ser encostado numa etapa por semelhança de nome.",
+      inputSchema: {
+        projectId: z.string().uuid().describe("ID do projeto (de list_projects)."),
+        to: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional()
+          .describe("Último dia das duas janelas (YYYY-MM-DD). Default: hoje."),
+        curta: z.number().int().min(1).max(365).optional().describe("Dias da janela curta. Default 7."),
+        longa: z.number().int().min(1).max(365).optional().describe("Dias da janela longa. Default 30."),
+      },
+    },
+    async ({ projectId, to, curta, longa }) =>
+      run(() =>
+        client.get(`/api/public/meta/v1/projects/${encodeURIComponent(projectId)}/panorama-cac`, {
+          to,
+          curta,
+          longa,
+        })
+      )
+  );
+
   // ---- Etapa: leads por origem / pesquisa / vendas ----
   server.registerTool(
     "get_stage_leads_summary",

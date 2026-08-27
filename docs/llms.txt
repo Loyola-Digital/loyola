@@ -74,6 +74,35 @@ Resposta: `{ projectId, stageId, stageName, campaignIds: [..], range, partial, l
 > **checkouts / checkoutRate** (Resumão v4): `checkouts` = evento `initiate_checkout` do pixel; `checkoutRate` = `purchases ÷ checkouts × 100`. Em todos os objetos Meta.
 > **linkClicks / ctrLink / cpcLink** (Epic 39): `clicks` cru da Meta = cliques TOTAIS (inclui curtida/perfil); `linkClicks` = evento `link_click` (tráfego real). Para análise de tráfego use `linkClicks`/`ctrLink`/`cpcLink`; `ctr`/`cpc` seguem sobre cliques totais por compatibilidade.
 
+### GET /api/public/meta/v1/projects/{projectId}/panorama-cac
+**O panorama do projeto — o que está no ar hoje, numa chamada** (Story 44.20). Query: `to` (último dia das janelas, default hoje), `curta` (dias da janela curta, default 7), `longa` (default 30), `fresh=1`.
+
+⚠️ **COMECE POR AQUI todo dia, ANTES de `/cadeia-cac`.** Esta rota diz *quais* etapas merecem leitura profunda; a da cadeia abre a etapa escolhida. Sem ela são de 6 a 10 chamadas (`/funnels`, `/stages` por funil, `/stages/{id}/daily` por etapa) para a mesma resposta — e cada consumidor junta do seu jeito, que é a classe de defeito que o Epic 44 existe para impedir.
+
+**Escopo: UM projeto.** Não existe rota cross-projeto, por decisão de permissão — a rota interna gêmea vive sob `/api/projects/:id/*`, onde o guard de convidado valida vínculo, e uma versão cross-projeto vazaria dados entre experts. Para a visão consolidada, chame N vezes.
+
+**Unidades:** `unidadeDasTaxas: "decimal"` · `spendIncludesMetaTax: true` — o `spend` já inclui o imposto Meta como gross-up (`spend ÷ (1 − 0,1215)` = **×1,1382**, não ×1,1215). Conferir com ×1,1215 acusa ~1,5% de diferença que não existe.
+
+**`janelas`** — `{ curta: {from,to,dias}, longa: {from,to,dias} }`, ambas terminando em `to`. Todo `spendCurta`/`spendLonga` se refere a elas; não há default de "histórico inteiro" aqui.
+
+**`etapas[]`** — uma linha por etapa do projeto com funil **não arquivado**:
+- `familia` — igual à da cadeia. **`null` = etapa fora da aba** (`lyrio`/`comercial`/`debriefing`): entra na lista, com `gargalo: null`, e **fica fora de `totais.etapasNoAr`**. Some da conta, não do panorama.
+- `noAr` — **medido por gasto** (`spendCurta > 0`), nunca por `effectiveStatus`. Campanha pausada no meio da janela gastou e conta: em 27/08, 5 das 13 campanhas do BBE com gasto na semana estavam `PAUSED`.
+- `principal` — **repassado do payload da cadeia sem reescrita**, com `motivo`/`message` intactos. Mesmos ramos, mesmas regras da entrada de `/cadeia-cac`.
+- `gargalo` — `{ metrica, atual, teto, queda }`, o `ranking[0]` da cadeia. ⚠️ **Sem `posicao`**, de propósito: lá ela é a posição do elo na cadeia, não a prioridade.
+- `campanhas[]` — `{ campaignId, campaignName, spendCurta, spendLonga, effectiveStatus, ultimoDiaComSpend }`.
+
+**`effectiveStatus`** — `ACTIVE` | `PAUSED` | … | `null`. ⚠️ **`null` NÃO é "pausada"**: é entidade que o backfill de nomes ainda não resolveu (Story 18.61). Renderize `—`, nunca "Pausado", por ausência de dado.
+
+**`campanhasOrfas`** — campanhas com gasto na janela curta **sem vínculo com nenhuma etapa** do projeto. É dinheiro fora de todo CAC e ROAS do painel. Não encoste numa etapa por semelhança de nome — isso é inventar atribuição.
+
+**`pendencias[]`** — `{ stageId, codigo, mensagem, origem }`. São fatos de **configuração**, não falhas da consulta, e cada `codigo` pede uma ação diferente (`semDados` = conectar fonte · `syncPendente` = esperar o sync · `leituraFalhou` = checar permissão · `indeterminado` = a checagem falhou · `foraDaAba` = etapa fora do escopo da aba). ⚠️ `origem: "cadeia"` = apurado no backend, citável como fato; `origem: "panorama"` = conclusão desta rota (`semTetoConfiavel`, `coberturaIndisponivel`), derivada por comparação. Não cite um derivado como fato de origem.
+⚠️ Etapa com fonte conectada e **zero venda/lead na janela** NÃO entra em `pendencias` — não é lacuna de configuração. O fato fica visível em `principal.vendasReais: 0` / `principal.leadsUnicos: 0`.
+
+**`totais`** — `{ spendCurta, spendLonga, etapasNoAr, campanhasComGasto }`. `campanhasComGasto` conta só as VINCULADAS; as órfãs têm lista própria.
+
+Resposta: `{ projectId, projectName, clientName, janelas, spendIncludesMetaTax, unidadeDasTaxas, etapas, campanhasOrfas, pendencias, totais }`
+
 ### GET /api/public/meta/v1/projects/{projectId}/stages/{stageId}/cadeia-cac
 **A Cadeia de CAC de uma etapa — o MESMO payload que a aba "Inácio" do painel renderiza** (Epic 44). Query: `from`, `to`, `fresh=1` (força recompute das vendas).
 
@@ -227,6 +256,7 @@ Tools (mapeiam 1:1 nos endpoints):
 - `get_creative_timeseries(projectId, adId, from?, to?)` → GET .../creatives/{adId}/timeseries
 - `get_daily(projectId, from?, to?)` → GET /api/public/meta/v1/projects/{projectId}/daily
 - `get_stage_daily(projectId, stageId, from?, to?)` → GET /api/public/meta/v1/projects/{projectId}/stages/{stageId}/daily (mídia SÓ das campanhas da etapa — sem contaminação entre funis/evergreen)
+- `get_project_panorama(projectId, to?, curta?, longa?)` → GET .../meta/v1/projects/{projectId}/panorama-cac (**o ponto de partida diário** — etapas no ar, gasto nas duas janelas, gargalo de cada uma, órfãs e pendências. Chame ANTES de `get_stage_cadeia_cac`)
 - `get_stage_cadeia_cac(projectId, stageId, from?, to?)` → GET .../meta/v1/projects/{projectId}/stages/{stageId}/cadeia-cac (**a Cadeia de CAC pronta** — CPM/CTR/CPC/Connect/Conv.LP, tetos, ranking e criativos DA ETAPA. Use em vez de recompor a partir de `get_stage_daily`)
 - `get_stage_leads_summary(projectId, stageId)` → GET .../v1/projects/{projectId}/stages/{stageId}/leads-summary
 - `get_stage_survey(projectId, stageId)` → GET .../v1/projects/{projectId}/stages/{stageId}/survey
