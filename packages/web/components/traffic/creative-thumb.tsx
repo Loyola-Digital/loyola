@@ -20,7 +20,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useApiClient } from "@/lib/hooks/use-api-client";
-import { creativePermalink, rotuloDoPermalink } from "@/lib/utils/creative-permalink";
+import { permalinkDaRotaDeVideo, rotuloDoPermalink } from "@/lib/utils/creative-permalink";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
@@ -197,9 +197,14 @@ export function CreativeThumb({ projectId, adId, nome, videoId, className }: Pro
                       Facebook cobre os ~4% que não têm post no Instagram. O
                       texto diz a rede certa em vez de "na Meta", que era
                       verdadeiro mas não dizia onde a pessoa ia cair. */}
-                  {creativePermalink(video) ? (
-                    <a href={creativePermalink(video)!} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-foreground">
-                      <ExternalLink className="h-3 w-3" /> {rotuloDoPermalink(creativePermalink(video))}
+                  {/* QA-66-01: `permalinkDaRotaDeVideo`, não `creativePermalink`.
+                      Esta rota chama o permalink do Facebook de `permalinkUrl`,
+                      e passar o objeto direto perderia o link dos ~4% de
+                      anúncios que só têm post no Facebook — sem o `tsc`
+                      reclamar, porque os campos são opcionais. */}
+                  {permalinkDaRotaDeVideo(video) ? (
+                    <a href={permalinkDaRotaDeVideo(video)!} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-foreground">
+                      <ExternalLink className="h-3 w-3" /> {rotuloDoPermalink(permalinkDaRotaDeVideo(video))}
                     </a>
                   ) : videoFalhou ? (
                     "Não consegui carregar o vídeo deste criativo."

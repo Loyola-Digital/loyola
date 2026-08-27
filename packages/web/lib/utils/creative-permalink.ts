@@ -39,6 +39,42 @@ export function creativePermalink(
 }
 
 /**
+ * Story 29.66 (QA-66-01) — a mesma cascata, para o payload da rota
+ * `/creative-video/:adId`.
+ *
+ * ## Por que isto não é só um `creativePermalink(video)`
+ *
+ * A rota chama o permalink do Facebook de **`permalinkUrl`**; o criativo o chama
+ * de **`adPermalinkUrl`**. Passar o objeto da rota direto para
+ * `creativePermalink` compila sem reclamação — os dois campos da interface são
+ * **opcionais**, então um objeto sem `adPermalinkUrl` é válido para o
+ * compilador — e devolve `null` justamente para os anúncios que só têm post no
+ * Facebook: os ~4% medidos na 29.63 (PP 5 de 125, Lyrio 2 de 56).
+ *
+ * O resultado é a perda silenciosa de um link que existe e funciona. Foi o que o
+ * gate pegou, e o `tsc` não pegou.
+ *
+ * Esta função existe para que a tradução entre os dois formatos aconteça **num
+ * lugar só, com nome, e presa por teste** — em vez de um objeto literal montado
+ * na chamada, que o próximo consumidor teria de lembrar de repetir.
+ */
+export interface PermalinksDaRotaDeVideo {
+  /** Permalink do post no Facebook — a rota chama assim (36.8). */
+  permalinkUrl?: string | null;
+  /** Permalink do post no Instagram (29.63). */
+  igPermalinkUrl?: string | null;
+}
+
+export function permalinkDaRotaDeVideo(
+  v: PermalinksDaRotaDeVideo | null | undefined,
+): string | null {
+  return creativePermalink({
+    igPermalinkUrl: v?.igPermalinkUrl,
+    adPermalinkUrl: v?.permalinkUrl,
+  });
+}
+
+/**
  * Story 29.66 — a rede social de um permalink, para o rótulo do botão.
  *
  * ## Por que o rótulo não pode ser fixo
@@ -85,5 +121,5 @@ export function rotuloDoPermalink(url: string | null | undefined): string | null
   if (rede === "facebook") return "Assistir no Facebook";
   // URL de host desconhecido existe (nunca vimos, mas o dado vem da Meta):
   // melhor um rótulo genérico e honesto que afirmar a rede errada.
-  return url ? "Assistir o criativo" : null;
+  return url ? "Assistir ao criativo" : null;
 }

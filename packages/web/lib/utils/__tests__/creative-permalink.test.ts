@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   creativePermalink,
+  permalinkDaRotaDeVideo,
   redeDoPermalink,
   rotuloDoPermalink,
 } from "@/lib/utils/creative-permalink";
@@ -123,5 +124,55 @@ describe("redeDoPermalink", () => {
 
   it("URL malformada devolve null em vez de estourar", () => {
     expect(redeDoPermalink("nao-e-url")).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// QA-66-01 / QA-66-02 — o payload da ROTA, que nenhum teste cobria
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * O gate pegou uma regressão que atravessou implementação, `tsc`, lint e suíte:
+ * `creativePermalink(video)` recebia o objeto de `/creative-video`, que chama o
+ * permalink do Facebook de `permalinkUrl` — não `adPermalinkUrl`.
+ *
+ * O compilador não reclamou porque os dois campos são **opcionais**. Estes
+ * testes usam o payload REAL da rota, que era o formato ausente do arquivo.
+ */
+describe("permalinkDaRotaDeVideo — o formato de /creative-video", () => {
+  /** O que a rota devolve quando o anúncio SÓ tem post no Facebook. */
+  const soFacebook = {
+    sourceUrl: "https://video.fbcdn.net/x.mp4",
+    origem: "cache" as const,
+    permalinkUrl: FB,
+    igPermalinkUrl: null,
+  };
+
+  it("NÃO perde o link do Facebook — o caso que causou o FAIL", () => {
+    // Com `creativePermalink` isto devolvia null e o link sumia da tela para os
+    // ~4% de anúncios sem post no Instagram (PP 5 de 125, Lyrio 2 de 56).
+    expect(permalinkDaRotaDeVideo(soFacebook)).toBe(FB);
+    // E o teste diferencial: passar direto pela cascata do criativo falha.
+    expect(creativePermalink(soFacebook)).toBeNull();
+  });
+
+  it("prefere o Instagram quando os dois existem", () => {
+    expect(
+      permalinkDaRotaDeVideo({ permalinkUrl: FB, igPermalinkUrl: IG }),
+    ).toBe(IG);
+  });
+
+  it("devolve null quando a rota não trouxe nenhum dos dois", () => {
+    expect(permalinkDaRotaDeVideo({ permalinkUrl: null, igPermalinkUrl: null })).toBeNull();
+    expect(permalinkDaRotaDeVideo(null)).toBeNull();
+    expect(permalinkDaRotaDeVideo(undefined)).toBeNull();
+  });
+
+  it("o rótulo do payload da rota diz a rede certa", () => {
+    // Fecha o ciclo: a tradução de formato tem que chegar inteira no texto.
+    expect(rotuloDoPermalink(permalinkDaRotaDeVideo(soFacebook))).toBe("Assistir no Facebook");
+    expect(rotuloDoPermalink(permalinkDaRotaDeVideo({ igPermalinkUrl: IG }))).toBe(
+      "Assistir no Instagram",
+    );
   });
 });
