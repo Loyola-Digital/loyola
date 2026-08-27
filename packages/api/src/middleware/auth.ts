@@ -12,6 +12,10 @@ export default fp(async function authPlugin(fastify) {
     // Story 36.2: rotas públicas autenticam por X-API-Key (middleware próprio),
     // não pelo Clerk. Não exigir usuário Clerk aqui.
     if (request.url.startsWith("/api/public/")) return;
+    // Callback OAuth do SendFlow: chega como navegação vinda do domínio DELES,
+    // sem cookie de sessão nosso. Quem autoriza é o `state` — segredo de uso
+    // único que nós mesmos geramos, com validade curta.
+    if (request.url.startsWith("/api/oauth/sendflow/callback")) return;
     // Only invite info (GET) is public; the accept endpoint (POST) requires auth
     if (request.method === "GET" && request.url.startsWith("/api/invitations/")) return;
 

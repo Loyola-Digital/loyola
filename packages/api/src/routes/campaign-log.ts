@@ -19,9 +19,11 @@ import {
   mauticConnections,
   projects,
   projectMembers,
+  sendflowConnections,
   users,
 } from "../db/schema.js";
 import { decryptMauticPassword, listAllMauticEmails } from "../services/mautic.js";
+import { sincronizarDisparosNoLog } from "../services/sendflow-groups-sync.js";
 
 const funnelParamsSchema = z.object({
   projectId: z.string().uuid(),
@@ -452,7 +454,34 @@ export default fp(async function campaignLogRoutes(fastify) {
         }
       }
 
-      return { archived: false, mautic: mauticResult, instagram: instagramResult };
+      // ---- SendFlow (WhatsApp) ----
+      // A lógica vive no serviço porque o scheduler diário chama a MESMA coisa
+      // — é o que faz o log já estar preenchido quando a pessoa abre a página.
+      let sendflowResult = { ...empty };
+      try {
+        const r = await sincronizarDisparosNoLog(
+          fastify.db,
+          params.data.projectId,
+          params.data.funnelId,
+        );
+        sendflowResult = { connected: r.connected, matched: r.encontrados, created: r.criados };
+        if (r.truncado) {
+          fastify.log.warn(
+            { funnelId: params.data.funnelId },
+            "[campaign-log] SendFlow: histórico truncado no teto de páginas",
+          );
+        }
+      } catch (err) {
+        fastify.log.warn({ err }, "campaign-log sync: SendFlow falhou (os outros seguem)");
+        sendflowResult = { connected: true, matched: 0, created: 0 };
+      }
+
+      return {
+        archived: false,
+        mautic: mauticResult,
+        instagram: instagramResult,
+        sendflow: sendflowResult,
+      };
     },
   );
 

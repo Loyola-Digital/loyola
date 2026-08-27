@@ -84,8 +84,10 @@ import funnelGroupsRoutes from "./routes/funnel-groups.js";
 import funnelBatchTurnsRoutes from "./routes/funnel-batch-turns.js";
 import zoomStageRoutes from "./routes/zoom-stage.js";
 import stageCreativePerformanceRoutes from "./routes/stage-creative-performance.js";
+import driveCreativesRoutes from "./routes/drive-creatives.js";
 import lpCampaignsRoutes from "./routes/lp-campaigns.js";
 import mauticRoutes from "./routes/mautic.js";
+import sendflowRoutes from "./routes/sendflow.js";
 import hotmartRoutes from "./routes/hotmart.js";
 import kiwifyRoutes from "./routes/kiwify.js";
 import memberkitRoutes from "./routes/memberkit.js";
@@ -105,6 +107,7 @@ import stageComercialRoutes from "./routes/stage-comercial.js";
 import instagramScansRoutes from "./routes/instagram-scans.js";
 import swipeFilesRoutes from "./routes/swipe-files.js";
 import paymentAlertsSchedulerPlugin from "./plugins/payment-alerts-scheduler.js";
+import sendflowGroupsSchedulerPlugin from "./plugins/sendflow-groups-scheduler.js";
 import revenuecatSnapshotSchedulerPlugin from "./plugins/revenuecat-snapshot-scheduler.js";
 import instaScanWorkerPlugin from "./plugins/insta-scan-worker.js";
 
@@ -166,6 +169,8 @@ export async function buildServer() {
   // Log de Campanha automático a partir do histórico de alterações da Meta.
   await app.register(metaActivitiesSchedulerPlugin);
   await app.register(paymentAlertsSchedulerPlugin);
+  // Grupos do SendFlow (substitui a exportação manual pra planilha).
+  await app.register(sendflowGroupsSchedulerPlugin);
   // Story 42.10: um ponto por dia das métricas do RevenueCat. A API só devolve
   // o estado de agora — cada dia sem coletar é um ponto perdido para sempre.
   await app.register(revenuecatSnapshotSchedulerPlugin);
@@ -235,8 +240,10 @@ export async function buildServer() {
   await app.register(funnelBatchTurnsRoutes);
   await app.register(zoomStageRoutes);
   await app.register(stageCreativePerformanceRoutes);
+  await app.register(driveCreativesRoutes);
   await app.register(lpCampaignsRoutes);
   await app.register(mauticRoutes);
+  await app.register(sendflowRoutes);
   await app.register(hotmartRoutes);
   await app.register(kiwifyRoutes);
   await app.register(memberkitRoutes);

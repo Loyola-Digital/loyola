@@ -41,9 +41,14 @@ const GOOGLE_TABS = [
 // projetos — quem escolhe o site de cada projeto faz isso na etapa.
 const ANALYTICS_TAB = { label: "Analytics", href: "/settings/analytics", value: "analytics" } as const;
 
+// Mesma razão da Analytics: a conta do SendFlow é uma só, compartilhada por
+// todos os experts — quem casa campanha com funil é o código do funil.
+const WHATSAPP_TAB = { label: "WhatsApp", href: "/settings/whatsapp", value: "whatsapp" } as const;
+
 const ADMIN_TABS = [
   ...BASE_TABS,
   ANALYTICS_TAB,
+  WHATSAPP_TAB,
   { label: "Usuários", href: "/settings/users", value: "users" },
   { label: "API Keys", href: "/settings/api-keys", value: "api-keys" },
   { label: "Auditoria", href: "/settings/audit", value: "audit" },

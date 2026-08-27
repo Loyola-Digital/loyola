@@ -6,6 +6,7 @@ import {
   funnelGroupsSpreadsheets,
   funnelGroupSnapshots,
 } from "../db/schema.js";
+import { sincronizarGruposDoSendflow } from "../services/sendflow-groups-sync.js";
 import { syncGroupsFromSheet } from "../services/funnel-groups-sync.js";
 
 const paramsSchema = z.object({
@@ -41,6 +42,8 @@ interface DailyPoint {
 interface CampaignSeries {
   campaignId: string;
   campaignName: string;
+  /** 'sendflow' = lido da fonte; 'planilha' = exportação manual (legado). */
+  fonte: string;
   series: DailyPoint[];
 }
 
@@ -159,8 +162,35 @@ export default fp(async function funnelGroupsRoutes(fastify) {
       if (!funnel) return reply.code(404).send({ error: "Funil não encontrado" });
 
       try {
+        // SendFlow primeiro: a planilha que alimentava isto era uma EXPORTAÇÃO
+        // manual do próprio SendFlow. Lendo da fonte, some o passo humano — e
+        // se o projeto não estiver conectado, cai na planilha como antes.
+        try {
+          const sf = await sincronizarGruposDoSendflow(
+            fastify.db,
+            p.data.projectId,
+            p.data.funnelId,
+          );
+          if (sf.connected && sf.campanha) {
+            return {
+              fonte: "sendflow" as const,
+              campanha: sf.campanha,
+              rowsProcessed: 1,
+              rowsInserted: sf.inseridos,
+              rowsUpdated: 0,
+              participantes: sf.participantes,
+              grupos: sf.grupos,
+              errors: [],
+            };
+          }
+        } catch (err) {
+          // Falha no SendFlow não pode derrubar o sync: a planilha ainda
+          // responde, e o time não fica sem número por causa da integração.
+          fastify.log.warn({ err }, "[funnel-groups] SendFlow falhou, caindo na planilha");
+        }
+
         const result = await syncGroupsFromSheet(fastify.db, p.data.funnelId);
-        return result;
+        return { fonte: "planilha" as const, ...result };
       } catch (err) {
         fastify.log.error({ err }, "[funnel-groups] sync failed");
         return reply.code(502).send({
@@ -216,7 +246,15 @@ export default fp(async function funnelGroupsRoutes(fastify) {
         const day = formatDay(r.snapshotAt);
         const key = `${r.campaignId}|${day}`;
         // rows estão ordenadas desc por snapshotAt — o primeiro que vê é o último do dia
-        if (!lastByCampDay.has(key)) {
+        const atual = lastByCampDay.get(key);
+        // PRIORIDADE AO SENDFLOW: com as duas origens no mesmo dia, vence o que
+        // veio da fonte. A planilha é exportação manual e pode estar velha (ou
+        // conter linhas coladas de outra campanha), então "mais recente" não
+        // basta como critério.
+        const trocar =
+          !atual ||
+          (r.source === "sendflow" && atual.source !== "sendflow");
+        if (trocar) {
           lastByCampDay.set(key, r);
         }
         if (!campaignNames.has(r.campaignId)) {
@@ -256,6 +294,9 @@ export default fp(async function funnelGroupsRoutes(fastify) {
         campaigns.push({
           campaignId,
           campaignName: campaignNames.get(campaignId) ?? campaignId,
+          // De onde veio o dado MAIS RECENTE desta campanha. A tela mostra isso
+          // pra ninguém se perguntar se está vendo planilha velha.
+          fonte: snaps[snaps.length - 1]?.source ?? "planilha",
           series,
         });
       }

@@ -35,6 +35,20 @@ const boxSchema = z.object({
   stageId: z.string().uuid().nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
   url: z.string().max(2048).nullable().optional(),
+  // Zod descarta chave fora do schema em silêncio: campo novo do bloco PRECISA
+  // entrar aqui, senão o canvas grava e o dado some sem erro nenhum.
+  /** Nota adesiva e bloco de texto guardam o conteúdo aqui, não no `label`. */
+  texto: z.string().max(4000).nullable().optional(),
+  /** Hierarquia do bloco de texto. */
+  estilo: z.enum(["h1", "h2", "h3", "corpo"]).nullable().optional(),
+  negrito: z.boolean().optional(),
+  italico: z.boolean().optional(),
+  /** Tamanho da fonte em px, quando a pessoa ajusta à mão. */
+  fonte: z.number().min(8).max(96).nullable().optional(),
+  /** Emoji do bloco genérico — só nos criados antes da troca por ícone. */
+  emoji: z.string().max(8).nullable().optional(),
+  /** Nome do ícone lucide do bloco genérico. */
+  icone: z.string().max(40).nullable().optional(),
 });
 
 const connectorSchema = z.object({
@@ -157,6 +171,77 @@ export default fp(async function funnelMapRoutes(fastify) {
 
     return [{ id: "tab1", name: "Principal", boxes, connectors }];
   }
+
+  /**
+   * Todos os mapas visíveis, para a tela global.
+   *
+   * Lista as ETAPAS do tipo `mapa`, não os desenhos: etapa criada e ainda em
+   * branco também precisa aparecer, senão a única forma de chegar até ela é
+   * navegando projeto por projeto — que é justamente o que esta tela evita.
+   *
+   * Devolve uma prévia enxuta (retângulos e cores) em vez do documento
+   * inteiro: a lista desenha miniaturas, e mandar rótulo, nota e conector de
+   * cada mapa faria o payload crescer sem nada aparecer na miniatura.
+   */
+  fastify.get("/api/funnel-maps", async (request) => {
+    const ehGuest = request.userRole === "guest";
+
+    const linhas = await fastify.db
+      .select({
+        projectId: projects.id,
+        projectName: projects.name,
+        projectColor: projects.color,
+        funnelId: funnels.id,
+        funnelName: funnels.name,
+        funnelArchivedAt: funnels.archivedAt,
+        stageId: funnelStages.id,
+        stageName: funnelStages.name,
+        tabs: funnelMaps.tabs,
+        updatedAt: funnelMaps.updatedAt,
+      })
+      .from(funnelStages)
+      .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
+      .innerJoin(projects, eq(projects.id, funnels.projectId))
+      .leftJoin(funnelMaps, eq(funnelMaps.stageId, funnelStages.id))
+      .where(eq(funnelStages.stageType, "mapa"))
+      .orderBy(asc(projects.name), asc(funnels.name), asc(funnelStages.sortOrder));
+
+    // Guest só enxerga projeto onde é membro — mesma regra de /api/projects.
+    let permitidos: Set<string> | null = null;
+    if (ehGuest) {
+      const membros = await fastify.db
+        .select({ projectId: projectMembers.projectId })
+        .from(projectMembers)
+        .where(eq(projectMembers.userId, request.userId));
+      permitidos = new Set(membros.map((m) => m.projectId));
+    }
+
+    const mapas = linhas
+      .filter((l) => !permitidos || permitidos.has(l.projectId))
+      .map((l) => {
+        const abas = l.tabs ?? [];
+        const primeira = abas[0];
+        return {
+          projectId: l.projectId,
+          projectName: l.projectName,
+          projectColor: l.projectColor,
+          funnelId: l.funnelId,
+          funnelName: l.funnelName,
+          arquivado: l.funnelArchivedAt !== null,
+          stageId: l.stageId,
+          stageName: l.stageName,
+          updatedAt: l.updatedAt?.toISOString() ?? null,
+          abas: abas.length,
+          blocos: abas.reduce((n, a) => n + (a.boxes?.length ?? 0), 0),
+          conectores: abas.reduce((n, a) => n + (a.connectors?.length ?? 0), 0),
+          previa: (primeira?.boxes ?? []).slice(0, 80).map((b) => ({
+            x: b.x, y: b.y, width: b.width, height: b.height, color: b.color, type: b.type,
+          })),
+        };
+      });
+
+    return { mapas };
+  });
 
   // ---- GET mapa ----
   fastify.get("/api/projects/:projectId/funnels/:funnelId/stages/:stageId/map", async (request, reply) => {

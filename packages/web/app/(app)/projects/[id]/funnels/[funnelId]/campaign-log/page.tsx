@@ -48,6 +48,7 @@ import {
   eventoBadgeClass,
 } from "@/lib/campaign-log-options";
 import { CampaignLogEntryDialog } from "@/components/funnels/campaign-log-entry-dialog";
+import { SendflowCard } from "@/components/funnels/sendflow-card";
 
 // Epic 38 / Story 38.1 — página do Log de Campanha do funil: timeline das
 // ações executadas (agrupada por dia) + lançamento rápido + filtros.
@@ -118,6 +119,10 @@ export default function CampaignLogPage() {
     }
     if (r.instagram.created > 0) {
       parts.push(`${r.instagram.created} post${r.instagram.created !== 1 ? "s" : ""} do Instagram`);
+    }
+    if ((r.sendflow?.created ?? 0) > 0) {
+      const n = r.sendflow!.created;
+      parts.push(`${n} disparo${n !== 1 ? "s" : ""} de WhatsApp`);
     }
     return parts.length > 0 ? `Importado: ${parts.join(" + ")}` : null;
   }
@@ -209,7 +214,7 @@ export default function CampaignLogPage() {
             className="gap-1.5"
             onClick={handleManualSync}
             disabled={syncLog.isPending}
-            title="Importa disparos de e-mail do Mautic e posts do Instagram publicados com a campanha ativa"
+            title="Importa disparos de e-mail (Mautic), posts do Instagram e disparos de WhatsApp (SendFlow)"
           >
             <RefreshCw className={`h-4 w-4 ${syncLog.isPending ? "animate-spin" : ""}`} />
             Sincronizar
@@ -220,6 +225,11 @@ export default function CampaignLogPage() {
           </Button>
         </div>
       </div>
+
+      {/* Grupos de WhatsApp da campanha — quantas pessoas e o movimento do dia.
+          Fica junto do log porque é a mesma pergunta: o que aconteceu na
+          campanha. */}
+      <SendflowCard projectId={params.id} funnelId={params.funnelId} />
 
       {/* Filtros */}
       <div className="flex items-center gap-2 flex-wrap">

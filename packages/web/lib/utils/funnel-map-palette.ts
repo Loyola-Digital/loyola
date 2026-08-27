@@ -137,3 +137,124 @@ export function metaDoTipo(type: string): { label: string; icon: string; cor: st
 
 export const LARGURA_PADRAO = 160;
 export const ALTURA_PADRAO = 80;
+
+// ============================================================
+// Blocos livres — nota, texto e genéricos
+// ============================================================
+
+/**
+ * Tipos que não representam peça do funil: servem pra anotar e organizar.
+ *
+ * Ficam fora de CATEGORIAS de propósito. `metaDoTipo` cai no genérico pra eles,
+ * e o canvas os renderiza com desenho próprio — sem selo de status, sem porta
+ * de conexão no caso do texto.
+ */
+export const TIPO_NOTA = "nota";
+export const TIPO_TEXTO = "texto";
+export const TIPO_GENERICO = "generico";
+
+export function ehBlocoLivre(type: string): boolean {
+  return type === TIPO_NOTA || type === TIPO_TEXTO || type === TIPO_GENERICO;
+}
+
+/** Cores das notas adesivas — as mesmas de bloco de papel. */
+export const CORES_NOTA = [
+  { nome: "Amarelo", cor: "#fde68a" },
+  { nome: "Verde", cor: "#bbf7d0" },
+  { nome: "Azul", cor: "#bfdbfe" },
+  { nome: "Rosa", cor: "#fbcfe8" },
+  { nome: "Laranja", cor: "#fed7aa" },
+  { nome: "Roxo", cor: "#e9d5ff" },
+] as const;
+
+/** Cores para as caixas de elemento (item 8 do feedback). */
+export const CORES_BLOCO = [
+  { nome: "Índigo", cor: "#6366f1" },
+  { nome: "Violeta", cor: "#8b5cf6" },
+  { nome: "Verde", cor: "#10b981" },
+  { nome: "Âmbar", cor: "#f59e0b" },
+  { nome: "Vermelho", cor: "#ef4444" },
+  { nome: "Rosa", cor: "#ec4899" },
+  { nome: "Ciano", cor: "#06b6d4" },
+  { nome: "Cinza", cor: "#6b7280" },
+] as const;
+
+/** Emojis dos blocos genéricos, agrupados pelo que o time desenha. */
+/**
+ * Blocos livres, desenhados com ícone.
+ *
+ * Eram emoji. Emoji muda de desenho conforme o sistema operacional, não
+ * acompanha o tema e destoa do resto da tela, que é toda de ícone de traço —
+ * e some no PDF, onde a fonte não tem o glifo.
+ *
+ * Cada um já nasce com um nome de verdade ("Início", "Decisão"), porque o
+ * genérico aqui é a FORMA, não o rótulo: um card escrito "genérico" não
+ * informa nada a quem lê o mapa depois.
+ */
+export const ICONES_GENERICOS: { grupo: string; itens: { icone: string; rotulo: string }[] }[] = [
+  {
+    grupo: "Fluxo",
+    itens: [
+      { icone: "Play", rotulo: "Início" },
+      { icone: "Pause", rotulo: "Pausa" },
+      { icone: "Split", rotulo: "Decisão" },
+      { icone: "RefreshCw", rotulo: "Repetição" },
+      { icone: "Check", rotulo: "Concluído" },
+      { icone: "X", rotulo: "Descartado" },
+      { icone: "TriangleAlert", rotulo: "Atenção" },
+      { icone: "Target", rotulo: "Objetivo" },
+    ],
+  },
+  {
+    grupo: "Canais",
+    itens: [
+      { icone: "Smartphone", rotulo: "App" },
+      { icone: "MessageCircle", rotulo: "WhatsApp" },
+      { icone: "Mail", rotulo: "E-mail" },
+      { icone: "Phone", rotulo: "Ligação" },
+      { icone: "Globe", rotulo: "Site" },
+      { icone: "Tv", rotulo: "Anúncio" },
+      { icone: "Video", rotulo: "Vídeo" },
+      { icone: "Camera", rotulo: "Conteúdo" },
+    ],
+  },
+  {
+    grupo: "Pessoas",
+    itens: [
+      { icone: "User", rotulo: "Lead" },
+      { icone: "Users", rotulo: "Público" },
+      { icone: "Magnet", rotulo: "Captação" },
+      { icone: "Handshake", rotulo: "Fechamento" },
+      { icone: "Briefcase", rotulo: "Time" },
+      { icone: "GraduationCap", rotulo: "Aluno" },
+      { icone: "ShoppingCart", rotulo: "Carrinho" },
+      { icone: "DollarSign", rotulo: "Receita" },
+    ],
+  },
+  {
+    grupo: "Marcos",
+    itens: [
+      { icone: "Rocket", rotulo: "Lançamento" },
+      { icone: "Flame", rotulo: "Aquecimento" },
+      { icone: "Star", rotulo: "Destaque" },
+      { icone: "Pin", rotulo: "Marco" },
+      { icone: "Brain", rotulo: "Estratégia" },
+      { icone: "BarChart3", rotulo: "Métrica" },
+      { icone: "Calendar", rotulo: "Data" },
+      { icone: "Flag", rotulo: "Meta" },
+    ],
+  },
+];
+
+/** Tamanhos de fonte por hierarquia do bloco de texto. */
+export const TAMANHO_DO_ESTILO: Record<string, number> = {
+  h1: 32,
+  h2: 24,
+  h3: 18,
+  corpo: 14,
+};
+
+export const NOTA_LARGURA = 180;
+export const NOTA_ALTURA = 140;
+export const TEXTO_LARGURA = 260;
+export const TEXTO_ALTURA = 60;

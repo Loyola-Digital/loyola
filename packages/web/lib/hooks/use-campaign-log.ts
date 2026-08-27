@@ -109,6 +109,8 @@ export interface CampaignLogSyncResult {
   archived: boolean;
   mautic: SyncSourceResult;
   instagram: SyncSourceResult;
+  /** Disparos de WhatsApp. Opcional: respostas antigas do backend não têm. */
+  sendflow?: SyncSourceResult;
 }
 
 /**

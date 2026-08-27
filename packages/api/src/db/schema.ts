@@ -1398,6 +1398,8 @@ export const funnelGroupSnapshots = pgTable(
     inputAmount: integer("input_amount").notNull().default(0),
     outputAmount: integer("output_amount").notNull().default(0),
     participantsAmount: integer("participants_amount").notNull().default(0),
+    /** 'sendflow' (lido da fonte) ou 'planilha' (exportação manual, legado). */
+    source: varchar("source", { length: 20 }).notNull().default("planilha"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -3339,3 +3341,30 @@ export const plausibleProjectSites = pgTable(
   },
   (table) => [index("idx_plausible_sites_project").on(table.projectId)]
 );
+
+// ============================================================
+// SENDFLOW (WhatsApp) — conexão por projeto
+// ============================================================
+// O MCP do SendFlow só tem authorization_code + refresh_token (não há
+// client_credentials), então guardamos o refresh e renovamos o access sozinhos.
+// client_id/secret ficam junto porque o refresh exige os dois.
+export const sendflowConnections = pgTable("sendflow_connections", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  /** NULL = conexão GLOBAL, vale pra todos os projetos. O SendFlow é uma conta
+   *  só para todos os experts; um projeto pode ter linha própria como override. */
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  clientId: varchar("client_id", { length: 255 }).notNull(),
+  clientSecretEncrypted: text("client_secret_encrypted").notNull(),
+  clientSecretIv: varchar("client_secret_iv", { length: 64 }).notNull(),
+  refreshTokenEncrypted: text("refresh_token_encrypted").notNull(),
+  refreshTokenIv: varchar("refresh_token_iv", { length: 64 }).notNull(),
+  /** Cache do access_token (1h) — renovar a cada request queimaria rate limit. */
+  accessTokenEncrypted: text("access_token_encrypted"),
+  accessTokenIv: varchar("access_token_iv", { length: 64 }),
+  accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
+  createdBy: uuid("created_by")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});

@@ -192,6 +192,11 @@ export function GroupsDashboardSection({ projectId, funnelId }: Props) {
                 {campaigns.map((c) => (
                   <SelectItem key={c.campaignId} value={c.campaignId}>
                     {c.campaignName}
+                    {c.fonte === "sendflow" && (
+                      <span className="ml-1.5 text-[9px] text-emerald-600 dark:text-emerald-500">
+                        · direto do SendFlow
+                      </span>
+                    )}
                   </SelectItem>
                 ))}
               </SelectContent>

@@ -56,6 +56,7 @@ import type {
   SurveyQuestionMeta,
 } from "@/lib/hooks/use-survey-aggregation";
 import { useCreativeRevenue } from "@/lib/hooks/use-creative-revenue";
+import { useDriveCreatives } from "@/lib/hooks/use-drive-creatives";
 
 // ============================================================
 // Tipos locais e formatters
@@ -117,6 +118,36 @@ function creativeImgSrc(c: MetaAdCreative | null): string {
   return c?.imageUrl || c?.thumbnailUrl || "";
 }
 
+/**
+ * Imagem do card: DRIVE primeiro, Meta como reserva.
+ *
+ * O preview da Meta expira quando a campanha é desligada — e é aí que alguém
+ * vai olhar o histórico. Se o Drive não tiver o arquivo (ou estiver sem
+ * acesso), cai na Meta e ninguém fica sem imagem.
+ */
+function srcDoCriativo(
+  c: MetaAdCreative | null,
+  nome: string | null | undefined,
+  doDrive: (n: string | null | undefined) => { url: string } | null,
+): string {
+  return doDrive(nome)?.url || creativeImgSrc(c);
+}
+
+/**
+ * De onde a imagem veio, pra tooltip.
+ *
+ * Sem isto, "carregou o criativo errado" vira investigação: não dá pra saber se
+ * veio do Drive ou da Meta, nem de qual pasta.
+ */
+function origemDoCriativo(
+  nome: string | null | undefined,
+  doDrive: (n: string | null | undefined) => { pasta: string; editada: boolean } | null,
+): string {
+  const d = doDrive(nome);
+  if (!d) return "Preview da Meta (sem arquivo correspondente no Drive)";
+  return `Drive · ${d.pasta}`;
+}
+
 /** True quando não há imageUrl HD e estamos caindo em thumbnail_url low-res. */
 function isLowResFallback(c: MetaAdCreative | null): boolean {
   return !c?.imageUrl && !!c?.thumbnailUrl;
@@ -132,6 +163,7 @@ function isLowResFallback(c: MetaAdCreative | null): boolean {
  * a pixelização em vez de esticar áspero.
  */
 function CreativeThumbnail({
+  title,
   src,
   alt,
   className,
@@ -141,6 +173,8 @@ function CreativeThumbnail({
   alt: string;
   className: string;
   isLowRes?: boolean;
+  /** Tooltip de origem (Drive + pasta, ou Meta). */
+  title?: string;
 }) {
   const [failed, setFailed] = useState(false);
   // Reset fallback quando a src muda (ex: lightbox navegando entre itens)
@@ -159,6 +193,7 @@ function CreativeThumbnail({
     <img
       src={src}
       alt={alt}
+      title={title}
       className={className}
       onError={() => setFailed(true)}
       style={isLowRes ? { imageRendering: "auto", filter: "blur(1.5px)" } : undefined}
@@ -342,12 +377,14 @@ function CreativeLightbox({
   projectId,
   onClose,
   funnelContext,
+  criativoDoDrive,
 }: {
   items: LightboxItem[];
   initialIndex: number;
   projectId: string;
   onClose: () => void;
   funnelContext?: { days: number; funnelType?: "launch" | "perpetual" | "mobile"; funnelName?: string };
+  criativoDoDrive: (n: string | null | undefined) => { url: string } | null;
 }) {
   const [index, setIndex] = useState(initialIndex);
   const item = items[index];
@@ -410,7 +447,7 @@ function CreativeLightbox({
               {index + 1} / {items.length}
             </span>
             <a
-              href={creativeImgSrc(item.creative)}
+              href={srcDoCriativo(item.creative, item.name, criativoDoDrive)}
               target="_blank"
               rel="noopener noreferrer"
               className="rounded-full p-1 hover:bg-muted text-muted-foreground hover:text-foreground"
@@ -433,7 +470,7 @@ function CreativeLightbox({
               controls
               autoPlay
               className="w-full max-h-[60vh] object-contain"
-              poster={creativeImgSrc(item.creative)}
+              poster={srcDoCriativo(item.creative, item.name, criativoDoDrive)}
             />
           ) : isVideo && videoData?.embedHtml ? (
             <iframe
@@ -448,7 +485,7 @@ function CreativeLightbox({
           ) : isVideo && videoData?.permalinkUrl ? (
             <div className="text-center p-8">
               <CreativeThumbnail
-                src={videoData.picture || creativeImgSrc(item.creative)}
+                src={srcDoCriativo(item.creative, item.name, criativoDoDrive) || videoData.picture || ""}
                 alt={item.name}
                 className="max-h-[40vh] object-contain mx-auto rounded-lg mb-4"
               />
@@ -463,7 +500,7 @@ function CreativeLightbox({
             </div>
           ) : !isVideo ? (
             <CreativeThumbnail
-              src={creativeImgSrc(item.creative)}
+              src={srcDoCriativo(item.creative, item.name, criativoDoDrive)}
               alt={item.name}
               className="w-full max-h-[60vh] object-contain"
             />
@@ -659,6 +696,8 @@ export function TopCreativesGallery({
   const [metric, setMetric] = useState<LocalMetric>("cpl");
   const [expanded, setExpanded] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  // Criativos do Drive: substituem o preview da Meta quando existem.
+  const { urlDoAnuncio: criativoDoDrive } = useDriveCreatives(projectId, funnelId, stageId);
   // Story 8.9: filtro de relevância estatística. Default OFF = filtro ATIVO
   // (esconde criativos sem volume estatístico). Não persiste entre sessões —
   // o threshold é dinâmico por período, persistir confundiria.
@@ -956,7 +995,8 @@ export function TopCreativesGallery({
             >
               <div className="relative aspect-video bg-muted/30">
                 <CreativeThumbnail
-                  src={creativeImgSrc(c.creative)}
+                  src={srcDoCriativo(c.creative, c.name, criativoDoDrive)}
+                  title={origemDoCriativo(c.name, criativoDoDrive)}
                   alt={c.name}
                   className="w-full h-full object-cover"
                   isLowRes={isLowResFallback(c.creative)}
@@ -1009,7 +1049,7 @@ export function TopCreativesGallery({
                     </a>
                   )}
                   <a
-                    href={creativeImgSrc(c.creative)}
+                    href={srcDoCriativo(c.creative, c.name, criativoDoDrive)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="opacity-0 group-hover:opacity-100 transition-opacity rounded bg-black/50 p-1 text-white hover:bg-black/70 backdrop-blur-sm"
@@ -1154,6 +1194,7 @@ export function TopCreativesGallery({
 
       {lightboxIndex !== null && (
         <CreativeLightbox
+          criativoDoDrive={criativoDoDrive}
           items={lightboxItems}
           initialIndex={lightboxIndex}
           projectId={projectId}
