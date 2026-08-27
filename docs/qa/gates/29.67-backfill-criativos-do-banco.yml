@@ -1,0 +1,97 @@
+schema: 1
+story: '29.67'
+gate: PASS
+iteration: 1
+status_reason: >-
+  PASS — os sete ACs cumpridos, e o desenho do AC3 resolve a causa raiz em vez do
+  caso. `CREATIVE_RESOLVERS` transforma "adicionar campo novo" em "adicionar uma
+  linha", que era exatamente o passo esquecido nas duas falhas anteriores (36.8
+  e 29.63).
+  Verifiquei a seleção **executando contra o banco de producao**, nao lendo o
+  codigo: a query devolve numeros coerentes, o teto corta, e o filtro discrimina
+  em dia de desatualizado. O DG & CPDF dar **zero candidatos** e a prova de que o
+  jsonb chega como objeto — se viesse como string, `precisaRecarimbar` acusaria
+  os 252 anuncios como desatualizados.
+  Uma observacao low e uma pendencia que so producao fecha.
+reviewer: 'Quinn'
+updated: '2026-08-27T00:00:00Z'
+
+verificacoes:
+  code_review: PASS           # a regra de "desatualizado" vive num lugar so
+  unit_tests: PASS            # 7 testes; remover um resolver da lista derruba 2
+  acceptance_criteria: PASS   # AC1-AC7
+  no_regressions: PASS        # baseline da API identico; `uniqueStrings` nao ficou orfao
+  performance: PASS           # 1 query a mais por projeto (group by + left join na janela)
+  security: CONCERNS          # ver QA-67-01 (baixo, entrada ja validada)
+  documentation: PASS         # a decisao do `days - 1` ficou registrada no codigo
+
+verificacoes_manuais_executadas:
+  - o: 'A query monta o SQL certo, ou o `MAX(creative::text)::jsonb` devolve string?'
+    como: >-
+      Chamei `adIdsParaAtualizarCriativo` contra o banco de producao em 3
+      projetos e inspecionei o tipo do `creative` recebido.
+    resultado: >-
+      `typeof creative === "object"`. E o **DG & CPDF devolveu 0 candidatos**:
+      se o jsonb viesse como string, `creative[carimbo]` seria `undefined`, todo
+      criativo pareceria versao 0 e os 252 anuncios entrariam na lista. Zero
+      prova que os carimbos estao sendo lidos de verdade.
+
+  - o: 'O filtro discrimina, ou aceita tudo?'
+    como: >-
+      `precisaRecarimbar` com um criativo REAL do banco, em dia, e o mesmo
+      objeto com o carimbo removido.
+    resultado: 'em dia → `false`; sem carimbo → `true`. Discrimina.'
+
+  - o: 'O teto realmente corta?'
+    como: 'Chamada com `teto = 0`.'
+    resultado: '`candidatos=1, nesta execucao=0, adiados=1`. A mecanica funciona.'
+
+  - o: 'O unico candidato do BBE e legitimo?'
+    como: 'Consultei o cache para aquele ad_id.'
+    resultado: >-
+      `120247555388900489` — **sem linha no cache**, nunca sincronizado. E o caso
+      que o AC1 existe para pegar, nao ruido.
+
+  - o: '`uniqueStrings` ficou orfao depois da mudanca?'
+    como: 'Contagem de usos no arquivo.'
+    resultado: 'Nao — segue em uso para `campaignIds`. Lint 0 erros confirma.'
+
+top_issues:
+  - id: 'QA-67-01'
+    severity: low
+    finding: >-
+      O relatorio do AC5 interpola `${days}` direto na string SQL
+      (`interval '${days} days'`). A entrada e um numero ja clampado
+      (`Math.min(Math.max(Number(...) || 7, 1), 365)`), entao nao ha injecao
+      possivel hoje — mas e um padrao que so e seguro por causa de uma validacao
+      que vive a 70 linhas de distancia.
+    suggested_action: >-
+      Parametrizar (`$1` com `make_interval(days => $1)`) quando tocar no script.
+      Nao bloqueia: o valor e numerico e limitado na origem.
+    refs: ['packages/api/src/scripts/backfill-meta-perf.ts:107']
+
+waiver: { active: false }
+
+o_que_merece_registro:
+  - >-
+    O @dev escolheu rodar o filtro de carimbo em **JS e nao em SQL**, e explicou
+    por que: duplicar a regra numa clausula criaria duas verdades que divergem no
+    dia do quarto resolver — o proprio defeito que a story corrige. E a decisao
+    certa, e o comentario no codigo a defende sem que o proximo leitor precise
+    adivinhar.
+  - >-
+    O AC4 virou decisao registrada em vez de mudanca arriscada. O `days - 1`
+    alimenta insights de campanha e placement; mexer nele por elegancia mudaria
+    numeros que hoje estao certos. Manter e documentar foi a leitura correta —
+    e o AC1 ja torna a janela irrelevante para a selecao de criativos.
+  - >-
+    O teste diferencial simula o esquecimento REAL: remover `igPermalinkResolver`
+    da lista derruba 2 de 7. Nao e um teste de que a funcao funciona; e um teste
+    de que o proximo campo nao vai ser esquecido em silencio.
+
+pendencias_de_producao:
+  - >-
+    **O AC2 so fecha rodando.** Testei duas chamadas seguidas a selecao (mesmo
+    resultado), mas isso nao prova o ciclo completo: a prova e rodar o
+    `--creatives` de verdade duas vezes e a segunda buscar ZERO criativos.
+    Ate la, o AC2 esta implementado e verificado por unidade, nao por operacao.
