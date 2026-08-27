@@ -450,10 +450,20 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
   }
 
   /**
-   * Redimensionar pelo canto. O bloco tem tamanho mínimo porque abaixo disso o
-   * rótulo e o selo de status não cabem — e um bloco de 10px é impossível de
-   * pegar de volta.
+   * Redimensionar pelo canto.
+   *
+   * O mínimo é por tipo. O card do funil precisa de espaço para rótulo e selo;
+   * já um bloco de TEXTO de uma linha tem 28px de altura, e obrigá-lo a 60
+   * faria a alça "empurrar" o bloco para cima do próprio tamanho na primeira
+   * mexida. Abaixo desses valores o bloco vira um ponto impossível de pegar de
+   * volta.
    */
+  function minimoDoTipo(tipo: string): { w: number; h: number } {
+    if (tipo === TIPO_TEXTO) return { w: 80, h: 28 };
+    if (tipo === TIPO_NOTA) return { w: 100, h: 80 };
+    return { w: 120, h: 60 };
+  }
+
   function iniciarResize(e: React.PointerEvent, b: BlocoDoMapa) {
     e.stopPropagation();
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
@@ -470,7 +480,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
           ...a,
           boxes: a.boxes.map((x) =>
             x.id === b.id
-              ? { ...x, width: Math.max(120, snap(w0 + dw)), height: Math.max(60, snap(h0 + dh)) }
+              ? {
+                  ...x,
+                  width: Math.max(minimoDoTipo(b.type).w, snap(w0 + dw)),
+                  height: Math.max(minimoDoTipo(b.type).h, snap(h0 + dh)),
+                }
               : x,
           ),
         }),
@@ -1564,6 +1578,14 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
                   <div
                     key={b.id}
                     onPointerDown={(e) => iniciarArrasto(e, b)}
+                    // Sem isto o clique sobe até o fundo do canvas, que limpa a
+                    // seleção — era o motivo de a nota "deselecionar sozinha" ao
+                    // ser clicada, e de o painel de cor/tamanho sumir no meio da
+                    // digitação (o clique dentro do textarea também subia).
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (editando?.id !== b.id) selecao.clicar(b.id, e.shiftKey);
+                    }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
                       selecao.definir([b.id]);
@@ -1624,6 +1646,18 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
                           </span>
                         )}
                       </div>
+                    )}
+
+                    {/* Mesma alça do card do funil: nota e texto também se
+                        redimensionam pelo canto. Aparece só no selecionado —
+                        em cima de cada nota do quadro viraria ruído. */}
+                    {ativo && (
+                      <span
+                        role="presentation"
+                        onPointerDown={(ev) => iniciarResize(ev, b)}
+                        onClick={(ev) => ev.stopPropagation()}
+                        className="absolute -bottom-1 -right-1 z-20 h-3 w-3 cursor-nwse-resize touch-none rounded-sm border border-primary bg-background"
+                      />
                     )}
                   </div>
                 );
