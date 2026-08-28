@@ -1,0 +1,205 @@
+storyId: "44.20"
+storyTitle: "O panorama do projeto — uma chamada em vez de sete"
+gate: CONCERNS
+reviewer: "@qa (Quinn)"
+reviewedAt: "2026-08-27"
+branch: fix/29.67-backfill-criativos-do-banco
+commits: [407632d4]
+scope: >
+  services/panorama-do-projeto.ts (novo, 600 linhas — a composição) ·
+  routes/project-panorama.ts + routes/public-panorama.ts (novos, invólucros) ·
+  app.ts (registro) · packages/mcp/src/tools.ts (tool `get_project_panorama`) ·
+  docs/llms.txt (entrada + rodapé) ·
+  __tests__/panorama-do-projeto.test.ts (novo, 22 testes) ·
+  __tests__/llms-txt-contrato.test.ts (+3 do panorama) ·
+  scripts/mede-panorama.ts (novo, read-only)
+
+codeRabbit:
+  status: SKIPPED
+  reason: "CLI em WSL, host macOS. Oitavo gate seguido sem ele — lacuna de cobertura, não aprovação."
+
+summary: >
+  A story entrega as oito ACs e a disciplina do epic está respeitada onde mais
+  importa: o serviço **não recalcula cadeia nenhuma** — chama
+  `montarPayloadCadeiaCac` por etapa e repassa `principal` com `motivo`/`message`
+  intactos. A regra 7.6 não foi violada; não há uma única divisão de taxa no
+  arquivo novo.
+
+  A validação contra produção é o ponto alto e foi além do exigido: `spendLonga`
+  bate com `agregado.spend` da cadeia com delta **0,0000** nas seis etapas com
+  gasto, e a revisão reconferiu o gross-up por fora, contra o SQL cru no MESMO
+  instante — razão 1,1383 nas duas etapas do BBE e ~1,137 nas cinco órfãs. O
+  imposto é aplicado uma vez, e o `round` por (campanha, dia) é o que faz os
+  centavos fecharem.
+
+  As cinco reversões do @dev foram reexecutadas e continuam derrubando a suíte.
+  E o defeito que ele achou sozinho — a pendência `semDados` de mensagem vazia
+  mandando conectar fonte já conectada — é o QA-4414-02 do gate anterior
+  materializado; a correção pelo desempate de `message` está certa e travada nos
+  dois sentidos.
+
+  **O que segura o gate é uma medição que faltou, e o número é grande:** a AC7
+  foi medida só no caminho default. Com `?fresh=1` — que é query param declarado
+  da rota (AC6) e da doc — o maior projeto vai a **15.137 ms**, 3× o teto de 5 s
+  da própria AC7. Ver QA-4420-01.
+
+evidenciasDaRevisao:
+  grossUpConferidoPorFora: >
+    Panorama e SQL cru no MESMO instante, janela 21–27/08, projeto BBE:
+    Captação Paga 3.548,54 ÷ 3.117,42 = **1,1383** · Perpétuo 3.151,39 ÷
+    2.768,50 = **1,1383** · as 5 órfãs entre 1,1333 e 1,1404 (desvio de centavo,
+    do `round` por dia em valores de R$ 0,75 a R$ 3,92).
+    `1 ÷ (1 − 0,1215) = 1,13824`. Uma aplicação, nem zero nem duas.
+  reversoesReexecutadas: "as 5 do @dev — todas continuam derrubando a suíte (2/2/1/1/1 failed)"
+  suite: "22 testes do panorama + 8 do contrato, todos passando · suíte da API 1609 passed / 11 failed, os 11 do baseline em 5 arquivos que a story não toca"
+  typecheck: "tsc --noEmit da API exit 0 · eslint limpo nos 7 arquivos"
+  duplaContagemMedida: "0 campanhas vinculadas a mais de uma etapa em funil vivo, nos 5 projetos"
+  orfasConferidas: "as 5 do BBE não pertencem a etapa NENHUMA, nem de funil arquivado — a afirmação do @dev nas Dev Notes se sustenta"
+
+issues:
+  - id: QA-4420-01
+    severity: high
+    category: performance
+    title: "A AC7 foi medida só sem `?fresh=1`. Com ele, o maior projeto leva 15,1 s — 3× o teto que a própria AC define"
+    file: packages/api/src/services/panorama-do-projeto.ts:395
+    story: "44.20 (AC6, AC7)"
+    reproduced: true
+    blocking: true
+    description: >
+      A AC6 declara `?fresh=1` entre os query params da rota, a AC8 mandou
+      documentá-lo, e a entrada do `llms.txt` o anuncia ao agente. A AC7 exige
+      medir o tempo do maior projeto. **A medição do @dev cobriu só o caminho
+      default.**
+
+      Medido nesta revisão, contra produção, os dois caminhos lado a lado:
+
+        projeto        etapas   sem fresh   com fresh=1
+        DG & CPDF        12       676 ms     15.137 ms     ← 3,0× o teto
+        BBE               6       494 ms      1.275 ms
+        PP                2       227 ms        259 ms
+        FZ & MFB          1       259 ms        251 ms
+        Lyrio             1       106 ms         97 ms
+
+      A causa é estrutural, não um pico: `opts.fresh` é repassado a **todas** as
+      N chamadas de `montarPayloadCadeiaCac` (`:395`), e em cada etapa paga ele
+      zera o `maxAge` do `getFreshSalesDaily`, forçando recompute ao vivo. O
+      panorama multiplica por N a operação mais cara do payload da cadeia — e N
+      é exatamente o que cresce no projeto grande.
+
+      A assimetria confirma: Lyrio e FZ & MFB não mudam (uma etapa, e a do Lyrio
+      é `familia: null`, que retorna antes de tocar em vendas); DG & CPDF, com
+      12 etapas, multiplica por 22.
+
+      ⚠️ **Não é só orçamento estourado.** 15 s é faixa de timeout de gateway e
+      de cliente MCP. O agente Inácio é o consumidor declarado desta rota, e
+      `?fresh=1` está anunciado a ele na doc como se fosse barato. Uma rota que
+      responde ou não conforme o projeto é pior que uma rota lenta.
+    suggestedFix: >
+      Três caminhos, e a escolha é do @po porque mexe no contrato da AC6:
+      (a) **Não propagar `fresh` no panorama** — ele é a varredura; a leitura
+      profunda com dado fresco é `/cadeia-cac` por etapa, que já tem o parâmetro
+      e custa o de uma etapa só. É o menor contrato e o mais coerente com "o
+      ponto de partida diário".
+      (b) Propagar só para as etapas `noAr` (as que gastaram na janela curta) —
+      no DG & CPDF isso seria 0 de 12 hoje.
+      (c) Manter e declarar o custo na doc e na tool, com o número medido.
+      Em qualquer um dos três, a AC7 exige que a medição fique **registrada na
+      story** — o que esta revisão já fez.
+
+  - id: QA-4420-02
+    severity: medium
+    category: contrato
+    title: "`totais.spendCurta` exclui as campanhas órfãs, e nada declara isso"
+    file: packages/api/src/services/panorama-do-projeto.ts:470
+    story: "44.20 (AC2, AC4)"
+    reproduced: true
+    blocking: false
+    description: >
+      `totais.spendCurta`/`spendLonga` somam **só as etapas**. As órfãs ficam de
+      fora, por construção — e é uma decisão defensável (elas não pertencem a
+      etapa nenhuma). O problema é que nem a forma da resposta na AC2, nem a
+      entrada do `llms.txt`, nem a `description` da tool dizem isso.
+
+      No BBE, medido hoje: `totais.spendCurta` = 6.677,63 enquanto o projeto
+      gastou ~R$ 13 a mais, em 5 campanhas órfãs. O consumidor que publicar
+      "investimento do BBE na semana" a partir de `totais` subnotifica.
+
+      O valor é irrelevante e o sinal não é — é o argumento da própria AC4
+      ("valor irrelevante, sinal relevante"). E o campo vizinho
+      `campanhasComGasto` teve o cuidado de declarar em comentário que conta só
+      as vinculadas; `spendCurta` não teve.
+    suggestedFix: >
+      Uma linha na entrada do `llms.txt` e no comentário de `totais`: os totais
+      são das ETAPAS; some `campanhasOrfas` se quiser o gasto do projeto. Ou um
+      campo `spendOrfas` ao lado, que remove a pergunta.
+
+  - id: QA-4420-03
+    severity: low
+    category: correctness
+    title: "Campanha vinculada a duas etapas seria contada duas vezes nos totais — 0 casos hoje, mas nada impede"
+    file: packages/api/src/services/panorama-do-projeto.ts:470
+    story: "44.20 (AC2)"
+    reproduced: false
+    blocking: false
+    description: >
+      `totais.spendCurta` e `campanhasComGasto` somam **por etapa**, sem
+      deduplicar `campaignId`. Se a mesma campanha estiver em `campaigns` de duas
+      etapas do projeto, o gasto dela entra duas vezes no total — e a etapa
+      individual continua certa, que é o que torna o defeito difícil de ver.
+
+      Medido em produção nesta revisão: **0 campanhas** em mais de uma etapa de
+      funil vivo, nos 5 projetos. É defeito latente, não ativo — por isso `low`.
+
+      Mas o vínculo é um `jsonb` editado pela UI, sem constraint de unicidade
+      entre etapas: nada no banco impede que apareça amanhã. E o painel
+      já tem histórico dessa classe — a dedup por (campanha, dia) do daily bulk
+      (`feedback_meta_daily_bulk_double_count`) existe porque a duplicata nasceu
+      em produção.
+    suggestedFix: >
+      Somar os totais sobre um `Map<campaignId, spend>` em vez de sobre as
+      etapas, ou declarar na doc que os totais podem contar a mesma campanha
+      duas vezes quando ela está em duas etapas.
+
+  - id: QA-4420-04
+    severity: low
+    category: teste
+    title: "O teste de paridade das rotas não prova paridade contra dados reais"
+    file: packages/api/src/__tests__/panorama-do-projeto.test.ts:196
+    story: "44.20 (AC6, T1)"
+    reproduced: false
+    blocking: false
+    description: >
+      T1 compara os dois payloads sobre o fake de banco. Ele prova que as duas
+      rotas chamam a mesma função com os mesmos argumentos — que é a divergência
+      que a AC6 teme — mas com um fake que ignora predicados, e com uma fixture
+      NOVA por rota (necessário, porque o fake consome a fila).
+
+      É o mesmo padrão da 44.9, então não é regressão de disciplina. Fica
+      registrado porque o @dev declarou honestamente, nas Dev Notes, o que o fake
+      não prova (IDOR, `archivedAt`), e esta é a terceira coisa da mesma família.
+    suggestedFix: >
+      `scripts/mede-panorama.ts` já roda contra produção; acrescentar a ele a
+      chamada das DUAS rotas via `app.inject` com banco real fecharia a última
+      lacuna, sem tocar na suíte.
+
+acs:
+  AC1: "ENTREGUE — `montarPanoramaDoProjeto` no molde pedido; zero cálculo de cadeia no arquivo (conferido linha a linha). Assinatura é superset da AC (ganhou `to` e `fresh`, que a AC6 exige)"
+  AC2: "ENTREGUE — forma bate campo a campo; `spend` tributado uma vez (conferido por fora, razão 1,1383); `principal` repassado sem reescrita; `familia: null` na lista e fora da conta; `noAr` medido por gasto. Ressalva em QA-4420-02"
+  AC3: "ENTREGUE — `null` viaja `null`; e a leitura cobre as VINCULADAS, não só quem gastou, com teste (a correção do @dev durante a implementação)"
+  AC4: "ENTREGUE — órfãs separadas e ordenadas; as 5 de produção conferidas por SQL: nenhuma pertence a etapa alguma, nem de funil arquivado"
+  AC5: "ENTREGUE — repasse literal com `origem: \"cadeia\"`, derivados com `origem: \"panorama\"` e mensagem própria; os 5+2 códigos existem. O desempate do `semDados` de denominador zero é melhoria sobre a AC, não desvio"
+  AC6: "ENTREGUE — duas rotas, uma função, registro em `app.ts`, 404 e não 403 para projeto inexistente, escopo exigido só na pública. Teste de paridade com a ressalva do QA-4420-04"
+  AC7: "PARCIAL — range sempre explícito (conferido em `:395`) e 676–878 ms no maior projeto SEM `fresh`. A medição não cobriu `?fresh=1`, e lá o teto estoura 3×. É o QA-4420-01"
+  AC8: "ENTREGUE — tool + entrada no `llms.txt`, com as 5 armadilhas exigidas, e teste de contrato travando caminho, tool e as duas armadilhas de leitura"
+
+proximaAcao: >
+  A AC7 diz, literalmente: "a story registra a medição e abre débito — não
+  silencia com cache". A medição de `?fresh=1` está registrada nesta revisão e na
+  story; o débito fica aberto para decisão do @po entre os três caminhos do
+  QA-4420-01, porque (a) e (b) mexem no contrato de query params da AC6.
+
+  QA-4420-02 é uma linha de doc e pode entrar junto. QA-4420-03 e 04 ficam
+  como débito declarado.
+
+  Status: InReview → **Done** (CONCERNS aprova com observações). O débito do
+  `fresh` NÃO deve viajar em silêncio para a 44.21.

@@ -566,6 +566,18 @@ export async function montarPanoramaDoProjeto(
     etapas: etapasDoPanorama,
     campanhasOrfas,
     pendencias,
+    /**
+     * ⚠️ QA-4420-02: os totais são das ETAPAS. As órfãs ficam de fora — elas não
+     * pertencem a etapa nenhuma, e somá-las aqui contradiria a separação da AC4.
+     * Quem quer o gasto do PROJETO soma `campanhasOrfas` por cima; a doc declara
+     * isso, porque em silêncio o consumidor subnotifica (no BBE, ~R$ 13 em 5
+     * campanhas — valor irrelevante, sinal relevante).
+     *
+     * ⚠️ QA-4420-03: a soma é POR ETAPA, sem deduplicar `campaignId`. Campanha
+     * vinculada a duas etapas entraria duas vezes. Medido em 27/08: 0 casos nos
+     * 5 projetos — defeito latente, não ativo. O vínculo é `jsonb` sem
+     * constraint de unicidade entre etapas, então nada no banco o impede.
+     */
     totais: {
       spendCurta: round(etapasDoPanorama.reduce((s, e) => s + e.spendCurta, 0)) ?? 0,
       spendLonga: round(etapasDoPanorama.reduce((s, e) => s + e.spendLonga, 0)) ?? 0,
