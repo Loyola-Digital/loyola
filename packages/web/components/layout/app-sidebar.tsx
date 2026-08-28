@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Brain, MessageSquare, CheckSquare, Settings, Plus, Eye, EyeOff, LayoutGrid, Radar, Library , Target, Map as MapIcon, Users } from "lucide-react";
+import { Brain, MessageSquare, CheckSquare, Settings, Plus, Eye, EyeOff, LayoutGrid, Radar, Library , Map as MapIcon, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/lib/stores/ui-store";
 import { useHiddenProjectsStore } from "@/lib/stores/hidden-projects-store";
@@ -25,15 +25,13 @@ import { ProjectFolder } from "@/components/layout/project-folder";
 import { CreateProjectDialog } from "@/components/layout/create-project-dialog";
 import { FunnelWizard } from "@/components/funnels/funnel-wizard";
 import { useUserRole } from "@/lib/hooks/use-user-role";
-import { usePdiExiste } from "@/lib/hooks/use-pdi";
 import { GuestSidebar } from "@/components/layout/guest-sidebar";
 import { useAutoCloseSidebarOnNavigation } from "@/lib/hooks/use-auto-close-sidebar";
 
 const navItems = [
-  // PDI abre primeiro: quando a pessoa tem um, é a tela inicial do app.
-  { label: "PDI", href: "/pdi", icon: Target },
-  // Ficha, férias e PDI de cada pessoa. Admin vê o time; os demais caem na
-  // própria ficha (o guard e o recorte de campos são do servidor).
+  // Ficha, férias e PDI de cada pessoa — o PDI virou aba daqui, e /pdi
+  // redireciona. Admin vê o time; os demais caem na própria ficha (o guard e o
+  // recorte de campos são do servidor).
   { label: "Pessoal", href: "/pessoal", icon: Users },
   { label: "Minds", href: "/minds", icon: Brain },
   { label: "Conversations", href: "/conversations", icon: MessageSquare },
@@ -55,9 +53,6 @@ const navItems = [
 
 function NavContent({ collapsed }: { collapsed: boolean }) {
   const pathname = usePathname();
-  const role = useUserRole();
-  const { data: pdiExiste } = usePdiExiste();
-  const temPdi = pdiExiste?.exists ?? false;
   const { total: openTaskCount } = useTasks({ status: "open", limit: 1, offset: 0 });
   const { data: projects, isLoading: projectsLoading } = useProjects();
   const hiddenIds = useHiddenProjectsStore((s) => s.hiddenIds);
@@ -77,7 +72,6 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
   // item seria um link pra tela vazia.
   const topItems = navItems.filter((i) => {
     if (i.href === "/settings") return false;
-    if (i.href === "/pdi") return temPdi || role === "admin";
     return true;
   });
   const settingsItem = navItems.find((i) => i.href === "/settings")!;
