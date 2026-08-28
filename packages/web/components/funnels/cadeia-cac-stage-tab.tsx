@@ -25,6 +25,7 @@ import { useMemo } from "react";
 import { AlertTriangle, Info, TrendingDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PanoramaDoProjeto } from "@/components/funnels/panorama-do-projeto";
 import {
   Tooltip as UiTooltip,
   TooltipContent,
@@ -201,8 +202,17 @@ export function CadeiaCacStageTab({
   if (!data) return null;
 
   // Etapa fora da aba ou sem série: motivo, nunca tela vazia.
+  //
+  // ⚠️ Story 44.21: o Panorama continua aparecendo AQUI. É a tela em que ele
+  // mais serve — quem abriu uma etapa que não tem cadeia precisa justamente
+  // saber quais etapas do mesmo expert têm.
   if (data.semDados) {
-    return <Motivo motivo={data.motivo} texto={data.message} />;
+    return (
+      <div className="space-y-6">
+        <PanoramaDoProjeto projectId={projectId} stageId={stageId} />
+        <Motivo motivo={data.motivo} texto={data.message} />
+      </div>
+    );
   }
 
   const p = data.principal;
@@ -210,6 +220,9 @@ export function CadeiaCacStageTab({
 
   return (
     <div className="space-y-6">
+      {/* Story 44.21 — o panorama do expert, antes do mergulho nesta etapa. */}
+      <PanoramaDoProjeto projectId={projectId} stageId={stageId} />
+
       {/* O número principal — spec §2.1 */}
       <div className="rounded-lg border p-5">
         <div className="flex items-baseline justify-between gap-4">

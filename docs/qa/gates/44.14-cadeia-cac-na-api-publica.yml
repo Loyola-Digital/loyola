@@ -1,0 +1,278 @@
+storyId: "44.14"
+storyTitle: "A Cadeia de CAC existe na API e o Inácio não sabe"
+gate: PASS
+gateInicial: CONCERNS
+gateNota: >
+  CONCERNS na primeira leitura, com 1 bloqueante (QA-4414-01). Os cinco achados
+  foram corrigidos no MESMO passe — só doc e teste, zero código de produção — e
+  cada correção está registrada no issue correspondente, com a reversão que
+  prova o teste novo. PASS é o estado final, não a leitura inicial.
+reviewer: "@qa (Quinn)"
+reviewedAt: "2026-08-27"
+branch: fix/29.67-backfill-criativos-do-banco
+commits: [56311474]
+scope: >
+  docs/llms.txt (+46 — entrada da rota, ausências declaradas, lista de tools) ·
+  packages/mcp/src/tools.ts (+29 — tool `get_stage_cadeia_cac`) ·
+  docs/guides/mcp-inacio-integracao.md (+33 — seção 7.5) ·
+  packages/api/src/__tests__/llms-txt-contrato.test.ts (novo, 4 testes)
+
+  Zero mudança de cálculo, de rota ou de tela. O risco desta story é de UMA
+  classe só: doc que promete o que a rota não entrega.
+
+codeRabbit:
+  status: SKIPPED
+  reason: "CLI em WSL, host macOS. Sétimo gate seguido sem ele — lacuna de cobertura, não aprovação."
+
+summary: >
+  As cinco ACs estão entregues e a parte difícil está certa: a tabela dos ramos
+  de `principal` bate campo a campo com os sete ramos do código
+  (`cadeia-cac-payload.ts:557-648`), inclusive o `spend` que aparece em todos e
+  o `valor: null` que a Dev Note original não previa. Documentar pelo tipo do
+  web teria prometido campos que não coexistem; documentar pelo payload de
+  produção evitou isso. A lista de campos da resposta bate com o `return` real
+  (`:654-731`), os quatro estados da `guardaDeCobertura` existem, o
+  `baseInsuficiente` dos tetos existe, e a `description` da tool diz as três
+  coisas que a AC2 exigiu.
+
+  O item de DoD que o @dev deixou em aberto está FECHADO — ver `dodChaveDoInacio`
+  abaixo. O gate HTTP de `x-api-key` foi exercido contra produção, a rota está
+  na `main` desde a 44.9 (`3523cf8e`) e a API em produção foi construída hoje
+  às 19:37Z. O escopo é `meta:read`, o MESMO que as tools que o Inácio já usa
+  com sucesso.
+
+  **O que segura o gate é uma linha de doc, e ela é a mais consequente do
+  arquivo:** a entrada declara `default: últimos 30 dias` e a rota devolve o
+  HISTÓRICO INTEIRO quando não há `from`/`to`. A prova está dentro da própria
+  story — o payload gratuito colado nela traz `agregado.dias: 160` ao lado de
+  `range: {from: null, to: null}`. Um consumidor que leia "R$ 100,93 nos
+  últimos 30 dias" sobre 160 dias de gasto publica um número errado pela
+  mesma mecânica que esta story existe para impedir, e no parâmetro que
+  reinterpreta TODOS os outros. Ver QA-4414-01.
+
+dodChaveDoInacio:
+  itemOriginal: "chamada real via HTTP com a chave do Inácio — @dev não tinha a chave"
+  status: FECHADO com residual declarado
+  exercidoPeloQa:
+    - "GET .../cadeia-cac em produção SEM header → 401 {\"code\":\"API_KEY_MISSING\"}"
+    - "GET .../cadeia-cac em produção com chave inválida → 401 {\"code\":\"API_KEY_INVALID\"}"
+    - "GET /api/health → 200, db connected, builtAt 2026-08-27T19:37:58Z"
+    - "`git log main -- routes/public-cadeia-cac.ts` → 3523cf8e (PR #560, Story 44.9), e `app.ts` da main registra as duas rotas"
+    - "requireScope(PUBLIC_READ_SCOPE) com PUBLIC_READ_SCOPE = \"meta:read\" — o mesmo escopo de public-meta, public-leads, public-vsl, public-funnel-sales (as tools que o Inácio já chama)"
+  oQueIssoProva: >
+    O gate de API key está VIVO nesta rota em produção (o 401 chega do lookup
+    por hash no banco, não de um 404 de rota), a rota está deployada, e a chave
+    do Inácio já carrega o escopo que ela exige — provado por construção: as
+    tools dele que funcionam hoje passam pelo mesmo `requireScope`.
+  residual: >
+    O corpo 200 com a chave real não foi visto. O 401 do prefixo dispara no hook
+    `onRequest` ANTES do roteador (provado com uma rota inexistente, que também
+    dá 401), então o 401 não distingue "rota existe" de "rota não existe" — quem
+    prova o deploy é a `main` + o `builtAt`, não o curl. Risco baixo e sem ação
+    pendente para esta story; a primeira chamada real do Inácio confirma.
+
+issues:
+  - id: QA-4414-01
+    status: CORRIGIDO — `llms.txt:38` (regra geral) e a entrada da rota declaram a exceção; `cadeia-cac-payload.ts:60` diz a metade que faltava; o guia ganhou a armadilha do período; e `llms-txt-contrato.test.ts` trava a volta da frase. **Provado por reversão:** repondo `default: últimos 30 dias` → 1 failed / 4 passed.
+    severity: high
+    category: doc-mente
+    title: "`default: últimos 30 dias` é falso — sem `from`/`to` a rota devolve o histórico inteiro da etapa"
+    file: docs/llms.txt:78
+    story: "44.14 (AC1)"
+    reproduced: true
+    blocking: true
+    description: >
+      A entrada abre com `Query: from, to (default: últimos 30 dias)`. O código
+      faz o contrário, e de propósito:
+
+        cadeia-cac-payload.ts:169  const explicitRange = Boolean(opts.from || opts.to)
+        cadeia-cac-payload.ts:170  const { from, to } = resolveRange(opts.from, opts.to)
+        meta-campaign-daily.ts:110 explicitRange ? and(...base, gte(date, from), lte(date, to)) : and(...base)
+
+      Sem `from`/`to`, `explicitRange` é `false` e o `where` NÃO filtra data — a
+      série vem inteira. O `resolveRange` de 30 dias é calculado e depois
+      ignorado no caminho default. O mesmo vale para os criativos
+      (`cadeia-cac-payload.ts:506-512`).
+
+      É decisão da 44.8, não bug: "período sem range usa `totalVendas`"
+      (44.8:101), e o payload declara o recorte em `range`, que vem
+      `{from: null, to: null}` justamente para dizer "não houve recorte".
+
+      **A prova está dentro desta story.** O payload gratuito colado na seção de
+      validação traz, na mesma resposta:
+
+        "range":    { "from": null, "to": null }
+        "agregado": { "spend": 18672.58, "dias": 160, ... }
+        "principal":{ "metrica": "cplReal", "valor": 100.93, ... }
+
+      160 dias. A doc diz 30.
+
+      E o consumidor não tem como desconfiar: `llms.txt:38` declara, como regra
+      geral do arquivo, "`from`, `to` (ISO YYYY-MM-DD; default = últimos 30
+      dias)" — e para as rotas irmãs isso é VERDADE (`public-meta.ts:199,285,442,519,596`
+      usam o range resolvido incondicionalmente). `/cadeia-cac` é a única
+      exceção do arquivo, e é a única que não a declara. A linha 78 repete a
+      regra geral em vez de abrir a exceção.
+
+      Consequência, na chamada mais provável (a tool tem `from`/`to`
+      opcionais, e o Inácio chamando "a cadeia da etapa" não passa nenhum): ele
+      lê `cplReal` de 160 dias e publica como "CPL dos últimos 30 dias" no
+      panorama diário. É a classe de erro do laudo de 2026-08-27 — número certo,
+      significado errado, porque a doc não declarou a régua — no parâmetro que
+      reinterpreta todos os outros números do payload.
+
+      ⚠️ O comentário do próprio código induz ao erro:
+      `cadeia-cac-payload.ts:60` diz "Range default: últimos 30 dias, igual às
+      rotas irmãs", copiado de `public-meta.ts:103` onde é verdade. Foi de lá
+      que a doc herdou a frase.
+    suggestedFix: >
+      Três linhas, todas em doc:
+      (1) `llms.txt:78` — trocar `(default: últimos 30 dias)` por: sem `from`/`to`
+      a resposta cobre o HISTÓRICO INTEIRO da etapa e `range` vem
+      `{from: null, to: null}` declarando isso; com `from`/`to`, `range` ecoa o
+      recorte aplicado. Explicitar que é a ÚNICA rota do arquivo que não segue o
+      default de 30 dias da linha 38.
+      (2) `llms.txt:38` — abrir a exceção na regra geral, para quem lê o topo e
+      não a entrada.
+      (3) `cadeia-cac-payload.ts:60` — corrigir o comentário do `resolveRange`
+      para dizer que o valor só é usado quando `explicitRange` é `true`.
+      Fora de escopo desta story, mas é a origem da frase.
+
+  - id: QA-4414-02
+    status: CORRIGIDO — o oitavo ramo entrou na tabela e a linha de ações ganhou o desempate (presença de `vendasReais`/`leadsUnicos` + ausência de `message`).
+    severity: medium
+    category: doc-incompleta
+    title: "`motivo: \"semDados\"` tem DOIS significados no payload e a doc só declara um — e a ação que ela manda tomar é a errada no outro"
+    file: docs/llms.txt:88-97
+    story: "44.14 (AC1)"
+    reproduced: true
+    blocking: false
+    description: >
+      A tabela dos ramos declara `semDados` como "sem fonte de vendas" / "sem
+      fonte conectada", e a linha seguinte fecha o contrato de ação:
+      "`semDados` = conectar fonte".
+
+      Mas o código emite o MESMO `motivo` num segundo lugar, dentro do ramo de
+      SUCESSO, quando a fonte existe e o denominador é zero:
+
+        cadeia-cac-payload.ts:585  ...(v.vendas === 0 ? { motivo: "semDados" } : {})
+        cadeia-cac-payload.ts:600  ...(lead.uniqueLeads === 0 ? { motivo: "semDados" } : {})
+
+      Nesse ramo o objeto sai com `valor: null` (`div` por zero), `motivo:
+      "semDados"` **e** `vendasReais: 0` / `leadsUnicos: 0`, `dataSource`,
+      `computedAt` — e SEM `message`. É um oitavo ramo, que a tabela de sete não
+      tem.
+
+      Quem seguir a doc manda conectar uma fonte que já está conectada. É
+      literalmente a falha que o QA-448-01 e o QA-448-02 corrigiram no payload —
+      dois motivos com ações opostas fundidos num rótulo só — reaparecendo do
+      lado da doc, no arquivo escrito para impedi-la.
+    suggestedFix: >
+      Uma linha na tabela dos ramos: "paga/gratuita | fonte OK, zero no
+      denominador | `valor: null`, `motivo: \"semDados\"` **junto de**
+      `vendasReais: 0`/`leadsUnicos: 0`, `dataSource`/`fonteDeLead` e
+      `computedAt`". E, na linha de ações, o desempate: distingue-se do ramo sem
+      fonte pela PRESENÇA desses campos e pela AUSÊNCIA de `message`.
+
+  - id: QA-4414-03
+    status: CORRIGIDO — os dois cortes que devolvem 200 truncado estão declarados junto ao parágrafo de `familia`, com `semDados: true` apontado como o campo a testar.
+    severity: low
+    category: doc-incompleta
+    title: "Etapa sem campanha vinculada também devolve payload truncado, e só o caso `familia: null` está documentado"
+    file: docs/llms.txt:80
+    story: "44.14 (AC1)"
+    reproduced: true
+    blocking: false
+    description: >
+      A doc declara o corte de `familia: null` ("200 com `semDados: true` e
+      `motivo: \"foraDaAba\"`"). Existe um segundo corte, não declarado
+      (`cadeia-cac-payload.ts:219-228`): etapa DENTRO da aba, mas com
+      `funnel_stages.campaigns` vazio devolve 200 com `familia` preenchida,
+      `semDados: true`, `motivo: "semDados"`, `campanhas: []` — e sem `atuais`,
+      `principal`, `tetos`, `ranking`, `composto`, `criativos`.
+
+      O consumidor que só conhece o corte de `familia: null` recebe um payload
+      sem os campos que a doc lista como resposta e não tem como saber se é
+      etapa orgânica ou falha da rota. A linha da resposta hedge com "(etapa com
+      dados)", o que sinaliza que existe outra forma sem dizer qual.
+    suggestedFix: >
+      Uma frase junto ao parágrafo de `familia`: são DOIS os cortes que
+      devolvem 200 truncado — `motivo: "foraDaAba"` (etapa fora da aba) e
+      `motivo: "semDados"` com `campanhas: []` (etapa da aba, sem campanha
+      vinculada — etapa orgânica, não erro). Ambos trazem `semDados: true` no
+      topo, que é o campo a testar antes de ler `atuais`/`principal`.
+
+  - id: QA-4414-04
+    status: CORRIGIDO — `campanhasElegiveisCustoDaCadeia` entrou na lista de `benchmarks`.
+    severity: low
+    category: doc-incompleta
+    title: "`benchmarks` documentado sem `campanhasElegiveisCustoDaCadeia`"
+    file: docs/llms.txt:96
+    story: "44.14 (AC1)"
+    reproduced: true
+    blocking: false
+    description: >
+      A doc lista `{ rotulo, medianas, campanhasElegiveis, medianaCustoDaCadeia,
+      campanhasComSerie }`. `ReferenciasDoGrupo` (`shared/cadeia-cac.ts:729`)
+      tem também `campanhasElegiveisCustoDaCadeia`, espalhado no payload pelo
+      `...referenciasDoGrupo(...)` (`cadeia-cac-payload.ts:730`).
+
+      É omissão, não mentira — a AC1 pede "no mínimo" — e o campo é o denominador
+      que torna `medianaCustoDaCadeia` auditável, que é a razão de o irmão
+      `campanhasElegiveis` ter sido documentado.
+    suggestedFix: "Acrescentar o campo à lista de `benchmarks`."
+
+  - id: QA-4414-05
+    status: CORRIGIDO — a asserção compara o caminho INTEIRO da tool, extraído do template string. **Provado por reversão:** `.../etapas/{stageId}/cadeia-cac` → 1 failed / 4 passed, reversão que a asserção antiga NÃO pegava.
+    severity: low
+    category: test-design
+    title: "A segunda asserção do teste de contrato passa com o caminho errado"
+    file: packages/api/src/__tests__/llms-txt-contrato.test.ts:68-84
+    story: "44.14 (AC5)"
+    reproduced: false
+    blocking: false
+    description: >
+      O teste "a tool MCP aponta para o mesmo caminho da rota" quebra o caminho
+      em segmentos e checa `toolsMcp.includes(seg)` para cada um, sobre o
+      arquivo INTEIRO. Os segmentos são `api`, `public`, `meta`, `v1`,
+      `projects`, `stages`, `cadeia-cac` — e os seis primeiros aparecem em
+      qualquer uma das 17 tools. Só `cadeia-cac` discrimina, e nem ele prova
+      que está na tool certa nem na ordem certa: se a rota virasse
+      `.../etapas/{stageId}/cadeia-cac`, o teste continuaria verde.
+
+      Não bloqueia porque o caso que a story teme — alguém renomear
+      `cadeia-cac` e a doc/tool ficarem apontando para o caminho antigo — é
+      justamente o que o segmento discriminante pega, e a primeira asserção
+      (llms.txt) compara a string inteira.
+    suggestedFix: >
+      Extrair o path literal da tool com um regex sobre o template string
+      (`/\`(\/api\/public\/[^\`]*cadeia-cac)\`/`), normalizar `${...}` para
+      `{...}` e comparar com o caminho da rota inteiro, como a primeira
+      asserção já faz.
+
+evidencias:
+  testes:
+    comando: "npx vitest run src/__tests__/llms-txt-contrato.test.ts src/__tests__/cadeia-cac-rotas-equivalentes.test.ts"
+    resultado: "2 arquivos, 13 testes, todos passando (1,45s)"
+  acs:
+    AC1: "ENTREGUE com defeito — a entrada existe e os 7 ramos de `principal` batem campo a campo com o código; o parágrafo de query params declara um default falso (QA-4414-01)"
+    AC2: "ENTREGUE — tool registrada; a `description` diz as três frases exigidas (preferir a tool · o principal muda com a família · criativos é da etapa)"
+    AC3: "ENTREGUE — `bodyConv` e `coberturaVendas` declarados com o mesmo motivo que o payload carrega, e o teste trava os dois termos"
+    AC4: "ENTREGUE — seção 7.5 do guia, com a nota de virada explícita e as quatro armadilhas. Não repete o erro do default de 30 dias"
+    AC5: "ENTREGUE — o teste lê o caminho do fonte da rota, prova por reversão registrada pelo @dev; asserção 2 é fraca (QA-4414-05)"
+
+proximaAcao: >
+  Nenhuma. Os cinco achados foram corrigidos e re-verificados no mesmo passe.
+  Story em **Done**, sem débito aberto. Segue para @devops (push/PR) junto com o
+  resto da branch.
+
+reVerificacao:
+  suite: "llms-txt-contrato (5) + cadeia-cac-rotas-equivalentes (9) — 14 passando"
+  reversoes:
+    - "frase do default de 30 dias reposta → 1 failed / 4 passed, mensagem correta"
+    - "caminho da tool divergente → 1 failed / 4 passed; a asserção ANTIGA passaria, que é o QA-4414-05"
+  arquivosTocadosNaCorrecao:
+    - docs/llms.txt
+    - docs/guides/mcp-inacio-integracao.md
+    - packages/api/src/services/cadeia-cac-payload.ts (só comentário)
+    - packages/api/src/__tests__/llms-txt-contrato.test.ts
