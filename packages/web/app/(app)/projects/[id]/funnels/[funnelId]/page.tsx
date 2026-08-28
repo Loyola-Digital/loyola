@@ -2,8 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Plus, Settings2 } from "lucide-react";
+import { Pencil, Plus, Settings2 } from "lucide-react";
 import { useFunnel, useFunnels, useUpdateFunnel } from "@/lib/hooks/use-funnels";
+import { useUserRole } from "@/lib/hooks/use-user-role";
+import {
+  RenomearFunnelDialog,
+  prefixoDoDrive,
+} from "@/components/funnels/renomear-funnel-dialog";
 import { useFunnelStages, useCreateStage } from "@/lib/hooks/use-funnel-stages";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -62,6 +67,8 @@ export default function FunnelPage() {
   const { data: allFunnels } = useFunnels(params.id, "all");
   const createStage = useCreateStage(params.id, params.funnelId);
   const updateFunnel = useUpdateFunnel(params.id, params.funnelId);
+  const role = useUserRole();
+  const [renomeando, setRenomeando] = useState(false);
 
   // Auto-redirect when there is exactly one stage (no need to show the list).
   // Epic 40: NÃO redireciona mais no perpétuo — a página do funil agora tem
@@ -166,10 +173,52 @@ export default function FunnelPage() {
 
   return (
     <div className="p-6 space-y-6">
+      <RenomearFunnelDialog
+        open={renomeando}
+        onOpenChange={setRenomeando}
+        nomeAtual={funnel.name}
+        matchCodeAtual={funnel.matchCode ?? null}
+        salvando={updateFunnel.isPending}
+        onSalvar={(dados) => {
+          const driveMudou = prefixoDoDrive(funnel.name) !== prefixoDoDrive(dados.name);
+          updateFunnel.mutate(dados, {
+            onSuccess: () => {
+              setRenomeando(false);
+              // O aviso do Drive fica mais tempo na tela: renomear a pasta lá é
+              // uma ação em OUTRO sistema, e some antes de ser lida num toast
+              // comum.
+              if (driveMudou) {
+                toast.warning(
+                  `Renomeado. A pasta de criativos passa a ser procurada como ${prefixoDoDrive(dados.name)} no Drive.`,
+                  { duration: 9000 },
+                );
+              } else {
+                toast.success("Funil renomeado");
+              }
+            },
+            onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao renomear"),
+          });
+        }}
+      />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">{funnel.name}</h1>
+          <h1 className="flex items-center gap-1.5 text-2xl font-bold">
+            {funnel.name}
+            {role === "admin" && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-muted-foreground/50 hover:text-foreground"
+                onClick={() => setRenomeando(true)}
+                aria-label="Renomear funil"
+                title="Renomear funil"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </h1>
           <p className="text-sm text-muted-foreground">
             {funnelData.funnelType === "launch"
               ? "Funil de Lançamento"
