@@ -14,7 +14,7 @@
  * passar o mouse.
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Bot,
   CalendarClock,
@@ -139,6 +139,10 @@ export function agruparPorDia(entries: CampaignLogEntry[] | undefined): Map<stri
 }
 
 export function EventosDoDia({ entradas }: { entradas: CampaignLogEntry[] | undefined }) {
+  // Qual balão está aberto. Existe por causa do celular — ver o comentário no
+  // `Tooltip` abaixo.
+  const [aberto, setAberto] = useState<string | null>(null);
+
   const familias = useMemo(() => {
     if (!entradas || entradas.length === 0) return [];
     // Uma família = um ícone, com todas as suas entradas atrás.
@@ -156,46 +160,62 @@ export function EventosDoDia({ entradas }: { entradas: CampaignLogEntry[] | unde
 
   return (
     // O provider é obrigatório: `Tooltip` aqui é só o Root do Radix, e sem ele
-    // envolvido a tela quebra em runtime. Um só para os ícones do dia, com
-    // abertura rápida — numa tabela a pessoa passa o mouse de linha em linha.
+    // envolvido a tela quebra em runtime.
     <TooltipProvider delayDuration={150}>
-      {/* Pilha: cada ícone cobre ~45% do anterior e a fila se abre no hover.
-          Numa tabela densa, três ícones lado a lado empurrariam a coluna toda;
-          empilhados ocupam pouco mais que um, e quem quiser olhar de perto
-          passa o mouse. O `group` é o gatilho da expansão. */}
-      <span className="group ml-1.5 inline-flex items-center align-middle">
+      {/* Pilha: cada ícone cobre ~45% do anterior e a fila se abre quando o
+          mouse entra — ou quando alguém TOCA num deles, no celular. Numa
+          tabela densa, três ícones lado a lado empurrariam a coluna;
+          empilhados ocupam pouco mais que um. */}
+      <span
+        className="group ml-1.5 inline-flex items-center align-middle"
+        data-aberto={aberto ? "sim" : "nao"}
+      >
         {familias.map(([familia, { icone: Icone, cor, itens }], i) => (
-          <Tooltip key={familia}>
+          <Tooltip
+            key={familia}
+            // Controlado por causa do TOQUE: o Radix abre no hover e no foco,
+            // mas fecha no `pointerdown` — no celular o balão apareceria e
+            // sumiria no mesmo gesto. Com o estado aqui, o toque manda.
+            open={aberto === familia}
+            onOpenChange={(o) => setAberto(o ? familia : null)}
+          >
             <TooltipTrigger asChild>
-              <span
+              <button
+                type="button"
+                // <button> e não <span>: no touch é o que recebe foco e o que
+                // o leitor de tela anuncia como acionável.
+                aria-label={`${familia}: ${itens.length} ${itens.length === 1 ? "ação" : "ações"} neste dia`}
+                onClick={() => setAberto(aberto === familia ? null : familia)}
                 className={
                   "relative inline-flex h-[18px] w-[18px] shrink-0 cursor-help items-center justify-center " +
-                  "rounded-full bg-background ring-1 ring-border/70 " +
+                  "rounded-full bg-background ring-1 ring-border/70 touch-manipulation " +
                   "transition-[margin,transform] duration-200 ease-out hover:scale-110 " +
-                  (i === 0 ? "" : "-ml-2 group-hover:ml-0.5 ") +
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary " +
+                  // Abre com o mouse OU quando um balão está aberto (o caminho
+                  // do toque, que não tem hover).
+                  (i === 0 ? "" : "-ml-2 group-hover:ml-0.5 group-data-[aberto=sim]:ml-0.5 ") +
                   cor
                 }
-                // Empilhamento com o primeiro por cima: a fila fica com cara de
-                // pilha, e não de sobreposição acidental.
+                // Empilhamento com o primeiro por cima.
                 style={{ zIndex: familias.length - i }}
               >
                 <Icone className="h-2.5 w-2.5" />
                 {/* Ponto de "tem mais de uma ação aqui". O número não cabe em
-                    18px sem virar borrão — a contagem exata está no tooltip. */}
+                    18px sem virar borrão — a contagem exata vai no balão. */}
                 {itens.length > 1 && (
                   <span
                     className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-current ring-1 ring-background"
                     aria-hidden
                   />
                 )}
-              </span>
+              </button>
             </TooltipTrigger>
-            <TooltipContent side="right" className="max-w-[340px]">
+            <TooltipContent side="right" className="max-w-[min(340px,80vw)]">
               <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide opacity-70">
                 {familia} · {itens.length} {itens.length === 1 ? "ação" : "ações"}
               </p>
               <ul className="space-y-1">
-                {/* Teto de 6: o tooltip precisa caber na tela. O resto vira
+                {/* Teto de 6: o balão precisa caber na tela. O resto vira
                     contagem, e o Log de Campanha tem a lista inteira. */}
                 {itens.slice(0, 6).map((e) => (
                   <li key={e.id} className="text-[11px] leading-snug">
