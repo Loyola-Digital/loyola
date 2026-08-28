@@ -16,8 +16,7 @@
  * já é denso; este bloco responde "em qual etapa eu mexo?" e sai da frente.
  */
 
-import { useEffect, useState } from "react";
-import { AlertTriangle, ChevronDown, ChevronRight, Info } from "lucide-react";
+import { AlertTriangle, Info } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePanorama } from "@/lib/hooks/use-panorama";
 import {
@@ -33,35 +32,15 @@ const pct = (v: number) =>
   `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
 /**
- * AC1 — a preferência de recolher persiste, e o bloco abre por default na
- * primeira visita: bloco fechado por default é bloco que ninguém descobre.
+ * Story 45.1 — o colapso saiu daqui.
  *
- * ⚠️ `localStorage` em try/catch e lido só depois da montagem: ler no primeiro
- * render quebraria a hidratação do Next (servidor não tem `window`), e em janela
- * anônima o acessor pode lançar.
+ * A 44.21 tornou o bloco recolhível porque ele dividia a tela com a tabela da
+ * Cadeia de CAC e obrigava a rolar por cima dele. Agora o Panorama é uma aba
+ * própria: um botão que esconde a única coisa que a aba mostra não protege
+ * ninguém de nada. Com ele saiu a chave `panorama-cac:aberto` do
+ * `localStorage` — ela fica órfã nos navegadores de quem já usou, e NÃO deve
+ * ser reaproveitada com outro sentido.
  */
-const CHAVE = "panorama-cac:aberto";
-
-function usePreferenciaDeAbertura(): [boolean, (v: boolean) => void] {
-  const [aberto, setAberto] = useState(true);
-  useEffect(() => {
-    try {
-      const salvo = window.localStorage.getItem(CHAVE);
-      if (salvo !== null) setAberto(salvo === "1");
-    } catch {
-      /* janela anônima / storage bloqueado: fica no default aberto */
-    }
-  }, []);
-  const alternar = (v: boolean) => {
-    setAberto(v);
-    try {
-      window.localStorage.setItem(CHAVE, v ? "1" : "0");
-    } catch {
-      /* preferência não persiste; o bloco continua funcionando */
-    }
-  };
-  return [aberto, alternar];
-}
 
 function Linha({ l }: { l: LinhaDoPanorama }) {
   return (
@@ -146,7 +125,6 @@ export function PanoramaDoProjeto({
   stageId: string;
 }) {
   const { data, isLoading, error } = usePanorama(projectId);
-  const [aberto, setAberto] = usePreferenciaDeAbertura();
 
   if (isLoading) return <Skeleton className="h-40 w-full" />;
 
@@ -172,28 +150,17 @@ export function PanoramaDoProjeto({
 
   return (
     <div className="rounded-lg border">
-      <button
-        type="button"
-        onClick={() => setAberto(!aberto)}
-        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
-        aria-expanded={aberto}
-      >
+      <div className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
         <div className="flex items-center gap-2">
-          {aberto ? (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          )}
           <span className="text-sm font-medium">Panorama de {data.projectName}</span>
           <span className="text-xs text-muted-foreground">
             {data.totais.etapasNoAr} {data.totais.etapasNoAr === 1 ? "etapa" : "etapas"} no ar ·{" "}
             {brl(data.totais.spendCurta)} em {data.janelas.curta.dias} dias
           </span>
         </div>
-      </button>
+      </div>
 
-      {aberto && (
-        <div className="border-t px-4 py-3">
+      <div className="border-t px-4 py-3">
           {linhas.length === 0 ? (
             /**
              * ⚠️ AC7 — afirmação, não tabela vazia. Isto NÃO é o estado de erro:
@@ -273,8 +240,7 @@ export function PanoramaDoProjeto({
               </span>
             </div>
           )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }

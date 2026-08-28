@@ -1,11 +1,13 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { TrendingUp, Youtube, FileSpreadsheet, Table as TableIcon, Link2, Settings2, Brain, Sparkles, Mail, BarChart3, Star, FlaskConical, FileBarChart2, Target, GitBranch} from "lucide-react";
+// Story 45.1 — os ícones das abas mudaram de casa: agora vivem na config em
+// `lib/utils/menu-de-abas.ts`. Aqui ficaram só os que o resto da página usa.
+import { FileSpreadsheet, Settings2, Sparkles } from "lucide-react";
 import { useFunnel } from "@/lib/hooks/use-funnels";
 import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
@@ -49,20 +51,38 @@ import { CampaignSelector } from "@/components/funnels/campaign-selector";
 import { useCampaignPicker } from "@/lib/hooks/use-funnels";
 import { useGoogleAdsCampaignPicker } from "@/lib/hooks/use-funnels";
 import { GoogleAdsCampaignSelector } from "@/components/funnels/google-ads-campaign-selector";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { Funnel, FunnelCampaign, ManualSale } from "@loyola-x/shared";
 import { ehCaptacaoPaga } from "@loyola-x/shared/src/stage-types";
 import { classificarFamilia } from "@loyola-x/shared/src/cadeia-cac";
 import { CadeiaCacStageTab } from "@/components/funnels/cadeia-cac-stage-tab";
+import { PanoramaDoProjeto } from "@/components/funnels/panorama-do-projeto";
+import { StageTabsNav } from "@/components/funnels/stage-tabs-nav";
+import { montarMenuDeAbas, resolverAbaAtiva } from "@/lib/utils/menu-de-abas";
 
 export default function StagePage() {
   const params = useParams<{ id: string; funnelId: string; stageId: string }>();
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Story 41.1: Tabs passou a ser controlado pra permitir que a config de
   // relatório leve o usuário direto ao wizard de Planilhas (order bumps).
-  const [activeTab, setActiveTab] = useState("meta-ads");
+  //
+  // Story 45.1: a aba ativa passou a viver na URL (`?tab=`), então deixou de ser
+  // um estado só. `abaEscolhida` é o clique do usuário nesta sessão;
+  // `abaSolicitada` é o que veio no link. O valor final sai de
+  // `resolverAbaAtiva()`, que valida os dois contra o menu DESTA etapa — um
+  // link de `?tab=cadeia-cac` aberto numa etapa `lyrio` cai no default em vez
+  // de deixar o `<Tabs>` sem conteúdo.
+  const [abaEscolhida, setAbaEscolhida] = useState<string | null>(null);
+  const [abaSolicitada, setAbaSolicitada] = useState<string | null>(null);
+
+  // Lido de `window.location` e não de `useSearchParams` — mesmo motivo já
+  // registrado em `debriefings/[id]/page.tsx:79`: o hook exigiria envolver a
+  // página inteira num `<Suspense>` para o build passar.
+  useEffect(() => {
+    setAbaSolicitada(new URLSearchParams(window.location.search).get("tab"));
+  }, []);
   const [stageName, setStageName] = useState("");
   // Vendas da captação paga (lançamento manual) — só usado quando stageType === "paid".
   const [manualSaleOpen, setManualSaleOpen] = useState(false);
@@ -221,6 +241,33 @@ export default function StagePage() {
 
   const metaCount = stage.campaigns.length;
   const ytCount = stage.googleAdsCampaigns.length;
+
+  /**
+   * Story 45.1 — a árvore de abas desta etapa. A elegibilidade que antes era
+   * `&&` inline em cada `<TabsTrigger>` agora vive em `montarMenuDeAbas()`, que
+   * é puro e testado. `classificarFamilia` continua sendo chamada aqui: é a
+   * função da 44.9 e mora no shared.
+   */
+  const menuDeAbas = montarMenuDeAbas({
+    funnelType,
+    ehCaptacaoPagaStage,
+    familiaCadeiaCac: classificarFamilia(stage.stageType),
+  });
+  const activeTab = resolverAbaAtiva(menuDeAbas, abaEscolhida ?? abaSolicitada);
+
+  /**
+   * Troca de aba: estado + URL. `replaceState` e não `push` porque 14 abas
+   * empilhando histórico transformam o botão voltar em lixo — e é o que a AC5
+   * pede. Não passa pelo router do Next de propósito: `router.replace` faria
+   * uma navegação de verdade a cada clique de aba.
+   */
+  function trocarAba(value: string) {
+    setAbaEscolhida(value);
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", value);
+    window.history.replaceState(null, "", url);
+  }
 
   async function handleSaveName() {
     if (!stageName.trim() || stageName.trim() === stage!.name) return;
@@ -535,88 +582,15 @@ export default function StagePage() {
       />
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="meta-ads" className="gap-1.5">
-            <TrendingUp className="h-3.5 w-3.5" />
-            Meta Ads
-            {metaCount > 0 && (
-              <span className="ml-1 text-[10px] bg-muted rounded-full px-1.5 py-0.5">{metaCount}</span>
-            )}
-          </TabsTrigger>
-          {/* Story 29.35: aba do protocolo de CAC. Imediatamente à direita de
-              Meta Ads e só no perpétuo — funil de lançamento tem outro
-              dashboard e outra matemática. */}
-          {funnelType === "perpetual" && (
-            <TabsTrigger value="analise-mvp" className="gap-1.5">
-              <Target className="h-3.5 w-3.5 text-primary" />
-              Análise MVP
-            </TabsTrigger>
-          )}
-          {funnelType === "launch" && ehCaptacaoPagaStage && (
-            <TabsTrigger value="meta-ads-teste" className="gap-1.5">
-              <FlaskConical className="h-3.5 w-3.5 text-cyan-400" />
-              Meta Ads TESTE
-            </TabsTrigger>
-          )}
-          <TabsTrigger value="youtube-ads" className="gap-1.5">
-            <Youtube className="h-3.5 w-3.5 text-red-500" />
-            YouTube Ads
-            {ytCount > 0 && (
-              <span className="ml-1 text-[10px] bg-muted rounded-full px-1.5 py-0.5">{ytCount}</span>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="surveys" className="gap-1.5">
-            <FileSpreadsheet className="h-3.5 w-3.5 text-green-600" />
-            Pesquisas
-          </TabsTrigger>
-          <TabsTrigger value="spreadsheets" className="gap-1.5">
-            <TableIcon className="h-3.5 w-3.5 text-blue-600" />
-            Planilhas
-          </TabsTrigger>
-          <TabsTrigger value="switchy-links" className="gap-1.5">
-            <Link2 className="h-3.5 w-3.5 text-purple-600" />
-            Links
-          </TabsTrigger>
-          <TabsTrigger value="lead-scoring" className="gap-1.5">
-            <Brain className="h-3.5 w-3.5 text-primary" />
-            Lead Scoring
-          </TabsTrigger>
-          <TabsTrigger value="organic-media" className="gap-1.5">
-            <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-            Mídias Orgânicas
-          </TabsTrigger>
-          <TabsTrigger value="mautic" className="gap-1.5">
-            <Mail className="h-3.5 w-3.5 text-primary" />
-            Mautic
-          </TabsTrigger>
-          {/* "Analytics", e não "GA4": a aba serve as duas fontes, e o projeto
-              que usa Plausible não lê GA4 nenhum — o nome antigo dizia o
-              contrário do que a tela mostra. O `value` continua "ga4" porque é o
-              que está gravado no estado/URL de quem já usa. */}
-          <TabsTrigger value="ga4" className="gap-1.5">
-            <BarChart3 className="h-3.5 w-3.5 text-orange-500" />
-            Analytics
-          </TabsTrigger>
-          <TabsTrigger value="nps" className="gap-1.5">
-            <Star className="h-3.5 w-3.5 text-yellow-500" />
-            NPS
-          </TabsTrigger>
-          {/* Story 44.9 — a aba só existe para etapa DENTRO da aba. Família
-              `null` (lyrio/comercial/debriefing) não ganha aba vazia: não ganha
-              aba. O `value` é contrato de URL — escolhido uma vez, não se mexe
-              (a lição do 0870c2a2, em que o rótulo mudou e o value ficou). */}
-          {classificarFamilia(stage.stageType) !== null && (
-            <TabsTrigger value="cadeia-cac" className="gap-1.5">
-              <GitBranch className="h-3.5 w-3.5 text-cyan-600" />
-              Cadeia de CAC
-            </TabsTrigger>
-          )}
-          <TabsTrigger value="relatorios" className="gap-1.5">
-            <FileBarChart2 className="h-3.5 w-3.5 text-primary" />
-            Relatórios
-          </TabsTrigger>
-        </TabsList>
+      <Tabs value={activeTab} onValueChange={trocarAba}>
+        {/* Story 45.1 — os 14 gatilhos soltos viraram 5 grupos. A árvore vem de
+            `montarMenuDeAbas()`; o `<StageTabsNav>` só desenha. */}
+        <StageTabsNav
+          menu={menuDeAbas}
+          activeTab={activeTab}
+          onChange={trocarAba}
+          badges={{ meta: metaCount, youtube: ytCount }}
+        />
 
         <TabsContent value="meta-ads" className="mt-6">
           {funnelType === "launch" ? (
@@ -805,6 +779,13 @@ export default function StagePage() {
           <CadeiaCacStageTab projectId={params.id} stageId={params.stageId} />
         </TabsContent>
 
+        {/* Story 45.1 — o Panorama saiu de cima da cadeia e virou irmã dela.
+            Os dois disputavam a mesma tela desde a 44.21: quem abria para olhar
+            UMA etapa rolava por cima do panorama do expert inteiro. */}
+        <TabsContent value="panorama" className="mt-6">
+          <PanoramaDoProjeto projectId={params.id} stageId={params.stageId} />
+        </TabsContent>
+
         <TabsContent value="ga4" className="mt-6">
           <Ga4StageTab projectId={params.id} funnelId={params.funnelId} stageId={params.stageId} />
         </TabsContent>
@@ -823,11 +804,14 @@ export default function StagePage() {
               funnelId={params.funnelId}
             />
           ) : (
+            /* AC6 — "Planilhas" agora é filha de "Dados": o salto precisa abrir
+               o grupo e refletir na URL como qualquer outra troca. `trocarAba`
+               faz as duas coisas; o grupo é derivado do filho. */
             <LaunchReportConfigSection
               projectId={params.id}
               funnelId={params.funnelId}
               stageId={params.stageId}
-              onOpenSpreadsheets={() => setActiveTab("spreadsheets")}
+              onOpenSpreadsheets={() => trocarAba("spreadsheets")}
             />
           )}
         </TabsContent>
