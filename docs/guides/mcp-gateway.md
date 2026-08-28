@@ -38,11 +38,55 @@ que julho passou batido.
 
 ## Como atualizar
 
+Na máquina onde o MCP roda (não na sua):
+
 ```bash
 cd <repo no gateway>
+bash scripts/atualizar-mcp-gateway.sh
+```
+
+O script mostra o antes e o depois, puxa a `main`, builda e lembra do passo que
+ele não pode fazer. À mão, é isto:
+
+```bash
 git pull origin main
 pnpm --filter @loyola-x/mcp build
-# reiniciar o processo do MCP
+# reiniciar QUEM INICIA o MCP — ver abaixo
+```
+
+### O "reiniciar o processo" não é um systemctl
+
+O MCP é **stdio**: não é um serviço que fica no ar, é um executável que o
+CLIENTE spawna. Quem o inicia é o Claude do Inácio, pelo `mcpServers` do config
+dele:
+
+```json
+{
+  "mcpServers": {
+    "loyola-x": {
+      "command": "node",
+      "args": ["/caminho/absoluto/loyola/packages/mcp/dist/index.js"],
+      "env": { "LOYOLA_API_BASE_URL": "...", "LOYOLA_API_KEY": "..." }
+    }
+  }
+}
+```
+
+Consequências práticas:
+
+- **build sem reiniciar o cliente não muda nada** — o processo antigo continua
+  no ar com o código velho em memória;
+- reiniciar é reiniciar a **sessão/serviço do Inácio**, não um daemon do MCP;
+- se depois do restart o roster ainda vier curto, o `args` do config aponta para
+  **outro** `dist/` — é o caminho a conferir primeiro.
+
+### Se você não sabe onde o repo está na máquina
+
+```bash
+# acha o clone do repo
+find / -maxdepth 6 -type d -name "loyola" -not -path "*/node_modules/*" 2>/dev/null
+# acha o config que registra o MCP (e revela o caminho do dist em uso)
+grep -rl "loyola-x" ~/.claude* ~/.config 2>/dev/null
 ```
 
 ### Conferindo
