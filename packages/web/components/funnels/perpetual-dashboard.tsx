@@ -1,6 +1,8 @@
 "use client";
 
 import { ehCaptacaoPaga } from "@loyola-x/shared/src/stage-types";
+import { useCampaignLog } from "@/lib/hooks/use-campaign-log";
+import { EventosDoDia, agruparPorDia } from "./eventos-do-dia";
 
 import * as React from "react";
 import { useState, useMemo, useEffect } from "react";
@@ -752,7 +754,15 @@ function EntityDimensionCharts({
   );
 }
 
-function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
+function PerpetualDailyTable({
+  rows,
+  projectId,
+  funnelId,
+}: {
+  rows: PerpetualDailyRow[];
+  projectId?: string;
+  funnelId?: string;
+}) {
   // Story 29.25: paginação (16/página). Estado antes de qualquer early-return
   // (Rules of Hooks). Reset p/ página 0 quando o range/filtro muda (rows nova ref).
   const [pageIndex, setPageIndex] = useState(0);
@@ -773,6 +783,18 @@ function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
   // Story 29.32: ordenação por dia. Padrão "desc" = dia mais recente primeiro —
   // quem opera abre o painel para ver ontem, não o primeiro dia do período.
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  // Ícones do que aconteceu no dia, do Log de Campanha. Agrupado uma vez para a
+  // tabela toda — filtrar a lista dentro de cada linha seria quadrático à toa.
+  const diasDoLog = useMemo(() => {
+    const isos = rows.map((r) => r.dateIso).filter(Boolean).sort();
+    if (isos.length === 0) return 30;
+    const t = Date.parse(`${isos[0]}T00:00:00`);
+    if (!Number.isFinite(t)) return 30;
+    return Math.min(365, Math.max(7, Math.ceil((Date.now() - t) / 86_400_000) + 1));
+  }, [rows]);
+  const logQuery = useCampaignLog(projectId ?? null, funnelId ?? null, { days: diasDoLog });
+  const eventosPorDia = useMemo(() => agruparPorDia(logQuery.data?.entries), [logQuery.data]);
 
   // Story 29.32 (AC2b): a ordenação vale para o CONJUNTO INTEIRO; a paginação
   // só fatia a visualização depois. Ordenar após o slice deixaria cada página
@@ -889,7 +911,10 @@ function PerpetualDailyTable({ rows }: { rows: PerpetualDailyRow[] }) {
               const m = deriveDailyMetrics(r);
               return (
                 <TableRow key={r.dateIso} className="text-xs">
-                  <TableCell className="font-medium whitespace-nowrap">{r.date}</TableCell>
+                  <TableCell className="font-medium whitespace-nowrap">
+                    {r.date}
+                    <EventosDoDia entradas={eventosPorDia.get(r.dateIso)} />
+                  </TableCell>
                   {colunas.map((c) => (
                     <TableCell
                       key={c.key}
@@ -2827,7 +2852,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         investimento={spendAggregates.totalSpendComTax}
       />
 
-      <PerpetualDailyTable rows={dailyChartData} />
+      <PerpetualDailyTable rows={dailyChartData} projectId={projectId} funnelId={funnel.id} />
 
       {/* ================================================================ */}
       {/* TABELA DETALHADA COM FILTRO — Story 29.18: movida pra baixo do gráfico */}

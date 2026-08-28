@@ -65,3 +65,7 @@ coverage/
 # NUNCA versionar. Ver .aiox/kiwify-analise/README.md.
 kiwify-analise/*
 !kiwify-analise/README.md
+
+# Bundle vendorizado gerado por scripts/gerar-bundle-mcp.sh — o destino dele é o
+# repo da imagem do gateway (vendor/loyola-mcp/index.cjs), não este.
+packages/mcp/loyola-mcp-bundle.cjs
