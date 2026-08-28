@@ -10,16 +10,19 @@ Este documento é o **briefing operacional** do agente Inácio: o que ele lê, e
 
 ## 1. O que já funciona e o que ainda não
 
-Antes de configurar a rotina, saiba o que existe hoje (verificado em 2026-08-27):
+Estado em **2026-08-28**:
 
 | Peça | Estado |
 |---|---|
-| Rota `.../stages/{stageId}/cadeia-cac` | ✅ **existe e está no ar** desde a Story 44.8 |
-| Tool MCP `get_stage_cadeia_cac` | ❌ **não existe** — 16 tools registradas, nenhuma da cadeia. Story **44.14** (Ready) resolve |
-| Rota e tool do panorama | ❌ **não existem** — Story **44.20** (Draft) |
+| Rota `.../stages/{stageId}/cadeia-cac` | ✅ **no ar** desde a Story 44.8 |
+| Tool MCP `get_stage_cadeia_cac` | ✅ **implementada** (Story 44.14, gate PASS) — aguardando merge da PR #650 |
+| Rota e tool `get_project_panorama` | ✅ **implementadas** (Story 44.20, gate CONCERNS aprovado) — aguardando merge da PR #650 |
+| Bloco Panorama na aba | ✅ implementado (Story 44.21) — falta validação visual |
 | Envio ao ClickUp | ✅ o Inácio já tem MCP do ClickUp. Nada a construir |
 
-⚠️ **Consequência prática:** enquanto 44.14 e 44.20 não forem implementadas, o Inácio **não consegue** produzir este relatório sem reconstruir a cadeia por fora — que é exatamente o defeito que a 44.14 documenta (ele fez isso em 27/08 e errou em três pontos). **Não ligue a rotina antes das duas stories.** Ligar antes produz um laudo com régua própria, que diverge da tela, todo dia, e ninguém percebe.
+🔴 **O único bloqueio que resta: a PR #650 precisa ser mergeada.** O deploy é automático a partir da `main`, então merge = tools no ar. Antes disso as duas tools **não existem** para o Inácio, e ele voltaria a reconstruir a cadeia por fora — o defeito de 27/08, em que ele errou três pontos.
+
+**Como conferir se já pode ligar:** peça ao Inácio para listar as tools dele. Se `get_project_panorama` e `get_stage_cadeia_cac` aparecerem, pode ligar. Se não, a PR ainda não subiu.
 
 ---
 
@@ -89,6 +92,29 @@ furo — por expert.
   Ao citar a queda composta, diga que é cenário teórico.
 - Cobertura de atribuição é DIAGNÓSTICO EXIBIDO, nunca multiplicador. Não
   corrija número nenhum por ela.
+- PERÍODO — a armadilha mais cara. get_stage_cadeia_cac SEM from/to devolve o
+  HISTÓRICO INTEIRO da etapa, não os últimos 30 dias. O campo `range` vem
+  {from: null, to: null} dizendo isso, e `agregado.dias` diz sobre quantos dias
+  o número foi somado. Uma etapa com 160 dias devolve o CPL de 160 dias.
+  SEMPRE passe from/to explícitos, e SEMPRE cite o período do número que você
+  publicar. As rotas irmãs (/daily, /creatives) têm default de 30 dias; esta é a
+  exceção.
+- get_project_panorama NÃO tem fresh: ele lê o cache de vendas como está, de
+  propósito (forçar recompute em todas as etapas levava 15 s no maior projeto).
+  Se precisar de venda recomputada ao vivo, abra a etapa com
+  get_stage_cadeia_cac(..., fresh) — custa o de uma etapa só.
+- `semDados` sai em DOIS ramos com ações opostas. Sem fonte conectada ele vem
+  com `message` e sem vendasReais/leadsUnicos. Com fonte conectada e zero venda
+  na janela ele vem SEM `message` e COM vendasReais: 0. O primeiro manda
+  configurar; o segundo é só uma etapa que não vendeu. Não mande ninguém
+  conectar o que já está conectado.
+- Nas pendências do panorama, `origem` diz a procedência: "cadeia" foi apurado
+  no backend e pode ser citado como fato; "panorama" é conclusão derivada por
+  comparação (semTetoConfiavel, coberturaIndisponivel). Não cite um derivado
+  como se fosse medição de origem.
+- totais.spendCurta/spendLonga são das ETAPAS. O gasto das campanhas órfãs vem
+  separado em totais.spendOrfas. O gasto do projeto é a soma dos dois — publicar
+  só o primeiro subnotifica.
 
 ## O que você NÃO tem
 
@@ -134,7 +160,7 @@ Não repita a tabela inteira em prosa: o leitor quer o que mudou e o que fazer.
 | Publicação diária | um comentário na task, com a data no topo |
 | Tags | `aiox-agent`, `panorama` |
 
-⚠️ **Confirme o list id antes de ligar a rotina.** A regra `.claude/rules/clickup-workflow.md` cita `901326639417` no texto e `901326621645` nos exemplos de `curl` — os dois não podem estar certos. Rodar contra o id errado publica num board que ninguém lê.
+✅ **List id resolvido (2026-08-28):** o correto é **`901326639417`** (`APP - Loyola X`) — usado e confirmado nesta sessão em três tasks de story. O `901326621645` que aparece nos exemplos de `curl` da regra `.claude/rules/clickup-workflow.md` aponta para outra list (`APP - Loyola Agents`); quem copiar o curl da regra publica no board errado.
 
 **Quando algo exige ação de alguém**, além do comentário: crie uma task própria, com responsável e data. O comentário é registro; task é trabalho. Um panorama que só comenta não faz ninguém agir — é a regra do método Pedro Valério que a `clickup-workflow.md` já aplica às stories.
 
