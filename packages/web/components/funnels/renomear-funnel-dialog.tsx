@@ -27,7 +27,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 
 /**
  * O token que casa campanha (Mautic, Log, SendFlow): os dois primeiros
@@ -37,6 +36,26 @@ import { Switch } from "@/components/ui/switch";
 export function tokenDoNome(nome: string): string {
   const segs = nome.trim().split("-").filter(Boolean);
   return (segs.length >= 2 ? `${segs[0]}-${segs[1]}` : nome.trim()).toLowerCase();
+}
+
+/**
+ * Tokens plausíveis para o casamento, do mais curto ao mais longo.
+ *
+ * A regra automática pega DOIS segmentos, o que serve para lançamento
+ * (`dg-pg04-jun-26` → `dg-pg04`) e é ambígua no perpétuo: `bbe-fc1-a1` e
+ * `bbe-fc1-a2` são funis diferentes que colapsam no mesmo `bbe-fc1`. Por isso
+ * a tela oferece o de três segmentos ao lado do automático, em vez de deixar
+ * quem renomeia descobrir a colisão depois — quando o sintoma é campanha
+ * chegando no funil errado, que não dá erro nenhum.
+ */
+export function sugestoesDeToken(nome: string): string[] {
+  const segs = nome.trim().split("-").filter(Boolean);
+  const opcoes: string[] = [];
+  for (const n of [2, 3]) {
+    if (segs.length >= n) opcoes.push(segs.slice(0, n).join("-").toLowerCase());
+  }
+  if (opcoes.length === 0 && nome.trim()) opcoes.push(nome.trim().toLowerCase());
+  return [...new Set(opcoes)];
 }
 
 /** O prefixo que vira pasta de campanha no Drive: "dg-pg04-jun-26" → "DG-PG04". */
@@ -79,28 +98,53 @@ export function RenomearFunnelDialog({
   onSalvar: (dados: { name: string; matchCode?: string | null }) => void;
 }) {
   const [nome, setNome] = useState(nomeAtual);
-  const [congelar, setCongelar] = useState(true);
+  /**
+   * O token que vai valer depois de salvar.
+   *
+   * Começa no atual (congelar é o padrão: renomear costuma ser corrigir o
+   * rótulo, não mudar a que campanhas o funil responde), mas é EDITÁVEL —
+   * porque o token automático pode estar simplesmente errado para o funil, e
+   * era o caso do perpétuo com a1/a2.
+   */
+  const [token, setToken] = useState("");
 
   useEffect(() => {
     if (open) {
       setNome(nomeAtual);
-      setCongelar(true);
+      setToken(matchCodeAtual || tokenDoNome(nomeAtual));
     }
-  }, [open, nomeAtual]);
+  }, [open, nomeAtual, matchCodeAtual]);
 
   const novo = nome.trim();
   const tokenAntes = matchCodeAtual || tokenDoNome(nomeAtual);
-  const tokenDepois = matchCodeAtual || tokenDoNome(novo || nomeAtual);
-  // Só há o que congelar quando o token vem do NOME. Com matchCode gravado, o
-  // casamento já é independente do nome e a renomeação não o afeta.
-  const casamentoMudaria = !matchCodeAtual && tokenAntes !== tokenDepois;
+  const tokenAutomatico = tokenDoNome(novo || nomeAtual);
+  const escolhido = token.trim().toLowerCase();
+  // Sugestões: o que vale hoje, o automático do nome novo e o de três
+  // segmentos (o que distingue a1 de a2).
+  const sugestoes = useMemo(
+    () => [...new Set([tokenAntes, ...sugestoesDeToken(novo || nomeAtual)])].filter(Boolean),
+    [tokenAntes, novo, nomeAtual],
+  );
+  // Precisa gravar matchCode? Só quando o token escolhido difere do que a regra
+  // automática produziria — senão o campo fica sujo à toa.
+  const precisaMatchCode = escolhido !== tokenAutomatico;
+  const casamentoMuda = escolhido !== tokenAntes;
   const driveAntes = prefixoDoDrive(nomeAtual);
   const driveDepois = prefixoDoDrive(novo || nomeAtual);
   const driveMudaria = driveAntes !== driveDepois;
 
+  function dadosParaSalvar() {
+    return {
+      name: novo,
+      // null limpa o override e devolve o casamento à regra automática.
+      matchCode: precisaMatchCode ? escolhido : null,
+    };
+  }
+
   const podeSalvar = useMemo(
-    () => novo.length > 0 && novo !== nomeAtual && !salvando,
-    [novo, nomeAtual, salvando],
+    // Token vazio bloqueia: sem ele o funil não casa com nada.
+    () => novo.length > 0 && novo !== nomeAtual && escolhido.length > 0 && !salvando,
+    [novo, nomeAtual, escolhido, salvando],
   );
 
   return (
@@ -124,54 +168,93 @@ export function RenomearFunnelDialog({
               maxLength={255}
               autoFocus
               onKeyDown={(e) => {
-                if (e.key === "Enter" && podeSalvar) {
-                  onSalvar({
-                    name: novo,
-                    ...(casamentoMudaria && congelar ? { matchCode: tokenAntes } : {}),
-                  });
-                }
+                if (e.key === "Enter" && podeSalvar) onSalvar(dadosParaSalvar());
               }}
             />
           </div>
 
           {novo && novo !== nomeAtual && (
-            <div className="space-y-1.5">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                O que muda junto
-              </p>
-              <Linha
-                rotulo="Casamento de campanhas (Mautic, Log, SendFlow)"
-                de={tokenAntes}
-                para={congelar && casamentoMudaria ? tokenAntes : tokenDepois}
-              />
-              <Linha rotulo="Pasta de criativos no Drive" de={driveAntes} para={driveDepois} />
-            </div>
-          )}
+            <>
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  O que muda junto
+                </p>
+                <Linha
+                  rotulo="Casamento de campanhas (Mautic, Log, SendFlow)"
+                  de={tokenAntes}
+                  para={escolhido}
+                />
+                <Linha rotulo="Pasta de criativos no Drive" de={driveAntes} para={driveDepois} />
+              </div>
 
-          {casamentoMudaria && (
-            <div className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                <div className="text-xs">
-                  <p className="font-medium">O casamento de campanhas mudaria</p>
-                  <p className="mt-0.5 text-muted-foreground">
-                    Campanhas que hoje casam por <code className="font-mono">{tokenAntes}</code>{" "}
-                    deixariam de casar. Nada dá erro — o funil simplesmente para de receber os
-                    disparos e as campanhas órfãs.
+              <div className="space-y-2 rounded-lg border border-border/50 p-3">
+                <div>
+                  <Label htmlFor="token" className="text-xs">
+                    Código de match
+                  </Label>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    É por ele que campanha, disparo e lead encontram este funil. A regra
+                    automática usa os dois primeiros segmentos do nome — o que basta para
+                    lançamento e é <strong>ambíguo no perpétuo</strong>, onde{" "}
+                    <code className="font-mono">a1</code> e <code className="font-mono">a2</code>{" "}
+                    virariam o mesmo código.
                   </p>
                 </div>
+                <Input
+                  id="token"
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  maxLength={50}
+                  className="h-8 font-mono text-sm"
+                />
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {sugestoes.map((sug) => (
+                    <button
+                      key={sug}
+                      type="button"
+                      onClick={() => setToken(sug)}
+                      className={`rounded-md border px-2 py-0.5 font-mono text-[11px] transition-colors ${
+                        escolhido === sug
+                          ? "border-primary bg-primary/10 text-foreground"
+                          : "border-border/60 text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      {sug}
+                      {sug === tokenAntes && <span className="ml-1 font-sans opacity-60">atual</span>}
+                      {sug === tokenAutomatico && sug !== tokenAntes && (
+                        <span className="ml-1 font-sans opacity-60">automático</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+                {precisaMatchCode && escolhido && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Fica gravado como override — o nome pode mudar de novo sem mexer no
+                    casamento.
+                  </p>
+                )}
+                {!escolhido && (
+                  <p className="text-[11px] text-destructive">
+                    Sem código de match o funil não recebe campanha nenhuma.
+                  </p>
+                )}
               </div>
-              <div className="flex items-center justify-between gap-3 pl-6">
-                <Label htmlFor="congelar" className="text-xs font-normal">
-                  Manter o casamento atual (grava{" "}
-                  <code className="font-mono">{tokenAntes}</code> como código de match)
-                </Label>
-                <Switch id="congelar" checked={congelar} onCheckedChange={setCongelar} />
-              </div>
-            </div>
+
+              {casamentoMuda && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <p className="text-xs text-muted-foreground">
+                    Campanhas que hoje casam por{" "}
+                    <code className="font-mono">{tokenAntes}</code> deixam de casar. Nada dá
+                    erro — o funil simplesmente para de receber os disparos e as campanhas
+                    órfãs.
+                  </p>
+                </div>
+              )}
+            </>
           )}
 
-          {driveMudaria && (
+          {driveMudaria && novo !== nomeAtual && (
             <p className="text-[11px] text-muted-foreground">
               ⚠️ A pasta de criativos passa a ser procurada como{" "}
               <code className="font-mono">{driveDepois}</code> no Drive. Se a pasta lá ainda se
@@ -187,12 +270,7 @@ export function RenomearFunnelDialog({
           </Button>
           <Button
             disabled={!podeSalvar}
-            onClick={() =>
-              onSalvar({
-                name: novo,
-                ...(casamentoMudaria && congelar ? { matchCode: tokenAntes } : {}),
-              })
-            }
+            onClick={() => onSalvar(dadosParaSalvar())}
           >
             {salvando && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
             Renomear
