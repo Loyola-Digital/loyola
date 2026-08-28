@@ -44,8 +44,22 @@ function driveDoProjeto(nomeDoProjeto: string, nomeDoFunil: string): string {
   return nomeDoProjeto.trim().split(/[\s|]/)[0].toUpperCase();
 }
 
-/** Prefixo da pasta da campanha: "dg-pg04-jul-26" → "DG-PG04". */
-function prefixoDaCampanha(nomeDoFunil: string): string {
+/**
+ * Prefixo da pasta da campanha: "dg-pg04-jul-26" → "DG-PG04".
+ *
+ * O `matchCode` do funil, quando existe, MANDA. Ele é o identificador que o
+ * time já declarou para aquele funil — e a regra automática, de dois
+ * segmentos, colide no perpétuo: `bbe-fc1-a2-ago-26` e `bbe-fc1-mai-26` viram
+ * os dois "BBE-FC1", disputando a mesma pasta.
+ *
+ * Pior que disputar: a busca no Drive é por CONTÉM e desempata pelo nome mais
+ * curto, então "BBE-FC1" acha "BBE-FC1-A1" e "BBE-FC1-A2" e escolhe uma delas
+ * sem critério nenhum ligado ao funil que perguntou. A galeria mostraria os
+ * criativos do funil errado — com cara de estar certa.
+ */
+function prefixoDaCampanha(nomeDoFunil: string, matchCode?: string | null): string {
+  const declarado = matchCode?.trim();
+  if (declarado) return declarado.toUpperCase();
   const segs = nomeDoFunil.trim().split("-").filter(Boolean);
   return (segs.length >= 2 ? `${segs[0]}-${segs[1]}` : nomeDoFunil).toUpperCase();
 }
@@ -71,6 +85,7 @@ export default fp(async function driveCreativesRoutes(fastify) {
       .select({
         projeto: projects.name,
         funil: funnels.name,
+        matchCode: funnels.matchCode,
         stageType: funnelStages.stageType,
       })
       .from(funnelStages)
@@ -88,16 +103,20 @@ export default fp(async function driveCreativesRoutes(fastify) {
   }
 
   async function pastasDe(
-    ctx: { projeto: string; funil: string; stageType: string },
+    ctx: { projeto: string; funil: string; matchCode: string | null; stageType: string },
     tipo: TipoDeCriativo,
   ): Promise<{ id: string; nome: string; editada: boolean }[]> {
-    const chave = `${ctx.funil}|${tipo}|${ctx.stageType}`;
+    // O matchCode entra na chave: mudá-lo muda a pasta procurada, e o cache
+    // continuaria servindo a antiga por até 30 min.
+    const chave = `${ctx.funil}|${ctx.matchCode ?? ""}|${tipo}|${ctx.stageType}`;
     const guardado = pastas.get(chave);
     if (guardado && guardado.expira > Date.now()) return guardado.lista;
 
     const r = await resolverPastaDeCriativos({
       drive: driveDoProjeto(ctx.projeto, ctx.funil),
-      campanha: prefixoDaCampanha(ctx.funil),
+      campanha: prefixoDaCampanha(ctx.funil, ctx.matchCode),
+      // Se o matchCode não nomear a pasta da campanha, cai no prefixo do nome.
+      alternativos: [prefixoDaCampanha(ctx.funil)],
       tipo,
       etapa: etapaDaPasta(ctx.stageType),
     });
@@ -177,7 +196,8 @@ export default fp(async function driveCreativesRoutes(fastify) {
       if (!ctx) return reply.code(404).send({ error: "Etapa não encontrada" });
 
       const drive = driveDoProjeto(ctx.projeto, ctx.funil);
-      const campanha = prefixoDaCampanha(ctx.funil);
+      const campanha = prefixoDaCampanha(ctx.funil, ctx.matchCode);
+      const alternativos = [prefixoDaCampanha(ctx.funil)];
       const etapa = etapaDaPasta(ctx.stageType);
 
       let visiveis: string[] = [];
@@ -188,8 +208,8 @@ export default fp(async function driveCreativesRoutes(fastify) {
       }
 
       const [video, estatico] = await Promise.all([
-        resolverPastaDeCriativos({ drive, campanha, tipo: "video", etapa }),
-        resolverPastaDeCriativos({ drive, campanha, tipo: "estatico", etapa }),
+        resolverPastaDeCriativos({ drive, campanha, alternativos, tipo: "video", etapa }),
+        resolverPastaDeCriativos({ drive, campanha, alternativos, tipo: "estatico", etapa }),
       ]);
 
       const arquivos: { tipo: string; nomes: string[] }[] = [];

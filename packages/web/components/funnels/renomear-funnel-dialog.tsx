@@ -184,7 +184,14 @@ export function RenomearFunnelDialog({
                   de={tokenAntes}
                   para={escolhido}
                 />
-                <Linha rotulo="Pasta de criativos no Drive" de={driveAntes} para={driveDepois} />
+                <Linha
+                  rotulo="Pasta de criativos no Drive"
+                  de={driveAntes}
+                  // O Drive procura pelo código de match primeiro e cai no
+                  // prefixo do nome se não achar — por isso o que muda aqui
+                  // segue o campo acima, não o nome.
+                  para={escolhido.toUpperCase()}
+                />
               </div>
 
               <div className="space-y-2 rounded-lg border border-border/50 p-3">
@@ -254,12 +261,12 @@ export function RenomearFunnelDialog({
             </>
           )}
 
-          {driveMudaria && novo !== nomeAtual && (
+          {novo !== nomeAtual && (escolhido.toUpperCase() !== driveAntes || driveMudaria) && (
             <p className="text-[11px] text-muted-foreground">
-              ⚠️ A pasta de criativos passa a ser procurada como{" "}
-              <code className="font-mono">{driveDepois}</code> no Drive. Se a pasta lá ainda se
-              chama <code className="font-mono">{driveAntes}</code>, a galeria de anúncios fica
-              vazia até alguém renomear a pasta — isso não tem override.
+              ⚠️ No Drive, a pasta passa a ser procurada como{" "}
+              <code className="font-mono">{escolhido.toUpperCase()}</code>, com{" "}
+              <code className="font-mono">{driveDepois}</code> como segunda tentativa. Se nenhuma
+              das duas existir lá, a galeria de anúncios fica vazia.
             </p>
           )}
         </div>

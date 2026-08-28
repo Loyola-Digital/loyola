@@ -170,6 +170,45 @@ async function subpastaPorPrefixo(paiId: string, prefixo: string): Promise<Arqui
   return candidatas[0] ?? null;
 }
 
+/**
+ * A pasta da campanha — que pode estar um degrau abaixo do esperado.
+ *
+ * Nem todo drive guarda as campanhas soltas dentro de "Campanhas". Medido no
+ * drive da BBE: elas estão separadas por natureza primeiro —
+ * `Campanhas / ♾️PERPÉTUO / 01 - BBE-FC1-MAI/26`, e o mesmo para
+ * `🚀 LANÇAMENTOS` e `🎤EVENTOS PRESENCIAIS`. Procurando só no nível direto, o
+ * drive inteiro da BBE nunca resolveu, e o sintoma era a galeria vazia sem
+ * explicação.
+ *
+ * Procura no nível direto primeiro: um drive que segue a convenção não paga
+ * chamada extra nenhuma, e uma pasta no nível certo continua ganhando de outra
+ * de nome parecido escondida numa categoria.
+ */
+async function acharPastaDaCampanha(
+  paiId: string,
+  /** Do mais específico ao mais genérico: ["BBE-FC1-A2", "BBE-FC1"]. */
+  alvos: string[],
+): Promise<ArquivoDoDrive | null> {
+  const categorias = await listar(
+    `'${paiId}' in parents and mimeType='${MIME_PASTA}' and trashed=false`,
+    "id,name,mimeType",
+  );
+
+  // Por ALVO e depois por nível — não o contrário. O código mais específico
+  // deve ganhar mesmo que a pasta dele esteja uma categoria abaixo, senão o
+  // genérico do nível direto sempre venceria e o `matchCode` não valeria de
+  // nada.
+  for (const alvo of alvos) {
+    const direta = await subpastaPorPrefixo(paiId, alvo);
+    if (direta) return direta;
+    for (const cat of categorias) {
+      const dentro = await subpastaPorPrefixo(cat.id, alvo);
+      if (dentro) return dentro;
+    }
+  }
+  return null;
+}
+
 // ============================================================
 // A convenção
 // ============================================================
@@ -302,6 +341,15 @@ export async function resolverPastaDeCriativos(opts: {
   drive: string;
   /** Prefixo da campanha, ex. "DG-PG04". */
   campanha: string;
+  /**
+   * Códigos alternativos, do mais específico ao mais genérico.
+   *
+   * Existe porque o `matchCode` do funil nem sempre nomeia a PASTA DA
+   * CAMPANHA. Medido na BBE: `bbe-fc1-a2` nomeia uma REMESSA dentro de
+   * `01 - BBE-FC1-MAI/26`. Tentar só o específico não acharia campanha
+   * nenhuma; tentar só o genérico ignoraria o código que o time declarou.
+   */
+  alternativos?: string[];
   tipo: TipoDeCriativo;
   etapa: EtapaDoCriativo;
 }): Promise<ResolucaoDePasta> {
@@ -338,7 +386,12 @@ export async function resolverPastaDeCriativos(opts: {
     for (const [nivel, alvoDoNivel] of degraus) {
       const achada =
         typeof alvoDoNivel === "string"
-          ? await subpastaPorPrefixo(atual, alvoDoNivel)
+          ? // A campanha é o único degrau que aceita estar uma pasta abaixo e
+            // que tenta mais de um código — ver `acharPastaDaCampanha`.
+            await acharPastaDaCampanha(atual, [
+              alvoDoNivel,
+              ...(opts.alternativos ?? []),
+            ])
           : await subpasta(atual, alvoDoNivel);
       passos.push({
         nivel,
