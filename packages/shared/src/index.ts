@@ -28,6 +28,7 @@ export const APP_NAME = "Loyola Digital X" as const;
  * apareceu quando o @qa rodou `node dist/routes/stage-sales-data.js`.
  */
 export { API_CONTRACT_VERSION } from "./contract.js";
+export { TOOLS_DO_MCP, type ToolDoMcp } from "./mcp-tools.js";
 export {
   ehCaptacaoPaga,
   temDashboardDeVendas,
