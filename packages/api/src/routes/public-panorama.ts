@@ -47,7 +47,6 @@ export default fp(async function publicPanoramaRoutes(fastify) {
           to: query.data.to,
           janelaCurtaDias: query.data.curta,
           janelaLongaDias: query.data.longa,
-          fresh: query.data.fresh,
         },
       );
       if (!panorama) {

@@ -75,7 +75,7 @@ Resposta: `{ projectId, stageId, stageName, campaignIds: [..], range, partial, l
 > **linkClicks / ctrLink / cpcLink** (Epic 39): `clicks` cru da Meta = cliques TOTAIS (inclui curtida/perfil); `linkClicks` = evento `link_click` (tráfego real). Para análise de tráfego use `linkClicks`/`ctrLink`/`cpcLink`; `ctr`/`cpc` seguem sobre cliques totais por compatibilidade.
 
 ### GET /api/public/meta/v1/projects/{projectId}/panorama-cac
-**O panorama do projeto — o que está no ar hoje, numa chamada** (Story 44.20). Query: `to` (último dia das janelas, default hoje), `curta` (dias da janela curta, default 7), `longa` (default 30), `fresh=1`.
+**O panorama do projeto — o que está no ar hoje, numa chamada** (Story 44.20). Query: `to` (último dia das janelas, default hoje), `curta` (dias da janela curta, default 7), `longa` (default 30). ⚠️ **Não há `?fresh=1` aqui**, ao contrário de `/cadeia-cac`: forçar recompute de venda em CADA etapa levava o maior projeto a 15,1 s (medido em 27/08 — 676 ms sem ele). O panorama é a varredura; dado de venda recomputado se pede na etapa escolhida, em `/stages/{stageId}/cadeia-cac?fresh=1`, pagando o custo de uma etapa só.
 
 ⚠️ **COMECE POR AQUI todo dia, ANTES de `/cadeia-cac`.** Esta rota diz *quais* etapas merecem leitura profunda; a da cadeia abre a etapa escolhida. Sem ela são de 6 a 10 chamadas (`/funnels`, `/stages` por funil, `/stages/{id}/daily` por etapa) para a mesma resposta — e cada consumidor junta do seu jeito, que é a classe de defeito que o Epic 44 existe para impedir.
 

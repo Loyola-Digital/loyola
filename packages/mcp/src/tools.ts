@@ -240,7 +240,8 @@ export function registerTools(server: McpServer, client: LoyolaClient): void {
         "`effectiveStatus: null` NÃO é 'pausada': é entidade que o backfill de nomes ainda não resolveu. Nunca escreva 'Pausado' por ausência de dado. " +
         "`familia: null` é etapa fora da aba (lyrio/comercial/debriefing), não erro — ela aparece na lista, com gargalo null, e fica fora de totais.etapasNoAr. " +
         "`pendencias` são fatos de CONFIGURAÇÃO, não falhas da consulta, e cada `codigo` pede uma ação diferente (semDados=conectar fonte, syncPendente=esperar o sync, leituraFalhou=checar permissão). O campo `origem` diz se o item foi apurado pelo backend (`cadeia`) ou concluído pelo panorama (`panorama`) — só o primeiro é fato de origem. " +
-        "`campanhasOrfas` é dinheiro gasto fora de toda etapa: não entra em CAC nem em ROAS de lugar nenhum, e não deve ser encostado numa etapa por semelhança de nome.",
+        "`campanhasOrfas` é dinheiro gasto fora de toda etapa: não entra em CAC nem em ROAS de lugar nenhum, e não deve ser encostado numa etapa por semelhança de nome. " +
+        "Esta tool NÃO tem `fresh`: ela lê o cache de vendas como está. Para número de venda recomputado ao vivo, abra a etapa escolhida com get_stage_cadeia_cac — o panorama forçando recompute em todas as etapas levava 15 s no maior projeto.",
       inputSchema: {
         projectId: z.string().uuid().describe("ID do projeto (de list_projects)."),
         to: z

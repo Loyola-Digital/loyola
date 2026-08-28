@@ -58,6 +58,15 @@ evidenciasDaRevisao:
 
 issues:
   - id: QA-4420-01
+    status: >
+      RESOLVIDO — caminho (a) escolhido pelo dono do produto em 27/08: o
+      panorama deixou de propagar `fresh`. O param saiu dos dois schemas de rota,
+      de `OpcoesDoPanorama`, do `llms.txt` e da `description` da tool, com a nota
+      de para onde ele foi (a etapa). Re-medido: DG & CPDF em **667 ms**.
+      Travado por teste que afirma sobre o `maxAgeMs` que chega ao
+      `getFreshSalesDaily` — não sobre tempo, que em teste é ruído. Provado por
+      reversão: repondo a propagação, 1 failed com "o panorama repassou
+      maxAgeMs: 0".
     severity: high
     category: performance
     title: "A AC7 foi medida só sem `?fresh=1`. Com ele, o maior projeto leva 15,1 s — 3× o teto que a própria AC define"
@@ -193,13 +202,25 @@ acs:
   AC8: "ENTREGUE — tool + entrada no `llms.txt`, com as 5 armadilhas exigidas, e teste de contrato travando caminho, tool e as duas armadilhas de leitura"
 
 proximaAcao: >
-  A AC7 diz, literalmente: "a story registra a medição e abre débito — não
-  silencia com cache". A medição de `?fresh=1` está registrada nesta revisão e na
-  story; o débito fica aberto para decisão do @po entre os três caminhos do
-  QA-4420-01, porque (a) e (b) mexem no contrato de query params da AC6.
+  **Nenhuma pendente.** O débito do QA-4420-01 foi decidido e fechado no mesmo
+  dia (caminho (a) — `fresh` não se propaga no panorama); QA-4420-02 corrigido;
+  03 e 04 ficam declarados como débito conhecido, ambos `low`.
 
-  QA-4420-02 é uma linha de doc e pode entrar junto. QA-4420-03 e 04 ficam
-  como débito declarado.
+  A story vai para a 44.21 sem débito aberto.
 
-  Status: InReview → **Done** (CONCERNS aprova com observações). O débito do
-  `fresh` NÃO deve viajar em silêncio para a 44.21.
+resolucaoDoDebito:
+  decisao: "(a) não propagar `fresh` no panorama — dono do produto, 2026-08-27"
+  motivo: >
+    O panorama é a varredura: ele diz QUAIS etapas merecem leitura profunda.
+    Forçar recompute de venda em todas elas multiplicava por N a operação mais
+    cara da cadeia para responder uma pergunta que não precisa de dado ao vivo.
+    Quem quer venda recomputada abre a etapa em
+    `/stages/{stageId}/cadeia-cac?fresh=1` e paga o custo de UMA.
+  antes: "DG & CPDF 15.137 ms com `?fresh=1`"
+  depois: "DG & CPDF 667 ms — o param não existe mais na rota"
+  travadoPor: "packages/api/src/__tests__/panorama-do-projeto.test.ts — asserção sobre `maxAgeMs`, provada por reversão"
+  contratoAlterado: >
+    ⚠️ A AC6 lista `?fresh=1` entre os query params. Ele foi REMOVIDO das duas
+    rotas do panorama. Fastify ignora query param desconhecido, então um chamador
+    antigo continua recebendo 200 — só não força mais o recompute. A doc e a tool
+    declaram a ausência e para onde o parâmetro foi.

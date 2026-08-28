@@ -135,9 +135,28 @@ export interface OpcoesDoPanorama {
   janelaCurtaDias?: number;
   /** Default 30. */
   janelaLongaDias?: number;
-  /** `"1"`/`"true"` força o recompute das vendas, repassado a cada etapa. */
-  fresh?: string;
 }
+
+/**
+ * ⚠️ **Não existe `fresh` aqui, e a ausência é decisão medida** (QA-4420-01).
+ *
+ * A primeira versão repassava `?fresh=1` às N chamadas de
+ * `montarPayloadCadeiaCac`, e em cada etapa paga isso zera o `maxAge` do
+ * `getFreshSalesDaily`, forçando recompute ao vivo. O panorama multiplicava por
+ * N a operação mais cara da cadeia — e N é o que cresce no projeto grande.
+ *
+ * Medido em 27/08 contra produção, DG & CPDF (12 etapas):
+ *
+ *     sem fresh      676 ms
+ *     com fresh=1  15.137 ms      ← 3× o teto de 5 s da AC7
+ *
+ * Projetos de UMA etapa não mudavam (Lyrio 106→97 ms), o que confirma que o
+ * custo é o N, não um pico.
+ *
+ * O panorama é a **varredura**: ele diz quais etapas merecem leitura profunda.
+ * Quem quer dado de venda recomputado abre a etapa escolhida em
+ * `/stages/{stageId}/cadeia-cac?fresh=1`, e paga o custo de UMA etapa.
+ */
 
 export const JANELA_CURTA_PADRAO = 7;
 export const JANELA_LONGA_PADRAO = 30;
@@ -491,7 +510,7 @@ export async function montarPanoramaDoProjeto(
       stageId: etapa.id,
       from: longa.from,
       to: longa.to,
-      fresh: opts.fresh,
+      // Sem `fresh` de propósito — ver a nota em `OpcoesDoPanorama`.
     });
 
     const campanhas: CampanhaDoPanorama[] = campaignIds.map((campaignId) => {

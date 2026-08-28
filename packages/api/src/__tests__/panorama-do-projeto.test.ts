@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import Fastify from "fastify";
 import fp from "fastify-plugin";
 import type { Database } from "../db/client.js";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   funnelStages,
   metaAdInsightsDaily,
@@ -643,5 +645,52 @@ describe("Story 44.20 — `semDados` de fonte ausente × de denominador zero", (
     mockGetFreshSalesDaily.mockResolvedValue({ payload: null, computedAt: null, source: "cache" });
     const p = (await montarPanoramaDoProjeto(fakeDb(fixture()), config, PROJ, OPTS))!;
     expect(p.pendencias.map((x) => x.codigo)).toContain("semDados");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// QA-4420-01 — o panorama não força recompute de venda
+// ─────────────────────────────────────────────────────────────
+
+describe("Story 44.20 (QA-4420-01) — o panorama não força recompute em N etapas", () => {
+  it("`?fresh=1` na URL NÃO chega ao getFreshSalesDaily como maxAge zero", async () => {
+    /**
+     * `maxAgeFrom("1", cfg)` devolve **0**, e `0` no `getFreshSalesDaily`
+     * significa "recompute sempre" (`utils/cache-freshness.ts:24`). Repassar
+     * isso às N etapas levava DG & CPDF de 676 ms para 15.137 ms — 3× o teto de
+     * 5 s da AC7, medido contra produção em 27/08.
+     *
+     * Este teste é o que impede o parâmetro de voltar por conveniência: ele
+     * afirma sobre o `maxAgeMs` que chega ao serviço de vendas, não sobre o
+     * tempo — tempo em teste é ruído, e a causa é o argumento.
+     */
+    const app = await buildApp(fixture());
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/projects/${PROJ}/panorama-cac${QS}&fresh=1`,
+    });
+    await app.close();
+
+    expect(res.statusCode).toBe(200);
+    expect(mockGetFreshSalesDaily).toHaveBeenCalled();
+    for (const chamada of mockGetFreshSalesDaily.mock.calls) {
+      const opts = chamada[3] as { maxAgeMs?: number } | undefined;
+      expect(
+        opts?.maxAgeMs,
+        "o panorama repassou maxAgeMs: 0 — é o recompute por etapa que a QA-4420-01 removeu",
+      ).not.toBe(0);
+    }
+  });
+
+  it("a leitura profunda com dado fresco continua existindo na ETAPA", async () => {
+    // O caminho não sumiu, mudou de lugar: `/stages/{id}/cadeia-cac?fresh=1`
+    // custa o recompute de UMA etapa, e é o que a doc manda usar.
+    const { default: publicCadeiaCacRoutes } = await import("../routes/public-cadeia-cac.js");
+    const rota = readFileSync(
+      resolve(import.meta.dirname, "../routes/public-cadeia-cac.ts"),
+      "utf8",
+    );
+    expect(publicCadeiaCacRoutes).toBeDefined();
+    expect(rota).toContain("fresh");
   });
 });

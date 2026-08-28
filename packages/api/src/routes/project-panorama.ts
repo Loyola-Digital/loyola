@@ -35,7 +35,11 @@ export const panoramaQuerySchema = z.object({
   to: z.string().regex(YMD).optional(),
   curta: z.coerce.number().int().min(1).max(365).optional(),
   longa: z.coerce.number().int().min(1).max(365).optional(),
-  fresh: z.string().optional(),
+  /**
+   * ⚠️ Sem `fresh` (QA-4420-01). O panorama é a varredura; `?fresh=1` custava
+   * 15,1 s no maior projeto porque forçava recompute de venda em CADA etapa.
+   * Dado de venda recomputado se pede na etapa: `/stages/{id}/cadeia-cac?fresh=1`.
+   */
 });
 
 export default fp(async function projectPanoramaRoutes(fastify) {
@@ -64,7 +68,6 @@ export default fp(async function projectPanoramaRoutes(fastify) {
         to: query.data.to,
         janelaCurtaDias: query.data.curta,
         janelaLongaDias: query.data.longa,
-        fresh: query.data.fresh,
       },
     );
     // Projeto inexistente → 404, nunca 403: 403 confirmaria que ele existe.
