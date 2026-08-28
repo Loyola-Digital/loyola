@@ -21,6 +21,8 @@ import {
   useDeleteFunnelBatchTurn,
   type FunnelBatchTurn,
 } from "@/lib/hooks/use-funnel-batch-turns";
+import { useCampaignLog } from "@/lib/hooks/use-campaign-log";
+import { EventosDoDia, agruparPorDia } from "./eventos-do-dia";
 
 interface CrossedFunnelDailyTableProps {
   rows: DailyRow[];
@@ -168,6 +170,21 @@ interface ContextMenuState {
  * Usado no LaunchDashboard (Story 18.3). Dados vêm do hook
  * `useCrossedFunnelMetrics` (Story 18.2/18.3).
  */
+/**
+ * Quantos dias o log precisa cobrir para alcançar a linha mais antiga da tabela.
+ *
+ * Pedir sempre 90 traria dados demais num período curto e de menos num longo —
+ * e o filtro da API é em dias, não em intervalo.
+ */
+function diasParaCobrir(datas: string[]): number {
+  const isos = datas.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  if (isos.length === 0) return 30;
+  const maisAntiga = Date.parse(`${isos[0]}T00:00:00`);
+  if (!Number.isFinite(maisAntiga)) return 30;
+  const dias = Math.ceil((Date.now() - maisAntiga) / 86_400_000) + 1;
+  return Math.min(365, Math.max(7, dias));
+}
+
 export function CrossedFunnelDailyTable({
   rows,
   totals,
@@ -314,6 +331,13 @@ export function CrossedFunnelDailyTable({
   const turnsQuery = useFunnelBatchTurns(projectId ?? "", funnelId ?? "");
   const createTurn = useCreateFunnelBatchTurn(projectId ?? "", funnelId ?? "");
   const updateTurn = useUpdateFunnelBatchTurn(projectId ?? "", funnelId ?? "");
+
+  // Os ícones ao lado da data: o que o Log de Campanha registrou naquele dia.
+  // Agrupado uma vez para a tabela toda — filtrar a lista dentro de cada linha
+  // seria trabalho quadrático à toa.
+  const diasDoLog = useMemo(() => diasParaCobrir(rows.map((r) => r.date)), [rows]);
+  const logQuery = useCampaignLog(projectId ?? null, funnelId ?? null, { days: diasDoLog });
+  const eventosPorDia = useMemo(() => agruparPorDia(logQuery.data?.entries), [logQuery.data]);
   const deleteTurn = useDeleteFunnelBatchTurn(projectId ?? "", funnelId ?? "");
 
   const turnsByDate = useMemo(() => {
@@ -466,6 +490,7 @@ export function CrossedFunnelDailyTable({
                         </span>
                       )}
                       {formatDateLabel(r.date)}
+                      <EventosDoDia entradas={eventosPorDia.get(r.date)} />
                     </span>
                   </TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.spend)}</TableCell>

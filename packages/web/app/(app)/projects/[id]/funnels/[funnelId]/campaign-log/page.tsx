@@ -27,7 +27,9 @@ import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -43,8 +45,9 @@ import {
 } from "@/lib/hooks/use-campaign-log";
 import {
   LOG_EVENTOS,
-  LOG_APLICATIVOS,
-  LOG_CATEGORIAS,
+  aplicativosParaEvento,
+  categoriasParaEvento,
+  valorVisivel,
   eventoBadgeClass,
 } from "@/lib/campaign-log-options";
 import { CampaignLogEntryDialog } from "@/components/funnels/campaign-log-entry-dialog";
@@ -176,6 +179,19 @@ export default function CampaignLogPage() {
     return Array.from(groups.entries());
   }, [entries]);
 
+  // Escolhido o evento, app e categoria mostram só os blocos que fazem sentido
+  // para ele. Sem evento, mostram tudo — agrupado.
+  const appsVisiveis = useMemo(() => aplicativosParaEvento(evento), [evento]);
+  const categoriasVisiveis = useMemo(() => categoriasParaEvento(evento), [evento]);
+
+  // Trocar o evento pode deixar para trás um app/categoria que sumiu da lista.
+  // Sem isto o filtro continuaria valendo, invisível: a tela mostraria poucos
+  // resultados e nada na barra explicaria por quê.
+  useEffect(() => {
+    if (!valorVisivel(appsVisiveis, aplicativo)) setAplicativo("");
+    if (!valorVisivel(categoriasVisiveis, categoria)) setCategoria("");
+  }, [appsVisiveis, categoriasVisiveis, aplicativo, categoria]);
+
   const hasFilters = !!(evento || aplicativo || categoria || qDebounced);
 
   async function handleDelete() {
@@ -251,8 +267,13 @@ export default function CampaignLogPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos os apps</SelectItem>
-            {LOG_APLICATIVOS.filter((a) => a !== "Outro").map((a) => (
-              <SelectItem key={a} value={a}>{a}</SelectItem>
+            {appsVisiveis.map((g) => (
+              <SelectGroup key={g.grupo}>
+                <SelectLabel className="text-[10px] uppercase tracking-wide">{g.grupo}</SelectLabel>
+                {g.itens.map((a) => (
+                  <SelectItem key={a} value={a}>{a}</SelectItem>
+                ))}
+              </SelectGroup>
             ))}
           </SelectContent>
         </Select>
@@ -262,8 +283,13 @@ export default function CampaignLogPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas as categorias</SelectItem>
-            {LOG_CATEGORIAS.filter((c) => c !== "Outro").map((c) => (
-              <SelectItem key={c} value={c}>{c}</SelectItem>
+            {categoriasVisiveis.map((g) => (
+              <SelectGroup key={g.grupo}>
+                <SelectLabel className="text-[10px] uppercase tracking-wide">{g.grupo}</SelectLabel>
+                {g.itens.map((c) => (
+                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                ))}
+              </SelectGroup>
             ))}
           </SelectContent>
         </Select>

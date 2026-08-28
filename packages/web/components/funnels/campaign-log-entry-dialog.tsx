@@ -32,6 +32,8 @@ import {
   LOG_EVENTOS,
   LOG_APLICATIVOS,
   LOG_CATEGORIAS,
+  aplicativosParaEvento,
+  categoriasParaEvento,
 } from "@/lib/campaign-log-options";
 import { cn } from "@/lib/utils";
 
@@ -151,6 +153,29 @@ export function CampaignLogEntryDialog({
   const [notes, setNotes] = useState("");
   const [responsavel, setResponsavel] = useState("");
   const [keepOpen, setKeepOpen] = useState(false);
+
+  /**
+   * As opções que sobram depois do evento escolhido.
+   *
+   * Quem registra "Ação no gerenciador de anúncios" escolhe entre 2 apps, não
+   * 34. "Outro" fica sempre no fim — a lista cobre o comum, não o exaustivo, e
+   * sem essa saída a pessoa marcaria qualquer coisa para conseguir salvar.
+   */
+  const opcoesDeApp = useMemo(
+    () => [...aplicativosParaEvento(evento).flatMap((g) => g.itens), "Outro"],
+    [evento],
+  );
+  const opcoesDeCategoria = useMemo(
+    () => [...categoriasParaEvento(evento).flatMap((g) => g.itens), "Outro"],
+    [evento],
+  );
+
+  // Trocou o evento e o que estava escolhido não existe mais na lista: limpa,
+  // senão o formulário salvaria uma combinação que a própria tela não oferece.
+  useEffect(() => {
+    if (aplicativo && !opcoesDeApp.includes(aplicativo)) setAplicativo("");
+    if (categoria && !opcoesDeCategoria.includes(categoria)) setCategoria("");
+  }, [opcoesDeApp, opcoesDeCategoria, aplicativo, categoria]);
 
   useEffect(() => {
     if (!open) return;
@@ -298,7 +323,7 @@ export function CampaignLogEntryDialog({
                 id="log-aplicativo"
                 value={aplicativo}
                 onChange={setAplicativo}
-                options={LOG_APLICATIVOS}
+                options={opcoesDeApp}
                 placeholder="Ferramenta usada"
               />
               {aplicativo === "Outro" && (
@@ -315,7 +340,7 @@ export function CampaignLogEntryDialog({
                 id="log-categoria"
                 value={categoria}
                 onChange={setCategoria}
-                options={LOG_CATEGORIAS}
+                options={opcoesDeCategoria}
                 placeholder="Detalhe da ação"
               />
               {categoria === "Outro" && (
