@@ -545,6 +545,21 @@ export default fp(async function funnelRoutes(fastify) {
       });
     }
 
+    /**
+     * Renomear é só de admin.
+     *
+     * O nome do funil não é rótulo: dele derivam o token que casa campanhas do
+     * Mautic e do SendFlow e o prefixo da pasta de criativos no Drive. Trocar o
+     * nome troca as três coisas, e as duas últimas falham em SILÊNCIO — o funil
+     * simplesmente para de receber campanha e a galeria fica vazia, sem erro
+     * nenhum. Os outros campos deste PUT seguem abertos a quem não é guest.
+     */
+    if (parseResult.data.name !== undefined && request.userRole !== "admin") {
+      return reply.code(403).send({
+        error: "Só admin pode renomear o funil — o nome define o casamento de campanhas e a pasta de criativos.",
+      });
+    }
+
     const project = await getProjectAccess(paramResult.data.projectId, request.userId, request.userRole);
     if (!project) {
       return reply.code(404).send({ error: "Projeto não encontrado" });
