@@ -20,9 +20,18 @@ Estado em **2026-08-28**:
 | Bloco Panorama na aba | ✅ implementado (Story 44.21) — falta validação visual |
 | Envio ao ClickUp | ✅ o Inácio já tem MCP do ClickUp. Nada a construir |
 
-🔴 **O único bloqueio que resta: a PR #650 precisa ser mergeada.** O deploy é automático a partir da `main`, então merge = tools no ar. Antes disso as duas tools **não existem** para o Inácio, e ele voltaria a reconstruir a cadeia por fora — o defeito de 27/08, em que ele errou três pontos.
+🔴 **O bloqueio que resta é o BUNDLE MCP no gateway, não o merge.** A PR #650 foi mergeada em 28/08 (`15acfa5e`) e a API deployou sozinha — mas isso entrega a **rota**, não a **tool**.
 
-**Como conferir se já pode ligar:** peça ao Inácio para listar as tools dele. Se `get_project_panorama` e `get_stage_cadeia_cac` aparecerem, pode ligar. Se não, a PR ainda não subiu.
+⚠️ **Deploy da API ≠ bundle do MCP.** São artefatos diferentes:
+
+| Artefato | Como atualiza |
+|---|---|
+| A rota (`/api/public/...`) | **automático** — merge na `main` dispara o deploy |
+| A tool MCP (`get_*`) | **manual** — o MCP é um processo **stdio** local ao gateway (`packages/mcp/src/index.ts:20`); precisa de rebuild do bundle e restart |
+
+Verificado em 28/08: o bundle do gateway servia **11 tools**, e a `main` tem **18**. Faltavam sete — as duas do Epic 44 e **cinco entregues em julho** que nunca chegaram. Dois meses de deriva, sem nada avisando. Ver **Story 44.22** (@devops).
+
+**Como conferir se já pode ligar:** peça ao Inácio para listar as tools. Se `get_project_panorama` e `get_stage_cadeia_cac` aparecerem, pode ligar. Se não, o bundle do gateway ainda está velho — **e mergear de novo não resolve**.
 
 ---
 
