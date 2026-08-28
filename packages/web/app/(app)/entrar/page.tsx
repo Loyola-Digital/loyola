@@ -28,7 +28,8 @@ export default function EntrarPage() {
       router.replace("/minds");
       return;
     }
-    router.replace(data?.exists ? "/pdi" : "/minds");
+    // Quem tem PDI cai direto na aba dele, dentro da ficha.
+    router.replace(data?.exists ? "/pessoal?aba=pdi" : "/minds");
   }, [isLoading, isError, data?.exists, router]);
 
   return (

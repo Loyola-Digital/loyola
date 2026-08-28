@@ -12,8 +12,10 @@
  * assunto.
  */
 
-import { useMemo, useState } from "react";
-import { AlertCircle, ArrowLeft, CalendarDays, Search, Target, UserRound, Users } from "lucide-react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { AlertCircle, ArrowLeft, CalendarDays, Search, Settings2, Target, UserRound, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +35,24 @@ import {
 import { useUserRole } from "@/lib/hooks/use-user-role";
 
 const semAcento = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+/**
+ * Lê a aba pedida na URL.
+ *
+ * Componente separado e sob <Suspense> porque `useSearchParams` obriga a isso
+ * no Next — sem a fronteira, o build falha ao pré-renderizar a página.
+ *
+ * Existe para o redirecionamento de `/pdi`: quem tinha o PDI como tela inicial
+ * continua caindo direto nele, agora dentro da ficha.
+ */
+function AbaDaUrl({ onAba }: { onAba: (aba: string) => void }) {
+  const params = useSearchParams();
+  const aba = params.get("aba");
+  useEffect(() => {
+    if (aba === "pdi" || aba === "ausencias" || aba === "dados") onAba(aba);
+  }, [aba, onAba]);
+  return null;
+}
 
 /** O PDI de outra pessoa: acha o documento dela na lista e carrega o HTML. */
 function PdiDaPessoa({ userId }: { userId: string }) {
@@ -73,6 +93,8 @@ function Detalhe({
   pessoas,
   editavel,
   ehPropria,
+  aba,
+  onAba,
 }: {
   ficha: Ficha;
   ausencias: React.ComponentProps<typeof AusenciasPessoa>["ausencias"];
@@ -80,9 +102,11 @@ function Detalhe({
   pessoas: { userId: string; nome: string }[];
   editavel: boolean;
   ehPropria: boolean;
+  aba: string;
+  onAba: (v: string) => void;
 }) {
   return (
-    <Tabs defaultValue="dados">
+    <Tabs value={aba} onValueChange={onAba}>
       <TabsList>
         <TabsTrigger value="dados" className="gap-1.5 text-xs">
           <UserRound className="h-3.5 w-3.5" />
@@ -166,6 +190,9 @@ export default function PessoalPage() {
   const [aberta, setAberta] = useState<string | null>(null);
   const { data: detalhe, isLoading: carregandoDetalhe } = usePessoa(aberta);
   const [busca, setBusca] = useState("");
+  // Aba da ficha. Controlada porque o redirecionamento de /pdi pede uma
+  // específica pela URL.
+  const [aba, setAba] = useState("dados");
 
   const pessoas = useMemo(
     () => (lista?.pessoas ?? []).map((p) => ({ userId: p.userId, nome: p.nome })),
@@ -197,6 +224,9 @@ export default function PessoalPage() {
     if (!minha) return null;
     return (
       <div className="space-y-6">
+        <Suspense fallback={null}>
+          <AbaDaUrl onAba={setAba} />
+        </Suspense>
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold">
             <UserRound className="h-6 w-6 text-primary" />
@@ -213,6 +243,8 @@ export default function PessoalPage() {
           pessoas={[]}
           editavel={false}
           ehPropria
+          aba={aba}
+          onAba={setAba}
         />
       </div>
     );
@@ -236,6 +268,8 @@ export default function PessoalPage() {
             pessoas={pessoas}
             editavel
             ehPropria={false}
+            aba={aba}
+            onAba={setAba}
           />
         )}
       </div>
@@ -247,14 +281,27 @@ export default function PessoalPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="flex items-center gap-2 text-2xl font-bold">
-          <Users className="h-6 w-6 text-primary" />
-          Pessoal
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Ficha, férias e PDI de cada pessoa do time.
-        </p>
+      <Suspense fallback={null}>
+        <AbaDaUrl onAba={setAba} />
+      </Suspense>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="flex items-center gap-2 text-2xl font-bold">
+            <Users className="h-6 w-6 text-primary" />
+            Pessoal
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Ficha, férias e PDI de cada pessoa do time.
+          </p>
+        </div>
+        {/* Atribuir PDI continua em tela própria: é upload de documento, não
+            edição de ficha. O caminho até ela é que passa por aqui agora. */}
+        <Button asChild variant="outline" size="sm" className="gap-1.5">
+          <Link href="/pdi/gerenciar">
+            <Settings2 className="h-3.5 w-3.5" />
+            Gerenciar PDIs
+          </Link>
+        </Button>
       </div>
 
       {foraHoje.length > 0 && (

@@ -130,9 +130,9 @@ export default function GerenciarPdiPage() {
           </p>
         </div>
         <Button asChild variant="ghost" size="sm" className="gap-1.5">
-          <Link href="/pdi">
+          <Link href="/pessoal">
             <ArrowLeft className="h-3.5 w-3.5" />
-            Voltar ao meu PDI
+            Voltar ao Pessoal
           </Link>
         </Button>
       </div>
