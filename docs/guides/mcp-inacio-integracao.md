@@ -22,7 +22,7 @@
 | Listas cumulativas Front/Comunidade | ❌ Pendente | Precisa de feature de conectar essas planilhas como entidade |
 | Config de canal por projeto + fallback UTM-da-venda | ❌ Pendente | 39.3 restante |
 
-\* "Entregue*" = código mergeado; a **rota** responde depois do próximo deploy da API. Os itens "AO VIVO" já respondem agora porque são dados de cache que os endpoints atuais espalham. As 2 **tools novas** exigem o bundle MCP atualizado no teu gateway (Lucas providencia).
+\* "Entregue*" = código mergeado; a **rota** responde depois do próximo deploy da API. Os itens "AO VIVO" já respondem agora porque são dados de cache que os endpoints atuais espalham. As 2 **tools novas** exigem o bundle MCP atualizado no teu gateway (Lucas providencia). Como fazer isso, e como saber que o gateway está atrás da `main`, está em [`mcp-gateway.md`](./mcp-gateway.md) — esta frase sozinha já falhou uma vez: escrita em julho, o rebuild só aconteceu em 28/08.
 
 ---
 
