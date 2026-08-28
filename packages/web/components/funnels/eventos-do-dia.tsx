@@ -210,7 +210,19 @@ export function EventosDoDia({ entradas }: { entradas: CampaignLogEntry[] | unde
                 )}
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right" className="max-w-[min(340px,80vw)]">
+            <TooltipContent
+              // "top" e não "right": a coluna da data fica no começo de uma
+              // tabela larga e com rolagem horizontal, e o balão à direita
+              // abria fora do campo de visão no celular. Para cima ele fica
+              // sobre a própria tabela, que é área visível por definição.
+              side="top"
+              align="start"
+              sideOffset={6}
+              // Margem da borda da tela: sem isso o Radix encosta o balão no
+              // limite exato da viewport e o texto fica colado na borda.
+              collisionPadding={8}
+              className="max-w-[min(340px,calc(100vw-24px))]"
+            >
               <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide opacity-70">
                 {familia} · {itens.length} {itens.length === 1 ? "ação" : "ações"}
               </p>
