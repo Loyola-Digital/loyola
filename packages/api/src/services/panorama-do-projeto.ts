@@ -121,8 +121,18 @@ export interface PanoramaDoProjeto {
   campanhasOrfas: { campaignId: string; campaignName: string | null; spendCurta: number }[];
   pendencias: PendenciaDoPanorama[];
   totais: {
+    /** Só das ETAPAS. As órfãs estão em `spendOrfas`. */
     spendCurta: number;
     spendLonga: number;
+    /**
+     * QA-4420-02 — o gasto das órfãs, separado e explícito.
+     *
+     * Ele existe para que ninguém precise somar `campanhasOrfas` por fora: essa
+     * soma é derivação, e derivação na tela faz a tela divergir do que o agente
+     * reporta pela REST. `spendCurta + spendOrfas` = o gasto do PROJETO na
+     * janela curta.
+     */
+    spendOrfas: number;
     etapasNoAr: number;
     campanhasComGasto: number;
   };
@@ -586,11 +596,12 @@ export async function montarPanoramaDoProjeto(
     campanhasOrfas,
     pendencias,
     /**
-     * ⚠️ QA-4420-02: os totais são das ETAPAS. As órfãs ficam de fora — elas não
-     * pertencem a etapa nenhuma, e somá-las aqui contradiria a separação da AC4.
-     * Quem quer o gasto do PROJETO soma `campanhasOrfas` por cima; a doc declara
-     * isso, porque em silêncio o consumidor subnotifica (no BBE, ~R$ 13 em 5
-     * campanhas — valor irrelevante, sinal relevante).
+     * ⚠️ QA-4420-02: `spendCurta`/`spendLonga` são das ETAPAS. As órfãs ficam de
+     * fora — elas não pertencem a etapa nenhuma, e somá-las junto contradiria a
+     * separação da AC4. Mas ficam ao lado, em `spendOrfas`: em silêncio o
+     * consumidor subnotificaria (no BBE, ~R$ 13 em 5 campanhas — valor
+     * irrelevante, sinal relevante), e sem o campo pronto a tela teria que
+     * derivar, que é o que a AC8 da 44.21 proíbe.
      *
      * ⚠️ QA-4420-03: a soma é POR ETAPA, sem deduplicar `campaignId`. Campanha
      * vinculada a duas etapas entraria duas vezes. Medido em 27/08: 0 casos nos
@@ -606,6 +617,7 @@ export async function montarPanoramaDoProjeto(
        * ler onde não há. Ela continua na lista `etapas` e no `spend` — some da
        * conta, não do panorama.
        */
+      spendOrfas: round(campanhasOrfas.reduce((s, o) => s + o.spendCurta, 0)) ?? 0,
       etapasNoAr: etapasDoPanorama.filter((e) => e.noAr && e.familia !== null).length,
       /** Campanhas VINCULADAS com gasto na janela curta. As órfãs têm lista própria. */
       campanhasComGasto: etapasDoPanorama.reduce(

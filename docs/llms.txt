@@ -99,7 +99,7 @@ Resposta: `{ projectId, stageId, stageName, campaignIds: [..], range, partial, l
 **`pendencias[]`** — `{ stageId, codigo, mensagem, origem }`. São fatos de **configuração**, não falhas da consulta, e cada `codigo` pede uma ação diferente (`semDados` = conectar fonte · `syncPendente` = esperar o sync · `leituraFalhou` = checar permissão · `indeterminado` = a checagem falhou · `foraDaAba` = etapa fora do escopo da aba). ⚠️ `origem: "cadeia"` = apurado no backend, citável como fato; `origem: "panorama"` = conclusão desta rota (`semTetoConfiavel`, `coberturaIndisponivel`), derivada por comparação. Não cite um derivado como fato de origem.
 ⚠️ Etapa com fonte conectada e **zero venda/lead na janela** NÃO entra em `pendencias` — não é lacuna de configuração. O fato fica visível em `principal.vendasReais: 0` / `principal.leadsUnicos: 0`.
 
-**`totais`** — `{ spendCurta, spendLonga, etapasNoAr, campanhasComGasto }`. ⚠️ **São totais das ETAPAS: as órfãs NÃO entram.** Para o gasto do projeto inteiro, some `campanhasOrfas`. `campanhasComGasto` também conta só as VINCULADAS. `etapasNoAr` exclui as de `familia: null`.
+**`totais`** — `{ spendCurta, spendLonga, spendOrfas, etapasNoAr, campanhasComGasto }`. ⚠️ `spendCurta`/`spendLonga` são das **ETAPAS**; o gasto das órfãs vem separado em **`spendOrfas`**, e `spendCurta + spendOrfas` é o gasto do PROJETO na janela curta. `campanhasComGasto` conta só as VINCULADAS. `etapasNoAr` exclui as de `familia: null`.
 
 Resposta: `{ projectId, projectName, clientName, janelas, spendIncludesMetaTax, unidadeDasTaxas, etapas, campanhasOrfas, pendencias, totais }`
 
