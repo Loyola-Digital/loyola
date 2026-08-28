@@ -38,71 +38,53 @@ que julho passou batido.
 
 ## Como atualizar
 
-Na máquina onde o MCP roda (não na sua):
+**Não é no gateway.** Medido no container do Inácio (28/08):
+
+- não existe repo do Loyola X lá — o único `.git` é o workspace do agente,
+  **sem remote e sem commits**;
+- não existe `packages/mcp/dist` em uso;
+- o que roda é `/app/vendor/loyola-mcp/index.cjs`, um bundle único de ~1,1 MB
+  **assado dentro da imagem Docker** do [openclaw](https://github.com/openclaw/openclaw);
+- e não há serviço para reiniciar: o MCP é stdio, iniciado pelo cliente.
+
+O README que vive ao lado do bundle (`/app/vendor/loyola-mcp/README.md`) diz o
+procedimento real — e ele passa por **um segundo repositório**:
+
+> `index.cjs` … is baked into the Docker image … Then commit the new `index.cjs`
+> and push (the build-image workflow bakes it into the next image).
+
+### O caminho
 
 ```bash
-cd <repo no gateway>
-bash scripts/atualizar-mcp-gateway.sh
+# 1. na sua máquina, no repo do Loyola X
+bash scripts/gerar-bundle-mcp.sh
+
+# 2. no fork do openclaw
+cp <saida>.cjs <fork>/vendor/loyola-mcp/index.cjs
+git add vendor/loyola-mcp/index.cjs && git commit && git push
+
+# 3. redeploy do Inácio no Coolify (a imagem é reassada)
+# 4. reiniciar a sessão do Inácio e conferir o roster
 ```
 
-O script mostra o antes e o depois, puxa a `main`, builda e lembra do passo que
-ele não pode fazer. À mão, é isto:
+O script gera, **valida conversando MCP com o bundle** (handshake + `tools/list`)
+e só então declara pronto: contar texto não prova que o servidor sobe, e um
+bundle que não sobe tira TODAS as tools do Inácio — pior que o atraso que se
+queria corrigir.
 
-```bash
-git pull origin main
-pnpm --filter @loyola-x/mcp build
-# reiniciar QUEM INICIA o MCP — ver abaixo
-```
+### Trocar o arquivo dentro do container não dura
 
-### O "reiniciar o processo" não é um systemctl
+Funciona até o próximo deploy: a imagem traz a versão dela de volta. O
+`.bak-20260713T144717Z` ao lado do bundle em produção sugere que foi isso que
+aconteceu em julho — o que ajuda a explicar uma atualização "já feita" que, um
+mês depois, não estava mais lá.
 
-O MCP é **stdio**: não é um serviço que fica no ar, é um executável que o
-CLIENTE spawna. Quem o inicia é o Claude do Inácio, pelo `mcpServers` do config
-dele:
+### Por que isso passou batido
 
-```json
-{
-  "mcpServers": {
-    "loyola-x": {
-      "command": "node",
-      "args": ["/caminho/absoluto/loyola/packages/mcp/dist/index.js"],
-      "env": { "LOYOLA_API_BASE_URL": "...", "LOYOLA_API_KEY": "..." }
-    }
-  }
-}
-```
-
-Consequências práticas:
-
-- **build sem reiniciar o cliente não muda nada** — o processo antigo continua
-  no ar com o código velho em memória;
-- reiniciar é reiniciar a **sessão/serviço do Inácio**, não um daemon do MCP;
-- se depois do restart o roster ainda vier curto, o `args` do config aponta para
-  **outro** `dist/` — é o caminho a conferir primeiro.
-
-### Se você não sabe onde o repo está na máquina
-
-```bash
-# acha o clone do repo
-find / -maxdepth 6 -type d -name "loyola" -not -path "*/node_modules/*" 2>/dev/null
-# acha o config que registra o MCP (e revela o caminho do dist em uso)
-grep -rl "loyola-x" ~/.claude* ~/.config 2>/dev/null
-```
-
-### Conferindo
-
-```bash
-git log --oneline -1                                  # o commit que você puxou
-grep -c 'server.registerTool(' packages/mcp/src/tools.ts   # 18 hoje
-```
-
-⚠️ Use `server.registerTool(`, com o prefixo. `grep -c registerTool` sozinho
-devolve **19**: conta também a linha da função `registerTools`, que é a
-declaração, não uma tool. Um número a mais aqui manda procurar problema onde não
-tem.
-
-Depois do restart, peça ao Inácio para listar as tools. Se o `grep` der 18 e o
-roster não mostrar as novas, o processo não reiniciou — só o build não basta.
+A atualização depende de tocar **um repositório que não é o do Loyola X**, com
+um workflow de imagem no meio. Isso não estava escrito em lugar nenhum deste
+repo — o README com o procedimento vive *dentro da imagem*, ou seja, só é
+encontrado por quem já está caçando o problema.
 
 ## O check que acusa a defasagem
 
