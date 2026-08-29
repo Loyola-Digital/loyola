@@ -12,10 +12,11 @@
  * a pergunta foi entendida como se queria.
  */
 
-import { useState } from "react";
-import { AlertTriangle, Loader2, Sparkles } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { AlertTriangle, Check, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { textoDoPasso, type PassoDoAgente } from "@/lib/hooks/use-agente-de-bi";
 
 /** Perguntas de partida — tirar a tela em branco é metade do uso. */
 const EXEMPLOS = [
@@ -28,15 +29,23 @@ const EXEMPLOS = [
 export function PerguntaAoBi({
   onPerguntar,
   pensando,
+  passos,
   explicacao,
   avisos,
 }: {
   onPerguntar: (pergunta: string) => void;
   pensando: boolean;
+  passos: PassoDoAgente[];
   explicacao: string | null;
   avisos: string[];
 }) {
   const [texto, setTexto] = useState("");
+  const fim = useRef<HTMLDivElement>(null);
+
+  // A lista rola sozinha: o passo que interessa é sempre o último.
+  useEffect(() => {
+    fim.current?.scrollIntoView({ block: "nearest" });
+  }, [passos.length]);
 
   function enviar() {
     const p = texto.trim();
@@ -82,11 +91,16 @@ export function PerguntaAoBi({
         ))}
       </div>
 
-      <Button size="sm" className="w-full" onClick={enviar} disabled={pensando || texto.trim().length < 3}>
+      <Button
+        size="sm"
+        className="w-full"
+        onClick={enviar}
+        disabled={pensando || texto.trim().length < 3}
+      >
         {pensando ? (
           <>
             <Loader2 className="size-3.5 animate-spin" />
-            Montando…
+            Trabalhando…
           </>
         ) : (
           <>
@@ -95,6 +109,30 @@ export function PerguntaAoBi({
           </>
         )}
       </Button>
+
+      {passos.length > 0 && (
+        // Os passos ficam depois de pronto: são o registro do que foi feito, e
+        // é neles que se vê a IA ter corrigido a própria escolha.
+        <ol className="max-h-40 space-y-1 overflow-y-auto rounded-md bg-background px-2.5 py-2">
+          {passos.map((p, i) => {
+            const ultimo = i === passos.length - 1;
+            const emAndamento = pensando && ultimo;
+            return (
+              <li key={i} className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                {emAndamento ? (
+                  <Loader2 className="mt-0.5 size-3 shrink-0 animate-spin" />
+                ) : (
+                  <Check className="mt-0.5 size-3 shrink-0 text-emerald-600" />
+                )}
+                <span className={emAndamento ? "text-foreground" : undefined}>
+                  {textoDoPasso(p)}
+                </span>
+              </li>
+            );
+          })}
+          <div ref={fim} />
+        </ol>
+      )}
 
       {explicacao && (
         <p className="rounded-md bg-background px-2.5 py-2 text-xs text-muted-foreground">

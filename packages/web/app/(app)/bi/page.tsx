@@ -52,6 +52,7 @@ import { GaleriaDeWidgets } from "@/components/bi/galeria-de-widgets";
 import { PerguntaAoBi } from "@/components/bi/pergunta-ao-bi";
 import { WidgetConteudo } from "@/components/bi/widget-conteudo";
 import { useProjects } from "@/lib/hooks/use-projects";
+import { useAgenteDeBi } from "@/lib/hooks/use-agente-de-bi";
 import { useRefreshProgressivo } from "@/lib/hooks/use-refresh-progressivo";
 import { useSalvamentoSerializado } from "@/lib/hooks/use-salvamento-serializado";
 import {
@@ -63,7 +64,6 @@ import {
   useDuplicarDashboard,
   useInserirWidget,
   usePresetsDeBi,
-  usePerguntarAoBi,
   useRemoverWidget,
   useSalvarDashboard,
   type PresetNaGaleria,
@@ -90,8 +90,7 @@ export default function BiPage() {
   const [aApagar, setAApagar] = useState<string | null>(null);
   const [inserindo, setInserindo] = useState<string | null>(null);
   const [emEdicao, setEmEdicao] = useState<Widget | null>(null);
-  const [explicacaoDaIa, setExplicacaoDaIa] = useState<string | null>(null);
-  const [avisosDaIa, setAvisosDaIa] = useState<string[]>([]);
+
   /** `true` enquanto o widget aberto ainda não existe no servidor. */
   const [editandoNovo, setEditandoNovo] = useState(false);
 
@@ -130,7 +129,7 @@ export default function BiPage() {
   const salvar = useSalvarDashboard(projectId, dashboardId);
   const inserir = useInserirWidget(projectId, dashboardId);
   const remover = useRemoverWidget(projectId, dashboardId);
-  const perguntar = usePerguntarAoBi(projectId, dashboardId);
+  const agente = useAgenteDeBi(projectId, dashboardId);
 
   useEffect(() => {
     if (dashboard) setWidgets(dashboard.widgets);
@@ -266,21 +265,12 @@ export default function BiPage() {
     setEditandoNovo(false);
   }
 
-  async function perguntarAIa(pergunta: string) {
-    setExplicacaoDaIa(null);
-    setAvisosDaIa([]);
-    try {
-      const r = await perguntar.mutateAsync(pergunta);
-      setWidgets((atuais) => [...atuais, ...r.widgets]);
-      // Os resultados vêm junto: é vendo o número que se julga se a pergunta
-      // foi entendida como se queria.
-      setRecemInseridos((atuais) => ({ ...atuais, ...r.resultados }));
-      setExplicacaoDaIa(r.explicacao);
-      setAvisosDaIa(r.avisos);
-    } catch (erro) {
-      setExplicacaoDaIa(null);
-      setAvisosDaIa([(erro as Error)?.message ?? "Não consegui montar agora."]);
-    }
+  function perguntarAIa(pergunta: string) {
+    // Cada widget entra no canvas assim que o número dele chega — não no fim.
+    void agente.perguntar(pergunta, (widget, resultado) => {
+      setWidgets((atuais) => [...atuais, widget]);
+      setRecemInseridos((atuais) => ({ ...atuais, [widget.id]: resultado }));
+    });
   }
 
   /** Copia um widget com id novo — mesma pergunta, outro recorte. */
@@ -553,9 +543,10 @@ export default function BiPage() {
             </div>
             <PerguntaAoBi
               onPerguntar={perguntarAIa}
-              pensando={perguntar.isPending}
-              explicacao={explicacaoDaIa}
-              avisos={avisosDaIa}
+              pensando={agente.pensando}
+              passos={agente.passos}
+              explicacao={agente.explicacao}
+              avisos={agente.avisos}
             />
 
             <div className="my-3 border-t" />

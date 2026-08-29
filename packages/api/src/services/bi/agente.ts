@@ -257,11 +257,27 @@ function extrairProposta(
   return null;
 }
 
+/**
+ * Um passo do trabalho, para a tela mostrar.
+ *
+ * Existe porque "Montando…" por vinte segundos é indistinguível de travado. E
+ * porque o passo diz coisas úteis: quando a IA erra uma chave e se corrige, quem
+ * está olhando vê isso acontecer em vez de esperar em silêncio.
+ */
+export type PassoDoAgente =
+  | { tipo: "lendo" }
+  | { tipo: "pensando"; tentativa: number }
+  | { tipo: "montou"; titulo: string; grafico: string }
+  | { tipo: "corrigindo"; motivo: string }
+  | { tipo: "calculando"; titulo: string };
+
 export interface ContextoDoAgente {
   cliente: ClienteMinimo;
   modelo?: string;
   /** Geometria dos widgets que já existem, para o novo não nascer por cima. */
   ocupados: { x: number; y: number; w: number; h: number }[];
+  /** Chamado a cada passo. A rota transforma em linha NDJSON. */
+  aoProgredir?: (passo: PassoDoAgente) => void;
 }
 
 /**
@@ -350,13 +366,17 @@ export async function montarWidgets(
 ): Promise<RespostaDoAgente> {
   const sistema = `${INSTRUCOES}\n\n# Catálogo\n${catalogoEmTexto()}`;
   const conversa: Anthropic.MessageParam[] = [{ role: "user", content: pergunta }];
+  const passo = ctx.aoProgredir ?? (() => {});
 
   const avisos: string[] = [];
   let explicacao = "";
 
+  passo({ tipo: "lendo" });
+
   // Duas passadas no máximo: a segunda existe para o modelo corrigir uma chave
   // trocada, que é o erro real. Insistir além disso repete o mesmo erro.
   for (let tentativa = 0; tentativa < 2; tentativa += 1) {
+    passo({ tipo: "pensando", tentativa });
     const mensagem = await chamar(ctx, {
       model: ctx.modelo ?? "claude-sonnet-4-6",
       max_tokens: 4096,
@@ -380,6 +400,7 @@ export async function montarWidgets(
       if ("widget" in r) {
         aceitos.push(r.widget);
         ocupados.push(r.widget.geometria);
+        passo({ tipo: "montou", titulo: r.widget.titulo, grafico: r.widget.tipo });
       } else {
         recusados.push(`"${p.titulo}": ${r.erro}`);
       }
@@ -388,6 +409,7 @@ export async function montarWidgets(
     if (recusados.length === 0) return { explicacao, widgets: aceitos, avisos };
 
     if (tentativa === 0) {
+      passo({ tipo: "corrigindo", motivo: recusados[0] ?? "" });
       // A mensagem de erro vai INTEIRA para o modelo: ela nomeia o campo e o
       // motivo, que é exatamente o que ele precisa para acertar na segunda.
       conversa.push({ role: "assistant", content: mensagem.content });

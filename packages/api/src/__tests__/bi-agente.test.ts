@@ -288,3 +288,50 @@ describe("saldo esgotado — o erro mais provável, e o menos óbvio", () => {
     ).rejects.toThrow(/chat e os Minds/i);
   });
 });
+
+describe("os passos que a tela mostra", () => {
+  it("cada etapa do trabalho vira um passo, na ordem", async () => {
+    // "Montando…" por vinte segundos é indistinguível de travado.
+    const { cliente } = clienteFalso([{ explicacao: "ok", widgets: [proposta()] }]);
+    const passos: string[] = [];
+    await montarWidgets("quanto gastei?", {
+      cliente,
+      ocupados: [],
+      aoProgredir: (p) => passos.push(p.tipo),
+    });
+    expect(passos).toEqual(["lendo", "pensando", "montou"]);
+  });
+
+  it("o passo de montagem diz o título e o tipo de gráfico", async () => {
+    const { cliente } = clienteFalso([
+      { explicacao: "ok", widgets: [proposta({ titulo: "Gasto por campanha", tipo: "barra" })] },
+    ]);
+    const montou: { titulo?: string; grafico?: string }[] = [];
+    await montarWidgets("x", {
+      cliente,
+      ocupados: [],
+      aoProgredir: (p) => {
+        if (p.tipo === "montou") montou.push(p);
+      },
+    });
+    expect(montou[0]).toMatchObject({ titulo: "Gasto por campanha", grafico: "barra" });
+  });
+
+  it("a autocorreção aparece como passo, não como silêncio", async () => {
+    // Quando a IA erra uma chave e se corrige, quem está olhando precisa ver.
+    const { cliente } = clienteFalso([
+      { explicacao: "a", widgets: [proposta({ metrics: ["trafego.inventada"] })] },
+      { explicacao: "b", widgets: [proposta()] },
+    ]);
+    const passos: string[] = [];
+    await montarWidgets("x", { cliente, ocupados: [], aoProgredir: (p) => passos.push(p.tipo) });
+    expect(passos).toContain("corrigindo");
+    // E a segunda passada é anunciada como tal.
+    expect(passos.filter((p) => p === "pensando")).toHaveLength(2);
+  });
+
+  it("sem callback, nada quebra", async () => {
+    const { cliente } = clienteFalso([{ explicacao: "ok", widgets: [proposta()] }]);
+    await expect(montarWidgets("x", { cliente, ocupados: [] })).resolves.toBeTruthy();
+  });
+});
