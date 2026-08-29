@@ -1,0 +1,395 @@
+storyId: "44.18"
+storyTitle: "Criativos por ETAPA na API pública — a doc para de dar ordem impossível"
+gate: CONCERNS
+reviewer: "@qa (Quinn)"
+reviewedAt: "2026-08-29"
+branch: docs/44.18-doc-criativos-por-etapa
+commits: [20504012]
+scope: >
+  docs/llms.txt (A4.1 — a frase "Etapa primeiro"; A4.2 — receita de junção no
+  bloco `criativos`) · docs/guides/mcp-inacio-integracao.md (A4.3 — a receita;
+  A4.4 — a decisão da AC0 registrada) ·
+  docs/stories/44.18.criativos-por-etapa-na-api.md (reescrita pela AC0) ·
+  .claude/agent-memory/aiox-po/ (2 arquivos).
+  **`docs/` puro** — nenhuma linha de `packages/`. Sem AC1–AC3: descartadas pela
+  AC0 do @po em 2026-08-29 (opção A).
+
+gatesDeBuild:
+  status: NÃO SE APLICA
+  motivo: >
+    A entrega não toca código de produto. Não rodei `turbo typecheck lint
+    build` e não afirmo tê-lo rodado. O único gate executável sobre este
+    diff é o teste de contrato do `llms.txt`, e ele foi rodado.
+  testeDeContratoLlmsTxt: >
+    `packages/api/src/__tests__/llms-txt-contrato.test.ts` — **8/8 passed**
+    (vitest 4.1.0, 25,4 s). O bloco novo foi inserido DENTRO da seção
+    `### GET .../cadeia-cac`, que é a seção que este teste recorta; ele
+    continua verde.
+
+codeRabbit:
+  status: SKIPPED
+  reason: "CLI em WSL, host macOS. Nono gate seguido sem ele — lacuna de cobertura, não aprovação. Sobre diff de markdown o custo do skip é o menor de todos."
+
+summary: >
+  **A afirmação mais perigosa da story é verdadeira.** O ponto que eu vim
+  derrubar — "os dois feeds arredondam `spend` em pontos diferentes" — se
+  sustenta linha a linha: `meta-ad-daily.ts:130` faz
+  `dias.reduce((s, d) => s + (round(d.spend) ?? 0), 0)` (arredonda POR DIA e
+  soma), enquanto `/creatives` acumula os N dias do período num único
+  `MetricAgg` por `adId` (`public-meta.ts:315-345`) e arredonda **uma vez** em
+  `deriveMetrics` (`public-meta.ts:130`). Se isso fosse falso, a doc estaria
+  proibindo somar por um motivo inexistente — era o pior defeito possível aqui,
+  e não é o caso.
+
+  Conferi as demais afirmações técnicas novas contra o código, não contra a
+  story: `adIds: string[]` existe em `CriativoDaAba`
+  (`shared/cadeia-cac.ts:1031`) e é literalmente `itens.map((x) => x.adId)` do
+  grupo (`:1105`) — é o conjunto de `adId` da etapa, não uma aproximação. A
+  junção entrega mesmo tudo o que a receita promete: `cpm`, `connectRate`,
+  `purchases`, `cpa`, `roas` saem de `deriveMetrics`
+  (`public-meta.ts:143,168,136,145,146`); `campaignId/campaignName/adsetId/
+  adsetName`, `creative` (thumbnail), `igPermalinkUrl` e `adPermalinkUrl` saem
+  do `map` de `/creatives` (`public-meta.ts:361-386`). E
+  `cpm = spend ÷ impressions × 1000` é exatamente a fórmula das DUAS réguas
+  (`cadeia-cac.ts:257` e `public-meta.ts:143`), na escala certa: `spend` em BRL
+  já tributado ÷ impressões.
+
+  **Nenhuma afirmação nova é falsa.** O que segura o gate são três lacunas do
+  que a receita NÃO diz — e o público é um agente que obedece literalmente.
+
+  A mais séria é o QA-4418-02: a receita blinda o `spend` contra uma
+  divergência de **centavos** e deixa `ctr`/`cpc`/`connectRate` — que existem
+  nos dois feeds **com o mesmo nome** — desprotegidos contra uma divergência de
+  **~100× e de definição**. O `criativos.ctr` do `/cadeia-cac` é
+  `div(linkClicks, impressions)`, decimal e por clique no LINK
+  (`shared/cadeia-cac.ts:1108`, travado em teste: ≈0,0149); o `/creatives.ctr`
+  é `(clicks / impressions) * 100`, percentual e por clique TOTAL
+  (`public-meta.ts:138`). O comparável de lá chama-se `ctrLink`/`cpcLink`. A
+  receita manda cruzar os dois feeds e não diz uma palavra sobre isso.
+
+  Some-se o QA-4418-01 — o bloco novo do guia foi inserido **dentro de uma
+  tabela markdown**, órfãando a terceira linha — e o QA-4418-03 — o aviso de
+  truncamento existe no guia e **não existe no `llms.txt`**, que é o artefato
+  que o agente lê em execução.
+
+  Nada disso é FAIL: a AC4 está materialmente entregue e nenhuma frase mente.
+  Mas numa story cujo produto É a confiabilidade do texto, três correções de
+  uma linha cada ficam registradas antes de fechar.
+
+evidenciasDaRevisao:
+  arredondamentoConferidoNosDoisArquivos: >
+    `/cadeia-cac`: `meta-ad-daily.ts:128-130` — comentário "Arredondado POR DIA
+    antes de somar" + `dias.reduce((s,d) => s + (round(d.spend) ?? 0), 0)`.
+    `/creatives`: `public-meta.ts:325` `accumulate(acc, row)` sobre UM `AdAcc`
+    por `adId` (todos os dias no mesmo agregado) → `public-meta.ts:130`
+    `spend: round(a.spend) ?? 0`. **Um round por dia contra um round no fim.**
+    A afirmação da story procede.
+  adIdsEhOConjuntoDaEtapa: >
+    `agruparCriativos` monta `adIds: itens.map((x) => x.adId)`
+    (`shared/cadeia-cac.ts:1105`) sobre os brutos de
+    `carregarCriativosDaEtapa`, que filtra por
+    `inArray(metaAdInsightsDaily.campaignId, p.campaignIds)`
+    (`meta-ad-daily.ts:32`). O recorte é o das campanhas da etapa, sem perda.
+  camposDaJuncaoConferidosUmAUm: >
+    cpm `:143` · connectRate `:168` · purchases `:136` · cpa `:145` · roas
+    `:146` · campaignId/Name + adsetId/Name `:298-301` (a story cita 297-300,
+    off-by-one) · creative/thumbnail `:361` · adPermalinkUrl `:370` ·
+    igPermalinkUrl `:380` · selos `*Stale` `:374,381`. Todos existem.
+    `get_creative_timeseries` devolve `deriveMetrics` POR DIA
+    (`public-meta.ts:483`) — logo `connectRate` por dia, como a story afirma.
+  toolCortaEm200SemOffset: >
+    `packages/mcp/src/tools.ts:117` — `limit: z.coerce.number().max(200)`;
+    `grep -c offset` no arquivo inteiro = **0**. A rota aceita
+    `max(500)` + `offset` (`public-meta.ts:88,90`). A afirmação procede, e o
+    "433 criativos medidos em produção" está no comentário da 43.4
+    (`public-meta.ts:80-86`).
+  nomeRealDaTool: >
+    `packages/mcp/src/tools.ts:203` — a tool chama-se **`get_stage_cadeia_cac`**
+    (underscore). Ver QA-4418-04: a lista do `llms.txt:226` usa apelido de rota
+    para os cinco itens, não nome de tool.
+  testeDeContrato: "llms-txt-contrato.test.ts — 8/8 passed"
+  memoriaDoPo: >
+    `.claude/agent-memory/aiox-po/feedback_lacuna_alcancavel_por_juncao.md` —
+    conferida contra o código: as quatro instruções do "How to apply" são
+    verdadeiras e a contagem 9→10 campos bate.
+
+issues:
+  - id: QA-4418-01
+    severity: medium
+    category: docs
+    title: "O bloco novo foi inserido DENTRO de uma tabela markdown — a terceira linha ficou órfã"
+    file: docs/guides/mcp-inacio-integracao.md:145-161
+    story: "44.18 (A4.3, A4.4)"
+    reproduced: true
+    blocking: false
+    description: >
+      A tabela "Conclusão do laudo | O campo que responde" tem três linhas. O
+      `#### Criativos da etapa: use os dois feeds, por junção` foi inserido
+      entre a **segunda** (`:144`) e a **terceira** (`:161`), com 16 linhas de
+      texto, título `####`, lista numerada e dois parágrafos em negrito no meio.
+
+      Resultado: a linha `| Pedido de print da tela, duas vezes | o payload
+      responde sozinho |` deixou de pertencer a qualquer tabela. Sem cabeçalho
+      nem separador acima dela, o renderizador (GitHub incluso) a imprime como
+      **texto literal com pipes**, não como linha de tabela.
+
+      A perda é pequena em bytes e específica em endereço: some justamente uma
+      das três conclusões erradas do laudo que este guia existe para catalogar
+      — e some do documento que a story escreveu para ser confiável.
+
+      Não é discutível nem depende de renderizador: um bloco de nível `####`
+      encerra a tabela onde aparece.
+    suggestedFix: >
+      Mover o bloco inteiro (`:146` a `:160`) para **depois** da linha `:161`,
+      antes do parágrafo "Recompor por fora não é só retrabalho". A tabela volta
+      a ter as três linhas e o bloco não muda de sentido — ele já é uma seção
+      autônoma, com título próprio.
+
+  - id: QA-4418-02
+    severity: medium
+    category: correctness
+    title: "A receita blinda `spend` contra centavos e deixa `ctr`/`cpc`/`connectRate` desprotegidos contra ~100× — os três existem nos dois feeds com o MESMO nome"
+    file: docs/llms.txt:145-150
+    story: "44.18 (A4.2, A4.3)"
+    reproduced: true
+    blocking: false
+    description: >
+      A receita manda cruzar `/cadeia-cac` com `/creatives` por `adId` e avisa
+      sobre duas armadilhas: a unidade da LINHA (Ad Name × adId) e o
+      arredondamento do `spend`. Falta a terceira, e ela é a de maior
+      magnitude.
+
+      Os dois feeds expõem campos **homônimos** com escala e definição
+      diferentes:
+
+        campo         /cadeia-cac (criativos)          /creatives
+        ctr           div(linkClicks, impressions)     (clicks/impressions)*100
+                      decimal · clique no LINK         percentual · clique TOTAL
+        cpc           div(spend, linkClicks)           spend / clicks
+                      por clique no LINK               por clique TOTAL
+        connectRate   div(lpViews, linkClicks)         (lpViews/linkClicks)*100
+                      decimal                          percentual
+
+      Referências: `shared/cadeia-cac.ts:1108,1109` e `:260`;
+      `public-meta.ts:138,139,168`. A escala decimal do `/cadeia-cac` está
+      travada em teste — `cadeia-cac-criativos.test.ts:37` afirma
+      `ctr ≈ 1500/101000` e `toBeLessThan(0.02)`. O `llms.txt:114` declara
+      `unidadeDasTaxas: "decimal"` — mas **só dentro da seção da cadeia**; a
+      seção do `/creatives` (`:46-50`) não declara unidade nenhuma.
+
+      O consumidor é um agente que obedece literalmente. Ele acabou de ser
+      instruído a buscar a linha do `/creatives` — que traz `ctr`, `cpc` e
+      `spend` junto com o que ele foi buscar. A receita diz explicitamente
+      qual `spend` vale. Sobre `ctr` e `cpc` ela silencia, e o valor de lá é
+      ~100× o daqui, sobre outro numerador.
+
+      **É desproporcional avisar sobre centavos e calar sobre 100×** — e é
+      exatamente a classe de defeito que o Epic 44 existe para impedir: duas
+      réguas para a mesma métrica. O precedente citado na própria story é o
+      `connectRate` que ficou 18 a 35 p.p. errado por mais de um ano.
+    suggestedFix: >
+      Um item a mais na receita (llms.txt e guia), no mesmo tom dos outros:
+      "⚠️ **`ctr`, `cpc` e `connectRate` existem nos dois, e não são o mesmo
+      número.** Aqui as taxas são **decimais** (`unidadeDasTaxas`) e usam
+      clique no LINK; no `/creatives` vêm **×100** e o `ctr`/`cpc` usam cliques
+      TOTAIS — o comparável de lá é `ctrLink`/`cpcLink`. Cite sempre os desta
+      resposta; do outro feed tome só o que aqui não existe."
+
+  - id: QA-4418-03
+    severity: medium
+    category: completeness
+    title: "O aviso de truncamento está no guia e NÃO está no `llms.txt` — e o `llms.txt` nem documenta que `truncated` existe"
+    file: docs/llms.txt:145-150
+    story: "44.18 (A4.2 × A4.3)"
+    reproduced: true
+    blocking: false
+    description: >
+      A A4.3 (guia, `:158`) traz o aviso: a tool corta em 200, não expõe
+      `offset`, e "declare a limitação em vez de tratar o recorte como
+      completo". A A4.2 (`llms.txt`) — que é o contrato que o agente carrega em
+      execução — **não traz nada disso**.
+
+      E o `llms.txt` piora a lacuna por conta própria, em drift herdado da
+      Story 43.4: `:48` documenta `limit (1–200, default 50)` e `:49` descreve
+      a resposta como `{ projectId, range, campaignId, orderBy, partial,
+      lastSyncedAt, count, creatives }` — **sem `total`, `returned`, `offset`
+      nem `truncated`**, que a rota devolve desde a 43.4
+      (`public-meta.ts:415-419`).
+
+      Encadeando: o agente lê a receita nova, chama
+      `get_creative_performance(projectId)` — sem `limit`, porque a receita não
+      manda passar um; sem `campaignId`, porque o passo 1 lhe disse que
+      `adIds[]` substitui filtrar campanha —, recebe os **50 primeiros por
+      spend do PROJETO INTEIRO**, intersecta com `adIds[]` e trata o resultado
+      como o conjunto da etapa. Não há nada na doc que o mande olhar
+      `truncated`, porque a doc não diz que esse campo existe.
+
+      **É o modo de falha que a story existe para matar**: um feed de projeto
+      parcial sendo tratado como completo para uma etapa. A informação que
+      evita isso foi escrita — no arquivo que o agente não lê em execução.
+    suggestedFix: >
+      Duas correções pequenas, ambas em `docs/llms.txt`:
+      (1) levar o ⚠️ do guia para o passo 2 da receita, acrescentando o que
+      falta ali também: **peça `limit` no máximo (200 pela tool) e/ou filtre por
+      `campaignId`, usando o bloco `campanhas` da própria etapa** — isso reduz
+      o feed ao recorte e torna o truncamento improvável; se ainda vier
+      `truncated: true`, declare a limitação;
+      (2) corrigir `:49` para incluir `total`, `returned`, `offset` e
+      `truncated` na forma da resposta. O drift é da 43.4, não desta story, mas
+      é dele que a receita nova depende.
+
+  - id: QA-4418-04
+    severity: low
+    category: docs
+    title: "`cadeia-cac` na lista da família `get_stage_*` não compõe o nome real da tool (`get_stage_cadeia_cac`)"
+    file: docs/llms.txt:226
+    story: "44.18 (A4.1)"
+    reproduced: true
+    blocking: false
+    description: >
+      A hipótese de que a A4.1 trocaria uma ordem impossível por outra foi
+      investigada e **não se confirma**, mas sobra uma aresta.
+
+      A tool real é `get_stage_cadeia_cac` (`packages/mcp/src/tools.ts:203`),
+      com underscore. A frase corrigida cita `cadeia-cac`, com hífen. Quem
+      concatenar `get_stage_` + o item da lista chega a
+      `get_stage_cadeia-cac`, que não existe.
+
+      **Por que não é bloqueante:** a lista já usava apelido de ROTA para os
+      quatro itens anteriores — `stage-daily`, `leads-summary`, `survey`,
+      `sales-daily` — e nenhum deles é nome de tool (`get_stage_daily`,
+      `get_stage_leads_summary`, ...). O item novo segue a convenção que já
+      estava lá. E o próprio `llms.txt:266` mapeia
+      `get_stage_cadeia_cac(projectId, stageId, from?, to?)` → a rota, no bloco
+      de tools do fim do arquivo. O agente tem como resolver, e a lista de
+      tools do cliente MCP resolve sozinha.
+
+      Fica registrado porque o custo de remover a ambiguidade é uma palavra,
+      e o público desta frase é justamente quem não questiona a fonte.
+    suggestedFix: >
+      Citar o nome real na frase: "…, `sales-daily` e **`cadeia-cac`
+      (`get_stage_cadeia_cac`)**". Ou, se preferir uniformidade, nomear as
+      cinco tools de verdade — mas aí é edição além da AC4 e vale como story
+      própria.
+
+  - id: QA-4418-05
+    severity: low
+    category: process
+    title: "File List vazia e 6 de 7 itens do Definition of Done desmarcados, com a story em InReview"
+    file: docs/stories/44.18.criativos-por-etapa-na-api.md:365-367
+    story: "44.18 (T5)"
+    reproduced: true
+    blocking: false
+    description: >
+      O @dev registrou "AC4 entregue" no Change Log e marcou T5 `[x]`, mas
+      `## 📂 File List` continua com `_A preencher pelo @dev._` e o Definition
+      of Done tem só o item da AC0 marcado — inclusive o item
+      "**AC4 entregue**", que é o objeto da entrega.
+
+      Não é lacuna de entrega: o commit `20504012` prova quais arquivos
+      mudaram, e cada item do DoD foi verificado nesta revisão. É escrituração,
+      e a story é o registro que sobrevive ao commit.
+
+      ⚠️ Um dos itens do DoD é `turbo typecheck lint build` limpo. **Ele não
+      foi rodado nesta revisão e eu não o marco.** Sobre diff exclusivamente
+      `.md` ele é vácuo — mas quem marcar tem de tê-lo rodado, não presumido.
+    suggestedFix: >
+      @dev preenche a File List com os 5 arquivos do commit e marca os itens do
+      DoD que conferir — os cinco de conteúdo estão verificados neste gate; o
+      do `turbo` exige rodar.
+
+  - id: QA-4418-06
+    severity: low
+    category: docs
+    title: "A story fixa `llms.txt:220` em seis pontos e a linha virou 226 depois da própria edição"
+    file: docs/stories/44.18.criativos-por-etapa-na-api.md
+    story: "44.18"
+    reproduced: true
+    blocking: false
+    description: >
+      O @po corrigiu as referências em 29/08 (`payload:684`→`694`,
+      `llms.txt:144`→`220`) e as duas estavam certas **naquele instante**. A
+      entrega do @dev acrescentou 6 linhas acima da frase, e ela é hoje a
+      `:226`. As seções narrativas da story falam no presente
+      ("`llms.txt:220` continua listando…"), então leem como afirmação atual.
+
+      Conferi as demais referências, uma a uma, e o saldo é bom:
+      `payload:694` ✅ (`criativos,`) · `shared:1026-1041` ✅ (a interface
+      inteira) · `shared:1061` ✅ (`normalizarNomeDeCriativo`) · `shared:1076`
+      ✅ (`agruparCriativos`) · `meta-ad-daily:27` ✅ · `:68` ✅ (o comentário
+      do imposto, exato) · `:30-33` ✅ · `public-meta:130` ✅ · `:168` ✅ ·
+      `:87-91` ✅ · `inacio-panorama-diario.md:121` ✅.
+
+      Duas ficaram a ±1–3 linhas, sem prejuízo do sentido:
+      `public-meta:297-300` (o bloco é `:298-301`) e `meta-ad-daily:126-128`
+      (aponta o começo do `return`; o `round` por dia é a `:130`).
+
+      É a terceira story seguida em que referência de linha envelhece dentro do
+      próprio ciclo — já existe memória do @po sobre isso
+      (`feedback_line_refs_drift.md`).
+    suggestedFix: >
+      Onde a referência precisa sobreviver, ancorar por conteúdo em vez de por
+      número ("a frase **Etapa primeiro** em `docs/llms.txt`"). Em referência
+      histórica, marcar o instante ("`:220` **antes desta entrega**").
+
+acs:
+  AC0: >
+    DECIDIDA E BEM FUNDAMENTADA — a decisão (A) foi reverificada, não aceita.
+    Os cinco campos são mesmo alcançáveis: CPM é conta (fórmula idêntica nas
+    duas réguas), e Connect Rate, purchases/CPA/ROAS, campanha/adset e
+    thumbnail/permalink existem em `deriveMetrics`/`/creatives`, a uma junção
+    por `adId` de distância. O argumento de custo também procede: a tool corta
+    em 200 e não tem `offset`, prova de que artefato MCP deriva sem dono.
+  AC1: "DESCARTADA pela AC0 — nada a revisar. O registro de que ela não era executável (CriativoBruto tem 6 campos) confere: `meta-ad-daily.ts:123-140` devolve `adId, adName, spend, impressions, linkClicks, views3s, p75` e descarta o resto do `accumulate`."
+  AC2: "DESCARTADA — mas o aprendizado migrou para a A4.2 item 4, e **é verdadeiro**. Conferido nos dois arquivos (ver `evidenciasDaRevisao`)."
+  AC3: "DESCARTADA — o aprendizado migrou para a A4.2 item 3, e está correto: `/cadeia-cac` agrupa por nome normalizado (`shared:1076`), `/creatives` responde por `adId`. A instrução 'expandir `adIds[]` antes de somar' é suficiente para a CONTAGEM. Não cobre a escala das taxas — QA-4418-02."
+  A4.1: >
+    ENTREGUE — `cadeia-cac` entrou na lista e a frase agora diz, na mesma
+    sentença, que criativos da etapa vêm dali. A ordem impossível acabou:
+    antes a família não oferecia criativo nenhum. Ressalva de nome em
+    QA-4418-04 (low).
+  A4.2: >
+    ENTREGUE COM RESSALVA — os 4 pontos exigidos estão lá, na ordem, e os
+    quatro são verdadeiros. O 5º ponto que o @dev acrescentou (CPM é conta;
+    `roas`/`cpa` de lá são de PIXEL) **não é escopo extra**: as Dev Notes da
+    própria story obrigam a rotular o ROAS como de pixel na receita, e a
+    afirmação é coerente com `llms.txt:230`. Aprovado. Faltam a armadilha de
+    escala (QA-4418-02) e o aviso de truncamento (QA-4418-03).
+  A4.3: >
+    ENTREGUE COM DEFEITO DE INSERÇÃO — a receita está no guia, mais completa
+    que a do `llms.txt` (tem o aviso de truncamento). Mas o bloco quebrou a
+    tabela onde foi inserido: QA-4418-01.
+  A4.4: >
+    ENTREGUE — a decisão está datada, atribuída (44.18, AC0, 2026-08-29) e
+    nomeia `get_stage_creative_performance` explicitamente, o que faz a busca
+    de quem for reabrir cair na resposta. O `llms.txt:145` reforça no outro
+    arquivo ("não existe rota de criativo por etapa — não peça uma"). Cumpre o
+    fim da AC.
+    ⚠️ O item do DoD "nenhuma menção a `get_stage_creative_performance`" está
+    tecnicamente violado pela letra e cumprido pelo espírito: a menção é uma
+    **negação nomeada**, que é o que torna a decisão localizável. Considerado
+    conforme.
+
+veracidadeDasAfirmacoesNovas:
+  arredondamentoEmPontosDiferentes: "VERDADEIRA — conferida nos dois arquivos"
+  adIdsEhORecorteAutoritativo: "VERDADEIRA"
+  juncaoEntregaOsCincoCampos: "VERDADEIRA — cada campo localizado em public-meta.ts"
+  cpmPorSpendDivImpressionsVezes1000: "VERDADEIRA — mesma fórmula das duas réguas, escala correta"
+  roasCpaDeLaSaoDePixel: "VERDADEIRA — coerente com llms.txt:230 e com o comentário do deriveMetrics"
+  toolCortaEm200SemOffset: "VERDADEIRA — max(200) e grep -c offset = 0"
+  unidadeDiferenteNasDuasPontas: "VERDADEIRA para a LINHA (nome × adId); INCOMPLETA para a ESCALA das taxas — QA-4418-02"
+  nenhumaPromessaDeToolInexistente: "CONFIRMADO — a única menção a `get_stage_creative_performance` é para negá-la"
+
+proximaAcao: >
+  **Débito aberto, não bloqueante.** QA-4418-01, 02 e 03 são três edições de
+  uma a duas linhas cada, todas em `docs/`, todas com o texto sugerido pronto
+  acima. Cabem numa passada do @dev nesta mesma branch, antes do PR — é o
+  momento mais barato, porque depois viram story.
+
+  QA-4418-04 e 06 ficam como débito conhecido (low). QA-4418-05 é escrituração
+  do @dev na story.
+
+  ⚠️ Se as três medium NÃO forem corrigidas antes do merge, a doc entra em
+  produção instruindo uma junção que pode produzir CTR ~100× errado sem
+  nenhum aviso, num arquivo cujo consumidor declarado não questiona a fonte.
+  A recomendação é corrigir agora.
