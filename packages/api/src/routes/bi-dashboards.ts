@@ -32,6 +32,7 @@ import {
   type ContextoDoDashboard,
   type Slicer,
 } from "../services/bi/contexto.js";
+import { montarWidgets } from "../services/bi/agente.js";
 import { aplicarDerivadas, validarDerivadas } from "../services/bi/derivadas.js";
 import { comPeriodo, preset } from "../services/bi/presets.js";
 import { ErroDeQuery, executarQuery, type ResultadoDaQuery } from "../services/bi/query.js";
@@ -576,7 +577,18 @@ export default fp(async function biDashboardsRoutes(fastify) {
     const { widgets } = widgetsGuardados(linha.widgets);
     const ctx = contextoDe(linha, sobreposicao.data);
 
+    // `hijack` ANTES de escrever: a partir daqui o Fastify não toca mais na
+    // resposta, e é este handler que fala com o socket.
+    reply.hijack();
+
+    // Os headers que o Fastify já tinha acumulado precisam ir JUNTO.
+    //
+    // Escrever direto no socket pula o `onSend`, que é onde o `@fastify/cors`
+    // põe o `Access-Control-Allow-Origin`. Sem esta cópia a resposta sai 200 e o
+    // navegador a descarta por CORS — um erro que não aparece em teste de
+    // servidor nem em log de aplicação, só no console de quem está usando.
     reply.raw.writeHead(200, {
+      ...(reply.getHeaders() as Record<string, number | string | string[]>),
       "Content-Type": "application/x-ndjson; charset=utf-8",
       "Cache-Control": "no-store",
       // Sem isto o proxy segura tudo e entrega no fim — o que anularia a
@@ -617,7 +629,74 @@ export default fp(async function biDashboardsRoutes(fastify) {
 
     if (!cancelado) escrever({ tipo: "fim" });
     reply.raw.end();
-    // `hijack` para o Fastify não tentar serializar uma resposta que já saiu.
-    return reply.hijack();
+  });
+
+  /**
+   * Monta widget a partir de uma pergunta em português.
+   *
+   * O modelo escolhe chaves do catálogo; o `validarSpec`/`planejar` de sempre
+   * decide o que entra. Uma chave inventada vira aviso, nunca consulta.
+   */
+  fastify.post("/api/projects/:projectId/bi/dashboards/:id/agente", async (request, reply) => {
+    const p = paramsComIdSchema.safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!(await temAcesso(p.data.projectId, request.userId!, request.userRole!))) {
+      return reply.code(404).send({ error: "Projeto não encontrado" });
+    }
+
+    const corpo = z
+      .object({ pergunta: z.string().min(3).max(1000) })
+      .safeParse(request.body);
+    if (!corpo.success) {
+      return reply.code(400).send({ error: "Escreva a pergunta com pelo menos 3 caracteres." });
+    }
+
+    const linha = await carregar(p.data.projectId, p.data.id);
+    if (!linha) return reply.code(404).send({ error: "Dashboard não encontrado" });
+
+    const { widgets } = widgetsGuardados(linha.widgets);
+    if (widgets.length >= LIMITE_DE_WIDGETS) {
+      return reply
+        .code(400)
+        .send({ error: `Um dashboard cabe até ${LIMITE_DE_WIDGETS} widgets. Divida em dois.` });
+    }
+
+    let resposta;
+    try {
+      resposta = await montarWidgets(corpo.data.pergunta, {
+        cliente: fastify.claude.client,
+        ocupados: widgets.map((w) => w.geometria),
+      });
+    } catch (erro) {
+      fastify.log.error({ erro }, "agente de BI falhou");
+      return reply.code(502).send({ error: "A IA não respondeu agora. Tente de novo." });
+    }
+
+    // Cabe o que sobra: o teto vale igual para quem pede à IA.
+    const cabem = resposta.widgets.slice(0, LIMITE_DE_WIDGETS - widgets.length);
+    const avisos = [...resposta.avisos];
+    if (cabem.length < resposta.widgets.length) {
+      avisos.push(`Só coube ${cabem.length} widget(s): o dashboard está perto do limite.`);
+    }
+
+    if (cabem.length > 0) {
+      await fastify.db
+        .update(biDashboards)
+        .set({ widgets: [...widgets, ...cabem], updatedAt: new Date() })
+        .where(eq(biDashboards.id, p.data.id));
+    }
+
+    // Os resultados voltam junto: o widget que a IA montou nasce preenchido, e
+    // é vendo o número que a pessoa julga se a pergunta foi bem entendida.
+    const ctx = contextoDe(linha);
+    const alcance = await escopoDe(linha, request.userId!, request.userRole!);
+    const resultados = await executarEmLotes(cabem, alcance, ctx);
+
+    return {
+      explicacao: resposta.explicacao,
+      widgets: cabem,
+      resultados,
+      avisos,
+    };
   });
 });

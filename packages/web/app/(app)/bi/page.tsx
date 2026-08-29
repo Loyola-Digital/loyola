@@ -15,10 +15,12 @@ import {
   Globe,
   LayoutDashboard,
   Loader2,
+  Copy as CopyIcon,
+  Lock,
+  LockOpen,
   Pencil,
   Plus,
   RefreshCw,
-  Settings2,
   Trash2,
   Building2,
   X,
@@ -47,6 +49,7 @@ import { BarraDeFiltros } from "@/components/bi/barra-de-filtros";
 import { BiCanvas } from "@/components/bi/bi-canvas";
 import { EditorDeWidget } from "@/components/bi/editor-de-widget";
 import { GaleriaDeWidgets } from "@/components/bi/galeria-de-widgets";
+import { PerguntaAoBi } from "@/components/bi/pergunta-ao-bi";
 import { WidgetConteudo } from "@/components/bi/widget-conteudo";
 import { useProjects } from "@/lib/hooks/use-projects";
 import { useRefreshProgressivo } from "@/lib/hooks/use-refresh-progressivo";
@@ -60,6 +63,7 @@ import {
   useDuplicarDashboard,
   useInserirWidget,
   usePresetsDeBi,
+  usePerguntarAoBi,
   useRemoverWidget,
   useSalvarDashboard,
   type PresetNaGaleria,
@@ -74,11 +78,20 @@ export default function BiPage() {
   const { data: projetos, isLoading: carregandoProjetos } = useProjects();
   const [projectId, setProjectId] = useState<string | null>(null);
   const [dashboardId, setDashboardId] = useState<string | null>(null);
-  const [organizando, setOrganizando] = useState(false);
+  /**
+   * O layout começa DESTRAVADO.
+   *
+   * O arrasto acontece só pelo cabeçalho do card, então mexer sem querer é
+   * difícil — e esconder "arrastar" e "remover" atrás de um modo fazia parecer
+   * que o dashboard não era editável.
+   */
+  const [layoutTravado, setLayoutTravado] = useState(false);
   const [galeriaAberta, setGaleriaAberta] = useState(false);
   const [aApagar, setAApagar] = useState<string | null>(null);
   const [inserindo, setInserindo] = useState<string | null>(null);
   const [emEdicao, setEmEdicao] = useState<Widget | null>(null);
+  const [explicacaoDaIa, setExplicacaoDaIa] = useState<string | null>(null);
+  const [avisosDaIa, setAvisosDaIa] = useState<string[]>([]);
   /** `true` enquanto o widget aberto ainda não existe no servidor. */
   const [editandoNovo, setEditandoNovo] = useState(false);
 
@@ -117,6 +130,7 @@ export default function BiPage() {
   const salvar = useSalvarDashboard(projectId, dashboardId);
   const inserir = useInserirWidget(projectId, dashboardId);
   const remover = useRemoverWidget(projectId, dashboardId);
+  const perguntar = usePerguntarAoBi(projectId, dashboardId);
 
   useEffect(() => {
     if (dashboard) setWidgets(dashboard.widgets);
@@ -252,6 +266,47 @@ export default function BiPage() {
     setEditandoNovo(false);
   }
 
+  async function perguntarAIa(pergunta: string) {
+    setExplicacaoDaIa(null);
+    setAvisosDaIa([]);
+    try {
+      const r = await perguntar.mutateAsync(pergunta);
+      setWidgets((atuais) => [...atuais, ...r.widgets]);
+      // Os resultados vêm junto: é vendo o número que se julga se a pergunta
+      // foi entendida como se queria.
+      setRecemInseridos((atuais) => ({ ...atuais, ...r.resultados }));
+      setExplicacaoDaIa(r.explicacao);
+      setAvisosDaIa(r.avisos);
+    } catch (erro) {
+      setExplicacaoDaIa(null);
+      setAvisosDaIa([(erro as Error)?.message ?? "Não consegui montar agora."]);
+    }
+  }
+
+  /** Copia um widget com id novo — mesma pergunta, outro recorte. */
+  async function duplicarWidget(w: Widget) {
+    const copia: Widget = {
+      ...w,
+      id: `novo-${Date.now()}`,
+      titulo: `${w.titulo} (cópia)`.slice(0, 120),
+      geometria: { ...w.geometria, y: w.geometria.y + w.geometria.h },
+    };
+    const { widget, resultado } = await inserir.mutateAsync({
+      widget: {
+        tipo: copia.tipo,
+        titulo: copia.titulo,
+        spec: copia.spec,
+        specsExtras: copia.specsExtras,
+        derivadas: copia.derivadas,
+        mergeKey: copia.mergeKey,
+        geometria: copia.geometria,
+        opcoes: copia.opcoes,
+      },
+    });
+    setWidgets((atuais) => [...atuais, widget]);
+    setRecemInseridos((atuais) => ({ ...atuais, [widget.id]: resultado }));
+  }
+
   async function removerWidget(id: string) {
     setWidgets((atuais) => atuais.filter((w) => w.id !== id));
     try {
@@ -324,13 +379,18 @@ export default function BiPage() {
             Atualizar
           </Button>
           <Button
-            variant={organizando ? "default" : "outline"}
+            variant={layoutTravado ? "secondary" : "outline"}
             size="sm"
-            onClick={() => setOrganizando((v) => !v)}
+            onClick={() => setLayoutTravado((v) => !v)}
             disabled={!dashboardId}
+            title={
+              layoutTravado
+                ? "O layout está travado — clique para poder arrastar"
+                : "Arraste os cards pelo cabeçalho. Clique para travar."
+            }
           >
-            <Settings2 className="size-3.5" />
-            {organizando ? "Concluir" : "Organizar"}
+            {layoutTravado ? <Lock className="size-3.5" /> : <LockOpen className="size-3.5" />}
+            {layoutTravado ? "Layout travado" : "Layout livre"}
           </Button>
           <Button
             size="sm"
@@ -414,7 +474,7 @@ export default function BiPage() {
             <BiCanvas
               widgets={widgets}
               onGeometriaMudou={aoMudarGeometria}
-              layoutTravado={!organizando}
+              layoutTravado={layoutTravado}
               renderWidget={(w) => (
                 <WidgetConteudo
                   widget={w}
@@ -422,33 +482,45 @@ export default function BiPage() {
                   carregando={calculando && !resultados[w.id]}
                 />
               )}
-              renderAcoes={(w) =>
-                organizando ? (
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="size-6 p-0"
-                      onClick={() => {
-                        setEditandoNovo(false);
-                        setEmEdicao(w);
-                      }}
-                      aria-label={`Editar ${w.titulo}`}
-                    >
-                      <Pencil className="size-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="size-6 p-0"
-                      onClick={() => removerWidget(w.id)}
-                      aria-label={`Remover ${w.titulo}`}
-                    >
-                      <X className="size-3.5" />
-                    </Button>
-                  </>
-                ) : null
-              }
+              // As ações ficam SEMPRE disponíveis: esconder "remover" atrás de
+              // um modo faz parecer que o widget não sai mais de lá.
+              renderAcoes={(w) => (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="size-6 p-0"
+                    onClick={() => {
+                      setEditandoNovo(false);
+                      setEmEdicao(w);
+                    }}
+                    aria-label={`Editar ${w.titulo}`}
+                    title="Editar"
+                  >
+                    <Pencil className="size-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="size-6 p-0"
+                    onClick={() => duplicarWidget(w)}
+                    aria-label={`Duplicar ${w.titulo}`}
+                    title="Duplicar"
+                  >
+                    <CopyIcon className="size-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="size-6 p-0 text-destructive"
+                    onClick={() => removerWidget(w.id)}
+                    aria-label={`Remover ${w.titulo}`}
+                    title="Remover"
+                  >
+                    <X className="size-3.5" />
+                  </Button>
+                </>
+              )}
               vazio={
                 <div className="rounded-xl border border-dashed p-10 text-center">
                   <p className="text-sm font-medium">Dashboard vazio</p>
@@ -479,6 +551,15 @@ export default function BiPage() {
                 <X className="size-3.5" />
               </Button>
             </div>
+            <PerguntaAoBi
+              onPerguntar={perguntarAIa}
+              pensando={perguntar.isPending}
+              explicacao={explicacaoDaIa}
+              avisos={avisosDaIa}
+            />
+
+            <div className="my-3 border-t" />
+
             <GaleriaDeWidgets
               presets={presets?.presets ?? []}
               onInserir={inserirPreset}

@@ -178,3 +178,25 @@ export function useRemoverWidget(projectId: string | null, id: string | null) {
       ),
   });
 }
+
+/**
+ * Pergunta em português; a resposta traz os widgets já montados e calculados.
+ *
+ * O servidor valida a escolha da IA contra o catálogo antes de salvar — o que
+ * chega aqui já passou pelo mesmo gate do editor.
+ */
+export function usePerguntarAoBi(projectId: string | null, id: string | null) {
+  const apiClient = useApiClient();
+  return useMutation({
+    mutationFn: (pergunta: string) =>
+      apiClient<{
+        explicacao: string;
+        widgets: Widget[];
+        resultados: Record<string, ResultadoDoWidget>;
+        avisos: string[];
+      }>(`/api/projects/${projectId}/bi/dashboards/${id}/agente`, {
+        method: "POST",
+        body: JSON.stringify({ pergunta }),
+      }),
+  });
+}
