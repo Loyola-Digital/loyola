@@ -3148,9 +3148,9 @@ export const swipeFiles = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     title: varchar("title", { length: 200 }).notNull(),
     notes: text("notes"),
-    /** image | video | link — define o que renderizar no card e no lightbox. */
+    /** image | video | pdf | link — define o que renderizar no card e no lightbox. */
     assetKind: varchar("asset_kind", { length: 10 })
-      .$type<"image" | "video" | "link">()
+      .$type<"image" | "video" | "pdf" | "link">()
       .notNull(),
 
     fileUrl: text("file_url"),
