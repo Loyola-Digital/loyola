@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Copy,
+  Globe,
   LayoutDashboard,
   Loader2,
   Pencil,
@@ -19,6 +20,7 @@ import {
   RefreshCw,
   Settings2,
   Trash2,
+  Building2,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -104,6 +106,7 @@ export default function BiPage() {
     carregando: calculando,
     pendentes,
     periodo: periodoEmVigor,
+    projetosNoEscopo,
     pedir,
     atualizarAgora,
   } = useRefreshProgressivo(projectId, dashboardId);
@@ -154,6 +157,20 @@ export default function BiPage() {
   function aplicarSlicers(novos: { field: string; values: string[] }[]) {
     salvar.mutate({ slicers: novos });
     pedir({ dateRange: dashboard?.dateRange, slicers: novos });
+  }
+
+  /**
+   * Alterna entre um projeto e todos.
+   *
+   * `atualizarAgora` em vez de `pedir`: trocar o escopo muda o significado de
+   * todo número da tela, e esperar 500 ms deixaria o painel mostrando o recorte
+   * antigo com o rótulo novo.
+   */
+  async function alternarEscopo() {
+    if (!dashboard) return;
+    const novo = dashboard.escopo === "todos" ? "projeto" : "todos";
+    await salvar.mutateAsync({ escopo: novo });
+    void atualizarAgora({});
   }
 
   async function inserirPreset(preset: PresetNaGaleria) {
@@ -333,6 +350,26 @@ export default function BiPage() {
             onChange={(e) => salvar.mutate({ nome: e.target.value })}
             className="h-8 w-[260px] text-sm"
           />
+          <Button
+            variant={dashboard.escopo === "todos" ? "secondary" : "outline"}
+            size="sm"
+            onClick={alternarEscopo}
+            title={
+              dashboard.escopo === "todos"
+                ? "Somando todos os projetos que você enxerga"
+                : `Somando só os funis de ${projetos?.find((p) => p.id === projectId)?.name ?? "este projeto"}`
+            }
+          >
+            {dashboard.escopo === "todos" ? (
+              <Globe className="size-3.5" />
+            ) : (
+              <Building2 className="size-3.5" />
+            )}
+            {dashboard.escopo === "todos"
+              ? `Todos os projetos${projetosNoEscopo > 1 ? ` (${projetosNoEscopo})` : ""}`
+              : "Este projeto"}
+          </Button>
+
           {pendentes > 0 && (
             <span className="text-xs text-muted-foreground">
               carregando {pendentes} widget(s)…

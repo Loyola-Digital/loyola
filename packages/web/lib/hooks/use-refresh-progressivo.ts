@@ -24,7 +24,13 @@ export interface ContextoPedido {
 }
 
 type LinhaNdjson =
-  | { tipo: "inicio"; total: number; periodo: { start: string; end: string } }
+  | {
+      tipo: "inicio";
+      total: number;
+      periodo: { start: string; end: string };
+      /** Quantos projetos entraram — a tela diz isso no escopo consolidado. */
+      projetosNoEscopo: number;
+    }
   | { tipo: "widget"; widgetId: string; resultado: ResultadoDoWidget }
   | { tipo: "fim" };
 
@@ -34,6 +40,7 @@ export function useRefreshProgressivo(projectId: string | null, dashboardId: str
   const [carregando, setCarregando] = useState(false);
   const [pendentes, setPendentes] = useState(0);
   const [periodo, setPeriodo] = useState<{ start: string; end: string } | null>(null);
+  const [projetosNoEscopo, setProjetosNoEscopo] = useState(0);
 
   // O endereço muda quando o dashboard muda; a função de executar precisa ver
   // sempre o valor atual sem recriar o controle (o que reiniciaria o debounce).
@@ -72,6 +79,7 @@ export function useRefreshProgressivo(projectId: string | null, dashboardId: str
             if (linha.tipo === "inicio") {
               setPendentes(linha.total);
               setPeriodo(linha.periodo);
+              setProjetosNoEscopo(linha.projetosNoEscopo ?? 1);
             } else if (linha.tipo === "widget") {
               setResultados((atuais) => ({ ...atuais, [linha.widgetId]: linha.resultado }));
               setPendentes((n) => Math.max(0, n - 1));
@@ -109,6 +117,7 @@ export function useRefreshProgressivo(projectId: string | null, dashboardId: str
     carregando,
     pendentes,
     periodo,
+    projetosNoEscopo,
     /** Troca de filtro: entra pelo debounce. */
     pedir: controle.pedir,
     /** Botão de atualizar: dispara na hora. */

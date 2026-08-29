@@ -115,7 +115,7 @@ describe("T2 · os operadores traduzem", () => {
           "trafego.campaign": { operator: op, value: valorDe[op] ?? "bbe" },
         },
       }),
-      { db, projectId: PROJETO },
+      { db, projectIds: [PROJETO] },
     );
     expect(texto(visto.where as SQL).sql).toContain("campaign_name");
   });
@@ -130,7 +130,7 @@ describe("T2 · os operadores traduzem", () => {
             "trafego.campaign": { operator: "$in", value: [] },
           },
         }),
-        { db, projectId: PROJETO },
+        { db, projectIds: [PROJETO] },
       ),
     ).rejects.toThrow(/lista vazia/i);
   });
@@ -140,7 +140,7 @@ describe("T2 · os operadores traduzem", () => {
     await expect(
       executarQuery(
         spec({ filters: { "trafego.date": { operator: "$between", value: ["2026-08-01"] } } }),
-        { db, projectId: PROJETO },
+        { db, projectIds: [PROJETO] },
       ),
     ).rejects.toThrow(/dois valores/i);
   });
@@ -150,7 +150,7 @@ describe("T3 · campo desconhecido para antes do SQL", () => {
   it("métrica fora do catálogo é recusada sem tocar no db", async () => {
     const { db, visto } = dbFalso();
     await expect(
-      executarQuery(spec({ metrics: ["trafego.senha_do_admin"] }), { db, projectId: PROJETO }),
+      executarQuery(spec({ metrics: ["trafego.senha_do_admin"] }), { db, projectIds: [PROJETO] }),
     ).rejects.toThrow(/desconhecido/i);
     expect(visto.selecao).toBeUndefined();
   });
@@ -221,7 +221,7 @@ describe("T4 · valor de filtro nunca vira SQL", () => {
           "trafego.campaign": { operator: "$eq", value: ataque },
         },
       }),
-      { db, projectId: PROJETO },
+      { db, projectIds: [PROJETO] },
     );
     const q = texto(visto.where as SQL);
     expect(q.sql).not.toContain("DROP TABLE");
@@ -237,7 +237,7 @@ describe("T4 · valor de filtro nunca vira SQL", () => {
           "trafego.campaign": { operator: "$ncontains", value: "teste" },
         },
       }),
-      { db, projectId: PROJETO },
+      { db, projectIds: [PROJETO] },
     );
     const q = texto(visto.where as SQL);
     expect(q.params).toContain("%teste%");
@@ -246,7 +246,7 @@ describe("T4 · valor de filtro nunca vira SQL", () => {
 
   it("o projeto entra sempre, mesmo sem filtro pedido", async () => {
     const { db, visto } = dbFalso();
-    await executarQuery(spec(), { db, projectId: PROJETO });
+    await executarQuery(spec(), { db, projectIds: [PROJETO] });
     expect(texto(visto.where as SQL).params).toContain(PROJETO);
   });
 });
@@ -266,7 +266,7 @@ describe("T5 · sem denominador o resultado é null", () => {
     ]);
     const r = await executarQuery(
       spec({ metrics: ["trafego.cpm"], dimensions: ["trafego.campaign"] }),
-      { db, projectId: PROJETO },
+      { db, projectIds: [PROJETO] },
     );
     expect(r.rows[0]!["trafego.cpm"]).toBeNull();
     expect(r.rows[1]!["trafego.cpm"]).toBe(2);
@@ -277,13 +277,13 @@ describe("T5 · sem denominador o resultado é null", () => {
     // CPM do período é 2. A média das razões daria ~5,6, que é um número que não
     // existe em lugar nenhum.
     const { db } = dbFalso([{ "trafego.spend": "20", "trafego.impressions": "10000" }]);
-    const r = await executarQuery(spec({ metrics: ["trafego.cpm"] }), { db, projectId: PROJETO });
+    const r = await executarQuery(spec({ metrics: ["trafego.cpm"] }), { db, projectIds: [PROJETO] });
     expect(r.rows[0]!["trafego.cpm"]).toBe(2);
   });
 
   it("a métrica base ausente vira 0, não null — zero gasto é zero mesmo", async () => {
     const { db } = dbFalso([{ "trafego.spend": null }]);
-    const r = await executarQuery(spec(), { db, projectId: PROJETO });
+    const r = await executarQuery(spec(), { db, projectIds: [PROJETO] });
     expect(r.rows[0]!["trafego.spend"]).toBe(0);
   });
 });
@@ -293,7 +293,7 @@ describe("T6 · limite", () => {
     const { db, limit } = dbFalso([{ "trafego.campaign": "x", "trafego.spend": "1" }]);
     const r = await executarQuery(spec({ dimensions: ["trafego.campaign"], limit: 99_999 }), {
       db,
-      projectId: PROJETO,
+      projectIds: [PROJETO],
     });
     expect(limit).toHaveBeenCalledWith(TETO_DE_LINHAS);
     expect(r.avisos.join(" ")).toMatch(/passa do teto/i);
@@ -307,7 +307,7 @@ describe("T6 · limite", () => {
     const { db, limit } = dbFalso(linhas);
     const r = await executarQuery(spec({ dimensions: ["trafego.campaign"], limit: 3 }), {
       db,
-      projectId: PROJETO,
+      projectIds: [PROJETO],
     });
     expect(limit).toHaveBeenCalledWith(3);
     expect(r.avisos.join(" ")).toMatch(/cortado/i);
@@ -315,7 +315,7 @@ describe("T6 · limite", () => {
 
   it("sem dimensão não há group by — é uma linha só", async () => {
     const { db, visto, limit } = dbFalso([{ "trafego.spend": "10" }]);
-    await executarQuery(spec(), { db, projectId: PROJETO });
+    await executarQuery(spec(), { db, projectIds: [PROJETO] });
     expect(visto.groupBy).toBeUndefined();
     expect(limit).toHaveBeenCalledWith(1);
   });
@@ -324,7 +324,7 @@ describe("T6 · limite", () => {
 describe("T7 · granularidade de data", () => {
   it("day não trunca", async () => {
     const { db, visto } = dbFalso();
-    await executarQuery(spec({ dimensions: ["trafego.date"] }), { db, projectId: PROJETO });
+    await executarQuery(spec({ dimensions: ["trafego.date"] }), { db, projectIds: [PROJETO] });
     expect(texto((visto.groupBy as SQL[])[0]!).sql).not.toContain("date_trunc");
   });
 
@@ -332,7 +332,7 @@ describe("T7 · granularidade de data", () => {
     const { db, visto } = dbFalso();
     await executarQuery(spec({ dimensions: ["trafego.date"], date_granularity: g }), {
       db,
-      projectId: PROJETO,
+      projectIds: [PROJETO],
     });
     const q = texto((visto.groupBy as SQL[])[0]!);
     expect(q.sql).toContain("date_trunc");
@@ -347,7 +347,7 @@ describe("T7 · granularidade de data", () => {
     const { db, visto } = dbFalso();
     await executarQuery(spec({ dimensions: ["trafego.campaign"], date_granularity: "month" }), {
       db,
-      projectId: PROJETO,
+      projectIds: [PROJETO],
     });
     expect(texto((visto.groupBy as SQL[])[0]!).sql).not.toContain("date_trunc");
   });
@@ -362,7 +362,7 @@ describe("ordenação", () => {
         dimensions: ["trafego.campaign"],
         order_by: [{ field: "trafego.cpm", direction: "desc" }],
       }),
-      { db, projectId: PROJETO },
+      { db, projectIds: [PROJETO] },
     );
     const q = texto((visto.orderBy as SQL[])[0]!);
     expect(q.sql).toContain("NULLIF");
@@ -373,7 +373,7 @@ describe("ordenação", () => {
     const { db, visto } = dbFalso();
     await executarQuery(spec({ metrics: ["trafego.spend"], dimensions: ["trafego.campaign"] }), {
       db,
-      projectId: PROJETO,
+      projectIds: [PROJETO],
     });
     expect(texto((visto.orderBy as SQL[])[0]!).sql).toContain("spend");
   });
@@ -384,7 +384,7 @@ describe("resultado", () => {
     const { db } = dbFalso([{ "trafego.campaign": "x", "trafego.spend": "1" }]);
     const r = await executarQuery(spec({ dimensions: ["trafego.campaign"] }), {
       db,
-      projectId: PROJETO,
+      projectIds: [PROJETO],
     });
     expect(r.columns.map((c) => c.key)).toEqual(["trafego.campaign", "trafego.spend"]);
     expect(r.columns[0]!.label).toBeTruthy();
@@ -407,7 +407,7 @@ describe("as outras entidades do banco", () => {
         metrics: ["vendas.revenue", "vendas.ticket_por_venda"],
         filters: { "vendas.date": { operator: "$between", value: ["2026-08-01", "2026-08-26"] } },
       }),
-      { db, projectId: PROJETO },
+      { db, projectIds: [PROJETO] },
     );
     const q = texto(visto.where as SQL);
     expect(q.sql).toContain("funnel_stages");
@@ -424,7 +424,7 @@ describe("as outras entidades do banco", () => {
         dimensions: ["vendas.date"],
         filters: { "vendas.date": { operator: "$between", value: ["2026-08-01", "2026-08-26"] } },
       }),
-      { db, projectId: PROJETO },
+      { db, projectIds: [PROJETO] },
     );
     const q = texto((visto.groupBy as SQL[])[0]!);
     expect(q.sql).toContain("AT TIME ZONE");
@@ -444,7 +444,7 @@ describe("as outras entidades do banco", () => {
         metrics: ["vendas.count"],
         filters: { "vendas.date": { operator: "$between", value: ["2026-08-01", "2026-08-26"] } },
       }),
-      { db, projectId: PROJETO },
+      { db, projectIds: [PROJETO] },
     );
     expect(texto(visto.where as SQL).sql).toContain("AT TIME ZONE");
   });
@@ -457,9 +457,79 @@ describe("as outras entidades do banco", () => {
         metrics: ["grupos.participantes"],
         filters: { "grupos.date": { operator: "$gte", value: "2026-08-01" } },
       }),
-      { db, projectId: PROJETO },
+      { db, projectIds: [PROJETO] },
     );
     expect(texto(visto.where as SQL).sql).toContain("funnels");
     expect(r.rows[0]!["grupos.participantes"]).toBe(820);
+  });
+});
+
+describe("escopo consolidado", () => {
+  const OUTRO = "22222222-3333-4444-5555-666666666666";
+
+  it("mais de um projeto entra na MESMA condição de escopo", async () => {
+    const { db, visto } = dbFalso();
+    await executarQuery(spec(), { db, projectIds: [PROJETO, OUTRO] });
+    const q = texto(visto.where as SQL);
+    expect(q.params).toContain(PROJETO);
+    expect(q.params).toContain(OUTRO);
+  });
+
+  it("a lista de projetos entra parametrizada, nunca colada no SQL", async () => {
+    // O escopo é a única coisa que separa um projeto do outro: se ela virasse
+    // texto concatenado, seria o pior lugar possível para uma injeção.
+    const { db, visto } = dbFalso();
+    await executarQuery(spec(), { db, projectIds: [PROJETO, OUTRO] });
+    expect(texto(visto.where as SQL).sql).not.toContain(PROJETO);
+  });
+
+  it("vendas e grupos também aceitam a lista, pelo caminho do funil", async () => {
+    for (const entity of ["vendas", "grupos"] as const) {
+      const { db, visto } = dbFalso();
+      await executarQuery(
+        querySpecSchema.parse({
+          entity,
+          metrics: [entity === "vendas" ? "vendas.count" : "grupos.participantes"],
+          filters: { [`${entity}.date`]: { operator: "$gte", value: "2026-08-01" } },
+        }),
+        { db, projectIds: [PROJETO, OUTRO] },
+      );
+      const q = texto(visto.where as SQL);
+      expect(q.params).toContain(OUTRO);
+      expect(q.sql).toMatch(/IN \(/);
+    }
+  });
+
+  it("a dimensão Projeto existe nas entidades de banco e sai como nome", async () => {
+    for (const [entity, metrica] of [
+      ["trafego", "trafego.spend"],
+      ["vendas", "vendas.count"],
+      ["grupos", "grupos.participantes"],
+    ] as const) {
+      const { db, visto } = dbFalso();
+      await executarQuery(
+        querySpecSchema.parse({
+          entity,
+          metrics: [metrica],
+          dimensions: [`${entity}.projeto`],
+          filters: { [`${entity}.date`]: { operator: "$gte", value: "2026-08-01" } },
+        }),
+        { db, projectIds: [PROJETO] },
+      );
+      const q = texto((visto.groupBy as SQL[])[0]!);
+      // Subconsulta escalar, não join: o executor monta consulta de uma tabela.
+      expect(q.sql.toLowerCase()).toContain("select");
+      expect(q.sql.toLowerCase()).toContain("name");
+    }
+  });
+
+  it("agrupar por projeto num escopo de um projeto só não é erro — é uma linha", async () => {
+    const { db } = dbFalso([{ "trafego.projeto": "BBE", "trafego.spend": "10" }]);
+    const r = await executarQuery(
+      spec({ dimensions: ["trafego.projeto"] }),
+      { db, projectIds: [PROJETO] },
+    );
+    expect(r.rows).toHaveLength(1);
+    expect(r.columns[0]!.label).toBe("Projeto");
   });
 });

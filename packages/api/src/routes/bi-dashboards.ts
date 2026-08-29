@@ -39,9 +39,13 @@ import { ErroDeQuery, executarQuery, type ResultadoDaQuery } from "../services/b
 const paramsSchema = z.object({ projectId: z.string().uuid() });
 const paramsComIdSchema = paramsSchema.extend({ id: z.string().uuid() });
 
+/** `projeto` = só o daqui; `todos` = todos os que quem olha enxerga. */
+const escopoSchema = z.enum(["projeto", "todos"]);
+
 const criarSchema = z.object({
   nome: z.string().min(1).max(200).default("Novo dashboard"),
   dateRange: dateRangeSchema.optional(),
+  escopo: escopoSchema.optional(),
 });
 
 /**
@@ -56,6 +60,7 @@ const patchSchema = z
     dateRange: dateRangeSchema.optional(),
     widgets: z.array(widgetSchema).optional(),
     slicers: z.array(slicerSchema).max(20).optional(),
+    escopo: escopoSchema.optional(),
   })
   .strict();
 
@@ -97,6 +102,38 @@ export default fp(async function biDashboardsRoutes(fastify) {
     return Boolean(membro);
   }
 
+  /**
+   * Os projetos que a consulta pode ler.
+   *
+   * Sai da SESSÃO, nunca do documento: um dashboard salvo com escopo `todos` não
+   * pode virar uma forma de ver projeto que a pessoa não enxerga. Admin vê
+   * todos; os demais, só onde são membros.
+   */
+  async function projetosVisiveis(userId: string, userRole: string): Promise<string[]> {
+    if (userRole === "admin") {
+      const todos = await fastify.db.select({ id: projects.id }).from(projects);
+      return todos.map((p) => p.id);
+    }
+    const meus = await fastify.db
+      .select({ id: projectMembers.projectId })
+      .from(projectMembers)
+      .where(eq(projectMembers.userId, userId));
+    return meus.map((m) => m.id);
+  }
+
+  /** A lista de projetos que este dashboard consulta, dado quem está olhando. */
+  async function escopoDe(
+    linha: typeof biDashboards.$inferSelect,
+    userId: string,
+    userRole: string,
+  ): Promise<string[]> {
+    if (linha.escopo !== "todos") return [linha.projectId];
+    const visiveis = await projetosVisiveis(userId, userRole);
+    // O projeto de origem sempre entra: quem consegue abrir o dashboard já
+    // provou acesso a ele.
+    return visiveis.includes(linha.projectId) ? visiveis : [...visiveis, linha.projectId];
+  }
+
   function paraApi(linha: typeof biDashboards.$inferSelect) {
     const { widgets, ilegiveis } = widgetsGuardados(linha.widgets);
     const dateRange = linha.dateRange as DateRange;
@@ -113,6 +150,7 @@ export default fp(async function biDashboardsRoutes(fastify) {
       // chegue num dia diferente do servidor por causa do fuso do navegador.
       periodo: resolverPeriodo(dateRange),
       slicers: slicersGuardados(linha.slicers),
+      escopo: linha.escopo === "todos" ? ("todos" as const) : ("projeto" as const),
       createdBy: linha.createdBy,
       createdAt: linha.createdAt.toISOString(),
       updatedAt: linha.updatedAt.toISOString(),
@@ -161,6 +199,7 @@ export default fp(async function biDashboardsRoutes(fastify) {
         nome: corpo.data.nome,
         widgets: [],
         dateRange: corpo.data.dateRange ?? { preset: "last_30d" },
+        escopo: corpo.data.escopo ?? "projeto",
         createdBy: request.userId ?? null,
       })
       .returning();
@@ -220,6 +259,7 @@ export default fp(async function biDashboardsRoutes(fastify) {
         ...(campos.dateRange !== undefined ? { dateRange: campos.dateRange } : {}),
         ...(campos.widgets !== undefined ? { widgets: campos.widgets } : {}),
         ...(campos.slicers !== undefined ? { slicers: campos.slicers } : {}),
+        ...(campos.escopo !== undefined ? { escopo: campos.escopo } : {}),
         updatedAt: new Date(),
       })
       .where(eq(biDashboards.id, p.data.id))
@@ -250,6 +290,7 @@ export default fp(async function biDashboardsRoutes(fastify) {
         widgets: duplicarWidgets(widgets),
         dateRange: linha.dateRange,
         slicers: linha.slicers,
+        escopo: linha.escopo,
         createdBy: request.userId ?? null,
       })
       .returning();
@@ -294,7 +335,7 @@ export default fp(async function biDashboardsRoutes(fastify) {
    */
   async function executarWidget(
     widget: Widget,
-    projectId: string,
+    projectIds: string[],
     ctx: ContextoDoDashboard,
   ): Promise<ResultadoDoWidget> {
     try {
@@ -307,7 +348,7 @@ export default fp(async function biDashboardsRoutes(fastify) {
         resultados.push(
           await executarQuery(preparada.spec, {
             db: fastify.db as never,
-            projectId,
+            projectIds,
             log: fastify.log,
           }),
         );
@@ -327,7 +368,7 @@ export default fp(async function biDashboardsRoutes(fastify) {
 
   async function executarEmLotes(
     widgets: Widget[],
-    projectId: string,
+    projectIds: string[],
     ctx: ContextoDoDashboard,
     tamanhoDoLote = 6,
   ): Promise<Record<string, ResultadoDoWidget>> {
@@ -336,7 +377,7 @@ export default fp(async function biDashboardsRoutes(fastify) {
       const lote = widgets.slice(i, i + tamanhoDoLote);
       await Promise.all(
         lote.map(async (w) => {
-          saida[w.id] = await executarWidget(w, projectId, ctx);
+          saida[w.id] = await executarWidget(w, projectIds, ctx);
         }),
       );
     }
@@ -451,7 +492,7 @@ export default fp(async function biDashboardsRoutes(fastify) {
     try {
       resultado = await executarQuery(novo.spec, {
         db: fastify.db as never,
-        projectId: p.data.projectId,
+        projectIds: await escopoDe(linha, request.userId!, request.userRole!),
         log: fastify.log,
       });
     } catch (erro) {
@@ -503,7 +544,12 @@ export default fp(async function biDashboardsRoutes(fastify) {
 
     const { widgets } = widgetsGuardados(linha.widgets);
     const ctx = contextoDe(linha, sobreposicao.data);
-    return { resultados: await executarEmLotes(widgets, p.data.projectId, ctx), periodo: ctx.periodo };
+    const alcance = await escopoDe(linha, request.userId!, request.userRole!);
+    return {
+      resultados: await executarEmLotes(widgets, alcance, ctx),
+      periodo: ctx.periodo,
+      projetosNoEscopo: alcance.length,
+    };
   });
 
   /**
@@ -544,7 +590,13 @@ export default fp(async function biDashboardsRoutes(fastify) {
 
     // O cabeçalho vem primeiro: a tela precisa do período resolvido antes do
     // primeiro widget, para já rotular o eixo.
-    escrever({ tipo: "inicio", total: widgets.length, periodo: ctx.periodo });
+    const alcance = await escopoDe(linha, request.userId!, request.userRole!);
+    escrever({
+      tipo: "inicio",
+      total: widgets.length,
+      periodo: ctx.periodo,
+      projetosNoEscopo: alcance.length,
+    });
 
     let cancelado = false;
     request.raw.on("close", () => {
@@ -557,7 +609,7 @@ export default fp(async function biDashboardsRoutes(fastify) {
       const lote = widgets.slice(i, i + LOTE);
       await Promise.all(
         lote.map(async (w) => {
-          const resultado = await executarWidget(w, p.data.projectId, ctx);
+          const resultado = await executarWidget(w, alcance, ctx);
           if (!cancelado) escrever({ tipo: "widget", widgetId: w.id, resultado });
         }),
       );

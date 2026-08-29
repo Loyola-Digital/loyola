@@ -229,6 +229,52 @@ export const PRESETS: Preset[] = [
     }),
   },
 
+  // ---------- Consolidado: só fazem sentido no escopo de todos os projetos ----------
+  {
+    id: "investimento_por_projeto",
+    nome: "Investimento por projeto",
+    descricao: "Quanto cada projeto consumiu de mídia no período",
+    categoria: "Consolidado",
+    tipo: "barra",
+    spec: spec("trafego", ["trafego.spend"], ["trafego.projeto"], {
+      order_by: [{ field: "trafego.spend", direction: "desc" }],
+      limit: 30,
+    }),
+  },
+  {
+    id: "receita_por_projeto",
+    nome: "Receita por projeto",
+    descricao: "Quanto cada projeto faturou no período",
+    categoria: "Consolidado",
+    tipo: "barra",
+    spec: spec("vendas", ["vendas.revenue", "vendas.count"], ["vendas.projeto"], {
+      order_by: [{ field: "vendas.revenue", direction: "desc" }],
+      limit: 30,
+    }),
+  },
+  {
+    id: "aplicacoes_por_projeto",
+    nome: "Aplicações por projeto",
+    descricao: "Quantas pessoas se aplicaram em cada projeto",
+    categoria: "Consolidado",
+    tipo: "barra",
+    spec: spec("aplicacoes", ["aplicacoes.count"], ["aplicacoes.projeto"], {
+      order_by: [{ field: "aplicacoes.count", direction: "desc" }],
+      limit: 30,
+    }),
+  },
+  {
+    id: "participantes_por_projeto",
+    nome: "Participantes por projeto",
+    descricao: "O tamanho dos grupos de cada projeto",
+    categoria: "Consolidado",
+    tipo: "barra",
+    spec: spec("grupos", ["grupos.participantes"], ["grupos.projeto"], {
+      order_by: [{ field: "grupos.participantes", direction: "desc" }],
+      limit: 30,
+    }),
+  },
+
   // ---------- Ainda bloqueados, e o motivo aparece na galeria ----------
   {
     id: "aplicacoes_periodo",

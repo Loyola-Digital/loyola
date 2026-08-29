@@ -17,7 +17,7 @@
  */
 
 import { eq } from "drizzle-orm";
-import { funnels } from "../../db/schema.js";
+import { funnels, projects } from "../../db/schema.js";
 import { carregarLinhasBrutas } from "../application-sheets.js";
 import { ErroDeQuery, type QuerySpec } from "./query.js";
 
@@ -32,6 +32,8 @@ export interface AplicacaoNormalizada {
   date: string;
   /** Origem já classificada — o mesmo vocabulário do resto do app. */
   origem: string;
+  /** Nome do projeto de onde a planilha veio, para o escopo consolidado. */
+  projeto: string;
 }
 
 interface Entrada {
@@ -114,10 +116,11 @@ export function dataParaIso(bruto: string): string | null {
   return null;
 }
 
-/** Normaliza as linhas de uma planilha em `{date, origem}`. */
+/** Normaliza as linhas de uma planilha em `{date, origem, projeto}`. */
 export function normalizar(
   linhas: Record<string, string>[],
   colunas: string[],
+  projeto = "",
 ): { linhas: AplicacaoNormalizada[]; avisos: string[] } {
   const avisos: string[] = [];
   const colunaData = acharCabecalho(colunas, CABECALHOS_DE_DATA);
@@ -147,7 +150,7 @@ export function normalizar(
     const bruta = (colunaOrigem ? linha[colunaOrigem] : "")?.trim() ?? "";
     // "sem origem" e não string vazia: o grupo precisa de nome para aparecer na
     // legenda do gráfico em vez de virar uma fatia anônima.
-    saida.push({ date, origem: bruta || "sem origem" });
+    saida.push({ date, origem: bruta || "sem origem", projeto });
   }
 
   if (semData > 0) {
@@ -168,45 +171,78 @@ type Fastify = {
   log: { warn: (o: unknown, m: string) => void };
 };
 
-/** Carrega e normaliza as aplicações de todos os funis do projeto. */
+/**
+ * Carrega e normaliza as aplicações de todos os funis dos projetos pedidos.
+ *
+ * O cache é por PROJETO, não pela lista: no escopo consolidado a lista muda
+ * conforme quem olha, e uma chave composta faria cada pessoa reler as mesmas
+ * abas do zero.
+ */
 export async function carregarAplicacoes(
   fastify: Fastify,
-  projectId: string,
+  projectIds: string[],
 ): Promise<{ linhas: AplicacaoNormalizada[]; avisos: string[] }> {
-  const guardado = cache.get(projectId);
-  if (guardado && Date.now() - guardado.em < VALIDADE_DO_CACHE_MS) {
-    return { linhas: guardado.linhas, avisos: guardado.avisos };
-  }
-
-  const db = fastify.db as {
-    select: (f: unknown) => { from: (t: unknown) => { where: (c: unknown) => Promise<{ id: string }[]> } };
-  };
-  const doProjeto = await db
-    .select({ id: funnels.id })
-    .from(funnels)
-    .where(eq(funnels.projectId, projectId));
-
   const linhas: AplicacaoNormalizada[] = [];
   const avisos = new Set<string>();
 
-  for (const funil of doProjeto) {
-    const bruto = await carregarLinhasBrutas(fastify as never, funil.id);
-    if (bruto.semPlanilha) continue;
-    const r = normalizar(bruto.linhas, bruto.colunas);
-    linhas.push(...r.linhas);
-    r.avisos.forEach((a) => avisos.add(a));
+  for (const projectId of projectIds) {
+    const guardado = cache.get(projectId);
+    if (guardado && Date.now() - guardado.em < VALIDADE_DO_CACHE_MS) {
+      linhas.push(...guardado.linhas);
+      guardado.avisos.forEach((a) => avisos.add(a));
+      continue;
+    }
+
+    const doProjeto = await funisComNome(fastify, projectId);
+    const doCache: AplicacaoNormalizada[] = [];
+    const avisosDoProjeto = new Set<string>();
+
+    for (const funil of doProjeto) {
+      const bruto = await carregarLinhasBrutas(fastify as never, funil.id);
+      if (bruto.semPlanilha) continue;
+      const r = normalizar(bruto.linhas, bruto.colunas, funil.projeto);
+      doCache.push(...r.linhas);
+      r.avisos.forEach((a) => avisosDoProjeto.add(a));
+    }
+
+    cache.set(projectId, { em: Date.now(), linhas: doCache, avisos: [...avisosDoProjeto] });
+    linhas.push(...doCache);
+    avisosDoProjeto.forEach((a) => avisos.add(a));
   }
 
-  const resultado = { linhas, avisos: [...avisos] };
-  cache.set(projectId, { em: Date.now(), ...resultado });
-  return resultado;
+  return { linhas, avisos: [...avisos] };
+}
+
+/** Os funis do projeto, já com o nome do projeto para a dimensão consolidada. */
+async function funisComNome(
+  fastify: Fastify,
+  projectId: string,
+): Promise<{ id: string; projeto: string }[]> {
+  const db = fastify.db as {
+    select: (f: unknown) => {
+      from: (t: unknown) => {
+        innerJoin: (t: unknown, c: unknown) => {
+          where: (c: unknown) => Promise<{ id: string; projeto: string }[]>;
+        };
+      };
+    };
+  };
+  return db
+    .select({ id: funnels.id, projeto: projects.name })
+    .from(funnels)
+    .innerJoin(projects, eq(projects.id, funnels.projectId))
+    .where(eq(funnels.projectId, projectId));
 }
 
 // ============================================================
 // Execução
 // ============================================================
 
-const CAMPO = { "aplicacoes.date": "date", "aplicacoes.origem": "origem" } as const;
+const CAMPO = {
+  "aplicacoes.date": "date",
+  "aplicacoes.origem": "origem",
+  "aplicacoes.projeto": "projeto",
+} as const;
 
 /** Aplica um filtro do spec sobre um valor de texto já normalizado. */
 function passa(valor: string, filtro: QuerySpec["filters"][string]): boolean {
@@ -345,10 +381,15 @@ export function executarSobreLinhas(
     rows = rows.slice(0, limite);
   }
 
+  const ROTULO: Record<string, string> = {
+    "aplicacoes.date": "Data da aplicação",
+    "aplicacoes.origem": "Origem",
+    "aplicacoes.projeto": "Projeto",
+  };
   const columns = [
     ...spec.dimensions.map((d) => ({
       key: d,
-      label: d === "aplicacoes.date" ? "Data da aplicação" : "Origem",
+      label: ROTULO[d] ?? d,
       semanticType: d === "aplicacoes.date" ? "date" : "text",
     })),
     { key: "aplicacoes.count", label: "Aplicações", semanticType: "number" },

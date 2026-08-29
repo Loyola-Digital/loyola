@@ -113,7 +113,9 @@ export function useSalvarDashboard(projectId: string | null, id: string | null) 
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (patch: Partial<Pick<Dashboard, "nome" | "widgets" | "dateRange" | "slicers">>) =>
+    mutationFn: (
+      patch: Partial<Pick<Dashboard, "nome" | "widgets" | "dateRange" | "slicers" | "escopo">>,
+    ) =>
       apiClient<Dashboard>(`/api/projects/${projectId}/bi/dashboards/${id}`, {
         method: "PUT",
         body: JSON.stringify(patch),
