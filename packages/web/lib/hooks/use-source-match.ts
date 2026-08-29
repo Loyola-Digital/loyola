@@ -56,15 +56,31 @@ export interface RespostaDoDiagnostico {
   regras: RegraDeOrigem[];
 }
 
-function base(projectId: string, funnelId: string, stageId: string) {
-  return `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/source-match`;
+/**
+ * As regras de origem são do PROJETO.
+ *
+ * O `utm_source` "instagram" significa a mesma coisa em qualquer funil e em
+ * qualquer etapa — classificar por etapa fazia a captação e a venda poderem
+ * discordar sobre a mesma pessoa.
+ *
+ * O `funnelId` continua existindo, mas só para ESTREITAR o diagnóstico: dá para
+ * olhar um funil de cada vez sem que a regra criada valha só para ele.
+ */
+function base(projectId: string) {
+  return `/api/projects/${projectId}/source-match`;
 }
 
-export function useDiagnosticoDeOrigem(projectId: string, funnelId: string, stageId: string) {
+/** `?funnelId=` quando se quer olhar um funil só. */
+function escopo(funnelId?: string) {
+  return funnelId ? `?funnelId=${encodeURIComponent(funnelId)}` : "";
+}
+
+export function useDiagnosticoDeOrigem(projectId: string, funnelId?: string) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["source-match", "diagnostico", projectId, funnelId, stageId],
-    queryFn: () => apiClient<RespostaDoDiagnostico>(`${base(projectId, funnelId, stageId)}/diagnostico`),
+    queryKey: ["source-match", "diagnostico", projectId, funnelId ?? "todos"],
+    queryFn: () =>
+      apiClient<RespostaDoDiagnostico>(`${base(projectId)}/diagnostico${escopo(funnelId)}`),
     // A planilha é lida a cada chamada: um staleTime curto evita releitura a
     // cada foco de janela sem deixar o número velho na tela.
     staleTime: 2 * 60 * 1000,
@@ -73,16 +89,17 @@ export function useDiagnosticoDeOrigem(projectId: string, funnelId: string, stag
 
 export function useOrfasPorCampo(
   projectId: string,
-  funnelId: string,
-  stageId: string,
+  funnelId: string | undefined,
   campo: string | null,
 ) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["source-match", "orfas", projectId, funnelId, stageId, campo],
+    queryKey: ["source-match", "orfas", projectId, funnelId ?? "todos", campo],
     queryFn: () =>
       apiClient<{ grupos: GrupoDeOrfaos[] }>(
-        `${base(projectId, funnelId, stageId)}/orfas?campo=${encodeURIComponent(campo ?? "")}`,
+        `${base(projectId)}/orfas?campo=${encodeURIComponent(campo ?? "")}${
+          funnelId ? `&funnelId=${encodeURIComponent(funnelId)}` : ""
+        }`,
       ),
     enabled: !!campo,
     staleTime: 2 * 60 * 1000,
@@ -98,12 +115,12 @@ export interface EntradaDeRegra {
   ativa?: boolean;
 }
 
-export function useCriarRegras(projectId: string, funnelId: string, stageId: string) {
+export function useCriarRegras(projectId: string) {
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (regras: EntradaDeRegra | EntradaDeRegra[]) =>
-      apiClient<{ regras: RegraDeOrigem[] }>(`${base(projectId, funnelId, stageId)}/regras`, {
+      apiClient<{ regras: RegraDeOrigem[] }>(`${base(projectId)}/regras`, {
         method: "POST",
         body: JSON.stringify(regras),
       }),
@@ -111,12 +128,12 @@ export function useCriarRegras(projectId: string, funnelId: string, stageId: str
   });
 }
 
-export function useAtualizarRegra(projectId: string, funnelId: string, stageId: string) {
+export function useAtualizarRegra(projectId: string) {
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, dados }: { id: string; dados: Partial<EntradaDeRegra> }) =>
-      apiClient<{ regra: RegraDeOrigem }>(`${base(projectId, funnelId, stageId)}/regras/${id}`, {
+      apiClient<{ regra: RegraDeOrigem }>(`${base(projectId)}/regras/${id}`, {
         method: "PUT",
         body: JSON.stringify(dados),
       }),
@@ -124,12 +141,12 @@ export function useAtualizarRegra(projectId: string, funnelId: string, stageId: 
   });
 }
 
-export function useRemoverRegra(projectId: string, funnelId: string, stageId: string) {
+export function useRemoverRegra(projectId: string) {
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      apiClient<void>(`${base(projectId, funnelId, stageId)}/regras/${id}`, { method: "DELETE" }),
+      apiClient<void>(`${base(projectId)}/regras/${id}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["source-match"] }),
   });
 }

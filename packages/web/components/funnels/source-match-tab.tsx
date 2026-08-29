@@ -21,6 +21,7 @@ import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
+  Globe,
   Loader2,
   Sparkles,
   Trash2,
@@ -161,23 +162,28 @@ function Veredito({ d }: { d: DiagnosticoDeOrigem }) {
 export function SourceMatchTab({
   projectId,
   funnelId,
-  stageId,
 }: {
   projectId: string;
   funnelId: string;
-  stageId: string;
+  /** Mantido pela chamada existente; a regra não é mais por etapa. */
+  stageId?: string;
 }) {
-  const { data, isLoading } = useDiagnosticoDeOrigem(projectId, funnelId, stageId);
+  /**
+   * Por padrão a tela olha o PROJETO inteiro.
+   *
+   * É onde a regra vale, então é onde ela precisa ser decidida: classificar
+   * olhando um funil só levaria a criar a mesma regra várias vezes, sem saber
+   * que a primeira já resolvia as outras.
+   */
+  const [soEsteFunil, setSoEsteFunil] = useState(false);
+  const escopo = soEsteFunil ? funnelId : undefined;
+
+  const { data, isLoading } = useDiagnosticoDeOrigem(projectId, escopo);
   const [campo, setCampo] = useState<string | null>(null);
-  const { data: orfas, isFetching: buscandoOrfas } = useOrfasPorCampo(
-    projectId,
-    funnelId,
-    stageId,
-    campo,
-  );
-  const criar = useCriarRegras(projectId, funnelId, stageId);
-  const atualizar = useAtualizarRegra(projectId, funnelId, stageId);
-  const remover = useRemoverRegra(projectId, funnelId, stageId);
+  const { data: orfas, isFetching: buscandoOrfas } = useOrfasPorCampo(projectId, escopo, campo);
+  const criar = useCriarRegras(projectId);
+  const atualizar = useAtualizarRegra(projectId);
+  const remover = useRemoverRegra(projectId);
 
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [tipo, setTipo] = useState<"pago" | "organico">("organico");
@@ -242,6 +248,29 @@ export function SourceMatchTab({
 
   return (
     <div className="space-y-6">
+      {/* 0. O escopo — a informação mais importante da tela */}
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2">
+        <Globe className="size-4 shrink-0 text-amber-600" />
+        <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+          A regra que você criar aqui vale para{" "}
+          <span className="font-medium text-foreground">o projeto inteiro</span> — todos os funis,
+          todas as etapas, e também no BI. O <code>utm_source</code> &quot;instagram&quot; é o mesmo
+          em qualquer lugar.
+        </p>
+        <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs">
+          <input
+            type="checkbox"
+            checked={soEsteFunil}
+            onChange={(e) => {
+              setSoEsteFunil(e.target.checked);
+              setSelecionados(new Set());
+            }}
+            className="size-3.5 accent-amber-600"
+          />
+          Analisar só este funil
+        </label>
+      </div>
+
       {/* 1. O quadro */}
       {d && (
         <div className="space-y-3">
@@ -253,7 +282,7 @@ export function SourceMatchTab({
               rotulo="Recuperadas"
               valor={d.recuperadas}
               tom={d.recuperadas > 0 ? "bom" : undefined}
-              ajuda="por regra daqui"
+              ajuda="por regra do projeto"
             />
             <Numero
               rotulo="Sem origem"

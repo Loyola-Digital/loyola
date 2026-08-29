@@ -265,6 +265,72 @@ export interface ContextoDoAgente {
 }
 
 /**
+ * Falha na conversa com o modelo, com o motivo preservado.
+ *
+ * A primeira versão engolia o erro e devolvia "a IA não respondeu, tente de
+ * novo" — que não distingue sobrecarga de chave errada, e deixa quem está
+ * olhando sem ação possível. O `motivo` sobe até a tela.
+ */
+export class ErroDoAgente extends Error {
+  constructor(
+    message: string,
+    /** Status HTTP da API, quando houver. */
+    public readonly status?: number,
+  ) {
+    super(message);
+    this.name = "ErroDoAgente";
+  }
+}
+
+/** Espera entre tentativas quando a API está sobrecarregada. */
+const ESPERA_MS = [400, 1200];
+
+function ehTemporario(erro: unknown): boolean {
+  const status = (erro as { status?: number })?.status;
+  // 429 (limite) e 5xx (sobrecarga) passam sozinhos; o resto, não.
+  return status === 429 || (typeof status === "number" && status >= 500);
+}
+
+function motivoLegivel(erro: unknown): string {
+  const e = erro as { status?: number; message?: string };
+  if (e?.status === 401 || e?.status === 403) {
+    return "A chave da API de IA foi recusada. Verifique a configuração do servidor.";
+  }
+  if (e?.status === 429) return "A IA está no limite de uso agora. Tente em alguns segundos.";
+  if (e?.status === 404) {
+    return "O modelo configurado não existe ou não está liberado para esta chave.";
+  }
+  if (typeof e?.status === "number" && e.status >= 500) {
+    return "A IA está sobrecarregada. Tente de novo em instantes.";
+  }
+  return e?.message ? `Falha ao falar com a IA: ${e.message}` : "Falha ao falar com a IA.";
+}
+
+/**
+ * Uma chamada ao modelo, com repetição só do que é temporário.
+ *
+ * Sobrecarga e limite de uso passam sozinhos e merecem uma segunda chance;
+ * chave errada e modelo inexistente, não — repetir só atrasa a mensagem que
+ * resolve.
+ */
+async function chamar(
+  ctx: ContextoDoAgente,
+  params: Anthropic.MessageCreateParamsNonStreaming,
+): Promise<Anthropic.Message> {
+  let ultimo: unknown;
+  for (let tentativa = 0; tentativa <= ESPERA_MS.length; tentativa += 1) {
+    try {
+      return await ctx.cliente.messages.create(params);
+    } catch (erro) {
+      ultimo = erro;
+      if (!ehTemporario(erro) || tentativa === ESPERA_MS.length) break;
+      await new Promise((r) => setTimeout(r, ESPERA_MS[tentativa]));
+    }
+  }
+  throw new ErroDoAgente(motivoLegivel(ultimo), (ultimo as { status?: number })?.status);
+}
+
+/**
  * Interpreta a pergunta e devolve widgets já validados.
  *
  * Nunca lança por culpa do modelo: pergunta impossível vira explicação e lista
@@ -283,7 +349,7 @@ export async function montarWidgets(
   // Duas passadas no máximo: a segunda existe para o modelo corrigir uma chave
   // trocada, que é o erro real. Insistir além disso repete o mesmo erro.
   for (let tentativa = 0; tentativa < 2; tentativa += 1) {
-    const mensagem = await ctx.cliente.messages.create({
+    const mensagem = await chamar(ctx, {
       model: ctx.modelo ?? "claude-sonnet-4-6",
       max_tokens: 4096,
       system: sistema,

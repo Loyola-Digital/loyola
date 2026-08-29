@@ -19,6 +19,8 @@
 import { eq } from "drizzle-orm";
 import { funnels, projects } from "../../db/schema.js";
 import { carregarLinhasBrutas } from "../application-sheets.js";
+import { origemDaLinha, regrasDoProjeto } from "../source-rules-store.js";
+import type { RegraDeOrigem } from "../source-rules.js";
 import { ErroDeQuery, type QuerySpec } from "./query.js";
 
 /** Teto de linhas da entidade de planilha — menor que o do banco, de propósito. */
@@ -116,11 +118,18 @@ export function dataParaIso(bruto: string): string | null {
   return null;
 }
 
-/** Normaliza as linhas de uma planilha em `{date, origem, projeto}`. */
+/**
+ * Normaliza as linhas de uma planilha em `{date, origem, projeto}`.
+ *
+ * As regras de origem do projeto entram AQUI, e não numa tela: é o que faz a
+ * classificação feita uma vez valer no BI, na tabela de aplicações e na
+ * captação — em vez de ficar presa onde foi criada.
+ */
 export function normalizar(
   linhas: Record<string, string>[],
   colunas: string[],
   projeto = "",
+  regras: RegraDeOrigem[] = [],
 ): { linhas: AplicacaoNormalizada[]; avisos: string[] } {
   const avisos: string[] = [];
   const colunaData = acharCabecalho(colunas, CABECALHOS_DE_DATA);
@@ -147,7 +156,10 @@ export function normalizar(
       semData += 1;
       continue;
     }
-    const bruta = (colunaOrigem ? linha[colunaOrigem] : "")?.trim() ?? "";
+    // A planilha primeiro; a regra só preenche o que ela deixou vazio.
+    const bruta = colunaOrigem
+      ? origemDaLinha(linha, regras, colunaOrigem)
+      : origemDaLinha(linha, regras);
     // "sem origem" e não string vazia: o grupo precisa de nome para aparecer na
     // legenda do gráfico em vez de virar uma fatia anônima.
     saida.push({ date, origem: bruta || "sem origem", projeto });
@@ -194,13 +206,14 @@ export async function carregarAplicacoes(
     }
 
     const doProjeto = await funisComNome(fastify, projectId);
+    const regras = await regrasDoProjeto(fastify.db as never, projectId);
     const doCache: AplicacaoNormalizada[] = [];
     const avisosDoProjeto = new Set<string>();
 
     for (const funil of doProjeto) {
       const bruto = await carregarLinhasBrutas(fastify as never, funil.id);
       if (bruto.semPlanilha) continue;
-      const r = normalizar(bruto.linhas, bruto.colunas, funil.projeto);
+      const r = normalizar(bruto.linhas, bruto.colunas, funil.projeto, regras);
       doCache.push(...r.linhas);
       r.avisos.forEach((a) => avisosDoProjeto.add(a));
     }

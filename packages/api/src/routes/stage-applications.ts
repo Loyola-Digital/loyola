@@ -38,6 +38,7 @@ import {
 } from "../db/schema.js";
 import { extractLPName } from "./lp-campaigns.js";
 import { getSpreadsheetSheets, readSheetData } from "../services/google-sheets.js";
+import { origemDaLinha, regrasDoProjeto } from "../services/source-rules-store.js";
 import {
   abasParaDescobrir,
   acharColunaUtmTerm,
@@ -52,6 +53,22 @@ import {
   letraDaPagina,
   type LinhaParaAgrupar,
 } from "../services/application-sheets.js";
+
+/**
+ * A linha da planilha como objeto `{cabeçalho: valor}`.
+ *
+ * As regras de origem observam a linha por NOME de coluna — é o que faz uma
+ * regra sobreviver a alguém reordenar o formulário.
+ */
+function linhaComoObjeto(headers: string[], row: string[]): Record<string, string> {
+  const saida: Record<string, string> = {};
+  for (const [i, h] of headers.entries()) {
+    // Primeira preenchida vence: colunas homônimas são a regra nestas
+    // planilhas, e a segunda costuma vir vazia.
+    if (h && !saida[h]) saida[h] = (row[i] ?? "").trim();
+  }
+  return saida;
+}
 
 const paramsSchema = z.object({
   projectId: z.string().uuid(),
@@ -696,6 +713,10 @@ export default fp(async function stageApplicationsRoutes(fastify) {
       const { abas, avisos } = await resolverAbas(funnelId);
       if (!abas.length) return { semPlanilha: true, aplicacoes: [], avisos };
 
+      // Uma leitura por request, não uma por linha: as regras mudam uma vez por
+      // mês e a lista tem centenas de linhas.
+      const regrasDeOrigem = await regrasDoProjeto(fastify.db as never, projectId);
+
       const aplicacoes = (
         await Promise.all(
           abas.map(async (aba) => {
@@ -722,6 +743,7 @@ export default fp(async function stageApplicationsRoutes(fastify) {
             // `utm_term` passa de 100 caracteres e vai como tooltip da LP.
             const iUtm = acharColunaUtmTerm(data.headers, data.rows);
             const iSource = acharColunaUtmSource(data.headers, data.rows);
+            const nomeDaColunaDeOrigem = iSource === null ? null : data.headers[iSource]!;
 
             // A aba com sufixo declara a página (mesma regra da 43.6): ali o
             // `utm_term` não sobrepõe o que o nome já disse.
@@ -737,7 +759,15 @@ export default fp(async function stageApplicationsRoutes(fastify) {
                 data: dia,
                 nome: iNome === null ? "" : (row[iNome] ?? "").trim(),
                 email: iEmail === null ? "" : (row[iEmail] ?? "").trim(),
-                utmSource: iSource === null ? "" : (row[iSource] ?? "").trim(),
+                // A regra de origem do projeto entra AQUI, e não só na tela que
+                // a criou: classificar uma vez precisa valer em toda leitura,
+                // senão esta tabela e o BI dizem coisas diferentes sobre a
+                // mesma pessoa.
+                utmSource: origemDaLinha(
+                  linhaComoObjeto(data.headers, row),
+                  regrasDeOrigem,
+                  nomeDaColunaDeOrigem ?? undefined,
+                ),
                 utmTerm,
                 lp: letra ? `PAGINA ${letra}` : null,
                 aba: aba.label,

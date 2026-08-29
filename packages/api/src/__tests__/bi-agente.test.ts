@@ -208,3 +208,54 @@ describe("a conversa", () => {
     expect(sistema).toMatch(/NÃO inclua filtro de data/i);
   });
 });
+
+describe("quando a IA falha, a mensagem diz o que fazer", () => {
+  function clienteQueFalha(erro: { status?: number; message?: string }, vezes = 99) {
+    let n = 0;
+    const create = vi.fn(async () => {
+      n += 1;
+      if (n <= vezes) throw Object.assign(new Error(erro.message ?? "falhou"), erro);
+      return {
+        content: [
+          {
+            type: "tool_use",
+            name: "montar_widgets",
+            id: "t",
+            input: { explicacao: "ok", widgets: [proposta()] },
+          },
+        ],
+      } as unknown as Anthropic.Message;
+    });
+    return { cliente: { messages: { create } }, create };
+  }
+
+  it("chave recusada NÃO é 'tente de novo' — é problema de configuração", async () => {
+    const { cliente, create } = clienteQueFalha({ status: 401 });
+    await expect(montarWidgets("x", { cliente, ocupados: [] })).rejects.toThrow(/chave/i);
+    // E não repete: repetir com chave errada só atrasa a mensagem que resolve.
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("modelo inexistente diz isso", async () => {
+    const { cliente } = clienteQueFalha({ status: 404 });
+    await expect(montarWidgets("x", { cliente, ocupados: [] })).rejects.toThrow(/modelo/i);
+  });
+
+  it("sobrecarga é repetida e passa sozinha", async () => {
+    // 500 e 429 passam com o tempo — merecem a segunda chance.
+    const { cliente, create } = clienteQueFalha({ status: 529, message: "overloaded" }, 1);
+    const r = await montarWidgets("x", { cliente, ocupados: [] });
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(r.widgets).toHaveLength(1);
+  });
+
+  it("limite de uso vira mensagem com prazo, não erro genérico", async () => {
+    const { cliente } = clienteQueFalha({ status: 429 });
+    await expect(montarWidgets("x", { cliente, ocupados: [] })).rejects.toThrow(/limite de uso/i);
+  });
+
+  it("erro sem status preserva a mensagem original", async () => {
+    const { cliente } = clienteQueFalha({ message: "socket hang up" });
+    await expect(montarWidgets("x", { cliente, ocupados: [] })).rejects.toThrow(/socket hang up/);
+  });
+});
