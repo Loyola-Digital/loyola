@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Brain, MessageSquare, CheckSquare, Settings, Plus, Eye, EyeOff, LayoutGrid, Radar, Library , Map as MapIcon, Users } from "lucide-react";
+import { Brain, MessageSquare, CheckSquare, Settings, Plus, Eye, EyeOff, LayoutDashboard, LayoutGrid, Radar, Library , Map as MapIcon, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/lib/stores/ui-store";
 import { useHiddenProjectsStore } from "@/lib/stores/hidden-projects-store";
@@ -46,6 +46,8 @@ const navItems = [
   // Os mapas vivem dentro de etapa > funil > projeto; aqui ficam todos juntos,
   // para comparar e editar sem navegar três níveis por desenho.
   { label: "Mapas de Funil", href: "/funnel-maps", icon: MapIcon },
+  // Epic 45: dashboards montaveis com widgets prontos, sem tela nova por pergunta.
+  { label: "BI", href: "/bi", icon: LayoutDashboard },
   // Epic 37: Debriefing saiu do menu global — agora é etapa de funil
   // (stageType "debriefing"); as rotas /debriefings/* seguem servindo o detalhe.
   { label: "Settings", href: "/settings", icon: Settings },
