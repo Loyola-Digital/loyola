@@ -3546,6 +3546,13 @@ export const biDashboards = pgTable(
     widgets: jsonb("widgets").notNull().default([]),
     /** `{preset}` ou `{start,end}` — o período que vale para o canvas inteiro. */
     dateRange: jsonb("date_range").notNull().default({ preset: "last_30d" }),
+    /**
+     * `Slicer[]` — o recorte que vale para o canvas inteiro.
+     *
+     * Estado do dashboard, e não da tela: quem abre o link precisa ver o mesmo
+     * recorte que quem salvou.
+     */
+    slicers: jsonb("slicers").notNull().default([]),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

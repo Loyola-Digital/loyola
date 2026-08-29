@@ -57,6 +57,11 @@ export interface Widget {
 
 export type DateRange = { preset: string } | { start: string; end: string };
 
+export interface Slicer {
+  field: string;
+  values: string[];
+}
+
 export interface Dashboard {
   id: string;
   projectId: string;
@@ -64,6 +69,8 @@ export interface Dashboard {
   widgets: Widget[];
   widgetsIlegiveis: number;
   dateRange: DateRange;
+  /** O recorte que vale para o canvas inteiro — estado do dashboard, não da tela. */
+  slicers: Slicer[];
   periodo: { start: string; end: string };
   createdBy: string | null;
   createdAt: string;

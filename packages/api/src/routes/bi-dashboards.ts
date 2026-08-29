@@ -25,6 +25,13 @@ import {
   type DateRange,
   type Widget,
 } from "../services/bi/dashboard.js";
+import {
+  aplicarContexto,
+  slicerSchema,
+  slicersGuardados,
+  type ContextoDoDashboard,
+  type Slicer,
+} from "../services/bi/contexto.js";
 import { comPeriodo, preset } from "../services/bi/presets.js";
 import { ErroDeQuery, executarQuery, type ResultadoDaQuery } from "../services/bi/query.js";
 
@@ -47,6 +54,7 @@ const patchSchema = z
     nome: z.string().min(1).max(200).optional(),
     dateRange: dateRangeSchema.optional(),
     widgets: z.array(widgetSchema).optional(),
+    slicers: z.array(slicerSchema).max(20).optional(),
   })
   .strict();
 
@@ -89,6 +97,7 @@ export default fp(async function biDashboardsRoutes(fastify) {
       // O período já resolvido evita que o cliente recalcule "últimos 30 dias" e
       // chegue num dia diferente do servidor por causa do fuso do navegador.
       periodo: resolverPeriodo(dateRange),
+      slicers: slicersGuardados(linha.slicers),
       createdBy: linha.createdBy,
       createdAt: linha.createdAt.toISOString(),
       updatedAt: linha.updatedAt.toISOString(),
@@ -191,6 +200,7 @@ export default fp(async function biDashboardsRoutes(fastify) {
         ...(campos.nome !== undefined ? { nome: campos.nome } : {}),
         ...(campos.dateRange !== undefined ? { dateRange: campos.dateRange } : {}),
         ...(campos.widgets !== undefined ? { widgets: campos.widgets } : {}),
+        ...(campos.slicers !== undefined ? { slicers: campos.slicers } : {}),
         updatedAt: new Date(),
       })
       .where(eq(biDashboards.id, p.data.id))
@@ -220,6 +230,7 @@ export default fp(async function biDashboardsRoutes(fastify) {
         // resultado nunca foi salvo.
         widgets: duplicarWidgets(widgets),
         dateRange: linha.dateRange,
+        slicers: linha.slicers,
         createdBy: request.userId ?? null,
       })
       .returning();
@@ -253,32 +264,71 @@ export default fp(async function biDashboardsRoutes(fastify) {
    * Sessenta widgets num `Promise.all` abrem sessenta consultas de uma vez — e o
    * dashboard passa a ser o que derruba a API para todo mundo.
    */
+  type ResultadoDoWidget = ResultadoDaQuery | { erro: string; campo?: string };
+
+  /** Executa UM widget já com o contexto do dashboard aplicado. */
+  async function executarWidget(
+    widget: Widget,
+    projectId: string,
+    ctx: ContextoDoDashboard,
+  ): Promise<ResultadoDoWidget> {
+    try {
+      const { spec, avisos } = aplicarContexto(widget.spec, ctx);
+      const r = await executarQuery(spec, { db: fastify.db as never, projectId });
+      // Os avisos do contexto entram junto com os da execução: um filtro que a
+      // pessoa acha que aplicou e não aplicou é número errado com cara de certo.
+      return { ...r, avisos: [...avisos, ...r.avisos] };
+    } catch (erro) {
+      // Um widget que falha não pode apagar os outros 59: o erro vira o conteúdo
+      // daquele card, e o resto do dashboard continua de pé.
+      if (erro instanceof ErroDeQuery) return { erro: erro.message, campo: erro.campo };
+      fastify.log.error({ erro }, "widget falhou");
+      return { erro: "Não foi possível carregar este widget" };
+    }
+  }
+
   async function executarEmLotes(
     widgets: Widget[],
     projectId: string,
+    ctx: ContextoDoDashboard,
     tamanhoDoLote = 6,
-  ): Promise<Record<string, ResultadoDaQuery | { erro: string; campo?: string }>> {
-    const saida: Record<string, ResultadoDaQuery | { erro: string; campo?: string }> = {};
+  ): Promise<Record<string, ResultadoDoWidget>> {
+    const saida: Record<string, ResultadoDoWidget> = {};
     for (let i = 0; i < widgets.length; i += tamanhoDoLote) {
       const lote = widgets.slice(i, i + tamanhoDoLote);
       await Promise.all(
         lote.map(async (w) => {
-          try {
-            saida[w.id] = await executarQuery(w.spec, { db: fastify.db as never, projectId });
-          } catch (erro) {
-            // Um widget que falha não pode apagar os outros 59: o erro vira o
-            // conteúdo daquele card, e o resto do dashboard continua de pé.
-            saida[w.id] =
-              erro instanceof ErroDeQuery
-                ? { erro: erro.message, campo: erro.campo }
-                : { erro: "Não foi possível carregar este widget" };
-            if (!(erro instanceof ErroDeQuery)) fastify.log.error({ erro }, "widget falhou");
-          }
+          saida[w.id] = await executarWidget(w, projectId, ctx);
         }),
       );
     }
     return saida;
   }
+
+  /** O contexto salvo no dashboard, opcionalmente sobreposto pelo corpo. */
+  function contextoDe(
+    linha: typeof biDashboards.$inferSelect,
+    sobreposicao?: { dateRange?: DateRange; slicers?: Slicer[] },
+  ): ContextoDoDashboard {
+    return {
+      periodo: resolverPeriodo(sobreposicao?.dateRange ?? (linha.dateRange as DateRange)),
+      slicers: sobreposicao?.slicers ?? slicersGuardados(linha.slicers),
+    };
+  }
+
+  /**
+   * A sobreposição de contexto para uma execução.
+   *
+   * Existe para a tela poder **pré-visualizar** um recorte antes de salvá-lo —
+   * mexer no seletor de período não deveria gravar nada até a pessoa parar de
+   * mexer.
+   */
+  const contextoSchema = z
+    .object({
+      dateRange: dateRangeSchema.optional(),
+      slicers: z.array(slicerSchema).max(20).optional(),
+    })
+    .strict();
 
   const inserirSchema = z.union([
     z.object({
@@ -399,10 +449,77 @@ export default fp(async function biDashboardsRoutes(fastify) {
       return reply.code(404).send({ error: "Projeto não encontrado" });
     }
 
+    const sobreposicao = contextoSchema.safeParse(request.body ?? {});
+    if (!sobreposicao.success) return reply.code(400).send({ error: "Contexto inválido" });
+
     const linha = await carregar(p.data.projectId, p.data.id);
     if (!linha) return reply.code(404).send({ error: "Dashboard não encontrado" });
 
     const { widgets } = widgetsGuardados(linha.widgets);
-    return { resultados: await executarEmLotes(widgets, p.data.projectId) };
+    const ctx = contextoDe(linha, sobreposicao.data);
+    return { resultados: await executarEmLotes(widgets, p.data.projectId, ctx), periodo: ctx.periodo };
+  });
+
+  /**
+   * A mesma execução, em NDJSON — uma linha por widget, conforme cada uma sai.
+   *
+   * O painel pinta widget a widget em vez de esperar o mais lento. É a primeira
+   * otimização que o dossiê recomenda, e antes de qualquer cache: num dashboard
+   * com uma consulta pesada, é a diferença entre "cinco segundos de tela vazia" e
+   * "quase tudo na hora, e um card enchendo depois".
+   */
+  fastify.post("/api/projects/:projectId/bi/dashboards/:id/refresh-all", async (request, reply) => {
+    const p = paramsComIdSchema.safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!(await temAcesso(p.data.projectId, request.userId!, request.userRole!))) {
+      return reply.code(404).send({ error: "Projeto não encontrado" });
+    }
+
+    const sobreposicao = contextoSchema.safeParse(request.body ?? {});
+    if (!sobreposicao.success) return reply.code(400).send({ error: "Contexto inválido" });
+
+    const linha = await carregar(p.data.projectId, p.data.id);
+    if (!linha) return reply.code(404).send({ error: "Dashboard não encontrado" });
+
+    const { widgets } = widgetsGuardados(linha.widgets);
+    const ctx = contextoDe(linha, sobreposicao.data);
+
+    reply.raw.writeHead(200, {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-store",
+      // Sem isto o proxy segura tudo e entrega no fim — o que anularia a
+      // atualização progressiva sem nenhum sinal de que anulou.
+      "X-Accel-Buffering": "no",
+    });
+
+    const escrever = (linhaJson: unknown) => {
+      if (!reply.raw.writableEnded) reply.raw.write(`${JSON.stringify(linhaJson)}\n`);
+    };
+
+    // O cabeçalho vem primeiro: a tela precisa do período resolvido antes do
+    // primeiro widget, para já rotular o eixo.
+    escrever({ tipo: "inicio", total: widgets.length, periodo: ctx.periodo });
+
+    let cancelado = false;
+    request.raw.on("close", () => {
+      // Quem fechou a aba não precisa das consultas restantes.
+      cancelado = true;
+    });
+
+    const LOTE = 6;
+    for (let i = 0; i < widgets.length && !cancelado; i += LOTE) {
+      const lote = widgets.slice(i, i + LOTE);
+      await Promise.all(
+        lote.map(async (w) => {
+          const resultado = await executarWidget(w, p.data.projectId, ctx);
+          if (!cancelado) escrever({ tipo: "widget", widgetId: w.id, resultado });
+        }),
+      );
+    }
+
+    if (!cancelado) escrever({ tipo: "fim" });
+    reply.raw.end();
+    // `hijack` para o Fastify não tentar serializar uma resposta que já saiu.
+    return reply.hijack();
   });
 });

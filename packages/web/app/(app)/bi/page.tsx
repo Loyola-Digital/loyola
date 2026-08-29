@@ -40,10 +40,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { BarraDeFiltros } from "@/components/bi/barra-de-filtros";
 import { BiCanvas } from "@/components/bi/bi-canvas";
 import { GaleriaDeWidgets } from "@/components/bi/galeria-de-widgets";
 import { WidgetConteudo } from "@/components/bi/widget-conteudo";
 import { useProjects } from "@/lib/hooks/use-projects";
+import { useRefreshProgressivo } from "@/lib/hooks/use-refresh-progressivo";
 import { useSalvamentoSerializado } from "@/lib/hooks/use-salvamento-serializado";
 import {
   useApagarDashboard,
@@ -54,12 +56,11 @@ import {
   useInserirWidget,
   usePresetsDeBi,
   useRemoverWidget,
-  useResultados,
   useSalvarDashboard,
   type PresetNaGaleria,
   type ResultadoDoWidget,
 } from "@/lib/hooks/use-bi";
-import type { Widget } from "@/lib/bi/tipos";
+import type { DateRange, Widget } from "@/lib/bi/tipos";
 import { cn } from "@/lib/utils";
 
 const PROJETO_LEMBRADO = "bi:projeto";
@@ -89,14 +90,16 @@ export default function BiPage() {
   const { data: dashboard } = useDashboard(projectId, dashboardId);
   const { data: presets } = usePresetsDeBi();
 
-  // A versão entra na chave do cache: trocar de dashboard ou salvar widget novo
-  // precisa refazer as consultas, mas arrastar um card não.
-  const versao = dashboard ? `${dashboard.widgets.length}:${dashboard.updatedAt}` : "";
+  // A atualização é progressiva: cada widget pinta quando a linha dele chega,
+  // em vez de a tela inteira esperar a consulta mais lenta.
   const {
-    data: execucao,
-    isFetching: calculando,
-    refetch: recalcular,
-  } = useResultados(projectId, dashboardId, versao);
+    resultados: calculados,
+    carregando: calculando,
+    pendentes,
+    periodo: periodoEmVigor,
+    pedir,
+    atualizarAgora,
+  } = useRefreshProgressivo(projectId, dashboardId);
 
   const criar = useCriarDashboard(projectId);
   const duplicar = useDuplicarDashboard(projectId);
@@ -130,9 +133,21 @@ export default function BiPage() {
   );
 
   const resultados = useMemo(
-    () => ({ ...(execucao?.resultados ?? {}), ...recemInseridos }),
-    [execucao, recemInseridos],
+    () => ({ ...calculados, ...recemInseridos }),
+    [calculados, recemInseridos],
   );
+
+  // Trocar o filtro salva (é estado do dashboard) e pede a leva nova — o
+  // debounce e o aborto da leva anterior ficam com o controle de levas.
+  function aplicarPeriodo(novo: DateRange) {
+    salvar.mutate({ dateRange: novo });
+    pedir({ dateRange: novo, slicers: dashboard?.slicers ?? [] });
+  }
+
+  function aplicarSlicers(novos: { field: string; values: string[] }[]) {
+    salvar.mutate({ slicers: novos });
+    pedir({ dateRange: dashboard?.dateRange, slicers: novos });
+  }
 
   async function inserirPreset(preset: PresetNaGaleria) {
     if (!dashboardId) return;
@@ -215,7 +230,7 @@ export default function BiPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => recalcular()}
+            onClick={() => atualizarAgora({})}
             disabled={!dashboardId || calculando}
           >
             <RefreshCw className={cn("size-3.5", calculando && "animate-spin")} />
@@ -248,9 +263,11 @@ export default function BiPage() {
             onChange={(e) => salvar.mutate({ nome: e.target.value })}
             className="h-8 w-[260px] text-sm"
           />
-          <span className="text-xs text-muted-foreground">
-            {dashboard.periodo.start} → {dashboard.periodo.end}
-          </span>
+          {pendentes > 0 && (
+            <span className="text-xs text-muted-foreground">
+              carregando {pendentes} widget(s)…
+            </span>
+          )}
           {dashboard.widgetsIlegiveis > 0 && (
             <span className="text-xs text-amber-600">
               {dashboard.widgetsIlegiveis} widget(s) salvos num formato antigo não abrem
@@ -265,6 +282,17 @@ export default function BiPage() {
             </Button>
           </div>
         </div>
+      )}
+
+      {dashboardId && dashboard && (
+        <BarraDeFiltros
+          projectId={dashboard.projectId}
+          dateRange={dashboard.dateRange}
+          periodo={periodoEmVigor ?? dashboard.periodo}
+          slicers={dashboard.slicers}
+          onDateRange={aplicarPeriodo}
+          onSlicers={aplicarSlicers}
+        />
       )}
 
       <div className="flex min-h-0 flex-1 gap-4">
