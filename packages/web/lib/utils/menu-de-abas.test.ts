@@ -1,0 +1,218 @@
+import { describe, expect, it } from "vitest";
+import {
+  ABA_PADRAO,
+  abaPadraoDoGrupo,
+  abasDoMenu,
+  ehGrupoExpansivel,
+  grupoDaAba,
+  montarMenuDeAbas,
+  resolverAbaAtiva,
+  type ContextoDeAbas,
+} from "./menu-de-abas";
+
+/** Etapa paga de um lançamento — a configuração mais comum. */
+const LANCAMENTO_CAPTACAO_PAGA: ContextoDeAbas = {
+  funnelType: "launch",
+  ehCaptacaoPagaStage: true,
+  familiaCadeiaCac: "paga",
+};
+
+const PERPETUO: ContextoDeAbas = {
+  funnelType: "perpetual",
+  ehCaptacaoPagaStage: false,
+  familiaCadeiaCac: "paga",
+};
+
+/** Lançamento fora da captação paga: o grupo Meta Ads fica sem filhos. */
+const LANCAMENTO_SEM_CAPTACAO_PAGA: ContextoDeAbas = {
+  funnelType: "launch",
+  ehCaptacaoPagaStage: false,
+  familiaCadeiaCac: "gratuita",
+};
+
+/** `lyrio` / `comercial` / `debriefing` — família `null`. */
+const FORA_DA_CADEIA: ContextoDeAbas = {
+  funnelType: "launch",
+  ehCaptacaoPagaStage: true,
+  familiaCadeiaCac: null,
+};
+
+const idsDe = (ctx: ContextoDeAbas) => montarMenuDeAbas(ctx).map((g) => g.id);
+const grupo = (ctx: ContextoDeAbas, id: string) => {
+  const g = montarMenuDeAbas(ctx).find((x) => x.id === id);
+  if (!g) throw new Error(`grupo ${id} não está no menu`);
+  return g;
+};
+
+describe("montarMenuDeAbas — estrutura", () => {
+  it("entrega cinco grupos de primeiro nível na etapa paga de lançamento", () => {
+    expect(idsDe(LANCAMENTO_CAPTACAO_PAGA)).toEqual([
+      "meta-ads",
+      "youtube-ads",
+      "dados",
+      "inacio",
+      "relatorios",
+    ]);
+  });
+
+  it("agrupa as oito fontes de dados em Dados, na ordem de antes", () => {
+    expect(grupo(LANCAMENTO_CAPTACAO_PAGA, "dados").filhos.map((f) => f.value)).toEqual([
+      "surveys",
+      "spreadsheets",
+      "switchy-links",
+      "lead-scoring",
+      "organic-media",
+      "mautic",
+      "ga4",
+      "nps",
+    ]);
+  });
+
+  it("mantém Relatórios no primeiro nível, fora do grupo Inácio", () => {
+    // O Resumão é de lançamento/perpétuo (Epic 41), não do Inácio. Enterrá-lo
+    // sob o rótulo de um expert esconderia a ferramenta de quem a usa.
+    const menu = montarMenuDeAbas(LANCAMENTO_CAPTACAO_PAGA);
+    expect(grupoDaAba(menu, "relatorios")?.id).toBe("relatorios");
+    expect(grupo(LANCAMENTO_CAPTACAO_PAGA, "inacio").filhos.map((f) => f.value)).toEqual([
+      "cadeia-cac",
+      "panorama",
+    ]);
+  });
+});
+
+describe("montarMenuDeAbas — elegibilidade (AC1/AC4)", () => {
+  it("lançamento com captação paga: Meta Ads tem Meta Ads TESTE, e não Análise MVP", () => {
+    expect(grupo(LANCAMENTO_CAPTACAO_PAGA, "meta-ads").filhos.map((f) => f.value)).toEqual([
+      "meta-ads-teste",
+    ]);
+  });
+
+  it("perpétuo: Meta Ads tem Análise MVP, e não Meta Ads TESTE", () => {
+    expect(grupo(PERPETUO, "meta-ads").filhos.map((f) => f.value)).toEqual(["analise-mvp"]);
+  });
+
+  it("lançamento sem captação paga: Meta Ads fica SEM filhos e vira aba comum", () => {
+    const g = grupo(LANCAMENTO_SEM_CAPTACAO_PAGA, "meta-ads");
+    expect(g.filhos).toEqual([]);
+    // Continua no menu porque tem conteúdo próprio — mas sem afordância de
+    // submenu, senão a seta abriria o nada.
+    expect(ehGrupoExpansivel(g)).toBe(false);
+    expect(abaPadraoDoGrupo(g)).toBe("meta-ads");
+  });
+
+  it("família null: o grupo Inácio não é renderizado", () => {
+    // Story 44.9 — família `null` não ganha aba vazia: não ganha aba. E o
+    // Panorama vive no mesmo escopo, então não sobra filho para segurar o grupo.
+    expect(idsDe(FORA_DA_CADEIA)).not.toContain("inacio");
+    expect(abasDoMenu(montarMenuDeAbas(FORA_DA_CADEIA)).map((a) => a.value)).not.toContain(
+      "panorama",
+    );
+  });
+
+  it("grupo sem conteúdo próprio e sem filhos some; com conteúdo próprio permanece", () => {
+    const semCadeia = montarMenuDeAbas(FORA_DA_CADEIA);
+    // "dados" nunca fica vazio, então continua; "inacio" some.
+    expect(semCadeia.map((g) => g.id)).toEqual(["meta-ads", "youtube-ads", "dados", "relatorios"]);
+  });
+});
+
+describe("abaPadraoDoGrupo (AC3)", () => {
+  it("pai com conteúdo próprio abre nele mesmo", () => {
+    expect(abaPadraoDoGrupo(grupo(PERPETUO, "meta-ads"))).toBe("meta-ads");
+    expect(abaPadraoDoGrupo(grupo(PERPETUO, "relatorios"))).toBe("relatorios");
+  });
+
+  it("Inácio abre em Cadeia de CAC, não em Panorama", () => {
+    expect(abaPadraoDoGrupo(grupo(PERPETUO, "inacio"))).toBe("cadeia-cac");
+  });
+
+  it("Dados abre no primeiro filho elegível", () => {
+    expect(abaPadraoDoGrupo(grupo(PERPETUO, "dados"))).toBe("surveys");
+  });
+});
+
+describe("grupoDaAba — o pai é derivado do filho (AC5)", () => {
+  it("acha o grupo a partir de uma aba filha", () => {
+    const menu = montarMenuDeAbas(LANCAMENTO_CAPTACAO_PAGA);
+    expect(grupoDaAba(menu, "meta-ads-teste")?.id).toBe("meta-ads");
+    expect(grupoDaAba(menu, "nps")?.id).toBe("dados");
+    expect(grupoDaAba(menu, "panorama")?.id).toBe("inacio");
+  });
+
+  it("devolve null para aba que não existe nesta etapa", () => {
+    expect(grupoDaAba(montarMenuDeAbas(FORA_DA_CADEIA), "cadeia-cac")).toBeNull();
+    expect(grupoDaAba(montarMenuDeAbas(PERPETUO), "meta-ads-teste")).toBeNull();
+  });
+});
+
+describe("resolverAbaAtiva — o ?tab= da URL (AC5)", () => {
+  const menuPago = montarMenuDeAbas(LANCAMENTO_CAPTACAO_PAGA);
+
+  it("sem ?tab= cai no default de hoje", () => {
+    expect(resolverAbaAtiva(menuPago, null)).toBe(ABA_PADRAO);
+    expect(resolverAbaAtiva(menuPago, undefined)).toBe("meta-ads");
+    expect(resolverAbaAtiva(menuPago, "")).toBe("meta-ads");
+  });
+
+  it("respeita um ?tab= válido, inclusive de aba filha", () => {
+    expect(resolverAbaAtiva(menuPago, "nps")).toBe("nps");
+    expect(resolverAbaAtiva(menuPago, "panorama")).toBe("panorama");
+    expect(resolverAbaAtiva(menuPago, "meta-ads-teste")).toBe("meta-ads-teste");
+  });
+
+  it("?tab= inexistente cai no default sem estourar", () => {
+    expect(resolverAbaAtiva(menuPago, "aba-que-nunca-existiu")).toBe("meta-ads");
+  });
+
+  it("?tab= válido em OUTRA etapa cai no default aqui", () => {
+    // O caso real: alguém manda o link da Cadeia de CAC de uma etapa paga e o
+    // colega abre numa etapa `lyrio`, onde a aba não existe.
+    const menuSemCadeia = montarMenuDeAbas(FORA_DA_CADEIA);
+    expect(resolverAbaAtiva(menuSemCadeia, "cadeia-cac")).toBe("meta-ads");
+    // E o inverso: Meta Ads TESTE não existe no perpétuo.
+    expect(resolverAbaAtiva(montarMenuDeAbas(PERPETUO), "meta-ads-teste")).toBe("meta-ads");
+  });
+
+  it("nunca devolve uma aba que o menu não renderiza", () => {
+    for (const ctx of [LANCAMENTO_CAPTACAO_PAGA, PERPETUO, LANCAMENTO_SEM_CAPTACAO_PAGA, FORA_DA_CADEIA]) {
+      const menu = montarMenuDeAbas(ctx);
+      const existentes = abasDoMenu(menu).map((a) => a.value);
+      for (const pedido of [null, "meta-ads", "cadeia-cac", "panorama", "lixo", "analise-mvp"]) {
+        expect(existentes).toContain(resolverAbaAtiva(menu, pedido));
+      }
+    }
+  });
+});
+
+describe("contrato de URL (AC2)", () => {
+  it("os values de antes da 45.1 sobrevivem intactos", () => {
+    // Renomear qualquer um destes quebraria links no mesmo dia em que eles
+    // passam a existir. "ga4" é o caso a lembrar: o rótulo virou "Analytics"
+    // na 0870c2a2 e o value ficou de propósito.
+    const todos = abasDoMenu(montarMenuDeAbas(PERPETUO)).map((a) => a.value);
+    expect(todos).toEqual([
+      "meta-ads",
+      "analise-mvp",
+      "youtube-ads",
+      "surveys",
+      "spreadsheets",
+      "switchy-links",
+      "lead-scoring",
+      "organic-media",
+      "mautic",
+      "ga4",
+      "nps",
+      "cadeia-cac",
+      "panorama",
+      "relatorios",
+    ]);
+  });
+
+  it("todo item tem value, label e ícone — o menu não renderiza buraco", () => {
+    for (const aba of abasDoMenu(montarMenuDeAbas(LANCAMENTO_CAPTACAO_PAGA))) {
+      expect(aba.value).toBeTruthy();
+      expect(aba.label).toBeTruthy();
+      expect(aba.icon).toBeTruthy();
+    }
+  });
+});

@@ -220,8 +220,12 @@ export function CadeiaCacStageTab({
 
   return (
     <div className="space-y-6">
-      {/* Story 44.21 — o panorama do expert, antes do mergulho nesta etapa. */}
-      <PanoramaDoProjeto projectId={projectId} stageId={stageId} />
+      {/* Story 45.1 — o panorama saiu daqui e virou a aba irmã "Panorama", no
+          grupo Inácio. Ele e a cadeia disputavam a mesma tela desde a 44.21:
+          quem abria para olhar UMA etapa rolava por cima do expert inteiro.
+
+          ⚠️ O render do estado `semDados` acima NÃO saiu, de propósito — lá o
+          panorama é a resposta, não o preâmbulo. */}
 
       {/* O número principal — spec §2.1 */}
       <div className="rounded-lg border p-5">

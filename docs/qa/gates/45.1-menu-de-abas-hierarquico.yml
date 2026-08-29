@@ -1,0 +1,300 @@
+storyId: "45.1"
+storyTitle: "O menu de abas vira hierárquico — 14 itens soltos viram 5 grupos"
+gate: CONCERNS
+reviewer: "@qa (Quinn)"
+reviewedAt: "2026-08-29"
+branch: feat/45.1-menu-abas-hierarquico
+commits: [925acfcc, 73c9a531]
+base: origin/main d787f101
+scope: >
+  packages/web/lib/utils/menu-de-abas.ts (novo, 264 linhas — a árvore como dado
+  + `montarMenuDeAbas()` e 5 derivações) ·
+  packages/web/lib/utils/menu-de-abas.test.ts (novo, 20 testes) ·
+  packages/web/components/funnels/stage-tabs-nav.tsx (novo, 168 linhas — menu de
+  2 níveis em `<button>`) ·
+  app/(app)/projects/[id]/funnels/[funnelId]/stages/[stageId]/page.tsx
+  (82 linhas de `TabsTrigger` → 8; deep-link `?tab=`; `TabsContent` de
+  `panorama`; imports órfãos removidos) ·
+  components/funnels/panorama-do-projeto.tsx (colapso + chave de localStorage
+  removidos) ·
+  components/funnels/cadeia-cac-stage-tab.tsx (render normal do Panorama
+  removido; o de `semDados` mantido)
+
+codeRabbit:
+  status: SKIPPED
+  reason: "CLI em WSL, host macOS. Nono gate seguido sem ele — lacuna de cobertura, não aprovação."
+
+summary: >
+  As nove ACs estão entregues, incluindo as duas que o @po criou na validação.
+  O achado bloqueador dele (F1 → AC7.1) foi conferido linha a linha e está
+  correto: o `<PanoramaDoProjeto>` do early-return de `data.semDados`
+  permanece em `cadeia-cac-stage-tab.tsx:212`, com o comentário da 44.21 ainda
+  no lugar, e só o render normal (`:224`) migrou para a sub-aba nova. Não é
+  "os dois saíram" nem "os dois ficaram" — é exatamente o recorte que a AC
+  pedia, e o @dev ainda deixou um comentário no ponto da remoção apontando de
+  volta para a decisão.
+
+  A armadilha F3 do @po (o teste que nasceria morto em `.test.tsx`) também foi
+  fechada: o módulo é `.ts` sem JSX, o ícone é referência de componente, e a
+  suíte do web foi de 642 para **662 testes em 40 arquivos** — reconferido
+  nesta revisão, não aceito da declaração.
+
+  **Os testes não são decorativos.** Duas reversões independentes foram
+  executadas aqui: a do @dev (remover a regra da família em `montarMenuDeAbas`)
+  derruba 4 testes, como ele declarou; e uma nova, que o @dev não fez — apagar
+  a validação do `?tab=` em `resolverAbaAtiva`, deixando-a aceitar qualquer
+  string — derruba outros 3, entre eles justamente o "nunca devolve uma aba que
+  o menu não renderiza". O arquivo foi restaurado por `git checkout` e a árvore
+  voltou limpa.
+
+  Conferência que nem o @po nem o @dev registraram: o conjunto de `value` que o
+  menu pode devolver e o conjunto de `<TabsContent value=...>` de `page.tsx`
+  batem **1:1, nos 15 valores**. Não sobra aba sem conteúdo nem conteúdo sem
+  aba — que é a metade do risco da AC5 que a função pura sozinha não cobre.
+
+  **O que segura o gate não é um defeito de cálculo, é um buraco no contrato
+  novo:** a aba ativa vive em dois `useState` que sobrevivem à navegação
+  client-side entre etapas, enquanto o `?tab=` da URL não é relido. O usuário
+  que troca de etapa pela sidebar continua vendo a aba antiga com uma URL que
+  não a descreve — e URL que não descreve a tela é o inverso do que a AC5
+  entrega. Ver QA-451-01. Some-se a isso o item de DoD nunca executado (a
+  validação visual em 3 configurações e o teste do link `?tab=`), e o veredito
+  é CONCERNS, não PASS.
+
+evidenciasDaRevisao:
+  diff: "git diff origin/main...HEAD (três pontos) — 7 arquivos, +1130/−135"
+  ac71ConferidaNoCodigo: >
+    `cadeia-cac-stage-tab.tsx:206-216` — o comentário da 44.21 e o
+    `<PanoramaDoProjeto>` continuam DENTRO do `if (data.semDados)`; o render de
+    `:224` virou comentário explicando a migração e apontando de volta para o
+    `semDados`. Recorte exato da AC7.1.
+  ac72ConferidaPorGrep: >
+    `git grep` de `panorama-cac:aberto` e `usePreferenciaDeAbertura` em
+    `packages/` → **zero ocorrências**. Chave, hook e botão saíram inteiros, sem
+    referência órfã.
+  reversoesReexecutadas: >
+    (1) do @dev — `filhosDeInacio` incondicional → **4 failed** (família null,
+    grupo vazio, grupoDaAba null, ?tab= de outra etapa).
+    (2) NOVA, minha — `resolverAbaAtiva` aceitando qualquer `solicitada` →
+    **3 failed** (?tab= inexistente, ?tab= de outra etapa, "nunca devolve uma
+    aba que o menu não renderiza").
+    Restaurado por `git checkout` nas duas: `git status --short` vazio e 20/20
+    de volta.
+  paridadeMenuXConteudo: >
+    União dos `value` do menu (launch+paga ∪ perpétuo) = 15; `TabsContent` de
+    `page.tsx` = 15; conjuntos idênticos (analise-mvp, cadeia-cac, ga4,
+    lead-scoring, mautic, meta-ads, meta-ads-teste, nps, organic-media,
+    panorama, relatorios, spreadsheets, surveys, switchy-links, youtube-ads).
+  elegibilidadePreservada: >
+    As três condições batem literalmente com o `&&` inline de antes:
+    `analise-mvp` ⟸ `funnelType === "perpetual"`; `meta-ads-teste` ⟸
+    `funnelType === "launch" && ehCaptacaoPagaStage`; `cadeia-cac` ⟸
+    `classificarFamilia(stage.stageType) !== null` — e `classificarFamilia`
+    continua sendo chamada em `page.tsx:254`, não foi reimplementada.
+  suite: "reexecutada — 40 arquivos, **662 testes, todos passando** (baseline 642 + 20 novos). Confirma que o `.test.ts` foi coletado."
+  eslint: "reexecutado por mim nos 6 arquivos — **exit 0, zero saída**."
+  ordemDosGatesConferida: >
+    A ressalva do @dev procede e é do próprio Next: `next.config` tem
+    `typescript.ignoreBuildErrors` e `eslint.ignoreDuringBuilds`, então o build
+    verde não é gate de tipo nem de lint — quem gateia é o `tsc --noEmit` e o
+    `eslint` à parte. E os 11 `TS6053` da primeira rodada apontavam para
+    `.next/types/**`, gerados PELO build: rodar `tsc` antes do build produz erro
+    de artefato ausente, não de código. `tsc` e `next build` não foram
+    reexecutados nesta revisão (custo alto, raciocínio conferido).
+  hooksAntesDosEarlyReturns: >
+    O `useEffect` novo e os dois `useState` estão em `page.tsx:78-89`, ANTES dos
+    early-returns de `sales`/`cpl`/`event`/`debriefing`/`comercial`/`lyrio`
+    (`:146+`). Não há chamada condicional de hook.
+  ac9NaoRegressao: >
+    Badge de Meta preservado E o de YouTube junto (`badge: "meta"` / `"youtube"`
+    + `<Contador>` com as mesmas classes); `iconClassName` de cada aba idêntico
+    ao `className` do JSX antigo, item a item; nenhum arquivo de early-return
+    (`sales-stage-view` e irmãos) tocado no diff.
+
+issues:
+  - id: QA-451-01
+    severity: medium
+    category: contrato-de-url
+    title: "A aba ativa sobrevive à troca de etapa, mas o `?tab=` não é relido — a URL passa a descrever outra tela"
+    file: "packages/web/app/(app)/projects/[id]/funnels/[funnelId]/stages/[stageId]/page.tsx:78-89"
+    story: "45.1 (AC5)"
+    reproduced: false
+    blocking: false
+    description: >
+      A aba ativa virou dois estados — `abaEscolhida` (clique) e `abaSolicitada`
+      (link) — e o `?tab=` é lido **uma única vez**, num `useEffect` com deps
+      `[]`.
+
+      No App Router, ir de `/stages/A` para `/stages/B` não troca o segmento de
+      rota, só o valor do param: o componente é reconciliado na mesma posição e
+      o estado do `useState` sobrevive. O efeito de deps `[]` não roda de novo.
+
+      Duas consequências, e a segunda é a que importa:
+
+      1. O usuário cai na etapa B na mesma aba em que estava na A. Isso é o
+         comportamento de antes (`useState("meta-ads")` também sobrevivia), não
+         é regressão — e é até defensável.
+      2. **A URL de B não tem `?tab=`, mas a tela mostra a aba antiga.** Copiar
+         essa URL e mandar para um colega entrega Meta Ads, não o que estava na
+         tela. É exatamente a promessa que a AC5 acabou de criar ("consiga
+         mandar um link direto para a aba certa") falhando no caminho mais
+         percorrido do app — a navegação entre etapas pela sidebar
+         (`components/layout/project-folder.tsx:173` e `:945`, `router.push` e
+         `<Link>` client-side).
+
+      E o inverso também fica travado: um link interno que carregue `?tab=` é
+      ignorado em navegação client-side, porque o efeito não relê.
+
+      ⚠️ **Não reproduzido em navegador.** A conclusão vem de leitura de código
+      + do comportamento de reconciliação do App Router. Se o Next remontar o
+      componente na troca de `stageId`, o achado é nulo. É verificável em 30
+      segundos na validação visual que já está pendente no DoD — por isso está
+      registrado como item dela, e não como bloqueio.
+    suggestedFix: >
+      Trocar as deps do efeito de `[]` para `[params.stageId]` e, no mesmo
+      efeito, zerar `abaEscolhida` — assim cada etapa relê o próprio `?tab=` e
+      não herda o clique da anterior. Alternativa equivalente e mais barata de
+      raciocinar: derivar a aba direto de `window.location` a cada troca, sem
+      guardar `abaEscolhida`. Não mexe em AC nenhuma.
+    verificarNaValidacaoVisual: >
+      Abrir a etapa A, clicar em "NPS" (URL vira `?tab=nps`), e ir para a etapa
+      B pela sidebar. Se a tela continuar em NPS com a URL sem `?tab=`, o
+      achado procede.
+
+  - id: QA-451-02
+    severity: low
+    category: acessibilidade
+    title: "O `aria-labelledby` do painel aponta para um gatilho que não existe, e as setas do teclado deixaram de navegar entre abas"
+    file: packages/web/components/funnels/stage-tabs-nav.tsx:20
+    story: "45.1 (AC3, débito declarado pelo @dev)"
+    reproduced: false
+    blocking: false
+    description: >
+      **A justificativa técnica do @dev procede.** Dois grupos ("Dados",
+      "Inácio") não têm aba própria; dar ao gatilho do pai o `value` do primeiro
+      filho colocaria o mesmo `value` em dois `TabsTrigger` do mesmo `<Tabs>`, e
+      o Radix deriva os `id` do DOM a partir do `value` — sairiam ids
+      duplicados. E misturar `<button>` com `TabsTrigger` dentro de um
+      `TabsPrimitive.List` de fato quebra o roving focus, que assume que todo
+      filho é item. A decisão 2 está certa.
+
+      **A avaliação de custo do conserto, não.** O @dev escreveu que corrigir
+      exigiria "voltar ao Radix (impossível) ou trocar `<Tabs>` por render
+      condicional, que é reescrever os 14 `TabsContent`". Há um terceiro
+      caminho, de uma linha por elemento: com o IDREF do `aria-labelledby`
+      quebrado, o cálculo do nome acessível cai no `aria-label` — então
+      `<TabsContent value="nps" aria-label="NPS">` devolve o nome do painel sem
+      tocar em arquitetura nenhuma. É atributo, não reescrita.
+
+      Fica registrado também o que o débito não mencionou: a navegação perdeu o
+      roving tabindex do Radix. Antes, 1 parada de Tab e as setas trocavam de
+      aba; agora são até 14 paradas de Tab e as setas não fazem nada. Funcional,
+      mas mais caro no teclado.
+
+      Severidade `low` porque a navegação continua operável (botões reais,
+      `aria-current`, `<nav aria-label>`), o painel continua alcançável, e este
+      é um painel interno de operação.
+    suggestedFix: >
+      `aria-label` em cada `<TabsContent>` com o rótulo da aba (o `label` já
+      está na config, dá para passar pelo mesmo mapa). As setas ficam como
+      débito de uma story de a11y própria, se alguém pedir.
+
+  - id: QA-451-03
+    severity: low
+    category: teste
+    title: "O teste 'nunca devolve uma aba que o menu não renderiza' não cobre o caminho em que isso pode acontecer"
+    file: packages/web/lib/utils/menu-de-abas.ts:253
+    story: "45.1 (AC5)"
+    reproduced: false
+    blocking: false
+    description: >
+      `resolverAbaAtiva` abre com `if (abas.length === 0) return ABA_PADRAO;` —
+      um caminho que devolve `"meta-ads"` justamente quando o menu está vazio,
+      isto é, quando `"meta-ads"` **não** é renderizado. É a única linha do
+      arquivo que contradiz o nome do teste que a protege.
+
+      Hoje é inalcançável: `montarMenuDeAbas` sempre inclui o grupo `meta-ads`
+      com `proprio` preenchido, então `abasDoMenu` nunca volta vazio. Por isso
+      `low`, e não um defeito ativo.
+
+      O que registro é o teste, não a linha: o caso "nunca devolve uma aba que o
+      menu não renderiza" itera **quatro contextos fixos**, e os quatro contêm
+      `meta-ads`. Ele afirma um invariante universal medindo quatro pontos onde
+      o invariante não pode falhar. Se uma story futura tornar `meta-ads`
+      condicional — que é o tipo de coisa que esta story acabou de tornar fácil
+      —, o teste continua verde e a função passa a devolver um `value` sem
+      `TabsContent`.
+    suggestedFix: >
+      Fazer o último `return abas[0].value` valer também para o caso vazio
+      (devolver `""` ou lançar seria pior; o mais honesto é o próprio guard
+      sumir, já que `abas` nunca é vazio), ou cobrir o invariante com um caso
+      que monte um menu vazio à mão em vez de depender dos quatro contextos.
+
+  - id: QA-451-04
+    severity: low
+    category: teste
+    title: "A AC7.1 — o achado bloqueador do @po — não tem teste nenhum, só comentário"
+    file: packages/web/components/funnels/cadeia-cac-stage-tab.tsx:206
+    story: "45.1 (AC7.1)"
+    reproduced: false
+    blocking: false
+    description: >
+      O comportamento que o @po pegou como bloqueador (o Panorama que fica no
+      early-return de `data.semDados`) está correto no código, mas é o único AC
+      desta story sem cobertura automatizada. O runner do web coleta apenas
+      `lib/utils/**/*.test.ts` — `.tsx` de componente não roda, e isso é
+      deliberado (Story 29.35), não débito desta story.
+
+      Resultado: um comportamento que **já foi quebrado uma vez no papel** (a
+      AC7 original, antes do @po) fica protegido por dois comentários. Bons
+      comentários — o de `:206-208` explica a decisão da 44.21 e o do ponto de
+      remoção aponta de volta para ele —, mas comentário não falha em CI.
+
+      `low` porque não há caminho barato: a lógica é de render, não é extraível
+      para função pura sem inventar indireção, e ligar jsdom vale story própria.
+      Fica declarado para que a próxima story que "limpar" o Panorama duplicado
+      encontre este registro antes de apagar a linha.
+    suggestedFix: >
+      Nenhuma ação nesta story. Se a story de jsdom/testing-library acontecer,
+      este é o primeiro caso a escrever.
+
+acs:
+  AC1: "ENTREGUE — os 14 `TabsTrigger` viraram config declarativa + `montarMenuDeAbas()` puro em `lib/utils`, no molde de `settings/layout.tsx`. Cada item carrega `value`, `label`, `icon` e a elegibilidade saiu do JSX."
+  AC2: "ENTREGUE — os 14 `value` sobrevivem literalmente; `ga4` continua `ga4` com rótulo 'Analytics'; único novo é `panorama`. Travado por teste de contrato E conferido 1:1 contra os `TabsContent` de `page.tsx`."
+  AC3: "ENTREGUE — pai com aba própria carrega o próprio conteúdo; Dados abre em `surveys`, Inácio em `cadeia-cac`; submenu visível só enquanto o grupo está ativo, sem hover. A decisão 3 do @dev (pai com aba própria sempre volta para ela) é melhoria sobre a story, não desvio: sem ela quem entra em Meta Ads TESTE fica sem rota de volta."
+  AC4: "ENTREGUE — launch sem captação paga deixa o grupo Meta Ads com 0 filhos, sem `▾` (`ehGrupoExpansivel` false, `ChevronDown` condicionado); família `null` faz o grupo Inácio sair do menu inteiro pelo filtro final. Provado por reversão (4 falhas)."
+  AC5: "ENTREGUE COM RESSALVA — `?tab=` governa a aba, um parâmetro só, pai derivado do filho, `history.replaceState` (não empilha histórico), fallback silencioso para `meta-ads`. A ressalva é QA-451-01: em navegação client-side entre etapas o `?tab=` não é relido e a URL passa a discordar da tela."
+  AC6: "ENTREGUE — `onOpenSpreadsheets={() => trocarAba('spreadsheets')}`; como o grupo é derivado do filho por `grupoDaAba`, o salto abre 'Dados', ativa 'Planilhas' e escreve na URL como qualquer outra troca. Nenhuma referência a `setActiveTab` sobrou no arquivo."
+  AC7: "ENTREGUE — `<TabsContent value=\"panorama\">` novo em `page.tsx:785`, com as mesmas props (`projectId`, `stageId`). Nenhuma regra de cálculo tocada: é movimentação de árvore de componentes."
+  AC7.1: "ENTREGUE — conferido linha a linha, que era o pedido. O `<PanoramaDoProjeto>` de `:212` permanece dentro do `if (data.semDados)`, com o comentário da 44.21 intacto; só o render normal migrou. Sem cobertura automatizada — QA-451-04."
+  AC7.2: "ENTREGUE — `CHAVE`, `usePreferenciaDeAbertura`, o botão e o render condicional saíram de `panorama-do-projeto.tsx`; `git grep` confirma zero referência órfã a `panorama-cac:aberto` em `packages/`."
+  AC8: "ENTREGUE — `overflow-x-auto` nas duas fileiras, sem `flex-wrap`; é o padrão de `event-stage-view.tsx:341`, um dos dois que a AC autorizava. A justificativa da escolha está no Dev Record, como a AC exigia."
+  AC9: "ENTREGUE — badge de Meta preservado e o de YouTube junto; `iconClassName` idêntico item a item ao `className` do JSX antigo; nenhum arquivo de early-return tocado no diff."
+
+dodPendente:
+  - >
+    **Validação visual com login, em 3 configurações** (launch com captação
+    paga, perpétuo, etapa de família `null`) — NÃO EXECUTADA. Declarada
+    honestamente pelo @dev.
+  - >
+    **Link `?tab=` enviado e aberto em outra sessão** — NÃO EXECUTADO. É o
+    contrato novo desta story e nunca foi exercido num navegador.
+  - >
+    Acrescentar a estes dois o roteiro do QA-451-01 (etapa A → clicar NPS →
+    trocar para a etapa B pela sidebar) — 30 segundos, e decide se o achado
+    medium procede ou cai.
+
+proximaAcao: >
+  Story liberada para merge (**Status → Done**), com três coisas registradas e
+  nenhuma bloqueante:
+
+  1. **QA-451-01 (medium)** — a decidir DEPOIS da validação visual, que é quem
+     confirma ou derruba o achado. Se procede, o conserto é uma linha de deps
+     de efeito e não toca AC nenhuma.
+  2. **QA-451-02 (low)** — `aria-label` nos `TabsContent`; barato, cabe em
+     qualquer story que passe por `page.tsx`.
+  3. **QA-451-03 e QA-451-04 (low)** — débito declarado, sem ação nesta story.
+
+  A validação visual continua sendo item de DoD em aberto. Ela não segura o
+  merge — segura a afirmação de que a AC5 funciona na tela, que ninguém ainda
+  pode fazer.
