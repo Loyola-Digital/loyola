@@ -35,7 +35,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
-import { funnelGroupSnapshots, manualSales, metaAdInsightsDaily } from "../../db/schema.js";
+import { funnelGroupSnapshots, manualSales, metaAdInsightsDaily, projects } from "../../db/schema.js";
 import { campo, type CampoDoCatalogo, type EntidadeDoCatalogo } from "./catalogo.js";
 
 // ============================================================
@@ -155,8 +155,13 @@ function somaDaAcao(tipo: string): SQL {
  */
 interface Fonte {
   tabela: unknown;
-  /** Prende a consulta ao projeto da sessão. Sem isto, um projeto lê o outro. */
-  escopo: (projectId: string) => SQL;
+  /**
+   * Prende a consulta aos projetos da SESSÃO. Sem isto, um projeto lê o outro.
+   *
+   * Recebe lista, não id: a visão consolidada soma vários projetos, e é a mesma
+   * condição que garante que só entram os que quem está olhando enxerga.
+   */
+  escopo: (projectIds: string[]) => SQL;
   /** Dimensões e campos filtráveis → expressão. */
   campos: Record<string, SQL>;
   /** Métricas base → expressão JÁ agregada. */
@@ -168,7 +173,7 @@ interface Fonte {
 const FONTES: Partial<Record<EntidadeDoCatalogo, Fonte>> = {
   trafego: {
     tabela: metaAdInsightsDaily,
-    escopo: (projectId) => eq(metaAdInsightsDaily.projectId, projectId),
+    escopo: (ids) => inArray(metaAdInsightsDaily.projectId, ids),
     campos: {
       // `date_start` já vem como a data fechada da conta de anúncio (texto ISO),
       // sem hora — então aqui não há fuso a converter.
@@ -176,6 +181,10 @@ const FONTES: Partial<Record<EntidadeDoCatalogo, Fonte>> = {
       "trafego.campaign": col(metaAdInsightsDaily.campaignName),
       "trafego.adset": col(metaAdInsightsDaily.adsetName),
       "trafego.ad": col(metaAdInsightsDaily.adName),
+      // Subconsulta escalar em vez de `JOIN`: o executor monta uma consulta de
+      // uma tabela só, e trocar isso por join mudaria a forma de tudo para
+      // atender uma dimensão que só aparece no escopo consolidado.
+      "trafego.projeto": sql`(SELECT ${projects.name} FROM ${projects} WHERE ${projects.id} = ${metaAdInsightsDaily.projectId})`,
     },
     metricas: {
       "trafego.spend": soma(metaAdInsightsDaily.spend),
@@ -197,14 +206,20 @@ const FONTES: Partial<Record<EntidadeDoCatalogo, Fonte>> = {
     tabela: manualSales,
     // A venda pertence à etapa, a etapa ao funil e o funil ao projeto. A
     // subconsulta percorre o caminho inteiro, parametrizada.
-    escopo: (projectId) => sql`${manualSales.stageId} IN (
+    escopo: (ids) => sql`${manualSales.stageId} IN (
       SELECT fs.id FROM funnel_stages fs
         JOIN funnels f ON f.id = fs.funnel_id
-       WHERE f.project_id = ${projectId}
+       WHERE f.project_id IN (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})
     )`,
     campos: {
       "vendas.date": diaLocal(manualSales.saleDate),
       "vendas.produto": col(manualSales.product),
+      "vendas.projeto": sql`(
+        SELECT p.name FROM funnel_stages fs
+          JOIN funnels f ON f.id = fs.funnel_id
+          JOIN projects p ON p.id = f.project_id
+         WHERE fs.id = ${manualSales.stageId}
+      )`,
     },
     metricas: {
       "vendas.count": sql`COUNT(*)`,
@@ -217,11 +232,16 @@ const FONTES: Partial<Record<EntidadeDoCatalogo, Fonte>> = {
 
   grupos: {
     tabela: funnelGroupSnapshots,
-    escopo: (projectId) => sql`${funnelGroupSnapshots.funnelId} IN (
-      SELECT id FROM funnels WHERE project_id = ${projectId}
+    escopo: (ids) => sql`${funnelGroupSnapshots.funnelId} IN (
+      SELECT id FROM funnels WHERE project_id IN (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})
     )`,
     campos: {
       "grupos.date": diaLocal(funnelGroupSnapshots.snapshotAt),
+      "grupos.projeto": sql`(
+        SELECT p.name FROM funnels f
+          JOIN projects p ON p.id = f.project_id
+         WHERE f.id = ${funnelGroupSnapshots.funnelId}
+      )`,
     },
     metricas: {
       "grupos.participantes": soma(funnelGroupSnapshots.participantsAmount),
@@ -402,7 +422,13 @@ type Db = {
 
 export interface ContextoDaQuery {
   db: Db;
-  projectId: string;
+  /**
+   * Os projetos que a consulta pode ler.
+   *
+   * Um id no escopo normal, vários no consolidado. Vem sempre da sessão — o
+   * documento do dashboard diz *se* é consolidado, nunca *quais* projetos.
+   */
+  projectIds: string[];
   /** Só a entidade de planilha usa — ela avisa sobre aba ilegível. */
   log?: { warn: (o: unknown, m: string) => void };
 }
@@ -526,7 +552,7 @@ export async function executarQuery(
     const { carregarAplicacoes, executarSobreLinhas } = await import("./aplicacoes.js");
     const carregado = await carregarAplicacoes(
       { db: ctx.db, log: ctx.log ?? { warn: () => {} } },
-      ctx.projectId,
+      ctx.projectIds,
     );
     const r = executarSobreLinhas(spec, carregado.linhas);
     return { ...r, avisos: [...carregado.avisos, ...r.avisos] };
@@ -544,7 +570,7 @@ export async function executarQuery(
     );
   }
 
-  const condicoes: SQL[] = [fonte.escopo(ctx.projectId)];
+  const condicoes: SQL[] = [fonte.escopo(ctx.projectIds)];
   for (const [chave, filtro] of Object.entries(spec.filters)) {
     const e = fonte.campos[chave];
     if (!e) {

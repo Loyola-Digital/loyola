@@ -3553,6 +3553,14 @@ export const biDashboards = pgTable(
      * recorte que quem salvou.
      */
     slicers: jsonb("slicers").notNull().default([]),
+    /**
+     * `projeto` = só o projeto onde o dashboard mora; `todos` = todos os
+     * projetos que quem está olhando enxerga.
+     *
+     * A lista de projetos sai da SESSÃO, nunca deste documento — senão um
+     * dashboard salvo viraria uma forma de ver projeto alheio.
+     */
+    escopo: varchar("escopo", { length: 20 }).notNull().default("projeto"),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

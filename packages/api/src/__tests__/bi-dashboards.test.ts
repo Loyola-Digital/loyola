@@ -67,12 +67,29 @@ const LINHA = {
 function fakeDb(fila: unknown[][]) {
   const capturado: Record<string, unknown> = {};
   const proximo = async () => fila.shift() ?? [];
+
+  /**
+   * Um elo da cadeia do Drizzle.
+   *
+   * É *thenable* porque nem toda consulta termina em `.limit()`: as que listam
+   * projetos e vínculos param no `.where()`, e uma sem `where` nenhum para no
+   * `.from()`. Sem isso o `await` ficaria pendurado no objeto da cadeia.
+   */
+  const elo = (): Record<string, unknown> => {
+    const eu: Record<string, unknown> = {
+      where: vi.fn(() => elo()),
+      innerJoin: vi.fn(() => elo()),
+      groupBy: vi.fn(() => elo()),
+      orderBy: proximo,
+      limit: proximo,
+      then: (ok: (v: unknown) => void, falhou: (e: unknown) => void) =>
+        proximo().then(ok, falhou),
+    };
+    return eu;
+  };
+
   const db = {
-    select: vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn(() => ({ limit: proximo, orderBy: proximo })),
-      })),
-    })),
+    select: vi.fn(() => ({ from: vi.fn(() => elo()) })),
     insert: vi.fn(() => ({
       values: vi.fn((v: Record<string, unknown>) => {
         capturado.inserido = v;
@@ -348,5 +365,83 @@ describe("período", () => {
       start: "2026-03-01",
       end: "2026-03-31",
     });
+  });
+});
+
+describe("escopo consolidado — a lista vem da sessão, não do documento", () => {
+  const LINHA_TODOS = { ...LINHA, escopo: "todos" };
+
+  it("admin executa sobre todos os projetos que existem", async () => {
+    // Fila: temAcesso(projeto) → carregar(dashboard) → projetosVisiveis(todos)
+    const { app } = await montar([
+      [{ id: PROJETO }],
+      [LINHA_TODOS],
+      [{ id: PROJETO }, { id: "p2" }, { id: "p3" }],
+    ]);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}/execute`,
+      payload: {},
+    });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().projetosNoEscopo).toBe(3);
+    await app.close();
+  });
+
+  it("não-admin só alcança os projetos onde é membro", async () => {
+    // O ponto inteiro da feature: um dashboard salvo com escopo `todos` NÃO
+    // pode virar uma forma de ler projeto alheio.
+    const { app } = await montar(
+      [
+        [{ id: PROJETO }],
+        [{ id: "m1" }],
+        [LINHA_TODOS],
+        [{ id: PROJETO }, { id: "p2" }],
+      ],
+      "user",
+    );
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}/execute`,
+      payload: {},
+    });
+    expect(r.json().projetosNoEscopo).toBe(2);
+    await app.close();
+  });
+
+  it("escopo `projeto` continua lendo um projeto só", async () => {
+    const { app } = await montar([[{ id: PROJETO }], [LINHA]]);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}/execute`,
+      payload: {},
+    });
+    expect(r.json().projetosNoEscopo).toBe(1);
+    await app.close();
+  });
+
+  it("o escopo entra no patch parcial como qualquer outro campo", async () => {
+    const { app, capturado } = await montar([[{ id: PROJETO }], [LINHA]]);
+    const r = await app.inject({
+      method: "PUT",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}`,
+      payload: { escopo: "todos" },
+    });
+    expect(r.statusCode).toBe(200);
+    const set = capturado.set as Record<string, unknown>;
+    expect(set.escopo).toBe("todos");
+    expect(set).not.toHaveProperty("widgets");
+    await app.close();
+  });
+
+  it("escopo inventado é recusado", async () => {
+    const { app } = await montar([[{ id: PROJETO }], [LINHA]]);
+    const r = await app.inject({
+      method: "PUT",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}`,
+      payload: { escopo: "tudo_do_mundo" },
+    });
+    expect(r.statusCode).toBe(400);
+    await app.close();
   });
 });

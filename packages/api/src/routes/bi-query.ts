@@ -41,7 +41,7 @@ export default fp(async function biQueryRoutes(fastify) {
       const inicio = Date.now();
       const resultado = await executarQuery(corpo.data.spec, {
         db: fastify.db as never,
-        projectId: corpo.data.projectId,
+        projectIds: [corpo.data.projectId],
       });
       // O tempo volta junto: o editor precisa mostrar quando a consulta ficou
       // cara, e é o que vai justificar cache mais adiante.

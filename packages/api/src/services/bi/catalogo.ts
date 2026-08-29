@@ -142,6 +142,17 @@ export const CAMPOS: CampoDoCatalogo[] = [
     dataType: "string",
     description: "Nome do anúncio, como está na Meta",
   },
+  {
+    key: "trafego.projeto",
+    label: "Projeto",
+    entity: "trafego",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description:
+      "De qual projeto o dado veio. Só faz sentido quando o dashboard está no escopo de todos os projetos",
+  },
 
   // ---------- trafego: métricas base ----------
   {
@@ -278,6 +289,17 @@ export const CAMPOS: CampoDoCatalogo[] = [
     description: "Qual produto foi vendido na transação",
   },
   {
+    key: "vendas.projeto",
+    label: "Projeto",
+    entity: "vendas",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description:
+      "De qual projeto o dado veio. Só faz sentido quando o dashboard está no escopo de todos os projetos",
+  },
+  {
     key: "vendas.count",
     label: "Vendas",
     entity: "vendas",
@@ -334,6 +356,17 @@ export const CAMPOS: CampoDoCatalogo[] = [
     description: "De qual canal a pessoa veio (utm_source, já com as regras de origem aplicadas)",
   },
   {
+    key: "aplicacoes.projeto",
+    label: "Projeto",
+    entity: "aplicacoes",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description:
+      "De qual projeto o dado veio. Só faz sentido quando o dashboard está no escopo de todos os projetos",
+  },
+  {
     key: "aplicacoes.count",
     label: "Aplicações",
     entity: "aplicacoes",
@@ -354,6 +387,17 @@ export const CAMPOS: CampoDoCatalogo[] = [
     aggregation: "none",
     dataType: "date",
     description: "Dia do retrato dos grupos",
+  },
+  {
+    key: "grupos.projeto",
+    label: "Projeto",
+    entity: "grupos",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description:
+      "De qual projeto o dado veio. Só faz sentido quando o dashboard está no escopo de todos os projetos",
   },
   {
     key: "grupos.participantes",

@@ -30,11 +30,11 @@ function spec(over: Record<string, unknown> = {}): QuerySpec {
 }
 
 const LINHAS: AplicacaoNormalizada[] = [
-  { date: "2026-08-01", origem: "instagram" },
-  { date: "2026-08-01", origem: "instagram" },
-  { date: "2026-08-02", origem: "google" },
-  { date: "2026-08-10", origem: "sem origem" },
-  { date: "2026-09-01", origem: "instagram" },
+  { date: "2026-08-01", origem: "instagram", projeto: "BBE" },
+  { date: "2026-08-01", origem: "instagram", projeto: "BBE" },
+  { date: "2026-08-02", origem: "google", projeto: "Lyrio" },
+  { date: "2026-08-10", origem: "sem origem", projeto: "Lyrio" },
+  { date: "2026-09-01", origem: "instagram", projeto: "BBE" },
 ];
 
 describe("achar o cabeçalho certo", () => {
@@ -88,7 +88,7 @@ describe("normalização", () => {
       [{ "Carimbo de data/hora": "01/08/2026", Nome: "Ana", utm_source: "instagram" }],
       colunas,
     );
-    expect(r.linhas).toEqual([{ date: "2026-08-01", origem: "instagram" }]);
+    expect(r.linhas).toEqual([{ date: "2026-08-01", origem: "instagram", projeto: "" }]);
   });
 
   it("sem coluna de data, RECUSA em vez de devolver zero aplicações", () => {
@@ -163,8 +163,8 @@ describe("execução em memória", () => {
     const r = executarSobreLinhas(
       spec({ dimensions: ["aplicacoes.date"], date_granularity: "week" }),
       [
-        { date: "2026-08-06", origem: "x" }, // quinta
-        { date: "2026-08-04", origem: "x" }, // terça
+        { date: "2026-08-06", origem: "x", projeto: "BBE" }, // quinta
+        { date: "2026-08-04", origem: "x", projeto: "BBE" }, // terça
       ],
     );
     expect(r.rows).toHaveLength(1);
@@ -214,6 +214,7 @@ describe("execução em memória", () => {
     const muitas = Array.from({ length: TETO_DE_APLICACOES + 10 }, (_, i) => ({
       date: "2026-08-01",
       origem: `origem-${i}`,
+      projeto: "BBE",
     }));
     const r = executarSobreLinhas(
       spec({ dimensions: ["aplicacoes.origem"], limit: 10_000 }),
@@ -231,5 +232,33 @@ describe("execução em memória", () => {
   it("as colunas saem rotuladas em português", () => {
     const r = executarSobreLinhas(spec({ dimensions: ["aplicacoes.origem"] }), LINHAS);
     expect(r.columns.map((c) => c.label)).toEqual(["Origem", "Aplicações"]);
+  });
+});
+
+describe("escopo consolidado na planilha", () => {
+  it("agrupa por projeto", () => {
+    const r = executarSobreLinhas(spec({ dimensions: ["aplicacoes.projeto"] }), LINHAS);
+    expect(r.rows.map((l) => [l["aplicacoes.projeto"], l["aplicacoes.count"]])).toEqual([
+      ["BBE", 2],
+      ["Lyrio", 2],
+    ]);
+  });
+
+  it("filtra por projeto", () => {
+    const r = executarSobreLinhas(
+      spec({
+        filters: {
+          "aplicacoes.date": { operator: "$between", value: ["2026-08-01", "2026-08-31"] },
+          "aplicacoes.projeto": { operator: "$eq", value: "Lyrio" },
+        },
+      }),
+      LINHAS,
+    );
+    expect(r.rows[0]!["aplicacoes.count"]).toBe(2);
+  });
+
+  it("a coluna de projeto sai rotulada", () => {
+    const r = executarSobreLinhas(spec({ dimensions: ["aplicacoes.projeto"] }), LINHAS);
+    expect(r.columns[0]!.label).toBe("Projeto");
   });
 });

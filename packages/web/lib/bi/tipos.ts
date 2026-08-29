@@ -86,6 +86,11 @@ export interface Dashboard {
   dateRange: DateRange;
   /** O recorte que vale para o canvas inteiro — estado do dashboard, não da tela. */
   slicers: Slicer[];
+  /**
+   * `projeto` = só o projeto onde o dashboard mora.
+   * `todos` = todos os projetos que QUEM ESTÁ OLHANDO enxerga.
+   */
+  escopo: "projeto" | "todos";
   periodo: { start: string; end: string };
   createdBy: string | null;
   createdAt: string;
