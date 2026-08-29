@@ -153,7 +153,12 @@ export function useApagarDashboard(projectId: string | null) {
 export function useInserirWidget(projectId: string | null, id: string | null) {
   const apiClient = useApiClient();
   return useMutation({
-    mutationFn: (entrada: { presetId: string; geometria?: { x: number; y: number } }) =>
+    mutationFn: (
+      entrada:
+        | { presetId: string; geometria?: { x: number; y: number } }
+        // O editor manda o widget inteiro; o id é do servidor.
+        | { widget: Omit<Widget, "id"> },
+    ) =>
       apiClient<{ widget: Widget; resultado: ResultadoDoWidget }>(
         `/api/projects/${projectId}/bi/dashboards/${id}/widgets`,
         { method: "POST", body: JSON.stringify(entrada) },

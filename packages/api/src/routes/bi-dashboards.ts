@@ -32,6 +32,7 @@ import {
   type ContextoDoDashboard,
   type Slicer,
 } from "../services/bi/contexto.js";
+import { aplicarDerivadas, validarDerivadas } from "../services/bi/derivadas.js";
 import { comPeriodo, preset } from "../services/bi/presets.js";
 import { ErroDeQuery, executarQuery, type ResultadoDaQuery } from "../services/bi/query.js";
 
@@ -57,6 +58,20 @@ const patchSchema = z
     slicers: z.array(slicerSchema).max(20).optional(),
   })
   .strict();
+
+/**
+ * O que impede um widget de ser salvo.
+ *
+ * A validação das derivadas roda na ESCRITA, não só na leitura: uma expressão
+ * que aponta para `q3` num widget de duas consultas precisa ser recusada na hora
+ * de salvar — senão vira coluna vazia todo dia, sem ninguém saber por quê.
+ */
+function problemasDoWidget(w: Widget): string[] {
+  const quantidade = 1 + (w.specsExtras?.length ?? 0);
+  return validarDerivadas(w.derivadas ?? [], quantidade, w.mergeKey).map(
+    (p) => `${w.titulo}: ${p}`,
+  );
+}
 
 export default fp(async function biDashboardsRoutes(fastify) {
   /**
@@ -188,6 +203,10 @@ export default fp(async function biDashboardsRoutes(fastify) {
         error: `Um dashboard cabe até ${LIMITE_DE_WIDGETS} widgets. Divida em dois.`,
       });
     }
+    const problemas = (campos.widgets ?? []).flatMap(problemasDoWidget);
+    if (problemas.length > 0) {
+      return reply.code(400).send({ error: problemas[0], detalhes: problemas });
+    }
 
     const linha = await carregar(p.data.projectId, p.data.id);
     if (!linha) return reply.code(404).send({ error: "Dashboard não encontrado" });
@@ -266,15 +285,30 @@ export default fp(async function biDashboardsRoutes(fastify) {
    */
   type ResultadoDoWidget = ResultadoDaQuery | { erro: string; campo?: string };
 
-  /** Executa UM widget já com o contexto do dashboard aplicado. */
+  /**
+   * Executa UM widget já com o contexto do dashboard aplicado.
+   *
+   * Um widget pode ter até quatro consultas — `spec` é a q0 e `specsExtras` são
+   * as demais. Elas existem justamente para poder ter **filtros diferentes**, e
+   * as colunas derivadas as combinam depois.
+   */
   async function executarWidget(
     widget: Widget,
     projectId: string,
     ctx: ContextoDoDashboard,
   ): Promise<ResultadoDoWidget> {
     try {
-      const { spec, avisos } = aplicarContexto(widget.spec, ctx);
-      const r = await executarQuery(spec, { db: fastify.db as never, projectId });
+      const todas = [widget.spec, ...(widget.specsExtras ?? [])];
+      const avisos: string[] = [];
+      const resultados: ResultadoDaQuery[] = [];
+      for (const bruta of todas) {
+        const preparada = aplicarContexto(bruta, ctx);
+        avisos.push(...preparada.avisos);
+        resultados.push(
+          await executarQuery(preparada.spec, { db: fastify.db as never, projectId }),
+        );
+      }
+      const r = aplicarDerivadas(resultados, widget.derivadas ?? [], widget.mergeKey);
       // Os avisos do contexto entram junto com os da execução: um filtro que a
       // pessoa acha que aplicou e não aplicou é número errado com cara de certo.
       return { ...r, avisos: [...avisos, ...r.avisos] };
@@ -387,11 +421,18 @@ export default fp(async function biDashboardsRoutes(fastify) {
         tipo: escolhido.tipo,
         titulo: corpo.data.titulo ?? escolhido.nome,
         spec: comPeriodo(escolhido.spec, periodo),
+        // Preset é sempre uma consulta só: multi-query nasce no editor.
+        specsExtras: [],
+        derivadas: [],
         geometria: { ...canto, w: tamanho.w, h: tamanho.h },
         opcoes: escolhido.opcoes ?? {},
       };
     } else {
       novo = { ...corpo.data.widget, id: randomUUID() };
+      const problemas = problemasDoWidget(novo);
+      if (problemas.length > 0) {
+        return reply.code(400).send({ error: problemas[0], detalhes: problemas });
+      }
     }
 
     const atualizados = [...widgets, novo];

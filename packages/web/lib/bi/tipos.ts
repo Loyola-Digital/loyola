@@ -46,11 +46,26 @@ export interface Geometria {
   h: number;
 }
 
+/** Uma coluna calculada a partir das consultas do widget. */
+export interface Derivada {
+  name: string;
+  label: string;
+  expression: string;
+  mode: "scalar" | "row";
+  semanticType: "currency" | "number" | "percent";
+}
+
 export interface Widget {
   id: string;
   tipo: TipoDeWidget;
   titulo: string;
+  /** A consulta base — a `q0` das expressões derivadas. */
   spec: QuerySpec;
+  /** Consultas adicionais (q1…q3). Existem para poder ter filtros diferentes. */
+  specsExtras: QuerySpec[];
+  derivadas: Derivada[];
+  /** A dimensão que casa as linhas das consultas, para derivada por linha. */
+  mergeKey?: string;
   geometria: Geometria;
   opcoes: Record<string, unknown>;
 }

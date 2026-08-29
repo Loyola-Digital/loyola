@@ -38,6 +38,8 @@ function widget(over: Partial<Widget> = {}): Widget {
       limit: 500,
       date_granularity: "day",
     },
+    specsExtras: [],
+    derivadas: [],
     geometria: { x: 0, y: 0, w: 4, h: 3 },
     opcoes: {},
     ...over,

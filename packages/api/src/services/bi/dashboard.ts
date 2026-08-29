@@ -8,6 +8,7 @@
 
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { derivadaSchema, MAX_DERIVADAS, MAX_QUERIES } from "./derivadas.js";
 import { querySpecSchema } from "./query.js";
 import { FUSO } from "./query.js";
 
@@ -38,6 +39,19 @@ export const widgetSchema = z.object({
   titulo: z.string().min(1).max(120),
   /** A consulta mora no widget, não no cliente — é o que impede spec forjado. */
   spec: querySpecSchema,
+  /**
+   * Consultas ADICIONAIS (q1, q2, q3) — `spec` é sempre a q0.
+   *
+   * Existe porque cada consulta pode ter filtros diferentes: é o que permite
+   * "lucro" com escopos assimétricos (receita de tudo menos o gasto de uma
+   * campanha só). A base continua sendo `spec`, então widget simples não muda de
+   * forma para ganhar o campo.
+   */
+  specsExtras: z.array(querySpecSchema).max(MAX_QUERIES - 1).default([]),
+  /** Colunas calculadas a partir das consultas, por parser próprio. */
+  derivadas: z.array(derivadaSchema).max(MAX_DERIVADAS).default([]),
+  /** A dimensão que casa as linhas das consultas, quando a derivada é por linha. */
+  mergeKey: z.string().max(120).optional(),
   geometria: geometriaSchema,
   /** Opções de desenho (cor, formato, meta). Livre de propósito. */
   opcoes: z.record(z.string(), z.unknown()).default({}),

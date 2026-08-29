@@ -14,6 +14,7 @@ import {
   Copy,
   LayoutDashboard,
   Loader2,
+  Pencil,
   Plus,
   RefreshCw,
   Settings2,
@@ -42,6 +43,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { BarraDeFiltros } from "@/components/bi/barra-de-filtros";
 import { BiCanvas } from "@/components/bi/bi-canvas";
+import { EditorDeWidget } from "@/components/bi/editor-de-widget";
 import { GaleriaDeWidgets } from "@/components/bi/galeria-de-widgets";
 import { WidgetConteudo } from "@/components/bi/widget-conteudo";
 import { useProjects } from "@/lib/hooks/use-projects";
@@ -49,6 +51,7 @@ import { useRefreshProgressivo } from "@/lib/hooks/use-refresh-progressivo";
 import { useSalvamentoSerializado } from "@/lib/hooks/use-salvamento-serializado";
 import {
   useApagarDashboard,
+  useCatalogoDeBi,
   useCriarDashboard,
   useDashboard,
   useDashboards,
@@ -73,6 +76,9 @@ export default function BiPage() {
   const [galeriaAberta, setGaleriaAberta] = useState(false);
   const [aApagar, setAApagar] = useState<string | null>(null);
   const [inserindo, setInserindo] = useState<string | null>(null);
+  const [emEdicao, setEmEdicao] = useState<Widget | null>(null);
+  /** `true` enquanto o widget aberto ainda não existe no servidor. */
+  const [editandoNovo, setEditandoNovo] = useState(false);
 
   // Widgets locais: o canvas mexe neles a cada arrasto, e o servidor recebe
   // depois, pela fila. Sem essa cópia, o card voltaria para a posição antiga a
@@ -89,6 +95,7 @@ export default function BiPage() {
   const { data: lista, isLoading: carregandoLista } = useDashboards(projectId);
   const { data: dashboard } = useDashboard(projectId, dashboardId);
   const { data: presets } = usePresetsDeBi();
+  const { data: catalogo } = useCatalogoDeBi();
 
   // A atualização é progressiva: cada widget pinta quando a linha dele chega,
   // em vez de a tela inteira esperar a consulta mais lenta.
@@ -163,6 +170,69 @@ export default function BiPage() {
       // travada em "inserindo".
       setInserindo(null);
     }
+  }
+
+  /** O widget em branco com que o editor começa. */
+  function widgetVazio(): Widget {
+    return {
+      id: "novo",
+      tipo: "kpi",
+      titulo: "Novo widget",
+      spec: {
+        entity: "trafego",
+        metrics: ["trafego.spend"],
+        dimensions: [],
+        // O período é injetado pelo dashboard; este é só o valor inicial.
+        filters: {
+          "trafego.date": {
+            operator: "$between",
+            value: [
+              periodoEmVigor?.start ?? dashboard?.periodo.start ?? "",
+              periodoEmVigor?.end ?? dashboard?.periodo.end ?? "",
+            ],
+          },
+        },
+        order_by: [],
+        limit: 500,
+        date_granularity: "day",
+      },
+      specsExtras: [],
+      derivadas: [],
+      geometria: { x: 0, y: 0, w: 3, h: 2 },
+      opcoes: {},
+    };
+  }
+
+  async function salvarWidgetEditado(editado: Widget) {
+    if (editandoNovo) {
+      // O id vem do servidor: o `"novo"` do rascunho é só um marcador de tela.
+      const semId: Omit<Widget, "id"> = {
+        tipo: editado.tipo,
+        titulo: editado.titulo,
+        spec: editado.spec,
+        specsExtras: editado.specsExtras,
+        derivadas: editado.derivadas,
+        mergeKey: editado.mergeKey,
+        geometria: editado.geometria,
+        opcoes: editado.opcoes,
+      };
+      const { widget, resultado } = await inserir.mutateAsync({ widget: semId });
+      setWidgets((atuais) => [...atuais, widget]);
+      setRecemInseridos((atuais) => ({ ...atuais, [widget.id]: resultado }));
+    } else {
+      const novos = widgets.map((w) => (w.id === editado.id ? editado : w));
+      setWidgets(novos);
+      await salvar.mutateAsync({ widgets: novos });
+      // A definição mudou: o resultado guardado é de outra pergunta.
+      setRecemInseridos((atuais) => {
+        const copia = { ...atuais };
+        delete copia[editado.id];
+        return copia;
+      });
+      void atualizarAgora({});
+    }
+    setEmEdicao(null);
+    setEditandoNovo(false);
   }
 
   async function removerWidget(id: string) {
@@ -317,15 +387,29 @@ export default function BiPage() {
               )}
               renderAcoes={(w) =>
                 organizando ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="size-6 p-0"
-                    onClick={() => removerWidget(w.id)}
-                    aria-label={`Remover ${w.titulo}`}
-                  >
-                    <X className="size-3.5" />
-                  </Button>
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="size-6 p-0"
+                      onClick={() => {
+                        setEditandoNovo(false);
+                        setEmEdicao(w);
+                      }}
+                      aria-label={`Editar ${w.titulo}`}
+                    >
+                      <Pencil className="size-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="size-6 p-0"
+                      onClick={() => removerWidget(w.id)}
+                      aria-label={`Remover ${w.titulo}`}
+                    >
+                      <X className="size-3.5" />
+                    </Button>
+                  </>
                 ) : null
               }
               vazio={
@@ -363,9 +447,33 @@ export default function BiPage() {
               onInserir={inserirPreset}
               inserindo={inserindo}
             />
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3 w-full"
+              onClick={() => {
+                setEditandoNovo(true);
+                setEmEdicao(widgetVazio());
+              }}
+            >
+              <Plus className="size-3.5" />
+              Montar do zero
+            </Button>
           </aside>
         )}
       </div>
+
+      <EditorDeWidget
+        aberto={Boolean(emEdicao)}
+        widget={emEdicao}
+        catalogo={catalogo ?? { metrics: [], dimensions: [] }}
+        periodo={periodoEmVigor ?? dashboard?.periodo ?? { start: "", end: "" }}
+        onFechar={() => {
+          setEmEdicao(null);
+          setEditandoNovo(false);
+        }}
+        onSalvar={salvarWidgetEditado}
+      />
 
       <AlertDialog open={Boolean(aApagar)} onOpenChange={(aberto) => !aberto && setAApagar(null)}>
         <AlertDialogContent>
