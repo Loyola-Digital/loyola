@@ -9,7 +9,7 @@
  * inutilizável e catálogo nomeado é usável no dia um.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Copy,
   Globe,
@@ -67,7 +67,6 @@ import {
   useRemoverWidget,
   useSalvarDashboard,
   type PresetNaGaleria,
-  type ResultadoDoWidget,
 } from "@/lib/hooks/use-bi";
 import type { DateRange, Widget } from "@/lib/bi/tipos";
 import { cn } from "@/lib/utils";
@@ -98,7 +97,6 @@ export default function BiPage() {
   // depois, pela fila. Sem essa cópia, o card voltaria para a posição antiga a
   // cada resposta da API.
   const [widgets, setWidgets] = useState<Widget[]>([]);
-  const [recemInseridos, setRecemInseridos] = useState<Record<string, ResultadoDoWidget>>({});
 
   useEffect(() => {
     if (projectId || !projetos?.length) return;
@@ -114,7 +112,8 @@ export default function BiPage() {
   // A atualização é progressiva: cada widget pinta quando a linha dele chega,
   // em vez de a tela inteira esperar a consulta mais lenta.
   const {
-    resultados: calculados,
+    resultados,
+    semear,
     carregando: calculando,
     pendentes,
     periodo: periodoEmVigor,
@@ -132,8 +131,15 @@ export default function BiPage() {
   const agente = useAgenteDeBi(projectId, dashboardId);
 
   useEffect(() => {
-    if (dashboard) setWidgets(dashboard.widgets);
+    // Enquanto o novo dashboard não chega, a tela fica vazia em vez de manter os
+    // widgets do anterior — que apareceriam com os números do projeto que acabou
+    // de sair.
+    setWidgets(dashboard?.widgets ?? []);
   }, [dashboard]);
+
+  useEffect(() => {
+    setWidgets([]);
+  }, [projectId, dashboardId]);
 
   useEffect(() => {
     if (!dashboardId && lista?.dashboards.length) setDashboardId(lista.dashboards[0]!.id);
@@ -153,11 +159,6 @@ export default function BiPage() {
       agendar(novos);
     },
     [agendar],
-  );
-
-  const resultados = useMemo(
-    () => ({ ...calculados, ...recemInseridos }),
-    [calculados, recemInseridos],
   );
 
   // Trocar o filtro salva (é estado do dashboard) e pede a leva nova — o
@@ -194,7 +195,7 @@ export default function BiPage() {
       setWidgets((atuais) => [...atuais, widget]);
       // O resultado veio junto com a inserção: o card nasce preenchido, sem
       // um segundo request nem um instante em branco.
-      setRecemInseridos((atuais) => ({ ...atuais, [widget.id]: resultado }));
+      semear(widget.id, resultado);
     } finally {
       // No `finally` de propósito: erro na inserção não pode deixar a galeria
       // travada em "inserindo".
@@ -248,17 +249,13 @@ export default function BiPage() {
       };
       const { widget, resultado } = await inserir.mutateAsync({ widget: semId });
       setWidgets((atuais) => [...atuais, widget]);
-      setRecemInseridos((atuais) => ({ ...atuais, [widget.id]: resultado }));
+      semear(widget.id, resultado);
     } else {
       const novos = widgets.map((w) => (w.id === editado.id ? editado : w));
       setWidgets(novos);
       await salvar.mutateAsync({ widgets: novos });
-      // A definição mudou: o resultado guardado é de outra pergunta.
-      setRecemInseridos((atuais) => {
-        const copia = { ...atuais };
-        delete copia[editado.id];
-        return copia;
-      });
+      // A definição mudou: o resultado em tela é de outra pergunta. A leva nova
+      // sobrescreve, e é ela que manda.
       void atualizarAgora({});
     }
     setEmEdicao(null);
@@ -269,7 +266,7 @@ export default function BiPage() {
     // Cada widget entra no canvas assim que o número dele chega — não no fim.
     void agente.perguntar(pergunta, (widget, resultado) => {
       setWidgets((atuais) => [...atuais, widget]);
-      setRecemInseridos((atuais) => ({ ...atuais, [widget.id]: resultado }));
+      semear(widget.id, resultado);
     });
   }
 
@@ -294,7 +291,7 @@ export default function BiPage() {
       },
     });
     setWidgets((atuais) => [...atuais, widget]);
-    setRecemInseridos((atuais) => ({ ...atuais, [widget.id]: resultado }));
+    semear(widget.id, resultado);
   }
 
   async function removerWidget(id: string) {
