@@ -3490,13 +3490,22 @@ export const sourceRuleOperatorEnum = pgEnum("source_rule_operator", [
   "vazio",
 ]);
 
-export const stageSourceRules = pgTable(
-  "stage_source_rules",
+/**
+ * As regras que atribuem origem a uma aplicação.
+ *
+ * Escopo de **PROJETO**, não de etapa. O `utm_source` "instagram" significa a
+ * mesma coisa em qualquer funil e em qualquer etapa do mesmo projeto —
+ * classificar de novo a cada etapa era pedir para as respostas divergirem: a
+ * captação diria orgânico e a venda diria pago, sobre a MESMA linha da MESMA
+ * planilha.
+ */
+export const projectSourceRules = pgTable(
+  "project_source_rules",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    stageId: uuid("stage_id")
+    projectId: uuid("project_id")
       .notNull()
-      .references(() => funnelStages.id, { onDelete: "cascade" }),
+      .references(() => projects.id, { onDelete: "cascade" }),
     /**
      * Coluna da planilha que a regra observa (`utm_medium`, `utm_term`, …).
      *
@@ -3520,7 +3529,7 @@ export const stageSourceRules = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [index("idx_stage_source_rules_stage").on(table.stageId, table.ordem)],
+  (table) => [index("idx_project_source_rules_project").on(table.projectId, table.ordem)],
 );
 
 // ============================================================

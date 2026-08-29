@@ -32,7 +32,7 @@ import {
   type ContextoDoDashboard,
   type Slicer,
 } from "../services/bi/contexto.js";
-import { montarWidgets } from "../services/bi/agente.js";
+import { ErroDoAgente, montarWidgets } from "../services/bi/agente.js";
 import { aplicarDerivadas, validarDerivadas } from "../services/bi/derivadas.js";
 import { comPeriodo, preset } from "../services/bi/presets.js";
 import { ErroDeQuery, executarQuery, type ResultadoDaQuery } from "../services/bi/query.js";
@@ -668,8 +668,12 @@ export default fp(async function biDashboardsRoutes(fastify) {
         ocupados: widgets.map((w) => w.geometria),
       });
     } catch (erro) {
+      // O motivo sobe até a tela: "tente de novo" não distingue sobrecarga de
+      // chave errada, e deixa quem está olhando sem ação possível.
       fastify.log.error({ erro }, "agente de BI falhou");
-      return reply.code(502).send({ error: "A IA não respondeu agora. Tente de novo." });
+      const legivel =
+        erro instanceof ErroDoAgente ? erro.message : "Falha inesperada ao falar com a IA.";
+      return reply.code(502).send({ error: legivel });
     }
 
     // Cabe o que sobra: o teto vale igual para quem pede à IA.

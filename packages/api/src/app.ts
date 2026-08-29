@@ -37,7 +37,7 @@ import invitationsRoutes from "./routes/invitations.js";
 import adminRoutes from "./routes/admin.js";
 import pdiRoutes from "./routes/pdi.js";
 import pessoalRoutes from "./routes/pessoal.js";
-import stageSourceRulesRoutes from "./routes/stage-source-rules.js";
+import projectSourceRulesRoutes from "./routes/project-source-rules.js";
 import biCatalogoRoutes from "./routes/bi-catalogo.js";
 import biDashboardsRoutes from "./routes/bi-dashboards.js";
 import biQueryRoutes from "./routes/bi-query.js";
@@ -199,7 +199,7 @@ export async function buildServer() {
   await app.register(adminRoutes);
   await app.register(pdiRoutes);
   await app.register(pessoalRoutes);
-  await app.register(stageSourceRulesRoutes);
+  await app.register(projectSourceRulesRoutes);
   await app.register(biCatalogoRoutes);
   await app.register(biQueryRoutes);
   await app.register(biDashboardsRoutes);
