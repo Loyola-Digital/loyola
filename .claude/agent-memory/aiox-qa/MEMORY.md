@@ -2,3 +2,4 @@
 - [Story 18.61 QA CONCERNS](project_story_18_61.md) — coluna Status Ativo/Pausado nos Criativos (regra OR); effective_status no cache; "—" até deploy+backfill; TEST-001/REL-001 abertos
 - [Story 44.12 QA CONCERNS](project_story_44_12.md) — produtor de CoberturaDiaria; backfill rodou em prod antes do deploy (sync reverte a guarda); column_mapping usa `timestamp`, sync procura `date`
 - [Reversão no fio, não na biblioteca](feedback_reversao_no_fio_nao_na_biblioteca.md) — story de wiring exige cortar o ARGUMENTO no call site; testar a lib não prova que o chamador está ligado
+- [Junção de feeds declara a escala](feedback_juncao_de_feeds_declara_escala.md) — campos homônimos nos dois lados: `ctr`/`cpc`/`connectRate` são decimais no /cadeia-cac e ×100 no /creatives
