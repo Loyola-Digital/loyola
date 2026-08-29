@@ -293,6 +293,14 @@ function ehTemporario(erro: unknown): boolean {
 
 function motivoLegivel(erro: unknown): string {
   const e = erro as { status?: number; message?: string };
+
+  // Saldo esgotado chega como 400, não como 402 — e a mensagem crua da
+  // Anthropic manda "ir para Plans & Billing", conselho que não serve para quem
+  // está olhando um dashboard. Trocamos por quem pode resolver.
+  if (/credit balance is too low/i.test(e?.message ?? "")) {
+    return "A conta de IA está sem saldo. Recarregue os créditos da Anthropic — isso afeta o chat e os Minds também.";
+  }
+
   if (e?.status === 401 || e?.status === 403) {
     return "A chave da API de IA foi recusada. Verifique a configuração do servidor.";
   }

@@ -259,3 +259,32 @@ describe("quando a IA falha, a mensagem diz o que fazer", () => {
     await expect(montarWidgets("x", { cliente, ocupados: [] })).rejects.toThrow(/socket hang up/);
   });
 });
+
+describe("saldo esgotado — o erro mais provável, e o menos óbvio", () => {
+  it("vira uma frase que diz quem resolve, não 'tente de novo'", async () => {
+    // A Anthropic manda saldo baixo como 400 com "Plans & Billing" — conselho
+    // inútil para quem está olhando um dashboard.
+    const create = vi.fn(async () => {
+      throw Object.assign(
+        new Error(
+          '400 {"type":"error","error":{"message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing"}}',
+        ),
+        { status: 400 },
+      );
+    });
+    await expect(
+      montarWidgets("x", { cliente: { messages: { create } }, ocupados: [] }),
+    ).rejects.toThrow(/sem saldo/i);
+    // E não repete: sem saldo, repetir não muda nada.
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("a mensagem avisa que o problema é maior que o BI", async () => {
+    const create = vi.fn(async () => {
+      throw Object.assign(new Error("credit balance is too low"), { status: 400 });
+    });
+    await expect(
+      montarWidgets("x", { cliente: { messages: { create } }, ocupados: [] }),
+    ).rejects.toThrow(/chat e os Minds/i);
+  });
+});
