@@ -445,3 +445,78 @@ describe("escopo consolidado — a lista vem da sessão, não do documento", () 
     await app.close();
   });
 });
+
+describe("refresh-all — a resposta escrita direto no socket", () => {
+  /**
+   * O `refresh-all` fala com o socket para poder mandar NDJSON linha a linha, e
+   * isso pula o `onSend` — que é onde o `@fastify/cors` põe o
+   * `Access-Control-Allow-Origin`. O resultado é uma resposta 200 que o
+   * navegador descarta: não aparece em log de servidor nem em teste de rota
+   * comum, só no console de quem está usando.
+   */
+  async function comCors(fila: unknown[][]) {
+    const { db } = fakeDb(fila);
+    const app: FastifyInstance = Fastify();
+    await app.register(
+      fp(async (f) => {
+        f.decorate("db", db);
+      }),
+    );
+    // Um "cors" mínimo com o mesmo mecanismo do real: header posto num hook,
+    // não no handler.
+    await app.register(
+      fp(async (f) => {
+        f.addHook("onRequest", async (request, reply) => {
+          reply.header("access-control-allow-origin", "https://x.loyoladigital.com");
+          request.userId = USUARIO;
+          request.userRole = "admin";
+        });
+      }),
+    );
+    await app.register(biDashboardsRoutes);
+    await app.ready();
+    return app;
+  }
+
+  it("preserva os headers do Fastify — inclusive o de CORS", async () => {
+    const app = await comCors([[{ id: PROJETO }], [LINHA], [{ id: PROJETO }]]);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}/refresh-all`,
+      payload: {},
+    });
+    expect(r.statusCode).toBe(200);
+    expect(r.headers["access-control-allow-origin"]).toBe("https://x.loyoladigital.com");
+    await app.close();
+  });
+
+  it("responde NDJSON, uma linha por widget, com início e fim", async () => {
+    const app = await comCors([[{ id: PROJETO }], [LINHA], [{ id: PROJETO }]]);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}/refresh-all`,
+      payload: {},
+    });
+    expect(r.headers["content-type"]).toContain("application/x-ndjson");
+
+    const linhas = r.body
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as { tipo: string });
+    expect(linhas[0]!.tipo).toBe("inicio");
+    expect(linhas.at(-1)!.tipo).toBe("fim");
+    expect(linhas.filter((l) => l.tipo === "widget")).toHaveLength(1);
+    await app.close();
+  });
+
+  it("o proxy é instruído a não segurar o stream", async () => {
+    const app = await comCors([[{ id: PROJETO }], [LINHA], [{ id: PROJETO }]]);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}/refresh-all`,
+      payload: {},
+    });
+    expect(r.headers["x-accel-buffering"]).toBe("no");
+    await app.close();
+  });
+});
