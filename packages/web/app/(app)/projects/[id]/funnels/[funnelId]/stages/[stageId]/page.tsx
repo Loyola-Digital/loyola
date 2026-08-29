@@ -80,9 +80,24 @@ export default function StagePage() {
   // Lido de `window.location` e não de `useSearchParams` — mesmo motivo já
   // registrado em `debriefings/[id]/page.tsx:79`: o hook exigiria envolver a
   // página inteira num `<Suspense>` para o build passar.
+  //
+  // ⚠️ QA-451-01 — as deps são `[params.stageId]`, e NÃO `[]`.
+  //
+  // No App Router, trocar de etapa pela sidebar muda só o parâmetro dinâmico da
+  // MESMA rota: os dois estados sobreviviam, e com deps `[]` o `?tab=` nunca era
+  // relido. Resultado: a tela ficava na aba da etapa anterior e a URL não
+  // descrevia o que estava na tela — o inverso exato do que a AC5 promete.
+  //
+  // Zerar `abaEscolhida` junto é parte do conserto: a escolha de clique vale
+  // para a etapa em que foi feita. Mantê-la faria a etapa nova abrir na aba que
+  // o usuário escolheu na anterior, mesmo com `?tab=` dizendo outra coisa.
+  //
+  // `trocarAba` usa `history.replaceState`, que não mexe em `params.stageId` —
+  // então trocar de aba não redispara este efeito.
   useEffect(() => {
+    setAbaEscolhida(null);
     setAbaSolicitada(new URLSearchParams(window.location.search).get("tab"));
-  }, []);
+  }, [params.stageId]);
   const [stageName, setStageName] = useState("");
   // Vendas da captação paga (lançamento manual) — só usado quando stageType === "paid".
   const [manualSaleOpen, setManualSaleOpen] = useState(false);
