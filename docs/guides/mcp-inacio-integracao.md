@@ -142,6 +142,22 @@ No laudo de 2026-08-27 a cadeia foi reconstruída a partir de `get_stage_daily`.
 |---|---|
 | "Conv. LP 2,39% não tem lastro" | `agregado.leadsAtribuidos` — existe no payload |
 | "O bloco de criativos mistura outros funis" | `criativos` do `/cadeia-cac` é **só da etapa**; `get_creative_performance` é do projeto |
+
+#### Criativos da etapa: use os dois feeds, por junção (Story 44.18)
+
+O `/cadeia-cac` traz `criativos` **só da etapa**, com `{ nome, ehId, adIds, spend, impressions, linkClicks, ctr, cpc, hookRate, holdRate }`. Não traz CPM, Connect Rate, compras/CPA/ROAS, campanha, adset, thumbnail nem permalink.
+
+**Isso não é lacuna — é junção.** `adIds[]` é o recorte autoritativo da etapa:
+
+1. pegue os `adIds[]` das linhas de `criativos`;
+2. cruze com `get_creative_performance` / `get_creative_timeseries` **por `adId`**, filtrando por esse conjunto;
+3. **expanda `adIds[]` antes de somar** — a linha daqui é um Ad Name e agrupa N `adId`; a de lá é um `adId`. Casar linha com linha erra;
+4. o **`spend` autoritativo é o do `/cadeia-cac`**. O outro feed arredonda em ponto diferente e diverge em centavos — **não some os dois**;
+5. `cpm` é conta, não busca: `spend ÷ impressions × 1000`. E `roas`/`cpa` do outro feed são **de pixel** — a régua de receita continua sendo `sales-daily ÷ investimento`.
+
+⚠️ **Limite prático conhecido:** a tool de `/creatives` corta em 200 itens e não expõe `offset`, enquanto a rota aceita até 500. Em projeto com muitos criativos na janela você recebe `truncated: true` **sem como buscar a cauda** — nesse caso, declare a limitação em vez de tratar o recorte como completo.
+
+**Decisão registrada (44.18, AC0, 2026-08-29):** criativos por etapa **têm dono** — é o `/cadeia-cac`. Os campos de mídia extras se obtêm por junção, e **não** por rota nova. Se você sentir falta de um endpoint `get_stage_creative_performance`, a resposta é esta receita; a story que o criaria foi avaliada e fechada sem código.
 | Pedido de print da tela, duas vezes | o payload responde sozinho |
 
 Recompor por fora não é só retrabalho: produz **uma segunda régua**. Foi assim que o `connectRate` ficou 18 a 35 p.p. errado por mais de um ano, e o Epic 44 inteiro existe para que exista uma régua só.

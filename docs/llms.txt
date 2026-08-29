@@ -142,6 +142,12 @@ Os `motivo` pedem **ações diferentes**: `semDados` = conectar fonte · `syncPe
 **`composto`** — `{ rotulo: "cenario-teorico", queda, custoAtual, custoNoTeto, metricasDoTeto }`. ⚠️ O rótulo é literal: os tetos vêm de campanhas diferentes e multiplicar taxas assume independência entre os elos, que eles não têm. Cite sempre como cenário teórico.
 **`benchmarks`** — `{ rotulo: "mediana-historica", medianas, campanhasElegiveis, medianaCustoDaCadeia, campanhasElegiveisCustoDaCadeia, campanhasComSerie }`. CTR (≥2%) e Connect Rate (>85%) são constantes de mercado e **não** vêm aqui.
 **`criativos`** — agrupados por nome, **SÓ das campanhas desta etapa**: `{ nome, ehId, adIds, spend, impressions, linkClicks, ctr, cpc, hookRate, holdRate }`. ⚠️ Diferente de `/creatives`, que é do **projeto inteiro** e mistura funis.
+  **Como obter CPM, Connect Rate, compras/CPA/ROAS, campanha, adset, thumbnail e permalink por criativo DA ETAPA** (não existe rota de criativo por etapa — não peça uma):
+  1. **`adIds[]` é o recorte autoritativo da etapa.** É ele que substitui filtrar campanha a mão — o erro que essa filtragem manual causa é justamente atribuir à etapa números do projeto inteiro.
+  2. Cruze com `get_creative_performance` / `get_creative_timeseries` **por `adId`**, mantendo só os `adId` que vieram em `adIds[]`.
+  3. **A unidade difere:** aqui a linha é um Ad Name (agrupa N `adId`); lá é um `adId`. Expanda `adIds[]` antes de somar — nunca case linha com linha.
+  4. **O `spend` autoritativo é o daqui.** O outro feed arredonda em ponto diferente e diverge em centavos: **não some os dois**, e cite o desta resposta.
+  5. `cpm` você não precisa buscar: é `spend ÷ impressions × 1000` com os dois campos já acima. E lembre que `roas`/`cpa` do outro feed são **de pixel** — não use para decisão de receita.
 **`distribuicaoHook`** — `{ mediana, melhor, pior, abaixoDeMetadeDaMediana, criativosDeVideo }`.
 **`atribuicao`** — `{ coberturaVendas, coberturaLeads, motivo, message }`. ⚠️ **Diagnóstico exibido, NUNCA multiplicador** (spec §2.7): não corrija número nenhum por ele.
 **`guardaDeCobertura`** — se o teto de Conv. LP foi protegido contra "a semana em que o rastreio funcionou melhor". Estados: `aplicada` · `semLeadNoPeriodo` · `indisponivel` · `naoSeAplica`.
@@ -217,7 +223,7 @@ Resposta: `{ projectId, stageId, totalCosts, byCategory:[{category,total,itens}]
 
 ## Como interpretar os números (honestidade)
 
-- **Etapa primeiro:** pra analisar um lançamento/etapa, use SEMPRE a família `get_stage_*` (`stage-daily`, `leads-summary`, `survey`, `sales-daily`). Os endpoints de projeto inteiro (`/daily`, `/campaigns`, `/creatives`) misturam todos os funis + evergreen.
+- **Etapa primeiro:** pra analisar um lançamento/etapa, use SEMPRE a família `get_stage_*` (`stage-daily`, `leads-summary`, `survey`, `sales-daily`, **`cadeia-cac`**). Os endpoints de projeto inteiro (`/daily`, `/campaigns`, `/creatives`) misturam todos os funis + evergreen. ⚠️ **Criativos da etapa saem de `cadeia-cac` (campo `criativos`)**, não de `/creatives` — até a 44.14 a família não tinha criativos, e esta frase mandava fazer algo que a própria lista não oferecia. Para os campos de mídia que o `cadeia-cac` não traz, junte por `adId`: receita no bloco `criativos`.
 - **`spend` já inclui o imposto Meta** (gross-up de 12,15% "por dentro" — `spend ÷ (1−0,1215)` — para datas ≥ 2026-01-01). Bate com o dashboard interno. ⚠️ NUNCA reaplique imposto (nem ×1,13 nem ÷0,8785 — o backend JÁ aplicou). Todas as respostas Meta trazem o selo **`spendIncludesMetaTax: true`** — se você está lendo esse campo, o número já está bruto de imposto.
 - **`get_stage_daily` sem from/to = série COMPLETA** das campanhas da etapa (lançamento é finito e frequentemente passado — o default de 30 dias devolvia `days:[]` pra etapa encerrada). `range` no retorno mostra o intervalo efetivamente coberto. Com from/to explícitos, filtra normalmente.
 - **`clicks` = cliques TOTAIS da Meta; `linkClicks` = tráfego real** (evento link_click). Use `linkClicks`/`ctrLink`/`cpcLink` pra análise de tráfego.
