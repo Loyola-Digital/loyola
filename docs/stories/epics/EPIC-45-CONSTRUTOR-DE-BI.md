@@ -58,3 +58,9 @@ E duas do dossiê são **rejeitadas** de propósito:
 ## Ordem
 
 45.1 → 45.2 → 45.3 → 45.4 → 45.5 são o caminho até "dashboard montável e útil". As três últimas sobem o teto.
+
+## Stories acrescentadas durante a execução
+
+| # | Story | Por que apareceu |
+|---|---|---|
+| 45.9 | Entidade `aplicacoes` pelo caminho de planilha | Sai da 45.2: as outras entidades são tabelas, essa é leitura ao vivo do Google Sheets — carregar, filtrar e agregar em memória é um caminho de execução inteiro, não uma linha a mais no mapa de colunas |
