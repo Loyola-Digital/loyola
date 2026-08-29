@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { PRESETS, comPeriodo, preset, presetsParaApi } from "../services/bi/presets.js";
 import { PADRAO_POR_TIPO, TIPOS_DE_WIDGET } from "../services/bi/dashboard.js";
 import { ErroDeQuery, planejar, validarSpec } from "../services/bi/query.js";
+import { validarSpecDeAplicacoes } from "../services/bi/aplicacoes.js";
 import { campo } from "../services/bi/catalogo.js";
 
 const PERIODO = { start: "2026-08-01", end: "2026-08-26" };
@@ -65,19 +66,30 @@ describe("T2 · toda métrica e dimensão existe no catálogo", () => {
   });
 });
 
+/**
+ * O caminho de execução de cada entidade.
+ *
+ * `aplicacoes` não passa por SQL: é lida da planilha e agregada em memória, e
+ * por isso tem validação própria.
+ */
+function conferirExecutavel(spec: ReturnType<typeof comPeriodo>) {
+  if (spec.entity === "aplicacoes") validarSpecDeAplicacoes(spec);
+  else planejar(spec);
+}
+
 describe("o preset ou funciona, ou diz por que não", () => {
   it("todo preset sem `bloqueado` é executável de verdade", () => {
     // A validação contra o catálogo não basta: `cpl_geral` existe no catálogo e
     // ainda assim não tem tradução no executor. Este teste é o que impede um
     // preset assim de entrar na galeria como se funcionasse.
     for (const p of PRESETS.filter((x) => !x.bloqueado)) {
-      expect(() => planejar(comPeriodo(p.spec, PERIODO)), `${p.id} não é executável`).not.toThrow();
+      expect(() => conferirExecutavel(comPeriodo(p.spec, PERIODO)), `${p.id} não é executável`).not.toThrow();
     }
   });
 
   it("todo preset bloqueado realmente falha — o aviso não é decorativo", () => {
     for (const p of PRESETS.filter((x) => x.bloqueado)) {
-      expect(() => planejar(comPeriodo(p.spec, PERIODO)), `${p.id} já funciona`).toThrow(
+      expect(() => conferirExecutavel(comPeriodo(p.spec, PERIODO)), `${p.id} já funciona`).toThrow(
         ErroDeQuery,
       );
     }

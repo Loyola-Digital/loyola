@@ -305,7 +305,11 @@ export default fp(async function biDashboardsRoutes(fastify) {
         const preparada = aplicarContexto(bruta, ctx);
         avisos.push(...preparada.avisos);
         resultados.push(
-          await executarQuery(preparada.spec, { db: fastify.db as never, projectId }),
+          await executarQuery(preparada.spec, {
+            db: fastify.db as never,
+            projectId,
+            log: fastify.log,
+          }),
         );
       }
       const r = aplicarDerivadas(resultados, widget.derivadas ?? [], widget.mergeKey);
@@ -448,6 +452,7 @@ export default fp(async function biDashboardsRoutes(fastify) {
       resultado = await executarQuery(novo.spec, {
         db: fastify.db as never,
         projectId: p.data.projectId,
+        log: fastify.log,
       });
     } catch (erro) {
       resultado = { erro: erro instanceof ErroDeQuery ? erro.message : "Falha ao calcular" };

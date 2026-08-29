@@ -32,8 +32,6 @@ export interface Preset {
   bloqueado?: string;
 }
 
-const AGUARDANDO_PLANILHA =
-  "Aplicações ainda vêm de planilha lida ao vivo — o construtor só consulta o banco (story 45.9).";
 const AGUARDANDO_ATRIBUICAO =
   "Depende do cruzamento entre lead e criativo, que ainda não tem tradução no executor.";
 
@@ -239,7 +237,6 @@ export const PRESETS: Preset[] = [
     categoria: "Aplicações",
     tipo: "kpi",
     spec: spec("aplicacoes", ["aplicacoes.count"]),
-    bloqueado: AGUARDANDO_PLANILHA,
   },
   {
     id: "origem_das_aplicacoes",
@@ -251,7 +248,6 @@ export const PRESETS: Preset[] = [
       order_by: [{ field: "aplicacoes.count", direction: "desc" }],
       limit: 12,
     }),
-    bloqueado: AGUARDANDO_PLANILHA,
   },
   {
     id: "cpl_geral",

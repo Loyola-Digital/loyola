@@ -1,6 +1,6 @@
 # EPIC 45 — Construtor de BI
 
-**Status:** In Progress
+**Status:** Done
 **Origem:** Dossiê VK Metrics (`02_ANALISE_DO_CODIGO/11_construtor_bi.md`, 2.874 linhas) + `INSTRUCOES-PARA-IA.md`
 **Owner:** @sm (stories) → @dev (implementação)
 
@@ -63,4 +63,4 @@ E duas do dossiê são **rejeitadas** de propósito:
 
 | # | Story | Por que apareceu |
 |---|---|---|
-| 45.9 | Entidade `aplicacoes` pelo caminho de planilha | Sai da 45.2: as outras entidades são tabelas, essa é leitura ao vivo do Google Sheets — carregar, filtrar e agregar em memória é um caminho de execução inteiro, não uma linha a mais no mapa de colunas |
+| 45.9 ✅ | Entidade `aplicacoes` pelo caminho de planilha | Sai da 45.2: as outras entidades são tabelas, essa é leitura ao vivo do Google Sheets — carregar, filtrar e agregar em memória é um caminho de execução inteiro, não uma linha a mais no mapa de colunas |

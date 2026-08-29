@@ -403,6 +403,8 @@ type Db = {
 export interface ContextoDaQuery {
   db: Db;
   projectId: string;
+  /** Só a entidade de planilha usa — ela avisa sobre aba ilegível. */
+  log?: { warn: (o: unknown, m: string) => void };
 }
 
 /** A fonte da entidade, ou o erro que explica por que ela não é consultável. */
@@ -512,11 +514,24 @@ export function planejar(spec: QuerySpec) {
   return { fonte, selecao, bases: [...bases] };
 }
 
-/** Executa o spec contra o banco. */
+/** Executa o spec contra o banco — ou contra a planilha, no caso de aplicações. */
 export async function executarQuery(
   spec: QuerySpec,
   ctx: ContextoDaQuery,
 ): Promise<ResultadoDaQuery> {
+  if (spec.entity === "aplicacoes") {
+    // Caminho próprio: esta entidade é lida ao vivo do Google Sheets, filtrada e
+    // agregada em memória. Ver `aplicacoes.ts` para o porquê de cada limite.
+    validarSpec(spec);
+    const { carregarAplicacoes, executarSobreLinhas } = await import("./aplicacoes.js");
+    const carregado = await carregarAplicacoes(
+      { db: ctx.db, log: ctx.log ?? { warn: () => {} } },
+      ctx.projectId,
+    );
+    const r = executarSobreLinhas(spec, carregado.linhas);
+    return { ...r, avisos: [...carregado.avisos, ...r.avisos] };
+  }
+
   const { fonte, selecao } = planejar(spec);
   const avisos: string[] = [];
 
