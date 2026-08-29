@@ -637,6 +637,18 @@ export default fp(async function biDashboardsRoutes(fastify) {
    * O modelo escolhe chaves do catálogo; o `validarSpec`/`planejar` de sempre
    * decide o que entra. Uma chave inventada vira aviso, nunca consulta.
    */
+  /**
+   * Monta widget a partir de uma pergunta, em NDJSON.
+   *
+   * Streaming por dois motivos que se resolvem juntos:
+   *
+   * 1. **A conexão não pode morrer em silêncio.** A IA pensa por dez a trinta
+   *    segundos, e um POST que não manda nada nesse tempo é cortado pelo proxy —
+   *    o navegador reporta "Failed to fetch", que não diz nada a ninguém.
+   * 2. **"Montando…" por vinte segundos é indistinguível de travado.** Os passos
+   *    dizem o que está acontecendo, e quando a IA erra uma chave e se corrige,
+   *    quem está olhando vê isso em vez de esperar no escuro.
+   */
   fastify.post("/api/projects/:projectId/bi/dashboards/:id/agente", async (request, reply) => {
     const p = paramsComIdSchema.safeParse(request.params);
     if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
@@ -644,9 +656,7 @@ export default fp(async function biDashboardsRoutes(fastify) {
       return reply.code(404).send({ error: "Projeto não encontrado" });
     }
 
-    const corpo = z
-      .object({ pergunta: z.string().min(3).max(1000) })
-      .safeParse(request.body);
+    const corpo = z.object({ pergunta: z.string().min(3).max(1000) }).safeParse(request.body);
     if (!corpo.success) {
       return reply.code(400).send({ error: "Escreva a pergunta com pelo menos 3 caracteres." });
     }
@@ -661,46 +671,66 @@ export default fp(async function biDashboardsRoutes(fastify) {
         .send({ error: `Um dashboard cabe até ${LIMITE_DE_WIDGETS} widgets. Divida em dois.` });
     }
 
-    let resposta;
+    // Daqui em diante a resposta é do socket. Os headers já acumulados no
+    // `reply` vão junto — é onde mora o `Access-Control-Allow-Origin`, e sem
+    // eles a resposta sai 200 e o navegador a descarta.
+    reply.hijack();
+    reply.raw.writeHead(200, {
+      ...(reply.getHeaders() as Record<string, number | string | string[]>),
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Accel-Buffering": "no",
+    });
+
+    const escrever = (linhaJson: unknown) => {
+      if (!reply.raw.writableEnded) reply.raw.write(`${JSON.stringify(linhaJson)}
+`);
+    };
+
     try {
-      resposta = await montarWidgets(corpo.data.pergunta, {
+      const resposta = await montarWidgets(corpo.data.pergunta, {
         cliente: fastify.claude.client,
         ocupados: widgets.map((w) => w.geometria),
+        aoProgredir: (passo) => escrever({ tipo: "passo", passo }),
       });
+
+      // Cabe o que sobra: o teto vale igual para quem pede à IA.
+      const cabem = resposta.widgets.slice(0, LIMITE_DE_WIDGETS - widgets.length);
+      const avisos = [...resposta.avisos];
+      if (cabem.length < resposta.widgets.length) {
+        avisos.push(`Só coube ${cabem.length} widget(s): o dashboard está perto do limite.`);
+      }
+
+      if (cabem.length > 0) {
+        await fastify.db
+          .update(biDashboards)
+          .set({ widgets: [...widgets, ...cabem], updatedAt: new Date() })
+          .where(eq(biDashboards.id, p.data.id));
+      }
+
+      // Cada widget sai assim que o número dele chega: é vendo o valor que a
+      // pessoa julga se a pergunta foi entendida, e esperar o último para
+      // mostrar o primeiro não ajuda em nada.
+      const ctx = contextoDe(linha);
+      const alcance = await escopoDe(linha, request.userId!, request.userRole!);
+      for (const w of cabem) {
+        escrever({ tipo: "passo", passo: { tipo: "calculando", titulo: w.titulo } });
+        const resultado = await executarWidget(w, alcance, ctx);
+        escrever({ tipo: "widget", widget: w, resultado });
+      }
+
+      escrever({ tipo: "fim", explicacao: resposta.explicacao, avisos });
     } catch (erro) {
       // O motivo sobe até a tela: "tente de novo" não distingue sobrecarga de
-      // chave errada, e deixa quem está olhando sem ação possível.
+      // saldo esgotado, e deixa quem está olhando sem ação possível.
       fastify.log.error({ erro }, "agente de BI falhou");
-      const legivel =
-        erro instanceof ErroDoAgente ? erro.message : "Falha inesperada ao falar com a IA.";
-      return reply.code(502).send({ error: legivel });
+      escrever({
+        tipo: "erro",
+        error:
+          erro instanceof ErroDoAgente ? erro.message : "Falha inesperada ao falar com a IA.",
+      });
     }
 
-    // Cabe o que sobra: o teto vale igual para quem pede à IA.
-    const cabem = resposta.widgets.slice(0, LIMITE_DE_WIDGETS - widgets.length);
-    const avisos = [...resposta.avisos];
-    if (cabem.length < resposta.widgets.length) {
-      avisos.push(`Só coube ${cabem.length} widget(s): o dashboard está perto do limite.`);
-    }
-
-    if (cabem.length > 0) {
-      await fastify.db
-        .update(biDashboards)
-        .set({ widgets: [...widgets, ...cabem], updatedAt: new Date() })
-        .where(eq(biDashboards.id, p.data.id));
-    }
-
-    // Os resultados voltam junto: o widget que a IA montou nasce preenchido, e
-    // é vendo o número que a pessoa julga se a pergunta foi bem entendida.
-    const ctx = contextoDe(linha);
-    const alcance = await escopoDe(linha, request.userId!, request.userRole!);
-    const resultados = await executarEmLotes(cabem, alcance, ctx);
-
-    return {
-      explicacao: resposta.explicacao,
-      widgets: cabem,
-      resultados,
-      avisos,
-    };
+    reply.raw.end();
   });
 });

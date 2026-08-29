@@ -520,3 +520,118 @@ describe("refresh-all — a resposta escrita direto no socket", () => {
     await app.close();
   });
 });
+
+describe("o agente responde em NDJSON, com CORS", () => {
+  /** Um Claude de mentira que devolve sempre o mesmo widget. */
+  const claudeFalso = {
+    client: {
+      messages: {
+        create: async () => ({
+          content: [
+            {
+              type: "tool_use",
+              name: "montar_widgets",
+              id: "t",
+              input: {
+                explicacao: "Montei o investimento por campanha.",
+                widgets: [
+                  {
+                    titulo: "Investimento por campanha",
+                    tipo: "barra",
+                    entity: "trafego",
+                    metrics: ["trafego.spend"],
+                    dimensions: ["trafego.campaign"],
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      },
+    },
+  };
+
+  async function comAgente(fila: unknown[][]) {
+    const { db } = fakeDb(fila);
+    const app: FastifyInstance = Fastify();
+    await app.register(
+      fp(async (f) => {
+        f.decorate("db", db);
+        f.decorate("claude", claudeFalso as never);
+      }),
+    );
+    await app.register(
+      fp(async (f) => {
+        f.addHook("onRequest", async (request, reply) => {
+          reply.header("access-control-allow-origin", "https://x.loyoladigital.com");
+          request.userId = USUARIO;
+          request.userRole = "admin";
+        });
+      }),
+    );
+    await app.register(biDashboardsRoutes);
+    await app.ready();
+    return app;
+  }
+
+  it("preserva o header de CORS — a mesma armadilha do refresh-all", async () => {
+    const app = await comAgente([[{ id: PROJETO }], [LINHA], [{ id: PROJETO }]]);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}/agente`,
+      payload: { pergunta: "quanto gastei por campanha?" },
+    });
+    expect(r.statusCode).toBe(200);
+    expect(r.headers["access-control-allow-origin"]).toBe("https://x.loyoladigital.com");
+    await app.close();
+  });
+
+  it("manda os passos ANTES do widget — é o que mantém a conexão viva", async () => {
+    const app = await comAgente([[{ id: PROJETO }], [LINHA], [{ id: PROJETO }]]);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}/agente`,
+      payload: { pergunta: "quanto gastei por campanha?" },
+    });
+
+    const linhas = r.body
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as { tipo: string });
+
+    expect(linhas[0]!.tipo).toBe("passo");
+    expect(linhas.at(-1)!.tipo).toBe("fim");
+    // O widget vem depois de pelo menos um passo: quem está olhando não fica no
+    // escuro enquanto a IA pensa.
+    const iWidget = linhas.findIndex((l) => l.tipo === "widget");
+    expect(iWidget).toBeGreaterThan(0);
+    await app.close();
+  });
+
+  it("a explicação da IA fecha o stream", async () => {
+    const app = await comAgente([[{ id: PROJETO }], [LINHA], [{ id: PROJETO }]]);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}/agente`,
+      payload: { pergunta: "quanto gastei por campanha?" },
+    });
+    const fim = r.body
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as { tipo: string; explicacao?: string })
+      .at(-1)!;
+    expect(fim.explicacao).toContain("investimento");
+    await app.close();
+  });
+
+  it("pergunta curta demais é 400 normal, antes do stream", async () => {
+    const app = await comAgente([[{ id: PROJETO }]]);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}/agente`,
+      payload: { pergunta: "oi" },
+    });
+    expect(r.statusCode).toBe(400);
+    await app.close();
+  });
+});
