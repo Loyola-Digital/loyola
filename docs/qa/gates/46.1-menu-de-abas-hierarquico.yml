@@ -1,4 +1,4 @@
-storyId: "45.1"
+storyId: "46.1"
 storyTitle: "O menu de abas vira hierárquico — 14 itens soltos viram 5 grupos"
 gate: CONCERNS
 reviewer: "@qa (Quinn)"
@@ -117,7 +117,7 @@ issues:
     category: contrato-de-url
     title: "A aba ativa sobrevive à troca de etapa, mas o `?tab=` não é relido — a URL passa a descrever outra tela"
     file: "packages/web/app/(app)/projects/[id]/funnels/[funnelId]/stages/[stageId]/page.tsx:78-89"
-    story: "45.1 (AC5)"
+    story: "46.1 (AC5)"
     reproduced: false
     blocking: false
     description: >
@@ -166,7 +166,7 @@ issues:
     category: acessibilidade
     title: "O `aria-labelledby` do painel aponta para um gatilho que não existe, e as setas do teclado deixaram de navegar entre abas"
     file: packages/web/components/funnels/stage-tabs-nav.tsx:20
-    story: "45.1 (AC3, débito declarado pelo @dev)"
+    story: "46.1 (AC3, débito declarado pelo @dev)"
     reproduced: false
     blocking: false
     description: >
@@ -204,7 +204,7 @@ issues:
     category: teste
     title: "O teste 'nunca devolve uma aba que o menu não renderiza' não cobre o caminho em que isso pode acontecer"
     file: packages/web/lib/utils/menu-de-abas.ts:253
-    story: "45.1 (AC5)"
+    story: "46.1 (AC5)"
     reproduced: false
     blocking: false
     description: >
@@ -235,7 +235,7 @@ issues:
     category: teste
     title: "A AC7.1 — o achado bloqueador do @po — não tem teste nenhum, só comentário"
     file: packages/web/components/funnels/cadeia-cac-stage-tab.tsx:206
-    story: "45.1 (AC7.1)"
+    story: "46.1 (AC7.1)"
     reproduced: false
     blocking: false
     description: >

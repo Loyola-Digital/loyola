@@ -7,7 +7,7 @@ metadata:
 
 Quando o gate do @po **nomeia** uma falha específica que a implementação deve evitar ("não mutar o const, `unshift` vazaria/duplicaria"), e o @dev responde com um teste por armadilha, a verificação do @qa não é a reversão do fix — é **injetar cada armadilha, uma por vez, e conferir que o teste dedicado a ela é um dos que falham**.
 
-**Why:** reversão e injeção medem coisas diferentes. Pego na Story 45.2 (Epic 45): a reversão completa (desfazer a mudança) derrubava 5 testes, mas **3 desses 5 eram os testes antigos consertados** — eles falhariam de qualquer jeito. Ela não dizia nada sobre os 2 testes novos escritos especificamente contra as armadilhas. Injetando `ABAS_DE_DADOS.unshift(...)` no escopo do módulo → 3 falhas, incluindo "não vaza para lançamento"; injetando o mesmo `unshift` dentro da função → 5 falhas, incluindo "montar duas vezes não duplica". Só aí ficou provado que os dois testes dedicados fazem o trabalho para o qual foram escritos.
+**Why:** reversão e injeção medem coisas diferentes. Pego na Story 46.2 (Epic 46): a reversão completa (desfazer a mudança) derrubava 5 testes, mas **3 desses 5 eram os testes antigos consertados** — eles falhariam de qualquer jeito. Ela não dizia nada sobre os 2 testes novos escritos especificamente contra as armadilhas. Injetando `ABAS_DE_DADOS.unshift(...)` no escopo do módulo → 3 falhas, incluindo "não vaza para lançamento"; injetando o mesmo `unshift` dentro da função → 5 falhas, incluindo "montar duas vezes não duplica". Só aí ficou provado que os dois testes dedicados fazem o trabalho para o qual foram escritos.
 
 Um teste pode existir, ter o nome certo, o comentário certo, e ainda assim não falhar quando o defeito que ele nomeia volta. Nome de teste é intenção; falha é prova.
 
@@ -19,4 +19,4 @@ Um teste pode existir, ter o nome certo, o comentário certo, e ainda assim não
 
 Cuidado com o **teste tautológico**, que é como a armadilha escapa: `expect(conjuntoExistente).toContain(fn(x))` passa igualmente quando `fn` cai no fallback — para aquele `x` a asserção não pode falhar de forma útil. Se a story promete "o teste trava o contrato", ache a asserção que trava, e verifique que ela é sobre o **valor esperado**, não sobre a pertinência a um conjunto que sempre contém a resposta errada também.
 
-Relacionado: [[reversao-no-fio-nao-na-biblioteca]], [[project-story-45-2]].
+Relacionado: [[reversao-no-fio-nao-na-biblioteca]], [[project-story-46-2]].

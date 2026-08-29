@@ -2,8 +2,8 @@
 - [Story 18.61 QA CONCERNS](project_story_18_61.md) — coluna Status Ativo/Pausado nos Criativos (regra OR); effective_status no cache; "—" até deploy+backfill; TEST-001/REL-001 abertos
 - [Story 44.12 QA CONCERNS](project_story_44_12.md) — produtor de CoberturaDiaria; backfill rodou em prod antes do deploy (sync reverte a guarda); column_mapping usa `timestamp`, sync procura `date`
 - [Reversão no fio, não na biblioteca](feedback_reversao_no_fio_nao_na_biblioteca.md) — story de wiring exige cortar o ARGUMENTO no call site; testar a lib não prova que o chamador está ligado
-- [Story 45.1 QA CONCERNS](project_story_45_1.md) — menu de abas em 2 níveis + `?tab=`; QA-451-01 (URL não é relida na troca de etapa) pende da validação visual
+- [Story 46.1 QA CONCERNS](project_story_45_1.md) — menu de abas em 2 níveis + `?tab=`; QA-451-01 (URL não é relida na troca de etapa) pende da validação visual
 - [Paridade função pura × render](feedback_paridade_funcao_pura_e_render.md) — o teste cobre metade do risco; compare os CONJUNTOS de values da config e do render
 - [Junção de feeds declara a escala](feedback_juncao_de_feeds_declara_escala.md) — campos homônimos nos dois lados: `ctr`/`cpc`/`connectRate` são decimais no /cadeia-cac e ×100 no /creatives
-- [Story 45.2 QA CONCERNS](project_story_45_2.md) — Análise MVP muda para o grupo Dados; código limpo, o medium é a validação visual nunca feita (2ª seguida no Epic 45)
+- [Story 46.2 QA CONCERNS](project_story_45_2.md) — Análise MVP muda para o grupo Dados; código limpo, o medium é a validação visual nunca feita (2ª seguida no Epic 46)
 - [Injetar a armadilha prevista](feedback_injetar_a_armadilha_prevista.md) — reverter o fix não prova o teste dedicado à armadilha; injete cada uma e cuidado com asserção tautológica

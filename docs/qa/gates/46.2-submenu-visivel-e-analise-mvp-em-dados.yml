@@ -1,4 +1,4 @@
-storyId: "45.2"
+storyId: "46.2"
 storyTitle: "O submenu que ninguém viu — e a Análise MVP muda de grupo"
 gate: CONCERNS
 reviewer: "@qa (Quinn)"
@@ -13,7 +13,7 @@ scope: >
   `funnelType === "perpetual"`; dois comentários de decisão) ·
   packages/web/lib/utils/menu-de-abas.test.ts (20 → 23 testes; 3 consertados,
   3 novos) ·
-  docs/stories/45.2.submenu-visivel-e-analise-mvp-em-dados.md (a story)
+  docs/stories/46.2.submenu-visivel-e-analise-mvp-em-dados.md (a story)
 
   Nenhum arquivo de render tocado. O diff de código é de 21 linhas em 1 arquivo.
 
@@ -58,15 +58,15 @@ summary: >
   `"analise-mvp"` e `grupoDaAba(menuPerpétuo, "analise-mvp")` devolve `"dados"`
   — os dois concordam, então um `?tab=analise-mvp` compartilhado antes abre a
   aba e abre o submenu certo. Também conferi que o CONJUNTO de `value` do
-  perpétuo é idêntico ao de antes da 45.2 (14 valores, ordenados e comparados),
+  perpétuo é idêntico ao de antes da 46.2 (14 valores, ordenados e comparados),
   o que preserva por construção a paridade 1:1 com os `TabsContent` de
-  `page.tsx` estabelecida no gate da 45.1. Registro, porém, que **nenhum teste
+  `page.tsx` estabelecida no gate da 46.1. Registro, porém, que **nenhum teste
   commitado afirma esse comportamento** — ver QA-452-05.
 
   **O que segura o PASS não é um defeito de código: é o DoD.** A própria story
   elevou a validação visual a "entregável principal, não a formalidade final",
-  e ela **não foi executada**. Esta é a segunda story seguida do Epic 45 que
-  chega ao gate sem tela — e a 45.1 provou, com esta própria story como
+  e ela **não foi executada**. Esta é a segunda story seguida do Epic 46 que
+  chega ao gate sem tela — e a 46.1 provou, com esta própria story como
   consequência, que é a tela que acha o que o teste não alcança. Some-se a isso
   o resíduo da redução de escopo: título, § Story, § Valor de negócio, duas
   linhas da tabela de Riscos e a § Nota de processo ainda afirmam que a aba
@@ -104,14 +104,14 @@ evidenciasDaRevisao:
     Teste descartável (`__qa452probe.test.ts`, criado, executado e removido) —
     4 asserções, todas verdes: `resolverAbaAtiva → "analise-mvp"`;
     `grupoDaAba → "dados"`; conjunto de values do perpétuo ordenado ===
-    conjunto de antes da 45.2 (14 valores); zero `value` duplicado no menu.
+    conjunto de antes da 46.2 (14 valores); zero `value` duplicado no menu.
   ac2ConferidaNoRender: >
     Não aceitei "confirmar que é o que acontece" como declaração. Em perpétuo,
     o grupo `meta-ads` fica com `filhos: []` e `proprio: META_ADS`, sobrevive ao
     filtro final (`:236`), e em `stage-tabs-nav.tsx` tanto o `<ChevronDown>`
     (`:108`) quanto o `aria-expanded` (`:87`) quanto a segunda linha inteira
     (`:123`) estão condicionados a `ehGrupoExpansivel` → **false**. Sem seta,
-    sem `aria-expanded`, sem submenu. É a AC4 da 45.1 sendo exercida por uma
+    sem `aria-expanded`, sem submenu. É a AC4 da 46.1 sendo exercida por uma
     configuração nova, como a AC2 previu.
   naoMutacaoConferidaNoCodigo: >
     `menu-de-abas.ts:181-182` — `ctx.funnelType === "perpetual" ?
@@ -123,7 +123,7 @@ evidenciasDaRevisao:
   gatesCarosAceitos: >
     `next build` (exit 0) e `tsc --noEmit` (0 erros, rodado DEPOIS do build) NÃO
     foram reexecutados — o raciocínio do @dev sobre a ordem está correto e é o
-    mesmo já validado no gate da 45.1: `next.config` tem `ignoreBuildErrors` e
+    mesmo já validado no gate da 46.1: `next.config` tem `ignoreBuildErrors` e
     `ignoreDuringBuilds`, então o build verde não é gate de tipo nem de lint, e
     rodar `tsc` antes do build produz `TS6053` de `.next/types` que são falsos.
     Com 21 linhas de diff num módulo sem JSX e sem import novo, o risco de tipo
@@ -143,15 +143,15 @@ issues:
     severity: medium
     category: definition-of-done
     title: "A validação visual (AC4) não foi executada — e esta story declarou que ela é o entregável principal"
-    file: "docs/stories/45.2.submenu-visivel-e-analise-mvp-em-dados.md (§ Definition of Done, T6)"
-    story: "45.2 (AC4)"
+    file: "docs/stories/46.2.submenu-visivel-e-analise-mvp-em-dados.md (§ Definition of Done, T6)"
+    story: "46.2 (AC4)"
     reproduced: false
     blocking: false
     description: >
       O @dev declarou honestamente que não a executou (exige login). O problema
-      não é a omissão, é a reincidência: **é a segunda story seguida do Epic 45
+      não é a omissão, é a reincidência: **é a segunda story seguida do Epic 46
       a chegar ao gate sem tela**, e esta story existe *porque* a validação
-      visual da 45.1 encontrou algo que nenhum teste alcançava. A própria 45.2
+      visual da 46.1 encontrou algo que nenhum teste alcançava. A própria 46.2
       escreveu no DoD: "desta vez ela é o entregável principal, não a
       formalidade final".
 
@@ -171,9 +171,9 @@ issues:
       linha traz "Meta Ads TESTE"; clicar em "Dados" abre em "Pesquisas".
       **(c) Grupo Dados com 9 filhos** — a linha continua legível e rola no
       mobile sem quebrar em duas.
-      **(d) Herdado da 45.1 (QA-451-01, medium, ainda aberto)** — etapa A →
+      **(d) Herdado da 46.1 (QA-451-01, medium, ainda aberto)** — etapa A →
       clicar "NPS" → trocar para a etapa B pela sidebar. Se a tela continuar em
-      NPS com a URL sem `?tab=`, o achado da 45.1 procede. São 30 segundos e
+      NPS com a URL sem `?tab=`, o achado da 46.1 procede. São 30 segundos e
       resolve um medium que está em produção.
 
   - id: QA-452-02
@@ -181,7 +181,7 @@ issues:
     category: mudanca-de-comportamento
     title: "Clicar em \"Dados\" no perpétuo passa a abrir a Análise MVP — declarado, aceito e travado, mas com um custo que ninguém escreveu"
     file: packages/web/lib/utils/menu-de-abas.ts:181
-    story: "45.2 (AC1, achado F3 do @po)"
+    story: "46.2 (AC1, achado F3 do @po)"
     reproduced: true
     blocking: false
     description: >
@@ -213,15 +213,15 @@ issues:
     category: ux
     title: "Consequência não declarada da AC2: no perpétuo a Análise MVP sai da tela inicial da etapa"
     file: packages/web/lib/utils/menu-de-abas.ts:170
-    story: "45.2 (AC2)"
+    story: "46.2 (AC2)"
     reproduced: true
     blocking: false
     description: >
       A AC2 documenta que "Meta Ads deixa de ter submenu". O que ela não liga é
       o outro lado disso: a aba padrão da etapa perpétua é `meta-ads`, e o
-      submenu **só renderiza para o grupo ativo**. Antes da 45.2, quem abria uma
+      submenu **só renderiza para o grupo ativo**. Antes da 46.2, quem abria uma
       etapa perpétua via a segunda linha com "Análise MVP" já na tela inicial,
-      sem clique — foi assim que o dono do produto a viu. Depois da 45.2, a tela
+      sem clique — foi assim que o dono do produto a viu. Depois da 46.2, a tela
       inicial não tem segunda linha nenhuma; a Análise MVP passa a exigir um
       clique em "Dados".
 
@@ -237,8 +237,8 @@ issues:
     severity: low
     category: documentacao
     title: "Afirmações órfãs que a redução de escopo deixou para trás — a story ainda diz que ninguém achou a aba"
-    file: "docs/stories/45.2.submenu-visivel-e-analise-mvp-em-dados.md"
-    story: "45.2"
+    file: "docs/stories/46.2.submenu-visivel-e-analise-mvp-em-dados.md"
+    story: "46.2"
     reproduced: true
     blocking: false
     description: >
@@ -282,7 +282,7 @@ issues:
     category: teste
     title: "O contrato `?tab=analise-mvp` está correto, mas nenhum teste commitado o afirma — a asserção que parece cobri-lo é tautológica"
     file: packages/web/lib/utils/menu-de-abas.test.ts:220-228
-    story: "45.2 (AC1, risco declarado)"
+    story: "46.2 (AC1, risco declarado)"
     reproduced: true
     blocking: false
     description: >
@@ -314,7 +314,7 @@ issues:
     category: documentacao
     title: "O docblock de `montarMenuDeAbas` não acompanhou a AC5 — ainda apresenta `analise-mvp` ao lado de `meta-ads-teste` como se fossem irmãos"
     file: packages/web/lib/utils/menu-de-abas.ts:163-167
-    story: "45.2 (AC5)"
+    story: "46.2 (AC5)"
     reproduced: true
     blocking: false
     description: >
@@ -333,9 +333,9 @@ issues:
       É exatamente o leitor que a AC5 quer proteger.
 
       Não há README nem doc separado descrevendo a árvore (`grep` em `docs/`:
-      só as stories 45.1 e 45.2, que são registro histórico e não se editam).
+      só as stories 46.1 e 46.2, que são registro histórico e não se editam).
     suggestedFix: >
-      Uma frase: "`analise-mvp` só no perpétuo — e desde a 45.2 ela compõe o
+      Uma frase: "`analise-mvp` só no perpétuo — e desde a 46.2 ela compõe o
       grupo **Dados**, não o Meta Ads".
 
 acs:
@@ -382,7 +382,7 @@ proximaAcao: >
 
   1. **QA-452-01 (medium)** — a validação visual é a única coisa que separa este
      gate de um PASS. Não é conserto, é execução: quatro roteiros de menos de um
-     minuto cada, um deles resolvendo de quebra o medium herdado da 45.1.
+     minuto cada, um deles resolvendo de quebra o medium herdado da 46.1.
   2. **QA-452-02 e QA-452-03 (low)** — consequências aceitas da AC1/AC2, com o
      custo de montagem e a saída da tela inicial registrados para que a
      validação visual saiba o que confirmar.

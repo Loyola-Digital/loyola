@@ -32,7 +32,7 @@ const pct = (v: number) =>
   `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
 /**
- * Story 45.1 — o colapso saiu daqui.
+ * Story 46.1 — o colapso saiu daqui.
  *
  * A 44.21 tornou o bloco recolhível porque ele dividia a tela com a tabela da
  * Cadeia de CAC e obrigava a rolar por cima dele. Agora o Panorama é uma aba

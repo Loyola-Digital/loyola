@@ -1,5 +1,5 @@
 /**
- * Story 45.1 — a árvore de abas da etapa, como dado.
+ * Story 46.1 — a árvore de abas da etapa, como dado.
  *
  * Antes desta story os 14 gatilhos eram JSX literal dentro de `page.tsx`
  * (`:540-619`), e a única forma de saber quais abas existem numa etapa era ler
@@ -90,8 +90,8 @@ const META_ADS: ItemDeAba = {
 /**
  * Story 29.35 — só no perpétuo; lançamento tem outro dashboard e outra matemática.
  *
- * Story 45.2 — mora no grupo **Dados**, não no Meta Ads. Foi decisão do dono do
- * produto na validação visual da 45.1: ele viu a aba sob o Meta Ads e disse que
+ * Story 46.2 — mora no grupo **Dados**, não no Meta Ads. Foi decisão do dono do
+ * produto na validação visual da 46.1: ele viu a aba sob o Meta Ads e disse que
  * o lugar dela era outro. Se você veio "consertar" isto de volta, não é engano.
  */
 const ANALISE_MVP: ItemDeAba = {
@@ -140,7 +140,7 @@ const CADEIA_CAC: ItemDeAba = {
   iconClassName: "text-cyan-600",
 };
 
-/** Story 45.1 — o único `value` novo. */
+/** Story 46.1 — o único `value` novo. */
 const PANORAMA: ItemDeAba = {
   value: "panorama",
   label: "Panorama",
@@ -167,7 +167,7 @@ const RELATORIOS: ItemDeAba = {
  * `meta-ads-teste` só em lançamento de captação paga, `cadeia-cac` só quando a
  * família não é `null`.
  *
- * ⚠️ Os GRUPOS, porém, mudaram na Story 45.2: `analise-mvp` é filha de **Dados**
+ * ⚠️ Os GRUPOS, porém, mudaram na Story 46.2: `analise-mvp` é filha de **Dados**
  * (em primeiro lugar), não de Meta Ads. Só `meta-ads-teste` ficou sob Meta Ads —
  * que, portanto, não tem filho nenhum em funil perpétuo.
  */
@@ -175,8 +175,8 @@ export function montarMenuDeAbas(ctx: ContextoDeAbas): GrupoDeAbas[] {
   const filhosDeMetaAds: ItemDeAba[] = [];
   if (ctx.funnelType === "launch" && ctx.ehCaptacaoPagaStage) filhosDeMetaAds.push(META_ADS_TESTE);
 
-  // Story 45.2 — a Análise MVP saiu do grupo Meta Ads e entrou em Dados, por
-  // decisão do dono do produto na validação visual da 45.1. Em primeiro lugar
+  // Story 46.2 — a Análise MVP saiu do grupo Meta Ads e entrou em Dados, por
+  // decisão do dono do produto na validação visual da 46.1. Em primeiro lugar
   // do grupo, e não no fim: ela é análise, as outras oito são fontes.
   //
   // ⛔ Não mutar `ABAS_DE_DADOS` — é `const` de módulo. `unshift` ali vazaria a

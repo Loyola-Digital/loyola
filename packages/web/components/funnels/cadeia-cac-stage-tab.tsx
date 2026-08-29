@@ -220,7 +220,7 @@ export function CadeiaCacStageTab({
 
   return (
     <div className="space-y-6">
-      {/* Story 45.1 — o panorama saiu daqui e virou a aba irmã "Panorama", no
+      {/* Story 46.1 — o panorama saiu daqui e virou a aba irmã "Panorama", no
           grupo Inácio. Ele e a cadeia disputavam a mesma tela desde a 44.21:
           quem abria para olhar UMA etapa rolava por cima do expert inteiro.
 
