@@ -3522,3 +3522,33 @@ export const stageSourceRules = pgTable(
   },
   (table) => [index("idx_stage_source_rules_stage").on(table.stageId, table.ordem)],
 );
+
+// ============================================================
+// Construtor de BI (Epic 45)
+// ============================================================
+
+/**
+ * Um dashboard montável.
+ *
+ * `widgets` guarda DEFINIÇÃO e GEOMETRIA — nunca resultado. Persistir o
+ * resultado criaria a pior classe de bug: número velho com cara de atual. Cada
+ * widget é recalculado a partir do `querySpec` que carrega consigo.
+ */
+export const biDashboards = pgTable(
+  "bi_dashboards",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    nome: varchar("nome", { length: 200 }).notNull(),
+    /** `Widget[]` — ver `services/bi/dashboard.ts` para a forma validada. */
+    widgets: jsonb("widgets").notNull().default([]),
+    /** `{preset}` ou `{start,end}` — o período que vale para o canvas inteiro. */
+    dateRange: jsonb("date_range").notNull().default({ preset: "last_30d" }),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("idx_bi_dashboards_project").on(table.projectId)],
+);

@@ -1,0 +1,184 @@
+/**
+ * O documento do dashboard: forma, validação e período.
+ *
+ * Fica separado das rotas porque três telas dependem da mesma forma — o canvas
+ * (45.4) salva geometria, a galeria (45.5) injeta preset e o editor (45.7)
+ * escreve `spec`. Uma forma só, validada num lugar só.
+ */
+
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
+import { querySpecSchema } from "./query.js";
+import { FUSO } from "./query.js";
+
+/**
+ * Teto de widgets por dashboard.
+ *
+ * Sessenta consultas disparando juntas já é o limite do que a tela renderiza sem
+ * travar — e do que o banco responde sem fila. Passar disso é sinal de que o
+ * recorte deveria virar um segundo dashboard.
+ */
+export const LIMITE_DE_WIDGETS = 60;
+
+/** A grade do canvas. Doze colunas é o que cabe em tela de notebook. */
+export const COLUNAS_DO_GRID = 12;
+
+export const geometriaSchema = z.object({
+  x: z.number().int().min(0).max(COLUNAS_DO_GRID - 1),
+  y: z.number().int().min(0).max(10_000),
+  w: z.number().int().min(1).max(COLUNAS_DO_GRID),
+  h: z.number().int().min(1).max(40),
+});
+
+export const TIPOS_DE_WIDGET = ["kpi", "linha", "barra", "tabela", "pizza"] as const;
+
+export const widgetSchema = z.object({
+  id: z.string().min(1).max(64),
+  tipo: z.enum(TIPOS_DE_WIDGET),
+  titulo: z.string().min(1).max(120),
+  /** A consulta mora no widget, não no cliente — é o que impede spec forjado. */
+  spec: querySpecSchema,
+  geometria: geometriaSchema,
+  /** Opções de desenho (cor, formato, meta). Livre de propósito. */
+  opcoes: z.record(z.string(), z.unknown()).default({}),
+});
+
+export type Widget = z.infer<typeof widgetSchema>;
+export type Geometria = z.infer<typeof geometriaSchema>;
+
+/**
+ * Os períodos com nome.
+ *
+ * Preset guardado como NOME, nunca como par de datas já resolvido: "últimos 30
+ * dias" salvo em agosto precisa continuar significando os últimos 30 dias em
+ * setembro.
+ */
+export const PRESETS_DE_PERIODO = [
+  "hoje",
+  "ontem",
+  "last_7d",
+  "last_14d",
+  "last_30d",
+  "last_90d",
+  "this_month",
+  "last_month",
+  "this_year",
+] as const;
+
+export type PresetDePeriodo = (typeof PRESETS_DE_PERIODO)[number];
+
+export const dateRangeSchema = z.union([
+  z.object({ preset: z.enum(PRESETS_DE_PERIODO) }),
+  z.object({
+    start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  }),
+]);
+
+export type DateRange = z.infer<typeof dateRangeSchema>;
+
+export const dashboardSchema = z.object({
+  nome: z.string().min(1).max(200),
+  widgets: z.array(widgetSchema).max(LIMITE_DE_WIDGETS),
+  dateRange: dateRangeSchema,
+});
+
+// ============================================================
+// Período
+// ============================================================
+
+/** A data ISO de "hoje" no fuso do relatório, não no fuso do servidor. */
+export function hojeEmSaoPaulo(agora = new Date()): string {
+  // `en-CA` porque o formato dele já é `YYYY-MM-DD` — evita remontar a string a
+  // partir das partes e errar o zero à esquerda.
+  return new Intl.DateTimeFormat("en-CA", { timeZone: FUSO }).format(agora);
+}
+
+function somarDias(iso: string, dias: number): string {
+  const [a, m, d] = iso.split("-").map(Number);
+  // `Date.UTC` de propósito: a conta é sobre a data-calendário já resolvida no
+  // fuso certo, então somar dias em UTC não pode escorregar na virada do
+  // horário de verão.
+  const t = Date.UTC(a!, m! - 1, d! + dias);
+  return new Date(t).toISOString().slice(0, 10);
+}
+
+/** O período resolvido em datas ISO, inclusive nas duas pontas. */
+export function resolverPeriodo(
+  range: DateRange,
+  agora = new Date(),
+): { start: string; end: string } {
+  if ("start" in range) return { start: range.start, end: range.end };
+
+  const hoje = hojeEmSaoPaulo(agora);
+  const [ano, mes] = hoje.split("-").map(Number);
+
+  switch (range.preset) {
+    case "hoje":
+      return { start: hoje, end: hoje };
+    case "ontem": {
+      const o = somarDias(hoje, -1);
+      return { start: o, end: o };
+    }
+    case "last_7d":
+      return { start: somarDias(hoje, -6), end: hoje };
+    case "last_14d":
+      return { start: somarDias(hoje, -13), end: hoje };
+    case "last_30d":
+      return { start: somarDias(hoje, -29), end: hoje };
+    case "last_90d":
+      return { start: somarDias(hoje, -89), end: hoje };
+    case "this_month":
+      return { start: `${hoje.slice(0, 7)}-01`, end: hoje };
+    case "last_month": {
+      const anteriorAno = mes === 1 ? ano! - 1 : ano!;
+      const anteriorMes = mes === 1 ? 12 : mes! - 1;
+      const inicio = `${anteriorAno}-${String(anteriorMes).padStart(2, "0")}-01`;
+      // O fim é o dia anterior ao primeiro deste mês — não precisa saber quantos
+      // dias o mês passado teve.
+      return { start: inicio, end: somarDias(`${hoje.slice(0, 7)}-01`, -1) };
+    }
+    case "this_year":
+      return { start: `${ano}-01-01`, end: hoje };
+  }
+}
+
+// ============================================================
+// Operações sobre o documento
+// ============================================================
+
+/**
+ * Copia os widgets com identidade nova.
+ *
+ * Id novo é obrigatório, não cosmético: dois widgets com o mesmo id fariam o
+ * canvas salvar a geometria de um por cima do outro.
+ */
+export function duplicarWidgets(widgets: Widget[]): Widget[] {
+  return widgets.map((w) => ({ ...w, id: randomUUID() }));
+}
+
+/** O nome da cópia, sem empilhar "(cópia) (cópia)" a cada duplicação. */
+export function nomeDaCopia(nome: string): string {
+  const base = nome.replace(/\s*\(cópia(?:\s+\d+)?\)$/u, "");
+  return `${base} (cópia)`.slice(0, 200);
+}
+
+/**
+ * Lê os widgets guardados no JSONB.
+ *
+ * Widget salvo já passou pela validação da escrita, então um inválido aqui só
+ * aparece se a forma tiver mudado embaixo do dado. Nesse caso ele é separado —
+ * não some em silêncio: a rota devolve a contagem, e a tela pode dizer que
+ * "3 widgets antigos não abrem" em vez de simplesmente não desenhá-los.
+ */
+export function widgetsGuardados(bruto: unknown): { widgets: Widget[]; ilegiveis: number } {
+  if (!Array.isArray(bruto)) return { widgets: [], ilegiveis: 0 };
+  const widgets: Widget[] = [];
+  let ilegiveis = 0;
+  for (const item of bruto) {
+    const r = widgetSchema.safeParse(item);
+    if (r.success) widgets.push(r.data);
+    else ilegiveis += 1;
+  }
+  return { widgets, ilegiveis };
+}

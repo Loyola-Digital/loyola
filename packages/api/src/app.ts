@@ -39,6 +39,7 @@ import pdiRoutes from "./routes/pdi.js";
 import pessoalRoutes from "./routes/pessoal.js";
 import stageSourceRulesRoutes from "./routes/stage-source-rules.js";
 import biCatalogoRoutes from "./routes/bi-catalogo.js";
+import biDashboardsRoutes from "./routes/bi-dashboards.js";
 import biQueryRoutes from "./routes/bi-query.js";
 import apiKeysRoutes from "./routes/api-keys.js";
 import publicDiscoveryRoutes from "./routes/public-discovery.js";
@@ -201,6 +202,7 @@ export async function buildServer() {
   await app.register(stageSourceRulesRoutes);
   await app.register(biCatalogoRoutes);
   await app.register(biQueryRoutes);
+  await app.register(biDashboardsRoutes);
   await app.register(apiKeysRoutes);
   // API pública read-only (/api/public/*) — Story 36.3
   await app.register(publicDiscoveryRoutes);
