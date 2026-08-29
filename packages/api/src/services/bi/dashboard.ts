@@ -30,7 +30,7 @@ export const geometriaSchema = z.object({
   h: z.number().int().min(1).max(40),
 });
 
-export const TIPOS_DE_WIDGET = ["kpi", "linha", "barra", "tabela", "pizza"] as const;
+export const TIPOS_DE_WIDGET = ["kpi", "linha", "barra", "tabela", "pizza", "funil"] as const;
 
 export const widgetSchema = z.object({
   id: z.string().min(1).max(64),
@@ -45,6 +45,23 @@ export const widgetSchema = z.object({
 
 export type Widget = z.infer<typeof widgetSchema>;
 export type Geometria = z.infer<typeof geometriaSchema>;
+export type TipoDeWidget = (typeof TIPOS_DE_WIDGET)[number];
+
+/**
+ * O tamanho com que cada tipo nasce.
+ *
+ * Vive aqui, e não só no cliente, porque a inserção de preset acontece no
+ * servidor: se os dois lados escolhessem o tamanho por conta própria, o widget
+ * mudaria de forma no primeiro recarregamento da página.
+ */
+export const PADRAO_POR_TIPO: Record<TipoDeWidget, { w: number; h: number }> = {
+  kpi: { w: 3, h: 2 },
+  linha: { w: 6, h: 4 },
+  barra: { w: 6, h: 4 },
+  pizza: { w: 4, h: 4 },
+  funil: { w: 4, h: 5 },
+  tabela: { w: 6, h: 5 },
+};
 
 /**
  * Os períodos com nome.
@@ -181,4 +198,29 @@ export function widgetsGuardados(bruto: unknown): { widgets: Widget[]; ilegiveis
     else ilegiveis += 1;
   }
   return { widgets, ilegiveis };
+}
+
+/**
+ * O primeiro espaço livre da grade para um bloco do tamanho pedido.
+ *
+ * Mora no servidor porque é ele que insere o preset. Varre linha a linha, da
+ * esquerda para a direita — é o que faz "clicar no preset" colocar o widget
+ * onde a pessoa esperaria, em vez de no fim da página.
+ */
+export function primeiroEspacoLivre(
+  ocupados: Geometria[],
+  tamanho: { w: number; h: number },
+): { x: number; y: number } {
+  const w = Math.min(tamanho.w, COLUNAS_DO_GRID);
+  const colidem = (a: Geometria, b: Geometria) =>
+    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+  const limite = ocupados.reduce((m, b) => Math.max(m, b.y + b.h), 0) + 1;
+  for (let y = 0; y <= limite; y += 1) {
+    for (let x = 0; x + w <= COLUNAS_DO_GRID; x += 1) {
+      const candidato = { x, y, w, h: tamanho.h };
+      if (!ocupados.some((b) => colidem(candidato, b))) return { x, y };
+    }
+  }
+  return { x: 0, y: limite };
 }

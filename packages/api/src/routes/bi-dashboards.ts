@@ -7,20 +7,26 @@
  * sobrescreveriam — o arrasto apagaria a troca de período feita no segundo antes.
  */
 
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { and, desc, eq } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { biDashboards, projectMembers, projects } from "../db/schema.js";
 import {
   LIMITE_DE_WIDGETS,
+  PADRAO_POR_TIPO,
   dateRangeSchema,
   duplicarWidgets,
   nomeDaCopia,
+  primeiroEspacoLivre,
   resolverPeriodo,
   widgetSchema,
   widgetsGuardados,
   type DateRange,
+  type Widget,
 } from "../services/bi/dashboard.js";
+import { comPeriodo, preset } from "../services/bi/presets.js";
+import { ErroDeQuery, executarQuery, type ResultadoDaQuery } from "../services/bi/query.js";
 
 const paramsSchema = z.object({ projectId: z.string().uuid() });
 const paramsComIdSchema = paramsSchema.extend({ id: z.string().uuid() });
@@ -235,5 +241,168 @@ export default fp(async function biDashboardsRoutes(fastify) {
 
     if (apagados.length === 0) return reply.code(404).send({ error: "Dashboard não encontrado" });
     return { ok: true };
+  });
+
+  // ============================================================
+  // Widgets e execução
+  // ============================================================
+
+  /**
+   * Executa vários widgets sem afogar o pool de conexões.
+   *
+   * Sessenta widgets num `Promise.all` abrem sessenta consultas de uma vez — e o
+   * dashboard passa a ser o que derruba a API para todo mundo.
+   */
+  async function executarEmLotes(
+    widgets: Widget[],
+    projectId: string,
+    tamanhoDoLote = 6,
+  ): Promise<Record<string, ResultadoDaQuery | { erro: string; campo?: string }>> {
+    const saida: Record<string, ResultadoDaQuery | { erro: string; campo?: string }> = {};
+    for (let i = 0; i < widgets.length; i += tamanhoDoLote) {
+      const lote = widgets.slice(i, i + tamanhoDoLote);
+      await Promise.all(
+        lote.map(async (w) => {
+          try {
+            saida[w.id] = await executarQuery(w.spec, { db: fastify.db as never, projectId });
+          } catch (erro) {
+            // Um widget que falha não pode apagar os outros 59: o erro vira o
+            // conteúdo daquele card, e o resto do dashboard continua de pé.
+            saida[w.id] =
+              erro instanceof ErroDeQuery
+                ? { erro: erro.message, campo: erro.campo }
+                : { erro: "Não foi possível carregar este widget" };
+            if (!(erro instanceof ErroDeQuery)) fastify.log.error({ erro }, "widget falhou");
+          }
+        }),
+      );
+    }
+    return saida;
+  }
+
+  const inserirSchema = z.union([
+    z.object({
+      presetId: z.string().min(1).max(80),
+      geometria: widgetSchema.shape.geometria.partial().optional(),
+      titulo: z.string().min(1).max(120).optional(),
+    }),
+    z.object({ widget: widgetSchema.omit({ id: true }) }),
+  ]);
+
+  fastify.post("/api/projects/:projectId/bi/dashboards/:id/widgets", async (request, reply) => {
+    const p = paramsComIdSchema.safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!(await temAcesso(p.data.projectId, request.userId!, request.userRole!))) {
+      return reply.code(404).send({ error: "Projeto não encontrado" });
+    }
+
+    const corpo = inserirSchema.safeParse(request.body);
+    if (!corpo.success) return reply.code(400).send({ error: "Widget inválido" });
+
+    const linha = await carregar(p.data.projectId, p.data.id);
+    if (!linha) return reply.code(404).send({ error: "Dashboard não encontrado" });
+
+    const { widgets } = widgetsGuardados(linha.widgets);
+    if (widgets.length >= LIMITE_DE_WIDGETS) {
+      return reply
+        .code(400)
+        .send({ error: `Um dashboard cabe até ${LIMITE_DE_WIDGETS} widgets. Divida em dois.` });
+    }
+
+    const periodo = resolverPeriodo(linha.dateRange as DateRange);
+    let novo: Widget;
+
+    if ("presetId" in corpo.data) {
+      const escolhido = preset(corpo.data.presetId);
+      if (!escolhido) return reply.code(400).send({ error: "Preset desconhecido" });
+      if (escolhido.bloqueado) {
+        // Recusar aqui, em vez de deixar o widget entrar para falhar depois: um
+        // card que erra toda vez que carrega é pior que um botão desabilitado.
+        return reply.code(400).send({ error: escolhido.bloqueado });
+      }
+      const tamanho = {
+        w: corpo.data.geometria?.w ?? PADRAO_POR_TIPO[escolhido.tipo].w,
+        h: corpo.data.geometria?.h ?? PADRAO_POR_TIPO[escolhido.tipo].h,
+      };
+      // Soltou num lugar? Vai para lá. Clicou? Vai para o primeiro espaço livre.
+      const canto =
+        corpo.data.geometria?.x !== undefined && corpo.data.geometria?.y !== undefined
+          ? { x: corpo.data.geometria.x, y: corpo.data.geometria.y }
+          : primeiroEspacoLivre(
+              widgets.map((w) => w.geometria),
+              tamanho,
+            );
+      novo = {
+        id: randomUUID(),
+        tipo: escolhido.tipo,
+        titulo: corpo.data.titulo ?? escolhido.nome,
+        spec: comPeriodo(escolhido.spec, periodo),
+        geometria: { ...canto, w: tamanho.w, h: tamanho.h },
+        opcoes: escolhido.opcoes ?? {},
+      };
+    } else {
+      novo = { ...corpo.data.widget, id: randomUUID() };
+    }
+
+    const atualizados = [...widgets, novo];
+    await fastify.db
+      .update(biDashboards)
+      .set({ widgets: atualizados, updatedAt: new Date() })
+      .where(eq(biDashboards.id, p.data.id));
+
+    // O resultado volta junto: sem isto a inserção precisaria de um segundo
+    // request, e o widget nasceria vazio por um instante.
+    let resultado: ResultadoDaQuery | { erro: string };
+    try {
+      resultado = await executarQuery(novo.spec, {
+        db: fastify.db as never,
+        projectId: p.data.projectId,
+      });
+    } catch (erro) {
+      resultado = { erro: erro instanceof ErroDeQuery ? erro.message : "Falha ao calcular" };
+    }
+
+    return reply.code(201).send({ widget: novo, resultado });
+  });
+
+  fastify.delete(
+    "/api/projects/:projectId/bi/dashboards/:id/widgets/:widgetId",
+    async (request, reply) => {
+      const p = paramsComIdSchema.extend({ widgetId: z.string().min(1) }).safeParse(request.params);
+      if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      if (!(await temAcesso(p.data.projectId, request.userId!, request.userRole!))) {
+        return reply.code(404).send({ error: "Projeto não encontrado" });
+      }
+
+      const linha = await carregar(p.data.projectId, p.data.id);
+      if (!linha) return reply.code(404).send({ error: "Dashboard não encontrado" });
+
+      const { widgets } = widgetsGuardados(linha.widgets);
+      const restantes = widgets.filter((w) => w.id !== p.data.widgetId);
+      if (restantes.length === widgets.length) {
+        return reply.code(404).send({ error: "Widget não encontrado" });
+      }
+
+      await fastify.db
+        .update(biDashboards)
+        .set({ widgets: restantes, updatedAt: new Date() })
+        .where(eq(biDashboards.id, p.data.id));
+
+      return { ok: true };
+    },
+  );
+
+  fastify.post("/api/projects/:projectId/bi/dashboards/:id/execute", async (request, reply) => {
+    const p = paramsComIdSchema.safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!(await temAcesso(p.data.projectId, request.userId!, request.userRole!))) {
+      return reply.code(404).send({ error: "Projeto não encontrado" });
+    }
+
+    const linha = await carregar(p.data.projectId, p.data.id);
+    if (!linha) return reply.code(404).send({ error: "Dashboard não encontrado" });
+
+    const { widgets } = widgetsGuardados(linha.widgets);
+    return { resultados: await executarEmLotes(widgets, p.data.projectId) };
   });
 });

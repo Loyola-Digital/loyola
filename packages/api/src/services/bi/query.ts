@@ -241,7 +241,7 @@ const ROTULO_DA_ENTIDADE: Record<EntidadeDoCatalogo, string> = {
 };
 
 /** A dimensão de data da entidade — é nela que o filtro obrigatório incide. */
-const CAMPO_DE_DATA: Record<EntidadeDoCatalogo, string> = {
+export const CAMPO_DE_DATA: Record<EntidadeDoCatalogo, string> = {
   trafego: "trafego.date",
   vendas: "vendas.date",
   aplicacoes: "aplicacoes.date",

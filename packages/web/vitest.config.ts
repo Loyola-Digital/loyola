@@ -30,6 +30,8 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
-    include: ["lib/utils/**/*.test.ts"],
+    // `lib/bi` entra junto pelo mesmo motivo de `lib/utils`: é lógica pura
+    // (aritmética de grade, máquina de estados de salvamento) e roda sem DOM.
+    include: ["lib/utils/**/*.test.ts", "lib/bi/**/*.test.ts"],
   },
 });

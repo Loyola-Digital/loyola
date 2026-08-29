@@ -12,6 +12,7 @@ import { and, desc, eq, ilike, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { metaAdInsightsDaily, projects } from "../db/schema.js";
 import { campo, catalogoParaApi } from "../services/bi/catalogo.js";
+import { presetsParaApi } from "../services/bi/presets.js";
 
 /**
  * Dimensões cujos valores dá para listar hoje, e a coluna de cada uma.
@@ -31,6 +32,13 @@ export default fp(async function biCatalogoRoutes(fastify) {
   fastify.get("/api/bi/catalogo", async (request, reply) => {
     if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
     return catalogoParaApi();
+  });
+
+  fastify.get("/api/bi/presets", async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    // Estático como o catálogo: os presets são declarados em código, e o teste
+    // que os valida contra o catálogo roda no build.
+    return { presets: presetsParaApi() };
   });
 
   fastify.get("/api/bi/valores", async (request, reply) => {
