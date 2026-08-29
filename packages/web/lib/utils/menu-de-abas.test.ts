@@ -87,8 +87,48 @@ describe("montarMenuDeAbas — elegibilidade (AC1/AC4)", () => {
     ]);
   });
 
-  it("perpétuo: Meta Ads tem Análise MVP, e não Meta Ads TESTE", () => {
-    expect(grupo(PERPETUO, "meta-ads").filhos.map((f) => f.value)).toEqual(["analise-mvp"]);
+  it("perpétuo: Meta Ads fica SEM filhos — a Análise MVP mudou de grupo (45.2)", () => {
+    const g = grupo(PERPETUO, "meta-ads");
+    expect(g.filhos).toEqual([]);
+    // Consequência declarada na AC2 da 45.2: sem filhos, vira aba comum e some
+    // a afordância de submenu. Não é regra nova — é a AC4 da 45.1 sendo
+    // exercida por uma configuração que antes não a alcançava.
+    expect(ehGrupoExpansivel(g)).toBe(false);
+  });
+
+  it("perpétuo: a Análise MVP é o PRIMEIRO filho de Dados (45.2 AC1)", () => {
+    // Primeiro e não último: ela é análise, as outras oito são fontes. No fim
+    // de nove itens ela se esconderia de novo — que é o que originou a story.
+    expect(grupo(PERPETUO, "dados").filhos.map((f) => f.value)).toEqual([
+      "analise-mvp",
+      "surveys",
+      "spreadsheets",
+      "switchy-links",
+      "lead-scoring",
+      "organic-media",
+      "mautic",
+      "ga4",
+      "nps",
+    ]);
+  });
+
+  it("lançamento: a Análise MVP NÃO vaza para Dados", () => {
+    // A armadilha que o @po barrou: mutar o const de módulo com `unshift`
+    // vazaria a aba para todo funil. Espalhar mantém a elegibilidade.
+    for (const ctx of [LANCAMENTO_CAPTACAO_PAGA, LANCAMENTO_SEM_CAPTACAO_PAGA]) {
+      const dados = montarMenuDeAbas(ctx).find((g) => g.id === "dados");
+      expect(dados?.filhos.map((f) => f.value)).not.toContain("analise-mvp");
+      expect(dados?.filhos[0]?.value).toBe("surveys");
+    }
+  });
+
+  it("montar duas vezes não duplica a Análise MVP", () => {
+    // A outra metade da mesma armadilha: `unshift` DENTRO da função acumularia
+    // uma cópia a cada chamada, e o menu é remontado a cada render.
+    const a = grupo(PERPETUO, "dados").filhos.map((f) => f.value);
+    const b = grupo(PERPETUO, "dados").filhos.map((f) => f.value);
+    expect(a).toEqual(b);
+    expect(a.filter((v) => v === "analise-mvp")).toHaveLength(1);
   });
 
   it("lançamento sem captação paga: Meta Ads fica SEM filhos e vira aba comum", () => {
@@ -126,8 +166,12 @@ describe("abaPadraoDoGrupo (AC3)", () => {
     expect(abaPadraoDoGrupo(grupo(PERPETUO, "inacio"))).toBe("cadeia-cac");
   });
 
-  it("Dados abre no primeiro filho elegível", () => {
-    expect(abaPadraoDoGrupo(grupo(PERPETUO, "dados"))).toBe("surveys");
+  it("Dados abre no primeiro filho elegível — que no perpétuo passou a ser a Análise MVP", () => {
+    // ⚠️ Efeito colateral declarado da 45.2 (achado F3 do @po): `abaPadraoDoGrupo`
+    // devolve `filhos[0]`, então pôr a Análise MVP em primeiro muda o destino do
+    // clique no pai "Dados". Aceito e travado aqui para não chegar como surpresa.
+    expect(abaPadraoDoGrupo(grupo(PERPETUO, "dados"))).toBe("analise-mvp");
+    expect(abaPadraoDoGrupo(grupo(LANCAMENTO_CAPTACAO_PAGA, "dados"))).toBe("surveys");
   });
 });
 
@@ -190,10 +234,12 @@ describe("contrato de URL (AC2)", () => {
     // passam a existir. "ga4" é o caso a lembrar: o rótulo virou "Analytics"
     // na 0870c2a2 e o value ficou de propósito.
     const todos = abasDoMenu(montarMenuDeAbas(PERPETUO)).map((a) => a.value);
+    // A 45.2 mudou a POSIÇÃO de `analise-mvp` (Meta Ads → Dados), nunca o
+    // `value`: `?tab=analise-mvp` compartilhado antes continua abrindo a aba.
     expect(todos).toEqual([
       "meta-ads",
-      "analise-mvp",
       "youtube-ads",
+      "analise-mvp",
       "surveys",
       "spreadsheets",
       "switchy-links",

@@ -87,7 +87,13 @@ const META_ADS: ItemDeAba = {
   badge: "meta",
 };
 
-/** Story 29.35 — só no perpétuo; lançamento tem outro dashboard e outra matemática. */
+/**
+ * Story 29.35 — só no perpétuo; lançamento tem outro dashboard e outra matemática.
+ *
+ * Story 45.2 — mora no grupo **Dados**, não no Meta Ads. Foi decisão do dono do
+ * produto na validação visual da 45.1: ele viu a aba sob o Meta Ads e disse que
+ * o lugar dela era outro. Se você veio "consertar" isto de volta, não é engano.
+ */
 const ANALISE_MVP: ItemDeAba = {
   value: "analise-mvp",
   label: "Análise MVP",
@@ -162,8 +168,17 @@ const RELATORIOS: ItemDeAba = {
  */
 export function montarMenuDeAbas(ctx: ContextoDeAbas): GrupoDeAbas[] {
   const filhosDeMetaAds: ItemDeAba[] = [];
-  if (ctx.funnelType === "perpetual") filhosDeMetaAds.push(ANALISE_MVP);
   if (ctx.funnelType === "launch" && ctx.ehCaptacaoPagaStage) filhosDeMetaAds.push(META_ADS_TESTE);
+
+  // Story 45.2 — a Análise MVP saiu do grupo Meta Ads e entrou em Dados, por
+  // decisão do dono do produto na validação visual da 45.1. Em primeiro lugar
+  // do grupo, e não no fim: ela é análise, as outras oito são fontes.
+  //
+  // ⛔ Não mutar `ABAS_DE_DADOS` — é `const` de módulo. `unshift` ali vazaria a
+  // aba para lançamento; dentro desta função, acumularia duplicatas a cada
+  // chamada. Espalhar é o único caminho correto.
+  const filhosDeDados: ItemDeAba[] =
+    ctx.funnelType === "perpetual" ? [ANALISE_MVP, ...ABAS_DE_DADOS] : ABAS_DE_DADOS;
 
   // Story 44.9 — família `null` (lyrio/comercial/debriefing) não ganha aba
   // vazia: não ganha aba. O Panorama vive no mesmo escopo, então o grupo
@@ -192,7 +207,7 @@ export function montarMenuDeAbas(ctx: ContextoDeAbas): GrupoDeAbas[] {
       icon: Database,
       iconClassName: "text-muted-foreground",
       proprio: null,
-      filhos: ABAS_DE_DADOS,
+      filhos: filhosDeDados,
     },
     {
       id: "inacio",
