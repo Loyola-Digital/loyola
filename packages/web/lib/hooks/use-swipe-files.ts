@@ -11,7 +11,7 @@
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-export type AssetKind = "image" | "video" | "link";
+export type AssetKind = "image" | "video" | "pdf" | "link";
 
 export interface SwipeFile {
   id: string;
@@ -20,6 +20,7 @@ export interface SwipeFile {
   assetKind: AssetKind;
   fileUrl: string | null;
   fileMime: string | null;
+  fileSizeBytes: number | null;
   width: number | null;
   height: number | null;
   sourceUrl: string | null;

@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useRef, useState } from "react";
-import { Upload, Link2, Loader2, X, ImageIcon, Film } from "lucide-react";
+import { Upload, Link2, Loader2, X, ImageIcon, Film, FileText } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -140,13 +140,19 @@ export function AddSwipeDialog({
         toast.error(`Arquivo tem ${fmtBytes(f.size)} — o limite é 200 MB.`);
         return;
       }
-      if (!f.type.startsWith("image/") && !f.type.startsWith("video/")) {
-        toast.error("Só imagem ou vídeo. Pra outros formatos, use o link.");
+      if (
+        !f.type.startsWith("image/") &&
+        !f.type.startsWith("video/") &&
+        f.type !== "application/pdf"
+      ) {
+        toast.error("Só imagem, vídeo ou PDF. Pra outros formatos, use o link.");
         return;
       }
       setFile(f);
       setLocalPreview(URL.createObjectURL(f));
-      setDims(await readMediaDimensions(f));
+      // PDF não passa por `readMediaDimensions`: não é <img> nem <video>, e a
+      // promessa nunca resolveria. Sem dimensão, o card usa a proporção padrão.
+      setDims(f.type === "application/pdf" ? null : await readMediaDimensions(f));
       // Nome do arquivo vira título provisório — reduz a fricção de catalogar.
       if (!title) setTitle(f.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").slice(0, 200));
     },
@@ -176,9 +182,13 @@ export function AddSwipeDialog({
     setTagInput("");
   }
 
-  const assetKind: AssetKind = file
-    ? file.type.startsWith("video/") ? "video" : "image"
-    : "link";
+  const assetKind: AssetKind = !file
+    ? "link"
+    : file.type === "application/pdf"
+      ? "pdf"
+      : file.type.startsWith("video/")
+        ? "video"
+        : "image";
 
   const podeSalvar = title.trim() && (file || sourceUrl.trim());
 
@@ -251,6 +261,14 @@ export function AddSwipeDialog({
                     // Preview local do arquivo que a pessoa acabou de escolher —
                     // não há legenda a fornecer.
                     <video src={localPreview} className="w-full rounded-lg" controls aria-label="Prévia do vídeo" />
+                  ) : assetKind === "pdf" ? (
+                    // O PDF ainda é um Blob local: gerar miniatura exigiria uma
+                    // biblioteca de render só para esta prévia. O nome e o
+                    // tamanho já confirmam que é o arquivo certo.
+                    <div className="flex items-center gap-2 rounded-lg border bg-muted/40 p-4 text-left">
+                      <FileText className="h-8 w-8 shrink-0 text-rose-600" />
+                      <span className="min-w-0 flex-1 truncate text-xs">{file?.name}</span>
+                    </div>
                   ) : (
                     <img src={localPreview} alt="" className="w-full rounded-lg" />
                   )}
@@ -287,8 +305,9 @@ export function AddSwipeDialog({
                 <div className="mb-2 flex justify-center gap-2 text-muted-foreground">
                   <ImageIcon className="h-5 w-5" />
                   <Film className="h-5 w-5" />
+                  <FileText className="h-5 w-5" />
                 </div>
-                <p className="text-sm">Arraste imagem ou vídeo aqui</p>
+                <p className="text-sm">Arraste imagem, vídeo ou PDF aqui</p>
                 <Button
                   variant="outline"
                   size="sm"
@@ -302,7 +321,7 @@ export function AddSwipeDialog({
                 <input
                   ref={inputRef}
                   type="file"
-                  accept="image/*,video/*"
+                  accept="image/*,video/*,application/pdf"
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
