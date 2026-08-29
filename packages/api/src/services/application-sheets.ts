@@ -378,3 +378,88 @@ export function agruparPorPagina(
   }
   return grupos;
 }
+
+/**
+ * As linhas das planilhas de aplicação como objetos crus `coluna → valor`.
+ *
+ * "Cru" é o ponto: a tela de match de origem deixa escolher QUALQUER coluna
+ * para analisar os leads sem origem, então reduzir a linha aos campos que a
+ * tabela de aplicações usa (nome, e-mail, utm_term) tiraria justamente as
+ * colunas que servem para recuperar a origem — um `utm_medium`, um campo do
+ * formulário, o nome da aba.
+ *
+ * Colunas homônimas seguem a mesma regra do resto do arquivo: a PREENCHIDA
+ * vence. Nestas planilhas, três colunas `utm_term` com dado só na primeira é a
+ * norma, e um objeto com a última venceria o dado bom.
+ */
+export interface LinhasBrutas {
+  linhas: Record<string, string>[];
+  /** Nomes de coluna com algum conteúdo, para o seletor de "analisar por". */
+  colunas: string[];
+  semPlanilha: boolean;
+}
+
+export async function carregarLinhasBrutas(
+  fastify: {
+    db: {
+      select: (...a: never[]) => {
+        from: (...a: never[]) => { where: (...a: never[]) => Promise<Record<string, unknown>[]> };
+      };
+    };
+    log: { warn: (o: unknown, m: string) => void };
+  },
+  funnelId: string,
+): Promise<LinhasBrutas> {
+  const { funnelSpreadsheets } = await import("../db/schema.js");
+  const { and, eq } = await import("drizzle-orm");
+  const { readSheetData } = await import("./google-sheets.js");
+
+  const sheets = (await (fastify.db as unknown as {
+    select: () => {
+      from: (t: unknown) => { where: (c: unknown) => Promise<
+        { spreadsheetId: string; sheetName: string; label: string }[]
+      > };
+    };
+  })
+    .select()
+    .from(funnelSpreadsheets)
+    .where(
+      and(eq(funnelSpreadsheets.funnelId, funnelId), eq(funnelSpreadsheets.type, "applications")),
+    )) as { spreadsheetId: string; sheetName: string; label: string }[];
+
+  if (sheets.length === 0) return { linhas: [], colunas: [], semPlanilha: true };
+
+  const linhas: Record<string, string>[] = [];
+  const preenchidas = new Set<string>();
+
+  for (const s of sheets) {
+    let data: { headers: string[]; rows: string[][] };
+    try {
+      data = await readSheetData(s.spreadsheetId, s.sheetName);
+    } catch (error) {
+      // Uma aba ilegível não pode derrubar o diagnóstico das outras: o número
+      // sai menor, e o aviso de planilha já existe na tela de aplicações.
+      fastify.log.warn({ err: error, aba: s.sheetName }, "[match-origem] aba ilegível");
+      continue;
+    }
+
+    for (const row of data.rows) {
+      const obj: Record<string, string> = { __aba: s.label };
+      data.headers.forEach((h, i) => {
+        const nome = (h ?? "").trim();
+        if (!nome) return;
+        const valor = (row[i] ?? "").trim();
+        // Homônimas: só sobrescreve se a nova tiver conteúdo.
+        if (valor || obj[nome] === undefined) obj[nome] = valor;
+        if (valor) preenchidas.add(nome);
+      });
+      linhas.push(obj);
+    }
+  }
+
+  return {
+    linhas,
+    colunas: ["__aba", ...[...preenchidas].sort()],
+    semPlanilha: false,
+  };
+}

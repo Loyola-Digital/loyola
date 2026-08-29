@@ -3466,3 +3466,59 @@ export const peopleAbsences = pgTable(
     index("idx_people_absences_periodo").on(table.inicio, table.fim),
   ]
 );
+
+// ============================================================
+// ORIGEM DOS LEADS — regras de atribuição (match de source)
+// ============================================================
+// O problema: parte das aplicações chega sem `utm_source`. Sem ele, o lead não
+// entra em nenhuma leitura de canal — e hoje ninguém sabe sequer QUANTOS são.
+//
+// A diferença desta implementação para a ferramenta que inspirou o desenho: lá
+// os leads moram no banco e a recuperação GRAVA a origem em cada um. Aqui os
+// leads são lidos ao vivo da planilha a cada request — não há linha para
+// gravar, e escrever na planilha do cliente seria invasivo e frágil.
+//
+// Então a atribuição é uma REGRA, aplicada na leitura. Sai melhor em dois
+// pontos: vale para o passado e para o lead novo que cair no mesmo padrão
+// (sem ninguém rodar nada de novo), e a planilha nunca é alterada — apagar a
+// regra devolve o dado ao estado original.
+
+export const sourceRuleOperatorEnum = pgEnum("source_rule_operator", [
+  "igual",
+  "contem",
+  "comeca_com",
+  "vazio",
+]);
+
+export const stageSourceRules = pgTable(
+  "stage_source_rules",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    /**
+     * Coluna da planilha que a regra observa (`utm_medium`, `utm_term`, …).
+     *
+     * Guardado como NOME e não como índice: a ordem das colunas muda quando
+     * alguém edita o formulário, e um índice gravado passaria a apontar para
+     * outra coluna em silêncio.
+     */
+    campo: varchar("campo", { length: 120 }).notNull(),
+    operador: sourceRuleOperatorEnum("operador").notNull().default("igual"),
+    /** Vazio quando o operador é `vazio`. */
+    valor: text("valor").notNull().default(""),
+    /**
+     * A origem atribuída. Segue a convenção `paid_*` / `organic_*` — é o
+     * prefixo que separa pago de orgânico no resto do sistema.
+     */
+    origem: varchar("origem", { length: 120 }).notNull(),
+    /** Menor primeiro. Duas regras que casam a mesma linha: vence a de menor ordem. */
+    ordem: integer("ordem").notNull().default(0),
+    ativa: boolean("ativa").notNull().default(true),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_stage_source_rules_stage").on(table.stageId, table.ordem)],
+);
