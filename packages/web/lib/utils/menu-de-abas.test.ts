@@ -217,6 +217,18 @@ describe("resolverAbaAtiva — o ?tab= da URL (AC5)", () => {
     expect(resolverAbaAtiva(montarMenuDeAbas(PERPETUO), "meta-ads-teste")).toBe("meta-ads");
   });
 
+  it("um link ?tab=analise-mvp de antes da 45.2 continua abrindo a aba (QA-452-05)", () => {
+    // A 45.2 mudou o GRUPO da aba, nunca o `value`. Este teste existe porque o
+    // "nunca devolve uma aba que o menu não renderiza", abaixo, é TAUTOLÓGICO
+    // para este caso: `toContain` passa igual se `resolverAbaAtiva` cair no
+    // fallback `meta-ads`. Aqui a asserção é de identidade, não de pertinência.
+    const menu = montarMenuDeAbas(PERPETUO);
+    expect(resolverAbaAtiva(menu, "analise-mvp")).toBe("analise-mvp");
+    // E o pai derivado tem de ser o grupo NOVO — senão o link abre a aba certa
+    // com o submenu errado aberto.
+    expect(grupoDaAba(menu, "analise-mvp")?.id).toBe("dados");
+  });
+
   it("nunca devolve uma aba que o menu não renderiza", () => {
     for (const ctx of [LANCAMENTO_CAPTACAO_PAGA, PERPETUO, LANCAMENTO_SEM_CAPTACAO_PAGA, FORA_DA_CADEIA]) {
       const menu = montarMenuDeAbas(ctx);

@@ -5,3 +5,5 @@
 - [Story 45.1 QA CONCERNS](project_story_45_1.md) — menu de abas em 2 níveis + `?tab=`; QA-451-01 (URL não é relida na troca de etapa) pende da validação visual
 - [Paridade função pura × render](feedback_paridade_funcao_pura_e_render.md) — o teste cobre metade do risco; compare os CONJUNTOS de values da config e do render
 - [Junção de feeds declara a escala](feedback_juncao_de_feeds_declara_escala.md) — campos homônimos nos dois lados: `ctr`/`cpc`/`connectRate` são decimais no /cadeia-cac e ×100 no /creatives
+- [Story 45.2 QA CONCERNS](project_story_45_2.md) — Análise MVP muda para o grupo Dados; código limpo, o medium é a validação visual nunca feita (2ª seguida no Epic 45)
+- [Injetar a armadilha prevista](feedback_injetar_a_armadilha_prevista.md) — reverter o fix não prova o teste dedicado à armadilha; injete cada uma e cuidado com asserção tautológica

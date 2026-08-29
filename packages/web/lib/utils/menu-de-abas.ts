@@ -162,9 +162,14 @@ const RELATORIOS: ItemDeAba = {
 /**
  * A árvore de abas desta etapa, já filtrada pela elegibilidade.
  *
- * As três condições preservam, sem mudança de regra, o que o `page.tsx` fazia
- * com `&&` inline: `analise-mvp` só no perpétuo, `meta-ads-teste` só em
- * lançamento de captação paga, `cadeia-cac` só quando a família não é `null`.
+ * As três condições de elegibilidade preservam, sem mudança de regra, o que o
+ * `page.tsx` fazia com `&&` inline: `analise-mvp` só no perpétuo,
+ * `meta-ads-teste` só em lançamento de captação paga, `cadeia-cac` só quando a
+ * família não é `null`.
+ *
+ * ⚠️ Os GRUPOS, porém, mudaram na Story 45.2: `analise-mvp` é filha de **Dados**
+ * (em primeiro lugar), não de Meta Ads. Só `meta-ads-teste` ficou sob Meta Ads —
+ * que, portanto, não tem filho nenhum em funil perpétuo.
  */
 export function montarMenuDeAbas(ctx: ContextoDeAbas): GrupoDeAbas[] {
   const filhosDeMetaAds: ItemDeAba[] = [];
