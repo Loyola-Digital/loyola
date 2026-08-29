@@ -9,10 +9,11 @@
  * só a ponte com o React e com o token de autenticação.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { criarControleDeLevas, type ContextoDaLeva } from "@/lib/bi/levas";
 import { lerNdjson } from "@/lib/bi/ndjson";
+import { reduzirResultados } from "@/lib/bi/resultados";
 import type { DateRange } from "@/lib/bi/tipos";
 import type { ResultadoDoWidget } from "@/lib/hooks/use-bi";
 
@@ -36,7 +37,12 @@ type LinhaNdjson =
 
 export function useRefreshProgressivo(projectId: string | null, dashboardId: string | null) {
   const { getToken } = useAuth();
-  const [resultados, setResultados] = useState<Record<string, ResultadoDoWidget>>({});
+  // O reducer mora em `lib/bi/resultados.ts` e é testado lá: é ele que garante
+  // que a leva passa por cima da semente, e que trocar de projeto zera as duas.
+  const [resultados, despachar] = useReducer(
+    reduzirResultados,
+    {} as Record<string, ResultadoDoWidget>,
+  );
   const [carregando, setCarregando] = useState(false);
   const [pendentes, setPendentes] = useState(0);
   const [periodo, setPeriodo] = useState<{ start: string; end: string } | null>(null);
@@ -81,7 +87,11 @@ export function useRefreshProgressivo(projectId: string | null, dashboardId: str
               setPeriodo(linha.periodo);
               setProjetosNoEscopo(linha.projetosNoEscopo ?? 1);
             } else if (linha.tipo === "widget") {
-              setResultados((atuais) => ({ ...atuais, [linha.widgetId]: linha.resultado }));
+              despachar({
+                tipo: "chegou",
+                widgetId: linha.widgetId,
+                resultado: linha.resultado,
+              });
               setPendentes((n) => Math.max(0, n - 1));
             }
           },
@@ -104,13 +114,27 @@ export function useRefreshProgressivo(projectId: string | null, dashboardId: str
   const controle = useMemo(() => criarControleDeLevas(executar), [executar]);
 
   useEffect(() => {
-    // Trocar de dashboard limpa o que estava pintado: manter os resultados do
-    // anterior faria o novo aparecer com números que não são dele.
-    setResultados({});
+    // Trocar de dashboard ou de projeto limpa o que estava pintado: manter os
+    // resultados do anterior faria o novo aparecer com números que não são dele.
+    despachar({ tipo: "limpar" });
+    setPeriodo(null);
     controle.cancelar();
     if (projectId && dashboardId) void controle.agora({});
     return () => controle.cancelar();
   }, [projectId, dashboardId, controle]);
+
+  /**
+   * Semeia o resultado de um widget recém-criado.
+   *
+   * Entra no MESMO mapa das levas, e não num mapa paralelo com prioridade: a
+   * semente é um valor provisório, e a próxima leva tem que poder passar por
+   * cima dela. Guardá-la separado — como estava — fazia o widget inserido nesta
+   * sessão continuar mostrando o número do projeto anterior depois de trocar de
+   * projeto ou de escopo, com cara de atual.
+   */
+  const semear = useCallback((widgetId: string, resultado: ResultadoDoWidget) => {
+    despachar({ tipo: "semear", widgetId, resultado });
+  }, []);
 
   return {
     resultados,
@@ -118,6 +142,7 @@ export function useRefreshProgressivo(projectId: string | null, dashboardId: str
     pendentes,
     periodo,
     projetosNoEscopo,
+    semear,
     /** Troca de filtro: entra pelo debounce. */
     pedir: controle.pedir,
     /** Botão de atualizar: dispara na hora. */
