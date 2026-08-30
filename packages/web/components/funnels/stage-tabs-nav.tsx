@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Story 45.1 — o menu de abas da etapa, em dois níveis.
+ * Story 46.1 — o menu de abas da etapa, em dois níveis.
  *
  * ⚠️ Por que botões, e não `<TabsTrigger>`:
  *
@@ -18,7 +18,7 @@
  * parecendo o menu de antes.
  *
  * Débito conhecido: o `TabsContent` do Radix aponta `aria-labelledby` para um
- * gatilho que não existe mais. Registrado no Dev Record da 45.1.
+ * gatilho que não existe mais. Registrado no Dev Record da 46.1.
  */
 
 import { ChevronDown } from "lucide-react";

@@ -2,5 +2,6 @@
 - [API deploy is manual and lags](project_api_deploy_manual_and_lags.md) — web auto-deploys, API doesn't; merge is not ship, and cache-writing stories decay
 - [Never stage `" 2"` sync artifacts](feedback_never_stage_sync_artifacts.md) — stage selectively; a `git add -A` cost Story 44.12 a blocking QA item
 - [Commit the QA gate before the PR](feedback_commit_qa_gate_before_pr.md) — gates are tracked but @qa often leaves them untracked
-- [Story 45.1 shipped com CONCERNS](project_story_45_1_shipped.md) — merged 2026-08-29 (#661); gate não virou PASS e a validação visual só dá para fazer em produção
+- [Epic 46 Navegação — 46.1 validada, 46.2 na PR #666](project_story_46_1_shipped.md) — a 46.1 passou na tela e gerou a 46.2; a 46.2 está aberta, verde e sem validação visual
 - [Índice de memória colide entre PRs](feedback_agent_memory_index_colide_entre_prs.md) — `.claude/agent-memory/*/MEMORY.md` é append-only; travou a #661 após o merge da #662
+- [Colisão de Epic 45 — RESOLVIDA](project_epic_45_46_renumeracao.md) — Navegação virou Epic 46; commits, branches e PRs #661/#666 ainda dizem 45.x

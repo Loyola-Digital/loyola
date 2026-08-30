@@ -87,8 +87,48 @@ describe("montarMenuDeAbas — elegibilidade (AC1/AC4)", () => {
     ]);
   });
 
-  it("perpétuo: Meta Ads tem Análise MVP, e não Meta Ads TESTE", () => {
-    expect(grupo(PERPETUO, "meta-ads").filhos.map((f) => f.value)).toEqual(["analise-mvp"]);
+  it("perpétuo: Meta Ads fica SEM filhos — a Análise MVP mudou de grupo (46.2)", () => {
+    const g = grupo(PERPETUO, "meta-ads");
+    expect(g.filhos).toEqual([]);
+    // Consequência declarada na AC2 da 46.2: sem filhos, vira aba comum e some
+    // a afordância de submenu. Não é regra nova — é a AC4 da 46.1 sendo
+    // exercida por uma configuração que antes não a alcançava.
+    expect(ehGrupoExpansivel(g)).toBe(false);
+  });
+
+  it("perpétuo: a Análise MVP é o PRIMEIRO filho de Dados (46.2 AC1)", () => {
+    // Primeiro e não último: ela é análise, as outras oito são fontes. No fim
+    // de nove itens ela se esconderia de novo — que é o que originou a story.
+    expect(grupo(PERPETUO, "dados").filhos.map((f) => f.value)).toEqual([
+      "analise-mvp",
+      "surveys",
+      "spreadsheets",
+      "switchy-links",
+      "lead-scoring",
+      "organic-media",
+      "mautic",
+      "ga4",
+      "nps",
+    ]);
+  });
+
+  it("lançamento: a Análise MVP NÃO vaza para Dados", () => {
+    // A armadilha que o @po barrou: mutar o const de módulo com `unshift`
+    // vazaria a aba para todo funil. Espalhar mantém a elegibilidade.
+    for (const ctx of [LANCAMENTO_CAPTACAO_PAGA, LANCAMENTO_SEM_CAPTACAO_PAGA]) {
+      const dados = montarMenuDeAbas(ctx).find((g) => g.id === "dados");
+      expect(dados?.filhos.map((f) => f.value)).not.toContain("analise-mvp");
+      expect(dados?.filhos[0]?.value).toBe("surveys");
+    }
+  });
+
+  it("montar duas vezes não duplica a Análise MVP", () => {
+    // A outra metade da mesma armadilha: `unshift` DENTRO da função acumularia
+    // uma cópia a cada chamada, e o menu é remontado a cada render.
+    const a = grupo(PERPETUO, "dados").filhos.map((f) => f.value);
+    const b = grupo(PERPETUO, "dados").filhos.map((f) => f.value);
+    expect(a).toEqual(b);
+    expect(a.filter((v) => v === "analise-mvp")).toHaveLength(1);
   });
 
   it("lançamento sem captação paga: Meta Ads fica SEM filhos e vira aba comum", () => {
@@ -126,8 +166,12 @@ describe("abaPadraoDoGrupo (AC3)", () => {
     expect(abaPadraoDoGrupo(grupo(PERPETUO, "inacio"))).toBe("cadeia-cac");
   });
 
-  it("Dados abre no primeiro filho elegível", () => {
-    expect(abaPadraoDoGrupo(grupo(PERPETUO, "dados"))).toBe("surveys");
+  it("Dados abre no primeiro filho elegível — que no perpétuo passou a ser a Análise MVP", () => {
+    // ⚠️ Efeito colateral declarado da 46.2 (achado F3 do @po): `abaPadraoDoGrupo`
+    // devolve `filhos[0]`, então pôr a Análise MVP em primeiro muda o destino do
+    // clique no pai "Dados". Aceito e travado aqui para não chegar como surpresa.
+    expect(abaPadraoDoGrupo(grupo(PERPETUO, "dados"))).toBe("analise-mvp");
+    expect(abaPadraoDoGrupo(grupo(LANCAMENTO_CAPTACAO_PAGA, "dados"))).toBe("surveys");
   });
 });
 
@@ -173,6 +217,18 @@ describe("resolverAbaAtiva — o ?tab= da URL (AC5)", () => {
     expect(resolverAbaAtiva(montarMenuDeAbas(PERPETUO), "meta-ads-teste")).toBe("meta-ads");
   });
 
+  it("um link ?tab=analise-mvp de antes da 46.2 continua abrindo a aba (QA-452-05)", () => {
+    // A 46.2 mudou o GRUPO da aba, nunca o `value`. Este teste existe porque o
+    // "nunca devolve uma aba que o menu não renderiza", abaixo, é TAUTOLÓGICO
+    // para este caso: `toContain` passa igual se `resolverAbaAtiva` cair no
+    // fallback `meta-ads`. Aqui a asserção é de identidade, não de pertinência.
+    const menu = montarMenuDeAbas(PERPETUO);
+    expect(resolverAbaAtiva(menu, "analise-mvp")).toBe("analise-mvp");
+    // E o pai derivado tem de ser o grupo NOVO — senão o link abre a aba certa
+    // com o submenu errado aberto.
+    expect(grupoDaAba(menu, "analise-mvp")?.id).toBe("dados");
+  });
+
   it("nunca devolve uma aba que o menu não renderiza", () => {
     for (const ctx of [LANCAMENTO_CAPTACAO_PAGA, PERPETUO, LANCAMENTO_SEM_CAPTACAO_PAGA, FORA_DA_CADEIA]) {
       const menu = montarMenuDeAbas(ctx);
@@ -185,15 +241,17 @@ describe("resolverAbaAtiva — o ?tab= da URL (AC5)", () => {
 });
 
 describe("contrato de URL (AC2)", () => {
-  it("os values de antes da 45.1 sobrevivem intactos", () => {
+  it("os values de antes da 46.1 sobrevivem intactos", () => {
     // Renomear qualquer um destes quebraria links no mesmo dia em que eles
     // passam a existir. "ga4" é o caso a lembrar: o rótulo virou "Analytics"
     // na 0870c2a2 e o value ficou de propósito.
     const todos = abasDoMenu(montarMenuDeAbas(PERPETUO)).map((a) => a.value);
+    // A 46.2 mudou a POSIÇÃO de `analise-mvp` (Meta Ads → Dados), nunca o
+    // `value`: `?tab=analise-mvp` compartilhado antes continua abrindo a aba.
     expect(todos).toEqual([
       "meta-ads",
-      "analise-mvp",
       "youtube-ads",
+      "analise-mvp",
       "surveys",
       "spreadsheets",
       "switchy-links",

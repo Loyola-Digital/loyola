@@ -1,0 +1,3 @@
+- [Numeração de epic no Loyola](project_numeracao_de_epic.md) — quem reserva o número é o doc em `docs/stories/epics/`, não a story; próximo livre é 47
+- [Renumerar sem orfanar o histórico](feedback_renumeracao_preserva_historia.md) — proteja branch/commit/PR do sed e deixe ponte do número velho ao novo
+- [Varredura de referências](feedback_varredura_de_referencias.md) — `git grep -l` com pathspec; `grep -r` estoura o timeout neste repo

@@ -1,11 +1,11 @@
 ---
-name: story-45-1-menu-abas-hierarquico
-description: Story 45.1 (menu de abas da etapa em 2 níveis + ?tab= na URL) — gate CONCERNS em 2026-08-29; QA-451-01 aberto e dependente da validação visual
+name: story-46-1-menu-abas-hierarquico
+description: Story 46.1 (menu de abas da etapa em 2 níveis + ?tab= na URL) — gate CONCERNS em 2026-08-29; QA-451-01 aberto e dependente da validação visual
 metadata:
   type: project
 ---
 
-Story 45.1 — os 14 `TabsTrigger` soltos de `stages/[stageId]/page.tsx` viraram config declarativa (`packages/web/lib/utils/menu-de-abas.ts`) + menu de 2 níveis (`components/funnels/stage-tabs-nav.tsx`), com a aba ativa em `?tab=`. Gate **CONCERNS**, Status Done, ClickUp `86ak7x5j0` em `ready to ship`.
+Story 46.1 — os 14 `TabsTrigger` soltos de `stages/[stageId]/page.tsx` viraram config declarativa (`packages/web/lib/utils/menu-de-abas.ts`) + menu de 2 níveis (`components/funnels/stage-tabs-nav.tsx`), com a aba ativa em `?tab=`. Gate **CONCERNS**, Status Done, ClickUp `86ak7x5j0` em `ready to ship`.
 
 **Why:** o dono do produto pediu em 2026-08-28 ("está muito comprida e pouco funcional"). O @po achou 1 bloqueador (AC7.1 — o `<PanoramaDoProjeto>` do early-return `semDados` da 44.21 tinha que FICAR; só o render normal migra) e a armadilha F3 (o vitest do web coleta `.test.ts` e não `.test.tsx`, então ícone como JSX faria o teste nascer morto). As duas foram atendidas.
 

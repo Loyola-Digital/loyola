@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-// Story 45.1 — os ícones das abas mudaram de casa: agora vivem na config em
+// Story 46.1 — os ícones das abas mudaram de casa: agora vivem na config em
 // `lib/utils/menu-de-abas.ts`. Aqui ficaram só os que o resto da página usa.
 import { FileSpreadsheet, Settings2, Sparkles } from "lucide-react";
 import { useFunnel } from "@/lib/hooks/use-funnels";
@@ -68,7 +68,7 @@ export default function StagePage() {
   // Story 41.1: Tabs passou a ser controlado pra permitir que a config de
   // relatório leve o usuário direto ao wizard de Planilhas (order bumps).
   //
-  // Story 45.1: a aba ativa passou a viver na URL (`?tab=`), então deixou de ser
+  // Story 46.1: a aba ativa passou a viver na URL (`?tab=`), então deixou de ser
   // um estado só. `abaEscolhida` é o clique do usuário nesta sessão;
   // `abaSolicitada` é o que veio no link. O valor final sai de
   // `resolverAbaAtiva()`, que valida os dois contra o menu DESTA etapa — um
@@ -258,7 +258,7 @@ export default function StagePage() {
   const ytCount = stage.googleAdsCampaigns.length;
 
   /**
-   * Story 45.1 — a árvore de abas desta etapa. A elegibilidade que antes era
+   * Story 46.1 — a árvore de abas desta etapa. A elegibilidade que antes era
    * `&&` inline em cada `<TabsTrigger>` agora vive em `montarMenuDeAbas()`, que
    * é puro e testado. `classificarFamilia` continua sendo chamada aqui: é a
    * função da 44.9 e mora no shared.
@@ -598,7 +598,7 @@ export default function StagePage() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={trocarAba}>
-        {/* Story 45.1 — os 14 gatilhos soltos viraram 5 grupos. A árvore vem de
+        {/* Story 46.1 — os 14 gatilhos soltos viraram 5 grupos. A árvore vem de
             `montarMenuDeAbas()`; o `<StageTabsNav>` só desenha. */}
         <StageTabsNav
           menu={menuDeAbas}
@@ -794,7 +794,7 @@ export default function StagePage() {
           <CadeiaCacStageTab projectId={params.id} stageId={params.stageId} />
         </TabsContent>
 
-        {/* Story 45.1 — o Panorama saiu de cima da cadeia e virou irmã dela.
+        {/* Story 46.1 — o Panorama saiu de cima da cadeia e virou irmã dela.
             Os dois disputavam a mesma tela desde a 44.21: quem abria para olhar
             UMA etapa rolava por cima do panorama do expert inteiro. */}
         <TabsContent value="panorama" className="mt-6">
