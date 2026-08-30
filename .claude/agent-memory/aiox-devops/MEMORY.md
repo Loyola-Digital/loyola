@@ -5,3 +5,4 @@
 - [Epic 46 Navegação — 46.1 validada, 46.2 na PR #666](project_story_46_1_shipped.md) — a 46.1 passou na tela e gerou a 46.2; a 46.2 está aberta, verde e sem validação visual
 - [Índice de memória colide entre PRs](feedback_agent_memory_index_colide_entre_prs.md) — `.claude/agent-memory/*/MEMORY.md` é append-only; travou a #661 após o merge da #662
 - [Colisão de Epic 45 — RESOLVIDA](project_epic_45_46_renumeracao.md) — Navegação virou Epic 46; commits, branches e PRs #661/#666 ainda dizem 45.x
+- [Gateway MCP do Inácio](reference_gateway_mcp_inacio.md) — atualizar a tool passa por outro repo (fork do openclaw) + Coolify; daqui só dá para gerar o bundle
