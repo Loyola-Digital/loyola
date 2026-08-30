@@ -7,3 +7,6 @@
 - [Junção de feeds declara a escala](feedback_juncao_de_feeds_declara_escala.md) — campos homônimos nos dois lados: `ctr`/`cpc`/`connectRate` são decimais no /cadeia-cac e ×100 no /creatives
 - [Story 46.2 QA CONCERNS](project_story_45_2.md) — Análise MVP muda para o grupo Dados; código limpo, o medium é a validação visual nunca feita (2ª seguida no Epic 46)
 - [Injetar a armadilha prevista](feedback_injetar_a_armadilha_prevista.md) — reverter o fix não prova o teste dedicado à armadilha; injete cada uma e cuidado com asserção tautológica
+- [Story 44.24 QA CONCERNS](project_story_44_24.md) — `offset` na tool MCP; AC5 pende de rebuild do gateway e o detector da 44.22 é cego a schema; probe = `limit: 300`
+- [Desempate inalcançável](feedback_desempate_inalcancavel.md) — `-Infinity - -Infinity` = NaN e a guarda `d !== 0` pula o tiebreak; execute o comparador, não leia a linha
+- [Runner que enxerga o arquivo](feedback_runner_que_enxerga_o_arquivo.md) — "este pacote não tem runner" ≠ "não dá para testar"; procure quem já faz readFileSync do arquivo
