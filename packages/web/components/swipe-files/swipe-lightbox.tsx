@@ -57,7 +57,8 @@ export function SwipeLightbox({
 
   if (!item) return null;
 
-  const media = item.assetKind === "link" ? item.ogImage : item.fileUrl;
+  const media =
+    item.assetKind === "link" ? item.ogImage : item.assetKind === "pdf" ? null : item.fileUrl;
 
   return (
     <div
@@ -107,7 +108,16 @@ export function SwipeLightbox({
       >
         {/* Mídia */}
         <div className="flex min-w-0 flex-1 items-center justify-center bg-black/40 p-2">
-          {item.assetKind === "video" && item.fileUrl ? (
+          {item.assetKind === "pdf" && item.fileUrl ? (
+            // `<iframe>` e não `<embed>`: o visualizador nativo do navegador dá
+            // zoom, busca e paginação de graça. O botão de abrir em aba fica no
+            // painel ao lado, para quem prefere a tela cheia do leitor.
+            <iframe
+              src={item.fileUrl}
+              title={item.title}
+              className="h-[86vh] w-full rounded bg-white"
+            />
+          ) : item.assetKind === "video" && item.fileUrl ? (
             // Sem <track>: é criativo de anúncio de terceiro, não temos legenda
             // pra fornecer. O título e as notas ficam no painel ao lado.
             <video
@@ -194,6 +204,19 @@ export function SwipeLightbox({
                 <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>
               ))}
             </div>
+          )}
+
+          {item.assetKind === "pdf" && item.fileUrl && (
+            // O iframe cabe para folhear; ler um PDF de vinte páginas pede a
+            // tela inteira do leitor do navegador.
+            <a
+              href={item.fileUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-4 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              Abrir o PDF em nova aba <ExternalLink className="h-3 w-3" />
+            </a>
           )}
 
           {item.sourceUrl && (

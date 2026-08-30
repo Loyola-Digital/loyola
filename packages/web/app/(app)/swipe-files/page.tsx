@@ -13,7 +13,7 @@
 
 import { useState } from "react";
 import {
-  AlertCircle, Library, Plus, Search, Star, X, Play, Link2, ImageIcon, Filter,
+  AlertCircle, Library, Plus, Search, Star, X, Play, Link2, ImageIcon, FileText, Filter,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -32,9 +32,17 @@ import {
 import { AddSwipeDialog } from "@/components/swipe-files/add-swipe-dialog";
 import { SwipeLightbox } from "@/components/swipe-files/swipe-lightbox";
 
+/** Tamanho legível. O card de PDF o mostra no lugar da miniatura que não existe. */
+function fmtBytes(n: number): string {
+  if (!n) return "PDF";
+  const mb = n / (1024 * 1024);
+  return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+}
+
 const KIND_META: Record<AssetKind, { label: string; Icon: typeof Play }> = {
   image: { label: "Imagem", Icon: ImageIcon },
   video: { label: "Vídeo", Icon: Play },
+  pdf: { label: "PDF", Icon: FileText },
   link: { label: "Link", Icon: Link2 },
 };
 
@@ -72,7 +80,11 @@ function SwipeCard({
   onOpen: () => void;
   onToggleFavorite: () => void;
 }) {
-  const media = item.assetKind === "link" ? item.ogImage : item.fileUrl;
+  // O PDF não vira <img>: o navegador não desenha a primeira página numa tag de
+  // imagem, e gerar miniatura no servidor pediria um renderizador só para isso.
+  // O card mostra a capa de ícone, e o lightbox abre o documento de verdade.
+  const media =
+    item.assetKind === "link" ? item.ogImage : item.assetKind === "pdf" ? null : item.fileUrl;
   const { label, Icon } = KIND_META[item.assetKind];
   // Reserva a proporção conhecida pra o masonry não saltar enquanto carrega.
   const ratio = item.width && item.height ? item.width / item.height : null;
@@ -89,6 +101,13 @@ function SwipeCard({
               className="w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
               style={ratio ? { aspectRatio: String(ratio) } : undefined}
             />
+          ) : item.assetKind === "pdf" ? (
+            <div className="flex aspect-[3/4] flex-col items-center justify-center gap-2 bg-gradient-to-b from-rose-500/10 to-transparent">
+              <FileText className="h-10 w-10 text-rose-600/70" />
+              <span className="px-3 text-center text-[11px] text-muted-foreground">
+                {fmtBytes(item.fileSizeBytes ?? 0)}
+              </span>
+            </div>
           ) : (
             <div className="flex aspect-video items-center justify-center">
               <Icon className="h-8 w-8 text-muted-foreground/40" />
@@ -210,7 +229,7 @@ export default function SwipeFilesPage() {
             />
           </div>
 
-          {(["image", "video", "link"] as const).map((k) => (
+          {(["image", "video", "pdf", "link"] as const).map((k) => (
             <Chip key={k} active={filters.kind === k} onClick={() => set("kind", k)}>
               {KIND_META[k].label}
             </Chip>

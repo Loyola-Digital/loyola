@@ -3148,9 +3148,9 @@ export const swipeFiles = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     title: varchar("title", { length: 200 }).notNull(),
     notes: text("notes"),
-    /** image | video | link — define o que renderizar no card e no lightbox. */
+    /** image | video | pdf | link — define o que renderizar no card e no lightbox. */
     assetKind: varchar("asset_kind", { length: 10 })
-      .$type<"image" | "video" | "link">()
+      .$type<"image" | "video" | "pdf" | "link">()
       .notNull(),
 
     fileUrl: text("file_url"),
@@ -3465,4 +3465,114 @@ export const peopleAbsences = pgTable(
     // E a do painel: "quem está fora nesta janela".
     index("idx_people_absences_periodo").on(table.inicio, table.fim),
   ]
+);
+
+// ============================================================
+// ORIGEM DOS LEADS — regras de atribuição (match de source)
+// ============================================================
+// O problema: parte das aplicações chega sem `utm_source`. Sem ele, o lead não
+// entra em nenhuma leitura de canal — e hoje ninguém sabe sequer QUANTOS são.
+//
+// A diferença desta implementação para a ferramenta que inspirou o desenho: lá
+// os leads moram no banco e a recuperação GRAVA a origem em cada um. Aqui os
+// leads são lidos ao vivo da planilha a cada request — não há linha para
+// gravar, e escrever na planilha do cliente seria invasivo e frágil.
+//
+// Então a atribuição é uma REGRA, aplicada na leitura. Sai melhor em dois
+// pontos: vale para o passado e para o lead novo que cair no mesmo padrão
+// (sem ninguém rodar nada de novo), e a planilha nunca é alterada — apagar a
+// regra devolve o dado ao estado original.
+
+export const sourceRuleOperatorEnum = pgEnum("source_rule_operator", [
+  "igual",
+  "contem",
+  "comeca_com",
+  "vazio",
+]);
+
+/**
+ * As regras que atribuem origem a uma aplicação.
+ *
+ * Escopo de **PROJETO**, não de etapa. O `utm_source` "instagram" significa a
+ * mesma coisa em qualquer funil e em qualquer etapa do mesmo projeto —
+ * classificar de novo a cada etapa era pedir para as respostas divergirem: a
+ * captação diria orgânico e a venda diria pago, sobre a MESMA linha da MESMA
+ * planilha.
+ */
+export const projectSourceRules = pgTable(
+  "project_source_rules",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /**
+     * Coluna da planilha que a regra observa (`utm_medium`, `utm_term`, …).
+     *
+     * Guardado como NOME e não como índice: a ordem das colunas muda quando
+     * alguém edita o formulário, e um índice gravado passaria a apontar para
+     * outra coluna em silêncio.
+     */
+    campo: varchar("campo", { length: 120 }).notNull(),
+    operador: sourceRuleOperatorEnum("operador").notNull().default("igual"),
+    /** Vazio quando o operador é `vazio`. */
+    valor: text("valor").notNull().default(""),
+    /**
+     * A origem atribuída. Segue a convenção `paid_*` / `organic_*` — é o
+     * prefixo que separa pago de orgânico no resto do sistema.
+     */
+    origem: varchar("origem", { length: 120 }).notNull(),
+    /** Menor primeiro. Duas regras que casam a mesma linha: vence a de menor ordem. */
+    ordem: integer("ordem").notNull().default(0),
+    ativa: boolean("ativa").notNull().default(true),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_project_source_rules_project").on(table.projectId, table.ordem)],
+);
+
+// ============================================================
+// Construtor de BI (Epic 45)
+// ============================================================
+
+/**
+ * Um dashboard montável.
+ *
+ * `widgets` guarda DEFINIÇÃO e GEOMETRIA — nunca resultado. Persistir o
+ * resultado criaria a pior classe de bug: número velho com cara de atual. Cada
+ * widget é recalculado a partir do `querySpec` que carrega consigo.
+ */
+export const biDashboards = pgTable(
+  "bi_dashboards",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    nome: varchar("nome", { length: 200 }).notNull(),
+    /** `Widget[]` — ver `services/bi/dashboard.ts` para a forma validada. */
+    widgets: jsonb("widgets").notNull().default([]),
+    /** `{preset}` ou `{start,end}` — o período que vale para o canvas inteiro. */
+    dateRange: jsonb("date_range").notNull().default({ preset: "last_30d" }),
+    /**
+     * `Slicer[]` — o recorte que vale para o canvas inteiro.
+     *
+     * Estado do dashboard, e não da tela: quem abre o link precisa ver o mesmo
+     * recorte que quem salvou.
+     */
+    slicers: jsonb("slicers").notNull().default([]),
+    /**
+     * `projeto` = só o projeto onde o dashboard mora; `todos` = todos os
+     * projetos que quem está olhando enxerga.
+     *
+     * A lista de projetos sai da SESSÃO, nunca deste documento — senão um
+     * dashboard salvo viraria uma forma de ver projeto alheio.
+     */
+    escopo: varchar("escopo", { length: 20 }).notNull().default("projeto"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("idx_bi_dashboards_project").on(table.projectId)],
 );

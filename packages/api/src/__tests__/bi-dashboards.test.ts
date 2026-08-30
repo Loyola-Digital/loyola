@@ -1,0 +1,637 @@
+/**
+ * CRUD dos dashboards.
+ *
+ * O que estes testes protegem é o `PUT` parcial: é a diferença entre o canvas
+ * salvar geometria e o canvas apagar o nome que alguém acabou de trocar.
+ */
+
+import { describe, expect, it, vi } from "vitest";
+import Fastify, { type FastifyInstance } from "fastify";
+import fp from "fastify-plugin";
+import type { Database } from "../db/client.js";
+import biDashboardsRoutes from "../routes/bi-dashboards.js";
+import {
+  LIMITE_DE_WIDGETS,
+  duplicarWidgets,
+  hojeEmSaoPaulo,
+  nomeDaCopia,
+  resolverPeriodo,
+  widgetsGuardados,
+  type Widget,
+} from "../services/bi/dashboard.js";
+
+const PROJETO = "30000000-0000-4000-8000-000000000003";
+const DASH = "40000000-0000-4000-8000-000000000004";
+const USUARIO = "10000000-0000-4000-8000-000000000001";
+
+function widget(over: Partial<Widget> = {}): Widget {
+  return {
+    id: "w1",
+    tipo: "kpi",
+    titulo: "Investimento",
+    spec: {
+      entity: "trafego",
+      metrics: ["trafego.spend"],
+      dimensions: [],
+      filters: { "trafego.date": { operator: "$between", value: ["2026-08-01", "2026-08-26"] } },
+      order_by: [],
+      limit: 500,
+      date_granularity: "day",
+    },
+    specsExtras: [],
+    derivadas: [],
+    geometria: { x: 0, y: 0, w: 4, h: 3 },
+    opcoes: {},
+    ...over,
+  };
+}
+
+const LINHA = {
+  id: DASH,
+  projectId: PROJETO,
+  nome: "Visão geral",
+  widgets: [widget()],
+  dateRange: { preset: "last_30d" },
+  createdBy: USUARIO,
+  createdAt: new Date("2026-08-01T12:00:00Z"),
+  updatedAt: new Date("2026-08-02T12:00:00Z"),
+};
+
+/**
+ * Um `db` de mentira com fila de respostas.
+ *
+ * Cada `select` consome a próxima resposta da fila, na ordem em que a rota faz
+ * as consultas — assim o teste diz "o projeto existe, o dashboard não" sem
+ * precisar saber qual `where` foi montado.
+ */
+function fakeDb(fila: unknown[][]) {
+  const capturado: Record<string, unknown> = {};
+  const proximo = async () => fila.shift() ?? [];
+
+  /**
+   * Um elo da cadeia do Drizzle.
+   *
+   * É *thenable* porque nem toda consulta termina em `.limit()`: as que listam
+   * projetos e vínculos param no `.where()`, e uma sem `where` nenhum para no
+   * `.from()`. Sem isso o `await` ficaria pendurado no objeto da cadeia.
+   */
+  const elo = (): Record<string, unknown> => {
+    const eu: Record<string, unknown> = {
+      where: vi.fn(() => elo()),
+      innerJoin: vi.fn(() => elo()),
+      groupBy: vi.fn(() => elo()),
+      orderBy: proximo,
+      limit: proximo,
+      then: (ok: (v: unknown) => void, falhou: (e: unknown) => void) =>
+        proximo().then(ok, falhou),
+    };
+    return eu;
+  };
+
+  const db = {
+    select: vi.fn(() => ({ from: vi.fn(() => elo()) })),
+    insert: vi.fn(() => ({
+      values: vi.fn((v: Record<string, unknown>) => {
+        capturado.inserido = v;
+        return { returning: async () => [{ ...LINHA, ...v }] };
+      }),
+    })),
+    update: vi.fn(() => ({
+      set: vi.fn((s: Record<string, unknown>) => {
+        capturado.set = s;
+        return { where: vi.fn(() => ({ returning: async () => [{ ...LINHA, ...s }] })) };
+      }),
+    })),
+    delete: vi.fn(() => ({
+      where: vi.fn(() => ({ returning: async () => fila.shift() ?? [] })),
+    })),
+  };
+  return { db: db as unknown as Database, capturado };
+}
+
+async function montar(fila: unknown[][], role = "admin") {
+  const { db, capturado } = fakeDb(fila);
+  const app: FastifyInstance = Fastify();
+  await app.register(
+    fp(async (f) => {
+      f.decorate("db", db);
+    }),
+  );
+  await app.register(
+    fp(async (f) => {
+      f.addHook("preHandler", async (request) => {
+        request.userId = USUARIO;
+        request.userRole = role;
+      });
+    }),
+  );
+  await app.register(biDashboardsRoutes);
+  await app.ready();
+  return { app, capturado };
+}
+
+describe("T1 · o PUT parcial não apaga o que não veio", () => {
+  it("mandar só o nome não toca em widgets nem em dateRange", async () => {
+    const { app, capturado } = await montar([[{ id: PROJETO }], [LINHA]]);
+    const r = await app.inject({
+      method: "PUT",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}`,
+      payload: { nome: "Diário do lançamento" },
+    });
+    expect(r.statusCode).toBe(200);
+    const set = capturado.set as Record<string, unknown>;
+    expect(set.nome).toBe("Diário do lançamento");
+    expect(set).not.toHaveProperty("widgets");
+    expect(set).not.toHaveProperty("dateRange");
+    await app.close();
+  });
+
+  it("mandar só widgets não toca no nome", async () => {
+    const { app, capturado } = await montar([[{ id: PROJETO }], [LINHA]]);
+    const r = await app.inject({
+      method: "PUT",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}`,
+      payload: { widgets: [widget({ id: "w2" })] },
+    });
+    expect(r.statusCode).toBe(200);
+    const set = capturado.set as Record<string, unknown>;
+    expect(set).toHaveProperty("widgets");
+    expect(set).not.toHaveProperty("nome");
+    await app.close();
+  });
+
+  it("patch vazio é 400, não 200 sem efeito", async () => {
+    const { app } = await montar([[{ id: PROJETO }], [LINHA]]);
+    const r = await app.inject({
+      method: "PUT",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}`,
+      payload: {},
+    });
+    expect(r.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it("campo escrito errado é 400, não sucesso silencioso", async () => {
+    // `widget` no lugar de `widgets` sairia como 200 sem salvar nada — a falha
+    // que parece funcionar.
+    const { app } = await montar([[{ id: PROJETO }], [LINHA]]);
+    const r = await app.inject({
+      method: "PUT",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}`,
+      payload: { widget: [widget()] },
+    });
+    expect(r.statusCode).toBe(400);
+    await app.close();
+  });
+});
+
+describe("T2 · duplicar", () => {
+  it("gera id novo para cada widget", () => {
+    const originais = [widget({ id: "w1" }), widget({ id: "w2" })];
+    const copias = duplicarWidgets(originais);
+    expect(copias.map((w) => w.id)).not.toEqual(["w1", "w2"]);
+    expect(new Set(copias.map((w) => w.id)).size).toBe(2);
+    // Tudo o mais é igual — geometria e spec são o que se está copiando.
+    expect(copias[0]!.geometria).toEqual(originais[0]!.geometria);
+    expect(copias[0]!.spec).toEqual(originais[0]!.spec);
+  });
+
+  it("a rota copia widgets com ids novos e nome de cópia", async () => {
+    const { app, capturado } = await montar([[{ id: PROJETO }], [LINHA]]);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}/duplicate`,
+    });
+    expect(r.statusCode).toBe(201);
+    const inserido = capturado.inserido as { nome: string; widgets: Widget[] };
+    expect(inserido.nome).toBe("Visão geral (cópia)");
+    expect(inserido.widgets[0]!.id).not.toBe("w1");
+    await app.close();
+  });
+
+  it('duplicar a cópia não empilha "(cópia) (cópia)"', () => {
+    expect(nomeDaCopia("Visão geral")).toBe("Visão geral (cópia)");
+    expect(nomeDaCopia("Visão geral (cópia)")).toBe("Visão geral (cópia)");
+  });
+});
+
+describe("T3 · acesso", () => {
+  it("projeto inexistente é 404, não 403 — não confirma que existe", async () => {
+    const { app } = await montar([[]]);
+    const r = await app.inject({ method: "GET", url: `/api/projects/${PROJETO}/bi/dashboards` });
+    expect(r.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it("guest é 404 antes de qualquer consulta", async () => {
+    const { app } = await montar([[{ id: PROJETO }]], "guest");
+    const r = await app.inject({ method: "GET", url: `/api/projects/${PROJETO}/bi/dashboards` });
+    expect(r.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it("membro não-admin passa quando tem vínculo com o projeto", async () => {
+    const { app } = await montar([[{ id: PROJETO }], [{ id: "m1" }], [LINHA]], "user");
+    const r = await app.inject({ method: "GET", url: `/api/projects/${PROJETO}/bi/dashboards` });
+    expect(r.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("não-admin sem vínculo é 404", async () => {
+    const { app } = await montar([[{ id: PROJETO }], []], "user");
+    const r = await app.inject({ method: "GET", url: `/api/projects/${PROJETO}/bi/dashboards` });
+    expect(r.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it("dashboard de outro projeto é 404", async () => {
+    const { app } = await montar([[{ id: PROJETO }], []]);
+    const r = await app.inject({
+      method: "GET",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}`,
+    });
+    expect(r.statusCode).toBe(404);
+    await app.close();
+  });
+});
+
+describe("T4 · limite de widgets", () => {
+  it(`o widget ${LIMITE_DE_WIDGETS + 1} é recusado com mensagem clara`, async () => {
+    const { app } = await montar([[{ id: PROJETO }], [LINHA]]);
+    const muitos = Array.from({ length: LIMITE_DE_WIDGETS + 1 }, (_, i) =>
+      widget({ id: `w${i}` }),
+    );
+    const r = await app.inject({
+      method: "PUT",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}`,
+      payload: { widgets: muitos },
+    });
+    expect(r.statusCode).toBe(400);
+    expect(r.json().error).toMatch(new RegExp(String(LIMITE_DE_WIDGETS)));
+    await app.close();
+  });
+
+  it("exatamente o limite passa", async () => {
+    const { app } = await montar([[{ id: PROJETO }], [LINHA]]);
+    const muitos = Array.from({ length: LIMITE_DE_WIDGETS }, (_, i) => widget({ id: `w${i}` }));
+    const r = await app.inject({
+      method: "PUT",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}`,
+      payload: { widgets: muitos },
+    });
+    expect(r.statusCode).toBe(200);
+    await app.close();
+  });
+});
+
+describe("o que é salvo", () => {
+  it("o dashboard novo nasce vazio, nunca com resultado", async () => {
+    const { app, capturado } = await montar([[{ id: PROJETO }]]);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards`,
+      payload: { nome: "Perpétuo" },
+    });
+    expect(r.statusCode).toBe(201);
+    expect((capturado.inserido as { widgets: unknown[] }).widgets).toEqual([]);
+    await app.close();
+  });
+
+  it("widget com forma inválida é contado, não some em silêncio", () => {
+    const { widgets, ilegiveis } = widgetsGuardados([widget(), { id: "x" }, null]);
+    expect(widgets).toHaveLength(1);
+    expect(ilegiveis).toBe(2);
+  });
+
+  it("o spec do widget é validado contra o catálogo na escrita", async () => {
+    const { app } = await montar([[{ id: PROJETO }], [LINHA]]);
+    const r = await app.inject({
+      method: "PUT",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}`,
+      payload: { widgets: [widget({ spec: { entity: "nada", metrics: [] } as never })] },
+    });
+    expect(r.statusCode).toBe(400);
+    await app.close();
+  });
+});
+
+describe("período", () => {
+  const agora = new Date("2026-08-26T14:00:00Z");
+
+  it("hoje sai no fuso de São Paulo, não no do servidor", () => {
+    // 26/08 às 14h UTC é 26/08 às 11h em São Paulo. Já 01/09 às 02h UTC ainda é
+    // 31/08 aqui — e é esse o dia que o relatório precisa mostrar.
+    expect(hojeEmSaoPaulo(agora)).toBe("2026-08-26");
+    expect(hojeEmSaoPaulo(new Date("2026-09-01T02:00:00Z"))).toBe("2026-08-31");
+  });
+
+  it("os presets resolvem em datas inclusivas nas duas pontas", () => {
+    expect(resolverPeriodo({ preset: "hoje" }, agora)).toEqual({
+      start: "2026-08-26",
+      end: "2026-08-26",
+    });
+    expect(resolverPeriodo({ preset: "last_7d" }, agora)).toEqual({
+      start: "2026-08-20",
+      end: "2026-08-26",
+    });
+    expect(resolverPeriodo({ preset: "last_30d" }, agora)).toEqual({
+      start: "2026-07-28",
+      end: "2026-08-26",
+    });
+    expect(resolverPeriodo({ preset: "this_month" }, agora)).toEqual({
+      start: "2026-08-01",
+      end: "2026-08-26",
+    });
+    expect(resolverPeriodo({ preset: "last_month" }, agora)).toEqual({
+      start: "2026-07-01",
+      end: "2026-07-31",
+    });
+    expect(resolverPeriodo({ preset: "this_year" }, agora)).toEqual({
+      start: "2026-01-01",
+      end: "2026-08-26",
+    });
+  });
+
+  it("o mês anterior atravessa a virada do ano", () => {
+    const janeiro = new Date("2026-01-15T12:00:00Z");
+    expect(resolverPeriodo({ preset: "last_month" }, janeiro)).toEqual({
+      start: "2025-12-01",
+      end: "2025-12-31",
+    });
+  });
+
+  it("período explícito passa intacto", () => {
+    expect(resolverPeriodo({ start: "2026-03-01", end: "2026-03-31" }, agora)).toEqual({
+      start: "2026-03-01",
+      end: "2026-03-31",
+    });
+  });
+});
+
+describe("escopo consolidado — a lista vem da sessão, não do documento", () => {
+  const LINHA_TODOS = { ...LINHA, escopo: "todos" };
+
+  it("admin executa sobre todos os projetos que existem", async () => {
+    // Fila: temAcesso(projeto) → carregar(dashboard) → projetosVisiveis(todos)
+    const { app } = await montar([
+      [{ id: PROJETO }],
+      [LINHA_TODOS],
+      [{ id: PROJETO }, { id: "p2" }, { id: "p3" }],
+    ]);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}/execute`,
+      payload: {},
+    });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().projetosNoEscopo).toBe(3);
+    await app.close();
+  });
+
+  it("não-admin só alcança os projetos onde é membro", async () => {
+    // O ponto inteiro da feature: um dashboard salvo com escopo `todos` NÃO
+    // pode virar uma forma de ler projeto alheio.
+    const { app } = await montar(
+      [
+        [{ id: PROJETO }],
+        [{ id: "m1" }],
+        [LINHA_TODOS],
+        [{ id: PROJETO }, { id: "p2" }],
+      ],
+      "user",
+    );
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}/execute`,
+      payload: {},
+    });
+    expect(r.json().projetosNoEscopo).toBe(2);
+    await app.close();
+  });
+
+  it("escopo `projeto` continua lendo um projeto só", async () => {
+    const { app } = await montar([[{ id: PROJETO }], [LINHA]]);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}/execute`,
+      payload: {},
+    });
+    expect(r.json().projetosNoEscopo).toBe(1);
+    await app.close();
+  });
+
+  it("o escopo entra no patch parcial como qualquer outro campo", async () => {
+    const { app, capturado } = await montar([[{ id: PROJETO }], [LINHA]]);
+    const r = await app.inject({
+      method: "PUT",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}`,
+      payload: { escopo: "todos" },
+    });
+    expect(r.statusCode).toBe(200);
+    const set = capturado.set as Record<string, unknown>;
+    expect(set.escopo).toBe("todos");
+    expect(set).not.toHaveProperty("widgets");
+    await app.close();
+  });
+
+  it("escopo inventado é recusado", async () => {
+    const { app } = await montar([[{ id: PROJETO }], [LINHA]]);
+    const r = await app.inject({
+      method: "PUT",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}`,
+      payload: { escopo: "tudo_do_mundo" },
+    });
+    expect(r.statusCode).toBe(400);
+    await app.close();
+  });
+});
+
+describe("refresh-all — a resposta escrita direto no socket", () => {
+  /**
+   * O `refresh-all` fala com o socket para poder mandar NDJSON linha a linha, e
+   * isso pula o `onSend` — que é onde o `@fastify/cors` põe o
+   * `Access-Control-Allow-Origin`. O resultado é uma resposta 200 que o
+   * navegador descarta: não aparece em log de servidor nem em teste de rota
+   * comum, só no console de quem está usando.
+   */
+  async function comCors(fila: unknown[][]) {
+    const { db } = fakeDb(fila);
+    const app: FastifyInstance = Fastify();
+    await app.register(
+      fp(async (f) => {
+        f.decorate("db", db);
+      }),
+    );
+    // Um "cors" mínimo com o mesmo mecanismo do real: header posto num hook,
+    // não no handler.
+    await app.register(
+      fp(async (f) => {
+        f.addHook("onRequest", async (request, reply) => {
+          reply.header("access-control-allow-origin", "https://x.loyoladigital.com");
+          request.userId = USUARIO;
+          request.userRole = "admin";
+        });
+      }),
+    );
+    await app.register(biDashboardsRoutes);
+    await app.ready();
+    return app;
+  }
+
+  it("preserva os headers do Fastify — inclusive o de CORS", async () => {
+    const app = await comCors([[{ id: PROJETO }], [LINHA], [{ id: PROJETO }]]);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}/refresh-all`,
+      payload: {},
+    });
+    expect(r.statusCode).toBe(200);
+    expect(r.headers["access-control-allow-origin"]).toBe("https://x.loyoladigital.com");
+    await app.close();
+  });
+
+  it("responde NDJSON, uma linha por widget, com início e fim", async () => {
+    const app = await comCors([[{ id: PROJETO }], [LINHA], [{ id: PROJETO }]]);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}/refresh-all`,
+      payload: {},
+    });
+    expect(r.headers["content-type"]).toContain("application/x-ndjson");
+
+    const linhas = r.body
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as { tipo: string });
+    expect(linhas[0]!.tipo).toBe("inicio");
+    expect(linhas.at(-1)!.tipo).toBe("fim");
+    expect(linhas.filter((l) => l.tipo === "widget")).toHaveLength(1);
+    await app.close();
+  });
+
+  it("o proxy é instruído a não segurar o stream", async () => {
+    const app = await comCors([[{ id: PROJETO }], [LINHA], [{ id: PROJETO }]]);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}/refresh-all`,
+      payload: {},
+    });
+    expect(r.headers["x-accel-buffering"]).toBe("no");
+    await app.close();
+  });
+});
+
+describe("o agente responde em NDJSON, com CORS", () => {
+  /** Um Claude de mentira que devolve sempre o mesmo widget. */
+  const claudeFalso = {
+    client: {
+      messages: {
+        create: async () => ({
+          content: [
+            {
+              type: "tool_use",
+              name: "montar_widgets",
+              id: "t",
+              input: {
+                explicacao: "Montei o investimento por campanha.",
+                widgets: [
+                  {
+                    titulo: "Investimento por campanha",
+                    tipo: "barra",
+                    entity: "trafego",
+                    metrics: ["trafego.spend"],
+                    dimensions: ["trafego.campaign"],
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      },
+    },
+  };
+
+  async function comAgente(fila: unknown[][]) {
+    const { db } = fakeDb(fila);
+    const app: FastifyInstance = Fastify();
+    await app.register(
+      fp(async (f) => {
+        f.decorate("db", db);
+        f.decorate("claude", claudeFalso as never);
+      }),
+    );
+    await app.register(
+      fp(async (f) => {
+        f.addHook("onRequest", async (request, reply) => {
+          reply.header("access-control-allow-origin", "https://x.loyoladigital.com");
+          request.userId = USUARIO;
+          request.userRole = "admin";
+        });
+      }),
+    );
+    await app.register(biDashboardsRoutes);
+    await app.ready();
+    return app;
+  }
+
+  it("preserva o header de CORS — a mesma armadilha do refresh-all", async () => {
+    const app = await comAgente([[{ id: PROJETO }], [LINHA], [{ id: PROJETO }]]);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}/agente`,
+      payload: { pergunta: "quanto gastei por campanha?" },
+    });
+    expect(r.statusCode).toBe(200);
+    expect(r.headers["access-control-allow-origin"]).toBe("https://x.loyoladigital.com");
+    await app.close();
+  });
+
+  it("manda os passos ANTES do widget — é o que mantém a conexão viva", async () => {
+    const app = await comAgente([[{ id: PROJETO }], [LINHA], [{ id: PROJETO }]]);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}/agente`,
+      payload: { pergunta: "quanto gastei por campanha?" },
+    });
+
+    const linhas = r.body
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as { tipo: string });
+
+    expect(linhas[0]!.tipo).toBe("passo");
+    expect(linhas.at(-1)!.tipo).toBe("fim");
+    // O widget vem depois de pelo menos um passo: quem está olhando não fica no
+    // escuro enquanto a IA pensa.
+    const iWidget = linhas.findIndex((l) => l.tipo === "widget");
+    expect(iWidget).toBeGreaterThan(0);
+    await app.close();
+  });
+
+  it("a explicação da IA fecha o stream", async () => {
+    const app = await comAgente([[{ id: PROJETO }], [LINHA], [{ id: PROJETO }]]);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}/agente`,
+      payload: { pergunta: "quanto gastei por campanha?" },
+    });
+    const fim = r.body
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as { tipo: string; explicacao?: string })
+      .at(-1)!;
+    expect(fim.explicacao).toContain("investimento");
+    await app.close();
+  });
+
+  it("pergunta curta demais é 400 normal, antes do stream", async () => {
+    const app = await comAgente([[{ id: PROJETO }]]);
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/projects/${PROJETO}/bi/dashboards/${DASH}/agente`,
+      payload: { pergunta: "oi" },
+    });
+    expect(r.statusCode).toBe(400);
+    await app.close();
+  });
+});

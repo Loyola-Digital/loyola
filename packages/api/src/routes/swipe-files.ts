@@ -30,13 +30,13 @@ const listQuery = z.object({
   niche: z.string().trim().max(120).optional(),
   brand: z.string().trim().max(120).optional(),
   tag: z.string().trim().max(60).optional(),
-  kind: z.enum(["image", "video", "link"]).optional(),
+  kind: z.enum(["image", "video", "pdf", "link"]).optional(),
   favorites: z.enum(["1", "true"]).optional(),
 });
 
 const createBody = z.object({
   title: z.string().trim().min(1).max(200),
-  assetKind: z.enum(["image", "video", "link"]),
+  assetKind: z.enum(["image", "video", "pdf", "link"]),
   notes: z.string().trim().max(4000).optional(),
   fileUrl: z.string().trim().max(2000).optional(),
   fileKey: z.string().trim().max(500).optional(),
@@ -69,6 +69,8 @@ const listColumns = {
   assetKind: swipeFiles.assetKind,
   fileUrl: swipeFiles.fileUrl,
   fileMime: swipeFiles.fileMime,
+  // O card de PDF mostra o tamanho no lugar da miniatura que não existe.
+  fileSizeBytes: swipeFiles.fileSizeBytes,
   width: swipeFiles.width,
   height: swipeFiles.height,
   sourceUrl: swipeFiles.sourceUrl,

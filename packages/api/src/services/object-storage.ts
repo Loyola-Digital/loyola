@@ -47,6 +47,9 @@ const ALLOWED_MIME = new Set([
   "video/mp4",
   "video/quicktime",
   "video/webm",
+  // PDF entra na lista porque criativo de anúncio muitas vezes chega assim:
+  // carrossel exportado, apresentação de oferta, página de vendas impressa.
+  "application/pdf",
 ]);
 
 /** 200MB — cabe vídeo de anúncio; acima disso é arquivo errado pra swipe file. */
@@ -85,6 +88,7 @@ function extFor(mime: string): string {
     "video/mp4": "mp4",
     "video/quicktime": "mov",
     "video/webm": "webm",
+    "application/pdf": "pdf",
   };
   return map[mime] ?? "bin";
 }
