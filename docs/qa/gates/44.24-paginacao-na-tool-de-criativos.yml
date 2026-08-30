@@ -1,0 +1,362 @@
+storyId: "44.24"
+storyTitle: "A tool de criativos ganha a paginação que a rota já tem"
+gate: CONCERNS
+reviewer: "@qa (Quinn)"
+reviewedAt: "2026-08-29"
+branch: docs/44.23-paginacao-tool-criativos
+commits: [db68b3df]
+nota_da_branch: >
+  O nome da branch diz 44.23 de propósito: a story foi renumerada para 44.24
+  depois de a branch existir (o 44.23 foi ocupado pelo PR #669 na `main`).
+  Nenhum commit foi pushado. Diff conferido com `git diff origin/main...HEAD`
+  (três pontos) — a branch já tem a `origin/main` mergeada para dentro.
+scope: >
+  packages/mcp/src/tools.ts (a tool `get_creative_performance`: `offset` no
+  schema e no repasse, `limit` `.max(200)` → `.max(500)`, `description` ensina
+  o laço) · docs/llms.txt (4 trechos) ·
+  docs/guides/mcp-inacio-integracao.md (1 trecho) · a story.
+  O commit do @dev toca exatamente os 4 arquivos declarados no File List.
+
+codeRabbit:
+  status: SKIPPED
+  reason: "CLI em WSL, host macOS. Lacuna de cobertura, não aprovação."
+
+decisao_em_uma_linha: >
+  O código está certo e eu o verifiquei linha a linha; o que segura o gate é
+  que a entrega **não existe para o Inácio** enquanto a AC5 não for feita, e
+  que a story afirma como resolvida uma garantia de ordenação que o código da
+  rota só cumpre pela metade.
+
+condicional: >
+  CONCERNS, não PASS: a AC5 é DoD e está aberta. E não FAIL, porque devolver a
+  story para InProgress a mandaria para o @dev — que não tem nada a fazer nela.
+  O que falta é rebuild do gateway (@devops) e o probe de verificação. O @dev
+  declarou a pendência com evidência, que é o comportamento certo.
+
+summary: >
+  AC1 a AC4 estão entregues e eu as conferi contra o código, não contra a
+  story. O repasse existe de verdade (a armadilha clássica desta mudança);
+  `offset: 0` **é enviado** (verificado empiricamente, não deduzido do tipo);
+  o teto de 500 iguala a rota sem tocar no default; e os cinco trechos de doc
+  foram reescritos com texto factualmente correto — checado campo a campo
+  contra `public-meta.ts`.
+
+  A afirmação mais importante da story também confere, e é a que mais importa
+  para o veredito: **o detector da 44.22 é cego a esta mudança**. Ele compara
+  nomes de tool como conjunto e esta story não adiciona nem remove nome nenhum.
+  Num gateway com bundle velho, `faltando` e `sobrando` ficam vazios, o aviso
+  não é registrado, e o roster fica idêntico ao de um gateway em dia. A story
+  não está sendo pessimista — o código confirma.
+
+  Dois achados novos, nenhum introduzido por esta story, ambos `medium`:
+
+  1. **O desempate por `adId` NÃO acontece quando a métrica de ordenação é
+     `null`** — e é `null` em 6 dos 10 `orderBy`. A story declara este risco
+     como "não se aplica"; a rota só o resolve para as 4 métricas que nunca
+     são nulas. É a única garantia de segurança da paginação por offset, e ela
+     é parcial. Ver QA-4424-01.
+
+  2. **"Não dá para ter teste neste setup" é falso.** `packages/api` tem
+     `"test": "vitest run"`, e o teste de contrato que o próprio @dev rodou já
+     lê `packages/mcp/src/tools.ts`. A asserção que travaria esta classe de
+     defasagem cabia no arquivo que já existe, com zero infra nova — e é
+     exatamente a defasagem que a story existe para consertar. Ver QA-4424-02.
+
+verificacoes:
+  - id: V1
+    o_que: "O repasse existe — `offset` sai no querystring, não só no schema"
+    onde: "tools.ts:122-127 (schema) · :132 (destructuring) · :138 (objeto de query)"
+    resultado: CONFERE
+    nota: >
+      As três pontas estão ligadas. É a armadilha que a AC1 nomeia — schema que
+      aceita e valor que some — e ela não aconteceu.
+
+  - id: V2
+    o_que: "`offset: 0` é ENVIADO, não engolido por filtro de falsy"
+    onde: "client.ts:46 — `if (value !== undefined && value !== null && value !== \"\")`"
+    resultado: CONFERE
+    nota: >
+      Comparação estrita. `0 !== \"\"` é `true` (número contra string, sem
+      coerção), então o `0` passa. Verificado rodando o próprio laço do client:
+      com `{limit:300, offset:0}` a URL sai `?limit=300&offset=0`.
+      Este era o valor mais provável de se perder, e é o da primeira página.
+
+  - id: V3
+    o_que: "O teto de 500 bate com a rota, e o default continua 50 dos dois lados"
+    onde: "tools.ts:121 `.min(1).max(500).optional()` · public-meta.ts:88 `.min(1).max(500).default(50)`"
+    resultado: CONFERE
+    nota: >
+      A tool **não** tem `.default()` — é `.optional()`, como antes. Omitir
+      `limit` manda `undefined`, o client descarta, e quem decide é o
+      `.default(50)` da rota. Mesma coisa para `offset` → `.default(0)`.
+      Nenhuma mudança de comportamento não declarada: o default não subiu junto
+      com o teto, que era o risco desta AC.
+
+  - id: V4
+    o_que: "A paginação por offset é segura nesta rota? (a story diz que sim)"
+    onde: "public-meta.ts:392-403 — `orderVal` + `creatives.sort`"
+    resultado: PARCIAL
+    nota: >
+      **Confere para 4 dos 10 `orderBy`; não confere para 6.** Detalhe em
+      QA-4424-01. O default (`spend`) está entre os seguros, o que reduz muito
+      a probabilidade — mas não é o que a story afirma, e a afirmação foi feita
+      sem qualificação, tanto no corpo quanto na tabela de riscos.
+
+  - id: V5
+    o_que: "A AC4 cobriu os 5 trechos — e só eles"
+    onde: "docs/llms.txt:48, :49, (+:50 novo), :153, :264 · docs/guides/mcp-inacio-integracao.md:170 (+:172 novo)"
+    resultado: CONFERE
+    nota: >
+      Os 5 exigidos foram reescritos, mais duas linhas aditivas (a condição de
+      parada em `llms.txt:50` e a nota histórica no guia). O diff dos dois
+      arquivos de doc não contém nada além disso.
+
+  - id: V6
+    o_que: "O texto novo é factualmente correto (o consumidor é um agente literal)"
+    onde: "conferido campo a campo contra public-meta.ts:88-90 e :415-424"
+    resultado: CONFERE
+    nota: >
+      `limit (1–500, default 50)` = `.min(1).max(500).default(50)`. ✓
+      `offset (default 0)` = `.min(0).default(0)`. ✓
+      A linha `Resposta:` agora lista `total`, `returned`, `offset` e
+      `truncated`, e a rota devolve os quatro com esses nomes exatos. ✓
+      A condição de parada fecha: `truncated = offset + pagina.length <
+      creatives.length`, e `pagina = slice(offset, offset+limit)` só devolve
+      menos que `limit` na última página — então "somar `limit` ao `offset` até
+      `truncated` virar `false`" termina, sem pular nem entrar em laço. ✓
+      A assinatura de `llms.txt:264` está na mesma ordem do `inputSchema`. ✓
+      Nenhum número errado, nenhum campo inventado, nenhuma condição de parada
+      mal descrita. Um nit `low` em QA-4424-04.
+
+  - id: V7
+    o_que: "O que o @dev decidiu NÃO alterar é mesmo registro histórico?"
+    onde: "grep dos padrões da DoD em docs/ inteiro"
+    resultado: CONFERE — a decisão está certa
+    nota: >
+      Zero menções sobreviventes em **doc viva**: `docs/llms.txt` e
+      `docs/guides/` estão limpos. Todos os hits restantes são registro:
+      `docs/stories/44.18*`, `docs/qa/gates/44.18*`,
+      `docs/qa/validations/43.2|43.3-43.5*`. E dois deles
+      (`docs/stories/43.4.story.md:15`, `epic-43:33,84`) falam de OUTRA
+      afirmação — "a API da **Meta** corta em 200" — que aqueles documentos
+      já rotulam como errada. Reescrever qualquer um apagaria o porquê.
+      Conferi também o outro guia vivo de MCP
+      (`docs/guides/mcp-epic39-consumo.md`): não faz afirmação de limite nem
+      de truncamento sobre `/creatives`.
+      ⚠️ Ressalva de forma: o comando literal da DoD
+      (`rg -n "1–200|..." docs/` volta vazio) **não** volta vazio — ele varre
+      `docs/` inteiro, registro histórico incluído. O critério que o @dev
+      aplicou (doc viva) é o certo; o comando escrito na DoD é que estava
+      largo demais.
+
+  - id: V8
+    o_que: "A AC5 está corretamente declarada como pendente? O detector da 44.22 pegaria?"
+    onde: "defasagem.ts:70-100 · index.ts:52-57 · public-mcp-manifest.ts:41-46 · shared/src/mcp-tools.ts"
+    resultado: CONFERE — o detector NÃO pega, a story está certa
+    nota: >
+      `compararComManifesto` monta `faltando` e `sobrando` como diferença de
+      conjunto sobre **nomes**, e `atrasado = faltando.length > 0`.
+      `index.ts:53` só registra o aviso `if (d.atrasado || d.sobrando.length >
+      0)`. O manifesto (`/api/public/v1/mcp-manifest`) publica
+      `tools: [...TOOLS_DO_MCP]` — nomes, nada de schema.
+      Esta story não muda nome nenhum: `verificar-tools.mjs` fecha em "18 tools"
+      antes e depois. Logo, num gateway defasado os dois arrays ficam vazios e
+      o roster é indistinguível do de um gateway em dia.
+      **Ler o roster e não achar o AVISO não prova nada aqui** — a story está
+      certa em recusar isso como evidência, e o probe do `limit: 300` é o único
+      sinal discriminante disponível. Achado colateral em QA-4424-03.
+
+  - id: V9
+    o_que: "Os gates que o @dev declarou, reexecutados por mim"
+    onde: "packages/mcp e packages/api"
+    resultado: CONFERE
+    nota: >
+      `tsc --noEmit` de `packages/mcp` → **exit 0** (3,4 s, binário direto).
+      `eslint src/` de `packages/mcp` → **exit 0**, saída vazia.
+      `node scripts/verificar-tools.mjs` → "✓ 18 tools do MCP conferem".
+      `vitest run src/__tests__/llms-txt-contrato.test.ts` → **8/8 passed**.
+      Todas as quatro afirmações do Dev Record se sustentam sozinhas.
+
+  - id: V10
+    o_que: "Escopo e itens negativos da DoD"
+    onde: "git diff origin/main...HEAD --name-only · shared/src/contract.ts:62"
+    resultado: CONFERE
+    nota: >
+      `API_CONTRACT_VERSION` continua **3**; nenhum arquivo de contrato foi
+      tocado, como "Fora de escopo" exigia. O commit `db68b3df` toca exatamente
+      os 4 arquivos do File List. Os dois arquivos de `.claude/agent-memory/`
+      que aparecem no diff vieram do commit do próprio @po nesta story
+      (`755d6246`), não de varredura de arquivo alheio.
+
+achados:
+  - id: QA-4424-01
+    severidade: medium
+    titulo: "O desempate por `adId` não dispara quando a métrica é `null` — e é `null` em 6 dos 10 `orderBy`"
+    onde: "packages/api/src/routes/public-meta.ts:392-403 (rota, herdado da Story 43.4)"
+    evidencia: >
+      `orderVal` devolve `-Infinity` para valor não-numérico (`:394`). Quando os
+      DOIS lados são `null`, `d = orderVal(b) - orderVal(a)` = `-Infinity -
+      (-Infinity)` = **NaN**. A guarda é `d !== 0`, e `NaN !== 0` é `true` — o
+      comparador **retorna NaN e nunca chega ao `localeCompare(b.adId)`**.
+      Pela ECMA-262 (SortCompare), comparador que devolve NaN é tratado como
+      `+0`; `Array.prototype.sort` é estável desde ES2019, então a ordem que
+      sobra é a de ENTRADA.
+      A ordem de entrada é a de inserção do `Map byAd` (`:325-345`), que é a
+      ordem das linhas de um `SELECT` **sem `ORDER BY`** (`:298-314`).
+      Reproduzido com o comparador literal da rota: `[z,a,m]` todos com
+      `roas: null` saem `z,a,m` (ordem de entrada) em vez de `a,m,z`.
+      Nulos vêm de `safeDiv` (`meta-metrics.ts:55`, `den > 0 ? … : null`) e das
+      guardas `impressions > 0`: são `ctr`, `cpc`, `cpm`, `cpl`, `cpa` e
+      `roas` — 6 dos 10 valores do enum. Seguras: `spend`, `impressions`,
+      `clicks`, `leads`.
+    impacto: >
+      A rota comenta o desempate como "OBRIGATÓRIO... senão paginar por offset
+      pula ou repete criativo" (`:396-399`). A garantia vale para o default
+      (`spend`) e falha justamente no caso mais comum de empate em massa: num
+      projeto de geração de leads, `purchases = 0` em todo criativo, então
+      `cpa` e `roas` são `null` em TODOS — e a ordenação inteira vira a ordem
+      do banco. Aí paginar depende de o Postgres devolver as linhas na mesma
+      ordem em duas requisições, o que ele não garante (seq scan sincronizado,
+      plano paralelo, ou sync concorrente gravando linhas no meio).
+      E a descrição da tool convida exatamente a isso: "Use orderBy para
+      rankear (ex.: 'ctr', 'cpa', 'roas'...)".
+    nao_e_regressao: >
+      Nasceu com a Story 43.4, não com esta. Mas esta é a story que torna o
+      caminho de offset alcançável pelo agente, e a que afirma na tabela de
+      riscos: "Paginação pular ou repetir criativo → **Não se aplica**: a rota
+      já desempata por `adId`". A afirmação é verdadeira pela metade e foi
+      feita sem qualificação.
+    atencao_ao_probe: >
+      ⚠️ O probe da AC5 (duas páginas, conferir que os `adId` não se repetem)
+      **provavelmente PASSA mesmo com este defeito**: duas chamadas seguidas
+      costumam trazer a mesma ordem do banco. Ele confirma a presença do
+      `offset`, não a estabilidade da ordenação. Não leia um probe verde como
+      refutação deste achado.
+    suggestedFix: >
+      Story de follow-up em `public-meta.ts`: `const d = orderVal(b) -
+      orderVal(a); return Number.isFinite(d) && d !== 0 ? d :
+      a.adId.localeCompare(b.adId);` — uma linha, e o desempate passa a valer
+      para os 10 `orderBy`. Vale um teste que ordene por `roas` com todos os
+      valores nulos e exija ordem por `adId`, provado por reversão.
+    dono: "@sm/@po — abrir follow-up. Fora do escopo desta story (é a rota)."
+
+  - id: QA-4424-02
+    severidade: medium
+    titulo: "O teste era possível, e no arquivo que o @dev já rodou"
+    onde: "packages/api/package.json · packages/api/src/__tests__/llms-txt-contrato.test.ts:41"
+    evidencia: >
+      A story conclui "não há runner" e o Dev Record escreve "não dá para ter
+      neste setup". O que foi verificado é que **`packages/mcp`** não tem
+      script `test` — verdade. Mas `packages/api` tem `"test": "vitest run"`,
+      e o teste de contrato que o próprio @dev executou já faz
+      `readFileSync(resolve(raiz, "packages/mcp/src/tools.ts"))` (`:41`) e
+      afirma coisas sobre esse arquivo cruzando-o com a fonte da rota e com
+      `docs/llms.txt`. A infraestrutura existe, já está apontada para os três
+      arquivos certos, e já rodava.
+    impacto: >
+      Esta story existe porque a rota foi a 500 + `offset` na 43.4 e a tool e a
+      doc ficaram em 200 por meses, em silêncio. Uma asserção no arquivo que já
+      existe — o `.max(N)` da tool igual ao `.max(N)` da rota, e `offset`
+      presente tanto no `inputSchema` quanto no objeto de query — teria pegado
+      exatamente essa defasagem, e pegaria a próxima. Sem ela, a única coisa
+      entre os dois lados volta a ser revisão humana.
+      Vale também para a lição já registrada no projeto ("testar o corpo
+      enviado, não o tipo"): a asserção sobre o objeto de query é o que prova o
+      repasse, e é escrevível hoje.
+    a_pergunta_errada: >
+      A pergunta feita foi "`packages/mcp` tem runner?". A pergunta que
+      discrimina é "algum runner já enxerga este arquivo?" — e a resposta é
+      sim, e estava rodando na mesma sessão.
+    suggestedFix: >
+      Acrescentar ao `llms-txt-contrato.test.ts` (ou irmão) três asserções, sem
+      infra nova: (a) o `.max(N)` do `limit` da tool == o `.max(N)` da rota,
+      ambos extraídos por regex do fonte, como o teste já faz com o path;
+      (b) `offset` presente no `inputSchema` **e** no objeto de query da
+      chamada da tool; (c) o `limit (1–N` do `llms.txt` == o mesmo N.
+    dono: "@sm/@po — follow-up. Não bloqueia esta story."
+
+  - id: QA-4424-03
+    severidade: low
+    titulo: "O detector da 44.22 já calcula `diasDeAtraso` e joga fora"
+    onde: "packages/mcp/src/defasagem.ts:75, :97 · index.ts:53"
+    evidencia: >
+      `diasEntre(bundleBuiltAt, manifesto.builtAt)` é calculado e vai para o
+      `Diagnostico`, e o manifesto ainda publica `contract`
+      (`public-mcp-manifest.ts:42`) — mas o registro do aviso é decidido só por
+      `d.atrasado || d.sobrando.length > 0`, ou seja, só por diferença de
+      NOMES. Um bundle 60 dias atrás com o mesmo roster fica silencioso, que é
+      precisamente o caso desta story.
+    suggestedFix: >
+      Na AC3/AC4 da 44.22: registrar o aviso também quando
+      `(d.diasDeAtraso ?? 0) > N` ou quando o `contract` do bundle divergir do
+      publicado. Os dois sinais já chegam ao ponto de decisão — falta a
+      condição usá-los.
+    dono: "@devops / a própria 44.22. Colateral, fora do escopo daqui."
+
+  - id: QA-4424-04
+    severidade: low
+    titulo: "`count` está documentado sem o aviso de `@deprecated`"
+    onde: "docs/llms.txt:49 · public-meta.ts:417-418"
+    evidencia: >
+      A rota marca `count` como `@deprecated — use total`. A linha `Resposta:`
+      lista `count` primeiro e `total` depois, sem distinguir. Também omite
+      `spendIncludesMetaTax`, que a rota devolve (omissão anterior a esta
+      story).
+    impacto: >
+      Inofensivo hoje — `count` e `total` são o mesmo valor (`:418`, `:421`).
+      Fica registrado porque o leitor é literal e a linha é contrato: se algum
+      dia `count` virar "itens desta página", quem seguiu a doc lê errado.
+    suggestedFix: "`\"count\" (legado — use `total`)` na mesma linha."
+    dono: "qualquer story que encoste no llms.txt."
+
+acs:
+  AC1: >
+    ENTREGUE — `offset` no `inputSchema` (`:122-127`), no destructuring
+    (`:132`) e no objeto de query (`:138`). O repasse foi verificado nas três
+    pontas, e `offset: 0` foi verificado CHEGANDO na URL, não deduzido do tipo.
+  AC2: >
+    ENTREGUE — `.max(500)` igual à rota; default intocado (a tool segue sem
+    `.default()`, quem decide é o `.default(50)` da rota). Nada acima de 500.
+  AC3: >
+    ENTREGUE — a `description` (`:109`) traz os quatro campos da resposta, o
+    laço (`somar limit ao offset`), a condição de parada (`truncated` false) e
+    a proibição de concluir contagem a partir de resposta truncada.
+  AC4: >
+    ENTREGUE — os 5 trechos reescritos e fact-checados contra a rota, mais 2
+    linhas aditivas corretas. Doc viva sem menção sobrevivente à limitação
+    removida. Nit `low` em QA-4424-04.
+  AC5: >
+    ⛔ **PENDENTE** — exige rebuild e restart do gateway (@devops) e o probe de
+    verificação. Nada disso está ao meu alcance nesta sessão, e o @dev declarou
+    a pendência com evidência em vez de silêncio, que é o comportamento certo.
+    Enquanto não for feita, **a tool alterada não existe para o Inácio**: o
+    arquivo mudou na `main`, o bundle do gateway não.
+    E o detector da 44.22 **não vai avisar** — confirmado no código (V8).
+
+evidenciasDaRevisao:
+  typecheck: "packages/mcp `tsc --noEmit` → exit 0"
+  lint: "packages/mcp `eslint src/` → exit 0, saída vazia"
+  guard: "packages/mcp `scripts/verificar-tools.mjs` → ✓ 18 tools (o mesmo antes e depois — por isso ele não é evidência desta mudança)"
+  testes: "packages/api `vitest run src/__tests__/llms-txt-contrato.test.ts` → 8/8 passed. ⚠️ Nenhuma das 8 asserções toca no que esta story mudou; é prova de não-regressão, não de entrega"
+  repasse_empirico: "laço de client.ts:44-48 reexecutado com {limit:300, offset:0} → `?limit=300&offset=0`"
+  ordenacao_empirica: "comparador de public-meta.ts:400-403 reexecutado com 3 itens de `roas: null` → ordem de entrada preservada, `adId` ignorado (QA-4424-01)"
+  varredura_doc: "padrões da DoD em docs/ — zero hits em doc viva; todos os sobreviventes são registro histórico (V7)"
+
+validacaoVisual:
+  status: NAO_SE_APLICA
+  motivo: "Story sem superfície de UI. A verificação equivalente é o probe da AC5, contra o gateway."
+
+proximaAcao: >
+  1. **@devops** — rebuild + restart do gateway
+     (`git pull origin main && pnpm --filter @loyola-x/mcp build`), e então o
+     probe da AC5: `get_creative_performance` com `limit: 300` (só o schema
+     novo aceita) e duas páginas por `offset`. Colar as saídas no Dev Record.
+     Enquanto isso não acontecer, a story está entregue no repositório e
+     **não** entregue ao Inácio.
+  2. **@sm/@po** — abrir follow-up para QA-4424-01 (o desempate por `adId` na
+     rota) e QA-4424-02 (a asserção de contrato tool↔rota). Nenhum dos dois é
+     trabalho desta story.
+  3. QA-4424-03 vai para a 44.22; QA-4424-04 pega carona na próxima story que
+     encostar no `llms.txt`.
+
+waiver: { active: false }
