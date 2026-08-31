@@ -106,7 +106,7 @@ export function registerTools(server: McpServer, client: LoyolaClient): void {
     {
       title: "Performance por criativo (anúncio)",
       description:
-        "Performance por criativo Meta (anúncio) de um projeto: metadata (thumbnail/title/body/cta), métricas de vídeo e KPIs (spend/ctr/cpc/cpm/leads/cpl/cpa/roas). Use orderBy para rankear (ex.: 'ctr', 'cpa', 'roas', 'spend', 'leads'). Filtre por campaignId se quiser uma campanha só.",
+        "Performance por criativo Meta (anúncio) de um projeto: metadata (thumbnail/title/body/cta), métricas de vídeo e KPIs (spend/ctr/cpc/cpm/leads/cpl/cpa/roas). Use orderBy para rankear (ex.: 'ctr', 'cpa', 'roas', 'spend', 'leads'). Filtre por campaignId se quiser uma campanha só. A resposta traz `total`, `returned`, `offset` e `truncated` — se `truncated` for true, chame de novo com `offset` maior para pegar o resto, senão a análise sai incompleta em silêncio.",
       inputSchema: {
         projectId: z.string().uuid().describe("ID do projeto (de list_projects)."),
         campaignId: z.string().optional().describe("Filtra por uma campanha (campaignId de list_campaigns)."),
@@ -114,17 +114,35 @@ export function registerTools(server: McpServer, client: LoyolaClient): void {
           .enum(["spend", "ctr", "cpc", "cpm", "cpl", "cpa", "roas", "leads", "impressions", "clicks"])
           .optional()
           .describe("Métrica de ordenação (desc). Default: spend."),
-        limit: z.coerce.number().int().min(1).max(200).optional().describe("Máx. de criativos. Default: 50."),
+        // O teto acompanha a rota (500, desde a 43.4). Ficar em 200 fazia a
+        // resposta voltar `truncated: true` sem dar meio de buscar o resto —
+        // são 433 criativos medidos numa janela de 30 dias.
+        limit: z.coerce
+          .number()
+          .int()
+          .min(1)
+          .max(500)
+          .optional()
+          .describe("Máx. de criativos por página. Default: 50, teto 500."),
+        offset: z.coerce
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            "Quantos pular. Use com `limit` quando a resposta vier `truncated: true`: some `returned` ao `offset` e chame de novo até `truncated` virar false.",
+          ),
         from: fromField,
         to: toField,
       },
     },
-    async ({ projectId, campaignId, orderBy, limit, from, to }) =>
+    async ({ projectId, campaignId, orderBy, limit, offset, from, to }) =>
       run(() =>
         client.get(`/api/public/meta/v1/projects/${encodeURIComponent(projectId)}/creatives`, {
           campaignId,
           orderBy,
           limit,
+          offset,
           from,
           to,
         })

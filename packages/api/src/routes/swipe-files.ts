@@ -15,6 +15,7 @@ import fp from "fastify-plugin";
 import { swipeFiles, users } from "../db/schema.js";
 import { fetchLinkPreview } from "../services/link-preview.js";
 import {
+  MAX_UPLOAD_BYTES,
   deleteObject,
   isStorageConfigured,
   presignUpload,
@@ -182,10 +183,19 @@ export default fp(async function swipeFilesRoutes(fastify) {
         code: "STORAGE_NOT_CONFIGURED",
       });
     }
+    // O tamanho já chegava e era IGNORADO: um arquivo acima do teto passava
+    // pelo presign e só falhava no bucket, com erro que não diz o que houve.
+    if (body.data.sizeBytes && body.data.sizeBytes > MAX_UPLOAD_BYTES) {
+      const mb = Math.round(MAX_UPLOAD_BYTES / 1024 / 1024);
+      return reply.code(400).send({ error: `Arquivo maior que o limite de ${mb} MB.` });
+    }
+
     try {
-      const result = await presignUpload(storage(), { mime: body.data.mime, prefix: "swipe" });
-      return result;
+      return await presignUpload(storage(), { mime: body.data.mime, prefix: "swipe" });
     } catch (err) {
+      // O log carrega o mime: sem ele, "falha ao preparar o upload" no console
+      // do navegador não diz qual tipo de arquivo derrubou.
+      fastify.log.error({ err, mime: body.data.mime }, "presign de swipe file falhou");
       return reply
         .code(400)
         .send({ error: err instanceof Error ? err.message : "Falha ao preparar o upload" });
@@ -240,7 +250,10 @@ export default fp(async function swipeFilesRoutes(fastify) {
       }
     }
 
-    const [created] = await fastify.db
+    // O insert era a única operação sem tratamento na rota: qualquer recusa do
+    // banco virava 500 sem corpo, e o navegador mostrava só o número.
+    try {
+      const [created] = await fastify.db
       .insert(swipeFiles)
       .values({
         title: d.title,
@@ -267,7 +280,16 @@ export default fp(async function swipeFilesRoutes(fastify) {
       })
       .returning({ id: swipeFiles.id });
 
-    return reply.code(201).send(created);
+      return reply.code(201).send(created);
+    } catch (err) {
+      fastify.log.error(
+        { err, assetKind: d.assetKind, fileMime: d.fileMime },
+        "falha ao gravar swipe file",
+      );
+      return reply.code(500).send({
+        error: "Não consegui salvar a referência. O arquivo subiu, mas o registro falhou.",
+      });
+    }
   });
 
   // ---- PATCH /:id ----

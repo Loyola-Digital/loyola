@@ -31,7 +31,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 SAIDA="${1:-$(pwd)/packages/mcp/loyola-mcp-bundle.cjs}"
-TESTE="$(mktemp -t loyola-mcp-teste-XXXXXX.mjs 2>/dev/null || mktemp /tmp/loyola-mcp-teste-XXXXXX.mjs)"
+# O `mktemp` do BSD (macOS) ignora o sufixo do template e devolve um arquivo SEM
+# `.mjs` — e aí o Node trata como CommonJS e o passo de validação falha, justo
+# o que prova que o bundle sobe. Criar o diretório e nomear o arquivo dentro
+# dele funciona igual nos dois.
+TESTE_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t loyola-mcp)"
+TESTE="$TESTE_DIR/teste.mjs"
 trap 'rm -f "$TESTE"' EXIT
 
 echo "── 1. compilando o pacote ──────────────────────────────"

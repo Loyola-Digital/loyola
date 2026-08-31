@@ -29,12 +29,28 @@ que julho passou batido.
 
 | campo | valor |
 |---|---|
-| Host / endereço do gateway | _(a preencher)_ |
-| Caminho do repo na máquina | _(a preencher)_ |
-| Como o processo do MCP é iniciado | _(systemd? pm2? docker? — a preencher)_ |
-| Comando de restart | _(a preencher)_ |
-| Quem tem acesso hoje | _(a preencher)_ |
-| Dono declarado da atualização | _(a preencher)_ |
+| Host / endereço do gateway | container do Inácio, orquestrado pelo Coolify |
+| Caminho do repo na máquina | **não existe** — o único `.git` no container é o workspace do agente, sem remote e sem commits. O bundle é assado na imagem, a partir do fork do [openclaw](https://github.com/lucasvital/inacio) |
+| Como o processo do MCP é iniciado | **stdio**, pelo cliente — não é serviço de rede |
+| Comando de restart | **não há**. O caminho é: push no fork → redeploy no Coolify → `docker pull` no host (ver abaixo) → reiniciar a sessão do Inácio |
+| Quem tem acesso hoje | só o Lucas (fork, Coolify e host) |
+| Dono declarado da atualização | _(a definir — hoje é gargalo de uma pessoa só)_ |
+
+### ⚠️ Redeploy no Coolify NÃO basta
+
+O `docker-compose.coolify.yml` do Inácio usa **`pull_policy: missing`**, de
+propósito: o helper do Coolify não consegue autenticar no GHCR. Com essa
+política, o Docker só busca a imagem quando **não tem nenhuma** — e ele sempre
+tem, então o redeploy reinicia o container com a imagem **velha**.
+
+Isso já custou três deploys seguidos que "não pegaram". O passo que falta é, no
+**host**:
+
+```bash
+docker pull ghcr.io/lucasvital/inacio:latest
+```
+
+e só então o redeploy.
 
 ## Como atualizar
 
@@ -64,7 +80,9 @@ cp <saida>.cjs <fork>/vendor/loyola-mcp/index.cjs
 git add vendor/loyola-mcp/index.cjs && git commit && git push
 
 # 3. redeploy do Inácio no Coolify (a imagem é reassada)
-# 4. reiniciar a sessão do Inácio e conferir o roster
+# 4. NO HOST: docker pull ghcr.io/lucasvital/inacio:latest
+#    (sem isto o `pull_policy: missing` reinicia com a imagem VELHA)
+# 5. reiniciar a sessão do Inácio e conferir o roster
 ```
 
 O script gera, **valida conversando MCP com o bundle** (handshake + `tools/list`)
@@ -142,3 +160,23 @@ Provado removendo uma tool da lista: `exit 1`, com o nome da divergência.
 Adicionou ou removeu tool? **Atualize `packages/shared/src/mcp-tools.ts` no mesmo
 PR** (o build cobra) e avise que o gateway precisa de rebuild — o merge não faz
 isso por você.
+
+## O detector de defasagem tem um ponto cego
+
+O `AVISO_bundle_do_mcp_desatualizado` compara **nomes de tools**. Ele pega
+tool nova que falta — que é o caso mais comum — e **não pega** mudança de
+parâmetro dentro de uma tool que já existe.
+
+Foi o que aconteceu com a paginação de `get_creative_performance`: os dois
+bundles têm as mesmas 18 tools e zero avisos, mas um aceita `limit: 500` e
+`offset` e o outro para em 200. Gateway defasado fica **idêntico** a gateway em
+dia.
+
+Enquanto o detector não comparar assinatura, o jeito de saber é chamar a tool
+com um valor que só o bundle novo aceita:
+
+```
+get_creative_performance com limit: 300
+  aceitou                                    → bundle novo ✅
+  "Too big: expected number to be <=200"     → ainda é o velho ❌
+```
