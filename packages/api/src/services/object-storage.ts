@@ -1,5 +1,8 @@
 /**
- * Object storage S3-compatível (Cloudflare R2).
+ * Object storage S3-compatível.
+ *
+ * Escrito para o Cloudflare R2 e hoje apontado para o **Supabase Storage** em
+ * produção — o `STORAGE_ENDPOINT` decide, e os dois falam o mesmo protocolo.
  *
  * Por que URL assinada e não upload pela API:
  * - o `@fastify/multipart` do app tem teto global de 10MB, e vídeo de anúncio
@@ -9,8 +12,9 @@
  * - o disco do container é efêmero (Dockerfile sem volume, Coolify recria a
  *   imagem a cada deploy), então gravar local perderia tudo no próximo deploy.
  *
- * R2 é preferível a S3 aqui por não cobrar egress — a biblioteca serve vídeo
- * repetidamente pro time.
+ * O R2 não cobra egress, o que importa numa biblioteca que serve o mesmo vídeo
+ * várias vezes para o time. A produção hoje usa Supabase; a troca é de env, não
+ * de código.
  */
 
 import { DeleteObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
@@ -65,6 +69,24 @@ export function isAllowedMime(mime: string): boolean {
 
 function client(cfg: StorageConfig): S3Client {
   return new S3Client({
+    /**
+     * Sem isto, NENHUM upload funciona fora da AWS.
+     *
+     * Desde a v3.729 o SDK inclui um checksum CRC32 por padrão. Numa URL
+     * assinada isso é fatal: na hora de assinar não existe corpo, então o
+     * parâmetro sai como `x-amz-checksum-crc32=AAAAAA==` — o CRC32 do VAZIO —
+     * e vai colado na assinatura. Quando o navegador faz o PUT com o arquivo
+     * de verdade, o provedor calcula o CRC32 do corpo real, compara com o do
+     * vazio e recusa.
+     *
+     * O Supabase devolve **500** nesse caso, não 400, o que faz parecer
+     * problema do servidor deles. Foi o que segurou o upload deste app desde
+     * sempre: a tabela `swipe_files` nunca teve uma linha.
+     *
+     * `WHEN_REQUIRED` mantém o checksum onde a API exige (ex.: DeleteObjects)
+     * e o tira do PutObject, que é onde ele quebra.
+     */
+    requestChecksumCalculation: "WHEN_REQUIRED",
     endpoint: cfg.endpoint,
     // "auto" serve pro R2; Supabase/S3 precisam da região real, senão a
     // assinatura não confere e o PUT volta 403.
