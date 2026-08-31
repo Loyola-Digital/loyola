@@ -6,12 +6,14 @@
  * a checagem para `startsWith("application/")` e liberar executável.
  */
 
-import { describe, expect, it } from "vitest";
+import { Readable } from "node:stream";
+import { describe, expect, it, vi } from "vitest";
 import {
   MAX_UPLOAD_BYTES,
   checarStorage,
   explicarErroDeStorage,
   isAllowedMime,
+  uploadComCliente,
 } from "../services/object-storage.js";
 
 describe("tipos permitidos", () => {
@@ -130,5 +132,95 @@ describe("o check de storage", () => {
     const r = await checarStorage({ endpoint: "", accessKeyId: "", secretAccessKey: "", bucket: "", publicUrl: "" });
     expect(r.ok).toBe(false);
     expect(r.erro?.codigo).toBe("NOT_CONFIGURED");
+  });
+});
+
+describe("o caminho do upload depende do tamanho", () => {
+  /**
+   * O `Upload` do lib-storage recebendo stream não sabe o tamanho, então usa
+   * sempre *multipart upload* — mesmo para um PDF de 2,6 MB. O Supabase
+   * responde `InternalError` a esse fluxo, e foi o que segurou o upload deste
+   * app. Sabendo o tamanho, um `PutObject` simples resolve.
+   */
+  function streamDe(bytes: number): Readable {
+    const pedaco = Buffer.alloc(64 * 1024, 1);
+    let restante = bytes;
+    return new Readable({
+      read() {
+        if (restante <= 0) return void this.push(null);
+        const n = Math.min(pedaco.length, restante);
+        restante -= n;
+        this.push(pedaco.subarray(0, n));
+      },
+    });
+  }
+
+  const cfg = {
+    endpoint: "https://exemplo.storage.supabase.co/storage/v1/s3",
+    accessKeyId: "fake",
+    secretAccessKey: "fake",
+    bucket: "swipe-files",
+    publicUrl: "https://exemplo.com/pub",
+    region: "us-east-2",
+  };
+
+  it("arquivo pequeno vai por PutObject, com ContentLength", async () => {
+    const enviados: string[] = [];
+    const s3 = {
+      send: vi.fn(async (cmd: { constructor: { name: string }; input: Record<string, unknown> }) => {
+        enviados.push(cmd.constructor.name);
+        expect(cmd.input.ContentLength).toBe(2_000_000);
+        return {};
+      }),
+    };
+    await uploadComCliente(s3 as never, cfg, {
+      corpo: streamDe(2_000_000),
+      mime: "application/pdf",
+    });
+    expect(enviados).toEqual(["PutObjectCommand"]);
+  });
+
+  it("o conteúdo chega inteiro, não truncado", async () => {
+    let recebido = 0;
+    const s3 = {
+      send: vi.fn(async (cmd: { input: { Body?: Buffer } }) => {
+        recebido = cmd.input.Body?.length ?? 0;
+        return {};
+      }),
+    };
+    await uploadComCliente(s3 as never, cfg, {
+      corpo: streamDe(1_234_567),
+      mime: "image/png",
+    });
+    expect(recebido).toBe(1_234_567);
+  });
+
+  it("a URL pública sai com a extensão do MIME", async () => {
+    const s3 = { send: vi.fn(async () => ({})) };
+    const r = await uploadComCliente(s3 as never, cfg, {
+      corpo: streamDe(100),
+      mime: "application/pdf",
+    });
+    expect(r.key).toMatch(/^swipe\/[0-9a-f-]{36}\.pdf$/);
+    expect(r.publicUrl).toBe(`https://exemplo.com/pub/${r.key}`);
+  });
+
+  it("tipo não permitido nem chega ao provedor", async () => {
+    const s3 = { send: vi.fn(async () => ({})) };
+    await expect(
+      uploadComCliente(s3 as never, cfg, { corpo: streamDe(10), mime: "text/html" }),
+    ).rejects.toThrow(/não permitido/i);
+    expect(s3.send).not.toHaveBeenCalled();
+  });
+});
+
+describe("InternalError do Supabase", () => {
+  it("manda checar o que é verificável, em vez de repetir o erro", () => {
+    // O Supabase usa `InternalError` para coisas diferentes — bucket ausente e
+    // fluxo não suportado, entre elas. Como o código não distingue, a frase
+    // aponta o diagnóstico em vez de fingir que sabe.
+    const r = explicarErroDeStorage({ name: "InternalError" });
+    expect(r.mensagem).toMatch(/bucket existe/i);
+    expect(r.mensagem).toContain("storage-check");
   });
 });

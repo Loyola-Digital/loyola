@@ -126,23 +126,32 @@ export async function deleteObject(cfg: StorageConfig, key: string): Promise<voi
 }
 
 /**
- * Sobe o arquivo PELO SERVIDOR, em vez de por URL assinada.
+ * Até onde o arquivo é lido para a memória antes de subir.
  *
- * ## Por que existe, se já havia o presign
+ * Acima disto, `uploadDireto` cai no envio em partes. O corte existe porque
+ * cada upload em voo segura este tanto de RAM no container — e porque o caminho
+ * em partes é justamente o que alguns provedores não suportam bem.
+ */
+export const LIMITE_EM_MEMORIA = 50 * 1024 * 1024;
+
+/**
+ * Sobe o arquivo PELO SERVIDOR.
  *
- * O presign é mais barato — o navegador fala direto com o bucket e o container
- * nem vê o arquivo. Mas o Supabase Storage responde **500** ao `PUT` assinado,
- * e um erro que não é nosso, não tem corpo útil e acontece no navegador de
- * quem está trabalhando não é algo que se conserta com paciência.
+ * ## Por que não é `Upload` do lib-storage direto
  *
- * Aqui o SDK fala com o bucket a partir do servidor, exatamente como já faz
- * para apagar objeto — caminho que funciona hoje.
+ * O `Upload` recebendo **stream** não sabe o tamanho, então usa sempre
+ * *multipart upload* — `CreateMultipartUpload`, `UploadPart`,
+ * `CompleteMultipartUpload` — mesmo para um PDF de 2,6 MB. O Supabase Storage
+ * responde `InternalError` a esse fluxo, e foi o que segurou o upload deste app.
  *
- * ## Stream, não buffer
+ * Sabendo o tamanho, um `PutObject` simples resolve — é uma requisição só, e é
+ * o caminho que todo provedor S3-compatível implementa bem.
  *
- * `Upload` do `lib-storage` consome o stream e fatia em partes de 5 MB, então
- * um vídeo de 200 MB nunca fica inteiro na memória do container. Ler para
- * `Buffer` seria mais simples e derrubaria o processo no primeiro vídeo grande.
+ * ## O corte
+ *
+ * Arquivo que cabe em `LIMITE_EM_MEMORIA` vai por `PutObject`. Acima disso, o
+ * envio em partes volta a ser a escolha certa: segurar 200 MB de vídeo na
+ * memória para evitar multipart trocaria um problema por um pior.
  */
 export async function uploadDireto(
   cfg: StorageConfig,
@@ -151,6 +160,20 @@ export async function uploadDireto(
   if (!isStorageConfigured(cfg)) {
     throw new Error("Object storage não configurado no servidor.");
   }
+  return uploadComCliente(client(cfg), cfg, entrada);
+}
+
+/**
+ * O mesmo, recebendo o cliente de fora.
+ *
+ * Separado só para o teste poder observar QUAL comando vai ao provedor — que é
+ * a decisão que este arquivo toma e a que quebrou em produção.
+ */
+export async function uploadComCliente(
+  s3: S3Client,
+  cfg: StorageConfig,
+  entrada: { corpo: Readable; mime: string; prefix?: string },
+): Promise<{ publicUrl: string; key: string }> {
   if (!isAllowedMime(entrada.mime)) {
     throw new Error(`Tipo de arquivo não permitido: ${entrada.mime}`);
   }
@@ -158,24 +181,66 @@ export async function uploadDireto(
   const prefix = (entrada.prefix ?? "swipe").replace(/[^a-z0-9-]/gi, "");
   const key = `${prefix}/${randomUUID()}.${extFor(entrada.mime)}`;
 
-  const envio = new Upload({
-    client: client(cfg),
-    params: {
-      Bucket: cfg.bucket as string,
-      Key: key,
-      Body: entrada.corpo,
-      ContentType: entrada.mime,
-    },
-    // 5 MB é o mínimo que o protocolo aceita por parte. Duas partes em voo:
-    // suficiente para não serializar a rede, longe de encher a memória.
-    partSize: 5 * 1024 * 1024,
-    queueSize: 2,
-  });
+  // Lê até o limite. Se o stream acabar antes, sabemos o tamanho exato e o
+  // caminho simples serve; se passar, o que já foi lido volta para a frente do
+  // stream e o envio segue em partes.
+  const { buffer, completo } = await lerAte(entrada.corpo, LIMITE_EM_MEMORIA);
 
-  await envio.done();
+  if (completo) {
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: cfg.bucket as string,
+        Key: key,
+        Body: buffer,
+        ContentType: entrada.mime,
+        ContentLength: buffer.length,
+      }),
+    );
+  } else {
+    entrada.corpo.unshift(buffer);
+    const envio = new Upload({
+      client: s3,
+      params: {
+        Bucket: cfg.bucket as string,
+        Key: key,
+        Body: entrada.corpo,
+        ContentType: entrada.mime,
+      },
+      // 5 MB é o mínimo que o protocolo aceita por parte. Duas em voo:
+      // suficiente para não serializar a rede, longe de encher a memória.
+      partSize: 5 * 1024 * 1024,
+      queueSize: 2,
+    });
+    await envio.done();
+  }
 
   const base = (cfg.publicUrl ?? "").replace(/\/+$/, "");
   return { publicUrl: `${base}/${key}`, key };
+}
+
+/**
+ * Lê o stream até `limite` bytes.
+ *
+ * `completo: true` significa que o stream terminou dentro do limite — e aí o
+ * tamanho é conhecido, que é a informação que decide o caminho do upload.
+ */
+async function lerAte(
+  stream: Readable,
+  limite: number,
+): Promise<{ buffer: Buffer; completo: boolean }> {
+  const partes: Buffer[] = [];
+  let total = 0;
+
+  for await (const pedaco of stream) {
+    const b = Buffer.isBuffer(pedaco) ? pedaco : Buffer.from(pedaco as ArrayBufferLike);
+    partes.push(b);
+    total += b.length;
+    // Passou do limite: para de acumular e devolve o que tem. O chamador
+    // devolve isto ao stream e segue em partes.
+    if (total > limite) return { buffer: Buffer.concat(partes), completo: false };
+  }
+
+  return { buffer: Buffer.concat(partes), completo: true };
 }
 
 /**
@@ -209,6 +274,13 @@ export function explicarErroDeStorage(erro: unknown): {
       "A assinatura não confere — verifique STORAGE_SECRET_ACCESS_KEY e STORAGE_REGION.",
     NotFound: "O provedor não achou o bucket. Verifique STORAGE_BUCKET e STORAGE_ENDPOINT.",
     Forbidden: "O provedor recusou a credencial para este bucket.",
+    // O Supabase devolve `InternalError` quando o BUCKET não existe e quando o
+    // fluxo pedido não é suportado (foi o caso do multipart upload). Como o
+    // código não distingue, a frase manda checar o que é verificável.
+    InternalError:
+      "O provedor recusou sem dizer o motivo. Confira se o bucket existe e se a credencial pode gravar nele — /api/swipe-files/storage-check responde as duas.",
+    InternalServerError:
+      "O provedor recusou sem dizer o motivo. Confira o bucket em /api/swipe-files/storage-check.",
   };
 
   const conhecido = codigo ? dicionario[codigo] : undefined;
