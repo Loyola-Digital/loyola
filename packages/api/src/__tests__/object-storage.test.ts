@@ -13,6 +13,7 @@ import {
   checarStorage,
   explicarErroDeStorage,
   isAllowedMime,
+  pareceplaceholder,
   uploadComCliente,
 } from "../services/object-storage.js";
 
@@ -222,5 +223,44 @@ describe("InternalError do Supabase", () => {
     const r = explicarErroDeStorage({ name: "InternalError" });
     expect(r.mensagem).toMatch(/bucket existe/i);
     expect(r.mensagem).toContain("storage-check");
+  });
+});
+
+describe("URL pública com valor de exemplo", () => {
+  /**
+   * O upload funcionou e o link salvo apontava para `seuprojeto.supabase.co` —
+   * um domínio que não existe. O arquivo estava no bucket; só o endereço
+   * gravado era o do exemplo do `.env`.
+   *
+   * É a pior classe de falha de configuração: tudo indica sucesso, e o erro só
+   * aparece quando alguém clica — possivelmente semanas depois.
+   */
+  it.each(["seuprojeto", "seu-projeto", "your-project", "example", "exemplo"])(
+    "reconhece '%s' como placeholder",
+    (p) => expect(pareceplaceholder(`https://${p}.supabase.co/storage/v1/object/public/x`)).toBe(true),
+  );
+
+  it("URL real passa", () => {
+    expect(
+      pareceplaceholder("https://gcwyehutxnmrnpdpgjvt.storage.supabase.co/storage/v1/object/public/swipe-files"),
+    ).toBe(false);
+  });
+
+  it("ausente não é suspeita — é outro problema, com outra mensagem", () => {
+    expect(pareceplaceholder(undefined)).toBe(false);
+    expect(pareceplaceholder("")).toBe(false);
+  });
+
+  it("o check acusa antes de tentar a rede", async () => {
+    const r = await checarStorage({
+      endpoint: "https://x.storage.supabase.co/storage/v1/s3",
+      accessKeyId: "k",
+      secretAccessKey: "s",
+      bucket: "swipe-files",
+      publicUrl: "https://seuprojeto.supabase.co/storage/v1/object/public/swipe-files",
+    });
+    expect(r.ok).toBe(false);
+    expect(r.erro?.codigo).toBe("PUBLIC_URL_PLACEHOLDER");
+    expect(r.urlPublicaSuspeita).toBe(true);
   });
 });

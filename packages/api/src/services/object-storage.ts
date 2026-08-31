@@ -303,13 +303,34 @@ export function explicarErroDeStorage(erro: unknown): {
  * duas perguntas que separam "configuração errada" de "arquivo problemático",
  * e que hoje só dá para responder tentando um upload de verdade.
  */
+/**
+ * Domínios que denunciam variável não preenchida.
+ *
+ * Um upload pode dar tudo certo e ainda assim gerar um link que não abre, se a
+ * URL pública ficou no valor de exemplo. O arquivo está no bucket; o link é que
+ * aponta para lugar nenhum — e o erro só aparece quando alguém clica.
+ */
+const PLACEHOLDERS = ["seuprojeto", "seu-projeto", "your-project", "yourproject", "example", "exemplo"];
+
+/** A URL pública parece um exemplo não substituído? */
+export function pareceplaceholder(url: string | undefined): boolean {
+  if (!url) return false;
+  const u = url.toLowerCase();
+  return PLACEHOLDERS.some((p) => u.includes(p));
+}
+
 export async function checarStorage(cfg: StorageConfig): Promise<{
   ok: boolean;
   bucket: string | null;
   endpoint: string | null;
+  urlPublicaSuspeita?: boolean;
   erro?: { mensagem: string; codigo: string | null; status: number | null };
 }> {
-  const base = { bucket: cfg.bucket ?? null, endpoint: cfg.endpoint ?? null };
+  const base = {
+    bucket: cfg.bucket ?? null,
+    endpoint: cfg.endpoint ?? null,
+    urlPublicaSuspeita: pareceplaceholder(cfg.publicUrl),
+  };
   if (!isStorageConfigured(cfg)) {
     return {
       ok: false,
@@ -317,6 +338,20 @@ export async function checarStorage(cfg: StorageConfig): Promise<{
       erro: {
         mensagem: "Faltam variáveis de STORAGE_* no servidor.",
         codigo: "NOT_CONFIGURED",
+        status: null,
+      },
+    };
+  }
+
+  // Isto NÃO impede o upload — impede que ele pareça ter funcionado. O arquivo
+  // sobe, o link é salvo, e só quem clica descobre que não abre.
+  if (base.urlPublicaSuspeita) {
+    return {
+      ok: false,
+      ...base,
+      erro: {
+        mensagem: `STORAGE_PUBLIC_URL ainda tem valor de exemplo (${cfg.publicUrl}). O arquivo sobe, mas o link salvo não abre.`,
+        codigo: "PUBLIC_URL_PLACEHOLDER",
         status: null,
       },
     };
