@@ -21,6 +21,7 @@
  */
 
 import { z } from "zod";
+import { ehEtapaDeEvento, ingressosDaEtapa } from "../services/ingressos-do-evento.js";
 import { asc, eq } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { funnels, funnelStages } from "../db/schema.js";
@@ -46,6 +47,8 @@ const INCLUDABLE = [
   "porProdutoPlataforma",
   "porOrigemTemperatura",
   "byStage",
+  /** Só na Captação de Evento: os lotes que explicam o total de ingressos. */
+  "ingressosPorLote",
 ] as const;
 type Includable = (typeof INCLUDABLE)[number];
 
@@ -174,6 +177,34 @@ export default fp(async function publicFunnelSalesRoutes(fastify) {
         subtypesConsidered: p.subtypesConsidered,
         manualSalesIncluded: p.manualSalesIncluded,
       };
+
+      /**
+       * Ingressos, só na Captação de Evento.
+       *
+       * Ingresso NÃO é venda: a Kiwify manda uma transação quando alguém compra
+       * três, então `totalVendas` subestima o público — medido no
+       * `bbe-pr2-ago-26`: 19 vendas, 22 ingressos.
+       *
+       * O campo entra sempre nesta etapa (e não atrás de `include`) porque, num
+       * evento, quantas pessoas vão é a pergunta — e um número que só aparece
+       * quando se sabe pedir não responde a quem não sabia que existia.
+       */
+      if (ehEtapaDeEvento(stage.stageType)) {
+        const ing = await ingressosDaEtapa(
+          fastify.db as never,
+          stage.id,
+          stage.projectId,
+          fastify.log,
+        );
+        out.ingressos = ing.total;
+        // O motivo sobe junto: "sem ingressos" e "não consegui perguntar"
+        // levam a ações diferentes, e um null mudo faria as duas parecerem
+        // a mesma coisa.
+        if (ing.total === null && ing.motivo) out.ingressosIndisponiveis = ing.motivo;
+        if (include.has("ingressosPorLote") && ing.porLote.length > 0) {
+          out.ingressosPorLote = ing.porLote;
+        }
+      }
       if (include.has("byDay")) out.byDay = p.byDay;
       if (include.has("porOrigem")) out.porOrigem = p.porOrigem;
       if (include.has("porCanal")) out.porCanal = p.porCanal;
