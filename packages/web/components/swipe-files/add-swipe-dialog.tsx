@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useRef, useState } from "react";
-import { Upload, Link2, Loader2, X, ImageIcon, Film, FileText } from "lucide-react";
+import { Upload, Link2, Loader2, X, ImageIcon, Film, FileText, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -21,8 +21,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
-  useCreateSwipeFile, useLinkPreview, useUploadToBucket, readMediaDimensions,
-  type AssetKind, type LinkPreview, type SwipeFacets,
+  useAnalisarSwipe, useCreateSwipeFile, useLinkPreview, useUploadToBucket, readMediaDimensions,
+  type AssetKind, type LinkPreview, type SugestaoDeSwipe, type SwipeFacets,
 } from "@/lib/hooks/use-swipe-files";
 
 const MAX_BYTES = 200 * 1024 * 1024;
@@ -30,6 +30,18 @@ const MAX_BYTES = 200 * 1024 * 1024;
 /** Sugestões que aparecem como chip — o time clica em vez de digitar. */
 const PLATAFORMAS = ["Meta", "Google", "TikTok", "YouTube", "Kwai", "Outro"];
 const FORMATOS = ["Reel", "Feed", "Story", "Carrossel", "VSL", "Landing page", "E-mail", "Criativo estático"];
+
+/**
+ * O que o modelo consegue enxergar — espelha `podeAnalisar` do servidor.
+ *
+ * Duplicado de propósito: o servidor recusa de qualquer forma, e aqui a lista
+ * serve só para não oferecer um botão que vai falhar. Um `fetch` para descobrir
+ * se cabe oferecer seria pior que a duplicação.
+ */
+function podeAnalisar(mime: string | undefined): boolean {
+  if (!mime) return false;
+  return mime.startsWith("image/") || mime === "application/pdf";
+}
 
 function fmtBytes(n: number): string {
   if (n >= 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
@@ -91,10 +103,13 @@ export function AddSwipeDialog({
 }) {
   const createSwipe = useCreateSwipeFile();
   const upload = useUploadToBucket();
+  const analisar = useAnalisarSwipe();
   const linkPreview = useLinkPreview();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [file, setFile] = useState<File | null>(null);
+  /** O que a IA sugeriu — para a tela dizer quais campos vieram dela. */
+  const [sugeridos, setSugeridos] = useState<Set<string>>(new Set());
   const [localPreview, setLocalPreview] = useState<string | null>(null);
   const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
   const [progress, setProgress] = useState(0);
@@ -130,6 +145,42 @@ export function AddSwipeDialog({
     setTags([]);
   }
 
+  /**
+   * Preenche o que estiver VAZIO com o que a IA sugeriu.
+   *
+   * Só o vazio: quem já digitou alguma coisa decidiu, e sobrescrever seria a
+   * ferramenta discordando de quem a acionou.
+   */
+  const aplicarSugestao = useCallback(
+    (sug: SugestaoDeSwipe) => {
+      const preenchidos = new Set<string>();
+      const por = (
+        atual: string,
+        valor: string | null,
+        set: (v: string) => void,
+        campo: string,
+      ) => {
+        if (!atual.trim() && valor) {
+          set(valor);
+          preenchidos.add(campo);
+        }
+      };
+      por(title, sug.titulo, setTitle, "titulo");
+      por(notes, sug.anotacoes, setNotes, "anotacoes");
+      por(brand, sug.marca, setBrand, "marca");
+      por(niche, sug.nicho, setNiche, "nicho");
+      por(platform, sug.plataforma, setPlatform, "plataforma");
+      por(format, sug.formato, setFormat, "formato");
+      if (tags.length === 0 && sug.tags.length > 0) {
+        setTags(sug.tags.slice(0, 20));
+        preenchidos.add("tags");
+      }
+      setSugeridos(preenchidos);
+      return preenchidos.size;
+    },
+    [title, notes, brand, niche, platform, format, tags],
+  );
+
   const aceitarArquivo = useCallback(
     async (f: File) => {
       if (!storageReady) {
@@ -158,6 +209,32 @@ export function AddSwipeDialog({
     },
     [storageReady, title],
   );
+
+  /**
+   * Pede à IA para catalogar o arquivo escolhido.
+   *
+   * Manual, não automático: analisar custa tempo e crédito, e quem já sabe o
+   * que está subindo não precisa esperar. O botão fica ao lado do arquivo, onde
+   * a decisão acontece.
+   */
+  async function pedirAnalise() {
+    if (!file) return;
+    try {
+      const { sugestao } = await analisar.mutateAsync({
+        file,
+        origem: sourceUrl.trim() || undefined,
+      });
+      const n = aplicarSugestao(sugestao);
+      toast.success(
+        n === 0
+          ? "A IA olhou, mas não achou nada além do que você já preencheu."
+          : `${n} campo${n > 1 ? "s" : ""} preenchido${n > 1 ? "s" : ""} — confira antes de salvar.`,
+      );
+    } catch (e) {
+      // A pessoa acabou de escolher o arquivo: o pior seria achar que perdeu.
+      toast.error(e instanceof Error ? e.message : "Não consegui analisar. Preencha à mão.");
+    }
+  }
 
   async function buscarPreview(url: string) {
     const clean = url.trim();
@@ -291,6 +368,36 @@ export function AddSwipeDialog({
                   {file && fmtBytes(file.size)}
                   {dims ? ` · ${dims.width}×${dims.height}` : ""}
                 </p>
+
+                {podeAnalisar(file?.type) ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={pedirAnalise}
+                    disabled={analisar.isPending || enviando}
+                  >
+                    {analisar.isPending ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Olhando a referência…
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-3.5 w-3.5" />
+                        Preencher com IA
+                      </>
+                    )}
+                  </Button>
+                ) : (
+                  file && (
+                    // Vídeo não passa pelo modelo, e dizer isso é melhor que um
+                    // botão que some sem explicação.
+                    <p className="text-[11px] text-muted-foreground">
+                      Vídeo não dá para analisar — preencha os campos abaixo.
+                    </p>
+                  )
+                )}
                 {enviando && progress > 0 && (
                   <div className="mx-auto max-w-[260px]">
                     <div className="h-1.5 overflow-hidden rounded-full bg-muted">
@@ -402,19 +509,23 @@ export function AddSwipeDialog({
 
           <div className="grid gap-3 sm:grid-cols-2">
             <CampoComSugestoes
-              id="swipe-brand" label="Marca" value={brand} onChange={setBrand}
+              id="swipe-brand" label={sugeridos.has("marca") ? "Marca ✨" : "Marca"}
+              value={brand} onChange={setBrand}
               sugestoes={facets.brand} placeholder="De quem é o anúncio"
             />
             <CampoComSugestoes
-              id="swipe-niche" label="Nicho" value={niche} onChange={setNiche}
+              id="swipe-niche" label={sugeridos.has("nicho") ? "Nicho ✨" : "Nicho"}
+              value={niche} onChange={setNiche}
               sugestoes={facets.niche} placeholder="Ex: finanças, saúde"
             />
             <CampoComSugestoes
-              id="swipe-platform" label="Plataforma" value={platform} onChange={setPlatform}
+              id="swipe-platform" label={sugeridos.has("plataforma") ? "Plataforma ✨" : "Plataforma"}
+              value={platform} onChange={setPlatform}
               sugestoes={[...new Set([...facets.platform, ...PLATAFORMAS])]}
             />
             <CampoComSugestoes
-              id="swipe-format" label="Formato" value={format} onChange={setFormat}
+              id="swipe-format" label={sugeridos.has("formato") ? "Formato ✨" : "Formato"}
+              value={format} onChange={setFormat}
               sugestoes={[...new Set([...facets.format, ...FORMATOS])]}
             />
           </div>

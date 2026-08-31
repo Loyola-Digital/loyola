@@ -8,6 +8,7 @@
  * 10MB do multipart da API e não ocupa memória do container.
  */
 
+import { useAuth } from "@clerk/nextjs";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -66,6 +67,8 @@ export interface LinkPreview {
 }
 
 const BASE = "/api/swipe-files";
+/** O `fetch` cru da análise não passa pelo apiClient: multipart precisa de FormData. */
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 export function useSwipeFiles(filters: SwipeFilters) {
   const apiClient = useApiClient();
@@ -236,5 +239,46 @@ export function readMediaDimensions(file: File): Promise<{ width: number; height
     }
     cleanup();
     resolve(null);
+  });
+}
+
+/** O que a IA sugere para preencher o formulário. `null` = ela não soube. */
+export interface SugestaoDeSwipe {
+  titulo: string | null;
+  anotacoes: string | null;
+  marca: string | null;
+  nicho: string | null;
+  plataforma: string | null;
+  formato: string | null;
+  tags: string[];
+}
+
+/**
+ * Manda o arquivo para a IA catalogar.
+ *
+ * O arquivo NÃO passa pelo bucket: a análise acontece antes de a pessoa decidir
+ * salvar, e subir para descartar depois deixaria lixo no R2 a cada tentativa.
+ */
+export function useAnalisarSwipe() {
+  const { getToken } = useAuth();
+  return useMutation({
+    mutationFn: async ({ file, origem }: { file: File; origem?: string }) => {
+      const form = new FormData();
+      form.append("file", file);
+      if (origem) form.append("origem", origem);
+
+      const token = await getToken();
+      const r = await fetch(`${API_URL}${BASE}/analisar`, {
+        method: "POST",
+        // Sem `Content-Type`: o browser precisa pôr o boundary do multipart.
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      });
+      if (!r.ok) {
+        const corpo = (await r.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(corpo?.error ?? "Não consegui analisar agora.");
+      }
+      return (await r.json()) as { sugestao: SugestaoDeSwipe };
+    },
   });
 }

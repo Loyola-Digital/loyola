@@ -15,6 +15,11 @@ import fp from "fastify-plugin";
 import { swipeFiles, users } from "../db/schema.js";
 import { fetchLinkPreview } from "../services/link-preview.js";
 import {
+  ErroDeAnalise,
+  analisarReferencia,
+  podeAnalisar,
+} from "../services/swipe-analise.js";
+import {
   MAX_UPLOAD_BYTES,
   deleteObject,
   isStorageConfigured,
@@ -199,6 +204,50 @@ export default fp(async function swipeFilesRoutes(fastify) {
       return reply
         .code(400)
         .send({ error: err instanceof Error ? err.message : "Falha ao preparar o upload" });
+    }
+  });
+
+  /**
+   * Lê a referência e sugere como catalogá-la.
+   *
+   * O arquivo vem por multipart e **não passa pelo bucket**: a análise acontece
+   * antes de a pessoa decidir salvar, e subir para descartar depois deixaria
+   * lixo no R2 a cada tentativa.
+   */
+  fastify.post(`${base}/analisar`, async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+
+    const arquivo = await request.file();
+    if (!arquivo) return reply.code(400).send({ error: "Envie a imagem ou o PDF." });
+
+    if (!podeAnalisar(arquivo.mimetype)) {
+      return reply.code(400).send({
+        error: "Só dá para analisar imagem ou PDF. Vídeo precisa ser catalogado à mão.",
+      });
+    }
+
+    const buffer = await arquivo.toBuffer();
+    if (buffer.length === 0) return reply.code(400).send({ error: "Arquivo vazio." });
+
+    // A origem vem como campo do multipart: uma landing page em PDF diz muito
+    // mais quando se sabe o domínio de onde veio.
+    const campos = arquivo.fields as Record<string, { value?: unknown } | undefined>;
+    const origem = typeof campos?.origem?.value === "string" ? campos.origem.value : undefined;
+
+    try {
+      const sugestao = await analisarReferencia(
+        fastify.claude.client,
+        { buffer, mimeType: arquivo.mimetype },
+        { nomeDoArquivo: arquivo.filename, origem },
+      );
+      return { sugestao };
+    } catch (err) {
+      fastify.log.error({ err, mime: arquivo.mimetype }, "analise de swipe file falhou");
+      // 502: a falha é do provedor, não do que o cliente mandou — a tela usa
+      // isso para oferecer o preenchimento manual em vez de culpar o arquivo.
+      return reply.code(502).send({
+        error: err instanceof ErroDeAnalise ? err.message : "Não consegui analisar agora.",
+      });
     }
   });
 
