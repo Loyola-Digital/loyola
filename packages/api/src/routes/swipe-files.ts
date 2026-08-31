@@ -30,6 +30,8 @@ import {
   testarEscrita,
   uploadDireto,
   type StorageConfig,
+  pareceplaceholder,
+  urlPublica,
 } from "../services/object-storage.js";
 
 const idParam = z.object({ id: z.string().uuid() });
@@ -79,6 +81,8 @@ const listColumns = {
   notes: swipeFiles.notes,
   assetKind: swipeFiles.assetKind,
   fileUrl: swipeFiles.fileUrl,
+  // A chave vem junto: é dela que sai a URL pública, não do `fileUrl`.
+  fileKey: swipeFiles.fileKey,
   fileMime: swipeFiles.fileMime,
   // O card de PDF mostra o tamanho no lugar da miniatura que não existe.
   fileSizeBytes: swipeFiles.fileSizeBytes,
@@ -168,7 +172,9 @@ export default fp(async function swipeFilesRoutes(fastify) {
       [...new Set(vals.filter((v): v is string => !!v))].sort((a, b) => a.localeCompare(b, "pt-BR"));
 
     return {
-      items: rows,
+      // A URL sai da CHAVE, não do que está gravado: assim, arrumar a variável
+      // de ambiente conserta as linhas antigas junto com as novas.
+      items: rows.map((r) => ({ ...r, fileUrl: urlPublica(r, fastify.config.STORAGE_PUBLIC_URL) })),
       facets: {
         platform: uniq(facetRows.map((r) => r.platform)),
         format: uniq(facetRows.map((r) => r.format)),
@@ -281,6 +287,21 @@ export default fp(async function swipeFilesRoutes(fastify) {
         return reply.code(503).send({
           error: "Upload indisponível: bucket não configurado no servidor.",
           code: "STORAGE_NOT_CONFIGURED",
+        });
+      }
+
+      // Base ainda no valor de exemplo: recusar ANTES de subir.
+      //
+      // O contrário já aconteceu — o arquivo foi para o bucket, a tela disse
+      // que deu certo, e o link salvo apontava para `seuprojeto.supabase.co`.
+      // Falhar aqui custa uma tentativa; deixar passar custa uma referência que
+      // parece existir e não abre.
+      if (pareceplaceholder(fastify.config.STORAGE_PUBLIC_URL)) {
+        return reply.code(503).send({
+          error:
+            "STORAGE_PUBLIC_URL ainda está com o valor de exemplo no servidor. " +
+            "O arquivo subiria, mas o link não abriria.",
+          code: "STORAGE_PUBLIC_URL_PLACEHOLDER",
         });
       }
 

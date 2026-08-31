@@ -319,6 +319,38 @@ export function pareceplaceholder(url: string | undefined): boolean {
   return PLACEHOLDERS.some((p) => u.includes(p));
 }
 
+/**
+ * A URL pública de um arquivo, montada na LEITURA.
+ *
+ * ## Por que não guardar a URL pronta
+ *
+ * Guardar era o que fazíamos, e custou caro: um deploy com `STORAGE_PUBLIC_URL`
+ * ainda no valor de exemplo gravou `https://seuprojeto.supabase.co/…` dentro do
+ * banco. Corrigir a variável depois não consertou nada — a URL errada já estava
+ * congelada na linha, e o link continuou morto.
+ *
+ * A chave (`swipe/uuid.pdf`) é o que de fato identifica o objeto, e ela nunca
+ * muda. O host é configuração, e configuração muda: troca de bucket, de
+ * provedor, de domínio. Derivar na leitura faz com que **arrumar a variável
+ * arrume todas as linhas de uma vez**, inclusive as que já estavam quebradas.
+ *
+ * O `fileUrl` gravado vira só fallback, para o que não tem chave: link externo
+ * colado à mão, e o que foi salvo antes desta mudança.
+ */
+export function urlPublica(
+  linha: { fileKey?: string | null; fileUrl?: string | null },
+  publicUrl?: string,
+): string | null {
+  const base = (publicUrl ?? "").replace(/\/+$/, "");
+  // Sem chave ou sem base configurada, o que estiver gravado é o melhor que há.
+  if (!linha.fileKey || !base) return linha.fileUrl ?? null;
+  // Base ainda no valor de exemplo: manter o que está gravado seria trocar um
+  // link morto por outro. Melhor devolver o gravado e deixar o diagnóstico
+  // (`/storage-check`) dizer o que está errado.
+  if (pareceplaceholder(base)) return linha.fileUrl ?? null;
+  return `${base}/${linha.fileKey}`;
+}
+
 export async function checarStorage(cfg: StorageConfig): Promise<{
   ok: boolean;
   bucket: string | null;
