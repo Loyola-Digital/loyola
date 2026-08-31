@@ -30,6 +30,7 @@
 import { useEffect, useRef, useState } from "react";
 import { FileText, Loader2 } from "lucide-react";
 import { motivoDaFalha, type CausaDaFalha } from "@/lib/swipe/motivo-da-falha";
+import { enquadrar } from "@/lib/swipe/enquadramento";
 
 /** Largura do bitmap. O card tem ~300px; 600 cobre telas retina sem exagero. */
 const LARGURA = 600;
@@ -140,9 +141,14 @@ export function PdfCapa({
       const ctx = canvas?.getContext("2d");
       if (!canvas || !ctx) return;
 
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      setProporcao(viewport.width / viewport.height);
+      // O canvas é o recorte. Uma landing page em PDF tem uma página só, de
+      // milhares de pixels: desenhá-la inteira daria uma tira na grade e ~14 MB
+      // de bitmap. Encolher o canvas faz o pdf.js clipar o excesso — o mesmo
+      // resultado na tela, sem pagar pelo que ninguém vê.
+      const quadro = enquadrar(base.width, base.height, LARGURA);
+      canvas.width = quadro.largura;
+      canvas.height = quadro.altura;
+      setProporcao(quadro.largura / quadro.altura);
 
       await pagina.render({ canvas, canvasContext: ctx, viewport }).promise;
       if (!cancelado) setEstado({ fase: "pronto" });
@@ -196,7 +202,7 @@ export function PdfCapa({
       <canvas
         ref={canvasRef}
         aria-label={`Primeira página de ${titulo}`}
-        className={`h-full w-full object-contain transition-opacity duration-200 ${
+        className={`h-full w-full object-cover object-top transition-opacity duration-200 ${
           estado.fase === "pronto" ? "opacity-100" : "opacity-0"
         }`}
       />
