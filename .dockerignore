@@ -1,0 +1,61 @@
+# O que NÃO vai para a imagem.
+#
+# ## Por que este arquivo existe
+#
+# Não havia `.dockerignore`, e o deploy passou a morrer em `exporting layers`
+# sem mensagem — o sintoma clássico de disco cheio no servidor de build.
+#
+# O Dockerfile do nixpacks faz `COPY . /app` **três vezes** (install, build e
+# start). Sem esta lista, cada uma copia o repositório inteiro, e a conta é o
+# contexto multiplicado por três, somado ao `node_modules` que o `pnpm i` cria
+# dentro da imagem.
+#
+# ## O que fica de fora, e o que NÃO pode sair
+#
+# `squads/` FICA: a API lê os Minds de lá em runtime (`MINDS_BASE_PATH`, com
+# default `./squads`). Excluir derrubaria o chat.
+
+# Dependências e artefatos — reinstalados/regerados dentro da imagem
+node_modules
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+.pnpm-store
+
+# Histórico: 39 MB que nenhuma etapa do build lê
+.git
+.github
+.gitignore
+
+# Framework de processo do AIOX — 34 MB, nada disso roda em produção
+.aiox-core
+.aiox
+.claude
+
+# Documentação e specs — 7 MB, só um script auxiliar as escreve
+docs
+*.md
+!README.md
+
+# Ambiente e segredo: o Coolify injeta as variáveis por build-arg
+.env
+.env.*
+!.env.example
+
+# Ferramentas de desenvolvimento
+.vscode
+.idea
+coverage
+**/*.test.ts
+**/*.test.tsx
+**/__tests__
+tests
+e2e
+
+# Pacotes que não vão ao ar por esta imagem
+packages/video
+scripts
+
+# Bundle do MCP: é vendorizado no fork do openclaw, não roda aqui
+packages/mcp/loyola-mcp-bundle.cjs
