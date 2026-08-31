@@ -48,6 +48,15 @@ export const MIMES_DE_IMAGEM = new Set([
 ]);
 export const MIME_PDF = "application/pdf";
 
+/** O mínimo que este módulo pede do cliente — o que o teste precisa simular. */
+export interface ClienteDeAnalise {
+  messages: {
+    stream: (p: Anthropic.MessageCreateParamsNonStreaming) => {
+      finalMessage: () => Promise<Anthropic.Message>;
+    };
+  };
+}
+
 export interface SugestaoDeSwipe {
   titulo: string | null;
   anotacoes: string | null;
@@ -180,7 +189,7 @@ export function motivoLegivel(erro: unknown): string {
  * salva em PDF diz muito mais quando se sabe o domínio de onde veio.
  */
 export async function analisarReferencia(
-  client: { messages: { create: (p: Anthropic.MessageCreateParamsNonStreaming) => Promise<Anthropic.Message> } },
+  client: ClienteDeAnalise,
   arquivo: { buffer: Buffer; mimeType: string },
   contexto?: { nomeDoArquivo?: string; origem?: string },
 ): Promise<SugestaoDeSwipe> {
@@ -215,29 +224,42 @@ export async function analisarReferencia(
 
   let resposta: Anthropic.Message;
   try {
-    resposta = await client.messages.create({
-      model: MODELO,
-      max_tokens: 1024,
-      system: INSTRUCOES,
-      tools: [FERRAMENTA],
-      // Força a ferramenta: sem isso o modelo às vezes responde em prosa, e aí
-      // a catalogação vira parsing de texto livre.
-      tool_choice: { type: "tool", name: FERRAMENTA.name },
-      messages: [
-        {
-          role: "user",
-          content: [
-            ...conteudo,
-            {
-              type: "text",
-              text: pistas.length
-                ? `Catalogue esta referência.\n${pistas.join("\n")}`
-                : "Catalogue esta referência.",
-            },
-          ],
-        },
-      ],
-    });
+    /**
+     * `stream` e não `create`, e o motivo é a rede, não a interface.
+     *
+     * Ler um PDF de alguns megabytes leva de 20 a 60 segundos — medido: 17 s
+     * para 0,45 MB. Uma requisição que não manda **nada** nesse tempo é cortada
+     * pelo proxy, e a tela fica pendurada sem erro nem resultado. O stream
+     * mantém bytes fluindo, então a conexão nunca parece ociosa.
+     *
+     * `finalMessage()` devolve a mensagem completa, como o `create` faria: o
+     * ganho está no meio do caminho, não no fim.
+     */
+    resposta = await client.messages
+      .stream({
+        model: MODELO,
+        max_tokens: 1024,
+        system: INSTRUCOES,
+        tools: [FERRAMENTA],
+        // Força a ferramenta: sem isso o modelo às vezes responde em prosa, e
+        // aí a catalogação vira parsing de texto livre.
+        tool_choice: { type: "tool", name: FERRAMENTA.name },
+        messages: [
+          {
+            role: "user",
+            content: [
+              ...conteudo,
+              {
+                type: "text",
+                text: pistas.length
+                  ? `Catalogue esta referência.\n${pistas.join("\n")}`
+                  : "Catalogue esta referência.",
+              },
+            ],
+          },
+        ],
+      })
+      .finalMessage();
   } catch (erro) {
     throw new ErroDeAnalise(motivoLegivel(erro));
   }

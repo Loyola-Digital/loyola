@@ -19,14 +19,20 @@ import {
 
 const IMAGEM = { buffer: Buffer.from("fake"), mimeType: "image/png" };
 
+/**
+ * Um cliente de mentira no formato de STREAM.
+ *
+ * A chamada real usa `messages.stream(...).finalMessage()` — sem isso, uma
+ * análise de 40 segundos é cortada pelo proxy no meio.
+ */
 function clienteQueResponde(input: Record<string, unknown>) {
-  const create = vi.fn(
-    async (_p: Anthropic.MessageCreateParamsNonStreaming) =>
+  const create = vi.fn((_p: Anthropic.MessageCreateParamsNonStreaming) => ({
+    finalMessage: async () =>
       ({
         content: [{ type: "tool_use", name: "catalogar_referencia", id: "t", input }],
       }) as unknown as Anthropic.Message,
-  );
-  return { cliente: { messages: { create } }, create };
+  }));
+  return { cliente: { messages: { stream: create } }, create };
 }
 
 describe("o que dá para analisar", () => {
@@ -75,8 +81,10 @@ describe("campo que não se sabe fica VAZIO", () => {
   });
 
   it("resposta sem ferramenta devolve tudo vazio, não quebra", async () => {
-    const create = vi.fn(async () => ({ content: [{ type: "text", text: "sei lá" }] }) as never);
-    const r = await analisarReferencia({ messages: { create } }, IMAGEM);
+    const create = vi.fn(() => ({
+      finalMessage: async () => ({ content: [{ type: "text", text: "sei lá" }] }) as never,
+    }));
+    const r = await analisarReferencia({ messages: { stream: create } }, IMAGEM);
     expect(r).toEqual({
       titulo: null,
       anotacoes: null,
@@ -158,10 +166,14 @@ describe("falha diz quem resolve", () => {
   });
 
   it("a falha da API vira ErroDeAnalise com a frase legível", async () => {
-    const create = vi.fn(async () => {
-      throw Object.assign(new Error("credit balance is too low"), { status: 400 });
-    });
-    await expect(analisarReferencia({ messages: { create } }, IMAGEM)).rejects.toThrow(/sem saldo/i);
+    const create = vi.fn(() => ({
+      finalMessage: async () => {
+        throw Object.assign(new Error("credit balance is too low"), { status: 400 });
+      },
+    }));
+    await expect(analisarReferencia({ messages: { stream: create } }, IMAGEM)).rejects.toThrow(
+      /sem saldo/i,
+    );
   });
 });
 
