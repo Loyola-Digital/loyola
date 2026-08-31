@@ -181,6 +181,84 @@ export default fp(async function swipeFilesRoutes(fastify) {
   });
 
   /**
+   * Lê a referência e sugere como catalogá-la, em NDJSON.
+   *
+   * O arquivo vem por multipart e **não passa pelo bucket**: a análise acontece
+   * antes de a pessoa decidir salvar, e subir para descartar depois deixaria
+   * lixo no bucket a cada tentativa.
+   *
+   * ## Por que NDJSON, para uma resposta só
+   *
+   * Ler um PDF leva de 20 a 60 segundos — medido: 17 s para 0,45 MB. Um POST
+   * que não manda nada nesse tempo é cortado pelo proxy, e a tela fica pendurada
+   * sem erro nem resultado. Foi o que aconteceu. Mandar um passo assim que cada
+   * etapa começa mantém a conexão viva E diz o que está acontecendo — a mesma
+   * coisa que resolveu o agente do BI.
+   */
+  fastify.post(`${base}/analisar`, async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+
+    const arquivo = await request.file();
+    if (!arquivo) return reply.code(400).send({ error: "Envie a imagem ou o PDF." });
+
+    if (!podeAnalisar(arquivo.mimetype)) {
+      return reply.code(400).send({
+        error: "Só dá para analisar imagem ou PDF. Vídeo precisa ser catalogado à mão.",
+      });
+    }
+
+    const buffer = await arquivo.toBuffer();
+    if (buffer.length === 0) return reply.code(400).send({ error: "Arquivo vazio." });
+
+    // A origem vem como campo do multipart: uma landing page em PDF diz muito
+    // mais quando se sabe o domínio de onde veio.
+    const campos = arquivo.fields as Record<string, { value?: unknown } | undefined>;
+    const origem = typeof campos?.origem?.value === "string" ? campos.origem.value : undefined;
+
+    // Daqui em diante a resposta é do socket. Os headers já acumulados vão
+    // junto — é onde mora o `Access-Control-Allow-Origin`.
+    reply.hijack();
+    reply.raw.writeHead(200, {
+      ...(reply.getHeaders() as Record<string, number | string | string[]>),
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Accel-Buffering": "no",
+    });
+
+    const escrever = (linha: unknown) => {
+      if (!reply.raw.writableEnded) reply.raw.write(`${JSON.stringify(linha)}\n`);
+    };
+
+    escrever({ tipo: "lendo", bytes: buffer.length });
+
+    /**
+     * Um sinal a cada 10 s enquanto o modelo pensa.
+     *
+     * O stream para a Anthropic mantém AQUELA conexão viva; esta aqui é outra.
+     * Sem o pulso, o proxy entre o navegador e nós corta pelo mesmo motivo.
+     */
+    const pulso = setInterval(() => escrever({ tipo: "analisando" }), 10_000);
+
+    try {
+      const sugestao = await analisarReferencia(
+        fastify.claude.client,
+        { buffer, mimeType: arquivo.mimetype },
+        { nomeDoArquivo: arquivo.filename, origem },
+      );
+      escrever({ tipo: "pronto", sugestao });
+    } catch (err) {
+      fastify.log.error({ err, mime: arquivo.mimetype }, "analise de swipe file falhou");
+      escrever({
+        tipo: "erro",
+        error: err instanceof ErroDeAnalise ? err.message : "Não consegui analisar agora.",
+      });
+    } finally {
+      clearInterval(pulso);
+      reply.raw.end();
+    }
+  });
+
+  /**
    * Sobe o arquivo PELO SERVIDOR.
    *
    * O caminho anterior (URL assinada, navegador → bucket) é mais barato, mas o

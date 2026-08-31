@@ -104,6 +104,9 @@ export function AddSwipeDialog({
   const createSwipe = useCreateSwipeFile();
   const upload = useUploadToBucket();
   const analisar = useAnalisarSwipe();
+  // O que a IA está fazendo agora. Um PDF leva de 20 a 60 s: um spinner mudo
+  // durante um minuto é indistinguível de uma tela travada.
+  const [passoDaIa, setPassoDaIa] = useState<string | null>(null);
   const linkPreview = useLinkPreview();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -219,10 +222,15 @@ export function AddSwipeDialog({
    */
   async function pedirAnalise() {
     if (!file) return;
+    setPassoDaIa("Enviando o arquivo…");
     try {
       const { sugestao } = await analisar.mutateAsync({
         file,
         origem: sourceUrl.trim() || undefined,
+        onPasso: (p) => {
+          if (p.tipo === "lendo") setPassoDaIa(`Lendo ${fmtBytes(p.bytes)}…`);
+          if (p.tipo === "analisando") setPassoDaIa("A IA ainda está lendo…");
+        },
       });
       const n = aplicarSugestao(sugestao);
       toast.success(
@@ -233,6 +241,8 @@ export function AddSwipeDialog({
     } catch (e) {
       // A pessoa acabou de escolher o arquivo: o pior seria achar que perdeu.
       toast.error(e instanceof Error ? e.message : "Não consegui analisar. Preencha à mão.");
+    } finally {
+      setPassoDaIa(null);
     }
   }
 
@@ -380,7 +390,7 @@ export function AddSwipeDialog({
                     {analisar.isPending ? (
                       <>
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        Olhando a referência…
+                        {passoDaIa ?? "Olhando a referência…"}
                       </>
                     ) : (
                       <>

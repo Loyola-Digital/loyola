@@ -270,26 +270,114 @@ export interface SugestaoDeSwipe {
  * O arquivo NÃO passa pelo bucket: a análise acontece antes de a pessoa decidir
  * salvar, e subir para descartar depois deixaria lixo no R2 a cada tentativa.
  */
+/** O que o servidor manda enquanto trabalha. Só `pronto` traz resultado. */
+export type PassoDaAnalise =
+  | { tipo: "lendo"; bytes: number }
+  | { tipo: "analisando" }
+  | { tipo: "pronto"; sugestao: SugestaoDeSwipe }
+  | { tipo: "erro"; error: string };
+
+/**
+ * Manda o arquivo e acompanha a leitura passo a passo.
+ *
+ * A resposta é NDJSON e não JSON, porque um PDF leva de 20 a 60 segundos para
+ * ser lido: uma requisição muda esse tempo todo é cortada no meio do caminho, e
+ * a tela fica pendurada sem erro nem resultado. Cada linha que chega é prova de
+ * que ainda está vivo — e vira texto na tela, que é o que a pessoa queria saber.
+ *
+ * `onPasso` é opcional de propósito: quem só quer o resultado ignora.
+ */
 export function useAnalisarSwipe() {
   const { getToken } = useAuth();
   return useMutation({
-    mutationFn: async ({ file, origem }: { file: File; origem?: string }) => {
+    mutationFn: async ({
+      file,
+      origem,
+      onPasso,
+    }: {
+      file: File;
+      origem?: string;
+      onPasso?: (p: PassoDaAnalise) => void;
+    }) => {
       const form = new FormData();
       form.append("file", file);
       if (origem) form.append("origem", origem);
 
       const token = await getToken();
-      const r = await fetch(`${API_URL}${BASE}/analisar`, {
-        method: "POST",
-        // Sem `Content-Type`: o browser precisa pôr o boundary do multipart.
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: form,
-      });
+
+      // Um teto absoluto. Sem ele, uma conexão que fica aberta sem mandar nada
+      // deixa o botão girando para sempre — que é pior que dar erro, porque
+      // ninguém sabe se pode preencher à mão.
+      const relogio = new AbortController();
+      const prazo = setTimeout(() => relogio.abort(), 3 * 60 * 1000);
+
+      let r: Response;
+      try {
+        r = await fetch(`${API_URL}${BASE}/analisar`, {
+          method: "POST",
+          // Sem `Content-Type`: o browser precisa pôr o boundary do multipart.
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          body: form,
+          signal: relogio.signal,
+        });
+      } catch (e) {
+        clearTimeout(prazo);
+        if (relogio.signal.aborted) {
+          throw new Error("A leitura passou de 3 minutos. Preencha à mão — nada se perdeu.");
+        }
+        throw e;
+      }
+
+      // Erro de validação (arquivo vazio, tipo errado) ainda vem como JSON: são
+      // respostas imediatas, que não precisam de stream nenhum.
       if (!r.ok) {
+        clearTimeout(prazo);
         const corpo = (await r.json().catch(() => null)) as { error?: string } | null;
         throw new Error(corpo?.error ?? "Não consegui analisar agora.");
       }
-      return (await r.json()) as { sugestao: SugestaoDeSwipe };
+
+      try {
+        const leitor = r.body?.getReader();
+        if (!leitor) throw new Error("Não consegui ler a resposta.");
+
+        const decodificador = new TextDecoder();
+        let sobra = "";
+        let resultado: SugestaoDeSwipe | null = null;
+
+        const processar = (linha: string) => {
+          const texto = linha.trim();
+          if (!texto) return;
+          let passo: PassoDaAnalise;
+          try {
+            passo = JSON.parse(texto) as PassoDaAnalise;
+          } catch {
+            // Linha truncada não derruba o que já chegou.
+            return;
+          }
+          onPasso?.(passo);
+          if (passo.tipo === "pronto") resultado = passo.sugestao;
+          if (passo.tipo === "erro") throw new Error(passo.error);
+        };
+
+        for (;;) {
+          const { done, value } = await leitor.read();
+          if (done) break;
+          sobra += decodificador.decode(value, { stream: true });
+          const linhas = sobra.split("\n");
+          // A última pode estar pela metade — fica para a próxima rodada.
+          sobra = linhas.pop() ?? "";
+          for (const l of linhas) processar(l);
+        }
+        if (sobra) processar(sobra);
+
+        if (!resultado) {
+          // Conexão fechou sem `pronto` nem `erro`: alguém cortou no meio.
+          throw new Error("A conexão caiu antes de terminar. Tente de novo.");
+        }
+        return { sugestao: resultado as SugestaoDeSwipe };
+      } finally {
+        clearTimeout(prazo);
+      }
     },
   });
 }
