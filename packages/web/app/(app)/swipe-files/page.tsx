@@ -96,9 +96,13 @@ function SwipeCard({
               className="w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
               style={ratio ? { aspectRatio: String(ratio) } : undefined}
             />
-          ) : item.assetKind === "pdf" && item.fileUrl ? (
+          ) : item.assetKind === "pdf" ? (
             // A primeira página como capa: numa grade, é o que faz reconhecer.
             // Doze ícones iguais de PDF não distinguem nada.
+            //
+            // Entra mesmo sem `fileUrl`: o PDF sem link é sintoma de storage
+            // mal configurado, e a capa sabe dizer isso. O ícone genérico
+            // escondia o problema atrás de algo que parecia normal.
             <PdfCapa url={item.fileUrl} titulo={item.title} tamanhoBytes={item.fileSizeBytes} />
           ) : (
             <div className="flex aspect-video items-center justify-center">
