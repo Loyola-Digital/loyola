@@ -32,6 +32,7 @@
     "jspdf": "^4.2.1",
     "lucide-react": "^0.577.0",
     "next": "^15",
+    "pdfjs-dist": "^6.3.289",
     "postcss": "^8.5.8",
     "radix-ui": "^1.4.3",
     "react": "^19",
