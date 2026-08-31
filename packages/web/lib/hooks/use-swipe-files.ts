@@ -282,3 +282,74 @@ export function useAnalisarSwipe() {
     },
   });
 }
+
+// ============================================================
+// Aviso no ClickUp
+// ============================================================
+
+export interface ConfigDoAvisoNoClickUp {
+  id: string;
+  enabled: boolean;
+  channelId: string;
+  channelName: string | null;
+  videoChannelId: string | null;
+  videoChannelName: string | null;
+  mentionUsers: { id: string; username: string }[];
+}
+
+export function useAvisoNoClickUp() {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["swipe-clickup-alert"],
+    queryFn: () =>
+      apiClient<{ config: ConfigDoAvisoNoClickUp | null; clickupPronto: boolean }>(
+        `${BASE}/clickup-alert`,
+      ),
+  });
+}
+
+export function useSalvarAvisoNoClickUp() {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (cfg: Omit<ConfigDoAvisoNoClickUp, "id">) =>
+      apiClient<ConfigDoAvisoNoClickUp>(`${BASE}/clickup-alert`, {
+        method: "PUT",
+        body: JSON.stringify(cfg),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["swipe-clickup-alert"] }),
+  });
+}
+
+/** Manda uma mensagem de teste — é como se confere o canal sem subir nada. */
+export function useTestarAvisoNoClickUp() {
+  const apiClient = useApiClient();
+  return useMutation({
+    mutationFn: () =>
+      apiClient<{ ok: true }>(`${BASE}/clickup-alert/test`, { method: "POST", body: "{}" }),
+  });
+}
+
+/** Canais do workspace. Só busca quando o painel abre — são ~100 canais. */
+export function useCanaisDoClickUp(enabled: boolean) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["swipe-clickup-channels"],
+    queryFn: () => apiClient<{ channels: { id: string; name: string }[] }>(`${BASE}/clickup-channels`),
+    enabled,
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+export function useMembrosDoClickUp(enabled: boolean) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["swipe-clickup-members"],
+    queryFn: () =>
+      apiClient<{ members: { id: string; username: string; email: string | null }[] }>(
+        `${BASE}/clickup-members`,
+      ),
+    enabled,
+    staleTime: 10 * 60 * 1000,
+  });
+}

@@ -13,7 +13,7 @@
 
 import { useState } from "react";
 import {
-  AlertCircle, Library, Plus, Search, Star, X, Play, Link2, ImageIcon, FileText, Filter,
+  AlertCircle, Bell, Library, Plus, Search, Star, X, Play, Link2, ImageIcon, FileText, Filter,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ import {
   type SwipeFile, type SwipeFilters, type AssetKind,
 } from "@/lib/hooks/use-swipe-files";
 import { AddSwipeDialog } from "@/components/swipe-files/add-swipe-dialog";
+import { ClickUpAlertDialog } from "@/components/swipe-files/clickup-alert-dialog";
 import { SwipeLightbox } from "@/components/swipe-files/swipe-lightbox";
 
 /** Tamanho legível. O card de PDF o mostra no lugar da miniatura que não existe. */
@@ -172,6 +173,7 @@ export default function SwipeFilesPage() {
   const [filters, setFilters] = useState<SwipeFilters>({});
   const [showFilters, setShowFilters] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [avisoOpen, setAvisoOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<SwipeFile | null>(null);
 
@@ -210,10 +212,21 @@ export default function SwipeFilesPage() {
             Biblioteca de referências de anúncios do time. Print, vídeo ou link — tudo num lugar só.
           </p>
         </div>
-        <Button onClick={() => setAddOpen(true)} className="gap-1.5">
-          <Plus className="h-4 w-4" />
-          Nova referência
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setAvisoOpen(true)}
+            title="Avisar no ClickUp quando entrar referência nova"
+            aria-label="Configurar aviso no ClickUp"
+          >
+            <Bell className="h-4 w-4" />
+          </Button>
+          <Button onClick={() => setAddOpen(true)} className="gap-1.5">
+            <Plus className="h-4 w-4" />
+            Nova referência
+          </Button>
+        </div>
       </div>
 
       {/* Uma linha de filtros acima de tudo que ela recorta. */}
@@ -329,6 +342,8 @@ export default function SwipeFilesPage() {
           {items.length === 300 ? " (mostrando as 300 mais recentes)" : ""}
         </p>
       )}
+
+      <ClickUpAlertDialog open={avisoOpen} onOpenChange={setAvisoOpen} />
 
       <AddSwipeDialog
         open={addOpen}
