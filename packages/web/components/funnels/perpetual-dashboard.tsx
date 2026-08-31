@@ -114,6 +114,7 @@ import {
 } from "@/lib/hooks/use-perpetual-sales-data";
 import type { Funnel, FunnelCampaign, StageType } from "@loyola-x/shared";
 import { StageSalesSection } from "./stage-sales-section";
+import { PerpetualHotColdSection } from "./perpetual-hot-cold-section";
 import { PerpetualUpsellSection } from "./perpetual-upsell-section";
 import { PerpetualUpsellWizardDialog } from "./perpetual-upsell-wizard-dialog";
 import { usePerpetualUpsellSpreadsheet } from "@/lib/hooks/use-perpetual-upsell";
@@ -2843,6 +2844,10 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           <PerpetualComboCard ob={salesData.orderBump} />
         </div>
       )}
+
+      {/* Os donuts vêm ANTES da tabela: a distribuição é a leitura de dois
+          segundos, e a tabela é onde se vai conferir o detalhe depois. */}
+      <PerpetualHotColdSection campaigns={funnelCampaigns} publicos={salesData?.publicos} />
 
       <PerpetualPublicosTable
         publicos={salesData?.publicos}
