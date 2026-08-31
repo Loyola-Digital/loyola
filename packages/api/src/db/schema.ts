@@ -3576,3 +3576,34 @@ export const biDashboards = pgTable(
   },
   (table) => [index("idx_bi_dashboards_project").on(table.projectId)],
 );
+
+/**
+ * Aviso no ClickUp quando entra referência nova no Swipe Files.
+ *
+ * Configuração ÚNICA, sem `projectId`: o Swipe Files é acervo do time e não é
+ * escopado por projeto — referência boa serve qualquer cliente. A unicidade
+ * é garantida por índice parcial (migration 0125).
+ */
+export const swipeClickupAlerts = pgTable("swipe_clickup_alerts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  enabled: boolean("enabled").notNull().default(true),
+  /** Canal padrão — recebe tudo que não cair numa regra específica. */
+  channelId: text("channel_id").notNull(),
+  channelName: text("channel_name"),
+  /**
+   * Vídeo tem canal próprio no ClickUp (`referências-videos`).
+   *
+   * Opcional: sem ele, vídeo vai para o canal padrão como o resto. É melhor um
+   * aviso no canal errado que aviso nenhum.
+   */
+  videoChannelId: text("video_channel_id"),
+  videoChannelName: text("video_channel_name"),
+  /** Colaboradores mencionados: `[{ id, username }]`. */
+  mentionUsers: jsonb("mention_users")
+    .$type<{ id: string; username: string }[]>()
+    .notNull()
+    .default([]),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});

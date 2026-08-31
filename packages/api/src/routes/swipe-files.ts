@@ -12,13 +12,14 @@
 import { z } from "zod";
 import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { swipeFiles, users } from "../db/schema.js";
+import { swipeClickupAlerts, swipeFiles, users } from "../db/schema.js";
 import { fetchLinkPreview } from "../services/link-preview.js";
 import {
   ErroDeAnalise,
   analisarReferencia,
   podeAnalisar,
 } from "../services/swipe-analise.js";
+import { avisarNoClickUp } from "../services/swipe-clickup-aviso.js";
 import {
   MAX_UPLOAD_BYTES,
   deleteObject,
@@ -299,6 +300,17 @@ export default fp(async function swipeFilesRoutes(fastify) {
       }
     }
 
+    // O nome de quem subiu, para o aviso não sair anônimo. Falha aqui não
+    // impede nada: sem nome o aviso ainda é útil.
+    const [autor] = request.userId
+      ? await fastify.db
+          .select({ name: users.name })
+          .from(users)
+          .where(eq(users.id, request.userId))
+          .limit(1)
+      : [];
+    const autorDoAviso = autor?.name ?? null;
+
     // O insert era a única operação sem tratamento na rota: qualquer recusa do
     // banco virava 500 sem corpo, e o navegador mostrava só o número.
     try {
@@ -328,6 +340,23 @@ export default fp(async function swipeFilesRoutes(fastify) {
         createdBy: request.userId,
       })
       .returning({ id: swipeFiles.id });
+
+      // O aviso sai DEPOIS de gravar, e sem `await` no caminho crítico: quem
+      // subiu já tem a referência salva, e esperar o ClickUp só atrasaria a
+      // tela por uma coisa que não muda o resultado.
+      void avisarNoClickUp(fastify as never, {
+        id: created!.id,
+        titulo: d.title,
+        assetKind: d.assetKind,
+        autor: autorDoAviso,
+        notas: d.notes ?? null,
+        marca: d.brand ?? null,
+        nicho: d.niche ?? null,
+        plataforma: d.platform ?? null,
+        formato: d.format ?? null,
+        tags: d.tags ?? [],
+        origem: d.sourceUrl ?? null,
+      });
 
       return reply.code(201).send(created);
     } catch (err) {
@@ -394,6 +423,133 @@ export default fp(async function swipeFilesRoutes(fastify) {
       } catch (err) {
         fastify.log.warn({ err, key: row.fileKey }, "[swipe-files] objeto não removido do bucket");
       }
+    }
+    return { ok: true };
+  });
+
+  // ============================================================
+  // Aviso no ClickUp — configuração
+  // ============================================================
+
+  const configBody = z.object({
+    enabled: z.boolean().default(true),
+    channelId: z.string().trim().min(1).max(120),
+    channelName: z.string().trim().max(200).optional(),
+    videoChannelId: z.string().trim().max(120).nullish(),
+    videoChannelName: z.string().trim().max(200).nullish(),
+    mentionUsers: z
+      .array(z.object({ id: z.string().min(1), username: z.string().min(1) }))
+      .max(10)
+      .default([]),
+  });
+
+  fastify.get(`${base}/clickup-alert`, async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const [cfg] = await fastify.db.select().from(swipeClickupAlerts).limit(1);
+    return {
+      config: cfg ?? null,
+      // A tela precisa saber se dá para configurar antes de oferecer o formulário.
+      clickupPronto: fastify.clickupService.isConfigured(),
+    };
+  });
+
+  fastify.put(`${base}/clickup-alert`, async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const body = configBody.safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: "Dados inválidos" });
+
+    const valores = {
+      enabled: body.data.enabled,
+      channelId: body.data.channelId,
+      channelName: body.data.channelName ?? null,
+      videoChannelId: body.data.videoChannelId ?? null,
+      videoChannelName: body.data.videoChannelName ?? null,
+      mentionUsers: body.data.mentionUsers,
+      updatedAt: new Date(),
+    };
+
+    // Configuração única: atualiza a que existe ou cria a primeira. Um `upsert`
+    // por id não serviria — o id é gerado, e quem salva não o conhece.
+    const [existente] = await fastify.db
+      .select({ id: swipeClickupAlerts.id })
+      .from(swipeClickupAlerts)
+      .limit(1);
+
+    const [salvo] = existente
+      ? await fastify.db
+          .update(swipeClickupAlerts)
+          .set(valores)
+          .where(eq(swipeClickupAlerts.id, existente.id))
+          .returning()
+      : await fastify.db
+          .insert(swipeClickupAlerts)
+          .values({ ...valores, createdBy: request.userId ?? null })
+          .returning();
+
+    return salvo;
+  });
+
+  /**
+   * Canais e membros do ClickUp, SEM projeto na URL.
+   *
+   * As rotas equivalentes em `event-payment-alerts` pedem `projectId`, mas só
+   * para validar formato — o workspace do ClickUp é um só. O Swipe Files não
+   * tem projeto, e inventar um só para passar na validação seria mentir na URL.
+   */
+  fastify.get(`${base}/clickup-channels`, async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (!fastify.clickupService.isConfigured()) {
+      return reply.code(409).send({ error: "ClickUp não configurado no servidor" });
+    }
+    try {
+      return { channels: await fastify.clickupService.getChatChannels() };
+    } catch (err) {
+      return reply
+        .code(502)
+        .send({ error: err instanceof Error ? err.message : "Erro ao listar canais" });
+    }
+  });
+
+  fastify.get(`${base}/clickup-members`, async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (!fastify.clickupService.isConfigured()) {
+      return reply.code(409).send({ error: "ClickUp não configurado no servidor" });
+    }
+    try {
+      return { members: await fastify.clickupService.getWorkspaceMembers() };
+    } catch (err) {
+      return reply
+        .code(502)
+        .send({ error: err instanceof Error ? err.message : "Erro ao listar membros" });
+    }
+  });
+
+  /** Manda uma mensagem de teste — é como se confere o canal sem subir nada. */
+  fastify.post(`${base}/clickup-alert/test`, async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (!fastify.clickupService.isConfigured()) {
+      return reply.code(503).send({ error: "ClickUp não configurado no servidor." });
+    }
+
+    const [cfg] = await fastify.db.select().from(swipeClickupAlerts).limit(1);
+    if (!cfg) return reply.code(400).send({ error: "Configure o canal antes de testar." });
+
+    const r = await avisarNoClickUp(fastify as never, {
+      id: "teste",
+      titulo: "Teste de aviso — nenhuma referência foi criada",
+      assetKind: "link",
+      autor: "Loyola X",
+      notas: "Se você está lendo isto no canal certo, o aviso está funcionando.",
+      marca: null,
+      nicho: null,
+      plataforma: null,
+      formato: null,
+      tags: ["teste"],
+      origem: null,
+    });
+
+    if (!r.enviado) {
+      return reply.code(502).send({ error: `Não consegui enviar (${r.motivo}).` });
     }
     return { ok: true };
   });

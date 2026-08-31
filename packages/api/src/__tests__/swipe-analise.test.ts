@@ -20,9 +20,12 @@ import {
 const IMAGEM = { buffer: Buffer.from("fake"), mimeType: "image/png" };
 
 function clienteQueResponde(input: Record<string, unknown>) {
-  const create = vi.fn(async () => ({
-    content: [{ type: "tool_use", name: "catalogar_referencia", id: "t", input }],
-  }) as unknown as Anthropic.Message);
+  const create = vi.fn(
+    async (_p: Anthropic.MessageCreateParamsNonStreaming) =>
+      ({
+        content: [{ type: "tool_use", name: "catalogar_referencia", id: "t", input }],
+      }) as unknown as Anthropic.Message,
+  );
   return { cliente: { messages: { create } }, create };
 }
 
