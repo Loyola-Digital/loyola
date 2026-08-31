@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { MAX_UPLOAD_BYTES, isAllowedMime, presignUpload } from "../services/object-storage.js";
+import { MAX_UPLOAD_BYTES, isAllowedMime } from "../services/object-storage.js";
 
 describe("tipos permitidos", () => {
   it.each(["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"])(
@@ -57,44 +57,23 @@ describe("limite de tamanho", () => {
   });
 });
 
-describe("a URL assinada não pode carregar checksum", () => {
+describe("o upload não passa mais por URL assinada", () => {
   /**
-   * O bug que travou o upload deste app desde sempre.
+   * O caminho anterior — navegador → bucket, por URL assinada — foi removido.
    *
-   * Desde a v3.729 o SDK inclui um CRC32 por padrão. Numa URL assinada isso é
-   * fatal: na hora de assinar não existe corpo, então o parâmetro sai como
-   * `x-amz-checksum-crc32=AAAAAA==` (o CRC32 do vazio) e vai colado na
-   * assinatura. O navegador manda o arquivo real, o provedor calcula o CRC32
-   * do corpo, compara com o do vazio e recusa — o Supabase com **500**, o que
-   * faz parecer problema do servidor deles.
+   * Dois motivos, nesta ordem: o Supabase Storage responde **500** ao `PUT`
+   * assinado, e manter dois caminhos para a mesma coisa, um deles quebrado em
+   * produção, é pior que ter um só.
+   *
+   * O bug que apareceu no meio do caminho vale registro: desde a v3.729 o SDK
+   * inclui um CRC32 por padrão, e numa URL assinada ele sai como o CRC32 do
+   * VAZIO — colado na assinatura. `requestChecksumCalculation: "WHEN_REQUIRED"`
+   * segue no cliente porque protege o upload pelo servidor pelo mesmo motivo:
+   * provedor S3-compatível que não implementa o checksum novo recusa.
    */
-  it("presignUpload não põe x-amz-checksum-crc32 na URL", async () => {
-    const cfg = {
-      endpoint: "https://exemplo.storage.supabase.co/storage/v1/s3",
-      accessKeyId: "fake",
-      secretAccessKey: "fake",
-      bucket: "swipe-files",
-      publicUrl: "https://exemplo.storage.supabase.co/storage/v1/object/public/swipe-files",
-      region: "us-east-2",
-    };
-    const { uploadUrl } = await presignUpload(cfg, { mime: "application/pdf" });
-    const params = [...new URL(uploadUrl).searchParams.keys()];
-
-    expect(params.some((p) => /checksum/i.test(p))).toBe(false);
-  });
-
-  it("a chave sai com a extensão do MIME, não do nome enviado", async () => {
-    // Nome vindo do cliente é entrada não confiável: path traversal, colisão,
-    // caractere exótico. A extensão vem do tipo, que já passou pela allowlist.
-    const cfg = {
-      endpoint: "https://exemplo.storage.supabase.co/storage/v1/s3",
-      accessKeyId: "fake",
-      secretAccessKey: "fake",
-      bucket: "swipe-files",
-      publicUrl: "https://exemplo.com/pub",
-      region: "us-east-2",
-    };
-    const { key } = await presignUpload(cfg, { mime: "application/pdf" });
-    expect(key).toMatch(/^swipe\/[0-9a-f-]{36}\.pdf$/);
+  it("presignUpload não é mais exportado", async () => {
+    const mod = (await import("../services/object-storage.js")) as Record<string, unknown>;
+    expect(mod.presignUpload).toBeUndefined();
+    expect(typeof mod.uploadDireto).toBe("function");
   });
 });

@@ -23,8 +23,9 @@ import { avisarNoClickUp } from "../services/swipe-clickup-aviso.js";
 import {
   MAX_UPLOAD_BYTES,
   deleteObject,
+  isAllowedMime,
   isStorageConfigured,
-  presignUpload,
+  uploadDireto,
   type StorageConfig,
 } from "../services/object-storage.js";
 
@@ -176,81 +177,66 @@ export default fp(async function swipeFilesRoutes(fastify) {
     };
   });
 
-  // ---- POST /presign — URL assinada de upload ----
-  fastify.post(`${base}/presign`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
-    const body = presignBody.safeParse(request.body);
-    if (!body.success) return reply.code(400).send({ error: "Dados inválidos" });
-
-    if (!isStorageConfigured(storage())) {
-      return reply.code(503).send({
-        error:
-          "Upload indisponível: bucket não configurado no servidor. Você ainda pode adicionar referências por link.",
-        code: "STORAGE_NOT_CONFIGURED",
-      });
-    }
-    // O tamanho já chegava e era IGNORADO: um arquivo acima do teto passava
-    // pelo presign e só falhava no bucket, com erro que não diz o que houve.
-    if (body.data.sizeBytes && body.data.sizeBytes > MAX_UPLOAD_BYTES) {
-      const mb = Math.round(MAX_UPLOAD_BYTES / 1024 / 1024);
-      return reply.code(400).send({ error: `Arquivo maior que o limite de ${mb} MB.` });
-    }
-
-    try {
-      return await presignUpload(storage(), { mime: body.data.mime, prefix: "swipe" });
-    } catch (err) {
-      // O log carrega o mime: sem ele, "falha ao preparar o upload" no console
-      // do navegador não diz qual tipo de arquivo derrubou.
-      fastify.log.error({ err, mime: body.data.mime }, "presign de swipe file falhou");
-      return reply
-        .code(400)
-        .send({ error: err instanceof Error ? err.message : "Falha ao preparar o upload" });
-    }
-  });
-
   /**
-   * Lê a referência e sugere como catalogá-la.
+   * Sobe o arquivo PELO SERVIDOR.
    *
-   * O arquivo vem por multipart e **não passa pelo bucket**: a análise acontece
-   * antes de a pessoa decidir salvar, e subir para descartar depois deixaria
-   * lixo no R2 a cada tentativa.
+   * O caminho anterior (URL assinada, navegador → bucket) é mais barato, mas o
+   * Supabase Storage responde 500 ao `PUT` assinado. O erro é dele, não tem
+   * corpo útil e acontece na tela de quem está trabalhando — não é algo que se
+   * conserta com paciência.
+   *
+   * Aqui o SDK fala com o bucket a partir do servidor, como já faz para apagar
+   * objeto. E em STREAM: um vídeo de 200 MB nunca fica inteiro na memória.
    */
-  fastify.post(`${base}/analisar`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+  fastify.post(
+    `${base}/upload`,
+    {
+      config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+    },
+    async (request, reply) => {
+      if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
 
-    const arquivo = await request.file();
-    if (!arquivo) return reply.code(400).send({ error: "Envie a imagem ou o PDF." });
+      if (!isStorageConfigured(storage())) {
+        return reply.code(503).send({
+          error: "Upload indisponível: bucket não configurado no servidor.",
+          code: "STORAGE_NOT_CONFIGURED",
+        });
+      }
 
-    if (!podeAnalisar(arquivo.mimetype)) {
-      return reply.code(400).send({
-        error: "Só dá para analisar imagem ou PDF. Vídeo precisa ser catalogado à mão.",
-      });
-    }
+      // O teto global do multipart é 10 MB (app.ts) e vídeo de anúncio passa
+      // disso com folga. O limite desta rota é o do bucket.
+      const arquivo = await request.file({ limits: { fileSize: MAX_UPLOAD_BYTES } });
+      if (!arquivo) return reply.code(400).send({ error: "Envie o arquivo." });
 
-    const buffer = await arquivo.toBuffer();
-    if (buffer.length === 0) return reply.code(400).send({ error: "Arquivo vazio." });
+      if (!isAllowedMime(arquivo.mimetype)) {
+        return reply.code(400).send({ error: `Tipo não permitido: ${arquivo.mimetype}` });
+      }
 
-    // A origem vem como campo do multipart: uma landing page em PDF diz muito
-    // mais quando se sabe o domínio de onde veio.
-    const campos = arquivo.fields as Record<string, { value?: unknown } | undefined>;
-    const origem = typeof campos?.origem?.value === "string" ? campos.origem.value : undefined;
+      try {
+        const r = await uploadDireto(storage(), {
+          corpo: arquivo.file,
+          mime: arquivo.mimetype,
+          prefix: "swipe",
+        });
 
-    try {
-      const sugestao = await analisarReferencia(
-        fastify.claude.client,
-        { buffer, mimeType: arquivo.mimetype },
-        { nomeDoArquivo: arquivo.filename, origem },
-      );
-      return { sugestao };
-    } catch (err) {
-      fastify.log.error({ err, mime: arquivo.mimetype }, "analise de swipe file falhou");
-      // 502: a falha é do provedor, não do que o cliente mandou — a tela usa
-      // isso para oferecer o preenchimento manual em vez de culpar o arquivo.
-      return reply.code(502).send({
-        error: err instanceof ErroDeAnalise ? err.message : "Não consegui analisar agora.",
-      });
-    }
-  });
+        // `truncated` é como o multipart avisa que cortou no limite — sem esta
+        // checagem o arquivo entraria PELA METADE, com URL válida e conteúdo
+        // quebrado, que é pior que falhar.
+        if (arquivo.file.truncated) {
+          await deleteObject(storage(), r.key).catch(() => {});
+          const mb = Math.round(MAX_UPLOAD_BYTES / 1024 / 1024);
+          return reply.code(400).send({ error: `Arquivo maior que o limite de ${mb} MB.` });
+        }
+
+        return r;
+      } catch (err) {
+        fastify.log.error({ err, mime: arquivo.mimetype }, "upload de swipe file falhou");
+        return reply.code(502).send({
+          error: err instanceof Error ? err.message : "Falha ao enviar o arquivo.",
+        });
+      }
+    },
+  );
 
   // ---- POST /preview — busca o Open Graph de um link ----
   fastify.post(

@@ -17,8 +17,9 @@
  * de código.
  */
 
-import { DeleteObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { DeleteObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
+import type { Readable } from "node:stream";
 import { randomUUID } from "node:crypto";
 
 export interface StorageConfig {
@@ -115,49 +116,6 @@ function extFor(mime: string): string {
   return map[mime] ?? "bin";
 }
 
-export interface PresignResult {
-  /** PUT aqui, com o mesmo Content-Type informado. Expira em 10 min. */
-  uploadUrl: string;
-  /** URL pública definitiva — é o que vai pro banco. */
-  publicUrl: string;
-  /** Caminho no bucket — guardado pra permitir o delete depois. */
-  key: string;
-}
-
-/**
- * Gera a URL assinada de upload.
- *
- * A chave é gerada no servidor a partir de um UUID: nome de arquivo vindo do
- * cliente é entrada não confiável (path traversal, colisão, caractere exótico)
- * e não tem por que virar caminho no bucket.
- */
-export async function presignUpload(
-  cfg: StorageConfig,
-  input: { mime: string; prefix?: string },
-): Promise<PresignResult> {
-  if (!isStorageConfigured(cfg)) {
-    throw new Error("Object storage não configurado no servidor.");
-  }
-  if (!isAllowedMime(input.mime)) {
-    throw new Error(`Tipo de arquivo não permitido: ${input.mime}`);
-  }
-
-  const prefix = (input.prefix ?? "swipe").replace(/[^a-z0-9-]/gi, "");
-  const key = `${prefix}/${randomUUID()}.${extFor(input.mime)}`;
-
-  const uploadUrl = await getSignedUrl(
-    client(cfg),
-    new PutObjectCommand({
-      Bucket: cfg.bucket as string,
-      Key: key,
-      ContentType: input.mime,
-    }),
-    { expiresIn: 600 },
-  );
-
-  const base = (cfg.publicUrl ?? "").replace(/\/+$/, "");
-  return { uploadUrl, publicUrl: `${base}/${key}`, key };
-}
 
 /** Remove o objeto. Falha aqui não deve derrubar o delete do registro. */
 export async function deleteObject(cfg: StorageConfig, key: string): Promise<void> {
@@ -165,4 +123,57 @@ export async function deleteObject(cfg: StorageConfig, key: string): Promise<voi
   await client(cfg).send(
     new DeleteObjectCommand({ Bucket: cfg.bucket as string, Key: key }),
   );
+}
+
+/**
+ * Sobe o arquivo PELO SERVIDOR, em vez de por URL assinada.
+ *
+ * ## Por que existe, se já havia o presign
+ *
+ * O presign é mais barato — o navegador fala direto com o bucket e o container
+ * nem vê o arquivo. Mas o Supabase Storage responde **500** ao `PUT` assinado,
+ * e um erro que não é nosso, não tem corpo útil e acontece no navegador de
+ * quem está trabalhando não é algo que se conserta com paciência.
+ *
+ * Aqui o SDK fala com o bucket a partir do servidor, exatamente como já faz
+ * para apagar objeto — caminho que funciona hoje.
+ *
+ * ## Stream, não buffer
+ *
+ * `Upload` do `lib-storage` consome o stream e fatia em partes de 5 MB, então
+ * um vídeo de 200 MB nunca fica inteiro na memória do container. Ler para
+ * `Buffer` seria mais simples e derrubaria o processo no primeiro vídeo grande.
+ */
+export async function uploadDireto(
+  cfg: StorageConfig,
+  entrada: { corpo: Readable; mime: string; prefix?: string },
+): Promise<{ publicUrl: string; key: string }> {
+  if (!isStorageConfigured(cfg)) {
+    throw new Error("Object storage não configurado no servidor.");
+  }
+  if (!isAllowedMime(entrada.mime)) {
+    throw new Error(`Tipo de arquivo não permitido: ${entrada.mime}`);
+  }
+
+  const prefix = (entrada.prefix ?? "swipe").replace(/[^a-z0-9-]/gi, "");
+  const key = `${prefix}/${randomUUID()}.${extFor(entrada.mime)}`;
+
+  const envio = new Upload({
+    client: client(cfg),
+    params: {
+      Bucket: cfg.bucket as string,
+      Key: key,
+      Body: entrada.corpo,
+      ContentType: entrada.mime,
+    },
+    // 5 MB é o mínimo que o protocolo aceita por parte. Duas partes em voo:
+    // suficiente para não serializar a rede, longe de encher a memória.
+    partSize: 5 * 1024 * 1024,
+    queueSize: 2,
+  });
+
+  await envio.done();
+
+  const base = (cfg.publicUrl ?? "").replace(/\/+$/, "");
+  return { publicUrl: `${base}/${key}`, key };
 }

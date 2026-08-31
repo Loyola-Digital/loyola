@@ -157,14 +157,18 @@ export function useDeleteSwipeFile() {
 }
 
 /**
- * Sobe o arquivo direto pro bucket e devolve a URL pública.
+ * Sobe o arquivo e devolve a URL pública.
  *
- * Três passos: pede a URL assinada → PUT no bucket → devolve a URL definitiva
- * pra quem chamou criar o registro. O `onProgress` usa XHR porque `fetch` não
- * expõe progresso de upload, e um vídeo de 100MB sem barra é uma tela travada.
+ * Vai para a NOSSA API, não direto ao bucket. O caminho anterior era por URL
+ * assinada — mais barato, porque o servidor nem via o arquivo — mas o Supabase
+ * Storage responde **500** ao `PUT` assinado. O erro é dele, não traz corpo
+ * útil e acontece na tela de quem está trabalhando.
+ *
+ * O `onProgress` continua com XHR: `fetch` não expõe progresso de upload, e um
+ * vídeo de 100 MB sem barra é uma tela travada.
  */
 export function useUploadToBucket() {
-  const apiClient = useApiClient();
+  const { getToken } = useAuth();
   return useMutation({
     mutationFn: async ({
       file,
@@ -173,33 +177,40 @@ export function useUploadToBucket() {
       file: File;
       onProgress?: (pct: number) => void;
     }) => {
-      const { uploadUrl, publicUrl, key } = await apiClient<{
-        uploadUrl: string;
-        publicUrl: string;
-        key: string;
-      }>(`${BASE}/presign`, {
-        method: "POST",
-        body: JSON.stringify({ mime: file.type, sizeBytes: file.size }),
-      });
+      const token = await getToken();
+      const form = new FormData();
+      form.append("file", file);
 
-      await new Promise<void>((resolve, reject) => {
+      return new Promise<{ publicUrl: string; key: string }>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open("PUT", uploadUrl);
-        xhr.setRequestHeader("Content-Type", file.type);
+        xhr.open("POST", `${API_URL}${BASE}/upload`);
+        if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+        // Sem `Content-Type`: o browser precisa pôr o boundary do multipart.
+
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable && onProgress) {
             onProgress(Math.round((e.loaded / e.total) * 100));
           }
         };
-        xhr.onload = () =>
-          xhr.status >= 200 && xhr.status < 300
-            ? resolve()
-            : reject(new Error(`O bucket recusou o upload (${xhr.status}).`));
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(JSON.parse(xhr.responseText) as { publicUrl: string; key: string });
+            return;
+          }
+          // A mensagem do servidor vem no corpo e diz o que houve — muito
+          // melhor que "o bucket recusou (500)", que não deixa ninguém agir.
+          let motivo = `Falha ao enviar (${xhr.status}).`;
+          try {
+            const corpo = JSON.parse(xhr.responseText) as { error?: string };
+            if (corpo?.error) motivo = corpo.error;
+          } catch {
+            /* resposta sem JSON — fica a mensagem padrão */
+          }
+          reject(new Error(motivo));
+        };
         xhr.onerror = () => reject(new Error("Falha de rede ao enviar o arquivo."));
-        xhr.send(file);
+        xhr.send(form);
       });
-
-      return { publicUrl, key };
     },
   });
 }
