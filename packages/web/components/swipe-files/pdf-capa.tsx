@@ -29,6 +29,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { FileText, Loader2 } from "lucide-react";
+import { motivoDaFalha, type CausaDaFalha } from "@/lib/swipe/motivo-da-falha";
 
 /** Largura do bitmap. O card tem ~300px; 600 cobre telas retina sem exagero. */
 const LARGURA = 600;
@@ -44,6 +45,13 @@ const TAMANHO_MAXIMO = 20 * 1024 * 1024;
  * página travou.
  */
 const PRAZO_MS = 15_000;
+
+/** Erro interno que leva a causa já classificada até o `catch`. */
+class FalhaDaCapa extends Error {
+  constructor(readonly causa: CausaDaFalha) {
+    super(causa.tipo);
+  }
+}
 
 type Estado =
   | { fase: "espera" }
@@ -83,16 +91,16 @@ export function PdfCapa({
   }, [visivel]);
 
   useEffect(() => {
-    if (!visivel || estado.fase !== "espera") return;
+    if (!visivel) return;
 
     if (!url) {
       // Sem link não há o que baixar. Dizer isso é melhor que um ícone mudo:
       // é sintoma de storage mal configurado no servidor, não de PDF ruim.
-      setEstado({ fase: "falhou", motivo: "Sem link — storage não configurado" });
+      setEstado({ fase: "falhou", motivo: motivoDaFalha({ tipo: "sem-link" }) });
       return;
     }
     if (tamanhoBytes && tamanhoBytes > TAMANHO_MAXIMO) {
-      setEstado({ fase: "falhou", motivo: "Grande demais para pré-visualizar" });
+      setEstado({ fase: "falhou", motivo: motivoDaFalha({ tipo: "grande-demais" }) });
       return;
     }
 
@@ -102,79 +110,82 @@ export function PdfCapa({
     const relogio = new AbortController();
     const prazo = setTimeout(() => relogio.abort(), PRAZO_MS);
 
-    (async () => {
-      try {
-        // O download é nosso, não do pdf.js: é assim que se enxerga o status.
-        // Um 400 de bucket privado e um 404 de chave errada levam a ações
-        // diferentes, e os dois viravam o mesmo spinner eterno.
-        const r = await fetch(url, { signal: relogio.signal });
-        if (!r.ok) {
-          setEstado({
-            fase: "falhou",
-            motivo:
-              r.status === 400 || r.status === 403
-                ? "Sem permissão — o bucket não é público"
-                : r.status === 404
-                  ? "Arquivo não encontrado no bucket"
-                  : `O servidor devolveu ${r.status}`,
-          });
-          return;
-        }
-        const dados = await r.arrayBuffer();
+    /** O caminho feliz, inteiro. O prazo corre por fora, contra ele. */
+    const desenhar = async () => {
+      // O download é nosso, não do pdf.js: é assim que se enxerga o status.
+      // Um 400 de bucket privado e um 404 de chave errada levam a ações
+      // diferentes, e os dois viravam o mesmo spinner eterno.
+      const r = await fetch(url, { signal: relogio.signal });
+      if (!r.ok) throw new FalhaDaCapa({ tipo: "http", status: r.status });
+
+      const dados = await r.arrayBuffer();
         if (cancelado) return;
 
         // Import dinâmico: o pdf.js pesa, e a maioria das sessões não abre um
         // PDF sequer. Fora do bundle inicial, ele só chega a quem precisa.
-        const pdfjs = await import("pdfjs-dist");
-        pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-          "pdfjs-dist/build/pdf.worker.min.mjs",
-          import.meta.url,
-        ).toString();
+      const pdfjs = await import("pdfjs-dist");
+      pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+        "pdfjs-dist/build/pdf.worker.min.mjs",
+        import.meta.url,
+      ).toString();
 
-        const doc = await pdfjs.getDocument({ data: new Uint8Array(dados) }).promise;
+      const doc = await pdfjs.getDocument({ data: new Uint8Array(dados) }).promise;
+      if (cancelado) return;
+
+      const pagina = await doc.getPage(1);
+      const base = pagina.getViewport({ scale: 1 });
+      const viewport = pagina.getViewport({ scale: LARGURA / base.width });
+
+      const canvas = canvasRef.current;
+      const ctx = canvas?.getContext("2d");
+      if (!canvas || !ctx) return;
+
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      setProporcao(viewport.width / viewport.height);
+
+      await pagina.render({ canvas, canvasContext: ctx, viewport }).promise;
+      if (!cancelado) setEstado({ fase: "pronto" });
+
+      // Libera o que o worker guardou: sem isso, uma grade de vinte PDFs
+      // segura centenas de megabytes de páginas já desenhadas.
+      void doc.cleanup();
+    };
+
+    /**
+     * O prazo corre contra o pipeline INTEIRO.
+     *
+     * O `AbortController` interrompe o `fetch`, mas não o pdf.js — sem esta
+     * corrida, um PDF que trava ao renderizar volta a girar sem fim.
+     */
+    const relogioDeParede = new Promise<never>((_, rejeitar) => {
+      setTimeout(() => rejeitar(new FalhaDaCapa({ tipo: "prazo" })), PRAZO_MS);
+    });
+
+    Promise.race([desenhar(), relogioDeParede])
+      .catch((e: unknown) => {
         if (cancelado) return;
-
-        const pagina = await doc.getPage(1);
-        const base = pagina.getViewport({ scale: 1 });
-        const viewport = pagina.getViewport({ scale: LARGURA / base.width });
-
-        const canvas = canvasRef.current;
-        const ctx = canvas?.getContext("2d");
-        if (!canvas || !ctx) return;
-
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        setProporcao(viewport.width / viewport.height);
-
-        await pagina.render({ canvas, canvasContext: ctx, viewport }).promise;
-        if (!cancelado) setEstado({ fase: "pronto" });
-
-        // Libera o que o worker guardou: sem isso, uma grade de vinte PDFs
-        // segura centenas de megabytes de páginas já desenhadas.
-        void doc.cleanup();
-      } catch (e) {
-        if (cancelado) return;
-        setEstado({
-          fase: "falhou",
-          motivo: relogio.signal.aborted
-            ? "Demorou demais — o arquivo não respondeu"
-            : e instanceof TypeError
-              // `TypeError` no fetch é rede: DNS que não resolve, CORS, offline.
-              // É o caso do link com host errado, que era o spinner eterno.
-              ? "Não consegui alcançar o arquivo"
-              : "Não consegui abrir este PDF",
-        });
-      } finally {
-        clearTimeout(prazo);
-      }
-    })();
+        const causa: CausaDaFalha =
+          e instanceof FalhaDaCapa
+            ? e.causa
+            : relogio.signal.aborted
+              ? { tipo: "prazo" }
+              : // `TypeError` no fetch é rede: DNS que não resolve, CORS, offline.
+                e instanceof TypeError
+                ? { tipo: "rede" }
+                : { tipo: "pdf" };
+        setEstado({ fase: "falhou", motivo: motivoDaFalha(causa) });
+      })
+      .finally(() => clearTimeout(prazo));
 
     return () => {
       cancelado = true;
       clearTimeout(prazo);
       relogio.abort();
     };
-  }, [visivel, estado.fase, url, tamanhoBytes]);
+    // `estado` fica FORA de propósito: ele é escrito aqui dentro, e incluí-lo
+    // faz o efeito cancelar o próprio trabalho a cada passo. Foi esse o bug.
+  }, [visivel, url, tamanhoBytes]);
 
   return (
     <div
@@ -192,16 +203,14 @@ export function PdfCapa({
 
       {estado.fase !== "pronto" && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-3 text-center">
-          {estado.fase === "carregando" ? (
+          {estado.fase === "carregando" || estado.fase === "espera" ? (
             <Loader2 className="size-6 animate-spin text-rose-600/60" />
           ) : (
             <>
               <FileText className="size-8 text-rose-600/70" />
-              {estado.fase === "falhou" && (
-                // O motivo na tela: é o que transforma "está quebrado" em algo
-                // que alguém consegue consertar.
-                <p className="text-[10px] leading-tight text-muted-foreground">{estado.motivo}</p>
-              )}
+              {/* O motivo na tela: é o que transforma "está quebrado" em algo
+                  que alguém consegue consertar. */}
+              <p className="text-[10px] leading-tight text-muted-foreground">{estado.motivo}</p>
             </>
           )}
         </div>
