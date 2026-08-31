@@ -22,9 +22,12 @@ import {
 import { avisarNoClickUp } from "../services/swipe-clickup-aviso.js";
 import {
   MAX_UPLOAD_BYTES,
+  checarStorage,
   deleteObject,
+  explicarErroDeStorage,
   isAllowedMime,
   isStorageConfigured,
+  testarEscrita,
   uploadDireto,
   type StorageConfig,
 } from "../services/object-storage.js";
@@ -230,13 +233,49 @@ export default fp(async function swipeFilesRoutes(fastify) {
 
         return r;
       } catch (err) {
-        fastify.log.error({ err, mime: arquivo.mimetype }, "upload de swipe file falhou");
+        // O erro do SDK carrega o código do S3 (`NoSuchBucket`, `AccessDenied`),
+        // que é o que distingue bucket inexistente de credencial errada — duas
+        // coisas que se resolvem de formas opostas. Só a `message` vira
+        // "Internal Server Error" e não deixa ninguém agir.
+        const detalhe = explicarErroDeStorage(err);
+        fastify.log.error(
+          { err, mime: arquivo.mimetype, codigo: detalhe.codigo, status: detalhe.status },
+          "upload de swipe file falhou",
+        );
         return reply.code(502).send({
-          error: err instanceof Error ? err.message : "Falha ao enviar o arquivo.",
+          error: detalhe.mensagem,
+          codigo: detalhe.codigo,
+          // A dica de onde olhar: sem isto, "falhou" manda a pessoa ao suporte.
+          diagnostico: `${base}/storage-check`,
         });
       }
     },
   );
+
+  /**
+   * Diz se o bucket está alcançável, sem subir arquivo nenhum.
+   *
+   * Existe porque a pergunta "por que o upload falha" tinha três respostas
+   * possíveis — bucket inexistente, credencial sem permissão, arquivo — e a
+   * única forma de distinguir era tentar subir e ler o erro cru.
+   */
+  fastify.get(`${base}/storage-check`, async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+
+    const leitura = await checarStorage(storage());
+    // Só testa escrita se a leitura passou: sem bucket, o teste de escrita
+    // repetiria o mesmo erro com outro nome.
+    const escrita = leitura.ok ? await testarEscrita(storage()) : { ok: false };
+
+    return {
+      configurado: isStorageConfigured(storage()),
+      bucket: leitura.bucket,
+      endpoint: leitura.endpoint,
+      alcancaOBucket: leitura.ok,
+      podeGravar: escrita.ok,
+      erro: leitura.erro ?? ("erro" in escrita ? escrita.erro : undefined) ?? null,
+    };
+  });
 
   // ---- POST /preview — busca o Open Graph de um link ----
   fastify.post(

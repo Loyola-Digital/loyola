@@ -7,7 +7,12 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { MAX_UPLOAD_BYTES, isAllowedMime } from "../services/object-storage.js";
+import {
+  MAX_UPLOAD_BYTES,
+  checarStorage,
+  explicarErroDeStorage,
+  isAllowedMime,
+} from "../services/object-storage.js";
 
 describe("tipos permitidos", () => {
   it.each(["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"])(
@@ -75,5 +80,55 @@ describe("o upload não passa mais por URL assinada", () => {
     const mod = (await import("../services/object-storage.js")) as Record<string, unknown>;
     expect(mod.presignUpload).toBeUndefined();
     expect(typeof mod.uploadDireto).toBe("function");
+  });
+});
+
+describe("o erro do provedor vira uma frase acionável", () => {
+  /**
+   * O upload falhou em produção e a tela mostrou `Internal Server Error` — que
+   * é o que sobra quando se lê só a `message` do erro do SDK. Bucket
+   * inexistente e credencial sem permissão produzem a MESMA frase, e as duas
+   * se resolvem de formas opostas.
+   */
+  it("NoSuchBucket manda criar o bucket, não falar com o suporte", () => {
+    const r = explicarErroDeStorage({ name: "NoSuchBucket", $metadata: { httpStatusCode: 404 } });
+    expect(r.mensagem).toMatch(/bucket não existe/i);
+    expect(r.codigo).toBe("NoSuchBucket");
+    expect(r.status).toBe(404);
+  });
+
+  it("AccessDenied aponta permissão, que é outra coisa", () => {
+    const r = explicarErroDeStorage({ name: "AccessDenied" });
+    expect(r.mensagem).toMatch(/permissão/i);
+  });
+
+  it("assinatura errada nomeia as duas variáveis que a causam", () => {
+    const r = explicarErroDeStorage({ name: "SignatureDoesNotMatch" });
+    expect(r.mensagem).toContain("STORAGE_SECRET_ACCESS_KEY");
+    expect(r.mensagem).toContain("STORAGE_REGION");
+  });
+
+  it("erro desconhecido preserva a mensagem E acrescenta o código", () => {
+    // O código é o que permite procurar; a mensagem sozinha não.
+    const r = explicarErroDeStorage({ name: "TooManyBuckets", message: "deu ruim" });
+    expect(r.mensagem).toBe("deu ruim (TooManyBuckets)");
+  });
+
+  it("`Error` genérico não polui a frase com o próprio nome", () => {
+    const r = explicarErroDeStorage({ name: "Error", message: "Internal Server Error" });
+    expect(r.mensagem).toBe("Internal Server Error");
+  });
+
+  it("erro sem nada devolve uma frase, nunca undefined", () => {
+    expect(explicarErroDeStorage({}).mensagem).toBeTruthy();
+    expect(explicarErroDeStorage(null).mensagem).toBeTruthy();
+  });
+});
+
+describe("o check de storage", () => {
+  it("sem variáveis, diz isso em vez de tentar a rede", async () => {
+    const r = await checarStorage({ endpoint: "", accessKeyId: "", secretAccessKey: "", bucket: "", publicUrl: "" });
+    expect(r.ok).toBe(false);
+    expect(r.erro?.codigo).toBe("NOT_CONFIGURED");
   });
 });
