@@ -9,6 +9,9 @@
  * Layout em masonry (colunas CSS) e não grid rígido: anúncio vem em proporção
  * variada (story 9:16, feed 1:1, banner), e forçar tudo em `aspect-video`
  * cortaria justamente o que se quer olhar.
+ *
+ * O card não tem moldura: numa biblioteca visual, uma borda desenhada ao redor
+ * de cada peça compete com a peça. O que separa um card do outro é o espaço.
  */
 
 import { useState } from "react";
@@ -66,6 +69,25 @@ function Chip({
   );
 }
 
+/**
+ * Um card da grade.
+ *
+ * ## A imagem É o card
+ *
+ * Sem moldura, sem fundo, sem caixa de metadados. Numa biblioteca visual, a
+ * borda de cada card compete com o conteúdo dela: trinta retângulos desenhados
+ * ao redor de trinta imagens fazem a tela parecer uma planilha. O que reconhece
+ * uma referência é a peça em si — o resto é legenda.
+ *
+ * ## O que fica visível e o que espera o hover
+ *
+ * Título e marca ficam sempre: é o que se lê ao varrer a grade procurando algo
+ * meio lembrado. As tags e o tipo do arquivo aparecem no hover — são úteis
+ * quando já se parou num card, e ruído enquanto se está passando o olho.
+ *
+ * A estrela é a exceção: se já está marcada, fica visível sempre. Um destaque
+ * que só aparece quando o mouse chega não destaca nada.
+ */
 function SwipeCard({
   item,
   onOpen,
@@ -76,8 +98,7 @@ function SwipeCard({
   onToggleFavorite: () => void;
 }) {
   // O PDF não vira <img>: o navegador não desenha a primeira página numa tag de
-  // imagem, e gerar miniatura no servidor pediria um renderizador só para isso.
-  // O card mostra a capa de ícone, e o lightbox abre o documento de verdade.
+  // imagem. `PdfCapa` renderiza a capa; o lightbox abre o documento de verdade.
   const media =
     item.assetKind === "link" ? item.ogImage : item.assetKind === "pdf" ? null : item.fileUrl;
   const { label, Icon } = KIND_META[item.assetKind];
@@ -85,78 +106,94 @@ function SwipeCard({
   const ratio = item.width && item.height ? item.width / item.height : null;
 
   return (
-    <div className="group mb-3 break-inside-avoid overflow-hidden rounded-xl border border-border/40 bg-card">
-      <button type="button" onClick={onOpen} className="block w-full text-left">
-        <div className="relative bg-muted/40" style={ratio ? { aspectRatio: String(ratio) } : undefined}>
-          {media ? (
-            <img
-              src={media}
-              alt={item.title}
-              loading="lazy"
-              className="w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
-              style={ratio ? { aspectRatio: String(ratio) } : undefined}
-            />
-          ) : item.assetKind === "pdf" ? (
-            // A primeira página como capa: numa grade, é o que faz reconhecer.
-            // Doze ícones iguais de PDF não distinguem nada.
-            //
-            // Entra mesmo sem `fileUrl`: o PDF sem link é sintoma de storage
-            // mal configurado, e a capa sabe dizer isso. O ícone genérico
-            // escondia o problema atrás de algo que parecia normal.
-            <PdfCapa url={item.fileUrl} titulo={item.title} tamanhoBytes={item.fileSizeBytes} />
-          ) : (
-            <div className="flex aspect-video items-center justify-center">
-              <Icon className="h-8 w-8 text-muted-foreground/40" />
-            </div>
-          )}
+    <div className="group mb-4 break-inside-avoid">
+      <div className="relative overflow-hidden rounded-2xl bg-muted/30">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="block w-full text-left"
+          aria-label={`Abrir ${item.title}`}
+        >
+          <div className="relative" style={ratio ? { aspectRatio: String(ratio) } : undefined}>
+            {media ? (
+              <img
+                src={media}
+                alt={item.title}
+                loading="lazy"
+                className="w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                style={ratio ? { aspectRatio: String(ratio) } : undefined}
+              />
+            ) : item.assetKind === "pdf" ? (
+              // Entra mesmo sem `fileUrl`: o PDF sem link é sintoma de storage
+              // mal configurado, e a capa sabe dizer isso. O ícone genérico
+              // escondia o problema atrás de algo que parecia normal.
+              <PdfCapa url={item.fileUrl} titulo={item.title} tamanhoBytes={item.fileSizeBytes} />
+            ) : (
+              <div className="flex aspect-[3/4] items-center justify-center">
+                <Icon className="h-8 w-8 text-muted-foreground/40" />
+              </div>
+            )}
 
-          <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
-            <Icon className="h-2.5 w-2.5" />
-            {label}
-          </span>
+            {/* Escurece no hover para o texto de cima ganhar contraste sobre
+                qualquer imagem — inclusive as claras. */}
+            <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-black/20 opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
 
-          {item.assetKind === "video" && (
-            <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-black/50 backdrop-blur-sm">
-                <Play className="ml-0.5 h-4 w-4 fill-white text-white" />
+            {item.assetKind === "video" && (
+              <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 backdrop-blur-sm transition-transform duration-200 group-hover:scale-110">
+                  <Play className="ml-0.5 h-4 w-4 fill-white text-white" />
+                </span>
               </span>
+            )}
+
+            {/* Tipo e tags só no hover: quem está varrendo a grade olha as
+                peças, não os rótulos. */}
+            <span className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-center gap-1 p-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+              <span className="inline-flex items-center gap-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
+                <Icon className="h-2.5 w-2.5" />
+                {label}
+              </span>
+              {item.tags.slice(0, 2).map((t) => (
+                <span
+                  key={t}
+                  className="rounded-full bg-white/15 px-1.5 py-0.5 text-[10px] text-white backdrop-blur-sm"
+                >
+                  {t}
+                </span>
+              ))}
+              {item.tags.length > 2 && (
+                <span className="text-[10px] text-white/70">+{item.tags.length - 2}</span>
+              )}
             </span>
-          )}
-        </div>
-      </button>
+          </div>
+        </button>
 
-      <div className="p-2.5">
-        <div className="flex items-start gap-1.5">
-          <p className="min-w-0 flex-1 truncate text-xs font-medium" title={item.title}>
-            {item.title}
-          </p>
-          <button
-            type="button"
-            onClick={onToggleFavorite}
-            className={`shrink-0 transition-colors ${
-              item.isFavorite ? "text-primary" : "text-muted-foreground/40 hover:text-muted-foreground"
-            }`}
-            aria-label={item.isFavorite ? "Remover destaque" : "Destacar"}
-          >
-            <Star className={`h-3.5 w-3.5 ${item.isFavorite ? "fill-current" : ""}`} />
-          </button>
-        </div>
+        {/* Irmã do botão, não filha: um <button> dentro de outro é inválido, e
+            o leitor de tela anuncia a ação errada. */}
+        <button
+          type="button"
+          onClick={onToggleFavorite}
+          aria-label={item.isFavorite ? "Remover destaque" : "Destacar"}
+          className={`absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full backdrop-blur-sm transition-all ${
+            item.isFavorite
+              ? "bg-primary text-primary-foreground"
+              : "bg-black/50 text-white opacity-0 hover:bg-black/70 group-hover:opacity-100 focus-visible:opacity-100"
+          }`}
+        >
+          <Star className={`h-3.5 w-3.5 ${item.isFavorite ? "fill-current" : ""}`} />
+        </button>
+      </div>
 
+      {/* Legenda solta, sem caixa. Duas linhas de título porque um nome cortado
+          no meio não ajuda a reconhecer nada. */}
+      <div className="px-1 pt-2">
+        <p className="line-clamp-2 text-[13px] font-medium leading-snug" title={item.title}>
+          {item.title}
+        </p>
         {(item.brand || item.platform || item.format) && (
-          <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
+          <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
             {[item.brand, item.platform, item.format].filter(Boolean).join(" · ")}
           </p>
-        )}
-
-        {item.tags.length > 0 && (
-          <div className="mt-1.5 flex flex-wrap gap-1">
-            {item.tags.slice(0, 3).map((t) => (
-              <Badge key={t} variant="secondary" className="px-1.5 py-0 text-[9px]">{t}</Badge>
-            ))}
-            {item.tags.length > 3 && (
-              <span className="text-[9px] text-muted-foreground">+{item.tags.length - 3}</span>
-            )}
-          </div>
         )}
       </div>
     </div>
@@ -295,9 +332,11 @@ export default function SwipeFilesPage() {
       {/* Galeria. Durante refiltro mantém o render anterior em opacidade
           reduzida — sem skeleton piscando e sem salto de layout. */}
       {isLoading ? (
-        <div className="columns-2 gap-3 sm:columns-3 lg:columns-4 xl:columns-5">
-          {Array.from({ length: 10 }).map((_, i) => (
-            <Skeleton key={i} className="mb-3 h-48 break-inside-avoid" />
+        <div className="columns-2 gap-4 sm:columns-3 lg:columns-4 xl:columns-5 2xl:columns-6">
+          {/* Alturas variadas de propósito: blocos iguais não parecem a grade
+              que vai aparecer, e o salto na troca fica evidente. */}
+          {[280, 200, 340, 240, 300, 190, 320, 260, 210, 290, 230, 310].map((h, i) => (
+            <Skeleton key={i} className="mb-4 break-inside-avoid rounded-2xl" style={{ height: h }} />
           ))}
         </div>
       ) : items.length === 0 ? (
@@ -314,7 +353,7 @@ export default function SwipeFilesPage() {
         </div>
       ) : (
         <div
-          className={`columns-2 gap-3 sm:columns-3 lg:columns-4 xl:columns-5 ${
+          className={`columns-2 gap-4 sm:columns-3 lg:columns-4 xl:columns-5 2xl:columns-6 ${
             isFetching ? "opacity-60 transition-opacity" : ""
           }`}
         >
