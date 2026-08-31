@@ -17,7 +17,7 @@
  * de código.
  */
 
-import { DeleteObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import type { Readable } from "node:stream";
 import { randomUUID } from "node:crypto";
@@ -176,4 +176,112 @@ export async function uploadDireto(
 
   const base = (cfg.publicUrl ?? "").replace(/\/+$/, "");
   return { publicUrl: `${base}/${key}`, key };
+}
+
+/**
+ * O que o provedor respondeu, em palavras.
+ *
+ * Um erro do SDK carrega bem mais que `message`: `name` traz o código do S3
+ * (`NoSuchBucket`, `AccessDenied`, `SignatureDoesNotMatch`) e `$metadata` traz
+ * o status HTTP. Só a `message` — que foi o que a tela mostrou — vira
+ * "Internal Server Error", que não distingue bucket inexistente de credencial
+ * errada, e essas duas coisas se resolvem de formas opostas.
+ */
+export function explicarErroDeStorage(erro: unknown): {
+  mensagem: string;
+  codigo: string | null;
+  status: number | null;
+} {
+  const e = erro as {
+    name?: string;
+    message?: string;
+    Code?: string;
+    $metadata?: { httpStatusCode?: number };
+  };
+  const codigo = e?.Code ?? e?.name ?? null;
+  const status = e?.$metadata?.httpStatusCode ?? null;
+
+  const dicionario: Record<string, string> = {
+    NoSuchBucket: "O bucket não existe no provedor. Crie-o ou corrija STORAGE_BUCKET.",
+    AccessDenied: "A credencial não tem permissão de escrita neste bucket.",
+    InvalidAccessKeyId: "STORAGE_ACCESS_KEY_ID não é reconhecida pelo provedor.",
+    SignatureDoesNotMatch:
+      "A assinatura não confere — verifique STORAGE_SECRET_ACCESS_KEY e STORAGE_REGION.",
+    NotFound: "O provedor não achou o bucket. Verifique STORAGE_BUCKET e STORAGE_ENDPOINT.",
+    Forbidden: "O provedor recusou a credencial para este bucket.",
+  };
+
+  const conhecido = codigo ? dicionario[codigo] : undefined;
+  if (conhecido) return { mensagem: conhecido, codigo, status };
+
+  // Sem código conhecido, o que se tem é o que veio — mas com o código junto,
+  // que é o que permite procurar.
+  const cru = e?.message || "Falha ao falar com o bucket.";
+  return {
+    mensagem: codigo && codigo !== "Error" ? `${cru} (${codigo})` : cru,
+    codigo,
+    status,
+  };
+}
+
+/**
+ * Testa a ligação com o bucket sem subir nada.
+ *
+ * `HeadBucket` responde se o bucket existe e se a credencial o alcança — as
+ * duas perguntas que separam "configuração errada" de "arquivo problemático",
+ * e que hoje só dá para responder tentando um upload de verdade.
+ */
+export async function checarStorage(cfg: StorageConfig): Promise<{
+  ok: boolean;
+  bucket: string | null;
+  endpoint: string | null;
+  erro?: { mensagem: string; codigo: string | null; status: number | null };
+}> {
+  const base = { bucket: cfg.bucket ?? null, endpoint: cfg.endpoint ?? null };
+  if (!isStorageConfigured(cfg)) {
+    return {
+      ok: false,
+      ...base,
+      erro: {
+        mensagem: "Faltam variáveis de STORAGE_* no servidor.",
+        codigo: "NOT_CONFIGURED",
+        status: null,
+      },
+    };
+  }
+
+  try {
+    await client(cfg).send(new HeadBucketCommand({ Bucket: cfg.bucket as string }));
+    return { ok: true, ...base };
+  } catch (erro) {
+    return { ok: false, ...base, erro: explicarErroDeStorage(erro) };
+  }
+}
+
+/**
+ * Sobe um objeto minúsculo e o apaga.
+ *
+ * O `HeadBucket` prova leitura; este prova ESCRITA, que é o que o upload faz.
+ * Uma credencial pode enxergar o bucket e não poder gravar nele, e a diferença
+ * só aparece na hora errada.
+ */
+export async function testarEscrita(cfg: StorageConfig): Promise<{
+  ok: boolean;
+  erro?: { mensagem: string; codigo: string | null; status: number | null };
+}> {
+  const chave = `_diagnostico/${randomUUID()}.txt`;
+  try {
+    await client(cfg).send(
+      new PutObjectCommand({
+        Bucket: cfg.bucket as string,
+        Key: chave,
+        Body: "loyola-x",
+        ContentType: "text/plain",
+      }),
+    );
+    await deleteObject(cfg, chave).catch(() => {});
+    return { ok: true };
+  } catch (erro) {
+    return { ok: false, erro: explicarErroDeStorage(erro) };
+  }
 }
