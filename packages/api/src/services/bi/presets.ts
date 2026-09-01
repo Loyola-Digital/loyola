@@ -153,10 +153,13 @@ export const PRESETS: Preset[] = [
   {
     id: "vendas_e_receita",
     nome: "Vendas e receita",
-    descricao: "Quantas transações e quanto entrou no período",
+    descricao: "Quantas compras e quanto entrou no período",
     categoria: "Vendas",
     tipo: "kpi",
-    spec: spec("vendas", ["vendas.count", "vendas.revenue"]),
+    // `faturamento` e não `vendas`: aquela conta só o lançamento manual, que
+    // tem 25 linhas em toda a história. Este preset é o mais usado do painel e
+    // vinha mostrando uma fração do que a operação vendeu.
+    spec: spec("faturamento", ["faturamento.compradores", "faturamento.bruto"]),
   },
   {
     id: "ticket_medio",
@@ -164,7 +167,7 @@ export const PRESETS: Preset[] = [
     descricao: "Receita dividida pelo número de transações — não por cliente",
     categoria: "Vendas",
     tipo: "kpi",
-    spec: spec("vendas", ["vendas.ticket_por_venda"]),
+    spec: spec("faturamento", ["faturamento.ticket"]),
   },
   {
     id: "receita_por_dia",
@@ -172,14 +175,17 @@ export const PRESETS: Preset[] = [
     descricao: "A curva de faturamento ao longo do período",
     categoria: "Vendas",
     tipo: "linha",
-    spec: spec("vendas", ["vendas.revenue"], ["vendas.date"], {
-      order_by: [{ field: "vendas.date", direction: "asc" }],
+    spec: spec("faturamento", ["faturamento.bruto"], ["faturamento.date"], {
+      order_by: [{ field: "faturamento.date", direction: "asc" }],
     }),
   },
   {
     id: "receita_por_produto",
-    nome: "Receita por produto",
-    descricao: "Quanto cada produto representou do faturamento",
+    nome: "Receita por produto (lançadas)",
+    // Fica em `vendas` porque o agregado diário das planilhas não guarda
+    // produto — só data, faturamento e contagem. O rótulo diz de onde vem para
+    // ninguém somar este gráfico com o faturamento total e estranhar.
+    descricao: "Quanto cada produto representou, entre as vendas lançadas à mão",
     categoria: "Vendas",
     tipo: "pizza",
     spec: spec("vendas", ["vendas.revenue"], ["vendas.produto"], {
@@ -189,8 +195,8 @@ export const PRESETS: Preset[] = [
   },
   {
     id: "vendas_por_produto",
-    nome: "Vendas por produto",
-    descricao: "Quantas transações de cada produto",
+    nome: "Vendas por produto (lançadas)",
+    descricao: "Quantas transações de cada produto, entre as lançadas à mão",
     categoria: "Vendas",
     tipo: "barra",
     spec: spec("vendas", ["vendas.count"], ["vendas.produto"], {
@@ -247,8 +253,8 @@ export const PRESETS: Preset[] = [
     descricao: "Quanto cada projeto faturou no período",
     categoria: "Consolidado",
     tipo: "barra",
-    spec: spec("vendas", ["vendas.revenue", "vendas.count"], ["vendas.projeto"], {
-      order_by: [{ field: "vendas.revenue", direction: "desc" }],
+    spec: spec("faturamento", ["faturamento.bruto", "faturamento.compradores"], ["faturamento.projeto"], {
+      order_by: [{ field: "faturamento.bruto", direction: "desc" }],
       limit: 30,
     }),
   },

@@ -89,7 +89,7 @@ export const ENTIDADES: DescricaoDeEntidade[] = [
     // `kiwify_cache`), então não há como somá-lo aqui. Um número chamado
     // "Vendas" sem essa ressalva mente por omissão.
     descricao:
-      "Transações lançadas no Kanban comercial ou importadas das planilhas de venda. NÃO inclui o que foi vendido direto na Kiwify ou Hotmart sem lançamento",
+      "APENAS o que foi lançado à mão no Kanban comercial — 25 registros em toda a história. Para faturamento, receita, ticket ou volume de venda use a entidade `faturamento`. Esta aqui só serve para quebrar por PRODUTO, que é a única coisa que ela tem e a outra não",
   },
   {
     key: "faturamento",
