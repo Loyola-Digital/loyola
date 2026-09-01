@@ -517,6 +517,28 @@ function fonteDe(entity: EntidadeDoCatalogo): Fonte {
   return f;
 }
 
+/**
+ * Métricas que precisam de OUTRA entidade.
+ *
+ * ## Por que existe
+ *
+ * ROAS é receita sobre investimento, e as duas moram em tabelas diferentes: a
+ * receita no cache das planilhas de venda, o investimento nas tabelas da Meta.
+ * O executor monta uma consulta de uma entidade só — então, sem isto, o ROAS
+ * ficava no catálogo como promessa e respondia "ainda não sei calcular". Era o
+ * pior dos mundos: a IA oferecia a métrica e o widget nascia morto.
+ *
+ * ## Como funciona
+ *
+ * Roda a segunda consulta com as MESMAS dimensões, traduzidas para a outra
+ * entidade, e junta em memória pela chave da dimensão. Não é join no banco
+ * porque as fontes não têm chave comum — o que elas compartilham é o
+ * significado de "mesmo dia" e "mesmo projeto".
+ */
+const EMPRESTIMOS: Record<string, { de: EntidadeDoCatalogo; metrica: string }> = {
+  "faturamento.investimento": { de: "trafego", metrica: "trafego.spend" },
+};
+
 /** A expressão de uma métrica base. */
 function expressaoDaMetrica(fonte: Fonte, key: string): SQL {
   const m = fonte.metricas[key];
@@ -595,13 +617,30 @@ export function planejar(spec: QuerySpec) {
   // uma derivada pedida.
   const bases = new Set<string>();
   for (const key of spec.metrics) {
+    // Métrica emprestada não sai do SQL desta fonte: vem da segunda consulta,
+    // na outra entidade. Pedi-la aqui daria "ainda não sei calcular" para algo
+    // que o executor sabe, sim, buscar — só não neste SELECT.
+    if (EMPRESTIMOS[key]) continue;
+
     const d = fonte.derivadas[key];
     if (d) {
       bases.add(d.de);
       bases.add(d.por);
-    } else {
-      bases.add(key);
+      continue;
     }
+
+    // Derivada cuja fórmula usa uma métrica emprestada (o ROAS e o CAC) é
+    // calculada depois do join, não em SQL. O que o SELECT precisa trazer é só
+    // a parte que MORA aqui.
+    const formula = campo(key)?.formula;
+    if (formula && Object.keys(EMPRESTIMOS).some((e) => formula.includes(e))) {
+      for (const parte of formula.split("/").map((x) => x.trim())) {
+        if (parte && !EMPRESTIMOS[parte] && fonte.metricas[parte]) bases.add(parte);
+      }
+      continue;
+    }
+
+    bases.add(key);
   }
 
   const selecao: Record<string, unknown> = {};
@@ -611,6 +650,52 @@ export function planejar(spec: QuerySpec) {
   for (const base of bases) selecao[base] = expressaoDaMetrica(fonte, base);
 
   return { fonte, selecao, bases: [...bases] };
+}
+
+
+/**
+ * A dimensão equivalente na outra entidade.
+ *
+ * Só existe para o que as duas sabem responder. `faturamento.funil` não está
+ * aqui porque o tráfego não sabe de funil: a campanha da Meta não carrega essa
+ * informação, e inventar um rateio daria um número plausível e falso.
+ */
+const DIMENSAO_EQUIVALENTE: Record<string, Record<string, string>> = {
+  faturamento: {
+    "faturamento.date": "trafego.date",
+    "faturamento.projeto": "trafego.projeto",
+  },
+};
+
+/** O que a segunda consulta precisa, ou o motivo de não dar. */
+export function planejarEmprestimo(spec: QuerySpec):
+  | { tipo: "nao-precisa" }
+  | { tipo: "impossivel"; dimensao: string; metrica: string }
+  | { tipo: "precisa"; entidade: EntidadeDoCatalogo; metricas: string[]; dimensoes: string[] } {
+  const pedidas = spec.metrics.filter((m) => EMPRESTIMOS[m]);
+  // Derivada que usa uma métrica emprestada também exige o empréstimo — é o
+  // caso do ROAS, que ninguém pede junto com "investimento".
+  for (const m of spec.metrics) {
+    const f = campo(m)?.formula ?? "";
+    for (const chave of Object.keys(EMPRESTIMOS)) {
+      if (f.includes(chave) && !pedidas.includes(chave)) pedidas.push(chave);
+    }
+  }
+  if (pedidas.length === 0) return { tipo: "nao-precisa" };
+
+  const equivalencias = DIMENSAO_EQUIVALENTE[spec.entity] ?? {};
+  for (const d of spec.dimensions) {
+    if (!equivalencias[d]) {
+      return { tipo: "impossivel", dimensao: d, metrica: pedidas[0]! };
+    }
+  }
+
+  return {
+    tipo: "precisa",
+    entidade: EMPRESTIMOS[pedidas[0]!]!.de,
+    metricas: pedidas.map((p) => EMPRESTIMOS[p]!.metrica),
+    dimensoes: spec.dimensions.map((d) => equivalencias[d]!),
+  };
 }
 
 /** Executa o spec contra o banco — ou contra a planilha, no caso de aplicações. */
@@ -629,6 +714,17 @@ export async function executarQuery(
     );
     const r = executarSobreLinhas(spec, carregado.linhas);
     return { ...r, avisos: [...carregado.avisos, ...r.avisos] };
+  }
+
+  const emprestimo = planejarEmprestimo(spec);
+  if (emprestimo.tipo === "impossivel") {
+    const d = campo(emprestimo.dimensao);
+    const m = campo(emprestimo.metrica);
+    throw new ErroDeQuery(
+      `Não dá para calcular "${m?.label ?? emprestimo.metrica}" por "${d?.label ?? emprestimo.dimensao}": ` +
+        `o investimento em mídia não é registrado nessa granularidade. Use por dia, por projeto, ou sem quebra.`,
+      emprestimo.dimensao,
+    );
   }
 
   const { fonte, selecao } = planejar(spec);
@@ -661,14 +757,42 @@ export async function executarQuery(
     .where(and(...condicoes));
 
   let linhas: Record<string, unknown>[];
+  /** Ordens que só podem ser aplicadas depois do join — ver dentro do `else`. */
+  let ordemEmMemoria: { field: string; direction: "asc" | "desc" }[] = [];
   if (spec.dimensions.length === 0) {
     // Sem dimensão o resultado é uma linha só — o total do período. Não há GROUP
     // BY, e ordenar ou limitar não significaria nada.
     linhas = await construtor.limit(1);
   } else {
-    const ordens = spec.order_by.length
+    /**
+     * Métrica emprestada não pode ordenar em SQL: ela nem está no SELECT.
+     * O ROAS e o CAC caem aqui, e é justamente por eles que se ordena — então
+     * a ordem passa a ser aplicada em memória, depois do join. O SQL ordena
+     * por algo local só para o corte de `limit` cair nas linhas que importam.
+     */
+    const dependeDoEmprestimo = (chave: string): boolean => {
+      if (EMPRESTIMOS[chave]) return true;
+      const f = campo(chave)?.formula ?? "";
+      return Object.keys(EMPRESTIMOS).some((e) => f.includes(e));
+    };
+
+    const pedidas = spec.order_by.length
       ? spec.order_by
       : [{ field: spec.metrics[0]!, direction: "desc" as const }];
+    ordemEmMemoria = pedidas.filter((o) => dependeDoEmprestimo(o.field));
+
+    const noSql = pedidas.filter((o) => !dependeDoEmprestimo(o.field));
+    const ordens = noSql.length
+      ? noSql
+      : // Nada local para ordenar: usa a primeira métrica que MORA aqui, ou a
+        // primeira dimensão. O resultado final é reordenado em memória.
+        [
+          {
+            field:
+              spec.metrics.find((m) => !dependeDoEmprestimo(m)) ?? spec.dimensions[0]!,
+            direction: "desc" as const,
+          },
+        ];
     const orderBy = ordens.map((o) => {
       const e = expressaoDeOrdem(fonte, o.field, spec.date_granularity);
       return o.direction === "asc" ? sql`${e} ASC NULLS LAST` : sql`${e} DESC NULLS LAST`;
@@ -696,6 +820,105 @@ export async function executarQuery(
     }
     return saida;
   });
+
+  if (emprestimo.tipo === "precisa") {
+    // A segunda consulta é do MESMO recorte, na outra entidade: mesmas
+    // dimensões traduzidas, mesmo período, mesmo escopo de projeto.
+    const equivalencias = DIMENSAO_EQUIVALENTE[spec.entity] ?? {};
+    const filtrosTraduzidos: QuerySpec["filters"] = {};
+    for (const [chave, filtro] of Object.entries(spec.filters)) {
+      const eq = equivalencias[chave];
+      // Filtro sem equivalente é DESCARTADO, e isso alarga o denominador: sem o
+      // recorte, o investimento vem maior e o ROAS sai menor. Melhor um número
+      // conservador e explicado que um número otimista e falso.
+      if (eq) filtrosTraduzidos[eq] = filtro;
+    }
+
+    const outro = await executarQuery(
+      querySpecSchema.parse({
+        entity: emprestimo.entidade,
+        metrics: emprestimo.metricas,
+        dimensions: emprestimo.dimensoes,
+        filters: filtrosTraduzidos,
+        limit: TETO_DE_LINHAS,
+        date_granularity: spec.date_granularity,
+      }),
+      ctx,
+    );
+
+    // Índice pela chave das dimensões, na ordem em que foram pedidas.
+    const chaveDa = (linha: Record<string, unknown>, dims: string[]) =>
+      dims.map((d) => String(linha[d] ?? "")).join("|");
+    const porChave = new Map(
+      outro.rows.map((l) => [chaveDa(l, emprestimo.dimensoes), l] as const),
+    );
+
+    for (const linha of rows) {
+      const casada = porChave.get(chaveDa(linha, spec.dimensions));
+      emprestimo.metricas.forEach((metricaLa, i) => {
+        const nossa = Object.keys(EMPRESTIMOS)[
+          Object.values(EMPRESTIMOS).findIndex((e) => e.metrica === metricaLa)
+        ];
+        if (nossa) linha[nossa] = casada ? num(casada[metricaLa]) : 0;
+        void i;
+      });
+    }
+
+    // As derivadas que dependem do empréstimo só podem ser calculadas AGORA:
+    // na primeira passada o denominador ainda não existia.
+    for (const linha of rows) {
+      for (const key of spec.metrics) {
+        const f = campo(key)?.formula;
+        if (!f) continue;
+        const [de, por] = f.split("/").map((x) => x.trim());
+        if (!de || !por) continue;
+        if (!(de in linha) || !(por in linha)) continue;
+        linha[key] = razao(num(linha[de]), num(linha[por]));
+      }
+    }
+
+    /**
+     * O que sobrou do outro lado.
+     *
+     * Um recorte pode ter investimento e nenhum faturamento — o `Lyrio`
+     * gastou R$ 3.387 em agosto e vende pelo RevenueCat, que não entra nesta
+     * fonte. Essas linhas não casam, e o investimento delas fica de fora.
+     *
+     * Sem avisar, quem soma a coluna encontra menos que o tráfego real e
+     * conclui que a tela está errada. Com aviso, sabe que a diferença tem nome.
+     */
+    const casadas = new Set(rows.map((l) => chaveDa(l, spec.dimensions)));
+    let orfao = 0;
+    for (const l of outro.rows) {
+      if (casadas.has(chaveDa(l, emprestimo.dimensoes))) continue;
+      for (const m of emprestimo.metricas) orfao += num(l[m]) ?? 0;
+    }
+    if (orfao > 0) {
+      avisos.push(
+        `R$ ${orfao.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} de investimento ficaram de fora: ` +
+          `houve tráfego em recortes sem faturamento registrado nesta fonte.`,
+      );
+    }
+
+    if (ordemEmMemoria.length > 0) {
+      rows.sort((a, b) => {
+        for (const o of ordemEmMemoria) {
+          const va = a[o.field];
+          const vb = b[o.field];
+          // `null` (taxa sem denominador) vai para o fim nos dois sentidos:
+          // "não deu para calcular" não é o menor valor, é ausência.
+          if (va === null && vb === null) continue;
+          if (va === null) return 1;
+          if (vb === null) return -1;
+          const d = Number(vb) - Number(va);
+          if (d !== 0) return o.direction === "asc" ? -d : d;
+        }
+        return 0;
+      });
+    }
+
+    avisos.push(...outro.avisos);
+  }
 
   const columns = [...spec.dimensions, ...spec.metrics].map((k) => {
     const c = campo(k)!;

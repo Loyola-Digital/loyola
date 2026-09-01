@@ -19,6 +19,7 @@ import {
   razao,
   TETO_DE_LINHAS,
   validarSpec,
+  planejarEmprestimo,
   type QuerySpec,
 } from "../services/bi/query.js";
 import { CAMPOS } from "../services/bi/catalogo.js";
@@ -610,5 +611,91 @@ describe("T9 · faturamento é a fonte que bate com o resto do app", () => {
     expect(ticket?.aggregation).toBe("none");
     expect(ticket?.formula).toBeTruthy();
     expect(ticket?.nullWhenEmpty).toBe(true);
+  });
+});
+
+describe("T10 · ROAS cruza tráfego e faturamento", () => {
+  /**
+   * O ROAS estava no catálogo desde sempre e NUNCA funcionou: a fórmula
+   * atravessava entidades (`vendas.revenue / trafego.spend`) e o executor monta
+   * uma consulta de uma entidade só. Quem pedia recebia "ainda não sei calcular
+   * ROAS (Geral)" — o pior dos mundos, porque a IA oferecia a métrica e o
+   * widget nascia morto.
+   *
+   * Conferido contra produção depois do conserto: total R$ 977.626,80 ÷
+   * R$ 150.425,09 = 6,50; por projeto, BBE 10,79 e PP 2,04. E o investimento
+   * total bate no centavo com uma consulta pura de tráfego.
+   */
+  it("por dia e por projeto, o empréstimo é planejado", () => {
+    for (const dim of ["faturamento.date", "faturamento.projeto"]) {
+      const plano = planejarEmprestimo(
+        spec({
+          entity: "faturamento",
+          metrics: ["faturamento.roas"],
+          dimensions: [dim],
+          filters: {
+            "faturamento.date": { operator: "$between", value: ["2026-08-01", "2026-08-31"] },
+          },
+        }),
+      );
+      expect(plano.tipo).toBe("precisa");
+    }
+  });
+
+  it("o ROAS puxa o investimento mesmo sem ninguém pedir a métrica", () => {
+    // Ninguém escreve "me dá ROAS e investimento": o denominador tem que vir
+    // sozinho, deduzido da fórmula.
+    const plano = planejarEmprestimo(
+      spec({
+        entity: "faturamento",
+        metrics: ["faturamento.roas"],
+        filters: {
+          "faturamento.date": { operator: "$between", value: ["2026-08-01", "2026-08-31"] },
+        },
+      }),
+    );
+    expect(plano).toMatchObject({ tipo: "precisa", metricas: ["trafego.spend"] });
+  });
+
+  it("por funil é recusado com explicação, não com número inventado", async () => {
+    // O tráfego não sabe de funil: a campanha da Meta não carrega isso. Ratear
+    // daria um número plausível e falso, que é pior que recusar.
+    const { db } = dbFalso();
+    await expect(
+      executarQuery(
+        spec({
+          entity: "faturamento",
+          metrics: ["faturamento.roas"],
+          dimensions: ["faturamento.funil"],
+          filters: {
+            "faturamento.date": { operator: "$between", value: ["2026-08-01", "2026-08-31"] },
+          },
+        }),
+        { db, projectIds: [PROJETO] },
+      ),
+    ).rejects.toThrow(/granularidade/);
+  });
+
+  it("consulta sem métrica emprestada não paga a segunda ida ao banco", () => {
+    const plano = planejarEmprestimo(
+      spec({
+        entity: "faturamento",
+        metrics: ["faturamento.bruto"],
+        filters: {
+          "faturamento.date": { operator: "$between", value: ["2026-08-01", "2026-08-31"] },
+        },
+      }),
+    );
+    expect(plano.tipo).toBe("nao-precisa");
+  });
+
+  it("o catálogo não promete mais um ROAS que não existe", () => {
+    // A regra do arquivo: só entra o que o executor sabe traduzir. As duas
+    // chaves antigas (`vendas.roas_geral`, `vendas.roas_atribuido`) eram
+    // promessa quebrada e saíram.
+    const chaves = CAMPOS.map((c) => c.key);
+    expect(chaves).not.toContain("vendas.roas_geral");
+    expect(chaves).not.toContain("vendas.roas_atribuido");
+    expect(chaves).toContain("faturamento.roas");
   });
 });
