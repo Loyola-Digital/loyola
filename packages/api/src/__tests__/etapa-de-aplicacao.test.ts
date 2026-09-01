@@ -9,7 +9,10 @@
 import { describe, expect, it } from "vitest";
 import {
   SEM_ORIGEM,
+  comNomeLegivel,
   dedupKey,
+  idsDaMeta,
+  pareceIdDaMeta,
   dentroDoPeriodo,
   emailComparavel,
   resumir,
@@ -211,5 +214,77 @@ describe("os parsers, contra o que as planilhas reais escrevem", () => {
     // sem data que sumir com receita real por uma célula mal formatada.
     expect(dataDaCelula("sem data")).toBeNull();
     expect(dentroDoPeriodo(dataDaCelula("sem data"), new Date("2026-08-01"), null)).toBe(true);
+  });
+});
+
+describe("conversão por origem — o 400% que apareceu na tela", () => {
+  /**
+   * Reproduz a linha exata do relato: origem "Sem Track" com 1 aplicação e 4
+   * vendas, mostrando 400%. O número existia e não significava nada — as
+   * vendas de uma origem não são necessariamente de quem se aplicou por ela.
+   */
+  it("a conversão nunca passa de 100%", () => {
+    const r = resumir(
+      [aplicacao({ email: "a@x.com", utmSource: "", utmMedium: "" })],
+      [
+        venda({ email: "b@x.com", chave: "1", utmSource: "", utmMedium: "" }),
+        venda({ email: "c@x.com", chave: "2", utmSource: "", utmMedium: "" }),
+        venda({ email: "d@x.com", chave: "3", utmSource: "", utmMedium: "" }),
+        venda({ email: "e@x.com", chave: "4", utmSource: "", utmMedium: "" }),
+      ],
+    );
+    const semTrack = r.porUtmSource.find((x) => x.origem === SEM_ORIGEM)!;
+    expect(semTrack.vendas).toBe(4);
+    expect(semTrack.aplicacoes).toBe(1);
+    // Nenhum dos compradores tinha se aplicado: a conversão da origem é ZERO,
+    // não 400%.
+    expect(semTrack.converteram).toBe(0);
+  });
+
+  it("a conversão vai na origem da APLICAÇÃO, não na da venda", () => {
+    // Quem entrou pelo Meta e pagou por link de WhatsApp converteu o Meta —
+    // é o canal de entrada que se está avaliando.
+    const r = resumir(
+      [aplicacao({ email: "joao@x.com", utmSource: "meta" })],
+      [venda({ email: "joao@x.com", utmSource: "whatsapp", chave: "1" })],
+    );
+    expect(r.porUtmSource.find((x) => x.origem === "meta")?.converteram).toBe(1);
+    expect(r.porUtmSource.find((x) => x.origem === "whatsapp")?.converteram).toBe(0);
+  });
+});
+
+describe("o id do conjunto vira nome", () => {
+  it("reconhece id da Meta e ignora utm_medium legítimo", () => {
+    // Os ids reais do relato.
+    expect(pareceIdDaMeta("120247234267040489")).toBe(true);
+    expect(pareceIdDaMeta("120247569245860489")).toBe(true);
+    // Nada disto pode virar "conjunto sem nome".
+    for (const v of ["automacao", "social", "2026", "01", "paulo", "descricao"]) {
+      expect(pareceIdDaMeta(v)).toBe(false);
+    }
+  });
+
+  it("troca o id pelo nome, e deixa o id quando o cache não tem", () => {
+    const nomes = new Map([["120247569245860489", "01_ig-fb_lal1-bbe"]]);
+    const linhas = [
+      { origem: "120247569245860489", vendas: 0, valor: 0, aplicacoes: 4, converteram: 0 },
+      { origem: "120247000000000000", vendas: 1, valor: 10, aplicacoes: 0, converteram: 0 },
+      { origem: "automacao", vendas: 5, valor: 50, aplicacoes: 0, converteram: 0 },
+    ];
+    const r = comNomeLegivel(linhas, nomes);
+    expect(r[0]?.origem).toBe("01_ig-fb_lal1-bbe");
+    // Id sem nome fica como está: inventar "desconhecido" esconderia qual é, e
+    // é o id que permite ir procurar na Meta.
+    expect(r[1]?.origem).toBe("120247000000000000");
+    expect(r[2]?.origem).toBe("automacao");
+  });
+
+  it("junta os ids das duas quebras, sem repetir", () => {
+    const a = [{ origem: "120247234267040489", vendas: 1, valor: 1, aplicacoes: 0, converteram: 0 }];
+    const b = [
+      { origem: "120247234267040489", vendas: 1, valor: 1, aplicacoes: 0, converteram: 0 },
+      { origem: "meta", vendas: 1, valor: 1, aplicacoes: 0, converteram: 0 },
+    ];
+    expect(idsDaMeta(a, b)).toEqual(["120247234267040489"]);
   });
 });

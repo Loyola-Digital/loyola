@@ -115,14 +115,22 @@ function TabelaDeOrigem({
               <th className="pb-1.5 text-right font-medium">Aplicações</th>
               <th className="pb-1.5 text-right font-medium">Vendas</th>
               <th className="pb-1.5 text-right font-medium">Receita</th>
-              <th className="pb-1.5 text-right font-medium">Conv.</th>
+              <th className="pb-1.5 text-right font-medium" title="Aplicações desta origem que viraram compra">
+                Conv.
+              </th>
             </tr>
           </thead>
           <tbody>
             {linhas.map((l) => {
-              // Conversão por origem só existe com aplicação: sem base, "—" é a
-              // resposta honesta, e 0% seria uma afirmação diferente.
-              const conv = l.aplicacoes > 0 ? (l.vendas / l.aplicacoes) * 100 : null;
+              // `converteram`, não `vendas`: as vendas de uma origem não são
+              // necessariamente de quem se aplicou por ela — uma compra pode
+              // chegar por WhatsApp de quem entrou pelo Meta. Dividir por
+              // `vendas` produzia "1 aplicação, 4 vendas, 400%", um número que
+              // existia e não significava nada.
+              //
+              // Sem aplicação não há base: "—" é a resposta honesta, e 0% seria
+              // uma afirmação diferente.
+              const conv = l.aplicacoes > 0 ? (l.converteram / l.aplicacoes) * 100 : null;
               return (
                 <tr key={l.origem} className="border-b border-border/20 last:border-0">
                   <td className="py-1.5 pr-2">{l.origem}</td>

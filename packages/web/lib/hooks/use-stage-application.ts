@@ -24,10 +24,13 @@ export interface FonteDeVenda {
 }
 
 export interface QuebraPorOrigem {
+  /** Já vem legível: id de conjunto da Meta chega traduzido para o nome. */
   origem: string;
   vendas: number;
   valor: number;
   aplicacoes: number;
+  /** Aplicações DESTA origem que viraram compra — o numerador da conversão. */
+  converteram: number;
 }
 
 export interface ResumoDaAplicacao {
