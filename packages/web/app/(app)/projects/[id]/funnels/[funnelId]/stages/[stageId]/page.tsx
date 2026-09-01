@@ -403,6 +403,24 @@ export default function StagePage() {
                     type="button"
                     onClick={() => {
                       updateStage.mutate(
+                        { stageType: "application" },
+                        { onSuccess: () => toast.success("Tipo alterado para Aplicação") }
+                      );
+                    }}
+                    className={cn(
+                      "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
+                      (stage.stageType as string) === "application"
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border hover:bg-muted"
+                    )}
+                  >
+                    <span className="font-medium">Aplicação</span>
+                    <span className="text-xs text-muted-foreground">Formulário + venda por UTM</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateStage.mutate(
                         { stageType: "sales" },
                         { onSuccess: () => toast.success("Tipo alterado para Vendas") }
                       );
