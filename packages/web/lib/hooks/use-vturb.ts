@@ -172,7 +172,15 @@ export function useVturbOverview(
           `?startDate=${range.startDate}&endDate=${range.endDate}`,
       ),
     enabled: !!projectId && !!stageId && !!linkId,
-    staleTime: 2 * 60 * 1000,
+    /**
+     * Meio minuto, e não dois.
+     *
+     * O VTurb computa a janela sob demanda: quem pede uma faixa nova pode
+     * receber uma resposta incompleta. O servidor já tenta de novo, mas se um
+     * zero escapar, dois minutos de cache o transformam em "sempre zerado" —
+     * que foi como o problema apareceu. Trinta segundos deixam um F5 resolver.
+     */
+    staleTime: 30 * 1000,
     // Segura o render anterior ao trocar de período — sem piscar skeleton.
     placeholderData: (prev) => prev,
   });

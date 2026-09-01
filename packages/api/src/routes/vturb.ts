@@ -278,9 +278,43 @@ export default fp(async function vturbRoutes(fastify) {
         // Os contadores do diário somam EXATAMENTE o agregado quando os dois
         // vêm bons (conferido em 7, 30 e 90 dias), então dá para reconstruir a
         // partir dele em vez de servir o zero.
-        const statsFinal = pareceVazio(stats) && temMovimento(byDay)
-          ? reconstruirStats(byDay, stats)
-          : stats;
+        /**
+         * Os DOIS vazios, com a curva de retenção cheia.
+         *
+         * É o caso que faltava, e o relato o descreveu sem saber: "Tempo
+         * assistido 0:46" ao lado de "Views 0". Os dois não podem ser verdade
+         * ao mesmo tempo — se há gente na curva de retenção, houve tráfego.
+         *
+         * A curva vem de outro endpoint (`user_engagement`) e é a testemunha:
+         * quando ela tem usuários e os contadores estão zerados, a resposta
+         * está incompleta, não vazia. Sem esta checagem eu concluía "não houve
+         * tráfego" e não tentava de novo — a janela de 30 dias ficava zerada
+         * enquanto 7 e 90 funcionavam, que foi exatamente o sintoma.
+         */
+        const houveAudiencia = (engagement?.grouped_timed?.[0]?.total_users ?? 0) > 0;
+
+        let agregado = stats;
+        let diarioBruto = byDay;
+        if (pareceVazio(agregado) && !temMovimento(diarioBruto) && houveAudiencia) {
+          const [s2, d2] = await Promise.all([
+            sessionStats(conn.token, {
+              ...base,
+              videoDuration: link.duration,
+              pitchTime: link.pitchTime,
+            }).catch(() => stats),
+            sessionStatsByDay(conn.token, {
+              ...base,
+              videoDuration: link.duration,
+              pitchTime: link.pitchTime,
+            }).catch(() => byDay),
+          ]);
+          agregado = s2;
+          diarioBruto = d2;
+        }
+
+        const statsFinal = pareceVazio(agregado) && temMovimento(diarioBruto)
+          ? reconstruirStats(diarioBruto, agregado)
+          : agregado;
 
         /**
          * O caso SIMÉTRICO: o diário vem vazio e o agregado vem cheio.
@@ -298,14 +332,14 @@ export default fp(async function vturbRoutes(fastify) {
          * Uma segunda tentativa basta: na medição, a janela já estava computada
          * na chamada seguinte.
          */
-        let diario = byDay;
+        let diario = diarioBruto;
         let diarioIncompleto = false;
         if (!temMovimento(diario) && !pareceVazio(statsFinal)) {
           diario = await sessionStatsByDay(conn.token, {
             ...base,
             videoDuration: link.duration,
             pitchTime: link.pitchTime,
-          }).catch(() => byDay);
+          }).catch(() => diarioBruto);
           // Se nem na segunda veio, a tela precisa DIZER isso. Um gráfico
           // chapado no zero ao lado de um total de 7 mil views faz o time
           // investigar uma queda que não existiu.
@@ -328,7 +362,11 @@ export default fp(async function vturbRoutes(fastify) {
            * pontos das que o VTurb calcularia (ele usa bases próprias por
            * sessão/dispositivo).
            */
-          statsReconstruidos: statsFinal !== stats,
+          // Compara com `agregado`, não com `stats`: a segunda tentativa pode
+          // ter trocado o objeto sem que houvesse reconstrução nenhuma, e o
+          // aviso diria "os totais foram somados dia a dia" para números que
+          // vieram prontos do VTurb.
+          statsReconstruidos: statsFinal !== agregado,
           /**
            * O diário veio vazio mesmo com o agregado cheio, nas duas
            * tentativas. Os totais valem; as séries por dia, não.

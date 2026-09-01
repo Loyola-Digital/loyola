@@ -113,3 +113,34 @@ describe("o diário vazio com totais cheios — o caso simétrico", () => {
     expect(!temMovimento([]) && !pareceVazio(vazio)).toBe(false);
   });
 });
+
+describe("os dois vazios com audiência na curva", () => {
+  /**
+   * O caso que faltava, descrito pelo relato sem saber: "Tempo assistido 0:46"
+   * ao lado de "Views 0". Os dois não podem ser verdade ao mesmo tempo — se há
+   * gente na curva de retenção, houve tráfego.
+   *
+   * A janela de 30 dias ficava zerada enquanto 7 e 90 funcionavam, porque
+   * quando os DOIS contadores vinham vazios eu concluía "não houve tráfego" e
+   * não tentava de novo. A curva vem de outro endpoint e serve de testemunha.
+   */
+  const vazio = { total_viewed: 0, total_started: 0, total_conversions: 0 } as never;
+
+  const precisaRepetir = (s: VturbSessionStats, d: VturbStatsByDay, usuarios: number) =>
+    pareceVazio(s) && !temMovimento(d) && usuarios > 0;
+
+  it("contadores zerados + curva com gente = resposta incompleta", () => {
+    expect(precisaRepetir(vazio, [], 812)).toBe(true);
+  });
+
+  it("período de verdade sem tráfego não vira tentativa extra", () => {
+    // Curva vazia junto com contadores vazios é uma resposta coerente: não
+    // houve nada. Insistir aqui gastaria cota do plano por nada.
+    expect(precisaRepetir(vazio, [], 0)).toBe(false);
+  });
+
+  it("contadores cheios não disparam nada, mesmo com curva cheia", () => {
+    const cheio = { total_viewed: 7433, total_started: 3187, total_conversions: 0 } as never;
+    expect(precisaRepetir(cheio, [], 812)).toBe(false);
+  });
+});
