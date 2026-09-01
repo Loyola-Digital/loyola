@@ -3549,9 +3549,15 @@ export const projectSourceRules = pgTable(
   "project_source_rules",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    projectId: uuid("project_id")
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
+    /**
+     * NULL = a regra vale para TODOS os projetos.
+     *
+     * O caso que motivou: um link mal montado entrega `{whatsapp}` — a macro
+     * com as chaves literais. Isso não é problema de um projeto, é do formato
+     * do link, e cadastrar a mesma correção projeto a projeto seria trabalho
+     * repetido e fatalmente desatualizado num deles.
+     */
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
     /**
      * Coluna da planilha que a regra observa (`utm_medium`, `utm_term`, …).
      *

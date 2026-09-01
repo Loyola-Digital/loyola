@@ -20,7 +20,7 @@
  * linha de planilha.
  */
 
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, isNull, or, sql } from "drizzle-orm";
 import { projectSourceRules } from "../db/schema.js";
 import { origemPorRegra, type LinhaDeAplicacao, type RegraDeOrigem } from "./source-rules.js";
 
@@ -66,8 +66,19 @@ export async function regrasDoProjeto(db: Db, projectId: string): Promise<RegraD
       ativa: projectSourceRules.ativa,
     })
     .from(projectSourceRules)
-    .where(eq(projectSourceRules.projectId, projectId))
-    .orderBy(asc(projectSourceRules.ordem), asc(projectSourceRules.createdAt))) as RegraDeOrigem[];
+    // Globais (`project_id IS NULL`) + as deste projeto. A correção de
+    // `{whatsapp}` é do formato do link e vale em qualquer campanha; a de
+    // "parceiro-x é orgânico" é de um cliente só. As duas convivem.
+    .where(
+      or(isNull(projectSourceRules.projectId), eq(projectSourceRules.projectId, projectId)),
+    )
+    // `ordem` decide, e a regra específica do projeto desempata na frente:
+    // quem cadastrou algo para o próprio projeto quis sobrepor o padrão.
+    .orderBy(
+      asc(projectSourceRules.ordem),
+      asc(sql`CASE WHEN ${projectSourceRules.projectId} IS NULL THEN 1 ELSE 0 END`),
+      asc(projectSourceRules.createdAt),
+    )) as RegraDeOrigem[];
 
   cache.set(projectId, { em: Date.now(), regras });
   return regras;
