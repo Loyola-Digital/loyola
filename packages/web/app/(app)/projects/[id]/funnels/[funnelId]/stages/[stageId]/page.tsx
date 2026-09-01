@@ -36,6 +36,7 @@ import { SwitchyLinksTab } from "@/components/funnels/switchy-links-tab";
 import { SwitchyFunnelSection } from "@/components/funnels/switchy-funnel-section";
 import { LeadScoringTab } from "@/components/funnels/lead-scoring-tab";
 import { OrganicMediaTab } from "@/components/funnels/organic-media-tab";
+import { ApplicationStageView } from "@/components/funnels/application-stage-view";
 import { CplStageView } from "@/components/funnels/cpl-stage-view";
 import { LaunchReportConfigSection } from "@/components/funnels/launch-report-config-section";
 import { PerpetualReportConfigSection } from "@/components/funnels/perpetual-report-config-section";
@@ -162,6 +163,20 @@ export default function StagePage() {
   if (stage.stageType === "sales") {
     return (
       <SalesStageView
+        projectId={params.id}
+        funnelId={params.funnelId}
+        funnelName={funnel.name}
+        stage={stage}
+      />
+    );
+  }
+
+  // Etapa "application" — formulário de aplicação: quem se aplicou, quem
+  // comprou, e de qual origem. Render dedicado: o dashboard de captação paga
+  // responde outra pergunta e mostraria campos que aqui não existem.
+  if ((stage.stageType as string) === "application") {
+    return (
+      <ApplicationStageView
         projectId={params.id}
         funnelId={params.funnelId}
         funnelName={funnel.name}

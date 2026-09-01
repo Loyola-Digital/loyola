@@ -93,6 +93,7 @@ export function StageCard({ stage, projectId, funnelId, isLastStage }: StageCard
                 <p className="font-semibold text-sm truncate">{stage.name}</p>
                 <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
                   stage.stageType === "paid" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                  : stage.stageType === "application" ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"
                   : stage.stageType === "sales" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
                   : stage.stageType === "cpl" ? "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400"
                   : stage.stageType === "event" ? "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-400"
@@ -102,7 +103,7 @@ export function StageCard({ stage, projectId, funnelId, isLastStage }: StageCard
                   : stage.stageType === "mapa" ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"
                   : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
                 }`}>
-                  {stage.stageType === "paid" ? "Paga" : stage.stageType === "sales" ? "Vendas" : stage.stageType === "cpl" ? "CPL" : stage.stageType === "event" ? "Evento Presencial" : stage.stageType === "event_capture" ? "Captação de Evento" : stage.stageType === "debriefing" ? "Debriefing" : stage.stageType === "comercial" ? "Comercial" : stage.stageType === "mapa" ? "Mapa" : "Gratuita"}
+                  {stage.stageType === "paid" ? "Paga" : stage.stageType === "application" ? "Aplicação" : stage.stageType === "sales" ? "Vendas" : stage.stageType === "cpl" ? "CPL" : stage.stageType === "event" ? "Evento Presencial" : stage.stageType === "event_capture" ? "Captação de Evento" : stage.stageType === "debriefing" ? "Debriefing" : stage.stageType === "comercial" ? "Comercial" : stage.stageType === "mapa" ? "Mapa" : "Gratuita"}
                 </span>
               </div>
               <div className="mt-2 space-y-1">
