@@ -65,6 +65,7 @@ import stageSalesJourneyRoutes from "./routes/stage-sales-journey.js";
 import switchyRoutes from "./routes/switchy.js";
 import funnelStageRoutes from "./routes/funnel-stages.js";
 import stageSalesSpreadsheetsRoutes from "./routes/stage-sales-spreadsheets.js";
+import stageApplicationRoutes from "./routes/stage-application.js";
 import stageSalesDataRoutes from "./routes/stage-sales-data.js";
 import sellersBreakdownRoutes from "./routes/sellers-breakdown.js";
 import sellerAliasesRoutes from "./routes/seller-aliases.js";
@@ -229,6 +230,7 @@ export async function buildServer() {
   await app.register(switchyRoutes);
   await app.register(funnelStageRoutes);
   await app.register(stageSalesSpreadsheetsRoutes);
+  await app.register(stageApplicationRoutes);
   await app.register(stageSalesDataRoutes);
   await app.register(sellersBreakdownRoutes);
   await app.register(sellerAliasesRoutes);

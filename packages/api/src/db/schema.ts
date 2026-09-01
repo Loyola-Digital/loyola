@@ -1597,6 +1597,38 @@ export const kiwifyConnections = pgTable(
  * contagem daquele lançamento começa a valer, e adivinhar isso por `created_at`
  * daria divergência logo na primeira comparação.
  */
+/**
+ * Etapa de Aplicação: quais planilhas de venda contam como "vendeu".
+ *
+ * A escolha é explícita, e não "todas as planilhas do funil", porque um funil
+ * costuma ter mais de uma natureza de venda conectada — no `dg-pg04` são três
+ * na mesma etapa (produto principal, TMB e captação). Somar as três contaria
+ * coisas diferentes como se fossem a mesma, e o número ficaria errado sem
+ * ninguém perceber.
+ */
+export const applicationStageConfigs = pgTable(
+  "application_stage_configs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .unique()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    /**
+     * Ids de `stage_sales_spreadsheets`, de QUALQUER etapa do mesmo funil.
+     *
+     * Vazio = ninguém escolheu ainda. A etapa mostra aplicações e tráfego e diz
+     * que falta escolher a fonte de venda — em vez de exibir zero vendas, que
+     * seria indistinguível de "não vendeu nada".
+     */
+    salesSpreadsheetIds: jsonb("sales_spreadsheet_ids").$type<string[]>().notNull().default([]),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("application_stage_configs_stage_idx").on(t.stageId)],
+);
+
 export const kiwifyStageConfigs = pgTable(
   "kiwify_stage_configs",
   {
