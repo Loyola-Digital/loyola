@@ -33,6 +33,17 @@ export function ehCaptacaoPaga(stageType: string | null | undefined): boolean {
   return stageType === "paid" || stageType === "event_capture";
 }
 
+/**
+ * Etapa de Aplicação — a página capta por formulário, e a venda vem depois.
+ *
+ * Fica FORA de `ehCaptacaoPaga` de propósito: aquela função liga o dashboard de
+ * captação inteiro (KPIs de lead, venda manual, comprovante), e esta etapa tem
+ * um dashboard próprio. O que ela compartilha é o tráfego, não o resto.
+ */
+export function ehEtapaDeAplicacao(stageType: string | null | undefined): boolean {
+  return stageType === "application";
+}
+
 /** Etapas que têm dashboard de vendas (KPIs, planilhas, faturamento). */
 export function temDashboardDeVendas(stageType: string | null | undefined): boolean {
   return ehCaptacaoPaga(stageType) || stageType === "sales";
@@ -40,6 +51,9 @@ export function temDashboardDeVendas(stageType: string | null | undefined): bool
 
 /** Etapas que captam lead — servem de fonte pro CRM e pro sync diário. */
 export function ehEtapaDeCaptacao(stageType: string | null | undefined): boolean {
+  // A etapa de Aplicação capta lead como qualquer outra — quem se aplica é
+  // lead, e o CRM e o sync diário precisam enxergá-lo.
+  if (stageType === "application") return true;
   return ehCaptacaoPaga(stageType) || stageType === "free";
 }
 

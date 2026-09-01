@@ -28,8 +28,15 @@ export interface SwitchyLinkRef {
 // dashboard), mas a venda manual é VENDA DE INGRESSO — com upload de comprovante
 // que a IA lê pra preencher a venda. Passou de 10 chars: a coluna foi ampliada
 // pra varchar(20) na migration 0102.
+// "application" = Captação por Aplicação: a página tem formulário de aplicação,
+// então o lead se APLICA antes de comprar. Junta o tráfego (como a Captação
+// Paga), as aplicações lidas da planilha de pesquisa, e a venda — que acontece
+// depois e é registrada numa planilha JÁ conectada em outra etapa do funil. A
+// pergunta que a etapa responde é a taxa aplicação→venda, e de qual origem
+// (utm_source/utm_medium) vem cada uma.
 export type StageType =
   | "paid"
+  | "application"
   | "free"
   | "sales"
   | "cpl"
