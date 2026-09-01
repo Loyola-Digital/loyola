@@ -21,6 +21,7 @@ import {
   validarSpec,
   type QuerySpec,
 } from "../services/bi/query.js";
+import { CAMPOS } from "../services/bi/catalogo.js";
 
 const dialeto = new PgDialect();
 const texto = (s: SQL) => dialeto.sqlToQuery(s);
@@ -57,12 +58,17 @@ function dbFalso(linhas: Record<string, unknown>[] = []) {
     select: vi.fn((f: Record<string, unknown>) => {
       visto.selecao = f;
       return {
-        from: vi.fn(() => ({
-          where: vi.fn((c: unknown) => {
-            visto.where = c;
-            return cadeia;
-          }),
-        })),
+        // O `from` é guardado porque a entidade `faturamento` tem a fonte numa
+        // subconsulta, não numa tabela — é lá que mora o `sales-daily`.
+        from: vi.fn((t: unknown) => {
+          visto.from = t;
+          return {
+            where: vi.fn((c: unknown) => {
+              visto.where = c;
+              return cadeia;
+            }),
+          };
+        }),
       };
     }),
   };
@@ -531,5 +537,78 @@ describe("escopo consolidado", () => {
     );
     expect(r.rows).toHaveLength(1);
     expect(r.columns[0]!.label).toBe("Projeto");
+  });
+});
+
+describe("T9 · faturamento é a fonte que bate com o resto do app", () => {
+  /**
+   * A entidade nasceu de um número errado em produção.
+   *
+   * O BI mostrava 17 transações e R$ 311.875 para 90 dias em todos os projetos
+   * — certo para `manual_sales`, que tem 25 linhas em toda a história, e uma
+   * fração da operação. No mesmo recorte, `dg-pg04` sozinho tinha 1.332
+   * compradores e R$ 305.221, e o total real era R$ 977.626,80 com 2.656
+   * compradores. Conferido rodando esta consulta contra o banco de produção.
+   */
+  it("consulta o cache diário das planilhas, não a tabela de lançamento manual", async () => {
+    const { db, visto } = dbFalso();
+    await executarQuery(
+      spec({
+        entity: "faturamento",
+        metrics: ["faturamento.bruto", "faturamento.compradores"],
+        dimensions: ["faturamento.funil"],
+        filters: {
+          "faturamento.date": { operator: "$between", value: ["2026-06-04", "2026-09-01"] },
+        },
+      }),
+      { db, projectIds: [PROJETO] },
+    );
+    const sql = JSON.stringify(visto.from);
+    expect(sql).toContain("sales-daily");
+    // `manual_sales` é a OUTRA entidade: misturar as duas dobraria a contagem.
+    expect(sql).not.toContain("manual_sales");
+  });
+
+  it("o escopo por projeto entra mesmo aqui, onde a fonte é uma subconsulta", async () => {
+    // Numa fonte derivada é fácil esquecer o escopo e vazar projeto alheio.
+    const { db, visto } = dbFalso();
+    await executarQuery(
+      spec({
+        entity: "faturamento",
+        metrics: ["faturamento.bruto"],
+        filters: {
+          "faturamento.date": { operator: "$between", value: ["2026-08-01", "2026-08-31"] },
+        },
+      }),
+      { db, projectIds: [PROJETO] },
+    );
+    const where = JSON.stringify(visto.where);
+    expect(where).toContain("project_id");
+    expect(where).toContain(PROJETO);
+  });
+
+  it("payload meio gravado não derruba a consulta inteira", async () => {
+    // A guarda de `jsonb_typeof` existe para uma linha ruim sumir do relatório
+    // em vez de quebrar o dashboard de todo mundo.
+    const { db, visto } = dbFalso();
+    await executarQuery(
+      spec({
+        entity: "faturamento",
+        metrics: ["faturamento.bruto"],
+        filters: {
+          "faturamento.date": { operator: "$between", value: ["2026-08-01", "2026-08-31"] },
+        },
+      }),
+      { db, projectIds: [PROJETO] },
+    );
+    expect(JSON.stringify(visto.from)).toContain("jsonb_typeof");
+  });
+
+  it("ticket médio é derivado, não somado", () => {
+    // Somar tickets diários e dividir por N dá um número que não existe.
+    const ticket = CAMPOS.find((c) => c.key === "faturamento.ticket");
+    expect(ticket?.aggregation).toBe("none");
+    expect(ticket?.formula).toBeTruthy();
+    expect(ticket?.nullWhenEmpty).toBe(true);
   });
 });

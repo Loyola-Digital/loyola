@@ -68,7 +68,7 @@ export const filtroSchema = z.object({
 export const TETO_DE_LINHAS = 10_000;
 
 export const querySpecSchema = z.object({
-  entity: z.enum(["trafego", "vendas", "aplicacoes", "grupos"]),
+  entity: z.enum(["trafego", "vendas", "faturamento", "aplicacoes", "grupos"]),
   metrics: z.array(z.string()).min(1).max(20),
   dimensions: z.array(z.string()).max(5).default([]),
   filters: z.record(z.string(), filtroSchema).default({}),
@@ -230,6 +230,77 @@ const FONTES: Partial<Record<EntidadeDoCatalogo, Fonte>> = {
     },
   },
 
+  /**
+   * O faturamento de verdade — o que as planilhas de venda registram.
+   *
+   * ## Por que não é a tabela `manual_sales`
+   *
+   * `vendas` conta o Kanban comercial: 25 linhas em toda a história, R$ 341 mil.
+   * A operação vende muito mais que isso, e o resto nunca passou por lá. Medido
+   * em 2026-09-01, 90 dias: o BI mostrava 17 transações enquanto `dg-pg02`
+   * sozinho tinha 1.983 compradores e R$ 495 mil, e `dg-pg04` outros 1.122 e
+   * R$ 298 mil. Um número certo para a fonte errada.
+   *
+   * ## De onde sai
+   *
+   * Do agregado diário que o sync das planilhas já grava em
+   * `public_metrics_cache` (escopo `sales-daily`), uma linha por etapa com um
+   * `byDay` dentro. Ler daí, e não da planilha ao vivo, dá três coisas de
+   * graça: é a MESMA fonte que alimenta o dashboard de funil (então o BI passa
+   * a bater com o resto do app), é SQL (então filtro, ordenação e limite
+   * funcionam como nas outras entidades), e não custa chamada de rede ao Google
+   * a cada widget.
+   *
+   * O preço é a frescura: vale o que o último sync gravou.
+   */
+  faturamento: {
+    // `LATERAL` abre o `byDay` em uma linha por dia. A guarda de `jsonb_typeof`
+    // não é paranoia: payload antigo ou meio gravado quebraria a consulta
+    // inteira em vez de sumir de um relatório.
+    tabela: sql`(
+      SELECT
+        pmc.project_id AS project_id,
+        pmc.key        AS stage_id,
+        (d->>'date')   AS dia,
+        COALESCE((d->>'faturamentoBruto')::numeric, 0)     AS bruto,
+        COALESCE((d->>'faturamentoLiquido')::numeric, 0)   AS liquido,
+        COALESCE((d->'ingressos'->>'total')::numeric, 0)   AS compradores,
+        COALESCE((d->'ingressos'->>'pago')::numeric, 0)    AS pagos,
+        COALESCE((d->'ingressos'->>'org')::numeric, 0)     AS organicos
+      FROM public_metrics_cache pmc,
+           LATERAL jsonb_array_elements(pmc.payload->'byDay') d
+      WHERE pmc.scope = 'sales-daily'
+        AND jsonb_typeof(pmc.payload->'byDay') = 'array'
+    ) AS faturamento`,
+    escopo: (ids) =>
+      sql`faturamento.project_id IN (${sql.join(ids.map((i) => sql`${i}::uuid`), sql`, `)})`,
+    campos: {
+      // A data já vem fechada no fuso pelo sync — não há timestamp a converter.
+      "faturamento.date": sql`faturamento.dia`,
+      "faturamento.projeto": sql`(SELECT p.name FROM projects p WHERE p.id = faturamento.project_id)`,
+      // O funil é o recorte que o time usa para falar ("os funis do BBE"), e a
+      // chave do cache é a etapa — então o caminho passa por `funnel_stages`.
+      "faturamento.funil": sql`(
+        SELECT f.name FROM funnel_stages fs
+          JOIN funnels f ON f.id = fs.funnel_id
+         WHERE fs.id = faturamento.stage_id::uuid
+      )`,
+      "faturamento.etapa": sql`(
+        SELECT fs.name FROM funnel_stages fs WHERE fs.id = faturamento.stage_id::uuid
+      )`,
+    },
+    metricas: {
+      "faturamento.bruto": sql`COALESCE(SUM(faturamento.bruto), 0)`,
+      "faturamento.liquido": sql`COALESCE(SUM(faturamento.liquido), 0)`,
+      "faturamento.compradores": sql`COALESCE(SUM(faturamento.compradores), 0)`,
+      "faturamento.pagos": sql`COALESCE(SUM(faturamento.pagos), 0)`,
+      "faturamento.organicos": sql`COALESCE(SUM(faturamento.organicos), 0)`,
+    },
+    derivadas: {
+      "faturamento.ticket": { de: "faturamento.bruto", por: "faturamento.compradores" },
+    },
+  },
+
   grupos: {
     tabela: funnelGroupSnapshots,
     escopo: (ids) => sql`${funnelGroupSnapshots.funnelId} IN (
@@ -255,7 +326,8 @@ const FONTES: Partial<Record<EntidadeDoCatalogo, Fonte>> = {
 /** Como a entidade aparece na mensagem de erro — nome de tela, não chave. */
 const ROTULO_DA_ENTIDADE: Record<EntidadeDoCatalogo, string> = {
   trafego: "Tráfego pago",
-  vendas: "Vendas",
+  vendas: "Vendas lançadas",
+  faturamento: "Faturamento",
   aplicacoes: "Aplicações",
   grupos: "Grupos de WhatsApp",
 };
@@ -264,6 +336,7 @@ const ROTULO_DA_ENTIDADE: Record<EntidadeDoCatalogo, string> = {
 export const CAMPO_DE_DATA: Record<EntidadeDoCatalogo, string> = {
   trafego: "trafego.date",
   vendas: "vendas.date",
+  faturamento: "faturamento.date",
   aplicacoes: "aplicacoes.date",
   grupos: "grupos.date",
 };
