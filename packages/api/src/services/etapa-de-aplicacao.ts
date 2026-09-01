@@ -59,6 +59,16 @@ export interface QuebraPorOrigem {
   valor: number;
   /** Aplicações com esta origem — permite ver conversão por canal. */
   aplicacoes: number;
+  /**
+   * Aplicações DESTA origem cujo e-mail aparece numa venda.
+   *
+   * É o numerador certo da conversão por canal. A primeira versão dividia
+   * `vendas ÷ aplicações` e produzia coisas como "1 aplicação, 4 vendas,
+   * 400%" — o número existia, mas não significava nada: as vendas de uma
+   * origem não são necessariamente de quem se aplicou por ela. Uma venda pode
+   * chegar por WhatsApp de alguém que se aplicou pelo Meta.
+   */
+  converteram: number;
 }
 
 export interface ResumoDaAplicacao {
@@ -121,6 +131,48 @@ export function dedupKey(
   return tx ? `${planilhaId}|tx|${tx}` : `${planilhaId}|linha|${linha}`;
 }
 
+/**
+ * Parece um id de entidade da Meta?
+ *
+ * O padrão Loyola põe o `adset_id` no `utm_medium`, então a tabela de origem
+ * enche de linhas como `120247234267040489` — que não dizem nada a ninguém. Os
+ * ids da Meta são numéricos e longos; 15 dígitos é o piso seguro, e evita
+ * confundir com um `utm_medium` legítimo tipo `2026` ou `01`.
+ */
+export function pareceIdDaMeta(valor: string): boolean {
+  return /^\d{15,}$/.test(valor.trim());
+}
+
+/**
+ * Troca o id pelo nome do conjunto, quando houver.
+ *
+ * O nome VAI JUNTO com o id quando os dois existem? Não: o nome sozinho é o
+ * que se lê, e quem precisa do id já sabe onde encontrá-lo. Poluir a coluna
+ * com `01_ig-fb_lal1-bbe (120247569245860489)` desfaria o ganho.
+ *
+ * Id sem nome no cache fica como está — inventar "Conjunto desconhecido"
+ * esconderia qual é, e é justamente o id que permite ir procurar na Meta.
+ */
+export function comNomeLegivel(
+  quebra: QuebraPorOrigem[],
+  nomes: Map<string, string>,
+): QuebraPorOrigem[] {
+  return quebra.map((linha) => {
+    if (!pareceIdDaMeta(linha.origem)) return linha;
+    const nome = nomes.get(linha.origem);
+    return nome ? { ...linha, origem: nome } : linha;
+  });
+}
+
+/** Os ids da Meta que aparecem numa quebra — o que buscar no cache. */
+export function idsDaMeta(...quebras: QuebraPorOrigem[][]): string[] {
+  const vistos = new Set<string>();
+  for (const q of quebras) {
+    for (const l of q) if (pareceIdDaMeta(l.origem)) vistos.add(l.origem);
+  }
+  return [...vistos];
+}
+
 /** Está dentro da janela? Sem data, a venda ENTRA — ver o porquê abaixo. */
 export function dentroDoPeriodo(
   data: Date | null,
@@ -139,10 +191,16 @@ export function dentroDoPeriodo(
 function acumular(
   mapa: Map<string, QuebraPorOrigem>,
   origem: string,
-  campo: "vendas" | "aplicacoes",
+  campo: "vendas" | "aplicacoes" | "converteram",
   valor: number,
 ): void {
-  const atual = mapa.get(origem) ?? { origem, vendas: 0, valor: 0, aplicacoes: 0 };
+  const atual = mapa.get(origem) ?? {
+    origem,
+    vendas: 0,
+    valor: 0,
+    aplicacoes: 0,
+    converteram: 0,
+  };
   atual[campo] += 1;
   atual.valor += valor;
   mapa.set(origem, atual);
@@ -182,6 +240,7 @@ export function resumir(
   let vendasContadas = 0;
   let valorTotal = 0;
   let converteram = 0;
+  const emailsQueCompraram = new Set<string>();
 
   for (const v of vendas) {
     if (vistas.has(v.chave)) continue;
@@ -189,10 +248,26 @@ export function resumir(
 
     vendasContadas += 1;
     valorTotal += v.valor;
-    if (v.email && emailsQueAplicaram.has(v.email)) converteram += 1;
+    if (v.email && emailsQueAplicaram.has(v.email)) {
+      converteram += 1;
+      emailsQueCompraram.add(v.email);
+    }
 
     acumular(porSource, v.utmSource || SEM_ORIGEM, "vendas", v.valor);
     acumular(porMedium, v.utmMedium || SEM_ORIGEM, "vendas", v.valor);
+  }
+
+  /**
+   * A conversão vai na origem da APLICAÇÃO, não na da venda.
+   *
+   * A pergunta do canal é "este tráfego traz gente que compra?", e quem
+   * responde isso é onde a pessoa ENTROU. A origem da venda diz por onde ela
+   * pagou — outra informação, útil, mas que não mede o canal.
+   */
+  for (const a of aplicacoes) {
+    if (!a.email || !emailsQueCompraram.has(a.email)) continue;
+    acumular(porSource, a.utmSource || SEM_ORIGEM, "converteram", 0);
+    acumular(porMedium, a.utmMedium || SEM_ORIGEM, "converteram", 0);
   }
 
   return {

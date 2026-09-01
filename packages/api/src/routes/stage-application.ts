@@ -32,13 +32,16 @@ import {
   funnelStages,
   funnelSurveys,
   funnels,
+  metaEntityNamesCache,
   stageSalesSpreadsheets,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import {
+  comNomeLegivel,
   dedupKey,
   dentroDoPeriodo,
   emailComparavel,
+  idsDaMeta,
   resumir,
   sanitizarUtm,
   type AplicacaoDaEtapa,
@@ -319,9 +322,34 @@ export default fp(async function stageApplicationRoutes(fastify) {
       }
     }
 
+    const resumo = resumir(aplicacoes, vendas);
+
+    /**
+     * O id do conjunto vira o nome dele.
+     *
+     * O padrão Loyola põe o `adset_id` no `utm_medium`, então a tabela chegava
+     * cheia de `120247234267040489`. O nome já está no banco — o cache que o
+     * sync da Meta mantém — e sem ele a quebra por público é ilegível.
+     */
+    const idsPendentes = idsDaMeta(resumo.porUtmSource, resumo.porUtmMedium);
+    if (idsPendentes.length > 0) {
+      const nomes = await fastify.db
+        .select({ id: metaEntityNamesCache.entityId, nome: metaEntityNamesCache.entityName })
+        .from(metaEntityNamesCache)
+        .where(
+          and(
+            eq(metaEntityNamesCache.projectId, p.data.projectId),
+            inArray(metaEntityNamesCache.entityId, idsPendentes),
+          ),
+        );
+      const mapa = new Map(nomes.map((n) => [n.id, n.nome]));
+      resumo.porUtmSource = comNomeLegivel(resumo.porUtmSource, mapa);
+      resumo.porUtmMedium = comNomeLegivel(resumo.porUtmMedium, mapa);
+    }
+
     return {
       periodo: { days: q.data.days ?? null, desde: de?.toISOString().slice(0, 10) ?? null },
-      resumo: resumir(aplicacoes, vendas),
+      resumo,
       fontes: { aplicacoes: minhas.length, vendas: ids.length },
       avisos,
     };
