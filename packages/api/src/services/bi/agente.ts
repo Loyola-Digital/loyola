@@ -247,14 +247,55 @@ type ClienteMinimo = {
 
 function extrairProposta(
   mensagem: Anthropic.Message,
-): { explicacao: string; widgets: WidgetProposto[] } | null {
+): { explicacao: string; widgets: WidgetProposto[]; toolUseId: string } | null {
   for (const bloco of mensagem.content) {
     if (bloco.type === "tool_use" && bloco.name === FERRAMENTA.name) {
       const entrada = bloco.input as { explicacao?: string; widgets?: WidgetProposto[] };
-      return { explicacao: entrada.explicacao ?? "", widgets: entrada.widgets ?? [] };
+      // O id vem junto: a correção precisa responder ESTE `tool_use` com um
+      // `tool_result`, ou a API recusa a conversa inteira. Ver `pedirCorrecao`.
+      return {
+        explicacao: entrada.explicacao ?? "",
+        widgets: entrada.widgets ?? [],
+        toolUseId: bloco.id,
+      };
     }
   }
   return null;
+}
+
+/**
+ * A devolutiva do validador, no formato que a API aceita.
+ *
+ * ## Por que não é uma mensagem de texto
+ *
+ * Era, e quebrava. Com `tool_choice` forçado, a resposta do modelo SEMPRE traz
+ * um bloco `tool_use`, e a API exige que a próxima mensagem do usuário comece
+ * com o `tool_result` daquele id. Mandar texto puro devolvia 400 —
+ * "`tool_use` ids were found without `tool_result` blocks immediately after" —
+ * e a autocorreção morria justamente quando ia consertar o erro.
+ *
+ * `is_error` não é decoração: é o que diz ao modelo que a chamada FALHOU, em
+ * vez de deixá-lo achar que o widget foi aceito e o usuário só quis outro.
+ */
+function pedirCorrecao(toolUseId: string, recusados: string[]): Anthropic.MessageParam {
+  return {
+    role: "user",
+    content: [
+      {
+        type: "tool_result",
+        tool_use_id: toolUseId,
+        is_error: true,
+        // A mensagem vai INTEIRA: ela nomeia o campo e o motivo, que é
+        // exatamente o que o modelo precisa para acertar na segunda.
+        content: [
+          "Alguns widgets foram recusados pelo validador:",
+          ...recusados,
+          "",
+          "Corrija usando apenas chaves do catálogo e responda de novo com a ferramenta.",
+        ].join("\n"),
+      },
+    ],
+  };
 }
 
 /**
@@ -410,13 +451,8 @@ export async function montarWidgets(
 
     if (tentativa === 0) {
       passo({ tipo: "corrigindo", motivo: recusados[0] ?? "" });
-      // A mensagem de erro vai INTEIRA para o modelo: ela nomeia o campo e o
-      // motivo, que é exatamente o que ele precisa para acertar na segunda.
       conversa.push({ role: "assistant", content: mensagem.content });
-      conversa.push({
-        role: "user",
-        content: `Alguns widgets foram recusados pelo validador:\n${recusados.join("\n")}\n\nCorrija usando apenas chaves do catálogo e responda de novo com a ferramenta.`,
-      });
+      conversa.push(pedirCorrecao(proposta.toolUseId, recusados));
       continue;
     }
 
