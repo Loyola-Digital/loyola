@@ -56,7 +56,12 @@ export interface CampoDoCatalogo {
   familia?: "geral" | "atribuido";
 }
 
-export type EntidadeDoCatalogo = "trafego" | "vendas" | "aplicacoes" | "grupos";
+export type EntidadeDoCatalogo =
+  | "trafego"
+  | "vendas"
+  | "faturamento"
+  | "aplicacoes"
+  | "grupos";
 
 export interface DescricaoDeEntidade {
   key: EntidadeDoCatalogo;
@@ -75,9 +80,26 @@ export const ENTIDADES: DescricaoDeEntidade[] = [
   },
   {
     key: "vendas",
-    label: "Vendas",
+    label: "Vendas (lançadas)",
     fonte: "banco",
-    descricao: "Transações registradas manualmente e pelas planilhas de venda",
+    // A procedência vai no rótulo, não só na descrição. Medido em 2026-09-01,
+    // 90 dias, todos os projetos: 17 transações e R$ 311.875 — que é o total
+    // CERTO desta fonte e uma fração da operação. O faturamento da Kiwify e da
+    // Hotmart não existe linha a linha no banco (só agregado por produto em
+    // `kiwify_cache`), então não há como somá-lo aqui. Um número chamado
+    // "Vendas" sem essa ressalva mente por omissão.
+    descricao:
+      "Transações lançadas no Kanban comercial ou importadas das planilhas de venda. NÃO inclui o que foi vendido direto na Kiwify ou Hotmart sem lançamento",
+  },
+  {
+    key: "faturamento",
+    label: "Faturamento",
+    fonte: "banco",
+    // Esta é a fonte que bate com o dashboard de funil. Medido em 2026-09-01,
+    // 90 dias, todos os projetos: R$ 977.626,80 e 2.656 compradores — contra
+    // as 17 transações que a entidade `vendas` mostrava para o mesmo recorte.
+    descricao:
+      "O que as planilhas de venda registraram, por dia · funil · etapa. É a mesma fonte do dashboard de funil — use esta para faturamento e volume de compradores",
   },
   {
     key: "aplicacoes",
@@ -301,23 +323,25 @@ export const CAMPOS: CampoDoCatalogo[] = [
   },
   {
     key: "vendas.count",
-    label: "Vendas",
+    label: "Vendas lançadas",
     entity: "vendas",
     role: "metric",
     semanticType: "number",
     aggregation: "count",
     dataType: "number",
-    description: "Quantidade de transações",
+    description:
+      "Quantidade de transações lançadas. Não conta venda que só existe na Kiwify/Hotmart",
   },
   {
     key: "vendas.revenue",
-    label: "Receita",
+    label: "Receita lançada",
     entity: "vendas",
     role: "metric",
     semanticType: "currency",
     aggregation: "sum",
     dataType: "number",
-    description: "Soma do valor das vendas",
+    description:
+      "Soma do valor das vendas lançadas. Não é o faturamento total: o que foi vendido direto na plataforma e não foi lançado fica de fora",
   },
   {
     key: "vendas.ticket_por_venda",
@@ -375,6 +399,111 @@ export const CAMPOS: CampoDoCatalogo[] = [
     aggregation: "count",
     dataType: "number",
     description: "Quantidade de respostas de formulário",
+  },
+
+  // ---------- faturamento ----------
+  {
+    key: "faturamento.date",
+    label: "Data",
+    entity: "faturamento",
+    role: "dimension",
+    semanticType: "date",
+    aggregation: "none",
+    dataType: "date",
+    description: "Dia da venda, já no fuso de São Paulo",
+  },
+  {
+    key: "faturamento.funil",
+    label: "Funil",
+    entity: "faturamento",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description: "Nome do funil — o recorte que o time usa para falar de campanha",
+  },
+  {
+    key: "faturamento.etapa",
+    label: "Etapa",
+    entity: "faturamento",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description: "Etapa do funil de onde a venda veio",
+  },
+  {
+    key: "faturamento.projeto",
+    label: "Projeto",
+    entity: "faturamento",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description:
+      "De qual projeto o dado veio. Só faz sentido quando o dashboard está no escopo de todos os projetos",
+  },
+  {
+    key: "faturamento.bruto",
+    label: "Faturamento bruto",
+    entity: "faturamento",
+    role: "metric",
+    semanticType: "currency",
+    aggregation: "sum",
+    dataType: "number",
+    description: "Faturamento antes de taxa e reembolso — é o número que o dashboard de funil mostra",
+  },
+  {
+    key: "faturamento.liquido",
+    label: "Faturamento líquido",
+    entity: "faturamento",
+    role: "metric",
+    semanticType: "currency",
+    aggregation: "sum",
+    dataType: "number",
+    description: "O que sobrou depois das deduções da plataforma",
+  },
+  {
+    key: "faturamento.compradores",
+    label: "Compradores",
+    entity: "faturamento",
+    role: "metric",
+    semanticType: "number",
+    aggregation: "sum",
+    dataType: "number",
+    description: "Quantidade de compras no dia. Use esta, não `vendas.count`, para volume de venda",
+  },
+  {
+    key: "faturamento.pagos",
+    label: "Compradores de tráfego pago",
+    entity: "faturamento",
+    role: "metric",
+    semanticType: "number",
+    aggregation: "sum",
+    dataType: "number",
+    description: "Compras atribuídas a anúncio",
+  },
+  {
+    key: "faturamento.organicos",
+    label: "Compradores orgânicos",
+    entity: "faturamento",
+    role: "metric",
+    semanticType: "number",
+    aggregation: "sum",
+    dataType: "number",
+    description: "Compras sem origem paga",
+  },
+  {
+    key: "faturamento.ticket",
+    label: "Ticket médio",
+    entity: "faturamento",
+    role: "metric",
+    semanticType: "currency",
+    aggregation: "none",
+    dataType: "number",
+    formula: "faturamento.bruto / faturamento.compradores",
+    nullWhenEmpty: true,
+    description: "Faturamento bruto dividido pelo número de compras",
   },
 
   // ---------- grupos ----------
