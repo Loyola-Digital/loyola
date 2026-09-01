@@ -63,6 +63,11 @@ export interface VturbOverview {
    * pontos das que o VTurb calcularia — ele usa bases próprias por sessão.
    */
   statsReconstruidos?: boolean;
+  /**
+   * O detalhamento diário veio vazio mesmo com os totais cheios, nas duas
+   * tentativas do servidor. Os números grandes valem; as séries, não.
+   */
+  diarioIncompleto?: boolean;
   byDay: (VturbStats & { date_key: string })[];
   /** null quando a VSL não tem duração cadastrada (a API exige pra calcular). */
   engagement: {

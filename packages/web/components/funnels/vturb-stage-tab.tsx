@@ -483,6 +483,16 @@ function VslDashboard({
         </p>
       )}
 
+      {/* O caso oposto: totais bons, séries vazias. Sem este aviso, os gráficos
+          chapados no zero ao lado de um total de milhares de views fazem
+          alguém investigar uma queda que não existiu. */}
+      {data.diarioIncompleto && (
+        <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+          O VTurb ainda não fechou o detalhamento diário deste período — os totais abaixo valem, mas
+          os gráficos por dia estão vazios. Recarregue em alguns instantes.
+        </p>
+      )}
+
       {/* Os seis números que descrevem a VSL, do começo ao fim do funil: quem
           deu play, quanto assistiu, quem chegou na oferta, quem clicou, quem
           comprou e quanto entrou. Cada um com a tendência do período. */}
