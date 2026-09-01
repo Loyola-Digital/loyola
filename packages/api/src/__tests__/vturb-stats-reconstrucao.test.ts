@@ -79,3 +79,37 @@ describe("reconstrução dos totais da VSL", () => {
     expect(Number.isNaN(r.overall_conversion_rate)).toBe(false);
   });
 });
+
+describe("o diário vazio com totais cheios — o caso simétrico", () => {
+  /**
+   * Medido em 2026-09-01, janela de 30 dias, na rota de produção: a PRIMEIRA
+   * chamada voltou `byDay: []` com `total_viewed: 7420`; as oito seguintes,
+   * todas completas com 32 linhas. O VTurb computa a janela sob demanda, e
+   * quem a pede primeiro recebe a resposta incompleta.
+   *
+   * Na tela isso não parecia erro: os totais certos e todos os gráficos
+   * chapados no zero. Trocar para 7 dias e voltar consertava — a pior forma de
+   * bug, a que some quando alguém vai investigar.
+   */
+  it("diário vazio + agregado cheio é detectado como incompleto", () => {
+    const cheio = { total_viewed: 7420, total_started: 3184, total_conversions: 0 } as never;
+    expect(pareceVazio(cheio)).toBe(false);
+    expect(temMovimento([])).toBe(false);
+    // As duas condições juntas são o gatilho da segunda tentativa.
+    expect(!temMovimento([]) && !pareceVazio(cheio)).toBe(true);
+  });
+
+  it("diário com um dia de movimento não dispara nada", () => {
+    const cheio = { total_viewed: 7420, total_started: 3184, total_conversions: 0 } as never;
+    const dia = [{ date_key: "2026-08-31", total_viewed: 22 }] as never;
+    expect(temMovimento(dia)).toBe(true);
+    expect(!temMovimento(dia) && !pareceVazio(cheio)).toBe(false);
+  });
+
+  it("período realmente sem tráfego não vira aviso falso", () => {
+    // Agregado vazio E diário vazio é uma resposta honesta: não houve nada.
+    // Avisar aqui treinaria o time a ignorar o aviso.
+    const vazio = { total_viewed: 0, total_started: 0, total_conversions: 0 } as never;
+    expect(!temMovimento([]) && !pareceVazio(vazio)).toBe(false);
+  });
+});

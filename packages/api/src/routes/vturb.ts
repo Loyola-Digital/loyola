@@ -282,6 +282,36 @@ export default fp(async function vturbRoutes(fastify) {
           ? reconstruirStats(byDay, stats)
           : stats;
 
+        /**
+         * O caso SIMÉTRICO: o diário vem vazio e o agregado vem cheio.
+         *
+         * Medido em 2026-09-01 na janela de 30 dias: a PRIMEIRA chamada voltou
+         * `byDay: []` com `total_viewed: 7420`; as oito seguintes, todas
+         * completas com 32 linhas. É o VTurb computando a janela sob demanda —
+         * quem abre a tela numa faixa que ninguém pediu ainda paga a conta e
+         * recebe a resposta incompleta.
+         *
+         * Na tela isso não parecia erro: os totais apareciam certos e TODOS os
+         * gráficos ficavam chapados no zero. Trocar para 7 dias e voltar já
+         * consertava, o que é a pior forma de bug — some quando se investiga.
+         *
+         * Uma segunda tentativa basta: na medição, a janela já estava computada
+         * na chamada seguinte.
+         */
+        let diario = byDay;
+        let diarioIncompleto = false;
+        if (!temMovimento(diario) && !pareceVazio(statsFinal)) {
+          diario = await sessionStatsByDay(conn.token, {
+            ...base,
+            videoDuration: link.duration,
+            pitchTime: link.pitchTime,
+          }).catch(() => byDay);
+          // Se nem na segunda veio, a tela precisa DIZER isso. Um gráfico
+          // chapado no zero ao lado de um total de 7 mil views faz o time
+          // investigar uma queda que não existiu.
+          diarioIncompleto = !temMovimento(diario);
+        }
+
         return {
           player: {
             id: link.id,
@@ -299,7 +329,12 @@ export default fp(async function vturbRoutes(fastify) {
            * sessão/dispositivo).
            */
           statsReconstruidos: statsFinal !== stats,
-          byDay,
+          /**
+           * O diário veio vazio mesmo com o agregado cheio, nas duas
+           * tentativas. Os totais valem; as séries por dia, não.
+           */
+          diarioIncompleto,
+          byDay: diario,
           engagement,
           clicks,
         };
