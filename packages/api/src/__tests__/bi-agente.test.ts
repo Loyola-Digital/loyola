@@ -167,6 +167,51 @@ describe("a conversa", () => {
     expect(JSON.stringify(segunda.content)).toContain("trafego.inventada");
   });
 
+  it("a correção responde o tool_use com um tool_result — senão a API recusa", async () => {
+    // Este teste nasceu de um 400 em produção, com a IA morrendo justo quando
+    // ia se corrigir:
+    //
+    //   "`tool_use` ids were found without `tool_result` blocks immediately
+    //    after: toolu_01XSH3TmGzr7bpPo3LGAT6vo"
+    //
+    // Com `tool_choice` forçado, TODA resposta traz um `tool_use`, e a API
+    // exige que a próxima mensagem do usuário comece pelo `tool_result` do
+    // mesmo id. Mandar texto puro parecia inofensivo e quebrava a conversa.
+    const { cliente, chamadas } = clienteFalso([
+      { explicacao: "erra", widgets: [proposta({ metrics: ["trafego.inventada"] })] },
+      { explicacao: "acerta", widgets: [proposta()] },
+    ]);
+    await montarWidgets("roas do público hot", { cliente, ocupados: [] });
+
+    const conversa = chamadas[1]!.messages;
+    // Todo `tool_use` do assistente é respondido logo em seguida.
+    for (const [i, m] of conversa.entries()) {
+      const blocos = Array.isArray(m.content) ? m.content : [];
+      const usos = blocos.filter((b) => (b as { type?: string }).type === "tool_use");
+      if (m.role !== "assistant" || usos.length === 0) continue;
+
+      const seguinte = conversa[i + 1];
+      expect(seguinte, "todo tool_use precisa de uma resposta").toBeDefined();
+      expect(seguinte!.role).toBe("user");
+
+      const resposta = Array.isArray(seguinte!.content) ? seguinte!.content : [];
+      for (const uso of usos) {
+        const casou = resposta.find(
+          (b) =>
+            (b as { type?: string }).type === "tool_result" &&
+            (b as { tool_use_id?: string }).tool_use_id === (uso as { id: string }).id,
+        );
+        expect(casou, `sem tool_result para ${(uso as { id: string }).id}`).toBeDefined();
+        // `is_error` é o que diz ao modelo que a chamada FALHOU — sem isso ele
+        // pode achar que o widget passou e o usuário só quis outro.
+        expect((casou as { is_error?: boolean }).is_error).toBe(true);
+      }
+    }
+
+    // E o motivo continua indo inteiro: é ele que nomeia o campo errado.
+    expect(JSON.stringify(conversa.at(-1)!.content)).toContain("trafego.inventada");
+  });
+
   it("insistir no mesmo erro não vira laço: entrega o que passou e avisa", async () => {
     const { cliente, create } = clienteFalso([
       { explicacao: "a", widgets: [proposta({ metrics: ["trafego.x"] }), proposta()] },
