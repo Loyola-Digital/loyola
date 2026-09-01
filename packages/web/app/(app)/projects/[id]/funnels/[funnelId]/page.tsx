@@ -51,7 +51,7 @@ export default function FunnelPage() {
   // do funil mobile), e deixá-la no estado ofereceria uma opção que a tela não
   // desenha.
   const [stageType, setStageType] = useState<
-    "free" | "paid" | "sales" | "cpl" | "event" | "event_capture" | "debriefing" | "comercial" | "mapa"
+    "free" | "paid" | "application" | "sales" | "cpl" | "event" | "event_capture" | "debriefing" | "comercial" | "mapa"
   >("free");
   const [matchCodeDraft, setMatchCodeDraft] = useState<string>("");
 
@@ -159,8 +159,9 @@ export default function FunnelPage() {
     setCreateOpen(false);
   }
 
-  function stageTypePlaceholder(type: "free" | "paid" | "sales" | "cpl" | "event" | "event_capture" | "debriefing" | "comercial" | "mapa"): string {
+  function stageTypePlaceholder(type: "free" | "paid" | "application" | "sales" | "cpl" | "event" | "event_capture" | "debriefing" | "comercial" | "mapa"): string {
     if (type === "paid") return "ex: Captação Paga";
+    if (type === "application") return "ex: Aplicação Mentoria";
     if (type === "sales") return "ex: Vendas Produto Principal";
     if (type === "cpl") return "ex: CPL Aula 1";
     if (type === "event") return "ex: Imersão Presencial";
@@ -412,6 +413,19 @@ export default function FunnelPage() {
                 >
                   <span className="font-medium">Paga</span>
                   <span className="text-xs text-muted-foreground">Captação + tráfego</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStageType("application")}
+                  className={cn(
+                    "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
+                    stageType === "application"
+                      ? "border-primary bg-primary/5 text-primary"
+                      : "border-border hover:bg-muted"
+                  )}
+                >
+                  <span className="font-medium">Aplicação</span>
+                  <span className="text-xs text-muted-foreground">Formulário + venda</span>
                 </button>
                 <button
                   type="button"
