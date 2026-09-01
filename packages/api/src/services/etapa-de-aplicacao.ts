@@ -40,9 +40,34 @@ export interface VendaDaAplicacao {
   valor: number;
   utmSource: string;
   utmMedium: string;
+  /**
+   * As outras UTMs, para o filtro.
+   *
+   * Não aparecem na tela — a quebra é por source e medium. Existem porque a
+   * marca que separa "venda desta etapa" das outras costuma estar na campanha
+   * ou no content, e filtrar por um campo que não foi lido é impossível.
+   */
+  utmCampaign?: string;
+  utmContent?: string;
+  utmTerm?: string;
   data: Date | null;
   /** Identidade da venda para deduplicar. Ver `dedupKey`. */
   chave: string;
+}
+
+/** Uma regra do filtro de UTM configurado na etapa. */
+export interface RegraDeUtm {
+  campo: "utm_source" | "utm_medium" | "utm_campaign" | "utm_content" | "utm_term";
+  /**
+   * `igual` para id de conjunto, `contem` para pedaço de nome de campanha.
+   *
+   * Os dois existem porque as duas coisas aparecem: `120247569245860489`
+   * precisa bater inteiro, e "pg04" precisa achar
+   * `dg-pg04-ago-26--vendas-captacao--...`.
+   */
+  modo: "igual" | "contem";
+  /** Qualquer um serve. Vazio = a regra não filtra nada. */
+  valores: string[];
 }
 
 /** Uma aplicação, do jeito que esta etapa precisa. */
@@ -209,6 +234,63 @@ function acumular(
 /** Maior valor primeiro — é a ordem em que se lê uma tabela de origem. */
 function ordenar(mapa: Map<string, QuebraPorOrigem>): QuebraPorOrigem[] {
   return [...mapa.values()].sort((a, b) => b.valor - a.valor || b.vendas - a.vendas);
+}
+
+/**
+ * A venda pertence a esta etapa?
+ *
+ * ## Como as regras se combinam
+ *
+ * Valores dentro da mesma regra são OU — "utm_source é meta OU google".
+ * Regras diferentes são E — "utm_source é meta E utm_campaign contém pg04".
+ * É a combinação que as pessoas esperam de um filtro, e a única que permite
+ * dizer "só o tráfego pago desta campanha" sem escrever uma expressão.
+ *
+ * ## Sem regras, tudo entra
+ *
+ * O padrão é não filtrar. Uma etapa recém-criada mostra o que a planilha tem,
+ * e a pessoa aperta o filtro quando descobre que veio venda demais — não o
+ * contrário, que exigiria configurar antes de ver qualquer coisa.
+ *
+ * ## Campo ausente NÃO passa
+ *
+ * Venda sem `utm_campaign` não casa com uma regra de campanha. É o oposto do
+ * que fizemos com data (venda sem data entra), e de propósito: ali a ausência
+ * era erro de formatação, aqui é a evidência de que a venda não veio por onde
+ * a regra descreve.
+ */
+export function pertenceAEtapa(venda: VendaDaAplicacao, regras: RegraDeUtm[]): boolean {
+  if (regras.length === 0) return true;
+
+  const valorDe = (campo: RegraDeUtm["campo"]): string => {
+    switch (campo) {
+      case "utm_source":
+        return venda.utmSource;
+      case "utm_medium":
+        return venda.utmMedium;
+      case "utm_campaign":
+        return venda.utmCampaign ?? "";
+      case "utm_content":
+        return venda.utmContent ?? "";
+      case "utm_term":
+        return venda.utmTerm ?? "";
+    }
+  };
+
+  for (const regra of regras) {
+    const procurados = regra.valores.map((v) => v.trim().toLowerCase()).filter(Boolean);
+    // Regra sem valor não é regra: ignorá-la é melhor que zerar a tela porque
+    // alguém deixou um campo em branco no formulário de configuração.
+    if (procurados.length === 0) continue;
+
+    const atual = valorDe(regra.campo).trim().toLowerCase();
+    if (!atual) return false;
+
+    const casou = procurados.some((p) => (regra.modo === "contem" ? atual.includes(p) : atual === p));
+    if (!casou) return false;
+  }
+
+  return true;
 }
 
 /**

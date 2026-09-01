@@ -21,7 +21,7 @@
  */
 
 import { useState } from "react";
-import { ClipboardList, Info, Settings2, TrendingUp } from "lucide-react";
+import { ClipboardList, Info, Plus, Settings2, TrendingUp, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,6 +41,7 @@ import {
   useFontesDaAplicacao,
   useSalvarFontesDaAplicacao,
   type QuebraPorOrigem,
+  type RegraDeUtm,
 } from "@/lib/hooks/use-stage-application";
 import { StageDeleteSection } from "./stage-delete-section";
 import { CampaignLogButton } from "./campaign-log-link";
@@ -150,6 +151,108 @@ function TabelaDeOrigem({
   );
 }
 
+const ROTULO_DO_CAMPO: Record<RegraDeUtm["campo"], string> = {
+  utm_source: "utm_source (origem)",
+  utm_medium: "utm_medium (público)",
+  utm_campaign: "utm_campaign (campanha)",
+  utm_content: "utm_content (criativo)",
+  utm_term: "utm_term (termo)",
+};
+
+/**
+ * O filtro que decide quais vendas são desta etapa.
+ *
+ * A planilha é do funil inteiro, então sem filtro a etapa conta venda que
+ * nasceu de outro lugar. Só quem montou a campanha sabe qual UTM carrega a
+ * marca — por isso se pergunta, em vez de adivinhar.
+ *
+ * `contém` é o padrão porque o caso mais comum é um pedaço de nome de campanha
+ * ("pg04"); `igual` existe para id de conjunto, que precisa bater inteiro.
+ */
+function FiltroDeUtm({
+  regras,
+  campos,
+  onMudar,
+}: {
+  regras: RegraDeUtm[];
+  campos: RegraDeUtm["campo"][];
+  onMudar: (r: RegraDeUtm[]) => void;
+}) {
+  function alterar(i: number, mudanca: Partial<RegraDeUtm>) {
+    onMudar(regras.map((r, j) => (i === j ? { ...r, ...mudanca } : r)));
+  }
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <Label>Quais vendas são desta etapa</Label>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">
+          A planilha é do funil inteiro. Sem regra nenhuma, tudo entra. Com regras, só a venda que
+          bate com <strong>todas</strong> elas conta — e dentro de cada regra, qualquer valor serve.
+        </p>
+      </div>
+
+      {regras.map((regra, i) => (
+        <div key={i} className="space-y-1.5 rounded-md border border-border/40 p-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <select
+              value={regra.campo}
+              onChange={(e) => alterar(i, { campo: e.target.value as RegraDeUtm["campo"] })}
+              className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+            >
+              {campos.map((c) => (
+                <option key={c} value={c}>
+                  {ROTULO_DO_CAMPO[c]}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={regra.modo}
+              onChange={(e) => alterar(i, { modo: e.target.value as RegraDeUtm["modo"] })}
+              className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+            >
+              <option value="contem">contém</option>
+              <option value="igual">é igual a</option>
+            </select>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-auto h-7 px-2 text-muted-foreground"
+              onClick={() => onMudar(regras.filter((_, j) => j !== i))}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+
+          <Input
+            value={regra.valores.join(", ")}
+            onChange={(e) =>
+              // Vírgula separa: é como as pessoas escrevem lista, e evita um
+              // botão de "adicionar valor" para cada item.
+              alterar(i, { valores: e.target.value.split(",").map((v) => v.trim()) })
+            }
+            placeholder="pg04, aplicacao — separe por vírgula"
+            className="h-8 text-xs"
+          />
+        </div>
+      ))}
+
+      <Button
+        variant="outline"
+        size="sm"
+        className="gap-1.5"
+        onClick={() => onMudar([...regras, { campo: "utm_campaign", modo: "contem", valores: [] }])}
+        disabled={regras.length >= 5}
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Adicionar regra
+      </Button>
+    </div>
+  );
+}
+
 function EscolhaDeFontes({
   projectId,
   funnelId,
@@ -162,8 +265,10 @@ function EscolhaDeFontes({
   const { data, isLoading } = useFontesDaAplicacao(projectId, funnelId, stageId);
   const salvar = useSalvarFontesDaAplicacao(projectId, funnelId, stageId);
   const [marcadas, setMarcadas] = useState<string[] | null>(null);
+  const [regras, setRegras] = useState<RegraDeUtm[] | null>(null);
 
   const atuais = marcadas ?? data?.escolhidas ?? [];
+  const filtros = regras ?? data?.utmFilters ?? [];
 
   function alternar(id: string) {
     setMarcadas(atuais.includes(id) ? atuais.filter((x) => x !== id) : [...atuais, id]);
@@ -171,9 +276,17 @@ function EscolhaDeFontes({
 
   async function gravar() {
     try {
-      await salvar.mutateAsync(atuais);
+      // Valor em branco não vira regra vazia gravada: limpar aqui evita uma
+      // regra que não filtra nada ocupando espaço na configuração.
+      await salvar.mutateAsync({
+        salesSpreadsheetIds: atuais,
+        utmFilters: filtros
+          .map((r) => ({ ...r, valores: r.valores.filter(Boolean) }))
+          .filter((r) => r.valores.length > 0),
+      });
       setMarcadas(null);
-      toast.success("Fontes de venda atualizadas.");
+      setRegras(null);
+      toast.success("Fontes e filtros atualizados.");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Não consegui salvar");
     }
@@ -234,8 +347,18 @@ function EscolhaDeFontes({
         </div>
       )}
 
-      <Button onClick={gravar} disabled={salvar.isPending || marcadas === null} size="sm">
-        Salvar fontes
+      <FiltroDeUtm
+        regras={filtros}
+        campos={data?.camposDeUtm ?? ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"]}
+        onMudar={setRegras}
+      />
+
+      <Button
+        onClick={gravar}
+        disabled={salvar.isPending || (marcadas === null && regras === null)}
+        size="sm"
+      >
+        Salvar
       </Button>
     </div>
   );
@@ -388,6 +511,16 @@ export function ApplicationStageView({
             />
             <Kpi label="Ticket médio" valor={ticket === null ? "—" : brl(ticket)} />
           </div>
+
+          {data && data.descartadasPeloFiltro > 0 && (
+            // Sem isto, "18 vendas viraram 3" parece dado sumindo.
+            <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+              <Info className="mt-0.5 h-3 w-3 shrink-0" />
+              {numero(data.descartadasPeloFiltro)} venda
+              {data.descartadasPeloFiltro !== 1 ? "s" : ""} da planilha ficou de fora pelo filtro de
+              UTM desta etapa.
+            </p>
+          )}
 
           {/* A diferença entre `vendas` e `converteram` é informação, não erro:
               é a venda que aconteceu sem passar pelo formulário. */}

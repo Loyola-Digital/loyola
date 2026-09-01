@@ -39,12 +39,14 @@ import { readSheetData } from "../services/google-sheets.js";
 import {
   comNomeLegivel,
   dedupKey,
+  pertenceAEtapa,
   dentroDoPeriodo,
   emailComparavel,
   idsDaMeta,
   resumir,
   sanitizarUtm,
   type AplicacaoDaEtapa,
+  type RegraDeUtm,
   type VendaDaAplicacao,
 } from "../services/etapa-de-aplicacao.js";
 
@@ -59,8 +61,26 @@ const periodo = z.object({
   days: z.coerce.number().int().min(1).max(365).optional(),
 });
 
+const CAMPOS_DE_UTM = [
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_content",
+  "utm_term",
+] as const;
+
 const corpoDaConfig = z.object({
   salesSpreadsheetIds: z.array(z.string().uuid()).max(20),
+  utmFilters: z
+    .array(
+      z.object({
+        campo: z.enum(CAMPOS_DE_UTM),
+        modo: z.enum(["igual", "contem"]).default("igual"),
+        valores: z.array(z.string().trim().max(200)).max(50),
+      }),
+    )
+    .max(5)
+    .default([]),
 });
 
 /**
@@ -147,13 +167,18 @@ export default fp(async function stageApplicationRoutes(fastify) {
       .where(eq(funnelStages.funnelId, funnelId));
   }
 
-  async function escolhidas(stageId: string): Promise<string[]> {
+  async function configDaEtapa(
+    stageId: string,
+  ): Promise<{ ids: string[]; filtros: RegraDeUtm[] }> {
     const [cfg] = await fastify.db
-      .select({ ids: applicationStageConfigs.salesSpreadsheetIds })
+      .select({
+        ids: applicationStageConfigs.salesSpreadsheetIds,
+        filtros: applicationStageConfigs.utmFilters,
+      })
       .from(applicationStageConfigs)
       .where(eq(applicationStageConfigs.stageId, stageId))
       .limit(1);
-    return cfg?.ids ?? [];
+    return { ids: cfg?.ids ?? [], filtros: (cfg?.filtros ?? []) as RegraDeUtm[] };
   }
 
   // ---- GET /sources — o que dá para escolher, e o que já foi escolhido ----
@@ -164,7 +189,7 @@ export default fp(async function stageApplicationRoutes(fastify) {
     if (!(await etapaValida(p.data))) return reply.code(404).send({ error: "Etapa não encontrada" });
 
     const disponiveis = await planilhasDoFunil(p.data.funnelId);
-    const ids = await escolhidas(p.data.stageId);
+    const { ids, filtros } = await configDaEtapa(p.data.stageId);
 
     return {
       // A etapa de origem vai junto: "n8n-kiwify-produto" sozinho não diz de
@@ -179,6 +204,8 @@ export default fp(async function stageApplicationRoutes(fastify) {
         temUtm: Boolean(s.columnMapping?.utm_source || s.columnMapping?.utm_medium),
       })),
       escolhidas: ids,
+      utmFilters: filtros,
+      camposDeUtm: CAMPOS_DE_UTM,
     };
   });
 
@@ -206,17 +233,19 @@ export default fp(async function stageApplicationRoutes(fastify) {
       .values({
         stageId: p.data.stageId,
         salesSpreadsheetIds: b.data.salesSpreadsheetIds,
+        utmFilters: b.data.utmFilters,
         createdBy: request.userId ?? null,
       })
       .onConflictDoUpdate({
         target: applicationStageConfigs.stageId,
         set: {
           salesSpreadsheetIds: b.data.salesSpreadsheetIds,
+          utmFilters: b.data.utmFilters,
           updatedAt: new Date(),
         },
       });
 
-    return { ok: true, escolhidas: b.data.salesSpreadsheetIds };
+    return { ok: true, escolhidas: b.data.salesSpreadsheetIds, utmFilters: b.data.utmFilters };
   });
 
   // ---- GET /dashboard — os números ----
@@ -279,8 +308,10 @@ export default fp(async function stageApplicationRoutes(fastify) {
     }
 
     // ---- vendas: só as planilhas escolhidas ----
-    const ids = await escolhidas(p.data.stageId);
+    const { ids, filtros } = await configDaEtapa(p.data.stageId);
     const vendas: VendaDaAplicacao[] = [];
+    /** Vendas que a planilha tinha e o filtro de UTM deixou de fora. */
+    let descartadasPeloFiltro = 0;
 
     if (ids.length === 0) {
       avisos.push(
@@ -302,18 +333,31 @@ export default fp(async function stageApplicationRoutes(fastify) {
           const iTx = coluna(dados.headers, m.transactionId, /transa|order|pedido|\bid\b/i);
           const iSource = coluna(dados.headers, m.utm_source, /utm[_ ]?source|(^|\W)s=/i);
           const iMedium = coluna(dados.headers, m.utm_medium, /utm[_ ]?medium|(^|\W)m=/i);
-
+          const iCampaign = coluna(dados.headers, m.utm_campaign, /utm[_ ]?campaign|(^|\W)c=/i);
+          const iContent = coluna(dados.headers, m.utm_content, /utm[_ ]?content|(^|\W)co=/i);
+          const iTerm = coluna(dados.headers, m.utm_term, /utm[_ ]?term|(^|\W)t=/i);
           dados.rows.forEach((linha, indice) => {
             const data = iData >= 0 ? dataDaCelula(linha[iData]) : null;
             if (!dentroDoPeriodo(data, de, null)) return;
-            vendas.push({
+            const daLinha = (i: number) => (i >= 0 ? (sanitizarUtm(linha[i]) ?? "") : "");
+            const venda: VendaDaAplicacao = {
               email: iEmail >= 0 ? emailComparavel(linha[iEmail]) : "",
               valor: iValor >= 0 ? valorEmReais(linha[iValor]) : 0,
-              utmSource: (iSource >= 0 ? sanitizarUtm(linha[iSource]) : null) ?? "",
-              utmMedium: (iMedium >= 0 ? sanitizarUtm(linha[iMedium]) : null) ?? "",
+              utmSource: daLinha(iSource),
+              utmMedium: daLinha(iMedium),
+              utmCampaign: daLinha(iCampaign),
+              utmContent: daLinha(iContent),
+              utmTerm: daLinha(iTerm),
               data,
               chave: dedupKey(f.id, indice, iTx >= 0 ? linha[iTx] : null),
-            });
+            };
+            // O filtro age ANTES da conta: uma venda de outra etapa não pode
+            // entrar no total e depois ser subtraída em algum lugar.
+            if (!pertenceAEtapa(venda, filtros)) {
+              descartadasPeloFiltro += 1;
+              return;
+            }
+            vendas.push(venda);
           });
         } catch (erro) {
           fastify.log.warn({ erro, sheet: f.sheetName }, "aba de vendas ilegivel");
@@ -350,7 +394,10 @@ export default fp(async function stageApplicationRoutes(fastify) {
     return {
       periodo: { days: q.data.days ?? null, desde: de?.toISOString().slice(0, 10) ?? null },
       resumo,
-      fontes: { aplicacoes: minhas.length, vendas: ids.length },
+      fontes: { aplicacoes: minhas.length, vendas: ids.length, filtrosDeUtm: filtros.length },
+      // O que o filtro tirou vai na resposta, não só na cabeça de quem
+      // configurou: sem isso, "18 vendas viraram 3" parece dado sumindo.
+      descartadasPeloFiltro,
       avisos,
     };
   });
