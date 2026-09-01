@@ -306,12 +306,30 @@ export const PRESETS: Preset[] = [
   },
   {
     id: "roas_geral",
-    nome: "ROAS (Geral)",
-    descricao: "Receita total dividida pelo investimento total do período",
+    nome: "ROAS do período",
+    descricao: "Faturamento bruto dividido pelo investimento em mídia",
     categoria: "Vendas",
     tipo: "kpi",
-    spec: spec("vendas", ["vendas.roas_geral"]),
-    bloqueado: AGUARDANDO_ATRIBUICAO,
+    // Deixou de ser bloqueado: o executor passou a cruzar faturamento com
+    // tráfego. Antes apontava para `vendas.roas_geral`, que somava só o
+    // lançamento manual (25 linhas em toda a história) e nunca calculava.
+    spec: spec("faturamento", ["faturamento.roas"]),
+  },
+  {
+    id: "roas_por_projeto",
+    nome: "ROAS por projeto",
+    descricao: "Onde o dinheiro rende mais, no escopo consolidado",
+    categoria: "Vendas",
+    tipo: "barra",
+    spec: spec("faturamento", ["faturamento.roas"], ["faturamento.projeto"]),
+  },
+  {
+    id: "cac_por_projeto",
+    nome: "CAC por projeto",
+    descricao: "Quanto custa cada comprador",
+    categoria: "Vendas",
+    tipo: "barra",
+    spec: spec("faturamento", ["faturamento.cac"], ["faturamento.projeto"]),
   },
 ];
 
