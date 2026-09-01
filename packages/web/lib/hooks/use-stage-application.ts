@@ -23,6 +23,15 @@ export interface FonteDeVenda {
   temUtm: boolean;
 }
 
+/** Uma regra do filtro de UTM: quais vendas pertencem a esta etapa. */
+export interface RegraDeUtm {
+  campo: "utm_source" | "utm_medium" | "utm_campaign" | "utm_content" | "utm_term";
+  /** `igual` para id de conjunto, `contem` para pedaço de nome de campanha. */
+  modo: "igual" | "contem";
+  /** Qualquer um serve. */
+  valores: string[];
+}
+
 export interface QuebraPorOrigem {
   /** Já vem legível: id de conjunto da Meta chega traduzido para o nome. */
   origem: string;
@@ -47,7 +56,9 @@ export interface ResumoDaAplicacao {
 export interface DashboardDaAplicacao {
   periodo: { days: number | null; desde: string | null };
   resumo: ResumoDaAplicacao;
-  fontes: { aplicacoes: number; vendas: number };
+  fontes: { aplicacoes: number; vendas: number; filtrosDeUtm: number };
+  /** Vendas que a planilha tinha e o filtro de UTM deixou de fora. */
+  descartadasPeloFiltro: number;
   avisos: string[];
 }
 
@@ -60,9 +71,12 @@ export function useFontesDaAplicacao(projectId: string, funnelId: string, stageI
   return useQuery({
     queryKey: ["application-sources", projectId, funnelId, stageId],
     queryFn: () =>
-      api<{ disponiveis: FonteDeVenda[]; escolhidas: string[] }>(
-        `${base(projectId, funnelId, stageId)}/sources`,
-      ),
+      api<{
+        disponiveis: FonteDeVenda[];
+        escolhidas: string[];
+        utmFilters: RegraDeUtm[];
+        camposDeUtm: RegraDeUtm["campo"][];
+      }>(`${base(projectId, funnelId, stageId)}/sources`),
   });
 }
 
@@ -74,10 +88,10 @@ export function useSalvarFontesDaAplicacao(
   const api = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (salesSpreadsheetIds: string[]) =>
-      api<{ ok: true; escolhidas: string[] }>(`${base(projectId, funnelId, stageId)}/sources`, {
+    mutationFn: (corpo: { salesSpreadsheetIds: string[]; utmFilters: RegraDeUtm[] }) =>
+      api<{ ok: true }>(`${base(projectId, funnelId, stageId)}/sources`, {
         method: "PUT",
-        body: JSON.stringify({ salesSpreadsheetIds }),
+        body: JSON.stringify(corpo),
       }),
     onSuccess: () => {
       // O dashboard depende da escolha: sem invalidar, a tela continua

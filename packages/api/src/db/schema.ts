@@ -1622,6 +1622,20 @@ export const applicationStageConfigs = pgTable(
      * seria indistinguível de "não vendeu nada".
      */
     salesSpreadsheetIds: jsonb("sales_spreadsheet_ids").$type<string[]>().notNull().default([]),
+    /**
+     * Quais vendas pertencem a esta etapa, pela UTM.
+     *
+     * A planilha é do FUNIL inteiro: sem filtro, a etapa contava venda que
+     * nasceu de outro lugar. O que distingue umas das outras é a UTM, e só
+     * quem montou a campanha sabe qual delas carrega essa marca — por isso é
+     * configuração, não heurística.
+     *
+     * Lista vazia = sem filtro, tudo entra.
+     */
+    utmFilters: jsonb("utm_filters")
+      .$type<{ campo: string; modo: "igual" | "contem"; valores: string[] }[]>()
+      .notNull()
+      .default([]),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

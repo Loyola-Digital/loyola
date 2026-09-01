@@ -13,11 +13,13 @@ import {
   dedupKey,
   idsDaMeta,
   pareceIdDaMeta,
+  pertenceAEtapa,
   dentroDoPeriodo,
   emailComparavel,
   resumir,
   sanitizarUtm,
   type AplicacaoDaEtapa,
+  type RegraDeUtm,
   type VendaDaAplicacao,
 } from "../services/etapa-de-aplicacao.js";
 import { dataDaCelula, valorEmReais } from "../routes/stage-application.js";
@@ -286,5 +288,85 @@ describe("o id do conjunto vira nome", () => {
       { origem: "meta", vendas: 1, valor: 1, aplicacoes: 0, converteram: 0 },
     ];
     expect(idsDaMeta(a, b)).toEqual(["120247234267040489"]);
+  });
+});
+
+describe("filtro de UTM — quais vendas são desta etapa", () => {
+  /**
+   * A planilha de venda é do FUNIL inteiro: a etapa mostrava 18 vendas quando
+   * só algumas nasceram do formulário dela. O que distingue umas das outras é
+   * a UTM, e só quem montou a campanha sabe qual delas carrega a marca.
+   */
+  const v = (over: Partial<VendaDaAplicacao> = {}) => venda({ chave: "k", ...over });
+
+  it("sem regra, tudo entra", () => {
+    // O padrão não filtra: a pessoa aperta o filtro quando descobre que veio
+    // venda demais, não antes de ver qualquer coisa.
+    expect(pertenceAEtapa(v(), [])).toBe(true);
+  });
+
+  it("valores da mesma regra são OU", () => {
+    const regra: RegraDeUtm[] = [
+      { campo: "utm_source", modo: "igual", valores: ["meta", "google"] },
+    ];
+    expect(pertenceAEtapa(v({ utmSource: "meta" }), regra)).toBe(true);
+    expect(pertenceAEtapa(v({ utmSource: "google" }), regra)).toBe(true);
+    expect(pertenceAEtapa(v({ utmSource: "whatsapp" }), regra)).toBe(false);
+  });
+
+  it("regras diferentes são E", () => {
+    const regras: RegraDeUtm[] = [
+      { campo: "utm_source", modo: "igual", valores: ["meta"] },
+      { campo: "utm_campaign", modo: "contem", valores: ["pg04"] },
+    ];
+    expect(pertenceAEtapa(v({ utmSource: "meta", utmCampaign: "dg-pg04-ago-26" }), regras)).toBe(
+      true,
+    );
+    // Bate a origem, erra a campanha.
+    expect(pertenceAEtapa(v({ utmSource: "meta", utmCampaign: "dg-pg02-jun" }), regras)).toBe(false);
+  });
+
+  it("`contem` acha o pedaço no meio do nome comprido", () => {
+    // O nome real de uma campanha do relato.
+    const regra: RegraDeUtm[] = [{ campo: "utm_campaign", modo: "contem", valores: ["escassez"] }];
+    expect(
+      pertenceAEtapa(
+        v({ utmCampaign: "dg-pg04-ago-26--vendas-captacao--2026-07-22--hot--cbo--escassez-videos" }),
+        regra,
+      ),
+    ).toBe(true);
+  });
+
+  it("`igual` não aceita o pedaço — é para id de conjunto", () => {
+    const regra: RegraDeUtm[] = [
+      { campo: "utm_medium", modo: "igual", valores: ["120247569245860489"] },
+    ];
+    expect(pertenceAEtapa(v({ utmMedium: "120247569245860489" }), regra)).toBe(true);
+    expect(pertenceAEtapa(v({ utmMedium: "1202475692458604891" }), regra)).toBe(false);
+  });
+
+  it("campo ausente NÃO passa", () => {
+    // Oposto do que fazemos com data (venda sem data entra), e de propósito:
+    // ali a ausência é erro de formatação, aqui é evidência de que a venda não
+    // veio por onde a regra descreve.
+    const regra: RegraDeUtm[] = [{ campo: "utm_campaign", modo: "contem", valores: ["pg04"] }];
+    expect(pertenceAEtapa(v({ utmCampaign: "" }), regra)).toBe(false);
+    expect(pertenceAEtapa(v({ utmCampaign: undefined }), regra)).toBe(false);
+  });
+
+  it("regra sem valores é ignorada, não zera a tela", () => {
+    // Alguém deixou um campo em branco no formulário de configuração. Zerar
+    // tudo por isso seria punir um erro de digitação com um painel vazio.
+    const regras: RegraDeUtm[] = [
+      { campo: "utm_source", modo: "igual", valores: [] },
+      { campo: "utm_source", modo: "igual", valores: ["  ", ""] },
+    ];
+    expect(pertenceAEtapa(v({ utmSource: "qualquer" }), regras)).toBe(true);
+  });
+
+  it("compara sem caixa e sem espaço", () => {
+    const regra: RegraDeUtm[] = [{ campo: "utm_source", modo: "igual", valores: [" Meta "] }];
+    expect(pertenceAEtapa(v({ utmSource: "meta" }), regra)).toBe(true);
+    expect(pertenceAEtapa(v({ utmSource: "META" }), regra)).toBe(true);
   });
 });
