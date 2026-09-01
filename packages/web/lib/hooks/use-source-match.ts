@@ -167,3 +167,64 @@ export function montarOrigem(tipo: "pago" | "organico", canal: string): string {
     .replace(/^_+|_+$/g, "");
   return `${tipo === "pago" ? "paid" : "organic"}_${limpo}`;
 }
+
+// ============================================================
+// Regras GLOBAIS — valem para todos os projetos
+// ============================================================
+//
+// Vivem em Settings, não dentro de uma etapa. O caso que motivou é o link mal
+// montado que entrega `{whatsapp}` — a macro com as chaves literais, sem
+// substituição. Isso não é problema de um projeto nem de uma etapa: é do
+// formato do link, e acontece igual em qualquer campanha.
+
+const GLOBAL = "/api/source-match/regras-globais";
+
+export function useRegrasGlobais() {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["source-match", "globais"],
+    queryFn: () => apiClient<{ regras: RegraDeOrigem[] }>(GLOBAL),
+  });
+}
+
+export function useCriarRegraGlobal() {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (regra: EntradaDeRegra) =>
+      apiClient<{ regras: RegraDeOrigem[] }>(GLOBAL, {
+        method: "POST",
+        body: JSON.stringify(regra),
+      }),
+    // Invalida `source-match` inteiro: a regra global muda o diagnóstico de
+    // TODOS os projetos, não só a lista que está na tela.
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["source-match"] }),
+  });
+}
+
+export function useRemoverRegraGlobal() {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient<void>(`${GLOBAL}/${id}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["source-match"] }),
+  });
+}
+
+/**
+ * Testa um valor contra as regras, sem gravar.
+ *
+ * Substitui o diagnóstico que a aba antiga tinha ("46 leads sem origem"), que
+ * dependia de uma etapa. Aqui não há etapa: o que responde a mesma pergunta é
+ * poder colar `{whatsapp}` e ver no que ele vira.
+ */
+export function useTestarRegraGlobal() {
+  const apiClient = useApiClient();
+  return useMutation({
+    mutationFn: (entrada: { campo: string; valor: string }) =>
+      apiClient<{ origem: string | null; regraId: string | null; casou: boolean }>(
+        `${GLOBAL}/testar`,
+        { method: "POST", body: JSON.stringify(entrada) },
+      ),
+  });
+}

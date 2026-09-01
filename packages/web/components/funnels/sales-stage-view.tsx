@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Settings2, BarChart3, Compass, FileSpreadsheet, Plus, Mail } from "lucide-react";
+import { Settings2, BarChart3, FileSpreadsheet, Plus, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,7 +23,6 @@ import { SalesConversionCard } from "./sales-conversion-card";
 import { SalesDailyComparisonChart } from "./sales-daily-comparison-chart";
 import { ApplicationsDailyChart } from "./applications-daily-chart";
 import { ApplicationsListTable } from "@/components/funnels/applications-list-table";
-import { SourceMatchTab } from "@/components/funnels/source-match-tab";
 import { ApplicationBandsCard } from "./application-bands-card";
 import { BuyersOriginCard } from "./buyers-origin-card";
 import { LeadJourneyPanel } from "./lead-journey-panel";
@@ -173,12 +172,6 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
           <TabsTrigger value="mautic" className="gap-1.5">
             <Mail className="h-3.5 w-3.5 text-primary" />
             Mautic
-          </TabsTrigger>
-          {/* Fica junto das aplicações porque é a mesma planilha e a mesma
-              pergunta: de onde vieram estas pessoas. */}
-          <TabsTrigger value="origem" className="gap-1.5">
-            <Compass className="h-3.5 w-3.5 text-amber-600" />
-            Origem
           </TabsTrigger>
         </TabsList>
 
@@ -359,10 +352,6 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
         <TabsContent value="mautic" className="mt-6">
           <MauticStageTab projectId={projectId} funnelId={funnelId} stageId={stage.id} />
         </TabsContent>
-        <TabsContent value="origem" className="mt-6">
-          <SourceMatchTab projectId={projectId} funnelId={funnelId} stageId={stage.id} />
-        </TabsContent>
-
       </Tabs>
 
       <ManualSaleDialog

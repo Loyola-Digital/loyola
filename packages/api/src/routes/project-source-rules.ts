@@ -29,13 +29,15 @@
  */
 
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { funnels, projectMembers, projects, projectSourceRules } from "../db/schema.js";
 import {
   agruparOrfaos,
   agruparParaClassificar,
   diagnosticar,
+  origemPorRegra,
+  type RegraDeOrigem,
   type LinhaDeAplicacao,
 } from "../services/source-rules.js";
 import {
@@ -263,4 +265,126 @@ export default fp(async function projectSourceRulesRoutes(fastify) {
     invalidarRegras(p.data.projectId);
     return { ok: true };
   });
+
+  // ============================================================
+  // Regras GLOBAIS — valem para todos os projetos
+  // ============================================================
+  //
+  // Vivem em Settings, não dentro de uma etapa. O caso que motivou é o link
+  // mal montado que entrega `{whatsapp}` — a macro com as chaves literais,
+  // sem substituição. Isso não é problema de um projeto nem de uma etapa: é
+  // do formato do link, e acontece igual em qualquer campanha.
+  //
+  // Cadastrar a mesma correção projeto a projeto seria trabalho repetido e
+  // fatalmente desatualizado num deles.
+
+  const base = "/api/source-match/regras-globais";
+
+  /** Regra global é configuração de time: só admin mexe. */
+  function soAdmin(request: { userRole?: string }): boolean {
+    return request.userRole !== "admin";
+  }
+
+  fastify.get(base, async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const regras = await fastify.db
+      .select()
+      .from(projectSourceRules)
+      .where(isNull(projectSourceRules.projectId))
+      .orderBy(asc(projectSourceRules.ordem), asc(projectSourceRules.createdAt));
+    return { regras };
+  });
+
+  fastify.post(base, async (request, reply) => {
+    if (soAdmin(request)) return reply.code(403).send({ error: "Só admin edita regra global" });
+    const body = z.union([regraSchema, z.array(regraSchema).max(200)]).safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: "Dados inválidos" });
+
+    const novas = (Array.isArray(body.data) ? body.data : [body.data]).map((r) => ({
+      projectId: null,
+      campo: r.campo,
+      operador: r.operador,
+      valor: r.operador === "vazio" ? "" : r.valor,
+      origem: r.origem,
+      ordem: r.ordem ?? 0,
+      ativa: r.ativa ?? true,
+      createdBy: request.userId ?? null,
+    }));
+
+    const criadas = await fastify.db.insert(projectSourceRules).values(novas).returning();
+    // Regra global toca TODOS os projetos: limpar só um deixaria os outros
+    // servindo a classificação antiga por um minuto — tempo suficiente para
+    // alguém conferir e achar que não funcionou.
+    invalidarRegras();
+    return reply.code(201).send({ regras: criadas });
+  });
+
+  fastify.put(`${base}/:regraId`, async (request, reply) => {
+    if (soAdmin(request)) return reply.code(403).send({ error: "Só admin edita regra global" });
+    const p = z.object({ regraId: z.string().uuid() }).safeParse(request.params);
+    const body = regraSchema.partial().safeParse(request.body);
+    if (!p.success || !body.success) return reply.code(400).send({ error: "Dados inválidos" });
+
+    const [atualizada] = await fastify.db
+      .update(projectSourceRules)
+      .set({ ...body.data, updatedAt: new Date() })
+      .where(
+        and(eq(projectSourceRules.id, p.data.regraId), isNull(projectSourceRules.projectId)),
+      )
+      .returning();
+
+    if (!atualizada) return reply.code(404).send({ error: "Regra não encontrada" });
+    invalidarRegras();
+    return atualizada;
+  });
+
+  fastify.delete(`${base}/:regraId`, async (request, reply) => {
+    if (soAdmin(request)) return reply.code(403).send({ error: "Só admin edita regra global" });
+    const p = z.object({ regraId: z.string().uuid() }).safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+    const apagadas = await fastify.db
+      .delete(projectSourceRules)
+      .where(and(eq(projectSourceRules.id, p.data.regraId), isNull(projectSourceRules.projectId)))
+      .returning({ id: projectSourceRules.id });
+
+    if (apagadas.length === 0) return reply.code(404).send({ error: "Regra não encontrada" });
+    invalidarRegras();
+    return { ok: true };
+  });
+
+  /**
+   * Testa as regras contra um valor, sem gravar nada.
+   *
+   * A tela global não tem etapa, então não dá para mostrar "46 leads sem
+   * origem" como a aba antiga fazia. O que substitui isso é poder colar
+   * `{whatsapp}` e ver no que ele vira — a mesma pergunta, respondida sem
+   * depender de um recorte que ali não existe.
+   */
+  fastify.post(`${base}/testar`, async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const body = z
+      .object({ campo: z.string().trim().min(1).max(120), valor: z.string().max(500) })
+      .safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: "Dados inválidos" });
+
+    const regras = (await fastify.db
+      .select()
+      .from(projectSourceRules)
+      .where(isNull(projectSourceRules.projectId))
+      .orderBy(
+        asc(projectSourceRules.ordem),
+        asc(projectSourceRules.createdAt),
+      )) as unknown as RegraDeOrigem[];
+
+    const atribuida = origemPorRegra(regras, { [body.data.campo]: body.data.valor });
+    return {
+      // `null` quando nada casou: dizer "sem origem" seria afirmar um
+      // resultado, e o que houve foi ausência de regra que se aplicasse.
+      origem: atribuida?.origem ?? null,
+      regraId: atribuida?.regraId ?? null,
+      casou: atribuida !== null,
+    };
+  });
+
 });

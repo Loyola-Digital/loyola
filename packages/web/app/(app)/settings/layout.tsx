@@ -25,6 +25,9 @@ import { useUserRole } from "@/lib/hooks/use-user-role";
 const BASE_TABS = [
   { label: "Geral", href: "/settings/general", value: "general" },
   { label: "Vendas", href: "/settings/sales", value: "sales" },
+  // Match de origem é global: a mesma correção de `{whatsapp}` vale em
+  // qualquer projeto, então cadastrá-la por projeto seria trabalho repetido.
+  { label: "Match de origem", href: "/settings/origem", value: "origem" },
 ] as const;
 
 const META_TABS = [
