@@ -22,8 +22,20 @@ const listQuerySchema = z.object({
 });
 
 export default fp(async function taskRoutes(fastify) {
+  /**
+   * O painel de tarefas dos agentes é de administração, não do produto.
+   *
+   * O menu deixou de mostrá-lo para quem não é admin, mas esconder um item não
+   * fecha a porta: quem digitar `/tasks` continuaria entrando, e a API
+   * continuaria respondendo. O guard é aqui, que é onde ele resiste.
+   */
+  function soAdmin(request: { userRole?: string }): boolean {
+    return request.userRole !== "admin";
+  }
+
   // POST /api/tasks
   fastify.post("/api/tasks", async (request, reply) => {
+    if (soAdmin(request)) return reply.code(403).send({ error: "Acesso negado" });
     const bodyResult = createTaskBodySchema.safeParse(request.body);
     if (!bodyResult.success) {
       return reply.code(400).send({
@@ -103,6 +115,7 @@ export default fp(async function taskRoutes(fastify) {
 
   // GET /api/tasks
   fastify.get("/api/tasks", async (request, reply) => {
+    if (soAdmin(request)) return reply.code(403).send({ error: "Acesso negado" });
     const queryResult = listQuerySchema.safeParse(request.query);
     if (!queryResult.success) {
       return reply.code(400).send({
