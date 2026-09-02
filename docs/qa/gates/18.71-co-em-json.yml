@@ -1,7 +1,10 @@
 storyId: "18.71"
 storyTitle: "O `co=` agora chega como JSON e a venda paga some da tabela"
 phase: design — pré-implementação (não há código; gate de testabilidade e risco)
-gate: CONCERNS
+gate: PASS
+gate_anterior: CONCERNS — as issues foram incorporadas na story antes do @dev pegar
+merged: "PR #719, squash f7058562, 2026-09-02"
+validacao_visual: "OK pelo gestor em 2026-09-02 — as 6 vendas na tela"'"'
 reviewer: "@qa (Quinn)"
 reviewedAt: "2026-09-02"
 branch: docs/44.23-paginacao-tool-criativos
