@@ -22,8 +22,15 @@
 import { z } from "zod";
 import { asc, eq, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { plannerCampaigns } from "../db/schema.js";
+import { plannerCampaigns, plannerGoogleCalendars } from "../db/schema.js";
 import { normalizarFase, type FaseDoPlanner } from "../services/planner.js";
+import {
+  corParaCampanha,
+  emailDaServiceAccount,
+  eventosDaAgenda,
+  nomeDaAgenda,
+  separarTitulo,
+} from "../services/planner-google.js";
 
 /** Paleta cíclica — a mesma do planner original. */
 export const PALETA = [
@@ -211,4 +218,187 @@ export default fp(async function plannerRoutes(fastify) {
     if (apagadas.length === 0) return reply.code(404).send({ error: "Campanha não encontrada" });
     return { ok: true };
   });
+
+  // ============================================================
+  // Agenda do Google
+  // ============================================================
+  //
+  // O time já planeja lá: a agenda "[FZ] Agenda Geral" tem 20 eventos e todos
+  // são fases de campanha (`FZL3 - Prod. Captação`, `[FZ BLACK] Definições`).
+  // O Planner só não sabia ler.
+
+  const google = "/api/planner/google";
+
+  fastify.get(google + "/agendas", async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const agendas = await fastify.db
+      .select()
+      .from(plannerGoogleCalendars)
+      .orderBy(asc(plannerGoogleCalendars.createdAt));
+    return {
+      agendas,
+      // Vai na resposta para a tela mostrar o e-mail a compartilhar sem que
+      // alguém precise procurá-lo no `.env`.
+      emailParaCompartilhar: emailDaServiceAccount(),
+    };
+  });
+
+  fastify.post(google + "/agendas", async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const b = z.object({ calendarId: z.string().trim().min(3).max(300) }).safeParse(request.body);
+    if (!b.success) return reply.code(400).send({ error: "Informe o ID da agenda" });
+
+    // Confere o acesso ANTES de gravar: uma agenda cadastrada que não abre
+    // vira erro toda vez que alguém tenta importar.
+    let label: string;
+    try {
+      label = await nomeDaAgenda(b.data.calendarId);
+    } catch (erro) {
+      return reply
+        .code(400)
+        .send({ error: erro instanceof Error ? erro.message : "Não consegui abrir a agenda" });
+    }
+
+    const [criada] = await fastify.db
+      .insert(plannerGoogleCalendars)
+      .values({ calendarId: b.data.calendarId, label, createdBy: request.userId ?? null })
+      .onConflictDoUpdate({ target: plannerGoogleCalendars.calendarId, set: { label } })
+      .returning();
+
+    return reply.code(201).send(criada);
+  });
+
+  fastify.delete(google + "/agendas/:id", async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    await fastify.db.delete(plannerGoogleCalendars).where(eq(plannerGoogleCalendars.id, p.data.id));
+    return { ok: true };
+  });
+
+  /**
+   * Traz os eventos da agenda para o Planner.
+   *
+   * ## O que é criado e o que é atualizado
+   *
+   * A fase guarda `googleEventId`. Na reimportação, quem tem esse campo é
+   * ATUALIZADO e quem não tem fica intocado — o Google manda nas fases dele, o
+   * Planner manda nas próprias. Sem isso, reimportar duplicaria tudo.
+   *
+   * ## Evento sem campanha no título
+   *
+   * Vai para uma campanha chamada "Agenda", em vez de virar uma campanha nova
+   * por evento. Uma reunião solta não é um lançamento.
+   */
+  fastify.post(google + "/importar", async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const b = z
+      .object({
+        calendarId: z.string().trim().min(3).max(300),
+        mesesAtras: z.number().int().min(0).max(24).default(6),
+        mesesAFrente: z.number().int().min(1).max(24).default(12),
+        /** Evento com HORA é reunião, não fase — fica de fora por padrão. */
+        incluirComHora: z.boolean().default(false),
+      })
+      .safeParse(request.body);
+    if (!b.success) return reply.code(400).send({ error: "Dados inválidos" });
+
+    const de = new Date();
+    de.setMonth(de.getMonth() - b.data.mesesAtras);
+    const ate = new Date();
+    ate.setMonth(ate.getMonth() + b.data.mesesAFrente);
+
+    let eventos;
+    try {
+      eventos = await eventosDaAgenda(b.data.calendarId, de, ate);
+    } catch (erro) {
+      return reply
+        .code(502)
+        .send({ error: erro instanceof Error ? erro.message : "Não consegui ler a agenda" });
+    }
+
+    const aproveitados = eventos.filter((e) => b.data.incluirComHora || !e.temHora);
+
+    // Agrupa por campanha ANTES de tocar no banco: assim cada campanha é uma
+    // escrita só, e não uma por fase.
+    type FaseImportada = {
+      id: string;
+      name: string;
+      start: string;
+      end: string;
+      googleEventId: string;
+    };
+    const porCampanha = new Map<string, FaseImportada[]>();
+    for (const e of aproveitados) {
+      const { campanha, fase } = separarTitulo(e.titulo);
+      const chave = campanha || "Agenda";
+      const lista = porCampanha.get(chave) ?? [];
+      lista.push({
+        id: "g" + e.id.slice(0, 24),
+        name: fase,
+        start: e.inicio,
+        end: e.fim,
+        googleEventId: e.id,
+      });
+      porCampanha.set(chave, lista);
+    }
+
+    const existentes = await fastify.db.select().from(plannerCampaigns);
+    let criadas = 0;
+    let atualizadas = 0;
+    let fasesTocadas = 0;
+
+    for (const [nome, fasesDoGoogle] of porCampanha) {
+      const atual = existentes.find((c) => c.name.toLowerCase() === nome.toLowerCase());
+
+      if (!atual) {
+        await fastify.db.insert(plannerCampaigns).values({
+          name: nome,
+          color: corParaCampanha(nome, PALETA),
+          sortOrder: existentes.length + criadas,
+          phases: fasesDoGoogle.map(normalizarFase),
+          createdBy: request.userId ?? null,
+        });
+        criadas += 1;
+        fasesTocadas += fasesDoGoogle.length;
+        continue;
+      }
+
+      // Mantém as fases feitas à mão; substitui as que vieram do Google.
+      const manuais = atual.phases.filter((f) => !f.googleEventId);
+      const antesPorEvento = new Map(
+        atual.phases.filter((f) => f.googleEventId).map((f) => [f.googleEventId as string, f]),
+      );
+
+      const novas = fasesDoGoogle.map((f) => {
+        // Preserva o id da fase quando ela já existia: a seleção na tela e o
+        // desfazer apontam para ele.
+        const antes = antesPorEvento.get(f.googleEventId);
+        return normalizarFase(antes ? { ...f, id: antes.id } : f);
+      });
+
+      await fastify.db
+        .update(plannerCampaigns)
+        .set({ phases: [...manuais, ...novas], updatedAt: new Date() })
+        .where(eq(plannerCampaigns.id, atual.id));
+      atualizadas += 1;
+      fasesTocadas += novas.length;
+    }
+
+    await fastify.db
+      .update(plannerGoogleCalendars)
+      .set({ lastImportedAt: new Date() })
+      .where(eq(plannerGoogleCalendars.calendarId, b.data.calendarId));
+
+    return {
+      lidos: eventos.length,
+      // A diferença entre lidos e importados é informação: dizer só "importei
+      // 20" esconderia as reuniões que ficaram de fora de propósito.
+      ignoradosPorTerHora: eventos.length - aproveitados.length,
+      campanhasCriadas: criadas,
+      campanhasAtualizadas: atualizadas,
+      fases: fasesTocadas,
+    };
+  });
+
 });

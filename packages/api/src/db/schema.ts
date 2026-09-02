@@ -3577,7 +3577,21 @@ export const plannerCampaigns = pgTable(
      * planejamento — a fase começou e ninguém sabe quando acaba.
      */
     phases: jsonb("phases")
-      .$type<{ id: string; name: string; start: string; end: string }[]>()
+      .$type<
+        {
+          id: string;
+          name: string;
+          start: string;
+          end: string;
+          /**
+           * De qual evento do Google esta fase veio.
+           *
+           * Reimportar ATUALIZA quem tem este campo e não toca em quem não tem
+           * — o Google manda nas fases dele, o Planner manda nas próprias.
+           */
+          googleEventId?: string;
+        }[]
+      >()
       .notNull()
       .default([]),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
@@ -3589,6 +3603,24 @@ export const plannerCampaigns = pgTable(
     index("planner_campaigns_project_idx").on(t.projectId),
   ],
 );
+
+/**
+ * As agendas do Google que o Planner conhece.
+ *
+ * Existe porque a service account NÃO enxerga `calendarList`: ela não tem
+ * caixa de entrada para aceitar o convite de compartilhamento, então a lista
+ * dela fica sempre vazia. A permissão vale desde que o e-mail é adicionado —
+ * o que falta é saber QUAL agenda ler, e isso quem diz é quem configura.
+ */
+export const plannerGoogleCalendars = pgTable("planner_google_calendars", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  /** O "ID da agenda" que aparece em Configurações → Integrar agenda. */
+  calendarId: text("calendar_id").notNull().unique(),
+  label: varchar("label", { length: 200 }).notNull(),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  lastImportedAt: timestamp("last_imported_at", { withTimezone: true }),
+});
 
 export const projectSourceRules = pgTable(
   "project_source_rules",

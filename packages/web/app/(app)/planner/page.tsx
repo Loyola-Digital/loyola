@@ -36,6 +36,7 @@ import {
   Rows3,
   Upload,
 } from "lucide-react";
+import { AgendasDoGoogle } from "@/components/planner/agendas-do-google";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useUserRole } from "@/lib/hooks/use-user-role";
@@ -117,6 +118,7 @@ export default function PlannerPage() {
   const [selecionada, setSelecionada] = useState<string | null>(null);
   const [mostrarCards, setMostrarCards] = useState(true);
   const [rail, setRail] = useState(true);
+  const [googleAberto, setGoogleAberto] = useState(false);
 
   const hoje = new Date();
   const [ano, setAno] = useState(hoje.getFullYear());
@@ -509,6 +511,10 @@ export default function PlannerPage() {
             <Acao onClick={desfazer} disabled={!temHistorico} titulo="Ctrl+Z">
               Desfazer
             </Acao>
+            <Acao onClick={() => setGoogleAberto(true)} titulo="Importar da agenda do Google">
+              <CalendarDays className="h-3.5 w-3.5" />
+              Google
+            </Acao>
             <Acao onClick={exportar}>
               <Download className="h-3.5 w-3.5" />
               Exportar
@@ -598,6 +604,8 @@ export default function PlannerPage() {
           </div>
         )}
       </main>
+
+      <AgendasDoGoogle open={googleAberto} onOpenChange={setGoogleAberto} />
     </div>
   );
 }
