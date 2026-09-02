@@ -490,7 +490,7 @@ export function CrossedFunnelDailyTable({
                         </span>
                       )}
                       {formatDateLabel(r.date)}
-                      <EventosDoDia entradas={eventosPorDia.get(r.date)} />
+                      <EventosDoDia entradas={eventosPorDia.get(r.date)} dia={r.date} />
                     </span>
                   </TableCell>
                   <TableCell className="text-right">{fmtCurrency(r.spend)}</TableCell>

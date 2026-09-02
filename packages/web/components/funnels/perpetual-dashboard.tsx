@@ -914,7 +914,7 @@ function PerpetualDailyTable({
                 <TableRow key={r.dateIso} className="text-xs">
                   <TableCell className="font-medium whitespace-nowrap">
                     {r.date}
-                    <EventosDoDia entradas={eventosPorDia.get(r.dateIso)} />
+                    <EventosDoDia entradas={eventosPorDia.get(r.dateIso)} dia={r.dateIso} />
                   </TableCell>
                   {colunas.map((c) => (
                     <TableCell
