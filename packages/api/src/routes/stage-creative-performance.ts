@@ -27,6 +27,7 @@ import {
   type CreativeSalesMetrics,
 } from "../utils/creative-sales-metrics.js";
 import { utmContentEfetivo, normalizeNumericId } from "../utils/utm-value.js";
+import { parseValorPlanilha } from "@loyola-x/shared";
 
 const paramsSchema = z.object({
   funnelId: z.string().uuid(),
@@ -171,9 +172,10 @@ function parseVideo3sViews(
 }
 
 function parseNumber(val: string | undefined): number {
-  if (!val) return 0;
-  const cleaned = val.replace(/[^\d.,]/g, "").replace(",", ".");
-  return parseFloat(cleaned) || 0;
+  // Story 18.71 (achado): o corpo anterior trocava só a PRIMEIRA vírgula e
+  // deixava o ponto de milhar, então "1.097,00" virava 1,097. Ver
+  // `shared/src/numero-ptbr.ts`.
+  return parseValorPlanilha(val);
 }
 
 function normalizeEmail(email: string): string {

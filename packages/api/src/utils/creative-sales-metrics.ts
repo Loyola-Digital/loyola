@@ -18,6 +18,7 @@
  */
 
 import { utmContentEfetivo } from "./utm-value.js";
+import { parseValorPlanilha } from "@loyola-x/shared";
 
 export interface SaleColumnIdx {
   utmContent: number;
@@ -38,9 +39,10 @@ export interface CreativeSalesMetrics {
 
 /** Espelho do parseNumber do endpoint de criativos (planilhas pt-BR). */
 function parseNumber(val: string | undefined): number {
-  if (!val) return 0;
-  const cleaned = val.replace(/[^\d.,]/g, "").replace(",", ".");
-  return parseFloat(cleaned) || 0;
+  // Story 18.71 (achado): o corpo anterior trocava só a PRIMEIRA vírgula e
+  // deixava o ponto de milhar, então "1.097,00" virava 1,097. Ver
+  // `shared/src/numero-ptbr.ts`.
+  return parseValorPlanilha(val);
 }
 
 /** Espelho do parseDate da 18.51a (dd/mm/yyyy preferido, ISO como fallback). */

@@ -11,6 +11,7 @@ import {
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { utmContentEfetivo } from "../utils/utm-value.js";
+import { parseValorPlanilha } from "@loyola-x/shared";
 
 // ============================================================
 // SCHEMAS
@@ -32,9 +33,10 @@ const querySchema = z.object({
 // ============================================================
 
 function parseNumber(val: string | undefined): number {
-  if (!val) return 0;
-  const cleaned = val.replace(/[^\d.,]/g, "").replace(",", ".");
-  return parseFloat(cleaned) || 0;
+  // Story 18.71 (achado): o corpo anterior trocava só a PRIMEIRA vírgula e
+  // deixava o ponto de milhar, então "1.097,00" virava 1,097. Ver
+  // `shared/src/numero-ptbr.ts`.
+  return parseValorPlanilha(val);
 }
 
 function parseDate(val: string | undefined): Date | null {
