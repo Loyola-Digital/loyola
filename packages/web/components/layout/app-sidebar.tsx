@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Brain, MessageSquare, CheckSquare, Settings, Plus, Eye, EyeOff, LayoutDashboard, LayoutGrid, Radar, Library , Map as MapIcon, Users } from "lucide-react";
+import { Brain, MessageSquare, CheckSquare, Settings, Plus, Eye, EyeOff, LayoutDashboard, LayoutGrid, Radar, Library, Map as MapIcon, Users, CalendarRange } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/lib/stores/ui-store";
 import { useHiddenProjectsStore } from "@/lib/stores/hidden-projects-store";
@@ -41,6 +41,8 @@ const navItems = [
   // Spy de Conteúdo: raio-x de perfil de terceiro no Instagram (Apify + Claude).
   // Não confundir com /instagram, que é insights das contas PRÓPRIAS via Meta API.
   { label: "Spy de Conteúdo", href: "/spy-conteudo", icon: Radar },
+  // O calendário do time: campanhas e suas fases, antes de virarem funil.
+  { label: "Planner", href: "/planner", icon: CalendarRange },
   // Biblioteca de referências de anúncios do time (print/vídeo/link).
   { label: "Swipe Files", href: "/swipe-files", icon: Library },
   // Os mapas vivem dentro de etapa > funil > projeto; aqui ficam todos juntos,
