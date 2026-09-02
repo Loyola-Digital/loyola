@@ -2,6 +2,7 @@
 
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import type { CampaignAnalytics } from "@/lib/hooks/use-traffic-analytics";
+import { fmtCurrency } from "@/lib/utils/format-number";
 
 interface HotColdSpendDonutProps {
   campaigns: CampaignAnalytics[];
@@ -46,9 +47,8 @@ function buildDonutData(campaigns: CampaignAnalytics[]): DonutDatum[] {
 }
 
 function fmtCurrencyCompact(v: number): string {
-  if (v >= 1_000_000) return `R$ ${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `R$ ${(v / 1_000).toFixed(1)}K`;
-  return `R$ ${v.toFixed(0)}`;
+  // Story 18.73: valor completo com centavos, sem K/M.
+  return fmtCurrency(v);
 }
 
 /**
@@ -92,7 +92,7 @@ function renderSliceLabel(props: any) {
         fontSize={10}
         fill="#fff"
       >
-        {`(${(percent * 100).toFixed(0)}%)`}
+        {`(${(percent * 100).toFixed(2)}%)`}
       </text>
     </g>
   );
@@ -217,7 +217,7 @@ export function HotColdSpendDonut({
                 {d.value > 0 ? fmtCurrencyCompact(d.value) : "\u2014"}
               </span>
               <span className="text-muted-foreground tabular-nums shrink-0 w-12 text-right">
-                {pct > 0 ? `${pct.toFixed(0)}%` : "\u2014"}
+                {pct > 0 ? `${pct.toFixed(2)}%` : "\u2014"}
               </span>
             </div>
           );

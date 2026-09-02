@@ -1,5 +1,7 @@
 "use client";
 
+import { fmtInt } from "@/lib/utils/format-number";
+
 interface ConversionFunnelProps {
   impressions: number;
   linkClicks: number | null;
@@ -16,11 +18,8 @@ interface FunnelStage {
   color: string;
 }
 
-function fmtNumber(val: number): string {
-  if (val >= 1_000_000) return `${(val / 1_000_000).toFixed(1)}M`;
-  if (val >= 1_000) return `${(val / 1_000).toFixed(1)}K`;
-  return val.toLocaleString("pt-BR");
-}
+// Story 18.73: número completo, sem K/M. Ver `lib/utils/format-number`.
+const fmtNumber = (val: number): string => fmtInt(val);
 
 function conversionRate(from: number, to: number): string {
   if (from === 0) return "0%";

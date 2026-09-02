@@ -461,4 +461,143 @@ export default fp(async function stageSalesSpreadsheetsRoutes(fastify) {
       return { productMapped: true, products, orderBumpProducts: orderBumps, productTypes };
     }
   );
+
+  // ============================================================
+  // Story 18.72 — GET .../sales-spreadsheets/rows
+  // ============================================================
+  //
+  // As LINHAS das planilhas de venda da etapa, enriquecidas com `named`.
+  //
+  // Por que uma rota nova: nenhuma das irmãs entrega linha crua. A de cadastro
+  // devolve só metadata, a `/products` devolve produtos já agregados, e
+  // `stage-sales-data` devolve KPIs somados. A tabela "Leads & vendas por UTM"
+  // agrupa no browser, linha a linha, e por isso enxergava zero venda em toda
+  // etapa cuja planilha vive aqui e não em `funnel_spreadsheets` — 6 etapas em
+  // 5 funis de produção.
+  //
+  // O `named` sai no MESMO vocabulário de `funnel-spreadsheets.ts` (`value`,
+  // `date`, `name`, `phone`, `email`, `utm_*`), não no desta tabela
+  // (`valorBruto`, `dataVenda`, `customerName`…). A ponte é feita aqui porque o
+  // consumidor não deve precisar saber que existem dois vocabulários para a
+  // mesma coisa — foi exatamente essa diferença que transformaria "0 vendas"
+  // em "N vendas, R$ 0" se o front lesse `named.value` de um mapping que chama
+  // o campo de `valorBruto`.
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/sales-spreadsheets/rows",
+    async (request, reply) => {
+      const params = paramsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      // Mesmos guards das rotas irmãs deste arquivo. A resposta carrega nome,
+      // e-mail e telefone de comprador: o guard de projeto é o que impede um
+      // usuário de ler a base de outro, e não pode ser herdado só do guard
+      // global de guest.
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const stage = await getStage(params.data.stageId, params.data.funnelId, params.data.projectId);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const sheets = await fastify.db
+        .select()
+        .from(stageSalesSpreadsheets)
+        .where(eq(stageSalesSpreadsheets.stageId, params.data.stageId));
+
+      // Uma etapa pode ter mais de uma planilha (dg-pg04/Vendas tem três), e
+      // duas podem apontar para a MESMA aba com subtypes diferentes. Ler a
+      // mesma aba duas vezes dobraria as vendas na tela.
+      const vistas = new Set<string>();
+      const resultado: Array<{
+        id: string;
+        subtype: string;
+        sheetName: string;
+        headers: string[];
+        rows: Array<{ values: string[]; named: Record<string, string> }>;
+        erro?: string;
+      }> = [];
+
+      for (const sheet of sheets) {
+        const chave = `${sheet.spreadsheetId}|${sheet.sheetName}`;
+        if (vistas.has(chave)) continue;
+        vistas.add(chave);
+
+        const mapping = (sheet.columnMapping ?? {}) as Record<string, string | undefined>;
+        const base = {
+          id: sheet.id,
+          subtype: sheet.subtype as string,
+          sheetName: sheet.sheetName,
+        };
+
+        let data;
+        try {
+          data = await readSheetData(sheet.spreadsheetId, sheet.sheetName);
+        } catch (error) {
+          // AC4: falha de leitura NÃO pode chegar na tela como "0 vendas". O
+          // consumidor precisa distinguir "não vendeu" de "não consegui ler".
+          request.log.error(
+            { err: error, sheetId: sheet.id, sheetName: sheet.sheetName },
+            "Story 18.72: falha ao ler planilha de vendas da etapa",
+          );
+          resultado.push({
+            ...base,
+            headers: [],
+            rows: [],
+            erro: error instanceof Error ? error.message : "Falha ao ler a planilha",
+          });
+          continue;
+        }
+
+        const idx = (nome: string | undefined): number =>
+          nome
+            ? data.headers.findIndex(
+                (h: string) => h.trim().toLowerCase() === nome.trim().toLowerCase(),
+              )
+            : -1;
+
+        // Vocabulário desta tabela → vocabulário comum.
+        const col = {
+          email: idx(mapping.email),
+          name: idx(mapping.customerName),
+          phone: idx(mapping.telefone),
+          date: idx(mapping.dataVenda),
+          status: idx(mapping.status),
+          bruto: idx(mapping.valorBruto),
+          liquido: idx(mapping.valorLiquido),
+          utm_source: idx(mapping.utm_source),
+          utm_medium: idx(mapping.utm_medium),
+          utm_campaign: idx(mapping.utm_campaign),
+          utm_content: idx(mapping.utm_content),
+          utm_term: idx(mapping.utm_term),
+        };
+
+        const rows = data.rows.map((row: string[]) => {
+          const named: Record<string, string> = {};
+          const put = (chave: string, i: number) => {
+            if (i >= 0) named[chave] = row[i] ?? "";
+          };
+          put("email", col.email);
+          put("name", col.name);
+          put("phone", col.phone);
+          put("date", col.date);
+          put("status", col.status);
+          put("utm_source", col.utm_source);
+          put("utm_medium", col.utm_medium);
+          put("utm_campaign", col.utm_campaign);
+          put("utm_content", col.utm_content);
+          put("utm_term", col.utm_term);
+          // `value`: bruto com fallback no líquido, como o resto da etapa faz.
+          // Sem isto o consumidor lê `named.value` de um mapping que não tem
+          // esse campo, e o faturamento sai zerado com a contagem certa.
+          const bruto = col.bruto >= 0 ? (row[col.bruto] ?? "") : "";
+          const liquido = col.liquido >= 0 ? (row[col.liquido] ?? "") : "";
+          named.value = bruto.trim() ? bruto : liquido;
+          return { values: row, named };
+        });
+
+        resultado.push({ ...base, headers: data.headers, rows });
+      }
+
+      return resultado;
+    }
+  );
 });

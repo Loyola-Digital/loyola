@@ -673,7 +673,7 @@ export function StageCreativePerformanceTable({
                           <span className="inline-flex flex-col items-end leading-tight">
                             <span>{cell.count}</span>
                             <span className="text-[10px] text-muted-foreground">
-                              {cell.pct.toFixed(0)}%
+                              {cell.pct.toFixed(2)}%
                             </span>
                           </span>
                         ) : (

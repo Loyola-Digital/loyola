@@ -17,7 +17,7 @@ import { useSheetData } from "@/lib/hooks/use-google-sheets";
 import type { SheetData } from "@/lib/hooks/use-google-sheets";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useFunnelSpreadsheets } from "@/lib/hooks/use-funnel-spreadsheets";
-import { normalizeNumericId } from "@/lib/utils/normalize-answer";
+import { utmContentEfetivo } from "@/lib/utils/normalize-answer";
 import { useResolveMetaNames } from "@/lib/hooks/use-funnel-adsets-map";
 
 // Story 18.47: extrai um mapa ad_id (content/utm_content) → Ad Name de uma aba
@@ -38,7 +38,7 @@ function extractAdNamesFromSheet(
   );
   if (contentIdx === -1 || adNameIdx === -1) return map;
   for (const row of rows) {
-    const adId = normalizeNumericId(row[contentIdx] ?? "");
+    const adId = utmContentEfetivo(row[contentIdx] ?? "");
     const adName = (row[adNameIdx] ?? "").trim();
     if (adId && adName && !map[adId]) map[adId] = adName;
   }
@@ -154,7 +154,7 @@ export function useCrossReferenceLeads({
       const idx = headers.findIndex((h) => ["utm_content", "content", "co="].includes(norm(h)));
       if (idx === -1) return;
       for (const row of rows) {
-        const adId = normalizeNumericId(row[idx] ?? "");
+        const adId = utmContentEfetivo(row[idx] ?? "");
         if (adId) ids.add(adId);
       }
     };
@@ -254,7 +254,7 @@ export function useCrossReferenceLeads({
       const utmContent = row[CONTENT_INDEX]?.trim() ?? "";
       if (!utmContent) continue;
 
-      const adId = normalizeNumericId(utmContent);
+      const adId = utmContentEfetivo(utmContent);
 
       leads[adId] = (leads[adId] ?? 0) + 1;
 
@@ -312,7 +312,7 @@ export function useCrossReferenceLeads({
         // Só leads pagos do Meta (utm_content = ad_id). ig/orgânico fora.
         if (utmSourceIdx !== -1 && norm(row[utmSourceIdx] ?? "") !== "meta") continue;
 
-        const adId = normalizeNumericId(row[utmContentIdx] ?? "");
+        const adId = utmContentEfetivo(row[utmContentIdx] ?? "");
         if (!adId) continue;
 
         const faixa = (row[faixaIdx] ?? "").trim().toUpperCase();

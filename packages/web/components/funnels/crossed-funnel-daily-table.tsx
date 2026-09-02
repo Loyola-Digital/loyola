@@ -23,6 +23,7 @@ import {
 } from "@/lib/hooks/use-funnel-batch-turns";
 import { useCampaignLog } from "@/lib/hooks/use-campaign-log";
 import { EventosDoDia, agruparPorDia } from "./eventos-do-dia";
+import { fmtInt as fmtIntCompartilhado } from "@/lib/utils/format-number";
 
 interface CrossedFunnelDailyTableProps {
   rows: DailyRow[];
@@ -86,10 +87,8 @@ function fmtPercent(v: number | null | undefined): string {
   return `${v.toFixed(2)}%`;
 }
 
-function fmtInt(v: number | null | undefined): string {
-  if (v == null) return "—";
-  return v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
-}
+// Story 18.73: contagem completa — o helper é o mesmo de todo o lançamento.
+const fmtInt = fmtIntCompartilhado;
 
 function formatDateLabel(d: string) {
   if (d === "Total") return d;

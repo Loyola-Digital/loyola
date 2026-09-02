@@ -171,7 +171,7 @@ function DimensionCard({
             <div key={item.name} className="flex items-center gap-1.5 text-[11px]">
               <span className={`flex-1 truncate font-medium ${colorCls}`}>{item.name}</span>
               <span className="text-muted-foreground tabular-nums shrink-0">
-                {item.count} ({pct.toFixed(0)}%)
+                {item.count} ({pct.toFixed(2)}%)
               </span>
             </div>
           );

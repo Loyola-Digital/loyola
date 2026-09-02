@@ -26,6 +26,8 @@ import {
   computeCreativeSalesMetrics,
   type CreativeSalesMetrics,
 } from "../utils/creative-sales-metrics.js";
+import { utmContentEfetivo, normalizeNumericId } from "../utils/utm-value.js";
+import { parseValorPlanilha } from "@loyola-x/shared";
 
 const paramsSchema = z.object({
   funnelId: z.string().uuid(),
@@ -170,9 +172,10 @@ function parseVideo3sViews(
 }
 
 function parseNumber(val: string | undefined): number {
-  if (!val) return 0;
-  const cleaned = val.replace(/[^\d.,]/g, "").replace(",", ".");
-  return parseFloat(cleaned) || 0;
+  // Story 18.71 (achado): o corpo anterior trocava só a PRIMEIRA vírgula e
+  // deixava o ponto de milhar, então "1.097,00" virava 1,097. Ver
+  // `shared/src/numero-ptbr.ts`.
+  return parseValorPlanilha(val);
 }
 
 function normalizeEmail(email: string): string {
@@ -184,14 +187,6 @@ function normalizeEmail(email: string): string {
  * Sheets as vezes prefixam IDs numéricos com `_` (forçar texto). Limpa pra
  * cruzar com ad_id puro do Meta.
  */
-function normalizeNumericId(id: string): string {
-  const trimmed = id.trim();
-  if (trimmed.startsWith("_")) {
-    const rest = trimmed.slice(1);
-    if (/^\d+$/.test(rest)) return rest;
-  }
-  return trimmed;
-}
 
 /**
  * Story 18.50: extrai LP (lpX no nome → LPA se ausente, decisão Danilo) e
@@ -512,7 +507,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               // computeCreativeSalesMetrics abaixo (Fat. Total linha-a-linha).
               const saleDedup = new Map<string, { adId: string; value: number }>();
               for (const row of salesData.rows) {
-                const adId = normalizeNumericId(row[saleUtmContentIdx] ?? "");
+                const adId = utmContentEfetivo(row[saleUtmContentIdx] ?? "");
                 if (!adId) continue;
                 const bruto = saleBrutoIdx !== -1 ? parseNumber(row[saleBrutoIdx]) : 0;
                 const liquido = saleLiquidoIdx !== -1 ? parseNumber(row[saleLiquidoIdx]) : 0;
@@ -623,7 +618,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             if (leadUtmContentIdx !== -1) {
               for (const row of leadsData.rows) {
                 const adIdRaw = row[leadUtmContentIdx] ?? "";
-                const adId = normalizeNumericId(adIdRaw);
+                const adId = utmContentEfetivo(adIdRaw);
                 if (!adId) continue;
 
                 const email =

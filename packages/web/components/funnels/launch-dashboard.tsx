@@ -101,6 +101,7 @@ import {
 import { ClipboardList, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { fmtCurrency as fmtCurrencyCompleto, fmtInt, fmtPercent as fmtPercentCompleto } from "@/lib/utils/format-number";
 
 interface LaunchDashboardProps {
   funnel: Funnel;
@@ -110,24 +111,13 @@ interface LaunchDashboardProps {
   onCampaignsChange?: (campaigns: FunnelCampaign[]) => void;
 }
 
-function fmtCurrency(val: number | null | undefined): string {
-  if (val == null || val === 0) return "—";
-  if (val >= 1_000_000) return `R$ ${(val / 1_000_000).toFixed(1)}M`;
-  if (val >= 1_000) return `R$ ${(val / 1_000).toFixed(1)}K`;
-  return `R$ ${val.toFixed(2)}`;
-}
-
-function fmtNumber(val: number | null | undefined): string {
-  if (val == null) return "—";
-  if (val >= 1_000_000) return `${(val / 1_000_000).toFixed(1)}M`;
-  if (val >= 1_000) return `${(val / 1_000).toFixed(1)}K`;
-  return val.toLocaleString("pt-BR");
-}
-
-function fmtPercent(val: number | null | undefined): string {
-  if (val == null) return "—";
-  return `${val.toFixed(2)}%`;
-}
+// Story 18.73: os três formatadores saíram daqui para `lib/utils/format-number`,
+// onde o runner do web alcança. O corpo antigo abreviava acima de mil — 1.147 e
+// 1.199 viravam ambos "1.1K" — e devolvia "—" para zero, apagando o criativo que
+// gastou sem faturar.
+const fmtCurrency = fmtCurrencyCompleto;
+const fmtNumber = fmtInt;
+const fmtPercent = fmtPercentCompleto;
 
 function safeNum(val: string | undefined): number {
   return val ? parseFloat(val) : 0;
@@ -537,7 +527,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                           {order.map(fonte => {
                             const item = byFonte.get(fonte);
                             const bruto = item?.bruto ?? 0;
-                            const pct = total > 0 ? ((bruto / total) * 100).toFixed(0) : "0";
+                            const pct = total > 0 ? ((bruto / total) * 100).toFixed(2) : "0";
                             return (
                               <div key={fonte}>
                                 {fonte}: {fmtCurrency(bruto)} ({pct}%)

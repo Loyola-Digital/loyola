@@ -19,6 +19,7 @@ import { useLeadsProjection, type ProjectedDayData } from "@/lib/hooks/use-leads
 import { useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useStageLeadInputs } from "@/lib/hooks/use-stage-lead-inputs";
 import type { Funnel } from "@loyola-x/shared";
+import { fmtCurrency } from "@/lib/utils/format-number";
 
 interface LeadsProjectionCostBasedChartProps {
   rows: DailyRow[];
@@ -335,10 +336,10 @@ export function LeadsProjectionCostBasedChart({
               return (
                 <div className="space-y-1 text-xs text-muted-foreground">
                   <div>
-                    Restante: R$ {valorRestante.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                    Restante: {fmtCurrency(valorRestante)}
                   </div>
                   <div>
-                    Pacing projetado: R$ {pacingProjetado.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}/dia
+                    Pacing projetado: {fmtCurrency(pacingProjetado)}/dia
                   </div>
                 </div>
               );

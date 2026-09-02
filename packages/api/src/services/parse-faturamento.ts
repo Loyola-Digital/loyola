@@ -16,6 +16,7 @@
  * Heurística de número: locale BR (ponto = milhar, vírgula = decimal), com
  * fallback p/ US quando a ordem dos separadores indica o contrário.
  */
+import { parseNumeroPtBr } from "@loyola-x/shared";
 export function parseFaturamento(raw: string | null | undefined): number | null {
   if (raw == null) return null;
   const s = String(raw).trim().toLowerCase();
@@ -75,31 +76,10 @@ function scaleOf(suffix: string | undefined): number {
   return 1_000_000; // mm, mi, m, milhão, milhões, milhoes, milhao
 }
 
-/** Interpreta um número solto considerando ponto/vírgula como milhar ou decimal. */
-function parseBrNumber(numStr: string): number | null {
-  const commas = (numStr.match(/,/g) || []).length;
-  const dots = (numStr.match(/\./g) || []).length;
-  let normalized = numStr;
+/**
+ * Story 18.71 (achado): esta era a implementação CERTA do repo e virou o
+ * `parseNumeroPtBr` do shared, de onde três rotas com a versão quebrada passaram
+ * a ler. Aqui fica o alias, para os chamadores deste arquivo não mudarem.
+ */
+const parseBrNumber = (numStr: string): number | null => parseNumeroPtBr(numStr);
 
-  if (commas > 0 && dots > 0) {
-    // ambos presentes → o ÚLTIMO separador é o decimal
-    if (numStr.lastIndexOf(",") > numStr.lastIndexOf(".")) {
-      normalized = numStr.replace(/\./g, "").replace(",", "."); // BR: 1.234,56
-    } else {
-      normalized = numStr.replace(/,/g, ""); // US: 1,234.56
-    }
-  } else if (commas > 0) {
-    // só vírgula: 1 vírgula = decimal BR (30,5); várias = milhar US (1,000,000)
-    normalized = commas > 1 ? numStr.replace(/,/g, "") : numStr.replace(",", ".");
-  } else if (dots > 0) {
-    // só ponto: milhar BR (30.000 / 1.234.567) vs decimal US (30.50)
-    const parts = numStr.split(".");
-    const last = parts[parts.length - 1];
-    if (parts.length > 2 || last.length === 3) {
-      normalized = numStr.replace(/\./g, ""); // milhar
-    }
-  }
-
-  const v = Number(normalized);
-  return Number.isFinite(v) ? v : null;
-}

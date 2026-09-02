@@ -216,7 +216,7 @@ export function PublicosTable({
                       perde exatamente isso. */}
                   {temBump && (
                     <td className="text-right px-2 tabular-nums text-emerald-400">
-                      {delta == null || delta === 0 ? "—" : `+${(delta * 100).toFixed(0)}%`}
+                      {delta == null || delta === 0 ? "—" : `+${(delta * 100).toFixed(2)}%`}
                     </td>
                   )}
                 </tr>
@@ -253,7 +253,7 @@ export function PublicosTable({
               {temBump && (
                 <td className="text-right px-2 tabular-nums text-emerald-400">
                   {totalPrincipal > 0
-                    ? `+${(((totalPrincipal + totalBump) / totalPrincipal - 1) * 100).toFixed(0)}%`
+                    ? `+${(((totalPrincipal + totalBump) / totalPrincipal - 1) * 100).toFixed(2)}%`
                     : "—"}
                 </td>
               )}

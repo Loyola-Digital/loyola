@@ -1,0 +1,83 @@
+storyId: "18.73"
+storyTitle: "O lançamento arredonda o que o gestor precisa ler inteiro"
+phase: design — pré-implementação (não há código; gate de testabilidade e risco)
+gate: PASS
+reviewer: "@qa (Quinn)"
+reviewedAt: "2026-09-02"
+branch: docs/44.23-paginacao-tool-criativos
+clickup: 86akae52y
+
+summary: >
+  A mais testável das três e a de menor risco técnico: o helper é função pura,
+  entra em lib/utils (onde o runner do web realmente coleta) e a story já traz a
+  tabela de entrada/saída pronta para virar teste. O padrão existe e é bom —
+  meta-tax.test.ts já usa a técnica de provar que o valor errado PARECIDO não
+  passa, que é exatamente o que se precisa aqui.
+
+  O risco desta story não é de código: é de escopo visual. O AC7 (transbordo
+  autorizado pelo gestor) faz 4 telas fora do lançamento mudarem de aparência.
+  Nenhum teste automatizado pega isso.
+
+issues:
+  - id: QA-1873-01
+    severity: medium
+    finding: >
+      Nada no repo impede que a troca dos 40 pontos escape para telas com
+      formatador próprio (tráfego, youtube, sales, spy-conteudo). O AC7 lista o
+      que NÃO pode mudar, mas a verificação é manual.
+    action: >
+      Antes da PR, rodar o grep do Dev Notes e conferir que os arquivos alterados
+      são só os 18 do inventário + o helper novo. Arquivo fora da lista = escopo
+      vazando.
+  - id: QA-1873-02
+    severity: medium
+    finding: >
+      AC8 (nada estoura de largura) não tem como ser testado por unidade e é
+      onde a story falha de verdade se falhar — número maior em tabela larga.
+    action: >
+      Validação visual obrigatória em crossed-funnel-daily-table e
+      stage-creative-performance-table, que já são as mais largas, COM dados de
+      um funil grande (dg-pg02 tem 2.136 linhas), não com um funil pequeno.
+  - id: QA-1873-03
+    severity: low
+    finding: >
+      A tabela do AC1 fixa `fmtInt(1147.6) = 1.148`. É arredondamento, e a
+      story se chama "não arredondar" — pode gerar confusão em revisão.
+    action: >
+      Está correto (contagem não tem fração) e já está explicitado na tabela.
+      Manter a linha do teste com comentário, para não ser "consertada" depois.
+
+test_design:
+  P0:
+    - "unit: fmtInt / fmtCurrency / fmtPercent contra a tabela inteira do AC1, incluindo null → '—'"
+    - "unit: nenhum retorno contém 'K' nem 'M' para valores até 9 dígitos"
+    - "unit: pt-BR de verdade — ponto no milhar, vírgula no decimal (1.234.567,89)"
+  P1:
+    - "unit: fmtPercent(46) === '46,00%' (duas casas mesmo sem fração)"
+    - "grep-gate: `function fmtCurrency|function fmtNumber` não retorna nada nos 18 componentes (AC2)"
+  P2:
+    - "visual: card Venda Ingressos Únicos + Ingresso+OrderBump (AC3)"
+    - "visual: eixo Y segue abreviado e o tooltip do mesmo gráfico mostra completo (AC6)"
+    - "visual: perpétuo e etapa de Vendas mudaram como esperado, sem quebra (AC7)"
+
+riscos:
+  - id: TECH-01
+    risco: "12 cópias do formatador; sobrar uma deixa a tela inconsistente de novo"
+    prob_impacto: "média × médio"
+    mitigacao: "grep-gate do P1 — objetivo e barato"
+  - id: BUS-01
+    risco: "transbordo do AC7 surpreende quem usa o perpétuo"
+    prob_impacto: "baixa × médio"
+    mitigacao: "gestor já autorizou (opção a); PR lista as telas que mudaram"
+  - id: OPS-01
+    risco: "coluna estourando em tabela larga só aparece em funil grande"
+    prob_impacto: "média × baixo"
+    mitigacao: "QA-1873-02 — validar com dg-pg02, não com bbe-pr2"
+
+baseline_suites:
+  web: "761 testes, 47 arquivos — 0 falhas. Qualquer falha nova é do @dev."
+  runner: 'include: ["lib/utils/**/*.test.ts", "lib/bi/**/*.test.ts"] — fora daí não roda'
+
+decision: >
+  PASS. Baixo risco técnico, alta testabilidade. O que decide esta story é a
+  validação visual (AC8/QA-1873-02), não a suíte.

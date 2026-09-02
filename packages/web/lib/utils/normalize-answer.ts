@@ -76,11 +76,15 @@ export function getLast8DigitsPhone(phone: string): string {
  *   "_abc123"             → "_abc123" (não toca — sufixo não é só dígitos)
  *   ""                    → ""
  */
-export function normalizeNumericId(id: string): string {
-  const trimmed = id.trim();
-  if (trimmed.startsWith("_")) {
-    const rest = trimmed.slice(1);
-    if (/^\d+$/.test(rest)) return rest;
-  }
-  return trimmed;
-}
+export { normalizeNumericId } from "@loyola-x/shared/src/utm-value";
+
+/**
+ * Story 18.71: para célula de planilha, prefira `utmContentEfetivo`.
+ *
+ * `normalizeNumericId` só tira o `_` do Sheets. O `co=`/`utm_content` das
+ * planilhas de venda chega em três formatos — objeto JSON, par duplicado
+ * (`{"org","org"}`) e macro não resolvida (`{{ad.id}}`) — e a string crua não
+ * casa com anúncio nenhum. Use `normalizeNumericId` apenas para id que veio da
+ * API do Meta.
+ */
+export { utmContentEfetivo } from "@loyola-x/shared/src/utm-value";
