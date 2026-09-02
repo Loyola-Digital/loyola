@@ -33,26 +33,32 @@ const navItems = [
   // redireciona. Admin vê o time; os demais caem na própria ficha (o guard e o
   // recorte de campos são do servidor).
   { label: "Pessoal", href: "/pessoal", icon: Users },
-  { label: "Minds", href: "/minds", icon: Brain },
-  { label: "Conversations", href: "/conversations", icon: MessageSquare },
-  { label: "Tasks", href: "/tasks", icon: CheckSquare },
+  // O calendário do time: campanhas e suas fases, antes de virarem funil. A
+  // rota segue `/planner` — trocar a URL quebraria os links já compartilhados,
+  // e o nome no menu é o que as pessoas leem.
+  { label: "Calendário", href: "/planner", icon: CalendarRange },
   // Epic 31: Sprint Dashboard — só visível pra não-guests (guard server-side)
-  { label: "Sprint", href: "/sprint-dashboard", icon: LayoutGrid },
+  { label: "Sprint Semanal", href: "/sprint-dashboard", icon: LayoutGrid },
+  // Os mapas vivem dentro de etapa > funil > projeto; aqui ficam todos juntos,
+  // para comparar e editar sem navegar três níveis por desenho.
+  { label: "Funis", href: "/funnel-maps", icon: MapIcon },
+  { label: "Minds", href: "/minds", icon: Brain },
+  // Filha de Minds: a conversa acontece COM um mind, e a indentação mostra
+  // essa dependência sem precisar de um menu que abre e fecha.
+  { label: "Conversations", href: "/conversations", icon: MessageSquare, filhoDe: "/minds" },
+  // Epic 45: dashboards montaveis com widgets prontos, sem tela nova por pergunta.
+  { label: "BI", href: "/bi", icon: LayoutDashboard },
   // Spy de Conteúdo: raio-x de perfil de terceiro no Instagram (Apify + Claude).
   // Não confundir com /instagram, que é insights das contas PRÓPRIAS via Meta API.
   { label: "Spy de Conteúdo", href: "/spy-conteudo", icon: Radar },
-  // O calendário do time: campanhas e suas fases, antes de virarem funil.
-  { label: "Planner", href: "/planner", icon: CalendarRange },
   // Biblioteca de referências de anúncios do time (print/vídeo/link).
   { label: "Swipe Files", href: "/swipe-files", icon: Library },
-  // Os mapas vivem dentro de etapa > funil > projeto; aqui ficam todos juntos,
-  // para comparar e editar sem navegar três níveis por desenho.
-  { label: "Mapas de Funil", href: "/funnel-maps", icon: MapIcon },
-  // Epic 45: dashboards montaveis com widgets prontos, sem tela nova por pergunta.
-  { label: "BI", href: "/bi", icon: LayoutDashboard },
+  // Fora da ordem que o Lucas pediu porque ele não a mencionou: tirar uma
+  // seção com contador ativo é decisão dele, não dedução minha.
+  { label: "Tasks", href: "/tasks", icon: CheckSquare },
   // Epic 37: Debriefing saiu do menu global — agora é etapa de funil
   // (stageType "debriefing"); as rotas /debriefings/* seguem servindo o detalhe.
-  { label: "Settings", href: "/settings", icon: Settings },
+  { label: "Configurações", href: "/settings", icon: Settings },
 ] as const;
 
 function NavContent({ collapsed }: { collapsed: boolean }) {
@@ -100,11 +106,16 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
               className={cn(
                 "justify-start gap-3",
                 collapsed && "justify-center px-2",
+                // Recuo em vez de menu sanfonado: a relação com o pai fica
+                // visível o tempo todo, e não custa um clique para descobrir.
+                "filhoDe" in item && !collapsed && "pl-9",
               )}
               asChild
             >
               <Link href={item.href}>
-                <Icon className="h-5 w-5 shrink-0" />
+                <Icon
+                  className={cn("shrink-0", "filhoDe" in item ? "h-4 w-4" : "h-5 w-5")}
+                />
                 {!collapsed && <span>{item.label}</span>}
                 {showBadge && (
                   <Badge variant="secondary" className="ml-auto text-[10px] px-1.5 py-0">
