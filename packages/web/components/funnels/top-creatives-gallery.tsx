@@ -60,6 +60,7 @@ import type {
 } from "@/lib/hooks/use-survey-aggregation";
 import { useCreativeRevenue } from "@/lib/hooks/use-creative-revenue";
 import { useDriveCreatives } from "@/lib/hooks/use-drive-creatives";
+import { fmtCurrency as fmtCurrencyCompleto, fmtInt } from "@/lib/utils/format-number";
 
 // ============================================================
 // Tipos locais e formatters
@@ -98,19 +99,10 @@ function hookColorClass(val: number | null): string {
   return val >= META_HOOK_VERDE ? "text-emerald-500" : "text-foreground";
 }
 
-function fmtCurrency(val: number | null): string {
-  if (val === null || val === 0) return "—";
-  if (val >= 1_000_000) return `R$ ${(val / 1_000_000).toFixed(1)}M`;
-  if (val >= 1_000) return `R$ ${(val / 1_000).toFixed(1)}K`;
-  return `R$ ${val.toFixed(2)}`;
-}
-
-function fmtNumber(val: number | null): string {
-  if (val === null) return "—";
-  if (val >= 1_000_000) return `${(val / 1_000_000).toFixed(1)}M`;
-  if (val >= 1_000) return `${(val / 1_000).toFixed(1)}K`;
-  return val.toLocaleString("pt-BR");
-}
+// Story 18.73: valor e contagem completos, sem K/M e com centavos.
+// Ver `lib/utils/format-number`.
+const fmtCurrency = fmtCurrencyCompleto;
+const fmtNumber = fmtInt;
 
 function fmtPercent(val: number | null): string {
   if (val === null) return "—";
@@ -254,7 +246,7 @@ function renderSurveyBlock(
       <div className="text-[10px] text-muted-foreground space-y-0.5 pt-1 border-t border-border/20">
         {lines.slice(0, MAX_SURVEY_LINES_PER_CARD).map(({ meta, top }) => {
           const t = top!;
-          const pct = ((t.count / t.total) * 100).toFixed(0);
+          const pct = ((t.count / t.total) * 100).toFixed(2);
           const titleDetail = `${meta.label}: ${t.label} · ${t.count} de ${t.total} leads (${pct}%) — baseado em ${t.totalResponses} ${t.totalResponses === 1 ? "resposta" : "respostas"}`;
           return (
             <p key={meta.key} className="truncate" title={titleDetail}>
@@ -284,7 +276,7 @@ function renderSurveyBlock(
   }
   function line(emoji: string, top: typeof survey.faturamento) {
     if (!top || top.total === 0) return null;
-    const pct = ((top.count / top.total) * 100).toFixed(0);
+    const pct = ((top.count / top.total) * 100).toFixed(2);
     const titleDetail = `${top.label} · ${top.count} de ${top.total} leads (${pct}%) — baseado em ${top.totalResponses} ${top.totalResponses === 1 ? "resposta" : "respostas"} da pesquisa`;
     return (
       <p className="truncate" title={titleDetail}>

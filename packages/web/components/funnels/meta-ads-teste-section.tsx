@@ -81,6 +81,7 @@ import { MetaFreshnessBadge } from "./meta-freshness-badge";
 import { LpPerformanceTable } from "@/lib/components/funnels/lp-performance-table";
 import type { Funnel, StageType } from "@loyola-x/shared";
 import { ehCaptacaoPaga } from "@loyola-x/shared/src/stage-types";
+import { fmtInt, fmtCurrency } from "@/lib/utils/format-number";
 
 // ---- paleta Loyola (estrutura do ref, cores nossas) ----
 const T = {
@@ -122,7 +123,7 @@ function weekdayOf(dateStr: string): string {
 
 // dinheiro sem centavos (igual print: "R$ 40.103")
 const money0 = (v: number | null) =>
-  v == null ? "—" : v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+  v == null ? "—" : fmtCurrency(v);  // Story 18.73: com centavos
 
 // estilos compartilhados dos gráficos (dark/mono)
 const MONO_TICK = { fontSize: 10, fill: "#a9b2c0", fontFamily: "'JetBrains Mono',monospace" };
@@ -1066,7 +1067,7 @@ function TesteDonut({ title, hot, cold, outros, fmt }: { title: string; hot: num
                   <span className="h-3 w-3 shrink-0 rounded-sm" style={{ background: DONUT_COLORS[d.key] }} />
                   <span className="w-14 shrink-0" style={{ color: T.text }}>{d.name}</span>
                   <span className="flex-1 tabular-nums" style={{ color: T.muted2 }}>{d.value > 0 ? fmt(d.value) : "—"}</span>
-                  <span className="w-12 shrink-0 text-right tabular-nums" style={{ color: T.muted2 }}>{pct > 0 ? `${pct.toFixed(0)}%` : "—"}</span>
+                  <span className="w-12 shrink-0 text-right tabular-nums" style={{ color: T.muted2 }}>{pct > 0 ? `${pct.toFixed(2)}%` : "—"}</span>
                 </div>
               );
             })}
@@ -1105,7 +1106,8 @@ function TesteFunnel({
   sales?: number | null;
   leadsLabel?: string;
 }) {
-  const fmtN = (v: number) => (v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(1)}K` : v.toLocaleString("pt-BR"));
+  // Story 18.73: número completo, sem K/M.
+  const fmtN = (v: number) => fmtInt(v);
   const conv = (from: number, to: number) => (from === 0 ? "0%" : `${((to / from) * 100).toFixed(1)}%`);
   const stages: { label: string; value: number }[] = [{ label: "Impressões", value: impressions }];
   if (linkClicks != null && linkClicks > 0) stages.push({ label: "Cliques no Link", value: linkClicks });
@@ -1235,7 +1237,7 @@ function TesteTrendChart({ rows, funnel, projectId, isPaid }: { rows: DailyRow[]
     <div className="rounded-[12px] border p-[17px] space-y-3" style={{ background: T.surface, borderColor: T.border }}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="mat-ct flex items-center text-[9px] uppercase" style={{ color: T.muted, letterSpacing: "1px" }}>{noun}: tendência + meta — real (esmeralda) · projeção (ouro tracejado) · meta (vermelho)</p>
-        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: pct >= 100 ? "rgba(16,185,129,.15)" : "rgba(245,158,11,.15)", color: pct >= 100 ? T.emerald : T.amber, fontFamily: "'JetBrains Mono',monospace" }}>{pct.toFixed(0)}% da meta</span>
+        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: pct >= 100 ? "rgba(16,185,129,.15)" : "rgba(245,158,11,.15)", color: pct >= 100 ? T.emerald : T.amber, fontFamily: "'JetBrains Mono',monospace" }}>{pct.toFixed(2)}% da meta</span>
       </div>
       <div className="flex flex-wrap gap-3">
         <label className="flex items-center gap-1.5 text-[10px]" style={{ color: T.muted }}>Data final

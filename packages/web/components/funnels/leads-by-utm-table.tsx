@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { fmtCurrency } from "@/lib/utils/format-number";
 
 type UtmKey = "utm_source" | "utm_medium" | "utm_campaign" | "utm_content" | "utm_term";
 
@@ -91,8 +92,8 @@ function parseValor(raw: string | undefined): number {
   return isNaN(n) ? 0 : n;
 }
 
-const brl = (v: number) =>
-  v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+// Story 18.73: faturamento com centavos — arredondar escondia diferença real.
+const brl = (v: number) => fmtCurrency(v);
 
 interface LeadItem {
   name: string;

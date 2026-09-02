@@ -14,6 +14,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { fmtInt } from "@/lib/utils/format-number";
 import {
   useSpreadsheets, useSpreadsheetSheets, useSheetData,
   useFunnelSurveys, useAddFunnelSurvey, useRemoveFunnelSurvey,
@@ -21,10 +22,8 @@ import {
   type SurveyType,
 } from "@/lib/hooks/use-google-sheets";
 
-function fmtNumber(val: number): string {
-  if (val >= 1_000) return `${(val / 1_000).toFixed(1)}K`;
-  return val.toLocaleString("pt-BR");
-}
+// Story 18.73: número completo, sem K. Ver `lib/utils/format-number`.
+const fmtNumber = (val: number): string => fmtInt(val);
 
 // ============================================================
 // SHEETS PICKER DIALOG
@@ -227,7 +226,7 @@ function SurveyDataSection({ survey, projectId, funnelId }: { survey: FunnelSurv
                                 <div className="h-full rounded bg-primary/30" style={{ width: `${pct}%` }} />
                               </div>
                               <span className="text-[10px] text-muted-foreground w-20 text-right">{value}</span>
-                              <span className="text-[10px] font-medium w-10 text-right">{pct.toFixed(0)}%</span>
+                              <span className="text-[10px] font-medium w-10 text-right">{pct.toFixed(2)}%</span>
                             </div>
                           );
                         })}

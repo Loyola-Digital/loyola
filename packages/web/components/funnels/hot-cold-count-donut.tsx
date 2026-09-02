@@ -74,7 +74,7 @@ function renderSliceLabel(props: any) {
         fontSize={10}
         fill="#fff"
       >
-        {`(${(percent * 100).toFixed(0)}%)`}
+        {`(${(percent * 100).toFixed(2)}%)`}
       </text>
     </g>
   );
@@ -185,7 +185,7 @@ export function HotColdCountDonut({
                 {d.value > 0 ? `${fmtInt(d.value)} ${label}` : "—"}
               </span>
               <span className="text-muted-foreground tabular-nums shrink-0 w-12 text-right">
-                {pct > 0 ? `${pct.toFixed(0)}%` : "—"}
+                {pct > 0 ? `${pct.toFixed(2)}%` : "—"}
               </span>
             </div>
           );

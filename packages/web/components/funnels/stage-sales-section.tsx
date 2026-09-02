@@ -128,7 +128,7 @@ function SalesTable({ rows, emptyMessage, keyLabel, topN = TABLE_DEFAULT_TOP_N }
               <td className="py-2 px-3 text-right text-muted-foreground whitespace-nowrap">
                 {row.vendas}
                 <span className="text-[10px] ml-1">
-                  ({totalVendas > 0 ? ((row.vendas / totalVendas) * 100).toFixed(0) : 0}%)
+                  ({totalVendas > 0 ? ((row.vendas / totalVendas) * 100).toFixed(2) : 0}%)
                 </span>
               </td>
               <td className="py-2 px-3 text-right whitespace-nowrap">{formatCurrency(row.bruto)}</td>

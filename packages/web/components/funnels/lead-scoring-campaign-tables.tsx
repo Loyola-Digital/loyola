@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { useLeadScoringCampaignBreakdown } from "@/lib/hooks/use-lead-scoring-campaign-breakdown";
+import { fmtInt as fmtIntCompartilhado } from "@/lib/utils/format-number";
 
 interface LeadScoringCampaignTableProps {
   projectId: string;
@@ -44,10 +45,8 @@ function fmtPercent(v: number | null | undefined): string {
   return `${v.toFixed(1)}%`;
 }
 
-function fmtInt(v: number | null | undefined): string {
-  if (v == null) return "—";
-  return v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
-}
+// Story 18.73: contagem completa — o helper é o mesmo de todo o lançamento.
+const fmtInt = fmtIntCompartilhado;
 
 const DAY_OPTIONS = [
   { value: 7, label: "Últimos 7 dias" },

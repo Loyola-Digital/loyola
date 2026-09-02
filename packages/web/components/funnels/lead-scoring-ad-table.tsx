@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { useLeadScoringAdBreakdown } from "@/lib/hooks/use-lead-scoring-ad-breakdown";
+import { fmtInt as fmtIntCompartilhado } from "@/lib/utils/format-number";
 
 interface LeadScoringAdTableProps {
   projectId: string;
@@ -36,10 +37,8 @@ function fmtPercent(v: number | null | undefined): string {
   return `${v.toFixed(1)}%`;
 }
 
-function fmtInt(v: number | null | undefined): string {
-  if (v == null) return "—";
-  return v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
-}
+// Story 18.73: contagem completa — o helper é o mesmo de todo o lançamento.
+const fmtInt = fmtIntCompartilhado;
 
 type SortKey = "adName" | "spend" | "totalLeads" | "cpl" | "cplIdeal";
 type SortDirection = "asc" | "desc" | null;

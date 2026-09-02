@@ -23,10 +23,10 @@ import { fetchAllAdInsights, fetchCampaignInsights } from "../services/meta-ads.
 import { getAdEffectiveStatusFromDb } from "../services/meta-db-source.js";
 import { getMetaAccountForProject } from "../services/traffic-analytics.js";
 import {
-import { utmContentEfetivo, normalizeNumericId } from "../utils/utm-value.js";
   computeCreativeSalesMetrics,
   type CreativeSalesMetrics,
 } from "../utils/creative-sales-metrics.js";
+import { utmContentEfetivo, normalizeNumericId } from "../utils/utm-value.js";
 
 const paramsSchema = z.object({
   funnelId: z.string().uuid(),
