@@ -23,6 +23,13 @@ export interface Fase {
   /** ISO `YYYY-MM-DD`, ou `""` quando ainda não foi definida. */
   start: string;
   end: string;
+  /**
+   * O evento correspondente na agenda do Google.
+   *
+   * Declarado aqui para que o campo ATRAVESSE a tela intacto: uma fase editada
+   * volta ao servidor com o vínculo, e o espelhamento sabe que evento mexer.
+   */
+  googleEventId?: string;
 }
 
 export interface Campanha {
@@ -32,6 +39,8 @@ export interface Campanha {
   sortOrder: number;
   projectId: string | null;
   phases: Fase[];
+  /** Agenda do Google que espelha esta campanha. `null` = vive só aqui. */
+  googleCalendarId?: string | null;
 }
 
 const FORMATO = /^\d{4}-\d{2}-\d{2}$/;

@@ -29,6 +29,13 @@ export interface FaseDoPlanner {
   /** ISO `YYYY-MM-DD`, ou `""` quando ainda não foi definida. */
   start: string;
   end: string;
+  /**
+   * O evento correspondente na agenda do Google.
+   *
+   * Presente tanto em fase importada de lá quanto em fase criada aqui e
+   * espelhada para lá — é o que liga as duas pontas nas duas direções.
+   */
+  googleEventId?: string;
 }
 
 const FORMATO = /^\d{4}-\d{2}-\d{2}$/;
@@ -236,4 +243,81 @@ export function corDoTextoSobre(hex: string): "#101216" | "#ffffff" {
   };
   const luminancia = 0.2126 * canal(0) + 0.7152 * canal(2) + 0.0722 * canal(4);
   return (luminancia + 0.05) / 0.05 > 4.5 ? "#101216" : "#ffffff";
+}
+
+// ============================================================
+// Sincronia com a agenda do Google
+// ============================================================
+
+export interface AcaoNoGoogle {
+  criar: FaseDoPlanner[];
+  atualizar: { fase: FaseDoPlanner; eventId: string }[];
+  apagar: string[];
+}
+
+/**
+ * O que fazer na agenda depois de salvar a campanha.
+ *
+ * Função pura, e é o ponto: decidir "criar, atualizar ou apagar" olhando duas
+ * listas de fases é onde mora o erro caro — um `apagar` a mais some com o
+ * evento de todo mundo, e um `criar` a mais duplica a fase na agenda do time.
+ * Aqui isso é testável sem tocar no Google.
+ *
+ * ## Fase que perdeu a data é apagada, não deixada para trás
+ *
+ * "Sem data" é um estado normal do planejamento: a fase existe, ninguém sabe
+ * quando. No Planner ela some das visões temporais; na agenda ela não tem onde
+ * ficar. Deixar o evento no lugar antigo seria pior que apagá-lo — o time
+ * continuaria vendo uma data que já não vale.
+ *
+ * ## Renomear a campanha mexe em TODOS os eventos
+ *
+ * O título no Google é `CAMPANHA - Fase`. Trocar o nome da campanha muda o
+ * título de cada fase dela, mesmo as que ninguém tocou.
+ */
+export function planejarSincronia(entrada: {
+  nomeAntes: string;
+  nomeDepois: string;
+  fasesAntes: FaseDoPlanner[];
+  fasesDepois: FaseDoPlanner[];
+}): AcaoNoGoogle {
+  const { nomeAntes, nomeDepois, fasesAntes, fasesDepois } = entrada;
+  const renomeou = nomeAntes.trim() !== nomeDepois.trim();
+
+  const antesPorId = new Map(fasesAntes.map((f) => [f.id, f]));
+  const idsDepois = new Set(fasesDepois.map((f) => f.id));
+
+  const acao: AcaoNoGoogle = { criar: [], atualizar: [], apagar: [] };
+
+  for (const fase of fasesDepois) {
+    const antes = antesPorId.get(fase.id);
+    const temData = Boolean(fase.start);
+
+    if (!fase.googleEventId) {
+      // Fase nova, ou que nunca chegou à agenda porque uma escrita anterior
+      // falhou. Sem data não há evento a criar — nem erro: ela existe aqui.
+      if (temData) acao.criar.push(fase);
+      continue;
+    }
+
+    if (!temData) {
+      acao.apagar.push(fase.googleEventId);
+      continue;
+    }
+
+    const mudou =
+      renomeou ||
+      !antes ||
+      antes.name !== fase.name ||
+      antes.start !== fase.start ||
+      antes.end !== fase.end;
+    if (mudou) acao.atualizar.push({ fase, eventId: fase.googleEventId });
+  }
+
+  // Fase que sumiu da campanha: o evento dela não tem mais dono.
+  for (const fase of fasesAntes) {
+    if (fase.googleEventId && !idsDepois.has(fase.id)) acao.apagar.push(fase.googleEventId);
+  }
+
+  return acao;
 }

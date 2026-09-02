@@ -31,7 +31,15 @@ import { createSign } from "node:crypto";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const CALENDAR_API = "https://www.googleapis.com/calendar/v3";
-const ESCOPO = "https://www.googleapis.com/auth/calendar.readonly";
+/**
+ * Leitura E escrita.
+ *
+ * Era `calendar.readonly` enquanto a integração tinha uma direção só. O Planner
+ * agora devolve para a agenda o que o time muda aqui — e com o escopo de
+ * leitura o Google recusaria a escrita mesmo com a permissão concedida na
+ * agenda, que é o tipo de falha que parece problema de permissão e não é.
+ */
+const ESCOPO = "https://www.googleapis.com/auth/calendar";
 
 interface ChaveDeServico {
   client_email: string;
@@ -40,6 +48,15 @@ interface ChaveDeServico {
 }
 
 let tokenEmCache: { token: string; expiraEm: number } | null = null;
+
+/** Um dia depois do último. Usado para escrever o `end` exclusivo do Google. */
+function diaSeguinte(iso: string): string {
+  const [a, m, d] = iso.split("-").map(Number);
+  // Meio-dia: à meia-noite, num dia de mudança de horário, somar 24h erra.
+  const dt = new Date(a!, m! - 1, d!, 12);
+  dt.setDate(dt.getDate() + 1);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+}
 
 function chave(): ChaveDeServico {
   const bruto = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
@@ -227,4 +244,135 @@ export function corParaCampanha(nome: string, paleta: readonly string[]): string
   let soma = 0;
   for (const c of nome) soma = (soma * 31 + c.charCodeAt(0)) % 100_000;
   return paleta[soma % paleta.length]!;
+}
+
+// ============================================================
+// Escrita — o Planner devolve para a agenda
+// ============================================================
+
+/**
+ * O título que o Google recebe.
+ *
+ * `CAMPANHA - Fase` de propósito: é um dos dois formatos que `separarTitulo`
+ * sabe ler. O que escrevemos precisa voltar igual numa reimportação — se o
+ * formato de saída não fosse o de entrada, cada ida e volta partiria a
+ * campanha em duas.
+ */
+export function tituloParaGoogle(campanha: string, fase: string): string {
+  const c = campanha.trim();
+  const f = fase.trim() || "Fase";
+  return c ? `${c} - ${f}` : f;
+}
+
+/** O corpo de um evento de dia inteiro, com o `end` que o Google espera. */
+function corpoDoEvento(titulo: string, inicio: string, fim: string) {
+  return {
+    summary: titulo,
+    start: { date: inicio },
+    // `end.date` é EXCLUSIVO: um evento de 13 a 17 termina em `18`. A leitura
+    // subtrai um dia; aqui é preciso somar. Esquecer encurta toda fase em um
+    // dia, e o erro é invisível — as datas continuam plausíveis.
+    end: { date: diaSeguinte(fim || inicio) },
+  };
+}
+
+async function chamar(
+  caminho: string,
+  metodo: string,
+  corpo?: unknown,
+): Promise<Response> {
+  return fetch(`${CALENDAR_API}${caminho}`, {
+    method: metodo,
+    headers: {
+      Authorization: `Bearer ${await token()}`,
+      "Content-Type": "application/json",
+    },
+    body: corpo === undefined ? undefined : JSON.stringify(corpo),
+  });
+}
+
+/** Cria o evento e devolve o id que o Google deu. */
+export async function criarEvento(
+  calendarId: string,
+  fase: { titulo: string; inicio: string; fim: string },
+): Promise<string> {
+  const r = await chamar(
+    `/calendars/${encodeURIComponent(calendarId)}/events`,
+    "POST",
+    corpoDoEvento(fase.titulo, fase.inicio, fase.fim),
+  );
+  if (r.status === 403) {
+    throw new Error(
+      `Sem permissão para ESCREVER nesta agenda. No Google Calendar, o ` +
+        `compartilhamento com ${emailDaServiceAccount() ?? "a service account"} precisa ser ` +
+        `"Fazer alterações nos eventos", não apenas "Ver todos os detalhes".`,
+    );
+  }
+  if (!r.ok) throw new Error(`Google respondeu ${r.status} ao criar o evento`);
+  const j = (await r.json()) as { id?: string };
+  if (!j.id) throw new Error("Google não devolveu o id do evento");
+  return j.id;
+}
+
+/**
+ * Atualiza o evento. Se ele não existe mais, cria outro.
+ *
+ * O 404 acontece de verdade em três situações: alguém apagou o evento à mão no
+ * Google, a campanha foi excluída e restaurada pelo Desfazer (os eventos já
+ * tinham ido embora), ou o id veio de uma agenda que foi desconectada. Nos três
+ * o resultado desejado é o mesmo — que o evento exista com estes dados — então
+ * recriar é a resposta certa, e devolver o id novo mantém a fase apontando para
+ * algo que existe.
+ */
+export async function atualizarEvento(
+  calendarId: string,
+  eventId: string,
+  fase: { titulo: string; inicio: string; fim: string },
+): Promise<string> {
+  const r = await chamar(
+    `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+    "PATCH",
+    corpoDoEvento(fase.titulo, fase.inicio, fase.fim),
+  );
+
+  if (r.status === 404 || r.status === 410) return criarEvento(calendarId, fase);
+  if (r.status === 403) {
+    throw new Error(
+      `Sem permissão para ESCREVER nesta agenda. O compartilhamento com ` +
+        `${emailDaServiceAccount() ?? "a service account"} precisa ser "Fazer alterações nos eventos".`,
+    );
+  }
+  if (!r.ok) throw new Error(`Google respondeu ${r.status} ao atualizar o evento`);
+  const j = (await r.json()) as { id?: string };
+  return j.id ?? eventId;
+}
+
+/**
+ * Apaga o evento. Não reclama se ele já não existia.
+ *
+ * 404 e 410 aqui são o estado desejado — o evento não está mais lá. Tratá-los
+ * como erro faria uma exclusão perfeitamente bem-sucedida parecer falha.
+ */
+export async function apagarEvento(calendarId: string, eventId: string): Promise<void> {
+  const r = await chamar(
+    `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+    "DELETE",
+  );
+  if (r.ok || r.status === 404 || r.status === 410) return;
+  throw new Error(`Google respondeu ${r.status} ao apagar o evento`);
+}
+
+/** De qual das agendas conectadas é este evento. `null` se não for de nenhuma. */
+export async function agendaDoEvento(
+  calendarIds: string[],
+  eventId: string,
+): Promise<string | null> {
+  for (const cal of calendarIds) {
+    const r = await chamar(
+      `/calendars/${encodeURIComponent(cal)}/events/${encodeURIComponent(eventId)}`,
+      "GET",
+    );
+    if (r.ok) return cal;
+  }
+  return null;
 }

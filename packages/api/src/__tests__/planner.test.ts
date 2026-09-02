@@ -16,6 +16,7 @@ import {
   mesesDoPeriodo,
   normalizarFase,
   periodoDaCampanha,
+  planejarSincronia,
   somarDias,
   type FaseDoPlanner,
 } from "../services/planner.js";
@@ -252,5 +253,112 @@ describe("corDoTextoSobre", () => {
   it("aceita hex de 3 dígitos e cor inválida não quebra", () => {
     expect(corDoTextoSobre("#fff")).toBe("#101216");
     expect(corDoTextoSobre("nao-e-cor")).toBe("#ffffff");
+  });
+});
+
+describe("planejarSincronia", () => {
+  const f = (
+    id: string,
+    name: string,
+    start: string,
+    end: string,
+    googleEventId?: string,
+  ): FaseDoPlanner => ({ id, name, start, end, ...(googleEventId ? { googleEventId } : {}) });
+
+  const base = { nomeAntes: "FZ BLACK", nomeDepois: "FZ BLACK" };
+
+  it("fase nova com data vira evento", () => {
+    const a = planejarSincronia({
+      ...base,
+      fasesAntes: [],
+      fasesDepois: [f("1", "Captação", "2026-09-01", "2026-09-05")],
+    });
+    expect(a.criar).toHaveLength(1);
+    expect(a.atualizar).toHaveLength(0);
+    expect(a.apagar).toHaveLength(0);
+  });
+
+  it("fase sem data não vira evento — e não é erro", () => {
+    // "Sem data" é estado normal do planejamento: a fase existe, ninguém sabe
+    // quando. Na agenda ela não teria onde ficar.
+    const a = planejarSincronia({
+      ...base,
+      fasesAntes: [],
+      fasesDepois: [f("1", "Definições", "", "")],
+    });
+    expect(a).toEqual({ criar: [], atualizar: [], apagar: [] });
+  });
+
+  it("mudar a data atualiza o evento", () => {
+    const a = planejarSincronia({
+      ...base,
+      fasesAntes: [f("1", "Captação", "2026-09-01", "2026-09-05", "ev1")],
+      fasesDepois: [f("1", "Captação", "2026-09-03", "2026-09-08", "ev1")],
+    });
+    expect(a.atualizar).toEqual([
+      { fase: f("1", "Captação", "2026-09-03", "2026-09-08", "ev1"), eventId: "ev1" },
+    ]);
+    expect(a.criar).toHaveLength(0);
+    expect(a.apagar).toHaveLength(0);
+  });
+
+  it("fase intocada não vira chamada à toa", () => {
+    // Salvar a campanha por qualquer motivo não pode reescrever a agenda
+    // inteira: seriam dezenas de chamadas por clique.
+    const iguais = [f("1", "Captação", "2026-09-01", "2026-09-05", "ev1")];
+    const a = planejarSincronia({ ...base, fasesAntes: iguais, fasesDepois: iguais });
+    expect(a).toEqual({ criar: [], atualizar: [], apagar: [] });
+  });
+
+  it("renomear a campanha atualiza TODAS as fases", () => {
+    // O título no Google é `CAMPANHA - Fase`, então o nome da campanha está
+    // dentro de cada evento.
+    const fases = [
+      f("1", "Captação", "2026-09-01", "2026-09-05", "ev1"),
+      f("2", "Vendas", "2026-09-06", "2026-09-10", "ev2"),
+    ];
+    const a = planejarSincronia({
+      nomeAntes: "FZ BLACK",
+      nomeDepois: "FZ BLACK 2026",
+      fasesAntes: fases,
+      fasesDepois: fases,
+    });
+    expect(a.atualizar.map((x) => x.eventId)).toEqual(["ev1", "ev2"]);
+  });
+
+  it("fase excluída apaga o evento", () => {
+    const a = planejarSincronia({
+      ...base,
+      fasesAntes: [
+        f("1", "Captação", "2026-09-01", "2026-09-05", "ev1"),
+        f("2", "Vendas", "2026-09-06", "2026-09-10", "ev2"),
+      ],
+      fasesDepois: [f("1", "Captação", "2026-09-01", "2026-09-05", "ev1")],
+    });
+    expect(a.apagar).toEqual(["ev2"]);
+    expect(a.atualizar).toHaveLength(0);
+  });
+
+  it("fase que PERDEU a data apaga o evento", () => {
+    // Deixar o evento na data antiga é pior que apagá-lo: o time continuaria
+    // vendo uma data que já não vale.
+    const a = planejarSincronia({
+      ...base,
+      fasesAntes: [f("1", "Captação", "2026-09-01", "2026-09-05", "ev1")],
+      fasesDepois: [f("1", "Captação", "", "", "ev1")],
+    });
+    expect(a.apagar).toEqual(["ev1"]);
+    expect(a.criar).toHaveLength(0);
+  });
+
+  it("fase sem evento por falha anterior é criada no próximo save", () => {
+    // Escrita que falhou deixa a fase sem `googleEventId`. Ela não fica órfã:
+    // a próxima edição a trata como nova e ela entra na agenda.
+    const a = planejarSincronia({
+      ...base,
+      fasesAntes: [f("1", "Captação", "2026-09-01", "2026-09-05")],
+      fasesDepois: [f("1", "Captação", "2026-09-01", "2026-09-05")],
+    });
+    expect(a.criar).toHaveLength(1);
   });
 });

@@ -15,6 +15,7 @@
  * duas versões divergirem, a tela mostra a dele.
  */
 
+import { toast } from "sonner";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import type { Campanha, Fase } from "@/lib/planner/datas";
@@ -37,6 +38,8 @@ export interface MudancaNaCampanha {
   projectId?: string | null;
   phases?: Fase[];
   sortOrder?: number;
+  /** Ligar (ou desligar) o espelho na agenda do Google. */
+  googleCalendarId?: string | null;
 }
 
 export function useCriarCampanha() {
@@ -54,7 +57,10 @@ export function useAtualizarCampanha() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, dados }: { id: string; dados: MudancaNaCampanha }) =>
-      api<Campanha>(`${BASE}/${id}`, { method: "PUT", body: JSON.stringify(dados) }),
+      api<Campanha & { avisoGoogle?: string }>(`${BASE}/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(dados),
+      }),
 
     // Otimista: a barra precisa acompanhar o cursor, não a rede.
     onMutate: async ({ id, dados }) => {
@@ -71,6 +77,12 @@ export function useAtualizarCampanha() {
       // Volta ao que era: melhor a tela recuar visivelmente do que ficar
       // mostrando uma data que o servidor recusou.
       if (ctx?.antes) qc.setQueryData(CHAVE, ctx.antes);
+    },
+    onSuccess: (r) => {
+      // A campanha FOI salva; o que falhou foi o espelho na agenda. Silenciar
+      // deixaria o time confiando num Google que ficou para trás -- e avisar
+      // com erro faria parecer que a edição se perdeu, o que não aconteceu.
+      if (r?.avisoGoogle) toast.warning(r.avisoGoogle);
     },
     onSettled: () => void qc.invalidateQueries({ queryKey: CHAVE }),
   });

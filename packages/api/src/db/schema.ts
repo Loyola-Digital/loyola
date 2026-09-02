@@ -3584,6 +3584,14 @@ export const plannerCampaigns = pgTable(
      * Texto e não `date`: "fim em aberto" é um estado de verdade no
      * planejamento — a fase começou e ninguém sabe quando acaba.
      */
+    /**
+     * A agenda do Google que espelha esta campanha.
+     *
+     * Preenchida na importação (a agenda de origem vira a de destino) ou
+     * escolhida na tela. Vazia = a campanha vive só aqui, e salvar não escreve
+     * em agenda nenhuma.
+     */
+    googleCalendarId: text("google_calendar_id"),
     phases: jsonb("phases")
       .$type<
         {
