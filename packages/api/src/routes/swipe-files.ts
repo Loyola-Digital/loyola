@@ -17,6 +17,7 @@ import { swipeClickupAlerts, swipeFiles, users } from "../db/schema.js";
 import { fetchLinkPreview } from "../services/link-preview.js";
 import {
   ErroDeAnalise,
+  analisarLink,
   analisarReferencia,
   podeAnalisar,
 } from "../services/swipe-analise.js";
@@ -829,6 +830,31 @@ export default fp(async function swipeFilesRoutes(fastify) {
     }
   });
 
+  /**
+   * A imagem de preview, quando da para usar.
+   *
+   * Devolve `undefined` em vez de lancar: a analise por texto funciona sem
+   * imagem, e uma miniatura que nao baixou nao pode custar a catalogacao
+   * inteira. Cinco megabytes de teto porque acima disso o custo do base64
+   * nao se paga para uma imagem que e so contexto.
+   */
+  async function baixarPreview(
+    url: string | null,
+  ): Promise<{ buffer: Buffer; mimeType: string } | undefined> {
+    if (!url) return undefined;
+    try {
+      const r = await fetch(url, { redirect: "follow" });
+      const mime = (r.headers.get("content-type") ?? "").split(";")[0]!.trim();
+      if (!r.ok || !podeAnalisar(mime) || mime === "application/pdf") return undefined;
+      const buffer = Buffer.from(await r.arrayBuffer());
+      return buffer.length > 0 && buffer.length <= 5 * 1024 * 1024
+        ? { buffer, mimeType: mime }
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   /** Baixa, sobe, cataloga e grava um item. Lanca quando nao da. */
   async function importarUm(
     item: ItemParaImportar,
@@ -840,6 +866,24 @@ export default fp(async function swipeFilesRoutes(fastify) {
     let fileMime: string | null = null;
     let fileSizeBytes: number | null = null;
     let sugestao: Awaited<ReturnType<typeof analisarReferencia>> | null = null;
+
+    // O preview e buscado ANTES da analise: e ele que da titulo e descricao
+    // para catalogar um link, que nao tem arquivo nenhum para o modelo ver.
+    let og: Awaited<ReturnType<typeof fetchLinkPreview>> = {
+      title: null,
+      description: null,
+      image: null,
+      siteName: null,
+    };
+    let ogFetchedAt: Date | null = null;
+    if (item.origem) {
+      try {
+        og = await fetchLinkPreview(item.origem);
+        ogFetchedAt = new Date();
+      } catch {
+        /* segue sem preview */
+      }
+    }
 
     if (item.anexo) {
       const resposta = await fetch(item.anexo.url, { redirect: "follow" });
@@ -898,29 +942,33 @@ export default fp(async function swipeFilesRoutes(fastify) {
     }
 
     /**
-     * O preview do link.
+     * Catalogar o que a IA nao consegue VER.
      *
-     * Sem isto o card de link entra sem miniatura nenhuma -- um retangulo com
-     * texto no meio de uma grade de imagens, que e a metade do acervo
-     * importado. O cadastro pela tela ja buscava; a importacao nao, e a falta
-     * so aparecia depois, na grade.
+     * Link nao tem arquivo e video ela nao le, entao os dois entravam sem
+     * marca, nicho, formato nem tag -- e sem faceta a referencia existe mas
+     * ninguem acha. Medido no acervo importado: 56 links e 21 videos, todos
+     * com os cinco campos vazios.
      *
-     * Falhar aqui nao impede nada: a referencia vale sem thumbnail, e a pagina
-     * pode simplesmente ter saido do ar.
+     * O material aqui e texto: o Open Graph da pagina, o endereco e a anotacao
+     * de quem salvou -- que e a unica fonte que diz POR QUE aquilo foi salvo.
+     * Quando o preview tem imagem, ela vai junto: numa landing page costuma ser
+     * a propria dobra inicial, e ai o modelo para de depender so do endereco.
      */
-    let og: Awaited<ReturnType<typeof fetchLinkPreview>> = {
-      title: null,
-      description: null,
-      image: null,
-      siteName: null,
-    };
-    let ogFetchedAt: Date | null = null;
-    if (item.origem) {
+    if (analisar && !sugestao && item.origem) {
       try {
-        og = await fetchLinkPreview(item.origem);
-        ogFetchedAt = new Date();
-      } catch {
-        /* segue sem preview */
+        sugestao = await analisarLink(
+          fastify.claude.client,
+          {
+            url: item.origem,
+            titulo: og.title,
+            descricao: og.description,
+            siteName: og.siteName,
+            notas: item.notas,
+          },
+          await baixarPreview(og.image),
+        );
+      } catch (err) {
+        fastify.log.warn({ err, importKey: item.importKey }, "analise de link falhou");
       }
     }
 

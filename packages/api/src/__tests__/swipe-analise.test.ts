@@ -12,6 +12,7 @@ import {
   ErroDeAnalise,
   FORMATOS,
   PLATAFORMAS,
+  analisarLink,
   analisarReferencia,
   motivoLegivel,
   podeAnalisar,
@@ -200,5 +201,81 @@ describe("o contexto entra no pedido", () => {
     await analisarReferencia(outro.cliente, IMAGEM);
     const c2 = outro.create.mock.calls[0]![0].messages[0]!.content as { type: string }[];
     expect(c2[0]!.type).toBe("image");
+  });
+});
+
+describe("analisarLink — catalogar sem ver a peça", () => {
+  it("manda endereço, Open Graph e a anotação de quem salvou", async () => {
+    // A anotação é a única fonte que diz POR QUE aquilo foi salvo — some dela
+    // e a catalogação vira descrição de site.
+    const { cliente, create } = clienteQueResponde({
+      marca: "Human Academy",
+      nicho: "educação",
+      formato: "Landing page",
+      tags: ["escassez", "workshop"],
+    });
+
+    const s = await analisarLink(cliente, {
+      url: "https://agent.humanacademy.ai/",
+      titulo: "Agent Lab Build",
+      descricao: "Workshop de 2 dias",
+      siteName: "Human Academy",
+      notas: "Coisa fina, hein...",
+    });
+
+    expect(s.marca).toBe("Human Academy");
+    expect(s.formato).toBe("Landing page");
+
+    const enviado = JSON.stringify(create.mock.calls[0]?.[0]);
+    expect(enviado).toContain("agent.humanacademy.ai");
+    expect(enviado).toContain("Agent Lab Build");
+    expect(enviado).toContain("Coisa fina");
+  });
+
+  it("avisa o modelo de que ele NÃO está vendo a peça", async () => {
+    // Sem esse aviso, "formato: Reel" a partir de uma URL é chute — e chute
+    // preenchido é pior que campo vazio, porque a faceta passa a mentir.
+    const { cliente, create } = clienteQueResponde({ tags: [] });
+    await analisarLink(cliente, { url: "https://exemplo.com/x" });
+
+    const sistema = String(create.mock.calls[0]?.[0]?.system ?? "");
+    expect(sistema).toMatch(/NÃO ESTÁ VENDO A PEÇA/i);
+  });
+
+  it("inclui a imagem do preview quando ela existe", async () => {
+    const { cliente, create } = clienteQueResponde({ tags: [] });
+    await analisarLink(
+      cliente,
+      { url: "https://exemplo.com/lp" },
+      { buffer: Buffer.from("fake"), mimeType: "image/png" },
+    );
+
+    const msg = create.mock.calls[0]?.[0]?.messages?.[0];
+    const tipos = (msg?.content as { type: string }[]).map((c) => c.type);
+    expect(tipos).toContain("image");
+    // E diz o que a imagem É: o preview é escolhido pelo site, não pelo
+    // anunciante, e lê-lo como "o criativo" produz anotação errada.
+    expect(JSON.stringify(msg)).toContain("preview que a própria página publica");
+  });
+
+  it("descarta plataforma fora do vocabulário fechado", async () => {
+    // O modelo sem imagem tende a inventar ("Instagram Reels"). Fora da lista,
+    // o valor é DESCARTADO — duas facetas para a mesma coisa quebram o filtro.
+    const { cliente } = clienteQueResponde({ plataforma: "Instagram Reels", tags: [] });
+    const s = await analisarLink(cliente, { url: "https://instagram.com/p/x" });
+    expect(s.plataforma).toBeNull();
+    expect(PLATAFORMAS).not.toContain("Instagram Reels");
+  });
+
+  it("ignora imagem de tipo que o modelo não enxerga", async () => {
+    const { cliente, create } = clienteQueResponde({ tags: [] });
+    await analisarLink(
+      cliente,
+      { url: "https://exemplo.com/x" },
+      { buffer: Buffer.from("fake"), mimeType: "image/svg+xml" },
+    );
+    const msg = create.mock.calls[0]?.[0]?.messages?.[0];
+    const tipos = (msg?.content as { type: string }[]).map((c) => c.type);
+    expect(tipos).not.toContain("image");
   });
 });

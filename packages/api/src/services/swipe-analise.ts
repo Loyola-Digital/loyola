@@ -278,3 +278,115 @@ export async function analisarReferencia(
     tags: tags(r.tags),
   };
 }
+
+// ============================================================
+// Catalogar sem ver a peça
+// ============================================================
+
+/**
+ * O que se sabe de um link sem abri-lo.
+ *
+ * Vem de três lugares que se completam: o Open Graph da página (título,
+ * descrição), a URL em si (o domínio costuma ser a marca) e o que a pessoa
+ * escreveu ao salvar — que é a única fonte que diz POR QUE aquilo foi salvo.
+ */
+export interface DadosDoLink {
+  url: string;
+  titulo?: string | null;
+  descricao?: string | null;
+  siteName?: string | null;
+  /** O texto de quem salvou. No acervo importado, a mensagem do ClickUp. */
+  notas?: string | null;
+}
+
+/**
+ * Instruções para quem NÃO está vendo a peça.
+ *
+ * Precisam ser mais duras que as da análise visual, e por um motivo concreto:
+ * com uma imagem na frente, "formato: Reel" é observação; com só uma URL, é
+ * chute. E um chute preenchido é pior que um campo vazio, porque a faceta
+ * passa a mentir e ninguém confere o que já veio preenchido.
+ */
+const INSTRUCOES_DE_LINK = `${INSTRUCOES}
+
+ATENÇÃO — VOCÊ NÃO ESTÁ VENDO A PEÇA
+
+Recebeu só o endereço e o que a página diz de si mesma. Isso muda o que dá para afirmar:
+
+- \`formato\` só quando o endereço ou o texto disserem. Uma landing page de vendas é "Landing page"; um post do Instagram sem mais nada NÃO diz se é Reel, Feed ou Carrossel — deixe VAZIO.
+- \`plataforma\` é onde o anúncio RODOU, não onde a página está hospedada. Um link de landing page normalmente não revela isso: deixe vazio em vez de escrever "Outro" por escrever.
+- \`marca\` costuma estar no domínio ou no nome do site. Não invente a partir do assunto.
+- \`anotacoes\` descreve o que a página parece ser e por que foi salva, a partir do que você tem. Não descreva um criativo que você não viu.
+
+Vazio não é falha — é a resposta certa para o que o texto não sustenta.`;
+
+/**
+ * Cataloga um link a partir do texto, e da imagem de preview quando houver.
+ *
+ * A imagem do Open Graph de uma landing page costuma ser a própria dobra
+ * inicial: quando ela existe, o modelo vê o design e para de depender só do
+ * endereço. Quando não existe, o texto ainda dá marca e nicho, que é o que faz
+ * a referência ser encontrada de novo.
+ */
+export async function analisarLink(
+  client: ClienteDeAnalise,
+  dados: DadosDoLink,
+  imagem?: { buffer: Buffer; mimeType: string },
+): Promise<SugestaoDeSwipe> {
+  const linhas = [
+    `Endereço: ${dados.url}`,
+    dados.siteName ? `Site: ${dados.siteName}` : null,
+    dados.titulo ? `Título da página: ${dados.titulo}` : null,
+    dados.descricao ? `Descrição da página: ${dados.descricao}` : null,
+    dados.notas ? `Anotação de quem salvou: ${dados.notas.slice(0, 1200)}` : null,
+  ].filter(Boolean);
+
+  const conteudo: Anthropic.ContentBlockParam[] = [];
+  if (imagem && MIMES_DE_IMAGEM.has(imagem.mimeType)) {
+    conteudo.push({
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: imagem.mimeType as "image/png" | "image/jpeg" | "image/webp" | "image/gif",
+        data: imagem.buffer.toString("base64"),
+      },
+    });
+    conteudo.push({
+      type: "text",
+      // Dizer O QUE é a imagem evita que ela seja lida como o criativo em si:
+      // a imagem de preview é escolhida pelo site, não pelo anunciante.
+      text: "A imagem acima é o preview que a própria página publica.",
+    });
+  }
+  conteudo.push({ type: "text", text: `Catalogue esta referência.\n${linhas.join("\n")}` });
+
+  let resposta: Anthropic.Message;
+  try {
+    resposta = await client.messages
+      .stream({
+        model: MODELO,
+        max_tokens: 1024,
+        system: INSTRUCOES_DE_LINK,
+        tools: [FERRAMENTA],
+        tool_choice: { type: "tool", name: FERRAMENTA.name },
+        messages: [{ role: "user", content: conteudo }],
+      })
+      .finalMessage();
+  } catch (erro) {
+    throw new ErroDeAnalise(motivoLegivel(erro));
+  }
+
+  const bloco = resposta.content.find((c) => c.type === "tool_use");
+  if (!bloco || bloco.type !== "tool_use") return VAZIA;
+
+  const r = bloco.input as Record<string, unknown>;
+  return {
+    titulo: texto(r.titulo, 200),
+    anotacoes: texto(r.anotacoes, 4000),
+    marca: texto(r.marca, 120),
+    nicho: texto(r.nicho, 120),
+    plataforma: daLista(r.plataforma, PLATAFORMAS),
+    formato: daLista(r.formato, FORMATOS),
+    tags: tags(r.tags),
+  };
+}
