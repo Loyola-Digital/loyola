@@ -67,11 +67,6 @@ const createBody = z.object({
 
 const updateBody = createBody.partial().extend({ isFavorite: z.boolean().optional() });
 
-const presignBody = z.object({
-  mime: z.string().trim().min(1).max(100),
-  sizeBytes: z.coerce.number().int().min(1).optional(),
-});
-
 const previewBody = z.object({ url: z.string().trim().min(1).max(2000) });
 
 /** Colunas da listagem + quem subiu. */

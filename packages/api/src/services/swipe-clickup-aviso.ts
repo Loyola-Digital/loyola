@@ -84,7 +84,7 @@ export function montarMensagem(ref: ReferenciaNova, urlDaBiblioteca: string): st
     ref.plataforma && `plataforma: ${ref.plataforma}`,
     ref.formato && `formato: ${ref.formato}`,
   ].filter(Boolean);
-  if (atributos.length) linhas.push(`\`${atributos.join("\` · \`")}\``);
+  if (atributos.length) linhas.push(`\`${atributos.join("` · `")}\``);
 
   if (ref.tags.length) linhas.push(ref.tags.map((t) => `#${t}`).join(" "));
 
