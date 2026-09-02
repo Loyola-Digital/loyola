@@ -452,3 +452,156 @@ export function useMembrosDoClickUp(enabled: boolean) {
     staleTime: 10 * 60 * 1000,
   });
 }
+
+// ============================================================
+// Importar o acervo antigo do ClickUp
+// ============================================================
+
+export type PassoDaImportacao =
+  | { tipo: "lendo-canal" }
+  | { tipo: "trabalhando" }
+  | {
+      tipo: "plano";
+      mensagens: number;
+      total: number;
+      jaImportados: number;
+      aImportar: number;
+      comArquivo: number;
+    }
+  | {
+      tipo: "item";
+      i: number;
+      de: number;
+      titulo: string;
+      kind: "image" | "video" | "pdf" | "link";
+      status: "ok" | "erro";
+      erro?: string;
+    }
+  | { tipo: "fim"; criados: number; falhas: number; ignorados?: number; simulado?: boolean }
+  | { tipo: "erro"; error: string };
+
+export interface ResumoDaImportacao {
+  criados: number;
+  falhas: number;
+  ignorados: number;
+  simulado: boolean;
+}
+
+/**
+ * Importa um canal do ClickUp para a biblioteca.
+ *
+ * ## Duas etapas, e a primeira não grava
+ *
+ * Sem `confirmar`, a chamada só planeja: diz quantos itens sairiam dali e
+ * quantos já entraram antes. É o que permite olhar o número antes de criar
+ * centenas de registros — e o número é a única forma de perceber que o canal
+ * escolhido está errado.
+ *
+ * ## O prazo é longo porque o trabalho é longo
+ *
+ * Centenas de arquivos, centenas de megabytes, um por vez. Vinte minutos é o
+ * teto; abaixo disso o navegador desistiria no meio de uma importação que o
+ * servidor ainda está fazendo — e aí a tela mente, dizendo que falhou.
+ */
+export function useImportarDoClickUp() {
+  const { getToken } = useAuth();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      channelId,
+      confirmar,
+      analisar,
+      limite,
+      onPasso,
+    }: {
+      channelId: string;
+      confirmar?: boolean;
+      analisar?: boolean;
+      limite?: number;
+      onPasso?: (p: PassoDaImportacao) => void;
+    }): Promise<ResumoDaImportacao> => {
+      const token = await getToken();
+      const relogio = new AbortController();
+      const prazo = setTimeout(() => relogio.abort(), 20 * 60 * 1000);
+
+      let r: Response;
+      try {
+        r = await fetch(`${API_URL}${BASE}/importar-clickup`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ channelId, confirmar, analisar, limite }),
+          signal: relogio.signal,
+        });
+      } catch (e) {
+        clearTimeout(prazo);
+        if (relogio.signal.aborted) {
+          throw new Error(
+            "Passou de 20 minutos. O servidor pode ter continuado — recarregue e veja o que entrou.",
+          );
+        }
+        throw e;
+      }
+
+      if (!r.ok) {
+        clearTimeout(prazo);
+        const corpo = (await r.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(corpo?.error ?? "Não consegui importar.");
+      }
+
+      try {
+        const leitor = r.body?.getReader();
+        if (!leitor) throw new Error("Não consegui ler a resposta.");
+
+        const decodificador = new TextDecoder();
+        let sobra = "";
+        let fim: ResumoDaImportacao | null = null;
+
+        const processar = (linha: string) => {
+          const texto = linha.trim();
+          if (!texto) return;
+          let passo: PassoDaImportacao;
+          try {
+            passo = JSON.parse(texto) as PassoDaImportacao;
+          } catch {
+            return;
+          }
+          onPasso?.(passo);
+          if (passo.tipo === "fim") {
+            fim = {
+              criados: passo.criados,
+              falhas: passo.falhas,
+              ignorados: passo.ignorados ?? 0,
+              simulado: Boolean(passo.simulado),
+            };
+          }
+          if (passo.tipo === "erro") throw new Error(passo.error);
+        };
+
+        for (;;) {
+          const { done, value } = await leitor.read();
+          if (done) break;
+          sobra += decodificador.decode(value, { stream: true });
+          const linhas = sobra.split("\n");
+          sobra = linhas.pop() ?? "";
+          for (const l of linhas) processar(l);
+        }
+        if (sobra) processar(sobra);
+
+        if (!fim) throw new Error("A conexão caiu antes de terminar.");
+        return fim;
+      } finally {
+        clearTimeout(prazo);
+      }
+    },
+    onSuccess: (r) => {
+      // Só invalida quando gravou: uma simulação não mudou nada, e recarregar
+      // a grade à toa pisca a tela inteira sem motivo.
+      if (!r.simulado && r.criados > 0) {
+        void qc.invalidateQueries({ queryKey: ["swipe-files"] });
+      }
+    },
+  });
+}

@@ -3225,6 +3225,14 @@ export const swipeFiles = pgTable(
 
     isFavorite: boolean("is_favorite").notNull().default(false),
 
+    /**
+     * De onde este item veio, quando veio de importação.
+     *
+     * Único (índice parcial) para que retomar uma importação interrompida não
+     * duplique o que já entrou. Vazio em tudo que foi subido à mão.
+     */
+    importKey: text("import_key"),
+
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),

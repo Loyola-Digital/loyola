@@ -152,6 +152,7 @@ const mockClickupPlugin = fp(async (fastify) => {
     getChatChannels: vi.fn(),
     sendChatMessage: vi.fn(),
     getWorkspaceMembers: vi.fn(),
+    getChatChannelMessages: vi.fn(),
   });
 });
 
