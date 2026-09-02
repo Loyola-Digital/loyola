@@ -29,6 +29,13 @@ import {
   Youtube,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { CampaignLogEntry } from "@/lib/hooks/use-campaign-log";
 
 type Icone = typeof Megaphone;
@@ -138,10 +145,116 @@ export function agruparPorDia(entries: CampaignLogEntry[] | undefined): Map<stri
   return mapa;
 }
 
-export function EventosDoDia({ entradas }: { entradas: CampaignLogEntry[] | undefined }) {
+/** Dia ISO (`2026-08-28`) escrito por extenso, para o título do modal. */
+function diaPorExtenso(dia: string): string {
+  const [a, m, d] = dia.split("-").map(Number);
+  if (!a || !m || !d) return dia;
+  return new Date(a, m - 1, d).toLocaleDateString("pt-BR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+  });
+}
+
+/**
+ * Tudo que aconteceu no dia, sem corte.
+ *
+ * O balão existe para a leitura de relance, e por isso precisa caber na tela:
+ * seis itens, anotação em 120 caracteres. Quando o dia foi movimentado é
+ * exatamente o que interessa que fica de fora — e a alternativa era abrir o Log
+ * de Campanha em outra tela e procurar o dia à mão.
+ *
+ * Aqui não há teto. A ordem é CRONOLÓGICA e não por família: a pergunta que
+ * traz alguém a este modal é "o que houve neste dia", e a resposta se lê na
+ * ordem em que as coisas aconteceram.
+ */
+function TudoDoDia({
+  dia,
+  entradas,
+  aberto,
+  onFechar,
+}: {
+  dia: string | undefined;
+  entradas: CampaignLogEntry[];
+  aberto: boolean;
+  onFechar: () => void;
+}) {
+  const emOrdem = useMemo(
+    () => [...entradas].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt)),
+    [entradas],
+  );
+
+  return (
+    <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
+      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="text-base">
+            {dia ? diaPorExtenso(dia) : "O que aconteceu"}
+          </DialogTitle>
+          <DialogDescription>
+            {emOrdem.length} {emOrdem.length === 1 ? "ação registrada" : "ações registradas"} no log
+            de campanha.
+          </DialogDescription>
+        </DialogHeader>
+
+        <ul className="space-y-3">
+          {emOrdem.map((e) => {
+            const c = classificar(e.aplicativo);
+            const Icone = c.icone;
+            return (
+              <li key={e.id} className="flex gap-2.5">
+                <span
+                  className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted ${c.cor}`}
+                >
+                  <Icone className="h-3 w-3" />
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <p className="flex flex-wrap items-baseline gap-x-1.5 text-sm">
+                    <span className="font-mono text-xs opacity-60">{hora(e.occurredAt)}</span>
+                    <span className="font-medium">{e.evento}</span>
+                  </p>
+
+                  {(e.aplicativo || e.categoria) && (
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      {[e.aplicativo, e.categoria].filter(Boolean).join(" · ")}
+                    </p>
+                  )}
+
+                  {/* Inteira, e com as quebras de linha que a pessoa digitou:
+                      é o texto que não cabia no balão, e reformatá-lo aqui
+                      desfaria o motivo de abrir o modal. */}
+                  {e.notes && (
+                    <p className="mt-1 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
+                      {e.notes}
+                    </p>
+                  )}
+
+                  {e.responsavel && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">por {e.responsavel}</p>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function EventosDoDia({
+  entradas,
+  dia,
+}: {
+  entradas: CampaignLogEntry[] | undefined;
+  /** Dia ISO da linha — só o título do modal usa. */
+  dia?: string;
+}) {
   // Qual balão está aberto. Existe por causa do celular — ver o comentário no
   // `Tooltip` abaixo.
   const [aberto, setAberto] = useState<string | null>(null);
+  const [modalAberto, setModalAberto] = useState(false);
 
   const familias = useMemo(() => {
     if (!entradas || entradas.length === 0) return [];
@@ -184,8 +297,15 @@ export function EventosDoDia({ entradas }: { entradas: CampaignLogEntry[] | unde
                 type="button"
                 // <button> e não <span>: no touch é o que recebe foco e o que
                 // o leitor de tela anuncia como acionável.
-                aria-label={`${familia}: ${itens.length} ${itens.length === 1 ? "ação" : "ações"} neste dia`}
-                onClick={() => setAberto(aberto === familia ? null : familia)}
+                aria-label={`${familia}: ${itens.length} ${itens.length === 1 ? "ação" : "ações"} neste dia. Abrir tudo.`}
+                // O clique abre o MODAL, não alterna o balão. O balão continua
+                // no hover, para a leitura de relance; quem clica quer
+                // justamente o que não cabia nele.
+                //
+                // No toque isso também melhora: o modal não some no mesmo
+                // gesto que o abriu — o problema que o estado controlado do
+                // tooltip resolvia à força.
+                onClick={() => setModalAberto(true)}
                 className={
                   "relative inline-flex h-[18px] w-[18px] shrink-0 cursor-help items-center justify-center " +
                   "rounded-full bg-background ring-1 ring-border/70 touch-manipulation " +
@@ -242,15 +362,25 @@ export function EventosDoDia({ entradas }: { entradas: CampaignLogEntry[] | unde
                   </li>
                 ))}
                 {itens.length > 6 && (
-                  <li className="text-[11px] opacity-70">
-                    + {itens.length - 6} outra(s) — veja no Log de Campanha
-                  </li>
+                  <li className="text-[11px] opacity-70">+ {itens.length - 6} outra(s)</li>
                 )}
               </ul>
+              {/* O balão corta por necessidade — então o convite para ver o
+                  resto precisa estar onde o corte acontece. */}
+              <p className="mt-1.5 border-t border-border/40 pt-1 text-[10px] opacity-60">
+                Clique para ver tudo do dia
+              </p>
             </TooltipContent>
           </Tooltip>
         ))}
       </span>
+
+      <TudoDoDia
+        dia={dia}
+        entradas={entradas ?? []}
+        aberto={modalAberto}
+        onFechar={() => setModalAberto(false)}
+      />
     </TooltipProvider>
   );
 }
