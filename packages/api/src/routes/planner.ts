@@ -164,6 +164,46 @@ export default fp(async function plannerRoutes(fastify) {
     return atualizada;
   });
 
+  /**
+   * Nova ordem das campanhas, de uma vez.
+   *
+   * Em lote, e não um PUT por card: arrastar um item no meio muda a posição de
+   * todos os que vêm depois, e mandar N requisições deixaria a lista embaralhada
+   * se uma falhasse — cada uma gravando uma ordem que já não é a atual.
+   *
+   * A posição é o ÍNDICE na lista recebida. Recalcular do zero em vez de
+   * mandar deltas evita que duas pessoas arrastando ao mesmo tempo produzam
+   * uma sequência com buracos ou empates.
+   */
+  fastify.put(`${base}/ordem`, async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const b = z
+      .object({ ids: z.array(z.string().uuid()).max(200) })
+      .safeParse(request.body);
+    if (!b.success) return reply.code(400).send({ error: "Lista de ids inválida" });
+
+    const existentes = await fastify.db
+      .select({ id: plannerCampaigns.id })
+      .from(plannerCampaigns);
+    const conhecidos = new Set(existentes.map((c) => c.id));
+
+    // Id que não existe mais é ignorado, não recusado: quem arrastou pode estar
+    // com uma lista de trinta segundos atrás, e derrubar a reordenação inteira
+    // por causa de uma campanha que alguém apagou seria pior.
+    const validos = b.data.ids.filter((id) => conhecidos.has(id));
+
+    await Promise.all(
+      validos.map((id, indice) =>
+        fastify.db
+          .update(plannerCampaigns)
+          .set({ sortOrder: indice, updatedAt: new Date() })
+          .where(eq(plannerCampaigns.id, id)),
+      ),
+    );
+
+    return { ok: true, ordenadas: validos.length, ignoradas: b.data.ids.length - validos.length };
+  });
+
   // ---- POST /:id/duplicar ----
   fastify.post(`${base}/:id/duplicar`, async (request, reply) => {
     if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });

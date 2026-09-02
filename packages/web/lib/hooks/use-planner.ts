@@ -193,3 +193,40 @@ export function useImportarAgenda() {
     },
   });
 }
+
+/**
+ * Grava a nova ordem das campanhas.
+ *
+ * Em lote e otimista: arrastar precisa ver o resultado no gesto, não depois da
+ * rede. A posição é o índice na lista — recalcular do zero evita que dois
+ * arrastos simultâneos produzam uma sequência com buracos.
+ */
+export function useReordenarCampanhas() {
+  const api = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: string[]) =>
+      api<{ ok: true }>(`${BASE}/ordem`, { method: "PUT", body: JSON.stringify({ ids }) }),
+    onMutate: async (ids) => {
+      await qc.cancelQueries({ queryKey: CHAVE });
+      const antes = qc.getQueryData<{ campanhas: Campanha[] }>(CHAVE);
+      qc.setQueryData<{ campanhas: Campanha[] }>(CHAVE, (atual) => {
+        if (!atual) return atual;
+        const porId = new Map(atual.campanhas.map((c) => [c.id, c]));
+        const reordenadas = ids
+          .map((id) => porId.get(id))
+          .filter((c): c is Campanha => Boolean(c))
+          .map((c, i) => ({ ...c, sortOrder: i }));
+        // As que não vieram na lista (concluídas escondidas, por exemplo) vão
+        // para o fim em vez de sumir do cache.
+        const resto = atual.campanhas.filter((c) => !ids.includes(c.id));
+        return { campanhas: [...reordenadas, ...resto] };
+      });
+      return { antes };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.antes) qc.setQueryData(CHAVE, ctx.antes);
+    },
+    onSettled: () => void qc.invalidateQueries({ queryKey: CHAVE }),
+  });
+}

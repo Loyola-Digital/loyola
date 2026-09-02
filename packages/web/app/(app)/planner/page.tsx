@@ -42,6 +42,15 @@ import {
 } from "lucide-react";
 import { AgendasDoGoogle } from "@/components/planner/agendas-do-google";
 import { toast } from "sonner";
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { SortableContext, rectSortingStrategy } from "@dnd-kit/sortable";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useUserRole } from "@/lib/hooks/use-user-role";
 import {
@@ -49,6 +58,7 @@ import {
   useCriarCampanha,
   useDuplicarCampanha,
   useExcluirCampanha,
+  useReordenarCampanhas,
   usePlanner,
   useRestaurarCampanha,
 } from "@/lib/hooks/use-planner";
@@ -168,6 +178,7 @@ export default function PlannerPage() {
   const atualizar = useAtualizarCampanha();
   const duplicar = useDuplicarCampanha();
   const excluir = useExcluirCampanha();
+  const reordenar = useReordenarCampanhas();
   const restaurar = useRestaurarCampanha();
 
   const [visao, setVisao] = useState<Visao>("split");
@@ -264,6 +275,35 @@ export default function PlannerPage() {
     [anotar, atualizar],
   );
 
+  /**
+   * Fase excluída, com volta por vinte segundos.
+   *
+   * A lixeira da fase é um alvo de 22px ao lado de campos de data — errar nela
+   * é mais fácil que errar a da campanha, e até agora só o Ctrl+Z salvava.
+   */
+  const excluirFase = useCallback(
+    (campanha: Campanha, faseId: string) => {
+      const fase = campanha.phases.find((f) => f.id === faseId);
+      if (!fase) return;
+      mudarCampanha(campanha, { phases: campanha.phases.filter((f) => f.id !== faseId) });
+      toast.success(`Fase "${fase.name}" excluída`, {
+        duration: 20_000,
+        action: {
+          label: "Desfazer",
+          onClick: () => {
+            // Volta na POSIÇÃO original, não no fim: a ordem das fases é o
+            // roteiro do lançamento, e recolocá-la no fim mudaria o plano.
+            const indice = campanha.phases.findIndex((f) => f.id === faseId);
+            const novas = [...campanha.phases.filter((f) => f.id !== faseId)];
+            novas.splice(indice, 0, fase);
+            mudarCampanha(campanha, { phases: novas });
+          },
+        },
+      });
+    },
+    [mudarCampanha],
+  );
+
   const mudarFase = useCallback(
     (campanhaId: string, fase: Fase) => {
       const c = campanhas.find((x) => x.id === campanhaId);
@@ -279,10 +319,36 @@ export default function PlannerPage() {
    * que apagou a coisa errada. Sem diálogo de confirmação de propósito:
    * confirmar toda exclusão treina a pessoa a clicar "sim" sem ler.
    */
+  // 4px antes de considerar arrasto: sem isso, um clique na alça com o dedo
+  // trêmulo já reordenaria a lista.
+  const sensores = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+
+  /**
+   * Nova ordem depois de soltar o card.
+   *
+   * Manda a lista INTEIRA na ordem nova, e não "moveu de 3 para 1": arrastar um
+   * item no meio muda a posição de todos os seguintes, e deltas parciais
+   * embaralhariam a lista se duas pessoas arrastassem ao mesmo tempo.
+   */
+  function soltarCampanha(e: DragEndEvent) {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const de = semPassado.findIndex((c) => c.id === active.id);
+    const para = semPassado.findIndex((c) => c.id === over.id);
+    if (de < 0 || para < 0) return;
+    const nova = [...semPassado];
+    const [movida] = nova.splice(de, 1);
+    nova.splice(para, 0, movida!);
+    reordenar.mutate(nova.map((c) => c.id));
+  }
+
   function excluirCampanha(c: Campanha) {
     anotar({ tipo: "excluiu", campanha: c });
     excluir.mutate(c.id);
     toast.success(`"${c.name}" excluída`, {
+      // Vinte segundos: tempo de perceber o engano, olhar a tela e decidir. O
+      // padrão do toast (quatro) some antes de alguém terminar de ler.
+      duration: 20_000,
       action: {
         label: "Desfazer",
         onClick: () => {
@@ -445,6 +511,7 @@ export default function PlannerPage() {
           onExcluir={() => excluirCampanha(c)}
           onDuplicar={() => duplicar.mutate(c.id)}
           onSelecionarFase={setSelecionada}
+          onExcluirFase={(faseId) => excluirFase(c, faseId)}
         />
       ))}
       <button
@@ -836,9 +903,20 @@ export default function PlannerPage() {
           </div>
         ) : visao === "cards" ? (
           <div className="min-h-0 flex-1 overflow-auto">
-            <div className="grid items-start gap-4 p-5 [grid-template-columns:repeat(auto-fill,minmax(500px,1fr))] max-[560px]:[grid-template-columns:1fr]">
-              {listaDeCards}
-            </div>
+            <DndContext
+              sensors={sensores}
+              collisionDetection={closestCenter}
+              onDragEnd={soltarCampanha}
+            >
+              <SortableContext
+                items={semPassado.map((c) => c.id)}
+                strategy={rectSortingStrategy}
+              >
+                <div className="grid items-start gap-4 p-5 [grid-template-columns:repeat(auto-fill,minmax(500px,1fr))] max-[560px]:[grid-template-columns:1fr]">
+                  {listaDeCards}
+                </div>
+              </SortableContext>
+            </DndContext>
           </div>
         ) : (
           /* Split: duas colunas com scroll INDEPENDENTE. Uma rolagem só faria
@@ -851,7 +929,18 @@ export default function PlannerPage() {
           >
             {mostrarCards && (
               <div className="order-2 min-w-0 space-y-3.5 bg-background p-3.5 lg:order-1 lg:overflow-y-auto lg:border-r lg:border-border">
-                {listaDeCards}
+                <DndContext
+                  sensors={sensores}
+                  collisionDetection={closestCenter}
+                  onDragEnd={soltarCampanha}
+                >
+                  <SortableContext
+                    items={semPassado.map((c) => c.id)}
+                    strategy={rectSortingStrategy}
+                  >
+                    {listaDeCards}
+                  </SortableContext>
+                </DndContext>
               </div>
             )}
             <div className="order-1 min-w-0 bg-card lg:order-2 lg:overflow-auto">
