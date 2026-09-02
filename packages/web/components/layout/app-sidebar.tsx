@@ -33,31 +33,45 @@ const navItems = [
   // redireciona. Admin vê o time; os demais caem na própria ficha (o guard e o
   // recorte de campos são do servidor).
   { label: "Pessoal", href: "/pessoal", icon: Users },
-  { label: "Minds", href: "/minds", icon: Brain },
-  { label: "Conversations", href: "/conversations", icon: MessageSquare },
-  { label: "Tasks", href: "/tasks", icon: CheckSquare },
+  // O calendário do time: campanhas e suas fases, antes de virarem funil. A
+  // rota segue `/planner` — trocar a URL quebraria os links já compartilhados,
+  // e o nome no menu é o que as pessoas leem.
+  { label: "Calendário", href: "/planner", icon: CalendarRange },
   // Epic 31: Sprint Dashboard — só visível pra não-guests (guard server-side)
-  { label: "Sprint", href: "/sprint-dashboard", icon: LayoutGrid },
+  { label: "Sprint Semanal", href: "/sprint-dashboard", icon: LayoutGrid },
+  // Os mapas vivem dentro de etapa > funil > projeto; aqui ficam todos juntos,
+  // para comparar e editar sem navegar três níveis por desenho.
+  { label: "Funis", href: "/funnel-maps", icon: MapIcon },
+  { label: "Minds", href: "/minds", icon: Brain },
+  // Filha de Minds: a conversa acontece COM um mind, e a indentação mostra
+  // essa dependência sem precisar de um menu que abre e fecha.
+  { label: "Conversations", href: "/conversations", icon: MessageSquare, filhoDe: "/minds" },
+  // Epic 45: dashboards montaveis com widgets prontos, sem tela nova por pergunta.
+  { label: "BI", href: "/bi", icon: LayoutDashboard },
   // Spy de Conteúdo: raio-x de perfil de terceiro no Instagram (Apify + Claude).
   // Não confundir com /instagram, que é insights das contas PRÓPRIAS via Meta API.
   { label: "Spy de Conteúdo", href: "/spy-conteudo", icon: Radar },
-  // O calendário do time: campanhas e suas fases, antes de virarem funil.
-  { label: "Planner", href: "/planner", icon: CalendarRange },
   // Biblioteca de referências de anúncios do time (print/vídeo/link).
   { label: "Swipe Files", href: "/swipe-files", icon: Library },
-  // Os mapas vivem dentro de etapa > funil > projeto; aqui ficam todos juntos,
-  // para comparar e editar sem navegar três níveis por desenho.
-  { label: "Mapas de Funil", href: "/funnel-maps", icon: MapIcon },
-  // Epic 45: dashboards montaveis com widgets prontos, sem tela nova por pergunta.
-  { label: "BI", href: "/bi", icon: LayoutDashboard },
   // Epic 37: Debriefing saiu do menu global — agora é etapa de funil
   // (stageType "debriefing"); as rotas /debriefings/* seguem servindo o detalhe.
-  { label: "Settings", href: "/settings", icon: Settings },
+  { label: "Configurações", href: "/settings", icon: Settings },
 ] as const;
+
+/**
+ * Fica por ÚLTIMO e só para admin.
+ *
+ * É o painel de tarefas dos agentes, não uma seção do produto: quem não
+ * administra o sistema não tem o que fazer ali, e a posição no fim diz isso
+ * sem precisar de explicação. Fora de `navItems` porque a ordem e a permissão
+ * dele não são as das demais.
+ */
+const TASKS_AGENTS = { label: "Tasks Agents", href: "/tasks", icon: CheckSquare } as const;
 
 function NavContent({ collapsed }: { collapsed: boolean }) {
   const pathname = usePathname();
   const { total: openTaskCount } = useTasks({ status: "open", limit: 1, offset: 0 });
+  const papel = useUserRole();
   const { data: projects, isLoading: projectsLoading } = useProjects();
   const hiddenIds = useHiddenProjectsStore((s) => s.hiddenIds);
   const showHidden = useHiddenProjectsStore((s) => s.showHidden);
@@ -92,7 +106,6 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
         {topItems.map((item) => {
           const isActive = pathname.startsWith(item.href);
           const Icon = item.icon;
-          const showBadge = item.href === "/tasks" && openTaskCount > 0 && !collapsed;
           return (
             <Button
               key={item.href}
@@ -100,17 +113,17 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
               className={cn(
                 "justify-start gap-3",
                 collapsed && "justify-center px-2",
+                // Recuo em vez de menu sanfonado: a relação com o pai fica
+                // visível o tempo todo, e não custa um clique para descobrir.
+                "filhoDe" in item && !collapsed && "pl-9",
               )}
               asChild
             >
               <Link href={item.href}>
-                <Icon className="h-5 w-5 shrink-0" />
+                <Icon
+                  className={cn("shrink-0", "filhoDe" in item ? "h-4 w-4" : "h-5 w-5")}
+                />
                 {!collapsed && <span>{item.label}</span>}
-                {showBadge && (
-                  <Badge variant="secondary" className="ml-auto text-[10px] px-1.5 py-0">
-                    {openTaskCount}
-                  </Badge>
-                )}
               </Link>
             </Button>
           );
@@ -199,6 +212,25 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
           <Plus className="h-4 w-4 shrink-0" />
           {!collapsed && <span className="text-sm">Nova Empresa</span>}
         </Button>
+
+        {/* Tasks Agents: por último e só para admin — ver `TASKS_AGENTS`. */}
+        {papel === "admin" && (
+          <Button
+            variant={pathname.startsWith(TASKS_AGENTS.href) ? "secondary" : "ghost"}
+            className={cn("justify-start gap-3", collapsed && "justify-center px-2")}
+            asChild
+          >
+            <Link href={TASKS_AGENTS.href}>
+              <TASKS_AGENTS.icon className="h-5 w-5 shrink-0" />
+              {!collapsed && <span>{TASKS_AGENTS.label}</span>}
+              {openTaskCount > 0 && !collapsed && (
+                <Badge variant="secondary" className="ml-auto px-1.5 py-0 text-[10px]">
+                  {openTaskCount}
+                </Badge>
+              )}
+            </Link>
+          </Button>
+        )}
       </nav>
 
       <CreateProjectDialog open={dialogOpen} onOpenChange={setDialogOpen} />

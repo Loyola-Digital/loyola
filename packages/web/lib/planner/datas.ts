@@ -231,3 +231,31 @@ let contador = 0;
 export function novoId(): string {
   return `p${(++contador).toString(36)}${Date.now().toString(36).slice(-4)}`;
 }
+
+/**
+ * A fase já terminou?
+ *
+ * O fim é `end || start`: uma fase em aberto que começou ontem NÃO terminou —
+ * ela está acontecendo, e é justamente a que não pode sumir da tela.
+ */
+export function faseTerminou(f: Fase, hoje = hojeIso()): boolean {
+  if (!f.start) return false;
+  // Fase em aberto NUNCA terminou, tenha começado quando tiver: "sem fim
+  // marcado" significa que ainda está acontecendo. Usar o início como fim
+  // sumiria com a fase em andamento — que é a mais importante da tela.
+  if (!f.end) return false;
+  return f.end < hoje;
+}
+
+/**
+ * A campanha inteira já passou?
+ *
+ * Exige ao menos uma fase datada. Campanha sem data nenhuma não é "concluída":
+ * é não planejada — some-la esconderia justamente a que está esperando alguém
+ * preencher.
+ */
+export function campanhaConcluida(c: Campanha, hoje = hojeIso()): boolean {
+  const datadas = c.phases.filter((f) => f.start);
+  if (datadas.length === 0) return false;
+  return datadas.every((f) => faseTerminou(f, hoje));
+}

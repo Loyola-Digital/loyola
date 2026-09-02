@@ -118,3 +118,78 @@ export function useRestaurarCampanha() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: CHAVE }),
   });
 }
+
+// ============================================================
+// Agenda do Google
+// ============================================================
+
+const GOOGLE = "/api/planner/google";
+const CHAVE_AGENDAS = ["planner", "agendas-google"] as const;
+
+export interface AgendaDoGoogle {
+  id: string;
+  calendarId: string;
+  label: string;
+  lastImportedAt: string | null;
+}
+
+export function useAgendasDoGoogle(habilitado = true) {
+  const api = useApiClient();
+  return useQuery({
+    queryKey: CHAVE_AGENDAS,
+    queryFn: () =>
+      api<{ agendas: AgendaDoGoogle[]; emailParaCompartilhar: string | null }>(
+        `${GOOGLE}/agendas`,
+      ),
+    enabled: habilitado,
+  });
+}
+
+export function useConectarAgenda() {
+  const api = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (calendarId: string) =>
+      api<AgendaDoGoogle>(`${GOOGLE}/agendas`, {
+        method: "POST",
+        body: JSON.stringify({ calendarId }),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: CHAVE_AGENDAS }),
+  });
+}
+
+export function useDesconectarAgenda() {
+  const api = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<{ ok: true }>(`${GOOGLE}/agendas/${id}`, { method: "DELETE" }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: CHAVE_AGENDAS }),
+  });
+}
+
+export interface ResultadoDaImportacao {
+  lidos: number;
+  /** Reuniões: evento com hora marcada não é fase. */
+  ignoradosPorTerHora: number;
+  campanhasCriadas: number;
+  campanhasAtualizadas: number;
+  fases: number;
+}
+
+export function useImportarAgenda() {
+  const api = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (corpo: { calendarId: string; mesesAtras?: number; mesesAFrente?: number }) =>
+      api<ResultadoDaImportacao>(`${GOOGLE}/importar`, {
+        method: "POST",
+        body: JSON.stringify(corpo),
+      }),
+    onSuccess: () => {
+      // Invalida as DUAS: a importação mexe nas campanhas e carimba a data da
+      // última importação na agenda.
+      void qc.invalidateQueries({ queryKey: CHAVE });
+      void qc.invalidateQueries({ queryKey: CHAVE_AGENDAS });
+    },
+  });
+}

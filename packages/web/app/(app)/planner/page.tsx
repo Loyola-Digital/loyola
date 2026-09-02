@@ -31,11 +31,14 @@ import {
   ChevronRight,
   Columns2,
   Download,
+  Eye,
+  EyeOff,
   LayoutGrid,
   PanelLeft,
   Rows3,
   Upload,
 } from "lucide-react";
+import { AgendasDoGoogle } from "@/components/planner/agendas-do-google";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useUserRole } from "@/lib/hooks/use-user-role";
@@ -49,7 +52,9 @@ import {
 } from "@/lib/hooks/use-planner";
 import {
   MESES_LONGOS,
+  campanhaConcluida,
   cruzaMes,
+  faseTerminou,
   mesesDoPeriodo,
   normalizar,
   type Campanha,
@@ -117,6 +122,16 @@ export default function PlannerPage() {
   const [selecionada, setSelecionada] = useState<string | null>(null);
   const [mostrarCards, setMostrarCards] = useState(true);
   const [rail, setRail] = useState(true);
+  const [googleAberto, setGoogleAberto] = useState(false);
+  /**
+   * Esconde o que já acabou.
+   *
+   * Ligado por padrão: o planner é sobre o que vem, e a agenda importada trouxe
+   * lançamentos de janeiro que só poluem. Mas o número do que está escondido
+   * aparece na tela — um filtro silencioso faz alguém procurar uma campanha que
+   * está ali e concluir que ela sumiu.
+   */
+  const [esconderPassado, setEsconderPassado] = useState(true);
 
   const hoje = new Date();
   const [ano, setAno] = useState(hoje.getFullYear());
@@ -126,7 +141,36 @@ export default function PlannerPage() {
   const [temHistorico, setTemHistorico] = useState(false);
 
   const campanhas = useMemo(() => data?.campanhas ?? [], [data]);
-  const visiveis = useMemo(() => campanhas.filter((c) => !ocultas.has(c.id)), [campanhas, ocultas]);
+  const concluidas = useMemo(
+    () => campanhas.filter((c) => campanhaConcluida(c)),
+    [campanhas],
+  );
+
+  /** O que a legenda, a timeline e os cards mostram. */
+  const noPainel = useMemo(
+    () => (esconderPassado ? campanhas.filter((c) => !campanhaConcluida(c)) : campanhas),
+    [campanhas, esconderPassado],
+  );
+
+  const visiveis = useMemo(
+    () => noPainel.filter((c) => !ocultas.has(c.id)),
+    [noPainel, ocultas],
+  );
+
+  /**
+   * Para os cards e a timeline, as fases passadas também somem.
+   *
+   * O CALENDÁRIO fica de fora deste corte de propósito: ele mostra um mês que
+   * a pessoa escolheu, e navegar para agosto e não ver nada seria a navegação
+   * de meses deixando de funcionar.
+   */
+  const semPassado = useMemo(
+    () =>
+      esconderPassado
+        ? visiveis.map((c) => ({ ...c, phases: c.phases.filter((f) => !faseTerminou(f)) }))
+        : visiveis,
+    [visiveis, esconderPassado],
+  );
   const meses = useMemo(() => mesesDoPeriodo(campanhas), [campanhas]);
 
   const anotar = useCallback((passo: Passo) => {
@@ -284,7 +328,7 @@ export default function PlannerPage() {
 
   const listaDeCards = (
     <>
-      {campanhas.map((c) => (
+      {semPassado.map((c) => (
         <CardDeCampanha
           key={c.id}
           campanha={c}
@@ -309,7 +353,19 @@ export default function PlannerPage() {
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col lg:grid lg:grid-cols-[236px_1fr]" data-rail={rail}>
+    /*
+     * As colunas acompanham o `rail`.
+     *
+     * Com largura fixa em `236px 1fr`, esconder a barra lateral com
+     * `display:none` tirava ela do grid — e o `main`, que era o segundo filho,
+     * passava a ocupar a PRIMEIRA coluna, espremido em 236px, com o resto da
+     * tela vazio. Parecia tela preta, e era o conteúdo comprimido num canto.
+     */
+    <div
+      className={`flex h-full min-h-0 flex-col lg:grid ${
+        rail ? "lg:grid-cols-[236px_minmax(0,1fr)]" : "lg:grid-cols-1"
+      }`}
+    >
       {/* Barra lateral do planner: título, visões, meses e legenda. No celular
           vira faixa horizontal no topo — some-la deixaria a legenda, que é o
           único jeito de ocultar uma campanha, inacessível. */}
@@ -405,7 +461,7 @@ export default function PlannerPage() {
           <section className="flex shrink-0 flex-col gap-1.5">
             <Rotulo>Campanhas</Rotulo>
             <div className="flex gap-px lg:flex-col">
-              {campanhas.map((c) => {
+              {noPainel.map((c) => {
                 const oculta = ocultas.has(c.id);
                 return (
                   <button
@@ -487,7 +543,9 @@ export default function PlannerPage() {
 
           {/* Título e subtítulo na mesma linha: o subtítulo é complemento do
               título, e empilhado vira um segundo assunto. */}
-          <h2 className="flex-none whitespace-nowrap text-base font-semibold tracking-[-0.01em] capitalize">
+          {/* Sem `capitalize`: a classe maiusculiza CADA palavra e produz
+              "Setembro De 2026". O nome do mês já vem com a inicial certa. */}
+          <h2 className="flex-none whitespace-nowrap text-base font-semibold tracking-[-0.01em]">
             {visao === "split"
               ? `${MESES_LONGOS[mes - 1]} de ${ano}`
               : visao === "cards"
@@ -508,6 +566,30 @@ export default function PlannerPage() {
             )}
             <Acao onClick={desfazer} disabled={!temHistorico} titulo="Ctrl+Z">
               Desfazer
+            </Acao>
+            <Acao
+              onClick={() => setEsconderPassado((v) => !v)}
+              titulo={
+                esconderPassado
+                  ? "Mostrar campanhas e fases que já terminaram"
+                  : "Esconder o que já terminou"
+              }
+            >
+              {esconderPassado ? (
+                <EyeOff className="h-3.5 w-3.5" />
+              ) : (
+                <Eye className="h-3.5 w-3.5" />
+              )}
+              {esconderPassado ? "Passado oculto" : "Mostrando tudo"}
+              {esconderPassado && concluidas.length > 0 && (
+                // O número do que está escondido: sem ele, o filtro é
+                // silencioso e alguém procura uma campanha que está ali.
+                <span className="font-mono text-[10px] opacity-70">{concluidas.length}</span>
+              )}
+            </Acao>
+            <Acao onClick={() => setGoogleAberto(true)} titulo="Importar da agenda do Google">
+              <CalendarDays className="h-3.5 w-3.5" />
+              Google
             </Acao>
             <Acao onClick={exportar}>
               <Download className="h-3.5 w-3.5" />
@@ -549,10 +631,29 @@ export default function PlannerPage() {
             <CalendarDays className="mx-auto mb-2 h-8 w-8 opacity-60" />
             Nenhuma campanha ainda — crie a primeira, ela já vem com as cinco fases padrão.
           </div>
+        ) : noPainel.length === 0 ? (
+          /* Existem campanhas, mas todas terminaram. Dizer "crie a primeira"
+             aqui seria mentira, e mandaria alguém criar uma duplicata do que
+             já está ali. */
+          <div className="px-5 py-[52px] text-center text-[13px] text-muted-foreground">
+            <CalendarDays className="mx-auto mb-2 h-8 w-8 opacity-60" />
+            <p>
+              {campanhas.length === 1
+                ? "A única campanha já terminou."
+                : `Todas as ${campanhas.length} campanhas já terminaram.`}
+            </p>
+            <button
+              type="button"
+              onClick={() => setEsconderPassado(false)}
+              className="mt-2 text-[12px] font-medium text-primary underline underline-offset-4"
+            >
+              Mostrar o que já passou
+            </button>
+          </div>
         ) : visao === "timeline" ? (
           <div className="min-h-0 flex-1 overflow-auto px-5 pb-6 pt-4">
             <Timeline
-              campanhas={visiveis}
+              campanhas={semPassado}
               faseSelecionada={selecionada}
               onSelecionarFase={(_c, f) => setSelecionada(f)}
               onMudarFase={mudarFase}
@@ -598,6 +699,8 @@ export default function PlannerPage() {
           </div>
         )}
       </main>
+
+      <AgendasDoGoogle open={googleAberto} onOpenChange={setGoogleAberto} />
     </div>
   );
 }

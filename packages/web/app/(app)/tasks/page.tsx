@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useUserRole } from "@/lib/hooks/use-user-role";
 import { CheckSquare, AlertCircle } from "lucide-react";
 import { useTasks } from "@/lib/hooks/use-tasks";
 import { TaskList } from "@/components/tasks/task-list";
@@ -21,6 +22,21 @@ const STATUS_FILTERS: Array<{ label: string; value: TaskStatus | "all" }> = [
 const LIMIT = 20;
 
 export default function TasksPage() {
+  // O guard de verdade é o da API; este existe para quem chega pela URL ver
+  // uma explicação em vez de uma tela de erro.
+  const papel = useUserRole();
+  if (papel !== "admin") {
+    return (
+      <div className="p-6">
+        <div className="rounded-xl border border-dashed border-border/40 p-12 text-center">
+          <p className="text-sm text-muted-foreground">
+            Tasks Agents é restrito à administração do sistema.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const [statusFilter, setStatusFilter] = useState<TaskStatus | "all">("all");
   const [offset, setOffset] = useState(0);
 

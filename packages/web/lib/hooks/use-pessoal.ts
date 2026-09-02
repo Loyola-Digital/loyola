@@ -173,3 +173,32 @@ export function useRemoverAusencia() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["pessoal"] }),
   });
 }
+
+/**
+ * O time no recorte que todo mundo pode ver.
+ *
+ * Rota separada da de admin de propósito: `/api/pessoal` devolve telefone,
+ * contato de emergência e saldo de férias. Recortar no servidor é o que
+ * resiste — filtrar na tela deixaria o dado trafegando igual.
+ */
+export interface PessoaNoDiretorio {
+  userId: string;
+  nome: string;
+  nomeCompleto: string | null;
+  email: string;
+  cargo: string | null;
+  entradaEm: string | null;
+  foto: string | null;
+  temFicha: boolean;
+}
+
+export function useDiretorioDoTime() {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["pessoal", "time"],
+    queryFn: () => apiClient<{ pessoas: PessoaNoDiretorio[] }>("/api/pessoal/time"),
+    // O diretório muda quando alguém entra ou troca de cargo — nenhuma das
+    // duas acontece no meio de uma sessão.
+    staleTime: 5 * 60 * 1000,
+  });
+}
