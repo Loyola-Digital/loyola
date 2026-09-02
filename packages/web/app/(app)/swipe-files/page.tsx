@@ -17,6 +17,7 @@
 import { useState } from "react";
 import {
   AlertCircle, Bell, Library, Plus, Search, Star, X, Play, Link2, ImageIcon, FileText, Filter,
+  DownloadCloud,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ import {
 } from "@/lib/hooks/use-swipe-files";
 import { AddSwipeDialog } from "@/components/swipe-files/add-swipe-dialog";
 import { ClickUpAlertDialog } from "@/components/swipe-files/clickup-alert-dialog";
+import { ImportarDoClickUp } from "@/components/swipe-files/importar-do-clickup";
 import { PdfCapa } from "@/components/swipe-files/pdf-capa";
 import { SwipeLightbox } from "@/components/swipe-files/swipe-lightbox";
 
@@ -206,6 +208,7 @@ export default function SwipeFilesPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [avisoOpen, setAvisoOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<SwipeFile | null>(null);
 
@@ -245,6 +248,19 @@ export default function SwipeFilesPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Importar cria centenas de registros numa tacada. Fora da mao de
+              quem administra, e um botao para clicar sem querer. */}
+          {(role === "admin" || role === "manager") && (
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setImportOpen(true)}
+              title="Importar referencias de um canal do ClickUp"
+              aria-label="Importar do ClickUp"
+            >
+              <DownloadCloud className="h-4 w-4" />
+            </Button>
+          )}
           <Button
             variant="outline"
             size="icon"
@@ -378,6 +394,7 @@ export default function SwipeFilesPage() {
       )}
 
       <ClickUpAlertDialog open={avisoOpen} onOpenChange={setAvisoOpen} />
+      <ImportarDoClickUp open={importOpen} onOpenChange={setImportOpen} />
 
       <AddSwipeDialog
         open={addOpen}

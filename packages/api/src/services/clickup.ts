@@ -46,6 +46,27 @@ interface ClickUpService {
   ): Promise<void>;
   /** Membros do workspace (pra escolher quem mencionar). */
   getWorkspaceMembers(): Promise<Array<{ id: string; username: string; email: string | null }>>;
+  /**
+   * Histórico de um canal, do mais novo ao mais antigo, com as threads.
+   *
+   * Existe para a importação do acervo de referências: o canal antigo tem 245
+   * mensagens e 340 anexos, e é a v3 que devolve as URLs — a v2 entrega só o
+   * texto, com os nomes dos arquivos colados e sem link nenhum.
+   */
+  getChatChannelMessages(
+    channelId: string,
+    opts?: { maxMensagens?: number; comThreads?: boolean },
+  ): Promise<ChatMessage[]>;
+}
+
+export interface ChatMessage {
+  id: string;
+  content?: string;
+  date?: number;
+  user_id?: string;
+  replies_count?: number;
+  /** Preenchidas quando `comThreads` — é onde costuma estar o contexto. */
+  respostas?: { content?: string }[];
 }
 
 interface UpdateTaskPartial {
@@ -459,6 +480,53 @@ export default fp(async function clickupService(fastify) {
     );
   }
 
+  async function getChatChannelMessages(
+    channelId: string,
+    opts?: { maxMensagens?: number; comThreads?: boolean },
+  ): Promise<ChatMessage[]> {
+    const teamId = await resolveTeamId();
+    const teto = opts?.maxMensagens ?? 2000;
+    const canal = encodeURIComponent(channelId);
+    const msgs: ChatMessage[] = [];
+    let cursor: string | undefined;
+
+    // Teto de páginas junto com o de mensagens: um `next_cursor` que não anda
+    // (já aconteceu nesta API, ver getChatChannels) viraria laço infinito.
+    for (let page = 0; page < 60 && msgs.length < teto; page++) {
+      const qs = cursor ? `?limit=100&cursor=${encodeURIComponent(cursor)}` : "?limit=100";
+      const data = await fetchApiV3<{ data?: ChatMessage[]; next_cursor?: string | null }>(
+        `/workspaces/${teamId}/chat/channels/${canal}/messages${qs}`,
+      );
+      const lote = data.data ?? [];
+      if (lote.length === 0) break;
+      msgs.push(...lote);
+      if (!data.next_cursor) break;
+      cursor = data.next_cursor;
+    }
+
+    const recorte = msgs.slice(0, teto);
+
+    if (opts?.comThreads) {
+      // Uma chamada por mensagem que tem thread. Em série de propósito: a v3
+      // devolve 429 com facilidade, e aqui não há pressa — quem espera é uma
+      // importação que já vai levar minutos.
+      for (const m of recorte) {
+        if (!m.replies_count) continue;
+        try {
+          const r = await fetchApiV3<{ data?: ChatMessage[] }>(
+            `/workspaces/${teamId}/chat/messages/${encodeURIComponent(m.id)}/replies?limit=100`,
+          );
+          m.respostas = r.data ?? [];
+        } catch {
+          // Thread perdida não invalida a mensagem: ela só perde contexto.
+          m.respostas = [];
+        }
+      }
+    }
+
+    return recorte;
+  }
+
   fastify.decorate("clickupService", {
     isConfigured,
     fetchApi,
@@ -479,5 +547,6 @@ export default fp(async function clickupService(fastify) {
     getChatChannels,
     sendChatMessage,
     getWorkspaceMembers,
+    getChatChannelMessages,
   });
 });

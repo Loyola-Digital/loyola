@@ -9,8 +9,9 @@
  * memória do container.
  */
 
+import { Readable } from "node:stream";
 import { z } from "zod";
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { swipeClickupAlerts, swipeFiles, users } from "../db/schema.js";
 import { fetchLinkPreview } from "../services/link-preview.js";
@@ -20,6 +21,10 @@ import {
   podeAnalisar,
 } from "../services/swipe-analise.js";
 import { avisarNoClickUp } from "../services/swipe-clickup-aviso.js";
+import {
+  planejarImportacao,
+  type ItemParaImportar,
+} from "../services/swipe-import-clickup.js";
 import {
   MAX_UPLOAD_BYTES,
   checarStorage,
@@ -672,4 +677,245 @@ export default fp(async function swipeFilesRoutes(fastify) {
     }
     return { ok: true };
   });
+
+  /**
+   * Traz para a biblioteca o que ja estava num canal de chat do ClickUp.
+   *
+   * ## Por que roda AQUI e nao num script
+   *
+   * As chaves do bucket so existem no servidor. Um script na maquina de alguem
+   * consegue ler o ClickUp e escrever no banco, mas nao consegue subir o
+   * binario - e sem o binario a referencia e uma linha que nao abre.
+   *
+   * ## O aviso fica de fora, de proposito
+   *
+   * Cada referencia salva pela tela manda uma mensagem de volta ao canal (ver
+   * `avisarNoClickUp`). Fazer isso aqui despejaria centenas de mensagens no
+   * mesmo canal que estamos importando - e, na importacao seguinte, elas
+   * virariam referencias. Este caminho grava sem avisar.
+   *
+   * ## NDJSON
+   *
+   * Sao centenas de itens e de megabytes: leva minutos. Um POST calado e
+   * cortado pelo proxy e a tela fica pendurada - o mesmo problema que a
+   * analise ja teve. Cada item resolvido vira uma linha.
+   */
+  fastify.post(`${base}/importar-clickup`, async (request, reply) => {
+    // Importar cria centenas de registros de uma vez. Nao e operacao de
+    // biblioteca, e de administracao.
+    if (request.userRole !== "admin" && request.userRole !== "manager") {
+      return reply.code(403).send({ error: "Só admin pode importar." });
+    }
+    if (!request.userId) return reply.code(401).send({ error: "Sem usuário." });
+
+    const corpo = z
+      .object({
+        channelId: z.string().trim().min(1).max(60),
+        /** Sem isto, so planeja e conta - nada e gravado. */
+        confirmar: z.boolean().optional(),
+        /** Manda imagem e PDF para a IA catalogar. Video nunca vai. */
+        analisar: z.boolean().optional(),
+        limite: z.coerce.number().int().min(1).max(1000).optional(),
+      })
+      .safeParse(request.body);
+    if (!corpo.success) return reply.code(400).send({ error: "Parâmetros inválidos." });
+    const { channelId, confirmar, analisar, limite } = corpo.data;
+
+    if (!fastify.clickupService.isConfigured()) {
+      return reply.code(503).send({ error: "ClickUp não configurado no servidor." });
+    }
+    if (!isStorageConfigured(storage()) || pareceplaceholder(fastify.config.STORAGE_PUBLIC_URL)) {
+      return reply.code(503).send({ error: "Storage não configurado no servidor." });
+    }
+
+    reply.hijack();
+    reply.raw.writeHead(200, {
+      ...(reply.getHeaders() as Record<string, number | string | string[]>),
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Accel-Buffering": "no",
+    });
+    const escrever = (linha: unknown) => {
+      if (!reply.raw.writableEnded) reply.raw.write(`${JSON.stringify(linha)}\n`);
+    };
+
+    // Ler o canal inteiro leva dezenas de segundos antes do primeiro item.
+    const pulso = setInterval(() => escrever({ tipo: "trabalhando" }), 10_000);
+
+    try {
+      escrever({ tipo: "lendo-canal" });
+      const msgs = await fastify.clickupService.getChatChannelMessages(channelId, {
+        comThreads: true,
+      });
+
+      const plano = planejarImportacao(msgs);
+
+      // O que ja entrou numa rodada anterior. Sem este corte, retomar uma
+      // importacao interrompida tentaria subir tudo de novo - o indice unico
+      // barraria a gravacao, mas so DEPOIS do download e do upload.
+      const jaTem = new Set<string>();
+      const chaves = plano.map((i) => i.importKey);
+      for (let i = 0; i < chaves.length; i += 500) {
+        const linhas = await fastify.db
+          .select({ k: swipeFiles.importKey })
+          .from(swipeFiles)
+          .where(inArray(swipeFiles.importKey, chaves.slice(i, i + 500)));
+        for (const l of linhas) if (l.k) jaTem.add(l.k);
+      }
+
+      const pendentes = plano.filter((i) => !jaTem.has(i.importKey));
+      const novos = pendentes.slice(0, limite ?? pendentes.length);
+
+      escrever({
+        tipo: "plano",
+        mensagens: msgs.length,
+        total: plano.length,
+        jaImportados: plano.length - pendentes.length,
+        aImportar: novos.length,
+        comArquivo: novos.filter((i) => i.anexo).length,
+      });
+
+      if (!confirmar) {
+        escrever({ tipo: "fim", simulado: true, criados: 0, falhas: 0 });
+        return;
+      }
+
+      let criados = 0;
+      let falhas = 0;
+
+      for (const [i, item] of novos.entries()) {
+        try {
+          const gravado = await importarUm(item, Boolean(analisar), request.userId);
+          criados++;
+          escrever({
+            tipo: "item",
+            i: i + 1,
+            de: novos.length,
+            titulo: gravado.titulo,
+            kind: item.kind,
+            status: "ok",
+          });
+        } catch (err) {
+          falhas++;
+          // Uma referencia que falhou nao pode parar as outras: o motivo
+          // costuma ser dela (anexo apagado, tipo recusado), nao da rodada.
+          fastify.log.warn({ err, importKey: item.importKey }, "item de importacao falhou");
+          escrever({
+            tipo: "item",
+            i: i + 1,
+            de: novos.length,
+            titulo: item.titulo,
+            kind: item.kind,
+            status: "erro",
+            erro: err instanceof Error ? err.message : "falhou",
+          });
+        }
+      }
+
+      escrever({ tipo: "fim", criados, falhas, ignorados: plano.length - novos.length });
+    } catch (err) {
+      fastify.log.error({ err, channelId }, "importacao do clickup falhou");
+      escrever({
+        tipo: "erro",
+        error: err instanceof Error ? err.message : "Não consegui importar.",
+      });
+    } finally {
+      clearInterval(pulso);
+      reply.raw.end();
+    }
+  });
+
+  /** Baixa, sobe, cataloga e grava um item. Lanca quando nao da. */
+  async function importarUm(
+    item: ItemParaImportar,
+    analisar: boolean,
+    userId: string,
+  ): Promise<{ titulo: string }> {
+    let fileUrl: string | null = null;
+    let fileKey: string | null = null;
+    let fileMime: string | null = null;
+    let fileSizeBytes: number | null = null;
+    let sugestao: Awaited<ReturnType<typeof analisarReferencia>> | null = null;
+
+    if (item.anexo) {
+      const resposta = await fetch(item.anexo.url, { redirect: "follow" });
+      if (!resposta.ok || !resposta.body) {
+        throw new Error(`anexo respondeu ${resposta.status}`);
+      }
+
+      const tamanho = Number(resposta.headers.get("content-length") ?? 0);
+
+      /**
+       * Buffer quando a IA vai ler; stream quando nao.
+       *
+       * A analise precisa dos bytes inteiros na memoria para virar base64.
+       * Video nao e analisavel e e o que pesa, entao vai direto do ClickUp ao
+       * bucket sem passar pela RAM do container.
+       *
+       * O teto de 32 MB e da API da Anthropic, nao nosso: um PDF acima disso e
+       * recusado la, e baixa-lo para a memoria seria gastar por nada.
+       */
+      const vaiAnalisar =
+        analisar && podeAnalisar(item.anexo.mime) && tamanho > 0 && tamanho <= 32 * 1024 * 1024;
+
+      if (vaiAnalisar) {
+        const buffer = Buffer.from(await resposta.arrayBuffer());
+        fileSizeBytes = buffer.length;
+        const r = await uploadDireto(storage(), {
+          corpo: Readable.from(buffer),
+          mime: item.anexo.mime,
+          prefix: "swipe",
+        });
+        fileUrl = r.publicUrl;
+        fileKey = r.key;
+        try {
+          sugestao = await analisarReferencia(
+            fastify.claude.client,
+            { buffer, mimeType: item.anexo.mime },
+            { nomeDoArquivo: item.anexo.nome, origem: item.origem ?? undefined },
+          );
+        } catch (err) {
+          // O arquivo ja esta no bucket e a referencia vale sem as facetas.
+          // Perder a catalogacao e um campo em branco; perder o arquivo seria
+          // ter de baixar tudo de novo.
+          fastify.log.warn({ err, importKey: item.importKey }, "analise da importacao falhou");
+        }
+      } else {
+        const r = await uploadDireto(storage(), {
+          corpo: Readable.fromWeb(resposta.body as never),
+          mime: item.anexo.mime,
+          prefix: "swipe",
+        });
+        fileUrl = r.publicUrl;
+        fileKey = r.key;
+        fileSizeBytes = tamanho || null;
+      }
+      fileMime = item.anexo.mime;
+    }
+
+    // O que a IA sugeriu vence o que o parsing adivinhou - ela viu a imagem.
+    // Mas so quando trouxe algo: campo vazio dela nao apaga o que ja tinhamos.
+    const titulo = (sugestao?.titulo || item.titulo).slice(0, 200);
+    const notas = [sugestao?.anotacoes, item.notas].filter(Boolean).join("\n\n").slice(0, 4000);
+
+    await fastify.db.insert(swipeFiles).values({
+      title: titulo,
+      notes: notas || null,
+      assetKind: item.kind,
+      fileUrl,
+      fileKey,
+      fileMime,
+      fileSizeBytes,
+      sourceUrl: item.origem,
+      brand: sugestao?.marca ?? null,
+      niche: sugestao?.nicho ?? null,
+      platform: sugestao?.plataforma ?? null,
+      format: sugestao?.formato ?? null,
+      tags: sugestao?.tags ?? [],
+      importKey: item.importKey,
+      createdBy: userId,
+    });
+
+    return { titulo };
+  }
 });
