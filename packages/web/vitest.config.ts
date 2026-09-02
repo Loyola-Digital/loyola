@@ -32,6 +32,6 @@ export default defineConfig({
     environment: "node",
     // `lib/bi` entra junto pelo mesmo motivo de `lib/utils`: é lógica pura
     // (aritmética de grade, máquina de estados de salvamento) e roda sem DOM.
-    include: ["lib/utils/**/*.test.ts", "lib/bi/**/*.test.ts", "lib/swipe/**/*.test.ts"],
+    include: ["lib/utils/**/*.test.ts", "lib/bi/**/*.test.ts", "lib/swipe/**/*.test.ts", "lib/planner/**/*.test.ts"],
   },
 });
