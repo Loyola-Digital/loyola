@@ -40,7 +40,7 @@ export function AgendasDoGoogle({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
-  const { data, isLoading } = useAgendasDoGoogle(open);
+  const { data, isLoading, error } = useAgendasDoGoogle(open);
   const conectar = useConectarAgenda();
   const desconectar = useDesconectarAgenda();
   const importar = useImportarAgenda();
@@ -91,11 +91,21 @@ export function AgendasDoGoogle({
         </DialogHeader>
 
         <div className="space-y-4">
+          {/* Sem isto, uma API que ainda não subiu aparece como um traço no
+              lugar do e-mail e uma lista vazia — indistinguível de "nada
+              configurado", que leva a procurar o erro no lugar errado. */}
+          {error && (
+            <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-[11px] text-amber-600 dark:text-amber-400">
+              A API do Planner ainda não respondeu a esta rota. Se o deploy acabou de sair, ela
+              sobe em alguns minutos — recarregue a página e tente de novo.
+            </p>
+          )}
+
           <div className="space-y-1.5 rounded-md border border-border bg-muted/40 p-3">
             <p className="text-[11px] font-medium">1. Compartilhe a agenda com este e-mail</p>
             <div className="flex items-center gap-1.5">
               <code className="min-w-0 flex-1 truncate rounded bg-background px-2 py-1 text-[11px]">
-                {email || "—"}
+                {email || (isLoading ? "carregando…" : "indisponível — ver aviso acima")}
               </code>
               <button
                 type="button"

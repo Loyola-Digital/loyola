@@ -501,7 +501,9 @@ export default function PlannerPage() {
 
           {/* Título e subtítulo na mesma linha: o subtítulo é complemento do
               título, e empilhado vira um segundo assunto. */}
-          <h2 className="flex-none whitespace-nowrap text-base font-semibold tracking-[-0.01em] capitalize">
+          {/* Sem `capitalize`: a classe maiusculiza CADA palavra e produz
+              "Setembro De 2026". O nome do mês já vem com a inicial certa. */}
+          <h2 className="flex-none whitespace-nowrap text-base font-semibold tracking-[-0.01em]">
             {visao === "split"
               ? `${MESES_LONGOS[mes - 1]} de ${ano}`
               : visao === "cards"
