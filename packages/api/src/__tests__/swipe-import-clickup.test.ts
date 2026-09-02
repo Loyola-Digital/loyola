@@ -231,3 +231,32 @@ describe("planejarImportacao", () => {
     expect(uma[0]!.importKey).toBe(url);
   });
 });
+
+describe("nomes de baixador de anúncio", () => {
+  // Importa mais para VÍDEO: a IA não lê vídeo, então o nome do arquivo é o
+  // título definitivo. Estes vieram dos canais `referências-videos` e
+  // `refs-videos`, onde enchiam a grade.
+  it("reconhece o que saiu de baixador ou é hash puro", () => {
+    for (const n of [
+      "SaveClip.App_004F4F9235E8FDCB40D102173B0B7AA0_video_dashinit.mp4",
+      "9C4844A5DF8539FA7B164C034AE1FEA7_video_dashinit.mp4",
+      "476831031_2845743875604430_8976576407387461233_n.mp4",
+      "462894214_1047973083446926_2554204716373321950_n.jpg",
+      "An9V4EpxVBe4vBaBAdBK-6SmBXHmclFPJ9SbwVlL-1X5BQRYwmUkRqIy3ApFb7YafRLoWQUq3H-WjPqCzfdLNpoN.mp4",
+    ]) {
+      expect(nomeEhGenerico(n), n).toBe(true);
+    }
+  });
+
+  it("não confunde com nome que alguém escreveu", () => {
+    for (const n of [
+      "Ícaro - Década.mp4",
+      "Teaser Oficial Subido Ao Vivo 2023.mp4",
+      "PLAYBOOK Black friday 2025.pdf",
+      "Alex Hormozi Books.zip",
+      "Black_Friday_Finclass.html",
+    ]) {
+      expect(nomeEhGenerico(n), n).toBe(false);
+    }
+  });
+});

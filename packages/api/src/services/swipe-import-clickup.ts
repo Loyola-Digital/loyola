@@ -161,7 +161,26 @@ export function nomeEhGenerico(nome: string): boolean {
     /^(image|file|undefined|download|unnamed|photo|video|foto)[-_ ]?\d*$/i.test(base) ||
     /^(cleanshot|screenshot|captura de tela|screen shot|img|image|rpreplay|whatsapp|photo)/i.test(base) ||
     /^\d{6,}$/.test(base) ||
-    /^screencapture-/i.test(base)
+    /^screencapture-/i.test(base) ||
+    /**
+     * Arquivo saído de baixador de anúncio.
+     *
+     * Importa mais para vídeo do que para imagem: a IA não lê vídeo, então o
+     * nome do arquivo é o título DEFINITIVO. Num canal de referência de vídeo
+     * isso enche a grade de
+     * `SaveClip.App_004F4F9235E8FDCB40D102173B0B7AA0_video_dashinit` — e a
+     * frase que a pessoa escreveu junto ("Ícaro - Década, gostei da sucessão
+     * de cortes") fica de fora, sendo a única coisa ali que identifica algo.
+     */
+    /^(saveclip|snaptik|ssstik|savefrom|fbdown|tiktokdownload)/i.test(base) ||
+    /_video_dashinit$/i.test(base) ||
+    // Hash cru: 16+ dígitos hexadecimais seguidos, sem palavra no meio.
+    /^[0-9a-f]{16,}$/i.test(base) ||
+    // Id do Facebook/Instagram: `476831031_2845743875604430_8976..._n`.
+    /^\d{6,}(_\d{6,})+(_n)?$/i.test(base) ||
+    // Token cru, tipo `An9V4EpxVBe4vBaBAdBK-6SmBXHmcl…` (88 caracteres).
+    // Trinta e dois seguidos SEM um espaço não é nome que alguém escreveu.
+    /^[A-Za-z0-9_-]{32,}$/.test(base)
   );
 }
 
