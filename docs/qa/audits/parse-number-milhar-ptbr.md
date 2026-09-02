@@ -2,7 +2,7 @@
 
 **Encontrado em:** 2026-09-02, durante a implementação da Story 18.71
 **Por:** @dev (Dex), validando o AC4 contra a planilha de produção
-**Status:** aberto — **fora do escopo das 18.71/18.72/18.73**, aguardando decisão
+**Status:** ✅ CORRIGIDO em 7fddf450, autorizado pelo gestor em 2026-09-02
 **Severidade:** alta — erro de 3 ordens de grandeza em dinheiro exibido
 
 ---
@@ -66,12 +66,34 @@ if (hasDot && hasComma) norm = s.replace(/\./g, "").replace(",", ".");
 else if (hasComma)      norm = s.replace(",", ".");
 ```
 
-## Por que não foi corrigido junto
+## Como foi corrigido
 
-1. Não está em nenhuma das três stories.
-2. Muda números que o gestor já conhece — faturamento e ROAS sobem ~1000× nas
-   etapas afetadas. Isso precisa ser avisado antes, não descoberto na tela.
-3. Merece story própria, com validação visual e conferência contra a planilha.
+O `parseBrNumber` de `parse-faturamento.ts` — que já era a implementação certa e
+completa do repo — foi extraído para `shared/src/numero-ptbr.ts`, e as três
+cópias quebradas passaram a ler de lá. O `parse-faturamento.ts` também, para não
+sobrar duas implementações corretas divergindo com o tempo.
+
+**Verificado contra a planilha depois do fix:**
+
+```
+Captação Paga do bbe-pr2-ago-26, atribuído a criativo
+  antes:  4 ingressos   R$   805,78
+  depois: 6 ingressos   R$ 9.573,00
+```
+
+11 testes novos em `api/src/__tests__/numero-ptbr.test.ts`, incluindo a asserção
+de que o corpo antigo chega em R$ 805,776 — reverter derruba o teste.
+
+### O que NÃO mudou, de propósito
+
+O sinal negativo continua descartado (o `[^\d.,]` original também removia o
+`-`). Preservar sinal mudaria o valor de estornos na tela e merece decisão
+própria.
+
+### Ainda pendente
+
+Validação visual: o Faturamento e o ROAS por criativo e por LP sobem nas etapas
+afetadas. É a mudança mais visível desta leva.
 
 ## Como reproduzir
 
