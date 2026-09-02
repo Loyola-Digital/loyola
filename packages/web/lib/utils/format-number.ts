@@ -65,6 +65,12 @@ export function fmtPercent(val: number | null | undefined): string {
 /**
  * **Só para `tickFormatter` de eixo de gráfico.** Mantém a abreviação que o
  * resto da tela perdeu — ver o cabeçalho deste módulo.
+ *
+ * Ainda sem consumidor de propósito: o AC6 da 18.73 mandou **não mexer** nos
+ * eixos que já existem, e trocar a fórmula inline deles por esta mudaria o que
+ * está na tela hoje (`launch-dashboard.tsx:1216` mostra `R$47382`, não
+ * `R$47.4K`). Existe para que eixo NOVO não volte a inventar a própria regra —
+ * que é a duplicação que esta story veio desfazer.
  */
 export function fmtEixo(val: number, tipo: "currency" | "number" = "number"): string {
   if (!Number.isFinite(val)) return "";

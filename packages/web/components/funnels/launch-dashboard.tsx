@@ -101,7 +101,7 @@ import {
 import { ClipboardList, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { fmtCurrency as fmtCurrencyCompleto, fmtInt, fmtPercent as fmtPercentCompleto, fmtEixo } from "@/lib/utils/format-number";
+import { fmtCurrency as fmtCurrencyCompleto, fmtInt, fmtPercent as fmtPercentCompleto } from "@/lib/utils/format-number";
 
 interface LaunchDashboardProps {
   funnel: Funnel;
