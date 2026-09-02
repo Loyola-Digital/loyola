@@ -44,6 +44,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fmtCurrency } from "@/lib/utils/format-number";
+import { useStageSalesRows } from "@/lib/hooks/use-stage-sales-rows";
+import { escolherFonteDeVendas, valorDaLinha } from "@/lib/utils/fonte-de-vendas";
 
 type UtmKey = "utm_source" | "utm_medium" | "utm_campaign" | "utm_content" | "utm_term";
 
@@ -79,18 +81,10 @@ const clean = (v: string | undefined) => (v ?? "").trim();
 /** Story 18.64: colunas ordenáveis — dimensão por índice, ou uma das métricas. */
 type SortKey = `dim:${number}` | "leads" | "vendas" | "faturamento" | "conv";
 
-/** Parseia valor monetário PT-BR ("R$ 1.234,56" | "297,00" | "1234.56"). */
-function parseValor(raw: string | undefined): number {
-  const s = (raw ?? "").replace(/[^\d.,-]/g, "").trim();
-  if (!s) return 0;
-  const hasDot = s.includes(".");
-  const hasComma = s.includes(",");
-  let norm = s;
-  if (hasDot && hasComma) norm = s.replace(/\./g, "").replace(",", ".");
-  else if (hasComma) norm = s.replace(",", ".");
-  const n = parseFloat(norm);
-  return isNaN(n) ? 0 : n;
-}
+// Story 18.72: o parseValor local saiu daqui. A leitura do valor virou
+// `valorDaLinha` em `lib/utils/fonte-de-vendas`, junto da escolha da fonte —
+// onde o runner do web alcança e o modo de falha (campo errado → "N vendas,
+// R$ 0") pode ser testado.
 
 // Story 18.73: faturamento com centavos — arredondar escondia diferença real.
 const brl = (v: number) => fmtCurrency(v);
@@ -135,7 +129,38 @@ export function LeadsByUtmTable({
   const salesSheet = sheets?.spreadsheets.find((s) => s.type === "sales" || s.type === "custom");
   const { data: leadsData, isLoading: leadsLoading } = useFunnelSpreadsheetData(projectId, funnelId, leadsSheet?.id);
   const { data: salesData, isLoading: salesLoading } = useFunnelSpreadsheetData(projectId, funnelId, salesSheet?.id);
-  const isLoading = leadsLoading || salesLoading;
+  // Story 18.72: a planilha de vendas da etapa vive em `stage_sales_spreadsheets`
+  // em 6 das 15 etapas de produção. Sem esta fonte, elas mostravam `0 vendas`
+  // em TODOS os grupos — não só no `meta` — e zero é indistinguível de "não
+  // vendeu".
+  const { data: salesRows, isLoading: stageSalesLoading } = useStageSalesRows(
+    projectId,
+    funnelId,
+    stageId ?? null,
+  );
+  const isLoading = leadsLoading || salesLoading || stageSalesLoading;
+
+  // Escolhe UMA fonte — nunca soma as duas. A regra e o porquê estão em
+  // `lib/utils/fonte-de-vendas`, onde o runner do web alcança.
+  const fonteVendas = useMemo(
+    () =>
+      escolherFonteDeVendas({
+        // O CADASTRO decide a fonte, não quantas linhas caem na janela — senão
+        // a tabela troca de planilha ao mexer no filtro de período.
+        temPlanilhaDoFunil: !!salesSheet,
+        linhasDoFunil: salesData ? filterSheetRowsByDays(salesData, days) : null,
+        planilhasDaEtapa: salesRows?.map((p) => ({
+          rows: filterSheetRowsByDays(
+            { mapping: { date: "date" }, rows: p.rows } as unknown as Parameters<
+              typeof filterSheetRowsByDays
+            >[0],
+            days,
+          ),
+          erro: p.erro,
+        })),
+      }),
+    [salesSheet, salesData, salesRows, days],
+  );
 
   const visibleDims: UtmKey[] = groupBy === "combo" ? UTM_KEYS : [groupBy];
 
@@ -218,19 +243,18 @@ export function LeadsByUtmTable({
       });
     }
 
-    // Vendas (1 linha = 1 venda) + faturamento
+    // Vendas (1 linha = 1 venda) + faturamento. Story 18.72: as linhas vêm da
+    // fonte escolhida acima, que pode ser a planilha da etapa.
     let totalVendas = 0;
     let totalFat = 0;
-    if (salesData) {
-      filterSheetRowsByDays(salesData, days).forEach((r) => {
-        const utms = utmsOf(r);
-        const val = parseValor(r.named.value);
-        const g = getGroup(utms);
-        g.vendas += 1;
-        g.faturamento += val;
-        totalVendas += 1;
-        totalFat += val;
-      });
+    for (const r of fonteVendas.linhas) {
+      const utms = utmsOf(r as { named: Partial<Record<string, string>> });
+      const val = valorDaLinha(r);
+      const g = getGroup(utms);
+      g.vendas += 1;
+      g.faturamento += val;
+      totalVendas += 1;
+      totalFat += val;
     }
 
     let arr = [...map.values()];
@@ -259,7 +283,7 @@ export function LeadsByUtmTable({
     });
 
     return { groups: arr, totalLeads: seenGlobal.size, totalVendas, totalFat };
-  }, [leadsData, salesData, days, groupBy, query, visibleDims, displayValue, sortCol, sortDir]);
+  }, [leadsData, fonteVendas, days, groupBy, query, visibleDims, displayValue, sortCol, sortDir]);
 
   const pageCount = Math.max(1, Math.ceil(groups.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
@@ -305,6 +329,17 @@ export function LeadsByUtmTable({
           <span className="text-[11px] text-muted-foreground">
             {totalLeads.toLocaleString("pt-BR")} leads · {totalVendas.toLocaleString("pt-BR")} vendas · {brl(totalFat)} · {groups.length} grupos
           </span>
+          {/* Story 18.72 AC4: falha de leitura NÃO pode chegar como "0 vendas".
+              Zero é indistinguível de "não vendeu" — foi assim que 6 etapas
+              ficaram zeradas sem ninguém perceber. */}
+          {fonteVendas.erro && (
+            <span
+              className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400"
+              title={`Não foi possível ler a planilha de vendas: ${fonteVendas.erro}`}
+            >
+              ⚠ vendas indisponíveis
+            </span>
+          )}
         </div>
         <div className="relative">
           <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
