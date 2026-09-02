@@ -1,0 +1,80 @@
+storyId: "18.72"
+storyTitle: "A tabela por UTM procura a planilha de vendas no lugar errado"
+phase: design — pré-implementação (não há código; gate de testabilidade e risco)
+gate: PASS
+reviewer: "@qa (Quinn)"
+reviewedAt: "2026-09-02"
+branch: docs/44.23-paginacao-tool-criativos
+clickup: 86akadj16
+
+summary: >
+  O bloqueante desta story já foi pego no gate do @po (a v1 mandava reaproveitar
+  um hook que devolve cadastro, não linhas). Revisei o que sobrou e a story está
+  testável: o diagnóstico é verificável no banco, o AC1 passou a fixar resultado
+  em vez de meio, e o AC4 já cobre o caso que costuma escapar — falha de leitura
+  virando `0` na tela.
+
+  Uma armadilha a travar antes do @dev começar: o teste do AC5 tem que exercitar
+  a agregação de verdade. Nesta base já houve teste de vínculo com banco mockado
+  que passava sem provar nada, porque o 404 vinha da fila do mock e não do
+  filtro.
+
+issues:
+  - id: QA-1872-01
+    severity: medium
+    finding: >
+      AC5 pede teste da "seleção de fonte + extração de valor". Com o hook
+      mockado, o teste passa mesmo se o mapping de valorBruto estiver errado —
+      basta o mock devolver o que o teste espera.
+    action: >
+      O teste tem que partir de linhas CRUAS + columnMapping real de
+      stage_sales_spreadsheets e conferir o número agregado. Se trocar
+      valorBruto por um campo inexistente e o teste continuar verde, ele é
+      decorativo.
+  - id: QA-1872-02
+    severity: medium
+    finding: >
+      AC1 manda usar funnel_spreadsheets quando as duas fontes existem
+      (fz-l2-jun-26). Sem teste de regressão nesse funil, a mudança pode dobrar
+      ou trocar o número dele sem ninguém ver.
+    action: "Cenário P0: funil com as DUAS fontes mantém exatamente o número de hoje"
+  - id: QA-1872-03
+    severity: low
+    finding: >
+      A rota nova (caminho recomendado) devolve linhas de planilha de venda —
+      dado de cliente com nome, e-mail e telefone.
+    action: >
+      Reusar o mesmo guard de projeto das rotas irmãs de
+      stage-sales-spreadsheets. Não herdar o guard só do guest-guard global:
+      na 43.7 ele não cobriu IDOR em rota project-scoped.
+
+test_design:
+  P0:
+    - "unit: agregação por UTM sobre linhas cruas + mapping de stage_sales_spreadsheets devolve vendas E faturamento corretos"
+    - "unit: mapping sem valorBruto não produz 'N vendas, R$ 0' silencioso"
+    - "regressão: fz-l2-jun-26 (as duas fontes) mantém o número atual — nunca soma as duas"
+  P1:
+    - "unit: etapa sem nenhuma planilha de vendas → 0 sem erro (AC4, primeira metade)"
+    - "unit: leitura que FALHA → estado de erro visível, não 0 (AC4, segunda metade)"
+    - "integration: bbe-pr2-ago-26 mostra vendas na linha `meta` e mantém os 38 leads (AC3)"
+  P2:
+    - "segurança: rota nova nega projeto de outro usuário (QA-1872-03)"
+
+riscos:
+  - id: TECH-01
+    risco: "rota nova que devolve linha crua abre mais um caminho de leitura de planilha para manter"
+    prob_impacto: "média × médio"
+    mitigacao: "espelhar o enrich de funnel-spreadsheets.ts:380-389 em vez de inventar formato novo"
+  - id: DATA-01
+    risco: "dupla contagem no funil que tem as duas fontes"
+    prob_impacto: "média × alto"
+    mitigacao: "AC1 proíbe somar; cenário P0 de regressão trava"
+  - id: SEC-01
+    risco: "rota nova exposta sem guard de projeto (dados pessoais de comprador)"
+    prob_impacto: "baixa × alto"
+    mitigacao: "QA-1872-03"
+
+decision: >
+  PASS para implementação. As três issues são de execução, não de desenho — vão
+  para o gate de código como itens obrigatórios. QA-1872-01 é o que mais
+  costuma escapar nesta base.

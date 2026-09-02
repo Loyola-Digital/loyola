@@ -1,0 +1,113 @@
+storyId: "18.71"
+storyTitle: "O `co=` agora chega como JSON e a venda paga some da tabela"
+phase: design — pré-implementação (não há código; gate de testabilidade e risco)
+gate: CONCERNS
+reviewer: "@qa (Quinn)"
+reviewedAt: "2026-09-02"
+branch: docs/44.23-paginacao-tool-criativos
+clickup: 86akadj0q
+
+summary: >
+  A story resolve o caso que o gestor relatou, mas descreve mal o mundo em que
+  vai rodar. Rodei `JSON.parse` sobre as 85 células que começam com `{` em todas
+  as abas de venda de produção: **5 parseiam, 80 falham**. Não é um formato com
+  variações — são três formatos diferentes, e a story só descrevia o primeiro.
+
+  As 2 vendas do relato (R$ 2.991,00 no `bbe-pr2`) são formato 1 e ficam
+  resolvidas. Mas "9 abas em 5 funis" vira **1 aba, 1 funil** para o que o AC1
+  corrige — e o AC6, que prometia agrupar orgânico em `org`, estava falso para
+  a maioria dos casos. Story corrigida antes do @dev pegar.
+
+formatos_encontrados:
+  - id: 1
+    exemplo: '{"co":"120247542282230489","url":"…","v":1}'
+    linhas: 5
+    onde: "bbe-pr2-ago-26 (só)"
+    tratado_pela_v1: true
+  - id: 2
+    exemplo: '{"org","org"} · {"imersao","imersao"}'
+    linhas: 41
+    onde: "fz-l2-jun-26, fz-m2-jul26, dg-pg02"
+    nota: "par duplicado entre chaves; NÃO é JSON — JSON.parse lança"
+    tratado_pela_v1: false
+  - id: 3
+    exemplo: "{{ad.id}}"
+    linhas: 42
+    onde: "dg-pg02 (39), dg-pg04 (2), fz-m2-jul26 (1)"
+    nota: >
+      macro do Meta não substituída — anúncio mal configurado, não bug de
+      parsing. `survey-aggregation.ts` já barra via isLikelyAdId().
+    tratado_pela_v1: false
+
+issues:
+  - id: QA-1871-01
+    severity: high
+    finding: "AC1 cobria 5 de 85 células; formatos 2 e 3 caíam no fallback 'texto cru'"
+    action: "Tabela do AC1 estendida para os 3 formatos — CORRIGIDO na story"
+  - id: QA-1871-02
+    severity: high
+    finding: "AC6 (orgânico agrupa em `org`) era falso: os `{\"org\",\"org\"}` são formato 2"
+    action: "AC6 reescrito para cobrir os dois formatos + nota de qual funil serve para testá-lo — CORRIGIDO"
+  - id: QA-1871-03
+    severity: medium
+    finding: "Alcance declarado ('9 abas em 5 funis') mede os 3 formatos juntos e superestima o efeito do AC1"
+    action: "Seção de medição corrigida com a quebra por formato — CORRIGIDO"
+  - id: QA-1871-04
+    severity: medium
+    finding: >
+      Zero cobertura de teste hoje em `normalizeNumericId` e
+      `computeCreativeSalesMetrics` — a mudança é no coração da atribuição de
+      receita e não há rede nenhuma.
+    action: "AC1 e AC5 já exigem teste novo; sem eles, NÃO aprovar o gate de código"
+  - id: QA-1871-05
+    severity: low
+    finding: >
+      Depois do fix, os `{\"co\":\"org\",\"u\":\"<uuid>\"…}` colapsam num único
+      grupo `org` (o uuid muda por venda, então hoje cada um é um grupo).
+      A contagem de grupos na tela vai CAIR.
+    action: "Registrado no AC6 como resultado esperado, para não virar bug report"
+
+test_design:
+  P0:
+    - "unit: normalizador — os 3 formatos + par não duplicado + string vazia + JSON malformado (não pode lançar)"
+    - "unit: reversão — trocar o normalizador pelo corpo atual DERRUBA o teste (AC5)"
+    - "integration: uma linha formato 1 com ad_id numérico é atribuída ao criativo; sem o fix, não é"
+  P1:
+    - "unit: isLikelyAdId continua barrando os 3 formatos depois do AC2 (AC5b)"
+    - "integration: LP recebe as 2 vendas do bbe-pr2 (AC3) e os criativos as mesmas 2 (AC4)"
+  P2:
+    - "unit: formato 2 vira `org`/`imersao` na dimensão Ad Name (AC6) — usar fixture de fz-l2/fz-m2, não bbe-pr2"
+
+riscos:
+  - id: TECH-01
+    risco: "4 arquivos chamam o normalizador; corrigir 3 e esquecer 1 deixa caminho divergente"
+    prob_impacto: "média × alto"
+    mitigacao: "AC2 exige remover as 4 cópias; grep por `function normalizeNumericId` deve voltar vazio"
+  - id: DATA-01
+    risco: "formato 2 tratado com heurística errada (`{\"a\",\"b\"}` não duplicado) inventaria atribuição"
+    prob_impacto: "baixa × alto"
+    mitigacao: "AC1 manda devolver texto cru quando o par NÃO é duplicado — nunca escolher um dos dois"
+  - id: BUS-01
+    risco: "gestor esperar que as 9 abas melhorem e ver só o bbe-pr2 mudar"
+    prob_impacto: "alta × médio"
+    mitigacao: "story corrigida; comunicar o alcance real ao entregar"
+
+baseline_suites:
+  api: "1950 testes — 17 falham em 9 arquivos, PRÉ-EXISTENTES na branch limpa"
+  api_arquivos_conhecidos:
+    - funnel-stages-lead-inputs.test.ts
+    - instagram-routes.test.ts
+    - instagram.test.ts
+    - projects.test.ts
+    - schema.test.ts
+    - "stage-cadeia-cac-config.test.ts (falha por TIMEOUT de 5s — flaky, não asserção)"
+  web: "761 testes, 47 arquivos — 0 falhas"
+  nota: >
+    Nenhum dos arquivos que falham toca os caminhos desta story. Se o @dev vir
+    17 falhas na API, não foi ele.
+
+decision: >
+  CONCERNS — a story está aprovada para implementação COM as correções já
+  aplicadas. O núcleo (o caso do gestor) é sólido; o que estava errado era o
+  alcance e o AC6, ambos corrigidos antes do @dev pegar. QA-1871-04 (cobertura
+  zero) é o que vira FAIL no gate de código se os testes não vierem.
