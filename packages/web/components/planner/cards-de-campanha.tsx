@@ -143,9 +143,10 @@ function LinhaDaFase({
             onExcluir();
           }}
           aria-label={`Excluir fase ${fase.name}`}
-          className="opacity-0 transition-opacity group-hover/linha:opacity-100 focus-visible:opacity-100"
+          title="Excluir fase"
+          className="rounded p-0.5 text-muted-foreground/50 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:text-destructive"
         >
-          <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+          <Trash2 className="h-3 w-3" />
         </button>
       </td>
     </tr>
@@ -202,13 +203,19 @@ export function CardDeCampanha({
           className="h-5 w-5 shrink-0 cursor-pointer rounded border-0 bg-transparent p-0"
         />
 
+        {/* Sempre visível, e não só no hover.
+            Uma ação que só aparece quando o mouse chega é impossível de achar
+            — e no toque não aparece nunca. Discreta resolve a hierarquia
+            visual; escondida resolve só a aparência. A proteção contra o
+            clique errado é o desfazer, não a invisibilidade. */}
         <button
           type="button"
           onClick={onExcluir}
-          aria-label={`Excluir ${campanha.name}`}
-          className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+          aria-label={`Excluir campanha ${campanha.name}`}
+          title="Excluir campanha"
+          className="shrink-0 rounded p-1 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:text-destructive"
         >
-          <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+          <Trash2 className="h-3.5 w-3.5" />
         </button>
       </header>
 

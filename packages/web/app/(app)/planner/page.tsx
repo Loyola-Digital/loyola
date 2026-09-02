@@ -118,6 +118,36 @@ export default function PlannerPage() {
     [campanhas, mudarCampanha],
   );
 
+  /**
+   * Exclui, e oferece a volta no próprio aviso.
+   *
+   * O Ctrl+Z existe, mas ninguém descobre um atalho no momento em que percebe
+   * que apagou a coisa errada. O botão no toast é a mesma ação ao alcance da
+   * mão que já está no mouse.
+   *
+   * Sem diálogo de confirmação de propósito: confirmar toda exclusão treina a
+   * pessoa a clicar "sim" sem ler, e aí a proteção deixa de proteger. Poder
+   * voltar atrás vale mais que ter de pedir licença.
+   */
+  function excluirCampanha(c: Campanha) {
+    anotar({ tipo: "excluiu", campanha: c });
+    excluir.mutate(c.id);
+    toast.success(`"${c.name}" excluída`, {
+      action: {
+        label: "Desfazer",
+        onClick: () => {
+          // Tira do histórico: desfazer pelo botão e depois pelo Ctrl+Z
+          // recriaria a campanha duas vezes.
+          historico.current = historico.current.filter(
+            (x) => !(x.tipo === "excluiu" && x.campanha.id === c.id),
+          );
+          setTemHistorico(historico.current.length > 0);
+          void restaurar.mutateAsync(c).then(() => toast.success(`"${c.name}" restaurada`));
+        },
+      },
+    });
+  }
+
   async function desfazer() {
     const passo = historico.current.pop();
     setTemHistorico(historico.current.length > 0);
@@ -425,11 +455,7 @@ export default function PlannerPage() {
                   campanha={c}
                   faseSelecionada={selecionada}
                   onMudar={(dados) => mudarCampanha(c, dados)}
-                  onExcluir={() => {
-                    anotar({ tipo: "excluiu", campanha: c });
-                    excluir.mutate(c.id);
-                    toast.success(`"${c.name}" excluída · Ctrl+Z desfaz`);
-                  }}
+                  onExcluir={() => excluirCampanha(c)}
                   onDuplicar={() => duplicar.mutate(c.id)}
                   onSelecionarFase={setSelecionada}
                 />
@@ -445,11 +471,7 @@ export default function PlannerPage() {
                       campanha={c}
                       faseSelecionada={selecionada}
                       onMudar={(dados) => mudarCampanha(c, dados)}
-                      onExcluir={() => {
-                        anotar({ tipo: "excluiu", campanha: c });
-                        excluir.mutate(c.id);
-                        toast.success(`"${c.name}" excluída · Ctrl+Z desfaz`);
-                      }}
+                      onExcluir={() => excluirCampanha(c)}
                       onDuplicar={() => duplicar.mutate(c.id)}
                       onSelecionarFase={setSelecionada}
                     />
