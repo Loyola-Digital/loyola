@@ -3545,6 +3545,51 @@ export const sourceRuleOperatorEnum = pgEnum("source_rule_operator", [
  * captação diria orgânico e a venda diria pago, sobre a MESMA linha da MESMA
  * planilha.
  */
+/**
+ * Planner de campanhas — o calendário do time, por campanha e fase.
+ *
+ * As fases moram em JSONB porque a unidade de edição é a CAMPANHA: quem mexe
+ * arrasta uma fase, renomeia outra e apaga uma terceira esperando que isso seja
+ * uma alteração só. Nenhuma consulta filtra fase isoladamente — todas leem a
+ * campanha inteira para desenhar a barra.
+ */
+export const plannerCampaigns = pgTable(
+  "planner_campaigns",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: varchar("name", { length: 200 }).notNull(),
+    /** Hex com `#`. Identifica a campanha nas três visões. */
+    color: varchar("color", { length: 9 }).notNull().default("#6D5BD0"),
+    /**
+     * Ordem manual. Não é o índice de um array: a linha sobrevive à
+     * reordenação, e duas pessoas mexendo não embaralham a lista uma da outra.
+     */
+    sortOrder: integer("sort_order").notNull().default(0),
+    /**
+     * Opcional: o planner é do TIME e nasce ANTES do projeto existir no app.
+     * "FZ — BLACK" é planejado meses antes de virar funil.
+     */
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+    /**
+     * Datas como texto ISO (`YYYY-MM-DD`) ou `""`.
+     *
+     * Texto e não `date`: "fim em aberto" é um estado de verdade no
+     * planejamento — a fase começou e ninguém sabe quando acaba.
+     */
+    phases: jsonb("phases")
+      .$type<{ id: string; name: string; start: string; end: string }[]>()
+      .notNull()
+      .default([]),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("planner_campaigns_ordem_idx").on(t.sortOrder, t.createdAt),
+    index("planner_campaigns_project_idx").on(t.projectId),
+  ],
+);
+
 export const projectSourceRules = pgTable(
   "project_source_rules",
   {
