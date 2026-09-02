@@ -90,10 +90,12 @@ O sinal negativo continua descartado (o `[^\d.,]` original também removia o
 `-`). Preservar sinal mudaria o valor de estornos na tela e merece decisão
 própria.
 
-### Ainda pendente
+### Fechado
 
-Validação visual: o Faturamento e o ROAS por criativo e por LP sobem nas etapas
-afetadas. É a mudança mais visível desta leva.
+Validação visual **OK pelo gestor em 2026-09-02**, depois do merge da PR #719
+(`f7058562`). Era a mudança mais visível desta leva: Faturamento e ROAS por
+criativo e por LP subiram nas etapas afetadas, e os números batem com a
+planilha.
 
 ## Como reproduzir
 
