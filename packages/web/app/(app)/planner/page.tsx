@@ -311,7 +311,19 @@ export default function PlannerPage() {
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col lg:grid lg:grid-cols-[236px_1fr]" data-rail={rail}>
+    /*
+     * As colunas acompanham o `rail`.
+     *
+     * Com largura fixa em `236px 1fr`, esconder a barra lateral com
+     * `display:none` tirava ela do grid — e o `main`, que era o segundo filho,
+     * passava a ocupar a PRIMEIRA coluna, espremido em 236px, com o resto da
+     * tela vazio. Parecia tela preta, e era o conteúdo comprimido num canto.
+     */
+    <div
+      className={`flex h-full min-h-0 flex-col lg:grid ${
+        rail ? "lg:grid-cols-[236px_minmax(0,1fr)]" : "lg:grid-cols-1"
+      }`}
+    >
       {/* Barra lateral do planner: título, visões, meses e legenda. No celular
           vira faixa horizontal no topo — some-la deixaria a legenda, que é o
           único jeito de ocultar uma campanha, inacessível. */}
