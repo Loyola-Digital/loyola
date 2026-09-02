@@ -18,6 +18,10 @@ const envSchema = z.object({
   API_PUBLIC_URL: z.string().optional(),
   MINDS_BASE_PATH: z.string().default("./squads"),
   CLICKUP_API_TOKEN: z.string().min(1).optional(),
+  /** Sincronia automática do Planner com a agenda do Google. */
+  PLANNER_SYNC_ENABLED: z.string().optional(),
+  /** Minutos entre ciclos. Mínimo de 5 aplicado no agendador. */
+  PLANNER_SYNC_MINUTES: z.coerce.number().int().min(1).max(1440).optional(),
   ENCRYPTION_KEY: z.string().length(64).regex(/^[0-9a-fA-F]+$/, "Must be 64-char hex string").optional(),
   GOOGLE_ADS_CLIENT_ID: z.string().min(1).optional(),
   GOOGLE_ADS_CLIENT_SECRET: z.string().min(1).optional(),

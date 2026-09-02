@@ -20,6 +20,7 @@ import {
   somarDias,
   type FaseDoPlanner,
 } from "../services/planner.js";
+import { chaveDoNome } from "../services/planner-sync.js";
 
 const fase = (over: Partial<FaseDoPlanner> = {}): FaseDoPlanner => ({
   id: "f1",
@@ -360,5 +361,25 @@ describe("planejarSincronia", () => {
       fasesDepois: [f("1", "Captação", "2026-09-01", "2026-09-05")],
     });
     expect(a.criar).toHaveLength(1);
+  });
+});
+
+describe("chaveDoNome", () => {
+  it("trata como a mesma campanha o que só muda hífen, espaço e caixa", () => {
+    // Medido nas agendas do time: as três variações abaixo são pares reais que
+    // viravam campanhas separadas a cada importação.
+    expect(chaveDoNome("BBE-Margem 3X")).toBe(chaveDoNome("BBE Margem 3X"));
+    expect(chaveDoNome("BBE-PR2")).toBe(chaveDoNome("BBEPR2"));
+    expect(chaveDoNome("DG-PG02-MAR-26")).toBe(chaveDoNome("DG-PG-02-MAR-26"));
+  });
+
+  it("ignora acento, que é onde a digitação diverge", () => {
+    expect(chaveDoNome("FÉRIAS")).toBe(chaveDoNome("ferias"));
+  });
+
+  it("não junta campanhas que são de fato diferentes", () => {
+    expect(chaveDoNome("FZ-L1-JAN-25")).not.toBe(chaveDoNome("FZ-L1-FEV-26"));
+    expect(chaveDoNome("DG-PG01-JAN-25")).not.toBe(chaveDoNome("DG-PG02-MAR-26"));
+    expect(chaveDoNome("BBE BLACK")).not.toBe(chaveDoNome("FZ BLACK"));
   });
 });

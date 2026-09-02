@@ -36,6 +36,16 @@ export interface FaseDoPlanner {
    * espelhada para lá — é o que liga as duas pontas nas duas direções.
    */
   googleEventId?: string;
+  /**
+   * A edição desta fase não chegou ao Google.
+   *
+   * Existe por causa da sincronização automática. Sem a marca, o cenário é:
+   * alguém move a fase, a escrita falha (rede, permissão), e o job de
+   * importação traz do Google a data ANTIGA e desfaz a edição — em silêncio,
+   * como se ninguém tivesse mexido. Marcada, a fase é preservada na importação
+   * e reenviada antes dela.
+   */
+  googleSyncPendente?: boolean;
 }
 
 const FORMATO = /^\d{4}-\d{2}-\d{2}$/;

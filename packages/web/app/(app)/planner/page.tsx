@@ -351,7 +351,15 @@ export default function PlannerPage() {
   function excluirCampanha(c: Campanha) {
     anotar({ tipo: "excluiu", campanha: c });
     excluir.mutate(c.id);
+    // Excluir aqui apaga os eventos na agenda do Google também — é o que
+    // "espelhado" significa. Mas some do calendário do TIME INTEIRO, e ninguém
+    // espera isso de um botão numa tela de planejamento. O aviso vai junto do
+    // Desfazer, no único momento em que ainda dá para voltar atrás.
+    const noGoogle = Boolean(c.googleCalendarId) && c.phases.some((f) => f.start);
     toast.success(`"${c.name}" excluída`, {
+      description: noGoogle
+        ? "As fases também saíram da agenda do Google. Desfazer recoloca."
+        : undefined,
       // Vinte segundos: tempo de perceber o engano, olhar a tela e decidir. O
       // padrão do toast (quatro) some antes de alguém terminar de ler.
       duration: 20_000,

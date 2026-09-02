@@ -3606,6 +3606,8 @@ export const plannerCampaigns = pgTable(
            * — o Google manda nas fases dele, o Planner manda nas próprias.
            */
           googleEventId?: string;
+          /** A edição desta fase não chegou ao Google. Ver `FaseDoPlanner`. */
+          googleSyncPendente?: boolean;
         }[]
       >()
       .notNull()

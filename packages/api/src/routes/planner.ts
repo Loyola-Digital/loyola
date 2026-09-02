@@ -24,6 +24,7 @@ import { asc, eq, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { plannerCampaigns, plannerGoogleCalendars } from "../db/schema.js";
 import { normalizarFase, planejarSincronia, type FaseDoPlanner } from "../services/planner.js";
+import { importarDaAgenda } from "../services/planner-sync.js";
 import {
   apagarEvento,
   atualizarEvento,
@@ -75,6 +76,7 @@ const faseSchema = z.object({
    * depois de editar; o defeito estava armado.
    */
   googleEventId: z.string().trim().max(1024).optional(),
+  googleSyncPendente: z.boolean().optional(),
 });
 
 const corSchema = z
@@ -271,20 +273,26 @@ export default fp(async function plannerRoutes(fastify) {
     };
 
     for (const fase of acao.criar) {
+      const alvo = porId.get(fase.id);
       try {
         const id = await criarEvento(e.agenda, {
           titulo: tituloParaGoogle(e.nomeDepois, fase.name),
           inicio: fase.start,
           fim: fase.end,
         });
-        const alvo = porId.get(fase.id);
-        if (alvo) alvo.googleEventId = id;
+        if (alvo) {
+          alvo.googleEventId = id;
+          delete alvo.googleSyncPendente;
+        }
       } catch (err) {
         anotar(err);
+        // Fase nova sem evento nao precisa de marca: sem `googleEventId` ela ja
+        // conta como nova no proximo save, e a importacao a preserva.
       }
     }
 
     for (const { fase, eventId } of acao.atualizar) {
+      const alvo = porId.get(fase.id);
       try {
         const id = await atualizarEvento(e.agenda, eventId, {
           titulo: tituloParaGoogle(e.nomeDepois, fase.name),
@@ -292,10 +300,15 @@ export default fp(async function plannerRoutes(fastify) {
           fim: fase.end,
         });
         // O id pode ser OUTRO: o evento tinha sumido do Google e foi recriado.
-        const alvo = porId.get(fase.id);
-        if (alvo && id !== eventId) alvo.googleEventId = id;
+        if (alvo) {
+          if (id !== eventId) alvo.googleEventId = id;
+          delete alvo.googleSyncPendente;
+        }
       } catch (err) {
         anotar(err);
+        // AQUI a marca importa: o evento existe no Google com os dados velhos,
+        // e a versao boa e a daqui. Sem marca, a proxima importacao a desfaz.
+        if (alvo) alvo.googleSyncPendente = true;
       }
     }
 
@@ -525,111 +538,20 @@ export default fp(async function plannerRoutes(fastify) {
       .safeParse(request.body);
     if (!b.success) return reply.code(400).send({ error: "Dados inválidos" });
 
-    const de = new Date();
-    de.setMonth(de.getMonth() - b.data.mesesAtras);
-    const ate = new Date();
-    ate.setMonth(ate.getMonth() + b.data.mesesAFrente);
-
-    let eventos;
+    // A regra de merge mora no serviço: o agendador chama a MESMA função, e
+    // duas cópias divergiriam no primeiro ajuste.
     try {
-      eventos = await eventosDaAgenda(b.data.calendarId, de, ate);
+      return await importarDaAgenda(fastify.db, b.data.calendarId, PALETA, {
+        mesesAtras: b.data.mesesAtras,
+        mesesAFrente: b.data.mesesAFrente,
+        incluirComHora: b.data.incluirComHora,
+        criadoPor: request.userId ?? null,
+      });
     } catch (erro) {
       return reply
         .code(502)
         .send({ error: erro instanceof Error ? erro.message : "Não consegui ler a agenda" });
     }
-
-    const aproveitados = eventos.filter((e) => b.data.incluirComHora || !e.temHora);
-
-    // Agrupa por campanha ANTES de tocar no banco: assim cada campanha é uma
-    // escrita só, e não uma por fase.
-    type FaseImportada = {
-      id: string;
-      name: string;
-      start: string;
-      end: string;
-      googleEventId: string;
-    };
-    const porCampanha = new Map<string, FaseImportada[]>();
-    for (const e of aproveitados) {
-      const { campanha, fase } = separarTitulo(e.titulo);
-      const chave = campanha || "Agenda";
-      const lista = porCampanha.get(chave) ?? [];
-      lista.push({
-        id: "g" + e.id.slice(0, 24),
-        name: fase,
-        start: e.inicio,
-        end: e.fim,
-        googleEventId: e.id,
-      });
-      porCampanha.set(chave, lista);
-    }
-
-    const existentes = await fastify.db.select().from(plannerCampaigns);
-    let criadas = 0;
-    let atualizadas = 0;
-    let fasesTocadas = 0;
-
-    for (const [nome, fasesDoGoogle] of porCampanha) {
-      const atual = existentes.find((c) => c.name.toLowerCase() === nome.toLowerCase());
-
-      if (!atual) {
-        await fastify.db.insert(plannerCampaigns).values({
-          name: nome,
-          color: corParaCampanha(nome, PALETA),
-          // A agenda de ORIGEM vira a de destino: o que for editado aqui
-          // depois volta para o mesmo lugar de onde veio.
-          googleCalendarId: b.data.calendarId,
-          sortOrder: existentes.length + criadas,
-          phases: fasesDoGoogle.map(normalizarFase),
-          createdBy: request.userId ?? null,
-        });
-        criadas += 1;
-        fasesTocadas += fasesDoGoogle.length;
-        continue;
-      }
-
-      // Mantém as fases feitas à mão; substitui as que vieram do Google.
-      const manuais = atual.phases.filter((f) => !f.googleEventId);
-      const antesPorEvento = new Map(
-        atual.phases.filter((f) => f.googleEventId).map((f) => [f.googleEventId as string, f]),
-      );
-
-      const novas = fasesDoGoogle.map((f) => {
-        // Preserva o id da fase quando ela já existia: a seleção na tela e o
-        // desfazer apontam para ele.
-        const antes = antesPorEvento.get(f.googleEventId);
-        return normalizarFase(antes ? { ...f, id: antes.id } : f);
-      });
-
-      await fastify.db
-        .update(plannerCampaigns)
-        .set({
-          phases: [...manuais, ...novas],
-          // Campanha importada antes de a escrita existir nao tinha agenda
-          // gravada. A primeira reimportacao preenche, e ela passa a espelhar.
-          ...(atual.googleCalendarId ? {} : { googleCalendarId: b.data.calendarId }),
-          updatedAt: new Date(),
-        })
-        .where(eq(plannerCampaigns.id, atual.id));
-      atualizadas += 1;
-      fasesTocadas += novas.length;
-    }
-
-    await fastify.db
-      .update(plannerGoogleCalendars)
-      .set({ lastImportedAt: new Date() })
-      .where(eq(plannerGoogleCalendars.calendarId, b.data.calendarId));
-
-    return {
-      lidos: eventos.length,
-      // A diferença entre lidos e importados é informação: dizer só "importei
-      // 20" esconderia as reuniões que ficaram de fora de propósito.
-      ignoradosPorTerHora: eventos.length - aproveitados.length,
-      campanhasCriadas: criadas,
-      campanhasAtualizadas: atualizadas,
-      fases: fasesTocadas,
-    };
   });
 
 });
