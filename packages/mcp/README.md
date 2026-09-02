@@ -6,14 +6,55 @@ MCP server que embrulha a **API pública Meta Ads Creative Intelligence** do Loy
 
 ## Tools
 
-| Tool | Endpoint | Para quê |
-|------|----------|----------|
-| `list_projects` | `GET /api/public/v1/projects` | Descobrir os projetos (comece aqui) |
-| `list_funnels` | `GET /api/public/v1/projects/{projectId}/funnels` | Funis de um projeto |
-| `list_stages` | `GET /api/public/v1/funnels/{funnelId}/stages` | Etapas de um funil |
-| `list_campaigns` | `GET /api/public/meta/v1/projects/{projectId}/campaigns` | Performance por campanha |
-| `get_creative_performance` | `GET .../creatives` | Performance por criativo (rankeável) |
-| `get_creative_timeseries` | `GET .../creatives/{adId}/timeseries` | Série diária de um criativo |
+**18 tools**, todas read-only. Cada uma mapeia 1:1 num endpoint `/api/public/*`.
+
+Comece por `list_projects` — o `projectId` dele é a entrada de quase todas as
+outras.
+
+### Estrutura
+
+| Tool | Para quê |
+|------|----------|
+| `list_projects` | Descobrir os projetos (comece aqui) |
+| `list_funnels` | Funis de um projeto |
+| `list_stages` | Etapas de um funil |
+
+### Tráfego
+
+| Tool | Para quê |
+|------|----------|
+| `list_campaigns` | Performance por campanha Meta |
+| `get_creative_performance` | Performance por criativo, rankeável |
+| `get_creative_timeseries` | Série diária de um criativo |
+| `get_daily` | Dados diários do projeto |
+| `get_stage_daily` | Dados diários da etapa |
+
+### Leads e qualificação
+
+| Tool | Para quê |
+|------|----------|
+| `get_stage_leads_summary` | Leads por origem × temperatura |
+| `get_stage_survey` | Pesquisa de qualificação da etapa |
+| `get_stage_cadeia_cac` | Cadeia de CAC da etapa |
+| `get_project_panorama` | Panorama do projeto (cadeia de CAC) |
+
+### Vendas
+
+| Tool | Para quê |
+|------|----------|
+| `get_stage_sales` | Resumo enxuto de uma etapa |
+| `get_funnel_sales` | Agregado do funil inteiro |
+| `get_stage_sales_daily` | Vendas diárias por origem |
+| `get_stage_sales_rows` | Row-level, transação a transação |
+| `get_cross_launch` | Recompra entre funis do projeto |
+| `get_stage_operational_costs` | Custos operacionais da etapa |
+
+### `AVISO_bundle_do_mcp_desatualizado`
+
+Não é uma tool de dado: aparece **só quando o gateway está atrás da `main`**, e
+existe porque um bundle velho não dá erro — serve menos tools, em silêncio. Se
+ela estiver no roster, as tools que faltam não existem naquele gateway, e não
+adianta tentar chamá-las. Ver [`docs/guides/mcp-gateway.md`](../../docs/guides/mcp-gateway.md).
 
 ## Configuração
 
