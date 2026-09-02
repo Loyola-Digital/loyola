@@ -33,6 +33,7 @@ import {
   type PessoaNaLista,
 } from "@/lib/hooks/use-pessoal";
 import { useUserRole } from "@/lib/hooks/use-user-role";
+import { DiretorioDoTime } from "@/components/pessoal/diretorio-do-time";
 
 const semAcento = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
@@ -246,6 +247,11 @@ export default function PessoalPage() {
           aba={aba}
           onAba={setAba}
         />
+
+        {/* O time vem DEPOIS da própria ficha: quem abre esta tela quase sempre
+            vem ver o próprio dado, e o diretório é o que se consulta de vez em
+            quando — sobretudo nas primeiras semanas. */}
+        <DiretorioDoTime />
       </div>
     );
   }
