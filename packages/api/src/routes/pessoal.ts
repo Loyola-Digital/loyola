@@ -203,6 +203,79 @@ export default fp(async function pessoalRoutes(fastify) {
   }
 
   // ---- Lista (admin) ----
+  /**
+   * O time inteiro, no recorte que TODO MUNDO pode ver.
+   *
+   * ## Por que uma rota separada, e não a de admin com menos campos
+   *
+   * `/api/pessoal` devolve telefone pessoal, contato de emergência, saldo de
+   * férias e observações da liderança. Filtrar isso na tela deixaria os dados
+   * trafegando de qualquer forma — quem abre o inspetor vê tudo. Recortar no
+   * servidor é a única forma que resiste.
+   *
+   * ## O que entra
+   *
+   * Nome, foto, cargo e desde quando está na casa. É o que responde "quem é
+   * essa pessoa e o que ela faz" — a pergunta de quem está entrando agora, que
+   * foi o motivo do pedido.
+   *
+   * ## O que NÃO entra, e por quê
+   *
+   * Telefone, nascimento, contato de emergência: são dados de RH, não de
+   * apresentação. Saldo e ausências: dizer que alguém está fora hoje parece
+   * inofensivo, mas ausência também é licença médica, e o motivo não cabe num
+   * diretório aberto ao time inteiro.
+   */
+  fastify.get("/api/pessoal/time", async (request, reply) => {
+    // Convidado não vê o time: ele é de fora, e o diretório é interno.
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+
+    const pessoas = await fastify.db
+      .select({ id: users.id, name: users.name, email: users.email, role: users.role })
+      .from(users)
+      .where(and(eq(users.status, "active"), eq(users.listed, true)))
+      .orderBy(asc(users.name));
+    const internos = pessoas.filter((u) => u.role !== "guest");
+    const ids = internos.map((u) => u.id);
+    if (ids.length === 0) return { pessoas: [] };
+
+    const [fichas, fotos] = await Promise.all([
+      fastify.db
+        .select({
+          userId: peopleRecords.userId,
+          cargo: peopleRecords.cargo,
+          entradaEm: peopleRecords.entradaEm,
+          foto: peopleRecords.foto,
+          nomeCompleto: peopleRecords.nomeCompleto,
+        })
+        .from(peopleRecords)
+        .where(inArray(peopleRecords.userId, ids)),
+      retratosDosPdis(ids),
+    ]);
+    const porUsuario = new Map(fichas.map((f) => [f.userId, f]));
+
+    return {
+      pessoas: internos.map((u) => {
+        const f = porUsuario.get(u.id);
+        const doPdi = fotos.get(u.id) ?? null;
+        return {
+          userId: u.id,
+          nome: u.name,
+          nomeCompleto: f?.nomeCompleto ?? null,
+          email: u.email,
+          cargo: f?.cargo ?? null,
+          entradaEm: f?.entradaEm ?? null,
+          // A foto da ficha manda; a do PDI entra quando não há outra. Quem
+          // acabou de chegar costuma ter só a do PDI, e é justamente quem o
+          // time precisa reconhecer.
+          foto: f?.foto ?? doPdi,
+          /** Sem ficha preenchida: a tela mostra o nome e diz que falta. */
+          temFicha: Boolean(f),
+        };
+      }),
+    };
+  });
+
   fastify.get("/api/pessoal", async (request, reply) => {
     if (!ehAdmin(request.userRole)) return reply.code(403).send({ error: "Acesso negado" });
 
