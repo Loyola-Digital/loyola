@@ -43,8 +43,9 @@ const navItems = [
   // para comparar e editar sem navegar três níveis por desenho.
   { label: "Funis", href: "/funnel-maps", icon: MapIcon },
   { label: "Minds", href: "/minds", icon: Brain },
-  // Filha de Minds: a conversa acontece COM um mind, e a indentação mostra
-  // essa dependência sem precisar de um menu que abre e fecha.
+  // Filha de Minds: aparece quando se está em Minds ou nela própria. A conversa
+  // acontece COM um mind — fora desse contexto, o item é uma porta para uma
+  // sala em que ninguém entra direto.
   { label: "Conversations", href: "/conversations", icon: MessageSquare, filhoDe: "/minds" },
   // Epic 45: dashboards montaveis com widgets prontos, sem tela nova por pergunta.
   { label: "BI", href: "/bi", icon: LayoutDashboard },
@@ -104,6 +105,14 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
           </p>
         )}
         {topItems.map((item) => {
+          // Subitem só aparece dentro do contexto do pai: em Minds ou nele
+          // próprio. Mostrá-lo sempre poluiria o menu com uma opção que só faz
+          // sentido depois de escolher um mind.
+          if ("filhoDe" in item) {
+            const pai = item.filhoDe as string;
+            const noContexto = pathname.startsWith(pai) || pathname.startsWith(item.href);
+            if (!noContexto) return null;
+          }
           const isActive = pathname.startsWith(item.href);
           const Icon = item.icon;
           return (

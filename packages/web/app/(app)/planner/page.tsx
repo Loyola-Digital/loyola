@@ -193,8 +193,18 @@ export default function PlannerPage() {
   // olhando o que vem. Aberto por padrão, ele empurraria o presente para
   // fora da tela — o oposto do motivo de existir.
   const [arquivadosAbertos, setArquivadosAbertos] = useState(false);
-  /** O calendário sozinho na tela. Ver o botão de tela cheia. */
+  /**
+   * O calendário ocupando a tela do monitor.
+   *
+   * Não é só esconder as colunas: pede `requestFullscreen` ao navegador, que
+   * tira a barra de endereços e as abas junto. Num planejamento de trimestre,
+   * cada faixa de 40px devolvida é uma semana a mais visível.
+   *
+   * O estado acompanha o navegador, e não o contrário — quem aperta F11 ou Esc
+   * fora do nosso botão precisa ver a tela responder.
+   */
   const [telaCheia, setTelaCheia] = useState(false);
+  const palcoRef = useRef<HTMLDivElement>(null);
 
   const hoje = new Date();
   const [ano, setAno] = useState(hoje.getFullYear());
@@ -308,11 +318,23 @@ export default function PlannerPage() {
     toast.success("Desfeito");
   }
 
+  // O navegador manda: sair pelo Esc dele, pelo F11 ou pelo botão da janela
+  // precisa desligar o nosso estado, senão a tela fica num modo que já acabou.
+  useEffect(() => {
+    function aoMudar() {
+      setTelaCheia(Boolean(document.fullscreenElement));
+    }
+    document.addEventListener("fullscreenchange", aoMudar);
+    return () => document.removeEventListener("fullscreenchange", aoMudar);
+  }, []);
+
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
       const alvo = e.target as HTMLElement | null;
-      // Esc sai da tela cheia: é o gesto que todo mundo tenta primeiro.
-      if (e.key === "Escape" && telaCheia) {
+      // Esc sai. Com fullscreen de verdade o navegador já trata e o
+      // `fullscreenchange` desliga o estado; isto cobre o caso em que o pedido
+      // foi recusado e só o overlay está de pé.
+      if (e.key === "Escape" && telaCheia && !document.fullscreenElement) {
         setTelaCheia(false);
         return;
       }
@@ -331,6 +353,24 @@ export default function PlannerPage() {
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
   });
+
+  /**
+   * Entra e sai da tela cheia.
+   *
+   * `requestFullscreen` pode ser recusado (permissão, iframe, navegador sem
+   * suporte). Quando isso acontece, o modo continua valendo como overlay: a
+   * lateral e os cards somem do mesmo jeito, e o que se perde é só a barra do
+   * navegador. Falhar aqui não pode custar a funcionalidade inteira.
+   */
+  async function alternarTelaCheia() {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => {});
+      setTelaCheia(false);
+      return;
+    }
+    setTelaCheia(true);
+    await palcoRef.current?.requestFullscreen?.().catch(() => {});
+  }
 
   function exportar() {
     const blob = new Blob([JSON.stringify({ campanhas }, null, 2)], { type: "application/json" });
@@ -431,7 +471,7 @@ export default function PlannerPage() {
      */
     <div
       className={`flex h-full min-h-0 flex-col lg:grid ${
-        rail && !telaCheia ? "lg:grid-cols-[236px_minmax(0,1fr)]" : "lg:grid-cols-1"
+        rail ? "lg:grid-cols-[236px_minmax(0,1fr)]" : "lg:grid-cols-1"
       }`}
     >
       {/* Barra lateral do planner: título, visões, meses e legenda. No celular
@@ -439,7 +479,7 @@ export default function PlannerPage() {
           único jeito de ocultar uma campanha, inacessível. */}
       <aside
         className={`flex shrink-0 flex-col overflow-hidden border-b border-border bg-card lg:border-b-0 lg:border-r ${
-          rail && !telaCheia ? "" : "lg:hidden"
+          rail ? "" : "lg:hidden"
         }`}
       >
         <div className="hidden border-b border-border px-[18px] pb-3.5 pt-[18px] lg:block">
@@ -689,19 +729,12 @@ export default function PlannerPage() {
 
           <div className="flex flex-none items-center gap-1.5">
             {visao === "split" && (
-              <Acao
-                onClick={() => setTelaCheia((v) => !v)}
-                titulo={telaCheia ? "Sair da tela cheia (Esc)" : "Calendário em tela cheia"}
-              >
-                {telaCheia ? (
-                  <Minimize2 className="h-3.5 w-3.5" />
-                ) : (
-                  <Maximize2 className="h-3.5 w-3.5" />
-                )}
-                {telaCheia ? "Sair" : "Tela cheia"}
+              <Acao onClick={alternarTelaCheia} titulo="Calendário em tela cheia">
+                <Maximize2 className="h-3.5 w-3.5" />
+                Tela cheia
               </Acao>
             )}
-            {visao === "split" && !telaCheia && (
+            {visao === "split" && (
               <Acao onClick={() => setMostrarCards((v) => !v)}>
                 {mostrarCards ? "Ocultar cards" : "Mostrar cards"}
               </Acao>
@@ -813,10 +846,10 @@ export default function PlannerPage() {
              comparar os dois. */
           <div
             className={`min-h-0 flex-1 lg:grid lg:overflow-hidden ${
-              mostrarCards && !telaCheia ? "lg:grid-cols-[528px_minmax(0,1fr)]" : "lg:grid-cols-1"
+              mostrarCards ? "lg:grid-cols-[528px_minmax(0,1fr)]" : "lg:grid-cols-1"
             }`}
           >
-            {mostrarCards && !telaCheia && (
+            {mostrarCards && (
               <div className="order-2 min-w-0 space-y-3.5 bg-background p-3.5 lg:order-1 lg:overflow-y-auto lg:border-r lg:border-border">
                 {listaDeCards}
               </div>
@@ -841,6 +874,74 @@ export default function PlannerPage() {
           </div>
         )}
       </main>
+
+      {/*
+        O palco da tela cheia.
+        Fica FORA do grid da página: em `position: fixed` ele ignora o layout do
+        app inteiro — a barra lateral, o cabeçalho, o padding. É o que faz o
+        calendário ocupar a tela de verdade, e não só a área que sobrava.
+        Renderizado sempre (com `hidden`) porque `requestFullscreen` precisa de
+        um elemento que já exista no documento.
+      */}
+      <div
+        ref={palcoRef}
+        className={`fixed inset-0 z-50 flex-col bg-card ${telaCheia ? "flex" : "hidden"}`}
+      >
+        <div className="flex h-12 flex-none items-center gap-3 border-b border-border px-4">
+          <Acao
+            onClick={() => {
+              setAno(hoje.getFullYear());
+              setMes(hoje.getMonth() + 1);
+            }}
+          >
+            Hoje
+          </Acao>
+          <button
+            type="button"
+            onClick={() => irParaMes(-1)}
+            aria-label="Mês anterior"
+            className="grid h-7 w-7 place-items-center rounded-md text-foreground/70 hover:bg-muted hover:text-foreground"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => irParaMes(1)}
+            aria-label="Próximo mês"
+            className="grid h-7 w-7 place-items-center rounded-md text-foreground/70 hover:bg-muted hover:text-foreground"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+
+          <h2 className="whitespace-nowrap text-base font-semibold tracking-[-0.01em]">
+            {MESES_LONGOS[mes - 1]} de {ano}
+          </h2>
+          <span className="text-[12px] text-muted-foreground">{subtitulo}</span>
+
+          <div className="flex-1" />
+
+          <Acao onClick={alternarTelaCheia} titulo="Sair (Esc)">
+            <Minimize2 className="h-3.5 w-3.5" />
+            Sair
+          </Acao>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-auto">
+          {/* Só monta o calendário quando está em cena: um segundo calendário
+              vivo no DOM recalcularia faixas e reagiria a arrasto o tempo
+              todo, escondido. */}
+          {telaCheia && (
+            <Calendario
+              campanhas={visiveis}
+              ano={ano}
+              mes={mes}
+              faseSelecionada={selecionada}
+              onSelecionarFase={(_c, f) => setSelecionada(f)}
+              onMudarFase={mudarFase}
+            />
+          )}
+        </div>
+      </div>
 
       <AgendasDoGoogle open={googleAberto} onOpenChange={setGoogleAberto} />
     </div>
