@@ -159,6 +159,27 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
           );
         })()}
 
+        {/* Tasks Agents fecha o bloco Global, depois de Configurações, e só
+            para admin. Ele estava DEPOIS de Empresas — o fim absoluto da barra,
+            longe do menu a que pertence. */}
+        {papel === "admin" && (
+          <Button
+            variant={pathname.startsWith(TASKS_AGENTS.href) ? "secondary" : "ghost"}
+            className={cn("justify-start gap-3", collapsed && "justify-center px-2")}
+            asChild
+          >
+            <Link href={TASKS_AGENTS.href}>
+              <TASKS_AGENTS.icon className="h-5 w-5 shrink-0" />
+              {!collapsed && <span>{TASKS_AGENTS.label}</span>}
+              {openTaskCount > 0 && !collapsed && (
+                <Badge variant="secondary" className="ml-auto px-1.5 py-0 text-[10px]">
+                  {openTaskCount}
+                </Badge>
+              )}
+            </Link>
+          </Button>
+        )}
+
         {/* Separator */}
         <Separator className="my-2" />
 
@@ -221,25 +242,6 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
           <Plus className="h-4 w-4 shrink-0" />
           {!collapsed && <span className="text-sm">Nova Empresa</span>}
         </Button>
-
-        {/* Tasks Agents: por último e só para admin — ver `TASKS_AGENTS`. */}
-        {papel === "admin" && (
-          <Button
-            variant={pathname.startsWith(TASKS_AGENTS.href) ? "secondary" : "ghost"}
-            className={cn("justify-start gap-3", collapsed && "justify-center px-2")}
-            asChild
-          >
-            <Link href={TASKS_AGENTS.href}>
-              <TASKS_AGENTS.icon className="h-5 w-5 shrink-0" />
-              {!collapsed && <span>{TASKS_AGENTS.label}</span>}
-              {openTaskCount > 0 && !collapsed && (
-                <Badge variant="secondary" className="ml-auto px-1.5 py-0 text-[10px]">
-                  {openTaskCount}
-                </Badge>
-              )}
-            </Link>
-          </Button>
-        )}
       </nav>
 
       <CreateProjectDialog open={dialogOpen} onOpenChange={setDialogOpen} />
