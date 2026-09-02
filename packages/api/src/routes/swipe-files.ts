@@ -771,6 +771,10 @@ export default fp(async function swipeFilesRoutes(fastify) {
         mensagens: msgs.length,
         total: plano.length,
         jaImportados: plano.length - pendentes.length,
+        // `pendentes` e o alvo real; `aImportar` e so o que cabe NESTE lote.
+        // A tela importa em lotes e precisa dos dois para nao reiniciar a
+        // contagem a cada rodada.
+        pendentes: pendentes.length,
         aImportar: novos.length,
         comArquivo: novos.filter((i) => i.anexo).length,
       });
