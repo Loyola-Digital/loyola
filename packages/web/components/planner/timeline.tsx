@@ -30,6 +30,9 @@ import {
 
 const PX_POR_DIA = 22;
 const ALTURA_BARRA = 24;
+/* Do CSS do original: linha de 38px com a barra de 20px em `top:9px`. */
+const ALTURA_DA_LINHA = 38;
+const ALTURA_DA_BARRA = 20;
 const LARGURA_ROTULO = 170;
 
 export function Timeline({
@@ -169,9 +172,9 @@ export function Timeline({
                   className="shrink-0 border-r border-border/50 px-2 py-2"
                   style={{ width: LARGURA_ROTULO }}
                 >
-                  <span className="flex items-center gap-1.5 text-xs">
+                  <span className="flex items-center gap-[7px] text-[11.5px] font-semibold text-foreground/80">
                     <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      className="h-2 w-2 shrink-0 rounded-sm"
                       style={{ backgroundColor: c.color }}
                     />
                     <span className="truncate">{c.name}</span>
@@ -180,13 +183,13 @@ export function Timeline({
 
                 <div
                   className="relative"
-                  style={{ width: largura, height: 8 + nFaixas * ALTURA_BARRA }}
+                  style={{ width: largura, height: Math.max(ALTURA_DA_LINHA, 18 + nFaixas * ALTURA_BARRA) }}
                 >
                   {/* Marcador de hoje: a referência que dá sentido a "estamos
                       atrasados" sem precisar contar dias na régua. */}
                   {hoje >= faixa.inicio && hoje <= faixa.fim && (
                     <span
-                      className="pointer-events-none absolute top-0 z-10 h-full w-px bg-[#1a73e8]"
+                      className="pointer-events-none absolute top-0 z-10 h-full w-0.5 bg-foreground/50"
                       style={{ left: dias(faixa.inicio, hoje) * PX_POR_DIA + PX_POR_DIA / 2 }}
                       aria-hidden
                     />
@@ -225,14 +228,14 @@ export function Timeline({
                           (e.target as Element).setPointerCapture?.(e.pointerId);
                         }}
                         title={`${b.fase.name}\n${br(b.start)} → ${b.fase.end ? br(b.fim) : "em aberto"}`}
-                        className={`absolute flex cursor-grab items-center gap-1 overflow-hidden rounded px-1.5 text-[10px] leading-none ${
+                        className={`absolute flex cursor-grab items-center gap-1 overflow-hidden rounded px-1.5 text-[10.5px] font-medium leading-none shadow-[0_1px_1px_rgba(0,0,0,.14)] transition-[filter] hover:brightness-110 ${
                           arrastando ? "z-20 cursor-grabbing shadow-lg" : ""
                         } ${faseSelecionada === b.fase.id ? "ring-2 ring-primary ring-offset-1" : ""}`}
                         style={{
                           left: esquerda,
                           width: larguraBarra,
-                          top: 4 + b.faixa * ALTURA_BARRA,
-                          height: ALTURA_BARRA - 6,
+                          top: 9 + b.faixa * ALTURA_BARRA,
+                          height: ALTURA_DA_BARRA,
                           backgroundColor: c.color,
                           color: corDoTexto(c.color),
                           borderRight: !b.fase.end
