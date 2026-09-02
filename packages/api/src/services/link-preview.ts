@@ -14,8 +14,19 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 
 const TIMEOUT_MS = 8_000;
-/** Só o <head> interessa; corta cedo pra não baixar página inteira. */
-const MAX_BYTES = 512 * 1024;
+/**
+ * Teto de leitura.
+ *
+ * Era 512 KB, no pressuposto de que o `<head>` vem no começo. Não vem sempre:
+ * medido, o `og:image` do YouTube está no byte ~700.000 — depois de um head
+ * cheio de script inline. O corte acontecia antes da meta tag, e o resultado
+ * era um link do YouTube sem título nem miniatura, indistinguível de um site
+ * que simplesmente não publica Open Graph.
+ *
+ * A leitura para no `</head>` de qualquer jeito, então este número só importa
+ * para as páginas que enfiam megabytes ali dentro.
+ */
+const MAX_BYTES = 1_500 * 1024;
 
 export interface LinkPreview {
   title: string | null;
@@ -122,17 +133,25 @@ export async function fetchLinkPreview(rawUrl: string): Promise<LinkPreview> {
       throw new Error("O link não aponta pra uma página HTML.");
     }
 
-    // Lê no máximo MAX_BYTES: o <head> vem no começo e páginas podem ser enormes.
+    // Lê até o </head> ou até MAX_BYTES, o que vier primeiro.
     const reader = res.body?.getReader();
     if (reader) {
       const decoder = new TextDecoder();
       let received = 0;
+      // Onde a busca por `</head>` já chegou. Sem isto, cada pedaço relia a
+      // string inteira desde o começo — com 1,5 MB e pedaços de 16 KB, isso é
+      // quase cem varreduras sobre um texto que só cresce.
+      let procurado = 0;
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
         received += value.byteLength;
         html += decoder.decode(value, { stream: true });
-        if (received >= MAX_BYTES || /<\/head>/i.test(html)) {
+        // Volta 6 caracteres: a etiqueta pode ter ficado partida entre dois
+        // pedaços, e procurar só no novo perderia o `</hea` + `d>`.
+        const achou = html.indexOf("</head", Math.max(0, procurado - 6)) >= 0;
+        procurado = html.length;
+        if (received >= MAX_BYTES || achou) {
           await reader.cancel();
           break;
         }

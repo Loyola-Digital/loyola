@@ -897,6 +897,33 @@ export default fp(async function swipeFilesRoutes(fastify) {
       fileMime = item.anexo.mime;
     }
 
+    /**
+     * O preview do link.
+     *
+     * Sem isto o card de link entra sem miniatura nenhuma -- um retangulo com
+     * texto no meio de uma grade de imagens, que e a metade do acervo
+     * importado. O cadastro pela tela ja buscava; a importacao nao, e a falta
+     * so aparecia depois, na grade.
+     *
+     * Falhar aqui nao impede nada: a referencia vale sem thumbnail, e a pagina
+     * pode simplesmente ter saido do ar.
+     */
+    let og: Awaited<ReturnType<typeof fetchLinkPreview>> = {
+      title: null,
+      description: null,
+      image: null,
+      siteName: null,
+    };
+    let ogFetchedAt: Date | null = null;
+    if (item.origem) {
+      try {
+        og = await fetchLinkPreview(item.origem);
+        ogFetchedAt = new Date();
+      } catch {
+        /* segue sem preview */
+      }
+    }
+
     // O que a IA sugeriu vence o que o parsing adivinhou - ela viu a imagem.
     // Mas so quando trouxe algo: campo vazio dela nao apaga o que ja tinhamos.
     const titulo = (sugestao?.titulo || item.titulo).slice(0, 200);
@@ -911,6 +938,11 @@ export default fp(async function swipeFilesRoutes(fastify) {
       fileMime,
       fileSizeBytes,
       sourceUrl: item.origem,
+      ogTitle: og.title,
+      ogDescription: og.description,
+      ogImage: og.image,
+      ogSiteName: og.siteName,
+      ogFetchedAt,
       brand: sugestao?.marca ?? null,
       niche: sugestao?.nicho ?? null,
       platform: sugestao?.plataforma ?? null,
