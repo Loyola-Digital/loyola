@@ -34,6 +34,8 @@ import {
   Eye,
   EyeOff,
   LayoutGrid,
+  Maximize2,
+  Minimize2,
   PanelLeft,
   Rows3,
   Upload,
@@ -55,6 +57,7 @@ import {
   campanhaConcluida,
   cruzaMes,
   faseTerminou,
+  periodo,
   mesesDoPeriodo,
   normalizar,
   type Campanha,
@@ -74,6 +77,56 @@ function Rotulo({ children }: { children: React.ReactNode }) {
     <p className="px-1.5 pb-0.5 font-mono text-[10px] font-medium uppercase tracking-[0.11em] text-muted-foreground">
       {children}
     </p>
+  );
+}
+
+/**
+ * Uma seção que abre e fecha.
+ *
+ * Com quinze campanhas e sete meses, a barra lateral vira uma lista que empurra
+ * tudo para baixo e obriga a rolar para achar qualquer coisa. Fechar o que não
+ * interessa agora devolve a tela.
+ *
+ * O contador fica no cabeçalho quando fechada: uma seção recolhida sem número
+ * some da consciência de quem olha, e a pessoa esquece que existe.
+ */
+function Secao({
+  titulo,
+  quantidade,
+  aberta,
+  onAlternar,
+  children,
+}: {
+  titulo: string;
+  quantidade: number;
+  aberta: boolean;
+  onAlternar: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="flex shrink-0 flex-col gap-1.5">
+      <button
+        type="button"
+        onClick={onAlternar}
+        aria-expanded={aberta}
+        className="flex items-center gap-1 rounded px-1.5 py-0.5 text-left transition-colors hover:bg-muted/60"
+      >
+        <ChevronRight
+          className={`h-3 w-3 shrink-0 text-muted-foreground transition-transform ${
+            aberta ? "rotate-90" : ""
+          }`}
+        />
+        <span className="font-mono text-[10px] font-medium uppercase tracking-[0.11em] text-muted-foreground">
+          {titulo}
+        </span>
+        {quantidade > 0 && (
+          <span className="ml-auto font-mono text-[10px] text-muted-foreground/70">
+            {quantidade}
+          </span>
+        )}
+      </button>
+      {aberta && children}
+    </section>
   );
 }
 
@@ -132,6 +185,16 @@ export default function PlannerPage() {
    * está ali e concluir que ela sumiu.
    */
   const [esconderPassado, setEsconderPassado] = useState(true);
+  // As duas começam abertas: a lateral existe para mostrar, e abrir sozinho
+  // seria pedir um clique antes de qualquer coisa aparecer.
+  const [mesesAbertos, setMesesAbertos] = useState(true);
+  const [campanhasAbertas, setCampanhasAbertas] = useState(true);
+  // Arquivados começa FECHADO: é histórico, e quem abre o planner está
+  // olhando o que vem. Aberto por padrão, ele empurraria o presente para
+  // fora da tela — o oposto do motivo de existir.
+  const [arquivadosAbertos, setArquivadosAbertos] = useState(false);
+  /** O calendário sozinho na tela. Ver o botão de tela cheia. */
+  const [telaCheia, setTelaCheia] = useState(false);
 
   const hoje = new Date();
   const [ano, setAno] = useState(hoje.getFullYear());
@@ -248,6 +311,11 @@ export default function PlannerPage() {
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
       const alvo = e.target as HTMLElement | null;
+      // Esc sai da tela cheia: é o gesto que todo mundo tenta primeiro.
+      if (e.key === "Escape" && telaCheia) {
+        setTelaCheia(false);
+        return;
+      }
       if (!(e.ctrlKey || e.metaKey)) return;
       if (e.key.toLowerCase() === "b") {
         e.preventDefault();
@@ -363,7 +431,7 @@ export default function PlannerPage() {
      */
     <div
       className={`flex h-full min-h-0 flex-col lg:grid ${
-        rail ? "lg:grid-cols-[236px_minmax(0,1fr)]" : "lg:grid-cols-1"
+        rail && !telaCheia ? "lg:grid-cols-[236px_minmax(0,1fr)]" : "lg:grid-cols-1"
       }`}
     >
       {/* Barra lateral do planner: título, visões, meses e legenda. No celular
@@ -371,7 +439,7 @@ export default function PlannerPage() {
           único jeito de ocultar uma campanha, inacessível. */}
       <aside
         className={`flex shrink-0 flex-col overflow-hidden border-b border-border bg-card lg:border-b-0 lg:border-r ${
-          rail ? "" : "lg:hidden"
+          rail && !telaCheia ? "" : "lg:hidden"
         }`}
       >
         <div className="hidden border-b border-border px-[18px] pb-3.5 pt-[18px] lg:block">
@@ -412,8 +480,12 @@ export default function PlannerPage() {
             </div>
           </section>
 
-          <section className="flex shrink-0 flex-col gap-1.5">
-            <Rotulo>Meses</Rotulo>
+          <Secao
+            titulo="Meses"
+            quantidade={meses.length}
+            aberta={mesesAbertos}
+            onAlternar={() => setMesesAbertos((v) => !v)}
+          >
             <div className="flex gap-1 lg:flex-col lg:gap-1.5">
               {meses.map((m) => {
                 const n = visiveis.reduce(
@@ -456,10 +528,14 @@ export default function PlannerPage() {
                 );
               })}
             </div>
-          </section>
+          </Secao>
 
-          <section className="flex shrink-0 flex-col gap-1.5">
-            <Rotulo>Campanhas</Rotulo>
+          <Secao
+            titulo="Campanhas"
+            quantidade={noPainel.length}
+            aberta={campanhasAbertas}
+            onAlternar={() => setCampanhasAbertas((v) => !v)}
+          >
             <div className="flex gap-px lg:flex-col">
               {noPainel.map((c) => {
                 const oculta = ocultas.has(c.id);
@@ -497,7 +573,60 @@ export default function PlannerPage() {
                 );
               })}
             </div>
-          </section>
+          </Secao>
+
+          {/* Arquivados: as campanhas que já terminaram inteiras.
+              Ficam aqui e não somem, porque "não me atrapalhe agora" é
+              diferente de "apague" — e é comum querer conferir o que foi feito
+              no lançamento passado. */}
+          {concluidas.length > 0 && (
+            <Secao
+              titulo="Arquivados"
+              quantidade={concluidas.length}
+              aberta={arquivadosAbertos}
+              onAlternar={() => setArquivadosAbertos((v) => !v)}
+            >
+              <div className="flex gap-px lg:flex-col">
+                {concluidas.map((c) => {
+                  const p = periodo(c.phases);
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      title="Mostrar no painel"
+                      onClick={() => {
+                        // Trazer um arquivado de volta significa desligar o
+                        // filtro: mostrá-lo sozinho exigiria um terceiro estado
+                        // ("visível apesar de concluído") que ninguém pediu.
+                        setEsconderPassado(false);
+                        if (p) {
+                          setAno(Number(p.fim.slice(0, 4)));
+                          setMes(Number(p.fim.slice(5, 7)));
+                          setVisao("split");
+                        }
+                      }}
+                      className="flex shrink-0 items-center gap-2 rounded-md px-2 py-[5px] text-left opacity-60 transition-opacity hover:bg-muted/60 hover:opacity-100 lg:w-full"
+                    >
+                      <span
+                        className="h-[9px] w-[9px] flex-none rounded-sm"
+                        style={{ boxShadow: `inset 0 0 0 1.5px ${c.color}` }}
+                      />
+                      <span className="min-w-0 flex-1 truncate text-[12px] leading-tight text-foreground/80">
+                        {c.name}
+                      </span>
+                      {/* O mês do fim: é o que distingue "FZ-L1-JAN-25" de
+                          "FZ-L1-FEV-26" numa lista de nomes parecidos. */}
+                      {p && (
+                        <span className="font-mono text-[10px] text-muted-foreground">
+                          {p.fim.slice(5, 7)}/{p.fim.slice(2, 4)}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </Secao>
+          )}
         </div>
       </aside>
 
@@ -560,6 +689,19 @@ export default function PlannerPage() {
 
           <div className="flex flex-none items-center gap-1.5">
             {visao === "split" && (
+              <Acao
+                onClick={() => setTelaCheia((v) => !v)}
+                titulo={telaCheia ? "Sair da tela cheia (Esc)" : "Calendário em tela cheia"}
+              >
+                {telaCheia ? (
+                  <Minimize2 className="h-3.5 w-3.5" />
+                ) : (
+                  <Maximize2 className="h-3.5 w-3.5" />
+                )}
+                {telaCheia ? "Sair" : "Tela cheia"}
+              </Acao>
+            )}
+            {visao === "split" && !telaCheia && (
               <Acao onClick={() => setMostrarCards((v) => !v)}>
                 {mostrarCards ? "Ocultar cards" : "Mostrar cards"}
               </Acao>
@@ -671,10 +813,10 @@ export default function PlannerPage() {
              comparar os dois. */
           <div
             className={`min-h-0 flex-1 lg:grid lg:overflow-hidden ${
-              mostrarCards ? "lg:grid-cols-[528px_minmax(0,1fr)]" : "lg:grid-cols-1"
+              mostrarCards && !telaCheia ? "lg:grid-cols-[528px_minmax(0,1fr)]" : "lg:grid-cols-1"
             }`}
           >
-            {mostrarCards && (
+            {mostrarCards && !telaCheia && (
               <div className="order-2 min-w-0 space-y-3.5 bg-background p-3.5 lg:order-1 lg:overflow-y-auto lg:border-r lg:border-border">
                 {listaDeCards}
               </div>
