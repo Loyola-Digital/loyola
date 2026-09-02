@@ -16,7 +16,21 @@
  */
 
 import { useEffect, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { GripVertical, Trash2 } from "lucide-react";
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { br, dias, novoId, periodo, type Campanha, type Fase } from "@/lib/planner/datas";
 
 /**
@@ -87,6 +101,9 @@ function LinhaDaFase({
   onExcluir: () => void;
   onSelecionar: () => void;
 }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: fase.id,
+  });
   const vazia = !fase.start;
   // "aberto" quando só tem início; "—" quando não tem data. Os dois são
   // estados de verdade no planejamento, e "0 dias" apagaria a diferença.
@@ -94,27 +111,49 @@ function LinhaDaFase({
 
   return (
     <div
+      ref={setNodeRef}
       onClick={onSelecionar}
-      className={`${GRADE} h-[34px] border-b border-border/60 transition-colors last:border-b-0 ${
+      className={`${GRADE} h-[34px] border-b border-border/60 bg-card transition-colors last:border-b-0 ${
         selecionada ? "" : "hover:bg-muted/40"
-      }`}
-      style={
-        selecionada ? { backgroundColor: `color-mix(in srgb, ${cor} 9%, transparent)` } : undefined
-      }
+      } ${isDragging ? "relative z-20 shadow-md" : ""}`}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        ...(selecionada
+          ? { backgroundColor: `color-mix(in srgb, ${cor} 9%, transparent)` }
+          : {}),
+      }}
     >
-      {/* A barrinha é a BORDA do input, como no original — assim ela acompanha
-          a altura do campo em vez de flutuar ao lado. */}
-      <TextoInline
+      <span className="flex min-w-0 items-center gap-1">
+        {/* A alça vem antes do nome: arrastar pelo corpo da linha brigaria com
+            o clique nos campos, e quem tentasse selecionar um texto sairia
+            reordenando a fase. */}
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          onClick={(e) => e.stopPropagation()}
+          aria-label={`Reordenar ${fase.name}`}
+          title="Arraste para reordenar"
+          className="grid h-5 w-3 shrink-0 cursor-grab touch-none place-items-center rounded text-muted-foreground/40 transition-colors hover:text-foreground active:cursor-grabbing"
+        >
+          <GripVertical className="h-3 w-3" />
+        </button>
+
+        {/* A barrinha é a BORDA do input, como no original — assim ela acompanha
+            a altura do campo em vez de flutuar ao lado. */}
+        <TextoInline
         valor={fase.name}
         onSalvar={(name) => onMudar({ ...fase, name })}
         placeholder="Nova fase"
         style={{
           borderLeft: `3px solid ${vazia ? `color-mix(in srgb, ${cor} 35%, transparent)` : cor}`,
         }}
-        className={`w-full rounded-[5px] bg-transparent px-1.5 py-0.5 text-[13px] outline-none hover:bg-foreground/5 ${
-          vazia ? "text-muted-foreground" : ""
-        }`}
-      />
+          className={`w-full rounded-[5px] bg-transparent px-1.5 py-0.5 text-[13px] outline-none hover:bg-foreground/5 ${
+            vazia ? "text-muted-foreground" : ""
+          }`}
+        />
+      </span>
 
       <input
         type="date"
@@ -167,6 +206,8 @@ export function CardDeCampanha({
   onExcluir,
   onDuplicar,
   onSelecionarFase,
+  onExcluirFase,
+  arrastavel = true,
 }: {
   campanha: Campanha;
   faseSelecionada: string | null;
@@ -174,20 +215,75 @@ export function CardDeCampanha({
   onExcluir: () => void;
   onDuplicar: () => void;
   onSelecionarFase: (faseId: string) => void;
+  /**
+   * Excluir fase passa pela página, e não por `onMudar`, porque de lá sai o
+   * aviso com o botão de desfazer — que precisa da fase original em mãos.
+   */
+  onExcluirFase: (faseId: string) => void;
+  /** Fora de uma lista ordenável, a alça não teria o que fazer. */
+  arrastavel?: boolean;
 }) {
   const p = periodo(campanha.phases);
   const total = p ? dias(p.inicio, p.fim) : null;
   const cor = campanha.color;
 
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: campanha.id,
+    disabled: !arrastavel,
+  });
+
+  // 4px antes de considerar arrasto: sem isso, um clique na alça com o dedo
+  // trêmulo já reordenaria a lista.
+  const sensores = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+
+  function soltarFase(e: DragEndEvent) {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const de = campanha.phases.findIndex((f) => f.id === active.id);
+    const para = campanha.phases.findIndex((f) => f.id === over.id);
+    if (de < 0 || para < 0) return;
+    const novas = [...campanha.phases];
+    const [movida] = novas.splice(de, 1);
+    novas.splice(para, 0, movida!);
+    onMudar({ phases: novas });
+  }
+
   return (
     <article
+      ref={setNodeRef}
       id={`campanha-${campanha.id}`}
-      className="overflow-hidden rounded-[10px] border border-border bg-card shadow-sm"
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        // Levantado enquanto arrasta: sem isso ele passa POR BAIXO dos vizinhos
+        // e some justo no gesto em que se está olhando para ele.
+        zIndex: isDragging ? 30 : undefined,
+      }}
+      className={`overflow-hidden rounded-[10px] border bg-card shadow-sm ${
+        isDragging ? "border-primary/60 opacity-90 shadow-lg" : "border-border"
+      }`}
     >
       <header
         className="flex items-start gap-2.5 border-b border-border px-3.5 pb-3 pt-3.5"
         style={{ backgroundColor: `color-mix(in srgb, ${cor} 9%, transparent)` }}
       >
+        {/* A alça: um alvo explícito, e não o card inteiro.
+            Arrastar pelo corpo brigaria com o clique nos campos de texto e nas
+            datas — a pessoa tentaria selecionar um nome e sairia arrastando o
+            card. O ícone diz onde pegar. */}
+        {arrastavel && (
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            aria-label={`Reordenar ${campanha.name}`}
+            title="Arraste para reordenar"
+            className="-ml-1 grid h-6 w-4 shrink-0 cursor-grab touch-none place-items-center rounded text-muted-foreground/50 transition-colors hover:text-foreground active:cursor-grabbing"
+          >
+            <GripVertical className="h-3.5 w-3.5" />
+          </button>
+        )}
+
         {/* Faixa de 4px esticada na altura do cabeçalho. */}
         <span
           className="min-h-[30px] w-1 shrink-0 self-stretch rounded-sm"
@@ -254,21 +350,30 @@ export function CardDeCampanha({
         <span />
       </div>
 
-      {campanha.phases.map((f) => (
-        <LinhaDaFase
-          key={f.id}
-          fase={f}
-          cor={cor}
-          selecionada={faseSelecionada === f.id}
-          onMudar={(atualizada) =>
-            onMudar({
-              phases: campanha.phases.map((x) => (x.id === atualizada.id ? atualizada : x)),
-            })
-          }
-          onExcluir={() => onMudar({ phases: campanha.phases.filter((x) => x.id !== f.id) })}
-          onSelecionar={() => onSelecionarFase(f.id)}
-        />
-      ))}
+      {/* Contexto PRÓPRIO das fases: aninhado no das campanhas, mas separado —
+          arrastar uma fase não pode mover o card que a contém. */}
+      <DndContext sensors={sensores} collisionDetection={closestCenter} onDragEnd={soltarFase}>
+        <SortableContext
+          items={campanha.phases.map((f) => f.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          {campanha.phases.map((f) => (
+            <LinhaDaFase
+              key={f.id}
+              fase={f}
+              cor={cor}
+              selecionada={faseSelecionada === f.id}
+              onMudar={(atualizada) =>
+                onMudar({
+                  phases: campanha.phases.map((x) => (x.id === atualizada.id ? atualizada : x)),
+                })
+              }
+              onExcluir={() => onExcluirFase(f.id)}
+              onSelecionar={() => onSelecionarFase(f.id)}
+            />
+          ))}
+        </SortableContext>
+      </DndContext>
 
       <footer className="flex gap-1.5 border-t border-border bg-muted/40 px-3 py-1.5">
         <button

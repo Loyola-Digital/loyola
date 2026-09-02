@@ -195,7 +195,24 @@ export function AgendasDoGoogle({
 
                     <button
                       type="button"
-                      onClick={() => desconectar.mutate(a.id)}
+                      onClick={async () => {
+                        await desconectar.mutateAsync(a.id);
+                        // Vinte segundos e um botão de volta: desconectar é
+                        // fácil de fazer sem querer, e reconectar exige achar o
+                        // ID da agenda de novo — que é o passo chato.
+                        toast.success(`"${a.label}" desconectada`, {
+                          duration: 20_000,
+                          action: {
+                            label: "Desfazer",
+                            onClick: () => {
+                              void conectar
+                                .mutateAsync(a.calendarId)
+                                .then(() => toast.success(`"${a.label}" reconectada`))
+                                .catch(() => toast.error("Não consegui reconectar"));
+                            },
+                          },
+                        });
+                      }}
                       title="Desconectar"
                       className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     >
