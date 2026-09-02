@@ -53,17 +53,25 @@ const navItems = [
   { label: "Spy de Conteúdo", href: "/spy-conteudo", icon: Radar },
   // Biblioteca de referências de anúncios do time (print/vídeo/link).
   { label: "Swipe Files", href: "/swipe-files", icon: Library },
-  // Fora da ordem que o Lucas pediu porque ele não a mencionou: tirar uma
-  // seção com contador ativo é decisão dele, não dedução minha.
-  { label: "Tasks", href: "/tasks", icon: CheckSquare },
   // Epic 37: Debriefing saiu do menu global — agora é etapa de funil
   // (stageType "debriefing"); as rotas /debriefings/* seguem servindo o detalhe.
   { label: "Configurações", href: "/settings", icon: Settings },
 ] as const;
 
+/**
+ * Fica por ÚLTIMO e só para admin.
+ *
+ * É o painel de tarefas dos agentes, não uma seção do produto: quem não
+ * administra o sistema não tem o que fazer ali, e a posição no fim diz isso
+ * sem precisar de explicação. Fora de `navItems` porque a ordem e a permissão
+ * dele não são as das demais.
+ */
+const TASKS_AGENTS = { label: "Tasks Agents", href: "/tasks", icon: CheckSquare } as const;
+
 function NavContent({ collapsed }: { collapsed: boolean }) {
   const pathname = usePathname();
   const { total: openTaskCount } = useTasks({ status: "open", limit: 1, offset: 0 });
+  const papel = useUserRole();
   const { data: projects, isLoading: projectsLoading } = useProjects();
   const hiddenIds = useHiddenProjectsStore((s) => s.hiddenIds);
   const showHidden = useHiddenProjectsStore((s) => s.showHidden);
@@ -98,7 +106,6 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
         {topItems.map((item) => {
           const isActive = pathname.startsWith(item.href);
           const Icon = item.icon;
-          const showBadge = item.href === "/tasks" && openTaskCount > 0 && !collapsed;
           return (
             <Button
               key={item.href}
@@ -117,11 +124,6 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
                   className={cn("shrink-0", "filhoDe" in item ? "h-4 w-4" : "h-5 w-5")}
                 />
                 {!collapsed && <span>{item.label}</span>}
-                {showBadge && (
-                  <Badge variant="secondary" className="ml-auto text-[10px] px-1.5 py-0">
-                    {openTaskCount}
-                  </Badge>
-                )}
               </Link>
             </Button>
           );
@@ -210,6 +212,25 @@ function NavContent({ collapsed }: { collapsed: boolean }) {
           <Plus className="h-4 w-4 shrink-0" />
           {!collapsed && <span className="text-sm">Nova Empresa</span>}
         </Button>
+
+        {/* Tasks Agents: por último e só para admin — ver `TASKS_AGENTS`. */}
+        {papel === "admin" && (
+          <Button
+            variant={pathname.startsWith(TASKS_AGENTS.href) ? "secondary" : "ghost"}
+            className={cn("justify-start gap-3", collapsed && "justify-center px-2")}
+            asChild
+          >
+            <Link href={TASKS_AGENTS.href}>
+              <TASKS_AGENTS.icon className="h-5 w-5 shrink-0" />
+              {!collapsed && <span>{TASKS_AGENTS.label}</span>}
+              {openTaskCount > 0 && !collapsed && (
+                <Badge variant="secondary" className="ml-auto px-1.5 py-0 text-[10px]">
+                  {openTaskCount}
+                </Badge>
+              )}
+            </Link>
+          </Button>
+        )}
       </nav>
 
       <CreateProjectDialog open={dialogOpen} onOpenChange={setDialogOpen} />
