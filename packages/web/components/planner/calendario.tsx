@@ -211,7 +211,15 @@ export function Calendario({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border/50 bg-card">
+    /*
+     * Rola de lado abaixo de ~500px.
+     *
+     * Sete colunas num celular de 414px dao 54px por dia, e uma barra de dois
+     * dias vira um retangulo sem texto. Preferimos a rolagem horizontal, que a
+     * pessoa entende, a uma grade ilegivel que parece quebrada.
+     */
+    <div className="overflow-x-auto rounded-xl border border-border/50 bg-card">
+      <div className="min-w-[520px]">
       <div className="grid grid-cols-7 border-b border-border/50 bg-muted/30">
         {DIAS_DA_SEMANA.map((d) => (
           <div key={d} className="py-1.5 text-center text-[10px] uppercase text-muted-foreground">
@@ -318,13 +326,20 @@ export function Calendario({
                           className="absolute left-0 top-0 h-full w-1.5 cursor-ew-resize"
                           aria-hidden
                         />
-                        <span className="shrink-0 opacity-70 tabular-nums">
+                        {/* A data some no celular: com sete colunas em 414px,
+                            "08/09" rouba metade do espaco do nome da fase — e
+                            o dia ja esta escrito na propria celula. */}
+                        <span className="hidden shrink-0 opacity-70 tabular-nums sm:inline">
                           {b.start.slice(8, 10)}/{b.start.slice(5, 7)}
                         </span>
                       </>
                     )}
                     <span className="truncate font-medium">{b.fase.name}</span>
-                    <span className="truncate opacity-70">· {b.campanha.name}</span>
+                    {/* A campanha tambem: a cor da barra ja diz qual e, e a
+                        legenda lateral traduz a cor. */}
+                    <span className="hidden truncate opacity-70 md:inline">
+                      · {b.campanha.name}
+                    </span>
                     {ultimo && !aberta && (
                       <span
                         onPointerDown={(e) => iniciarArrasto(e, b.campanha, b.fase, "fim")}
@@ -341,6 +356,7 @@ export function Calendario({
       </div>
 
       {diasNoMes === 0 && <p className="p-4 text-sm text-muted-foreground">Mês inválido.</p>}
+      </div>
     </div>
   );
 }

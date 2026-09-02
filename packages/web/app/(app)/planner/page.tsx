@@ -250,8 +250,18 @@ export default function PlannerPage() {
         : "arraste as barras para reprogramar";
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] flex-col">
-      <header className="flex flex-wrap items-center gap-2 border-b border-border/50 px-4 py-2.5">
+    /*
+     * Sem altura fixa.
+     *
+     * `h-[calc(100vh-3.5rem)]` funciona no desktop e falha no celular: ali o
+     * `100vh` conta a barra do navegador, que aparece e some conforme a rolagem
+     * — o container muda de altura sozinho e corta o conteudo. As outras telas
+     * do app usam `h-full` com scroll do pai, e esta passa a fazer igual.
+     */
+    <div className="flex h-full flex-col">
+      {/* Rola de lado em vez de quebrar em quatro linhas: num celular, um
+          cabecalho de 160px de altura come metade da tela util. */}
+      <header className="flex items-center gap-2 overflow-x-auto border-b border-border/50 px-4 py-2.5">
         <div className="flex items-center gap-1 rounded-lg border border-border/50 p-0.5">
           {(
             [
@@ -358,10 +368,13 @@ export default function PlannerPage() {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
-        <aside className="hidden w-52 shrink-0 overflow-y-auto border-r border-border/50 p-3 lg:block">
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        {/* No celular vira faixa horizontal em vez de sumir: sem ela, os meses
+            e a legenda de campanhas ficariam inacessiveis, e a legenda e o
+            unico jeito de ocultar uma campanha. */}
+        <aside className="w-full shrink-0 overflow-x-auto border-b border-border/50 p-3 lg:w-52 lg:overflow-y-auto lg:border-b-0 lg:border-r">
           <p className="mb-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">Meses</p>
-          <div className="mb-4 space-y-0.5">
+          <div className="mb-4 flex gap-1 overflow-x-auto lg:block lg:space-y-0.5">
             {meses.map((m) => {
               const n = visiveis.reduce(
                 (acc, c) => acc + c.phases.filter((f) => cruzaMes(f, m.ano, m.mes)).length,
@@ -377,7 +390,7 @@ export default function PlannerPage() {
                     setMes(m.mes);
                     setVisao("split");
                   }}
-                  className={`flex w-full items-center justify-between rounded px-1.5 py-1 text-[11px] transition-colors ${
+                  className={`flex shrink-0 items-center justify-between gap-1 rounded px-1.5 py-1 text-[11px] transition-colors lg:w-full ${
                     atual ? "bg-primary/10 font-medium text-primary" : "hover:bg-muted"
                   }`}
                 >
@@ -395,7 +408,7 @@ export default function PlannerPage() {
           <p className="mb-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
             Campanhas
           </p>
-          <div className="space-y-0.5">
+          <div className="flex gap-1 overflow-x-auto lg:block lg:space-y-0.5">
             {campanhas.map((c) => {
               const oculta = ocultas.has(c.id);
               return (
@@ -411,7 +424,7 @@ export default function PlannerPage() {
                       return novo;
                     })
                   }
-                  className={`flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[11px] transition-opacity hover:bg-muted ${
+                  className={`flex shrink-0 items-center gap-1.5 rounded px-1.5 py-1 text-left text-[11px] transition-opacity hover:bg-muted lg:w-full ${
                     oculta ? "opacity-40" : ""
                   }`}
                 >
@@ -464,7 +477,10 @@ export default function PlannerPage() {
           ) : (
             <div className={`grid gap-4 ${mostrarCards ? "xl:grid-cols-[480px_1fr]" : ""}`}>
               {mostrarCards && (
-                <div className="space-y-3 xl:max-h-[calc(100vh-9rem)] xl:overflow-y-auto xl:pr-1">
+                // `order-2` no celular: o calendario e a visao principal desta
+                // tela, e os cards empilhados em cima empurrariam ele para
+                // fora do primeiro rolar.
+                <div className="order-2 space-y-3 xl:order-1 xl:max-h-[calc(100vh-9rem)] xl:overflow-y-auto xl:pr-1">
                   {campanhas.map((c) => (
                     <CardDeCampanha
                       key={c.id}
@@ -479,6 +495,7 @@ export default function PlannerPage() {
                 </div>
               )}
 
+              <div className="order-1 min-w-0 xl:order-2">
               <Calendario
                 campanhas={visiveis}
                 ano={ano}
@@ -495,6 +512,7 @@ export default function PlannerPage() {
                 }}
                 onMudarFase={mudarFase}
               />
+              </div>
             </div>
           )}
         </main>
