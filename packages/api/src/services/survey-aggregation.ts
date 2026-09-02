@@ -2,6 +2,7 @@ import { eq, and, isNotNull, inArray } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { funnelSurveys, funnels, publicMetricsCache } from "../db/schema.js";
 import { readSheetData } from "./google-sheets.js";
+import { utmContentEfetivo } from "../utils/utm-value.js";
 
 /**
  * Story 36.7 (Buraco 1): agregação da PESQUISA DE QUALIFICAÇÃO no backend —
@@ -70,11 +71,6 @@ function mostCommonRaw(rawValues: string[]): string {
   let bestCount = 0;
   for (const [r, c] of counts) if (c > bestCount) { best = r; bestCount = c; }
   return best;
-}
-function normalizeNumericId(id: string): string {
-  const t = id.trim();
-  if (t.startsWith("_") && /^\d+$/.test(t.slice(1))) return t.slice(1);
-  return t;
 }
 /**
  * Auditoria Epic 39: byAdId deve conter SÓ ad ids reais da Meta (numéricos,
@@ -294,7 +290,7 @@ export async function computeSurveyForStage(db: Database, stageId: string): Prom
         }
       }
       if (indexes.utmContent >= 0) {
-        const adId = normalizeNumericId((row[indexes.utmContent] ?? "").trim());
+        const adId = utmContentEfetivo((row[indexes.utmContent] ?? "").trim());
         if (adId && isLikelyAdId(adId)) {
           let perQ = byAdBuckets[adId];
           if (!perQ) { perQ = new Map(); byAdBuckets[adId] = perQ; }

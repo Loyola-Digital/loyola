@@ -17,6 +17,8 @@
  * criativo pago para atribuir) — divergência esperada vs os cards do topo.
  */
 
+import { utmContentEfetivo } from "./utm-value.js";
+
 export interface SaleColumnIdx {
   utmContent: number;
   email: number;
@@ -55,15 +57,6 @@ function parseDate(val: string | undefined): Date | null {
   return isNaN(dt.getTime()) ? null : dt;
 }
 
-/** Espelho do normalizeNumericId do endpoint (`_123` exportado do Sheets → `123`). */
-function normalizeNumericId(id: string): string {
-  const trimmed = id.trim();
-  if (trimmed.startsWith("_")) {
-    const rest = trimmed.slice(1);
-    if (/^\d+$/.test(rest)) return rest;
-  }
-  return trimmed;
-}
 
 function inc(map: Map<string, number>, key: string, delta: number): void {
   map.set(key, (map.get(key) ?? 0) + delta);
@@ -95,7 +88,7 @@ export function computeCreativeSalesMetrics(
   let rowIndex = -1;
   for (const row of rows) {
     rowIndex += 1;
-    const adId = normalizeNumericId(row[idx.utmContent] ?? "");
+    const adId = utmContentEfetivo(row[idx.utmContent] ?? "");
     if (!adId) continue;
 
     const bruto = idx.bruto !== -1 ? parseNumber(row[idx.bruto]) : 0;

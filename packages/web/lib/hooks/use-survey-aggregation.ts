@@ -13,7 +13,7 @@ import {
   SURVEY_EMAIL_MATCHERS,
   SURVEY_PHONE_MATCHERS,
 } from "@/lib/constants/survey-questions";
-import { normalizeAnswer, mostCommonRaw, normalizeEmail, getLast8DigitsPhone, normalizeNumericId } from "@/lib/utils/normalize-answer";
+import { normalizeAnswer, mostCommonRaw, normalizeEmail, getLast8DigitsPhone, utmContentEfetivo } from "@/lib/utils/normalize-answer";
 import { PAID_SOURCES } from "@/lib/utils/funnel-metrics";
 import { useFunnelSpreadsheets, useFunnelSpreadsheetData } from "@/lib/hooks/use-funnel-spreadsheets";
 
@@ -451,7 +451,7 @@ export function useSurveyAggregation(
       // byAdId — legacy (4 keys hardcoded) + dynamic (todas as questions do mapping)
       if (indexes.utmContent >= 0) {
         for (const row of effectiveRows) {
-          const adId = normalizeNumericId((row[indexes.utmContent] ?? "").trim());
+          const adId = utmContentEfetivo((row[indexes.utmContent] ?? "").trim());
           if (!adId) continue;
 
           // Legacy: 4 keys hardcoded (mantido por retrocompat)

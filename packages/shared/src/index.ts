@@ -36,6 +36,10 @@ export {
   tiposEquivalentes,
 } from "./stage-types.js";
 export { normalizarNomeCampanha, temSufixoDeCopia } from "./campaign-name.js";
+// Story 18.71: o `utm_content` efetivo de uma célula de planilha — o `co=` chega
+// em três formatos e só um deles é o ad_id puro. Módulo folha: o web importa por
+// subpath (`@loyola-x/shared/src/utm-value`), a API por aqui.
+export { utmContentEfetivo, normalizeNumericId } from "./utm-value.js";
 // Story 29.59: a identidade de uma landing page. Compartilhada porque o
 // dashboard e o relatório TÊM que agrupar as mesmas URLs na mesma linha.
 export { normalizeLpUrl, lpLabel, type LpKey } from "./lp-url.js";

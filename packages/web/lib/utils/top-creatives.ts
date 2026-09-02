@@ -5,7 +5,7 @@ import type {
 } from "@/lib/hooks/use-traffic-analytics";
 import type { FunnelSpreadsheetRow } from "@/lib/types/funnel-spreadsheet";
 import { PAID_SOURCES, safeDivide } from "@/lib/utils/funnel-metrics";
-import { normalizeNumericId } from "@/lib/utils/normalize-answer";
+import { normalizeNumericId, utmContentEfetivo } from "@/lib/utils/normalize-answer";
 // Story 29.65 (AC4): o piso de amostra é o MESMO da 43.8. Um terceiro critério
 // de "amostra suficiente" no painel seria uma terceira resposta para a mesma
 // pergunta — e nenhuma delas ganharia a confiança de quem lê.
@@ -201,7 +201,7 @@ export function countPaidLeadsForAds(
   const idSet = new Set(adIds.map(normalizeNumericId));
   let count = 0;
   for (const row of rows) {
-    const utmContent = normalizeNumericId(row.named.utm_content ?? "");
+    const utmContent = utmContentEfetivo(row.named.utm_content ?? "");
     if (!idSet.has(utmContent)) continue;
     const utmSource = (row.named.utm_source ?? "").trim().toLowerCase();
     if (PAID_SOURCES.has(utmSource)) count += 1;
@@ -229,7 +229,7 @@ export function countLeadsByOriginForAds(
   };
   let rowIdx = 0;
   for (const row of rows) {
-    const utmContent = normalizeNumericId(row.named.utm_content ?? "");
+    const utmContent = utmContentEfetivo(row.named.utm_content ?? "");
     if (!idSet.has(utmContent)) { rowIdx++; continue; }
     const email = (row.named.email ?? "").trim().toLowerCase();
     const key = email || `__no-email_${rowIdx}`;

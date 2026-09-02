@@ -32,7 +32,7 @@ import {
 import { useResolveMetaNames } from "@/lib/hooks/use-funnel-adsets-map";
 import { useSurveyBandByContact } from "@/lib/hooks/use-survey-band-by-contact";
 import { filterSheetRowsByDays } from "@/lib/utils/spreadsheet-filters";
-import { normalizeEmail, getLast8DigitsPhone, normalizeNumericId } from "@/lib/utils/normalize-answer";
+import { normalizeEmail, getLast8DigitsPhone, utmContentEfetivo } from "@/lib/utils/normalize-answer";
 import {
   Table,
   TableBody,
@@ -147,11 +147,11 @@ export function LeadsByUtmTable({
     const collect = (data: typeof leadsData) => {
       if (!data) return;
       for (const r of filterSheetRowsByDays(data, days)) {
-        const c = normalizeNumericId(clean(r.named.utm_campaign));
+        const c = utmContentEfetivo(clean(r.named.utm_campaign));
         if (c) camp.add(c);
-        const m = normalizeNumericId(clean(r.named.utm_medium));
+        const m = utmContentEfetivo(clean(r.named.utm_medium));
         if (m) med.add(m);
-        const ct = normalizeNumericId(clean(r.named.utm_content));
+        const ct = utmContentEfetivo(clean(r.named.utm_content));
         if (ct) cont.add(ct);
       }
     };
@@ -174,7 +174,7 @@ export function LeadsByUtmTable({
       if (!raw) return raw;
       const entity = META_ENTITY_BY_UTM[key];
       if (!entity) return raw;
-      const id = normalizeNumericId(raw);
+      const id = utmContentEfetivo(raw);
       const map = entity === "campaign" ? campaignNames : entity === "adset" ? adsetNames : adNames;
       return map.get(id) ?? raw;
     };

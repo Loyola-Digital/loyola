@@ -10,6 +10,7 @@ import {
   projectMembers,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
+import { utmContentEfetivo } from "../utils/utm-value.js";
 
 // ============================================================
 // SCHEMAS
@@ -62,14 +63,6 @@ function normalizeEmail(email: string): string {
  * necessário aqui pra cruzar utm_content da planilha de leads (que às vezes
  * vem com `_12345` do Google Sheets formatado como texto) com ad_id do Meta.
  */
-function normalizeNumericId(id: string): string {
-  const trimmed = id.trim();
-  if (trimmed.startsWith("_")) {
-    const rest = trimmed.slice(1);
-    if (/^\d+$/.test(rest)) return rest;
-  }
-  return trimmed;
-}
 
 const EMPTY_RESPONSE = {
   byAdId: {} as Record<string, { faturamentoBruto: number; faturamentoLiquido: number; vendas: number; emails: string[] }>,
@@ -242,7 +235,7 @@ export default fp(async function creativeRevenueRoutes(fastify) {
         const saleDedup = new Map<string, { adId: string; bruto: number; liquido: number }>();
         let noKeyCounter = 0;
         for (const row of salesData.rows) {
-          const adId = normalizeNumericId(row[saleUtmContentIdx] ?? "");
+          const adId = utmContentEfetivo(row[saleUtmContentIdx] ?? "");
           if (!adId) continue;
           if (cutoff && saleDateIdx !== -1) {
             const dt = parseDate(row[saleDateIdx]);
@@ -318,7 +311,7 @@ export default fp(async function creativeRevenueRoutes(fastify) {
           const sale = salesByEmail.get(email);
           if (!sale) continue;
 
-          const adId = normalizeNumericId(row[leadUtmIdx] ?? "");
+          const adId = utmContentEfetivo(row[leadUtmIdx] ?? "");
           if (!adId) continue;
 
           const ad = byAdIdMap.get(adId) ?? {
