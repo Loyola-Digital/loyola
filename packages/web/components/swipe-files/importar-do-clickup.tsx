@@ -50,9 +50,19 @@ interface Plano {
   mensagens: number;
   total: number;
   jaImportados: number;
+  pendentes: number;
   aImportar: number;
   comArquivo: number;
 }
+
+/**
+ * Itens por pedido HTTP.
+ *
+ * Vinte e cinco arquivos com analise levam poucos minutos -- folgado dentro do
+ * prazo, e pequeno o bastante para que uma queda custe pouco. Cada lote que
+ * termina esta gravado.
+ */
+const TAMANHO_DO_LOTE = 25;
 
 interface Linha {
   titulo: string;
@@ -82,7 +92,6 @@ export function ImportarDoClickUp({
   const [analisar, setAnalisar] = useState(true);
   const [plano, setPlano] = useState<Plano | null>(null);
   const [linhas, setLinhas] = useState<Linha[]>([]);
-  const [andamento, setAndamento] = useState<{ i: number; de: number } | null>(null);
   const [lendo, setLendo] = useState(false);
 
   const fimDaLista = useRef<HTMLDivElement>(null);
@@ -99,7 +108,6 @@ export function ImportarDoClickUp({
   useEffect(() => {
     setPlano(null);
     setLinhas([]);
-    setAndamento(null);
   }, [canal]);
 
   function receber(p: PassoDaImportacao) {
@@ -109,7 +117,6 @@ export function ImportarDoClickUp({
       setPlano(p);
     }
     if (p.tipo === "item") {
-      setAndamento({ i: p.i, de: p.de });
       setLinhas((v) => [
         ...v,
         { titulo: p.titulo, kind: p.kind, ok: p.status === "ok", erro: p.erro },
@@ -119,7 +126,6 @@ export function ImportarDoClickUp({
 
   async function simular() {
     setLinhas([]);
-    setAndamento(null);
     try {
       await importar.mutateAsync({ channelId: canal, onPasso: receber });
     } catch (e) {
@@ -128,24 +134,56 @@ export function ImportarDoClickUp({
     }
   }
 
+  /**
+   * Importa em lotes, um pedido HTTP por lote.
+   *
+   * Medido: 246 arquivos para o bucket e 213 análises de imagem dão perto de
+   * uma hora. Nenhum proxy mantém um POST aberto por tanto tempo — e um único
+   * pedido que estoura leva junto tudo que ainda não tinha sido gravado.
+   *
+   * Em lotes, cada pedido cabe folgado no prazo e o que entrou está gravado.
+   * A chave de importação faz o resto: o lote seguinte recomeça exatamente de
+   * onde o anterior parou, sem repetir nada.
+   */
   async function executar() {
     setLinhas([]);
-    setAndamento(null);
+
+    let criados = 0;
+    let falhas = 0;
+
     try {
-      const r = await importar.mutateAsync({
-        channelId: canal,
-        confirmar: true,
-        analisar,
-        onPasso: receber,
-      });
+      for (let lote = 0; lote < 60; lote++) {
+        const r = await importar.mutateAsync({
+          channelId: canal,
+          confirmar: true,
+          analisar,
+          limite: TAMANHO_DO_LOTE,
+          onPasso: (p) => {
+            // O `plano` de cada lote recontaria o total e a barra voltaria ao
+            // começo a cada rodada. Só o primeiro define o alvo.
+            if (p.tipo === "plano" && lote > 0) return;
+            receber(p);
+          },
+        });
+        criados += r.criados;
+        falhas += r.falhas;
+
+        // Nada criado neste lote: ou acabou, ou todos os itens restantes estão
+        // falhando. Nos dois casos, insistir só repetiria o mesmo erro.
+        if (r.criados === 0) break;
+      }
+
       toast.success(
-        `${r.criados} referência(s) na biblioteca`,
-        r.falhas > 0
-          ? { description: `${r.falhas} não entraram — o motivo está na lista.` }
-          : undefined,
+        `${criados} referência(s) na biblioteca`,
+        falhas > 0 ? { description: `${falhas} não entraram — o motivo está na lista.` } : undefined,
       );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "A importação parou");
+      toast.error(
+        e instanceof Error ? e.message : "A importação parou",
+        criados > 0
+          ? { description: `${criados} já entraram. Rodar de novo continua de onde parou.` }
+          : undefined,
+      );
     }
   }
 
@@ -216,7 +254,7 @@ export function ImportarDoClickUp({
                 {plano.mensagens} mensagens lidas
               </p>
               <p className="text-muted-foreground">
-                <strong className="text-foreground">{plano.aImportar}</strong> item(ns) a importar —{" "}
+                <strong className="text-foreground">{plano.pendentes}</strong> item(ns) a importar —{" "}
                 {plano.comArquivo} com arquivo para subir.
               </p>
               {plano.jaImportados > 0 && (
@@ -237,7 +275,11 @@ export function ImportarDoClickUp({
           {linhas.length > 0 && (
             <div className="space-y-1.5">
               <p className="text-[11px] font-medium">
-                {andamento ? `${andamento.i} de ${andamento.de}` : "Resultado"}
+                {/* Conta as linhas, e nao o item do lote: em lotes de 25, o
+                    contador do servidor voltaria a 1 a cada rodada. */}
+                {importar.isPending && plano
+                  ? `${linhas.length} de ${plano.pendentes}`
+                  : "Resultado"}
               </p>
               <div className="max-h-56 space-y-0.5 overflow-y-auto rounded-md border border-border p-1.5">
                 {linhas.map((l, i) => {
@@ -283,13 +325,13 @@ export function ImportarDoClickUp({
               Ver o que tem lá
             </Button>
           ) : (
-            <Button size="sm" onClick={executar} disabled={ocupado || plano.aImportar === 0}>
+            <Button size="sm" onClick={executar} disabled={ocupado || plano.pendentes === 0}>
               {ocupado ? (
                 <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
               ) : (
                 <Download className="mr-1.5 h-3.5 w-3.5" />
               )}
-              Importar {plano.aImportar}
+              Importar {plano.pendentes}
             </Button>
           )}
         </div>

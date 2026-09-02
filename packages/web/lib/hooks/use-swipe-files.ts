@@ -465,6 +465,8 @@ export type PassoDaImportacao =
       mensagens: number;
       total: number;
       jaImportados: number;
+      /** Tudo que falta importar. `aImportar` e so o pedaco deste lote. */
+      pendentes: number;
       aImportar: number;
       comArquivo: number;
     }
