@@ -1897,11 +1897,23 @@ export async function fetchAccountActivities(
   );
 
   const out: MetaActivity[] = [...(response.data ?? [])];
-  for (let page = 1; page < maxPages && response.paging?.next; page++) {
+  let page = 1;
+  for (; page < maxPages && response.paging?.next; page++) {
     response = await fetchMetaNext<{ data?: MetaActivity[]; paging?: { next?: string } }>(
       response.paging.next,
     );
     out.push(...(response.data ?? []));
   }
+
+  /**
+   * Parou porque acabou, ou porque bateu o teto?
+   *
+   * Uma conta movimentada estoura 20 páginas com folga — medido: 4.000 eventos
+   * exatos numa janela de 30 dias, que é `maxPages × 200` no ponto. Quem
+   * chamou não tinha como saber que o resultado estava cortado, e um log
+   * incompleto é indistinguível de um log completo. Marcar a lista é feio, e é
+   * o jeito de não mudar a assinatura para todos os chamadores.
+   */
+  (out as MetaActivity[] & { truncado?: boolean }).truncado = Boolean(response.paging?.next);
   return out;
 }

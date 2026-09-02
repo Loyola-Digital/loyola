@@ -44,6 +44,13 @@ export interface ActivitySyncSummary {
   entriesCreated: number;
   semFunil: number;
   errors: { accountId: string; error: string }[];
+  /**
+   * A busca parou no teto de páginas, não no fim dos dados.
+   *
+   * Quem chama precisa saber: o log gravado está correto no que trouxe, e
+   * INCOMPLETO no que a janela pedia.
+   */
+  truncadas?: boolean;
   /** Preenchido só em dryRun: o que seria gravado. */
   preview?: {
     funnelId: string;
@@ -316,7 +323,19 @@ export async function syncMetaActivityLog(
       const atividades = await fetchAccountActivities(metaAccountId, token, since, until);
       resumo.accountsProcessed++;
       resumo.activitiesFetched += atividades.length;
-      log(`[meta-activities] ${primeiro.accountName}: ${atividades.length} eventos`);
+
+      // O teto de paginação foi atingido: há atividade que não veio. Sem este
+      // aviso, um log cortado parece um log completo — e quem for conferir
+      // conclui que o sync está quebrado, não que a janela é grande demais.
+      if ((atividades as typeof atividades & { truncado?: boolean }).truncado) {
+        resumo.truncadas = true;
+        log(
+          `[meta-activities] ${primeiro.accountName}: TETO atingido (${atividades.length} eventos). ` +
+            `Há atividade que não veio — reduza a janela de dias para alcançá-la.`,
+        );
+      } else {
+        log(`[meta-activities] ${primeiro.accountName}: ${atividades.length} eventos`);
+      }
 
       const rascunhos = atividades
         .map(mapearAtividade)

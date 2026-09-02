@@ -47,6 +47,11 @@ export default fp(async function metaActivitiesSchedulerPlugin(fastify) {
           activitiesFetched: resumo.activitiesFetched,
           entriesCreated: resumo.entriesCreated,
           semFunil: resumo.semFunil,
+          // Verdadeiro = a busca parou no teto de páginas, não no fim dos
+          // dados. Com a janela padrão de 7 dias isso não acontece; se
+          // aparecer no log, a janela cresceu ou a conta ficou movimentada
+          // demais, e há atividade que não veio.
+          truncadas: resumo.truncadas ?? false,
           errors: resumo.errors.length,
           durationMs: Date.now() - inicio,
         },
