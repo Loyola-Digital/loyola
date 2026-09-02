@@ -78,8 +78,20 @@ function ymd(d: Date): string {
 async function indiceCampanhaPorFunil(
   db: Database,
   projectId: string,
+  codigos: { funnelId: string; code: string }[],
 ): Promise<Map<string, string>> {
-  const indice = new Map<string, string>();
+  /** Todos os funis que reivindicam cada campanha, mais o nome dela. */
+  const candidatos = new Map<string, { funis: string[]; nome: string | null }>();
+
+  const anotar = (id: unknown, nome: unknown, funnelId: string) => {
+    if (!id) return;
+    const chave = String(id);
+    const atual = candidatos.get(chave) ?? { funis: [], nome: null };
+    // A mesma campanha em duas ETAPAS do mesmo funil é comum e não muda nada.
+    if (!atual.funis.includes(funnelId)) atual.funis.push(funnelId);
+    if (!atual.nome && typeof nome === "string") atual.nome = nome;
+    candidatos.set(chave, atual);
+  };
 
   const listaFunis = await db
     .select({ id: funnels.id, campaigns: funnels.campaigns })
@@ -87,9 +99,7 @@ async function indiceCampanhaPorFunil(
     .where(eq(funnels.projectId, projectId));
 
   for (const f of listaFunis) {
-    for (const c of f.campaigns ?? []) {
-      if (c?.id) indice.set(String(c.id), f.id);
-    }
+    for (const c of f.campaigns ?? []) anotar(c?.id, c?.name, f.id);
   }
 
   const etapas = await db
@@ -99,15 +109,60 @@ async function indiceCampanhaPorFunil(
     .where(eq(funnels.projectId, projectId));
 
   for (const s of etapas) {
-    for (const c of s.campaigns ?? []) {
-      // Primeiro vínculo vence: a mesma campanha em duas etapas do mesmo funil é
-      // comum e não muda o destino; em funis diferentes, o primeiro é tão bom
-      // quanto o segundo e evitar o flip mantém o log estável entre execuções.
-      if (c?.id && !indice.has(String(c.id))) indice.set(String(c.id), s.funnelId);
-    }
+    for (const c of s.campaigns ?? []) anotar(c?.id, c?.name, s.funnelId);
   }
 
+  const indice = new Map<string, string>();
+  for (const [campaignId, { funis, nome }] of candidatos) {
+    const escolhido = desempatarPorNome(nome, funis, codigos);
+    if (escolhido) indice.set(campaignId, escolhido);
+  }
   return indice;
+}
+
+/**
+ * A mesma campanha vinculada em mais de um funil — quem fica com o log.
+ *
+ * ## O caso real
+ *
+ * `bbe-a2-ago-26--venda-perpetuo--hot_cbo_vencedores` estava selecionada tanto
+ * no `bbe-fc1-a1-mai-26` quanto no `bbe-fc1-a2-ago-26`. O índice era um mapa
+ * `campanha → funil`, então o segundo vínculo era ignorado e o log inteiro do
+ * A2 caía no A1 — que ficou com 2.076 entradas enquanto o A2 mostrava zero.
+ *
+ * O código anterior dizia que "o primeiro é tão bom quanto o segundo". Não é:
+ * o A2 tem `matchCode` `bbe-a2`, que está no nome da campanha, e o A1 não tem
+ * código nenhum que case. A evidência para desempatar existia e era ignorada.
+ *
+ * ## A regra
+ *
+ * Entre os funis que reivindicam a campanha, vence aquele cujo código aparece
+ * no NOME dela; o código mais longo ganha, porque é o mais específico. Sem
+ * nenhum código casando — ou com empate — fica o primeiro, que mantém o log
+ * estável entre execuções em vez de alternar a cada sync.
+ */
+export function desempatarPorNome(
+  nomeDaCampanha: string | null,
+  candidatos: string[],
+  codigos: { funnelId: string; code: string }[],
+): string | null {
+  if (candidatos.length === 0) return null;
+  if (candidatos.length === 1) return candidatos[0]!;
+
+  const nome = (nomeDaCampanha ?? "").toLowerCase();
+  if (!nome) return candidatos[0]!;
+
+  const casam = codigos
+    .filter((c) => candidatos.includes(c.funnelId) && c.code && nome.includes(c.code))
+    .sort((a, b) => b.code.length - a.code.length);
+
+  if (casam.length === 0) return candidatos[0]!;
+  // Empate no comprimento entre funis diferentes: nenhum é mais específico, e
+  // escolher no par ou ímpar seria pior que manter a ordem.
+  if (casam.length > 1 && casam[0]!.code.length === casam[1]!.code.length) {
+    return candidatos[0]!;
+  }
+  return casam[0]!.funnelId;
 }
 
 /**
@@ -268,8 +323,10 @@ export async function syncMetaActivityLog(
         .filter((d): d is MetaLogDraft => d !== null);
 
       for (const projeto of projetos) {
-        const campanhaParaFunil = await indiceCampanhaPorFunil(db, projeto.projectId);
+        // Os códigos vêm ANTES do índice: é com eles que se desempata a
+        // campanha vinculada em mais de um funil.
         const codigos = await codigosDeMatch(db, projeto.projectId);
+        const campanhaParaFunil = await indiceCampanhaPorFunil(db, projeto.projectId, codigos);
         // Projeto sem funil nenhum não tem onde pendurar o log.
         if (campanhaParaFunil.size === 0 && codigos.length === 0) continue;
         const filhoParaCampanha = await indiceFilhoParaCampanha(db, projeto.projectId);
