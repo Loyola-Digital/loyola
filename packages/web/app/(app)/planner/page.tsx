@@ -3,20 +3,25 @@
 /**
  * Planner de Campanhas — o calendário do time.
  *
+ * O layout é o do planner original, medido no CSS dele: barra lateral de 236px
+ * com o título do app, as três visões e os meses; topbar de 56px com o mês
+ * grande e o subtítulo ao lado; split de `528px | 1fr` com scroll independente
+ * em cada coluna. O que muda são os tokens — `bg-card`, `border-border`,
+ * `text-muted-foreground` no lugar dos hex fixos, para o tema do app valer aqui.
+ *
  * ## As três visões respondem perguntas diferentes
  *
- * - **Cards + calendário** (padrão): "o que acontece nesta semana?" — a
- *   pergunta que trava um planejamento, e a única que exige ver todas as
- *   campanhas na mesma grade.
- * - **Cards**: "quando exatamente é a fase X?" — onde se digita.
- * - **Timeline**: "os lançamentos estão espremidos?" — só aparece com o
- *   período inteiro na mesma régua.
+ * - **Cards + calendário**: "o que acontece nesta semana?" — a que trava um
+ *   planejamento, e a única que exige todas as campanhas na mesma grade.
+ * - **Só cards**: "quando exatamente é a fase X?" — onde se digita.
+ * - **Timeline**: "os lançamentos estão espremidos?" — só com o período
+ *   inteiro na mesma régua.
  *
  * ## `oculta` não vai para o servidor
  *
  * Esconder uma campanha é preferência de quem está olhando, não decisão sobre o
- * plano. Se fosse ao banco, alguém escondendo uma campanha para conferir outra
- * a esconderia para o time inteiro.
+ * plano. No banco, alguém escondendo uma para conferir outra a esconderia para
+ * o time inteiro.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -27,13 +32,11 @@ import {
   Columns2,
   Download,
   LayoutGrid,
-  Plus,
+  PanelLeft,
   Rows3,
-  Undo2,
   Upload,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useUserRole } from "@/lib/hooks/use-user-role";
 import {
@@ -58,10 +61,47 @@ import { Timeline } from "@/components/planner/timeline";
 
 type Visao = "split" | "cards" | "timeline";
 
-/** O que o desfazer guarda. Uma ação por entrada, no máximo 30. */
-type Passo =
-  | { tipo: "editou"; campanha: Campanha }
-  | { tipo: "excluiu"; campanha: Campanha };
+type Passo = { tipo: "editou"; campanha: Campanha } | { tipo: "excluiu"; campanha: Campanha };
+
+/** Rótulo de seção da barra lateral — o `.lbl` do original. */
+function Rotulo({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="px-1.5 pb-0.5 font-mono text-[10px] font-medium uppercase tracking-[0.11em] text-muted-foreground">
+      {children}
+    </p>
+  );
+}
+
+/** Botão de ação da topbar — o `.act` do original. */
+function Acao({
+  children,
+  onClick,
+  disabled,
+  titulo,
+  primary,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  titulo?: string;
+  primary?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={titulo}
+      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-[11px] py-1.5 text-[12px] font-medium transition-colors disabled:cursor-default disabled:opacity-40 ${
+        primary
+          ? "border border-foreground bg-foreground text-background hover:opacity-90"
+          : "border border-border bg-card text-foreground/80 hover:bg-muted hover:text-foreground"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
 
 export default function PlannerPage() {
   const role = useUserRole();
@@ -76,6 +116,7 @@ export default function PlannerPage() {
   const [ocultas, setOcultas] = useState<Set<string>>(new Set());
   const [selecionada, setSelecionada] = useState<string | null>(null);
   const [mostrarCards, setMostrarCards] = useState(true);
+  const [rail, setRail] = useState(true);
 
   const hoje = new Date();
   const [ano, setAno] = useState(hoje.getFullYear());
@@ -85,10 +126,7 @@ export default function PlannerPage() {
   const [temHistorico, setTemHistorico] = useState(false);
 
   const campanhas = useMemo(() => data?.campanhas ?? [], [data]);
-  const visiveis = useMemo(
-    () => campanhas.filter((c) => !ocultas.has(c.id)),
-    [campanhas, ocultas],
-  );
+  const visiveis = useMemo(() => campanhas.filter((c) => !ocultas.has(c.id)), [campanhas, ocultas]);
   const meses = useMemo(() => mesesDoPeriodo(campanhas), [campanhas]);
 
   const anotar = useCallback((passo: Passo) => {
@@ -112,22 +150,17 @@ export default function PlannerPage() {
   const mudarFase = useCallback(
     (campanhaId: string, fase: Fase) => {
       const c = campanhas.find((x) => x.id === campanhaId);
-      if (!c) return;
-      mudarCampanha(c, { phases: c.phases.map((f) => (f.id === fase.id ? fase : f)) });
+      if (c) mudarCampanha(c, { phases: c.phases.map((f) => (f.id === fase.id ? fase : f)) });
     },
     [campanhas, mudarCampanha],
   );
 
   /**
-   * Exclui, e oferece a volta no próprio aviso.
+   * Exclui e oferece a volta no próprio aviso.
    *
    * O Ctrl+Z existe, mas ninguém descobre um atalho no momento em que percebe
-   * que apagou a coisa errada. O botão no toast é a mesma ação ao alcance da
-   * mão que já está no mouse.
-   *
-   * Sem diálogo de confirmação de propósito: confirmar toda exclusão treina a
-   * pessoa a clicar "sim" sem ler, e aí a proteção deixa de proteger. Poder
-   * voltar atrás vale mais que ter de pedir licença.
+   * que apagou a coisa errada. Sem diálogo de confirmação de propósito:
+   * confirmar toda exclusão treina a pessoa a clicar "sim" sem ler.
    */
   function excluirCampanha(c: Campanha) {
     anotar({ tipo: "excluiu", campanha: c });
@@ -136,8 +169,6 @@ export default function PlannerPage() {
       action: {
         label: "Desfazer",
         onClick: () => {
-          // Tira do histórico: desfazer pelo botão e depois pelo Ctrl+Z
-          // recriaria a campanha duas vezes.
           historico.current = historico.current.filter(
             (x) => !(x.tipo === "excluiu" && x.campanha.id === c.id),
           );
@@ -152,14 +183,13 @@ export default function PlannerPage() {
     const passo = historico.current.pop();
     setTemHistorico(historico.current.length > 0);
     if (!passo) return;
-
     if (passo.tipo === "excluiu") {
       await restaurar.mutateAsync(passo.campanha);
       toast.success(`"${passo.campanha.name}" restaurada`);
       return;
     }
-    // Editar volta a campanha inteira ao que era: a unidade de edição é a
-    // campanha, então desfazer campo a campo daria um estado que nunca existiu.
+    // Volta a campanha inteira: a unidade de edição é a campanha, e desfazer
+    // campo a campo daria um estado que nunca existiu.
     await atualizar.mutateAsync({
       id: passo.campanha.id,
       dados: {
@@ -171,12 +201,17 @@ export default function PlannerPage() {
     toast.success("Desfeito");
   }
 
-  // Ctrl+Z em qualquer lugar da tela, menos dentro de um campo de texto — ali
-  // o desfazer nativo do input é o que a pessoa espera.
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
-      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
       const alvo = e.target as HTMLElement | null;
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        setRail((v) => !v);
+        return;
+      }
+      if (e.key.toLowerCase() !== "z") return;
+      // Dentro de um campo, o desfazer nativo é o que a pessoa espera.
       if (alvo?.matches?.("input, textarea")) return;
       e.preventDefault();
       void desfazer();
@@ -190,20 +225,18 @@ export default function PlannerPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `planner-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `planner-campanhas-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
   async function importar(arquivo: File) {
     try {
-      const texto = await arquivo.text();
-      const lido = JSON.parse(texto) as { campanhas?: Campanha[] };
+      const lido = JSON.parse(await arquivo.text()) as { campanhas?: Campanha[] };
       if (!Array.isArray(lido.campanhas)) throw new Error("Arquivo sem lista de campanhas");
-
-      // ADICIONA, não substitui. O planner original trocava o estado inteiro
-      // sem avisar — aqui perder o trabalho de outra pessoa por um clique não
-      // é um risco que valha a conveniência.
+      // ADICIONA, não substitui. O original trocava o estado inteiro sem avisar
+      // — perder o trabalho de outra pessoa por um clique não vale a
+      // conveniência.
       for (const c of lido.campanhas) {
         await criar.mutateAsync({ name: c.name, color: c.color, phases: c.phases });
       }
@@ -230,7 +263,7 @@ export default function PlannerPage() {
   if (role === "guest") {
     return (
       <div className="p-6">
-        <div className="rounded-xl border border-dashed border-border/40 p-12 text-center">
+        <div className="rounded-xl border border-dashed border-border p-12 text-center">
           <p className="text-sm text-muted-foreground">O Planner é restrito à equipe interna.</p>
         </div>
       </div>
@@ -249,274 +282,322 @@ export default function PlannerPage() {
         ? `${campanhas.length} ${campanhas.length === 1 ? "campanha" : "campanhas"}`
         : "arraste as barras para reprogramar";
 
+  const listaDeCards = (
+    <>
+      {campanhas.map((c) => (
+        <CardDeCampanha
+          key={c.id}
+          campanha={c}
+          faseSelecionada={selecionada}
+          onMudar={(dados) => mudarCampanha(c, dados)}
+          onExcluir={() => excluirCampanha(c)}
+          onDuplicar={() => duplicar.mutate(c.id)}
+          onSelecionarFase={setSelecionada}
+        />
+      ))}
+      <button
+        type="button"
+        onClick={async () => {
+          await criar.mutateAsync({ name: "Nova campanha" });
+          setVisao("cards");
+        }}
+        className="grid min-h-[110px] place-items-center rounded-[10px] border border-dashed border-border text-[13px] font-medium text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-card hover:text-foreground"
+      >
+        + Nova campanha
+      </button>
+    </>
+  );
+
   return (
-    /*
-     * Sem altura fixa.
-     *
-     * `h-[calc(100vh-3.5rem)]` funciona no desktop e falha no celular: ali o
-     * `100vh` conta a barra do navegador, que aparece e some conforme a rolagem
-     * — o container muda de altura sozinho e corta o conteudo. As outras telas
-     * do app usam `h-full` com scroll do pai, e esta passa a fazer igual.
-     */
-    <div className="flex h-full flex-col">
-      {/* Rola de lado em vez de quebrar em quatro linhas: num celular, um
-          cabecalho de 160px de altura come metade da tela util. */}
-      <header className="flex items-center gap-2 overflow-x-auto border-b border-border/50 px-4 py-2.5">
-        <div className="flex items-center gap-1 rounded-lg border border-border/50 p-0.5">
-          {(
-            [
-              ["split", Columns2, "Cards + calendário"],
-              ["cards", LayoutGrid, "Só cards"],
-              ["timeline", Rows3, "Timeline"],
-            ] as const
-          ).map(([v, Icone, titulo]) => (
-            <button
-              key={v}
-              type="button"
-              title={titulo}
-              onClick={() => setVisao(v)}
-              className={`rounded px-2 py-1 transition-colors ${
-                visao === v ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted"
-              }`}
-            >
-              <Icone className="h-3.5 w-3.5" />
-            </button>
-          ))}
-        </div>
-
-        {visao === "split" && (
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-2 text-[11px]"
-              onClick={() => {
-                setAno(hoje.getFullYear());
-                setMes(hoje.getMonth() + 1);
-              }}
-            >
-              Hoje
-            </Button>
-            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => irParaMes(-1)}>
-              <ChevronLeft className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => irParaMes(1)}>
-              <ChevronRight className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        )}
-
-        <div className="min-w-0">
-          <h1 className="truncate text-sm font-semibold">
-            {visao === "split" ? `${MESES_LONGOS[mes - 1]} de ${ano}` : visao === "cards" ? "Cards" : "Timeline"}
+    <div className="flex h-full min-h-0 flex-col lg:grid lg:grid-cols-[236px_1fr]" data-rail={rail}>
+      {/* Barra lateral do planner: título, visões, meses e legenda. No celular
+          vira faixa horizontal no topo — some-la deixaria a legenda, que é o
+          único jeito de ocultar uma campanha, inacessível. */}
+      <aside
+        className={`flex shrink-0 flex-col overflow-hidden border-b border-border bg-card lg:border-b-0 lg:border-r ${
+          rail ? "" : "lg:hidden"
+        }`}
+      >
+        <div className="hidden border-b border-border px-[18px] pb-3.5 pt-[18px] lg:block">
+          <h1 className="text-[15px] font-bold leading-tight tracking-[-0.01em]">
+            Planner de Campanhas
           </h1>
-          <p className="truncate text-[11px] text-muted-foreground">{subtitulo}</p>
+          <p className="mt-[3px] text-[11px] text-muted-foreground">
+            Loyola Digital · {hoje.getFullYear()}
+          </p>
         </div>
 
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="flex flex-1 gap-4 overflow-x-auto px-3 py-3.5 lg:flex-col lg:gap-[18px] lg:overflow-y-auto lg:px-3 lg:pb-5 lg:pt-3.5">
+          <section className="flex shrink-0 flex-col gap-1.5">
+            <Rotulo>Visão</Rotulo>
+            <div className="flex gap-1 lg:flex-col lg:gap-1.5">
+              {(
+                [
+                  ["split", Columns2, "Cards + Calendário"],
+                  ["cards", LayoutGrid, "Só cards"],
+                  ["timeline", Rows3, "Timeline"],
+                ] as const
+              ).map(([v, Icone, rotulo]) => (
+                <button
+                  key={v}
+                  type="button"
+                  aria-current={visao === v}
+                  onClick={() => setVisao(v)}
+                  className={`flex shrink-0 items-center gap-[9px] whitespace-nowrap rounded-md px-[9px] py-[7px] text-left text-[13px] transition-colors lg:w-full ${
+                    visao === v
+                      ? "bg-muted font-semibold text-foreground"
+                      : "font-medium text-foreground/70 hover:bg-muted/60 hover:text-foreground"
+                  }`}
+                >
+                  <Icone className="h-3.5 w-3.5 flex-none opacity-75" />
+                  {rotulo}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="flex shrink-0 flex-col gap-1.5">
+            <Rotulo>Meses</Rotulo>
+            <div className="flex gap-1 lg:flex-col lg:gap-1.5">
+              {meses.map((m) => {
+                const n = visiveis.reduce(
+                  (acc, c) => acc + c.phases.filter((f) => cruzaMes(f, m.ano, m.mes)).length,
+                  0,
+                );
+                const atual = m.ano === ano && m.mes === mes && visao === "split";
+                return (
+                  <button
+                    key={`${m.ano}-${m.mes}`}
+                    type="button"
+                    aria-current={atual}
+                    onClick={() => {
+                      setAno(m.ano);
+                      setMes(m.mes);
+                      setVisao("split");
+                    }}
+                    className={`flex shrink-0 items-center gap-[9px] whitespace-nowrap rounded-md px-[9px] py-[7px] text-left text-[13px] transition-colors lg:w-full ${
+                      atual
+                        ? "bg-muted font-semibold text-foreground"
+                        : "font-medium text-foreground/70 hover:bg-muted/60 hover:text-foreground"
+                    }`}
+                  >
+                    <span className="capitalize">{MESES_LONGOS[m.mes - 1]}</span>
+                    <span className="font-mono text-[11px] text-muted-foreground">
+                      {String(m.ano).slice(2)}
+                    </span>
+                    {/* Zero não aparece: uma coluna de zeros vira ruído e
+                        esconde os meses que têm algo. */}
+                    {n > 0 && (
+                      <span
+                        className={`ml-auto font-mono text-[10px] ${
+                          atual ? "text-foreground/80" : "text-muted-foreground"
+                        }`}
+                      >
+                        {n}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="flex shrink-0 flex-col gap-1.5">
+            <Rotulo>Campanhas</Rotulo>
+            <div className="flex gap-px lg:flex-col">
+              {campanhas.map((c) => {
+                const oculta = ocultas.has(c.id);
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    title={oculta ? "Mostrar no calendário" : "Ocultar do calendário"}
+                    onClick={() =>
+                      setOcultas((s) => {
+                        const novo = new Set(s);
+                        if (novo.has(c.id)) novo.delete(c.id);
+                        else novo.add(c.id);
+                        return novo;
+                      })
+                    }
+                    className={`flex shrink-0 items-center gap-2 rounded-md px-2 py-[5px] text-left transition-colors hover:bg-muted/60 lg:w-full ${
+                      oculta ? "opacity-40" : ""
+                    }`}
+                  >
+                    {/* Oculta vira contorno em vez de sumir: o vazio diz
+                        "existe e está escondida", o sumiço não diz nada. */}
+                    <span
+                      className="h-[9px] w-[9px] flex-none rounded-sm"
+                      style={
+                        oculta
+                          ? { boxShadow: `inset 0 0 0 1.5px ${c.color}` }
+                          : { backgroundColor: c.color }
+                      }
+                    />
+                    <span className="truncate text-[12px] leading-tight text-foreground/80">
+                      {c.name}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      </aside>
+
+      <main className="flex min-h-0 min-w-0 flex-col">
+        <header className="flex h-14 flex-none items-center gap-3 overflow-x-auto border-b border-border bg-card px-5">
+          <button
+            type="button"
+            onClick={() => setRail((v) => !v)}
+            title="Recolher barra lateral (Ctrl+B)"
+            className="hidden h-[30px] w-[30px] flex-none place-items-center rounded-full text-foreground/70 transition-colors hover:bg-muted hover:text-foreground lg:grid"
+          >
+            <PanelLeft className="h-4 w-4" />
+          </button>
+
           {visao === "split" && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-[11px]"
-              onClick={() => setMostrarCards((v) => !v)}
-            >
-              {mostrarCards ? "Ocultar cards" : "Mostrar cards"}
-            </Button>
+            <div className="flex flex-none items-center gap-[3px]">
+              <Acao
+                onClick={() => {
+                  setAno(hoje.getFullYear());
+                  setMes(hoje.getMonth() + 1);
+                }}
+              >
+                Hoje
+              </Acao>
+              <button
+                type="button"
+                onClick={() => irParaMes(-1)}
+                aria-label="Mês anterior"
+                className="grid h-7 w-7 place-items-center rounded-md text-foreground/70 hover:bg-muted hover:text-foreground"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => irParaMes(1)}
+                aria-label="Próximo mês"
+                className="grid h-7 w-7 place-items-center rounded-md text-foreground/70 hover:bg-muted hover:text-foreground"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
           )}
 
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0"
-            title="Desfazer (Ctrl+Z)"
-            disabled={!temHistorico}
-            onClick={desfazer}
-          >
-            <Undo2 className="h-3.5 w-3.5" />
-          </Button>
+          {/* Título e subtítulo na mesma linha: o subtítulo é complemento do
+              título, e empilhado vira um segundo assunto. */}
+          <h2 className="flex-none whitespace-nowrap text-base font-semibold tracking-[-0.01em] capitalize">
+            {visao === "split"
+              ? `${MESES_LONGOS[mes - 1]} de ${ano}`
+              : visao === "cards"
+                ? "Cards"
+                : "Timeline"}
+          </h2>
+          <span className="ml-0.5 flex-none whitespace-nowrap text-[12px] text-muted-foreground">
+            {subtitulo}
+          </span>
 
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Exportar" onClick={exportar}>
-            <Download className="h-3.5 w-3.5" />
-          </Button>
+          <div className="flex-1" />
 
-          <label className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-muted" title="Importar">
-            <Upload className="h-3.5 w-3.5" />
-            <input
-              type="file"
-              accept="application/json"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void importar(f);
-                e.target.value = "";
+          <div className="flex flex-none items-center gap-1.5">
+            {visao === "split" && (
+              <Acao onClick={() => setMostrarCards((v) => !v)}>
+                {mostrarCards ? "Ocultar cards" : "Mostrar cards"}
+              </Acao>
+            )}
+            <Acao onClick={desfazer} disabled={!temHistorico} titulo="Ctrl+Z">
+              Desfazer
+            </Acao>
+            <Acao onClick={exportar}>
+              <Download className="h-3.5 w-3.5" />
+              Exportar
+            </Acao>
+            <label className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-card px-[11px] py-1.5 text-[12px] font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground">
+              <Upload className="h-3.5 w-3.5" />
+              Importar
+              <input
+                type="file"
+                accept="application/json"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void importar(f);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <Acao
+              primary
+              onClick={async () => {
+                await criar.mutateAsync({ name: "Nova campanha" });
+                setVisao("cards");
               }}
-            />
-          </label>
-
-          <Button
-            size="sm"
-            className="h-7 gap-1 px-2 text-[11px]"
-            onClick={async () => {
-              await criar.mutateAsync({ name: "Nova campanha" });
-              setVisao("cards");
-            }}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Campanha
-          </Button>
-        </div>
-      </header>
-
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        {/* No celular vira faixa horizontal em vez de sumir: sem ela, os meses
-            e a legenda de campanhas ficariam inacessiveis, e a legenda e o
-            unico jeito de ocultar uma campanha. */}
-        <aside className="w-full shrink-0 overflow-x-auto border-b border-border/50 p-3 lg:w-52 lg:overflow-y-auto lg:border-b-0 lg:border-r">
-          <p className="mb-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">Meses</p>
-          <div className="mb-4 flex gap-1 overflow-x-auto lg:block lg:space-y-0.5">
-            {meses.map((m) => {
-              const n = visiveis.reduce(
-                (acc, c) => acc + c.phases.filter((f) => cruzaMes(f, m.ano, m.mes)).length,
-                0,
-              );
-              const atual = m.ano === ano && m.mes === mes;
-              return (
-                <button
-                  key={`${m.ano}-${m.mes}`}
-                  type="button"
-                  onClick={() => {
-                    setAno(m.ano);
-                    setMes(m.mes);
-                    setVisao("split");
-                  }}
-                  className={`flex shrink-0 items-center justify-between gap-1 rounded px-1.5 py-1 text-[11px] transition-colors lg:w-full ${
-                    atual ? "bg-primary/10 font-medium text-primary" : "hover:bg-muted"
-                  }`}
-                >
-                  <span>
-                    {MESES_LONGOS[m.mes - 1]?.slice(0, 3).toLowerCase()} {String(m.ano).slice(2)}
-                  </span>
-                  {/* Sem fase não mostra zero: uma coluna de zeros vira ruído
-                      e esconde os meses que têm algo. */}
-                  {n > 0 && <span className="tabular-nums text-muted-foreground">{n}</span>}
-                </button>
-              );
-            })}
+            >
+              + Campanha
+            </Acao>
           </div>
+        </header>
 
-          <p className="mb-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-            Campanhas
-          </p>
-          <div className="flex gap-1 overflow-x-auto lg:block lg:space-y-0.5">
-            {campanhas.map((c) => {
-              const oculta = ocultas.has(c.id);
-              return (
-                <button
-                  key={c.id}
-                  type="button"
-                  title={oculta ? "Mostrar" : "Ocultar"}
-                  onClick={() =>
-                    setOcultas((s) => {
-                      const novo = new Set(s);
-                      if (novo.has(c.id)) novo.delete(c.id);
-                      else novo.add(c.id);
-                      return novo;
-                    })
-                  }
-                  className={`flex shrink-0 items-center gap-1.5 rounded px-1.5 py-1 text-left text-[11px] transition-opacity hover:bg-muted lg:w-full ${
-                    oculta ? "opacity-40" : ""
-                  }`}
-                >
-                  <span
-                    className="h-2.5 w-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: c.color }}
-                  />
-                  <span className="truncate">{c.name}</span>
-                </button>
-              );
-            })}
+        {isLoading ? (
+          <div className="space-y-3 p-5">
+            <Skeleton className="h-64 rounded-[10px]" />
+            <Skeleton className="h-32 rounded-[10px]" />
           </div>
-        </aside>
-
-        <main className="min-w-0 flex-1 overflow-auto p-4">
-          {isLoading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-64 rounded-xl" />
-              <Skeleton className="h-32 rounded-xl" />
-            </div>
-          ) : campanhas.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border/40 p-12 text-center">
-              <CalendarDays className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-              <p className="text-sm font-medium">Nenhuma campanha ainda.</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Crie a primeira — ela já vem com as cinco fases padrão.
-              </p>
-            </div>
-          ) : visao === "timeline" ? (
+        ) : campanhas.length === 0 ? (
+          <div className="px-5 py-[52px] text-center text-[13px] text-muted-foreground">
+            <CalendarDays className="mx-auto mb-2 h-8 w-8 opacity-60" />
+            Nenhuma campanha ainda — crie a primeira, ela já vem com as cinco fases padrão.
+          </div>
+        ) : visao === "timeline" ? (
+          <div className="min-h-0 flex-1 overflow-auto px-5 pb-6 pt-4">
             <Timeline
               campanhas={visiveis}
               faseSelecionada={selecionada}
               onSelecionarFase={(_c, f) => setSelecionada(f)}
               onMudarFase={mudarFase}
             />
-          ) : visao === "cards" ? (
-            <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-              {campanhas.map((c) => (
-                <CardDeCampanha
-                  key={c.id}
-                  campanha={c}
-                  faseSelecionada={selecionada}
-                  onMudar={(dados) => mudarCampanha(c, dados)}
-                  onExcluir={() => excluirCampanha(c)}
-                  onDuplicar={() => duplicar.mutate(c.id)}
-                  onSelecionarFase={setSelecionada}
-                />
-              ))}
+          </div>
+        ) : visao === "cards" ? (
+          <div className="min-h-0 flex-1 overflow-auto">
+            <div className="grid items-start gap-4 p-5 [grid-template-columns:repeat(auto-fill,minmax(500px,1fr))] max-[560px]:[grid-template-columns:1fr]">
+              {listaDeCards}
             </div>
-          ) : (
-            <div className={`grid gap-4 ${mostrarCards ? "xl:grid-cols-[480px_1fr]" : ""}`}>
-              {mostrarCards && (
-                // `order-2` no celular: o calendario e a visao principal desta
-                // tela, e os cards empilhados em cima empurrariam ele para
-                // fora do primeiro rolar.
-                <div className="order-2 space-y-3 xl:order-1 xl:max-h-[calc(100vh-9rem)] xl:overflow-y-auto xl:pr-1">
-                  {campanhas.map((c) => (
-                    <CardDeCampanha
-                      key={c.id}
-                      campanha={c}
-                      faseSelecionada={selecionada}
-                      onMudar={(dados) => mudarCampanha(c, dados)}
-                      onExcluir={() => excluirCampanha(c)}
-                      onDuplicar={() => duplicar.mutate(c.id)}
-                      onSelecionarFase={setSelecionada}
-                    />
-                  ))}
-                </div>
-              )}
-
-              <div className="order-1 min-w-0 xl:order-2">
+          </div>
+        ) : (
+          /* Split: duas colunas com scroll INDEPENDENTE. Uma rolagem só faria
+             a lista de cards arrastar o calendário junto, e a graça da visão é
+             comparar os dois. */
+          <div
+            className={`min-h-0 flex-1 lg:grid lg:overflow-hidden ${
+              mostrarCards ? "lg:grid-cols-[528px_minmax(0,1fr)]" : "lg:grid-cols-1"
+            }`}
+          >
+            {mostrarCards && (
+              <div className="order-2 min-w-0 space-y-3.5 bg-background p-3.5 lg:order-1 lg:overflow-y-auto lg:border-r lg:border-border">
+                {listaDeCards}
+              </div>
+            )}
+            <div className="order-1 min-w-0 bg-card lg:order-2 lg:overflow-auto">
               <Calendario
                 campanhas={visiveis}
                 ano={ano}
                 mes={mes}
                 faseSelecionada={selecionada}
-                onSelecionarFase={(_c, f) => {
-                  setSelecionada(f);
-                  // Leva o card correspondente à vista: clicar numa barra e não
-                  // achar onde editá-la é o atrito que a visão dividida existe
-                  // para eliminar.
+                onSelecionarFase={(campanhaId, faseId) => {
+                  setSelecionada(faseId);
+                  // Leva o card à vista: clicar numa barra e não achar onde
+                  // editá-la é o atrito que a visão dividida existe para tirar.
                   document
-                    .querySelector(`#campanha-${_c}`)
+                    .querySelector(`#campanha-${campanhaId}`)
                     ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
                 }}
                 onMudarFase={mudarFase}
               />
-              </div>
             </div>
-          )}
-        </main>
-      </div>
+          </div>
+        )}
+      </main>
     </div>
   );
 }

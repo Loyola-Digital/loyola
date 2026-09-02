@@ -3,54 +3,44 @@
 /**
  * Os cards — onde se digita.
  *
- * O calendário e a timeline servem para VER e para arrastar; aqui é onde se
- * escreve nome, escolhe cor e cadastra data com precisão. Por isso todo campo é
- * um input direto, sem modal: abrir uma janela para trocar uma data seria três
- * cliques onde cabe um.
+ * A estrutura é a do planner original, medida no CSS dele: grade de
+ * `1fr 120px 120px 42px 22px`, cabeçalho de 26px, linha de 34px, datas em fonte
+ * mono centralizada sobre fundo afundado. O que muda são os tokens: onde ele
+ * usa `--surface` e `--line` fixos, aqui entram `bg-card` e `border-border` do
+ * nosso design system, que já respondem ao tema.
  *
  * ## Quando salva
  *
- * Texto salva ao SAIR do campo, não a cada tecla. O planner original mandava a
- * cada caractere porque o Firestore aguentava; aqui isso viraria uma requisição
- * por letra digitada. Data salva no `change` — o seletor nativo só dispara
- * quando a data está completa, então não há meio-termo a proteger.
+ * Texto salva ao SAIR do campo, não a cada tecla. O original mandava por
+ * caractere porque o Firestore aguentava; aqui seria uma requisição por letra.
  */
 
 import { useEffect, useState } from "react";
-import { Copy, Plus, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  br,
-  corDoTexto,
-  dias,
-  novoId,
-  periodo,
-  type Campanha,
-  type Fase,
-} from "@/lib/planner/datas";
+import { Trash2 } from "lucide-react";
+import { br, dias, novoId, periodo, type Campanha, type Fase } from "@/lib/planner/datas";
 
 /**
- * Um campo de texto que só avisa quando a pessoa termina.
+ * Campo de texto que só avisa quando a pessoa termina.
  *
- * Mantém o próprio estado enquanto está sendo editado — sem isso, uma
- * atualização vinda do servidor no meio da digitação apagaria o que está sendo
- * escrito.
+ * Guarda o próprio rascunho enquanto está em foco — sem isso, uma atualização
+ * vinda do servidor no meio da digitação apagaria o que está sendo escrito.
  */
-function TextoQueSalvaAoSair({
+function TextoInline({
   valor,
   onSalvar,
   className,
   placeholder,
+  style,
 }: {
   valor: string;
   onSalvar: (v: string) => void;
   className?: string;
   placeholder?: string;
+  style?: React.CSSProperties;
 }) {
   const [rascunho, setRascunho] = useState(valor);
   const [editando, setEditando] = useState(false);
 
-  // Só aceita o valor de fora quando NÃO está editando.
   useEffect(() => {
     if (!editando) setRascunho(valor);
   }, [valor, editando]);
@@ -59,6 +49,7 @@ function TextoQueSalvaAoSair({
     <input
       value={rascunho}
       placeholder={placeholder}
+      style={style}
       onFocus={() => setEditando(true)}
       onChange={(e) => setRascunho(e.target.value)}
       onBlur={() => {
@@ -78,78 +69,94 @@ function TextoQueSalvaAoSair({
   );
 }
 
+/** A grade das linhas de fase. Idêntica ao `.phead`/`.prow` do original. */
+const GRADE = "grid grid-cols-[minmax(0,1fr)_120px_120px_42px_22px] items-center gap-1.5 px-3";
+
 function LinhaDaFase({
   fase,
+  cor,
   selecionada,
   onMudar,
   onExcluir,
   onSelecionar,
 }: {
   fase: Fase;
+  cor: string;
   selecionada: boolean;
   onMudar: (f: Fase) => void;
   onExcluir: () => void;
   onSelecionar: () => void;
 }) {
-  // "aberto" quando só tem início: a fase começou e ninguém sabe quando acaba.
-  // "—" quando não tem data nenhuma. Os dois são estados de verdade no
-  // planejamento, e mostrar "0 dias" nos dois casos apagaria a diferença.
-  const duracao = !fase.start ? "—" : fase.end ? String(dias(fase.start, fase.end)) : "aberto";
+  const vazia = !fase.start;
+  // "aberto" quando só tem início; "—" quando não tem data. Os dois são
+  // estados de verdade no planejamento, e "0 dias" apagaria a diferença.
+  const duracao = vazia ? "—" : fase.end ? String(dias(fase.start, fase.end)) : "aberto";
 
   return (
-    <tr
+    <div
       onClick={onSelecionar}
-      data-vazia={!fase.start ? "1" : undefined}
-      className={`group/linha cursor-pointer border-b border-border/30 last:border-0 transition-colors ${
-        selecionada ? "bg-primary/5" : "hover:bg-muted/40"
-      } data-[vazia]:opacity-55`}
+      className={`${GRADE} h-[34px] border-b border-border/60 transition-colors last:border-b-0 ${
+        selecionada ? "" : "hover:bg-muted/40"
+      }`}
+      style={
+        selecionada ? { backgroundColor: `color-mix(in srgb, ${cor} 9%, transparent)` } : undefined
+      }
     >
-      <td className="py-1">
-        <TextoQueSalvaAoSair
-          valor={fase.name}
-          onSalvar={(name) => onMudar({ ...fase, name })}
-          placeholder="Nome da fase"
-          className="w-full bg-transparent px-1 text-xs outline-none focus:rounded focus:bg-background focus:ring-1 focus:ring-primary/40"
-        />
-      </td>
-      <td className="py-1">
-        <input
-          type="date"
-          value={fase.start}
-          onChange={(e) => onMudar({ ...fase, start: e.target.value })}
-          className="w-[120px] rounded bg-transparent px-1 text-[11px] tabular-nums outline-none focus:bg-background focus:ring-1 focus:ring-primary/40"
-        />
-      </td>
-      <td className="py-1">
-        <input
-          type="date"
-          value={fase.end}
-          // Sem início não há fim: o campo fica bloqueado em vez de aceitar um
-          // valor que o servidor vai zerar logo em seguida.
-          disabled={!fase.start}
-          min={fase.start || undefined}
-          onChange={(e) => onMudar({ ...fase, end: e.target.value })}
-          className="w-[120px] rounded bg-transparent px-1 text-[11px] tabular-nums outline-none focus:bg-background focus:ring-1 focus:ring-primary/40 disabled:opacity-40"
-        />
-      </td>
-      <td className="py-1 pr-1 text-right text-[11px] tabular-nums text-muted-foreground">
+      {/* A barrinha é a BORDA do input, como no original — assim ela acompanha
+          a altura do campo em vez de flutuar ao lado. */}
+      <TextoInline
+        valor={fase.name}
+        onSalvar={(name) => onMudar({ ...fase, name })}
+        placeholder="Nova fase"
+        style={{
+          borderLeft: `3px solid ${vazia ? `color-mix(in srgb, ${cor} 35%, transparent)` : cor}`,
+        }}
+        className={`w-full rounded-[5px] bg-transparent px-1.5 py-0.5 text-[13px] outline-none hover:bg-foreground/5 ${
+          vazia ? "text-muted-foreground" : ""
+        }`}
+      />
+
+      <input
+        type="date"
+        value={fase.start}
+        onChange={(e) => onMudar({ ...fase, start: e.target.value })}
+        className="w-full rounded-[5px] border border-transparent bg-muted px-1.5 py-0.5 text-center font-mono text-[11.5px] tabular-nums text-foreground/80 outline-none hover:border-border focus:border-foreground focus:bg-card focus:text-foreground"
+      />
+
+      <input
+        type="date"
+        value={fase.end}
+        // Sem início não há fim: bloquear é melhor que aceitar um valor que o
+        // servidor vai zerar em seguida.
+        disabled={vazia}
+        min={fase.start || undefined}
+        onChange={(e) => onMudar({ ...fase, end: e.target.value })}
+        className="w-full rounded-[5px] border border-transparent bg-muted px-1.5 py-0.5 text-center font-mono text-[11.5px] tabular-nums text-foreground/80 outline-none hover:border-border focus:border-foreground focus:bg-card focus:text-foreground disabled:opacity-40"
+      />
+
+      <span
+        className={`text-right font-mono tabular-nums ${
+          duracao === "aberto"
+            ? "text-[10px] tracking-wide text-muted-foreground"
+            : "text-[11.5px] text-foreground/80"
+        }`}
+      >
         {duracao}
-      </td>
-      <td className="py-1">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onExcluir();
-          }}
-          aria-label={`Excluir fase ${fase.name}`}
-          title="Excluir fase"
-          className="rounded p-0.5 text-muted-foreground/50 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:text-destructive"
-        >
-          <Trash2 className="h-3 w-3" />
-        </button>
-      </td>
-    </tr>
+      </span>
+
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onExcluir();
+        }}
+        aria-label={`Excluir fase ${fase.name}`}
+        title="Excluir fase"
+        className="grid h-[22px] w-[22px] place-items-center rounded-[5px] text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+      >
+        <Trash2 className="h-3 w-3" />
+      </button>
+    </div>
   );
 }
 
@@ -170,116 +177,119 @@ export function CardDeCampanha({
 }) {
   const p = periodo(campanha.phases);
   const total = p ? dias(p.inicio, p.fim) : null;
-
-  function mudarFase(atualizada: Fase) {
-    onMudar({ phases: campanha.phases.map((f) => (f.id === atualizada.id ? atualizada : f)) });
-  }
+  const cor = campanha.color;
 
   return (
     <article
       id={`campanha-${campanha.id}`}
-      className="group overflow-hidden rounded-xl border border-border/50 bg-card"
-      style={{ ["--c" as string]: campanha.color }}
+      className="overflow-hidden rounded-[10px] border border-border bg-card shadow-sm"
     >
       <header
-        className="flex items-center gap-2 px-3 py-2"
-        style={{
-          backgroundColor: `color-mix(in srgb, ${campanha.color} 14%, transparent)`,
-          borderLeft: `3px solid ${campanha.color}`,
-        }}
+        className="flex items-start gap-2.5 border-b border-border px-3.5 pb-3 pt-3.5"
+        style={{ backgroundColor: `color-mix(in srgb, ${cor} 9%, transparent)` }}
       >
-        <TextoQueSalvaAoSair
-          valor={campanha.name}
-          onSalvar={(name) => onMudar({ name })}
-          placeholder="Nome da campanha"
-          className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none focus:rounded focus:bg-background focus:px-1 focus:ring-1 focus:ring-primary/40"
+        {/* Faixa de 4px esticada na altura do cabeçalho. */}
+        <span
+          className="min-h-[30px] w-1 shrink-0 self-stretch rounded-sm"
+          style={{ backgroundColor: cor }}
+          aria-hidden
         />
 
-        <input
-          type="color"
-          value={campanha.color}
-          onChange={(e) => onMudar({ color: e.target.value })}
-          aria-label={`Cor de ${campanha.name}`}
-          className="h-5 w-5 shrink-0 cursor-pointer rounded border-0 bg-transparent p-0"
-        />
+        <div className="min-w-0 flex-1">
+          <TextoInline
+            valor={campanha.name}
+            onSalvar={(name) => onMudar({ name })}
+            placeholder="Nome da campanha"
+            className="w-full rounded bg-transparent text-[14px] font-semibold tracking-[-0.01em] outline-none hover:bg-foreground/5"
+          />
+          <p className="mt-0.5 flex flex-wrap gap-2 font-mono text-[10.5px] text-muted-foreground">
+            <span>
+              {campanha.phases.length} {campanha.phases.length === 1 ? "fase" : "fases"}
+            </span>
+            {p && (
+              <>
+                <span>
+                  {br(p.inicio)} → {br(p.fim)}
+                </span>
+                <span>{total}d</span>
+              </>
+            )}
+          </p>
+        </div>
 
-        {/* Sempre visível, e não só no hover.
-            Uma ação que só aparece quando o mouse chega é impossível de achar
-            — e no toque não aparece nunca. Discreta resolve a hierarquia
-            visual; escondida resolve só a aparência. A proteção contra o
-            clique errado é o desfazer, não a invisibilidade. */}
+        {/* O input de cor cobre o quadradinho, invisível: a área de clique é a
+            do alvo, não a do controle nativo. */}
+        <span className="relative grid h-6 w-6 shrink-0 place-items-center rounded-[5px] hover:bg-foreground/10">
+          <span
+            className="h-3.5 w-3.5 rounded-[3px] shadow-[inset_0_0_0_1px_rgba(0,0,0,.15)]"
+            style={{ backgroundColor: cor }}
+          />
+          <input
+            type="color"
+            value={cor}
+            onChange={(e) => onMudar({ color: e.target.value })}
+            aria-label={`Cor de ${campanha.name}`}
+            className="absolute inset-0 cursor-pointer border-0 p-0 opacity-0"
+          />
+        </span>
+
         <button
           type="button"
           onClick={onExcluir}
           aria-label={`Excluir campanha ${campanha.name}`}
           title="Excluir campanha"
-          className="shrink-0 rounded p-1 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:text-destructive"
+          className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-[5px] text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
         >
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       </header>
 
-      <p className="px-3 py-1.5 text-[11px] text-muted-foreground">
-        {campanha.phases.length} {campanha.phases.length === 1 ? "fase" : "fases"}
-        {p && ` · ${br(p.inicio)} → ${br(p.fim)} · ${total}d`}
-      </p>
-
-      <div className="px-2">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-border/40 text-left text-[10px] uppercase tracking-wide text-muted-foreground">
-              <th className="pb-1 pl-1 font-medium">Fase</th>
-              <th className="pb-1 font-medium">Início</th>
-              <th className="pb-1 font-medium">Fim</th>
-              <th className="pb-1 pr-1 text-right font-medium">Dias</th>
-              <th className="w-5" />
-            </tr>
-          </thead>
-          <tbody>
-            {campanha.phases.map((f) => (
-              <LinhaDaFase
-                key={f.id}
-                fase={f}
-                selecionada={faseSelecionada === f.id}
-                onMudar={mudarFase}
-                onExcluir={() =>
-                  onMudar({ phases: campanha.phases.filter((x) => x.id !== f.id) })
-                }
-                onSelecionar={() => onSelecionarFase(f.id)}
-              />
-            ))}
-          </tbody>
-        </table>
+      <div
+        className={`${GRADE} h-[26px] border-b border-border bg-muted/40 font-mono text-[10px] font-medium uppercase tracking-[0.11em] text-muted-foreground`}
+      >
+        <span>Fase</span>
+        <span className="text-center">Início</span>
+        <span className="text-center">Fim</span>
+        <span className="text-right">Dias</span>
+        <span />
       </div>
 
-      <footer className="flex items-center justify-between gap-2 px-3 py-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 gap-1 px-2 text-[11px]"
+      {campanha.phases.map((f) => (
+        <LinhaDaFase
+          key={f.id}
+          fase={f}
+          cor={cor}
+          selecionada={faseSelecionada === f.id}
+          onMudar={(atualizada) =>
+            onMudar({
+              phases: campanha.phases.map((x) => (x.id === atualizada.id ? atualizada : x)),
+            })
+          }
+          onExcluir={() => onMudar({ phases: campanha.phases.filter((x) => x.id !== f.id) })}
+          onSelecionar={() => onSelecionarFase(f.id)}
+        />
+      ))}
+
+      <footer className="flex gap-1.5 border-t border-border bg-muted/40 px-3 py-1.5">
+        <button
+          type="button"
           onClick={() =>
             onMudar({
               phases: [...campanha.phases, { id: novoId(), name: "Nova fase", start: "", end: "" }],
             })
           }
+          className="rounded-[5px] px-1.5 py-0.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
         >
-          <Plus className="h-3 w-3" />
-          Adicionar fase
-        </Button>
-
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 gap-1 px-2 text-[11px] text-muted-foreground"
+          + Adicionar fase
+        </button>
+        <button
+          type="button"
           onClick={onDuplicar}
+          className="rounded-[5px] px-1.5 py-0.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
         >
-          <Copy className="h-3 w-3" />
-          Duplicar
-        </Button>
+          Duplicar campanha
+        </button>
       </footer>
     </article>
   );
 }
-
-/** O texto sobre a cor da campanha, exposto para o calendário e a timeline. */
-export { corDoTexto };

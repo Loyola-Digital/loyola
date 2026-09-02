@@ -1,27 +1,24 @@
 "use client";
 
 /**
- * O calendário mensal — a visão principal.
+ * O calendário mensal — a linguagem visual do Google Calendar.
  *
- * ## O que ele resolve
- *
- * A tabela de cards responde "quando é a fase X". Só o calendário responde a
- * pergunta que trava um planejamento: "o que mais está acontecendo nesta
- * semana?". É por isso que ele é o padrão.
+ * A estrutura vem do planner original, medida no CSS dele: cabeçalho dos dias
+ * em 10,5px com letter-spacing, número do dia centralizado num círculo de 22px,
+ * barras de 18px com 11,5px de fonte. O que muda são os tokens — `bg-card`,
+ * `border-border`, `text-muted-foreground` no lugar dos hex fixos, para o tema
+ * do app valer aqui também.
  *
  * ## Barras que atravessam semanas
  *
- * Uma fase de 21 dias não é uma barra: são três, uma por linha da grade. Cada
- * segmento sabe se é o primeiro e/ou o último, e só arredonda as pontas
- * externas — assim a fase parece uma coisa só que continua na linha de baixo,
- * em vez de três blocos soltos.
+ * Uma fase de 21 dias vira três barras, uma por linha. Cada segmento sabe se é
+ * o primeiro e/ou o último: as pontas internas ficam com raio 1px e as externas
+ * com 4px, então a fase parece uma coisa só que continua na linha de baixo.
  *
  * ## Faixas congeladas durante o arrasto
  *
- * A altura de cada semana depende de quantas faixas ela usa. Se isso for
- * recalculado enquanto o dedo está na tela, a linha pula de altura debaixo do
- * cursor e a barra escapa. Durante o arrasto a contagem fica congelada no que
- * era antes de começar.
+ * A altura da semana depende de quantas faixas ela usa. Recalcular isso durante
+ * o gesto faria a linha pular debaixo do cursor e a barra escapar.
  */
 
 import { useMemo, useRef, useState } from "react";
@@ -40,15 +37,15 @@ import {
 
 const DIAS_DA_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"] as const;
 
-/** Altura de uma barra, e o espaço do cabeçalho do dia. */
-const ALTURA_BARRA = 20;
-const ALTURA_CABECALHO = 26;
+/* Medidas do original: barra de 18px empilhada de 20 em 20, sob 26px de dia. */
+const ALTURA_BARRA = 18;
+const PASSO_FAIXA = 20;
+const ALTURA_DO_DIA = 26;
 
 interface Arrasto {
   campanhaId: string;
   faseId: string;
   modo: "mover" | "inicio" | "fim";
-  /** Índice da célula onde o gesto começou. */
   celulaInicial: number;
   startOriginal: string;
   endOriginal: string;
@@ -71,25 +68,17 @@ export function Calendario({
 }) {
   const gradeRef = useRef<HTMLDivElement>(null);
   const [arrasto, setArrasto] = useState<Arrasto | null>(null);
-  /** Deslocamento em dias durante o gesto — some ao soltar. */
   const [delta, setDelta] = useState(0);
-
   const hoje = hojeIso();
 
-  /** O primeiro domingo da grade e quantas semanas ela tem. */
-  const { primeiroDia, semanas, diasNoMes } = useMemo(() => {
+  const { primeiroDia, semanas } = useMemo(() => {
     const primeiro = new Date(ano, mes - 1, 1, 12);
     const nDias = new Date(ano, mes, 0).getDate();
     const inicio = new Date(primeiro);
     inicio.setDate(inicio.getDate() - primeiro.getDay());
-    return {
-      primeiroDia: inicio,
-      semanas: Math.ceil((primeiro.getDay() + nDias) / 7),
-      diasNoMes: nDias,
-    };
+    return { primeiroDia: inicio, semanas: Math.ceil((primeiro.getDay() + nDias) / 7) };
   }, [ano, mes]);
 
-  /** As 7×N datas da grade, em ISO. */
   const celulas = useMemo(() => {
     const saida: string[] = [];
     for (let i = 0; i < semanas * 7; i++) {
@@ -100,15 +89,13 @@ export function Calendario({
     return saida;
   }, [primeiroDia, semanas]);
 
-  /** As fases visíveis, com o arrasto já aplicado, empilhadas em faixas. */
+  /** As fases visíveis, já com o arrasto aplicado, empilhadas em faixas. */
   const barras = useMemo(() => {
     const itens: { campanha: Campanha; fase: Fase }[] = [];
     for (const c of campanhas) {
       for (const f of c.phases) {
         if (!f.start) continue;
-        // Aplica o deslocamento ao vivo: a barra acompanha o cursor.
-        const emMovimento = arrasto?.faseId === f.id;
-        if (!emMovimento) {
+        if (arrasto?.faseId !== f.id) {
           itens.push({ campanha: c, fase: f });
           continue;
         }
@@ -120,7 +107,7 @@ export function Calendario({
           end = endOriginal ? somarDias(endOriginal, delta) : "";
         } else if (modo === "inicio") {
           start = somarDias(startOriginal, delta);
-          // Redimensionar nunca inverte: o início não passa do fim.
+          // Redimensionar nunca inverte.
           if (end && start > end) start = end;
         } else {
           end = somarDias(endOriginal || startOriginal, delta);
@@ -132,74 +119,56 @@ export function Calendario({
     return emFaixas(itens);
   }, [campanhas, arrasto, delta]);
 
-  /** Quantas faixas cada semana usa — define a altura da linha. */
   const faixasPorSemana = useMemo(() => {
     const contagem = new Array(semanas).fill(1);
     for (const b of barras) {
       for (let s = 0; s < semanas; s++) {
-        const ini = celulas[s * 7]!;
-        const fim = celulas[s * 7 + 6]!;
-        if (b.start <= fim && b.fim >= ini) contagem[s] = Math.max(contagem[s], b.faixa + 1);
+        if (b.start <= celulas[s * 7 + 6]! && b.fim >= celulas[s * 7]!) {
+          contagem[s] = Math.max(contagem[s], b.faixa + 1);
+        }
       }
     }
     return contagem;
   }, [barras, celulas, semanas]);
 
-  /**
-   * Congela a altura durante o arrasto.
-   *
-   * Sem isto, mover uma barra para uma semana mais cheia aumenta a linha no
-   * meio do gesto e o cursor perde a barra de vista.
-   */
-  const alturaCongelada = useRef<number[] | null>(null);
-  const alturas = arrasto ? (alturaCongelada.current ?? faixasPorSemana) : faixasPorSemana;
+  const congelado = useRef<number[] | null>(null);
+  const alturas = arrasto ? (congelado.current ?? faixasPorSemana) : faixasPorSemana;
 
-  /** Índice da célula sob o ponteiro, ou o mais próximo se soltar fora. */
+  const alturaDaSemana = (s: number) =>
+    ALTURA_DO_DIA + Math.max(alturas[s]!, 1) * PASSO_FAIXA + 6;
+
+  /** A célula sob o ponteiro; se soltar fora, a mais próxima. */
   function celulaSob(clientX: number, clientY: number): number {
     const grade = gradeRef.current;
     if (!grade) return -1;
     const r = grade.getBoundingClientRect();
-    const larguraCol = r.width / 7;
-    const col = Math.max(0, Math.min(6, Math.floor((clientX - r.left) / larguraCol)));
-
-    // A altura das linhas varia, então a linha sai de acumular, não de dividir.
+    const col = Math.max(0, Math.min(6, Math.floor(((clientX - r.left) / r.width) * 7)));
     let y = r.top;
     for (let s = 0; s < semanas; s++) {
-      const h = ALTURA_CABECALHO + Math.max(alturas[s]!, 1) * ALTURA_BARRA + 8;
+      const h = alturaDaSemana(s);
       if (clientY < y + h || s === semanas - 1) return s * 7 + col;
       y += h;
     }
     return col;
   }
 
-  function iniciarArrasto(
-    e: React.PointerEvent,
-    campanha: Campanha,
-    fase: Fase,
-    modo: Arrasto["modo"],
-  ) {
+  function iniciar(e: React.PointerEvent, c: Campanha, f: Fase, modo: Arrasto["modo"]) {
     e.preventDefault();
     e.stopPropagation();
-    alturaCongelada.current = faixasPorSemana;
+    congelado.current = faixasPorSemana;
     setArrasto({
-      campanhaId: campanha.id,
-      faseId: fase.id,
+      campanhaId: c.id,
+      faseId: f.id,
       modo,
       celulaInicial: celulaSob(e.clientX, e.clientY),
-      startOriginal: fase.start,
-      endOriginal: fase.end,
+      startOriginal: f.start,
+      endOriginal: f.end,
     });
     setDelta(0);
     (e.target as Element).setPointerCapture?.(e.pointerId);
   }
 
-  function moverArrasto(e: React.PointerEvent) {
-    if (!arrasto) return;
-    const atual = celulaSob(e.clientX, e.clientY);
-    if (atual >= 0) setDelta(atual - arrasto.celulaInicial);
-  }
-
-  function soltarArrasto() {
+  function soltar() {
     if (!arrasto) return;
     const barra = barras.find((b) => b.fase.id === arrasto.faseId);
     // Delta zero é clique, não arrasto: seleciona em vez de gravar.
@@ -207,75 +176,81 @@ export function Calendario({
     else if (barra) onMudarFase(arrasto.campanhaId, barra.fase);
     setArrasto(null);
     setDelta(0);
-    alturaCongelada.current = null;
+    congelado.current = null;
   }
 
   return (
-    /*
-     * Rola de lado abaixo de ~500px.
-     *
-     * Sete colunas num celular de 414px dao 54px por dia, e uma barra de dois
-     * dias vira um retangulo sem texto. Preferimos a rolagem horizontal, que a
-     * pessoa entende, a uma grade ilegivel que parece quebrada.
-     */
-    <div className="overflow-x-auto rounded-xl border border-border/50 bg-card">
-      <div className="min-w-[520px]">
-      <div className="grid grid-cols-7 border-b border-border/50 bg-muted/30">
-        {DIAS_DA_SEMANA.map((d) => (
-          <div key={d} className="py-1.5 text-center text-[10px] uppercase text-muted-foreground">
-            {d}
-          </div>
-        ))}
-      </div>
+    <div className="flex min-h-full flex-col overflow-x-auto bg-card">
+      <div className="min-w-[520px] flex-1">
+        <div className="sticky top-0 z-[6] grid grid-cols-7 bg-card">
+          {DIAS_DA_SEMANA.map((d) => (
+            <div
+              key={d}
+              className="px-0 pb-[7px] pt-[9px] text-center text-[10.5px] font-medium uppercase tracking-[0.9px] text-muted-foreground"
+            >
+              {d}
+            </div>
+          ))}
+        </div>
 
-      <div
-        ref={gradeRef}
-        onPointerMove={moverArrasto}
-        onPointerUp={soltarArrasto}
-        onPointerCancel={soltarArrasto}
-        className="relative select-none"
-        style={{ touchAction: arrasto ? "none" : undefined }}
-      >
-        {Array.from({ length: semanas }, (_, s) => {
-          const altura = ALTURA_CABECALHO + Math.max(alturas[s]!, 1) * ALTURA_BARRA + 8;
-          return (
+        <div
+          ref={gradeRef}
+          onPointerMove={(e) => {
+            if (!arrasto) return;
+            const atual = celulaSob(e.clientX, e.clientY);
+            if (atual >= 0) setDelta(atual - arrasto.celulaInicial);
+          }}
+          onPointerUp={soltar}
+          onPointerCancel={soltar}
+          className="select-none"
+          style={{ touchAction: arrasto ? "none" : undefined }}
+        >
+          {Array.from({ length: semanas }, (_, s) => (
             <div
               key={s}
-              className="relative grid grid-cols-7 border-b border-border/30 last:border-0"
-              style={{ height: altura }}
+              className="relative border-t border-border last:border-b"
+              style={{ height: alturaDaSemana(s) }}
             >
-              {Array.from({ length: 7 }, (_, c) => {
-                const iso = celulas[s * 7 + c]!;
-                const doMes = Number(iso.slice(5, 7)) === mes;
-                const fimDeSemana = c === 0 || c === 6;
-                const ehHoje = iso === hoje;
-                const dia = Number(iso.slice(8, 10));
-                return (
-                  <div
-                    key={c}
-                    className={`border-r border-border/20 last:border-0 ${
-                      fimDeSemana ? "bg-muted/25" : ""
-                    } ${doMes ? "" : "opacity-40"}`}
-                  >
-                    <div className="flex items-center gap-1 px-1 pt-1">
-                      <span
-                        className={`inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] tabular-nums ${
-                          ehHoje ? "bg-[#1a73e8] font-semibold text-white" : "text-muted-foreground"
+              <div className="absolute inset-0 grid grid-cols-7">
+                {Array.from({ length: 7 }, (_, c) => {
+                  const iso = celulas[s * 7 + c]!;
+                  const doMes = Number(iso.slice(5, 7)) === mes;
+                  const fimDeSemana = c === 0 || c === 6;
+                  const ehHoje = iso === hoje;
+                  const dia = Number(iso.slice(8, 10));
+                  return (
+                    <div
+                      key={c}
+                      className={`border-r border-border last:border-r-0 ${
+                        fimDeSemana ? "bg-foreground/[0.025]" : ""
+                      }`}
+                    >
+                      <div
+                        className={`pt-1 text-center text-[12px] leading-none tabular-nums ${
+                          doMes ? "text-foreground/80" : "text-muted-foreground opacity-55"
                         }`}
                       >
-                        {dia}
-                      </span>
-                      {/* O dia 1 mostra o mês: numa grade que começa no domingo
-                          anterior, sem isso não dá para saber onde o mês vira. */}
-                      {dia === 1 && (
-                        <span className="text-[9px] uppercase text-muted-foreground">
-                          {MESES_CURTOS[Number(iso.slice(5, 7)) - 1]}
+                        <span
+                          className={`inline-block h-[22px] min-w-[22px] rounded-full px-[3px] leading-[22px] ${
+                            ehHoje
+                              ? "bg-[#1a73e8] font-medium text-white dark:bg-[#8ab4f8] dark:text-[#0D0F13]"
+                              : ""
+                          }`}
+                        >
+                          {dia}
                         </span>
-                      )}
+                        {/* O dia 1 traz o mês: numa grade que começa no domingo
+                            anterior, sem isso não se vê onde o mês vira. */}
+                        {dia === 1 && (
+                          <span className="ml-px text-[10px] opacity-70">
+                            {MESES_CURTOS[Number(iso.slice(5, 7)) - 1]}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
 
               {barras.map((b) => {
                 const iniSemana = celulas[s * 7]!;
@@ -289,61 +264,56 @@ export function Calendario({
                 const primeiro = b.start >= iniSemana;
                 const ultimo = b.fim <= fimSemana;
                 const aberta = !b.fase.end;
-                const selecionada = faseSelecionada === b.fase.id;
                 const arrastando = arrasto?.faseId === b.fase.id;
 
                 return (
                   <div
                     key={`${b.fase.id}-${s}`}
-                    onPointerDown={(e) => iniciarArrasto(e, b.campanha, b.fase, "mover")}
+                    onPointerDown={(e) => iniciar(e, b.campanha, b.fase, "mover")}
                     title={`${b.fase.name} · ${b.campanha.name}\n${br(b.start)} → ${
                       b.fase.end ? br(b.fim) : "em aberto"
                     }`}
-                    className={`absolute flex cursor-grab items-center gap-1 overflow-hidden px-1 text-[10px] leading-none ${
-                      arrastando ? "z-20 cursor-grabbing opacity-90 shadow-lg" : "z-10"
-                    } ${selecionada ? "ring-2 ring-offset-1 ring-primary" : ""}`}
+                    className={`absolute flex cursor-pointer select-none items-center gap-[5px] overflow-hidden whitespace-nowrap px-1.5 text-[11.5px] font-medium leading-[18px] transition-[filter] hover:brightness-110 active:cursor-grabbing ${
+                      arrastando ? "z-40 cursor-grabbing brightness-110 shadow-lg" : "z-10"
+                    } ${faseSelecionada === b.fase.id ? "ring-2 ring-foreground ring-offset-1" : ""}`}
                     style={{
                       left: `calc(${(col / 7) * 100}% + 2px)`,
                       width: `calc(${(span / 7) * 100}% - 4px)`,
-                      top: ALTURA_CABECALHO + b.faixa * ALTURA_BARRA,
-                      height: ALTURA_BARRA - 3,
+                      top: ALTURA_DO_DIA + b.faixa * PASSO_FAIXA,
+                      height: ALTURA_BARRA,
                       backgroundColor: b.campanha.color,
                       color: corDoTexto(b.campanha.color),
-                      // Só as pontas externas arredondam: a fase parece uma coisa
-                      // só que continua na linha de baixo.
-                      borderRadius: `${primeiro ? "4px" : "0"} ${ultimo ? "4px" : "0"} ${
-                        ultimo ? "4px" : "0"
-                      } ${primeiro ? "4px" : "0"}`,
-                      // Fim em aberto: a borda direita fica tracejada, dizendo
-                      // que a fase não termina ali — ela só não tem fim ainda.
-                      borderRight: aberta && ultimo ? "2px dashed rgba(255,255,255,.6)" : undefined,
+                      // Pontas internas com 1px, externas com 4px: a fase parece
+                      // uma coisa só que continua na linha de baixo.
+                      borderRadius: `${primeiro ? 4 : 1}px ${ultimo ? 4 : 1}px ${
+                        ultimo ? 4 : 1
+                      }px ${primeiro ? 4 : 1}px`,
+                      borderRight:
+                        aberta && ultimo
+                          ? "2px dashed color-mix(in srgb, currentColor 60%, transparent)"
+                          : undefined,
                     }}
                   >
                     {primeiro && (
                       <>
                         <span
-                          onPointerDown={(e) => iniciarArrasto(e, b.campanha, b.fase, "inicio")}
-                          className="absolute left-0 top-0 h-full w-1.5 cursor-ew-resize"
+                          onPointerDown={(e) => iniciar(e, b.campanha, b.fase, "inicio")}
+                          className="absolute bottom-0 left-0 top-0 z-[2] w-[7px] cursor-ew-resize"
                           aria-hidden
                         />
-                        {/* A data some no celular: com sete colunas em 414px,
-                            "08/09" rouba metade do espaco do nome da fase — e
-                            o dia ja esta escrito na propria celula. */}
-                        <span className="hidden shrink-0 opacity-70 tabular-nums sm:inline">
+                        <span className="hidden flex-none text-[10.5px] font-normal opacity-80 sm:inline">
                           {b.start.slice(8, 10)}/{b.start.slice(5, 7)}
                         </span>
                       </>
                     )}
-                    <span className="truncate font-medium">{b.fase.name}</span>
-                    {/* A campanha tambem: a cor da barra ja diz qual e, e a
-                        legenda lateral traduz a cor. */}
-                    <span className="hidden truncate opacity-70 md:inline">
+                    <span className="overflow-hidden text-ellipsis">{b.fase.name}</span>
+                    <span className="hidden overflow-hidden text-ellipsis font-normal opacity-[0.72] md:inline">
                       · {b.campanha.name}
                     </span>
                     {ultimo && !aberta && (
                       <span
-                        onPointerDown={(e) => iniciarArrasto(e, b.campanha, b.fase, "fim")}
-                        className="absolute right-0 top-0 h-full w-1.5 cursor-ew-resize"
+                        onPointerDown={(e) => iniciar(e, b.campanha, b.fase, "fim")}
+                        className="absolute bottom-0 right-0 top-0 z-[2] w-[7px] cursor-ew-resize"
                         aria-hidden
                       />
                     )}
@@ -351,11 +321,8 @@ export function Calendario({
                 );
               })}
             </div>
-          );
-        })}
-      </div>
-
-      {diasNoMes === 0 && <p className="p-4 text-sm text-muted-foreground">Mês inválido.</p>}
+          ))}
+        </div>
       </div>
     </div>
   );
