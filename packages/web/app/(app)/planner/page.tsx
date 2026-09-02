@@ -54,6 +54,7 @@ import { SortableContext, rectSortingStrategy } from "@dnd-kit/sortable";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useUserRole } from "@/lib/hooks/use-user-role";
 import {
+  useAgendasDoGoogle,
   useAtualizarCampanha,
   useCriarCampanha,
   useDuplicarCampanha,
@@ -178,6 +179,11 @@ export default function PlannerPage() {
   const atualizar = useAtualizarCampanha();
   const duplicar = useDuplicarCampanha();
   const excluir = useExcluirCampanha();
+  // As agendas conectadas alimentam o seletor de cada card. Vêm por aqui e não
+  // de dentro do card: são as mesmas para todos, e uma consulta por card seria
+  // uma por campanha na tela.
+  const { data: agendasDoGoogle } = useAgendasDoGoogle();
+  const agendasConectadas = agendasDoGoogle?.agendas ?? [];
   const reordenar = useReordenarCampanhas();
   const restaurar = useRestaurarCampanha();
 
@@ -512,6 +518,7 @@ export default function PlannerPage() {
           onDuplicar={() => duplicar.mutate(c.id)}
           onSelecionarFase={setSelecionada}
           onExcluirFase={(faseId) => excluirFase(c, faseId)}
+          agendas={agendasConectadas}
         />
       ))}
       <button

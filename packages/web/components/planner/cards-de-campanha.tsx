@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { GripVertical, Trash2 } from "lucide-react";
+import { CalendarDays, GripVertical, Trash2 } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -207,14 +207,22 @@ export function CardDeCampanha({
   onDuplicar,
   onSelecionarFase,
   onExcluirFase,
+  agendas,
   arrastavel = true,
 }: {
   campanha: Campanha;
   faseSelecionada: string | null;
-  onMudar: (dados: { name?: string; color?: string; phases?: Fase[] }) => void;
+  onMudar: (dados: {
+    name?: string;
+    color?: string;
+    phases?: Fase[];
+    googleCalendarId?: string | null;
+  }) => void;
   onExcluir: () => void;
   onDuplicar: () => void;
   onSelecionarFase: (faseId: string) => void;
+  /** Agendas conectadas, para escolher qual espelha esta campanha. */
+  agendas?: { calendarId: string; label: string }[];
   /**
    * Excluir fase passa pela página, e não por `onMudar`, porque de lá sai o
    * aviso com o botão de desfazer — que precisa da fase original em mãos.
@@ -309,6 +317,39 @@ export function CardDeCampanha({
                 </span>
                 <span>{total}d</span>
               </>
+            )}
+            {/*
+              O espelho na agenda do Google.
+
+              Fica aqui, junto do resto que descreve a campanha, e não escondido
+              num menu: o que este campo decide é se o cronograma aparece para o
+              time inteiro no Google ou só nesta tela — e quem está montando a
+              campanha precisa ver isso sem procurar.
+            */}
+            {agendas && agendas.length > 0 && (
+              <span className="relative inline-flex items-center gap-1">
+                <CalendarDays
+                  className={`h-3 w-3 ${campanha.googleCalendarId ? "text-primary" : "opacity-50"}`}
+                />
+                <select
+                  value={campanha.googleCalendarId ?? ""}
+                  onChange={(e) => onMudar({ googleCalendarId: e.target.value || null })}
+                  aria-label={`Agenda do Google de ${campanha.name}`}
+                  title={
+                    campanha.googleCalendarId
+                      ? "As mudanças aqui vão para esta agenda"
+                      : "Esta campanha não vai para o Google"
+                  }
+                  className="max-w-[130px] cursor-pointer truncate border-0 bg-transparent p-0 font-mono text-[10.5px] text-muted-foreground outline-none hover:text-foreground focus:text-foreground"
+                >
+                  <option value="">sem agenda</option>
+                  {agendas.map((a) => (
+                    <option key={a.calendarId} value={a.calendarId}>
+                      {a.label}
+                    </option>
+                  ))}
+                </select>
+              </span>
             )}
           </p>
         </div>

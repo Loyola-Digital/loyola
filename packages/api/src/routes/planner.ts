@@ -23,13 +23,17 @@ import { z } from "zod";
 import { asc, eq, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { plannerCampaigns, plannerGoogleCalendars } from "../db/schema.js";
-import { normalizarFase, type FaseDoPlanner } from "../services/planner.js";
+import { normalizarFase, planejarSincronia, type FaseDoPlanner } from "../services/planner.js";
 import {
+  apagarEvento,
+  atualizarEvento,
   corParaCampanha,
+  criarEvento,
   emailDaServiceAccount,
   eventosDaAgenda,
   nomeDaAgenda,
   separarTitulo,
+  tituloParaGoogle,
 } from "../services/planner-google.js";
 
 /** Paleta cíclica — a mesma do planner original. */
@@ -60,6 +64,17 @@ const faseSchema = z.object({
   name: z.string().trim().max(200),
   start: z.string().trim().max(10),
   end: z.string().trim().max(10),
+  /**
+   * Precisa estar AQUI, e nao so no banco.
+   *
+   * O Zod remove o que nao declara. Sem esta linha, qualquer edicao de uma
+   * campanha importada apagava o vinculo de TODAS as fases com o Google -- e a
+   * reimportacao seguinte, que so preserva quem nao tem o campo, as trataria
+   * como manuais e somaria as do Google por cima, duplicando o cronograma
+   * inteiro. Nenhuma campanha chegou a duplicar porque ninguem reimportou
+   * depois de editar; o defeito estava armado.
+   */
+  googleEventId: z.string().trim().max(1024).optional(),
 });
 
 const corSchema = z
@@ -72,6 +87,8 @@ const criarSchema = z.object({
   color: corSchema.optional(),
   projectId: z.string().uuid().nullable().optional(),
   phases: z.array(faseSchema).max(60).optional(),
+  /** Agenda que espelha esta campanha. Vazio = vive so aqui. */
+  googleCalendarId: z.string().trim().max(300).nullable().optional(),
 });
 
 const atualizarSchema = z.object({
@@ -82,6 +99,7 @@ const atualizarSchema = z.object({
   // e o calendário fica ilegível muito antes.
   phases: z.array(faseSchema).max(60).optional(),
   sortOrder: z.number().int().min(0).max(9999).optional(),
+  googleCalendarId: z.string().trim().max(300).nullable().optional(),
 });
 
 /** Um id curto e legível, no formato do planner original. */
@@ -123,12 +141,24 @@ export default fp(async function plannerRoutes(fastify) {
       FASES_PADRAO.map((name, i) => ({ id: novoId(i), name, start: "", end: "" }))
     ).map(normalizarFase);
 
+    // Campanha nova nasce ja na agenda, quando ha uma escolhida: criar aqui e
+    // ter de lembrar de espelhar depois seria o passo que todo mundo esquece.
+    const agendaNova = b.data.googleCalendarId ?? null;
+    const espelho = await espelharNoGoogle({
+      agenda: agendaNova,
+      nomeAntes: b.data.name,
+      nomeDepois: b.data.name,
+      fasesAntes: [],
+      fasesDepois: fases,
+    });
+
     const [criada] = await fastify.db
       .insert(plannerCampaigns)
       .values({
         name: b.data.name,
         color: b.data.color ?? PALETA[(total ?? 0) % PALETA.length]!,
         projectId: b.data.projectId ?? null,
+        googleCalendarId: agendaNova,
         sortOrder: total ?? 0,
         phases: fases,
         createdBy: request.userId ?? null,
@@ -145,14 +175,41 @@ export default fp(async function plannerRoutes(fastify) {
     const b = atualizarSchema.safeParse(request.body);
     if (!p.success || !b.success) return reply.code(400).send({ error: "Dados inválidos" });
 
+    // Precisa do estado ANTERIOR para saber o que mudou na agenda: sem ele
+    // nao da para distinguir "fase nova" de "fase que so foi salva de novo",
+    // e cada gravacao reescreveria a agenda inteira.
+    const [antes] = await fastify.db
+      .select()
+      .from(plannerCampaigns)
+      .where(eq(plannerCampaigns.id, p.data.id))
+      .limit(1);
+    if (!antes) return reply.code(404).send({ error: "Campanha não encontrada" });
+
     const mudanca: Record<string, unknown> = { updatedAt: new Date() };
     if (b.data.name !== undefined) mudanca.name = b.data.name;
     if (b.data.color !== undefined) mudanca.color = b.data.color;
     if (b.data.projectId !== undefined) mudanca.projectId = b.data.projectId;
     if (b.data.sortOrder !== undefined) mudanca.sortOrder = b.data.sortOrder;
+    if (b.data.googleCalendarId !== undefined) mudanca.googleCalendarId = b.data.googleCalendarId;
     // A normalização acontece no servidor, sempre: a tela pode confiar que o
     // que voltou está arrumado, e um cliente antigo não grava data inválida.
     if (b.data.phases !== undefined) mudanca.phases = b.data.phases.map(normalizarFase);
+
+    const nomeDepois = (b.data.name ?? antes.name) as string;
+    const fasesDepois = (mudanca.phases ?? antes.phases) as FaseDoPlanner[];
+    const agenda = (b.data.googleCalendarId ?? antes.googleCalendarId) as string | null;
+
+    const { fases: fasesFinais, aviso } = await espelharNoGoogle({
+      agenda,
+      nomeAntes: antes.name,
+      nomeDepois,
+      fasesAntes: antes.phases as FaseDoPlanner[],
+      fasesDepois,
+    });
+    // Os ids que o Google acabou de dar precisam ir para o banco na MESMA
+    // gravacao: um evento criado cuja fase nao guardou o id vira orfao, e o
+    // proximo save cria outro em cima.
+    if (fasesFinais) mudanca.phases = fasesFinais;
 
     const [atualizada] = await fastify.db
       .update(plannerCampaigns)
@@ -161,8 +218,106 @@ export default fp(async function plannerRoutes(fastify) {
       .returning();
 
     if (!atualizada) return reply.code(404).send({ error: "Campanha não encontrada" });
-    return atualizada;
+    // O aviso viaja junto com a campanha salva: o trabalho local NAO se perde
+    // porque o Google recusou, e quem editou fica sabendo que a agenda ficou
+    // para tras.
+    return aviso ? { ...atualizada, avisoGoogle: aviso } : atualizada;
   });
+
+  /**
+   * Leva para a agenda o que mudou aqui.
+   *
+   * ## Nunca derruba o salvamento
+   *
+   * A campanha e do Planner; a agenda e um espelho. Se o Google esta fora do ar
+   * ou a permissao mudou, o trabalho de quem estava planejando tem de ser
+   * gravado do mesmo jeito -- perder a edicao para proteger a consistencia de
+   * um espelho seria o pior dos dois mundos. A falha volta como aviso.
+   *
+   * ## Fase que falhou fica sem id, e isso e proposital
+   *
+   * Sem `googleEventId`, o proximo save a trata como nova e tenta de novo.
+   * E a retomada mais simples que existe: sem fila, sem estado extra, e o
+   * proprio uso normal do Planner conserta o que ficou para tras.
+   */
+  async function espelharNoGoogle(e: {
+    agenda: string | null;
+    nomeAntes: string;
+    nomeDepois: string;
+    fasesAntes: FaseDoPlanner[];
+    fasesDepois: FaseDoPlanner[];
+  }): Promise<{ fases: FaseDoPlanner[] | null; aviso: string | null }> {
+    if (!e.agenda || !emailDaServiceAccount()) return { fases: null, aviso: null };
+
+    const acao = planejarSincronia({
+      nomeAntes: e.nomeAntes,
+      nomeDepois: e.nomeDepois,
+      fasesAntes: e.fasesAntes,
+      fasesDepois: e.fasesDepois,
+    });
+    if (!acao.criar.length && !acao.atualizar.length && !acao.apagar.length) {
+      return { fases: null, aviso: null };
+    }
+
+    const porId = new Map(e.fasesDepois.map((f) => [f.id, { ...f }]));
+    let falhas = 0;
+    let motivo: string | null = null;
+
+    const anotar = (err: unknown) => {
+      falhas++;
+      // A primeira mensagem basta: dez falhas seguidas sao a mesma causa (sem
+      // permissao, sem rede), e concatenar dez copias nao ajuda ninguem.
+      motivo ??= err instanceof Error ? err.message : "Falha ao falar com o Google";
+    };
+
+    for (const fase of acao.criar) {
+      try {
+        const id = await criarEvento(e.agenda, {
+          titulo: tituloParaGoogle(e.nomeDepois, fase.name),
+          inicio: fase.start,
+          fim: fase.end,
+        });
+        const alvo = porId.get(fase.id);
+        if (alvo) alvo.googleEventId = id;
+      } catch (err) {
+        anotar(err);
+      }
+    }
+
+    for (const { fase, eventId } of acao.atualizar) {
+      try {
+        const id = await atualizarEvento(e.agenda, eventId, {
+          titulo: tituloParaGoogle(e.nomeDepois, fase.name),
+          inicio: fase.start,
+          fim: fase.end,
+        });
+        // O id pode ser OUTRO: o evento tinha sumido do Google e foi recriado.
+        const alvo = porId.get(fase.id);
+        if (alvo && id !== eventId) alvo.googleEventId = id;
+      } catch (err) {
+        anotar(err);
+      }
+    }
+
+    for (const eventId of acao.apagar) {
+      try {
+        await apagarEvento(e.agenda, eventId);
+      } catch (err) {
+        anotar(err);
+      }
+    }
+
+    // A fase perdeu a data: o evento foi apagado e o id nao aponta mais para
+    // nada. Mante-lo faria o proximo save tentar atualizar um evento morto.
+    for (const f of porId.values()) if (!f.start) delete f.googleEventId;
+
+    return {
+      fases: [...porId.values()],
+      aviso: falhas
+        ? `${falhas} altera${falhas === 1 ? "ção" : "ções"} não chegou à agenda do Google: ${motivo}`
+        : null,
+    };
+  }
 
   /**
    * Nova ordem das campanhas, de uma vez.
@@ -250,12 +405,39 @@ export default fp(async function plannerRoutes(fastify) {
     const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
     if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
 
-    const apagadas = await fastify.db
+    const [apagada] = await fastify.db
       .delete(plannerCampaigns)
       .where(eq(plannerCampaigns.id, p.data.id))
-      .returning({ id: plannerCampaigns.id });
+      .returning();
 
-    if (apagadas.length === 0) return reply.code(404).send({ error: "Campanha não encontrada" });
+    if (!apagada) return reply.code(404).send({ error: "Campanha não encontrada" });
+
+    /**
+     * Os eventos saem da agenda junto.
+     *
+     * Deixa-los seria pior que apagar: o time continuaria vendo no Google um
+     * cronograma que nao existe mais, e sem nada no Planner para corrigi-lo.
+     *
+     * O Desfazer da tela recria a campanha por POST, e ai `espelharNoGoogle`
+     * cria eventos novos -- os ids antigos ja nao valem, e `atualizarEvento`
+     * trata 404 criando outro. A volta funciona; o que ela nao preserva e o id
+     * do evento, que ninguem ve.
+     */
+    const agenda = apagada.googleCalendarId;
+    if (agenda && emailDaServiceAccount()) {
+      for (const f of (apagada.phases ?? []) as FaseDoPlanner[]) {
+        if (!f.googleEventId) continue;
+        try {
+          await apagarEvento(agenda, f.googleEventId);
+        } catch (err) {
+          // A campanha ja saiu do banco. Falhar aqui deixaria um evento orfao
+          // na agenda, o que e ruim -- mas devolver erro faria a tela dizer
+          // que a exclusao falhou, quando ela funcionou.
+          fastify.log.warn({ err, eventId: f.googleEventId }, "evento orfao na agenda do Google");
+        }
+      }
+    }
+
     return { ok: true };
   });
 
@@ -395,6 +577,9 @@ export default fp(async function plannerRoutes(fastify) {
         await fastify.db.insert(plannerCampaigns).values({
           name: nome,
           color: corParaCampanha(nome, PALETA),
+          // A agenda de ORIGEM vira a de destino: o que for editado aqui
+          // depois volta para o mesmo lugar de onde veio.
+          googleCalendarId: b.data.calendarId,
           sortOrder: existentes.length + criadas,
           phases: fasesDoGoogle.map(normalizarFase),
           createdBy: request.userId ?? null,
@@ -419,7 +604,13 @@ export default fp(async function plannerRoutes(fastify) {
 
       await fastify.db
         .update(plannerCampaigns)
-        .set({ phases: [...manuais, ...novas], updatedAt: new Date() })
+        .set({
+          phases: [...manuais, ...novas],
+          // Campanha importada antes de a escrita existir nao tinha agenda
+          // gravada. A primeira reimportacao preenche, e ela passa a espelhar.
+          ...(atual.googleCalendarId ? {} : { googleCalendarId: b.data.calendarId }),
+          updatedAt: new Date(),
+        })
         .where(eq(plannerCampaigns.id, atual.id));
       atualizadas += 1;
       fasesTocadas += novas.length;
