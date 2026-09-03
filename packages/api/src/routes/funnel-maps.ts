@@ -16,6 +16,7 @@ import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { Readable } from "node:stream";
 import { funnelMaps, funnels, funnelStages, projects, projectMembers } from "../db/schema.js";
+import { abaEmBranco, comAoMenosUmaAba } from "../services/funnel-map-abas.js";
 import {
   MAX_UPLOAD_BYTES,
   isAllowedMime,
@@ -434,6 +435,8 @@ export default fp(async function funnelMapRoutes(fastify) {
         .insert(funnelMaps)
         .values({ stageId: etapa!.id, tabs: [], updatedBy: request.userId ?? null })
         .returning();
+      // Com funil, `tabs: []` é seguro: a rota do funil monta o rascunho das
+      // etapas quando o desenho está vazio, e ele sempre traz uma aba.
 
       return reply.code(201).send({
         ...mapa,
@@ -449,7 +452,10 @@ export default fp(async function funnelMapRoutes(fastify) {
         stageId: null,
         name: b.data.name,
         projectId: b.data.projectId ?? null,
-        tabs: [],
+        // Nasce COM uma aba. Sem funil não há etapas de onde montar um
+        // rascunho, e um mapa de zero abas não abre — o canvas exige
+        // `abas[abaAtiva]` para sair do carregamento.
+        tabs: [abaEmBranco()],
         updatedBy: request.userId ?? null,
       })
       .returning();
@@ -469,7 +475,21 @@ export default fp(async function funnelMapRoutes(fastify) {
       .where(eq(funnelMaps.id, p.data.id))
       .limit(1);
     if (!mapa) return reply.code(404).send({ error: "Mapa não encontrado" });
-    return mapa;
+
+    /**
+     * Mesmo contrato da rota do funil: `{ tabs, rascunho, updatedAt }`.
+     *
+     * Devolver o registro do banco cru foi o defeito: faltava `rascunho`,
+     * `updatedAt` vinha como `Date` em vez de texto, e — o que travava a tela
+     * — `tabs` podia ser uma lista VAZIA. O canvas monta a partir de
+     * `abas[abaAtiva]` e fica no esqueleto de carregamento enquanto essa aba
+     * não existe, sem erro nenhum para investigar.
+     */
+    return {
+      tabs: comAoMenosUmaAba(mapa.tabs),
+      rascunho: (mapa.tabs ?? []).length === 0,
+      updatedAt: mapa.updatedAt?.toISOString() ?? null,
+    };
   });
 
   fastify.put("/api/funnel-maps/:id", async (request, reply) => {
