@@ -90,6 +90,88 @@ function Chip({
  * A estrela é a exceção: se já está marcada, fica visível sempre. Um destaque
  * que só aparece quando o mouse chega não destaca nada.
  */
+/**
+ * A capa de um vídeo: o primeiro quadro dele.
+ *
+ * `preload="metadata"` faz o navegador buscar só o cabeçalho e desenhar um
+ * quadro — alguns quilobytes, não o arquivo inteiro. O `#t=0.1` pede o quadro
+ * de um décimo de segundo em vez do zero: muitos vídeos abrem em preto, e uma
+ * grade de retângulos pretos não diz o que é cada peça.
+ *
+ * `muted` e `playsInline` não são decoração: sem eles o iOS assume tela cheia
+ * e ignora o pedido de quadro.
+ */
+function VideoCapa({ url, titulo }: { url: string; titulo: string }) {
+  return (
+    <video
+      src={`${url}#t=0.1`}
+      preload="metadata"
+      muted
+      playsInline
+      aria-label={titulo}
+      className="w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+    />
+  );
+}
+
+/** Uma cor estável a partir do texto — a mesma referência, sempre igual. */
+function corDe(texto: string): string {
+  let soma = 0;
+  for (const c of texto) soma = (soma * 31 + c.charCodeAt(0)) % 100_000;
+  const matiz = soma % 360;
+  return `hsl(${matiz} 42% 32%)`;
+}
+
+/**
+ * A capa de quem não tem imagem nenhuma.
+ *
+ * Medido no acervo: 85 dos 102 links não têm `og:image` — ou o site não
+ * publica, ou é um HTML anexado no ClickUp, servido como texto puro. O
+ * fallback anterior era um ícone cinza de 32px no meio de um retângulo vazio:
+ * oitenta cards visualmente idênticos, indistinguíveis entre si e parecidos
+ * com imagem que falhou ao carregar.
+ *
+ * Aqui o card mostra o que de fato identifica a referência — o domínio e o
+ * título — sobre uma cor derivada dele. Não é bonito por acaso: é o mesmo
+ * princípio das iniciais no diretório do time, onde uma silhueta repetida
+ * também não distinguia ninguém.
+ */
+function CapaSemImagem({
+  titulo,
+  origem,
+  Icone,
+  rotulo,
+}: {
+  titulo: string;
+  origem: string | null;
+  Icone: typeof Play;
+  rotulo: string;
+}) {
+  let dominio: string | null = null;
+  try {
+    if (origem) dominio = new URL(origem).hostname.replace(/^www\./, "");
+  } catch {
+    /* origem inválida: fica sem o domínio, que é só um enfeite aqui */
+  }
+  // O anexo do ClickUp no lugar do domínio não diz nada a ninguém.
+  const eDoClickUp = dominio?.includes("clickup") ?? false;
+
+  return (
+    <div
+      className="flex aspect-[4/5] flex-col justify-between p-3.5 text-white"
+      style={{ background: `linear-gradient(150deg, ${corDe(titulo)}, rgba(0,0,0,.55))` }}
+    >
+      <Icone className="h-4 w-4 opacity-60" />
+      <div className="min-w-0">
+        <p className="line-clamp-4 text-[13px] font-semibold leading-snug">{titulo}</p>
+        <p className="mt-1 truncate text-[10.5px] opacity-70">
+          {dominio && !eDoClickUp ? dominio : rotulo}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function SwipeCard({
   item,
   onOpen,
@@ -99,10 +181,21 @@ function SwipeCard({
   onOpen: () => void;
   onToggleFavorite: () => void;
 }) {
-  // O PDF não vira <img>: o navegador não desenha a primeira página numa tag de
-  // imagem. `PdfCapa` renderiza a capa; o lightbox abre o documento de verdade.
+  /**
+   * O que vira <img> na capa.
+   *
+   * PDF e VÍDEO ficam de fora, pelo mesmo motivo: o navegador não desenha
+   * nenhum dos dois numa tag de imagem. O PDF já tinha `PdfCapa`; o vídeo
+   * caía no `fileUrl` e virava `<img src="...mp4">` — um ícone de imagem
+   * quebrada em cima de todo card de vídeo. Passou despercebido enquanto o
+   * acervo tinha um vídeo só; com 23, é a metade da grade.
+   */
   const media =
-    item.assetKind === "link" ? item.ogImage : item.assetKind === "pdf" ? null : item.fileUrl;
+    item.assetKind === "link"
+      ? item.ogImage
+      : item.assetKind === "pdf" || item.assetKind === "video"
+        ? null
+        : item.fileUrl;
   const { label, Icon } = KIND_META[item.assetKind];
   // Reserva a proporção conhecida pra o masonry não saltar enquanto carrega.
   const ratio = item.width && item.height ? item.width / item.height : null;
@@ -130,10 +223,15 @@ function SwipeCard({
               // mal configurado, e a capa sabe dizer isso. O ícone genérico
               // escondia o problema atrás de algo que parecia normal.
               <PdfCapa url={item.fileUrl} titulo={item.title} tamanhoBytes={item.fileSizeBytes} />
+            ) : item.assetKind === "video" && item.fileUrl ? (
+              <VideoCapa url={item.fileUrl} titulo={item.title} />
             ) : (
-              <div className="flex aspect-[3/4] items-center justify-center">
-                <Icon className="h-8 w-8 text-muted-foreground/40" />
-              </div>
+              <CapaSemImagem
+                titulo={item.title}
+                origem={item.sourceUrl}
+                Icone={Icon}
+                rotulo={label}
+              />
             )}
 
             {/* Escurece no hover para o texto de cima ganhar contraste sobre
