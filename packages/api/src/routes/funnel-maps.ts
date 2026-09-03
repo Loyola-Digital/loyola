@@ -12,9 +12,17 @@
  */
 
 import { z } from "zod";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
+import { Readable } from "node:stream";
 import { funnelMaps, funnels, funnelStages, projects, projectMembers } from "../db/schema.js";
+import {
+  MAX_UPLOAD_BYTES,
+  isAllowedMime,
+  isStorageConfigured,
+  pareceplaceholder,
+  uploadDireto,
+} from "../services/object-storage.js";
 
 const paramsSchema = z.object({
   projectId: z.string().uuid(),
@@ -49,6 +57,9 @@ const boxSchema = z.object({
   emoji: z.string().max(8).nullable().optional(),
   /** Nome do ícone lucide do bloco genérico. */
   icone: z.string().max(40).nullable().optional(),
+  /** Bloco `imagem`: o arquivo no bucket. `imageKey` permite apagá-lo depois. */
+  imageUrl: z.string().max(2048).nullable().optional(),
+  imageKey: z.string().max(500).nullable().optional(),
 });
 
 const connectorSchema = z.object({
@@ -222,8 +233,11 @@ export default fp(async function funnelMapRoutes(fastify) {
         const abas = l.tabs ?? [];
         const primeira = abas[0];
         return {
-          projectId: l.projectId,
-          projectName: l.projectName,
+          // `null` aqui é o que diz à tela que este mapa mora numa etapa e
+          // deve ser aberto pelo caminho do funil, não pelo id.
+          mapId: null as string | null,
+          projectId: l.projectId as string | null,
+          projectName: l.projectName as string | null,
           projectColor: l.projectColor,
           funnelId: l.funnelId,
           funnelName: l.funnelName,
@@ -240,7 +254,59 @@ export default fp(async function funnelMapRoutes(fastify) {
         };
       });
 
-    return { mapas };
+    /**
+     * Os mapas SEM etapa entram por uma segunda consulta.
+     *
+     * A de cima parte de `funnel_stages` — quem não tem etapa não aparece lá
+     * de jeito nenhum. Unir com SQL exigiria um LEFT JOIN partindo de
+     * `funnel_maps` e refazer o filtro de guest para linhas sem projeto; duas
+     * consultas somadas dizem a mesma coisa e continuam legíveis.
+     */
+    const soltos = await fastify.db
+      .select({
+        id: funnelMaps.id,
+        name: funnelMaps.name,
+        projectId: funnelMaps.projectId,
+        projectName: projects.name,
+        projectColor: projects.color,
+        tabs: funnelMaps.tabs,
+        updatedAt: funnelMaps.updatedAt,
+      })
+      .from(funnelMaps)
+      .leftJoin(projects, eq(projects.id, funnelMaps.projectId))
+      .where(isNull(funnelMaps.stageId))
+      .orderBy(asc(funnelMaps.name));
+
+    const avulsos = soltos
+      // Guest não vê mapa avulso: a regra de acesso é "membro do projeto", e o
+      // mapa sem projeto não tem a quem perguntar. Com projeto, vale a regra.
+      .filter((m) => !ehGuest && (!m.projectId || !permitidos || permitidos.has(m.projectId)))
+      .map((m) => {
+        const abas = m.tabs ?? [];
+        const primeira = abas[0];
+        return {
+          mapId: m.id,
+          projectId: m.projectId,
+          projectName: m.projectName,
+          projectColor: m.projectColor,
+          funnelId: null as string | null,
+          funnelName: null as string | null,
+          arquivado: false,
+          stageId: null as string | null,
+          stageName: m.name ?? "Mapa sem nome",
+          updatedAt: m.updatedAt?.toISOString() ?? null,
+          abas: abas.length,
+          blocos: abas.reduce((n, a) => n + (a.boxes?.length ?? 0), 0),
+          conectores: abas.reduce((n, a) => n + (a.connectors?.length ?? 0), 0),
+          previa: (primeira?.boxes ?? []).slice(0, 80).map((b) => ({
+            x: b.x, y: b.y, width: b.width, height: b.height, color: b.color, type: b.type,
+          })),
+        };
+      });
+
+    // Avulsos primeiro: é onde está o rascunho recém-criado, e quem acabou de
+    // criá-lo não deveria procurá-lo no fim de uma lista de trinta.
+    return { mapas: [...avulsos, ...mapas] };
   });
 
   // ---- GET mapa ----
@@ -308,5 +374,248 @@ export default fp(async function funnelMapRoutes(fastify) {
 
     await fastify.db.delete(funnelMaps).where(eq(funnelMaps.stageId, params.data.stageId));
     return { ok: true };
+  });
+
+  // ============================================================
+  // Mapa avulso — criado do Global, com ou sem funil
+  // ============================================================
+  //
+  // As rotas acima endereçam o mapa pelo caminho projeto/funil/etapa. Um mapa
+  // sem funil não tem esse caminho, então precisa ser endereçado pelo próprio
+  // id. As duas formas convivem: o editor de dentro do funil não muda.
+
+  /** Interno = não-guest. Mapa sem projeto não tem membro para conferir. */
+  function ehInterno(request: { userRole?: string }): boolean {
+    return request.userRole !== "guest";
+  }
+
+  fastify.post("/api/funnel-maps", async (request, reply) => {
+    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const b = z
+      .object({
+        name: z.string().trim().min(1).max(160),
+        projectId: z.string().uuid().nullable().optional(),
+        funnelId: z.string().uuid().nullable().optional(),
+      })
+      .safeParse(request.body);
+    if (!b.success) return reply.code(400).send({ error: "Dados inválidos" });
+
+    /**
+     * Com funil, o mapa nasce como ETAPA — igual aos que já existem.
+     *
+     * Criar um mapa solto e "pendurá-lo" no funil por um campo faria dois
+     * caminhos para a mesma coisa: um mapa que aparece na lista de etapas e
+     * outro que não, ambos dizendo pertencer ao mesmo lançamento.
+     */
+    if (b.data.funnelId) {
+      const [funil] = await fastify.db
+        .select({ id: funnels.id, projectId: funnels.projectId })
+        .from(funnels)
+        .where(eq(funnels.id, b.data.funnelId))
+        .limit(1);
+      if (!funil) return reply.code(404).send({ error: "Funil não encontrado" });
+
+      const [{ ultimo }] = await fastify.db
+        .select({ ultimo: sql<number>`coalesce(max(${funnelStages.sortOrder}), -1)::int` })
+        .from(funnelStages)
+        .where(eq(funnelStages.funnelId, funil.id));
+
+      const [etapa] = await fastify.db
+        .insert(funnelStages)
+        .values({
+          funnelId: funil.id,
+          name: b.data.name,
+          stageType: "mapa",
+          sortOrder: (ultimo ?? -1) + 1,
+        })
+        .returning({ id: funnelStages.id });
+
+      const [mapa] = await fastify.db
+        .insert(funnelMaps)
+        .values({ stageId: etapa!.id, tabs: [], updatedBy: request.userId ?? null })
+        .returning();
+
+      return reply.code(201).send({
+        ...mapa,
+        projectId: funil.projectId,
+        funnelId: funil.id,
+        stageId: etapa!.id,
+      });
+    }
+
+    const [mapa] = await fastify.db
+      .insert(funnelMaps)
+      .values({
+        stageId: null,
+        name: b.data.name,
+        projectId: b.data.projectId ?? null,
+        tabs: [],
+        updatedBy: request.userId ?? null,
+      })
+      .returning();
+
+    return reply.code(201).send(mapa);
+  });
+
+  /** Um mapa avulso pelo id. Os que têm etapa seguem pelas rotas de funil. */
+  fastify.get("/api/funnel-maps/:id", async (request, reply) => {
+    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+    const [mapa] = await fastify.db
+      .select()
+      .from(funnelMaps)
+      .where(eq(funnelMaps.id, p.data.id))
+      .limit(1);
+    if (!mapa) return reply.code(404).send({ error: "Mapa não encontrado" });
+    return mapa;
+  });
+
+  fastify.put("/api/funnel-maps/:id", async (request, reply) => {
+    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const b = z
+      .object({
+        name: z.string().trim().min(1).max(160).optional(),
+        projectId: z.string().uuid().nullable().optional(),
+        tabs: tabsSchema.optional(),
+      })
+      .safeParse(request.body);
+    if (!p.success || !b.success) return reply.code(400).send({ error: "Dados inválidos" });
+
+    const [atualizado] = await fastify.db
+      .update(funnelMaps)
+      .set({ ...b.data, updatedBy: request.userId ?? null, updatedAt: new Date() })
+      .where(eq(funnelMaps.id, p.data.id))
+      .returning();
+
+    if (!atualizado) return reply.code(404).send({ error: "Mapa não encontrado" });
+    return atualizado;
+  });
+
+  /**
+   * Liga um mapa avulso a um funil.
+   *
+   * Cria a etapa `mapa` no funil e aponta o desenho para ela — a partir daí o
+   * mapa aparece na lista de etapas como qualquer outro, e o `name` próprio
+   * deixa de ser usado.
+   */
+  fastify.put("/api/funnel-maps/:id/vincular", async (request, reply) => {
+    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const b = z.object({ funnelId: z.string().uuid() }).safeParse(request.body);
+    if (!p.success || !b.success) return reply.code(400).send({ error: "Dados inválidos" });
+
+    const [mapa] = await fastify.db
+      .select()
+      .from(funnelMaps)
+      .where(eq(funnelMaps.id, p.data.id))
+      .limit(1);
+    if (!mapa) return reply.code(404).send({ error: "Mapa não encontrado" });
+    if (mapa.stageId) return reply.code(409).send({ error: "Este mapa já está num funil." });
+
+    const [funil] = await fastify.db
+      .select({ id: funnels.id, projectId: funnels.projectId })
+      .from(funnels)
+      .where(eq(funnels.id, b.data.funnelId))
+      .limit(1);
+    if (!funil) return reply.code(404).send({ error: "Funil não encontrado" });
+
+    const [{ ultimo }] = await fastify.db
+      .select({ ultimo: sql<number>`coalesce(max(${funnelStages.sortOrder}), -1)::int` })
+      .from(funnelStages)
+      .where(eq(funnelStages.funnelId, funil.id));
+
+    const [etapa] = await fastify.db
+      .insert(funnelStages)
+      .values({
+        funnelId: funil.id,
+        name: mapa.name ?? "Mapa",
+        stageType: "mapa",
+        sortOrder: (ultimo ?? -1) + 1,
+      })
+      .returning({ id: funnelStages.id });
+
+    const [ligado] = await fastify.db
+      .update(funnelMaps)
+      .set({
+        stageId: etapa!.id,
+        projectId: funil.projectId,
+        updatedBy: request.userId ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(funnelMaps.id, p.data.id))
+      .returning();
+
+    return { ...ligado, funnelId: funil.id };
+  });
+
+  fastify.delete("/api/funnel-maps/:id", async (request, reply) => {
+    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+    const apagados = await fastify.db
+      .delete(funnelMaps)
+      .where(and(eq(funnelMaps.id, p.data.id), isNull(funnelMaps.stageId)))
+      .returning({ id: funnelMaps.id });
+
+    // Mapa COM etapa sai pela rota do funil: apagá-lo aqui deixaria a etapa
+    // órfã na lista, apontando para um desenho que não existe mais.
+    if (apagados.length === 0) {
+      return reply.code(404).send({ error: "Mapa avulso não encontrado" });
+    }
+    return { ok: true };
+  });
+
+  /**
+   * Sobe uma imagem para dentro do mapa.
+   *
+   * ## NÃO passa pelo Swipe Files
+   *
+   * Mesmo bucket, prefixo `mapa/`, e nenhuma linha em `swipe_files` — a
+   * biblioteca lista da tabela, nunca do bucket, então um print de página
+   * colado num mapa não aparece no acervo de referências do time. Também não
+   * dispara o aviso no ClickUp.
+   */
+  fastify.post("/api/funnel-maps/imagem", async (request, reply) => {
+    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+
+    const cfg = {
+      endpoint: fastify.config.STORAGE_ENDPOINT,
+      accessKeyId: fastify.config.STORAGE_ACCESS_KEY_ID,
+      secretAccessKey: fastify.config.STORAGE_SECRET_ACCESS_KEY,
+      bucket: fastify.config.STORAGE_BUCKET,
+      publicUrl: fastify.config.STORAGE_PUBLIC_URL,
+      region: fastify.config.STORAGE_REGION,
+      forcePathStyle: fastify.config.STORAGE_FORCE_PATH_STYLE === "true",
+    };
+    if (!isStorageConfigured(cfg) || pareceplaceholder(cfg.publicUrl)) {
+      return reply.code(503).send({ error: "Storage não configurado no servidor." });
+    }
+
+    const arquivo = await request.file({ limits: { fileSize: MAX_UPLOAD_BYTES } });
+    if (!arquivo) return reply.code(400).send({ error: "Envie a imagem." });
+    // Só imagem: o bloco desenha um `<img>`, e um PDF ali viraria um retângulo
+    // quebrado no meio do mapa.
+    if (!arquivo.mimetype.startsWith("image/") || !isAllowedMime(arquivo.mimetype)) {
+      return reply.code(400).send({ error: `Tipo não permitido: ${arquivo.mimetype}` });
+    }
+
+    try {
+      const buffer = await arquivo.toBuffer();
+      if (buffer.length === 0) return reply.code(400).send({ error: "Arquivo vazio." });
+
+      const r = await uploadDireto(cfg, {
+        corpo: Readable.from(buffer),
+        mime: arquivo.mimetype,
+        prefix: "mapa",
+      });
+      return { url: r.publicUrl, key: r.key, bytes: buffer.length };
+    } catch (err) {
+      fastify.log.error({ err }, "upload de imagem do mapa falhou");
+      return reply.code(502).send({ error: "Não consegui subir a imagem." });
+    }
   });
 });

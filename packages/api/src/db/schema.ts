@@ -695,9 +695,23 @@ export const funnelMaps = pgTable("funnel_maps", {
    * por exemplo) sem que um sobrescreva o outro.
    */
   stageId: uuid("stage_id")
-    .notNull()
     .unique()
     .references(() => funnelStages.id, { onDelete: "cascade" }),
+  /**
+   * Nome próprio, para o mapa que não tem etapa.
+   *
+   * Quando há etapa, o nome vem dela — e é assim nos mapas antigos, que têm
+   * este campo vazio. A leitura resolve com `stage.name ?? map.name`.
+   */
+  name: varchar("name", { length: 160 }),
+  /**
+   * Empresa, opcional e independente do funil.
+   *
+   * Um rascunho pode já ser "da FZ" sem estar preso a um lançamento. Vazio
+   * significa interno: a regra de acesso é "membro do projeto", e sem projeto
+   * não há membro para conferir — então guest não vê.
+   */
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
   /** Abas do mapa, cada uma com seus blocos e conectores. */
   tabs: jsonb("tabs")
     .$type<
@@ -719,6 +733,15 @@ export const funnelMaps = pgTable("funnel_maps", {
           stageId?: string | null;
           notes?: string | null;
           url?: string | null;
+          /**
+           * Imagem do bloco `imagem` — print de página, criativo, referência.
+           *
+           * Mora no JSONB junto com o resto do bloco, sem coluna nova. O
+           * arquivo vai para o bucket com prefixo `mapa/`, e `imageKey` é o
+           * que permite apagá-lo de lá quando o bloco sair.
+           */
+          imageUrl?: string | null;
+          imageKey?: string | null;
         }>;
         connectors: Array<{
           id: string;

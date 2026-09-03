@@ -9,7 +9,7 @@
  */
 
 import { useApiClient } from "@/lib/hooks/use-api-client";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 /** Só o que a miniatura desenha: retângulo e cor. */
 export interface PreviaDoBloco {
@@ -22,13 +22,20 @@ export interface PreviaDoBloco {
 }
 
 export interface MapaNaLista {
-  projectId: string;
-  projectName: string;
+  /**
+   * Preenchido só no mapa AVULSO, que não mora numa etapa.
+   *
+   * É o que diz à tela por onde abrir: `null` significa "vá pelo caminho
+   * projeto/funil/etapa", como sempre foi.
+   */
+  mapId: string | null;
+  projectId: string | null;
+  projectName: string | null;
   projectColor: string | null;
-  funnelId: string;
-  funnelName: string;
+  funnelId: string | null;
+  funnelName: string | null;
   arquivado: boolean;
-  stageId: string;
+  stageId: string | null;
   stageName: string;
   /** null = etapa criada, desenho ainda não salvo. */
   updatedAt: string | null;
@@ -44,5 +51,47 @@ export function useFunnelMapsGlobal() {
     queryKey: ["funnel-maps-global"],
     queryFn: () => apiClient<{ mapas: MapaNaLista[] }>("/api/funnel-maps"),
     staleTime: 60 * 1000,
+  });
+}
+
+/**
+ * Cria um mapa da tela Global.
+ *
+ * Com `funnelId`, o servidor cria a etapa `mapa` no funil e o desenho nasce
+ * como qualquer outro. Sem, nasce avulso — para rascunhar o funil de um
+ * cliente que ainda não está no sistema — e pode ser vinculado depois.
+ */
+export function useCriarMapa() {
+  const api = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dados: { name: string; funnelId?: string | null; projectId?: string | null }) =>
+      api<{ id: string; stageId: string | null }>("/api/funnel-maps", {
+        method: "POST",
+        body: JSON.stringify(dados),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["funnel-maps-global"] }),
+  });
+}
+
+export function useExcluirMapaAvulso() {
+  const api = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api(`/api/funnel-maps/${id}`, { method: "DELETE" }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["funnel-maps-global"] }),
+  });
+}
+
+export function useVincularMapa() {
+  const api = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, funnelId }: { id: string; funnelId: string }) =>
+      api(`/api/funnel-maps/${id}/vincular`, {
+        method: "PUT",
+        body: JSON.stringify({ funnelId }),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["funnel-maps-global"] }),
   });
 }

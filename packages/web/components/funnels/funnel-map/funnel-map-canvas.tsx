@@ -24,6 +24,7 @@ import {
   StickyNote, Trash2, Type, Undo2, Redo2, Unlink, X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { imagemDoEvento, useSubirImagemDoMapa } from "@/lib/hooks/use-mapa-imagem";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,6 +41,9 @@ import {
   TEXTO_ALTURA,
   TEXTO_LARGURA,
   TIPO_GENERICO,
+  IMAGEM_ALTURA,
+  IMAGEM_LARGURA,
+  TIPO_IMAGEM,
   TIPO_NOTA,
   TIPO_TEXTO,
   ehBlocoLivre,
@@ -53,8 +57,9 @@ import {
   GRADE, snap, useHistorico, useSelecao, useZoom,
 } from "@/lib/hooks/use-canvas-ux";
 import {
-  useFunnelMap,
-  useSaveFunnelMap,
+  useMapaPorEndereco,
+  useSalvarMapaPorEndereco,
+  type EnderecoDoMapa,
   type AbaDoMapa,
   type BlocoDoMapa,
   type ConectorDoMapa,
@@ -193,16 +198,28 @@ function Secao({
 }
 
 interface Props {
-  projectId: string;
-  funnelId: string;
-  stageId: string;
+  /**
+   * Onde este mapa mora.
+   *
+   * Os três juntos endereçam o mapa que é etapa de um funil. O mapa avulso não
+   * tem nenhum deles e vem por `mapId` — ver `EnderecoDoMapa`.
+   */
+  projectId?: string;
+  funnelId?: string;
+  stageId?: string;
+  /** Mapa avulso, criado do Global sem funil. */
+  mapId?: string;
   /** Altura da área de desenho. A etapa dedicada usa a tela quase inteira. */
   altura?: number;
 }
 
-export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: Props) {
-  const { data, isLoading } = useFunnelMap(projectId, funnelId, stageId);
-  const salvar = useSaveFunnelMap(projectId, funnelId, stageId);
+export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 520 }: Props) {
+  const endereco: EnderecoDoMapa =
+    mapId && !stageId
+      ? { tipo: "avulso", mapId }
+      : { tipo: "funil", projectId: projectId!, funnelId: funnelId!, stageId: stageId! };
+  const { data, isLoading } = useMapaPorEndereco(endereco);
+  const salvar = useSalvarMapaPorEndereco(endereco);
 
   const [abas, setAbas] = useState<AbaDoMapa[] | null>(null);
   const [abaAtiva, setAbaAtiva] = useState(0);
@@ -241,6 +258,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
   // A preferência é de quem está usando e vale por navegador; guardar no banco
   // faria uma pessoa mudar a barra da outra.
   const [paletaAberta, setPaletaAberta] = useState(true);
+  const subirImagem = useSubirImagemDoMapa();
+  /** Realce enquanto um arquivo paira sobre o canvas. */
+  const [arrastandoArquivo, setArrastandoArquivo] = useState(false);
   const [busca, setBusca] = useState("");
   const [fechadas, setFechadas] = useState<Set<string>>(new Set());
   useEffect(() => {
@@ -461,6 +481,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
   function minimoDoTipo(tipo: string): { w: number; h: number } {
     if (tipo === TIPO_TEXTO) return { w: 80, h: 28 };
     if (tipo === TIPO_NOTA) return { w: 100, h: 80 };
+    if (tipo === TIPO_IMAGEM) return { w: 220, h: 150 };
     return { w: 120, h: 60 };
   }
 
@@ -585,6 +606,24 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
    * confirmar que foi criado. Nascer no centro da tela dispensa mover a câmera:
    * o elemento aparece onde o olho já está.
    */
+  /**
+   * Ponto da TELA para coordenada do quadro.
+   *
+   * Descontar o pan e dividir pelo zoom é o que faz a imagem nascer sob o
+   * cursor: sem isso, largar um arquivo com o quadro deslocado ou ampliado
+   * põe o bloco longe de onde a pessoa soltou.
+   */
+  function posicaoNoQuadro(clientX: number, clientY: number): { x: number; y: number } {
+    const el = areaRef.current;
+    if (!el) return { x: 200, y: 200 };
+    const r = el.getBoundingClientRect();
+    const z = zoom.valor;
+    return {
+      x: snap((clientX - r.left - pan.x) / z - IMAGEM_LARGURA / 2),
+      y: snap((clientY - r.top - pan.y) / z - IMAGEM_ALTURA / 2),
+    };
+  }
+
   function proximaPosicao(w = LARGURA_PADRAO, h = ALTURA_PADRAO): { x: number; y: number } {
     const el = areaRef.current;
     const z = zoom.valor;
@@ -626,6 +665,67 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
     }));
     selecao.definir([id]);
     setEditando({ id, valor: "" });
+  }
+
+  /**
+   * Sobe a imagem e põe o bloco no mapa.
+   *
+   * O bloco entra ANTES do upload terminar, com `imageUrl` vazio: subir um
+   * print de dois megabytes leva segundos, e uma tela que não responde nesse
+   * tempo faz a pessoa colar de novo. O bloco mostra que está carregando e
+   * recebe a URL quando ela chega.
+   *
+   * `posicao` vem do arrastar (onde soltou); colando, cai no fluxo normal.
+   */
+  async function adicionarImagem(arquivo: File, posicao?: { x: number; y: number }) {
+    const id = novoId("img");
+    const p = posicao ?? proximaPosicao(IMAGEM_LARGURA, IMAGEM_ALTURA);
+    alterarAba((a) => ({
+      ...a,
+      boxes: [
+        ...a.boxes,
+        {
+          id, type: TIPO_IMAGEM, label: arquivo.name.slice(0, 120), ...p,
+          width: IMAGEM_LARGURA, height: IMAGEM_ALTURA,
+          color: "#64748b", status: "ativo" as StatusBloco,
+          imageUrl: null, imageKey: null,
+        },
+      ],
+    }));
+    selecao.definir([id]);
+
+    try {
+      const r = await subirImagem.mutateAsync(arquivo);
+      alterarAba((a) => ({
+        ...a,
+        boxes: a.boxes.map((b) =>
+          b.id === id ? { ...b, imageUrl: r.url, imageKey: r.key } : b,
+        ),
+      }));
+    } catch (e) {
+      // Sem a imagem o bloco é um retângulo vazio que ninguém sabe o que é —
+      // melhor tirá-lo e deixar a pessoa tentar de novo.
+      alterarAba((a) => ({ ...a, boxes: a.boxes.filter((b) => b.id !== id) }));
+      toast.error(e instanceof Error ? e.message : "Não consegui subir a imagem");
+    }
+  }
+
+  /**
+   * Abre o seletor de arquivo do sistema.
+   *
+   * Um `<input type=file>` criado na hora, sem elemento escondido no JSX: ele
+   * não é reaproveitado, e um input pendurado no DOM teria de ser limpo entre
+   * usos para permitir escolher o MESMO arquivo duas vezes seguidas.
+   */
+  function escolherImagem() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.onchange = () => {
+      const f = input.files?.[0];
+      if (f) void adicionarImagem(f);
+    };
+    input.click();
   }
 
   /** Bloco de texto: título ou parágrafo solto no board. */
@@ -1142,7 +1242,14 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
       if (mod && e.key.toLowerCase() === "a") { e.preventDefault(); selecao.definir(blocos.map((b) => b.id)); return; }
       if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); duplicarSelecionados(); return; }
       if (mod && e.key.toLowerCase() === "c") { e.preventDefault(); copiarSelecionados(); return; }
-      if (mod && e.key.toLowerCase() === "v") { e.preventDefault(); colar(); return; }
+      /**
+       * O V NÃO é tratado aqui — ver o listener de `paste` abaixo.
+       *
+       * `preventDefault` num keydown de Ctrl+V cancela a ação padrão, e com
+       * ela o próprio evento `paste`. Como só o `paste` carrega o
+       * `clipboardData`, tratar o atalho aqui tornaria impossível colar um
+       * print no mapa: a imagem nunca chegaria.
+       */
       if (mod && (e.key === "=" || e.key === "+")) { e.preventDefault(); zoom.aumentar(); return; }
       if (mod && e.key === "-") { e.preventDefault(); zoom.diminuir(); return; }
       if (mod && e.key === "0") { e.preventDefault(); enquadrarTudo(); return; }
@@ -1183,11 +1290,35 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
     }
     function onKeyUp(e: KeyboardEvent) { if (e.key === " ") espaco.current = false; }
 
+    /**
+     * Colar: imagem da área de transferência, ou os blocos copiados aqui.
+     *
+     * Os dois usos disputam o mesmo Ctrl+V, e a imagem ganha quando existe —
+     * quem acabou de dar print numa página quer ela no mapa, não os blocos
+     * que copiou dez minutos atrás.
+     */
+    function aoColar(e: ClipboardEvent) {
+      const alvo = e.target as HTMLElement | null;
+      // Dentro de um campo de texto, colar é colar texto.
+      if (alvo && (alvo.tagName === "INPUT" || alvo.tagName === "TEXTAREA" || alvo.isContentEditable)) {
+        return;
+      }
+      const arquivo = imagemDoEvento(e.clipboardData);
+      if (arquivo) {
+        e.preventDefault();
+        void adicionarImagem(arquivo);
+        return;
+      }
+      colar();
+    }
+
     window.addEventListener("keydown", onKey);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("paste", aoColar);
     return () => {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("paste", aoColar);
     };
   });
 
@@ -1210,13 +1341,17 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
 
   const SECOES_LIVRES = [
     { chave: "nota", rotulo: "Nota", acao: adicionarNota },
+    // Terceiro caminho da imagem, ao lado de colar e arrastar: é o que a
+    // pessoa procura quando o arquivo está no disco e não na área de
+    // transferência.
+    { chave: "imagem", rotulo: "Imagem", acao: escolherImagem },
     ...(["h1", "h2", "h3", "corpo"] as const).map((e) => ({
       chave: e,
       rotulo: e === "corpo" ? "Texto" : e.toUpperCase(),
       acao: () => adicionarTexto(e),
     })),
   ];
-  const filtroLivres = SECOES_LIVRES.filter((l) => casa(l.rotulo) || casa("anotar"));
+  const filtroLivres = SECOES_LIVRES.filter((l) => casa(l.rotulo) || casa("anotar") || casa("print"));
   // Ícone casa pelo grupo OU pelo próprio rótulo — o emoji antigo só dava pra
   // achar pelo grupo, porque não tinha nome nenhum.
   const filtrarIcones = (g: { grupo: string; itens: { icone: string; rotulo: string }[] }) =>
@@ -1463,7 +1598,34 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
         {/* Canvas */}
         <div
           ref={areaRef}
-          className="relative flex-1 touch-none overflow-hidden rounded-lg border border-border/40"
+          /**
+           * Arrastar um arquivo para cá cria o bloco ONDE soltou.
+           *
+           * `preventDefault` no `dragOver` é o que impede o navegador de abrir
+           * a imagem numa aba nova — sem ele, largar um print sobre o mapa faz
+           * a página inteira ser substituída pelo arquivo.
+           */
+          onDragOver={(e) => {
+            if (!e.dataTransfer.types.includes("Files")) return;
+            e.preventDefault();
+            setArrastandoArquivo(true);
+          }}
+          onDragLeave={(e) => {
+            // Só quando o ponteiro sai da área de verdade: `dragleave` também
+            // dispara ao cruzar a borda de qualquer filho, e o realce piscaria.
+            if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+            setArrastandoArquivo(false);
+          }}
+          onDrop={(e) => {
+            const arquivo = imagemDoEvento(e.dataTransfer);
+            if (!arquivo) return;
+            e.preventDefault();
+            setArrastandoArquivo(false);
+            void adicionarImagem(arquivo, posicaoNoQuadro(e.clientX, e.clientY));
+          }}
+          className={`relative flex-1 touch-none overflow-hidden rounded-lg border ${
+            arrastandoArquivo ? "border-primary ring-2 ring-primary/40" : "border-border/40"
+          }`}
           style={{
             height: alturaDaArea,
             cursor: espaco.current ? "grab" : "default",
@@ -1568,6 +1730,46 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, altura = 520 }: 
             {blocos.map((b) => {
               const meta = metaDoTipo(b.type);
               const ativo = selecao.tem(b.id);
+
+              // A imagem é o conteúdo: moldura de bloco por cima disputaria
+              // com ela justamente o que se quer ver.
+              if (b.type === TIPO_IMAGEM) {
+                return (
+                  <div
+                    key={b.id}
+                    onPointerDown={(e) => iniciarArrasto(e, b)}
+                    onClick={(e) => e.stopPropagation()}
+                    className={`absolute overflow-hidden rounded-md ${
+                      ativo ? "ring-2 ring-primary" : "ring-1 ring-border/60"
+                    }`}
+                    style={{ left: b.x, top: b.y, width: b.width, height: b.height }}
+                  >
+                    {b.imageUrl ? (
+                      <img
+                        src={b.imageUrl}
+                        alt={b.label || "imagem do mapa"}
+                        draggable={false}
+                        /* `contain` e não `cover`: um print de página cortado
+                           ao meio perde exatamente a dobra que motivou salvá-lo. */
+                        className="pointer-events-none h-full w-full bg-muted/40 object-contain"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-muted/40 text-[11px] text-muted-foreground">
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        subindo…
+                      </div>
+                    )}
+                    {ativo && (
+                      <span
+                        role="presentation"
+                        onPointerDown={(ev) => iniciarResize(ev, b)}
+                        onClick={(ev) => ev.stopPropagation()}
+                        className="absolute -bottom-1 -right-1 z-20 h-3 w-3 cursor-nwse-resize touch-none rounded-sm border border-primary bg-background"
+                      />
+                    )}
+                  </div>
+                );
+              }
 
               // Nota e texto têm desenho próprio: sem selo de status, sem card
               // de peça do funil. Compartilham só o gesto de arrastar.
