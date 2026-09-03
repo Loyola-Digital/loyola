@@ -335,7 +335,10 @@ export function ordenarPorMetrica(
       );
       break;
     default:
-      ordenado.sort((a, b) => b.ctr - a.ctr);
+      // CTR agora é de link e pode ser `null` (métrica ausente). Sem este
+      // tratamento, `null` seria coagido a 0 e o criativo sem medição
+      // apareceria como o pior CTR do funil — uma acusação falsa.
+      ordenado.sort((a, b) => maiorPrimeiro(a.ctr, b.ctr));
   }
   return ordenado;
 }

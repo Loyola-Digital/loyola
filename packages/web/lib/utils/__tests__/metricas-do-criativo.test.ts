@@ -27,6 +27,7 @@ const criativo = (over: Partial<AggregatedCreative>): AggregatedCreative =>
     reach: 8_000,
     ctr: 2,
     cpc: 0.5,
+    clicksTotais: 200,
     creative: null,
     hookRate: null,
     views3s: null,
@@ -34,8 +35,6 @@ const criativo = (over: Partial<AggregatedCreative>): AggregatedCreative =>
     holdRate: null,
     cpm: null,
     linkClicks: null,
-    ctrLink: null,
-    cpcLink: null,
     amostraBaixa: false,
     leadsPagos: 0,
     leadsOrg: 0,
@@ -51,7 +50,7 @@ const criativo = (over: Partial<AggregatedCreative>): AggregatedCreative =>
 describe("badge — o botão é a soma dos checkboxes (AC3)", () => {
   it("abre com CPM, Hook, Hold e CTR marcados — o 'Métricas (4)' do relato", () => {
     const padrao = metricasPadrao();
-    expect(padrao.sort()).toEqual(["cpm", "ctrLink", "hookRate", "holdRate"].sort());
+    expect(padrao.sort()).toEqual(["cpm", "ctr", "hookRate", "holdRate"].sort());
     expect(contarMarcadas(padrao)).toBe(4);
   });
 
@@ -271,10 +270,14 @@ describe("cliques no link — diferente de cliques totais (AC11)", () => {
       ad({ campaignId: "a1", spend: 100, impressions: 1000, clicks: 500, linkClicks: 50 }),
     ]);
     expect(g.linkClicks).toBe(50);
-    // CTR de link = 5%; o CTR de todos os cliques seria 50%.
-    expect(g.ctrLink).toBeCloseTo(5, 5);
-    expect(g.ctr).toBeCloseTo(50, 5);
-    expect(g.cpcLink).toBeCloseTo(2, 5);
+    // Decisão do gestor (2026-09-03): há UM CTR no produto, e é o de link.
+    // 50 cliques no link em 1.000 impressões = 5%. Se ainda fosse sobre
+    // cliques totais (500), daria 50% — é essa a diferença que a unificação
+    // eliminou da tela.
+    expect(g.ctr).toBeCloseTo(5, 5);
+    expect(g.ctr).not.toBeCloseTo(50, 1);
+    expect(g.clicksTotais).toBe(500);
+    expect(g.cpc).toBeCloseTo(2, 5);
   });
 
   it("nenhum anúncio com linkClicks → null, nunca 0", () => {
@@ -282,7 +285,10 @@ describe("cliques no link — diferente de cliques totais (AC11)", () => {
     // Zerar transformaria "não medido" em "ninguém clicou".
     const [g] = aggregateCreativesByName([ad({ linkClicks: null })]);
     expect(g.linkClicks).toBeNull();
-    expect(g.ctrLink).toBeNull();
-    expect(g.cpcLink).toBeNull();
+    // Sem fallback para cliques totais: era ele que fazia esta galeria e a
+    // tabela de Desempenho de Criativos mostrarem números diferentes sob o
+    // mesmo rótulo.
+    expect(g.ctr).toBeNull();
+    expect(g.cpc).toBeNull();
   });
 });

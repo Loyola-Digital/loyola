@@ -135,15 +135,16 @@ export const METRICAS: MetricaDoCriativo[] = [
     formato: "numero",
   },
   {
-    id: "ctrLink",
+    id: "ctr",
     categoria: "cliques",
     label: "CTR",
-    explicacao: "Cliques no link ÷ impressões × 100.",
+    explicacao:
+      "Cliques no link ÷ impressões × 100. O produto tem um CTR só, e é este — nunca o clique em qualquer lugar do anúncio.",
     formato: "percentual",
     marcadaPorPadrao: true,
   },
   {
-    id: "cpcLink",
+    id: "cpc",
     categoria: "cliques",
     label: "CPC",
     explicacao: "Investimento ÷ cliques no link.",
@@ -306,10 +307,10 @@ export function valorDaMetrica(
       return c.holdRate;
     case "linkClicks":
       return c.linkClicks;
-    case "ctrLink":
-      return c.ctrLink;
-    case "cpcLink":
-      return c.cpcLink;
+    case "ctr":
+      return c.ctr;
+    case "cpc":
+      return c.cpc;
     case "txConversao": {
       const conv = ctx.conversoes;
       if (conv == null || c.linkClicks == null || c.linkClicks <= 0) return null;

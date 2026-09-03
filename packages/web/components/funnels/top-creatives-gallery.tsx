@@ -406,7 +406,8 @@ interface LightboxItem {
   spend: number;
   impressions: number;
   clicks: number;
-  ctr: number;
+  /** CTR de link (decisão do gestor, 2026-09-03). `null` = métrica ausente. */
+  ctr: number | null;
   cplPago: number | null;
   parentInfo?: string;
 }

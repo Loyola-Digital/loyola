@@ -26,8 +26,20 @@ export interface AggregatedCreative {
   impressions: number;
   clicks: number;
   reach: number;
-  ctr: number;
-  cpc: number;
+  /**
+   * **CTR sobre cliques NO LINK** — decisão do gestor em 2026-09-03: o produto
+   * tem um CTR só, e é este. `Σ linkClicks ÷ Σ impressões × 100`.
+   *
+   * `null` quando a Meta não devolveu `link_click` nas actions de nenhum
+   * anúncio do grupo. **Sem fallback para cliques totais**: era o fallback
+   * silencioso de `buildAnalyticsRow` que fazia esta galeria mostrar um CTR e a
+   * tabela de Desempenho de Criativos mostrar outro, com o mesmo rótulo.
+   */
+  ctr: number | null;
+  /** CPC sobre cliques NO LINK. Mesma regra de ausência do `ctr`. */
+  cpc: number | null;
+  /** Cliques em qualquer lugar do anúncio. Guardado como dado bruto. */
+  clicksTotais: number;
   creative: MetaAdCreative | null;
   parentInfo?: string;
   /**
@@ -56,14 +68,10 @@ export interface AggregatedCreative {
   /** Story 18.76: `Σ spend ÷ Σ impressões × 1000`. Nunca média de CPMs. */
   cpm: number | null;
   /**
-   * Story 18.76 (AC11): Σ `inline_link_clicks`. **Diferente de `clicks`**, que
-   * conta clique em qualquer lugar do anúncio. `null` = não medido.
+   * Story 18.76 (AC11): Σ cliques no link do grupo. **Diferente de `clicks`**,
+   * que conta clique em qualquer lugar do anúncio. `null` = não medido.
    */
   linkClicks: number | null;
-  /** CTR sobre cliques NO LINK. O `ctr` acima é sobre todos os cliques. */
-  ctrLink: number | null;
-  /** CPC sobre cliques NO LINK. */
-  cpcLink: number | null;
   /** Story 29.65 (AC4): abaixo do piso de reproduções — fora do ranking. */
   amostraBaixa: boolean;
 
@@ -222,9 +230,13 @@ export function aggregateCreativesByName(
       comLinkClicks.length > 0
         ? comLinkClicks.reduce((s, a) => s + (a.linkClicks ?? 0), 0)
         : null;
-    const ctrLink =
+    /**
+     * Um CTR só no produto, e é o de link (decisão do gestor, 2026-09-03).
+     * `0` medido continua sendo `0` — só a ausência da métrica vira `null`.
+     */
+    const ctrDeLink =
       linkClicks === null || impressions <= 0 ? null : (linkClicks / impressions) * 100;
-    const cpcLink = linkClicks === null || linkClicks <= 0 ? null : spend / linkClicks;
+    const cpcDeLink = linkClicks === null || linkClicks <= 0 ? null : spend / linkClicks;
 
     result.push({
       name,
@@ -233,8 +245,9 @@ export function aggregateCreativesByName(
       impressions,
       clicks,
       reach,
-      ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
-      cpc: safeDivide(spend, clicks) ?? 0,
+      ctr: ctrDeLink,
+      cpc: cpcDeLink,
+      clicksTotais: clicks,
       creative: leader.creative ?? null,
       parentInfo: `${leader.parentCampaignName} › ${leader.adsetName}`,
       videoMetrics: leader.videoMetrics,
@@ -244,8 +257,6 @@ export function aggregateCreativesByName(
       holdRate,
       cpm,
       linkClicks,
-      ctrLink,
-      cpcLink,
       // Story 29.65 (AC4): mesmo piso da 43.8, não um terceiro critério novo.
       // Um criativo com 200 impressões e 3 reproduções mostra 1,5% ou 60%
       // dependendo do dia; sem piso, o topo de "Melhores Hooks" vira ruído.
