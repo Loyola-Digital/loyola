@@ -28,12 +28,9 @@ import { importarDaAgenda } from "../services/planner-sync.js";
 import {
   apagarEvento,
   atualizarEvento,
-  corParaCampanha,
   criarEvento,
   emailDaServiceAccount,
-  eventosDaAgenda,
   nomeDaAgenda,
-  separarTitulo,
   tituloParaGoogle,
 } from "../services/planner-google.js";
 
@@ -146,7 +143,9 @@ export default fp(async function plannerRoutes(fastify) {
     // Campanha nova nasce ja na agenda, quando ha uma escolhida: criar aqui e
     // ter de lembrar de espelhar depois seria o passo que todo mundo esquece.
     const agendaNova = b.data.googleCalendarId ?? null;
-    const espelho = await espelharNoGoogle({
+    // O retorno não é lido: a criação já grava o que precisa e o erro sobe por
+    // exceção. Ler numa variável só para descartá-la é o que o lint pega.
+    await espelharNoGoogle({
       agenda: agendaNova,
       nomeAntes: b.data.name,
       nomeDepois: b.data.name,
