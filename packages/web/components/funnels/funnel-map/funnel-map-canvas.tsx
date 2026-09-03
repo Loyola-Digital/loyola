@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Icons from "lucide-react";
 import {
-  ChevronDown, ChevronRight, ClipboardCopy, Copy, FileDown, Keyboard, Loader2, Maximize2, Minimize2, Minus,
+  ChevronDown, ChevronRight, ClipboardCopy, Copy, FileDown, Keyboard, Loader2, Maximize2, Minimize2, Minus, Spline, Waypoints,
   PanelLeftClose, PanelLeftOpen, Pencil, Plus, RotateCcw, Save, Scan, Search,
   StickyNote, Trash2, Type, Undo2, Redo2, Unlink, X,
 } from "lucide-react";
@@ -65,10 +65,24 @@ import {
 } from "@/lib/hooks/use-funnel-map";
 
 /** Ícone por nome, com fallback — nome errado não derruba o mapa. */
-function IconePorNome({ nome, className }: { nome: string; className?: string }) {
-  const Componente = (Icons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[nome];
+function IconePorNome({
+  nome,
+  className,
+  style,
+}: {
+  nome: string;
+  className?: string;
+  /** Usado para tingir o ícone com a cor do tipo do bloco. */
+  style?: React.CSSProperties;
+}) {
+  const Componente = (
+    Icons as unknown as Record<
+      string,
+      React.ComponentType<{ className?: string; style?: React.CSSProperties }>
+    >
+  )[nome];
   const Final = Componente ?? Icons.Square;
-  return <Final className={className} />;
+  return <Final className={className} style={style} />;
 }
 
 /** Onde fica, em pixels, um ponto de conexão do bloco. */
@@ -88,6 +102,46 @@ function pontoDoBloco(b: BlocoDoMapa, ponto: PontoDeConexao): { x: number; y: nu
  * a esquerda do próximo bloco desenha um "S" legível, em vez de cortar por cima
  * das caixas como faria uma reta.
  */
+/**
+ * Caminho em angulos retos, no lugar da curva.
+ *
+ * Sai perpendicular a ancora, dobra no meio e chega perpendicular a outra —
+ * o desenho de fluxograma. Num mapa com muitas ligacoes paralelas, as curvas
+ * de Bezier se cruzam e vira dificil seguir qual sai de onde; as retas se
+ * empilham e continuam legiveis.
+ *
+ * O raio de 8px nas dobras evita o canto vivo, que fica duro na tela.
+ */
+function caminhoRetoDaSeta(
+  de: { x: number; y: number },
+  dePonto: PontoDeConexao,
+  para: { x: number; y: number },
+  paraPonto: PontoDeConexao,
+): string {
+  const SAIDA = 24;
+  const sai = (p: PontoDeConexao, base: { x: number; y: number }) => {
+    switch (p) {
+      case "right": return { x: base.x + SAIDA, y: base.y };
+      case "left": return { x: base.x - SAIDA, y: base.y };
+      case "top": return { x: base.x, y: base.y - SAIDA };
+      case "bottom": return { x: base.x, y: base.y + SAIDA };
+    }
+  };
+  const a = sai(dePonto, de);
+  const b = sai(paraPonto, para);
+
+  // Horizontal quando a saida e por um lado; vertical quando por cima/baixo.
+  const horizontal = dePonto === "left" || dePonto === "right";
+  const meio = horizontal ? (a.x + b.x) / 2 : (a.y + b.y) / 2;
+  const pontos = horizontal
+    ? [de, a, { x: meio, y: a.y }, { x: meio, y: b.y }, b, para]
+    : [de, a, { x: a.x, y: meio }, { x: b.x, y: meio }, b, para];
+
+  return pontos
+    .map((pt, i) => `${i === 0 ? "M" : "L"} ${pt.x} ${pt.y}`)
+    .join(" ");
+}
+
 function caminhoDaSeta(de: { x: number; y: number }, dePonto: PontoDeConexao, para: { x: number; y: number }, paraPonto: PontoDeConexao): string {
   const forca = Math.max(40, Math.abs(para.x - de.x) / 2);
   const alca = (p: PontoDeConexao, base: { x: number; y: number }) => {
@@ -230,6 +284,27 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
   const [menu, setMenu] = useState<{ x: number; y: number; boxId: string } | null>(null);
   /** Seta selecionada — permite apagar UMA ligação, sem levar as outras junto. */
   const [conectorSel, setConectorSel] = useState<string | null>(null);
+  /**
+   * Curva ou reta, para o mapa inteiro.
+   *
+   * Preferencia de quem desenha, nao propriedade da ligacao: um mapa com
+   * metade das setas curvas e metade retas fica sujo, e ninguem escolhe isso
+   * de proposito seta a seta. Fica no `localStorage` porque acompanha a
+   * pessoa, nao o documento.
+   */
+  const [setasRetas, setSetasRetas] = useState(false);
+  /** Escrevendo o texto de uma ligação. `null` = ninguém editando. */
+  const [rotulando, setRotulando] = useState<{ id: string; valor: string } | null>(null);
+  useEffect(() => {
+    try { setSetasRetas(localStorage.getItem("mapa:setas") === "retas"); } catch { /* ignora */ }
+  }, []);
+  function alternarSetas() {
+    setSetasRetas((v) => {
+      const novo = !v;
+      try { localStorage.setItem("mapa:setas", novo ? "retas" : "curvas"); } catch { /* ignora */ }
+      return novo;
+    });
+  }
   /**
    * O seletor que abre no duplo clique de uma bolinha.
    *
@@ -1123,6 +1198,20 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
     setBuscaDoPonto("");
   }
 
+  /** Grava o texto da ligação. Vazio APAGA o rótulo, não guarda "". */
+  function confirmarRotulo() {
+    const r = rotulando;
+    setRotulando(null);
+    if (!r) return;
+    const texto = r.valor.trim().slice(0, 60);
+    alterarAba((a) => ({
+      ...a,
+      connectors: a.connectors.map((c) =>
+        c.id === r.id ? { ...c, label: texto || null } : c,
+      ),
+    }));
+  }
+
   /** Apaga uma seta específica — a que estiver selecionada. */
   function removerConector(id: string) {
     alterarAba((a) => ({ ...a, connectors: a.connectors.filter((c) => c.id !== id) }));
@@ -1156,6 +1245,26 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       y: (cy - r.top - pan.y) / zoom.valor,
     };
   }, [zoom.valor, pan]);
+
+  /**
+   * A inversa de `paraDesenho`: coordenada do quadro → ponto na tela.
+   *
+   * Usada por controles que vivem FORA do `<svg>` mas precisam aparecer sobre
+   * um ponto do desenho — o campo do rótulo da ligação. Dentro do SVG eles
+   * herdariam o zoom e ficariam minúsculos com o mapa afastado.
+   */
+  const paraTela = useCallback(
+    (x: number, y: number) => {
+      const el = areaRef.current;
+      if (!el) return { x: 0, y: 0 };
+      const r = el.getBoundingClientRect();
+      return {
+        x: x * zoom.valor + pan.x + r.left,
+        y: y * zoom.valor + pan.y + r.top,
+      };
+    },
+    [zoom.valor, pan],
+  );
 
   /** Seleção por área e mover a tela com Space/botão do meio. */
   function fundoPointerDown(e: React.PointerEvent) {
@@ -1490,7 +1599,19 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
         else removerSelecionados();
         return;
       }
-      if (e.key === "Escape") { selecao.limpar(); setConectorSel(null); setLigando(null); setMenu(null); setAjuda(false); setRenomeando(null); return; }
+      if (e.key === "Escape") { selecao.limpar(); setConectorSel(null); setLigando(null); setMenu(null); setAjuda(false); setRenomeando(null); setRotulando(null); return; }
+      /**
+       * T cria um bloco de texto.
+       *
+       * Sem modificador de proposito: e a tecla que todo editor de quadro usa
+       * para isso. Os `return` acima ja tiraram do caminho quem esta digitando
+       * num campo — aqui a tecla so chega com o foco no quadro.
+       */
+      if (!mod && !e.altKey && e.key.toLowerCase() === "t") {
+        e.preventDefault();
+        adicionarTexto("corpo");
+        return;
+      }
       if (e.key === "?") { e.preventDefault(); setAjuda((v) => !v); return; }
       if (e.key.toLowerCase() === "f" && !mod) { e.preventDefault(); void alternarTelaCheia(); return; }
       if ((e.key === "F2" || e.key === "Enter") && selecao.unico) {
@@ -1664,6 +1785,14 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
             onClick={refazer} disabled={!historico.podeRefazer} aria-label="Refazer"
           >
             <Redo2 className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="ghost" size="icon" className="h-6 w-6"
+            onClick={alternarSetas}
+            aria-label={setasRetas ? "Setas curvas" : "Setas retas"}
+            title={setasRetas ? "Usar setas curvas" : "Usar setas retas"}
+          >
+            {setasRetas ? <Spline className="h-3 w-3" /> : <Waypoints className="h-3 w-3" />}
           </Button>
           <Button
             variant="ghost" size="icon" className="h-6 w-6"
@@ -1916,7 +2045,15 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                 const de = blocos.find((b) => b.id === c.fromBox);
                 const para = blocos.find((b) => b.id === c.toBox);
                 if (!de || !para) return null;
-                const d = caminhoDaSeta(pontoDoBloco(de, c.fromPoint), c.fromPoint, pontoDoBloco(para, c.toPoint), c.toPoint);
+                const inicio = pontoDoBloco(de, c.fromPoint);
+                const fim = pontoDoBloco(para, c.toPoint);
+                const d = setasRetas
+                  ? caminhoRetoDaSeta(inicio, c.fromPoint, fim, c.toPoint)
+                  : caminhoDaSeta(inicio, c.fromPoint, fim, c.toPoint);
+                // Meio do trecho, para o rotulo. Aproximacao boa o bastante:
+                // medir o caminho real exigiria `getTotalLength`, que so
+                // funciona com o elemento ja no DOM.
+                const meio = { x: (inicio.x + fim.x) / 2, y: (inicio.y + fim.y) / 2 };
                 const ativa = conectorSel === c.id;
                 return (
                   <g key={c.id}>
@@ -1930,7 +2067,16 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                       strokeWidth={16}
                       className="pointer-events-auto cursor-pointer"
                       onClick={(e) => { e.stopPropagation(); setConectorSel(c.id); selecao.limpar(); }}
-                      onDoubleClick={(e) => { e.stopPropagation(); removerConector(c.id); }}
+                      /* Duplo clique ESCREVE o rótulo, não apaga mais a
+                         ligação: apagar por duplo clique num alvo de 16px é
+                         fácil de fazer sem querer, e agora há a tecla Delete
+                         com a ligação selecionada — que pede a seleção antes,
+                         então não acontece por acidente. */
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        setConectorSel(c.id);
+                        setRotulando({ id: c.id, valor: c.label ?? "" });
+                      }}
                     />
                     <path
                       d={d}
@@ -1941,6 +2087,35 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                       strokeDasharray={c.type === "dashed" ? "8 4" : undefined}
                       markerEnd="url(#seta-mapa)"
                     />
+
+                    {/* O texto da ligação — "Sim", "Não", "se comprou".
+                        Uma seta sem rótulo num mapa com ramificação obriga a
+                        adivinhar qual caminho é qual. Fica sobre um retângulo
+                        da cor do fundo para não se perder em cima da linha. */}
+                    {c.label && (
+                      <g
+                        className="pointer-events-auto cursor-pointer"
+                        onClick={(e) => { e.stopPropagation(); setConectorSel(c.id); }}
+                        onDoubleClick={(e) => { e.stopPropagation(); setRotulando({ id: c.id, valor: c.label ?? "" }); }}
+                      >
+                        <rect
+                          x={meio.x - (c.label.length * 3.4 + 6)}
+                          y={meio.y - 9}
+                          width={c.label.length * 6.8 + 12}
+                          height={18}
+                          rx={4}
+                          className="fill-background"
+                        />
+                        <text
+                          x={meio.x}
+                          y={meio.y + 4}
+                          textAnchor="middle"
+                          className={`text-[11px] font-medium ${ativa ? "fill-primary" : "fill-foreground/70"}`}
+                        >
+                          {c.label}
+                        </text>
+                      </g>
+                    )}
 
                     {/* Alças de reapontar — só na ligação selecionada.
                         Visíveis o tempo todo, cada seta do mapa carregaria dois
@@ -2150,7 +2325,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                     if (!selecao.tem(b.id)) selecao.definir([b.id]);
                     setMenu({ x: e.clientX, y: e.clientY, boxId: b.id });
                   }}
-                  className={`absolute cursor-grab touch-none select-none rounded-lg border-2 bg-card p-2 shadow-sm transition-shadow active:cursor-grabbing ${
+                  className={`absolute cursor-grab touch-none select-none rounded-xl border-2 bg-card p-2 shadow-sm transition-shadow active:cursor-grabbing ${
                     ativo ? "ring-2 ring-primary ring-offset-1" : ""
                   }`}
                   style={{ left: b.x, top: b.y, width: b.width, height: b.height, borderColor: b.color }}
@@ -2175,23 +2350,43 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                       <p className="mt-1 text-[9px] text-muted-foreground">Enter salva · Esc cancela</p>
                     </div>
                   ) : (
-                    <>
-                      <div className="flex items-center gap-1.5">
-                        {b.emoji ? (
-                          // Bloco criado antes da troca por ícone: mantém o que
-                          // a pessoa escolheu em vez de sumir com o desenho.
-                          <span className="shrink-0 text-sm leading-none">{b.emoji}</span>
-                        ) : (
-                          <IconePorNome nome={b.icone ?? meta.icon} className="h-3.5 w-3.5 shrink-0" />
-                        )}
-                        <span className="truncate text-[11px] font-medium" title={b.label}>{b.label}</span>
-                      </div>
-                      {/* O genérico não tem tipo pra mostrar: `metaDoTipo` cai no
-                          fallback e escreveria "generico" embaixo do nome. */}
-                      {b.type !== TIPO_GENERICO && (
-                        <p className="mt-0.5 truncate text-[10px] text-muted-foreground">{meta.label}</p>
+                    /**
+                      O conteúdo do bloco: ícone e nome, e mais nada.
+                      Antes havia DUAS linhas — o nome e, embaixo, o tipo vindo
+                      da paleta. Num bloco criado pela paleta as duas dizem a
+                      mesma palavra ("Checkout" sobre "Checkout"), e a segunda
+                      não era editável: ocupava metade do card para repetir o
+                      que já estava escrito acima.
+                      O ícone ganhou um quadrado de fundo na cor do tipo, e o
+                      conjunto foi para o centro — a leitura de relance passa a
+                      ser o ícone, e o nome logo ao lado.
+                    */
+                    <div className="flex h-full w-full items-center justify-center gap-2 px-1">
+                      {b.emoji ? (
+                        // Bloco criado antes da troca por ícone: mantém o que
+                        // a pessoa escolheu em vez de sumir com o desenho.
+                        <span className="shrink-0 text-lg leading-none">{b.emoji}</span>
+                      ) : (
+                        <span
+                          className="grid h-7 w-7 shrink-0 place-items-center rounded-lg"
+                          // A cor do tipo, bem clara: o ícone precisa de um
+                          // fundo que o destaque sem competir com a borda.
+                          style={{ background: `${b.color}24` }}
+                        >
+                          <IconePorNome
+                            nome={b.icone ?? meta.icon}
+                            className="h-4 w-4"
+                            style={{ color: b.color }}
+                          />
+                        </span>
                       )}
-                    </>
+                      <span
+                        className="min-w-0 truncate text-[13px] font-semibold leading-tight"
+                        title={b.label}
+                      >
+                        {b.label}
+                      </span>
+                    </div>
                   )}
                   {/* O selo de status saiu do bloco.
                       "Em construção", "Otimizar" e "Pausado" nunca foram
@@ -2404,6 +2599,46 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       </div>
 
       {/* Menu de contexto do bloco */}
+      {/*
+        Escrevendo o texto de uma ligação.
+        Fica FORA do <svg>: campo de formulário dentro de SVG exige
+        `foreignObject`, que herda o zoom do quadro — o input encolheria junto
+        com o mapa afastado e ficaria impossível de acertar.
+      */}
+      {rotulando && (() => {
+        const c = aba?.connectors.find((x) => x.id === rotulando.id);
+        const de = c && blocos.find((b) => b.id === c.fromBox);
+        const para = c && blocos.find((b) => b.id === c.toBox);
+        if (!c || !de || !para) return null;
+        const i = pontoDoBloco(de, c.fromPoint);
+        const f = pontoDoBloco(para, c.toPoint);
+        const centro = paraTela((i.x + f.x) / 2, (i.y + f.y) / 2);
+        return (
+          <>
+            <div className="fixed inset-0 z-40" onClick={confirmarRotulo} />
+            <div
+              className="fixed z-50 w-40"
+              style={{ left: centro.x - 80, top: centro.y - 14 }}
+            >
+              <Input
+                autoFocus
+                value={rotulando.valor}
+                onChange={(e) => setRotulando({ id: rotulando.id, valor: e.target.value })}
+                onBlur={confirmarRotulo}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); confirmarRotulo(); }
+                  // Esc descarta a edição e mantém o rótulo que estava lá.
+                  if (e.key === "Escape") { e.preventDefault(); setRotulando(null); }
+                }}
+                onFocus={(e) => e.currentTarget.select()}
+                placeholder="Sim, Não, se comprou…"
+                className="h-7 text-center text-[12px] shadow-lg"
+              />
+            </div>
+          </>
+        );
+      })()}
+
       {/*
         O seletor do duplo clique na bolinha.
         Fixo na janela e não dentro do quadro: dentro, ele herdaria o zoom e o
