@@ -95,3 +95,14 @@ export function useVincularMapa() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["funnel-maps-global"] }),
   });
 }
+
+/** Renomear o mapa avulso e mudar a empresa dele. */
+export function useAtualizarMapa() {
+  const api = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...dados }: { id: string; name?: string; projectId?: string | null }) =>
+      api(`/api/funnel-maps/${id}`, { method: "PUT", body: JSON.stringify(dados) }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["funnel-maps-global"] }),
+  });
+}
