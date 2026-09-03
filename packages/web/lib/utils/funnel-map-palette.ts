@@ -41,7 +41,10 @@ export const CATEGORIAS: CategoriaDeBloco[] = [
       { type: "landing_page", label: "Landing Page", icon: "Layout" },
       { type: "captura", label: "Página de Captura", icon: "UserPlus" },
       { type: "vsl", label: "VSL", icon: "Play" },
-      { type: "squeeze", label: "Squeeze Page", icon: "Minimize2" },
+      // O `type` continua `squeeze`: e ele que os mapas ja salvos guardam, e
+      // trocar a chave por causa do rotulo apagaria o icone e a cor dos blocos
+      // que existem. So o nome muda.
+      { type: "squeeze", label: "Pesquisa", icon: "ClipboardList" },
       { type: "blog", label: "Blog Post", icon: "BookOpen" },
     ],
   },
@@ -49,7 +52,7 @@ export const CATEGORIAS: CategoriaDeBloco[] = [
     name: "Conversão",
     color: "#10b981",
     items: [
-      { type: "checkout", label: "Checkout", icon: "CreditCard" },
+      { type: "checkout", label: "Checkout", icon: "DollarSign" },
       { type: "upsell", label: "Upsell", icon: "TrendingUp" },
       { type: "downsell", label: "Downsell", icon: "TrendingDown" },
       { type: "order_bump", label: "Order Bump", icon: "Plus" },
@@ -92,7 +95,10 @@ export const CATEGORIAS: CategoriaDeBloco[] = [
     name: "Entrega",
     color: "#06b6d4",
     items: [
-      { type: "pagamento", label: "Pagamento", icon: "DollarSign" },
+      // `pagamento` saiu da paleta: dois itens de nome parecido para a mesma
+      // ideia faziam escolher no chute. O tipo continua valendo no
+      // `metaDoTipo`, entao os blocos ja desenhados seguem intactos — ele so
+      // nao e mais oferecido.
       { type: "entrega", label: "Entrega", icon: "Package" },
       { type: "membros", label: "Área de Membros", icon: "Lock" },
     ],
@@ -128,11 +134,24 @@ const PORTIPO = new Map<string, { tipo: TipoDeBloco; cor: string }>(
   CATEGORIAS.flatMap((c) => c.items.map((i) => [i.type, { tipo: i, cor: c.color }] as const)),
 );
 
+/**
+ * Tipos que saíram da paleta mas continuam desenhados.
+ *
+ * Tirar um item da paleta impede que ele seja criado de novo — não apaga o que
+ * já está nos mapas. Sem esta tabela, o bloco antigo cairia no genérico e
+ * perderia ícone e cor de uma vez, o que parece corrupção do desenho para quem
+ * abre o mapa.
+ */
+const APOSENTADOS: Record<string, { label: string; icon: string; cor: string }> = {
+  // Virou `checkout`, que agora carrega o cifrão.
+  pagamento: { label: "Pagamento", icon: "DollarSign", cor: "#06b6d4" },
+};
+
 /** Metadados de um tipo. Tipo desconhecido não quebra o mapa — vira genérico. */
 export function metaDoTipo(type: string): { label: string; icon: string; cor: string } {
   const achado = PORTIPO.get(type);
-  if (!achado) return { label: type, icon: "Square", cor: "#8b5cf6" };
-  return { label: achado.tipo.label, icon: achado.tipo.icon, cor: achado.cor };
+  if (achado) return { label: achado.tipo.label, icon: achado.tipo.icon, cor: achado.cor };
+  return APOSENTADOS[type] ?? { label: type, icon: "Square", cor: "#8b5cf6" };
 }
 
 export const LARGURA_PADRAO = 160;

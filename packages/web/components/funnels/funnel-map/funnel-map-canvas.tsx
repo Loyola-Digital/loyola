@@ -36,7 +36,6 @@ import {
   ICONES_GENERICOS,
   NOTA_ALTURA,
   NOTA_LARGURA,
-  STATUS,
   TAMANHO_DO_ESTILO,
   TEXTO_ALTURA,
   TEXTO_LARGURA,
@@ -46,7 +45,6 @@ import {
   TIPO_IMAGEM,
   TIPO_NOTA,
   TIPO_TEXTO,
-  ehBlocoLivre,
   ALTURA_PADRAO,
   LARGURA_PADRAO,
   metaDoTipo,
@@ -210,7 +208,8 @@ interface Props {
   /** Mapa avulso, criado do Global sem funil. */
   mapId?: string;
   /** Altura da área de desenho. A etapa dedicada usa a tela quase inteira. */
-  altura?: number;
+  /** Px, ou qualquer expressao CSS de altura. */
+  altura?: number | string;
 }
 
 export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 520 }: Props) {
@@ -592,7 +591,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       ...a,
       boxes: [
         ...a.boxes,
-        { id, type: tipo, label, ...p, width: LARGURA_PADRAO, height: ALTURA_PADRAO, color: cor, status: "construcao" as StatusBloco },
+        { id, type: tipo, label, ...p, width: LARGURA_PADRAO, height: ALTURA_PADRAO, color: cor, status: "ativo" as StatusBloco },
       ],
     }));
     selecao.definir([id]);
@@ -763,7 +762,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
           // mapa depois a abrir um por um pra saber o que é.
           id, type: TIPO_GENERICO, label: rotulo, ...p,
           width: LARGURA_PADRAO, height: ALTURA_PADRAO,
-          color: CORES_BLOCO[0].cor, status: "construcao" as StatusBloco,
+          color: CORES_BLOCO[0].cor, status: "ativo" as StatusBloco,
           icone,
         },
       ],
@@ -1328,7 +1327,15 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
   // "Nome" não teria alvo definido.
   const blocoSelecionado = blocos.find((b) => b.id === selecao.unico) ?? null;
   const largura = Math.max(1200, ...blocos.map((b) => b.x + b.width + 200));
-  const alturaDoDesenho = Math.max(altura, ...blocos.map((b) => b.y + b.height + 160));
+  /**
+   * Altura do CONTEÚDO rolável — não a da janela.
+   *
+   * Quando `altura` vem como expressão CSS (`calc(100vh - …)`), não há número
+   * para comparar: o piso vira uma constante. O desenho cresce a partir dela
+   * conforme os blocos descem, que é o que essa conta sempre fez.
+   */
+  const pisoDoDesenho = typeof altura === "number" ? altura : 600;
+  const alturaDoDesenho = Math.max(pisoDoDesenho, ...blocos.map((b) => b.y + b.height + 160));
   // Origem do desenho. Os blocos podem ficar em coordenada negativa (arrastar
   // para cima/esquerda é livre), e o <svg> recorta no próprio box — sem
   // esticá-lo para trás, os conectores que passam acima de zero sumiriam.
@@ -1365,6 +1372,14 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
     CATEGORIAS.every((c) => filtrarItens(c).length === 0);
 
   /** Mesma altura do canvas: a coluna acompanha a área de desenho. */
+  /**
+   * `altura` aceita numero (px) ou expressao CSS.
+   *
+   * A tela global precisa que o mapa OCUPE o que sobra da janela: com um
+   * numero fixo, sempre havia uma faixa vazia embaixo em monitor alto e
+   * scroll em monitor baixo. Uma expressao (`calc(100vh - …)`) resolve os
+   * dois sem a tela ter de medir nada.
+   */
   const alturaDaArea = telaCheia ? "calc(100vh - 190px)" : altura;
 
   const origemX = Math.min(0, ...blocos.map((b) => b.x - 200));
@@ -1920,16 +1935,13 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                       )}
                     </>
                   )}
-                  {renomeando?.id !== b.id && (
-                  <span
-                    className="absolute bottom-1.5 right-2 flex items-center gap-1 text-[9px]"
-                    style={{ color: STATUS[b.status]?.color }}
-                    title={STATUS[b.status]?.label}
-                  >
-                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: STATUS[b.status]?.color }} />
-                    {STATUS[b.status]?.label}
-                  </span>
-                  )}
+                  {/* O selo de status saiu do bloco.
+                      "Em construção", "Otimizar" e "Pausado" nunca foram
+                      usados, e todo bloco novo nascia marcado como "Em
+                      construção" — o mapa inteiro exibia um aviso que não
+                      queria dizer nada, roubando a linha de baixo do card e
+                      competindo com o rótulo, que é o que se lê.
+                      O campo continua no dado; só não aparece nem se edita. */}
                   {/* Etapa de verdade do Loyola X: o mapa mostra quais blocos
                       têm dado atrás e quais são só plano. */}
                   {b.stageId && (
@@ -2082,31 +2094,6 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
             )}
 
             {/* Status não se aplica a anotação — é atributo de peça do funil. */}
-            {!ehBlocoLivre(blocoSelecionado.type) && (
-            <div className="space-y-1">
-              <Label className="text-[10px]">Status</Label>
-              <div className="grid grid-cols-2 gap-1">
-                {(Object.keys(STATUS) as StatusBloco[]).map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() =>
-                      alterarAba((a) => ({
-                        ...a,
-                        boxes: a.boxes.map((b) => (b.id === blocoSelecionado.id ? { ...b, status: s } : b)),
-                      }))
-                    }
-                    className={`rounded border px-1 py-0.5 text-[10px] transition-colors ${
-                      blocoSelecionado.status === s ? "border-transparent text-white" : "border-border/60 hover:bg-muted"
-                    }`}
-                    style={blocoSelecionado.status === s ? { background: STATUS[s].color } : undefined}
-                  >
-                    {STATUS[s].label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            )}
             <div className="space-y-1">
               <Label className="text-[10px]">Link (opcional)</Label>
               <Input
