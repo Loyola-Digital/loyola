@@ -600,8 +600,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
   function adicionarBloco(tipo: string, cor: string, label: string) {
     // Quem estava selecionado vira a origem da ligação — ver `ligarAoAnterior`.
     const anterior = selecao.unico;
+    const blocoAnterior = anterior ? (blocos.find((b) => b.id === anterior) ?? null) : null;
     const id = `b-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4).toString(36)}`;
-    const p = proximaPosicao();
+    // Encadeando, nasce a frente do anterior; solto, no centro da tela.
+    const p = blocoAnterior ? posicaoAFrente(blocoAnterior) : proximaPosicao();
     alterarAba((a) => ({
       ...a,
       boxes: [
@@ -638,6 +640,40 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       x: snap((clientX - r.left - pan.x) / z - IMAGEM_LARGURA / 2),
       y: snap((clientY - r.top - pan.y) / z - IMAGEM_ALTURA / 2),
     };
+  }
+
+  /**
+   * O lugar do bloco que continua outro: logo a frente dele.
+   *
+   * Encadear e um gesto espacial — a peca seguinte fica onde o olho ja esta,
+   * e nao no centro da tela. Nascer no centro obrigava a arrastar de volta a
+   * cada bloco, o que anulava boa parte do ganho de ja nascer ligado.
+   *
+   * Quando o espaco a frente esta ocupado, DESCE em vez de empilhar por cima:
+   * e o que acontece ao ramificar o mesmo bloco duas vezes (um upsell e um
+   * downsell saindo do mesmo checkout).
+   */
+  function posicaoAFrente(
+    origem: BlocoDoMapa,
+    lado: PontoDeConexao = "right",
+    w = LARGURA_PADRAO,
+    h = ALTURA_PADRAO,
+  ): { x: number; y: number } {
+    const AFASTAMENTO = 90;
+    const base: Record<PontoDeConexao, { x: number; y: number }> = {
+      right: { x: origem.x + origem.width + AFASTAMENTO, y: origem.y },
+      left: { x: origem.x - w - AFASTAMENTO, y: origem.y },
+      bottom: { x: origem.x, y: origem.y + origem.height + AFASTAMENTO },
+      top: { x: origem.x, y: origem.y - h - AFASTAMENTO },
+    };
+    const { x } = base[lado];
+    let { y } = base[lado];
+    const ocupado = () =>
+      blocos.some(
+        (b) => b.id !== origem.id && Math.abs(b.x - x) < w * 0.8 && Math.abs(b.y - y) < h * 0.8,
+      );
+    for (let i = 0; i < 20 && ocupado(); i += 1) y += h + 40;
+    return { x: snap(x), y: snap(y) };
   }
 
   function proximaPosicao(w = LARGURA_PADRAO, h = ALTURA_PADRAO): { x: number; y: number } {
@@ -769,7 +805,8 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
   function adicionarGenerico(icone: string, rotulo: string) {
     const id = novoId("g");
     const anterior = selecao.unico;
-    const p = proximaPosicao();
+    const blocoAnterior = anterior ? (blocos.find((b) => b.id === anterior) ?? null) : null;
+    const p = blocoAnterior ? posicaoAFrente(blocoAnterior) : proximaPosicao();
     alterarAba((a) => ({
       ...a,
       boxes: [
@@ -1022,14 +1059,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
     const origem = blocos.find((b) => b.id === alvo.boxId);
     if (!origem) return;
 
-    const AFASTAMENTO = 90;
-    const desloca: Record<PontoDeConexao, { x: number; y: number }> = {
-      right: { x: origem.x + origem.width + AFASTAMENTO, y: origem.y },
-      left: { x: origem.x - LARGURA_PADRAO - AFASTAMENTO, y: origem.y },
-      bottom: { x: origem.x, y: origem.y + origem.height + AFASTAMENTO },
-      top: { x: origem.x, y: origem.y - ALTURA_PADRAO - AFASTAMENTO },
-    };
-    const pos = desloca[alvo.ponto];
+    // Mesma conta do encadeamento pela paleta: uma copia aqui divergiria no
+    // primeiro ajuste de afastamento.
+    const pos = posicaoAFrente(origem, alvo.ponto);
     // A âncora oposta é a que encara a origem: saindo pela direita, a seta
     // chega pela esquerda do novo bloco.
     const oposto: Record<PontoDeConexao, PontoDeConexao> = {
@@ -1048,8 +1080,8 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
           id,
           type: tipo,
           label,
-          x: snap(pos.x),
-          y: snap(pos.y),
+          x: pos.x,
+          y: pos.y,
           width: LARGURA_PADRAO,
           height: ALTURA_PADRAO,
           color: cor,
