@@ -40,6 +40,34 @@ const fichaSchema = z.object({
   observacoes: z.string().max(4000).nullable().optional(),
 });
 
+/**
+ * O que a PRÓPRIA pessoa pode mudar na ficha dela.
+ *
+ * Três campos ficam de fora, e não por desconfiança:
+ *
+ * - `entradaEm` e `ajusteSaldoDias` alimentam o cálculo de férias
+ *   (`calcularSaldo`). Quem edita esses dois se dá férias — deixá-los aqui
+ *   transformaria uma tela de perfil num formulário de auto-aprovação.
+ * - `observacoes` são notas do RH SOBRE a pessoa. Ela nem as recebe em
+ *   `/me`; poder gravá-las sem ver o que havia antes apagaria o registro de
+ *   outra pessoa.
+ *
+ * `cargo` fica DENTRO: é o campo que o diretório do time exibe, é o que a
+ * pessoa sabe descrever melhor que o RH, e um cargo errado é visível para
+ * todo mundo e corrigível por qualquer admin.
+ */
+export const fichaDaPropriaPessoa = fichaSchema.pick({
+  nomeCompleto: true,
+  foto: true,
+  nascimento: true,
+  telefone: true,
+  emailContato: true,
+  emergenciaNome: true,
+  emergenciaTelefone: true,
+  emergenciaParentesco: true,
+  cargo: true,
+});
+
 const ausenciaSchema = z.object({
   kind: z.enum(["ferias", "folga", "ausencia", "licenca"]),
   status: z.enum(["programada", "aprovada", "concluida", "cancelada"]),
@@ -381,14 +409,39 @@ export default fp(async function pessoalRoutes(fastify) {
   });
 
   // ---- Salvar ficha (admin) ----
+  /**
+   * Salvar a ficha — admin de qualquer pessoa, cada um da sua.
+   *
+   * Quem melhor sabe o telefone, o contato de emergência e como descrever o
+   * próprio trabalho é a pessoa. Concentrar isso num admin faz o diretório
+   * envelhecer: ninguém abre um chamado para corrigir o próprio sobrenome, e o
+   * campo fica errado para sempre.
+   *
+   * O QUE cada um pode mudar é que difere — ver `fichaDaPropriaPessoa`.
+   */
   fastify.put("/api/pessoal/:userId", async (request, reply) => {
-    if (!ehAdmin(request.userRole)) return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ userId: ID }).safeParse(request.params);
-    const body = fichaSchema.safeParse(request.body);
-    if (!p.success || !body.success) {
+    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+    const admin = ehAdmin(request.userRole);
+    const ehAPropria = request.userId === p.data.userId;
+    // Convidado não tem ficha nem time: o diretório é interno.
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    if (!admin && !ehAPropria) return reply.code(403).send({ error: "Acesso negado" });
+
+    /**
+     * O Zod DESCARTA o que não está no schema, e é o que protege aqui.
+     *
+     * Uma tela antiga que mandasse a ficha inteira não quebra: os campos de RH
+     * simplesmente não chegam ao banco. Rejeitar a requisição seria mais
+     * barulhento e menos seguro — quem tenta de novo com o campo removido
+     * consegue o mesmo efeito.
+     */
+    const body = (admin ? fichaSchema : fichaDaPropriaPessoa).safeParse(request.body);
+    if (!body.success) {
       return reply.code(400).send({
         error: "Dados inválidos",
-        details: body.success ? undefined : body.error.flatten().fieldErrors,
+        details: body.error.flatten().fieldErrors,
       });
     }
 
