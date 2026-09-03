@@ -37,6 +37,7 @@ import {
   Maximize2,
   Minimize2,
   PanelLeft,
+  CalendarRange,
   Rows3,
   Upload,
 } from "lucide-react";
@@ -75,10 +76,12 @@ import {
   type Fase,
 } from "@/lib/planner/datas";
 import { CardDeCampanha } from "@/components/planner/cards-de-campanha";
+import { CalendarioAnual } from "@/components/planner/calendario-anual";
+import { useProjects } from "@/lib/hooks/use-projects";
 import { Calendario } from "@/components/planner/calendario";
 import { Timeline } from "@/components/planner/timeline";
 
-type Visao = "split" | "cards" | "timeline";
+type Visao = "split" | "cards" | "timeline" | "anual";
 
 type Passo = { tipo: "editou"; campanha: Campanha } | { tipo: "excluiu"; campanha: Campanha };
 
@@ -188,6 +191,16 @@ export default function PlannerPage() {
   const restaurar = useRestaurarCampanha();
 
   const [visao, setVisao] = useState<Visao>("split");
+  /**
+   * Estado do calendario anual.
+   *
+   * A matriz e de UMA empresa por vez, como a planilha que o time usava: as
+   * esteiras da FZ nao sao as da BBE, e empilhar todas numa grade de doze
+   * colunas daria uma tela que ninguem le.
+   */
+  const [empresaAnual, setEmpresaAnual] = useState<string | null>(null);
+  const [anoAnual, setAnoAnual] = useState(() => new Date().getFullYear());
+  const { data: empresas } = useProjects();
   const [ocultas, setOcultas] = useState<Set<string>>(new Set());
   const [selecionada, setSelecionada] = useState<string | null>(null);
   const [mostrarCards, setMostrarCards] = useState(true);
@@ -512,7 +525,9 @@ export default function PlannerPage() {
       ? `${fasesNoMes} ${fasesNoMes === 1 ? "fase no mês" : "fases no mês"}`
       : visao === "cards"
         ? `${campanhas.length} ${campanhas.length === 1 ? "campanha" : "campanhas"}`
-        : "arraste as barras para reprogramar";
+        : visao === "anual"
+          ? "o que roda em cada mês"
+          : "arraste as barras para reprogramar";
 
   const listaDeCards = (
     <>
@@ -582,6 +597,7 @@ export default function PlannerPage() {
                   ["split", Columns2, "Cards + Calendário"],
                   ["cards", LayoutGrid, "Só cards"],
                   ["timeline", Rows3, "Timeline"],
+                  ["anual", CalendarRange, "Anual (esteiras)"],
                 ] as const
               ).map(([v, Icone, rotulo]) => (
                 <button
@@ -906,6 +922,32 @@ export default function PlannerPage() {
             >
               Mostrar o que já passou
             </button>
+          </div>
+        ) : visao === "anual" ? (
+          /* A matriz de esteiras x meses. Fora do fluxo das campanhas de
+             proposito: nao ha barra para arrastar nem mes selecionado aqui, e
+             reaproveitar os controles do Gantt sugeriria uma ligacao que nao
+             existe. */
+          <div className="min-h-0 flex-1 overflow-auto p-5">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <label htmlFor="empresa-anual" className="text-[11px] font-medium">
+                Empresa
+              </label>
+              <select
+                id="empresa-anual"
+                value={empresaAnual ?? ""}
+                onChange={(e) => setEmpresaAnual(e.target.value || null)}
+                className="h-8 rounded-md border border-border bg-background px-2 text-[12px]"
+              >
+                <option value="">Escolha…</option>
+                {(empresas ?? []).map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <CalendarioAnual projectId={empresaAnual} ano={anoAnual} onMudarAno={setAnoAnual} />
           </div>
         ) : visao === "timeline" ? (
           <div className="min-h-0 flex-1 overflow-auto px-5 pb-6 pt-4">
