@@ -35,6 +35,14 @@ export interface BlocoDoMapa {
   emoji?: string | null;
   /** Nome do ícone lucide do bloco livre. */
   icone?: string | null;
+  /**
+   * Bloco `imagem`: o arquivo no bucket.
+   *
+   * `imageKey` é o caminho no bucket, guardado para poder apagar o objeto
+   * quando o bloco sair — só a URL não permite isso.
+   */
+  imageUrl?: string | null;
+  imageKey?: string | null;
 }
 
 export type PontoDeConexao = "top" | "right" | "bottom" | "left";
@@ -69,6 +77,58 @@ export interface MapaDoFunil {
 
 function base(projectId: string, funnelId: string, stageId: string) {
   return `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/map`;
+}
+
+/**
+ * Endereço do mapa — pelo funil, ou pelo id quando ele é avulso.
+ *
+ * Um mapa criado do Global sem funil não tem projeto, funil nem etapa: o
+ * caminho de sempre simplesmente não existe para ele. As duas formas convivem
+ * porque o editor é o mesmo; o que muda é de onde ele lê e para onde grava.
+ */
+export type EnderecoDoMapa =
+  | { tipo: "funil"; projectId: string; funnelId: string; stageId: string }
+  | { tipo: "avulso"; mapId: string };
+
+export function urlDoMapa(e: EnderecoDoMapa): string {
+  return e.tipo === "avulso"
+    ? `/api/funnel-maps/${e.mapId}`
+    : base(e.projectId, e.funnelId, e.stageId);
+}
+
+export function chaveDoMapa(e: EnderecoDoMapa): (string | undefined)[] {
+  return e.tipo === "avulso"
+    ? ["funnel-map", "avulso", e.mapId]
+    : ["funnel-map", e.projectId, e.funnelId, e.stageId];
+}
+
+/** Leitura por endereço. Serve aos dois tipos de mapa. */
+export function useMapaPorEndereco(e: EnderecoDoMapa) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: chaveDoMapa(e),
+    queryFn: () => apiClient<MapaDoFunil>(urlDoMapa(e)),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useSalvarMapaPorEndereco(e: EnderecoDoMapa) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (tabs: AbaDoMapa[]) =>
+      apiClient<{ ok: true; updatedAt: string }>(urlDoMapa(e), {
+        method: "PUT",
+        body: JSON.stringify({ tabs }),
+      }),
+    onSuccess: () => {
+      // Só marca como salvo; não refaz a query, senão o canvas piscaria de
+      // volta para o servidor no meio da edição.
+      qc.setQueryData<MapaDoFunil>(chaveDoMapa(e), (atual) =>
+        atual ? { ...atual, rascunho: false } : atual,
+      );
+    },
+  });
 }
 
 export function useFunnelMap(projectId: string, funnelId: string, stageId: string) {

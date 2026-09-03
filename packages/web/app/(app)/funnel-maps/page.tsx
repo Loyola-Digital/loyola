@@ -11,13 +11,14 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, ArrowLeft, ExternalLink, Map as MapIcon, Search } from "lucide-react";
+import { AlertCircle, ArrowLeft, ExternalLink, Map as MapIcon, Plus, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FunnelMapCanvas } from "@/components/funnels/funnel-map/funnel-map-canvas";
 import { MapaMiniatura } from "@/components/funnels/funnel-map/mapa-miniatura";
+import { NovoMapaDialog } from "@/components/funnels/funnel-map/novo-mapa-dialog";
 import { useFunnelMapsGlobal, type MapaNaLista } from "@/lib/hooks/use-funnel-maps-global";
 import { useUserRole } from "@/lib/hooks/use-user-role";
 
@@ -36,6 +37,7 @@ export default function FunnelMapsPage() {
   const [busca, setBusca] = useState("");
   const [aberto, setAberto] = useState<MapaNaLista | null>(null);
   const [mostrarArquivados, setMostrarArquivados] = useState(false);
+  const [novoAberto, setNovoAberto] = useState(false);
 
   const mapas = data?.mapas ?? [];
   const arquivados = mapas.filter((m) => m.arquivado).length;
@@ -92,14 +94,21 @@ export default function FunnelMapsPage() {
           </Button>
         </div>
 
-        {/* As edições salvam no mesmo lugar de sempre — é o mesmo editor. */}
-        <FunnelMapCanvas
-          key={aberto.stageId}
-          projectId={aberto.projectId}
-          funnelId={aberto.funnelId}
-          stageId={aberto.stageId}
-          altura={620}
-        />
+        {/* As edições salvam no mesmo lugar de sempre — é o mesmo editor.
+            O mapa AVULSO não tem projeto/funil/etapa, e o editor endereça o
+            desenho por esse caminho; até ele ser vinculado a um funil, abre
+            pela tela própria. */}
+        {aberto.projectId && aberto.funnelId && aberto.stageId ? (
+          <FunnelMapCanvas
+            key={aberto.stageId}
+            projectId={aberto.projectId}
+            funnelId={aberto.funnelId}
+            stageId={aberto.stageId}
+            altura={620}
+          />
+        ) : aberto.mapId ? (
+          <FunnelMapCanvas key={aberto.mapId} mapId={aberto.mapId} altura={620} />
+        ) : null}
       </div>
     );
   }
@@ -107,14 +116,28 @@ export default function FunnelMapsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="flex items-center gap-2 text-2xl font-bold">
-          <MapIcon className="h-6 w-6 text-indigo-500" />
-          Mapas de funil
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Todos os mapas desenhados no Loyola X. Clique em um para abrir e editar aqui mesmo.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h1 className="flex items-center gap-2 text-2xl font-bold">
+              <MapIcon className="h-6 w-6 text-indigo-500" />
+              Mapas de funil
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Todos os mapas desenhados no Loyola X. Clique em um para abrir e editar aqui mesmo.
+            </p>
+          </div>
+          {/* Criar daqui poupa os três níveis de navegação — e permite o mapa
+              que ainda não tem funil onde morar. */}
+          {role !== "guest" && (
+            <Button size="sm" className="gap-1.5" onClick={() => setNovoAberto(true)}>
+              <Plus className="h-4 w-4" />
+              Novo mapa
+            </Button>
+          )}
+        </div>
       </div>
+
+      <NovoMapaDialog open={novoAberto} onOpenChange={setNovoAberto} />
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative max-w-xs flex-1">

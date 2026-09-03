@@ -152,9 +152,19 @@ export const ALTURA_PADRAO = 80;
 export const TIPO_NOTA = "nota";
 export const TIPO_TEXTO = "texto";
 export const TIPO_GENERICO = "generico";
+/**
+ * Bloco que desenha uma imagem — print de página, criativo, referência.
+ *
+ * Especial como nota e texto: sem selo de status e sem card de peça do funil.
+ * O que ele mostra é a imagem, e uma moldura de bloco por cima disputaria com
+ * ela justamente o que se quer ver.
+ */
+export const TIPO_IMAGEM = "imagem";
 
 export function ehBlocoLivre(type: string): boolean {
-  return type === TIPO_NOTA || type === TIPO_TEXTO || type === TIPO_GENERICO;
+  return (
+    type === TIPO_NOTA || type === TIPO_TEXTO || type === TIPO_GENERICO || type === TIPO_IMAGEM
+  );
 }
 
 /** Cores das notas adesivas — as mesmas de bloco de papel. */
@@ -253,6 +263,15 @@ export const TAMANHO_DO_ESTILO: Record<string, number> = {
   h3: 18,
   corpo: 14,
 };
+
+/**
+ * Tamanho inicial do bloco de imagem.
+ *
+ * Maior que os demais e em proporção de tela (22:15): o que entra aqui costuma
+ * ser print de página, e no tamanho de um bloco comum não daria para ler nada.
+ */
+export const IMAGEM_LARGURA = 220;
+export const IMAGEM_ALTURA = 150;
 
 export const NOTA_LARGURA = 180;
 export const NOTA_ALTURA = 140;
