@@ -49,6 +49,21 @@ export interface AggregatedCreative {
   hookRate: number | null;
   /** Σ views3s do grupo. `null` = nenhum anúncio trouxe a métrica. */
   views3s: number | null;
+  /** Story 18.76: Σ views a 75% do grupo. `null` = ninguém trouxe a métrica. */
+  views75: number | null;
+  /** Story 18.76: `Σ views75 ÷ Σ views3s × 100`. `null` ≠ 0. */
+  holdRate: number | null;
+  /** Story 18.76: `Σ spend ÷ Σ impressões × 1000`. Nunca média de CPMs. */
+  cpm: number | null;
+  /**
+   * Story 18.76 (AC11): Σ `inline_link_clicks`. **Diferente de `clicks`**, que
+   * conta clique em qualquer lugar do anúncio. `null` = não medido.
+   */
+  linkClicks: number | null;
+  /** CTR sobre cliques NO LINK. O `ctr` acima é sobre todos os cliques. */
+  ctrLink: number | null;
+  /** CPC sobre cliques NO LINK. */
+  cpcLink: number | null;
   /** Story 29.65 (AC4): abaixo do piso de reproduções — fora do ranking. */
   amostraBaixa: boolean;
 
@@ -85,6 +100,21 @@ export interface AggregatedCreative {
  * - Recalcula: CTR ponderado (sumClicks/sumImpressions × 100), CPC (sumSpend/sumClicks)
  * - Escolhe `creative` e `videoMetrics` do ad com MAIOR spend do grupo
  */
+/**
+ * Story 18.74 (AC3) — a visão "Todos": um card por ANÚNCIO, sem agrupar.
+ *
+ * Reusa `aggregateCreativesByName` com uma lista de um elemento em vez de
+ * reimplementar a construção do `AggregatedCreative`. Duas construções do mesmo
+ * objeto divergiriam no dia em que um campo novo entrasse — e o sintoma seria
+ * uma aba mostrando um número que a outra não mostra.
+ *
+ * A unidade muda: aqui `ids` tem sempre um elemento, e o mesmo nome pode
+ * aparecer N vezes. Quem consome precisa usar `ids[0]` como chave, não `name`.
+ */
+export function aggregateCreativesByAd(ads: TopPerformerAd[]): AggregatedCreative[] {
+  return ads.flatMap((ad) => aggregateCreativesByName([ad]));
+}
+
 export function aggregateCreativesByName(
   ads: TopPerformerAd[],
 ): AggregatedCreative[] {
@@ -151,6 +181,51 @@ export function aggregateCreativesByName(
         ? null
         : (views3s / impressoesDeVideo) * 100;
 
+    /**
+     * Story 18.76 (AC8/AC10) — Hold Rate do GRUPO: `Σ views75 ÷ Σ views3s`.
+     *
+     * Mesma regra do `hookRate` acima: só os anúncios que TÊM a métrica entram
+     * nas duas pontas, e `null` quando nenhum tem. A fonte é `videoMetrics.p75`
+     * do anúncio — **não** o `videoMetrics` do líder do grupo, que é de UM
+     * anúncio e erraria o denominador (o defeito que a 29.64 pagou).
+     */
+    const views75 =
+      comVideo.length > 0
+        ? comVideo.reduce((s, a) => s + (a.videoMetrics?.p75 ?? 0), 0)
+        : null;
+    const holdRate =
+      views75 === null || views3s === null || views3s <= 0
+        ? null
+        : (views75 / views3s) * 100;
+
+    /**
+     * Story 18.76 — CPM do grupo: `Σ spend ÷ Σ impressões × 1000`.
+     * Média de CPMs não é o CPM do grupo: um anúncio caro com 10 impressões
+     * puxaria a média sem ter custado quase nada.
+     */
+    const cpm = impressions > 0 ? (spend / impressions) * 1000 : null;
+
+    /**
+     * Story 18.76 (AC11) — cliques NO LINK, somados do grupo.
+     *
+     * `clicks` (acima) é o clique em qualquer lugar do anúncio; `linkClicks` é
+     * o `inline_link_clicks`. Os dois existem no payload e são números
+     * diferentes — a tabela de Desempenho de Criativos usa o segundo desde a
+     * 18.59, e é ele que a categoria "Cliques no link" precisa.
+     *
+     * `null` quando NENHUM anúncio do grupo trouxe a métrica: a Meta não
+     * devolve `inline_link_clicks` para todo objetivo de campanha, e zerar
+     * transformaria "não medido" em "ninguém clicou".
+     */
+    const comLinkClicks = sorted.filter((a) => a.linkClicks != null);
+    const linkClicks =
+      comLinkClicks.length > 0
+        ? comLinkClicks.reduce((s, a) => s + (a.linkClicks ?? 0), 0)
+        : null;
+    const ctrLink =
+      linkClicks === null || impressions <= 0 ? null : (linkClicks / impressions) * 100;
+    const cpcLink = linkClicks === null || linkClicks <= 0 ? null : spend / linkClicks;
+
     result.push({
       name,
       ids: sorted.map((a) => a.campaignId),
@@ -165,6 +240,12 @@ export function aggregateCreativesByName(
       videoMetrics: leader.videoMetrics,
       hookRate,
       views3s,
+      views75,
+      holdRate,
+      cpm,
+      linkClicks,
+      ctrLink,
+      cpcLink,
       // Story 29.65 (AC4): mesmo piso da 43.8, não um terceiro critério novo.
       // Um criativo com 200 impressões e 3 reproduções mostra 1,5% ou 60%
       // dependendo do dia; sem piso, o topo de "Melhores Hooks" vira ruído.

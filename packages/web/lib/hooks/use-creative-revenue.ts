@@ -34,12 +34,27 @@ export function useCreativeRevenue(
   funnelId: string | null,
   stageId: string | null,
   days?: number,
+  /**
+   * Story 18.75 (AC9): range explícito, para telas com data custom (Perpétuo).
+   * Quando os dois vêm, o range ganha de `days` — é a escolha do usuário
+   * contra o preset. Sem propagar isto, o card mostrava faturamento de uma
+   * janela ao lado do investimento de outra, com aparência de coerência.
+   */
+  startDate?: string,
+  endDate?: string,
 ) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["creative-revenue", projectId, funnelId, stageId, days],
+    queryKey: ["creative-revenue", projectId, funnelId, stageId, days, startDate, endDate],
     queryFn: () => {
-      const qs = days ? `?days=${days}` : "";
+      const params = new URLSearchParams();
+      if (startDate && endDate) {
+        params.set("startDate", startDate);
+        params.set("endDate", endDate);
+      } else if (days) {
+        params.set("days", String(days));
+      }
+      const qs = params.toString() ? `?${params.toString()}` : "";
       return apiClient<CreativeRevenueData>(
         `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/creative-revenue${qs}`,
       );

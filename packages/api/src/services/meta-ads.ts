@@ -1144,6 +1144,108 @@ export async function fetchPlacementDailyInsights(
   return out;
 }
 
+/**
+ * Story 29.69 — investimento por HORA do dia.
+ *
+ * `hourly_stats_aggregated_by_advertiser_time_zone` combinado com
+ * `time_increment=1` devolve uma linha por (dia × hora) — verificado contra a
+ * conta `act_382129543871900` na Task 0b da story, HTTP 200:
+ *
+ * ```json
+ * { "spend": "26.39", "impressions": "437", "clicks": "13",
+ *   "date_start": "2026-08-25",
+ *   "hourly_stats_aggregated_by_advertiser_time_zone": "00:00:00 - 00:59:59" }
+ * ```
+ *
+ * ⚠️ **A hora vem como texto de intervalo**, não como número — use
+ * `horaDaFaixaMeta` de `utils/sale-date.ts` para extrair o `0..23`.
+ *
+ * ⚠️ **24× mais linhas por dia** que o sync diário. O cap de paginação é
+ * proporcionalmente maior, e o resultado é para ser gravado no banco e lido de
+ * lá — nunca consultado a cada abertura de painel.
+ */
+export interface MetaHourlyInsight {
+  date_start: string;
+  spend?: string;
+  impressions?: string;
+  clicks?: string;
+  hourly_stats_aggregated_by_advertiser_time_zone?: string;
+}
+
+export async function fetchHourlyDailyInsights(
+  metaAccountId: string,
+  accessToken: string,
+  days: number = 7,
+  startDate?: string,
+  endDate?: string,
+  campaignIds?: string[],
+): Promise<MetaHourlyInsight[]> {
+  const since = startDate && endDate ? startDate : dateRangeFromDays(days).since;
+  const until = startDate && endDate ? endDate : dateRangeFromDays(days).until;
+  const fields = "spend,impressions,clicks";
+  // Filtro por campanha usa o mesmo formato do resto do serviço — sem ele, a
+  // conta inteira entra na conta do funil.
+  const filtering =
+    campaignIds && campaignIds.length > 0
+      ? `&filtering=${encodeURIComponent(
+          JSON.stringify([{ field: "campaign.id", operator: "IN", value: campaignIds }]),
+        )}`
+      : "";
+
+  type PageResponse = { data: MetaHourlyInsight[]; paging?: { next?: string } };
+  const out: MetaHourlyInsight[] = [];
+
+  for (const chunk of chunkDateRange(since, until)) {
+    const timeRange = buildTimeRangeParam(chunk.since, chunk.until);
+    let nextPath: string | null = `/act_${metaAccountId}/insights?fields=${fields}&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone&time_range=${timeRange}&time_increment=1&level=account&limit=500${filtering}`;
+    let useFullUrl = false;
+    while (nextPath) {
+      const res: PageResponse = useFullUrl
+        ? await fetchMetaNext<PageResponse>(nextPath)
+        : await fetchMeta<PageResponse>(nextPath, accessToken);
+      out.push(...(res.data ?? []));
+      const nextUrl = res.paging?.next;
+      // 24 linhas por dia: o cap de 5.000 do placement daria só ~208 dias, e
+      // truncaria em silêncio num range anual. 24.000 cobre ~1.000 dias.
+      const cap = avaliarCap(nextUrl, out.length, 24_000);
+      if (cap.truncado) {
+        console.warn(mensagemTruncamento("fetchHourlyDailyInsights", 24_000, `conta=${metaAccountId}`));
+      }
+      if (cap.continuar) {
+        nextPath = nextUrl!;
+        useFullUrl = true;
+      } else {
+        nextPath = null;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Fuso da conta de anúncios. O breakdown horário é reportado NELE, e a venda é
+ * carimbada no fuso do negócio — se os dois diferirem, sobrepor as séries no
+ * mesmo eixo produz uma leitura de "melhor hora" que não existe.
+ *
+ * Devolve `null` quando a Meta não responde: o painel declara "não verificado",
+ * que é diferente de "verificado e igual".
+ */
+export async function fetchAccountTimezone(
+  metaAccountId: string,
+  accessToken: string,
+): Promise<{ name: string; offsetHours: number } | null> {
+  try {
+    const res = await fetchMeta<{ timezone_name?: string; timezone_offset_hours_utc?: number }>(
+      `/act_${metaAccountId}?fields=timezone_name,timezone_offset_hours_utc`,
+      accessToken,
+    );
+    if (!res.timezone_name) return null;
+    return { name: res.timezone_name, offsetHours: res.timezone_offset_hours_utc ?? 0 };
+  } catch {
+    return null;
+  }
+}
+
 // ============================================================
 // AD CREATIVES (Story 8.1)
 // ============================================================

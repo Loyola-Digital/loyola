@@ -835,6 +835,8 @@ export function MetaAdsTesteTab({
                   campaignIds={campaignIds}
                   funnelId={funnel.id}
                   stageId={stageId}
+                  // Story 18.75 (AC3): sem isto o card não distingue ingresso de lead.
+                  stageType={stageType}
                   funnelContext={{ days, funnelType: "launch", funnelName: funnel?.name }}
                   surveyDataByAdId={survey.byAdId}
                   surveyDataByAdIdDynamic={survey.byAdIdDynamic}

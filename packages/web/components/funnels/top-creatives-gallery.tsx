@@ -11,6 +11,9 @@ import {
   AlertTriangle,
   ImageOff,
   Instagram,
+  Search,
+  ChevronDown,
+  Info,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +49,7 @@ import { filterSheetRowsByDays } from "@/lib/utils/spreadsheet-filters";
 import { PISO_DE_REPRODUCOES } from "@loyola-x/shared/src/video-camadas";
 import {
   aggregateCreativesByName,
+  aggregateCreativesByAd,
   enrichWithPaidLeads,
   mergeSurveyForGroup,
   mergeSurveyDynamicForGroup,
@@ -59,6 +63,42 @@ import type {
   SurveyQuestionMeta,
 } from "@/lib/hooks/use-survey-aggregation";
 import { useCreativeRevenue } from "@/lib/hooks/use-creative-revenue";
+import { useStageCreativePerformance } from "@/lib/hooks/useStageCreativePerformance";
+import {
+  conversaoDoCriativo,
+  custoPorConversao,
+  motivoSemConversao,
+  vendasDeduzidas,
+  ingressosDoGrupo,
+} from "@/lib/utils/conversao-do-criativo";
+import {
+  VISOES,
+  VISAO_INICIAL,
+  visaoPorId,
+  presetModificado,
+  chipsDeFiltro,
+  limparCampo,
+  aplicarBuscaEMidia,
+  roasDoCriativo,
+  ordenarPorMetrica,
+  type FiltrosDaGaleria,
+  type MetricaDeOrdenacao,
+} from "@/lib/utils/top-criativos-visoes";
+import {
+  CATEGORIAS,
+  METRICAS,
+  metricasPadrao,
+  contarPorCategoria,
+  contarMarcadas,
+  buscarMetricas,
+  categoriasIndisponiveis,
+  valorDaMetrica,
+  maximosPorMetrica,
+  larguraDaBarra,
+  corDaBarra,
+  type CategoriaId,
+  type ContextoDeMetrica,
+} from "@/lib/utils/metricas-do-criativo";
 import { useDriveCreatives } from "@/lib/hooks/use-drive-creatives";
 import { fmtCurrency as fmtCurrencyCompleto, fmtInt } from "@/lib/utils/format-number";
 
@@ -66,10 +106,14 @@ import { fmtCurrency as fmtCurrencyCompleto, fmtInt } from "@/lib/utils/format-n
 // Tipos locais e formatters
 // ============================================================
 
-type LocalMetric = "cpl" | "cplQualified" | "leads" | "ctr" | "spend" | "hook";
-
+/**
+ * Story 18.74: a lista de ordenações continua completa aqui — inclusive as que
+ * NÃO viraram aba (`CPL Qual`, `Leads`). Elas seguem alcançáveis pelo controle
+ * de ordenação da barra de ferramentas: uma aba a menos não pode significar uma
+ * leitura a menos.
+ */
 interface MetricOption {
-  value: LocalMetric;
+  value: MetricaDeOrdenacao;
   label: string;
   sortLabel: string;
   needsReview?: boolean;
@@ -84,6 +128,9 @@ const METRIC_OPTIONS: MetricOption[] = [
   // Story 29.65: gancho do vídeo. Ordena DESC e só entram criativos com a
   // métrica — ver `sortByMetric` e o aviso de omitidos.
   { value: "hook", label: "Hook", sortLabel: "Melhores Hooks" },
+  // Story 18.74 (AC4): faturamento da planilha ÷ investimento — nunca o
+  // `roasLegacy` do pixel, que é outro número com o mesmo nome.
+  { value: "roas", label: "ROAS", sortLabel: "Maiores ROAS" },
 ];
 
 /**
@@ -295,7 +342,30 @@ function renderSurveyBlock(
   );
 }
 
-function formatMetricValue(c: AggregatedCreative, metric: LocalMetric): string {
+/** Story 18.76: formata pelo tipo da métrica. `null` sempre vira `—`. */
+function formatarValorDaMetrica(
+  formato: "moeda" | "numero" | "percentual" | "multiplicador",
+  valor: number | null,
+): string {
+  if (valor == null || !Number.isFinite(valor)) return "—";
+  switch (formato) {
+    case "moeda":
+      return fmtCurrency(valor);
+    case "numero":
+      return fmtNumber(valor);
+    case "percentual":
+      return fmtPercent(valor);
+    case "multiplicador":
+      return `${valor.toFixed(2)}x`;
+  }
+}
+
+function formatMetricValue(
+  c: AggregatedCreative,
+  metric: MetricaDeOrdenacao,
+  /** Story 18.74: só a ordenação por ROAS precisa do cruzamento. */
+  roasPorNome?: Map<string, number | null>,
+): string {
   switch (metric) {
     case "cpl":
       return fmtCurrency(c.cplPago);
@@ -307,6 +377,11 @@ function formatMetricValue(c: AggregatedCreative, metric: LocalMetric): string {
       return fmtPercent(c.ctr);
     case "spend":
       return fmtCurrency(c.spend);
+    case "roas": {
+      const r = roasPorNome?.get(c.name);
+      // `null` = sem investimento ou sem faturamento atribuído. `0` é medição.
+      return r == null ? "—" : `${r.toFixed(2)}x`;
+    }
     default:
       return "—";
   }
@@ -317,39 +392,6 @@ function formatMetricValue(c: AggregatedCreative, metric: LocalMetric): string {
  * - cpl / cplQualified: ASC (menor = melhor); null vai pro final
  * - leads / ctr / spend: DESC (maior = melhor)
  */
-function sortByMetric(
-  creatives: AggregatedCreative[],
-  metric: LocalMetric,
-): AggregatedCreative[] {
-  const sorted = [...creatives];
-  if (metric === "cpl") {
-    sorted.sort((a, b) => {
-      if (a.cplPago == null && b.cplPago == null) return 0;
-      if (a.cplPago == null) return 1;
-      if (b.cplPago == null) return -1;
-      return a.cplPago - b.cplPago;
-    });
-  } else if (metric === "cplQualified") {
-    sorted.sort((a, b) => {
-      if (a.cplQualified == null && b.cplQualified == null) return 0;
-      if (a.cplQualified == null) return 1;
-      if (b.cplQualified == null) return -1;
-      return a.cplQualified - b.cplQualified;
-    });
-  } else if (metric === "leads") {
-    sorted.sort((a, b) => b.leadsPagos - a.leadsPagos);
-  } else if (metric === "spend") {
-    sorted.sort((a, b) => b.spend - a.spend);
-  } else if (metric === "hook") {
-    // Story 29.65 (AC3): quem não tem a métrica NÃO entra no ranking — é
-    // filtrado antes de chegar aqui. O sort só ordena o que sobrou, DESC.
-    sorted.sort((a, b) => (b.hookRate ?? 0) - (a.hookRate ?? 0));
-  } else {
-    sorted.sort((a, b) => b.ctr - a.ctr);
-  }
-  return sorted;
-}
-
 // ============================================================
 // LIGHTBOX
 // ============================================================
@@ -648,6 +690,14 @@ interface TopCreativesGalleryProps {
    * o faturamento real por criativo nos cards.
    */
   stageId?: string;
+  /**
+   * Story 18.75 (AC3): tipo da etapa (`paid`, `event_capture`, `free`, …).
+   * É o que permite ao card distinguir ingresso de lead — as duas telas de
+   * lançamento já o têm em mãos e passam adiante. O Perpétuo não passa nada:
+   * ele se identifica por `funnelContext.funnelType`. Ausente = leads, o
+   * comportamento de antes desta story.
+   */
+  stageType?: string | null;
   funnelContext?: {
     days: number;
     funnelType?: "launch" | "perpetual" | "mobile";
@@ -688,6 +738,7 @@ export function TopCreativesGallery({
   campaignIds,
   funnelId,
   stageId,
+  stageType,
   funnelContext,
   surveyDataByAdId,
   surveyDataByAdIdDynamic,
@@ -696,7 +747,37 @@ export function TopCreativesGallery({
   startDate,
   endDate,
 }: TopCreativesGalleryProps) {
-  const [metric, setMetric] = useState<LocalMetric>("cpl");
+  // Story 18.74 — a aba é um preset inteiro (ordenação + filtros + agrupamento);
+  // `filtros` é o estado vivo, que a barra de ferramentas altera sem reescrever
+  // o preset. `metric` e `showAll` continuam existindo como derivações para que
+  // o resto do arquivo (avisos da 8.9 e da 29.65) siga funcionando igual.
+  const [visaoId, setVisaoId] = useState<string>(VISAO_INICIAL);
+  const visao = visaoPorId(visaoId);
+  const [filtros, setFiltros] = useState<FiltrosDaGaleria>(() => ({
+    ...visaoPorId(VISAO_INICIAL).preset,
+    // Story 29.8: o Perpétuo abre sem o filtro de relevância (o CPA do Pixel
+    // fica alto demais e esconde quase tudo).
+    incluirBaixoGasto: defaultShowAll,
+  }));
+  const metric: MetricaDeOrdenacao = filtros.metrica;
+  const showAll = filtros.incluirBaixoGasto;
+  const abaModificada = presetModificado(filtros, visao.preset);
+  const chips = chipsDeFiltro(filtros);
+
+  /** Troca de aba: aplica o preset inteiro de uma vez (AC2). */
+  const aplicarVisao = (id: string) => {
+    setVisaoId(id);
+    setFiltros({ ...visaoPorId(id).preset });
+  };
+
+  // Story 18.76 — painel de métricas.
+  const [metricasMarcadas, setMetricasMarcadas] = useState<string[]>(() => metricasPadrao());
+  const [painelAberto, setPainelAberto] = useState(false);
+  const [buscaMetrica, setBuscaMetrica] = useState("");
+  const [categoriasAbertas, setCategoriasAbertas] = useState<Set<CategoriaId>>(
+    () => new Set(CATEGORIAS.filter((k) => !k.colapsadaPorPadrao).map((k) => k.id)),
+  );
+
   const [expanded, setExpanded] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   // Criativos do Drive: substituem o preview da Meta quando existem.
@@ -706,7 +787,12 @@ export function TopCreativesGallery({
   // o threshold é dinâmico por período, persistir confundiria.
   // Story 29.8 ext: perpetuals desabilitam por default (vendas vem da planilha,
   // não do Pixel — CPA do Pixel é underreported e o threshold fica abusivo).
-  const [showAll, setShowAll] = useState(defaultShowAll);
+  /** Compat: o toggle da 8.9 agora escreve no campo do preset. */
+  const setShowAll = (v: boolean | ((prev: boolean) => boolean)) =>
+    setFiltros((f) => ({
+      ...f,
+      incluirBaixoGasto: typeof v === "function" ? v(f.incluirBaixoGasto) : v,
+    }));
 
   // Story 21.7 — faturamento real por criativo (cruzamento leads × vendas).
   // Só ativa quando temos funnelId+stageId; hook é no-op (`enabled: false`)
@@ -716,7 +802,50 @@ export function TopCreativesGallery({
     funnelId ?? null,
     stageId ?? null,
     days,
+    // Story 18.75 (AC9): o Perpétuo abre com range custom. Sem propagar, o card
+    // somava vendas de uma janela ao lado do investimento de outra — e as duas
+    // pareciam a mesma coisa.
+    startDate,
+    endDate,
   );
+
+  // ============================================================
+  // Story 18.75 — a unidade de conversão do card
+  // ============================================================
+
+  /** Vendas, ingressos ou leads — decidido pela tela, não pelo card. */
+  const conv = useMemo(
+    () => conversaoDoCriativo(funnelContext?.funnelType, stageType),
+    [funnelContext?.funnelType, stageType],
+  );
+
+  /**
+   * Ingressos por anúncio (Captação Paga). Vem da MESMA rota que alimenta a
+   * tabela de Desempenho de Criativos (18.55) — se os dois números divergirem
+   * na mesma tela, é defeito, não duas leituras válidas.
+   *
+   * Só liga na etapa paga: nas outras o hook fica desabilitado e não custa
+   * requisição alguma.
+   */
+  const { data: ingressosData } = useStageCreativePerformance({
+    projectId,
+    funnelId: funnelId ?? "",
+    stageId: stageId ?? "",
+    days,
+    enabled: conv.unidade === "ingressos" && !!funnelId && !!stageId,
+  });
+
+  /** Ingressos únicos por `ad_id`, para casar com os `ids` do grupo agregado. */
+  const ingressosPorAdId = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of ingressosData?.creatives ?? []) {
+      if (c.adId && c.ingressosUnicos != null) {
+        m.set(c.adId, (m.get(c.adId) ?? 0) + c.ingressosUnicos);
+      }
+    }
+    return m;
+  }, [ingressosData]);
+
 
   const brlFormatter = useMemo(
     () => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }),
@@ -753,15 +882,87 @@ export function TopCreativesGallery({
     linkedSheet?.id,
   );
 
+  /**
+   * A fonte da conversão está ligada? Distingue "não configurado" de "nenhuma
+   * conversão no período" — as duas viram `—` na tela, e pedem ações
+   * diferentes (AC5).
+   */
+  const temFonteDeConversao = useMemo(() => {
+    if (conv.unidade === "vendas") return !!revenueData && !revenueData.semDados;
+    if (conv.unidade === "ingressos") return !!ingressosData?.creatives?.length;
+    return !!sheetData;
+  }, [conv.unidade, revenueData, ingressosData, sheetData]);
+
   const aggregated = useMemo<AggregatedCreative[]>(() => {
     if (!data) return [];
-    const agg = aggregateCreativesByName(data.topPerformers);
+    // Story 18.74 (AC3): a aba "Todos" muda a UNIDADE da lista — um card por
+    // anúncio em vez de um por nome. Não é só outra ordenação.
+    const agg =
+      filtros.agrupamento === "anuncio"
+        ? aggregateCreativesByAd(data.topPerformers)
+        : aggregateCreativesByName(data.topPerformers);
     if (!sheetData) return agg;
     const filtered = filterSheetRowsByDays(sheetData, days);
     const utmContentMapped = !!sheetData.mapping.utm_content;
     const utmSourceMapped = !!sheetData.mapping.utm_source;
     return enrichWithPaidLeads(agg, filtered, utmContentMapped, utmSourceMapped);
-  }, [data, sheetData, days]);
+  }, [data, sheetData, days, filtros.agrupamento]);
+
+  /**
+   * Story 18.74 (AC4) — ROAS por criativo, a partir do faturamento REAL da
+   * planilha (o mesmo que o card imprime), nunca do ROAS do pixel. Ordenar por
+   * um e exibir o outro é como o ranking passa a discordar do card.
+   */
+  const roasPorNome = useMemo(() => {
+    const m = new Map<string, number | null>();
+    if (!revenueData || revenueData.semDados) return m;
+    for (const c of aggregated) {
+      const { bruto } = vendasDeduzidas(c.ids, revenueData.byAdId);
+      m.set(c.name, roasDoCriativo(bruto, c.spend));
+    }
+    return m;
+  }, [aggregated, revenueData]);
+
+  /** A aba de ROAS só existe se houver de onde tirar faturamento (AC4). */
+  const roasDisponivel = !!revenueData && !revenueData.semDados;
+
+  /**
+   * Story 18.76 — o contexto que as métricas de venda/conversão precisam e o
+   * `AggregatedCreative` não carrega (vem do cruzamento com a planilha).
+   */
+  const contextoDeMetrica = useMemo(() => {
+    return (c: AggregatedCreative): ContextoDeMetrica => {
+      const { vendas, bruto } = revenueData && !revenueData.semDados
+        ? vendasDeduzidas(c.ids, revenueData.byAdId)
+        : { vendas: 0, bruto: 0 };
+      const temVendas = !!revenueData && !revenueData.semDados;
+      const conversoes =
+        conv.unidade === "vendas"
+          ? temVendas
+            ? vendas
+            : null
+          : conv.unidade === "ingressos"
+            ? ingressosDoGrupo(c.ids, ingressosPorAdId)
+            : temFonteDeConversao
+              ? c.leadsPagos
+              : null;
+      return {
+        vendas: temVendas ? vendas : null,
+        faturamento: temVendas ? bruto : null,
+        conversoes,
+      };
+    };
+  }, [revenueData, conv.unidade, ingressosPorAdId, temFonteDeConversao]);
+
+  /** Métricas indisponíveis nesta etapa — checkbox desabilitado, não ausente. */
+  const semCategoria = useMemo(
+    () =>
+      categoriasIndisponiveis({
+        temPlanilhaDeLeads: !!sheetData,
+        temPlanilhaDeVendas: !!revenueData && !revenueData.semDados,
+      }),
+    [sheetData, revenueData],
+  );
 
   // Story 8.9: limiar de relevância estatística calculado sobre o conjunto
   // agregado completo. threshold = 2 × CPA agregado (ou 2 × gasto médio se
@@ -809,9 +1010,24 @@ export function TopCreativesGallery({
         : relevantCreatives,
     [relevantCreatives, metric],
   );
+  /** Story 18.74 (AC5): busca por nome + filtro de tipo de mídia. */
+  const buscados = useMemo(
+    () => aplicarBuscaEMidia(elegiveis, filtros),
+    [elegiveis, filtros],
+  );
   const sorted = useMemo(
-    () => sortByMetric(elegiveis, metric),
-    [elegiveis, metric],
+    () => ordenarPorMetrica(buscados, metric, roasPorNome),
+    [buscados, metric, roasPorNome],
+  );
+
+  /**
+   * Story 18.76 (AC7): a barra compara os criativos EXIBIDOS entre si. Um
+   * máximo global (ou fixo) faria todas as barras encolherem quando um outlier
+   * entrasse na lista, sem que nada tivesse mudado nos criativos.
+   */
+  const maximosDasBarras = useMemo(
+    () => maximosPorMetrica(metricasMarcadas, sorted, contextoDeMetrica),
+    [metricasMarcadas, sorted, contextoDeMetrica],
   );
 
   if (isLoading) {
@@ -855,7 +1071,17 @@ export function TopCreativesGallery({
         <div>
           <h3 className="text-sm font-semibold">Top Criativos — {metricLabel}</h3>
           <p className="text-[11px] text-muted-foreground">
-            {sorted.length} {sorted.length === 1 ? "criativo" : "criativos"} agregados por nome
+            {/* Story 18.74 (AC3): a mesma tela passa a somar unidades
+                diferentes conforme a aba — declarar qual está em uso é o que
+                impede alguém de comparar 40 anúncios com 12 criativos. */}
+            {sorted.length}{" "}
+            {filtros.agrupamento === "anuncio"
+              ? sorted.length === 1
+                ? "anúncio"
+                : "anúncios"
+              : sorted.length === 1
+                ? "criativo agregado por nome"
+                : "criativos agregados por nome"}
             {!showAll && hiddenCount > 0 && (
               <>
                 {" · "}
@@ -901,50 +1127,300 @@ export function TopCreativesGallery({
             )}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {/* Story 8.9: toggle relevância estatística. Só aparece quando o
-              filtro está aplicável (mode !== 'disabled') ou já foi destogglado. */}
-          {(relevanceThreshold.mode !== "disabled" || showAll) && (
+      </div>
+
+      {/* ============================================================ */}
+      {/* Story 18.74 (AC1/AC2) — abas de visão                         */}
+      {/* Cada aba carrega ordenação + filtros + agrupamento. Mexer em  */}
+      {/* qualquer controle marca a aba (•) sem reescrever o preset:    */}
+      {/* um clique nela restaura o original.                           */}
+      {/* ============================================================ */}
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-border/30 -mx-1 px-1">
+        {VISOES.map((v) => {
+          const ativa = v.id === visaoId;
+          const desabilitada = v.id === "roas" && !roasDisponivel;
+          return (
+            <button
+              key={v.id}
+              type="button"
+              role="tab"
+              aria-selected={ativa}
+              disabled={desabilitada}
+              onClick={() => aplicarVisao(v.id)}
+              title={
+                desabilitada
+                  ? "Sem planilha de vendas ligada a esta etapa — não há faturamento para calcular ROAS."
+                  : v.descricao
+              }
+              className={`shrink-0 px-2.5 py-1.5 text-[11px] font-medium border-b-2 -mb-px transition-colors ${
+                desabilitada
+                  ? "border-transparent text-muted-foreground/40 cursor-not-allowed"
+                  : ativa
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {v.label}
+              {ativa && abaModificada && (
+                <span className="ml-1 text-primary" title="Visão modificada — clique para restaurar">
+                  •
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ============================================================ */}
+      {/* Story 18.74 (AC5) — barra de ferramentas                      */}
+      {/* ============================================================ */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+          <input
+            type="search"
+            value={filtros.busca}
+            onChange={(e) => setFiltros((f) => ({ ...f, busca: e.target.value }))}
+            placeholder="Buscar criativo..."
+            aria-label="Buscar criativo pelo nome"
+            className="h-7 w-[170px] rounded-md border border-border/40 bg-transparent pl-7 pr-2 text-[11px] outline-none focus:border-primary/50"
+          />
+        </div>
+
+        <Select
+          value={filtros.metrica}
+          onValueChange={(v) => setFiltros((f) => ({ ...f, metrica: v as MetricaDeOrdenacao }))}
+        >
+          <SelectTrigger className="h-7 w-[160px] text-xs" aria-label="Ordenação">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {METRIC_OPTIONS.map((m) => (
+              <SelectItem key={m.value} value={m.value} disabled={m.value === "roas" && !roasDisponivel}>
+                <span className="flex items-center gap-1.5">
+                  {m.sortLabel}
+                  {m.needsReview && <AlertTriangle className="h-3 w-3 text-amber-500" />}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* ==================================================== */}
+        {/* Story 18.76 — botão + painel de métricas             */}
+        {/* ==================================================== */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setPainelAberto((v) => !v)}
+            aria-expanded={painelAberto}
+            aria-haspopup="dialog"
+            title="Escolher quais métricas aparecem em cada card"
+            className={`h-7 px-2.5 rounded-md border text-[11px] font-medium transition-colors ${
+              painelAberto
+                ? "border-primary/40 bg-primary/10 text-primary"
+                : "border-border/40 text-muted-foreground hover:bg-muted/50"
+            }`}
+          >
+            Métricas
+            {/* AC3: o badge é a soma dos checkboxes. Zero = sem badge. */}
+            {contarMarcadas(metricasMarcadas) > 0 && ` (${contarMarcadas(metricasMarcadas)})`}
+          </button>
+
+          {painelAberto && (
+            <>
+              {/* Clique fora fecha. Um painel que só fecha no botão prende o
+                  usuário quando ele já foi olhar outra coisa na tela. */}
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setPainelAberto(false)}
+                aria-hidden
+              />
+              <div
+                role="dialog"
+                aria-label="Painel de métricas"
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setPainelAberto(false);
+                }}
+                className="absolute z-50 mt-1 w-[290px] max-h-[420px] overflow-y-auto rounded-lg border border-border/50 bg-popover p-2 shadow-lg"
+              >
+                <div className="relative mb-2">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                  <input
+                    autoFocus
+                    value={buscaMetrica}
+                    onChange={(e) => setBuscaMetrica(e.target.value)}
+                    placeholder="Buscar métrica..."
+                    aria-label="Buscar métrica"
+                    className="h-7 w-full rounded-md border border-border/40 bg-transparent pl-7 pr-2 text-[11px] outline-none focus:border-primary/50"
+                  />
+                </div>
+
+                {CATEGORIAS.map((cat) => {
+                  const idsQueCasam = buscarMetricas(buscaMetrica);
+                  const daCategoria = METRICAS.filter(
+                    (m) => m.categoria === cat.id && idsQueCasam.includes(m.id),
+                  );
+                  // Busca não deixa categoria vazia na tela.
+                  if (daCategoria.length === 0) return null;
+                  // AC1: buscar EXPANDE a categoria com resultado — senão o
+                  // usuário busca, vê o nome da categoria e nada dentro.
+                  const aberta = buscaMetrica.trim() !== "" || categoriasAbertas.has(cat.id);
+                  const marcadasNaCategoria = contarPorCategoria(metricasMarcadas, cat.id);
+                  const indisponivel = semCategoria[cat.id];
+                  return (
+                    <div key={cat.id} className="mb-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCategoriasAbertas((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(cat.id)) next.delete(cat.id);
+                            else next.add(cat.id);
+                            return next;
+                          })
+                        }
+                        aria-expanded={aberta}
+                        className="flex w-full items-center gap-1 px-1 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground"
+                      >
+                        {aberta ? (
+                          <ChevronDown className="h-3 w-3" />
+                        ) : (
+                          <ChevronRight className="h-3 w-3" />
+                        )}
+                        {cat.label}
+                        {/* AC1: sem badge quando zero. */}
+                        {marcadasNaCategoria > 0 && (
+                          <span className="text-primary">({marcadasNaCategoria})</span>
+                        )}
+                        {indisponivel && (
+                          <span className="ml-auto text-[9px] font-normal normal-case text-muted-foreground/60">
+                            indisponível
+                          </span>
+                        )}
+                      </button>
+
+                      {aberta &&
+                        daCategoria.map((m) => {
+                          const marcada = metricasMarcadas.includes(m.id);
+                          return (
+                            <label
+                              key={m.id}
+                              title={indisponivel ?? undefined}
+                              className={`flex items-center gap-2 rounded px-2 py-1 text-[11px] ${
+                                indisponivel
+                                  ? "cursor-not-allowed text-muted-foreground/50"
+                                  : "cursor-pointer hover:bg-muted/50"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={marcada}
+                                disabled={!!indisponivel}
+                                onChange={() =>
+                                  setMetricasMarcadas((prev) =>
+                                    prev.includes(m.id)
+                                      ? prev.filter((x) => x !== m.id)
+                                      : [...prev, m.id],
+                                  )
+                                }
+                                className="h-3 w-3 accent-primary"
+                              />
+                              <span className="flex-1">{m.label}</span>
+                              {/* AC4: o "i" traz a FÓRMULA, não o nome por extenso. */}
+                              <span title={m.explicacao} className="cursor-help">
+                                <Info className="h-3 w-3 text-muted-foreground/60" />
+                              </span>
+                            </label>
+                          );
+                        })}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+
+        <Select
+          value={filtros.tipoDeMidia}
+          onValueChange={(v) =>
+            setFiltros((f) => ({ ...f, tipoDeMidia: v as FiltrosDaGaleria["tipoDeMidia"] }))
+          }
+        >
+          <SelectTrigger className="h-7 w-[120px] text-xs" aria-label="Tipo de mídia">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Toda mídia</SelectItem>
+            <SelectItem value="video">Só vídeo</SelectItem>
+            <SelectItem value="estatico">Só estático</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={filtros.agrupamento}
+          onValueChange={(v) =>
+            setFiltros((f) => ({ ...f, agrupamento: v as FiltrosDaGaleria["agrupamento"] }))
+          }
+        >
+          <SelectTrigger className="h-7 w-[150px] text-xs" aria-label="Agrupamento">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="nome">Por nome do criativo</SelectItem>
+            <SelectItem value="anuncio">Por anúncio</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {/* Story 8.9: o toggle de relevância mudou de lugar, não de regra. */}
+        {(relevanceThreshold.mode !== "disabled" || showAll) && (
+          <button
+            type="button"
+            onClick={() => setShowAll((v) => !v)}
+            className={`h-7 px-2.5 rounded-md border text-[11px] font-medium transition-colors ${
+              showAll
+                ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
+                : "border-border/40 bg-transparent text-muted-foreground hover:bg-muted/50"
+            }`}
+            aria-pressed={showAll}
+            title={
+              showAll
+                ? "Filtro de relevância desativado — mostrando todos os criativos"
+                : "Mostrando apenas criativos com gasto estatisticamente relevante"
+            }
+          >
+            {showAll ? "Mostrando todos" : "Mostrar todos"}
+          </button>
+        )}
+      </div>
+
+      {/* Story 18.74 (AC6) — filtros ativos. Sem filtro, não ocupa espaço. */}
+      {chips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {chips.map((chip) => (
+            <button
+              key={chip.campo}
+              type="button"
+              onClick={() => setFiltros((f) => limparCampo(f, chip.campo))}
+              title={`Remover: ${chip.texto}`}
+              className="inline-flex items-center gap-1 h-6 px-2 rounded-full border border-border/40 bg-muted/30 text-[10px] hover:bg-muted/60 transition-colors"
+            >
+              {chip.texto}
+              <X className="h-2.5 w-2.5" />
+            </button>
+          ))}
+          {chips.length >= 2 && (
             <button
               type="button"
-              onClick={() => setShowAll((v) => !v)}
-              className={`h-7 px-2.5 rounded-md border text-[11px] font-medium transition-colors ${
-                showAll
-                  ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
-                  : "border-border/40 bg-transparent text-muted-foreground hover:bg-muted/50"
-              }`}
-              aria-label={
-                showAll
-                  ? "Esconder criativos com baixo gasto"
-                  : "Mostrar criativos com baixo gasto"
-              }
-              aria-pressed={showAll}
-              title={
-                showAll
-                  ? "Filtro de relevância desativado — mostrando todos os criativos"
-                  : "Mostrando apenas criativos com gasto estatisticamente relevante"
-              }
+              onClick={() => setFiltros({ ...visao.preset })}
+              className="text-[10px] text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground"
             >
-              {showAll ? "Mostrando todos" : "Mostrar todos"}
+              Limpar tudo
             </button>
           )}
-          <Select value={metric} onValueChange={(v) => setMetric(v as LocalMetric)}>
-            <SelectTrigger className="h-7 w-[150px] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {METRIC_OPTIONS.map((m) => (
-                <SelectItem key={m.value} value={m.value}>
-                  <span className="flex items-center gap-1.5">
-                    {m.label}
-                    {m.needsReview && <AlertTriangle className="h-3 w-3 text-amber-500" />}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
-      </div>
+      )}
 
       {showReviewBadge && (
         <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 flex items-start gap-2 text-[11px]">
@@ -984,15 +1460,26 @@ export function TopCreativesGallery({
             buildFunnelCtrFormula(c.ctr, funnel),
             path,
           );
-          const cplFormula = c.cplPago != null
-            ? enrichFormulaForEntity(
-                buildFunnelCplFormula(c.spend, c.leadsPagos, funnel, "pago"),
-                path,
-              )
-            : undefined;
+          // Story 18.75 — a conversão do card, na unidade da tela.
+          const conversoes =
+            conv.unidade === "vendas"
+              ? temFonteDeConversao
+                ? vendasDeduzidas(c.ids, revenueData?.byAdId).vendas
+                : null
+              : conv.unidade === "ingressos"
+                ? ingressosDoGrupo(c.ids, ingressosPorAdId)
+                : temFonteDeConversao
+                  ? c.leadsPagos
+                  : null;
+          const motivoConv = motivoSemConversao(conv, temFonteDeConversao, conversoes);
+          const custoConv = custoPorConversao(c.spend, conversoes);
+          // Story 18.76: o mesmo contexto que alimentou os máximos das barras.
+          const ctxMetrica = contextoDeMetrica(c);
           return (
             <div
-              key={c.name}
+              // Story 18.74 (AC3): na visão "Todos" o mesmo nome aparece N
+              // vezes (um card por anúncio), então a chave é o ad_id.
+              key={filtros.agrupamento === "anuncio" ? (c.ids[0] ?? c.name) : c.name}
               className="group rounded-lg border border-border/20 bg-muted/10 overflow-hidden hover:border-border/50 transition-all hover:shadow-md cursor-pointer"
               onClick={() => setLightboxIndex(i)}
             >
@@ -1072,43 +1559,130 @@ export function TopCreativesGallery({
                   {c.name}
                 </p>
                 <p className="text-lg font-bold tracking-tight">
-                  {formatMetricValue(c, metric)}
+                  {formatMetricValue(c, metric, roasPorNome)}
                 </p>
-                <div className="grid grid-cols-3 gap-1 text-[10px] pt-1 border-t border-border/20">
+                {/* Story 18.75 (AC1): grid 2×2 fixo. O CTR saiu daqui e desceu
+                    uma linha (AC10) — o que o gestor precisa ler no card é
+                    quantas conversões o criativo trouxe e quanto custou cada
+                    uma, e isso muda de nome conforme a tela (AC2). */}
+                <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-[10px] pt-1 border-t border-border/20">
                   <MetricTooltip label="Investimento" value={fmtCurrency(c.spend)} formula={spendFormula}>
-                    <div
-                      onClick={(e) => e.stopPropagation()}
-                      className="cursor-help text-center"
-                    >
+                    <div onClick={(e) => e.stopPropagation()} className="cursor-help text-center">
                       <p className="text-muted-foreground">Invest.</p>
                       <p className="font-semibold underline decoration-dotted decoration-muted-foreground/40 underline-offset-2">
                         {fmtCurrency(c.spend)}
                       </p>
                     </div>
                   </MetricTooltip>
-                  <MetricTooltip label="CTR" value={fmtPercent(c.ctr)} formula={ctrFormula}>
-                    <div
-                      onClick={(e) => e.stopPropagation()}
-                      className="cursor-help text-center"
-                    >
-                      <p className="text-muted-foreground">CTR</p>
-                      <p className="font-semibold underline decoration-dotted decoration-muted-foreground/40 underline-offset-2">
-                        {fmtPercent(c.ctr)}
-                      </p>
-                    </div>
-                  </MetricTooltip>
-                  <MetricTooltip label="CPL Pago" value={fmtCurrency(c.cplPago)} formula={cplFormula}>
-                    <div
-                      onClick={(e) => e.stopPropagation()}
-                      className="cursor-help text-center"
-                    >
-                      <p className="text-muted-foreground">CPL</p>
-                      <p className="font-semibold underline decoration-dotted decoration-muted-foreground/40 underline-offset-2">
-                        {fmtCurrency(c.cplPago)}
-                      </p>
-                    </div>
-                  </MetricTooltip>
+
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="cursor-help text-center"
+                    title={`${fmtNumber(c.impressions)} impressões${c.ids.length > 1 ? ` — somadas dos ${c.ids.length} anúncios com este nome` : ""}`}
+                  >
+                    <p className="text-muted-foreground">Impressões</p>
+                    <p className="font-semibold">{fmtNumber(c.impressions)}</p>
+                  </div>
+
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="cursor-help text-center"
+                    title={
+                      motivoConv ??
+                      `${fmtNumber(conversoes ?? 0)} ${conv.rotulo.toLowerCase()} da ${conv.fonte}${
+                        conv.unidade === "vendas" && c.ids.length > 1
+                          ? ` — comprador contado uma vez só entre os ${c.ids.length} anúncios do grupo`
+                          : ""
+                      }`
+                    }
+                  >
+                    <p className="text-muted-foreground">{conv.rotulo}</p>
+                    <p className={`font-semibold ${motivoConv ? "text-muted-foreground" : ""}`}>
+                      {motivoConv ? "—" : fmtNumber(conversoes ?? 0)}
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="cursor-help text-center"
+                    title={
+                      motivoConv ??
+                      `${conv.nomeCusto} = investimento ÷ ${conv.rotulo.toLowerCase()} = ${fmtCurrency(c.spend)} ÷ ${fmtNumber(conversoes ?? 0)}`
+                    }
+                  >
+                    <p className="text-muted-foreground">{conv.rotuloCusto}</p>
+                    <p className={`font-semibold ${custoConv == null ? "text-muted-foreground" : ""}`}>
+                      {custoConv == null ? "—" : fmtCurrency(custoConv)}
+                    </p>
+                  </div>
                 </div>
+
+                {/* AC10: o CTR não some da tela ao sair do grid — continua aqui
+                    e no lightbox, com a mesma fórmula de antes. */}
+                <MetricTooltip label="CTR" value={fmtPercent(c.ctr)} formula={ctrFormula}>
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="cursor-help text-[10px] text-center pt-1 border-t border-border/20"
+                  >
+                    <span className="text-muted-foreground">CTR: </span>
+                    <span className="font-semibold underline decoration-dotted decoration-muted-foreground/40 underline-offset-2">
+                      {fmtPercent(c.ctr)}
+                    </span>
+                  </div>
+                </MetricTooltip>
+
+                {/* ==================================================== */}
+                {/* Story 18.76 (AC6) — uma barra por métrica marcada     */}
+                {/* ==================================================== */}
+                {metricasMarcadas.length > 0 && (
+                  <div
+                    className="space-y-1 pt-1.5 border-t border-border/20"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {METRICAS.filter((m) => metricasMarcadas.includes(m.id)).map((m) => {
+                      const valor = valorDaMetrica(m.id, c, ctxMetrica);
+                      const largura = larguraDaBarra(valor, maximosDasBarras.get(m.id));
+                      const cor = corDaBarra(m, valor);
+                      // Cor da barra e do valor são a MESMA — é o que liga
+                      // visualmente a linha inteira (AC6).
+                      const classeCor =
+                        cor === "meta-ok"
+                          ? "text-emerald-500"
+                          : cor === "custo"
+                            ? "text-amber-500"
+                            : cor === "meta-abaixo"
+                              ? "text-foreground"
+                              : "text-sky-500";
+                      const classeFundo =
+                        cor === "meta-ok"
+                          ? "bg-emerald-500"
+                          : cor === "custo"
+                            ? "bg-amber-500"
+                            : cor === "meta-abaixo"
+                              ? "bg-muted-foreground/50"
+                              : "bg-sky-500";
+                      return (
+                        <div key={m.id} className="flex items-center gap-1.5 text-[9px]" title={m.explicacao}>
+                          <span className="w-[74px] shrink-0 truncate text-muted-foreground">
+                            {m.label}
+                          </span>
+                          <span className="h-1 flex-1 rounded-full bg-muted/40 overflow-hidden">
+                            {/* `null` desenha barra vazia: não medido nunca vira 0%. */}
+                            {largura != null && (
+                              <span
+                                className={`block h-full rounded-full ${classeFundo}`}
+                                style={{ width: `${largura}%` }}
+                              />
+                            )}
+                          </span>
+                          <span className={`w-[62px] shrink-0 text-right font-semibold tabular-nums ${classeCor}`}>
+                            {formatarValorDaMetrica(m.formato, valor)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {/* Story 29.65: o gancho só aparece quando o filtro é dele — nas
                     outras ordenações seria mais um número disputando um card já
