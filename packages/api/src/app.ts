@@ -120,6 +120,7 @@ import paymentAlertsSchedulerPlugin from "./plugins/payment-alerts-scheduler.js"
 import sendflowGroupsSchedulerPlugin from "./plugins/sendflow-groups-scheduler.js";
 import revenuecatSnapshotSchedulerPlugin from "./plugins/revenuecat-snapshot-scheduler.js";
 import plannerSyncSchedulerPlugin from "./plugins/planner-sync-scheduler.js";
+import plannerAnualRoutes from "./routes/planner-anual.js";
 import instaScanWorkerPlugin from "./plugins/insta-scan-worker.js";
 
 export async function buildServer() {
@@ -235,6 +236,8 @@ export async function buildServer() {
   await app.register(funnelStageRoutes);
   await app.register(stageSalesSpreadsheetsRoutes);
   await app.register(plannerRoutes);
+  // Calendario anual (esteiras x meses). Em teste; arquivo proprio.
+  await app.register(plannerAnualRoutes);
   await app.register(stageApplicationRoutes);
   await app.register(stageSalesDataRoutes);
   await app.register(sellersBreakdownRoutes);

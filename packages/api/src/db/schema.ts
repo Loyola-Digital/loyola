@@ -3630,6 +3630,62 @@ export const plannerCampaigns = pgTable(
  * dela fica sempre vazia. A permissão vale desde que o e-mail é adicionado —
  * o que falta é saber QUAL agenda ler, e isso quem diz é quem configura.
  */
+// ============================================================
+// Calendário anual — matriz de esteiras x meses (migration 0133)
+// ============================================================
+//
+// Outra escala do Planner. A campanha é um evento com fases datadas; a esteira
+// é uma máquina que roda todo mês ("Webinar diário", "Reunião secreta 3x").
+// Uma não descreve a outra, e por isso não há referência entre as duas.
+//
+// Em teste: se sair, são estas duas tabelas e nada mais.
+
+export const plannerAnnualTracks = pgTable(
+  "planner_annual_tracks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /** A faixa colorida da lateral: `organico` | `trafego` | `ascensao`. */
+    grupo: varchar("grupo", { length: 20 }).notNull(),
+    nome: varchar("nome", { length: 120 }).notNull().default(""),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("idx_planner_annual_tracks_projeto").on(t.projectId, t.sortOrder)],
+);
+
+export const plannerAnnualCells = pgTable(
+  "planner_annual_cells",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    trackId: uuid("track_id")
+      .notNull()
+      .references(() => plannerAnnualTracks.id, { onDelete: "cascade" }),
+    ano: integer("ano").notNull(),
+    /** 1 a 12. */
+    mes: integer("mes").notNull(),
+    /**
+     * Texto livre, e não lista.
+     *
+     * Na planilha do time isso varia entre "Diário", "3x por mês" e
+     * "19, 20 e 21" — nenhuma lista fechada cobre os três.
+     */
+    frequencia: varchar("frequencia", { length: 120 }),
+    produto: varchar("produto", { length: 160 }),
+    /** Back-End | Front-End */
+    categoria: varchar("categoria", { length: 20 }),
+    /** Lançamento | DR - VSL | Grupo de Conteúdo | ... */
+    funil: varchar("funil", { length: 60 }),
+    updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("idx_planner_annual_cells_celula").on(t.trackId, t.ano, t.mes)],
+);
+
 export const plannerGoogleCalendars = pgTable("planner_google_calendars", {
   id: uuid("id").defaultRandom().primaryKey(),
   /** O "ID da agenda" que aparece em Configurações → Integrar agenda. */
