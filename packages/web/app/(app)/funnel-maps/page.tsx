@@ -11,15 +11,38 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, ArrowLeft, ExternalLink, Map as MapIcon, Plus, Search } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowLeft,
+  ExternalLink,
+  Map as MapIcon,
+  Plus,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { FunnelMapCanvas } from "@/components/funnels/funnel-map/funnel-map-canvas";
 import { MapaMiniatura } from "@/components/funnels/funnel-map/mapa-miniatura";
 import { NovoMapaDialog } from "@/components/funnels/funnel-map/novo-mapa-dialog";
-import { useFunnelMapsGlobal, type MapaNaLista } from "@/lib/hooks/use-funnel-maps-global";
+import {
+  useExcluirMapaAvulso,
+  useFunnelMapsGlobal,
+  type MapaNaLista,
+} from "@/lib/hooks/use-funnel-maps-global";
 import { useUserRole } from "@/lib/hooks/use-user-role";
 
 function quando(iso: string | null): string {
@@ -38,6 +61,8 @@ export default function FunnelMapsPage() {
   const [aberto, setAberto] = useState<MapaNaLista | null>(null);
   const [mostrarArquivados, setMostrarArquivados] = useState(false);
   const [novoAberto, setNovoAberto] = useState(false);
+  const [aExcluir, setAExcluir] = useState<MapaNaLista | null>(null);
+  const excluir = useExcluirMapaAvulso();
 
   const mapas = data?.mapas ?? [];
   const arquivados = mapas.filter((m) => m.arquivado).length;
@@ -181,22 +206,32 @@ export default function FunnelMapsPage() {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {filtrados.map((m) => (
+            /* Relativo para o botão de excluir se posicionar por cima: um
+               <button> dentro de outro é inválido, e o leitor de tela anuncia
+               a ação errada. */
+            <div key={m.mapId ?? m.stageId} className="group relative">
             <button
-              key={m.stageId}
               type="button"
               onClick={() => setAberto(m)}
-              className="group rounded-xl border border-border/40 bg-card/60 p-3 text-left transition-colors hover:border-primary/40 hover:bg-card"
+              className="w-full rounded-xl border border-border/40 bg-card/60 p-3 text-left transition-colors hover:border-primary/40 hover:bg-card"
             >
               <MapaMiniatura blocos={m.previa} />
               <div className="mt-2 flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{m.funnelName}</p>
+                  {/* O avulso não tem funil: o nome dele é o título. */}
+                  <p className="truncate text-sm font-medium">{m.funnelName ?? m.stageName}</p>
                   <p className="truncate text-[11px] text-muted-foreground">
-                    <span
-                      className="mr-1 inline-block h-2 w-2 rounded-sm align-middle"
-                      style={{ background: m.projectColor ?? "#6b7280" }}
-                    />
-                    {m.projectName} · {m.stageName}
+                    {m.projectName ? (
+                      <>
+                        <span
+                          className="mr-1 inline-block h-2 w-2 rounded-sm align-middle"
+                          style={{ background: m.projectColor ?? "#6b7280" }}
+                        />
+                        {m.projectName} · {m.stageName}
+                      </>
+                    ) : (
+                      "sem funil"
+                    )}
                   </p>
                 </div>
                 {m.arquivado && (
@@ -218,9 +253,57 @@ export default function FunnelMapsPage() {
                 <span className="ml-auto">{quando(m.updatedAt)}</span>
               </div>
             </button>
+
+            {/* Só o avulso é apagável por aqui. O mapa que é etapa de um funil
+                sai pela tela do funil — apagá-lo daqui deixaria a etapa órfã
+                na lista, apontando para um desenho que não existe mais. */}
+            {m.mapId && role !== "guest" && (
+              <button
+                type="button"
+                onClick={() => setAExcluir(m)}
+                title="Excluir mapa"
+                aria-label={`Excluir ${m.stageName}`}
+                className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-md bg-background/90 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:bg-destructive/10 hover:text-destructive focus:opacity-100 group-hover:opacity-100"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
+            </div>
           ))}
         </div>
       )}
+
+      {/* Confirmação, e não desfazer: o mapa avulso não deixa etapa para trás,
+          então não há de onde recriá-lo depois. */}
+      <AlertDialog open={!!aExcluir} onOpenChange={(o) => !o && setAExcluir(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir “{aExcluir?.stageName}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O desenho vai embora com {aExcluir?.blocos ?? 0} bloco(s). Não dá para desfazer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const alvo = aExcluir;
+                setAExcluir(null);
+                if (!alvo?.mapId) return;
+                // Não precisa fechar o editor: a lista só existe quando ele
+                // está fechado — com um mapa aberto, a tela toda é o editor.
+                excluir.mutate(alvo.mapId, {
+                  onSuccess: () => toast.success(`"${alvo.stageName}" excluído`),
+                  onError: (e) =>
+                    toast.error(e instanceof Error ? e.message : "Não consegui excluir"),
+                });
+              }}
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
