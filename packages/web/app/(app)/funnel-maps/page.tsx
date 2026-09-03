@@ -9,7 +9,7 @@
  * que sair do lugar para isso.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -18,32 +18,28 @@ import {
   Map as MapIcon,
   Plus,
   Search,
-  Trash2,
+  MoreHorizontal,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { FunnelMapCanvas } from "@/components/funnels/funnel-map/funnel-map-canvas";
 import { MapaMiniatura } from "@/components/funnels/funnel-map/mapa-miniatura";
 import { NovoMapaDialog } from "@/components/funnels/funnel-map/novo-mapa-dialog";
-import {
-  useExcluirMapaAvulso,
-  useFunnelMapsGlobal,
-  type MapaNaLista,
-} from "@/lib/hooks/use-funnel-maps-global";
+import { EditarMapaDialog } from "@/components/funnels/funnel-map/editar-mapa-dialog";
+import { useFunnelMapsGlobal, type MapaNaLista } from "@/lib/hooks/use-funnel-maps-global";
 import { useUserRole } from "@/lib/hooks/use-user-role";
+import { useUIStore } from "@/lib/stores/ui-store";
+
+/**
+ * O que sobra da janela para o desenho.
+ *
+ * Os 190px sao o cabecalho do app mais a barra de titulo do mapa. Antes eram
+ * 620px fixos: em monitor alto sobrava uma faixa vazia embaixo, em monitor
+ * baixo o editor passava da tela.
+ */
+const ALTURA_DO_EDITOR = "calc(100vh - 190px)";
 
 function quando(iso: string | null): string {
   if (!iso) return "nunca salvo";
@@ -61,8 +57,40 @@ export default function FunnelMapsPage() {
   const [aberto, setAberto] = useState<MapaNaLista | null>(null);
   const [mostrarArquivados, setMostrarArquivados] = useState(false);
   const [novoAberto, setNovoAberto] = useState(false);
-  const [aExcluir, setAExcluir] = useState<MapaNaLista | null>(null);
-  const excluir = useExcluirMapaAvulso();
+  const [editando, setEditando] = useState<MapaNaLista | null>(null);
+
+  /**
+   * Com o mapa aberto, a barra lateral do app recolhe.
+   *
+   * O editor tem paleta propria a esquerda e painel de bloco a direita; a
+   * navegacao do app no meio disso rouba a largura de que o desenho precisa.
+   * Ao fechar o mapa ela volta como estava — recolher e nao devolver faria a
+   * tela parecer quebrada para quem so passou por aqui.
+   */
+  const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
+  /**
+   * O estado da barra fica num `ref`, e não nas dependências.
+   *
+   * Lido como dependência, o efeito rodaria de novo quando alguém reabrisse a
+   * barra na mão com o mapa aberto — e a fecharia na hora. O `ref` deixa o
+   * efeito depender só de abrir/fechar o mapa, sem precisar silenciar regra
+   * de lint nenhuma.
+   */
+  const barraAntes = useRef<boolean | null>(null);
+  const sidebarRef = useRef(useUIStore.getState().sidebarOpen);
+  useEffect(() => useUIStore.subscribe((e) => (sidebarRef.current = e.sidebarOpen)), []);
+
+  useEffect(() => {
+    if (aberto) {
+      if (barraAntes.current === null) barraAntes.current = sidebarRef.current;
+      setSidebarOpen(false);
+      return;
+    }
+    if (barraAntes.current !== null) {
+      setSidebarOpen(barraAntes.current);
+      barraAntes.current = null;
+    }
+  }, [aberto, setSidebarOpen]);
 
   const mapas = data?.mapas ?? [];
   const arquivados = mapas.filter((m) => m.arquivado).length;
@@ -129,10 +157,10 @@ export default function FunnelMapsPage() {
             projectId={aberto.projectId}
             funnelId={aberto.funnelId}
             stageId={aberto.stageId}
-            altura={620}
+            altura={ALTURA_DO_EDITOR}
           />
         ) : aberto.mapId ? (
-          <FunnelMapCanvas key={aberto.mapId} mapId={aberto.mapId} altura={620} />
+          <FunnelMapCanvas key={aberto.mapId} mapId={aberto.mapId} altura={ALTURA_DO_EDITOR} />
         ) : null}
       </div>
     );
@@ -260,12 +288,12 @@ export default function FunnelMapsPage() {
             {m.mapId && role !== "guest" && (
               <button
                 type="button"
-                onClick={() => setAExcluir(m)}
-                title="Excluir mapa"
-                aria-label={`Excluir ${m.stageName}`}
-                className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-md bg-background/90 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:bg-destructive/10 hover:text-destructive focus:opacity-100 group-hover:opacity-100"
+                onClick={() => setEditando(m)}
+                title="Editar mapa"
+                aria-label={`Editar ${m.stageName}`}
+                className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-md bg-background/90 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:bg-muted hover:text-foreground focus:opacity-100 group-hover:opacity-100"
               >
-                <Trash2 className="h-3.5 w-3.5" />
+                <MoreHorizontal className="h-4 w-4" />
               </button>
             )}
             </div>
@@ -273,37 +301,7 @@ export default function FunnelMapsPage() {
         </div>
       )}
 
-      {/* Confirmação, e não desfazer: o mapa avulso não deixa etapa para trás,
-          então não há de onde recriá-lo depois. */}
-      <AlertDialog open={!!aExcluir} onOpenChange={(o) => !o && setAExcluir(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Excluir “{aExcluir?.stageName}”?</AlertDialogTitle>
-            <AlertDialogDescription>
-              O desenho vai embora com {aExcluir?.blocos ?? 0} bloco(s). Não dá para desfazer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                const alvo = aExcluir;
-                setAExcluir(null);
-                if (!alvo?.mapId) return;
-                // Não precisa fechar o editor: a lista só existe quando ele
-                // está fechado — com um mapa aberto, a tela toda é o editor.
-                excluir.mutate(alvo.mapId, {
-                  onSuccess: () => toast.success(`"${alvo.stageName}" excluído`),
-                  onError: (e) =>
-                    toast.error(e instanceof Error ? e.message : "Não consegui excluir"),
-                });
-              }}
-            >
-              Excluir
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <EditarMapaDialog mapa={editando} onOpenChange={(v) => !v && setEditando(null)} />
     </div>
   );
 }
