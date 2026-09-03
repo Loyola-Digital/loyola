@@ -25,17 +25,23 @@ export interface ImagemNoBucket {
   url: string;
   key: string;
   bytes: number;
+  mime?: string;
 }
 
 /** Tipos que o bloco desenha. Espelha o que o servidor aceita. */
 export const IMAGENS_ACEITAS = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"];
+export const PDF = "application/pdf";
+/** Imagem e PDF. Vídeo fica fora — ver a rota. */
+export const ANEXOS_ACEITOS = [...IMAGENS_ACEITAS, PDF];
 
 export function useSubirImagemDoMapa() {
   const { getToken } = useAuth();
   return useMutation({
     mutationFn: async (arquivo: File): Promise<ImagemNoBucket> => {
-      if (!IMAGENS_ACEITAS.includes(arquivo.type)) {
-        throw new Error(`${arquivo.type || "Esse arquivo"} não é uma imagem que dá para desenhar.`);
+      if (!ANEXOS_ACEITOS.includes(arquivo.type)) {
+        throw new Error(
+          `${arquivo.type || "Esse arquivo"} não entra no mapa. Vale imagem ou PDF.`,
+        );
       }
 
       const token = await getToken();
@@ -81,12 +87,12 @@ export function useSubirImagemDoMapa() {
 export function imagemDoEvento(dt: DataTransfer | null): File | null {
   if (!dt) return null;
   for (const f of Array.from(dt.files)) {
-    if (IMAGENS_ACEITAS.includes(f.type)) return f;
+    if (ANEXOS_ACEITOS.includes(f.type)) return f;
   }
   for (const item of Array.from(dt.items)) {
     if (item.kind !== "file") continue;
     const f = item.getAsFile();
-    if (f && IMAGENS_ACEITAS.includes(f.type)) return f;
+    if (f && ANEXOS_ACEITOS.includes(f.type)) return f;
   }
   return null;
 }

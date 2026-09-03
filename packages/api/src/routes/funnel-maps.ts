@@ -617,9 +617,16 @@ export default fp(async function funnelMapRoutes(fastify) {
 
     const arquivo = await request.file({ limits: { fileSize: MAX_UPLOAD_BYTES } });
     if (!arquivo) return reply.code(400).send({ error: "Envie a imagem." });
-    // Só imagem: o bloco desenha um `<img>`, e um PDF ali viraria um retângulo
-    // quebrado no meio do mapa.
-    if (!arquivo.mimetype.startsWith("image/") || !isAllowedMime(arquivo.mimetype)) {
+    /**
+     * Imagem ou PDF — os dois tipos que o mapa desenha.
+     *
+     * Vídeo fica de fora: um bloco que toca vídeo dentro de um quadro que se
+     * arrasta e amplia é uma tela dentro de outra, e o mapa deixa de ser um
+     * mapa. Quem precisa disso põe o link.
+     */
+    const ehImagem = arquivo.mimetype.startsWith("image/");
+    const ehPdf = arquivo.mimetype === "application/pdf";
+    if ((!ehImagem && !ehPdf) || !isAllowedMime(arquivo.mimetype)) {
       return reply.code(400).send({ error: `Tipo não permitido: ${arquivo.mimetype}` });
     }
 
@@ -632,7 +639,7 @@ export default fp(async function funnelMapRoutes(fastify) {
         mime: arquivo.mimetype,
         prefix: "mapa",
       });
-      return { url: r.publicUrl, key: r.key, bytes: buffer.length };
+      return { url: r.publicUrl, key: r.key, bytes: buffer.length, mime: arquivo.mimetype };
     } catch (err) {
       fastify.log.error({ err }, "upload de imagem do mapa falhou");
       return reply.code(502).send({ error: "Não consegui subir a imagem." });

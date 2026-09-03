@@ -179,10 +179,21 @@ export const TIPO_GENERICO = "generico";
  * ela justamente o que se quer ver.
  */
 export const TIPO_IMAGEM = "imagem";
+/**
+ * Documento anexado ao mapa — briefing, contrato, playbook.
+ *
+ * Especial como a imagem: o que ele mostra é a capa do arquivo, e uma moldura
+ * de bloco por cima disputaria com ela.
+ */
+export const TIPO_PDF = "pdf";
 
 export function ehBlocoLivre(type: string): boolean {
   return (
-    type === TIPO_NOTA || type === TIPO_TEXTO || type === TIPO_GENERICO || type === TIPO_IMAGEM
+    type === TIPO_NOTA ||
+    type === TIPO_TEXTO ||
+    type === TIPO_GENERICO ||
+    type === TIPO_IMAGEM ||
+    type === TIPO_PDF
   );
 }
 
