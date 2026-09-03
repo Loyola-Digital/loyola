@@ -2416,6 +2416,45 @@ export const metaPlacementInsightsDaily = pgTable(
   ]
 );
 
+/**
+ * Story 29.69 — investimento por HORA, do breakdown
+ * `hourly_stats_aggregated_by_advertiser_time_zone`.
+ *
+ * Por que uma tabela, e não uma consulta ao vivo: o breakdown multiplica por 24
+ * o número de linhas que a Meta devolve por dia. Ler isso a cada abertura de
+ * painel estoura o rate limit da conta — foi o que aconteceu em 2026-07-16 e
+ * virou regra: consultar em lote, guardar no banco, ler do banco.
+ *
+ * Mesma forma de `meta_placement_insights_daily`: chave composta por projeto +
+ * dia + dimensão, e um índice de lookup por (projeto, dia).
+ *
+ * `hour` é `0..23` **no fuso da conta de anúncios** (o breakdown é
+ * "advertiser time zone"). Na conta verificada na Task 0b esse fuso é
+ * America/Sao_Paulo, o mesmo do negócio — mas o campo `accountTimezone` fica
+ * registrado para que o painel possa declarar o desencontro em vez de sobrepor
+ * duas séries em relógios diferentes.
+ */
+export const metaHourlyInsightsDaily = pgTable(
+  "meta_hourly_insights_daily",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    dateStart: varchar("date_start", { length: 10 }).notNull(), // YYYY-MM-DD
+    hour: integer("hour").notNull(), // 0..23 no fuso da conta
+    spend: numeric("spend").notNull().default("0"),
+    impressions: numeric("impressions").notNull().default("0"),
+    clicks: numeric("clicks").notNull().default("0"),
+    /** Fuso da conta no momento da coleta (ex.: `America/Sao_Paulo`). */
+    accountTimezone: varchar("account_timezone", { length: 64 }),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.dateStart, table.hour] }),
+    index("idx_meta_hourly_insights_lookup").on(table.projectId, table.dateStart),
+  ]
+);
+
 // Epic 35+: estado do sync Meta por (projeto, conta, tipo). Fonte do selo
 // "atualizado há X" nos painéis (max(last_success_at) do projeto) e da
 // observabilidade do producer. kind ∈ ad-daily | campaign-daily | placements |

@@ -42,7 +42,9 @@ function ad(over: Partial<TopPerformerAd> & { campaignName: string }): TopPerfor
     cpm: 0,
     leads: null,
     cpl: null,
-    linkClicks: null,
+    // O helper ignorava overrides deste campo; com o CTR unificado em cliques
+    // no link (2026-09-03), ele passou a importar.
+    linkClicks: over.linkClicks ?? null,
     landingPageViews: null,
     connectRate: null,
     qualifiedLeads: null,
@@ -163,8 +165,21 @@ describe("aggregateCreativesByName — hookRate (Story 29.65)", () => {
     const [g] = aggregateCreativesByName(grupo);
     expect(g.spend).toBe(1_000);
     expect(g.impressions).toBe(100_000);
-    expect(g.clicks).toBe(800);
-    // CTR segue derivado dos somatórios totais: 800 ÷ 100.000 = 0,8%
-    expect(g.ctr).toBeCloseTo(0.8, 5);
+    // Os cliques totais continuam somados — só mudaram de campo, para abrir
+    // espaço ao CTR de link (decisão do gestor, 2026-09-03).
+    expect(g.clicksTotais).toBe(800);
+    // ⚠️ Mudança de DEFINIÇÃO, não regressão: o CTR do produto passou a ser
+    // sempre sobre cliques NO LINK. Este fixture não tem `linkClicks`, então o
+    // grupo não tem CTR — e `null` é a resposta certa: antes, o número 0,8%
+    // vinha de cliques em qualquer lugar do anúncio, com o rótulo "CTR", e
+    // discordava do CTR que a tabela de Desempenho de Criativos mostrava.
+    expect(g.ctr).toBeNull();
+
+    // Com a métrica presente, o CTR é o de link — e só ele.
+    const [comLink] = aggregateCreativesByName([
+      ad({ campaignName: "Y", spend: 600, impressions: 100_000, clicks: 800, linkClicks: 400 }),
+    ]);
+    expect(comLink.ctr).toBeCloseTo(0.4, 5);
+    expect(comLink.clicksTotais).toBe(800);
   });
 });

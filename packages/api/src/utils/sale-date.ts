@@ -99,3 +99,153 @@ export function daysBetween(inicio: string, fim: string): number {
   };
   return Math.floor((toUtc(fim) - toUtc(inicio)) / 86_400_000) + 1;
 }
+
+// ============================================================
+// Story 29.69 — a HORA da venda
+// ============================================================
+
+/**
+ * Formatador de hora no fuso do negócio. `hourCycle: "h23"` evita o `24` que o
+ * `en-US` devolve para meia-noite.
+ */
+const hourFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: BUSINESS_TIMEZONE,
+  hour: "2-digit",
+  hourCycle: "h23",
+});
+
+/**
+ * A célula traz indicador de fuso? (`Z`, `+03:00`, `-0300`)
+ *
+ * É o que separa **instante** de **hora escrita**, e a Task 0 da 29.69 mostrou
+ * que os dois convivem na MESMA coluna: em `bbe-fc1-a1-mai-26`, 44 de 263
+ * linhas terminam em `Z` e 219 não. Tratar as duas iguais joga as 44 três horas
+ * adiante — e as que caem entre 00:00Z e 02:59Z, para o dia seguinte.
+ */
+function temFuso(raw: string): boolean {
+  return /(?:Z|[+-]\d{2}:?\d{2})$/.test(raw.trim());
+}
+
+export interface DiaEHoraDaVenda {
+  /** `YYYY-MM-DD` no fuso do negócio. */
+  dia: string;
+  /**
+   * Hora cheia `0..23`, ou `null` quando a célula não traz hora.
+   *
+   * `null` **não é meia-noite**. Uma planilha que só registra o dia
+   * (`19/08/2025` — o caso de 2 dos 5 funis perpétuos em produção) colocaria
+   * 100% das vendas às 00h num gráfico "por hora", e o pico das 00h seria lido
+   * como comportamento do comprador.
+   */
+  hora: number | null;
+}
+
+/**
+ * Dia e hora de uma venda, derivados **juntos** da mesma célula.
+ *
+ * Separá-los em duas funções seria convidar o caso em que o dia sai do caminho
+ * de instante (convertido) e a hora do caminho literal — e a venda apareceria
+ * às 22h de um dia em que ela não aconteceu.
+ *
+ * Três formatos, todos vistos em produção (Task 0):
+ *
+ * | Célula                       | Dia         | Hora | Por quê |
+ * |------------------------------|-------------|------|---------|
+ * | `19/08/2025`                 | `2025-08-19`| `null` | não há hora escrita |
+ * | `24/05/2026 20:12:38`        | `2026-05-24`| `20` | hora escrita, sem fuso: literal |
+ * | `2026-08-27 08:42:44`        | `2026-08-27`| `8`  | idem — ISO sem fuso **não** é instante |
+ * | `2026-07-12T23:50:33.624Z`   | `2026-07-12`| `20` | instante: convertido para São Paulo |
+ * | `2026-07-21T01:18:00Z`       | `2026-07-20`| `22` | instante: cai no dia anterior |
+ *
+ * ⚠️ **Divergência conhecida com `saleDayKey`** (deixada de propósito, para o
+ * QA decidir): naquela função, `2026-08-27 08:42:44` cai no ramo de instante e
+ * é interpretado no fuso do PROCESSO. Em produção (UTC) uma venda antes das 03h
+ * locais vira o dia anterior. Aqui a regra é a correta — ISO sem fuso é hora
+ * escrita —, e por isso as duas podem discordar nesse caso. Corrigir
+ * `saleDayKey` mudaria números de séries diárias já em produção, o que está
+ * **fora do escopo desta story** (AC8). Ver o teste que documenta o caso.
+ */
+export function saleDayAndHour(raw: string | null | undefined): DiaEHoraDaVenda | null {
+  if (!raw) return null;
+  const trimmed = String(raw).trim();
+  if (!trimmed) return null;
+
+  // 1) BR — `dd/mm/aaaa` com hora opcional. Sempre literal.
+  const br = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T](\d{1,2}):(\d{2}))?/);
+  if (br) {
+    const [, d, m, y, hh] = br;
+    const day = Number.parseInt(d, 10);
+    const month = Number.parseInt(m, 10);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    const dia = `${y}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const hora = hh == null ? null : Number.parseInt(hh, 10);
+    if (hora != null && (hora < 0 || hora > 23)) return { dia, hora: null };
+    return { dia, hora };
+  }
+
+  // 2) ISO sem fuso — `aaaa-mm-dd`, `aaaa-mm-dd hh:mm`, `aaaa-mm-ddThh:mm`.
+  //    Hora escrita, não instante: interpretar como UTC (ou como o fuso do
+  //    processo) é o que faria a venda mudar de hora conforme onde o código
+  //    roda.
+  if (!temFuso(trimmed)) {
+    const iso = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+    if (iso) {
+      const [, y, m, d, hh] = iso;
+      const dia = `${y}-${m}-${d}`;
+      const hora = hh == null ? null : Number.parseInt(hh, 10);
+      if (hora != null && (hora < 0 || hora > 23)) return { dia, hora: null };
+      return { dia, hora };
+    }
+  }
+
+  // 3) Sobrou instante com fuso — converte para o fuso do negócio.
+  const dt = new Date(trimmed);
+  if (Number.isNaN(dt.getTime())) return null;
+  const hora = Number.parseInt(hourFormatter.format(dt), 10);
+  return {
+    dia: toBusinessDayKey(dt),
+    hora: Number.isNaN(hora) ? null : hora,
+  };
+}
+
+/**
+ * Dia da semana de uma chave `YYYY-MM-DD`: `0` = Domingo … `6` = Sábado.
+ *
+ * Aritmética de calendário em UTC — a chave já é dia civil e não deve passar
+ * por conversão de fuso de novo, sob pena de segunda-feira virar domingo.
+ */
+export function weekdayFromDayKey(dayKey: string): number | null {
+  const m = dayKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const [, y, mo, d] = m;
+  const dt = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)));
+  if (Number.isNaN(dt.getTime())) return null;
+  return dt.getUTCDay();
+}
+
+/** Domingo → Sábado, para rótulo de eixo. */
+export const NOMES_DOS_DIAS = [
+  "Domingo",
+  "Segunda",
+  "Terça",
+  "Quarta",
+  "Quinta",
+  "Sexta",
+  "Sábado",
+] as const;
+
+/**
+ * Faixa horária da Meta (`"14:00:00 - 14:59:59"`) → `14`.
+ *
+ * O breakdown `hourly_stats_aggregated_by_advertiser_time_zone` devolve a hora
+ * como **texto de intervalo**, não como número — verificado contra a API na
+ * Task 0b da 29.69. Sem este parser, a chave do cache viraria a string inteira
+ * e nada casaria com a hora da venda.
+ */
+export function horaDaFaixaMeta(faixa: string | null | undefined): number | null {
+  if (!faixa) return null;
+  const m = String(faixa).trim().match(/^(\d{1,2}):/);
+  if (!m) return null;
+  const h = Number.parseInt(m[1], 10);
+  return h >= 0 && h <= 23 ? h : null;
+}

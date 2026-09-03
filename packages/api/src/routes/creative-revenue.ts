@@ -25,6 +25,14 @@ const paramsSchema = z.object({
 
 const querySchema = z.object({
   days: z.coerce.number().int().positive().optional(),
+  /**
+   * Story 18.75 (AC9): range explícito. O Perpétuo abre com data custom, e até
+   * aqui a rota só entendia `days` — o card mostrava investimento de uma janela
+   * e faturamento de outra, com aparência de coerência. Quando os dois vêm,
+   * o range explícito ganha (é a escolha do usuário; `days` é o preset).
+   */
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 // ============================================================
@@ -212,12 +220,26 @@ export default fp(async function creativeRevenueRoutes(fastify) {
         return EMPTY_RESPONSE;
       }
 
-      // Cutoff de data (se days passado) — aplicado na planilha de vendas
-      let cutoff: Date | null = null;
-      if (query.data.days) {
-        cutoff = new Date();
-        cutoff.setDate(cutoff.getDate() - query.data.days);
+      // Janela de data — aplicada na planilha de vendas (e na de leads, no
+      // caminho legacy). Story 18.75 (AC9): `startDate`/`endDate` explícitos
+      // têm precedência sobre `days`; sem nenhum dos dois, não filtra.
+      let cutoffStart: Date | null = null;
+      let cutoffEnd: Date | null = null;
+      if (query.data.startDate && query.data.endDate) {
+        cutoffStart = new Date(query.data.startDate + "T00:00:00");
+        cutoffEnd = new Date(query.data.endDate + "T23:59:59");
+      } else if (query.data.days) {
+        cutoffStart = new Date();
+        cutoffStart.setDate(cutoffStart.getDate() - query.data.days);
       }
+      const temJanela = cutoffStart !== null || cutoffEnd !== null;
+      /** `true` quando a linha fica FORA da janela — inclui data ilegível. */
+      const foraDaJanela = (dt: Date | null): boolean => {
+        if (!dt) return true;
+        if (cutoffStart && dt < cutoffStart) return true;
+        if (cutoffEnd && dt > cutoffEnd) return true;
+        return false;
+      };
 
       // Para cada ad, mantém um Set de identidades de dedup. O frontend
       // deduplica de novo entre ad_ids do mesmo criativo (AC-4/AC-8) usando
@@ -239,9 +261,8 @@ export default fp(async function creativeRevenueRoutes(fastify) {
         for (const row of salesData.rows) {
           const adId = utmContentEfetivo(row[saleUtmContentIdx] ?? "");
           if (!adId) continue;
-          if (cutoff && saleDateIdx !== -1) {
-            const dt = parseDate(row[saleDateIdx]);
-            if (!dt || dt < cutoff) continue;
+          if (temJanela && saleDateIdx !== -1) {
+            if (foraDaJanela(parseDate(row[saleDateIdx]))) continue;
           }
           const bruto = parseNumber(row[saleBrutoIdx] ?? "");
           const liquido = parseNumber(row[saleLiquidoIdx] ?? "");
@@ -284,9 +305,8 @@ export default fp(async function creativeRevenueRoutes(fastify) {
         for (const row of salesData.rows) {
           const email = normalizeEmail(row[saleEmailIdx] ?? "");
           if (!email) continue;
-          if (cutoff && saleDateIdx !== -1) {
-            const dt = parseDate(row[saleDateIdx]);
-            if (!dt || dt < cutoff) continue;
+          if (temJanela && saleDateIdx !== -1) {
+            if (foraDaJanela(parseDate(row[saleDateIdx]))) continue;
           }
           const bruto = parseNumber(row[saleBrutoIdx] ?? "");
           const liquido = parseNumber(row[saleLiquidoIdx] ?? "");
@@ -305,9 +325,8 @@ export default fp(async function creativeRevenueRoutes(fastify) {
           if (!email) continue;
 
           // Filtro de data no LEAD também (se tem coluna de data mapeada).
-          if (cutoff && leadDateIdx !== -1) {
-            const dt = parseDate(row[leadDateIdx]);
-            if (!dt || dt < cutoff) continue;
+          if (temJanela && leadDateIdx !== -1) {
+            if (foraDaJanela(parseDate(row[leadDateIdx]))) continue;
           }
 
           const sale = salesByEmail.get(email);

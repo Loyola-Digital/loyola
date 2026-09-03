@@ -686,7 +686,27 @@ export async function getTopPerformers(
     const clicks = parseFloat(a.clicks || "0");
     const reach = parseFloat(a.reach || "0");
 
-    const row = buildAnalyticsRow(a.ad_id, a.ad_name, spend, impressions, clicks, null, null, null, reach);
+    /**
+     * Cliques NO LINK (`link_click` das `actions`) — decisão do gestor em
+     * 2026-09-03: CTR e CPC do produto são sempre sobre clique no link, como no
+     * Gerenciador da Meta.
+     *
+     * ⚠️ Esta linha estava **omitida**. `buildAnalyticsRow` já dizia, num
+     * comentário, que usava link clicks — mas recebia `linkClicks` ausente e
+     * caía no fallback de cliques totais, sem avisar. O resultado: a galeria de
+     * criativos mostrava CTR de clique em qualquer lugar do anúncio enquanto a
+     * tabela de Desempenho de Criativos mostrava CTR de link, e os dois números
+     * discordavam com o mesmo rótulo na mesma tela.
+     *
+     * `null` quando a métrica não veio; `0` quando veio e foi zero — a
+     * diferença entre "não medimos" e "ninguém clicou" sobrevive até a tela.
+     */
+    const linkClicks = a.actions ? parseActionCount(a.actions, "link_click") : null;
+
+    const row = buildAnalyticsRow(
+      a.ad_id, a.ad_name, spend, impressions, clicks, null, null, null, reach,
+      linkClicks,
+    );
     return { ...row, adsetName: a.adset_name, parentCampaignName: a.campaign_name, creative: null, videoMetrics: a.videoMetrics ?? null };
   });
 
