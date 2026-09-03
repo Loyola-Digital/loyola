@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Icons from "lucide-react";
 import {
-  ChevronDown, ChevronRight, ClipboardCopy, Copy, FileDown, Keyboard, Loader2, Maximize2, Minimize2, Minus, Spline, Waypoints,
+  ChevronDown, ChevronRight, ClipboardCopy, Copy, FileDown, Keyboard, Loader2, Maximize2, Minimize2, Minus, Moon, Spline, Sun, Waypoints,
   PanelLeftClose, PanelLeftOpen, Pencil, Plus, RotateCcw, Save, Scan, Search,
   StickyNote, Trash2, Type, Undo2, Redo2, Unlink, X,
 } from "lucide-react";
@@ -293,6 +293,29 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
    * pessoa, nao o documento.
    */
   const [setasRetas, setSetasRetas] = useState(false);
+  /**
+   * O mapa em claro, dentro de um app escuro.
+   *
+   * As cores dos blocos vieram de paleta de fluxograma — pensadas para papel.
+   * Sobre preto elas ficam saturadas e brigam entre si, e num mapa de trinta
+   * blocos isso cansa. Preferência da pessoa, guardada no `localStorage`: não
+   * é propriedade do documento, e dois no time podem querer diferente.
+   */
+  const [mapaClaro, setMapaClaro] = useState(false);
+  useEffect(() => {
+    try { setMapaClaro(localStorage.getItem("mapa:tema") === "claro"); } catch { /* ignora */ }
+  }, []);
+  function alternarTema() {
+    setMapaClaro((v) => {
+      const novo = !v;
+      try { localStorage.setItem("mapa:tema", novo ? "claro" : "escuro"); } catch { /* ignora */ }
+      return novo;
+    });
+  }
+  /** A imagem aberta em tamanho grande. `null` = nenhuma. */
+  const [imagemAmpliada, setImagemAmpliada] = useState<{ url: string; titulo: string } | null>(
+    null,
+  );
   /** Escrevendo o texto de uma ligação. `null` = ninguém editando. */
   const [rotulando, setRotulando] = useState<{ id: string; valor: string } | null>(null);
   useEffect(() => {
@@ -1745,7 +1768,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
   return (
     <section
       ref={secaoRef}
-      className="space-y-3 rounded-xl border border-border/40 bg-card/60 p-4 data-[cheia=true]:rounded-none"
+      className={`space-y-3 rounded-xl border border-border/40 bg-card/60 p-4 data-[cheia=true]:rounded-none ${mapaClaro ? "mapa-claro" : ""}`}
       data-cheia={telaCheia}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1785,6 +1808,14 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
             onClick={refazer} disabled={!historico.podeRefazer} aria-label="Refazer"
           >
             <Redo2 className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="ghost" size="icon" className="h-6 w-6"
+            onClick={alternarTema}
+            aria-label={mapaClaro ? "Mapa escuro" : "Mapa claro"}
+            title={mapaClaro ? "Mapa escuro" : "Mapa claro"}
+          >
+            {mapaClaro ? <Moon className="h-3 w-3" /> : <Sun className="h-3 w-3" />}
           </Button>
           <Button
             variant="ghost" size="icon" className="h-6 w-6"
@@ -2186,8 +2217,21 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                   <div
                     key={b.id}
                     onPointerDown={(e) => iniciarArrasto(e, b)}
-                    onClick={(e) => e.stopPropagation()}
-                    className={`absolute overflow-hidden rounded-md ${
+                    // Selecionar de verdade, e não só parar a propagação: sem
+                    // seleção não aparecem as âncoras nem a alça de tamanho, e
+                    // a imagem virava um bloco de segunda classe no mapa.
+                    onClick={(e) => { e.stopPropagation(); selecao.clicar(b.id, e.shiftKey); }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      if (b.imageUrl) setImagemAmpliada({ url: b.imageUrl, titulo: b.label });
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (!selecao.tem(b.id)) selecao.definir([b.id]);
+                      setMenu({ x: e.clientX, y: e.clientY, boxId: b.id });
+                    }}
+                    className={`group absolute rounded-md ${
                       ativo ? "ring-2 ring-primary" : "ring-1 ring-border/60"
                     }`}
                     style={{ left: b.x, top: b.y, width: b.width, height: b.height }}
@@ -2199,7 +2243,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                         draggable={false}
                         /* `contain` e não `cover`: um print de página cortado
                            ao meio perde exatamente a dobra que motivou salvá-lo. */
-                        className="pointer-events-none h-full w-full bg-muted/40 object-contain"
+                        className="pointer-events-none h-full w-full rounded-md bg-muted/40 object-contain"
                       />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center bg-muted/40 text-[11px] text-muted-foreground">
@@ -2215,6 +2259,37 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                         className="absolute -bottom-1 -right-1 z-20 h-3 w-3 cursor-nwse-resize touch-none rounded-sm border border-primary bg-background"
                       />
                     )}
+
+                    {/* As mesmas âncoras dos blocos comuns.
+                        Sem elas, a única forma de ligar uma imagem ao resto do
+                        mapa era criar um bloco ao lado só para servir de ponte
+                        — e o print, que costuma ser a evidência do que a etapa
+                        faz, ficava solto no canto. */}
+                    {PONTOS.map((pt) => {
+                      const pos = pontoDoBloco({ ...b, x: 0, y: 0 }, pt);
+                      return (
+                        <button
+                          key={pt}
+                          type="button"
+                          onPointerDown={(ev) => pontoPointerDown(ev, b, pt)}
+                          onClick={(ev) => { ev.stopPropagation(); clicarNoPonto(b.id, pt); }}
+                          onDoubleClick={(ev) => {
+                            ev.stopPropagation();
+                            setLigando(null);
+                            setPreviaLigacao(null);
+                            setCriarDoPonto({ boxId: b.id, ponto: pt, x: ev.clientX, y: ev.clientY });
+                            setBuscaDoPonto("");
+                          }}
+                          className={`absolute z-20 h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-crosshair touch-none rounded-full border transition-colors ${
+                            ligando?.boxId === b.id && ligando.ponto === pt
+                              ? "border-primary bg-primary"
+                              : "border-border bg-background opacity-0 hover:bg-primary group-hover:opacity-100"
+                          } ${ativo ? "opacity-100" : ""}`}
+                          style={{ left: pos.x, top: pos.y }}
+                          aria-label={`Conectar pelo lado ${pt}`}
+                        />
+                      );
+                    })}
                   </div>
                 );
               }
@@ -2599,6 +2674,49 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       </div>
 
       {/* Menu de contexto do bloco */}
+      {/*
+        A imagem em tamanho grande.
+
+        O bloco no mapa é uma miniatura de 220px: um print de página inteira ali
+        não se lê. Aqui o arquivo aparece no tamanho original, limitado pela
+        janela — a "mais qualidade" não vem de outro arquivo, vem de parar de
+        encolher o mesmo.
+      */}
+      {imagemAmpliada && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-6"
+          onClick={() => setImagemAmpliada(null)}
+          onKeyDown={(e) => e.key === "Escape" && setImagemAmpliada(null)}
+          role="presentation"
+        >
+          <img
+            src={imagemAmpliada.url}
+            alt={imagemAmpliada.titulo || "imagem do mapa"}
+            /* Clicar NA imagem não fecha: quem quer ver de perto costuma
+               clicar nela para ampliar mais, e fechar ali seria hostil. */
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-full max-w-full rounded-lg object-contain shadow-2xl"
+          />
+          <button
+            type="button"
+            onClick={() => setImagemAmpliada(null)}
+            aria-label="Fechar"
+            className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full bg-white/10 text-white backdrop-blur-sm hover:bg-white/20"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          <a
+            href={imagemAmpliada.url}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-md bg-white/10 px-3 py-1.5 text-[12px] text-white backdrop-blur-sm hover:bg-white/20"
+          >
+            Abrir o arquivo original
+          </a>
+        </div>
+      )}
+
       {/*
         Escrevendo o texto de uma ligação.
         Fica FORA do <svg>: campo de formulário dentro de SVG exige

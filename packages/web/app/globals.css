@@ -200,3 +200,35 @@
   --viz-ord-3: #3987e5;
   --viz-ord-4: #86b6ef;
 }
+
+/**
+ * O mapa de funil em claro, dentro de um app que é escuro.
+ *
+ * O `<html>` carrega `.dark` fixo, e não há alternância de tema no produto. O
+ * mapa é o único lugar onde o fundo claro muda o trabalho: as cores dos blocos
+ * foram escolhidas para papel (a paleta veio de fluxograma), e sobre preto elas
+ * ficam saturadas e brigam entre si — num mapa de trinta blocos isso cansa.
+ *
+ * Redefine os tokens SÓ dentro do container, com os mesmos valores do tema
+ * claro. Assim tudo que o mapa desenha — bloco, nota, painel, paleta — vira
+ * claro junto, sem uma classe condicional em cada elemento.
+ */
+.mapa-claro {
+  --color-background: hsl(40 20% 98%);
+  --color-foreground: hsl(30 10% 12%);
+  --color-card: hsl(0 0% 100%);
+  --color-card-foreground: hsl(30 10% 12%);
+  --color-popover: hsl(0 0% 100%);
+  --color-popover-foreground: hsl(30 10% 12%);
+  --color-secondary: hsl(40 10% 94%);
+  --color-secondary-foreground: hsl(30 10% 20%);
+  --color-muted: hsl(40 8% 93%);
+  --color-muted-foreground: hsl(30 5% 45%);
+  --color-accent: hsl(47 90% 92%);
+  --color-accent-foreground: hsl(40 60% 28%);
+  --color-border: hsl(40 10% 88%);
+  --color-input: hsl(40 10% 88%);
+
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+}
