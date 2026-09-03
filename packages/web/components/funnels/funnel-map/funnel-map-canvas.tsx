@@ -230,6 +230,19 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
   const [menu, setMenu] = useState<{ x: number; y: number; boxId: string } | null>(null);
   /** Seta selecionada — permite apagar UMA ligação, sem levar as outras junto. */
   const [conectorSel, setConectorSel] = useState<string | null>(null);
+  /**
+   * O seletor que abre no duplo clique de uma bolinha.
+   *
+   * Guarda de ONDE saiu (bloco e âncora) e a posição na tela, porque o popup
+   * é desenhado fora do quadro — em coordenada de janela, não de desenho.
+   */
+  const [criarDoPonto, setCriarDoPonto] = useState<{
+    boxId: string;
+    ponto: PontoDeConexao;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [buscaDoPonto, setBuscaDoPonto] = useState("");
   /** Ponta solta da linha enquanto se arrasta de uma bolinha até outro bloco. */
   const [previaLigacao, setPreviaLigacao] = useState<{ x: number; y: number } | null>(null);
   const [ajuda, setAjuda] = useState(false);
@@ -585,6 +598,8 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
   }
 
   function adicionarBloco(tipo: string, cor: string, label: string) {
+    // Quem estava selecionado vira a origem da ligação — ver `ligarAoAnterior`.
+    const anterior = selecao.unico;
     const id = `b-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4).toString(36)}`;
     const p = proximaPosicao();
     alterarAba((a) => ({
@@ -594,6 +609,8 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
         { id, type: tipo, label, ...p, width: LARGURA_PADRAO, height: ALTURA_PADRAO, color: cor, status: "ativo" as StatusBloco },
       ],
     }));
+    // Lido ANTES de trocar a seleção: `selecao.definir` já aponta para o novo.
+    ligarAoAnterior(anterior, id);
     selecao.definir([id]);
   }
 
@@ -751,6 +768,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
   /** Bloco livre com ícone — o "quadradinho" pra qualquer coisa. */
   function adicionarGenerico(icone: string, rotulo: string) {
     const id = novoId("g");
+    const anterior = selecao.unico;
     const p = proximaPosicao();
     alterarAba((a) => ({
       ...a,
@@ -767,6 +785,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
         },
       ],
     }));
+    ligarAoAnterior(anterior, id);
     selecao.definir([id]);
   }
 
@@ -794,6 +813,40 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
    * Exigir as mesmas âncoras faria o desligar funcionar às vezes — pior que
    * não existir.
    */
+  /**
+   * Liga o bloco recem-criado ao que estava selecionado.
+   *
+   * Montar um funil e uma sequencia: captura, VSL, checkout. Sem isto, cada
+   * bloco novo exige um segundo gesto so para dizer o que ja era obvio pela
+   * ordem em que foram criados.
+   *
+   * So encadeia a partir de UM bloco selecionado. Com varios selecionados nao
+   * ha "o anterior", e clicar no vazio antes de criar quebra a corrente de
+   * proposito — e o gesto natural de "esse aqui comeca outra coisa".
+   */
+  function ligarAoAnterior(anteriorId: string | null, novoId: string) {
+    if (!anteriorId || anteriorId === novoId) return;
+    alterarAba((a) => {
+      // Nao repete uma ligacao que ja existe: criar, desfazer e criar de novo
+      // no mesmo lugar renderia duas setas sobrepostas.
+      if (a.connectors.some((c) => c.fromBox === anteriorId && c.toBox === novoId)) return a;
+      return {
+        ...a,
+        connectors: [
+          ...a.connectors,
+          {
+            id: `c-${Date.now().toString(36)}`,
+            fromBox: anteriorId,
+            fromPoint: "right",
+            toBox: novoId,
+            toPoint: "left",
+            type: "solid",
+          } as ConectorDoMapa,
+        ],
+      };
+    });
+  }
+
   function conectarOuDesligar(
     origem: string,
     pontoOrigem: PontoDeConexao,
@@ -892,6 +945,133 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
     };
     window.addEventListener("pointermove", mover);
     window.addEventListener("pointerup", soltar);
+  }
+
+  /**
+   * Arrasta a PONTA de uma ligacao existente para outro bloco.
+   *
+   * Antes so dava para apagar e refazer: dois gestos e a perda da ponta que
+   * estava certa. Aqui a extremidade solta segue o ponteiro e, ao soltar sobre
+   * um bloco, a ligacao reaponta — a ancora e recalculada pelo lado mais
+   * proximo, como no arrasto da bolinha.
+   *
+   * `qual` diz que ponta se move: `to` e a da seta, `from` e a da origem.
+   */
+  function arrastarPontaDaLigacao(
+    e: React.PointerEvent,
+    conector: ConectorDoMapa,
+    qual: "from" | "to",
+  ) {
+    e.stopPropagation();
+    e.preventDefault();
+    const fixoId = qual === "to" ? conector.fromBox : conector.toBox;
+    const fixo = blocos.find((b) => b.id === fixoId);
+    if (!fixo) return;
+
+    setConectorSel(conector.id);
+    // Reaproveita a previa do arrasto da bolinha: a linha tracejada que sai do
+    // lado fixo ate o ponteiro e exatamente o mesmo desenho.
+    setLigando({
+      boxId: fixoId,
+      ponto: qual === "to" ? conector.fromPoint : conector.toPoint,
+    });
+
+    const mover = (ev: PointerEvent) => setPreviaLigacao(paraDesenho(ev.clientX, ev.clientY));
+    const soltar = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", mover);
+      window.removeEventListener("pointerup", soltar);
+      setPreviaLigacao(null);
+      setLigando(null);
+
+      const alvo = blocoSob(ev.clientX, ev.clientY);
+      // Soltar no vazio ou no proprio bloco do outro lado nao muda nada: a
+      // ligacao volta para onde estava, e ninguem perde o trabalho por um
+      // arrasto que escorregou.
+      if (!alvo || alvo.id === fixoId) return;
+
+      const ancora = ancoraMaisProxima(alvo, ev.clientX, ev.clientY);
+      alterarAba((a) => ({
+        ...a,
+        connectors: a.connectors.map((c) =>
+          c.id !== conector.id
+            ? c
+            : qual === "to"
+              ? { ...c, toBox: alvo.id, toPoint: ancora }
+              : { ...c, fromBox: alvo.id, fromPoint: ancora },
+        ),
+      }));
+    };
+    window.addEventListener("pointermove", mover);
+    window.addEventListener("pointerup", soltar);
+  }
+
+  /**
+   * Cria um bloco JÁ ligado, a partir de uma bolinha.
+   *
+   * O gesto que faltava: montando um funil, a próxima peça quase sempre sai
+   * de onde a anterior termina. Antes eram três passos — criar na paleta,
+   * arrastar até o lugar, ligar.
+   *
+   * O bloco nasce ao lado da âncora de onde saiu: pela direita vai para a
+   * direita, por baixo desce. Cair sempre no centro da tela obrigaria a
+   * arrastá-lo de volta.
+   */
+  function criarLigadoAoPonto(tipo: string, cor: string, label: string) {
+    const alvo = criarDoPonto;
+    if (!alvo) return;
+    const origem = blocos.find((b) => b.id === alvo.boxId);
+    if (!origem) return;
+
+    const AFASTAMENTO = 90;
+    const desloca: Record<PontoDeConexao, { x: number; y: number }> = {
+      right: { x: origem.x + origem.width + AFASTAMENTO, y: origem.y },
+      left: { x: origem.x - LARGURA_PADRAO - AFASTAMENTO, y: origem.y },
+      bottom: { x: origem.x, y: origem.y + origem.height + AFASTAMENTO },
+      top: { x: origem.x, y: origem.y - ALTURA_PADRAO - AFASTAMENTO },
+    };
+    const pos = desloca[alvo.ponto];
+    // A âncora oposta é a que encara a origem: saindo pela direita, a seta
+    // chega pela esquerda do novo bloco.
+    const oposto: Record<PontoDeConexao, PontoDeConexao> = {
+      right: "left",
+      left: "right",
+      bottom: "top",
+      top: "bottom",
+    };
+
+    const id = novoId("b");
+    alterarAba((a) => ({
+      ...a,
+      boxes: [
+        ...a.boxes,
+        {
+          id,
+          type: tipo,
+          label,
+          x: snap(pos.x),
+          y: snap(pos.y),
+          width: LARGURA_PADRAO,
+          height: ALTURA_PADRAO,
+          color: cor,
+          status: "ativo" as StatusBloco,
+        },
+      ],
+      connectors: [
+        ...a.connectors,
+        {
+          id: `c-${Date.now().toString(36)}`,
+          fromBox: alvo.boxId,
+          fromPoint: alvo.ponto,
+          toBox: id,
+          toPoint: oposto[alvo.ponto],
+          type: "solid",
+        } as ConectorDoMapa,
+      ],
+    }));
+
+    selecao.definir([id]);
+    setCriarDoPonto(null);
+    setBuscaDoPonto("");
   }
 
   /** Apaga uma seta específica — a que estiver selecionada. */
@@ -1346,6 +1526,13 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
     !alvoDaBusca ||
     texto.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").includes(alvoDaBusca);
 
+  /** Casa ignorando caixa e acento — "trafego" acha "Tráfego". */
+  function casaComBusca(texto: string, alvo: string): boolean {
+    const n = (t: string) =>
+      t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    return !alvo.trim() || n(texto).includes(n(alvo.trim()));
+  }
+
   const SECOES_LIVRES = [
     { chave: "nota", rotulo: "Nota", acao: adicionarNota },
     // Terceiro caminho da imagem, ao lado de colar e arrastar: é o que a
@@ -1705,6 +1892,28 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                       strokeDasharray={c.type === "dashed" ? "8 4" : undefined}
                       markerEnd="url(#seta-mapa)"
                     />
+
+                    {/* Alças de reapontar — só na ligação selecionada.
+                        Visíveis o tempo todo, cada seta do mapa carregaria dois
+                        pontos extras e o desenho viraria uma nuvem de bolinhas
+                        que competem com as âncoras dos blocos. */}
+                    {ativa &&
+                      (
+                        [
+                          ["from", pontoDoBloco(de, c.fromPoint)],
+                          ["to", pontoDoBloco(para, c.toPoint)],
+                        ] as const
+                      ).map(([qual, pos]) => (
+                        <circle
+                          key={qual}
+                          cx={pos.x}
+                          cy={pos.y}
+                          r={5}
+                          className="pointer-events-auto cursor-grab fill-background stroke-primary"
+                          strokeWidth={2}
+                          onPointerDown={(ev) => arrastarPontaDaLigacao(ev, c, qual)}
+                        />
+                      ))}
                   </g>
                 );
               })}
@@ -1968,6 +2177,16 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                         type="button"
                         onPointerDown={(e) => pontoPointerDown(e, b, p)}
                         onClick={(e) => { e.stopPropagation(); clicarNoPonto(b.id, p); }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          // O primeiro clique do par já armou `ligando`; deixá-lo
+                          // armado faria o próximo clique em qualquer bloco criar
+                          // uma ligação que ninguém pediu.
+                          setLigando(null);
+                          setPreviaLigacao(null);
+                          setCriarDoPonto({ boxId: b.id, ponto: p, x: e.clientX, y: e.clientY });
+                          setBuscaDoPonto("");
+                        }}
                         className={`absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-crosshair touch-none rounded-full border transition-colors ${
                           ligando?.boxId === b.id && ligando.ponto === p
                             ? "border-primary bg-primary"
@@ -2136,6 +2355,85 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       </div>
 
       {/* Menu de contexto do bloco */}
+      {/*
+        O seletor do duplo clique na bolinha.
+        Fixo na janela e não dentro do quadro: dentro, ele herdaria o zoom e o
+        pan — a lista encolheria com o mapa afastado e sairia de vista ao
+        arrastar o fundo.
+      */}
+      {criarDoPonto && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setCriarDoPonto(null)}
+            onContextMenu={(e) => { e.preventDefault(); setCriarDoPonto(null); }}
+          />
+          <div
+            className="fixed z-50 w-56 overflow-hidden rounded-lg border border-border bg-popover shadow-lg"
+            style={{
+              // Não deixa o popup sair pela borda: perto da direita ou do fim
+              // da tela ele abre para dentro.
+              left: Math.min(criarDoPonto.x + 8, window.innerWidth - 240),
+              top: Math.min(criarDoPonto.y + 8, window.innerHeight - 340),
+            }}
+          >
+            <div className="border-b border-border p-1.5">
+              <Input
+                autoFocus
+                value={buscaDoPonto}
+                onChange={(e) => setBuscaDoPonto(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setCriarDoPonto(null);
+                  // Enter cria o primeiro da lista: digitar "check" e apertar
+                  // Enter é mais rápido do que mirar o item com o mouse.
+                  if (e.key === "Enter") {
+                    const primeiro = CATEGORIAS.flatMap((c) =>
+                      c.items.filter((i) => casaComBusca(i.label, buscaDoPonto)).map((i) => ({ i, cor: c.color })),
+                    )[0];
+                    if (primeiro) criarLigadoAoPonto(primeiro.i.type, primeiro.cor, primeiro.i.label);
+                  }
+                }}
+                placeholder="Que bloco entra aqui?"
+                className="h-7 text-[12px]"
+              />
+            </div>
+            <div className="max-h-64 overflow-y-auto p-1">
+              {CATEGORIAS.map((cat) => {
+                const itens = cat.items.filter((i) => casaComBusca(i.label, buscaDoPonto));
+                if (itens.length === 0) return null;
+                return (
+                  <div key={cat.name}>
+                    <p className="px-1.5 pb-0.5 pt-1.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      {cat.name}
+                    </p>
+                    {itens.map((i) => (
+                      <button
+                        key={i.type}
+                        type="button"
+                        onClick={() => criarLigadoAoPonto(i.type, cat.color, i.label)}
+                        className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[11px] hover:bg-muted"
+                      >
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-sm"
+                          style={{ background: cat.color }}
+                        />
+                        <IconePorNome nome={i.icon} className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{i.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })}
+              {CATEGORIAS.every((c) => c.items.every((i) => !casaComBusca(i.label, buscaDoPonto))) && (
+                <p className="px-1.5 py-4 text-center text-[11px] text-muted-foreground">
+                  Nada com “{buscaDoPonto}”.
+                </p>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
       {menu && (
         <>
           <div className="fixed inset-0 z-40" onPointerDown={() => setMenu(null)} />
