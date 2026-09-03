@@ -217,6 +217,45 @@ export function aplicarBuscaEMidia<
 }
 
 // ============================================================
+// Identidade do criativo
+// ============================================================
+
+/**
+ * Chave estável de um item da lista — **e a razão de ela existir**.
+ *
+ * No agrupamento por nome, o nome é único e serve. Na visão "Todos"
+ * (agrupamento por anúncio) o MESMO nome aparece N vezes, uma por `ad_id`: um
+ * mapa chaveado por nome guardaria um valor só, e os N cards leriam o do
+ * último — todos com o ROAS de um anúncio que não é o deles.
+ *
+ * Achado do gate de QA da 18.74, reproduzido em teste.
+ */
+export function chaveDoCriativo(
+  c: { name: string; ids: string[] },
+  agrupamento: Agrupamento,
+): string {
+  return agrupamento === "anuncio" ? (c.ids[0] ?? c.name) : c.name;
+}
+
+/**
+ * O preset da aba, ajustado ao default da tela.
+ *
+ * O Perpétuo abre com o filtro de relevância desligado (29.8). Sem este ajuste,
+ * a aba nasceria marcada como modificada (`•`) sem que ninguém tivesse tocado
+ * em nada — e o marcador que deveria significar "você mexeu aqui" viraria
+ * enfeite permanente.
+ */
+export function presetEfetivo(
+  visao: VisaoDeCriativos,
+  defaultShowAll: boolean,
+): FiltrosDaGaleria {
+  return {
+    ...visao.preset,
+    incluirBaixoGasto: visao.preset.incluirBaixoGasto || defaultShowAll,
+  };
+}
+
+// ============================================================
 // ROAS
 // ============================================================
 
@@ -251,7 +290,9 @@ export function roasDoCriativo(
 export function ordenarPorMetrica(
   criativos: AggregatedCreative[],
   metrica: MetricaDeOrdenacao,
-  roasPorNome?: Map<string, number | null>,
+  /** Mapa chaveado por `chaveDoCriativo` — **não** por nome. */
+  roasPorChave?: Map<string, number | null>,
+  agrupamento: Agrupamento = "nome",
 ): AggregatedCreative[] {
   const ordenado = [...criativos];
   const menorPrimeiro = (a: number | null, b: number | null) => {
@@ -287,7 +328,10 @@ export function ordenarPorMetrica(
       break;
     case "roas":
       ordenado.sort((a, b) =>
-        maiorPrimeiro(roasPorNome?.get(a.name) ?? null, roasPorNome?.get(b.name) ?? null),
+        maiorPrimeiro(
+          roasPorChave?.get(chaveDoCriativo(a, agrupamento)) ?? null,
+          roasPorChave?.get(chaveDoCriativo(b, agrupamento)) ?? null,
+        ),
       );
       break;
     default:

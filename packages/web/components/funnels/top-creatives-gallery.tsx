@@ -81,6 +81,8 @@ import {
   aplicarBuscaEMidia,
   roasDoCriativo,
   ordenarPorMetrica,
+  chaveDoCriativo,
+  presetEfetivo,
   type FiltrosDaGaleria,
   type MetricaDeOrdenacao,
 } from "@/lib/utils/top-criativos-visoes";
@@ -364,7 +366,8 @@ function formatMetricValue(
   c: AggregatedCreative,
   metric: MetricaDeOrdenacao,
   /** Story 18.74: só a ordenação por ROAS precisa do cruzamento. */
-  roasPorNome?: Map<string, number | null>,
+  roasPorChave?: Map<string, number | null>,
+  chave?: string,
 ): string {
   switch (metric) {
     case "cpl":
@@ -378,7 +381,7 @@ function formatMetricValue(
     case "spend":
       return fmtCurrency(c.spend);
     case "roas": {
-      const r = roasPorNome?.get(c.name);
+      const r = roasPorChave?.get(chave ?? c.name);
       // `null` = sem investimento ou sem faturamento atribuído. `0` é medição.
       return r == null ? "—" : `${r.toFixed(2)}x`;
     }
@@ -753,21 +756,22 @@ export function TopCreativesGallery({
   // o resto do arquivo (avisos da 8.9 e da 29.65) siga funcionando igual.
   const [visaoId, setVisaoId] = useState<string>(VISAO_INICIAL);
   const visao = visaoPorId(visaoId);
-  const [filtros, setFiltros] = useState<FiltrosDaGaleria>(() => ({
-    ...visaoPorId(VISAO_INICIAL).preset,
-    // Story 29.8: o Perpétuo abre sem o filtro de relevância (o CPA do Pixel
-    // fica alto demais e esconde quase tudo).
-    incluirBaixoGasto: defaultShowAll,
-  }));
+  // Story 29.8: o Perpétuo abre sem o filtro de relevância (o CPA do Pixel fica
+  // alto demais e esconde quase tudo). O preset da aba absorve esse default —
+  // senão a aba nasceria marcada como modificada sem ninguém ter tocado nela.
+  const [filtros, setFiltros] = useState<FiltrosDaGaleria>(() =>
+    presetEfetivo(visaoPorId(VISAO_INICIAL), defaultShowAll),
+  );
   const metric: MetricaDeOrdenacao = filtros.metrica;
   const showAll = filtros.incluirBaixoGasto;
-  const abaModificada = presetModificado(filtros, visao.preset);
+  const presetDaAba = presetEfetivo(visao, defaultShowAll);
+  const abaModificada = presetModificado(filtros, presetDaAba);
   const chips = chipsDeFiltro(filtros);
 
   /** Troca de aba: aplica o preset inteiro de uma vez (AC2). */
   const aplicarVisao = (id: string) => {
     setVisaoId(id);
-    setFiltros({ ...visaoPorId(id).preset });
+    setFiltros(presetEfetivo(visaoPorId(id), defaultShowAll));
   };
 
   // Story 18.76 — painel de métricas.
@@ -913,15 +917,18 @@ export function TopCreativesGallery({
    * planilha (o mesmo que o card imprime), nunca do ROAS do pixel. Ordenar por
    * um e exibir o outro é como o ranking passa a discordar do card.
    */
-  const roasPorNome = useMemo(() => {
+  const roasPorChave = useMemo(() => {
     const m = new Map<string, number | null>();
     if (!revenueData || revenueData.semDados) return m;
     for (const c of aggregated) {
       const { bruto } = vendasDeduzidas(c.ids, revenueData.byAdId);
-      m.set(c.name, roasDoCriativo(bruto, c.spend));
+      // Gate de QA: chaveado por `chaveDoCriativo`, NUNCA por nome. Na visão
+      // "Todos" o mesmo nome cobre N anúncios e um mapa por nome faria todos
+      // eles lerem o ROAS do último.
+      m.set(chaveDoCriativo(c, filtros.agrupamento), roasDoCriativo(bruto, c.spend));
     }
     return m;
-  }, [aggregated, revenueData]);
+  }, [aggregated, revenueData, filtros.agrupamento]);
 
   /** A aba de ROAS só existe se houver de onde tirar faturamento (AC4). */
   const roasDisponivel = !!revenueData && !revenueData.semDados;
@@ -1016,8 +1023,8 @@ export function TopCreativesGallery({
     [elegiveis, filtros],
   );
   const sorted = useMemo(
-    () => ordenarPorMetrica(buscados, metric, roasPorNome),
-    [buscados, metric, roasPorNome],
+    () => ordenarPorMetrica(buscados, metric, roasPorChave, filtros.agrupamento),
+    [buscados, metric, roasPorChave, filtros.agrupamento],
   );
 
   /**
@@ -1413,7 +1420,7 @@ export function TopCreativesGallery({
           {chips.length >= 2 && (
             <button
               type="button"
-              onClick={() => setFiltros({ ...visao.preset })}
+              onClick={() => setFiltros(presetDaAba)}
               className="text-[10px] text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground"
             >
               Limpar tudo
@@ -1475,11 +1482,14 @@ export function TopCreativesGallery({
           const custoConv = custoPorConversao(c.spend, conversoes);
           // Story 18.76: o mesmo contexto que alimentou os máximos das barras.
           const ctxMetrica = contextoDeMetrica(c);
+          // A MESMA chave que o mapa de ROAS usa e que o React usa como `key`.
+          // Duas noções de identidade é como o card lê o número de outro.
+          const chaveDoCard = chaveDoCriativo(c, filtros.agrupamento);
           return (
             <div
               // Story 18.74 (AC3): na visão "Todos" o mesmo nome aparece N
               // vezes (um card por anúncio), então a chave é o ad_id.
-              key={filtros.agrupamento === "anuncio" ? (c.ids[0] ?? c.name) : c.name}
+              key={chaveDoCard}
               className="group rounded-lg border border-border/20 bg-muted/10 overflow-hidden hover:border-border/50 transition-all hover:shadow-md cursor-pointer"
               onClick={() => setLightboxIndex(i)}
             >
@@ -1559,7 +1569,7 @@ export function TopCreativesGallery({
                   {c.name}
                 </p>
                 <p className="text-lg font-bold tracking-tight">
-                  {formatMetricValue(c, metric, roasPorNome)}
+                  {formatMetricValue(c, metric, roasPorChave, chaveDoCard)}
                 </p>
                 {/* Story 18.75 (AC1): grid 2×2 fixo. O CTR saiu daqui e desceu
                     uma linha (AC10) — o que o gestor precisa ler no card é

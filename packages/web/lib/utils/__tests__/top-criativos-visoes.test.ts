@@ -9,6 +9,8 @@ import {
   aplicarBuscaEMidia,
   roasDoCriativo,
   ordenarPorMetrica,
+  chaveDoCriativo,
+  presetEfetivo,
   type FiltrosDaGaleria,
 } from "../top-criativos-visoes";
 import type { AggregatedCreative } from "../top-creatives";
@@ -209,5 +211,68 @@ describe("ordenarPorMetrica — ausência vai para o fim, nunca para o topo", ()
     const lista = [base({ name: "b", spend: 1 }), base({ name: "a", spend: 9 })];
     ordenarPorMetrica(lista, "spend");
     expect(lista.map((c) => c.name)).toEqual(["b", "a"]);
+  });
+});
+
+describe("chaveDoCriativo — achado do gate de QA (18.74)", () => {
+  it("por nome, a chave é o nome", () => {
+    expect(chaveDoCriativo({ name: "Promo", ids: ["ad1"] }, "nome")).toBe("Promo");
+  });
+
+  it("por anúncio, a chave é o ad_id — dois cards do MESMO nome não colidem", () => {
+    // Este é o defeito que o gate pegou: na visão "Todos", dois anúncios com o
+    // mesmo Ad Name liam o mesmo valor de um mapa chaveado por nome, e os dois
+    // mostravam o ROAS de um anúncio que não era o deles.
+    const a = chaveDoCriativo({ name: "Promo", ids: ["ad1"] }, "anuncio");
+    const b = chaveDoCriativo({ name: "Promo", ids: ["ad2"] }, "anuncio");
+    expect(a).not.toBe(b);
+  });
+
+  it("sem ad_id, cai no nome em vez de virar undefined", () => {
+    expect(chaveDoCriativo({ name: "Promo", ids: [] }, "anuncio")).toBe("Promo");
+  });
+});
+
+describe("ordenarPorMetrica por ROAS na visão por anúncio", () => {
+  it("cada anúncio lê o SEU ROAS, mesmo com nomes iguais", () => {
+    const lista = [
+      base({ name: "Promo", ids: ["ad1"] }),
+      base({ name: "Promo", ids: ["ad2"] }),
+    ];
+    const porChave = new Map<string, number | null>([
+      ["ad1", 1],
+      ["ad2", 9],
+    ]);
+    const r = ordenarPorMetrica(lista, "roas", porChave, "anuncio");
+    // O de ROAS 9 vem primeiro. Com o mapa por nome, a ordem seria arbitrária
+    // e os dois leriam o mesmo valor.
+    expect(r[0].ids[0]).toBe("ad2");
+    expect(r[1].ids[0]).toBe("ad1");
+  });
+
+  it("no agrupamento por nome, continua lendo por nome", () => {
+    const lista = [base({ name: "A", ids: ["ad1"] }), base({ name: "B", ids: ["ad2"] })];
+    const porChave = new Map<string, number | null>([["A", 1], ["B", 9]]);
+    expect(ordenarPorMetrica(lista, "roas", porChave, "nome")[0].name).toBe("B");
+  });
+});
+
+describe("presetEfetivo — o Perpétuo não nasce com a aba marcada", () => {
+  it("absorve o default de mostrar baixo gasto", () => {
+    const cpl = visaoPorId("cpl");
+    expect(presetEfetivo(cpl, true).incluirBaixoGasto).toBe(true);
+    expect(presetEfetivo(cpl, false).incluirBaixoGasto).toBe(false);
+  });
+
+  it("com o default ligado, o estado inicial NÃO conta como modificado", () => {
+    // Sem isto, o `•` de "você mexeu aqui" apareceria no primeiro render de
+    // todo funil perpétuo — e viraria enfeite permanente.
+    const cpl = visaoPorId("cpl");
+    const inicial = presetEfetivo(cpl, true);
+    expect(presetModificado(inicial, presetEfetivo(cpl, true))).toBe(false);
+  });
+
+  it("a aba Todos não perde o que já tinha", () => {
+    expect(presetEfetivo(visaoPorId("todos"), false).incluirBaixoGasto).toBe(true);
   });
 });
