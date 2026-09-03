@@ -93,6 +93,7 @@ function Detalhe({
   saldo,
   pessoas,
   editavel,
+  camposDeRh = true,
   ehPropria,
   aba,
   onAba,
@@ -102,6 +103,8 @@ function Detalhe({
   saldo: React.ComponentProps<typeof AusenciasPessoa>["saldo"];
   pessoas: { userId: string; nome: string }[];
   editavel: boolean;
+  /** `false` quando a pessoa edita a própria ficha. Ver `FichaPessoa`. */
+  camposDeRh?: boolean;
   ehPropria: boolean;
   aba: string;
   onAba: (v: string) => void;
@@ -123,7 +126,7 @@ function Detalhe({
         </TabsTrigger>
       </TabsList>
       <TabsContent value="dados" className="mt-4">
-        <FichaPessoa ficha={ficha} editavel={editavel} />
+        <FichaPessoa ficha={ficha} editavel={editavel} camposDeRh={camposDeRh} />
       </TabsContent>
       <TabsContent value="ausencias" className="mt-4">
         <AusenciasPessoa
@@ -234,7 +237,8 @@ export default function PessoalPage() {
             Minha ficha
           </h1>
           <p className="text-sm text-muted-foreground">
-            Seus dados, suas férias e seu PDI. Para corrigir algo, fale com a liderança.
+            Seus dados, suas férias e seu PDI. Você mesmo mantém os seus dados em dia — data de
+            entrada e saldo de férias ficam com a liderança.
           </p>
         </div>
         <Detalhe
@@ -242,7 +246,11 @@ export default function PessoalPage() {
           ausencias={minha.ausencias}
           saldo={minha.saldo}
           pessoas={[]}
-          editavel={false}
+          // Quem melhor sabe o próprio telefone e contato de emergência é a
+          // pessoa. Concentrar isso num admin faz o diretório envelhecer:
+          // ninguém abre chamado para corrigir o próprio sobrenome.
+          editavel
+          camposDeRh={false}
           ehPropria
           aba={aba}
           onAba={setAba}

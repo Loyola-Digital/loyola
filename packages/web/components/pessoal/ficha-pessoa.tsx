@@ -77,7 +77,23 @@ function Campo({
   );
 }
 
-export function FichaPessoa({ ficha, editavel }: { ficha: Ficha; editavel: boolean }) {
+export function FichaPessoa({
+  ficha,
+  editavel,
+  camposDeRh = true,
+}: {
+  ficha: Ficha;
+  editavel: boolean;
+  /**
+   * Se os campos que só o RH mexe entram na edição.
+   *
+   * `false` quando é a pessoa editando a própria ficha. A data de entrada
+   * alimenta o cálculo de saldo de férias — editável por quem a usa, vira
+   * formulário de auto-aprovação. O servidor descarta esses campos de qualquer
+   * forma; aqui é para não OFERECER um controle que não vai valer.
+   */
+  camposDeRh?: boolean;
+}) {
   const salvar = useSalvarFicha(ficha.userId);
   const arquivoRef = useRef<HTMLInputElement>(null);
   const [processandoFoto, setProcessandoFoto] = useState(false);
@@ -132,14 +148,19 @@ export function FichaPessoa({ ficha, editavel }: { ficha: Ficha; editavel: boole
       nomeCompleto: form.nomeCompleto || null,
       cargo: form.cargo || null,
       nascimento: form.nascimento || null,
-      entradaEm: form.entradaEm || null,
       telefone: form.telefone || null,
       emailContato: form.emailContato || null,
       emergenciaNome: form.emergenciaNome || null,
       emergenciaTelefone: form.emergenciaTelefone || null,
       emergenciaParentesco: form.emergenciaParentesco || null,
-      observacoes: form.observacoes || null,
     };
+    // Campos de RH só vão quando quem edita pode mudá-los. Mandá-los sempre
+    // funcionaria — o servidor descarta —, mas uma requisição que carrega o
+    // que vai ser jogado fora esconde a regra de quem lê o código depois.
+    if (camposDeRh) {
+      dados.entradaEm = form.entradaEm || null;
+      dados.observacoes = form.observacoes || null;
+    }
     // Só manda a foto se mudou: são dezenas de KB, e reenviar a cada gravação
     // de um telefone seria desperdício.
     if (foto !== ficha.foto) dados.foto = foto;
@@ -227,7 +248,7 @@ export function FichaPessoa({ ficha, editavel }: { ficha: Ficha; editavel: boole
         <Campo rotulo="Nome completo" valor={form.nomeCompleto ?? ""} onChange={(v) => mudar("nomeCompleto", v)} editavel={editavel} dica={ficha.nome} />
         <Campo rotulo="Cargo" valor={form.cargo ?? ""} onChange={(v) => mudar("cargo", v)} editavel={editavel} />
         <Campo rotulo="Data de nascimento" valor={form.nascimento ?? ""} onChange={(v) => mudar("nascimento", v)} editavel={editavel} tipo="date" />
-        <Campo rotulo="Data de entrada" valor={form.entradaEm ?? ""} onChange={(v) => mudar("entradaEm", v)} editavel={editavel} tipo="date" />
+        <Campo rotulo="Data de entrada" valor={form.entradaEm ?? ""} onChange={(v) => mudar("entradaEm", v)} editavel={editavel && camposDeRh} tipo="date" />
         <Campo rotulo="Telefone" valor={form.telefone ?? ""} onChange={(v) => mudar("telefone", v)} editavel={editavel} dica="(11) 90000-0000" />
         <Campo rotulo="E-mail de contato" valor={form.emailContato ?? ""} onChange={(v) => mudar("emailContato", v)} editavel={editavel} dica={ficha.email} />
       </div>
