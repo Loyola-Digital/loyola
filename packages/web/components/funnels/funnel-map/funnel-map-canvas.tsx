@@ -653,6 +653,19 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
    * e o que acontece ao ramificar o mesmo bloco duas vezes (um upsell e um
    * downsell saindo do mesmo checkout).
    */
+  /**
+   * Perto do bloco selecionado, ou no centro quando não há nenhum.
+   *
+   * Vale para o que NÃO encadeia — nota, texto, imagem. Eles não ganham seta
+   * (uma anotação não é etapa do funil), mas aparecer no centro da tela quando
+   * a pessoa está trabalhando num canto obriga a arrastar de volta do mesmo
+   * jeito que os blocos obrigavam.
+   */
+  function pertoDoSelecionado(w: number, h: number): { x: number; y: number } {
+    const alvo = selecao.unico ? blocos.find((b) => b.id === selecao.unico) : null;
+    return alvo ? posicaoAFrente(alvo, "right", w, h) : proximaPosicao(w, h);
+  }
+
   function posicaoAFrente(
     origem: BlocoDoMapa,
     lado: PontoDeConexao = "right",
@@ -702,7 +715,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
   /** Nota adesiva: texto solto, sem status nem conexão. */
   function adicionarNota() {
     const id = novoId("n");
-    const p = proximaPosicao(NOTA_LARGURA, NOTA_ALTURA);
+    // Perto do bloco selecionado, mas SEM ligação: a nota comenta a etapa, e
+    // uma seta saindo dela diria que o funil passa por um post-it.
+    const p = pertoDoSelecionado(NOTA_LARGURA, NOTA_ALTURA);
     alterarAba((a) => ({
       ...a,
       boxes: [
@@ -731,7 +746,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
    */
   async function adicionarImagem(arquivo: File, posicao?: { x: number; y: number }) {
     const id = novoId("img");
-    const p = posicao ?? proximaPosicao(IMAGEM_LARGURA, IMAGEM_ALTURA);
+    // Arrastado, vale onde soltou. Colado ou escolhido, entra perto do bloco
+    // selecionado — costuma ser o print DAQUELA página.
+    const p = posicao ?? pertoDoSelecionado(IMAGEM_LARGURA, IMAGEM_ALTURA);
     alterarAba((a) => ({
       ...a,
       boxes: [
@@ -783,7 +800,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
   /** Bloco de texto: título ou parágrafo solto no board. */
   function adicionarTexto(estilo: "h1" | "h2" | "h3" | "corpo") {
     const id = novoId("t");
-    const p = proximaPosicao(TEXTO_LARGURA, TEXTO_ALTURA);
+    const p = pertoDoSelecionado(TEXTO_LARGURA, TEXTO_ALTURA);
     alterarAba((a) => ({
       ...a,
       boxes: [
