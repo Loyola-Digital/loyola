@@ -19,12 +19,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Icons from "lucide-react";
 import {
-  ChevronDown, ChevronRight, ClipboardCopy, Copy, FileDown, Keyboard, Loader2, Maximize2, Minimize2, Minus, Moon, Spline, Sun, Waypoints,
+  ChevronDown, ChevronRight, ClipboardCopy, Copy, FileDown, FileText, Keyboard, Loader2, Maximize2, Minimize2, Minus, Moon, Spline, Sun, Waypoints,
   PanelLeftClose, PanelLeftOpen, Pencil, Plus, RotateCcw, Save, Scan, Search,
   StickyNote, Trash2, Type, Undo2, Redo2, Unlink, X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { imagemDoEvento, useSubirImagemDoMapa } from "@/lib/hooks/use-mapa-imagem";
+import { encurtar, linkAoColar, pedacosDoTexto } from "@/lib/utils/texto-com-links";
+import { PDF, imagemDoEvento, useSubirImagemDoMapa } from "@/lib/hooks/use-mapa-imagem";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -44,6 +45,7 @@ import {
   IMAGEM_LARGURA,
   TIPO_IMAGEM,
   TIPO_NOTA,
+  TIPO_PDF,
   TIPO_TEXTO,
   ALTURA_PADRAO,
   LARGURA_PADRAO,
@@ -312,6 +314,8 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       return novo;
     });
   }
+  /** O documento aberto no leitor. `null` = nenhum. */
+  const [pdfAberto, setPdfAberto] = useState<{ url: string; titulo: string } | null>(null);
   /** A imagem aberta em tamanho grande. `null` = nenhuma. */
   const [imagemAmpliada, setImagemAmpliada] = useState<{ url: string; titulo: string } | null>(
     null,
@@ -843,7 +847,8 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
    * `posicao` vem do arrastar (onde soltou); colando, cai no fluxo normal.
    */
   async function adicionarImagem(arquivo: File, posicao?: { x: number; y: number }) {
-    const id = novoId("img");
+    const ehPdf = arquivo.type === PDF;
+    const id = novoId(ehPdf ? "pdf" : "img");
     // Arrastado, vale onde soltou. Colado ou escolhido, entra perto do bloco
     // selecionado — costuma ser o print DAQUELA página.
     const p = posicao ?? pertoDoSelecionado(IMAGEM_LARGURA, IMAGEM_ALTURA);
@@ -852,8 +857,13 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       boxes: [
         ...a.boxes,
         {
-          id, type: TIPO_IMAGEM, label: arquivo.name.slice(0, 120), ...p,
-          width: IMAGEM_LARGURA, height: IMAGEM_ALTURA,
+          id,
+          // PDF e imagem seguem o mesmo caminho de upload e o mesmo bloco; só
+          // o desenho difere. Separar em duas funções duplicaria o tratamento
+          // de erro, o "subindo…" e o posicionamento.
+          type: ehPdf ? TIPO_PDF : TIPO_IMAGEM,
+          label: arquivo.name.slice(0, 120), ...p,
+          width: IMAGEM_LARGURA, height: ehPdf ? 120 : IMAGEM_ALTURA,
           color: "#64748b", status: "ativo" as StatusBloco,
           imageUrl: null, imageKey: null,
         },
@@ -884,10 +894,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
    * não é reaproveitado, e um input pendurado no DOM teria de ser limpo entre
    * usos para permitir escolher o MESMO arquivo duas vezes seguidas.
    */
-  function escolherImagem() {
+  function escolherImagem(accept = "image/*") {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = "image/*";
+    input.accept = accept;
     input.onchange = () => {
       const f = input.files?.[0];
       if (f) void adicionarImagem(f);
@@ -1731,14 +1741,19 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
     // Terceiro caminho da imagem, ao lado de colar e arrastar: é o que a
     // pessoa procura quando o arquivo está no disco e não na área de
     // transferência.
-    { chave: "imagem", rotulo: "Imagem", acao: escolherImagem },
+    { chave: "imagem", rotulo: "Imagem", acao: () => escolherImagem("image/*") },
+    // Item próprio, e não um "Imagem ou PDF": quem procura anexar um briefing
+    // não pensa em "imagem", e um rótulo duplo esconde as duas coisas.
+    { chave: "pdf", rotulo: "PDF", acao: () => escolherImagem("application/pdf") },
     ...(["h1", "h2", "h3", "corpo"] as const).map((e) => ({
       chave: e,
       rotulo: e === "corpo" ? "Texto" : e.toUpperCase(),
       acao: () => adicionarTexto(e),
     })),
   ];
-  const filtroLivres = SECOES_LIVRES.filter((l) => casa(l.rotulo) || casa("anotar") || casa("print"));
+  const filtroLivres = SECOES_LIVRES.filter(
+    (l) => casa(l.rotulo) || casa("anotar") || casa("print") || casa("anexo") || casa("documento"),
+  );
   // Ícone casa pelo grupo OU pelo próprio rótulo — o emoji antigo só dava pra
   // achar pelo grupo, porque não tinha nome nenhum.
   const filtrarIcones = (g: { grupo: string; itens: { icone: string; rotulo: string }[] }) =>
@@ -2210,6 +2225,86 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
               const meta = metaDoTipo(b.type);
               const ativo = selecao.tem(b.id);
 
+              /**
+               * Documento anexado.
+               *
+               * Não desenha a página: renderizar PDF no quadro exigiria carregar
+               * o leitor inteiro por bloco, e um mapa com cinco anexos ficaria
+               * pesado antes de alguém abrir qualquer um. A capa diz o que é e
+               * o duplo clique abre no leitor.
+               */
+              if (b.type === TIPO_PDF) {
+                return (
+                  <div
+                    key={b.id}
+                    onPointerDown={(e) => iniciarArrasto(e, b)}
+                    onClick={(e) => { e.stopPropagation(); selecao.clicar(b.id, e.shiftKey); }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      if (b.imageUrl) setPdfAberto({ url: b.imageUrl, titulo: b.label });
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (!selecao.tem(b.id)) selecao.definir([b.id]);
+                      setMenu({ x: e.clientX, y: e.clientY, boxId: b.id });
+                    }}
+                    className={`group absolute flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed bg-card px-3 ${
+                      ativo ? "ring-2 ring-primary" : ""
+                    }`}
+                    style={{
+                      left: b.x, top: b.y, width: b.width, height: b.height,
+                      borderColor: b.imageUrl ? "#dc2626" : "var(--color-border)",
+                    }}
+                  >
+                    {b.imageUrl ? (
+                      <>
+                        <FileText className="h-6 w-6 shrink-0" style={{ color: "#dc2626" }} />
+                        <span className="line-clamp-2 text-center text-[11px] font-medium leading-tight">
+                          {b.label || "Documento"}
+                        </span>
+                        <span className="text-[9px] text-muted-foreground">
+                          duplo clique para abrir
+                        </span>
+                      </>
+                    ) : (
+                      <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        subindo…
+                      </span>
+                    )}
+
+                    {ativo && (
+                      <span
+                        role="presentation"
+                        onPointerDown={(ev) => iniciarResize(ev, b)}
+                        onClick={(ev) => ev.stopPropagation()}
+                        className="absolute -bottom-1 -right-1 z-20 h-3 w-3 cursor-nwse-resize touch-none rounded-sm border border-primary bg-background"
+                      />
+                    )}
+
+                    {PONTOS.map((pt) => {
+                      const pos = pontoDoBloco({ ...b, x: 0, y: 0 }, pt);
+                      return (
+                        <button
+                          key={pt}
+                          type="button"
+                          onPointerDown={(ev) => pontoPointerDown(ev, b, pt)}
+                          onClick={(ev) => { ev.stopPropagation(); clicarNoPonto(b.id, pt); }}
+                          className={`absolute z-20 h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-crosshair touch-none rounded-full border transition-colors ${
+                            ligando?.boxId === b.id && ligando.ponto === pt
+                              ? "border-primary bg-primary"
+                              : "border-border bg-background opacity-0 hover:bg-primary group-hover:opacity-100"
+                          } ${ativo ? "opacity-100" : ""}`}
+                          style={{ left: pos.x, top: pos.y }}
+                          aria-label={`Conectar pelo lado ${pt}`}
+                        />
+                      );
+                    })}
+                  </div>
+                );
+              }
+
               // A imagem é o conteúdo: moldura de bloco por cima disputaria
               // com ela justamente o que se quer ver.
               if (b.type === TIPO_IMAGEM) {
@@ -2346,6 +2441,33 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                           if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); confirmarTexto(); }
                         }}
                         onPointerDown={(ev) => ev.stopPropagation()}
+                        /**
+                         * Colar uma URL por cima do texto selecionado vira
+                         * link, como no ClickUp — o atalho que evita ter de
+                         * conhecer a sintaxe `[rótulo](url)`.
+                         *
+                         * Sem seleção, ou colando algo que não é endereço,
+                         * `linkAoColar` devolve `null` e o colar segue o
+                         * caminho normal: interceptar tudo faria o Ctrl+V
+                         * comum parar de funcionar dentro da nota.
+                         */
+                        onPaste={(ev) => {
+                          const alvo = ev.currentTarget;
+                          const r = linkAoColar(
+                            editando.valor,
+                            alvo.selectionStart ?? 0,
+                            alvo.selectionEnd ?? 0,
+                            ev.clipboardData.getData("text"),
+                          );
+                          if (!r) return;
+                          ev.preventDefault();
+                          setEditando({ id: b.id, valor: r.texto });
+                          // O cursor precisa ir para o fim do que entrou, e o
+                          // React ainda não repintou — daí o próximo quadro.
+                          requestAnimationFrame(() => {
+                            alvo.setSelectionRange(r.cursor, r.cursor);
+                          });
+                        }}
                         className="h-full w-full resize-none bg-transparent outline-none"
                         style={{
                           fontSize: tamanho,
@@ -2365,7 +2487,33 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                           color: ehNota ? "#1f2937" : "var(--color-foreground)",
                         }}
                       >
-                        {b.texto || (
+                        {b.texto ? (
+                          /* O texto continua texto; só os endereços viram
+                             âncora na hora de desenhar. `stopPropagation` no
+                             ponteiro impede que clicar no link comece a
+                             arrastar o bloco — sem isso o link nunca abriria. */
+                          pedacosDoTexto(b.texto).map((pedaco, i) =>
+                            pedaco.tipo === "texto" ? (
+                              <span key={i}>{pedaco.valor}</span>
+                            ) : (
+                              <a
+                                key={i}
+                                href={pedaco.url}
+                                target="_blank"
+                                rel="noreferrer noopener"
+                                onPointerDown={(ev) => ev.stopPropagation()}
+                                onClick={(ev) => ev.stopPropagation()}
+                                title={pedaco.url}
+                                className="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                                style={{ color: ehNota ? "#1d4ed8" : "var(--color-primary)" }}
+                              >
+                                {pedaco.rotulo === pedaco.url
+                                  ? encurtar(pedaco.rotulo)
+                                  : pedaco.rotulo}
+                              </a>
+                            ),
+                          )
+                        ) : (
                           <span className="opacity-40">
                             {ehNota ? "Duplo clique pra escrever" : "Texto"}
                           </span>
@@ -2674,6 +2822,45 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       </div>
 
       {/* Menu de contexto do bloco */}
+      {/*
+        O documento, em tela quase cheia.
+
+        `<iframe>` com o próprio leitor do navegador: ele já tem zoom, busca,
+        páginas e impressão. Embutir uma biblioteca de PDF traria megabytes de
+        JavaScript para repetir o que o navegador faz melhor.
+      */}
+      {pdfAberto && (
+        <div className="fixed inset-0 z-[60] flex flex-col bg-black/80 p-4 md:p-8">
+          <div className="mb-2 flex items-center gap-2">
+            <FileText className="h-4 w-4 shrink-0 text-white/80" />
+            <p className="min-w-0 flex-1 truncate text-[13px] font-medium text-white">
+              {pdfAberto.titulo || "Documento"}
+            </p>
+            <a
+              href={pdfAberto.url}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-md bg-white/10 px-2.5 py-1 text-[11px] text-white backdrop-blur-sm hover:bg-white/20"
+            >
+              Abrir em aba nova
+            </a>
+            <button
+              type="button"
+              onClick={() => setPdfAberto(null)}
+              aria-label="Fechar"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/10 text-white backdrop-blur-sm hover:bg-white/20"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <iframe
+            src={pdfAberto.url}
+            title={pdfAberto.titulo || "Documento"}
+            className="min-h-0 flex-1 rounded-lg bg-white"
+          />
+        </div>
+      )}
+
       {/*
         A imagem em tamanho grande.
 
