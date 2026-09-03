@@ -216,7 +216,10 @@ export async function reenviarPendentes(
           inicio: f.start,
           fim: f.end,
         });
-        const { googleSyncPendente: _, ...limpa } = f;
+        // Remove `googleSyncPendente` do objeto sem criar a variável de
+        // descarte que o `no-unused-vars` reprova.
+        const limpa = { ...f };
+        delete (limpa as { googleSyncPendente?: unknown }).googleSyncPendente;
         novas[i] = { ...limpa, googleEventId: id };
         resolvidas++;
         mudou = true;
