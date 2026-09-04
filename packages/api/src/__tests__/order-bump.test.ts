@@ -78,17 +78,39 @@ describe("acessório e avulso são coisas diferentes (18.66, AC1)", () => {
     expect(r.compradoresSoBump).toBe(1);
   });
 
+  /**
+   * Story 29.74 (AC8) — este caso era UM só, com dois asserts acoplados:
+   * `faturamentoTotal === 500` e `representatividade === 100/500`. Quando o
+   * `faturamentoTotal` passou a ser o faturamento da ETAPA (AC7), o primeiro
+   * assert quebrou — e a correção tentadora seria trocar 500 por 800 no mesmo
+   * `it`, o que faria a representatividade passar a valer 100/800 = 12,5% sem
+   * ninguém notar. Isso desfaria a 18.68. Por isso são dois casos agora: um
+   * para o número que a tela imprime, outro para o denominador das taxas.
+   */
+  it("o faturamento da etapa inclui o avulso — é o número do card (29.74, AC7)", () => {
+    // 400 principal + 100 acessório + 300 avulso. Uma definição só de
+    // faturamento: o tooltip deste card e o card do topo dizem o mesmo valor.
+    expect(r.faturamentoTotal).toBe(800);
+  });
+
   it("a representatividade é sobre a receita da CAPTAÇÃO (18.68, AC7)", () => {
-    // ⚠️ MUDOU na 18.68. Antes o denominador era `principal + acessório +
-    // avulso` (800 aqui). Agora é só a captação — 400 principal + 100
-    // acessório = 500 — porque o avulso é venda de OUTRA oferta, e mantê-lo no
-    // denominador dilui a métrica com receita que não é do funil.
+    // ⚠️ MUDOU na 18.68 e NÃO muda na 29.74. O denominador é só a captação —
+    // 400 principal + 100 acessório = 500 — porque o avulso é venda de OUTRA
+    // oferta, e mantê-lo aqui dilui a métrica com receita que não é do funil.
     //
     // Medido em produção: no dg-pg02 o denominador antigo incluía R$ 252.772
     // de Mentoria, Automações e Comunidade, e a representatividade saía 2,95%
     // em vez de 6,39%.
-    expect(r.faturamentoTotal).toBe(500);
+    expect(r.receitaCaptacao).toBe(500);
     expect(r.representatividade).toBeCloseTo(100 / 500, 10);
+  });
+
+  it("faturamento da etapa e receita de captação são campos DIFERENTES", () => {
+    // O que a 29.74 comprou: dois nomes para duas perguntas. Se um dia os dois
+    // voltarem a ser o mesmo número, ou o card volta a contradizer o tooltip
+    // (se colapsarem no menor) ou a 18.68 foi desfeita (se colapsarem no maior).
+    expect(r.faturamentoTotal).not.toBe(r.receitaCaptacao);
+    expect(r.faturamentoTotal - r.receitaCaptacao).toBe(r.bumpAvulso);
   });
 
   it("o avulso NÃO entra no denominador", () => {
@@ -188,12 +210,17 @@ describe("a tabela fecha com a etapa (18.67, AC5)", () => {
   });
 
   it("Σ (AOV c/ bump × compradores) = receita da captação", () => {
-    // Desde a 18.68 o `faturamentoTotal` JÁ é só a captação, então não há mais
-    // o que subtrair — a tabela fecha com ele diretamente.
+    // Desde a 18.68 a base da tabela é só a captação, então não há o que
+    // subtrair — ela fecha com o denominador diretamente.
+    //
+    // Story 29.74: o campo passou a se chamar `receitaCaptacao`.
+    // `faturamentoTotal` agora é o faturamento da ETAPA e NÃO fecha com a
+    // tabela — que é o ponto: são duas perguntas diferentes.
     const r = resumirOrderBump(FIXTURE, true);
     const t = tabelaPorPublico(FIXTURE);
     const soma = t.reduce((s, l) => s + l.aovComBump! * l.compradores, 0);
-    expect(soma).toBeCloseTo(r.faturamentoTotal, 6);
+    expect(soma).toBeCloseTo(r.receitaCaptacao, 6);
+    expect(soma).not.toBeCloseTo(r.faturamentoTotal, 6);
   });
 });
 
@@ -604,10 +631,19 @@ describe("Story 18.68 (AC7) — produto de outra etapa fica fora do denominador"
 
   it("a Mentoria não entra na receita da captação", () => {
     const r = resumirOrderBump(COM_OUTRA_ETAPA, true);
-    expect(r.faturamentoTotal).toBeCloseTo(39.9 + 197, 6);
+    expect(r.receitaCaptacao).toBeCloseTo(39.9 + 197, 6);
     // Com ela dentro seriam R$ 4.736,90 e a representatividade cairia de
     // 83% para 4% — foi o que aconteceu na medição contra produção.
-    expect(r.faturamentoTotal).not.toBeCloseTo(4736.9, 2);
+    expect(r.receitaCaptacao).not.toBeCloseTo(4736.9, 2);
+  });
+
+  it("mas a Mentoria ENTRA no faturamento da etapa (29.74, AC7)", () => {
+    // Ela foi vendida: é faturamento. O que ela não é, é receita da captação.
+    // Este par de casos é a fronteira inteira que a 29.74 desenhou — um número
+    // para "quanto entrou", outro para "quanto entrou POR ESTE funil".
+    const r = resumirOrderBump(COM_OUTRA_ETAPA, true);
+    expect(r.faturamentoTotal).toBeCloseTo(4736.9, 2);
+    expect(r.faturamentoTotal - r.receitaCaptacao).toBeCloseTo(4500, 2);
   });
 
   it("e não conta como comprador da captação", () => {

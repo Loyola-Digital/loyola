@@ -335,14 +335,44 @@ export function agruparEmCheckouts(
 export interface ResumoOrderBump {
   /** A etapa tem ao menos um produto marcado como order bump. */
   temConfiguracao: boolean;
+  /**
+   * Story 29.74 (AC7) — faturamento da ETAPA: a soma de **todas** as linhas de
+   * receita do recorte, sem exceção. É o mesmo número que o card imprime
+   * (`R$ 57.549,00` no BBE a1, medido em 2026-09-04).
+   *
+   * ⚠️ Até a 29.74 este campo valia `receitaBase + bumpAcessorio` — sem o bump
+   * avulso e sem os checkouts que não ancoram. O resultado era o tooltip deste
+   * card dizendo "Faturamento total da etapa: R$ 55.814,00" na mesma tela em
+   * que o card do topo dizia R$ 57.549,00. Decisão do gestor: o produto tem UMA
+   * definição de faturamento, e é esta.
+   *
+   * **Não use este campo como denominador de taxa** — para isso existe
+   * `receitaCaptacao`, logo abaixo.
+   */
   faturamentoTotal: number;
+  /**
+   * Story 29.74 (AC8) — o denominador das taxas: `receitaBase + bumpAcessorio`.
+   *
+   * É o valor que `faturamentoTotal` tinha antes, agora com nome próprio. A
+   * regra é da Story 18.68 (AC7) e continua intacta: o bump avulso é venda de
+   * OUTRA oferta, e mantê-lo aqui dilui a métrica com receita que não é do
+   * funil. Medido lá: no dg-pg02 o denominador "total" incluía R$ 252.772 de
+   * Mentoria, Automações e Comunidade, e a representatividade saía 2,95% em vez
+   * de 6,39%; no pg04, 8,13% em vez de 23,96%.
+   */
+  receitaCaptacao: number;
   /** Receita de produto NÃO marcado como bump. */
   faturamentoPrincipal: number;
   /** Bump de quem TEM produto principal — o bump de verdade (AC2 da 18.66). */
   bumpAcessorio: number;
-  /** Bump de quem NÃO tem principal: venda própria desses produtos (AC3). */
+  /**
+   * Bump de quem NÃO tem principal: venda própria desses produtos (AC3).
+   *
+   * Story 29.74: passou a CONTAR em `faturamentoTotal` — foi vendido, é
+   * faturamento. Continua fora de `receitaCaptacao`, que é outra pergunta.
+   */
   bumpAvulso: number;
-  /** `bumpAcessorio ÷ faturamentoTotal`. `null` quando não há faturamento. */
+  /** `bumpAcessorio ÷ receitaCaptacao`. `null` quando não há receita. */
   representatividade: number | null;
   /** Compradores com ao menos um produto principal. */
   compradoresComPrincipal: number;
@@ -535,10 +565,24 @@ export function resumirOrderBump(
    */
   const receitaCaptacao = receitaBase + bumpAcessorio;
 
+  /**
+   * Story 29.74 (AC7) — o faturamento da etapa sai das LINHAS, não dos
+   * checkouts consolidados.
+   *
+   * `consolidar()` só soma `c.base` quando o checkout ancora, então derivar o
+   * total dali deixaria de fora o bump avulso e as linhas de checkouts que não
+   * ancoram — que é justamente o que fazia este número divergir do card.
+   * Somando as linhas, ele passa a ser, por construção, o mesmo valor que a
+   * rota calcula: no Perpétuo `Σ dedupMap` e no Lançamento `totalBruto` somam
+   * exatamente estas linhas.
+   */
+  const faturamentoDaEtapa = linhas.reduce((s, l) => s + l.bruto, 0);
+
   return {
     temConfiguracao,
     sinalDeCheckout: sinal,
-    faturamentoTotal: receitaCaptacao,
+    faturamentoTotal: faturamentoDaEtapa,
+    receitaCaptacao,
     faturamentoPrincipal: receitaBase,
     bumpAcessorio,
     bumpAvulso,

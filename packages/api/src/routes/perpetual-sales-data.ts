@@ -124,6 +124,7 @@ const EMPTY_SALES_DATA = {
   // Story 29.53 (AC3): sem planilha não há linha para classificar. `null` é o
   // mesmo sinal de "não há quebra a mostrar" que o funil sem classificação dá.
   porTipoProduto: null as { principal: number; order_bump: number; upsell: number } | null,
+  faturamentoPorTipo: null as { principal: number; order_bump: number; upsell: number } | null,
   faturamentoBruto: 0,
   faturamentoLiquido: 0,
   faturamentoLiquidoCalculado: 0,
@@ -323,6 +324,17 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
        * Conta as linhas que são receita — as mesmas que entram no faturamento.
        */
       const quebraPorTipo = quebraVazia();
+      /**
+       * Story 29.74 (AC1) — a MESMA quebra, em valor bruto.
+       *
+       * Vive aqui, ao lado da contagem, e é alimentada no mesmo laço a partir
+       * do mesmo `tipoDaLinha` e do mesmo `bruto` que entram no `dedupMap`.
+       * Um segundo passe pelas linhas — ou derivar de `resumirOrderBump` —
+       * daria duas somas da mesma coisa, e elas divergiriam na primeira mudança
+       * de regra. Sendo o mesmo laço, `Σ faturamentoPorTipo === faturamentoBruto`
+       * por construção, não por coincidência.
+       */
+      const faturamentoPorTipo = quebraVazia();
       /** Story 29.61 — alimenta `resumirOrderBump` e `tabelaPorPublico`. */
       const linhasParaPublico: LinhaDeVenda[] = [];
       // txIds reembolsados → remove a linha "paid" pareada (mesmo id) das vendas.
@@ -377,6 +389,7 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
           tiposDeProduto,
         );
         quebraPorTipo[tipoDaLinha] += 1;
+        faturamentoPorTipo[tipoDaLinha] += bruto;
 
         // Story 29.61 — a mesma linha que entra na quebra entra na análise de
         // público. Derivar as duas do mesmo laço é o que garante que os números
@@ -520,6 +533,10 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       return {
         totalVendas,
         porTipoProduto: temClassificacao ? quebraPorTipo : null,
+        // Story 29.74 (AC5): mesmo critério da contagem — sem coluna mapeada ou
+        // sem produto classificado, tudo cai em `principal` e a quebra não
+        // informa nada.
+        faturamentoPorTipo: temClassificacao ? faturamentoPorTipo : null,
         // Story 29.61 (AC5) — separa bump acessório de venda avulsa, mesma
         // regra da 18.66.
         orderBump: resumirOrderBump(linhasParaPublico, temAdicionais),
