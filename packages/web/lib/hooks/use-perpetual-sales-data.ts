@@ -2,7 +2,11 @@
 
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useQuery } from "@tanstack/react-query";
-import type { PerpetualSalesData, PerpetualSalesDataDaily } from "@loyola-x/shared";
+import type {
+  PerpetualSalesData,
+  PerpetualSalesDataDaily,
+  PerpetualHourlyData,
+} from "@loyola-x/shared";
 
 const STALE_TIME = 2 * 60 * 1000;
 
@@ -94,6 +98,34 @@ export function usePerpetualSalesDataDailyByEntity(
           `?${buildRangeQuery(days, startDate, endDate)}&groupBy=${groupBy}`,
       ),
     enabled: !!projectId && !!funnelId && !!groupBy,
+    staleTime: STALE_TIME,
+  });
+}
+
+/**
+ * Story 29.69/29.70/29.71/29.72 — as duas agregações da seção "Análise
+ * detalhada no período".
+ *
+ * Query própria, e não um campo a mais em `usePerpetualSalesData`: esta lê a
+ * planilha INTEIRA linha a linha (para derivar hora) e cruza com o cache
+ * horário do banco. Pendurá-la na query dos cards faria todo o dashboard
+ * esperar por ela.
+ */
+export function usePerpetualHourly(
+  projectId: string | null,
+  funnelId: string | null,
+  days: number,
+  startDate?: string,
+  endDate?: string,
+) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["perpetual-hourly", projectId, funnelId, days, startDate, endDate],
+    queryFn: () =>
+      apiClient<PerpetualHourlyData>(
+        `/api/projects/${projectId}/funnels/${funnelId}/perpetual/hourly?${buildRangeQuery(days, startDate, endDate)}`,
+      ),
+    enabled: !!projectId && !!funnelId,
     staleTime: STALE_TIME,
   });
 }
