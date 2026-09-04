@@ -19,9 +19,25 @@ import { Percent, Users, AlertTriangle, ShoppingCart, Layers } from "lucide-reac
 import type { PerpetualSalesData } from "@loyola-x/shared";
 import { diagnosticarPublico } from "@/lib/utils/publico-confiavel";
 
-const fmtCurrency = (v: number) =>
-  v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const fmtNumber = (v: number) => v.toLocaleString("pt-BR");
+/**
+ * ⚠️ Estes formatadores aceitam `undefined` DE PROPÓSITO.
+ *
+ * O tipo diz `number`, e o `tsc` confia nele — mas o que chega em runtime é o
+ * payload da API **em produção**, que pode ser mais velho que o front. Foi o
+ * que aconteceu em 2026-09-04: a Story 29.74 acrescentou `receitaCaptacao` ao
+ * resumo do order bump, o front subiu na Vercel antes da API, e
+ * `undefined.toLocaleString()` derrubou o dashboard inteiro do Perpétuo com
+ * "Cannot read properties of undefined (reading 'toLocaleString')".
+ *
+ * Um campo que ainda não existe deve virar `—` num canto da tela, nunca uma
+ * página em branco. Não trocar por `v: number` de novo.
+ */
+const fmtCurrency = (v: number | null | undefined) =>
+  v == null || !Number.isFinite(v)
+    ? "—"
+    : v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const fmtNumber = (v: number | null | undefined) =>
+  v == null || !Number.isFinite(v) ? "—" : v.toLocaleString("pt-BR");
 const fmtPct = (v: number | null) =>
   v == null
     ? "—"
