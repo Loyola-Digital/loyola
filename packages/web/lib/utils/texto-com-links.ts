@@ -81,6 +81,20 @@ function empurrarComUrlSolta(saida: PedacoDeTexto[], trecho: string): void {
   if (resto < trecho.length) saida.push({ tipo: "texto", valor: trecho.slice(resto) });
 }
 
+/**
+ * Garante o esquema no endereço.
+ *
+ * `exemplo.com` sem `https://` é lido pelo navegador como caminho RELATIVO: o
+ * link abriria dentro do próprio Loyola X, numa rota que não existe. Aplicado
+ * na hora de abrir, e não ao gravar, para valer também nos links que já foram
+ * salvos sem esquema.
+ */
+export function comEsquema(url: string): string {
+  const t = url.trim();
+  if (!t) return t;
+  return /^https?:\/\//i.test(t) ? t : `https://${t}`;
+}
+
 /** Só o domínio, para caber num bloco estreito. */
 export function encurtar(url: string, max = 40): string {
   if (url.length <= max) return url;

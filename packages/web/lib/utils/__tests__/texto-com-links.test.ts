@@ -8,6 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  comEsquema,
   ehUrl,
   encurtar,
   linkAoColar,
@@ -110,5 +111,28 @@ describe("encurtar", () => {
     const r = encurtar(longa);
     expect(r.startsWith("exemplo.com.br/")).toBe(true);
     expect(r.length).toBeLessThanOrEqual(40);
+  });
+});
+
+describe("comEsquema", () => {
+  it("completa o endereço digitado sem http", () => {
+    // Sem esquema o navegador trata como caminho relativo, e o link abre
+    // DENTRO do app numa rota que não existe.
+    expect(comEsquema("exemplo.com/lp")).toBe("https://exemplo.com/lp");
+  });
+
+  it("não mexe no que já tem esquema", () => {
+    expect(comEsquema("https://exemplo.com")).toBe("https://exemplo.com");
+    expect(comEsquema("http://exemplo.com")).toBe("http://exemplo.com");
+  });
+
+  it("apara antes de decidir", () => {
+    expect(comEsquema("  exemplo.com  ")).toBe("https://exemplo.com");
+  });
+
+  it("string vazia continua vazia", () => {
+    // Devolver "https://" para um campo em branco criaria um link para lugar
+    // nenhum no bloco.
+    expect(comEsquema("   ")).toBe("");
   });
 });

@@ -19,12 +19,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Icons from "lucide-react";
 import {
-  ChevronDown, ChevronRight, ClipboardCopy, Copy, FileDown, FileText, Keyboard, Loader2, Maximize2, Minimize2, Minus, Moon, Spline, Sun, Waypoints,
+  ChevronDown, ChevronRight, ClipboardCopy, Copy, FileDown, FileText, Keyboard, Loader2, Maximize2, Minimize2, Link2, Minus, Moon, Spline, Sun, Waypoints,
   PanelLeftClose, PanelLeftOpen, Pencil, Plus, RotateCcw, Save, Scan, Search,
   StickyNote, Trash2, Type, Undo2, Redo2, Unlink, X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { encurtar, linkAoColar, pedacosDoTexto } from "@/lib/utils/texto-com-links";
+import { comEsquema, encurtar, linkAoColar, pedacosDoTexto } from "@/lib/utils/texto-com-links";
 import { descendentes } from "@/lib/utils/cadeia-do-mapa";
 import {
   Alfinete,
@@ -2975,6 +2975,32 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                     <span className="absolute left-1.5 top-[-8px] rounded bg-primary px-1 text-[8px] font-medium text-primary-foreground">
                       etapa
                     </span>
+                  )}
+
+                  {/*
+                    O link do bloco, visível e clicável.
+
+                    O campo "Link" existia no painel e não aparecia em lugar
+                    nenhum do desenho: quem preenchia a URL da página só a
+                    reencontrava abrindo o painel de novo, bloco por bloco — o
+                    que é o mesmo que o campo não existir para quem lê o mapa.
+
+                    `stopPropagation` no ponteiro é o que permite clicar: sem
+                    ele o gesto começa a arrastar o bloco e o link nunca abre.
+                  */}
+                  {b.url && (
+                    <a
+                      href={comEsquema(b.url)}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      title={b.url}
+                      aria-label={`Abrir o link de ${b.label}`}
+                      onPointerDown={(ev) => ev.stopPropagation()}
+                      onClick={(ev) => ev.stopPropagation()}
+                      className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-primary"
+                    >
+                      <Link2 className="h-3 w-3" />
+                    </a>
                   )}
 
                   {/* Alça de redimensionar — só no bloco selecionado, senão
