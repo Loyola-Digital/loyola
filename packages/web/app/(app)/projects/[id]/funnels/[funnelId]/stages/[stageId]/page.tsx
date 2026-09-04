@@ -7,6 +7,7 @@ import { FileSpreadsheet, Settings2, Sparkles } from "lucide-react";
 import { useFunnel } from "@/lib/hooks/use-funnels";
 import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useTituloDaAba } from "@/components/layout/titulo-da-aba";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -113,6 +114,24 @@ export default function StagePage() {
   const { data: funnelData, isLoading: funnelLoading } = useFunnel(params.id, params.funnelId);
   const { data: stage, isLoading: stageLoading } = useFunnelStage(params.id, params.funnelId, params.stageId);
   const updateStage = useUpdateStage(params.id, params.funnelId, params.stageId);
+
+  /**
+   * A aba diz o funil E a etapa.
+   *
+   * Só o nome da etapa não bastaria: "Vendas" e "Captação" se repetem em todo
+   * funil, e três abas abertas voltariam a ser indistinguíveis. O funil na
+   * frente é o que separa `bbe-fh · Vendas` de `dg-pg04 · Vendas`.
+   *
+   * No perpétuo a etapa costuma ter o nome do próprio funil; repetir os dois
+   * daria "bbe-fh · bbe-fh".
+   */
+  const nomeDoFunil = funnelData?.funnel.name;
+  const nomeDaEtapa = stage?.name;
+  useTituloDaAba(
+    nomeDoFunil && nomeDaEtapa && nomeDaEtapa !== nomeDoFunil
+      ? `${nomeDoFunil} · ${nomeDaEtapa}`
+      : (nomeDaEtapa ?? nomeDoFunil),
+  );
 
   const { data: metaPicker } = useCampaignPicker(settingsOpen ? params.id : null);
   const { data: googlePicker } = useGoogleAdsCampaignPicker(settingsOpen ? params.id : null);

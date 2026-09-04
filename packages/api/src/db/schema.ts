@@ -742,6 +742,8 @@ export const funnelMaps = pgTable("funnel_maps", {
            */
           imageUrl?: string | null;
           imageKey?: string | null;
+          /** Bloco `forma`: qual figura desenhar (quadrado, círculo…). */
+          forma?: string | null;
         }>;
         connectors: Array<{
           id: string;

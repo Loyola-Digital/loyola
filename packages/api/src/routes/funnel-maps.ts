@@ -69,6 +69,8 @@ const boxSchema = z.object({
   /** Bloco `imagem`: o arquivo no bucket. `imageKey` permite apagá-lo depois. */
   imageUrl: z.string().max(2048).nullable().optional(),
   imageKey: z.string().max(500).nullable().optional(),
+  /** Bloco `forma`: quadrado, circulo, triangulo, losango. */
+  forma: z.string().max(20).nullable().optional(),
 });
 
 const connectorSchema = z.object({
