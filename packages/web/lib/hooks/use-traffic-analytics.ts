@@ -328,16 +328,51 @@ export function useTopPerformers(
     ? `&startDate=${startDate}&endDate=${endDate}`
     : "";
   const cacheKeyIds = idList.length > 0 ? [...idList].sort().join(",") : null;
+  const buscar = (n: number) =>
+    apiClient<TopPerformersResponse>(
+      `/api/traffic/analytics/${projectId}/top-performers?metric=${metric}&limit=${n}&days=${days}${campaignParam}${rangeParam}`,
+    );
+
   return useQuery({
     queryKey: ["traffic-top-performers", projectId, metric, limit, days, cacheKeyIds, startDate, endDate],
-    queryFn: () =>
-      apiClient<TopPerformersResponse>(
-        `/api/traffic/analytics/${projectId}/top-performers?metric=${metric}&limit=${limit}&days=${days}${campaignParam}${rangeParam}`,
-      ),
+    /**
+     * ⚠️ Fallback para API ANTIGA — não remover sem checar o `/api/health`.
+     *
+     * A Story 18.78 elevou o teto de `limit` de 100 para 500 na rota. O front
+     * sobe na Vercel em minutos; a API sobe noutro ciclo. Em 2026-09-04 a
+     * janela entre os dois foi de horas, e nela **a galeria de criativos
+     * quebrou em produção**: o front pedia 500, o zod da API antiga respondia
+     * `400`, e a tela ficava vazia — pior do que estava antes da story.
+     *
+     * Um teto maior é uma capacidade NOVA da API. Pedir e cair para o valor
+     * antigo quando ela recusa é o que torna o front compatível com as duas
+     * versões, em vez de exigir que os dois deploys sejam atômicos (não são).
+     *
+     * Quando a API estiver deployada, a primeira chamada passa e a segunda
+     * nunca acontece.
+     */
+    queryFn: async () => {
+      try {
+        return await buscar(limit);
+      } catch (err) {
+        if (limit <= LIMITE_DA_API_ANTIGA) throw err;
+        console.warn(
+          `[top-performers] limit=${limit} recusado pela API; refazendo com ${LIMITE_DA_API_ANTIGA}. ` +
+            "A API em produção está mais velha que o front (ver /api/health).",
+        );
+        return await buscar(LIMITE_DA_API_ANTIGA);
+      }
+    },
     enabled: !!projectId,
     staleTime: TRAFFIC_STALE_TIME,
   });
 }
+
+/**
+ * O teto que a rota aceitava antes da Story 18.78. Existe como constante para
+ * que o dia em que ele puder sumir seja uma busca só.
+ */
+const LIMITE_DA_API_ANTIGA = 100;
 
 export interface CampaignDailyInsight {
   date_start: string;
