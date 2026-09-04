@@ -16,7 +16,17 @@ export type MetaSyncKind =
   | "creatives"
   | "names"
   // Histórico de alterações da conta que alimenta o Log de Campanha.
-  | "activities";
+  | "activities"
+  /**
+   * Story 29.69 — breakdown horário (24 linhas por dia por campanha).
+   *
+   * Só na cadência DIÁRIA: na intraday, a cada 15 minutos, seriam
+   * `dias × 24 × campanhas` linhas por ciclo — 24× o custo do sync diário
+   * comum, contra o rate limit que já derrubou endpoints desta API em
+   * 2026-07-16. O painel que ele alimenta lê PADRÃO ("que hora converte
+   * melhor"), não tempo real, e sobrevive a um dia de defasagem.
+   */
+  | "hourly";
 
 export interface SyncRunResult {
   success: boolean;

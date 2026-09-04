@@ -38,6 +38,11 @@ export default fp(async function metaPerfSchedulerPlugin(fastify) {
       const summary = await syncMetaPerformance(fastify.db, {
         days: fastify.config.META_PERF_SYNC_DAYS ?? 14,
         creatives: true, // cadência diária popula também o cache de criativos
+        // Story 29.69: e o breakdown horário, que alimenta os seis painéis da
+        // "Análise detalhada no período". Fica FORA da intraday de propósito —
+        // são 24 linhas por dia por campanha, e a cada 15 minutos isso seria
+        // 24× o custo do sync comum contra o rate limit.
+        hourly: true,
         log: (m) => fastify.log.info(m),
       });
       fastify.log.info(
@@ -46,6 +51,7 @@ export default fp(async function metaPerfSchedulerPlugin(fastify) {
           projectsSkipped: summary.projectsSkipped,
           adRowsUpserted: summary.adRowsUpserted,
           campaignsCovered: summary.campaignsCovered,
+          hourlyRowsUpserted: summary.hourlyRowsUpserted,
           errors: summary.errors.length,
           durationMs: Date.now() - startedAt,
         },

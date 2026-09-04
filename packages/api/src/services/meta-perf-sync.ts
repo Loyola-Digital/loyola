@@ -14,6 +14,7 @@ import {
   upsertPlacementInsights,
   upsertAdCreatives,
   adIdsParaAtualizarCriativo,
+  syncHourlyInsights,
 } from "./meta-insights-cache.js";
 import { recordSyncRun, type MetaSyncKind } from "./meta-sync-state.js";
 import { singleFlight } from "../utils/single-flight.js";
@@ -39,6 +40,8 @@ export interface PerfSyncSummary {
   adRowsUpserted: number;
   campaignRowsUpserted: number;
   placementRowsUpserted: number;
+  /** Story 29.69: linhas do breakdown horário. Só na cadência diária. */
+  hourlyRowsUpserted: number;
   creativesUpserted: number;
   campaignsCovered: number;
   errors: { projectId: string; accountId?: string; kind?: string; error: string }[];
@@ -49,6 +52,16 @@ export interface PerfSyncOptions {
   projectIds?: string[];
   /** Inclui sync de creatives (mais caro). Usar na cadência diária, não na intraday. */
   creatives?: boolean;
+  /**
+   * Story 29.69 — inclui o breakdown HORÁRIO (24 linhas por dia por campanha).
+   *
+   * Mesma regra do `creatives`: cadência diária, nunca a intraday. Com 15
+   * minutos de intervalo e 3 dias de janela, o BBE sozinho faria 936 linhas por
+   * ciclo × 96 ciclos/dia. O painel por hora lê padrão de comportamento, não
+   * tempo real — um dia de defasagem não muda a leitura de "que hora converte
+   * melhor".
+   */
+  hourly?: boolean;
   log?: (msg: string) => void;
 }
 
@@ -69,6 +82,7 @@ export async function syncMetaPerformance(
     adRowsUpserted: 0,
     campaignRowsUpserted: 0,
     placementRowsUpserted: 0,
+    hourlyRowsUpserted: 0,
     creativesUpserted: 0,
     campaignsCovered: 0,
     errors: [],
@@ -184,6 +198,26 @@ export async function syncMetaPerformance(
         const plRows = await fetchPlacementDailyInsights(metaAccountId, accessToken, days);
         return upsertPlacementInsights(db, projectId, plRows);
       });
+
+      // 3b. Breakdown HORÁRIO (Story 29.69) — só na cadência diária.
+      //
+      // Reusa `campaignIds` do passo 2: são as campanhas que tiveram entrega no
+      // range, e não a lista configurada nos funis. Sincronizar campanha sem
+      // entrega gastaria chamada para gravar 24 zeros por dia.
+      if (opts.hourly && campaignIds.length > 0) {
+        summary.hourlyRowsUpserted += await step("hourly", async () => {
+          const { since, until } = dateRangeFromDays(days);
+          return syncHourlyInsights(
+            db,
+            projectId,
+            metaAccountId,
+            accessToken,
+            campaignIds,
+            since,
+            until,
+          );
+        });
+      }
 
       // 4. Creatives (só na cadência diária — `opts.creatives`).
       //
