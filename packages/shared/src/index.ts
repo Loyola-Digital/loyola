@@ -191,6 +191,9 @@ export type {
   SalesPlatform,
   PerpetualSalesData,
   PerpetualSalesDataDaily,
+  // Story 29.69: as duas agregações da seção "Análise detalhada no período".
+  PerpetualHourlyData,
+  PerpetualHourlyPosition,
   PerpetualUpsellSpreadsheet,
   PerpetualUpsellData,
   FunnelStage,

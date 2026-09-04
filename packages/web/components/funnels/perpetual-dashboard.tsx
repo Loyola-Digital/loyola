@@ -92,6 +92,7 @@ import {
 import { CampaignSelector } from "./campaign-selector";
 import { TopCreativesGallery } from "./top-creatives-gallery";
 import { CamadasDeVideoSection } from "./camadas-de-video-section";
+import { PerpetualAnaliseHoraria } from "./perpetual-analise-horaria";
 import { RefreshDataButton } from "./refresh-data-button";
 import { MetaFreshnessBadge } from "./meta-freshness-badge";
 import { PerpetualSpreadsheetWizardDialog } from "./perpetual-spreadsheet-wizard-dialog";
@@ -119,6 +120,7 @@ import {
 import { usePerpetualSpreadsheet } from "@/lib/hooks/use-perpetual-spreadsheet";
 import {
   usePerpetualSalesData,
+  usePerpetualHourly,
   usePerpetualSalesDataDaily,
   usePerpetualSalesDataDailyByEntity,
 } from "@/lib/hooks/use-perpetual-sales-data";
@@ -1367,6 +1369,19 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   const { data: perpetualSpreadsheet } = usePerpetualSpreadsheet(projectId, funnel.id);
   const { data: upsellSpreadsheet } = usePerpetualUpsellSpreadsheet(projectId, funnel.id);
   const { data: salesData } = usePerpetualSalesData(
+    projectId,
+    funnel.id,
+    days,
+    customRange?.startDate,
+    customRange?.endDate,
+  );
+  /**
+   * Stories 29.70/29.71/29.72 — as duas agregações da seção "Análise detalhada
+   * no período". Query separada de propósito: esta lê a planilha inteira linha
+   * a linha (para derivar hora) e cruza com o cache horário, e pendurá-la nos
+   * cards faria o dashboard esperar por ela.
+   */
+  const { data: horaria, isLoading: carregandoHoraria } = usePerpetualHourly(
     projectId,
     funnel.id,
     days,
@@ -3381,6 +3396,11 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           que rendeu, esta seção mostra ONDE cada vídeo perde o espectador — e o
           que dá para recombinar. Não depende de `hasCampaigns`: a leitura por
           camada é sobre o CRIATIVO, e vale mesmo sem campanha vinculada. */}
+      {/* Stories 29.70/29.71/29.72 — em que hora do dia e em que dia da semana o
+          funil performa. Fica ANTES das camadas de vídeo porque responde uma
+          pergunta de período (quando investir), não de criativo. */}
+      <PerpetualAnaliseHoraria data={horaria} isLoading={carregandoHoraria} />
+
       <CamadasDeVideoSection projectId={projectId} campaignIds={campaignIds} />
 
       {hasCampaigns && (

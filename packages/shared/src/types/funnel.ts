@@ -343,6 +343,56 @@ export interface PerpetualSalesData {
  * Série diária de receita bruta da planilha. Chave = data local (YYYY-MM-DD).
  * Sem dedup — cada linha da planilha é uma transação distinta.
  */
+/**
+ * Story 29.69 (AC5/AC6) — as duas agregações que os seis painéis da seção
+ * "Análise detalhada no período" consomem.
+ *
+ * As posições vêm SEMPRE todas: 24 horas e 7 dias, mesmo zeradas. Hora sem
+ * venda é uma barra de altura zero; hora ausente faria o eixo pular de 13h para
+ * 15h e a leitura de "melhor hora" sair errada.
+ */
+export interface PerpetualHourlyPosition {
+  faturamentoBruto: number;
+  faturamentoLiquido: number;
+  /** Compradores distintos NA POSIÇÃO — não linhas, e não o pixel da Meta. */
+  vendas: number;
+  /** Com o imposto Meta aplicado uma única vez, no backend. */
+  investimento: number;
+  /** `null` quando não houve investimento: ROAS infinito achata o gráfico. */
+  roas: number | null;
+  /** Receita líquida − investimento (a fórmula do Epic 29). */
+  margem: number;
+}
+
+export interface PerpetualHourlyData {
+  porHora: (PerpetualHourlyPosition & { hora: number })[];
+  porDiaDaSemana: (PerpetualHourlyPosition & { dia: number; nome: string })[];
+  /**
+   * Story 29.69 (AC6) — o que permite a tela dizer "faltam 12 de 148" em vez de
+   * desenhar um gráfico incompleto com cara de completo.
+   *
+   * A cobertura é PARCIAL e não binária: medido em produção, `fz-a1` tem 5% das
+   * vendas com hora e `pps1` tem 30% — a mesma coluna, formatos diferentes
+   * linha a linha. Por isso vem o faturamento dentro e fora do corte, não só a
+   * contagem.
+   */
+  cobertura: {
+    totalVendas: number;
+    vendasComHora: number;
+    vendasSemHora: number;
+    faturamentoComHora: number;
+    faturamentoSemHora: number;
+    /** `null` = o sync horário nunca rodou para este funil. */
+    primeiroDiaComCacheHorario: string | null;
+    ultimoSyncHorario: string | null;
+    /** Fuso em que a Meta reportou as faixas. `null` = não verificado. */
+    accountTimezone: string | null;
+    temContaMeta: boolean;
+    janela: { since: string; until: string };
+  };
+  semDados: boolean;
+}
+
 export interface PerpetualSalesDataDaily {
   byDay: Record<string, number>;
   /**
