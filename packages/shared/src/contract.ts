@@ -59,4 +59,22 @@
 // ⚠️ `packages/mcp` (o servidor stdio do Inácio) NÃO tem checagem de contrato.
 // Esta rota é nova e não muda nenhuma existente, então o risco é menor — mas o
 // aviso é barato e a 44.2 já ensinou que ele some quando não está escrito.
-export const API_CONTRACT_VERSION = 3;
+//
+// v4 (Stories 18.78, 29.69, 29.74, 29.68): TRÊS mudanças de API numa leva, e o
+// bump ficou de fora — o defeito que este arquivo existe para evitar.
+//
+// Em 2026-09-04 o front subiu com as três e a API ficou parada em 13:38 UTC.
+// Com o contrato igual nos dois lados, o banner de defasagem NÃO acusou nada, e
+// o que apareceu foi:
+//
+//   - `top-performers?limit=500` → 400 (a API antiga valida `.max(100)`), e a
+//     galeria de criativos ficou VAZIA — regressão de algo que funcionava;
+//   - `/perpetual/hourly` → 404, seção sumindo em silêncio;
+//   - `receitaCaptacao` ausente no payload → `undefined.toLocaleString()`
+//     derrubando o dashboard inteiro.
+//
+// A lição não é "sincronizar deploys" — eles não são atômicos e não vão ser. É
+// que toda mudança de rota, de validação de parâmetro OU de forma de payload
+// bumpa esta constante, para o painel dizer que está na frente da API antes de
+// o usuário descobrir sozinho.
+export const API_CONTRACT_VERSION = 4;

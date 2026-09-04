@@ -127,5 +127,16 @@ export function usePerpetualHourly(
       ),
     enabled: !!projectId && !!funnelId,
     staleTime: STALE_TIME,
+    /**
+     * ⚠️ Rota NOVA (29.69): a API em produção pode ser mais velha que o front e
+     * responder 404. A seção some sozinha (o componente devolve `null` sem
+     * dado), e insistir gastaria três tentativas por render para receber o
+     * mesmo 404 — a rota não vai passar a existir entre um retry e outro.
+     */
+    retry: (falhas, erro) => {
+      const status = (erro as { status?: number })?.status;
+      if (status === 404) return false;
+      return falhas < 2;
+    },
   });
 }
