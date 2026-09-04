@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, MoreHorizontal, Pencil, Plus, RefreshCw, ScrollText, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, ImagePlus, MoreHorizontal, Pencil, Plus, RefreshCw, ScrollText, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,7 @@ import {
 import {
   LOG_EVENTOS,
   aplicativosParaEvento,
+  CATEGORIA_EM_DESTAQUE,
   categoriasParaEvento,
   valorVisivel,
   eventoBadgeClass,
@@ -361,7 +362,17 @@ export default function CampaignLogPage() {
                             {e.evento}
                           </span>
                           {e.categoria && (
-                            <span className="inline-flex items-center rounded-full border border-border/50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                            // Criativo novo puxa o olho: numa lista de trinta
+                            // ajustes de budget, é o que muda a leitura da curva.
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] ${
+                                CATEGORIA_EM_DESTAQUE[e.categoria]?.classe ??
+                                "border-border/50 text-muted-foreground"
+                              }`}
+                            >
+                              {CATEGORIA_EM_DESTAQUE[e.categoria] && (
+                                <ImagePlus className="h-2.5 w-2.5" />
+                              )}
                               {e.categoria}
                             </span>
                           )}

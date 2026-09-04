@@ -24,6 +24,7 @@ import {
   Mail,
   Megaphone,
   MessageCircle,
+  ImagePlus,
   Radio,
   Video,
   Youtube,
@@ -37,6 +38,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { CampaignLogEntry } from "@/lib/hooks/use-campaign-log";
+import { CATEGORIA_EM_DESTAQUE } from "@/lib/campaign-log-options";
 
 type Icone = typeof Megaphone;
 
@@ -108,7 +110,31 @@ const POR_APLICATIVO: { casa: (app: string) => boolean; icone: Icone; cor: strin
 /** Sem aplicativo declarado — a entrada existe e não pode sumir da coluna. */
 const OUTROS = { icone: Radio, cor: "text-muted-foreground", familia: "Outros" };
 
-function classificar(app: string | null) {
+/**
+ * Categorias que valem mais que o aplicativo.
+ *
+ * O ícone sai do app porque é ele que diz ONDE a ação aconteceu — e isso serve
+ * para quase tudo. Criativo novo é a exceção: no Meta Ads ele ficava com o
+ * mesmo megafone de um ajuste de budget ou de uma campanha pausada, e é
+ * justamente o evento que se procura ao investigar uma virada na curva.
+ *
+ * Consultado ANTES do aplicativo, e só para o que merece: uma tabela grande
+ * aqui devolveria o mosaico de símbolos que o agrupamento por família existe
+ * para evitar.
+ */
+const POR_CATEGORIA: Record<string, { icone: Icone; cor: string; familia: string }> = Object.
+  fromEntries(
+    Object.entries(CATEGORIA_EM_DESTAQUE).map(([categoria, d]) => [
+      categoria,
+      // O nome do ícone vem da fonte única; o componente é resolvido aqui,
+      // porque `campaign-log-options` é dado e não deve importar React.
+      { icone: ImagePlus, cor: "text-indigo-600 dark:text-indigo-400", familia: d.rotulo },
+    ]),
+  );
+
+function classificar(app: string | null, categoria?: string | null) {
+  const daCategoria = categoria ? POR_CATEGORIA[categoria] : undefined;
+  if (daCategoria) return daCategoria;
   if (!app) return OUTROS;
   return POR_APLICATIVO.find((p) => p.casa(app)) ?? OUTROS;
 }
@@ -199,7 +225,7 @@ function TudoDoDia({
 
         <ul className="space-y-3">
           {emOrdem.map((e) => {
-            const c = classificar(e.aplicativo);
+            const c = classificar(e.aplicativo, e.categoria);
             const Icone = c.icone;
             return (
               <li key={e.id} className="flex gap-2.5">
@@ -261,7 +287,7 @@ export function EventosDoDia({
     // Uma família = um ícone, com todas as suas entradas atrás.
     const porFamilia = new Map<string, { icone: Icone; cor: string; itens: CampaignLogEntry[] }>();
     for (const e of entradas) {
-      const c = classificar(e.aplicativo);
+      const c = classificar(e.aplicativo, e.categoria);
       const atual = porFamilia.get(c.familia);
       if (atual) atual.itens.push(e);
       else porFamilia.set(c.familia, { icone: c.icone, cor: c.cor, itens: [e] });
