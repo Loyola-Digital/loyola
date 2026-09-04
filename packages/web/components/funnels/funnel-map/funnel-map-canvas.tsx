@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { encurtar, linkAoColar, pedacosDoTexto } from "@/lib/utils/texto-com-links";
+import { descendentes } from "@/lib/utils/cadeia-do-mapa";
 import {
   Alfinete,
   BotaoDeComentarios,
@@ -338,6 +339,16 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
    * que ainda não foi salvo ele é `null`, e o botão fica desligado — comentar
    * ali deixaria o comentário órfão no primeiro save.
    */
+  /**
+   * Blocos que vão junto no arrasto por segurar — ver `iniciarArrasto`.
+   *
+   * Guardado em estado (e não só no closure do gesto) porque a tela precisa
+   * mostrar QUAIS vão junto antes de a pessoa começar a mover: sem o realce,
+   * segurar quatro segundos e ver tudo andar de uma vez assusta.
+   */
+  const [cadeiaPresa, setCadeiaPresa] = useState<Set<string>>(new Set());
+  const [segurando, setSegurando] = useState(false);
+
   const [modoComentario, setModoComentario] = useState(false);
   const [conversaAberta, setConversaAberta] = useState<string | null>(null);
   const [novoComentario, setNovoComentario] = useState<{ x: number; y: number; texto: string } | null>(null);
@@ -505,8 +516,41 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
     );
     if (!origens.has(bloco.id)) origens.set(bloco.id, { x: bloco.x, y: bloco.y });
 
+    /**
+     * Segurar parado prende a CORRENTE: o bloco e tudo que vem depois dele.
+     *
+     * Reposicionar um trecho do funil era arrastar peça por peça e refazer o
+     * alinhamento no fim. Aqui a captação leva junto a VSL, o checkout e o
+     * upsell que saem dela.
+     *
+     * O relógio morre ao primeiro movimento — o arrasto comum não pode ficar
+     * mais lento por causa deste gesto. E o realce aparece antes de mover:
+     * segurar e ver tudo andar de uma vez, sem aviso, assusta.
+     */
+    let relogio: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      relogio = null;
+      const cadeia = descendentes(bloco.id, aba?.connectors ?? []);
+      if (cadeia.size === 0) return;
+      for (const id of cadeia) {
+        const b = blocos.find((x) => x.id === id);
+        if (b && !origens.has(id)) origens.set(id, { x: b.x, y: b.y });
+      }
+      setCadeiaPresa(cadeia);
+      setSegurando(true);
+    }, 4000);
+
+    const desarmar = () => {
+      if (relogio) {
+        clearTimeout(relogio);
+        relogio = null;
+      }
+    };
+
     let primeiro = true;
     const mover = (ev: PointerEvent) => {
+      // Andou: já não é "segurar parado". Quatro pixels de folga porque a mão
+      // treme, e um tremor não pode custar o gesto.
+      if (Math.abs(ev.clientX - inicioX) > 4 || Math.abs(ev.clientY - inicioY) > 4) desarmar();
       // Divide pelo zoom: sem isso, com o mapa a 50% o bloco anda o dobro do
       // que o ponteiro.
       const dx = (ev.clientX - inicioX) / zoom.valor;
@@ -552,6 +596,12 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       window.removeEventListener("pointermove", mover);
       window.removeEventListener("pointerup", soltar);
       setGuias([]);
+      // Soltar antes dos quatro segundos não pode deixar o relógio armado: ele
+      // dispararia depois, com o ponteiro já livre, e prenderia a corrente sem
+      // ninguém ter pedido.
+      desarmar();
+      setCadeiaPresa(new Set());
+      setSegurando(false);
     };
     window.addEventListener("pointermove", mover);
     window.addEventListener("pointerup", soltar);
@@ -2654,6 +2704,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                   }}
                   className={`absolute cursor-grab touch-none select-none rounded-xl border-2 bg-card p-2 shadow-sm transition-shadow active:cursor-grabbing ${
                     ativo ? "ring-2 ring-primary ring-offset-1" : ""
+                  } ${
+                    // Preso pelo segurar: quem vai junto precisa se anunciar
+                    // ANTES de andar, senão o mapa inteiro pula de uma vez sem
+                    // aviso e parece que algo quebrou.
+                    cadeiaPresa.has(b.id) ? "ring-2 ring-amber-400 ring-offset-1" : ""
                   }`}
                   style={{ left: b.x, top: b.y, width: b.width, height: b.height, borderColor: b.color }}
                 >
@@ -2926,6 +2981,16 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       </div>
 
       {/* Menu de contexto do bloco */}
+      {/* Aviso do modo corrente.
+          Quatro segundos é muito tempo para um gesto sem resposta: sem esta
+          faixa, quem segura acha que a tela travou e solta antes. */}
+      {segurando && cadeiaPresa.size > 0 && (
+        <div className="pointer-events-none fixed left-1/2 top-4 z-[55] -translate-x-1/2 rounded-full bg-amber-400 px-3 py-1 text-[11px] font-semibold text-amber-950 shadow-lg">
+          Arrastando com {cadeiaPresa.size}{" "}
+          {cadeiaPresa.size === 1 ? "bloco à frente" : "blocos à frente"}
+        </div>
+      )}
+
       {/*
         Alfinetes e conversas.
 
