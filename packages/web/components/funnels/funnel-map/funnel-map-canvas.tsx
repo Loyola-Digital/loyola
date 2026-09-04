@@ -172,6 +172,15 @@ function caminhoDaSeta(de: { x: number; y: number }, dePonto: PontoDeConexao, pa
 
 const PONTOS: PontoDeConexao[] = ["top", "right", "bottom", "left"];
 
+/**
+ * Quanto tempo segurar parado para prender a corrente.
+ *
+ * Dois segundos: longo o bastante para não disparar num clique hesitante,
+ * curto o bastante para não parecer que a tela travou. O realce aparece assim
+ * que completa, e é ele que confirma o gesto.
+ */
+const ESPERA_DA_CORRENTE = 2000;
+
 /** Distância em px (na escala do desenho) para o alinhamento "colar". */
 const IMA = 6;
 
@@ -344,7 +353,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
    *
    * Guardado em estado (e não só no closure do gesto) porque a tela precisa
    * mostrar QUAIS vão junto antes de a pessoa começar a mover: sem o realce,
-   * segurar quatro segundos e ver tudo andar de uma vez assusta.
+   * segurar e ver tudo andar de uma vez assusta.
    */
   const [cadeiaPresa, setCadeiaPresa] = useState<Set<string>>(new Set());
   const [segurando, setSegurando] = useState(false);
@@ -537,7 +546,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       }
       setCadeiaPresa(cadeia);
       setSegurando(true);
-    }, 4000);
+    }, ESPERA_DA_CORRENTE);
 
     const desarmar = () => {
       if (relogio) {
@@ -596,7 +605,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       window.removeEventListener("pointermove", mover);
       window.removeEventListener("pointerup", soltar);
       setGuias([]);
-      // Soltar antes dos quatro segundos não pode deixar o relógio armado: ele
+      // Soltar antes do tempo não pode deixar o relógio armado: ele
       // dispararia depois, com o ponteiro já livre, e prenderia a corrente sem
       // ninguém ter pedido.
       desarmar();
@@ -2982,7 +2991,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
 
       {/* Menu de contexto do bloco */}
       {/* Aviso do modo corrente.
-          Quatro segundos é muito tempo para um gesto sem resposta: sem esta
+          Segurar sem resposta na tela parece travamento: sem esta
           faixa, quem segura acha que a tela travou e solta antes. */}
       {segurando && cadeiaPresa.size > 0 && (
         <div className="pointer-events-none fixed left-1/2 top-4 z-[55] -translate-x-1/2 rounded-full bg-amber-400 px-3 py-1 text-[11px] font-semibold text-amber-950 shadow-lg">
