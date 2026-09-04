@@ -39,8 +39,16 @@ export interface EsteiraAnual {
   meses: CelulaAnual[];
 }
 
+export interface GrupoAnual {
+  id: string;
+  rotulo: string;
+  cor: string;
+}
+
 interface Matriz {
   esteiras: EsteiraAnual[];
+  /** As três faixas com o nome e a cor que a empresa escolheu. */
+  grupos?: GrupoAnual[];
 }
 
 export function chaveDaMatriz(projectId: string | null, ano: number) {
@@ -137,6 +145,70 @@ export function useAtualizarEsteira(projectId: string | null, ano: number) {
     mutationFn: ({ id, ...dados }: { id: string; grupo?: string; nome?: string }) =>
       api(`${BASE}/esteiras/${id}`, { method: "PUT", body: JSON.stringify(dados) }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: chaveDaMatriz(projectId, ano) }),
+  });
+}
+
+/**
+ * Renomeia ou recolore a faixa de um grupo.
+ *
+ * Otimista como o resto da tela: quem arrasta o seletor de cor vê a faixa
+ * acompanhando o dedo. Esperar a rede a cada tom faria a cor piscar de volta
+ * à antiga entre um e outro.
+ */
+export function useAtualizarGrupo(projectId: string | null, ano: number) {
+  const api = useApiClient();
+  const qc = useQueryClient();
+  const chave = chaveDaMatriz(projectId, ano);
+
+  return useMutation({
+    mutationFn: ({
+      grupo,
+      ...dados
+    }: {
+      grupo: string;
+      /** `null` volta ao padrão do código — ver `limparRotulo` na API. */
+      rotulo?: string | null;
+      cor?: string | null;
+    }) =>
+      api<{ grupos: GrupoAnual[] }>(`${BASE}/${projectId}/grupos/${grupo}`, {
+        method: "PUT",
+        body: JSON.stringify(dados),
+      }),
+
+    onMutate: async ({ grupo, ...dados }) => {
+      await qc.cancelQueries({ queryKey: chave });
+      const antes = qc.getQueryData<Matriz>(chave);
+      qc.setQueryData<Matriz>(chave, (atual) =>
+        atual?.grupos
+          ? {
+              ...atual,
+              grupos: atual.grupos.map((g) =>
+                g.id === grupo
+                  ? {
+                      ...g,
+                      // Nome apagado volta ao padrão, e o padrão só o servidor
+                      // conhece — então aqui a mudança otimista não acontece e
+                      // a resposta é que traz o rótulo de volta.
+                      ...(dados.rotulo ? { rotulo: dados.rotulo } : {}),
+                      ...(dados.cor ? { cor: dados.cor } : {}),
+                    }
+                  : g,
+              ),
+            }
+          : atual,
+      );
+      return { antes };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.antes) qc.setQueryData(chave, ctx.antes);
+    },
+    onSuccess: (resp) => {
+      // A resposta traz os três já resolvidos com os padrões aplicados — é o
+      // que conclui o caso "apaguei o nome, quero o original de volta".
+      qc.setQueryData<Matriz>(chave, (atual) =>
+        atual ? { ...atual, grupos: resp.grupos } : atual,
+      );
+    },
   });
 }
 

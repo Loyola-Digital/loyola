@@ -19,7 +19,11 @@
 import { z } from "zod";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { plannerAnnualCells, plannerAnnualTracks } from "../db/schema.js";
+import {
+  plannerAnnualCells,
+  plannerAnnualGroups,
+  plannerAnnualTracks,
+} from "../db/schema.js";
 import {
   CATEGORIAS,
   ESTEIRAS_INICIAIS,
@@ -27,7 +31,10 @@ import {
   GRUPOS,
   celulaVazia,
   ehGrupo,
+  gruposDoProjeto,
   limparCelula,
+  limparCor,
+  limparRotulo,
   montarMatriz,
 } from "../services/planner-anual.js";
 
@@ -69,18 +76,33 @@ export default fp(async function plannerAnualRoutes(fastify) {
     const p = z.object({ projectId: ID, ano: ANO }).safeParse(request.params);
     if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
 
-    const esteiras = await fastify.db
-      .select({
-        id: plannerAnnualTracks.id,
-        grupo: plannerAnnualTracks.grupo,
-        nome: plannerAnnualTracks.nome,
-        sortOrder: plannerAnnualTracks.sortOrder,
-      })
-      .from(plannerAnnualTracks)
-      .where(eq(plannerAnnualTracks.projectId, p.data.projectId))
-      .orderBy(asc(plannerAnnualTracks.sortOrder));
+    // As duas em paralelo: a personalizacao da faixa nao depende das esteiras,
+    // e a tela precisa dos rotulos ate quando nao ha linha nenhuma — sao eles
+    // que nomeiam os botoes de criar esteira.
+    const [esteiras, personalizacoes] = await Promise.all([
+      fastify.db
+        .select({
+          id: plannerAnnualTracks.id,
+          grupo: plannerAnnualTracks.grupo,
+          nome: plannerAnnualTracks.nome,
+          sortOrder: plannerAnnualTracks.sortOrder,
+        })
+        .from(plannerAnnualTracks)
+        .where(eq(plannerAnnualTracks.projectId, p.data.projectId))
+        .orderBy(asc(plannerAnnualTracks.sortOrder)),
+      fastify.db
+        .select({
+          grupo: plannerAnnualGroups.grupo,
+          rotulo: plannerAnnualGroups.rotulo,
+          cor: plannerAnnualGroups.cor,
+        })
+        .from(plannerAnnualGroups)
+        .where(eq(plannerAnnualGroups.projectId, p.data.projectId)),
+    ]);
 
-    if (esteiras.length === 0) return { esteiras: [] };
+    const grupos = gruposDoProjeto(personalizacoes);
+
+    if (esteiras.length === 0) return { esteiras: [], grupos };
 
     const celulas = await fastify.db
       .select({
@@ -103,7 +125,59 @@ export default fp(async function plannerAnualRoutes(fastify) {
         ),
       );
 
-    return { esteiras: montarMatriz(esteiras, celulas) };
+    return { esteiras: montarMatriz(esteiras, celulas), grupos };
+  });
+
+  /**
+   * Renomeia e recolore a faixa de um grupo, por empresa.
+   *
+   * Upsert: a linha nasce na primeira vez que alguem mexe. Campo vazio grava
+   * `null` e volta ao padrao do codigo — e e assim que a personalizacao se
+   * desfaz, sem um botao "restaurar" a mais no painel.
+   */
+  fastify.put(`${base}/:projectId/grupos/:grupo`, async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const p = z
+      .object({ projectId: ID, grupo: z.string().refine(ehGrupo, "Grupo inválido") })
+      .safeParse(request.params);
+    const b = z
+      .object({
+        rotulo: z.string().max(60).nullable().optional(),
+        cor: z.string().max(30).nullable().optional(),
+      })
+      .safeParse(request.body);
+    if (!p.success || !b.success) return reply.code(400).send({ error: "Dados inválidos" });
+
+    // O que a tela nao mandou fica como estava; o que veio passa pela limpeza,
+    // que e quem decide o que e ausencia (e volta ao padrao).
+    const patch: { rotulo?: string | null; cor?: string | null } = {};
+    if ("rotulo" in b.data) patch.rotulo = limparRotulo(b.data.rotulo);
+    if ("cor" in b.data) patch.cor = limparCor(b.data.cor);
+
+    await fastify.db
+      .insert(plannerAnnualGroups)
+      .values({
+        projectId: p.data.projectId,
+        grupo: p.data.grupo,
+        rotulo: patch.rotulo ?? null,
+        cor: patch.cor ?? null,
+        updatedBy: request.userId ?? null,
+      })
+      .onConflictDoUpdate({
+        target: [plannerAnnualGroups.projectId, plannerAnnualGroups.grupo],
+        set: { ...patch, updatedBy: request.userId ?? null, updatedAt: new Date() },
+      });
+
+    const personalizacoes = await fastify.db
+      .select({
+        grupo: plannerAnnualGroups.grupo,
+        rotulo: plannerAnnualGroups.rotulo,
+        cor: plannerAnnualGroups.cor,
+      })
+      .from(plannerAnnualGroups)
+      .where(eq(plannerAnnualGroups.projectId, p.data.projectId));
+
+    return { grupos: gruposDoProjeto(personalizacoes) };
   });
 
   /** Cria uma esteira. Sem `nome`, entra como linha em branco para nomear. */
