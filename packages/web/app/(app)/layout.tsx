@@ -1,4 +1,5 @@
 import { AppSidebar } from "@/components/layout/app-sidebar";
+import { TituloDaAba } from "@/components/layout/titulo-da-aba";
 import { Topbar } from "@/components/layout/topbar";
 import { UserStatusGuard } from "@/components/layout/user-status-guard";
 import { ApiContractBanner } from "@/components/layout/api-contract-banner";
@@ -7,6 +8,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <UserStatusGuard>
       <div className="flex h-screen overflow-hidden">
+        {/* Renomeia a aba conforme a tela. Aqui, e não em cada página: uma
+            chamada por tela seria uma linha a esquecer em cada nova rota. */}
+        <TituloDaAba />
         <AppSidebar />
         <div className="flex flex-1 flex-col overflow-hidden min-h-0">
           <Topbar />

@@ -27,6 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { FunnelMapCanvas } from "@/components/funnels/funnel-map/funnel-map-canvas";
 import { MapaMiniatura } from "@/components/funnels/funnel-map/mapa-miniatura";
 import { NovoMapaDialog } from "@/components/funnels/funnel-map/novo-mapa-dialog";
+import { useTituloDaAba } from "@/components/layout/titulo-da-aba";
 import { EditarMapaDialog } from "@/components/funnels/funnel-map/editar-mapa-dialog";
 import { useFunnelMapsGlobal, type MapaNaLista } from "@/lib/hooks/use-funnel-maps-global";
 import { useUserRole } from "@/lib/hooks/use-user-role";
@@ -58,6 +59,9 @@ export default function FunnelMapsPage() {
   const [mostrarArquivados, setMostrarArquivados] = useState(false);
   const [novoAberto, setNovoAberto] = useState(false);
   const [editando, setEditando] = useState<MapaNaLista | null>(null);
+
+  // O mapa aberto nomeia a aba; a lista fica com o nome da tela.
+  useTituloDaAba(aberto?.stageName);
 
   /**
    * Com o mapa aberto, a barra lateral do app recolhe.
