@@ -33,6 +33,7 @@ import {
 } from "@/components/funnels/funnel-map/comentarios-do-mapa";
 import {
   emConversas,
+  useAtualizarComentario,
   useComentar,
   useComentariosDoMapa,
 } from "@/lib/hooks/use-mapa-comentarios";
@@ -302,6 +303,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
   const mapaId = (data as { id?: string | null } | undefined)?.id ?? null;
   const { data: comentarios } = useComentariosDoMapa(mapaId);
   const comentar = useComentar(mapaId);
+  const mexerNoComentario = useAtualizarComentario(mapaId);
 
   const [abas, setAbas] = useState<AbaDoMapa[] | null>(null);
   const [abaAtiva, setAbaAtiva] = useState(0);
@@ -376,6 +378,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
     rotulo: string;
     url: string;
   } | null>(null);
+
+  /** O campo de link de um BLOCO (não do texto dentro dele). */
+  const [linkDoBloco, setLinkDoBloco] = useState<{ blocoId: string; url: string } | null>(null);
 
   const [modoComentario, setModoComentario] = useState(false);
   const [conversaAberta, setConversaAberta] = useState<string | null>(null);
@@ -1871,6 +1876,23 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
        * para isso. Os `return` acima ja tiraram do caminho quem esta digitando
        * num campo — aqui a tecla so chega com o foco no quadro.
        */
+      /**
+       * ⌘/Ctrl+K põe link no bloco selecionado.
+       *
+       * O mesmo atalho que já existia dentro do texto — e é o ponto: quem
+       * aprendeu o gesto numa nota espera que ele valha no bloco. O campo
+       * continua no painel para quem prefere clicar.
+       */
+      if (mod && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        const alvo = blocos.find((b) => b.id === selecao.unico);
+        if (!alvo) {
+          toast.info("Selecione um bloco para pôr o link.");
+          return;
+        }
+        setLinkDoBloco({ blocoId: alvo.id, url: alvo.url ?? "" });
+        return;
+      }
       if (!mod && !e.altKey && e.key.toLowerCase() === "t") {
         e.preventDefault();
         adicionarTexto("corpo");
@@ -2298,10 +2320,25 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
           }}
           className={`relative flex-1 touch-none overflow-hidden rounded-lg border ${
             arrastandoArquivo ? "border-primary ring-2 ring-primary/40" : "border-border/40"
+          } ${
+            // O modo comentário precisa aparecer no PONTEIRO. Só o botão
+            // realçado na barra não bastava: quem clica está olhando para o
+            // quadro, e descobria o modo pelo alfinete que nasceu sem querer.
+            modoComentario ? "ring-2 ring-amber-400/50" : ""
           }`}
           style={{
             height: alturaDaArea,
-            cursor: espaco.current ? "grab" : "default",
+            /**
+             * O cursor vira um balão no modo comentário.
+             *
+             * SVG embutido em vez de `crosshair`: a mira é o cursor de mil
+             * ferramentas e não diz O QUE vai acontecer ao clicar. O balão diz.
+             * O `12 12` no fim ancora a ponta no meio do desenho, senão o
+             * alfinete nasce deslocado do lugar apontado.
+             */
+            cursor: modoComentario
+              ? "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24' fill='%23fbbf24' stroke='%23713f12' stroke-width='1.5'><path d='M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z'/></svg>\") 12 12, crosshair"
+              : espaco.current ? "grab" : "default",
             // A grade acompanha o pan e o zoom — é a referência visual de que a
             // tela está se movendo.
             backgroundImage: "radial-gradient(circle, var(--color-border) 1px, transparent 1px)",
@@ -3199,6 +3236,48 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       </div>
 
       {/* Menu de contexto do bloco */}
+      {/* O link do bloco, pelo atalho. */}
+      {linkDoBloco && (
+        <>
+          <div className="fixed inset-0 z-[59]" onClick={() => setLinkDoBloco(null)} />
+          <div className="fixed left-1/2 top-24 z-[60] w-80 -translate-x-1/2 rounded-lg border border-border bg-popover p-3 shadow-xl">
+            <p className="mb-1.5 text-[11px] font-medium">
+              Link de “
+              <span className="text-primary">
+                {blocos.find((b) => b.id === linkDoBloco.blocoId)?.label ?? "bloco"}
+              </span>
+              ”
+            </p>
+            <Input
+              autoFocus
+              value={linkDoBloco.url}
+              onChange={(e) => setLinkDoBloco({ ...linkDoBloco, url: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setLinkDoBloco(null);
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  const url = linkDoBloco.url.trim();
+                  alterarAba((a) => ({
+                    ...a,
+                    boxes: a.boxes.map((b) =>
+                      // Campo esvaziado REMOVE o link: sem isto não haveria
+                      // como tirar um endereço colado por engano.
+                      b.id === linkDoBloco.blocoId ? { ...b, url: url || null } : b,
+                    ),
+                  }));
+                  setLinkDoBloco(null);
+                }
+              }}
+              placeholder="cole o endereço aqui"
+              className="h-8 text-[12px]"
+            />
+            <p className="mt-1.5 text-[10px] text-muted-foreground">
+              Enter confirma · Esc cancela · vazio remove
+            </p>
+          </div>
+        </>
+      )}
+
       {/* O campo de link: cola a URL e o trecho selecionado vira âncora. */}
       {criandoLink && (
         <>
@@ -3279,6 +3358,23 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                   numero={i + 1}
                   ativo={aberta}
                   onClick={() => setConversaAberta(aberta ? null : c.id)}
+                  onArrastar={(cx, cy) => {
+                    const p = paraDesenho(cx, cy);
+                    /**
+                     * Mover DESANCORA do bloco.
+                     *
+                     * O alfinete preso a um bloco é desenhado na posição dele,
+                     * então gravar `x`/`y` sem soltar o vínculo não mudaria
+                     * nada na tela — o comentário voltaria para o bloco no
+                     * próximo render, e o arrasto pareceria não ter funcionado.
+                     */
+                    mexerNoComentario.mutate({
+                      id: c.id,
+                      x: Math.round(p.x),
+                      y: Math.round(p.y),
+                      boxId: null,
+                    });
+                  }}
                 />
                 {aberta && (
                   <div className="absolute left-7 top-0">

@@ -106,6 +106,8 @@ export function useAtualizarComentario(mapId: string | null) {
       resolvido?: boolean;
       x?: number;
       y?: number;
+      /** `null` solta o alfinete do bloco a que estava preso. */
+      boxId?: string | null;
     }) =>
       api(`/api/funnel-maps/comentarios/${id}`, {
         method: "PUT",
