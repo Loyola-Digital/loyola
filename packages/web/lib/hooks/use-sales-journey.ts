@@ -59,6 +59,36 @@ export interface BuyersOrigin {
   comTermEstruturado: number;
   /** Toda planilha conectada no funil (menos as de venda) e quantos casou. */
   fontes: { label: string; tipo: "pesquisa" | "aplicacao" | "captacao"; compradores: number }[];
+  /**
+   * Story 18.77 — os quatro cortes da seção "Análise detalhada de origem".
+   *
+   * Cada linha traz leads (denominador), compradores (numerador) e a taxa já
+   * derivada dos somatórios — nunca média de taxas. O numerador sai do MESMO
+   * cruzamento por e-mail que o denominador: a origem do comprador é a que ele
+   * tinha como LEAD, não o `utm_source` da linha de venda, que pode ter sido
+   * recarimbado no checkout.
+   */
+  analiseDeOrigem?: {
+    porTipo: LinhaDeOrigem[];
+    porTemperatura: LinhaDeOrigem[];
+    /** Canais NOMEADOS dentro de Orgânico — o que o balde escondia. */
+    fontesOrganicas: LinhaDeOrigem[];
+    fontesPagas: LinhaDeOrigem[];
+    total: { leads: number; compradores: number; taxa: number | null };
+    /** `false` = sem lead cruzável; a tela declara em vez de exibir taxa. */
+    cruzamentoPorPessoa: boolean;
+    pisoDeAmostra: number;
+  };
+}
+
+export interface LinhaDeOrigem {
+  nome: string;
+  leads: number;
+  compradores: number;
+  /** `null` = sem lead na origem. Denominador zero não é 0%. */
+  taxa: number | null;
+  /** Menos leads que o piso: a taxa aparece, mas marcada. */
+  amostraBaixa: boolean;
 }
 
 export interface JourneyEvent {

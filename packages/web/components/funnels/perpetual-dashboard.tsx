@@ -93,6 +93,7 @@ import { CampaignSelector } from "./campaign-selector";
 import { TopCreativesGallery } from "./top-creatives-gallery";
 import { CamadasDeVideoSection } from "./camadas-de-video-section";
 import { PerpetualAnaliseHoraria } from "./perpetual-analise-horaria";
+import { PerpetualAnaliseOrigem } from "./perpetual-analise-origem";
 import { RefreshDataButton } from "./refresh-data-button";
 import { MetaFreshnessBadge } from "./meta-freshness-badge";
 import { PerpetualSpreadsheetWizardDialog } from "./perpetual-spreadsheet-wizard-dialog";
@@ -3396,6 +3397,13 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           que rendeu, esta seção mostra ONDE cada vídeo perde o espectador — e o
           que dá para recombinar. Não depende de `hasCampaigns`: a leitura por
           camada é sobre o CRIATIVO, e vale mesmo sem campanha vinculada. */}
+      {/* Story 29.68 — de onde vêm os compradores e a que taxa cada origem paga
+          converte. Vem antes da análise horária: "quem" antes de "quando". */}
+      <PerpetualAnaliseOrigem
+        analise={salesData?.analiseDeOrigem ?? undefined}
+        faturamentoTotal={salesData?.faturamentoBruto ?? 0}
+      />
+
       {/* Stories 29.70/29.71/29.72 — em que hora do dia e em que dia da semana o
           funil performa. Fica ANTES das camadas de vídeo porque responde uma
           pergunta de período (quando investir), não de criativo. */}
