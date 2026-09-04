@@ -25,6 +25,8 @@ import { ApplicationsDailyChart } from "./applications-daily-chart";
 import { ApplicationsListTable } from "@/components/funnels/applications-list-table";
 import { ApplicationBandsCard } from "./application-bands-card";
 import { BuyersOriginCard } from "./buyers-origin-card";
+import { AnaliseDeOrigem } from "./analise-de-origem";
+import { useBuyersOrigin } from "@/lib/hooks/use-sales-journey";
 import { LeadJourneyPanel } from "./lead-journey-panel";
 import { ManualPixSalesSection } from "./manual-pix-sales-section";
 import { SalesStagePublicosSection } from "./sales-stage-publicos-section";
@@ -54,6 +56,13 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
   const campaignIds = stage.campaigns.map((c) => c.id);
   const { adsetsMap } = useFunnelAdsetsMap(projectId, campaignIds, days);
   const { data: metaPicker } = useCampaignPicker(settingsOpen ? projectId : null);
+
+  /**
+   * Story 18.77 — a mesma query que o `BuyersOriginCard` já faz, com a mesma
+   * chave: o react-query dedupe as duas, então a seção não custa uma segunda
+   * leitura das planilhas. O `analiseDeOrigem` veio junto na resposta.
+   */
+  const { data: buyersOrigin } = useBuyersOrigin(projectId, funnelId, stage.id, days);
 
   async function handleSaveName() {
     if (!stageName.trim() || stageName.trim() === stage.name) return;
@@ -222,6 +231,11 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
             funnelId={funnelId}
             stageId={stage.id}
           />
+          {/* Story 18.77 — qual origem CONVERTE, não só qual traz volume. Vem
+              logo antes do card de origem dos compradores porque as duas leem o
+              mesmo cruzamento: aquele mostra de onde vieram, este mostra a que
+              taxa cada origem converteu. */}
+          <AnaliseDeOrigem data={buyersOrigin} />
           {/* De onde veio quem comprou + busca da jornada de um e-mail. */}
           <div className="grid gap-4 lg:grid-cols-2">
             <BuyersOriginCard

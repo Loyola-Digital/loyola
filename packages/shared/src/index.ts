@@ -194,6 +194,7 @@ export type {
   // Story 29.69: as duas agregações da seção "Análise detalhada no período".
   PerpetualHourlyData,
   PerpetualHourlyPosition,
+  LinhaDeOrigemPerpetuo,
   PerpetualUpsellSpreadsheet,
   PerpetualUpsellData,
   FunnelStage,

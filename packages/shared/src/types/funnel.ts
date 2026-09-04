@@ -248,6 +248,34 @@ export interface PerpetualSalesData {
   faturamentoPorTipo?: { ingresso: number; principal: number; order_bump: number; combo: number; upsell: number } | null;
 
   /**
+   * Story 29.68 — os quatro cortes da "Análise detalhada de origem".
+   *
+   * Gêmea da 18.77 (Lançamento), com a MESMA classificação. O que muda é o
+   * denominador: aqui é **cliques no link** (decisão do gestor), e ele só
+   * existe para tráfego pago — nos blocos orgânicos a tela declara a ausência
+   * em vez de mostrar `0%`.
+   */
+  analiseDeOrigem?: {
+    porTipo: LinhaDeOrigemPerpetuo[];
+    porTemperatura: LinhaDeOrigemPerpetuo[];
+    fontesOrganicas: LinhaDeOrigemPerpetuo[];
+    fontesPagas: LinhaDeOrigemPerpetuo[];
+    /** `null` = sem campanha, sem cache, ou período sem recorte de datas. */
+    cliquesNoLink: number | null;
+    denominador: "cliques no link";
+    /**
+     * A janela em que os cliques foram contados — a MESMA das vendas.
+     *
+     * Existe porque o desalinhamento produz taxa impossível: medido no `fz-a1`,
+     * 1.473 compradores do histórico contra 1.126 cliques de 30 dias deram
+     * 130,82%. Com a janela declarada, quem lê consegue ver quando as duas
+     * pontas falam de períodos diferentes.
+     */
+    janelaDoDenominador: { since: string; until: string } | null;
+    pisoDeAmostra: number;
+  } | null;
+
+  /**
    * Story 29.61 — order bump e AOV por público no Perpétuo.
    *
    * ⚠️ Estes campos contam **COMPRADORES**, enquanto `porTipoProduto` acima
@@ -351,6 +379,16 @@ export interface PerpetualSalesData {
  * venda é uma barra de altura zero; hora ausente faria o eixo pular de 13h para
  * 15h e a leitura de "melhor hora" sair errada.
  */
+export interface LinhaDeOrigemPerpetuo {
+  nome: string;
+  /** Compradores DISTINTOS — o order bump vem em linha própria e não conta. */
+  compradores: number;
+  faturamentoBruto: number;
+  faturamentoLiquido: number;
+  /** Dos somatórios da origem, nunca média de AOVs. */
+  aov: number | null;
+}
+
 export interface PerpetualHourlyPosition {
   faturamentoBruto: number;
   faturamentoLiquido: number;

@@ -34,7 +34,24 @@ import {
 import { readSheetData } from "../services/google-sheets.js";
 import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
 import { chaveLp, lpDoRegistro, parseUtmTerm, type FonteLp } from "../services/utm-term.js";
-import { phoneTail } from "../utils/lead-origin.js";
+// Story 18.77 (AC4): UMA classificação só. A regex de temperatura do
+// `lead-scoring.ts` e o `classifyFonte` do `stage-sales-data.ts` NÃO são usados
+// aqui — se divergirem do resultado desta seção, é defeito e vai para o backlog.
+import {
+  phoneTail,
+  classifyOrigem,
+  classifyCanal,
+  classifyTemperatura,
+} from "../utils/lead-origin.js";
+
+/**
+ * Story 18.77 (AC6) — piso de leads para a taxa ser lida sem ressalva.
+ *
+ * Abaixo dele a linha continua aparecendo (esconder seria pior), mas marcada:
+ * "1 lead, 1 venda" não é 100% de conversão no mesmo sentido que "800 leads,
+ * 800 vendas" seria.
+ */
+const PISO_DE_LEADS_POR_ORIGEM = 10;
 
 const paramsSchema = z.object({
   projectId: z.string().uuid(),
@@ -514,6 +531,18 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
         string,
         { source: string; medium: string; campaign: string; term: string; fonteLabel: string }
       >();
+      /**
+       * Story 18.77 — TODO lead do funil por e-mail, com a origem dele.
+       *
+       * É o denominador da taxa lead→venda. Separado de `origemPorEmail`, que
+       * só tem quem comprou: a taxa é `compradores da origem ÷ leads da
+       * origem`, e as duas pontas precisam sair do MESMO cruzamento por pessoa
+       * (AC3) — não de dois carimbos independentes.
+       */
+      const origemDeTodoLead = new Map<
+        string,
+        { source: string; medium: string; term: string }
+      >();
 
       for (const f of fontes) {
         let data: { headers: string[]; rows: string[][] };
@@ -531,7 +560,30 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
 
         for (const row of data.rows) {
           const email = normalizeEmail(row[emailIdx]);
-          if (!email || !compradores.has(email)) continue;
+          if (!email) continue;
+
+          /**
+           * Story 18.77 (AC10) — o DENOMINADOR, no mesmo laço do numerador.
+           *
+           * `buyers-origin` já lia estas planilhas para achar a origem de quem
+           * comprou; o que faltava era contar TODO MUNDO que passou por elas.
+           * Ler as mesmas planilhas uma segunda vez, noutra rota, daria dois
+           * números que divergiriam na primeira mudança de regra — e a taxa
+           * lead→venda é a divisão de um pelo outro.
+           *
+           * A dedup é por e-mail e vale para o funil inteiro: quem preencheu
+           * duas pesquisas é UM lead, não dois. A primeira fonte que casar
+           * vence, a mesma regra do comprador logo abaixo.
+           */
+          if (!origemDeTodoLead.has(email)) {
+            origemDeTodoLead.set(email, {
+              source: (srcIdx !== -1 ? row[srcIdx] : "")?.trim() || "",
+              medium: (medIdx !== -1 ? row[medIdx] : "")?.trim() || "",
+              term: (termIdx !== -1 ? row[termIdx] : "")?.trim() || "",
+            });
+          }
+
+          if (!compradores.has(email)) continue;
           // Primeira fonte que casar vence: as fontes vêm de pesquisa primeiro,
           // que é a origem declarada do lead, não o último clique do checkout.
           if (origemPorEmail.has(email)) continue;
@@ -599,10 +651,84 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
         porPlanilha.set(o.fonteLabel, (porPlanilha.get(o.fonteLabel) ?? 0) + 1);
       }
 
+      /**
+       * Story 18.77 (AC1/AC2/AC5) — os quatro cortes da seção "Análise
+       * detalhada de origem", cada um com leads, compradores e a taxa.
+       *
+       * A taxa é re-derivada dos somatórios da linha, nunca média de taxas —
+       * padrão do repo. E o numerador sai do MESMO mapa por e-mail que o
+       * denominador (AC3): a origem do comprador é a que ele tinha como LEAD,
+       * não o `utm_source` da linha de venda, que pode ter sido recarimbado no
+       * checkout.
+       */
+      const cortarPor = (
+        chave: (o: { source: string; medium: string; term: string }) => string | null,
+      ) => {
+        const acc = new Map<string, { leads: number; compradores: number }>();
+        for (const [email, o] of origemDeTodoLead) {
+          const k = chave(o);
+          if (!k) continue;
+          const e = acc.get(k) ?? { leads: 0, compradores: 0 };
+          e.leads += 1;
+          if (origemPorEmail.has(email)) e.compradores += 1;
+          acc.set(k, e);
+        }
+        return [...acc.entries()]
+          .map(([nome, v]) => ({
+            nome,
+            leads: v.leads,
+            compradores: v.compradores,
+            // `null` sem lead: taxa com denominador zero não é 0%, é ausência
+            // de base. A tela mostra "—".
+            taxa: v.leads > 0 ? (v.compradores / v.leads) * 100 : null,
+            /**
+             * AC6 — amostra baixa é MARCADA, não escondida. Uma origem com 1
+             * lead e 1 venda apareceria como "100% de conversão" ao lado de uma
+             * com 800 leads, sem qualquer ressalva.
+             */
+            amostraBaixa: v.leads < PISO_DE_LEADS_POR_ORIGEM,
+          }))
+          // AC7 — por VOLUME de leads: a origem que mais traz gente vem
+          // primeiro, não a que tem a melhor taxa sobre 3 pessoas.
+          .sort((a, b) => b.leads - a.leads);
+      };
+
+      const totalLeads = origemDeTodoLead.size;
+      const analiseDeOrigem = {
+        // 2a — Pago · Orgânico · Sem Track. "Sem Track" APARECE: um lançamento
+        // com 40% sem rastreio é informação, não sujeira (AC1).
+        porTipo: cortarPor((o) => classifyOrigem(o.source)),
+        // 2b — Quente · Frio · Indefinido, do `utm_term`.
+        porTemperatura: cortarPor((o) => classifyTemperatura(o.term)),
+        // 2c e 2d — os canais NOMEADOS dentro de cada balde. É o que a rota
+        // antiga não conseguia responder: `porUtmSource` já vinha somado por
+        // balde, e Instagram, YouTube e ManyChat cabiam todos em "Orgânico".
+        fontesOrganicas: cortarPor((o) =>
+          classifyOrigem(o.source) === "Orgânico" ? classifyCanal(o.source, o.medium) : null,
+        ),
+        fontesPagas: cortarPor((o) =>
+          classifyOrigem(o.source) === "Pago" ? classifyCanal(o.source, o.medium) : null,
+        ),
+        /** AC7 — a linha de total: o denominador do fechamento. */
+        total: {
+          leads: totalLeads,
+          compradores: origemPorEmail.size,
+          taxa: totalLeads > 0 ? (origemPorEmail.size / totalLeads) * 100 : null,
+        },
+        /**
+         * AC3 — quando o cruzamento não é possível, o bloco DECLARA que está
+         * comparando carimbos independentes em vez de exibir uma taxa com
+         * aparência de fato.
+         */
+        cruzamentoPorPessoa: totalLeads > 0,
+        pisoDeAmostra: PISO_DE_LEADS_POR_ORIGEM,
+      };
+
       return {
         semDados: false,
         totalCompradores: compradores.size,
         casados: origemPorEmail.size,
+        analiseDeOrigem,
         // Comprador que não aparece em nenhuma pesquisa/planilha de lead: comprou
         // sem passar pela aplicação, ou usou outro e-mail no checkout.
         semOrigem: compradores.size - origemPorEmail.size,

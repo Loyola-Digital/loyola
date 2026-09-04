@@ -31,10 +31,27 @@ import {
   NOMES_DOS_DIAS,
 } from "../utils/sale-date.js";
 import { applyMetaTax } from "../utils/meta-tax.js";
+// Story 29.68 (AC4): a MESMA classificação da 18.77 (Lançamento). Se a mesma
+// venda for classificada diferente nas duas telas, é defeito.
+import {
+  classifyOrigem,
+  classifyCanal,
+  classifyTemperatura,
+} from "../utils/lead-origin.js";
+import { parseActionCount } from "../utils/meta-metrics.js";
+
+/**
+ * Story 29.68 (AC7) — piso de amostra por origem.
+ *
+ * Mesma régua da 18.77: abaixo dele a linha aparece, marcada. Uma origem com 2
+ * compradores não é "a que mais converte" no mesmo sentido que uma com 400.
+ */
+const PISO_DE_AMOSTRA_POR_ORIGEM = 10;
 import { getMetaAccountForProject } from "../services/traffic-analytics.js";
 import {
   getHourlyInsightsFromDb,
   getCampaignDailySpendFromDb,
+  getCampaignInsightsFromDb,
 } from "../services/meta-db-source.js";
 import { PLATFORM_RATE_BREAKDOWN } from "../services/perpetual-report-config.js";
 
@@ -315,6 +332,8 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
           utmMedium: string;
           utmContent: string;
           utmCampaign: string;
+          /** Story 29.68: base da temperatura (quente/frio) por comprador. */
+          utmTerm: string | null;
           lastDate: Date | null;
         }
       >();
@@ -374,6 +393,16 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         const utmMedium = sanitizeUtmValue(row[utmMediumIdx]) ?? SEM_ORIGEM_LABEL;
         const utmContent = sanitizeUtmValue(row[utmContentIdx]) ?? SEM_ORIGEM_LABEL;
         const utmCampaign = sanitizeUtmValue(row[utmCampaignIdx]) ?? SEM_ORIGEM_LABEL;
+        /**
+         * Story 29.68 — `null`, NUNCA `SEM_ORIGEM_LABEL`.
+         *
+         * O mesmo cuidado que a 29.61 documentou para o `utmSource` de
+         * `linhasParaPublico`: `"(sem origem)"` é string não vazia, e
+         * `classifyTemperatura` a leria como um term qualquer. Aqui isso viraria
+         * "indefinido" de qualquer jeito, mas a distinção importa para quem ler
+         * o campo depois.
+         */
+        const utmTermDaLinha = utmTermIdx === -1 ? null : sanitizeUtmValue(row[utmTermIdx]);
         const rowDate = dataIdx !== -1 ? parseDate(row[dataIdx]) : null;
         const status = hasStatusCol ? (row[statusIdx] ?? "").trim() : "";
 
@@ -474,10 +503,11 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
             existing.utmMedium = utmMedium;
             existing.utmContent = utmContent;
             existing.utmCampaign = utmCampaign;
+            existing.utmTerm = utmTermDaLinha;
             existing.lastDate = rowDate;
           }
         } else {
-          dedupMap.set(dedupKey, { bruto, liquido, forma, utmSource, utmMedium, utmContent, utmCampaign, lastDate: rowDate });
+          dedupMap.set(dedupKey, { bruto, liquido, forma, utmSource, utmMedium, utmContent, utmCampaign, utmTerm: utmTermDaLinha, lastDate: rowDate });
         }
       }
 
@@ -520,6 +550,142 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         addToMap(formaMap, forma, bruto, liquido);
       }
 
+      /**
+       * Story 29.68 — o denominador: cliques no link das campanhas do funil.
+       *
+       * Lido do BANCO (`meta_campaign_insights_daily`), como manda a regra de
+       * rate limit — a rota do dashboard nunca chama a Meta ao vivo. `null`
+       * quando não há campanha vinculada ou o cache não tem o dado: a tela
+       * declara a ausência em vez de dividir por zero e mostrar `0%`.
+       */
+      const cliquesNoLinkDoFunil = await (async (): Promise<number | null> => {
+        const stages = await fastify.db
+          .select({ campaigns: funnelStages.campaigns })
+          .from(funnelStages)
+          .where(eq(funnelStages.funnelId, params.data.funnelId));
+        const ids = stages
+          .flatMap((st) => (Array.isArray(st.campaigns) ? st.campaigns : []))
+          .map((c: unknown) =>
+            typeof c === "string" ? c : ((c as { id?: string })?.id ?? ""),
+          )
+          .filter(Boolean);
+        if (ids.length === 0) return null;
+
+        /**
+         * ⚠️ A janela do denominador tem que ser a MESMA do numerador.
+         *
+         * Sem `cutoffStart`, o `dedupMap` acima não filtra nada — são os
+         * compradores do histórico inteiro. Cruzar isso com os cliques de 30
+         * dias produz taxa acima de 100%: medido no `fz-a1`, 1.473 compradores
+         * de sempre contra 1.126 cliques do último mês deram **130,82%**, um
+         * número que parece defeito de cálculo e não é: são duas janelas.
+         *
+         * Quando não há recorte, não há denominador comparável — e `null` faz a
+         * tela declarar isso, em vez de imprimir a taxa impossível.
+         */
+        if (!cutoffStart && !query.data.days) return null;
+
+        const until = businessToday();
+        const since = cutoffStart
+          ? cutoffStart.toISOString().slice(0, 10)
+          : shiftDayKey(until, -(query.data.days ?? 30));
+        const ate = cutoffEnd ? cutoffEnd.toISOString().slice(0, 10) : until;
+        const campanhas = await getCampaignInsightsFromDb(
+          fastify.db,
+          params.data.projectId,
+          since,
+          ate,
+          ids,
+        );
+        if (campanhas.length === 0) return null;
+        const total = campanhas.reduce(
+          (acc, c) => acc + parseActionCount(c.actions, "link_click"),
+          0,
+        );
+        // `0` medido é diferente de "não medimos": só a ausência de campanha ou
+        // de cache vira `null`, e essa distinção é o que a AC3 protege.
+        return total;
+      })();
+
+      /**
+       * Story 29.68 (AC1/AC2) — a "Análise detalhada de origem" do Perpétuo.
+       *
+       * O denominador é **cliques no link** (decisão do gestor, 2026-09-03) — a
+       * mesma `Tx Conversão` que a tabela de Detalhamento já mostra, para que
+       * dois números com o mesmo nome na mesma tela passem a bater.
+       *
+       * ⚠️ **O clique só existe para tráfego PAGO.** Nos blocos orgânicos não há
+       * denominador, e a resposta diz isso em vez de mandar `0%`: taxa zero e
+       * ausência de denominador são coisas diferentes, e a segunda apresentada
+       * como a primeira acusa o canal orgânico de não converter.
+       *
+       * A unidade é COMPRADOR distinto (o `dedupMap` já deduplica por e-mail),
+       * não linha — o order bump viria numa linha própria e inflaria a conta.
+       */
+      const cortarOrigem = (
+        chave: (v: {
+          utmSource: string;
+          utmMedium: string;
+          utmTerm: string | null;
+        }) => string | null,
+      ) => {
+        const acc = new Map<string, { compradores: number; bruto: number; liquido: number }>();
+        for (const v of dedupMap.values()) {
+          const k = chave(v);
+          if (!k) continue;
+          const e = acc.get(k) ?? { compradores: 0, bruto: 0, liquido: 0 };
+          e.compradores += 1;
+          e.bruto += v.bruto;
+          e.liquido += v.liquido;
+          acc.set(k, e);
+        }
+        return [...acc.entries()]
+          .map(([nome, v]) => ({
+            nome,
+            compradores: v.compradores,
+            faturamentoBruto: v.bruto,
+            faturamentoLiquido: v.liquido,
+            /** AOV da origem, dos somatórios — nunca média de AOVs. */
+            aov: v.compradores > 0 ? v.bruto / v.compradores : null,
+          }))
+          .sort((a, b) => b.faturamentoBruto - a.faturamentoBruto);
+      };
+
+      const analiseDeOrigem = {
+        porTipo: cortarOrigem((v) => classifyOrigem(v.utmSource)),
+        porTemperatura: cortarOrigem((v) => classifyTemperatura(v.utmTerm)),
+        fontesOrganicas: cortarOrigem((v) =>
+          classifyOrigem(v.utmSource) === "Orgânico"
+            ? classifyCanal(v.utmSource, v.utmMedium)
+            : null,
+        ),
+        fontesPagas: cortarOrigem((v) =>
+          classifyOrigem(v.utmSource) === "Pago"
+            ? classifyCanal(v.utmSource, v.utmMedium)
+            : null,
+        ),
+        /**
+         * AC2/AC3 — o denominador vai NA RESPOSTA, para a tela poder declarar
+         * de onde sai cada taxa. `null` quando não há campanha vinculada: a
+         * seção mostra vendas, faturamento, AOV e participação, e diz o que
+         * falta para haver taxa.
+         */
+        cliquesNoLink: cliquesNoLinkDoFunil,
+        denominador: "cliques no link" as const,
+        /**
+         * A janela em que os cliques foram contados — a mesma das vendas. A
+         * tela imprime junto da taxa: sem isso, ninguém tem como saber se o
+         * numerador e o denominador falam do mesmo período.
+         */
+        janelaDoDenominador:
+          cliquesNoLinkDoFunil === null
+            ? null
+            : cutoffStart
+              ? { since: cutoffStart.toISOString().slice(0, 10), until: cutoffEnd ? cutoffEnd.toISOString().slice(0, 10) : businessToday() }
+              : { since: shiftDayKey(businessToday(), -(query.data.days ?? 30)), until: businessToday() },
+        pisoDeAmostra: PISO_DE_AMOSTRA_POR_ORIGEM,
+      };
+
       const platform = spreadsheet.platform;
       const feeRate = effectivePlatformFeeRate(platform, hasStatusCol);
       const faturamentoLiquidoCalculado = totalBruto * (1 - feeRate);
@@ -548,6 +714,7 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
 
       return {
         totalVendas,
+        analiseDeOrigem,
         porTipoProduto: temClassificacao ? quebraPorTipo : null,
         // Story 29.74 (AC5): mesmo critério da contagem — sem coluna mapeada ou
         // sem produto classificado, tudo cai em `principal` e a quebra não
