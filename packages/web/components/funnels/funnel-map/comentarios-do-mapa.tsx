@@ -18,7 +18,7 @@
  */
 
 import { useState } from "react";
-import { Check, MessageCircle, MessageSquarePlus, Trash2, X } from "lucide-react";
+import { Check, Loader2, MessageCircle, MessageSquarePlus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -213,24 +213,42 @@ export function BotaoDeComentarios({
 }: {
   mapId: string | null;
   ativo: boolean;
-  onAlternar: () => void;
+  /**
+   * Sem `mapId`, quem chama precisa GRAVAR o mapa antes e só então ligar o
+   * modo — ver `alternarComentarios` no canvas.
+   */
+  onAlternar: () => void | Promise<void>;
 }) {
   const { data } = useComentariosDoMapa(mapId);
   const abertas = emConversas(data?.comentarios ?? []).filter((c) => !c.resolvido).length;
+  const [ocupado, setOcupado] = useState(false);
 
   return (
     <Button
       variant={ativo ? "secondary" : "ghost"}
       size="icon"
       className="relative h-6 w-6"
-      onClick={onAlternar}
-      disabled={!mapId}
-      // Um mapa que ainda não foi salvo não tem id: o comentário nasceria órfão.
-      title={mapId ? (ativo ? "Sair do modo comentário" : "Comentar no mapa") : "Salve o mapa para comentar"}
+      onClick={async () => {
+        // Nunca desabilitado por falta de `mapId`: um botão apagado sem
+        // explicação é indistinguível de um botão quebrado, e era o que
+        // acontecia num mapa ainda não gravado. Agora ele grava e segue.
+        setOcupado(true);
+        try {
+          await onAlternar();
+        } finally {
+          setOcupado(false);
+        }
+      }}
+      disabled={ocupado}
+      title={ativo ? "Sair do modo comentário" : "Comentar no mapa"}
       aria-label="Comentários"
     >
-      <MessageSquarePlus className="h-3 w-3" />
-      {abertas > 0 && (
+      {ocupado ? (
+        <Loader2 className="h-3 w-3 animate-spin" />
+      ) : (
+        <MessageSquarePlus className="h-3 w-3" />
+      )}
+      {abertas > 0 && !ocupado && (
         <span className="absolute -right-0.5 -top-0.5 grid h-3 min-w-3 place-items-center rounded-full bg-amber-400 px-0.5 text-[8px] font-bold text-amber-950">
           {abertas}
         </span>

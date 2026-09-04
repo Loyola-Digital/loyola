@@ -358,6 +358,21 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
   const [cadeiaPresa, setCadeiaPresa] = useState<Set<string>>(new Set());
   const [segurando, setSegurando] = useState(false);
 
+  /**
+   * O campo de link do bloco de texto.
+   *
+   * Guarda o trecho selecionado e onde ele começa e termina, porque o textarea
+   * perde a seleção assim que o foco vai para o campo de URL — e sem as
+   * posições não há onde inserir a marcação de volta.
+   */
+  const [criandoLink, setCriandoLink] = useState<{
+    blocoId: string;
+    inicio: number;
+    fim: number;
+    rotulo: string;
+    url: string;
+  } | null>(null);
+
   const [modoComentario, setModoComentario] = useState(false);
   const [conversaAberta, setConversaAberta] = useState<string | null>(null);
   const [novoComentario, setNovoComentario] = useState<{ x: number; y: number; texto: string } | null>(null);
@@ -1329,6 +1344,38 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
     }));
   }
 
+  /**
+   * Liga o modo comentário, gravando o mapa se ele ainda não existir.
+   *
+   * O comentário é endereçado pela chave do desenho, e um mapa nunca salvo não
+   * tem uma. A versão anterior resolvia isso desabilitando o botão — o que, na
+   * prática, é um controle apagado sem explicação, indistinguível de um botão
+   * quebrado. Aqui ele grava e segue: o próximo render já traz o `id`.
+   */
+  async function alternarComentarios() {
+    if (modoComentario) {
+      setModoComentario(false);
+      setConversaAberta(null);
+      setNovoComentario(null);
+      return;
+    }
+
+    if (!mapaId) {
+      try {
+        await salvar.mutateAsync(abas ?? []);
+        setSujo(false);
+        toast.success("Mapa salvo — agora dá para comentar");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Preciso salvar o mapa antes de comentar");
+        return;
+      }
+    }
+
+    setModoComentario(true);
+    setConversaAberta(null);
+    setNovoComentario(null);
+  }
+
   /** Apaga uma seta específica — a que estiver selecionada. */
   function removerConector(id: string) {
     alterarAba((a) => ({ ...a, connectors: a.connectors.filter((c) => c.id !== id) }));
@@ -1968,11 +2015,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
           <BotaoDeComentarios
             mapId={mapaId}
             ativo={modoComentario}
-            onAlternar={() => {
-              setModoComentario((v) => !v);
-              setConversaAberta(null);
-              setNovoComentario(null);
-            }}
+            onAlternar={alternarComentarios}
           />
           <Button
             variant="ghost" size="icon" className="h-6 w-6"
@@ -2593,6 +2636,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                     }}
                   >
                     {editando?.id === b.id ? (
+                      <>
                       <textarea
                         autoFocus
                         value={editando.valor}
@@ -2602,6 +2646,32 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                           if (ev.key === "Escape") { ev.preventDefault(); setEditando(null); }
                           // Enter quebra linha; ⌘/Ctrl+Enter fecha a edição.
                           if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); confirmarTexto(); }
+                          /**
+                           * ⌘/Ctrl+K vira link — o atalho que todo editor usa.
+                           *
+                           * A sintaxe `[rótulo](url)` continua funcionando para
+                           * quem a conhece, mas ninguém deveria PRECISAR
+                           * conhecê-la: era a única forma de criar um link com
+                           * texto próprio, e isso é o mesmo que não ter a
+                           * funcionalidade para quem não escreve markdown.
+                           */
+                          if (ev.key.toLowerCase() === "k" && (ev.metaKey || ev.ctrlKey)) {
+                            ev.preventDefault();
+                            const alvo = ev.currentTarget;
+                            const inicio = alvo.selectionStart ?? 0;
+                            const fim = alvo.selectionEnd ?? 0;
+                            if (inicio === fim) {
+                              toast.info("Selecione o texto que vira link.");
+                              return;
+                            }
+                            setCriandoLink({
+                              blocoId: b.id,
+                              inicio,
+                              fim,
+                              rotulo: editando.valor.slice(inicio, fim),
+                              url: "",
+                            });
+                          }
                         }}
                         onPointerDown={(ev) => ev.stopPropagation()}
                         /**
@@ -2639,6 +2709,12 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                           color: ehNota ? "#1f2937" : "var(--color-foreground)",
                         }}
                       />
+                      {/* A dica fica NO lugar onde se digita. Um atalho que só
+                          existe na tela de ajuda é um atalho que ninguém usa. */}
+                      <span className="pointer-events-none absolute -bottom-4 left-0 whitespace-nowrap text-[9px] text-muted-foreground">
+                        selecione + ⌘K vira link
+                      </span>
+                      </>
                     ) : (
                       <div
                         className="h-full w-full overflow-hidden whitespace-pre-wrap break-words"
@@ -2990,6 +3066,51 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       </div>
 
       {/* Menu de contexto do bloco */}
+      {/* O campo de link: cola a URL e o trecho selecionado vira âncora. */}
+      {criandoLink && (
+        <>
+          <div className="fixed inset-0 z-[59]" onClick={() => setCriandoLink(null)} />
+          <div className="fixed left-1/2 top-24 z-[60] w-80 -translate-x-1/2 rounded-lg border border-border bg-popover p-3 shadow-xl">
+            <p className="mb-1.5 text-[11px] font-medium">
+              Link em “<span className="text-primary">{criandoLink.rotulo}</span>”
+            </p>
+            <Input
+              autoFocus
+              value={criandoLink.url}
+              onChange={(e) => setCriandoLink({ ...criandoLink, url: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setCriandoLink(null);
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  const url = criandoLink.url.trim();
+                  if (!url) return;
+                  // Sem esquema, o navegador trataria como caminho relativo e o
+                  // link abriria dentro do próprio app.
+                  const completa = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+                  setEditando((atual) => {
+                    if (!atual || atual.id !== criandoLink.blocoId) return atual;
+                    const marcado = `[${criandoLink.rotulo}](${completa})`;
+                    return {
+                      id: atual.id,
+                      valor:
+                        atual.valor.slice(0, criandoLink.inicio) +
+                        marcado +
+                        atual.valor.slice(criandoLink.fim),
+                    };
+                  });
+                  setCriandoLink(null);
+                }
+              }}
+              placeholder="cole o endereço aqui"
+              className="h-8 text-[12px]"
+            />
+            <p className="mt-1.5 text-[10px] text-muted-foreground">
+              Enter confirma · Esc cancela
+            </p>
+          </div>
+        </>
+      )}
+
       {/* Aviso do modo corrente.
           Segurar sem resposta na tela parece travamento: sem esta
           faixa, quem segura acha que a tela travou e solta antes. */}
