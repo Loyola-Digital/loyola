@@ -185,17 +185,49 @@ export function Alfinete({
   numero,
   ativo,
   onClick,
+  onArrastar,
 }: {
   numero: number;
   ativo: boolean;
   onClick: () => void;
+  /**
+   * Chamado ao SOLTAR, com o ponto de tela onde caiu.
+   *
+   * Quem chama converte para coordenada de desenho e grava — a conversão
+   * depende do zoom e do pan, que vivem no canvas.
+   */
+  onArrastar: (clientX: number, clientY: number) => void;
 }) {
   return (
     <button
       type="button"
       onClick={(e) => { e.stopPropagation(); onClick(); }}
-      onPointerDown={(e) => e.stopPropagation()}
-      className={`grid h-6 w-6 place-items-center rounded-full rounded-bl-none text-[10px] font-bold shadow-md transition-transform hover:scale-110 ${
+      /**
+       * Arrastar move o alfinete; clicar sem mover abre a conversa.
+       *
+       * Os dois gestos no mesmo botão porque é o que se espera de um marcador:
+       * exigir uma alça separada para mover um círculo de 24px seria um alvo
+       * dentro de outro. Quatro pixels separam um do outro — abaixo disso é
+       * tremor de mão, não intenção de arrastar.
+       */
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        const x0 = e.clientX;
+        const y0 = e.clientY;
+        let arrastou = false;
+
+        const mover = (ev: PointerEvent) => {
+          if (Math.abs(ev.clientX - x0) > 4 || Math.abs(ev.clientY - y0) > 4) arrastou = true;
+        };
+        const soltar = (ev: PointerEvent) => {
+          window.removeEventListener("pointermove", mover);
+          window.removeEventListener("pointerup", soltar);
+          if (arrastou) onArrastar(ev.clientX, ev.clientY);
+        };
+        window.addEventListener("pointermove", mover);
+        window.addEventListener("pointerup", soltar);
+      }}
+      className={`grid h-6 w-6 cursor-grab place-items-center rounded-full rounded-bl-none text-[10px] font-bold shadow-md transition-transform hover:scale-110 active:cursor-grabbing ${
         ativo ? "bg-primary text-primary-foreground" : "bg-amber-400 text-amber-950"
       }`}
       aria-label={`Comentário ${numero}`}

@@ -698,6 +698,8 @@ export default fp(async function funnelMapRoutes(fastify) {
         resolvido: z.boolean().optional(),
         x: z.coerce.number().int().min(-100_000).max(100_000).optional(),
         y: z.coerce.number().int().min(-100_000).max(100_000).optional(),
+        /** `null` solta o alfinete do bloco — ver o arrasto no canvas. */
+        boxId: z.string().trim().max(64).nullable().optional(),
       })
       .safeParse(request.body);
     if (!p.success || !b.success) return reply.code(400).send({ error: "Dados inválidos" });
