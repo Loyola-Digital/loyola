@@ -32,6 +32,14 @@ async function main() {
   // Custa chamadas à Graph API (lotes de 50), então é opt-in — não vira default
   // de um script que hoje roda sem tocar criativo nenhum.
   const creatives = hasFlag("creatives");
+  /**
+   * Story 29.69 — o breakdown horário. Opt-in pelo mesmo motivo do `creatives`:
+   * são 24 linhas por dia por campanha, e num backfill de 365 dias isso é
+   * ordens de grandeza a mais que o sync comum. Serve para popular o histórico
+   * de um funil recém-configurado, que a cadência diária levaria semanas para
+   * cobrir sozinha.
+   */
+  const hourly = hasFlag("hourly");
 
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   const db = drizzle(pool, { schema });
@@ -61,16 +69,26 @@ async function main() {
   }
 
   console.log(
-    `\n[backfill-meta-perf] days=${days}${creatives ? " +creatives" : ""} — chamando a Graph API e populando o cache...\n`,
+    `\n[backfill-meta-perf] days=${days}${creatives ? " +creatives" : ""}${hourly ? " +hourly" : ""} — chamando a Graph API e populando o cache...\n`,
   );
   const summary = await syncMetaPerformance(db, {
     days,
     projectIds,
     creatives,
+    hourly,
     log: (m) => console.log(m),
   });
   console.log("\n=== SUMMARY ===");
   console.log(JSON.stringify(summary, null, 2));
+
+  if (hourly) {
+    const h = await pool.query(
+      "SELECT count(*)::int AS n, min(date_start) AS desde, max(date_start) AS ate FROM meta_hourly_insights_daily",
+    );
+    console.log(
+      `\nbreakdown horário -> ${h.rows[0].n} linhas, de ${h.rows[0].desde ?? "—"} a ${h.rows[0].ate ?? "—"}`,
+    );
+  }
 
   const camp = await pool.query("SELECT count(*)::int AS n FROM meta_campaign_insights_daily");
   const ad = await pool.query("SELECT count(*)::int AS n FROM meta_ad_insights_daily");
