@@ -3770,6 +3770,33 @@ export const plannerAnnualTracks = pgTable(
   (t) => [index("idx_planner_annual_tracks_projeto").on(t.projectId, t.sortOrder)],
 );
 
+/**
+ * O que a empresa mudou na faixa colorida (nome e cor).
+ *
+ * Tabela de personalização, não de grupos: as três chaves seguem fixas no
+ * código. Só existe linha para o que alguém mexeu — semear três por empresa
+ * faria toda empresa nova nascer com cópias do padrão, e mudar o padrão depois
+ * não alcançaria nenhuma delas.
+ */
+export const plannerAnnualGroups = pgTable(
+  "planner_annual_groups",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /** `organico` | `trafego` | `ascensao`. */
+    grupo: varchar("grupo", { length: 20 }).notNull(),
+    /** Vazio = o rótulo padrão do código. */
+    rotulo: varchar("rotulo", { length: 40 }),
+    /** `#rrggbb` minúsculo. Vazio = a cor padrão do código. */
+    cor: varchar("cor", { length: 7 }),
+    updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("idx_planner_annual_groups_projeto").on(t.projectId, t.grupo)],
+);
+
 export const plannerAnnualCells = pgTable(
   "planner_annual_cells",
   {

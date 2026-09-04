@@ -24,10 +24,11 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   useAtualizarEsteira,
+  useAtualizarGrupo,
   useCriarEsteira,
   useCriarEsteirasIniciais,
   useExcluirEsteira,
@@ -35,6 +36,7 @@ import {
   useMatrizAnual,
   type CelulaAnual,
   type EsteiraAnual,
+  type GrupoAnual,
 } from "@/lib/hooks/use-planner-anual";
 
 const MESES = [
@@ -62,12 +64,36 @@ const FUNIS = [
   "Time comercial",
 ] as const;
 
-/** Os três da lateral, na ordem em que aparecem. */
-const GRUPOS = [
+/**
+ * Os três da lateral, na ordem em que aparecem.
+ *
+ * Fallback: o servidor devolve os nomes e cores que a empresa escolheu, mas a
+ * tela precisa desenhar algo enquanto a matriz não chegou — e as chaves
+ * (`organico`…) são fixas dos dois lados.
+ */
+const GRUPOS_PADRAO: GrupoAnual[] = [
   { id: "organico", rotulo: "ORGÂNICO", cor: "#A32B1F" },
   { id: "trafego", rotulo: "TRÁFEGO", cor: "#5A7F3C" },
   { id: "ascensao", rotulo: "ASCENSÃO", cor: "#1F3864" },
-] as const;
+];
+
+/**
+ * Sugestões de cor para a faixa.
+ *
+ * As três da planilha do time mais tons que se distinguem delas à distância —
+ * a faixa é lida de relance na lateral, e dois vermelhos parecidos fariam
+ * ORGÂNICO e o grupo vizinho virarem a mesma coisa ao passar o olho.
+ */
+const CORES_SUGERIDAS = [
+  "#A32B1F",
+  "#5A7F3C",
+  "#1F3864",
+  "#B45309",
+  "#7C3AED",
+  "#0F766E",
+  "#BE185D",
+  "#3F3F46",
+];
 
 const LARGURA_FAIXA = 26;
 const LARGURA_ESTEIRA = 200;
@@ -290,12 +316,15 @@ function BlocoDoGrupo({
   onGravarCelula,
   onRenomear,
   onExcluir,
+  onEditarFaixa,
 }: {
-  grupo: { id: string; rotulo: string; cor: string };
+  grupo: GrupoAnual;
   esteiras: EsteiraAnual[];
   onGravarCelula: (esteiraId: string, mes: number, c: CelulaAnual) => void;
   onRenomear: (esteiraId: string, nome: string) => void;
   onExcluir: (esteira: EsteiraAnual) => void;
+  /** Recebe o ponto do clique — o painel abre ancorado nele, ver o porquê lá. */
+  onEditarFaixa: (clientX: number, clientY: number) => void;
 }) {
   if (esteiras.length === 0) return null;
 
@@ -305,18 +334,25 @@ function BlocoDoGrupo({
         className="sticky left-0 z-20 flex shrink-0 bg-background"
         style={{ width: LARGURA_ESTEIRA }}
       >
-        {/* A faixa: cor do grupo e o nome girado, centralizado na altura toda. */}
-        <div
-          className="flex shrink-0 items-center justify-center"
+        {/* A faixa: cor do grupo e o nome girado, centralizado na altura toda.
+            Clicar nela abre o painel de nome e cor — o lápis só aparece no
+            hover para não competir com o rótulo, que é o que se lê aqui. */}
+        <button
+          type="button"
+          onClick={(ev) => onEditarFaixa(ev.clientX, ev.clientY)}
+          title={`Renomear ou trocar a cor de "${grupo.rotulo}"`}
+          aria-label={`Editar a faixa ${grupo.rotulo}`}
+          className="group/faixa relative flex shrink-0 items-center justify-center transition-[filter] hover:brightness-125"
           style={{ width: LARGURA_FAIXA, backgroundColor: grupo.cor }}
         >
+          <Pencil className="absolute top-1.5 h-2.5 w-2.5 text-white/0 transition-colors group-hover/faixa:text-white/80" />
           <span
             className="whitespace-nowrap text-[9px] font-bold tracking-[0.18em] text-white"
             style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
           >
             {grupo.rotulo}
           </span>
-        </div>
+        </button>
 
         <div className="flex min-w-0 flex-col">
           {esteiras.map((e) => (
@@ -343,6 +379,122 @@ function BlocoDoGrupo({
   );
 }
 
+/**
+ * O painel de nome e cor da faixa.
+ *
+ * Ancorado no PONTO DO CLIQUE e `fixed`, não dentro do bloco: a grade rola na
+ * horizontal com `overflow`, e um painel filho dela seria recortado — ou pior,
+ * esticaria a área de rolagem quando o grupo tem uma linha só.
+ *
+ * O nome grava ao SAIR do campo, como o resto do calendário. A cor grava no
+ * clique do quadradinho; o seletor livre espera a mão parar, senão arrastar o
+ * matiz vira uma requisição por tom.
+ */
+function PainelDaFaixa({
+  grupo,
+  x,
+  y,
+  onGravar,
+  onFechar,
+}: {
+  grupo: GrupoAnual;
+  x: number;
+  y: number;
+  onGravar: (dados: { rotulo?: string | null; cor?: string | null }) => void;
+  onFechar: () => void;
+}) {
+  const [nome, setNome] = useState(grupo.rotulo);
+  const [cor, setCor] = useState(grupo.cor);
+  const espera = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => void (espera.current && clearTimeout(espera.current)), []);
+
+  const corAoVivo = (c: string) => {
+    setCor(c);
+    if (espera.current) clearTimeout(espera.current);
+    espera.current = setTimeout(() => onGravar({ cor: c }), 300);
+  };
+
+  const LARGURA = 248;
+  const esquerda = Math.min(Math.max(8, x + 10), window.innerWidth - LARGURA - 8);
+  const topo = Math.min(Math.max(8, y - 20), window.innerHeight - 210);
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[59]" onClick={onFechar} />
+      <div
+        className="fixed z-[60] rounded-lg border border-border bg-popover p-3 shadow-xl"
+        style={{ left: esquerda, top: topo, width: LARGURA }}
+      >
+        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Faixa
+        </p>
+        <input
+          autoFocus
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
+          onBlur={() => nome.trim() !== grupo.rotulo && onGravar({ rotulo: nome })}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Escape") {
+              setNome(grupo.rotulo);
+              onFechar();
+            }
+          }}
+          maxLength={40}
+          placeholder="nome da faixa"
+          className="w-full rounded-md border border-border bg-transparent px-2 py-1 text-[12px] outline-none focus:border-primary"
+        />
+
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
+          {CORES_SUGERIDAS.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => {
+                setCor(c);
+                onGravar({ cor: c });
+              }}
+              aria-label={`Cor ${c}`}
+              className={`h-5 w-5 rounded border transition-transform hover:scale-110 ${
+                c === cor ? "border-foreground" : "border-transparent"
+              }`}
+              style={{ backgroundColor: c }}
+            />
+          ))}
+          {/* O seletor livre fica junto dos atalhos, e não escondido atrás de
+              um "mais": quem quer a cor exata da marca vem direto para cá. */}
+          <label
+            className="grid h-5 w-5 cursor-pointer place-items-center rounded border border-dashed border-border text-[9px] text-muted-foreground hover:border-foreground"
+            title="Escolher outra cor"
+          >
+            +
+            <input
+              type="color"
+              value={cor}
+              onChange={(e) => corAoVivo(e.target.value)}
+              onBlur={(e) => onGravar({ cor: e.target.value })}
+              className="sr-only"
+            />
+          </label>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            setNome("");
+            onGravar({ rotulo: null, cor: null });
+            onFechar();
+          }}
+          className="mt-2.5 text-[10px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        >
+          Voltar ao nome e à cor originais
+        </button>
+      </div>
+    </>
+  );
+}
+
 export function CalendarioAnual({
   projectId,
   ano,
@@ -358,8 +510,15 @@ export function CalendarioAnual({
   const iniciais = useCriarEsteirasIniciais(projectId, ano);
   const renomear = useAtualizarEsteira(projectId, ano);
   const excluir = useExcluirEsteira(projectId, ano);
+  const mexerNaFaixa = useAtualizarGrupo(projectId, ano);
 
   const rolagem = useRef<HTMLDivElement>(null);
+  /** Qual faixa está em edição e onde o painel abre. */
+  const [editandoFaixa, setEditandoFaixa] = useState<{
+    grupo: GrupoAnual;
+    x: number;
+    y: number;
+  } | null>(null);
 
   if (!projectId) {
     return (
@@ -379,6 +538,9 @@ export function CalendarioAnual({
   }
 
   const esteiras = data?.esteiras ?? [];
+  // O servidor manda os três já com o nome e a cor da empresa aplicados; o
+  // padrão local só cobre o instante entre o render e a resposta.
+  const grupos = data?.grupos ?? GRUPOS_PADRAO;
 
   // Matriz sem linha nenhuma não ensina o que ela é: em vez de uma grade vazia,
   // o convite para começar com as esteiras que o time já usava.
@@ -435,7 +597,7 @@ export function CalendarioAnual({
 
         <div className="flex-1" />
 
-        {GRUPOS.map((g) => (
+        {grupos.map((g) => (
           <button
             key={g.id}
             type="button"
@@ -478,11 +640,12 @@ export function CalendarioAnual({
             ))}
           </div>
 
-          {GRUPOS.map((g) => (
+          {grupos.map((g) => (
             <BlocoDoGrupo
               key={g.id}
               grupo={g}
               esteiras={esteiras.filter((e) => e.grupo === g.id)}
+              onEditarFaixa={(x, y) => setEditandoFaixa({ grupo: g, x, y })}
               onGravarCelula={(esteiraId, mes, celula) => {
                 gravar.mutate(
                   { trackId: esteiraId, mes, celula },
@@ -519,6 +682,24 @@ export function CalendarioAnual({
           ))}
         </div>
       </div>
+
+      {editandoFaixa && (
+        <PainelDaFaixa
+          grupo={editandoFaixa.grupo}
+          x={editandoFaixa.x}
+          y={editandoFaixa.y}
+          onGravar={(dados) =>
+            mexerNaFaixa.mutate(
+              { grupo: editandoFaixa.grupo.id, ...dados },
+              {
+                onError: (err) =>
+                  toast.error(err instanceof Error ? err.message : "Não consegui salvar a faixa"),
+              },
+            )
+          }
+          onFechar={() => setEditandoFaixa(null)}
+        />
+      )}
     </div>
   );
 }

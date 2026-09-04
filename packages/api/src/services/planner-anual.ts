@@ -35,6 +35,65 @@ export const COR_DO_GRUPO: Record<Grupo, string> = {
   ascensao: "#1F3864",
 };
 
+export interface GrupoDoAnual {
+  id: Grupo;
+  rotulo: string;
+  cor: string;
+}
+
+/**
+ * O que a empresa mudou na faixa. Pode não haver linha nenhuma.
+ *
+ * A tabela guarda só o que alguém personalizou — semear três linhas por
+ * empresa faria toda empresa nova carregar cópias do padrão, e mudar o padrão
+ * depois não alcançaria nenhuma delas.
+ */
+export interface PersonalizacaoDeGrupo {
+  grupo: string;
+  rotulo: string | null;
+  cor: string | null;
+}
+
+/**
+ * Texto do campo → rótulo da faixa. Vazio é ausência, não valor.
+ *
+ * Apagar o nome RESTAURA o padrão — é o "desfazer" da personalização sem um
+ * botão a mais no painel, e evita uma faixa colorida sem nenhum texto, que não
+ * diz de que grupo é a linha.
+ */
+export function limparRotulo(v: string | null | undefined): string | null {
+  const s = (v ?? "").trim();
+  return s ? s.slice(0, 40) : null;
+}
+
+/**
+ * Cor → `#rrggbb` minúsculo, ou nada.
+ *
+ * Só hexadecimal: a cor vai direto para `background-color` no navegador de
+ * quem abrir, então aceitar texto livre aqui é deixar a tela decidir o que
+ * fazer com `red; content: …`. As três letras viram seis para o valor gravado
+ * ser sempre comparável ao que o `input[type=color]` devolve.
+ */
+export function limparCor(v: string | null | undefined): string | null {
+  const s = (v ?? "").trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(s)) return s;
+  if (/^#[0-9a-f]{3}$/.test(s)) return `#${s[1]}${s[1]}${s[2]}${s[2]}${s[3]}${s[3]}`;
+  return null;
+}
+
+/** As três faixas de uma empresa, com o que ela mudou aplicado por cima. */
+export function gruposDoProjeto(personalizacoes: PersonalizacaoDeGrupo[]): GrupoDoAnual[] {
+  const por = new Map(personalizacoes.map((p) => [p.grupo, p]));
+  return GRUPOS.map((g) => {
+    const p = por.get(g);
+    return {
+      id: g,
+      rotulo: limparRotulo(p?.rotulo) ?? ROTULO_DO_GRUPO[g],
+      cor: limparCor(p?.cor) ?? COR_DO_GRUPO[g],
+    };
+  });
+}
+
 export const CATEGORIAS = ["Back-End", "Front-End"] as const;
 
 export const FUNIS = [

@@ -10,10 +10,15 @@
 import { describe, expect, it } from "vitest";
 import {
   CATEGORIAS,
+  COR_DO_GRUPO,
   FUNIS,
+  ROTULO_DO_GRUPO,
   celulaVazia,
   ehGrupo,
+  gruposDoProjeto,
   limparCelula,
+  limparCor,
+  limparRotulo,
   montarMatriz,
   type CelulaGravada,
   type EsteiraDoAnual,
@@ -142,5 +147,69 @@ describe("ehGrupo", () => {
     expect(ehGrupo("ascensao")).toBe(true);
     expect(ehGrupo("ORGÂNICO")).toBe(false);
     expect(ehGrupo("outro")).toBe(false);
+  });
+});
+
+/**
+ * A faixa do grupo é renomeável e pinta com a cor que a empresa escolher.
+ *
+ * O que estes testes protegem: sem personalização a tela vê o padrão (a
+ * tabela guarda só o que mudou, então "sem linha" é o caso comum, não a
+ * exceção), apagar o nome volta ao padrão em vez de deixar uma faixa muda, e
+ * cor que não é hexadecimal não chega ao `background-color` do navegador.
+ */
+describe("gruposDoProjeto", () => {
+  it("sem personalização nenhuma, entrega os três padrões na ordem", () => {
+    const g = gruposDoProjeto([]);
+    expect(g.map((x) => x.id)).toEqual(["organico", "trafego", "ascensao"]);
+    expect(g[0].rotulo).toBe(ROTULO_DO_GRUPO.organico);
+    expect(g[0].cor).toBe(COR_DO_GRUPO.organico);
+  });
+
+  it("aplica só o que a empresa mudou, mantendo o resto no padrão", () => {
+    const g = gruposDoProjeto([{ grupo: "trafego", rotulo: "MÍDIA PAGA", cor: "#112233" }]);
+    expect(g[1]).toEqual({ id: "trafego", rotulo: "MÍDIA PAGA", cor: "#112233" });
+    expect(g[0].rotulo).toBe(ROTULO_DO_GRUPO.organico);
+    expect(g[2].cor).toBe(COR_DO_GRUPO.ascensao);
+  });
+
+  it("nome apagado volta ao padrão — faixa colorida sem texto não diz nada", () => {
+    const g = gruposDoProjeto([{ grupo: "organico", rotulo: "   ", cor: null }]);
+    expect(g[0].rotulo).toBe(ROTULO_DO_GRUPO.organico);
+    expect(g[0].cor).toBe(COR_DO_GRUPO.organico);
+  });
+
+  it("cor inválida cai no padrão em vez de ir para o CSS", () => {
+    const g = gruposDoProjeto([{ grupo: "ascensao", rotulo: null, cor: "red; content: x" }]);
+    expect(g[2].cor).toBe(COR_DO_GRUPO.ascensao);
+  });
+
+  it("grupo desconhecido na tabela é ignorado", () => {
+    const g = gruposDoProjeto([{ grupo: "inventado", rotulo: "X", cor: "#000000" }]);
+    expect(g).toHaveLength(3);
+    expect(g.some((x) => x.rotulo === "X")).toBe(false);
+  });
+});
+
+describe("limparCor", () => {
+  it("normaliza para minúsculo e aceita a forma de três dígitos", () => {
+    expect(limparCor("#AABBCC")).toBe("#aabbcc");
+    expect(limparCor("#F0A")).toBe("#ff00aa");
+  });
+
+  it("recusa o que não é hexadecimal", () => {
+    for (const v of ["red", "rgb(1,2,3)", "#12345", "", null, undefined, "#gggggg"]) {
+      expect(limparCor(v)).toBeNull();
+    }
+  });
+});
+
+describe("limparRotulo", () => {
+  it("corta em 40 para não estourar a coluna do banco", () => {
+    expect(limparRotulo("x".repeat(80))).toHaveLength(40);
+  });
+
+  it("só espaço é ausência", () => {
+    expect(limparRotulo("  ")).toBeNull();
   });
 });
