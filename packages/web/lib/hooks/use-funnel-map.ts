@@ -121,11 +121,23 @@ export function useSalvarMapaPorEndereco(e: EnderecoDoMapa) {
         method: "PUT",
         body: JSON.stringify({ tabs }),
       }),
-    onSuccess: () => {
-      // Só marca como salvo; não refaz a query, senão o canvas piscaria de
-      // volta para o servidor no meio da edição.
+    onSuccess: (_resposta, tabs) => {
+      /**
+       * O cache recebe o que ACABOU de ser salvo.
+       *
+       * Antes marcava só `rascunho: false` e deixava as `tabs` antigas ali. O
+       * desenho no servidor estava certo, mas com `staleTime` de um minuto
+       * quem saía do funil e voltava dentro desse intervalo recebia o cache —
+       * e via o mapa como estava ANTES de salvar. Só um F5 mostrava o certo, o
+       * que faz o save parecer que não funcionou.
+       *
+       * Continua sem refazer a query: um `invalidate` aqui traria o servidor
+       * por cima de quem já voltou a editar, e o canvas piscaria no meio do
+       * trabalho. Escrever o que foi salvo mantém o cache verdadeiro sem
+       * nenhuma ida à rede.
+       */
       qc.setQueryData<MapaDoFunil>(chaveDoMapa(e), (atual) =>
-        atual ? { ...atual, rascunho: false } : atual,
+        atual ? { ...atual, tabs, rascunho: false } : atual,
       );
     },
   });
@@ -149,11 +161,11 @@ export function useSaveFunnelMap(projectId: string, funnelId: string, stageId: s
         method: "PUT",
         body: JSON.stringify({ tabs }),
       }),
-    onSuccess: () => {
-      // Só marca como salvo; não refaz a query, senão o canvas piscaria de volta
-      // para o servidor no meio da edição.
+    onSuccess: (_resposta, tabs) => {
+      // Mesmo motivo do `useSalvarMapaPorEndereco`: sem gravar as `tabs`, o
+      // cache serve o desenho de antes do save por um minuto inteiro.
       qc.setQueryData<MapaDoFunil>(["funnel-map", projectId, funnelId, stageId], (atual) =>
-        atual ? { ...atual, rascunho: false } : atual,
+        atual ? { ...atual, tabs, rascunho: false } : atual,
       );
     },
   });
