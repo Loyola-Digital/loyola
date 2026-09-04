@@ -110,6 +110,30 @@ export function eventoBadgeClass(evento: string): string {
   return "bg-muted text-muted-foreground";
 }
 
+/**
+ * Categorias que ganham símbolo próprio, acima do aplicativo.
+ *
+ * O ícone normalmente sai do APP, porque é ele que diz onde a ação aconteceu.
+ * Criativo novo é a exceção: no Meta Ads ele ficava com o mesmo megafone de um
+ * ajuste de budget ou de uma campanha pausada — e é justamente o evento que se
+ * procura ao investigar uma virada na curva.
+ *
+ * Aqui, e não em cada tela, para que a lista diária e o log não divirjam: dois
+ * lugares mostrando o mesmo evento com símbolos diferentes é pior que nenhum
+ * símbolo.
+ */
+export const CATEGORIA_EM_DESTAQUE: Record<
+  string,
+  { icone: "ImagePlus"; rotulo: string; classe: string }
+> = {
+  "Publicação de Criativos": {
+    icone: "ImagePlus",
+    rotulo: "Criativo novo",
+    classe:
+      "border-indigo-500/40 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-semibold",
+  },
+};
+
 // ============================================================
 // Segmentação — o que faz sentido para cada evento
 // ============================================================

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, desc, asc, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, desc, asc, isNull, isNotNull, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { funnels, funnelStages, projects, projectMembers, metaAdsAccountProjects, metaAdsAccounts, googleAdsAccountProjects, googleAdsAccounts, users } from "../db/schema.js";
 import { fetchCampaigns, decryptAccountToken } from "../services/meta-ads.js";
@@ -229,9 +229,33 @@ export default fp(async function funnelRoutes(fastify) {
       .from(funnels)
       .leftJoin(users, eq(funnels.lastAuditBy, users.id))
       .where(whereClause)
-      // Story 10.8: perpétuos primeiro (DESC ordena "perpetual" > "launch"
-      // alfabeticamente), depois sort_order manual, com created_at de tiebreak.
-      .orderBy(desc(funnels.type), asc(funnels.sortOrder), asc(funnels.createdAt));
+      /**
+       * Por ONDE se trabalhou por último.
+       *
+       * A ordem anterior era perpétuos primeiro, depois `sort_order` manual —
+       * estável, e por isso mesmo inútil para quem mexe em três funis por
+       * semana: o que acabou de ser editado ficava no mesmo lugar de sempre,
+       * às vezes no fim da lista.
+       *
+       * "Modificado" precisa contar o trabalho de VERDADE. O `updated_at` do
+       * funil só muda quando o funil em si é editado — mexer numa etapa, que é
+       * onde o dia acontece, não o tocava. Daí o `GREATEST` com o maior
+       * `updated_at` das etapas dele.
+       *
+       * Arquivado desce independentemente da data: ele saiu de circulação de
+       * propósito, e uma edição antiga não deveria trazê-lo de volta ao topo.
+       */
+      .orderBy(
+        sql`(${funnels.archivedAt} IS NOT NULL)`,
+        desc(sql`GREATEST(
+          ${funnels.updatedAt},
+          COALESCE(
+            (SELECT MAX(s.updated_at) FROM funnel_stages s WHERE s.funnel_id = ${funnels.id}),
+            ${funnels.updatedAt}
+          )
+        )`),
+        asc(funnels.createdAt),
+      );
 
     return rows.map((row) => {
       const result = funnelShape(row.funnel);
