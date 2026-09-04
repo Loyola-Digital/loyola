@@ -26,16 +26,22 @@ import {
   metaCampaignInsightsDaily,
   metaAdInsightsDaily,
   metaPlacementInsightsDaily,
+  metaHourlyInsightsDaily,
   metaAdCreativesCache,
   metaCreativeThumbnails,
 } from "../db/schema.js";
 import {
   fetchCampaignDailyInsightsForIds,
+  fetchHourlyDailyInsights,
+  fetchAccountTimezone,
   type MetaDailyInsight,
   type AdDailyInsight,
   type MetaPlacementDailyInsight,
+  type MetaHourlyInsight,
   type MetaAdCreative,
 } from "./meta-ads.js";
+// Story 29.69: a hora chega como faixa de texto ("14:00:00 - 14:59:59").
+import { horaDaFaixaMeta } from "../utils/sale-date.js";
 import { singleFlight } from "../utils/single-flight.js";
 
 // Story 18.38: só o DIA ATUAL tem TTL (1h). Qualquer dia passado já gravado no
@@ -465,6 +471,125 @@ export async function upsertPlacementInsights(
         clicks: sql`EXCLUDED.clicks`,
         actions: sql`EXCLUDED.actions`,
         actionValues: sql`EXCLUDED.action_values`,
+        lastSyncedAt: sql`EXCLUDED.last_synced_at`,
+      },
+    });
+  return values.length;
+}
+
+/**
+ * Story 29.69 (AC4) — o sync que popula a base horária.
+ *
+ * Busca na Meta só o que falta e grava; o dashboard nunca chama a API para
+ * isto. Dois cuidados que a story exige:
+ *
+ * 1. **O custo é 24× o do sync diário** — 24 linhas por dia por campanha. Por
+ *    isso o padrão é `dias` curto (a janela que a tela mostra), e o que já está
+ *    no banco não é rebuscado: dia fechado não muda de gasto.
+ * 2. **O fuso vai junto.** A Meta reporta as faixas no fuso da CONTA e a venda
+ *    é carimbada no fuso do negócio. Guardar qual era o fuso na coleta é o que
+ *    permite a tela dizer "não verificado" em vez de sobrepor duas séries que
+ *    não estão no mesmo eixo.
+ *
+ * Devolve quantas linhas gravou. Não propaga erro: o painel horário é
+ * complementar, e derrubar a request do dashboard por causa dele seria pior que
+ * mostrar a cobertura menor que a AC6 já declara.
+ */
+export async function syncHourlyInsights(
+  db: Database,
+  projectId: string,
+  metaAccountId: string,
+  accessToken: string,
+  campaignIds: string[],
+  since: string,
+  until: string,
+): Promise<number> {
+  if (campaignIds.length === 0) return 0;
+  try {
+    const [rows, tz] = await Promise.all([
+      fetchHourlyDailyInsights(
+        metaAccountId,
+        accessToken,
+        undefined,
+        since,
+        until,
+        campaignIds,
+      ),
+      fetchAccountTimezone(metaAccountId, accessToken),
+    ]);
+    // Guardamos o NOME do fuso (`America/Sao_Paulo`), não o offset: horário de
+    // verão muda o offset e não o nome, e é o nome que responde "as duas séries
+    // estão no mesmo eixo?".
+    const n = await upsertHourlyInsights(db, projectId, rows, tz?.name ?? null);
+    console.log(
+      `[meta-sync] hourly: ${n} linha(s) de ${rows.length} para ${campaignIds.length} campanha(s), ${since}..${until} (tz=${tz?.name ?? "?"})`,
+    );
+    return n;
+  } catch (err) {
+    console.error(
+      `[meta-sync] hourly falhou para o projeto ${projectId}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return 0;
+  }
+}
+
+/**
+ * Story 29.69 (AC4) — grava o breakdown horário no banco.
+ *
+ * Chave `(projeto, dia, campanha, hora)`. A campanha faz parte dela porque três
+ * funis perpétuos do BBE dividem o mesmo projeto — sem ela, o sync de um
+ * sobrescreveria o do outro (ver migration 0136).
+ *
+ * A hora chega da Meta como FAIXA de texto (`"14:00:00 - 14:59:59"`), não como
+ * inteiro; `horaDaFaixaMeta` extrai a hora inicial. Linha cuja faixa não parseia
+ * é descartada em vez de virar hora `0` — um gráfico "por hora" com o lixo
+ * empilhado à meia-noite é pior que um gráfico com menos dados.
+ */
+export async function upsertHourlyInsights(
+  db: Database,
+  projectId: string,
+  rows: MetaHourlyInsight[],
+  accountTimezone: string | null,
+): Promise<number> {
+  if (rows.length === 0) return 0;
+  const now = new Date();
+  const values = rows
+    .map((r) => {
+      const hour = horaDaFaixaMeta(
+        r.hourly_stats_aggregated_by_advertiser_time_zone,
+      );
+      if (hour === null || !r.date_start || !r.campaign_id) return null;
+      return {
+        projectId,
+        dateStart: r.date_start.slice(0, 10),
+        campaignId: r.campaign_id,
+        hour,
+        spend: r.spend ?? "0",
+        impressions: r.impressions ?? "0",
+        clicks: r.clicks ?? "0",
+        accountTimezone,
+        lastSyncedAt: now,
+      };
+    })
+    .filter((v): v is NonNullable<typeof v> => v !== null);
+  if (values.length === 0) return 0;
+
+  await db
+    .insert(metaHourlyInsightsDaily)
+    .values(values)
+    .onConflictDoUpdate({
+      target: [
+        metaHourlyInsightsDaily.projectId,
+        metaHourlyInsightsDaily.dateStart,
+        metaHourlyInsightsDaily.campaignId,
+        metaHourlyInsightsDaily.hour,
+      ],
+      set: {
+        spend: sql`EXCLUDED.spend`,
+        impressions: sql`EXCLUDED.impressions`,
+        clicks: sql`EXCLUDED.clicks`,
+        accountTimezone: sql`EXCLUDED.account_timezone`,
         lastSyncedAt: sql`EXCLUDED.last_synced_at`,
       },
     });

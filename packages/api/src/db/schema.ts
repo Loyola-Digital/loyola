@@ -2443,6 +2443,22 @@ export const metaHourlyInsightsDaily = pgTable(
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
     dateStart: varchar("date_start", { length: 10 }).notNull(), // YYYY-MM-DD
+    /**
+     * Story 29.69 (continuação) — a campanha entrou na CHAVE.
+     *
+     * A primeira versão desta tabela era `(projeto, dia, hora)`, e isso não
+     * sobrevive ao dado real: o BBE tem TRÊS funis perpétuos no mesmo projeto
+     * (`bbe-fc1-a1`, `bbe-fc1-a2`, `bbe-fh`), cada um com suas campanhas. O
+     * sync de um sobrescreveria o do outro na mesma linha, e o gráfico "por
+     * hora" de um funil mostraria o investimento do outro — sem erro, sem
+     * aviso.
+     *
+     * Verificado contra a API antes de mudar: `level=campaign` com o breakdown
+     * horário devolve HTTP 200 e a soma bate exatamente com `level=account`
+     * (R$ 1.470,67 em 3 dias do BBE, nos dois níveis). Guardar por campanha não
+     * perde nem duplica gasto — só permite recortar depois.
+     */
+    campaignId: varchar("campaign_id", { length: 64 }).notNull(),
     hour: integer("hour").notNull(), // 0..23 no fuso da conta
     spend: numeric("spend").notNull().default("0"),
     impressions: numeric("impressions").notNull().default("0"),
@@ -2452,7 +2468,9 @@ export const metaHourlyInsightsDaily = pgTable(
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.projectId, table.dateStart, table.hour] }),
+    primaryKey({
+      columns: [table.projectId, table.dateStart, table.campaignId, table.hour],
+    }),
     index("idx_meta_hourly_insights_lookup").on(table.projectId, table.dateStart),
   ]
 );

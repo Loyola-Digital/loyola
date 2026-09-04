@@ -19,6 +19,7 @@ import type { Database } from "../db/client.js";
 import {
   metaCampaignInsightsDaily,
   metaPlacementInsightsDaily,
+  metaHourlyInsightsDaily,
   metaEntityNamesCache,
 } from "../db/schema.js";
 import type { MetaCampaignInsight, MetaPlacementInsight } from "./meta-ads.js";
@@ -150,6 +151,117 @@ export async function getPlacementBreakdownFromDb(
       actions: mergeActions(rs.map((r) => r.actions)),
     };
   });
+}
+
+/**
+ * Story 29.69 (AC7) — spend por DIA, lido do banco.
+ *
+ * O corte por dia da semana sai daqui, e não do cache horário: os três painéis
+ * de dia da semana precisam funcionar mesmo que o sync horário nunca tenha
+ * rodado. `getCampaignInsightsFromDb`, logo acima, agrega por campanha e perde
+ * o dia — que é justamente o eixo de que precisamos.
+ */
+export async function getCampaignDailySpendFromDb(
+  db: Database,
+  projectId: string,
+  since: string,
+  until: string,
+  campaignIds: string[],
+): Promise<{ dateStart: string; spend: number }[]> {
+  const conds = [
+    eq(metaCampaignInsightsDaily.projectId, projectId),
+    gte(metaCampaignInsightsDaily.dateStart, since),
+    lte(metaCampaignInsightsDaily.dateStart, until),
+  ];
+  if (campaignIds.length > 0) {
+    conds.push(inArray(metaCampaignInsightsDaily.campaignId, campaignIds));
+  }
+  const rows = await db
+    .select({
+      dateStart: metaCampaignInsightsDaily.dateStart,
+      spend: metaCampaignInsightsDaily.spend,
+    })
+    .from(metaCampaignInsightsDaily)
+    .where(and(...conds));
+
+  const porDia = new Map<string, number>();
+  for (const r of rows) {
+    porDia.set(r.dateStart, (porDia.get(r.dateStart) ?? 0) + Number(r.spend ?? 0));
+  }
+  return Array.from(porDia.entries()).map(([dateStart, spend]) => ({ dateStart, spend }));
+}
+
+/**
+ * Story 29.69 (AC4/AC6) — investimento por hora, lido do BANCO.
+ *
+ * Devolve uma linha por `(dia, hora)` já somada sobre as campanhas pedidas, mais
+ * a cobertura que a AC6 exige: desde qual dia existe cache, e em que fuso a
+ * Meta reportou as faixas. Sem isso a tela desenharia um gráfico incompleto com
+ * cara de completo.
+ *
+ * NUNCA chama a Meta — o dashboard lê daqui; quem preenche é o sync
+ * (`syncHourlyInsights`). Regra do repo desde o estouro de rate limit de
+ * 2026-07-16.
+ */
+export async function getHourlyInsightsFromDb(
+  db: Database,
+  projectId: string,
+  since: string,
+  until: string,
+  campaignIds: string[],
+): Promise<{
+  porDiaEHora: { dateStart: string; hour: number; spend: number; impressions: number; clicks: number }[];
+  primeiroDiaComCache: string | null;
+  accountTimezone: string | null;
+  ultimoSync: Date | null;
+}> {
+  const filtros = [
+    eq(metaHourlyInsightsDaily.projectId, projectId),
+    gte(metaHourlyInsightsDaily.dateStart, since),
+    lte(metaHourlyInsightsDaily.dateStart, until),
+  ];
+  // Sem campanhas o recorte não existe: devolver a conta inteira aqui seria o
+  // mesmo defeito que a campanha na chave veio corrigir.
+  if (campaignIds.length > 0) {
+    filtros.push(inArray(metaHourlyInsightsDaily.campaignId, campaignIds));
+  }
+  const rows = await db
+    .select()
+    .from(metaHourlyInsightsDaily)
+    .where(and(...filtros));
+
+  if (rows.length === 0) {
+    return { porDiaEHora: [], primeiroDiaComCache: null, accountTimezone: null, ultimoSync: null };
+  }
+
+  const acc = new Map<string, { dateStart: string; hour: number; spend: number; impressions: number; clicks: number }>();
+  let primeiroDia: string | null = null;
+  let tz: string | null = null;
+  let ultimo: Date | null = null;
+  for (const r of rows) {
+    const key = `${r.dateStart}|${r.hour}`;
+    const e = acc.get(key) ?? {
+      dateStart: r.dateStart,
+      hour: r.hour,
+      spend: 0,
+      impressions: 0,
+      clicks: 0,
+    };
+    e.spend += Number(r.spend ?? 0);
+    e.impressions += Number(r.impressions ?? 0);
+    e.clicks += Number(r.clicks ?? 0);
+    acc.set(key, e);
+    if (primeiroDia === null || r.dateStart < primeiroDia) primeiroDia = r.dateStart;
+    if (tz === null && r.accountTimezone) tz = r.accountTimezone;
+    if (r.lastSyncedAt && (ultimo === null || r.lastSyncedAt > ultimo)) ultimo = r.lastSyncedAt;
+  }
+
+  return {
+    porDiaEHora: Array.from(acc.values()),
+    primeiroDiaComCache: primeiroDia,
+    accountTimezone: tz,
+    ultimoSync: ultimo,
+  };
 }
 
 /**
