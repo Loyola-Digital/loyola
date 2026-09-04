@@ -10,6 +10,13 @@ import { normalizeNumericId, utmContentEfetivo } from "@/lib/utils/normalize-ans
 // de "amostra suficiente" no painel seria uma terceira resposta para a mesma
 // pergunta — e nenhuma delas ganharia a confiança de quem lê.
 import { PISO_DE_REPRODUCOES } from "@loyola-x/shared/src/video-camadas";
+// Story 18.78: CTR/CPC de link e a soma do grupo — fonte única do produto.
+// Import de VALOR do shared no web vai por SUBPATH (módulo folha).
+import {
+  ctrDeLink,
+  cpcDeLink,
+  somarLinkClicks,
+} from "@loyola-x/shared/src/clique-no-link";
 
 /**
  * Representa um criativo agregado — vários `TopPerformerAd` com o mesmo
@@ -225,18 +232,12 @@ export function aggregateCreativesByName(
      * devolve `inline_link_clicks` para todo objetivo de campanha, e zerar
      * transformaria "não medido" em "ninguém clicou".
      */
-    const comLinkClicks = sorted.filter((a) => a.linkClicks != null);
-    const linkClicks =
-      comLinkClicks.length > 0
-        ? comLinkClicks.reduce((s, a) => s + (a.linkClicks ?? 0), 0)
-        : null;
-    /**
-     * Um CTR só no produto, e é o de link (decisão do gestor, 2026-09-03).
-     * `0` medido continua sendo `0` — só a ausência da métrica vira `null`.
-     */
-    const ctrDeLink =
-      linkClicks === null || impressions <= 0 ? null : (linkClicks / impressions) * 100;
-    const cpcDeLink = linkClicks === null || linkClicks <= 0 ? null : spend / linkClicks;
+    // Story 18.78: a soma e as duas taxas saíram daqui para o shared, onde a
+    // API e o Detalhamento do Perpétuo leem a MESMA regra. Enquanto eram três
+    // cópias, duas mantinham o fallback para cliques totais.
+    const linkClicks = somarLinkClicks(sorted);
+    const ctrLink = ctrDeLink(linkClicks, impressions);
+    const cpcLink = cpcDeLink(linkClicks, spend);
 
     result.push({
       name,
@@ -245,8 +246,8 @@ export function aggregateCreativesByName(
       impressions,
       clicks,
       reach,
-      ctr: ctrDeLink,
-      cpc: cpcDeLink,
+      ctr: ctrLink,
+      cpc: cpcLink,
       clicksTotais: clicks,
       creative: leader.creative ?? null,
       parentInfo: `${leader.parentCampaignName} › ${leader.adsetName}`,

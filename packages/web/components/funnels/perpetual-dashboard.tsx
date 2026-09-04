@@ -1,6 +1,13 @@
 "use client";
 
 import { ehCaptacaoPaga } from "@loyola-x/shared/src/stage-types";
+// Story 18.78: CTR/CPC de link, sem fallback — a MESMA regra do backend e do
+// card do Top Criativos. Import de valor do shared no web vai por subpath.
+import {
+  ctrDeLink,
+  cpcDeLink,
+  somarLinkClicks,
+} from "@loyola-x/shared/src/clique-no-link";
 import { useCampaignLog } from "@/lib/hooks/use-campaign-log";
 import { EventosDoDia, agruparPorDia } from "./eventos-do-dia";
 
@@ -1993,7 +2000,11 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         const spend = members.reduce((s, m) => s + m.spend, 0);
         const impressions = members.reduce((s, m) => s + m.impressions, 0);
         const clicks = members.reduce((s, m) => s + m.clicks, 0);
-        const linkClicks = members.reduce((s, m) => s + (m.linkClicks ?? 0), 0);
+        // Story 18.78 (AC5): a soma vem do shared — só quem TEM a métrica
+        // entra, e o grupo fica `null` quando nenhum membro tem. Somar `?? 0`
+        // apagaria a diferença entre "a Meta não devolveu link_click" e
+        // "ninguém clicou no link".
+        const linkClicks = somarLinkClicks(members);
         const revenue = members.reduce((s, m) => s + (m.revenue ?? 0), 0);
         const sales = members.reduce((s, m) => s + (m.sales ?? 0), 0);
         // Story 29.29: métricas de vídeo são ADITIVAS entre os membros (um Ad
@@ -2007,10 +2018,14 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           campaignName: name,
           spend, impressions, clicks, revenue, sales,
           videoViews3s, videoViews75,
-          linkClicks: linkClicks > 0 ? linkClicks : null,
-          // Story 29.20 (M2): CTR/CPC de LINK clicks (fallback total) — igual buildAnalyticsRow.
-          ctr: linkClicks > 0 && impressions > 0 ? (linkClicks / impressions) * 100 : (impressions > 0 ? (clicks / impressions) * 100 : 0),
-          cpc: linkClicks > 0 ? spend / linkClicks : (clicks > 0 ? spend / clicks : 0),
+          linkClicks,
+          // Story 29.20 (M2): CTR/CPC de LINK clicks — a MESMA função que
+          // `buildAnalyticsRow` e o card do Top Criativos usam (18.78).
+          // Sem fallback para cliques totais: onde o card mostra `—`, esta
+          // coluna mostrava um percentual de clique em qualquer lugar do
+          // anúncio, com o mesmo rótulo.
+          ctr: ctrDeLink(linkClicks, impressions),
+          cpc: cpcDeLink(linkClicks, spend),
           cpm: impressions > 0 ? (spend / impressions) * 1000 : 0,
           roas: spend > 0 ? revenue / spend : null,
           costPerSale: sales > 0 ? spend / sales : null,

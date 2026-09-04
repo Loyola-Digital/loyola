@@ -857,15 +857,22 @@ export function TopCreativesGallery({
     [],
   );
 
-  // Hotfix pos-Story 8.9: buscamos por SPEND desc (limit=100) em vez de CTR.
-  // Rationale: o filtro de relevancia estatistica trabalha sobre spend, e o
-  // ranking por CTR favorecia criativos pequenos com CTR anomalo, deixando
-  // grandes spenders fora do payload. Limit=100 e o teto do backend e cobre
-  // qualquer conta realista do produto.
+  // Hotfix pos-Story 8.9: buscamos por SPEND desc em vez de CTR. Rationale: o
+  // filtro de relevancia estatistica trabalha sobre spend, e o ranking por CTR
+  // favorecia criativos pequenos com CTR anomalo, deixando grandes spenders
+  // fora do payload.
+  //
+  // Story 18.78 (AC1): 100 → 500. As metricas do card sao SOMATORIOS do grupo,
+  // entao um Ad Name com anuncios fora do corte somava menos aqui do que na
+  // tabela que le todos — 14 de 28 grupos do bbe-pr2 (171 anuncios) tinham Hold
+  // Rate divergente, e o perpetuo do BBE estava a 2 anuncios de entrar na
+  // mesma faixa. O que protege o rate limit e o `CREATIVE_FETCH_LIMIT` do
+  // backend, que segue em 100: alem dele o anuncio vem sem miniatura, mas com
+  // os numeros.
   const { data, isLoading } = useTopPerformers(
     projectId,
     "spend" as const,
-    100,
+    500,
     days,
     campaignIds && campaignIds.length > 0 ? campaignIds : null,
     startDate,

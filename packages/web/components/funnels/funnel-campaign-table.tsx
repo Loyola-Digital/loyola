@@ -173,8 +173,9 @@ interface LightboxItem {
   spend: number;
   impressions: number;
   clicks: number;
-  ctr: number;
-  cpc: number;
+  /** Story 18.78: CTR/CPC de link; `null` = métrica ausente, exibida como `—`. */
+  ctr: number | null;
+  cpc: number | null;
   reach: number;
   videoMetrics?: VideoMetrics | null;
 }

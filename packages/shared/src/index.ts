@@ -46,6 +46,11 @@ export { parseNumeroPtBr, parseValorPlanilha } from "./numero-ptbr.js";
 // Story 29.59: a identidade de uma landing page. Compartilhada porque o
 // dashboard e o relatório TÊM que agrupar as mesmas URLs na mesma linha.
 export { normalizeLpUrl, lpLabel, type LpKey } from "./lp-url.js";
+// Story 18.78: CTR e CPC de clique no link, sem fallback. Módulo folha — o web
+// importa por subpath (`@loyola-x/shared/src/clique-no-link`), a API por aqui.
+// Existiam três cópias desta fórmula e duas ainda tinham o fallback que o
+// gestor tirou em 2026-09-03.
+export { ctrDeLink, cpcDeLink, somarLinkClicks } from "./clique-no-link.js";
 // Story 43.8: as três camadas do vídeo. Módulo folha — o web importa por
 // subpath (`@loyola-x/shared/src/video-camadas`), a API por aqui.
 export {
