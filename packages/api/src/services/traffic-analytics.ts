@@ -29,6 +29,9 @@ import { fetchCampaignDailyInsightsForIdsWithCache } from "./meta-insights-cache
 import { getCampaignInsightsFromDb, getPlacementBreakdownFromDb } from "./meta-db-source.js";
 import { singleFlight } from "../utils/single-flight.js";
 import { applyMetaTax } from "../utils/meta-tax.js";
+// Story 18.78: a API importa o shared por bare specifier (subpath derruba o
+// boot — ver 19.14). O web importa o mesmo módulo por subpath.
+import { ctrDeLink, cpcDeLink } from "@loyola-x/shared";
 
 // Story 18.26 Fase 2: TTL alinhado com meta_entity_names_cache (24h)
 const META_AD_CREATIVES_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -135,8 +138,12 @@ export interface CampaignAnalytics {
   clicks: number;
   reach: number;
   frequency: number;
-  ctr: number;
-  cpc: number;
+  /**
+   * Story 18.78: CTR e CPC de clique no LINK. `null` quando a Meta não devolveu
+   * `link_click` — não é zero, é ausência de medição, e a tela mostra `—`.
+   */
+  ctr: number | null;
+  cpc: number | null;
   cpm: number;
   leads: number | null;
   cpl: number | null;
@@ -641,6 +648,57 @@ export interface TopPerformerAd extends CampaignAnalytics {
   videoMetrics: VideoMetrics | null;
 }
 
+/**
+ * Story 18.78 (AC2) — quantos anúncios têm o criativo buscado na Meta.
+ *
+ * Era o mesmo número que cortava os dados (`limit`), e por isso o corte de
+ * rate limit virava corte de cálculo. Agora são duas coisas: `limit` diz
+ * quantos anúncios o cliente recebe, esta constante diz de quantos vale a pena
+ * pagar a miniatura. Os primeiros da ordenação — os de maior gasto quando
+ * `metric=spend`, que é como a galeria pede.
+ */
+export const CREATIVE_FETCH_LIMIT = 100;
+
+/**
+ * Story 18.78 (AC2) — de quais anúncios vale a pena pagar a miniatura.
+ *
+ * Exportada para teste: o que precisa ficar provado é que este corte NÃO
+ * encolhe a lista devolvida ao cliente. Era o mesmo `slice` para as duas
+ * coisas, e por isso o teto de rate limit virava teto de cálculo.
+ *
+ * A ordem importa. A galeria agrupa por Ad Name e mostra a imagem do anúncio
+ * de MAIOR GASTO do grupo, então um `slice` puro deixaria sem imagem todo
+ * grupo cujo líder caísse além do teto (medido no bbe-pr2: 2 dos 30 cards).
+ * Por isso o primeiro anúncio de cada nome entra antes — mesmo número de
+ * chamadas à Meta, nenhum card agrupado sem miniatura.
+ *
+ * `topAds` já chega ordenado pela métrica, então "o primeiro de cada nome" é
+ * o líder do grupo quando a ordenação é por gasto, que é como a galeria pede.
+ */
+export function idsParaBuscarCriativo(
+  topAds: readonly { campaignId: string; campaignName: string }[],
+): string[] {
+  const escolhidos: string[] = [];
+  const jaTem = new Set<string>();
+  const nomeVisto = new Set<string>();
+
+  for (const ad of topAds) {
+    if (escolhidos.length >= CREATIVE_FETCH_LIMIT) break;
+    const nome = ad.campaignName?.trim() ?? "";
+    if (nomeVisto.has(nome)) continue;
+    nomeVisto.add(nome);
+    jaTem.add(ad.campaignId);
+    escolhidos.push(ad.campaignId);
+  }
+  for (const ad of topAds) {
+    if (escolhidos.length >= CREATIVE_FETCH_LIMIT) break;
+    if (jaTem.has(ad.campaignId)) continue;
+    jaTem.add(ad.campaignId);
+    escolhidos.push(ad.campaignId);
+  }
+  return escolhidos;
+}
+
 export async function getTopPerformers(
   db: Database,
   projectId: string,
@@ -728,8 +786,16 @@ export async function getTopPerformers(
   const topAds = filtered.slice(0, limit);
 
   // Fetch creatives for top ads only — Story 18.26 Fase 2: DB cache 24h
+  //
+  // Story 18.78 (AC2): a busca de criativo é o que custa rate limit (lotes de
+  // 50 + passos de hi-res/IG), não o cálculo. Então o teto vive AQUI, e não no
+  // `limit` que corta os dados: os anúncios além de `CREATIVE_FETCH_LIMIT`
+  // voltam com `creative: null` e entram nos somatórios do grupo do mesmo
+  // jeito. `aggregateCreativesByName` inclui ads sem creative de propósito, e
+  // a galeria renderiza placeholder — some a miniatura, nunca o número.
   try {
-    const adIds = topAds.map((a) => a.campaignId); // campaignId is actually the ad_id from buildAnalyticsRow
+    // campaignId is actually the ad_id from buildAnalyticsRow
+    const adIds = idsParaBuscarCriativo(topAds);
     const creatives = await fetchAdCreativesWithCache(
       makeAdCreativeCacheAdapter(db, projectId),
       metaAccount.metaAccountId,
@@ -934,7 +1000,13 @@ export async function getAllAdsForProject(
 }
 
 // Helper to build a consistent analytics row
-function buildAnalyticsRow(
+/**
+ * Story 18.78: exportada para teste. O que precisa ficar provado não é a
+ * fórmula (essa vive no shared, testada lá), e sim que esta função REPASSA
+ * `linkClicks` — a 18.76 documentou num comentário que usava cliques no link
+ * enquanto recebia o parâmetro ausente e caía no fallback, sem avisar ninguém.
+ */
+export function buildAnalyticsRow(
   id: string, name: string, spend: number, impressions: number, clicks: number,
   entityLeads: number | null, qualLeads: number | null,
   saleData: { count: number; revenue: number } | null,
@@ -948,9 +1020,14 @@ function buildAnalyticsRow(
     spend, impressions, clicks,
     reach,
     frequency: reach > 0 ? impressions / reach : 0,
-    // CTR and CPC use link clicks (not total clicks) — matches Meta Ads Manager
-    ctr: linkClicks && linkClicks > 0 && impressions > 0 ? (linkClicks / impressions) * 100 : (impressions > 0 ? (clicks / impressions) * 100 : 0),
-    cpc: linkClicks && linkClicks > 0 ? spend / linkClicks : (clicks > 0 ? spend / clicks : 0),
+    /**
+     * CTR e CPC são de CLIQUE NO LINK, sem fallback — a regra vive em
+     * `@loyola-x/shared/src/clique-no-link` desde a Story 18.78, porque as três
+     * cópias que existiam divergiram: esta e a do Detalhamento do Perpétuo
+     * caíam em cliques totais enquanto o card do Top Criativos mostrava `—`.
+     */
+    ctr: ctrDeLink(linkClicks, impressions),
+    cpc: cpcDeLink(linkClicks, spend),
     cpm: impressions > 0 ? (spend * 1000) / impressions : 0,
     leads: entityLeads,
     cpl: entityLeads !== null && entityLeads > 0 ? spend / entityLeads : null,

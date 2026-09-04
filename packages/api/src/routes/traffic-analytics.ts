@@ -284,7 +284,12 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
   // Se ambos presentes, `campaignIds` prevalece.
   const topPerformersQuerySchema = z.object({
     metric: z.enum(["roas", "cpl", "cplQualified", "leads", "sales", "ctr", "spend"]).default("roas"),
-    limit: z.coerce.number().int().min(1).max(100).default(5),
+    // Story 18.78 (AC1): teto de 100 → 500. O corte de 100 existia para
+    // proteger o rate limit da busca de criativos, mas cortava os DADOS: um Ad
+    // Name com anúncios fora do corte somava menos no card do que na tabela que
+    // lê todos (medido: 14 de 28 grupos do bbe-pr2 com Hold divergente). Quem
+    // protege o rate limit agora é `CREATIVE_FETCH_LIMIT`, no serviço.
+    limit: z.coerce.number().int().min(1).max(500).default(5),
     days: z.coerce.number().int().min(1).max(365).default(30),
     campaignId: z.string().optional(),
     campaignIds: z.string().optional(),

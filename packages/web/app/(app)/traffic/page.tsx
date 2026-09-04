@@ -691,8 +691,9 @@ interface LightboxItem {
   spend: number;
   impressions: number;
   clicks: number;
-  ctr: number;
-  cpc: number;
+  /** Story 18.78: CTR/CPC de link; `null` = métrica ausente, exibida como `—`. */
+  ctr: number | null;
+  cpc: number | null;
   reach: number;
   videoMetrics?: VideoMetrics | null;
   parentInfo?: string;
@@ -1127,6 +1128,24 @@ function CreativeRankingChart({ projectId, days, campaignId }: { projectId: stri
 type CreativeFilter = "all" | "VIDEO" | "IMAGE" | "CAROUSEL";
 type CreativeSort = "spend" | "ctr" | "cpc" | "impressions";
 
+/**
+ * Story 18.78 — comparadores que jogam o "não medido" pro FIM da lista, nos
+ * dois sentidos. Mesma semântica de `ordenarPorMetrica` (top-criativos-visoes).
+ * Recebem `(a, b)` na ordem que o `sort` entrega.
+ */
+function maiorPrimeiro(a: number | null, b: number | null): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  return b - a;
+}
+function menorPrimeiro(a: number | null, b: number | null): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  return a - b;
+}
+
 function CreativeGallerySection({ projectId, days, campaignId }: { projectId: string; days: number; campaignId?: string | null }) {
   const [filterType, setFilterType] = useState<CreativeFilter>("all");
   const [sortBy, setSortBy] = useState<CreativeSort>("spend");
@@ -1147,8 +1166,12 @@ function CreativeGallerySection({ projectId, days, campaignId }: { projectId: st
   const sorted = [...filtered].sort((a, b) => {
     switch (sortBy) {
       case "spend": return b.spend - a.spend;
-      case "ctr": return b.ctr - a.ctr;
-      case "cpc": return (a.cpc || 999) - (b.cpc || 999);
+      // Story 18.78: CTR/CPC podem ser `null` (a Meta não devolveu
+      // `link_click`). Quem não tem a métrica vai pro FIM das duas ordenações —
+      // coagir a 0 poria o não medido no topo de "menor CPC", e coagir a 999
+      // (o que esta linha fazia) é a mesma acusação ao contrário.
+      case "ctr": return maiorPrimeiro(a.ctr, b.ctr);
+      case "cpc": return menorPrimeiro(a.cpc, b.cpc);
       case "impressions": return b.impressions - a.impressions;
       default: return 0;
     }
@@ -1459,8 +1482,11 @@ function exportCsv(campaigns: CampaignAnalytics[], hasCrm: boolean, hasQual: boo
       String(c.reach),
       c.frequency > 0 ? c.frequency.toFixed(2).replace(".", ",") : "",
       String(c.clicks),
-      c.ctr.toFixed(2).replace(".", ","),
-      c.cpc.toFixed(2).replace(".", ","),
+      // Story 18.78: métrica ausente vira célula VAZIA no CSV — o mesmo
+      // tratamento que leads/CPL já recebiam abaixo. Escrever "0,00" faria a
+      // planilha afirmar que ninguém clicou no link.
+      c.ctr != null ? c.ctr.toFixed(2).replace(".", ",") : "",
+      c.cpc != null ? c.cpc.toFixed(2).replace(".", ",") : "",
       c.cpm.toFixed(2).replace(".", ","),
     ];
     if (hasCrm) {

@@ -17,8 +17,14 @@ export interface CampaignAnalytics {
   clicks: number;
   reach: number;
   frequency: number;
-  ctr: number;
-  cpc: number;
+  /**
+   * Story 18.78: CTR e CPC de clique no LINK, espelhando `buildAnalyticsRow`.
+   * `null` = a Meta não devolveu `link_click` para o objetivo da campanha —
+   * ausência de medição, não zero. A tela mostra `—`; nunca preencher com
+   * `?? 0`, que é trocar "não medido" por "ninguém clicou".
+   */
+  ctr: number | null;
+  cpc: number | null;
   cpm: number;
   leads: number | null;
   cpl: number | null;
