@@ -76,6 +76,53 @@ export function legendaQuebraPorTipo(
 }
 
 /**
+ * Story 29.74 (AC3/AC4) — a legenda da quebra do card de **Faturamento Bruto**.
+ *
+ * Irmã de `legendaQuebraPorTipo`, com uma diferença que muda tudo: aqui as
+ * fatias **somam** o valor do card, porque valor é aditivo. Lá elas contam
+ * linhas e não somam, e o `titulo` avisa. Os dois textos vivem lado a lado
+ * nesta tela, então cada um precisa dizer qual é o seu caso — quem lê vai
+ * tentar somar as duas.
+ *
+ * Devolve `null` pelo mesmo critério da irmã: sem nada além de `principal`, a
+ * quebra é a ausência de informação disfarçada de informação.
+ */
+export function legendaFaturamentoPorTipo(
+  quebra:
+    | { principal: number; order_bump: number; combo?: number; upsell: number }
+    | null
+    | undefined,
+  faturamentoBruto: number,
+  fmtMoeda: (v: number) => string,
+): { texto: string; titulo: string } | null {
+  if (!quebra) return null;
+  if (quebra.order_bump === 0 && (quebra.combo ?? 0) === 0 && quebra.upsell === 0) {
+    return null;
+  }
+
+  const partes: string[] = [];
+  if (quebra.principal > 0) partes.push(`Faturamento Principal ${fmtMoeda(quebra.principal)}`);
+  // Story 18.69 — combo é venda própria, não adicional: mesmo peso do principal.
+  if ((quebra.combo ?? 0) > 0) partes.push(`Faturamento Combo ${fmtMoeda(quebra.combo!)}`);
+  if (quebra.order_bump > 0) {
+    partes.push(`Faturamento Order Bump ${fmtMoeda(quebra.order_bump)}`);
+  }
+  if (quebra.upsell > 0) partes.push(`Faturamento Upsell ${fmtMoeda(quebra.upsell)}`);
+  if (partes.length === 0) return null;
+
+  return {
+    texto: partes.join(" · "),
+    titulo:
+      "As fatias somam o Faturamento Bruto do card — valor é aditivo, e o order " +
+      "bump já está dentro dele: ele chega numa linha própria com o mesmo e-mail " +
+      "da compra principal, e a soma por comprador junta as duas. " +
+      `Total: ${fmtMoeda(faturamentoBruto)}. ` +
+      "⚠️ Não confundir com a quebra do card de Vendas, que conta LINHAS e por " +
+      "isso não fecha com o número dele.",
+  };
+}
+
+/**
  * Separa os nomes por tipo — o que a 29.50 consome para propor as premissas do
  * relatório sem que ninguém redigite nome de produto.
  *

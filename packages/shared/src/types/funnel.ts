@@ -233,6 +233,21 @@ export interface PerpetualSalesData {
   porTipoProduto?: { ingresso: number; principal: number; order_bump: number; combo: number; upsell: number } | null;
 
   /**
+   * Story 29.74 (AC1) — a mesma quebra, em VALOR bruto.
+   *
+   * ⚠️ Irmã de `porTipoProduto`, e diferente dela: aquela conta LINHAS e por
+   * isso **não** fecha com `totalVendas` (o bump vem numa linha própria com o
+   * mesmo e-mail); esta soma REAIS e **fecha** com `faturamentoBruto`, porque
+   * valor é aditivo. Quem ler as duas na mesma tela vai tentar somar as duas —
+   * a de valor fecha, a de contagem não, e cada uma diz isso no seu tooltip.
+   *
+   * `null` pelo mesmo critério de `porTipoProduto`: sem coluna de produto
+   * mapeada ou sem produto classificado, tudo cairia em `principal` e a quebra
+   * seria a ausência de informação disfarçada de informação.
+   */
+  faturamentoPorTipo?: { ingresso: number; principal: number; order_bump: number; combo: number; upsell: number } | null;
+
+  /**
    * Story 29.61 — order bump e AOV por público no Perpétuo.
    *
    * ⚠️ Estes campos contam **COMPRADORES**, enquanto `porTipoProduto` acima
@@ -246,7 +261,14 @@ export interface PerpetualSalesData {
    */
   orderBump?: {
     temConfiguracao: boolean;
+    /**
+     * Story 29.74 (AC7): faturamento da ETAPA — todas as linhas de receita, o
+     * mesmo número do card. Não é denominador de taxa; para isso é
+     * `receitaCaptacao`.
+     */
     faturamentoTotal: number;
+    /** Story 29.74 (AC8): `receitaBase + bumpAcessorio` — denominador da 18.68. */
+    receitaCaptacao: number;
     faturamentoPrincipal: number;
     bumpAcessorio: number;
     bumpAvulso: number;
@@ -467,13 +489,19 @@ export interface StageSalesData {
   orderBump?: {
     /** A etapa tem produto marcado. `false` → a UI SOME com o card. */
     temConfiguracao: boolean;
+    /**
+     * Story 29.74 (AC7): faturamento da ETAPA — todas as linhas de receita, o
+     * mesmo número do card. Não é denominador de taxa.
+     */
     faturamentoTotal: number;
+    /** Story 29.74 (AC8): `receitaBase + bumpAcessorio` — denominador da 18.68. */
+    receitaCaptacao: number;
     faturamentoPrincipal: number;
     /** Bump de quem tem produto principal — o bump de verdade. */
     bumpAcessorio: number;
     /** Bump de quem NÃO tem principal: venda própria desses produtos. */
     bumpAvulso: number;
-    /** `bumpAcessorio ÷ faturamentoTotal`. */
+    /** `bumpAcessorio ÷ receitaCaptacao`. */
     representatividade: number | null;
     compradoresComPrincipal: number;
     compradoresComBump: number;

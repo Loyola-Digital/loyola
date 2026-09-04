@@ -138,9 +138,38 @@ export function buildFunnelSalesCountFormula(sales: number | null | undefined, f
   return { expression: "Σ vendas (atribuídas ao funil)", values: [{ label: "Vendas", value: sales, source: "Google Sheets · planilha de vendas" }], result: nf.format(sales), period: period(f), note: note(f) };
 }
 
-export function buildFunnelRevenueFormula(revenue: number | null | undefined, f: FunnelFilters): MetricFormula | undefined {
+/**
+ * Story 29.74 (AC4) — a quebra por tipo de produto entra no tooltip.
+ *
+ * Opcional: só o card do Perpétuo a tem. Os demais chamadores
+ * (linha do Detalhamento, série diária) seguem com o tooltip de antes.
+ */
+export function buildFunnelRevenueFormula(
+  revenue: number | null | undefined,
+  f: FunnelFilters,
+  quebra?: { principal: number; order_bump: number; combo?: number; upsell: number } | null,
+): MetricFormula | undefined {
   if (revenue == null) return undefined;
-  return { expression: "Σ valor das vendas atribuídas", values: [{ label: "Receita", value: fmtBRL(revenue), source: "Google Sheets · valor das vendas" }], result: fmtBRL(revenue), period: period(f), note: note(f) };
+  const values = [
+    { label: "Receita", value: fmtBRL(revenue), source: "Google Sheets · valor das vendas" },
+  ];
+  // As parcelas somam a receita acima — valor é aditivo, e o order bump já está
+  // dentro dela (linha própria, mesmo e-mail da compra principal).
+  if (quebra) {
+    if (quebra.principal > 0) {
+      values.push({ label: "Faturamento Principal", value: fmtBRL(quebra.principal), source: "Produto classificado como principal" });
+    }
+    if ((quebra.combo ?? 0) > 0) {
+      values.push({ label: "Faturamento Combo", value: fmtBRL(quebra.combo!), source: "Produto classificado como combo" });
+    }
+    if (quebra.order_bump > 0) {
+      values.push({ label: "Faturamento Order Bump", value: fmtBRL(quebra.order_bump), source: "Produto classificado como order bump" });
+    }
+    if (quebra.upsell > 0) {
+      values.push({ label: "Faturamento Upsell", value: fmtBRL(quebra.upsell), source: "Produto classificado como upsell" });
+    }
+  }
+  return { expression: "Σ valor das vendas atribuídas", values, result: fmtBRL(revenue), period: period(f), note: note(f) };
 }
 
 export function buildFunnelCacFormula(cac: number | null, f: FunnelFilters): MetricFormula | undefined {

@@ -96,7 +96,10 @@ import { RefreshDataButton } from "./refresh-data-button";
 import { MetaFreshnessBadge } from "./meta-freshness-badge";
 import { PerpetualSpreadsheetWizardDialog } from "./perpetual-spreadsheet-wizard-dialog";
 import { PerpetualProductTypesDialog } from "./perpetual-product-types-dialog";
-import { legendaQuebraPorTipo } from "@/lib/utils/perpetual-product-types";
+import {
+  legendaQuebraPorTipo,
+  legendaFaturamentoPorTipo,
+} from "@/lib/utils/perpetual-product-types";
 // Story 29.61 — order bump, upsell e AOV por público. A regra é do backend
 // (`utils/order-bump.ts`), a mesma da Captação Paga; aqui só a apresentação.
 import {
@@ -2455,6 +2458,19 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
             usingSpreadsheet && salesData
               ? legendaQuebraPorTipo(salesData.porTipoProduto, m.totalSales)
               : null;
+          /**
+           * Story 29.74 (AC3) — a quebra do Faturamento Bruto, em valor.
+           * Mesmo gate da de Vendas: `faturamentoPorTipo` já vem `null` do
+           * backend quando não há classificação (AC5).
+           */
+          const quebraDeFaturamento =
+            usingSpreadsheet && salesData
+              ? legendaFaturamentoPorTipo(
+                  salesData.faturamentoPorTipo,
+                  m.totalRevenue,
+                  fmtCurrency,
+                )
+              : null;
           return (
             // Story 29.32: 8 cards em DUAS linhas de quatro — resultado em cima
             // (Faturamento Bruto, Vendas, Ticket Médio, Investimento), eficiência
@@ -2463,8 +2479,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
             <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
               {/* ---------- Linha 1 — resultado ---------- */}
               {/* Story 29.25 → 29.28: "Receita" → "Faturamento" → "Faturamento Bruto". */}
-              <MetricTooltip label="Faturamento Bruto" value={fmtCurrency(m.totalRevenue)} formula={buildFunnelRevenueFormula(m.totalRevenue, f)}>
-                <KpiCard icon={DollarSign} label="Faturamento Bruto" value={fmtCurrency(m.totalRevenue)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} />
+              <MetricTooltip label="Faturamento Bruto" value={fmtCurrency(m.totalRevenue)} formula={buildFunnelRevenueFormula(m.totalRevenue, f, usingSpreadsheet && salesData ? salesData.faturamentoPorTipo : null)}>
+                <KpiCard icon={DollarSign} label="Faturamento Bruto" value={fmtCurrency(m.totalRevenue)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} breakdown={quebraDeFaturamento ?? undefined} />
               </MetricTooltip>
               <MetricTooltip label="Vendas" value={fmtNumber(m.totalSales)} formula={buildFunnelSalesCountFormula(m.totalSales, f)}>
                 <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(m.totalSales)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} breakdown={quebraDeProduto ?? undefined} />

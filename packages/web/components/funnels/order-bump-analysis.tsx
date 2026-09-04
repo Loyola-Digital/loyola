@@ -96,10 +96,15 @@ export function orderBumpCardProps(
   return {
     value: fmtPct(ob.representatividade),
     title:
-      "Representatividade do order bump = bump acessório ÷ faturamento total.\n\n" +
+      // Story 29.74 (AC7/AC9): o denominador é a RECEITA DA CAPTAÇÃO — regra da
+      // 18.68, que não mudou. O que mudou foi o nome: "faturamento total" agora
+      // é o faturamento da ETAPA, o mesmo número do card, e ele NÃO é o
+      // denominador desta taxa.
+      "Representatividade do order bump = bump acessório ÷ receita da captação.\n\n" +
       `Bump acessório: ${fmtCurrency(ob.bumpAcessorio)} — de compradores que TÊM produto principal.\n` +
-      `Venda avulsa: ${fmtCurrency(ob.bumpAvulso)} — de ${fmtNumber(ob.compradoresSoBump)} compradores que só levaram esses produtos, sem produto principal. Não é acréscimo a venda nenhuma, então não entra na representatividade.\n\n` +
-      `Faturamento total da etapa: ${fmtCurrency(ob.faturamentoTotal)}.`,
+      `Venda avulsa: ${fmtCurrency(ob.bumpAvulso)} — de ${fmtNumber(ob.compradoresSoBump)} compradores que só levaram esses produtos, sem produto principal. Conta no faturamento da etapa (foi vendido), mas não entra nesta taxa: não é acréscimo a venda nenhuma.\n\n` +
+      `Receita da captação (denominador): ${fmtCurrency(ob.receitaCaptacao)}.\n` +
+      `Faturamento da etapa: ${fmtCurrency(ob.faturamentoTotal)}.`,
     valorAcessorio: fmtCurrency(ob.bumpAcessorio),
     // AC4 — o valor sozinho não distingue "muita gente levando bump barato" de
     // "pouca gente levando bump caro", e as duas situações pedem ações opostas.

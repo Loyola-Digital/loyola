@@ -49,10 +49,15 @@ export function PerpetualOrderBumpCard({
       <p
         className="text-xl font-bold tracking-tight underline decoration-dotted decoration-muted-foreground/40 underline-offset-4 cursor-help"
         title={
-          "Representatividade = order bump acessório ÷ faturamento total.\n\n" +
+          // Story 29.74 (AC7): o denominador é a RECEITA DA CAPTAÇÃO, e o
+          // rótulo passou a dizer isso. Antes ele se chamava "faturamento
+          // total" e valia R$ 55.814,00 enquanto o card do topo dizia
+          // R$ 57.549,00 — duas definições de faturamento na mesma tela.
+          "Representatividade = order bump acessório ÷ receita da captação.\n\n" +
           `Acessório: ${fmtCurrency(ob.bumpAcessorio)} — de compradores que TÊM produto principal.\n` +
-          `Avulso: ${fmtCurrency(ob.bumpAvulso)} — de ${fmtNumber(ob.compradoresSoBump)} comprador(es) que só levaram produtos de bump, sem principal. Não é acréscimo a venda nenhuma, então fica fora da conta.\n\n` +
-          `Faturamento total: ${fmtCurrency(ob.faturamentoTotal)}.`
+          `Avulso: ${fmtCurrency(ob.bumpAvulso)} — de ${fmtNumber(ob.compradoresSoBump)} comprador(es) que só levaram produtos de bump, sem principal. Conta no faturamento da etapa (foi vendido), mas fica fora desta taxa: não é acréscimo a venda nenhuma.\n\n` +
+          `Receita da captação (denominador): ${fmtCurrency(ob.receitaCaptacao)}.\n` +
+          `Faturamento da etapa: ${fmtCurrency(ob.faturamentoTotal)} — o mesmo valor do card Faturamento Bruto.`
         }
       >
         {fmtPct(ob.representatividade)}
