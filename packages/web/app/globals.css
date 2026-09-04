@@ -129,6 +129,29 @@
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 
+  /*
+   * Controles nativos (a lista aberta do <select>, o calendário do
+   * input[type=date], a barra de rolagem do sistema) são pintados pelo
+   * NAVEGADOR, não pelo CSS daqui. Sem `color-scheme` o Chrome os desenha em
+   * claro — e as <option> herdam a cor de texto do app, que é clara. Texto
+   * claro sobre fundo branco: era o dropdown "branco com escrito cinza".
+   *
+   * O app é escuro e ponto — `<html class="dark">` fixo em app/layout.tsx.
+   */
+  html {
+    color-scheme: dark;
+  }
+
+  /*
+   * A <option> herda a cor do <select> — inclusive a cor apagada que marca
+   * "sem valor" no campo fechado. Dentro da lista aberta isso vira texto
+   * ilegível, então a cor plena é reposta aqui.
+   */
+  option {
+    background-color: var(--color-popover);
+    color: var(--color-popover-foreground);
+  }
+
   /* Gold accent on selection */
   ::selection {
     background-color: hsl(47 98% 54% / 0.3);
