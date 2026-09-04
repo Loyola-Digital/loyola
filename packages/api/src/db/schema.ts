@@ -3702,6 +3702,36 @@ export const plannerCampaigns = pgTable(
 //
 // Em teste: se sair, são estas duas tabelas e nada mais.
 
+/**
+ * Comentários no mapa de funil (migration 0135).
+ *
+ * Fora do JSONB do desenho de propósito: o mapa é gravado inteiro a cada save,
+ * e um comentário guardado ali seria apagado por quem só arrastou um bloco.
+ */
+export const funnelMapComments = pgTable(
+  "funnel_map_comments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    mapId: uuid("map_id")
+      .notNull()
+      .references(() => funnelMaps.id, { onDelete: "cascade" }),
+    /** Qual aba. Texto porque o id da aba vive no JSONB, não numa tabela. */
+    tabId: varchar("tab_id", { length: 64 }).notNull(),
+    /** Resposta dentro de uma conversa. Vazio = o comentário que a abre. */
+    parentId: uuid("parent_id"),
+    /** Bloco a que se refere. Vazio = alfinete solto no fundo. */
+    boxId: varchar("box_id", { length: 64 }),
+    x: integer("x").notNull().default(0),
+    y: integer("y").notNull().default(0),
+    texto: text("texto").notNull(),
+    resolvido: boolean("resolvido").notNull().default(false),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("idx_funnel_map_comments_mapa").on(t.mapId, t.createdAt)],
+);
+
 export const plannerAnnualTracks = pgTable(
   "planner_annual_tracks",
   {

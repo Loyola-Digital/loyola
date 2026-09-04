@@ -25,6 +25,16 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { encurtar, linkAoColar, pedacosDoTexto } from "@/lib/utils/texto-com-links";
+import {
+  Alfinete,
+  BotaoDeComentarios,
+  ConversaAberta,
+} from "@/components/funnels/funnel-map/comentarios-do-mapa";
+import {
+  emConversas,
+  useComentar,
+  useComentariosDoMapa,
+} from "@/lib/hooks/use-mapa-comentarios";
 import { PDF, imagemDoEvento, useSubirImagemDoMapa } from "@/lib/hooks/use-mapa-imagem";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,7 +64,7 @@ import {
 } from "@/lib/utils/funnel-map-palette";
 import { exportarMapaEmPdf } from "@/lib/utils/funnel-map-pdf";
 import {
-  GRADE, snap, useHistorico, useSelecao, useZoom,
+  GRADE, ZOOM_MAX, ZOOM_MIN, snap, useHistorico, useSelecao, useZoom,
 } from "@/lib/hooks/use-canvas-ux";
 import {
   useMapaPorEndereco,
@@ -275,6 +285,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       : { tipo: "funil", projectId: projectId!, funnelId: funnelId!, stageId: stageId! };
   const { data, isLoading } = useMapaPorEndereco(endereco);
   const salvar = useSalvarMapaPorEndereco(endereco);
+  const mapaId = (data as { id?: string | null } | undefined)?.id ?? null;
+  const { data: comentarios } = useComentariosDoMapa(mapaId);
+  const comentar = useComentar(mapaId);
 
   const [abas, setAbas] = useState<AbaDoMapa[] | null>(null);
   const [abaAtiva, setAbaAtiva] = useState(0);
@@ -316,6 +329,18 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
   }
   /** O documento aberto no leitor. `null` = nenhum. */
   const [pdfAberto, setPdfAberto] = useState<{ url: string; titulo: string } | null>(null);
+
+  /**
+   * Comentários.
+   *
+   * `mapaId` vem da resposta do servidor: o comentário é endereçado pela chave
+   * do desenho, e a tela só conhece o caminho projeto/funil/etapa. Num mapa
+   * que ainda não foi salvo ele é `null`, e o botão fica desligado — comentar
+   * ali deixaria o comentário órfão no primeiro save.
+   */
+  const [modoComentario, setModoComentario] = useState(false);
+  const [conversaAberta, setConversaAberta] = useState<string | null>(null);
+  const [novoComentario, setNovoComentario] = useState<{ x: number; y: number; texto: string } | null>(null);
   /** A imagem aberta em tamanho grande. `null` = nenhuma. */
   const [imagemAmpliada, setImagemAmpliada] = useState<{ url: string; titulo: string } | null>(
     null,
@@ -1355,9 +1380,66 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
     window.addEventListener("pointerup", soltar);
   }
 
-  /** ⌘ + roda dá zoom; roda sozinha continua rolando o canvas. */
-  function fundoWheel(e: React.WheelEvent) {
-    if (e.ctrlKey || e.metaKey) zoom.aplicar(e.deltaY < 0 ? 1.1 : 1 / 1.1);
+  /**
+   * Zoom pela roda — preso ao mapa e ancorado no ponteiro.
+   *
+   * ## Por que um listener nativo, e não `onWheel`
+   *
+   * O React registra `wheel` como PASSIVO no root, e `preventDefault` num
+   * listener passivo é ignorado (com aviso no console). Sem o
+   * `preventDefault`, o navegador executa o zoom NATIVO da página junto: a
+   * barra lateral do app, o cabeçalho e todo o resto cresciam junto com o
+   * mapa. É preciso `addEventListener(..., { passive: false })`.
+   *
+   * ## Ancorado no ponteiro
+   *
+   * Sem ajustar o `pan`, ampliar afasta o conteúdo do cursor e a pessoa
+   * persegue o que queria ver — o que faz o zoom PARECER sensível demais
+   * mesmo com passo pequeno. Aqui o ponto sob o cursor fica onde está.
+   *
+   * ## O passo
+   *
+   * Proporcional ao `deltaY`, não fixo: trackpad manda dezenas de eventos
+   * pequenos e mouse manda poucos e grandes. Um fator fixo por evento faz o
+   * trackpad disparar o zoom de ponta a ponta num gesto só.
+   */
+  useEffect(() => {
+    const el = areaRef.current;
+    if (!el) return;
+
+    function aoGirar(e: WheelEvent) {
+      if (!e.ctrlKey && !e.metaKey) return;
+      // Segura o zoom do navegador — o motivo de tudo isto ser nativo.
+      e.preventDefault();
+
+      const area = el!.getBoundingClientRect();
+      // `deltaMode` 1 é linha e 2 é página; normalizar evita que um mouse que
+      // reporta linhas ande vinte vezes mais que um trackpad.
+      const passo = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+      const fator = Math.exp(-passo * 0.0012);
+
+      setZoomComAncora(fator, e.clientX - area.left, e.clientY - area.top);
+    }
+
+    el.addEventListener("wheel", aoGirar, { passive: false });
+    return () => el.removeEventListener("wheel", aoGirar);
+  });
+
+  /**
+   * Aplica o fator mantendo fixo o ponto sob o cursor.
+   *
+   * O `pan` compensa a mudança de escala: sem isso o desenho escorrega para
+   * fora da tela conforme se amplia.
+   */
+  function setZoomComAncora(fator: number, ancoraX: number, ancoraY: number) {
+    const antes = zoom.valor;
+    const depois = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, antes * fator));
+    if (depois === antes) return;
+    zoom.aplicar(depois / antes);
+    setPan((p) => ({
+      x: ancoraX - ((ancoraX - p.x) * depois) / antes,
+      y: ancoraY - ((ancoraY - p.y) * depois) / antes,
+    }));
   }
 
   function enquadrarTudo() {
@@ -1824,6 +1906,15 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
           >
             <Redo2 className="h-3 w-3" />
           </Button>
+          <BotaoDeComentarios
+            mapId={mapaId}
+            ativo={modoComentario}
+            onAlternar={() => {
+              setModoComentario((v) => !v);
+              setConversaAberta(null);
+              setNovoComentario(null);
+            }}
+          />
           <Button
             variant="ghost" size="icon" className="h-6 w-6"
             onClick={alternarTema}
@@ -2061,9 +2152,22 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
             backgroundSize: `${20 * zoom.valor}px ${20 * zoom.valor}px`,
             backgroundPosition: `${pan.x}px ${pan.y}px`,
           }}
-          onWheel={fundoWheel}
           onPointerDown={fundoPointerDown}
-          onClick={() => { if (!arrastouMarquee.current) { selecao.limpar(); setConectorSel(null); setLigando(null); } }}
+          onClick={(e) => {
+            if (arrastouMarquee.current) return;
+            // No modo comentário o clique no fundo põe o alfinete. É modo, e
+            // não gesto solto, porque este mesmo clique já significa "limpar a
+            // seleção" — sobrecarregá-lo faria comentar por acidente.
+            if (modoComentario && mapaId) {
+              const p = paraDesenho(e.clientX, e.clientY);
+              setNovoComentario({ x: Math.round(p.x), y: Math.round(p.y), texto: "" });
+              setConversaAberta(null);
+              return;
+            }
+            selecao.limpar();
+            setConectorSel(null);
+            setLigando(null);
+          }}
           onContextMenu={(e) => e.preventDefault()}
         >
           <div
@@ -2822,6 +2926,91 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       </div>
 
       {/* Menu de contexto do bloco */}
+      {/*
+        Alfinetes e conversas.
+
+        Em coordenada de TELA, não de desenho: um alfinete que encolhe com o
+        zoom vira um ponto ilegível num mapa afastado — e é justamente afastado
+        que se procura o que ainda está em aberto.
+      */}
+      {mapaId &&
+        emConversas(comentarios?.comentarios ?? [])
+          .filter((c) => !c.resolvido && c.tabId === aba?.id)
+          .map((c, i) => {
+            // Comentário sobre um bloco anda com o bloco: o alfinete parado
+            // enquanto a etapa se move deixa de dizer sobre o que ele fala.
+            const dono = c.boxId ? blocos.find((b) => b.id === c.boxId) : null;
+            const alvo = dono
+              ? { x: dono.x + dono.width, y: dono.y }
+              : { x: c.x, y: c.y };
+            const t = paraTela(alvo.x, alvo.y);
+            const aberta = conversaAberta === c.id;
+            return (
+              <div key={c.id} className="fixed z-40" style={{ left: t.x, top: t.y }}>
+                <Alfinete
+                  numero={i + 1}
+                  ativo={aberta}
+                  onClick={() => setConversaAberta(aberta ? null : c.id)}
+                />
+                {aberta && (
+                  <div className="absolute left-7 top-0">
+                    <ConversaAberta
+                      conversa={c}
+                      mapId={mapaId}
+                      onFechar={() => setConversaAberta(null)}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+      {/* Escrevendo o primeiro comentário de uma conversa nova. */}
+      {novoComentario && mapaId && aba && (() => {
+        const t = paraTela(novoComentario.x, novoComentario.y);
+        return (
+          <div
+            className="fixed z-50 w-64 rounded-lg border border-border bg-popover p-2 shadow-xl"
+            style={{ left: t.x, top: t.y }}
+          >
+            <textarea
+              autoFocus
+              value={novoComentario.texto}
+              onChange={(e) => setNovoComentario({ ...novoComentario, texto: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setNovoComentario(null);
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  const texto = novoComentario.texto.trim();
+                  if (!texto) return;
+                  comentar.mutate(
+                    { tabId: aba.id, texto, x: novoComentario.x, y: novoComentario.y },
+                    {
+                      onSuccess: () => setNovoComentario(null),
+                      onError: (err) =>
+                        toast.error(err instanceof Error ? err.message : "Não consegui comentar"),
+                    },
+                  );
+                }
+              }}
+              placeholder="O que você quer dizer sobre isto?"
+              rows={3}
+              className="w-full resize-none rounded border border-border bg-background px-1.5 py-1 text-[11.5px] outline-none focus:border-primary"
+            />
+            <div className="mt-1 flex items-center justify-between">
+              <span className="text-[9px] text-muted-foreground">Enter envia · Esc cancela</span>
+              <button
+                type="button"
+                onClick={() => setNovoComentario(null)}
+                className="text-[10px] text-muted-foreground hover:text-foreground"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
       {/*
         O documento, em tela quase cheia.
 

@@ -15,7 +15,15 @@ import { z } from "zod";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { Readable } from "node:stream";
-import { funnelMaps, funnels, funnelStages, projects, projectMembers } from "../db/schema.js";
+import {
+  funnelMapComments,
+  funnelMaps,
+  funnels,
+  funnelStages,
+  projects,
+  projectMembers,
+  users,
+} from "../db/schema.js";
 import { abaEmBranco, comAoMenosUmaAba } from "../services/funnel-map-abas.js";
 import {
   MAX_UPLOAD_BYTES,
@@ -326,12 +334,21 @@ export default fp(async function funnelMapRoutes(fastify) {
       .limit(1);
 
     if (mapa && (mapa.tabs ?? []).length > 0) {
-      return { tabs: mapa.tabs, rascunho: false, updatedAt: mapa.updatedAt.toISOString() };
+      // O `id` vai junto porque os COMENTÁRIOS são endereçados por ele — a
+      // tela conhece o caminho projeto/funil/etapa, não a chave do desenho.
+      return { id: mapa.id, tabs: mapa.tabs, rascunho: false, updatedAt: mapa.updatedAt.toISOString() };
     }
 
     // `rascunho: true` diz à tela que isto ainda não foi salvo por ninguém — o
     // desenho é sugestão, e some se o time preferir começar do zero.
-    return { tabs: await rascunhoDasEtapas(params.data.funnelId), rascunho: true, updatedAt: null };
+    // Sem `id`: o mapa não existe ainda, e comentar num rascunho que ninguém
+    // salvou deixaria o comentário órfão no primeiro save.
+    return {
+      id: mapa?.id ?? null,
+      tabs: await rascunhoDasEtapas(params.data.funnelId),
+      rascunho: true,
+      updatedAt: null,
+    };
   });
 
   // ---- PUT mapa ----
@@ -486,6 +503,7 @@ export default fp(async function funnelMapRoutes(fastify) {
      * não existe, sem erro nenhum para investigar.
      */
     return {
+      id: mapa.id,
       tabs: comAoMenosUmaAba(mapa.tabs),
       rascunho: (mapa.tabs ?? []).length === 0,
       updatedAt: mapa.updatedAt?.toISOString() ?? null,
@@ -586,6 +604,138 @@ export default fp(async function funnelMapRoutes(fastify) {
     if (apagados.length === 0) {
       return reply.code(404).send({ error: "Mapa avulso não encontrado" });
     }
+    return { ok: true };
+  });
+
+  // ============================================================
+  // Comentários
+  // ============================================================
+
+  /**
+   * As conversas de um mapa, com as respostas.
+   *
+   * Tudo de uma vez e agrupado na memória: são poucos por mapa, e uma consulta
+   * por aba faria uma ida ao banco a cada troca de aba.
+   */
+  fastify.get("/api/funnel-maps/:id/comentarios", async (request, reply) => {
+    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+    const linhas = await fastify.db
+      .select({
+        id: funnelMapComments.id,
+        tabId: funnelMapComments.tabId,
+        parentId: funnelMapComments.parentId,
+        boxId: funnelMapComments.boxId,
+        x: funnelMapComments.x,
+        y: funnelMapComments.y,
+        texto: funnelMapComments.texto,
+        resolvido: funnelMapComments.resolvido,
+        createdAt: funnelMapComments.createdAt,
+        autorId: funnelMapComments.createdBy,
+        autor: users.name,
+      })
+      .from(funnelMapComments)
+      .leftJoin(users, eq(users.id, funnelMapComments.createdBy))
+      .where(eq(funnelMapComments.mapId, p.data.id))
+      .orderBy(asc(funnelMapComments.createdAt));
+
+    return {
+      comentarios: linhas.map((c) => ({ ...c, createdAt: c.createdAt.toISOString() })),
+    };
+  });
+
+  fastify.post("/api/funnel-maps/:id/comentarios", async (request, reply) => {
+    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const b = z
+      .object({
+        tabId: z.string().trim().min(1).max(64),
+        texto: z.string().trim().min(1).max(4000),
+        parentId: z.string().uuid().nullable().optional(),
+        boxId: z.string().trim().max(64).nullable().optional(),
+        x: z.coerce.number().int().min(-100_000).max(100_000).default(0),
+        y: z.coerce.number().int().min(-100_000).max(100_000).default(0),
+      })
+      .safeParse(request.body);
+    if (!p.success || !b.success) return reply.code(400).send({ error: "Dados inválidos" });
+
+    // O mapa precisa existir: sem esta checagem, um id inventado criaria um
+    // comentário que nenhuma tela mostra e ninguém consegue apagar.
+    const [mapa] = await fastify.db
+      .select({ id: funnelMaps.id })
+      .from(funnelMaps)
+      .where(eq(funnelMaps.id, p.data.id))
+      .limit(1);
+    if (!mapa) return reply.code(404).send({ error: "Mapa não encontrado" });
+
+    const [criado] = await fastify.db
+      .insert(funnelMapComments)
+      .values({
+        mapId: p.data.id,
+        tabId: b.data.tabId,
+        parentId: b.data.parentId ?? null,
+        boxId: b.data.boxId ?? null,
+        x: b.data.x,
+        y: b.data.y,
+        texto: b.data.texto,
+        createdBy: request.userId ?? null,
+      })
+      .returning();
+
+    return reply.code(201).send(criado);
+  });
+
+  fastify.put("/api/funnel-maps/comentarios/:id", async (request, reply) => {
+    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const b = z
+      .object({
+        texto: z.string().trim().min(1).max(4000).optional(),
+        resolvido: z.boolean().optional(),
+        x: z.coerce.number().int().min(-100_000).max(100_000).optional(),
+        y: z.coerce.number().int().min(-100_000).max(100_000).optional(),
+      })
+      .safeParse(request.body);
+    if (!p.success || !b.success) return reply.code(400).send({ error: "Dados inválidos" });
+
+    const [atualizado] = await fastify.db
+      .update(funnelMapComments)
+      .set({ ...b.data, updatedAt: new Date() })
+      .where(eq(funnelMapComments.id, p.data.id))
+      .returning();
+
+    if (!atualizado) return reply.code(404).send({ error: "Comentário não encontrado" });
+
+    /**
+     * Resolver a conversa resolve as respostas dela.
+     *
+     * Sem isto, um alfinete some da tela mas as respostas continuam marcadas
+     * como abertas — e o contador de pendentes nunca zera.
+     */
+    if (b.data.resolvido !== undefined && !atualizado.parentId) {
+      await fastify.db
+        .update(funnelMapComments)
+        .set({ resolvido: b.data.resolvido, updatedAt: new Date() })
+        .where(eq(funnelMapComments.parentId, p.data.id));
+    }
+
+    return atualizado;
+  });
+
+  /** Apagar a conversa leva as respostas junto (CASCADE no `parent_id`). */
+  fastify.delete("/api/funnel-maps/comentarios/:id", async (request, reply) => {
+    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+    const apagados = await fastify.db
+      .delete(funnelMapComments)
+      .where(eq(funnelMapComments.id, p.data.id))
+      .returning({ id: funnelMapComments.id });
+
+    if (apagados.length === 0) return reply.code(404).send({ error: "Comentário não encontrado" });
     return { ok: true };
   });
 
