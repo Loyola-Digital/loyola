@@ -69,8 +69,20 @@ const GRUPOS = [
   { id: "ascensao", rotulo: "ASCENSÃO", cor: "#1F3864" },
 ] as const;
 
-const LARGURA_ESTEIRA = 210;
-const LARGURA_MES = 168;
+const LARGURA_FAIXA = 26;
+const LARGURA_ESTEIRA = 200;
+const LARGURA_MES = 158;
+/**
+ * Altura de cada campo dentro da célula.
+ *
+ * Fixa porque os rótulos da coluna da esquerda (Produto, Categoria, Funil)
+ * precisam cair na MESMA linha do campo correspondente de todos os doze meses
+ * — é o que a planilha faz, e o que transforma doze caixas soltas numa tabela
+ * que se lê na horizontal.
+ */
+const ALTURA_CAMPO = 22;
+const ALTURA_FREQUENCIA = 20;
+const ALTURA_LINHA = ALTURA_FREQUENCIA + ALTURA_CAMPO * 3 + 14;
 
 /** Um campo de texto que só avisa quando a pessoa sai dele. */
 function Texto({
@@ -155,97 +167,178 @@ function Celula({
   const mudar = (campo: keyof CelulaAnual, v: string) =>
     onGravar({ ...celula, [campo]: v.trim() || null });
 
+  // Célula vazia fica com a moldura apagada: numa grade de 12 meses, doze
+  // caixas igualmente marcadas escondem quais têm plano de verdade.
+  const vazia = !celula.produto && !celula.categoria && !celula.funil;
+
   return (
-    <div className="px-1 py-1" style={{ width: LARGURA_MES }}>
-      <Texto
-        valor={celula.frequencia ?? ""}
-        onGravar={(v) => mudar("frequencia", v)}
-        placeholder="quando…"
-        className="mb-1 text-center text-[10.5px] text-muted-foreground"
-      />
-      <div className="space-y-0.5 rounded-md border border-border bg-card px-2 py-1.5">
+    <div
+      className="shrink-0 border-r border-border/50 px-1.5 pb-1.5"
+      style={{ width: LARGURA_MES, height: ALTURA_LINHA }}
+    >
+      <div style={{ height: ALTURA_FREQUENCIA }} className="flex items-center">
         <Texto
-          valor={celula.produto ?? ""}
-          onGravar={(v) => mudar("produto", v)}
-          placeholder="produto"
-          className="text-[11px] font-medium"
+          valor={celula.frequencia ?? ""}
+          onGravar={(v) => mudar("frequencia", v)}
+          placeholder="—"
+          className="text-center text-[10px] font-medium text-muted-foreground"
         />
-        <Escolha
-          valor={celula.categoria ?? ""}
-          opcoes={CATEGORIAS}
-          onGravar={(v) => mudar("categoria", v)}
-          placeholder="categoria"
-        />
-        <Escolha
-          valor={celula.funil ?? ""}
-          opcoes={FUNIS}
-          onGravar={(v) => mudar("funil", v)}
-          placeholder="funil"
-        />
+      </div>
+      <div
+        className={`rounded-md border bg-card px-2 ${
+          vazia ? "border-border/40" : "border-border"
+        }`}
+      >
+        <div style={{ height: ALTURA_CAMPO }} className="flex items-center">
+          <Texto
+            valor={celula.produto ?? ""}
+            onGravar={(v) => mudar("produto", v)}
+            placeholder="—"
+            className="text-[11px] font-medium"
+          />
+        </div>
+        <div style={{ height: ALTURA_CAMPO }} className="flex items-center border-t border-border/30">
+          <Escolha
+            valor={celula.categoria ?? ""}
+            opcoes={CATEGORIAS}
+            onGravar={(v) => mudar("categoria", v)}
+            placeholder="—"
+          />
+        </div>
+        <div style={{ height: ALTURA_CAMPO }} className="flex items-center border-t border-border/30">
+          <Escolha
+            valor={celula.funil ?? ""}
+            opcoes={FUNIS}
+            onGravar={(v) => mudar("funil", v)}
+            placeholder="—"
+          />
+        </div>
       </div>
     </div>
   );
 }
 
-function LinhaDaEsteira({
+/**
+ * A coluna da esquerda de uma esteira: nome e os rótulos dos campos.
+ *
+ * Os rótulos existem porque, sem eles, os três campos da célula são três
+ * caixas de texto sem nome — e "Back-End" sozinho não diz se é categoria ou
+ * produto. Na planilha eles aparecem uma vez por linha, à esquerda, e é o que
+ * permite ler os doze meses na horizontal sem reler o cabeçalho.
+ */
+function ColunaDaEsteira({
   esteira,
-  primeiraDoGrupo,
-  totalNoGrupo,
-  cor,
-  rotulo,
-  onGravarCelula,
   onRenomear,
   onExcluir,
 }: {
   esteira: EsteiraAnual;
-  primeiraDoGrupo: boolean;
-  totalNoGrupo: number;
-  cor: string;
-  rotulo: string;
-  onGravarCelula: (mes: number, c: CelulaAnual) => void;
   onRenomear: (nome: string) => void;
   onExcluir: () => void;
 }) {
   return (
-    <div className="flex border-b border-border">
-      {/* A faixa do grupo aparece UMA vez, na primeira linha dele: repetida em
-          todas viraria uma parede de texto vertical. */}
+    <div
+      className="group flex shrink-0 flex-col border-r border-border bg-background px-2 pb-1.5"
+      style={{ width: LARGURA_ESTEIRA - LARGURA_FAIXA, height: ALTURA_LINHA }}
+    >
+      <div style={{ height: ALTURA_FREQUENCIA }} className="flex items-center gap-1">
+        <Texto
+          valor={esteira.nome}
+          onGravar={onRenomear}
+          placeholder="nome da esteira"
+          className="text-[12px] font-semibold"
+        />
+        <button
+          type="button"
+          onClick={onExcluir}
+          title="Excluir esteira"
+          aria-label={`Excluir esteira ${esteira.nome || "sem nome"}`}
+          className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+        >
+          <Trash2 className="h-3 w-3" />
+        </button>
+      </div>
+      {/* Alinhados com os campos da célula pela mesma altura — ver ALTURA_CAMPO. */}
+      {["Produto", "Categoria", "Funil"].map((r, i) => (
+        <div
+          key={r}
+          style={{ height: ALTURA_CAMPO }}
+          className={`flex items-center text-[10px] font-medium uppercase tracking-wide text-muted-foreground ${
+            i === 0 ? "" : "border-t border-border/30"
+          }`}
+        >
+          {r}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Um grupo inteiro — a faixa colorida e as esteiras dele.
+ *
+ * A faixa é UM elemento com a altura do grupo todo, e não um pedaço por linha.
+ * Fatiada, o texto vertical ficava espremido dentro de uma linha de 90px e a
+ * cor aparecia em blocos separados por borda — que era o "esticado" feio.
+ * Inteira, ela se lê de uma vez, como na planilha.
+ *
+ * A coluna da esquerda inteira é `sticky`: rolar até Outubro sem ela deixa
+ * quem lê sem saber de que esteira é a célula.
+ */
+function BlocoDoGrupo({
+  grupo,
+  esteiras,
+  onGravarCelula,
+  onRenomear,
+  onExcluir,
+}: {
+  grupo: { id: string; rotulo: string; cor: string };
+  esteiras: EsteiraAnual[];
+  onGravarCelula: (esteiraId: string, mes: number, c: CelulaAnual) => void;
+  onRenomear: (esteiraId: string, nome: string) => void;
+  onExcluir: (esteira: EsteiraAnual) => void;
+}) {
+  if (esteiras.length === 0) return null;
+
+  return (
+    <div className="flex border-b-2 border-border">
       <div
-        className="sticky left-0 z-10 flex shrink-0 items-stretch bg-background"
+        className="sticky left-0 z-20 flex shrink-0 bg-background"
         style={{ width: LARGURA_ESTEIRA }}
       >
-        <div className="w-6 shrink-0" style={{ backgroundColor: primeiraDoGrupo ? cor : cor }}>
-          {primeiraDoGrupo && (
-            <span
-              className="flex h-full items-center justify-center text-[9px] font-bold tracking-[0.14em] text-white"
-              style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
-            >
-              {totalNoGrupo > 0 ? rotulo : ""}
-            </span>
-          )}
-        </div>
-        <div className="group flex min-w-0 flex-1 items-center gap-1 px-2">
-          <Texto
-            valor={esteira.nome}
-            onGravar={onRenomear}
-            placeholder="nome da esteira"
-            className="text-[12px] font-semibold"
-          />
-          <button
-            type="button"
-            onClick={onExcluir}
-            title="Excluir esteira"
-            aria-label={`Excluir esteira ${esteira.nome || "sem nome"}`}
-            className="grid h-6 w-6 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+        {/* A faixa: cor do grupo e o nome girado, centralizado na altura toda. */}
+        <div
+          className="flex shrink-0 items-center justify-center"
+          style={{ width: LARGURA_FAIXA, backgroundColor: grupo.cor }}
+        >
+          <span
+            className="whitespace-nowrap text-[9px] font-bold tracking-[0.18em] text-white"
+            style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
           >
-            <Trash2 className="h-3 w-3" />
-          </button>
+            {grupo.rotulo}
+          </span>
+        </div>
+
+        <div className="flex min-w-0 flex-col">
+          {esteiras.map((e) => (
+            <ColunaDaEsteira
+              key={e.id}
+              esteira={e}
+              onRenomear={(nome) => onRenomear(e.id, nome)}
+              onExcluir={() => onExcluir(e)}
+            />
+          ))}
         </div>
       </div>
 
-      {esteira.meses.map((m, i) => (
-        <Celula key={i} celula={m} onGravar={(c) => onGravarCelula(i + 1, c)} />
-      ))}
+      <div className="flex flex-col">
+        {esteiras.map((e) => (
+          <div key={e.id} className="flex border-b border-border/40 last:border-b-0">
+            {e.meses.map((m, i) => (
+              <Celula key={i} celula={m} onGravar={(c) => onGravarCelula(e.id, i + 1, c)} />
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -363,15 +456,21 @@ export function CalendarioAnual({
         <div style={{ minWidth: LARGURA_ESTEIRA + 12 * LARGURA_MES }}>
           {/* Cabeçalho dos meses. A célula vazia da esquerda acompanha a coluna
               congelada, senão os nomes dos meses saem de alinhamento. */}
-          <div className="flex border-b border-border bg-muted/40">
+          <div className="flex border-b-2 border-border">
             <div
-              className="sticky left-0 z-20 shrink-0 bg-muted/40"
+              className="sticky left-0 z-30 shrink-0 bg-background"
               style={{ width: LARGURA_ESTEIRA }}
             />
-            {MESES.map((m) => (
+            {MESES.map((m, i) => (
               <div
                 key={m}
-                className="shrink-0 px-1 py-1.5 text-center text-[11px] font-semibold"
+                /* Alternado como na planilha: doze cabeçalhos iguais numa faixa
+                   longa fazem perder a coluna ao percorrer com o olho. */
+                className={`shrink-0 px-1 py-2 text-center text-[11px] font-bold uppercase tracking-wide ${
+                  i % 2 === 0
+                    ? "bg-foreground text-background"
+                    : "bg-muted-foreground/70 text-background"
+                }`}
                 style={{ width: LARGURA_MES }}
               >
                 {m}
@@ -379,51 +478,45 @@ export function CalendarioAnual({
             ))}
           </div>
 
-          {GRUPOS.flatMap((g) => {
-            const doGrupo = esteiras.filter((e) => e.grupo === g.id);
-            return doGrupo.map((e, i) => (
-              <LinhaDaEsteira
-                key={e.id}
-                esteira={e}
-                primeiraDoGrupo={i === 0}
-                totalNoGrupo={doGrupo.length}
-                cor={g.cor}
-                rotulo={g.rotulo}
-                onGravarCelula={(mes, celula) => {
-                  gravar.mutate(
-                    { trackId: e.id, mes, celula },
-                    {
-                      onError: (err) =>
-                        toast.error(err instanceof Error ? err.message : "Não consegui salvar"),
+          {GRUPOS.map((g) => (
+            <BlocoDoGrupo
+              key={g.id}
+              grupo={g}
+              esteiras={esteiras.filter((e) => e.grupo === g.id)}
+              onGravarCelula={(esteiraId, mes, celula) => {
+                gravar.mutate(
+                  { trackId: esteiraId, mes, celula },
+                  {
+                    onError: (err) =>
+                      toast.error(err instanceof Error ? err.message : "Não consegui salvar"),
+                  },
+                );
+              }}
+              onRenomear={(id, nome) => renomear.mutate({ id, nome })}
+              onExcluir={(e) => {
+                excluir.mutate(e.id);
+                toast.success(`"${e.nome || "Esteira"}" excluída`, {
+                  // O ano inteiro daquela linha vai junto — vale dizer antes
+                  // que a pessoa procure onde foi.
+                  description: "As doze células dela saíram também.",
+                  duration: 20_000,
+                  action: {
+                    label: "Desfazer",
+                    onClick: () => {
+                      void criar
+                        .mutateAsync({ grupo: e.grupo, nome: e.nome })
+                        .then(() =>
+                          toast.success(
+                            `"${e.nome || "Esteira"}" recriada — as células precisam ser preenchidas de novo.`,
+                          ),
+                        )
+                        .catch(() => toast.error("Não consegui recriar"));
                     },
-                  );
-                }}
-                onRenomear={(nome) => renomear.mutate({ id: e.id, nome })}
-                onExcluir={() => {
-                  excluir.mutate(e.id);
-                  toast.success(`"${e.nome || "Esteira"}" excluída`, {
-                    // O ano inteiro daquela linha vai junto — vale dizer antes
-                    // que a pessoa procure onde foi.
-                    description: "As doze células dela saíram também.",
-                    duration: 20_000,
-                    action: {
-                      label: "Desfazer",
-                      onClick: () => {
-                        void criar
-                          .mutateAsync({ grupo: e.grupo, nome: e.nome })
-                          .then(() =>
-                            toast.success(
-                              `"${e.nome || "Esteira"}" recriada — as células precisam ser preenchidas de novo.`,
-                            ),
-                          )
-                          .catch(() => toast.error("Não consegui recriar"));
-                      },
-                    },
-                  });
-                }}
-              />
-            ));
-          })}
+                  },
+                });
+              }}
+            />
+          ))}
         </div>
       </div>
     </div>
