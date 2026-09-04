@@ -11,6 +11,7 @@ import {
 } from "@/components/funnels/renomear-funnel-dialog";
 import { useFunnelStages, useCreateStage } from "@/lib/hooks/use-funnel-stages";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useTituloDaAba } from "@/components/layout/titulo-da-aba";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -56,6 +57,8 @@ export default function FunnelPage() {
   const [matchCodeDraft, setMatchCodeDraft] = useState<string>("");
 
   const { data: funnelData, isLoading: funnelLoading } = useFunnel(params.id, params.funnelId);
+  // O nome na aba: com cinco abas abertas, "Funil" em todas não distingue nada.
+  useTituloDaAba(funnelData?.funnel.name);
 
   // Sync draft com valor real quando funil carrega
   useEffect(() => {
