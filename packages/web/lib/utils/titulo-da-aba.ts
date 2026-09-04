@@ -52,6 +52,9 @@ export function nomeDaRota(pathname: string): string | null {
   // As rotas de projeto são as mais profundas e a mais específica precisa
   // ganhar: `/projects/x/funnels/y/campaign-log` não é "Empresas".
   if (pathname.includes("/campaign-log")) return "Log de campanha";
+  // A etapa é mais específica que o funil e precisa ganhar dele: `/funnels/x/
+  // stages/y` não é a tela do funil.
+  if (pathname.includes("/stages/")) return "Etapa";
   if (pathname.includes("/funnels/")) return "Funil";
   if (pathname.includes("/instagram")) return "Instagram";
   if (pathname.includes("/conversations")) return "Conversations";

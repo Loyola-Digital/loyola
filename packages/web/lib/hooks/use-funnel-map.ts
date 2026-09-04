@@ -43,6 +43,8 @@ export interface BlocoDoMapa {
    */
   imageUrl?: string | null;
   imageKey?: string | null;
+  /** Bloco `forma`: qual figura desenhar. Ver `FORMAS`. */
+  forma?: string | null;
 }
 
 export type PontoDeConexao = "top" | "right" | "bottom" | "left";

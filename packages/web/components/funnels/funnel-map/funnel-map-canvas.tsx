@@ -52,8 +52,12 @@ import {
   TEXTO_ALTURA,
   TEXTO_LARGURA,
   TIPO_GENERICO,
+  FORMAS,
+  ehBlocoLivre,
   IMAGEM_ALTURA,
   IMAGEM_LARGURA,
+  TIPO_FORMA,
+  larguraParaTitulo,
   TIPO_IMAGEM,
   TIPO_NOTA,
   TIPO_PDF,
@@ -759,7 +763,21 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
     const atual = blocos.find((b) => b.id === alvo);
     setRenomeando(null);
     if (!nome || !atual || nome === atual.label) return;
-    alterarAba((a) => ({ ...a, boxes: a.boxes.map((b) => (b.id === alvo ? { ...b, label: nome } : b)) }));
+    alterarAba((a) => ({
+      ...a,
+      boxes: a.boxes.map((b) => {
+        if (b.id !== alvo) return b;
+        /**
+         * O bloco cresce para caber o nome novo.
+         *
+         * Só CRESCE: encolher desfaria uma largura que a pessoa ajustou à mão
+         * — e mexer no nome não é pedido para redimensionar. Bloco livre fica
+         * de fora; nota e texto têm o tamanho como parte do desenho.
+         */
+        if (ehBlocoLivre(b.type)) return { ...b, label: nome };
+        return { ...b, label: nome, width: Math.max(b.width, larguraParaTitulo(nome)) };
+      }),
+    }));
   }
 
   /** Duplica os blocos selecionados, deslocados pra não nascer por baixo. */
@@ -809,7 +827,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       ...a,
       boxes: [
         ...a.boxes,
-        { id, type: tipo, label, ...p, width: LARGURA_PADRAO, height: ALTURA_PADRAO, color: cor, status: "ativo" as StatusBloco },
+        { id, type: tipo, label, ...p, width: larguraParaTitulo(label), height: ALTURA_PADRAO, color: cor, status: "ativo" as StatusBloco },
       ],
     }));
     // Lido ANTES de trocar a seleção: `selecao.definir` já aponta para o novo.
@@ -1002,6 +1020,29 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       if (f) void adicionarImagem(f);
     };
     input.click();
+  }
+
+  /** Figura geométrica solta: agrupa, marca área, desenha o que a paleta não nomeia. */
+  function adicionarForma(forma: string, rotulo: string) {
+    const id = novoId("f");
+    const anterior = selecao.unico;
+    const blocoAnterior = anterior ? (blocos.find((b) => b.id === anterior) ?? null) : null;
+    const p = blocoAnterior ? posicaoAFrente(blocoAnterior, "right", 120, 120) : proximaPosicao(120, 120);
+    alterarAba((a) => ({
+      ...a,
+      boxes: [
+        ...a.boxes,
+        {
+          id, type: TIPO_FORMA, label: rotulo, ...p,
+          // Quadrada por padrão: círculo e losango só ficam certos assim, e
+          // quem quiser um retângulo redimensiona.
+          width: 120, height: 120,
+          color: CORES_BLOCO[0].cor, status: "ativo" as StatusBloco,
+          forma,
+        },
+      ],
+    }));
+    selecao.definir([id]);
   }
 
   /** Bloco de texto: título ou parágrafo solto no board. */
@@ -1522,7 +1563,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       // `deltaMode` 1 é linha e 2 é página; normalizar evita que um mouse que
       // reporta linhas ande vinte vezes mais que um trackpad.
       const passo = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
-      const fator = Math.exp(-passo * 0.0012);
+      // 0.00138 = os 0.0012 originais mais 15%, pedido depois do primeiro
+      // ajuste: a curva estava confortável, só um pouco lenta.
+      const fator = Math.exp(-passo * 0.00138);
 
       setZoomComAncora(fator, e.clientX - area.left, e.clientY - area.top);
     }
@@ -1933,6 +1976,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
     // Item próprio, e não um "Imagem ou PDF": quem procura anexar um briefing
     // não pensa em "imagem", e um rótulo duplo esconde as duas coisas.
     { chave: "pdf", rotulo: "PDF", acao: () => escolherImagem("application/pdf") },
+    ...FORMAS.map((f) => ({
+      chave: f.id,
+      rotulo: f.rotulo,
+      acao: () => adicionarForma(f.id, f.rotulo),
+    })),
     ...(["h1", "h2", "h3", "corpo"] as const).map((e) => ({
       chave: e,
       rotulo: e === "corpo" ? "Texto" : e.toUpperCase(),
@@ -1940,7 +1988,13 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
     })),
   ];
   const filtroLivres = SECOES_LIVRES.filter(
-    (l) => casa(l.rotulo) || casa("anotar") || casa("print") || casa("anexo") || casa("documento"),
+    (l) =>
+      casa(l.rotulo) ||
+      casa("anotar") ||
+      casa("print") ||
+      casa("anexo") ||
+      casa("documento") ||
+      casa("forma"),
   );
   // Ícone casa pelo grupo OU pelo próprio rótulo — o emoji antigo só dava pra
   // achar pelo grupo, porque não tinha nome nenhum.
@@ -2430,6 +2484,59 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
             {blocos.map((b) => {
               const meta = metaDoTipo(b.type);
               const ativo = selecao.tem(b.id);
+
+              /**
+               * Figura geométrica.
+               *
+               * Desenhada em SVG, e não com `border-radius` e `clip-path`: o
+               * triângulo por `clip-path` não aceita contorno, e uma forma sem
+               * traço some do mapa claro assim que o preenchimento é suave.
+               *
+               * Fica ATRÁS dos demais (`zIndex: 0`): a figura serve para
+               * agrupar, e por cima esconderia justamente o que agrupa.
+               */
+              if (b.type === TIPO_FORMA) {
+                const f = b.forma ?? "quadrado";
+                const caminho =
+                  f === "triangulo"
+                    ? "M 50 4 L 96 96 L 4 96 Z"
+                    : f === "losango"
+                      ? "M 50 4 L 96 50 L 50 96 L 4 50 Z"
+                      : null;
+                return (
+                  <div
+                    key={b.id}
+                    onPointerDown={(e) => iniciarArrasto(e, b)}
+                    onClick={(e) => { e.stopPropagation(); selecao.clicar(b.id, e.shiftKey); }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (!selecao.tem(b.id)) selecao.definir([b.id]);
+                      setMenu({ x: e.clientX, y: e.clientY, boxId: b.id });
+                    }}
+                    className={`absolute ${ativo ? "ring-2 ring-primary ring-offset-2" : ""}`}
+                    style={{ left: b.x, top: b.y, width: b.width, height: b.height, zIndex: 0 }}
+                  >
+                    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full">
+                      {caminho ? (
+                        <path d={caminho} fill={`${b.color}26`} stroke={b.color} strokeWidth={2} />
+                      ) : f === "circulo" ? (
+                        <ellipse cx="50" cy="50" rx="48" ry="48" fill={`${b.color}26`} stroke={b.color} strokeWidth={2} />
+                      ) : (
+                        <rect x="2" y="2" width="96" height="96" rx="6" fill={`${b.color}26`} stroke={b.color} strokeWidth={2} />
+                      )}
+                    </svg>
+                    {ativo && (
+                      <span
+                        role="presentation"
+                        onPointerDown={(ev) => iniciarResize(ev, b)}
+                        onClick={(ev) => ev.stopPropagation()}
+                        className="absolute -bottom-1 -right-1 z-20 h-3 w-3 cursor-nwse-resize touch-none rounded-sm border border-primary bg-background"
+                      />
+                    )}
+                  </div>
+                );
+              }
 
               /**
                * Documento anexado.

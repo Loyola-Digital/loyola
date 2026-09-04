@@ -38,7 +38,9 @@ export const CATEGORIAS: CategoriaDeBloco[] = [
     name: "Páginas",
     color: "#8b5cf6",
     items: [
-      { type: "landing_page", label: "Landing Page", icon: "Layout" },
+      // O `type` continua `landing_page`: e ele que os mapas ja salvos guardam,
+      // e trocar a chave por causa do rotulo apagaria icone e cor deles.
+      { type: "landing_page", label: "Página de Vendas", icon: "Layout" },
       { type: "captura", label: "Página de Captura", icon: "UserPlus" },
       { type: "vsl", label: "VSL", icon: "Play" },
       // O `type` continua `squeeze`: e ele que os mapas ja salvos guardam, e
@@ -54,6 +56,9 @@ export const CATEGORIAS: CategoriaDeBloco[] = [
     items: [
       { type: "checkout", label: "Checkout", icon: "DollarSign" },
       { type: "upsell", label: "Upsell", icon: "TrendingUp" },
+      // Mesmo icone de proposito: e a mesma jogada, o que muda e QUANDO ela
+      // acontece. Dois simbolos diferentes sugeririam duas coisas distintas.
+      { type: "upsell_imediato", label: "Upsell Imediato", icon: "TrendingUp" },
       { type: "downsell", label: "Downsell", icon: "TrendingDown" },
       { type: "order_bump", label: "Order Bump", icon: "Plus" },
       { type: "obrigado", label: "Página de Obrigado", icon: "CheckCircle" },
@@ -155,6 +160,24 @@ export function metaDoTipo(type: string): { label: string; icon: string; cor: st
 }
 
 export const LARGURA_PADRAO = 160;
+export const LARGURA_MAXIMA_DO_BLOCO = 320;
+
+/**
+ * Largura que cabe o titulo inteiro.
+ *
+ * Com o titulo maior e centralizado, um nome como "Pagina de obrigado do
+ * upsell" era cortado em "Pagina de obrig…" — e o bloco existe para dizer o
+ * que ele e. A conta e aproximada de proposito: medir texto de verdade exige
+ * canvas ou um nó no DOM, e errar dez pixels para mais nao custa nada, enquanto
+ * medir a cada tecla custaria em toda digitacao.
+ *
+ * `7.2` e a largura media de um caractere em 13px semibold; `76` cobre o icone,
+ * o espaco entre eles e o respiro das bordas.
+ */
+export function larguraParaTitulo(titulo: string): number {
+  const estimada = Math.ceil(titulo.trim().length * 7.2) + 76;
+  return Math.min(LARGURA_MAXIMA_DO_BLOCO, Math.max(LARGURA_PADRAO, estimada));
+}
 export const ALTURA_PADRAO = 80;
 
 // ============================================================
@@ -186,6 +209,23 @@ export const TIPO_IMAGEM = "imagem";
  * de bloco por cima disputaria com ela.
  */
 export const TIPO_PDF = "pdf";
+/**
+ * Figura geometrica solta — circulo, quadrado, triangulo, losango.
+ *
+ * Serve para agrupar, marcar area e desenhar o que a paleta nao nomeia. Nao e
+ * peca do funil: nao tem status nem tipo, so forma e cor.
+ */
+export const TIPO_FORMA = "forma";
+
+/** As formas disponiveis. O valor vai no campo `forma` do bloco. */
+export const FORMAS = [
+  { id: "quadrado", rotulo: "Quadrado" },
+  { id: "circulo", rotulo: "Círculo" },
+  { id: "triangulo", rotulo: "Triângulo" },
+  { id: "losango", rotulo: "Losango" },
+] as const;
+
+export type FormaDoBloco = (typeof FORMAS)[number]["id"];
 
 export function ehBlocoLivre(type: string): boolean {
   return (
@@ -193,7 +233,8 @@ export function ehBlocoLivre(type: string): boolean {
     type === TIPO_TEXTO ||
     type === TIPO_GENERICO ||
     type === TIPO_IMAGEM ||
-    type === TIPO_PDF
+    type === TIPO_PDF ||
+    type === TIPO_FORMA
   );
 }
 
@@ -231,9 +272,19 @@ export const CORES_BLOCO = [
  * genérico aqui é a FORMA, não o rótulo: um card escrito "genérico" não
  * informa nada a quem lê o mapa depois.
  */
+/**
+ * Os icones livres, num grupo so.
+ *
+ * Eram quatro secoes — Fluxo, Canais, Pessoas, Marcos — e a divisao nao ajudava
+ * a achar nada: quem procura um icone de foguete nao pensa "isso e um Marco",
+ * pensa "foguete". Quatro cabecalhos empurravam a lista para baixo e obrigavam
+ * a abrir todas para varrer trinta e dois itens.
+ *
+ * A busca da paleta resolve o encontrar; o grupo unico resolve o folhear.
+ */
 export const ICONES_GENERICOS: { grupo: string; itens: { icone: string; rotulo: string }[] }[] = [
   {
-    grupo: "Fluxo",
+    grupo: "Random",
     itens: [
       { icone: "Play", rotulo: "Início" },
       { icone: "Pause", rotulo: "Pausa" },
@@ -243,11 +294,6 @@ export const ICONES_GENERICOS: { grupo: string; itens: { icone: string; rotulo: 
       { icone: "X", rotulo: "Descartado" },
       { icone: "TriangleAlert", rotulo: "Atenção" },
       { icone: "Target", rotulo: "Objetivo" },
-    ],
-  },
-  {
-    grupo: "Canais",
-    itens: [
       { icone: "Smartphone", rotulo: "App" },
       { icone: "MessageCircle", rotulo: "WhatsApp" },
       { icone: "Mail", rotulo: "E-mail" },
@@ -256,11 +302,6 @@ export const ICONES_GENERICOS: { grupo: string; itens: { icone: string; rotulo: 
       { icone: "Tv", rotulo: "Anúncio" },
       { icone: "Video", rotulo: "Vídeo" },
       { icone: "Camera", rotulo: "Conteúdo" },
-    ],
-  },
-  {
-    grupo: "Pessoas",
-    itens: [
       { icone: "User", rotulo: "Lead" },
       { icone: "Users", rotulo: "Público" },
       { icone: "Magnet", rotulo: "Captação" },
@@ -269,11 +310,6 @@ export const ICONES_GENERICOS: { grupo: string; itens: { icone: string; rotulo: 
       { icone: "GraduationCap", rotulo: "Aluno" },
       { icone: "ShoppingCart", rotulo: "Carrinho" },
       { icone: "DollarSign", rotulo: "Receita" },
-    ],
-  },
-  {
-    grupo: "Marcos",
-    itens: [
       { icone: "Rocket", rotulo: "Lançamento" },
       { icone: "Flame", rotulo: "Aquecimento" },
       { icone: "Star", rotulo: "Destaque" },

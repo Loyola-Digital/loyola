@@ -67,3 +67,23 @@ describe("tituloDaAba", () => {
     expect(tituloDaAba("/bi", null)).toBe("BI | Loyola X");
   });
 });
+
+describe("etapa dentro do funil", () => {
+  it("a etapa ganha do funil", () => {
+    // `/funnels/x/stages/y` não é a tela do funil: sem esta ordem, abrir uma
+    // etapa mostraria "Funil" na aba.
+    expect(nomeDaRota("/projects/1/funnels/2/stages/3")).toBe("Etapa");
+  });
+
+  it("o log continua ganhando de todos", () => {
+    expect(nomeDaRota("/projects/1/funnels/2/campaign-log")).toBe("Log de campanha");
+  });
+
+  it("o contexto junta funil e etapa", () => {
+    // "Vendas" sozinho se repete em todo funil; o que separa as abas é o funil
+    // na frente.
+    expect(tituloDaAba("/projects/1/funnels/2/stages/3", "bbe-fh · Vendas")).toBe(
+      "bbe-fh · Vendas · Etapa | Loyola X",
+    );
+  });
+});
