@@ -1169,6 +1169,14 @@ export interface MetaHourlyInsight {
   spend?: string;
   impressions?: string;
   clicks?: string;
+  /**
+   * Story 29.69 (continuação): passou a vir sempre — o `level` mudou de
+   * `account` para `campaign` porque o cache precisa da campanha na chave (três
+   * funis perpétuos do BBE dividem o mesmo projeto). Medido: a soma por
+   * campanha bate exatamente com a de conta.
+   */
+  campaign_id?: string;
+  campaign_name?: string;
   hourly_stats_aggregated_by_advertiser_time_zone?: string;
 }
 
@@ -1182,7 +1190,10 @@ export async function fetchHourlyDailyInsights(
 ): Promise<MetaHourlyInsight[]> {
   const since = startDate && endDate ? startDate : dateRangeFromDays(days).since;
   const until = startDate && endDate ? endDate : dateRangeFromDays(days).until;
-  const fields = "spend,impressions,clicks";
+  // `campaign_id` entra porque o cache é chaveado por campanha (ver a migration
+  // 0136). `level=campaign` foi verificado contra a conta do BBE: HTTP 200 e a
+  // MESMA soma de `level=account` — R$ 1.470,67 em 3 dias nos dois níveis.
+  const fields = "spend,impressions,clicks,campaign_id,campaign_name";
   // Filtro por campanha usa o mesmo formato do resto do serviço — sem ele, a
   // conta inteira entra na conta do funil.
   const filtering =
@@ -1197,7 +1208,7 @@ export async function fetchHourlyDailyInsights(
 
   for (const chunk of chunkDateRange(since, until)) {
     const timeRange = buildTimeRangeParam(chunk.since, chunk.until);
-    let nextPath: string | null = `/act_${metaAccountId}/insights?fields=${fields}&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone&time_range=${timeRange}&time_increment=1&level=account&limit=500${filtering}`;
+    let nextPath: string | null = `/act_${metaAccountId}/insights?fields=${fields}&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone&time_range=${timeRange}&time_increment=1&level=campaign&limit=500${filtering}`;
     let useFullUrl = false;
     while (nextPath) {
       const res: PageResponse = useFullUrl
