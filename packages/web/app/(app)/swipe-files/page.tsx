@@ -38,6 +38,7 @@ import { ClickUpAlertDialog } from "@/components/swipe-files/clickup-alert-dialo
 import { ImportarDoClickUp } from "@/components/swipe-files/importar-do-clickup";
 import { PdfCapa } from "@/components/swipe-files/pdf-capa";
 import { SwipeLightbox } from "@/components/swipe-files/swipe-lightbox";
+import { Chip, GrupoDeFiltro } from "@/components/swipe-files/filtros-do-swipe";
 
 const KIND_META: Record<AssetKind, { label: string; Icon: typeof Play }> = {
   image: { label: "Imagem", Icon: ImageIcon },
@@ -45,31 +46,6 @@ const KIND_META: Record<AssetKind, { label: string; Icon: typeof Play }> = {
   pdf: { label: "PDF", Icon: FileText },
   link: { label: "Link", Icon: Link2 },
 };
-
-/** Chip de filtro — clicar de novo limpa. */
-function Chip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
-        active
-          ? "border-primary bg-primary/10 font-medium text-primary"
-          : "border-border/50 text-muted-foreground hover:bg-muted hover:text-foreground"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
 
 /**
  * Um card da grade.
@@ -327,6 +303,7 @@ export default function SwipeFilesPage() {
 
   const items = data?.items ?? [];
   const facets = data?.facets ?? { platform: [], format: [], niche: [], brand: [], tags: [] };
+  const total = data?.total ?? 0;
   const ativos = Object.entries(filters).filter(([, v]) => v).length;
 
   function set<K extends keyof SwipeFilters>(key: K, value: SwipeFilters[K]) {
@@ -415,30 +392,35 @@ export default function SwipeFilesPage() {
               Limpar
             </Button>
           )}
+
+          {/* Quanto o recorte deixou de fora. Sem isso não dá para saber se o
+              filtro pegou meia biblioteca ou três itens. */}
+          {ativos > 0 && total > 0 && (
+            <span className="text-[11px] tabular-nums text-muted-foreground">
+              {items.length} de {total}
+            </span>
+          )}
         </div>
 
         {showFilters && (
           <div className="space-y-2 rounded-xl border border-border/40 p-3">
-            {([
-              ["Plataforma", "platform", facets.platform],
-              ["Formato", "format", facets.format],
-              ["Nicho", "niche", facets.niche],
-              ["Marca", "brand", facets.brand],
-              ["Tag", "tag", facets.tags],
-            ] as const)
-              .filter(([, , opts]) => opts.length > 0)
-              .map(([label, key, opts]) => (
-                <div key={key} className="flex flex-wrap items-center gap-1.5">
-                  <span className="w-[74px] shrink-0 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    {label}
-                  </span>
-                  {opts.map((o) => (
-                    <Chip key={o} active={filters[key] === o} onClick={() => set(key, o)}>
-                      {o}
-                    </Chip>
-                  ))}
-                </div>
-              ))}
+            {(
+              [
+                ["Plataforma", "platform", facets.platform],
+                ["Formato", "format", facets.format],
+                ["Nicho", "niche", facets.niche],
+                ["Marca", "brand", facets.brand],
+                ["Tag", "tag", facets.tags],
+              ] as const
+            ).map(([label, key, opts]) => (
+              <GrupoDeFiltro
+                key={key}
+                rotulo={label}
+                opcoes={opts}
+                ativo={filters[key]}
+                onEscolher={(v) => set(key, v)}
+              />
+            ))}
           </div>
         )}
       </div>

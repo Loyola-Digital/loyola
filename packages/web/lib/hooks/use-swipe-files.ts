@@ -40,12 +40,18 @@ export interface SwipeFile {
   createdAt: string;
 }
 
+/** Uma opção de filtro com quantas referências ela alcança. */
+export interface OpcaoDeFiltro {
+  valor: string;
+  n: number;
+}
+
 export interface SwipeFacets {
-  platform: string[];
-  format: string[];
-  niche: string[];
-  brand: string[];
-  tags: string[];
+  platform: OpcaoDeFiltro[];
+  format: OpcaoDeFiltro[];
+  niche: OpcaoDeFiltro[];
+  brand: OpcaoDeFiltro[];
+  tags: OpcaoDeFiltro[];
 }
 
 export interface SwipeFilters {
@@ -86,9 +92,13 @@ export function useSwipeFiles(filters: SwipeFilters) {
   return useQuery({
     queryKey: ["swipe-files", suffix],
     queryFn: () =>
-      apiClient<{ items: SwipeFile[]; facets: SwipeFacets; storageReady: boolean }>(
-        `${BASE}${suffix}`,
-      ),
+      apiClient<{
+        items: SwipeFile[];
+        facets: SwipeFacets;
+        /** Tamanho da biblioteca inteira, sem filtro — para o "X de N". */
+        total: number;
+        storageReady: boolean;
+      }>(`${BASE}${suffix}`),
     // Segura o resultado anterior enquanto refiltra: sem isso o grid pisca a
     // cada tecla digitada na busca.
     placeholderData: (prev) => prev,
