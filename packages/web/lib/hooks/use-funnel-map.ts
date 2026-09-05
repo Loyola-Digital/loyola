@@ -45,6 +45,14 @@ export interface BlocoDoMapa {
   imageKey?: string | null;
   /** Bloco `forma`: qual figura desenhar. Ver `FORMAS`. */
   forma?: string | null;
+  /**
+   * Referências do Swipe Files presas a este bloco.
+   *
+   * Só os ids — título, miniatura e tipo vêm da biblioteca na hora de
+   * desenhar. Copiar isso para dentro do mapa faria a referência congelar:
+   * trocar o print no Swipe Files não alcançaria os mapas que já o citam.
+   */
+  swipeIds?: string[] | null;
 }
 
 export type PontoDeConexao = "top" | "right" | "bottom" | "left";
