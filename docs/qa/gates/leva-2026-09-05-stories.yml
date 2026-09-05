@@ -61,10 +61,16 @@ verificacoes:
       pendências levantadas pelo @sm são legítimas e ficam para o gestor.
 
 pendenciasParaOGestor:
-  - "18.79 AC4 — a aba \"Todos\" mantém o agrupamento por Ad ID? (o preset dela depende disso)"
-  - "18.79 AC6 — \"Mais Vendas/Leads\" é uma opção ou duas? `leads` existe, `vendas` não"
-  - "18.79 AC3 — @sm decidiu aba desabilitada com tooltip; o gestor pode preferir sumir"
-  - "29.76 AC1 — depende do CSV que o gestor vai salvar em docs/dados/"
+  status: "RESOLVIDAS em 2026-09-05, pelo gestor"
+  respostas:
+    - "18.79 AC4 — a aba \"Todos\" mantém o agrupamento por Ad ID? → SIM. Sai só o CONTROLE da barra; o tipo `Agrupamento`, `chaveDoCriativo` e o preset da aba continuam."
+    - "18.79 AC6 — uma opção ou duas? → AS DUAS, separadas. `Mais Leads` já existe; `Mais Vendas` é nova."
+    - "18.79 AC3 — desabilitada com tooltip, ou sumir? → DESABILITADA COM TOOLTIP, como o @sm propôs."
+    - "29.76 AC1 — CSV em docs/dados/ → o gestor vai salvar."
+  aberta_tecnica: >
+    18.79 AC6 — QUAL contagem de vendas alimenta "Mais Vendas". Não é decisão do
+    gestor: a 29.53 registrou três contagens diferentes no perpétuo (`sales` do
+    pixel, `salesCount` do comprador dedupado, checkouts). O dev mede e declara.
 
 ordemSugerida: >
   29.76 primeiro (é bug, alta, e a causa já está isolada), depois 29.75 (o AC1
