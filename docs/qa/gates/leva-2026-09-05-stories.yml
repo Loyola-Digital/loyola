@@ -1,0 +1,72 @@
+alvo: "Leva de 2026-09-05 — 3 stories (Bloco A, B e C do pedido do gestor)"
+stories: ["29.75", "29.76", "18.79"]
+revisadoPor: "@po (Pax)"
+revisadoEm: "2026-09-05"
+
+decisao: GO
+detalhePorStory:
+  29.75: "GO — score 7/10, 2 correções aplicadas"
+  29.76: "GO — score 9/10, 1 correção aplicada"
+  18.79: "GO — score 9/10, sem correção"
+
+resumo: >
+  As três passam. Os dois defeitos encontrados eram do @sm, não do pedido: um
+  número inventado e uma referência para o arquivo errado. Os dois teriam
+  sobrevivido a qualquer revisão que não abrisse o código.
+
+verificacoes:
+  - id: PO-01
+    story: "29.75"
+    severidade: media
+    achado: >
+      O @sm escreveu "R$ 57.949,00 ÷ 148 = R$ 391,55" como se fosse medição. O
+      gestor havia dito **"R$ 57,9K"** — abreviado. O valor exato foi
+      INVENTADO para preencher a conta, e "57,9K" cobre qualquer coisa entre
+      R$ 57.900 e R$ 57.999.
+    porQueImporta: >
+      A diferença entre 144 e 148 no denominador é ~2,8%. Um numerador chutado
+      da mesma ordem de grandeza faz o erro desaparecer na conferência — e o AC
+      passaria com o número errado.
+    correcao: "AC4 agora manda MEDIR o faturamento antes de calcular. Exemplo do AC5 marcado como ilustrativo."
+
+  - id: PO-02
+    story: "29.76"
+    severidade: media
+    achado: >
+      A referência da agregação por Ad Name apontava
+      `routes/traffic-analytics.ts:839-841`. O código está em
+      **`services/traffic-analytics.ts:949`** — arquivo diferente, não só linha.
+    porQueImporta: >
+      É a evidência CENTRAL da story. Um dev que abrisse o arquivo citado não
+      acharia nada e poderia concluir que o diagnóstico era especulação.
+    correcao: "Corrigido, com o trecho literal `const key = a.ad_name.trim()` junto."
+
+  - id: PO-03
+    story: "29.76"
+    severidade: nenhuma
+    nota: >
+      A causa foi CONFIRMADA de forma independente nesta validação:
+      `services/traffic-analytics.ts:949` agrega por `ad_name` e o `adMap`
+      guarda um único `id` por chave. O mapa de temperatura é por `ad_id`
+      (`temperatura-de-publico.ts:131`). As duas pontas conferem.
+
+  - id: PO-04
+    story: "18.79"
+    severidade: nenhuma
+    nota: >
+      Todas as referências conferem: o `<Select>` de ordenação está em `:1205`
+      (aria-label "Ordenação"), `METRIC_OPTIONS` em `:124`, a trava do ROAS em
+      `:942`/`:1156`, "Mostrando todos" em `:1408`, e a aba "Todos" com
+      `agrupamento: "anuncio"` em `top-criativos-visoes.ts:72`. As três
+      pendências levantadas pelo @sm são legítimas e ficam para o gestor.
+
+pendenciasParaOGestor:
+  - "18.79 AC4 — a aba \"Todos\" mantém o agrupamento por Ad ID? (o preset dela depende disso)"
+  - "18.79 AC6 — \"Mais Vendas/Leads\" é uma opção ou duas? `leads` existe, `vendas` não"
+  - "18.79 AC3 — @sm decidiu aba desabilitada com tooltip; o gestor pode preferir sumir"
+  - "29.76 AC1 — depende do CSV que o gestor vai salvar em docs/dados/"
+
+ordemSugerida: >
+  29.76 primeiro (é bug, alta, e a causa já está isolada), depois 29.75 (o AC1
+  dela é um levantamento que pode revelar mais consumidores da base), 18.79 por
+  último (tem 3 pendências abertas).
