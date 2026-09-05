@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Pencil, Plus, Settings2 } from "lucide-react";
 import { useFunnel, useFunnels, useUpdateFunnel } from "@/lib/hooks/use-funnels";
+import { rotuloDoTipoDeEtapa } from "@/lib/utils/rotulos-de-etapa";
 import { useUserRole } from "@/lib/hooks/use-user-role";
 import {
   RenomearFunnelDialog,
@@ -162,17 +163,10 @@ export default function FunnelPage() {
     setCreateOpen(false);
   }
 
-  function stageTypePlaceholder(type: "free" | "paid" | "application" | "sales" | "cpl" | "event" | "event_capture" | "debriefing" | "comercial" | "mapa"): string {
-    if (type === "paid") return "ex: Captação Paga";
-    if (type === "application") return "ex: Aplicação Mentoria";
-    if (type === "sales") return "ex: Vendas Produto Principal";
-    if (type === "cpl") return "ex: CPL Aula 1";
-    if (type === "event") return "ex: Imersão Presencial";
-    if (type === "event_capture") return "ex: Captação Imersão SP";
-    if (type === "debriefing") return "ex: Debriefing DGPG-03";
-    if (type === "comercial") return "ex: Comercial Upsell";
-    if (type === "mapa") return "ex: Mapa do Lançamento";
-    return "ex: Captação Orgânica";
+  // Story 19.15: o texto vem do módulo — num funil perpétuo, a etapa `free`
+  // sugere "ex: Aquisição" em vez de "ex: Captação Orgânica".
+  function stageTypePlaceholder(type: string): string {
+    return rotuloDoTipoDeEtapa(type, funnelData?.funnelType).placeholder;
   }
 
   return (
@@ -355,6 +349,7 @@ export default function FunnelPage() {
           stages={stages}
           projectId={params.id}
           funnelId={params.funnelId}
+          funnelType={funnelData.funnelType}
         />
       )}
 
@@ -401,8 +396,8 @@ export default function FunnelPage() {
                       : "border-border hover:bg-muted"
                   )}
                 >
-                  <span className="font-medium">Gratuita</span>
-                  <span className="text-xs text-muted-foreground">Captação orgânica</span>
+                  <span className="font-medium">{rotuloDoTipoDeEtapa("free", funnelData?.funnelType).titulo}</span>
+                  <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("free", funnelData?.funnelType).descricao}</span>
                 </button>
                 <button
                   type="button"
@@ -414,8 +409,8 @@ export default function FunnelPage() {
                       : "border-border hover:bg-muted"
                   )}
                 >
-                  <span className="font-medium">Paga</span>
-                  <span className="text-xs text-muted-foreground">Captação + tráfego</span>
+                  <span className="font-medium">{rotuloDoTipoDeEtapa("paid", funnelData?.funnelType).titulo}</span>
+                  <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("paid", funnelData?.funnelType).descricao}</span>
                 </button>
                 <button
                   type="button"
@@ -427,8 +422,8 @@ export default function FunnelPage() {
                       : "border-border hover:bg-muted"
                   )}
                 >
-                  <span className="font-medium">Aplicação</span>
-                  <span className="text-xs text-muted-foreground">Formulário + venda</span>
+                  <span className="font-medium">{rotuloDoTipoDeEtapa("application", funnelData?.funnelType).titulo}</span>
+                  <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("application", funnelData?.funnelType).descricao}</span>
                 </button>
                 <button
                   type="button"
@@ -440,8 +435,8 @@ export default function FunnelPage() {
                       : "border-border hover:bg-muted"
                   )}
                 >
-                  <span className="font-medium">Vendas</span>
-                  <span className="text-xs text-muted-foreground">Só planilha de vendas</span>
+                  <span className="font-medium">{rotuloDoTipoDeEtapa("sales", funnelData?.funnelType).titulo}</span>
+                  <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("sales", funnelData?.funnelType).descricao}</span>
                 </button>
                 <button
                   type="button"
@@ -453,8 +448,8 @@ export default function FunnelPage() {
                       : "border-border hover:bg-muted"
                   )}
                 >
-                  <span className="font-medium">CPL</span>
-                  <span className="text-xs text-muted-foreground">Reuniões Zoom + retenção</span>
+                  <span className="font-medium">{rotuloDoTipoDeEtapa("cpl", funnelData?.funnelType).titulo}</span>
+                  <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("cpl", funnelData?.funnelType).descricao}</span>
                 </button>
                 <button
                   type="button"
@@ -466,8 +461,8 @@ export default function FunnelPage() {
                       : "border-border hover:bg-muted"
                   )}
                 >
-                  <span className="font-medium">Evento Presencial</span>
-                  <span className="text-xs text-muted-foreground">Vendas no local + MemberKit</span>
+                  <span className="font-medium">{rotuloDoTipoDeEtapa("event", funnelData?.funnelType).titulo}</span>
+                  <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("event", funnelData?.funnelType).descricao}</span>
                 </button>
                 <button
                   type="button"
@@ -479,8 +474,8 @@ export default function FunnelPage() {
                       : "border-border hover:bg-muted"
                   )}
                 >
-                  <span className="font-medium">Captação de Evento</span>
-                  <span className="text-xs text-muted-foreground">Tráfego + ingressos</span>
+                  <span className="font-medium">{rotuloDoTipoDeEtapa("event_capture", funnelData?.funnelType).titulo}</span>
+                  <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("event_capture", funnelData?.funnelType).descricao}</span>
                 </button>
                 <button
                   type="button"
@@ -492,8 +487,8 @@ export default function FunnelPage() {
                       : "border-border hover:bg-muted"
                   )}
                 >
-                  <span className="font-medium">Debriefing</span>
-                  <span className="text-xs text-muted-foreground">Docs HTML + comentários</span>
+                  <span className="font-medium">{rotuloDoTipoDeEtapa("debriefing", funnelData?.funnelType).titulo}</span>
+                  <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("debriefing", funnelData?.funnelType).descricao}</span>
                 </button>
                 <button
                   type="button"
@@ -505,8 +500,8 @@ export default function FunnelPage() {
                       : "border-border hover:bg-muted"
                   )}
                 >
-                  <span className="font-medium">Mapa</span>
-                  <span className="text-xs text-muted-foreground">Desenho do funil em blocos</span>
+                  <span className="font-medium">{rotuloDoTipoDeEtapa("mapa", funnelData?.funnelType).titulo}</span>
+                  <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("mapa", funnelData?.funnelType).descricao}</span>
                 </button>
                 <button
                   type="button"
@@ -518,8 +513,8 @@ export default function FunnelPage() {
                       : "border-border hover:bg-muted"
                   )}
                 >
-                  <span className="font-medium">Comercial</span>
-                  <span className="text-xs text-muted-foreground">CRM kanban de compradores</span>
+                  <span className="font-medium">{rotuloDoTipoDeEtapa("comercial", funnelData?.funnelType).titulo}</span>
+                  <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("comercial", funnelData?.funnelType).descricao}</span>
                 </button>
               </div>
             </div>

@@ -37,6 +37,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useUpdateStage, useDeleteStage } from "@/lib/hooks/use-funnel-stages";
+import { rotuloDoTipoDeEtapa } from "@/lib/utils/rotulos-de-etapa";
 import { toast } from "sonner";
 import type { FunnelStage } from "@loyola-x/shared";
 
@@ -45,9 +46,17 @@ interface StageCardProps {
   projectId: string;
   funnelId: string;
   isLastStage: boolean;
+  /**
+   * Story 19.15 — o tipo do FUNIL, não o da etapa.
+   *
+   * O card precisa dele porque `free` se chama "Perpétuo" num funil perpétuo e
+   * "Gratuita" nos demais. Sem esta prop a lista de etapas diria "Gratuita"
+   * enquanto a tela de edição diz "Perpétuo", na mesma navegação.
+   */
+  funnelType?: string | null;
 }
 
-export function StageCard({ stage, projectId, funnelId, isLastStage }: StageCardProps) {
+export function StageCard({ stage, projectId, funnelId, isLastStage, funnelType }: StageCardProps) {
   const router = useRouter();
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -103,7 +112,7 @@ export function StageCard({ stage, projectId, funnelId, isLastStage }: StageCard
                   : stage.stageType === "mapa" ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"
                   : "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
                 }`}>
-                  {stage.stageType === "paid" ? "Paga" : stage.stageType === "application" ? "Aplicação" : stage.stageType === "sales" ? "Vendas" : stage.stageType === "cpl" ? "CPL" : stage.stageType === "event" ? "Evento Presencial" : stage.stageType === "event_capture" ? "Captação de Evento" : stage.stageType === "debriefing" ? "Debriefing" : stage.stageType === "comercial" ? "Comercial" : stage.stageType === "mapa" ? "Mapa" : "Gratuita"}
+                  {rotuloDoTipoDeEtapa(stage.stageType, funnelType).titulo}
                 </span>
               </div>
               <div className="mt-2 space-y-1">
@@ -202,9 +211,7 @@ export function StageCard({ stage, projectId, funnelId, isLastStage }: StageCard
                           {
                             onSuccess: () =>
                               toast.success(
-                                newType === "paid"
-                                  ? "Etapa alterada para Paga"
-                                  : "Etapa alterada para Gratuita"
+                                `Etapa alterada para ${rotuloDoTipoDeEtapa(newType, funnelType).titulo}`
                               ),
                           }
                         );
@@ -213,12 +220,12 @@ export function StageCard({ stage, projectId, funnelId, isLastStage }: StageCard
                       {stage.stageType === "paid" ? (
                         <>
                           <Gift className="h-4 w-4 mr-2" />
-                          Alterar para Gratuita
+                          Alterar para {rotuloDoTipoDeEtapa("free", funnelType).titulo}
                         </>
                       ) : (
                         <>
                           <CreditCard className="h-4 w-4 mr-2" />
-                          Alterar para Paga
+                          Alterar para {rotuloDoTipoDeEtapa("paid", funnelType).titulo}
                         </>
                       )}
                     </DropdownMenuItem>

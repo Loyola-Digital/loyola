@@ -63,6 +63,7 @@ import { CadeiaCacStageTab } from "@/components/funnels/cadeia-cac-stage-tab";
 import { PanoramaDoProjeto } from "@/components/funnels/panorama-do-projeto";
 import { StageTabsNav } from "@/components/funnels/stage-tabs-nav";
 import { montarMenuDeAbas, resolverAbaAtiva } from "@/lib/utils/menu-de-abas";
+import { rotuloDoTipoDeEtapa } from "@/lib/utils/rotulos-de-etapa";
 
 export default function StagePage() {
   const params = useParams<{ id: string; funnelId: string; stageId: string }>();
@@ -387,7 +388,7 @@ export default function StagePage() {
                     onClick={() => {
                       updateStage.mutate(
                         { stageType: "free" },
-                        { onSuccess: () => toast.success("Tipo alterado para Gratuita") }
+                        { onSuccess: () => toast.success(`Tipo alterado para ${rotuloDoTipoDeEtapa("free", funnelType).titulo}`) }
                       );
                     }}
                     className={cn(
@@ -397,15 +398,15 @@ export default function StagePage() {
                         : "border-border hover:bg-muted"
                     )}
                   >
-                    <span className="font-medium">Gratuita</span>
-                    <span className="text-xs text-muted-foreground">Captação orgânica</span>
+                    <span className="font-medium">{rotuloDoTipoDeEtapa("free", funnelType).titulo}</span>
+                    <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("free", funnelType).descricao}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => {
                       updateStage.mutate(
                         { stageType: "paid" },
-                        { onSuccess: () => toast.success("Tipo alterado para Paga") }
+                        { onSuccess: () => toast.success(`Tipo alterado para ${rotuloDoTipoDeEtapa("paid", funnelType).titulo}`) }
                       );
                     }}
                     className={cn(
@@ -415,15 +416,15 @@ export default function StagePage() {
                         : "border-border hover:bg-muted"
                     )}
                   >
-                    <span className="font-medium">Paga</span>
-                    <span className="text-xs text-muted-foreground">Captação + tráfego</span>
+                    <span className="font-medium">{rotuloDoTipoDeEtapa("paid", funnelType).titulo}</span>
+                    <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("paid", funnelType).descricao}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => {
                       updateStage.mutate(
                         { stageType: "application" },
-                        { onSuccess: () => toast.success("Tipo alterado para Aplicação") }
+                        { onSuccess: () => toast.success(`Tipo alterado para ${rotuloDoTipoDeEtapa("application", funnelType).titulo}`) }
                       );
                     }}
                     className={cn(
@@ -433,15 +434,15 @@ export default function StagePage() {
                         : "border-border hover:bg-muted"
                     )}
                   >
-                    <span className="font-medium">Aplicação</span>
-                    <span className="text-xs text-muted-foreground">Formulário + venda por UTM</span>
+                    <span className="font-medium">{rotuloDoTipoDeEtapa("application", funnelType).titulo}</span>
+                    <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("application", funnelType).descricao}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => {
                       updateStage.mutate(
                         { stageType: "sales" },
-                        { onSuccess: () => toast.success("Tipo alterado para Vendas") }
+                        { onSuccess: () => toast.success(`Tipo alterado para ${rotuloDoTipoDeEtapa("sales", funnelType).titulo}`) }
                       );
                     }}
                     className={cn(
@@ -451,15 +452,15 @@ export default function StagePage() {
                         : "border-border hover:bg-muted"
                     )}
                   >
-                    <span className="font-medium">Vendas</span>
-                    <span className="text-xs text-muted-foreground">Só planilha de vendas</span>
+                    <span className="font-medium">{rotuloDoTipoDeEtapa("sales", funnelType).titulo}</span>
+                    <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("sales", funnelType).descricao}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => {
                       updateStage.mutate(
                         { stageType: "cpl" },
-                        { onSuccess: () => toast.success("Tipo alterado para CPL") }
+                        { onSuccess: () => toast.success(`Tipo alterado para ${rotuloDoTipoDeEtapa("cpl", funnelType).titulo}`) }
                       );
                     }}
                     className={cn(
@@ -469,15 +470,15 @@ export default function StagePage() {
                         : "border-border hover:bg-muted"
                     )}
                   >
-                    <span className="font-medium">CPL</span>
-                    <span className="text-xs text-muted-foreground">Reuniões Zoom + retenção</span>
+                    <span className="font-medium">{rotuloDoTipoDeEtapa("cpl", funnelType).titulo}</span>
+                    <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("cpl", funnelType).descricao}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => {
                       updateStage.mutate(
                         { stageType: "event" },
-                        { onSuccess: () => toast.success("Tipo alterado para Evento Presencial") }
+                        { onSuccess: () => toast.success(`Tipo alterado para ${rotuloDoTipoDeEtapa("event", funnelType).titulo}`) }
                       );
                     }}
                     className={cn(
@@ -487,15 +488,15 @@ export default function StagePage() {
                         : "border-border hover:bg-muted"
                     )}
                   >
-                    <span className="font-medium">Evento Presencial</span>
-                    <span className="text-xs text-muted-foreground">Vendas no local + MemberKit</span>
+                    <span className="font-medium">{rotuloDoTipoDeEtapa("event", funnelType).titulo}</span>
+                    <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("event", funnelType).descricao}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => {
                       updateStage.mutate(
                         { stageType: "event_capture" },
-                        { onSuccess: () => toast.success("Tipo alterado para Captação de Evento") }
+                        { onSuccess: () => toast.success(`Tipo alterado para ${rotuloDoTipoDeEtapa("event_capture", funnelType).titulo}`) }
                       );
                     }}
                     className={cn(
@@ -505,15 +506,15 @@ export default function StagePage() {
                         : "border-border hover:bg-muted"
                     )}
                   >
-                    <span className="font-medium">Captação de Evento</span>
-                    <span className="text-xs text-muted-foreground">Tráfego + ingressos</span>
+                    <span className="font-medium">{rotuloDoTipoDeEtapa("event_capture", funnelType).titulo}</span>
+                    <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("event_capture", funnelType).descricao}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => {
                       updateStage.mutate(
                         { stageType: "debriefing" },
-                        { onSuccess: () => toast.success("Tipo alterado para Debriefing") }
+                        { onSuccess: () => toast.success(`Tipo alterado para ${rotuloDoTipoDeEtapa("debriefing", funnelType).titulo}`) }
                       );
                     }}
                     className={cn(
@@ -523,15 +524,15 @@ export default function StagePage() {
                         : "border-border hover:bg-muted"
                     )}
                   >
-                    <span className="font-medium">Debriefing</span>
-                    <span className="text-xs text-muted-foreground">Docs HTML + comentários</span>
+                    <span className="font-medium">{rotuloDoTipoDeEtapa("debriefing", funnelType).titulo}</span>
+                    <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("debriefing", funnelType).descricao}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => {
                       updateStage.mutate(
                         { stageType: "mapa" },
-                        { onSuccess: () => toast.success("Tipo alterado para Mapa") }
+                        { onSuccess: () => toast.success(`Tipo alterado para ${rotuloDoTipoDeEtapa("mapa", funnelType).titulo}`) }
                       );
                     }}
                     className={cn(
@@ -541,15 +542,15 @@ export default function StagePage() {
                         : "border-border hover:bg-muted"
                     )}
                   >
-                    <span className="font-medium">Mapa</span>
-                    <span className="text-xs text-muted-foreground">Desenho do funil em blocos</span>
+                    <span className="font-medium">{rotuloDoTipoDeEtapa("mapa", funnelType).titulo}</span>
+                    <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("mapa", funnelType).descricao}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => {
                       updateStage.mutate(
                         { stageType: "comercial" },
-                        { onSuccess: () => toast.success("Tipo alterado para Comercial") }
+                        { onSuccess: () => toast.success(`Tipo alterado para ${rotuloDoTipoDeEtapa("comercial", funnelType).titulo}`) }
                       );
                     }}
                     className={cn(
@@ -559,15 +560,15 @@ export default function StagePage() {
                         : "border-border hover:bg-muted"
                     )}
                   >
-                    <span className="font-medium">Comercial</span>
-                    <span className="text-xs text-muted-foreground">CRM kanban de compradores</span>
+                    <span className="font-medium">{rotuloDoTipoDeEtapa("comercial", funnelType).titulo}</span>
+                    <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("comercial", funnelType).descricao}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => {
                       updateStage.mutate(
                         { stageType: "lyrio" },
-                        { onSuccess: () => toast.success("Tipo alterado para Lyrio") }
+                        { onSuccess: () => toast.success(`Tipo alterado para ${rotuloDoTipoDeEtapa("lyrio", funnelType).titulo}`) }
                       );
                     }}
                     className={cn(
@@ -577,8 +578,8 @@ export default function StagePage() {
                         : "border-border hover:bg-muted"
                     )}
                   >
-                    <span className="font-medium">Lyrio</span>
-                    <span className="text-xs text-muted-foreground">App mobile — Meta + RevenueCat</span>
+                    <span className="font-medium">{rotuloDoTipoDeEtapa("lyrio", funnelType).titulo}</span>
+                    <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("lyrio", funnelType).descricao}</span>
                   </button>
                 </div>
               </div>

@@ -25,12 +25,14 @@ import { toast } from "sonner";
 import type { FunnelStage } from "@loyola-x/shared";
 
 interface SortableStageGridProps {
+  /** Story 19.15 — desce até o `StageCard`, que rotula `free` conforme o funil. */
+  funnelType?: string | null;
   stages: FunnelStage[];
   projectId: string;
   funnelId: string;
 }
 
-export function SortableStageGrid({ stages, projectId, funnelId }: SortableStageGridProps) {
+export function SortableStageGrid({ stages, projectId, funnelId, funnelType }: SortableStageGridProps) {
   const reorder = useReorderStages(projectId, funnelId);
 
   // Mantém ordem local pra UI instantânea — sincroniza quando server retorna
@@ -77,6 +79,7 @@ export function SortableStageGrid({ stages, projectId, funnelId }: SortableStage
               stage={stage}
               projectId={projectId}
               funnelId={funnelId}
+              funnelType={funnelType}
               isLastStage={orderedStages.length === 1}
             />
           ))}
@@ -87,13 +90,14 @@ export function SortableStageGrid({ stages, projectId, funnelId }: SortableStage
 }
 
 interface SortableStageCardProps {
+  funnelType?: string | null;
   stage: FunnelStage;
   projectId: string;
   funnelId: string;
   isLastStage: boolean;
 }
 
-function SortableStageCard({ stage, projectId, funnelId, isLastStage }: SortableStageCardProps) {
+function SortableStageCard({ stage, projectId, funnelId, isLastStage, funnelType }: SortableStageCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: stage.id,
   });
@@ -121,7 +125,7 @@ function SortableStageCard({ stage, projectId, funnelId, isLastStage }: Sortable
       >
         <GripVertical className="h-4 w-4" />
       </button>
-      <StageCard stage={stage} projectId={projectId} funnelId={funnelId} isLastStage={isLastStage} />
+      <StageCard stage={stage} projectId={projectId} funnelId={funnelId} isLastStage={isLastStage} funnelType={funnelType} />
     </div>
   );
 }
