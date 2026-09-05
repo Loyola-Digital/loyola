@@ -60,6 +60,7 @@ import {
   useArchiveFunnel,
   useUnarchiveFunnel,
 } from "@/lib/hooks/use-funnels";
+import { agruparPorTipo } from "@/lib/utils/agrupar-funis";
 import { useFunnelStages, useCreateStage, useReorderStages, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import type { Funnel, FunnelStage } from "@loyola-x/shared";
 import {
@@ -1019,32 +1020,6 @@ interface SortableFunnelListProps {
   funnels: Funnel[];
   projectId: string;
   isAdmin: boolean;
-}
-
-/**
- * Ordem de exibição dos grupos na sidebar. Um tipo que NÃO esteja nesta lista
- * ainda assim é renderizado, no fim — a lista só define ordem, nunca quem
- * aparece. Antes ela montava dois grupos fixos (perpetual e launch) e filtrava
- * por eles, então funil de tipo novo ("mobile") sumia inteiro da navegação:
- * existia na API, mas nenhum grupo o recebia.
- */
-const ORDEM_DOS_TIPOS: string[] = ["perpetual", "launch", "mobile"];
-
-/** Agrupa por tipo preservando a ordem vinda do servidor dentro de cada grupo. */
-function agruparPorTipo(funnels: Funnel[]): { tipo: string; funnels: Funnel[] }[] {
-  const porTipo = new Map<string, Funnel[]>();
-  for (const f of funnels) {
-    const atual = porTipo.get(f.type);
-    if (atual) atual.push(f);
-    else porTipo.set(f.type, [f]);
-  }
-  const posicao = (t: string) => {
-    const i = ORDEM_DOS_TIPOS.indexOf(t);
-    return i === -1 ? Number.MAX_SAFE_INTEGER : i;
-  };
-  return [...porTipo.entries()]
-    .sort((a, b) => posicao(a[0]) - posicao(b[0]))
-    .map(([tipo, funnels]) => ({ tipo, funnels }));
 }
 
 function SortableFunnelList({ funnels: allFunnels, projectId, isAdmin }: SortableFunnelListProps) {
