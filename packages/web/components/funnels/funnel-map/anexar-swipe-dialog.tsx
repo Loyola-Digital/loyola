@@ -35,6 +35,22 @@ import { CapaDoSwipe } from "@/components/swipe-files/capa-do-swipe";
 /** Igual ao teto do `boxSchema` na API — passar disso vira mosaico ilegível. */
 const MAXIMO = 12;
 
+/**
+ * Quantas capas o diálogo desenha por vez.
+ *
+ * Não é enfeite: as referências são guardadas em tamanho original, e o acervo
+ * tem 1,1 MB de média por imagem (medido — landing page inteira, 2542px de
+ * largura). Desenhar as 291 de uma vez é pedir ~340 MB e mandar o navegador
+ * decodificar trezentas imagens gigantes para encolhê-las a 128px. É por isso
+ * que a grade ficava cinza: as capas estavam a caminho.
+ *
+ * O Supabase resolveria isso servindo miniaturas (`/render/image/`), mas essa
+ * transformação responde 403 no plano atual. A saída definitiva é gerar a
+ * miniatura no upload; até lá, o diálogo carrega de dezoito em dezoito e conta
+ * com a busca — quem procura a VSL digita "vsl" em vez de rolar 291 capas.
+ */
+const POR_VEZ = 18;
+
 export function AnexarSwipeDialog({
   open,
   onOpenChange,
@@ -50,6 +66,7 @@ export function AnexarSwipeDialog({
 }) {
   const [busca, setBusca] = useState("");
   const [escolhidos, setEscolhidos] = useState<string[]>(jaAnexados);
+  const [quantas, setQuantas] = useState(POR_VEZ);
 
   // Reabrir precisa refletir o que o bloco tem AGORA: sem isto, desanexar pelo
   // painel e reabrir o diálogo mostraria a peça ainda marcada.
@@ -57,11 +74,14 @@ export function AnexarSwipeDialog({
     if (open) {
       setEscolhidos(jaAnexados);
       setBusca("");
+      setQuantas(POR_VEZ);
     }
   }, [open, jaAnexados]);
 
   const { data, isLoading } = useSwipeFiles(busca.trim() ? { q: busca.trim() } : {});
-  const itens = useMemo(() => data?.items ?? [], [data]);
+  const achados = useMemo(() => data?.items ?? [], [data]);
+  const itens = achados.slice(0, quantas);
+  const restantes = achados.length - itens.length;
 
   const alternar = (id: string) =>
     setEscolhidos((atual) =>
@@ -88,7 +108,12 @@ export function AnexarSwipeDialog({
           <Input
             autoFocus
             value={busca}
-            onChange={(e) => setBusca(e.target.value)}
+            onChange={(e) => {
+              setBusca(e.target.value);
+              // Busca nova recomeça do começo: manter o "carregar mais" de
+              // antes traria 90 capas de um resultado de três.
+              setQuantas(POR_VEZ);
+            }}
             placeholder="Buscar por título, marca, tag ou anotação..."
             className="h-9 pl-8"
           />
@@ -134,6 +159,17 @@ export function AnexarSwipeDialog({
             })
           )}
         </div>
+
+        {restantes > 0 && (
+          <button
+            type="button"
+            onClick={() => setQuantas((q) => q + POR_VEZ)}
+            className="w-full rounded-md border border-border/50 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            Carregar mais {Math.min(POR_VEZ, restantes)} — faltam {restantes}
+            {!busca.trim() && ". Ou busque pelo título, marca ou tag."}
+          </button>
+        )}
 
         <DialogFooter className="items-center gap-2 sm:justify-between">
           <span className="text-[11px] text-muted-foreground">

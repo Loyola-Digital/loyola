@@ -96,6 +96,10 @@ export function CapaDoSwipe({
         src={url}
         alt={item.title}
         loading="lazy"
+        /* As referências são guardadas em tamanho original — 1,1 MB de média,
+           landing page de 2542px. Decodificar isso na thread principal trava a
+           rolagem; `async` manda o trabalho para fora dela. */
+        decoding="async"
         className={`object-cover object-top ${className}`}
       />
     );
