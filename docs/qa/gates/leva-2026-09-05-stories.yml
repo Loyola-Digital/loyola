@@ -67,10 +67,8 @@ pendenciasParaOGestor:
     - "18.79 AC6 — uma opção ou duas? → AS DUAS, separadas. `Mais Leads` já existe; `Mais Vendas` é nova."
     - "18.79 AC3 — desabilitada com tooltip, ou sumir? → DESABILITADA COM TOOLTIP, como o @sm propôs."
     - "29.76 AC1 — CSV em docs/dados/ → o gestor vai salvar."
-  aberta_tecnica: >
-    18.79 AC6 — QUAL contagem de vendas alimenta "Mais Vendas". Não é decisão do
-    gestor: a 29.53 registrou três contagens diferentes no perpétuo (`sales` do
-    pixel, `salesCount` do comprador dedupado, checkouts). O dev mede e declara.
+    - "18.79 AC6 — qual contagem alimenta \"Mais Vendas\"? → `salesCount`, o comprador dedupado (NÃO `sales`, que é o pixel). Herda a dependência de planilha da aba ROAS."
+  aberta_tecnica: "nenhuma"
 
 ordemSugerida: >
   29.76 primeiro (é bug, alta, e a causa já está isolada), depois 29.75 (o AC1
