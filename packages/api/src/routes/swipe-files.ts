@@ -22,6 +22,7 @@ import {
   podeAnalisar,
 } from "../services/swipe-analise.js";
 import { avisarNoClickUp } from "../services/swipe-clickup-aviso.js";
+import { contarFacetas } from "../services/swipe-facetas.js";
 import {
   planejarImportacao,
   type ItemParaImportar,
@@ -146,6 +147,10 @@ export default fp(async function swipeFilesRoutes(fastify) {
           ilike(swipeFiles.notes, like),
           ilike(swipeFiles.brand, like),
           ilike(swipeFiles.ogTitle, like),
+          // As tags entram na busca porque a maioria delas é única: 589 das
+          // 781 aparecem numa referência só. Como filtro elas não recortam
+          // nada — como texto procurado, são o caminho mais curto até o item.
+          sql`${swipeFiles.tags}::text ILIKE ${like}`,
         ),
       );
     }
@@ -169,20 +174,21 @@ export default fp(async function swipeFilesRoutes(fastify) {
       })
       .from(swipeFiles);
 
-    const uniq = (vals: (string | null)[]) =>
-      [...new Set(vals.filter((v): v is string => !!v))].sort((a, b) => a.localeCompare(b, "pt-BR"));
 
     return {
       // A URL sai da CHAVE, não do que está gravado: assim, arrumar a variável
       // de ambiente conserta as linhas antigas junto com as novas.
       items: rows.map((r) => ({ ...r, fileUrl: urlPublica(r, fastify.config.STORAGE_PUBLIC_URL) })),
+      // Com CONTAGEM e ordenadas por uso — ver `contarFacetas` para o porquê.
       facets: {
-        platform: uniq(facetRows.map((r) => r.platform)),
-        format: uniq(facetRows.map((r) => r.format)),
-        niche: uniq(facetRows.map((r) => r.niche)),
-        brand: uniq(facetRows.map((r) => r.brand)),
-        tags: uniq(facetRows.flatMap((r) => r.tags ?? [])),
+        platform: contarFacetas(facetRows.map((r) => r.platform)),
+        format: contarFacetas(facetRows.map((r) => r.format)),
+        niche: contarFacetas(facetRows.map((r) => r.niche)),
+        brand: contarFacetas(facetRows.map((r) => r.brand)),
+        tags: contarFacetas(facetRows.flatMap((r) => r.tags ?? [])),
       },
+      /** Serve à tela para dizer "1 de 291" sem uma chamada a mais. */
+      total: facetRows.length,
       storageReady: isStorageConfigured(storage()),
     };
   });

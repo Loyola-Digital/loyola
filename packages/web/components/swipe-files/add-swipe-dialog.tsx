@@ -90,6 +90,15 @@ function CampoComSugestoes({
   );
 }
 
+/**
+ * Só os nomes das facetas.
+ *
+ * As facetas chegam contadas (`{ valor, n }`) porque os FILTROS ordenam por
+ * uso. Aqui a contagem não serve: o campo só quer completar o que a pessoa
+ * digita, e o que ordena a sugestão é o texto dela.
+ */
+const valores = (opcoes: { valor: string }[]) => opcoes.map((o) => o.valor);
+
 export function AddSwipeDialog({
   open,
   onOpenChange,
@@ -521,22 +530,22 @@ export function AddSwipeDialog({
             <CampoComSugestoes
               id="swipe-brand" label={sugeridos.has("marca") ? "Marca ✨" : "Marca"}
               value={brand} onChange={setBrand}
-              sugestoes={facets.brand} placeholder="De quem é o anúncio"
+              sugestoes={valores(facets.brand)} placeholder="De quem é o anúncio"
             />
             <CampoComSugestoes
               id="swipe-niche" label={sugeridos.has("nicho") ? "Nicho ✨" : "Nicho"}
               value={niche} onChange={setNiche}
-              sugestoes={facets.niche} placeholder="Ex: finanças, saúde"
+              sugestoes={valores(facets.niche)} placeholder="Ex: finanças, saúde"
             />
             <CampoComSugestoes
               id="swipe-platform" label={sugeridos.has("plataforma") ? "Plataforma ✨" : "Plataforma"}
               value={platform} onChange={setPlatform}
-              sugestoes={[...new Set([...facets.platform, ...PLATAFORMAS])]}
+              sugestoes={[...new Set([...valores(facets.platform), ...PLATAFORMAS])]}
             />
             <CampoComSugestoes
               id="swipe-format" label={sugeridos.has("formato") ? "Formato ✨" : "Formato"}
               value={format} onChange={setFormat}
-              sugestoes={[...new Set([...facets.format, ...FORMATOS])]}
+              sugestoes={[...new Set([...valores(facets.format), ...FORMATOS])]}
             />
           </div>
 
