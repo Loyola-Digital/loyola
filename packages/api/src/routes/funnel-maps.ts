@@ -25,6 +25,7 @@ import {
   users,
 } from "../db/schema.js";
 import { abaEmBranco, comAoMenosUmaAba } from "../services/funnel-map-abas.js";
+import { ordenarMapasPorAtividade } from "../services/funnel-maps-lista.js";
 import {
   MAX_UPLOAD_BYTES,
   isAllowedMime,
@@ -236,6 +237,8 @@ export default fp(async function funnelMapRoutes(fastify) {
       .innerJoin(projects, eq(projects.id, funnels.projectId))
       .leftJoin(funnelMaps, eq(funnelMaps.stageId, funnelStages.id))
       .where(eq(funnelStages.stageType, "mapa"))
+      // A ordem final é por atividade (`ordenarMapasPorAtividade`, no fim
+      // desta rota). Esta aqui só desempata o que tem a mesma data.
       .orderBy(asc(projects.name), asc(funnels.name), asc(funnelStages.sortOrder));
 
     // Guest só enxerga projeto onde é membro — mesma regra de /api/projects.
@@ -325,9 +328,15 @@ export default fp(async function funnelMapRoutes(fastify) {
         };
       });
 
-    // Avulsos primeiro: é onde está o rascunho recém-criado, e quem acabou de
-    // criá-lo não deveria procurá-lo no fim de uma lista de trinta.
-    return { mapas: [...avulsos, ...mapas] };
+    /**
+     * Uma lista só, ordenada por quando cada mapa foi mexido.
+     *
+     * Antes os avulsos vinham na frente, "porque é onde está o rascunho
+     * recém-criado". A data resolve isso melhor e sem regra especial: o
+     * avulso acabado de criar tem `updatedAt` de agora e sobe sozinho — e no
+     * dia seguinte desce, que é o certo, porque aí ele já não é novidade.
+     */
+    return { mapas: ordenarMapasPorAtividade([...avulsos, ...mapas]) };
   });
 
   // ---- GET mapa ----
