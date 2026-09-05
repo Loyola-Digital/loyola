@@ -39,6 +39,7 @@ import { ImportarDoClickUp } from "@/components/swipe-files/importar-do-clickup"
 import { PdfCapa } from "@/components/swipe-files/pdf-capa";
 import { SwipeLightbox } from "@/components/swipe-files/swipe-lightbox";
 import { Chip, GrupoDeFiltro } from "@/components/swipe-files/filtros-do-swipe";
+import { miniaturaDoSwipe } from "@/lib/utils/miniatura-do-swipe";
 
 const KIND_META: Record<AssetKind, { label: string; Icon: typeof Play }> = {
   image: { label: "Imagem", Icon: ImageIcon },
@@ -160,18 +161,14 @@ function SwipeCard({
   /**
    * O que vira <img> na capa.
    *
-   * PDF e VÍDEO ficam de fora, pelo mesmo motivo: o navegador não desenha
-   * nenhum dos dois numa tag de imagem. O PDF já tinha `PdfCapa`; o vídeo
-   * caía no `fileUrl` e virava `<img src="...mp4">` — um ícone de imagem
-   * quebrada em cima de todo card de vídeo. Passou despercebido enquanto o
-   * acervo tinha um vídeo só; com 23, é a metade da grade.
+   * A regra vive em `miniaturaDoSwipe` porque o mapa de funil desenha as
+   * mesmas peças: PDF e VÍDEO ficam de fora, já que o navegador não desenha
+   * nenhum dos dois numa tag de imagem. O vídeo já caiu no `fileUrl` uma vez
+   * e virou `<img src="...mp4">` — ícone quebrado em cima de metade da grade.
+   * Duas cópias dessa regra é como ela volta.
    */
-  const media =
-    item.assetKind === "link"
-      ? item.ogImage
-      : item.assetKind === "pdf" || item.assetKind === "video"
-        ? null
-        : item.fileUrl;
+  const { forma, url: media } = miniaturaDoSwipe(item);
+  const ehImagem = forma === "imagem";
   const { label, Icon } = KIND_META[item.assetKind];
   // Reserva a proporção conhecida pra o masonry não saltar enquanto carrega.
   const ratio = item.width && item.height ? item.width / item.height : null;
@@ -186,7 +183,7 @@ function SwipeCard({
           aria-label={`Abrir ${item.title}`}
         >
           <div className="relative" style={ratio ? { aspectRatio: String(ratio) } : undefined}>
-            {media ? (
+            {ehImagem && media ? (
               <img
                 src={media}
                 alt={item.title}

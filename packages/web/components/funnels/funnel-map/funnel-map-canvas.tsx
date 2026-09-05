@@ -38,10 +38,8 @@ import {
   useComentariosDoMapa,
 } from "@/lib/hooks/use-mapa-comentarios";
 import { PDF, imagemDoEvento, useSubirImagemDoMapa } from "@/lib/hooks/use-mapa-imagem";
-import {
-  AnexarSwipeDialog,
-  CapaDoSwipe,
-} from "@/components/funnels/funnel-map/anexar-swipe-dialog";
+import { AnexarSwipeDialog } from "@/components/funnels/funnel-map/anexar-swipe-dialog";
+import { CapaDoSwipe } from "@/components/swipe-files/capa-do-swipe";
 import { SwipeLightbox } from "@/components/swipe-files/swipe-lightbox";
 import { useSwipesPorIds, useUpdateSwipeFile } from "@/lib/hooks/use-swipe-files";
 import { Button } from "@/components/ui/button";
@@ -3086,7 +3084,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                                 }}
                                 className="min-w-0 flex-1 overflow-hidden rounded-md border border-border/60 transition-colors hover:border-primary"
                               >
-                                <CapaDoSwipe item={r} className="h-full w-full" />
+                                <CapaDoSwipe item={r} compacta className="h-full w-full" />
                               </button>
                             ))}
                           {refsDoBloco(b).length > 3 && (
@@ -3347,7 +3345,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                         title="Abrir a referência"
                         className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
                       >
-                        <CapaDoSwipe item={r} className="h-7 w-9 shrink-0 rounded" />
+                        <CapaDoSwipe item={r} compacta className="h-7 w-9 shrink-0 overflow-hidden rounded" />
                         <span className="min-w-0 truncate text-[10px]">{r.title}</span>
                       </button>
                       <button
