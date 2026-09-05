@@ -58,6 +58,31 @@ function Bloco({
       {/* AC2 — cada bloco declara o PRÓPRIO denominador. Dois blocos com
           denominadores diferentes lado a lado são lidos como comparáveis, e
           não são. */}
+      {/*
+        Gate @qa (QA-02) — Story 29.68, AC5.
+
+        O AC pedia "a mesma base" que o donut "Públicos quente e frio". Não é o
+        que acontece, e mudar a base DESTE bloco seria pior: 2a, 2c e 2d contam
+        compradores, e trocar só o 2b para checkouts deixaria a seção
+        contradizendo a si mesma.
+
+        Medido em produção (2026-09-05): bloco 148 × donut 171 no bbe-fc1-a1,
+        342 × 439 no pps1 (28%). A CLASSIFICAÇÃO não diverge — 0 de 2.093
+        compradores caem em quente/frio aqui sem cair lá. O que difere é a
+        unidade: comprador dedupado por e-mail aqui, checkout de captação lá.
+
+        Então a diferença é DECLARADA. Dois números de quente/frio na mesma
+        tela, com 28% de distância e sem explicação, é o que o AC5 existe para
+        impedir — e dizer qual é qual resolve isso sem quebrar a seção.
+      */}
+      {campo === "porTemperatura" && (
+        <p className="mb-2 text-[11px] leading-tight text-amber-600 dark:text-amber-400">
+          Conta <strong>compradores</strong> (e-mails distintos), como o resto
+          desta seção. O card &quot;Públicos quente e frio&quot; acima conta{" "}
+          <strong>checkouts de captação</strong> — os dois números são certos e
+          não batem.
+        </p>
+      )}
       <p className="mb-2 text-[11px] leading-tight text-muted-foreground">
         {podeTaxa
           ? `Tx = compradores ÷ ${fmtInt(a.cliquesNoLink)} cliques no link${

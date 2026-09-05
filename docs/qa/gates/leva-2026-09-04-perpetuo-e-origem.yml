@@ -1,0 +1,141 @@
+alvo: "Leva de 2026-09-04 — 8 stories do Perpétuo e do Top Criativos"
+stories: ["18.77", "18.78", "29.68", "29.69", "29.70", "29.71", "29.72", "29.74"]
+prs: [759, 760, 761, 762, 763, 764, 765, 766]
+revisadoPor: "@qa (Quinn)"
+revisadoEm: "2026-09-05"
+
+decisao: CONCERNS
+detalhePorStory:
+  18.78: CONCERNS
+  29.74: CONCERNS
+  29.69: CONCERNS
+  29.70: PASS
+  29.71: PASS
+  29.72: PASS
+  18.77: FAIL
+  29.68: FAIL
+
+resumo: >
+  Seis das oito passam. Duas falham por ACs explícitos não atendidos — os dois
+  achados foram encontrados NESTE gate, não estavam registrados em lugar nenhum,
+  e os dois fazem a tela afirmar coisa errada em vez de deixar de mostrar algo.
+
+  As três CONCERNS são pelo mesmo motivo, e não é de código: as três mudaram a
+  API e nenhuma previu que o front sobe antes dela. O resultado chegou em
+  produção — galeria vazia, seção 404, e uma página derrubada por
+  `undefined.toLocaleString()`. Já corrigido em #765/#766, mas o gate registra
+  porque a causa (não bumpar `API_CONTRACT_VERSION`) era evitável e conhecida.
+
+verificacoes:
+  - id: QA-01
+    story: "18.77"
+    severidade: media
+    ac: "AC9 — cada bloco declara de qual etapa veio o denominador"
+    achado: >
+      `AnaliseDeOrigem` recebe a prop `denominadorDeOutraEtapa`, mas
+      `sales-stage-view.tsx:238` a renderiza SEM passá-la. A tela imprime
+      sempre "Leads e vendas da mesma etapa" — inclusive na etapa de **Vendas**,
+      onde `fontesDeOrigem(funnelId)` varre as planilhas do FUNIL INTEIRO e o
+      denominador vem, na maior parte, da etapa de captação.
+    porQueImporta: >
+      Não é ausência de informação: é afirmação FALSA. O AC9 nasceu justamente
+      do gate do @po, que apontou que no Lançamento a venda e o lead não moram
+      na mesma etapa. A implementação criou o mecanismo e não o ligou.
+    correcao: >
+      Passar a prop em `sales-stage-view.tsx`, ou remover a frase quando a etapa
+      for de vendas. O componente já está pronto para as duas.
+
+  - id: QA-02
+    story: "29.68"
+    severidade: media
+    ac: "AC5 — a seção não contradiz 'Públicos quente e frio'"
+    achado: >
+      O bloco 2b conta COMPRADORES (dedup por `chaveDeComprador`); o donut ao
+      lado conta CHECKOUTS de captação (`tabelaPorPublico`, que agrupa por
+      checkout e exige produto que ancora). Medido em produção:
+      bbe-fc1-a1 148 × 171 (dif. 23) · fz-a1 1.603 × 1.605 (dif. 2) ·
+      pps1 342 × 439 (**dif. 97, 28%**).
+    porQueImporta: >
+      O AC5 exige "a mesma base". Dois números de quente/frio na mesma tela,
+      diferindo em 28%, e o leitor não tem como saber qual usar. A
+      CLASSIFICAÇÃO não diverge (medido: 0 de 2.093 compradores caem em
+      quente/frio no 2b sem cair no donut) — a unidade é que difere.
+    correcao: >
+      Ou o bloco 2b passa a usar `tabelaPorPublico` como base, ou declara no
+      subtítulo que conta compradores enquanto o donut conta checkouts. A
+      segunda é mais barata e honesta; a primeira é o que o AC pede.
+    riscoLatente: >
+      Há um segundo eixo, hoje inerte: `classificarPublicoDaVenda` classifica
+      por ORIGEM primeiro (orgânico e sem-track nunca viram quente/frio),
+      enquanto o 2b aplica `classifyTemperatura` puro. Hoje 0 compradores
+      divergem por isso; passa a divergir no dia em que uma venda orgânica tiver
+      hot/cold no `utm_term`.
+
+  - id: QA-03
+    stories: ["18.78", "29.69", "29.74"]
+    severidade: alta
+    origem: "produção, 2026-09-04"
+    achado: >
+      As três mudaram a API e o front subiu antes dela. Em produção:
+      `top-performers?limit=500` → 400 (galeria de criativos VAZIA — regressão
+      de algo que funcionava); `/perpetual/hourly` → 404 com 3 retries;
+      `receitaCaptacao` ausente → `undefined.toLocaleString()` derrubando o
+      dashboard inteiro. `API_CONTRACT_VERSION` ficou em 3 durante as três, então
+      o banner de defasagem da 29.45 não acusou nada.
+    status: >
+      Corrigido em #765 (formatadores null-safe) e #766 (fallback de limite,
+      retry off em 404, contrato → 4). A API foi deployada em 2026-09-04 19:16
+      e os dois lados estão em contract 4.
+    porQueImporta: >
+      Nenhum gate do repo olha para a fronteira entre dois deploys: `tsc`,
+      testes, lint e build passaram nas três. O que faltou era barato — bumpar
+      uma constante — e existia justamente para isso.
+
+  - id: QA-04
+    stories: ["29.70", "29.71", "29.72"]
+    severidade: baixa
+    achado: >
+      Seis painéis novos, cobertos por 7 testes de `lib/utils` (cobertura, piso,
+      rótulo de hora). Nenhum teste de componente: o runner do `packages/web`
+      inclui só `lib/**/*.test.ts`, e os `.test.tsx` ficam fora — decisão
+      deliberada da 29.35, não esquecimento desta leva.
+    mitigacao: >
+      A validação visual FOI executada pelo gestor em 2026-09-04, depois do
+      deploy da API. É o que substitui o teste de componente aqui.
+
+seteChecagens:
+  codeReview: >
+    OK. Padrões do repo seguidos: `ComposedChart` (não `BarChart`, que engole
+    `<Line>` em silêncio), `connectNulls={false}`, taxas re-derivadas dos
+    somatórios, formatadores compartilhados nos componentes novos.
+  testes: >
+    OK com ressalva (QA-04). 981 no web, 88 nos arquivos tocados da API. As 11
+    falhas da suíte da API são pré-existentes e foram provadas com stash.
+  acceptanceCriteria: "2 ACs não atendidos — QA-01 e QA-02."
+  regressoes: >
+    UMA, em produção: a galeria de criativos ficou vazia por horas (QA-03).
+    Corrigida.
+  performance: >
+    OK. O sync horário (24 linhas/dia/campanha) ficou FORA da cadência intraday
+    de propósito — na intraday seriam 936 linhas × 96 ciclos/dia.
+  seguranca: >
+    OK. As rotas novas reusam os guards existentes (`getProjectAccess`,
+    `guest` bloqueado em `buyers-origin`). Nenhum dado novo exposto sem escopo
+    de projeto.
+  documentacao: >
+    OK, acima da média. As decisões e as medições de produção estão nas stories
+    e nos comentários — inclusive as que contrariaram a premissa original
+    (cobertura de hora parcial, Task 0 subestimada).
+
+validacaoVisual:
+  executada: true
+  por: "gestor"
+  em: "2026-09-04"
+  nota: >
+    Feita após o deploy da API (contract 4, build 19:16). É o que fecha a
+    lacuna do QA-04 e o que pegou, antes deste gate, os três defeitos de
+    produção do QA-03.
+
+proximoPasso: >
+  QA-01 e QA-02 voltam para @dev — as duas correções são pequenas e localizadas.
+  As seis stories restantes seguem para Done.

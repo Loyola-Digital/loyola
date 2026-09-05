@@ -115,18 +115,31 @@ function Bloco({
   );
 }
 
-export function AnaliseDeOrigem({
-  data,
-  denominadorDeOutraEtapa,
-}: {
-  data: BuyersOrigin | undefined;
-  /**
-   * Story 18.77 (AC9) — no Lançamento a venda e o lead não moram na mesma
-   * etapa. Quando o denominador vem da captação, o bloco declara isso: sem a
-   * frase, o leitor assume que os leads são da etapa que está vendo.
-   */
-  denominadorDeOutraEtapa?: string | null;
-}) {
+/**
+ * Story 18.77 (AC9), corrigido no gate @qa (QA-01) — de onde vem o denominador.
+ *
+ * No Lançamento a venda e o lead NÃO moram na mesma etapa: `fontesDeOrigem`
+ * varre as planilhas do FUNIL inteiro, então os leads vêm, na maior parte, da
+ * captação — e esta tela é a de Vendas.
+ *
+ * A primeira versão tinha uma prop `denominadorDeOutraEtapa` que o dashboard
+ * nunca passou, e a tela afirmava "Leads e vendas da mesma etapa" mesmo aqui.
+ * Não era informação faltando: era afirmação falsa.
+ *
+ * Agora a frase sai das FONTES que a própria resposta traz — as planilhas reais
+ * que alimentaram o denominador. É mais preciso que nomear uma etapa, e não
+ * depende de o chamador lembrar de passar nada.
+ */
+function descreverDenominador(fontes: BuyersOrigin["fontes"]): string {
+  const usadas = fontes.filter((f) => f.compradores > 0);
+  if (usadas.length === 0) {
+    return "Nenhuma planilha de origem do funil casou com os compradores — as taxas abaixo ficam sem base.";
+  }
+  const nomes = usadas.map((f) => f.label).join(" · ");
+  return `Leads das planilhas de origem do FUNIL, não só desta etapa: ${nomes}.`;
+}
+
+export function AnaliseDeOrigem({ data }: { data: BuyersOrigin | undefined }) {
   const a = data?.analiseDeOrigem;
   if (!data || data.semDados || !a) return null;
 
@@ -155,9 +168,7 @@ export function AnaliseDeOrigem({
         <h3 className="text-sm font-semibold">Análise detalhada de origem</h3>
         <p className="text-xs text-muted-foreground">
           Taxa lead → venda por origem, cruzada por e-mail.{" "}
-          {denominadorDeOutraEtapa
-            ? `Os leads vêm da etapa ${denominadorDeOutraEtapa}.`
-            : "Leads e vendas da mesma etapa."}
+          {descreverDenominador(data.fontes)}
         </p>
       </div>
 
