@@ -18,7 +18,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, FileText, Link2, Loader2, Play, Search } from "lucide-react";
+import { Check, Loader2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -29,46 +29,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useSwipeFiles, type SwipeFile } from "@/lib/hooks/use-swipe-files";
-import { miniaturaDoSwipe } from "@/lib/utils/miniatura-do-swipe";
+import { useSwipeFiles } from "@/lib/hooks/use-swipe-files";
+import { CapaDoSwipe } from "@/components/swipe-files/capa-do-swipe";
 
 /** Igual ao teto do `boxSchema` na API — passar disso vira mosaico ilegível. */
 const MAXIMO = 12;
-
-/** A capa de uma referência, do tamanho que for pedido. */
-export function CapaDoSwipe({ item, className = "" }: { item: SwipeFile; className?: string }) {
-  const { forma, url } = miniaturaDoSwipe(item);
-
-  if (forma === "imagem" && url) {
-    return (
-      <img src={url} alt={item.title} loading="lazy" className={`object-cover ${className}`} />
-    );
-  }
-  if (forma === "video" && url) {
-    return (
-      <video
-        // `#t=0.1` pede o primeiro quadro: sem isso o player mostra um
-        // retângulo preto até alguém dar play, e a miniatura não diz nada.
-        src={`${url}#t=0.1`}
-        preload="metadata"
-        muted
-        playsInline
-        className={`object-cover ${className}`}
-      />
-    );
-  }
-  return (
-    <div className={`grid place-items-center bg-muted/50 ${className}`}>
-      {forma === "pdf" ? (
-        <FileText className="h-4 w-4 text-muted-foreground" />
-      ) : item.assetKind === "video" ? (
-        <Play className="h-4 w-4 text-muted-foreground" />
-      ) : (
-        <Link2 className="h-4 w-4 text-muted-foreground" />
-      )}
-    </div>
-  );
-}
 
 export function AnexarSwipeDialog({
   open,
@@ -129,7 +94,10 @@ export function AnexarSwipeDialog({
           />
         </div>
 
-        <div className="grid max-h-[46vh] grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4 md:grid-cols-5">
+        {/* Menos colunas e mais altura que um grid de icones: numa landing
+            page de proporção 1:8, uma célula baixa vira uma listra do meio da
+            página — indistinguível da listra da página seguinte. */}
+        <div className="grid max-h-[52vh] grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3 md:grid-cols-4">
           {isLoading ? (
             <p className="col-span-full flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -152,7 +120,7 @@ export function AnexarSwipeDialog({
                     marcado ? "border-primary ring-2 ring-primary/40" : "border-border/50 hover:border-foreground/30"
                   }`}
                 >
-                  <CapaDoSwipe item={item} className="h-20 w-full" />
+                  <CapaDoSwipe item={item} className="h-32 w-full" />
                   <span className="block truncate px-1.5 py-1 text-[10px] leading-tight">
                     {item.title}
                   </span>
