@@ -20,6 +20,11 @@ A IA do AIOX (Claude Code) consulta este arquivo automaticamente no início de c
 ### Lucas Vital — Founder / Full-stack
 
 - **email:** `lucasvitalsilva17@gmail.com`
+- **email (git nesta máquina):** `148392398+lucasvital@users.noreply.github.com`
+  — é o e-mail do GitHub da conta `lucasvital`, e é ele que o `git config`
+  local usa. O Vercel recusa o deploy quando o autor do commit não pertence ao
+  time `lucasvital`; com o noreply da própria conta, o commit é sempre
+  atribuído a ela. Ver a memória `vercel-deploy-bloqueado`.
 - **role:** Fundador da Loyola Digital, responsável por todo o produto
 - **scope:** `full`
 - **allowed_paths:** `**/*` (sem restrição)
