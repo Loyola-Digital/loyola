@@ -35,7 +35,15 @@ export function SwipeLightbox({
   onClose: () => void;
   onNavigate: (next: number) => void;
   onToggleFavorite: (item: SwipeFile) => void;
-  onDelete: (item: SwipeFile) => void;
+  /**
+   * Sem isto, o botão de apagar não aparece.
+   *
+   * Aberto de dentro do mapa de funil, apagar removeria a referência da
+   * BIBLIOTECA inteira — não o vínculo com aquele bloco, que é o que a pessoa
+   * esperaria ali. O gesto certo naquele contexto é "desanexar", e ele mora no
+   * painel do bloco.
+   */
+  onDelete?: (item: SwipeFile) => void;
 }) {
   const item = items[index];
 
@@ -162,15 +170,17 @@ export function SwipeLightbox({
                 </a>
               </Button>
             )}
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-8 w-8 text-destructive"
-              onClick={() => onDelete(item)}
-              title="Excluir"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+            {onDelete && (
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8 text-destructive"
+                onClick={() => onDelete(item)}
+                title="Excluir"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
           </div>
 
           {item.notes && (

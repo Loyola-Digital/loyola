@@ -71,6 +71,16 @@ const boxSchema = z.object({
   imageKey: z.string().max(500).nullable().optional(),
   /** Bloco `forma`: quadrado, circulo, triangulo, losango. */
   forma: z.string().max(20).nullable().optional(),
+  /**
+   * Referências do Swipe Files presas a este bloco.
+   *
+   * Só os ids: o título, a miniatura e o tipo são lidos da biblioteca na hora
+   * de desenhar. Copiar isso para dentro do mapa faria a referência congelar —
+   * trocar o print no Swipe Files não alcançaria os mapas que já o citam.
+   *
+   * O teto de doze é o que ainda cabe no card sem virar mosaico ilegível.
+   */
+  swipeIds: z.array(z.string().uuid()).max(12).nullable().optional(),
 });
 
 const connectorSchema = z.object({

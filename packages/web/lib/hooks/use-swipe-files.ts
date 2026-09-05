@@ -105,6 +105,28 @@ export function useSwipeFiles(filters: SwipeFilters) {
   });
 }
 
+/**
+ * As referências de uma lista de ids.
+ *
+ * Serve ao mapa de funil, que guarda nos blocos só os ids. A chave do cache
+ * usa a lista ORDENADA: `[a,b]` e `[b,a]` são a mesma busca, e sem ordenar
+ * cada reordenação de bloco viraria uma ida à rede.
+ */
+export function useSwipesPorIds(ids: string[]) {
+  const apiClient = useApiClient();
+  const chave = [...new Set(ids)].sort().join(",");
+
+  return useQuery({
+    queryKey: ["swipe-files-por-ids", chave],
+    queryFn: () => apiClient<{ items: SwipeFile[] }>(`${BASE}/por-ids?ids=${chave}`),
+    enabled: chave.length > 0,
+    // A biblioteca muda devagar e o mapa relê a cada troca de aba: meia hora
+    // de validade evita uma requisição por clique sem mostrar dado velho de
+    // verdade.
+    staleTime: 30 * 60 * 1000,
+  });
+}
+
 export function useLinkPreview() {
   const apiClient = useApiClient();
   return useMutation({

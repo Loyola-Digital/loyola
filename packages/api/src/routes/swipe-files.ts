@@ -208,6 +208,47 @@ export default fp(async function swipeFilesRoutes(fastify) {
    * etapa começa mantém a conexão viva E diz o que está acontecendo — a mesma
    * coisa que resolveu o agente do BI.
    */
+  /**
+   * As referências de uma lista de ids.
+   *
+   * O mapa de funil prende referências aos blocos guardando só os ids — o
+   * resto vem daqui na hora de desenhar. Sem esta rota, mostrar seis
+   * miniaturas num mapa seria baixar as 291 da biblioteca e descartar 285.
+   *
+   * A ordem devolvida é a ORDEM PEDIDA, não a do banco: é ela que o bloco
+   * mostra, e uma referência que troca de lugar sozinha entre dois carregamentos
+   * parece que alguém mexeu no mapa.
+   */
+  fastify.get(`${base}/por-ids`, async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const q = z
+      .object({ ids: z.string().min(1).max(4000) })
+      .safeParse(request.query);
+    if (!q.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+    const ids = [...new Set(q.data.ids.split(",").map((s) => s.trim()).filter(Boolean))]
+      .filter((s) => /^[0-9a-f-]{36}$/i.test(s))
+      .slice(0, 200);
+    if (ids.length === 0) return { items: [] };
+
+    const rows = await fastify.db
+      .select(listColumns)
+      .from(swipeFiles)
+      .leftJoin(users, eq(users.id, swipeFiles.createdBy))
+      .where(inArray(swipeFiles.id, ids));
+
+    const porId = new Map(rows.map((r) => [r.id, r]));
+    return {
+      // Id que não existe mais some da lista em silêncio: a referência pode ter
+      // sido apagada da biblioteca depois de presa ao bloco, e o mapa não deve
+      // quebrar por isso.
+      items: ids
+        .map((id) => porId.get(id))
+        .filter((r): r is (typeof rows)[number] => !!r)
+        .map((r) => ({ ...r, fileUrl: urlPublica(r, fastify.config.STORAGE_PUBLIC_URL) })),
+    };
+  });
+
   fastify.post(`${base}/analisar`, async (request, reply) => {
     if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
 

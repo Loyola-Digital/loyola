@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Icons from "lucide-react";
 import {
-  ChevronDown, ChevronRight, ClipboardCopy, Copy, FileDown, FileText, Keyboard, Loader2, Maximize2, Minimize2, Link2, Minus, Moon, Spline, Sun, Waypoints,
+  ChevronDown, ChevronRight, ClipboardCopy, Copy, FileDown, FileText, Keyboard, Library, Loader2, Maximize2, Minimize2, Link2, Minus, Moon, Spline, Sun, Waypoints,
   PanelLeftClose, PanelLeftOpen, Pencil, Plus, RotateCcw, Save, Scan, Search,
   StickyNote, Trash2, Type, Undo2, Redo2, Unlink, X,
 } from "lucide-react";
@@ -38,6 +38,12 @@ import {
   useComentariosDoMapa,
 } from "@/lib/hooks/use-mapa-comentarios";
 import { PDF, imagemDoEvento, useSubirImagemDoMapa } from "@/lib/hooks/use-mapa-imagem";
+import {
+  AnexarSwipeDialog,
+  CapaDoSwipe,
+} from "@/components/funnels/funnel-map/anexar-swipe-dialog";
+import { SwipeLightbox } from "@/components/swipe-files/swipe-lightbox";
+import { useSwipesPorIds, useUpdateSwipeFile } from "@/lib/hooks/use-swipe-files";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -185,6 +191,15 @@ const PONTOS: PontoDeConexao[] = ["top", "right", "bottom", "left"];
  * que completa, e é ele que confirma o gesto.
  */
 const ESPERA_DA_CORRENTE = 2000;
+
+/**
+ * Altura mínima de um card que carrega referência.
+ *
+ * O card padrão tem 60px — o suficiente para ícone e nome, e nada além. Uma
+ * miniatura ali dentro sairia como um risco de 8px. Cresce só na primeira vez
+ * que se anexa: ver o `onConfirmar` do diálogo.
+ */
+const ALTURA_COM_REFERENCIA = 112;
 
 /** Distância em px (na escala do desenho) para o alinhamento "colar". */
 const IMA = 6;
@@ -485,6 +500,35 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
 
   const aba = abas?.[abaAtiva];
   const blocos = useMemo(() => aba?.boxes ?? [], [aba]);
+
+  /**
+   * As referências do Swipe Files presas aos blocos desta aba.
+   *
+   * Uma busca só para a aba inteira, e não uma por bloco: um mapa com doze
+   * cards referenciados viraria doze requisições para desenhar a mesma tela.
+   */
+  const idsDeReferencia = useMemo(
+    () => [...new Set(blocos.flatMap((b) => b.swipeIds ?? []))],
+    [blocos],
+  );
+  const { data: referencias } = useSwipesPorIds(idsDeReferencia);
+  const refPorId = useMemo(
+    () => new Map((referencias?.items ?? []).map((r) => [r.id, r])),
+    [referencias],
+  );
+  const favoritarSwipe = useUpdateSwipeFile();
+
+  /** Qual bloco está escolhendo referências. */
+  const [anexandoNoBloco, setAnexandoNoBloco] = useState<string | null>(null);
+  /** A referência aberta em tela cheia, e a lista onde ela navega. */
+  const [refAberta, setRefAberta] = useState<{ ids: string[]; indice: number } | null>(null);
+
+  /**
+   * As referências de um bloco, na ordem em que foram presas e sem as que
+   * sumiram da biblioteca — uma peça apagada lá não pode furar o mapa aqui.
+   */
+  const refsDoBloco = (b: BlocoDoMapa) =>
+    (b.swipeIds ?? []).map((id) => refPorId.get(id)).filter((r) => !!r);
 
   /**
    * Ponto único de mutação do desenho — e por isso o lugar certo de gravar o
@@ -2972,7 +3016,18 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                       conjunto foi para o centro — a leitura de relance passa a
                       ser o ícone, e o nome logo ao lado.
                     */
-                    <div className="flex h-full w-full items-center justify-center gap-2 px-1">
+                    <div
+                      className={
+                        // Com referências o card vira coluna: cabeçalho em
+                        // cima, miniaturas embaixo. Sem elas, segue centrado
+                        // como sempre foi — um card de uma palavra não deve
+                        // ganhar layout de painel por causa do que não tem.
+                        refsDoBloco(b).length > 0
+                          ? "flex h-full w-full flex-col gap-1 overflow-hidden"
+                          : "flex h-full w-full items-center justify-center gap-2 px-1"
+                      }
+                    >
+                    <div className="flex min-h-0 shrink-0 items-center justify-center gap-2 px-1">
                       {b.emoji ? (
                         // Bloco criado antes da troca por ícone: mantém o que
                         // a pessoa escolheu em vez de sumir com o desenho.
@@ -2997,6 +3052,61 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                       >
                         {b.label}
                       </span>
+                    </div>
+
+                      {/*
+                        As referências do Swipe Files, dentro do card.
+
+                        A miniatura é o ponto: o mapa deixa de dizer "VSL" e
+                        passa a MOSTRAR a VSL. Clicar abre a peça em tela
+                        cheia — `stopPropagation` no ponteiro é o que impede
+                        que o gesto comece a arrastar o bloco, como no link.
+
+                        Três à vista e o resto num contador: quatro miniaturas
+                        num card de 120px não seriam miniaturas, seriam
+                        manchas.
+                      */}
+                      {refsDoBloco(b).length > 0 && (
+                        <div className="flex min-h-0 flex-1 items-stretch gap-1 px-1 pb-0.5">
+                          {refsDoBloco(b)
+                            .slice(0, 3)
+                            .map((r, i) => (
+                              <button
+                                key={r.id}
+                                type="button"
+                                title={r.title}
+                                aria-label={`Abrir a referência ${r.title}`}
+                                onPointerDown={(ev) => ev.stopPropagation()}
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  setRefAberta({
+                                    ids: refsDoBloco(b).map((x) => x.id),
+                                    indice: i,
+                                  });
+                                }}
+                                className="min-w-0 flex-1 overflow-hidden rounded-md border border-border/60 transition-colors hover:border-primary"
+                              >
+                                <CapaDoSwipe item={r} className="h-full w-full" />
+                              </button>
+                            ))}
+                          {refsDoBloco(b).length > 3 && (
+                            <button
+                              type="button"
+                              onPointerDown={(ev) => ev.stopPropagation()}
+                              onClick={(ev) => {
+                                ev.stopPropagation();
+                                setRefAberta({
+                                  ids: refsDoBloco(b).map((x) => x.id),
+                                  indice: 3,
+                                });
+                              }}
+                              className="grid w-7 shrink-0 place-items-center rounded-md border border-border/60 text-[10px] font-medium text-muted-foreground hover:border-primary hover:text-primary"
+                            >
+                              +{refsDoBloco(b).length - 3}
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                   {/* O selo de status saiu do bloco.
@@ -3208,6 +3318,66 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                 className="h-7 text-xs"
               />
             </div>
+            {/*
+              As referências do Swipe Files.
+
+              Fica no painel, e não num menu escondido, porque é a ligação
+              entre o mapa (a estrutura) e a biblioteca (as peças) — o motivo
+              de existir do desenho. Desanexar mora aqui e não no lightbox:
+              lá o gesto vizinho é APAGAR da biblioteca, e trocar um pelo
+              outro tira a peça de todos os mapas que a citam.
+            */}
+            <div className="space-y-1">
+              <Label className="text-[10px]">Referências</Label>
+              {refsDoBloco(blocoSelecionado).length > 0 && (
+                <div className="space-y-1">
+                  {refsDoBloco(blocoSelecionado).map((r, i) => (
+                    <div
+                      key={r.id}
+                      className="flex items-center gap-1.5 rounded-md border border-border/50 p-1"
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRefAberta({
+                            ids: refsDoBloco(blocoSelecionado).map((x) => x.id),
+                            indice: i,
+                          })
+                        }
+                        title="Abrir a referência"
+                        className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                      >
+                        <CapaDoSwipe item={r} className="h-7 w-9 shrink-0 rounded" />
+                        <span className="min-w-0 truncate text-[10px]">{r.title}</span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Desanexar ${r.title}`}
+                        title="Desanexar (a referência continua na biblioteca)"
+                        onClick={() =>
+                          ajustarBloco(blocoSelecionado.id, {
+                            swipeIds: (blocoSelecionado.swipeIds ?? []).filter((x) => x !== r.id),
+                          })
+                        }
+                        className="shrink-0 text-muted-foreground hover:text-red-500"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full gap-1.5 text-[11px]"
+                onClick={() => setAnexandoNoBloco(blocoSelecionado.id)}
+              >
+                <Library className="h-3 w-3" />
+                {refsDoBloco(blocoSelecionado).length > 0 ? "Trocar" : "Anexar do Swipe Files"}
+              </Button>
+            </div>
+
             <Button
               size="sm"
               variant="ghost"
@@ -3664,6 +3834,43 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       )}
 
       {ajuda && <PainelDeAtalhos onClose={() => setAjuda(false)} />}
+
+      {anexandoNoBloco && (
+        <AnexarSwipeDialog
+          open
+          onOpenChange={(v) => !v && setAnexandoNoBloco(null)}
+          nomeDoBloco={blocos.find((b) => b.id === anexandoNoBloco)?.label ?? ""}
+          jaAnexados={blocos.find((b) => b.id === anexandoNoBloco)?.swipeIds ?? []}
+          onConfirmar={(ids) => {
+            const alvo = blocos.find((b) => b.id === anexandoNoBloco);
+            if (!alvo) return;
+            ajustarBloco(alvo.id, {
+              swipeIds: ids,
+              // O card precisa de altura para a miniatura caber. Só CRESCE, e
+              // só na primeira vez: encolher de volta ao desanexar desfaria o
+              // tamanho que a pessoa tivesse ajustado à mão depois.
+              ...(ids.length > 0 && alvo.height < ALTURA_COM_REFERENCIA
+                ? { height: ALTURA_COM_REFERENCIA }
+                : {}),
+            });
+            setAnexandoNoBloco(null);
+          }}
+        />
+      )}
+
+      {refAberta && (
+        <SwipeLightbox
+          items={refAberta.ids.map((id) => refPorId.get(id)).filter((r) => !!r)}
+          index={refAberta.indice}
+          onClose={() => setRefAberta(null)}
+          onNavigate={(i) => setRefAberta({ ...refAberta, indice: i })}
+          onToggleFavorite={(item) =>
+            favoritarSwipe.mutate({ id: item.id, input: { isFavorite: !item.isFavorite } })
+          }
+          /* Sem `onDelete`: aqui apagar tiraria a peça da BIBLIOTECA inteira,
+             não do bloco. Desanexar mora no painel. */
+        />
+      )}
 
       {data?.rascunho && sujo && (
         <button
