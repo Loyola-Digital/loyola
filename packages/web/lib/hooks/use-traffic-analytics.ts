@@ -703,8 +703,25 @@ export function useAllAdSets(
   });
 }
 
+/**
+ * Story 29.76 — a linha de um criativo, com a quebra por público.
+ *
+ * `porPublico` é **opcional**: a API sobe noutro ciclo que o front, e enquanto
+ * a versão antiga responde, o campo simplesmente não vem. Quem consome tem de
+ * tratar a ausência como "sem quebra", nunca como "não rodou neste público".
+ */
+export type LinhaDeAd = CampaignAnalytics & {
+  parentCampaignName: string;
+  videoViews3s?: number;
+  videoViews75?: number;
+  porPublico?: {
+    quente?: CampaignAnalytics & { parentCampaignName: string };
+    frio?: CampaignAnalytics & { parentCampaignName: string };
+  };
+};
+
 export interface AllAdsResponse {
-  ads: (CampaignAnalytics & { parentCampaignName: string })[];
+  ads: LinhaDeAd[];
 }
 
 export function useAllAds(

@@ -77,4 +77,10 @@
 // que toda mudança de rota, de validação de parâmetro OU de forma de payload
 // bumpa esta constante, para o painel dizer que está na frente da API antes de
 // o usuário descobrir sozinho.
-export const API_CONTRACT_VERSION = 4;
+// v5 (Story 29.76): `/all-ads` passou a devolver `porPublico` em cada linha —
+// as métricas do criativo somadas por público (quente/frio). O front tem
+// fallback (`temQuebra: false` → caminho antigo pelo mapa), então a API velha
+// não quebra nada; o que ela causa é o filtro "Por Criativo + quente" continuar
+// zerando no pps1 até a API subir. Por isso a versão sobe: o banner avisa que a
+// correção ainda não chegou, em vez de o gestor achar que ela não funcionou.
+export const API_CONTRACT_VERSION = 5;

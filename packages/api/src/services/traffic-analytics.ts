@@ -28,6 +28,7 @@ import {
 import { fetchCampaignDailyInsightsForIdsWithCache } from "./meta-insights-cache.js";
 import { getCampaignInsightsFromDb, getPlacementBreakdownFromDb } from "./meta-db-source.js";
 import { singleFlight } from "../utils/single-flight.js";
+import { classificarPelaCascata, type TemperaturaDePublico } from "../utils/temperatura-de-publico.js";
 import { applyMetaTax } from "../utils/meta-tax.js";
 // Story 18.78: a API importa o shared por bare specifier (subpath derruba o
 // boot — ver 19.14). O web importa o mesmo módulo por subpath.
@@ -908,6 +909,21 @@ export async function getAllAdSetsForProject(
   return result;
 }
 
+/**
+ * Story 29.76 — a linha de um criativo, com a quebra por público quando ela
+ * existe. `porPublico` é OPCIONAL de propósito: o front tem de funcionar contra
+ * uma API que ainda não a devolve (deploys em ciclos diferentes).
+ */
+export type LinhaDeAd = CampaignAnalytics & {
+  parentCampaignName: string;
+  videoViews3s?: number;
+  videoViews75?: number;
+  porPublico?: {
+    quente?: CampaignAnalytics & { parentCampaignName: string };
+    frio?: CampaignAnalytics & { parentCampaignName: string };
+  };
+};
+
 export async function getAllAdsForProject(
   db: Database,
   projectId: string,
@@ -915,10 +931,10 @@ export async function getAllAdsForProject(
   campaignIds?: string[],
   startDate?: string,
   endDate?: string,
-): Promise<{ ads: (CampaignAnalytics & { parentCampaignName: string })[]; }> {
+): Promise<{ ads: LinhaDeAd[] }> {
   const rangeKey = startDate && endDate ? `${startDate}_${endDate}` : `d${days}`;
   const cacheKey = `analytics:${projectId}:allads:${rangeKey}:${campaignIds?.sort().join(",") ?? "all"}`;
-  type AllAdsResult = { ads: (CampaignAnalytics & { parentCampaignName: string })[] };
+  type AllAdsResult = { ads: LinhaDeAd[] };
   const cached = getCached<AllAdsResult>(cacheKey);
   if (cached) return cached;
 
@@ -944,7 +960,26 @@ export async function getAllAdsForProject(
   // ter N ad_ids, e as métricas de vídeo dos N somam sob o mesmo nome, igual ao
   // resto. As TAXAS (Hook/Hold/Body) são derivadas depois, no frontend, a partir
   // destes somatórios — nunca média das taxas por id.
-  const adMap = new Map<string, { id: string; campaignName: string; spend: number; impressions: number; clicks: number; reach: number; leads: number; linkClicks: number; lpViews: number; purchases: number; revenue: number; videoViews3s: number; videoViews75: number }>();
+  type AcumuladorDeAd = { id: string; campaignName: string; spend: number; impressions: number; clicks: number; reach: number; leads: number; linkClicks: number; lpViews: number; purchases: number; revenue: number; videoViews3s: number; videoViews75: number };
+  const adMap = new Map<string, AcumuladorDeAd>();
+
+  /**
+   * Story 29.76 — o MESMO acúmulo, quebrado por público (quente/frio).
+   *
+   * Um Ad Name atravessa campanhas: no `pps1`, `ad11-pp-s1-ago26--noticia` tem
+   * 4 ad_ids — 3 em campanha fria, 1 em quente. Como o `adMap` guarda um único
+   * `id` por nome, o front classificava o criativo INTEIRO pela temperatura
+   * desse representante. Onde o frio domina em quantidade de ad_ids, o filtro
+   * "quente" devolvia **zero** criativos de 4 que existiam.
+   *
+   * Somar aqui, e não classificar lá, é o que faz a métrica seguir o filtro: um
+   * criativo com R$ 100 em quente e R$ 900 em frio precisa aparecer com R$ 100
+   * quando o filtro é quente. Devolver a linha inteira trocaria "o criativo
+   * sumiu" por "número errado que parece certo" — o pior dos dois.
+   */
+  const adMapPorPublico = new Map<string, AcumuladorDeAd>();
+  const chaveDePublico = (nome: string, t: TemperaturaDePublico) => `${nome}\u0000${t}`;
+
   for (const a of filtered) {
     const key = a.ad_name.trim();
     const leads = parseLeadsFromActions(a.actions);
@@ -981,16 +1016,67 @@ export async function getAllAdsForProject(
         videoViews3s: v3s, videoViews75: v75,
       });
     }
+
+    // Story 29.76 — a mesma linha, somada no balde do seu público.
+    // A cascata é a de `temperatura-de-publico.ts` (anúncio → conjunto →
+    // campanha), a MESMA que monta o mapa consumido pelo front: duas regras
+    // diferentes para a mesma pergunta é exatamente como as duas pontas
+    // divergem sem ninguém perceber.
+    const classe = classificarPelaCascata({
+      adId: a.ad_id, adName: a.ad_name, adsetId: a.adset_id,
+      adsetName: a.adset_name, campaignId: a.campaign_id, campaignName: a.campaign_name,
+    });
+    if (classe) {
+      const kp = chaveDePublico(key, classe.temperatura);
+      const ex = adMapPorPublico.get(kp);
+      if (ex) {
+        ex.spend += applyMetaTax(parseFloat(a.spend || "0"), a.date_start);
+        ex.impressions += parseFloat(a.impressions || "0");
+        ex.clicks += parseFloat(a.clicks || "0");
+        ex.reach += parseFloat(a.reach || "0");
+        ex.leads += leads; ex.linkClicks += lc; ex.lpViews += lpv;
+        ex.purchases += purchases; ex.revenue += revenue;
+        ex.videoViews3s += v3s; ex.videoViews75 += v75;
+      } else {
+        adMapPorPublico.set(kp, {
+          id: a.ad_id, campaignName: a.campaign_name,
+          spend: applyMetaTax(parseFloat(a.spend || "0"), a.date_start),
+          impressions: parseFloat(a.impressions || "0"),
+          clicks: parseFloat(a.clicks || "0"),
+          reach: parseFloat(a.reach || "0"),
+          leads, linkClicks: lc, lpViews: lpv, purchases, revenue,
+          videoViews3s: v3s, videoViews75: v75,
+        });
+      }
+    }
   }
 
-  const ads = Array.from(adMap.entries()).map(([name, a]) => {
+  /** Story 29.76 — a linha de um acumulador, seja o total ou o de um público. */
+  const linhaDoAcumulador = (id: string, name: string, a: AcumuladorDeAd) => {
     const saleData = a.purchases > 0 ? { count: a.purchases, revenue: a.revenue } : null;
-    const row = buildAnalyticsRow(a.id, name, a.spend, a.impressions, a.clicks, a.leads > 0 ? a.leads : null, null, saleData, a.reach, a.linkClicks > 0 ? a.linkClicks : null, a.lpViews > 0 ? a.lpViews : null);
+    const row = buildAnalyticsRow(id, name, a.spend, a.impressions, a.clicks, a.leads > 0 ? a.leads : null, null, saleData, a.reach, a.linkClicks > 0 ? a.linkClicks : null, a.lpViews > 0 ? a.lpViews : null);
     return {
       ...row,
       parentCampaignName: a.campaignName,
       videoViews3s: a.videoViews3s,
       videoViews75: a.videoViews75,
+    };
+  };
+
+  const ads = Array.from(adMap.entries()).map(([name, a]) => {
+    const linha = linhaDoAcumulador(a.id, name, a);
+    // `porPublico` só traz o que EXISTE. Um criativo que só rodou em campanha
+    // quente vem com `frio` ausente — e o front distingue "não rodou neste
+    // público" de "rodou e gastou zero".
+    const quente = adMapPorPublico.get(chaveDePublico(name, "quente"));
+    const frio = adMapPorPublico.get(chaveDePublico(name, "frio"));
+    if (!quente && !frio) return linha;
+    return {
+      ...linha,
+      porPublico: {
+        ...(quente ? { quente: linhaDoAcumulador(quente.id, name, quente) } : {}),
+        ...(frio ? { frio: linhaDoAcumulador(frio.id, name, frio) } : {}),
+      },
     };
   });
 
