@@ -17,7 +17,7 @@
 import { useState } from "react";
 import {
   AlertCircle, Bell, Library, Plus, Search, Star, X, Play, Link2, ImageIcon, FileText, Filter,
-  DownloadCloud,
+  DownloadCloud, Loader2, Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useUserRole } from "@/lib/hooks/use-user-role";
 import {
+  useBuscaPorContexto,
+  useSwipesPorIds,
   useSwipeFiles, useUpdateSwipeFile, useDeleteSwipeFile,
   type SwipeFile, type SwipeFilters, type AssetKind,
 } from "@/lib/hooks/use-swipe-files";
@@ -40,6 +42,8 @@ import { PdfCapa } from "@/components/swipe-files/pdf-capa";
 import { SwipeLightbox } from "@/components/swipe-files/swipe-lightbox";
 import { Chip, GrupoDeFiltro } from "@/components/swipe-files/filtros-do-swipe";
 import { miniaturaDoSwipe } from "@/lib/utils/miniatura-do-swipe";
+import { deveBuscarPorContexto } from "@/lib/utils/busca-por-contexto";
+import { useTermoEmRepouso } from "@/lib/hooks/use-termo-em-repouso";
 
 const KIND_META: Record<AssetKind, { label: string; Icon: typeof Play }> = {
   image: { label: "Imagem", Icon: ImageIcon },
@@ -282,8 +286,34 @@ export default function SwipeFilesPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<SwipeFile | null>(null);
+  /**
+   * A peça aberta a partir da seção "por contexto".
+   *
+   * Estado próprio porque o lightbox da grade navega por ÍNDICE dentro de
+   * `items` — e estas peças, por definição, não estão em `items`: são as que a
+   * busca por texto não achou.
+   */
+  const [pecaPorContexto, setPecaPorContexto] = useState<SwipeFile | null>(null);
 
   const { data, isLoading, isFetching } = useSwipeFiles(filters);
+
+  /**
+   * A busca por contexto, quando a por texto não deu conta.
+   *
+   * O termo entra em repouso antes de chegar aqui — sem isso, digitar
+   * "escassez" viraria oito chamadas ao modelo, uma por letra.
+   */
+  const termoParado = useTermoEmRepouso(filters.q ?? "");
+  const porContexto = useBuscaPorContexto(
+    termoParado,
+    deveBuscarPorContexto({
+      termo: termoParado,
+      achadosPorTexto: data?.items.length ?? 0,
+      carregandoTexto: isFetching || isLoading,
+    }),
+  );
+  const idsPorContexto = (porContexto.data?.achados ?? []).map((a) => a.id);
+  const { data: pecasPorContexto } = useSwipesPorIds(idsPorContexto);
   const updateItem = useUpdateSwipeFile();
   const deleteItem = useDeleteSwipeFile();
 
@@ -463,6 +493,55 @@ export default function SwipeFilesPage() {
         </div>
       )}
 
+      {/*
+        Encontradas por CONTEXTO.
+
+        Seção separada, e não misturada na grade: são peças que a busca por
+        texto não achou, e a pessoa precisa saber por que elas apareceram —
+        daí o motivo em cada card. Diluídas entre as outras, pareceriam ruído
+        de uma busca que trouxe coisa demais.
+      */}
+      {porContexto.isFetching && (
+        <p className="flex items-center gap-2 rounded-lg border border-border/40 px-3 py-2 text-[12px] text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Procurando por contexto — pelo que as peças <em>são</em>, não pela palavra…
+        </p>
+      )}
+
+      {!porContexto.isFetching && (porContexto.data?.achados.length ?? 0) > 0 && (
+        <div className="space-y-2 rounded-xl border border-primary/25 bg-primary/[0.03] p-3">
+          <p className="flex items-center gap-1.5 text-[12px] font-medium">
+            <Sparkles className="h-3.5 w-3.5 text-primary" />
+            Encontradas por contexto
+            <span className="font-normal text-muted-foreground">
+              — não têm a palavra “{termoParado}”, mas respondem a ela
+            </span>
+          </p>
+          <div className="columns-2 gap-4 sm:columns-3 lg:columns-4 xl:columns-5">
+            {(porContexto.data?.achados ?? []).map((achado) => {
+              const peca = (pecasPorContexto?.items ?? []).find((p) => p.id === achado.id);
+              if (!peca) return null;
+              return (
+                <div key={peca.id} className="mb-4 break-inside-avoid">
+                  <SwipeCard
+                    item={peca}
+                    onOpen={() => setPecaPorContexto(peca)}
+                    onToggleFavorite={() =>
+                      updateItem.mutate({ id: peca.id, input: { isFavorite: !peca.isFavorite } })
+                    }
+                  />
+                  {/* O motivo é o que torna o resultado confiável: sem ele a
+                      peça aparece sem explicação e parece engano da máquina. */}
+                  <p className="mt-1 px-1 text-[11px] leading-snug text-muted-foreground">
+                    {achado.motivo}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {items.length > 0 && (
         <p className="text-[11px] text-muted-foreground">
           {items.length} referência{items.length !== 1 ? "s" : ""}
@@ -491,6 +570,24 @@ export default function SwipeFilesPage() {
           }
           onDelete={(item) => {
             setLightboxIndex(null);
+            setConfirmDelete(item);
+          }}
+        />
+      )}
+
+      {/* Uma peça achada por contexto: lista de uma só, porque ela não está na
+          grade e não há por onde navegar a partir dela. */}
+      {pecaPorContexto && (
+        <SwipeLightbox
+          items={[pecaPorContexto]}
+          index={0}
+          onClose={() => setPecaPorContexto(null)}
+          onNavigate={() => {}}
+          onToggleFavorite={(item) =>
+            updateItem.mutate({ id: item.id, input: { isFavorite: !item.isFavorite } })
+          }
+          onDelete={(item) => {
+            setPecaPorContexto(null);
             setConfirmDelete(item);
           }}
         />
