@@ -127,6 +127,45 @@ export function useSwipesPorIds(ids: string[]) {
   });
 }
 
+export interface AchadoPorContexto {
+  id: string;
+  /** O que naquela peça responde à busca. Aparece no card. */
+  motivo: string;
+}
+
+/**
+ * Busca por CONTEXTO — o que a peça é, não a palavra que ela contém.
+ *
+ * ## Só entra quando a busca por texto não deu conta
+ *
+ * `habilitado` vem da tela: com resultado suficiente por texto, esta não roda.
+ * A busca literal é instantânea e resolve a maioria dos casos ("Opal", "vsl");
+ * chamar o modelo em cima dela seria pagar 4 segundos por nada.
+ *
+ * ## Espera a digitação parar
+ *
+ * O termo chega aqui já em repouso (ver `useTermoEmRepouso`). Sem isso, digitar
+ * "escassez" dispararia oito buscas — uma por letra.
+ */
+export function useBuscaPorContexto(q: string, habilitado: boolean) {
+  const apiClient = useApiClient();
+  const termo = q.trim();
+
+  return useQuery({
+    queryKey: ["swipe-busca-contexto", termo],
+    queryFn: () =>
+      apiClient<{ achados: AchadoPorContexto[]; indisponivel?: string }>(
+        `${BASE}/busca-contexto`,
+        { method: "POST", body: JSON.stringify({ q: termo }) },
+      ),
+    enabled: habilitado && termo.length >= 3,
+    // A resposta para o mesmo termo não muda enquanto a biblioteca não muda —
+    // e cada chamada custa uma ida ao modelo. Meia hora é conservador.
+    staleTime: 30 * 60 * 1000,
+    retry: false,
+  });
+}
+
 export function useLinkPreview() {
   const apiClient = useApiClient();
   return useMutation({

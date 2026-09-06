@@ -24,6 +24,12 @@ import {
 import { avisarNoClickUp } from "../services/swipe-clickup-aviso.js";
 import { contarFacetas } from "../services/swipe-facetas.js";
 import {
+  CABECALHO_DO_CATALOGO,
+  instrucao,
+  interpretarResposta,
+  montarCatalogo,
+} from "../services/swipe-busca-semantica.js";
+import {
   planejarImportacao,
   type ItemParaImportar,
 } from "../services/swipe-import-clickup.js";
@@ -247,6 +253,76 @@ export default fp(async function swipeFilesRoutes(fastify) {
         .filter((r): r is (typeof rows)[number] => !!r)
         .map((r) => ({ ...r, fileUrl: urlPublica(r, fastify.config.STORAGE_PUBLIC_URL) })),
     };
+  });
+
+  /**
+   * Busca por CONTEXTO — o que a peça É, não a palavra que ela contém.
+   *
+   * O catálogo inteiro vai no prompt, num bloco marcado para cache: ele muda
+   * devagar, e sem o cache cada busca pagaria os ~27 mil tokens do zero. Ver
+   * `swipe-busca-semantica.ts` para por que não são embeddings.
+   *
+   * Falha aqui NÃO é erro para quem buscou: a busca por texto já respondeu, e
+   * isto é o complemento. Devolve lista vazia e a tela não mostra a seção.
+   */
+  fastify.post(`${base}/busca-contexto`, async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const b = z
+      .object({ q: z.string().trim().min(2).max(300), limite: z.coerce.number().int().min(1).max(30).optional() })
+      .safeParse(request.body);
+    if (!b.success) return reply.code(400).send({ error: "Busca inválida" });
+
+    const chave = process.env.ANTHROPIC_API_KEY;
+    if (!chave) return { achados: [], indisponivel: "Análise por IA não configurada." };
+
+    const refs = await fastify.db
+      .select({
+        id: swipeFiles.id,
+        title: swipeFiles.title,
+        notes: swipeFiles.notes,
+        brand: swipeFiles.brand,
+        niche: swipeFiles.niche,
+        platform: swipeFiles.platform,
+        format: swipeFiles.format,
+        tags: swipeFiles.tags,
+      })
+      .from(swipeFiles)
+      .orderBy(desc(swipeFiles.createdAt))
+      .limit(1200);
+
+    if (refs.length === 0) return { achados: [] };
+
+    try {
+      const { default: Anthropic } = await import("@anthropic-ai/sdk");
+      const client = new Anthropic({ apiKey: chave });
+      const resposta = await client.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 900,
+        system: [
+          {
+            type: "text",
+            text:
+              "Você ajuda um time de marketing a achar peças numa biblioteca de referências de anúncios.\n\n" +
+              `Catálogo (${CABECALHO_DO_CATALOGO}):\n` +
+              montarCatalogo(refs),
+            // O catálogo muda devagar e é o grosso do prompt: sem cache, cada
+            // busca paga os ~27 mil tokens de novo.
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+        messages: [{ role: "user", content: instrucao(b.data.q, b.data.limite ?? 12) }],
+      });
+
+      const texto = resposta.content
+        .map((c) => (c.type === "text" ? c.text : ""))
+        .join("\n");
+      return { achados: interpretarResposta(texto, refs) };
+    } catch (e) {
+      // Log e silêncio: a busca por texto já entregou algo, e um erro vermelho
+      // aqui faria parecer que a busca inteira falhou.
+      request.log.warn({ err: e }, "busca por contexto falhou");
+      return { achados: [], indisponivel: "Não consegui buscar por contexto agora." };
+    }
   });
 
   fastify.post(`${base}/analisar`, async (request, reply) => {

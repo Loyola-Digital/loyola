@@ -13,8 +13,13 @@
  *
  * ## Não sobrescreve o que já foi preenchido
  *
- * Só toca em quem está sem marca E sem tags. Uma referência que alguém
- * catalogou à mão não pode ser reescrita por um palpite de máquina.
+ * Entra quem está sem marca E sem tags, ou sem DESCRIÇÃO — mas cada campo é
+ * gravado com `coalesce`, então o que já existe fica. Uma referência que
+ * alguém catalogou à mão não pode ser reescrita por um palpite de máquina.
+ *
+ * A descrição entrou no critério quando a busca por contexto passou a ler dela:
+ * medido, 40 das 291 não tinham texto nenhum além do título, e ficariam
+ * invisíveis para qualquer busca que não fosse pelo nome do arquivo.
  *
  * Uso: node --import tsx src/scripts/backfill-swipe-catalogo.ts [--aplicar] [--limite=N]
  */
@@ -66,7 +71,11 @@ async function main(): Promise<void> {
     `select id, title, asset_kind, source_url, file_url, og_title, og_description,
             og_site_name, og_image, notes
        from swipe_files
-      where brand is null and jsonb_array_length(tags) = 0
+      where (brand is null and jsonb_array_length(tags) = 0)
+         -- Sem DESCRIÇÃO também entra: é dela que a busca por contexto lê.
+         -- Uma referência sem texto nenhum é invisível para qualquer busca
+         -- que não seja pelo título, e o título às vezes é "IMG_2043".
+         or coalesce(length(btrim(notes)), 0) < 25
       order by asset_kind, created_at
       limit $1`,
     [limite],
