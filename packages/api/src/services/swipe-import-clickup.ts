@@ -99,6 +99,23 @@ const ROTULO_DE_ARQUIVO =
  * Swipe Files" para cada referência que já está lá dentro — a biblioteca
  * duplicando a si mesma, uma volta por importação.
  */
+/**
+ * A anotação é só o rótulo de fatia da importação?
+ *
+ * Uma mensagem longa do ClickUp entra dividida, e cada pedaço carregava o
+ * rótulo "Parte 2/5". Medido no acervo: 36 referências ficaram com isso como
+ * anotação inteira — não dizem nada sobre a peça, e são invisíveis para a
+ * busca por contexto, que lê justamente esse campo.
+ *
+ * Serve para decidir o que a catalogação pode SOBRESCREVER. Um limiar por
+ * tamanho não serviria: as outras quatro anotações curtas do acervo são
+ * humanas ("Que página linda", "Ref Workshop pago") e não podem ser apagadas
+ * por um palpite de máquina.
+ */
+export function ehRotuloDeFatia(notes: string | null | undefined): boolean {
+  return /^\s*parte\s*\d+\s*\/\s*\d+\s*$/i.test(notes ?? "");
+}
+
 export function ehAvisoDoProprioSwipe(content: string): boolean {
   return /^\s*\**Nova referência no Swipe Files\**\s*—/i.test(content);
 }

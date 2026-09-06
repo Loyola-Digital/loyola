@@ -27,6 +27,7 @@ import "dotenv/config";
 import Anthropic from "@anthropic-ai/sdk";
 import pg from "pg";
 import { analisarLink } from "../services/swipe-analise.js";
+import { ehRotuloDeFatia } from "../services/swipe-import-clickup.js";
 
 interface Linha {
   id: string;
@@ -75,7 +76,13 @@ async function main(): Promise<void> {
          -- Sem DESCRIÇÃO também entra: é dela que a busca por contexto lê.
          -- Uma referência sem texto nenhum é invisível para qualquer busca
          -- que não seja pelo título, e o título às vezes é "IMG_2043".
-         or coalesce(length(btrim(notes)), 0) < 25
+         or notes is null or btrim(notes) = ''
+         -- O rótulo de fatia da importação conta como sem descrição: medido,
+         -- 36 referências ficaram com "Parte 2/5" como anotação inteira.
+         -- Escrito com classes explicitas, sem atalho de barra: esta consulta
+         -- vive numa template string do TS, e la a barra some antes de chegar
+         -- ao Postgres — a versao anterior casou com ZERO linhas em silencio.
+         or notes ~ '^ *[Pp]arte *[0-9]+ */ *[0-9]+ *$'
       order by asset_kind, created_at
       limit $1`,
     [limite],
@@ -130,10 +137,25 @@ async function main(): Promise<void> {
                   platform = coalesce(platform, $3),
                   format = coalesce(format, $4),
                   tags = case when jsonb_array_length(tags) = 0 then $5::jsonb else tags end,
-                  notes = coalesce(nullif(notes, ''), $6),
+                  -- Sobrescreve a anotação só quando ela é vazia OU o rótulo
+                  -- de fatia da importação ("Parte 2/5"). As anotações humanas
+                  -- curtas do acervo ("Que página linda") ficam intactas.
+                  notes = case
+                            when $8::boolean then coalesce($6, notes)
+                            else coalesce(nullif(notes, ''), $6)
+                          end,
                   updated_at = now()
             where id = $7`,
-          [s.marca, s.nicho, s.plataforma, s.formato, JSON.stringify(s.tags), s.anotacoes, r.id],
+          [
+            s.marca,
+            s.nicho,
+            s.plataforma,
+            s.formato,
+            JSON.stringify(s.tags),
+            s.anotacoes,
+            r.id,
+            ehRotuloDeFatia(r.notes),
+          ],
         );
       }
     } catch (e) {

@@ -16,6 +16,7 @@ import {
   planejarImportacao,
   planejarMensagem,
   type MensagemDoClickUp,
+  ehRotuloDeFatia,
 } from "../services/swipe-import-clickup.js";
 
 const msg = (content: string, extra: Partial<MensagemDoClickUp> = {}): MensagemDoClickUp => ({
@@ -258,5 +259,40 @@ describe("nomes de baixador de anúncio", () => {
     ]) {
       expect(nomeEhGenerico(n), n).toBe(false);
     }
+  });
+});
+
+/**
+ * O rótulo de fatia da importação.
+ *
+ * O que protege: "Parte 2/5" pode ser sobrescrito pela catalogação, e as
+ * anotações humanas curtas do acervo — "Que página linda", "Ref Workshop
+ * pago" — não podem.
+ */
+describe("ehRotuloDeFatia", () => {
+  it("reconhece o rótulo em qualquer forma que a importação produziu", () => {
+    for (const v of ["Parte 2/5", "parte 1/3", "  Parte 10 / 12  ", "PARTE 5/5"]) {
+      expect(ehRotuloDeFatia(v)).toBe(true);
+    }
+  });
+
+  it("NÃO toca em anotação humana curta — são as quatro reais do acervo", () => {
+    for (const v of [
+      "Que página linda",
+      "Coisa fina, hein...",
+      "Ref Workshop pago",
+      "Ref. produto margem 3X:",
+    ]) {
+      expect(ehRotuloDeFatia(v)).toBe(false);
+    }
+  });
+
+  it("não confunde com anotação que MENCIONA uma parte", () => {
+    expect(ehRotuloDeFatia("A parte 2/5 da página é a melhor")).toBe(false);
+  });
+
+  it("vazio e nulo não são rótulo", () => {
+    expect(ehRotuloDeFatia(null)).toBe(false);
+    expect(ehRotuloDeFatia("")).toBe(false);
   });
 });
