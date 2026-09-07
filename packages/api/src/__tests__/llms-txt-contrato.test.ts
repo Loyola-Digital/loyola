@@ -218,7 +218,10 @@ describe("Story 44.24 — a tool de criativos pagina como a rota", () => {
    * as duas são lidas do fonte aqui.
    */
   const schemaDaTool = () => {
-    const m = toolsMcp.match(/"get_creative_performance"[\s\S]*?inputSchema:\s*\{([\s\S]*?)\n      \},/);
+    // `{6}` em vez de seis espaços literais: o ESLint recusa espaços contáveis
+    // a olho (`no-regex-spaces`), e com razão — um a mais ou a menos aqui faria
+    // o match falhar e o teste "não achar o inputSchema" por indentação.
+    const m = toolsMcp.match(/"get_creative_performance"[\s\S]*?inputSchema:\s*\{([\s\S]*?)\n {6}\},/);
     if (!m) throw new Error("não achei o inputSchema de get_creative_performance");
     return m[1];
   };
