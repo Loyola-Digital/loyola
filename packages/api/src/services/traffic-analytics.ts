@@ -26,7 +26,12 @@ import {
   type MetaCampaignInsight,
 } from "./meta-ads.js";
 import { fetchCampaignDailyInsightsForIdsWithCache } from "./meta-insights-cache.js";
-import { getCampaignInsightsFromDb, getPlacementBreakdownFromDb } from "./meta-db-source.js";
+import {
+  getCampaignInsightsFromDb,
+  getPlacementBreakdownFromDb,
+  // Story 43.9 — insights por anúncio também saem do banco.
+  getAdInsightsFromDb,
+} from "./meta-db-source.js";
 import { singleFlight } from "../utils/single-flight.js";
 import { classificarPelaCascata, type TemperaturaDePublico } from "../utils/temperatura-de-publico.js";
 import { applyMetaTax } from "../utils/meta-tax.js";
@@ -727,14 +732,31 @@ export async function getTopPerformers(
   if (!metaAccount) return [];
 
   // Story 9.1: Single flat query for ALL ads (works for ASC/Advantage+ campaigns)
-  const allAds = await fetchAllAdInsights(
-    metaAccount.metaAccountId,
-    metaAccount.accessToken,
-    days,
+  //
+  // Story 43.9 — DB-first, mesmo padrão do overview logo acima: lê de
+  // `meta_ad_insights_daily`, que o sync mantém quente, e só vai à Meta quando
+  // o banco não cobre o range. `level=ad` é a consulta mais cara do arquivo —
+  // varre a conta inteira, página por página — e o limite da Meta é
+  // compartilhado entre todos os dashboards.
+  const { since: adSince, until: adUntil } =
+    startDate && endDate ? { since: startDate, until: endDate } : dateRangeFromDays(days);
+  let allAds = await getAdInsightsFromDb(
+    db,
+    projectId,
+    adSince,
+    adUntil,
     idList.length > 0 ? idList : undefined,
-    startDate,
-    endDate,
   );
+  if (allAds.length === 0) {
+    allAds = await fetchAllAdInsights(
+      metaAccount.metaAccountId,
+      metaAccount.accessToken,
+      days,
+      idList.length > 0 ? idList : undefined,
+      startDate,
+      endDate,
+    );
+  }
 
   if (allAds.length === 0) return [];
 
@@ -943,14 +965,22 @@ export async function getAllAdsForProject(
     return { ads: [] };
   }
 
-  const allAds = await fetchAllAdInsights(
-    metaAccount.metaAccountId,
-    metaAccount.accessToken,
-    days,
-    campaignIds,
-    startDate,
-    endDate,
-  );
+  // Story 43.9 — DB-first (ver `getTopPerformers` acima). Esta é a rota
+  // `/all-ads`, que a 29.76 acabou de tornar mais pesada ao devolver a quebra
+  // por público: mais um motivo para ela não varrer a Meta a cada request.
+  const { since: adSince, until: adUntil } =
+    startDate && endDate ? { since: startDate, until: endDate } : dateRangeFromDays(days);
+  let allAds = await getAdInsightsFromDb(db, projectId, adSince, adUntil, campaignIds);
+  if (allAds.length === 0) {
+    allAds = await fetchAllAdInsights(
+      metaAccount.metaAccountId,
+      metaAccount.accessToken,
+      days,
+      campaignIds,
+      startDate,
+      endDate,
+    );
+  }
 
   const idSet = campaignIds ? new Set(campaignIds) : null;
   const filtered = idSet ? allAds.filter((a) => idSet.has(a.campaign_id)) : allAds;
