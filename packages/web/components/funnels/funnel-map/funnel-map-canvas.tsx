@@ -21,7 +21,7 @@ import * as Icons from "lucide-react";
 import {
   ChevronDown, ChevronRight, ClipboardCopy, Copy, FileDown, FileText, Keyboard, Library, Loader2, Maximize2, Minimize2, Link2, Minus, Moon, Spline, Sun, Waypoints,
   PanelLeftClose, PanelLeftOpen, Pencil, Plus, RotateCcw, Save, Scan, Search,
-  StickyNote, Trash2, Type, Undo2, Redo2, Unlink, X,
+  StickyNote, Trash2, Type, Undo2, Redo2, Unlink, X, Image as ImageIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { comEsquema, encurtar, linkAoColar, pedacosDoTexto } from "@/lib/utils/texto-com-links";
@@ -2051,6 +2051,19 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       acao: () => adicionarTexto(e),
     })),
   ];
+  /**
+   * Os três de anotação que também aparecem no atalho da bolinha.
+   *
+   * Um recorte de `SECOES_LIVRES`, e não a lista inteira: o popup do ponto é
+   * uma decisão rápida no meio do desenho, e as formas geométricas e os quatro
+   * níveis de título ali dentro fariam dele uma segunda paleta.
+   */
+  const ANOTACOES_DO_PONTO = [
+    { rotulo: "Nota", Icone: StickyNote, acao: adicionarNota },
+    { rotulo: "Texto", Icone: Type, acao: () => adicionarTexto("corpo") },
+    { rotulo: "Imagem", Icone: ImageIcon, acao: () => escolherImagem("image/*") },
+  ];
+
   const filtroLivres = SECOES_LIVRES.filter(
     (l) =>
       casa(l.rotulo) ||
@@ -2270,29 +2283,6 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
             </Secao>
           )}
 
-          {/* Genéricos: o "quadradinho" pra qualquer coisa que o funil tenha. */}
-          {ICONES_GENERICOS.map((g) => {
-            const itens = filtrarIcones(g);
-            return (
-              <Secao key={g.grupo} titulo={g.grupo} chave={`e:${g.grupo}`} fechada={fechadas} alternar={alternarSecao} visivel={itens.length > 0}>
-                <div className="grid grid-cols-4 gap-0.5">
-                  {itens.map((i) => (
-                    <button
-                      key={i.icone}
-                      type="button"
-                      onClick={() => adicionarGenerico(i.icone, i.rotulo)}
-                      title={i.rotulo}
-                      aria-label={`Bloco ${i.rotulo}`}
-                      className="flex h-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    >
-                      <IconePorNome nome={i.icone} className="h-3.5 w-3.5" />
-                    </button>
-                  ))}
-                </div>
-              </Secao>
-            );
-          })}
-
           {CATEGORIAS.map((cat) => {
             const itens = filtrarItens(cat);
             return (
@@ -2316,6 +2306,36 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                       <IconePorNome nome={item.icon} className="h-3 w-3 shrink-0" />
                       <span className="truncate">{item.label}</span>
                       <Plus className="ml-auto h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+                    </button>
+                  ))}
+                </div>
+              </Secao>
+            );
+          })}
+
+          {/*
+            Os ícones livres ficam por ÚLTIMO.
+
+            São 32 e servem para o que a paleta não nomeia — quem abre a lista
+            está quase sempre atrás de uma etapa de verdade ("Checkout",
+            "VSL"), e trinta e dois quadradinhos genéricos na frente delas
+            empurravam o que se procura para fora da tela.
+          */}
+          {ICONES_GENERICOS.map((g) => {
+            const itens = filtrarIcones(g);
+            return (
+              <Secao key={g.grupo} titulo={g.grupo} chave={`e:${g.grupo}`} fechada={fechadas} alternar={alternarSecao} visivel={itens.length > 0}>
+                <div className="grid grid-cols-4 gap-0.5">
+                  {itens.map((i) => (
+                    <button
+                      key={i.icone}
+                      type="button"
+                      onClick={() => adicionarGenerico(i.icone, i.rotulo)}
+                      title={i.rotulo}
+                      aria-label={`Bloco ${i.rotulo}`}
+                      className="flex h-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      <IconePorNome nome={i.icone} className="h-3.5 w-3.5" />
                     </button>
                   ))}
                 </div>
@@ -3768,6 +3788,40 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
               />
             </div>
             <div className="max-h-64 overflow-y-auto p-1">
+              {/*
+                Anotar entra aqui, e não só na paleta lateral.
+
+                A bolinha é o gesto de "e depois disto, o quê?" — e às vezes a
+                resposta é um lembrete, não uma etapa. Ter de fechar o popup,
+                ir à paleta e arrastar de volta ao lugar certo é o caminho
+                longo para uma frase de dez palavras.
+
+                Estes nascem NO PONTO mas SEM seta: uma seta saindo de um
+                post-it diria que o funil passa por ele.
+              */}
+              {ANOTACOES_DO_PONTO.filter((n) => casaComBusca(n.rotulo, buscaDoPonto)).length > 0 && (
+                <div>
+                  <p className="px-1.5 pb-0.5 pt-1.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Anotar
+                  </p>
+                  {ANOTACOES_DO_PONTO.filter((n) => casaComBusca(n.rotulo, buscaDoPonto)).map((n) => (
+                    <button
+                      key={n.rotulo}
+                      type="button"
+                      onClick={() => {
+                        n.acao();
+                        setCriarDoPonto(null);
+                      }}
+                      className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[11px] hover:bg-muted"
+                    >
+                      <span className="h-2 w-2 shrink-0 rounded-sm bg-muted-foreground/40" />
+                      <n.Icone className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{n.rotulo}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {CATEGORIAS.map((cat) => {
                 const itens = cat.items.filter((i) => casaComBusca(i.label, buscaDoPonto));
                 if (itens.length === 0) return null;

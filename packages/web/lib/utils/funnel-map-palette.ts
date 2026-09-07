@@ -47,6 +47,9 @@ export const CATEGORIAS: CategoriaDeBloco[] = [
       // trocar a chave por causa do rotulo apagaria o icone e a cor dos blocos
       // que existem. So o nome muda.
       { type: "squeeze", label: "Pesquisa", icon: "ClipboardList" },
+      // A pagina que segura a pessoa antes de liberar o proximo passo —
+      // contagem regressiva, conteudo que abre com o tempo.
+      { type: "delay_pagina", label: "Delay de Página", icon: "Timer" },
       { type: "blog", label: "Blog Post", icon: "BookOpen" },
     ],
   },
@@ -62,6 +65,9 @@ export const CATEGORIAS: CategoriaDeBloco[] = [
       { type: "downsell", label: "Downsell", icon: "TrendingDown" },
       { type: "order_bump", label: "Order Bump", icon: "Plus" },
       { type: "obrigado", label: "Página de Obrigado", icon: "CheckCircle" },
+      // Faz parte do funil como qualquer outra etapa: e por onde o dinheiro
+      // volta, e o mapa que o omite conta so metade da historia.
+      { type: "reembolso", label: "Reembolso", icon: "Undo2" },
     ],
   },
   {
