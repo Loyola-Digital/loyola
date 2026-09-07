@@ -56,6 +56,10 @@ export interface SwipeFacets {
 
 export interface SwipeFilters {
   q?: string;
+  /** Só as peças desta coleção. */
+  colecao?: string;
+  /** `brand` | `niche` | `platform` | `format` — a "pasta automática". */
+  agruparPor?: string;
   platform?: string;
   format?: string;
   niche?: string;
@@ -87,6 +91,8 @@ export function useSwipeFiles(filters: SwipeFilters) {
   if (filters.tag) qs.set("tag", filters.tag);
   if (filters.kind) qs.set("kind", filters.kind);
   if (filters.favorites) qs.set("favorites", "1");
+  if (filters.colecao) qs.set("colecao", filters.colecao);
+  if (filters.agruparPor) qs.set("agruparPor", filters.agruparPor);
   const suffix = qs.toString() ? `?${qs}` : "";
 
   return useQuery({
@@ -97,6 +103,13 @@ export function useSwipeFiles(filters: SwipeFilters) {
         facets: SwipeFacets;
         /** Tamanho da biblioteca inteira, sem filtro — para o "X de N". */
         total: number;
+        /**
+         * Os mesmos itens organizados por um atributo, quando pedido.
+         *
+         * Só os ids: repetir as peças dobraria o corpo da resposta para dizer
+         * a mesma coisa. A tela remonta a partir de `items`.
+         */
+        grupos: { valor: string | null; ids: string[] }[] | null;
         storageReady: boolean;
       }>(`${BASE}${suffix}`),
     // Segura o resultado anterior enquanto refiltra: sem isso o grid pisca a
@@ -124,6 +137,87 @@ export function useSwipesPorIds(ids: string[]) {
     // de validade evita uma requisição por clique sem mostrar dado velho de
     // verdade.
     staleTime: 30 * 60 * 1000,
+  });
+}
+
+export interface ColecaoDoSwipe {
+  id: string;
+  nome: string;
+  descricao: string | null;
+  pecas: number;
+  criadaEm: string | null;
+  mexidaEm: string | null;
+}
+
+/**
+ * As coleções, com a contagem de peças.
+ *
+ * Chamadas de "coleção" e não de "pasta" porque uma peça está em várias — o
+ * mesmo criativo serve ao lançamento e às referências de escassez.
+ */
+export function useColecoes() {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["swipe-colecoes"],
+    queryFn: () => apiClient<{ colecoes: ColecaoDoSwipe[] }>(`${BASE}/colecoes`),
+  });
+}
+
+export function useCriarColecao() {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dados: { nome: string; descricao?: string | null }) =>
+      apiClient<ColecaoDoSwipe>(`${BASE}/colecoes`, {
+        method: "POST",
+        body: JSON.stringify(dados),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["swipe-colecoes"] }),
+  });
+}
+
+export function useAtualizarColecao() {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...dados }: { id: string; nome?: string; descricao?: string | null }) =>
+      apiClient(`${BASE}/colecoes/${id}`, { method: "PATCH", body: JSON.stringify(dados) }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["swipe-colecoes"] }),
+  });
+}
+
+/** Apaga a coleção. As peças ficam — o vínculo é que cai. */
+export function useExcluirColecao() {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient(`${BASE}/colecoes/${id}`, { method: "DELETE" }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["swipe-colecoes"] }),
+  });
+}
+
+export function useMexerNaColecao() {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...dados
+    }: {
+      id: string;
+      adicionar?: string[];
+      remover?: string[];
+    }) =>
+      apiClient<{ pecas: number }>(`${BASE}/colecoes/${id}/pecas`, {
+        method: "PUT",
+        body: JSON.stringify(dados),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["swipe-colecoes"] });
+      // A grade pode estar filtrada por esta coleção: sem isto, a peça
+      // adicionada não aparece até o próximo F5.
+      void qc.invalidateQueries({ queryKey: ["swipe-files"] });
+    },
   });
 }
 

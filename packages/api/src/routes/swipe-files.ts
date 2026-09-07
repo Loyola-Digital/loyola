@@ -13,7 +13,13 @@ import { Readable } from "node:stream";
 import { z } from "zod";
 import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { swipeClickupAlerts, swipeFiles, users } from "../db/schema.js";
+import {
+  swipeClickupAlerts,
+  swipeCollectionItems,
+  swipeCollections,
+  swipeFiles,
+  users,
+} from "../db/schema.js";
 import { fetchLinkPreview } from "../services/link-preview.js";
 import {
   ErroDeAnalise,
@@ -23,6 +29,12 @@ import {
 } from "../services/swipe-analise.js";
 import { avisarNoClickUp } from "../services/swipe-clickup-aviso.js";
 import { contarFacetas } from "../services/swipe-facetas.js";
+import {
+  agruparPorAtributo,
+  ehAgrupamento,
+  limparNomeDaColecao,
+  nomeLivre,
+} from "../services/swipe-colecoes.js";
 import {
   CABECALHO_DO_CATALOGO,
   instrucao,
@@ -58,6 +70,10 @@ const listQuery = z.object({
   tag: z.string().trim().max(60).optional(),
   kind: z.enum(["image", "video", "pdf", "link"]).optional(),
   favorites: z.enum(["1", "true"]).optional(),
+  /** Só as peças desta coleção. */
+  colecao: z.string().uuid().optional(),
+  /** Devolve também os grupos por atributo — a "pasta automática". */
+  agruparPor: z.string().trim().max(20).optional(),
 });
 
 const createBody = z.object({
@@ -145,6 +161,15 @@ export default fp(async function swipeFilesRoutes(fastify) {
     if (f.favorites) conds.push(eq(swipeFiles.isFavorite, true));
     // Contém a tag — o índice GIN atende esse operador.
     if (f.tag) conds.push(sql`${swipeFiles.tags} @> ${JSON.stringify([f.tag])}::jsonb`);
+    // Coleção entra como subconsulta e não como join: um join duplicaria a
+    // peça que está em duas coleções, e a grade mostraria o mesmo card duas
+    // vezes.
+    if (f.colecao) {
+      conds.push(
+        sql`exists (select 1 from ${swipeCollectionItems} ci
+                    where ci.swipe_id = ${swipeFiles.id} and ci.collection_id = ${f.colecao})`,
+      );
+    }
     if (f.q) {
       const like = `%${f.q}%`;
       conds.push(
@@ -195,6 +220,20 @@ export default fp(async function swipeFilesRoutes(fastify) {
       },
       /** Serve à tela para dizer "1 de 291" sem uma chamada a mais. */
       total: facetRows.length,
+      /**
+       * A "pasta automática": os mesmos itens, organizados por um atributo que
+       * a IA já preencheu.
+       *
+       * Só os IDS, não as peças de novo — repetir os objetos dobraria o corpo
+       * da resposta para dizer a mesma coisa. A tela remonta pela ordem.
+       */
+      grupos:
+        f.agruparPor && ehAgrupamento(f.agruparPor)
+          ? agruparPorAtributo(rows, f.agruparPor).map((g) => ({
+              valor: g.valor,
+              ids: g.pecas.map((p) => p.id),
+            }))
+          : null,
       storageReady: isStorageConfigured(storage()),
     };
   });
@@ -323,6 +362,166 @@ export default fp(async function swipeFilesRoutes(fastify) {
       request.log.warn({ err: e }, "busca por contexto falhou");
       return { achados: [], indisponivel: "Não consegui buscar por contexto agora." };
     }
+  });
+
+  // ---- Coleções ----
+
+  /**
+   * As coleções, com quantas peças cada uma tem.
+   *
+   * A contagem vem no mesmo `GET` porque a tela mostra as duas coisas juntas —
+   * uma coleção sem número na frente não diz se vale abrir.
+   */
+  fastify.get(`${base}/colecoes`, async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const linhas = await fastify.db
+      .select({
+        id: swipeCollections.id,
+        nome: swipeCollections.nome,
+        descricao: swipeCollections.descricao,
+        criadaEm: swipeCollections.createdAt,
+        pecas: sql<number>`count(${swipeCollectionItems.swipeId})::int`,
+        mexidaEm: sql<Date>`greatest(${swipeCollections.updatedAt}, coalesce(max(${swipeCollectionItems.addedAt}), ${swipeCollections.updatedAt}))`,
+      })
+      .from(swipeCollections)
+      .leftJoin(swipeCollectionItems, eq(swipeCollectionItems.collectionId, swipeCollections.id))
+      .groupBy(swipeCollections.id)
+      // Por atividade: a coleção que acabou de receber peça é a que está em uso.
+      .orderBy(
+        desc(
+          sql`greatest(${swipeCollections.updatedAt}, coalesce(max(${swipeCollectionItems.addedAt}), ${swipeCollections.updatedAt}))`,
+        ),
+      );
+
+    return {
+      colecoes: linhas.map((l) => ({
+        ...l,
+        criadaEm: l.criadaEm?.toISOString() ?? null,
+        mexidaEm: l.mexidaEm ? new Date(l.mexidaEm).toISOString() : null,
+      })),
+    };
+  });
+
+  /** Cria uma coleção. Nome repetido ganha sufixo em vez de recusar o envio. */
+  fastify.post(`${base}/colecoes`, async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const b = z
+      .object({ nome: z.string().max(200), descricao: z.string().max(2000).nullable().optional() })
+      .safeParse(request.body);
+    if (!b.success) return reply.code(400).send({ error: "Dados inválidos" });
+
+    const nome = limparNomeDaColecao(b.data.nome);
+    if (!nome) return reply.code(400).send({ error: "A coleção precisa de um nome." });
+
+    const existentes = await fastify.db
+      .select({ nome: swipeCollections.nome })
+      .from(swipeCollections);
+
+    const [criada] = await fastify.db
+      .insert(swipeCollections)
+      .values({
+        // Subir a mesma pasta duas vezes é comum — a segunda com mais
+        // arquivos. Recusar pelo nome faria perder o envio inteiro.
+        nome: nomeLivre(nome, existentes.map((e) => e.nome)),
+        descricao: b.data.descricao ?? null,
+        createdBy: request.userId ?? null,
+      })
+      .returning();
+
+    return reply.code(201).send(criada);
+  });
+
+  fastify.patch(`${base}/colecoes/:id`, async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const b = z
+      .object({ nome: z.string().max(200).optional(), descricao: z.string().max(2000).nullable().optional() })
+      .safeParse(request.body);
+    if (!p.success || !b.success) return reply.code(400).send({ error: "Dados inválidos" });
+
+    const patch: { nome?: string; descricao?: string | null } = {};
+    if (b.data.nome !== undefined) {
+      const nome = limparNomeDaColecao(b.data.nome);
+      if (!nome) return reply.code(400).send({ error: "A coleção precisa de um nome." });
+      patch.nome = nome;
+    }
+    if (b.data.descricao !== undefined) patch.descricao = b.data.descricao;
+
+    const [atualizada] = await fastify.db
+      .update(swipeCollections)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(swipeCollections.id, p.data.id))
+      .returning();
+
+    if (!atualizada) return reply.code(404).send({ error: "Coleção não encontrada" });
+    return atualizada;
+  });
+
+  /**
+   * Apaga a coleção. As PEÇAS ficam.
+   *
+   * Só o vínculo cai (`ON DELETE CASCADE` na tabela de itens). Uma coleção é
+   * um recorte da biblioteca, não um depósito: apagar "Black Friday 2026" não
+   * pode levar junto os 47 criativos que continuam servindo a outros usos.
+   */
+  fastify.delete(`${base}/colecoes/:id`, async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+    const apagadas = await fastify.db
+      .delete(swipeCollections)
+      .where(eq(swipeCollections.id, p.data.id))
+      .returning({ id: swipeCollections.id });
+
+    if (apagadas.length === 0) return reply.code(404).send({ error: "Coleção não encontrada" });
+    return { ok: true };
+  });
+
+  /** Põe ou tira peças de uma coleção. Repetir não duplica. */
+  fastify.put(`${base}/colecoes/:id/pecas`, async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const b = z
+      .object({
+        adicionar: z.array(z.string().uuid()).max(500).optional(),
+        remover: z.array(z.string().uuid()).max(500).optional(),
+      })
+      .safeParse(request.body);
+    if (!p.success || !b.success) return reply.code(400).send({ error: "Dados inválidos" });
+
+    if (b.data.adicionar?.length) {
+      await fastify.db
+        .insert(swipeCollectionItems)
+        .values(
+          b.data.adicionar.map((swipeId) => ({
+            collectionId: p.data.id,
+            swipeId,
+            addedBy: request.userId ?? null,
+          })),
+        )
+        // Pôr de novo o que já está lá é um gesto normal (selecionar tudo e
+        // arrastar); não pode virar erro.
+        .onConflictDoNothing();
+    }
+
+    if (b.data.remover?.length) {
+      await fastify.db
+        .delete(swipeCollectionItems)
+        .where(
+          and(
+            eq(swipeCollectionItems.collectionId, p.data.id),
+            inArray(swipeCollectionItems.swipeId, b.data.remover),
+          ),
+        );
+    }
+
+    const [{ total }] = await fastify.db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(swipeCollectionItems)
+      .where(eq(swipeCollectionItems.collectionId, p.data.id));
+
+    return { pecas: total ?? 0 };
   });
 
   fastify.post(`${base}/analisar`, async (request, reply) => {

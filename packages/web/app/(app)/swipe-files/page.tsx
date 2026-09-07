@@ -17,7 +17,7 @@
 import { useState } from "react";
 import {
   AlertCircle, Bell, Library, Plus, Search, Star, X, Play, Link2, ImageIcon, FileText, Filter,
-  DownloadCloud, HelpCircle, Loader2, Sparkles,
+  DownloadCloud, HelpCircle, Loader2, Sparkles, ArrowLeft, FolderOpen, LayoutGrid, Bookmark,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -33,7 +33,7 @@ import {
   useBuscaPorContexto,
   useSwipesPorIds,
   useSwipeFiles, useUpdateSwipeFile, useDeleteSwipeFile,
-  type SwipeFile, type SwipeFilters, type AssetKind,
+  type SwipeFile, type SwipeFilters, type AssetKind, type ColecaoDoSwipe,
 } from "@/lib/hooks/use-swipe-files";
 import { AddSwipeDialog } from "@/components/swipe-files/add-swipe-dialog";
 import { ClickUpAlertDialog } from "@/components/swipe-files/clickup-alert-dialog";
@@ -41,6 +41,8 @@ import { ImportarDoClickUp } from "@/components/swipe-files/importar-do-clickup"
 import { PdfCapa } from "@/components/swipe-files/pdf-capa";
 import { SwipeLightbox } from "@/components/swipe-files/swipe-lightbox";
 import { Chip, GrupoDeFiltro } from "@/components/swipe-files/filtros-do-swipe";
+import { GradeDeColecoes } from "@/components/swipe-files/colecoes";
+import { SalvarEmColecao } from "@/components/swipe-files/salvar-em-colecao";
 import { miniaturaDoSwipe } from "@/lib/utils/miniatura-do-swipe";
 import { deveBuscarPorContexto } from "@/lib/utils/busca-por-contexto";
 import { useTermoEmRepouso } from "@/lib/hooks/use-termo-em-repouso";
@@ -304,8 +306,25 @@ export default function SwipeFilesPage() {
    * busca por texto não achou.
    */
   const [pecaPorContexto, setPecaPorContexto] = useState<SwipeFile | null>(null);
+  /**
+   * Qual das duas views está aberta.
+   *
+   * "Tudo" é a grade solta — boa para procurar e descobrir. "Coleções" é a
+   * organização feita à mão, boa para pousar o olho. São necessidades
+   * diferentes, e uma tela só nunca atende as duas bem.
+   */
+  const [view, setView] = useState<"tudo" | "colecoes">("tudo");
+  /** A coleção aberta dentro da view de coleções. */
+  const [colecaoAberta, setColecaoAberta] = useState<ColecaoDoSwipe | null>(null);
+  /** De qual peça o menu "salvar em" está aberto. */
+  const [salvando, setSalvando] = useState<string | null>(null);
 
-  const { data, isLoading, isFetching } = useSwipeFiles(filters);
+  const { data, isLoading, isFetching } = useSwipeFiles({
+    ...filters,
+    // A coleção aberta é um filtro como outro qualquer — assim busca e
+    // facetas continuam funcionando DENTRO dela, sem uma segunda tela.
+    colecao: colecaoAberta?.id,
+  });
 
   /**
    * A busca por contexto, quando a por texto não deu conta.
@@ -407,7 +426,69 @@ export default function SwipeFilesPage() {
         </div>
       </div>
 
+      {/*
+        As duas maneiras de olhar a biblioteca.
+
+        A grade solta é boa para procurar e descobrir; a coleção é boa para
+        pousar o olho no que já foi separado. São necessidades diferentes, e
+        empilhar as duas numa tela só faz a segunda desaparecer.
+      */}
+      <div className="flex items-center gap-1 border-b border-border/50">
+        {([
+          ["tudo", "Tudo", LayoutGrid],
+          ["colecoes", "Coleções", FolderOpen],
+        ] as const).map(([chave, rotulo, Icone]) => (
+          <button
+            key={chave}
+            type="button"
+            onClick={() => {
+              setView(chave);
+              setColecaoAberta(null);
+            }}
+            className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-[13px] transition-colors ${
+              view === chave
+                ? "border-primary font-medium text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Icone className="h-3.5 w-3.5" />
+            {rotulo}
+          </button>
+        ))}
+      </div>
+
+      {/* A lista de coleções. Abrir uma volta para a grade, filtrada. */}
+      {view === "colecoes" && !colecaoAberta && (
+        <GradeDeColecoes
+          onAbrir={(c) => {
+            setColecaoAberta(c);
+            // Filtros de antes não se aplicam à coleção recém-aberta: a
+            // pessoa clicou nela para ver o que TEM dentro.
+            setFilters({});
+          }}
+        />
+      )}
+
+      {colecaoAberta && (
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1.5 px-2 text-[12px]"
+            onClick={() => setColecaoAberta(null)}
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Coleções
+          </Button>
+          <span className="text-[15px] font-semibold">{colecaoAberta.nome}</span>
+          <span className="text-[12px] text-muted-foreground">
+            {items.length} {items.length === 1 ? "referência" : "referências"}
+          </span>
+        </div>
+      )}
+
       {/* Uma linha de filtros acima de tudo que ela recorta. */}
+      {(view === "tudo" || colecaoAberta) && (
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[220px] flex-1">
@@ -457,6 +538,35 @@ export default function SwipeFilesPage() {
           )}
         </div>
 
+        {/*
+          Agrupar por atributo — a "pasta automática".
+
+          Não precisa de tabela nem de manutenção: marca, nicho, plataforma e
+          formato já organizam o acervo desde que a peça foi catalogada. É a
+          resposta para "o que eu tenho de cada marca?", que nenhuma coleção
+          feita à mão daria sem trabalho de arrumação.
+        */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] text-muted-foreground">Agrupar por</span>
+          {([
+            ["", "Nada"],
+            ["brand", "Marca"],
+            ["niche", "Nicho"],
+            ["platform", "Plataforma"],
+            ["format", "Formato"],
+          ] as const).map(([valor, rotulo]) => (
+            <Chip
+              key={rotulo}
+              active={(filters.agruparPor ?? "") === valor}
+              onClick={() =>
+                setFilters((f) => ({ ...f, agruparPor: valor || undefined }))
+              }
+            >
+              {rotulo}
+            </Chip>
+          ))}
+        </div>
+
         {showFilters && (
           <div className="space-y-2 rounded-xl border border-border/40 p-3">
             {(
@@ -479,9 +589,12 @@ export default function SwipeFilesPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* Galeria. Durante refiltro mantém o render anterior em opacidade
           reduzida — sem skeleton piscando e sem salto de layout. */}
+      {(view === "tudo" || colecaoAberta) && (
+      <>
       {isLoading ? (
         <div className="columns-2 gap-4 sm:columns-3 lg:columns-4 xl:columns-5 2xl:columns-6">
           {/* Alturas variadas de propósito: blocos iguais não parecem a grade
@@ -501,6 +614,47 @@ export default function SwipeFilesPage() {
               ? "Tente afrouxar os filtros."
               : "Suba o primeiro print, vídeo ou link de anúncio que valha guardar."}
           </p>
+        </div>
+      ) : data?.grupos ? (
+        /*
+          Agrupado por atributo. Cada grupo é uma faixa com seu próprio
+          cabeçalho e contagem — o que transforma a grade solta numa tela que
+          se lê de cima para baixo, sem precisar de coleção nenhuma.
+        */
+        <div className={`space-y-6 ${isFetching ? "opacity-60 transition-opacity" : ""}`}>
+          {data.grupos.map((g) => {
+            const doGrupo = g.ids
+              .map((id) => items.find((i) => i.id === id))
+              .filter((i): i is SwipeFile => !!i);
+            if (doGrupo.length === 0) return null;
+            return (
+              <div key={g.valor ?? "__sem__"} className="space-y-2">
+                <div className="flex items-baseline gap-2 border-b border-border/50 pb-1">
+                  <h2 className="text-[14px] font-semibold">
+                    {/* Sem valor no campo não é um grupo qualquer: é a fila do
+                        que ainda precisa ser catalogado, e some-la esconderia
+                        parte do acervo de quem escolheu agrupar. */}
+                    {g.valor ?? "Sem esse dado"}
+                  </h2>
+                  <span className="text-[11px] tabular-nums text-muted-foreground">
+                    {doGrupo.length}
+                  </span>
+                </div>
+                <div className="columns-2 gap-4 sm:columns-3 lg:columns-4 xl:columns-5 2xl:columns-6">
+                  {doGrupo.map((item) => (
+                    <SwipeCard
+                      key={item.id}
+                      item={item}
+                      onOpen={() => setLightboxIndex(items.indexOf(item))}
+                      onToggleFavorite={() =>
+                        updateItem.mutate({ id: item.id, input: { isFavorite: !item.isFavorite } })
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div
@@ -580,6 +734,9 @@ export default function SwipeFilesPage() {
       <ClickUpAlertDialog open={avisoOpen} onOpenChange={setAvisoOpen} />
       <ImportarDoClickUp open={importOpen} onOpenChange={setImportOpen} />
 
+      </>
+      )}
+
       <AddSwipeDialog
         open={addOpen}
         onOpenChange={setAddOpen}
@@ -587,7 +744,32 @@ export default function SwipeFilesPage() {
         storageReady={data?.storageReady ?? false}
       />
 
+      {/*
+        "Salvar em…" fica fora do lightbox, flutuando por cima dele.
+
+        Dentro, ele disputaria espaço com Destacar, Baixar e Excluir numa
+        linha que já está cheia — e o menu precisa abrir por cima do overlay,
+        que é o elemento mais alto da tela.
+      */}
+      {salvando && (
+        <>
+          <div className="fixed inset-0 z-[70]" onClick={() => setSalvando(null)} />
+          <div className="fixed left-1/2 top-1/2 z-[71] -translate-x-1/2 -translate-y-1/2">
+            <SalvarEmColecao swipeIds={[salvando]} onFechar={() => setSalvando(null)} />
+          </div>
+        </>
+      )}
+
       {lightboxIndex !== null && (
+        <>
+        <button
+          type="button"
+          onClick={() => setSalvando(items[lightboxIndex]?.id ?? null)}
+          className="fixed bottom-5 left-1/2 z-[65] flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-white/20 bg-black/70 px-3.5 py-2 text-[12px] font-medium text-white backdrop-blur-sm transition-colors hover:bg-black/85"
+        >
+          <Bookmark className="h-3.5 w-3.5" />
+          Salvar em coleção
+        </button>
         <SwipeLightbox
           items={items}
           index={lightboxIndex}
@@ -601,6 +783,7 @@ export default function SwipeFilesPage() {
             setConfirmDelete(item);
           }}
         />
+        </>
       )}
 
       {/* Uma peça achada por contexto: lista de uma só, porque ela não está na
