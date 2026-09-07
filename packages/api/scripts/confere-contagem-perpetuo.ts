@@ -124,6 +124,8 @@ async function main() {
     const compradoresDoPeriodo = new Set<string>();
     const transacoes = new Set<string>();
     const quebra = quebraVazia();
+    /** Story 29.75 — quantos COMPRADORES levaram ao menos um bump. */
+    const compradoresComBump = new Set<string>();
     const compradoresDoDia = new Set<string>();
     let linhasPagas = 0;
     let linhasNoDia = 0;
@@ -136,6 +138,9 @@ async function main() {
       if (tx) transacoes.add(tx);
       const tipoDaLinha = tipoDoProduto(produtoIdx === -1 ? null : row[produtoIdx], tipos);
       quebra[tipoDaLinha] += 1;
+      if (tipoDaLinha === "order_bump") {
+        compradoresComBump.add(chaveDeComprador(row[emailIdx], row[txIdx], i));
+      }
       linhasParaPublico.push({
         email: (row[emailIdx] ?? "").trim().toLowerCase(),
         tipo: tipoDaLinha,
@@ -175,6 +180,12 @@ async function main() {
     console.log(`  [2] LINHAS (uma por linha da planilha) ... principal ${quebra.principal} · bump ${quebra.order_bump} · upsell ${quebra.upsell}   → legenda do KPI Vendas e do Faturamento`);
     console.log(`  [3] CHECKOUTS (e-mail + data + tx) ....... captacao ${ob.compradoresComPrincipal} · com bump ${ob.compradoresComBump} · so bump ${ob.compradoresSoBump}   → cards AOV / Order Bump / Combo`);
     console.log(`      donut de publicos (tabelaPorPublico) . ${checkoutsNoDonut}   → so checkout com produto que ancora`);
+    const nC = compradoresDoPeriodo.size;
+    console.log("\nStory 29.75 — as tres formas de escrever o card, medidas:");
+    console.log(`  hoje (CHECKOUTS) ............... ${ob.compradoresComBump} de ${ob.compradoresComPrincipal} = ${ob.taxaDeAdesao == null ? "—" : (ob.taxaDeAdesao * 100).toFixed(1) + "%"}`);
+    console.log(`  A: LINHAS de bump / compradores  ${quebra.order_bump} de ${nC} = ${((quebra.order_bump / nC) * 100).toFixed(1)}%   ← bate com o "Order Bump N" do resumo`);
+    console.log(`  B: COMPRADORES com bump ........ ${compradoresComBump.size} de ${nC} = ${((compradoresComBump.size / nC) * 100).toFixed(1)}%   ← unidade do KPI "Vendas" nos dois lados`);
+
     console.log("\ncard Order Bump, como a tela mostra hoje:");
     console.log(`  ${ob.compradoresComBump} de ${ob.compradoresComPrincipal} compradores (${ob.taxaDeAdesao == null ? "—" : (ob.taxaDeAdesao * 100).toFixed(1) + "%"})`);
     console.log(`  R$ ${ob.bumpAcessorio.toFixed(2)} acessorio (${ob.representatividade == null ? "—" : (ob.representatividade * 100).toFixed(1) + "%"}) + R$ ${ob.bumpAvulso.toFixed(2)} em venda avulsa`);
