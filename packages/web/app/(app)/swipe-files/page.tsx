@@ -17,7 +17,7 @@
 import { useState } from "react";
 import {
   AlertCircle, Bell, Library, Plus, Search, Star, X, Play, Link2, ImageIcon, FileText, Filter,
-  DownloadCloud, Loader2, Sparkles,
+  DownloadCloud, HelpCircle, Loader2, Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,16 @@ import { Chip, GrupoDeFiltro } from "@/components/swipe-files/filtros-do-swipe";
 import { miniaturaDoSwipe } from "@/lib/utils/miniatura-do-swipe";
 import { deveBuscarPorContexto } from "@/lib/utils/busca-por-contexto";
 import { useTermoEmRepouso } from "@/lib/hooks/use-termo-em-repouso";
+
+/**
+ * A explicação de como a biblioteca funciona.
+ *
+ * Página fora do app, e não uma tela aqui dentro: ela é lida uma vez por
+ * pessoa, muda quando as regras de catalogação mudam, e vale para quem ainda
+ * nem tem acesso ao Loyola X. Manter isso como rota do app custaria uma tela
+ * que quase nunca é aberta.
+ */
+const COMO_FUNCIONA = "https://claude.ai/code/artifact/04aa2ccd-e6b9-470b-a6f1-5b0c3280004e";
 
 const KIND_META: Record<AssetKind, { label: string; Icon: typeof Play }> = {
   image: { label: "Imagem", Icon: ImageIcon },
@@ -363,6 +373,24 @@ export default function SwipeFilesPage() {
               <DownloadCloud className="h-4 w-4" />
             </Button>
           )}
+          {/*
+            Como a biblioteca funciona, para o time.
+
+            Fica ao lado dos outros controles e não escondido num menu: quem
+            não sabe que a busca entende contexto — ou que plataforma e formato
+            são lista fechada — não vai procurar essa explicação. Ela precisa
+            estar onde a pessoa já está olhando.
+          */}
+          <Button
+            variant="outline"
+            size="icon"
+            asChild
+            title="Como o Swipe Files indexa e como buscar"
+          >
+            <a href={COMO_FUNCIONA} target="_blank" rel="noreferrer noopener" aria-label="Como funciona o Swipe Files">
+              <HelpCircle className="h-4 w-4" />
+            </a>
+          </Button>
           <Button
             variant="outline"
             size="icon"
