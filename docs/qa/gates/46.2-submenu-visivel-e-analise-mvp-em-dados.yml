@@ -1,6 +1,6 @@
 storyId: "46.2"
 storyTitle: "O submenu que ninguém viu — e a Análise MVP muda de grupo"
-gate: CONCERNS
+gate: CONCERNS  # ⚠️ ver `dodResolvidoDepois` no fim: o item que motivou o CONCERNS foi cumprido em 2026-08-30
 reviewer: "@qa (Quinn)"
 reviewedAt: "2026-08-29"
 branch: feat/45.2-submenu-visivel
@@ -396,3 +396,22 @@ proximaAcao: >
   realmente falha quando a armadilha volta, e um efeito colateral declarado
   antes de ser descoberto. O que falta é olhar a tela — que foi exatamente o que
   produziu esta story.
+
+# ─────────────────────────────────────────────────────────────
+# Acrescentado em 2026-08-30 — NÃO altera o veredito acima.
+# Reavaliar veredito é do @qa; isto registra o fato que o motivava.
+# ─────────────────────────────────────────────────────────────
+dodResolvidoDepois:
+  data: "2026-08-30"
+  quem: "dono do produto"
+  item: "AC4 — validação visual (QA-452-01)"
+  resultado: >
+    Aprovada. Era o ÚNICO motivo do CONCERNS: o gate registrou que não havia
+    defeito de código e que o que segurava era o DoD em aberto. As duas
+    configurações foram conferidas na tela — perpétuo (Análise MVP dentro de
+    Dados, em primeiro, e Meta Ads sem seta de submenu) e lançamento com
+    captação paga (Meta Ads com "Meta Ads TESTE", Dados começando em Pesquisas).
+  aindaAberto: >
+    QA-451-01 (medium, herdado da 46.1) segue em produção — trocar de etapa pela
+    sidebar. O conserto está na main; a validação de 2026-08-29 cobriu os quatro
+    pontos da 46.1, e esta de 2026-08-30 cobriu os dois da 46.2.
