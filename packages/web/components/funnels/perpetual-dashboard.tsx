@@ -1948,6 +1948,24 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         filtroPublico,
         (l) => l.campaignId,
         temperatura.data?.[tableFilter],
+        /**
+         * Story 29.76 — só na dimensão "Por Criativo".
+         *
+         * Nas outras duas a linha É a entidade (a campanha, o conjunto), e o
+         * `campaignId` dela está no mapa: classificar por id acerta. Aqui a
+         * linha é um **Ad Name** que agrega N anúncios de campanhas diferentes,
+         * e o `campaignId` é o de um deles — decidir por ele é sorteio.
+         *
+         * `porPublico` vem da API já somado por público; quando não vier
+         * (API antiga), `temQuebra: false` devolve o caminho de antes.
+         */
+        tableFilter === "ad"
+          ? (linha, publico) => {
+              const q = (linha as { porPublico?: Record<string, typeof linha> }).porPublico;
+              if (!q) return { temQuebra: false };
+              return { temQuebra: true, linha: q[publico] };
+            }
+          : undefined,
       ),
     [tableDataSemFiltro, filtroPublico, temperatura.data, tableFilter],
   );
