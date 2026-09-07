@@ -12,9 +12,15 @@ forma de saber se o nosso cache está incompleto.
 `<fonte>-<conta/funil>-<inicio>_<fim>.csv` — ex.:
 `meta-bbe-perpetuo-2026-07-17_2026-09-05.csv`
 
-## Pendente
+## Disponível
 
-- [ ] `meta-bbe-perpetuo-2026-07-17_2026-09-05.csv` — export da Meta com
-      campanha, campaign_id, conjunto, adset_id, anúncio, ad_id, dia, gasto,
-      cliques no link, compras, CTR, CPM, CPC, impressões, video 3s, ThruPlays,
-      25%, 75%. Usado pela story 29.76 (filtro do Detalhamento).
+- [x] `meta-bbe-perpetuo-2026-07-17_2026-09-05.csv` — export do Gerenciador de
+      Anúncios, feito pelo gestor em 05/09 e commitado em 07/09. **2.406 linhas,
+      51 dias, 18 campanhas** (todas `bbe-*-perpetuo-*`), com as colunas que a
+      29.76 pedia: campanha, campaign_id, conjunto, adset_id, anúncio, ad_id,
+      dia, gasto, cliques no link, compras, CTR, CPM, CPC, impressões, vídeo 3s,
+      ThruPlays, 25%, 75%.
+
+      Usado pela story 29.76 (filtro do Detalhamento) — é a conferência
+      independente do AC1: o que se mediu antes dele foi o nosso banco contra o
+      nosso banco.
