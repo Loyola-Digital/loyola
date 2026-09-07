@@ -20,9 +20,18 @@ Estado em **2026-08-28**:
 | Bloco Panorama na aba | ✅ implementado (Story 44.21) — falta validação visual |
 | Envio ao ClickUp | ✅ o Inácio já tem MCP do ClickUp. Nada a construir |
 
-🔴 **O único bloqueio que resta: a PR #650 precisa ser mergeada.** O deploy é automático a partir da `main`, então merge = tools no ar. Antes disso as duas tools **não existem** para o Inácio, e ele voltaria a reconstruir a cadeia por fora — o defeito de 27/08, em que ele errou três pontos.
+🔴 **O bloqueio que resta é o BUNDLE MCP no gateway, não o merge.** A PR #650 foi mergeada em 28/08 (`15acfa5e`) e a API deployou sozinha — mas isso entrega a **rota**, não a **tool**.
 
-**Como conferir se já pode ligar:** peça ao Inácio para listar as tools dele. Se `get_project_panorama` e `get_stage_cadeia_cac` aparecerem, pode ligar. Se não, a PR ainda não subiu.
+⚠️ **Deploy da API ≠ bundle do MCP.** São artefatos diferentes:
+
+| Artefato | Como atualiza |
+|---|---|
+| A rota (`/api/public/...`) | **automático** — merge na `main` dispara o deploy |
+| A tool MCP (`get_*`) | **manual** — o MCP é um processo **stdio** local ao gateway (`packages/mcp/src/index.ts:20`); precisa de rebuild do bundle e restart |
+
+Verificado em 28/08: o bundle do gateway servia **11 tools**, e a `main` tem **18**. Faltavam sete — as duas do Epic 44 e **cinco entregues em julho** que nunca chegaram. Dois meses de deriva, sem nada avisando. Ver **Story 44.22** (@devops).
+
+**Como conferir se já pode ligar:** peça ao Inácio para listar as tools. Se `get_project_panorama` e `get_stage_cadeia_cac` aparecerem, pode ligar. Se não, o bundle do gateway ainda está velho — **e mergear de novo não resolve**.
 
 ---
 
@@ -145,6 +154,96 @@ hoje. Se nada mudou desde ontem, escreva "sem mudança relevante" e pare.
 Direto, em português, sem adjetivo de entusiasmo. Número antes de opinião.
 Quando não souber, diga que não sabe e por quê — o payload sempre traz o motivo.
 Não repita a tabela inteira em prosa: o leitor quer o que mudou e o que fazer.
+```
+
+---
+
+## 3b. O Resumo Consolidado — todos os experts de uma vez
+
+> Cole isto quando o pedido for **"o resumo de todos os projetos"**, e não o panorama de um expert. As regras da §3 continuam valendo todas; esta seção acrescenta o que muda quando os experts entram na mesma página.
+
+```
+Você vai produzir o RESUMO CONSOLIDADO: todos os experts numa leitura só.
+
+## A sequência
+
+1. list_projects
+2. Para CADA projeto: get_project_panorama(projectId)
+3. Para cada etapa com noAr = true: get_stage_cadeia_cac(projectId, stageId,
+   from, to) — SEMPRE com from/to explícitos. Sem eles a rota devolve o
+   histórico inteiro da etapa, não a janela.
+
+Não existe rota cross-projeto, e isso é decisão de produto, não limitação:
+uma rota assim vazaria dados entre clientes. Consolidar os N panoramas é
+trabalho seu.
+
+## O que PODE ser somado entre experts
+
+- Investimento. Dinheiro é dinheiro: some spendCurta de todos, e lembre que
+  totais.spendCurta é só das ETAPAS — o gasto do projeto é
+  totais.spendCurta + totais.spendOrfas.
+- Contagens: etapas no ar, campanhas com gasto, campanhas órfãs, pendências.
+
+## O que NÃO pode, e por quê
+
+- NÃO calcule "CAC médio" nem "CPL médio" entre experts. Isso é média de
+  médias, que dá outro número — é a regra §2.6 da spec, e o Epic 44 inteiro
+  existe porque uma régua paralela sobreviveu um ano sem ninguém ver. Se
+  precisar de um agregado, é razão de somas (Σ spend ÷ Σ vendas) e só DENTRO
+  da mesma família.
+- NÃO compare CAC de etapa paga com CPL de etapa gratuita. Denominadores
+  diferentes: um é venda, o outro é lead.
+- NÃO ranqueie experts por CAC absoluto. Ticket, produto e etapa do funil são
+  diferentes. Um CAC de R$ 565 numa captação de evento não é "pior" que
+  R$ 209 num perpétuo — são coisas distintas.
+
+## A comparação que É honesta
+
+Cada etapa contra o PRÓPRIO teto. O campo `gargalo` já traz isso pronto:
+métrica, atual, teto e queda. Uma etapa perdendo 67% contra o próprio teto tem
+mais a ganhar que uma perdendo 12%, independentemente do CAC absoluto — e essa
+ordenação é comparável entre experts, porque cada uma foi medida contra si
+mesma.
+
+Use a queda contra o teto para priorizar. Use o CAC para descrever, nunca para
+ranquear.
+
+## A estrutura do resumo
+
+1. ABERTURA — período exato (as duas janelas, com datas), quantos experts,
+   investimento total nas duas janelas, quantas etapas no ar. Quatro linhas.
+
+2. QUADRO GERAL — uma tabela, uma linha por expert:
+   expert · etapas no ar · invest 7d · invest 30d · resultado · gargalo
+   Ordene por investimento na janela curta: quem está gastando mais hoje.
+
+3. POR EXPERT — o bloco da §3 (estado, números, gargalo, criativo, pendência).
+   Expert sem nada no ar: UMA linha dizendo isso, e siga. Não encha o
+   documento com quem está parado.
+
+4. ONDE ESTÁ O DINHEIRO PARADO — o bloco que só existe na visão consolidada:
+   - campanhas órfãs somadas (gasto fora de toda etapa, não entra em CAC nem
+     ROAS de lugar nenhum)
+   - etapas com investimento e SEM resultado apurável, com o motivo de cada uma
+   - pendências que bloqueiam medição, agrupadas por AÇÃO e não por expert:
+     "conectar fonte" (semDados), "esperar o sync" (syncPendente), "checar
+     permissão" (leituraFalhou). Agrupar por ação é o que transforma a lista
+     em trabalho.
+
+5. AS TRÊS DE HOJE — no máximo três ações, ordenadas por quanto destravam.
+   Cada uma com: o que fazer, em qual expert/etapa, e o número que justifica.
+   Se nada mudou desde o último resumo, diga isso e pare.
+
+## Regras de escrita
+
+- TODO número vem com o período. "CPL de R$ 100,93 em 160 dias" é uma frase;
+  "CPL de R$ 100,93" é meia.
+- Nunca escreva "sem dados" genérico. Cada motivo pede uma ação diferente e
+  o payload sempre traz qual.
+- Separe o que foi medido do que foi derivado: nas pendências, origem "cadeia"
+  é fato apurado no backend; origem "panorama" é conclusão por comparação.
+- Não repita a tabela em prosa. Quem lê o quadro geral não quer ler de novo.
+- Tom direto, sem adjetivo de entusiasmo. Número antes de opinião.
 ```
 
 ---
