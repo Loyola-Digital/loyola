@@ -52,9 +52,30 @@ const base = (over: Partial<AggregatedCreative>): AggregatedCreative =>
     ...over,
   }) as AggregatedCreative;
 
-describe("VISOES — as seis abas do relato", () => {
-  it("tem exatamente as seis abas, na ordem pedida", () => {
-    expect(VISOES.map((v) => v.id)).toEqual(["todos", "hook", "cpl", "roas", "ctr", "spend"]);
+describe("VISOES — as abas do relato", () => {
+  it("tem exatamente as oito abas, na ordem pedida", () => {
+    // Story 18.79 (AC6): "leads" e "vendas" entraram cada uma ao lado da sua
+    // parente, sem reordenar as seis da 18.74 entre si.
+    expect(VISOES.map((v) => v.id)).toEqual([
+      "todos", "hook", "cpl", "leads", "roas", "vendas", "ctr", "spend",
+    ]);
+  });
+
+  it("as duas novas são entradas SEPARADAS, não uma combinada", () => {
+    // Decisão do gestor (2026-09-05): "As duas". Uma aba só, "Mais
+    // Vendas/Leads", responderia duas perguntas com um ranking só.
+    const ids = VISOES.map((v) => v.id);
+    expect(ids).toContain("leads");
+    expect(ids).toContain("vendas");
+    expect(visaoPorId("leads").preset.metrica).toBe("leads");
+    expect(visaoPorId("vendas").preset.metrica).toBe("vendas");
+  });
+
+  it("`visaoPorId` com id desconhecido continua caindo em CPL", () => {
+    // As abas novas entraram DEPOIS do índice 2 de propósito: o fallback é
+    // `VISOES[2]`, e inseri-las antes mudaria a visão default sem ninguém
+    // pedir.
+    expect(VISOES[2]!.id).toBe("cpl");
   });
 
   it("'Todos' é a única que desagrega e solta o filtro de relevância", () => {
@@ -279,5 +300,48 @@ describe("presetEfetivo — o Perpétuo não nasce com a aba marcada", () => {
 
   it("a aba Todos não perde o que já tinha", () => {
     expect(presetEfetivo(visaoPorId("todos"), false).incluirBaixoGasto).toBe(true);
+  });
+});
+
+
+// ============================================================
+// Story 18.79 (AC6) — ordenação por vendas
+// ============================================================
+
+describe("ordenarPorMetrica por vendas", () => {
+  it("ordena do maior para o menor, pelo mapa de vendas", () => {
+    const lista = [base({ name: "A" }), base({ name: "B" }), base({ name: "C" })];
+    const vendas = new Map<string, number | null>([["A", 3], ["B", 11], ["C", 7]]);
+    const r = ordenarPorMetrica(lista, "vendas", undefined, "nome", vendas);
+    expect(r.map((c) => c.name)).toEqual(["B", "C", "A"]);
+  });
+
+  it("quem não tem medição vai para o FIM, nunca empatado com quem vendeu zero", () => {
+    // `null` é "esta etapa não cruza com planilha", e 0 é "não vendeu". Coagir
+    // um ao outro acusa de mau desempenho quem só não foi medido.
+    const lista = [base({ name: "sem" }), base({ name: "zerado" }), base({ name: "vendeu" })];
+    const vendas = new Map<string, number | null>([
+      ["sem", null], ["zerado", 0], ["vendeu", 5],
+    ]);
+    const r = ordenarPorMetrica(lista, "vendas", undefined, "nome", vendas);
+    expect(r.map((c) => c.name)).toEqual(["vendeu", "zerado", "sem"]);
+  });
+
+  it("na visão por anúncio lê por ad_id — não pelo nome", () => {
+    // Mesmo achado do gate da 18.74 no ROAS: dois anúncios com o MESMO nome
+    // leriam ambos o valor do último se o mapa fosse chaveado por nome.
+    const lista = [
+      base({ name: "Igual", ids: ["ad-1"] }),
+      base({ name: "Igual", ids: ["ad-2"] }),
+    ];
+    const vendas = new Map<string, number | null>([["ad-1", 1], ["ad-2", 9]]);
+    const r = ordenarPorMetrica(lista, "vendas", undefined, "anuncio", vendas);
+    expect(r[0]!.ids).toEqual(["ad-2"]);
+  });
+
+  it("sem o mapa, não inventa ordem: todos viram ausência", () => {
+    const lista = [base({ name: "A" }), base({ name: "B" })];
+    const r = ordenarPorMetrica(lista, "vendas", undefined, "nome");
+    expect(r).toHaveLength(2);
   });
 });
