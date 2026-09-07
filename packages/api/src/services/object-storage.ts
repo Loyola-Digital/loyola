@@ -55,6 +55,17 @@ const ALLOWED_MIME = new Set([
   // PDF entra na lista porque criativo de anúncio muitas vezes chega assim:
   // carrossel exportado, apresentação de oferta, página de vendas impressa.
   "application/pdf",
+  /**
+   * HTML: a página de vendas salva do navegador.
+   *
+   * Guardar a página em vez do link é o que sobrevive ao anunciante tirar a
+   * oferta do ar — que é o destino da maioria das referências.
+   *
+   * É servido de um domínio de storage separado do app, e a tela só o desenha
+   * dentro de um `iframe sandbox` sem scripts: o arquivo veio de fora e pode
+   * conter qualquer coisa.
+   */
+  "text/html",
 ]);
 
 /** 200MB — cabe vídeo de anúncio; acima disso é arquivo errado pra swipe file. */

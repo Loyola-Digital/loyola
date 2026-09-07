@@ -19,7 +19,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import {
+import { Code2,
   AlertCircle,
   Check,
   Download,
@@ -66,7 +66,7 @@ const TAMANHO_DO_LOTE = 25;
 
 interface Linha {
   titulo: string;
-  kind: "image" | "video" | "pdf" | "link";
+  kind: "image" | "video" | "pdf" | "link" | "html";
   ok: boolean;
   erro?: string;
 }
@@ -76,6 +76,7 @@ const ICONE = {
   video: Film,
   pdf: FileText,
   link: Link2,
+  html: Code2,
 } as const;
 
 export function ImportarDoClickUp({

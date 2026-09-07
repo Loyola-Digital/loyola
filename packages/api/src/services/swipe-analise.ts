@@ -47,6 +47,76 @@ export const MIMES_DE_IMAGEM = new Set([
   "image/gif",
 ]);
 export const MIME_PDF = "application/pdf";
+export const MIME_HTML = "text/html";
+
+/**
+ * O texto de uma página HTML, para o modelo ler.
+ *
+ * ## Por que extrair, em vez de mandar o arquivo
+ *
+ * A página salva com estilos embutidos passa de um megabyte, quase tudo CSS e
+ * `data:` URI de imagem. Mandar isso ao modelo gastaria o orçamento inteiro
+ * do prompt em bytes que não dizem nada sobre a oferta — e o que interessa
+ * (headline, promessa, preço, prova) são alguns milhares de caracteres.
+ *
+ * `<script>` e `<style>` saem inteiros: o corpo deles é código, e um `<style>`
+ * de 200 KB dentro do texto empurraria a copy para fora do limite.
+ */
+/** As entidades que aparecem em copy: `&amp;`, `&nbsp;`, `&aacute;`. */
+function entidades(v: string | undefined): string | undefined {
+  return v
+    ?.replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0?39;|&apos;/gi, "'")
+    .trim();
+}
+
+export function textoDoHtml(html: string, limite = 12_000): string {
+  const semCodigo = html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ");
+
+  // O título e a meta description vêm primeiro e separados: são a promessa da
+  // página resumida por quem a escreveu, e costumam valer mais que o corpo.
+  // As entidades passam pelo mesmo tratamento do corpo: um título gravado
+  // como "CRM &amp; workspace" chega assim ao modelo e volta assim para o
+  // acervo, onde alguém depois procura por "&" e não acha.
+  const titulo = entidades(/<title[^>]*>([\s\S]*?)<\/title>/i.exec(semCodigo)?.[1]);
+  const descricao = entidades(
+    /<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)/i.exec(semCodigo)?.[1],
+  );
+
+  const corpo = semCodigo
+    // Quebra onde havia bloco: sem isto, "COMPRE AGORA" cola na frase
+    // seguinte e o modelo lê uma palavra que não existe.
+    .replace(/<\/(p|div|section|h[1-6]|li|tr)[^>]*>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/[ \t]+/g, " ")
+    // A tag de ABERTURA vira espaço, e ele fica pendurado no começo da
+    // linha seguinte. Não muda o que o modelo entende, mas suja a leitura
+    // de quem for depurar o prompt.
+    .replace(/[ \t]*\n[ \t]*/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  const partes = [
+    titulo ? `Título da página: ${titulo}` : null,
+    descricao ? `Descrição: ${descricao}` : null,
+    corpo,
+  ].filter(Boolean);
+
+  return partes.join("\n\n").slice(0, limite);
+}
 
 /** O mínimo que este módulo pede do cliente — o que o teste precisa simular. */
 export interface ClienteDeAnalise {
@@ -85,7 +155,13 @@ const VAZIA: SugestaoDeSwipe = {
  * preta do primeiro quadro. Melhor não oferecer do que oferecer errado.
  */
 export function podeAnalisar(mime: string | null | undefined): boolean {
+  // HTML entra por outro caminho — `analisarHtml`, que manda o TEXTO da
+  // página e não o arquivo. Ver `textoDoHtml`.
   return Boolean(mime && (MIMES_DE_IMAGEM.has(mime) || mime === MIME_PDF));
+}
+
+export function ehHtml(mime: string | null | undefined): boolean {
+  return (mime ?? "").split(";")[0]!.trim().toLowerCase() === MIME_HTML;
 }
 
 const INSTRUCOES = `Você cataloga referências de anúncio para a biblioteca de um time de marketing brasileiro.
@@ -297,6 +373,15 @@ export interface DadosDoLink {
   siteName?: string | null;
   /** O texto de quem salvou. No acervo importado, a mensagem do ClickUp. */
   notas?: string | null;
+  /**
+   * O texto da página, quando ela veio como arquivo HTML.
+   *
+   * É o melhor material de catalogação que existe no acervo: enquanto um link
+   * entrega só o Open Graph — título e uma linha de descrição —, aqui o modelo
+   * lê a headline, a promessa, o preço e a prova, que é o que faz a peça ser
+   * reencontrada. Ver `textoDoHtml`.
+   */
+  textoDaPagina?: string | null;
 }
 
 /**
@@ -339,6 +424,9 @@ export async function analisarLink(
     dados.titulo ? `Título da página: ${dados.titulo}` : null,
     dados.descricao ? `Descrição da página: ${dados.descricao}` : null,
     dados.notas ? `Anotação de quem salvou: ${dados.notas.slice(0, 1200)}` : null,
+    dados.textoDaPagina
+      ? `Conteúdo da página:\n${dados.textoDaPagina}`
+      : null,
   ].filter(Boolean);
 
   const conteudo: Anthropic.ContentBlockParam[] = [];

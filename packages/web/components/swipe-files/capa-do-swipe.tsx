@@ -22,7 +22,7 @@
  * fato identifica — título e domínio — sobre uma cor derivada do título.
  */
 
-import { FileText, Image as ImageIcon, Link2, Play } from "lucide-react";
+import { Code2, FileText, Image as ImageIcon, Link2, Play } from "lucide-react";
 import { miniaturaDoSwipe } from "@/lib/utils/miniatura-do-swipe";
 import type { SwipeFile } from "@/lib/hooks/use-swipe-files";
 
@@ -33,8 +33,8 @@ export function corDe(texto: string): string {
   return `hsl(${soma % 360} 42% 32%)`;
 }
 
-const ICONE = { image: ImageIcon, video: Play, pdf: FileText, link: Link2 } as const;
-const ROTULO = { image: "Imagem", video: "Vídeo", pdf: "PDF", link: "Link" } as const;
+const ICONE = { image: ImageIcon, video: Play, pdf: FileText, link: Link2, html: Code2 } as const;
+const ROTULO = { image: "Imagem", video: "Vídeo", pdf: "PDF", link: "Link", html: "Página" } as const;
 
 export function CapaSemImagem({
   item,

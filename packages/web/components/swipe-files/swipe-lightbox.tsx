@@ -116,7 +116,29 @@ export function SwipeLightbox({
       >
         {/* Mídia */}
         <div className="flex min-w-0 flex-1 items-center justify-center bg-black/40 p-2">
-          {item.assetKind === "pdf" && item.fileUrl ? (
+          {item.assetKind === "html" && item.fileUrl ? (
+            /*
+              A página salva, renderizada de verdade.
+
+              ## O `sandbox` sem `allow-scripts` e sem `allow-same-origin`
+
+              O arquivo veio de fora e pode conter qualquer coisa. Sem essas
+              duas permissões o navegador o trata como origem opaca: o JS não
+              roda, e nada ali dentro alcança a sessão de quem está vendo. O
+              CSS continua valendo, que é o que interessa — a página aparece
+              como era.
+
+              `allow-popups` fica de fora pelo mesmo motivo: um `window.open`
+              de página de vendas salva é anúncio, não conteúdo.
+            */
+            <iframe
+              src={item.fileUrl}
+              title={item.title}
+              sandbox=""
+              referrerPolicy="no-referrer"
+              className="h-[86vh] w-full rounded bg-white"
+            />
+          ) : item.assetKind === "pdf" && item.fileUrl ? (
             // `<iframe>` e não `<embed>`: o visualizador nativo do navegador dá
             // zoom, busca e paginação de graça. O botão de abrir em aba fica no
             // painel ao lado, para quem prefere a tela cheia do leitor.

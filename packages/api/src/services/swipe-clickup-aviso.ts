@@ -23,7 +23,7 @@ import { swipeClickupAlerts } from "../db/schema.js";
 export interface ReferenciaNova {
   id: string;
   titulo: string;
-  assetKind: "image" | "video" | "pdf" | "link";
+  assetKind: "image" | "video" | "pdf" | "link" | "html";
   /** Quem subiu — o aviso sem autor não deixa ninguém perguntar nada. */
   autor: string | null;
   notas: string | null;
@@ -48,6 +48,7 @@ const ROTULO: Record<ReferenciaNova["assetKind"], string> = {
   video: "🎬 Vídeo",
   pdf: "📄 PDF",
   link: "🔗 Link",
+  html: "🧾 Página",
 };
 
 /**

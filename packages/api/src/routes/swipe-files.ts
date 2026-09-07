@@ -26,6 +26,8 @@ import {
   analisarLink,
   analisarReferencia,
   podeAnalisar,
+  ehHtml,
+  textoDoHtml,
 } from "../services/swipe-analise.js";
 import { avisarNoClickUp } from "../services/swipe-clickup-aviso.js";
 import { contarFacetas } from "../services/swipe-facetas.js";
@@ -68,7 +70,7 @@ const listQuery = z.object({
   niche: z.string().trim().max(120).optional(),
   brand: z.string().trim().max(120).optional(),
   tag: z.string().trim().max(60).optional(),
-  kind: z.enum(["image", "video", "pdf", "link"]).optional(),
+  kind: z.enum(["image", "video", "pdf", "link", "html"]).optional(),
   favorites: z.enum(["1", "true"]).optional(),
   /** Só as peças desta coleção. */
   colecao: z.string().uuid().optional(),
@@ -78,7 +80,7 @@ const listQuery = z.object({
 
 const createBody = z.object({
   title: z.string().trim().min(1).max(200),
-  assetKind: z.enum(["image", "video", "pdf", "link"]),
+  assetKind: z.enum(["image", "video", "pdf", "link", "html"]),
   notes: z.string().trim().max(4000).optional(),
   fileUrl: z.string().trim().max(2000).optional(),
   fileKey: z.string().trim().max(500).optional(),
@@ -530,9 +532,11 @@ export default fp(async function swipeFilesRoutes(fastify) {
     const arquivo = await request.file();
     if (!arquivo) return reply.code(400).send({ error: "Envie a imagem ou o PDF." });
 
-    if (!podeAnalisar(arquivo.mimetype)) {
+    // HTML entra por outro caminho: o modelo lê o TEXTO da página, não o
+    // arquivo. Ver `textoDoHtml` para por que não mandamos o HTML cru.
+    if (!podeAnalisar(arquivo.mimetype) && !ehHtml(arquivo.mimetype)) {
       return reply.code(400).send({
-        error: "Só dá para analisar imagem ou PDF. Vídeo precisa ser catalogado à mão.",
+        error: "Só dá para analisar imagem, PDF ou página HTML. Vídeo precisa ser catalogado à mão.",
       });
     }
 
@@ -569,11 +573,24 @@ export default fp(async function swipeFilesRoutes(fastify) {
     const pulso = setInterval(() => escrever({ tipo: "analisando" }), 10_000);
 
     try {
-      const sugestao = await analisarReferencia(
-        fastify.claude.client,
-        { buffer, mimeType: arquivo.mimetype },
-        { nomeDoArquivo: arquivo.filename, origem },
-      );
+      const sugestao = ehHtml(arquivo.mimetype)
+        ? /*
+           * A página salva é o melhor material de catalogação do acervo.
+           *
+           * Um link entrega só o Open Graph — título e uma linha. Aqui o
+           * modelo lê a headline, a promessa, o preço e a prova, que é o que
+           * faz a peça ser reencontrada três meses depois.
+           */
+          await analisarLink(fastify.claude.client, {
+            url: origem ?? arquivo.filename ?? "página salva",
+            titulo: arquivo.filename ?? null,
+            textoDaPagina: textoDoHtml(buffer.toString("utf8")),
+          })
+        : await analisarReferencia(
+            fastify.claude.client,
+            { buffer, mimeType: arquivo.mimetype },
+            { nomeDoArquivo: arquivo.filename, origem },
+          );
       escrever({ tipo: "pronto", sugestao });
     } catch (err) {
       fastify.log.error({ err, mime: arquivo.mimetype }, "analise de swipe file falhou");
