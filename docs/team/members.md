@@ -32,6 +32,15 @@ A IA do AIOX (Claude Code) consulta este arquivo automaticamente no início de c
 ### Danilo — Traffic Specialist
 
 - **email:** `danilo@bonsaitrafegopago.com.br`
+- **email (git neste repo):** o mesmo — `git config --local user.email`, ajustado
+  em 2026-09-07. **Estava `marketing@bonsaitrafegopago.com.br`**, que pertence a
+  **outra conta do GitHub** (`marketing794`), e não à `danilotsagae`. O Vercel
+  recusava o deploy dos previews com *"Git author marketing794 must have access
+  to the project"*, enquanto a `main` passava — porque o **merge por squash
+  reescreve o autor** para a identidade da conta que mergeia. Resultado: nenhuma
+  PR tinha preview, e a validação visual só era possível depois do merge, em
+  produção. Mesmo problema que o Lucas resolveu acima, e mesma solução: assinar
+  com um e-mail que o GitHub reconheça como a própria conta.
 - **role:** Especialista em tráfego pago (Meta Ads, Google Ads, YouTube Ads) — trabalha exclusivamente nos dashboards de tráfego
 - **scope:** `restricted`
 - **allowed_paths:**
