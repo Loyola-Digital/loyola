@@ -18,6 +18,14 @@
 import { Percent, Users, AlertTriangle, ShoppingCart, Layers } from "lucide-react";
 import type { PerpetualSalesData } from "@loyola-x/shared";
 import { diagnosticarPublico } from "@/lib/utils/publico-confiavel";
+// Story 29.75 — as três regras dos cards vivem em `lib/utils` porque é o único
+// diretório que o runner do pacote executa. Dentro deste `.tsx` elas não
+// teriam teste, e são a razão de ser desta story.
+import {
+  adesaoDeBump,
+  representatividadeDeBump,
+  aovDoPerpetuo,
+} from "@/lib/utils/cards-do-perpetuo";
 
 /**
  * ⚠️ Estes formatadores aceitam `undefined` DE PROPÓSITO.
@@ -49,10 +57,60 @@ const fmtPct = (v: number | null) =>
  */
 export function PerpetualOrderBumpCard({
   ob,
+  bumpsDoResumo,
+  vendasDoResumo,
+  faturamentoBruto,
 }: {
   ob: PerpetualSalesData["orderBump"];
+  /**
+   * Story 29.75 (AC2) — `porTipoProduto.order_bump`: LINHAS de bump, o mesmo
+   * número que o resumo mostra em «Order Bump N».
+   *
+   * ⚠️ Não é `ob.compradoresComBump`. Aquele conta CHECKOUTS (35 onde o resumo
+   * diz 41, medido no bbe-fc1-a1 em 07/09) e era a origem da divergência que
+   * abriu esta story. Decisão do gestor: o resumo é a verdade, e o card fala
+   * de PEDIDOS de bump — quem levar dois conta duas vezes.
+   *
+   * `null` quando a API não classifica produto: aí o card volta ao texto
+   * antigo, por checkout, em vez de mostrar `—`.
+   */
+  bumpsDoResumo: number | null;
+  /** `totalVendas` — a mesma base do KPI «Vendas». */
+  vendasDoResumo: number | null;
+  /** `faturamentoBruto` — o mesmo valor do card Faturamento Bruto. */
+  faturamentoBruto: number | null;
 }) {
   if (!ob || !ob.temConfiguracao || ob.faturamentoTotal <= 0) return null;
+
+  /**
+   * Story 29.75 (AC3) — a venda avulsa **compõe** o valor do card.
+   *
+   * Antes ela aparecia como uma linha à parte ("+ R$ 1.735,00 em venda
+   * avulsa") e ficava fora da taxa. O gestor decidiu que ela entra: foi
+   * vendida, é receita de bump.
+   *
+   * O denominador acompanha. Manter `receitaCaptacao` (que NÃO inclui o
+   * avulso) com um numerador que passou a incluí-lo daria uma taxa que não
+   * corresponde a razão nenhuma — some maçã, divida por pera. Passa a ser o
+   * faturamento bruto, o mesmo do card do topo.
+   */
+  const {
+    total: bumpTotal,
+    taxa: representatividade,
+    base: baseDaTaxa,
+  } = representatividadeDeBump(
+    ob.bumpAcessorio,
+    ob.bumpAvulso,
+    faturamentoBruto,
+    ob.faturamentoTotal,
+  );
+
+  /** Sem classificação de produto na API, mantém a leitura antiga. */
+  const { taxa: adesao, usaResumo } = adesaoDeBump(
+    bumpsDoResumo,
+    vendasDoResumo,
+    ob.taxaDeAdesao,
+  );
 
   return (
     <div className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-3">
@@ -69,24 +127,38 @@ export function PerpetualOrderBumpCard({
           // rótulo passou a dizer isso. Antes ele se chamava "faturamento
           // total" e valia R$ 55.814,00 enquanto o card do topo dizia
           // R$ 57.549,00 — duas definições de faturamento na mesma tela.
-          "Representatividade = order bump acessório ÷ receita da captação.\n\n" +
+          "Representatividade = todo o order bump ÷ faturamento bruto.\n\n" +
           `Acessório: ${fmtCurrency(ob.bumpAcessorio)} — de compradores que TÊM produto principal.\n` +
-          `Avulso: ${fmtCurrency(ob.bumpAvulso)} — de ${fmtNumber(ob.compradoresSoBump)} comprador(es) que só levaram produtos de bump, sem principal. Conta no faturamento da etapa (foi vendido), mas fica fora desta taxa: não é acréscimo a venda nenhuma.\n\n` +
-          `Receita da captação (denominador): ${fmtCurrency(ob.receitaCaptacao)}.\n` +
-          `Faturamento da etapa: ${fmtCurrency(ob.faturamentoTotal)} — o mesmo valor do card Faturamento Bruto.`
+          `Avulso: ${fmtCurrency(ob.bumpAvulso)} — de ${fmtNumber(ob.compradoresSoBump)} comprador(es) que só levaram produtos de bump, sem principal.\n` +
+          `Total (numerador): ${fmtCurrency(bumpTotal)} — desde a Story 29.75 o avulso COMPÕE o valor; antes ficava de fora da taxa.\n\n` +
+          `Faturamento bruto (denominador): ${fmtCurrency(baseDaTaxa)} — o mesmo valor do card Faturamento Bruto.\n\n` +
+          (usaResumo
+            ? `Adesão: ${fmtNumber(bumpsDoResumo)} order bumps em ${fmtNumber(vendasDoResumo)} vendas — os mesmos números do resumo. Conta PEDIDOS de bump: quem levou dois conta duas vezes.`
+            : `Adesão por checkout: ${fmtNumber(ob.compradoresComBump)} de ${fmtNumber(ob.compradoresComPrincipal)} — a API não classifica produto neste funil, então o número do resumo não existe.`)
         }
       >
-        {fmtPct(ob.representatividade)}
+        {fmtPct(representatividade)}
       </p>
       <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight space-y-0.5">
-        <p className="tabular-nums">{fmtCurrency(ob.bumpAcessorio)}</p>
-        <p>
-          {fmtNumber(ob.compradoresComBump)} de {fmtNumber(ob.compradoresComPrincipal)}{" "}
-          compradores ({fmtPct(ob.taxaDeAdesao)})
-        </p>
+        <p className="tabular-nums">{fmtCurrency(bumpTotal)}</p>
+        {usaResumo ? (
+          // Story 29.75 (AC2): "order bumps"/"vendas", não "compradores" — o
+          // numerador conta pedidos, e chamá-los de pessoas seria falso.
+          <p>
+            {fmtNumber(bumpsDoResumo)} order bumps em {fmtNumber(vendasDoResumo)} vendas (
+            {fmtPct(adesao)})
+          </p>
+        ) : (
+          <p>
+            {fmtNumber(ob.compradoresComBump)} de {fmtNumber(ob.compradoresComPrincipal)}{" "}
+            compradores ({fmtPct(adesao)})
+          </p>
+        )}
         {ob.bumpAvulso > 0 && (
+          // AC3: deixa de ser "+ R$ X" (que somava por fora) e passa a
+          // declarar quanto do total acima veio de venda avulsa.
           <p className="text-amber-600 dark:text-amber-400">
-            + {fmtCurrency(ob.bumpAvulso)} em venda avulsa
+            inclui {fmtCurrency(ob.bumpAvulso)} de venda avulsa
           </p>
         )}
       </div>
@@ -99,8 +171,37 @@ export function PerpetualOrderBumpCard({
  * classificado: valor médio do pedido é receita ÷ compradores e não depende de
  * bump nenhum.
  */
-export function PerpetualAovCard({ ob }: { ob: PerpetualSalesData["orderBump"] }) {
+export function PerpetualAovCard({
+  ob,
+  vendasDoResumo,
+  faturamentoBruto,
+}: {
+  ob: PerpetualSalesData["orderBump"];
+  /** Story 29.75 (AC4) — `totalVendas`, a mesma base do KPI «Vendas». */
+  vendasDoResumo: number | null;
+  /** Story 29.75 (AC4) — `faturamentoBruto`, o mesmo do card do topo. */
+  faturamentoBruto: number | null;
+}) {
   if (!ob || ob.aovGeral == null) return null;
+
+  /**
+   * Story 29.75 (AC4) — AOV = faturamento bruto TOTAL ÷ vendas do resumo.
+   *
+   * Antes era `receitaCaptacao ÷ compradoresComPrincipal`: um denominador em
+   * checkouts (149) sobre um numerador que excluía a venda avulsa. Medido no
+   * bbe-fc1-a1 em 07/09: R$ 58.240,37 ÷ 149 = R$ 390,87, contra
+   * R$ 59.975,37 ÷ 153 = R$ 391,99 na regra nova.
+   *
+   * A diferença é pequena aqui e não é o ponto: o ponto é o card deixar de ter
+   * base própria. Com esta mudança, AOV × Vendas fecha com o Faturamento
+   * Bruto do topo — antes não fechava com nada na tela.
+   */
+  const { valor: aov, usaResumo } = aovDoPerpetuo(
+    faturamentoBruto,
+    vendasDoResumo,
+    ob.aovGeral,
+  );
+
   return (
     <div className="rounded-xl border border-border/30 bg-gradient-to-br from-card/80 to-card/40 p-3">
       <div className="flex items-center justify-between mb-1.5">
@@ -112,18 +213,23 @@ export function PerpetualAovCard({ ob }: { ob: PerpetualSalesData["orderBump"] }
       <p
         className="text-xl font-bold tracking-tight underline decoration-dotted decoration-muted-foreground/40 underline-offset-4 cursor-help"
         title={
-          "AOV (valor médio do pedido) = (produto principal + adicionais) ÷ compradores.\n\n" +
-          `Base: ${fmtNumber(ob.compradoresComPrincipal)} compradores com produto principal.\n` +
-          (ob.compradoresSoBump > 0
-            ? `Não inclui ${fmtNumber(ob.compradoresSoBump)} comprador(es) que só levaram produtos de bump — sem pedido principal, entrariam no denominador puxando o número para baixo, e ele deixaria de bater com a tabela abaixo.\n`
-            : "") +
-          "\nFecha com a linha Total da tabela de públicos."
+          usaResumo
+            ? "AOV (valor médio do pedido) = faturamento bruto ÷ vendas.\n\n" +
+              `${fmtCurrency(faturamentoBruto)} ÷ ${fmtNumber(vendasDoResumo)} = ${fmtCurrency(aov)}\n\n` +
+              "Story 29.75 (AC4): os dois números são os mesmos dos cards Faturamento Bruto e Vendas, no topo. Antes o AOV tinha base própria (receita da captação ÷ checkouts) e não fechava com nenhum outro número da tela."
+            : "AOV (valor médio do pedido) = (produto principal + adicionais) ÷ compradores.\n\n" +
+              `Base: ${fmtNumber(ob.compradoresComPrincipal)} compradores com produto principal.\n` +
+              (ob.compradoresSoBump > 0
+                ? `Não inclui ${fmtNumber(ob.compradoresSoBump)} comprador(es) que só levaram produtos de bump — sem pedido principal, entrariam no denominador puxando o número para baixo.\n`
+                : "")
         }
       >
-        {fmtCurrency(ob.aovGeral)}
+        {fmtCurrency(aov)}
       </p>
       <p className="text-[10px] text-muted-foreground mt-0.5">
-        {fmtNumber(ob.compradoresComPrincipal)} compradores
+        {usaResumo
+          ? `${fmtNumber(vendasDoResumo)} vendas`
+          : `${fmtNumber(ob.compradoresComPrincipal)} compradores`}
       </p>
     </div>
   );

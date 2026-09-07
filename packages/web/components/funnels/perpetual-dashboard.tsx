@@ -199,6 +199,31 @@ function fmtCurrency(val: number | null | undefined): string {
   return `R$ ${val.toFixed(2)}`;
 }
 
+/**
+ * Story 29.75 (AC5) — Faturamento Bruto e Investimento por extenso.
+ *
+ * `fmtCurrency`, acima, abrevia acima de mil: o card do Faturamento mostrava
+ * `R$ 57,9K`, e o gestor não tinha como saber se eram 57.900 ou 57.949 — a
+ * diferença que ele precisava ver era menor que a que a abreviação esconde.
+ *
+ * Só estes DOIS cards mudam (AC5). Os demais seguem abreviados de propósito:
+ * num grid 4×2, oito valores por extenso quebram a linha.
+ *
+ * Mantém o `—` de `val === 0` do formatador local em vez de usar o
+ * `fmtCurrency` de `lib/utils/format-number` direto: lá zero vira `R$ 0,00`, e
+ * um funil sem investimento passaria a exibir um valor onde hoje há um traço —
+ * mudança de comportamento que o AC10 proíbe.
+ */
+function fmtCurrencyCheio(val: number | null | undefined): string {
+  if (val == null || val === 0) return "—";
+  return val.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 // Story 29.8: formato compacto pra labels dos pontos no gráfico (evita poluir)
 function fmtCurrencyCompact(val: number | null | undefined): string {
   if (val == null) return "—";
@@ -2513,8 +2538,9 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
             <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
               {/* ---------- Linha 1 — resultado ---------- */}
               {/* Story 29.25 → 29.28: "Receita" → "Faturamento" → "Faturamento Bruto". */}
-              <MetricTooltip label="Faturamento Bruto" value={fmtCurrency(m.totalRevenue)} formula={buildFunnelRevenueFormula(m.totalRevenue, f, usingSpreadsheet && salesData ? salesData.faturamentoPorTipo : null)}>
-                <KpiCard icon={DollarSign} label="Faturamento Bruto" value={fmtCurrency(m.totalRevenue)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} breakdown={quebraDeFaturamento ?? undefined} />
+              {/* Story 29.75 (AC5): `fmtCurrencyCheio` — sem abreviar. */}
+              <MetricTooltip label="Faturamento Bruto" value={fmtCurrencyCheio(m.totalRevenue)} formula={buildFunnelRevenueFormula(m.totalRevenue, f, usingSpreadsheet && salesData ? salesData.faturamentoPorTipo : null)}>
+                <KpiCard icon={DollarSign} label="Faturamento Bruto" value={fmtCurrencyCheio(m.totalRevenue)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} breakdown={quebraDeFaturamento ?? undefined} />
               </MetricTooltip>
               <MetricTooltip label="Vendas" value={fmtNumber(m.totalSales)} formula={buildFunnelSalesCountFormula(m.totalSales, f)}>
                 <KpiCard icon={ShoppingCart} label="Vendas" value={fmtNumber(m.totalSales)} hintTooltip fromSheet={fromSheet} warning={noSalesSource ? "Conectar fonte de vendas" : undefined} breakdown={quebraDeProduto ?? undefined} />
@@ -2541,9 +2567,12 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                 spendComTax={m.totalSpend}
                 hasTax={spendAggregates.hasTax}
               >
-                <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrency(m.totalSpend)} hintTooltip
+                {/* Story 29.75 (AC5): `fmtCurrencyCheio` — sem abreviar. O
+                    valor comparado acompanha, ou a variação ficaria entre um
+                    número cheio e um abreviado. */}
+                <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrencyCheio(m.totalSpend)} hintTooltip
                   comparison={compSpend !== null && m.totalSpend != null ? {
-                    display: fmtCurrency(compSpend),
+                    display: fmtCurrencyCheio(compSpend),
                     delta: calcDelta(m.totalSpend, compSpend),
                     higherIsBetter: false,
                   } : undefined}
@@ -2592,6 +2621,42 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           );
         })()
       ) : <EmptyState />}
+
+      {/* ================================================================ */}
+      {/* Story 29.75 (AC6) — AOV e ORDER BUMP, acima da Tendência          */}
+      {/*                                                                  */}
+      {/* Vinham lá embaixo, entre o gráfico de Investimento e os donuts. O */}
+      {/* gestor pediu que subissem: são leitura de resultado, e resultado  */}
+      {/* fica junto do resultado. A Tendência, logo abaixo, responde para  */}
+      {/* onde os números estão indo — a ordem passa a ser "quanto" e só    */}
+      {/* depois "para onde".                                              */}
+      {/*                                                                  */}
+      {/* Continuam fora do grid 4×2 de KPIs de propósito (29.32): aquele   */}
+      {/* grid é fechado, e um nono card cairia sozinho numa terceira linha.*/}
+      {/* ================================================================ */}
+      {salesData?.orderBump?.aovGeral != null && (
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
+          {/* AOV aparece mesmo sem order bump configurado — valor médio do
+              pedido é receita ÷ vendas. O card de bump, ao lado, some. */}
+          {/* Story 29.75 (AC2/AC4) — os cards recebem os números DO RESUMO em
+              vez de derivarem base própria. `porTipoProduto` é `null` quando a
+              API não classifica produto: nesse caso os cards mantêm a leitura
+              antiga, por checkout, em vez de mostrarem `—`. */}
+          <PerpetualAovCard
+            ob={salesData.orderBump}
+            vendasDoResumo={salesData.totalVendas}
+            faturamentoBruto={salesData.faturamentoBruto}
+          />
+          <PerpetualOrderBumpCard
+            ob={salesData.orderBump}
+            bumpsDoResumo={salesData.porTipoProduto?.order_bump ?? null}
+            vendasDoResumo={salesData.totalVendas}
+            faturamentoBruto={salesData.faturamentoBruto}
+          />
+          {/* Story 18.69 — ao lado do order bump, nunca somado a ele. */}
+          <PerpetualComboCard ob={salesData.orderBump} />
+        </div>
+      )}
 
       {/* ================================================================ */}
       {/* Story 29.54 — TENDÊNCIA: ROAS e Margem em 1, 3 e 7 dias          */}
@@ -2888,27 +2953,6 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       </div>
         );
       })()}
-
-      {/* ================================================================ */}
-      {/* QUADRO DE DADOS DIÁRIOS — Story 29.23: tabela por dia (15 colunas) */}
-      {/* ================================================================ */}
-      {/* Story 29.61 — conversão de bump/upsell e AOV por público. Fica acima
-          do Quadro de Dados Diários porque responde sobre QUEM comprou, e o
-          quadro responde sobre QUANDO. */}
-      {/* O card fica AQUI e não no grid de KPIs de propósito: aquele grid é um
-          4×2 fechado (resultado em cima, eficiência embaixo, decisão da 29.32),
-          e um nono card cairia sozinho numa terceira linha. Aqui ele fica ao
-          lado da tabela que o detalha, que é onde a leitura continua. */}
-      {salesData?.orderBump?.aovGeral != null && (
-        <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
-          {/* AOV aparece mesmo sem order bump configurado — valor médio do
-              pedido é receita ÷ compradores. O card de bump, ao lado, some. */}
-          <PerpetualAovCard ob={salesData.orderBump} />
-          <PerpetualOrderBumpCard ob={salesData.orderBump} />
-          {/* Story 18.69 — ao lado do order bump, nunca somado a ele. */}
-          <PerpetualComboCard ob={salesData.orderBump} />
-        </div>
-      )}
 
       {/* Os donuts vêm ANTES da tabela: a distribuição é a leitura de dois
           segundos, e a tabela é onde se vai conferir o detalhe depois. */}
