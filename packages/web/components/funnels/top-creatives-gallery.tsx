@@ -13,6 +13,7 @@ import {
   Instagram,
   Search,
   ChevronDown,
+  SlidersHorizontal,
   Info,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -133,6 +134,9 @@ const METRIC_OPTIONS: MetricOption[] = [
   // Story 18.74 (AC4): faturamento da planilha ÷ investimento — nunca o
   // `roasLegacy` do pixel, que é outro número com o mesmo nome.
   { value: "roas", label: "ROAS", sortLabel: "Maiores ROAS" },
+  // Story 18.79 (AC6): comprador dedupado da planilha (`vendasDeduzidas`), não
+  // o `sales` do pixel — ver o comentário do tipo em `top-criativos-visoes.ts`.
+  { value: "vendas", label: "Vendas", sortLabel: "Mais Vendas" },
 ];
 
 /**
@@ -368,6 +372,8 @@ function formatMetricValue(
   /** Story 18.74: só a ordenação por ROAS precisa do cruzamento. */
   roasPorChave?: Map<string, number | null>,
   chave?: string,
+  /** Story 18.79 (AC6): idem para vendas — mesmo cruzamento, mesma chave. */
+  vendasPorChave?: Map<string, number | null>,
 ): string {
   switch (metric) {
     case "cpl":
@@ -384,6 +390,12 @@ function formatMetricValue(
       const r = roasPorChave?.get(chave ?? c.name);
       // `null` = sem investimento ou sem faturamento atribuído. `0` é medição.
       return r == null ? "—" : `${r.toFixed(2)}x`;
+    }
+    case "vendas": {
+      // Story 18.79 (AC6). Sem o cruzamento o valor é `undefined`/`null` e sai
+      // `—`; zero é medição e é impresso como 0.
+      const v = vendasPorChave?.get(chave ?? c.name);
+      return v == null ? "—" : fmtNumber(v);
     }
     default:
       return "—";
@@ -938,7 +950,30 @@ export function TopCreativesGallery({
     return m;
   }, [aggregated, revenueData, filtros.agrupamento]);
 
-  /** A aba de ROAS só existe se houver de onde tirar faturamento (AC4). */
+  /**
+   * Story 18.79 (AC6) — vendas por criativo, do MESMO cruzamento que alimenta
+   * o ROAS e o card. Derivar de outra fonte faria o ranking discordar do
+   * número impresso no card, que é o defeito que a 18.74 já corrigiu no ROAS.
+   */
+  const vendasPorChave = useMemo(() => {
+    const m = new Map<string, number | null>();
+    if (!revenueData || revenueData.semDados) return m;
+    for (const c of aggregated) {
+      const { vendas } = vendasDeduzidas(c.ids, revenueData.byAdId);
+      m.set(chaveDoCriativo(c, filtros.agrupamento), vendas);
+    }
+    return m;
+  }, [aggregated, revenueData, filtros.agrupamento]);
+
+  /**
+   * As abas «Maiores ROAS» e «Mais Vendas» dependem da planilha (AC4 da 18.74,
+   * AC6 da 18.79). Sem ela, ficam — desabilitadas e com o motivo (AC3).
+   *
+   * ⚠️ Medido em 2026-09-07 (`scripts/diagnostica-creative-revenue.ts`): só
+   * **8 de 47** etapas em produção conseguem calcular. E na maioria das outras
+   * o que falta NÃO é a planilha de vendas — é a de **leads**, ou as duas. Por
+   * isso o tooltip fala das duas, em vez de acusar só uma.
+   */
   const roasDisponivel = !!revenueData && !revenueData.semDados;
 
   /**
@@ -1031,8 +1066,8 @@ export function TopCreativesGallery({
     [elegiveis, filtros],
   );
   const sorted = useMemo(
-    () => ordenarPorMetrica(buscados, metric, roasPorChave, filtros.agrupamento),
-    [buscados, metric, roasPorChave, filtros.agrupamento],
+    () => ordenarPorMetrica(buscados, metric, roasPorChave, filtros.agrupamento, vendasPorChave),
+    [buscados, metric, roasPorChave, filtros.agrupamento, vendasPorChave],
   );
 
   /**
@@ -1153,7 +1188,14 @@ export function TopCreativesGallery({
       <div className="flex items-center gap-1 overflow-x-auto border-b border-border/30 -mx-1 px-1">
         {VISOES.map((v) => {
           const ativa = v.id === visaoId;
-          const desabilitada = v.id === "roas" && !roasDisponivel;
+          /**
+           * Story 18.79 (AC3/AC6) — as duas abas que dependem do cruzamento
+           * com a planilha. Ficam na tela, desabilitadas e com o motivo: aba
+           * que some ensina que o recurso não existe; aba cinza com motivo
+           * ensina o que fazer para tê-lo.
+           */
+          const dependeDaPlanilha = v.id === "roas" || v.id === "vendas";
+          const desabilitada = dependeDaPlanilha && !roasDisponivel;
           return (
             <button
               key={v.id}
@@ -1164,7 +1206,14 @@ export function TopCreativesGallery({
               onClick={() => aplicarVisao(v.id)}
               title={
                 desabilitada
-                  ? "Sem planilha de vendas ligada a esta etapa — não há faturamento para calcular ROAS."
+                  ? // ⚠️ O texto fala das DUAS planilhas de propósito. Medido em
+                    // 2026-09-07 (`diagnostica-creative-revenue.ts`): das 39
+                    // etapas sem este cruzamento, na maioria o que falta é a de
+                    // LEADS, ou as duas — culpar só a de vendas mandaria o
+                    // gestor conectar o que já está conectado.
+                    `${v.label} precisa cruzar leads × vendas: esta etapa precisa ` +
+                    "de uma planilha de LEADS e uma de VENDAS conectadas. " +
+                    "Falta ao menos uma das duas."
                   : v.descricao
               }
               className={`shrink-0 px-2.5 py-1.5 text-[11px] font-medium border-b-2 -mb-px transition-colors ${
@@ -1202,27 +1251,42 @@ export function TopCreativesGallery({
           />
         </div>
 
+        {/* Story 18.79 (AC1) — o <Select> de ordenação saiu daqui.
+            As abas acima já escolhem a métrica, e ter os dois era escolher a
+            mesma coisa em dois lugares.
+
+            ⚠️ `METRIC_OPTIONS` NÃO saiu: as abas leem a mesma lista, e
+            `formatMetricValue`/`ordenarPorMetrica` dependem dela. */}
+
         <Select
-          value={filtros.metrica}
-          onValueChange={(v) => setFiltros((f) => ({ ...f, metrica: v as MetricaDeOrdenacao }))}
+          value={filtros.tipoDeMidia}
+          onValueChange={(v) =>
+            setFiltros((f) => ({ ...f, tipoDeMidia: v as FiltrosDaGaleria["tipoDeMidia"] }))
+          }
         >
-          <SelectTrigger className="h-7 w-[160px] text-xs" aria-label="Ordenação">
+          <SelectTrigger className="h-7 w-[120px] text-xs" aria-label="Tipo de mídia">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {METRIC_OPTIONS.map((m) => (
-              <SelectItem key={m.value} value={m.value} disabled={m.value === "roas" && !roasDisponivel}>
-                <span className="flex items-center gap-1.5">
-                  {m.sortLabel}
-                  {m.needsReview && <AlertTriangle className="h-3 w-3 text-amber-500" />}
-                </span>
-              </SelectItem>
-            ))}
+            <SelectItem value="todos">Toda mídia</SelectItem>
+            <SelectItem value="video">Só vídeo</SelectItem>
+            <SelectItem value="estatico">Só estático</SelectItem>
           </SelectContent>
         </Select>
 
+        {/* Story 18.79 (AC4) — o <Select> de agrupamento saiu: em uso normal é
+            sempre um card por Ad Name.
+
+            ⚠️ O agrupamento por Ad ID NÃO morreu. A aba "Todos" tem
+            `agrupamento: "anuncio"` no preset e o mantém — é a visão crua, um
+            card por anúncio. `chaveDoCriativo`, o tipo `Agrupamento` e o
+            `presetModificado` seguem intactos; o chip de filtro ativo também,
+            porque é ele que explica por que aquela aba mostra mais cards. */}
+
         {/* ==================================================== */}
-        {/* Story 18.76 — botão + painel de métricas             */}
+        {/* Story 18.79 (AC5) — «Métricas» à ESQUERDA do          */}
+        {/* «Mostrando todos», e com seta: o botão parecia um     */}
+        {/* rótulo e ninguém percebia que abria um painel.        */}
         {/* ==================================================== */}
         <div className="relative">
           <button
@@ -1231,15 +1295,25 @@ export function TopCreativesGallery({
             aria-expanded={painelAberto}
             aria-haspopup="dialog"
             title="Escolher quais métricas aparecem em cada card"
-            className={`h-7 px-2.5 rounded-md border text-[11px] font-medium transition-colors ${
+            className={`inline-flex h-7 items-center gap-1 px-2.5 rounded-md border text-[11px] font-medium transition-colors ${
               painelAberto
                 ? "border-primary/40 bg-primary/10 text-primary"
-                : "border-border/40 text-muted-foreground hover:bg-muted/50"
+                : "border-border/40 text-foreground hover:bg-muted/50"
             }`}
           >
-            Métricas
-            {/* AC3: o badge é a soma dos checkboxes. Zero = sem badge. */}
+            {/* Story 18.79 (AC5) — rótulo explícito e seta.
+                Antes era só a palavra "Métricas" em `text-muted-foreground`,
+                do mesmo tamanho dos rótulos vizinhos: lia-se como legenda, não
+                como controle. O texto agora diz o que o painel faz, a cor é a
+                do conteúdo (não a de rótulo secundário) e a seta gira ao abrir,
+                que é a convenção dos outros dropdowns desta barra. */}
+            <SlidersHorizontal className="h-3 w-3" />
+            Métricas do card
+            {/* AC3 da 18.76: o badge é a soma dos checkboxes. Zero = sem badge. */}
             {contarMarcadas(metricasMarcadas) > 0 && ` (${contarMarcadas(metricasMarcadas)})`}
+            <ChevronDown
+              className={`h-3 w-3 transition-transform ${painelAberto ? "rotate-180" : ""}`}
+            />
           </button>
 
           {painelAberto && (
@@ -1357,37 +1431,6 @@ export function TopCreativesGallery({
           )}
         </div>
 
-        <Select
-          value={filtros.tipoDeMidia}
-          onValueChange={(v) =>
-            setFiltros((f) => ({ ...f, tipoDeMidia: v as FiltrosDaGaleria["tipoDeMidia"] }))
-          }
-        >
-          <SelectTrigger className="h-7 w-[120px] text-xs" aria-label="Tipo de mídia">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todos">Toda mídia</SelectItem>
-            <SelectItem value="video">Só vídeo</SelectItem>
-            <SelectItem value="estatico">Só estático</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={filtros.agrupamento}
-          onValueChange={(v) =>
-            setFiltros((f) => ({ ...f, agrupamento: v as FiltrosDaGaleria["agrupamento"] }))
-          }
-        >
-          <SelectTrigger className="h-7 w-[150px] text-xs" aria-label="Agrupamento">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="nome">Por nome do criativo</SelectItem>
-            <SelectItem value="anuncio">Por anúncio</SelectItem>
-          </SelectContent>
-        </Select>
-
         {/* Story 8.9: o toggle de relevância mudou de lugar, não de regra. */}
         {(relevanceThreshold.mode !== "disabled" || showAll) && (
           <button
@@ -1469,10 +1512,6 @@ export function TopCreativesGallery({
           const path = { ad: c.name };
           const spendFormula = enrichFormulaForEntity(
             buildFunnelSpendFormula(c.spend, funnel),
-            path,
-          );
-          const ctrFormula = enrichFormulaForEntity(
-            buildFunnelCtrFormula(c.ctr, funnel),
             path,
           );
           // Story 18.75 — a conversão do card, na unidade da tela.
@@ -1577,7 +1616,7 @@ export function TopCreativesGallery({
                   {c.name}
                 </p>
                 <p className="text-lg font-bold tracking-tight">
-                  {formatMetricValue(c, metric, roasPorChave, chaveDoCard)}
+                  {formatMetricValue(c, metric, roasPorChave, chaveDoCard, vendasPorChave)}
                 </p>
                 {/* Story 18.75 (AC1): grid 2×2 fixo. O CTR saiu daqui e desceu
                     uma linha (AC10) — o que o gestor precisa ler no card é
@@ -1635,19 +1674,11 @@ export function TopCreativesGallery({
                   </div>
                 </div>
 
-                {/* AC10: o CTR não some da tela ao sair do grid — continua aqui
-                    e no lightbox, com a mesma fórmula de antes. */}
-                <MetricTooltip label="CTR" value={fmtPercent(c.ctr)} formula={ctrFormula}>
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    className="cursor-help text-[10px] text-center pt-1 border-t border-border/20"
-                  >
-                    <span className="text-muted-foreground">CTR: </span>
-                    <span className="font-semibold underline decoration-dotted decoration-muted-foreground/40 underline-offset-2">
-                      {fmtPercent(c.ctr)}
-                    </span>
-                  </div>
-                </MetricTooltip>
+                {/* Story 18.79 (AC7) — a linha fixa de CTR saiu daqui.
+                    Ele aparecia duas vezes no mesmo card: nesta linha e como
+                    métrica selecionável no painel. Fica a selecionável — quem
+                    quiser CTR marca, como faz com as outras. No LIGHTBOX ele
+                    continua (`:609`), que é onde se olha o criativo inteiro. */}
 
                 {/* ==================================================== */}
                 {/* Story 18.76 (AC6) — uma barra por métrica marcada     */}

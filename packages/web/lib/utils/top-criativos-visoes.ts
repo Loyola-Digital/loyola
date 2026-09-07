@@ -26,7 +26,19 @@ export type MetricaDeOrdenacao =
   | "ctr"
   | "spend"
   | "hook"
-  | "roas";
+  | "roas"
+  /**
+   * Story 18.79 (AC6) — vendas do criativo, pelo **comprador dedupado**
+   * (`vendasDeduzidas(...).vendas`), nunca pelo `sales` do pixel da Meta.
+   *
+   * A 29.53 registrou que os dois divergem: no bbe-fc1-a1 mediu 98 (pixel) ×
+   * 115 (comprador). Ordenar pelo pixel daria um ranking **diferente e
+   * plausível** — o pior tipo de erro, porque ninguém desconfia dele.
+   *
+   * Vem da planilha, como o ROAS: mesma dependência, mesmo tratamento quando
+   * a etapa não a tem (aba presente, desabilitada, com o motivo).
+   */
+  | "vendas";
 
 export type Agrupamento = "nome" | "anuncio";
 export type TipoDeMidia = "todos" | "video" | "estatico";
@@ -58,7 +70,8 @@ const FILTROS_BASE: FiltrosDaGaleria = {
 };
 
 /**
- * As seis abas, na ordem pedida pelo gestor.
+ * As oito abas, na ordem pedida pelo gestor (seis da 18.74 + as duas da
+ * 18.79, cada uma ao lado da sua parente).
  *
  * "Todos" é a única que muda o **agrupamento**: é a visão crua, um card por
  * anúncio e sem filtro de relevância. As outras cinco agregam por nome — a
@@ -83,11 +96,27 @@ export const VISOES: VisaoDeCriativos[] = [
     descricao: "Menor custo por lead primeiro",
     preset: { ...FILTROS_BASE, metrica: "cpl" },
   },
+  // Story 18.79 (AC6) — DUAS entradas, não uma combinada. Decisão do gestor
+  // (2026-09-05): "As duas". Cada uma fica ao lado da sua parente: leads
+  // depois do CPL (custo × volume da mesma coisa), vendas depois do ROAS
+  // (as duas dependem do cruzamento com a planilha e caem juntas sem ela).
+  {
+    id: "leads",
+    label: "Mais Leads",
+    descricao: "Mais leads pagos primeiro",
+    preset: { ...FILTROS_BASE, metrica: "leads" },
+  },
   {
     id: "roas",
     label: "Maiores ROAS",
     descricao: "Maior retorno sobre investimento primeiro (faturamento da planilha)",
     preset: { ...FILTROS_BASE, metrica: "roas" },
+  },
+  {
+    id: "vendas",
+    label: "Mais Vendas",
+    descricao: "Mais vendas primeiro — comprador dedupado da planilha, não o pixel da Meta",
+    preset: { ...FILTROS_BASE, metrica: "vendas" },
   },
   {
     id: "ctr",
@@ -293,6 +322,12 @@ export function ordenarPorMetrica(
   /** Mapa chaveado por `chaveDoCriativo` — **não** por nome. */
   roasPorChave?: Map<string, number | null>,
   agrupamento: Agrupamento = "nome",
+  /**
+   * Story 18.79 (AC6) — vendas por `chaveDoCriativo`, mesma regra do
+   * `roasPorChave`: chavear por NOME faria os N cards de um mesmo nome, na
+   * visão "Todos", lerem todos o valor do último anúncio.
+   */
+  vendasPorChave?: Map<string, number | null>,
 ): AggregatedCreative[] {
   const ordenado = [...criativos];
   const menorPrimeiro = (a: number | null, b: number | null) => {
@@ -331,6 +366,17 @@ export function ordenarPorMetrica(
         maiorPrimeiro(
           roasPorChave?.get(chaveDoCriativo(a, agrupamento)) ?? null,
           roasPorChave?.get(chaveDoCriativo(b, agrupamento)) ?? null,
+        ),
+      );
+      break;
+    case "vendas":
+      // Story 18.79 (AC6). `null` (etapa sem planilha) cai para o fim por
+      // `maiorPrimeiro`, como o ROAS — nunca vira 0, que colocaria o criativo
+      // sem medição empatado com o que de fato não vendeu.
+      ordenado.sort((a, b) =>
+        maiorPrimeiro(
+          vendasPorChave?.get(chaveDoCriativo(a, agrupamento)) ?? null,
+          vendasPorChave?.get(chaveDoCriativo(b, agrupamento)) ?? null,
         ),
       );
       break;
