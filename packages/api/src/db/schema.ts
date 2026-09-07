@@ -3270,6 +3270,49 @@ export const instagramScans = pgTable(
 // dos filtros. O binário vive no bucket (o disco do container é efêmero); aqui
 // fica só a URL + a chave, pra conseguir apagar o objeto depois.
 
+/**
+ * Coleções do Swipe Files — o agrupamento feito à mão.
+ *
+ * Chamada de "coleção" e não de "pasta" porque uma peça pertence a mais de
+ * uma: o mesmo criativo serve à coleção do lançamento e à de referências de
+ * escassez. Pasta cria a expectativa de que o arquivo está num lugar só.
+ *
+ * Existe para o critério que NÃO está nos campos que a IA preenche — marca,
+ * nicho e formato já agrupam o acervo sozinhos, e a tela agrupa por eles sem
+ * tabela nenhuma.
+ */
+export const swipeCollections = pgTable(
+  "swipe_collections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    nome: varchar("nome", { length: 120 }).notNull(),
+    descricao: text("descricao"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  // Sem caixa: "Black Friday" e "black friday" são a mesma coleção.
+  (t) => [uniqueIndex("idx_swipe_collections_nome").on(sql`lower(${t.nome})`)],
+);
+
+export const swipeCollectionItems = pgTable(
+  "swipe_collection_items",
+  {
+    collectionId: uuid("collection_id")
+      .notNull()
+      .references(() => swipeCollections.id, { onDelete: "cascade" }),
+    swipeId: uuid("swipe_id")
+      .notNull()
+      .references(() => swipeFiles.id, { onDelete: "cascade" }),
+    addedBy: uuid("added_by").references(() => users.id, { onDelete: "set null" }),
+    addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.collectionId, t.swipeId] }),
+    index("idx_swipe_collection_items_peca").on(t.swipeId),
+  ],
+);
+
 export const swipeFiles = pgTable(
   "swipe_files",
   {
