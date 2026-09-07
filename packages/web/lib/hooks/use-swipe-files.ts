@@ -12,7 +12,7 @@ import { useAuth } from "@clerk/nextjs";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-export type AssetKind = "image" | "video" | "pdf" | "link";
+export type AssetKind = "image" | "video" | "pdf" | "link" | "html";
 
 export interface SwipeFile {
   id: string;
@@ -640,7 +640,7 @@ export type PassoDaImportacao =
       i: number;
       de: number;
       titulo: string;
-      kind: "image" | "video" | "pdf" | "link";
+      kind: "image" | "video" | "pdf" | "link" | "html";
       status: "ok" | "erro";
       erro?: string;
     }

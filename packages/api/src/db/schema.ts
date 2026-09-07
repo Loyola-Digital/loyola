@@ -3321,7 +3321,7 @@ export const swipeFiles = pgTable(
     notes: text("notes"),
     /** image | video | pdf | link — define o que renderizar no card e no lightbox. */
     assetKind: varchar("asset_kind", { length: 10 })
-      .$type<"image" | "video" | "pdf" | "link">()
+      .$type<"image" | "video" | "pdf" | "link" | "html">()
       .notNull(),
 
     fileUrl: text("file_url"),

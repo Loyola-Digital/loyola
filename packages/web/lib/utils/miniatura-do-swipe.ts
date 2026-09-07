@@ -13,7 +13,7 @@
 export type FormaDaMiniatura = "imagem" | "video" | "pdf" | "nenhuma";
 
 export interface ParaMiniatura {
-  assetKind: "image" | "video" | "pdf" | "link";
+  assetKind: "image" | "video" | "pdf" | "link" | "html";
   fileUrl?: string | null;
   ogImage?: string | null;
 }
@@ -33,5 +33,9 @@ export function miniaturaDoSwipe(item: ParaMiniatura): {
   if (item.assetKind === "pdf") {
     return item.fileUrl ? { forma: "pdf", url: item.fileUrl } : { forma: "nenhuma", url: null };
   }
+  // A página salva não vira miniatura: desenhá-la exigiria um iframe por card,
+  // e trinta iframes numa grade renderizam trinta páginas de uma vez. A capa
+  // com título e domínio diz mais e custa nada.
+  if (item.assetKind === "html") return { forma: "nenhuma", url: null };
   return item.fileUrl ? { forma: "imagem", url: item.fileUrl } : { forma: "nenhuma", url: null };
 }

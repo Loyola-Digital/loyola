@@ -38,9 +38,17 @@ const FORMATOS = ["Reel", "Feed", "Story", "Carrossel", "VSL", "Landing page", "
  * serve só para não oferecer um botão que vai falhar. Um `fetch` para descobrir
  * se cabe oferecer seria pior que a duplicação.
  */
+/** Mime de página, tolerando o `; charset=` que o navegador acrescenta. */
+function ehHtml(mime: string | undefined): boolean {
+  return (mime ?? "").split(";")[0]!.trim().toLowerCase() === "text/html";
+}
+
 function podeAnalisar(mime: string | undefined): boolean {
   if (!mime) return false;
-  return mime.startsWith("image/") || mime === "application/pdf";
+  // HTML entra: o modelo lê o TEXTO da página, que é o melhor material de
+  // catalogação do acervo — headline, promessa, preço e prova, em vez do
+  // título e da linha de descrição que um link entrega.
+  return mime.startsWith("image/") || mime === "application/pdf" || ehHtml(mime);
 }
 
 function fmtBytes(n: number): string {
@@ -282,9 +290,14 @@ export function AddSwipeDialog({
     ? "link"
     : file.type === "application/pdf"
       ? "pdf"
-      : file.type.startsWith("video/")
-        ? "video"
-        : "image";
+      : ehHtml(file.type) || /\.html?$/i.test(file.name)
+        ? // A extensão entra na conta porque o navegador nem sempre resolve o
+          // mime de um arquivo salvo do disco — vem `application/octet-stream`
+          // e a página viraria "imagem" quebrada.
+          "html"
+        : file.type.startsWith("video/")
+          ? "video"
+          : "image";
 
   const podeSalvar = title.trim() && (file || sourceUrl.trim());
 
@@ -447,7 +460,7 @@ export function AddSwipeDialog({
                 <input
                   ref={inputRef}
                   type="file"
-                  accept="image/*,video/*,application/pdf"
+                  accept="image/*,video/*,application/pdf,text/html,.html,.htm"
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
