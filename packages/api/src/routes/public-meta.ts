@@ -398,8 +398,26 @@ export default fp(async function publicMetaRoutes(fastify) {
       // ou repete criativo entre requisições. É o mesmo defeito que o QA-15
       // apontou na paginação do backfill da 42.6.
       creatives.sort((a, b) => {
-        const d = orderVal(b) - orderVal(a);
-        return d !== 0 ? d : a.adId.localeCompare(b.adId);
+        const va = orderVal(a);
+        const vb = orderVal(b);
+        // ⚠️ Story 44.24 (QA-4424-01) — COMPARAR, não subtrair.
+        //
+        // A versão anterior fazia `orderVal(b) - orderVal(a)`, e para duas
+        // métricas nulas isso é `-Infinity - (-Infinity)` = **NaN**. Como
+        // `NaN !== 0` é `true`, o comparador devolvia NaN e o desempate por
+        // `adId` — que a 43.4 declarou OBRIGATÓRIO logo acima — nunca era
+        // alcançado. Comparador que devolve NaN vale 0 pelo spec, então
+        // sobrava a ordem de INSERÇÃO do `Map byAd`: as linhas de um SELECT
+        // sem `ORDER BY`.
+        //
+        // Atinge 6 dos 10 `orderBy` (`ctr`, `cpc`, `cpm`, `cpl`, `cpa`,
+        // `roas` — todos via `safeDiv`, que devolve `null` sem denominador).
+        // Num projeto de geração de leads, `purchases = 0` em todo criativo
+        // deixa `cpa` e `roas` nulos em TODOS, e a ordenação inteira vira
+        // ordem de banco. Paginar por `offset` sobre isso pula ou repete.
+        if (va < vb) return 1;
+        if (va > vb) return -1;
+        return a.adId.localeCompare(b.adId);
       });
 
       const pagina = creatives.slice(offset, offset + limit);

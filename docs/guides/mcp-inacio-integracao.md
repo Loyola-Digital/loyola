@@ -167,7 +167,9 @@ O `/cadeia-cac` traz `criativos` **só da etapa**, com `{ nome, ehId, adIds, spe
 5. o **`spend` autoritativo é o do `/cadeia-cac`**. O outro feed arredonda em ponto diferente e diverge em centavos — **não some os dois**;
 6. `cpm` é conta, não busca: `spend ÷ impressions × 1000`. E `roas`/`cpa` do outro feed são **de pixel** — a régua de receita continua sendo `sales-daily ÷ investimento`.
 
-⚠️ **Limite prático conhecido:** a tool de `/creatives` corta em 200 itens e não expõe `offset`, enquanto a rota aceita até 500. Em projeto com muitos criativos na janela você recebe `truncated: true` **sem como buscar a cauda** — nesse caso, declare a limitação em vez de tratar o recorte como completo.
+⚠️ **Pagine antes de cruzar.** O `/creatives` devolve **50 por default** e até **500** por página. A resposta traz `total`, `returned`, `offset` e `truncated`: enquanto `truncated` for `true`, repita a chamada somando `limit` ao `offset`. **A junção com `adIds[]` só está completa depois de `truncated: false`** — parar antes faz a etapa aparecer com menos criativos do que tem, e o erro é silencioso.
+
+> *Até a Story 44.24 a tool cortava em 200 e não expunha `offset`: a orientação anterior era declarar a limitação, porque não havia alternativa. Havia — na rota, desde a 43.4. A tool é que não tinha recebido.*
 
 **Decisão registrada (44.18, AC0, 2026-08-29):** criativos por etapa **têm dono** — é o `/cadeia-cac`. Os campos de mídia extras se obtêm por junção, e **não** por rota nova. Se você sentir falta de um endpoint `get_stage_creative_performance`, a resposta é esta receita; a story que o criaria foi avaliada e fechada sem código.
 

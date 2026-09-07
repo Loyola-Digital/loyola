@@ -39,6 +39,8 @@ const rotaPanorama = readFileSync(
   "utf8",
 );
 const toolsMcp = readFileSync(resolve(raiz, "packages/mcp/src/tools.ts"), "utf8");
+/** Story 44.24 — a rota `/creatives`, cujo teto de `limit` a tool tem de espelhar. */
+const rotaMeta = readFileSync(resolve(raiz, "packages/api/src/routes/public-meta.ts"), "utf8");
 
 /**
  * O caminho tal como o Fastify o registra, extraído do fonte da rota.
@@ -202,5 +204,56 @@ describe("Story 44.20 — contrato entre docs/llms.txt e a rota do panorama", ()
 
     expect(entrada).toContain("1,1382");
     expect(/effectiveStatus/.test(entrada) && /n[aã]o [ée]/i.test(entrada)).toBe(true);
+  });
+});
+
+describe("Story 44.24 — a tool de criativos pagina como a rota", () => {
+  /**
+   * QA-4424-02: o @dev declarou "não dá para ter teste neste setup" porque
+   * `packages/mcp` não tem runner. A pergunta que discrimina não era "este
+   * pacote tem runner?", e sim "algum runner já enxerga este arquivo?" — e
+   * este aqui já lia `packages/mcp/src/tools.ts` desde a 44.14.
+   *
+   * O que trava: a defasagem que a 44.24 conserta é entre a TOOL e a ROTA, e
+   * as duas são lidas do fonte aqui.
+   */
+  const schemaDaTool = () => {
+    // `{6}` em vez de seis espaços literais: o ESLint recusa espaços contáveis
+    // a olho (`no-regex-spaces`), e com razão — um a mais ou a menos aqui faria
+    // o match falhar e o teste "não achar o inputSchema" por indentação.
+    const m = toolsMcp.match(/"get_creative_performance"[\s\S]*?inputSchema:\s*\{([\s\S]*?)\n {6}\},/);
+    if (!m) throw new Error("não achei o inputSchema de get_creative_performance");
+    return m[1];
+  };
+  const tetoDe = (fonte: string) => {
+    const m = fonte.match(/limit:[\s\S]*?\.max\((\d+)\)/);
+    return m ? Number(m[1]) : null;
+  };
+
+  it("o teto de `limit` da tool é o mesmo da rota", () => {
+    // Era 200 na tool contra 500 na rota — o consumidor via `truncated: true`
+    // e não alcançava a cauda. Se divergirem de novo, este teste cai.
+    //
+    // Os dois tetos são lidos do fonte, nunca escritos aqui: uma constante
+    // repetida no teste seria a terceira cópia a sair de sincronia.
+    const tetoDaRota = tetoDe(
+      rotaMeta.split("\n").find((l) => /limit:\s*z\.coerce/.test(l)) ?? "",
+    );
+    expect(tetoDaRota).toBe(500);
+    expect(tetoDe(schemaDaTool())).toBe(tetoDaRota);
+  });
+
+  it("a tool expõe `offset` no schema E o repassa na chamada", () => {
+    // As duas pontas: schema sem repasse aceita o parâmetro e perde o valor.
+    expect(schemaDaTool()).toMatch(/offset:/);
+    const repasse = toolsMcp.match(/creatives`,\s*\{([\s\S]*?)\}/);
+    expect(repasse?.[1]).toMatch(/\boffset\b/);
+  });
+
+  it("o `llms.txt` documenta os campos que são a condição de parada", () => {
+    // Sem `truncated` documentado, o laço da descrição não tem como parar.
+    for (const campo of ["total", "returned", "offset", "truncated"]) {
+      expect(llms).toContain(`"${campo}"`);
+    }
   });
 });
