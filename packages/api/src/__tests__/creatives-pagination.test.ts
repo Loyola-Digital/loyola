@@ -74,7 +74,10 @@ describe("ordenação estável", () => {
 
   it("sem desempate, a mesma entrada embaralhada daria ordens diferentes", () => {
     // Contraprova: é isto que a story evita.
-    const semDesempate = (arr: Criativo[]) => [...arr].sort((x, y) => y.spend - x.spend);
+    // Usa `valorDeOrdem` para não repetir a coerção de `null` aqui — e porque
+    // o ponto desta contraprova é a AUSÊNCIA do desempate, não o tipo.
+    const semDesempate = (arr: Criativo[]) =>
+      [...arr].sort((x, y) => valorDeOrdem(y) - valorDeOrdem(x));
     const a = semDesempate(muitos).map((c) => c.adId);
     const b = semDesempate([...muitos].reverse()).map((c) => c.adId);
     expect(a).not.toEqual(b);
@@ -83,7 +86,7 @@ describe("ordenação estável", () => {
   it("a métrica continua sendo o critério principal", () => {
     const ord = ordenar(muitos);
     for (let i = 1; i < ord.length; i++) {
-      expect(ord[i - 1].spend).toBeGreaterThanOrEqual(ord[i].spend);
+      expect(valorDeOrdem(ord[i - 1]!)).toBeGreaterThanOrEqual(valorDeOrdem(ord[i]!));
     }
   });
 });

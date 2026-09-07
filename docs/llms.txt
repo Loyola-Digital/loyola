@@ -45,8 +45,9 @@ Resposta: `{ "projectId", "range": {"from","to"}, "partial": false, "lastSyncedA
 
 ### GET /api/public/meta/v1/projects/{projectId}/creatives
 Performance por criativo (anúncio). Ordenável e filtrável por campanha.
-Query: `campaignId` (opcional), `from`, `to`, `orderBy` (`spend|ctr|cpc|cpm|cpl|cpa|roas|leads|impressions|clicks`, default `spend`), `limit` (1–200, default 50).
-Resposta: `{ "projectId", "range", "campaignId", "orderBy", "partial", "lastSyncedAt", "count", "creatives": [ Creative ] }`
+Query: `campaignId` (opcional), `from`, `to`, `orderBy` (`spend|ctr|cpc|cpm|cpl|cpa|roas|leads|impressions|clicks`, default `spend`), `limit` (**1–500**, default 50), `offset` (default 0).
+Resposta: `{ "projectId", "range", "campaignId", "orderBy", "partial", "lastSyncedAt", "count", "total", "returned", "offset", "truncated", "creatives": [ Creative ] }`
+⚠️ **`truncated: true` = há mais criativos além desta página.** Repita somando `limit` ao `offset` até `truncated` virar `false`; `total` diz quantos existem ao todo. Nunca conclua "o projeto tem N criativos" a partir de uma resposta truncada.
 `Creative = { adId, adName, campaignId, campaignName, adsetId, adsetName, creative: { imageUrl, thumbnailUrl, videoId, title, body, linkUrl, ctaType, objectType } | null, igPermalinkUrl, igPermalinkStale, adPermalinkUrl, adPermalinkStale, videoMetrics, ...(mesmas métricas de Campaign) }`
 
 **Três links diferentes, não confunda:**
@@ -149,7 +150,7 @@ Os `motivo` pedem **ações diferentes**: `semDados` = conectar fonte · `syncPe
   4. ⚠️ **`ctr`, `cpc` e `connectRate` existem nos dois feeds com o MESMO nome e NÃO são a mesma coisa** — divergem ~100× e por definição. Aqui: `ctr = linkClicks ÷ impressions` **decimal** e por clique no **LINK** (0,0149 = 1,49%), `cpc = spend ÷ linkClicks`, `connectRate` decimal. Em `/creatives`: `ctr = (clicks ÷ impressions) × 100` **percentual** e por clique **TOTAL**, `cpc = spend ÷ clicks`, `connectRate` ×100. **O comparável de lá é `ctrLink`/`cpcLink`, não `ctr`/`cpc`.** Nunca substitua um pelo outro nem os compare direto.
   5. **O `spend` autoritativo é o daqui.** O outro feed arredonda em ponto diferente e diverge em centavos: **não some os dois**, e cite o desta resposta.
   6. `cpm` você não precisa buscar: é `spend ÷ impressions × 1000` com os dois campos já acima. E lembre que `roas`/`cpa` do outro feed são **de pixel** — não use para decisão de receita.
-  7. ⚠️ **O recorte de `/creatives` pode vir incompleto sem avisar.** A tool corta em **200** itens (default 50, ordenado por spend) e **não expõe `offset`** — não há como buscar a cauda. Passe `limit` explícito, cheque o campo `truncated` da resposta e, se vier `true`, **declare a limitação** em vez de tratar o recorte como o conjunto da etapa. Nunca conclua "a etapa tem N criativos" a partir de uma resposta truncada.
+  7. ⚠️ **Pagine — o recorte não vem completo por default.** `limit` default é 50 e vai até **500**; use `offset` para avançar. A resposta traz `total`, `returned`, `offset` e `truncated`: enquanto `truncated` for `true`, repita somando `limit` ao `offset`. **Só depois de `truncated: false`** você tem o conjunto inteiro — e só então a junção com `adIds[]` está completa. Nunca conclua quantos criativos a etapa tem a partir de uma resposta truncada.
 **`distribuicaoHook`** — `{ mediana, melhor, pior, abaixoDeMetadeDaMediana, criativosDeVideo }`.
 **`atribuicao`** — `{ coberturaVendas, coberturaLeads, motivo, message }`. ⚠️ **Diagnóstico exibido, NUNCA multiplicador** (spec §2.7): não corrija número nenhum por ele.
 **`guardaDeCobertura`** — se o teto de Conv. LP foi protegido contra "a semana em que o rastreio funcionou melhor". Estados: `aplicada` · `semLeadNoPeriodo` · `indisponivel` · `naoSeAplica`.
