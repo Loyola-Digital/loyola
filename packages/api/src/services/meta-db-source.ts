@@ -20,9 +20,10 @@ import {
   metaCampaignInsightsDaily,
   metaPlacementInsightsDaily,
   metaHourlyInsightsDaily,
+  metaAdInsightsDaily,
   metaEntityNamesCache,
 } from "../db/schema.js";
-import type { MetaCampaignInsight, MetaPlacementInsight } from "./meta-ads.js";
+import type { AllAdInsight, MetaCampaignInsight, MetaPlacementInsight, VideoMetrics } from "./meta-ads.js";
 
 type ActionArr = { action_type: string; value: string }[] | null | undefined;
 
@@ -301,4 +302,123 @@ export async function getAdEffectiveStatusFromDb(
     if (r.effectiveStatus) out.set(r.entityId, r.effectiveStatus);
   }
   return out;
+}
+
+
+// ============================================================
+// Story 43.9 — insights por ANÚNCIO, DB-first
+//
+// `fetchAllAdInsights` era o último fetcher quente sem par no banco: os
+// dashboards do gestor o chamam em quatro pontos (`getTopPerformers`,
+// `getAllAdsAnalytics`, e dois de adset), e cada chamada é uma varredura da
+// conta na API da Meta — `level=ad`, todas as páginas.
+//
+// O limite da Meta é por conta/app e compartilhado entre TODOS os dashboards:
+// estourar derruba os cruzamentos de uma vez, e foi o que aconteceu em
+// 2026-07-16. A tabela `meta_ad_insights_daily` já existe e o sync a mantém
+// quente (medido em 2026-09-07: BBE, FZ e Lyrio sincronizados há 12 min).
+// Faltava alguém ler dela.
+// ============================================================
+
+/**
+ * As métricas de vídeo somadas dia a dia.
+ *
+ * Exportada para teste: é a única parte desta função que decide um número
+ * (o resto é somatório e junção), e é a que erra em silêncio se alguém trocar
+ * a soma pelo valor do último dia.
+ *
+ * `videoMetrics` é gravado por dia como jsonb, e no range vira a soma — nunca a
+ * do último dia, que é o que um `?? row.videoMetrics` faria por engano. Ausência
+ * em TODOS os dias devolve `null`, não um objeto de zeros: zero é medição, e
+ * `null` é "a Meta não devolveu reprodução nenhuma". A distinção decide se um
+ * criativo fica fora do ranking de hook ou aparece como o pior dele.
+ */
+export function somarVideoMetrics(brutos: unknown[]): VideoMetrics | null {
+  const validos = brutos.filter((v): v is Record<string, number> => v != null && typeof v === "object");
+  if (validos.length === 0) return null;
+  const soma = (k: string) => validos.reduce((s, v) => s + (Number(v[k]) || 0), 0);
+  const out: VideoMetrics = {
+    p25: soma("p25"),
+    p50: soma("p50"),
+    p75: soma("p75"),
+    p100: soma("p100"),
+    thruplay: soma("thruplay"),
+  };
+  // Opcionais: só entram se ao menos um dia os trouxe — senão `views3s: 0`
+  // diria "medimos e deu zero" onde o certo é "não veio".
+  if (validos.some((v) => v.views3s != null)) out.views3s = soma("views3s");
+  if (validos.some((v) => v.plays != null)) out.plays = soma("plays");
+  return out;
+}
+
+/**
+ * Insights por anúncio agregados no range, lendo de `meta_ad_insights_daily`.
+ *
+ * Mesma shape de `fetchAllAdInsights` — trocar a fonte no caller não muda a
+ * matemática a jusante (ROAS, CPL, imposto, hook rate).
+ *
+ * ⚠️ `ctr`, `cpc` e `cpm` saem como `""`, exatamente como em
+ * `getCampaignInsightsFromDb`: são taxas, e média de médias diárias não é a taxa
+ * do período. Quem precisa delas as re-deriva dos somatórios — que é o que o
+ * código a jusante já faz.
+ *
+ * ⚠️ `inline_link_clicks` não vem: `fetchAllAdInsightsImpl` **também não o pede**
+ * (confira os `fields` lá). As duas fontes omitem o mesmo campo, então nada
+ * muda de comportamento ao trocar.
+ *
+ * Devolve `[]` quando não há cobertura — o caller cai no fetch ao vivo.
+ */
+export async function getAdInsightsFromDb(
+  db: Database,
+  projectId: string,
+  since: string,
+  until: string,
+  campaignIds?: string[],
+): Promise<AllAdInsight[]> {
+  const conds = [
+    eq(metaAdInsightsDaily.projectId, projectId),
+    gte(metaAdInsightsDaily.dateStart, since),
+    lte(metaAdInsightsDaily.dateStart, until),
+  ];
+  if (campaignIds && campaignIds.length > 0) {
+    conds.push(inArray(metaAdInsightsDaily.campaignId, campaignIds));
+  }
+  const rows = await db.select().from(metaAdInsightsDaily).where(and(...conds));
+  if (rows.length === 0) return [];
+
+  const byAd = new Map<string, typeof rows>();
+  for (const r of rows) {
+    const list = byAd.get(r.adId);
+    if (list) list.push(r);
+    else byAd.set(r.adId, [r]);
+  }
+
+  return Array.from(byAd.entries()).map(([adId, rs]) => {
+    // O nome pode faltar em alguns dias e existir em outros — pega o primeiro
+    // que veio, e cai no id em vez de mostrar vazio.
+    const nomeDe = (campo: "adName" | "adsetName" | "campaignName") =>
+      rs.find((r) => r[campo])?.[campo] ?? null;
+    const idDe = (campo: "adsetId" | "campaignId") => rs.find((r) => r[campo])?.[campo] ?? "";
+
+    return {
+      ad_id: adId,
+      ad_name: nomeDe("adName") ?? adId,
+      adset_id: idDe("adsetId"),
+      adset_name: nomeDe("adsetName") ?? "",
+      campaign_id: idDe("campaignId"),
+      campaign_name: nomeDe("campaignName") ?? "",
+      date_start: since,
+      date_stop: until,
+      impressions: String(sumNumeric(rs, "impressions")),
+      reach: String(sumNumeric(rs, "reach")),
+      clicks: String(sumNumeric(rs, "clicks")),
+      spend: String(sumNumeric(rs, "spend")),
+      ctr: "",
+      cpc: "",
+      cpm: "",
+      actions: mergeActions(rs.map((r) => r.actions)),
+      action_values: mergeActions(rs.map((r) => r.actionValues)),
+      videoMetrics: somarVideoMetrics(rs.map((r) => r.videoMetrics)),
+    };
+  });
 }
