@@ -28,6 +28,13 @@ export interface BlocoDoMapa {
   /** Nota adesiva e bloco de texto guardam o conteúdo aqui, não no `label`. */
   texto?: string | null;
   estilo?: "h1" | "h2" | "h3" | "corpo" | null;
+  /**
+   * Alinhamento do texto dentro do bloco. Vazio = à esquerda.
+   *
+   * Só vale para nota e bloco de texto: no card de funil o conteúdo é ícone
+   * mais rótulo, já centralizado por natureza.
+   */
+  alinhamento?: "esquerda" | "centro" | "direita" | null;
   negrito?: boolean;
   italico?: boolean;
   fonte?: number | null;

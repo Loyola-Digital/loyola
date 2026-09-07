@@ -254,7 +254,17 @@ export const CORES_NOTA = [
   { nome: "Roxo", cor: "#e9d5ff" },
 ] as const;
 
-/** Cores para as caixas de elemento (item 8 do feedback). */
+/**
+ * Cores das caixas de elemento.
+ *
+ * Duas famílias por matiz — uma viva e uma escura —, porque a cor aqui é usada
+ * para SEPARAR trechos do funil, e oito tons vivos começam a se confundir a
+ * partir do quinto. Com o par claro/escuro, dois blocos vizinhos do mesmo
+ * matiz continuam distinguíveis de relance.
+ *
+ * As oito primeiras são as originais, na mesma ordem: quem já pintou um mapa
+ * encontra a cor onde ela estava.
+ */
 export const CORES_BLOCO = [
   { nome: "Índigo", cor: "#6366f1" },
   { nome: "Violeta", cor: "#8b5cf6" },
@@ -264,6 +274,22 @@ export const CORES_BLOCO = [
   { nome: "Rosa", cor: "#ec4899" },
   { nome: "Ciano", cor: "#06b6d4" },
   { nome: "Cinza", cor: "#6b7280" },
+  { nome: "Azul", cor: "#3b82f6" },
+  { nome: "Céu", cor: "#0ea5e9" },
+  { nome: "Turquesa", cor: "#14b8a6" },
+  { nome: "Lima", cor: "#84cc16" },
+  { nome: "Oliva", cor: "#65a30d" },
+  { nome: "Laranja", cor: "#f97316" },
+  { nome: "Tijolo", cor: "#c2410c" },
+  { nome: "Vinho", cor: "#9f1239" },
+  { nome: "Framboesa", cor: "#e11d48" },
+  { nome: "Fúcsia", cor: "#d946ef" },
+  { nome: "Púrpura", cor: "#7e22ce" },
+  { nome: "Marinho", cor: "#1e3a8a" },
+  { nome: "Petróleo", cor: "#0f766e" },
+  { nome: "Chumbo", cor: "#334155" },
+  { nome: "Areia", cor: "#a8a29e" },
+  { nome: "Grafite", cor: "#1f2937" },
 ] as const;
 
 /** Emojis dos blocos genéricos, agrupados pelo que o time desenha. */

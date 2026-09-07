@@ -53,3 +53,50 @@ export function comAoMenosUmaAba<B, C, T extends AbaDoMapa<B, C>>(
 ): (T | AbaDoMapa<B, C>)[] {
   return tabs && tabs.length > 0 ? tabs : [abaEmBranco<B, C>()];
 }
+
+/**
+ * As mesmas abas com ids NOVOS em tudo — abas, blocos e conectores.
+ *
+ * Serve à duplicação. Copiar o JSONB como está funcionaria, porque cada mapa
+ * tem o seu; o problema aparece depois, quando alguém copia um bloco da cópia
+ * e cola no original: o id colado já existe lá, e a ligação passa a apontar
+ * para o bloco errado sem erro nenhum.
+ *
+ * As referências dos conectores (`fromBox`/`toBox`) são reescritas pelo mesmo
+ * mapa de tradução — um conector que sobrasse apontando para o id antigo
+ * viraria uma seta solta no meio do desenho.
+ *
+ * Campo que não seja id é copiado como está: posição, cor, texto, imagem. É
+ * uma cópia do desenho, não uma reinterpretação dele.
+ */
+export function reidentificarAbas<
+  T extends {
+    id: string;
+    boxes: { id: string }[];
+    connectors: { id: string; fromBox: string; toBox: string }[];
+  },
+>(abas: T[], sufixo = "c"): T[] {
+  let n = 0;
+  const novoId = (prefixo: string) => `${prefixo}${sufixo}${(n += 1)}`;
+
+  return abas.map((aba, i) => {
+    const traducao = new Map<string, string>();
+    for (const b of aba.boxes ?? []) traducao.set(b.id, novoId("b"));
+
+    return {
+      ...aba,
+      id: `tab${sufixo}${i + 1}`,
+      boxes: (aba.boxes ?? []).map((b) => ({ ...b, id: traducao.get(b.id) ?? b.id })),
+      connectors: (aba.connectors ?? [])
+        // Conector cujo bloco não veio junto é DESCARTADO: apontar para um id
+        // que não existe desenha uma seta saindo do nada.
+        .filter((c) => traducao.has(c.fromBox) && traducao.has(c.toBox))
+        .map((c) => ({
+          ...c,
+          id: novoId("l"),
+          fromBox: traducao.get(c.fromBox) as string,
+          toBox: traducao.get(c.toBox) as string,
+        })),
+    } as T;
+  });
+}
