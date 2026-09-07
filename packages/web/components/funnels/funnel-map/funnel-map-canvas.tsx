@@ -22,6 +22,7 @@ import {
   ChevronDown, ChevronRight, ClipboardCopy, Copy, FileDown, FileText, Keyboard, Library, Loader2, Maximize2, Minimize2, Link2, Minus, Moon, Spline, Sun, Waypoints,
   PanelLeftClose, PanelLeftOpen, Pencil, Plus, RotateCcw, Save, Scan, Search,
   StickyNote, Trash2, Type, Undo2, Redo2, Unlink, X, Image as ImageIcon,
+  AlignLeft, AlignCenter, AlignRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { comEsquema, encurtar, linkAoColar, pedacosDoTexto } from "@/lib/utils/texto-com-links";
@@ -108,6 +109,17 @@ function IconePorNome({
 }
 
 /** Onde fica, em pixels, um ponto de conexão do bloco. */
+/**
+ * O gesto de SOMAR à seleção, nos dois sistemas.
+ *
+ * Shift é o que se usa no Mac; no Windows a mão vai para Ctrl. Aceitar só um
+ * dos dois faz metade do time achar que selecionar vários não existe. `metaKey`
+ * entra junto porque no Mac o Cmd também soma em quase todo editor.
+ */
+function somaASelecao(e: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }): boolean {
+  return e.shiftKey || e.ctrlKey || e.metaKey;
+}
+
 function pontoDoBloco(b: BlocoDoMapa, ponto: PontoDeConexao): { x: number; y: number } {
   switch (ponto) {
     case "top": return { x: b.x + b.width / 2, y: b.y };
@@ -581,11 +593,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
     const inicioX = e.clientX;
     const inicioY = e.clientY;
-    selecao.clicar(bloco.id, e.shiftKey);
+    selecao.clicar(bloco.id, somaASelecao(e));
 
     // Arrasta o GRUPO. As origens são fotografadas antes do gesto: acumular
     // delta sobre a posição corrente faria o erro do snap somar frame a frame.
-    const alvos = selecao.ids.has(bloco.id) && !e.shiftKey ? [...selecao.ids] : [bloco.id];
+    const alvos = selecao.ids.has(bloco.id) && !somaASelecao(e) ? [...selecao.ids] : [bloco.id];
     const origens = new Map(
       blocos.filter((b) => alvos.includes(b.id)).map((b) => [b.id, { x: b.x, y: b.y }]),
     );
@@ -1542,7 +1554,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
     const ini = paraDesenho(e.clientX, e.clientY);
     arrastouMarquee.current = false;
     setMarquee({ ax: ini.x, ay: ini.y, bx: ini.x, by: ini.y });
-    const base = e.shiftKey ? [...selecao.ids] : [];
+    const base = somaASelecao(e) ? [...selecao.ids] : [];
 
     const mover = (ev: PointerEvent) => {
       const p = paraDesenho(ev.clientX, ev.clientY);
@@ -1610,9 +1622,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       // `deltaMode` 1 é linha e 2 é página; normalizar evita que um mouse que
       // reporta linhas ande vinte vezes mais que um trackpad.
       const passo = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
-      // 0.00138 = os 0.0012 originais mais 15%, pedido depois do primeiro
-      // ajuste: a curva estava confortável, só um pouco lenta.
-      const fator = Math.exp(-passo * 0.00138);
+      // 0.001518 = os 0.0012 originais, mais 15% e depois mais 10% — dois
+      // pedidos seguidos, cada um sobre o valor anterior. Multiplicar é o que
+      // mantém "mais 10%" significando o mesmo na terceira vez.
+      const fator = Math.exp(-passo * 0.001518);
 
       setZoomComAncora(fator, e.clientX - area.left, e.clientY - area.top);
     }
@@ -1935,6 +1948,17 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
         setLinkDoBloco({ blocoId: alvo.id, url: alvo.url ?? "" });
         return;
       }
+      /**
+       * B esconde e mostra a barra lateral.
+       *
+       * Mesma tecla do Figma. O botão continua na barra de cima, mas com a
+       * paleta fechada ele fica longe de onde a mão está — no meio do desenho.
+       */
+      if (!mod && !e.altKey && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        alternarPaleta();
+        return;
+      }
       if (!mod && !e.altKey && e.key.toLowerCase() === "t") {
         e.preventDefault();
         adicionarTexto("corpo");
@@ -2173,10 +2197,15 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
             {telaCheia ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
           </Button>
           <Button
-            variant="ghost" size="icon" className="hidden h-6 w-6 md:inline-flex"
+            variant="ghost" size="icon"
+            /* Realçado quando a barra está OCULTA: sem a coluna na tela, um
+               ícone ghost no meio de outros seis não diz que ela existe. */
+            className={`hidden h-6 w-6 md:inline-flex ${
+              paletaAberta ? "" : "bg-primary/10 text-primary hover:bg-primary/20"
+            }`}
             onClick={alternarPaleta}
-            aria-label={paletaAberta ? "Ocultar barra lateral" : "Mostrar barra lateral"}
-            title={paletaAberta ? "Ocultar barra lateral" : "Mostrar barra lateral"}
+            aria-label={paletaAberta ? "Ocultar barra lateral (B)" : "Mostrar barra lateral (B)"}
+            title={paletaAberta ? "Ocultar barra lateral · B" : "Mostrar barra lateral · B"}
           >
             {paletaAberta ? <PanelLeftClose className="h-3 w-3" /> : <PanelLeftOpen className="h-3 w-3" />}
           </Button>
@@ -2606,7 +2635,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                   <div
                     key={b.id}
                     onPointerDown={(e) => iniciarArrasto(e, b)}
-                    onClick={(e) => { e.stopPropagation(); selecao.clicar(b.id, e.shiftKey); }}
+                    onClick={(e) => { e.stopPropagation(); selecao.clicar(b.id, somaASelecao(e)); }}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -2650,7 +2679,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                   <div
                     key={b.id}
                     onPointerDown={(e) => iniciarArrasto(e, b)}
-                    onClick={(e) => { e.stopPropagation(); selecao.clicar(b.id, e.shiftKey); }}
+                    onClick={(e) => { e.stopPropagation(); selecao.clicar(b.id, somaASelecao(e)); }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
                       if (b.imageUrl) setPdfAberto({ url: b.imageUrl, titulo: b.label });
@@ -2727,7 +2756,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                     // Selecionar de verdade, e não só parar a propagação: sem
                     // seleção não aparecem as âncoras nem a alça de tamanho, e
                     // a imagem virava um bloco de segunda classe no mapa.
-                    onClick={(e) => { e.stopPropagation(); selecao.clicar(b.id, e.shiftKey); }}
+                    onClick={(e) => { e.stopPropagation(); selecao.clicar(b.id, somaASelecao(e)); }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
                       if (b.imageUrl) setImagemAmpliada({ url: b.imageUrl, titulo: b.label });
@@ -2816,7 +2845,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                     // digitação (o clique dentro do textarea também subia).
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (editando?.id !== b.id) selecao.clicar(b.id, e.shiftKey);
+                      if (editando?.id !== b.id) selecao.clicar(b.id, somaASelecao(e));
                     }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
@@ -2930,6 +2959,15 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                           fontStyle: b.italico ? "italic" : "normal",
                           lineHeight: 1.25,
                           color: ehNota ? "#1f2937" : "var(--color-foreground)",
+                          // Sem alinhamento gravado, à esquerda — é como todo
+                          // texto do mapa sempre se comportou, e mudar o padrão
+                          // reposicionaria o que já está desenhado.
+                          textAlign:
+                            b.alinhamento === "centro"
+                              ? "center"
+                              : b.alinhamento === "direita"
+                                ? "right"
+                                : "left",
                         }}
                       >
                         {b.texto ? (
@@ -2985,7 +3023,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                 <div
                   key={b.id}
                   onPointerDown={(e) => iniciarArrasto(e, b)}
-                  onClick={(e) => { e.stopPropagation(); selecao.clicar(b.id, e.shiftKey); }}
+                  onClick={(e) => { e.stopPropagation(); selecao.clicar(b.id, somaASelecao(e)); }}
                   onDoubleClick={(e) => { e.stopPropagation(); selecao.definir([b.id]); setRenomeando({ id: b.id, valor: b.label }); }}
                   onContextMenu={(e) => {
                     e.preventDefault();
@@ -3304,6 +3342,37 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                     I
                   </button>
                 </div>
+                {/*
+                  Alinhamento — ao lado de negrito e itálico porque é a mesma
+                  natureza de ajuste, e quem procura um procura o outro.
+                */}
+                <div className="flex items-center gap-1 pt-0.5">
+                  <span className="mr-0.5 text-[10px] text-muted-foreground">Alinhar</span>
+                  {([
+                    ["esquerda", AlignLeft],
+                    ["centro", AlignCenter],
+                    ["direita", AlignRight],
+                  ] as const).map(([valor, Icone]) => {
+                    const ativo = (blocoSelecionado.alinhamento ?? "esquerda") === valor;
+                    return (
+                      <button
+                        key={valor}
+                        type="button"
+                        onClick={() => ajustarBloco(blocoSelecionado.id, { alinhamento: valor })}
+                        aria-label={`Alinhar à ${valor === "centro" ? "centro" : valor}`}
+                        title={`Alinhar à ${valor}`}
+                        className={`grid h-6 w-6 place-items-center rounded border transition-colors ${
+                          ativo
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border/60 hover:bg-muted"
+                        }`}
+                      >
+                        <Icone className="h-3 w-3" />
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <div className="flex items-center gap-1.5 pt-0.5">
                   <span className="text-[10px] text-muted-foreground">Tamanho</span>
                   <input
@@ -3971,6 +4040,8 @@ const ATALHOS: { grupo: string; itens: [string, string][] }[] = [
     itens: [
       ["Clique", "Seleciona o bloco"],
       ["Shift + clique", "Adiciona à seleção"],
+      ["Ctrl/⌘ + clique", "Adiciona à seleção (mesmo efeito)"],
+      ["Arrastar a seleção", "Move todos os selecionados juntos"],
       ["Arrastar no vazio", "Seleção por área"],
       ["⌘A", "Seleciona tudo"],
       ["Esc", "Limpa a seleção"],
@@ -3988,6 +4059,7 @@ const ATALHOS: { grupo: string; itens: [string, string][] }[] = [
       ["⌘Z / ⇧⌘Z", "Desfaz / refaz"],
       ["⌘S", "Salva agora (salva sozinho também)"],
       ["Setas", "Move 20px (Shift = 100px)"],
+      ["B", "Esconde e mostra a barra lateral"],
     ],
   },
   {

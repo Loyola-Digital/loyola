@@ -19,7 +19,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, Link2, Loader2, Trash2 } from "lucide-react";
+import { AlertTriangle, Copy, Link2, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -33,6 +33,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   useAtualizarMapa,
+  useDuplicarMapa,
   useExcluirMapaAvulso,
   useVincularMapa,
   type MapaNaLista,
@@ -51,6 +52,7 @@ export function EditarMapaDialog({
   const atualizar = useAtualizarMapa();
   const vincular = useVincularMapa();
   const excluir = useExcluirMapaAvulso();
+  const duplicar = useDuplicarMapa();
   const { data: empresas } = useProjects();
 
   const [nome, setNome] = useState("");
@@ -146,7 +148,41 @@ export function EditarMapaDialog({
             </select>
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex items-center justify-between gap-2">
+            {/*
+              Duplicar fica junto de Salvar, e não na zona de perigo: é um
+              gesto seguro — a cópia nasce à parte e o original não é tocado.
+            */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              disabled={ocupado || duplicar.isPending}
+              onClick={() =>
+                duplicar
+                  .mutateAsync({ id })
+                  .then((c) =>
+                    toast.success(`“${c.name}” criada`, {
+                      // A cópia sai da etapa e vira mapa avulso: sem dizer
+                      // isso, a pessoa a procura dentro do funil e não acha.
+                      description: "A cópia é um mapa avulso — está na lista de mapas.",
+                      duration: 8000,
+                    }),
+                  )
+                  .then(() => onOpenChange(false))
+                  .catch((e) =>
+                    toast.error(e instanceof Error ? e.message : "Não consegui duplicar"),
+                  )
+              }
+            >
+              {duplicar.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+              Duplicar
+            </Button>
+
             <Button size="sm" onClick={salvar} disabled={!nome.trim() || ocupado}>
               {atualizar.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
               Salvar

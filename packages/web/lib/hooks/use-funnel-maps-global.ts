@@ -74,6 +74,26 @@ export function useCriarMapa() {
   });
 }
 
+/**
+ * Duplica um mapa. A cópia nasce sempre AVULSA.
+ *
+ * Uma etapa tem um mapa só; duplicar dentro dela criaria duas etapas de mesmo
+ * nome no funil. A cópia é quase sempre um rascunho — "e se fosse assim?" — e
+ * não deveria entrar na estrutura do lançamento antes de alguém decidir.
+ */
+export function useDuplicarMapa() {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name?: string }) =>
+      apiClient<{ id: string; name: string }>(`/api/funnel-maps/${id}/duplicar`, {
+        method: "POST",
+        body: JSON.stringify(name ? { name } : {}),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["funnel-maps"] }),
+  });
+}
+
 export function useExcluirMapaAvulso() {
   const api = useApiClient();
   const qc = useQueryClient();

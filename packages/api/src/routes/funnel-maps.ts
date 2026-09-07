@@ -24,7 +24,7 @@ import {
   projectMembers,
   users,
 } from "../db/schema.js";
-import { abaEmBranco, comAoMenosUmaAba } from "../services/funnel-map-abas.js";
+import { abaEmBranco, comAoMenosUmaAba, reidentificarAbas } from "../services/funnel-map-abas.js";
 import { ordenarMapasPorAtividade } from "../services/funnel-maps-lista.js";
 import {
   MAX_UPLOAD_BYTES,
@@ -59,6 +59,8 @@ const boxSchema = z.object({
   texto: z.string().max(4000).nullable().optional(),
   /** Hierarquia do bloco de texto. */
   estilo: z.enum(["h1", "h2", "h3", "corpo"]).nullable().optional(),
+  /** Alinhamento do texto na nota e no bloco de texto. */
+  alinhamento: z.enum(["esquerda", "centro", "direita"]).nullable().optional(),
   negrito: z.boolean().optional(),
   italico: z.boolean().optional(),
   /** Tamanho da fonte em px, quando a pessoa ajusta à mão. */
@@ -502,6 +504,56 @@ export default fp(async function funnelMapRoutes(fastify) {
   });
 
   /** Um mapa avulso pelo id. Os que têm etapa seguem pelas rotas de funil. */
+  /**
+   * Duplica um mapa — o desenho inteiro, num mapa avulso novo.
+   *
+   * ## Sempre AVULSO, mesmo duplicando um mapa de etapa
+   *
+   * Uma etapa tem um mapa só. Duplicar dentro dela criaria duas etapas com o
+   * mesmo nome no funil, e a cópia é quase sempre um rascunho — "e se a gente
+   * fizesse assim?" — que não deveria entrar na estrutura do lançamento antes
+   * de alguém decidir.
+   *
+   * ## Os ids dos blocos são REESCRITOS
+   *
+   * Blocos e conectores se referenciam por id dentro do JSONB. Copiar como
+   * está funcionaria — cada mapa tem seu próprio JSONB —, mas colar um bloco
+   * de um mapa no outro depois traria um id que já existe lá, e a ligação
+   * apontaria para o bloco errado sem nenhum erro visível.
+   *
+   * Comentários NÃO vêm junto: são a conversa sobre AQUELE desenho, e
+   * reaparecer numa cópia que ninguém discutiu confunde quem os escreveu.
+   */
+  fastify.post("/api/funnel-maps/:id/duplicar", async (request, reply) => {
+    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const b = z.object({ name: z.string().trim().min(1).max(160).optional() }).safeParse(request.body ?? {});
+    if (!p.success || !b.success) return reply.code(400).send({ error: "Dados inválidos" });
+
+    const [origem] = await fastify.db
+      .select()
+      .from(funnelMaps)
+      .where(eq(funnelMaps.id, p.data.id))
+      .limit(1);
+    if (!origem) return reply.code(404).send({ error: "Mapa não encontrado" });
+
+    const nome = b.data.name?.trim() || `${origem.name ?? "Mapa"} (cópia)`;
+
+    const [copia] = await fastify.db
+      .insert(funnelMaps)
+      .values({
+        name: nome.slice(0, 160),
+        projectId: origem.projectId,
+        // Avulso de propósito — ver o cabeçalho.
+        stageId: null,
+        tabs: reidentificarAbas(origem.tabs ?? []),
+        updatedBy: request.userId ?? null,
+      })
+      .returning({ id: funnelMaps.id, name: funnelMaps.name });
+
+    return reply.code(201).send(copia);
+  });
+
   fastify.get("/api/funnel-maps/:id", async (request, reply) => {
     if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
