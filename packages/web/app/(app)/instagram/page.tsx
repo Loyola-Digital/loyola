@@ -16,6 +16,7 @@ import {
   useRefreshInstagram,
 } from "@/lib/hooks/use-instagram";
 import { AccountSelector } from "@/components/instagram/account-selector";
+import { TabelaMensal } from "@/components/instagram/tabela-mensal";
 import {
   PeriodSelector,
   periodToConfig,
@@ -155,6 +156,15 @@ export default function InstagramDashboardPage() {
         postsInPeriod={postsInPeriod}
         postsCountTruncated={postsCountTruncated}
       />
+
+      {/*
+        O comparativo mensal vem ANTES dos gráficos do período.
+
+        Ele responde "o perfil está crescendo ou caindo?", que é a pergunta
+        que se faz antes de qualquer outra — e os blocos abaixo respondem
+        "como foi este período", que só interessa depois dessa.
+      */}
+      <TabelaMensal accountId={selectedAccountId} />
 
       {/* Reach & Impressions chart */}
       <ReachChart

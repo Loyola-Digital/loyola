@@ -29,6 +29,13 @@ const linkProjectSchema = z.object({
   projectId: z.string().uuid(),
 });
 
+import {
+  comVariacao,
+  janelasMensais,
+  montarLinha,
+  reconstruirSeguidores,
+} from "../services/instagram-mensal.js";
+
 const idParamSchema = z.object({
   id: z.string().uuid(),
 });
@@ -394,6 +401,96 @@ export default fp(async function instagramRoutes(fastify) {
       }
     },
   );
+
+  /**
+   * A tabela mensal — o consolidado que os experts acompanham na planilha.
+   *
+   * ## Uma chamada de insights POR MÊS
+   *
+   * A Graph API não tem "relatório mensal": ela responde a uma janela
+   * `since/until`. Seis meses são seis janelas — e o cache do serviço as guarda
+   * por período, então a segunda visita do dia não chama a API nenhuma vez.
+   *
+   * ## Os posts vêm de UMA busca só
+   *
+   * Buscar mídia mês a mês repetiria os mesmos posts recentes em cada janela.
+   * Aqui vem a lista uma vez e cada post cai no mês da sua data — o que também
+   * evita seis vezes o custo de enriquecer cada post com insights.
+   *
+   * O último mês fica INCOMPLETO de propósito: é o mês corrente, e a API ainda
+   * demora cerca de dois dias para fechar os números de seguidores. A tela
+   * marca isso; escondê-lo faria o mês parecer uma queda.
+   */
+  fastify.get("/api/instagram/accounts/:id/mensal", async (request, reply) => {
+    const paramResult = idParamSchema.safeParse(request.params);
+    if (!paramResult.success) return reply.code(400).send({ error: "ID inválido" });
+
+    const account = await getAccount(paramResult.data.id);
+    if (!account) return reply.code(404).send({ error: "Conta não encontrada" });
+
+    const q = z
+      .object({ meses: z.coerce.number().int().min(2).max(12).optional() })
+      .safeParse(request.query);
+    if (!q.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const quantos = q.data.meses ?? 6;
+
+    const janelas = janelasMensais(quantos, new Date());
+
+    try {
+      const [perfil, midia, ...porJanela] = await Promise.all([
+        fastify.instagramService.getProfile(paramResult.data.id),
+        // 100 posts cobrem seis meses com folga em qualquer perfil do time.
+        fastify.instagramService.getMediaList(paramResult.data.id, 100),
+        ...janelas.map((j) =>
+          fastify.instagramService
+            .getAccountInsights(
+              paramResult.data.id,
+              "day",
+              Math.floor(j.inicio.getTime() / 1000),
+              Math.floor(j.fim.getTime() / 1000),
+            )
+            // Um mês que a API recusa não pode derrubar os outros cinco: vira
+            // linha zerada, que a tela mostra como "sem dado".
+            .catch(() => []),
+        ),
+      ]);
+
+      const linhas = janelas.map((j, i) => {
+        const doMes = (midia?.data ?? []).filter((m) => {
+          const t = new Date(m.timestamp);
+          return t >= j.inicio && t < j.fim;
+        });
+        return montarLinha(
+          j.mes,
+          porJanela[i] ?? [],
+          doMes.map((m) => ({
+            id: m.id,
+            caption: m.caption ?? null,
+            permalink: m.permalink ?? null,
+            timestamp: m.timestamp,
+            mediaType: m.media_type ?? null,
+            reach: m.reach ?? null,
+            views: m.views ?? null,
+            likes: m.like_count ?? null,
+            comments: m.comments_count ?? null,
+            saved: m.saved ?? null,
+            shares: m.shares ?? null,
+          })),
+        );
+      });
+
+      return {
+        conta: { id: account.id, username: account.instagramUsername },
+        seguidoresHoje: perfil.followers_count ?? null,
+        meses: comVariacao(reconstruirSeguidores(linhas, perfil.followers_count ?? 0)),
+      };
+    } catch (error) {
+      if (error instanceof InstagramApiError) {
+        return reply.code(error.statusCode).send(errorResponse(error));
+      }
+      throw error;
+    }
+  });
 
   // ---- GET /api/instagram/accounts/:id/media ----
   fastify.get("/api/instagram/accounts/:id/media", async (request, reply) => {
