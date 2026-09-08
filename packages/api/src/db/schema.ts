@@ -46,7 +46,11 @@ export const userRoleEnum = pgEnum("user_role", [
   "guest",
 ]);
 
-export const userStatusEnum = pgEnum("user_status", ["active", "pending", "blocked"]);
+export const userStatusEnum = pgEnum("user_status", [
+  "active",
+  "pending",
+  "blocked",
+]);
 
 export const messageRoleEnum = pgEnum("message_role", ["user", "assistant"]);
 
@@ -98,7 +102,7 @@ export const users = pgTable(
   (table) => [
     uniqueIndex("uq_users_clerk_id").on(table.clerkId),
     uniqueIndex("uq_users_email").on(table.email),
-  ]
+  ],
 );
 
 // ============================================================
@@ -128,7 +132,7 @@ export const apiKeys = pgTable(
   (table) => [
     uniqueIndex("uq_api_keys_key_hash").on(table.keyHash),
     index("idx_api_keys_created_by").on(table.createdBy),
-  ]
+  ],
 );
 
 // ============================================================
@@ -154,9 +158,7 @@ export const projects = pgTable(
       .defaultNow()
       .notNull(),
   },
-  (table) => [
-    index("idx_projects_created_by").on(table.createdBy),
-  ]
+  (table) => [index("idx_projects_created_by").on(table.createdBy)],
 );
 
 export const conversations = pgTable(
@@ -193,7 +195,7 @@ export const conversations = pgTable(
     index("idx_conversations_project").on(table.projectId),
     check("chk_message_count_positive", sql`message_count >= 0`),
     check("chk_total_tokens_positive", sql`total_tokens >= 0`),
-  ]
+  ],
 );
 
 export const messages = pgTable(
@@ -225,10 +227,10 @@ export const messages = pgTable(
   (table) => [
     index("idx_messages_conversation_created").on(
       table.conversationId,
-      table.createdAt
+      table.createdAt,
     ),
     check("chk_message_content_not_empty", sql`length(content) > 0`),
-  ]
+  ],
 );
 
 export const delegatedTasks = pgTable(
@@ -266,7 +268,7 @@ export const delegatedTasks = pgTable(
     uniqueIndex("uq_tasks_clickup_task_id").on(table.clickupTaskId),
     check("chk_task_title_not_empty", sql`length(title) > 0`),
     check("chk_task_clickup_url", sql`clickup_url LIKE 'https://%'`),
-  ]
+  ],
 );
 
 // ============================================================
@@ -299,7 +301,7 @@ export const instagramAccounts = pgTable(
   (table) => [
     uniqueIndex("uq_ig_accounts_instagram_user_id").on(table.instagramUserId),
     index("idx_ig_accounts_user").on(table.userId),
-  ]
+  ],
 );
 
 // Many-to-many: one Instagram account can belong to multiple projects
@@ -321,7 +323,7 @@ export const instagramAccountProjects = pgTable(
     unique("uq_ig_account_project").on(table.accountId, table.projectId),
     index("idx_ig_account_projects_account").on(table.accountId),
     index("idx_ig_account_projects_project").on(table.projectId),
-  ]
+  ],
 );
 
 // ============================================================
@@ -342,7 +344,14 @@ export const projectInvitations = pgTable(
     token: text("token").notNull().unique(),
     permissions: jsonb("permissions")
       .notNull()
-      .default({ instagram: true, traffic: true, youtubeAds: true, youtubeOrganic: true, conversations: true, mind: true }),
+      .default({
+        instagram: true,
+        traffic: true,
+        youtubeAds: true,
+        youtubeOrganic: true,
+        conversations: true,
+        mind: true,
+      }),
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -352,7 +361,7 @@ export const projectInvitations = pgTable(
   (table) => [
     uniqueIndex("idx_project_invitations_token").on(table.token),
     index("idx_project_invitations_project").on(table.projectId),
-  ]
+  ],
 );
 
 export const projectMembers = pgTable(
@@ -368,7 +377,14 @@ export const projectMembers = pgTable(
     role: text("role").notNull().default("guest"),
     permissions: jsonb("permissions")
       .notNull()
-      .default({ instagram: true, traffic: true, youtubeAds: true, youtubeOrganic: true, conversations: true, mind: true }),
+      .default({
+        instagram: true,
+        traffic: true,
+        youtubeAds: true,
+        youtubeOrganic: true,
+        conversations: true,
+        mind: true,
+      }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -377,7 +393,7 @@ export const projectMembers = pgTable(
     unique("uq_project_members_project_user").on(table.projectId, table.userId),
     index("idx_project_members_project").on(table.projectId),
     index("idx_project_members_user").on(table.userId),
-  ]
+  ],
 );
 
 export const projectMinds = pgTable(
@@ -399,7 +415,7 @@ export const projectMinds = pgTable(
     unique("uq_project_minds_project_mind").on(table.projectId, table.mindId),
     index("idx_project_minds_project").on(table.projectId),
     index("idx_project_minds_mind").on(table.mindId),
-  ]
+  ],
 );
 
 export const instagramMetricsCache = pgTable(
@@ -423,11 +439,11 @@ export const instagramMetricsCache = pgTable(
       table.accountId,
       table.metricType,
       table.periodStart,
-      table.periodEnd
+      table.periodEnd,
     ),
     index("idx_ig_metrics_account").on(table.accountId),
     index("idx_ig_metrics_expires").on(table.expiresAt),
-  ]
+  ],
 );
 
 // ============================================================
@@ -456,7 +472,7 @@ export const metaAdsAccounts = pgTable(
   (table) => [
     uniqueIndex("uq_meta_ads_meta_account_id").on(table.metaAccountId),
     index("idx_meta_ads_created_by").on(table.createdBy),
-  ]
+  ],
 );
 
 export const metaAdsAccountProjects = pgTable(
@@ -477,7 +493,7 @@ export const metaAdsAccountProjects = pgTable(
     unique("uq_meta_ads_account_project").on(table.accountId, table.projectId),
     index("idx_meta_ads_account_projects_account").on(table.accountId),
     index("idx_meta_ads_account_projects_project").on(table.projectId),
-  ]
+  ],
 );
 
 // ============================================================
@@ -508,7 +524,7 @@ export const googleAdsAccounts = pgTable(
   (table) => [
     uniqueIndex("uq_google_ads_customer_id").on(table.customerId),
     index("idx_google_ads_created_by").on(table.createdBy),
-  ]
+  ],
 );
 
 export const googleAdsAccountProjects = pgTable(
@@ -526,10 +542,13 @@ export const googleAdsAccountProjects = pgTable(
       .notNull(),
   },
   (table) => [
-    unique("uq_google_ads_account_project").on(table.accountId, table.projectId),
+    unique("uq_google_ads_account_project").on(
+      table.accountId,
+      table.projectId,
+    ),
     index("idx_google_ads_account_projects_account").on(table.accountId),
     index("idx_google_ads_account_projects_project").on(table.projectId),
-  ]
+  ],
 );
 
 // ============================================================
@@ -560,7 +579,7 @@ export const youtubeChannels = pgTable(
   (table) => [
     uniqueIndex("uq_youtube_channel_id").on(table.channelId),
     index("idx_youtube_channels_created_by").on(table.createdBy),
-  ]
+  ],
 );
 
 export const youtubeChannelProjects = pgTable(
@@ -581,14 +600,18 @@ export const youtubeChannelProjects = pgTable(
     unique("uq_youtube_channel_project").on(table.channelId, table.projectId),
     index("idx_youtube_channel_projects_channel").on(table.channelId),
     index("idx_youtube_channel_projects_project").on(table.projectId),
-  ]
+  ],
 );
 
 // ============================================================
 // FUNNELS TABLES (EPIC-10)
 // ============================================================
 
-export const funnelTypeEnum = pgEnum("funnel_type", ["launch", "perpetual", "mobile"]);
+export const funnelTypeEnum = pgEnum("funnel_type", [
+  "launch",
+  "perpetual",
+  "mobile",
+]);
 
 export const funnels = pgTable(
   "funnels",
@@ -599,16 +622,19 @@ export const funnels = pgTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     name: varchar("name", { length: 255 }).notNull(),
     type: funnelTypeEnum("type").notNull(),
-    metaAccountId: uuid("meta_account_id").references(() => metaAdsAccounts.id, {
-      onDelete: "set null",
-    }),
+    metaAccountId: uuid("meta_account_id").references(
+      () => metaAdsAccounts.id,
+      {
+        onDelete: "set null",
+      },
+    ),
     campaigns: jsonb("campaigns")
       .notNull()
       .default([])
       .$type<{ id: string; name: string }[]>(),
     googleAdsAccountId: uuid("google_ads_account_id").references(
       () => googleAdsAccounts.id,
-      { onDelete: "set null" }
+      { onDelete: "set null" },
     ),
     googleAdsCampaigns: jsonb("google_ads_campaigns")
       .notNull()
@@ -624,7 +650,7 @@ export const funnels = pgTable(
       .$type<{ uniq: number; id: string; domain: string }[]>(),
     compareFunnelId: uuid("compare_funnel_id").references(
       (): AnyPgColumn => funnels.id,
-      { onDelete: "set null" }
+      { onDelete: "set null" },
     ),
     /**
      * Dia 1 do funil comparado, quando não é o primeiro dia de veiculação.
@@ -650,13 +676,17 @@ export const funnels = pgTable(
     lastAuditBy: uuid("last_audit_by").references(() => users.id, {
       onDelete: "set null",
     }),
-    auditStatus: varchar("audit_status", { length: 20 }).default("pending").notNull(),
+    auditStatus: varchar("audit_status", { length: 20 })
+      .default("pending")
+      .notNull(),
     /** Story 10.8: ordem manual dentro do tipo (perpetuals/launches). Hard rule
      * "perpétuos antes de lançamentos" é enforced no endpoint, não no schema. */
     sortOrder: integer("sort_order").notNull().default(0),
     /** Story 10.9: soft archive. NULL = ativo, NOT NULL = arquivado. */
     archivedAt: timestamp("archived_at", { withTimezone: true }),
-    archivedBy: uuid("archived_by").references(() => users.id, { onDelete: "set null" }),
+    archivedBy: uuid("archived_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -666,8 +696,12 @@ export const funnels = pgTable(
   },
   (table) => [
     index("idx_funnels_project").on(table.projectId),
-    index("idx_funnels_project_sort").on(table.projectId, table.type, table.sortOrder),
-  ]
+    index("idx_funnels_project_sort").on(
+      table.projectId,
+      table.type,
+      table.sortOrder,
+    ),
+  ],
 );
 
 // ============================================================
@@ -711,7 +745,9 @@ export const funnelMaps = pgTable("funnel_maps", {
    * significa interno: a regra de acesso é "membro do projeto", e sem projeto
    * não há membro para conferir — então guest não vê.
    */
-  projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+  projectId: uuid("project_id").references(() => projects.id, {
+    onDelete: "set null",
+  }),
   /** Abas do mapa, cada uma com seus blocos e conectores. */
   tabs: jsonb("tabs")
     .$type<
@@ -759,9 +795,15 @@ export const funnelMaps = pgTable("funnel_maps", {
     >()
     .notNull()
     .default([]),
-  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedBy: uuid("updated_by").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
 
 export const funnelStages = pgTable(
@@ -772,16 +814,19 @@ export const funnelStages = pgTable(
       .notNull()
       .references(() => funnels.id, { onDelete: "cascade" }),
     name: varchar("name", { length: 255 }).notNull(),
-    metaAccountId: uuid("meta_account_id").references(() => metaAdsAccounts.id, {
-      onDelete: "set null",
-    }),
+    metaAccountId: uuid("meta_account_id").references(
+      () => metaAdsAccounts.id,
+      {
+        onDelete: "set null",
+      },
+    ),
     campaigns: jsonb("campaigns")
       .notNull()
       .default([])
       .$type<{ id: string; name: string }[]>(),
     googleAdsAccountId: uuid("google_ads_account_id").references(
       () => googleAdsAccounts.id,
-      { onDelete: "set null" }
+      { onDelete: "set null" },
     ),
     googleAdsCampaigns: jsonb("google_ads_campaigns")
       .notNull()
@@ -803,7 +848,9 @@ export const funnelStages = pgTable(
     lastAuditBy: uuid("last_audit_by").references(() => users.id, {
       onDelete: "set null",
     }),
-    auditStatus: varchar("audit_status", { length: 20 }).default("pending").notNull(),
+    auditStatus: varchar("audit_status", { length: 20 })
+      .default("pending")
+      .notNull(),
     projectionEndDate: date("projection_end_date"),
     leadGoal: integer("lead_goal"),
     /**
@@ -829,7 +876,10 @@ export const funnelStages = pgTable(
      * abaixo (spec §5). Campo MANUAL **apenas enquanto não houver venda real** —
      * com venda, o número certo é `faturamento ÷ nº de vendas` do Loyola.
      */
-    ticketMedioManual: numeric("ticket_medio_manual", { precision: 12, scale: 2 }),
+    ticketMedioManual: numeric("ticket_medio_manual", {
+      precision: 12,
+      scale: 2,
+    }),
     // Story 18.56: URL manual de cada LP da tabela "Desempenho de Testes de
     // LPs". Chave = lpName normalizado (trim+lowercase, ex. "lpa"); valor =
     // URL http(s). As LPs são derivadas do Campaign Name (18.46), então o
@@ -849,13 +899,17 @@ export const funnelStages = pgTable(
     // GA4 e o token ficam em ga4_connections (por projeto); cada etapa só escolhe
     // QUAL página analisar. NULL = etapa sem análise GA4 configurada.
     ga4PageFilter: text("ga4_page_filter"),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index("idx_funnel_stages_funnel").on(table.funnelId),
     index("idx_funnel_stages_projection").on(table.projectionEndDate),
-  ]
+  ],
 );
 
 // ============================================================
@@ -873,31 +927,28 @@ export const stageSalesSpreadsheets = pgTable(
     spreadsheetId: varchar("spreadsheet_id", { length: 255 }).notNull(),
     spreadsheetName: varchar("spreadsheet_name", { length: 255 }).notNull(),
     sheetName: varchar("sheet_name", { length: 255 }).notNull(),
-    columnMapping: jsonb("column_mapping")
-      .notNull()
-      .default({})
-      .$type<{
-        // Story 19.10: email opcional — planilha de Evento Presencial
-        // ("event_sales") identifica venda por linha (nome+telefone), sem email.
-        email?: string;
-        customerName?: string;
-        productName?: string;
-        valorBruto?: string;
-        valorLiquido?: string;
-        formaPagamento?: string;
-        canalOrigem?: string;
-        dataVenda?: string;
-        utm_source?: string;
-        utm_medium?: string;
-        utm_campaign?: string;
-        utm_content?: string;
-        utm_term?: string;
-        // Story 19.10 — campos do Evento Presencial
-        closer?: string;
-        telefone?: string;
-        caixa?: string;
-        negociacao?: string;
-      }>(),
+    columnMapping: jsonb("column_mapping").notNull().default({}).$type<{
+      // Story 19.10: email opcional — planilha de Evento Presencial
+      // ("event_sales") identifica venda por linha (nome+telefone), sem email.
+      email?: string;
+      customerName?: string;
+      productName?: string;
+      valorBruto?: string;
+      valorLiquido?: string;
+      formaPagamento?: string;
+      canalOrigem?: string;
+      dataVenda?: string;
+      utm_source?: string;
+      utm_medium?: string;
+      utm_campaign?: string;
+      utm_content?: string;
+      utm_term?: string;
+      // Story 19.10 — campos do Evento Presencial
+      closer?: string;
+      telefone?: string;
+      caixa?: string;
+      negociacao?: string;
+    }>(),
     // Story 18.51a: nomes de produtos (productName) marcados como ORDER BUMP.
     // Todo produto NÃO listado aqui é tratado como "produto da captação" (o
     // ingresso). Base das métricas "únicas" (dedup por e-mail, só captação) vs
@@ -920,14 +971,16 @@ export const stageSalesSpreadsheets = pgTable(
      * minúsculas, sem espaços nas pontas).
      */
     productTypes: jsonb("product_types").$type<Record<string, string> | null>(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     // UNIQUE total foi dropado (migration 0031) — etapas tipo "sales" precisam
     // de N planilhas por stage. Capture/main_product seguem com partial UNIQUE
     // criado por SQL: WHERE subtype IN ('capture', 'main_product').
     index("idx_stage_sales_spreadsheets_stage").on(table.stageId),
-  ]
+  ],
 );
 
 // ============================================================
@@ -964,7 +1017,11 @@ export const funnelSurveys = pgTable(
          * Quando setado, computeBands usa direto da célula em vez de recalcular
          * via scoring_model. Workflow: n8n grava a faixa na planilha; app só lê. */
         faixa?: string;
-        questions?: Array<{ columnName: string; label: string; showInDashboard: boolean }>;
+        questions?: Array<{
+          columnName: string;
+          label: string;
+          showInDashboard: boolean;
+        }>;
       }>()
       .default({}),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -975,7 +1032,7 @@ export const funnelSurveys = pgTable(
     index("idx_funnel_surveys_funnel").on(table.funnelId),
     index("idx_funnel_surveys_stage").on(table.stageId),
     index("idx_funnel_surveys_type").on(table.surveyType),
-  ]
+  ],
 );
 
 // ============================================================
@@ -993,21 +1050,30 @@ export const funnelNpsDatasets = pgTable(
     funnelId: uuid("funnel_id")
       .notNull()
       .references(() => funnels.id, { onDelete: "cascade" }),
-    stageId: uuid("stage_id").references(() => funnelStages.id, { onDelete: "cascade" }),
+    stageId: uuid("stage_id").references(() => funnelStages.id, {
+      onDelete: "cascade",
+    }),
     label: varchar("label", { length: 120 }).notNull().default("NPS"),
     spreadsheetId: varchar("spreadsheet_id", { length: 255 }).notNull(),
     spreadsheetName: varchar("spreadsheet_name", { length: 255 }).notNull(),
     sheetName: varchar("sheet_name", { length: 255 }).notNull(),
     columnMapping: jsonb("column_mapping")
       .notNull()
-      .$type<{ name?: string; email?: string; score?: string; timestamp?: string }>()
+      .$type<{
+        name?: string;
+        email?: string;
+        score?: string;
+        timestamp?: string;
+      }>()
       .default({}),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index("idx_funnel_nps_funnel").on(table.funnelId),
     index("idx_funnel_nps_stage").on(table.stageId),
-  ]
+  ],
 );
 
 /** Epic 38 — status do brinde por respondente do NPS (marcado no evento). */
@@ -1021,12 +1087,17 @@ export const npsBrindeStatus = pgTable(
     /** Chave estável do respondente (Respondent ID do Tally, ou email/nome). */
     respondentKey: varchar("respondent_key", { length: 255 }).notNull(),
     delivered: boolean("delivered").notNull().default(false),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
-    unique("uq_nps_brinde_dataset_respondent").on(table.datasetId, table.respondentKey),
+    unique("uq_nps_brinde_dataset_respondent").on(
+      table.datasetId,
+      table.respondentKey,
+    ),
     index("idx_nps_brinde_dataset").on(table.datasetId),
-  ]
+  ],
 );
 
 // ============================================================
@@ -1045,19 +1116,24 @@ export const stageLeadScoringSchemas = pgTable(
       onDelete: "set null",
     }),
     schemaJson: jsonb("schema_json").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [
-    index("idx_lead_scoring_stage").on(table.stageId),
-  ]
+  (table) => [index("idx_lead_scoring_stage").on(table.stageId)],
 );
 
 // ============================================================
 // SALES PRODUCTS & SPREADSHEET MAPPINGS (Settings — Sales Integration)
 // ============================================================
 
-export const salesProductTypeEnum = pgEnum("sales_product_type", ["inferior", "superior"]);
+export const salesProductTypeEnum = pgEnum("sales_product_type", [
+  "inferior",
+  "superior",
+]);
 
 export const salesProducts = pgTable(
   "sales_products",
@@ -1071,12 +1147,14 @@ export const salesProducts = pgTable(
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [
-    index("idx_sales_products_project").on(table.projectId),
-  ]
+  (table) => [index("idx_sales_products_project").on(table.projectId)],
 );
 
 export const salesSpreadsheetMappings = pgTable(
@@ -1089,28 +1167,26 @@ export const salesSpreadsheetMappings = pgTable(
     spreadsheetId: varchar("spreadsheet_id", { length: 255 }).notNull(),
     spreadsheetName: varchar("spreadsheet_name", { length: 255 }).notNull(),
     sheetName: varchar("sheet_name", { length: 255 }).notNull(),
-    columnMapping: jsonb("column_mapping")
-      .notNull()
-      .$type<{
-        email: string;
-        date: string;
-        origin?: string;
-        type?: string;
-        value?: string;
-        name?: string;
-        phone?: string;
-        status?: string;
-        utm_source?: string;
-        utm_medium?: string;
-        utm_campaign?: string;
-        utm_content?: string;
-        utm_term?: string;
-      }>(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    columnMapping: jsonb("column_mapping").notNull().$type<{
+      email: string;
+      date: string;
+      origin?: string;
+      type?: string;
+      value?: string;
+      name?: string;
+      phone?: string;
+      status?: string;
+      utm_source?: string;
+      utm_medium?: string;
+      utm_campaign?: string;
+      utm_content?: string;
+      utm_term?: string;
+    }>(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [
-    index("idx_sales_mappings_product").on(table.productId),
-  ]
+  (table) => [index("idx_sales_mappings_product").on(table.productId)],
 );
 
 // ============================================================
@@ -1158,7 +1234,10 @@ export const manualSales = pgTable(
     /** Parcelamento (Evento Presencial): nº de parcelas combinadas. null = à vista. */
     installmentCount: integer("installment_count"),
     /** Parcelamento: valor combinado mensal de cada parcela. */
-    installmentAmount: numeric("installment_amount", { precision: 12, scale: 2 }),
+    installmentAmount: numeric("installment_amount", {
+      precision: 12,
+      scale: 2,
+    }),
     /** Parcelamento: data da 1ª parcela (as demais vencem mensalmente). */
     firstInstallmentDate: date("first_installment_date"),
     /** Reembolso (Evento Presencial): quando a venda foi reembolsada. null = ativa. */
@@ -1166,22 +1245,25 @@ export const manualSales = pgTable(
     /** Motivo do reembolso (obrigatório ao reembolsar). */
     refundReason: text("refund_reason"),
     /** Quem lançou o reembolso. */
-    refundedBy: uuid("refunded_by").references(() => users.id, { onDelete: "set null" }),
+    refundedBy: uuid("refunded_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index("idx_manual_sales_stage_date").on(table.stageId, table.saleDate),
     check("manual_sales_value_positive", sql`${table.value} > 0`),
-  ]
+  ],
 );
 
 // ============================================================
 // FUNNEL SPREADSHEETS (EPIC-17 — Planilhas Genéricas no Funil)
 // ============================================================
-
 
 /**
  * Comprovante (print ou PDF) de uma venda manual.
@@ -1212,13 +1294,15 @@ export const manualSaleReceipts = pgTable(
     uploadedBy: uuid("uploaded_by")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     // Um comprovante por venda: reenviar substitui, em vez de acumular versões
     // que ninguém saberia qual é a boa.
     uniqueIndex("uq_manual_sale_receipt").on(table.manualSaleId),
-  ]
+  ],
 );
 
 export const funnelSpreadsheetTypeEnum = pgEnum("funnel_spreadsheet_type", [
@@ -1254,35 +1338,33 @@ export const funnelSpreadsheets = pgTable(
     spreadsheetId: varchar("spreadsheet_id", { length: 255 }).notNull(),
     spreadsheetName: varchar("spreadsheet_name", { length: 255 }).notNull(),
     sheetName: varchar("sheet_name", { length: 255 }).notNull(),
-    columnMapping: jsonb("column_mapping")
-      .notNull()
-      .$type<{
-        name?: string;
-        email?: string;
-        phone?: string;
-        date?: string;
-        status?: string;
-        value?: string;
-        valorBruto?: string;
-        valorLiquido?: string;
-        formaPagamento?: string;
-        /**
-         * Story 29.31: nome do produto de cada venda — pré-requisito da 29.30
-         * (classificar Principal / Order Bump / Upsell / Downsell).
-         *
-         * Mesmo nome usado por `stageSalesSpreadsheets.columnMapping` (:739) e
-         * por `SaleColumnMapping` no shared. Este tipo era o único dos três sem
-         * o campo; a story fecha a divergência.
-         */
-        productName?: string;
-        /** Story 18.17: faixa de lead scoring (A/B/C/D) */
-        faixa?: string;
-        utm_source?: string;
-        utm_medium?: string;
-        utm_campaign?: string;
-        utm_content?: string;
-        utm_term?: string;
-      }>(),
+    columnMapping: jsonb("column_mapping").notNull().$type<{
+      name?: string;
+      email?: string;
+      phone?: string;
+      date?: string;
+      status?: string;
+      value?: string;
+      valorBruto?: string;
+      valorLiquido?: string;
+      formaPagamento?: string;
+      /**
+       * Story 29.31: nome do produto de cada venda — pré-requisito da 29.30
+       * (classificar Principal / Order Bump / Upsell / Downsell).
+       *
+       * Mesmo nome usado por `stageSalesSpreadsheets.columnMapping` (:739) e
+       * por `SaleColumnMapping` no shared. Este tipo era o único dos três sem
+       * o campo; a story fecha a divergência.
+       */
+      productName?: string;
+      /** Story 18.17: faixa de lead scoring (A/B/C/D) */
+      faixa?: string;
+      utm_source?: string;
+      utm_medium?: string;
+      utm_campaign?: string;
+      utm_content?: string;
+      utm_term?: string;
+    }>(),
     /**
      * Story 29.49: tipo de cada produto vendido — `productName` → tipo.
      *
@@ -1321,14 +1403,17 @@ export const funnelSpreadsheets = pgTable(
   (table) => [
     index("idx_funnel_spreadsheets_funnel").on(table.funnelId),
     index("idx_funnel_spreadsheets_stage").on(table.stageId),
-  ]
+  ],
 );
 
 // ============================================================
 // ORGANIC POSTS LINKED TO STAGES (EPIC-23 — Story 23.1)
 // ============================================================
 
-export const organicPostSourceEnum = pgEnum("organic_post_source", ["youtube", "instagram"]);
+export const organicPostSourceEnum = pgEnum("organic_post_source", [
+  "youtube",
+  "instagram",
+]);
 
 export const stageOrganicPosts = pgTable(
   "stage_organic_posts",
@@ -1345,13 +1430,22 @@ export const stageOrganicPosts = pgTable(
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
-    unique("uq_stage_organic_post").on(table.stageId, table.source, table.externalId),
+    unique("uq_stage_organic_post").on(
+      table.stageId,
+      table.source,
+      table.externalId,
+    ),
     index("idx_stage_organic_posts_stage").on(table.stageId),
-    index("idx_stage_organic_posts_project_source").on(table.projectId, table.source),
-  ]
+    index("idx_stage_organic_posts_project_source").on(
+      table.projectId,
+      table.source,
+    ),
+  ],
 );
 
 // ============================================================
@@ -1375,12 +1469,15 @@ export const instagramMonthlyReports = pgTable(
       .notNull(),
   },
   (table) => [
-    unique("uq_instagram_monthly_report_project_month").on(table.projectId, table.month),
+    unique("uq_instagram_monthly_report_project_month").on(
+      table.projectId,
+      table.month,
+    ),
     index("idx_instagram_monthly_reports_project_generated_at").on(
       table.projectId,
       table.generatedAt,
     ),
-  ]
+  ],
 );
 
 // ============================================================
@@ -1399,11 +1496,13 @@ export const funnelGroupsSpreadsheets = pgTable(
     spreadsheetName: varchar("spreadsheet_name", { length: 255 }).notNull(),
     sheetName: varchar("sheet_name", { length: 255 }).notNull(),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index("idx_funnel_groups_spreadsheets_funnel").on(table.funnelId),
-  ]
+  ],
 );
 
 export const funnelGroupSnapshots = pgTable(
@@ -1425,13 +1524,22 @@ export const funnelGroupSnapshots = pgTable(
     participantsAmount: integer("participants_amount").notNull().default(0),
     /** 'sendflow' (lido da fonte) ou 'planilha' (exportação manual, legado). */
     source: varchar("source", { length: 20 }).notNull().default("planilha"),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
-    unique("uq_group_snapshots_unique").on(table.funnelId, table.campaignId, table.snapshotAt),
-    index("idx_group_snapshots_funnel_date").on(table.funnelId, table.snapshotAt),
+    unique("uq_group_snapshots_unique").on(
+      table.funnelId,
+      table.campaignId,
+      table.snapshotAt,
+    ),
+    index("idx_group_snapshots_funnel_date").on(
+      table.funnelId,
+      table.snapshotAt,
+    ),
     index("idx_group_snapshots_campaign").on(table.funnelId, table.campaignId),
-  ]
+  ],
 );
 
 // ============================================================
@@ -1447,14 +1555,20 @@ export const funnelBatchTurns = pgTable(
       .references(() => funnels.id, { onDelete: "cascade" }),
     date: date("date").notNull(),
     label: varchar("label", { length: 255 }).notNull(),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     unique("uq_batch_turns_funnel_date").on(table.funnelId, table.date),
     index("idx_batch_turns_funnel").on(table.funnelId),
-  ]
+  ],
 );
 
 // ============================================================
@@ -1475,10 +1589,16 @@ export const projectZoomConnections = pgTable(
     clientId: varchar("client_id", { length: 255 }).notNull(),
     clientSecretEncrypted: text("client_secret_encrypted").notNull(),
     clientSecretIv: text("client_secret_iv").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("idx_project_zoom_connections_project").on(table.projectId)]
+  (table) => [
+    index("idx_project_zoom_connections_project").on(table.projectId),
+  ],
 );
 
 // ============================================================
@@ -1499,10 +1619,14 @@ export const mauticConnections = pgTable(
     username: varchar("username", { length: 255 }).notNull(),
     passwordEncrypted: text("password_encrypted").notNull(),
     passwordIv: text("password_iv").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("idx_mautic_connections_project").on(table.projectId)]
+  (table) => [index("idx_mautic_connections_project").on(table.projectId)],
 );
 
 export const funnelStageMauticCampaigns = pgTable(
@@ -1514,13 +1638,21 @@ export const funnelStageMauticCampaigns = pgTable(
       .unique()
       .references(() => funnelStages.id, { onDelete: "cascade" }),
     mauticCampaignId: varchar("mautic_campaign_id", { length: 64 }).notNull(),
-    mauticCampaignName: varchar("mautic_campaign_name", { length: 500 }).notNull(),
+    mauticCampaignName: varchar("mautic_campaign_name", {
+      length: 500,
+    }).notNull(),
     /** "auto" (casado pelo nome do funil) | "manual" (selecionado na lista). */
-    matchMode: varchar("match_mode", { length: 16 }).notNull().default("manual"),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    matchMode: varchar("match_mode", { length: 16 })
+      .notNull()
+      .default("manual"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("idx_mautic_stage_campaign_stage").on(table.stageId)]
+  (table) => [index("idx_mautic_stage_campaign_stage").on(table.stageId)],
 );
 
 // ============================================================
@@ -1541,10 +1673,14 @@ export const hotmartConnections = pgTable(
     clientIdIv: text("client_id_iv").notNull(),
     clientSecretEncrypted: text("client_secret_encrypted").notNull(),
     clientSecretIv: text("client_secret_iv").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("idx_hotmart_connections_project").on(table.projectId)]
+  (table) => [index("idx_hotmart_connections_project").on(table.projectId)],
 );
 
 // Story 34.x (perf): cache persistente do dashboard/products Hotmart. A API
@@ -1561,9 +1697,11 @@ export const hotmartCache = pgTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     cacheKey: varchar("cache_key", { length: 200 }).notNull(),
     data: jsonb("data").notNull(),
-    computedAt: timestamp("computed_at", { withTimezone: true }).defaultNow().notNull(),
+    computedAt: timestamp("computed_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [primaryKey({ columns: [table.projectId, table.cacheKey] })]
+  (table) => [primaryKey({ columns: [table.projectId, table.cacheKey] })],
 );
 
 // ============================================================
@@ -1595,10 +1733,14 @@ export const kiwifyConnections = pgTable(
     // projectId no path; a autenticação do POST é a comparação constant-time deste
     // token. Gerado sob demanda (crypto.randomBytes). NUNCA logar.
     webhookToken: text("webhook_token").unique(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("idx_kiwify_connections_project").on(table.projectId)]
+  (table) => [index("idx_kiwify_connections_project").on(table.projectId)],
 );
 
 // ============================================================
@@ -1646,7 +1788,10 @@ export const applicationStageConfigs = pgTable(
      * que falta escolher a fonte de venda — em vez de exibir zero vendas, que
      * seria indistinguível de "não vendeu nada".
      */
-    salesSpreadsheetIds: jsonb("sales_spreadsheet_ids").$type<string[]>().notNull().default([]),
+    salesSpreadsheetIds: jsonb("sales_spreadsheet_ids")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
     /**
      * Quais vendas pertencem a esta etapa, pela UTM.
      *
@@ -1661,9 +1806,15 @@ export const applicationStageConfigs = pgTable(
       .$type<{ campo: string; modo: "igual" | "contem"; valores: string[] }[]>()
       .notNull()
       .default([]),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [index("application_stage_configs_stage_idx").on(t.stageId)],
 );
@@ -1689,10 +1840,14 @@ export const kiwifyStageConfigs = pgTable(
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("idx_kiwify_stage_configs_stage").on(table.stageId)]
+  (table) => [index("idx_kiwify_stage_configs_stage").on(table.stageId)],
 );
 
 export const memberkitConnections = pgTable(
@@ -1705,10 +1860,14 @@ export const memberkitConnections = pgTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     apiKeyEncrypted: text("api_key_encrypted").notNull(),
     apiKeyIv: text("api_key_iv").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("idx_memberkit_connections_project").on(table.projectId)]
+  (table) => [index("idx_memberkit_connections_project").on(table.projectId)],
 );
 
 // Config de matrícula POR ETAPA: em qual(is) turma(s) do MemberKit matricular o
@@ -1721,14 +1880,21 @@ export const stageMemberkitEnrollment = pgTable(
       .notNull()
       .unique()
       .references(() => funnelStages.id, { onDelete: "cascade" }),
-    classroomIds: jsonb("classroom_ids").notNull().default([]).$type<number[]>(),
+    classroomIds: jsonb("classroom_ids")
+      .notNull()
+      .default([])
+      .$type<number[]>(),
     /** active | inactive | pending | expired (enum do POST /users do MemberKit). */
     status: varchar("status", { length: 10 }).notNull().default("active"),
     autoEnroll: boolean("auto_enroll").notNull().default(true),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("idx_stage_memberkit_enrollment_stage").on(table.stageId)]
+  (table) => [index("idx_stage_memberkit_enrollment_stage").on(table.stageId)],
 );
 
 // ============================================================
@@ -1746,12 +1912,18 @@ export const stageEventProducts = pgTable(
     name: varchar("name", { length: 255 }).notNull(),
     /** Turma do MemberKit onde matricular quem compra este produto (null = sem matrícula). */
     memberkitClassroomId: integer("memberkit_classroom_id"),
-    memberkitClassroomName: varchar("memberkit_classroom_name", { length: 255 }),
+    memberkitClassroomName: varchar("memberkit_classroom_name", {
+      length: 255,
+    }),
     sortOrder: integer("sort_order").notNull().default(0),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("idx_stage_event_products_stage").on(table.stageId)]
+  (table) => [index("idx_stage_event_products_stage").on(table.stageId)],
 );
 
 export const stageEventClosers = pgTable(
@@ -1763,10 +1935,14 @@ export const stageEventClosers = pgTable(
       .references(() => funnelStages.id, { onDelete: "cascade" }),
     name: varchar("name", { length: 255 }).notNull(),
     sortOrder: integer("sort_order").notNull().default(0),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("idx_stage_event_closers_stage").on(table.stageId)]
+  (table) => [index("idx_stage_event_closers_stage").on(table.stageId)],
 );
 
 // Story 19.12b — planilhas de vendas do funil "espelhadas" na etapa de Evento.
@@ -1782,12 +1958,17 @@ export const stageEventMirroredSheets = pgTable(
     sourceSpreadsheetId: uuid("source_spreadsheet_id")
       .notNull()
       .references(() => stageSalesSpreadsheets.id, { onDelete: "cascade" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index("idx_stage_event_mirrored_event_stage").on(table.eventStageId),
-    uniqueIndex("uq_stage_event_mirrored").on(table.eventStageId, table.sourceSpreadsheetId),
-  ]
+    uniqueIndex("uq_stage_event_mirrored").on(
+      table.eventStageId,
+      table.sourceSpreadsheetId,
+    ),
+  ],
 );
 
 // Story 19.13 — Mapa do Evento: status de cada lead/participante na etapa de
@@ -1806,12 +1987,17 @@ export const stageEventLeadStatus = pgTable(
     note: text("note"),
     /** Vendedor/closer atribuído ao lead (nome livre; espelha stage_event_closers). */
     assignedSeller: varchar("assigned_seller", { length: 255 }),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index("idx_stage_event_lead_status_stage").on(table.stageId),
-    uniqueIndex("uq_stage_event_lead_status").on(table.stageId, table.leadEmail),
-  ]
+    uniqueIndex("uq_stage_event_lead_status").on(
+      table.stageId,
+      table.leadEmail,
+    ),
+  ],
 );
 
 // ============================================================
@@ -1832,18 +2018,30 @@ export const stageSalesPlanSources = pgTable(
     tipo: varchar("tipo", { length: 80 }).notNull().default(""),
     /** ID da planilha do Google (string, não uuid). */
     spreadsheetId: varchar("spreadsheet_id", { length: 255 }).notNull(),
-    spreadsheetName: varchar("spreadsheet_name", { length: 500 }).notNull().default(""),
+    spreadsheetName: varchar("spreadsheet_name", { length: 500 })
+      .notNull()
+      .default(""),
     sheetName: varchar("sheet_name", { length: 255 }).notNull(),
     /** { name?, email?, telefone?, tipo?, faturamento? } — colunas mapeadas. */
     mapping: jsonb("mapping")
-      .$type<{ name?: string; email?: string; telefone?: string; tipo?: string; faturamento?: string }>()
+      .$type<{
+        name?: string;
+        email?: string;
+        telefone?: string;
+        tipo?: string;
+        faturamento?: string;
+      }>()
       .notNull()
       .default({}),
     sortOrder: integer("sort_order").notNull().default(0),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("idx_stage_sales_plan_sources_stage").on(table.stageId)]
+  (table) => [index("idx_stage_sales_plan_sources_stage").on(table.stageId)],
 );
 
 // Matriz de decisão (global): faixa [min, max) de faturamento → oferta.
@@ -1861,10 +2059,14 @@ export const stageSalesPlanRules = pgTable(
     maxRevenue: numeric("max_revenue", { precision: 14, scale: 2 }),
     offer: varchar("offer", { length: 500 }).notNull().default(""),
     sortOrder: integer("sort_order").notNull().default(0),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("idx_stage_sales_plan_rules_stage").on(table.stageId)]
+  (table) => [index("idx_stage_sales_plan_rules_stage").on(table.stageId)],
 );
 
 // Story 35.6 (Epic 35 fase 2 — webhooks de assinatura). A Public API da Kiwify
@@ -1888,13 +2090,21 @@ export const kiwifyWebhookEvents = pgTable(
     // sha256 hex do corpo cru — idempotência por projeto.
     dedupKey: text("dedup_key").notNull(),
     payload: jsonb("payload").notNull(),
-    receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
-    unique("kiwify_webhook_events_project_dedup_unique").on(table.projectId, table.dedupKey),
+    unique("kiwify_webhook_events_project_dedup_unique").on(
+      table.projectId,
+      table.dedupKey,
+    ),
     index("idx_kiwify_webhook_events_project").on(table.projectId),
-    index("idx_kiwify_webhook_events_subscription").on(table.projectId, table.subscriptionId),
-  ]
+    index("idx_kiwify_webhook_events_subscription").on(
+      table.projectId,
+      table.subscriptionId,
+    ),
+  ],
 );
 
 // Story 35.6 (fase 2): estado NORMALIZADO atual da assinatura — 1 linha por
@@ -1927,13 +2137,23 @@ export const kiwifySubscriptions = pgTable(
     canceledAt: timestamp("canceled_at", { withTimezone: true }),
     lastEventType: text("last_event_type"),
     lastEventAt: timestamp("last_event_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
-    unique("kiwify_subscriptions_project_sub_unique").on(table.projectId, table.subscriptionId),
-    index("idx_kiwify_subscriptions_project_status").on(table.projectId, table.status),
-  ]
+    unique("kiwify_subscriptions_project_sub_unique").on(
+      table.projectId,
+      table.subscriptionId,
+    ),
+    index("idx_kiwify_subscriptions_project_status").on(
+      table.projectId,
+      table.status,
+    ),
+  ],
 );
 
 // Epic 37 — Integração GA4 (Google Analytics Data API) por projeto. Conexão via
@@ -1955,10 +2175,14 @@ export const ga4Connections = pgTable(
     /** ID numérico da property GA4 (sem o prefixo "properties/"). */
     propertyId: varchar("property_id", { length: 32 }).notNull(),
     propertyName: text("property_name"),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("idx_ga4_connections_project").on(table.projectId)]
+  (table) => [index("idx_ga4_connections_project").on(table.projectId)],
 );
 
 // Story 35.1 (perf): cache persistente do dashboard/products Kiwify. A API
@@ -1974,9 +2198,11 @@ export const kiwifyCache = pgTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     cacheKey: varchar("cache_key", { length: 200 }).notNull(),
     data: jsonb("data").notNull(),
-    computedAt: timestamp("computed_at", { withTimezone: true }).defaultNow().notNull(),
+    computedAt: timestamp("computed_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [primaryKey({ columns: [table.projectId, table.cacheKey] })]
+  (table) => [primaryKey({ columns: [table.projectId, table.cacheKey] })],
 );
 
 // ============================================================
@@ -2005,10 +2231,14 @@ export const revenuecatConnections = pgTable(
      * e toda rota que lesse esta tabela devolvia 500. Foi assim que o overview
      * do RevenueCat apareceu zerado na tela do Lyrio.
      */
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("idx_revenuecat_connections_project").on(table.projectId)]
+  (table) => [index("idx_revenuecat_connections_project").on(table.projectId)],
 );
 
 // Config POR ETAPA (stageType "lyrio"): qual RevenueCat project a etapa observa
@@ -2039,19 +2269,25 @@ export const revenuecatStageConfig = pgTable(
     platformFeePct: numeric("platform_fee_pct", { precision: 5, scale: 2 })
       .notNull()
       .default("15.00"),
-    taxPct: numeric("tax_pct", { precision: 5, scale: 2 }).notNull().default("5.00"),
+    taxPct: numeric("tax_pct", { precision: 5, scale: 2 })
+      .notNull()
+      .default("5.00"),
     otherCostsPct: numeric("other_costs_pct", { precision: 5, scale: 2 })
       .notNull()
       .default("1.00"),
     /** token secreto embutido na URL do webhook. Gerado sob demanda. NUNCA logar. */
     webhookToken: text("webhook_token").unique(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index("idx_revenuecat_stage_config_stage").on(table.stageId),
     index("idx_revenuecat_stage_config_project").on(table.projectId),
-  ]
+  ],
 );
 
 // Vendas/eventos vindos do webhook do RevenueCat, por etapa. Idempotente via
@@ -2082,7 +2318,10 @@ export const revenuecatSales = pgTable(
     productId: varchar("product_id", { length: 255 }),
     countryCode: varchar("country_code", { length: 8 }),
     currency: varchar("currency", { length: 8 }),
-    priceInPurchasedCurrency: numeric("price_in_purchased_currency", { precision: 14, scale: 4 }),
+    priceInPurchasedCurrency: numeric("price_in_purchased_currency", {
+      precision: 14,
+      scale: 4,
+    }),
     revenueUsd: numeric("revenue_usd", { precision: 14, scale: 4 }),
     purchasedAt: timestamp("purchased_at", { withTimezone: true }),
     /**
@@ -2114,17 +2353,34 @@ export const revenuecatSales = pgTable(
     /** Atributo custom do app: paid_ads | referral_url | play_store_organic. */
     acquisitionSource: varchar("acquisition_source", { length: 64 }),
     payload: jsonb("payload").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
-    unique("revenuecat_sales_stage_event_unique").on(table.stageId, table.eventId),
-    index("idx_revenuecat_sales_stage_purchased").on(table.stageId, table.purchasedAt),
-    index("idx_revenuecat_sales_stage_event_at").on(table.stageId, table.eventAt),
+    unique("revenuecat_sales_stage_event_unique").on(
+      table.stageId,
+      table.eventId,
+    ),
+    index("idx_revenuecat_sales_stage_purchased").on(
+      table.stageId,
+      table.purchasedAt,
+    ),
+    index("idx_revenuecat_sales_stage_event_at").on(
+      table.stageId,
+      table.eventAt,
+    ),
     index("idx_revenuecat_sales_project").on(table.projectId),
     // Story 42.6: chaves de cruzamento com campanha e anúncio da Meta.
-    index("idx_revenuecat_sales_stage_utm_campaign").on(table.stageId, table.utmCampaign),
-    index("idx_revenuecat_sales_stage_utm_content").on(table.stageId, table.utmContent),
-  ]
+    index("idx_revenuecat_sales_stage_utm_campaign").on(
+      table.stageId,
+      table.utmCampaign,
+    ),
+    index("idx_revenuecat_sales_stage_utm_content").on(
+      table.stageId,
+      table.utmContent,
+    ),
+  ],
 );
 
 /**
@@ -2152,18 +2408,35 @@ export const revenuecatSubscriptions = pgTable(
     status: varchar("status", { length: 40 }),
     startsAt: timestamp("starts_at", { withTimezone: true }),
     endsAt: timestamp("ends_at", { withTimezone: true }),
-    currentPeriodStartsAt: timestamp("current_period_starts_at", { withTimezone: true }),
-    currentPeriodEndsAt: timestamp("current_period_ends_at", { withTimezone: true }),
+    currentPeriodStartsAt: timestamp("current_period_starts_at", {
+      withTimezone: true,
+    }),
+    currentPeriodEndsAt: timestamp("current_period_ends_at", {
+      withTimezone: true,
+    }),
     entitlements: jsonb("entitlements"),
     payload: jsonb("payload").notNull(),
-    syncedAt: timestamp("synced_at", { withTimezone: true }).defaultNow().notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    syncedAt: timestamp("synced_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
-    uniqueIndex("uq_revenuecat_subscriptions_stage_sub").on(table.stageId, table.subscriptionId),
-    index("idx_revenuecat_subscriptions_stage_starts").on(table.stageId, table.startsAt),
-    index("idx_revenuecat_subscriptions_customer").on(table.stageId, table.customerId),
-  ]
+    uniqueIndex("uq_revenuecat_subscriptions_stage_sub").on(
+      table.stageId,
+      table.subscriptionId,
+    ),
+    index("idx_revenuecat_subscriptions_stage_starts").on(
+      table.stageId,
+      table.startsAt,
+    ),
+    index("idx_revenuecat_subscriptions_customer").on(
+      table.stageId,
+      table.customerId,
+    ),
+  ],
 );
 
 /**
@@ -2206,13 +2479,15 @@ export const revenuecatMetricSnapshots = pgTable(
     metrics: jsonb("metrics").notNull(),
     /** Instante exato da coleta: `active_subscriptions` é snapshot, e coletar
      *  às 3h ou às 23h dá números diferentes para o mesmo "dia". */
-    collectedAt: timestamp("collected_at", { withTimezone: true }).defaultNow().notNull(),
+    collectedAt: timestamp("collected_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     // AC3: rodar duas vezes no mesmo dia atualiza, não duplica.
     unique("uq_rc_snapshot_stage_date").on(table.stageId, table.snapshotDate),
     index("idx_rc_snapshot_stage_date").on(table.stageId, table.snapshotDate),
-  ]
+  ],
 );
 
 export const revenuecatBackfillState = pgTable("revenuecat_backfill_state", {
@@ -2228,7 +2503,9 @@ export const revenuecatBackfillState = pgTable("revenuecat_backfill_state", {
   error: text("error"),
   startedAt: timestamp("started_at", { withTimezone: true }),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
 
 // Story 28.7: cache persistente de nomes Meta (ad/adset/campaign) — substitui
@@ -2247,12 +2524,20 @@ export const metaEntityNamesCache = pgTable(
     // e entidades sem status resolvido ficam NULL → o dashboard exibe "—", nunca
     // "Pausado" por ausência de dado. Sincronizado pelo backfill de nomes.
     effectiveStatus: varchar("effective_status", { length: 40 }),
-    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).defaultNow().notNull(),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.projectId, table.entityType, table.entityId] }),
-    index("idx_meta_names_cache_lookup").on(table.projectId, table.entityType, table.lastSyncedAt),
-  ]
+    primaryKey({
+      columns: [table.projectId, table.entityType, table.entityId],
+    }),
+    index("idx_meta_names_cache_lookup").on(
+      table.projectId,
+      table.entityType,
+      table.lastSyncedAt,
+    ),
+  ],
 );
 
 // Story 18.26 Fase 2: cache persistente de creative metadata Meta (imagem,
@@ -2266,41 +2551,44 @@ export const metaAdCreativesCache = pgTable(
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
     adId: varchar("ad_id", { length: 64 }).notNull(),
-    creative: jsonb("creative")
-      .notNull()
-      .$type<{
-        imageUrl?: string | null;
-        thumbnailUrl?: string | null;
-        videoId?: string | null;
-        title?: string | null;
-        body?: string | null;
-        linkUrl?: string | null;
-        ctaType?: string | null;
-        objectType?: string | null;
-        /** Story 29.43: versão do resolver que escreveu `linkUrl`. */
-        linkUrlResolver?: number;
-        /**
-         * Story 36.8: permalink do ANÚNCIO (post no Facebook) — não o destino
-         * do clique (`linkUrl`) nem o permalink do vídeo.
-         */
-        adPermalinkUrl?: string | null;
-        /** Story 36.8: versão do resolver que escreveu `adPermalinkUrl`. */
-        adPermalinkResolver?: number;
-        /**
-         * Story 29.63: permalink do post no INSTAGRAM (`/p/{shortcode}/`).
-         * Preferido sobre o `adPermalinkUrl` (Facebook) na tela: é o link que o
-         * anunciante reconhece, e cobre 96–100% dos anúncios com entrega.
-         */
-        igPermalinkUrl?: string | null;
-        /** Story 29.63: versão do resolver que escreveu `igPermalinkUrl`. */
-        igPermalinkResolver?: number;
-      }>(),
-    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).defaultNow().notNull(),
+    creative: jsonb("creative").notNull().$type<{
+      imageUrl?: string | null;
+      thumbnailUrl?: string | null;
+      videoId?: string | null;
+      title?: string | null;
+      body?: string | null;
+      linkUrl?: string | null;
+      ctaType?: string | null;
+      objectType?: string | null;
+      /** Story 29.43: versão do resolver que escreveu `linkUrl`. */
+      linkUrlResolver?: number;
+      /**
+       * Story 36.8: permalink do ANÚNCIO (post no Facebook) — não o destino
+       * do clique (`linkUrl`) nem o permalink do vídeo.
+       */
+      adPermalinkUrl?: string | null;
+      /** Story 36.8: versão do resolver que escreveu `adPermalinkUrl`. */
+      adPermalinkResolver?: number;
+      /**
+       * Story 29.63: permalink do post no INSTAGRAM (`/p/{shortcode}/`).
+       * Preferido sobre o `adPermalinkUrl` (Facebook) na tela: é o link que o
+       * anunciante reconhece, e cobre 96–100% dos anúncios com entrega.
+       */
+      igPermalinkUrl?: string | null;
+      /** Story 29.63: versão do resolver que escreveu `igPermalinkUrl`. */
+      igPermalinkResolver?: number;
+    }>(),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.projectId, table.adId] }),
-    index("idx_meta_ad_creatives_lookup").on(table.projectId, table.lastSyncedAt),
-  ]
+    index("idx_meta_ad_creatives_lookup").on(
+      table.projectId,
+      table.lastSyncedAt,
+    ),
+  ],
 );
 
 // Story 18.26 Fase 3: cache persistente de insights diários por campanha.
@@ -2334,9 +2622,11 @@ export const metaCreativeThumbnails = pgTable(
     conteudo: bytea("conteudo").notNull(),
     /** De qual URL veio — para auditar e para saber se o criativo mudou. */
     sourceUrl: text("source_url"),
-    fetchedAt: timestamp("fetched_at", { withTimezone: true }).defaultNow().notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [primaryKey({ columns: [table.projectId, table.adId] })]
+  (table) => [primaryKey({ columns: [table.projectId, table.adId] })],
 );
 
 export const metaCampaignInsightsDaily = pgTable(
@@ -2352,13 +2642,22 @@ export const metaCampaignInsightsDaily = pgTable(
     reach: numeric("reach").notNull().default("0"),
     clicks: numeric("clicks").notNull().default("0"),
     actions: jsonb("actions").$type<{ action_type: string; value: string }[]>(),
-    actionValues: jsonb("action_values").$type<{ action_type: string; value: string }[]>(),
-    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).defaultNow().notNull(),
+    actionValues:
+      jsonb("action_values").$type<{ action_type: string; value: string }[]>(),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.projectId, table.campaignId, table.dateStart] }),
-    index("idx_meta_campaign_insights_lookup").on(table.projectId, table.campaignId, table.dateStart),
-  ]
+    primaryKey({
+      columns: [table.projectId, table.campaignId, table.dateStart],
+    }),
+    index("idx_meta_campaign_insights_lookup").on(
+      table.projectId,
+      table.campaignId,
+      table.dateStart,
+    ),
+  ],
 );
 
 // Story 18.26 Fase 3: análogo pra insights por ad.
@@ -2380,14 +2679,21 @@ export const metaAdInsightsDaily = pgTable(
     reach: numeric("reach").notNull().default("0"),
     clicks: numeric("clicks").notNull().default("0"),
     actions: jsonb("actions").$type<{ action_type: string; value: string }[]>(),
-    actionValues: jsonb("action_values").$type<{ action_type: string; value: string }[]>(),
+    actionValues:
+      jsonb("action_values").$type<{ action_type: string; value: string }[]>(),
     videoMetrics: jsonb("video_metrics"),
-    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).defaultNow().notNull(),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.projectId, table.adId, table.dateStart] }),
-    index("idx_meta_ad_insights_campaign").on(table.projectId, table.campaignId, table.dateStart),
-  ]
+    index("idx_meta_ad_insights_campaign").on(
+      table.projectId,
+      table.campaignId,
+      table.dateStart,
+    ),
+  ],
 );
 
 // Epic 35+: breakdown de placement por dia (publisher_platform × platform_position).
@@ -2407,15 +2713,26 @@ export const metaPlacementInsightsDaily = pgTable(
     impressions: numeric("impressions").notNull().default("0"),
     clicks: numeric("clicks").notNull().default("0"),
     actions: jsonb("actions").$type<{ action_type: string; value: string }[]>(),
-    actionValues: jsonb("action_values").$type<{ action_type: string; value: string }[]>(),
-    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).defaultNow().notNull(),
+    actionValues:
+      jsonb("action_values").$type<{ action_type: string; value: string }[]>(),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     primaryKey({
-      columns: [table.projectId, table.dateStart, table.publisherPlatform, table.platformPosition],
+      columns: [
+        table.projectId,
+        table.dateStart,
+        table.publisherPlatform,
+        table.platformPosition,
+      ],
     }),
-    index("idx_meta_placement_insights_lookup").on(table.projectId, table.dateStart),
-  ]
+    index("idx_meta_placement_insights_lookup").on(
+      table.projectId,
+      table.dateStart,
+    ),
+  ],
 );
 
 /**
@@ -2465,14 +2782,19 @@ export const metaHourlyInsightsDaily = pgTable(
     clicks: numeric("clicks").notNull().default("0"),
     /** Fuso da conta no momento da coleta (ex.: `America/Sao_Paulo`). */
     accountTimezone: varchar("account_timezone", { length: 64 }),
-    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).defaultNow().notNull(),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     primaryKey({
       columns: [table.projectId, table.dateStart, table.campaignId, table.hour],
     }),
-    index("idx_meta_hourly_insights_lookup").on(table.projectId, table.dateStart),
-  ]
+    index("idx_meta_hourly_insights_lookup").on(
+      table.projectId,
+      table.dateStart,
+    ),
+  ],
 );
 
 // Epic 35+: estado do sync Meta por (projeto, conta, tipo). Fonte do selo
@@ -2497,7 +2819,7 @@ export const metaSyncState = pgTable(
   (table) => [
     primaryKey({ columns: [table.projectId, table.accountId, table.kind] }),
     index("idx_meta_sync_state_project").on(table.projectId),
-  ]
+  ],
 );
 
 export const funnelStageZoomMeetings = pgTable(
@@ -2516,12 +2838,17 @@ export const funnelStageZoomMeetings = pgTable(
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
     cachedData: jsonb("cached_data"),
     syncError: text("sync_error"),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
-    uniqueIndex("uq_zoom_meetings_stage_uuid").on(table.stageId, table.meetingUuid),
+    uniqueIndex("uq_zoom_meetings_stage_uuid").on(
+      table.stageId,
+      table.meetingUuid,
+    ),
     index("idx_zoom_meetings_stage").on(table.stageId),
-  ]
+  ],
 );
 
 // ============================================================
@@ -2535,34 +2862,42 @@ export const sprintDashboardConfig = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     singleton: boolean("singleton").notNull().default(true),
-    blocks: jsonb("blocks").notNull().default([]).$type<Array<{
-      id: string;
-      title: string;
-      subtitle?: string;
-      color: string;
-      clickupListIds: string[];
-      filters: {
-        statuses?: string[];
-        tags?: string[];
-        assigneeIds?: string[];
-      };
-      groupBy?: "status" | "tag" | "assignee" | null;
-      sortOrder: number;
-      campaignPhases?: Array<{
+    blocks: jsonb("blocks").notNull().default([]).$type<
+      Array<{
         id: string;
-        label: string;
-        startDate: string;
-        endDate?: string;
-        color?: string;
-      }>;
-    }>>(),
-    updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+        title: string;
+        subtitle?: string;
+        color: string;
+        clickupListIds: string[];
+        filters: {
+          statuses?: string[];
+          tags?: string[];
+          assigneeIds?: string[];
+        };
+        groupBy?: "status" | "tag" | "assignee" | null;
+        sortOrder: number;
+        campaignPhases?: Array<{
+          id: string;
+          label: string;
+          startDate: string;
+          endDate?: string;
+          color?: string;
+        }>;
+      }>
+    >(),
+    updatedBy: uuid("updated_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     uniqueIndex("sprint_dashboard_config_singleton_uniq").on(table.singleton),
-  ]
+  ],
 );
 
 // ============================================================
@@ -2580,16 +2915,30 @@ export const projectSwitchySettings = pgTable(
       .unique()
       .references(() => projects.id, { onDelete: "cascade" }),
     pixels: jsonb("pixels")
-      .$type<{ platform: string; value: string; title?: string; id?: string; workspaceId?: number | string | null }[]>()
+      .$type<
+        {
+          platform: string;
+          value: string;
+          title?: string;
+          id?: string;
+          workspaceId?: number | string | null;
+        }[]
+      >()
       .notNull()
       .default(sql`'[]'::jsonb`),
     showGdpr: boolean("show_gdpr").notNull().default(false),
     defaultUtmTerm: varchar("default_utm_term", { length: 120 }),
     defaultUtmContent: varchar("default_utm_content", { length: 120 }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("idx_project_switchy_settings_project").on(table.projectId)]
+  (table) => [
+    index("idx_project_switchy_settings_project").on(table.projectId),
+  ],
 );
 
 export const switchyChannelPresets = pgTable(
@@ -2604,10 +2953,14 @@ export const switchyChannelPresets = pgTable(
     utmSource: varchar("utm_source", { length: 120 }).notNull(),
     sortOrder: integer("sort_order").notNull().default(0),
     enabled: boolean("enabled").notNull().default(true),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("idx_switchy_presets_project").on(table.projectId)]
+  (table) => [index("idx_switchy_presets_project").on(table.projectId)],
 );
 
 export const switchyShortenedLinks = pgTable(
@@ -2641,13 +2994,15 @@ export const switchyShortenedLinks = pgTable(
     shortUrl: text("short_url"),
     switchyLinkId: varchar("switchy_link_id", { length: 255 }),
     switchyUniq: bigint("switchy_uniq", { mode: "number" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index("idx_switchy_links_project").on(table.projectId),
     index("idx_switchy_links_created_at").on(table.createdAt),
     index("idx_switchy_links_funnel").on(table.funnelId),
-  ]
+  ],
 );
 
 // ============================================================
@@ -2667,11 +3022,18 @@ export const sellerAliases = pgTable(
     /** Nome exibido no breakdown. Capitalização preservada. */
     canonicalName: varchar("canonical_name", { length: 255 }).notNull(),
     /** Variações que colapsam no canônico, já normalizadas (lowercase+trim). */
-    aliases: jsonb("aliases").notNull().default(sql`'[]'::jsonb`).$type<string[]>(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    aliases: jsonb("aliases")
+      .notNull()
+      .default(sql`'[]'::jsonb`)
+      .$type<string[]>(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("idx_seller_aliases_project").on(table.projectId)]
+  (table) => [index("idx_seller_aliases_project").on(table.projectId)],
 );
 
 // ============================================================
@@ -2691,9 +3053,13 @@ export const publicMetricsCache = pgTable(
     scope: varchar("scope", { length: 40 }).notNull(),
     key: varchar("key", { length: 200 }).notNull(),
     payload: jsonb("payload").notNull(),
-    computedAt: timestamp("computed_at", { withTimezone: true }).defaultNow().notNull(),
+    computedAt: timestamp("computed_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [primaryKey({ columns: [table.projectId, table.scope, table.key] })]
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.scope, table.key] }),
+  ],
 );
 
 // ============================================================
@@ -2732,7 +3098,7 @@ export const debriefings = pgTable(
   (table) => [
     index("idx_debriefings_created_at").on(table.createdAt),
     index("idx_debriefings_stage").on(table.stageId),
-  ]
+  ],
 );
 
 // ============================================================
@@ -2748,14 +3114,24 @@ export const stageComercialConfig = pgTable("stage_comercial_config", {
     .unique()
     .references(() => funnelStages.id, { onDelete: "cascade" }),
   /** Etapas do funil de onde puxar os compradores/respondentes. */
-  sourceStageIds: jsonb("source_stage_ids").$type<string[]>().notNull().default([]),
+  sourceStageIds: jsonb("source_stage_ids")
+    .$type<string[]>()
+    .notNull()
+    .default([]),
   /** Fonte dos cards: "buyers" (quem comprou) ou "survey" (quem respondeu a pesquisa). */
-  comercialSource: varchar("comercial_source", { length: 20 }).$type<"buyers" | "survey">().notNull().default("buyers"),
+  comercialSource: varchar("comercial_source", { length: 20 })
+    .$type<"buyers" | "survey">()
+    .notNull()
+    .default("buyers"),
   createdBy: uuid("created_by")
     .notNull()
     .references(() => users.id, { onDelete: "restrict" }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
 
 export const stageCrmColumns = pgTable(
@@ -2769,10 +3145,16 @@ export const stageCrmColumns = pgTable(
     sortOrder: integer("sort_order").notNull().default(0),
     /** Coluna terminal (Ganhou/Perdeu) — semântica de fechamento. */
     isTerminal: boolean("is_terminal").notNull().default(false),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("idx_crm_columns_stage_sort").on(table.stageId, table.sortOrder)]
+  (table) => [
+    index("idx_crm_columns_stage_sort").on(table.stageId, table.sortOrder),
+  ],
 );
 
 export const stageCrmCards = pgTable(
@@ -2793,10 +3175,19 @@ export const stageCrmCards = pgTable(
     customerPhone: varchar("customer_phone", { length: 50 }),
     /** Compras do comprador: [{produto, valor, dataVenda, fonte}]. */
     products: jsonb("products")
-      .$type<{ produto: string; valor: number; dataVenda: string | null; fonte: string }[]>()
+      .$type<
+        {
+          produto: string;
+          valor: number;
+          dataVenda: string | null;
+          fonte: string;
+        }[]
+      >()
       .notNull()
       .default([]),
-    totalValue: numeric("total_value", { precision: 12, scale: 2 }).notNull().default("0"),
+    totalValue: numeric("total_value", { precision: 12, scale: 2 })
+      .notNull()
+      .default("0"),
     firstPurchaseAt: timestamp("first_purchase_at", { withTimezone: true }),
     notes: text("notes"),
     /** Responsável (texto livre — como o Closer do evento). */
@@ -2811,8 +3202,12 @@ export const stageCrmCards = pgTable(
      * sync — reflete só o que a pessoa fez. null = nenhuma ação ainda. */
     lastActivityAt: timestamp("last_activity_at", { withTimezone: true }),
     sortOrder: integer("sort_order").notNull().default(0),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     // Parcial (0087): unicidade vale só pra quem TEM e-mail — assim o sync
@@ -2821,8 +3216,12 @@ export const stageCrmCards = pgTable(
     uniqueIndex("uq_crm_cards_stage_email")
       .on(table.stageId, table.customerEmail)
       .where(sql`${table.customerEmail} IS NOT NULL`),
-    index("idx_crm_cards_stage_column_sort").on(table.stageId, table.columnId, table.sortOrder),
-  ]
+    index("idx_crm_cards_stage_column_sort").on(
+      table.stageId,
+      table.columnId,
+      table.sortOrder,
+    ),
+  ],
 );
 
 // ============================================================
@@ -2851,8 +3250,12 @@ export const stageEventPaymentAlerts = pgTable("stage_event_payment_alerts", {
   createdBy: uuid("created_by")
     .notNull()
     .references(() => users.id, { onDelete: "restrict" }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
 
 // ============================================================
@@ -2870,7 +3273,9 @@ export const sprintReports = pgTable("sprint_reports", {
   kind: varchar("kind", { length: 60 }),
   /** HTML autocontido (sem dependências externas). */
   html: text("html").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
 
 // ============================================================
@@ -2890,9 +3295,15 @@ export const stageOperationalCosts = pgTable("stage_operational_costs", {
   amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
   /** Data em que o custo ocorreu/ocorrerá (opcional). */
   incurredAt: date("incurred_at"),
-  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  createdBy: uuid("created_by").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
 
 // ============================================================
@@ -2927,15 +3338,22 @@ export const campaignLogEntries = pgTable(
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
-    index("idx_campaign_log_funnel_occurred").on(table.funnelId, table.occurredAt),
+    index("idx_campaign_log_funnel_occurred").on(
+      table.funnelId,
+      table.occurredAt,
+    ),
     uniqueIndex("uq_campaign_log_source")
       .on(table.funnelId, table.sourceId)
       .where(sql`${table.sourceId} IS NOT NULL`),
-  ]
+  ],
 );
 
 export const debriefingComments = pgTable(
@@ -2961,9 +3379,9 @@ export const debriefingComments = pgTable(
   (table) => [
     index("idx_debriefing_comments_debriefing_created").on(
       table.debriefingId,
-      table.createdAt
+      table.createdAt,
     ),
-  ]
+  ],
 );
 
 // ============================================================
@@ -3000,7 +3418,9 @@ export const launchReportConfigs = pgTable(
       .notNull()
       .references(() => funnelStages.id, { onDelete: "cascade" }),
     tipo: varchar("tipo", { length: 20 }).notNull().$type<LaunchReportTipo>(),
-    etapa: varchar("etapa", { length: 30 }).notNull().$type<LaunchReportEtapa>(),
+    etapa: varchar("etapa", { length: 30 })
+      .notNull()
+      .$type<LaunchReportEtapa>(),
     entidadeCaptura: varchar("entidade_captura", { length: 10 })
       .notNull()
       .$type<LaunchReportEntidade>(),
@@ -3012,11 +3432,19 @@ export const launchReportConfigs = pgTable(
     /** Gate do §12. Default false — só o time marca true, após conferir contra o painel. */
     validado: boolean("validado").notNull().default(false),
     validadoEm: timestamp("validado_em", { withTimezone: true }),
-    validadoPor: uuid("validado_por").references(() => users.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    validadoPor: uuid("validado_por").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [uniqueIndex("launch_report_configs_stage_uniq").on(table.stageId)]
+  (table) => [
+    uniqueIndex("launch_report_configs_stage_uniq").on(table.stageId),
+  ],
 );
 
 // Config por PROJETO (= "expert" na spec). Cada expert tem pesquisa própria,
@@ -3051,10 +3479,16 @@ export const expertReportConfigs = pgTable(
       .notNull()
       .default({})
       .$type<Partial<Record<SurveyCanonicalField, string>>>(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [uniqueIndex("expert_report_configs_project_uniq").on(table.projectId)]
+  (table) => [
+    uniqueIndex("expert_report_configs_project_uniq").on(table.projectId),
+  ],
 );
 
 // ============================================================
@@ -3091,7 +3525,10 @@ export const perpetualReportConfigs = pgTable(
     /** Override do gross-up de mídia. Nulo = META_TAX_RATE. */
     impostoPct: numeric("imposto_pct", { precision: 6, scale: 4 }),
     /** Overrides das taxas da §C.3.4. Nulo = default da plataforma (kiwify/hotmart). */
-    taxaPlataformaPct: numeric("taxa_plataforma_pct", { precision: 6, scale: 4 }),
+    taxaPlataformaPct: numeric("taxa_plataforma_pct", {
+      precision: 6,
+      scale: 4,
+    }),
     taxaImpostoPct: numeric("taxa_imposto_pct", { precision: 6, scale: 4 }),
     taxaOutrosPct: numeric("taxa_outros_pct", { precision: 6, scale: 4 }),
     /**
@@ -3101,7 +3538,10 @@ export const perpetualReportConfigs = pgTable(
      * ferramentas e comissão: nenhum dos três aparece em outra linha da conta,
      * então a margem realizada sai abaixo da planejada se ficarem de fora.
      */
-    margemDesejadaPct: numeric("margem_desejada_pct", { precision: 6, scale: 4 }),
+    margemDesejadaPct: numeric("margem_desejada_pct", {
+      precision: 6,
+      scale: 4,
+    }),
     /** CMV por unidade (frete e embalagem inclusos). Tipicamente 0 em digital. */
     cmv: numeric("cmv", { precision: 12, scale: 2 }),
     /**
@@ -3121,7 +3561,18 @@ export const perpetualReportConfigs = pgTable(
      * tem significado, e o protocolo manda abortar (AGG-01/ST-07).
      */
     manualRates: jsonb("manual_rates")
-      .$type<Record<string, { value: number; source: string; windowStart: string; windowEnd: string; measuredAt: string }>>()
+      .$type<
+        Record<
+          string,
+          {
+            value: number;
+            source: string;
+            windowStart: string;
+            windowEnd: string;
+            measuredAt: string;
+          }
+        >
+      >()
       .notNull()
       .default({}),
     /** Qual dos 7 templates descreve o funil. NULL = cadeia não calculada. */
@@ -3147,11 +3598,19 @@ export const perpetualReportConfigs = pgTable(
     /** Gate do §C.8. Default false — só o time marca true, após o checklist §C.11. */
     validado: boolean("validado").notNull().default(false),
     validadoEm: timestamp("validado_em", { withTimezone: true }),
-    validadoPor: uuid("validado_por").references(() => users.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    validadoPor: uuid("validado_por").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [uniqueIndex("perpetual_report_configs_funnel_uniq").on(table.funnelId)]
+  (table) => [
+    uniqueIndex("perpetual_report_configs_funnel_uniq").on(table.funnelId),
+  ],
 );
 
 // Story 41.9 — relatórios perpétuos gerados. O HTML é um retrato do período:
@@ -3168,15 +3627,24 @@ export const perpetualReports = pgTable(
     dataFim: date("data_fim").notNull(),
     html: text("html").notNull(),
     /** Métricas do momento — lista sem precisar reprocessar o HTML. */
-    metricas: jsonb("metricas").notNull().default({}).$type<Record<string, unknown>>(),
+    metricas: jsonb("metricas")
+      .notNull()
+      .default({})
+      .$type<Record<string, unknown>>(),
     alertas: jsonb("alertas")
       .notNull()
       .default([])
       .$type<{ codigo: string; mensagem: string }[]>(),
-    geradoPor: uuid("gerado_por").references(() => users.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    geradoPor: uuid("gerado_por").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("perpetual_reports_funnel_idx").on(table.funnelId, table.createdAt)]
+  (table) => [
+    index("perpetual_reports_funnel_idx").on(table.funnelId, table.createdAt),
+  ],
 );
 
 // ============================================================
@@ -3194,8 +3662,12 @@ export const launchReports = pgTable(
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
     /** Nulo no Comparativo entre funis diferentes — as duas refs vão em `metricas`. */
-    funnelId: uuid("funnel_id").references(() => funnels.id, { onDelete: "set null" }),
-    stageId: uuid("stage_id").references(() => funnelStages.id, { onDelete: "set null" }),
+    funnelId: uuid("funnel_id").references(() => funnels.id, {
+      onDelete: "set null",
+    }),
+    stageId: uuid("stage_id").references(() => funnelStages.id, {
+      onDelete: "set null",
+    }),
     /** `resumao` | `comparativo` */
     kind: varchar("kind", { length: 20 }).notNull().default("resumao"),
     title: varchar("title", { length: 255 }).notNull(),
@@ -3205,13 +3677,17 @@ export const launchReports = pgTable(
     html: text("html").notNull(),
     metricas: jsonb("metricas").$type<Record<string, unknown>>(),
     alertas: jsonb("alertas").$type<{ codigo: string; mensagem: string }[]>(),
-    geradoPor: uuid("gerado_por").references(() => users.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    geradoPor: uuid("gerado_por").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index("launch_reports_stage_idx").on(table.stageId, table.createdAt),
     index("launch_reports_project_idx").on(table.projectId, table.createdAt),
-  ]
+  ],
 );
 
 // ============================================================
@@ -3243,7 +3719,11 @@ export const instagramScans = pgTable(
     metrics: jsonb("metrics").$type<Record<string, unknown>>(),
     analysis: jsonb("analysis").$type<Record<string, unknown>>(),
     /** Tokens + modelo — visibilidade de custo por scan. */
-    usage: jsonb("usage").$type<{ model: string; inputTokens: number; outputTokens: number }>(),
+    usage: jsonb("usage").$type<{
+      model: string;
+      inputTokens: number;
+      outputTokens: number;
+    }>(),
     error: text("error"),
     requestedBy: uuid("requested_by")
       .notNull()
@@ -3252,13 +3732,17 @@ export const instagramScans = pgTable(
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index("idx_insta_scans_queue").on(table.status, table.createdAt),
     index("idx_insta_scans_username").on(table.username, table.createdAt),
-  ]
+  ],
 );
 
 // ============================================================
@@ -3321,12 +3805,21 @@ export const swipeCollections = pgTable(
      * As referências continuam na biblioteca de qualquer forma; só o
      * agrupamento cai.
      */
-    parentId: uuid("parent_id").references((): AnyPgColumn => swipeCollections.id, {
-      onDelete: "cascade",
+    parentId: uuid("parent_id").references(
+      (): AnyPgColumn => swipeCollections.id,
+      {
+        onDelete: "cascade",
+      },
+    ),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
     }),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
     // O nome é único DENTRO da mãe: duas pastas podem ter uma "anúncios" cada,
@@ -3351,8 +3844,12 @@ export const swipeCollectionItems = pgTable(
     swipeId: uuid("swipe_id")
       .notNull()
       .references(() => swipeFiles.id, { onDelete: "cascade" }),
-    addedBy: uuid("added_by").references(() => users.id, { onDelete: "set null" }),
-    addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
+    addedBy: uuid("added_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
     primaryKey({ columns: [t.collectionId, t.swipeId] }),
@@ -3408,13 +3905,21 @@ export const swipeFiles = pgTable(
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     index("idx_swipe_files_created").on(table.createdAt),
-    index("idx_swipe_files_facets").on(table.platform, table.format, table.niche),
-  ]
+    index("idx_swipe_files_facets").on(
+      table.platform,
+      table.format,
+      table.niche,
+    ),
+  ],
 );
 
 // ============================================================
@@ -3436,14 +3941,20 @@ export const vturbConnections = pgTable(
     apiTokenEncrypted: text("api_token_encrypted").notNull(),
     apiTokenIv: text("api_token_iv").notNull(),
     /** O VTurb assume UTC quando omitido — o corte de dia sairia errado no BR. */
-    timezone: varchar("timezone", { length: 60 }).notNull().default("America/Sao_Paulo"),
+    timezone: varchar("timezone", { length: 60 })
+      .notNull()
+      .default("America/Sao_Paulo"),
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("idx_vturb_connections_project").on(table.projectId)]
+  (table) => [index("idx_vturb_connections_project").on(table.projectId)],
 );
 
 export const vturbPlayers = pgTable(
@@ -3465,13 +3976,20 @@ export const vturbPlayers = pgTable(
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
-    uniqueIndex("uq_vturb_players_stage_player").on(table.stageId, table.playerId),
+    uniqueIndex("uq_vturb_players_stage_player").on(
+      table.stageId,
+      table.playerId,
+    ),
     index("idx_vturb_players_stage").on(table.stageId),
-  ]
+  ],
 );
 
 // ============================================================
@@ -3499,13 +4017,17 @@ export const pdiDocuments = pgTable(
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     // A consulta quente é "o PDI mais recente desta pessoa", em todo boot do app.
     index("idx_pdi_documents_user_created").on(table.userId, table.createdAt),
-  ]
+  ],
 );
 
 // ============================================================
@@ -3540,10 +4062,14 @@ export const plausibleConfig = pgTable(
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [uniqueIndex("uq_plausible_config_singleton").on(table.singleton)]
+  (table) => [uniqueIndex("uq_plausible_config_singleton").on(table.singleton)],
 );
 
 // Qual site da instância cada projeto lê. A presença desta linha é o que
@@ -3562,10 +4088,14 @@ export const plausibleProjectSites = pgTable(
     createdBy: uuid("created_by")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("idx_plausible_sites_project").on(table.projectId)]
+  (table) => [index("idx_plausible_sites_project").on(table.projectId)],
 );
 
 // ============================================================
@@ -3578,7 +4108,9 @@ export const sendflowConnections = pgTable("sendflow_connections", {
   id: uuid("id").defaultRandom().primaryKey(),
   /** NULL = conexão GLOBAL, vale pra todos os projetos. O SendFlow é uma conta
    *  só para todos os experts; um projeto pode ter linha própria como override. */
-  projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  projectId: uuid("project_id").references(() => projects.id, {
+    onDelete: "cascade",
+  }),
   clientId: varchar("client_id", { length: 255 }).notNull(),
   clientSecretEncrypted: text("client_secret_encrypted").notNull(),
   clientSecretIv: varchar("client_secret_iv", { length: 64 }).notNull(),
@@ -3587,12 +4119,18 @@ export const sendflowConnections = pgTable("sendflow_connections", {
   /** Cache do access_token (1h) — renovar a cada request queimaria rate limit. */
   accessTokenEncrypted: text("access_token_encrypted"),
   accessTokenIv: varchar("access_token_iv", { length: 64 }),
-  accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
+  accessTokenExpiresAt: timestamp("access_token_expires_at", {
+    withTimezone: true,
+  }),
   createdBy: uuid("created_by")
     .notNull()
     .references(() => users.id, { onDelete: "restrict" }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
 
 // ============================================================
@@ -3647,6 +4185,20 @@ export const peopleRecords = pgTable("people_records", {
   cargo: varchar("cargo", { length: 120 }),
   entradaEm: date("entrada_em"),
   /**
+   * Dados de pagamento — a própria pessoa preenche, admin lê para pagar.
+   *
+   * CPF e CNPJ guardam SÓ OS DÍGITOS (há CHECK na migration 0141): a máscara é
+   * da tela, e aceitar as duas formas deixaria o mesmo documento conviver
+   * escrito de dois jeitos.
+   *
+   * Nada disto entra em `/api/pessoal/time` — o diretório é aberto ao time
+   * inteiro e tem query própria com as colunas nomeadas.
+   */
+  cpf: varchar("cpf", { length: 11 }),
+  cnpj: varchar("cnpj", { length: 14 }),
+  chavePix: varchar("chave_pix", { length: 140 }),
+  endereco: text("endereco"),
+  /**
    * Correção manual do saldo de férias, em dias.
    *
    * O saldo é calculado a partir da entrada e do histórico, mas nenhum cálculo
@@ -3655,9 +4207,15 @@ export const peopleRecords = pgTable("people_records", {
    */
   ajusteSaldoDias: integer("ajuste_saldo_dias").notNull().default(0),
   observacoes: text("observacoes"),
-  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedBy: uuid("updated_by").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
 
 export const peopleAbsences = pgTable(
@@ -3681,16 +4239,22 @@ export const peopleAbsences = pgTable(
       onDelete: "set null",
     }),
     observacao: text("observacao"),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
     // A consulta quente é "as ausências desta pessoa, da mais recente pra trás".
     index("idx_people_absences_user").on(table.userId, table.inicio),
     // E a do painel: "quem está fora nesta janela".
     index("idx_people_absences_periodo").on(table.inicio, table.fim),
-  ]
+  ],
 );
 
 // ============================================================
@@ -3749,7 +4313,9 @@ export const plannerCampaigns = pgTable(
      * Opcional: o planner é do TIME e nasce ANTES do projeto existir no app.
      * "FZ — BLACK" é planejado meses antes de virar funil.
      */
-    projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+    projectId: uuid("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
     /**
      * Datas como texto ISO (`YYYY-MM-DD`) ou `""`.
      *
@@ -3784,9 +4350,15 @@ export const plannerCampaigns = pgTable(
       >()
       .notNull()
       .default([]),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
     index("planner_campaigns_ordem_idx").on(t.sortOrder, t.createdAt),
@@ -3835,9 +4407,15 @@ export const funnelMapComments = pgTable(
     y: integer("y").notNull().default(0),
     texto: text("texto").notNull(),
     resolvido: boolean("resolvido").notNull().default(false),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [index("idx_funnel_map_comments_mapa").on(t.mapId, t.createdAt)],
 );
@@ -3853,11 +4431,19 @@ export const plannerAnnualTracks = pgTable(
     grupo: varchar("grupo", { length: 20 }).notNull(),
     nome: varchar("nome", { length: 120 }).notNull().default(""),
     sortOrder: integer("sort_order").notNull().default(0),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
-  (t) => [index("idx_planner_annual_tracks_projeto").on(t.projectId, t.sortOrder)],
+  (t) => [
+    index("idx_planner_annual_tracks_projeto").on(t.projectId, t.sortOrder),
+  ],
 );
 
 /**
@@ -3881,10 +4467,16 @@ export const plannerAnnualGroups = pgTable(
     rotulo: varchar("rotulo", { length: 40 }),
     /** `#rrggbb` minúsculo. Vazio = a cor padrão do código. */
     cor: varchar("cor", { length: 7 }),
-    updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid("updated_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
-  (t) => [uniqueIndex("idx_planner_annual_groups_projeto").on(t.projectId, t.grupo)],
+  (t) => [
+    uniqueIndex("idx_planner_annual_groups_projeto").on(t.projectId, t.grupo),
+  ],
 );
 
 export const plannerAnnualCells = pgTable(
@@ -3909,10 +4501,16 @@ export const plannerAnnualCells = pgTable(
     categoria: varchar("categoria", { length: 20 }),
     /** Lançamento | DR - VSL | Grupo de Conteúdo | ... */
     funil: varchar("funil", { length: 60 }),
-    updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid("updated_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
-  (t) => [uniqueIndex("idx_planner_annual_cells_celula").on(t.trackId, t.ano, t.mes)],
+  (t) => [
+    uniqueIndex("idx_planner_annual_cells_celula").on(t.trackId, t.ano, t.mes),
+  ],
 );
 
 export const plannerGoogleCalendars = pgTable("planner_google_calendars", {
@@ -3920,8 +4518,12 @@ export const plannerGoogleCalendars = pgTable("planner_google_calendars", {
   /** O "ID da agenda" que aparece em Configurações → Integrar agenda. */
   calendarId: text("calendar_id").notNull().unique(),
   label: varchar("label", { length: 200 }).notNull(),
-  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdBy: uuid("created_by").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
   lastImportedAt: timestamp("last_imported_at", { withTimezone: true }),
 });
 
@@ -3937,7 +4539,9 @@ export const projectSourceRules = pgTable(
      * do link, e cadastrar a mesma correção projeto a projeto seria trabalho
      * repetido e fatalmente desatualizado num deles.
      */
-    projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id").references(() => projects.id, {
+      onDelete: "cascade",
+    }),
     /**
      * Coluna da planilha que a regra observa (`utm_medium`, `utm_term`, …).
      *
@@ -3957,11 +4561,19 @@ export const projectSourceRules = pgTable(
     /** Menor primeiro. Duas regras que casam a mesma linha: vence a de menor ordem. */
     ordem: integer("ordem").notNull().default(0),
     ativa: boolean("ativa").notNull().default(true),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (table) => [index("idx_project_source_rules_project").on(table.projectId, table.ordem)],
+  (table) => [
+    index("idx_project_source_rules_project").on(table.projectId, table.ordem),
+  ],
 );
 
 // ============================================================
@@ -4002,9 +4614,15 @@ export const biDashboards = pgTable(
      * dashboard salvo viraria uma forma de ver projeto alheio.
      */
     escopo: varchar("escopo", { length: 20 }).notNull().default("projeto"),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [index("idx_bi_dashboards_project").on(table.projectId)],
 );
@@ -4035,7 +4653,13 @@ export const swipeClickupAlerts = pgTable("swipe_clickup_alerts", {
     .$type<{ id: string; username: string }[]>()
     .notNull()
     .default([]),
-  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  createdBy: uuid("created_by").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
