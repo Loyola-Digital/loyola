@@ -69,6 +69,7 @@ function getAllTabs(isAdmin: boolean, podeAnalytics = false): readonly Tab[] {
     if (podeAnalytics) tabs.push(ANALYTICS_TAB);
     tabs.push(
       { label: "Usuários", href: "/settings/users", value: "users" },
+      { label: "Adesão", href: "/settings/adesao", value: "adesao" },
       { label: "API Keys", href: "/settings/api-keys", value: "api-keys" },
       { label: "Auditoria", href: "/settings/audit", value: "audit" },
     );
@@ -99,6 +100,9 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   // mas não aqui — mostrar a aba para quem vai levar "acesso restrito" ao
   // clicar é pior do que não mostrar.
   const podeAnalytics = role === "admin";
+  // Adesão mostra o comportamento de colegas — ampliar quem vê é decisão de
+  // gestão, não permissão herdada por conveniência. Manager não entra.
+  const podeAdesao = role === "admin";
   const allTabs = getAllTabs(isAdmin, podeAnalytics);
   const activeTab = getActiveTab(allTabs, pathname);
   const isMetaActive = META_TABS.some((t) => pathname.startsWith(t.href));
@@ -121,6 +125,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     ? [
         ...(podeAnalytics ? [ANALYTICS_TAB as Tab] : []),
         { label: "Usuários", href: "/settings/users", value: "users" },
+        ...(podeAdesao ? [{ label: "Adesão", href: "/settings/adesao", value: "adesao" } as Tab] : []),
         { label: "API Keys", href: "/settings/api-keys", value: "api-keys" },
         { label: "Auditoria", href: "/settings/audit", value: "audit" },
       ]
