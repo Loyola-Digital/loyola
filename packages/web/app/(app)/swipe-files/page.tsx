@@ -17,7 +17,7 @@
 import { useState } from "react";
 import {
   AlertCircle, Bell, Library, Plus, Search, Star, X, Play, Link2, ImageIcon, FileText, Filter,
-  DownloadCloud, HelpCircle, Loader2, Sparkles, ArrowLeft, FolderOpen, LayoutGrid, Bookmark, Code2, FolderUp,
+  DownloadCloud, HelpCircle, Loader2, Sparkles, ArrowLeft, FolderOpen, LayoutGrid, Bookmark, Code2, FolderUp, FileType,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -66,6 +66,9 @@ const KIND_META: Record<AssetKind, { label: string; Icon: typeof Play }> = {
   // "Página" e não "HTML": quem salva uma landing page do navegador não pensa
   // no formato do arquivo, pensa na página que quis guardar.
   html: { label: "Página", Icon: Code2 },
+  // "Documento" e não ".docx": quem sobe uma transcrição pensa no conteúdo,
+  // não no formato do arquivo.
+  doc: { label: "Documento", Icon: FileType },
 };
 
 /**
@@ -512,7 +515,7 @@ export default function SwipeFilesPage() {
             />
           </div>
 
-          {(["image", "video", "html", "pdf", "link"] as const).map((k) => (
+          {(["image", "video", "html", "doc", "pdf", "link"] as const).map((k) => (
             <Chip key={k} active={filters.kind === k} onClick={() => set("kind", k)}>
               {KIND_META[k].label}
             </Chip>

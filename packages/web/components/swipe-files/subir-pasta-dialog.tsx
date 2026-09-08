@@ -176,9 +176,11 @@ export function SubirPastaDialog({
             ? "image"
             : item.mimeFinal.startsWith("video/")
               ? "video"
-              : item.mimeFinal === "application/pdf"
+                : item.mimeFinal === "application/pdf"
                 ? "pdf"
-                : "html",
+                : item.mimeFinal === "text/html"
+                  ? "html"
+                  : "doc",
           fileUrl: publicUrl,
           fileKey: key,
           fileMime: item.mimeFinal,

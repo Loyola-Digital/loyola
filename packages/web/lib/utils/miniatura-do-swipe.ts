@@ -13,7 +13,7 @@
 export type FormaDaMiniatura = "imagem" | "video" | "pdf" | "nenhuma";
 
 export interface ParaMiniatura {
-  assetKind: "image" | "video" | "pdf" | "link" | "html";
+  assetKind: "image" | "video" | "pdf" | "link" | "html" | "doc";
   fileUrl?: string | null;
   ogImage?: string | null;
 }
@@ -37,5 +37,8 @@ export function miniaturaDoSwipe(item: ParaMiniatura): {
   // e trinta iframes numa grade renderizam trinta páginas de uma vez. A capa
   // com título e domínio diz mais e custa nada.
   if (item.assetKind === "html") return { forma: "nenhuma", url: null };
+  // Documento também não: transcrição é texto, e um `.docx` não desenha em
+  // nenhuma tag do navegador.
+  if (item.assetKind === "doc") return { forma: "nenhuma", url: null };
   return item.fileUrl ? { forma: "imagem", url: item.fileUrl } : { forma: "nenhuma", url: null };
 }

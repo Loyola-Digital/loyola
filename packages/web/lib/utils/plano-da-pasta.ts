@@ -37,6 +37,9 @@ const MIMES = new Set([
   "video/webm",
   "application/pdf",
   "text/html",
+  // Transcrição, roteiro, briefing — o texto que descreve o vídeo ao lado.
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/plain",
 ]);
 
 /** Extensões que decidem quando o navegador não sabe o mime do arquivo. */
@@ -53,6 +56,8 @@ const EXTENSOES: Record<string, string> = {
   pdf: "application/pdf",
   html: "text/html",
   htm: "text/html",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  txt: "text/plain",
 };
 
 export interface ArquivoDaPasta {
@@ -176,7 +181,9 @@ export function resumoPorTipo(itens: ItemPlanejado[]): { tipo: string; n: number
         ? "vídeo"
         : i.mimeFinal === "application/pdf"
           ? "PDF"
-          : "página";
+          : i.mimeFinal === "text/html"
+            ? "página"
+            : "documento";
     conta.set(tipo, (conta.get(tipo) ?? 0) + 1);
   }
   return [...conta.entries()]
