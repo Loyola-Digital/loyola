@@ -144,6 +144,8 @@ export interface ColecaoDoSwipe {
   id: string;
   nome: string;
   descricao: string | null;
+  /** A coleção onde esta mora. `null` = na raiz. */
+  parentId: string | null;
   pecas: number;
   criadaEm: string | null;
   mexidaEm: string | null;
@@ -167,8 +169,8 @@ export function useCriarColecao() {
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (dados: { nome: string; descricao?: string | null }) =>
-      apiClient<ColecaoDoSwipe>(`${BASE}/colecoes`, {
+    mutationFn: (dados: { nome: string; descricao?: string | null; parentId?: string | null }) =>
+      apiClient<ColecaoDoSwipe & { jaExistia?: boolean }>(`${BASE}/colecoes`, {
         method: "POST",
         body: JSON.stringify(dados),
       }),

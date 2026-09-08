@@ -11,7 +11,7 @@
 
 import { Readable } from "node:stream";
 import { z } from "zod";
-import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   swipeClickupAlerts,
@@ -381,6 +381,7 @@ export default fp(async function swipeFilesRoutes(fastify) {
         id: swipeCollections.id,
         nome: swipeCollections.nome,
         descricao: swipeCollections.descricao,
+        parentId: swipeCollections.parentId,
         criadaEm: swipeCollections.createdAt,
         pecas: sql<number>`count(${swipeCollectionItems.swipeId})::int`,
         mexidaEm: sql<Date>`greatest(${swipeCollections.updatedAt}, coalesce(max(${swipeCollectionItems.addedAt}), ${swipeCollections.updatedAt}))`,
@@ -408,16 +409,42 @@ export default fp(async function swipeFilesRoutes(fastify) {
   fastify.post(`${base}/colecoes`, async (request, reply) => {
     if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
     const b = z
-      .object({ nome: z.string().max(200), descricao: z.string().max(2000).nullable().optional() })
+      .object({
+        nome: z.string().max(200),
+        descricao: z.string().max(2000).nullable().optional(),
+        /** Onde ela mora. Vazio = na raiz. */
+        parentId: z.string().uuid().nullable().optional(),
+      })
       .safeParse(request.body);
     if (!b.success) return reply.code(400).send({ error: "Dados inválidos" });
 
     const nome = limparNomeDaColecao(b.data.nome);
     if (!nome) return reply.code(400).send({ error: "A coleção precisa de um nome." });
 
+    const pai = b.data.parentId ?? null;
+
+    /**
+     * Já existe uma com esse nome NO MESMO LUGAR? Devolve ela.
+     *
+     * Subir a mesma pasta de novo é o caso comum — a segunda vez com mais
+     * arquivos. Criar "Black Friday (2)" ao lado da original espalharia o
+     * acervo em duas coleções que ninguém queria separadas.
+     */
+    const [jaExiste] = await fastify.db
+      .select({ id: swipeCollections.id, nome: swipeCollections.nome })
+      .from(swipeCollections)
+      .where(
+        pai
+          ? and(eq(swipeCollections.parentId, pai), sql`lower(${swipeCollections.nome}) = lower(${nome})`)
+          : and(isNull(swipeCollections.parentId), sql`lower(${swipeCollections.nome}) = lower(${nome})`),
+      )
+      .limit(1);
+    if (jaExiste) return reply.code(200).send({ ...jaExiste, jaExistia: true });
+
     const existentes = await fastify.db
       .select({ nome: swipeCollections.nome })
-      .from(swipeCollections);
+      .from(swipeCollections)
+      .where(pai ? eq(swipeCollections.parentId, pai) : isNull(swipeCollections.parentId));
 
     const [criada] = await fastify.db
       .insert(swipeCollections)
@@ -426,6 +453,7 @@ export default fp(async function swipeFilesRoutes(fastify) {
         // arquivos. Recusar pelo nome faria perder o envio inteiro.
         nome: nomeLivre(nome, existentes.map((e) => e.nome)),
         descricao: b.data.descricao ?? null,
+        parentId: pai,
         createdBy: request.userId ?? null,
       })
       .returning();
