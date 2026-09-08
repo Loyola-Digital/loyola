@@ -97,7 +97,7 @@ Resposta: `{ projectId, stageId, stageName, campaignIds: [..], range, partial, l
 
 **`campanhasOrfas`** — campanhas com gasto na janela curta **sem vínculo com nenhuma etapa** do projeto. É dinheiro fora de todo CAC e ROAS do painel. Não encoste numa etapa por semelhança de nome — isso é inventar atribuição.
 
-**`pendencias[]`** — `{ stageId, codigo, mensagem, origem }`. São fatos de **configuração**, não falhas da consulta, e cada `codigo` pede uma ação diferente (`semDados` = conectar fonte · `syncPendente` = esperar o sync · `leituraFalhou` = checar permissão · `indeterminado` = a checagem falhou · `foraDaAba` = etapa fora do escopo da aba). ⚠️ `origem: "cadeia"` = apurado no backend, citável como fato; `origem: "panorama"` = conclusão desta rota (`semTetoConfiavel`, `coberturaIndisponivel`), derivada por comparação. Não cite um derivado como fato de origem.
+**`pendencias[]`** — `{ stageId, codigo, mensagem, origem }`. São fatos de **configuração**, não falhas da consulta, e cada `codigo` pede uma ação diferente (`semDados` = conectar fonte · `syncPendente` = esperar o sync · `leituraFalhou` = checar permissão · `indeterminado` = a checagem falhou · `foraDaAba` = etapa fora do escopo da aba). ⚠️ **`reguaDivergente` é a exceção: NÃO é ação do operador** (Story 44.25 AC8) — é uma lacuna de engenharia já endereçada pela Story 44.28. Reporte-a como nota, nunca na lista de "o que configurar hoje". ⚠️ `origem: "cadeia"` = apurado no backend, citável como fato; `origem: "panorama"` = conclusão desta rota (`semTetoConfiavel`, `coberturaIndisponivel`), derivada por comparação. Não cite um derivado como fato de origem.
 ⚠️ Etapa com fonte conectada e **zero venda/lead na janela** NÃO entra em `pendencias` — não é lacuna de configuração. O fato fica visível em `principal.vendasReais: 0` / `principal.leadsUnicos: 0`.
 
 **`totais`** — `{ spendCurta, spendLonga, spendOrfas, etapasNoAr, campanhasComGasto }`. ⚠️ `spendCurta`/`spendLonga` são das **ETAPAS**; o gasto das órfãs vem separado em **`spendOrfas`**, e `spendCurta + spendOrfas` é o gasto do PROJETO na janela curta. `campanhasComGasto` conta só as VINCULADAS. `etapasNoAr` exclui as de `familia: null`.
@@ -114,12 +114,13 @@ Resposta: `{ projectId, projectName, clientName, janelas, spendIncludesMetaTax, 
 **Unidades:** `unidadeDasTaxas: "decimal"` — `0,0192` é 1,92%, não 1,92. `spendIncludesMetaTax: true` — o `spend` JÁ inclui o imposto Meta, aplicado como gross-up (`spend ÷ (1 − 0,1215)`); não reaplicar nem tentar reverter.
 
 **`familia`** — `"paga"` (`paid`/`sales`/`event_capture`/`event`) · `"gratuita"` (`free`/`cpl`) · `null`. **`null` NÃO é erro**: a etapa (`lyrio`, `comercial`, `debriefing`) está fora da aba, e a resposta vem `200` com `semDados: true` e `motivo: "foraDaAba"`.
+⚠️ **O tipo do FUNIL pode promover a etapa (Story 44.25).** Num funil `perpetual`, uma etapa `free`/`cpl` devolve `familia: "paga"` — porque ali o `stage_type` é o default da coluna, não uma escolha, e a etapa é o dashboard de venda inteiro do perpétuo. **Não conclua a família a partir do `stageType` sozinho: leia o campo `familia`, que já vem resolvido.** A promoção alcança só `free`/`cpl`: `mapa` e `comercial` dentro de perpétuo continuam `null`. Em produção isso vale para 3 etapas — `bbe-fc1-a1-mai-26`, `fz-a1` e `pps1`.
 ⚠️ **São DOIS os cortes que devolvem `200` truncado**, sem `atuais`/`principal`/`tetos`/`ranking`/`composto`/`criativos`: `motivo: "foraDaAba"` (etapa fora da aba) e `motivo: "semDados"` com `campanhas: []` (etapa DA aba, sem nenhuma campanha vinculada — etapa orgânica, não erro). Os dois trazem `semDados: true` no topo: **teste esse campo antes de ler `atuais`/`principal`**.
 
 **`principal`** — o número principal, e **ele muda de métrica com a família**:
 - família **paga** → `metrica: "cacReal"`, `valor = spend ÷ vendasReais` (vendas do Loyola, não do pixel)
 - família **gratuita** → `metrica: "cplReal"`, `valor = spend ÷ leadsUnicos`
-⚠️ **Numa etapa gratuita o número principal NÃO é CAC.** Chamar o CPL de CAC é o erro que esta rota existe para impedir.
+⚠️ **Numa etapa de família gratuita o número principal NÃO é CAC.** Chamar o CPL de CAC é o erro que esta rota existe para impedir. Mas atenção à direção inversa, aberta pela Story 44.25: uma etapa com `stageType: "free"` num funil `perpetual` tem família **paga** e o principal É `cacReal`. **Quem manda é `familia`, nunca `stageType`.**
 ⚠️ Os campos de `principal` **mudam por ramo** — não assuma que coexistem:
 
 | família | situação | campos além de `metrica` |
@@ -134,6 +135,8 @@ Resposta: `{ projectId, projectName, clientName, janelas, spendIncludesMetaTax, 
 | paga ou gratuita | fonte OK, **zero no denominador** | `valor: null`, `motivo: "semDados"` **junto de** `vendasReais: 0`/`leadsUnicos: 0`, `spend`, `dataSource`/`fonteDeLead`, `computedAt` — e **sem `message`** |
 
 Os `motivo` pedem **ações diferentes**: `semDados` = conectar fonte · `syncPendente` = esperar o sync · `leituraFalhou` = checar permissão/tentar de novo · `indeterminado` = a checagem falhou. Não colapse em "sem dados".
+
+⚠️ **`reguaDivergente`** (Story 44.25 AC8) — só na etapa promovida pelo funil perpétuo. `valor: null` com `metrica: "cacReal"`, `spend`, `vendasReais`, `dataSource` e `computedAt` presentes. Significa: **a etapa TEM CAC, esta rota ainda não o publica.** A base de vendas daqui conta transações dedupadas por `txId+produto`; o dashboard perpétuo conta checkouts/compradores com classificação de produto — 124 contra 73 na mesma janela de 30 dias, medido em 07/09/2026. Publicar os dois com o mesmo nome faria uma tela contradizer a outra. **Para o CAC desta etapa, use o dashboard perpétuo.** Não é ação do operador e não é falta de configuração; a Story 44.28 remove a supressão.
 ⚠️ **`semDados` sai em dois ramos com ações opostas.** Sem fonte conectada ele vem com `message` e sem `vendasReais`/`leadsUnicos`; com fonte conectada e zero no denominador ele vem **sem `message`** e **com** `vendasReais: 0`/`leadsUnicos: 0` + `computedAt`. Mandar conectar fonte no segundo caso é pedir para configurar algo que já está configurado.
 
 **`agregado`** — os brutos somáveis que compõem toda taxa: `{ spend, impressions, linkClicks, landingPageViews, checkouts, leadsAtribuidos, dias }`. `leadsAtribuidos: null` = não medido (não é zero).

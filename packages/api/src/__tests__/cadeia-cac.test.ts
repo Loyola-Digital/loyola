@@ -164,6 +164,72 @@ describe("família — classificação própria (§1)", () => {
   });
 });
 
+/**
+ * Story 44.25 — o tipo do FUNIL promove a etapa gratuita à família paga.
+ *
+ * ⚠️ Estes testes existem para FALHAR com a assinatura de um argumento. Um
+ * teste que passa nos dois mundos não prova nada — regra aprendida na 44.2,
+ * onde a suíte continuou verde durante um ano com o `connectRate` errado.
+ */
+describe("família — o funil promove a etapa gratuita (Story 44.25)", () => {
+  it("AC1: free e cpl dentro de perpetual viram paga", () => {
+    expect(classificarFamilia("free", "perpetual")).toBe("paga");
+    expect(classificarFamilia("cpl", "perpetual")).toBe("paga");
+  });
+
+  /**
+   * AC6 — a promoção NÃO alcança tipo que já está fora da aba.
+   *
+   * Não é hipótese: varredura do banco em 2026-09-07 achou os dois em funil
+   * `perpetual` ativo — `BBE/bbe-fh/Funil` (`mapa`) e `PP/pps1/Comercial`
+   * (`comercial`). Promovê-los faria o Panorama pedir CAC de um desenho de
+   * funil, que por definição não tem métrica própria.
+   */
+  it("AC6: mapa, comercial e debriefing dentro de perpetual continuam fora da aba", () => {
+    for (const t of ["mapa", "comercial", "debriefing", "lyrio"]) {
+      expect(classificarFamilia(t, "perpetual")).toBeNull();
+    }
+  });
+
+  it("AC7: fora do perpétuo nada muda", () => {
+    expect(classificarFamilia("free", "launch")).toBe("gratuita");
+    expect(classificarFamilia("cpl", "launch")).toBe("gratuita");
+    expect(classificarFamilia("paid", "launch")).toBe("paga");
+    expect(classificarFamilia("sales", "launch")).toBe("paga");
+  });
+
+  it("sem funnelType, a regra é a de sempre — compatibilidade", () => {
+    expect(classificarFamilia("free")).toBe("gratuita");
+    expect(classificarFamilia("free", null)).toBe("gratuita");
+    expect(classificarFamilia("free", undefined)).toBe("gratuita");
+  });
+
+  it("etapa já paga dentro de perpetual segue paga, sem passar pela promoção", () => {
+    expect(classificarFamilia("paid", "perpetual")).toBe("paga");
+    expect(classificarFamilia("event_capture", "perpetual")).toBe("paga");
+  });
+
+  /** Funil desconhecido não promove — só `perpetual` está em `FUNIS_DE_VENDA`. */
+  it("mobile e tipo de funil novo não promovem", () => {
+    expect(classificarFamilia("free", "mobile")).toBe("gratuita");
+    expect(classificarFamilia("free", "tipo_de_funil_novo")).toBe("gratuita");
+    expect(classificarFamilia("lyrio", "mobile")).toBeNull();
+  });
+
+  /**
+   * O caso que originou a story, com os identificadores de produção.
+   *
+   * stage `a08ccc49-59b8-4dcf-86d0-97b60db06566` (`bbe-funil-churrasco`,
+   * `stage_type = 'free'`) no funil `052437fa-…` (`bbe-fc1-a1-mai-26`,
+   * `type = 'perpetual'`): 18 campanhas `--venda--perpetuo--`, R$ 61 mil em 90
+   * dias, e a aba dizia CPL.
+   */
+  it("o caso bbe-funil-churrasco: free dentro de perpetual é paga", () => {
+    expect(classificarFamilia("free", "perpetual")).toBe("paga");
+    expect(classificarFamilia("free", "perpetual")).not.toBe("gratuita");
+  });
+});
+
 describe("razão de somas, nunca média de médias (§2.6)", () => {
   /** Os dois métodos dão números DIFERENTES — é por isso que a regra existe. */
   it("razão de somas ≠ média das taxas diárias", () => {

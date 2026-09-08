@@ -1,0 +1,212 @@
+storyId: "44.25"
+storyTitle: "A família da etapa vem do funil, não só do stage_type"
+gate: CONCERNS
+reviewer: "@qa (Quinn)"
+reviewedAt: "2026-09-07"
+revisao: 2  # a 1ª foi antes da AC8 existir
+branch: feature/44.25-familia-vem-do-funil
+commits: []  # nada commitado no momento da revisão
+# ── REVISÃO 2 (após a AC8) ──────────────────────────────────
+revisao2:
+  escopo_novo: "AC8 — supressão do CAC na etapa promovida (cadeia-cac-payload.ts) + 3 testes + llms.txt + tools.ts"
+
+  achados_anteriores:
+    QA-4425-01: RESOLVIDO_POR_DECISAO  # @po escolheu suprimir o valor (AC8), nem (a) nem (b)
+    QA-4425-02: FECHADO                # llms.txt + descrição da tool MCP
+    QA-4425-03: FECHADO                # 4 testes de integração, com prova de reversão
+    QA-4425-04: ACEITO                 # limitação estrutural do runner do web
+
+  verificacoes_independentes_desta_revisao:
+    - "A tela: `cadeia-cac-stage-tab.tsx:251` renderiza `<Motivo motivo texto>`, e `Motivo` usa `texto ?? TEXTO_DO_MOTIVO[motivo] ?? motivo`. Como a AC8 sempre envia `message`, o usuário vê a explicação em bloco âmbar — não um `—` mudo. Sem risco de fallback por código desconhecido."
+    - "Mutação DIFERENTE da que o @dev usou: alarguei `promovidaPeloFunil` para `familia === \"paga\"` (supressão vazando para toda etapa paga). Derrubou 5 testes — 4 deles PRÉ-EXISTENTES, que já protegiam o `cacReal` da família paga. A rede é real, não foi montada só para esta story."
+
+  novo_achado:
+    - id: QA-4425-05
+      severidade: MÉDIA
+      categoria: docs
+      titulo: "O PROMPT do Inácio não conhece a promoção nem o motivo novo"
+      evidencia: >
+        `docs/guides/inacio-panorama-diario.md` §3 — o texto que vai colado na
+        configuração da rotina diária:
+
+          :91-92  "principal.metrica muda com a família: cacReal na paga,
+                   cplReal na gratuita. Nunca chame de CAC o número de uma
+                   etapa gratuita."
+          :96-98  "Os motivos (semDados, syncPendente, leituraFalhou,
+                   indeterminado, foraDaAba, semTetoConfiavel,
+                   coberturaIndisponivel) pedem AÇÕES DIFERENTES. Reporte o
+                   motivo específico."
+
+        `reguaDivergente` não está na lista, e nada diz para ler `familia` em
+        vez de deduzir do `stageType`.
+      porque_importa: >
+        O @dev atualizou os DOIS lugares que o gate anterior apontou (llms.txt e
+        a descrição da tool) e faltou o terceiro — que é o mais operante: o
+        llms.txt é referência, a descrição da tool é dica de escolha, mas o §3
+        é **o prompt que governa o agente**.
+
+        Duas consequências concretas: (1) o Inácio vê `familia: "paga"` numa
+        etapa que ele sabe ser `free` e pode reportá-la como bug; (2) vê
+        `motivo: reguaDivergente` numa lista cuja regra é "cada motivo pede uma
+        AÇÃO" e o publica como pendência do operador — exatamente o que a AC8
+        existe para evitar.
+
+        ⚠️ E a janela de risco é real: merge é deploy, e a Story 44.30 (que
+        reescreve este guia) só vem depois da 44.28. Entre uma e outra, o
+        Inácio roda com prompt velho e payload novo.
+      recomendacao: >
+        Duas linhas no §3 do guia, na 44.25: a promoção pelo funil, e
+        `reguaDivergente` como exceção sem ação do operador.
+
+  efeito_colateral_avaliado:
+    titulo: "reguaDivergente entra na lista de pendências do Panorama"
+    veredito: ACEITO_COM_RESSALVA
+    nota: >
+      O @dev encontrou, não escondeu, cobriu com teste e documentou no
+      llms.txt — a conduta certa. Aceito porque filtrar seria apagar uma lacuna
+      real, e o teste que ele escreveu vai acusar qualquer mudança futura.
+      A ressalva é o QA-4425-05: sem o guia atualizado, a documentação que
+      neutraliza o ruído não chega a quem lê.
+
+  quality_checks_revisao2:
+    code_review:    { status: PASS, nota: "`promovidaPeloFunil` reusa `captaLead` em vez de reperguntar a família — as duas não podem divergir. Comentário traz o número medido e nomeia quem remove a supressão." }
+    unit_tests:     { status: PASS, nota: "3 testes novos. Um deles trava a supressão em NÃO vazar para `paid` — sem ele, alargar a regra apagaria o CAC de todas as captações pagas em silêncio. Mutação independente confirmou 5 testes de rede." }
+    acceptance:     { status: PASS, nota: "AC8 entregue como especificada, incluindo os diagnósticos que continuam viajando." }
+    no_regressions: { status: PASS, nota: "2.332 passam (era 2.329, +3). As mesmas 13 de baseline." }
+    performance:    { status: PASS, nota: "Nenhuma leitura nova — a supressão é um ramo sobre dado já lido." }
+    security:       { status: PASS, nota: "Sem superfície nova." }
+    documentation:  { status: CONCERNS, nota: "llms.txt e tool MCP corretos; o PROMPT do agente ficou para trás — QA-4425-05." }
+
+  pendencias_para_o_merge:
+    - "QA-4425-05 — duas linhas no §3 de docs/guides/inacio-panorama-diario.md"
+    - "Validação visual nas 3 etapas — segue aberta desde a revisão 1"
+
+scope: >
+  shared/src/cadeia-cac.ts (FUNIS_DE_VENDA + classificarFamilia com 2º argumento) ·
+  api/src/services/cadeia-cac-payload.ts (EtapaDaCadeia.funnelType, select, captaLead) ·
+  web/app/(app)/.../stages/[stageId]/page.tsx (passa funnelType) ·
+  api/src/__tests__/cadeia-cac.test.ts (+6 casos)
+
+codeRabbit:
+  status: SKIPPED
+  reason: "CLI roda em WSL, host é macOS. Lacuna de cobertura declarada, não aprovação."
+
+summary: >
+  A implementação está correta contra os ACs validados, é mínima (11 linhas de
+  código efetivo em 4 arquivos) e a disciplina de prova foi respeitada: a
+  reversão do bug derruba 2 testes, e a varredura de produção confirmou as 3
+  etapas que mudam e as 2 que não podem mudar.
+
+  O gate é CONCERNS por um risco que os ACs não cobriram e que a revisão
+  quantificou: a mudança de rótulo expõe uma divergência de 41% entre o CAC do
+  Panorama e o da aba Meta Ads, na mesma etapa e na mesma janela. Não é defeito
+  desta story — as duas réguas já eram diferentes —, mas era a diferença de
+  nome que impedia a comparação. Ao renomear CPL para CAC, a story convida
+  exatamente a comparação que agora falha.
+
+achados:
+  - id: QA-4425-01
+    severidade: ALTA
+    categoria: requirements
+    titulo: "Panorama vai exibir CAC 41% abaixo do CAC da aba Meta Ads, sem declarar"
+    evidencia: >
+      Simulação com dados de produção (07/09/2026), janela longa do Panorama
+      (09/08→07/09), etapa bbe-funil-churrasco:
+
+        Panorama (após esta story) : R$ 15.841,75 ÷ 124 vendas = CAC R$ 127,76
+        Aba Meta Ads (fixture §2.1) : R$ 15.757,56 ÷  73 vendas = CAC R$ 215,86
+
+      O investimento bate (0,5% de diferença, sync mais fresco). O denominador
+      não: 124 contra 73 vendas — a régua pública (`sales-daily`, dedup por
+      txId+produto) conta 70% a mais que a régua do dashboard (checkout/comprador
+      com classificação de produto). O CAC sai sistematicamente OTIMISTA.
+    porque_importa: >
+      Antes desta story o Panorama exibia "CPL R$ 72,62" — rótulo diferente do
+      da aba, e ninguém comparava. Agora exibirá "CAC R$ 127,76" ao lado de uma
+      aba que diz "CAC R$ 215,86" para a MESMA etapa. É a classe de defeito que
+      o Epic 44 existe para impedir, e a 44.17 já a nomeou: "duas telas com o
+      mesmo nome e números diferentes é exatamente o problema do connectRate que
+      custou um ano ao projeto — isso precisa ser conferido e, se acontecer,
+      DECLARADO NA TELA".
+
+      Agravante: um CAC otimista numa tela de decisão de verba empurra para
+      escalar. O erro tem direção, e é a direção que custa dinheiro.
+    recomendacao: >
+      Não bloqueia o merge da 44.25 — a régua é a 44.28. Mas exige UMA das duas
+      antes de a mudança chegar ao usuário:
+      (a) declarar na tela e no payload que este CAC usa a régua pública e pode
+          divergir do dashboard perpétuo, com link para a 44.28; ou
+      (b) segurar a 44.25 até a 44.28 unificar a régua.
+      A decisão é do @po. Registrar como AC na 44.28 de qualquer forma.
+
+  - id: QA-4425-02
+    severidade: MÉDIA
+    categoria: docs
+    titulo: "docs/llms.txt continua dizendo que free é sempre gratuita"
+    evidencia: >
+      llms.txt:116 — `"gratuita" (free/cpl)`, sem menção ao tipo do funil.
+      llms.txt:121-122 — "família gratuita → metrica: cplReal" e
+      "⚠️ Numa etapa gratuita o número principal NÃO é CAC."
+    porque_importa: >
+      O llms.txt é o contrato que o agente Inácio lê — a própria doc do projeto
+      o define assim. Depois desta story, `free` dentro de perpétuo devolve
+      `familia: "paga"` e `metrica: "cacReal"`. O Inácio vai ler que free é
+      gratuita, receber cacReal, e ou reportar errado ou abrir um bug que não
+      existe. É a mesma armadilha de `packages/mcp` não ter checagem de
+      contrato (`shared/src/contract.ts`).
+    recomendacao: >
+      Atualizar llms.txt na própria 44.25, antes do merge. É barato e o
+      consumidor primário do payload é um LLM que lê esse arquivo.
+
+  - id: QA-4425-03
+    severidade: MÉDIA
+    categoria: tests
+    titulo: "AC2, AC3 e AC4 não têm teste — só a função pura foi coberta"
+    evidencia: >
+      Os 6 casos novos exercitam `classificarFamilia` isolada. Não há teste de
+      integração com `free` + `perpetual` no payload nem no panorama. Em
+      particular, `captaLead` (AC3) pode ser revertido para
+      `familia === "gratuita"` e NENHUM teste falha — o CPL do perpétuo
+      desapareceria do payload em silêncio.
+    porque_importa: >
+      É o padrão que o repo já pagou para aprender: teste que não falha com o
+      bug de volta é decorativo. O @dev fez a prova de reversão para o AC1;
+      AC2/AC3 ficaram sem a mesma proteção.
+    recomendacao: >
+      Um teste em `public-cadeia-cac.test.ts` com `etapa({ stageType: "free",
+      funnelType: "perpetual" })` provando `familia: "paga"`,
+      `principal.metrica: "cacReal"` E que o cache de lead continua sendo lido.
+      A infraestrutura (`filaVinculo`, `etapa()`) já existe no arquivo.
+
+  - id: QA-4425-04
+    severidade: BAIXA
+    categoria: tests
+    titulo: "AC5 (web) sem teste"
+    evidencia: "A chamada em page.tsx:308 não é coberta; menu-de-abas.test.ts recebe a família já resolvida."
+    porque_importa: "Limitação estrutural conhecida — o runner do web cobre lib/utils e os .test.tsx de componente são órfãos de propósito (documentado na 44.21)."
+    recomendacao: "Aceitar. Cobrir por validação visual, que já está no DoD."
+
+quality_checks:
+  code_review:      { status: PASS, nota: "11 linhas efetivas, constante nomeada, comentário explica o porquê e cita sales-daily-sync.ts:168. Segue o padrão do arquivo." }
+  unit_tests:       { status: CONCERNS, nota: "AC1/AC6/AC7 cobertos com prova de reversão (2 falhas). AC2/AC3/AC4 sem teste — QA-4425-03." }
+  acceptance:       { status: PASS, nota: "AC1–AC7 entregues. AC4 entrega o rótulo, que é o que ele cobra — o valor é da 44.26/44.28, e a story declara isso." }
+  no_regressions:   { status: PASS, nota: "16 de 19 etapas inalteradas (verificado). web 1.049/1.049. As 13 falhas da API são baseline — confirmado por caminho independente: nenhum dos 6 arquivos referencia classificarFamilia, cadeia-cac, panorama ou funnelType, e as falhas são de permissões de projeto e 500s." }
+  performance:      { status: PASS, nota: "Zero query nova: funnelType sai do innerJoin que já existia pela prova de vínculo. `captaLead` preserva exatamente o conjunto de etapas que já lia o cache — o custo do panorama não muda." }
+  security:         { status: PASS, nota: "A prova de vínculo etapa↔funil↔projeto em resolverEtapaDoProjeto permanece intacta. Nenhum id de fora entra em query sem o innerJoin. Sem superfície nova." }
+  documentation:    { status: CONCERNS, nota: "Comentários de código exemplares. llms.txt desatualizado — QA-4425-02." }
+
+verificacoes_independentes:
+  - "Simulei o CAC que o Panorama exibirá nas 3 etapas, contra o banco de produção — origem do QA-4425-01."
+  - "Reconferi o baseline das 13 falhas por caminho diferente do @dev (grep de acoplamento + natureza das asserções), em vez de repetir o stash."
+  - "Reli o diff sem comentários: 11 linhas de código efetivo, nenhuma divisão nova, nenhuma leitura extra."
+
+pendencias_para_o_merge:
+  - "QA-4425-02 — atualizar docs/llms.txt (barato, faça nesta story)"
+  - "QA-4425-03 — teste de integração free+perpetual (barato, a infra existe)"
+  - "QA-4425-01 — decisão do @po: declarar a divergência na tela, ou segurar até a 44.28"
+  - "Validação visual no Panorama e na aba das 3 etapas (BBE, FZ, PP) — não substituível por teste"
+
+nao_verificado:
+  - "Validação visual — exige a aplicação rodando; é a última linha do DoD e continua aberta."
+  - "CodeRabbit — indisponível neste host."
+  - "FZ e PP em profundidade: confirmei que têm fonte de venda e cache, não que os números resultantes fazem sentido para aqueles clientes. Nenhum dos dois foi auditado pelo briefing do Inácio."

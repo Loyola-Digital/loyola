@@ -90,12 +90,30 @@ furo — por expert.
   ela não tem cadeia.
 - principal.metrica muda com a família: "cacReal" na paga, "cplReal" na
   gratuita. Nunca chame de CAC o número de uma etapa gratuita.
+- LEIA O CAMPO `familia`. NUNCA deduza a família do `stageType`. Num funil
+  PERPÉTUO, uma etapa `free`/`cpl` é promovida à família PAGA — ali o
+  stage_type é o default da coluna, não uma escolha, e a etapa é o dashboard de
+  venda do perpétuo inteiro. Hoje isso vale para bbe-fc1-a1-mai-26, fz-a1 e
+  pps1. Ver uma etapa "free" com familia "paga" NÃO é bug: é o desenho. A
+  promoção alcança só free/cpl — `mapa` e `comercial` dentro de perpétuo
+  seguem familia: null.
 - noAr é medido por GASTO, não por status na Meta. Uma campanha PAUSED que
   gastou na janela está no ar naquela janela. effectiveStatus: null significa
   "não resolvido pelo backfill", nunca "pausada".
 - Os motivos (semDados, syncPendente, leituraFalhou, indeterminado, foraDaAba,
   semTetoConfiavel, coberturaIndisponivel) pedem AÇÕES DIFERENTES. Reporte o
   motivo específico. Nunca escreva "sem dados" para todos.
+- `reguaDivergente` é a ÚNICA EXCEÇÃO à regra acima: não é ação de ninguém no
+  time de tráfego, e NÃO entra na lista de pendências do seu relatório. Ele
+  aparece na etapa promovida do perpétuo e significa: "esta etapa TEM CAC, mas
+  esta rota ainda não o publica" — a base de vendas daqui conta transações
+  dedupadas, e o dashboard perpétuo conta checkouts/compradores; deu 124 contra
+  73 na mesma janela de 30 dias. Publicar os dois com o mesmo nome faria uma
+  tela contradizer a outra. O que fazer: para o CAC dessa etapa, PEÇA O NÚMERO
+  DO DASHBOARD PERPÉTUO (aba Meta Ads) em vez de publicar o desta rota, e diga
+  de onde ele veio. `spend` e `vendasReais` desta rota continuam confiáveis e
+  podem ser citados. Não abra chamado: já existe trabalho em andamento para
+  unificar a régua.
 - Teto com confianca: "baixa" é indicação, não meta. Diga isso ao citá-lo.
 - composto.rotulo é "cenario-teorico": os tetos vêm de campanhas diferentes.
   Ao citar a queda composta, diga que é cenário teórico.
@@ -362,9 +380,11 @@ Uma vez por semana, pegue **uma** etapa do relatório dele e compare com a aba C
 | Campo | Deve bater |
 |---|---|
 | Investimento da janela | exato, ao centavo |
-| CAC ou CPL | exato |
+| CAC ou CPL | exato — **exceto na etapa promovida**, ver abaixo |
 | Métrica do gargalo e o teto | exatos |
 | Nome do criativo de maior investimento | exato |
+
+⚠️ **Nas três etapas promovidas do perpétuo** (`bbe-fc1-a1-mai-26`, `fz-a1`, `pps1`) **a aba não exibe CAC**, e isso é o comportamento correto — não um erro do Inácio nem da tela. A base de vendas da aba conta transações dedupadas e a do dashboard perpétuo conta checkouts/compradores; enquanto as duas réguas não forem uma só, publicar um CAC aqui faria esta aba contradizer a aba Meta Ads ao lado. O card mostra o motivo. **Para conferir o CAC dessas etapas, use o dashboard perpétuo.**
 
 **Qualquer divergência significa que ele recalculou por fora.** Não ajuste o número no texto dele — corrija o prompt para ler o campo do payload em vez de derivar.
 

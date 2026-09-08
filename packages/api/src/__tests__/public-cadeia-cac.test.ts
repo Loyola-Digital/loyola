@@ -150,6 +150,10 @@ const etapa = (over: Record<string, unknown> = {}) => ({
   id: STAGE,
   name: "Captação Paga",
   stageType: "paid",
+  // Story 44.25: o tipo do funil entra na classificação de família. `launch` é
+  // o default aqui de propósito — é o que preserva o comportamento de todos os
+  // testes escritos antes da story.
+  funnelType: "launch",
   campaigns: [{ id: "c1", name: "Campanha 1" }],
   // Story 44.9 AC4 — o `numeric` do Postgres chega como STRING.
   lpTemVsl: true,
@@ -1341,6 +1345,167 @@ describe("cadeia-cac — os QUATRO estados da guarda de cobertura (Story 44.12)"
     expect(body.principal.leadsUnicos).toBe(400);
     // Story 44.11 somou a 4ª: as linhas por `ad_id` do bloco de criativos.
     expect(mockSelect).toHaveBeenCalledTimes(4); // vínculo, insights, cache de lead, criativos
+    await app.close();
+  });
+});
+
+/**
+ * Story 44.25 — a etapa `free` de um funil `perpetual` é família PAGA.
+ *
+ * Achado QA-4425-03: os testes da story cobriam só `classificarFamilia`
+ * isolada. O caminho que produz o payload — e sobretudo o `captaLead`, que
+ * mantém a leitura do cache de lead depois da promoção — ficava sem prova.
+ * `captaLead` podia ser revertido para `familia === "gratuita"` sem nenhum
+ * teste falhar.
+ */
+describe("cadeia-cac — o funil promove a etapa (Story 44.25)", () => {
+  const cacheDeLead = (payload: Record<string, unknown>) =>
+    filaLeadCache([{ payload, computedAt: new Date("2026-09-07T04:01:47Z") }]);
+
+  it("free + perpetual devolve familia paga e principal cacReal", async () => {
+    filaVinculo([
+      etapa({ stageType: "free", funnelType: "perpetual", name: "bbe-funil-churrasco" }),
+    ]);
+    filaInsights(diasDe("c1", 10));
+    cacheDeLead({ uniqueLeads: 217, totalLeads: 245, fonte: "planilha_leads" });
+    const app = await buildApp();
+    const body = (await app.inject({ method: "GET", url: url() })).json();
+
+    expect(body.familia).toBe("paga");
+    expect(body.principal.metrica).toBe("cacReal");
+    expect(body.principal.vendasReais).toBe(40);
+    // ⚠️ E o principal NÃO é CPL: era isso que o Resumão de 06/09 publicava.
+    expect(body.principal.metrica).not.toBe("cplReal");
+    expect(body.principal.leadsUnicos).toBeUndefined();
+    await app.close();
+  });
+
+  /**
+   * AC8 — o rótulo sai, o número não.
+   *
+   * A régua desta rota conta 70% mais vendas que a do dashboard perpétuo
+   * (124 × 73 em 30 dias, medido em 07/09/2026), e `meta-ads` e `cadeia-cac`
+   * são abas irmãs. Publicar os dois CACs faria uma contradizer a outra a um
+   * clique de distância.
+   */
+  it("AC8: a etapa PROMOVIDA sai com valor null e motivo reguaDivergente", async () => {
+    filaVinculo([etapa({ stageType: "free", funnelType: "perpetual" })]);
+    filaInsights(diasDe("c1", 10));
+    cacheDeLead({ uniqueLeads: 217, fonte: "planilha_leads" });
+    const app = await buildApp();
+    const p = (await app.inject({ method: "GET", url: url() })).json().principal;
+
+    expect(p.metrica).toBe("cacReal"); // o RÓTULO está certo
+    expect(p.valor).toBeNull(); //         o NÚMERO não é publicado
+    expect(p.motivo).toBe("reguaDivergente");
+    expect(p.message).toContain("Meta Ads"); // diz QUAL aba consultar
+    // Os diagnósticos continuam viajando — quem quiser o número desta régua
+    // consegue derivá-lo, e sabe de qual régua ele veio.
+    expect(p.spend).toBeGreaterThan(0);
+    expect(p.vendasReais).toBe(40);
+    expect(p.dataSource).toBeDefined();
+    await app.close();
+  });
+
+  /**
+   * A mensagem é a MESMA nas três etapas promovidas — logo não pode conter
+   * número de nenhuma delas.
+   *
+   * A validação visual de 08/09/2026 pegou a primeira versão em produção
+   * local: ela dizia "124 contra 73 vendas" (os números do BBE) e aparecia
+   * idêntica no `fz-a1`, cujo card mostra 1.622 vendas. Um número concreto que
+   * não descreve a tela é pior que nenhum — convida a conferir e não fecha.
+   *
+   * Este teste trava a AUSÊNCIA. Se alguém voltar a fixar uma medição aqui,
+   * ele quebra.
+   */
+  it("a message da supressão não carrega número de nenhum cliente", async () => {
+    filaVinculo([etapa({ stageType: "free", funnelType: "perpetual" })]);
+    filaInsights(diasDe("c1", 10));
+    cacheDeLead({ uniqueLeads: 217, fonte: "planilha_leads" });
+    const app = await buildApp();
+    const p = (await app.inject({ method: "GET", url: url() })).json().principal;
+
+    // Nenhum dígito: nem contagem de venda, nem data, nem número de story.
+    expect(p.message).not.toMatch(/\d/);
+    // E nenhum jargão de implementação — o texto é para o operador.
+    for (const jargao of ["txId", "payload", "spend", "vendasReais", "Story", "rota"]) {
+      expect(p.message).not.toContain(jargao);
+    }
+    await app.close();
+  });
+
+  /**
+   * ⚠️ A supressão é SÓ da etapa promovida.
+   *
+   * Uma etapa `paid`/`sales` sempre foi paga e não passa pela promoção: o CAC
+   * dela é calculado com a mesma régua de sempre e continua saindo. Sem este
+   * teste, alargar a supressão para toda família paga apagaria o CAC de todas
+   * as captações pagas do projeto sem nada acusar.
+   */
+  it("AC8: etapa que JÁ era paga (paid) mantém o CAC — a supressão não vaza", async () => {
+    filaVinculo([etapa({ stageType: "paid", funnelType: "perpetual" })]);
+    filaInsights(diasDe("c1", 10));
+    const app = await buildApp();
+    const p = (await app.inject({ method: "GET", url: url() })).json().principal;
+
+    expect(p.metrica).toBe("cacReal");
+    expect(p.valor).not.toBeNull();
+    expect(p.valor).toBeCloseTo(spendTotal(100, 10) / 40, 6);
+    expect(p.motivo).toBeUndefined();
+    await app.close();
+  });
+
+  /**
+   * AC3, e o motivo de este teste existir.
+   *
+   * A 4ª chamada é o cache de lead. Se `captaLead` voltar a ser
+   * `familia === "gratuita"`, a etapa promovida deixa de lê-lo e a contagem cai
+   * para 3 — o CPL do perpétuo sumiria do payload sem nada acusar. É a mesma
+   * técnica do teste "o cache de lead é lido UMA vez" logo acima.
+   */
+  it("AC3: a etapa promovida CONTINUA lendo o cache de lead", async () => {
+    filaVinculo([etapa({ stageType: "free", funnelType: "perpetual" })]);
+    filaInsights(diasDe("c1", 10));
+    cacheDeLead({ uniqueLeads: 217, fonte: "planilha_leads" });
+    const app = await buildApp();
+    const body = (await app.inject({ method: "GET", url: url() })).json();
+
+    expect(body.familia).toBe("paga");
+    expect(mockSelect).toHaveBeenCalledTimes(4); // vínculo, insights, CACHE DE LEAD, criativos
+    await app.close();
+  });
+
+  /**
+   * AC6 — a promoção alcança só `free`/`cpl`.
+   *
+   * `mapa` e `comercial` existem DENTRO de funis perpétuos em produção
+   * (BBE/bbe-fh/Funil e PP/pps1/Comercial). Promovê-los faria o Panorama pedir
+   * CAC de um desenho de funil, que não tem métrica própria.
+   */
+  it("AC6: mapa e comercial dentro de perpetual seguem fora da aba", async () => {
+    for (const stageType of ["mapa", "comercial"]) {
+      filaVinculo([etapa({ stageType, funnelType: "perpetual" })]);
+      const app = await buildApp();
+      const body = (await app.inject({ method: "GET", url: url() })).json();
+      expect(body.familia).toBeNull();
+      expect(body.motivo).toBe("foraDaAba");
+      await app.close();
+    }
+  });
+
+  /** AC7 — fora do perpétuo, o payload é o de sempre. */
+  it("AC7: free + launch continua gratuita, com cplReal", async () => {
+    filaVinculo([etapa({ stageType: "free", funnelType: "launch" })]);
+    filaInsights(diasDe("c1", 10));
+    cacheDeLead({ uniqueLeads: 500, fonte: "planilha_leads" });
+    const app = await buildApp();
+    const body = (await app.inject({ method: "GET", url: url() })).json();
+
+    expect(body.familia).toBe("gratuita");
+    expect(body.principal.metrica).toBe("cplReal");
+    expect(body.principal.leadsUnicos).toBe(500);
+    expect(mockGetFreshSalesDaily).not.toHaveBeenCalled();
     await app.close();
   });
 });
