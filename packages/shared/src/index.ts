@@ -49,6 +49,16 @@ export { normalizeLpUrl, lpLabel, type LpKey } from "./lp-url.js";
 // Story 44.28: os KPIs do topo do perpétuo — compartilhados entre a tela e a
 // API pública, para o Inácio não recompor a conta por fora.
 export { calcularMetricasDoPerpetuo } from "./perpetuo-metricas.js";
+// Story 44.30 — o veredito do Resumão, por regra e não por julgamento do agente.
+export {
+  vereditoDoPerpetuo,
+  roasDeEquilibrio,
+  META_DE_ROAS,
+  type Veredito,
+  type Cor,
+  type EntradaDoVeredito,
+  type TaxasDaPlataforma,
+} from "./veredito-do-perpetuo.js";
 export type {
   MidiaDoPerpetuo,
   VendasDoPerpetuo,

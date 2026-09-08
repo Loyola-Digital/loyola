@@ -59,8 +59,10 @@ import {
   agregar,
   calcularMetricas,
   calcularMetricasDoPerpetuo,
+  vereditoDoPerpetuo,
   type DiaBruto,
 } from "@loyola-x/shared";
+import { PLATFORM_RATE_BREAKDOWN } from "../services/perpetual-report-config.js";
 
 const paramsSchema = z.object({ funnelId: z.string().uuid() });
 
@@ -228,6 +230,118 @@ export default fp(async function publicPerpetualMetricsRoutes(fastify) {
       const cadeia = temMidia ? calcularMetricas(agregado, "paga") : null;
 
       /**
+       * Story 44.30 (AC2) — o veredito vem PRONTO, e o agente não decide a cor.
+       *
+       * O Resumão de 06/09 chamou de "saudável" uma operação com ROAS 7d de
+       * 1,47x contra meta de 2x. Não houve regra violada: não havia regra. Uma
+       * instrução em prosa não conserta — LLM julgando produz julgamento
+       * diferente a cada dia, e nenhum teste alcança isso.
+       *
+       * ⚠️ **A regra do §3.4 olha DUAS janelas** (7 e 30 dias) mais margem e
+       * dias negativos — não a janela pedida. Então o veredito lê sempre os 30
+       * dias que terminam em `periodo.to`, independente de `from`/`to`: pedir
+       * 90 dias não pode mudar a cor, senão o mesmo funil teria vereditos
+       * diferentes conforme quem perguntou.
+       *
+       * Custo: uma leitura de mídia e uma da planilha a mais por chamada. A
+       * planilha tem cache de 30 s por `spreadsheetId`, então a segunda leitura
+       * da mesma requisição não vai à rede.
+       */
+      const trintaDias = { from: inicioDaJanela(30, janela.to), to: janela.to };
+      const serieDoVeredito = await (async () => {
+        if (campaignIds.length === 0) return null;
+        const cs = await carregarSerieDiariaPorCampanha(fastify.db, {
+          projectId: funil.projectId,
+          campaignIds,
+          from: trintaDias.from,
+          to: trintaDias.to,
+          explicitRange: true,
+        });
+        const spendPorDia30 = new Map<string, number>();
+        for (const c of cs) {
+          for (const d of c.days ?? []) {
+            spendPorDia30.set(d.date, (spendPorDia30.get(d.date) ?? 0) + d.spend);
+          }
+        }
+        if (spendPorDia30.size === 0) return null;
+        const diarias30 = await calcularVendasDiariasDoPerpetuo(fastify.db, {
+          funnelId,
+          startDate: trintaDias.from,
+          endDate: trintaDias.to,
+        });
+        return { spendPorDia30, receitaPorDia30: (diarias30.byDay ?? {}) as Record<string, number> };
+      })();
+
+      /**
+       * ROAS e margem de uma sub-janela, dos MESMOS dias dos dois lados.
+       *
+       * `null` quando não houve investimento nela — dividir por zero ou tratar
+       * ausência como zero é o que a Story 44.26 fechou.
+       */
+      const janelaDoVeredito = (dias: number) => {
+        /**
+         * ⚠️ A janela SAI daqui junto com os números.
+         *
+         * A primeira versão devolvia só `{roas, margemPct, diasNegativos}` e o
+         * `from` era remontado no payload com `inicioDaJanela(7, ...)` fixo.
+         * Isso desacopla o rótulo do cálculo: trocar o argumento desta função
+         * mudava a conta e **não** mudava a janela declarada. O teste de
+         * reversão não pegava, porque a mentira estava do lado do rótulo.
+         *
+         * Declarar aqui é o que faz "o número e a janela dele" andarem juntos —
+         * que é a regra que este epic inteiro existe para impor.
+         */
+        const de = inicioDaJanela(dias, janela.to);
+        const periodo = { from: de, to: janela.to, dias };
+        if (!serieDoVeredito) {
+          return { ...periodo, roas: null, margemPct: null, diasNegativos: null };
+        }
+        let spend = 0;
+        let receita = 0;
+        let diasNegativos = 0;
+        for (let i = 0; i < dias; i += 1) {
+          const dia = inicioDaJanela(dias - i, janela.to);
+          if (dia < de) continue;
+          const s = serieDoVeredito.spendPorDia30.get(dia) ?? 0;
+          const r = serieDoVeredito.receitaPorDia30[dia] ?? 0;
+          spend += s;
+          receita += r;
+          // Um dia é negativo quando a receita LÍQUIDA dele não paga a mídia
+          // dele — a mesma conta da margem (Story 29.20), por dia.
+          if (s > 0 && r * (1 - (vendas.feeRate ?? 0)) - s < 0) diasNegativos += 1;
+        }
+        if (spend <= 0) return { ...periodo, roas: null, margemPct: null, diasNegativos: null };
+        const margem = receita * (1 - (vendas.feeRate ?? 0)) - spend;
+        return {
+          ...periodo,
+          roas: receita / spend,
+          margemPct: receita > 0 ? (margem / receita) * 100 : null,
+          diasNegativos,
+        };
+      };
+
+      const sete = janelaDoVeredito(7);
+      const trinta = janelaDoVeredito(30);
+
+      // As taxas saem da plataforma da planilha (`PLATFORM_RATE_BREAKDOWN`, a
+      // mesma fonte do relatório perpétuo desde a 41.8). Sem plataforma
+      // conhecida elas chegam zeradas e o ponto de equilíbrio vira 1,00x — mais
+      // permissivo, e por isso quem manda continua sendo a meta.
+      const taxas =
+        vendas.platform && vendas.platform in PLATFORM_RATE_BREAKDOWN
+          ? PLATFORM_RATE_BREAKDOWN[vendas.platform as keyof typeof PLATFORM_RATE_BREAKDOWN]
+          : undefined;
+      const veredito = vereditoDoPerpetuo({
+        roas7d: sete.roas,
+        roas30d: trinta.roas,
+        margem7dPct: sete.margemPct,
+        diasNegativosEm7: sete.diasNegativos,
+        taxas: taxas
+          ? { plataforma: taxas.plataforma, imposto: taxas.imposto, outros: taxas.outros }
+          : { plataforma: 0, imposto: 0, outros: 0 },
+      });
+
+      /**
        * AC4 — a série diária do Resumão, **um dia por linha**, mídia e vendas
        * lado a lado.
        *
@@ -291,6 +405,17 @@ export default fp(async function publicPerpetualMetricsRoutes(fastify) {
               medido: vendas.reembolsoReal,
             }
           : null,
+
+        /**
+         * O veredito da janela, por regra. `cor`, `rotulo` e `motivo` vão
+         * prontos: quem publica reporta, não julga (Story 44.30 AC2).
+         */
+        veredito,
+        /**
+         * As duas janelas que o veredito leu, para o texto poder citá-las. São
+         * SEMPRE 7 e 30 dias terminando em `periodo.to` — não a janela pedida.
+         */
+        janelasDoVeredito: { sete, trinta },
 
         cadeia,
         agregadoDeMidia: temMidia ? agregado : null,

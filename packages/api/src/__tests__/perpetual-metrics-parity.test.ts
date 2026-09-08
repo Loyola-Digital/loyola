@@ -324,6 +324,57 @@ describe("ausência é ausência, e zero medido é zero", () => {
   });
 });
 
+describe("Story 44.30 — o veredito vem no payload, pronto", () => {
+  /**
+   * A função pura tem 32 casos em `veredito-do-perpetuo.test.ts`. O que ESTE
+   * bloco prova é o FIO: que a rota alimenta a função com as duas janelas
+   * certas e devolve o resultado. Sem ele, a função poderia estar perfeita e a
+   * rota passar `null` em tudo.
+   */
+  it("a resposta traz cor, rótulo, motivo e a condição que disparou", async () => {
+    const { pub } = await respostas();
+    expect(pub.veredito).toBeDefined();
+    expect(["verde", "amarelo", "vermelho", "semDado"]).toContain(pub.veredito.cor);
+    expect(pub.veredito.metaDeRoas).toBe(2);
+    expect(pub.veredito.fonteDaMeta).toBe("constante");
+  });
+
+  /**
+   * ⚠️ **Pede 90 dias de propósito.** A janela usada em `respostas()` é de 7
+   * dias, e com ela um veredito que lesse a janela PEDIDA daria o mesmo
+   * resultado de um que lê 7 — o teste passaria com o defeito dentro.
+   *
+   * Foi o que aconteceu na primeira versão deste bloco: trocar
+   * `janelaDoVeredito(7)` por `janelaDoVeredito(janela.dias)` não derrubava
+   * nada. Mesmo defeito de controle que a validação visual da 44.25 apontou:
+   * um item que passa e falha com a mesma tela não é verificação.
+   */
+  it("as janelas do veredito são 7 e 30 dias mesmo quando se pede 90", async () => {
+    const app = await montarApp();
+    const r = await app.inject({
+      method: "GET",
+      url: `/api/public/v1/funnels/${FUNIL}/perpetual-metrics?days=90`,
+    });
+    await app.close();
+    const p = r.json();
+    const vao = (j: { from: string; to: string }) =>
+      Math.round((Date.parse(`${j.to}T00:00:00Z`) - Date.parse(`${j.from}T00:00:00Z`)) / 86_400_000) + 1;
+
+    expect(p.periodo.dias).toBe(90);
+    // O veredito NÃO segue a janela pedida: senão o mesmo funil teria cores
+    // diferentes conforme quem perguntou, no mesmo dia.
+    expect(vao(p.janelasDoVeredito.sete)).toBe(7);
+    expect(vao(p.janelasDoVeredito.trinta)).toBe(30);
+  });
+
+  it("o motivo não carrega jargão de sistema (AC4)", async () => {
+    const { pub } = await respostas();
+    for (const jargao of ["semDados", "roas7d", "Story", "null", "payload"]) {
+      expect(pub.veredito.motivo).not.toContain(jargao);
+    }
+  });
+});
+
 describe("a janela é a mesma nos dois lados (Story 44.27)", () => {
   it("`days=7` inclui hoje — sete dias, não oito", async () => {
     const app = await montarApp();
