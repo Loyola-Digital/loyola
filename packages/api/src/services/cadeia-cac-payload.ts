@@ -1009,6 +1009,22 @@ export async function montarPayloadCadeiaCac(
       lastSyncedAt: c.lastSyncedAt,
     })),
     agregado,
+    /**
+     * Story 44.31 (AC1) — o intervalo REAL dos dias que entraram na soma.
+     *
+     * ⚠️ Não é o mesmo que `range`. `range` é o que o CHAMADOR pediu, e vem
+     * `{null, null}` quando ele não pediu nada — que é o caso da aba, por
+     * decisão da Story 44.8: sem `from`/`to`, a rota lê o histórico inteiro.
+     *
+     * Sem este campo a tela não tem como declarar de quando é o número que
+     * mostra, e foi assim que o `bbe-pr2-ago-26/Captação Paga` passou a exibir
+     * CAC R$ 743,58 na aba e R$ 855,11 no Panorama — os dois certos, janelas
+     * diferentes, e nenhuma das duas telas dizendo qual.
+     *
+     * `agregado.dias` conta os dias COM dado, que pode ser menos que o vão
+     * entre `de` e `ate` — a tela mostra os dois.
+     */
+    periodoDaSerie,
     atuais,
     principal,
     /**

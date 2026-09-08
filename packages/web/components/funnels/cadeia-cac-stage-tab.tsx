@@ -22,6 +22,7 @@
  */
 
 import { useMemo } from "react";
+import { periodoDoNumero } from "@/lib/utils/periodo-do-numero";
 import { AlertTriangle, Info, TrendingDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -171,6 +172,38 @@ function LinhaTabela({ l }: { l: LinhaDaCadeia }) {
   );
 }
 
+/**
+ * Story 44.31 — a linha que declara o período do número principal.
+ *
+ * A regra mora em `lib/utils/periodo-do-numero.ts` porque o `vitest.config` do
+ * web só coleta `lib/utils/**\/*.test.ts`: um `.test.tsx` de componente nunca
+ * roda, e o teste existiria sem nunca ter executado. Aqui só se renderiza.
+ */
+function PeriodoDoNumero({
+  range,
+  serie,
+  dias,
+}: {
+  range: { from: string | null; to: string | null };
+  serie?: { de: string; ate: string } | null;
+  dias?: number;
+}) {
+  const p = periodoDoNumero({ range, serie, dias });
+  if (!p.texto) return null;
+  return (
+    <p className="mt-2 text-xs text-muted-foreground">
+      {p.historico ? (
+        <>
+          <span className="font-medium">Todo o histórico</span>
+          {p.texto.replace("Todo o histórico", "")}
+        </>
+      ) : (
+        p.texto
+      )}
+    </p>
+  );
+}
+
 export function CadeiaCacStageTab({
   projectId,
   stageId,
@@ -248,6 +281,16 @@ export function CadeiaCacStageTab({
             </div>
           </div>
         </div>
+
+        {/* Story 44.31 (AC1/AC2) — de QUE PERÍODO é este número.
+
+            Sem esta linha, `bbe-pr2-ago-26/Captação Paga` mostrava CAC
+            R$ 743,58 aqui e R$ 855,11 no Panorama — os dois certos, janelas
+            diferentes (histórico inteiro × 30 dias), e nenhuma das telas
+            dizendo qual. Quem comparava concluía que uma estava quebrada.
+
+            ⚠️ Nenhum número muda: é rótulo. */}
+        <PeriodoDoNumero range={data.range} serie={data.periodoDaSerie} dias={data.agregado?.dias} />
         {p?.motivo && <div className="mt-3"><Motivo motivo={p.motivo} texto={p.message} /></div>}
         {/* Imposto declarado, para ninguém aplicar de novo por fora. */}
         {data.spendIncludesMetaTax && (
