@@ -69,6 +69,8 @@ export function SubirPastaDialog({
   const [destino, setDestino] = useState<string | null>(null);
   const [feitos, setFeitos] = useState(0);
   const [atual, setAtual] = useState<string>("");
+  /** Segundos de espera quando o servidor pede calma. `0` = subindo normal. */
+  const [esperando, setEsperando] = useState(0);
   const [falhas, setFalhas] = useState<Falha[]>([]);
   const cancelar = useRef(false);
 
@@ -84,6 +86,7 @@ export function SubirPastaDialog({
     setDestino(null);
     setFeitos(0);
     setAtual("");
+    setEsperando(0);
     setFalhas([]);
     cancelar.current = false;
   }
@@ -166,7 +169,13 @@ export function SubirPastaDialog({
       }
 
       try {
-        const { publicUrl, key } = await subir.mutateAsync({ file });
+        const { publicUrl, key } = await subir.mutateAsync({
+          file,
+          // O servidor tem teto por minuto; num lote grande dá para bater
+          // nele. Mostrar a espera evita que a fila pareça travada.
+          onEsperando: (s) => setEsperando(s),
+        });
+        setEsperando(0);
         const criado = await criar.mutateAsync({
           // O nome do arquivo é o título; a IA não roda aqui — analisar 60
           // arquivos levaria vinte minutos, e a catalogação pode ser feita
@@ -379,6 +388,12 @@ export function SubirPastaDialog({
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               {feitos} de {total} · {atual}
             </p>
+            {esperando > 0 && (
+              <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-[11px] text-amber-600">
+                O servidor pediu uma pausa de {esperando}s — a fila continua sozinha depois disso.
+                Nenhum arquivo se perde.
+              </p>
+            )}
             <p className="text-[11px] text-muted-foreground">
               Pode deixar aberto. Fechar cancela o que ainda não subiu — o que já entrou fica.
             </p>
