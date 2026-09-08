@@ -23,7 +23,10 @@ import { classifyRefundStatus, isRefundBucket, isRevenueBucket } from "../servic
 import {
   saleDayKey,
   businessToday,
-  shiftDayKey,
+  // Story 44.27: a régua ÚNICA do seletor de período — substituiu os cinco
+  // `shiftDayKey(hoje, -days)` deste arquivo. Ver a nota no helper: eram duas
+  // réguas, e a diferença de um dia inflava o ROAS da janela curta.
+  inicioDaJanela,
   // Story 29.69: dia e hora derivados JUNTOS, nos três formatos que as
   // planilhas de produção usam — um deles com fuso misto na mesma coluna.
   saleDayAndHour,
@@ -317,8 +320,9 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         cutoffStart = new Date(query.data.startDate + "T00:00:00");
         cutoffEnd = new Date(query.data.endDate + "T23:59:59");
       } else if (query.data.days && dataIdx !== -1) {
-        cutoffStart = new Date();
-        cutoffStart.setDate(cutoffStart.getDate() - query.data.days);
+        // Story 44.27: `-(days − 1)` via `inicioDaJanela` — uma janela de N
+        // dias terminando hoje inclui hoje.
+        cutoffStart = new Date(`${inicioDaJanela(query.data.days)}T00:00:00`);
       }
 
       // Dedup por transactionId quando mapeado, senão por email (Story 28.4 pattern).
@@ -588,7 +592,7 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         const until = businessToday();
         const since = cutoffStart
           ? cutoffStart.toISOString().slice(0, 10)
-          : shiftDayKey(until, -(query.data.days ?? 30));
+          : inicioDaJanela(query.data.days ?? 30, until);
         const ate = cutoffEnd ? cutoffEnd.toISOString().slice(0, 10) : until;
         const campanhas = await getCampaignInsightsFromDb(
           fastify.db,
@@ -682,7 +686,7 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
             ? null
             : cutoffStart
               ? { since: cutoffStart.toISOString().slice(0, 10), until: cutoffEnd ? cutoffEnd.toISOString().slice(0, 10) : businessToday() }
-              : { since: shiftDayKey(businessToday(), -(query.data.days ?? 30)), until: businessToday() },
+              : { since: inicioDaJanela(query.data.days ?? 30), until: businessToday() },
         pisoDeAmostra: PISO_DE_AMOSTRA_POR_ORIGEM,
       };
 
@@ -843,7 +847,7 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         cutoffStartDay = query.data.startDate;
         cutoffEndDay = query.data.endDate;
       } else if (query.data.days) {
-        cutoffStartDay = shiftDayKey(businessToday(), -query.data.days);
+        cutoffStartDay = inicioDaJanela(query.data.days);
       }
 
       const byDay: Record<string, number> = {};
@@ -1013,7 +1017,7 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
         until = query.data.endDate;
       } else {
         until = businessToday();
-        since = shiftDayKey(until, -(query.data.days ?? 30));
+        since = inicioDaJanela(query.data.days ?? 30, until);
       }
 
       // ---- campanhas do funil ----

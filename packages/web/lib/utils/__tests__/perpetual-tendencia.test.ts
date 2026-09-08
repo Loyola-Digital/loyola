@@ -392,3 +392,143 @@ describe("o dia de negócio não é o do processo", () => {
     expect(ultimoDiaFechado(new Date("2026-09-01T03:00:00Z"))).toBe("2026-08-31");
   });
 });
+
+/**
+ * Story 44.27 — com a janela alinhada, a Tendência 7D no seletor de 7 dias é
+ * ESTRUTURALMENTE parcial, e precisa dizer isso.
+ *
+ * A âncora é o último dia FECHADO (ontem). Um seletor de 7 dias cobre
+ * hoje−6..hoje, logo só SEIS deles estão fechados. A janela de 7 dias nunca
+ * fecha ali — e antes da 44.27 ela fechava por acidente, porque a série trazia
+ * um dia a mais vindo só do lado das vendas.
+ *
+ * Era esse dia órfão (receita sem custo) que produzia 1.61x onde os seletores
+ * de 30d/90d, cobrindo os mesmos dias dos DOIS lados, produziam 1.36x.
+ */
+describe("Story 44.27 — janela alinhada e a parcial declarada", () => {
+  const dia = (d: string, spend: number, revenue: number) => ({
+    dateIso: d,
+    spend,
+    revenue,
+    margin: revenue * 0.6 - spend,
+  });
+
+  /** Seletor de 7 dias, já ALINHADO: 01/09..07/09, hoje = 07/09. */
+  const seletor7d = [
+    dia("2026-09-01", 757.71, 1684.0),
+    dia("2026-09-02", 812.21, 694.0),
+    dia("2026-09-03", 630.26, 297.0),
+    dia("2026-09-04", 510.81, 740.1),
+    dia("2026-09-05", 523.28, 609.64),
+    dia("2026-09-06", 687.93, 1988.0),
+    dia("2026-09-07", 411.04, 347.0), // parcial, fora da âncora
+  ];
+
+  it("a janela de 7 dias se declara PARCIAL — só 6 dias fechados", () => {
+    const t = calcularTendencia(seletor7d, [1, 3, 7], "2026-09-06")!;
+    const j7 = t.janelas.find((x) => x.dias === 7)!;
+    expect(j7.parcial).toBe(true);
+    expect(j7.diasCobertos).toBe(6);
+    expect(t.ancora).toBe("2026-09-06");
+    expect(t.diasFechados).toBe(6);
+  });
+
+  /**
+   * ⚠️ O teste que trava o defeito.
+   *
+   * Com o dia órfão (31/08: venda sem investimento, porque a janela do spend
+   * não o alcançava), a janela de 7 dias soma receita a mais e o ROAS infla.
+   */
+  it("o dia órfão — receita sem custo — infla o ROAS, e por isso saiu da série", () => {
+    const comOrfao = [dia("2026-08-31", 0, 297.0), ...seletor7d]; // spend 0: o bug
+    const alinhado = [dia("2026-08-31", 724.59, 297.0), ...seletor7d]; // como deveria
+
+    const roasOrfao = calcularTendencia(comOrfao, [7], "2026-09-06")!.janelas[0]!.roas!;
+    const roasAlinhado = calcularTendencia(alinhado, [7], "2026-09-06")!.janelas[0]!.roas!;
+
+    // O mesmo numerador, denominadores diferentes: o órfão infla.
+    expect(roasOrfao).toBeGreaterThan(roasAlinhado);
+    // E a inflação é material — o chamado media 1.61x contra 1.36x, +19%.
+    expect(roasOrfao / roasAlinhado).toBeGreaterThan(1.15);
+  });
+
+  it("janela de 1 e 3 dias continuam fechando — elas cabem nos 6 dias", () => {
+    const t = calcularTendencia(seletor7d, [1, 3, 7], "2026-09-06")!;
+    expect(t.janelas.find((x) => x.dias === 1)!.parcial).toBe(false);
+    expect(t.janelas.find((x) => x.dias === 3)!.parcial).toBe(false);
+  });
+});
+
+/**
+ * Story 44.27 AC6a — a Tendência 7D vista nos seletores de 30d/90d NÃO muda.
+ *
+ * Este é o teste que faltava, e o gate (QA-4427-01) mostrou por quê: o AC6
+ * original dizia que "30d e 90d continuam com os mesmos números", o que é falso
+ * para os CARDS — eles somavam faturamento de N+1 dias contra investimento de
+ * N, e alinhar derruba o faturamento. No `pps1` o ROAS de 30 dias sai de 1.067x
+ * para 0.912x, cruzando o ponto de equilíbrio.
+ *
+ * O que de fato não muda é a TENDÊNCIA de 7 dias vista desses seletores: eles
+ * já cobriam 31/08 dos DOIS lados, então ela já emitia 1.36x e continua.
+ *
+ * A diferença entre os dois casos é a razão de o AC ter sido separado em
+ * AC6a/AC6b — e é ela que este teste trava.
+ */
+describe("Story 44.27 AC6a — a Tendência 7D nos seletores longos não muda", () => {
+  const dia = (d: string, spend: number, revenue: number) => ({
+    dateIso: d,
+    spend,
+    revenue,
+    margin: revenue * 0.6 - spend,
+  });
+
+  /**
+   * Fixture do §2.2 do briefing, com o dia 31/08 presente e COMPLETO — que é o
+   * que um seletor de 30d/90d entrega: 7 dias fechados de 31/08 a 06/09.
+   */
+  const seletorLongo = [
+    dia("2026-08-29", 643.38, 500.0), // fora da janela de 7d, só para dar corpo
+    dia("2026-08-30", 866.83, 700.0),
+    dia("2026-08-31", 724.59, 297.0), // ← o dia que o seletor de 7d não alcança
+    dia("2026-09-01", 757.71, 1684.0),
+    dia("2026-09-02", 812.21, 694.0),
+    dia("2026-09-03", 630.26, 297.0),
+    dia("2026-09-04", 510.81, 740.1),
+    dia("2026-09-05", 523.28, 609.64),
+    dia("2026-09-06", 687.93, 1988.0),
+    dia("2026-09-07", 411.04, 347.0), // parcial
+  ];
+
+  it("com 31/08 nos dois lados, a janela de 7 dias FECHA", () => {
+    const t = calcularTendencia(seletorLongo, [1, 3, 7], "2026-09-06")!;
+    const j7 = t.janelas.find((x) => x.dias === 7)!;
+    expect(j7.parcial).toBe(false);
+    expect(j7.diasCobertos).toBe(7);
+  });
+
+  it("e o ROAS bate com a soma de 31/08..06/09 — o 1.36x do briefing", () => {
+    const t = calcularTendencia(seletorLongo, [7], "2026-09-06")!;
+    const j7 = t.janelas[0]!;
+    const dias7 = seletorLongo.filter((d) => d.dateIso >= "2026-08-31" && d.dateIso <= "2026-09-06");
+    const spend = dias7.reduce((a, d) => a + d.spend, 0);
+    const revenue = dias7.reduce((a, d) => a + d.revenue, 0);
+    expect(j7.spend).toBeCloseTo(spend, 6);
+    expect(j7.roas).toBeCloseTo(revenue / spend, 6);
+    // ⚠️ Razão de somas — a janela inclui os 7 dias, 31/08 entre eles.
+    expect(j7.spend).toBeCloseTo(4646.79, 1);
+  });
+
+  /**
+   * ⚠️ O contraste que dá sentido ao AC6a.
+   *
+   * Sem o dia 31/08 (o que o seletor de 7 dias vê após a AC1), a mesma janela
+   * se declara parcial. O número não é "o mesmo" nos dois seletores — o que é
+   * o mesmo é o comportamento: cada um usa os dias que tem, e diz quantos são.
+   */
+  it("o mesmo cálculo, sem 31/08, se declara parcial — os seletores diferem e AMBOS estão certos", () => {
+    const semODia = seletorLongo.filter((d) => d.dateIso >= "2026-09-01");
+    const t = calcularTendencia(semODia, [7], "2026-09-06")!;
+    expect(t.janelas[0]!.parcial).toBe(true);
+    expect(t.janelas[0]!.diasCobertos).toBe(6);
+  });
+});
