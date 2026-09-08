@@ -50,6 +50,9 @@ import type { Database } from "../db/client.js";
 import { funnels, funnelStages, publicMetricsCache } from "../db/schema.js";
 import { carregarSerieDiariaPorCampanha } from "./meta-campaign-daily.js";
 import { getFreshSalesDaily, type SalesDailyPayload } from "./sales-daily-sync.js";
+// Story 44.28 (T6): a régua do perpétuo — a MESMA que o dashboard e a rota
+// pública do Inácio leem. Só as etapas PROMOVIDAS passam por aqui.
+import { calcularVendasDoPerpetuo } from "./perpetual-sales.js";
 import { LEAD_ORIGIN_SCOPE, resolveLeadSource, type LeadOriginPayload } from "./lead-origin-sync.js";
 import { carregarCriativosDaEtapa } from "./meta-ad-daily.js";
 import { maxAgeFrom } from "../utils/cache-freshness.js";
@@ -128,6 +131,15 @@ export interface EtapaDaCadeia {
    * `UPDATE` no banco.
    */
   funnelType: string | null;
+  /**
+   * Story 44.28 (T6) — o funil, para ler a planilha do PERPÉTUO.
+   *
+   * A planilha de venda do perpétuo vive no FUNIL (`funnel_spreadsheets`
+   * type='perpetual_sales', `stage_id` NULL) e é herdada pelas etapas. Sai do
+   * mesmo `innerJoin` que já provava o vínculo — sem query extra, como o
+   * `funnelType` da 44.25.
+   */
+  funnelId: string;
   campaigns: unknown;
   /** Story 44.9 AC4 — `null` = não respondido, diferente de `false`. */
   lpTemVsl: boolean | null;
@@ -158,6 +170,7 @@ export async function resolverEtapaDoProjeto(
       // Story 44.25: o `innerJoin` contra `funnels` já existe pela prova de
       // vínculo — o tipo do funil sai dele sem query extra.
       funnelType: funnels.type,
+      funnelId: funnels.id,
       campaigns: funnelStages.campaigns,
       lpTemVsl: funnelStages.lpTemVsl,
       ticketMedioManual: funnelStages.ticketMedioManual,
@@ -714,6 +727,52 @@ export async function montarPayloadCadeiaCac(
   let vendasSemDataNoTotal: number | null = null;
 
   if (familia === "paga") {
+    /**
+     * Story 44.28 (T6) — **duas fontes de venda, e a etapa escolhe qual.**
+     *
+     * | etapa | fonte | por quê |
+     * |---|---|---|
+     * | promovida (perpétuo) | `calcularVendasDoPerpetuo` | a MESMA régua do dashboard e da rota pública do Inácio |
+     * | lançamento | `getFreshSalesDaily` | inalterado — a planilha é da etapa, não do funil |
+     *
+     * ## O que essa troca corrigiu
+     *
+     * A régua antiga (`sales-daily-sync`, dedup por `txId+produto`) contava
+     * bem mais que a do painel nas etapas de perpétuo. Medido em 08/09/2026,
+     * janela de 30 dias:
+     *
+     * ```
+     *   bbe-funil-churrasco   129 → 74 vendas   CAC R$ 117,78 → R$ 205,32  (+74%)
+     *   pps1/Aquisição         32 → 27 vendas   CAC R$  91,91 → R$ 108,93  (+19%)
+     *   fz-a1/Vendas           78 → 77 vendas   CAC R$  40,23 → R$  40,75  ( +1%)
+     * ```
+     *
+     * O CAC sobe nas três porque a contagem antiga era otimista — o número não
+     * piorou, estava errado. O investimento nunca foi o problema: a Story 44.25
+     * já tinha registrado que ele batia dentro de 0,5%.
+     *
+     * ## Por que isto derruba a supressão da 44.25 (AC7)
+     *
+     * Aquela story escondeu o CAC das etapas promovidas com
+     * `motivo: "reguaDivergente"`, e o motivo era literal: as abas irmãs
+     * `meta-ads` e `cadeia-cac` contavam vendas de jeitos diferentes, a um
+     * clique uma da outra. Com a mesma função dos dois lados o motivo deixa de
+     * ser verdadeiro — e supressão sem motivo é número escondido. A supressão e
+     * o teste que a travava caem juntos.
+     */
+    let leitura: {
+      vendas: number;
+      /**
+       * `null` na fonte do perpétuo: ela não produz esse diagnóstico, e
+       * inventar `0` afirmaria "nenhuma venda sem data" sobre algo não medido
+       * (QA-448-07). Medido em 08/09 nas três planilhas de perpétuo:
+       * **zero linha sem data legível** em 2.402 — o aviso da tela nunca
+       * dispararia ali de qualquer forma.
+       */
+      vendasSemData: number | null;
+      dataSource: "cache" | "live";
+      computedAt: Date | null;
+    } | null = null;
     // ⚠️ QA-448-01: erro de LEITURA e ausência de FONTE são causas
     // diferentes, com ações opostas — "cheque a permissão / tente de novo"
     // contra "conecte uma planilha". O `.catch(() => null)` anterior fundia
@@ -725,12 +784,53 @@ export async function montarPayloadCadeiaCac(
     // (`public-funnel-sales.ts:141-148`): lá a venda é o payload inteiro,
     // aqui é UM campo, e derrubar a resposta jogaria fora o teto, o ranking
     // e os benchmarks, que estão calculados e corretos.
-    let fresh: Awaited<ReturnType<typeof getFreshSalesDaily>> | null = null;
     let erroDeLeitura: string | null = null;
+
     try {
-      fresh = await getFreshSalesDaily(db, opts.projectId, opts.stageId, {
-        maxAgeMs: maxAgeFrom(opts.fresh, config.SALES_PUBLIC_MAX_AGE_SEC),
-      });
+      if (promovidaPeloFunil) {
+        /**
+         * ⚠️ `propagarErroDeLeitura` é o que mantém a distinção viva.
+         *
+         * `calcularVendasDoPerpetuo` engole a falha de leitura por padrão e
+         * devolve `semDados: true` — bom para o painel, que mostra "sem dados"
+         * nos dois casos. Aqui NÃO serve: sem a opção, uma planilha que não
+         * abriu viraria "conecte uma planilha", e o operador iria configurar o
+         * que já está configurado.
+         */
+        const v = await calcularVendasDoPerpetuo(
+          db,
+          {
+            projectId: opts.projectId,
+            funnelId: stage.funnelId,
+            // Sem `range`, o histórico inteiro — o mesmo que a aba já fazia
+            // (decisão da Story 44.8; a 44.31 trata de declarar isso na tela).
+            ...(range ? { startDate: range.from, endDate: range.to } : {}),
+          },
+          { propagarErroDeLeitura: true },
+        );
+        if (!v.semDados) {
+          leitura = {
+            vendas: v.totalVendas,
+            vendasSemData: null,
+            // A planilha é lida ao vivo a cada chamada — não há cache aqui.
+            dataSource: "live",
+            computedAt: new Date(),
+          };
+        }
+      } else {
+        const fresh = await getFreshSalesDaily(db, opts.projectId, opts.stageId, {
+          maxAgeMs: maxAgeFrom(opts.fresh, config.SALES_PUBLIC_MAX_AGE_SEC),
+        });
+        if (fresh?.payload) {
+          const v = vendasDoPeriodo(fresh.payload, range);
+          leitura = {
+            vendas: v.vendas,
+            vendasSemData: v.vendasSemDataNoTotal,
+            dataSource: fresh.source,
+            computedAt: fresh.computedAt,
+          };
+        }
+      }
     } catch (err) {
       erroDeLeitura = err instanceof Error ? err.message : "Falha ao calcular vendas";
     }
@@ -743,7 +843,7 @@ export async function montarPayloadCadeiaCac(
         message: `Não foi possível LER a fonte de vendas desta etapa (a fonte existe; a leitura falhou): ${erroDeLeitura}`,
         spend: agregado.spend,
       };
-    } else if (!fresh?.payload) {
+    } else if (leitura === null) {
       principal = {
         metrica: "cacReal",
         valor: null,
@@ -752,112 +852,34 @@ export async function montarPayloadCadeiaCac(
         spend: agregado.spend,
       };
     } else {
-      const v = vendasDoPeriodo(fresh.payload, range);
-      vendasSemDataNoTotal = v.vendasSemDataNoTotal;
+      vendasSemDataNoTotal = leitura.vendasSemData;
+      // ⚠️ `cacReal` sai mesmo com cobertura de atribuição 0% — ele depende
+      // do TOTAL da etapa, não da atribuição por campanha. É a propriedade
+      // que motivou a v1.1 inteira. `null` aqui só quando não há venda.
       /**
-       * Story 44.25 (AC8) — na etapa PROMOVIDA, o rótulo sai e o número não.
+       * Story 44.26 (AC5) — pela razão com janela.
        *
-       * ## O que foi medido
-       *
-       * Em 07/09/2026, na `bbe-funil-churrasco`, janela de 30 dias:
-       *
-       *     esta rota          R$ 15.841,75 ÷ 124 vendas = CAC R$ 127,76
-       *     aba Meta Ads       R$ 15.757,56 ÷  73 vendas = CAC R$ 215,86
-       *
-       * O investimento bate (0,5%, sync mais fresco). O denominador não: a
-       * régua daqui (`sales-daily-sync`, dedup por `txId+produto`) conta 70% a
-       * mais que a do dashboard perpétuo (checkout/comprador com classificação
-       * de produto — Stories 18.68, 29.61, 29.75).
-       *
-       * ## Por que suprimir, e não publicar com aviso
-       *
-       * `meta-ads` e `cadeia-cac` são **abas irmãs da mesma etapa**
-       * (`menu-de-abas.ts`): a divergência fica a um clique. Antes da 44.25 o
-       * rótulo era CPL e ninguém comparava; ao renomear para CAC, a story
-       * convida exatamente a comparação que falha. É a classe de defeito que o
-       * Epic 44 existe para impedir — o `connectRate` custou um ano.
-       *
-       * E o erro tem DIREÇÃO: o CAC sai otimista. Numa tela de decisão de
-       * verba, isso empurra para escalar. Aviso não neutraliza número.
-       *
-       * Vale a regra 7.4 da spec: ausência é declarada, nunca vira `0` nem
-       * estimativa.
-       *
-       * ⚠️ **Isto é TEMPORÁRIO e tem dono: a Story 44.28 (AC6) remove esta
-       * supressão** ao unificar a régua. Sem aquele AC, uma medida de meses
-       * vira permanente por esquecimento.
-       *
-       * Os diagnósticos continuam viajando (`vendasReais`, `dataSource`,
-       * `computedAt`): quem quiser o número desta régua consegue derivá-lo, e
-       * sabe de qual régua ele veio.
+       * O número NÃO muda: as duas pontas já vinham do mesmo `range`
+       * (`vendasDoPeriodo` filtra por ele, e `calcularVendasDoPerpetuo` recebe
+       * `startDate`/`endDate` dele). O que muda é que a assinatura deixa de
+       * aceitar dois `number` soltos — a porta por onde o CPL passou e
+       * publicou R$ 3,17 à diretoria.
        */
-      if (promovidaPeloFunil) {
-        principal = {
-          metrica: "cacReal",
-          valor: null,
-          motivo: "reguaDivergente",
-          /**
-           * ⚠️ **Sem número fixo aqui, e a razão é a validação visual de
-           * 08/09/2026.**
-           *
-           * A primeira versão desta mensagem trazia "124 contra 73 vendas,
-           * medido em 07/09/2026" — os números do BBE. A mensagem é a MESMA
-           * para as três etapas promovidas, então o operador do `fz-a1` lia
-           * "124 contra 73" olhando para um card que dizia 1.622 vendas e uma
-           * aba Meta Ads que dizia 267. Um número concreto que não descreve
-           * nada da tela é pior que nenhum: convida a conferir e não fecha.
-           *
-           * Calcular a comparação ao vivo também não serve: o outro lado é o
-           * dashboard perpétuo, que é rota autenticada e outra régua — é
-           * exatamente o que a 44.28 vai unificar. Enquanto não houver as duas
-           * contagens no mesmo lugar, a mensagem descreve a NATUREZA da
-           * divergência, não a magnitude.
-           *
-           * E o texto é de OPERADOR: `txId+produto`, `spend`, `vendasReais` e
-           * o número da story saíram daqui e vivem neste comentário e no
-           * `llms.txt`, que é onde dev e agente leem.
-           */
-          /**
-           * ⚠️ Curta de propósito: este texto sai em DOIS lugares — o card da
-           * aba e a lista de pendências do Panorama, que o repassa literal.
-           * A validação visual reprovou a primeira versão ali: cinco linhas no
-           * meio de itens de uma linha.
-           */
-          message:
-            "CAC não publicado: esta aba e a aba Meta Ads contam vendas de formas diferentes e os totais divergem. Use o CAC da aba Meta Ads. O investimento e as vendas mostrados aqui seguem válidos.",
-          spend: agregado.spend,
-          vendasReais: v.vendas,
-          dataSource: fresh.source,
-          computedAt: fresh.computedAt,
-        };
-      } else {
-        // ⚠️ `cacReal` sai mesmo com cobertura de atribuição 0% — ele depende
-        // do TOTAL da etapa, não da atribuição por campanha. É a propriedade
-        // que motivou a v1.1 inteira. `null` aqui só quando não há venda.
-        /**
-         * Story 44.26 (AC5) — pela razão com janela.
-         *
-         * O número NÃO muda: as duas pontas já vinham do mesmo `range`
-         * (`vendasDoPeriodo` filtra por ele). O que muda é que a assinatura
-         * deixa de aceitar dois `number` soltos — a porta por onde o CPL
-         * passou e publicou R$ 3,17 à diretoria.
-         */
-        const janelaDoCac: Periodo = range
-          ? { de: range.from, ate: range.to }
-          : (periodoDaSerie ?? { de: "", ate: "" });
-        principal = {
-          metrica: "cacReal",
-          valor: cacRealNaJanela(
-            { valor: agregado.spend, periodo: janelaDoCac },
-            { valor: v.vendas, periodo: janelaDoCac },
-          ).valor,
-          spend: agregado.spend,
-          vendasReais: v.vendas,
-          ...(v.vendas === 0 ? { motivo: "semDados" as const } : {}),
-          dataSource: fresh.source,
-          computedAt: fresh.computedAt,
-        };
-      }
+      const janelaDoCac: Periodo = range
+        ? { de: range.from, ate: range.to }
+        : (periodoDaSerie ?? { de: "", ate: "" });
+      principal = {
+        metrica: "cacReal",
+        valor: cacRealNaJanela(
+          { valor: agregado.spend, periodo: janelaDoCac },
+          { valor: leitura.vendas, periodo: janelaDoCac },
+        ).valor,
+        spend: agregado.spend,
+        vendasReais: leitura.vendas,
+        ...(leitura.vendas === 0 ? { motivo: "semDados" as const } : {}),
+        dataSource: leitura.dataSource,
+        computedAt: leitura.computedAt,
+      };
     }
   } else {
     // Story 44.12 (AC4): `lead` já foi lido lá em cima, para a guarda. Reusar.
@@ -987,6 +1009,28 @@ export async function montarPayloadCadeiaCac(
       lastSyncedAt: c.lastSyncedAt,
     })),
     agregado,
+    /**
+     * Story 44.31 (AC1) — o intervalo REAL dos dias que entraram na soma.
+     *
+     * ⚠️ Não é o mesmo que `range`. `range` é o que o CHAMADOR pediu, e vem
+     * `{null, null}` quando ele não pediu nada — que é o caso da aba, por
+     * decisão da Story 44.8: sem `from`/`to`, a rota lê o histórico inteiro.
+     *
+     * Sem este campo a tela não tem como declarar de quando é o número que
+     * mostra, e foi assim que o `bbe-pr2-ago-26/Captação Paga` passou a exibir
+     * CAC R$ 743,58 na aba e R$ 855,11 no Panorama — os dois certos, janelas
+     * diferentes, e nenhuma das duas telas dizendo qual.
+     *
+     * ⚠️ **Não use `agregado.dias` para isso.** Ele conta pares
+     * (campanha, dia) — `agregar()` soma 1 por `DiaBruto`, e a série é o
+     * `flatMap` das campanhas. Medido no `bbe-funil-churrasco` em 08/09: 239
+     * contra 54 dias reais, 4,4× — cinco campanhas no mesmo período. Rotular
+     * aquilo de "dias" na tela seria exatamente o defeito que esta story fecha,
+     * publicado por ela.
+     */
+    periodoDaSerie,
+    /** Dias DISTINTOS com dado — o que a tela declara ao lado do intervalo. */
+    diasComDado: diasDaSerie.size,
     atuais,
     principal,
     /**

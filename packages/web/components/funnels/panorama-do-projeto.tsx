@@ -42,6 +42,12 @@ const pct = (v: number) =>
  * ser reaproveitada com outro sentido.
  */
 
+/** `2026-09-08` → `08/09`. O ano só atrapalha num rótulo de coluna. */
+function dm(iso: string): string {
+  const [, mes, dia] = iso.split("-");
+  return `${dia}/${mes}`;
+}
+
 function Linha({ l }: { l: LinhaDoPanorama }) {
   return (
     <tr
@@ -156,6 +162,12 @@ export function PanoramaDoProjeto({
           <span className="text-xs text-muted-foreground">
             {data.totais.etapasNoAr} {data.totais.etapasNoAr === 1 ? "etapa" : "etapas"} no ar ·{" "}
             {brl(data.totais.spendCurta)} em {data.janelas.curta.dias} dias
+            {/* Story 44.31 (AC3) — as DATAS, não só a contagem de dias.
+                "30 dias" não diz quais: quem compara este número com a aba
+                Cadeia de CAC (que lê o histórico inteiro) precisa ver a
+                diferença na tela, e não deduzi-la de dois números que não
+                fecham. */}
+            {" "}({dm(data.janelas.curta.from)}–{dm(data.janelas.curta.to)})
           </span>
         </div>
       </div>
@@ -179,7 +191,14 @@ export function PanoramaDoProjeto({
                     <th className="pb-2 pr-4 font-medium">
                       Invest. {data.janelas.curta.dias}d · {data.janelas.longa.dias}d
                     </th>
-                    <th className="pb-2 pr-4 font-medium">Resultado</th>
+                    {/* Story 44.31 (AC3) — a coluna não dizia de que janela
+                        era o CAC/CPL que exibe. Ele vem da janela LONGA
+                        (`panorama-do-projeto.ts:518`), enquanto a aba Cadeia de
+                        CAC lê o histórico inteiro — foi assim que a mesma etapa
+                        apareceu com R$ 743,58 lá e R$ 855,11 aqui. */}
+                    <th className="pb-2 pr-4 font-medium">
+                      Resultado ({data.janelas.longa.dias}d)
+                    </th>
                     <th className="pb-2 font-medium">Gargalo</th>
                   </tr>
                 </thead>

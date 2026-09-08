@@ -1,0 +1,969 @@
+/**
+ * Story 44.28 (T3) — a leitura de vendas do perpétuo, fora do handler.
+ *
+ * ## Por que isto saiu da rota
+ *
+ * Este cálculo vivia INLINE no handler de
+ * `GET .../perpetual/sales-data` (`perpetual-sales-data.ts:249-761`): 512
+ * linhas amarradas a `request`, `reply` e ao `fastify` do plugin. Só quem
+ * passasse pela autenticação chegava nele.
+ *
+ * O agente Inácio lê a API **pública** e precisa dos mesmos números. Havia três
+ * caminhos, e dois são armadilha:
+ *
+ * | caminho | por que não |
+ * |---|---|
+ * | reimplementar na rota pública | vira uma **terceira régua** para julgar as outras duas — vetado pelo @po |
+ * | a rota pública chamar a interna por HTTP | acopla a pública à autenticação e ao roteamento |
+ * | **extrair para cá** | as duas rotas passam a ler a MESMA função ✅ |
+ *
+ * ## Esta extração é um MOVE, não uma reescrita
+ *
+ * Nenhuma regra mudou de propósito. As guardas (params, query, acesso ao
+ * projeto, existência do funil) ficaram na rota, porque são da rota; daqui para
+ * baixo é o mesmo código, com `params.data.*`/`query.data.*` virando argumentos
+ * e `fastify.db` virando o primeiro parâmetro.
+ *
+ * ⚠️ Isso é uma afirmação verificável, e `turbo build` verde não a verifica.
+ * A prova é o retrato das 27 respostas de produção tirado ANTES e DEPOIS
+ * (3 funis × 3 janelas × 3 rotas) — ver a T3 na story. O AC5 mantém a paridade
+ * viva num teste, para o dia em que alguém mexer num lado só.
+ *
+ * ## O que continua sendo verdade sobre estes números
+ *
+ * A régua de vendas é a do CARD: `totalVendas` são **compradores únicos**,
+ * deduplicados por e-mail na janela inteira. Ver a nota longa em
+ * `shared/src/perpetuo-metricas.ts`, que consome o que sai daqui.
+ */
+
+import { eq, and } from "drizzle-orm";
+import type { Database } from "../db/client.js";
+import { funnelSpreadsheets, funnelStages } from "../db/schema.js";
+import { chaveDeComprador } from "../utils/comprador.js";
+import { quebraVazia, tipoDoProduto, type TipoDeProduto } from "../utils/produto.js";
+// Story 29.61 — a MESMA regra da Captação Paga (18.66/18.67), reusada.
+// O que muda é a ENTRADA: aqui o tipo vem do mapa `product_types` (três tipos,
+// Story 29.49) e não da lista `order_bump_products` (dois).
+import {
+  resumirOrderBump,
+  tabelaPorPublico,
+  type LinhaDeVenda,
+} from "../utils/order-bump.js";
+import { readSheetData } from "./google-sheets.js";
+import { classifyRefundStatus, isRefundBucket, isRevenueBucket } from "./sales-status.js";
+import { businessToday, inicioDaJanela, saleDayKey } from "../utils/sale-date.js";
+// Story 29.68 (AC4): a MESMA classificação da 18.77 (Lançamento). Se a mesma
+// venda for classificada diferente nas duas telas, é defeito.
+import { classifyOrigem, classifyCanal, classifyTemperatura } from "../utils/lead-origin.js";
+import { parseActionCount } from "../utils/meta-metrics.js";
+import { getCampaignInsightsFromDb } from "./meta-db-source.js";
+import { PLATFORM_RATE_BREAKDOWN } from "./perpetual-report-config.js";
+
+/**
+ * Story 29.68 (AC7) — piso de amostra por origem.
+ *
+ * Mesma régua da 18.77: abaixo dele a linha aparece, marcada. Uma origem com 2
+ * compradores não é "a que mais converte" no mesmo sentido que uma com 400.
+ */
+const PISO_DE_AMOSTRA_POR_ORIGEM = 10;
+
+// ---- helpers (copiados de stage-sales-data — refactor DRY pode esperar) ----
+
+export function parseNumber(val: string | undefined): number {
+  if (!val) return 0;
+  const cleaned = val.replace(/[^\d.,]/g, "");
+  if (!cleaned) return 0;
+  const hasComma = cleaned.includes(",");
+  const normalized = hasComma
+    ? cleaned.replace(/\./g, "").replace(",", ".")
+    : cleaned;
+  return parseFloat(normalized) || 0;
+}
+
+export function sanitizeUtmValue(val: string | undefined | null): string | null {
+  if (val == null) return null;
+  const trimmed = String(val).trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  if (lower === "null" || lower === "undefined" || lower === "-" || lower === "n/a" || lower === "na") return null;
+  return trimmed;
+}
+
+function parseDate(val: string | undefined): Date | null {
+  if (!val) return null;
+  const trimmed = val.trim();
+  const brMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\D|$)/);
+  if (brMatch) {
+    const [, d, m, y] = brMatch;
+    const dt = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+  const dt = new Date(trimmed);
+  return isNaN(dt.getTime()) ? null : dt;
+}
+
+// Story 29.7: fee rates por plataforma (Kiwify=20.99% / Hotmart=26% / Other=0%).
+//
+// Story 41.8 (AC9): as taxas passaram a sair de UMA fonte —
+// `PLATFORM_RATE_BREAKDOWN` em `services/perpetual-report-config.ts`, que é a
+// mesma que o relatório perpétuo usa. Antes a composição vivia duplicada aqui
+// (só a soma) e no `perpetual-dashboard.tsx` (só o detalhe), e nada garantia que
+// as duas contassem a mesma coisa. O valor efetivo NÃO mudou: os testes
+// comparam contra 20,99% / 26% / 0.
+const PLATFORM_FEE_RATES: Record<string, number> = Object.fromEntries(
+  Object.entries(PLATFORM_RATE_BREAKDOWN).map(([plat, b]) => [
+    plat,
+    roundRate(b.plataforma + b.imposto + b.outros + b.reembolso),
+  ]),
+);
+
+/** Componente de reembolso ESTIMADO embutido nas taxas acima (Kiwify/Hotmart). */
+const REFUND_FEE_ESTIMATE = PLATFORM_RATE_BREAKDOWN.kiwify.reembolso;
+
+/** Soma de frações produz 0.20990000000000003 — o arredondamento evita ruído. */
+function roundRate(n: number): number {
+  return Math.round(n * 10_000) / 10_000;
+}
+
+/**
+ * Fee efetivo da plataforma. Se a planilha traz status real de reembolso
+ * (hasStatusCol), remove o componente estimado de 4% — o reembolso real já
+ * foi subtraído do bruto.
+ */
+export function effectivePlatformFeeRate(platform: string | null, hasStatusCol: boolean): number {
+  if (!platform) return 0;
+  const rate = PLATFORM_FEE_RATES[platform] ?? 0;
+  if (hasStatusCol && rate > 0) return roundRate(Math.max(0, rate - REFUND_FEE_ESTIMATE));
+  return rate;
+}
+
+export const EMPTY_SALES_DATA = {
+  totalVendas: 0,
+  // Story 29.53 (AC3): sem planilha não há linha para classificar. `null` é o
+  // mesmo sinal de "não há quebra a mostrar" que o funil sem classificação dá.
+  porTipoProduto: null as { principal: number; order_bump: number; upsell: number } | null,
+  faturamentoPorTipo: null as { principal: number; order_bump: number; upsell: number } | null,
+  faturamentoBruto: 0,
+  faturamentoLiquido: 0,
+  faturamentoLiquidoCalculado: 0,
+  // Reembolsos (refunded + chargeback) — já descontados do faturamento acima.
+  reembolsoBruto: 0,
+  reembolsoLiquido: 0,
+  vendasReembolsadas: 0,
+  // true quando a planilha tem coluna de status → reembolso medido de verdade
+  // (e o 4% estimado da plataforma é removido da Margem).
+  reembolsoReal: false,
+  platform: null as string | null,
+  feeRate: 0,
+  ticketMedioBruto: 0,
+  ticketMedioLiquido: 0,
+  porUtmSource: [] as { source: string; vendas: number; bruto: number; liquido: number }[],
+  porUtmMedium: [] as { medium: string; vendas: number; bruto: number; liquido: number }[],
+  porUtmContent: [] as { content: string; vendas: number; bruto: number; liquido: number }[],
+  porUtmCampaign: [] as { campaign: string; vendas: number; bruto: number; liquido: number }[],
+  porFormaPagamento: [] as { forma: string; vendas: number; bruto: number; liquido: number }[],
+  semDados: true,
+};
+
+export const SEM_ORIGEM_LABEL = "(sem origem)";
+
+/**
+ * A planilha de vendas ligada ao funil. `null` = nenhuma conectada.
+ *
+ * Vive aqui (e não mais dentro do plugin) porque as três rotas do arquivo
+ * irmão e esta função precisam da MESMA leitura.
+ */
+export async function loadPerpetualSpreadsheet(db: Database, funnelId: string) {
+  const [row] = await db
+    .select()
+    .from(funnelSpreadsheets)
+    .where(
+      and(
+        eq(funnelSpreadsheets.funnelId, funnelId),
+        eq(funnelSpreadsheets.type, "perpetual_sales"),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+/** A janela pedida. Os três campos são opcionais — sem nenhum, é o histórico. */
+export interface JanelaDeVendas {
+  days?: number;
+  startDate?: string;
+  endDate?: string;
+}
+
+/**
+ * Story 44.28 (T6) — deixar a falha de LEITURA subir, em vez de virar ausência.
+ *
+ * O default (`false`) é o comportamento histórico do handler autenticado: uma
+ * planilha que não abriu devolve `semDados: true`, igual a uma planilha que não
+ * existe. O painel vive bem com isso — ele mostra "sem dados" nos dois casos.
+ *
+ * A aba Cadeia de CAC **não** vive: ela distingue `leituraFalhou` ("a fonte
+ * existe; cheque a permissão ou tente de novo") de `semDados` ("conecte uma
+ * planilha"), e as duas mensagens mandam o operador fazer coisas opostas.
+ * Fundir as duas é o defeito que a Story 36.9 AC5 fechou, que voltou como
+ * QA-4414-02 e que este repo já pagou duas vezes.
+ *
+ * Por isso a distinção é OPT-IN: quem pede, recebe a exceção; quem não pede,
+ * continua exatamente como antes.
+ */
+export interface OpcoesDeLeitura {
+  propagarErroDeLeitura?: boolean;
+}
+
+/**
+ * As vendas do perpétuo na janela — o corpo que era o handler de `sales-data`.
+ *
+ * Devolve exatamente o mesmo objeto que a rota devolvia, incluindo os casos de
+ * ausência (`EMPTY_SALES_DATA` com `semDados` true ou false, que significam
+ * coisas diferentes: sem planilha × planilha sem linha na janela).
+ */
+export async function calcularVendasDoPerpetuo(
+  db: Database,
+  { projectId, funnelId, days, startDate, endDate }: JanelaDeVendas & {
+    projectId: string;
+    funnelId: string;
+  },
+  opcoes: OpcoesDeLeitura = {},
+) {
+  const spreadsheet = await loadPerpetualSpreadsheet(db, funnelId);
+  if (!spreadsheet) return EMPTY_SALES_DATA;
+
+  const mapping = spreadsheet.columnMapping as {
+    email: string;
+    transactionId?: string;
+    // Story 29.53 (AC1): a coluna que o wizard mapeia desde a 29.31. A chave
+    // é `productName` — `produto` era o nome errado que fazia o índice ser
+    // -1 em toda planilha (AC7, corrigido no relatório na Fatia A).
+    productName?: string;
+    valorBruto?: string;
+    valorLiquido?: string;
+    formaPagamento?: string;
+    utm_source?: string;
+    utm_medium?: string;
+    utm_content?: string;
+    utm_campaign?: string;
+    // Story 29.61: a temperatura (quente/frio) do público sai daqui — é o
+    // mesmo campo que `classifyTemperatura` lê no resto do projeto. Estava
+    // ausente deste cast, embora exista em `SaleColumnMapping` e as
+    // planilhas do perpétuo o mapeiem ("t=").
+    utm_term?: string;
+    dataVenda?: string;
+    status?: string;
+  };
+
+  /**
+   * Story 29.53 (AC1) — a classificação da 29.49 finalmente entra na conta.
+   *
+   * `{}` significa "nada classificado", e nada classificado é exatamente o
+   * comportamento anterior à story: `tipoDoProduto` devolve `principal` para
+   * quem está ausente do mapa.
+   */
+  const tiposDeProduto = (spreadsheet.productTypes as Record<string, TipoDeProduto> | null) ?? {};
+
+  let sheetData;
+  try {
+    sheetData = await readSheetData(spreadsheet.spreadsheetId, spreadsheet.sheetName);
+  } catch (err) {
+    // ⚠️ Ver `OpcoesDeLeitura`: só sobe para quem pediu. Engolir aqui é o
+    // comportamento histórico e continua sendo o default.
+    if (opcoes.propagarErroDeLeitura) throw err;
+    return { ...EMPTY_SALES_DATA, semDados: true };
+  }
+
+  const { headers, rows } = sheetData;
+  if (rows.length === 0) return { ...EMPTY_SALES_DATA, semDados: true };
+
+  const colIdx = (fieldName: string | undefined): number =>
+    fieldName ? headers.indexOf(fieldName) : -1;
+
+  const emailIdx = colIdx(mapping.email);
+  const txIdx = colIdx(mapping.transactionId);
+  const brutoIdx = colIdx(mapping.valorBruto);
+  const liquidoIdx = colIdx(mapping.valorLiquido);
+  const formaIdx = colIdx(mapping.formaPagamento);
+  const utmSourceIdx = colIdx(mapping.utm_source);
+  const utmMediumIdx = colIdx(mapping.utm_medium);
+  const utmContentIdx = colIdx(mapping.utm_content);
+  const utmCampaignIdx = colIdx(mapping.utm_campaign);
+  const dataIdx = colIdx(mapping.dataVenda);
+  const statusIdx = colIdx(mapping.status);
+  const hasStatusCol = statusIdx !== -1;
+  const produtoIdx = colIdx(mapping.productName);
+  // Story 29.61 — a temperatura vem do `utm_term`, como no resto do projeto.
+  const utmTermIdx = colIdx(mapping.utm_term);
+
+  if (emailIdx === -1) return { ...EMPTY_SALES_DATA, semDados: true };
+
+  // Fix 1 (29.8): suporta startDate/endDate explicitos (custom range no passado)
+  // OU days retroativos (presets). Sem nenhum dos dois = todos os dados.
+  let cutoffStart: Date | null = null;
+  let cutoffEnd: Date | null = null;
+  if (startDate && endDate && dataIdx !== -1) {
+    cutoffStart = new Date(startDate + "T00:00:00");
+    cutoffEnd = new Date(endDate + "T23:59:59");
+  } else if (days && dataIdx !== -1) {
+    // Story 44.27: `-(days − 1)` via `inicioDaJanela` — uma janela de N
+    // dias terminando hoje inclui hoje.
+    cutoffStart = new Date(`${inicioDaJanela(days)}T00:00:00`);
+  }
+
+  // Dedup por transactionId quando mapeado, senão por email (Story 28.4 pattern).
+  const dedupMap = new Map<
+    string,
+    {
+      bruto: number;
+      liquido: number;
+      forma: string;
+      utmSource: string;
+      utmMedium: string;
+      utmContent: string;
+      utmCampaign: string;
+      /** Story 29.68: base da temperatura (quente/frio) por comprador. */
+      utmTerm: string | null;
+      lastDate: Date | null;
+    }
+  >();
+
+  // Reembolsos/chargebacks são contados por TRANSAÇÃO (txId) ou por LINHA
+  // quando não há txId — NUNCA colapsados por email. Se caíssem na dedup por
+  // email, vários reembolsos do mesmo cliente virariam um só (bug: 51 → 12).
+  // Reembolso NÃO deduplica: a pessoa compra (linha paid, id X) e ao reembolsar
+  // volta como uma NOVA linha refunded com o MESMO id X. Cada linha refunded/
+  // chargeback é um reembolso real e deve ser contada 1:1 com as linhas.
+  let reembolsoBruto = 0;
+  let reembolsoLiquido = 0;
+  let vendasReembolsadas = 0;
+
+  /**
+   * Story 29.53 (AC3) — a quebra conta LINHAS, não compradores.
+   *
+   * Por isso ela não fecha com `totalVendas`, e a legenda do card precisa
+   * dizer isso: no funil do Netão são 109 linhas principais + 20 de bump =
+   * 129 linhas pagas, contra 110 compradores únicos. Somar as fatias e
+   * esperar o total é o erro que parece acerto.
+   *
+   * Conta as linhas que são receita — as mesmas que entram no faturamento.
+   */
+  const quebraPorTipo = quebraVazia();
+  /**
+   * Story 29.74 (AC1) — a MESMA quebra, em valor bruto.
+   *
+   * Vive aqui, ao lado da contagem, e é alimentada no mesmo laço a partir
+   * do mesmo `tipoDaLinha` e do mesmo `bruto` que entram no `dedupMap`.
+   * Um segundo passe pelas linhas — ou derivar de `resumirOrderBump` —
+   * daria duas somas da mesma coisa, e elas divergiriam na primeira mudança
+   * de regra. Sendo o mesmo laço, `Σ faturamentoPorTipo === faturamentoBruto`
+   * por construção, não por coincidência.
+   */
+  const faturamentoPorTipo = quebraVazia();
+  /** Story 29.61 — alimenta `resumirOrderBump` e `tabelaPorPublico`. */
+  const linhasParaPublico: LinhaDeVenda[] = [];
+  // txIds reembolsados → remove a linha "paid" pareada (mesmo id) das vendas.
+  const refundedTxIds = new Set<string>();
+
+  for (const [idxDaLinha, row] of rows.entries()) {
+    const email = (row[emailIdx] ?? "").trim().toLowerCase();
+    if (!email) continue;
+
+    if ((cutoffStart || cutoffEnd) && dataIdx !== -1) {
+      const dt = parseDate(row[dataIdx]);
+      if (!dt) continue;
+      if (cutoffStart && dt < cutoffStart) continue;
+      if (cutoffEnd && dt > cutoffEnd) continue;
+    }
+
+    const bruto = parseNumber(row[brutoIdx] ?? "");
+    const liquido = parseNumber(row[liquidoIdx] ?? "");
+    const forma = (row[formaIdx] ?? "").trim() || "Não informado";
+    const utmSource = sanitizeUtmValue(row[utmSourceIdx]) ?? SEM_ORIGEM_LABEL;
+    const utmMedium = sanitizeUtmValue(row[utmMediumIdx]) ?? SEM_ORIGEM_LABEL;
+    const utmContent = sanitizeUtmValue(row[utmContentIdx]) ?? SEM_ORIGEM_LABEL;
+    const utmCampaign = sanitizeUtmValue(row[utmCampaignIdx]) ?? SEM_ORIGEM_LABEL;
+    /**
+     * Story 29.68 — `null`, NUNCA `SEM_ORIGEM_LABEL`.
+     *
+     * O mesmo cuidado que a 29.61 documentou para o `utmSource` de
+     * `linhasParaPublico`: `"(sem origem)"` é string não vazia, e
+     * `classifyTemperatura` a leria como um term qualquer. Aqui isso viraria
+     * "indefinido" de qualquer jeito, mas a distinção importa para quem ler
+     * o campo depois.
+     */
+    const utmTermDaLinha = utmTermIdx === -1 ? null : sanitizeUtmValue(row[utmTermIdx]);
+    const rowDate = dataIdx !== -1 ? parseDate(row[dataIdx]) : null;
+    const status = hasStatusCol ? (row[statusIdx] ?? "").trim() : "";
+
+    const txId = txIdx >= 0 ? (row[txIdx] ?? "").trim() : "";
+
+    const bucket = classifyRefundStatus(status, hasStatusCol);
+
+    // Reembolso/chargeback: conta cada linha (sem dedup). Nunca entra na dedup
+    // de vendas — senão a compra e o reembolso do mesmo id colapsariam num só.
+    // Precisa vir ANTES do filtro de receita: tem efeito colateral (alimenta
+    // reembolsoBruto e refundedTxIds) que se perderia num descarte genérico.
+    if (isRefundBucket(bucket)) {
+      reembolsoBruto += bruto;
+      reembolsoLiquido += liquido;
+      vendasReembolsadas += 1;
+      if (txId) refundedTxIds.add(txId);
+      continue;
+    }
+
+    // Story 29.26: recusada/pendente/aguardando pagamento não é receita.
+    // Sai antes da dedup — não conta em vendas, faturamento, ticket médio
+    // nem em nenhum corte por UTM.
+    if (!isRevenueBucket(bucket)) continue;
+
+    // Story 29.53 (AC1/AC3): classifica a linha paga. Produto ausente do
+    // mapa — ou coluna não mapeada — é `principal`, o default da 29.49.
+    const tipoDaLinha = tipoDoProduto(
+      produtoIdx === -1 ? null : row[produtoIdx],
+      tiposDeProduto,
+    );
+    quebraPorTipo[tipoDaLinha] += 1;
+    faturamentoPorTipo[tipoDaLinha] += bruto;
+
+    // Story 29.61 — a mesma linha que entra na quebra entra na análise de
+    // público. Derivar as duas do mesmo laço é o que garante que os números
+    // não se contradigam: se fossem dois passes com filtros próprios,
+    // divergiriam na primeira mudança de regra.
+    //
+    // ⚠️ A quebra conta LINHAS e a análise conta COMPRADORES (AC6): 26
+    // linhas de bump são 24 compradores no funil medido. Os dois números
+    // são certos, e a tela declara qual é qual.
+    linhasParaPublico.push({
+      // Gate QA: reusa o `email` do topo do laço em vez de recalcular. Duas
+      // normalizações da mesma chave divergem no dia em que uma mudar, e o
+      // sintoma seria um comprador contado duas vezes.
+      email,
+      // Story 18.69: o tipo vai direto — o Perpétuo já classifica em
+      // quatro papéis desde a 29.49, agora com `combo` incluído.
+      tipo: tipoDaLinha,
+      bruto,
+      // Story 18.68: a data forma o checkout.
+      data: dataIdx === -1 ? null : (parseDate(row[dataIdx])),
+      transacaoId: txIdx === -1 ? null : (row[txIdx] ?? "").trim() || null,
+      /**
+       * ⚠️ Gate QA — `null`, NUNCA `SEM_ORIGEM_LABEL`.
+       *
+       * A linha 328 acima faz `sanitizeUtmValue(...) ?? SEM_ORIGEM_LABEL`
+       * porque ali o valor vira rótulo de agrupamento. Repetir isso aqui
+       * seria um defeito silencioso: `"(sem origem)"` é uma string não
+       * vazia, `classifyOrigem` não a encontra em `PAID_UTM_SOURCES` e a
+       * classifica como **"Orgânico"** — venda sem rastreio nenhum viraria
+       * tráfego orgânico na tabela.
+       */
+      utmSource: utmSourceIdx === -1 ? null : sanitizeUtmValue(row[utmSourceIdx]),
+      utmTerm: utmTermIdx === -1 ? null : sanitizeUtmValue(row[utmTermIdx]),
+    });
+
+    /**
+     * Story 29.53 (AC2) — a unidade contada e o E-MAIL, nao a transacao.
+     *
+     * O order bump chega numa LINHA PROPRIA com a mesma transacao da compra
+     * principal, e a chave `tx|` o colapsava — em tese. Medido na planilha
+     * do Netao: o `transactionId` daquele funil aponta para a coluna `ID`,
+     * que e unica nas 196 linhas, entao a dedup nao deduplicava NADA e cada
+     * bump virava uma venda a mais. CAC de 08/08: R$ 101,85 exibido contra
+     * R$ 162,95 real, 60% de diferenca no numero que decide escala.
+     *
+     * O e-mail nao depende de mapeamento certo de coluna: 17 dos 20 bumps
+     * tem o mesmo e-mail da compra principal no mesmo dia, e as 129 linhas
+     * aprovadas colapsam em 110 compradores.
+     *
+     * ⚠️ Isto NAO e regra nova — e o que o escopo do EPIC-29 pede desde
+     * 2026-05-22: "API que agrega vendas por email (dedup 1 venda/email)".
+     * Quem divergiu foi a implementacao.
+     *
+     * `tx|` fica como rede para a linha sem e-mail, e o indice da linha
+     * como ultimo recurso: descartar em silencio some com a venda.
+     */
+    const dedupKey = chaveDeComprador(email, txId, idxDaLinha);
+
+    const existing = dedupMap.get(dedupKey);
+    if (existing) {
+      existing.bruto += bruto;
+      existing.liquido += liquido;
+      if (rowDate && (!existing.lastDate || rowDate > existing.lastDate)) {
+        existing.forma = forma;
+        existing.utmSource = utmSource;
+        existing.utmMedium = utmMedium;
+        existing.utmContent = utmContent;
+        existing.utmCampaign = utmCampaign;
+        existing.utmTerm = utmTermDaLinha;
+        existing.lastDate = rowDate;
+      }
+    } else {
+      dedupMap.set(dedupKey, { bruto, liquido, forma, utmSource, utmMedium, utmContent, utmCampaign, utmTerm: utmTermDaLinha, lastDate: rowDate });
+    }
+  }
+
+  // Remove das vendas a linha "paid" cujo id foi reembolsado (a compra
+  // reembolsada não é receita realizada).
+  for (const txId of refundedTxIds) dedupMap.delete(`tx|${txId}`);
+
+  if (dedupMap.size === 0 && vendasReembolsadas === 0) return { ...EMPTY_SALES_DATA, semDados: false };
+
+  let totalBruto = 0;
+  let totalLiquido = 0;
+  let totalVendas = 0;
+  const utmSourceMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
+  const utmMediumMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
+  const utmContentMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
+  const utmCampaignMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
+  const formaMap = new Map<string, { vendas: number; bruto: number; liquido: number }>();
+
+  const addToMap = (
+    m: Map<string, { vendas: number; bruto: number; liquido: number }>,
+    key: string,
+    bruto: number,
+    liquido: number,
+  ) => {
+    const e = m.get(key) ?? { vendas: 0, bruto: 0, liquido: 0 };
+    e.vendas += 1;
+    e.bruto += bruto;
+    e.liquido += liquido;
+    m.set(key, e);
+  };
+
+  for (const { bruto, liquido, forma, utmSource, utmMedium, utmContent, utmCampaign } of dedupMap.values()) {
+    totalVendas += 1;
+    totalBruto += bruto;
+    totalLiquido += liquido;
+    addToMap(utmSourceMap, utmSource, bruto, liquido);
+    addToMap(utmMediumMap, utmMedium, bruto, liquido);
+    addToMap(utmContentMap, utmContent, bruto, liquido);
+    addToMap(utmCampaignMap, utmCampaign, bruto, liquido);
+    addToMap(formaMap, forma, bruto, liquido);
+  }
+
+  /**
+   * Story 29.68 — o denominador: cliques no link das campanhas do funil.
+   *
+   * Lido do BANCO (`meta_campaign_insights_daily`), como manda a regra de
+   * rate limit — a rota do dashboard nunca chama a Meta ao vivo. `null`
+   * quando não há campanha vinculada ou o cache não tem o dado: a tela
+   * declara a ausência em vez de dividir por zero e mostrar `0%`.
+   */
+  const cliquesNoLinkDoFunil = await (async (): Promise<number | null> => {
+    const stages = await db
+      .select({ campaigns: funnelStages.campaigns })
+      .from(funnelStages)
+      .where(eq(funnelStages.funnelId, funnelId));
+    const ids = stages
+      .flatMap((st) => (Array.isArray(st.campaigns) ? st.campaigns : []))
+      .map((c: unknown) =>
+        typeof c === "string" ? c : ((c as { id?: string })?.id ?? ""),
+      )
+      .filter(Boolean);
+    if (ids.length === 0) return null;
+
+    /**
+     * ⚠️ A janela do denominador tem que ser a MESMA do numerador.
+     *
+     * Sem `cutoffStart`, o `dedupMap` acima não filtra nada — são os
+     * compradores do histórico inteiro. Cruzar isso com os cliques de 30
+     * dias produz taxa acima de 100%: medido no `fz-a1`, 1.473 compradores
+     * de sempre contra 1.126 cliques do último mês deram **130,82%**, um
+     * número que parece defeito de cálculo e não é: são duas janelas.
+     *
+     * Quando não há recorte, não há denominador comparável — e `null` faz a
+     * tela declarar isso, em vez de imprimir a taxa impossível.
+     */
+    if (!cutoffStart && !days) return null;
+
+    const until = businessToday();
+    const since = cutoffStart
+      ? cutoffStart.toISOString().slice(0, 10)
+      : inicioDaJanela(days ?? 30, until);
+    const ate = cutoffEnd ? cutoffEnd.toISOString().slice(0, 10) : until;
+    const campanhas = await getCampaignInsightsFromDb(
+      db,
+      projectId,
+      since,
+      ate,
+      ids,
+    );
+    if (campanhas.length === 0) return null;
+    const total = campanhas.reduce(
+      (acc, c) => acc + parseActionCount(c.actions, "link_click"),
+      0,
+    );
+    // `0` medido é diferente de "não medimos": só a ausência de campanha ou
+    // de cache vira `null`, e essa distinção é o que a AC3 protege.
+    return total;
+  })();
+
+  /**
+   * Story 29.68 (AC1/AC2) — a "Análise detalhada de origem" do Perpétuo.
+   *
+   * O denominador é **cliques no link** (decisão do gestor, 2026-09-03) — a
+   * mesma `Tx Conversão` que a tabela de Detalhamento já mostra, para que
+   * dois números com o mesmo nome na mesma tela passem a bater.
+   *
+   * ⚠️ **O clique só existe para tráfego PAGO.** Nos blocos orgânicos não há
+   * denominador, e a resposta diz isso em vez de mandar `0%`: taxa zero e
+   * ausência de denominador são coisas diferentes, e a segunda apresentada
+   * como a primeira acusa o canal orgânico de não converter.
+   *
+   * A unidade é COMPRADOR distinto (o `dedupMap` já deduplica por e-mail),
+   * não linha — o order bump viria numa linha própria e inflaria a conta.
+   */
+  const cortarOrigem = (
+    chave: (v: {
+      utmSource: string;
+      utmMedium: string;
+      utmTerm: string | null;
+    }) => string | null,
+  ) => {
+    const acc = new Map<string, { compradores: number; bruto: number; liquido: number }>();
+    for (const v of dedupMap.values()) {
+      const k = chave(v);
+      if (!k) continue;
+      const e = acc.get(k) ?? { compradores: 0, bruto: 0, liquido: 0 };
+      e.compradores += 1;
+      e.bruto += v.bruto;
+      e.liquido += v.liquido;
+      acc.set(k, e);
+    }
+    return [...acc.entries()]
+      .map(([nome, v]) => ({
+        nome,
+        compradores: v.compradores,
+        faturamentoBruto: v.bruto,
+        faturamentoLiquido: v.liquido,
+        /** AOV da origem, dos somatórios — nunca média de AOVs. */
+        aov: v.compradores > 0 ? v.bruto / v.compradores : null,
+      }))
+      .sort((a, b) => b.faturamentoBruto - a.faturamentoBruto);
+  };
+
+  const analiseDeOrigem = {
+    porTipo: cortarOrigem((v) => classifyOrigem(v.utmSource)),
+    porTemperatura: cortarOrigem((v) => classifyTemperatura(v.utmTerm)),
+    fontesOrganicas: cortarOrigem((v) =>
+      classifyOrigem(v.utmSource) === "Orgânico"
+        ? classifyCanal(v.utmSource, v.utmMedium)
+        : null,
+    ),
+    fontesPagas: cortarOrigem((v) =>
+      classifyOrigem(v.utmSource) === "Pago"
+        ? classifyCanal(v.utmSource, v.utmMedium)
+        : null,
+    ),
+    /**
+     * AC2/AC3 — o denominador vai NA RESPOSTA, para a tela poder declarar
+     * de onde sai cada taxa. `null` quando não há campanha vinculada: a
+     * seção mostra vendas, faturamento, AOV e participação, e diz o que
+     * falta para haver taxa.
+     */
+    cliquesNoLink: cliquesNoLinkDoFunil,
+    denominador: "cliques no link" as const,
+    /**
+     * A janela em que os cliques foram contados — a mesma das vendas. A
+     * tela imprime junto da taxa: sem isso, ninguém tem como saber se o
+     * numerador e o denominador falam do mesmo período.
+     */
+    janelaDoDenominador:
+      cliquesNoLinkDoFunil === null
+        ? null
+        : cutoffStart
+          ? { since: cutoffStart.toISOString().slice(0, 10), until: cutoffEnd ? cutoffEnd.toISOString().slice(0, 10) : businessToday() }
+          : { since: inicioDaJanela(days ?? 30), until: businessToday() },
+    pisoDeAmostra: PISO_DE_AMOSTRA_POR_ORIGEM,
+  };
+
+  const platform = spreadsheet.platform;
+  const feeRate = effectivePlatformFeeRate(platform, hasStatusCol);
+  const faturamentoLiquidoCalculado = totalBruto * (1 - feeRate);
+
+  /**
+   * Story 29.53 (AC3): a quebra só aparece quando há o que quebrar.
+   *
+   * Precisa das DUAS pontas — a coluna de produto mapeada no wizard (29.31)
+   * e ao menos um produto classificado no diálogo (29.49). Com uma só, todas
+   * as linhas caem em `principal` e o card exibiria "Principal 129" como se
+   * fosse informação, quando é só a ausência dela.
+   */
+  const temClassificacao = produtoIdx !== -1 && Object.keys(tiposDeProduto).length > 0;
+
+  /**
+   * Story 29.61 — há produto classificado como bump ou upsell?
+   *
+   * `temClassificacao` (acima) é mais frouxo: ele aceita um mapa que só
+   * tenha `principal`, porque a quebra da 29.53 ainda faz sentido assim.
+   * Aqui não: sem bump nem upsell, não há taxa a calcular e o card some
+   * (AC7), como na Captação Paga.
+   */
+  const temAdicionais = Object.values(tiposDeProduto).some(
+    (t) => t === "order_bump" || t === "upsell",
+  );
+
+  return {
+    totalVendas,
+    analiseDeOrigem,
+    porTipoProduto: temClassificacao ? quebraPorTipo : null,
+    // Story 29.74 (AC5): mesmo critério da contagem — sem coluna mapeada ou
+    // sem produto classificado, tudo cai em `principal` e a quebra não
+    // informa nada.
+    faturamentoPorTipo: temClassificacao ? faturamentoPorTipo : null,
+    // Story 29.61 (AC5) — separa bump acessório de venda avulsa, mesma
+    // regra da 18.66.
+    orderBump: resumirOrderBump(linhasParaPublico, temAdicionais),
+    // Story 29.61 (AC3/AC4) — conversão de bump, de upsell e AOV.
+    publicos: tabelaPorPublico(linhasParaPublico),
+    /** Story 29.61 (AC3) — a coluna de upsell some quando ninguém classificou. */
+    temUpsellClassificado: Object.values(tiposDeProduto).some((t) => t === "upsell"),
+    faturamentoBruto: totalBruto,
+    faturamentoLiquido: totalLiquido,
+    faturamentoLiquidoCalculado,
+    reembolsoBruto,
+    reembolsoLiquido,
+    vendasReembolsadas,
+    reembolsoReal: hasStatusCol,
+    platform,
+    feeRate,
+    ticketMedioBruto: totalVendas > 0 ? totalBruto / totalVendas : 0,
+    ticketMedioLiquido: totalVendas > 0 ? totalLiquido / totalVendas : 0,
+    porUtmSource: Array.from(utmSourceMap.entries())
+      .map(([source, v]) => ({ source, ...v }))
+      .sort((a, b) => b.bruto - a.bruto),
+    porUtmMedium: Array.from(utmMediumMap.entries())
+      .map(([medium, v]) => ({ medium, ...v }))
+      .sort((a, b) => b.bruto - a.bruto),
+    porUtmContent: Array.from(utmContentMap.entries())
+      .map(([content, v]) => ({ content, ...v }))
+      .sort((a, b) => b.bruto - a.bruto),
+    porUtmCampaign: Array.from(utmCampaignMap.entries())
+      .map(([campaign, v]) => ({ campaign, ...v }))
+      .sort((a, b) => b.bruto - a.bruto),
+    porFormaPagamento: Array.from(formaMap.entries())
+      .map(([forma, v]) => ({ forma, ...v }))
+      .sort((a, b) => b.vendas - a.vendas),
+    semDados: false,
+  };
+}
+
+/**
+ * Story 44.28 (T3) — as vendas do perpétuo **por dia**, fora do handler.
+ *
+ * ⚠️ **Esta NÃO é a mesma contagem de `calcularVendasDoPerpetuo`, e a diferença
+ * é deliberada.**
+ *
+ * | função | deduplica | responde |
+ * |---|---|---|
+ * | `calcularVendasDoPerpetuo` | por e-mail na JANELA inteira | "quantos clientes foram adquiridos?" |
+ * | esta | por e-mail DENTRO DO DIA | "quanto vendeu neste dia?" |
+ *
+ * Quem compra em dois dias conta **duas vezes** aqui e **uma** lá. Somar os dias
+ * e esperar o total do card é o erro que parece acerto — e a soma sempre será
+ * maior ou igual. As duas estão certas; o que não pode é apresentarem-se com o
+ * mesmo nome. Por isso quem publica esta série a rotula `vendasNoDia`, nunca
+ * `vendas` (Story 44.28, AC1).
+ *
+ * Precedente idêntico e deliberado na Story 44.12 (Decisão 2 do @po).
+ */
+export async function calcularVendasDiariasDoPerpetuo(
+  db: Database,
+  // ⚠️ Sem `projectId` de propósito: a leitura é por funil, e o controle de
+  // acesso ao projeto mora na rota, que é de quem ele é.
+  { funnelId, days, startDate, endDate, groupBy }: JanelaDeVendas & {
+    funnelId: string;
+    groupBy?: "campaign" | "adset" | "ad";
+  },
+) {
+  const spreadsheet = await loadPerpetualSpreadsheet(db, funnelId);
+  if (!spreadsheet) return { byDay: {} as Record<string, number>, semDados: true };
+
+  const mapping = spreadsheet.columnMapping as {
+    email: string;
+    transactionId?: string;
+    valorBruto?: string;
+    dataVenda?: string;
+    status?: string;
+    // Story 29.42 (AC8): mesmos campos que o endpoint irmão já mapeia.
+    utm_medium?: string;
+    utm_content?: string;
+    utm_campaign?: string;
+  };
+
+  let sheetData;
+  try {
+    sheetData = await readSheetData(spreadsheet.spreadsheetId, spreadsheet.sheetName);
+  } catch {
+    return { byDay: {} as Record<string, number>, semDados: true };
+  }
+
+  const { headers, rows } = sheetData;
+  if (rows.length === 0) return { byDay: {} as Record<string, number>, semDados: true };
+
+  const colIdx = (fieldName: string | undefined): number =>
+    fieldName ? headers.indexOf(fieldName) : -1;
+
+  const emailIdx = colIdx(mapping.email);
+  const txIdx = colIdx(mapping.transactionId);
+  const brutoIdx = colIdx(mapping.valorBruto);
+  const dataIdx = colIdx(mapping.dataVenda);
+  const statusIdx = colIdx(mapping.status);
+  const hasStatusCol = statusIdx !== -1;
+
+  // Story 29.42 (AC8): a coluna de UTM que corresponde à dimensão pedida.
+  // `-1` quando a planilha não tem a coluna — as vendas caem todas em
+  // "(sem origem)", que é honesto, em vez de sumirem.
+  const utmIdx =
+    groupBy === "campaign" ? colIdx(mapping.utm_campaign)
+    : groupBy === "adset" ? colIdx(mapping.utm_medium)
+    : groupBy === "ad" ? colIdx(mapping.utm_content)
+    : -1;
+
+  if (dataIdx === -1) return { byDay: {} as Record<string, number>, semDados: true };
+
+  // Pass 1: coleta ids reembolsados pra excluir tanto a linha refunded quanto
+  // a compra "paid" pareada (mesmo id) da série de receita no tempo.
+  const refundedTxIds = new Set<string>();
+  if (hasStatusCol && txIdx !== -1) {
+    for (const row of rows) {
+      if (isRefundBucket(classifyRefundStatus(row[statusIdx], hasStatusCol))) {
+        const txId = (row[txIdx] ?? "").trim();
+        if (txId) refundedTxIds.add(txId);
+      }
+    }
+  }
+
+  // Fix 1 (29.8): suporta startDate/endDate ou days retroativos.
+  // Story 41.7 (§C.7): o corte passou a ser por DIA CIVIL de São Paulo, em
+  // vez de comparação de instantes no fuso do processo. Comparar strings
+  // `YYYY-MM-DD` é determinístico e não depende de onde a API roda.
+  let cutoffStartDay: string | null = null;
+  let cutoffEndDay: string | null = null;
+  if (startDate && endDate) {
+    cutoffStartDay = startDate;
+    cutoffEndDay = endDate;
+  } else if (days) {
+    cutoffStartDay = inicioDaJanela(days);
+  }
+
+  const byDay: Record<string, number> = {};
+  // Story 29.23: contagem de vendas por dia (mesmo filtro/linhas de `byDay`,
+  // contando transações em vez de somar faturamento) — base de Vendas/CPV/
+  // Ticket Médio por dia no Quadro de Dados Diários.
+  const salesByDay: Record<string, number> = {};
+  /**
+   * Story 29.42 (AC8): `chave da entidade -> série diária`. A chave é o
+   * valor cru do UTM (ID da entidade Meta no perpétuo); resolver para nome
+   * é do frontend, que já tem os mapas de nomes carregados.
+   */
+  const byEntity: Record<
+    string,
+    { revenueByDay: Record<string, number>; salesByDay: Record<string, number> }
+  > = {};
+  let counted = 0;
+
+  /**
+   * Story 29.53 (AC2) — a serie diaria deduplica por e-mail DENTRO do dia.
+   *
+   * ⚠️ A soma dos dias NAO bate com o total do periodo, e isso esta certo:
+   * quem comprou em dois dias conta nos dois aqui e uma vez la. Medido na
+   * planilha do Netao, a divergencia e de **1** em 110 — um comprador que
+   * voltou em 28/07 e 04/08.
+   *
+   * Precedente identico e deliberado na Story 44.12 (Decisao 2 do @po), com
+   * a mesma justificativa: sao perguntas diferentes. "Quantos compradores
+   * neste dia?" e "quantos compradores no periodo?" nao somam.
+   */
+  const vistosPorDia = new Set<string>();
+  /** Story 29.53 (AC6): o mesmo, por entidade — ver o comentário no uso. */
+  const vistosPorEntidadeNoDia = new Set<string>();
+  for (const [idxDaLinha, row] of rows.entries()) {
+    const rowDay = saleDayKey(row[dataIdx]);
+    if (!rowDay) continue;
+    if (cutoffStartDay && rowDay < cutoffStartDay) continue;
+    if (cutoffEndDay && rowDay > cutoffEndDay) continue;
+
+    if (emailIdx !== -1) {
+      const email = (row[emailIdx] ?? "").trim();
+      if (!email) continue;
+    }
+
+    // Reembolso/chargeback não entram na série de receita no tempo — nem a
+    // linha refunded, nem a compra "paid" pareada (mesmo id).
+    // Story 29.26: recusada/pendente também sai — a série diária conta as
+    // MESMAS linhas que o agregado, senão o gráfico contradiz os cards.
+    if (hasStatusCol) {
+      if (!isRevenueBucket(classifyRefundStatus(row[statusIdx], hasStatusCol))) continue;
+      if (txIdx !== -1) {
+        const txId = (row[txIdx] ?? "").trim();
+        if (txId && refundedTxIds.has(txId)) continue;
+      }
+    }
+
+    const bruto = parseNumber(row[brutoIdx] ?? "");
+    if (bruto <= 0) continue;
+
+    // Story 41.7 (§C.7): `rowDay` já é o dia civil de São Paulo. Antes daqui
+    // saía `getFullYear/getMonth/getDate`, que usava o fuso do processo.
+    // O FATURAMENTO soma todas as linhas — o order bump E receita (AC4).
+    byDay[rowDay] = (byDay[rowDay] ?? 0) + bruto;
+
+    // A CONTAGEM conta compradores. A segunda linha do mesmo e-mail no
+    // mesmo dia (o bump) soma no faturamento e nao cria venda.
+    const chaveDoDia = chaveDeComprador(
+      emailIdx === -1 ? null : row[emailIdx],
+      txIdx === -1 ? null : row[txIdx],
+      idxDaLinha,
+      rowDay,
+    );
+    if (!vistosPorDia.has(chaveDoDia)) {
+      vistosPorDia.add(chaveDoDia);
+      salesByDay[rowDay] = (salesByDay[rowDay] ?? 0) + 1;
+    }
+
+    // Story 29.42 (AC8): a MESMA linha que entrou no total entra aqui.
+    // Derivar a dimensão dentro do mesmo laço é o que garante que a soma
+    // de `byEntity` feche com `byDay` — se fossem dois laços com filtros
+    // separados, divergiriam na primeira mudança de regra.
+    if (groupBy) {
+      const chave = sanitizeUtmValue(utmIdx === -1 ? undefined : row[utmIdx]) ?? SEM_ORIGEM_LABEL;
+      const e = (byEntity[chave] ??= { revenueByDay: {}, salesByDay: {} });
+      e.revenueByDay[rowDay] = (e.revenueByDay[rowDay] ?? 0) + bruto;
+      /**
+       * Story 29.53 (AC6) — a série POR ENTIDADE deduplica igual à agregada.
+       *
+       * Aqui era `+= 1` por linha: o total do dia já contava compradores e a
+       * quebra por campanha/público/criativo ainda contava linhas. O bump
+       * saía do card e continuava inflando o CAC do Detalhamento — a mesma
+       * distorção, um nível abaixo, onde a decisão de pausar é tomada.
+       *
+       * ⚠️ Σ(entidades) pode passar o total do dia quando o principal e o
+       * bump da mesma pessoa vêm com UTMs diferentes: ela é um comprador em
+       * cada entidade. É a resposta certa para "quantos compradores esta
+       * campanha trouxe hoje" e não soma com o total, pela mesma razão que
+       * Σ(dias) ≠ período.
+       */
+      const chaveNaEntidade = `${chave}|${chaveDoDia}`;
+      if (!vistosPorEntidadeNoDia.has(chaveNaEntidade)) {
+        vistosPorEntidadeNoDia.add(chaveNaEntidade);
+        e.salesByDay[rowDay] = (e.salesByDay[rowDay] ?? 0) + 1;
+      }
+    }
+    counted++;
+  }
+
+  if (counted === 0) {
+    return {
+      byDay: {} as Record<string, number>,
+      salesByDay: {} as Record<string, number>,
+      ...(groupBy ? { byEntity: {} as typeof byEntity, groupBy } : {}),
+      semDados: false,
+    };
+  }
+  return {
+    byDay,
+    salesByDay,
+    ...(groupBy ? { byEntity, groupBy } : {}),
+    semDados: false,
+  };
+}

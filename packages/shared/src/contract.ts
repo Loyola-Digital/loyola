@@ -83,4 +83,27 @@
 // não quebra nada; o que ela causa é o filtro "Por Criativo + quente" continuar
 // zerando no pps1 até a API subir. Por isso a versão sobe: o banner avisa que a
 // correção ainda não chegou, em vez de o gestor achar que ela não funcionou.
-export const API_CONTRACT_VERSION = 5;
+// v6 (Story 44.28): nasceu `GET /api/public/v1/funnels/:id/perpetual-metrics`,
+// a rota que o agente Inácio lê para publicar CAC, ROAS e margem do perpétuo no
+// Resumão da diretoria.
+//
+// ⚠️ O bump vai NESTA story, e não na consumidora (a 44.29). Se ele entrasse
+// junto do consumidor, o painel passaria a exigir uma rota que a API ainda não
+// tem, e o sintoma chegaria disfarçado — 400 de validação, 404 de rota, campo
+// `undefined` derrubando a tela. Foi o que custou as investigações das Stories
+// 18.60, 29.43 e 29.45, e é exatamente o que o parágrafo acima descreve.
+//
+// A rota é ADITIVA: nada que existia mudou de forma. O que a API velha causa é
+// o Inácio não encontrar a rota — e aí a versão defasada é o que explica por
+// quê, em vez de o leitor concluir que o agente quebrou.
+//
+// A v6 carrega TAMBÉM a T6 da mesma story, e essa não é aditiva: o motivo
+// `reguaDivergente` deixou de existir, e as três etapas promovidas de perpétuo
+// passaram a publicar `principal.valor` onde antes vinha `null`. As duas
+// mudanças sobem no mesmo deploy, então um bump só as cobre.
+//
+// ⚠️ O `packages/mcp` NÃO checa esta constante (roda na máquina de quem usa o
+// agente). Para ele, a mudança de número chega no instante do deploy, sem
+// aviso — por isso a leva do Inácio manda um aviso humano junto, e esta é a
+// terceira vez: ver `docs/qa/audits/`.
+export const API_CONTRACT_VERSION = 6;

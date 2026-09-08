@@ -1,6 +1,8 @@
 "use client";
 
 import { ehCaptacaoPaga } from "@loyola-x/shared/src/stage-types";
+// Story 44.28: os KPIs do topo, agora compartilhados com a API pública.
+import { calcularMetricasDoPerpetuo } from "@loyola-x/shared/src/perpetuo-metricas";
 // Story 18.78: CTR/CPC de link, sem fallback — a MESMA regra do backend e do
 // card do Top Criativos. Import de valor do shared no web vai por subpath.
 import {
@@ -1763,59 +1765,34 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   // com dados da planilha. Spend continua Meta.
   // Story 29.7: Margem usa faturamentoLiquidoCalculado (descontou fees plataforma).
   // Story 29.9: spend Meta ganha imposto 12.15% para dias >= 2026-01-01 (via spendAggregates).
+  /**
+   * Story 44.28 — a conta saiu daqui e virou função pura no `shared`.
+   *
+   * Ela vivia como `useMemo` de 53 linhas neste arquivo, e por isso só existia
+   * no navegador: o agente Inácio, que lê a API pública, teria que recompor o
+   * CAC por fora — a segunda régua que o Epic 44 existe para impedir.
+   *
+   * ⚠️ O `overview` continua espalhado no retorno porque a tela usa outros
+   * campos dele (impressões, cliques, CTR…). A função devolve só os KPIs que
+   * ela calcula; o resto passa por cima, como antes.
+   */
   const effectiveMetrics = useMemo(() => {
-    // Sem campanha Meta vinculada: KPIs 100% da planilha (investimento zero,
-    // ROAS/CAC sem sentido → "—"; Margem = receita líquida).
-    if (!hasCampaigns) {
-      if (!usingSpreadsheet || !salesData) return null;
-      const sales = salesData.totalVendas;
-      const revenue = salesData.faturamentoBruto;
-      const margin = salesData.faturamentoLiquidoCalculado;
-      return {
-        totalSpend: 0,
-        totalSales: sales,
-        totalRevenue: revenue,
-        cac: null,
-        margin,
-        marginPercent: revenue > 0 ? (margin / revenue) * 100 : null,
-        roas: null,
-      };
-    }
-    if (!overview) return null;
-    const effectiveSpend = spendAggregates.totalSpendComTax > 0
-      ? spendAggregates.totalSpendComTax
-      : overview.totalSpend;
-
-    if (!usingSpreadsheet || !salesData) {
-      // Story 29.10: sem planilha de vendas conectada = sem fonte de vendas.
-      // NÃO herda vendas/receita do pixel Meta (era o bug — fallback silencioso).
-      // Vendas/Receita = 0; derivados (CAC/Margem/ROAS) = null → renderizam "—".
-      return {
-        ...overview,
-        totalSpend: effectiveSpend,
-        totalSales: 0,
-        totalRevenue: 0,
-        cac: null,
-        margin: null,
-        marginPercent: null,
-        roas: null,
-      };
-    }
-    const sales = salesData.totalVendas;
-    const revenue = salesData.faturamentoBruto;
-    // Story 29.20 (Danilo): Margem = Receita LÍQUIDA (após fees da plataforma) − Investimento.
-    const netRevenue = salesData.faturamentoLiquidoCalculado;
-    const margin = netRevenue - effectiveSpend;
-    return {
-      ...overview,
-      totalSpend: effectiveSpend,
-      totalSales: sales,
-      totalRevenue: revenue,
-      cac: sales > 0 ? effectiveSpend / sales : null,
-      margin,
-      marginPercent: revenue > 0 ? (margin / revenue) * 100 : null,
-      roas: effectiveSpend > 0 ? revenue / effectiveSpend : null,
-    };
+    const m = calcularMetricasDoPerpetuo({
+      temCampanhas: hasCampaigns,
+      midia: overview ? { totalSpend: overview.totalSpend } : null,
+      vendas:
+        usingSpreadsheet && salesData
+          ? {
+              totalVendas: salesData.totalVendas,
+              faturamentoBruto: salesData.faturamentoBruto,
+              faturamentoLiquidoCalculado: salesData.faturamentoLiquidoCalculado,
+            }
+          : null,
+      spendComTaxAgregado: spendAggregates.totalSpendComTax,
+    });
+    if (!m) return null;
+    // Sem campanha, não há `overview` para espalhar — o ramo 1 devolve só os KPIs.
+    return hasCampaigns && overview ? { ...overview, ...m } : m;
   }, [overview, salesData, usingSpreadsheet, spendAggregates, hasCampaigns]);
 
   // Revenue by audience (ad sets)

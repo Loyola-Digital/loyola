@@ -97,7 +97,7 @@ Resposta: `{ projectId, stageId, stageName, campaignIds: [..], range, partial, l
 
 **`campanhasOrfas`** — campanhas com gasto na janela curta **sem vínculo com nenhuma etapa** do projeto. É dinheiro fora de todo CAC e ROAS do painel. Não encoste numa etapa por semelhança de nome — isso é inventar atribuição.
 
-**`pendencias[]`** — `{ stageId, codigo, mensagem, origem }`. São fatos de **configuração**, não falhas da consulta, e cada `codigo` pede uma ação diferente (`semDados` = conectar fonte · `syncPendente` = esperar o sync · `leituraFalhou` = checar permissão · `indeterminado` = a checagem falhou · `foraDaAba` = etapa fora do escopo da aba). ⚠️ **`reguaDivergente` é a exceção: NÃO é ação do operador** (Story 44.25 AC8) — é uma lacuna de engenharia já endereçada pela Story 44.28. Reporte-a como nota, nunca na lista de "o que configurar hoje". ⚠️ `origem: "cadeia"` = apurado no backend, citável como fato; `origem: "panorama"` = conclusão desta rota (`semTetoConfiavel`, `coberturaIndisponivel`), derivada por comparação. Não cite um derivado como fato de origem.
+**`pendencias[]`** — `{ stageId, codigo, mensagem, origem }`. São fatos de **configuração**, não falhas da consulta, e cada `codigo` pede uma ação diferente (`semDados` = conectar fonte · `syncPendente` = esperar o sync · `leituraFalhou` = checar permissão · `indeterminado` = a checagem falhou · `foraDaAba` = etapa fora do escopo da aba). ⚠️ `origem: "cadeia"` = apurado no backend, citável como fato; `origem: "panorama"` = conclusão desta rota (`semTetoConfiavel`, `coberturaIndisponivel`), derivada por comparação. Não cite um derivado como fato de origem.
 ⚠️ Etapa com fonte conectada e **zero venda/lead na janela** NÃO entra em `pendencias` — não é lacuna de configuração. O fato fica visível em `principal.vendasReais: 0` / `principal.leadsUnicos: 0` — nos dois casos **sem `message`**, que é o que os distingue de lacuna de configuração (QA-4414-02 · QA-4426-01).
 
 **`totais`** — `{ spendCurta, spendLonga, spendOrfas, etapasNoAr, campanhasComGasto }`. ⚠️ `spendCurta`/`spendLonga` são das **ETAPAS**; o gasto das órfãs vem separado em **`spendOrfas`**, e `spendCurta + spendOrfas` é o gasto do PROJETO na janela curta. `campanhasComGasto` conta só as VINCULADAS. `etapasNoAr` exclui as de `familia: null`.
@@ -146,7 +146,9 @@ Os `motivo` pedem **ações diferentes**: `semDados` = conectar fonte · `syncPe
 
 ⚠️ `motivo: "semCoberturaDiaria"` — o cache é anterior à série diária e **o CPL não sai**. O total acumulado NÃO é substituto: dividir investimento de uma janela por leads de outra é o defeito que publicou "CPL Real R$ 3,17" no Resumão de 06/09. Ação: esperar o sync, não conectar fonte.
 
-⚠️ **`reguaDivergente`** (Story 44.25 AC8) — só na etapa promovida pelo funil perpétuo. `valor: null` com `metrica: "cacReal"`, `spend`, `vendasReais`, `dataSource` e `computedAt` presentes. Significa: **a etapa TEM CAC, esta rota ainda não o publica.** A base de vendas daqui conta transações dedupadas por `txId+produto`; o dashboard perpétuo conta checkouts/compradores com classificação de produto — 124 contra 73 na mesma janela de 30 dias, medido em 07/09/2026. Publicar os dois com o mesmo nome faria uma tela contradizer a outra. **Para o CAC desta etapa, use o dashboard perpétuo.** Não é ação do operador e não é falta de configuração; a Story 44.28 remove a supressão.
+⚠️ **A etapa promovida pelo funil perpétuo publica CAC normalmente** (Story 44.28, desde 08/09/2026). O motivo `reguaDivergente`, que suprimia esse número desde a 44.25, **não existe mais**: as duas telas passaram a contar vendas pela mesma função (`calcularVendasDoPerpetuo`), então o CAC desta rota e o do dashboard perpétuo são o mesmo número. Se você tem instrução antiga mandando pedir o CAC ao dashboard nessas etapas, ela está vencida.
+
+⚠️ **O CAC dessas etapas MUDOU em 08/09/2026, e para cima.** A régua anterior contava mais vendas que a do painel, o que barateava o CAC. Medido na janela de 30 dias: `bbe-funil-churrasco` R$ 117,78 → R$ 205,32 (+74%), `pps1/Aquisição` R$ 91,91 → R$ 108,93 (+19%), `fz-a1/Vendas` R$ 40,23 → R$ 40,75 (+1%). **O número não piorou — estava errado.** Ao comparar com relatório seu de antes dessa data, diga isso; não reporte como queda de desempenho.
 ⚠️ **`semDados` sai em dois ramos com ações opostas.** Sem fonte conectada ele vem com `message` e sem `vendasReais`/`leadsUnicos`; com fonte conectada e zero no denominador ele vem **sem `message`** e **com** `vendasReais: 0`/`leadsUnicos: 0` + `computedAt`. Mandar conectar fonte no segundo caso é pedir para configurar algo que já está configurado.
 
 **`agregado`** — os brutos somáveis que compõem toda taxa: `{ spend, impressions, linkClicks, landingPageViews, checkouts, leadsAtribuidos, dias }`. `leadsAtribuidos: null` = não medido (não é zero).
@@ -171,6 +173,29 @@ Os `motivo` pedem **ações diferentes**: `semDados` = conectar fonte · `syncPe
 **`campanhas`** — uma linha por campanha vinculada: `{ campaignId, campaignName, dias, motivo, lastSyncedAt }`. `dias: null` + `motivo: "semDados"` = vinculada mas sem nenhuma linha no cache (≠ "rodou e não teve nada").
 
 Resposta (etapa com dados): `{ projectId, stageId, stageName, stageType, familia, fonte: "ad-level", spendIncludesMetaTax, unidadeDasTaxas, range, lpTemVsl, ticketMedioManual, campanhas, agregado, atuais, principal, atribuicao, criativos, distribuicaoHook, bodyConvIndisponivel, vendasSemDataNoTotal, leadsSemData, tetos, guardaDeCobertura, ranking, composto, decomposicaoCPC, benchmarks }`
+
+## Endpoints — Funil perpétuo (Story 44.28)
+
+### GET /api/public/v1/funnels/{funnelId}/perpetual-metrics
+Os KPIs do topo de um funil **perpétuo** — os MESMOS números que a aba Meta Ads do painel renderiza, porque as duas leem a mesma função. Parâmetros: `from`/`to` (`YYYY-MM-DD`, a janela exata) **ou** `days` (atalho: 1 = hoje, 7, 30, 90; a janela de N dias INCLUI hoje). Para o **dia fechado**, peça `from` = `to` = ontem.
+
+⚠️ **Use esta rota para falar do perpétuo.** Recompor CAC ou ROAS por fora — spend de um endpoint, vendas de outro — cria uma segunda régua que diverge da tela. É a classe de defeito que o Epic 44 existe para impedir.
+
+**`vendas`** — **COMPRADORES ÚNICOS** no período (dedup por e-mail na janela inteira). `unidadeDeVendas` declara isso no payload. É a régua que o CAC exige: CAC é custo de aquisição de *cliente*, e quem compra em dois dias é **uma** aquisição.
+
+⚠️ **`serieDiaria[].vendasNoDia` é OUTRA contagem** — deduplica **dentro do dia**. A soma da série é **maior ou igual** a `vendas`, e isso está certo: são perguntas diferentes ("quanto vendeu neste dia" × "quantos clientes foram adquiridos"). **Nunca some a série para citar o total** — use `vendas`. Os dois nomes são diferentes de propósito.
+
+**`investimento`** — JÁ inclui o imposto Meta de 12,15% (gross-up ÷ (1 − 0,1215) = ×1,1382, **não** ×1,1215). `investimentoComImpostoDeMidia: true` confirma. Não reaplicar nem reverter.
+
+**`cac`, `roas`, `margem`, `margemPercent`** — `null` quando falta numerador ou denominador, **nunca `0`**. `roas` é sobre o faturamento BRUTO; a margem é receita LÍQUIDA menos investimento (Story 29.20).
+
+**Ausências são diferentes entre si:** `investimento: null` = sem campanha vinculada ou sem mídia na janela · `vendas: null` = sem planilha de vendas conectada · `vendas: 0` = há planilha e **não houve venda no período**. A terceira é informação de gestão; tratá-la como "sem dado" manda o leitor procurar um defeito que não existe.
+
+**`cadeia`** — `{ cpm, cpc, ctr, connectRate, convLP }`, `null` sem mídia na janela. `convLP` aqui é a **conversão de checkout** (checkouts ÷ visitas na LP); `connectRate` é visitas na LP ÷ **cliques no link**, jamais sobre cliques totais.
+
+**`orderBump`, `reembolsos`, `porTemperatura`** — do mesmo bloco de vendas. `reembolsos.medido: false` = a planilha não tem coluna de status e o valor é estimativa.
+
+Resposta: `{ funnelId, projectId, funnelName, funnelType, periodo: {from,to,dias,origem}, vendas, unidadeDeVendas, investimento, investimentoComImpostoDeMidia, faturamentoBruto, faturamentoLiquidoCalculado, ticketMedioBruto, cac, roas, margem, margemPercent, orderBump, reembolsos, cadeia, agregadoDeMidia, porTemperatura, serieDiaria, semDados }`
 
 ## Endpoints — Leads por origem (Story 36.7)
 
@@ -281,6 +306,7 @@ Tools (mapeiam 1:1 nos endpoints):
 - `get_stage_daily(projectId, stageId, from?, to?)` → GET /api/public/meta/v1/projects/{projectId}/stages/{stageId}/daily (mídia SÓ das campanhas da etapa — sem contaminação entre funis/evergreen)
 - `get_project_panorama(projectId, to?, curta?, longa?)` → GET .../meta/v1/projects/{projectId}/panorama-cac (**o ponto de partida diário** — etapas no ar, gasto nas duas janelas, gargalo de cada uma, órfãs e pendências. Chame ANTES de `get_stage_cadeia_cac`)
 - `get_stage_cadeia_cac(projectId, stageId, from?, to?)` → GET .../meta/v1/projects/{projectId}/stages/{stageId}/cadeia-cac (**a Cadeia de CAC pronta** — CPM/CTR/CPC/Connect/Conv.LP, tetos, ranking e criativos DA ETAPA. Use em vez de recompor a partir de `get_stage_daily`)
+- `get_perpetual_metrics(funnelId, from, to)` → GET /api/public/v1/funnels/{funnelId}/perpetual-metrics (**os KPIs do PERPÉTUO na régua da aba Meta Ads** — CAC, ROAS, margem, order bump, cadeia e série diária. `from`/`to` são OBRIGATÓRIOS aqui de propósito. Não recomponha CAC/ROAS do perpétuo a partir de outras tools)
 - `get_stage_leads_summary(projectId, stageId)` → GET .../v1/projects/{projectId}/stages/{stageId}/leads-summary
 - `get_stage_survey(projectId, stageId)` → GET .../v1/projects/{projectId}/stages/{stageId}/survey
 - `get_stage_sales_daily(projectId, stageId)` → GET .../v1/projects/{projectId}/stages/{stageId}/sales-daily

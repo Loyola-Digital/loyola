@@ -231,7 +231,8 @@ export function registerTools(server: McpServer, client: LoyolaClient): void {
         "Taxas em decimal (0.0192 = 1,92%); spend já inclui o imposto Meta. " +
         "familia:null não é erro — é etapa fora da aba (lyrio/comercial/debriefing), com motivo 'foraDaAba'. " +
         "Cada `motivo` pede uma ação diferente (semDados=conectar fonte, syncPendente=esperar o sync, leituraFalhou=checar permissão): não colapse em 'sem dados'. " +
-        "EXCEÇÃO: `reguaDivergente` NÃO é ação de ninguém e não entra em lista de pendências — significa que a etapa TEM CAC mas esta rota ainda não o publica (a base de vendas daqui conta transações dedupadas; o dashboard perpétuo conta checkouts/compradores). Para o CAC dessa etapa, use o número do dashboard perpétuo e diga de onde veio; `spend` e `vendasReais` desta rota seguem confiáveis.",
+        "Story 44.28 (08/09/2026): o motivo `reguaDivergente` FOI REMOVIDO. A etapa promovida do perpétuo publica CAC normalmente, e é o MESMO número da aba Meta Ads — as duas passaram a contar vendas pela mesma função. Encontrar esse motivo num payload significa payload velho. " +
+        "⚠️ O CAC dessas etapas SUBIU nessa data porque a contagem anterior inflava as vendas: em 30 dias, bbe-funil-churrasco R$ 117,78 → R$ 205,32, pps1/Aquisição R$ 91,91 → R$ 108,93, fz-a1/Vendas R$ 40,23 → R$ 40,75. É correção, não piora — ao comparar com relatório anterior a 08/09, explique em vez de reportar queda.",
       inputSchema: {
         projectId: z.string().uuid().describe("ID do projeto (de list_projects)."),
         stageId: z.string().describe("ID da etapa (de list_stages)."),
@@ -280,6 +281,54 @@ export function registerTools(server: McpServer, client: LoyolaClient): void {
           to,
           curta,
           longa,
+        })
+      )
+  );
+
+  // ---- Perpétuo: os KPIs do topo, na régua da aba Meta Ads ----
+  server.registerTool(
+    "get_perpetual_metrics",
+    {
+      title: "Métricas do funil PERPÉTUO (a régua da aba Meta Ads)",
+      description:
+        "CAC, ROAS, margem, faturamento, order bump, reembolsos e a cadeia (CPM/CPC/CTR/connect rate/conversão de checkout) de um funil PERPÉTUO, na janela pedida (Story 44.28). " +
+        "USE ESTA TOOL para falar do perpétuo no Resumão: ela devolve os MESMOS números que a aba Meta Ads do painel renderiza, porque as duas leem a mesma função. Recompor CAC ou ROAS por fora, a partir de spend de uma tool e vendas de outra, cria uma segunda régua que diverge da tela — é a classe de defeito que o Epic 44 inteiro existe para impedir. " +
+        "⚠️ `vendas` são COMPRADORES ÚNICOS no período (dedup por e-mail na janela inteira). É a régua que o CAC exige, já que CAC é custo de aquisição de CLIENTE: quem compra em dois dias é UMA aquisição. " +
+        "⚠️ `serieDiaria[].vendasNoDia` é OUTRA contagem — deduplica DENTRO do dia — e por isso a soma dela é MAIOR OU IGUAL a `vendas`. Isso está certo e não é divergência a reportar: são perguntas diferentes ('quanto vendeu neste dia' × 'quantos clientes foram adquiridos'). NUNCA some a série para citar o total de vendas; use `vendas`. " +
+        "`investimento` JÁ inclui o imposto Meta de 12,15% (gross-up ÷ (1 − 0,1215) = ×1,1382, NÃO ×1,1215): não reaplicar nem tentar reverter. " +
+        "Ausência é declarada, não vira zero: `investimento: null` = sem campanha vinculada ou sem mídia na janela; `vendas: null` = sem planilha de vendas conectada; `vendas: 0` = há planilha e não houve venda — coisas diferentes, com ações diferentes. `cac`/`roas`/`margem` vêm `null` quando falta numerador ou denominador, nunca `0`. " +
+        "`cadeia` é `null` sem mídia na janela. `convLP` ali é a conversão de CHECKOUT (checkouts ÷ visitas na LP); `connectRate` é visitas na LP ÷ cliques no link — jamais sobre cliques totais. " +
+        "Difere de get_stage_sales_daily, que conta vendas-dia de uma ETAPA por outra régua: as duas NÃO se substituem e não devem ser comparadas como se medissem a mesma coisa. " +
+        "Para o dia fechado, peça `from` = `to` = ontem.",
+      inputSchema: {
+        funnelId: z
+          .string()
+          .uuid()
+          .describe("ID do funil perpétuo (de list_funnels, onde type='perpetual')."),
+        /**
+         * ⚠️ Obrigatórios de propósito (AC1).
+         *
+         * A rota aceita janela default, e `get_stage_cadeia_cac` mostrou o
+         * preço disso: chamada sem recorte devolve o HISTÓRICO INTEIRO, e o
+         * agente publica um número de seis meses ao lado de um de 30 dias sem
+         * que nada na resposta acuse. Aqui o schema não deixa a chamada sair
+         * sem janela.
+         */
+        from: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .describe("Primeiro dia da janela (YYYY-MM-DD). OBRIGATÓRIO."),
+        to: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .describe("Último dia da janela (YYYY-MM-DD), inclusive. OBRIGATÓRIO."),
+      },
+    },
+    async ({ funnelId, from, to }) =>
+      run(() =>
+        client.get(`/api/public/v1/funnels/${encodeURIComponent(funnelId)}/perpetual-metrics`, {
+          from,
+          to,
         })
       )
   );

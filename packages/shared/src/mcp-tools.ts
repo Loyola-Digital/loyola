@@ -38,6 +38,8 @@ export const TOOLS_DO_MCP = [
   "get_stage_daily",
   "get_stage_cadeia_cac",
   "get_project_panorama",
+  // Story 44.28/44.29 — os KPIs do perpétuo na régua da aba Meta Ads.
+  "get_perpetual_metrics",
   "get_stage_leads_summary",
   "get_stage_survey",
   "get_stage_sales_daily",

@@ -54,7 +54,6 @@ import {
   checarStorage,
   deleteObject,
   explicarErroDeStorage,
-  isAllowedMime,
   resolverMime,
   isStorageConfigured,
   testarEscrita,
