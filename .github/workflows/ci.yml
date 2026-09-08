@@ -54,3 +54,95 @@ jobs:
         # sai assim que essas suítes forem consertadas.
         continue-on-error: ${{ matrix.tarefa == 'test' }}
         run: pnpm -r --if-present ${{ matrix.tarefa }}
+
+  # ─────────────────────────────────────────────────────────────
+  # O gatilho que faltava: merge NÃO atualiza o gateway do MCP
+  # ─────────────────────────────────────────────────────────────
+  #
+  # Story 44.22 (AC3). O bundle que o agente Inácio executa é um processo stdio
+  # numa máquina de fora — `packages/mcp/dist` é gitignored e nada no pipeline
+  # da `main` toca nele. Quando alguém mexe nas tools e mergeia, o servidor não
+  # quebra: ele passa a servir MENOS tools, calado.
+  #
+  # Foi assim que CINCO tools entregues em julho só chegaram ao Inácio em
+  # agosto — dois meses de deriva. E aconteceu de novo em 08/09, com a
+  # `get_perpetual_metrics` da Story 44.29: mergeada, e o gateway ficou atrás no
+  # mesmo instante.
+  #
+  # ## Por que um comentário, e não um check que falha
+  #
+  # O bundle desatualizado não é defeito do código desta PR — o código está
+  # certo. Falhar o CI ensinaria o time a ignorar um vermelho legítimo, que é
+  # exatamente o que o comentário do `continue-on-error` acima descreve.
+  #
+  # ## Por que não bastava o detector do lado do MCP
+  #
+  # `packages/mcp/src/defasagem.ts` já avisa — mas avisa **ao agente**, na
+  # próxima vez que ele listar as tools. Quem mergeia não fica sabendo, e é
+  # quem pode agir. A Story 44.22 recusa explicitamente a saída "documentar
+  # melhor": já estava documentado, na frase certa, em julho.
+  avisar-gateway-mcp:
+    name: gateway do MCP
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Precisa do histórico para comparar com a base da PR.
+          fetch-depth: 0
+
+      - name: A PR toca a superfície do MCP?
+        id: diff
+        run: |
+          base="origin/${{ github.base_ref }}"
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          # `packages/mcp/**` cobre tools, config e transporte.
+          # `mcp-tools.ts` é a lista canônica: mexer nela é somar ou tirar tool.
+          if git diff --name-only "$base"...HEAD \
+             | grep -qE '^packages/mcp/|^packages/shared/src/mcp-tools\.ts$'; then
+            echo "tocou=sim" >> "$GITHUB_OUTPUT"
+          else
+            echo "tocou=nao" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Um comentário por PR. Sem isto, cada push novo repetiria o aviso e ele
+      # viraria ruído — que é como um aviso deixa de ser lido.
+      - name: Já avisei nesta PR?
+        id: existente
+        if: steps.diff.outputs.tocou == 'sim'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh pr view "${{ github.event.pull_request.number }}" \
+               --json comments --jq '.comments[].body' \
+             | grep -q '<!-- aviso-gateway-mcp -->'; then
+            echo "ja=sim" >> "$GITHUB_OUTPUT"
+          else
+            echo "ja=nao" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Avisar
+        if: steps.diff.outputs.tocou == 'sim' && steps.existente.outputs.ja == 'nao'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment "${{ github.event.pull_request.number }}" --body '<!-- aviso-gateway-mcp -->
+          ⚠️ **Esta PR muda a superfície do MCP — o gateway precisa de rebuild à mão.**
+
+          O merge entrega a **rota** da API automaticamente. A **tool** não: o bundle é um processo stdio numa máquina de fora, `packages/mcp/dist` é gitignored, e nenhum passo do pipeline da `main` toca nele.
+
+          **Depois do merge, NO GATEWAY:**
+
+          ```bash
+          git pull origin main
+          pnpm --filter @loyola-x/mcp build
+          # reinicie o processo do MCP
+          ```
+
+          Sem isso o servidor não quebra — ele serve **menos tools, calado**. Foi assim que cinco tools de julho só chegaram ao agente em agosto.
+
+          Para conferir depois: `GET /api/public/v1/mcp-manifest` diz quantas tools a `main` tem; o agente compara sozinho e avisa se estiver atrás (`packages/mcp/src/defasagem.ts`).
+
+          _Story 44.22 (AC3). Este aviso não bloqueia o merge._'

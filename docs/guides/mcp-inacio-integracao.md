@@ -43,6 +43,48 @@ Verificado em prod (22/07):
 
 ---
 
+## 2b. ⚠️ Quando cada tool chegou de verdade ao gateway (Story 44.22, AC4)
+
+**"Entregue" no repo e "existe para o Inácio" são datas diferentes**, e a
+distância entre elas chegou a dois meses. Esta tabela existe para quem for reler
+laudos antigos do agente: onde falta um número, pode ser que a **ferramenta**
+não existisse — não que o dado faltasse.
+
+| Tool | Mergeada na `main` | Chegou ao gateway | Distância |
+|---|---|---|---|
+| `get_stage_sales_rows` | julho/2026 | **28/08/2026** | ~2 meses |
+| `get_cross_launch` | julho/2026 | **28/08/2026** | ~2 meses |
+| `get_stage_operational_costs` | julho/2026 | **28/08/2026** | ~2 meses |
+| `get_stage_sales` | anterior a julho | **28/08/2026** | > 2 meses |
+| `get_funnel_sales` | anterior a julho | **28/08/2026** | > 2 meses |
+| `get_stage_cadeia_cac` | 27/08/2026 | **28/08/2026** | 1 dia |
+| `get_project_panorama` | 27/08/2026 | **28/08/2026** | 1 dia |
+| `get_perpetual_metrics` | **08/09/2026** | ⏳ **pendente** | — |
+
+⚠️ **Consequência concreta:** entre julho e 28/08 o Inácio produziu análises sem
+saber que tinha row-level de venda disponível. Nenhum laudo daquele período
+usou `get_stage_sales_rows`, e a ausência ali é de ferramenta.
+
+⚠️ **A última linha está aberta agora.** A `get_perpetual_metrics` (Story 44.29)
+foi mergeada em 08/09 e o gateway ainda não foi reconstruído — o agente segue
+sem ela, e as descrições que ele lê ainda mandam pedir o CAC do perpétuo ao
+dashboard, instrução que venceu no mesmo merge.
+
+### Como saber, sem perguntar a ninguém
+
+```
+GET /api/public/v1/mcp-manifest    →  o que a `main` tem
+```
+
+O próprio MCP compara e registra um aviso no roster quando está atrás
+(`packages/mcp/src/defasagem.ts`). Testado em 08/09 com o bundle de ontem:
+*"Este gateway serve 18 tools; a main tem 19. FALTAM 1: get_perpetual_metrics."*
+
+E desde 08/09 o CI comenta na PR quando ela mexe em `packages/mcp/` ou na lista
+canônica — o gatilho que a AC3 pedia, para quem mergeia saber junto com o agente.
+
+---
+
 ## 3. `get_stage_sales_rows` — row-level de venda (39.I3)
 
 `GET /api/public/v1/projects/{projectId}/stages/{stageId}/sales-rows` — **1 linha por TRANSAÇÃO**, mesmas fontes do sales-daily (`resolveSalesSheetsForStage`: subtypes de venda + capture-fallback em paid + herança do perpétuo). Leitura AO VIVO da planilha (cache de 30s).
