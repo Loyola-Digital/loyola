@@ -23,8 +23,10 @@ import { Badge } from "@/components/ui/badge";
 import {
   useAnalisarSwipe, useCreateSwipeFile, useLinkPreview, useUploadToBucket, readMediaDimensions,
   type AssetKind, type LinkPreview, type SugestaoDeSwipe, type SwipeFacets,
+  useMexerNaColecao,
 } from "@/lib/hooks/use-swipe-files";
 import { mimeDoArquivo } from "@/lib/utils/plano-da-pasta";
+import { SeletorDeColecao } from "@/components/swipe-files/seletor-de-colecao";
 
 const MAX_BYTES = 200 * 1024 * 1024;
 
@@ -117,6 +119,7 @@ export function AddSwipeDialog({
 }) {
   const createSwipe = useCreateSwipeFile();
   const upload = useUploadToBucket();
+  const mexerNaColecao = useMexerNaColecao();
   const analisar = useAnalisarSwipe();
   // O que a IA está fazendo agora. Um PDF leva de 20 a 60 s: um spinner mudo
   // durante um minuto é indistinguível de uma tela travada.
@@ -128,6 +131,8 @@ export function AddSwipeDialog({
   /** O que a IA sugeriu — para a tela dizer quais campos vieram dela. */
   const [sugeridos, setSugeridos] = useState<Set<string>>(new Set());
   const [localPreview, setLocalPreview] = useState<string | null>(null);
+  /** Coleção onde a referência entra ao ser salva. `null` = nenhuma. */
+  const [colecao, setColecao] = useState<string | null>(null);
   const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
   const [progress, setProgress] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -158,6 +163,7 @@ export function AddSwipeDialog({
     setNiche("");
     setPlatform("");
     setFormat("");
+    setColecao(null);
     setTagInput("");
     setTags([]);
   }
@@ -320,13 +326,15 @@ export function AddSwipeDialog({
         fileUrl = r.publicUrl;
         fileKey = r.key;
       }
-      await createSwipe.mutateAsync({
+      const criada = await createSwipe.mutateAsync({
         title: title.trim(),
         assetKind,
         notes: notes.trim() || undefined,
         fileUrl,
         fileKey,
-        fileMime: file?.type,
+        // O mime resolvido, não o que o navegador disse: para arquivo do disco
+        // ele manda `application/octet-stream`, e isso ia parar no banco.
+        fileMime: mimeDoAnexo ?? undefined,
         fileSizeBytes: file?.size,
         width: dims?.width,
         height: dims?.height,
@@ -337,6 +345,21 @@ export function AddSwipeDialog({
         format: format.trim() || undefined,
         tags,
       });
+
+      /**
+       * A coleção entra DEPOIS de criar, e a falha aqui não desfaz a criação.
+       *
+       * A referência já está na biblioteca — perdê-la porque o vínculo falhou
+       * seria trocar um problema pequeno (ficou sem coleção) por um grande
+       * (subiu o arquivo e não ficou nada).
+       */
+      if (colecao) {
+        try {
+          await mexerNaColecao.mutateAsync({ id: colecao, adicionar: [criada.id] });
+        } catch {
+          toast.warning("Salvei a referência, mas não consegui pôr na coleção.");
+        }
+      }
       toast.success("Referência adicionada à biblioteca");
       reset();
       onOpenChange(false);
@@ -578,6 +601,15 @@ export function AddSwipeDialog({
               sugestoes={[...new Set([...valores(facets.format), ...FORMATOS])]}
             />
           </div>
+
+          {/* Onde ela vai morar. Fica junto dos campos de catalogação porque
+              é a mesma decisão: como esta referência vai ser reencontrada. */}
+          <SeletorDeColecao
+            valor={colecao}
+            onEscolher={setColecao}
+            rotulo="Salvar na coleção"
+            ajuda="Dá para mudar depois, pelo botão no visualizador."
+          />
 
           <div className="space-y-1.5">
             <Label htmlFor="swipe-tags">Tags</Label>
