@@ -608,6 +608,42 @@ describe("Story 44.20 — gargalo e pendências derivadas", () => {
     // E o principal da gratuita é CPL, nunca CAC.
     expect((p.etapas[0].principal as { metrica: string }).metrica).toBe("cplReal");
   });
+
+  /**
+   * Story 44.25 (AC8) — a etapa promovida entra no Panorama com o rótulo CAC,
+   * sem número, e a supressão ENTRA na lista de pendências.
+   *
+   * ⚠️ Este teste existe para deixar o efeito colateral VISÍVEL, não para
+   * aprová-lo. `pendenciasRepassadas` lista todo `motivo` que venha com
+   * `message` (`panorama-do-projeto.ts:379`), e `reguaDivergente` vem — logo
+   * ele aparece ao lado de `semDados`/`syncPendente`/`leituraFalhou`, que são
+   * lacunas de CONFIGURAÇÃO com ação do operador. Esta não é: a ação é a Story
+   * 44.28, e é de engenharia.
+   *
+   * O `llms.txt` declara a exceção para que o Inácio não a agrupe em "o que
+   * configurar hoje". Se o @po preferir que ela deixe de ser pendência, o lugar
+   * é `pendenciasRepassadas` — e este teste é quem vai acusar a mudança.
+   */
+  it("AC8: a etapa promovida entra com metrica cacReal, valor null, e a supressão vira pendência", async () => {
+    const f = fixture();
+    f.set(funnelStages, [[etapa({ stageType: "free", funnelType: "perpetual" })]]);
+    f.set(metaAdInsightsDaily, [serieComTeto()]);
+    f.set(publicMetricsCache, [
+      [{ payload: { uniqueLeads: 40, fonte: "planilha_leads" }, computedAt: new Date("2026-08-27T00:00:00Z") }],
+    ]);
+
+    const p = (await montarPanoramaDoProjeto(fakeDb(f), config, PROJ, OPTS))!;
+    const principal = p.etapas[0].principal as { metrica: string; valor: number | null; motivo?: string };
+
+    expect(p.etapas[0].familia).toBe("paga");
+    expect(principal.metrica).toBe("cacReal");
+    expect(principal.valor).toBeNull();
+    expect(principal.motivo).toBe("reguaDivergente");
+
+    const pend = p.pendencias.find((x) => x.codigo === "reguaDivergente");
+    expect(pend).toBeDefined();
+    expect(pend!.origem).toBe("cadeia");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────

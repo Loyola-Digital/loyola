@@ -117,6 +117,16 @@ export interface EtapaDaCadeia {
   id: string;
   name: string;
   stageType: string | null;
+  /**
+   * Story 44.25 — o tipo do FUNIL (`launch`, `perpetual`, `mobile`, …).
+   *
+   * Entra na classificação de família porque num funil `perpetual` o
+   * `stage_type` não descreve o que a etapa mede: ele é o default `free` da
+   * coluna, e a etapa é o dashboard de venda inteiro. `classificarFamilia`
+   * (`shared/src/cadeia-cac.ts`) documenta a regra e por que ela não é um
+   * `UPDATE` no banco.
+   */
+  funnelType: string | null;
   campaigns: unknown;
   /** Story 44.9 AC4 — `null` = não respondido, diferente de `false`. */
   lpTemVsl: boolean | null;
@@ -144,6 +154,9 @@ export async function resolverEtapaDoProjeto(
       id: funnelStages.id,
       name: funnelStages.name,
       stageType: funnelStages.stageType,
+      // Story 44.25: o `innerJoin` contra `funnels` já existe pela prova de
+      // vínculo — o tipo do funil sai dele sem query extra.
+      funnelType: funnels.type,
       campaigns: funnelStages.campaigns,
       lpTemVsl: funnelStages.lpTemVsl,
       ticketMedioManual: funnelStages.ticketMedioManual,
@@ -211,7 +224,38 @@ export async function montarPayloadCadeiaCac(
   // Família `null` = a etapa está FORA da aba (`lyrio`, `comercial`,
   // `debriefing`, ou um tipo novo). 200 com o motivo — fora da aba é
   // resultado, não erro (spec §1).
-  const familia = classificarFamilia(stage.stageType);
+  //
+  // Story 44.25: o tipo do FUNIL entra na conta — num `perpetual`, uma etapa
+  // `free`/`cpl` é o dashboard de venda e a família é paga.
+  const familia = classificarFamilia(stage.stageType, stage.funnelType);
+
+  /**
+   * Story 44.25 (AC3) — a etapa capta lead pelo TIPO DELA, não pela família.
+   *
+   * O perpétuo é o caso: `stage_type = 'free'` capta lead pela planilha
+   * `n8n-leads-captacao` dentro de um funil de venda. A família é paga — o
+   * número que manda é o CAC —, e o CPL segue existindo como diagnóstico de
+   * topo (briefing §3.2: métrica secundária).
+   *
+   * ⚠️ Ler o cache pela FAMÍLIA perderia o CPL aqui; lê-lo em toda etapa paga
+   * custaria uma query por etapa no panorama, onde N cresce — a nota de
+   * `OpcoesDoPanorama` mediu 676 ms → 15.137 ms quando o panorama multiplicou
+   * uma leitura cara por N. A condição certa é o tipo, e ela preserva
+   * exatamente o conjunto de etapas que já lia.
+   */
+  const captaLead = classificarFamilia(stage.stageType) === "gratuita";
+
+  /**
+   * Story 44.25 (AC8) — a etapa é paga porque o FUNIL a promoveu, não porque o
+   * tipo dela dizia isso.
+   *
+   * Reusa `captaLead` de propósito: "seria gratuita pelo tipo, é paga com o
+   * funil" É a definição de promovida. Uma segunda chamada a
+   * `classificarFamilia` só para reperguntar o mesmo abriria a porta de as duas
+   * divergirem.
+   */
+  const promovidaPeloFunil = familia === "paga" && captaLead;
+
   if (familia === null) {
     return {
       ...base,
@@ -276,7 +320,8 @@ export async function montarPayloadCadeiaCac(
    */
   let lead: LeadOriginPayload | undefined;
   let leadComputedAt: Date | null = null;
-  if (familia === "gratuita") {
+  // Story 44.25 (AC3): `captaLead`, não `familia` — ver a nota lá em cima.
+  if (captaLead) {
     const [row] = await db
       .select({ payload: publicMetricsCache.payload, computedAt: publicMetricsCache.computedAt })
       .from(publicMetricsCache)
@@ -584,18 +629,96 @@ export async function montarPayloadCadeiaCac(
     } else {
       const v = vendasDoPeriodo(fresh.payload, range);
       vendasSemDataNoTotal = v.vendasSemDataNoTotal;
-      // ⚠️ `cacReal` sai mesmo com cobertura de atribuição 0% — ele depende
-      // do TOTAL da etapa, não da atribuição por campanha. É a propriedade
-      // que motivou a v1.1 inteira. `null` aqui só quando não há venda.
-      principal = {
-        metrica: "cacReal",
-        valor: cacReal(agregado.spend, v.vendas),
-        spend: agregado.spend,
-        vendasReais: v.vendas,
-        ...(v.vendas === 0 ? { motivo: "semDados" as const } : {}),
-        dataSource: fresh.source,
-        computedAt: fresh.computedAt,
-      };
+      /**
+       * Story 44.25 (AC8) — na etapa PROMOVIDA, o rótulo sai e o número não.
+       *
+       * ## O que foi medido
+       *
+       * Em 07/09/2026, na `bbe-funil-churrasco`, janela de 30 dias:
+       *
+       *     esta rota          R$ 15.841,75 ÷ 124 vendas = CAC R$ 127,76
+       *     aba Meta Ads       R$ 15.757,56 ÷  73 vendas = CAC R$ 215,86
+       *
+       * O investimento bate (0,5%, sync mais fresco). O denominador não: a
+       * régua daqui (`sales-daily-sync`, dedup por `txId+produto`) conta 70% a
+       * mais que a do dashboard perpétuo (checkout/comprador com classificação
+       * de produto — Stories 18.68, 29.61, 29.75).
+       *
+       * ## Por que suprimir, e não publicar com aviso
+       *
+       * `meta-ads` e `cadeia-cac` são **abas irmãs da mesma etapa**
+       * (`menu-de-abas.ts`): a divergência fica a um clique. Antes da 44.25 o
+       * rótulo era CPL e ninguém comparava; ao renomear para CAC, a story
+       * convida exatamente a comparação que falha. É a classe de defeito que o
+       * Epic 44 existe para impedir — o `connectRate` custou um ano.
+       *
+       * E o erro tem DIREÇÃO: o CAC sai otimista. Numa tela de decisão de
+       * verba, isso empurra para escalar. Aviso não neutraliza número.
+       *
+       * Vale a regra 7.4 da spec: ausência é declarada, nunca vira `0` nem
+       * estimativa.
+       *
+       * ⚠️ **Isto é TEMPORÁRIO e tem dono: a Story 44.28 (AC6) remove esta
+       * supressão** ao unificar a régua. Sem aquele AC, uma medida de meses
+       * vira permanente por esquecimento.
+       *
+       * Os diagnósticos continuam viajando (`vendasReais`, `dataSource`,
+       * `computedAt`): quem quiser o número desta régua consegue derivá-lo, e
+       * sabe de qual régua ele veio.
+       */
+      if (promovidaPeloFunil) {
+        principal = {
+          metrica: "cacReal",
+          valor: null,
+          motivo: "reguaDivergente",
+          /**
+           * ⚠️ **Sem número fixo aqui, e a razão é a validação visual de
+           * 08/09/2026.**
+           *
+           * A primeira versão desta mensagem trazia "124 contra 73 vendas,
+           * medido em 07/09/2026" — os números do BBE. A mensagem é a MESMA
+           * para as três etapas promovidas, então o operador do `fz-a1` lia
+           * "124 contra 73" olhando para um card que dizia 1.622 vendas e uma
+           * aba Meta Ads que dizia 267. Um número concreto que não descreve
+           * nada da tela é pior que nenhum: convida a conferir e não fecha.
+           *
+           * Calcular a comparação ao vivo também não serve: o outro lado é o
+           * dashboard perpétuo, que é rota autenticada e outra régua — é
+           * exatamente o que a 44.28 vai unificar. Enquanto não houver as duas
+           * contagens no mesmo lugar, a mensagem descreve a NATUREZA da
+           * divergência, não a magnitude.
+           *
+           * E o texto é de OPERADOR: `txId+produto`, `spend`, `vendasReais` e
+           * o número da story saíram daqui e vivem neste comentário e no
+           * `llms.txt`, que é onde dev e agente leem.
+           */
+          /**
+           * ⚠️ Curta de propósito: este texto sai em DOIS lugares — o card da
+           * aba e a lista de pendências do Panorama, que o repassa literal.
+           * A validação visual reprovou a primeira versão ali: cinco linhas no
+           * meio de itens de uma linha.
+           */
+          message:
+            "CAC não publicado: esta aba e a aba Meta Ads contam vendas de formas diferentes e os totais divergem. Use o CAC da aba Meta Ads. O investimento e as vendas mostrados aqui seguem válidos.",
+          spend: agregado.spend,
+          vendasReais: v.vendas,
+          dataSource: fresh.source,
+          computedAt: fresh.computedAt,
+        };
+      } else {
+        // ⚠️ `cacReal` sai mesmo com cobertura de atribuição 0% — ele depende
+        // do TOTAL da etapa, não da atribuição por campanha. É a propriedade
+        // que motivou a v1.1 inteira. `null` aqui só quando não há venda.
+        principal = {
+          metrica: "cacReal",
+          valor: cacReal(agregado.spend, v.vendas),
+          spend: agregado.spend,
+          vendasReais: v.vendas,
+          ...(v.vendas === 0 ? { motivo: "semDados" as const } : {}),
+          dataSource: fresh.source,
+          computedAt: fresh.computedAt,
+        };
+      }
     }
   } else {
     // Story 44.12 (AC4): `lead` já foi lido lá em cima, para a guarda. Reusar.

@@ -301,7 +301,11 @@ export default function StagePage() {
   const menuDeAbas = montarMenuDeAbas({
     funnelType,
     ehCaptacaoPagaStage,
-    familiaCadeiaCac: classificarFamilia(stage.stageType),
+    // Story 44.25 (AC5): o `funnelType` entra na classificação — sem ele a aba
+    // diria "gratuita" onde a API diz "paga", e telas que divergem da API são a
+    // classe de defeito que o Epic 44 existe para impedir (o `connectRate`
+    // ficou 18 a 35 p.p. errado por mais de um ano — Story 44.2).
+    familiaCadeiaCac: classificarFamilia(stage.stageType, funnelType),
   });
   const activeTab = resolverAbaAtiva(menuDeAbas, abaEscolhida ?? abaSolicitada);
 

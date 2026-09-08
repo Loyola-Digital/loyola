@@ -167,6 +167,16 @@ const FAMILIA_PAGA = ["paid", "sales", "event_capture", "event"] as const;
 const FAMILIA_GRATUITA = ["free", "cpl"] as const;
 
 /**
+ * Story 44.25 — funis cujo dashboard é de VENDA, qualquer que seja o
+ * `stage_type` da etapa.
+ *
+ * Um perpétuo não tem etapas no sentido do lançamento (Story 29.6): tem UMA
+ * etapa que serve de porta para o dashboard inteiro, e o `stage_type` dela é
+ * detalhe de configuração, não declaração do que ela mede.
+ */
+const FUNIS_DE_VENDA = ["perpetual"] as const;
+
+/**
  * Classificação PRÓPRIA da aba (spec §1).
  *
  * ⚠️ Não use `ehCaptacaoPaga()` nem irmãos: `ehCaptacaoPaga` = `paid` +
@@ -176,11 +186,55 @@ const FAMILIA_GRATUITA = ["free", "cpl"] as const;
  *
  * `null` = fora da aba (`lyrio`, `comercial`, `debriefing`, ou tipo novo).
  * Fora da aba é resultado, não erro: a spec manda reportar, não inventar.
+ *
+ * ## Story 44.25 — o funil PROMOVE a etapa gratuita, e só ela
+ *
+ * `bbe-funil-churrasco` é a etapa única de um funil `perpetual` com 18
+ * campanhas `--venda--perpetuo--` e R$ 61 mil faturados em 90 dias. O
+ * `stage_type` dela é `free` — o default da coluna (`schema.ts:799`), nunca
+ * escolhido —, e por isso a aba a lia como captação gratuita: sem CAC, sem
+ * ROAS, sem faturamento, com o CPL no lugar do número que manda. A diretoria
+ * recebeu "no ar e saudável" sobre um funil com ROAS 7d de 1,47x contra meta
+ * de 2x, e 3 dos últimos 7 dias com margem negativa.
+ *
+ * ⚠️ **A promoção alcança só `free`/`cpl`, e a restrição não é cautela: é
+ * dado.** Varredura do banco em 2026-09-07 — dos 6 stages em funil `perpetual`
+ * ativo, **dois não são de venda**:
+ *
+ *     BBE / bbe-fh  / Funil       stage_type = "mapa"        ← sem métrica própria
+ *     PP  / pps1    / Comercial   stage_type = "comercial"   ← fora da aba
+ *
+ * Promover por funil sem olhar o tipo faria os dois pedirem CAC no Panorama —
+ * e `mapa` é o desenho do funil, que por definição não tem métrica. Quando o
+ * tipo da etapa diz explicitamente "fora da aba", ele vence.
+ *
+ * ⚠️ **Corrigir isso pelo banco (`stage_type = 'sales'`) quebra a fonte de
+ * vendas.** A planilha do perpétuo vive no FUNIL (`funnel_spreadsheets`
+ * type='perpetual_sales', stage_id NULL) e é herdada pela etapa em
+ * `resolveSalesSheetsForStage` (`sales-daily-sync.ts:168`) SOMENTE quando
+ * `ehEtapaDeCaptacao(stageType)` — que é `application|paid|event_capture|free`.
+ * Com `sales`, a herança some e a etapa volta a `semDados`: exatamente o bug M1
+ * que o mapeamento de julho/2026 fechou. Conferido no banco: os 4 perpétuos de
+ * produção têm ZERO planilha de etapa e vivem inteiramente dessa herança.
+ *
+ * Por isso a correção mora aqui — na classificação da aba, que é quem tem essa
+ * pergunta a responder — e não no dado.
+ *
+ * `funnelType` é opcional para não obrigar o chamador que legitimamente não o
+ * tem em mãos; quando ausente, a regra é a de sempre.
  */
-export function classificarFamilia(stageType: string | null | undefined): Familia | null {
+export function classificarFamilia(
+  stageType: string | null | undefined,
+  funnelType?: string | null | undefined,
+): Familia | null {
   if (!stageType) return null;
   if ((FAMILIA_PAGA as readonly string[]).includes(stageType)) return "paga";
-  if ((FAMILIA_GRATUITA as readonly string[]).includes(stageType)) return "gratuita";
+  if ((FAMILIA_GRATUITA as readonly string[]).includes(stageType)) {
+    // A promoção age só sobre a família gratuita — ver a varredura acima.
+    return funnelType && (FUNIS_DE_VENDA as readonly string[]).includes(funnelType)
+      ? "paga"
+      : "gratuita";
+  }
   return null;
 }
 

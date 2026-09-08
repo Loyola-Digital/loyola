@@ -224,11 +224,13 @@ export function registerTools(server: McpServer, client: LoyolaClient): void {
       description:
         "A Cadeia de CAC de uma etapa — o MESMO payload que a aba 'Inácio' do painel renderiza (Epic 44). " +
         "PREFIRA esta tool a recompor a cadeia à mão a partir de get_stage_daily: CPM, CTR, CPC, Connect Rate, Conv. LP, tetos por janela de 7 dias, ranking do gargalo e benchmarks já vêm calculados com a régua da spec — recalcular por fora cria uma segunda régua que diverge da tela. " +
-        "O número principal MUDA de métrica com a família da etapa: cacReal (spend ÷ vendas) na família paga (paid/sales/event_capture/event), cplReal (spend ÷ leads únicos) na gratuita (free/cpl) — numa etapa gratuita o principal NÃO é CAC. " +
+        "O número principal MUDA de métrica com a família da etapa: cacReal (spend ÷ vendas) na família paga (paid/sales/event_capture/event), cplReal (spend ÷ leads únicos) na gratuita (free/cpl) — numa etapa de família gratuita o principal NÃO é CAC. " +
+        "⚠️ LEIA O CAMPO `familia`, NUNCA deduza do `stageType` (Story 44.25): num funil `perpetual`, uma etapa `free`/`cpl` é promovida à família PAGA e o principal É cacReal — ali o stage_type é o default da coluna, não uma escolha, e a etapa é o dashboard de venda do perpétuo. Vale hoje para bbe-fc1-a1-mai-26, fz-a1 e pps1. A promoção alcança só free/cpl: `mapa` e `comercial` dentro de perpétuo seguem familia:null. " +
         "`criativos` aqui é SÓ das campanhas desta etapa; get_creative_performance é do PROJETO inteiro e mistura funis. " +
         "Taxas em decimal (0.0192 = 1,92%); spend já inclui o imposto Meta. " +
         "familia:null não é erro — é etapa fora da aba (lyrio/comercial/debriefing), com motivo 'foraDaAba'. " +
-        "Cada `motivo` pede uma ação diferente (semDados=conectar fonte, syncPendente=esperar o sync, leituraFalhou=checar permissão): não colapse em 'sem dados'.",
+        "Cada `motivo` pede uma ação diferente (semDados=conectar fonte, syncPendente=esperar o sync, leituraFalhou=checar permissão): não colapse em 'sem dados'. " +
+        "EXCEÇÃO: `reguaDivergente` NÃO é ação de ninguém e não entra em lista de pendências — significa que a etapa TEM CAC mas esta rota ainda não o publica (a base de vendas daqui conta transações dedupadas; o dashboard perpétuo conta checkouts/compradores). Para o CAC dessa etapa, use o número do dashboard perpétuo e diga de onde veio; `spend` e `vendasReais` desta rota seguem confiáveis.",
       inputSchema: {
         projectId: z.string().uuid().describe("ID do projeto (de list_projects)."),
         stageId: z.string().describe("ID da etapa (de list_stages)."),
