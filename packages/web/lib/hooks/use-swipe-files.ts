@@ -193,8 +193,16 @@ export function useExcluirColecao() {
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => apiClient(`${BASE}/colecoes/${id}`, { method: "DELETE" }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["swipe-colecoes"] }),
+    mutationFn: ({ id, comAsPecas }: { id: string; comAsPecas?: boolean }) =>
+      apiClient<{ ok: boolean; colecoesApagadas: number; pecasApagadas: number }>(
+        `${BASE}/colecoes/${id}${comAsPecas ? "?comAsPecas=1" : ""}`,
+        { method: "DELETE" },
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["swipe-colecoes"] });
+      // A grade pode estar mostrando peças que acabaram de ser apagadas.
+      void qc.invalidateQueries({ queryKey: ["swipe-files"] });
+    },
   });
 }
 
