@@ -499,15 +499,73 @@ export default fp(async function swipeFilesRoutes(fastify) {
   fastify.delete(`${base}/colecoes/:id`, async (request, reply) => {
     if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
-    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const q = z
+      .object({ comAsPecas: z.enum(["1", "true"]).optional() })
+      .safeParse(request.query);
+    if (!p.success || !q.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const levarAsPecas = Boolean(q.data.comAsPecas);
 
-    const apagadas = await fastify.db
-      .delete(swipeCollections)
-      .where(eq(swipeCollections.id, p.data.id))
-      .returning({ id: swipeCollections.id });
+    /**
+     * A coleção e tudo que está dentro dela.
+     *
+     * Apagar a mãe já derruba as filhas por `CASCADE`, mas para saber QUAIS
+     * peças ficariam órfãs é preciso conhecer a árvore antes — depois do
+     * delete, os vínculos já não existem.
+     */
+    const arvore = await fastify.db.execute<{ id: string }>(sql`
+      WITH RECURSIVE t AS (
+        SELECT id FROM swipe_collections WHERE id = ${p.data.id}
+        UNION ALL
+        SELECT c.id FROM swipe_collections c JOIN t ON c.parent_id = t.id
+      )
+      SELECT id FROM t
+    `);
+    const ids = (arvore.rows ?? arvore).map((r: { id: string }) => r.id);
+    if (ids.length === 0) return reply.code(404).send({ error: "Coleção não encontrada" });
 
-    if (apagadas.length === 0) return reply.code(404).send({ error: "Coleção não encontrada" });
-    return { ok: true };
+    let pecasApagadas = 0;
+    if (levarAsPecas) {
+      /**
+       * Só as peças EXCLUSIVAS desta árvore.
+       *
+       * Uma referência que também está em "Referências de escassez" não pode
+       * sumir porque a coleção do lançamento foi apagada — ela foi separada
+       * para dois usos, e um deles continua valendo.
+       */
+      const exclusivas = await fastify.db.execute<{ id: string; file_key: string | null }>(sql`
+        SELECT s.id, s.file_key
+        FROM swipe_files s
+        WHERE EXISTS (
+          SELECT 1 FROM swipe_collection_items i
+          WHERE i.swipe_id = s.id AND i.collection_id = ANY(${ids}::uuid[])
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM swipe_collection_items i
+          WHERE i.swipe_id = s.id AND i.collection_id <> ALL(${ids}::uuid[])
+        )
+      `);
+      const linhas = (exclusivas.rows ?? exclusivas) as { id: string; file_key: string | null }[];
+
+      if (linhas.length > 0) {
+        // O objeto sai do bucket ANTES da linha: sem a linha, ninguém mais
+        // sabe qual é a chave, e o arquivo fica pago para sempre.
+        await Promise.all(
+          linhas
+            .filter((l) => l.file_key)
+            .map((l) => deleteObject(storage(), l.file_key as string).catch(() => {})),
+        );
+        await fastify.db.delete(swipeFiles).where(
+          inArray(
+            swipeFiles.id,
+            linhas.map((l) => l.id),
+          ),
+        );
+        pecasApagadas = linhas.length;
+      }
+    }
+
+    await fastify.db.delete(swipeCollections).where(eq(swipeCollections.id, p.data.id));
+    return { ok: true, colecoesApagadas: ids.length, pecasApagadas };
   });
 
   /** Põe ou tira peças de uma coleção. Repetir não duplica. */

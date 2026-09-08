@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { SwipeFile } from "@/lib/hooks/use-swipe-files";
+import { PaginaSalva } from "@/components/swipe-files/pagina-salva";
 
 function fmtWhen(iso: string): string {
   const d = new Date(iso);
@@ -117,27 +118,9 @@ export function SwipeLightbox({
         {/* Mídia */}
         <div className="flex min-w-0 flex-1 items-center justify-center bg-black/40 p-2">
           {item.assetKind === "html" && item.fileUrl ? (
-            /*
-              A página salva, renderizada de verdade.
-
-              ## O `sandbox` sem `allow-scripts` e sem `allow-same-origin`
-
-              O arquivo veio de fora e pode conter qualquer coisa. Sem essas
-              duas permissões o navegador o trata como origem opaca: o JS não
-              roda, e nada ali dentro alcança a sessão de quem está vendo. O
-              CSS continua valendo, que é o que interessa — a página aparece
-              como era.
-
-              `allow-popups` fica de fora pelo mesmo motivo: um `window.open`
-              de página de vendas salva é anúncio, não conteúdo.
-            */
-            <iframe
-              src={item.fileUrl}
-              title={item.title}
-              sandbox=""
-              referrerPolicy="no-referrer"
-              className="h-[86vh] w-full rounded bg-white"
-            />
+            /* Ver `PaginaSalva`: o conteúdo é buscado e injetado, para a
+               renderização não depender do `Content-Type` do storage. */
+            <PaginaSalva url={item.fileUrl} titulo={item.title} />
           ) : item.assetKind === "pdf" && item.fileUrl ? (
             // `<iframe>` e não `<embed>`: o visualizador nativo do navegador dá
             // zoom, busca e paginação de graça. O botão de abrir em aba fica no

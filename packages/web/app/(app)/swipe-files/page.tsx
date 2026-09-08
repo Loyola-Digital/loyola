@@ -324,6 +324,14 @@ export default function SwipeFilesPage() {
   const [view, setView] = useState<"tudo" | "colecoes">("tudo");
   /** A coleção aberta dentro da view de coleções. */
   const [colecaoAberta, setColecaoAberta] = useState<ColecaoDoSwipe | null>(null);
+  /**
+   * Em que nível da árvore de coleções estamos.
+   *
+   * Separado de `colecaoAberta` porque são duas coisas: navegar PARA DENTRO
+   * (ver as subcoleções) e ABRIR (ver as referências). Um estado só faria
+   * entrar numa pasta ser a mesma coisa que listar o conteúdo dela.
+   */
+  const [nivelDeColecao, setNivelDeColecao] = useState<ColecaoDoSwipe | null>(null);
   /** De qual peça o menu "salvar em" está aberto. */
   const [salvando, setSalvando] = useState<string | null>(null);
 
@@ -458,6 +466,7 @@ export default function SwipeFilesPage() {
             onClick={() => {
               setView(chave);
               setColecaoAberta(null);
+              setNivelDeColecao(null);
             }}
             className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-[13px] transition-colors ${
               view === chave
@@ -474,6 +483,8 @@ export default function SwipeFilesPage() {
       {/* A lista de coleções. Abrir uma volta para a grade, filtrada. */}
       {view === "colecoes" && !colecaoAberta && (
         <GradeDeColecoes
+          paiAtual={nivelDeColecao}
+          onEntrar={setNivelDeColecao}
           onAbrir={(c) => {
             setColecaoAberta(c);
             // Filtros de antes não se aplicam à coleção recém-aberta: a
