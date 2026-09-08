@@ -329,14 +329,135 @@ export function calcularMetricas(a: Agregado, familia: Familia): Metricas {
  *
  * ⚠️ Só venda de status PAGO entra (regra 7.1). `purchases`/`revenue` de
  * endpoint Meta são pixel e não substituem.
+ *
+ * @deprecated **Story 44.26 — núcleo sem janela.** Em produção use
+ * `cacRealNaJanela`, que exige numerador e denominador medidos no mesmo
+ * intervalo. Esta assinatura recebe dois `number` soltos e não tem como
+ * recusar uma divisão entre janelas diferentes — foi por ela que passou o
+ * "CPL Real R$ 3,17" publicado à diretoria. Continua exportada porque os
+ * testes dourados da spec §8 a usam como referência da fórmula.
  */
 export function cacReal(spend: number, vendasReais: number): number | null {
   return div(spend, vendasReais);
 }
 
-/** `CPL real = spend ÷ leads únicos do Loyola` (total da etapa). Imune a atribuição. */
+/**
+ * `CPL real = spend ÷ leads únicos do Loyola` (total da etapa). Imune a atribuição.
+ *
+ * @deprecated **Story 44.26 — núcleo sem janela.** Use `cplRealNaJanela`. Ver
+ * a nota de `cacReal` acima: esta é a assinatura que produziu os três CPLs
+ * divergentes do mesmo funil no mesmo dia.
+ */
 export function cplReal(spend: number, leadsUnicos: number): number | null {
   return div(spend, leadsUnicos);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Razão com janela obrigatória (Story 44.26)
+// ─────────────────────────────────────────────────────────────
+
+/** O intervalo fechado em que um número foi medido. `YYYY-MM-DD` nas duas pontas. */
+export interface Periodo {
+  de: string;
+  ate: string;
+}
+
+/**
+ * Um número que **carrega a janela em que foi medido**.
+ *
+ * O tipo existe para tornar impossível o que aconteceu com o CPL: `cplReal`
+ * (logo acima) recebe dois `number` soltos e não tem como saber que o primeiro
+ * é de um dia e o segundo, de dois meses. Aqui a janela viaja colada ao valor,
+ * e a razão a confere antes de dividir.
+ */
+export interface Medido {
+  valor: number;
+  periodo: Periodo;
+}
+
+/** Por que uma razão não saiu. Cada motivo pede uma ação diferente. */
+export type MotivoDaRazao = "semDados" | "janelasDiferentes";
+
+export interface Razao {
+  valor: number | null;
+  /** A janela do resultado. `null` quando ele não saiu. */
+  periodo: Periodo | null;
+  motivo?: MotivoDaRazao;
+  message?: string;
+}
+
+export function mesmoPeriodo(a: Periodo, b: Periodo): boolean {
+  return a.de === b.de && a.ate === b.ate;
+}
+
+function textoDoPeriodo(p: Periodo): string {
+  return `${p.de}..${p.ate}`;
+}
+
+/**
+ * `numerador ÷ denominador`, **e só quando os dois foram medidos na mesma janela**.
+ *
+ * ## O defeito que isto fecha
+ *
+ * O Resumão de 06/09/2026 publicou "CPL Real R$ 3,17" para uma etapa que capta
+ * a R$ 164 no mês. O número era real e a conta, aritmeticamente correta:
+ *
+ * ```
+ *   R$ 687,93  (investimento de UM dia, 06/09)
+ *   ÷ 217      (leads únicos de 07/07 a 06/09, 62 dias)
+ *   = R$ 3,17
+ * ```
+ *
+ * O mesmo contador de 217 dividiu R$ 15.759,45 (30 dias) no Panorama, dando
+ * R$ 72,62, e R$ 25.898,88 (90 dias) na Cadeia de CAC, dando R$ 119,35. Três
+ * CPLs para o mesmo funil no mesmo dia, com numerador e denominador em janelas
+ * distintas, e nada avisando.
+ *
+ * Um erro de escala nunca aparece como erro: R$ 3,17 é um CPL plausível, e foi
+ * publicado à diretoria como sinal de saúde.
+ *
+ * ⚠️ **Janelas diferentes devolvem `null` com motivo, jamais uma estimativa.**
+ * Escalar o denominador pela proporção de dias (`217 × 7/62`) inventaria uma
+ * distribuição uniforme que os dados desmentem — nesta etapa foram 26 leads na
+ * última semana contra 104 no último mês.
+ */
+export function razaoNaJanela(numerador: Medido, denominador: Medido): Razao {
+  if (!mesmoPeriodo(numerador.periodo, denominador.periodo)) {
+    return {
+      valor: null,
+      periodo: null,
+      motivo: "janelasDiferentes",
+      message:
+        `O numerador foi medido em ${textoDoPeriodo(numerador.periodo)} e o denominador em ` +
+        `${textoDoPeriodo(denominador.periodo)}. Uma razão entre janelas diferentes não tem ` +
+        `significado — meça os dois no mesmo intervalo ou reporte "sem dado".`,
+    };
+  }
+  const valor = div(numerador.valor, denominador.valor);
+  if (valor === null) {
+    return {
+      valor: null,
+      periodo: numerador.periodo,
+      motivo: "semDados",
+      message: `O denominador é zero ou ausente em ${textoDoPeriodo(numerador.periodo)}.`,
+    };
+  }
+  return { valor, periodo: numerador.periodo };
+}
+
+/** `CAC = investimento ÷ vendas`, com as duas pontas na mesma janela. */
+export function cacRealNaJanela(spend: Medido, vendas: Medido): Razao {
+  return razaoNaJanela(spend, vendas);
+}
+
+/** `CPL = investimento ÷ leads`, com as duas pontas na mesma janela. */
+export function cplRealNaJanela(spend: Medido, leads: Medido): Razao {
+  return razaoNaJanela(spend, leads);
+}
+
+/** `ROAS = faturamento ÷ investimento`, com as duas pontas na mesma janela. */
+export function roasNaJanela(faturamento: Medido, spend: Medido): Razao {
+  return razaoNaJanela(faturamento, spend);
 }
 
 // ─────────────────────────────────────────────────────────────

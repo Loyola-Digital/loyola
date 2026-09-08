@@ -87,9 +87,15 @@ export {
   agregadoVazio,
   agregar,
   calcularMetricas,
-  // o número principal
+  // o número principal (núcleo sem janela — @deprecated, ver Story 44.26)
   cacReal,
   cplReal,
+  // razão com janela obrigatória (Story 44.26) — o caminho de produção
+  mesmoPeriodo,
+  razaoNaJanela,
+  cacRealNaJanela,
+  cplRealNaJanela,
+  roasNaJanela,
   // cadeia de decomposição
   custoDaCadeia,
   cliquesPorConversao,
@@ -144,6 +150,10 @@ export type {
   TetosDoGrupo,
   ReferenciasDoGrupo,
   Selo,
+  Periodo,
+  Medido,
+  MotivoDaRazao,
+  Razao,
 } from "./cadeia-cac.js";
 
 export type {

@@ -1,0 +1,191 @@
+storyId: "44.26"
+storyTitle: "Toda razão declara a janela dos dois lados — ou não sai"
+gate: PASS
+reviewer: "@qa (Quinn)"
+reviewedAt: "2026-09-08"
+revisao: 2  # a 1ª foi FAIL; os dois achados foram fechados
+
+# ── RE-GATE (após os fixes) ─────────────────────────────────
+regate:
+  veredito: PASS
+  achados_da_revisao_1:
+    QA-4426-01: FECHADO   # message suprimida no denominador zero + teste espelho no panorama
+    QA-4426-02: FECHADO   # as três entradas do `principal` gratuito no llms.txt
+    QA-4426-03: ACEITO    # sem efeito hoje; vai com a tela na 44.28
+
+  verificacao_independente: >
+    Apliquei uma mutação DIFERENTE da que o @dev usou: em vez de devolver a
+    `message`, **inverti a condição** (`!== "semDados"`), o que preserva o
+    caminho feliz e troca os dois ramos de lugar. Derrubou o teste espelho — o
+    fix está travado no sentido que importa.
+
+  observacao_registrada:
+    id: QA-4426-04
+    severidade: BAIXA
+    titulo: "A proteção é assimétrica: nada trava o lado da CONFIGURAÇÃO"
+    evidencia: >
+      A mesma mutação invertida também remove a `message` do
+      `semCoberturaDiaria` — e **nenhum teste acusou**. Existem 3 asserções
+      sobre `motivo === "semCoberturaDiaria"`
+      (`public-cadeia-cac.test.ts:421,1343,1624`), nenhuma sobre a presença da
+      `message` nem sobre virar pendência no Panorama.
+    porque_importa: >
+      O defeito simétrico do QA-4426-01: em vez de pendência FALSA, seria
+      pendência que SOME. Uma lacuna real de configuração deixaria de aparecer
+      e ninguém saberia que precisa esperar o sync.
+    porque_NAO_bloqueia: >
+      O comportamento está correto e provado; o que falta é uma trava adicional.
+      E os dois lados não têm o mesmo histórico: o de pendência falsa já entrou
+      no repo TRÊS vezes (chamado de 2026-08-14 → 36.9 AC5 → QA-4414-02 →
+      44.26); o simétrico, nenhuma. Bloquear uma terceira rodada por um cenário
+      sem histórico seria desproporcional.
+    recomendacao: >
+      Fechar na 44.28, que mexe neste código de qualquer forma — um teste no
+      panorama provando que `semCoberturaDiaria` VIRA pendência.
+
+  quality_checks_revisao2:
+    code_review:    { status: PASS, nota: "O comentário põe os dois `semDados` lado a lado, com o histórico das três ocorrências. É o tipo de nota que impede a quarta." }
+    unit_tests:     { status: PASS, nota: "O teste espelho fechou o buraco. Assimetria registrada em QA-4426-04, sem bloquear." }
+    acceptance:     { status: PASS, nota: "AC1–AC7 entregues; T7 confirmado contra produção." }
+    no_regressions: { status: PASS, nota: "2.346 passam (era 2.345) com as mesmas 13 de baseline. `llms-txt-contrato` 11/11." }
+    performance:    { status: PASS }
+    security:       { status: PASS }
+    documentation:  { status: PASS, nota: "A linha `:101` do llms.txt agora ENSINA a regra — o que distingue fato de pendência é a ausência de `message`. Era conhecimento que só vivia em teste." }
+
+  nao_verificado:
+    - "Validação visual — as 4 etapas gratuitas seguem sem cache de lead, então não há o que ver na tela. Fica para quando alguma ganhar."
+    - "CodeRabbit — indisponível neste host."
+
+branch: feature/44.26-razao-com-janela-obrigatoria
+commits: []  # nada commitado no momento da revisão
+
+scope: >
+  shared/src/cadeia-cac.ts (Periodo/Medido/Razao/razaoNaJanela + 3 wrappers, @deprecated nos antigos) ·
+  shared/src/index.ts (exports) ·
+  api/src/services/cadeia-cac-payload.ts (periodoDaSerie, cplDaJanela/cplCaptacao, CAC e CPL migrados) ·
+  api/src/__tests__/cadeia-cac.test.ts (+7) · public-cadeia-cac.test.ts (+5, 4 atualizados) ·
+  docs/llms.txt · packages/mcp/src/tools.ts
+
+codeRabbit:
+  status: SKIPPED
+  reason: "CLI em WSL, host macOS. Lacuna declarada, não aprovação."
+
+summary: >
+  O núcleo da story está certo e bem provado: a razão com janela obrigatória
+  fecha o defeito que publicou "CPL Real R$ 3,17", o @dev encontrou sozinho que
+  o `cplReal` da família gratuita tinha o mesmo problema, e a conferência contra
+  produção mostrou o PP subestimando o CPL em 10×. Quatro testes existentes
+  quebraram por codificarem o comportamento antigo, e foram atualizados com o
+  motivo — conduta correta.
+
+  O gate é FAIL por UM achado, e ele não é de opinião: o ramo de denominador
+  zero da família gratuita passou a emitir `message`, o que no Panorama o
+  transforma em pendência de configuração. É a reintrodução do QA-4414-02 — o
+  mesmo defeito que gerou o chamado de 2026-08-14 e que a Story 36.9 AC5
+  fechou. O fix é de uma linha, e o padrão correto está no ramo irmão, 37 linhas
+  acima no mesmo arquivo.
+
+achados:
+  - id: QA-4426-01
+    severidade: ALTA
+    categoria: correctness
+    titulo: "Zero lead na janela virou pendência de configuração — regressão do QA-4414-02"
+    evidencia: >
+      `cadeia-cac-payload.ts:893` espalha `motivo` E `message` juntos:
+
+        ...(cplDaJanela.motivo ? { motivo: cplDaJanela.motivo, message: cplDaJanela.message } : {})
+
+      Com zero leads nos dias com mídia, `razaoNaJanela` devolve
+      `motivo: "semDados"` COM `message` (é o comportamento correto DELA), e o
+      `principal` repassa os dois. Verificado por execução:
+
+        QA>>> motivo: semDados | message presente: true | leadsUnicos: 0
+
+      `panorama-do-projeto.ts:379` desempata pela PRESENÇA de `message`:
+
+        if (motivo && mensagem) { saida.push({ codigo: motivo, ... }) }
+
+      Logo a etapa entra na lista de pendências de configuração.
+    porque_importa: >
+      Mandar conectar uma fonte que JÁ está conectada é exatamente o chamado de
+      2026-08-14 que a Story 36.9 AC5 fechou, e que voltou como QA-4414-02 no
+      gate da 44.14. O repo já pagou por ele duas vezes.
+
+      O ramo da família PAGA preserva a regra corretamente, 37 linhas acima no
+      mesmo arquivo (`:856`):
+
+        ...(v.vendas === 0 ? { motivo: "semDados" as const } : {})
+
+      — motivo sem `message`. A gratuita passou a divergir do irmão.
+
+      ⚠️ **Hoje é latente, não ativo**: nenhuma das 4 etapas de família gratuita
+      tem cache de lead, então nenhuma alcança este ramo. Mas basta o sync
+      popular uma delas para o defeito ficar ativo, e aí ele chega como chamado,
+      não como teste.
+    recomendacao: >
+      Distinguir os dois `semDados`: o de CONFIGURAÇÃO (sem cache, sem
+      cobertura) mantém `message`; o de DENOMINADOR ZERO manda só o `motivo`,
+      como a família paga faz. E um teste no `panorama-do-projeto.test.ts`
+      espelhando o "fonte conectada com ZERO venda" que já existe para a paga —
+      sem ele, a próxima refatoração repete pela terceira vez.
+
+  - id: QA-4426-02
+    severidade: MÉDIA
+    categoria: docs
+    titulo: "O llms.txt documenta o bloco NOVO e esquece que o `principal` da gratuita mudou"
+    evidencia: >
+      `cplCaptacao` está muito bem documentado (`:139-145`). Mas o `principal`
+      da família gratuita também mudou, e a doc segue descrevendo o antigo:
+
+        :122  "família gratuita → `valor = spend ÷ leadsUnicos`"
+        :131  "gratuita | ok | `valor`, `spend`, `leadsUnicos`, `fonteDeLead`"
+        :101  "o fato fica visível em `principal.leadsUnicos: 0`"
+
+      Três coisas mudaram e não estão lá: `leadsUnicos` passou a ser **os leads
+      da janela** (não o total); nasceu `leadsUnicosDaEtapa`; e existe o motivo
+      novo `semCoberturaDiaria`.
+    porque_importa: >
+      É a **segunda vez na mesma leva** que a doc de um lugar é atualizada e a
+      do irmão fica para trás — o QA-4425-05 foi exatamente isto na 44.25. O
+      Inácio vai ler que `leadsUnicos` é o total da etapa e receber o da janela;
+      no BBE seriam 92 onde a doc promete 218.
+    recomendacao: "Atualizar as três entradas do `principal` gratuito no llms.txt."
+
+  - id: QA-4426-03
+    severidade: BAIXA
+    categoria: docs
+    titulo: "A tela mostra `leadsUnicos` sem dizer que agora é da janela"
+    evidencia: "`cadeia-cac-stage-tab.tsx:247` — `${p?.leadsUnicos ?? 0} leads`."
+    porque_importa: >
+      O número mudou de significado sob um rótulo que não mudou. **Sem efeito
+      hoje**: as 4 etapas gratuitas não têm cache (o campo sai `0`) e as
+      promovidas são família paga (mostram vendas). Fica registrado para quando
+      alguma ganhar cache.
+    recomendacao: "Aceitar nesta story; tratar junto da tela na 44.28."
+
+verificacoes_independentes:
+  - "Mutação DIFERENTE da do @dev: removi o recorte por dias com mídia (a decisão de 37% do @po). Derrubou exatamente o teste do AC2 — a decisão está travada."
+  - "Executei o ramo de denominador zero e capturei a saída real — origem do QA-4426-01. Não deduzi do código."
+  - "Rastreei os consumidores de `principal.leadsUnicos` fora de artefatos de build: a tela, o `panorama-view`, o hook e o llms.txt."
+
+quality_checks:
+  code_review:      { status: PASS, nota: "`cplDaJanela` subiu para antes do `principal` e é reusado pelos dois ramos — duas contas do mesmo número seria o defeito de novo. O @dev viu isso sozinho." }
+  unit_tests:       { status: CONCERNS, nota: "12 casos novos, prova de reversão sólida (valor cai 4×). Falta o teste do denominador zero na gratuita — o buraco por onde o QA-4426-01 passou." }
+  acceptance:       { status: PASS, nota: "AC1–AC7 entregues. T7 confirma as relações do @po: BBE 2,37× e PP 10,13×." }
+  no_regressions:   { status: FAIL, nota: "QA-4426-01 — regressão latente do QA-4414-02 no ramo de denominador zero." }
+  performance:      { status: PASS, nota: "Nenhuma leitura nova; o cache de lead já era lido desde a 44.25." }
+  security:         { status: PASS, nota: "Sem superfície nova." }
+  documentation:    { status: CONCERNS, nota: "O bloco novo está exemplar; o `principal` da gratuita ficou para trás — QA-4426-02." }
+
+o_que_esta_muito_bom:
+  - "O @dev encontrou por conta própria que o `cplReal` da gratuita tinha o mesmo defeito — o `tsc` acusou ao migrar o CAC, e ele não se limitou a calar o erro."
+  - "Os 4 testes que quebraram foram atualizados COM O MOTIVO, não ajustados para passar. O comentário do 400 × 1000 explica por que são bases diferentes."
+  - "T7 mediu contra produção e achou o PP subestimando o CPL em 10× — R$ 36 onde o real é R$ 367."
+
+pendencias_para_o_merge:
+  - "QA-4426-01 (ALTA) — separar o `semDados` de denominador zero do de configuração + teste no panorama"
+  - "QA-4426-02 (MÉDIA) — as três entradas do `principal` gratuito no llms.txt"
+
+nao_verificado:
+  - "Validação visual — as 4 etapas gratuitas não têm cache, então não há o que ver na tela hoje; as promovidas seguem no `principal` da 44.25. Fica para quando alguma ganhar cache."
+  - "CodeRabbit — indisponível neste host."

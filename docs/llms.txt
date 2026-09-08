@@ -98,7 +98,7 @@ Resposta: `{ projectId, stageId, stageName, campaignIds: [..], range, partial, l
 **`campanhasOrfas`** — campanhas com gasto na janela curta **sem vínculo com nenhuma etapa** do projeto. É dinheiro fora de todo CAC e ROAS do painel. Não encoste numa etapa por semelhança de nome — isso é inventar atribuição.
 
 **`pendencias[]`** — `{ stageId, codigo, mensagem, origem }`. São fatos de **configuração**, não falhas da consulta, e cada `codigo` pede uma ação diferente (`semDados` = conectar fonte · `syncPendente` = esperar o sync · `leituraFalhou` = checar permissão · `indeterminado` = a checagem falhou · `foraDaAba` = etapa fora do escopo da aba). ⚠️ **`reguaDivergente` é a exceção: NÃO é ação do operador** (Story 44.25 AC8) — é uma lacuna de engenharia já endereçada pela Story 44.28. Reporte-a como nota, nunca na lista de "o que configurar hoje". ⚠️ `origem: "cadeia"` = apurado no backend, citável como fato; `origem: "panorama"` = conclusão desta rota (`semTetoConfiavel`, `coberturaIndisponivel`), derivada por comparação. Não cite um derivado como fato de origem.
-⚠️ Etapa com fonte conectada e **zero venda/lead na janela** NÃO entra em `pendencias` — não é lacuna de configuração. O fato fica visível em `principal.vendasReais: 0` / `principal.leadsUnicos: 0`.
+⚠️ Etapa com fonte conectada e **zero venda/lead na janela** NÃO entra em `pendencias` — não é lacuna de configuração. O fato fica visível em `principal.vendasReais: 0` / `principal.leadsUnicos: 0` — nos dois casos **sem `message`**, que é o que os distingue de lacuna de configuração (QA-4414-02 · QA-4426-01).
 
 **`totais`** — `{ spendCurta, spendLonga, spendOrfas, etapasNoAr, campanhasComGasto }`. ⚠️ `spendCurta`/`spendLonga` são das **ETAPAS**; o gasto das órfãs vem separado em **`spendOrfas`**, e `spendCurta + spendOrfas` é o gasto do PROJETO na janela curta. `campanhasComGasto` conta só as VINCULADAS. `etapasNoAr` exclui as de `familia: null`.
 
@@ -120,6 +120,7 @@ Resposta: `{ projectId, projectName, clientName, janelas, spendIncludesMetaTax, 
 **`principal`** — o número principal, e **ele muda de métrica com a família**:
 - família **paga** → `metrica: "cacReal"`, `valor = spend ÷ vendasReais` (vendas do Loyola, não do pixel)
 - família **gratuita** → `metrica: "cplReal"`, `valor = spend ÷ leadsUnicos`
+  ⚠️ **Story 44.26 — `leadsUnicos` aqui são os leads DA JANELA**, contados só nos dias em que houve campanha, não o total da etapa. O total viaja ao lado em `leadsUnicosDaEtapa`, e os dois são legitimamente diferentes (o da janela deduplica dentro do dia; o total, globalmente). Ver a nota de `cplCaptacao` abaixo — a regra do denominador é a mesma. Motivo novo: `semCoberturaDiaria` = o cache não tem série diária e **o CPL não sai**; o total acumulado NÃO substitui.
 ⚠️ **Numa etapa de família gratuita o número principal NÃO é CAC.** Chamar o CPL de CAC é o erro que esta rota existe para impedir. Mas atenção à direção inversa, aberta pela Story 44.25: uma etapa com `stageType: "free"` num funil `perpetual` tem família **paga** e o principal É `cacReal`. **Quem manda é `familia`, nunca `stageType`.**
 ⚠️ Os campos de `principal` **mudam por ramo** — não assuma que coexistem:
 
@@ -128,13 +129,22 @@ Resposta: `{ projectId, projectName, clientName, janelas, spendIncludesMetaTax, 
 | paga | ok | `valor`, `spend`, `vendasReais`, `dataSource`, `computedAt` |
 | paga | sem fonte de vendas | `valor: null`, `motivo: "semDados"`, `message`, `spend` |
 | paga | leitura da fonte falhou | `valor: null`, `motivo: "leituraFalhou"`, `message`, `spend` |
-| gratuita | ok | `valor`, `spend`, `leadsUnicos`, `fonteDeLead`, `computedAt` |
+| gratuita | ok | `valor`, `spend`, `leadsUnicos` (**da janela**), `leadsUnicosDaEtapa` (total), `fonteDeLead`, `computedAt` |
+| gratuita | cache sem série diária | `valor: null`, `motivo: "semCoberturaDiaria"`, `message`, `leadsUnicosDaEtapa` — esperar o sync, **não** conectar fonte |
 | gratuita | tem fonte, cache não computado | `valor: null`, `motivo: "syncPendente"`, `message`, `spend` |
 | gratuita | sem fonte conectada | `valor: null`, `motivo: "semDados"`, `message`, `spend` |
 | gratuita | não foi possível determinar | `valor: null`, `motivo: "indeterminado"`, `message`, `spend` |
 | paga ou gratuita | fonte OK, **zero no denominador** | `valor: null`, `motivo: "semDados"` **junto de** `vendasReais: 0`/`leadsUnicos: 0`, `spend`, `dataSource`/`fonteDeLead`, `computedAt` — e **sem `message`** |
 
 Os `motivo` pedem **ações diferentes**: `semDados` = conectar fonte · `syncPendente` = esperar o sync · `leituraFalhou` = checar permissão/tentar de novo · `indeterminado` = a checagem falhou. Não colapse em "sem dados".
+
+**`cplCaptacao`** (Story 44.26) — bloco **secundário**, presente quando a etapa capta lead (`stageType` `free`/`cpl`), inclusive na promovida. Traz `valor`, `periodo`, `spend`, `leadsNaJanela`, `diasComLeadSemMidia`, `baseDoDenominador`, `leadsUnicosDaEtapa`, `leadsSemData`, `fonteDeLead`, `computedAt`.
+
+⚠️ **Nunca use `cplCaptacao` no lugar do `principal`.** Em etapa de venda o número que manda é o CAC; o CPL é diagnóstico de topo.
+
+⚠️ **O denominador é `leadsNaJanela`, e ele NÃO é `leadsUnicosDaEtapa`.** Duas diferenças, as duas de propósito: (1) só entram os dias em que **houve campanha** — lead de dia sem mídia é orgânico e não pertence a um CPL de mídia; `diasComLeadSemMidia` diz quantos ficaram de fora (medido no `pps1`: 8 contra 11 leads, 37% no CPL); (2) a contagem deduplica **dentro do dia**, não globalmente — quem apareceu em dois dias conta nos dois. Logo `leadsNaJanela ≠ leadsUnicosDaEtapa` é o esperado, **não** divergência a reportar. `baseDoDenominador` declara isso no payload.
+
+⚠️ `motivo: "semCoberturaDiaria"` — o cache é anterior à série diária e **o CPL não sai**. O total acumulado NÃO é substituto: dividir investimento de uma janela por leads de outra é o defeito que publicou "CPL Real R$ 3,17" no Resumão de 06/09. Ação: esperar o sync, não conectar fonte.
 
 ⚠️ **`reguaDivergente`** (Story 44.25 AC8) — só na etapa promovida pelo funil perpétuo. `valor: null` com `metrica: "cacReal"`, `spend`, `vendasReais`, `dataSource` e `computedAt` presentes. Significa: **a etapa TEM CAC, esta rota ainda não o publica.** A base de vendas daqui conta transações dedupadas por `txId+produto`; o dashboard perpétuo conta checkouts/compradores com classificação de produto — 124 contra 73 na mesma janela de 30 dias, medido em 07/09/2026. Publicar os dois com o mesmo nome faria uma tela contradizer a outra. **Para o CAC desta etapa, use o dashboard perpétuo.** Não é ação do operador e não é falta de configuração; a Story 44.28 remove a supressão.
 ⚠️ **`semDados` sai em dois ramos com ações opostas.** Sem fonte conectada ele vem com `message` e sem `vendasReais`/`leadsUnicos`; com fonte conectada e zero no denominador ele vem **sem `message`** e **com** `vendasReais: 0`/`leadsUnicos: 0` + `computedAt`. Mandar conectar fonte no segundo caso é pedir para configurar algo que já está configurado.
