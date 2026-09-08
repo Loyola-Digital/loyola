@@ -15,10 +15,21 @@
  * deixa de importar, e um arquivo antigo com mime errado volta a funcionar
  * sem precisar subir de novo.
  *
- * ## O sandbox continua fechado
+ * ## `allow-scripts`, e por que ele é seguro aqui
  *
- * Sem `allow-scripts` e sem `allow-same-origin`: o arquivo veio de fora e pode
- * conter qualquer coisa. O CSS continua valendo, que é o que interessa.
+ * Muita página salva monta o conteúdo com JavaScript. O PDI do time é assim:
+ * medido no arquivo, o markup tem 176 caracteres — só os rótulos — e todo o
+ * resto vem de um `<script type="application/json">` lido na hora. Sem
+ * scripts, a página renderiza a moldura e nada dentro.
+ *
+ * `allow-scripts` SEM `allow-same-origin` deixa o documento numa origem
+ * opaca: o script roda, mas não alcança cookie, `localStorage`, o DOM desta
+ * página nem faz requisição autenticada para a nossa API. É o mesmo arranjo
+ * que CodePen e JSFiddle usam para rodar código de estranhos.
+ *
+ * **Os dois juntos seriam o erro grave**: com `allow-same-origin` no meio, o
+ * script pode remover o próprio atributo `sandbox` e escapar. Um sem o outro
+ * é seguro; os dois, não.
  *
  * ## A codificação
  *
@@ -97,7 +108,8 @@ export function PaginaSalva({ url, titulo }: { url: string; titulo: string }) {
       <iframe
         srcDoc={html}
         title={titulo}
-        sandbox=""
+        /* NUNCA acrescentar `allow-same-origin` aqui — ver o cabeçalho. */
+        sandbox="allow-scripts"
         referrerPolicy="no-referrer"
         className="h-full w-full rounded bg-white"
       />
