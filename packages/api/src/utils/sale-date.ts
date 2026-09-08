@@ -18,6 +18,8 @@
  * Por isso a distinção é feita pela presença de componente de hora + fuso, não
  * por heurística de valor.
  */
+import { inicioDaJanela as inicioDaJanelaCompartilhada } from "@loyola-x/shared";
+
 
 export const BUSINESS_TIMEZONE = "America/Sao_Paulo";
 
@@ -281,5 +283,9 @@ export function horaDaFaixaMeta(faixa: string | null | undefined): number | null
  * virou função com nome em vez de aritmética repetida.
  */
 export function inicioDaJanela(dias: number, ate: string = businessToday()): string {
-  return shiftDayKey(ate, -(dias - 1));
+  // Story 18.80: a aritmética mudou de casa — foi para `@loyola-x/shared`,
+  // porque o FRONT tinha a sua própria versão da mesma regra, errada por um
+  // dia. Aqui fica só o default de `ate`, que é do fuso do negócio e não
+  // pertence ao módulo compartilhado.
+  return inicioDaJanelaCompartilhada(dias, ate);
 }

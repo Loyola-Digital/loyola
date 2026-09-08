@@ -49,6 +49,9 @@ export { normalizeLpUrl, lpLabel, type LpKey } from "./lp-url.js";
 // Story 44.28: os KPIs do topo do perpétuo — compartilhados entre a tela e a
 // API pública, para o Inácio não recompor a conta por fora.
 export { calcularMetricasDoPerpetuo } from "./perpetuo-metricas.js";
+// Story 18.80 — a régua de janela por dias, compartilhada entre API e web.
+// Antes existia só na API, e o front tinha a sua, errada por um dia.
+export { inicioDaJanela, shiftDayKey } from "./janela-de-dias.js";
 // Story 44.30 — o veredito do Resumão, por regra e não por julgamento do agente.
 export {
   vereditoDoPerpetuo,
