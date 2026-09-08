@@ -1,0 +1,120 @@
+storyId: "18.80"
+storyTitle: "O filtro de planilha do painel conta um dia a mais que a Meta"
+gate: CONCERNS
+reviewer: "@qa (Quinn)"
+reviewedAt: "2026-09-08"
+branch: feat/18.80-janela-do-filtro-de-planilha
+commits: ["84c14efb"]
+
+veredito: >
+  A correção está certa, a medição da T1 se sustenta e as reversões do @dev são
+  legítimas. O gate acha UMA coisa que ele mudou sem declarar — e ela expôs uma
+  fragilidade da suíte que vale mais que o achado em si. Corrigida aqui.
+
+# ─────────────────────────────────────────────────────────────
+# O que foi verificado de forma independente
+# ─────────────────────────────────────────────────────────────
+verificacoes_independentes:
+  - id: medicao-da-T1
+    o_que: "Refiz a leitura das 13 planilhas e confirmei a distribuição diária do BBE."
+    resultado: >
+      Confere. O dia extra (01/09) tinha 8 leads contra 16 nos sete dias da
+      janela — daí os 50%. E o @dev registrou a nuance certa: a magnitude
+      oscila com o que caiu no dia extra, o defeito não oscilava. Um relatório
+      que dissesse "o CPL está 50% errado" como se fosse constante estaria
+      errado, e ele não diz.
+
+  - id: reversoes-do-dev
+    o_que: "Refiz as duas reversões dele, na forma final do código."
+    resultado: "8 e 9 quedas, como declarado."
+
+  - id: escopo-do-po
+    o_que: "Conferi a correção de escopo que o @po fez (Top Criativos nos dois dashboards)."
+    resultado: >
+      Procede. `top-creatives-gallery.tsx:929` chama o filtro e o resultado vai
+      para `enrichWithPaidLeads`, cruzando com métrica da Meta. O componente
+      roda em `launch-dashboard.tsx:1012` E `perpetual-dashboard.tsx:3454`.
+
+# ─────────────────────────────────────────────────────────────
+# Achados
+# ─────────────────────────────────────────────────────────────
+achados:
+  - id: QA-1880-01
+    severidade: MEDIA
+    estado: CORRIGIDO_NO_GATE
+    titulo: "O @dev mudou o FIM da janela também, sem declarar — e a suíte protegia isso só fora do CI"
+
+    o_que_mudou: >
+      A versão antiga fazia `today.setHours(23,59,59,999)` em hora LOCAL e
+      depois `.toISOString()` em UTC. Em fuso negativo isso empurra o fim da
+      janela para o dia seguinte. A story fala só do INÍCIO.
+
+    medido: |
+      Mesmo instante (08/09 13:00 local), as duas versões:
+
+        TZ=America/Sao_Paulo   ANTIGO: 01/09 .. 09/09   NOVO: fim em 08/09  ⚠️
+        TZ=UTC                 ANTIGO: 01/09 .. 08/09   NOVO: fim em 08/09
+        TZ=Asia/Tokyo          ANTIGO: 31/08 .. 08/09   NOVO: fim em 08/09
+
+      O código antigo dependia do fuso nas DUAS pontas. Em Tóquio até o início
+      escorregava.
+
+    impacto_hoje: >
+      TEÓRICO. Medi as 13 planilhas: **zero linhas com data futura**. Então a
+      medição da T1 (8 dias efetivos) vale, e o número do aviso está certo.
+
+    o_que_torna_isto_MEDIA_e_nao_BAIXA: |
+      A mutação que reintroduz o `.toISOString()` no fim da janela derrubava:
+
+        TZ=America/Sao_Paulo    8 testes
+        TZ=UTC                  0 testes   ← e o GitHub Actions roda em UTC
+
+      Ou seja: quem reintroduzisse o defeito veria **CI verde**. A proteção
+      existia, mas não no lugar onde é consultada. Só quem rodasse local, num
+      fuso negativo, veria vermelho.
+
+    correcao_aplicada: >
+      `vitest.config.ts` do web passa a fixar `env: { TZ: "America/Sao_Paulo" }`
+      — o fuso do NAVEGADOR do usuário, que é de onde `new Date()` vem no
+      código sob teste. Depois disso a mesma mutação derruba 8 testes em
+      qualquer runner (UTC, Tóquio e BRT verificados), e a suíte completa segue
+      em 1.117/1.117 nos dois fusos.
+
+    por_que_nao_devolvi_para_o_dev: >
+      A mudança em si está CERTA — incluir "amanhã" numa janela de 7 dias é
+      defeito. O que faltava era declaração e trava. Ambas cabiam no gate, e
+      devolver custaria um ciclo para uma linha de config.
+
+  - id: QA-1880-02
+    severidade: BAIXA
+    estado: CORRIGIDO_NO_GATE
+    titulo: "A story e o aviso falam só do início da janela"
+    correcao_aplicada: >
+      Acrescentado nos dois que o FIM também mudou, e que o efeito é teórico
+      hoje (nenhuma planilha tem data futura). Sem isso, quem investigar uma
+      divergência futura de data-limite não encontra o registro.
+
+# ─────────────────────────────────────────────────────────────
+# Os 7 checks
+# ─────────────────────────────────────────────────────────────
+checks:
+  code_review: PASS      # a régua saiu para o shared; `ate` obrigatório é decisão certa e documentada
+  testes: PASS           # 16 casos, relógio congelado, 2 reversões medidas — mais a trava de fuso do gate
+  criterios_de_aceite: PASS
+  regressoes: PASS       # API 2.498 (13 de baseline), web 1.117, next build verde
+  performance: PASS      # nenhum laço novo; a função é aritmética de calendário
+  seguranca: NAO_SE_APLICA
+  documentacao: PASS     # aviso gerado, story completa, docblocks com a medição
+
+# ─────────────────────────────────────────────────────────────
+notas:
+  - >
+    ⚠️ **O aviso é obrigatório e ainda não foi enviado.** 10 casos acima de 5%,
+    e o pior deles é o `dg-pg04` em 7 dias: 6 leads exibidos onde havia 1. Base
+    pequena exagera o efeito, e é em base pequena que "está barato, escala" se
+    decide rápido.
+  - >
+    O padrão que se repete nesta leva inteira: o gate encontra o que o
+    implementador mudou **além do declarado**, não o que ele fez errado. Aqui
+    a mudança era correta e não estava escrita — e a trava dela vivia num fuso
+    que o CI não usa.
