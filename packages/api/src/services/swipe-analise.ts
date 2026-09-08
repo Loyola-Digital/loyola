@@ -48,6 +48,45 @@ export const MIMES_DE_IMAGEM = new Set([
 ]);
 export const MIME_PDF = "application/pdf";
 export const MIME_HTML = "text/html";
+export const MIME_DOCX =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+export const MIME_TXT = "text/plain";
+
+export function ehDocumento(mime: string | null | undefined): boolean {
+  const m = (mime ?? "").split(";")[0]!.trim().toLowerCase();
+  return m === MIME_DOCX || m === MIME_TXT;
+}
+
+/**
+ * O texto de um documento — transcrição, roteiro, briefing.
+ *
+ * É o melhor material de catalogação que existe para VÍDEO: o modelo não
+ * assiste, mas lê. Uma pasta de swipe vem com o `.mp4` e a transcrição lado a
+ * lado, e é a transcrição que diz o gancho, a oferta e a prova.
+ *
+ * `.docx` é um ZIP com XML dentro; quem desempacota é a `mammoth`, que já
+ * estava no projeto. `.txt` é lido direto.
+ */
+export async function textoDoDocumento(
+  buffer: Buffer,
+  mime: string,
+  limite = 12_000,
+): Promise<string> {
+  const m = (mime ?? "").split(";")[0]!.trim().toLowerCase();
+  if (m === MIME_TXT) {
+    return buffer.toString("utf8").replace(/\r\n/g, "\n").trim().slice(0, limite);
+  }
+
+  const { default: mammoth } = await import("mammoth");
+  const r = await mammoth.extractRawText({ buffer });
+  return r.value
+    // Transcrição vem com uma quebra por fala; colapsar mantém o texto
+    // legível sem gastar o prompt em brancos.
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]+/g, " ")
+    .trim()
+    .slice(0, limite);
+}
 
 /**
  * O texto de uma página HTML, para o modelo ler.

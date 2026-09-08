@@ -17,7 +17,7 @@
 import { useState } from "react";
 import {
   AlertCircle, Bell, Library, Plus, Search, Star, X, Play, Link2, ImageIcon, FileText, Filter,
-  DownloadCloud, HelpCircle, Loader2, Sparkles, ArrowLeft, FolderOpen, LayoutGrid, Bookmark, Code2,
+  DownloadCloud, HelpCircle, Loader2, Sparkles, ArrowLeft, FolderOpen, LayoutGrid, Bookmark, Code2, FolderUp, FileType,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,7 @@ import { SwipeLightbox } from "@/components/swipe-files/swipe-lightbox";
 import { Chip, GrupoDeFiltro } from "@/components/swipe-files/filtros-do-swipe";
 import { GradeDeColecoes } from "@/components/swipe-files/colecoes";
 import { SalvarEmColecao } from "@/components/swipe-files/salvar-em-colecao";
+import { SubirPastaDialog } from "@/components/swipe-files/subir-pasta-dialog";
 import { miniaturaDoSwipe } from "@/lib/utils/miniatura-do-swipe";
 import { deveBuscarPorContexto } from "@/lib/utils/busca-por-contexto";
 import { useTermoEmRepouso } from "@/lib/hooks/use-termo-em-repouso";
@@ -65,6 +66,9 @@ const KIND_META: Record<AssetKind, { label: string; Icon: typeof Play }> = {
   // "Página" e não "HTML": quem salva uma landing page do navegador não pensa
   // no formato do arquivo, pensa na página que quis guardar.
   html: { label: "Página", Icon: Code2 },
+  // "Documento" e não ".docx": quem sobe uma transcrição pensa no conteúdo,
+  // não no formato do arquivo.
+  doc: { label: "Documento", Icon: FileType },
 };
 
 /**
@@ -299,6 +303,7 @@ export default function SwipeFilesPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [avisoOpen, setAvisoOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [pastaOpen, setPastaOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<SwipeFile | null>(null);
   /**
@@ -422,6 +427,12 @@ export default function SwipeFilesPage() {
           >
             <Bell className="h-4 w-4" />
           </Button>
+          {/* Subir pasta fica ao lado de "Nova referência": é a mesma
+              intenção — pôr coisa na biblioteca —, só que em lote. */}
+          <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={() => setPastaOpen(true)}>
+            <FolderUp className="h-4 w-4" />
+            Subir pasta
+          </Button>
           <Button onClick={() => setAddOpen(true)} className="gap-1.5">
             <Plus className="h-4 w-4" />
             Nova referência
@@ -504,7 +515,7 @@ export default function SwipeFilesPage() {
             />
           </div>
 
-          {(["image", "video", "html", "pdf", "link"] as const).map((k) => (
+          {(["image", "video", "html", "doc", "pdf", "link"] as const).map((k) => (
             <Chip key={k} active={filters.kind === k} onClick={() => set("kind", k)}>
               {KIND_META[k].label}
             </Chip>
@@ -739,6 +750,8 @@ export default function SwipeFilesPage() {
 
       </>
       )}
+
+      <SubirPastaDialog open={pastaOpen} onOpenChange={setPastaOpen} />
 
       <AddSwipeDialog
         open={addOpen}

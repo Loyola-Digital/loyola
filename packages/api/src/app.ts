@@ -121,6 +121,7 @@ import paymentAlertsSchedulerPlugin from "./plugins/payment-alerts-scheduler.js"
 import sendflowGroupsSchedulerPlugin from "./plugins/sendflow-groups-scheduler.js";
 import revenuecatSnapshotSchedulerPlugin from "./plugins/revenuecat-snapshot-scheduler.js";
 import plannerSyncSchedulerPlugin from "./plugins/planner-sync-scheduler.js";
+import usoDoProdutoPlugin from "./plugins/uso-do-produto.js";
 import plannerAnualRoutes from "./routes/planner-anual.js";
 import instaScanWorkerPlugin from "./plugins/insta-scan-worker.js";
 
@@ -155,6 +156,10 @@ export async function buildServer() {
     publishableKey: app.config.CLERK_PUBLISHABLE_KEY,
     hookName: "onRequest",
   });
+  // O acumulador de uso é registrado ANTES do auth porque é o hook do auth que
+  // alimenta ele — o decorator precisa existir quando aquele hook roda. Grava
+  // no banco só pelo timer, que dispara bem depois do `dbPlugin`.
+  await app.register(usoDoProdutoPlugin);
   await app.register(authPlugin);
 
   // 4. Database

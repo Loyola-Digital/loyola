@@ -11,7 +11,7 @@
 
 import { Readable } from "node:stream";
 import { z } from "zod";
-import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   swipeClickupAlerts,
@@ -28,6 +28,8 @@ import {
   podeAnalisar,
   ehHtml,
   textoDoHtml,
+  ehDocumento,
+  textoDoDocumento,
 } from "../services/swipe-analise.js";
 import { avisarNoClickUp } from "../services/swipe-clickup-aviso.js";
 import { contarFacetas } from "../services/swipe-facetas.js";
@@ -53,6 +55,7 @@ import {
   deleteObject,
   explicarErroDeStorage,
   isAllowedMime,
+  resolverMime,
   isStorageConfigured,
   testarEscrita,
   uploadDireto,
@@ -70,7 +73,7 @@ const listQuery = z.object({
   niche: z.string().trim().max(120).optional(),
   brand: z.string().trim().max(120).optional(),
   tag: z.string().trim().max(60).optional(),
-  kind: z.enum(["image", "video", "pdf", "link", "html"]).optional(),
+  kind: z.enum(["image", "video", "pdf", "link", "html", "doc"]).optional(),
   favorites: z.enum(["1", "true"]).optional(),
   /** Só as peças desta coleção. */
   colecao: z.string().uuid().optional(),
@@ -80,7 +83,7 @@ const listQuery = z.object({
 
 const createBody = z.object({
   title: z.string().trim().min(1).max(200),
-  assetKind: z.enum(["image", "video", "pdf", "link", "html"]),
+  assetKind: z.enum(["image", "video", "pdf", "link", "html", "doc"]),
   notes: z.string().trim().max(4000).optional(),
   fileUrl: z.string().trim().max(2000).optional(),
   fileKey: z.string().trim().max(500).optional(),
@@ -381,6 +384,7 @@ export default fp(async function swipeFilesRoutes(fastify) {
         id: swipeCollections.id,
         nome: swipeCollections.nome,
         descricao: swipeCollections.descricao,
+        parentId: swipeCollections.parentId,
         criadaEm: swipeCollections.createdAt,
         pecas: sql<number>`count(${swipeCollectionItems.swipeId})::int`,
         mexidaEm: sql<Date>`greatest(${swipeCollections.updatedAt}, coalesce(max(${swipeCollectionItems.addedAt}), ${swipeCollections.updatedAt}))`,
@@ -408,16 +412,42 @@ export default fp(async function swipeFilesRoutes(fastify) {
   fastify.post(`${base}/colecoes`, async (request, reply) => {
     if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
     const b = z
-      .object({ nome: z.string().max(200), descricao: z.string().max(2000).nullable().optional() })
+      .object({
+        nome: z.string().max(200),
+        descricao: z.string().max(2000).nullable().optional(),
+        /** Onde ela mora. Vazio = na raiz. */
+        parentId: z.string().uuid().nullable().optional(),
+      })
       .safeParse(request.body);
     if (!b.success) return reply.code(400).send({ error: "Dados inválidos" });
 
     const nome = limparNomeDaColecao(b.data.nome);
     if (!nome) return reply.code(400).send({ error: "A coleção precisa de um nome." });
 
+    const pai = b.data.parentId ?? null;
+
+    /**
+     * Já existe uma com esse nome NO MESMO LUGAR? Devolve ela.
+     *
+     * Subir a mesma pasta de novo é o caso comum — a segunda vez com mais
+     * arquivos. Criar "Black Friday (2)" ao lado da original espalharia o
+     * acervo em duas coleções que ninguém queria separadas.
+     */
+    const [jaExiste] = await fastify.db
+      .select({ id: swipeCollections.id, nome: swipeCollections.nome })
+      .from(swipeCollections)
+      .where(
+        pai
+          ? and(eq(swipeCollections.parentId, pai), sql`lower(${swipeCollections.nome}) = lower(${nome})`)
+          : and(isNull(swipeCollections.parentId), sql`lower(${swipeCollections.nome}) = lower(${nome})`),
+      )
+      .limit(1);
+    if (jaExiste) return reply.code(200).send({ ...jaExiste, jaExistia: true });
+
     const existentes = await fastify.db
       .select({ nome: swipeCollections.nome })
-      .from(swipeCollections);
+      .from(swipeCollections)
+      .where(pai ? eq(swipeCollections.parentId, pai) : isNull(swipeCollections.parentId));
 
     const [criada] = await fastify.db
       .insert(swipeCollections)
@@ -426,6 +456,7 @@ export default fp(async function swipeFilesRoutes(fastify) {
         // arquivos. Recusar pelo nome faria perder o envio inteiro.
         nome: nomeLivre(nome, existentes.map((e) => e.nome)),
         descricao: b.data.descricao ?? null,
+        parentId: pai,
         createdBy: request.userId ?? null,
       })
       .returning();
@@ -532,11 +563,19 @@ export default fp(async function swipeFilesRoutes(fastify) {
     const arquivo = await request.file();
     if (!arquivo) return reply.code(400).send({ error: "Envie a imagem ou o PDF." });
 
+    /**
+     * O tipo sai do NOME quando o cabeçalho é vago — mesmo motivo da rota de
+     * upload: o navegador escreve `application/octet-stream` para arquivo do
+     * disco, e a análise recusava a página com o arquivo certo em mãos.
+     */
+    const mimeReal = resolverMime(arquivo.filename, arquivo.mimetype) ?? arquivo.mimetype;
+
     // HTML entra por outro caminho: o modelo lê o TEXTO da página, não o
     // arquivo. Ver `textoDoHtml` para por que não mandamos o HTML cru.
-    if (!podeAnalisar(arquivo.mimetype) && !ehHtml(arquivo.mimetype)) {
+    if (!podeAnalisar(mimeReal) && !ehHtml(mimeReal) && !ehDocumento(mimeReal)) {
       return reply.code(400).send({
-        error: "Só dá para analisar imagem, PDF ou página HTML. Vídeo precisa ser catalogado à mão.",
+        error:
+          "Só dá para analisar imagem, PDF, página ou documento. Vídeo precisa ser catalogado à mão.",
       });
     }
 
@@ -573,7 +612,19 @@ export default fp(async function swipeFilesRoutes(fastify) {
     const pulso = setInterval(() => escrever({ tipo: "analisando" }), 10_000);
 
     try {
-      const sugestao = ehHtml(arquivo.mimetype)
+      const sugestao = ehDocumento(mimeReal)
+        ? /*
+           * Transcrição, roteiro, briefing — o modelo lê o texto.
+           *
+           * É o melhor material que existe para catalogar VÍDEO: ele não
+           * assiste, mas a transcrição diz o gancho, a oferta e a prova.
+           */
+          await analisarLink(fastify.claude.client, {
+            url: origem ?? arquivo.filename ?? "documento",
+            titulo: arquivo.filename ?? null,
+            textoDaPagina: await textoDoDocumento(buffer, mimeReal),
+          })
+        : ehHtml(mimeReal)
         ? /*
            * A página salva é o melhor material de catalogação do acervo.
            *
@@ -588,12 +639,12 @@ export default fp(async function swipeFilesRoutes(fastify) {
           })
         : await analisarReferencia(
             fastify.claude.client,
-            { buffer, mimeType: arquivo.mimetype },
+            { buffer, mimeType: mimeReal },
             { nomeDoArquivo: arquivo.filename, origem },
           );
       escrever({ tipo: "pronto", sugestao });
     } catch (err) {
-      fastify.log.error({ err, mime: arquivo.mimetype }, "analise de swipe file falhou");
+      fastify.log.error({ err, mime: mimeReal }, "analise de swipe file falhou");
       escrever({
         tipo: "erro",
         error: err instanceof ErroDeAnalise ? err.message : "Não consegui analisar agora.",
@@ -650,14 +701,28 @@ export default fp(async function swipeFilesRoutes(fastify) {
       const arquivo = await request.file({ limits: { fileSize: MAX_UPLOAD_BYTES } });
       if (!arquivo) return reply.code(400).send({ error: "Envie o arquivo." });
 
-      if (!isAllowedMime(arquivo.mimetype)) {
-        return reply.code(400).send({ error: `Tipo não permitido: ${arquivo.mimetype}` });
+      /**
+       * O tipo sai do nome quando o cabeçalho não serve.
+       *
+       * O navegador escreve `application/octet-stream` no multipart com
+       * frequência para arquivo vindo do disco — e a rota recusava um `.html`
+       * legítimo com "Tipo não permitido: application/octet-stream". A pessoa
+       * via o erro e não tinha o que fazer: o arquivo estava certo.
+       */
+      const mime = resolverMime(arquivo.filename, arquivo.mimetype);
+      if (!mime) {
+        return reply
+          .code(400)
+          .send({ error: `Tipo não permitido: ${arquivo.mimetype || "desconhecido"}` });
       }
 
       try {
         const r = await uploadDireto(storage(), {
           corpo: arquivo.file,
-          mime: arquivo.mimetype,
+          // O mime RESOLVIDO vai para o bucket: é ele que o Supabase devolve
+          // no `Content-Type`, e é ele que faz o navegador renderizar a página
+          // em vez de baixá-la.
+          mime,
           prefix: "swipe",
         });
 

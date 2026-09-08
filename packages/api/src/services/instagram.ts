@@ -53,6 +53,8 @@ interface InstagramMedia {
   media_type: string;
   media_url?: string;
   thumbnail_url?: string;
+  /** O link público do post — a tabela mensal usa para abrir o melhor do mês. */
+  permalink?: string;
   timestamp: string;
   like_count?: number;
   comments_count?: number;
@@ -81,7 +83,18 @@ interface InsightEntry {
   name: string;
   period: string;
   values: InsightValue[];
-  total_value?: { value: number | Record<string, unknown> };
+  /**
+   * `breakdowns` aparece quando a métrica é pedida com `breakdown=` — é onde
+   * vem a separação de novos seguidores e unfollows, por exemplo. Sem declarar
+   * aqui, o dado chega e o TypeScript não deixa ninguém lê-lo.
+   */
+  total_value?: {
+    value?: number | Record<string, unknown>;
+    breakdowns?: {
+      dimension_keys?: string[];
+      results?: { dimension_values: string[]; value: number }[];
+    }[];
+  };
   title: string;
   description: string;
   id: string;
@@ -441,7 +454,9 @@ export default fp(async function instagramServicePlugin(fastify) {
     after?: string,
   ): Promise<{ data: InstagramMedia[]; nextCursor?: string }> {
     const { token, igUserId } = await getDecryptedToken(accountId);
-    let path = `/${igUserId}/media?fields=id,caption,media_type,media_url,thumbnail_url,timestamp,like_count,comments_count&limit=${limit}`;
+    // `permalink` entra para a tabela mensal poder linkar o melhor post do mês
+    // — sem ele, o card mostra o título e não leva a lugar nenhum.
+    let path = `/${igUserId}/media?fields=id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count&limit=${limit}`;
     if (after) path += `&after=${after}`;
 
     const result = await graphFetch<MediaListResponse>(path, token);

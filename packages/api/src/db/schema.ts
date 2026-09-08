@@ -3281,18 +3281,65 @@ export const instagramScans = pgTable(
  * nicho e formato já agrupam o acervo sozinhos, e a tela agrupa por eles sem
  * tabela nenhuma.
  */
+/**
+ * Uso do produto, por usuário / área / hora — para medir adesão.
+ *
+ * Agregado de propósito: uma tela faz dezenas de chamadas, e gravar cada uma
+ * daria milhões de linhas por ano para responder "o time está usando isto?".
+ *
+ * E só a ÁREA, nunca o caminho completo: guardar a URL responderia "fulano
+ * abriu o funil do cliente X às 14h32", que é vigiar pessoa em vez de medir
+ * produto. Ver `services/adesao.ts`.
+ */
+export const userActivity = pgTable(
+  "user_activity",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    area: varchar("area", { length: 24 }).notNull(),
+    /** Hora cheia em UTC. */
+    hora: timestamp("hora", { withTimezone: true }).notNull(),
+    requisicoes: integer("requisicoes").notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.area, t.hora] }),
+    index("idx_user_activity_hora").on(t.hora),
+  ],
+);
+
 export const swipeCollections = pgTable(
   "swipe_collections",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     nome: varchar("nome", { length: 120 }).notNull(),
     descricao: text("descricao"),
+    /**
+     * A coleção onde esta mora — subir uma pasta preserva a estrutura dela.
+     *
+     * `CASCADE`: apagar a mãe apaga as filhas, que é o que "pasta" promete.
+     * As referências continuam na biblioteca de qualquer forma; só o
+     * agrupamento cai.
+     */
+    parentId: uuid("parent_id").references((): AnyPgColumn => swipeCollections.id, {
+      onDelete: "cascade",
+    }),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  // Sem caixa: "Black Friday" e "black friday" são a mesma coleção.
-  (t) => [uniqueIndex("idx_swipe_collections_nome").on(sql`lower(${t.nome})`)],
+  (t) => [
+    // O nome é único DENTRO da mãe: duas pastas podem ter uma "anúncios" cada,
+    // e recusar a segunda faria a segunda pasta falhar inteira. Na raiz segue
+    // único — é a lista que se vê primeiro.
+    uniqueIndex("idx_swipe_collections_nome_raiz")
+      .on(sql`lower(${t.nome})`)
+      .where(sql`${t.parentId} is null`),
+    uniqueIndex("idx_swipe_collections_nome_filha")
+      .on(t.parentId, sql`lower(${t.nome})`)
+      .where(sql`${t.parentId} is not null`),
+    index("idx_swipe_collections_parent").on(t.parentId),
+  ],
 );
 
 export const swipeCollectionItems = pgTable(
@@ -3321,7 +3368,7 @@ export const swipeFiles = pgTable(
     notes: text("notes"),
     /** image | video | pdf | link — define o que renderizar no card e no lightbox. */
     assetKind: varchar("asset_kind", { length: 10 })
-      .$type<"image" | "video" | "pdf" | "link" | "html">()
+      .$type<"image" | "video" | "pdf" | "link" | "html" | "doc">()
       .notNull(),
 
     fileUrl: text("file_url"),

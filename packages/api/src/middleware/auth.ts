@@ -2,6 +2,7 @@ import { getAuth, clerkClient } from "@clerk/fastify";
 import { eq } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { users } from "../db/schema.js";
+import { areaDaRota } from "../services/adesao.js";
 
 export default fp(async function authPlugin(fastify) {
   fastify.addHook("onRequest", async (request, reply) => {
@@ -185,5 +186,18 @@ export default fp(async function authPlugin(fastify) {
       reply.code(403).send({ error: "Acesso bloqueado.", code: "BLOCKED" });
       return;
     }
+
+    /**
+     * Marca o uso — só depois de o acesso estar liberado.
+     *
+     * Registrar antes contaria como "usou o produto" quem levou 403 na porta,
+     * e a adesão passaria a incluir quem nunca entrou.
+     *
+     * Vai para um acumulador em memória, não para o banco: gravar a cada
+     * requisição dobraria a carga para responder uma pergunta que ninguém faz
+     * em tempo real. Quem grava é o `uso-do-produto` scheduler.
+     */
+    const area = areaDaRota(request.url);
+    if (area) fastify.usoDoProduto.registrar(dbUser[0].id, area.chave, new Date());
   });
 });

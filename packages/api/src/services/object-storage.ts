@@ -66,6 +66,16 @@ const ALLOWED_MIME = new Set([
    * conter qualquer coisa.
    */
   "text/html",
+  /**
+   * Documento de texto: transcrição, roteiro, briefing.
+   *
+   * Entrou porque a transcrição é o melhor material de catalogação que existe
+   * para VÍDEO — o modelo não assiste, mas lê. Uma pasta de swipe costuma vir
+   * com o `.mp4` e o `.docx` da fala lado a lado, e recusar o segundo joga
+   * fora justamente o que descreve o primeiro.
+   */
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/plain",
 ]);
 
 /** 200MB — cabe vídeo de anúncio; acima disso é arquivo errado pra swipe file. */
@@ -77,6 +87,44 @@ export function isStorageConfigured(cfg: StorageConfig): boolean {
 
 export function isAllowedMime(mime: string): boolean {
   return ALLOWED_MIME.has(mime);
+}
+
+/** Extensões que decidem quando o navegador não sabe o tipo do arquivo. */
+const POR_EXTENSAO: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  gif: "image/gif",
+  avif: "image/avif",
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+  webm: "video/webm",
+  pdf: "application/pdf",
+  html: "text/html",
+  htm: "text/html",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  txt: "text/plain",
+};
+
+/**
+ * O tipo do arquivo, contando com a EXTENSÃO quando o cabeçalho não serve.
+ *
+ * O multipart entrega o `Content-Type` que o navegador escreveu — e para
+ * arquivo vindo do disco ele escreve `application/octet-stream` com
+ * frequência, às vezes nada. Confiar só nele fazia a rota recusar um `.html`
+ * legítimo com "Tipo não permitido: application/octet-stream", e o mesmo
+ * aconteceria com um `.png` em qualquer navegador que resolvesse ser vago.
+ *
+ * A extensão é palpite, mas é um palpite melhor que a recusa — e o conjunto de
+ * tipos aceitos continua sendo o mesmo `ALLOWED_MIME`.
+ */
+export function resolverMime(nome: string | undefined, mimeDoUpload: string): string | null {
+  const declarado = (mimeDoUpload ?? "").split(";")[0]!.trim().toLowerCase();
+  if (ALLOWED_MIME.has(declarado)) return declarado;
+  const ext = (nome ?? "").split(".").pop()?.toLowerCase() ?? "";
+  const porExt = POR_EXTENSAO[ext];
+  return porExt && ALLOWED_MIME.has(porExt) ? porExt : null;
 }
 
 function client(cfg: StorageConfig): S3Client {

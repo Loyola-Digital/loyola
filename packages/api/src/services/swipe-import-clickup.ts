@@ -42,7 +42,7 @@ export interface MensagemDoClickUp {
   respostas?: { content?: string }[];
 }
 
-export type TipoDeAsset = "image" | "video" | "pdf" | "link" | "html";
+export type TipoDeAsset = "image" | "video" | "pdf" | "link" | "html" | "doc";
 
 export interface ItemParaImportar {
   /**
