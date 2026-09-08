@@ -39,6 +39,7 @@ import { AddSwipeDialog } from "@/components/swipe-files/add-swipe-dialog";
 import { ClickUpAlertDialog } from "@/components/swipe-files/clickup-alert-dialog";
 import { ImportarDoClickUp } from "@/components/swipe-files/importar-do-clickup";
 import { PdfCapa } from "@/components/swipe-files/pdf-capa";
+import { PaginaCapa } from "@/components/swipe-files/pagina-capa";
 import { SwipeLightbox } from "@/components/swipe-files/swipe-lightbox";
 import { Chip, GrupoDeFiltro } from "@/components/swipe-files/filtros-do-swipe";
 import { GradeDeColecoes } from "@/components/swipe-files/colecoes";
@@ -219,6 +220,10 @@ function SwipeCard({
               // mal configurado, e a capa sabe dizer isso. O ícone genérico
               // escondia o problema atrás de algo que parecia normal.
               <PdfCapa url={item.fileUrl} titulo={item.title} tamanhoBytes={item.fileSizeBytes} />
+            ) : item.assetKind === "html" ? (
+              // A página renderizada, não um ícone: numa grade de referências
+              // o que faz reconhecer é o layout — headline, cores, herói.
+              <PaginaCapa url={item.fileUrl} titulo={item.title} tamanhoBytes={item.fileSizeBytes} />
             ) : item.assetKind === "video" && item.fileUrl ? (
               <VideoCapa url={item.fileUrl} titulo={item.title} />
             ) : (
