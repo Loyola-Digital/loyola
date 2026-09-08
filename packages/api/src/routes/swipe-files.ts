@@ -46,6 +46,14 @@ import {
   avisarLoteNoClickUp,
   avisarNoClickUp,
 } from "../services/swipe-clickup-aviso.js";
+import {
+  aprenderVocabulario,
+  camposDaSugestao,
+  catalogarItem,
+  MAX_BYTES_DE_ANALISE,
+  podeCatalogar,
+  VOCAB_MAX,
+} from "../services/swipe-catalogo.js";
 import { contarFacetas } from "../services/swipe-facetas.js";
 import {
   agruparPorAtributo,
@@ -982,11 +990,9 @@ export default fp(async function swipeFilesRoutes(fastify) {
        */
       const mime = resolverMime(arquivo.filename, arquivo.mimetype);
       if (!mime) {
-        return reply
-          .code(400)
-          .send({
-            error: `Tipo não permitido: ${arquivo.mimetype || "desconhecido"}`,
-          });
+        return reply.code(400).send({
+          error: `Tipo não permitido: ${arquivo.mimetype || "desconhecido"}`,
+        });
       }
 
       try {
@@ -1347,11 +1353,9 @@ export default fp(async function swipeFilesRoutes(fastify) {
     try {
       return { channels: await fastify.clickupService.getChatChannels() };
     } catch (err) {
-      return reply
-        .code(502)
-        .send({
-          error: err instanceof Error ? err.message : "Erro ao listar canais",
-        });
+      return reply.code(502).send({
+        error: err instanceof Error ? err.message : "Erro ao listar canais",
+      });
     }
   });
 
@@ -1366,11 +1370,9 @@ export default fp(async function swipeFilesRoutes(fastify) {
     try {
       return { members: await fastify.clickupService.getWorkspaceMembers() };
     } catch (err) {
-      return reply
-        .code(502)
-        .send({
-          error: err instanceof Error ? err.message : "Erro ao listar membros",
-        });
+      return reply.code(502).send({
+        error: err instanceof Error ? err.message : "Erro ao listar membros",
+      });
     }
   });
 
@@ -1412,6 +1414,123 @@ export default fp(async function swipeFilesRoutes(fastify) {
     }
     return { ok: true };
   });
+
+  /**
+   * Cataloga com IA o que acabou de subir em lote.
+   *
+   * ## Por que não durante a subida
+   *
+   * A fila do navegador sobe um arquivo por vez com a tela aberta. Analisar
+   * cada um ali dobraria o tempo de uma pasta de sessenta — e quem fecha a aba
+   * no meio perde o que faltava. Subir é rápido; catalogar acontece depois.
+   *
+   * ## Por que não espera terminar
+   *
+   * Sessenta análises em série levam minutos. Segurar a resposta faria o proxy
+   * cortar e a tela mostrar erro numa operação que está indo bem. Responde na
+   * hora com quantos entraram na fila; o resultado aparece na biblioteca
+   * conforme sai.
+   *
+   * Se o container reiniciar no meio, o que faltou continua sem catalogação —
+   * e é para isso que existe `src/scripts/backfill-catalogo-swipe.ts`.
+   */
+  fastify.post(`${base}/catalogar-lote`, async (request, reply) => {
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
+    if (!fastify.claude?.client) {
+      return reply.code(503).send({ error: "IA não configurada no servidor." });
+    }
+
+    const corpo = z
+      .object({ ids: z.array(z.string().uuid()).min(1).max(200) })
+      .safeParse(request.body);
+    if (!corpo.success) return reply.code(400).send({ error: "Lote inválido" });
+
+    const itens = await fastify.db
+      .select({
+        id: swipeFiles.id,
+        title: swipeFiles.title,
+        assetKind: swipeFiles.assetKind,
+        fileUrl: swipeFiles.fileUrl,
+        fileMime: swipeFiles.fileMime,
+        sourceUrl: swipeFiles.sourceUrl,
+      })
+      .from(swipeFiles)
+      .where(inArray(swipeFiles.id, corpo.data.ids));
+
+    // Vídeo sai aqui e é CONTADO: dizer quantos ficaram de fora é o que evita
+    // alguém achar que a catalogação falhou.
+    const fila = itens.filter((i) => i.fileUrl && podeCatalogar(i));
+    const videos = itens.filter((i) => i.assetKind === "video").length;
+
+    void (async () => {
+      try {
+        const vocabulario = await vocabularioDoAcervo();
+        for (const item of fila) {
+          try {
+            const r = await fetch(item.fileUrl!);
+            if (!r.ok) continue;
+            const buffer = Buffer.from(await r.arrayBuffer());
+            if (buffer.length > MAX_BYTES_DE_ANALISE) continue;
+
+            const sugestao = await catalogarItem(
+              fastify.claude.client,
+              item,
+              buffer,
+              vocabulario,
+            );
+            await fastify.db
+              .update(swipeFiles)
+              .set(camposDaSugestao(sugestao))
+              .where(eq(swipeFiles.id, item.id));
+            aprenderVocabulario(vocabulario, sugestao);
+          } catch (err) {
+            // Um item que falha não derruba a fila: o resto do lote ainda ganha
+            // catalogação, e o backfill pega o que sobrou.
+            fastify.log.warn(
+              { err, id: item.id },
+              "falhou catalogar item do lote",
+            );
+          }
+        }
+        fastify.log.info(
+          { quantos: fila.length },
+          "catalogacao de lote concluida",
+        );
+      } catch (err) {
+        fastify.log.error({ err }, "catalogacao de lote falhou");
+      }
+    })();
+
+    return { naFila: fila.length, videosDeFora: videos };
+  });
+
+  /**
+   * O que o acervo já usa, para o modelo reaproveitar a grafia em vez de criar
+   * uma variante do mesmo nome — "Navarro" e "Gabriel Navarro" viram dois
+   * filtros com metade das peças cada.
+   */
+  async function vocabularioDoAcervo() {
+    const [marcas, nichos, tags] = await Promise.all([
+      fastify.db.execute(
+        sql`select brand v from swipe_files where brand is not null and brand <> ''
+            group by 1 order by count(*) desc limit ${VOCAB_MAX}`,
+      ),
+      fastify.db.execute(
+        sql`select niche v from swipe_files where niche is not null and niche <> ''
+            group by 1 order by count(*) desc limit ${VOCAB_MAX}`,
+      ),
+      fastify.db.execute(
+        sql`select t v from swipe_files, jsonb_array_elements_text(tags) t
+            group by 1 order by count(*) desc limit ${VOCAB_MAX}`,
+      ),
+    ]);
+    const col = (r: unknown) =>
+      ((r as { rows?: { v: string }[] }).rows ?? [])
+        .map((x) => x.v)
+        .filter(Boolean);
+    return { marcas: col(marcas), nichos: col(nichos), tags: col(tags) };
+  }
 
   /**
    * O aviso único de uma subida em lote.

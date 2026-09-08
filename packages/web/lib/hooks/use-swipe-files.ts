@@ -933,3 +933,29 @@ export function useAvisarLote() {
       }),
   });
 }
+
+/**
+ * Manda catalogar com IA o que acabou de subir em lote.
+ *
+ * O servidor responde na hora e cataloga em segundo plano — sessenta análises
+ * levam minutos, e segurar a resposta faria o proxy cortar uma operação que
+ * está indo bem. `naFila` é quantos entraram; `videosDeFora`, quantos a IA não
+ * consegue catalogar (ninguém assiste o vídeo).
+ */
+export function useCatalogarLote() {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { ids: string[] }) =>
+      apiClient<{ naFila: number; videosDeFora: number }>(
+        `${BASE}/catalogar-lote`,
+        {
+          method: "POST",
+          body: JSON.stringify(input),
+        },
+      ),
+    // A catalogação chega depois; a invalidação faz a grade buscar de novo
+    // quando a pessoa voltar para ela.
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["swipe-files"] }),
+  });
+}
