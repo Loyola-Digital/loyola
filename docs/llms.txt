@@ -174,6 +174,29 @@ Os `motivo` pedem **ações diferentes**: `semDados` = conectar fonte · `syncPe
 
 Resposta (etapa com dados): `{ projectId, stageId, stageName, stageType, familia, fonte: "ad-level", spendIncludesMetaTax, unidadeDasTaxas, range, lpTemVsl, ticketMedioManual, campanhas, agregado, atuais, principal, atribuicao, criativos, distribuicaoHook, bodyConvIndisponivel, vendasSemDataNoTotal, leadsSemData, tetos, guardaDeCobertura, ranking, composto, decomposicaoCPC, benchmarks }`
 
+## Endpoints — Funil perpétuo (Story 44.28)
+
+### GET /api/public/v1/funnels/{funnelId}/perpetual-metrics
+Os KPIs do topo de um funil **perpétuo** — os MESMOS números que a aba Meta Ads do painel renderiza, porque as duas leem a mesma função. Parâmetros: `from`/`to` (`YYYY-MM-DD`, a janela exata) **ou** `days` (atalho: 1 = hoje, 7, 30, 90; a janela de N dias INCLUI hoje). Para o **dia fechado**, peça `from` = `to` = ontem.
+
+⚠️ **Use esta rota para falar do perpétuo.** Recompor CAC ou ROAS por fora — spend de um endpoint, vendas de outro — cria uma segunda régua que diverge da tela. É a classe de defeito que o Epic 44 existe para impedir.
+
+**`vendas`** — **COMPRADORES ÚNICOS** no período (dedup por e-mail na janela inteira). `unidadeDeVendas` declara isso no payload. É a régua que o CAC exige: CAC é custo de aquisição de *cliente*, e quem compra em dois dias é **uma** aquisição.
+
+⚠️ **`serieDiaria[].vendasNoDia` é OUTRA contagem** — deduplica **dentro do dia**. A soma da série é **maior ou igual** a `vendas`, e isso está certo: são perguntas diferentes ("quanto vendeu neste dia" × "quantos clientes foram adquiridos"). **Nunca some a série para citar o total** — use `vendas`. Os dois nomes são diferentes de propósito.
+
+**`investimento`** — JÁ inclui o imposto Meta de 12,15% (gross-up ÷ (1 − 0,1215) = ×1,1382, **não** ×1,1215). `investimentoComImpostoDeMidia: true` confirma. Não reaplicar nem reverter.
+
+**`cac`, `roas`, `margem`, `margemPercent`** — `null` quando falta numerador ou denominador, **nunca `0`**. `roas` é sobre o faturamento BRUTO; a margem é receita LÍQUIDA menos investimento (Story 29.20).
+
+**Ausências são diferentes entre si:** `investimento: null` = sem campanha vinculada ou sem mídia na janela · `vendas: null` = sem planilha de vendas conectada · `vendas: 0` = há planilha e **não houve venda no período**. A terceira é informação de gestão; tratá-la como "sem dado" manda o leitor procurar um defeito que não existe.
+
+**`cadeia`** — `{ cpm, cpc, ctr, connectRate, convLP }`, `null` sem mídia na janela. `convLP` aqui é a **conversão de checkout** (checkouts ÷ visitas na LP); `connectRate` é visitas na LP ÷ **cliques no link**, jamais sobre cliques totais.
+
+**`orderBump`, `reembolsos`, `porTemperatura`** — do mesmo bloco de vendas. `reembolsos.medido: false` = a planilha não tem coluna de status e o valor é estimativa.
+
+Resposta: `{ funnelId, projectId, funnelName, funnelType, periodo: {from,to,dias,origem}, vendas, unidadeDeVendas, investimento, investimentoComImpostoDeMidia, faturamentoBruto, faturamentoLiquidoCalculado, ticketMedioBruto, cac, roas, margem, margemPercent, orderBump, reembolsos, cadeia, agregadoDeMidia, porTemperatura, serieDiaria, semDados }`
+
 ## Endpoints — Leads por origem (Story 36.7)
 
 ### GET /api/public/v1/projects/{projectId}/stages/{stageId}/leads-summary
@@ -283,6 +306,7 @@ Tools (mapeiam 1:1 nos endpoints):
 - `get_stage_daily(projectId, stageId, from?, to?)` → GET /api/public/meta/v1/projects/{projectId}/stages/{stageId}/daily (mídia SÓ das campanhas da etapa — sem contaminação entre funis/evergreen)
 - `get_project_panorama(projectId, to?, curta?, longa?)` → GET .../meta/v1/projects/{projectId}/panorama-cac (**o ponto de partida diário** — etapas no ar, gasto nas duas janelas, gargalo de cada uma, órfãs e pendências. Chame ANTES de `get_stage_cadeia_cac`)
 - `get_stage_cadeia_cac(projectId, stageId, from?, to?)` → GET .../meta/v1/projects/{projectId}/stages/{stageId}/cadeia-cac (**a Cadeia de CAC pronta** — CPM/CTR/CPC/Connect/Conv.LP, tetos, ranking e criativos DA ETAPA. Use em vez de recompor a partir de `get_stage_daily`)
+- `get_perpetual_metrics(funnelId, from, to)` → GET /api/public/v1/funnels/{funnelId}/perpetual-metrics (**os KPIs do PERPÉTUO na régua da aba Meta Ads** — CAC, ROAS, margem, order bump, cadeia e série diária. `from`/`to` são OBRIGATÓRIOS aqui de propósito. Não recomponha CAC/ROAS do perpétuo a partir de outras tools)
 - `get_stage_leads_summary(projectId, stageId)` → GET .../v1/projects/{projectId}/stages/{stageId}/leads-summary
 - `get_stage_survey(projectId, stageId)` → GET .../v1/projects/{projectId}/stages/{stageId}/survey
 - `get_stage_sales_daily(projectId, stageId)` → GET .../v1/projects/{projectId}/stages/{stageId}/sales-daily

@@ -285,6 +285,54 @@ export function registerTools(server: McpServer, client: LoyolaClient): void {
       )
   );
 
+  // ---- Perpétuo: os KPIs do topo, na régua da aba Meta Ads ----
+  server.registerTool(
+    "get_perpetual_metrics",
+    {
+      title: "Métricas do funil PERPÉTUO (a régua da aba Meta Ads)",
+      description:
+        "CAC, ROAS, margem, faturamento, order bump, reembolsos e a cadeia (CPM/CPC/CTR/connect rate/conversão de checkout) de um funil PERPÉTUO, na janela pedida (Story 44.28). " +
+        "USE ESTA TOOL para falar do perpétuo no Resumão: ela devolve os MESMOS números que a aba Meta Ads do painel renderiza, porque as duas leem a mesma função. Recompor CAC ou ROAS por fora, a partir de spend de uma tool e vendas de outra, cria uma segunda régua que diverge da tela — é a classe de defeito que o Epic 44 inteiro existe para impedir. " +
+        "⚠️ `vendas` são COMPRADORES ÚNICOS no período (dedup por e-mail na janela inteira). É a régua que o CAC exige, já que CAC é custo de aquisição de CLIENTE: quem compra em dois dias é UMA aquisição. " +
+        "⚠️ `serieDiaria[].vendasNoDia` é OUTRA contagem — deduplica DENTRO do dia — e por isso a soma dela é MAIOR OU IGUAL a `vendas`. Isso está certo e não é divergência a reportar: são perguntas diferentes ('quanto vendeu neste dia' × 'quantos clientes foram adquiridos'). NUNCA some a série para citar o total de vendas; use `vendas`. " +
+        "`investimento` JÁ inclui o imposto Meta de 12,15% (gross-up ÷ (1 − 0,1215) = ×1,1382, NÃO ×1,1215): não reaplicar nem tentar reverter. " +
+        "Ausência é declarada, não vira zero: `investimento: null` = sem campanha vinculada ou sem mídia na janela; `vendas: null` = sem planilha de vendas conectada; `vendas: 0` = há planilha e não houve venda — coisas diferentes, com ações diferentes. `cac`/`roas`/`margem` vêm `null` quando falta numerador ou denominador, nunca `0`. " +
+        "`cadeia` é `null` sem mídia na janela. `convLP` ali é a conversão de CHECKOUT (checkouts ÷ visitas na LP); `connectRate` é visitas na LP ÷ cliques no link — jamais sobre cliques totais. " +
+        "Difere de get_stage_sales_daily, que conta vendas-dia de uma ETAPA por outra régua: as duas NÃO se substituem e não devem ser comparadas como se medissem a mesma coisa. " +
+        "Para o dia fechado, peça `from` = `to` = ontem.",
+      inputSchema: {
+        funnelId: z
+          .string()
+          .uuid()
+          .describe("ID do funil perpétuo (de list_funnels, onde type='perpetual')."),
+        /**
+         * ⚠️ Obrigatórios de propósito (AC1).
+         *
+         * A rota aceita janela default, e `get_stage_cadeia_cac` mostrou o
+         * preço disso: chamada sem recorte devolve o HISTÓRICO INTEIRO, e o
+         * agente publica um número de seis meses ao lado de um de 30 dias sem
+         * que nada na resposta acuse. Aqui o schema não deixa a chamada sair
+         * sem janela.
+         */
+        from: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .describe("Primeiro dia da janela (YYYY-MM-DD). OBRIGATÓRIO."),
+        to: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .describe("Último dia da janela (YYYY-MM-DD), inclusive. OBRIGATÓRIO."),
+      },
+    },
+    async ({ funnelId, from, to }) =>
+      run(() =>
+        client.get(`/api/public/v1/funnels/${encodeURIComponent(funnelId)}/perpetual-metrics`, {
+          from,
+          to,
+        })
+      )
+  );
+
   // ---- Etapa: leads por origem / pesquisa / vendas ----
   server.registerTool(
     "get_stage_leads_summary",
