@@ -291,6 +291,24 @@ export function useBuscaPorContexto(q: string, habilitado: boolean) {
   });
 }
 
+/**
+ * O texto de um documento, para ler na tela.
+ *
+ * O `.docx` é um ZIP e o navegador não abre — quem extrai é o servidor. O
+ * resultado não muda enquanto o arquivo for o mesmo, então uma hora de
+ * validade evita reextrair a cada abertura do visualizador.
+ */
+export function useTextoDoDocumento(id: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["swipe-texto", id],
+    queryFn: () => apiClient<{ texto: string }>(`${BASE}/${id}/texto`),
+    enabled: Boolean(id),
+    staleTime: 60 * 60 * 1000,
+    retry: false,
+  });
+}
+
 export function useLinkPreview() {
   const apiClient = useApiClient();
   return useMutation({

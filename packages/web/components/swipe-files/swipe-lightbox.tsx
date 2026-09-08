@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { SwipeFile } from "@/lib/hooks/use-swipe-files";
 import { PaginaSalva } from "@/components/swipe-files/pagina-salva";
+import { DocumentoSalvo } from "@/components/swipe-files/documento-salvo";
 
 function fmtWhen(iso: string): string {
   const d = new Date(iso);
@@ -117,7 +118,11 @@ export function SwipeLightbox({
       >
         {/* Mídia */}
         <div className="flex min-w-0 flex-1 items-center justify-center bg-black/40 p-2">
-          {item.assetKind === "html" && item.fileUrl ? (
+          {item.assetKind === "doc" ? (
+            /* O `.docx` é um ZIP: sem extrair o texto, o visualizador mostra
+               "Documento" e mais nada — e parece que o arquivo se perdeu. */
+            <DocumentoSalvo id={item.id} titulo={item.title} urlDoArquivo={item.fileUrl ?? null} />
+          ) : item.assetKind === "html" && item.fileUrl ? (
             /* Ver `PaginaSalva`: o conteúdo é buscado e injetado, para a
                renderização não depender do `Content-Type` do storage. */
             <PaginaSalva url={item.fileUrl} titulo={item.title} />
