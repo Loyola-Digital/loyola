@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   useAvisarLote,
+  useCatalogarLote,
   useColecoes,
   useCreateSwipeFile,
   useCriarColecao,
@@ -81,6 +82,7 @@ export function SubirPastaDialog({
   const criarColecao = useCriarColecao();
   const mexerNaColecao = useMexerNaColecao();
   const avisarLote = useAvisarLote();
+  const catalogarLote = useCatalogarLote();
 
   // O nome da coleção escolhida, para o aviso dizer onde as coisas caíram —
   // "Em Navarro" é reconhecível; um uuid não é.
@@ -193,9 +195,10 @@ export function SubirPastaDialog({
         });
         setEsperando(0);
         const criado = await criar.mutateAsync({
-          // O nome do arquivo é o título; a IA não roda aqui — analisar 60
-          // arquivos levaria vinte minutos, e a catalogação pode ser feita
-          // depois, item a item ou pelo backfill.
+          // O nome do arquivo é o título. A IA não roda AQUI — analisar
+          // sessenta arquivos na fila do navegador dobraria o tempo, e quem
+          // fechasse a aba perderia o resto. Ela roda no servidor, depois:
+          // `catalogarLote`, no fim desta função.
           title: item.nome.replace(/\.[^.]+$/, "").slice(0, 200),
           assetKind: item.mimeFinal.startsWith("image/")
             ? "image"
@@ -250,6 +253,10 @@ export function SubirPastaDialog({
     // silencioso de propósito — as referências já estão salvas, e não há o que
     // a pessoa possa fazer com esse erro.
     if (criados.length > 0) {
+      // Catalogar vem ANTES de avisar: assim o resumo no ClickUp e a
+      // catalogação começam juntos, e nenhum dos dois espera o outro.
+      catalogarLote.mutate({ ids: criados });
+
       const raiz = plano.colecoes[0]?.caminho[0];
       avisarLote.mutate({
         ids: criados,

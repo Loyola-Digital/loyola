@@ -27,7 +27,14 @@ import type Anthropic from "@anthropic-ai/sdk";
 const MODELO = "claude-sonnet-4-6";
 
 /** Os mesmos da tela. Um vocabulário fechado é o que mantém a faceta útil. */
-export const PLATAFORMAS = ["Meta", "Google", "TikTok", "YouTube", "Kwai", "Outro"] as const;
+export const PLATAFORMAS = [
+  "Meta",
+  "Google",
+  "TikTok",
+  "YouTube",
+  "Kwai",
+  "Outro",
+] as const;
 export const FORMATOS = [
   "Reel",
   "Feed",
@@ -74,18 +81,24 @@ export async function textoDoDocumento(
 ): Promise<string> {
   const m = (mime ?? "").split(";")[0]!.trim().toLowerCase();
   if (m === MIME_TXT) {
-    return buffer.toString("utf8").replace(/\r\n/g, "\n").trim().slice(0, limite);
+    return buffer
+      .toString("utf8")
+      .replace(/\r\n/g, "\n")
+      .trim()
+      .slice(0, limite);
   }
 
   const { default: mammoth } = await import("mammoth");
   const r = await mammoth.extractRawText({ buffer });
-  return r.value
-    // Transcrição vem com uma quebra por fala; colapsar mantém o texto
-    // legível sem gastar o prompt em brancos.
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/[ \t]+/g, " ")
-    .trim()
-    .slice(0, limite);
+  return (
+    r.value
+      // Transcrição vem com uma quebra por fala; colapsar mantém o texto
+      // legível sem gastar o prompt em brancos.
+      .replace(/\n{3,}/g, "\n\n")
+      .replace(/[ \t]+/g, " ")
+      .trim()
+      .slice(0, limite)
+  );
 }
 
 /**
@@ -124,9 +137,13 @@ export function textoDoHtml(html: string, limite = 12_000): string {
   // As entidades passam pelo mesmo tratamento do corpo: um título gravado
   // como "CRM &amp; workspace" chega assim ao modelo e volta assim para o
   // acervo, onde alguém depois procura por "&" e não acha.
-  const titulo = entidades(/<title[^>]*>([\s\S]*?)<\/title>/i.exec(semCodigo)?.[1]);
+  const titulo = entidades(
+    /<title[^>]*>([\s\S]*?)<\/title>/i.exec(semCodigo)?.[1],
+  );
   const descricao = entidades(
-    /<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)/i.exec(semCodigo)?.[1],
+    /<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)/i.exec(
+      semCodigo,
+    )?.[1],
   );
 
   const corpo = semCodigo
@@ -219,16 +236,72 @@ REGRAS
 TOM
 Escreva como quem cataloga para si mesmo — objetivo e sem adjetivo de vendedor.`;
 
+/**
+ * O que o acervo JÁ usa — para o modelo reaproveitar em vez de inventar.
+ *
+ * Sem isto, a mesma marca entra como "Navarro" numa peça e "Gabriel Navarro"
+ * na seguinte (medido, catalogando três anúncios do mesmo anunciante). O filtro
+ * então lista as duas, cada uma com metade das peças, e nenhuma das duas
+ * responde "me mostra tudo do Navarro".
+ *
+ * É sugestão, não camisa de força: anunciante novo precisa poder entrar com
+ * nome novo, senão o vocabulário congela no que já existe.
+ */
+export interface VocabularioDoAcervo {
+  marcas?: string[];
+  nichos?: string[];
+  tags?: string[];
+}
+
+/** Quantos valores de cada tipo cabem no prompt sem virar ruído. */
+const VOCAB_MAX = 40;
+
+function comVocabulario(instrucoes: string, v?: VocabularioDoAcervo): string {
+  const listas = [
+    v?.marcas?.length
+      ? `Marcas já no acervo: ${v.marcas.slice(0, VOCAB_MAX).join(", ")}`
+      : null,
+    v?.nichos?.length
+      ? `Nichos já no acervo: ${v.nichos.slice(0, VOCAB_MAX).join(", ")}`
+      : null,
+    v?.tags?.length
+      ? `Tags já no acervo: ${v.tags.slice(0, VOCAB_MAX).join(", ")}`
+      : null,
+  ].filter(Boolean);
+  if (!listas.length) return instrucoes;
+
+  return `${instrucoes}
+
+VOCABULÁRIO DO ACERVO
+Se o que você identificou for a MESMA coisa que um destes, use a grafia daqui —
+"Navarro" e "Gabriel Navarro" viram dois filtros com metade das peças cada.
+Se for coisa nova, escreva o nome novo: a lista é o que já existe, não o que é permitido.
+
+${listas.join("\n")}`;
+}
+
 const FERRAMENTA: Anthropic.Tool = {
   name: "catalogar_referencia",
   description: "Preenche os campos de catalogação da referência.",
   input_schema: {
     type: "object",
     properties: {
-      titulo: { type: "string", description: "Curto e específico. Vazio se não der." },
-      anotacoes: { type: "string", description: "O que dá para roubar: gancho, estrutura, prova." },
-      marca: { type: "string", description: "Quem anuncia. VAZIO se não estiver visível." },
-      nicho: { type: "string", description: "Ex.: finanças, saúde, educação, estética." },
+      titulo: {
+        type: "string",
+        description: "Curto e específico. Vazio se não der.",
+      },
+      anotacoes: {
+        type: "string",
+        description: "O que dá para roubar: gancho, estrutura, prova.",
+      },
+      marca: {
+        type: "string",
+        description: "Quem anuncia. VAZIO se não estiver visível.",
+      },
+      nicho: {
+        type: "string",
+        description: "Ex.: finanças, saúde, educação, estética.",
+      },
       plataforma: { type: "string", enum: [...PLATAFORMAS] },
       formato: { type: "string", enum: [...FORMATOS] },
       tags: { type: "array", items: { type: "string" }, maxItems: 6 },
@@ -241,7 +314,8 @@ function texto(v: unknown, max: number): string | null {
   if (typeof v !== "string") return null;
   const t = v.trim();
   // String vazia e "não sei" são a mesma coisa: campo em branco na tela.
-  if (!t || /^(n\/a|nao sei|não sei|desconhecid[oa]|indefinid[oa])$/i.test(t)) return null;
+  if (!t || /^(n\/a|nao sei|não sei|desconhecid[oa]|indefinid[oa])$/i.test(t))
+    return null;
   return t.slice(0, max);
 }
 
@@ -290,7 +364,8 @@ export function motivoLegivel(erro: unknown): string {
   if (e?.status === 401 || e?.status === 403) {
     return "A chave da API de IA foi recusada. Fale com quem cuida do servidor.";
   }
-  if (e?.status === 429) return "A IA está no limite de uso. Tente em alguns segundos.";
+  if (e?.status === 429)
+    return "A IA está no limite de uso. Tente em alguns segundos.";
   if (typeof e?.status === "number" && e.status >= 500) {
     return "A IA está sobrecarregada. Tente de novo em instantes.";
   }
@@ -306,7 +381,11 @@ export function motivoLegivel(erro: unknown): string {
 export async function analisarReferencia(
   client: ClienteDeAnalise,
   arquivo: { buffer: Buffer; mimeType: string },
-  contexto?: { nomeDoArquivo?: string; origem?: string },
+  contexto?: {
+    nomeDoArquivo?: string;
+    origem?: string;
+    vocabulario?: VocabularioDoAcervo;
+  },
 ): Promise<SugestaoDeSwipe> {
   if (!podeAnalisar(arquivo.mimeType)) {
     throw new ErroDeAnalise("Só dá para analisar imagem ou PDF.");
@@ -318,7 +397,11 @@ export async function analisarReferencia(
       ? [
           {
             type: "document",
-            source: { type: "base64", media_type: "application/pdf", data: base64 },
+            source: {
+              type: "base64",
+              media_type: "application/pdf",
+              data: base64,
+            },
           },
         ]
       : [
@@ -326,14 +409,17 @@ export async function analisarReferencia(
             type: "image",
             source: {
               type: "base64",
-              media_type: arquivo.mimeType as "image/png" | "image/jpeg" | "image/webp" | "image/gif",
+              media_type: arquivo.mimeType as
+                "image/png" | "image/jpeg" | "image/webp" | "image/gif",
               data: base64,
             },
           },
         ];
 
   const pistas = [
-    contexto?.nomeDoArquivo ? `Nome do arquivo: ${contexto.nomeDoArquivo}` : null,
+    contexto?.nomeDoArquivo
+      ? `Nome do arquivo: ${contexto.nomeDoArquivo}`
+      : null,
     contexto?.origem ? `Veio de: ${contexto.origem}` : null,
   ].filter(Boolean);
 
@@ -354,7 +440,7 @@ export async function analisarReferencia(
       .stream({
         model: MODELO,
         max_tokens: 1024,
-        system: INSTRUCOES,
+        system: comVocabulario(INSTRUCOES, contexto?.vocabulario),
         tools: [FERRAMENTA],
         // Força a ferramenta: sem isso o modelo às vezes responde em prosa, e
         // aí a catalogação vira parsing de texto livre.
@@ -407,6 +493,8 @@ export async function analisarReferencia(
  */
 export interface DadosDoLink {
   url: string;
+  /** O que o acervo já usa, para o modelo não criar uma variante do mesmo nome. */
+  vocabulario?: VocabularioDoAcervo;
   titulo?: string | null;
   descricao?: string | null;
   siteName?: string | null;
@@ -462,10 +550,10 @@ export async function analisarLink(
     dados.siteName ? `Site: ${dados.siteName}` : null,
     dados.titulo ? `Título da página: ${dados.titulo}` : null,
     dados.descricao ? `Descrição da página: ${dados.descricao}` : null,
-    dados.notas ? `Anotação de quem salvou: ${dados.notas.slice(0, 1200)}` : null,
-    dados.textoDaPagina
-      ? `Conteúdo da página:\n${dados.textoDaPagina}`
+    dados.notas
+      ? `Anotação de quem salvou: ${dados.notas.slice(0, 1200)}`
       : null,
+    dados.textoDaPagina ? `Conteúdo da página:\n${dados.textoDaPagina}` : null,
   ].filter(Boolean);
 
   const conteudo: Anthropic.ContentBlockParam[] = [];
@@ -474,7 +562,8 @@ export async function analisarLink(
       type: "image",
       source: {
         type: "base64",
-        media_type: imagem.mimeType as "image/png" | "image/jpeg" | "image/webp" | "image/gif",
+        media_type: imagem.mimeType as
+          "image/png" | "image/jpeg" | "image/webp" | "image/gif",
         data: imagem.buffer.toString("base64"),
       },
     });
@@ -485,7 +574,10 @@ export async function analisarLink(
       text: "A imagem acima é o preview que a própria página publica.",
     });
   }
-  conteudo.push({ type: "text", text: `Catalogue esta referência.\n${linhas.join("\n")}` });
+  conteudo.push({
+    type: "text",
+    text: `Catalogue esta referência.\n${linhas.join("\n")}`,
+  });
 
   let resposta: Anthropic.Message;
   try {
@@ -493,7 +585,7 @@ export async function analisarLink(
       .stream({
         model: MODELO,
         max_tokens: 1024,
-        system: INSTRUCOES_DE_LINK,
+        system: comVocabulario(INSTRUCOES_DE_LINK, dados.vocabulario),
         tools: [FERRAMENTA],
         tool_choice: { type: "tool", name: FERRAMENTA.name },
         messages: [{ role: "user", content: conteudo }],
