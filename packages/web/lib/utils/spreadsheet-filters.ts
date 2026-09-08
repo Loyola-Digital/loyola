@@ -1,3 +1,4 @@
+import { inicioDaJanela } from "@loyola-x/shared/src/janela-de-dias";
 import type { FunnelSpreadsheetData, FunnelSpreadsheetRow } from "@/lib/types/funnel-spreadsheet";
 
 /**
@@ -22,7 +23,12 @@ export function normaliseDate(raw: string | undefined | null): string | null {
 
 /**
  * Retorna apenas as linhas da planilha cuja coluna mapeada como `date` cai
- * dentro da janela retroativa `[today - days, today]`.
+ * dentro da janela de **`days` dias terminando hoje** — ou seja,
+ * `[hoje - (days - 1), hoje]`, inclusiva nas duas pontas.
+ *
+ * ⚠️ Story 18.80: até 08/09/2026 esta função devolvia `days + 1` dias, e o
+ * resultado dela cruza com dado da Meta que vem com `days`. Ver a nota no
+ * corpo.
  *
  * Linhas sem data válida ou fora da janela são descartadas.
  * Se a coluna `date` não estiver mapeada, retorna todas as linhas (não há como filtrar).
@@ -34,15 +40,27 @@ export function filterSheetRowsByDays(
   if (!data) return [];
   if (!data.mapping.date) return data.rows;
 
-  const today = new Date();
-  today.setHours(23, 59, 59, 999);
-  const cutoff = new Date(today);
-  cutoff.setDate(cutoff.getDate() - days);
-  cutoff.setHours(0, 0, 0, 0);
-
-  const cutoffIso = cutoff.toISOString().slice(0, 10);
-  const todayIso = today.toISOString().slice(0, 10);
-
+  /**
+   * Story 18.80 — a janela vem de `@loyola-x/shared`, a MESMA função da API.
+   *
+   * Antes esta função tinha a própria aritmética, e ela estava errada por um
+   * dia: `cutoff = hoje - days` com filtro inclusivo devolve `days + 1` dias.
+   * A mídia da Meta sempre veio com `days` (`traffic-analytics.ts:1191`), e as
+   * duas cruzam em CPL, CAC, ROAS e no Top Criativos — leads de 8 dias sobre
+   * investimento de 7. O erro tinha direção: sempre otimista.
+   *
+   * Medido em 08/09/2026, antes de corrigir: CPL do `bbe-fc1-a1-mai-26` em 7
+   * dias saía 50% mais barato que o real. A magnitude oscila com o que caiu no
+   * dia extra; o defeito não oscilava.
+   *
+   * ⚠️ O "hoje" é o do NAVEGADOR, e por isso vai explícito: a API usa o dia do
+   * fuso do negócio. `inicioDaJanela` não embute default nenhum, justamente
+   * para essa diferença não sumir dentro da função que existe para acabar com
+   * divergência de janela.
+   */
+  const agora = new Date();
+  const todayIso = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
+  const cutoffIso = inicioDaJanela(days, todayIso);
   return data.rows.filter((row) => {
     const normalized = normaliseDate(row.named.date);
     if (!normalized) return false;

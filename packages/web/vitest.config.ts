@@ -33,5 +33,21 @@ export default defineConfig({
     // `lib/bi` entra junto pelo mesmo motivo de `lib/utils`: é lógica pura
     // (aritmética de grade, máquina de estados de salvamento) e roda sem DOM.
     include: ["lib/utils/**/*.test.ts", "lib/bi/**/*.test.ts", "lib/swipe/**/*.test.ts", "lib/planner/**/*.test.ts"],
+    /**
+     * Story 18.80 (gate do @qa) — o fuso do runner é FIXADO no do usuário.
+     *
+     * Sem isto a suíte protegia menos em CI do que na máquina do time. Medido:
+     * reintroduzir `.toISOString()` no fim da janela de
+     * `spreadsheet-filters.ts` derrubava **8 testes em America/Sao_Paulo e
+     * ZERO em UTC** — e o GitHub Actions roda em UTC.
+     *
+     * Ou seja: o defeito subiria com o CI verde, e só quem rodasse local veria
+     * vermelho. Uma proteção que não existe no lugar onde é consultada.
+     *
+     * `America/Sao_Paulo` e não UTC porque é onde o navegador do usuário está,
+     * e o código lê `new Date()` do navegador. Testar no fuso de produção é o
+     * que faz o teste falar do produto.
+     */
+    env: { TZ: "America/Sao_Paulo" },
   },
 });
