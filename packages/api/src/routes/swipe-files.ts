@@ -11,7 +11,17 @@
 
 import { Readable } from "node:stream";
 import { z } from "zod";
-import { and, desc, eq, ilike, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   swipeClickupAlerts,
@@ -32,7 +42,10 @@ import {
   textoDoDocumento,
   MIME_DOCX,
 } from "../services/swipe-analise.js";
-import { avisarNoClickUp } from "../services/swipe-clickup-aviso.js";
+import {
+  avisarLoteNoClickUp,
+  avisarNoClickUp,
+} from "../services/swipe-clickup-aviso.js";
 import { contarFacetas } from "../services/swipe-facetas.js";
 import {
   agruparPorAtributo,
@@ -97,9 +110,20 @@ const createBody = z.object({
   platform: z.string().trim().max(40).optional(),
   format: z.string().trim().max(40).optional(),
   tags: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
+  /**
+   * Parte de uma subida em lote — não avise por esta.
+   *
+   * Subir uma pasta chama esta rota uma vez por arquivo. Sem isto, sessenta
+   * arquivos viram sessenta mensagens seguidas no canal, o que não avisa
+   * ninguém: enterra a conversa e ensina o time a ignorar o canal. Quem sobe em
+   * lote fecha com `POST /aviso-de-lote`, que manda um resumo só.
+   */
+  emLote: z.boolean().optional(),
 });
 
-const updateBody = createBody.partial().extend({ isFavorite: z.boolean().optional() });
+const updateBody = createBody
+  .partial()
+  .extend({ isFavorite: z.boolean().optional() });
 
 const previewBody = z.object({ url: z.string().trim().min(1).max(2000) });
 
@@ -152,7 +176,8 @@ export default fp(async function swipeFilesRoutes(fastify) {
 
   // ---- GET / — lista com filtros ----
   fastify.get(base, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const q = listQuery.safeParse(request.query);
     if (!q.success) return reply.code(400).send({ error: "Filtros inválidos" });
     const f = q.data;
@@ -165,7 +190,8 @@ export default fp(async function swipeFilesRoutes(fastify) {
     if (f.kind) conds.push(eq(swipeFiles.assetKind, f.kind));
     if (f.favorites) conds.push(eq(swipeFiles.isFavorite, true));
     // Contém a tag — o índice GIN atende esse operador.
-    if (f.tag) conds.push(sql`${swipeFiles.tags} @> ${JSON.stringify([f.tag])}::jsonb`);
+    if (f.tag)
+      conds.push(sql`${swipeFiles.tags} @> ${JSON.stringify([f.tag])}::jsonb`);
     // Coleção entra como subconsulta e não como join: um join duplicaria a
     // peça que está em duas coleções, e a grade mostraria o mesmo card duas
     // vezes.
@@ -210,11 +236,13 @@ export default fp(async function swipeFilesRoutes(fastify) {
       })
       .from(swipeFiles);
 
-
     return {
       // A URL sai da CHAVE, não do que está gravado: assim, arrumar a variável
       // de ambiente conserta as linhas antigas junto com as novas.
-      items: rows.map((r) => ({ ...r, fileUrl: urlPublica(r, fastify.config.STORAGE_PUBLIC_URL) })),
+      items: rows.map((r) => ({
+        ...r,
+        fileUrl: urlPublica(r, fastify.config.STORAGE_PUBLIC_URL),
+      })),
       // Com CONTAGEM e ordenadas por uso — ver `contarFacetas` para o porquê.
       facets: {
         platform: contarFacetas(facetRows.map((r) => r.platform)),
@@ -270,13 +298,22 @@ export default fp(async function swipeFilesRoutes(fastify) {
    * parece que alguém mexeu no mapa.
    */
   fastify.get(`${base}/por-ids`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const q = z
       .object({ ids: z.string().min(1).max(4000) })
       .safeParse(request.query);
-    if (!q.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!q.success)
+      return reply.code(400).send({ error: "Parâmetros inválidos" });
 
-    const ids = [...new Set(q.data.ids.split(",").map((s) => s.trim()).filter(Boolean))]
+    const ids = [
+      ...new Set(
+        q.data.ids
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      ),
+    ]
       .filter((s) => /^[0-9a-f-]{36}$/i.test(s))
       .slice(0, 200);
     if (ids.length === 0) return { items: [] };
@@ -295,7 +332,10 @@ export default fp(async function swipeFilesRoutes(fastify) {
       items: ids
         .map((id) => porId.get(id))
         .filter((r): r is (typeof rows)[number] => !!r)
-        .map((r) => ({ ...r, fileUrl: urlPublica(r, fastify.config.STORAGE_PUBLIC_URL) })),
+        .map((r) => ({
+          ...r,
+          fileUrl: urlPublica(r, fastify.config.STORAGE_PUBLIC_URL),
+        })),
     };
   });
 
@@ -310,14 +350,19 @@ export default fp(async function swipeFilesRoutes(fastify) {
    * isto é o complemento. Devolve lista vazia e a tela não mostra a seção.
    */
   fastify.post(`${base}/busca-contexto`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const b = z
-      .object({ q: z.string().trim().min(2).max(300), limite: z.coerce.number().int().min(1).max(30).optional() })
+      .object({
+        q: z.string().trim().min(2).max(300),
+        limite: z.coerce.number().int().min(1).max(30).optional(),
+      })
       .safeParse(request.body);
     if (!b.success) return reply.code(400).send({ error: "Busca inválida" });
 
     const chave = process.env.ANTHROPIC_API_KEY;
-    if (!chave) return { achados: [], indisponivel: "Análise por IA não configurada." };
+    if (!chave)
+      return { achados: [], indisponivel: "Análise por IA não configurada." };
 
     const refs = await fastify.db
       .select({
@@ -354,7 +399,9 @@ export default fp(async function swipeFilesRoutes(fastify) {
             cache_control: { type: "ephemeral" },
           },
         ],
-        messages: [{ role: "user", content: instrucao(b.data.q, b.data.limite ?? 12) }],
+        messages: [
+          { role: "user", content: instrucao(b.data.q, b.data.limite ?? 12) },
+        ],
       });
 
       const texto = resposta.content
@@ -365,7 +412,10 @@ export default fp(async function swipeFilesRoutes(fastify) {
       // Log e silêncio: a busca por texto já entregou algo, e um erro vermelho
       // aqui faria parecer que a busca inteira falhou.
       request.log.warn({ err: e }, "busca por contexto falhou");
-      return { achados: [], indisponivel: "Não consegui buscar por contexto agora." };
+      return {
+        achados: [],
+        indisponivel: "Não consegui buscar por contexto agora.",
+      };
     }
   });
 
@@ -378,7 +428,8 @@ export default fp(async function swipeFilesRoutes(fastify) {
    * uma coleção sem número na frente não diz se vale abrir.
    */
   fastify.get(`${base}/colecoes`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const linhas = await fastify.db
       .select({
         id: swipeCollections.id,
@@ -390,7 +441,10 @@ export default fp(async function swipeFilesRoutes(fastify) {
         mexidaEm: sql<Date>`greatest(${swipeCollections.updatedAt}, coalesce(max(${swipeCollectionItems.addedAt}), ${swipeCollections.updatedAt}))`,
       })
       .from(swipeCollections)
-      .leftJoin(swipeCollectionItems, eq(swipeCollectionItems.collectionId, swipeCollections.id))
+      .leftJoin(
+        swipeCollectionItems,
+        eq(swipeCollectionItems.collectionId, swipeCollections.id),
+      )
       .groupBy(swipeCollections.id)
       // Por atividade: a coleção que acabou de receber peça é a que está em uso.
       .orderBy(
@@ -410,7 +464,8 @@ export default fp(async function swipeFilesRoutes(fastify) {
 
   /** Cria uma coleção. Nome repetido ganha sufixo em vez de recusar o envio. */
   fastify.post(`${base}/colecoes`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const b = z
       .object({
         nome: z.string().max(200),
@@ -422,7 +477,8 @@ export default fp(async function swipeFilesRoutes(fastify) {
     if (!b.success) return reply.code(400).send({ error: "Dados inválidos" });
 
     const nome = limparNomeDaColecao(b.data.nome);
-    if (!nome) return reply.code(400).send({ error: "A coleção precisa de um nome." });
+    if (!nome)
+      return reply.code(400).send({ error: "A coleção precisa de um nome." });
 
     const pai = b.data.parentId ?? null;
 
@@ -438,8 +494,14 @@ export default fp(async function swipeFilesRoutes(fastify) {
       .from(swipeCollections)
       .where(
         pai
-          ? and(eq(swipeCollections.parentId, pai), sql`lower(${swipeCollections.nome}) = lower(${nome})`)
-          : and(isNull(swipeCollections.parentId), sql`lower(${swipeCollections.nome}) = lower(${nome})`),
+          ? and(
+              eq(swipeCollections.parentId, pai),
+              sql`lower(${swipeCollections.nome}) = lower(${nome})`,
+            )
+          : and(
+              isNull(swipeCollections.parentId),
+              sql`lower(${swipeCollections.nome}) = lower(${nome})`,
+            ),
       )
       .limit(1);
     if (jaExiste) return reply.code(200).send({ ...jaExiste, jaExistia: true });
@@ -447,14 +509,21 @@ export default fp(async function swipeFilesRoutes(fastify) {
     const existentes = await fastify.db
       .select({ nome: swipeCollections.nome })
       .from(swipeCollections)
-      .where(pai ? eq(swipeCollections.parentId, pai) : isNull(swipeCollections.parentId));
+      .where(
+        pai
+          ? eq(swipeCollections.parentId, pai)
+          : isNull(swipeCollections.parentId),
+      );
 
     const [criada] = await fastify.db
       .insert(swipeCollections)
       .values({
         // Subir a mesma pasta duas vezes é comum — a segunda com mais
         // arquivos. Recusar pelo nome faria perder o envio inteiro.
-        nome: nomeLivre(nome, existentes.map((e) => e.nome)),
+        nome: nomeLivre(
+          nome,
+          existentes.map((e) => e.nome),
+        ),
         descricao: b.data.descricao ?? null,
         parentId: pai,
         createdBy: request.userId ?? null,
@@ -465,17 +534,23 @@ export default fp(async function swipeFilesRoutes(fastify) {
   });
 
   fastify.patch(`${base}/colecoes/:id`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
     const b = z
-      .object({ nome: z.string().max(200).optional(), descricao: z.string().max(2000).nullable().optional() })
+      .object({
+        nome: z.string().max(200).optional(),
+        descricao: z.string().max(2000).nullable().optional(),
+      })
       .safeParse(request.body);
-    if (!p.success || !b.success) return reply.code(400).send({ error: "Dados inválidos" });
+    if (!p.success || !b.success)
+      return reply.code(400).send({ error: "Dados inválidos" });
 
     const patch: { nome?: string; descricao?: string | null } = {};
     if (b.data.nome !== undefined) {
       const nome = limparNomeDaColecao(b.data.nome);
-      if (!nome) return reply.code(400).send({ error: "A coleção precisa de um nome." });
+      if (!nome)
+        return reply.code(400).send({ error: "A coleção precisa de um nome." });
       patch.nome = nome;
     }
     if (b.data.descricao !== undefined) patch.descricao = b.data.descricao;
@@ -486,7 +561,8 @@ export default fp(async function swipeFilesRoutes(fastify) {
       .where(eq(swipeCollections.id, p.data.id))
       .returning();
 
-    if (!atualizada) return reply.code(404).send({ error: "Coleção não encontrada" });
+    if (!atualizada)
+      return reply.code(404).send({ error: "Coleção não encontrada" });
     return atualizada;
   });
 
@@ -498,12 +574,14 @@ export default fp(async function swipeFilesRoutes(fastify) {
    * pode levar junto os 47 criativos que continuam servindo a outros usos.
    */
   fastify.delete(`${base}/colecoes/:id`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
     const q = z
       .object({ comAsPecas: z.enum(["1", "true"]).optional() })
       .safeParse(request.query);
-    if (!p.success || !q.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!p.success || !q.success)
+      return reply.code(400).send({ error: "Parâmetros inválidos" });
     const levarAsPecas = Boolean(q.data.comAsPecas);
 
     /**
@@ -522,7 +600,8 @@ export default fp(async function swipeFilesRoutes(fastify) {
       SELECT id FROM t
     `);
     const ids = (arvore.rows ?? arvore).map((r: { id: string }) => r.id);
-    if (ids.length === 0) return reply.code(404).send({ error: "Coleção não encontrada" });
+    if (ids.length === 0)
+      return reply.code(404).send({ error: "Coleção não encontrada" });
 
     let pecasApagadas = 0;
     if (levarAsPecas) {
@@ -596,13 +675,16 @@ export default fp(async function swipeFilesRoutes(fastify) {
       }
     }
 
-    await fastify.db.delete(swipeCollections).where(eq(swipeCollections.id, p.data.id));
+    await fastify.db
+      .delete(swipeCollections)
+      .where(eq(swipeCollections.id, p.data.id));
     return { ok: true, colecoesApagadas: ids.length, pecasApagadas };
   });
 
   /** Põe ou tira peças de uma coleção. Repetir não duplica. */
   fastify.put(`${base}/colecoes/:id/pecas`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
     const b = z
       .object({
@@ -610,7 +692,8 @@ export default fp(async function swipeFilesRoutes(fastify) {
         remover: z.array(z.string().uuid()).max(500).optional(),
       })
       .safeParse(request.body);
-    if (!p.success || !b.success) return reply.code(400).send({ error: "Dados inválidos" });
+    if (!p.success || !b.success)
+      return reply.code(400).send({ error: "Dados inválidos" });
 
     if (b.data.adicionar?.length) {
       await fastify.db
@@ -658,9 +741,11 @@ export default fp(async function swipeFilesRoutes(fastify) {
    * dois mil caracteres.
    */
   fastify.get(`${base}/:id/texto`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
-    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!p.success)
+      return reply.code(400).send({ error: "Parâmetros inválidos" });
 
     const [item] = await fastify.db
       .select({
@@ -672,9 +757,12 @@ export default fp(async function swipeFilesRoutes(fastify) {
       .from(swipeFiles)
       .where(eq(swipeFiles.id, p.data.id))
       .limit(1);
-    if (!item) return reply.code(404).send({ error: "Referência não encontrada" });
+    if (!item)
+      return reply.code(404).send({ error: "Referência não encontrada" });
     if (item.assetKind !== "doc") {
-      return reply.code(400).send({ error: "Esta referência não é um documento." });
+      return reply
+        .code(400)
+        .send({ error: "Esta referência não é um documento." });
     }
 
     const url = urlPublica(item, fastify.config.STORAGE_PUBLIC_URL);
@@ -682,34 +770,53 @@ export default fp(async function swipeFilesRoutes(fastify) {
 
     try {
       const r = await fetch(url);
-      if (!r.ok) return reply.code(502).send({ error: "Não consegui buscar o arquivo." });
+      if (!r.ok)
+        return reply
+          .code(502)
+          .send({ error: "Não consegui buscar o arquivo." });
       const buffer = Buffer.from(await r.arrayBuffer());
       // Sem limite aqui: na análise o corte existe para caber no prompt; para
       // LER, cortar o documento no meio é esconder o fim da transcrição.
-      const texto = await textoDoDocumento(buffer, item.fileMime ?? MIME_DOCX, 500_000);
+      const texto = await textoDoDocumento(
+        buffer,
+        item.fileMime ?? MIME_DOCX,
+        500_000,
+      );
       return { texto };
     } catch (err) {
-      request.log.warn({ err, id: p.data.id }, "não consegui extrair o texto do documento");
-      return reply.code(502).send({ error: "Não consegui ler este documento." });
+      request.log.warn(
+        { err, id: p.data.id },
+        "não consegui extrair o texto do documento",
+      );
+      return reply
+        .code(502)
+        .send({ error: "Não consegui ler este documento." });
     }
   });
 
   fastify.post(`${base}/analisar`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
 
     const arquivo = await request.file();
-    if (!arquivo) return reply.code(400).send({ error: "Envie a imagem ou o PDF." });
+    if (!arquivo)
+      return reply.code(400).send({ error: "Envie a imagem ou o PDF." });
 
     /**
      * O tipo sai do NOME quando o cabeçalho é vago — mesmo motivo da rota de
      * upload: o navegador escreve `application/octet-stream` para arquivo do
      * disco, e a análise recusava a página com o arquivo certo em mãos.
      */
-    const mimeReal = resolverMime(arquivo.filename, arquivo.mimetype) ?? arquivo.mimetype;
+    const mimeReal =
+      resolverMime(arquivo.filename, arquivo.mimetype) ?? arquivo.mimetype;
 
     // HTML entra por outro caminho: o modelo lê o TEXTO da página, não o
     // arquivo. Ver `textoDoHtml` para por que não mandamos o HTML cru.
-    if (!podeAnalisar(mimeReal) && !ehHtml(mimeReal) && !ehDocumento(mimeReal)) {
+    if (
+      !podeAnalisar(mimeReal) &&
+      !ehHtml(mimeReal) &&
+      !ehDocumento(mimeReal)
+    ) {
       return reply.code(400).send({
         error:
           "Só dá para analisar imagem, PDF, página ou documento. Vídeo precisa ser catalogado à mão.",
@@ -717,12 +824,19 @@ export default fp(async function swipeFilesRoutes(fastify) {
     }
 
     const buffer = await arquivo.toBuffer();
-    if (buffer.length === 0) return reply.code(400).send({ error: "Arquivo vazio." });
+    if (buffer.length === 0)
+      return reply.code(400).send({ error: "Arquivo vazio." });
 
     // A origem vem como campo do multipart: uma landing page em PDF diz muito
     // mais quando se sabe o domínio de onde veio.
-    const campos = arquivo.fields as Record<string, { value?: unknown } | undefined>;
-    const origem = typeof campos?.origem?.value === "string" ? campos.origem.value : undefined;
+    const campos = arquivo.fields as Record<
+      string,
+      { value?: unknown } | undefined
+    >;
+    const origem =
+      typeof campos?.origem?.value === "string"
+        ? campos.origem.value
+        : undefined;
 
     // Daqui em diante a resposta é do socket. Os headers já acumulados vão
     // junto — é onde mora o `Access-Control-Allow-Origin`.
@@ -735,7 +849,8 @@ export default fp(async function swipeFilesRoutes(fastify) {
     });
 
     const escrever = (linha: unknown) => {
-      if (!reply.raw.writableEnded) reply.raw.write(`${JSON.stringify(linha)}\n`);
+      if (!reply.raw.writableEnded)
+        reply.raw.write(`${JSON.stringify(linha)}\n`);
     };
 
     escrever({ tipo: "lendo", bytes: buffer.length });
@@ -762,29 +877,35 @@ export default fp(async function swipeFilesRoutes(fastify) {
             textoDaPagina: await textoDoDocumento(buffer, mimeReal),
           })
         : ehHtml(mimeReal)
-        ? /*
-           * A página salva é o melhor material de catalogação do acervo.
-           *
-           * Um link entrega só o Open Graph — título e uma linha. Aqui o
-           * modelo lê a headline, a promessa, o preço e a prova, que é o que
-           * faz a peça ser reencontrada três meses depois.
-           */
-          await analisarLink(fastify.claude.client, {
-            url: origem ?? arquivo.filename ?? "página salva",
-            titulo: arquivo.filename ?? null,
-            textoDaPagina: textoDoHtml(buffer.toString("utf8")),
-          })
-        : await analisarReferencia(
-            fastify.claude.client,
-            { buffer, mimeType: mimeReal },
-            { nomeDoArquivo: arquivo.filename, origem },
-          );
+          ? /*
+             * A página salva é o melhor material de catalogação do acervo.
+             *
+             * Um link entrega só o Open Graph — título e uma linha. Aqui o
+             * modelo lê a headline, a promessa, o preço e a prova, que é o que
+             * faz a peça ser reencontrada três meses depois.
+             */
+            await analisarLink(fastify.claude.client, {
+              url: origem ?? arquivo.filename ?? "página salva",
+              titulo: arquivo.filename ?? null,
+              textoDaPagina: textoDoHtml(buffer.toString("utf8")),
+            })
+          : await analisarReferencia(
+              fastify.claude.client,
+              { buffer, mimeType: mimeReal },
+              { nomeDoArquivo: arquivo.filename, origem },
+            );
       escrever({ tipo: "pronto", sugestao });
     } catch (err) {
-      fastify.log.error({ err, mime: mimeReal }, "analise de swipe file falhou");
+      fastify.log.error(
+        { err, mime: mimeReal },
+        "analise de swipe file falhou",
+      );
       escrever({
         tipo: "erro",
-        error: err instanceof ErroDeAnalise ? err.message : "Não consegui analisar agora.",
+        error:
+          err instanceof ErroDeAnalise
+            ? err.message
+            : "Não consegui analisar agora.",
       });
     } finally {
       clearInterval(pulso);
@@ -819,7 +940,8 @@ export default fp(async function swipeFilesRoutes(fastify) {
       config: { rateLimit: { max: 120, timeWindow: "1 minute" } },
     },
     async (request, reply) => {
-      if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+      if (denyGuest(request))
+        return reply.code(403).send({ error: "Acesso negado" });
 
       if (!isStorageConfigured(storage())) {
         return reply.code(503).send({
@@ -845,7 +967,9 @@ export default fp(async function swipeFilesRoutes(fastify) {
 
       // O teto global do multipart é 10 MB (app.ts) e vídeo de anúncio passa
       // disso com folga. O limite desta rota é o do bucket.
-      const arquivo = await request.file({ limits: { fileSize: MAX_UPLOAD_BYTES } });
+      const arquivo = await request.file({
+        limits: { fileSize: MAX_UPLOAD_BYTES },
+      });
       if (!arquivo) return reply.code(400).send({ error: "Envie o arquivo." });
 
       /**
@@ -860,7 +984,9 @@ export default fp(async function swipeFilesRoutes(fastify) {
       if (!mime) {
         return reply
           .code(400)
-          .send({ error: `Tipo não permitido: ${arquivo.mimetype || "desconhecido"}` });
+          .send({
+            error: `Tipo não permitido: ${arquivo.mimetype || "desconhecido"}`,
+          });
       }
 
       try {
@@ -879,7 +1005,9 @@ export default fp(async function swipeFilesRoutes(fastify) {
         if (arquivo.file.truncated) {
           await deleteObject(storage(), r.key).catch(() => {});
           const mb = Math.round(MAX_UPLOAD_BYTES / 1024 / 1024);
-          return reply.code(400).send({ error: `Arquivo maior que o limite de ${mb} MB.` });
+          return reply
+            .code(400)
+            .send({ error: `Arquivo maior que o limite de ${mb} MB.` });
         }
 
         return r;
@@ -890,7 +1018,12 @@ export default fp(async function swipeFilesRoutes(fastify) {
         // "Internal Server Error" e não deixa ninguém agir.
         const detalhe = explicarErroDeStorage(err);
         fastify.log.error(
-          { err, mime: arquivo.mimetype, codigo: detalhe.codigo, status: detalhe.status },
+          {
+            err,
+            mime: arquivo.mimetype,
+            codigo: detalhe.codigo,
+            status: detalhe.status,
+          },
           "upload de swipe file falhou",
         );
         return reply.code(502).send({
@@ -911,7 +1044,8 @@ export default fp(async function swipeFilesRoutes(fastify) {
    * única forma de distinguir era tentar subir e ler o erro cru.
    */
   fastify.get(`${base}/storage-check`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
 
     const leitura = await checarStorage(storage());
     // Só testa escrita se a leitura passou: sem bucket, o teste de escrita
@@ -924,7 +1058,8 @@ export default fp(async function swipeFilesRoutes(fastify) {
       endpoint: leitura.endpoint,
       alcancaOBucket: leitura.ok,
       podeGravar: escrita.ok,
-      erro: leitura.erro ?? ("erro" in escrita ? escrita.erro : undefined) ?? null,
+      erro:
+        leitura.erro ?? ("erro" in escrita ? escrita.erro : undefined) ?? null,
     };
   });
 
@@ -933,14 +1068,16 @@ export default fp(async function swipeFilesRoutes(fastify) {
     `${base}/preview`,
     { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
     async (request, reply) => {
-      if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+      if (denyGuest(request))
+        return reply.code(403).send({ error: "Acesso negado" });
       const body = previewBody.safeParse(request.body);
       if (!body.success) return reply.code(400).send({ error: "URL inválida" });
       try {
         return await fetchLinkPreview(body.data.url);
       } catch (err) {
         return reply.code(422).send({
-          error: err instanceof Error ? err.message : "Não consegui ler esse link",
+          error:
+            err instanceof Error ? err.message : "Não consegui ler esse link",
           code: "PREVIEW_FAILED",
         });
       }
@@ -949,23 +1086,32 @@ export default fp(async function swipeFilesRoutes(fastify) {
 
   // ---- POST / — cria a referência ----
   fastify.post(base, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const body = createBody.safeParse(request.body);
-    if (!body.success) return reply.code(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.code(400).send({ error: "Dados inválidos" });
     const d = body.data;
 
     if (d.assetKind === "link" && !d.sourceUrl) {
-      return reply.code(400).send({ error: "Referência de link precisa da URL." });
+      return reply
+        .code(400)
+        .send({ error: "Referência de link precisa da URL." });
     }
     if (d.assetKind !== "link" && !d.fileUrl) {
-      return reply.code(400).send({ error: "Referência de arquivo precisa do upload concluído." });
+      return reply
+        .code(400)
+        .send({ error: "Referência de arquivo precisa do upload concluído." });
     }
 
     // Busca o preview no servidor quando há link. Falha aqui não impede o
     // cadastro: a referência vale mesmo sem thumbnail.
-    let og = { title: null, description: null, image: null, siteName: null } as Awaited<
-      ReturnType<typeof fetchLinkPreview>
-    >;
+    let og = {
+      title: null,
+      description: null,
+      image: null,
+      siteName: null,
+    } as Awaited<ReturnType<typeof fetchLinkPreview>>;
     let ogFetchedAt: Date | null = null;
     if (d.sourceUrl) {
       try {
@@ -991,48 +1137,51 @@ export default fp(async function swipeFilesRoutes(fastify) {
     // banco virava 500 sem corpo, e o navegador mostrava só o número.
     try {
       const [created] = await fastify.db
-      .insert(swipeFiles)
-      .values({
-        title: d.title,
-        notes: d.notes || null,
-        assetKind: d.assetKind,
-        fileUrl: d.fileUrl || null,
-        fileKey: d.fileKey || null,
-        fileMime: d.fileMime || null,
-        fileSizeBytes: d.fileSizeBytes ?? null,
-        width: d.width ?? null,
-        height: d.height ?? null,
-        sourceUrl: d.sourceUrl || null,
-        ogTitle: og.title,
-        ogDescription: og.description,
-        ogImage: og.image,
-        ogSiteName: og.siteName,
-        ogFetchedAt,
-        brand: d.brand || null,
-        niche: d.niche || null,
-        platform: d.platform || null,
-        format: d.format || null,
-        tags: d.tags ?? [],
-        createdBy: request.userId,
-      })
-      .returning({ id: swipeFiles.id });
+        .insert(swipeFiles)
+        .values({
+          title: d.title,
+          notes: d.notes || null,
+          assetKind: d.assetKind,
+          fileUrl: d.fileUrl || null,
+          fileKey: d.fileKey || null,
+          fileMime: d.fileMime || null,
+          fileSizeBytes: d.fileSizeBytes ?? null,
+          width: d.width ?? null,
+          height: d.height ?? null,
+          sourceUrl: d.sourceUrl || null,
+          ogTitle: og.title,
+          ogDescription: og.description,
+          ogImage: og.image,
+          ogSiteName: og.siteName,
+          ogFetchedAt,
+          brand: d.brand || null,
+          niche: d.niche || null,
+          platform: d.platform || null,
+          format: d.format || null,
+          tags: d.tags ?? [],
+          createdBy: request.userId,
+        })
+        .returning({ id: swipeFiles.id });
 
       // O aviso sai DEPOIS de gravar, e sem `await` no caminho crítico: quem
       // subiu já tem a referência salva, e esperar o ClickUp só atrasaria a
       // tela por uma coisa que não muda o resultado.
-      void avisarNoClickUp(fastify as never, {
-        id: created!.id,
-        titulo: d.title,
-        assetKind: d.assetKind,
-        autor: autorDoAviso,
-        notas: d.notes ?? null,
-        marca: d.brand ?? null,
-        nicho: d.niche ?? null,
-        plataforma: d.platform ?? null,
-        formato: d.format ?? null,
-        tags: d.tags ?? [],
-        origem: d.sourceUrl ?? null,
-      });
+      //
+      // Em lote, quem avisa é o resumo no fim — ver `emLote` no schema.
+      if (!d.emLote)
+        void avisarNoClickUp(fastify as never, {
+          id: created!.id,
+          titulo: d.title,
+          assetKind: d.assetKind,
+          autor: autorDoAviso,
+          notas: d.notes ?? null,
+          marca: d.brand ?? null,
+          nicho: d.niche ?? null,
+          plataforma: d.platform ?? null,
+          formato: d.format ?? null,
+          tags: d.tags ?? [],
+          origem: d.sourceUrl ?? null,
+        });
 
       return reply.code(201).send(created);
     } catch (err) {
@@ -1041,14 +1190,16 @@ export default fp(async function swipeFilesRoutes(fastify) {
         "falha ao gravar swipe file",
       );
       return reply.code(500).send({
-        error: "Não consegui salvar a referência. O arquivo subiu, mas o registro falhou.",
+        error:
+          "Não consegui salvar a referência. O arquivo subiu, mas o registro falhou.",
       });
     }
   });
 
   // ---- PATCH /:id ----
   fastify.patch(`${base}/:id`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const params = idParam.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: "ID inválido" });
     const body = updateBody.safeParse(request.body);
@@ -1057,7 +1208,9 @@ export default fp(async function swipeFilesRoutes(fastify) {
     }
     const d = body.data;
 
-    const updates: Partial<typeof swipeFiles.$inferInsert> = { updatedAt: new Date() };
+    const updates: Partial<typeof swipeFiles.$inferInsert> = {
+      updatedAt: new Date(),
+    };
     if (d.title !== undefined) updates.title = d.title;
     if (d.notes !== undefined) updates.notes = d.notes || null;
     if (d.brand !== undefined) updates.brand = d.brand || null;
@@ -1072,13 +1225,15 @@ export default fp(async function swipeFilesRoutes(fastify) {
       .set(updates)
       .where(eq(swipeFiles.id, params.data.id))
       .returning({ id: swipeFiles.id });
-    if (!updated) return reply.code(404).send({ error: "Referência não encontrada" });
+    if (!updated)
+      return reply.code(404).send({ error: "Referência não encontrada" });
     return { ok: true };
   });
 
   // ---- DELETE /:id ----
   fastify.delete(`${base}/:id`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const params = idParam.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: "ID inválido" });
 
@@ -1087,9 +1242,12 @@ export default fp(async function swipeFilesRoutes(fastify) {
       .from(swipeFiles)
       .where(eq(swipeFiles.id, params.data.id))
       .limit(1);
-    if (!row) return reply.code(404).send({ error: "Referência não encontrada" });
+    if (!row)
+      return reply.code(404).send({ error: "Referência não encontrada" });
 
-    await fastify.db.delete(swipeFiles).where(eq(swipeFiles.id, params.data.id));
+    await fastify.db
+      .delete(swipeFiles)
+      .where(eq(swipeFiles.id, params.data.id));
 
     // Objeto órfão no bucket é barato; registro pendurado por falha de rede no
     // storage seria pior. Por isso o delete do banco vem primeiro.
@@ -1097,7 +1255,10 @@ export default fp(async function swipeFilesRoutes(fastify) {
       try {
         await deleteObject(storage(), row.fileKey);
       } catch (err) {
-        fastify.log.warn({ err, key: row.fileKey }, "[swipe-files] objeto não removido do bucket");
+        fastify.log.warn(
+          { err, key: row.fileKey },
+          "[swipe-files] objeto não removido do bucket",
+        );
       }
     }
     return { ok: true };
@@ -1120,7 +1281,8 @@ export default fp(async function swipeFilesRoutes(fastify) {
   });
 
   fastify.get(`${base}/clickup-alert`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const [cfg] = await fastify.db.select().from(swipeClickupAlerts).limit(1);
     return {
       config: cfg ?? null,
@@ -1130,9 +1292,11 @@ export default fp(async function swipeFilesRoutes(fastify) {
   });
 
   fastify.put(`${base}/clickup-alert`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const body = configBody.safeParse(request.body);
-    if (!body.success) return reply.code(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.code(400).send({ error: "Dados inválidos" });
 
     const valores = {
       enabled: body.data.enabled,
@@ -1173,49 +1337,66 @@ export default fp(async function swipeFilesRoutes(fastify) {
    * tem projeto, e inventar um só para passar na validação seria mentir na URL.
    */
   fastify.get(`${base}/clickup-channels`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     if (!fastify.clickupService.isConfigured()) {
-      return reply.code(409).send({ error: "ClickUp não configurado no servidor" });
+      return reply
+        .code(409)
+        .send({ error: "ClickUp não configurado no servidor" });
     }
     try {
       return { channels: await fastify.clickupService.getChatChannels() };
     } catch (err) {
       return reply
         .code(502)
-        .send({ error: err instanceof Error ? err.message : "Erro ao listar canais" });
+        .send({
+          error: err instanceof Error ? err.message : "Erro ao listar canais",
+        });
     }
   });
 
   fastify.get(`${base}/clickup-members`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     if (!fastify.clickupService.isConfigured()) {
-      return reply.code(409).send({ error: "ClickUp não configurado no servidor" });
+      return reply
+        .code(409)
+        .send({ error: "ClickUp não configurado no servidor" });
     }
     try {
       return { members: await fastify.clickupService.getWorkspaceMembers() };
     } catch (err) {
       return reply
         .code(502)
-        .send({ error: err instanceof Error ? err.message : "Erro ao listar membros" });
+        .send({
+          error: err instanceof Error ? err.message : "Erro ao listar membros",
+        });
     }
   });
 
   /** Manda uma mensagem de teste — é como se confere o canal sem subir nada. */
   fastify.post(`${base}/clickup-alert/test`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     if (!fastify.clickupService.isConfigured()) {
-      return reply.code(503).send({ error: "ClickUp não configurado no servidor." });
+      return reply
+        .code(503)
+        .send({ error: "ClickUp não configurado no servidor." });
     }
 
     const [cfg] = await fastify.db.select().from(swipeClickupAlerts).limit(1);
-    if (!cfg) return reply.code(400).send({ error: "Configure o canal antes de testar." });
+    if (!cfg)
+      return reply
+        .code(400)
+        .send({ error: "Configure o canal antes de testar." });
 
     const r = await avisarNoClickUp(fastify as never, {
       id: "teste",
       titulo: "Teste de aviso — nenhuma referência foi criada",
       assetKind: "link",
       autor: "Loyola X",
-      notas: "Se você está lendo isto no canal certo, o aviso está funcionando.",
+      notas:
+        "Se você está lendo isto no canal certo, o aviso está funcionando.",
       marca: null,
       nicho: null,
       plataforma: null,
@@ -1225,9 +1406,83 @@ export default fp(async function swipeFilesRoutes(fastify) {
     });
 
     if (!r.enviado) {
-      return reply.code(502).send({ error: `Não consegui enviar (${r.motivo}).` });
+      return reply
+        .code(502)
+        .send({ error: `Não consegui enviar (${r.motivo}).` });
     }
     return { ok: true };
+  });
+
+  /**
+   * O aviso único de uma subida em lote.
+   *
+   * ## Por que o cliente fecha o lote, e não o servidor
+   *
+   * O servidor vê sessenta POSTs independentes; nada neles diz que pertencem à
+   * mesma pasta. Agrupar aqui exigiria uma janela de tempo — "tudo que chegou
+   * nos últimos 30s é o mesmo lote" —, que erra nas duas pontas: junta duas
+   * pessoas subindo ao mesmo tempo e separa um lote lento.
+   *
+   * Quem está subindo sabe onde o lote começa e termina. Ele marca `emLote`
+   * em cada POST e chama esta rota no fim.
+   *
+   * ## Os ids, não a contagem
+   *
+   * O cliente poderia mandar "12 imagens" pronto. Mandando os ids, quem conta
+   * é o banco: um arquivo que falhou não entra no número, e o resumo não
+   * consegue anunciar o que não foi salvo.
+   *
+   * ## Fechar o lote não é obrigatório
+   *
+   * Se a aba fechar no meio, o resumo não sai — e está certo: as referências
+   * estão salvas, e um aviso perdido é bem melhor que sessenta enviados.
+   */
+  fastify.post(`${base}/aviso-de-lote`, async (request, reply) => {
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
+
+    const corpo = z
+      .object({
+        // O teto é o mesmo do plano de pasta: acima disso a subida já teria
+        // sido recusada antes de chegar aqui.
+        ids: z.array(z.string().uuid()).min(1).max(1000),
+        /** A coleção de destino, para o resumo dizer onde as coisas caíram. */
+        destino: z.string().trim().max(200).optional(),
+      })
+      .safeParse(request.body);
+    if (!corpo.success) return reply.code(400).send({ error: "Lote inválido" });
+
+    // Só o que existe de verdade. Ids inventados somem em silêncio em vez de
+    // virarem erro: o resumo é consequência, não o trabalho.
+    const itens = await fastify.db
+      .select({ titulo: swipeFiles.title, assetKind: swipeFiles.assetKind })
+      .from(swipeFiles)
+      .where(inArray(swipeFiles.id, corpo.data.ids));
+
+    const [autor] = request.userId
+      ? await fastify.db
+          .select({ name: users.name })
+          .from(users)
+          .where(eq(users.id, request.userId))
+          .limit(1)
+      : [];
+
+    const r = await avisarLoteNoClickUp(
+      fastify as never,
+      itens as {
+        titulo: string;
+        assetKind: "image" | "video" | "pdf" | "link" | "html" | "doc";
+      }[],
+      { autor: autor?.name ?? null, destino: corpo.data.destino ?? null },
+    );
+
+    // 200 mesmo sem enviar: as referências estão salvas, e a tela não tem o que
+    // fazer com o erro. O motivo vai junto para o log de quem for investigar.
+    return {
+      avisado: r.enviado,
+      motivo: r.motivo ?? null,
+      referencias: itens.length,
+    };
   });
 
   /**
@@ -1270,14 +1525,22 @@ export default fp(async function swipeFilesRoutes(fastify) {
         limite: z.coerce.number().int().min(1).max(1000).optional(),
       })
       .safeParse(request.body);
-    if (!corpo.success) return reply.code(400).send({ error: "Parâmetros inválidos." });
+    if (!corpo.success)
+      return reply.code(400).send({ error: "Parâmetros inválidos." });
     const { channelId, confirmar, analisar, limite } = corpo.data;
 
     if (!fastify.clickupService.isConfigured()) {
-      return reply.code(503).send({ error: "ClickUp não configurado no servidor." });
+      return reply
+        .code(503)
+        .send({ error: "ClickUp não configurado no servidor." });
     }
-    if (!isStorageConfigured(storage()) || pareceplaceholder(fastify.config.STORAGE_PUBLIC_URL)) {
-      return reply.code(503).send({ error: "Storage não configurado no servidor." });
+    if (
+      !isStorageConfigured(storage()) ||
+      pareceplaceholder(fastify.config.STORAGE_PUBLIC_URL)
+    ) {
+      return reply
+        .code(503)
+        .send({ error: "Storage não configurado no servidor." });
     }
 
     reply.hijack();
@@ -1288,7 +1551,8 @@ export default fp(async function swipeFilesRoutes(fastify) {
       "X-Accel-Buffering": "no",
     });
     const escrever = (linha: unknown) => {
-      if (!reply.raw.writableEnded) reply.raw.write(`${JSON.stringify(linha)}\n`);
+      if (!reply.raw.writableEnded)
+        reply.raw.write(`${JSON.stringify(linha)}\n`);
     };
 
     // Ler o canal inteiro leva dezenas de segundos antes do primeiro item.
@@ -1296,9 +1560,12 @@ export default fp(async function swipeFilesRoutes(fastify) {
 
     try {
       escrever({ tipo: "lendo-canal" });
-      const msgs = await fastify.clickupService.getChatChannelMessages(channelId, {
-        comThreads: true,
-      });
+      const msgs = await fastify.clickupService.getChatChannelMessages(
+        channelId,
+        {
+          comThreads: true,
+        },
+      );
 
       const plano = planejarImportacao(msgs);
 
@@ -1341,7 +1608,11 @@ export default fp(async function swipeFilesRoutes(fastify) {
 
       for (const [i, item] of novos.entries()) {
         try {
-          const gravado = await importarUm(item, Boolean(analisar), request.userId);
+          const gravado = await importarUm(
+            item,
+            Boolean(analisar),
+            request.userId,
+          );
           criados++;
           escrever({
             tipo: "item",
@@ -1355,7 +1626,10 @@ export default fp(async function swipeFilesRoutes(fastify) {
           falhas++;
           // Uma referencia que falhou nao pode parar as outras: o motivo
           // costuma ser dela (anexo apagado, tipo recusado), nao da rodada.
-          fastify.log.warn({ err, importKey: item.importKey }, "item de importacao falhou");
+          fastify.log.warn(
+            { err, importKey: item.importKey },
+            "item de importacao falhou",
+          );
           escrever({
             tipo: "item",
             i: i + 1,
@@ -1368,7 +1642,12 @@ export default fp(async function swipeFilesRoutes(fastify) {
         }
       }
 
-      escrever({ tipo: "fim", criados, falhas, ignorados: plano.length - novos.length });
+      escrever({
+        tipo: "fim",
+        criados,
+        falhas,
+        ignorados: plano.length - novos.length,
+      });
     } catch (err) {
       fastify.log.error({ err, channelId }, "importacao do clickup falhou");
       escrever({
@@ -1396,7 +1675,8 @@ export default fp(async function swipeFilesRoutes(fastify) {
     try {
       const r = await fetch(url, { redirect: "follow" });
       const mime = (r.headers.get("content-type") ?? "").split(";")[0]!.trim();
-      if (!r.ok || !podeAnalisar(mime) || mime === "application/pdf") return undefined;
+      if (!r.ok || !podeAnalisar(mime) || mime === "application/pdf")
+        return undefined;
       const buffer = Buffer.from(await r.arrayBuffer());
       return buffer.length > 0 && buffer.length <= 5 * 1024 * 1024
         ? { buffer, mimeType: mime }
@@ -1455,7 +1735,10 @@ export default fp(async function swipeFilesRoutes(fastify) {
        * recusado la, e baixa-lo para a memoria seria gastar por nada.
        */
       const vaiAnalisar =
-        analisar && podeAnalisar(item.anexo.mime) && tamanho > 0 && tamanho <= 32 * 1024 * 1024;
+        analisar &&
+        podeAnalisar(item.anexo.mime) &&
+        tamanho > 0 &&
+        tamanho <= 32 * 1024 * 1024;
 
       if (vaiAnalisar) {
         const buffer = Buffer.from(await resposta.arrayBuffer());
@@ -1471,13 +1754,19 @@ export default fp(async function swipeFilesRoutes(fastify) {
           sugestao = await analisarReferencia(
             fastify.claude.client,
             { buffer, mimeType: item.anexo.mime },
-            { nomeDoArquivo: item.anexo.nome, origem: item.origem ?? undefined },
+            {
+              nomeDoArquivo: item.anexo.nome,
+              origem: item.origem ?? undefined,
+            },
           );
         } catch (err) {
           // O arquivo ja esta no bucket e a referencia vale sem as facetas.
           // Perder a catalogacao e um campo em branco; perder o arquivo seria
           // ter de baixar tudo de novo.
-          fastify.log.warn({ err, importKey: item.importKey }, "analise da importacao falhou");
+          fastify.log.warn(
+            { err, importKey: item.importKey },
+            "analise da importacao falhou",
+          );
         }
       } else {
         const r = await uploadDireto(storage(), {
@@ -1519,14 +1808,20 @@ export default fp(async function swipeFilesRoutes(fastify) {
           await baixarPreview(og.image),
         );
       } catch (err) {
-        fastify.log.warn({ err, importKey: item.importKey }, "analise de link falhou");
+        fastify.log.warn(
+          { err, importKey: item.importKey },
+          "analise de link falhou",
+        );
       }
     }
 
     // O que a IA sugeriu vence o que o parsing adivinhou - ela viu a imagem.
     // Mas so quando trouxe algo: campo vazio dela nao apaga o que ja tinhamos.
     const titulo = (sugestao?.titulo || item.titulo).slice(0, 200);
-    const notas = [sugestao?.anotacoes, item.notas].filter(Boolean).join("\n\n").slice(0, 4000);
+    const notas = [sugestao?.anotacoes, item.notas]
+      .filter(Boolean)
+      .join("\n\n")
+      .slice(0, 4000);
 
     await fastify.db.insert(swipeFiles).values({
       title: titulo,
