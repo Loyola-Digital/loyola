@@ -396,7 +396,17 @@ describe("cadeia-cac — o número principal (AC4)", () => {
     await app.close();
   });
 
-  it("família GRATUITA devolve cplReal, com o lead único do Loyola", async () => {
+  /**
+   * ⚠️ Story 44.26 mudou este teste, e a mudança É o ponto.
+   *
+   * Antes, `leadsUnicos: 500` (o total do cache) era o denominador — mesmo com
+   * o `spend` vindo de uma janela de 10 dias. Era assim que o mesmo contador de
+   * 217 leads produzia R$ 3,17, R$ 72,62 e R$ 119,35 para o mesmo funil.
+   *
+   * Agora, sem `coberturaDiaria` no cache, **não há leads por dia** e o CPL não
+   * sai (AC3): cair no total acumulado seria exatamente o defeito.
+   */
+  it("família GRATUITA sem coberturaDiaria NÃO cai no total acumulado (44.26 AC3)", async () => {
     filaVinculo([etapa({ stageType: "free", name: "Captação Gratuita" })]);
     filaInsights(diasDe("c1", 10));
     filaLeadCache([
@@ -407,8 +417,12 @@ describe("cadeia-cac — o número principal (AC4)", () => {
     const body = res.json();
     expect(body.familia).toBe("gratuita");
     expect(body.principal.metrica).toBe("cplReal");
-    expect(body.principal.leadsUnicos).toBe(500);
-    expect(body.principal.valor).toBeCloseTo(spendTotal(100, 10) / 500, 6);
+    expect(body.principal.valor).toBeNull();
+    expect(body.principal.motivo).toBe("semCoberturaDiaria");
+    // ⚠️ O total do cache continua visível — mas como RASTREABILIDADE, nunca
+    // como denominador.
+    expect(body.principal.leadsUnicosDaEtapa).toBe(500);
+    expect(body.principal.valor).not.toBeCloseTo(spendTotal(100, 10) / 500, 6);
     // A rota de vendas nem é consultada na família gratuita.
     expect(mockGetFreshSalesDaily).not.toHaveBeenCalled();
     await app.close();
@@ -1319,7 +1333,14 @@ describe("cadeia-cac — os QUATRO estados da guarda de cobertura (Story 44.12)"
     const app = await buildApp();
     const res = await app.inject({ method: "GET", url: url() });
     expect(res.statusCode).toBe(200);
-    expect(res.json().principal.valor).not.toBeNull();
+    /**
+     * ⚠️ Story 44.26 — o valor agora É `null`, e o teste continua provando o
+     * que se propôs: **a rota não quebra** com cache anterior à 44.12.
+     *
+     * A asserção antiga (`not.toBeNull`) só passava porque o CPL caía no total
+     * acumulado — o defeito. O que importa aqui é o 200 e o motivo explícito.
+     */
+    expect(res.json().principal.motivo).toBe("semCoberturaDiaria");
     await app.close();
   });
 
@@ -1342,7 +1363,21 @@ describe("cadeia-cac — os QUATRO estados da guarda de cobertura (Story 44.12)"
     const app = await buildApp();
     const body = (await app.inject({ method: "GET", url: url() })).json();
     expect(body.guardaDeCobertura.estado).toBe("aplicada");
-    expect(body.principal.leadsUnicos).toBe(400);
+    /**
+     * ⚠️ Story 44.26 — 1000, não 400, e a diferença é a lição.
+     *
+     * 400 é `uniqueLeads`: dedup GLOBAL do cache. 1000 é `Σ coberturaDiaria`
+     * dos 10 dias da série (100/dia): dedup DENTRO DO DIA — quem apareceu em
+     * dois dias conta nos dois.
+     *
+     * São bases diferentes, e o denominador certo é o da janela. Aqui ele é
+     * MAIOR que o acumulado porque a série cobre todo o cache; em produção,
+     * onde a janela é menor que o histórico, é menor — no BBE, 92 contra 218.
+     * A comparação não tem direção fixa: o que importa é ser a MESMA janela do
+     * numerador.
+     */
+    expect(body.principal.leadsUnicos).toBe(1000);
+    expect(body.principal.leadsUnicosDaEtapa).toBe(400);
     // Story 44.11 somou a 4ª: as linhas por `ad_id` do bloco de criativos.
     expect(mockSelect).toHaveBeenCalledTimes(4); // vínculo, insights, cache de lead, criativos
     await app.close();
@@ -1504,8 +1539,114 @@ describe("cadeia-cac — o funil promove a etapa (Story 44.25)", () => {
 
     expect(body.familia).toBe("gratuita");
     expect(body.principal.metrica).toBe("cplReal");
-    expect(body.principal.leadsUnicos).toBe(500);
+    // ⚠️ Story 44.26: sem `coberturaDiaria` no fake, o VALOR não sai — e o que
+    // este teste da 44.25 cobra é a FAMÍLIA e a MÉTRICA, não o número.
+    expect(body.principal.leadsUnicosDaEtapa).toBe(500);
     expect(mockGetFreshSalesDaily).not.toHaveBeenCalled();
+    await app.close();
+  });
+});
+
+/**
+ * Story 44.26 — o bloco `cplCaptacao`: CPL com janela própria, secundário.
+ *
+ * Nasceu porque a 44.25 promoveu a etapa `free` do perpétuo e a AC8 suprimiu o
+ * CAC: BBE e PP ficaram sem número nenhum, com R$ 26 mil e R$ 16 mil
+ * investidos. Este bloco devolve um número a elas — com a janela certa.
+ */
+describe("cadeia-cac — cplCaptacao (Story 44.26)", () => {
+  const serie = (n: number, leadsTotais = 10, offset = 0) =>
+    Array.from({ length: n }, (_, i) => ({
+      date: `2026-08-${String(i + 1 + offset).padStart(2, "0")}`,
+      leadsAtribuidos: 5,
+      leadsTotais,
+    }));
+
+  it("etapa promovida: principal segue cacReal suprimido, e o CPL vem AO LADO", async () => {
+    filaVinculo([etapa({ stageType: "free", funnelType: "perpetual" })]);
+    filaInsights(diasDe("c1", 10));
+    filaLeadCache([
+      { payload: { uniqueLeads: 400, fonte: "planilha_leads", coberturaDiaria: serie(10) }, computedAt: new Date() },
+    ]);
+    const app = await buildApp();
+    const body = (await app.inject({ method: "GET", url: url() })).json();
+
+    // O principal NÃO mudou: continua o CAC suprimido pela 44.25 AC8.
+    expect(body.principal.metrica).toBe("cacReal");
+    expect(body.principal.motivo).toBe("reguaDivergente");
+    // E o CPL entra como bloco PRÓPRIO — nunca no lugar do principal.
+    expect(body.cplCaptacao.metrica).toBe("cplCaptacao");
+    expect(body.cplCaptacao.leadsNaJanela).toBe(100); // 10 dias × 10
+    expect(body.cplCaptacao.valor).toBeCloseTo(spendTotal(100, 10) / 100, 6);
+    await app.close();
+  });
+
+  /**
+   * AC2 — o denominador sai dos DIAS COM MÍDIA, não da janela.
+   *
+   * Decisão do @po com medição: no `PP/Aquisição` são 8 leads nos dias com
+   * campanha contra 11 na janela — 37% no CPL. Lead de dia sem mídia é
+   * orgânico e não pertence a um CPL de mídia.
+   */
+  it("AC2: lead de dia SEM campanha fica fora do denominador, e é contado à parte", async () => {
+    filaVinculo([etapa({ stageType: "free", funnelType: "perpetual" })]);
+    filaInsights(diasDe("c1", 10)); // dias 2026-08-01..10
+    filaLeadCache([
+      {
+        payload: {
+          uniqueLeads: 400,
+          fonte: "planilha_leads",
+          // 10 dias COM mídia + 3 dias depois, sem campanha nenhuma
+          coberturaDiaria: [...serie(10), ...serie(3, 7, 10)],
+        },
+        computedAt: new Date(),
+      },
+    ]);
+    const app = await buildApp();
+    const c = (await app.inject({ method: "GET", url: url() })).json().cplCaptacao;
+
+    expect(c.leadsNaJanela).toBe(100); // só os dias com mídia — 21 leads ficaram fora
+    expect(c.diasComLeadSemMidia).toBe(3);
+    // ⚠️ Sem este campo os 37% do PP ficariam invisíveis.
+    expect(c.valor).toBeCloseTo(spendTotal(100, 10) / 100, 6);
+    expect(c.valor).not.toBeCloseTo(spendTotal(100, 10) / 121, 6);
+    await app.close();
+  });
+
+  it("AC3: sem coberturaDiaria, sem CPL — e NUNCA o total acumulado", async () => {
+    filaVinculo([etapa({ stageType: "free", funnelType: "perpetual" })]);
+    filaInsights(diasDe("c1", 10));
+    filaLeadCache([{ payload: { uniqueLeads: 400, fonte: "planilha_leads" }, computedAt: new Date() }]);
+    const app = await buildApp();
+    const c = (await app.inject({ method: "GET", url: url() })).json().cplCaptacao;
+
+    expect(c.valor).toBeNull();
+    expect(c.motivo).toBe("semCoberturaDiaria");
+    expect(c.leadsUnicosDaEtapa).toBe(400); // rastreabilidade, não denominador
+    await app.close();
+  });
+
+  it("a base do denominador é declarada — Σ por dia ≠ uniqueLeads", async () => {
+    filaVinculo([etapa({ stageType: "free", funnelType: "perpetual" })]);
+    filaInsights(diasDe("c1", 10));
+    filaLeadCache([
+      { payload: { uniqueLeads: 400, fonte: "planilha_leads", coberturaDiaria: serie(10) }, computedAt: new Date() },
+    ]);
+    const app = await buildApp();
+    const c = (await app.inject({ method: "GET", url: url() })).json().cplCaptacao;
+
+    expect(c.baseDoDenominador).toContain("dedup dentro do dia");
+    // ⚠️ Os dois convivem e são DIFERENTES de propósito.
+    expect(c.leadsNaJanela).not.toBe(c.leadsUnicosDaEtapa);
+    await app.close();
+  });
+
+  it("etapa que não capta lead não traz o bloco — ausência é a resposta", async () => {
+    filaVinculo([etapa({ stageType: "paid" })]);
+    filaInsights(diasDe("c1", 10));
+    const app = await buildApp();
+    const body = (await app.inject({ method: "GET", url: url() })).json();
+    expect(body.cplCaptacao).toBeUndefined();
     await app.close();
   });
 });

@@ -677,6 +677,47 @@ describe("Story 44.20 — `semDados` de fonte ausente × de denominador zero", (
     expect(p.pendencias.map((x) => x.codigo)).not.toContain("semDados");
   });
 
+  /**
+   * QA-4426-01 (Story 44.26) — o ESPELHO do teste acima, na família gratuita.
+   *
+   * A 44.26 trocou o denominador do CPL pelos leads da janela, e a primeira
+   * versão espalhava `motivo` e `message` juntos. Com isso, uma etapa com
+   * fonte conectada e ZERO lead na janela virava pendência de configuração —
+   * mandando conectar o que já está conectado, pela terceira vez na história
+   * do repo (chamado de 2026-08-14 → Story 36.9 AC5 → QA-4414-02 → aqui).
+   *
+   * Este teste é a trava que faltava: a família paga tinha a dela desde a
+   * 44.20, a gratuita não.
+   */
+  it("gratuita: ZERO lead na janela é fato, não pendência de configuração", async () => {
+    const f = fixture();
+    f.set(funnelStages, [[etapa({ stageType: "free" })]]);
+    f.set(metaAdInsightsDaily, [serieComTeto()]);
+    f.set(publicMetricsCache, [
+      [
+        {
+          payload: {
+            uniqueLeads: 40,
+            fonte: "planilha_leads",
+            // Cobertura PRESENTE (logo não é `semCoberturaDiaria`), mas todos
+            // os dias com lead estão FORA dos dias com campanha.
+            coberturaDiaria: [{ date: "2026-01-01", leadsAtribuidos: 0, leadsTotais: 3 }],
+          },
+          computedAt: new Date("2026-08-27T00:00:00Z"),
+        },
+      ],
+    ]);
+
+    const p = (await montarPanoramaDoProjeto(fakeDb(f), config, PROJ, OPTS))!;
+    const principal = p.etapas[0].principal as Record<string, unknown>;
+
+    // O fato continua VISÍVEL — ele só não é lacuna de configuração.
+    expect(principal.motivo).toBe("semDados");
+    expect(principal.leadsUnicos).toBe(0);
+    expect(principal.message).toBeUndefined(); // ← a trava
+    expect(p.pendencias.map((x) => x.codigo)).not.toContain("semDados");
+  });
+
   it("fonte AUSENTE continua virando pendência, com a mensagem literal", async () => {
     mockGetFreshSalesDaily.mockResolvedValue({ payload: null, computedAt: null, source: "cache" });
     const p = (await montarPanoramaDoProjeto(fakeDb(fixture()), config, PROJ, OPTS))!;

@@ -7,6 +7,11 @@ import {
   calcularMetricas,
   cacReal,
   cplReal,
+  mesmoPeriodo,
+  razaoNaJanela,
+  cacRealNaJanela,
+  cplRealNaJanela,
+  roasNaJanela,
   custoDaCadeia,
   cliquesPorConversao,
   janelasDe7Dias,
@@ -478,5 +483,89 @@ describe("ranking (§3)", () => {
       { ...TETO, cpm: 1, ctr: 1 },
     );
     perto(semCpmCtr! * 100, 79.92);
+  });
+});
+
+/**
+ * Story 44.26 — a razão só sai com numerador e denominador na MESMA janela.
+ *
+ * O defeito que estes testes fecham publicou "CPL Real R$ 3,17" à diretoria:
+ * investimento de um dia dividido por leads de 62. A conta estava certa; as
+ * janelas, não. Um erro de escala nunca aparece como erro — R$ 3,17 é um CPL
+ * plausível.
+ */
+describe("razão com janela obrigatória (Story 44.26)", () => {
+  const jan = { de: "2026-09-01", ate: "2026-09-07" };
+  const set = { de: "2026-07-07", ate: "2026-09-06" };
+
+  it("mesma janela: divide e devolve o período", () => {
+    const r = razaoNaJanela({ valor: 1000, periodo: jan }, { valor: 4, periodo: jan });
+    expect(r.valor).toBe(250);
+    expect(r.periodo).toEqual(jan);
+    expect(r.motivo).toBeUndefined();
+  });
+
+  it("janelas diferentes: null + motivo, e a mensagem nomeia os DOIS intervalos", () => {
+    const r = razaoNaJanela({ valor: 1000, periodo: jan }, { valor: 4, periodo: set });
+    expect(r.valor).toBeNull();
+    expect(r.periodo).toBeNull();
+    expect(r.motivo).toBe("janelasDiferentes");
+    expect(r.message).toContain("2026-09-01..2026-09-07");
+    expect(r.message).toContain("2026-07-07..2026-09-06");
+  });
+
+  it("denominador zero é semDados, não janelasDiferentes — ações opostas", () => {
+    const r = razaoNaJanela({ valor: 1000, periodo: jan }, { valor: 0, periodo: jan });
+    expect(r.valor).toBeNull();
+    expect(r.motivo).toBe("semDados");
+  });
+
+  /**
+   * AC6 — **o caso exato do chamado, com os números reais.**
+   *
+   * R$ 687,93 do dia 06/09 ÷ 217 leads de 07/07..06/09. A conta antiga dava
+   * R$ 3,17 e foi publicada como sinal de saúde.
+   */
+  it("AC6: o R$ 3,17 do Resumão de 06/09 não pode mais sair", () => {
+    const umDia = { de: "2026-09-06", ate: "2026-09-06" };
+    const r = cplRealNaJanela(
+      { valor: 687.93, periodo: umDia },
+      { valor: 217, periodo: set },
+    );
+    expect(r.valor).toBeNull();
+    expect(r.motivo).toBe("janelasDiferentes");
+    // A conta antiga, para o contraste ficar no teste:
+    expect(cplReal(687.93, 217)).toBeCloseTo(3.17, 2);
+  });
+
+  /**
+   * ⚠️ Nunca escalar por proporção de dias.
+   *
+   * `217 × 1/62` daria ~3,5 leads e um CPL de R$ 196 — um número inventado,
+   * apoiado numa distribuição uniforme que os dados desmentem: nesta etapa
+   * foram 26 leads na última semana contra 104 no último mês.
+   */
+  it("não estima: janelas diferentes devolvem ausência, nunca valor escalado", () => {
+    const semana = { de: "2026-08-31", ate: "2026-09-06" };
+    const r = cplRealNaJanela({ valor: 4646.8, periodo: semana }, { valor: 217, periodo: set });
+    expect(r.valor).toBeNull();
+    expect(r.motivo).toBe("janelasDiferentes");
+  });
+
+  it("cacRealNaJanela e roasNaJanela seguem a mesma regra", () => {
+    expect(cacRealNaJanela({ valor: 1000, periodo: jan }, { valor: 4, periodo: jan }).valor).toBe(250);
+    expect(cacRealNaJanela({ valor: 1000, periodo: jan }, { valor: 4, periodo: set }).motivo).toBe(
+      "janelasDiferentes",
+    );
+    expect(roasNaJanela({ valor: 3000, periodo: jan }, { valor: 1000, periodo: jan }).valor).toBe(3);
+    expect(roasNaJanela({ valor: 3000, periodo: jan }, { valor: 1000, periodo: set }).motivo).toBe(
+      "janelasDiferentes",
+    );
+  });
+
+  it("mesmoPeriodo compara as duas pontas", () => {
+    expect(mesmoPeriodo(jan, { ...jan })).toBe(true);
+    expect(mesmoPeriodo(jan, { de: jan.de, ate: "2026-09-08" })).toBe(false);
+    expect(mesmoPeriodo(jan, { de: "2026-08-31", ate: jan.ate })).toBe(false);
   });
 });

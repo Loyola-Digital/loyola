@@ -29,18 +29,19 @@
 import { and, eq } from "drizzle-orm";
 import {
   agregar,
-  cacReal,
+  cacRealNaJanela,
   calcularMetricas,
   calcularTetos,
   classificarFamilia,
   compostoNoTeto,
-  cplReal,
+  cplRealNaJanela,
   custoDaCadeia,
   decomporCPC,
   metricasDoTeto,
   montarRanking,
   referenciasDoGrupo,
   type DiaBruto,
+  type Periodo,
   type SerieDeCampanha,
   agruparCriativos,
   distribuicaoDoHook,
@@ -405,6 +406,17 @@ export async function montarPayloadCadeiaCac(
    * janelas bem menores.
    */
   const diasDaSerie = new Set(todosOsDias.map((d) => d.date));
+  /**
+   * Story 44.26 — o intervalo REAL coberto pela série de mídia.
+   *
+   * É a janela que vale para as razões: o numerador (`spend`) só existe em dia
+   * com campanha, então o denominador tem de vir do mesmo conjunto.
+   */
+  const diasOrdenados = [...diasDaSerie].sort();
+  const periodoDaSerie: Periodo | null =
+    diasOrdenados.length > 0
+      ? { de: diasOrdenados[0]!, ate: diasOrdenados[diasOrdenados.length - 1]! }
+      : null;
   const atribuidosDeduplicados =
     familia === "gratuita" && lead?.coberturaDiaria
       ? lead.coberturaDiaria.filter((d) => diasDaSerie.has(d.date)).reduce((acc, d) => acc + d.leadsAtribuidos, 0)
@@ -582,6 +594,119 @@ export async function montarPayloadCadeiaCac(
   // O número principal (spec §2.1). Venda e lead SEMPRE do Loyola X — o
   // `purchasesProxyPixel` é pixel e subconta (R$20k viraram ~R$6–7k
   // reportados, deck §7.1).
+  /**
+   * Story 44.26 (AC2) — o CPL de captação, **secundário e com janela própria**.
+   *
+   * ## Por que ele existe, e por que agora
+   *
+   * A 44.25 promoveu a etapa `free` do perpétuo à família paga e a AC8 dela
+   * suprimiu o CAC (as réguas de venda ainda divergem). Resultado: `BBE
+   * bbe-funil-churrasco` e `PP Aquisição` ficaram **sem número nenhum**, com
+   * R$ 26 mil e R$ 16 mil investidos. Este bloco devolve um número a elas —
+   * com a janela certa desde o primeiro dia.
+   *
+   * ⚠️ **Nunca ocupa o lugar do `principal`.** Numa etapa de venda o número
+   * que manda é o CAC (briefing §3.2); o CPL é diagnóstico de topo.
+   *
+   * ## O denominador sai dos DIAS COM MÍDIA, não da janela
+   *
+   * Decisão do @po (08/09/2026), com medição: no `PP/Aquisição` há dias com
+   * lead e **sem campanha rodando** — 8 leads nos dias com mídia contra 11 na
+   * janela, o que move o CPL de R$ 367,62 para R$ 267,36. **37% de diferença.**
+   *
+   * O numerador é `spend`, que só existe em dia com campanha. Lead de dia sem
+   * mídia é orgânico e não pertence a um CPL de mídia — incluí-lo infla o
+   * denominador e **subestima** o custo, o erro na direção que faz a captação
+   * parecer mais barata do que é.
+   *
+   * É o mesmo recorte que `atribuidosDeduplicados` (acima) usa para a `convLP`,
+   * e pelo mesmo motivo: numerador e denominador de conjuntos diferentes
+   * fabricam uma taxa que não significa nada.
+   *
+   * `diasComLeadSemMidia` viaja junto (AC2) — sem ele os 37% do PP ficam
+   * invisíveis e viram chamado.
+   *
+   * ## A base do denominador NÃO é `uniqueLeads`
+   *
+   * `coberturaDiaria.leadsTotais` deduplica **dentro do dia**: quem apareceu em
+   * dois dias conta nos dois. `Σ leadsTotais` é legitimamente diferente de
+   * `uniqueLeads`, e o payload declara as duas — sem isso alguém soma e acusa
+   * divergência.
+   */
+  const cplDaJanela = (() => {
+    if (!lead) {
+      return {
+        metrica: "cplCaptacao" as const,
+        valor: null,
+        leadsNaJanela: null,
+        motivo: "semDados" as const,
+        message:
+          "Esta etapa capta lead, mas o cache de origem de leads ainda não foi computado. O sync roda diariamente.",
+      };
+    }
+
+    // AC3: cache anterior à Story 44.12 não tem `coberturaDiaria`. Sem ela não
+    // há leads POR DIA — e cair no `uniqueLeads` global seria exatamente o
+    // defeito que esta story fecha.
+    if (!lead.coberturaDiaria || lead.coberturaDiaria.length === 0) {
+      return {
+        metrica: "cplCaptacao" as const,
+        valor: null,
+        leadsNaJanela: null,
+        motivo: "semCoberturaDiaria" as const,
+        message:
+          "O cache de leads desta etapa não tem a série diária (registro anterior à cobertura por dia). Sem ela não é possível contar leads na mesma janela do investimento, e o total acumulado NÃO serve de substituto — dividir investimento de uma janela por leads de outra foi o defeito que esta regra existe para impedir. O sync diário popula o campo.",
+        leadsUnicosDaEtapa: lead.uniqueLeads,
+        periodoDoCache: lead.range,
+      };
+    }
+
+    if (!periodoDaSerie) {
+      return {
+        metrica: "cplCaptacao" as const,
+        valor: null,
+        leadsNaJanela: null,
+        motivo: "semDados" as const,
+        message: "Nenhum dia de mídia na janela — sem numerador, não há CPL.",
+      };
+    }
+
+    const leadsNaJanela = lead.coberturaDiaria
+      .filter((d) => diasDaSerie.has(d.date))
+      .reduce((acc, d) => acc + d.leadsTotais, 0);
+    const diasComLeadSemMidia = lead.coberturaDiaria.filter(
+      (d) => d.leadsTotais > 0 && !diasDaSerie.has(d.date),
+    ).length;
+
+    const r = cplRealNaJanela(
+      { valor: agregado.spend, periodo: periodoDaSerie },
+      { valor: leadsNaJanela, periodo: periodoDaSerie },
+    );
+
+    return {
+      metrica: "cplCaptacao" as const,
+      valor: r.valor,
+      periodo: r.periodo,
+      ...(r.motivo ? { motivo: r.motivo, message: r.message } : {}),
+      spend: agregado.spend,
+      leadsNaJanela,
+      /** Dias com lead e SEM campanha — ficaram fora do denominador (AC2). */
+      diasComLeadSemMidia,
+      /**
+       * ⚠️ Base do denominador: dedup POR DIA, não global. `Σ leadsNaJanela`
+       * não bate com `leadsUnicosDaEtapa`, e isso está certo.
+       */
+      baseDoDenominador: "leads por dia (dedup dentro do dia)" as const,
+      /** O total do cache, para rastreabilidade — NUNCA é o denominador. */
+      leadsUnicosDaEtapa: lead.uniqueLeads,
+      periodoDoCache: lead.range,
+      /** AC4: linhas sem data legível ficam fora da série e seguem no total. */
+      leadsSemData: lead.leadsSemData ?? null,
+      fonteDeLead: lead.fonte,
+      computedAt: leadComputedAt,
+    };
+  })();
+
   let principal: Record<string, unknown>;
   // ⚠️ QA-448-07: `null`, não `0`. Fora do ramo de sucesso nada foi lido, e
   // `0` afirmaria "nenhuma venda sem data" sobre dado inexistente. Na
@@ -709,9 +834,23 @@ export async function montarPayloadCadeiaCac(
         // ⚠️ `cacReal` sai mesmo com cobertura de atribuição 0% — ele depende
         // do TOTAL da etapa, não da atribuição por campanha. É a propriedade
         // que motivou a v1.1 inteira. `null` aqui só quando não há venda.
+        /**
+         * Story 44.26 (AC5) — pela razão com janela.
+         *
+         * O número NÃO muda: as duas pontas já vinham do mesmo `range`
+         * (`vendasDoPeriodo` filtra por ele). O que muda é que a assinatura
+         * deixa de aceitar dois `number` soltos — a porta por onde o CPL
+         * passou e publicou R$ 3,17 à diretoria.
+         */
+        const janelaDoCac: Periodo = range
+          ? { de: range.from, ate: range.to }
+          : (periodoDaSerie ?? { de: "", ate: "" });
         principal = {
           metrica: "cacReal",
-          valor: cacReal(agregado.spend, v.vendas),
+          valor: cacRealNaJanela(
+            { valor: agregado.spend, periodo: janelaDoCac },
+            { valor: v.vendas, periodo: janelaDoCac },
+          ).valor,
           spend: agregado.spend,
           vendasReais: v.vendas,
           ...(v.vendas === 0 ? { motivo: "semDados" as const } : {}),
@@ -723,13 +862,64 @@ export async function montarPayloadCadeiaCac(
   } else {
     // Story 44.12 (AC4): `lead` já foi lido lá em cima, para a guarda. Reusar.
     if (lead) {
+      /**
+       * Story 44.26 — **este é o ponto exato do defeito que a story fecha.**
+       *
+       * Até aqui a linha era:
+       *
+       *     valor: cplReal(agregado.spend, lead.uniqueLeads)
+       *
+       * `agregado.spend` é da janela pedida; `lead.uniqueLeads` é o total do
+       * cache, de uma janela que o próprio payload declara em `lead.range` e
+       * que ninguém lia. Foi assim que o mesmo contador de 217 leads dividiu
+       * R$ 687,93 (1 dia) → R$ 3,17, R$ 15.759,45 (30 dias) → R$ 72,62 e
+       * R$ 25.898,88 (90 dias) → R$ 119,35, no mesmo funil e no mesmo dia.
+       *
+       * Agora o denominador vem dos leads DA JANELA, pelo mesmo caminho do
+       * `cplCaptacao` — que é calculado logo abaixo e reusado aqui para não
+       * existirem duas contas do mesmo número.
+       *
+       * ⚠️ `leadsUnicos` continua no payload (a tela e o `llms.txt` o leem),
+       * mas passa a carregar **os leads da janela**, que é o denominador de
+       * fato. O total do cache viaja ao lado, em `leadsUnicosDaEtapa`.
+       */
+      /**
+       * ⚠️ **QA-4426-01 — `semDados` de denominador zero NÃO leva `message`.**
+       *
+       * O desempate do Panorama (`panorama-do-projeto.ts:379`) é a PRESENÇA de
+       * `message`: com ela, o motivo vira pendência de CONFIGURAÇÃO e o
+       * operador é mandado conectar uma fonte que já está conectada. É o
+       * chamado de 2026-08-14 que a Story 36.9 AC5 fechou e que voltou como
+       * QA-4414-02 no gate da 44.14 — o repo já pagou por ele duas vezes.
+       *
+       * Uma primeira versão desta linha espalhava `motivo` e `message` juntos,
+       * o que reintroduzia o defeito pela terceira vez. O ramo da família paga
+       * (`:856`) sempre fez certo: `motivo` sozinho quando o denominador é
+       * zero.
+       *
+       * Os dois `semDados` são coisas diferentes:
+       *
+       *   CONFIGURAÇÃO (sem cache, sem cobertura) → motivo + message → pendência
+       *   DENOMINADOR ZERO (fonte ok, 0 lead)     → motivo sozinho    → fato
+       *
+       * O de configuração nem chega aqui: vem dos ramos de ausência mais
+       * abaixo, ou do `semCoberturaDiaria` do `cplDaJanela`. Este ramo só é
+       * alcançado com cobertura presente — logo `semDados` aqui é sempre
+       * "não houve lead na janela", que é fato de negócio, não lacuna de setup.
+       */
+      const zeroLeadNaJanela = cplDaJanela.motivo === "semDados";
       principal = {
         metrica: "cplReal",
-        valor: cplReal(agregado.spend, lead.uniqueLeads),
+        valor: cplDaJanela.valor,
         spend: agregado.spend,
-        leadsUnicos: lead.uniqueLeads,
+        leadsUnicos: cplDaJanela.leadsNaJanela,
+        leadsUnicosDaEtapa: lead.uniqueLeads,
         fonteDeLead: lead.fonte,
-        ...(lead.uniqueLeads === 0 ? { motivo: "semDados" as const } : {}),
+        ...(cplDaJanela.motivo
+          ? zeroLeadNaJanela
+            ? { motivo: cplDaJanela.motivo }
+            : { motivo: cplDaJanela.motivo, message: cplDaJanela.message }
+          : {}),
         computedAt: leadComputedAt,
       };
     } else {
@@ -784,9 +974,11 @@ export async function montarPayloadCadeiaCac(
     }
   }
 
+
   return {
     ...base,
     familia,
+    ...(captaLead ? { cplCaptacao: cplDaJanela } : {}),
     campanhas: campanhas.map((c) => ({
       campaignId: c.campaignId,
       campaignName: c.campaignName,
