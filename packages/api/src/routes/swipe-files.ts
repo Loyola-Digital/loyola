@@ -726,7 +726,17 @@ export default fp(async function swipeFilesRoutes(fastify) {
   fastify.post(
     `${base}/upload`,
     {
-      config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+      /**
+       * 120/min — dimensionado para o upload de PASTA.
+       *
+       * Eram 30, pensados para quem sobe um arquivo por vez. Uma pasta de 127
+       * arquivos estourava no meio: os primeiros entravam, o resto levava 429
+       * e virava "falhou" na tela, com o arquivo perfeitamente válido.
+       *
+       * Dois por segundo ainda protege o bucket de abuso, e o cliente respeita
+       * o `retry-after` quando bate no teto — ver `useUploadToBucket`.
+       */
+      config: { rateLimit: { max: 120, timeWindow: "1 minute" } },
     },
     async (request, reply) => {
       if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
