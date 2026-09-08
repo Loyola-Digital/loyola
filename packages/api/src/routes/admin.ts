@@ -2,7 +2,8 @@ import { z } from "zod";
 import { eq, like, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { clerkClient } from "@clerk/fastify";
-import { users, messages, conversations } from "../db/schema.js";
+import { users, messages, conversations, userActivity } from "../db/schema.js";
+import { ROTULO_DA_AREA } from "../services/adesao.js";
 import { syncMetaPerformance } from "../services/meta-perf-sync.js";
 import { syncLeadOrigin } from "../services/lead-origin-sync.js";
 import { syncSurvey } from "../services/survey-aggregation.js";
@@ -64,6 +65,101 @@ export default fp(async function adminRoutes(fastify) {
       log: (m) => fastify.log.info(m),
     });
     return { ok: true, days, meta, leads, survey, salesDaily };
+  });
+
+  /**
+   * Adesão do time — quem usa o Loyola X, quando e onde.
+   *
+   * ## Só admin, e sem "manager"
+   *
+   * As outras rotas daqui aceitam manager. Esta não: são dados sobre o
+   * comportamento de colegas, e ampliar quem os vê é uma decisão de gestão, não
+   * um detalhe de permissão que se herda por conveniência.
+   *
+   * ## Todo mundo aparece, inclusive quem nunca entrou
+   *
+   * O `LEFT JOIN` é o ponto da tela: uma lista só de quem usou responderia
+   * "quem usa", quando a pergunta é "quem NÃO está usando".
+   */
+  fastify.get("/api/admin/adesao", async (request, reply) => {
+    if (request.userRole !== "admin") {
+      return reply.code(403).send({ error: "Só admin vê a adesão do time." });
+    }
+    const q = z
+      .object({ dias: z.coerce.number().int().min(1).max(365).optional() })
+      .safeParse(request.query);
+    if (!q.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const dias = q.data.dias ?? 30;
+
+    const desde = new Date(Date.now() - dias * 86_400_000);
+
+    const linhas = await fastify.db
+      .select({
+        id: users.id,
+        nome: users.name,
+        email: users.email,
+        papel: users.role,
+        situacao: users.status,
+        entrouEm: users.createdAt,
+        ultimoUso: sql<Date | null>`max(${userActivity.hora})`,
+        // Dias DISTINTOS, não requisições: quem abriu uma tela e ficou nela
+        // não usou menos que quem recarregou trinta vezes.
+        diasAtivos: sql<number>`count(distinct date_trunc('day', ${userActivity.hora}))::int`,
+        requisicoes: sql<number>`coalesce(sum(${userActivity.requisicoes}), 0)::int`,
+      })
+      .from(users)
+      .leftJoin(
+        userActivity,
+        sql`${userActivity.userId} = ${users.id} and ${userActivity.hora} >= ${desde}`,
+      )
+      .where(sql`${users.status} <> 'blocked' and ${users.listed} = true`)
+      .groupBy(users.id)
+      .orderBy(sql`max(${userActivity.hora}) desc nulls last`);
+
+    // As áreas de cada pessoa vêm numa segunda consulta: no mesmo `GROUP BY`
+    // elas multiplicariam as linhas e estragariam a contagem de dias ativos.
+    const areas = await fastify.db
+      .select({
+        userId: userActivity.userId,
+        area: userActivity.area,
+        requisicoes: sql<number>`sum(${userActivity.requisicoes})::int`,
+      })
+      .from(userActivity)
+      .where(sql`${userActivity.hora} >= ${desde}`)
+      .groupBy(userActivity.userId, userActivity.area);
+
+    const porUsuario = new Map<string, { area: string; rotulo: string; requisicoes: number }[]>();
+    for (const a of areas) {
+      const lista = porUsuario.get(a.userId) ?? [];
+      lista.push({
+        area: a.area,
+        rotulo: ROTULO_DA_AREA[a.area] ?? a.area,
+        requisicoes: a.requisicoes,
+      });
+      porUsuario.set(a.userId, lista);
+    }
+
+    // Atividade por dia, do time inteiro — a linha do tempo da tela.
+    const porDia = await fastify.db
+      .select({
+        dia: sql<string>`to_char(date_trunc('day', ${userActivity.hora}), 'YYYY-MM-DD')`,
+        pessoas: sql<number>`count(distinct ${userActivity.userId})::int`,
+      })
+      .from(userActivity)
+      .where(sql`${userActivity.hora} >= ${desde}`)
+      .groupBy(sql`date_trunc('day', ${userActivity.hora})`)
+      .orderBy(sql`date_trunc('day', ${userActivity.hora})`);
+
+    return {
+      dias,
+      pessoas: linhas.map((l) => ({
+        ...l,
+        entrouEm: l.entrouEm?.toISOString() ?? null,
+        ultimoUso: l.ultimoUso ? new Date(l.ultimoUso).toISOString() : null,
+        areas: (porUsuario.get(l.id) ?? []).sort((a, b) => b.requisicoes - a.requisicoes),
+      })),
+      porDia,
+    };
   });
 
   // ---- GET /api/admin/users ---- (admin only — list users by status)

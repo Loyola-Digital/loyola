@@ -3281,6 +3281,33 @@ export const instagramScans = pgTable(
  * nicho e formato já agrupam o acervo sozinhos, e a tela agrupa por eles sem
  * tabela nenhuma.
  */
+/**
+ * Uso do produto, por usuário / área / hora — para medir adesão.
+ *
+ * Agregado de propósito: uma tela faz dezenas de chamadas, e gravar cada uma
+ * daria milhões de linhas por ano para responder "o time está usando isto?".
+ *
+ * E só a ÁREA, nunca o caminho completo: guardar a URL responderia "fulano
+ * abriu o funil do cliente X às 14h32", que é vigiar pessoa em vez de medir
+ * produto. Ver `services/adesao.ts`.
+ */
+export const userActivity = pgTable(
+  "user_activity",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    area: varchar("area", { length: 24 }).notNull(),
+    /** Hora cheia em UTC. */
+    hora: timestamp("hora", { withTimezone: true }).notNull(),
+    requisicoes: integer("requisicoes").notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.area, t.hora] }),
+    index("idx_user_activity_hora").on(t.hora),
+  ],
+);
+
 export const swipeCollections = pgTable(
   "swipe_collections",
   {
