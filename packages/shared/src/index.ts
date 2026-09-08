@@ -46,6 +46,15 @@ export { parseNumeroPtBr, parseValorPlanilha } from "./numero-ptbr.js";
 // Story 29.59: a identidade de uma landing page. Compartilhada porque o
 // dashboard e o relatório TÊM que agrupar as mesmas URLs na mesma linha.
 export { normalizeLpUrl, lpLabel, type LpKey } from "./lp-url.js";
+// Story 44.28: os KPIs do topo do perpétuo — compartilhados entre a tela e a
+// API pública, para o Inácio não recompor a conta por fora.
+export { calcularMetricasDoPerpetuo } from "./perpetuo-metricas.js";
+export type {
+  MidiaDoPerpetuo,
+  VendasDoPerpetuo,
+  EntradaDasMetricas,
+  MetricasDoPerpetuo,
+} from "./perpetuo-metricas.js";
 // Story 18.78: CTR e CPC de clique no link, sem fallback. Módulo folha — o web
 // importa por subpath (`@loyola-x/shared/src/clique-no-link`), a API por aqui.
 // Existiam três cópias desta fórmula e duas ainda tinham o fallback que o
