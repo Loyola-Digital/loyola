@@ -12,7 +12,8 @@ import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export type TipoDeAusencia = "ferias" | "folga" | "ausencia" | "licenca";
-export type StatusDeAusencia = "programada" | "aprovada" | "concluida" | "cancelada";
+export type StatusDeAusencia =
+  "programada" | "aprovada" | "concluida" | "cancelada";
 
 export interface Ausencia {
   id: string;
@@ -52,6 +53,14 @@ export interface Ficha {
   cargo: string | null;
   entradaEm: string | null;
   ajusteSaldoDias: number;
+  /**
+   * Dados de pagamento. Chegam do servidor SEM máscara — só dígitos, no caso
+   * de CPF e CNPJ. Quem formata é a tela.
+   */
+  cpf: string | null;
+  cnpj: string | null;
+  chavePix: string | null;
+  endereco: string | null;
   /** Só volta para admin. */
   observacoes?: string | null;
   temFicha: boolean;
@@ -113,6 +122,10 @@ export type EntradaDaFicha = Partial<
     | "cargo"
     | "entradaEm"
     | "observacoes"
+    | "cpf"
+    | "cnpj"
+    | "chavePix"
+    | "endereco"
   >
 > & { ajusteSaldoDias?: number };
 
@@ -155,7 +168,13 @@ export function useAtualizarAusencia() {
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, dados }: { id: string; dados: Partial<EntradaDeAusencia> }) =>
+    mutationFn: ({
+      id,
+      dados,
+    }: {
+      id: string;
+      dados: Partial<EntradaDeAusencia>;
+    }) =>
       apiClient<{ ausencia: Ausencia }>(`/api/pessoal/ausencias/${id}`, {
         method: "PUT",
         body: JSON.stringify(dados),
@@ -196,7 +215,8 @@ export function useDiretorioDoTime() {
   const apiClient = useApiClient();
   return useQuery({
     queryKey: ["pessoal", "time"],
-    queryFn: () => apiClient<{ pessoas: PessoaNoDiretorio[] }>("/api/pessoal/time"),
+    queryFn: () =>
+      apiClient<{ pessoas: PessoaNoDiretorio[] }>("/api/pessoal/time"),
     // O diretório muda quando alguém entra ou troca de cargo — nenhuma das
     // duas acontece no meio de uma sessão.
     staleTime: 5 * 60 * 1000,

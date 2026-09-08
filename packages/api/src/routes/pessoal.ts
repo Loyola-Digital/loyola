@@ -14,7 +14,13 @@
 import { z } from "zod";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { peopleAbsences, peopleRecords, pdiDocuments, users } from "../db/schema.js";
+import {
+  peopleAbsences,
+  peopleRecords,
+  pdiDocuments,
+  users,
+} from "../db/schema.js";
+import { soDigitos, validarCnpj, validarCpf } from "../services/documentos.js";
 
 const ID = z.string().uuid();
 
@@ -28,16 +34,61 @@ const fichaSchema = z.object({
     })
     .nullable()
     .optional(),
-  nascimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  nascimento: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
   telefone: z.string().max(40).nullable().optional(),
   emailContato: z.string().max(255).nullable().optional(),
   emergenciaNome: z.string().max(255).nullable().optional(),
   emergenciaTelefone: z.string().max(40).nullable().optional(),
   emergenciaParentesco: z.string().max(80).nullable().optional(),
   cargo: z.string().max(120).nullable().optional(),
-  entradaEm: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  entradaEm: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
   ajusteSaldoDias: z.number().int().min(-365).max(365).optional(),
   observacoes: z.string().max(4000).nullable().optional(),
+
+  /**
+   * Documentos de pagamento.
+   *
+   * Chegam mascarados da tela e entram como dígitos — o `transform` roda ANTES
+   * do `refine`, então a conferência do dígito verificador vê o mesmo número
+   * que vai para o banco.
+   *
+   * Vazio é apagar, não erro: quem preencheu errado precisa poder limpar o
+   * campo sem que a validação segure o formulário inteiro.
+   */
+  cpf: z
+    .string()
+    .transform(soDigitos)
+    .refine((v) => v === "" || validarCpf(v), {
+      message: "CPF inválido — confira os dígitos.",
+    })
+    .nullable()
+    .optional(),
+  cnpj: z
+    .string()
+    .transform(soDigitos)
+    .refine((v) => v === "" || validarCnpj(v), {
+      message: "CNPJ inválido — confira os dígitos.",
+    })
+    .nullable()
+    .optional(),
+  /**
+   * A chave PIX NÃO é validada além do tamanho.
+   *
+   * São cinco formatos aceitos pelo Banco Central, e o único jeito de saber se
+   * uma chave existe é tentar pagar. Recusar aqui significaria inventar uma
+   * regra mais estrita que a do banco e travar alguém com uma chave legítima —
+   * o oposto do que este campo serve para fazer.
+   */
+  chavePix: z.string().max(140).nullable().optional(),
+  endereco: z.string().max(500).nullable().optional(),
 });
 
 /**
@@ -66,6 +117,13 @@ export const fichaDaPropriaPessoa = fichaSchema.pick({
   emergenciaTelefone: true,
   emergenciaParentesco: true,
   cargo: true,
+  // Os dados de pagamento são DA pessoa: quem sabe o CNPJ certo é o dono dele,
+  // não o RH transcrevendo de um print. Errar aqui atrasa o próprio pagamento,
+  // o que já é o incentivo certo.
+  cpf: true,
+  cnpj: true,
+  chavePix: true,
+  endereco: true,
 });
 
 const ausenciaSchema = z.object({
@@ -86,12 +144,16 @@ export function diasDoPeriodo(inicio: string, fim: string): number {
 }
 
 /** Períodos aquisitivos completos (12 meses cada) desde a entrada. */
-export function periodosCompletos(entrada: string | null, hoje = new Date()): number {
+export function periodosCompletos(
+  entrada: string | null,
+  hoje = new Date(),
+): number {
   if (!entrada) return 0;
   const d = new Date(`${entrada}T00:00:00Z`);
   if (Number.isNaN(d.getTime())) return 0;
   let meses =
-    (hoje.getUTCFullYear() - d.getUTCFullYear()) * 12 + (hoje.getUTCMonth() - d.getUTCMonth());
+    (hoje.getUTCFullYear() - d.getUTCFullYear()) * 12 +
+    (hoje.getUTCMonth() - d.getUTCMonth());
   if (hoje.getUTCDate() < d.getUTCDate()) meses -= 1;
   return Math.max(0, Math.floor(meses / 12));
 }
@@ -123,9 +185,19 @@ export function calcularSaldo(
   const periodos = periodosCompletos(entrada);
   const direito = periodos * 30;
   const gozados = ausencias
-    .filter((a) => a.kind === "ferias" && (a.status === "aprovada" || a.status === "concluida"))
+    .filter(
+      (a) =>
+        a.kind === "ferias" &&
+        (a.status === "aprovada" || a.status === "concluida"),
+    )
     .reduce((n, a) => n + diasDoPeriodo(a.inicio, a.fim), 0);
-  return { direito, gozados, ajuste, disponivel: direito - gozados + ajuste, periodos };
+  return {
+    direito,
+    gozados,
+    ajuste,
+    disponivel: direito - gozados + ajuste,
+    periodos,
+  };
 }
 
 /**
@@ -136,10 +208,14 @@ export function calcularSaldo(
  * uma imagem que a empresa já tem.
  */
 function retratoDoPdi(html: string): string | null {
-  const bloco = html.match(/class=["'][^"']*portrait-wrap[^"']*["'][\s\S]{0,400}?<img[^>]*>/i);
+  const bloco = html.match(
+    /class=["'][^"']*portrait-wrap[^"']*["'][\s\S]{0,400}?<img[^>]*>/i,
+  );
   const alvo = bloco ? bloco[0] : html.match(/<img[^>]*>/i)?.[0];
   if (!alvo) return null;
-  const src = alvo.match(/src=["'](data:image\/[a-z+]+;base64,[A-Za-z0-9+/=\s]+)["']/i);
+  const src = alvo.match(
+    /src=["'](data:image\/[a-z+]+;base64,[A-Za-z0-9+/=\s]+)["']/i,
+  );
   return src ? src[1].replace(/\s+/g, "") : null;
 }
 
@@ -147,7 +223,9 @@ export default fp(async function pessoalRoutes(fastify) {
   const ehAdmin = (role: string | undefined) => role === "admin";
 
   /** Retratos vindos do PDI, para os userIds pedidos. */
-  async function retratosDosPdis(userIds: string[]): Promise<Map<string, string>> {
+  async function retratosDosPdis(
+    userIds: string[],
+  ): Promise<Map<string, string>> {
     const mapa = new Map<string, string>();
     if (userIds.length === 0) return mapa;
     const docs = await fastify.db
@@ -225,6 +303,13 @@ export default fp(async function pessoalRoutes(fastify) {
       cargo: f?.cargo ?? null,
       entradaEm: f?.entradaEm ?? null,
       ajusteSaldoDias: f?.ajusteSaldoDias ?? 0,
+      // Vão nas DUAS visões: a pessoa confere os próprios, e admin precisa
+      // deles para pagar. Fora daqui, só o diretório do time lê a tabela — e
+      // ele nomeia as colunas que traz.
+      cpf: f?.cpf ?? null,
+      cnpj: f?.cnpj ?? null,
+      chavePix: f?.chavePix ?? null,
+      endereco: f?.endereco ?? null,
       ...(completo ? { observacoes: f?.observacoes ?? null } : {}),
       temFicha: f !== null,
     };
@@ -256,10 +341,16 @@ export default fp(async function pessoalRoutes(fastify) {
    */
   fastify.get("/api/pessoal/time", async (request, reply) => {
     // Convidado não vê o time: ele é de fora, e o diretório é interno.
-    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    if (request.userRole === "guest")
+      return reply.code(403).send({ error: "Acesso negado" });
 
     const pessoas = await fastify.db
-      .select({ id: users.id, name: users.name, email: users.email, role: users.role })
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        role: users.role,
+      })
       .from(users)
       .where(and(eq(users.status, "active"), eq(users.listed, true)))
       .orderBy(asc(users.name));
@@ -305,12 +396,18 @@ export default fp(async function pessoalRoutes(fastify) {
   });
 
   fastify.get("/api/pessoal", async (request, reply) => {
-    if (!ehAdmin(request.userRole)) return reply.code(403).send({ error: "Acesso negado" });
+    if (!ehAdmin(request.userRole))
+      return reply.code(403).send({ error: "Acesso negado" });
 
     // Sai de `users` porque recém-admitido ainda não tem ficha — e é ele que
     // mais precisa aparecer, para alguém preencher.
     const pessoas = await fastify.db
-      .select({ id: users.id, name: users.name, email: users.email, role: users.role })
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        role: users.role,
+      })
       .from(users)
       .where(and(eq(users.status, "active"), eq(users.listed, true)))
       .orderBy(asc(users.name));
@@ -319,7 +416,10 @@ export default fp(async function pessoalRoutes(fastify) {
     if (ids.length === 0) return { pessoas: [] };
 
     const [fichas, ausencias, fotos] = await Promise.all([
-      fastify.db.select().from(peopleRecords).where(inArray(peopleRecords.userId, ids)),
+      fastify.db
+        .select()
+        .from(peopleRecords)
+        .where(inArray(peopleRecords.userId, ids)),
       fastify.db
         .select()
         .from(peopleAbsences)
@@ -339,13 +439,19 @@ export default fp(async function pessoalRoutes(fastify) {
           ...formaFicha(u, f, fotos.get(u.id) ?? null, true),
           saldo: calcularSaldo(
             f?.entradaEm ?? null,
-            minhas.map((a) => ({ kind: a.kind, status: a.status, inicio: a.inicio, fim: a.fim })),
+            minhas.map((a) => ({
+              kind: a.kind,
+              status: a.status,
+              inicio: a.inicio,
+              fim: a.fim,
+            })),
             f?.ajusteSaldoDias ?? 0,
           ),
           /** Fora HOJE — é o que o painel precisa responder de relance. */
           ausenteAgora: ativas.some((a) => a.inicio <= hoje && a.fim >= hoje),
           /** O próximo período que ainda não terminou. */
-          proxima: ativas.filter((a) => a.fim >= hoje).map(formaAusencia)[0] ?? null,
+          proxima:
+            ativas.filter((a) => a.fim >= hoje).map(formaAusencia)[0] ?? null,
           totalAusencias: ativas.length,
         };
       }),
@@ -354,10 +460,16 @@ export default fp(async function pessoalRoutes(fastify) {
 
   // ---- A própria ficha ----
   fastify.get("/api/pessoal/me", async (request, reply) => {
-    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    if (request.userRole === "guest")
+      return reply.code(403).send({ error: "Acesso negado" });
 
     const [u] = await fastify.db
-      .select({ id: users.id, name: users.name, email: users.email, role: users.role })
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        role: users.role,
+      })
       .from(users)
       .where(eq(users.id, request.userId))
       .limit(1);
@@ -372,7 +484,12 @@ export default fp(async function pessoalRoutes(fastify) {
       ficha: formaFicha(u, f, fotos.get(u.id) ?? null, false),
       saldo: calcularSaldo(
         f?.entradaEm ?? null,
-        ausencias.map((a) => ({ kind: a.kind, status: a.status, inicio: a.inicio, fim: a.fim })),
+        ausencias.map((a) => ({
+          kind: a.kind,
+          status: a.status,
+          inicio: a.inicio,
+          fim: a.fim,
+        })),
         f?.ajusteSaldoDias ?? 0,
       ),
       ausencias: ausencias.map(formaAusencia),
@@ -381,12 +498,19 @@ export default fp(async function pessoalRoutes(fastify) {
 
   // ---- Ficha de alguém (admin) ----
   fastify.get("/api/pessoal/:userId", async (request, reply) => {
-    if (!ehAdmin(request.userRole)) return reply.code(403).send({ error: "Acesso negado" });
+    if (!ehAdmin(request.userRole))
+      return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ userId: ID }).safeParse(request.params);
-    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!p.success)
+      return reply.code(400).send({ error: "Parâmetros inválidos" });
 
     const [u] = await fastify.db
-      .select({ id: users.id, name: users.name, email: users.email, role: users.role })
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        role: users.role,
+      })
       .from(users)
       .where(eq(users.id, p.data.userId))
       .limit(1);
@@ -401,7 +525,12 @@ export default fp(async function pessoalRoutes(fastify) {
       ficha: formaFicha(u, f, fotos.get(u.id) ?? null, true),
       saldo: calcularSaldo(
         f?.entradaEm ?? null,
-        ausencias.map((a) => ({ kind: a.kind, status: a.status, inicio: a.inicio, fim: a.fim })),
+        ausencias.map((a) => ({
+          kind: a.kind,
+          status: a.status,
+          inicio: a.inicio,
+          fim: a.fim,
+        })),
         f?.ajusteSaldoDias ?? 0,
       ),
       ausencias: ausencias.map(formaAusencia),
@@ -421,13 +550,16 @@ export default fp(async function pessoalRoutes(fastify) {
    */
   fastify.put("/api/pessoal/:userId", async (request, reply) => {
     const p = z.object({ userId: ID }).safeParse(request.params);
-    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!p.success)
+      return reply.code(400).send({ error: "Parâmetros inválidos" });
 
     const admin = ehAdmin(request.userRole);
     const ehAPropria = request.userId === p.data.userId;
     // Convidado não tem ficha nem time: o diretório é interno.
-    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
-    if (!admin && !ehAPropria) return reply.code(403).send({ error: "Acesso negado" });
+    if (request.userRole === "guest")
+      return reply.code(403).send({ error: "Acesso negado" });
+    if (!admin && !ehAPropria)
+      return reply.code(403).send({ error: "Acesso negado" });
 
     /**
      * O Zod DESCARTA o que não está no schema, e é o que protege aqui.
@@ -437,7 +569,9 @@ export default fp(async function pessoalRoutes(fastify) {
      * barulhento e menos seguro — quem tenta de novo com o campo removido
      * consegue o mesmo efeito.
      */
-    const body = (admin ? fichaSchema : fichaDaPropriaPessoa).safeParse(request.body);
+    const body = (admin ? fichaSchema : fichaDaPropriaPessoa).safeParse(
+      request.body,
+    );
     if (!body.success) {
       return reply.code(400).send({
         error: "Dados inválidos",
@@ -471,7 +605,8 @@ export default fp(async function pessoalRoutes(fastify) {
 
   // ---- Ausências (admin) ----
   fastify.post("/api/pessoal/:userId/ausencias", async (request, reply) => {
-    if (!ehAdmin(request.userRole)) return reply.code(403).send({ error: "Acesso negado" });
+    if (!ehAdmin(request.userRole))
+      return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ userId: ID }).safeParse(request.params);
     const body = ausenciaSchema.safeParse(request.body);
     if (!p.success || !body.success) {
@@ -481,35 +616,47 @@ export default fp(async function pessoalRoutes(fastify) {
       });
     }
     if (body.data.fim < body.data.inicio) {
-      return reply.code(400).send({ error: "O fim não pode ser antes do início." });
+      return reply
+        .code(400)
+        .send({ error: "O fim não pode ser antes do início." });
     }
 
     const [criada] = await fastify.db
       .insert(peopleAbsences)
-      .values({ userId: p.data.userId, ...body.data, createdBy: request.userId })
+      .values({
+        userId: p.data.userId,
+        ...body.data,
+        createdBy: request.userId,
+      })
       .returning();
     return reply.code(201).send({ ausencia: formaAusencia(criada) });
   });
 
   fastify.put("/api/pessoal/ausencias/:id", async (request, reply) => {
-    if (!ehAdmin(request.userRole)) return reply.code(403).send({ error: "Acesso negado" });
+    if (!ehAdmin(request.userRole))
+      return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ id: ID }).safeParse(request.params);
     const body = ausenciaSchema.partial().safeParse(request.body);
-    if (!p.success || !body.success) return reply.code(400).send({ error: "Dados inválidos" });
+    if (!p.success || !body.success)
+      return reply.code(400).send({ error: "Dados inválidos" });
 
     const [atual] = await fastify.db
       .select()
       .from(peopleAbsences)
       .where(eq(peopleAbsences.id, p.data.id))
       .limit(1);
-    if (!atual) return reply.code(404).send({ error: "Registro não encontrado" });
+    if (!atual)
+      return reply.code(404).send({ error: "Registro não encontrado" });
 
     // Valida contra o que a linha FICARÁ, não contra o que veio no corpo: uma
     // edição que muda só o início pode inverter o período sem o corpo conter os
     // dois campos.
     const inicio = body.data.inicio ?? atual.inicio;
     const fim = body.data.fim ?? atual.fim;
-    if (fim < inicio) return reply.code(400).send({ error: "O fim não pode ser antes do início." });
+    if (fim < inicio)
+      return reply
+        .code(400)
+        .send({ error: "O fim não pode ser antes do início." });
 
     const [linha] = await fastify.db
       .update(peopleAbsences)
@@ -520,10 +667,14 @@ export default fp(async function pessoalRoutes(fastify) {
   });
 
   fastify.delete("/api/pessoal/ausencias/:id", async (request, reply) => {
-    if (!ehAdmin(request.userRole)) return reply.code(403).send({ error: "Acesso negado" });
+    if (!ehAdmin(request.userRole))
+      return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ id: ID }).safeParse(request.params);
-    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
-    await fastify.db.delete(peopleAbsences).where(eq(peopleAbsences.id, p.data.id));
+    if (!p.success)
+      return reply.code(400).send({ error: "Parâmetros inválidos" });
+    await fastify.db
+      .delete(peopleAbsences)
+      .where(eq(peopleAbsences.id, p.data.id));
     return reply.code(204).send();
   });
 });
