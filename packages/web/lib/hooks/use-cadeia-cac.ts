@@ -33,6 +33,11 @@ export interface CadeiaCacPayload {
    * este existe mesmo quando ninguém pediu janela, e é o que a tela declara.
    */
   periodoDaSerie?: { de: string; ate: string } | null;
+  /**
+   * Dias DISTINTOS com dado. ⚠️ Não é `agregado.dias`, que conta pares
+   * (campanha, dia) — 239 contra 54 no `bbe-funil-churrasco`, 4,4×.
+   */
+  diasComDado?: number;
   lpTemVsl: boolean | null;
   ticketMedioManual: number | null;
 

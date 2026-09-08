@@ -1021,10 +1021,16 @@ export async function montarPayloadCadeiaCac(
      * CAC R$ 743,58 na aba e R$ 855,11 no Panorama — os dois certos, janelas
      * diferentes, e nenhuma das duas telas dizendo qual.
      *
-     * `agregado.dias` conta os dias COM dado, que pode ser menos que o vão
-     * entre `de` e `ate` — a tela mostra os dois.
+     * ⚠️ **Não use `agregado.dias` para isso.** Ele conta pares
+     * (campanha, dia) — `agregar()` soma 1 por `DiaBruto`, e a série é o
+     * `flatMap` das campanhas. Medido no `bbe-funil-churrasco` em 08/09: 239
+     * contra 54 dias reais, 4,4× — cinco campanhas no mesmo período. Rotular
+     * aquilo de "dias" na tela seria exatamente o defeito que esta story fecha,
+     * publicado por ela.
      */
     periodoDaSerie,
+    /** Dias DISTINTOS com dado — o que a tela declara ao lado do intervalo. */
+    diasComDado: diasDaSerie.size,
     atuais,
     principal,
     /**

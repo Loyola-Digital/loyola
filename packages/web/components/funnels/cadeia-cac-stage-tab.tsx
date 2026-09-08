@@ -290,7 +290,7 @@ export function CadeiaCacStageTab({
             dizendo qual. Quem comparava concluía que uma estava quebrada.
 
             ⚠️ Nenhum número muda: é rótulo. */}
-        <PeriodoDoNumero range={data.range} serie={data.periodoDaSerie} dias={data.agregado?.dias} />
+        <PeriodoDoNumero range={data.range} serie={data.periodoDaSerie} dias={data.diasComDado} />
         {p?.motivo && <div className="mt-3"><Motivo motivo={p.motivo} texto={p.message} /></div>}
         {/* Imposto declarado, para ninguém aplicar de novo por fora. */}
         {data.spendIncludesMetaTax && (

@@ -1465,6 +1465,50 @@ describe("cadeia-cac — os QUATRO estados da guarda de cobertura (Story 44.12)"
  * teste falhar.
  */
 /**
+ * Story 44.31 — `diasComDado` conta DIAS, e `agregado.dias` não.
+ *
+ * ⚠️ O defeito quase publicado: a primeira versão do rótulo de período usava
+ * `agregado.dias`, que soma 1 por `DiaBruto` — e a série é o `flatMap` das
+ * campanhas. Medido no `bbe-funil-churrasco` em 08/09: **239 contra 54**, 4,4×,
+ * porque cinco campanhas cobrem os mesmos dias.
+ *
+ * A tela teria dito "239 dias com dado" para um intervalo de 54 dias. Um número
+ * com o rótulo errado — exatamente o defeito que a Story 44.31 fecha, publicado
+ * por ela.
+ */
+describe("Story 44.31 — dias distintos × pares (campanha, dia)", () => {
+  it("duas campanhas nos MESMOS 10 dias dão 10 dias, não 20", () => {
+    filaVinculo([etapaCom(["c1", "c2"], { stageType: "paid" })]);
+    // A mesma janela para as duas — é o caso que separa as duas contagens.
+    filaInsights([...diasDe("c1", 10), ...diasDe("c2", 10)]);
+    return (async () => {
+      const app = await buildApp();
+      const body = (await app.inject({ method: "GET", url: url() })).json();
+      expect(body.diasComDado).toBe(10);
+      // E o campo antigo continua contando pares — ele não é o errado, é OUTRA
+      // coisa. Afirmar os dois é o que impede alguém trocar um pelo outro.
+      expect(body.agregado.dias).toBe(20);
+      await app.close();
+    })();
+  });
+
+  it("o período da série é o intervalo real, e sai no payload", () => {
+    filaVinculo([etapa({ stageType: "paid" })]);
+    filaInsights(diasDe("c1", 10));
+    return (async () => {
+      const app = await buildApp();
+      const body = (await app.inject({ method: "GET", url: url() })).json();
+      expect(body.periodoDaSerie).toEqual({ de: "2026-08-01", ate: "2026-08-10" });
+      // ⚠️ E `range` continua `{null, null}`: ninguém pediu janela. São campos
+      // diferentes de propósito — foi por confundi-los que a aba e o Panorama
+      // mostraram CACs diferentes sem nenhuma das duas dizer de quando eram.
+      expect(body.range).toEqual({ from: null, to: null });
+      await app.close();
+    })();
+  });
+});
+
+/**
  * ## Reversões medidas (Story 44.28 T6)
  *
  * Rodadas contra `public-cadeia-cac` + `panorama-do-projeto`, com o defeito
