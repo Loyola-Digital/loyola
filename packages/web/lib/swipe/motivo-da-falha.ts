@@ -1,5 +1,5 @@
 /**
- * Por que a capa do PDF não abriu, em uma frase que alguém consegue agir.
+ * Por que a capa — do PDF ou da página salva — não abriu, em uma frase que alguém consegue agir.
  *
  * Separado do componente porque é a única parte com regra de verdade — e
  * porque o pacote web roda os testes em `environment: node`, sem DOM. Uma
@@ -13,7 +13,8 @@ export type CausaDaFalha =
   | { tipo: "http"; status: number }
   | { tipo: "prazo" }
   | { tipo: "rede" }
-  | { tipo: "pdf" };
+  | { tipo: "pdf" }
+  | { tipo: "pagina" };
 
 /** O que a tela mostra quando não dá para desenhar a capa. */
 export function motivoDaFalha(causa: CausaDaFalha): string {
@@ -38,5 +39,7 @@ export function motivoDaFalha(causa: CausaDaFalha): string {
       return "Não consegui alcançar o arquivo";
     case "pdf":
       return "Não consegui abrir este PDF";
+    case "pagina":
+      return "Não consegui abrir esta página";
   }
 }

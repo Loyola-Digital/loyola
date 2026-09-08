@@ -33,27 +33,13 @@
  *
  * ## A codificação
  *
- * UTF-8 primeiro. Se o resultado vier cheio de caracteres de substituição, o
- * arquivo é de um editor antigo (Windows-1252) — e aí a segunda tentativa
- * acerta os acentos que apareceriam como "ImersÃ£o".
+ * Fica em `decodificarHtml`, compartilhada com a capa do card — as duas telas
+ * precisam do mesmo palpite, e o porquê está documentado lá.
  */
 
 import { useEffect, useState } from "react";
 import { AlertCircle, ExternalLink, Loader2 } from "lucide-react";
-
-/** Quantos caracteres perdidos já indicam que o UTF-8 foi o palpite errado. */
-const LIMITE_DE_PERDA = 3;
-
-function decodificar(bytes: ArrayBuffer): string {
-  const utf8 = new TextDecoder("utf-8").decode(bytes);
-  const perdidos = (utf8.match(/�/g) ?? []).length;
-  if (perdidos <= LIMITE_DE_PERDA) return utf8;
-  try {
-    return new TextDecoder("windows-1252").decode(bytes);
-  } catch {
-    return utf8;
-  }
-}
+import { decodificarHtml } from "@/lib/swipe/decodificar-html";
 
 export function PaginaSalva({ url, titulo }: { url: string; titulo: string }) {
   const [html, setHtml] = useState<string | null>(null);
@@ -66,7 +52,7 @@ export function PaginaSalva({ url, titulo }: { url: string; titulo: string }) {
 
     fetch(url)
       .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
-      .then((b) => vivo && setHtml(decodificar(b)))
+      .then((b) => vivo && setHtml(decodificarHtml(b)))
       .catch(() => vivo && setErro(true));
 
     return () => {
