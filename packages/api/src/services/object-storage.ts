@@ -79,6 +79,42 @@ export function isAllowedMime(mime: string): boolean {
   return ALLOWED_MIME.has(mime);
 }
 
+/** Extensões que decidem quando o navegador não sabe o tipo do arquivo. */
+const POR_EXTENSAO: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  gif: "image/gif",
+  avif: "image/avif",
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+  webm: "video/webm",
+  pdf: "application/pdf",
+  html: "text/html",
+  htm: "text/html",
+};
+
+/**
+ * O tipo do arquivo, contando com a EXTENSÃO quando o cabeçalho não serve.
+ *
+ * O multipart entrega o `Content-Type` que o navegador escreveu — e para
+ * arquivo vindo do disco ele escreve `application/octet-stream` com
+ * frequência, às vezes nada. Confiar só nele fazia a rota recusar um `.html`
+ * legítimo com "Tipo não permitido: application/octet-stream", e o mesmo
+ * aconteceria com um `.png` em qualquer navegador que resolvesse ser vago.
+ *
+ * A extensão é palpite, mas é um palpite melhor que a recusa — e o conjunto de
+ * tipos aceitos continua sendo o mesmo `ALLOWED_MIME`.
+ */
+export function resolverMime(nome: string | undefined, mimeDoUpload: string): string | null {
+  const declarado = (mimeDoUpload ?? "").split(";")[0]!.trim().toLowerCase();
+  if (ALLOWED_MIME.has(declarado)) return declarado;
+  const ext = (nome ?? "").split(".").pop()?.toLowerCase() ?? "";
+  const porExt = POR_EXTENSAO[ext];
+  return porExt && ALLOWED_MIME.has(porExt) ? porExt : null;
+}
+
 function client(cfg: StorageConfig): S3Client {
   return new S3Client({
     /**

@@ -53,6 +53,7 @@ import {
   deleteObject,
   explicarErroDeStorage,
   isAllowedMime,
+  resolverMime,
   isStorageConfigured,
   testarEscrita,
   uploadDireto,
@@ -560,9 +561,16 @@ export default fp(async function swipeFilesRoutes(fastify) {
     const arquivo = await request.file();
     if (!arquivo) return reply.code(400).send({ error: "Envie a imagem ou o PDF." });
 
+    /**
+     * O tipo sai do NOME quando o cabeçalho é vago — mesmo motivo da rota de
+     * upload: o navegador escreve `application/octet-stream` para arquivo do
+     * disco, e a análise recusava a página com o arquivo certo em mãos.
+     */
+    const mimeReal = resolverMime(arquivo.filename, arquivo.mimetype) ?? arquivo.mimetype;
+
     // HTML entra por outro caminho: o modelo lê o TEXTO da página, não o
     // arquivo. Ver `textoDoHtml` para por que não mandamos o HTML cru.
-    if (!podeAnalisar(arquivo.mimetype) && !ehHtml(arquivo.mimetype)) {
+    if (!podeAnalisar(mimeReal) && !ehHtml(mimeReal)) {
       return reply.code(400).send({
         error: "Só dá para analisar imagem, PDF ou página HTML. Vídeo precisa ser catalogado à mão.",
       });
@@ -601,7 +609,7 @@ export default fp(async function swipeFilesRoutes(fastify) {
     const pulso = setInterval(() => escrever({ tipo: "analisando" }), 10_000);
 
     try {
-      const sugestao = ehHtml(arquivo.mimetype)
+      const sugestao = ehHtml(mimeReal)
         ? /*
            * A página salva é o melhor material de catalogação do acervo.
            *
@@ -616,12 +624,12 @@ export default fp(async function swipeFilesRoutes(fastify) {
           })
         : await analisarReferencia(
             fastify.claude.client,
-            { buffer, mimeType: arquivo.mimetype },
+            { buffer, mimeType: mimeReal },
             { nomeDoArquivo: arquivo.filename, origem },
           );
       escrever({ tipo: "pronto", sugestao });
     } catch (err) {
-      fastify.log.error({ err, mime: arquivo.mimetype }, "analise de swipe file falhou");
+      fastify.log.error({ err, mime: mimeReal }, "analise de swipe file falhou");
       escrever({
         tipo: "erro",
         error: err instanceof ErroDeAnalise ? err.message : "Não consegui analisar agora.",
@@ -678,14 +686,28 @@ export default fp(async function swipeFilesRoutes(fastify) {
       const arquivo = await request.file({ limits: { fileSize: MAX_UPLOAD_BYTES } });
       if (!arquivo) return reply.code(400).send({ error: "Envie o arquivo." });
 
-      if (!isAllowedMime(arquivo.mimetype)) {
-        return reply.code(400).send({ error: `Tipo não permitido: ${arquivo.mimetype}` });
+      /**
+       * O tipo sai do nome quando o cabeçalho não serve.
+       *
+       * O navegador escreve `application/octet-stream` no multipart com
+       * frequência para arquivo vindo do disco — e a rota recusava um `.html`
+       * legítimo com "Tipo não permitido: application/octet-stream". A pessoa
+       * via o erro e não tinha o que fazer: o arquivo estava certo.
+       */
+      const mime = resolverMime(arquivo.filename, arquivo.mimetype);
+      if (!mime) {
+        return reply
+          .code(400)
+          .send({ error: `Tipo não permitido: ${arquivo.mimetype || "desconhecido"}` });
       }
 
       try {
         const r = await uploadDireto(storage(), {
           corpo: arquivo.file,
-          mime: arquivo.mimetype,
+          // O mime RESOLVIDO vai para o bucket: é ele que o Supabase devolve
+          // no `Content-Type`, e é ele que faz o navegador renderizar a página
+          // em vez de baixá-la.
+          mime,
           prefix: "swipe",
         });
 
