@@ -48,6 +48,7 @@ import publicMetaRoutes from "./routes/public-meta.js";
 import publicCadeiaCacRoutes from "./routes/public-cadeia-cac.js";
 import stageCadeiaCacRoutes from "./routes/stage-cadeia-cac.js";
 import publicPanoramaRoutes from "./routes/public-panorama.js";
+import publicPerpetualMetricsRoutes from "./routes/public-perpetual-metrics.js";
 import projectPanoramaRoutes from "./routes/project-panorama.js";
 import publicVslRoutes from "./routes/public-vsl.js";
 import publicLeadsRoutes from "./routes/public-leads.js";
@@ -218,6 +219,7 @@ export async function buildServer() {
   await app.register(stageCadeiaCacRoutes);
   // Story 44.20 — o panorama do projeto. Duas rotas, uma função, como as irmãs acima.
   await app.register(publicPanoramaRoutes);
+  await app.register(publicPerpetualMetricsRoutes);
   await app.register(projectPanoramaRoutes);
   await app.register(publicVslRoutes);
   await app.register(publicLeadsRoutes);
