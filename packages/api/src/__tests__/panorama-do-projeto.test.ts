@@ -689,6 +689,40 @@ describe("Story 44.20 — `semDados` de fonte ausente × de denominador zero", (
    * Este teste é a trava que faltava: a família paga tinha a dela desde a
    * 44.20, a gratuita não.
    */
+  /**
+   * QA-4426-04 (Story 44.28 AC8) — o LADO SIMÉTRICO, que faltava.
+   *
+   * O gate da 44.26 travou o caso "zero lead na janela NÃO vira pendência".
+   * Mas nada travava o oposto: `semCoberturaDiaria` **precisa** virar pendência,
+   * porque é lacuna de configuração de verdade — o cache não tem série diária e
+   * alguém precisa esperar o sync.
+   *
+   * O @qa mostrou o buraco com uma mutação: inverter a condição que separa os
+   * dois `semDados` removia a `message` do `semCoberturaDiaria` — e **nenhum
+   * teste acusava**. A pendência sumiria em silêncio, que é o defeito espelhado
+   * do QA-4426-01: em vez de pendência falsa, pendência que some.
+   */
+  it("QA-4426-04: `semCoberturaDiaria` VIRA pendência — é lacuna de configuração", async () => {
+    const f = fixture();
+    f.set(funnelStages, [[etapa({ stageType: "free" })]]);
+    f.set(metaAdInsightsDaily, [serieComTeto()]);
+    // Cache ANTERIOR à Story 44.12: tem lead, não tem `coberturaDiaria`.
+    f.set(publicMetricsCache, [
+      [{ payload: { uniqueLeads: 40, fonte: "planilha_leads" }, computedAt: new Date("2026-08-27T00:00:00Z") }],
+    ]);
+
+    const p = (await montarPanoramaDoProjeto(fakeDb(f), config, PROJ, OPTS))!;
+    const principal = p.etapas[0].principal as Record<string, unknown>;
+
+    expect(principal.motivo).toBe("semCoberturaDiaria");
+    // ⚠️ A `message` é o que faz o Panorama tratá-lo como pendência. Sem ela,
+    // a lacuna some da lista e ninguém sabe que precisa esperar o sync.
+    expect(principal.message).toBeDefined();
+    const pend = p.pendencias.find((x) => x.codigo === "semCoberturaDiaria");
+    expect(pend).toBeDefined();
+    expect(pend!.origem).toBe("cadeia");
+  });
+
   it("gratuita: ZERO lead na janela é fato, não pendência de configuração", async () => {
     const f = fixture();
     f.set(funnelStages, [[etapa({ stageType: "free" })]]);
