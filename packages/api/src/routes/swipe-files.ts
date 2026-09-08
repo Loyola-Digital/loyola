@@ -11,7 +11,7 @@
 
 import { Readable } from "node:stream";
 import { z } from "zod";
-import { and, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   swipeClickupAlerts,
@@ -532,28 +532,59 @@ export default fp(async function swipeFilesRoutes(fastify) {
        * Uma referência que também está em "Referências de escassez" não pode
        * sumir porque a coleção do lançamento foi apagada — ela foi separada
        * para dois usos, e um deles continua valendo.
+       *
+       * Montado com o construtor de consultas, e não com SQL escrito à mão:
+       * um array interpolado num `sql` template vira lista de parâmetros
+       * (`$1, $2, $3`), e `ANY(($1,$2,$3)::uuid[])` não é SQL válido — era
+       * isso que devolvia 500 ao apagar.
        */
-      const exclusivas = await fastify.db.execute<{ id: string; file_key: string | null }>(sql`
-        SELECT s.id, s.file_key
-        FROM swipe_files s
-        WHERE EXISTS (
-          SELECT 1 FROM swipe_collection_items i
-          WHERE i.swipe_id = s.id AND i.collection_id = ANY(${ids}::uuid[])
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM swipe_collection_items i
-          WHERE i.swipe_id = s.id AND i.collection_id <> ALL(${ids}::uuid[])
-        )
-      `);
-      const linhas = (exclusivas.rows ?? exclusivas) as { id: string; file_key: string | null }[];
+      const dentro = await fastify.db
+        .selectDistinct({ id: swipeCollectionItems.swipeId })
+        .from(swipeCollectionItems)
+        .where(inArray(swipeCollectionItems.collectionId, ids));
+
+      const candidatos = dentro.map((d) => d.id);
+      const fora = candidatos.length
+        ? await fastify.db
+            .selectDistinct({ id: swipeCollectionItems.swipeId })
+            .from(swipeCollectionItems)
+            .where(
+              and(
+                inArray(swipeCollectionItems.swipeId, candidatos),
+                notInArray(swipeCollectionItems.collectionId, ids),
+              ),
+            )
+        : [];
+
+      const temOutraCasa = new Set(fora.map((f) => f.id));
+      const soAqui = candidatos.filter((id) => !temOutraCasa.has(id));
+
+      const linhas = soAqui.length
+        ? await fastify.db
+            .select({ id: swipeFiles.id, file_key: swipeFiles.fileKey })
+            .from(swipeFiles)
+            .where(inArray(swipeFiles.id, soAqui))
+        : [];
 
       if (linhas.length > 0) {
-        // O objeto sai do bucket ANTES da linha: sem a linha, ninguém mais
-        // sabe qual é a chave, e o arquivo fica pago para sempre.
+        /*
+          O objeto sai do bucket ANTES da linha: sem a linha, ninguém mais sabe
+          qual é a chave, e o arquivo fica pago para sempre.
+
+          `storage()` dentro do `try` de cada um: sem credencial configurada
+          ele LANÇA, e um throw aqui derrubaria a rota inteira — a coleção não
+          seria apagada por causa de um arquivo que talvez nem exista.
+        */
         await Promise.all(
           linhas
             .filter((l) => l.file_key)
-            .map((l) => deleteObject(storage(), l.file_key as string).catch(() => {})),
+            .map(async (l) => {
+              try {
+                await deleteObject(storage(), l.file_key as string);
+              } catch {
+                /* arquivo já sumiu, ou storage sem credencial — a linha sai igual */
+              }
+            }),
         );
         await fastify.db.delete(swipeFiles).where(
           inArray(
