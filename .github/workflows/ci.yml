@@ -86,37 +86,37 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     permissions:
+      # ⚠️ Declarar `permissions` num job SUBSTITUI o conjunto inteiro — não
+      # acrescenta ao default. A primeira versão pedia só `pull-requests: write`
+      # e o `actions/checkout` morreu com "Repository not found", porque ficou
+      # sem `contents: read`. Aqui não há checkout (ver abaixo), mas a lição
+      # fica: ao declarar uma, declare todas as que o job usa.
+      contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
-        with:
-          # Precisa do histórico para comparar com a base da PR.
-          fetch-depth: 0
-
-      - name: A PR toca a superfície do MCP?
-        id: diff
+      # Sem `actions/checkout` de propósito. A pergunta é "quais arquivos esta
+      # PR mudou", e o GitHub já responde isso — clonar o repo para redescobrir
+      # com `git diff` traz junto os problemas de profundidade de clone, de
+      # merge-base e de permissão que derrubaram a primeira versão deste job.
+      - name: A PR toca a superfície do MCP, e já avisei?
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
         run: |
-          base="origin/${{ github.base_ref }}"
-          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          set -euo pipefail
           # `packages/mcp/**` cobre tools, config e transporte.
           # `mcp-tools.ts` é a lista canônica: mexer nela é somar ou tirar tool.
-          if git diff --name-only "$base"...HEAD \
+          if gh pr diff "$PR" --repo "$REPO" --name-only \
              | grep -qE '^packages/mcp/|^packages/shared/src/mcp-tools\.ts$'; then
             echo "tocou=sim" >> "$GITHUB_OUTPUT"
           else
             echo "tocou=nao" >> "$GITHUB_OUTPUT"
           fi
-
-      # Um comentário por PR. Sem isto, cada push novo repetiria o aviso e ele
-      # viraria ruído — que é como um aviso deixa de ser lido.
-      - name: Já avisei nesta PR?
-        id: existente
-        if: steps.diff.outputs.tocou == 'sim'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if gh pr view "${{ github.event.pull_request.number }}" \
-               --json comments --jq '.comments[].body' \
+          # Um comentário por PR: sem isto, cada push repetiria o aviso e ele
+          # viraria ruído — que é como um aviso deixa de ser lido.
+          if gh pr view "$PR" --repo "$REPO" --json comments --jq '.comments[].body' \
              | grep -q '<!-- aviso-gateway-mcp -->'; then
             echo "ja=sim" >> "$GITHUB_OUTPUT"
           else
@@ -124,11 +124,13 @@ jobs:
           fi
 
       - name: Avisar
-        if: steps.diff.outputs.tocou == 'sim' && steps.existente.outputs.ja == 'nao'
+        if: steps.check.outputs.tocou == 'sim' && steps.check.outputs.ja == 'nao'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
         run: |
-          gh pr comment "${{ github.event.pull_request.number }}" --body '<!-- aviso-gateway-mcp -->
+          gh pr comment "$PR" --repo "$REPO" --body '<!-- aviso-gateway-mcp -->
           ⚠️ **Esta PR muda a superfície do MCP — o gateway precisa de rebuild à mão.**
 
           O merge entrega a **rota** da API automaticamente. A **tool** não: o bundle é um processo stdio numa máquina de fora, `packages/mcp/dist` é gitignored, e nenhum passo do pipeline da `main` toca nele.
