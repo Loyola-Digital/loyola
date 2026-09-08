@@ -34,6 +34,7 @@ import {
   useMexerNaColecao,
   useUploadToBucket,
 } from "@/lib/hooks/use-swipe-files";
+import { SeletorDeColecao } from "@/components/swipe-files/seletor-de-colecao";
 import {
   planejarPasta,
   resumoPorTipo,
@@ -58,6 +59,14 @@ export function SubirPastaDialog({
   const [arquivos, setArquivos] = useState<File[]>([]);
   const [plano, setPlano] = useState<PlanoDaPasta | null>(null);
   const [comColecoes, setComColecoes] = useState(true);
+  /**
+   * A coleção onde tudo vai parar. `null` = na raiz da biblioteca.
+   *
+   * Destino e estrutura são escolhas ORTOGONAIS: dá para jogar a árvore inteira
+   * dentro de "Black Friday 2026" que já existe, ou mandar tudo solto para
+   * dentro dela sem criar subpasta nenhuma.
+   */
+  const [destino, setDestino] = useState<string | null>(null);
   const [feitos, setFeitos] = useState(0);
   const [atual, setAtual] = useState<string>("");
   const [falhas, setFalhas] = useState<Falha[]>([]);
@@ -72,6 +81,7 @@ export function SubirPastaDialog({
     setEstado("escolhendo");
     setArquivos([]);
     setPlano(null);
+    setDestino(null);
     setFeitos(0);
     setAtual("");
     setFalhas([]);
@@ -135,7 +145,9 @@ export function SubirPastaDialog({
       try {
         const criada = await criarColecao.mutateAsync({
           nome: c.nome,
-          parentId: caminhoPai ? (idPorCaminho.get(caminhoPai) ?? null) : null,
+          // A raiz da pasta pendura no DESTINO escolhido; as demais, na mãe
+          // que acabou de nascer.
+          parentId: caminhoPai ? (idPorCaminho.get(caminhoPai) ?? null) : destino,
         });
         idPorCaminho.set(c.caminho.join("/"), criada.id);
       } catch {
@@ -174,9 +186,11 @@ export function SubirPastaDialog({
           tags: [],
         });
 
+        // Sem pasta própria (o modo "tudo solto"), o arquivo entra direto no
+        // destino escolhido — que pode ser nenhum, e aí fica na biblioteca.
         const idColecao = item.colecao.length
           ? idPorCaminho.get(item.colecao.join("/"))
-          : undefined;
+          : (destino ?? undefined);
         if (idColecao) {
           await mexerNaColecao.mutateAsync({ id: idColecao, adicionar: [criado.id] });
         }
@@ -261,6 +275,17 @@ export function SubirPastaDialog({
               </div>
             </div>
 
+            <SeletorDeColecao
+              valor={destino}
+              onEscolher={setDestino}
+              rotulo="Onde colocar"
+              ajuda={
+                comColecoes
+                  ? "As pastas viram coleções dentro desta."
+                  : "Todos os arquivos entram nesta coleção."
+              }
+            />
+
             <div className="space-y-1.5">
               {[
                 {
@@ -270,8 +295,8 @@ export function SubirPastaDialog({
                 },
                 {
                   valor: false,
-                  titulo: "Subir tudo solto",
-                  ajuda: "Os arquivos entram na biblioteca sem criar coleção nenhuma.",
+                  titulo: "Não criar subcoleções",
+                  ajuda: "Os arquivos entram todos no mesmo lugar, sem repetir as pastas.",
                 },
               ].map((op) => (
                 <button
