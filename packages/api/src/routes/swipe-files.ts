@@ -30,6 +30,7 @@ import {
   textoDoHtml,
   ehDocumento,
   textoDoDocumento,
+  MIME_DOCX,
 } from "../services/swipe-analise.js";
 import { avisarNoClickUp } from "../services/swipe-clickup-aviso.js";
 import { contarFacetas } from "../services/swipe-facetas.js";
@@ -612,6 +613,54 @@ export default fp(async function swipeFilesRoutes(fastify) {
       .where(eq(swipeCollectionItems.collectionId, p.data.id));
 
     return { pecas: total ?? 0 };
+  });
+
+  /**
+   * O texto de um documento, para LER na tela.
+   *
+   * O `.docx` é um ZIP com XML dentro — o navegador não abre. Sem isto, uma
+   * transcrição subida vira um card que diz "Documento" e não mostra nada, que
+   * é pior que não ter subido: parece que o arquivo se perdeu.
+   *
+   * A extração acontece aqui porque a `mammoth` vive no servidor, e mandá-la
+   * para o navegador seria meio megabyte de biblioteca para ler um texto de
+   * dois mil caracteres.
+   */
+  fastify.get(`${base}/:id/texto`, async (request, reply) => {
+    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+    const [item] = await fastify.db
+      .select({
+        assetKind: swipeFiles.assetKind,
+        fileMime: swipeFiles.fileMime,
+        fileUrl: swipeFiles.fileUrl,
+        fileKey: swipeFiles.fileKey,
+      })
+      .from(swipeFiles)
+      .where(eq(swipeFiles.id, p.data.id))
+      .limit(1);
+    if (!item) return reply.code(404).send({ error: "Referência não encontrada" });
+    if (item.assetKind !== "doc") {
+      return reply.code(400).send({ error: "Esta referência não é um documento." });
+    }
+
+    const url = urlPublica(item, fastify.config.STORAGE_PUBLIC_URL);
+    if (!url) return reply.code(404).send({ error: "Arquivo não encontrado." });
+
+    try {
+      const r = await fetch(url);
+      if (!r.ok) return reply.code(502).send({ error: "Não consegui buscar o arquivo." });
+      const buffer = Buffer.from(await r.arrayBuffer());
+      // Sem limite aqui: na análise o corte existe para caber no prompt; para
+      // LER, cortar o documento no meio é esconder o fim da transcrição.
+      const texto = await textoDoDocumento(buffer, item.fileMime ?? MIME_DOCX, 500_000);
+      return { texto };
+    } catch (err) {
+      request.log.warn({ err, id: p.data.id }, "não consegui extrair o texto do documento");
+      return reply.code(502).send({ error: "Não consegui ler este documento." });
+    }
   });
 
   fastify.post(`${base}/analisar`, async (request, reply) => {
