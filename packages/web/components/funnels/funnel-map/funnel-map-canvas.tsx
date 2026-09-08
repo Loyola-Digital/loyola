@@ -120,6 +120,18 @@ function somaASelecao(e: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean
   return e.shiftKey || e.ctrlKey || e.metaKey;
 }
 
+/** O mesmo ponto, empurrado para FORA do bloco pelo lado em que está. */
+function pontoAfastado(
+  p: { x: number; y: number },
+  lado: PontoDeConexao,
+  d: number,
+): { x: number; y: number } {
+  if (lado === "top") return { x: p.x, y: p.y - d };
+  if (lado === "bottom") return { x: p.x, y: p.y + d };
+  if (lado === "left") return { x: p.x - d, y: p.y };
+  return { x: p.x + d, y: p.y };
+}
+
 function pontoDoBloco(b: BlocoDoMapa, ponto: PontoDeConexao): { x: number; y: number } {
   switch (ponto) {
     case "top": return { x: b.x + b.width / 2, y: b.y };
@@ -2551,27 +2563,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                       </g>
                     )}
 
-                    {/* Alças de reapontar — só na ligação selecionada.
-                        Visíveis o tempo todo, cada seta do mapa carregaria dois
-                        pontos extras e o desenho viraria uma nuvem de bolinhas
-                        que competem com as âncoras dos blocos. */}
-                    {ativa &&
-                      (
-                        [
-                          ["from", pontoDoBloco(de, c.fromPoint)],
-                          ["to", pontoDoBloco(para, c.toPoint)],
-                        ] as const
-                      ).map(([qual, pos]) => (
-                        <circle
-                          key={qual}
-                          cx={pos.x}
-                          cy={pos.y}
-                          r={5}
-                          className="pointer-events-auto cursor-grab fill-background stroke-primary"
-                          strokeWidth={2}
-                          onPointerDown={(ev) => arrastarPontaDaLigacao(ev, c, qual)}
-                        />
-                      ))}
+                    {/* As alças de reapontar NÃO ficam aqui — ver o `<svg>`
+                        das alças, depois dos blocos. Este desenho fica ATRÁS
+                        dos cards, e a alça nasce exatamente na borda de um
+                        deles: aqui dentro ela ficaria embaixo do card, visível
+                        pela metade e impossível de agarrar. */}
                   </g>
                 );
               })}
@@ -2858,7 +2854,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                       if (!selecao.tem(b.id)) selecao.definir([b.id]);
                       setMenu({ x: e.clientX, y: e.clientY, boxId: b.id });
                     }}
-                    className={`absolute cursor-grab touch-none select-none active:cursor-grabbing ${
+                    /* `group` para as âncoras de ligação aparecerem no hover
+                       — sem ela o `group-hover` delas nunca dispara. */
+                    className={`group absolute cursor-grab touch-none select-none active:cursor-grabbing ${
                       ehNota ? "rounded-sm p-2 shadow-md" : "p-1"
                     } ${ativo ? "ring-2 ring-primary ring-offset-1" : ""}`}
                     style={{
@@ -3015,6 +3013,46 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                         className="absolute -bottom-1 -right-1 z-20 h-3 w-3 cursor-nwse-resize touch-none rounded-sm border border-primary bg-background"
                       />
                     )}
+
+                    {/*
+                      Âncoras de ligação também na nota e no texto.
+
+                      Faltavam. PDF, imagem e card do funil sempre tiveram, e a
+                      ausência aqui não era uma decisão: um lembrete ou um
+                      rótulo que explica um trecho do funil precisa poder
+                      apontar para o card a que se refere.
+
+                      Só no HOVER ou no selecionado, ao contrário do card: uma
+                      parede de post-its com quatro bolinhas cada viraria um
+                      quadro de bolinhas, e a nota se lê de longe.
+                    */}
+                    {PONTOS.map((pt) => {
+                      const pos = pontoDoBloco({ ...b, x: 0, y: 0 }, pt);
+                      return (
+                        <button
+                          key={pt}
+                          type="button"
+                          onPointerDown={(ev) => pontoPointerDown(ev, b, pt)}
+                          onClick={(ev) => { ev.stopPropagation(); clicarNoPonto(b.id, pt); }}
+                          onDoubleClick={(ev) => {
+                            ev.stopPropagation();
+                            setLigando(null);
+                            setPreviaLigacao(null);
+                            setCriarDoPonto({ boxId: b.id, ponto: pt, x: ev.clientX, y: ev.clientY });
+                            setBuscaDoPonto("");
+                          }}
+                          className={`absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-crosshair touch-none rounded-full border transition-opacity ${
+                            ligando?.boxId === b.id && ligando.ponto === pt
+                              ? "border-primary bg-primary opacity-100"
+                              : `border-border bg-background hover:bg-primary ${
+                                  ativo ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                                }`
+                          }`}
+                          style={{ left: pos.x, top: pos.y }}
+                          aria-label={`Conectar pelo lado ${pt}`}
+                        />
+                      );
+                    })}
                   </div>
                 );
               }
@@ -3247,6 +3285,67 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
                 </div>
               );
             })}
+
+            {/*
+              As alças de reapontar, numa camada ACIMA dos blocos.
+
+              A alça nasce na borda do bloco de origem ou destino. No `<svg>`
+              das linhas — que é irmão anterior dos cards — ela ficava por baixo
+              deles: dava para ver metade e não dava para agarrar, que é
+              exatamente o gesto de levar a seta para outro card.
+
+              O `<svg>` não recebe ponteiro; só os círculos recebem. Assim a
+              camada não rouba o clique de nada que esteja embaixo.
+            */}
+            {conectorSel && (
+              <svg
+                className="pointer-events-none absolute z-30"
+                style={{ left: origemX, top: origemY }}
+                width={largura - origemX}
+                height={alturaDoDesenho - origemY}
+                viewBox={`${origemX} ${origemY} ${largura - origemX} ${alturaDoDesenho - origemY}`}
+              >
+                {(() => {
+                  const c = aba.connectors.find((x) => x.id === conectorSel);
+                  if (!c) return null;
+                  const de = blocos.find((b) => b.id === c.fromBox);
+                  const para = blocos.find((b) => b.id === c.toBox);
+                  if (!de || !para) return null;
+                  return (
+                    [
+                      ["from", pontoDoBloco(de, c.fromPoint), c.fromPoint],
+                      ["to", pontoDoBloco(para, c.toPoint), c.toPoint],
+                    ] as const
+                  ).map(([qual, pos, lado]) => {
+                    // Afastada do bloco: em cima da borda ela disputa o clique
+                    // com a âncora de ligação, que mora no mesmo lugar.
+                    const fora = pontoAfastado(pos, lado, 12);
+                    return (
+                      <g key={qual}>
+                        {/* O traço até a borda diz de qual ponta é a alça —
+                            solta a 12px, ela pareceria um enfeite. */}
+                        <line
+                          x1={pos.x}
+                          y1={pos.y}
+                          x2={fora.x}
+                          y2={fora.y}
+                          className="stroke-primary/40"
+                          strokeWidth={1.5}
+                        />
+                        <circle
+                          cx={fora.x}
+                          cy={fora.y}
+                          r={6}
+                          className="pointer-events-auto cursor-grab fill-background stroke-primary"
+                          strokeWidth={2}
+                          onPointerDown={(ev) => arrastarPontaDaLigacao(ev, c, qual)}
+                        />
+                      </g>
+                    );
+                  });
+                })()}
+              </svg>
+            )}
 
             {marquee && (
               <div
