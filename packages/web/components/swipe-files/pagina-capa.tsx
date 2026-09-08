@@ -126,11 +126,17 @@ export function PaginaCapa({
     if (!visivel) return;
 
     if (!url) {
-      setEstado({ fase: "falhou", motivo: motivoDaFalha({ tipo: "sem-link" }) });
+      setEstado({
+        fase: "falhou",
+        motivo: motivoDaFalha({ tipo: "sem-link" }),
+      });
       return;
     }
     if (tamanhoBytes && tamanhoBytes > TAMANHO_MAXIMO) {
-      setEstado({ fase: "falhou", motivo: motivoDaFalha({ tipo: "grande-demais" }) });
+      setEstado({
+        fase: "falhou",
+        motivo: motivoDaFalha({ tipo: "grande-demais" }),
+      });
       return;
     }
 
@@ -204,7 +210,9 @@ export function PaginaCapa({
           ) : (
             <>
               <Globe className="size-8 text-sky-600/70" />
-              <p className="text-[10px] leading-tight text-muted-foreground">{estado.motivo}</p>
+              <p className="text-[10px] leading-tight text-muted-foreground">
+                {estado.motivo}
+              </p>
             </>
           )}
         </div>

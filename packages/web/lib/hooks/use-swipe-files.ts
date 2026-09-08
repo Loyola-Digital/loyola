@@ -336,6 +336,13 @@ export interface CreateSwipeInput {
   platform?: string;
   format?: string;
   tags?: string[];
+  /**
+   * Parte de uma subida em lote — o servidor não avisa no ClickUp por esta.
+   *
+   * Quem marca isto assume fechar o lote com `useAvisarLote`, senão nenhum
+   * aviso sai. É o certo para uma pasta: sessenta arquivos, um aviso.
+   */
+  emLote?: boolean;
 }
 
 export function useCreateSwipeFile() {
@@ -903,5 +910,26 @@ export function useImportarDoClickUp() {
         void qc.invalidateQueries({ queryKey: ["swipe-files"] });
       }
     },
+  });
+}
+
+/**
+ * Fecha uma subida em lote com um aviso só no ClickUp.
+ *
+ * Manda os ids, não a contagem: quem conta é o banco, e o que falhou não entra
+ * no número. Não invalida nada — o aviso não muda a biblioteca.
+ */
+export function useAvisarLote() {
+  const apiClient = useApiClient();
+  return useMutation({
+    mutationFn: (input: { ids: string[]; destino?: string }) =>
+      apiClient<{
+        avisado: boolean;
+        motivo: string | null;
+        referencias: number;
+      }>(`${BASE}/aviso-de-lote`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
   });
 }
