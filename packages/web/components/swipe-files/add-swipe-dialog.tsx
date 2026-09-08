@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useRef, useState } from "react";
-import { Upload, Link2, Loader2, X, ImageIcon, Film, FileText, Sparkles } from "lucide-react";
+import { Code2, Upload, Link2, Loader2, X, ImageIcon, Film, FileText, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -24,6 +24,7 @@ import {
   useAnalisarSwipe, useCreateSwipeFile, useLinkPreview, useUploadToBucket, readMediaDimensions,
   type AssetKind, type LinkPreview, type SugestaoDeSwipe, type SwipeFacets,
 } from "@/lib/hooks/use-swipe-files";
+import { mimeDoArquivo } from "@/lib/utils/plano-da-pasta";
 
 const MAX_BYTES = 200 * 1024 * 1024;
 
@@ -38,17 +39,13 @@ const FORMATOS = ["Reel", "Feed", "Story", "Carrossel", "VSL", "Landing page", "
  * serve só para não oferecer um botão que vai falhar. Um `fetch` para descobrir
  * se cabe oferecer seria pior que a duplicação.
  */
-/** Mime de página, tolerando o `; charset=` que o navegador acrescenta. */
-function ehHtml(mime: string | undefined): boolean {
-  return (mime ?? "").split(";")[0]!.trim().toLowerCase() === "text/html";
-}
-
 function podeAnalisar(mime: string | undefined): boolean {
   if (!mime) return false;
   // HTML entra: o modelo lê o TEXTO da página, que é o melhor material de
   // catalogação do acervo — headline, promessa, preço e prova, em vez do
   // título e da linha de descrição que um link entrega.
-  return mime.startsWith("image/") || mime === "application/pdf" || ehHtml(mime);
+  const limpo = mime.split(";")[0]!.trim().toLowerCase();
+  return limpo.startsWith("image/") || limpo === "application/pdf" || limpo === "text/html";
 }
 
 function fmtBytes(n: number): string {
@@ -211,19 +208,33 @@ export function AddSwipeDialog({
         toast.error(`Arquivo tem ${fmtBytes(f.size)} — o limite é 200 MB.`);
         return;
       }
-      if (
-        !f.type.startsWith("image/") &&
-        !f.type.startsWith("video/") &&
-        f.type !== "application/pdf"
-      ) {
-        toast.error("Só imagem, vídeo ou PDF. Pra outros formatos, use o link.");
+      /**
+       * O tipo sai de `mimeDoArquivo`, que também olha a EXTENSÃO.
+       *
+       * Testar `f.type` sozinho barrava a página HTML: o navegador manda
+       * `application/octet-stream` (ou vazio) para arquivo vindo do disco, e o
+       * `.html` caía no "só imagem, vídeo ou PDF" mesmo com o formato já
+       * aceito no resto do caminho.
+       *
+       * É a mesma função que o upload de pasta usa — a regra de "o que o
+       * Swipe Files sabe guardar" mora num lugar só.
+       */
+      const mime = mimeDoArquivo(f.name, f.type);
+      if (!mime) {
+        toast.error("Só imagem, vídeo, PDF ou página HTML. Pra outros formatos, use o link.");
         return;
       }
       setFile(f);
-      setLocalPreview(URL.createObjectURL(f));
-      // PDF não passa por `readMediaDimensions`: não é <img> nem <video>, e a
-      // promessa nunca resolveria. Sem dimensão, o card usa a proporção padrão.
-      setDims(f.type === "application/pdf" ? null : await readMediaDimensions(f));
+      // Página não tem preview local: o `objectURL` de um HTML abriria a
+      // página dentro da caixinha de pré-visualização. Ela já tem capa própria.
+      setLocalPreview(mime === "text/html" ? null : URL.createObjectURL(f));
+      // Nem PDF nem HTML passam por `readMediaDimensions`: não são <img> nem
+      // <video>, e a promessa nunca resolveria.
+      setDims(
+        mime === "application/pdf" || mime === "text/html"
+          ? null
+          : await readMediaDimensions(f),
+      );
       // Nome do arquivo vira título provisório — reduz a fricção de catalogar.
       if (!title) setTitle(f.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").slice(0, 200));
     },
@@ -286,16 +297,14 @@ export function AddSwipeDialog({
     setTagInput("");
   }
 
+  const mimeDoAnexo = file ? mimeDoArquivo(file.name, file.type) : null;
   const assetKind: AssetKind = !file
     ? "link"
-    : file.type === "application/pdf"
+    : mimeDoAnexo === "application/pdf"
       ? "pdf"
-      : ehHtml(file.type) || /\.html?$/i.test(file.name)
-        ? // A extensão entra na conta porque o navegador nem sempre resolve o
-          // mime de um arquivo salvo do disco — vem `application/octet-stream`
-          // e a página viraria "imagem" quebrada.
-          "html"
-        : file.type.startsWith("video/")
+      : mimeDoAnexo === "text/html"
+        ? "html"
+        : mimeDoAnexo?.startsWith("video/")
           ? "video"
           : "image";
 
@@ -363,24 +372,32 @@ export function AddSwipeDialog({
               dragging ? "border-primary bg-primary/5" : "border-border/50"
             }`}
           >
-            {localPreview ? (
+            {/* A condição é o ARQUIVO, não o preview: a página HTML não tem
+                objectURL para desenhar, e testar o preview a deixava caindo na
+                zona de arrastar — como se a escolha não tivesse funcionado. */}
+            {file ? (
               <div className="space-y-2">
                 <div className="relative mx-auto max-w-[260px]">
-                  {assetKind === "video" ? (
+                  {assetKind === "video" && localPreview ? (
                     // Preview local do arquivo que a pessoa acabou de escolher —
                     // não há legenda a fornecer.
                     <video src={localPreview} className="w-full rounded-lg" controls aria-label="Prévia do vídeo" />
-                  ) : assetKind === "pdf" ? (
-                    // O PDF ainda é um Blob local: gerar miniatura exigiria uma
-                    // biblioteca de render só para esta prévia. O nome e o
-                    // tamanho já confirmam que é o arquivo certo.
+                  ) : assetKind === "pdf" || assetKind === "html" ? (
+                    // Nem o PDF nem a página viram miniatura aqui: um exigiria
+                    // biblioteca de render só para esta prévia, e a outra
+                    // abriria a página inteira dentro da caixinha. O nome do
+                    // arquivo já confirma que é o certo.
                     <div className="flex items-center gap-2 rounded-lg border bg-muted/40 p-4 text-left">
-                      <FileText className="h-8 w-8 shrink-0 text-rose-600" />
+                      {assetKind === "pdf" ? (
+                        <FileText className="h-8 w-8 shrink-0 text-rose-600" />
+                      ) : (
+                        <Code2 className="h-8 w-8 shrink-0 text-sky-600" />
+                      )}
                       <span className="min-w-0 flex-1 truncate text-xs">{file?.name}</span>
                     </div>
-                  ) : (
+                  ) : localPreview ? (
                     <img src={localPreview} alt="" className="w-full rounded-lg" />
-                  )}
+                  ) : null}
                   <Button
                     variant="secondary"
                     size="icon"
