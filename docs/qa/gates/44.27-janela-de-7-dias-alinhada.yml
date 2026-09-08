@@ -1,0 +1,172 @@
+storyId: "44.27"
+storyTitle: "A janela de 7 dias tem os mesmos dias nos dois lados"
+gate: PASS
+reviewer: "@qa (Quinn)"
+reviewedAt: "2026-09-08"
+revisao: 2  # a 1ª foi CONCERNS; os dois achados foram fechados
+
+# ── RE-GATE ─────────────────────────────────────────────────
+regate:
+  veredito: PASS
+  achados_da_revisao_1:
+    QA-4427-01: FECHADO   # @po separou AC6a/AC6b com medição; @dev escreveu o teste
+    QA-4427-02: FECHADO   # aviso redigido, com o pps1 em destaque
+    QA-4427-03: REGISTRADO  # fora de escopo — outras réguas `-days` no repo
+
+  verificacao_independente: >
+    Mutação diferente das do @dev: forcei `diasCobertos = n` (a parcial nunca
+    dispara). Derrubou **4 testes** — dois da 29.57 e os dois novos da 44.27.
+    A rede que declara janela incompleta é real e anterior a esta story; o que
+    faltava era ela ter material para disparar, e a AC1 deu.
+
+  sobre_o_AC6:
+    nota: >
+      O @po não só reescreveu o AC como MEDIU o que o AC antigo afirmava — e
+      achou que o `pps1` cruza o ponto de equilíbrio (1.067x → 0.912x). O AC
+      corrigido vale mais que o original: ele agora **ensina** que os dois
+      seletores dão números diferentes e ambos estão certos.
+
+  sobre_o_aviso:
+    veredito: APROVADO
+    nota: >
+      A frase de abertura está limpa de jargão e diz o essencial: "a mudança é
+      uma correção: o painel vinha somando faturamento de um dia a mais do que
+      somava investimento". A seção do `pps1` faz o trabalho mais difícil —
+      dizer que o número não piorou, estava errado, e que decisão apoiada nele
+      precisa ser revista.
+    observacao: >
+      O cabeçalho e a seção final trazem "Story 44.27" e "packages/mcp", que a
+      regra §3.6 do briefing proíbe em texto para a diretoria. **Não é defeito
+      do documento** — ele é um artefato interno com seções endereçadas, e a
+      parte técnica está separada e rotulada "Para o agente Inácio". Ao colar
+      para a diretoria, colar do "O aviso, em uma frase" até "O que NÃO mudou".
+
+  quality_checks_revisao2:
+    code_review:    { status: PASS }
+    unit_tests:     { status: PASS, nota: "13 casos novos ao todo. A mutação da parcial derruba 4, dois deles pré-existentes." }
+    acceptance:     { status: PASS, nota: "AC1, AC2, AC3, AC5, AC6a, AC6b. AC4 dispensada pelo @po com medição." }
+    no_regressions: { status: PASS, nota: "web 1.055 (era 1.049 no início da story), API 2.352, as mesmas 13 de baseline." }
+    performance:    { status: PASS }
+    security:       { status: PASS }
+    documentation:  { status: PASS, nota: "O comentário do helper e o aviso, juntos, contam a história inteira do defeito." }
+
+  nao_verificado:
+    - "Validação visual — a mudança aparece nos cards dos 4 perpétuos. O `pps1` cruzando 1.0x merece um olhar antes do merge, não por dúvida técnica, mas porque é o número que vai gerar pergunta."
+    - "QA-4427-03 — as outras réguas `-days` seguem sem investigação."
+    - "CodeRabbit — indisponível neste host."
+
+branch: feature/44.27-janela-de-7-dias-alinhada
+commits: []  # nada commitado no momento da revisão
+
+scope: >
+  api/src/utils/sale-date.ts (helper `inicioDaJanela`) ·
+  api/src/routes/perpetual-sales-data.ts (os 5 cortes) ·
+  api/src/__tests__/janela-do-seletor.test.ts (novo, 6) ·
+  web/lib/utils/__tests__/perpetual-tendencia.test.ts (+4)
+
+codeRabbit:
+  status: SKIPPED
+  reason: "CLI em WSL, host macOS. Lacuna declarada, não aprovação."
+
+summary: >
+  O código está certo e o helper é a decisão acertada — a régua virou função com
+  nome, com a medição do defeito no comentário, e não sobrou nenhum
+  `shiftDayKey(hoje, -days)` no arquivo. A prova de reversão derruba 6 testes.
+
+  O CONCERNS é pelo **AC6**, que é o teste de regressão desta story: ele está
+  escrito de forma que não pode passar, **não tem teste**, e a medição do
+  próprio @dev o contradiz sem que a contradição tenha sido sinalizada. É a
+  mesma classe do que o gate da 44.25 pegou — um critério de conferência que,
+  se seguido ao pé da letra, faria alguém concluir regressão onde há correção.
+
+achados:
+  - id: QA-4427-01
+    severidade: ALTA
+    categoria: requirements
+    titulo: "O AC6 afirma que 30d e 90d não mudam — e a medição do @dev mostra que mudam"
+    evidencia: >
+      AC6: *"Seletores de 30d e 90d continuam com os mesmos números — eles já
+      emitiam 1.36x. Teste diferencial."*
+
+      A T5 do próprio @dev mediu o contrário:
+
+        bbe-fc1  30d: sai o dia 09/08 — 1 venda,  R$ 347,00
+        pps1     30d: sai o dia 09/08 — 8 vendas, R$ 456,00
+        fz-a1    90d: sai o dia 10/06 — 6 vendas, R$ 354,00
+
+      E **não existe teste do AC6**: `grep` por "30d|90d|idêntic" em
+      `janela-do-seletor.test.ts` não encontra nada, e o `perpetual-tendencia`
+      só tem um AC6 de outra story (29.57). A T4 foi marcada como feita.
+    porque_importa: >
+      O AC6 é a rede de regressão desta story. Como está:
+
+      1. **Não pode passar.** Os cards de 30d e 90d mudam — e devem mudar, era
+         esse o defeito: somavam faturamento de N+1 dias contra investimento de
+         N. A mudança é a correção.
+      2. **Induz erro na conferência.** Quem abrir produção esperando "números
+         idênticos" em 30d/90d vai ver o faturamento cair e concluir regressão.
+         É exatamente o que o gate da 44.25 pegou no Testing daquela story
+         ("nenhuma outra etapa mudou de família", quando três mudavam).
+      3. **A intenção real ficou sem cobertura.** O que o AC6 queria dizer é que
+         a *Tendência 7D vista nos seletores de 30d/90d* continua 1.36x — isso
+         sim precisa de teste, e não tem.
+    recomendacao: >
+      Reescrever o AC6 separando as duas coisas (é do @po): a **Tendência 7D**
+      nos seletores 30d/90d continua 1.36x; os **cards** de 30d/90d MUDAM, e a
+      mudança é a entrega. Depois, o teste que falta (@dev).
+
+  - id: QA-4427-02
+    severidade: BAIXA
+    categoria: docs
+    titulo: "A queda no card do BBE precisa de aviso, e o texto do aviso não existe"
+    evidencia: >
+      O @dev registrou que o card de 7 dias do BBE perde R$ 2.032 (7 vendas) —
+      cerca de um terço do que exibe — e escreveu "isto precisa ser avisado
+      antes do merge". O DoD tem a linha "Aviso a quem lê o Resumão", sem texto.
+    porque_importa: >
+      É a terceira story da leva que muda número em produção sem rota nova, e
+      `packages/mcp` não tem checagem de contrato. Uma queda de um terço no
+      faturamento do card, sem aviso, chega como bug reportado.
+    recomendacao: "Redigir o aviso antes do merge, não depois. Uma linha basta, mas precisa existir."
+
+  - id: QA-4427-03
+    severidade: BAIXA
+    categoria: efficiency
+    titulo: "A mesma régua `-days` existe em outros arquivos — fora do escopo, registrado"
+    evidencia: >
+      `stage-sales-journey.ts:515,1332` e `google-ads.ts` (6 ocorrências) usam
+      `setDate(getDate() - days)`, o mesmo padrão que esta story corrigiu.
+    porque_importa: >
+      O helper `inicioDaJanela` agora existe e é o lugar certo. Não investiguei
+      se esses pontos cruzam com uma régua diferente do outro lado — que é o que
+      transforma o padrão em defeito. Pode ser inofensivo; pode ser o mesmo bug
+      em outra tela.
+    recomendacao: "Fora do escopo da 44.27. Vale uma investigação própria."
+
+verificacoes_independentes:
+  - "Varri o repo por réguas remanescentes: nenhum `shiftDayKey(x, -days)` sobrou em `perpetual-sales-data.ts`. As duas ocorrências restantes são texto de comentário."
+  - "Procurei o teste do AC6 por três caminhos (grep no arquivo novo, no de tendência, e por palavra-chave). Não existe — origem do QA-4427-01."
+  - "Confirmei que `traffic-analytics.ts:1192` não foi tocado: era a régua certa desde sempre."
+
+quality_checks:
+  code_review:      { status: PASS, nota: "O helper com a medição do defeito no comentário é o padrão certo — a régua virou função com nome, não aritmética repetida. Nenhum dos cinco cortes ficou para trás." }
+  unit_tests:       { status: CONCERNS, nota: "10 casos novos e prova de reversão sólida (6 falhas). Falta o do AC6 — QA-4427-01." }
+  acceptance:       { status: CONCERNS, nota: "AC1, AC2, AC3, AC5 entregues. AC4 dispensada pelo @po. **AC6 não é verificável como está escrito**." }
+  no_regressions:   { status: PASS, nota: "API 2.352 (era 2.346), web 1.052 (era 1.049), as mesmas 13 de baseline. As mudanças em 30d/90d são a correção, não regressão." }
+  performance:      { status: PASS, nota: "Aritmética de calendário; nenhuma query nova." }
+  security:         { status: PASS }
+  documentation:    { status: CONCERNS, nota: "O comentário do helper é exemplar. Falta o texto do aviso de mudança de número — QA-4427-02." }
+
+o_que_esta_muito_bom:
+  - "A AC5 foi resolvida por LEITURA: o @dev descobriu que `calcularTendencia` já marcava parcial, e que antes da AC1 aquela janela fechava por acidente. Não escreveu código para um problema que não existia."
+  - "O `turbo lint` pegou o `shiftDayKey` órfão que o `turbo build` deixou passar, e o @dev registrou o padrão em vez de só corrigir."
+  - "A T5 mediu além do que o briefing pedia e achou que o CARD também estava desalinhado, não só a Tendência."
+
+pendencias_para_o_merge:
+  - "QA-4427-01 — @po reescreve o AC6; @dev escreve o teste que falta"
+  - "QA-4427-02 — redigir o aviso da mudança de número"
+
+nao_verificado:
+  - "Validação visual — a mudança é de janela; o efeito aparece nos cards e na Tendência dos 4 perpétuos. Vale conferir pelo menos o BBE, onde a queda é de um terço."
+  - "QA-4427-03 — não investiguei se as outras réguas cruzam com fonte de régua diferente."
+  - "CodeRabbit — indisponível neste host."

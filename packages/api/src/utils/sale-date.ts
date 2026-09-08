@@ -249,3 +249,37 @@ export function horaDaFaixaMeta(faixa: string | null | undefined): number | null
   const h = Number.parseInt(m[1], 10);
   return h >= 0 && h <= 23 ? h : null;
 }
+
+/**
+ * Story 44.27 — o primeiro dia de uma janela de `dias` que **termina hoje**.
+ *
+ * ## Por que este helper existe
+ *
+ * O seletor de período do painel tinha DUAS réguas para o mesmo número:
+ *
+ *     vendas do perpétuo   shiftDayKey(businessToday(), -dias)     → dias + 1
+ *     investimento         (dias − 1) × 86_400_000                 → dias
+ *
+ * Com `dias = 7` em 07/09/2026, a tabela listava **oito** dias (31/08→07/09):
+ * a venda de 31/08 entrava e o investimento de 31/08 não, porque a janela do
+ * spend começava em 01/09. O dia órfão somava receita sem somar custo, e a
+ * Tendência de 7 dias emitia **1.61x** onde os seletores de 30 e 90 dias, para
+ * a mesma janela, emitiam **1.36x** — 19% de otimismo no bloco cuja função é
+ * disparar decisão de corte de verba.
+ *
+ * A diferença era exatamente o investimento de um dia: R$ 4.646,80 com 31/08,
+ * R$ 3.922,21 sem ele.
+ *
+ * ## Uma janela de N dias TERMINANDO hoje inclui hoje
+ *
+ * Por isso `-(dias − 1)` e não `-dias`. Sete dias contados a partir de hoje são
+ * hoje e os seis anteriores.
+ *
+ * ⚠️ **Use isto em todo corte por `days`.** Eram cinco pontos em
+ * `perpetual-sales-data.ts` (`:321`, `:591`, `:685`, `:846`, `:1016`), e
+ * consertar um só deixaria os outros quatro divergindo — foi por isso que
+ * virou função com nome em vez de aritmética repetida.
+ */
+export function inicioDaJanela(dias: number, ate: string = businessToday()): string {
+  return shiftDayKey(ate, -(dias - 1));
+}
