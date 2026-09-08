@@ -23,8 +23,20 @@ import type { Database } from "../db/client.js";
 const PROJ = "30000000-0000-4000-8000-000000000003";
 const STAGE = "50000000-0000-4000-8000-000000000005";
 const OUTRO_PROJ = "30000000-0000-4000-8000-000000000099";
+/** Story 44.28 (T6): a planilha do perpétuo é do FUNIL, não da etapa. */
+const FUNNEL = "60000000-0000-4000-8000-000000000006";
 
 const mockGetFreshSalesDaily = vi.fn();
+/**
+ * Story 44.28 (T6) — a etapa PROMOVIDA passou a ler a planilha do perpétuo, e
+ * não mais `sales-daily-sync`. As duas fontes convivem no arquivo: os testes de
+ * lançamento seguem no mock de cima, os de perpétuo neste.
+ */
+const mockReadSheetData = vi.fn();
+vi.mock("../services/google-sheets.js", () => ({
+  readSheetData: (...a: unknown[]) => mockReadSheetData(...a),
+}));
+
 vi.mock("../services/sales-daily-sync.js", () => ({
   getFreshSalesDaily: (...args: unknown[]) => mockGetFreshSalesDaily(...args),
 }));
@@ -126,9 +138,19 @@ function filaInsights(rows: unknown[]) {
  */
 function resetDb() {
   mockSelect.mockReset();
+  /**
+   * O default responde "nada encontrado" para QUALQUER forma de query.
+   *
+   * ⚠️ Antes da Story 44.28, `where()` devolvia uma Promise crua e um
+   * `.where().limit()` (a forma que `loadPerpetualSpreadsheet` usa) estourava
+   * `TypeError` — que o handler capturava e reportava como `leituraFalhou`.
+   * O sintoma era um teste falhando por motivo inventado pela infraestrutura,
+   * não pelo código sob teste.
+   */
+  const vazio = () => Object.assign(Promise.resolve([]), { limit: () => Promise.resolve([]) });
   mockSelect.mockReturnValue({
     from: () => ({
-      where: () => Promise.resolve([]),
+      where: vazio,
       innerJoin: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }),
     }),
   });
@@ -146,6 +168,52 @@ function filaLeadCache(rows: unknown[]) {
   });
 }
 
+/**
+ * Story 44.28 (T6) — a planilha de venda do PERPÉTUO (`funnel_spreadsheets`,
+ * type `perpetual_sales`), lida por `calcularVendasDoPerpetuo`.
+ *
+ * Só as etapas promovidas chegam nesta query, e ela é a ÚLTIMA do handler —
+ * por isso vai no fim da fila.
+ */
+function filaPlanilhaDoPerpetuo(rows: unknown[] = [PLANILHA_DO_PERPETUO]) {
+  mockSelect.mockReturnValueOnce({
+    from: () => ({ where: () => ({ limit: () => Promise.resolve(rows) }) }),
+  });
+}
+
+const PLANILHA_DO_PERPETUO = {
+  id: "sp1",
+  funnelId: FUNNEL,
+  type: "perpetual_sales",
+  spreadsheetId: "sheet-perp",
+  sheetName: "Vendas",
+  platform: "kiwify",
+  productTypes: {},
+  columnMapping: {
+    email: "email",
+    transactionId: "id",
+    valorBruto: "bruto",
+    valorLiquido: "liquido",
+    dataVenda: "data",
+    status: "status",
+  },
+};
+
+/** Cabeçalho e linhas da planilha do perpétuo — `n` compradores distintos. */
+function vendasDoPerpetuo(n: number) {
+  return {
+    headers: ["email", "id", "bruto", "liquido", "data", "status"],
+    rows: Array.from({ length: n }, (_, i) => [
+      `c${i}@x.com`,
+      `t${i}`,
+      "100,00",
+      "80,00",
+      "05/09/2026",
+      "paid",
+    ]),
+  };
+}
+
 const etapa = (over: Record<string, unknown> = {}) => ({
   id: STAGE,
   name: "Captação Paga",
@@ -154,6 +222,9 @@ const etapa = (over: Record<string, unknown> = {}) => ({
   // o default aqui de propósito — é o que preserva o comportamento de todos os
   // testes escritos antes da story.
   funnelType: "launch",
+  // Story 44.28 (T6): a planilha do perpétuo vive no FUNIL, então o payload
+  // precisa do id dele. Sai do mesmo innerJoin que já prova o vínculo.
+  funnelId: FUNNEL,
   campaigns: [{ id: "c1", name: "Campanha 1" }],
   // Story 44.9 AC4 — o `numeric` do Postgres chega como STRING.
   lpTemVsl: true,
@@ -1393,6 +1464,21 @@ describe("cadeia-cac — os QUATRO estados da guarda de cobertura (Story 44.12)"
  * `captaLead` podia ser revertido para `familia === "gratuita"` sem nenhum
  * teste falhar.
  */
+/**
+ * ## Reversões medidas (Story 44.28 T6)
+ *
+ * Rodadas contra `public-cadeia-cac` + `panorama-do-projeto`, com o defeito
+ * reintroduzido no código:
+ *
+ * | defeito | testes que caem |
+ * |---|---|
+ * | a etapa promovida volta a ler `sales-daily-sync` | 6 |
+ * | `propagarErroDeLeitura` removido (falha vira ausência) | 1 |
+ * | a régua do perpétuo vaza para TODA a família paga | 12 |
+ *
+ * O terceiro é o que mais derruba, e é o certo: alargar a régua apagaria o CAC
+ * de todas as captações pagas de lançamento, que não têm planilha de funil.
+ */
 describe("cadeia-cac — o funil promove a etapa (Story 44.25)", () => {
   const cacheDeLead = (payload: Record<string, unknown>) =>
     filaLeadCache([{ payload, computedAt: new Date("2026-09-07T04:01:47Z") }]);
@@ -1403,6 +1489,11 @@ describe("cadeia-cac — o funil promove a etapa (Story 44.25)", () => {
     ]);
     filaInsights(diasDe("c1", 10));
     cacheDeLead({ uniqueLeads: 217, totalLeads: 245, fonte: "planilha_leads" });
+    // Story 44.28 (T6): a etapa promovida lê a planilha do PERPÉTUO, não mais
+    // `sales-daily-sync`. 40 compradores para o número casar com o de antes.
+    filaCriativos([]); // 4ª query (`meta-ad-daily`) — a planilha do perpétuo é a 5ª
+    filaPlanilhaDoPerpetuo();
+    mockReadSheetData.mockResolvedValue(vendasDoPerpetuo(40));
     const app = await buildApp();
     const body = (await app.inject({ method: "GET", url: url() })).json();
 
@@ -1416,69 +1507,90 @@ describe("cadeia-cac — o funil promove a etapa (Story 44.25)", () => {
   });
 
   /**
-   * AC8 — o rótulo sai, o número não.
+   * Story 44.28 (AC7) — **a régua da etapa promovida é a do PERPÉTUO.**
    *
-   * A régua desta rota conta 70% mais vendas que a do dashboard perpétuo
-   * (124 × 73 em 30 dias, medido em 07/09/2026), e `meta-ads` e `cadeia-cac`
-   * são abas irmãs. Publicar os dois CACs faria uma contradizer a outra a um
-   * clique de distância.
+   * Este é o teste que substitui o da supressão. Ele não afirma só "sai um
+   * número": afirma que o número veio da planilha do funil e NÃO de
+   * `sales-daily-sync`, que é o que a T6 trocou.
+   *
+   * A prova é a discordância deliberada das duas fontes: o mock de
+   * `getFreshSalesDaily` devolve 40 vendas, e a planilha do perpétuo, 25. Se
+   * alguém reverter a fonte, o CAC cai para o valor de 40 e este teste quebra.
+   * Fossem as duas iguais, a reversão passaria despercebida.
    */
-  it("AC8: a etapa PROMOVIDA sai com valor null e motivo reguaDivergente", async () => {
+  it("AC7: o CAC da etapa promovida vem da planilha do perpétuo, não do sales-daily", async () => {
     filaVinculo([etapa({ stageType: "free", funnelType: "perpetual" })]);
     filaInsights(diasDe("c1", 10));
     cacheDeLead({ uniqueLeads: 217, fonte: "planilha_leads" });
+    filaCriativos([]); // 4ª query (`meta-ad-daily`) — a planilha do perpétuo é a 5ª
+    filaPlanilhaDoPerpetuo();
+    mockReadSheetData.mockResolvedValue(vendasDoPerpetuo(25));
     const app = await buildApp();
     const p = (await app.inject({ method: "GET", url: url() })).json().principal;
 
-    expect(p.metrica).toBe("cacReal"); // o RÓTULO está certo
-    expect(p.valor).toBeNull(); //         o NÚMERO não é publicado
-    expect(p.motivo).toBe("reguaDivergente");
-    expect(p.message).toContain("Meta Ads"); // diz QUAL aba consultar
-    // Os diagnósticos continuam viajando — quem quiser o número desta régua
-    // consegue derivá-lo, e sabe de qual régua ele veio.
-    expect(p.spend).toBeGreaterThan(0);
-    expect(p.vendasReais).toBe(40);
-    expect(p.dataSource).toBeDefined();
+    expect(p.metrica).toBe("cacReal");
+    // ⚠️ O NÚMERO SAI. A supressão `reguaDivergente` da 44.25 caiu junto com o
+    // motivo dela: com a mesma função nos dois lados, as abas irmãs concordam.
+    expect(p.valor).not.toBeNull();
+    expect(p.motivo).toBeUndefined();
+    expect(p.vendasReais).toBe(25);
+    expect(p.valor).toBeCloseTo(spendTotal(100, 10) / 25, 6);
+    // E não o da régua antiga, que o mock de `sales-daily-sync` ainda devolve.
+    expect(p.vendasReais).not.toBe(40);
     await app.close();
   });
 
   /**
-   * A mensagem é a MESMA nas três etapas promovidas — logo não pode conter
-   * número de nenhuma delas.
+   * ⚠️ Falha de LEITURA continua distinta de ausência de FONTE.
    *
-   * A validação visual de 08/09/2026 pegou a primeira versão em produção
-   * local: ela dizia "124 contra 73 vendas" (os números do BBE) e aparecia
-   * idêntica no `fz-a1`, cujo card mostra 1.622 vendas. Um número concreto que
-   * não descreve a tela é pior que nenhum — convida a conferir e não fecha.
-   *
-   * Este teste trava a AUSÊNCIA. Se alguém voltar a fixar uma medição aqui,
-   * ele quebra.
+   * `calcularVendasDoPerpetuo` engole a exceção por padrão e devolve
+   * `semDados: true` — o painel vive bem com isso. Aqui não: as duas mensagens
+   * mandam o operador fazer coisas opostas ("cheque a permissão" × "conecte uma
+   * planilha"). A opção `propagarErroDeLeitura` existe só por isso, e este
+   * teste é o que impede alguém de removê-la por parecer supérflua.
    */
-  it("a message da supressão não carrega número de nenhum cliente", async () => {
+  it("AC7: planilha que não abre vira leituraFalhou, não semDados", async () => {
     filaVinculo([etapa({ stageType: "free", funnelType: "perpetual" })]);
     filaInsights(diasDe("c1", 10));
     cacheDeLead({ uniqueLeads: 217, fonte: "planilha_leads" });
+    filaCriativos([]); // 4ª query (`meta-ad-daily`) — a planilha do perpétuo é a 5ª
+    filaPlanilhaDoPerpetuo();
+    mockReadSheetData.mockRejectedValue(new Error("403 sem permissão na planilha"));
     const app = await buildApp();
     const p = (await app.inject({ method: "GET", url: url() })).json().principal;
 
-    // Nenhum dígito: nem contagem de venda, nem data, nem número de story.
-    expect(p.message).not.toMatch(/\d/);
-    // E nenhum jargão de implementação — o texto é para o operador.
-    for (const jargao of ["txId", "payload", "spend", "vendasReais", "Story", "rota"]) {
-      expect(p.message).not.toContain(jargao);
-    }
+    expect(p.motivo).toBe("leituraFalhou");
+    expect(p.message).toContain("403 sem permissão");
+    await app.close();
+  });
+
+  it("AC7: sem planilha conectada no funil, o motivo é semDados", async () => {
+    filaVinculo([etapa({ stageType: "free", funnelType: "perpetual" })]);
+    filaInsights(diasDe("c1", 10));
+    cacheDeLead({ uniqueLeads: 217, fonte: "planilha_leads" });
+    filaCriativos([]); // 4ª query (`meta-ad-daily`) — a planilha do perpétuo é a 5ª
+    filaPlanilhaDoPerpetuo([]); // nenhuma planilha do tipo perpetual_sales
+    const app = await buildApp();
+    const p = (await app.inject({ method: "GET", url: url() })).json().principal;
+
+    expect(p.motivo).toBe("semDados");
+    expect(p.message).toContain("conectada");
     await app.close();
   });
 
   /**
-   * ⚠️ A supressão é SÓ da etapa promovida.
+   * ⚠️ **A troca de régua da T6 é SÓ da etapa promovida.**
    *
-   * Uma etapa `paid`/`sales` sempre foi paga e não passa pela promoção: o CAC
-   * dela é calculado com a mesma régua de sempre e continua saindo. Sem este
-   * teste, alargar a supressão para toda família paga apagaria o CAC de todas
-   * as captações pagas do projeto sem nada acusar.
+   * Uma etapa `paid`/`sales` sempre foi paga e não passa pela promoção: a
+   * planilha dela é da ETAPA, e continua sendo lida por `sales-daily-sync`.
+   * Sem este teste, alargar a régua do perpétuo para toda família paga faria
+   * as captações pagas de LANÇAMENTO lerem a planilha do funil — que não
+   * existe nelas — e o CAC de todas sumiria sem nada acusar.
+   *
+   * Note que NÃO há `filaPlanilhaDoPerpetuo` aqui: se o código tentasse
+   * lê-la, a fila estaria errada e o teste quebraria.
    */
-  it("AC8: etapa que JÁ era paga (paid) mantém o CAC — a supressão não vaza", async () => {
+  it("etapa que JÁ era paga (paid) segue na régua de lançamento", async () => {
     filaVinculo([etapa({ stageType: "paid", funnelType: "perpetual" })]);
     filaInsights(diasDe("c1", 10));
     const app = await buildApp();
@@ -1494,20 +1606,39 @@ describe("cadeia-cac — o funil promove a etapa (Story 44.25)", () => {
   /**
    * AC3, e o motivo de este teste existir.
    *
-   * A 4ª chamada é o cache de lead. Se `captaLead` voltar a ser
+   * A 3ª chamada é o cache de lead. Se `captaLead` voltar a ser
    * `familia === "gratuita"`, a etapa promovida deixa de lê-lo e a contagem cai
-   * para 3 — o CPL do perpétuo sumiria do payload sem nada acusar. É a mesma
-   * técnica do teste "o cache de lead é lido UMA vez" logo acima.
+   * — o CPL do perpétuo sumiria do payload sem nada acusar. É a mesma técnica
+   * do teste "o cache de lead é lido UMA vez" logo acima.
+   *
+   * ⚠️ Story 44.28 (T6): passaram a ser **cinco** chamadas, não quatro. A
+   * quinta é a planilha do perpétuo, que a etapa promovida agora lê no lugar
+   * de `sales-daily-sync`. O número subiu porque a fonte mudou — não porque
+   * alguém duplicou uma query.
    */
   it("AC3: a etapa promovida CONTINUA lendo o cache de lead", async () => {
     filaVinculo([etapa({ stageType: "free", funnelType: "perpetual" })]);
     filaInsights(diasDe("c1", 10));
     cacheDeLead({ uniqueLeads: 217, fonte: "planilha_leads" });
+    filaCriativos([]);
+    filaPlanilhaDoPerpetuo();
+    mockReadSheetData.mockResolvedValue(vendasDoPerpetuo(10));
     const app = await buildApp();
     const body = (await app.inject({ method: "GET", url: url() })).json();
 
     expect(body.familia).toBe("paga");
-    expect(mockSelect).toHaveBeenCalledTimes(4); // vínculo, insights, CACHE DE LEAD, criativos
+    /**
+     * São SEIS: vínculo, insights, CACHE DE LEAD, criativos, planilha do
+     * perpétuo e — a sexta — o `funnel_stages` do bloco de cliques dentro de
+     * `calcularVendasDoPerpetuo`.
+     *
+     * ⚠️ Essa sexta não produz nada nesta aba: o bloco de cliques exige uma
+     * janela recortada para ter denominador comparável, e a aba Cadeia chama
+     * sem `from`/`to` (histórico inteiro, decisão da Story 44.8). A query sai
+     * e o resultado é descartado. É barato e não é defeito, mas está anotado
+     * para quem for otimizar não concluir que a leitura some sem efeito.
+     */
+    expect(mockSelect).toHaveBeenCalledTimes(6);
     await app.close();
   });
 
@@ -1562,18 +1693,30 @@ describe("cadeia-cac — cplCaptacao (Story 44.26)", () => {
       leadsTotais,
     }));
 
-  it("etapa promovida: principal segue cacReal suprimido, e o CPL vem AO LADO", async () => {
+  it("etapa promovida: o principal é o CAC, e o CPL vem AO LADO", async () => {
     filaVinculo([etapa({ stageType: "free", funnelType: "perpetual" })]);
     filaInsights(diasDe("c1", 10));
     filaLeadCache([
       { payload: { uniqueLeads: 400, fonte: "planilha_leads", coberturaDiaria: serie(10) }, computedAt: new Date() },
     ]);
+    filaCriativos([]);
+    filaPlanilhaDoPerpetuo();
+    mockReadSheetData.mockResolvedValue(vendasDoPerpetuo(20));
     const app = await buildApp();
     const body = (await app.inject({ method: "GET", url: url() })).json();
 
-    // O principal NÃO mudou: continua o CAC suprimido pela 44.25 AC8.
+    /**
+     * ⚠️ Story 44.28 (AC7): o principal MUDOU — o CAC agora sai com número.
+     *
+     * A supressão da 44.25 (`motivo: "reguaDivergente"`) caiu junto com a
+     * razão dela: as duas abas passaram a contar vendas pela mesma função.
+     * O que este teste sempre protegeu continua valendo, e é o essencial —
+     * **o CPL não toma o lugar do principal.** Era isso que o Resumão de
+     * 06/09 publicava, e é o defeito que a 44.25 abriu a leva para corrigir.
+     */
     expect(body.principal.metrica).toBe("cacReal");
-    expect(body.principal.motivo).toBe("reguaDivergente");
+    expect(body.principal.motivo).toBeUndefined();
+    expect(body.principal.valor).toBeCloseTo(spendTotal(100, 10) / 20, 6);
     // E o CPL entra como bloco PRÓPRIO — nunca no lugar do principal.
     expect(body.cplCaptacao.metrica).toBe("cplCaptacao");
     expect(body.cplCaptacao.leadsNaJanela).toBe(100); // 10 dias × 10

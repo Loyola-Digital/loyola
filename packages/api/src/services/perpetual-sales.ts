@@ -195,6 +195,26 @@ export interface JanelaDeVendas {
 }
 
 /**
+ * Story 44.28 (T6) — deixar a falha de LEITURA subir, em vez de virar ausência.
+ *
+ * O default (`false`) é o comportamento histórico do handler autenticado: uma
+ * planilha que não abriu devolve `semDados: true`, igual a uma planilha que não
+ * existe. O painel vive bem com isso — ele mostra "sem dados" nos dois casos.
+ *
+ * A aba Cadeia de CAC **não** vive: ela distingue `leituraFalhou` ("a fonte
+ * existe; cheque a permissão ou tente de novo") de `semDados` ("conecte uma
+ * planilha"), e as duas mensagens mandam o operador fazer coisas opostas.
+ * Fundir as duas é o defeito que a Story 36.9 AC5 fechou, que voltou como
+ * QA-4414-02 e que este repo já pagou duas vezes.
+ *
+ * Por isso a distinção é OPT-IN: quem pede, recebe a exceção; quem não pede,
+ * continua exatamente como antes.
+ */
+export interface OpcoesDeLeitura {
+  propagarErroDeLeitura?: boolean;
+}
+
+/**
  * As vendas do perpétuo na janela — o corpo que era o handler de `sales-data`.
  *
  * Devolve exatamente o mesmo objeto que a rota devolvia, incluindo os casos de
@@ -207,6 +227,7 @@ export async function calcularVendasDoPerpetuo(
     projectId: string;
     funnelId: string;
   },
+  opcoes: OpcoesDeLeitura = {},
 ) {
   const spreadsheet = await loadPerpetualSpreadsheet(db, funnelId);
   if (!spreadsheet) return EMPTY_SALES_DATA;
@@ -246,7 +267,10 @@ export async function calcularVendasDoPerpetuo(
   let sheetData;
   try {
     sheetData = await readSheetData(spreadsheet.spreadsheetId, spreadsheet.sheetName);
-  } catch {
+  } catch (err) {
+    // ⚠️ Ver `OpcoesDeLeitura`: só sobe para quem pediu. Engolir aqui é o
+    // comportamento histórico e continua sendo o default.
+    if (opcoes.propagarErroDeLeitura) throw err;
     return { ...EMPTY_SALES_DATA, semDados: true };
   }
 

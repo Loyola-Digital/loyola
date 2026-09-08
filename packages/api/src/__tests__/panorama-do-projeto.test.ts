@@ -5,6 +5,7 @@ import type { Database } from "../db/client.js";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
+  funnelSpreadsheets,
   funnelStages,
   metaAdInsightsDaily,
   metaEntityNamesCache,
@@ -44,6 +45,34 @@ const mockGetFreshSalesDaily = vi.fn();
 vi.mock("../services/sales-daily-sync.js", () => ({
   getFreshSalesDaily: (...args: unknown[]) => mockGetFreshSalesDaily(...args),
 }));
+
+/**
+ * Story 44.28 (T6) — a etapa PROMOVIDA lê a planilha do perpétuo, ao vivo.
+ * As etapas de lançamento seguem no mock de `sales-daily-sync` acima.
+ */
+const mockReadSheetData = vi.fn();
+vi.mock("../services/google-sheets.js", () => ({
+  readSheetData: (...a: unknown[]) => mockReadSheetData(...a),
+}));
+
+/** A planilha do perpétuo e `n` compradores distintos nela. */
+const PLANILHA_DO_PERPETUO = {
+  id: "sp1",
+  funnelId: FUNNEL,
+  type: "perpetual_sales",
+  spreadsheetId: "sheet-perp",
+  sheetName: "Vendas",
+  platform: "kiwify",
+  productTypes: {},
+  columnMapping: { email: "email", valorBruto: "bruto", dataVenda: "data", status: "status" },
+};
+// ⚠️ A data cai DENTRO de `OPTS` (janela terminando em 2026-08-27). Com uma
+// data fora, o perpétuo devolveria zero venda e o CAC sairia `null` — o teste
+// falharia por fixture, não por código.
+const vendasDoPerpetuo = (n: number) => ({
+  headers: ["email", "bruto", "data", "status"],
+  rows: Array.from({ length: n }, (_, i) => [`c${i}@x.com`, "100,00", "20/08/2026", "paid"]),
+});
 
 const mockResolveLeadSource = vi.fn();
 vi.mock("../services/lead-origin-sync.js", async (importOriginal) => {
@@ -610,39 +639,54 @@ describe("Story 44.20 — gargalo e pendências derivadas", () => {
   });
 
   /**
-   * Story 44.25 (AC8) — a etapa promovida entra no Panorama com o rótulo CAC,
-   * sem número, e a supressão ENTRA na lista de pendências.
+   * Story 44.28 (AC7) — **a etapa promovida entra no Panorama com CAC e com
+   * NÚMERO**, e `reguaDivergente` não existe mais.
    *
-   * ⚠️ Este teste existe para deixar o efeito colateral VISÍVEL, não para
-   * aprová-lo. `pendenciasRepassadas` lista todo `motivo` que venha com
-   * `message` (`panorama-do-projeto.ts:379`), e `reguaDivergente` vem — logo
-   * ele aparece ao lado de `semDados`/`syncPendente`/`leituraFalhou`, que são
-   * lacunas de CONFIGURAÇÃO com ação do operador. Esta não é: a ação é a Story
-   * 44.28, e é de engenharia.
+   * ## O que este teste era, e por que mudou
    *
-   * O `llms.txt` declara a exceção para que o Inácio não a agrupe em "o que
-   * configurar hoje". Se o @po preferir que ela deixe de ser pendência, o lugar
-   * é `pendenciasRepassadas` — e este teste é quem vai acusar a mudança.
+   * A 44.25 (AC8) suprimiu o CAC das etapas promovidas porque esta aba e a
+   * Meta Ads contavam vendas de jeitos diferentes — e são abas irmãs, a um
+   * clique uma da outra. A supressão vinha com `message`, e
+   * `pendenciasRepassadas` lista todo motivo que tenha uma
+   * (`panorama-do-projeto.ts:379`), então ela aparecia na lista de pendências
+   * ao lado de lacunas de CONFIGURAÇÃO — sendo que a ação dela era de
+   * engenharia, não do operador.
+   *
+   * A T6 desta story trocou a régua da etapa promovida para a do perpétuo. Com
+   * a mesma função nos dois lados, o motivo da supressão deixou de ser
+   * verdadeiro, e supressão sem motivo é número escondido. Este teste inverteu:
+   * agora ele prova que o número SAI e que a pendência SUMIU.
+   *
+   * ⚠️ A ausência é afirmada explicitamente. Só checar que o valor existe
+   * deixaria passar uma `reguaDivergente` órfã continuar poluindo a lista de
+   * "o que configurar hoje" que o Inácio publica.
    */
-  it("AC8: a etapa promovida entra com metrica cacReal, valor null, e a supressão vira pendência", async () => {
+  it("AC7: a etapa promovida entra com cacReal COM número, e sem pendência de régua", async () => {
     const f = fixture();
     f.set(funnelStages, [[etapa({ stageType: "free", funnelType: "perpetual" })]]);
     f.set(metaAdInsightsDaily, [serieComTeto()]);
     f.set(publicMetricsCache, [
       [{ payload: { uniqueLeads: 40, fonte: "planilha_leads" }, computedAt: new Date("2026-08-27T00:00:00Z") }],
     ]);
+    f.set(funnelSpreadsheets, [[PLANILHA_DO_PERPETUO]]);
+    mockReadSheetData.mockResolvedValue(vendasDoPerpetuo(30));
 
     const p = (await montarPanoramaDoProjeto(fakeDb(f), config, PROJ, OPTS))!;
-    const principal = p.etapas[0].principal as { metrica: string; valor: number | null; motivo?: string };
+    const principal = p.etapas[0].principal as {
+      metrica: string;
+      valor: number | null;
+      motivo?: string;
+      vendasReais?: number;
+    };
 
     expect(p.etapas[0].familia).toBe("paga");
     expect(principal.metrica).toBe("cacReal");
-    expect(principal.valor).toBeNull();
-    expect(principal.motivo).toBe("reguaDivergente");
+    expect(principal.valor).not.toBeNull();
+    expect(principal.vendasReais).toBe(30);
+    expect(principal.motivo).toBeUndefined();
 
-    const pend = p.pendencias.find((x) => x.codigo === "reguaDivergente");
-    expect(pend).toBeDefined();
-    expect(pend!.origem).toBe("cadeia");
+    // A pendência que a 44.25 criou não existe mais em lugar nenhum.
+    expect(p.pendencias.find((x) => x.codigo === "reguaDivergente")).toBeUndefined();
   });
 });
 

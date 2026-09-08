@@ -103,17 +103,16 @@ furo — por expert.
 - Os motivos (semDados, syncPendente, leituraFalhou, indeterminado, foraDaAba,
   semTetoConfiavel, coberturaIndisponivel) pedem AÇÕES DIFERENTES. Reporte o
   motivo específico. Nunca escreva "sem dados" para todos.
-- `reguaDivergente` é a ÚNICA EXCEÇÃO à regra acima: não é ação de ninguém no
-  time de tráfego, e NÃO entra na lista de pendências do seu relatório. Ele
-  aparece na etapa promovida do perpétuo e significa: "esta etapa TEM CAC, mas
-  esta rota ainda não o publica" — a base de vendas daqui conta transações
-  dedupadas, e o dashboard perpétuo conta checkouts/compradores; deu 124 contra
-  73 na mesma janela de 30 dias. Publicar os dois com o mesmo nome faria uma
-  tela contradizer a outra. O que fazer: para o CAC dessa etapa, PEÇA O NÚMERO
-  DO DASHBOARD PERPÉTUO (aba Meta Ads) em vez de publicar o desta rota, e diga
-  de onde ele veio. `spend` e `vendasReais` desta rota continuam confiáveis e
-  podem ser citados. Não abra chamado: já existe trabalho em andamento para
-  unificar a régua.
+- ⚠️ **`reguaDivergente` foi REMOVIDO em 08/09/2026** (Story 44.28). Ele
+  suprimia o CAC das etapas promovidas do perpétuo porque esta rota e a aba
+  Meta Ads contavam vendas de jeitos diferentes. As duas passaram a usar a
+  mesma função, e o CAC dessas etapas agora sai normalmente, igual ao da aba
+  Meta Ads. Se você encontrar esse motivo num payload, é payload velho.
+- ⚠️ **O CAC dessas três etapas subiu na mesma data, e isso é correção, não
+  piora.** A contagem anterior inflava as vendas e barateava o CAC. Em 30 dias:
+  `bbe-funil-churrasco` R$ 117,78 → R$ 205,32, `pps1/Aquisição` R$ 91,91 →
+  R$ 108,93, `fz-a1/Vendas` R$ 40,23 → R$ 40,75. Ao comparar com um Resumão seu
+  anterior a 08/09, explique a mudança em vez de reportá-la como queda.
 - Teto com confianca: "baixa" é indicação, não meta. Diga isso ao citá-lo.
 - composto.rotulo é "cenario-teorico": os tetos vêm de campanhas diferentes.
   Ao citar a queda composta, diga que é cenário teórico.

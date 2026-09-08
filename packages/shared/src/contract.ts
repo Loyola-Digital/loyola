@@ -96,4 +96,14 @@
 // A rota é ADITIVA: nada que existia mudou de forma. O que a API velha causa é
 // o Inácio não encontrar a rota — e aí a versão defasada é o que explica por
 // quê, em vez de o leitor concluir que o agente quebrou.
+//
+// A v6 carrega TAMBÉM a T6 da mesma story, e essa não é aditiva: o motivo
+// `reguaDivergente` deixou de existir, e as três etapas promovidas de perpétuo
+// passaram a publicar `principal.valor` onde antes vinha `null`. As duas
+// mudanças sobem no mesmo deploy, então um bump só as cobre.
+//
+// ⚠️ O `packages/mcp` NÃO checa esta constante (roda na máquina de quem usa o
+// agente). Para ele, a mudança de número chega no instante do deploy, sem
+// aviso — por isso a leva do Inácio manda um aviso humano junto, e esta é a
+// terceira vez: ver `docs/qa/audits/`.
 export const API_CONTRACT_VERSION = 6;

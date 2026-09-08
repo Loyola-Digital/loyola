@@ -231,7 +231,8 @@ export function registerTools(server: McpServer, client: LoyolaClient): void {
         "Taxas em decimal (0.0192 = 1,92%); spend já inclui o imposto Meta. " +
         "familia:null não é erro — é etapa fora da aba (lyrio/comercial/debriefing), com motivo 'foraDaAba'. " +
         "Cada `motivo` pede uma ação diferente (semDados=conectar fonte, syncPendente=esperar o sync, leituraFalhou=checar permissão): não colapse em 'sem dados'. " +
-        "EXCEÇÃO: `reguaDivergente` NÃO é ação de ninguém e não entra em lista de pendências — significa que a etapa TEM CAC mas esta rota ainda não o publica (a base de vendas daqui conta transações dedupadas; o dashboard perpétuo conta checkouts/compradores). Para o CAC dessa etapa, use o número do dashboard perpétuo e diga de onde veio; `spend` e `vendasReais` desta rota seguem confiáveis.",
+        "Story 44.28 (08/09/2026): o motivo `reguaDivergente` FOI REMOVIDO. A etapa promovida do perpétuo publica CAC normalmente, e é o MESMO número da aba Meta Ads — as duas passaram a contar vendas pela mesma função. Encontrar esse motivo num payload significa payload velho. " +
+        "⚠️ O CAC dessas etapas SUBIU nessa data porque a contagem anterior inflava as vendas: em 30 dias, bbe-funil-churrasco R$ 117,78 → R$ 205,32, pps1/Aquisição R$ 91,91 → R$ 108,93, fz-a1/Vendas R$ 40,23 → R$ 40,75. É correção, não piora — ao comparar com relatório anterior a 08/09, explique em vez de reportar queda.",
       inputSchema: {
         projectId: z.string().uuid().describe("ID do projeto (de list_projects)."),
         stageId: z.string().describe("ID da etapa (de list_stages)."),
