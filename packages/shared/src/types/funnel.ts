@@ -647,6 +647,24 @@ export interface StageSalesData {
    * Kiwify configurada ou o produto não é evento.
    */
   ingressosReais?: number | null;
+  /**
+   * Quais ingressos saíram, lote a lote.
+   *
+   * A planilha de vendas não tem isso: a venda da Kiwify não diz de qual lote
+   * é o ingresso, e uma compra de três chega como UMA linha. O número por lote
+   * só existe no produto, em `issued_tickets`.
+   *
+   * Vazio quando a etapa não é evento ou não tem produto configurado.
+   */
+  lotesDeIngresso?: {
+    produto: string;
+    lote: string;
+    /** Em reais — a API da Kiwify devolve centavos. */
+    preco: number;
+    vendidos: number;
+    disponiveis: number;
+    total: number;
+  }[];
   porUtmSource: { fonte: string; vendas: number; bruto: number; liquido: number; manual?: boolean }[];
   /**
    * Agregação por utm_medium. utm_medium carrega o adset_id (padrão Loyola).

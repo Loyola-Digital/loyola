@@ -21,7 +21,7 @@ import {
 import { readSheetData } from "../services/google-sheets.js";
 import { temDashboardDeVendas } from "../utils/stage-types.js";
 import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
-import { contarIngressosDoEvento } from "../services/kiwify-event-tickets.js";
+import { ingressosDoEvento } from "../services/kiwify-event-tickets.js";
 // Stories 18.66/18.67 — a regra de order bump por comprador. Módulo puro, para
 // que a separação acessório/avulso seja provável sem levantar a rota.
 import {
@@ -932,11 +932,20 @@ export default fp(async function stageSalesDataRoutes(fastify) {
        * onde tirar o número, e repetir o total de vendas fingindo ser contagem
        * de ingresso é o erro que isto existe para corrigir.
        */
-      const ingressosReais = await contarIngressosDoEvento(
+      const ingressos = await ingressosDoEvento(
         fastify.db,
         params.data.projectId,
         params.data.stageId,
       );
+      const ingressosReais = ingressos?.total ?? null;
+      /**
+       * A quebra por LOTE — quais ingressos saíram.
+       *
+       * A planilha de vendas não tem isso: a venda da Kiwify não diz de qual
+       * lote é o ingresso, e uma compra de três chega como uma linha só. O
+       * número por lote só existe no produto, em `issued_tickets`.
+       */
+      const lotesDeIngresso = ingressos?.lotes ?? [];
       const faturamentoTotal = totalBruto;
       const ingressosPorProduto = Array.from(ingressosPorProdutoMap.values())
         .map((v) => ({ produto: v.name, count: v.count, bruto: v.bruto, isOrderBump: v.isOrderBump }))
@@ -1121,6 +1130,8 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           .sort((a, b) => b.vendas - a.vendas),
         /** Ingressos do evento (Kiwify), contando compras múltiplas. */
         ingressosReais,
+        /** Quais ingressos saíram, lote a lote. Vazio quando não é evento. */
+        lotesDeIngresso,
         porUtmSource: Array.from(utmSourceMap.entries())
           // `manual: true` diz que aquela linha é um vendedor, não uma UTM — a
           // tela usa isso para rotular sem ter de adivinhar pelo nome.

@@ -42,6 +42,7 @@ import {
 } from "@/lib/hooks/use-traffic-analytics";
 import { ConversionFunnel } from "./conversion-funnel";
 import { CrossedFunnelDailyTable } from "./crossed-funnel-daily-table";
+import { LotesDeIngresso } from "@/components/funnels/lotes-de-ingresso";
 import { LeadsByUtmTable } from "./leads-by-utm-table";
 import { CplComparisonChart } from "./cpl-comparison-chart";
 import { LeadsCumulativeChart } from "./leads-cumulative-chart";
@@ -693,6 +694,18 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
             </div>
           );
         })()
+      )}
+
+      {/*
+        Quais ingressos saíram, lote a lote.
+
+        Vem logo depois dos números do topo porque responde a pergunta que o
+        "Ingressos emitidos: 28" abre e não fecha: 28 de quê. A planilha de
+        vendas não tem essa quebra — a venda da Kiwify não diz de qual lote é
+        o ingresso.
+      */}
+      {(salesData?.lotesDeIngresso?.length ?? 0) > 0 && (
+        <LotesDeIngresso lotes={salesData!.lotesDeIngresso!} />
       )}
 
       {/* Dados diários — tabela cruzada (Story 18.3) */}
