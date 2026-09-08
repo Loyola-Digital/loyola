@@ -160,3 +160,45 @@ describe("resumoPorTipo", () => {
     ]);
   });
 });
+
+/**
+ * A pasta real que motivou o suporte a documento.
+ *
+ * `SwipeOffers` tem 127 arquivos: 60 vídeos em `Ads`, 60 transcrições `.docx`
+ * em `Transcrição`, mais imagens. Antes, os 61 `.docx` eram recusados — e com
+ * eles ia embora a pasta `Transcrição` inteira, porque coleção sem arquivo não
+ * é criada. Justamente o texto que descreve os vídeos.
+ */
+describe("a pasta SwipeOffers", () => {
+  const pasta = [
+    ...Array.from({ length: 60 }, (_, i) => arq(`SwipeOffers/Ads/ativo ${i}.mp4`)),
+    ...Array.from({ length: 60 }, (_, i) => arq(`SwipeOffers/Transcrição/ativo ${i}.docx`)),
+    arq("SwipeOffers/VSL/Gabriel Navarro - VSL 1.docx"),
+    arq("SwipeOffers/VSL/vsl.mp4"),
+    arq("SwipeOffers/Checkout/checkout.png"),
+    ...Array.from({ length: 5 }, (_, i) => arq(`SwipeOffers/Ads/print-${i}.jpg`)),
+  ];
+
+  it("nenhum arquivo fica de fora", () => {
+    const plano = planejarPasta(pasta);
+    expect(plano.ignorados).toHaveLength(0);
+    expect(plano.itens).toHaveLength(pasta.length);
+  });
+
+  it("a pasta Transcrição vira coleção — antes sumia junto com os .docx", () => {
+    const nomes = planejarPasta(pasta).colecoes.map((c) => c.nome);
+    expect(nomes).toContain("Transcrição");
+    expect(nomes).toEqual(["SwipeOffers", "Ads", "Checkout", "Transcrição", "VSL"]);
+  });
+
+  it("o .docx é reconhecido mesmo com o mime vazio do navegador", () => {
+    const plano = planejarPasta([arq("R/transcricao.docx", { mime: "" })]);
+    expect(plano.itens[0]!.mimeFinal).toContain("wordprocessingml");
+  });
+
+  it("o resumo separa documento de vídeo", () => {
+    const r = resumoPorTipo(planejarPasta(pasta).itens);
+    expect(r.find((t) => t.tipo === "documento")?.n).toBe(61);
+    expect(r.find((t) => t.tipo === "vídeo")?.n).toBe(61);
+  });
+});

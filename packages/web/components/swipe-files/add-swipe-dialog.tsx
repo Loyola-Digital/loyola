@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useRef, useState } from "react";
-import { Code2, Upload, Link2, Loader2, X, ImageIcon, Film, FileText, Sparkles } from "lucide-react";
+import { FileType, Code2, Upload, Link2, Loader2, X, ImageIcon, Film, FileText, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -227,7 +227,7 @@ export function AddSwipeDialog({
        */
       const mime = mimeDoArquivo(f.name, f.type);
       if (!mime) {
-        toast.error("Só imagem, vídeo, PDF ou página HTML. Pra outros formatos, use o link.");
+        toast.error("Só imagem, vídeo, PDF, página ou documento. Pra outros formatos, use o link.");
         return;
       }
       setFile(f);
@@ -310,9 +310,11 @@ export function AddSwipeDialog({
       ? "pdf"
       : mimeDoAnexo === "text/html"
         ? "html"
-        : mimeDoAnexo?.startsWith("video/")
-          ? "video"
-          : "image";
+        : mimeDoAnexo === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || mimeDoAnexo === "text/plain"
+          ? "doc"
+          : mimeDoAnexo?.startsWith("video/")
+            ? "video"
+            : "image";
 
   const podeSalvar = title.trim() && (file || sourceUrl.trim());
 
@@ -405,7 +407,7 @@ export function AddSwipeDialog({
                     // Preview local do arquivo que a pessoa acabou de escolher —
                     // não há legenda a fornecer.
                     <video src={localPreview} className="w-full rounded-lg" controls aria-label="Prévia do vídeo" />
-                  ) : assetKind === "pdf" || assetKind === "html" ? (
+                  ) : assetKind === "pdf" || assetKind === "html" || assetKind === "doc" ? (
                     // Nem o PDF nem a página viram miniatura aqui: um exigiria
                     // biblioteca de render só para esta prévia, e a outra
                     // abriria a página inteira dentro da caixinha. O nome do
@@ -413,6 +415,8 @@ export function AddSwipeDialog({
                     <div className="flex items-center gap-2 rounded-lg border bg-muted/40 p-4 text-left">
                       {assetKind === "pdf" ? (
                         <FileText className="h-8 w-8 shrink-0 text-rose-600" />
+                      ) : assetKind === "doc" ? (
+                        <FileType className="h-8 w-8 shrink-0 text-blue-600" />
                       ) : (
                         <Code2 className="h-8 w-8 shrink-0 text-sky-600" />
                       )}
@@ -500,7 +504,7 @@ export function AddSwipeDialog({
                 <input
                   ref={inputRef}
                   type="file"
-                  accept="image/*,video/*,application/pdf,text/html,.html,.htm"
+                  accept="image/*,video/*,application/pdf,text/html,.html,.htm,.docx,.txt"
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0];

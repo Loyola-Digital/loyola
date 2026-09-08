@@ -66,6 +66,16 @@ const ALLOWED_MIME = new Set([
    * conter qualquer coisa.
    */
   "text/html",
+  /**
+   * Documento de texto: transcrição, roteiro, briefing.
+   *
+   * Entrou porque a transcrição é o melhor material de catalogação que existe
+   * para VÍDEO — o modelo não assiste, mas lê. Uma pasta de swipe costuma vir
+   * com o `.mp4` e o `.docx` da fala lado a lado, e recusar o segundo joga
+   * fora justamente o que descreve o primeiro.
+   */
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/plain",
 ]);
 
 /** 200MB — cabe vídeo de anúncio; acima disso é arquivo errado pra swipe file. */
@@ -93,6 +103,8 @@ const POR_EXTENSAO: Record<string, string> = {
   pdf: "application/pdf",
   html: "text/html",
   htm: "text/html",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  txt: "text/plain",
 };
 
 /**
