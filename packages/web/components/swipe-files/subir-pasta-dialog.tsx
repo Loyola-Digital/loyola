@@ -29,6 +29,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  useAvisarLote,
+  useColecoes,
   useCreateSwipeFile,
   useCriarColecao,
   useMexerNaColecao,
@@ -69,6 +71,8 @@ export function SubirPastaDialog({
   const [destino, setDestino] = useState<string | null>(null);
   const [feitos, setFeitos] = useState(0);
   const [atual, setAtual] = useState<string>("");
+  /** Segundos de espera quando o servidor pede calma. `0` = subindo normal. */
+  const [esperando, setEsperando] = useState(0);
   const [falhas, setFalhas] = useState<Falha[]>([]);
   const cancelar = useRef(false);
 
@@ -76,6 +80,14 @@ export function SubirPastaDialog({
   const criar = useCreateSwipeFile();
   const criarColecao = useCriarColecao();
   const mexerNaColecao = useMexerNaColecao();
+  const avisarLote = useAvisarLote();
+
+  // O nome da coleção escolhida, para o aviso dizer onde as coisas caíram —
+  // "Em Navarro" é reconhecível; um uuid não é.
+  const { data: dadosDasColecoes } = useColecoes();
+  const nomeDoDestino = destino
+    ? (dadosDasColecoes?.colecoes.find((c) => c.id === destino)?.nome ?? null)
+    : null;
 
   function recomecar() {
     setEstado("escolhendo");
@@ -84,6 +96,7 @@ export function SubirPastaDialog({
     setDestino(null);
     setFeitos(0);
     setAtual("");
+    setEsperando(0);
     setFalhas([]);
     cancelar.current = false;
   }
@@ -131,6 +144,8 @@ export function SubirPastaDialog({
     setEstado("subindo");
     cancelar.current = false;
     const erros: Falha[] = [];
+    /** Os ids que entraram — é com eles que o aviso do fim é montado. */
+    const criados: string[] = [];
 
     /**
      * As coleções vêm ANTES dos arquivos, e das rasas para as fundas.
@@ -147,7 +162,9 @@ export function SubirPastaDialog({
           nome: c.nome,
           // A raiz da pasta pendura no DESTINO escolhido; as demais, na mãe
           // que acabou de nascer.
-          parentId: caminhoPai ? (idPorCaminho.get(caminhoPai) ?? null) : destino,
+          parentId: caminhoPai
+            ? (idPorCaminho.get(caminhoPai) ?? null)
+            : destino,
         });
         idPorCaminho.set(c.caminho.join("/"), criada.id);
       } catch {
@@ -158,7 +175,9 @@ export function SubirPastaDialog({
     for (const item of plano.itens) {
       if (cancelar.current) break;
       setAtual(item.nome);
-      const file = arquivos.find((f) => (f.webkitRelativePath || f.name) === item.caminho);
+      const file = arquivos.find(
+        (f) => (f.webkitRelativePath || f.name) === item.caminho,
+      );
       if (!file) {
         erros.push({ nome: item.nome, motivo: "arquivo não encontrado" });
         setFeitos((n) => n + 1);
@@ -166,7 +185,13 @@ export function SubirPastaDialog({
       }
 
       try {
-        const { publicUrl, key } = await subir.mutateAsync({ file });
+        const { publicUrl, key } = await subir.mutateAsync({
+          file,
+          // O servidor tem teto por minuto; num lote grande dá para bater
+          // nele. Mostrar a espera evita que a fila pareça travada.
+          onEsperando: (s) => setEsperando(s),
+        });
+        setEsperando(0);
         const criado = await criar.mutateAsync({
           // O nome do arquivo é o título; a IA não roda aqui — analisar 60
           // arquivos levaria vinte minutos, e a catalogação pode ser feita
@@ -176,7 +201,7 @@ export function SubirPastaDialog({
             ? "image"
             : item.mimeFinal.startsWith("video/")
               ? "video"
-                : item.mimeFinal === "application/pdf"
+              : item.mimeFinal === "application/pdf"
                 ? "pdf"
                 : item.mimeFinal === "text/html"
                   ? "html"
@@ -186,7 +211,11 @@ export function SubirPastaDialog({
           fileMime: item.mimeFinal,
           fileSizeBytes: item.tamanho,
           tags: [],
+          // O ClickUp não avisa por arquivo: sessenta mensagens seguidas
+          // enterram o canal. O resumo sai uma vez, no fim.
+          emLote: true,
         });
+        criados.push(criado.id);
 
         // Sem pasta própria (o modo "tudo solto"), o arquivo entra direto no
         // destino escolhido — que pode ser nenhum, e aí fica na biblioteca.
@@ -194,7 +223,10 @@ export function SubirPastaDialog({
           ? idPorCaminho.get(item.colecao.join("/"))
           : (destino ?? undefined);
         if (idColecao) {
-          await mexerNaColecao.mutateAsync({ id: idColecao, adicionar: [criado.id] });
+          await mexerNaColecao.mutateAsync({
+            id: idColecao,
+            adicionar: [criado.id],
+          });
         }
       } catch (e) {
         erros.push({
@@ -208,7 +240,24 @@ export function SubirPastaDialog({
     setFalhas(erros);
     setEstado("pronto");
     const ok = plano.itens.length - erros.length;
-    if (ok > 0) toast.success(`${ok} ${ok === 1 ? "referência subiu" : "referências subiram"}`);
+    if (ok > 0)
+      toast.success(
+        `${ok} ${ok === 1 ? "referência subiu" : "referências subiram"}`,
+      );
+
+    // O aviso do lote fecha aqui, e sem `await`: o canal do ClickUp não pode
+    // segurar a tela de quem acabou de subir sessenta arquivos. Falhar é
+    // silencioso de propósito — as referências já estão salvas, e não há o que
+    // a pessoa possa fazer com esse erro.
+    if (criados.length > 0) {
+      const raiz = plano.colecoes[0]?.caminho[0];
+      avisarLote.mutate({
+        ids: criados,
+        // O nome que a pessoa reconhece: a coleção escolhida, ou a pasta que
+        // acabou de virar coleção.
+        destino: nomeDoDestino ?? raiz,
+      });
+    }
   }
 
   const total = plano?.itens.length ?? 0;
@@ -229,8 +278,8 @@ export function SubirPastaDialog({
         <DialogHeader>
           <DialogTitle>Subir uma pasta</DialogTitle>
           <DialogDescription>
-            Escolha uma pasta do computador. As subpastas viram coleções dentro dela, na mesma
-            estrutura — ou tudo entra solto, se preferir.
+            Escolha uma pasta do computador. As subpastas viram coleções dentro
+            dela, na mesma estrutura — ou tudo entra solto, se preferir.
           </DialogDescription>
         </DialogHeader>
 
@@ -239,14 +288,17 @@ export function SubirPastaDialog({
             <FolderUp className="h-8 w-8 text-muted-foreground" />
             <span className="text-sm font-medium">Escolher pasta</span>
             <span className="max-w-xs text-[12px] text-muted-foreground">
-              Imagem, vídeo, PDF e página. O que não for referência fica de fora, e a tela diz o
-              quê.
+              Imagem, vídeo, PDF e página. O que não for referência fica de
+              fora, e a tela diz o quê.
             </span>
             <input
               type="file"
               // `webkitdirectory` é o atributo que abre o seletor de PASTA. Só
               // funciona escrito assim, e o React exige o cast.
-              {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
+              {...({ webkitdirectory: "", directory: "" } as Record<
+                string,
+                string
+              >)}
               multiple
               onChange={(e) => escolher(e.target.files)}
               className="sr-only"
@@ -259,7 +311,8 @@ export function SubirPastaDialog({
             <div className="rounded-lg border border-border/60 p-3">
               <p className="text-sm font-medium">{plano.raiz ?? "Pasta"}</p>
               <p className="mt-0.5 text-[12px] text-muted-foreground">
-                {plano.itens.length} {plano.itens.length === 1 ? "arquivo" : "arquivos"} ·{" "}
+                {plano.itens.length}{" "}
+                {plano.itens.length === 1 ? "arquivo" : "arquivos"} ·{" "}
                 {(plano.bytes / 1024 / 1024).toFixed(1)} MB
                 {plano.colecoes.length > 0 &&
                   ` · ${plano.colecoes.length} ${plano.colecoes.length === 1 ? "coleção" : "coleções"}`}
@@ -293,12 +346,14 @@ export function SubirPastaDialog({
                 {
                   valor: true,
                   titulo: "Seguir a estrutura de pastas",
-                  ajuda: "Cada pasta vira uma coleção, aninhada como no computador.",
+                  ajuda:
+                    "Cada pasta vira uma coleção, aninhada como no computador.",
                 },
                 {
                   valor: false,
                   titulo: "Não criar subcoleções",
-                  ajuda: "Os arquivos entram todos no mesmo lugar, sem repetir as pastas.",
+                  ajuda:
+                    "Os arquivos entram todos no mesmo lugar, sem repetir as pastas.",
                 },
               ].map((op) => (
                 <button
@@ -313,7 +368,9 @@ export function SubirPastaDialog({
                 >
                   <span
                     className={`mt-0.5 grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full border ${
-                      comColecoes === op.valor ? "border-primary" : "border-border"
+                      comColecoes === op.valor
+                        ? "border-primary"
+                        : "border-border"
                     }`}
                   >
                     {comColecoes === op.valor && (
@@ -321,8 +378,12 @@ export function SubirPastaDialog({
                     )}
                   </span>
                   <span className="min-w-0">
-                    <span className="block text-[13px] font-medium">{op.titulo}</span>
-                    <span className="block text-[11px] text-muted-foreground">{op.ajuda}</span>
+                    <span className="block text-[13px] font-medium">
+                      {op.titulo}
+                    </span>
+                    <span className="block text-[11px] text-muted-foreground">
+                      {op.ajuda}
+                    </span>
                   </span>
                 </button>
               ))}
@@ -348,21 +409,26 @@ export function SubirPastaDialog({
                 <p className="flex items-center gap-1.5 text-[12px] font-medium text-amber-600">
                   <AlertCircle className="h-3.5 w-3.5" />
                   {plano.ignorados.length}{" "}
-                  {plano.ignorados.length === 1 ? "arquivo fica" : "arquivos ficam"} de fora
+                  {plano.ignorados.length === 1
+                    ? "arquivo fica"
+                    : "arquivos ficam"}{" "}
+                  de fora
                 </p>
                 <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">
                   {plano.ignorados
                     .slice(0, 6)
                     .map((i) => i.nome)
                     .join(", ")}
-                  {plano.ignorados.length > 6 && ` e mais ${plano.ignorados.length - 6}`}
+                  {plano.ignorados.length > 6 &&
+                    ` e mais ${plano.ignorados.length - 6}`}
                 </p>
               </div>
             )}
 
             <p className="text-[11px] leading-relaxed text-muted-foreground">
-              Os arquivos sobem um por vez e a IA <strong>não</strong> cataloga agora — analisar
-              dezenas levaria muitos minutos. Dá para catalogar depois, item a item.
+              Os arquivos sobem um por vez e a IA <strong>não</strong> cataloga
+              agora — analisar dezenas levaria muitos minutos. Dá para catalogar
+              depois, item a item.
             </p>
           </div>
         )}
@@ -379,8 +445,15 @@ export function SubirPastaDialog({
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               {feitos} de {total} · {atual}
             </p>
+            {esperando > 0 && (
+              <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-[11px] text-amber-600">
+                O servidor pediu uma pausa de {esperando}s — a fila continua
+                sozinha depois disso. Nenhum arquivo se perde.
+              </p>
+            )}
             <p className="text-[11px] text-muted-foreground">
-              Pode deixar aberto. Fechar cancela o que ainda não subiu — o que já entrou fica.
+              Pode deixar aberto. Fechar cancela o que ainda não subiu — o que
+              já entrou fica.
             </p>
           </div>
         )}
@@ -389,7 +462,8 @@ export function SubirPastaDialog({
           <div className="space-y-3 py-2">
             <p className="flex items-center gap-2 text-sm font-medium">
               <Check className="h-4 w-4 text-emerald-500" />
-              {plano.itens.length - falhas.length} de {plano.itens.length} no lugar
+              {plano.itens.length - falhas.length} de {plano.itens.length} no
+              lugar
             </p>
             {falhas.length > 0 && (
               <div className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-border/50 p-2">
@@ -398,7 +472,10 @@ export function SubirPastaDialog({
                     <X className="mt-0.5 h-3 w-3 shrink-0 text-red-500" />
                     <span className="min-w-0">
                       <span className="font-medium">{f.nome}</span>
-                      <span className="text-muted-foreground"> — {f.motivo}</span>
+                      <span className="text-muted-foreground">
+                        {" "}
+                        — {f.motivo}
+                      </span>
                     </span>
                   </p>
                 ))}
@@ -413,7 +490,11 @@ export function SubirPastaDialog({
               <Button variant="ghost" size="sm" onClick={recomecar}>
                 Trocar de pasta
               </Button>
-              <Button size="sm" onClick={() => void executar()} disabled={total === 0}>
+              <Button
+                size="sm"
+                onClick={() => void executar()}
+                disabled={total === 0}
+              >
                 Subir {total} {total === 1 ? "arquivo" : "arquivos"}
               </Button>
             </>

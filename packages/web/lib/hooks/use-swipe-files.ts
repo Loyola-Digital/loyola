@@ -131,7 +131,8 @@ export function useSwipesPorIds(ids: string[]) {
 
   return useQuery({
     queryKey: ["swipe-files-por-ids", chave],
-    queryFn: () => apiClient<{ items: SwipeFile[] }>(`${BASE}/por-ids?ids=${chave}`),
+    queryFn: () =>
+      apiClient<{ items: SwipeFile[] }>(`${BASE}/por-ids?ids=${chave}`),
     enabled: chave.length > 0,
     // A biblioteca muda devagar e o mapa relê a cada troca de aba: meia hora
     // de validade evita uma requisição por clique sem mostrar dado velho de
@@ -161,7 +162,8 @@ export function useColecoes() {
   const apiClient = useApiClient();
   return useQuery({
     queryKey: ["swipe-colecoes"],
-    queryFn: () => apiClient<{ colecoes: ColecaoDoSwipe[] }>(`${BASE}/colecoes`),
+    queryFn: () =>
+      apiClient<{ colecoes: ColecaoDoSwipe[] }>(`${BASE}/colecoes`),
   });
 }
 
@@ -169,12 +171,17 @@ export function useCriarColecao() {
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (dados: { nome: string; descricao?: string | null; parentId?: string | null }) =>
+    mutationFn: (dados: {
+      nome: string;
+      descricao?: string | null;
+      parentId?: string | null;
+    }) =>
       apiClient<ColecaoDoSwipe & { jaExistia?: boolean }>(`${BASE}/colecoes`, {
         method: "POST",
         body: JSON.stringify(dados),
       }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["swipe-colecoes"] }),
+    onSuccess: () =>
+      void qc.invalidateQueries({ queryKey: ["swipe-colecoes"] }),
   });
 }
 
@@ -182,9 +189,20 @@ export function useAtualizarColecao() {
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...dados }: { id: string; nome?: string; descricao?: string | null }) =>
-      apiClient(`${BASE}/colecoes/${id}`, { method: "PATCH", body: JSON.stringify(dados) }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["swipe-colecoes"] }),
+    mutationFn: ({
+      id,
+      ...dados
+    }: {
+      id: string;
+      nome?: string;
+      descricao?: string | null;
+    }) =>
+      apiClient(`${BASE}/colecoes/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(dados),
+      }),
+    onSuccess: () =>
+      void qc.invalidateQueries({ queryKey: ["swipe-colecoes"] }),
   });
 }
 
@@ -194,10 +212,13 @@ export function useExcluirColecao() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, comAsPecas }: { id: string; comAsPecas?: boolean }) =>
-      apiClient<{ ok: boolean; colecoesApagadas: number; pecasApagadas: number }>(
-        `${BASE}/colecoes/${id}${comAsPecas ? "?comAsPecas=1" : ""}`,
-        { method: "DELETE" },
-      ),
+      apiClient<{
+        ok: boolean;
+        colecoesApagadas: number;
+        pecasApagadas: number;
+      }>(`${BASE}/colecoes/${id}${comAsPecas ? "?comAsPecas=1" : ""}`, {
+        method: "DELETE",
+      }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["swipe-colecoes"] });
       // A grade pode estar mostrando peças que acabaram de ser apagadas.
@@ -270,6 +291,24 @@ export function useBuscaPorContexto(q: string, habilitado: boolean) {
   });
 }
 
+/**
+ * O texto de um documento, para ler na tela.
+ *
+ * O `.docx` é um ZIP e o navegador não abre — quem extrai é o servidor. O
+ * resultado não muda enquanto o arquivo for o mesmo, então uma hora de
+ * validade evita reextrair a cada abertura do visualizador.
+ */
+export function useTextoDoDocumento(id: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["swipe-texto", id],
+    queryFn: () => apiClient<{ texto: string }>(`${BASE}/${id}/texto`),
+    enabled: Boolean(id),
+    staleTime: 60 * 60 * 1000,
+    retry: false,
+  });
+}
+
 export function useLinkPreview() {
   const apiClient = useApiClient();
   return useMutation({
@@ -297,6 +336,13 @@ export interface CreateSwipeInput {
   platform?: string;
   format?: string;
   tags?: string[];
+  /**
+   * Parte de uma subida em lote — o servidor não avisa no ClickUp por esta.
+   *
+   * Quem marca isto assume fechar o lote com `useAvisarLote`, senão nenhum
+   * aviso sai. É o certo para uma pasta: sessenta arquivos, um aviso.
+   */
+  emLote?: boolean;
 }
 
 export function useCreateSwipeFile() {
@@ -304,7 +350,10 @@ export function useCreateSwipeFile() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateSwipeInput) =>
-      apiClient<{ id: string }>(BASE, { method: "POST", body: JSON.stringify(input) }),
+      apiClient<{ id: string }>(BASE, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["swipe-files"] }),
   });
 }
@@ -313,7 +362,13 @@ export function useUpdateSwipeFile() {
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, input }: { id: string; input: Partial<CreateSwipeInput> & { isFavorite?: boolean } }) =>
+    mutationFn: ({
+      id,
+      input,
+    }: {
+      id: string;
+      input: Partial<CreateSwipeInput> & { isFavorite?: boolean };
+    }) =>
       apiClient<{ ok: boolean }>(`${BASE}/${id}`, {
         method: "PATCH",
         body: JSON.stringify(input),
@@ -326,7 +381,8 @@ export function useDeleteSwipeFile() {
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => apiClient<{ ok: boolean }>(`${BASE}/${id}`, { method: "DELETE" }),
+    mutationFn: (id: string) =>
+      apiClient<{ ok: boolean }>(`${BASE}/${id}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["swipe-files"] }),
   });
 }
@@ -342,56 +398,110 @@ export function useDeleteSwipeFile() {
  * O `onProgress` continua com XHR: `fetch` não expõe progresso de upload, e um
  * vídeo de 100 MB sem barra é uma tela travada.
  */
+/** Erro de teto de requisições — o cliente espera e tenta de novo. */
+class NoLimite extends Error {
+  constructor(public readonly esperarMs: number) {
+    super("No limite do servidor.");
+    this.name = "NoLimite";
+  }
+}
+
 export function useUploadToBucket() {
   const { getToken } = useAuth();
   return useMutation({
     mutationFn: async ({
       file,
       onProgress,
+      onEsperando,
     }: {
       file: File;
       onProgress?: (pct: number) => void;
+      /** Avisa que bateu no teto e está esperando — a fila mostra isso. */
+      onEsperando?: (segundos: number) => void;
     }) => {
       const token = await getToken();
-      const form = new FormData();
-      form.append("file", file);
 
-      return new Promise<{ publicUrl: string; key: string }>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", `${API_URL}${BASE}/upload`);
-        if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-        // Sem `Content-Type`: o browser precisa pôr o boundary do multipart.
-
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable && onProgress) {
-            onProgress(Math.round((e.loaded / e.total) * 100));
-          }
-        };
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve(JSON.parse(xhr.responseText) as { publicUrl: string; key: string });
-            return;
-          }
-          // A mensagem do servidor vem no corpo e diz o que houve — muito
-          // melhor que "o bucket recusou (500)", que não deixa ninguém agir.
-          let motivo = `Falha ao enviar (${xhr.status}).`;
-          try {
-            const corpo = JSON.parse(xhr.responseText) as { error?: string };
-            if (corpo?.error) motivo = corpo.error;
-          } catch {
-            /* resposta sem JSON — fica a mensagem padrão */
-          }
-          reject(new Error(motivo));
-        };
-        xhr.onerror = () => reject(new Error("Falha de rede ao enviar o arquivo."));
-        xhr.send(form);
-      });
+      /**
+       * Bateu no teto do servidor? Espera e tenta de novo.
+       *
+       * O upload de pasta manda dezenas de arquivos em sequência e esbarra no
+       * limite por minuto — e um 429 virava "falhou", com o arquivo válido e
+       * nada a fazer além de subir tudo outra vez.
+       *
+       * O `retry-after` do servidor diz quanto esperar; sem ele, dez segundos,
+       * que cobre a janela de um minuto em três tentativas.
+       */
+      for (let tentativa = 0; ; tentativa += 1) {
+        try {
+          return await enviarUmaVez(file, token, onProgress);
+        } catch (e) {
+          if (!(e instanceof NoLimite) || tentativa >= 3) throw e;
+          onEsperando?.(Math.ceil(e.esperarMs / 1000));
+          await new Promise((r) => setTimeout(r, e.esperarMs));
+        }
+      }
     },
   });
 }
 
+function enviarUmaVez(
+  file: File,
+  token: string | null,
+  onProgress?: (pct: number) => void,
+): Promise<{ publicUrl: string; key: string }> {
+  const form = new FormData();
+  form.append("file", file);
+
+  return new Promise<{ publicUrl: string; key: string }>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_URL}${BASE}/upload`);
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    // Sem `Content-Type`: o browser precisa pôr o boundary do multipart.
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(
+          JSON.parse(xhr.responseText) as { publicUrl: string; key: string },
+        );
+        return;
+      }
+      // 429 não é falha do arquivo: é a vez dele que ainda não chegou.
+      if (xhr.status === 429) {
+        const cabecalho = Number(xhr.getResponseHeader("retry-after"));
+        reject(
+          new NoLimite(
+            Number.isFinite(cabecalho) && cabecalho > 0
+              ? cabecalho * 1000
+              : 10_000,
+          ),
+        );
+        return;
+      }
+      // A mensagem do servidor vem no corpo e diz o que houve — muito
+      // melhor que "o bucket recusou (500)", que não deixa ninguém agir.
+      let motivo = `Falha ao enviar (${xhr.status}).`;
+      try {
+        const corpo = JSON.parse(xhr.responseText) as { error?: string };
+        if (corpo?.error) motivo = corpo.error;
+      } catch {
+        /* resposta sem JSON — fica a mensagem padrão */
+      }
+      reject(new Error(motivo));
+    };
+    xhr.onerror = () => reject(new Error("Falha de rede ao enviar o arquivo."));
+    xhr.send(form);
+  });
+}
+
 /** Lê dimensões antes do upload — o card reserva a proporção e o grid não salta. */
-export function readMediaDimensions(file: File): Promise<{ width: number; height: number } | null> {
+export function readMediaDimensions(
+  file: File,
+): Promise<{ width: number; height: number } | null> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const cleanup = () => URL.revokeObjectURL(url);
@@ -498,7 +608,9 @@ export function useAnalisarSwipe() {
       } catch (e) {
         clearTimeout(prazo);
         if (relogio.signal.aborted) {
-          throw new Error("A leitura passou de 3 minutos. Preencha à mão — nada se perdeu.");
+          throw new Error(
+            "A leitura passou de 3 minutos. Preencha à mão — nada se perdeu.",
+          );
         }
         throw e;
       }
@@ -507,7 +619,9 @@ export function useAnalisarSwipe() {
       // respostas imediatas, que não precisam de stream nenhum.
       if (!r.ok) {
         clearTimeout(prazo);
-        const corpo = (await r.json().catch(() => null)) as { error?: string } | null;
+        const corpo = (await r.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         throw new Error(corpo?.error ?? "Não consegui analisar agora.");
       }
 
@@ -576,9 +690,10 @@ export function useAvisoNoClickUp() {
   return useQuery({
     queryKey: ["swipe-clickup-alert"],
     queryFn: () =>
-      apiClient<{ config: ConfigDoAvisoNoClickUp | null; clickupPronto: boolean }>(
-        `${BASE}/clickup-alert`,
-      ),
+      apiClient<{
+        config: ConfigDoAvisoNoClickUp | null;
+        clickupPronto: boolean;
+      }>(`${BASE}/clickup-alert`),
   });
 }
 
@@ -591,7 +706,8 @@ export function useSalvarAvisoNoClickUp() {
         method: "PUT",
         body: JSON.stringify(cfg),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["swipe-clickup-alert"] }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["swipe-clickup-alert"] }),
   });
 }
 
@@ -600,7 +716,10 @@ export function useTestarAvisoNoClickUp() {
   const apiClient = useApiClient();
   return useMutation({
     mutationFn: () =>
-      apiClient<{ ok: true }>(`${BASE}/clickup-alert/test`, { method: "POST", body: "{}" }),
+      apiClient<{ ok: true }>(`${BASE}/clickup-alert/test`, {
+        method: "POST",
+        body: "{}",
+      }),
   });
 }
 
@@ -609,7 +728,10 @@ export function useCanaisDoClickUp(enabled: boolean) {
   const apiClient = useApiClient();
   return useQuery({
     queryKey: ["swipe-clickup-channels"],
-    queryFn: () => apiClient<{ channels: { id: string; name: string }[] }>(`${BASE}/clickup-channels`),
+    queryFn: () =>
+      apiClient<{ channels: { id: string; name: string }[] }>(
+        `${BASE}/clickup-channels`,
+      ),
     enabled,
     staleTime: 10 * 60 * 1000,
   });
@@ -620,9 +742,9 @@ export function useMembrosDoClickUp(enabled: boolean) {
   return useQuery({
     queryKey: ["swipe-clickup-members"],
     queryFn: () =>
-      apiClient<{ members: { id: string; username: string; email: string | null }[] }>(
-        `${BASE}/clickup-members`,
-      ),
+      apiClient<{
+        members: { id: string; username: string; email: string | null }[];
+      }>(`${BASE}/clickup-members`),
     enabled,
     staleTime: 10 * 60 * 1000,
   });
@@ -654,7 +776,13 @@ export type PassoDaImportacao =
       status: "ok" | "erro";
       erro?: string;
     }
-  | { tipo: "fim"; criados: number; falhas: number; ignorados?: number; simulado?: boolean }
+  | {
+      tipo: "fim";
+      criados: number;
+      falhas: number;
+      ignorados?: number;
+      simulado?: boolean;
+    }
   | { tipo: "erro"; error: string };
 
 export interface ResumoDaImportacao {
@@ -724,7 +852,9 @@ export function useImportarDoClickUp() {
 
       if (!r.ok) {
         clearTimeout(prazo);
-        const corpo = (await r.json().catch(() => null)) as { error?: string } | null;
+        const corpo = (await r.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         throw new Error(corpo?.error ?? "Não consegui importar.");
       }
 
@@ -780,5 +910,26 @@ export function useImportarDoClickUp() {
         void qc.invalidateQueries({ queryKey: ["swipe-files"] });
       }
     },
+  });
+}
+
+/**
+ * Fecha uma subida em lote com um aviso só no ClickUp.
+ *
+ * Manda os ids, não a contagem: quem conta é o banco, e o que falhou não entra
+ * no número. Não invalida nada — o aviso não muda a biblioteca.
+ */
+export function useAvisarLote() {
+  const apiClient = useApiClient();
+  return useMutation({
+    mutationFn: (input: { ids: string[]; destino?: string }) =>
+      apiClient<{
+        avisado: boolean;
+        motivo: string | null;
+        referencias: number;
+      }>(`${BASE}/aviso-de-lote`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
   });
 }
