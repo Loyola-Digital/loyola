@@ -37,6 +37,7 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
+import { centralizarNoCursor } from "@/lib/utils/dnd-centralizar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -607,11 +608,22 @@ export function GradeDeColecoes({
         arrasta o vazio e não sabe se pegou a coleção certa. O nome basta:
         o card inteiro flutuando taparia justamente o alvo que se quer mirar.
       */}
-      <DragOverlay dropAnimation={null}>
+      {/* `modifiers` recentra a prévia no ponteiro — sem ele ela nasce no
+          canto do card e mirar a pasta de destino vira adivinhação. */}
+      <DragOverlay dropAnimation={null} modifiers={[centralizarNoCursor]}>
         {arrastando ? (
-          <span className="pointer-events-none rounded-lg border border-primary/60 bg-popover px-2.5 py-1.5 text-[12px] font-medium shadow-lg">
-            {todas.find((c) => c.id === arrastando)?.nome ?? "Coleção"}
-          </span>
+          /*
+           * O `DragOverlay` envolve isto num wrapper do TAMANHO DO CARD, e o
+           * modifier centra esse wrapper no cursor. Uma etiqueta solta ficaria
+           * no canto superior esquerdo dele — ou seja, ainda longe do ponteiro,
+           * que era metade do problema. Ocupar o wrapper e centralizar dentro
+           * dele é o que põe a etiqueta debaixo do cursor de verdade.
+           */
+          <div className="pointer-events-none flex h-full w-full items-center justify-center">
+            <span className="rounded-lg border border-primary/60 bg-popover px-2.5 py-1.5 text-[12px] font-medium shadow-lg">
+              {todas.find((c) => c.id === arrastando)?.nome ?? "Coleção"}
+            </span>
+          </div>
         ) : null}
       </DragOverlay>
     </DndContext>
