@@ -15,7 +15,7 @@
  *   TEXTO no caso dos valores fixos (o nome guarda o texto, não a FK).
  */
 
-import { and, asc, count, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, isNotNull, isNull } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   namingCampaigns,
@@ -29,6 +29,7 @@ import {
 import { registrarNoChangelog, type AcaoDoChangelog } from "./changelog.js";
 import type { Conexao } from "./conexao.js";
 import type { Referencia } from "./regras.js";
+import type { DicionarioSnapshot } from "@loyola-x/shared";
 
 export type Expert = typeof namingExperts.$inferSelect;
 export type Produto = typeof namingProducts.$inferSelect;
@@ -38,7 +39,10 @@ export type Lp = typeof namingLandingPages.$inferSelect;
 export type ValorFixo = typeof namingDictionaryValues.$inferSelect;
 export type TipoDeValor = ValorFixo["type"];
 
-export type Entidade = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "dicionario";
+export type Entidade = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "dicionario" | "campanhas";
+/** As que têm `active` (campanha não se desativa; publica ou duplica). */
+export type EntidadeAtivavel = Exclude<Entidade, "campanhas">;
+export type Campanha = typeof namingCampaigns.$inferSelect;
 
 /** Nome da tabela que vai no changelog. */
 export const TABELA: Record<Entidade, string> = {
@@ -48,6 +52,7 @@ export const TABELA: Record<Entidade, string> = {
   ofertas: "naming_offers",
   lps: "naming_landing_pages",
   dicionario: "naming_dictionary_values",
+  campanhas: "naming_campaigns",
 };
 
 const TABELAS = {
@@ -57,6 +62,7 @@ const TABELAS = {
   ofertas: namingOffers,
   lps: namingLandingPages,
   dicionario: namingDictionaryValues,
+  campanhas: namingCampaigns,
 } as const;
 
 type Linha<E extends Entidade> = (typeof TABELAS)[E]["$inferSelect"];
@@ -81,6 +87,18 @@ function ativoSe(inativos: boolean, coluna: AnyPgColumn) {
 function onde(...conds: (ReturnType<typeof eq> | undefined)[]) {
   const c = conds.filter(Boolean) as ReturnType<typeof eq>[];
   return c.length === 0 ? undefined : c.length === 1 ? c[0] : and(...c);
+}
+
+export interface FiltrosDeCampanha {
+  expertId?: string;
+  productId?: string;
+  funnelId?: string;
+  offerId?: string;
+  year?: string;
+  q?: string;
+  publicada?: boolean;
+  limit: number;
+  offset: number;
 }
 
 export function criarRepositorio(db: Conexao) {
@@ -150,13 +168,13 @@ export function criarRepositorio(db: Conexao) {
   }
 
   /** `active` ↔ `deactivate`/`reactivate`, com a ação certa no changelog. */
-  async function alternarAtivo<E extends Entidade>(
+  async function alternarAtivo<E extends EntidadeAtivavel>(
     entidade: E,
     antes: Linha<E>,
     ativo: boolean,
     author: string | null,
   ) {
-    return atualizar(entidade, antes, { active: ativo } as Partial<Insercao<E>>, author, ativo ? "reactivate" : "deactivate");
+    return atualizar(entidade, antes, { active: ativo } as unknown as Partial<Insercao<E>>, author, ativo ? "reactivate" : "deactivate");
   }
 
   // ── uso em campanhas ──────────────────────────────────────────────────
@@ -248,6 +266,9 @@ export function criarRepositorio(db: Conexao) {
         return [...(await lpsComo("offerId", id)), ...(await campanhasComo("offerId", id))];
       case "lps":
         return campanhasComo("landingPageId", id);
+      case "campanhas":
+        // Nada referencia uma campanha ainda (conjuntos e anúncios são fase 2).
+        return [];
       case "dicionario": {
         if (!linha.type || !linha.value) return [];
         const col = namingCampaigns[COLUNA_DO_TIPO[linha.type]];
@@ -387,7 +408,67 @@ export function criarRepositorio(db: Conexao) {
       (await db.select().from(namingDictionaryValues).where(and(eq(namingDictionaryValues.type, type), eq(namingDictionaryValues.value, value))).limit(1))[0],
   };
 
+  // ── snapshot do dicionário (Story 47.3) ───────────────────────────────
+  /**
+   * O dicionário inteiro, por CÓDIGO (não por id): é o que `parseCampaignName`
+   * lê e o que a prévia do gerador tem em mãos. `inativos=false` é o snapshot
+   * de GRAVAR (só o vigente); `true` é o de VALIDAR nome antigo.
+   */
+  async function snapshot(inativos: boolean): Promise<DicionarioSnapshot> {
+    const [ex, pr, fu, of, lp, va] = await Promise.all([
+      experts.listar(true),
+      produtos.listar(undefined, true),
+      funis.listar(undefined, true),
+      ofertas.listar(undefined, true),
+      lps.listar({}, true),
+      dicionario.listar(undefined, true),
+    ]);
+    const filtra = <T extends { active: boolean }>(xs: T[]) => (inativos ? xs : xs.filter((x) => x.active));
+    const codeDoExpert = new Map(ex.map((e) => [e.id, e.code]));
+    const slugDoProduto = new Map(pr.map((p) => [p.id, p.slug]));
+    const codeDoFunil = new Map(fu.map((f) => [f.id, f.code]));
+    const codeDaOferta = new Map(of.map((o) => [o.id, o.code]));
+    return {
+      experts: filtra(ex).map((e) => ({ code: e.code, active: e.active })),
+      produtos: filtra(pr).map((p) => ({ expert: codeDoExpert.get(p.expertId) ?? "?", slug: p.slug, active: p.active })),
+      funis: filtra(fu).map((f) => ({ expert: codeDoExpert.get(f.expertId) ?? "?", code: f.code, active: f.active })),
+      ofertas: filtra(of).map((o) => ({ expert: codeDoExpert.get(o.expertId) ?? "?", code: o.code, active: o.active })),
+      lps: filtra(lp).map((l) => ({
+        expert: codeDoExpert.get(l.expertId) ?? "?",
+        product: slugDoProduto.get(l.productId) ?? "?",
+        funnel: codeDoFunil.get(l.funnelId) ?? "?",
+        offer: codeDaOferta.get(l.offerId) ?? "?",
+        code: l.code,
+        active: l.active,
+      })),
+      valores: filtra(va).map((v) => ({ type: v.type, value: v.value, active: v.active })),
+    };
+  }
+
+  // ── campanhas (Story 47.3) ────────────────────────────────────────────
+  const campanhas = {
+    listar: async (f: FiltrosDeCampanha) => {
+      const cond = onde(
+        f.expertId ? eq(namingCampaigns.expertId, f.expertId) : undefined,
+        f.productId ? eq(namingCampaigns.productId, f.productId) : undefined,
+        f.funnelId ? eq(namingCampaigns.funnelId, f.funnelId) : undefined,
+        f.offerId ? eq(namingCampaigns.offerId, f.offerId) : undefined,
+        f.year ? eq(namingCampaigns.year, f.year) : undefined,
+        f.q ? (ilike(namingCampaigns.name, `%${f.q}%`) as unknown as ReturnType<typeof eq>) : undefined,
+        f.publicada === true ? (isNotNull(namingCampaigns.publishedAt) as unknown as ReturnType<typeof eq>) : undefined,
+        f.publicada === false ? (isNull(namingCampaigns.publishedAt) as unknown as ReturnType<typeof eq>) : undefined,
+      );
+      const [itens, [{ n }]] = await Promise.all([
+        db.select().from(namingCampaigns).where(cond).orderBy(desc(namingCampaigns.createdAt)).limit(f.limit).offset(f.offset),
+        db.select({ n: count() }).from(namingCampaigns).where(cond),
+      ]);
+      return { itens, total: Number(n) };
+    },
+  };
+
   return {
+    snapshot,
+    campanhas,
     inserir,
     atualizar,
     excluir,

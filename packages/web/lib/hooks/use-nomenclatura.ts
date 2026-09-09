@@ -19,6 +19,7 @@
 
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { DicionarioSnapshot, ParseResult } from "@loyola-x/shared/src/nomenclatura-de-campanha";
 
 export type Recurso = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "dicionario";
 export type TipoDeValor = "year" | "temperature" | "auction" | "format";
@@ -200,5 +201,114 @@ export function useAlternarAtivo(recurso: Recurso) {
     mutationFn: ({ id, ativo }: { id: string; ativo: boolean }) =>
       apiClient<Record<string, unknown>>(`${BASE}/${recurso}/${id}/${ativo ? "reativar" : "desativar"}`, { method: "POST" }),
     onSuccess: invalidar,
+  });
+}
+
+// ─────────────────── Story 47.3: snapshot, campanhas, validador ───────────────────
+
+export interface Campanha {
+  id: string;
+  expertId: string;
+  productId: string;
+  funnelId: string;
+  offerId: string | null;
+  offerValue: string;
+  landingPageId: string | null;
+  lpValue: string;
+  year: string;
+  temperature: string;
+  auction: string;
+  format: string;
+  suffix: string | null;
+  name: string;
+  publishedAt: string | null;
+  metaCampaignId: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  expertCode: string;
+  productSlug: string;
+  funnelRotulo: string;
+  offerRotulo: string;
+  lpSlug: string | null;
+}
+
+/** O dicionário por código — o que a prévia e o validador leem. */
+export function useSnapshot(inativos = false) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["nomenclatura", "snapshot", inativos],
+    queryFn: () => apiClient<DicionarioSnapshot>(`${BASE}/dicionario/snapshot${query({ inativos })}`),
+    staleTime: 30 * 1000,
+  });
+}
+
+export interface FiltrosDeCampanhas {
+  expertId?: string;
+  productId?: string;
+  funnelId?: string;
+  offerId?: string;
+  year?: string;
+  q?: string;
+  publicada?: "1" | "0";
+  limit?: number;
+  offset?: number;
+}
+
+export function useCampanhas(f: FiltrosDeCampanhas = {}) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["nomenclatura", "campanhas", f],
+    queryFn: () =>
+      apiClient<{ itens: Campanha[]; total: number }>(
+        `${BASE}/campanhas${query({ ...f, limit: f.limit === undefined ? undefined : String(f.limit), offset: f.offset === undefined ? undefined : String(f.offset) })}`,
+      ),
+    staleTime: 15 * 1000,
+  });
+}
+
+export function useCampanha(id: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["nomenclatura", "campanhas", "uma", id],
+    queryFn: () => apiClient<Campanha>(`${BASE}/campanhas/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCriarCampanha() {
+  const apiClient = useApiClient();
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: (dados: Record<string, unknown>) => apiClient<Campanha>(`${BASE}/campanhas`, { method: "POST", body: JSON.stringify(dados) }),
+    onSuccess: invalidar,
+  });
+}
+
+export function useEditarCampanha() {
+  const apiClient = useApiClient();
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: ({ id, dados }: { id: string; dados: Record<string, unknown> }) =>
+      apiClient<Campanha>(`${BASE}/campanhas/${id}`, { method: "PATCH", body: JSON.stringify(dados) }),
+    onSuccess: invalidar,
+  });
+}
+
+export function usePublicarCampanha() {
+  const apiClient = useApiClient();
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: ({ id, metaCampaignId }: { id: string; metaCampaignId?: string }) =>
+      apiClient<Campanha>(`${BASE}/campanhas/${id}/publicar`, { method: "POST", body: JSON.stringify(metaCampaignId ? { metaCampaignId } : {}) }),
+    onSuccess: invalidar,
+  });
+}
+
+/** Validar um nome existente (spec § 8) — lê o snapshot COM inativos no servidor. */
+export function useValidarNome() {
+  const apiClient = useApiClient();
+  return useMutation({
+    mutationFn: (name: string) => apiClient<ParseResult>(`${BASE}/validar-nome`, { method: "POST", body: JSON.stringify({ name }) }),
   });
 }

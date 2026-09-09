@@ -23,7 +23,7 @@ export const ABAS_DO_DICIONARIO: { value: AbaDoDicionario; label: string }[] = [
   { value: "valores", label: "Valores fixos" },
 ];
 
-/** A seção Campanhas chega na 47.3; até lá aparece desabilitada ("Em breve"). */
+/** Seção Campanhas (Story 47.3): gerador, listagem e validador. */
 export const ABAS_DE_CAMPANHAS: { value: AbaDeCampanhas; label: string }[] = [
   { value: "nova", label: "Nova campanha" },
   { value: "lista", label: "Campanhas" },
@@ -32,7 +32,7 @@ export const ABAS_DE_CAMPANHAS: { value: AbaDeCampanhas; label: string }[] = [
 
 export const SECOES: { value: Secao; label: string; disponivel: boolean }[] = [
   { value: "dicionario", label: "Dicionário", disponivel: true },
-  { value: "campanhas", label: "Campanhas", disponivel: false },
+  { value: "campanhas", label: "Campanhas", disponivel: true },
 ];
 
 export interface AbaAtiva {

@@ -49,6 +49,26 @@ export {
   type TipoDeCodigo,
   type Normalizacao,
 } from "./nomenclatura-codigos.js";
+// Story 47.3: o nome da campanha do perpétuo — montar (`buildCampaignName`) e
+// ler/validar contra um snapshot do dicionário (`parseCampaignName`). Módulo
+// folha: o web importa por `@loyola-x/shared/src/nomenclatura-de-campanha`.
+export {
+  SEPARADOR,
+  OFMIX,
+  LPMIX,
+  NA,
+  ORDEM_DOS_CAMPOS,
+  CAMPO,
+  buildCampaignName,
+  pedacosDoNome,
+  parseCampaignName,
+  type CampoDoNome,
+  type BlocoDoNome,
+  type CampaignFields,
+  type PedacoDoNome,
+  type DicionarioSnapshot,
+  type ParseResult,
+} from "./nomenclatura-de-campanha.js";
 // Story 18.71: o `utm_content` efetivo de uma célula de planilha — o `co=` chega
 // em três formatos e só um deles é o ad_id puro. Módulo folha: o web importa por
 // subpath (`@loyola-x/shared/src/utm-value`), a API por aqui.

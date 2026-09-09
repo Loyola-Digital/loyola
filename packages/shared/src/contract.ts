@@ -115,4 +115,9 @@
 //
 // ADITIVA: nada que existia mudou de forma. `packages/mcp` não é afetado
 // (nenhuma tool nova, nenhuma rota pública).
-export const API_CONTRACT_VERSION = 7;
+//
+// v8 (Story 47.3): rotas novas `/api/nomenclatura/campanhas`,
+// `/api/nomenclatura/dicionario/snapshot` e `/api/nomenclatura/validar-nome` —
+// o gerador de nome de campanha depende das três. ADITIVA; `packages/mcp` não
+// é afetado.
+export const API_CONTRACT_VERSION = 8;

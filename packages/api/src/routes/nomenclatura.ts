@@ -34,7 +34,8 @@
 import { z } from "zod";
 import fp from "fastify-plugin";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { montarSlugDeLp } from "@loyola-x/shared";
+import { LPMIX, NA, montarSlugDeLp, parseCampaignName } from "@loyola-x/shared";
+import { CAMPOS_DO_NOME, montarCampanha } from "../services/nomenclatura/campanhas.js";
 import { listarChangelog } from "../services/nomenclatura/changelog.js";
 import { violaUnicidade } from "../utils/db-errors.js";
 import {
@@ -51,6 +52,7 @@ import {
 import {
   criarRepositorio,
   type Entidade,
+  type EntidadeAtivavel,
   type Repositorio,
   type TipoDeValor,
 } from "../services/nomenclatura/repositorio.js";
@@ -222,7 +224,7 @@ export default fp(async function nomenclaturaRoutes(fastify) {
   );
 
   // ──────────────── contrato comum: reativar / excluir ────────────────
-  const ENTIDADES: { entidade: Entidade; rota: string; rotulo: string }[] = [
+  const ENTIDADES: { entidade: EntidadeAtivavel; rota: string; rotulo: string }[] = [
     { entidade: "experts", rota: "experts", rotulo: "Expert" },
     { entidade: "produtos", rota: "produtos", rotulo: "Produto" },
     { entidade: "funis", rota: "funis", rotulo: "Funil" },
@@ -574,6 +576,161 @@ export default fp(async function nomenclaturaRoutes(fastify) {
       if (b.sortOrder !== undefined) patch.sortOrder = b.sortOrder;
       if (Object.keys(patch).length === 0) return antes;
       return r.atualizar("dicionario", antes, patch, author);
+    }),
+  );
+
+  // ─────────────────── snapshot, campanhas e validador (Story 47.3) ───────────────────
+  fastify.get(
+    "/api/nomenclatura/dicionario/snapshot",
+    tentar(async (request) => {
+      autor(request);
+      const q = parse(z.object({ inativos: z.enum(["1", "true", "0", "false"]).optional() }), request.query);
+      return repo().snapshot(querInativos(q));
+    }),
+  );
+
+  fastify.post(
+    "/api/nomenclatura/validar-nome",
+    tentar(async (request) => {
+      autor(request);
+      const b = parse(z.object({ name: z.string().max(300) }), request.body);
+      // COM inativos: nome antigo continua legível (regra 4); o resultado traz avisos.
+      return parseCampaignName(b.name, await repo().snapshot(true));
+    }),
+  );
+
+  const campanhaSchema = z.object({
+    expertId: uuid,
+    productId: uuid,
+    funnelId: uuid,
+    offerId: uuid.nullable(),
+    landingPageId: uuid.nullable(),
+    lpValue: z.enum([LPMIX, NA]).optional(),
+    year: z.string().min(1).max(20),
+    temperature: z.string().min(1).max(20),
+    auction: z.string().min(1).max(20),
+    format: z.string().min(1).max(20),
+    suffix: z.string().regex(/^v\d{2}$/, "sufixo no formato vNN").nullable().optional(),
+    notes: z.string().trim().max(4000).nullable().optional(),
+    metaCampaignId: z.string().trim().max(40).nullable().optional(),
+  });
+
+  /** Rótulos para a listagem — códigos em vez de ids. */
+  async function rotulosDeCampanhas(r: Repositorio) {
+    const [ex, pr, fu, of, lp] = await Promise.all([r.experts.listar(true), r.produtos.listar(undefined, true), r.funis.listar(undefined, true), r.ofertas.listar(undefined, true), r.lps.listar({}, true)]);
+    const mapa = <T extends { id: string }>(xs: T[]) => new Map(xs.map((x) => [x.id, x]));
+    const m = { ex: mapa(ex), pr: mapa(pr), fu: mapa(fu), of: mapa(of), lp: mapa(lp) };
+    return (c: { expertId: string; productId: string; funnelId: string; offerId: string | null; landingPageId: string | null; offerValue: string }) => ({
+      expertCode: m.ex.get(c.expertId)?.code ?? "?",
+      productSlug: m.pr.get(c.productId)?.slug ?? "?",
+      funnelRotulo: (() => { const f = m.fu.get(c.funnelId); return f ? rotuloDe(f.code, f.description) : "?"; })(),
+      offerRotulo: (() => { if (!c.offerId) return `${c.offerValue} — a campanha carrega mais de uma oferta`; const o = m.of.get(c.offerId); return o ? rotuloDe(o.code, o.description) : "?"; })(),
+      lpSlug: c.landingPageId ? (m.lp.get(c.landingPageId)?.slug ?? "?") : null,
+    });
+  }
+
+  fastify.get(
+    "/api/nomenclatura/campanhas",
+    tentar(async (request) => {
+      autor(request);
+      const q = parse(
+        z.object({
+          expertId: uuid.optional(),
+          productId: uuid.optional(),
+          funnelId: uuid.optional(),
+          offerId: uuid.optional(),
+          year: z.string().max(20).optional(),
+          q: z.string().max(200).optional(),
+          publicada: z.enum(["1", "0"]).optional(),
+          limit: z.coerce.number().int().min(1).max(200).default(50),
+          offset: z.coerce.number().int().min(0).default(0),
+        }),
+        request.query,
+      );
+      const r = repo();
+      const [{ itens, total }, rotulos] = await Promise.all([
+        r.campanhas.listar({ ...q, publicada: q.publicada === undefined ? undefined : q.publicada === "1" }),
+        rotulosDeCampanhas(r),
+      ]);
+      return { itens: itens.map((c) => ({ ...c, ...rotulos(c) })), total };
+    }),
+  );
+
+  fastify.get(
+    "/api/nomenclatura/campanhas/:id",
+    tentar(async (request) => {
+      autor(request);
+      const { id } = parse(idParams, request.params);
+      const r = repo();
+      const c = await existente(r, "campanhas", id, "Campanha");
+      return { ...c, ...(await rotulosDeCampanhas(r))(c) };
+    }),
+  );
+
+  fastify.post(
+    "/api/nomenclatura/campanhas",
+    tentar(async (request, reply) => {
+      const author = autor(request);
+      const b = parse(campanhaSchema, request.body);
+      const r = repo();
+      const m = await montarCampanha(r, b);
+      const linha = await r.inserir(
+        "campanhas",
+        { ...m, fields: undefined, notes: b.notes ?? null, metaCampaignId: b.metaCampaignId ?? null, createdBy: author } as never,
+        author,
+      );
+      return reply.code(201).send({ ...linha, ...(await rotulosDeCampanhas(r))(linha) });
+    }),
+  );
+
+  fastify.patch(
+    "/api/nomenclatura/campanhas/:id",
+    tentar(async (request) => {
+      const author = autor(request);
+      const { id } = parse(idParams, request.params);
+      const b = parse(campanhaSchema.partial(), request.body);
+      const r = repo();
+      const antes = await existente(r, "campanhas", id, "Campanha");
+      // Regra 6: publicada não muda de nome. Só notas e id da Meta seguem editáveis.
+      const mexeNoNome = CAMPOS_DO_NOME.some((c) => b[c] !== undefined && b[c] !== (antes as Record<string, unknown>)[c]);
+      if (antes.publishedAt && mexeNoNome) {
+        throw new ErroDeNomenclatura(409, "Campanha publicada: o nome está congelado na Meta. Duplique para criar outra.", { campo: "name" });
+      }
+      const patch: Record<string, unknown> = {};
+      if (mexeNoNome) {
+        const m = await montarCampanha(r, {
+          expertId: b.expertId ?? antes.expertId,
+          productId: b.productId ?? antes.productId,
+          funnelId: b.funnelId ?? antes.funnelId,
+          offerId: b.offerId === undefined ? antes.offerId : b.offerId,
+          landingPageId: b.landingPageId === undefined ? antes.landingPageId : b.landingPageId,
+          lpValue: (b.lpValue ?? (antes.landingPageId ? undefined : (antes.lpValue as typeof LPMIX | typeof NA))) as typeof LPMIX | typeof NA | undefined,
+          year: b.year ?? antes.year,
+          temperature: b.temperature ?? antes.temperature,
+          auction: b.auction ?? antes.auction,
+          format: b.format ?? antes.format,
+          suffix: b.suffix === undefined ? antes.suffix : b.suffix,
+        });
+        Object.assign(patch, { ...m, fields: undefined });
+      }
+      if (b.notes !== undefined) patch.notes = b.notes;
+      if (b.metaCampaignId !== undefined) patch.metaCampaignId = b.metaCampaignId;
+      if (Object.keys(patch).length === 0) return { ...antes, ...(await rotulosDeCampanhas(r))(antes) };
+      const depois = await r.atualizar("campanhas", antes, patch as never, author);
+      return { ...depois, ...(await rotulosDeCampanhas(r))(depois) };
+    }),
+  );
+
+  fastify.post(
+    "/api/nomenclatura/campanhas/:id/publicar",
+    tentar(async (request) => {
+      const author = autor(request);
+      const { id } = parse(idParams, request.params);
+      const b = parse(z.object({ metaCampaignId: z.string().trim().max(40).optional() }).optional().default({}), request.body ?? {});
+      const r = repo();
+      const antes = await existente(r, "campanhas", id, "Campanha");
+      if (antes.publishedAt) return antes;
+      return r.atualizar("campanhas", antes, { publishedAt: new Date(), ...(b.metaCampaignId ? { metaCampaignId: b.metaCampaignId } : {}) } as never, author, "publish");
     }),
   );
 

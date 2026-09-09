@@ -14,18 +14,36 @@ type Linha = Record<string, unknown> & { id: string; active: boolean };
 type Log = { entity: string; entityId: string; action: string; before: unknown; after: unknown; author: string | null };
 
 function memoria() {
-  const t: Record<string, Linha[]> = { experts: [], produtos: [], funis: [], ofertas: [], lps: [], dicionario: [] };
+  const t: Record<string, Linha[]> = { experts: [], produtos: [], funis: [], ofertas: [], lps: [], dicionario: [], campanhas: [] };
   const campanhas: Record<string, unknown>[] = [];
   const changelog: Log[] = [];
   let seq = 0;
   const id = () => `00000000-0000-4000-8000-${String(++seq).padStart(12, "0")}`;
-  const NOME: Record<string, string> = { experts: "naming_experts", produtos: "naming_products", funis: "naming_funnels", ofertas: "naming_offers", lps: "naming_landing_pages", dicionario: "naming_dictionary_values" };
+  const NOME: Record<string, string> = { experts: "naming_experts", produtos: "naming_products", funis: "naming_funnels", ofertas: "naming_offers", lps: "naming_landing_pages", dicionario: "naming_dictionary_values", campanhas: "naming_campaigns" };
   const COL: Record<string, string> = { experts: "expertId", produtos: "productId", funis: "funnelId", ofertas: "offerId", lps: "landingPageId" };
 
   const ativos = (xs: Linha[], inativos: boolean) => (inativos ? xs : xs.filter((x) => x.active));
-  const contar = (col: string, v: unknown) => campanhas.filter((c) => c[col] === v).length;
+  const contar = (col: string, v: unknown) => [...campanhas, ...t.campanhas].filter((c) => c[col] === v).length;
+  const codeDe = (e: string, id: unknown) => String(t[e].find((x) => x.id === id)?.code ?? t[e].find((x) => x.id === id)?.slug ?? "?");
 
   const repo = {
+    async snapshot(inativos: boolean) {
+      const f = (xs: Linha[]) => (inativos ? xs : xs.filter((x) => x.active));
+      return {
+        experts: f(t.experts).map((e) => ({ code: e.code, active: e.active })),
+        produtos: f(t.produtos).map((p) => ({ expert: codeDe("experts", p.expertId), slug: p.slug, active: p.active })),
+        funis: f(t.funis).map((x) => ({ expert: codeDe("experts", x.expertId), code: x.code, active: x.active })),
+        ofertas: f(t.ofertas).map((x) => ({ expert: codeDe("experts", x.expertId), code: x.code, active: x.active })),
+        lps: f(t.lps).map((l) => ({ expert: codeDe("experts", l.expertId), product: codeDe("produtos", l.productId), funnel: codeDe("funis", l.funnelId), offer: codeDe("ofertas", l.offerId), code: l.code, active: l.active })),
+        valores: f(t.dicionario).map((v) => ({ type: v.type, value: v.value, active: v.active })),
+      };
+    },
+    campanhas: {
+      listar: async (f: Record<string, unknown>) => {
+        const itens = t.campanhas.filter((c) => ["expertId", "productId", "funnelId", "offerId", "year"].every((k) => !f[k] || c[k] === f[k]) && (!f.q || String(c.name).includes(String(f.q))));
+        return { itens, total: itens.length };
+      },
+    },
     async inserir(e: string, v: Record<string, unknown>, author: string | null) {
       const linha = { id: id(), active: true, ...v } as Linha;
       t[e].push(linha);
@@ -342,6 +360,91 @@ describe("rotas da nomenclatura", () => {
     mem.repo.inserir = original;
     expect(r.statusCode).toBe(409);
     expect(r.json().error).toContain("acabou de ser cadastrado");
+  });
+
+  // ─────────────── Story 47.3: campanhas, snapshot, validador ───────────────
+  async function dicionarioBase(app: FastifyInstance) {
+    for (const [type, values] of Object.entries({ year: ["2026"], temperature: ["hot"], auction: ["cbo"], format: ["videos"] })) {
+      for (const value of values) await app.inject({ method: "POST", url: "/api/nomenclatura/dicionario", payload: { type, value } });
+    }
+  }
+
+  it("AC 3/4 (servidor): POST campanha grava o nome gerado, ignora `name` do body, e o sufixo entra no fim", async () => {
+    const { bbe, churrasco, a01, of01 } = await cenario(app);
+    await dicionarioBase(app);
+    const lpa = (await app.inject({ method: "POST", url: "/api/nomenclatura/lps", payload: { expertId: bbe.id, productId: churrasco.id, funnelId: a01.id, offerId: of01.id } })).json();
+    const r = await app.inject({ method: "POST", url: "/api/nomenclatura/campanhas", payload: { expertId: bbe.id, productId: churrasco.id, funnelId: a01.id, offerId: of01.id, landingPageId: lpa.id, year: "2026", temperature: "hot", auction: "cbo", format: "videos", name: "hackeado" } });
+    expect(r.statusCode).toBe(201);
+    expect(r.json()).toMatchObject({ name: "bbe_churrasco_a01_of01_2026_hot_cbo_videos_lpa", offerValue: "of01", lpValue: "lpa", expertCode: "bbe", productSlug: "churrasco", lpSlug: "bbe-churrasco-a01-of01-lpa" });
+    const comSufixo = await app.inject({ method: "POST", url: "/api/nomenclatura/campanhas", payload: { expertId: bbe.id, productId: churrasco.id, funnelId: a01.id, offerId: null, landingPageId: null, lpValue: "na", year: "2026", temperature: "hot", auction: "cbo", format: "videos", suffix: "v02" } });
+    expect(comSufixo.json()).toMatchObject({ name: "bbe_churrasco_a01_ofmix_2026_hot_cbo_videos_na_v02", offerValue: "ofmix", offerId: null, lpValue: "na" });
+    expect(mem.changelog.filter((l) => l.entity === "naming_campaigns" && l.action === "create")).toHaveLength(2);
+    // agora a oferta está USADA: código trava, descrição não
+    const troca = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ofertas/${of01.id}`, payload: { code: "of07" } });
+    expect(troca.statusCode).toBe(409);
+    expect(troca.json()).toMatchObject({ usadoEm: 1 });
+  });
+
+  it("regra 8: valor fora do dicionário vigente e registro inativo não entram em nome novo", async () => {
+    const { bbe, churrasco, a01, of01, of02 } = await cenario(app);
+    await dicionarioBase(app);
+    const base = { expertId: bbe.id, productId: churrasco.id, funnelId: a01.id, offerId: of01.id, landingPageId: null, lpValue: "na", year: "2026", temperature: "hot", auction: "cbo" };
+    const formato = await app.inject({ method: "POST", url: "/api/nomenclatura/campanhas", payload: { ...base, format: "carrossel" } });
+    expect(formato.statusCode).toBe(422);
+    expect(formato.json().error).toContain('campo 8 (formato): "carrossel"');
+    await app.inject({ method: "POST", url: `/api/nomenclatura/ofertas/${of02.id}/desativar` });
+    const inativa = await app.inject({ method: "POST", url: "/api/nomenclatura/campanhas", payload: { ...base, offerId: of02.id, format: "videos" } });
+    expect(inativa.statusCode).toBe(422);
+    expect(inativa.json()).toMatchObject({ campo: "offerId" });
+    // ...mas o validador de nome antigo aceita a oferta inativa, com aviso
+    const val = await app.inject({ method: "POST", url: "/api/nomenclatura/validar-nome", payload: { name: "bbe_churrasco_a01_of02_2026_hot_cbo_videos_na" } });
+    expect(val.json()).toMatchObject({ valid: true, avisos: ["campo 4 (oferta): of02 está inativa"] });
+  });
+
+  it("AC 8 (campanha): produto de outro expert → 422; LP de outra oferta → 422; com ofmix a LP de qualquer oferta serve", async () => {
+    const { bbe, fz, churrasco, a01, of01, of02 } = await cenario(app);
+    await dicionarioBase(app);
+    const hamb = (await app.inject({ method: "POST", url: "/api/nomenclatura/produtos", payload: { expertId: fz.id, slug: "hamburguer", name: "H" } })).json();
+    const base = { expertId: bbe.id, productId: churrasco.id, funnelId: a01.id, offerId: of01.id, landingPageId: null, lpValue: "na", year: "2026", temperature: "hot", auction: "cbo", format: "videos" };
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/campanhas", payload: { ...base, productId: hamb.id } })).json()).toMatchObject({ campo: "productId" });
+    const lpDaOf02 = (await app.inject({ method: "POST", url: "/api/nomenclatura/lps", payload: { expertId: bbe.id, productId: churrasco.id, funnelId: a01.id, offerId: of02.id } })).json();
+    const errada = await app.inject({ method: "POST", url: "/api/nomenclatura/campanhas", payload: { ...base, landingPageId: lpDaOf02.id } });
+    expect(errada.statusCode).toBe(422);
+    expect(errada.json().error).toContain("outra oferta");
+    const ofmix = await app.inject({ method: "POST", url: "/api/nomenclatura/campanhas", payload: { ...base, offerId: null, landingPageId: lpDaOf02.id } });
+    expect(ofmix.statusCode).toBe(201);
+    expect(ofmix.json().name).toBe("bbe_churrasco_a01_ofmix_2026_hot_cbo_videos_lpa");
+  });
+
+  it("AC 11 (servidor): publicada não muda de nome (409); notas e id da Meta seguem editáveis; recalcula o nome enquanto não publicada", async () => {
+    const { bbe, churrasco, a01, of01 } = await cenario(app);
+    await dicionarioBase(app);
+    await app.inject({ method: "POST", url: "/api/nomenclatura/dicionario", payload: { type: "temperature", value: "cold" } });
+    const base = { expertId: bbe.id, productId: churrasco.id, funnelId: a01.id, offerId: of01.id, landingPageId: null, lpValue: "na", year: "2026", temperature: "hot", auction: "cbo", format: "videos" };
+    const c = (await app.inject({ method: "POST", url: "/api/nomenclatura/campanhas", payload: base })).json();
+    const fria = await app.inject({ method: "PATCH", url: `/api/nomenclatura/campanhas/${c.id}`, payload: { temperature: "cold" } });
+    expect(fria.json().name).toBe("bbe_churrasco_a01_of01_2026_cold_cbo_videos_na");
+    const pub = await app.inject({ method: "POST", url: `/api/nomenclatura/campanhas/${c.id}/publicar`, payload: { metaCampaignId: "123" } });
+    expect(pub.json().publishedAt).toBeTruthy();
+    expect(mem.changelog.at(-1)).toMatchObject({ action: "publish", entityId: c.id });
+    const congelada = await app.inject({ method: "PATCH", url: `/api/nomenclatura/campanhas/${c.id}`, payload: { temperature: "hot" } });
+    expect(congelada.statusCode).toBe(409);
+    expect(congelada.json().error).toContain("congelado");
+    const notas = await app.inject({ method: "PATCH", url: `/api/nomenclatura/campanhas/${c.id}`, payload: { notes: "campanha do fim de semana" } });
+    expect(notas.statusCode).toBe(200);
+    expect(notas.json().notes).toBe("campanha do fim de semana");
+    const lista = (await app.inject({ method: "GET", url: `/api/nomenclatura/campanhas?expertId=${bbe.id}` })).json();
+    expect(lista.total).toBe(1);
+    expect(lista.itens[0]).toMatchObject({ name: "bbe_churrasco_a01_of01_2026_cold_cbo_videos_na", funnelRotulo: "a01 — VSL direto para checkout", offerRotulo: "of01 — oferta com ticket médio de R$ 347" });
+  });
+
+  it("snapshot: só ativos por padrão, com inativos=1 inclui", async () => {
+    const { of02 } = await cenario(app);
+    await app.inject({ method: "POST", url: `/api/nomenclatura/ofertas/${of02.id}/desativar` });
+    const ativos = (await app.inject({ method: "GET", url: "/api/nomenclatura/dicionario/snapshot" })).json();
+    expect(ativos.ofertas.map((o: { code: string }) => o.code)).toEqual(["of01"]);
+    const todos = (await app.inject({ method: "GET", url: "/api/nomenclatura/dicionario/snapshot?inativos=1" })).json();
+    expect(todos.ofertas.map((o: { code: string; active: boolean }) => [o.code, o.active])).toEqual([["of01", true], ["of02", false]]);
   });
 
   it("id inexistente → 404; id malformado → 400", async () => {
