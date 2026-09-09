@@ -16,7 +16,9 @@
  */
 
 /** O nome que a pessoa digitou → o que vai ao banco. */
-export function limparNomeDaColecao(v: string | null | undefined): string | null {
+export function limparNomeDaColecao(
+  v: string | null | undefined,
+): string | null {
   const s = (v ?? "").replace(/\s+/g, " ").trim();
   return s ? s.slice(0, 120) : null;
 }
@@ -94,8 +96,52 @@ export function agruparPorAtributo<T extends PecaAgrupavel>(
 
   const ordenados = [...grupos.entries()]
     // Maior primeiro: um grupo de quinze diz mais sobre o acervo que um de um.
-    .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0], "pt-BR"))
+    .sort(
+      (a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0], "pt-BR"),
+    )
     .map(([valor, pecas]) => ({ valor, pecas }));
 
-  return sem.length > 0 ? [...ordenados, { valor: null, pecas: sem }] : ordenados;
+  return sem.length > 0
+    ? [...ordenados, { valor: null, pecas: sem }]
+    : ordenados;
+}
+
+/**
+ * Mover `id` para dentro de `novoPai` criaria um ciclo?
+ *
+ * ## Por que arrastar precisa de guarda
+ *
+ * Arrastar "anúncios" para dentro de "Black Friday" é trocar o `parent_id`.
+ * Nada no banco impede o inverso — pôr "Black Friday" dentro de "anúncios",
+ * que é filha dela. `parent_id` é uma FK para a mesma tabela, e um ciclo
+ * satisfaz a FK.
+ *
+ * O resultado é uma perda silenciosa: as duas somem da raiz, nenhuma aparece
+ * na listagem, e só SQL as acha. A recursão que monta a árvore no seletor tem
+ * um `Set` de visitados, então a tela não trava — ela só deixa de mostrar o
+ * ramo inteiro, sem dizer nada.
+ *
+ * `paiDe` é o mapa de toda a árvore: id → id da mãe (ou `null` na raiz). A
+ * checagem sobe do novo pai até a raiz; se esbarrar em `id` no caminho, é
+ * porque `id` é ancestral do destino, e pô-lo lá dentro fecharia o laço.
+ */
+export function criariaCiclo(
+  id: string,
+  novoPai: string | null,
+  paiDe: Map<string, string | null>,
+): boolean {
+  // Ir para a raiz nunca cicla: a raiz não tem para onde subir.
+  if (novoPai === null) return false;
+  // Ser pai de si mesma é o ciclo mais curto que existe.
+  if (novoPai === id) return true;
+
+  let atual: string | null = novoPai;
+  // O teto existe porque a árvore PODE já estar corrompida por um ciclo
+  // anterior. Sem ele, esta função — a que existe para impedir ciclos — seria
+  // o laço infinito.
+  for (let passos = 0; atual !== null && passos <= paiDe.size; passos++) {
+    if (atual === id) return true;
+    atual = paiDe.get(atual) ?? null;
+  }
+  return false;
 }

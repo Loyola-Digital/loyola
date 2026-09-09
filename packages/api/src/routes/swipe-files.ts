@@ -54,6 +54,7 @@ import {
   podeCatalogar,
   VOCAB_MAX,
 } from "../services/swipe-catalogo.js";
+import { criariaCiclo } from "../services/swipe-colecoes.js";
 import { contarFacetas } from "../services/swipe-facetas.js";
 import {
   agruparPorAtributo,
@@ -549,12 +550,51 @@ export default fp(async function swipeFilesRoutes(fastify) {
       .object({
         nome: z.string().max(200).optional(),
         descricao: z.string().max(2000).nullable().optional(),
+        /**
+         * Para onde a coleção vai — `null` é a raiz.
+         *
+         * É o que faz arrastar uma pasta para dentro de outra funcionar. Vem
+         * separado de `nome` de propósito: mover não renomeia, e uma tela que
+         * mandasse os dois juntos sobrescreveria o nome a cada arrasto.
+         */
+        parentId: z.string().uuid().nullable().optional(),
       })
       .safeParse(request.body);
     if (!p.success || !b.success)
       return reply.code(400).send({ error: "Dados inválidos" });
 
-    const patch: { nome?: string; descricao?: string | null } = {};
+    const patch: {
+      nome?: string;
+      descricao?: string | null;
+      parentId?: string | null;
+    } = {};
+
+    if (b.data.parentId !== undefined) {
+      /*
+       * A guarda contra ciclo.
+       *
+       * Arrastar uma coleção para dentro da própria filha (ou neta) fecha um
+       * laço: as duas somem da raiz, nenhuma aparece na listagem, e só SQL as
+       * acha. O banco não impede — `parent_id` é só uma FK para a mesma
+       * tabela, e um ciclo satisfaz a FK.
+       */
+      const arvore = await fastify.db
+        .select({
+          id: swipeCollections.id,
+          parentId: swipeCollections.parentId,
+        })
+        .from(swipeCollections);
+      const paiDe = new Map(arvore.map((c) => [c.id, c.parentId ?? null]));
+
+      if (criariaCiclo(p.data.id, b.data.parentId, paiDe)) {
+        return reply.code(400).send({
+          error:
+            "Não dá para pôr uma coleção dentro de si mesma ou de uma que já está dentro dela.",
+        });
+      }
+      patch.parentId = b.data.parentId;
+    }
+
     if (b.data.nome !== undefined) {
       const nome = limparNomeDaColecao(b.data.nome);
       if (!nome)

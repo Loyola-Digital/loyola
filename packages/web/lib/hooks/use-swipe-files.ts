@@ -196,6 +196,14 @@ export function useAtualizarColecao() {
       id: string;
       nome?: string;
       descricao?: string | null;
+      /**
+       * Para onde a coleção vai — `null` é a raiz.
+       *
+       * Vem separado de `nome` de propósito: mover não renomeia. Mandar os
+       * dois juntos faria cada arrasto sobrescrever o nome com o que estava
+       * na tela.
+       */
+      parentId?: string | null;
     }) =>
       apiClient(`${BASE}/colecoes/${id}`, {
         method: "PATCH",
