@@ -37,7 +37,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { LPMIX, NA, montarSlugDeLp, parseCampaignName } from "@loyola-x/shared";
 import { CAMPOS_DO_NOME, montarCampanha } from "../services/nomenclatura/campanhas.js";
 import { listarChangelog } from "../services/nomenclatura/changelog.js";
-import { violaUnicidade } from "../utils/db-errors.js";
+import { tabelaInexistente, violaUnicidade } from "../utils/db-errors.js";
 import {
   ErroDeNomenclatura,
   codigoValidado,
@@ -109,6 +109,14 @@ export default fp(async function nomenclaturaRoutes(fastify) {
         // interno" para quem só pediu um código que acabou de ser ocupado.
         if (violaUnicidade(e)) {
           return reply.code(409).send({ error: "Esse código acabou de ser cadastrado por outra pessoa. Recarregue a lista e escolha o próximo." });
+        }
+        // Banco sem as tabelas `naming_*`: a migration 0142 ainda não rodou aqui.
+        // É estado de ambiente, não defeito — e a tela precisa dizer isso.
+        if (tabelaInexistente(e)) {
+          return reply.code(503).send({
+            error: "As tabelas da nomenclatura ainda não existem neste banco — a migration 0142 não rodou aqui. Em produção ela entra no deploy da API.",
+            codigo: "migration-pendente",
+          });
         }
         throw e;
       }

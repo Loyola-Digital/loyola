@@ -447,6 +447,19 @@ describe("rotas da nomenclatura", () => {
     expect(todos.ofertas.map((o: { code: string; active: boolean }) => [o.code, o.active])).toEqual([["of01", true], ["of02", false]]);
   });
 
+  it("banco sem as tabelas (42P01) → 503 com a mensagem de migration pendente, não 500", async () => {
+    const original = mem.repo.experts.listar;
+    mem.repo.experts.listar = (async () => {
+      const erroDoDriver = Object.assign(new Error('relation "naming_experts" does not exist'), { code: "42P01" });
+      throw Object.assign(new Error("Failed query: select ..."), { cause: erroDoDriver });
+    }) as unknown as typeof original;
+    const r = await app.inject({ method: "GET", url: "/api/nomenclatura/experts" });
+    mem.repo.experts.listar = original;
+    expect(r.statusCode).toBe(503);
+    expect(r.json()).toMatchObject({ codigo: "migration-pendente" });
+    expect(r.json().error).toContain("migration 0142");
+  });
+
   it("id inexistente → 404; id malformado → 400", async () => {
     expect((await app.inject({ method: "PATCH", url: `/api/nomenclatura/funis/${USUARIO}`, payload: {} })).statusCode).toBe(404);
     expect((await app.inject({ method: "PATCH", url: "/api/nomenclatura/funis/abc", payload: {} })).statusCode).toBe(400);

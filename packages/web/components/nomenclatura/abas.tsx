@@ -36,7 +36,14 @@ function useReativar(recurso: Parameters<typeof useAlternarAtivo>[0]) {
   };
 }
 
-const mensagemDeErro = (e: unknown) => (e ? (erroDaApi(e).status === 404 ? "A API ainda não tem as rotas da nomenclatura — provavelmente está atrás do painel. Veja o aviso de versão no topo." : erroDaApi(e).mensagem) : null);
+const mensagemDeErro = (e: unknown) => {
+  if (!e) return null;
+  const err = erroDaApi(e);
+  if (err.status === 404) return "A API ainda não tem as rotas da nomenclatura — provavelmente está atrás do painel. Veja o aviso de versão no topo.";
+  // 503 `migration-pendente` já vem com a frase certa da API; 500 genérico ganha a pista de ambiente.
+  if (err.status === 500) return "Erro interno na API ao ler a nomenclatura. Se este ambiente ainda não recebeu a migration 0142, é isso — não é dado zerado.";
+  return err.mensagem;
+};
 
 export function AbaExperts({ podeEditar }: { podeEditar: boolean }) {
   const aba = useAba<Expert>();

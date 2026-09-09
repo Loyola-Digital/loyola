@@ -47,3 +47,16 @@ export function violaUnicidade(err: unknown, constraint?: string): boolean {
     );
   });
 }
+
+/** Codigo SQLSTATE de undefined_table. */
+const UNDEFINED_TABLE = "42P01";
+
+/**
+ * Diz se o erro e "a tabela nao existe" — o sintoma de rota nova rodando
+ * contra um banco onde a migration ainda nao entrou (Story 47.3: a API local
+ * aponta para um banco sem as `naming_*`). Sem isto o usuario ve "Erro
+ * interno do servidor" e ninguem sabe que e migration, nao defeito.
+ */
+export function tabelaInexistente(err: unknown): boolean {
+  return cadeiaDeCausas(err).some((elo) => elo.code === UNDEFINED_TABLE);
+}
