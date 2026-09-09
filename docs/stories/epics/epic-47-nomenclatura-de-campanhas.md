@@ -1,6 +1,6 @@
 # EPIC 47 — Nomenclatura de campanhas do perpétuo (Dicionário + Gerador)
 
-**Status:** 47.1 **InReview** (implementada em 2026-09-09, branch `feat/47.1-nomenclatura-modelo-e-api`, aguarda OK do dono do produto + gate do @qa) · 47.2–47.4 Ready · P1 (seed) aberta
+**Status:** 47.1 InReview (gate CONCERNS) · 47.2 **InReview** (implementada em 2026-09-09, branch `feat/47.2-nomenclatura-submenu-e-telas` empilhada na 47.1) · 47.3–47.4 Ready · P1 (seed) aberta · revisão das Etapas 1+2 com o dono do produto no local pendente
 **Origem:** especificação do dono do produto entregue em 2026-09-09 — guardada verbatim em `epic-47-especificacao-nomenclatura.md` (a **fonte de verdade** deste epic; toda AC abaixo rastreia para uma seção dela)
 **Owner:** @sm (stories, por delegação do pedido) → @po (validação) → @dev (implementação) → @qa (gate)
 **Criado:** 2026-09-09 pelo @sm (River). ⚠️ Estrutura de epic é atribuição do @pm (Morgan) — este documento foi criado junto com as stories porque o pedido chegou como spec pronta; o @pm valida ou reescreve a estrutura na primeira leitura.
@@ -63,7 +63,7 @@ Este epic põe dentro do Loyola X, em Configurações → Nomenclatura:
 | # | Story | Etapa da spec | Entrega | Pontos | Status |
 |---|---|---|---|---|---|
 | 47.1 | Modelo de dados, migration, seed e API do dicionário | 1 (+ API, D7) | 8 tabelas `naming_*`, serviço com normalização/sugestão/imutabilidade/exclusão/changelog, rotas CRUD `/api/nomenclatura/*`, seed idempotente, testes de servidor | 8 | **InReview** · gate **CONCERNS** (QA-471-02: sem banco real) · 53 testes · 9 reversões · branch `feat/47.1-nomenclatura-modelo-e-api` |
-| 47.2 | Submenu Nomenclatura e telas do Dicionário | 2 | entrada em `/settings`, 6 abas (Experts · Produtos · Funis · Ofertas · LPs · Valores fixos) com incluir/editar/excluir/desativar | 8 | **Ready** (GO 9/10) |
+| 47.2 | Submenu Nomenclatura e telas do Dicionário | 2 | entrada em `/settings`, 6 abas (Experts · Produtos · Funis · Ofertas · LPs · Valores fixos) com incluir/editar/excluir/desativar | 8 | **InReview** · 17 testes puros · web 1.142 · `next build` verde · validação visual pendente |
 | 47.3 | Gerador de nome de campanha, listagem e validador | 3 | `buildCampaignName`/`parseCampaignName` no `shared`, rotas de campanhas, tela do gerador com prévia colorida, publicar/duplicar, "Validar um nome existente" | 8 | **Ready** (GO 9/10) |
 | 47.4 | Suíte de aceite (15 critérios) e validação visual | 4 | matriz AC → teste, lacunas fechadas, roteiro visual executado nas duas telas, docs | 5 | **Ready** (GO 9/10) |
 
@@ -99,6 +99,7 @@ Nomenclatura de conjunto e anúncio · parâmetros de URL · integração Meta �
 |---|---|---|
 | 2026-09-09 | @sm (River) | Epic criado a partir da spec do dono do produto. Spec arquivada verbatim. Decisões D1–D9 registradas; D2 e D3 marcadas para confirmação do @po. Pré-condições P1–P3 declaradas. |
 | 2026-09-09 | @po (Pax) | 47.1 validada: GO 9,5/10 → Ready. D2 confirmada, D3 decidida (não-guest lê e escreve), P3 fechada. Sigla do expert imutável desde a criação (contradição da spec resolvida pelo lado estrito). |
+| 2026-09-09 | @dev (Dex) | 47.2 implementada e em InReview: entrada Nomenclatura em `/settings`, 6 abas do Dicionário, seção/aba na URL. Validação visual fica com o dono do produto. |
 | 2026-09-09 | @qa (Quinn) | Gate da 47.1: CONCERNS. QA-471-01 (corrida → 500) corrigido no gate; QA-471-02 aberto (nada gravado em Postgres real). Migration conferida contra `drizzle-kit generate`. |
 | 2026-09-09 | @dev (Dex) | 47.1 implementada e em InReview. Seed com `TODO(P1)` (só valores fixos entram até os `[PREENCHER]`). |
 | 2026-09-09 | @po (Pax) | 47.2/47.3/47.4 validadas: GO 9/10 cada → Ready. D10 (bump do contrato por story que cria rota) e D11 (normalização/slug no `shared` pela 47.1). Guest já é barrado pelo middleware (47.2 AC1 corrigida). Relatório consolidado em `docs/qa/validations/47.1-47.4-po-validation.md`. |
