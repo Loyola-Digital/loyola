@@ -55,12 +55,39 @@ export function chaveDaMatriz(projectId: string | null, ano: number) {
   return ["planner-anual", projectId, ano] as const;
 }
 
+/**
+ * De quanto em quanto tempo a matriz se atualiza sozinha.
+ *
+ * O calendário é editado por várias pessoas ao mesmo tempo — quem mexe numa
+ * célula precisa aparecer para quem está olhando, sem F5. Quinze segundos é
+ * curto o bastante para a mudança chegar antes de alguém refazer o trabalho, e
+ * longo o bastante para o payload não pesar: a matriz inteira são doze meses
+ * por esteira.
+ *
+ * O React Query NÃO dispara isto com a aba em segundo plano (o padrão de
+ * `refetchIntervalInBackground` é `false`), então quem deixou a tela aberta
+ * numa aba esquecida não gera requisição nenhuma.
+ */
+const INTERVALO_MS = 15_000;
+
+/**
+ * Curto de propósito, e por um motivo diferente do intervalo.
+ *
+ * O `staleTime` global é de cinco minutos. Com ele, VOLTAR para a aba não
+ * buscava nada — era a causa de precisar de F5 mesmo depois de trocar de
+ * janela e voltar. Dez segundos fazem o foco na janela valer como um pedido de
+ * atualização, que é o gesto natural de quem volta para conferir.
+ */
+const VALIDADE_MS = 10_000;
+
 export function useMatrizAnual(projectId: string | null, ano: number) {
   const api = useApiClient();
   return useQuery({
     queryKey: chaveDaMatriz(projectId, ano),
     queryFn: () => api<Matriz>(`${BASE}/${projectId}/${ano}`),
     enabled: Boolean(projectId),
+    refetchInterval: INTERVALO_MS,
+    staleTime: VALIDADE_MS,
   });
 }
 
@@ -69,7 +96,9 @@ export function useVocabularioAnual() {
   return useQuery({
     queryKey: ["planner-anual-vocabulario"],
     queryFn: () =>
-      api<{ grupos: string[]; categorias: string[]; funis: string[] }>(`${BASE}/vocabulario`),
+      api<{ grupos: string[]; categorias: string[]; funis: string[] }>(
+        `${BASE}/vocabulario`,
+      ),
     // O vocabulário é fixo no servidor: buscar uma vez por sessão basta.
     staleTime: Infinity,
   });
@@ -103,7 +132,12 @@ export function useGravarCelula(projectId: string | null, ano: number) {
           ? {
               esteiras: atual.esteiras.map((e) =>
                 e.id === trackId
-                  ? { ...e, meses: e.meses.map((m, i) => (i === mes - 1 ? celula : m)) }
+                  ? {
+                      ...e,
+                      meses: e.meses.map((m, i) =>
+                        i === mes - 1 ? celula : m,
+                      ),
+                    }
                   : e,
               ),
             }
@@ -124,17 +158,26 @@ export function useCriarEsteira(projectId: string | null, ano: number) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (dados: { grupo: string; nome?: string }) =>
-      api(`${BASE}/${projectId}/esteiras`, { method: "POST", body: JSON.stringify(dados) }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: chaveDaMatriz(projectId, ano) }),
+      api(`${BASE}/${projectId}/esteiras`, {
+        method: "POST",
+        body: JSON.stringify(dados),
+      }),
+    onSuccess: () =>
+      void qc.invalidateQueries({ queryKey: chaveDaMatriz(projectId, ano) }),
   });
 }
 
-export function useCriarEsteirasIniciais(projectId: string | null, ano: number) {
+export function useCriarEsteirasIniciais(
+  projectId: string | null,
+  ano: number,
+) {
   const api = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api(`${BASE}/${projectId}/esteiras/iniciais`, { method: "POST" }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: chaveDaMatriz(projectId, ano) }),
+    mutationFn: () =>
+      api(`${BASE}/${projectId}/esteiras/iniciais`, { method: "POST" }),
+    onSuccess: () =>
+      void qc.invalidateQueries({ queryKey: chaveDaMatriz(projectId, ano) }),
   });
 }
 
@@ -142,9 +185,20 @@ export function useAtualizarEsteira(projectId: string | null, ano: number) {
   const api = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...dados }: { id: string; grupo?: string; nome?: string }) =>
-      api(`${BASE}/esteiras/${id}`, { method: "PUT", body: JSON.stringify(dados) }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: chaveDaMatriz(projectId, ano) }),
+    mutationFn: ({
+      id,
+      ...dados
+    }: {
+      id: string;
+      grupo?: string;
+      nome?: string;
+    }) =>
+      api(`${BASE}/esteiras/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(dados),
+      }),
+    onSuccess: () =>
+      void qc.invalidateQueries({ queryKey: chaveDaMatriz(projectId, ano) }),
   });
 }
 
@@ -216,7 +270,9 @@ export function useExcluirEsteira(projectId: string | null, ano: number) {
   const api = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api(`${BASE}/esteiras/${id}`, { method: "DELETE" }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: chaveDaMatriz(projectId, ano) }),
+    mutationFn: (id: string) =>
+      api(`${BASE}/esteiras/${id}`, { method: "DELETE" }),
+    onSuccess: () =>
+      void qc.invalidateQueries({ queryKey: chaveDaMatriz(projectId, ano) }),
   });
 }
