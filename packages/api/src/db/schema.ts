@@ -4663,3 +4663,253 @@ export const swipeClickupAlerts = pgTable("swipe_clickup_alerts", {
     .defaultNow()
     .notNull(),
 });
+
+// ─────────────────────────────────────────────────────────────
+// Epic 47 — Nomenclatura de campanhas do perpétuo (Story 47.1)
+// ─────────────────────────────────────────────────────────────
+//
+// O nome de cada campanha de perpétuo no Meta segue nove campos separados por
+// `_` (`bbe_churrasco_a01_of01_2026_hot_cbo_videos_lpa`). O nome viaja na URL,
+// chega na planilha de vendas e é quebrado em nove colunas para cruzar
+// investimento com faturamento. Estas tabelas são o DICIONÁRIO de onde cada
+// campo sai — e a razão de o nome não poder mais ser digitado à mão.
+//
+// ## Por que `naming_` na frente
+//
+// `funnels` e `projects` já existem neste arquivo (Epic 10) e são outra coisa:
+// o funil-etapa do Loyola X. `campaigns` é coluna jsonb de `funnels`. O prefixo
+// segue a convenção do próprio arquivo (`swipe_*`, `planner_*`, `stage_*`).
+//
+// ## Por que os UNIQUE não têm `WHERE active`
+//
+// Regra 4 da spec: código nunca muda de significado nem é reaproveitado —
+// `of02` desativada continua sendo "a oferta de R$ 297" para sempre. A
+// unicidade inclui inativos de propósito; reaproveitar o código faria a
+// planilha somar duas ofertas diferentes na mesma coluna.
+//
+// ## Por que `ON DELETE RESTRICT` nos filhos
+//
+// Quem decide se pode apagar é o serviço (`services/nomenclatura/`), que
+// precisa listar O QUE referencia para a tela oferecer "Desativar" no lugar.
+// Cascata no banco apagaria em silêncio exatamente o que a regra manda mostrar.
+//
+// ## Por que `naming_campaigns` guarda texto além das FKs
+//
+// `year`, `temperature`, `auction`, `format`, `offer_value` e `lp_value` são o
+// texto que entrou no nome. Se um valor do dicionário for desativado depois, o
+// nome continua reconstruível — e `ofmix`, `lpmix` e `na` nem são registros.
+
+export const namingDictionaryTypeEnum = pgEnum("naming_dictionary_type", [
+  "year",
+  "temperature",
+  "auction",
+  "format",
+]);
+
+export const namingChangelogActionEnum = pgEnum("naming_changelog_action", [
+  "create",
+  "update",
+  "delete",
+  "deactivate",
+  "reactivate",
+  "publish",
+]);
+
+export const namingExperts = pgTable(
+  "naming_experts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    /** Sigla: 2–4 letras. Imutável desde a criação (spec § 4.1). */
+    code: varchar("code", { length: 4 }).notNull(),
+    name: varchar("name", { length: 120 }).notNull(),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("uq_naming_experts_code").on(t.code)],
+);
+
+export const namingProducts = pgTable(
+  "naming_products",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    expertId: uuid("expert_id")
+      .notNull()
+      .references(() => namingExperts.id, { onDelete: "restrict" }),
+    /** `[a-z0-9-]`, até 20. Único por expert. Imutável depois de usado. */
+    slug: varchar("slug", { length: 20 }).notNull(),
+    name: varchar("name", { length: 120 }).notNull(),
+    description: text("description"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("uq_naming_products_expert_slug").on(t.expertId, t.slug),
+    index("idx_naming_products_expert").on(t.expertId),
+  ],
+);
+
+export const namingFunnels = pgTable(
+  "naming_funnels",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    expertId: uuid("expert_id")
+      .notNull()
+      .references(() => namingExperts.id, { onDelete: "restrict" }),
+    /** `a01`…`a99`. Numeração POR EXPERT: `a01` do bbe e `a01` do fz coexistem. */
+    code: varchar("code", { length: 3 }).notNull(),
+    /** Obrigatória: é o que a pessoa lê no select (`a01 — VSL direto para checkout`). */
+    description: text("description").notNull(),
+    startedAt: date("started_at").notNull().defaultNow(),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("uq_naming_funnels_expert_code").on(t.expertId, t.code),
+    index("idx_naming_funnels_expert").on(t.expertId),
+  ],
+);
+
+export const namingOffers = pgTable(
+  "naming_offers",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    expertId: uuid("expert_id")
+      .notNull()
+      .references(() => namingExperts.id, { onDelete: "restrict" }),
+    /** `of01`…`of99`, por expert. `ofmix` NÃO é registro — é valor especial do gerador. */
+    code: varchar("code", { length: 4 }).notNull(),
+    /** Obrigatória: preço, parcelamento, bump, upsell, garantia, checkout. */
+    description: text("description").notNull(),
+    startedAt: date("started_at").notNull().defaultNow(),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("uq_naming_offers_expert_code").on(t.expertId, t.code),
+    index("idx_naming_offers_expert").on(t.expertId),
+  ],
+);
+
+export const namingLandingPages = pgTable(
+  "naming_landing_pages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    expertId: uuid("expert_id")
+      .notNull()
+      .references(() => namingExperts.id, { onDelete: "restrict" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => namingProducts.id, { onDelete: "restrict" }),
+    funnelId: uuid("funnel_id")
+      .notNull()
+      .references(() => namingFunnels.id, { onDelete: "restrict" }),
+    offerId: uuid("offer_id")
+      .notNull()
+      .references(() => namingOffers.id, { onDelete: "restrict" }),
+    /** `lpa`, `lpb`… Único dentro da combinação expert+produto+funil+oferta. */
+    code: varchar("code", { length: 3 }).notNull(),
+    /** GERADO pelo serviço: `bbe-churrasco-a01-of01-lpa`. Nunca aceito do cliente. */
+    slug: varchar("slug", { length: 80 }).notNull(),
+    url: text("url"),
+    description: text("description"),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("uq_naming_lps_combinacao_code").on(
+      t.expertId,
+      t.productId,
+      t.funnelId,
+      t.offerId,
+      t.code,
+    ),
+    uniqueIndex("uq_naming_lps_slug").on(t.slug),
+    index("idx_naming_lps_expert").on(t.expertId),
+  ],
+);
+
+export const namingDictionaryValues = pgTable(
+  "naming_dictionary_values",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    type: namingDictionaryTypeEnum("type").notNull(),
+    /** `[a-z0-9]`, único por tipo. Imutável depois de usado. */
+    value: varchar("value", { length: 20 }).notNull(),
+    description: text("description"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("uq_naming_dictionary_type_value").on(t.type, t.value)],
+);
+
+export const namingCampaigns = pgTable(
+  "naming_campaigns",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    expertId: uuid("expert_id")
+      .notNull()
+      .references(() => namingExperts.id, { onDelete: "restrict" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => namingProducts.id, { onDelete: "restrict" }),
+    funnelId: uuid("funnel_id")
+      .notNull()
+      .references(() => namingFunnels.id, { onDelete: "restrict" }),
+    /** `null` quando `offer_value = 'ofmix'`. */
+    offerId: uuid("offer_id").references(() => namingOffers.id, { onDelete: "restrict" }),
+    offerValue: varchar("offer_value", { length: 8 }).notNull(),
+    year: varchar("year", { length: 20 }).notNull(),
+    temperature: varchar("temperature", { length: 20 }).notNull(),
+    auction: varchar("auction", { length: 20 }).notNull(),
+    format: varchar("format", { length: 20 }).notNull(),
+    /** `null` quando `lp_value` é `lpmix` ou `na`. */
+    landingPageId: uuid("landing_page_id").references(() => namingLandingPages.id, {
+      onDelete: "restrict",
+    }),
+    lpValue: varchar("lp_value", { length: 8 }).notNull(),
+    /** `vNN`, só para distinguir campanhas idênticas no mesmo ano. Entra no fim. */
+    suffix: varchar("suffix", { length: 3 }),
+    /** GERADO e armazenado. Recalculado a cada gravação enquanto não publicada. */
+    name: varchar("name", { length: 160 }).notNull(),
+    /** Preenchido = nome congelado na Meta. Só "Duplicar" a partir daí. */
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    metaCampaignId: varchar("meta_campaign_id", { length: 40 }),
+    notes: text("notes"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_naming_campaigns_expert").on(t.expertId),
+    index("idx_naming_campaigns_name").on(t.name),
+  ],
+);
+
+/**
+ * Toda escrita em qualquer tabela `naming_*` deixa uma linha aqui (regra 7 da
+ * spec). Escrita por UMA função (`services/nomenclatura/changelog.ts`), nunca
+ * pelos handlers — senão o primeiro handler novo esquece, e o histórico deixa
+ * de ser confiável sem que nada acuse.
+ */
+export const namingChangelog = pgTable(
+  "naming_changelog",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    /** Nome da tabela (`naming_offers`, …). */
+    entity: varchar("entity", { length: 40 }).notNull(),
+    entityId: uuid("entity_id").notNull(),
+    action: namingChangelogActionEnum("action").notNull(),
+    before: jsonb("before").$type<Record<string, unknown> | null>(),
+    after: jsonb("after").$type<Record<string, unknown> | null>(),
+    author: uuid("author").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("idx_naming_changelog_entity").on(t.entity, t.entityId)],
+);
