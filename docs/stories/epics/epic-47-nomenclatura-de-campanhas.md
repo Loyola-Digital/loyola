@@ -1,6 +1,6 @@
 # EPIC 47 — Nomenclatura de campanhas do perpétuo (Dicionário + Gerador)
 
-**Status:** **Done** — na `main` (#827 + #829) e em produção; validado pelo dono do produto em 2026-09-09. Pendência única: P1 (valores do seed) — o dono cadastra pela tela.
+**Status:** Fase 1 **Done** (#827, #829, #830, #831) e em produção · **Fase 1.5 aberta:** 47.5 (classificação das legadas) e 47.6 (o cruzamento lê o vínculo) em Draft, a pedido do dono em 2026-09-09 · P1 (valores do seed) — o dono cadastra pela tela
 **Origem:** especificação do dono do produto entregue em 2026-09-09 — guardada verbatim em `epic-47-especificacao-nomenclatura.md` (a **fonte de verdade** deste epic; toda AC abaixo rastreia para uma seção dela)
 **Owner:** @sm (stories, por delegação do pedido) → @po (validação) → @dev (implementação) → @qa (gate)
 **Criado:** 2026-09-09 pelo @sm (River). ⚠️ Estrutura de epic é atribuição do @pm (Morgan) — este documento foi criado junto com as stories porque o pedido chegou como spec pronta; o @pm valida ou reescreve a estrutura na primeira leitura.
@@ -36,7 +36,7 @@ Este epic põe dentro do Loyola X, em Configurações → Nomenclatura:
 | ID | Decisão | Por quê |
 |---|---|---|
 | **D1** | **Todas as tabelas novas levam prefixo `naming_`**: `naming_experts`, `naming_products`, `naming_funnels`, `naming_offers`, `naming_landing_pages`, `naming_dictionary_values`, `naming_campaigns`, `naming_changelog`. | `funnels` e `projects` **já existem** em `packages/api/src/db/schema.ts` (Epic 10) e `campaigns` é coluna jsonb de `funnels`; existem ainda `planner_campaigns` e `campaign_log_entries`. A spec (§ 4) manda seguir a convenção do repo, e a convenção aqui é prefixar por domínio (`swipe_*`, `planner_*`, `stage_*`). |
-| **D2** ✅ confirmada pelo @po | **`naming_experts` é tabela própria, sem FK para `projects`.** | É o que a spec descreve (§ 4.1). Os quatro experts do seed (`bbe`, `fz`, `pps`, `dg`) coincidem com projetos existentes (BBE, FZ & MFB, PP, DG & CPDF), e ligar os dois seria útil na fase 2 (URL, cruzamento). **Não foi pedido** — Artigo IV. Fica registrado como extensão natural: um `project_id uuid NULL` pode entrar depois sem migração destrutiva. @po confirma. |
+| **D2** ✅ confirmada pelo @po · **reaberta na 47.5** (o dono respondeu "sim" para expert vir do projeto → `project_id` nulo entra) | **`naming_experts` é tabela própria, sem FK para `projects`.** | É o que a spec descreve (§ 4.1). Os quatro experts do seed (`bbe`, `fz`, `pps`, `dg`) coincidem com projetos existentes (BBE, FZ & MFB, PP, DG & CPDF), e ligar os dois seria útil na fase 2 (URL, cruzamento). **Não foi pedido** — Artigo IV. Fica registrado como extensão natural: um `project_id uuid NULL` pode entrar depois sem migração destrutiva. @po confirma. |
 | **D3** ✅ decidida pelo @po | **Permissões:** `guest` não vê o submenu e recebe `403` na API. **Qualquer outro papel lê e escreve** (criar/editar/excluir/desativar/publicar). | A spec não fala de papéis (Artigo IV — não inventar restrição). O dicionário é dado operacional do tráfego, e o enum do repo (`copywriter · strategist · manager · admin · guest`) não diz quem do time de tráfego tem qual papel. A proposta original do @sm (escrita só admin/manager/strategist) arriscava trancar justamente quem opera. Estreitar depois é uma linha em `permissoes.ts`. |
 | **D4** | **Rota `/settings/nomenclatura`**, entrada nova em `BASE_TABS` do `settings/layout.tsx`, com as seções internas (Dicionário › 6 abas · Campanhas › Gerador / Listagem / Validar) **na URL** via `?secao=&aba=`. | Regra 1 do Epic 46: aba ativa é contrato de URL; e o layout de settings já é abas-como-dado. Não inventar padrão novo. |
 | **D5** | **Changelog é tabela nova** (`naming_changelog`), escrito por **uma** camada de serviço (`packages/api/src/services/nomenclatura/`), nunca nos handlers. `author` = `users.id` (a API já resolve `request.userId` pelo Clerk). | Spec § 4.8. A `user_activity` existente é contador de adesão, não trilha de auditoria — não serve de base. |
@@ -66,6 +66,9 @@ Este epic põe dentro do Loyola X, em Configurações → Nomenclatura:
 | 47.2 | Submenu Nomenclatura e telas do Dicionário | 2 | entrada em `/settings`, 6 abas (Experts · Produtos · Funis · Ofertas · LPs · Valores fixos) com incluir/editar/excluir/desativar | 8 | **Done** · gate PASS |
 | 47.3 | Gerador de nome de campanha, listagem e validador | 3 | `buildCampaignName`/`parseCampaignName` no `shared`, rotas de campanhas, tela do gerador com prévia colorida, publicar/duplicar, "Validar um nome existente" | 8 | **Done** · gate PASS |
 | 47.4 | Suíte de aceite (15 critérios) e validação visual | 4 | matriz AC → teste, lacunas fechadas, roteiro visual executado nas duas telas, docs | 5 | **Done** · gate PASS |
+
+| 47.5 | Classificação de campanhas legadas do perpétuo | — (pedido pós-validação) | expert ↔ projeto (fecha a D2), `origin`/`meta_campaign_name` em campanhas, decisões, filtro por token, parser de sugestão, aba Legadas, contrato 9 | 8 | Draft |
+| 47.6 | O cruzamento investimento × faturamento lê o vínculo | — | mapa `campaign_id → 9 campos`, agrupador por dimensão no perpétuo com "não classificada" e cobertura, colar id da Meta | 8 | Draft (precisa do @architect) |
 
 Arquivos: `docs/stories/47.1.nomenclatura-modelo-de-dados-e-api.md` · `docs/stories/47.2.nomenclatura-submenu-e-telas-do-dicionario.md` · `docs/stories/47.3.nomenclatura-gerador-de-nome-de-campanha.md` · `docs/stories/47.4.nomenclatura-suite-de-aceite-e-validacao-visual.md`
 
@@ -111,6 +114,7 @@ Nomenclatura de conjunto e anúncio · parâmetros de URL · integração Meta �
 |---|---|---|
 | 2026-09-09 | @sm (River) | Epic criado a partir da spec do dono do produto. Spec arquivada verbatim. Decisões D1–D9 registradas; D2 e D3 marcadas para confirmação do @po. Pré-condições P1–P3 declaradas. |
 | 2026-09-09 | @po (Pax) | 47.1 validada: GO 9,5/10 → Ready. D2 confirmada, D3 decidida (não-guest lê e escreve), P3 fechada. Sigla do expert imutável desde a criação (contradição da spec resolvida pelo lado estrito). |
+| 2026-09-09 | @sm (River) | Fase 1.5: stories 47.5 (legadas) e 47.6 (cruzamento) criadas a partir do pedido do dono e das 6 respostas. Medição: 51 candidatas, 32 com gasto (R$ 40,9k). |
 | 2026-09-09 | @po (Pax) | Epic fechado: validação visual do dono em produção concluída, gates 47.2–47.4 promovidos a PASS, stories Done. P1 fica como pendência operacional (cadastro pela tela). |
 | 2026-09-09 | @devops (Gage) | Rebase na `main` (7c026676, sem conflito), push e PR #827 com a leva inteira. **Merge por squash `a114f33b`** com autorização do dono; ClickUp 4× done. |
 | 2026-09-09 | @dev (Dex) | Follow-up da validação visual: DV1 (botão Nova campanha + ações com texto + saída explícita nos modos editar/duplicar + reset do form uma vez por id), DV2 (identidade em linhas), DV3 (sub-aba Slug de LP). |
