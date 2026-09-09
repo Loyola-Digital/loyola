@@ -36,6 +36,7 @@ import fp from "fastify-plugin";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { montarSlugDeLp } from "@loyola-x/shared";
 import { listarChangelog } from "../services/nomenclatura/changelog.js";
+import { violaUnicidade } from "../utils/db-errors.js";
 import {
   ErroDeNomenclatura,
   codigoValidado,
@@ -99,6 +100,14 @@ export default fp(async function nomenclaturaRoutes(fastify) {
         return await fn(request, reply);
       } catch (e) {
         if (e instanceof ErroDeNomenclatura) return reply.code(e.status).send(e.corpo());
+        // Gate do @qa (QA-471-01): a checagem "já existe?" e o INSERT não são
+        // atômicos. Duas pessoas cadastrando `of03` ao mesmo tempo passam as
+        // duas pela checagem e a segunda estoura o UNIQUE do banco — que é a
+        // garantia de verdade (regra 4). Sem isto, isso virava 500 "Erro
+        // interno" para quem só pediu um código que acabou de ser ocupado.
+        if (violaUnicidade(e)) {
+          return reply.code(409).send({ error: "Esse código acabou de ser cadastrado por outra pessoa. Recarregue a lista e escolha o próximo." });
+        }
         throw e;
       }
     };

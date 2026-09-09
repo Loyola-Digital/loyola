@@ -330,6 +330,20 @@ describe("rotas da nomenclatura", () => {
     expect(mem.changelog.at(-1)).toMatchObject({ action: "delete", entityId: of01.id });
   });
 
+  it("QA-471-01: UNIQUE estourado na corrida entre checagem e INSERT vira 409, não 500", async () => {
+    const { bbe } = await cenario(app);
+    // O repositório em memória "perde a corrida": a checagem não viu of03, o banco viu.
+    const original = mem.repo.inserir;
+    mem.repo.inserir = (async () => {
+      const erroDoDriver = Object.assign(new Error('duplicate key value violates unique constraint "uq_naming_offers_expert_code"'), { code: "23505", constraint: "uq_naming_offers_expert_code" });
+      throw Object.assign(new Error("Failed query: insert into naming_offers"), { cause: erroDoDriver });
+    }) as typeof original;
+    const r = await app.inject({ method: "POST", url: "/api/nomenclatura/ofertas", payload: { expertId: bbe.id, description: "corrida" } });
+    mem.repo.inserir = original;
+    expect(r.statusCode).toBe(409);
+    expect(r.json().error).toContain("acabou de ser cadastrado");
+  });
+
   it("id inexistente → 404; id malformado → 400", async () => {
     expect((await app.inject({ method: "PATCH", url: `/api/nomenclatura/funis/${USUARIO}`, payload: {} })).statusCode).toBe(404);
     expect((await app.inject({ method: "PATCH", url: "/api/nomenclatura/funis/abc", payload: {} })).statusCode).toBe(400);
