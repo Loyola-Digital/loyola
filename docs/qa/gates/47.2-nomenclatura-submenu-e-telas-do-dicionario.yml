@@ -7,7 +7,8 @@ revisadoPor: "@qa (Quinn)"
 revisadoEm: "2026-09-09"
 arquivos: "14 novos/modificados — ver File List"
 
-decisao: CONCERNS
+decisao: PASS  # promovido em 2026-09-09: validação visual feita pelo dono do produto em produção (#827 + #829)
+historico: "CONCERNS em 2026-09-09 (só pela AC18); PASS em 2026-09-09 após o dono do produto validar em produção — três divergências (DV1–DV3) corrigidas na #829, nenhuma outra reportada."
 condicional: >
   O código está certo: 17 testes puros, 3 reversões, web 1.156/1.156, `next
   build` verde, lint limpo. O que segura o PASS é a regra do Epic 46 —
@@ -62,8 +63,8 @@ achados:
     correcao: "`useId()`."
   - id: QA-472-03
     severidade: medium
-    status: aberto
-    o_que: "AC18 — validação visual não executada. Roteiro bloco B (14 passos) com o dono do produto."
+    status: resolvido
+    o_que: "AC18 — validação visual executada pelo dono do produto em produção; DV1/DV2 corrigidos na #829."
 
 os7checks:
   code_review: "✅"

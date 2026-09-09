@@ -1,6 +1,6 @@
 # EPIC 47 — Nomenclatura de campanhas do perpétuo (Dicionário + Gerador)
 
-**Status:** **MERGED na `main`** (PR #827, squash `a114f33b`, 2026-09-09) · em produção · validação visual do dono em andamento em produção — 3 divergências no primeiro relato (DV1–DV3 no roteiro), follow-up em PR · migration 0142 e seed **em produção** · P1 (valores do seed) aberta · **roteiro visual de 37 passos aguarda o dono do produto** · gates: 47.1 **PASS** · 47.2/47.3/47.4 **CONCERNS** (só pela validação visual pendente)
+**Status:** **Done** — na `main` (#827 + #829) e em produção; validado pelo dono do produto em 2026-09-09. Pendência única: P1 (valores do seed) — o dono cadastra pela tela.
 **Origem:** especificação do dono do produto entregue em 2026-09-09 — guardada verbatim em `epic-47-especificacao-nomenclatura.md` (a **fonte de verdade** deste epic; toda AC abaixo rastreia para uma seção dela)
 **Owner:** @sm (stories, por delegação do pedido) → @po (validação) → @dev (implementação) → @qa (gate)
 **Criado:** 2026-09-09 pelo @sm (River). ⚠️ Estrutura de epic é atribuição do @pm (Morgan) — este documento foi criado junto com as stories porque o pedido chegou como spec pronta; o @pm valida ou reescreve a estrutura na primeira leitura.
@@ -62,10 +62,10 @@ Este epic põe dentro do Loyola X, em Configurações → Nomenclatura:
 
 | # | Story | Etapa da spec | Entrega | Pontos | Status |
 |---|---|---|---|---|---|
-| 47.1 | Modelo de dados, migration, seed e API do dicionário | 1 (+ API, D7) | 8 tabelas `naming_*`, serviço com normalização/sugestão/imutabilidade/exclusão/changelog, rotas CRUD `/api/nomenclatura/*`, seed idempotente, testes de servidor | 8 | **InReview** · gate **CONCERNS** (QA-471-02: sem banco real) · 53 testes · 9 reversões · branch `feat/47.1-nomenclatura-modelo-e-api` |
-| 47.2 | Submenu Nomenclatura e telas do Dicionário | 2 | entrada em `/settings`, 6 abas (Experts · Produtos · Funis · Ofertas · LPs · Valores fixos) com incluir/editar/excluir/desativar | 8 | **InReview** · 17 testes puros · web 1.142 · `next build` verde · validação visual pendente |
-| 47.3 | Gerador de nome de campanha, listagem e validador | 3 | `buildCampaignName`/`parseCampaignName` no `shared`, rotas de campanhas, tela do gerador com prévia colorida, publicar/duplicar, "Validar um nome existente" | 8 | **InReview** · 73 testes API · 31 web · `next build` verde · 9 reversões · validação visual pendente |
-| 47.4 | Suíte de aceite (15 critérios) e validação visual | 4 | matriz AC → teste, lacunas fechadas, roteiro visual executado nas duas telas, docs | 5 | **InReview** · matriz 15/15 · 26 reversões · roteiro visual aguarda execução |
+| 47.1 | Modelo de dados, migration, seed e API do dicionário | 1 (+ API, D7) | 8 tabelas `naming_*`, serviço com normalização/sugestão/imutabilidade/exclusão/changelog, rotas CRUD `/api/nomenclatura/*`, seed idempotente, testes de servidor | 8 | **Done** · gate PASS |
+| 47.2 | Submenu Nomenclatura e telas do Dicionário | 2 | entrada em `/settings`, 6 abas (Experts · Produtos · Funis · Ofertas · LPs · Valores fixos) com incluir/editar/excluir/desativar | 8 | **Done** · gate PASS |
+| 47.3 | Gerador de nome de campanha, listagem e validador | 3 | `buildCampaignName`/`parseCampaignName` no `shared`, rotas de campanhas, tela do gerador com prévia colorida, publicar/duplicar, "Validar um nome existente" | 8 | **Done** · gate PASS |
+| 47.4 | Suíte de aceite (15 critérios) e validação visual | 4 | matriz AC → teste, lacunas fechadas, roteiro visual executado nas duas telas, docs | 5 | **Done** · gate PASS |
 
 Arquivos: `docs/stories/47.1.nomenclatura-modelo-de-dados-e-api.md` · `docs/stories/47.2.nomenclatura-submenu-e-telas-do-dicionario.md` · `docs/stories/47.3.nomenclatura-gerador-de-nome-de-campanha.md` · `docs/stories/47.4.nomenclatura-suite-de-aceite-e-validacao-visual.md`
 
@@ -111,6 +111,7 @@ Nomenclatura de conjunto e anúncio · parâmetros de URL · integração Meta �
 |---|---|---|
 | 2026-09-09 | @sm (River) | Epic criado a partir da spec do dono do produto. Spec arquivada verbatim. Decisões D1–D9 registradas; D2 e D3 marcadas para confirmação do @po. Pré-condições P1–P3 declaradas. |
 | 2026-09-09 | @po (Pax) | 47.1 validada: GO 9,5/10 → Ready. D2 confirmada, D3 decidida (não-guest lê e escreve), P3 fechada. Sigla do expert imutável desde a criação (contradição da spec resolvida pelo lado estrito). |
+| 2026-09-09 | @po (Pax) | Epic fechado: validação visual do dono em produção concluída, gates 47.2–47.4 promovidos a PASS, stories Done. P1 fica como pendência operacional (cadastro pela tela). |
 | 2026-09-09 | @devops (Gage) | Rebase na `main` (7c026676, sem conflito), push e PR #827 com a leva inteira. **Merge por squash `a114f33b`** com autorização do dono; ClickUp 4× done. |
 | 2026-09-09 | @dev (Dex) | Follow-up da validação visual: DV1 (botão Nova campanha + ações com texto + saída explícita nos modos editar/duplicar + reset do form uma vez por id), DV2 (identidade em linhas), DV3 (sub-aba Slug de LP). |
 | 2026-09-09 | @qa (Quinn) | Gates: 47.1 → PASS; 47.2, 47.3, 47.4 → CONCERNS só pela AC18 (roteiro do dono). Prova no banco real (11 checks, dados `zz` apagados). Corrigidos no gate: leituras em série na transação da cascata (pg@9), reset do FormLp no gerador, ids duplicados, typo. |

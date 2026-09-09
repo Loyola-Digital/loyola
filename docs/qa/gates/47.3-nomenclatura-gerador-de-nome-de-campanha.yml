@@ -6,7 +6,8 @@ autor: "@dev (Dex)"
 revisadoPor: "@qa (Quinn)"
 revisadoEm: "2026-09-09"
 
-decisao: CONCERNS
+decisao: PASS  # promovido em 2026-09-09: validação visual feita pelo dono do produto em produção (#827 + #829)
+historico: "CONCERNS em 2026-09-09 (só pela AC18); PASS em 2026-09-09 após o dono do produto validar em produção — três divergências (DV1–DV3) corrigidas na #829, nenhuma outra reportada."
 condicional: >
   Código e regras certos e provados também no banco real (montarCampanha,
   changelog update/publish, snapshot só-ativos × com-inativos). Segura o PASS
@@ -60,8 +61,8 @@ achados:
     o_que: "Confirmações de 'Marcar como publicada' usam `confirm()` nativo (decisão declarada pelo @dev). Funciona; destoa do resto da tela. Trocar por AlertDialog quando houver um segundo caso."
   - id: QA-473-04
     severidade: medium
-    status: aberto
-    o_que: "AC18 — validação visual (bloco C) e D1–D4 pendentes com o dono do produto."
+    status: resolvido
+    o_que: "AC18 — validação visual executada pelo dono em produção; DV1–DV3 na #829. D1–D4 conferidos pelo @qa com dados `zz` no banco real."
 
 os7checks:
   code_review: "✅ QA-473-01 achado e corrigido na leitura"
