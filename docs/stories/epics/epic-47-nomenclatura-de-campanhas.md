@@ -1,6 +1,6 @@
 # EPIC 47 — Nomenclatura de campanhas do perpétuo (Dicionário + Gerador)
 
-**Status:** as 4 stories **InReview** (2026-09-09; branches empilhadas `feat/47.1…` → `feat/47.4-nomenclatura-suite-de-aceite`) · migration 0142 e seed **em produção** · P1 (valores do seed) aberta · **roteiro visual de 37 passos aguarda o dono do produto** · gates: 47.1 **PASS** · 47.2/47.3/47.4 **CONCERNS** (só pela validação visual pendente)
+**Status:** as 4 stories **InReview** · **PR #827 aberta** (`feat/47.4-nomenclatura-suite-de-aceite` → `main`, rebased em `7c026676`) · migration 0142 e seed **em produção** · P1 (valores do seed) aberta · **roteiro visual de 37 passos aguarda o dono do produto** · gates: 47.1 **PASS** · 47.2/47.3/47.4 **CONCERNS** (só pela validação visual pendente)
 **Origem:** especificação do dono do produto entregue em 2026-09-09 — guardada verbatim em `epic-47-especificacao-nomenclatura.md` (a **fonte de verdade** deste epic; toda AC abaixo rastreia para uma seção dela)
 **Owner:** @sm (stories, por delegação do pedido) → @po (validação) → @dev (implementação) → @qa (gate)
 **Criado:** 2026-09-09 pelo @sm (River). ⚠️ Estrutura de epic é atribuição do @pm (Morgan) — este documento foi criado junto com as stories porque o pedido chegou como spec pronta; o @pm valida ou reescreve a estrutura na primeira leitura.
@@ -111,6 +111,7 @@ Nomenclatura de conjunto e anúncio · parâmetros de URL · integração Meta �
 |---|---|---|
 | 2026-09-09 | @sm (River) | Epic criado a partir da spec do dono do produto. Spec arquivada verbatim. Decisões D1–D9 registradas; D2 e D3 marcadas para confirmação do @po. Pré-condições P1–P3 declaradas. |
 | 2026-09-09 | @po (Pax) | 47.1 validada: GO 9,5/10 → Ready. D2 confirmada, D3 decidida (não-guest lê e escreve), P3 fechada. Sigla do expert imutável desde a criação (contradição da spec resolvida pelo lado estrito). |
+| 2026-09-09 | @devops (Gage) | Rebase na `main` (7c026676, sem conflito), push e PR #827 com a leva inteira. |
 | 2026-09-09 | @qa (Quinn) | Gates: 47.1 → PASS; 47.2, 47.3, 47.4 → CONCERNS só pela AC18 (roteiro do dono). Prova no banco real (11 checks, dados `zz` apagados). Corrigidos no gate: leituras em série na transação da cascata (pg@9), reset do FormLp no gerador, ids duplicados, typo. |
 | 2026-09-09 | @dev (Dex) | 47.4 em InReview: matriz 15/15 × teste × reversão, 6 testes de lacuna, roteiro visual de 37 passos (execução com o dono do produto). |
 | 2026-09-09 | @dev (Dex) | Migration 0142 aplicada em produção com autorização do dono do produto (QA-471-02 resolvida); seed 2× = 9 valores fixos, 0 duplicatas. Local passa a funcionar de ponta a ponta. |
