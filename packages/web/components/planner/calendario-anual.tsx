@@ -24,7 +24,14 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   useAtualizarEsteira,
@@ -110,7 +117,57 @@ const ALTURA_CAMPO = 22;
 const ALTURA_FREQUENCIA = 20;
 const ALTURA_LINHA = ALTURA_FREQUENCIA + ALTURA_CAMPO * 3 + 14;
 
-/** Um campo de texto que só avisa quando a pessoa sai dele. */
+/**
+ * Diz que a tela está viva.
+ *
+ * A matriz se atualiza sozinha, e uma tela que muda sem ninguém mexer levanta a
+ * dúvida oposta: "será que ISTO está atualizado?". Sem um sinal, a saída de
+ * quem duvida é o F5 — que é o gesto que a atualização automática existe para
+ * aposentar.
+ *
+ * Fica em segundos até o minuto, porque é a escala do intervalo: "há 45s" diz
+ * que acabou de conferir; "há 1 min" já pediria atenção.
+ */
+function SeloDeAtualizacao({
+  emAndamento,
+  quando,
+}: {
+  emAndamento: boolean;
+  quando: number;
+}) {
+  const [agora, setAgora] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setAgora(Date.now()), 5_000);
+    return () => clearInterval(t);
+  }, []);
+
+  if (!quando) return null;
+  const seg = Math.max(0, Math.round((agora - quando) / 1000));
+  const texto = emAndamento
+    ? "atualizando…"
+    : seg < 60
+      ? `há ${seg}s`
+      : `há ${Math.floor(seg / 60)} min`;
+
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[10px] text-muted-foreground"
+      title="O calendário se atualiza sozinho — não precisa recarregar a página."
+    >
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${
+          emAndamento ? "animate-pulse bg-primary" : "bg-muted-foreground/40"
+        }`}
+      />
+      {texto}
+    </span>
+  );
+}
+
+/**
+ * Um campo de texto que só avisa quando a pessoa sai dele — e que não se deixa
+ * sobrescrever enquanto está sendo digitado.
+ */
 function Texto({
   valor,
   onGravar,
@@ -123,15 +180,38 @@ function Texto({
   className?: string;
 }) {
   const [local, setLocal] = useState(valor);
-  // Só reconcilia quando o valor de fora muda de verdade: sem isto, a resposta
-  // do servidor sobrescreveria o que a pessoa digitou desde então.
-  useEffect(() => setLocal(valor), [valor]);
+
+  /**
+   * Enquanto o cursor está AQUI, nada de fora entra.
+   *
+   * A matriz se atualiza sozinha a cada quinze segundos para mostrar o que
+   * outra pessoa mexeu. Sem esta trava, o refetch chegava no meio de uma frase
+   * e a substituía pelo que está gravado — a pessoa via o próprio texto sumir
+   * enquanto digitava, sem ter feito nada.
+   *
+   * `ref` e não `state` porque isto não desenha nada: virar `state` faria o
+   * campo renderizar de novo a cada foco, e o cursor pularia para o fim.
+   */
+  const editando = useRef(false);
+  useEffect(() => {
+    if (!editando.current) setLocal(valor);
+  }, [valor]);
 
   return (
     <input
       value={local}
       onChange={(e) => setLocal(e.target.value)}
-      onBlur={() => local !== valor && onGravar(local)}
+      onFocus={() => {
+        editando.current = true;
+      }}
+      onBlur={() => {
+        editando.current = false;
+        // Reconcilia na saída: o que chegou enquanto se digitava foi ignorado,
+        // e sem isto a célula ficaria mostrando um valor velho até o próximo
+        // refetch.
+        if (local !== valor) onGravar(local);
+        else setLocal(valor);
+      }}
       onKeyDown={(e) => {
         if (e.key === "Enter") e.currentTarget.blur();
         // Esc devolve o valor gravado — a saída sem consequência de quem
@@ -223,7 +303,10 @@ function Celula({
             className="text-[11px] font-medium"
           />
         </div>
-        <div style={{ height: ALTURA_CAMPO }} className="flex items-center border-t border-border/30">
+        <div
+          style={{ height: ALTURA_CAMPO }}
+          className="flex items-center border-t border-border/30"
+        >
           <Escolha
             valor={celula.categoria ?? ""}
             opcoes={CATEGORIAS}
@@ -231,7 +314,10 @@ function Celula({
             placeholder="—"
           />
         </div>
-        <div style={{ height: ALTURA_CAMPO }} className="flex items-center border-t border-border/30">
+        <div
+          style={{ height: ALTURA_CAMPO }}
+          className="flex items-center border-t border-border/30"
+        >
           <Escolha
             valor={celula.funil ?? ""}
             opcoes={FUNIS}
@@ -266,7 +352,10 @@ function ColunaDaEsteira({
       className="group flex shrink-0 flex-col border-r border-border bg-background px-2 pb-1.5"
       style={{ width: LARGURA_ESTEIRA - LARGURA_FAIXA, height: ALTURA_LINHA }}
     >
-      <div style={{ height: ALTURA_FREQUENCIA }} className="flex items-center gap-1">
+      <div
+        style={{ height: ALTURA_FREQUENCIA }}
+        className="flex items-center gap-1"
+      >
         <Texto
           valor={esteira.nome}
           onGravar={onRenomear}
@@ -368,9 +457,16 @@ function BlocoDoGrupo({
 
       <div className="flex flex-col">
         {esteiras.map((e) => (
-          <div key={e.id} className="flex border-b border-border/40 last:border-b-0">
+          <div
+            key={e.id}
+            className="flex border-b border-border/40 last:border-b-0"
+          >
             {e.meses.map((m, i) => (
-              <Celula key={i} celula={m} onGravar={(c) => onGravarCelula(e.id, i + 1, c)} />
+              <Celula
+                key={i}
+                celula={m}
+                onGravar={(c) => onGravarCelula(e.id, i + 1, c)}
+              />
             ))}
           </div>
         ))}
@@ -407,7 +503,10 @@ function PainelDaFaixa({
   const [cor, setCor] = useState(grupo.cor);
   const espera = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => () => void (espera.current && clearTimeout(espera.current)), []);
+  useEffect(
+    () => () => void (espera.current && clearTimeout(espera.current)),
+    [],
+  );
 
   const corAoVivo = (c: string) => {
     setCor(c);
@@ -416,7 +515,10 @@ function PainelDaFaixa({
   };
 
   const LARGURA = 248;
-  const esquerda = Math.min(Math.max(8, x + 10), window.innerWidth - LARGURA - 8);
+  const esquerda = Math.min(
+    Math.max(8, x + 10),
+    window.innerWidth - LARGURA - 8,
+  );
   const topo = Math.min(Math.max(8, y - 20), window.innerHeight - 210);
 
   return (
@@ -433,7 +535,9 @@ function PainelDaFaixa({
           autoFocus
           value={nome}
           onChange={(e) => setNome(e.target.value)}
-          onBlur={() => nome.trim() !== grupo.rotulo && onGravar({ rotulo: nome })}
+          onBlur={() =>
+            nome.trim() !== grupo.rotulo && onGravar({ rotulo: nome })
+          }
           onKeyDown={(e) => {
             if (e.key === "Enter") e.currentTarget.blur();
             if (e.key === "Escape") {
@@ -504,7 +608,10 @@ export function CalendarioAnual({
   ano: number;
   onMudarAno: (a: number) => void;
 }) {
-  const { data, isLoading } = useMatrizAnual(projectId, ano);
+  const { data, isLoading, isFetching, dataUpdatedAt } = useMatrizAnual(
+    projectId,
+    ano,
+  );
   const gravar = useGravarCelula(projectId, ano);
   const criar = useCriarEsteira(projectId, ano);
   const iniciais = useCriarEsteirasIniciais(projectId, ano);
@@ -549,8 +656,9 @@ export function CalendarioAnual({
       <div className="rounded-xl border border-dashed border-border/40 p-10 text-center">
         <p className="text-sm font-medium">Nenhuma esteira nesta empresa</p>
         <p className="mx-auto mt-1 max-w-md text-[12px] text-muted-foreground">
-          Uma esteira é o que roda ao longo do ano — lançamento, perpétuo, webinar diário. Comece
-          com as seis do calendário que o time já usa e ajuste depois.
+          Uma esteira é o que roda ao longo do ano — lançamento, perpétuo,
+          webinar diário. Comece com as seis do calendário que o time já usa e
+          ajuste depois.
         </p>
         <button
           type="button"
@@ -558,7 +666,11 @@ export function CalendarioAnual({
             iniciais
               .mutateAsync()
               .then(() => toast.success("Esteiras criadas"))
-              .catch((e) => toast.error(e instanceof Error ? e.message : "Não consegui criar"))
+              .catch((e) =>
+                toast.error(
+                  e instanceof Error ? e.message : "Não consegui criar",
+                ),
+              )
           }
           disabled={iniciais.isPending}
           className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-foreground bg-foreground px-3 py-1.5 text-[12px] font-medium text-background disabled:opacity-50"
@@ -595,6 +707,8 @@ export function CalendarioAnual({
           <ChevronRight className="h-4 w-4" />
         </button>
 
+        <SeloDeAtualizacao emAndamento={isFetching} quando={dataUpdatedAt} />
+
         <div className="flex-1" />
 
         {grupos.map((g) => (
@@ -604,7 +718,11 @@ export function CalendarioAnual({
             onClick={() =>
               criar
                 .mutateAsync({ grupo: g.id })
-                .catch((e) => toast.error(e instanceof Error ? e.message : "Não consegui criar"))
+                .catch((e) =>
+                  toast.error(
+                    e instanceof Error ? e.message : "Não consegui criar",
+                  ),
+                )
             }
             className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium hover:bg-muted"
           >
@@ -614,7 +732,10 @@ export function CalendarioAnual({
         ))}
       </div>
 
-      <div ref={rolagem} className="overflow-x-auto rounded-xl border border-border">
+      <div
+        ref={rolagem}
+        className="overflow-x-auto rounded-xl border border-border"
+      >
         <div style={{ minWidth: LARGURA_ESTEIRA + 12 * LARGURA_MES }}>
           {/* Cabeçalho dos meses. A célula vazia da esquerda acompanha a coluna
               congelada, senão os nomes dos meses saem de alinhamento. */}
@@ -651,7 +772,11 @@ export function CalendarioAnual({
                   { trackId: esteiraId, mes, celula },
                   {
                     onError: (err) =>
-                      toast.error(err instanceof Error ? err.message : "Não consegui salvar"),
+                      toast.error(
+                        err instanceof Error
+                          ? err.message
+                          : "Não consegui salvar",
+                      ),
                   },
                 );
               }}
@@ -693,7 +818,11 @@ export function CalendarioAnual({
               { grupo: editandoFaixa.grupo.id, ...dados },
               {
                 onError: (err) =>
-                  toast.error(err instanceof Error ? err.message : "Não consegui salvar a faixa"),
+                  toast.error(
+                    err instanceof Error
+                      ? err.message
+                      : "Não consegui salvar a faixa",
+                  ),
               },
             )
           }
