@@ -33,6 +33,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { CORES_DO_GOOGLE, nomeDaCor } from "@/lib/utils/cores-do-google";
 import {
   useAtualizarEsteira,
   useAtualizarGrupo,
@@ -85,22 +86,14 @@ const GRUPOS_PADRAO: GrupoAnual[] = [
 ];
 
 /**
- * Sugestões de cor para a faixa.
+ * Sugestões de cor para a faixa — as do Google Calendar.
  *
- * As três da planilha do time mais tons que se distinguem delas à distância —
- * a faixa é lida de relance na lateral, e dois vermelhos parecidos fariam
- * ORGÂNICO e o grupo vizinho virarem a mesma coisa ao passar o olho.
+ * Eram tons escolhidos aqui. O time olha as duas telas, e a mesma esteira em
+ * cores diferentes perde o reconhecimento de relance, que é a única coisa que
+ * a cor faz. As onze do Google já são desenhadas para se distinguirem entre si
+ * em barras pequenas, que é exatamente o caso da faixa lateral.
  */
-const CORES_SUGERIDAS = [
-  "#A32B1F",
-  "#5A7F3C",
-  "#1F3864",
-  "#B45309",
-  "#7C3AED",
-  "#0F766E",
-  "#BE185D",
-  "#3F3F46",
-];
+const CORES_SUGERIDAS = CORES_DO_GOOGLE.map((c) => c.hex);
 
 const LARGURA_FAIXA = 26;
 const LARGURA_ESTEIRA = 200;
@@ -559,7 +552,10 @@ function PainelDaFaixa({
                 setCor(c);
                 onGravar({ cor: c });
               }}
-              aria-label={`Cor ${c}`}
+              /* O NOME, não o hex: é assim que a cor é chamada no Google
+                 Calendar, e é assim que alguém pede "põe no tomate". */
+              aria-label={`Cor ${nomeDaCor(c) ?? c}`}
+              title={nomeDaCor(c) ?? c}
               className={`h-5 w-5 rounded border transition-transform hover:scale-110 ${
                 c === cor ? "border-foreground" : "border-transparent"
               }`}
