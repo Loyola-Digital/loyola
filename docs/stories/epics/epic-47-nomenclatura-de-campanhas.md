@@ -99,6 +99,7 @@ Nomenclatura de conjunto e anúncio · parâmetros de URL · integração Meta �
 |---|---|---|
 | 2026-09-09 | @sm (River) | Epic criado a partir da spec do dono do produto. Spec arquivada verbatim. Decisões D1–D9 registradas; D2 e D3 marcadas para confirmação do @po. Pré-condições P1–P3 declaradas. |
 | 2026-09-09 | @po (Pax) | 47.1 validada: GO 9,5/10 → Ready. D2 confirmada, D3 decidida (não-guest lê e escreve), P3 fechada. Sigla do expert imutável desde a criação (contradição da spec resolvida pelo lado estrito). |
+| 2026-09-09 | @dev (Dex) | Migration 0142 aplicada em produção com autorização do dono do produto (QA-471-02 resolvida); seed 2× = 9 valores fixos, 0 duplicatas. Local passa a funcionar de ponta a ponta. |
 | 2026-09-09 | @dev (Dex) | 47.3 implementada e em InReview: `buildCampaignName`/`parseCampaignName` no `shared`, rotas de campanhas/snapshot/validador, gerador com prévia colorida, listagem, validador. Contrato 7→8. |
 | 2026-09-09 | @dev (Dex) | 47.2 implementada e em InReview: entrada Nomenclatura em `/settings`, 6 abas do Dicionário, seção/aba na URL. Validação visual fica com o dono do produto. |
 | 2026-09-09 | @qa (Quinn) | Gate da 47.1: CONCERNS. QA-471-01 (corrida → 500) corrigido no gate; QA-471-02 aberto (nada gravado em Postgres real). Migration conferida contra `drizzle-kit generate`. |
