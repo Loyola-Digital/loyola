@@ -23,7 +23,11 @@ import { z } from "zod";
 import { asc, eq, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { plannerCampaigns, plannerGoogleCalendars } from "../db/schema.js";
-import { normalizarFase, planejarSincronia, type FaseDoPlanner } from "../services/planner.js";
+import {
+  normalizarFase,
+  planejarSincronia,
+  type FaseDoPlanner,
+} from "../services/planner.js";
 import { importarDaAgenda } from "../services/planner-sync.js";
 import {
   apagarEvento,
@@ -33,20 +37,16 @@ import {
   nomeDaAgenda,
   tituloParaGoogle,
 } from "../services/planner-google.js";
+import { PALETA_DO_GOOGLE } from "../services/cores-do-google.js";
 
-/** Paleta cíclica — a mesma do planner original. */
-export const PALETA = [
-  "#6D5BD0",
-  "#C2851B",
-  "#2D7F8C",
-  "#C4503F",
-  "#4B8B3B",
-  "#B0457B",
-  "#3F6FB5",
-  "#8A6A3C",
-  "#9A3F8F",
-  "#2F8F6E",
-] as const;
+/**
+ * Paleta cíclica — as onze cores de evento do Google Calendar.
+ *
+ * Era um conjunto próprio, herdado do planner original. O time olha as duas
+ * telas, e um lançamento roxo aqui e vermelho no Google perde exatamente o que
+ * a cor faz num calendário: reconhecer de relance. Ver `cores-do-google.ts`.
+ */
+export const PALETA = PALETA_DO_GOOGLE;
 
 /** As fases que uma campanha nova ganha. Vieram da planilha do time. */
 export const FASES_PADRAO = [
@@ -115,17 +115,22 @@ export default fp(async function plannerRoutes(fastify) {
 
   // ---- GET / — todas as campanhas, na ordem ----
   fastify.get(base, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const campanhas = await fastify.db
       .select()
       .from(plannerCampaigns)
-      .orderBy(asc(plannerCampaigns.sortOrder), asc(plannerCampaigns.createdAt));
+      .orderBy(
+        asc(plannerCampaigns.sortOrder),
+        asc(plannerCampaigns.createdAt),
+      );
     return { campanhas };
   });
 
   // ---- POST / — cria ----
   fastify.post(base, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const b = criarSchema.safeParse(request.body);
     if (!b.success) return reply.code(400).send({ error: "Dados inválidos" });
 
@@ -137,7 +142,12 @@ export default fp(async function plannerRoutes(fastify) {
 
     const fases: FaseDoPlanner[] = (
       b.data.phases ??
-      FASES_PADRAO.map((name, i) => ({ id: novoId(i), name, start: "", end: "" }))
+      FASES_PADRAO.map((name, i) => ({
+        id: novoId(i),
+        name,
+        start: "",
+        end: "",
+      }))
     ).map(normalizarFase);
 
     // Campanha nova nasce ja na agenda, quando ha uma escolhida: criar aqui e
@@ -171,10 +181,12 @@ export default fp(async function plannerRoutes(fastify) {
 
   // ---- PUT /:id — atualiza (a campanha inteira é a unidade) ----
   fastify.put(`${base}/:id`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
     const b = atualizarSchema.safeParse(request.body);
-    if (!p.success || !b.success) return reply.code(400).send({ error: "Dados inválidos" });
+    if (!p.success || !b.success)
+      return reply.code(400).send({ error: "Dados inválidos" });
 
     // Precisa do estado ANTERIOR para saber o que mudou na agenda: sem ele
     // nao da para distinguir "fase nova" de "fase que so foi salva de novo",
@@ -184,21 +196,25 @@ export default fp(async function plannerRoutes(fastify) {
       .from(plannerCampaigns)
       .where(eq(plannerCampaigns.id, p.data.id))
       .limit(1);
-    if (!antes) return reply.code(404).send({ error: "Campanha não encontrada" });
+    if (!antes)
+      return reply.code(404).send({ error: "Campanha não encontrada" });
 
     const mudanca: Record<string, unknown> = { updatedAt: new Date() };
     if (b.data.name !== undefined) mudanca.name = b.data.name;
     if (b.data.color !== undefined) mudanca.color = b.data.color;
     if (b.data.projectId !== undefined) mudanca.projectId = b.data.projectId;
     if (b.data.sortOrder !== undefined) mudanca.sortOrder = b.data.sortOrder;
-    if (b.data.googleCalendarId !== undefined) mudanca.googleCalendarId = b.data.googleCalendarId;
+    if (b.data.googleCalendarId !== undefined)
+      mudanca.googleCalendarId = b.data.googleCalendarId;
     // A normalização acontece no servidor, sempre: a tela pode confiar que o
     // que voltou está arrumado, e um cliente antigo não grava data inválida.
-    if (b.data.phases !== undefined) mudanca.phases = b.data.phases.map(normalizarFase);
+    if (b.data.phases !== undefined)
+      mudanca.phases = b.data.phases.map(normalizarFase);
 
     const nomeDepois = (b.data.name ?? antes.name) as string;
     const fasesDepois = (mudanca.phases ?? antes.phases) as FaseDoPlanner[];
-    const agenda = (b.data.googleCalendarId ?? antes.googleCalendarId) as string | null;
+    const agenda = (b.data.googleCalendarId ?? antes.googleCalendarId) as
+      string | null;
 
     const { fases: fasesFinais, aviso } = await espelharNoGoogle({
       agenda,
@@ -218,7 +234,8 @@ export default fp(async function plannerRoutes(fastify) {
       .where(eq(plannerCampaigns.id, p.data.id))
       .returning();
 
-    if (!atualizada) return reply.code(404).send({ error: "Campanha não encontrada" });
+    if (!atualizada)
+      return reply.code(404).send({ error: "Campanha não encontrada" });
     // O aviso viaja junto com a campanha salva: o trabalho local NAO se perde
     // porque o Google recusou, e quem editou fica sabendo que a agenda ficou
     // para tras.
@@ -248,7 +265,8 @@ export default fp(async function plannerRoutes(fastify) {
     fasesAntes: FaseDoPlanner[];
     fasesDepois: FaseDoPlanner[];
   }): Promise<{ fases: FaseDoPlanner[] | null; aviso: string | null }> {
-    if (!e.agenda || !emailDaServiceAccount()) return { fases: null, aviso: null };
+    if (!e.agenda || !emailDaServiceAccount())
+      return { fases: null, aviso: null };
 
     const acao = planejarSincronia({
       nomeAntes: e.nomeAntes,
@@ -268,7 +286,8 @@ export default fp(async function plannerRoutes(fastify) {
       falhas++;
       // A primeira mensagem basta: dez falhas seguidas sao a mesma causa (sem
       // permissao, sem rede), e concatenar dez copias nao ajuda ninguem.
-      motivo ??= err instanceof Error ? err.message : "Falha ao falar com o Google";
+      motivo ??=
+        err instanceof Error ? err.message : "Falha ao falar com o Google";
     };
 
     for (const fase of acao.criar) {
@@ -343,11 +362,13 @@ export default fp(async function plannerRoutes(fastify) {
    * uma sequência com buracos ou empates.
    */
   fastify.put(`${base}/ordem`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const b = z
       .object({ ids: z.array(z.string().uuid()).max(200) })
       .safeParse(request.body);
-    if (!b.success) return reply.code(400).send({ error: "Lista de ids inválida" });
+    if (!b.success)
+      return reply.code(400).send({ error: "Lista de ids inválida" });
 
     const existentes = await fastify.db
       .select({ id: plannerCampaigns.id })
@@ -368,21 +389,28 @@ export default fp(async function plannerRoutes(fastify) {
       ),
     );
 
-    return { ok: true, ordenadas: validos.length, ignoradas: b.data.ids.length - validos.length };
+    return {
+      ok: true,
+      ordenadas: validos.length,
+      ignoradas: b.data.ids.length - validos.length,
+    };
   });
 
   // ---- POST /:id/duplicar ----
   fastify.post(`${base}/:id/duplicar`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
-    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!p.success)
+      return reply.code(400).send({ error: "Parâmetros inválidos" });
 
     const [origem] = await fastify.db
       .select()
       .from(plannerCampaigns)
       .where(eq(plannerCampaigns.id, p.data.id))
       .limit(1);
-    if (!origem) return reply.code(404).send({ error: "Campanha não encontrada" });
+    if (!origem)
+      return reply.code(404).send({ error: "Campanha não encontrada" });
 
     // Fases ganham id novo: manter os antigos faria a seleção na tela apontar
     // para duas barras ao mesmo tempo.
@@ -406,23 +434,28 @@ export default fp(async function plannerRoutes(fastify) {
     await fastify.db
       .update(plannerCampaigns)
       .set({ sortOrder: sql`${plannerCampaigns.sortOrder} + 1` })
-      .where(sql`${plannerCampaigns.sortOrder} > ${origem.sortOrder} AND ${plannerCampaigns.id} <> ${copia!.id}`);
+      .where(
+        sql`${plannerCampaigns.sortOrder} > ${origem.sortOrder} AND ${plannerCampaigns.id} <> ${copia!.id}`,
+      );
 
     return reply.code(201).send(copia);
   });
 
   // ---- DELETE /:id ----
   fastify.delete(`${base}/:id`, async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
-    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!p.success)
+      return reply.code(400).send({ error: "Parâmetros inválidos" });
 
     const [apagada] = await fastify.db
       .delete(plannerCampaigns)
       .where(eq(plannerCampaigns.id, p.data.id))
       .returning();
 
-    if (!apagada) return reply.code(404).send({ error: "Campanha não encontrada" });
+    if (!apagada)
+      return reply.code(404).send({ error: "Campanha não encontrada" });
 
     /**
      * Os eventos saem da agenda junto.
@@ -445,7 +478,10 @@ export default fp(async function plannerRoutes(fastify) {
           // A campanha ja saiu do banco. Falhar aqui deixaria um evento orfao
           // na agenda, o que e ruim -- mas devolver erro faria a tela dizer
           // que a exclusao falhou, quando ela funcionou.
-          fastify.log.warn({ err, eventId: f.googleEventId }, "evento orfao na agenda do Google");
+          fastify.log.warn(
+            { err, eventId: f.googleEventId },
+            "evento orfao na agenda do Google",
+          );
         }
       }
     }
@@ -464,7 +500,8 @@ export default fp(async function plannerRoutes(fastify) {
   const google = "/api/planner/google";
 
   fastify.get(google + "/agendas", async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const agendas = await fastify.db
       .select()
       .from(plannerGoogleCalendars)
@@ -478,9 +515,13 @@ export default fp(async function plannerRoutes(fastify) {
   });
 
   fastify.post(google + "/agendas", async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
-    const b = z.object({ calendarId: z.string().trim().min(3).max(300) }).safeParse(request.body);
-    if (!b.success) return reply.code(400).send({ error: "Informe o ID da agenda" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
+    const b = z
+      .object({ calendarId: z.string().trim().min(3).max(300) })
+      .safeParse(request.body);
+    if (!b.success)
+      return reply.code(400).send({ error: "Informe o ID da agenda" });
 
     // Confere o acesso ANTES de gravar: uma agenda cadastrada que não abre
     // vira erro toda vez que alguém tenta importar.
@@ -490,23 +531,39 @@ export default fp(async function plannerRoutes(fastify) {
     } catch (erro) {
       return reply
         .code(400)
-        .send({ error: erro instanceof Error ? erro.message : "Não consegui abrir a agenda" });
+        .send({
+          error:
+            erro instanceof Error
+              ? erro.message
+              : "Não consegui abrir a agenda",
+        });
     }
 
     const [criada] = await fastify.db
       .insert(plannerGoogleCalendars)
-      .values({ calendarId: b.data.calendarId, label, createdBy: request.userId ?? null })
-      .onConflictDoUpdate({ target: plannerGoogleCalendars.calendarId, set: { label } })
+      .values({
+        calendarId: b.data.calendarId,
+        label,
+        createdBy: request.userId ?? null,
+      })
+      .onConflictDoUpdate({
+        target: plannerGoogleCalendars.calendarId,
+        set: { label },
+      })
       .returning();
 
     return reply.code(201).send(criada);
   });
 
   fastify.delete(google + "/agendas/:id", async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
-    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
-    await fastify.db.delete(plannerGoogleCalendars).where(eq(plannerGoogleCalendars.id, p.data.id));
+    if (!p.success)
+      return reply.code(400).send({ error: "Parâmetros inválidos" });
+    await fastify.db
+      .delete(plannerGoogleCalendars)
+      .where(eq(plannerGoogleCalendars.id, p.data.id));
     return { ok: true };
   });
 
@@ -525,7 +582,8 @@ export default fp(async function plannerRoutes(fastify) {
    * por evento. Uma reunião solta não é um lançamento.
    */
   fastify.post(google + "/importar", async (request, reply) => {
-    if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (denyGuest(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const b = z
       .object({
         calendarId: z.string().trim().min(3).max(300),
@@ -549,8 +607,10 @@ export default fp(async function plannerRoutes(fastify) {
     } catch (erro) {
       return reply
         .code(502)
-        .send({ error: erro instanceof Error ? erro.message : "Não consegui ler a agenda" });
+        .send({
+          error:
+            erro instanceof Error ? erro.message : "Não consegui ler a agenda",
+        });
     }
   });
-
 });

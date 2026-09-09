@@ -28,6 +28,7 @@
  */
 
 import { createSign } from "node:crypto";
+import { hexDoColorId } from "./cores-do-google.js";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const CALENDAR_API = "https://www.googleapis.com/calendar/v3";
@@ -74,13 +75,22 @@ export function emailDaServiceAccount(): string | null {
 }
 
 async function token(): Promise<string> {
-  if (tokenEmCache && Date.now() < tokenEmCache.expiraEm) return tokenEmCache.token;
+  if (tokenEmCache && Date.now() < tokenEmCache.expiraEm)
+    return tokenEmCache.token;
 
   const k = chave();
   const agora = Math.floor(Date.now() / 1000);
-  const cabecalho = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
+  const cabecalho = Buffer.from(
+    JSON.stringify({ alg: "RS256", typ: "JWT" }),
+  ).toString("base64url");
   const corpo = Buffer.from(
-    JSON.stringify({ iss: k.client_email, scope: ESCOPO, aud: k.token_uri, iat: agora, exp: agora + 3600 }),
+    JSON.stringify({
+      iss: k.client_email,
+      scope: ESCOPO,
+      aud: k.token_uri,
+      iat: agora,
+      exp: agora + 3600,
+    }),
   ).toString("base64url");
 
   const assinador = createSign("RSA-SHA256");
@@ -95,8 +105,12 @@ async function token(): Promise<string> {
       assertion: jwt,
     }),
   });
-  const j = (await r.json()) as { access_token?: string; error_description?: string };
-  if (!j.access_token) throw new Error(j.error_description ?? "Google recusou o token");
+  const j = (await r.json()) as {
+    access_token?: string;
+    error_description?: string;
+  };
+  if (!j.access_token)
+    throw new Error(j.error_description ?? "Google recusou o token");
 
   // Um minuto de folga: um token que expira no meio da requisição vira 401.
   tokenEmCache = { token: j.access_token, expiraEm: Date.now() + 3540_000 };
@@ -112,13 +126,24 @@ export interface EventoDoGoogle {
   fim: string;
   /** Evento com hora marcada (reunião), não faixa de dias. */
   temHora: boolean;
+  /**
+   * A cor que o evento tem NO GOOGLE, em hex — ou `null`.
+   *
+   * `null` não é falha: `colorId` só existe quando alguém pintou o evento à
+   * mão. Sem ele o evento herda a cor do calendário, que a service account não
+   * consegue ler (`calendarList` é por usuário e vem vazia para ela).
+   */
+  cor: string | null;
 }
 
 /** O nome da agenda, ou erro explicando o que fazer. */
 export async function nomeDaAgenda(calendarId: string): Promise<string> {
-  const r = await fetch(`${CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}`, {
-    headers: { Authorization: `Bearer ${await token()}` },
-  });
+  const r = await fetch(
+    `${CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}`,
+    {
+      headers: { Authorization: `Bearer ${await token()}` },
+    },
+  );
   if (r.status === 404) {
     throw new Error(
       `Sem acesso a esta agenda. Compartilhe com ${emailDaServiceAccount() ?? "a service account"} ` +
@@ -163,6 +188,7 @@ export async function eventosDaAgenda(
       status?: string;
       start?: { date?: string; dateTime?: string };
       end?: { date?: string; dateTime?: string };
+      colorId?: string;
     }[];
   };
 
@@ -185,7 +211,14 @@ export async function eventosDaAgenda(
       fim = e.end?.dateTime?.slice(0, 10) ?? inicio;
     }
 
-    saida.push({ id: e.id, titulo: (e.summary ?? "").trim() || "(sem título)", inicio, fim, temHora });
+    saida.push({
+      id: e.id,
+      titulo: (e.summary ?? "").trim() || "(sem título)",
+      inicio,
+      fim,
+      temHora,
+      cor: hexDoColorId(e.colorId),
+    });
   }
   return saida;
 }
@@ -238,7 +271,10 @@ export function separarTitulo(titulo: string): TituloSeparado {
 }
 
 /** Uma cor estável para a campanha, derivada do nome. */
-export function corParaCampanha(nome: string, paleta: readonly string[]): string {
+export function corParaCampanha(
+  nome: string,
+  paleta: readonly string[],
+): string {
   // Hash simples: a mesma campanha recebe a mesma cor em toda importação, e
   // duas campanhas diferentes raramente colidem.
   let soma = 0;
@@ -335,14 +371,16 @@ export async function atualizarEvento(
     corpoDoEvento(fase.titulo, fase.inicio, fase.fim),
   );
 
-  if (r.status === 404 || r.status === 410) return criarEvento(calendarId, fase);
+  if (r.status === 404 || r.status === 410)
+    return criarEvento(calendarId, fase);
   if (r.status === 403) {
     throw new Error(
       `Sem permissão para ESCREVER nesta agenda. O compartilhamento com ` +
         `${emailDaServiceAccount() ?? "a service account"} precisa ser "Fazer alterações nos eventos".`,
     );
   }
-  if (!r.ok) throw new Error(`Google respondeu ${r.status} ao atualizar o evento`);
+  if (!r.ok)
+    throw new Error(`Google respondeu ${r.status} ao atualizar o evento`);
   const j = (await r.json()) as { id?: string };
   return j.id ?? eventId;
 }
@@ -353,7 +391,10 @@ export async function atualizarEvento(
  * 404 e 410 aqui são o estado desejado — o evento não está mais lá. Tratá-los
  * como erro faria uma exclusão perfeitamente bem-sucedida parecer falha.
  */
-export async function apagarEvento(calendarId: string, eventId: string): Promise<void> {
+export async function apagarEvento(
+  calendarId: string,
+  eventId: string,
+): Promise<void> {
   const r = await chamar(
     `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
     "DELETE",

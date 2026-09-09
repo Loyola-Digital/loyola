@@ -24,7 +24,11 @@ import { eq } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { plannerCampaigns, plannerGoogleCalendars } from "../db/schema.js";
 import { normalizarFase, type FaseDoPlanner } from "./planner.js";
-import { corParaCampanha, eventosDaAgenda, separarTitulo } from "./planner-google.js";
+import {
+  corParaCampanha,
+  eventosDaAgenda,
+  separarTitulo,
+} from "./planner-google.js";
 
 /**
  * O nome reduzido ao que identifica a campanha.
@@ -81,11 +85,24 @@ export async function importarDaAgenda(
   ate.setMonth(ate.getMonth() + mesesAFrente);
 
   const eventos = await eventosDaAgenda(calendarId, de, ate);
-  const aproveitados = eventos.filter((e) => opcoes.incluirComHora || !e.temHora);
+  const aproveitados = eventos.filter(
+    (e) => opcoes.incluirComHora || !e.temHora,
+  );
 
   // Agrupa por campanha ANTES de tocar no banco: assim cada campanha é uma
   // escrita só, e não uma por fase.
   const porCampanha = new Map<string, FaseDoPlanner[]>();
+  /**
+   * A cor que a campanha tem NO GOOGLE.
+   *
+   * Vale a do primeiro evento que trouxe cor própria. Uma campanha com eventos
+   * de cores diferentes existe — alguém pintou uma fase de vermelho para
+   * destacar — mas a campanha tem UMA cor aqui, e a primeira é a mais estável:
+   * os eventos vêm ordenados por data, então é a cor com que a campanha
+   * começou, não a da última fase que alguém mexeu.
+   */
+  const corDaCampanha = new Map<string, string>();
+
   for (const e of aproveitados) {
     const { campanha, fase } = separarTitulo(e.titulo);
     const chave = campanha || "Agenda";
@@ -98,6 +115,7 @@ export async function importarDaAgenda(
       googleEventId: e.id,
     });
     porCampanha.set(chave, lista);
+    if (e.cor && !corDaCampanha.has(chave)) corDaCampanha.set(chave, e.cor);
   }
 
   const existentes = await db.select().from(plannerCampaigns);
@@ -106,12 +124,25 @@ export async function importarDaAgenda(
   let fasesTocadas = 0;
 
   for (const [nome, fasesDoGoogle] of porCampanha) {
-    const atual = existentes.find((c) => chaveDoNome(c.name) === chaveDoNome(nome));
+    const atual = existentes.find(
+      (c) => chaveDoNome(c.name) === chaveDoNome(nome),
+    );
 
     if (!atual) {
       await db.insert(plannerCampaigns).values({
         name: nome,
-        color: corParaCampanha(nome, paleta),
+        /*
+         * A cor do Google manda quando existe.
+         *
+         * `colorId` só vem quando alguém pintou o evento à mão lá — e quem
+         * pintou já decidiu a cor daquele lançamento. Sobrescrever com um
+         * palpite derivado do nome desfaria essa decisão, e as duas telas
+         * voltariam a mostrar o mesmo lançamento de cores diferentes.
+         *
+         * Sem cor no evento, segue o sorteio estável por nome: o evento herdou
+         * a cor do calendário, que a service account não enxerga.
+         */
+        color: corDaCampanha.get(nome) ?? corParaCampanha(nome, paleta),
         // A agenda de ORIGEM vira a de destino: o que for editado aqui depois
         // volta para o mesmo lugar de onde veio.
         googleCalendarId: calendarId,
@@ -127,12 +158,18 @@ export async function importarDaAgenda(
     const fases = atual.phases as FaseDoPlanner[];
 
     // Ver o cabeçalho: manuais e pendentes ficam; o resto o Google manda.
-    const preservadas = fases.filter((f) => !f.googleEventId || f.googleSyncPendente);
+    const preservadas = fases.filter(
+      (f) => !f.googleEventId || f.googleSyncPendente,
+    );
     const pendentes = new Set(
-      fases.filter((f) => f.googleSyncPendente && f.googleEventId).map((f) => f.googleEventId),
+      fases
+        .filter((f) => f.googleSyncPendente && f.googleEventId)
+        .map((f) => f.googleEventId),
     );
     const antesPorEvento = new Map(
-      fases.filter((f) => f.googleEventId).map((f) => [f.googleEventId as string, f]),
+      fases
+        .filter((f) => f.googleEventId)
+        .map((f) => [f.googleEventId as string, f]),
     );
 
     const novas = fasesDoGoogle
@@ -201,7 +238,8 @@ export async function reenviarPendentes(
 
   for (const c of campanhas) {
     const fases = c.phases as FaseDoPlanner[];
-    if (!c.googleCalendarId || !fases.some((f) => f.googleSyncPendente)) continue;
+    if (!c.googleCalendarId || !fases.some((f) => f.googleSyncPendente))
+      continue;
 
     let mudou = false;
     const novas = [...fases];

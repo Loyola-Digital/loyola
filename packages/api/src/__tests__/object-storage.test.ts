@@ -23,12 +23,27 @@ describe("tipos permitidos", () => {
     (mime) => expect(isAllowedMime(mime)).toBe(true),
   );
 
-  it.each(["video/mp4", "video/quicktime", "video/webm"])("%s é aceito", (mime) =>
-    expect(isAllowedMime(mime)).toBe(true),
+  it.each(["video/mp4", "video/quicktime", "video/webm"])(
+    "%s é aceito",
+    (mime) => expect(isAllowedMime(mime)).toBe(true),
   );
 
   it("PDF é aceito — criativo de anúncio chega assim", () => {
     expect(isAllowedMime("application/pdf")).toBe(true);
+  });
+
+  it("HTML é aceito — página de vendas salva é referência de primeira", () => {
+    /*
+     * Estava na lista de recusados, e a troca foi deliberada: uma landing page
+     * salva é o melhor material de catalogação do acervo — o modelo lê a
+     * headline, a promessa e o preço, coisa que um link não entrega.
+     *
+     * O risco de XSS não desaparece por isso; ele é contido em OUTRO lugar. O
+     * visualizador desenha a página num iframe com `sandbox="allow-scripts"` e
+     * SEM `allow-same-origin`, o que a deixa numa origem opaca: sem cookie,
+     * sem `localStorage`, sem o DOM da nossa página. Ver `pagina-salva.tsx`.
+     */
+    expect(isAllowedMime("text/html")).toBe(true);
   });
 });
 
@@ -36,7 +51,6 @@ describe("tipos recusados", () => {
   it.each([
     "application/octet-stream",
     "application/x-msdownload",
-    "text/html",
     "image/svg+xml",
     "application/zip",
     "application/json",
@@ -80,7 +94,10 @@ describe("o upload não passa mais por URL assinada", () => {
    * provedor S3-compatível que não implementa o checksum novo recusa.
    */
   it("presignUpload não é mais exportado", async () => {
-    const mod = (await import("../services/object-storage.js")) as Record<string, unknown>;
+    const mod = (await import("../services/object-storage.js")) as Record<
+      string,
+      unknown
+    >;
     expect(mod.presignUpload).toBeUndefined();
     expect(typeof mod.uploadDireto).toBe("function");
   });
@@ -94,7 +111,10 @@ describe("o erro do provedor vira uma frase acionável", () => {
    * se resolvem de formas opostas.
    */
   it("NoSuchBucket manda criar o bucket, não falar com o suporte", () => {
-    const r = explicarErroDeStorage({ name: "NoSuchBucket", $metadata: { httpStatusCode: 404 } });
+    const r = explicarErroDeStorage({
+      name: "NoSuchBucket",
+      $metadata: { httpStatusCode: 404 },
+    });
     expect(r.mensagem).toMatch(/bucket não existe/i);
     expect(r.codigo).toBe("NoSuchBucket");
     expect(r.status).toBe(404);
@@ -113,12 +133,18 @@ describe("o erro do provedor vira uma frase acionável", () => {
 
   it("erro desconhecido preserva a mensagem E acrescenta o código", () => {
     // O código é o que permite procurar; a mensagem sozinha não.
-    const r = explicarErroDeStorage({ name: "TooManyBuckets", message: "deu ruim" });
+    const r = explicarErroDeStorage({
+      name: "TooManyBuckets",
+      message: "deu ruim",
+    });
     expect(r.mensagem).toBe("deu ruim (TooManyBuckets)");
   });
 
   it("`Error` genérico não polui a frase com o próprio nome", () => {
-    const r = explicarErroDeStorage({ name: "Error", message: "Internal Server Error" });
+    const r = explicarErroDeStorage({
+      name: "Error",
+      message: "Internal Server Error",
+    });
     expect(r.mensagem).toBe("Internal Server Error");
   });
 
@@ -130,7 +156,13 @@ describe("o erro do provedor vira uma frase acionável", () => {
 
 describe("o check de storage", () => {
   it("sem variáveis, diz isso em vez de tentar a rede", async () => {
-    const r = await checarStorage({ endpoint: "", accessKeyId: "", secretAccessKey: "", bucket: "", publicUrl: "" });
+    const r = await checarStorage({
+      endpoint: "",
+      accessKeyId: "",
+      secretAccessKey: "",
+      bucket: "",
+      publicUrl: "",
+    });
     expect(r.ok).toBe(false);
     expect(r.erro?.codigo).toBe("NOT_CONFIGURED");
   });
@@ -168,11 +200,16 @@ describe("o caminho do upload depende do tamanho", () => {
   it("arquivo pequeno vai por PutObject, com ContentLength", async () => {
     const enviados: string[] = [];
     const s3 = {
-      send: vi.fn(async (cmd: { constructor: { name: string }; input: Record<string, unknown> }) => {
-        enviados.push(cmd.constructor.name);
-        expect(cmd.input.ContentLength).toBe(2_000_000);
-        return {};
-      }),
+      send: vi.fn(
+        async (cmd: {
+          constructor: { name: string };
+          input: Record<string, unknown>;
+        }) => {
+          enviados.push(cmd.constructor.name);
+          expect(cmd.input.ContentLength).toBe(2_000_000);
+          return {};
+        },
+      ),
     };
     await uploadComCliente(s3 as never, cfg, {
       corpo: streamDe(2_000_000),
@@ -209,7 +246,10 @@ describe("o caminho do upload depende do tamanho", () => {
   it("tipo não permitido nem chega ao provedor", async () => {
     const s3 = { send: vi.fn(async () => ({})) };
     await expect(
-      uploadComCliente(s3 as never, cfg, { corpo: streamDe(10), mime: "text/html" }),
+      uploadComCliente(s3 as never, cfg, {
+        corpo: streamDe(10),
+        mime: "application/zip",
+      }),
     ).rejects.toThrow(/não permitido/i);
     expect(s3.send).not.toHaveBeenCalled();
   });
@@ -237,12 +277,19 @@ describe("URL pública com valor de exemplo", () => {
    */
   it.each(["seuprojeto", "seu-projeto", "your-project", "example", "exemplo"])(
     "reconhece '%s' como placeholder",
-    (p) => expect(pareceplaceholder(`https://${p}.supabase.co/storage/v1/object/public/x`)).toBe(true),
+    (p) =>
+      expect(
+        pareceplaceholder(
+          `https://${p}.supabase.co/storage/v1/object/public/x`,
+        ),
+      ).toBe(true),
   );
 
   it("URL real passa", () => {
     expect(
-      pareceplaceholder("https://gcwyehutxnmrnpdpgjvt.storage.supabase.co/storage/v1/object/public/swipe-files"),
+      pareceplaceholder(
+        "https://gcwyehutxnmrnpdpgjvt.storage.supabase.co/storage/v1/object/public/swipe-files",
+      ),
     ).toBe(false);
   });
 
@@ -257,7 +304,8 @@ describe("URL pública com valor de exemplo", () => {
       accessKeyId: "k",
       secretAccessKey: "s",
       bucket: "swipe-files",
-      publicUrl: "https://seuprojeto.supabase.co/storage/v1/object/public/swipe-files",
+      publicUrl:
+        "https://seuprojeto.supabase.co/storage/v1/object/public/swipe-files",
     });
     expect(r.ok).toBe(false);
     expect(r.erro?.codigo).toBe("PUBLIC_URL_PLACEHOLDER");
