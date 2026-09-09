@@ -1,0 +1,157 @@
+alvo: "Story 47.1 — Nomenclatura: modelo de dados, migration, seed e API do dicionário"
+epic: 47
+branch: "feat/47.1-nomenclatura-modelo-e-api"
+commit: 7744fd4f
+autor: "@dev (Dex) — Claude Fable 5.1, sessão do Danilo"
+revisadoPor: "@qa (Quinn)"
+revisadoEm: "2026-09-09"
+arquivos: 18 novos/modificados — ver File List da story
+tamanho: "~2.100 linhas (schema, migration, 4 arquivos de serviço, rota, seed, 4 suítes)"
+
+decisao: PASS  # promovido em 2026-09-09: QA-471-02 resolvida (banco real) — ver `historico`
+historico: "CONCERNS em 2026-09-09 (manhã) por QA-471-02; PASS em 2026-09-09 (tarde) após migration em produção, seed 2× e prova da camada de serviço no banco real (11 checks)."
+condicional: >
+  (texto original do CONCERNS, mantido para rastreio) O código está certo e protegido — 53 testes, 9 reversões medidas, predicados
+  do Drizzle inspecionados, migration conferida coluna a coluna contra o
+  `drizzle-kit generate`. O que impede o PASS é o que NENHUM teste desta story
+  alcança: nada foi gravado num Postgres de verdade. O primeiro contato do
+  schema com um banco vai ser o `drizzle-kit push --force` do deploy. Ver
+  QA-471-02. Somado a isso, a spec (§ 0.3) exige a revisão do dono do produto
+  antes da 47.2, e ela ainda não aconteceu.
+
+resumo: >
+  A story faz o que a spec § 3–5 e § 9 pedem, e faz do jeito que o repo faz:
+  módulo folha no `shared`, uma porta só para o changelog, regras puras
+  separadas das consultas, mensagens de erro literais testadas. As oito regras
+  invioláveis têm cada uma um teste que cai quando a regra volta atrás.
+
+  Encontrei UM defeito de código, médio, e corrigi no gate: a checagem "já
+  existe?" e o INSERT não são atômicos, e a corrida estourava o UNIQUE do
+  banco como 500 "Erro interno" — o repo já tinha `violaUnicidade` para isso
+  desde a Story 36.x e a rota não usava. Os demais achados são baixos.
+
+verificacoes:
+  - id: V1
+    o_que: "As 8 tabelas e 2 enums do schema batem com a migration 0142 escrita à mão"
+    onde: "`drizzle-kit generate` num diretório de rascunho × `0142_nomenclatura_de_campanhas.sql`"
+    resultado: CONFERE
+    nota: >
+      O @dev declarou que não conferiu (journal do repo parado em 0007). Conferi
+      eu: mesmo conjunto de colunas, mesmos tipos, mesmos 6 UNIQUE + 7 índices,
+      mesmas 14 FKs com `restrict`/`set null`. As únicas diferenças são ordem
+      de `NOT NULL DEFAULT` e o `NOT NULL` implícito da PK — equivalentes.
+
+  - id: V2
+    o_que: "Unicidade e sugestão de código INCLUEM inativos (regra 4)"
+    onde: "`nomenclatura-repositorio.test.ts` renderiza o `where` com `PgDialect` — `porCode`, `codigos`, `porSlug`, `porValor` sem `active`"
+    resultado: CONFERE
+    nota: "Mutação c) do @dev (porCode passa a filtrar active) derruba 1 teste. Não é mock que devolve vazio; é o SQL."
+
+  - id: V3
+    o_que: "Toda escrita passa pelo changelog, nenhum handler escreve direto"
+    onde: "`grep -n namingChangelog packages/api/src/routes/` → vazio; `repositorio.ts` chama `registrarNoChangelog` em inserir/atualizar/excluir/alternarAtivo"
+    resultado: CONFERE
+
+  - id: V4
+    o_que: "Mensagem de conflito cita a descrição e sugere o próximo (AC 5 da spec)"
+    onde: "`nomenclatura-rotas.test.ts` — string literal `of02 já existe para bbe: \"oferta com ticket médio de R$ 297\". Use of03.`"
+    resultado: CONFERE
+
+  - id: V5
+    o_que: "Sigla do expert imutável desde a criação; código usado imutável; exclusão bloqueada com referências; coerência de expert em LP; guest 403"
+    onde: "rotas + regras; reversões a), d), h) do @dev + as duas primeiras minhas"
+    resultado: CONFERE
+
+  - id: V6
+    o_que: "Segurança: rota atrás do auth global, sem `/api/public`, entrada por zod, slug não gravável, sem SQL cru, 500 sanitizado pelo `setErrorHandler`"
+    onde: "`middleware/auth.ts` (não há skip para `/api/nomenclatura`), `app.ts:135`, `routes/nomenclatura.ts`"
+    resultado: CONFERE
+    nota: "O body pode mandar `slug`; a rota ignora (AC11). Testado em AC 7 com `slug: \"hackeado\"`."
+
+  - id: V7
+    o_que: "Seed idempotente e sem invenção"
+    onde: "`nomenclatura-seed.test.ts` — duas rodadas, contagem igual; `[PREENCHER]` em `pulados`"
+    resultado: CONFERE
+    nota: "Hoje só os 9 valores fixos entram. Ver QA-471-03."
+
+  - id: V8
+    o_que: "`API_CONTRACT_VERSION` 6→7 e efeito no painel"
+    onde: "`shared/src/contract.ts`; `web/lib/utils/api-contract.ts:34` (`api < web` → banner 'api-atras')"
+    resultado: CONFERE
+    nota: >
+      Depois do merge, enquanto a API do Railway não subir, o painel mostra o
+      banner de API defasada. É o comportamento desenhado (29.45); não é
+      regressão. O `packages/mcp` não lê a constante.
+
+  - id: V9
+    o_que: "Suítes e lint"
+    onde: "API 2.562 passando · 11 falhas em 5 arquivos pré-existentes (confirmado com a branch em stash) · `tsc` limpo · eslint da API inteira: 0 erros, 1 warning pré-existente em `lp-campaigns.ts:57`"
+    resultado: CONFERE
+
+achados:
+  - id: QA-471-01
+    severidade: medium
+    status: corrigido-no-gate
+    o_que: >
+      Corrida entre a checagem "código já existe?" e o INSERT: a segunda
+      gravação simultânea estoura o UNIQUE e a rota devolvia 500 "Erro interno
+      do servidor". O repo já tem `utils/db-errors.ts` (`violaUnicidade`) e
+      três rotas o usam; esta não usava.
+    correcao: >
+      `tentar()` em `routes/nomenclatura.ts` passa a mapear `violaUnicidade(e)`
+      para 409 com mensagem de "recarregue e escolha o próximo". Teste novo em
+      `nomenclatura-rotas.test.ts` simula o erro do driver aninhado em `cause`
+      (formato do Drizzle >= 0.44); reverter o mapeamento derruba 1 teste.
+      Suíte: 53/53.
+
+  - id: QA-471-02
+    severidade: medium
+    status: resolvido-2026-09-09
+    resolucao: >
+      Dono do produto autorizou aplicar a 0142 no banco de produção (é o que o
+      deploy faria). Aplicada em transação via `pg`; `information_schema`
+      confirma as 8 tabelas e os 7 UNIQUE; seed rodado 2×: `inseridos`
+      naming_dictionary_values 9 → 0, changelog com 9 linhas `create`. Falta
+      só o `defaultNow()` em coluna `date` (nenhum funil inserido ainda) — o
+      primeiro cadastro pela tela prova.
+    o_que: >
+      Nenhuma linha foi gravada num Postgres real. Migration conferida por
+      comparação com o `generate`, seed testado contra banco em memória, rotas
+      contra repositório em memória. O que falta provar só o banco prova:
+      `defaultNow()` em coluna `date`, `onConflictDoNothing` sem `target`
+      escolhendo o UNIQUE certo, e a transação da cascata.
+    acao: >
+      Antes do merge OU no primeiro deploy: rodar `pnpm --filter @loyola-x/api
+      seed:nomenclatura` contra um banco com o schema aplicado, duas vezes, e
+      anexar a saída (`inseridos` 9 → 0). A 47.4 (AC5) já prevê conferir a
+      forma do dado no banco — se ninguém fizer antes, ela cobre.
+
+  - id: QA-471-03
+    severidade: low
+    status: aberto
+    o_que: "P1 — os `[PREENCHER]` da spec § 9. O seed pula experts, produtos, funil e LP. Não é defeito; é insumo que só o dono do produto tem."
+    acao: "Dono do produto manda os valores → `DADOS_DO_SEED` → rodar o seed de novo."
+
+  - id: QA-471-04
+    severidade: low
+    status: aberto
+    o_que: "`GET /api/nomenclatura/changelog` lê `fastify.db` direto e não é exercitada pelo teste de rotas (que injeta repositório em memória)."
+    acao: "Quando a 47.2 mostrar o histórico na tela, cobrir por `listarChangelog` com o db falso de `nomenclatura-repositorio.test.ts`."
+
+  - id: QA-471-05
+    severidade: info
+    o_que: "A spec se contradiz sobre a sigla do expert (§ 4.1 'imutável depois de criada' × regra 5 'depois de usada'). O @po escolheu o lado estrito e o código segue. Registrado para o dono do produto confirmar na revisão da Etapa 1."
+
+os7checks:
+  code_review: "✅ regras puras × consultas × handlers, uma porta de changelog, `naming_` justificado no schema"
+  testes: "✅ 53 casos, 9 reversões medidas (8 do @dev + 1 do gate)"
+  criterios_de_aceite: "✅ AC1–AC21 — AC5 conferida no gate (V1); AC17 (seed em prod) fica aguardando P1"
+  regressoes: "✅ 11 falhas de baseline, idênticas sem a branch"
+  performance: "✅ listagens fazem 2–5 consultas agrupadas; dicionário tem dezenas de linhas"
+  seguranca: "✅ V6"
+  documentacao: "✅ story, epic, migration e módulos narrados; decisões do @dev listadas"
+
+proximo: >
+  1) Dono do produto revisa a Etapa 1 (spec § 0.3) — nomes de tabela/coluna,
+  mensagens de erro, e a sigla imutável (QA-471-05). 2) @devops push + PR.
+  3) QA-471-02 no primeiro banco real. 4) Só então `*develop 47.2`.

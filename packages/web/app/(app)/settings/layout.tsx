@@ -28,6 +28,10 @@ const BASE_TABS = [
   // Match de origem é global: a mesma correção de `{whatsapp}` vale em
   // qualquer projeto, então cadastrá-la por projeto seria trabalho repetido.
   { label: "Match de origem", href: "/settings/origem", value: "origem" },
+  // Epic 47: o dicionário de onde sai cada campo do nome de campanha do
+  // perpétuo. Global pelo mesmo motivo do match de origem — `bbe`, `of01` e
+  // `hot` significam a mesma coisa em qualquer projeto.
+  { label: "Nomenclatura", href: "/settings/nomenclatura", value: "nomenclatura" },
 ] as const;
 
 const META_TABS = [

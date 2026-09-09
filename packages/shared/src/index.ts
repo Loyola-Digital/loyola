@@ -36,6 +36,39 @@ export {
   tiposEquivalentes,
 } from "./stage-types.js";
 export { normalizarNomeCampanha, temSufixoDeCopia } from "./campaign-name.js";
+// Story 47.1: normalização e formato dos códigos que entram no nome da
+// campanha do perpétuo (expert, produto, funil, oferta, LP, valor fixo) e o
+// slug da LP. A tela mostra ao vivo e a API decide — uma função só. Módulo
+// folha: o web importa por `@loyola-x/shared/src/nomenclatura-codigos`.
+export {
+  FORMATO_DO_CODIGO,
+  normalizarCodigo,
+  montarSlugDeLp,
+  proximoCodigoNumerado,
+  proximoCodigoDeLp,
+  type TipoDeCodigo,
+  type Normalizacao,
+} from "./nomenclatura-codigos.js";
+// Story 47.3: o nome da campanha do perpétuo — montar (`buildCampaignName`) e
+// ler/validar contra um snapshot do dicionário (`parseCampaignName`). Módulo
+// folha: o web importa por `@loyola-x/shared/src/nomenclatura-de-campanha`.
+export {
+  SEPARADOR,
+  OFMIX,
+  LPMIX,
+  NA,
+  ORDEM_DOS_CAMPOS,
+  CAMPO,
+  buildCampaignName,
+  pedacosDoNome,
+  parseCampaignName,
+  type CampoDoNome,
+  type BlocoDoNome,
+  type CampaignFields,
+  type PedacoDoNome,
+  type DicionarioSnapshot,
+  type ParseResult,
+} from "./nomenclatura-de-campanha.js";
 // Story 18.71: o `utm_content` efetivo de uma célula de planilha — o `co=` chega
 // em três formatos e só um deles é o ad_id puro. Módulo folha: o web importa por
 // subpath (`@loyola-x/shared/src/utm-value`), a API por aqui.

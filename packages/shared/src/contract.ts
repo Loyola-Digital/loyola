@@ -106,4 +106,18 @@
 // agente). Para ele, a mudança de número chega no instante do deploy, sem
 // aviso — por isso a leva do Inácio manda um aviso humano junto, e esta é a
 // terceira vez: ver `docs/qa/audits/`.
-export const API_CONTRACT_VERSION = 6;
+//
+// v7 (Story 47.1): rotas novas `/api/nomenclatura/*` — o dicionário de códigos
+// do nome de campanha do perpétuo (experts, produtos, funis, ofertas, LPs e
+// valores fixos). As telas da 47.2 e o gerador da 47.3 dependem delas, e o
+// bump entra AQUI, na story que cria a rota — se entrasse lá, o painel pediria
+// uma rota que a API não tem e o `404` viraria "dicionário vazio" na tela.
+//
+// ADITIVA: nada que existia mudou de forma. `packages/mcp` não é afetado
+// (nenhuma tool nova, nenhuma rota pública).
+//
+// v8 (Story 47.3): rotas novas `/api/nomenclatura/campanhas`,
+// `/api/nomenclatura/dicionario/snapshot` e `/api/nomenclatura/validar-nome` —
+// o gerador de nome de campanha depende das três. ADITIVA; `packages/mcp` não
+// é afetado.
+export const API_CONTRACT_VERSION = 8;
