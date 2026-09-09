@@ -10,6 +10,7 @@ describe("abaAtiva — a URL decide seção e aba (Epic 46, regra 1)", () => {
   it("lê seção e aba válidas", () => {
     expect(abaAtiva(params({ secao: "dicionario", aba: "lps" }))).toEqual({ secao: "dicionario", aba: "lps" });
     expect(abaAtiva(params({ secao: "campanhas", aba: "validar" }))).toEqual({ secao: "campanhas", aba: "validar" });
+    expect(abaAtiva(params({ secao: "campanhas", aba: "slug" }))).toEqual({ secao: "campanhas", aba: "slug" });
   });
   it("aba desconhecida cai no default da seção; seção desconhecida cai no default geral", () => {
     expect(abaAtiva(params({ secao: "dicionario", aba: "xpto" }))).toEqual({ secao: "dicionario", aba: "experts" });
