@@ -10,9 +10,10 @@
  * `lib/utils/nomenclatura-gerador.ts`, com teste. Aqui só se desenha.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Loader2, Lock, Plus } from "lucide-react";
+import { ChevronDown, Loader2, Lock, Plus, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -103,8 +104,13 @@ export function GeradorDeCampanha({ modo }: { modo: Modo }) {
   const valores = useListaDe("dicionario");
 
   // Pré-preenchimento (editar/duplicar) — sem published_at nem meta id no duplicar.
+  // UMA vez por id: qualquer mutação invalida ["nomenclatura"] e refaz a query da
+  // origem; sem esta guarda, cadastrar uma oferta pelo "+ cadastrar novo" durante a
+  // edição devolvia o formulário ao estado do banco e apagava o que se escolheu.
+  const carregadoDe = useRef<string | null>(null);
   useEffect(() => {
-    if (origem.data) {
+    if (origem.data && carregadoDe.current !== origem.data.id) {
+      carregadoDe.current = origem.data.id;
       setEstado(estadoDeCampanha(origem.data));
       setSufixoAberto(Boolean(origem.data.suffix));
     }
@@ -142,11 +148,12 @@ export function GeradorDeCampanha({ modo }: { modo: Modo }) {
     try {
       const corpo = corpoDaCampanha(estado);
       const salva = modo.tipo === "editar" ? await editar.mutateAsync({ id: modo.id, dados: corpo }) : await criar.mutateAsync(corpo);
+      await navigator.clipboard.writeText(salva.name).catch(() => undefined);
       toast.success(
         <span>
-          Campanha salva: <code className="font-mono">{salva.name}</code>
+          Campanha salva e nome copiado: <code className="font-mono">{salva.name}</code>
         </span>,
-        { action: { label: "Copiar", onClick: () => void navigator.clipboard.writeText(salva.name) } },
+        { duration: 8000, action: { label: "Criar outra", onClick: () => router.push(hrefDe("campanhas", "nova")) } },
       );
       router.push(hrefDe("campanhas", "lista"));
     } catch (e) {
@@ -181,6 +188,16 @@ export function GeradorDeCampanha({ modo }: { modo: Modo }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_minmax(320px,420px)]">
       <div className="space-y-4">
+        {modo.tipo !== "nova" ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
+            <span>
+              {modo.tipo === "editar" ? "Editando" : "Duplicando"} <code className="font-mono">{origem.data?.name}</code>
+            </span>
+            <Button asChild size="sm" variant="outline">
+              <Link href={hrefDe("campanhas", "nova")}><RotateCcw className="mr-1 h-3.5 w-3.5" /> Começar uma nova</Link>
+            </Button>
+          </div>
+        ) : null}
         {publicada ? (
           <p className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
             <Lock className="h-4 w-4" /> Campanha publicada: o nome está congelado na Meta. Só observações e o id da Meta editam. Para outra variação, <strong className="ml-1">Duplicar</strong>.
@@ -188,16 +205,25 @@ export function GeradorDeCampanha({ modo }: { modo: Modo }) {
         ) : null}
         {modo.tipo === "duplicar" ? <p className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">Duplicando <code className="font-mono">{origem.data?.name}</code> — ajuste o que muda e salve como nova.</p> : null}
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <SeletorDeExpert valor={estado.expertId} onChange={escolher("expertId")} travado={publicada} id="g-expert" />
+        {/* Identidade em linhas separadas (validação visual: o menu aberto do Funil
+            cobria o da Oferta quando ficavam lado a lado — os rótulos são longos). */}
+        <div className="grid gap-3">
+          <div>
+            <SeletorDeExpert valor={estado.expertId} onChange={escolher("expertId")} travado={publicada} id="g-expert" />
+            {!estado.expertId ? <p className="mt-1 text-xs text-muted-foreground">Comece pelo expert — produto, funil, oferta e LP liberam em cascata.</p> : null}
+          </div>
           <SelectDoGerador id="g-produto" label="Produto" valor={estado.productId} onChange={escolher("productId")} opcoes={(produtos.data ?? []).map((p) => ({ value: p.id, rotulo: `${p.slug} — ${p.name}` }))} desabilitado={!estado.expertId} travado={publicada} aoCadastrar={() => setCadastro("produto")} />
           <SelectDoGerador id="g-funil" label="Funil" valor={estado.funnelId} onChange={escolher("funnelId")} opcoes={(funis.data ?? []).map((f) => ({ value: f.id, rotulo: f.rotulo }))} desabilitado={!estado.expertId} travado={publicada} aoCadastrar={() => setCadastro("funil")} />
           <SelectDoGerador id="g-oferta" label="Oferta" valor={estado.offerId} onChange={escolher("offerId")} opcoes={opcoesDeOferta((ofertas.data ?? []).map((o) => ({ id: o.id, rotulo: o.rotulo })))} desabilitado={!estado.expertId} travado={publicada} aoCadastrar={() => setCadastro("oferta")} />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
           <SelectDoGerador id="g-ano" label="Ano" valor={estado.year} onChange={escolher("year")} opcoes={porTipo("year")} travado={publicada} />
           <SelectDoGerador id="g-temp" label="Temperatura" valor={estado.temperature} onChange={escolher("temperature")} opcoes={porTipo("temperature")} travado={publicada} />
           <SelectDoGerador id="g-leilao" label="Leilão" valor={estado.auction} onChange={escolher("auction")} opcoes={porTipo("auction")} travado={publicada} />
           <SelectDoGerador id="g-formato" label="Formato" valor={estado.format} onChange={escolher("format")} opcoes={porTipo("format")} travado={publicada} />
-          <div className="sm:col-span-2">
+        </div>
+        <div className="grid gap-3">
+          <div>
             <SelectDoGerador id="g-lp" label="LP" valor={estado.lpId} onChange={escolher("lpId")} opcoes={opcoesDeLp(lpsParaOpcoes, estado)} desabilitado={!estado.productId || !estado.funnelId || !estado.offerId} placeholder={estado.offerId ? "LP da combinação, ou lpmix / na" : "Escolha produto, funil e oferta antes"} travado={publicada} aoCadastrar={() => setCadastro("lp")} />
           </div>
         </div>
@@ -230,6 +256,9 @@ export function GeradorDeCampanha({ modo }: { modo: Modo }) {
             <>
               <Button type="button" onClick={() => router.push(`${hrefDe("campanhas", "nova")}&duplicar=${modo.tipo === "editar" ? modo.id : ""}`)}>
                 Duplicar
+              </Button>
+              <Button type="button" variant="outline" asChild>
+                <Link href={hrefDe("campanhas", "nova")}><Plus className="mr-1 h-4 w-4" /> Nova campanha</Link>
               </Button>
               <Button type="button" variant="outline" disabled={salvando} onClick={() => void (async () => { setErro(null); try { await editar.mutateAsync({ id: (modo as { id: string }).id, dados: { notes: estado.notes.trim() || null } }); toast.success("Observações salvas."); } catch (e) { setErro(erroDaApi(e)); } })()}>
                 Salvar observações

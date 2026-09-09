@@ -9,7 +9,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Copy, Pencil, Files, Lock, Search } from "lucide-react";
+import { Copy, Pencil, Files, Lock, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,6 +45,16 @@ export function ListaDeCampanhas() {
 
   return (
     <div className="space-y-3">
+      {/* Validação visual do dono do produto (2026-09-09): "não aparece o botão de
+          adicionar nova campanha". A sub-aba não bastava como caminho. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">{lista.data ? `${lista.data.total} campanha${lista.data.total === 1 ? "" : "s"}` : ""}</p>
+        <Button asChild>
+          <Link href={hrefDe("campanhas", "nova")}>
+            <Plus className="mr-1 h-4 w-4" /> Nova campanha
+          </Link>
+        </Button>
+      </div>
       <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">
         <CascataDeSelects valor={cascata} onChange={setCascata} compacto />
         <div className="space-y-1">
@@ -105,13 +115,16 @@ export function ListaDeCampanhas() {
                   <TableCell>{c.publishedAt ? <Badge variant="secondary"><Lock className="mr-1 h-3 w-3" />sim</Badge> : <Badge variant="outline">não</Badge>}</TableCell>
                   <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{new Date(c.createdAt).toLocaleDateString("pt-BR")}</TableCell>
                   <TableCell className="whitespace-nowrap text-right">
-                    {!c.publishedAt ? (
-                      <Button size="sm" variant="ghost" asChild title="Editar"><Link href={`${hrefDe("campanhas", "nova")}&editar=${c.id}`}><Pencil className="h-4 w-4" /></Link></Button>
-                    ) : null}
-                    <Button size="sm" variant="ghost" asChild title="Duplicar"><Link href={`${hrefDe("campanhas", "nova")}&duplicar=${c.id}`}><Files className="h-4 w-4" /></Link></Button>
-                    {!c.publishedAt ? (
-                      <Button size="sm" variant="ghost" title="Marcar como publicada" onClick={() => void marcar(c.id, c.name)} disabled={publicar.isPending}><Lock className="h-4 w-4" /></Button>
-                    ) : null}
+                    {/* Botões com texto e borda: os ícones "ghost" pareciam desabilitados (validação visual). */}
+                    <span className="inline-flex gap-1">
+                      {!c.publishedAt ? (
+                        <Button size="sm" variant="outline" asChild><Link href={`${hrefDe("campanhas", "nova")}&editar=${c.id}`}><Pencil className="mr-1 h-3.5 w-3.5" />Editar</Link></Button>
+                      ) : null}
+                      <Button size="sm" variant="outline" asChild><Link href={`${hrefDe("campanhas", "nova")}&duplicar=${c.id}`}><Files className="mr-1 h-3.5 w-3.5" />Duplicar</Link></Button>
+                      {!c.publishedAt ? (
+                        <Button size="sm" variant="outline" onClick={() => void marcar(c.id, c.name)} disabled={publicar.isPending}><Lock className="mr-1 h-3.5 w-3.5" />Publicar</Button>
+                      ) : null}
+                    </span>
                   </TableCell>
                 </TableRow>
               ))
@@ -119,7 +132,7 @@ export function ListaDeCampanhas() {
           </TableBody>
         </Table>
       </div>
-      {lista.data ? <p className="text-xs text-muted-foreground">{lista.data.total} campanha{lista.data.total === 1 ? "" : "s"}{lista.data.total > 100 ? " — mostrando as 100 mais recentes; refine os filtros" : ""}.</p> : null}
+      {lista.data && lista.data.total > 100 ? <p className="text-xs text-muted-foreground">Mostrando as 100 mais recentes — refine os filtros.</p> : null}
     </div>
   );
 }

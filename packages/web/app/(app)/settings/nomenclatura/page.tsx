@@ -27,6 +27,7 @@ import { AbaExperts, AbaFunisOuOfertas, AbaLps, AbaProdutos, AbaValoresFixos } f
 import { GeradorDeCampanha } from "@/components/nomenclatura/gerador-de-campanha";
 import { ListaDeCampanhas } from "@/components/nomenclatura/lista-de-campanhas";
 import { ValidadorDeNome } from "@/components/nomenclatura/validador-de-nome";
+import { GeradorDeSlug } from "@/components/nomenclatura/gerador-de-slug";
 
 export default function NomenclaturaPage() {
   return (
@@ -113,6 +114,8 @@ function Nomenclatura() {
               <ListaDeCampanhas />
             ) : ativa.aba === "validar" ? (
               <ValidadorDeNome />
+            ) : ativa.aba === "slug" ? (
+              <GeradorDeSlug podeEditar={podeEditar} />
             ) : (
               <GeradorDeCampanha
                 key={`${params.get("editar") ?? ""}|${params.get("duplicar") ?? ""}`}
