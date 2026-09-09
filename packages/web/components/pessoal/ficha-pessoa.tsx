@@ -17,6 +17,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { prepararFoto } from "@/lib/utils/foto-pessoa";
 import {
+  entradaDoFormulario,
+  formularioDaFicha,
+} from "@/lib/utils/campos-da-ficha";
+import {
   mascararCnpj,
   mascararCpf,
   NOME_DA_CHAVE,
@@ -25,11 +29,7 @@ import {
   validarCnpj,
   validarCpf,
 } from "@/lib/utils/documentos";
-import {
-  useSalvarFicha,
-  type EntradaDaFicha,
-  type Ficha,
-} from "@/lib/hooks/use-pessoal";
+import { useSalvarFicha, type Ficha } from "@/lib/hooks/use-pessoal";
 
 /** "2026-08-26" → "26/08/2026", sem passar por Date (que desloca fuso). */
 export function dataBr(iso: string | null): string {
@@ -183,18 +183,9 @@ export function FichaPessoa({
   // desmontar a tela) — sem isto o formulário mostraria os dados de quem
   // estava aberto antes.
   useEffect(() => {
-    setForm({
-      nomeCompleto: ficha.nomeCompleto ?? "",
-      cargo: ficha.cargo ?? "",
-      nascimento: ficha.nascimento ?? "",
-      entradaEm: ficha.entradaEm ?? "",
-      telefone: ficha.telefone ?? "",
-      emailContato: ficha.emailContato ?? "",
-      emergenciaNome: ficha.emergenciaNome ?? "",
-      emergenciaTelefone: ficha.emergenciaTelefone ?? "",
-      emergenciaParentesco: ficha.emergenciaParentesco ?? "",
-      observacoes: ficha.observacoes ?? "",
-    });
+    // Vem da lista única: era aqui que os campos de pagamento faltavam, e por
+    // isso a ficha abria vazia mesmo com dado gravado.
+    setForm(formularioDaFicha(ficha));
     setFoto(ficha.foto);
     setSujo(false);
   }, [ficha]);
@@ -223,23 +214,7 @@ export function FichaPessoa({
   }
 
   function gravar() {
-    const dados: EntradaDaFicha = {
-      nomeCompleto: form.nomeCompleto || null,
-      cargo: form.cargo || null,
-      nascimento: form.nascimento || null,
-      telefone: form.telefone || null,
-      emailContato: form.emailContato || null,
-      emergenciaNome: form.emergenciaNome || null,
-      emergenciaTelefone: form.emergenciaTelefone || null,
-      emergenciaParentesco: form.emergenciaParentesco || null,
-    };
-    // Campos de RH só vão quando quem edita pode mudá-los. Mandá-los sempre
-    // funcionaria — o servidor descarta —, mas uma requisição que carrega o
-    // que vai ser jogado fora esconde a regra de quem lê o código depois.
-    if (camposDeRh) {
-      dados.entradaEm = form.entradaEm || null;
-      dados.observacoes = form.observacoes || null;
-    }
+    const dados = entradaDoFormulario(form, { camposDeRh });
     // Só manda a foto se mudou: são dezenas de KB, e reenviar a cada gravação
     // de um telefone seria desperdício.
     if (foto !== ficha.foto) dados.foto = foto;
