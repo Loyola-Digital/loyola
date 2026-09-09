@@ -6,7 +6,8 @@ autor: "@dev (Dex)"
 revisadoPor: "@qa (Quinn)"
 revisadoEm: "2026-09-09"
 
-decisao: CONCERNS
+decisao: PASS  # promovido em 2026-09-09: validação visual feita pelo dono do produto em produção (#827 + #829)
+historico: "CONCERNS em 2026-09-09 (só pela AC18); PASS em 2026-09-09 após o dono do produto validar em produção — três divergências (DV1–DV3) corrigidas na #829, nenhuma outra reportada."
 condicional: >
   A matriz está completa e honesta — 15/15 ACs com mutação que derruba, e o
   que só a tela prova está nomeado, não escondido. Falta a metade que é do
@@ -40,8 +41,8 @@ verificacoes:
 achados:
   - id: QA-474-01
     severidade: medium
-    status: aberto
-    o_que: "Roteiro visual não executado (AC4). É do dono do produto; a coluna Resultado está vazia."
+    status: resolvido
+    o_que: "Roteiro executado pelo dono do produto em produção (relato global, não passo a passo): DV1–DV3 reportadas e corrigidas na #829; nenhuma outra divergência."
   - id: QA-474-02
     severidade: info
     o_que: "Registros de teste no banco de produção foram criados e apagados pela prova de QA. Nenhum resto: `select count(*) from naming_experts where code='zz'` = 0."
