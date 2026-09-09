@@ -1,0 +1,75 @@
+alvo: "Story 47.2 — Nomenclatura: submenu em Configurações e telas do Dicionário"
+epic: 47
+branch: "feat/47.2-nomenclatura-submenu-e-telas (empilhada; revisada em feat/47.4 616a4d67+)"
+commit: 492b870d
+autor: "@dev (Dex)"
+revisadoPor: "@qa (Quinn)"
+revisadoEm: "2026-09-09"
+arquivos: "14 novos/modificados — ver File List"
+
+decisao: CONCERNS
+condicional: >
+  O código está certo: 17 testes puros, 3 reversões, web 1.156/1.156, `next
+  build` verde, lint limpo. O que segura o PASS é a regra do Epic 46 —
+  nenhuma story de navegação passa sem validação visual — e a AC18 ainda não
+  foi executada: o dono do produto tem o roteiro
+  (`docs/qa/47.4-nomenclatura-roteiro-visual.md`, bloco B) e o banco já está
+  pronto. Assim que o bloco B voltar sem divergência, vira PASS.
+
+verificacoes:
+  - id: V1
+    o_que: "Entrada em BASE_TABS; sem filtro de guest no layout (guest já é barrado pelo middleware)"
+    onde: "settings/layout.tsx; middleware.ts:25; app-sidebar.tsx:295"
+    resultado: CONFERE
+  - id: V2
+    o_que: "Seção/aba na URL; aba de outra seção não vaza"
+    onde: "lib/utils/nomenclatura-abas.ts + teste (5 casos); mutação 'aba vaza' derruba 1"
+    resultado: CONFERE
+  - id: V3
+    o_que: "Normalização e slug ao vivo pela MESMA função do shared"
+    onde: "nomenclatura-cascata.ts importa `@loyola-x/shared/src/nomenclatura-codigos` (subpath); mutação 'template string' derruba 1"
+    resultado: CONFERE
+  - id: V4
+    o_que: "Excluir → 409 com referências → Desativar; expert com contagem da API"
+    onde: "dialogo-de-exclusao.tsx lê `err.corpo.referencias` e `useImpactoDaDesativacao`"
+    resultado: CONFERE
+    nota: "A API foi exercitada no banco REAL nesta sessão: `referenciasDe(oferta)` → lp, campanha; cascata em transação deixou expert e LP inativos."
+  - id: V5
+    o_que: "Textos literais da spec (campo usado, aviso de descrição, cascata)"
+    onde: "nomenclatura-cascata.ts (constantes) + testes por igualdade de string"
+    resultado: CONFERE
+  - id: V6
+    o_que: "Mensagem de erro do servidor chega literal; 404 e 500 ganham a pista de ambiente; 503 migration-pendente"
+    onde: "formulario-dialogo.tsx, abas.tsx `mensagemDeErro`"
+    resultado: CONFERE
+    nota: "O dono do produto viu 'Erro interno do servidor' no local antes da migration — a API agora responde 503 com a frase certa (commit 887f0875)."
+
+achados:
+  - id: QA-472-01
+    severidade: medium
+    status: corrigido-no-gate
+    o_que: >
+      `experts.filhosAtivos` fazia quatro `select` em `Promise.all` — e é
+      chamada DENTRO da transação da cascata, onde há uma conexão só. O `pg`
+      avisou ("Calling client.query() when the client is already executing a
+      query is deprecated and will be removed in pg@9.0") ao rodar a cascata no
+      banco real. Hoje funciona por enfileiramento; no pg@9 quebra a cascata.
+    correcao: "Quatro leituras em série. Sem teste automatizado possível para 'paralelo na mesma conexão'; provado no banco real (cascata verde, sem aviso após a mudança seria o ideal — reexecutar no próximo teste real)."
+  - id: QA-472-02
+    severidade: low
+    status: corrigido-no-gate
+    o_que: "`id=\"busca\"` fixo na tabela genérica: Valores fixos renderiza quatro tabelas na mesma página → ids duplicados (a11y)."
+    correcao: "`useId()`."
+  - id: QA-472-03
+    severidade: medium
+    status: aberto
+    o_que: "AC18 — validação visual não executada. Roteiro bloco B (14 passos) com o dono do produto."
+
+os7checks:
+  code_review: "✅"
+  testes: "✅ 17 puros · 3 reversões · componentes fora do runner (declarado)"
+  criterios_de_aceite: "✅ AC1–AC17 · AC18 pendente"
+  regressoes: "✅ web 1.156/1.156 · next build verde"
+  performance: "✅"
+  seguranca: "✅ nenhuma rota nova; guest barrado no middleware e na API"
+  documentacao: "✅"

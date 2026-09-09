@@ -22,7 +22,7 @@ export async function copiarTexto(texto: string) {
   }
 }
 
-export function PrevaDoNome({ previa, compacta = false }: { previa: Previa; compacta?: boolean }) {
+export function PreviaDoNome({ previa, compacta = false }: { previa: Previa; compacta?: boolean }) {
   return (
     <div className="space-y-2">
       {!compacta ? (

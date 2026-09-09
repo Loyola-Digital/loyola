@@ -299,14 +299,20 @@ export function criarRepositorio(db: Conexao) {
       const mapa = (xs: { id: string; n: number }[]) => new Map(xs.map((x) => [x.id, Number(x.n)]));
       return { produtos: mapa(p), funis: mapa(f), ofertas: mapa(o), lps: mapa(l) };
     },
-    /** Filhos ATIVOS de um expert — o que a desativação em cascata vai tocar. */
+    /**
+     * Filhos ATIVOS de um expert — o que a desativação em cascata vai tocar.
+     *
+     * SEQUENCIAL de propósito (gate do @qa, QA-472-01): esta função roda dentro
+     * da transação da cascata, e uma transação é UMA conexão. `Promise.all`
+     * aqui enfileirava quatro queries no mesmo client — o `pg` avisa que é
+     * deprecado e o pg@9 vai recusar. Quatro leituras pequenas em série custam
+     * nada; um deadlock silencioso no deploy futuro custaria a cascata inteira.
+     */
     filhosAtivos: async (expertId: string) => {
-      const [produtos, funis, ofertas, lps] = await Promise.all([
-        db.select().from(namingProducts).where(and(eq(namingProducts.expertId, expertId), eq(namingProducts.active, true))),
-        db.select().from(namingFunnels).where(and(eq(namingFunnels.expertId, expertId), eq(namingFunnels.active, true))),
-        db.select().from(namingOffers).where(and(eq(namingOffers.expertId, expertId), eq(namingOffers.active, true))),
-        db.select().from(namingLandingPages).where(and(eq(namingLandingPages.expertId, expertId), eq(namingLandingPages.active, true))),
-      ]);
+      const produtos = await db.select().from(namingProducts).where(and(eq(namingProducts.expertId, expertId), eq(namingProducts.active, true)));
+      const funis = await db.select().from(namingFunnels).where(and(eq(namingFunnels.expertId, expertId), eq(namingFunnels.active, true)));
+      const ofertas = await db.select().from(namingOffers).where(and(eq(namingOffers.expertId, expertId), eq(namingOffers.active, true)));
+      const lps = await db.select().from(namingLandingPages).where(and(eq(namingLandingPages.expertId, expertId), eq(namingLandingPages.active, true)));
       return { produtos, funis, ofertas, lps };
     },
   };

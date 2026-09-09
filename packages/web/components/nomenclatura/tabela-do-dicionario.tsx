@@ -7,7 +7,7 @@
  * mais "Usado em N campanhas" que vem pronto da API.
  */
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useId, useMemo, useState, type ReactNode } from "react";
 import { ArrowDownAZ, ArrowUpAZ, Pencil, Plus, Power, RotateCcw, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,6 +54,8 @@ export function TabelaDoDicionario<T extends LinhaBase>(props: {
   const { linhas, carregando, erro, colunas, buscaEm, ordenarPor, inativos, onInativos, onNovo, novoDesabilitado, onEditar, onExcluir, onAlternar, podeEditar, filtros, rotuloDoNovo = "Novo", vazio = "Nada cadastrado ainda." } = props;
   const [busca, setBusca] = useState("");
   const [asc, setAsc] = useState(true);
+  // Valores fixos renderiza quatro tabelas na mesma página: `id="busca"` fixo duplicava (gate do @qa).
+  const idDaBusca = useId();
 
   const visiveis = useMemo(() => {
     const lista = (linhas ?? []).filter((l) => casaBusca(busca, l as Record<string, unknown>, buscaEm));
@@ -69,10 +71,10 @@ export function TabelaDoDicionario<T extends LinhaBase>(props: {
       <div className="flex flex-wrap items-end gap-3">
         {filtros}
         <div className="flex-1 min-w-[180px]">
-          <Label htmlFor="busca" className="text-xs text-muted-foreground">
+          <Label htmlFor={idDaBusca} className="text-xs text-muted-foreground">
             Buscar
           </Label>
-          <Input id="busca" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="código, descrição…" />
+          <Input id={idDaBusca} value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="código, descrição…" />
         </div>
         <label className="flex items-center gap-2 text-sm">
           <Switch checked={inativos} onCheckedChange={onInativos} />

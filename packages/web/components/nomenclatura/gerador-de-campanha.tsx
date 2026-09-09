@@ -46,7 +46,7 @@ import {
 } from "@/lib/utils/nomenclatura-gerador";
 import { CASCATA_VAZIA } from "@/lib/utils/nomenclatura-cascata";
 import { FormFunilOuOferta, FormLp, FormProduto } from "./forms";
-import { PrevaDoNome } from "./previa-do-nome";
+import { PreviaDoNome } from "./previa-do-nome";
 import { SeletorDeExpert } from "./seletor-de-expert";
 
 type Modo = { tipo: "nova" } | { tipo: "editar"; id: string } | { tipo: "duplicar"; id: string };
@@ -167,7 +167,13 @@ export function GeradorDeCampanha({ modo }: { modo: Modo }) {
 
   const salvando = criar.isPending || editar.isPending;
   const lpsParaOpcoes = (lps.data ?? []).map((l: Lp) => ({ id: l.id, code: l.code, slug: l.slug, productId: l.productId, funnelId: l.funnelId, offerId: l.offerId }));
-  const cascataParaLp = { expertId: estado.expertId, productId: estado.productId, funnelId: estado.funnelId, offerId: estado.offerId === "ofmix" ? "" : estado.offerId };
+  // Memoizado (gate do @qa, QA-473-01): `FormLp` reseta o próprio estado quando
+  // `cascataInicial` muda de identidade. Um objeto novo a cada render do
+  // gerador zerava o formulário da LP a cada tecla digitada nele.
+  const cascataParaLp = useMemo(
+    () => (estado.expertId ? { ...CASCATA_VAZIA, expertId: estado.expertId, productId: estado.productId, funnelId: estado.funnelId, offerId: estado.offerId === "ofmix" ? "" : estado.offerId } : undefined),
+    [estado.expertId, estado.productId, estado.funnelId, estado.offerId],
+  );
 
   if (idDaOrigem && origem.isLoading) return <p className="text-sm text-muted-foreground">Carregando campanha…</p>;
   if (idDaOrigem && origem.error) return <p className="text-sm text-destructive">{erroDaApi(origem.error).mensagem}</p>;
@@ -247,14 +253,14 @@ export function GeradorDeCampanha({ modo }: { modo: Modo }) {
 
       <aside className="space-y-3 lg:sticky lg:top-4 lg:self-start">
         <h3 className="text-sm font-semibold">Prévia</h3>
-        <PrevaDoNome previa={previa} />
+        <PreviaDoNome previa={previa} />
       </aside>
 
       {/* "+ cadastrar novo" — os formulários da 47.2, já com o expert (e a combinação) preenchidos; ao salvar, o novo fica selecionado. */}
       <FormProduto aberto={cadastro === "produto"} linha={null} expertInicial={estado.expertId} onFechar={() => setCadastro(null)} />
       <FormFunilOuOferta recurso="funis" aberto={cadastro === "funil"} linha={null} expertInicial={estado.expertId} onFechar={() => setCadastro(null)} />
       <FormFunilOuOferta recurso="ofertas" aberto={cadastro === "oferta"} linha={null} expertInicial={estado.expertId} onFechar={() => setCadastro(null)} />
-      <FormLp aberto={cadastro === "lp"} linha={null} cascataInicial={estado.expertId ? { ...CASCATA_VAZIA, ...cascataParaLp } : undefined} onFechar={() => setCadastro(null)} onSalvo={(lp) => setEstado((e) => ({ ...e, lpId: lp.id }))} />
+      <FormLp aberto={cadastro === "lp"} linha={null} cascataInicial={cascataParaLp} onFechar={() => setCadastro(null)} onSalvo={(lp) => setEstado((e) => ({ ...e, lpId: lp.id }))} />
     </div>
   );
 }

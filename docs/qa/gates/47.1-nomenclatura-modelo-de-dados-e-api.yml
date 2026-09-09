@@ -8,9 +8,10 @@ revisadoEm: "2026-09-09"
 arquivos: 18 novos/modificados — ver File List da story
 tamanho: "~2.100 linhas (schema, migration, 4 arquivos de serviço, rota, seed, 4 suítes)"
 
-decisao: CONCERNS  # → elegível a PASS: QA-471-02 resolvida em 2026-09-09 (ver achados); falta a revisão do dono do produto (spec § 0.3)
+decisao: PASS  # promovido em 2026-09-09: QA-471-02 resolvida (banco real) — ver `historico`
+historico: "CONCERNS em 2026-09-09 (manhã) por QA-471-02; PASS em 2026-09-09 (tarde) após migration em produção, seed 2× e prova da camada de serviço no banco real (11 checks)."
 condicional: >
-  O código está certo e protegido — 53 testes, 9 reversões medidas, predicados
+  (texto original do CONCERNS, mantido para rastreio) O código está certo e protegido — 53 testes, 9 reversões medidas, predicados
   do Drizzle inspecionados, migration conferida coluna a coluna contra o
   `drizzle-kit generate`. O que impede o PASS é o que NENHUM teste desta story
   alcança: nada foi gravado num Postgres de verdade. O primeiro contato do

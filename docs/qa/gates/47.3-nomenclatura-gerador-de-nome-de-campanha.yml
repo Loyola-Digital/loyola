@@ -1,0 +1,73 @@
+alvo: "Story 47.3 — Nomenclatura: gerador de nome de campanha, listagem e validador"
+epic: 47
+branch: "feat/47.3-nomenclatura-gerador (empilhada)"
+commit: "5f8ea608 + 887f0875"
+autor: "@dev (Dex)"
+revisadoPor: "@qa (Quinn)"
+revisadoEm: "2026-09-09"
+
+decisao: CONCERNS
+condicional: >
+  Código e regras certos e provados também no banco real (montarCampanha,
+  changelog update/publish, snapshot só-ativos × com-inativos). Segura o PASS
+  a AC18 (roteiro bloco C, 15 passos) e a conferência D1–D4 no banco depois do
+  primeiro uso pela tela.
+
+verificacoes:
+  - id: V1
+    o_que: "buildCampaignName / parseCampaignName puros, com snapshot; duas leituras do dicionário"
+    onde: "shared/src/nomenclatura-de-campanha.ts; 15 testes em api/nomenclatura-nome; reversões: 7 underscores → 2, LP de outra oferta → 1"
+    resultado: CONFERE
+  - id: V2
+    o_que: "`name` nunca vem do cliente; publicada não muda de nome (409); notas editáveis"
+    onde: "rotas: POST/PATCH campanhas; teste 'AC 11 (servidor)'; reversão 'publicada muda de nome' → 1"
+    resultado: CONFERE
+  - id: V3
+    o_que: "Regra 8 (só ativos gravam) × regra 4 (inativo válido com aviso no parse)"
+    onde: "campanhas.ts + validar-nome; teste 'regra 8: …'; reversão 'oferta inativa entra em nome novo' → 1"
+    resultado: CONFERE
+    nota: "Banco real: snapshot(false) não traz zz desativado; snapshot(true) traz com active=false."
+  - id: V4
+    o_que: "Cascata do gerador, ofmix/lpmix/na por último, ano padrão, prévia = buildCampaignName"
+    onde: "lib/utils/nomenclatura-gerador.ts; 14 testes; 4 reversões"
+    resultado: CONFERE
+  - id: V5
+    o_que: "Contrato 7 → 8 na story que cria a rota"
+    onde: "shared/src/contract.ts"
+    resultado: CONFERE
+  - id: V6
+    o_que: "campanhas.listar: filtros no SQL (ilike, ano, published_at), contagem com o mesmo predicado"
+    onde: "api/nomenclatura-repositorio (47.4 fechou a lacuna); reversão 'busca ignorada' → 1"
+    resultado: CONFERE
+
+achados:
+  - id: QA-473-01
+    severidade: medium
+    status: corrigido-no-gate
+    o_que: >
+      No gerador, `cascataInicial` do `FormLp` ("+ cadastrar novo" na LP) era
+      um objeto novo a cada render. `FormLp` reseta o próprio estado quando
+      essa prop muda de identidade → digitar no formulário da LP apagava o que
+      se digitava. Não há teste de componente que pegue isso; só a tela (ou a
+      leitura). Corrigido com `useMemo` pelos quatro ids.
+  - id: QA-473-02
+    severidade: low
+    status: corrigido-no-gate
+    o_que: "Componente exportado como `PrevaDoNome` (typo). Renomeado para `PreviaDoNome`."
+  - id: QA-473-03
+    severidade: low
+    status: aberto
+    o_que: "Confirmações de 'Marcar como publicada' usam `confirm()` nativo (decisão declarada pelo @dev). Funciona; destoa do resto da tela. Trocar por AlertDialog quando houver um segundo caso."
+  - id: QA-473-04
+    severidade: medium
+    status: aberto
+    o_que: "AC18 — validação visual (bloco C) e D1–D4 pendentes com o dono do produto."
+
+os7checks:
+  code_review: "✅ QA-473-01 achado e corrigido na leitura"
+  testes: "✅ 15 nome + 5 rotas + 14 gerador; 9 reversões"
+  criterios_de_aceite: "✅ AC1–AC17 · AC18 pendente"
+  regressoes: "✅ API 2.592 (11 baseline) · web 1.156 · next build verde"
+  performance: "✅ listagem limitada a 100 com total"
+  seguranca: "✅ `name` não vem do cliente; guest 403; zod em tudo"
+  documentacao: "✅"

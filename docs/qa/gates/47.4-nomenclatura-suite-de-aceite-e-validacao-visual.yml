@@ -1,0 +1,56 @@
+alvo: "Story 47.4 — Nomenclatura: suíte de aceite (15 critérios) e validação visual"
+epic: 47
+branch: "feat/47.4-nomenclatura-suite-de-aceite"
+commit: 616a4d67
+autor: "@dev (Dex)"
+revisadoPor: "@qa (Quinn)"
+revisadoEm: "2026-09-09"
+
+decisao: CONCERNS
+condicional: >
+  A matriz está completa e honesta — 15/15 ACs com mutação que derruba, e o
+  que só a tela prova está nomeado, não escondido. Falta a metade que é do
+  dono do produto: executar o roteiro (37 passos) e preencher a coluna
+  Resultado; depois disso D1–D4 no banco. Sem isso a story não fecha, por
+  definição dela mesma (AC4).
+
+verificacoes:
+  - id: V1
+    o_que: "Cada AC da spec tem teste que cai com a regra revertida"
+    onde: "docs/qa/47.4-nomenclatura-matriz-de-aceite.md; 26 mutações conferidas nos Change Logs das 4 stories + 4 desta"
+    resultado: CONFERE
+  - id: V2
+    o_que: "Lacunas fechadas com SQL renderizado, não mock vazio"
+    onde: "nomenclatura-repositorio.test.ts (+8): listas por expert, campanhas.listar, snapshot"
+    resultado: CONFERE
+  - id: V3
+    o_que: "O que o repo não prova está declarado (AC6)"
+    onde: "seção final da matriz"
+    resultado: CONFERE
+    nota: >
+      Dois dos três itens declarados foram provados por mim no banco real
+      nesta sessão: `defaultNow()` em `date` (started_at = 2026-09-09) e a
+      cascata em transação. Sobra só o comportamento de componente.
+  - id: V4
+    o_que: "AC5 — forma do dado no banco"
+    onde: "prova no banco real: name, offer_value/lp_value + FKs, changelog update before/after e publish"
+    resultado: CONFERE
+    nota: "Com registros de teste `zz`, removidos ao fim (6 linhas + 13 de changelog). D1–D4 do roteiro repetem a conferência com os dados reais do dono."
+
+achados:
+  - id: QA-474-01
+    severidade: medium
+    status: aberto
+    o_que: "Roteiro visual não executado (AC4). É do dono do produto; a coluna Resultado está vazia."
+  - id: QA-474-02
+    severidade: info
+    o_que: "Registros de teste no banco de produção foram criados e apagados pela prova de QA. Nenhum resto: `select count(*) from naming_experts where code='zz'` = 0."
+
+os7checks:
+  code_review: "✅"
+  testes: "✅ 83 API · 31 web · 26 reversões"
+  criterios_de_aceite: "✅ AC1–AC3, AC5–AC8 · AC4 pendente"
+  regressoes: "✅"
+  performance: "—"
+  seguranca: "—"
+  documentacao: "✅ matriz + roteiro"
