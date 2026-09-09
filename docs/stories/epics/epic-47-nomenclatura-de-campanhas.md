@@ -1,6 +1,6 @@
 # EPIC 47 — Nomenclatura de campanhas do perpétuo (Dicionário + Gerador)
 
-**Status:** 47.1 InReview (gate CONCERNS) · 47.2 InReview · 47.3 **InReview** (implementada em 2026-09-09, branch `feat/47.3-nomenclatura-gerador` empilhada na 47.2) · 47.4 Ready · P1 (seed) aberta · revisão visual das Etapas 1–3 com o dono do produto no local pendente
+**Status:** as 4 stories **InReview** (2026-09-09; branches empilhadas `feat/47.1…` → `feat/47.4-nomenclatura-suite-de-aceite`) · migration 0142 e seed **em produção** · P1 (valores do seed) aberta · **roteiro visual de 37 passos aguarda o dono do produto** · gates do @qa pendentes na 47.2–47.4
 **Origem:** especificação do dono do produto entregue em 2026-09-09 — guardada verbatim em `epic-47-especificacao-nomenclatura.md` (a **fonte de verdade** deste epic; toda AC abaixo rastreia para uma seção dela)
 **Owner:** @sm (stories, por delegação do pedido) → @po (validação) → @dev (implementação) → @qa (gate)
 **Criado:** 2026-09-09 pelo @sm (River). ⚠️ Estrutura de epic é atribuição do @pm (Morgan) — este documento foi criado junto com as stories porque o pedido chegou como spec pronta; o @pm valida ou reescreve a estrutura na primeira leitura.
@@ -65,7 +65,7 @@ Este epic põe dentro do Loyola X, em Configurações → Nomenclatura:
 | 47.1 | Modelo de dados, migration, seed e API do dicionário | 1 (+ API, D7) | 8 tabelas `naming_*`, serviço com normalização/sugestão/imutabilidade/exclusão/changelog, rotas CRUD `/api/nomenclatura/*`, seed idempotente, testes de servidor | 8 | **InReview** · gate **CONCERNS** (QA-471-02: sem banco real) · 53 testes · 9 reversões · branch `feat/47.1-nomenclatura-modelo-e-api` |
 | 47.2 | Submenu Nomenclatura e telas do Dicionário | 2 | entrada em `/settings`, 6 abas (Experts · Produtos · Funis · Ofertas · LPs · Valores fixos) com incluir/editar/excluir/desativar | 8 | **InReview** · 17 testes puros · web 1.142 · `next build` verde · validação visual pendente |
 | 47.3 | Gerador de nome de campanha, listagem e validador | 3 | `buildCampaignName`/`parseCampaignName` no `shared`, rotas de campanhas, tela do gerador com prévia colorida, publicar/duplicar, "Validar um nome existente" | 8 | **InReview** · 73 testes API · 31 web · `next build` verde · 9 reversões · validação visual pendente |
-| 47.4 | Suíte de aceite (15 critérios) e validação visual | 4 | matriz AC → teste, lacunas fechadas, roteiro visual executado nas duas telas, docs | 5 | **Ready** (GO 9/10) |
+| 47.4 | Suíte de aceite (15 critérios) e validação visual | 4 | matriz AC → teste, lacunas fechadas, roteiro visual executado nas duas telas, docs | 5 | **InReview** · matriz 15/15 · 26 reversões · roteiro visual aguarda execução |
 
 Arquivos: `docs/stories/47.1.nomenclatura-modelo-de-dados-e-api.md` · `docs/stories/47.2.nomenclatura-submenu-e-telas-do-dicionario.md` · `docs/stories/47.3.nomenclatura-gerador-de-nome-de-campanha.md` · `docs/stories/47.4.nomenclatura-suite-de-aceite-e-validacao-visual.md`
 
@@ -89,6 +89,18 @@ Arquivos: `docs/stories/47.1.nomenclatura-modelo-de-dados-e-api.md` · `docs/sto
 - **`schema.ts` tem 4.665 linhas e é tocado por várias PRs por semana.** Conflito de merge é provável; a 47.1 acrescenta um bloco contíguo no fim do arquivo para minimizar.
 - **Ninguém no repo importa nada desta área ainda** — risco de regressão em código existente é baixo, mas o `next build` e o `tsc` do web precisam do `shared` compilado (`feedback_shared_dist_typecheck`).
 
+## O que este epic provou (47.4 AC8)
+
+| | |
+|---|---|
+| ACs da spec com teste automatizado que cai com a regra revertida | **15 de 15** |
+| ACs com parte que só a tela prova | 10 de 15 |
+| mutações medidas | 26, nenhuma decorativa |
+| casos automatizados | 83 na API · 31 no web |
+| banco real | migration 0142 aplicada em produção em 2026-09-09; seed 2× = 9 → 0 |
+
+O que o número não cobre está declarado na matriz (componentes, `defaultNow()` em `date`, atomicidade da cascata) e vira passo do roteiro visual — que é entregável, não formalidade (regra do Epic 46).
+
 ## Fora do escopo (spec § 11)
 
 Nomenclatura de conjunto e anúncio · parâmetros de URL · integração Meta · importação da planilha antiga. O modelo fica pronto: `naming_campaigns.id` será pai de conjuntos/anúncios e `naming_landing_pages.code` volta no nome do anúncio.
@@ -99,6 +111,7 @@ Nomenclatura de conjunto e anúncio · parâmetros de URL · integração Meta �
 |---|---|---|
 | 2026-09-09 | @sm (River) | Epic criado a partir da spec do dono do produto. Spec arquivada verbatim. Decisões D1–D9 registradas; D2 e D3 marcadas para confirmação do @po. Pré-condições P1–P3 declaradas. |
 | 2026-09-09 | @po (Pax) | 47.1 validada: GO 9,5/10 → Ready. D2 confirmada, D3 decidida (não-guest lê e escreve), P3 fechada. Sigla do expert imutável desde a criação (contradição da spec resolvida pelo lado estrito). |
+| 2026-09-09 | @dev (Dex) | 47.4 em InReview: matriz 15/15 × teste × reversão, 6 testes de lacuna, roteiro visual de 37 passos (execução com o dono do produto). |
 | 2026-09-09 | @dev (Dex) | Migration 0142 aplicada em produção com autorização do dono do produto (QA-471-02 resolvida); seed 2× = 9 valores fixos, 0 duplicatas. Local passa a funcionar de ponta a ponta. |
 | 2026-09-09 | @dev (Dex) | 47.3 implementada e em InReview: `buildCampaignName`/`parseCampaignName` no `shared`, rotas de campanhas/snapshot/validador, gerador com prévia colorida, listagem, validador. Contrato 7→8. |
 | 2026-09-09 | @dev (Dex) | 47.2 implementada e em InReview: entrada Nomenclatura em `/settings`, 6 abas do Dicionário, seção/aba na URL. Validação visual fica com o dono do produto. |

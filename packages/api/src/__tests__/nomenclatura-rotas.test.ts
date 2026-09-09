@@ -460,6 +460,20 @@ describe("rotas da nomenclatura", () => {
     expect(r.json().error).toContain("migration 0142");
   });
 
+  it("AC 1 (rota): ?expertId devolve só o que é daquele expert", async () => {
+    const { bbe, fz } = await cenario(app);
+    await app.inject({ method: "POST", url: "/api/nomenclatura/produtos", payload: { expertId: fz.id, slug: "hamburguer", name: "H" } });
+    await app.inject({ method: "POST", url: "/api/nomenclatura/funis", payload: { expertId: fz.id, code: "a01", description: "Quiz" } });
+    const pBbe = (await app.inject({ method: "GET", url: `/api/nomenclatura/produtos?expertId=${bbe.id}` })).json();
+    const pFz = (await app.inject({ method: "GET", url: `/api/nomenclatura/produtos?expertId=${fz.id}` })).json();
+    const fFz = (await app.inject({ method: "GET", url: `/api/nomenclatura/funis?expertId=${fz.id}` })).json();
+    const oFz = (await app.inject({ method: "GET", url: `/api/nomenclatura/ofertas?expertId=${fz.id}` })).json();
+    expect(pBbe.map((p: { slug: string }) => p.slug)).toEqual(["churrasco"]);
+    expect(pFz.map((p: { slug: string }) => p.slug)).toEqual(["hamburguer"]);
+    expect(fFz.map((f: { rotulo: string }) => f.rotulo)).toEqual(["a01 — Quiz"]);
+    expect(oFz).toEqual([]);
+  });
+
   it("id inexistente → 404; id malformado → 400", async () => {
     expect((await app.inject({ method: "PATCH", url: `/api/nomenclatura/funis/${USUARIO}`, payload: {} })).statusCode).toBe(404);
     expect((await app.inject({ method: "PATCH", url: "/api/nomenclatura/funis/abc", payload: {} })).statusCode).toBe(400);

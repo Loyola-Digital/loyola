@@ -32,6 +32,7 @@ function fakeDb(respostas: unknown[][] = []) {
       }),
       orderBy: vi.fn(() => cadeia(reg)),
       limit: vi.fn(() => cadeia(reg)),
+      offset: vi.fn(() => cadeia(reg)),
       returning: vi.fn(async () => [{ id: "novo", ...(reg.valores as object) }]),
       onConflictDoNothing: vi.fn(() => cadeia(reg)),
       set: vi.fn((v: unknown) => {
@@ -189,3 +190,88 @@ describe("toda escrita deixa changelog (regra 7)", () => {
     expect((log.before as Record<string, unknown>).code).toBe("a01");
   });
 });
+
+// ─────────────── Story 47.4: lacunas da matriz (predicados que faltavam) ───────────────
+
+describe("AC 1 (servidor): as listas filtram pelo expert pedido", () => {
+  it("produtos.listar(expertId, false) → expert_id = $1 AND active = true", async () => {
+    const { db, registros } = fakeDb();
+    await criarRepositorio(db).produtos.listar(EXPERT, false);
+    const { sql, params } = sqlDe(registros[0].where);
+    expect(sql).toContain('"expert_id" = ');
+    expect(sql).toContain('"active" = ');
+    expect(params).toEqual([EXPERT, true]);
+  });
+  it("funis.listar(expertId, false) idem", async () => {
+    const { db, registros } = fakeDb();
+    await criarRepositorio(db).funis.listar(EXPERT, false);
+    expect(sqlDe(registros[0].where).params).toEqual([EXPERT, true]);
+  });
+  it("lps.listar pela combinação inteira (AC 7/9 da spec: LP é da combinação)", async () => {
+    const { db, registros } = fakeDb();
+    await criarRepositorio(db).lps.listar({ expertId: "e", productId: "p", funnelId: "f", offerId: "o" }, false);
+    const { sql, params } = sqlDe(registros[0].where);
+    for (const c of ["expert_id", "product_id", "funnel_id", "offer_id", "active"]) expect(sql).toContain(`"${c}" = `);
+    expect(params).toEqual(["e", "p", "f", "o", true]);
+  });
+});
+
+describe("Story 47.3: campanhas.listar — filtros vão para o SQL, não para a memória", () => {
+  it("busca no nome é ILIKE com %q%; ano e expert entram como igualdade", async () => {
+    const { db, registros } = fakeDb([[], [{ n: 0 }]]);
+    await criarRepositorio(db).campanhas.listar({ expertId: EXPERT, year: "2026", q: "churrasco", limit: 50, offset: 0 });
+    const { sql, params } = sqlDe(registros[0].where);
+    expect(sql).toContain('"expert_id" = ');
+    expect(sql).toContain('"year" = ');
+    expect(sql).toMatch(/"name" ilike /);
+    expect(params).toEqual([EXPERT, "2026", "%churrasco%"]);
+    // a contagem usa o MESMO predicado
+    expect(sqlDe(registros[1].where).params).toEqual([EXPERT, "2026", "%churrasco%"]);
+  });
+  it("publicada=true → published_at IS NOT NULL; publicada=false → IS NULL; sem filtro → sem where", async () => {
+    const a = fakeDb([[], [{ n: 0 }]]);
+    await criarRepositorio(a.db).campanhas.listar({ publicada: true, limit: 10, offset: 0 });
+    expect(sqlDe(a.registros[0].where).sql).toMatch(/"published_at" is not null/);
+    const b = fakeDb([[], [{ n: 0 }]]);
+    await criarRepositorio(b.db).campanhas.listar({ publicada: false, limit: 10, offset: 0 });
+    expect(sqlDe(b.registros[0].where).sql).toMatch(/"published_at" is null/);
+    const c = fakeDb([[], [{ n: 0 }]]);
+    await criarRepositorio(c.db).campanhas.listar({ limit: 10, offset: 0 });
+    expect(c.registros[0].where).toBeUndefined();
+  });
+});
+
+describe("Story 47.3: snapshot — por código, com os pais resolvidos", () => {
+  const linhas = {
+    experts: [{ id: "e1", code: "bbe", active: true }, { id: "e2", code: "fz", active: false }],
+    produtos: [{ id: "p1", expertId: "e1", slug: "churrasco", active: true }],
+    funis: [{ id: "f1", expertId: "e1", code: "a01", active: true }],
+    ofertas: [{ id: "o1", expertId: "e1", code: "of01", active: true }, { id: "o2", expertId: "e1", code: "of02", active: false }],
+    lps: [{ id: "l1", expertId: "e1", productId: "p1", funnelId: "f1", offerId: "o2", code: "lpa", active: true }],
+    valores: [{ type: "format", value: "videos", active: true }, { type: "format", value: "estaticos", active: false }],
+  };
+  const fila = () => [linhas.experts, linhas.produtos, linhas.funis, linhas.ofertas, linhas.lps, linhas.valores];
+  it("inativos=false: só ativos, mas a LP de oferta inativa ainda resolve o CÓDIGO da oferta (o pai é lido inteiro)", async () => {
+    const { db } = fakeDb(fila());
+    const s = await criarRepositorio(db).snapshot(false);
+    expect(s.experts).toEqual([{ code: "bbe", active: true }]);
+    expect(s.ofertas.map((o) => o.code)).toEqual(["of01"]);
+    expect(s.lps).toEqual([{ expert: "bbe", product: "churrasco", funnel: "a01", offer: "of02", code: "lpa", active: true }]);
+    expect(s.valores).toEqual([{ type: "format", value: "videos", active: true }]);
+  });
+  it("inativos=true: tudo, com o flag", async () => {
+    const { db } = fakeDb(fila());
+    const s = await criarRepositorio(db).snapshot(true);
+    expect(s.experts.map((e) => [e.code, e.active])).toEqual([["bbe", true], ["fz", false]]);
+    expect(s.ofertas.map((o) => o.code)).toEqual(["of01", "of02"]);
+    expect(s.valores).toHaveLength(2);
+  });
+  it("as seis leituras do snapshot NÃO filtram active no SQL (o filtro é em memória, depois de resolver os pais)", async () => {
+    const { db, registros } = fakeDb(fila());
+    await criarRepositorio(db).snapshot(false);
+    const selects = registros.filter((r) => r.tipo === "select");
+    expect(selects).toHaveLength(6);
+    for (const r of selects) expect(r.where).toBeUndefined();
+  });
+});
+
