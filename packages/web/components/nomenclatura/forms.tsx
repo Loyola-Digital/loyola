@@ -298,7 +298,9 @@ export function FormLp(props: { aberto: boolean; linha: Lp | null; cascataInicia
 
   return (
     <FormularioDialogo aberto={aberto} onFechar={onFechar} titulo={linha ? `Editar LP ${linha.slug}` : "Nova LP"} descricao="Uma LP pertence a expert + produto + funil + oferta. O slug é gerado e é a identidade pública da página." onSalvar={salvar} salvando={criar.isPending || editar.isPending} podeSalvar={completa && Boolean(code.trim())} erro={erro}>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {/* Um select por linha (validação visual do dono, 2026-09-09): os rótulos de
+          funil e oferta são longos e, lado a lado, a lista aberta de um cobria o outro. */}
+      <div className="grid gap-3">
         <CascataDeSelects valor={cascata} onChange={(c) => { setCascata(c); setCode(""); }} travado={Boolean(linha)} />
       </div>
       <CampoImutavel id="lpcode" label="Código" valor={code} onChange={setCode} tipo="lp" usadoEm={linha?.usadoEm ?? 0} placeholder="lpa" ajuda={!linha && sugestao.data?.codigo ? `Sugerido: ${sugestao.data.codigo} (próximo livre nesta combinação).` : "lp + uma letra, único na combinação."} />
