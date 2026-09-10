@@ -156,6 +156,32 @@ export async function resolveSalesSheetsForStage(
   // não tem planilha de venda — quando tem as duas, a capture costuma repetir as
   // MESMAS transações (dedup é por sheet) e dobraria o faturamento.
   let sheets: ResolvedSalesSheet[] = allSheets.filter((s) => SALES_SUBTYPES.includes(s.subtype));
+
+  // A aba "Planilhas vinculadas" da etapa grava em funnel_spreadsheets com
+  // stage_id preenchido — NÃO em stage_sales_spreadsheets. Sem ler daqui, uma
+  // planilha vinculada pela tela (com os campos mapeados) devolvia semDados.
+  const daTela = await db
+    .select({
+      id: funnelSpreadsheets.id,
+      subtype: funnelSpreadsheets.type,
+      spreadsheetId: funnelSpreadsheets.spreadsheetId,
+      sheetName: funnelSpreadsheets.sheetName,
+      columnMapping: funnelSpreadsheets.columnMapping,
+    })
+    .from(funnelSpreadsheets)
+    // `type` aqui é enum próprio da tabela; dos SALES_SUBTYPES só "sales" existe
+    // nele (perpetual_sales tem o bloco abaixo, sem stage_id).
+    .where(and(eq(funnelSpreadsheets.stageId, stageId), eq(funnelSpreadsheets.type, "sales")));
+
+  // Dedup por planilha+aba: a mesma fonte nas duas tabelas dobraria o faturamento.
+  const vistas = new Set(sheets.map((s) => `${s.spreadsheetId}|${s.sheetName}`));
+  for (const s of daTela) {
+    const chave = `${s.spreadsheetId}|${s.sheetName}`;
+    if (vistas.has(chave)) continue;
+    vistas.add(chave);
+    sheets.push(s);
+  }
+
   if (sheets.length === 0 && ehCaptacaoPaga(stageRow?.stageType)) {
     sheets = allSheets.filter((s) => s.subtype === "capture");
   }
