@@ -14,12 +14,15 @@ type Linha = Record<string, unknown> & { id: string; active: boolean };
 type Log = { entity: string; entityId: string; action: string; before: unknown; after: unknown; author: string | null };
 
 function memoria() {
-  const t: Record<string, Linha[]> = { experts: [], produtos: [], funis: [], ofertas: [], lps: [], dicionario: [], campanhas: [] };
+  const t: Record<string, Linha[]> = { experts: [], produtos: [], funis: [], ofertas: [], lps: [], dicionario: [], campanhas: [], decisoes: [] };
+  /** Story 47.5: "cache de nomes" do Meta e gasto, em memória. */
+  const meta: { projectId: string; projeto: string; campaignId: string; nome: string; statusMeta: string | null }[] = [];
+  const gastoMeta: Record<string, { spend: number; de: string; ate: string }> = {};
   const campanhas: Record<string, unknown>[] = [];
   const changelog: Log[] = [];
   let seq = 0;
   const id = () => `00000000-0000-4000-8000-${String(++seq).padStart(12, "0")}`;
-  const NOME: Record<string, string> = { experts: "naming_experts", produtos: "naming_products", funis: "naming_funnels", ofertas: "naming_offers", lps: "naming_landing_pages", dicionario: "naming_dictionary_values", campanhas: "naming_campaigns" };
+  const NOME: Record<string, string> = { experts: "naming_experts", produtos: "naming_products", funis: "naming_funnels", ofertas: "naming_offers", lps: "naming_landing_pages", dicionario: "naming_dictionary_values", campanhas: "naming_campaigns", decisoes: "naming_legacy_decisions" };
   const COL: Record<string, string> = { experts: "expertId", produtos: "productId", funis: "funnelId", ofertas: "offerId", lps: "landingPageId" };
 
   const ativos = (xs: Linha[], inativos: boolean) => (inativos ? xs : xs.filter((x) => x.active));
@@ -98,9 +101,26 @@ function memoria() {
       }
       return refs;
     },
+    legadas: {
+      listar: async (f: { projectId?: string; q?: string }) => {
+        const nomes = meta.filter((m) => (!f.projectId || m.projectId === f.projectId) && (!f.q || m.nome.toLowerCase().includes(f.q.toLowerCase())) && /(^|[^a-z0-9])(a1|a2)([^a-z0-9]|$)|perpetuo|perpétuo/i.test(m.nome));
+        return {
+          nomes,
+          gasto: new Map(nomes.filter((n) => gastoMeta[n.campaignId]).map((n) => [n.campaignId, gastoMeta[n.campaignId]])),
+          decisoes: new Map(t.decisoes.map((d) => [`${d.projectId}:${d.campaignId}`, d])),
+        };
+      },
+      detalhe: async (projectId: string, campaignId: string) => {
+        const m = meta.find((x) => x.projectId === projectId && x.campaignId === campaignId);
+        return m ? { nome: m.nome, primeiroGasto: gastoMeta[campaignId]?.de ?? null } : undefined;
+      },
+      decisao: async (projectId: string, campaignId: string) => t.decisoes.find((d) => d.projectId === projectId && d.campaignId === campaignId),
+      porNomeAntigo: async (nome: string) => t.campanhas.find((c) => c.origin === "legado" && c.metaCampaignName === nome),
+    },
     experts: {
       listar: async (inativos: boolean) => ativos(t.experts, inativos),
       porCode: async (code: string) => t.experts.find((x) => x.code === code),
+      porProjeto: async (projectId: string) => t.experts.find((x) => x.projectId === projectId),
       contagens: async () => ({ produtos: new Map(), funis: new Map(), ofertas: new Map(), lps: new Map() }),
       filhosAtivos: async (expertId: string) => ({
         produtos: t.produtos.filter((x) => x.expertId === expertId && x.active),
@@ -136,7 +156,7 @@ function memoria() {
       porValor: async (type: string, value: string) => t.dicionario.find((x) => x.type === type && x.value === value),
     },
   };
-  return { repo: repo as unknown as Repositorio, t, campanhas, changelog };
+  return { repo: repo as unknown as Repositorio, t, campanhas, changelog, meta, gastoMeta };
 }
 
 const USUARIO = "10000000-0000-4000-8000-000000000001";
@@ -472,6 +492,83 @@ describe("rotas da nomenclatura", () => {
     expect(pFz.map((p: { slug: string }) => p.slug)).toEqual(["hamburguer"]);
     expect(fFz.map((f: { rotulo: string }) => f.rotulo)).toEqual(["a01 — Quiz"]);
     expect(oFz).toEqual([]);
+  });
+
+  // ─────────────── Story 47.5: legadas ───────────────
+  const PROJ_BBE = "50000000-0000-4000-8000-000000000001";
+  const PROJ_DG = "50000000-0000-4000-8000-000000000002";
+  async function legadasBase(app: FastifyInstance) {
+    const c = await cenario(app);
+    await dicionarioBase(app);
+    await app.inject({ method: "PATCH", url: `/api/nomenclatura/experts/${c.bbe.id}`, payload: { projectId: PROJ_BBE } });
+    await app.inject({ method: "POST", url: "/api/nomenclatura/dicionario", payload: { type: "temperature", value: "cold" } });
+    mem.meta.push(
+      { projectId: PROJ_BBE, projeto: "BBE", campaignId: "111", nome: "bbe-a1-jul-26--venda--perpetuo--hot_cbo_videos", statusMeta: "ACTIVE" },
+      { projectId: PROJ_BBE, projeto: "BBE", campaignId: "222", nome: "bbe-a10-lancamento-abril", statusMeta: "PAUSED" },
+      { projectId: PROJ_DG, projeto: "DG & CPDF", campaignId: "333", nome: "[VENDAS] [PERPETUO] [CPF] [FRIO] - Manutenção", statusMeta: "ACTIVE" },
+    );
+    mem.gastoMeta["111"] = { spend: 1234.5, de: "2026-07-09", ate: "2026-09-01" };
+    return c;
+  }
+
+  it("47.5 AC7: lista só o que casa com o filtro, com gasto, expert do projeto e sugestão; ordena por gasto", async () => {
+    await legadasBase(app);
+    const r = (await app.inject({ method: "GET", url: "/api/nomenclatura/legadas" })).json();
+    expect(r.itens.map((i: { campaignId: string }) => i.campaignId)).toEqual(["111", "333"]); // a10 fica de fora
+    expect(r.itens[0]).toMatchObject({ gasto: 1234.5, de: "2026-07-09", expert: { code: "bbe" }, decisao: null });
+    expect(r.itens[0].sugestao.campos).toMatchObject({ expert: "bbe", funnel: "a01", product: "churrasco", year: "2026", temperature: "hot", auction: "cbo", format: "videos" });
+    expect(r.itens[1]).toMatchObject({ expert: null, gasto: 0 });
+    expect(r.itens[1].sugestao.campos).toMatchObject({ temperature: "cold" });
+    expect(r.resumo).toEqual({ total: 2, pendentes: 2, gastoPendente: 1234.5 });
+  });
+
+  it("47.5 AC8/AC9: classifica uma vez (nasce publicada no 1º gasto, origem legado, nome antigo guardado); 2ª → 409; desfazer apaga o registro", async () => {
+    const { churrasco, a01, of01 } = await legadasBase(app);
+    const corpo = { productId: churrasco.id, funnelId: a01.id, offerId: of01.id, landingPageId: null, lpValue: "na", year: "2026", temperature: "hot", auction: "cbo", format: "videos", expertId: "ignorado" };
+    const r = await app.inject({ method: "POST", url: `/api/nomenclatura/legadas/${PROJ_BBE}/111/classificar`, payload: corpo });
+    expect(r.statusCode).toBe(201);
+    expect(r.json()).toMatchObject({ origin: "legado", metaCampaignId: "111", metaCampaignName: "bbe-a1-jul-26--venda--perpetuo--hot_cbo_videos", name: "bbe_churrasco_a01_of01_2026_hot_cbo_videos_na" });
+    expect(String(r.json().publishedAt)).toContain("2026-07-09");
+    const de_novo = await app.inject({ method: "POST", url: `/api/nomenclatura/legadas/${PROJ_BBE}/111/classificar`, payload: corpo });
+    expect(de_novo.statusCode).toBe(409);
+    const lista = (await app.inject({ method: "GET", url: "/api/nomenclatura/legadas?fila=classificadas" })).json();
+    expect(lista.itens.map((i: { campaignId: string }) => i.campaignId)).toEqual(["111"]);
+    // publicada: não muda de nome
+    const patch = await app.inject({ method: "PATCH", url: `/api/nomenclatura/campanhas/${r.json().id}`, payload: { temperature: "cold" } });
+    expect(patch.statusCode).toBe(409);
+    // validador reconhece o nome antigo
+    const val = (await app.inject({ method: "POST", url: "/api/nomenclatura/validar-nome", payload: { name: "bbe-a1-jul-26--venda--perpetuo--hot_cbo_videos" } })).json();
+    expect(val.valid).toBe(false);
+    expect(val.legado).toMatchObject({ campanhaId: r.json().id, name: "bbe_churrasco_a01_of01_2026_hot_cbo_videos_na" });
+    // desfazer: apaga campanha E decisão; volta para a fila
+    const del = await app.inject({ method: "DELETE", url: `/api/nomenclatura/legadas/${PROJ_BBE}/111/decisao` });
+    expect(del.statusCode).toBe(204);
+    expect(mem.t.campanhas).toHaveLength(0);
+    expect(mem.changelog.filter((l) => l.entity === "naming_campaigns").map((l) => l.action)).toEqual(["create", "delete"]);
+    const pend = (await app.inject({ method: "GET", url: "/api/nomenclatura/legadas" })).json();
+    expect(pend.resumo.pendentes).toBe(2);
+  });
+
+  it("47.5 AC1/AC8: sem expert vinculado ao projeto → 422; projeto já vinculado a outro expert → 409", async () => {
+    const { fz, churrasco, a01, of01 } = await legadasBase(app);
+    const r = await app.inject({ method: "POST", url: `/api/nomenclatura/legadas/${PROJ_DG}/333/classificar`, payload: { productId: churrasco.id, funnelId: a01.id, offerId: of01.id, landingPageId: null, lpValue: "na", year: "2026", temperature: "cold", auction: "cbo", format: "videos" } });
+    expect(r.statusCode).toBe(422);
+    expect(r.json().error).toContain("expert vinculado");
+    const dup = await app.inject({ method: "PATCH", url: `/api/nomenclatura/experts/${fz.id}`, payload: { projectId: PROJ_BBE } });
+    expect(dup.statusCode).toBe(409);
+    expect(dup.json().error).toContain("bbe");
+  });
+
+  it("47.5 AC9/AC13: ignorar tira da fila com motivo; desfazer volta; classificada não pode ser ignorada", async () => {
+    const { churrasco, a01, of01 } = await legadasBase(app);
+    const ig = await app.inject({ method: "POST", url: `/api/nomenclatura/legadas/${PROJ_DG}/333/ignorar`, payload: { reason: "é lançamento" } });
+    expect(ig.statusCode).toBe(201);
+    expect((await app.inject({ method: "GET", url: "/api/nomenclatura/legadas" })).json().itens.map((i: { campaignId: string }) => i.campaignId)).toEqual(["111"]);
+    expect((await app.inject({ method: "GET", url: "/api/nomenclatura/legadas?fila=ignoradas" })).json().itens[0]).toMatchObject({ campaignId: "333", decisao: { tipo: "ignorada", reason: "é lançamento" } });
+    await app.inject({ method: "DELETE", url: `/api/nomenclatura/legadas/${PROJ_DG}/333/decisao` });
+    expect((await app.inject({ method: "GET", url: "/api/nomenclatura/legadas" })).json().resumo.pendentes).toBe(2);
+    await app.inject({ method: "POST", url: `/api/nomenclatura/legadas/${PROJ_BBE}/111/classificar`, payload: { productId: churrasco.id, funnelId: a01.id, offerId: of01.id, landingPageId: null, lpValue: "na", year: "2026", temperature: "hot", auction: "cbo", format: "videos" } });
+    expect((await app.inject({ method: "POST", url: `/api/nomenclatura/legadas/${PROJ_BBE}/111/ignorar`, payload: {} })).statusCode).toBe(409);
   });
 
   it("id inexistente → 404; id malformado → 400", async () => {

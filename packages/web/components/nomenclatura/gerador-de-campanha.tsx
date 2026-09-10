@@ -24,10 +24,12 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   erroDaApi,
   useCampanha,
+  useClassificarLegada,
   useCriarCampanha,
   useEditarCampanha,
   useListaDe,
   usePublicarCampanha,
+  type Campanha,
   type ErroDaApi,
   type Lp,
 } from "@/lib/hooks/use-nomenclatura";
@@ -50,7 +52,12 @@ import { FormFunilOuOferta, FormLp, FormProduto } from "./forms";
 import { PreviaDoNome } from "./previa-do-nome";
 import { SeletorDeExpert } from "./seletor-de-expert";
 
-type Modo = { tipo: "nova" } | { tipo: "editar"; id: string } | { tipo: "duplicar"; id: string };
+type Modo =
+  | { tipo: "nova" }
+  | { tipo: "editar"; id: string }
+  | { tipo: "duplicar"; id: string }
+  /** Story 47.5: classificar uma campanha antiga do Meta — expert travado (vem do projeto), estado inicial da sugestão, salva pela rota de legadas. */
+  | { tipo: "legada"; projectId: string; campaignId: string; nomeAntigo: string; inicial: EstadoDoGerador; onSalvo: (c: Campanha) => void };
 
 function SelectDoGerador(props: { id: string; label: string; valor: string; onChange: (v: string) => void; opcoes: Opcao[]; desabilitado?: boolean; placeholder?: string; aoCadastrar?: () => void; travado?: boolean }) {
   const { id, label, valor, onChange, opcoes, desabilitado, placeholder, aoCadastrar, travado } = props;
@@ -83,9 +90,9 @@ function SelectDoGerador(props: { id: string; label: string; valor: string; onCh
 
 export function GeradorDeCampanha({ modo }: { modo: Modo }) {
   const router = useRouter();
-  const idDaOrigem = modo.tipo === "nova" ? null : modo.id;
+  const idDaOrigem = modo.tipo === "editar" || modo.tipo === "duplicar" ? modo.id : null;
   const origem = useCampanha(idDaOrigem);
-  const [estado, setEstado] = useState<EstadoDoGerador>(ESTADO_VAZIO);
+  const [estado, setEstado] = useState<EstadoDoGerador>(modo.tipo === "legada" ? modo.inicial : ESTADO_VAZIO);
   const [erro, setErro] = useState<ErroDaApi | null>(null);
   const [sufixoAberto, setSufixoAberto] = useState(false);
   const [cadastro, setCadastro] = useState<"produto" | "funil" | "oferta" | "lp" | null>(null);
@@ -93,6 +100,8 @@ export function GeradorDeCampanha({ modo }: { modo: Modo }) {
   const criar = useCriarCampanha();
   const editar = useEditarCampanha();
   const publicar = usePublicarCampanha();
+  const classificar = useClassificarLegada();
+  const ehLegada = modo.tipo === "legada";
   const publicada = modo.tipo === "editar" && Boolean(origem.data?.publishedAt);
 
   // Listas: só ATIVOS (regra 8) — o gerador nunca oferece código desativado.
@@ -147,6 +156,16 @@ export function GeradorDeCampanha({ modo }: { modo: Modo }) {
     setErro(null);
     try {
       const corpo = corpoDaCampanha(estado);
+      if (modo.tipo === "legada") {
+        const salva = await classificar.mutateAsync({ projectId: modo.projectId, campaignId: modo.campaignId, dados: corpo });
+        toast.success(
+          <span>
+            Classificada como <code className="font-mono">{salva.name}</code>
+          </span>,
+        );
+        modo.onSalvo(salva);
+        return;
+      }
       const salva = modo.tipo === "editar" ? await editar.mutateAsync({ id: modo.id, dados: corpo }) : await criar.mutateAsync(corpo);
       await navigator.clipboard.writeText(salva.name).catch(() => undefined);
       toast.success(
@@ -172,7 +191,7 @@ export function GeradorDeCampanha({ modo }: { modo: Modo }) {
     }
   }
 
-  const salvando = criar.isPending || editar.isPending;
+  const salvando = criar.isPending || editar.isPending || classificar.isPending;
   const lpsParaOpcoes = (lps.data ?? []).map((l: Lp) => ({ id: l.id, code: l.code, slug: l.slug, productId: l.productId, funnelId: l.funnelId, offerId: l.offerId }));
   // Memoizado (gate do @qa, QA-473-01): `FormLp` reseta o próprio estado quando
   // `cascataInicial` muda de identidade. Um objeto novo a cada render do
@@ -188,7 +207,12 @@ export function GeradorDeCampanha({ modo }: { modo: Modo }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_minmax(320px,420px)]">
       <div className="space-y-4">
-        {modo.tipo !== "nova" ? (
+        {ehLegada ? (
+          <p className="rounded-md border px-3 py-2 text-sm">
+            Classificando <code className="font-mono">{(modo as { nomeAntigo: string }).nomeAntigo}</code>. O nome no Meta não muda; o nome novo é o rótulo que o cruzamento vai usar. Campos vazios não foram reconhecidos no nome antigo.
+          </p>
+        ) : null}
+        {modo.tipo === "editar" || modo.tipo === "duplicar" ? (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
             <span>
               {modo.tipo === "editar" ? "Editando" : "Duplicando"} <code className="font-mono">{origem.data?.name}</code>
@@ -209,8 +233,8 @@ export function GeradorDeCampanha({ modo }: { modo: Modo }) {
             cobria o da Oferta quando ficavam lado a lado — os rótulos são longos). */}
         <div className="grid gap-3">
           <div>
-            <SeletorDeExpert valor={estado.expertId} onChange={escolher("expertId")} travado={publicada} id="g-expert" />
-            {!estado.expertId ? <p className="mt-1 text-xs text-muted-foreground">Comece pelo expert — produto, funil, oferta e LP liberam em cascata.</p> : null}
+            <SeletorDeExpert valor={estado.expertId} onChange={escolher("expertId")} travado={publicada || ehLegada} id="g-expert" />
+            {!estado.expertId ? <p className="mt-1 text-xs text-muted-foreground">Comece pelo expert — produto, funil, oferta e LP liberam em cascata.</p> : ehLegada ? <p className="mt-1 text-xs text-muted-foreground">Expert vem do projeto da campanha; não se escolhe aqui.</p> : null}
           </div>
           <SelectDoGerador id="g-produto" label="Produto" valor={estado.productId} onChange={escolher("productId")} opcoes={(produtos.data ?? []).map((p) => ({ value: p.id, rotulo: `${p.slug} — ${p.name}` }))} desabilitado={!estado.expertId} travado={publicada} aoCadastrar={() => setCadastro("produto")} />
           <SelectDoGerador id="g-funil" label="Funil" valor={estado.funnelId} onChange={escolher("funnelId")} opcoes={(funis.data ?? []).map((f) => ({ value: f.id, rotulo: f.rotulo }))} desabilitado={!estado.expertId} travado={publicada} aoCadastrar={() => setCadastro("funil")} />
@@ -268,7 +292,7 @@ export function GeradorDeCampanha({ modo }: { modo: Modo }) {
             <>
               <Button type="button" onClick={() => void salvar()} disabled={!previa.completo || salvando}>
                 {salvando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                {modo.tipo === "editar" ? "Salvar alterações" : "Salvar"}
+                {modo.tipo === "editar" ? "Salvar alterações" : ehLegada ? "Classificar" : "Salvar"}
               </Button>
               {modo.tipo === "editar" ? (
                 <Button type="button" variant="outline" onClick={() => void marcarPublicada()} disabled={publicar.isPending}>

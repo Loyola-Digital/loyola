@@ -28,6 +28,7 @@ import { GeradorDeCampanha } from "@/components/nomenclatura/gerador-de-campanha
 import { ListaDeCampanhas } from "@/components/nomenclatura/lista-de-campanhas";
 import { ValidadorDeNome } from "@/components/nomenclatura/validador-de-nome";
 import { GeradorDeSlug } from "@/components/nomenclatura/gerador-de-slug";
+import { Legadas } from "@/components/nomenclatura/legadas";
 
 export default function NomenclaturaPage() {
   return (
@@ -116,6 +117,8 @@ function Nomenclatura() {
               <ValidadorDeNome />
             ) : ativa.aba === "slug" ? (
               <GeradorDeSlug podeEditar={podeEditar} />
+            ) : ativa.aba === "legadas" ? (
+              <Legadas podeEditar={podeEditar} />
             ) : (
               <GeradorDeCampanha
                 key={`${params.get("editar") ?? ""}|${params.get("duplicar") ?? ""}`}

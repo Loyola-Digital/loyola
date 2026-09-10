@@ -4706,6 +4706,10 @@ export const namingDictionaryTypeEnum = pgEnum("naming_dictionary_type", [
   "format",
 ]);
 
+/** Story 47.5: de onde a campanha veio — do gerador ou classificada a partir do Meta. */
+export const namingCampaignOriginEnum = pgEnum("naming_campaign_origin", ["gerador", "legado"]);
+export const namingLegacyDecisionEnum = pgEnum("naming_legacy_decision", ["classificada", "ignorada"]);
+
 export const namingChangelogActionEnum = pgEnum("naming_changelog_action", [
   "create",
   "update",
@@ -4722,11 +4726,19 @@ export const namingExperts = pgTable(
     /** Sigla: 2–4 letras. Imutável desde a criação (spec § 4.1). */
     code: varchar("code", { length: 4 }).notNull(),
     name: varchar("name", { length: 120 }).notNull(),
+    /**
+     * Story 47.5 — o projeto do Loyola X que este expert representa.
+     *
+     * Opcional e único: um projeto tem no máximo um expert. É o que deduz o
+     * expert das campanhas legadas (que pertencem a projetos) sem ninguém
+     * escolher à mão — escolher à mão faria o cruzamento por projeto divergir.
+     */
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
     active: boolean("active").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [uniqueIndex("uq_naming_experts_code").on(t.code)],
+  (t) => [uniqueIndex("uq_naming_experts_code").on(t.code), uniqueIndex("uq_naming_experts_project").on(t.projectId)],
 );
 
 export const namingProducts = pgTable(
@@ -4881,6 +4893,10 @@ export const namingCampaigns = pgTable(
     /** Preenchido = nome congelado na Meta. Só "Duplicar" a partir daí. */
     publishedAt: timestamp("published_at", { withTimezone: true }),
     metaCampaignId: varchar("meta_campaign_id", { length: 40 }),
+    /** Story 47.5: `legado` = classificada a partir de uma campanha que já rodava no Meta. */
+    origin: namingCampaignOriginEnum("origin").notNull().default("gerador"),
+    /** Story 47.5: o nome ANTIGO no Meta, que não muda. `name` é o rótulo novo. */
+    metaCampaignName: varchar("meta_campaign_name", { length: 500 }),
     notes: text("notes"),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -4889,7 +4905,33 @@ export const namingCampaigns = pgTable(
   (t) => [
     index("idx_naming_campaigns_expert").on(t.expertId),
     index("idx_naming_campaigns_name").on(t.name),
+    index("idx_naming_campaigns_meta").on(t.metaCampaignId),
   ],
+);
+
+/**
+ * Story 47.5 — o que tira uma campanha legada da fila de classificação.
+ *
+ * `classificada` aponta para a linha em `naming_campaigns`; `ignorada` é "não é
+ * perpétuo", reversível. Chave = a campanha do Meta dentro do projeto — é a
+ * mesma chave do gasto (`meta_campaign_insights_daily`).
+ */
+export const namingLegacyDecisions = pgTable(
+  "naming_legacy_decisions",
+  {
+    /** PK própria (o changelog exige `entity_id uuid`); a unicidade é (projeto, campanha). */
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    campaignId: varchar("campaign_id", { length: 64 }).notNull(),
+    decision: namingLegacyDecisionEnum("decision").notNull(),
+    namingCampaignId: uuid("naming_campaign_id").references(() => namingCampaigns.id, { onDelete: "set null" }),
+    reason: text("reason"),
+    author: uuid("author").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("uq_naming_legacy_decisions_campanha").on(t.projectId, t.campaignId)],
 );
 
 /**

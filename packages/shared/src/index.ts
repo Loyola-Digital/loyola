@@ -69,6 +69,15 @@ export {
   type DicionarioSnapshot,
   type ParseResult,
 } from "./nomenclatura-de-campanha.js";
+// Story 47.5: campanhas legadas — filtro por token e sugestão de classificação
+// a partir do nome antigo. Módulo folha (web: subpath `src/nomenclatura-legado`).
+export {
+  REGEX_LEGADA_SQL,
+  ehCandidataALegada,
+  sugerirClassificacao,
+  type SugestaoDeClassificacao,
+  type CampoSugerido,
+} from "./nomenclatura-legado.js";
 // Story 18.71: o `utm_content` efetivo de uma célula de planilha — o `co=` chega
 // em três formatos e só um deles é o ad_id puro. Módulo folha: o web importa por
 // subpath (`@loyola-x/shared/src/utm-value`), a API por aqui.

@@ -67,7 +67,7 @@ Este epic põe dentro do Loyola X, em Configurações → Nomenclatura:
 | 47.3 | Gerador de nome de campanha, listagem e validador | 3 | `buildCampaignName`/`parseCampaignName` no `shared`, rotas de campanhas, tela do gerador com prévia colorida, publicar/duplicar, "Validar um nome existente" | 8 | **Done** · gate PASS |
 | 47.4 | Suíte de aceite (15 critérios) e validação visual | 4 | matriz AC → teste, lacunas fechadas, roteiro visual executado nas duas telas, docs | 5 | **Done** · gate PASS |
 
-| 47.5 | Classificação de campanhas legadas do perpétuo | — (pedido pós-validação) | expert ↔ projeto (fecha a D2), `origin`/`meta_campaign_name` em campanhas, decisões, filtro por token, parser de sugestão, aba Legadas, contrato 9 | 8 | **Ready** (GO 9/10) |
+| 47.5 | Classificação de campanhas legadas do perpétuo | — (pedido pós-validação) | expert ↔ projeto (fecha a D2), `origin`/`meta_campaign_name` em campanhas, decisões, filtro por token, parser de sugestão, aba Legadas, contrato 9 | 8 | **InReview** · 98 testes API · contrato 9 · validação do dono após deploy |
 | 47.6 | O cruzamento investimento × faturamento lê o vínculo | — | mapa `campaign_id → 9 campos`, agrupador por dimensão no perpétuo com "não classificada" e cobertura, colar id da Meta | 8 | Draft (precisa do @architect) |
 
 Arquivos: `docs/stories/47.1.nomenclatura-modelo-de-dados-e-api.md` · `docs/stories/47.2.nomenclatura-submenu-e-telas-do-dicionario.md` · `docs/stories/47.3.nomenclatura-gerador-de-nome-de-campanha.md` · `docs/stories/47.4.nomenclatura-suite-de-aceite-e-validacao-visual.md`
@@ -114,6 +114,7 @@ Nomenclatura de conjunto e anúncio · parâmetros de URL · integração Meta �
 |---|---|---|
 | 2026-09-09 | @sm (River) | Epic criado a partir da spec do dono do produto. Spec arquivada verbatim. Decisões D1–D9 registradas; D2 e D3 marcadas para confirmação do @po. Pré-condições P1–P3 declaradas. |
 | 2026-09-09 | @po (Pax) | 47.1 validada: GO 9,5/10 → Ready. D2 confirmada, D3 decidida (não-guest lê e escreve), P3 fechada. Sigla do expert imutável desde a criação (contradição da spec resolvida pelo lado estrito). |
+| 2026-09-09 | @dev (Dex) | 47.5 implementada e em InReview (aba Legadas, expert ↔ projeto, decisões, sugestão a partir do nome antigo). |
 | 2026-09-09 | @po (Pax) | 47.5 validada: GO 9/10 → Ready (desfazer classificação apaga o registro; permissões D3). 47.6 segue Draft até o @architect. |
 | 2026-09-09 | @sm (River) | Fase 1.5: stories 47.5 (legadas) e 47.6 (cruzamento) criadas a partir do pedido do dono e das 6 respostas. Medição: 51 candidatas, 32 com gasto (R$ 40,9k). |
 | 2026-09-09 | @po (Pax) | Epic fechado: validação visual do dono em produção concluída, gates 47.2–47.4 promovidos a PASS, stories Done. P1 fica como pendência operacional (cadastro pela tela). |

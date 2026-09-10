@@ -12,7 +12,7 @@
 
 export type Secao = "dicionario" | "campanhas";
 export type AbaDoDicionario = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "valores";
-export type AbaDeCampanhas = "nova" | "lista" | "validar" | "slug";
+export type AbaDeCampanhas = "nova" | "lista" | "validar" | "slug" | "legadas";
 
 export const ABAS_DO_DICIONARIO: { value: AbaDoDicionario; label: string }[] = [
   { value: "experts", label: "Experts" },
@@ -30,6 +30,8 @@ export const ABAS_DE_CAMPANHAS: { value: AbaDeCampanhas; label: string }[] = [
   { value: "validar", label: "Validar um nome" },
   /** Pedido do dono do produto na validação visual (2026-09-09): montar o slug de LP sem passar pelo cadastro. */
   { value: "slug", label: "Slug de LP" },
+  /** Story 47.5: campanhas antigas do Meta classificadas nos nove campos. */
+  { value: "legadas", label: "Legadas" },
 ];
 
 export const SECOES: { value: Secao; label: string; disponivel: boolean }[] = [

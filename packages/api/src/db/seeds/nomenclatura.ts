@@ -58,7 +58,8 @@ export const DADOS_DO_SEED = {
   lps: [{ expert: "bbe", produto: "churrasco", funil: "a01", oferta: "of01", code: "lpa", url: null as string | null }],
   /** Spec § 9.6, nesta ordem. `mix` em temperatura e `carrossel` em formato NÃO entram. */
   valores: {
-    year: ["2026", "2027"],
+    /** 2025 entrou na 47.5: campanhas legadas rodaram em 2025 e o ano é o em que rodou. */
+    year: ["2025", "2026", "2027"],
     temperature: ["hot", "cold"],
     auction: ["abo", "cbo"],
     format: ["videos", "estaticos", "mix"],

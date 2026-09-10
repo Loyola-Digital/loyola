@@ -15,9 +15,12 @@ import { erroDaApi, useValidarNome } from "@/lib/hooks/use-nomenclatura";
 import { CLASSE_DO_BLOCO } from "@/lib/utils/nomenclatura-gerador";
 import { CAMPO, ORDEM_DOS_CAMPOS, type ParseResult } from "@loyola-x/shared/src/nomenclatura-de-campanha";
 
+/** Story 47.5: a API acrescenta `legado` quando o nome antigo já foi classificado. */
+type Resultado = ParseResult & { legado?: { campanhaId: string; name: string } };
+
 export function ValidadorDeNome() {
   const [texto, setTexto] = useState("");
-  const [resultados, setResultados] = useState<{ nome: string; r: ParseResult | null; erro?: string }[]>([]);
+  const [resultados, setResultados] = useState<{ nome: string; r: Resultado | null; erro?: string }[]>([]);
   const validar = useValidarNome();
 
   async function rodar() {
@@ -64,7 +67,12 @@ export function ValidadorDeNome() {
             ) : r ? (
               <p className="mt-1 font-mono text-xs text-muted-foreground">{r.partes.join(" · ")}</p>
             ) : null}
-            {r?.errors.length ? <ul className="mt-2 list-disc pl-5 text-destructive">{r.errors.map((e) => <li key={e}>{e}</li>)}</ul> : null}
+            {r?.legado ? (
+              <p className="mt-2 rounded-md border px-2 py-1 text-xs">
+                Legado classificado como <code className="font-mono">{r.legado.name}</code> — o nome no Meta continua este; o cruzamento usa o novo.
+              </p>
+            ) : null}
+            {r?.errors.length && !r.legado ? <ul className="mt-2 list-disc pl-5 text-destructive">{r.errors.map((e) => <li key={e}>{e}</li>)}</ul> : null}
             {r?.avisos.length ? <ul className="mt-2 list-disc pl-5 text-warning">{r.avisos.map((a) => <li key={a}>{a}</li>)}</ul> : null}
             {erro ? <p className="mt-1 text-destructive">{erro}</p> : null}
           </div>

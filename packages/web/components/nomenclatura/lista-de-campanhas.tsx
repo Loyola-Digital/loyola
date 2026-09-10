@@ -104,6 +104,7 @@ export function ListaDeCampanhas() {
                   <TableCell className="whitespace-nowrap">
                     <span className="inline-flex items-center gap-1">
                       <code className="font-mono text-sm">{c.name}</code>
+                      {c.origin === "legado" ? <Badge variant="outline" title={c.metaCampaignName ? `No Meta: ${c.metaCampaignName}` : undefined}>legado</Badge> : null}
                       <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Copiar nome" onClick={() => void copiarTexto(c.name)}><Copy className="h-3.5 w-3.5" /></Button>
                     </span>
                   </TableCell>
