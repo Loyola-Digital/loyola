@@ -4704,6 +4704,9 @@ export const namingDictionaryTypeEnum = pgEnum("naming_dictionary_type", [
   "temperature",
   "auction",
   "format",
+  /** Story 47.10: tipo de criativo (ad · adv · carr) e sigla de lançamento (pg · l · m · pr) do nome de anúncio. */
+  "creative_type",
+  "launch_type",
 ]);
 
 /** Story 47.5: de onde a campanha veio — do gerador ou classificada a partir do Meta. */
@@ -5023,4 +5026,42 @@ export const namingVsls = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [uniqueIndex("uq_naming_vsls_name").on(t.name), index("idx_naming_vsls_expert").on(t.expertId)],
+);
+
+// ─────────────────────── Story 47.10 — Nome de anúncio ───────────────────────
+//
+// `{tipo}{NN}_{expert}_{sigla}{NN}_{mm-aaaa}--{descricao}`. Tipo de criativo e
+// sigla de lançamento vivem em `naming_dictionary_values` (types novos). O NN
+// do criativo é uma sequência ÚNICA por expert (unique `(expert_id,
+// creative_seq)`), reservada NA GRAVAÇÃO (D22) — o servidor recalcula e o
+// UNIQUE é a garantia contra corrida. `structure` (até o `--`) é o que o
+// designer recebe; `name` é estrutura + descrição.
+
+export const namingAds = pgTable(
+  "naming_ads",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    expertId: uuid("expert_id")
+      .notNull()
+      .references(() => namingExperts.id, { onDelete: "restrict" }),
+    /** Valor de `creative_type` (texto, reconstruível). */
+    creativeType: varchar("creative_type", { length: 20 }).notNull(),
+    creativeSeq: integer("creative_seq").notNull(),
+    /** Valor de `launch_type`. */
+    launchType: varchar("launch_type", { length: 20 }).notNull(),
+    launchSeq: integer("launch_seq").notNull(),
+    /** Primeiro dia do mês; o nome mostra `mm-aaaa`. */
+    adDate: date("ad_date").notNull(),
+    /** A parte depois do `--`, normalizada. Opcional: o designer pode personalizar fora. */
+    description: text("description"),
+    /** GERADA: até o `--` inclusive. */
+    structure: varchar("structure", { length: 80 }).notNull(),
+    /** GERADA: estrutura + descrição (igual à estrutura sem descrição). */
+    name: varchar("name", { length: 160 }).notNull(),
+    notes: text("notes"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("uq_naming_ads_expert_seq").on(t.expertId, t.creativeSeq), index("idx_naming_ads_expert").on(t.expertId)],
 );

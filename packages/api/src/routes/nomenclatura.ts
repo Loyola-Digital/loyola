@@ -34,9 +34,10 @@
 import { z } from "zod";
 import fp from "fastify-plugin";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { LPMIX, NA, montarSlugDeLp, parseCampaignName, parseVslName, sugerirClassificacao } from "@loyola-x/shared";
+import { LPMIX, NA, montarSlugDeLp, parseAdName, parseCampaignName, parseVslName, sugerirClassificacao } from "@loyola-x/shared";
 import { CAMPOS_DO_NOME, montarCampanha } from "../services/nomenclatura/campanhas.js";
 import { CAMPOS_DA_VSL_NO_BANCO, montarVsl } from "../services/nomenclatura/vsl.js";
+import { montarAnuncio, proximoNnDeAnuncio } from "../services/nomenclatura/anuncios.js";
 import { coberturaDeGasto, invalidarMapa, mapaDeDimensoes } from "../services/nomenclatura/mapa-de-campanhas.js";
 import { listarChangelog } from "../services/nomenclatura/changelog.js";
 import { tabelaInexistente, violaUnicidade } from "../utils/db-errors.js";
@@ -75,11 +76,12 @@ const listaQuery = z.object({
   productId: uuid.optional(),
   funnelId: uuid.optional(),
   offerId: uuid.optional(),
-  type: z.enum(["year", "temperature", "auction", "format"]).optional(),
+  type: z.enum(["year", "temperature", "auction", "format", "creative_type", "launch_type"]).optional(),
 });
 const dataIso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "data no formato AAAA-MM-DD");
 
-const TIPOS_DE_VALOR = ["year", "temperature", "auction", "format"] as const;
+/** Story 47.10: `creative_type` e `launch_type` são os do nome de anúncio; o CRUD é o mesmo. */
+const TIPOS_DE_VALOR = ["year", "temperature", "auction", "format", "creative_type", "launch_type"] as const;
 
 export default fp(async function nomenclaturaRoutes(fastify) {
   const repo = (): Repositorio => fastify.nomenclaturaRepo ?? criarRepositorio(fastify.db);
@@ -954,6 +956,135 @@ export default fp(async function nomenclaturaRoutes(fastify) {
       return { ...depois, ...(await rotulosDeVsls(r))(depois) };
     }),
   );
+  // ─────────────────────────── Story 47.10: Nome de anúncio ───────────────────────────
+  const mmAaaa = z.string().regex(/^(0[1-9]|1[0-2])-\d{4}$/, "data no formato mm-aaaa");
+  const anuncioSchema = z.object({
+    expertId: uuid,
+    creativeType: z.string().min(1).max(20),
+    creativeSeq: z.number().int().min(1).max(99).nullable().optional(),
+    launchType: z.string().min(1).max(20),
+    launchSeq: z.number().int().min(1).max(99),
+    date: mmAaaa,
+    description: z.string().trim().max(200).nullable().optional(),
+    notes: z.string().trim().max(4000).nullable().optional(),
+  });
+
+  const rotulosDeAnuncio = (r: Repositorio) => async (a: { expertId: string }) => ({ expertCode: (await r.porId("experts", a.expertId))?.code ?? "?" });
+
+  fastify.get(
+    "/api/nomenclatura/ads/proximo",
+    tentar(async (request) => {
+      autor(request);
+      const q = parse(z.object({ expertId: uuid, launchType: z.string().max(20).optional() }), request.query);
+      const r = repo();
+      await existente(r, "experts", q.expertId, "Expert");
+      const usados = (await r.anuncios.seqsDoExpert(q.expertId)).map((s) => s.creativeSeq);
+      const nn = proximoNnDeAnuncio(usados);
+      const maiorLancamento = q.launchType ? await r.anuncios.maiorLancamento(q.expertId, q.launchType) : null;
+      return { creativeSeq: nn, creativeSeqTexto: nn === null ? null : String(nn).padStart(2, "0"), launchSeqSugerido: maiorLancamento };
+    }),
+  );
+
+  fastify.get(
+    "/api/nomenclatura/ads/snapshot",
+    tentar(async (request) => {
+      autor(request);
+      const q = parse(z.object({ inativos: z.enum(["1", "true", "0", "false"]).optional() }), request.query);
+      return repo().snapshotDeAnuncios(querInativos(q));
+    }),
+  );
+
+  fastify.post(
+    "/api/nomenclatura/ads/validar-nome",
+    tentar(async (request) => {
+      autor(request);
+      const b = parse(z.object({ name: z.string().max(300) }), request.body);
+      return parseAdName(b.name, await repo().snapshotDeAnuncios(true));
+    }),
+  );
+
+  fastify.get(
+    "/api/nomenclatura/ads",
+    tentar(async (request) => {
+      autor(request);
+      const q = parse(
+        z.object({
+          expertId: uuid.optional(),
+          creativeType: z.string().max(20).optional(),
+          launchType: z.string().max(20).optional(),
+          de: mmAaaa.optional(),
+          ate: mmAaaa.optional(),
+          q: z.string().max(200).optional(),
+          limit: z.coerce.number().int().min(1).max(200).default(50),
+          offset: z.coerce.number().int().min(0).default(0),
+        }),
+        request.query,
+      );
+      const r = repo();
+      const paraData = (mm?: string) => (mm ? `${mm.slice(3)}-${mm.slice(0, 2)}-01` : undefined);
+      const { itens, total } = await r.anuncios.listar({ ...q, de: paraData(q.de), ate: paraData(q.ate) });
+      const experts = new Map((await r.experts.listar(true)).map((e) => [e.id, e.code]));
+      return { itens: itens.map((a) => ({ ...a, expertCode: experts.get(a.expertId) ?? "?" })), total };
+    }),
+  );
+
+  fastify.get(
+    "/api/nomenclatura/ads/:id",
+    tentar(async (request) => {
+      autor(request);
+      const { id } = parse(idParams, request.params);
+      const r = repo();
+      const a = await existente(r, "anuncios", id, "Anúncio");
+      return { ...a, ...(await rotulosDeAnuncio(r)(a)) };
+    }),
+  );
+
+  fastify.post(
+    "/api/nomenclatura/ads",
+    tentar(async (request, reply) => {
+      const author = autor(request);
+      const b = parse(anuncioSchema, request.body);
+      const r = repo();
+      const m = await montarAnuncio(r, b);
+      const linha = await r.inserir("anuncios", { ...m, fields: undefined, notes: b.notes ?? null, createdBy: author } as never, author);
+      return reply.code(201).send({ ...linha, ...(await rotulosDeAnuncio(r)(linha)) });
+    }),
+  );
+
+  fastify.patch(
+    "/api/nomenclatura/ads/:id",
+    tentar(async (request) => {
+      const author = autor(request);
+      const { id } = parse(idParams, request.params);
+      // D23: depois de salvo, tipo e NN do criativo não mudam (o nome já foi para o Meta e para o arquivo do designer).
+      const b = parse(z.object({ launchType: z.string().min(1).max(20).optional(), launchSeq: z.number().int().min(1).max(99).optional(), date: mmAaaa.optional(), description: z.string().trim().max(200).nullable().optional(), notes: z.string().trim().max(4000).nullable().optional() }), request.body);
+      const r = repo();
+      const antes = await existente(r, "anuncios", id, "Anúncio");
+      const mexeNoNome = b.launchType !== undefined || b.launchSeq !== undefined || b.date !== undefined || b.description !== undefined;
+      const patch: Record<string, unknown> = {};
+      if (mexeNoNome) {
+        const m = await montarAnuncio(
+          r,
+          {
+            expertId: antes.expertId,
+            creativeType: antes.creativeType,
+            creativeSeq: antes.creativeSeq,
+            launchType: b.launchType ?? antes.launchType,
+            launchSeq: b.launchSeq ?? antes.launchSeq,
+            date: b.date ?? `${antes.adDate.slice(5, 7)}-${antes.adDate.slice(0, 4)}`,
+            description: b.description === undefined ? antes.description : b.description,
+          },
+          { ignorarSeqDe: antes.id },
+        );
+        Object.assign(patch, { ...m, fields: undefined });
+      }
+      if (b.notes !== undefined) patch.notes = b.notes;
+      if (Object.keys(patch).length === 0) return { ...antes, ...(await rotulosDeAnuncio(r)(antes)) };
+      const depois = await r.atualizar("anuncios", antes, patch as never, author);
+      return { ...depois, ...(await rotulosDeAnuncio(r)(depois)) };
+    }),
+  );
+
   // ─────────────────── dimensões e cobertura (Story 47.6) ───────────────────
   fastify.get(
     "/api/nomenclatura/dimensoes",

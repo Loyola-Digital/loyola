@@ -132,4 +132,9 @@
 // v11 (Story 47.9): rotas novas `/api/nomenclatura/vsl/*` (variáveis de VSL,
 // snapshot, validador e VSLs) e o campo `variaveisDeVsl` em
 // `impacto-da-desativacao`. ADITIVA; `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 11;
+//
+// v12 (Story 47.10): rotas novas `/api/nomenclatura/ads/*` e dois tipos novos
+// em `naming_dictionary_values` (`creative_type`, `launch_type`) — o web
+// antigo desconhece os tipos e a aba Valores fixos do Dicionário segue com os
+// quatro. ADITIVA; `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 12;

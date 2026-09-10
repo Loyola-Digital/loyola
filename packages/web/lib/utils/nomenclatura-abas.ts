@@ -15,11 +15,13 @@
  * `lib/utils/**\/*.test.ts` (ver `menu-de-abas.ts`, Story 46.1).
  */
 
-export type Secao = "dicionario" | "campanhas" | "slug" | "vsl";
+export type Secao = "dicionario" | "campanhas" | "slug" | "vsl" | "ads";
 export type AbaDoDicionario = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "valores";
 export type AbaDeCampanhas = "nova" | "lista" | "validar" | "legadas";
 /** Story 47.9: seção Nome VSL. */
 export type AbaDeVsl = "nova" | "lista" | "variaveis";
+/** Story 47.10: seção Nome Ads. */
+export type AbaDeAds = "novo" | "lista" | "valores";
 
 export const ABAS_DO_DICIONARIO: { value: AbaDoDicionario; label: string }[] = [
   { value: "experts", label: "Experts" },
@@ -51,6 +53,13 @@ export const ABAS_DE_VSL: { value: AbaDeVsl; label: string }[] = [
   { value: "variaveis", label: "Variáveis" },
 ];
 
+/** Seção Nome Ads (Story 47.10): gerador, listagem e os dois valores fixos do anúncio. */
+export const ABAS_DE_ADS: { value: AbaDeAds; label: string }[] = [
+  { value: "novo", label: "Novo anúncio" },
+  { value: "lista", label: "Anúncios" },
+  { value: "valores", label: "Valores fixos" },
+];
+
 export const SECOES: { value: Secao; label: string; disponivel: boolean }[] = [
   { value: "dicionario", label: "Dicionário", disponivel: true },
   { value: "campanhas", label: "Campanhas", disponivel: true },
@@ -58,6 +67,8 @@ export const SECOES: { value: Secao; label: string; disponivel: boolean }[] = [
   { value: "slug", label: "Slug de LP", disponivel: true },
   /** Story 47.9 — à direita de Slug de LP, como o pedido do dono fixa. */
   { value: "vsl", label: "Nome VSL", disponivel: true },
+  /** Story 47.10 — à direita de Nome VSL. */
+  { value: "ads", label: "Nome Ads", disponivel: true },
 ];
 
 /** Seção sem sub-abas não tem `aba` — a barra de abas não é desenhada para ela. */
@@ -65,7 +76,8 @@ export type AbaAtiva =
   | { secao: "dicionario"; aba: AbaDoDicionario }
   | { secao: "campanhas"; aba: AbaDeCampanhas }
   | { secao: "slug" }
-  | { secao: "vsl"; aba: AbaDeVsl };
+  | { secao: "vsl"; aba: AbaDeVsl }
+  | { secao: "ads"; aba: AbaDeAds };
 
 const DEFAULT: AbaAtiva = { secao: "dicionario", aba: "experts" };
 
@@ -82,6 +94,7 @@ export function abaAtiva(params: { get(k: string): string | null }): AbaAtiva {
   const pedida = params.get("aba");
   if (secao === "slug") return { secao };
   if (secao === "vsl") return { secao, aba: ABAS_DE_VSL.find((a) => a.value === pedida)?.value ?? "nova" };
+  if (secao === "ads") return { secao, aba: ABAS_DE_ADS.find((a) => a.value === pedida)?.value ?? "novo" };
   if (secao === "dicionario") {
     return { secao, aba: ABAS_DO_DICIONARIO.find((a) => a.value === pedida)?.value ?? "experts" };
   }
@@ -94,10 +107,11 @@ export function hrefDaSecao(secao: Secao): string {
   if (secao === "dicionario") return hrefDe("dicionario", "experts");
   if (secao === "campanhas") return hrefDe("campanhas", "nova");
   if (secao === "vsl") return hrefDe("vsl", "nova");
+  if (secao === "ads") return hrefDe("ads", "novo");
   return hrefDe("slug");
 }
 
-export function hrefDe(secao: Secao, aba?: AbaDoDicionario | AbaDeCampanhas | AbaDeVsl): string {
+export function hrefDe(secao: Secao, aba?: AbaDoDicionario | AbaDeCampanhas | AbaDeVsl | AbaDeAds): string {
   const base = `/settings/nomenclatura?secao=${secao}`;
   return aba ? `${base}&aba=${aba}` : base;
 }

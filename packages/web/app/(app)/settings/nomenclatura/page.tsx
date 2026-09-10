@@ -12,7 +12,8 @@
  * Seção e aba vivem na URL (`?secao=&aba=`) — regra 1 do Epic 46. A árvore é
  * dado em `lib/utils/nomenclatura-abas.ts`; aqui só se desenha. "Slug de LP"
  * é seção própria sem sub-abas (Story 47.7). "Nome VSL" (Story 47.9) tem
- * Nova VSL · VSLs · Variáveis.
+ * Nova VSL · VSLs · Variáveis. "Nome Ads" (Story 47.10) tem Novo anúncio ·
+ * Anúncios · Valores fixos.
  *
  * Permissões (D3): `guest` nem chega aqui (o middleware redireciona rotas
  * globais); todo outro papel edita.
@@ -25,7 +26,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useUserRole } from "@/lib/hooks/use-user-role";
-import { ABAS_DE_CAMPANHAS, ABAS_DE_VSL, ABAS_DO_DICIONARIO, SECOES, abaAtiva, hrefDaSecao, hrefDe } from "@/lib/utils/nomenclatura-abas";
+import { ABAS_DE_ADS, ABAS_DE_CAMPANHAS, ABAS_DE_VSL, ABAS_DO_DICIONARIO, SECOES, abaAtiva, hrefDaSecao, hrefDe } from "@/lib/utils/nomenclatura-abas";
 import { AbaExperts, AbaFunisOuOfertas, AbaLps, AbaProdutos, AbaValoresFixos } from "@/components/nomenclatura/abas";
 import { GeradorDeCampanha } from "@/components/nomenclatura/gerador-de-campanha";
 import { ListaDeCampanhas } from "@/components/nomenclatura/lista-de-campanhas";
@@ -35,6 +36,9 @@ import { Legadas } from "@/components/nomenclatura/legadas";
 import { AbaVariaveisDeVsl } from "@/components/nomenclatura/vsl/aba-variaveis";
 import { GeradorDeVsl } from "@/components/nomenclatura/vsl/gerador-de-vsl";
 import { ListaDeVsls } from "@/components/nomenclatura/vsl/lista-de-vsls";
+import { AbaValoresDeAds } from "@/components/nomenclatura/ads/aba-valores-de-ads";
+import { GeradorDeAnuncio } from "@/components/nomenclatura/ads/gerador-de-anuncio";
+import { ListaDeAnuncios } from "@/components/nomenclatura/ads/lista-de-anuncios";
 
 export default function NomenclaturaPage() {
   return (
@@ -84,7 +88,22 @@ function Nomenclatura() {
           </nav>
 
           {/* Abas da seção — a seção Slug de LP não tem sub-abas (47.7) */}
-          {ativa.secao === "slug" ? null : ativa.secao === "vsl" ? (
+          {ativa.secao === "slug" ? null : ativa.secao === "ads" ? (
+            <nav aria-label="Abas de anúncios" className="flex flex-wrap gap-1">
+              {ABAS_DE_ADS.map((a) => (
+                <Link
+                  key={a.value}
+                  href={hrefDe("ads", a.value)}
+                  className={cn(
+                    "rounded-md px-3 py-1.5 text-sm transition-colors",
+                    ativa.aba === a.value ? "bg-accent text-accent-foreground font-medium" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                  )}
+                >
+                  {a.label}
+                </Link>
+              ))}
+            </nav>
+          ) : ativa.secao === "vsl" ? (
             <nav aria-label="Abas de VSL" className="flex flex-wrap gap-1">
               {ABAS_DE_VSL.map((a) => (
                 <Link
@@ -133,6 +152,17 @@ function Nomenclatura() {
 
           {ativa.secao === "slug" ? (
             <GeradorDeSlug podeEditar={podeEditar} />
+          ) : ativa.secao === "ads" ? (
+            ativa.aba === "lista" ? (
+              <ListaDeAnuncios />
+            ) : ativa.aba === "valores" ? (
+              <AbaValoresDeAds podeEditar={podeEditar} />
+            ) : (
+              <GeradorDeAnuncio
+                key={`ads|${params.get("editar") ?? ""}|${params.get("duplicar") ?? ""}`}
+                modo={params.get("editar") ? { tipo: "editar", id: params.get("editar")! } : params.get("duplicar") ? { tipo: "duplicar", id: params.get("duplicar")! } : { tipo: "novo" }}
+              />
+            )
           ) : ativa.secao === "vsl" ? (
             ativa.aba === "lista" ? (
               <ListaDeVsls />

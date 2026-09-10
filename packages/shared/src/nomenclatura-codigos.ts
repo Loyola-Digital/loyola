@@ -21,7 +21,7 @@
  */
 
 /** Cada tipo de código tem o próprio formato (spec § 4). */
-export type TipoDeCodigo = "expert" | "produto" | "funil" | "oferta" | "lp" | "valor" | "vsl";
+export type TipoDeCodigo = "expert" | "produto" | "funil" | "oferta" | "lp" | "valor" | "vsl" | "anuncio";
 
 export const FORMATO_DO_CODIGO: Record<TipoDeCodigo, { regex: RegExp; descricao: string }> = {
   expert: { regex: /^[a-z]{2,4}$/, descricao: "2 a 4 letras (ex.: bbe)" },
@@ -32,6 +32,8 @@ export const FORMATO_DO_CODIGO: Record<TipoDeCodigo, { regex: RegExp; descricao:
   valor: { regex: /^[a-z0-9]+$/, descricao: "só letras e números (ex.: videos, 2026)" },
   /** Story 47.9: variável de VSL (lead, mecanismo do problema, mecanismo da solução) — nome semântico, como o slug de produto. */
   vsl: { regex: /^[a-z0-9-]{1,20}$/, descricao: "até 20 caracteres em [a-z0-9-] (ex.: falta-de-metodo)" },
+  /** Story 47.10: a descrição livre do anúncio (depois do `--`), quando digitada no sistema. */
+  anuncio: { regex: /^[a-z0-9-]{1,60}$/, descricao: "até 60 caracteres em [a-z0-9-] (ex.: gancho-demissao)" },
 };
 
 export type Normalizacao =

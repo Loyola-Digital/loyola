@@ -14,7 +14,7 @@ type Linha = Record<string, unknown> & { id: string; active: boolean };
 type Log = { entity: string; entityId: string; action: string; before: unknown; after: unknown; author: string | null };
 
 function memoria() {
-  const t: Record<string, Linha[]> = { experts: [], produtos: [], funis: [], ofertas: [], lps: [], dicionario: [], campanhas: [], decisoes: [], vslVariaveis: [], vsls: [] };
+  const t: Record<string, Linha[]> = { experts: [], produtos: [], funis: [], ofertas: [], lps: [], dicionario: [], campanhas: [], decisoes: [], vslVariaveis: [], vsls: [], anuncios: [] };
   /** Story 47.5: "cache de nomes" do Meta e gasto, em memória. */
   const meta: { projectId: string; projeto: string; campaignId: string; nome: string; statusMeta: string | null }[] = [];
   const gastoMeta: Record<string, { spend: number; de: string; ate: string }> = {};
@@ -22,7 +22,7 @@ function memoria() {
   const changelog: Log[] = [];
   let seq = 0;
   const id = () => `00000000-0000-4000-8000-${String(++seq).padStart(12, "0")}`;
-  const NOME: Record<string, string> = { experts: "naming_experts", produtos: "naming_products", funis: "naming_funnels", ofertas: "naming_offers", lps: "naming_landing_pages", dicionario: "naming_dictionary_values", campanhas: "naming_campaigns", decisoes: "naming_legacy_decisions", vslVariaveis: "naming_vsl_variables", vsls: "naming_vsls" };
+  const NOME: Record<string, string> = { experts: "naming_experts", produtos: "naming_products", funis: "naming_funnels", ofertas: "naming_offers", lps: "naming_landing_pages", dicionario: "naming_dictionary_values", campanhas: "naming_campaigns", decisoes: "naming_legacy_decisions", vslVariaveis: "naming_vsl_variables", vsls: "naming_vsls", anuncios: "naming_ads" };
   const COL: Record<string, string> = { experts: "expertId", produtos: "productId", funis: "funnelId", ofertas: "offerId", lps: "landingPageId" };
 
   const ativos = (xs: Linha[], inativos: boolean) => (inativos ? xs : xs.filter((x) => x.active));
@@ -40,6 +40,27 @@ function memoria() {
         lps: f(t.lps).map((l) => ({ expert: codeDe("experts", l.expertId), product: codeDe("produtos", l.productId), funnel: codeDe("funis", l.funnelId), offer: codeDe("ofertas", l.offerId), code: l.code, active: l.active })),
         valores: f(t.dicionario).map((v) => ({ type: v.type, value: v.value, active: v.active })),
       };
+    },
+    /** Story 47.10 */
+    async snapshotDeAnuncios(inativos: boolean) {
+      const f = (xs: Linha[]) => (inativos ? xs : xs.filter((x) => x.active));
+      return {
+        experts: f(t.experts).map((e) => ({ code: e.code, active: e.active })),
+        creativeTypes: f(t.dicionario.filter((v) => v.type === "creative_type")).map((v) => ({ value: v.value, active: v.active })),
+        launchTypes: f(t.dicionario.filter((v) => v.type === "launch_type")).map((v) => ({ value: v.value, active: v.active })),
+      };
+    },
+    anuncios: {
+      listar: async (f: Record<string, unknown>) => {
+        const itens = t.anuncios.filter((a) => ["expertId", "creativeType", "launchType"].every((k) => !f[k] || a[k] === f[k]) && (!f.q || String(a.name).includes(String(f.q))) && (!f.de || String(a.adDate) >= String(f.de)) && (!f.ate || String(a.adDate) <= String(f.ate)));
+        return { itens, total: itens.length };
+      },
+      seqsDoExpert: async (expertId: string) => t.anuncios.filter((a) => a.expertId === expertId).map((a) => ({ id: a.id, creativeSeq: a.creativeSeq as number })),
+      porSeq: async (expertId: string, seq: number) => t.anuncios.find((a) => a.expertId === expertId && a.creativeSeq === seq),
+      maiorLancamento: async (expertId: string, launchType: string) => {
+        const xs = t.anuncios.filter((a) => a.expertId === expertId && a.launchType === launchType).map((a) => a.launchSeq as number);
+        return xs.length ? Math.max(...xs) : null;
+      },
     },
     /** Story 47.9 */
     async snapshotDeVsl(inativos: boolean) {
@@ -110,6 +131,11 @@ function memoria() {
     },
     async usoPorValor(type: string) {
       const m = new Map<string, number>();
+      if (type === "creative_type" || type === "launch_type") {
+        const col = type === "creative_type" ? "creativeType" : "launchType";
+        for (const a of t.anuncios) m.set(a[col] as string, (m.get(a[col] as string) ?? 0) + 1);
+        return m;
+      }
       for (const c of campanhas) m.set(c[type] as string, (m.get(c[type] as string) ?? 0) + 1);
       return m;
     },
@@ -117,6 +143,7 @@ function memoria() {
       return contar(col, i);
     },
     async campanhasComValor(type: string, v: string) {
+      if (type === "creative_type" || type === "launch_type") return t.anuncios.filter((a) => a[type === "creative_type" ? "creativeType" : "launchType"] === v).length;
       return contar(type, v);
     },
     async referenciasDe(e: string, linha: Linha) {
@@ -134,6 +161,10 @@ function memoria() {
       }
       if (e === "ofertas" || e === "produtos" || e === "experts") {
         for (const v of t.vsls.filter((v) => v[COL[e]] === linha.id)) refs.push({ tipo: "vsl", id: v.id, rotulo: String(v.name) });
+      }
+      if (e === "dicionario" && (linha.type === "creative_type" || linha.type === "launch_type")) {
+        for (const a of t.anuncios.filter((a) => a[linha.type === "creative_type" ? "creativeType" : "launchType"] === linha.value)) refs.push({ tipo: "anuncio", id: a.id, rotulo: String(a.name) });
+        return refs;
       }
       if (e === "dicionario") {
         for (const c of campanhas.filter((c) => c[linha.type as string] === linha.value)) refs.push({ tipo: "campanha", id: c.id as string, rotulo: c.name as string });
@@ -672,6 +703,82 @@ describe("rotas da nomenclatura", () => {
     expect(r.json().offerValue).toBe("of02");
     const guest = await app.inject({ method: "GET", url: "/api/nomenclatura/vsl/vsls", headers: { "x-papel": "guest" } });
     expect(guest.statusCode).toBe(403);
+  });
+
+  // ─────────────── Story 47.10: Nome de anúncio ───────────────
+  async function adsBase(app: FastifyInstance) {
+    const c = await cenario(app);
+    for (const [type, values] of Object.entries({ creative_type: ["ad", "adv", "carr"], launch_type: ["pg", "l", "m", "pr"] })) {
+      for (const value of values) await app.inject({ method: "POST", url: "/api/nomenclatura/dicionario", payload: { type, value, description: value } });
+    }
+    return c;
+  }
+  const corpoBase = (expertId: string) => ({ expertId, creativeType: "adv", launchType: "pg", launchSeq: 2, date: "09-2026" });
+
+  it("47.10 AC2: os dois tipos novos passam pelo CRUD de valores fixos, com usadoEm por anúncio e código travado quando usado", async () => {
+    const { bbe } = await adsBase(app);
+    const tipos = (await app.inject({ method: "GET", url: "/api/nomenclatura/dicionario?type=creative_type" })).json();
+    expect(tipos.map((v: { value: string }) => v.value)).toEqual(["ad", "adv", "carr"]);
+    await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: corpoBase(bbe.id) });
+    const depois = (await app.inject({ method: "GET", url: "/api/nomenclatura/dicionario?type=creative_type" })).json();
+    expect(depois.find((v: { value: string }) => v.value === "adv").usadoEm).toBe(1);
+    const adv = depois.find((v: { value: string }) => v.value === "adv");
+    expect((await app.inject({ method: "PATCH", url: `/api/nomenclatura/dicionario/${adv.id}`, payload: { value: "vid" } })).statusCode).toBe(409);
+    const del = await app.inject({ method: "DELETE", url: `/api/nomenclatura/dicionario/${adv.id}` });
+    expect(del.json()).toMatchObject({ podeDesativar: true, referencias: [{ tipo: "anuncio", rotulo: "adv01_bbe_pg02_09-2026--" }] });
+  });
+
+  it("47.10 AC3/AC4/AC8: NN sequencial ÚNICO por expert, qualquer tipo; sugestão pula os usados; NN ocupado → 409 com o dono e o próximo; estrutura e nome gravados", async () => {
+    const { bbe, fz } = await adsBase(app);
+    const p0 = (await app.inject({ method: "GET", url: `/api/nomenclatura/ads/proximo?expertId=${bbe.id}` })).json();
+    expect(p0).toEqual({ creativeSeq: 1, creativeSeqTexto: "01", launchSeqSugerido: null });
+    const a1 = (await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), description: "Gancho Demissão" } })).json();
+    expect(a1).toMatchObject({ creativeSeq: 1, structure: "adv01_bbe_pg02_09-2026--", name: "adv01_bbe_pg02_09-2026--gancho-demissao", adDate: "2026-09-01", expertCode: "bbe" });
+    const a2 = (await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), creativeType: "ad" } })).json();
+    expect(a2.structure).toBe("ad02_bbe_pg02_09-2026--"); // Q3: 2º criativo do expert, mesmo sendo outro tipo
+    // fz tem a própria sequência
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: corpoBase(fz.id) })).json().creativeSeq).toBe(1);
+    // sugestão pula 01 e 02; o número do lançamento sugerido é o maior usado para (expert, sigla)
+    const p = (await app.inject({ method: "GET", url: `/api/nomenclatura/ads/proximo?expertId=${bbe.id}&launchType=pg` })).json();
+    expect(p).toEqual({ creativeSeq: 3, creativeSeqTexto: "03", launchSeqSugerido: 2 });
+    // NN ocupado → 409 com quem ocupa e o próximo livre
+    const corrida = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), creativeSeq: 1 } });
+    expect(corrida.statusCode).toBe(409);
+    expect(corrida.json()).toMatchObject({ campo: "creativeSeq", sugestao: "03" });
+    expect(corrida.json().error).toContain("já é de adv01_bbe_pg02_09-2026--gancho-demissao");
+    expect(mem.changelog.filter((l) => l.entity === "naming_ads" && l.action === "create")).toHaveLength(3);
+  });
+
+  it("47.10 AC4/AC6: tipo/sigla fora do dicionário ou inativos → 422; data fora de mm-aaaa e descrição com _ → 400; guest → 403", async () => {
+    const { bbe } = await adsBase(app);
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), creativeType: "img" } })).json()).toMatchObject({ campo: "creativeType" });
+    const carr = (await app.inject({ method: "GET", url: "/api/nomenclatura/dicionario?type=creative_type" })).json().find((v: { value: string }) => v.value === "carr");
+    await app.inject({ method: "POST", url: `/api/nomenclatura/dicionario/${carr.id}/desativar` });
+    const inativo = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), creativeType: "carr" } });
+    expect(inativo.statusCode).toBe(422);
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), date: "2026-09" } })).statusCode).toBe(400);
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), description: "gancho_dor" } })).statusCode).toBe(400);
+    expect((await app.inject({ method: "GET", url: "/api/nomenclatura/ads", headers: { "x-papel": "guest" } })).statusCode).toBe(403);
+    // validador: reconhece; carr inativo vira aviso
+    const val = (await app.inject({ method: "POST", url: "/api/nomenclatura/ads/validar-nome", payload: { name: "carr05_bbe_pg02_09-2026--x" } })).json();
+    expect(val.valid).toBe(true);
+    expect(val.avisos).toEqual(["campo 1 (criativo): carr está inativo"]);
+  });
+
+  it("47.10 AC9: PATCH muda descrição/lançamento/data e recalcula; tipo e NN do criativo não são aceitos (D23); listagem filtra por expert, tipo, sigla e período", async () => {
+    const { bbe } = await adsBase(app);
+    const a = (await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: corpoBase(bbe.id) })).json();
+    const r = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${a.id}`, payload: { description: "prova social", launchSeq: 3, date: "10-2026" } });
+    expect(r.json()).toMatchObject({ structure: "adv01_bbe_pg03_10-2026--", name: "adv01_bbe_pg03_10-2026--prova-social", creativeSeq: 1 });
+    // NN/tipo no corpo do PATCH: ignorados pelo schema (não são campos aceitos) — o NN continua 1
+    const tenta = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${a.id}`, payload: { creativeSeq: 9, creativeType: "ad", notes: "n" } });
+    expect(tenta.json()).toMatchObject({ creativeSeq: 1, creativeType: "adv", notes: "n" });
+    await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), creativeType: "ad", launchType: "l", date: "08-2026" } });
+    const lista = (await app.inject({ method: "GET", url: `/api/nomenclatura/ads?expertId=${bbe.id}&creativeType=ad` })).json();
+    expect(lista.total).toBe(1);
+    expect(lista.itens[0].structure).toBe("ad02_bbe_l02_08-2026--");
+    const periodo = (await app.inject({ method: "GET", url: `/api/nomenclatura/ads?de=09-2026&ate=12-2026` })).json();
+    expect(periodo.itens.map((x: { structure: string }) => x.structure)).toEqual(["adv01_bbe_pg03_10-2026--"]);
   });
 
   it("47.8 AC6: campanha do gerador com id da Meta colado NÃO aparece na fila de legadas (o nome v2 casa com o filtro)", async () => {
