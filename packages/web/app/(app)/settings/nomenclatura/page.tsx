@@ -9,7 +9,8 @@
  * 47.3): gerador de nome, listagem e validador de nome existente.
  *
  * Seção e aba vivem na URL (`?secao=&aba=`) — regra 1 do Epic 46. A árvore é
- * dado em `lib/utils/nomenclatura-abas.ts`; aqui só se desenha.
+ * dado em `lib/utils/nomenclatura-abas.ts`; aqui só se desenha. "Slug de LP"
+ * é seção própria sem sub-abas (Story 47.7).
  *
  * Permissões (D3): `guest` nem chega aqui (o middleware redireciona rotas
  * globais); todo outro papel edita.
@@ -22,7 +23,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useUserRole } from "@/lib/hooks/use-user-role";
-import { ABAS_DE_CAMPANHAS, ABAS_DO_DICIONARIO, SECOES, abaAtiva, hrefDe } from "@/lib/utils/nomenclatura-abas";
+import { ABAS_DE_CAMPANHAS, ABAS_DO_DICIONARIO, SECOES, abaAtiva, hrefDaSecao, hrefDe } from "@/lib/utils/nomenclatura-abas";
 import { AbaExperts, AbaFunisOuOfertas, AbaLps, AbaProdutos, AbaValoresFixos } from "@/components/nomenclatura/abas";
 import { GeradorDeCampanha } from "@/components/nomenclatura/gerador-de-campanha";
 import { ListaDeCampanhas } from "@/components/nomenclatura/lista-de-campanhas";
@@ -61,7 +62,7 @@ function Nomenclatura() {
               s.disponivel ? (
                 <Link
                   key={s.value}
-                  href={hrefDe(s.value, s.value === "dicionario" ? "experts" : "nova")}
+                  href={hrefDaSecao(s.value)}
                   className={cn(
                     "-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors",
                     ativa.secao === s.value ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
@@ -77,8 +78,8 @@ function Nomenclatura() {
             )}
           </nav>
 
-          {/* Abas da seção */}
-          {ativa.secao === "dicionario" ? (
+          {/* Abas da seção — a seção Slug de LP não tem sub-abas (47.7) */}
+          {ativa.secao === "slug" ? null : ativa.secao === "dicionario" ? (
             <nav aria-label="Abas do dicionário" className="flex flex-wrap gap-1">
               {ABAS_DO_DICIONARIO.map((a) => (
                 <Link
@@ -110,13 +111,13 @@ function Nomenclatura() {
             </nav>
           )}
 
-          {ativa.secao === "campanhas" ? (
+          {ativa.secao === "slug" ? (
+            <GeradorDeSlug podeEditar={podeEditar} />
+          ) : ativa.secao === "campanhas" ? (
             ativa.aba === "lista" ? (
               <ListaDeCampanhas />
             ) : ativa.aba === "validar" ? (
               <ValidadorDeNome />
-            ) : ativa.aba === "slug" ? (
-              <GeradorDeSlug podeEditar={podeEditar} />
             ) : ativa.aba === "legadas" ? (
               <Legadas podeEditar={podeEditar} />
             ) : (
