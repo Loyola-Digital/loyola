@@ -198,10 +198,14 @@ export function FormFunilOuOferta(props: { recurso: "funis" | "ofertas"; aberto:
       : await tentar(() => criar.mutateAsync({ expertId, code, description, startedAt }), `${rotulo} ${code} criado.`);
     if (!ok) return;
     if (eOutra && !linha) {
-      // Mantém o expert; limpa código (a sugestão traz o próximo) e descrição.
-      setCode("");
+      // Mantém o expert e busca o PRÓXIMO código explicitamente. Não dá para
+      // confiar no efeito da sugestão: a invalidação do salvar já refez a
+      // busca enquanto o campo ainda tinha o código anterior, e limpar depois
+      // não dispara o efeito de novo (visto pelo dono: parou de ser sequencial).
       setDescription("");
       setAvisoDescricao(false);
+      const proximo = await sugestao.refetch();
+      setCode(proximo.data?.codigo ?? "");
       return;
     }
     onFechar();
@@ -318,10 +322,13 @@ export function FormLp(props: { aberto: boolean; linha: Lp | null; cascataInicia
     if (!ok) return;
     if (criada && onSalvo) onSalvo(criada);
     if (eOutra) {
-      // Mantém expert/produto/funil/oferta; limpa código (a sugestão traz a próxima letra), URL e descrição.
-      setCode("");
+      // Mantém expert/produto/funil/oferta e busca a PRÓXIMA letra explicitamente
+      // (mesmo motivo do formulário de funil/oferta: o efeito da sugestão não
+      // dispara de novo depois que a invalidação já trouxe o valor novo).
       setUrl("");
       setDescription("");
+      const proximo = await sugestao.refetch();
+      setCode(proximo.data?.codigo ?? "");
       return;
     }
     onFechar();
