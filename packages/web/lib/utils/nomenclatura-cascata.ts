@@ -62,6 +62,8 @@ export interface ImpactoDaDesativacao {
   funis: number;
   ofertas: number;
   lps: number;
+  /** Story 47.9 */
+  variaveisDeVsl?: number;
 }
 
 /**
@@ -76,6 +78,7 @@ export function textoDaCascata(code: string, impacto: ImpactoDaDesativacao): str
   if (impacto.funis) partes.push(plural(impacto.funis, "funil", "funis"));
   if (impacto.ofertas) partes.push(plural(impacto.ofertas, "oferta", "ofertas"));
   if (impacto.lps) partes.push(plural(impacto.lps, "LP", "LPs"));
+  if (impacto.variaveisDeVsl) partes.push(plural(impacto.variaveisDeVsl, "variável de VSL", "variáveis de VSL"));
   if (partes.length === 0) return `Desativar ${code}? Ele some dos selects do gerador e pode ser reativado depois.`;
   const lista = partes.length === 1 ? partes[0] : `${partes.slice(0, -1).join(", ")} e ${partes.at(-1)}`;
   return `Isso desativa ${lista} de ${code}. Continuar?`;

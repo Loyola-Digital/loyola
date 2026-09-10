@@ -34,8 +34,9 @@
 import { z } from "zod";
 import fp from "fastify-plugin";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { LPMIX, NA, montarSlugDeLp, parseCampaignName, sugerirClassificacao } from "@loyola-x/shared";
+import { LPMIX, NA, montarSlugDeLp, parseCampaignName, parseVslName, sugerirClassificacao } from "@loyola-x/shared";
 import { CAMPOS_DO_NOME, montarCampanha } from "../services/nomenclatura/campanhas.js";
+import { CAMPOS_DA_VSL_NO_BANCO, montarVsl } from "../services/nomenclatura/vsl.js";
 import { coberturaDeGasto, invalidarMapa, mapaDeDimensoes } from "../services/nomenclatura/mapa-de-campanhas.js";
 import { listarChangelog } from "../services/nomenclatura/changelog.js";
 import { tabelaInexistente, violaUnicidade } from "../utils/db-errors.js";
@@ -56,6 +57,7 @@ import {
   type EntidadeAtivavel,
   type Repositorio,
   type TipoDeValor,
+  type TipoDeVariavelDeVsl,
 } from "../services/nomenclatura/repositorio.js";
 
 declare module "fastify" {
@@ -220,7 +222,7 @@ export default fp(async function nomenclaturaRoutes(fastify) {
       const r = repo();
       await existente(r, "experts", id, "Expert");
       const filhos = await r.experts.filhosAtivos(id);
-      return { produtos: filhos.produtos.length, funis: filhos.funis.length, ofertas: filhos.ofertas.length, lps: filhos.lps.length };
+      return { produtos: filhos.produtos.length, funis: filhos.funis.length, ofertas: filhos.ofertas.length, lps: filhos.lps.length, variaveisDeVsl: filhos.variaveisDeVsl.length };
     }),
   );
 
@@ -238,10 +240,11 @@ export default fp(async function nomenclaturaRoutes(fastify) {
         for (const f of filhos.funis) await r.alternarAtivo("funis", f, false, author);
         for (const o of filhos.ofertas) await r.alternarAtivo("ofertas", o, false, author);
         for (const l of filhos.lps) await r.alternarAtivo("lps", l, false, author);
+        for (const v of filhos.variaveisDeVsl) await r.alternarAtivo("vslVariaveis", v, false, author);
         const depois = antes.active ? await r.alternarAtivo("experts", antes, false, author) : antes;
         return {
           ...depois,
-          desativados: { produtos: filhos.produtos.length, funis: filhos.funis.length, ofertas: filhos.ofertas.length, lps: filhos.lps.length },
+          desativados: { produtos: filhos.produtos.length, funis: filhos.funis.length, ofertas: filhos.ofertas.length, lps: filhos.lps.length, variaveisDeVsl: filhos.variaveisDeVsl.length },
         };
       });
     }),
@@ -255,6 +258,8 @@ export default fp(async function nomenclaturaRoutes(fastify) {
     { entidade: "ofertas", rota: "ofertas", rotulo: "Oferta" },
     { entidade: "lps", rota: "lps", rotulo: "LP" },
     { entidade: "dicionario", rota: "dicionario", rotulo: "Valor" },
+    /** Story 47.9 */
+    { entidade: "vslVariaveis", rota: "vsl/variaveis", rotulo: "Variável de VSL" },
   ];
 
   for (const { entidade, rota, rotulo } of ENTIDADES) {
@@ -290,7 +295,7 @@ export default fp(async function nomenclaturaRoutes(fastify) {
         const { id } = parse(idParams, request.params);
         const r = repo();
         const antes = await existente(r, entidade, id, rotulo);
-        const referencias = await r.referenciasDe(entidade, antes as { id: string; type?: TipoDeValor; value?: string });
+        const referencias = await r.referenciasDe(entidade, antes as { id: string; type?: TipoDeValor | TipoDeVariavelDeVsl; value?: string });
         exigirSemReferencias(referencias);
         await r.excluir(entidade, antes, author);
         return reply.code(204).send();
@@ -305,8 +310,9 @@ export default fp(async function nomenclaturaRoutes(fastify) {
       autor(request);
       const q = parse(listaQuery, request.query);
       const r = repo();
-      const [linhas, uso] = await Promise.all([r.produtos.listar(q.expertId, querInativos(q)), r.usoPorFk("productId")]);
-      return linhas.map((p) => ({ ...p, usadoEm: uso.get(p.id) ?? 0 }));
+      // Story 47.9 (gate QA-479-01): o slug do produto entra no nome da VSL — VSL conta como uso.
+      const [linhas, uso, usoVsl] = await Promise.all([r.produtos.listar(q.expertId, querInativos(q)), r.usoPorFk("productId"), r.usoEmVsls("productId")]);
+      return linhas.map((p) => ({ ...p, usadoEm: (uso.get(p.id) ?? 0) + (usoVsl.get(p.id) ?? 0) }));
     }),
   );
 
@@ -343,7 +349,7 @@ export default fp(async function nomenclaturaRoutes(fastify) {
       if (b.slug !== undefined) {
         const slug = codigoValidado(b.slug, "produto", "slug");
         if (slug !== antes.slug) {
-          exigirNaoUsado(await r.campanhasQueUsam("productId", id), "slug");
+          exigirNaoUsado((await r.campanhasQueUsam("productId", id)) + (await r.vslsQueUsam("productId", id)), "slug");
           const ja = await r.produtos.porSlug(antes.expertId, slug);
           if (ja) throw conflitoDeCodigo({ codigo: slug, escopo: "este expert", descricaoExistente: ja.name, sugestao: null, campo: "slug" });
           patch.slug = slug;
@@ -369,8 +375,9 @@ export default fp(async function nomenclaturaRoutes(fastify) {
         autor(request);
         const q = parse(listaQuery, request.query);
         const r = repo();
-        const [linhas, uso] = await Promise.all([acesso(r).listar(q.expertId, querInativos(q)), r.usoPorFk(cfg.coluna)]);
-        return linhas.map((l) => ({ ...l, rotulo: rotuloDe(l.code, l.description), usadoEm: uso.get(l.id) ?? 0 }));
+        // Story 47.9 (AC3): a oferta é o pitch da VSL — VSL conta como uso da oferta.
+        const [linhas, uso, usoVsl] = await Promise.all([acesso(r).listar(q.expertId, querInativos(q)), r.usoPorFk(cfg.coluna), cfg.entidade === "ofertas" ? r.usoEmVsls("offerId") : Promise.resolve(new Map<string, number>())]);
+        return linhas.map((l) => ({ ...l, rotulo: rotuloDe(l.code, l.description), usadoEm: (uso.get(l.id) ?? 0) + (usoVsl.get(l.id) ?? 0) }));
       }),
     );
 
@@ -425,7 +432,7 @@ export default fp(async function nomenclaturaRoutes(fastify) {
         if (b.code !== undefined) {
           const code = codigoValidado(b.code, cfg.tipo, "code");
           if (code !== antes.code) {
-            exigirNaoUsado(await r.campanhasQueUsam(cfg.coluna, id), "code");
+            exigirNaoUsado((await r.campanhasQueUsam(cfg.coluna, id)) + (cfg.entidade === "ofertas" ? await r.vslsQueUsam("offerId", id) : 0), "code");
             const ja = await acesso(r).porCode(antes.expertId, code);
             if (ja) {
               const sugestao = sugerirCodigo(cfg.tipo, await acesso(r).codigos(antes.expertId));
@@ -764,6 +771,189 @@ export default fp(async function nomenclaturaRoutes(fastify) {
     }),
   );
 
+  // ─────────────────────────── Story 47.9: Nome de VSL ───────────────────────────
+  const tipoDeVariavel = z.enum(["lead", "problem", "solution"]);
+  const ROTULO_DA_VARIAVEL: Record<TipoDeVariavelDeVsl, string> = { lead: "Lead", problem: "Mecanismo do problema", solution: "Mecanismo da solução" };
+
+  fastify.get(
+    "/api/nomenclatura/vsl/variaveis",
+    tentar(async (request) => {
+      autor(request);
+      const q = parse(z.object({ inativos: z.enum(["1", "true", "0", "false"]).optional(), expertId: uuid.optional(), type: tipoDeVariavel.optional() }), request.query);
+      const r = repo();
+      const [linhas, lead, problem, solution] = await Promise.all([
+        r.vslVariaveis.listar({ expertId: q.expertId, type: q.type }, querInativos(q)),
+        r.usoEmVsls("leadId"),
+        r.usoEmVsls("problemId"),
+        r.usoEmVsls("solutionId"),
+      ]);
+      const uso = { lead, problem, solution };
+      return linhas.map((v) => ({ ...v, rotulo: rotuloDe(v.code, v.description), usadoEm: uso[v.type].get(v.id) ?? 0 }));
+    }),
+  );
+
+  fastify.post(
+    "/api/nomenclatura/vsl/variaveis",
+    tentar(async (request, reply) => {
+      const author = autor(request);
+      const b = parse(z.object({ expertId: uuid, type: tipoDeVariavel, code: z.string(), description: z.string().trim().min(1).max(2000) }), request.body);
+      const r = repo();
+      const expert = await existente(r, "experts", b.expertId, "Expert");
+      const code = codigoValidado(b.code, "vsl", "code");
+      const ja = await r.vslVariaveis.porCode(expert.id, b.type, code);
+      if (ja) throw conflitoDeCodigo({ codigo: code, escopo: `${expert.code} (${ROTULO_DA_VARIAVEL[b.type].toLowerCase()})`, descricaoExistente: ja.description, sugestao: null, campo: "code" });
+      const linha = await r.inserir("vslVariaveis", { expertId: expert.id, type: b.type, code, description: b.description }, author);
+      return reply.code(201).send({ ...linha, rotulo: rotuloDe(linha.code, linha.description), usadoEm: 0 });
+    }),
+  );
+
+  fastify.patch(
+    "/api/nomenclatura/vsl/variaveis/:id",
+    tentar(async (request) => {
+      const author = autor(request);
+      const { id } = parse(idParams, request.params);
+      const b = parse(z.object({ code: z.string().optional(), description: z.string().trim().min(1).max(2000).optional() }), request.body);
+      const r = repo();
+      const antes = await existente(r, "vslVariaveis", id, "Variável de VSL");
+      const patch: Partial<typeof antes> = {};
+      if (b.code !== undefined) {
+        const code = codigoValidado(b.code, "vsl", "code");
+        if (code !== antes.code) {
+          const coluna = ({ lead: "leadId", problem: "problemId", solution: "solutionId" } as const)[antes.type];
+          exigirNaoUsado(await r.vslsQueUsam(coluna, id), "code");
+          const ja = await r.vslVariaveis.porCode(antes.expertId, antes.type, code);
+          if (ja) throw conflitoDeCodigo({ codigo: code, escopo: "este expert", descricaoExistente: ja.description, sugestao: null, campo: "code" });
+          patch.code = code;
+        }
+      }
+      if (b.description !== undefined) patch.description = b.description;
+      if (Object.keys(patch).length === 0) return { ...antes, rotulo: rotuloDe(antes.code, antes.description) };
+      const depois = await r.atualizar("vslVariaveis", antes, patch, author);
+      return { ...depois, rotulo: rotuloDe(depois.code, depois.description) };
+    }),
+  );
+
+  fastify.get(
+    "/api/nomenclatura/vsl/snapshot",
+    tentar(async (request) => {
+      autor(request);
+      const q = parse(z.object({ inativos: z.enum(["1", "true", "0", "false"]).optional() }), request.query);
+      return repo().snapshotDeVsl(querInativos(q));
+    }),
+  );
+
+  fastify.post(
+    "/api/nomenclatura/vsl/validar-nome",
+    tentar(async (request) => {
+      autor(request);
+      const b = parse(z.object({ name: z.string().max(300) }), request.body);
+      // COM inativos: nome antigo continua legível (regra 4).
+      return parseVslName(b.name, await repo().snapshotDeVsl(true));
+    }),
+  );
+
+  const vslSchema = z.object({
+    expertId: uuid,
+    productId: uuid,
+    leadId: uuid,
+    problemId: uuid,
+    solutionId: uuid,
+    offerId: uuid,
+    notes: z.string().trim().max(4000).nullable().optional(),
+  });
+
+  /** Rótulos para a listagem — códigos em vez de ids. */
+  async function rotulosDeVsls(r: Repositorio) {
+    const [ex, pr, of, va] = await Promise.all([r.experts.listar(true), r.produtos.listar(undefined, true), r.ofertas.listar(undefined, true), r.vslVariaveis.listar({}, true)]);
+    const mapa = <T extends { id: string }>(xs: T[]) => new Map(xs.map((x) => [x.id, x]));
+    const m = { ex: mapa(ex), pr: mapa(pr), of: mapa(of), va: mapa(va) };
+    const variavel = (id: string) => { const v = m.va.get(id); return v ? rotuloDe(v.code, v.description) : "?"; };
+    return (v: { expertId: string; productId: string; leadId: string; problemId: string; solutionId: string; offerId: string }) => ({
+      expertCode: m.ex.get(v.expertId)?.code ?? "?",
+      productSlug: m.pr.get(v.productId)?.slug ?? "?",
+      leadRotulo: variavel(v.leadId),
+      problemRotulo: variavel(v.problemId),
+      solutionRotulo: variavel(v.solutionId),
+      offerRotulo: (() => { const o = m.of.get(v.offerId); return o ? rotuloDe(o.code, o.description) : "?"; })(),
+    });
+  }
+
+  fastify.get(
+    "/api/nomenclatura/vsl/vsls",
+    tentar(async (request) => {
+      autor(request);
+      const q = parse(
+        z.object({
+          expertId: uuid.optional(),
+          productId: uuid.optional(),
+          offerId: uuid.optional(),
+          q: z.string().max(200).optional(),
+          limit: z.coerce.number().int().min(1).max(200).default(50),
+          offset: z.coerce.number().int().min(0).default(0),
+        }),
+        request.query,
+      );
+      const r = repo();
+      const [{ itens, total }, rotulos] = await Promise.all([r.vsls.listar(q), rotulosDeVsls(r)]);
+      return { itens: itens.map((v) => ({ ...v, ...rotulos(v) })), total };
+    }),
+  );
+
+  fastify.get(
+    "/api/nomenclatura/vsl/vsls/:id",
+    tentar(async (request) => {
+      autor(request);
+      const { id } = parse(idParams, request.params);
+      const r = repo();
+      const v = await existente(r, "vsls", id, "VSL");
+      return { ...v, ...(await rotulosDeVsls(r))(v) };
+    }),
+  );
+
+  fastify.post(
+    "/api/nomenclatura/vsl/vsls",
+    tentar(async (request, reply) => {
+      const author = autor(request);
+      const b = parse(vslSchema, request.body);
+      const r = repo();
+      const m = await montarVsl(r, b);
+      // D18: sem sufixo — mesma combinação é a mesma VSL.
+      const ja = await r.vsls.porNome(m.name);
+      if (ja) throw new ErroDeNomenclatura(409, `Já existe uma VSL com este nome: ${m.name}. Duas VSLs com a mesma combinação são a mesma VSL.`, { campo: "name", vslId: ja.id });
+      const linha = await r.inserir("vsls", { ...m, fields: undefined, notes: b.notes ?? null, createdBy: author } as never, author);
+      return reply.code(201).send({ ...linha, ...(await rotulosDeVsls(r))(linha) });
+    }),
+  );
+
+  fastify.patch(
+    "/api/nomenclatura/vsl/vsls/:id",
+    tentar(async (request) => {
+      const author = autor(request);
+      const { id } = parse(idParams, request.params);
+      const b = parse(vslSchema.partial(), request.body);
+      const r = repo();
+      const antes = await existente(r, "vsls", id, "VSL");
+      const mexeNoNome = CAMPOS_DA_VSL_NO_BANCO.some((c) => b[c] !== undefined && b[c] !== antes[c]);
+      const patch: Record<string, unknown> = {};
+      if (mexeNoNome) {
+        const m = await montarVsl(r, {
+          expertId: b.expertId ?? antes.expertId,
+          productId: b.productId ?? antes.productId,
+          leadId: b.leadId ?? antes.leadId,
+          problemId: b.problemId ?? antes.problemId,
+          solutionId: b.solutionId ?? antes.solutionId,
+          offerId: b.offerId ?? antes.offerId,
+        });
+        const ja = await r.vsls.porNome(m.name);
+        if (ja && ja.id !== id) throw new ErroDeNomenclatura(409, `Já existe uma VSL com este nome: ${m.name}.`, { campo: "name", vslId: ja.id });
+        Object.assign(patch, { ...m, fields: undefined });
+      }
+      if (b.notes !== undefined) patch.notes = b.notes;
+      if (Object.keys(patch).length === 0) return { ...antes, ...(await rotulosDeVsls(r))(antes) };
+      const depois = await r.atualizar("vsls", antes, patch as never, author);
+      return { ...depois, ...(await rotulosDeVsls(r))(depois) };
+    }),
+  );
   // ─────────────────── dimensões e cobertura (Story 47.6) ───────────────────
   fastify.get(
     "/api/nomenclatura/dimensoes",

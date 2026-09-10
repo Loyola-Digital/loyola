@@ -4955,3 +4955,72 @@ export const namingChangelog = pgTable(
   },
   (t) => [index("idx_naming_changelog_entity").on(t.entity, t.entityId)],
 );
+
+// ─────────────────────── Story 47.9 — Nome de VSL ───────────────────────
+//
+// `vsl_expert_produto_lead_problema_solucao_oferta`. As três variáveis
+// próprias (lead · mecanismo do problema · mecanismo da solução) são por
+// expert e vivem numa tabela só com `type` — o mesmo desenho de
+// `naming_dictionary_values` com `expert_id` a mais (D17). Expert, produto e
+// oferta são os do dicionário de campanhas (a oferta é o pitch — D19).
+
+export const namingVslVariableTypeEnum = pgEnum("naming_vsl_variable_type", ["lead", "problem", "solution"]);
+
+export const namingVslVariables = pgTable(
+  "naming_vsl_variables",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    expertId: uuid("expert_id")
+      .notNull()
+      .references(() => namingExperts.id, { onDelete: "restrict" }),
+    type: namingVslVariableTypeEnum("type").notNull(),
+    /** `[a-z0-9-]`, até 20. Único por (expert, tipo), inativos inclusos. Imutável depois de usado. */
+    code: varchar("code", { length: 20 }).notNull(),
+    /** Obrigatória: é o que se lê no select do gerador. */
+    description: text("description").notNull(),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("uq_naming_vsl_variables_expert_type_code").on(t.expertId, t.type, t.code),
+    index("idx_naming_vsl_variables_expert").on(t.expertId),
+  ],
+);
+
+export const namingVsls = pgTable(
+  "naming_vsls",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    expertId: uuid("expert_id")
+      .notNull()
+      .references(() => namingExperts.id, { onDelete: "restrict" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => namingProducts.id, { onDelete: "restrict" }),
+    leadId: uuid("lead_id")
+      .notNull()
+      .references(() => namingVslVariables.id, { onDelete: "restrict" }),
+    problemId: uuid("problem_id")
+      .notNull()
+      .references(() => namingVslVariables.id, { onDelete: "restrict" }),
+    solutionId: uuid("solution_id")
+      .notNull()
+      .references(() => namingVslVariables.id, { onDelete: "restrict" }),
+    offerId: uuid("offer_id")
+      .notNull()
+      .references(() => namingOffers.id, { onDelete: "restrict" }),
+    /** Os TEXTOS que entraram no nome — reconstruível mesmo se uma variável for desativada (spec § 4.7). */
+    leadValue: varchar("lead_value", { length: 20 }).notNull(),
+    problemValue: varchar("problem_value", { length: 20 }).notNull(),
+    solutionValue: varchar("solution_value", { length: 20 }).notNull(),
+    offerValue: varchar("offer_value", { length: 8 }).notNull(),
+    /** GERADO e armazenado. Único: duas VSLs com a mesma combinação são a mesma VSL (D18). */
+    name: varchar("name", { length: 160 }).notNull(),
+    notes: text("notes"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("uq_naming_vsls_name").on(t.name), index("idx_naming_vsls_expert").on(t.expertId)],
+);

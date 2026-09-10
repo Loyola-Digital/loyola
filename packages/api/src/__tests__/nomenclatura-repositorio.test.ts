@@ -248,6 +248,44 @@ describe("Story 47.3: campanhas.listar — filtros vão para o SQL, não para a 
     expect(q.params).toEqual(["gerador"]);
     expect([...ids]).toEqual(["111", "222"]);
   });
+  it("47.9: vslVariaveis.porCode filtra expert + type + code SEM active (unicidade inclui inativos); listar filtra active só sem inativos", async () => {
+    const a = fakeDb([[]]);
+    await criarRepositorio(a.db).vslVariaveis.porCode(EXPERT, "lead", "demissao");
+    const q = sqlDe(a.registros[0].where);
+    expect(q.sql).toMatch(/"expert_id" = /);
+    expect(q.sql).toMatch(/"type" = /);
+    expect(q.sql).toMatch(/"code" = /);
+    expect(q.sql).not.toMatch(/"active"/);
+    expect(q.params).toEqual([EXPERT, "lead", "demissao"]);
+    const b = fakeDb([[]]);
+    await criarRepositorio(b.db).vslVariaveis.listar({ expertId: EXPERT, type: "solution" }, false);
+    expect(sqlDe(b.registros[0].where).sql).toMatch(/"active" = /);
+    const c = fakeDb([[]]);
+    await criarRepositorio(c.db).vslVariaveis.listar({ expertId: EXPERT }, true);
+    expect(sqlDe(c.registros[0].where).sql).not.toMatch(/"active"/);
+  });
+  it("47.9: vsls.listar por expert/produto/oferta e ILIKE no nome; porNome é igualdade exata", async () => {
+    const a = fakeDb([[], [{ n: 0 }]]);
+    await criarRepositorio(a.db).vsls.listar({ expertId: EXPERT, offerId: "00000000-0000-4000-8000-00000000000f", q: "demissao", limit: 10, offset: 0 });
+    const q = sqlDe(a.registros[0].where);
+    expect(q.sql).toMatch(/"expert_id" = /);
+    expect(q.sql).toMatch(/"offer_id" = /);
+    expect(q.sql).toMatch(/"name" ilike /);
+    expect(q.params).toEqual([EXPERT, "00000000-0000-4000-8000-00000000000f", "%demissao%"]);
+    const b = fakeDb([[]]);
+    await criarRepositorio(b.db).vsls.porNome("vsl_x");
+    expect(sqlDe(b.registros[0].where).params).toEqual(["vsl_x"]);
+  });
+  it("47.9: usoEmVsls agrupa pela coluna pedida e vslsQueUsam conta pela FK", async () => {
+    const a = fakeDb([[{ id: "o1", n: 2 }]]);
+    const m = await criarRepositorio(a.db).usoEmVsls("offerId");
+    expect(m.get("o1")).toBe(2);
+    // groupBy recebe a COLUNA (não um SQL): o nome dela é o que se prova
+    expect((a.registros[0].groupBy as { name: string }).name).toBe("offer_id");
+    const b = fakeDb([[{ n: 3 }]]);
+    expect(await criarRepositorio(b.db).vslsQueUsam("leadId", "l1")).toBe(3);
+    expect(sqlDe(b.registros[0].where).sql).toMatch(/"lead_id" = /);
+  });
   it("47.8: naoPublicadas é published_at IS NULL — publicada nunca entra no recálculo (regra 6)", async () => {
     const a = fakeDb([[]]);
     await criarRepositorio(a.db).campanhas.naoPublicadas();
