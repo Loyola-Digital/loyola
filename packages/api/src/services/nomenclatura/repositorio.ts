@@ -15,7 +15,7 @@
  *   TEXTO no caso dos valores fixos (o nome guarda o texto, não a FK).
  */
 
-import { and, asc, count, desc, eq, ilike, inArray, isNotNull, isNull, max, min, sql, sum } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lte, max, min, sql, sum } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   metaCampaignInsightsDaily,
@@ -27,6 +27,7 @@ import {
   namingLandingPages,
   namingLegacyDecisions,
   namingOffers,
+  namingAds,
   namingProducts,
   namingVslVariables,
   namingVsls,
@@ -35,7 +36,7 @@ import {
 import { registrarNoChangelog, type AcaoDoChangelog } from "./changelog.js";
 import type { Conexao } from "./conexao.js";
 import type { Referencia } from "./regras.js";
-import { REGEX_LEGADA_SQL, type DicionarioSnapshot, type VslSnapshot } from "@loyola-x/shared";
+import { REGEX_LEGADA_SQL, type AdSnapshot, type DicionarioSnapshot, type VslSnapshot } from "@loyola-x/shared";
 
 export type Expert = typeof namingExperts.$inferSelect;
 export type Produto = typeof namingProducts.$inferSelect;
@@ -48,11 +49,13 @@ export type TipoDeValor = ValorFixo["type"];
 export type VariavelDeVsl = typeof namingVslVariables.$inferSelect;
 export type TipoDeVariavelDeVsl = VariavelDeVsl["type"];
 export type Vsl = typeof namingVsls.$inferSelect;
+/** Story 47.10 */
+export type Anuncio = typeof namingAds.$inferSelect;
 
-export type Entidade = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "dicionario" | "campanhas" | "decisoes" | "vslVariaveis" | "vsls";
+export type Entidade = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "dicionario" | "campanhas" | "decisoes" | "vslVariaveis" | "vsls" | "anuncios";
 export type Decisao = typeof namingLegacyDecisions.$inferSelect;
 /** As que têm `active` (campanha não se desativa; publica ou duplica). */
-export type EntidadeAtivavel = Exclude<Entidade, "campanhas" | "decisoes" | "vsls">;
+export type EntidadeAtivavel = Exclude<Entidade, "campanhas" | "decisoes" | "vsls" | "anuncios">;
 export type Campanha = typeof namingCampaigns.$inferSelect;
 
 /** Nome da tabela que vai no changelog. */
@@ -67,6 +70,7 @@ export const TABELA: Record<Entidade, string> = {
   decisoes: "naming_legacy_decisions",
   vslVariaveis: "naming_vsl_variables",
   vsls: "naming_vsls",
+  anuncios: "naming_ads",
 };
 
 const TABELAS = {
@@ -80,6 +84,7 @@ const TABELAS = {
   decisoes: namingLegacyDecisions,
   vslVariaveis: namingVslVariables,
   vsls: namingVsls,
+  anuncios: namingAds,
 } as const;
 
 type Linha<E extends Entidade> = (typeof TABELAS)[E]["$inferSelect"];
@@ -197,12 +202,17 @@ export function criarRepositorio(db: Conexao) {
   // ── uso em campanhas ──────────────────────────────────────────────────
   type ColunaDeFk = "expertId" | "productId" | "funnelId" | "offerId" | "landingPageId";
   type ColunaDeTexto = "year" | "temperature" | "auction" | "format";
-  const COLUNA_DO_TIPO: Record<TipoDeValor, ColunaDeTexto> = {
+  type TipoDeCampanha = "year" | "temperature" | "auction" | "format";
+  type TipoDeAnuncio = "creative_type" | "launch_type";
+  const COLUNA_DO_TIPO: Record<TipoDeCampanha, ColunaDeTexto> = {
     year: "year",
     temperature: "temperature",
     auction: "auction",
     format: "format",
   };
+  /** Story 47.10: os dois tipos do nome de anúncio guardam o texto em `naming_ads`. */
+  const COLUNA_DO_TIPO_DE_ANUNCIO: Record<TipoDeAnuncio, "creativeType" | "launchType"> = { creative_type: "creativeType", launch_type: "launchType" };
+  const ehTipoDeAnuncio = (t: TipoDeValor): t is TipoDeAnuncio => t === "creative_type" || t === "launch_type";
 
   async function usoPorFk(coluna: ColunaDeFk): Promise<Map<string, number>> {
     const col = namingCampaigns[coluna];
@@ -211,6 +221,11 @@ export function criarRepositorio(db: Conexao) {
   }
 
   async function usoPorValor(type: TipoDeValor): Promise<Map<string, number>> {
+    if (ehTipoDeAnuncio(type)) {
+      const col = namingAds[COLUNA_DO_TIPO_DE_ANUNCIO[type]];
+      const linhas = await db.select({ valor: col, n: count() }).from(namingAds).groupBy(col);
+      return new Map(linhas.map((l) => [l.valor, Number(l.n)]));
+    }
     const col = namingCampaigns[COLUNA_DO_TIPO[type]];
     const linhas = await db.select({ valor: col, n: count() }).from(namingCampaigns).groupBy(col);
     return new Map(linhas.map((l) => [l.valor, Number(l.n)]));
@@ -224,7 +239,12 @@ export function criarRepositorio(db: Conexao) {
     return Number(n);
   }
 
+  /** "Usado em N" de um valor fixo: campanhas para os quatro tipos do nome de campanha; anúncios para os dois do nome de anúncio. */
   async function campanhasComValor(type: TipoDeValor, valor: string): Promise<number> {
+    if (ehTipoDeAnuncio(type)) {
+      const [{ n }] = await db.select({ n: count() }).from(namingAds).where(eq(namingAds[COLUNA_DO_TIPO_DE_ANUNCIO[type]], valor));
+      return Number(n);
+    }
     const [{ n }] = await db
       .select({ n: count() })
       .from(namingCampaigns)
@@ -281,7 +301,7 @@ export function criarRepositorio(db: Conexao) {
     const id = linha.id;
     switch (entidade) {
       case "experts": {
-        const [produtos, funis, ofertas, lps, campanhas, variaveis, vsls] = await Promise.all([
+        const [produtos, funis, ofertas, lps, campanhas, variaveis, vsls, anuncios] = await Promise.all([
           db.select({ id: namingProducts.id, r: namingProducts.slug }).from(namingProducts).where(eq(namingProducts.expertId, id)).limit(LIMITE_DE_REFERENCIAS),
           db.select({ id: namingFunnels.id, r: namingFunnels.code }).from(namingFunnels).where(eq(namingFunnels.expertId, id)).limit(LIMITE_DE_REFERENCIAS),
           db.select({ id: namingOffers.id, r: namingOffers.code }).from(namingOffers).where(eq(namingOffers.expertId, id)).limit(LIMITE_DE_REFERENCIAS),
@@ -289,6 +309,7 @@ export function criarRepositorio(db: Conexao) {
           campanhasComo("expertId", id),
           db.select({ id: namingVslVariables.id, r: namingVslVariables.code }).from(namingVslVariables).where(eq(namingVslVariables.expertId, id)).limit(LIMITE_DE_REFERENCIAS),
           vslsComo("expertId", id),
+          db.select({ id: namingAds.id, r: namingAds.name }).from(namingAds).where(eq(namingAds.expertId, id)).limit(LIMITE_DE_REFERENCIAS),
         ]);
         return [
           ...produtos.map((p) => ({ tipo: "produto" as const, id: p.id, rotulo: p.r })),
@@ -298,6 +319,7 @@ export function criarRepositorio(db: Conexao) {
           ...campanhas,
           ...variaveis.map((v) => ({ tipo: "variavel" as const, id: v.id, rotulo: v.r })),
           ...vsls,
+          ...anuncios.map((a) => ({ tipo: "anuncio" as const, id: a.id, rotulo: a.r })),
         ];
       }
       case "produtos":
@@ -313,6 +335,8 @@ export function criarRepositorio(db: Conexao) {
       }
       case "vsls":
         return [];
+      case "anuncios":
+        return [];
       case "lps":
         return campanhasComo("landingPageId", id);
       case "campanhas":
@@ -322,7 +346,12 @@ export function criarRepositorio(db: Conexao) {
         return [];
       case "dicionario": {
         if (!linha.type || !linha.value) return [];
-        const col = namingCampaigns[COLUNA_DO_TIPO[linha.type as TipoDeValor]];
+        const tipo = linha.type as TipoDeValor;
+        if (ehTipoDeAnuncio(tipo)) {
+          const anuncios = await db.select({ id: namingAds.id, name: namingAds.name }).from(namingAds).where(eq(namingAds[COLUNA_DO_TIPO_DE_ANUNCIO[tipo]], linha.value)).limit(LIMITE_DE_REFERENCIAS);
+          return anuncios.map((a) => ({ tipo: "anuncio" as const, id: a.id, rotulo: a.name }));
+        }
+        const col = namingCampaigns[COLUNA_DO_TIPO[tipo]];
         const linhas = await db
           .select({ id: namingCampaigns.id, name: namingCampaigns.name })
           .from(namingCampaigns)
@@ -519,6 +548,46 @@ export function criarRepositorio(db: Conexao) {
     };
   }
 
+  // ── Story 47.10: anúncios ─────────────────────────────────────────────
+  const anuncios = {
+    listar: async (f: { expertId?: string; creativeType?: string; launchType?: string; de?: string; ate?: string; q?: string; limit: number; offset: number }) => {
+      const cond = onde(
+        f.expertId ? eq(namingAds.expertId, f.expertId) : undefined,
+        f.creativeType ? eq(namingAds.creativeType, f.creativeType) : undefined,
+        f.launchType ? eq(namingAds.launchType, f.launchType) : undefined,
+        f.de ? (gte(namingAds.adDate, f.de) as unknown as ReturnType<typeof eq>) : undefined,
+        f.ate ? (lte(namingAds.adDate, f.ate) as unknown as ReturnType<typeof eq>) : undefined,
+        f.q ? (ilike(namingAds.name, `%${f.q}%`) as unknown as ReturnType<typeof eq>) : undefined,
+      );
+      const [itens, [{ n }]] = await Promise.all([
+        db.select().from(namingAds).where(cond).orderBy(desc(namingAds.createdAt)).limit(f.limit).offset(f.offset),
+        db.select({ n: count() }).from(namingAds).where(cond),
+      ]);
+      return { itens, total: Number(n) };
+    },
+    /** Todos os NN do expert — a base do "próximo livre" (regra 4: número não se reaproveita). */
+    seqsDoExpert: async (expertId: string) =>
+      db.select({ id: namingAds.id, creativeSeq: namingAds.creativeSeq }).from(namingAds).where(eq(namingAds.expertId, expertId)),
+    porSeq: async (expertId: string, creativeSeq: number) =>
+      (await db.select().from(namingAds).where(and(eq(namingAds.expertId, expertId), eq(namingAds.creativeSeq, creativeSeq))).limit(1))[0],
+    /** Maior NN de lançamento já usado para (expert, sigla) — sugestão, não sequência (Q5). */
+    maiorLancamento: async (expertId: string, launchType: string) => {
+      const [r] = await db.select({ m: max(namingAds.launchSeq) }).from(namingAds).where(and(eq(namingAds.expertId, expertId), eq(namingAds.launchType, launchType)));
+      return r?.m === null || r?.m === undefined ? null : Number(r.m);
+    },
+  };
+
+  /** O que `parseAdName` lê: experts e os dois tipos de valor fixo do anúncio. */
+  async function snapshotDeAnuncios(inativos: boolean): Promise<AdSnapshot> {
+    const [ex, va] = await Promise.all([experts.listar(true), dicionario.listar(undefined, true)]);
+    const filtra = <T extends { active: boolean }>(xs: T[]) => (inativos ? xs : xs.filter((x) => x.active));
+    return {
+      experts: filtra(ex).map((e) => ({ code: e.code, active: e.active })),
+      creativeTypes: filtra(va.filter((v) => v.type === "creative_type")).map((v) => ({ value: v.value, active: v.active })),
+      launchTypes: filtra(va.filter((v) => v.type === "launch_type")).map((v) => ({ value: v.value, active: v.active })),
+    };
+  }
+
   // ── snapshot do dicionário (Story 47.3) ───────────────────────────────
   /**
    * O dicionário inteiro, por CÓDIGO (não por id): é o que `parseCampaignName`
@@ -552,7 +621,10 @@ export function criarRepositorio(db: Conexao) {
         code: l.code,
         active: l.active,
       })),
-      valores: filtra(va).map((v) => ({ type: v.type, value: v.value, active: v.active })),
+      // Story 47.10: os tipos do nome de anúncio não entram no snapshot do nome de campanha.
+      valores: filtra(va)
+        .filter((v) => !ehTipoDeAnuncio(v.type))
+        .map((v) => ({ type: v.type as TipoDeCampanha, value: v.value, active: v.active })),
     };
   }
 
@@ -659,6 +731,8 @@ export function criarRepositorio(db: Conexao) {
   return {
     snapshot,
     snapshotDeVsl,
+    snapshotDeAnuncios,
+    anuncios,
     vslVariaveis,
     vsls,
     usoEmVsls,

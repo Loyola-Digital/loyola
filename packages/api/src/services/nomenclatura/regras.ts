@@ -92,7 +92,7 @@ export function exigirNaoUsado(usadoEm: number, campo: string): void {
 }
 
 export interface Referencia {
-  tipo: "produto" | "funil" | "oferta" | "lp" | "campanha" | "variavel" | "vsl";
+  tipo: "produto" | "funil" | "oferta" | "lp" | "campanha" | "variavel" | "vsl" | "anuncio";
   id: string;
   rotulo: string;
 }

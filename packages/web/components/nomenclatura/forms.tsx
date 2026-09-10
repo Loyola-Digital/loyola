@@ -364,7 +364,7 @@ export function FormLp(props: { aberto: boolean; linha: Lp | null; cascataInicia
 }
 
 // ─────────────────────────── Valor fixo ───────────────────────────
-export const ROTULO_DO_TIPO: Record<TipoDeValor, string> = { year: "Ano", temperature: "Temperatura", auction: "Leilão", format: "Formato" };
+export const ROTULO_DO_TIPO: Record<TipoDeValor, string> = { year: "Ano", temperature: "Temperatura", auction: "Leilão", format: "Formato", creative_type: "Tipo de criativo", launch_type: "Sigla de lançamento" };
 
 export function FormValorFixo(props: { aberto: boolean; tipo: TipoDeValor; linha: ValorFixo | null; onFechar: () => void }) {
   const { aberto, tipo, linha, onFechar } = props;
@@ -390,7 +390,7 @@ export function FormValorFixo(props: { aberto: boolean; tipo: TipoDeValor; linha
   }
   return (
     <FormularioDialogo aberto={aberto} onFechar={onFechar} titulo={linha ? `Editar ${ROTULO_DO_TIPO[tipo].toLowerCase()} ${linha.value}` : `Novo valor em ${ROTULO_DO_TIPO[tipo]}`} onSalvar={salvar} salvando={criar.isPending || editar.isPending} podeSalvar={Boolean(value.trim())} erro={erro}>
-      <CampoImutavel id="value" label="Valor" valor={value} onChange={setValue} tipo="valor" usadoEm={linha?.usadoEm ?? 0} placeholder={tipo === "year" ? "2028" : tipo === "format" ? "carrossel" : "mix"} ajuda="Só letras e números. Entra no nome exatamente assim." autoFocus={!linha} />
+      <CampoImutavel id="value" label="Valor" valor={value} onChange={setValue} tipo="valor" usadoEm={linha?.usadoEm ?? 0} placeholder={tipo === "year" ? "2028" : tipo === "format" ? "carrossel" : tipo === "creative_type" ? "adv" : tipo === "launch_type" ? "pg" : "mix"} ajuda="Só letras e números. Entra no nome exatamente assim." autoFocus={!linha} />
       <div className="space-y-1">
         <Label htmlFor="vdesc">Descrição (opcional)</Label>
         <Input id="vdesc" value={description} onChange={(e) => setDescription(e.target.value)} />

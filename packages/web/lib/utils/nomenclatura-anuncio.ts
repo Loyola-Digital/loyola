@@ -1,0 +1,154 @@
+/**
+ * Story 47.10 — o que a tela de Nome Ads decide, na forma pura.
+ *
+ * Estado do gerador, prévia (= `buildAdName` do `shared`, a MESMA função do
+ * servidor), a estrutura que o designer recebe × o nome completo, o corpo da
+ * API e o `mm-aaaa` a partir de uma data. O `.tsx` só desenha.
+ *
+ * ⚠️ `.ts` sem JSX — o runner do web só coleta `lib/utils/**`.
+ */
+
+import {
+  FORMATO_DA_DATA_DO_ANUNCIO,
+  SEPARADOR_DA_DESCRICAO,
+  buildAdName,
+  mesAnoDe,
+  pedacosDoAnuncio,
+  type AdFields,
+  type BlocoDoAnuncio,
+  type PedacoDoAnuncio,
+} from "@loyola-x/shared/src/nomenclatura-de-anuncio";
+import { normalizarCodigo } from "@loyola-x/shared/src/nomenclatura-codigos";
+
+export { mesAnoDe, FORMATO_DA_DATA_DO_ANUNCIO, SEPARADOR_DA_DESCRICAO };
+
+export interface EstadoDoAnuncio {
+  expertId: string;
+  creativeType: string;
+  /** Texto do campo (`"03"`); vazio = o servidor sugere. */
+  creativeSeq: string;
+  launchType: string;
+  launchSeq: string;
+  /** `mm-aaaa` */
+  date: string;
+  description: string;
+  notes: string;
+}
+
+export const ESTADO_VAZIO_DO_ANUNCIO: EstadoDoAnuncio = { expertId: "", creativeType: "", creativeSeq: "", launchType: "", launchSeq: "", date: "", description: "", notes: "" };
+
+/** Trocar o expert limpa o NN do criativo (a sequência é por expert) e o NN do lançamento (a sugestão é por expert+sigla). O resto fica. */
+export function aoEscolherNoAnuncio(estado: EstadoDoAnuncio, campo: keyof EstadoDoAnuncio, valor: string): EstadoDoAnuncio {
+  if (estado[campo] === valor) return estado;
+  const proximo = { ...estado, [campo]: valor };
+  if (campo === "expertId") return { ...proximo, creativeSeq: "", launchSeq: "" };
+  if (campo === "launchType") return { ...proximo, launchSeq: "" };
+  return proximo;
+}
+
+/** `"3"` → 3; `""`/inválido → undefined. */
+export function nnDe(texto: string): number | undefined {
+  const n = Number(texto);
+  return /^\d{1,2}$/.test(texto.trim()) && n >= 1 && n <= 99 ? n : undefined;
+}
+
+/** Do estado para os campos do nome; a descrição vai normalizada (mesma função do servidor). */
+export function camposDoAnuncio(estado: EstadoDoAnuncio, experts: { id: string; code: string }[]): Partial<AdFields> {
+  const desc = estado.description.trim() ? normalizarCodigo(estado.description, "anuncio") : null;
+  return {
+    creativeType: estado.creativeType || undefined,
+    creativeSeq: nnDe(estado.creativeSeq),
+    expert: experts.find((e) => e.id === estado.expertId)?.code,
+    launchType: estado.launchType || undefined,
+    launchSeq: nnDe(estado.launchSeq),
+    date: FORMATO_DA_DATA_DO_ANUNCIO.test(estado.date) ? estado.date : undefined,
+    description: desc?.ok ? desc.valor : undefined,
+  };
+}
+
+export interface PreviaDoAnuncio {
+  pedacos: PedacoDoAnuncio[];
+  /** Até o `--` inclusive — o que o designer recebe (5d). */
+  estrutura: string | null;
+  /** Estrutura + descrição; igual à estrutura sem descrição. */
+  nome: string | null;
+  texto: string;
+  tamanho: number;
+  completo: boolean;
+  erro: string | null;
+  /** Descrição digitada mas rejeitada pela normalização (`_`, `--`, …). */
+  erroDaDescricao: string | null;
+}
+
+export function previaDoAnuncio(estado: EstadoDoAnuncio, experts: { id: string; code: string }[]): PreviaDoAnuncio {
+  const campos = camposDoAnuncio(estado, experts);
+  const pedacos = pedacosDoAnuncio(campos);
+  const estruturais = pedacos.filter((p) => p.campo !== "description");
+  const completo = estruturais.every((p) => !p.faltando);
+  const desc = estado.description.trim() ? normalizarCodigo(estado.description, "anuncio") : null;
+  const erroDaDescricao = desc && !desc.ok ? desc.motivo : null;
+  let estrutura: string | null = null;
+  let nome: string | null = null;
+  let erro: string | null = null;
+  if (completo && !erroDaDescricao) {
+    try {
+      const r = buildAdName(campos as AdFields);
+      estrutura = r.structure;
+      nome = r.name;
+    } catch (e) {
+      erro = (e as Error).message;
+    }
+  }
+  const texto = nome ?? estruturais.map((p) => (p.faltando ? "…" : p.valor)).join("_") + SEPARADOR_DA_DESCRICAO + (campos.description ?? "");
+  return { pedacos, estrutura, nome, texto, tamanho: nome?.length ?? 0, completo: completo && nome !== null, erro, erroDaDescricao };
+}
+
+/** Classes de cor por bloco — só tokens que existem em `globals.css`. */
+export const CLASSE_DO_BLOCO_DO_ANUNCIO: Record<BlocoDoAnuncio, string> = {
+  criativo: "text-brand",
+  identidade: "text-foreground",
+  lancamento: "text-info",
+  data: "text-warning",
+  descricao: "text-muted-foreground",
+};
+
+export const LEGENDA_DO_ANUNCIO: { bloco: BlocoDoAnuncio; rotulo: string; descricao: string }[] = [
+  { bloco: "criativo", rotulo: "Criativo", descricao: "tipo + NN sequencial do expert" },
+  { bloco: "identidade", rotulo: "Expert", descricao: "" },
+  { bloco: "lancamento", rotulo: "Lançamento", descricao: "sigla + número do lançamento" },
+  { bloco: "data", rotulo: "Data", descricao: "mês e ano (mm-aaaa)" },
+  { bloco: "descricao", rotulo: "Descrição", descricao: "livre, do designer — depois do --" },
+];
+
+/** O corpo que a API espera. `creativeSeq` vazio = deixar o servidor escolher. */
+export function corpoDoAnuncio(estado: EstadoDoAnuncio) {
+  return {
+    expertId: estado.expertId,
+    creativeType: estado.creativeType,
+    creativeSeq: nnDe(estado.creativeSeq) ?? null,
+    launchType: estado.launchType,
+    launchSeq: nnDe(estado.launchSeq) ?? 0,
+    date: estado.date,
+    description: estado.description.trim() || null,
+    notes: estado.notes.trim() || null,
+  };
+}
+
+/** De um anúncio gravado para o estado do gerador. `proximoNn` = duplicar (o NN anda). */
+export function estadoDeAnuncio(a: { expertId: string; creativeType: string; creativeSeq: number; launchType: string; launchSeq: number; adDate: string; description: string | null; notes: string | null }, modo: "editar" | "duplicar"): EstadoDoAnuncio {
+  return {
+    expertId: a.expertId,
+    creativeType: a.creativeType,
+    creativeSeq: modo === "editar" ? String(a.creativeSeq).padStart(2, "0") : "",
+    launchType: a.launchType,
+    launchSeq: String(a.launchSeq).padStart(2, "0"),
+    date: mesAnoDe(a.adDate),
+    description: a.description ?? "",
+    notes: a.notes ?? "",
+  };
+}
+
+/** Mês corrente em `mm-aaaa` (default do campo). */
+export function mesCorrente(agora = new Date()): string {
+  return mesAnoDe(agora);
+}

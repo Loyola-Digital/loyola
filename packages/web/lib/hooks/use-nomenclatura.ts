@@ -22,13 +22,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DicionarioSnapshot, ParseResult } from "@loyola-x/shared/src/nomenclatura-de-campanha";
 import type { SugestaoDeClassificacao } from "@loyola-x/shared/src/nomenclatura-legado";
 import type { TipoDeVariavel, VslParseResult, VslSnapshot } from "@loyola-x/shared/src/nomenclatura-de-vsl";
+import type { AdParseResult } from "@loyola-x/shared/src/nomenclatura-de-anuncio";
 
 /** `vsl/variaveis` (Story 47.9) segue o mesmo contrato CRUD, sob o prefixo `/vsl`. */
 export type Recurso = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "dicionario" | "vsl/variaveis";
-export type TipoDeValor = "year" | "temperature" | "auction" | "format";
+/** `creative_type` e `launch_type` (Story 47.10) são os do nome de anúncio; mesmo CRUD. */
+export type TipoDeValor = "year" | "temperature" | "auction" | "format" | "creative_type" | "launch_type";
 
 export interface Referencia {
-  tipo: "produto" | "funil" | "oferta" | "lp" | "campanha" | "variavel" | "vsl";
+  tipo: "produto" | "funil" | "oferta" | "lp" | "campanha" | "variavel" | "vsl" | "anuncio";
   id: string;
   rotulo: string;
 }
@@ -408,6 +410,82 @@ export function useValidarNomeDeVsl() {
   const apiClient = useApiClient();
   return useMutation({
     mutationFn: (name: string) => apiClient<VslParseResult>(`${BASE}/vsl/validar-nome`, { method: "POST", body: JSON.stringify({ name }) }),
+  });
+}
+
+// ─────────────────── Story 47.10: anúncios ───────────────────
+
+export interface Anuncio {
+  id: string;
+  expertId: string;
+  creativeType: string;
+  creativeSeq: number;
+  launchType: string;
+  launchSeq: number;
+  /** `AAAA-MM-01` */
+  adDate: string;
+  description: string | null;
+  structure: string;
+  name: string;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  expertCode: string;
+}
+
+export function useProximoNnDeAnuncio(expertId: string, launchType?: string) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["nomenclatura", "ads", "proximo", expertId, launchType ?? ""],
+    queryFn: () => apiClient<{ creativeSeq: number | null; creativeSeqTexto: string | null; launchSeqSugerido: number | null }>(`${BASE}/ads/proximo${query({ expertId, launchType })}`),
+    enabled: Boolean(expertId),
+    // Nunca velho: alguém acabou de reservar o 03.
+    staleTime: 0,
+  });
+}
+
+export function useAnuncios(f: { expertId?: string; creativeType?: string; launchType?: string; de?: string; ate?: string; q?: string; limit?: number; offset?: number } = {}) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["nomenclatura", "ads", "lista", f],
+    queryFn: () =>
+      apiClient<{ itens: Anuncio[]; total: number }>(`${BASE}/ads${query({ ...f, limit: f.limit === undefined ? undefined : String(f.limit), offset: f.offset === undefined ? undefined : String(f.offset) })}`),
+    staleTime: 15 * 1000,
+  });
+}
+
+export function useAnuncio(id: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["nomenclatura", "ads", "um", id],
+    queryFn: () => apiClient<Anuncio>(`${BASE}/ads/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCriarAnuncio() {
+  const apiClient = useApiClient();
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: (dados: Record<string, unknown>) => apiClient<Anuncio>(`${BASE}/ads`, { method: "POST", body: JSON.stringify(dados) }),
+    onSuccess: invalidar,
+  });
+}
+
+export function useEditarAnuncio() {
+  const apiClient = useApiClient();
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: ({ id, dados }: { id: string; dados: Record<string, unknown> }) =>
+      apiClient<Anuncio>(`${BASE}/ads/${id}`, { method: "PATCH", body: JSON.stringify(dados) }),
+    onSuccess: invalidar,
+  });
+}
+
+export function useValidarNomeDeAnuncio() {
+  const apiClient = useApiClient();
+  return useMutation({
+    mutationFn: (name: string) => apiClient<AdParseResult>(`${BASE}/ads/validar-nome`, { method: "POST", body: JSON.stringify({ name }) }),
   });
 }
 

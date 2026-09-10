@@ -64,6 +64,20 @@ export const DADOS_DO_SEED = {
     auction: ["abo", "cbo"],
     format: ["videos", "estaticos", "mix"],
   } as Record<"year" | "temperature" | "auction" | "format", string[]>,
+  /** Story 47.10 (AC1): tipo de criativo e sigla de lançamento, nesta ordem e com estas descrições — exatamente como o pedido do dono. */
+  valoresDeAnuncio: {
+    creative_type: [
+      { value: "ad", description: "estático" },
+      { value: "adv", description: "vídeo" },
+      { value: "carr", description: "carrossel" },
+    ],
+    launch_type: [
+      { value: "pg", description: "lançamento pago" },
+      { value: "l", description: "lançamento gratuito" },
+      { value: "m", description: "meteórico" },
+      { value: "pr", description: "evento presencial" },
+    ],
+  } as Record<"creative_type" | "launch_type", { value: string; description: string }[]>,
 } as const;
 
 export interface ResultadoDoSeed {
@@ -94,12 +108,15 @@ export async function seedNomenclatura(db: Database): Promise<ResultadoDoSeed> {
   }
 
   // valores fixos — não dependem de nada
-  await inserir(
-    namingDictionaryValues,
-    (Object.keys(DADOS_DO_SEED.valores) as (keyof typeof DADOS_DO_SEED.valores)[]).flatMap((type) =>
+  await inserir(namingDictionaryValues, [
+    ...(Object.keys(DADOS_DO_SEED.valores) as (keyof typeof DADOS_DO_SEED.valores)[]).flatMap((type) =>
       DADOS_DO_SEED.valores[type].map((value, sortOrder) => ({ type, value, sortOrder })),
     ),
-  );
+    // Story 47.10: os dois tipos do nome de anúncio, com descrição.
+    ...(Object.keys(DADOS_DO_SEED.valoresDeAnuncio) as (keyof typeof DADOS_DO_SEED.valoresDeAnuncio)[]).flatMap((type) =>
+      DADOS_DO_SEED.valoresDeAnuncio[type].map((v, sortOrder) => ({ type, value: v.value, description: v.description, sortOrder })),
+    ),
+  ]);
 
   // experts
   const expertsProntos = DADOS_DO_SEED.experts.filter((e) => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ABAS_DE_CAMPANHAS, ABAS_DE_VSL, SECOES, abaAtiva, hrefDaSecao, hrefDe } from "../nomenclatura-abas";
+import { ABAS_DE_ADS, ABAS_DE_CAMPANHAS, ABAS_DE_VSL, SECOES, abaAtiva, hrefDaSecao, hrefDe } from "../nomenclatura-abas";
 
 const params = (q: Record<string, string>) => new URLSearchParams(q);
 
@@ -65,5 +65,17 @@ describe("Nome VSL é seção com três abas (Story 47.9)", () => {
     expect(ordem.indexOf("vsl")).toBe(ordem.indexOf("slug") + 1);
     expect(hrefDaSecao("vsl")).toBe("/settings/nomenclatura?secao=vsl&aba=nova");
     expect(abaAtiva(new URL(hrefDe("vsl", "lista"), "http://x").searchParams)).toEqual({ secao: "vsl", aba: "lista" });
+  });
+});
+
+describe("Nome Ads é seção com três abas (Story 47.10)", () => {
+  it("AC7: ?secao=ads abre Novo anúncio por padrão; abas novo · lista · valores; à direita de Nome VSL", () => {
+    expect(abaAtiva(params({ secao: "ads" }))).toEqual({ secao: "ads", aba: "novo" });
+    expect(abaAtiva(params({ secao: "ads", aba: "valores" }))).toEqual({ secao: "ads", aba: "valores" });
+    expect(abaAtiva(params({ secao: "ads", aba: "nova" }))).toEqual({ secao: "ads", aba: "novo" });
+    expect(ABAS_DE_ADS.map((a) => a.value)).toEqual(["novo", "lista", "valores"]);
+    const ordem = SECOES.map((s) => s.value);
+    expect(ordem.indexOf("ads")).toBe(ordem.indexOf("vsl") + 1);
+    expect(hrefDaSecao("ads")).toBe("/settings/nomenclatura?secao=ads&aba=novo");
   });
 });
