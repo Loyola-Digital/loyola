@@ -74,7 +74,7 @@ Este epic põe dentro do Loyola X, em Configurações → Nomenclatura:
 
 | # | Story | Item do pedido | Entrega | Pontos | Status |
 |---|---|---|---|---|---|
-| 47.7 | "Slug de LP" vira seção própria e lista as LPs do expert | 1, 3 | seção `?secao=slug` ao lado de Campanhas (link antigo compatível); ao escolher o expert, tabela Código · Slug · URL · Descrição que a cascata estreita | 3 | **Ready** · GO 9,5 |
+| 47.7 | "Slug de LP" vira seção própria e lista as LPs do expert | 1, 3 | seção `?secao=slug` ao lado de Campanhas (link antigo compatível); ao escolher o expert, tabela Código · Slug · URL · Descrição que a cascata estreita | 3 | **Done** · gate CONCERNS (AC8 visual com o dono) · branch `feat/47.7-slug-de-lp-secao` aguardando push |
 | 47.8 | Novo padrão do nome de campanha (template v2) | 2 | `expert_funil_produto_oferta_perpetuo_ano_temp_leilao_formato_lp` (10 campos); build/parse/prévia/validador; recálculo das não publicadas; fila de Legadas exclui ids já vinculados; contrato 10 | 8 | **Ready** · GO 9 · Q1 = `a01` · ⛔ **P4 bloqueia o merge**: existe fluxo externo em 9 colunas, o dono nomeia e ajusta antes |
 | 47.9 | Seção "Nome VSL" — três variáveis por expert + oferta do dicionário + gerador | 4 | `naming_vsl_variables` (lead · problem · solution) + `naming_vsls` (com `offer_id`); `vsl_expert_produto_lead_problema_solucao_oferta`; abas Nova VSL · VSLs · Variáveis | 8 | **Ready** · GO 9 · pitch = `ofNN` (resposta do dono) |
 | 47.10 | Seção "Nome Ads" — tipo de criativo, sigla de lançamento e gerador com sequencial | 5 | tipos `creative_type` (ad · adv · carr) e `launch_type` (pg · l · m · pr) em Valores fixos; `naming_ads` com NN reservado na gravação; `{tipo}{NN}_{expert}_{sigla}{NN}_{mm-aaaa}--{descricao}`, NN único por expert; copiar estrutura × nome completo | 8 | **Ready** · GO 8,5 · data `mm-aaaa`, NN por expert (respostas do dono) |
@@ -138,6 +138,7 @@ Nomenclatura de conjunto · parâmetros de URL · integração Meta · importaç
 
 | Data | Autor | Mudança |
 |---|---|---|
+| 2026-09-10 | @qa (Quinn) | 47.7 gate CONCERNS → Done (AC8 visual pendente; 2 achados low). @dev implementou na mesma data: seção `slug`, link antigo compatível, tabela de LPs por expert. |
 | 2026-09-10 | @po (Pax) | Fase 2 validada: 47.7 GO 9,5 · 47.8 GO 9 (P4 bloqueia merge) · 47.9 GO 9 (pitch = oferta) · 47.10 GO 8,5 (`mm-aaaa`, NN por expert). Todas Ready. Relatório em `docs/qa/validations/47.7-47.10-po-validation.md`. |
 | 2026-09-10 | @sm (River) | Fase 2: stories 47.7 (Slug de LP seção + lista por expert), 47.8 (template v2 do nome, Q1 `a1`×`a01`, P4 planilha), 47.9 (Nome VSL), 47.10 (Nome Ads) criadas a partir do pedido do dono. Adendo do template v2 registrado; spec verbatim intacta. Medido: 1 campanha em `naming_campaigns`, 4 funis `a01`, 11 LPs. |
 | 2026-09-09 | @sm (River) | Epic criado a partir da spec do dono do produto. Spec arquivada verbatim. Decisões D1–D9 registradas; D2 e D3 marcadas para confirmação do @po. Pré-condições P1–P3 declaradas. |
