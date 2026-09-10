@@ -310,8 +310,9 @@ export default fp(async function nomenclaturaRoutes(fastify) {
       autor(request);
       const q = parse(listaQuery, request.query);
       const r = repo();
-      const [linhas, uso] = await Promise.all([r.produtos.listar(q.expertId, querInativos(q)), r.usoPorFk("productId")]);
-      return linhas.map((p) => ({ ...p, usadoEm: uso.get(p.id) ?? 0 }));
+      // Story 47.9 (gate QA-479-01): o slug do produto entra no nome da VSL — VSL conta como uso.
+      const [linhas, uso, usoVsl] = await Promise.all([r.produtos.listar(q.expertId, querInativos(q)), r.usoPorFk("productId"), r.usoEmVsls("productId")]);
+      return linhas.map((p) => ({ ...p, usadoEm: (uso.get(p.id) ?? 0) + (usoVsl.get(p.id) ?? 0) }));
     }),
   );
 
@@ -348,7 +349,7 @@ export default fp(async function nomenclaturaRoutes(fastify) {
       if (b.slug !== undefined) {
         const slug = codigoValidado(b.slug, "produto", "slug");
         if (slug !== antes.slug) {
-          exigirNaoUsado(await r.campanhasQueUsam("productId", id), "slug");
+          exigirNaoUsado((await r.campanhasQueUsam("productId", id)) + (await r.vslsQueUsam("productId", id)), "slug");
           const ja = await r.produtos.porSlug(antes.expertId, slug);
           if (ja) throw conflitoDeCodigo({ codigo: slug, escopo: "este expert", descricaoExistente: ja.name, sugestao: null, campo: "slug" });
           patch.slug = slug;

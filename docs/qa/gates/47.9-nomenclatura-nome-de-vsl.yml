@@ -1,0 +1,64 @@
+alvo: "Story 47.9 — Nomenclatura: seção \"Nome VSL\" (três variáveis por expert + oferta do dicionário + gerador)"
+epic: 47
+commit: "c800ae45 + correção do gate (branch feat/47.9-nome-de-vsl, base main)"
+revisadoPor: "@qa (Quinn)"
+revisadoEm: "2026-09-10"
+
+decisao: CONCERNS
+condicional: >
+  Aprovada para PR. CONCERNS por duas pendências que não são de código:
+  (1) a migration 0144 só roda em produção no deploy da API — até lá a
+  seção mostra "a API ainda não tem as rotas de VSL"; (2) AC12 — roteiro
+  visual de 14 passos com o dono. Um achado corrigido no gate (QA-479-01).
+  Mesmo agente implementou e revisou na mesma sessão; o re-executado de
+  forma independente está em `evidencias`.
+
+rastreabilidade:
+  AC1: "schema + 0144; SQL narrado = drizzle-kit generate coluna a coluna (enum, NOT NULL, defaults, FKs restrict/set null, índices)"
+  AC2: "naming_vsls com 6 FKs + 4 textos + name único; coerência de expert em montarVsl (rotas test 422 outro expert)"
+  AC3: "normalização (tipo vsl), unicidade (expert, tipo) inclusive inativa com descrição no conflito, imutabilidade após uso, exclusão bloqueada → desativar, changelog pela mesma camada, cascata do expert; OFERTA conta VSL (usadoEm, código, exclusão) — rotas test; PRODUTO idem (QA-479-01, corrigido no gate)"
+  AC4: "rotas /vsl/variaveis (CRUD comum), /vsl/snapshot, /vsl/validar-nome, /vsl/vsls; guest 403 (rotas test); contrato 11"
+  AC5: "nomenclatura-de-vsl.ts — 11 casos: build, parse por expert E tipo, prefixo, contagem, inativo com aviso (reversões A, B)"
+  AC6: "SECOES/ABAS_DE_VSL — nomenclatura-abas.test.ts (seção à direita de slug, abas, default nova)"
+  AC7: "aba-variaveis.tsx: expert obrigatório, 3 seções sobre TabelaDoDicionario, novo já com o expert — só roteiro visual"
+  AC8: "gerador-de-vsl.tsx: cascata (reversão G), prévia = buildVslName (nomenclatura-vsl.test.ts), + cadastrar nova, salvar e criar outra mantém expert/produto — tela só pelo roteiro"
+  AC9: "lista-de-vsls.tsx: filtros expert/produto/oferta + busca, Editar, Duplicar; 409 duplicada (rotas test, reversão E); PATCH recalcula o nome (rotas test)"
+  AC10: "select sem opções mostra 'nenhum … cadastrado para {expert}' (SelectDaVsl.vazio); erro da API na lista com role=alert — só roteiro visual"
+  AC11: "API: rotas com repo em memória (6 casos), predicados PgDialect (3 casos), shared (11); web: 7; migration vs drizzle-kit; 7 reversões (A–G)"
+  AC12: "PENDENTE — roteiro de 14 passos na story"
+
+evidencias:
+  - "@qa re-executou: nomenclatura-vsl-nome (11), rotas (35 → 35 com a asserção do gate), repositorio (26) — 72/72; web nomenclatura-vsl + abas — 18/18"
+  - "@dev na mesma sessão: API 2.657 + 11 baseline (funnel-stages-lead-inputs, instagram-routes, instagram, projects, schema); web 1.182/1.182; next build verde; tsc API e web limpos; eslint limpo nos três pacotes"
+  - "migration 0144 conferida contra drizzle-kit generate num dir de rascunho — sem banco"
+  - "corrida no UNIQUE (duas pessoas, mesmo código/nome): cai no `violaUnicidade` → 409 do wrapper `tentar` (QA-471-01), não 500"
+  - "CodeRabbit: CLI ausente nesta máquina — não rodou; declarado"
+
+corrigido_no_gate:
+  - id: QA-479-01
+    severidade: medium
+    o_que: >
+      O slug do PRODUTO entra no nome da VSL (posição 3), mas só a oferta
+      passou a contar VSL como uso. Um produto usado apenas em VSLs mostrava
+      "usado em 0" e deixava trocar o slug — o `name` gravado ficaria
+      inconsistente com o dicionário. (A exclusão já era bloqueada: o
+      `referenciasDe` conta VSLs para produto.)
+    correcao: "GET /produtos soma usoEmVsls('productId'); PATCH do slug exige campanhas + VSLs = 0. Asserção no teste AC3; reversão coberta pelo mesmo caso."
+
+achados_abertos:
+  - id: QA-479-02
+    severidade: low
+    o_que: >
+      Editar uma VSL cuja variável foi desativada depois: o select só lista
+      ativas, o estado guarda o id antigo, a prévia fica incompleta e o
+      Salvar trava até trocar a variável. Comportamento coerente com o
+      gerador de campanha (regra 8), mas sem mensagem explicando por quê.
+    recomendacao: "no modo editar, mostrar '{tipo} desativado — escolha outro' quando o id do estado não está na lista."
+  - id: QA-479-03
+    severidade: info
+    o_que: "Não há DELETE de VSL (não pedido); D18 sem publicar/sufixo. Validador de nome de VSL existe na API, não na tela (pergunta 2 do @sm, aberta)."
+  - id: QA-479-04
+    severidade: info
+    o_que: "AC7, AC8 (tela), AC10 e AC12 só têm prova pelo roteiro visual — componente .tsx sem runner."
+
+debitos_documentados: []

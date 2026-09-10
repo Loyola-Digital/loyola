@@ -647,6 +647,12 @@ describe("rotas da nomenclatura", () => {
     expect((await app.inject({ method: "PATCH", url: `/api/nomenclatura/ofertas/${of01.id}`, payload: { code: "of07" } })).statusCode).toBe(409);
     const delOferta = await app.inject({ method: "DELETE", url: `/api/nomenclatura/ofertas/${of01.id}` });
     expect(delOferta.json().referencias.some((r: { tipo: string }) => r.tipo === "vsl")).toBe(true);
+    // gate QA-479-01: o PRODUTO também entra no nome da VSL — usadoEm e slug travado
+    const produtos = (await app.inject({ method: "GET", url: `/api/nomenclatura/produtos?expertId=${bbe.id}` })).json();
+    expect(produtos.find((p: { id: string }) => p.id === churrasco.id).usadoEm).toBe(1);
+    const slug = await app.inject({ method: "PATCH", url: `/api/nomenclatura/produtos/${churrasco.id}`, payload: { slug: "churrasco-premium" } });
+    expect(slug.statusCode).toBe(409);
+    expect(slug.json()).toMatchObject({ usadoEm: 1 });
   });
 
   it("47.9 AC3: desativar o expert desativa as variáveis de VSL em cascata, e o impacto conta", async () => {
