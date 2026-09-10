@@ -68,7 +68,7 @@ describe("seed da nomenclatura", () => {
     const segunda = await seedNomenclatura(banco.db);
     expect(banco.contagens()).toEqual(depoisDa1);
     expect(Object.values(segunda.inseridos).every((n) => n === 0)).toBe(true);
-    expect(primeira.inseridos.naming_dictionary_values).toBe(9);
+    expect(primeira.inseridos.naming_dictionary_values).toBe(10);
   });
 
   it("valores fixos entram na ordem da spec § 9.6 e nada de mix/carrossel fora do lugar", async () => {
@@ -76,7 +76,7 @@ describe("seed da nomenclatura", () => {
     await seedNomenclatura(banco.db);
     const valores = banco.tabelas.get("naming_dictionary_values")!;
     const por = (type: string) => valores.filter((v) => v.type === type).sort((a, b) => (a.sortOrder as number) - (b.sortOrder as number)).map((v) => v.value);
-    expect(por("year")).toEqual(["2026", "2027"]);
+    expect(por("year")).toEqual(["2025", "2026", "2027"]);
     expect(por("temperature")).toEqual(["hot", "cold"]);
     expect(por("auction")).toEqual(["abo", "cbo"]);
     expect(por("format")).toEqual(["videos", "estaticos", "mix"]);

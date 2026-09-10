@@ -20,6 +20,7 @@
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DicionarioSnapshot, ParseResult } from "@loyola-x/shared/src/nomenclatura-de-campanha";
+import type { SugestaoDeClassificacao } from "@loyola-x/shared/src/nomenclatura-legado";
 
 export type Recurso = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "dicionario";
 export type TipoDeValor = "year" | "temperature" | "auction" | "format";
@@ -62,6 +63,8 @@ interface Base {
 export interface Expert extends Base {
   code: string;
   name: string;
+  /** Story 47.5: projeto do Loyola X que este expert representa (único por projeto). */
+  projectId: string | null;
   produtos: number;
   funis: number;
   ofertas: number;
@@ -223,6 +226,9 @@ export interface Campanha {
   name: string;
   publishedAt: string | null;
   metaCampaignId: string | null;
+  /** Story 47.5 */
+  origin: "gerador" | "legado";
+  metaCampaignName: string | null;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -310,5 +316,67 @@ export function useValidarNome() {
   const apiClient = useApiClient();
   return useMutation({
     mutationFn: (name: string) => apiClient<ParseResult>(`${BASE}/validar-nome`, { method: "POST", body: JSON.stringify({ name }) }),
+  });
+}
+
+// ─────────────────── Story 47.5: legadas ───────────────────
+
+export type FilaDeLegadas = "pendentes" | "ignoradas" | "classificadas" | "todas";
+
+export interface Legada {
+  projectId: string;
+  projeto: string;
+  campaignId: string;
+  nome: string;
+  statusMeta: string | null;
+  expert: { id: string; code: string; name: string; active: boolean } | null;
+  gasto: number;
+  de: string | null;
+  ate: string | null;
+  decisao: { tipo: "classificada" | "ignorada"; namingCampaignId: string | null; reason: string | null; em: string } | null;
+  sugestao: SugestaoDeClassificacao;
+}
+
+export interface RespostaDeLegadas {
+  itens: Legada[];
+  resumo: { total: number; pendentes: number; gastoPendente: number };
+}
+
+export function useLegadas(f: { projectId?: string; fila?: FilaDeLegadas; q?: string } = {}) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["nomenclatura", "legadas", f],
+    queryFn: () => apiClient<RespostaDeLegadas>(`${BASE}/legadas${query(f)}`),
+    staleTime: 15 * 1000,
+  });
+}
+
+export function useClassificarLegada() {
+  const apiClient = useApiClient();
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: ({ projectId, campaignId, dados }: { projectId: string; campaignId: string; dados: Record<string, unknown> }) =>
+      apiClient<Campanha>(`${BASE}/legadas/${projectId}/${encodeURIComponent(campaignId)}/classificar`, { method: "POST", body: JSON.stringify(dados) }),
+    onSuccess: invalidar,
+  });
+}
+
+export function useIgnorarLegada() {
+  const apiClient = useApiClient();
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: ({ projectId, campaignId, reason }: { projectId: string; campaignId: string; reason?: string }) =>
+      apiClient<unknown>(`${BASE}/legadas/${projectId}/${encodeURIComponent(campaignId)}/ignorar`, { method: "POST", body: JSON.stringify(reason ? { reason } : {}) }),
+    onSuccess: invalidar,
+  });
+}
+
+export function useDesfazerDecisao() {
+  const apiClient = useApiClient();
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: ({ projectId, campaignId }: { projectId: string; campaignId: string }) =>
+      apiClient<void>(`${BASE}/legadas/${projectId}/${encodeURIComponent(campaignId)}/decisao`, { method: "DELETE" }),
+    onSuccess: invalidar,
   });
 }

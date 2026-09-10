@@ -34,7 +34,7 @@
 import { z } from "zod";
 import fp from "fastify-plugin";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { LPMIX, NA, montarSlugDeLp, parseCampaignName } from "@loyola-x/shared";
+import { LPMIX, NA, montarSlugDeLp, parseCampaignName, sugerirClassificacao } from "@loyola-x/shared";
 import { CAMPOS_DO_NOME, montarCampanha } from "../services/nomenclatura/campanhas.js";
 import { listarChangelog } from "../services/nomenclatura/changelog.js";
 import { tabelaInexistente, violaUnicidade } from "../utils/db-errors.js";
@@ -142,6 +142,14 @@ export default fp(async function nomenclaturaRoutes(fastify) {
     return linha;
   }
 
+  /** Story 47.5: um projeto tem no máximo um expert (é o que deduz o expert das legadas). */
+  async function exigirProjetoLivre(r: Repositorio, projectId: string, expertId: string | null) {
+    const dono = await r.experts.porProjeto(projectId);
+    if (dono && dono.id !== expertId) {
+      throw new ErroDeNomenclatura(409, `Este projeto já está vinculado ao expert ${dono.code}. Um projeto tem um expert só.`, { campo: "projectId" });
+    }
+  }
+
   // ─────────────────────────── experts ───────────────────────────
   fastify.get(
     "/api/nomenclatura/experts",
@@ -169,12 +177,13 @@ export default fp(async function nomenclaturaRoutes(fastify) {
     "/api/nomenclatura/experts",
     tentar(async (request, reply) => {
       const author = autor(request);
-      const b = parse(z.object({ code: z.string(), name: z.string().trim().min(1).max(120) }), request.body);
+      const b = parse(z.object({ code: z.string(), name: z.string().trim().min(1).max(120), projectId: uuid.nullable().optional() }), request.body);
       const r = repo();
       const code = codigoValidado(b.code, "expert", "code");
       const ja = await r.experts.porCode(code);
       if (ja) throw conflitoDeCodigo({ codigo: code, escopo: "a base", descricaoExistente: ja.name, sugestao: null, campo: "code" });
-      const linha = await r.inserir("experts", { code, name: b.name }, author);
+      if (b.projectId) await exigirProjetoLivre(r, b.projectId, null);
+      const linha = await r.inserir("experts", { code, name: b.name, projectId: b.projectId ?? null }, author);
       return reply.code(201).send({ ...linha, usadoEm: 0 });
     }),
   );
@@ -184,15 +193,21 @@ export default fp(async function nomenclaturaRoutes(fastify) {
     tentar(async (request) => {
       const author = autor(request);
       const { id } = parse(idParams, request.params);
-      const b = parse(z.object({ code: z.string().optional(), name: z.string().trim().min(1).max(120).optional() }), request.body);
+      const b = parse(z.object({ code: z.string().optional(), name: z.string().trim().min(1).max(120).optional(), projectId: uuid.nullable().optional() }), request.body);
       // Sigla imutável DESDE A CRIAÇÃO (spec § 4.1; decisão do @po na 47.1).
       if (b.code !== undefined) {
         throw new ErroDeNomenclatura(409, "A sigla do expert não muda depois de criada. Para outro significado, crie outro expert.", { campo: "code" });
       }
       const r = repo();
       const antes = await existente(r, "experts", id, "Expert");
-      if (b.name === undefined) return antes;
-      return r.atualizar("experts", antes, { name: b.name }, author);
+      const patch: Partial<typeof antes> = {};
+      if (b.name !== undefined) patch.name = b.name;
+      if (b.projectId !== undefined) {
+        if (b.projectId) await exigirProjetoLivre(r, b.projectId, id);
+        patch.projectId = b.projectId;
+      }
+      if (Object.keys(patch).length === 0) return antes;
+      return r.atualizar("experts", antes, patch, author);
     }),
   );
 
@@ -602,8 +617,12 @@ export default fp(async function nomenclaturaRoutes(fastify) {
     tentar(async (request) => {
       autor(request);
       const b = parse(z.object({ name: z.string().max(300) }), request.body);
+      const r = repo();
       // COM inativos: nome antigo continua legível (regra 4); o resultado traz avisos.
-      return parseCampaignName(b.name, await repo().snapshot(true));
+      const resultado = parseCampaignName(b.name, await r.snapshot(true));
+      // Story 47.5: nome antigo do Meta já classificado — inválido como nome novo, mas reconhecido.
+      const legado = resultado.valid ? undefined : await r.legadas.porNomeAntigo(b.name.trim());
+      return legado ? { ...resultado, legado: { campanhaId: legado.id, name: legado.name } } : resultado;
     }),
   );
 
@@ -739,6 +758,109 @@ export default fp(async function nomenclaturaRoutes(fastify) {
       const antes = await existente(r, "campanhas", id, "Campanha");
       if (antes.publishedAt) return antes;
       return r.atualizar("campanhas", antes, { publishedAt: new Date(), ...(b.metaCampaignId ? { metaCampaignId: b.metaCampaignId } : {}) } as never, author, "publish");
+    }),
+  );
+
+  // ─────────────────────────── legadas (Story 47.5) ───────────────────────────
+  const legadaParams = z.object({ projectId: uuid, campaignId: z.string().min(1).max(64) });
+
+  fastify.get(
+    "/api/nomenclatura/legadas",
+    tentar(async (request) => {
+      autor(request);
+      const q = parse(z.object({ projectId: uuid.optional(), fila: z.enum(["pendentes", "ignoradas", "classificadas", "todas"]).default("pendentes"), q: z.string().max(200).optional() }), request.query);
+      const r = repo();
+      const [{ nomes, gasto, decisoes }, experts, snap] = await Promise.all([r.legadas.listar({ projectId: q.projectId, q: q.q }), r.experts.listar(true), r.snapshot(false)]);
+      const expertDoProjeto = new Map(experts.filter((e) => e.projectId).map((e) => [e.projectId as string, e]));
+      const itens = nomes
+        .map((n) => {
+          const decisao = decisoes.get(`${n.projectId}:${n.campaignId}`);
+          const expert = expertDoProjeto.get(n.projectId);
+          const g = gasto.get(n.campaignId);
+          return {
+            projectId: n.projectId,
+            projeto: n.projeto,
+            campaignId: n.campaignId,
+            nome: n.nome,
+            statusMeta: n.statusMeta,
+            expert: expert ? { id: expert.id, code: expert.code, name: expert.name, active: expert.active } : null,
+            gasto: g?.spend ?? 0,
+            de: g?.de ?? null,
+            ate: g?.ate ?? null,
+            decisao: decisao ? { tipo: decisao.decision, namingCampaignId: decisao.namingCampaignId, reason: decisao.reason, em: decisao.createdAt } : null,
+            sugestao: sugerirClassificacao(n.nome, snap, expert?.code),
+          };
+        })
+        .filter((i) => (q.fila === "todas" ? true : q.fila === "pendentes" ? !i.decisao : i.decisao?.tipo === (q.fila === "ignoradas" ? "ignorada" : "classificada")))
+        .sort((a, b) => b.gasto - a.gasto);
+      const pendentes = nomes.filter((n) => !decisoes.get(`${n.projectId}:${n.campaignId}`));
+      return {
+        itens,
+        resumo: { total: nomes.length, pendentes: pendentes.length, gastoPendente: pendentes.reduce((acc, n) => acc + (gasto.get(n.campaignId)?.spend ?? 0), 0) },
+      };
+    }),
+  );
+
+  fastify.post(
+    "/api/nomenclatura/legadas/:projectId/:campaignId/classificar",
+    tentar(async (request, reply) => {
+      const author = autor(request);
+      const { projectId, campaignId } = parse(legadaParams, request.params);
+      // expertId vem do PROJETO, nunca do corpo (47.5 AC1 / Dev Notes).
+      const b = parse(campanhaSchema.omit({ expertId: true }), request.body);
+      const r = repo();
+      const expert = await r.experts.porProjeto(projectId);
+      if (!expert) throw new ErroDeNomenclatura(422, "Este projeto ainda não tem expert vinculado. Vincule em Dicionário › Experts antes de classificar.", { campo: "projectId" });
+      const detalhe = await r.legadas.detalhe(projectId, campaignId);
+      if (!detalhe) throw new ErroDeNomenclatura(404, "Campanha do Meta não encontrada neste projeto.");
+      const ja = await r.legadas.decisao(projectId, campaignId);
+      if (ja?.decision === "classificada") throw new ErroDeNomenclatura(409, "Esta campanha já foi classificada. Para refazer, use \"voltar para a fila\" — isso apaga a classificação.", { campo: "campaignId" });
+      const m = await montarCampanha(r, { ...b, expertId: expert.id });
+      const publishedAt = detalhe.primeiroGasto ? new Date(`${detalhe.primeiroGasto}T12:00:00Z`) : new Date();
+      const linha = await r.inserir(
+        "campanhas",
+        { ...m, fields: undefined, origin: "legado", metaCampaignId: campaignId, metaCampaignName: detalhe.nome, publishedAt, notes: b.notes ?? null, createdBy: author } as never,
+        author,
+      );
+      if (ja) await r.excluir("decisoes", ja, author); // estava "ignorada": a classificação substitui
+      await r.inserir("decisoes", { projectId, campaignId, decision: "classificada", namingCampaignId: linha.id, reason: null, author }, author);
+      return reply.code(201).send({ ...linha, ...(await rotulosDeCampanhas(r))(linha) });
+    }),
+  );
+
+  fastify.post(
+    "/api/nomenclatura/legadas/:projectId/:campaignId/ignorar",
+    tentar(async (request, reply) => {
+      const author = autor(request);
+      const { projectId, campaignId } = parse(legadaParams, request.params);
+      const b = parse(z.object({ reason: z.string().trim().max(500).optional() }).optional().default({}), request.body ?? {});
+      const r = repo();
+      const detalhe = await r.legadas.detalhe(projectId, campaignId);
+      if (!detalhe) throw new ErroDeNomenclatura(404, "Campanha do Meta não encontrada neste projeto.");
+      const ja = await r.legadas.decisao(projectId, campaignId);
+      if (ja?.decision === "classificada") throw new ErroDeNomenclatura(409, "Campanha classificada não pode ser ignorada. Volte para a fila antes.", { campo: "campaignId" });
+      if (ja) return ja;
+      const d = await r.inserir("decisoes", { projectId, campaignId, decision: "ignorada", namingCampaignId: null, reason: b.reason ?? null, author }, author);
+      return reply.code(201).send(d);
+    }),
+  );
+
+  fastify.delete(
+    "/api/nomenclatura/legadas/:projectId/:campaignId/decisao",
+    tentar(async (request, reply) => {
+      const author = autor(request);
+      const { projectId, campaignId } = parse(legadaParams, request.params);
+      const r = repo();
+      const ja = await r.legadas.decisao(projectId, campaignId);
+      if (!ja) return reply.code(204).send();
+      // Decisão do @po (47.5 AC9): desfazer uma classificação APAGA o registro —
+      // legada nasce publicada e Editar fica bloqueado; é o único conserto.
+      if (ja.decision === "classificada" && ja.namingCampaignId) {
+        const c = await r.porId("campanhas", ja.namingCampaignId);
+        if (c) await r.excluir("campanhas", c, author);
+      }
+      await r.excluir("decisoes", ja, author);
+      return reply.code(204).send();
     }),
   );
 

@@ -15,21 +15,25 @@
  *   TEXTO no caso dos valores fixos (o nome guarda o texto, não a FK).
  */
 
-import { and, asc, count, desc, eq, ilike, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, isNotNull, isNull, max, min, sql, sum } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
+  metaCampaignInsightsDaily,
+  metaEntityNamesCache,
   namingCampaigns,
   namingDictionaryValues,
   namingExperts,
   namingFunnels,
   namingLandingPages,
+  namingLegacyDecisions,
   namingOffers,
   namingProducts,
+  projects,
 } from "../../db/schema.js";
 import { registrarNoChangelog, type AcaoDoChangelog } from "./changelog.js";
 import type { Conexao } from "./conexao.js";
 import type { Referencia } from "./regras.js";
-import type { DicionarioSnapshot } from "@loyola-x/shared";
+import { REGEX_LEGADA_SQL, type DicionarioSnapshot } from "@loyola-x/shared";
 
 export type Expert = typeof namingExperts.$inferSelect;
 export type Produto = typeof namingProducts.$inferSelect;
@@ -39,9 +43,10 @@ export type Lp = typeof namingLandingPages.$inferSelect;
 export type ValorFixo = typeof namingDictionaryValues.$inferSelect;
 export type TipoDeValor = ValorFixo["type"];
 
-export type Entidade = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "dicionario" | "campanhas";
+export type Entidade = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "dicionario" | "campanhas" | "decisoes";
+export type Decisao = typeof namingLegacyDecisions.$inferSelect;
 /** As que têm `active` (campanha não se desativa; publica ou duplica). */
-export type EntidadeAtivavel = Exclude<Entidade, "campanhas">;
+export type EntidadeAtivavel = Exclude<Entidade, "campanhas" | "decisoes">;
 export type Campanha = typeof namingCampaigns.$inferSelect;
 
 /** Nome da tabela que vai no changelog. */
@@ -53,6 +58,7 @@ export const TABELA: Record<Entidade, string> = {
   lps: "naming_landing_pages",
   dicionario: "naming_dictionary_values",
   campanhas: "naming_campaigns",
+  decisoes: "naming_legacy_decisions",
 };
 
 const TABELAS = {
@@ -63,6 +69,7 @@ const TABELAS = {
   lps: namingLandingPages,
   dicionario: namingDictionaryValues,
   campanhas: namingCampaigns,
+  decisoes: namingLegacyDecisions,
 } as const;
 
 type Linha<E extends Entidade> = (typeof TABELAS)[E]["$inferSelect"];
@@ -269,6 +276,8 @@ export function criarRepositorio(db: Conexao) {
       case "campanhas":
         // Nada referencia uma campanha ainda (conjuntos e anúncios são fase 2).
         return [];
+      case "decisoes":
+        return [];
       case "dicionario": {
         if (!linha.type || !linha.value) return [];
         const col = namingCampaigns[COLUNA_DO_TIPO[linha.type]];
@@ -288,6 +297,9 @@ export function criarRepositorio(db: Conexao) {
       db.select().from(namingExperts).where(ativoSe(inativos, namingExperts.active)).orderBy(asc(namingExperts.code)),
     porCode: async (code: string) =>
       (await db.select().from(namingExperts).where(eq(namingExperts.code, code)).limit(1))[0],
+    /** Story 47.5: o expert de um projeto (único por projeto). */
+    porProjeto: async (projectId: string) =>
+      (await db.select().from(namingExperts).where(eq(namingExperts.projectId, projectId)).limit(1))[0],
     /** Contagem de filhos por expert, para as colunas da listagem (spec § 6). */
     contagens: async () => {
       const [p, f, o, l] = await Promise.all([
@@ -472,9 +484,73 @@ export function criarRepositorio(db: Conexao) {
     },
   };
 
+  // ── legadas (Story 47.5) ──────────────────────────────────────────────
+  /**
+   * Campanhas do Meta que casam com o filtro de perpétuo, com gasto, decisão e
+   * o expert do projeto. Três leituras (nomes, gasto, decisões) casadas em
+   * memória: são dezenas de linhas, e a regex é a MESMA do `shared`
+   * (`REGEX_LEGADA_SQL`) — uma regra, dois lados.
+   */
+  const legadas = {
+    listar: async (f: { projectId?: string; q?: string }) => {
+      const nomes = await db
+        .select({
+          projectId: metaEntityNamesCache.projectId,
+          projeto: projects.name,
+          campaignId: metaEntityNamesCache.entityId,
+          nome: metaEntityNamesCache.entityName,
+          statusMeta: metaEntityNamesCache.effectiveStatus,
+        })
+        .from(metaEntityNamesCache)
+        .innerJoin(projects, eq(projects.id, metaEntityNamesCache.projectId))
+        .where(
+          and(
+            eq(metaEntityNamesCache.entityType, "campaign"),
+            sql`${metaEntityNamesCache.entityName} ~* ${REGEX_LEGADA_SQL}`,
+            f.projectId ? eq(metaEntityNamesCache.projectId, f.projectId) : undefined,
+            f.q ? ilike(metaEntityNamesCache.entityName, `%${f.q}%`) : undefined,
+          ),
+        );
+      const ids = nomes.map((n) => n.campaignId);
+      if (ids.length === 0) return { nomes, gasto: new Map<string, { spend: number; de: string | null; ate: string | null }>(), decisoes: new Map<string, Decisao>() };
+      const [gastos, decisoes] = await Promise.all([
+        db
+          .select({ campaignId: metaCampaignInsightsDaily.campaignId, spend: sum(metaCampaignInsightsDaily.spend), de: min(metaCampaignInsightsDaily.dateStart), ate: max(metaCampaignInsightsDaily.dateStart) })
+          .from(metaCampaignInsightsDaily)
+          .where(inArray(metaCampaignInsightsDaily.campaignId, ids))
+          .groupBy(metaCampaignInsightsDaily.campaignId),
+        db.select().from(namingLegacyDecisions).where(inArray(namingLegacyDecisions.campaignId, ids)),
+      ]);
+      return {
+        nomes,
+        gasto: new Map(gastos.map((g) => [g.campaignId, { spend: Number(g.spend ?? 0), de: g.de ?? null, ate: g.ate ?? null }])),
+        decisoes: new Map(decisoes.map((d) => [`${d.projectId}:${d.campaignId}`, d])),
+      };
+    },
+    /** Nome e primeiro dia de gasto de UMA campanha — o que a classificação grava. */
+    detalhe: async (projectId: string, campaignId: string) => {
+      const [nome] = await db
+        .select({ nome: metaEntityNamesCache.entityName })
+        .from(metaEntityNamesCache)
+        .where(and(eq(metaEntityNamesCache.projectId, projectId), eq(metaEntityNamesCache.entityType, "campaign"), eq(metaEntityNamesCache.entityId, campaignId)))
+        .limit(1);
+      const [g] = await db
+        .select({ de: min(metaCampaignInsightsDaily.dateStart) })
+        .from(metaCampaignInsightsDaily)
+        .where(and(eq(metaCampaignInsightsDaily.projectId, projectId), eq(metaCampaignInsightsDaily.campaignId, campaignId)));
+      return nome ? { nome: nome.nome, primeiroGasto: g?.de ?? null } : undefined;
+    },
+    decisao: async (projectId: string, campaignId: string) =>
+      (await db.select().from(namingLegacyDecisions).where(and(eq(namingLegacyDecisions.projectId, projectId), eq(namingLegacyDecisions.campaignId, campaignId))).limit(1))[0],
+    /** Legada já classificada com este nome antigo (validador). */
+    porNomeAntigo: async (nome: string) =>
+      (await db.select().from(namingCampaigns).where(and(eq(namingCampaigns.origin, "legado"), eq(namingCampaigns.metaCampaignName, nome))).limit(1))[0],
+  };
+
   return {
     snapshot,
     campanhas,
+    legadas,
     inserir,
     atualizar,
     excluir,

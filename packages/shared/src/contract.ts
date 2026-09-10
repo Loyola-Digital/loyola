@@ -120,4 +120,7 @@
 // `/api/nomenclatura/dicionario/snapshot` e `/api/nomenclatura/validar-nome` —
 // o gerador de nome de campanha depende das três. ADITIVA; `packages/mcp` não
 // é afetado.
-export const API_CONTRACT_VERSION = 8;
+//
+// v9 (Story 47.5): rotas novas `/api/nomenclatura/legadas*` e o campo `legado`
+// na resposta de `validar-nome`. ADITIVA; a aba Legadas depende delas.
+export const API_CONTRACT_VERSION = 9;

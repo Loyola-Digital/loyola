@@ -42,6 +42,7 @@ import {
 import { CampoImutavel } from "./campo-imutavel";
 import { FormularioDialogo } from "./formulario-dialogo";
 import { SeletorDeExpert } from "./seletor-de-expert";
+import { useProjects } from "@/lib/hooks/use-projects";
 
 /** Hoje no fuso do navegador, `AAAA-MM-DD` — `toISOString()` daria o dia de UTC. */
 function hoje(): string {
@@ -82,16 +83,21 @@ export function FormExpert(props: { aberto: boolean; linha: Expert | null; onFec
   const { erro, setErro, tentar } = useSalvar();
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const projetos = useProjects();
+  const NENHUM = "__nenhum__";
   useEffect(() => {
     setCode(linha?.code ?? "");
     setName(linha?.name ?? "");
+    setProjectId(linha?.projectId ?? "");
     setErro(null);
   }, [linha, aberto, setErro]);
 
   async function salvar() {
+    const dados = { name, projectId: projectId || null };
     const ok = linha
-      ? await tentar(() => editar.mutateAsync({ id: linha.id, dados: { name } }), `Expert ${linha.code} atualizado.`)
-      : await tentar(() => criar.mutateAsync({ code, name }), `Expert ${code.toLowerCase()} criado.`);
+      ? await tentar(() => editar.mutateAsync({ id: linha.id, dados }), `Expert ${linha.code} atualizado.`)
+      : await tentar(() => criar.mutateAsync({ code, ...dados }), `Expert ${code.toLowerCase()} criado.`);
     if (ok) onFechar();
   }
   return (
@@ -100,6 +106,17 @@ export function FormExpert(props: { aberto: boolean; linha: Expert | null; onFec
       <div className="space-y-1">
         <Label htmlFor="name">Nome de exibição</Label>
         <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Netão" autoFocus={Boolean(linha)} />
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="projeto">Projeto do Loyola X (opcional)</Label>
+        <Select value={projectId || NENHUM} onValueChange={(v) => setProjectId(v === NENHUM ? "" : v)}>
+          <SelectTrigger id="projeto"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NENHUM}>Nenhum</SelectItem>
+            {(projetos.data ?? []).map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">É o que deduz o expert das campanhas legadas do projeto. Um projeto tem um expert só.</p>
       </div>
     </FormularioDialogo>
   );
