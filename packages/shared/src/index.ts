@@ -75,6 +75,27 @@ export {
   type DicionarioSnapshot,
   type ParseResult,
 } from "./nomenclatura-de-campanha.js";
+// Story 47.9: o nome da VSL — `vsl_expert_produto_lead_problema_solucao_oferta`.
+// Módulo folha: o web importa por `@loyola-x/shared/src/nomenclatura-de-vsl`.
+export {
+  PREFIXO_VSL,
+  ORDEM_DA_VSL,
+  CAMPOS_DA_VSL,
+  CAMPO_DA_VSL,
+  TIPOS_DE_VARIAVEL,
+  TOTAL_DE_CAMPOS_DA_VSL,
+  buildVslName,
+  pedacosDaVsl,
+  parseVslName,
+  type CampoDaVsl,
+  type PosicaoDaVsl,
+  type BlocoDaVsl,
+  type TipoDeVariavel,
+  type VslFields,
+  type PedacoDaVsl,
+  type VslSnapshot,
+  type VslParseResult,
+} from "./nomenclatura-de-vsl.js";
 // Story 47.5: campanhas legadas — filtro por token e sugestão de classificação
 // a partir do nome antigo. Módulo folha (web: subpath `src/nomenclatura-legado`).
 export {

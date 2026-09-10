@@ -28,12 +28,14 @@ import {
   namingLegacyDecisions,
   namingOffers,
   namingProducts,
+  namingVslVariables,
+  namingVsls,
   projects,
 } from "../../db/schema.js";
 import { registrarNoChangelog, type AcaoDoChangelog } from "./changelog.js";
 import type { Conexao } from "./conexao.js";
 import type { Referencia } from "./regras.js";
-import { REGEX_LEGADA_SQL, type DicionarioSnapshot } from "@loyola-x/shared";
+import { REGEX_LEGADA_SQL, type DicionarioSnapshot, type VslSnapshot } from "@loyola-x/shared";
 
 export type Expert = typeof namingExperts.$inferSelect;
 export type Produto = typeof namingProducts.$inferSelect;
@@ -42,11 +44,15 @@ export type Oferta = typeof namingOffers.$inferSelect;
 export type Lp = typeof namingLandingPages.$inferSelect;
 export type ValorFixo = typeof namingDictionaryValues.$inferSelect;
 export type TipoDeValor = ValorFixo["type"];
+/** Story 47.9 */
+export type VariavelDeVsl = typeof namingVslVariables.$inferSelect;
+export type TipoDeVariavelDeVsl = VariavelDeVsl["type"];
+export type Vsl = typeof namingVsls.$inferSelect;
 
-export type Entidade = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "dicionario" | "campanhas" | "decisoes";
+export type Entidade = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "dicionario" | "campanhas" | "decisoes" | "vslVariaveis" | "vsls";
 export type Decisao = typeof namingLegacyDecisions.$inferSelect;
 /** As que têm `active` (campanha não se desativa; publica ou duplica). */
-export type EntidadeAtivavel = Exclude<Entidade, "campanhas" | "decisoes">;
+export type EntidadeAtivavel = Exclude<Entidade, "campanhas" | "decisoes" | "vsls">;
 export type Campanha = typeof namingCampaigns.$inferSelect;
 
 /** Nome da tabela que vai no changelog. */
@@ -59,6 +65,8 @@ export const TABELA: Record<Entidade, string> = {
   dicionario: "naming_dictionary_values",
   campanhas: "naming_campaigns",
   decisoes: "naming_legacy_decisions",
+  vslVariaveis: "naming_vsl_variables",
+  vsls: "naming_vsls",
 };
 
 const TABELAS = {
@@ -70,6 +78,8 @@ const TABELAS = {
   dicionario: namingDictionaryValues,
   campanhas: namingCampaigns,
   decisoes: namingLegacyDecisions,
+  vslVariaveis: namingVslVariables,
+  vsls: namingVsls,
 } as const;
 
 type Linha<E extends Entidade> = (typeof TABELAS)[E]["$inferSelect"];
@@ -233,6 +243,27 @@ export function criarRepositorio(db: Conexao) {
     return linhas.map((c) => ({ tipo: "campanha", id: c.id, rotulo: c.name }));
   }
 
+  // ── Story 47.9: uso em VSLs ───────────────────────────────────────────
+  type ColunaDeVsl = "expertId" | "productId" | "leadId" | "problemId" | "solutionId" | "offerId";
+  /** Uma variável pode estar em lead_id, problem_id ou solution_id — o tipo dela diz qual. */
+  const COLUNA_DA_VARIAVEL: Record<TipoDeVariavelDeVsl, ColunaDeVsl> = { lead: "leadId", problem: "problemId", solution: "solutionId" };
+
+  async function usoEmVsls(coluna: ColunaDeVsl): Promise<Map<string, number>> {
+    const col = namingVsls[coluna];
+    const linhas = await db.select({ id: col, n: count() }).from(namingVsls).groupBy(col);
+    return new Map(linhas.filter((l) => l.id).map((l) => [l.id as string, Number(l.n)]));
+  }
+
+  async function vslsQueUsam(coluna: ColunaDeVsl, id: string): Promise<number> {
+    const [{ n }] = await db.select({ n: count() }).from(namingVsls).where(eq(namingVsls[coluna], id));
+    return Number(n);
+  }
+
+  async function vslsComo(coluna: ColunaDeVsl, id: string): Promise<Referencia[]> {
+    const linhas = await db.select({ id: namingVsls.id, name: namingVsls.name }).from(namingVsls).where(eq(namingVsls[coluna], id)).limit(LIMITE_DE_REFERENCIAS);
+    return linhas.map((v) => ({ tipo: "vsl", id: v.id, rotulo: v.name }));
+  }
+
   async function lpsComo(coluna: "expertId" | "productId" | "funnelId" | "offerId", id: string): Promise<Referencia[]> {
     const linhas = await db
       .select({ id: namingLandingPages.id, slug: namingLandingPages.slug })
@@ -246,16 +277,18 @@ export function criarRepositorio(db: Conexao) {
    * Tudo que impede o hard delete (spec § 5): produto → LPs; funil → LPs;
    * oferta → LPs; expert → tudo; qualquer um → campanhas.
    */
-  async function referenciasDe(entidade: Entidade, linha: { id: string; type?: TipoDeValor; value?: string }): Promise<Referencia[]> {
+  async function referenciasDe(entidade: Entidade, linha: { id: string; type?: TipoDeValor | TipoDeVariavelDeVsl; value?: string }): Promise<Referencia[]> {
     const id = linha.id;
     switch (entidade) {
       case "experts": {
-        const [produtos, funis, ofertas, lps, campanhas] = await Promise.all([
+        const [produtos, funis, ofertas, lps, campanhas, variaveis, vsls] = await Promise.all([
           db.select({ id: namingProducts.id, r: namingProducts.slug }).from(namingProducts).where(eq(namingProducts.expertId, id)).limit(LIMITE_DE_REFERENCIAS),
           db.select({ id: namingFunnels.id, r: namingFunnels.code }).from(namingFunnels).where(eq(namingFunnels.expertId, id)).limit(LIMITE_DE_REFERENCIAS),
           db.select({ id: namingOffers.id, r: namingOffers.code }).from(namingOffers).where(eq(namingOffers.expertId, id)).limit(LIMITE_DE_REFERENCIAS),
           lpsComo("expertId", id),
           campanhasComo("expertId", id),
+          db.select({ id: namingVslVariables.id, r: namingVslVariables.code }).from(namingVslVariables).where(eq(namingVslVariables.expertId, id)).limit(LIMITE_DE_REFERENCIAS),
+          vslsComo("expertId", id),
         ]);
         return [
           ...produtos.map((p) => ({ tipo: "produto" as const, id: p.id, rotulo: p.r })),
@@ -263,14 +296,23 @@ export function criarRepositorio(db: Conexao) {
           ...ofertas.map((o) => ({ tipo: "oferta" as const, id: o.id, rotulo: o.r })),
           ...lps,
           ...campanhas,
+          ...variaveis.map((v) => ({ tipo: "variavel" as const, id: v.id, rotulo: v.r })),
+          ...vsls,
         ];
       }
       case "produtos":
-        return [...(await lpsComo("productId", id)), ...(await campanhasComo("productId", id))];
+        return [...(await lpsComo("productId", id)), ...(await campanhasComo("productId", id)), ...(await vslsComo("productId", id))];
       case "funis":
         return [...(await lpsComo("funnelId", id)), ...(await campanhasComo("funnelId", id))];
       case "ofertas":
-        return [...(await lpsComo("offerId", id)), ...(await campanhasComo("offerId", id))];
+        // Story 47.9 (AC3): a oferta é o pitch da VSL — VSL também segura a oferta.
+        return [...(await lpsComo("offerId", id)), ...(await campanhasComo("offerId", id)), ...(await vslsComo("offerId", id))];
+      case "vslVariaveis": {
+        const tipo = linha.type as TipoDeVariavelDeVsl | undefined;
+        return tipo ? vslsComo(COLUNA_DA_VARIAVEL[tipo], id) : [];
+      }
+      case "vsls":
+        return [];
       case "lps":
         return campanhasComo("landingPageId", id);
       case "campanhas":
@@ -280,7 +322,7 @@ export function criarRepositorio(db: Conexao) {
         return [];
       case "dicionario": {
         if (!linha.type || !linha.value) return [];
-        const col = namingCampaigns[COLUNA_DO_TIPO[linha.type]];
+        const col = namingCampaigns[COLUNA_DO_TIPO[linha.type as TipoDeValor]];
         const linhas = await db
           .select({ id: namingCampaigns.id, name: namingCampaigns.name })
           .from(namingCampaigns)
@@ -325,7 +367,9 @@ export function criarRepositorio(db: Conexao) {
       const funis = await db.select().from(namingFunnels).where(and(eq(namingFunnels.expertId, expertId), eq(namingFunnels.active, true)));
       const ofertas = await db.select().from(namingOffers).where(and(eq(namingOffers.expertId, expertId), eq(namingOffers.active, true)));
       const lps = await db.select().from(namingLandingPages).where(and(eq(namingLandingPages.expertId, expertId), eq(namingLandingPages.active, true)));
-      return { produtos, funis, ofertas, lps };
+      // Story 47.9: as variáveis de VSL do expert vão junto na cascata.
+      const variaveisDeVsl = await db.select().from(namingVslVariables).where(and(eq(namingVslVariables.expertId, expertId), eq(namingVslVariables.active, true)));
+      return { produtos, funis, ofertas, lps, variaveisDeVsl };
     },
   };
 
@@ -425,6 +469,55 @@ export function criarRepositorio(db: Conexao) {
     porValor: async (type: TipoDeValor, value: string) =>
       (await db.select().from(namingDictionaryValues).where(and(eq(namingDictionaryValues.type, type), eq(namingDictionaryValues.value, value))).limit(1))[0],
   };
+
+  // ── Story 47.9: variáveis de VSL e VSLs ───────────────────────────────
+  const vslVariaveis = {
+    listar: (f: { expertId?: string; type?: TipoDeVariavelDeVsl }, inativos: boolean) =>
+      db
+        .select()
+        .from(namingVslVariables)
+        .where(
+          onde(
+            f.expertId ? eq(namingVslVariables.expertId, f.expertId) : undefined,
+            f.type ? eq(namingVslVariables.type, f.type) : undefined,
+            ativoSe(inativos, namingVslVariables.active),
+          ),
+        )
+        .orderBy(asc(namingVslVariables.type), asc(namingVslVariables.code)),
+    /** Unicidade por (expert, tipo), inativos inclusos (regra 4). */
+    porCode: async (expertId: string, type: TipoDeVariavelDeVsl, code: string) =>
+      (await db.select().from(namingVslVariables).where(and(eq(namingVslVariables.expertId, expertId), eq(namingVslVariables.type, type), eq(namingVslVariables.code, code))).limit(1))[0],
+  };
+
+  const vsls = {
+    listar: async (f: { expertId?: string; productId?: string; offerId?: string; q?: string; limit: number; offset: number }) => {
+      const cond = onde(
+        f.expertId ? eq(namingVsls.expertId, f.expertId) : undefined,
+        f.productId ? eq(namingVsls.productId, f.productId) : undefined,
+        f.offerId ? eq(namingVsls.offerId, f.offerId) : undefined,
+        f.q ? (ilike(namingVsls.name, `%${f.q}%`) as unknown as ReturnType<typeof eq>) : undefined,
+      );
+      const [itens, [{ n }]] = await Promise.all([
+        db.select().from(namingVsls).where(cond).orderBy(desc(namingVsls.createdAt)).limit(f.limit).offset(f.offset),
+        db.select({ n: count() }).from(namingVsls).where(cond),
+      ]);
+      return { itens, total: Number(n) };
+    },
+    porNome: async (name: string) => (await db.select().from(namingVsls).where(eq(namingVsls.name, name)).limit(1))[0],
+  };
+
+  /** O que `parseVslName` lê: experts, produtos, ofertas e as variáveis, por código. */
+  async function snapshotDeVsl(inativos: boolean): Promise<VslSnapshot> {
+    const [ex, pr, of, va] = await Promise.all([experts.listar(true), produtos.listar(undefined, true), ofertas.listar(undefined, true), vslVariaveis.listar({}, true)]);
+    const filtra = <T extends { active: boolean }>(xs: T[]) => (inativos ? xs : xs.filter((x) => x.active));
+    const codeDoExpert = new Map(ex.map((e) => [e.id, e.code]));
+    return {
+      experts: filtra(ex).map((e) => ({ code: e.code, active: e.active })),
+      produtos: filtra(pr).map((p) => ({ expert: codeDoExpert.get(p.expertId) ?? "?", slug: p.slug, active: p.active })),
+      ofertas: filtra(of).map((o) => ({ expert: codeDoExpert.get(o.expertId) ?? "?", code: o.code, active: o.active })),
+      variaveis: filtra(va).map((v) => ({ expert: codeDoExpert.get(v.expertId) ?? "?", type: v.type, code: v.code, active: v.active })),
+    };
+  }
 
   // ── snapshot do dicionário (Story 47.3) ───────────────────────────────
   /**
@@ -565,6 +658,11 @@ export function criarRepositorio(db: Conexao) {
 
   return {
     snapshot,
+    snapshotDeVsl,
+    vslVariaveis,
+    vsls,
+    usoEmVsls,
+    vslsQueUsam,
     campanhas,
     legadas,
     inserir,

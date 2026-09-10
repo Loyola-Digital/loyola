@@ -14,7 +14,7 @@ type Linha = Record<string, unknown> & { id: string; active: boolean };
 type Log = { entity: string; entityId: string; action: string; before: unknown; after: unknown; author: string | null };
 
 function memoria() {
-  const t: Record<string, Linha[]> = { experts: [], produtos: [], funis: [], ofertas: [], lps: [], dicionario: [], campanhas: [], decisoes: [] };
+  const t: Record<string, Linha[]> = { experts: [], produtos: [], funis: [], ofertas: [], lps: [], dicionario: [], campanhas: [], decisoes: [], vslVariaveis: [], vsls: [] };
   /** Story 47.5: "cache de nomes" do Meta e gasto, em memória. */
   const meta: { projectId: string; projeto: string; campaignId: string; nome: string; statusMeta: string | null }[] = [];
   const gastoMeta: Record<string, { spend: number; de: string; ate: string }> = {};
@@ -22,7 +22,7 @@ function memoria() {
   const changelog: Log[] = [];
   let seq = 0;
   const id = () => `00000000-0000-4000-8000-${String(++seq).padStart(12, "0")}`;
-  const NOME: Record<string, string> = { experts: "naming_experts", produtos: "naming_products", funis: "naming_funnels", ofertas: "naming_offers", lps: "naming_landing_pages", dicionario: "naming_dictionary_values", campanhas: "naming_campaigns", decisoes: "naming_legacy_decisions" };
+  const NOME: Record<string, string> = { experts: "naming_experts", produtos: "naming_products", funis: "naming_funnels", ofertas: "naming_offers", lps: "naming_landing_pages", dicionario: "naming_dictionary_values", campanhas: "naming_campaigns", decisoes: "naming_legacy_decisions", vslVariaveis: "naming_vsl_variables", vsls: "naming_vsls" };
   const COL: Record<string, string> = { experts: "expertId", produtos: "productId", funis: "funnelId", ofertas: "offerId", lps: "landingPageId" };
 
   const ativos = (xs: Linha[], inativos: boolean) => (inativos ? xs : xs.filter((x) => x.active));
@@ -40,6 +40,35 @@ function memoria() {
         lps: f(t.lps).map((l) => ({ expert: codeDe("experts", l.expertId), product: codeDe("produtos", l.productId), funnel: codeDe("funis", l.funnelId), offer: codeDe("ofertas", l.offerId), code: l.code, active: l.active })),
         valores: f(t.dicionario).map((v) => ({ type: v.type, value: v.value, active: v.active })),
       };
+    },
+    /** Story 47.9 */
+    async snapshotDeVsl(inativos: boolean) {
+      const f = (xs: Linha[]) => (inativos ? xs : xs.filter((x) => x.active));
+      return {
+        experts: f(t.experts).map((e) => ({ code: e.code, active: e.active })),
+        produtos: f(t.produtos).map((p) => ({ expert: codeDe("experts", p.expertId), slug: p.slug, active: p.active })),
+        ofertas: f(t.ofertas).map((x) => ({ expert: codeDe("experts", x.expertId), code: x.code, active: x.active })),
+        variaveis: f(t.vslVariaveis).map((v) => ({ expert: codeDe("experts", v.expertId), type: v.type, code: v.code, active: v.active })),
+      };
+    },
+    vslVariaveis: {
+      listar: async (f: { expertId?: string; type?: string }, inativos: boolean) => ativos(t.vslVariaveis.filter((x) => (!f.expertId || x.expertId === f.expertId) && (!f.type || x.type === f.type)), inativos),
+      porCode: async (expertId: string, type: string, code: string) => t.vslVariaveis.find((x) => x.expertId === expertId && x.type === type && x.code === code),
+    },
+    vsls: {
+      listar: async (f: Record<string, unknown>) => {
+        const itens = t.vsls.filter((v) => ["expertId", "productId", "offerId"].every((k) => !f[k] || v[k] === f[k]) && (!f.q || String(v.name).includes(String(f.q))));
+        return { itens, total: itens.length };
+      },
+      porNome: async (name: string) => t.vsls.find((v) => v.name === name),
+    },
+    async usoEmVsls(col: string) {
+      const m = new Map<string, number>();
+      for (const v of t.vsls) if (v[col]) m.set(v[col] as string, (m.get(v[col] as string) ?? 0) + 1);
+      return m;
+    },
+    async vslsQueUsam(col: string, i: string) {
+      return t.vsls.filter((v) => v[col] === i).length;
     },
     campanhas: {
       listar: async (f: Record<string, unknown>) => {
@@ -98,6 +127,14 @@ function memoria() {
       if (["experts", "produtos", "funis", "ofertas"].includes(e)) {
         for (const l of t.lps.filter((l) => l[COL[e]] === linha.id)) refs.push({ tipo: "lp", id: l.id, rotulo: String(l.slug) });
       }
+      if (e === "vslVariaveis") {
+        const col = ({ lead: "leadId", problem: "problemId", solution: "solutionId" } as Record<string, string>)[linha.type as string];
+        for (const v of t.vsls.filter((v) => v[col] === linha.id)) refs.push({ tipo: "vsl", id: v.id, rotulo: String(v.name) });
+        return refs;
+      }
+      if (e === "ofertas" || e === "produtos" || e === "experts") {
+        for (const v of t.vsls.filter((v) => v[COL[e]] === linha.id)) refs.push({ tipo: "vsl", id: v.id, rotulo: String(v.name) });
+      }
       if (e === "dicionario") {
         for (const c of campanhas.filter((c) => c[linha.type as string] === linha.value)) refs.push({ tipo: "campanha", id: c.id as string, rotulo: c.name as string });
       } else {
@@ -131,6 +168,7 @@ function memoria() {
         funis: t.funis.filter((x) => x.expertId === expertId && x.active),
         ofertas: t.ofertas.filter((x) => x.expertId === expertId && x.active),
         lps: t.lps.filter((x) => x.expertId === expertId && x.active),
+        variaveisDeVsl: t.vslVariaveis.filter((x) => x.expertId === expertId && x.active),
       }),
     },
     produtos: {
@@ -337,7 +375,7 @@ describe("rotas da nomenclatura", () => {
     await app.inject({ method: "POST", url: "/api/nomenclatura/lps", payload: { expertId: bbe.id, productId: churrasco.id, funnelId: a01.id, offerId: of01.id } });
 
     const impacto = await app.inject({ method: "GET", url: `/api/nomenclatura/experts/${bbe.id}/impacto-da-desativacao` });
-    expect(impacto.json()).toEqual({ produtos: 1, funis: 1, ofertas: 2, lps: 1 });
+    expect(impacto.json()).toEqual({ produtos: 1, funis: 1, ofertas: 2, lps: 1, variaveisDeVsl: 0 });
     expect(mem.t.produtos[0].active).toBe(true);
 
     const antes = mem.changelog.length;
@@ -524,6 +562,110 @@ describe("rotas da nomenclatura", () => {
     expect(r.itens[1]).toMatchObject({ expert: null, gasto: 0 });
     expect(r.itens[1].sugestao.campos).toMatchObject({ temperature: "cold" });
     expect(r.resumo).toEqual({ total: 2, pendentes: 2, gastoPendente: 1234.5 });
+  });
+
+  // ─────────────── Story 47.9: Nome VSL ───────────────
+  async function vslBase(app: FastifyInstance) {
+    const c = await cenario(app);
+    const post = async (url: string, payload: Record<string, unknown>) => (await app.inject({ method: "POST", url, payload })).json();
+    const lead = await post("/api/nomenclatura/vsl/variaveis", { expertId: c.bbe.id, type: "lead", code: "Demissão", description: "quem foi demitido" });
+    const problem = await post("/api/nomenclatura/vsl/variaveis", { expertId: c.bbe.id, type: "problem", code: "falta-de-metodo", description: "tenta sozinho" });
+    const solution = await post("/api/nomenclatura/vsl/variaveis", { expertId: c.bbe.id, type: "solution", code: "agente-pronto", description: "agente pronto" });
+    return { ...c, lead, problem, solution };
+  }
+
+  it("47.9 AC3/AC4: variável normaliza o código, é única por (expert, tipo) inclusive inativa, com a descrição no conflito; mesmo código em tipos diferentes coexiste", async () => {
+    const { bbe, lead } = await vslBase(app);
+    expect(lead).toMatchObject({ code: "demissao", type: "lead", rotulo: "demissao — quem foi demitido", usadoEm: 0 });
+    const dup = await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/variaveis", payload: { expertId: bbe.id, type: "lead", code: "demissao", description: "outra" } });
+    expect(dup.statusCode).toBe(409);
+    expect(dup.json().error).toBe('demissao já existe para bbe (lead): "quem foi demitido".');
+    await app.inject({ method: "POST", url: `/api/nomenclatura/vsl/variaveis/${lead.id}/desativar` });
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/variaveis", payload: { expertId: bbe.id, type: "lead", code: "demissao", description: "x" } })).statusCode).toBe(409);
+    const outroTipo = await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/variaveis", payload: { expertId: bbe.id, type: "problem", code: "demissao", description: "como problema" } });
+    expect(outroTipo.statusCode).toBe(201);
+    const sublinhado = await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/variaveis", payload: { expertId: bbe.id, type: "solution", code: "agente_pronto", description: "x" } });
+    expect(sublinhado.statusCode).toBe(400);
+    const semDescricao = await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/variaveis", payload: { expertId: bbe.id, type: "solution", code: "novo", description: "" } });
+    expect(semDescricao.statusCode).toBe(400);
+    // listagem por expert e tipo; inativos só com o flag
+    const lista = (await app.inject({ method: "GET", url: `/api/nomenclatura/vsl/variaveis?expertId=${bbe.id}&type=lead` })).json();
+    expect(lista).toEqual([]);
+    const comInativos = (await app.inject({ method: "GET", url: `/api/nomenclatura/vsl/variaveis?expertId=${bbe.id}&type=lead&inativos=1` })).json();
+    expect(comInativos.map((v: { code: string }) => v.code)).toEqual(["demissao"]);
+  });
+
+  it("47.9 AC2/AC5/AC9: POST vsls grava o nome gerado (oferta = pitch), ignora `name` do body; nome duplicado → 409; changelog", async () => {
+    const { bbe, churrasco, of01, lead, problem, solution } = await vslBase(app);
+    const corpo = { expertId: bbe.id, productId: churrasco.id, leadId: lead.id, problemId: problem.id, solutionId: solution.id, offerId: of01.id, name: "hackeado" };
+    const r = await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/vsls", payload: corpo });
+    expect(r.statusCode).toBe(201);
+    expect(r.json()).toMatchObject({ name: "vsl_bbe_churrasco_demissao_falta-de-metodo_agente-pronto_of01", leadValue: "demissao", offerValue: "of01", expertCode: "bbe", productSlug: "churrasco", leadRotulo: "demissao — quem foi demitido", offerRotulo: "of01 — oferta com ticket médio de R$ 347" });
+    expect(mem.changelog.at(-1)).toMatchObject({ entity: "naming_vsls", action: "create" });
+    const dup = await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/vsls", payload: corpo });
+    expect(dup.statusCode).toBe(409);
+    expect(dup.json().error).toContain("Já existe uma VSL com este nome");
+    const lista = (await app.inject({ method: "GET", url: `/api/nomenclatura/vsl/vsls?expertId=${bbe.id}&q=demissao` })).json();
+    expect(lista.total).toBe(1);
+    // validador: reconhece o nome; nome com prefixo errado é inválido
+    const val = (await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/validar-nome", payload: { name: r.json().name } })).json();
+    expect(val.valid).toBe(true);
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/validar-nome", payload: { name: "ad_bbe_churrasco_demissao_falta-de-metodo_agente-pronto_of01" } })).json().valid).toBe(false);
+  });
+
+  it("47.9 AC2/AC3: coerência — variável de outro expert → 422; variável do TIPO errado → 422; inativa → 422", async () => {
+    const { bbe, fz, churrasco, of01, lead, problem, solution } = await vslBase(app);
+    const leadDoFz = (await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/variaveis", payload: { expertId: fz.id, type: "lead", code: "outro", description: "x" } })).json();
+    const base = { expertId: bbe.id, productId: churrasco.id, leadId: lead.id, problemId: problem.id, solutionId: solution.id, offerId: of01.id };
+    const outroExpert = await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/vsls", payload: { ...base, leadId: leadDoFz.id } });
+    expect(outroExpert.statusCode).toBe(422);
+    expect(outroExpert.json()).toMatchObject({ campo: "leadId" });
+    const tipoErrado = await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/vsls", payload: { ...base, problemId: lead.id } });
+    expect(tipoErrado.statusCode).toBe(422);
+    expect(tipoErrado.json().error).toContain("é lead, não mecanismo do problema");
+    await app.inject({ method: "POST", url: `/api/nomenclatura/vsl/variaveis/${solution.id}/desativar` });
+    const inativa = await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/vsls", payload: base });
+    expect(inativa.statusCode).toBe(422);
+    expect(inativa.json()).toMatchObject({ campo: "solutionId" });
+  });
+
+  it("47.9 AC3: variável usada em VSL trava o código (409 com usadoEm), descrição segue editável; excluir é bloqueado com a lista e podeDesativar; a OFERTA conta a VSL como uso", async () => {
+    const { bbe, churrasco, of01, lead, problem, solution } = await vslBase(app);
+    await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/vsls", payload: { expertId: bbe.id, productId: churrasco.id, leadId: lead.id, problemId: problem.id, solutionId: solution.id, offerId: of01.id } });
+    const troca = await app.inject({ method: "PATCH", url: `/api/nomenclatura/vsl/variaveis/${lead.id}`, payload: { code: "demitido" } });
+    expect(troca.statusCode).toBe(409);
+    expect(troca.json()).toMatchObject({ usadoEm: 1 });
+    const desc = await app.inject({ method: "PATCH", url: `/api/nomenclatura/vsl/variaveis/${lead.id}`, payload: { description: "quem perdeu o emprego" } });
+    expect(desc.statusCode).toBe(200);
+    expect(mem.changelog.at(-1)).toMatchObject({ entity: "naming_vsl_variables", action: "update", before: { description: "quem foi demitido" }, after: { description: "quem perdeu o emprego" } });
+    const del = await app.inject({ method: "DELETE", url: `/api/nomenclatura/vsl/variaveis/${problem.id}` });
+    expect(del.statusCode).toBe(409);
+    expect(del.json()).toMatchObject({ podeDesativar: true, referencias: [{ tipo: "vsl", rotulo: "vsl_bbe_churrasco_demissao_falta-de-metodo_agente-pronto_of01" }] });
+    // a oferta: usadoEm soma a VSL; código travado; excluir bloqueado por vsl
+    const ofertas = (await app.inject({ method: "GET", url: `/api/nomenclatura/ofertas?expertId=${bbe.id}` })).json();
+    expect(ofertas.find((o: { id: string }) => o.id === of01.id).usadoEm).toBe(1);
+    expect((await app.inject({ method: "PATCH", url: `/api/nomenclatura/ofertas/${of01.id}`, payload: { code: "of07" } })).statusCode).toBe(409);
+    const delOferta = await app.inject({ method: "DELETE", url: `/api/nomenclatura/ofertas/${of01.id}` });
+    expect(delOferta.json().referencias.some((r: { tipo: string }) => r.tipo === "vsl")).toBe(true);
+  });
+
+  it("47.9 AC3: desativar o expert desativa as variáveis de VSL em cascata, e o impacto conta", async () => {
+    const { bbe } = await vslBase(app);
+    const impacto = (await app.inject({ method: "GET", url: `/api/nomenclatura/experts/${bbe.id}/impacto-da-desativacao` })).json();
+    expect(impacto.variaveisDeVsl).toBe(3);
+    const r = (await app.inject({ method: "POST", url: `/api/nomenclatura/experts/${bbe.id}/desativar` })).json();
+    expect(r.desativados.variaveisDeVsl).toBe(3);
+    expect(mem.t.vslVariaveis.every((v) => !v.active)).toBe(true);
+  });
+
+  it("47.9 AC9: PATCH recalcula o nome quando muda um campo; guest → 403", async () => {
+    const { bbe, churrasco, of01, of02, lead, problem, solution } = await vslBase(app);
+    const v = (await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/vsls", payload: { expertId: bbe.id, productId: churrasco.id, leadId: lead.id, problemId: problem.id, solutionId: solution.id, offerId: of01.id } })).json();
+    const r = await app.inject({ method: "PATCH", url: `/api/nomenclatura/vsl/vsls/${v.id}`, payload: { offerId: of02.id } });
+    expect(r.json().name).toBe("vsl_bbe_churrasco_demissao_falta-de-metodo_agente-pronto_of02");
+    expect(r.json().offerValue).toBe("of02");
+    const guest = await app.inject({ method: "GET", url: "/api/nomenclatura/vsl/vsls", headers: { "x-papel": "guest" } });
+    expect(guest.statusCode).toBe(403);
   });
 
   it("47.8 AC6: campanha do gerador com id da Meta colado NÃO aparece na fila de legadas (o nome v2 casa com o filtro)", async () => {

@@ -128,4 +128,8 @@
 // na 5ª posição. NÃO aditiva: `partes` de `/validar-nome` passou de 9 para 10
 // pedaços e as posições nas mensagens mudaram; o web antigo desenharia dez
 // pedaços em nove rótulos. `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 10;
+//
+// v11 (Story 47.9): rotas novas `/api/nomenclatura/vsl/*` (variáveis de VSL,
+// snapshot, validador e VSLs) e o campo `variaveisDeVsl` em
+// `impacto-da-desativacao`. ADITIVA; `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 11;

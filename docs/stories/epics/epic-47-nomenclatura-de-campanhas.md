@@ -76,7 +76,7 @@ Este epic põe dentro do Loyola X, em Configurações → Nomenclatura:
 |---|---|---|---|---|---|
 | 47.7 | "Slug de LP" vira seção própria e lista as LPs do expert | 1, 3 | seção `?secao=slug` ao lado de Campanhas (link antigo compatível); ao escolher o expert, tabela Código · Slug · URL · Descrição que a cascata estreita | 3 | **Done** · gate CONCERNS (AC8 visual com o dono) · branch `feat/47.7-slug-de-lp-secao` aguardando push |
 | 47.8 | Novo padrão do nome de campanha (template v2) | 2 | `expert_funil_produto_oferta_perpetuo_ano_temp_leilao_formato_lp` (10 campos); build/parse/prévia/validador; recálculo das não publicadas; fila de Legadas exclui ids já vinculados; contrato 10 | 8 | **Done** · gate CONCERNS (branch `feat/47.8-template-v2-nome-de-campanha`, empilhada na 47.7, aguardando push) · ⛔ **P4 bloqueia o merge**: existe fluxo externo em 9 colunas, o dono nomeia e ajusta antes · T5 (recálculo) roda em prod após o deploy |
-| 47.9 | Seção "Nome VSL" — três variáveis por expert + oferta do dicionário + gerador | 4 | `naming_vsl_variables` (lead · problem · solution) + `naming_vsls` (com `offer_id`); `vsl_expert_produto_lead_problema_solucao_oferta`; abas Nova VSL · VSLs · Variáveis | 8 | **Ready** · GO 9 · pitch = `ofNN` (resposta do dono) |
+| 47.9 | Seção "Nome VSL" — três variáveis por expert + oferta do dicionário + gerador | 4 | `naming_vsl_variables` (lead · problem · solution) + `naming_vsls` (com `offer_id`); `vsl_expert_produto_lead_problema_solucao_oferta`; abas Nova VSL · VSLs · Variáveis | 8 | **InReview** · implementada (branch `feat/47.9-nome-de-vsl`) · migration 0144 entra no deploy · AC12 visual com o dono |
 | 47.10 | Seção "Nome Ads" — tipo de criativo, sigla de lançamento e gerador com sequencial | 5 | tipos `creative_type` (ad · adv · carr) e `launch_type` (pg · l · m · pr) em Valores fixos; `naming_ads` com NN reservado na gravação; `{tipo}{NN}_{expert}_{sigla}{NN}_{mm-aaaa}--{descricao}`, NN único por expert; copiar estrutura × nome completo | 8 | **Ready** · GO 8,5 · data `mm-aaaa`, NN por expert (respostas do dono) |
 
 Arquivos: `docs/stories/47.7.nomenclatura-slug-de-lp-secao-propria.md` · `47.8.nomenclatura-novo-padrao-do-nome-de-campanha.md` · `47.9.nomenclatura-nome-de-vsl.md` · `47.10.nomenclatura-nome-de-anuncio.md`
@@ -138,6 +138,7 @@ Nomenclatura de conjunto · parâmetros de URL · integração Meta · importaç
 
 | Data | Autor | Mudança |
 |---|---|---|
+| 2026-09-10 | @dev (Dex) | 47.9 em InReview: tabelas `naming_vsl_variables`/`naming_vsls` (0144), módulo folha da VSL, rotas `/vsl/*` (contrato 11), seção Nome VSL (Nova VSL · VSLs · Variáveis). Oferta passa a contar VSL como uso. |
 | 2026-09-10 | @qa (Quinn) | 47.8 gate CONCERNS → Done (P4 merge, T5 prod, AC11 visual). QA-478-01 corrigido no gate. |
 | 2026-09-10 | @dev (Dex) | 47.8 em InReview: template v2 (contrato 10), recálculo, fila de legadas, e correção do mapa da 47.6 (lia produto/funil pelo nome; agora lê pela ordem declarada, com fallback v1). Merge segue travado pela P4. |
 | 2026-09-10 | @qa (Quinn) | 47.7 gate CONCERNS → Done (AC8 visual pendente; 2 achados low). @dev implementou na mesma data: seção `slug`, link antigo compatível, tabela de LPs por expert. |
