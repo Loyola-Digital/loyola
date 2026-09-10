@@ -879,6 +879,8 @@ export default fp(async function nomenclaturaRoutes(fastify) {
     problemId: uuid,
     solutionId: uuid,
     offerId: uuid,
+    /** Link da VSL no Drive (pedido do dono, 2026-09-10). Opcional. */
+    url: z.string().trim().url().max(2000).nullable().optional(),
     notes: z.string().trim().max(4000).nullable().optional(),
   });
 
@@ -940,7 +942,7 @@ export default fp(async function nomenclaturaRoutes(fastify) {
       // D18: sem sufixo — mesma combinação é a mesma VSL.
       const ja = await r.vsls.porNome(m.name);
       if (ja) throw new ErroDeNomenclatura(409, `Já existe uma VSL com este nome: ${m.name}. Duas VSLs com a mesma combinação são a mesma VSL.`, { campo: "name", vslId: ja.id });
-      const linha = await r.inserir("vsls", { ...m, fields: undefined, notes: b.notes ?? null, createdBy: author } as never, author);
+      const linha = await r.inserir("vsls", { ...m, fields: undefined, url: b.url ?? null, notes: b.notes ?? null, createdBy: author } as never, author);
       return reply.code(201).send({ ...linha, ...(await rotulosDeVsls(r))(linha) });
     }),
   );
@@ -968,6 +970,7 @@ export default fp(async function nomenclaturaRoutes(fastify) {
         if (ja && ja.id !== id) throw new ErroDeNomenclatura(409, `Já existe uma VSL com este nome: ${m.name}.`, { campo: "name", vslId: ja.id });
         Object.assign(patch, { ...m, fields: undefined });
       }
+      if (b.url !== undefined) patch.url = b.url;
       if (b.notes !== undefined) patch.notes = b.notes;
       if (Object.keys(patch).length === 0) return { ...antes, ...(await rotulosDeVsls(r))(antes) };
       const depois = await r.atualizar("vsls", antes, patch as never, author);

@@ -45,10 +45,12 @@ export interface EstadoDaVsl {
   problemId: string;
   solutionId: string;
   offerId: string;
+  /** Link da VSL no Drive (pedido do dono). Opcional. */
+  url: string;
   notes: string;
 }
 
-export const ESTADO_VAZIO_DA_VSL: EstadoDaVsl = { expertId: "", productId: "", leadId: "", problemId: "", solutionId: "", offerId: "", notes: "" };
+export const ESTADO_VAZIO_DA_VSL: EstadoDaVsl = { expertId: "", productId: "", leadId: "", problemId: "", solutionId: "", offerId: "", url: "", notes: "" };
 
 /** Trocar o expert limpa TUDO abaixo; os outros campos não limpam nada (são independentes). Trocar pelo mesmo valor não limpa. */
 export function aoEscolherNaVsl(estado: EstadoDaVsl, campo: keyof EstadoDaVsl, valor: string): EstadoDaVsl {
@@ -126,11 +128,24 @@ export function corpoDaVsl(estado: EstadoDaVsl) {
     problemId: estado.problemId,
     solutionId: estado.solutionId,
     offerId: estado.offerId,
+    url: estado.url.trim() || null,
     notes: estado.notes.trim() || null,
   };
 }
 
 /** De uma VSL gravada para o estado do gerador (Editar e Duplicar). */
-export function estadoDeVsl(v: { expertId: string; productId: string; leadId: string; problemId: string; solutionId: string; offerId: string; notes: string | null }): EstadoDaVsl {
-  return { expertId: v.expertId, productId: v.productId, leadId: v.leadId, problemId: v.problemId, solutionId: v.solutionId, offerId: v.offerId, notes: v.notes ?? "" };
+export function estadoDeVsl(v: { expertId: string; productId: string; leadId: string; problemId: string; solutionId: string; offerId: string; url?: string | null; notes: string | null }): EstadoDaVsl {
+  return { expertId: v.expertId, productId: v.productId, leadId: v.leadId, problemId: v.problemId, solutionId: v.solutionId, offerId: v.offerId, url: v.url ?? "", notes: v.notes ?? "" };
+}
+
+/** URL aceitável para o link da VSL: vazio (opcional) ou http(s) válido. */
+export function linkDaVslValido(url: string): boolean {
+  const u = url.trim();
+  if (!u) return true;
+  try {
+    const parsed = new URL(u);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
 }

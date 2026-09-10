@@ -17,9 +17,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Copy, Loader2, Plus, RotateCcw } from "lucide-react";
+import { Copy, ExternalLink, Loader2, Plus, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -38,6 +39,7 @@ import {
   camposDaVsl,
   corpoDaVsl,
   estadoDeVsl,
+  linkDaVslValido,
   previaDaVsl,
   type EstadoDaVsl,
   type PreviaDaVsl,
@@ -170,7 +172,7 @@ export function GeradorDeVsl({ modo }: { modo: Modo }) {
       if (eOutra) {
         // Mantém expert e produto (AC8); limpa as três variáveis, a oferta e as observações.
         toast.success(<span>Salva e nome copiado: <code className="font-mono">{salva.name}</code>. Escolha o próximo ângulo.</span>, { duration: 8000 });
-        setEstado((e) => ({ ...e, leadId: "", problemId: "", solutionId: "", offerId: "", notes: "" }));
+        setEstado((e) => ({ ...e, leadId: "", problemId: "", solutionId: "", offerId: "", url: "", notes: "" }));
         return;
       }
       toast.success(<span>VSL salva e nome copiado: <code className="font-mono">{salva.name}</code></span>, {
@@ -246,6 +248,7 @@ export function GeradorDeVsl({ modo }: { modo: Modo }) {
                       <TableHead>Problema</TableHead>
                       <TableHead>Solução</TableHead>
                       <TableHead>Oferta</TableHead>
+                      <TableHead>Link</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -262,6 +265,7 @@ export function GeradorDeVsl({ modo }: { modo: Modo }) {
                         <TableCell className="max-w-[180px] truncate" title={v.problemRotulo}>{v.problemRotulo}</TableCell>
                         <TableCell className="max-w-[180px] truncate" title={v.solutionRotulo}>{v.solutionRotulo}</TableCell>
                         <TableCell className="max-w-[180px] truncate" title={v.offerRotulo}>{v.offerRotulo}</TableCell>
+                        <TableCell>{v.url ? <a href={v.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline underline-offset-2"><ExternalLink className="h-3.5 w-3.5" />abrir</a> : "—"}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -271,6 +275,11 @@ export function GeradorDeVsl({ modo }: { modo: Modo }) {
           </div>
         ) : null}
 
+        <div className="space-y-1">
+          <Label htmlFor="v-url">Link da VSL no Drive (opcional)</Label>
+          <Input id="v-url" value={estado.url} onChange={(e) => setEstado((s) => ({ ...s, url: e.target.value }))} placeholder="https://drive.google.com/…" aria-invalid={!linkDaVslValido(estado.url) || undefined} />
+          {!linkDaVslValido(estado.url) ? <p className="text-xs text-destructive">Cole o link completo, começando com https://</p> : <p className="text-xs text-muted-foreground">O vídeo ou o roteiro no Drive. Fica na listagem como link.</p>}
+        </div>
         <div className="space-y-1">
           <Label htmlFor="v-notas">Observações (opcional)</Label>
           <Textarea id="v-notas" value={estado.notes} onChange={(e) => setEstado((s) => ({ ...s, notes: e.target.value }))} rows={2} />
@@ -283,12 +292,12 @@ export function GeradorDeVsl({ modo }: { modo: Modo }) {
         ) : null}
 
         <div className="flex flex-wrap gap-2">
-          <Button type="button" onClick={() => void salvar()} disabled={!previa.completo || salvando}>
+          <Button type="button" onClick={() => void salvar()} disabled={!previa.completo || !linkDaVslValido(estado.url) || salvando}>
             {salvando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             {modo.tipo === "editar" ? "Salvar alterações" : "Salvar"}
           </Button>
           {modo.tipo !== "editar" ? (
-            <Button type="button" variant="secondary" onClick={() => void salvar(true)} disabled={!previa.completo || salvando}>
+            <Button type="button" variant="secondary" onClick={() => void salvar(true)} disabled={!previa.completo || !linkDaVslValido(estado.url) || salvando}>
               Salvar e criar outra
             </Button>
           ) : null}

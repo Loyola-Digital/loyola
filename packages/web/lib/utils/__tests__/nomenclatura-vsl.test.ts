@@ -7,10 +7,11 @@ import {
   camposDaVsl,
   corpoDaVsl,
   estadoDeVsl,
+  linkDaVslValido,
   previaDaVsl,
 } from "../nomenclatura-vsl";
 
-const cheio = { expertId: "e", productId: "p", leadId: "l", problemId: "pr", solutionId: "s", offerId: "o", notes: "" };
+const cheio = { expertId: "e", productId: "p", leadId: "l", problemId: "pr", solutionId: "s", offerId: "o", url: "", notes: "" };
 const t = {
   experts: [{ id: "e", code: "dg" }],
   produtos: [{ id: "p", slug: "claude-negocios" }],
@@ -57,10 +58,17 @@ describe("prévia com a MESMA função do servidor (AC8)", () => {
 });
 
 describe("ida e volta com a API", () => {
-  it("corpoDaVsl manda os seis ids e as notas (null quando vazias)", () => {
-    expect(corpoDaVsl({ ...cheio, notes: "  " })).toEqual({ expertId: "e", productId: "p", leadId: "l", problemId: "pr", solutionId: "s", offerId: "o", notes: null });
+  it("corpoDaVsl manda os seis ids, o link e as notas (null quando vazios)", () => {
+    expect(corpoDaVsl({ ...cheio, notes: "  " })).toEqual({ expertId: "e", productId: "p", leadId: "l", problemId: "pr", solutionId: "s", offerId: "o", url: null, notes: null });
+    expect(corpoDaVsl({ ...cheio, url: " https://drive.google.com/x " }).url).toBe("https://drive.google.com/x");
+  });
+  it("link da VSL: vazio vale (opcional); http(s) vale; sem esquema ou outro esquema não", () => {
+    expect(linkDaVslValido("")).toBe(true);
+    expect(linkDaVslValido("https://drive.google.com/file/d/abc/view")).toBe(true);
+    expect(linkDaVslValido("drive.google.com/x")).toBe(false);
+    expect(linkDaVslValido("ftp://x")).toBe(false);
   });
   it("estadoDeVsl devolve o estado do gerador a partir de uma VSL gravada", () => {
-    expect(estadoDeVsl({ ...cheio, notes: null })).toEqual({ ...ESTADO_VAZIO_DA_VSL, ...cheio, notes: "" });
+    expect(estadoDeVsl({ ...cheio, url: "https://d/x", notes: null })).toEqual({ ...ESTADO_VAZIO_DA_VSL, ...cheio, url: "https://d/x", notes: "" });
   });
 });

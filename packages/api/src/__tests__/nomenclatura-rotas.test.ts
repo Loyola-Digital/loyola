@@ -701,12 +701,17 @@ describe("rotas da nomenclatura", () => {
     expect(mem.t.vslVariaveis.every((v) => !v.active)).toBe(true);
   });
 
-  it("47.9 AC9: PATCH recalcula o nome quando muda um campo; guest → 403", async () => {
+  it("47.9 AC9: PATCH recalcula o nome quando muda um campo; link do Drive entra na criação e edita depois; guest → 403", async () => {
     const { bbe, churrasco, of01, of02, lead, problem, solution } = await vslBase(app);
-    const v = (await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/vsls", payload: { expertId: bbe.id, productId: churrasco.id, leadId: lead.id, problemId: problem.id, solutionId: solution.id, offerId: of01.id } })).json();
+    const v = (await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/vsls", payload: { expertId: bbe.id, productId: churrasco.id, leadId: lead.id, problemId: problem.id, solutionId: solution.id, offerId: of01.id, url: "https://drive.google.com/file/d/abc/view" } })).json();
+    expect(v.url).toBe("https://drive.google.com/file/d/abc/view");
     const r = await app.inject({ method: "PATCH", url: `/api/nomenclatura/vsl/vsls/${v.id}`, payload: { offerId: of02.id } });
     expect(r.json().name).toBe("vsl_bbe_churrasco_lead01_pr01_sol01_of02");
     expect(r.json().offerValue).toBe("of02");
+    expect(r.json().url).toBe("https://drive.google.com/file/d/abc/view"); // o link não se perde no recálculo
+    const semLink = await app.inject({ method: "PATCH", url: `/api/nomenclatura/vsl/vsls/${v.id}`, payload: { url: null } });
+    expect(semLink.json().url).toBeNull();
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/vsls", payload: { expertId: bbe.id, productId: churrasco.id, leadId: lead.id, problemId: problem.id, solutionId: solution.id, offerId: of01.id, url: "drive.google.com/x" } })).statusCode).toBe(400);
     const guest = await app.inject({ method: "GET", url: "/api/nomenclatura/vsl/vsls", headers: { "x-papel": "guest" } });
     expect(guest.statusCode).toBe(403);
   });
