@@ -23,7 +23,7 @@
  */
 
 import { and, eq, gte, inArray, isNotNull, sum } from "drizzle-orm";
-import type { CampaignFields } from "@loyola-x/shared";
+import { ORDEM_DO_NOME, PERPETUO, type CampaignFields } from "@loyola-x/shared";
 import { funnelStages, funnels, metaCampaignInsightsDaily, namingCampaigns, namingExperts } from "../../db/schema.js";
 import type { Conexao } from "./conexao.js";
 
@@ -48,12 +48,27 @@ export function invalidarMapa(projectId?: string): void {
   else cache.clear();
 }
 
+/** Posição de cada código no nome, pela ordem declarada no `shared` (v2, Story 47.8). */
+const POSICAO_V2 = { expert: ORDEM_DO_NOME.indexOf("expert"), product: ORDEM_DO_NOME.indexOf("product"), funnel: ORDEM_DO_NOME.indexOf("funnel"), kind: ORDEM_DO_NOME.indexOf("kind") };
+/** Template v1 (até 2026-09-10): `expert_produto_funil_…`. Nome publicado nesse padrão está congelado (regra 6) e continua legível. */
+const POSICAO_V1 = { expert: 0, product: 1, funnel: 2 };
+
+/**
+ * Expert, produto e funil a partir do nome gravado. O nome é gerado pelo
+ * servidor a partir dos códigos, então ler as posições é a forma mais barata
+ * de ter os três por código sem três joins — desde que se leia a posição
+ * CERTA: `perpetuo` na 5ª casa diz que é v2; sem ele, é um nome congelado no v1.
+ */
+export function codigosDoNome(name: string): { expert: string; product: string; funnel: string } {
+  const p = name.split("_");
+  const pos = p[POSICAO_V2.kind] === PERPETUO ? POSICAO_V2 : POSICAO_V1;
+  return { expert: p[pos.expert] ?? "", product: p[pos.product] ?? "", funnel: p[pos.funnel] ?? "" };
+}
+
 function paraDimensao(c: typeof namingCampaigns.$inferSelect): DimensaoDeCampanha | null {
   if (!c.metaCampaignId) return null;
   return {
-    expert: c.name.split("_")[0] ?? "",
-    product: c.name.split("_")[1] ?? "",
-    funnel: c.name.split("_")[2] ?? "",
+    ...codigosDoNome(c.name),
     offer: c.offerValue,
     year: c.year,
     temperature: c.temperature,
@@ -69,9 +84,8 @@ function paraDimensao(c: typeof namingCampaigns.$inferSelect): DimensaoDeCampanh
 }
 
 /**
- * O mapa do projeto. Os três primeiros campos vêm do `name` gravado (o nome é
- * gerado pelo servidor a partir dos códigos; é a forma mais barata de ter
- * expert/produto/funil por código sem três joins) — os demais são as colunas
+ * O mapa do projeto. Expert/produto/funil vêm do `name` gravado
+ * (`codigosDoNome`, que sabe v1 e v2) — os demais são as colunas
  * textuais que `naming_campaigns` guarda de propósito para isto (spec § 4.7).
  */
 export async function mapaDeDimensoes(db: Conexao, projectId: string): Promise<MapaDeDimensoes> {

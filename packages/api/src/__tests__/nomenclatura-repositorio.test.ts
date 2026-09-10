@@ -239,6 +239,20 @@ describe("Story 47.3: campanhas.listar — filtros vão para o SQL, não para a 
     await criarRepositorio(c.db).campanhas.listar({ limit: 10, offset: 0 });
     expect(c.registros[0].where).toBeUndefined();
   });
+  it("47.8: metaIdsDoGerador filtra meta_campaign_id IS NOT NULL E origin = gerador (a legada classificada fica fora)", async () => {
+    const a = fakeDb([[{ metaCampaignId: "111" }, { metaCampaignId: "222" }]]);
+    const ids = await criarRepositorio(a.db).campanhas.metaIdsDoGerador();
+    const q = sqlDe(a.registros[0].where);
+    expect(q.sql).toMatch(/"meta_campaign_id" is not null/);
+    expect(q.sql).toMatch(/"origin" = /);
+    expect(q.params).toEqual(["gerador"]);
+    expect([...ids]).toEqual(["111", "222"]);
+  });
+  it("47.8: naoPublicadas é published_at IS NULL — publicada nunca entra no recálculo (regra 6)", async () => {
+    const a = fakeDb([[]]);
+    await criarRepositorio(a.db).campanhas.naoPublicadas();
+    expect(sqlDe(a.registros[0].where).sql).toMatch(/"published_at" is null/);
+  });
 });
 
 describe("Story 47.3: snapshot — por código, com os pais resolvidos", () => {

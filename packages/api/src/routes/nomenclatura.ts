@@ -796,7 +796,10 @@ export default fp(async function nomenclaturaRoutes(fastify) {
       autor(request);
       const q = parse(z.object({ projectId: uuid.optional(), fila: z.enum(["pendentes", "ignoradas", "classificadas", "todas"]).default("pendentes"), q: z.string().max(200).optional() }), request.query);
       const r = repo();
-      const [{ nomes, gasto, decisoes }, experts, snap] = await Promise.all([r.legadas.listar({ projectId: q.projectId, q: q.q }), r.experts.listar(true), r.snapshot(false)]);
+      const [{ nomes: nomesBrutos, gasto, decisoes }, experts, snap, vinculadas] = await Promise.all([r.legadas.listar({ projectId: q.projectId, q: q.q }), r.experts.listar(true), r.snapshot(false), r.campanhas.metaIdsDoGerador()]);
+      // Story 47.8 (AC6): campanha do gerador já colada no Meta tem `perpetuo` no nome e casaria com o
+      // filtro de legadas. Se o id é de uma campanha do GERADOR, não é legada (a classificada segue pela decisão).
+      const nomes = nomesBrutos.filter((n) => !vinculadas.has(n.campaignId));
       const expertDoProjeto = new Map(experts.filter((e) => e.projectId).map((e) => [e.projectId as string, e]));
       const itens = nomes
         .map((n) => {

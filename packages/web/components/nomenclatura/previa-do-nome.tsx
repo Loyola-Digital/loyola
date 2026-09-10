@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * Story 47.3 — a prévia do nome (spec § 7): mono, nove campos coloridos por
+ * Story 47.3 — a prévia do nome (spec § 7): mono, dez campos coloridos por
  * bloco (identidade / ano / segmentação), `_` em cinza, `…` no que falta,
+ * a constante `perpetuo` já preenchida (Story 47.8),
  * contador e botão Copiar. A string vem de `buildCampaignName` (pela
  * `previaDoNome`), nunca de template string.
  */
@@ -50,7 +51,7 @@ export function PreviaDoNome({ previa, compacta = false }: { previa: Previa; com
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        {previa.nome ? `${previa.tamanho} caracteres` : previa.erro ? <span className="text-destructive">{previa.erro}</span> : "Preencha os nove campos para liberar o nome."}
+        {previa.nome ? `${previa.tamanho} caracteres` : previa.erro ? <span className="text-destructive">{previa.erro}</span> : "Preencha os campos para liberar o nome."}
       </p>
     </div>
   );

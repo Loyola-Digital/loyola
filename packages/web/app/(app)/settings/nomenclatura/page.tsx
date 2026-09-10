@@ -3,8 +3,9 @@
 /**
  * Configurações → Nomenclatura (Epic 47 / Story 47.2).
  *
- * O dicionário de onde sai cada um dos nove campos do nome de campanha do
- * perpétuo (`bbe_churrasco_a01_of01_2026_hot_cbo_videos_lpa`): experts,
+ * O dicionário de onde sai cada um dos dez campos do nome de campanha do
+ * perpétuo (`bbe_a01_churrasco_of01_perpetuo_2026_hot_cbo_videos_lpa`,
+ * template v2 da Story 47.8): experts,
  * produtos, funis, ofertas, LPs e valores fixos — e a seção Campanhas (Story
  * 47.3): gerador de nome, listagem e validador de nome existente.
  *
@@ -51,8 +52,8 @@ function Nomenclatura() {
         <CardHeader>
           <CardTitle>Nomenclatura de campanhas</CardTitle>
           <CardDescription>
-            O nome de cada campanha do perpétuo tem nove campos separados por <code className="font-mono">_</code>:{" "}
-            <code className="font-mono">expert_produto_funil_oferta_ano_temp_leilao_formato_lp</code>. Aqui fica o dicionário de onde cada campo sai. Código não muda de significado nem é reaproveitado — desative em vez de excluir.
+            O nome de cada campanha do perpétuo tem dez campos separados por <code className="font-mono">_</code>:{" "}
+            <code className="font-mono">expert_funil_produto_oferta_perpetuo_ano_temp_leilao_formato_lp</code>. Aqui fica o dicionário de onde cada campo sai. Código não muda de significado nem é reaproveitado — desative em vez de excluir.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
