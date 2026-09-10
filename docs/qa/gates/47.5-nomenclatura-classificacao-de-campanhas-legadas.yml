@@ -1,0 +1,27 @@
+alvo: "Story 47.5 — Nomenclatura: classificação de campanhas legadas do perpétuo"
+epic: 47
+commits: "030bd56f (#834) · f21fdf6c (#835) · a6a084fb (#836)"
+revisadoPor: "dono do produto (validação em produção) · @qa não rodou gate separado nesta story — declarado"
+revisadoEm: "2026-09-09/10"
+
+decisao: PASS
+condicional: >
+  PASS pela validação do dono do produto em produção ("Finalizado!"), depois de
+  dois follow-ups nascidos dessa validação (#835 "Salvar e adicionar outra";
+  #836 próximo código após salvar-e-outra). Não houve passagem formal do @qa
+  nesta story: o mesmo agente implementou e revisou na mesma sessão, e a
+  prova independente foi a do dono. Fica registrado, não escondido.
+
+evidencias:
+  - "98 testes de nomenclatura na API (11 do módulo de legadas sobre a amostra real de produção), 1.169 no web, next build verde, 5 reversões medidas"
+  - "migration 0143 aplicada em produção em transação; colunas e tabela conferidas no information_schema"
+  - "regex por token re-medida em produção: 51 candidatas, zero saíram com o aperto"
+  - "dono validou a fila de legadas e os fluxos de LP/campanha em produção"
+
+achados_abertos:
+  - id: QA-475-01
+    severidade: low
+    o_que: "Confirmações de 'Não é perpétuo' e 'Voltar para a fila' usam prompt()/confirm() nativos (mesmo débito da 47.3, QA-473-03)."
+  - id: QA-475-02
+    severidade: info
+    o_que: "AC17 executada pelo dono com relato global; sem registro passo a passo."
