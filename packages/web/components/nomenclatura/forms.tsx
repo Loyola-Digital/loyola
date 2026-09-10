@@ -191,15 +191,23 @@ export function FormFunilOuOferta(props: { recurso: "funis" | "ofertas"; aberto:
     if (!linha && sugestao.data?.codigo && !code) setCode(sugestao.data.codigo);
   }, [sugestao.data?.codigo, linha]);
 
-  async function salvar() {
+  async function salvar(eOutra = false) {
     const rotulo = ehFunil ? "Funil" : "Oferta";
     const ok = linha
       ? await tentar(() => editar.mutateAsync({ id: linha.id, dados: { code, description, startedAt } }), `${rotulo} ${linha.code} atualizado.`)
-      : await tentar(() => criar.mutateAsync({ expertId, code, description, startedAt }), `${rotulo} criado.`);
-    if (ok) onFechar();
+      : await tentar(() => criar.mutateAsync({ expertId, code, description, startedAt }), `${rotulo} ${code} criado.`);
+    if (!ok) return;
+    if (eOutra && !linha) {
+      // Mantém o expert; limpa código (a sugestão traz o próximo) e descrição.
+      setCode("");
+      setDescription("");
+      setAvisoDescricao(false);
+      return;
+    }
+    onFechar();
   }
   return (
-    <FormularioDialogo aberto={aberto} onFechar={onFechar} titulo={linha ? `Editar ${ehFunil ? "funil" : "oferta"} ${linha.code}` : ehFunil ? "Novo funil" : "Nova oferta"} descricao={ehFunil ? "A descrição é o mecanismo do funil — é o que aparece no select do gerador." : "A descrição é o que a pessoa vai ler no gerador: preço, parcelamento, bump, garantia."} onSalvar={salvar} salvando={criar.isPending || editar.isPending} podeSalvar={Boolean(expertId && code.trim() && description.trim())} erro={erro}>
+    <FormularioDialogo aberto={aberto} onFechar={onFechar} titulo={linha ? `Editar ${ehFunil ? "funil" : "oferta"} ${linha.code}` : ehFunil ? "Novo funil" : "Nova oferta"} descricao={ehFunil ? "A descrição é o mecanismo do funil — é o que aparece no select do gerador." : "A descrição é o que a pessoa vai ler no gerador: preço, parcelamento, bump, garantia."} onSalvar={() => salvar(false)} onSalvarEOutra={linha ? undefined : () => salvar(true)} salvando={criar.isPending || editar.isPending} podeSalvar={Boolean(expertId && code.trim() && description.trim())} erro={erro}>
       <SeletorDeExpert valor={expertId} onChange={(v) => { setExpertId(v); setCode(""); }} travado={Boolean(linha)} />
       <CampoImutavel id="code" label="Código" valor={code} onChange={setCode} tipo={ehFunil ? "funil" : "oferta"} usadoEm={linha?.usadoEm ?? 0} placeholder={ehFunil ? "a01" : "of01"} ajuda={!linha && sugestao.data?.codigo ? `Sugerido: ${sugestao.data.codigo} (próximo livre deste expert, contando inativos).` : ehFunil ? "a + dois dígitos, por expert." : "of + dois dígitos, por expert."} />
       <div className="space-y-1">
@@ -294,7 +302,7 @@ export function FormLp(props: { aberto: boolean; linha: Lp | null; cascataInicia
     [experts.data, produtos.data, funis.data, ofertas.data, cascata, code],
   );
 
-  async function salvar() {
+  async function salvar(eOutra = false) {
     const dados = { code, url: url.trim() || null, description: description.trim() || null };
     if (linha) {
       const ok = await tentar(() => editar.mutateAsync({ id: linha.id, dados }), `LP ${linha.slug} atualizada.`);
@@ -306,15 +314,21 @@ export function FormLp(props: { aberto: boolean; linha: Lp | null; cascataInicia
       criada = await criar.mutateAsync({ ...cascata, code, url: url.trim() || undefined, description: description.trim() || undefined });
       // Conferência AC13: o slug que a tela mostrou tem que ser o que a API gravou.
       if (slug && criada.slug !== slug) toast.warning(`A API gravou ${criada.slug}, a tela mostrava ${slug}. Avise o dev.`);
-    }, "LP criada.");
-    if (ok) {
-      if (criada && onSalvo) onSalvo(criada);
-      onFechar();
+    }, criada ? `LP ${(criada as Lp).slug} criada.` : "LP criada.");
+    if (!ok) return;
+    if (criada && onSalvo) onSalvo(criada);
+    if (eOutra) {
+      // Mantém expert/produto/funil/oferta; limpa código (a sugestão traz a próxima letra), URL e descrição.
+      setCode("");
+      setUrl("");
+      setDescription("");
+      return;
     }
+    onFechar();
   }
 
   return (
-    <FormularioDialogo aberto={aberto} onFechar={onFechar} titulo={linha ? `Editar LP ${linha.slug}` : "Nova LP"} descricao="Uma LP pertence a expert + produto + funil + oferta. O slug é gerado e é a identidade pública da página." onSalvar={salvar} salvando={criar.isPending || editar.isPending} podeSalvar={completa && Boolean(code.trim())} erro={erro}>
+    <FormularioDialogo aberto={aberto} onFechar={onFechar} titulo={linha ? `Editar LP ${linha.slug}` : "Nova LP"} descricao="Uma LP pertence a expert + produto + funil + oferta. O slug é gerado e é a identidade pública da página." onSalvar={() => salvar(false)} onSalvarEOutra={linha ? undefined : () => salvar(true)} salvando={criar.isPending || editar.isPending} podeSalvar={completa && Boolean(code.trim())} erro={erro}>
       {/* Um select por linha (validação visual do dono, 2026-09-09): os rótulos de
           funil e oferta são longos e, lado a lado, a lista aberta de um cobria o outro. */}
       <div className="grid gap-3">
