@@ -16,10 +16,11 @@
  */
 
 export type Secao = "dicionario" | "campanhas" | "slug" | "vsl" | "ads";
-export type AbaDoDicionario = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "valores";
+/** `variaveis-vsl` (follow-up da 47.9, decisão do dono em 2026-09-10): as variáveis da VSL moram no Dicionário, não na seção Nome VSL. */
+export type AbaDoDicionario = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "valores" | "variaveis-vsl";
 export type AbaDeCampanhas = "nova" | "lista" | "validar" | "legadas";
-/** Story 47.9: seção Nome VSL. */
-export type AbaDeVsl = "nova" | "lista" | "variaveis";
+/** Story 47.9: seção Nome VSL — só gerador e listagem; o cadastro das variáveis é do Dicionário. */
+export type AbaDeVsl = "nova" | "lista";
 /** Story 47.10: seção Nome Ads. */
 export type AbaDeAds = "novo" | "lista" | "valores";
 
@@ -30,6 +31,7 @@ export const ABAS_DO_DICIONARIO: { value: AbaDoDicionario; label: string }[] = [
   { value: "ofertas", label: "Ofertas" },
   { value: "lps", label: "LPs" },
   { value: "valores", label: "Valores fixos" },
+  { value: "variaveis-vsl", label: "Variáveis de VSL" },
 ];
 
 /** Seção Campanhas (Story 47.3): gerador, listagem e validador. */
@@ -50,7 +52,6 @@ export const ABAS_DE_CAMPANHAS: { value: AbaDeCampanhas; label: string }[] = [
 export const ABAS_DE_VSL: { value: AbaDeVsl; label: string }[] = [
   { value: "nova", label: "Nova VSL" },
   { value: "lista", label: "VSLs" },
-  { value: "variaveis", label: "Variáveis" },
 ];
 
 /** Seção Nome Ads (Story 47.10): gerador, listagem e os dois valores fixos do anúncio. */
@@ -93,6 +94,8 @@ export function abaAtiva(params: { get(k: string): string | null }): AbaAtiva {
   const secao = SECOES.find((s) => s.value === params.get("secao"))?.value ?? DEFAULT.secao;
   const pedida = params.get("aba");
   if (secao === "slug") return { secao };
+  // Compatibilidade: `?secao=vsl&aba=variaveis` foi a URL do cadastro por algumas horas em 2026-09-10; abre o mesmo cadastro no Dicionário.
+  if (secao === "vsl" && pedida === "variaveis") return { secao: "dicionario", aba: "variaveis-vsl" };
   if (secao === "vsl") return { secao, aba: ABAS_DE_VSL.find((a) => a.value === pedida)?.value ?? "nova" };
   if (secao === "ads") return { secao, aba: ABAS_DE_ADS.find((a) => a.value === pedida)?.value ?? "novo" };
   if (secao === "dicionario") {

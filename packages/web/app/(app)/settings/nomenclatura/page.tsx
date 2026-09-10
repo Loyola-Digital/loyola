@@ -12,7 +12,7 @@
  * Seção e aba vivem na URL (`?secao=&aba=`) — regra 1 do Epic 46. A árvore é
  * dado em `lib/utils/nomenclatura-abas.ts`; aqui só se desenha. "Slug de LP"
  * é seção própria sem sub-abas (Story 47.7). "Nome VSL" (Story 47.9) tem
- * Nova VSL · VSLs · Variáveis. "Nome Ads" (Story 47.10) tem Novo anúncio ·
+ * Nova VSL · VSLs (as variáveis moram no Dicionário — decisão do dono). "Nome Ads" (Story 47.10) tem Novo anúncio ·
  * Anúncios · Valores fixos.
  *
  * Permissões (D3): `guest` nem chega aqui (o middleware redireciona rotas
@@ -166,8 +166,6 @@ function Nomenclatura() {
           ) : ativa.secao === "vsl" ? (
             ativa.aba === "lista" ? (
               <ListaDeVsls />
-            ) : ativa.aba === "variaveis" ? (
-              <AbaVariaveisDeVsl podeEditar={podeEditar} />
             ) : (
               <GeradorDeVsl
                 key={`vsl|${params.get("editar") ?? ""}|${params.get("duplicar") ?? ""}`}
@@ -197,6 +195,8 @@ function Nomenclatura() {
             <AbaFunisOuOfertas recurso="ofertas" podeEditar={podeEditar} />
           ) : ativa.aba === "lps" ? (
             <AbaLps podeEditar={podeEditar} />
+          ) : ativa.aba === "variaveis-vsl" ? (
+            <AbaVariaveisDeVsl podeEditar={podeEditar} />
           ) : (
             <AbaValoresFixos podeEditar={podeEditar} />
           )}
