@@ -46,6 +46,10 @@ function memoria() {
         const itens = t.campanhas.filter((c) => ["expertId", "productId", "funnelId", "offerId", "year"].every((k) => !f[k] || c[k] === f[k]) && (!f.q || String(c.name).includes(String(f.q))));
         return { itens, total: itens.length };
       },
+      /** Story 47.8 (AC6). */
+      metaIdsDoGerador: async () => new Set(t.campanhas.filter((c) => c.metaCampaignId && c.origin !== "legado").map((c) => String(c.metaCampaignId))),
+      /** Story 47.8 (T5). */
+      naoPublicadas: async () => t.campanhas.filter((c) => !c.publishedAt),
     },
     async inserir(e: string, v: Record<string, unknown>, author: string | null) {
       const linha = { id: id(), active: true, ...v } as Linha;
@@ -262,11 +266,11 @@ describe("rotas da nomenclatura", () => {
 
   it("AC 9: excluir oferta usada → 409 com a lista e podeDesativar; desativada some da lista e volta com inativos=1", async () => {
     const { bbe, of02 } = await cenario(app);
-    mem.campanhas.push({ id: "c1", name: "bbe_churrasco_a01_of02_2026_hot_cbo_videos_lpa", offerId: of02.id, expertId: bbe.id });
+    mem.campanhas.push({ id: "c1", name: "bbe_a01_churrasco_of02_perpetuo_2026_hot_cbo_videos_lpa", offerId: of02.id, expertId: bbe.id });
 
     const del = await app.inject({ method: "DELETE", url: `/api/nomenclatura/ofertas/${of02.id}` });
     expect(del.statusCode).toBe(409);
-    expect(del.json()).toMatchObject({ podeDesativar: true, referencias: [{ tipo: "campanha", id: "c1", rotulo: "bbe_churrasco_a01_of02_2026_hot_cbo_videos_lpa" }] });
+    expect(del.json()).toMatchObject({ podeDesativar: true, referencias: [{ tipo: "campanha", id: "c1", rotulo: "bbe_a01_churrasco_of02_perpetuo_2026_hot_cbo_videos_lpa" }] });
     expect(mem.t.ofertas.find((o) => o.id === of02.id)).toBeDefined();
 
     const des = await app.inject({ method: "POST", url: `/api/nomenclatura/ofertas/${of02.id}/desativar` });
@@ -395,9 +399,9 @@ describe("rotas da nomenclatura", () => {
     const lpa = (await app.inject({ method: "POST", url: "/api/nomenclatura/lps", payload: { expertId: bbe.id, productId: churrasco.id, funnelId: a01.id, offerId: of01.id } })).json();
     const r = await app.inject({ method: "POST", url: "/api/nomenclatura/campanhas", payload: { expertId: bbe.id, productId: churrasco.id, funnelId: a01.id, offerId: of01.id, landingPageId: lpa.id, year: "2026", temperature: "hot", auction: "cbo", format: "videos", name: "hackeado" } });
     expect(r.statusCode).toBe(201);
-    expect(r.json()).toMatchObject({ name: "bbe_churrasco_a01_of01_2026_hot_cbo_videos_lpa", offerValue: "of01", lpValue: "lpa", expertCode: "bbe", productSlug: "churrasco", lpSlug: "bbe-churrasco-a01-of01-lpa" });
+    expect(r.json()).toMatchObject({ name: "bbe_a01_churrasco_of01_perpetuo_2026_hot_cbo_videos_lpa", offerValue: "of01", lpValue: "lpa", expertCode: "bbe", productSlug: "churrasco", lpSlug: "bbe-churrasco-a01-of01-lpa" });
     const comSufixo = await app.inject({ method: "POST", url: "/api/nomenclatura/campanhas", payload: { expertId: bbe.id, productId: churrasco.id, funnelId: a01.id, offerId: null, landingPageId: null, lpValue: "na", year: "2026", temperature: "hot", auction: "cbo", format: "videos", suffix: "v02" } });
-    expect(comSufixo.json()).toMatchObject({ name: "bbe_churrasco_a01_ofmix_2026_hot_cbo_videos_na_v02", offerValue: "ofmix", offerId: null, lpValue: "na" });
+    expect(comSufixo.json()).toMatchObject({ name: "bbe_a01_churrasco_ofmix_perpetuo_2026_hot_cbo_videos_na_v02", offerValue: "ofmix", offerId: null, lpValue: "na" });
     expect(mem.changelog.filter((l) => l.entity === "naming_campaigns" && l.action === "create")).toHaveLength(2);
     // agora a oferta está USADA: código trava, descrição não
     const troca = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ofertas/${of01.id}`, payload: { code: "of07" } });
@@ -411,13 +415,13 @@ describe("rotas da nomenclatura", () => {
     const base = { expertId: bbe.id, productId: churrasco.id, funnelId: a01.id, offerId: of01.id, landingPageId: null, lpValue: "na", year: "2026", temperature: "hot", auction: "cbo" };
     const formato = await app.inject({ method: "POST", url: "/api/nomenclatura/campanhas", payload: { ...base, format: "carrossel" } });
     expect(formato.statusCode).toBe(422);
-    expect(formato.json().error).toContain('campo 8 (formato): "carrossel"');
+    expect(formato.json().error).toContain('campo 9 (formato): "carrossel"');
     await app.inject({ method: "POST", url: `/api/nomenclatura/ofertas/${of02.id}/desativar` });
     const inativa = await app.inject({ method: "POST", url: "/api/nomenclatura/campanhas", payload: { ...base, offerId: of02.id, format: "videos" } });
     expect(inativa.statusCode).toBe(422);
     expect(inativa.json()).toMatchObject({ campo: "offerId" });
     // ...mas o validador de nome antigo aceita a oferta inativa, com aviso
-    const val = await app.inject({ method: "POST", url: "/api/nomenclatura/validar-nome", payload: { name: "bbe_churrasco_a01_of02_2026_hot_cbo_videos_na" } });
+    const val = await app.inject({ method: "POST", url: "/api/nomenclatura/validar-nome", payload: { name: "bbe_a01_churrasco_of02_perpetuo_2026_hot_cbo_videos_na" } });
     expect(val.json()).toMatchObject({ valid: true, avisos: ["campo 4 (oferta): of02 está inativa"] });
   });
 
@@ -433,7 +437,7 @@ describe("rotas da nomenclatura", () => {
     expect(errada.json().error).toContain("outra oferta");
     const ofmix = await app.inject({ method: "POST", url: "/api/nomenclatura/campanhas", payload: { ...base, offerId: null, landingPageId: lpDaOf02.id } });
     expect(ofmix.statusCode).toBe(201);
-    expect(ofmix.json().name).toBe("bbe_churrasco_a01_ofmix_2026_hot_cbo_videos_lpa");
+    expect(ofmix.json().name).toBe("bbe_a01_churrasco_ofmix_perpetuo_2026_hot_cbo_videos_lpa");
   });
 
   it("AC 11 (servidor): publicada não muda de nome (409); notas e id da Meta seguem editáveis; recalcula o nome enquanto não publicada", async () => {
@@ -443,7 +447,7 @@ describe("rotas da nomenclatura", () => {
     const base = { expertId: bbe.id, productId: churrasco.id, funnelId: a01.id, offerId: of01.id, landingPageId: null, lpValue: "na", year: "2026", temperature: "hot", auction: "cbo", format: "videos" };
     const c = (await app.inject({ method: "POST", url: "/api/nomenclatura/campanhas", payload: base })).json();
     const fria = await app.inject({ method: "PATCH", url: `/api/nomenclatura/campanhas/${c.id}`, payload: { temperature: "cold" } });
-    expect(fria.json().name).toBe("bbe_churrasco_a01_of01_2026_cold_cbo_videos_na");
+    expect(fria.json().name).toBe("bbe_a01_churrasco_of01_perpetuo_2026_cold_cbo_videos_na");
     const pub = await app.inject({ method: "POST", url: `/api/nomenclatura/campanhas/${c.id}/publicar`, payload: { metaCampaignId: "123" } });
     expect(pub.json().publishedAt).toBeTruthy();
     expect(mem.changelog.at(-1)).toMatchObject({ action: "publish", entityId: c.id });
@@ -455,7 +459,7 @@ describe("rotas da nomenclatura", () => {
     expect(notas.json().notes).toBe("campanha do fim de semana");
     const lista = (await app.inject({ method: "GET", url: `/api/nomenclatura/campanhas?expertId=${bbe.id}` })).json();
     expect(lista.total).toBe(1);
-    expect(lista.itens[0]).toMatchObject({ name: "bbe_churrasco_a01_of01_2026_cold_cbo_videos_na", funnelRotulo: "a01 — VSL direto para checkout", offerRotulo: "of01 — oferta com ticket médio de R$ 347" });
+    expect(lista.itens[0]).toMatchObject({ name: "bbe_a01_churrasco_of01_perpetuo_2026_cold_cbo_videos_na", funnelRotulo: "a01 — VSL direto para checkout", offerRotulo: "of01 — oferta com ticket médio de R$ 347" });
   });
 
   it("snapshot: só ativos por padrão, com inativos=1 inclui", async () => {
@@ -522,12 +526,43 @@ describe("rotas da nomenclatura", () => {
     expect(r.resumo).toEqual({ total: 2, pendentes: 2, gastoPendente: 1234.5 });
   });
 
+  it("47.8 AC6: campanha do gerador com id da Meta colado NÃO aparece na fila de legadas (o nome v2 casa com o filtro)", async () => {
+    const { bbe, churrasco, a01, of01 } = await legadasBase(app);
+    // 111 é legada pendente; agora uma campanha do gerador é publicada com metaCampaignId = 111
+    const c = (await app.inject({ method: "POST", url: "/api/nomenclatura/campanhas", payload: { expertId: bbe.id, productId: churrasco.id, funnelId: a01.id, offerId: of01.id, landingPageId: null, lpValue: "na", year: "2026", temperature: "hot", auction: "cbo", format: "videos" } })).json();
+    expect(c.name).toContain("_perpetuo_");
+    await app.inject({ method: "POST", url: `/api/nomenclatura/campanhas/${c.id}/publicar`, payload: { metaCampaignId: "111" } });
+    const r = (await app.inject({ method: "GET", url: "/api/nomenclatura/legadas" })).json();
+    expect(r.itens.map((i: { campaignId: string }) => i.campaignId)).toEqual(["333"]);
+    expect(r.resumo).toEqual({ total: 1, pendentes: 1, gastoPendente: 0 });
+    // `todas` também não a traz: vinculada não é legada em nenhuma fila
+    const todas = (await app.inject({ method: "GET", url: "/api/nomenclatura/legadas?fila=todas" })).json();
+    expect(todas.itens.map((i: { campaignId: string }) => i.campaignId)).toEqual(["333"]);
+  });
+
+  it("47.8 AC5 (T5): recalcular renomeia só as NÃO publicadas no padrão antigo, com changelog; é idempotente", async () => {
+    const { bbe, churrasco, a01, of01 } = await cenario(app);
+    await dicionarioBase(app);
+    const base = { expertId: bbe.id, productId: churrasco.id, funnelId: a01.id, offerId: of01.id, offerValue: "of01", landingPageId: null, lpValue: "na", year: "2026", temperature: "hot", auction: "cbo", format: "videos", suffix: null };
+    // duas linhas gravadas "ontem", no padrão v1; uma publicada (congelada) e uma não
+    await mem.repo.inserir("campanhas", { ...base, name: "bbe_churrasco_a01_of01_2026_hot_cbo_videos_na", publishedAt: null } as never, null);
+    await mem.repo.inserir("campanhas", { ...base, name: "bbe_churrasco_a01_of01_2026_hot_cbo_videos_na_v02", suffix: "v02", publishedAt: new Date("2026-09-09") } as never, null);
+    const { recalcularNomesNaoPublicados } = await import("../services/nomenclatura/campanhas.js");
+    const r1 = await recalcularNomesNaoPublicados(mem.repo, null);
+    expect(r1.examinadas).toBe(1);
+    expect(r1.renomeadas).toEqual([{ id: expect.any(String), de: "bbe_churrasco_a01_of01_2026_hot_cbo_videos_na", para: "bbe_a01_churrasco_of01_perpetuo_2026_hot_cbo_videos_na" }]);
+    expect(mem.t.campanhas.map((c) => c.name).sort()).toEqual(["bbe_a01_churrasco_of01_perpetuo_2026_hot_cbo_videos_na", "bbe_churrasco_a01_of01_2026_hot_cbo_videos_na_v02"]);
+    expect(mem.changelog.at(-1)).toMatchObject({ entity: "naming_campaigns", action: "update", before: { name: "bbe_churrasco_a01_of01_2026_hot_cbo_videos_na" }, after: { name: "bbe_a01_churrasco_of01_perpetuo_2026_hot_cbo_videos_na" } });
+    const r2 = await recalcularNomesNaoPublicados(mem.repo, null);
+    expect(r2.renomeadas).toEqual([]);
+  });
+
   it("47.5 AC8/AC9: classifica uma vez (nasce publicada no 1º gasto, origem legado, nome antigo guardado); 2ª → 409; desfazer apaga o registro", async () => {
     const { churrasco, a01, of01 } = await legadasBase(app);
     const corpo = { productId: churrasco.id, funnelId: a01.id, offerId: of01.id, landingPageId: null, lpValue: "na", year: "2026", temperature: "hot", auction: "cbo", format: "videos", expertId: "ignorado" };
     const r = await app.inject({ method: "POST", url: `/api/nomenclatura/legadas/${PROJ_BBE}/111/classificar`, payload: corpo });
     expect(r.statusCode).toBe(201);
-    expect(r.json()).toMatchObject({ origin: "legado", metaCampaignId: "111", metaCampaignName: "bbe-a1-jul-26--venda--perpetuo--hot_cbo_videos", name: "bbe_churrasco_a01_of01_2026_hot_cbo_videos_na" });
+    expect(r.json()).toMatchObject({ origin: "legado", metaCampaignId: "111", metaCampaignName: "bbe-a1-jul-26--venda--perpetuo--hot_cbo_videos", name: "bbe_a01_churrasco_of01_perpetuo_2026_hot_cbo_videos_na" });
     expect(String(r.json().publishedAt)).toContain("2026-07-09");
     const de_novo = await app.inject({ method: "POST", url: `/api/nomenclatura/legadas/${PROJ_BBE}/111/classificar`, payload: corpo });
     expect(de_novo.statusCode).toBe(409);
@@ -539,7 +574,7 @@ describe("rotas da nomenclatura", () => {
     // validador reconhece o nome antigo
     const val = (await app.inject({ method: "POST", url: "/api/nomenclatura/validar-nome", payload: { name: "bbe-a1-jul-26--venda--perpetuo--hot_cbo_videos" } })).json();
     expect(val.valid).toBe(false);
-    expect(val.legado).toMatchObject({ campanhaId: r.json().id, name: "bbe_churrasco_a01_of01_2026_hot_cbo_videos_na" });
+    expect(val.legado).toMatchObject({ campanhaId: r.json().id, name: "bbe_a01_churrasco_of01_perpetuo_2026_hot_cbo_videos_na" });
     // desfazer: apaga campanha E decisão; volta para a fila
     const del = await app.inject({ method: "DELETE", url: `/api/nomenclatura/legadas/${PROJ_BBE}/111/decisao` });
     expect(del.statusCode).toBe(204);

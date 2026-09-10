@@ -14,6 +14,7 @@
     "backfill:meta-names": "tsx src/scripts/backfill-meta-names.ts",
     "backfill:kiwify-subs": "tsx src/scripts/backfill-kiwify-subscriptions.ts",
     "seed:nomenclatura": "tsx src/scripts/seed-nomenclatura.ts",
+    "nomenclatura:recalcular-nomes": "tsx src/scripts/recalcular-nomes-de-campanha.ts",
     "start": "node dist/server.js"
   },
   "dependencies": {

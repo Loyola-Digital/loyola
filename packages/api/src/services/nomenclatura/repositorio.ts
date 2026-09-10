@@ -482,6 +482,22 @@ export function criarRepositorio(db: Conexao) {
       ]);
       return { itens, total: Number(n) };
     },
+    /**
+     * Story 47.8 (AC6): ids da Meta colados em campanhas DO GERADOR. A fila de
+     * legadas tira esses da frente — o nome v2 contém `perpetuo`, que é
+     * exatamente o token do filtro de legadas. Só origem `gerador`: a legada
+     * classificada também tem `meta_campaign_id`, mas ela É legada e vive na
+     * fila "classificadas" pela decisão (47.5).
+     */
+    metaIdsDoGerador: async (): Promise<Set<string>> => {
+      const linhas = await db
+        .select({ metaCampaignId: namingCampaigns.metaCampaignId })
+        .from(namingCampaigns)
+        .where(and(isNotNull(namingCampaigns.metaCampaignId), eq(namingCampaigns.origin, "gerador")));
+      return new Set(linhas.map((l) => l.metaCampaignId as string));
+    },
+    /** Story 47.8 (T5): as que ainda podem mudar de nome (regra 6). */
+    naoPublicadas: async () => db.select().from(namingCampaigns).where(isNull(namingCampaigns.publishedAt)),
   };
 
   // ── legadas (Story 47.5) ──────────────────────────────────────────────

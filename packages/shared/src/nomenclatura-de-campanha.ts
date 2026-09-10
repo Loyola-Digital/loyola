@@ -1,8 +1,20 @@
 /**
- * Story 47.3 — o NOME da campanha do perpétuo: como nasce e como se lê.
+ * Story 47.3 / 47.8 — o NOME da campanha do perpétuo: como nasce e como se lê.
  *
- *   expert_produto_funil_oferta_ano_temp_leilao_formato_lp[_vNN]
- *   bbe_churrasco_a01_of01_2026_hot_cbo_videos_lpa            (46 caracteres)
+ *   expert_funil_produto_oferta_perpetuo_ano_temp_leilao_formato_lp[_vNN]
+ *   bbe_a01_churrasco_of01_perpetuo_2026_hot_cbo_videos_lpa          (55 caracteres)
+ *
+ * ## Template v2 (Story 47.8, pedido do dono em 2026-09-10)
+ *
+ * Dez campos, nove `_`. O funil vem colado no expert ("bbe a01" é como a
+ * operação fala), o produto desce para a 3ª posição, e o campo 5 é a
+ * CONSTANTE `perpetuo` — este dicionário é só de perpétuo, então não há
+ * segundo valor a escolher (D12). `CampaignFields` continua com os nove
+ * campos que alguém escolhe; a constante entra só no texto.
+ *
+ * O v1 (`expert_produto_funil_oferta_ano_…`, 9 campos) rodou de 2026-09-09
+ * a 2026-09-10. Nome publicado no Meta não muda (regra 6); o validador
+ * reconhece a contagem antiga e diz de onde ela vem, mas não converte (D14).
  *
  * Duas funções puras, usadas pelo servidor (gravar e validar) e pela prévia do
  * gerador no navegador (spec § 8):
@@ -39,7 +51,10 @@ export const SEPARADOR = "_";
 export const OFMIX = "ofmix";
 export const LPMIX = "lpmix";
 export const NA = "na";
+/** Campo 5, constante (Story 47.8, D12): este dicionário é só de perpétuo. */
+export const PERPETUO = "perpetuo";
 
+/** Os nove campos que alguém ESCOLHE. A constante `perpetuo` não está aqui. */
 export type CampoDoNome =
   | "expert"
   | "product"
@@ -51,12 +66,19 @@ export type CampoDoNome =
   | "format"
   | "lp";
 
-/** Ordem posicional — a planilha quebra o nome nesta ordem. Nunca muda. */
-export const ORDEM_DOS_CAMPOS: readonly CampoDoNome[] = [
+/** Uma posição do nome: um campo escolhido ou a constante (`kind` = `perpetuo`). */
+export type PosicaoDoNome = CampoDoNome | "kind";
+
+/**
+ * Ordem posicional do NOME — dez posições. A planilha quebra o nome nesta
+ * ordem. Mudou UMA vez (v1 → v2, Story 47.8); não muda por conveniência.
+ */
+export const ORDEM_DO_NOME: readonly PosicaoDoNome[] = [
   "expert",
-  "product",
   "funnel",
+  "product",
   "offer",
+  "kind",
   "year",
   "temperature",
   "auction",
@@ -64,19 +86,26 @@ export const ORDEM_DOS_CAMPOS: readonly CampoDoNome[] = [
   "lp",
 ];
 
+/** Só os campos escolhidos, na ordem em que aparecem no nome (sem a constante). */
+export const ORDEM_DOS_CAMPOS: readonly CampoDoNome[] = ORDEM_DO_NOME.filter((p): p is CampoDoNome => p !== "kind");
+
+export const TOTAL_DE_CAMPOS = ORDEM_DO_NOME.length;
+export const TOTAL_DE_SEPARADORES = TOTAL_DE_CAMPOS - 1;
+
 export type BlocoDoNome = "identidade" | "ano" | "segmentacao";
 
-/** Rótulo (pt-BR, para mensagens) e bloco de cor (spec § 2) de cada campo. */
-export const CAMPO: Record<CampoDoNome, { posicao: number; rotulo: string; bloco: BlocoDoNome }> = {
+/** Rótulo (pt-BR, para mensagens) e bloco de cor (spec § 2) de cada posição. */
+export const CAMPO: Record<PosicaoDoNome, { posicao: number; rotulo: string; bloco: BlocoDoNome }> = {
   expert: { posicao: 1, rotulo: "expert", bloco: "identidade" },
-  product: { posicao: 2, rotulo: "produto", bloco: "identidade" },
-  funnel: { posicao: 3, rotulo: "funil", bloco: "identidade" },
+  funnel: { posicao: 2, rotulo: "funil", bloco: "identidade" },
+  product: { posicao: 3, rotulo: "produto", bloco: "identidade" },
   offer: { posicao: 4, rotulo: "oferta", bloco: "identidade" },
-  year: { posicao: 5, rotulo: "ano", bloco: "ano" },
-  temperature: { posicao: 6, rotulo: "temperatura", bloco: "segmentacao" },
-  auction: { posicao: 7, rotulo: "leilão", bloco: "segmentacao" },
-  format: { posicao: 8, rotulo: "formato", bloco: "segmentacao" },
-  lp: { posicao: 9, rotulo: "lp", bloco: "segmentacao" },
+  kind: { posicao: 5, rotulo: "tipo", bloco: "identidade" },
+  year: { posicao: 6, rotulo: "ano", bloco: "ano" },
+  temperature: { posicao: 7, rotulo: "temperatura", bloco: "segmentacao" },
+  auction: { posicao: 8, rotulo: "leilão", bloco: "segmentacao" },
+  format: { posicao: 9, rotulo: "formato", bloco: "segmentacao" },
+  lp: { posicao: 10, rotulo: "lp", bloco: "segmentacao" },
 };
 
 export interface CampaignFields {
@@ -98,16 +127,21 @@ export interface CampaignFields {
 const VALOR_DE_CAMPO = /^[a-z0-9-]+$/;
 const SUFIXO = /^v\d{2}$/;
 
+/** O valor de uma posição: o campo escolhido, ou a constante. */
+function valorDaPosicao(fields: Partial<CampaignFields>, posicao: PosicaoDoNome): string | undefined {
+  return posicao === "kind" ? PERPETUO : fields[posicao];
+}
+
 /**
  * Monta o nome. Lança `Error` nomeando o campo se algum valor estiver vazio,
  * fora de `[a-z0-9-]`, ou se o sufixo não for `vNN`.
  */
 export function buildCampaignName(fields: CampaignFields): string {
-  const partes = ORDEM_DOS_CAMPOS.map((campo) => {
-    const valor = fields[campo];
-    if (!valor) throw new Error(`campo ${CAMPO[campo].posicao} (${CAMPO[campo].rotulo}): vazio`);
+  const partes = ORDEM_DO_NOME.map((posicao) => {
+    const valor = valorDaPosicao(fields, posicao);
+    if (!valor) throw new Error(`campo ${CAMPO[posicao].posicao} (${CAMPO[posicao].rotulo}): vazio`);
     if (!VALOR_DE_CAMPO.test(valor)) {
-      throw new Error(`campo ${CAMPO[campo].posicao} (${CAMPO[campo].rotulo}): "${valor}" fora de [a-z0-9-]`);
+      throw new Error(`campo ${CAMPO[posicao].posicao} (${CAMPO[posicao].rotulo}): "${valor}" fora de [a-z0-9-]`);
     }
     return valor;
   });
@@ -120,21 +154,19 @@ export function buildCampaignName(fields: CampaignFields): string {
 
 /** O que a prévia precisa para colorir: cada pedaço com o bloco dele. */
 export interface PedacoDoNome {
-  campo: CampoDoNome | "suffix";
+  campo: PosicaoDoNome | "suffix";
   valor: string;
   bloco: BlocoDoNome | "sufixo";
-  /** `true` quando o campo ainda não foi escolhido — a prévia mostra `…`. */
+  /** `true` quando o campo ainda não foi escolhido — a prévia mostra `…`. A constante nunca falta. */
   faltando: boolean;
 }
 
-/** Pedaços do nome, aceitando campos vazios (prévia parcial, spec § 7). */
+/** Pedaços do nome, aceitando campos vazios (prévia parcial, spec § 7). Dez pedaços (+ sufixo). */
 export function pedacosDoNome(fields: Partial<CampaignFields>): PedacoDoNome[] {
-  const pedacos: PedacoDoNome[] = ORDEM_DOS_CAMPOS.map((campo) => ({
-    campo,
-    valor: fields[campo] ?? "",
-    bloco: CAMPO[campo].bloco,
-    faltando: !fields[campo],
-  }));
+  const pedacos: PedacoDoNome[] = ORDEM_DO_NOME.map((posicao) => {
+    const valor = valorDaPosicao(fields, posicao) ?? "";
+    return { campo: posicao, valor, bloco: CAMPO[posicao].bloco, faltando: !valor };
+  });
   if (fields.suffix) pedacos.push({ campo: "suffix", valor: fields.suffix, bloco: "sufixo", faltando: false });
   return pedacos;
 }
@@ -160,10 +192,14 @@ export interface ParseResult {
   avisos: string[];
 }
 
-const erroDe = (campo: CampoDoNome, motivo: string) => `campo ${CAMPO[campo].posicao} (${CAMPO[campo].rotulo}): ${motivo}`;
+const erroDe = (campo: PosicaoDoNome, motivo: string) => `campo ${CAMPO[campo].posicao} (${CAMPO[campo].rotulo}): ${motivo}`;
+
+/** Contagem do template v1 (9 campos) — só para a dica do validador (Story 47.8, AC2). */
+const CAMPOS_DO_V1 = 9;
+export const DICA_DO_PADRAO_ANTIGO = `parece o padrão anterior (${CAMPOS_DO_V1} campos, funil na 3ª posição) — o padrão atual tem ${TOTAL_DE_CAMPOS} campos, com "${PERPETUO}" na 5ª (Story 47.8)`;
 
 /**
- * Quebra um nome em nove campos (+ sufixo) e valida cada um contra o
+ * Quebra um nome em dez campos (+ sufixo) e valida cada um contra o
  * dicionário recebido. Erros apontam campo e motivo; um erro estrutural
  * (contagem, caractere) interrompe antes da validação semântica — não faz
  * sentido dizer que "a oferta não existe" quando os campos estão deslocados.
@@ -178,20 +214,29 @@ export function parseCampaignName(name: string, dicionario: DicionarioSnapshot):
   if (bruto !== bruto.toLowerCase()) errors.push("o nome tem maiúscula — a convenção é toda minúscula");
 
   let suffix: string | undefined;
-  if (partes.length === 10 && SUFIXO.test(partes[9])) suffix = partes.pop();
-  if (partes.length !== 9) {
-    errors.push(`esperados 8 separadores "_" (9 campos), encontrados ${partes.length - 1} (${partes.length} campos)`);
+  const ultimo = partes[partes.length - 1];
+  if (partes.length === TOTAL_DE_CAMPOS + 1 && SUFIXO.test(ultimo)) suffix = partes.pop();
+  // v1 com sufixo tem exatamente dez pedaços e o último é vNN — mas o 5º não é `perpetuo`
+  // (um `vNN` nunca é código de LP). Tira o sufixo para a contagem acusar o padrão antigo.
+  else if (partes.length === TOTAL_DE_CAMPOS && SUFIXO.test(ultimo) && partes[4] !== PERPETUO) suffix = partes.pop();
+  if (partes.length !== TOTAL_DE_CAMPOS) {
+    errors.push(
+      `esperados ${TOTAL_DE_SEPARADORES} separadores "_" (${TOTAL_DE_CAMPOS} campos), encontrados ${partes.length - 1} (${partes.length} campos)`,
+    );
+    if (partes.length === CAMPOS_DO_V1) errors.push(DICA_DO_PADRAO_ANTIGO);
     return { valid: false, partes: suffix ? [...partes, suffix] : partes, errors, avisos };
   }
 
   partes.forEach((p, i) => {
-    const campo = ORDEM_DOS_CAMPOS[i];
+    const campo = ORDEM_DO_NOME[i];
     if (p === "") errors.push(erroDe(campo, "vazio (dois _ seguidos?)"));
     else if (!VALOR_DE_CAMPO.test(p)) errors.push(erroDe(campo, `"${p}" fora de [a-z0-9-]`));
   });
   if (errors.length) return { valid: false, partes: suffix ? [...partes, suffix] : partes, errors, avisos };
 
-  const [expert, product, funnel, offer, year, temperature, auction, format, lp] = partes;
+  const [expert, funnel, product, offer, kind, year, temperature, auction, format, lp] = partes;
+
+  if (kind !== PERPETUO) errors.push(erroDe("kind", `"${kind}" — o único valor é "${PERPETUO}"`));
 
   const e = dicionario.experts.find((x) => x.code === expert);
   if (!e) errors.push(erroDe("expert", `"${expert}" não está cadastrado`));
