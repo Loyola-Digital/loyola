@@ -116,8 +116,8 @@ describe("parseCampaignName — AC 12 no template v2", () => {
     expect(r.valid).toBe(false);
     expect(r.errors).toContain('campo 5 (tipo): "lancamento" — o único valor é "perpetuo"');
   });
-  it("AC2: contagem errada aponta 9 separadores / 10 campos e não segue para a validação semântica", () => {
-    const r = parseCampaignName("bbe_a01_churrasco_of01_perpetuo_2026_hot_cbo_videos", dic());
+  it("AC2: contagem errada aponta 9 separadores / 10 campos e não segue para a validação semântica (v1: contagem + dica, nada mais)", () => {
+    const r = parseCampaignName("bbe_churrasco_a01_of01_2026_hot_cbo_videos_lpa", dic());
     expect(r.valid).toBe(false);
     expect(r.errors).toEqual([
       'esperados 9 separadores "_" (10 campos), encontrados 8 (9 campos)',
@@ -135,6 +135,11 @@ describe("parseCampaignName — AC 12 no template v2", () => {
     expect(parseCampaignName(`${v1}_v02`, dic()).errors).toContain(DICA_DO_PADRAO_ANTIGO);
     // 8 campos NÃO é o padrão antigo: sem dica
     expect(parseCampaignName("bbe_churrasco_a01_of01_2026_hot_cbo_videos", dic()).errors).toHaveLength(1);
+  });
+  it("QA-478-01: v2 com um campo a menos (9 pedaços, perpetuo na 5ª) NÃO recebe a dica do padrão antigo", () => {
+    const r = parseCampaignName("bbe_a01_churrasco_of01_perpetuo_2026_hot_cbo_videos", dic());
+    expect(r.valid).toBe(false);
+    expect(r.errors).toEqual(['esperados 9 separadores "_" (10 campos), encontrados 8 (9 campos)']);
   });
   it("sufixo vNN é aceito como 11º campo; 11º campo que não é vNN é erro de contagem", () => {
     const ok = parseCampaignName(`${NOME}_v02`, dic());

@@ -223,7 +223,8 @@ export function parseCampaignName(name: string, dicionario: DicionarioSnapshot):
     errors.push(
       `esperados ${TOTAL_DE_SEPARADORES} separadores "_" (${TOTAL_DE_CAMPOS} campos), encontrados ${partes.length - 1} (${partes.length} campos)`,
     );
-    if (partes.length === CAMPOS_DO_V1) errors.push(DICA_DO_PADRAO_ANTIGO);
+    // Só é o padrão antigo se o 5º pedaço NÃO é `perpetuo`: um v2 com um campo a menos é outro erro (gate QA-478-01).
+    if (partes.length === CAMPOS_DO_V1 && partes[4] !== PERPETUO) errors.push(DICA_DO_PADRAO_ANTIGO);
     return { valid: false, partes: suffix ? [...partes, suffix] : partes, errors, avisos };
   }
 
