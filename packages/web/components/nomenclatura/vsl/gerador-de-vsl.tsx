@@ -6,6 +6,10 @@
  * Salvar, "Salvar e criar outra" (mantém expert e produto). Também serve para
  * Editar e Duplicar (`?editar=` / `?duplicar=` na aba `nova`).
  *
+ * Pedido do dono (2026-09-10): ao escolher o expert, listar abaixo as VSLs já
+ * criadas dele (mesmo desenho da lista de LPs no Slug de LP, 47.7); escolher
+ * o produto estreita a lista.
+ *
  * As decisões (cascata, prévia, corpo da API) estão em
  * `lib/utils/nomenclatura-vsl.ts`, com teste. Aqui só se desenha.
  */
@@ -19,8 +23,10 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { erroDaApi, useCriarVsl, useEditarVsl, useListaDe, useVsl, type ErroDaApi, type VariavelDeVsl } from "@/lib/hooks/use-nomenclatura";
+import { erroDaApi, useCriarVsl, useEditarVsl, useListaDe, useVsl, useVsls, type ErroDaApi, type VariavelDeVsl } from "@/lib/hooks/use-nomenclatura";
 import { hrefDe } from "@/lib/utils/nomenclatura-abas";
 import {
   CLASSE_DO_BLOCO_DA_VSL,
@@ -125,6 +131,9 @@ export function GeradorDeVsl({ modo }: { modo: Modo }) {
   const produtos = useListaDe("produtos", { expertId: estado.expertId }, { enabled: Boolean(estado.expertId) });
   const ofertas = useListaDe("ofertas", { expertId: estado.expertId }, { enabled: Boolean(estado.expertId) });
   const variaveis = useListaDe("vsl/variaveis", { expertId: estado.expertId }, { enabled: Boolean(estado.expertId) });
+  // VSLs já criadas do expert (estreita pelo produto quando escolhido).
+  const existentes = useVsls({ expertId: estado.expertId || undefined, productId: estado.productId || undefined, limit: 100 });
+  const temExpert = Boolean(estado.expertId);
 
   // Pré-preenchimento UMA vez por id (mesma guarda do gerador de campanha).
   const carregadoDe = useRef<string | null>(null);
@@ -213,6 +222,54 @@ export function GeradorDeVsl({ modo }: { modo: Modo }) {
           ))}
           <SelectDaVsl id="v-oferta" label="Oferta (pitch)" valor={estado.offerId} onChange={escolher("offerId")} opcoes={(ofertas.data ?? []).map((o) => ({ value: o.id, rotulo: o.rotulo }))} desabilitado={!estado.expertId} vazio={`nenhuma oferta cadastrada para ${expertCode} — cadastre em Dicionário › Ofertas`} aoCadastrar={() => setCadastro("oferta")} />
         </div>
+
+        {temExpert ? (
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold">
+              VSLs de <span className="font-mono">{expertCode}</span>
+              {estado.productId ? <span className="font-normal text-muted-foreground"> · {produtos.data?.find((p) => p.id === estado.productId)?.slug ?? ""}</span> : null}
+            </h3>
+            {existentes.isLoading ? (
+              <Skeleton className="h-20 w-full" />
+            ) : existentes.error ? (
+              <p className="text-sm text-destructive" role="alert">Não foi possível listar as VSLs: {erroDaApi(existentes.error).mensagem}</p>
+            ) : (existentes.data?.itens.length ?? 0) === 0 ? (
+              <p className="text-sm text-muted-foreground">{estado.productId ? "Nenhuma VSL deste produto ainda." : `Nenhuma VSL de ${expertCode} ainda.`}</p>
+            ) : (
+              <div className="overflow-x-auto rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nome</TableHead>
+                      <TableHead>Produto</TableHead>
+                      <TableHead>Lead</TableHead>
+                      <TableHead>Problema</TableHead>
+                      <TableHead>Solução</TableHead>
+                      <TableHead>Oferta</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {existentes.data!.itens.map((v) => (
+                      <TableRow key={v.id}>
+                        <TableCell className="whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1">
+                            <code className="font-mono text-sm">{v.name}</code>
+                            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Copiar nome" aria-label={`Copiar ${v.name}`} onClick={() => void copiarTexto(v.name)}><Copy className="h-3.5 w-3.5" /></Button>
+                          </span>
+                        </TableCell>
+                        <TableCell className="font-mono">{v.productSlug}</TableCell>
+                        <TableCell className="max-w-[180px] truncate" title={v.leadRotulo}>{v.leadRotulo}</TableCell>
+                        <TableCell className="max-w-[180px] truncate" title={v.problemRotulo}>{v.problemRotulo}</TableCell>
+                        <TableCell className="max-w-[180px] truncate" title={v.solutionRotulo}>{v.solutionRotulo}</TableCell>
+                        <TableCell className="max-w-[180px] truncate" title={v.offerRotulo}>{v.offerRotulo}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        ) : null}
 
         <div className="space-y-1">
           <Label htmlFor="v-notas">Observações (opcional)</Label>
