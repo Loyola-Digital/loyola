@@ -1,6 +1,6 @@
 # EPIC 47 — Nomenclatura de campanhas do perpétuo (Dicionário + Gerador)
 
-**Status:** Fase 1 e 47.5 **Done** em produção · **47.6 Ready** (GO do @po em 2026-09-10; começa pela medição de cobertura) · P1 (valores do seed) — o dono cadastra pela tela
+**Status:** Fase 1 e 47.5 **Done** · **47.6 InReview (fatia A)**: o Resumão já agrupa por dimensão do dicionário com cobertura declarada; fatia B (tabelas diárias do dashboard) aberta · valor depende de o dono classificar legadas e colar ids da Meta (cobertura hoje 0%)
 **Origem:** especificação do dono do produto entregue em 2026-09-09 — guardada verbatim em `epic-47-especificacao-nomenclatura.md` (a **fonte de verdade** deste epic; toda AC abaixo rastreia para uma seção dela)
 **Owner:** @sm (stories, por delegação do pedido) → @po (validação) → @dev (implementação) → @qa (gate)
 **Criado:** 2026-09-09 pelo @sm (River). ⚠️ Estrutura de epic é atribuição do @pm (Morgan) — este documento foi criado junto com as stories porque o pedido chegou como spec pronta; o @pm valida ou reescreve a estrutura na primeira leitura.
@@ -68,7 +68,7 @@ Este epic põe dentro do Loyola X, em Configurações → Nomenclatura:
 | 47.4 | Suíte de aceite (15 critérios) e validação visual | 4 | matriz AC → teste, lacunas fechadas, roteiro visual executado nas duas telas, docs | 5 | **Done** · gate PASS |
 
 | 47.5 | Classificação de campanhas legadas do perpétuo | — (pedido pós-validação) | expert ↔ projeto (fecha a D2), `origin`/`meta_campaign_name` em campanhas, decisões, filtro por token, parser de sugestão, aba Legadas, contrato 9 | 8 | **Done** · PASS (validação do dono) · #834 #835 #836 |
-| 47.6 | O cruzamento investimento × faturamento lê o vínculo | — | mapa `campaign_id → 9 campos`, agrupador por dimensão no perpétuo com "não classificada" e cobertura, colar id da Meta | 8 | **Ready** (GO 8,5/10) — começa pela AC0 (medição) |
+| 47.6 | O cruzamento investimento × faturamento lê o vínculo | — | mapa `campaign_id → 9 campos`, agrupador por dimensão no perpétuo com "não classificada" e cobertura, colar id da Meta | 8 | **InReview (fatia A)** · AC0 = 0% de cobertura hoje · relatório com tabelas por dimensão + cobertura · fatia B (dashboard diário) aberta |
 
 Arquivos: `docs/stories/47.1.nomenclatura-modelo-de-dados-e-api.md` · `docs/stories/47.2.nomenclatura-submenu-e-telas-do-dicionario.md` · `docs/stories/47.3.nomenclatura-gerador-de-nome-de-campanha.md` · `docs/stories/47.4.nomenclatura-suite-de-aceite-e-validacao-visual.md`
 
@@ -114,6 +114,7 @@ Nomenclatura de conjunto e anúncio · parâmetros de URL · integração Meta �
 |---|---|---|
 | 2026-09-09 | @sm (River) | Epic criado a partir da spec do dono do produto. Spec arquivada verbatim. Decisões D1–D9 registradas; D2 e D3 marcadas para confirmação do @po. Pré-condições P1–P3 declaradas. |
 | 2026-09-09 | @po (Pax) | 47.1 validada: GO 9,5/10 → Ready. D2 confirmada, D3 decidida (não-guest lê e escreve), P3 fechada. Sigla do expert imutável desde a criação (contradição da spec resolvida pelo lado estrito). |
+| 2026-09-10 | @dev (Dex) | 47.6 fatia A em InReview: AC0 (0%), mapa, cobertura, porDimensao no relatório, colar id da Meta. Fatia B (dashboard diário) declarada. |
 | 2026-09-10 | @po (Pax) | 47.6 validada: GO 8,5/10 → Ready. |
 | 2026-09-10 | @architect (Aria) | 47.6: decisões — agrupar no backend, cobertura dupla, só funil perpetual, teste diferencial obrigatório. |
 | 2026-09-10 | @po (Pax) | 47.5 Done após validação do dono em produção; follow-ups #835/#836. Próximo: @architect na 47.6. |

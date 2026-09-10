@@ -100,6 +100,43 @@ export interface PerpetualReportInput {
    * quanto ficou sem LP, não por qual dos três motivos.
    */
   linkUrlPorAd?: Record<string, string | null>;
+  /**
+   * Story 47.6 — `campaign_id → nove campos do nome` (Epic 47). Opcional: sem o
+   * mapa, `porDimensao` não sai e nada do que existia muda. Com ele, cada
+   * dimensão do dicionário (expert, produto, funil, oferta, ano, temperatura,
+   * leilão, formato, LP) vira uma tabela, e campanha sem vínculo cai em
+   * "não classificada" — nunca some, nunca é rateada.
+   */
+  dimensoes?: Record<string, DimensaoDoNome>;
+}
+
+/** Os nove campos do nome (Epic 47), como o mapa entrega. */
+export interface DimensaoDoNome {
+  expert: string;
+  product: string;
+  funnel: string;
+  offer: string;
+  year: string;
+  temperature: string;
+  auction: string;
+  format: string;
+  lp: string;
+  origin: "gerador" | "legado";
+}
+
+export const CAMPOS_DO_NOME = ["expert", "product", "funnel", "offer", "year", "temperature", "auction", "format", "lp"] as const;
+export type CampoDoNome = (typeof CAMPOS_DO_NOME)[number];
+
+/** A linha de quem não tem vínculo. Chave própria, como as outras caudas. */
+export const NAO_CLASSIFICADA_KEY = "__nao_classificada__";
+export const NAO_CLASSIFICADA_LABEL = "Não classificada";
+
+export interface CoberturaDoVinculo {
+  /** % do investimento (com imposto) em campanhas com vínculo. `null` sem investimento. */
+  gasto: { comVinculo: number; semVinculo: number; pct: number | null };
+  /** % das vendas PAGAS ATRIBUÍDAS a campanha que caem em campanha com vínculo. `null` sem venda atribuída. */
+  vendas: { comVinculo: number; semVinculo: number; pct: number | null };
+  campanhas: { total: number; comVinculo: number };
 }
 
 // ------------------------------------------------------------------
@@ -176,7 +213,15 @@ export interface PerpetualReport {
      * do período tem URL no cache de criativos (W-LP).
      */
     lps?: SegmentoRow[];
+    /**
+     * Story 47.6 — uma tabela por dimensão do dicionário. Ausente quando o
+     * mapa não foi passado; presente (com "Não classificada" a 100%) quando foi
+     * passado e nada tem vínculo — a ausência de vínculo é informação.
+     */
+    porDimensao?: Record<CampoDoNome, SegmentoRow[]>;
   };
+  /** Story 47.6 — a régua das tabelas por dimensão. Ausente sem mapa. */
+  coberturaVinculo?: CoberturaDoVinculo;
   tendencia:
     | { disponivel: true; metricas: TendenciaMetrica[] }
     | { disponivel: false; motivo: string; vendasPorDia: { dia: string; vendas: number }[] };
@@ -388,6 +433,7 @@ export function computePerpetualReport(input: PerpetualReportInput): PerpetualRe
     },
     memorialMargem,
     segmentos: seg.segmentos,
+    ...(seg.coberturaVinculo ? { coberturaVinculo: seg.coberturaVinculo } : {}),
     tendencia,
     organico: {
       // Story 29.53 (AC6): a mesma regra da venda paga — o orgânico também tem
@@ -553,6 +599,14 @@ function buildSegmentos(
   const criativos = new Map<string, Bucket>();
   /** Story 29.59 — a seção de landing pages. Só sai do forno se resolver algo. */
   const lps = new Map<string, Bucket>();
+  /** Story 47.6 — uma tabela por campo do nome, só quando o mapa veio. */
+  const porDimensao = input.dimensoes
+    ? (Object.fromEntries(CAMPOS_DO_NOME.map((campo) => [campo, new Map<string, Bucket>()])) as Record<CampoDoNome, Map<string, Bucket>>)
+    : null;
+  let coberturaGastoCom = 0;
+  let coberturaGastoSem = 0;
+  let coberturaVendasCom = 0;
+  let coberturaVendasSem = 0;
 
   /**
    * `ad_id → chave da LP`. Construído uma vez e usado nos dois lados (o
@@ -578,6 +632,17 @@ function buildSegmentos(
       getOrInit(formato, fmt, FORMATO_LABEL[fmt] ?? fmt).investimento += c.spendComImposto;
     }
     getOrInit(campanhas, c.campaignId, c.campaignName).investimento += c.spendComImposto;
+
+    // Story 47.6 — por dimensão do dicionário, quando há mapa.
+    if (porDimensao) {
+      const d = input.dimensoes?.[c.campaignId];
+      if (d) coberturaGastoCom += c.spendComImposto;
+      else coberturaGastoSem += c.spendComImposto;
+      for (const campo of CAMPOS_DO_NOME) {
+        const valor = d?.[campo];
+        getOrInit(porDimensao[campo], valor ?? NAO_CLASSIFICADA_KEY, valor ?? NAO_CLASSIFICADA_LABEL).investimento += c.spendComImposto;
+      }
+    }
   }
 
   // --- vendas: atribuição por ID. Sem ID resolvível → semAtribuicao.
@@ -622,6 +687,15 @@ function buildSegmentos(
         email,
         v.valorBruto,
       );
+      if (porDimensao) {
+        const d = input.dimensoes?.[campanha.campaignId];
+        if (d) coberturaVendasCom++;
+        else coberturaVendasSem++;
+        for (const campo of CAMPOS_DO_NOME) {
+          const valor = d?.[campo];
+          addVenda(getOrInit(porDimensao[campo], valor ?? NAO_CLASSIFICADA_KEY, valor ?? NAO_CLASSIFICADA_LABEL), email, v.valorBruto);
+        }
+      }
 
       if (!vendasPorCampanha.has(campanha.campaignId)) {
         vendasPorCampanha.set(campanha.campaignId, new Set());
@@ -766,6 +840,27 @@ function buildSegmentos(
     quenteFrio: toRows(quenteFrio, investimentoTotal, rates),
     campanhas: toRows(campanhas, investimentoTotal, rates),
   };
+  // Story 47.6 — presente sempre que o mapa veio, mesmo com tudo "não classificada".
+  let coberturaVinculo: CoberturaDoVinculo | undefined;
+  if (porDimensao) {
+    segmentos.porDimensao = Object.fromEntries(
+      CAMPOS_DO_NOME.map((campo) => [campo, toRows(porDimensao[campo], investimentoTotal, rates)]),
+    ) as Record<CampoDoNome, SegmentoRow[]>;
+    const totalGasto = coberturaGastoCom + coberturaGastoSem;
+    const totalVendas = coberturaVendasCom + coberturaVendasSem;
+    const comVinculo = input.campanhas.filter((c) => input.dimensoes?.[c.campaignId]).length;
+    coberturaVinculo = {
+      gasto: { comVinculo: round2(coberturaGastoCom), semVinculo: round2(coberturaGastoSem), pct: totalGasto > 0 ? coberturaGastoCom / totalGasto : null },
+      vendas: { comVinculo: coberturaVendasCom, semVinculo: coberturaVendasSem, pct: totalVendas > 0 ? coberturaVendasCom / totalVendas : null },
+      campanhas: { total: input.campanhas.length, comVinculo },
+    };
+    if (totalGasto > 0 && coberturaGastoCom / totalGasto < 0.5) {
+      alertas.push({
+        codigo: "W-VINCULO",
+        mensagem: `Só ${Math.round((100 * coberturaGastoCom) / totalGasto)}% do investimento está em campanhas com vínculo no dicionário de nomenclatura — as tabelas por dimensão concentram o resto em "Não classificada". Classifique as legadas e cole o id da Meta nas geradas.`,
+      });
+    }
+  }
   // Ausente ≠ zerado: sem split, a seção some do relatório (§C.9).
   if (config.temSplitFormato) segmentos.formato = toRows(formato, investimentoTotal, rates);
   if (!publicoIndisponivel && publicos.size > 0) {
@@ -797,6 +892,7 @@ function buildSegmentos(
 
   return {
     segmentos,
+    coberturaVinculo,
     vendasPorCampanha,
     somaCampanhas,
     sobreposicao,
