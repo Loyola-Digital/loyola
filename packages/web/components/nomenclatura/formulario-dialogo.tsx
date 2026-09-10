@@ -31,8 +31,10 @@ export function FormularioDialogo(props: {
   podeSalvar: boolean;
   erro: ErroDaApi | null;
   children: ReactNode;
+  /** "Salvar e adicionar outra": grava e mantém o formulário aberto com as seleções (pedido do dono, 2026-09-09). */
+  onSalvarEOutra?: () => void | Promise<void>;
 }) {
-  const { aberto, onFechar, titulo, descricao, onSalvar, salvando, podeSalvar, erro, children } = props;
+  const { aberto, onFechar, titulo, descricao, onSalvar, salvando, podeSalvar, erro, children, onSalvarEOutra } = props;
   function submeter(e: FormEvent) {
     e.preventDefault();
     if (podeSalvar && !salvando) void onSalvar();
@@ -56,6 +58,11 @@ export function FormularioDialogo(props: {
             <Button type="button" variant="ghost" onClick={onFechar} disabled={salvando}>
               Cancelar
             </Button>
+            {onSalvarEOutra ? (
+              <Button type="button" variant="secondary" disabled={!podeSalvar || salvando} onClick={() => void onSalvarEOutra()}>
+                Salvar e adicionar outra
+              </Button>
+            ) : null}
             <Button type="submit" disabled={!podeSalvar || salvando}>
               {salvando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Salvar

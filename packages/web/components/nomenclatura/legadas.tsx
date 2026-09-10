@@ -112,7 +112,13 @@ export function Legadas({ podeEditar }: { podeEditar: boolean }) {
         ) : null}
       </div>
 
-      {lista.error ? <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{erroDaApi(lista.error).mensagem}</p> : null}
+      {lista.error ? (
+        <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {erroDaApi(lista.error).status === 404
+            ? "A API ainda não tem a rota de legadas — provavelmente está atrás do painel (deploy em andamento). Veja o aviso de versão no topo e recarregue em alguns minutos."
+            : erroDaApi(lista.error).mensagem}
+        </p>
+      ) : null}
 
       <div className="overflow-x-auto rounded-md border">
         <Table>

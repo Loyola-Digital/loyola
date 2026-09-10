@@ -152,7 +152,7 @@ export function GeradorDeCampanha({ modo }: { modo: Modo }) {
 
   const escolher = (campo: keyof EstadoDoGerador) => (v: string) => setEstado((e) => aoEscolher(e, campo, v));
 
-  async function salvar() {
+  async function salvar(eOutra = false) {
     setErro(null);
     try {
       const corpo = corpoDaCampanha(estado);
@@ -168,6 +168,18 @@ export function GeradorDeCampanha({ modo }: { modo: Modo }) {
       }
       const salva = modo.tipo === "editar" ? await editar.mutateAsync({ id: modo.id, dados: corpo }) : await criar.mutateAsync(corpo);
       await navigator.clipboard.writeText(salva.name).catch(() => undefined);
+      if (eOutra) {
+        // Mantém todas as seleções (é o que se quer para variar só um campo); limpa sufixo e observações.
+        toast.success(
+          <span>
+            Salva e nome copiado: <code className="font-mono">{salva.name}</code>. Ajuste o que muda e salve a próxima.
+          </span>,
+          { duration: 8000 },
+        );
+        setEstado((e) => ({ ...e, suffix: "", notes: "" }));
+        setSufixoAberto(false);
+        return;
+      }
       toast.success(
         <span>
           Campanha salva e nome copiado: <code className="font-mono">{salva.name}</code>
@@ -294,6 +306,11 @@ export function GeradorDeCampanha({ modo }: { modo: Modo }) {
                 {salvando ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 {modo.tipo === "editar" ? "Salvar alterações" : ehLegada ? "Classificar" : "Salvar"}
               </Button>
+              {modo.tipo === "nova" || modo.tipo === "duplicar" ? (
+                <Button type="button" variant="secondary" onClick={() => void salvar(true)} disabled={!previa.completo || salvando}>
+                  Salvar e criar outra
+                </Button>
+              ) : null}
               {modo.tipo === "editar" ? (
                 <Button type="button" variant="outline" onClick={() => void marcarPublicada()} disabled={publicar.isPending}>
                   Marcar como publicada
