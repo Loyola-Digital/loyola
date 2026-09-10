@@ -138,6 +138,7 @@ Nomenclatura de conjunto · parâmetros de URL · integração Meta · importaç
 
 | Data | Autor | Mudança |
 |---|---|---|
+| 2026-09-10 | @dev (Dex) | Follow-up 2 da 47.9: variáveis de VSL com código sigla + NN (`lead01`, `pr01`, `sol01`), sugerido; D21 desfeita; 5 variáveis de produção renomeadas. |
 | 2026-09-10 | @dev (Dex) | Follow-up da 47.9 a pedido do dono: Variáveis de VSL passam a ser aba do **Dicionário** (D20 desfeita); Nome VSL fica com Nova VSL · VSLs. |
 | 2026-09-10 | @devops (Gage) | Fase 2 inteira mergeada: #842 docs → #845 (47.7, substituiu a #843) → #844 (47.8) → #846 (47.9) → #847 (47.10). Deploy da API no Railway ficou parado em contrato 9 até o dono disparar à mão (15:20). Pendente: seed + recálculo em prod, roteiros visuais. |
 | 2026-09-10 | @qa (Quinn) | 47.10 gate CONCERNS → Done (seed dos 7 valores em prod; AC12 visual). Fase 2 inteira com gate. |

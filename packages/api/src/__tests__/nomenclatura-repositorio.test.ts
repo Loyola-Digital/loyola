@@ -264,6 +264,14 @@ describe("Story 47.3: campanhas.listar — filtros vão para o SQL, não para a 
     await criarRepositorio(c.db).vslVariaveis.listar({ expertId: EXPERT }, true);
     expect(sqlDe(c.registros[0].where).sql).not.toMatch(/"active"/);
   });
+  it("47.9: vslVariaveis.codigos filtra expert + type SEM active (sugestão conta inativos, regra 4)", async () => {
+    const a = fakeDb([[{ code: "lead01" }, { code: "lead02" }]]);
+    const codes = await criarRepositorio(a.db).vslVariaveis.codigos(EXPERT, "lead");
+    expect(codes).toEqual(["lead01", "lead02"]);
+    const q = sqlDe(a.registros[0].where);
+    expect(q.params).toEqual([EXPERT, "lead"]);
+    expect(q.sql).not.toMatch(/"active"/);
+  });
   it("47.9: vsls.listar por expert/produto/oferta e ILIKE no nome; porNome é igualdade exata", async () => {
     const a = fakeDb([[], [{ n: 0 }]]);
     await criarRepositorio(a.db).vsls.listar({ expertId: EXPERT, offerId: "00000000-0000-4000-8000-00000000000f", q: "demissao", limit: 10, offset: 0 });

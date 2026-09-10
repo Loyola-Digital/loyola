@@ -75,6 +75,7 @@ function memoria() {
     vslVariaveis: {
       listar: async (f: { expertId?: string; type?: string }, inativos: boolean) => ativos(t.vslVariaveis.filter((x) => (!f.expertId || x.expertId === f.expertId) && (!f.type || x.type === f.type)), inativos),
       porCode: async (expertId: string, type: string, code: string) => t.vslVariaveis.find((x) => x.expertId === expertId && x.type === type && x.code === code),
+      codigos: async (expertId: string, type: string) => t.vslVariaveis.filter((x) => x.expertId === expertId && x.type === type).map((x) => x.code as string),
     },
     vsls: {
       listar: async (f: Record<string, unknown>) => {
@@ -599,31 +600,36 @@ describe("rotas da nomenclatura", () => {
   async function vslBase(app: FastifyInstance) {
     const c = await cenario(app);
     const post = async (url: string, payload: Record<string, unknown>) => (await app.inject({ method: "POST", url, payload })).json();
-    const lead = await post("/api/nomenclatura/vsl/variaveis", { expertId: c.bbe.id, type: "lead", code: "Demissão", description: "quem foi demitido" });
-    const problem = await post("/api/nomenclatura/vsl/variaveis", { expertId: c.bbe.id, type: "problem", code: "falta-de-metodo", description: "tenta sozinho" });
-    const solution = await post("/api/nomenclatura/vsl/variaveis", { expertId: c.bbe.id, type: "solution", code: "agente-pronto", description: "agente pronto" });
+    // sem `code`: o servidor sugere lead01 / pr01 / sol01 (decisão do dono, 2026-09-10)
+    const lead = await post("/api/nomenclatura/vsl/variaveis", { expertId: c.bbe.id, type: "lead", description: "quem foi demitido" });
+    const problem = await post("/api/nomenclatura/vsl/variaveis", { expertId: c.bbe.id, type: "problem", description: "tenta sozinho" });
+    const solution = await post("/api/nomenclatura/vsl/variaveis", { expertId: c.bbe.id, type: "solution", description: "agente pronto" });
     return { ...c, lead, problem, solution };
   }
 
-  it("47.9 AC3/AC4: variável normaliza o código, é única por (expert, tipo) inclusive inativa, com a descrição no conflito; mesmo código em tipos diferentes coexiste", async () => {
-    const { bbe, lead } = await vslBase(app);
-    expect(lead).toMatchObject({ code: "demissao", type: "lead", rotulo: "demissao — quem foi demitido", usadoEm: 0 });
-    const dup = await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/variaveis", payload: { expertId: bbe.id, type: "lead", code: "demissao", description: "outra" } });
+  it("47.9 AC3/AC4: código é sigla + NN sugerido por (expert, tipo), único inclusive inativo, com a descrição e o próximo no conflito; formato fora da sigla → 400", async () => {
+    const { bbe, lead, problem, solution } = await vslBase(app);
+    expect(lead).toMatchObject({ code: "lead01", type: "lead", rotulo: "lead01 — quem foi demitido", usadoEm: 0 });
+    expect(problem.code).toBe("pr01");
+    expect(solution.code).toBe("sol01");
+    expect((await app.inject({ method: "GET", url: `/api/nomenclatura/vsl/variaveis/proximo-codigo?expertId=${bbe.id}&type=lead` })).json()).toEqual({ codigo: "lead02" });
+    const dup = await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/variaveis", payload: { expertId: bbe.id, type: "lead", code: "lead01", description: "outra" } });
     expect(dup.statusCode).toBe(409);
-    expect(dup.json().error).toBe('demissao já existe para bbe (lead): "quem foi demitido".');
+    expect(dup.json().error).toBe('lead01 já existe para bbe (lead): "quem foi demitido". Use lead02.');
     await app.inject({ method: "POST", url: `/api/nomenclatura/vsl/variaveis/${lead.id}/desativar` });
-    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/variaveis", payload: { expertId: bbe.id, type: "lead", code: "demissao", description: "x" } })).statusCode).toBe(409);
-    const outroTipo = await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/variaveis", payload: { expertId: bbe.id, type: "problem", code: "demissao", description: "como problema" } });
-    expect(outroTipo.statusCode).toBe(201);
-    const sublinhado = await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/variaveis", payload: { expertId: bbe.id, type: "solution", code: "agente_pronto", description: "x" } });
-    expect(sublinhado.statusCode).toBe(400);
-    const semDescricao = await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/variaveis", payload: { expertId: bbe.id, type: "solution", code: "novo", description: "" } });
+    // inativo continua ocupando o código (regra 4) e a sugestão pula para lead02
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/variaveis", payload: { expertId: bbe.id, type: "lead", code: "lead01", description: "x" } })).statusCode).toBe(409);
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/variaveis", payload: { expertId: bbe.id, type: "lead", description: "segundo" } })).json().code).toBe("lead02");
+    // formato: a sigla é do tipo — "lead01" não vale para problema; texto livre não vale para nada
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/variaveis", payload: { expertId: bbe.id, type: "problem", code: "lead01", description: "x" } })).statusCode).toBe(400);
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/variaveis", payload: { expertId: bbe.id, type: "solution", code: "agente-pronto", description: "x" } })).statusCode).toBe(400);
+    const semDescricao = await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/variaveis", payload: { expertId: bbe.id, type: "solution", description: "" } });
     expect(semDescricao.statusCode).toBe(400);
     // listagem por expert e tipo; inativos só com o flag
     const lista = (await app.inject({ method: "GET", url: `/api/nomenclatura/vsl/variaveis?expertId=${bbe.id}&type=lead` })).json();
-    expect(lista).toEqual([]);
+    expect(lista.map((v: { code: string }) => v.code)).toEqual(["lead02"]);
     const comInativos = (await app.inject({ method: "GET", url: `/api/nomenclatura/vsl/variaveis?expertId=${bbe.id}&type=lead&inativos=1` })).json();
-    expect(comInativos.map((v: { code: string }) => v.code)).toEqual(["demissao"]);
+    expect(comInativos.map((v: { code: string }) => v.code)).toEqual(["lead01", "lead02"]);
   });
 
   it("47.9 AC2/AC5/AC9: POST vsls grava o nome gerado (oferta = pitch), ignora `name` do body; nome duplicado → 409; changelog", async () => {
@@ -631,22 +637,22 @@ describe("rotas da nomenclatura", () => {
     const corpo = { expertId: bbe.id, productId: churrasco.id, leadId: lead.id, problemId: problem.id, solutionId: solution.id, offerId: of01.id, name: "hackeado" };
     const r = await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/vsls", payload: corpo });
     expect(r.statusCode).toBe(201);
-    expect(r.json()).toMatchObject({ name: "vsl_bbe_churrasco_demissao_falta-de-metodo_agente-pronto_of01", leadValue: "demissao", offerValue: "of01", expertCode: "bbe", productSlug: "churrasco", leadRotulo: "demissao — quem foi demitido", offerRotulo: "of01 — oferta com ticket médio de R$ 347" });
+    expect(r.json()).toMatchObject({ name: "vsl_bbe_churrasco_lead01_pr01_sol01_of01", leadValue: "lead01", offerValue: "of01", expertCode: "bbe", productSlug: "churrasco", leadRotulo: "lead01 — quem foi demitido", offerRotulo: "of01 — oferta com ticket médio de R$ 347" });
     expect(mem.changelog.at(-1)).toMatchObject({ entity: "naming_vsls", action: "create" });
     const dup = await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/vsls", payload: corpo });
     expect(dup.statusCode).toBe(409);
     expect(dup.json().error).toContain("Já existe uma VSL com este nome");
-    const lista = (await app.inject({ method: "GET", url: `/api/nomenclatura/vsl/vsls?expertId=${bbe.id}&q=demissao` })).json();
+    const lista = (await app.inject({ method: "GET", url: `/api/nomenclatura/vsl/vsls?expertId=${bbe.id}&q=lead01` })).json();
     expect(lista.total).toBe(1);
     // validador: reconhece o nome; nome com prefixo errado é inválido
     const val = (await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/validar-nome", payload: { name: r.json().name } })).json();
     expect(val.valid).toBe(true);
-    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/validar-nome", payload: { name: "ad_bbe_churrasco_demissao_falta-de-metodo_agente-pronto_of01" } })).json().valid).toBe(false);
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/validar-nome", payload: { name: "ad_bbe_churrasco_lead01_pr01_sol01_of01" } })).json().valid).toBe(false);
   });
 
   it("47.9 AC2/AC3: coerência — variável de outro expert → 422; variável do TIPO errado → 422; inativa → 422", async () => {
     const { bbe, fz, churrasco, of01, lead, problem, solution } = await vslBase(app);
-    const leadDoFz = (await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/variaveis", payload: { expertId: fz.id, type: "lead", code: "outro", description: "x" } })).json();
+    const leadDoFz = (await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/variaveis", payload: { expertId: fz.id, type: "lead", description: "x" } })).json();
     const base = { expertId: bbe.id, productId: churrasco.id, leadId: lead.id, problemId: problem.id, solutionId: solution.id, offerId: of01.id };
     const outroExpert = await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/vsls", payload: { ...base, leadId: leadDoFz.id } });
     expect(outroExpert.statusCode).toBe(422);
@@ -663,7 +669,7 @@ describe("rotas da nomenclatura", () => {
   it("47.9 AC3: variável usada em VSL trava o código (409 com usadoEm), descrição segue editável; excluir é bloqueado com a lista e podeDesativar; a OFERTA conta a VSL como uso", async () => {
     const { bbe, churrasco, of01, lead, problem, solution } = await vslBase(app);
     await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/vsls", payload: { expertId: bbe.id, productId: churrasco.id, leadId: lead.id, problemId: problem.id, solutionId: solution.id, offerId: of01.id } });
-    const troca = await app.inject({ method: "PATCH", url: `/api/nomenclatura/vsl/variaveis/${lead.id}`, payload: { code: "demitido" } });
+    const troca = await app.inject({ method: "PATCH", url: `/api/nomenclatura/vsl/variaveis/${lead.id}`, payload: { code: "lead09" } });
     expect(troca.statusCode).toBe(409);
     expect(troca.json()).toMatchObject({ usadoEm: 1 });
     const desc = await app.inject({ method: "PATCH", url: `/api/nomenclatura/vsl/variaveis/${lead.id}`, payload: { description: "quem perdeu o emprego" } });
@@ -671,7 +677,7 @@ describe("rotas da nomenclatura", () => {
     expect(mem.changelog.at(-1)).toMatchObject({ entity: "naming_vsl_variables", action: "update", before: { description: "quem foi demitido" }, after: { description: "quem perdeu o emprego" } });
     const del = await app.inject({ method: "DELETE", url: `/api/nomenclatura/vsl/variaveis/${problem.id}` });
     expect(del.statusCode).toBe(409);
-    expect(del.json()).toMatchObject({ podeDesativar: true, referencias: [{ tipo: "vsl", rotulo: "vsl_bbe_churrasco_demissao_falta-de-metodo_agente-pronto_of01" }] });
+    expect(del.json()).toMatchObject({ podeDesativar: true, referencias: [{ tipo: "vsl", rotulo: "vsl_bbe_churrasco_lead01_pr01_sol01_of01" }] });
     // a oferta: usadoEm soma a VSL; código travado; excluir bloqueado por vsl
     const ofertas = (await app.inject({ method: "GET", url: `/api/nomenclatura/ofertas?expertId=${bbe.id}` })).json();
     expect(ofertas.find((o: { id: string }) => o.id === of01.id).usadoEm).toBe(1);
@@ -699,7 +705,7 @@ describe("rotas da nomenclatura", () => {
     const { bbe, churrasco, of01, of02, lead, problem, solution } = await vslBase(app);
     const v = (await app.inject({ method: "POST", url: "/api/nomenclatura/vsl/vsls", payload: { expertId: bbe.id, productId: churrasco.id, leadId: lead.id, problemId: problem.id, solutionId: solution.id, offerId: of01.id } })).json();
     const r = await app.inject({ method: "PATCH", url: `/api/nomenclatura/vsl/vsls/${v.id}`, payload: { offerId: of02.id } });
-    expect(r.json().name).toBe("vsl_bbe_churrasco_demissao_falta-de-metodo_agente-pronto_of02");
+    expect(r.json().name).toBe("vsl_bbe_churrasco_lead01_pr01_sol01_of02");
     expect(r.json().offerValue).toBe("of02");
     const guest = await app.inject({ method: "GET", url: "/api/nomenclatura/vsl/vsls", headers: { "x-papel": "guest" } });
     expect(guest.statusCode).toBe(403);

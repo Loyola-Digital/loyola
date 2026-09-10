@@ -10,8 +10,10 @@
 
 import {
   CAMPO_DA_VSL,
+  PREFIXO_DA_VARIAVEL,
   SEPARADOR_DA_VSL,
   TIPOS_DE_VARIAVEL,
+  TIPO_DE_CODIGO_DA_VARIAVEL,
   buildVslName,
   pedacosDaVsl,
   type BlocoDaVsl,
@@ -20,7 +22,7 @@ import {
   type VslFields,
 } from "@loyola-x/shared/src/nomenclatura-de-vsl";
 
-export { TIPOS_DE_VARIAVEL, CAMPO_DA_VSL, type TipoDeVariavel };
+export { TIPOS_DE_VARIAVEL, CAMPO_DA_VSL, PREFIXO_DA_VARIAVEL, TIPO_DE_CODIGO_DA_VARIAVEL, type TipoDeVariavel };
 
 /** Rótulos pt-BR das três variáveis (a oferta é o pitch — D19). */
 export const ROTULO_DA_VARIAVEL: Record<TipoDeVariavel, string> = {
@@ -29,10 +31,11 @@ export const ROTULO_DA_VARIAVEL: Record<TipoDeVariavel, string> = {
   solution: "Mecanismo da solução",
 };
 
+/** Código é sigla + NN (decisão do dono, 2026-09-10); a descrição carrega o significado. */
 export const PLACEHOLDER_DA_VARIAVEL: Record<TipoDeVariavel, { code: string; description: string }> = {
-  lead: { code: "demissao", description: "Ex.: quem foi demitido e quer renda própria" },
-  problem: { code: "falta-de-metodo", description: "Ex.: tenta sozinho e trava por não ter um método" },
-  solution: { code: "agente-pronto", description: "Ex.: um agente pronto que faz o trabalho pesado" },
+  lead: { code: "lead01", description: "Ex.: gancho IA \"ficou de fora\"" },
+  problem: { code: "pr01", description: "Ex.: tenta sozinho e trava por não ter um método" },
+  solution: { code: "sol01", description: "Ex.: um agente pronto que faz o trabalho pesado" },
 };
 
 export interface EstadoDaVsl {

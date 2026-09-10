@@ -153,8 +153,8 @@ export function useListaDe<R extends Recurso>(
 
 /** Sugestão de código no escopo (funis/ofertas por expert; lps pela combinação). */
 export function useProximoCodigo(
-  recurso: "funis" | "ofertas" | "lps",
-  params: { expertId?: string; productId?: string; funnelId?: string; offerId?: string },
+  recurso: "funis" | "ofertas" | "lps" | "vsl/variaveis",
+  params: { expertId?: string; productId?: string; funnelId?: string; offerId?: string; type?: TipoDeVariavel },
   enabled: boolean,
 ) {
   const apiClient = useApiClient();
