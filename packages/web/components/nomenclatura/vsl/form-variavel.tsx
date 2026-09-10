@@ -3,17 +3,18 @@
 /**
  * Story 47.9 — formulário de uma variável de VSL (lead · mecanismo do problema
  * · mecanismo da solução), por expert. Mesmo molde de `FormFunilOuOferta`:
- * código com normalização ao vivo e travado quando usado, descrição
- * OBRIGATÓRIA (é o que se lê no select do gerador), "Salvar e adicionar outra".
+ * código **sigla + NN sugerido** (`lead01`, `pr01`, `sol01` — decisão do dono,
+ * 2026-09-10), travado quando usado, descrição OBRIGATÓRIA (é o que se lê no
+ * select do gerador), "Salvar e adicionar outra" busca o próximo código.
  */
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { erroDaApi, useCriar, useEditar, type ErroDaApi, type VariavelDeVsl } from "@/lib/hooks/use-nomenclatura";
+import { erroDaApi, useCriar, useEditar, useProximoCodigo, type ErroDaApi, type VariavelDeVsl } from "@/lib/hooks/use-nomenclatura";
 import { AVISO_DE_DESCRICAO_USADA } from "@/lib/utils/nomenclatura-cascata";
-import { PLACEHOLDER_DA_VARIAVEL, ROTULO_DA_VARIAVEL, type TipoDeVariavel } from "@/lib/utils/nomenclatura-vsl";
+import { PLACEHOLDER_DA_VARIAVEL, PREFIXO_DA_VARIAVEL, ROTULO_DA_VARIAVEL, TIPO_DE_CODIGO_DA_VARIAVEL, type TipoDeVariavel } from "@/lib/utils/nomenclatura-vsl";
 import { CampoImutavel } from "../campo-imutavel";
 import { FormularioDialogo } from "../formulario-dialogo";
 import { SeletorDeExpert } from "../seletor-de-expert";
@@ -35,6 +36,7 @@ export function FormVariavel(props: {
   const [description, setDescription] = useState("");
   const [avisoDescricao, setAvisoDescricao] = useState(false);
   const rotulo = ROTULO_DA_VARIAVEL[tipo];
+  const sugestao = useProximoCodigo("vsl/variaveis", { expertId, type: tipo }, aberto && !linha && Boolean(expertId));
 
   useEffect(() => {
     setExpertId(linha?.expertId ?? expertInicial ?? "");
@@ -43,6 +45,11 @@ export function FormVariavel(props: {
     setAvisoDescricao(false);
     setErro(null);
   }, [linha, aberto, expertInicial]);
+
+  // Código sugerido preenche o campo vazio; se a pessoa já digitou, não sobrescreve.
+  useEffect(() => {
+    if (!linha && sugestao.data?.codigo && !code) setCode(sugestao.data.codigo);
+  }, [sugestao.data?.codigo, linha]);
 
   async function salvar(eOutra = false) {
     setErro(null);
@@ -57,8 +64,11 @@ export function FormVariavel(props: {
       toast.success(`${rotulo} ${criada.code} criado.`);
       onSalvo?.(criada);
       if (eOutra) {
-        setCode("");
+        // Busca o PRÓXIMO código explicitamente (a invalidação já refez a query com o campo ainda preenchido — armadilha da #836).
         setDescription("");
+        setAvisoDescricao(false);
+        const proximo = await sugestao.refetch();
+        setCode(proximo.data?.codigo ?? "");
         return;
       }
       onFechar();
@@ -80,7 +90,7 @@ export function FormVariavel(props: {
       erro={erro}
     >
       <SeletorDeExpert valor={expertId} onChange={(v) => { setExpertId(v); setCode(""); }} travado={Boolean(linha) || Boolean(expertInicial)} id="var-expert" />
-      <CampoImutavel id="var-code" label="Código" valor={code} onChange={setCode} tipo="vsl" usadoEm={linha?.usadoEm ?? 0} placeholder={PLACEHOLDER_DA_VARIAVEL[tipo].code} ajuda="Até 20 caracteres em [a-z0-9-]. Entra no nome da VSL exatamente assim; único por expert e tipo." autoFocus={!linha} />
+      <CampoImutavel id="var-code" label="Código" valor={code} onChange={setCode} tipo={TIPO_DE_CODIGO_DA_VARIAVEL[tipo]} usadoEm={linha?.usadoEm ?? 0} placeholder={PLACEHOLDER_DA_VARIAVEL[tipo].code} ajuda={!linha && sugestao.data?.codigo ? `Sugerido: ${sugestao.data.codigo} (próximo livre deste expert, contando inativos).` : `${PREFIXO_DA_VARIAVEL[tipo]} + dois dígitos, por expert. Entra no nome da VSL exatamente assim.`} />
       <div className="space-y-1">
         <Label htmlFor="var-desc">Descrição (obrigatória)</Label>
         <Textarea id="var-desc" value={description} onChange={(e) => setDescription(e.target.value)} onFocus={() => setAvisoDescricao((linha?.usadoEm ?? 0) > 0)} rows={3} placeholder={PLACEHOLDER_DA_VARIAVEL[tipo].description} />

@@ -21,7 +21,7 @@
  */
 
 /** Cada tipo de código tem o próprio formato (spec § 4). */
-export type TipoDeCodigo = "expert" | "produto" | "funil" | "oferta" | "lp" | "valor" | "vsl" | "anuncio";
+export type TipoDeCodigo = "expert" | "produto" | "funil" | "oferta" | "lp" | "valor" | "vsl-lead" | "vsl-problem" | "vsl-solution" | "anuncio";
 
 export const FORMATO_DO_CODIGO: Record<TipoDeCodigo, { regex: RegExp; descricao: string }> = {
   expert: { regex: /^[a-z]{2,4}$/, descricao: "2 a 4 letras (ex.: bbe)" },
@@ -30,8 +30,10 @@ export const FORMATO_DO_CODIGO: Record<TipoDeCodigo, { regex: RegExp; descricao:
   oferta: { regex: /^of\d{2}$/, descricao: "of + dois dígitos (ex.: of01)" },
   lp: { regex: /^lp[a-z]$/, descricao: "lp + uma letra (ex.: lpa)" },
   valor: { regex: /^[a-z0-9]+$/, descricao: "só letras e números (ex.: videos, 2026)" },
-  /** Story 47.9: variável de VSL (lead, mecanismo do problema, mecanismo da solução) — nome semântico, como o slug de produto. */
-  vsl: { regex: /^[a-z0-9-]{1,20}$/, descricao: "até 20 caracteres em [a-z0-9-] (ex.: falta-de-metodo)" },
+  /** Story 47.9 (decisão do dono, 2026-09-10): variável de VSL é sigla + dois dígitos, sequencial por expert e tipo — como funil e oferta. */
+  "vsl-lead": { regex: /^lead\d{2}$/, descricao: "lead + dois dígitos (ex.: lead01)" },
+  "vsl-problem": { regex: /^pr\d{2}$/, descricao: "pr + dois dígitos (ex.: pr01)" },
+  "vsl-solution": { regex: /^sol\d{2}$/, descricao: "sol + dois dígitos (ex.: sol01)" },
   /** Story 47.10: a descrição livre do anúncio (depois do `--`), quando digitada no sistema. */
   anuncio: { regex: /^[a-z0-9-]{1,60}$/, descricao: "até 60 caracteres em [a-z0-9-] (ex.: gancho-demissao)" },
 };
@@ -103,7 +105,7 @@ export function montarSlugDeLp(partes: {
  * acabaram — é caso para reportar, não para inventar um `a100` que quebra o
  * formato.
  */
-export function proximoCodigoNumerado(prefixo: "a" | "of", existentes: readonly string[]): string | null {
+export function proximoCodigoNumerado(prefixo: string, existentes: readonly string[]): string | null {
   const usados = new Set(existentes.map((c) => c.toLowerCase()));
   for (let n = 1; n <= 99; n++) {
     const candidato = `${prefixo}${String(n).padStart(2, "0")}`;

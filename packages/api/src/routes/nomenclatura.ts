@@ -34,7 +34,7 @@
 import { z } from "zod";
 import fp from "fastify-plugin";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { LPMIX, NA, montarSlugDeLp, parseAdName, parseCampaignName, parseVslName, sugerirClassificacao } from "@loyola-x/shared";
+import { LPMIX, NA, PREFIXO_DA_VARIAVEL, TIPO_DE_CODIGO_DA_VARIAVEL, montarSlugDeLp, parseAdName, parseCampaignName, parseVslName, proximoCodigoNumerado, sugerirClassificacao } from "@loyola-x/shared";
 import { CAMPOS_DO_NOME, montarCampanha } from "../services/nomenclatura/campanhas.js";
 import { CAMPOS_DA_VSL_NO_BANCO, montarVsl } from "../services/nomenclatura/vsl.js";
 import { montarAnuncio, proximoNnDeAnuncio } from "../services/nomenclatura/anuncios.js";
@@ -794,16 +794,31 @@ export default fp(async function nomenclaturaRoutes(fastify) {
     }),
   );
 
+  /** Sugestão de código por (expert, tipo): `lead01`, `pr01`, `sol01` — o menor livre, inativos inclusos (decisão do dono, 2026-09-10). */
+  fastify.get(
+    "/api/nomenclatura/vsl/variaveis/proximo-codigo",
+    tentar(async (request) => {
+      autor(request);
+      const q = parse(z.object({ expertId: uuid, type: tipoDeVariavel }), request.query);
+      const r = repo();
+      await existente(r, "experts", q.expertId, "Expert");
+      return { codigo: proximoCodigoNumerado(PREFIXO_DA_VARIAVEL[q.type], await r.vslVariaveis.codigos(q.expertId, q.type)) };
+    }),
+  );
+
   fastify.post(
     "/api/nomenclatura/vsl/variaveis",
     tentar(async (request, reply) => {
       const author = autor(request);
-      const b = parse(z.object({ expertId: uuid, type: tipoDeVariavel, code: z.string(), description: z.string().trim().min(1).max(2000) }), request.body);
+      const b = parse(z.object({ expertId: uuid, type: tipoDeVariavel, code: z.string().optional(), description: z.string().trim().min(1).max(2000) }), request.body);
       const r = repo();
       const expert = await existente(r, "experts", b.expertId, "Expert");
-      const code = codigoValidado(b.code, "vsl", "code");
+      const codigos = await r.vslVariaveis.codigos(expert.id, b.type);
+      const sugestao = proximoCodigoNumerado(PREFIXO_DA_VARIAVEL[b.type], codigos);
+      const code = b.code !== undefined && b.code !== "" ? codigoValidado(b.code, TIPO_DE_CODIGO_DA_VARIAVEL[b.type], "code") : sugestao;
+      if (!code) throw new ErroDeNomenclatura(409, `Sequência de ${ROTULO_DA_VARIAVEL[b.type].toLowerCase()} esgotada para ${expert.code} (99 códigos).`, { campo: "code" });
       const ja = await r.vslVariaveis.porCode(expert.id, b.type, code);
-      if (ja) throw conflitoDeCodigo({ codigo: code, escopo: `${expert.code} (${ROTULO_DA_VARIAVEL[b.type].toLowerCase()})`, descricaoExistente: ja.description, sugestao: null, campo: "code" });
+      if (ja) throw conflitoDeCodigo({ codigo: code, escopo: `${expert.code} (${ROTULO_DA_VARIAVEL[b.type].toLowerCase()})`, descricaoExistente: ja.description, sugestao, campo: "code" });
       const linha = await r.inserir("vslVariaveis", { expertId: expert.id, type: b.type, code, description: b.description }, author);
       return reply.code(201).send({ ...linha, rotulo: rotuloDe(linha.code, linha.description), usadoEm: 0 });
     }),
@@ -819,12 +834,15 @@ export default fp(async function nomenclaturaRoutes(fastify) {
       const antes = await existente(r, "vslVariaveis", id, "Variável de VSL");
       const patch: Partial<typeof antes> = {};
       if (b.code !== undefined) {
-        const code = codigoValidado(b.code, "vsl", "code");
+        const code = codigoValidado(b.code, TIPO_DE_CODIGO_DA_VARIAVEL[antes.type], "code");
         if (code !== antes.code) {
           const coluna = ({ lead: "leadId", problem: "problemId", solution: "solutionId" } as const)[antes.type];
           exigirNaoUsado(await r.vslsQueUsam(coluna, id), "code");
           const ja = await r.vslVariaveis.porCode(antes.expertId, antes.type, code);
-          if (ja) throw conflitoDeCodigo({ codigo: code, escopo: "este expert", descricaoExistente: ja.description, sugestao: null, campo: "code" });
+          if (ja) {
+            const sugestao = proximoCodigoNumerado(PREFIXO_DA_VARIAVEL[antes.type], await r.vslVariaveis.codigos(antes.expertId, antes.type));
+            throw conflitoDeCodigo({ codigo: code, escopo: "este expert", descricaoExistente: ja.description, sugestao, campo: "code" });
+          }
           patch.code = code;
         }
       }

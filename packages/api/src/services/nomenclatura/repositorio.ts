@@ -516,6 +516,9 @@ export function criarRepositorio(db: Conexao) {
     /** Unicidade por (expert, tipo), inativos inclusos (regra 4). */
     porCode: async (expertId: string, type: TipoDeVariavelDeVsl, code: string) =>
       (await db.select().from(namingVslVariables).where(and(eq(namingVslVariables.expertId, expertId), eq(namingVslVariables.type, type), eq(namingVslVariables.code, code))).limit(1))[0],
+    /** Todos os códigos do (expert, tipo), inativos inclusos — a base da sugestão `lead01 → lead02`. */
+    codigos: async (expertId: string, type: TipoDeVariavelDeVsl) =>
+      (await db.select({ code: namingVslVariables.code }).from(namingVslVariables).where(and(eq(namingVslVariables.expertId, expertId), eq(namingVslVariables.type, type)))).map((x) => x.code),
   };
 
   const vsls = {
