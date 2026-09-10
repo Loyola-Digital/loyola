@@ -76,7 +76,7 @@ Este epic põe dentro do Loyola X, em Configurações → Nomenclatura:
 |---|---|---|---|---|---|
 | 47.7 | "Slug de LP" vira seção própria e lista as LPs do expert | 1, 3 | seção `?secao=slug` ao lado de Campanhas (link antigo compatível); ao escolher o expert, tabela Código · Slug · URL · Descrição que a cascata estreita | 3 | **Done** · gate CONCERNS · **MERGED #845** (`53de9dfb`) · AC8 visual com o dono |
 | 47.8 | Novo padrão do nome de campanha (template v2) | 2 | `expert_funil_produto_oferta_perpetuo_ano_temp_leilao_formato_lp` (10 campos); build/parse/prévia/validador; recálculo das não publicadas; fila de Legadas exclui ids já vinculados; contrato 10 | 8 | **Done** · gate CONCERNS · **MERGED #844** (`dee2b559`) · P4 fechada pelo dono (planilha em 10 colunas) · T5 (recálculo, 1 linha) em prod após o deploy · AC11 visual |
-| 47.9 | Seção "Nome VSL" — três variáveis por expert + oferta do dicionário + gerador | 4 | `naming_vsl_variables` (lead · problem · solution) + `naming_vsls` (com `offer_id`); `vsl_expert_produto_lead_problema_solucao_oferta`; abas Nova VSL · VSLs · Variáveis | 8 | **Done** · gate CONCERNS · **MERGED #846** (`91aff85e`) · migration 0144 no deploy · AC12 visual |
+| 47.9 | Seção "Nome VSL" — três variáveis por expert + oferta do dicionário + gerador | 4 | `naming_vsl_variables` (lead · problem · solution) + `naming_vsls` (com `offer_id`); `vsl_expert_produto_lead_problema_solucao_oferta`; abas Nova VSL · VSLs; cadastro das variáveis em **Dicionário › Variáveis de VSL** (decisão do dono) | 8 | **Done** · gate CONCERNS · **MERGED #846** (`91aff85e`) · migration 0144 no deploy · AC12 visual |
 | 47.10 | Seção "Nome Ads" — tipo de criativo, sigla de lançamento e gerador com sequencial | 5 | tipos `creative_type` (ad · adv · carr) e `launch_type` (pg · l · m · pr) em Valores fixos; `naming_ads` com NN reservado na gravação; `{tipo}{NN}_{expert}_{sigla}{NN}_{mm-aaaa}--{descricao}`, NN único por expert; copiar estrutura × nome completo | 8 | **Done** · gate CONCERNS · **MERGED #847** (`155eba98`) · migration 0145 no deploy + `seed:nomenclatura` em prod · AC12 visual |
 
 Arquivos: `docs/stories/47.7.nomenclatura-slug-de-lp-secao-propria.md` · `47.8.nomenclatura-novo-padrao-do-nome-de-campanha.md` · `47.9.nomenclatura-nome-de-vsl.md` · `47.10.nomenclatura-nome-de-anuncio.md`
@@ -138,6 +138,7 @@ Nomenclatura de conjunto · parâmetros de URL · integração Meta · importaç
 
 | Data | Autor | Mudança |
 |---|---|---|
+| 2026-09-10 | @dev (Dex) | Follow-up da 47.9 a pedido do dono: Variáveis de VSL passam a ser aba do **Dicionário** (D20 desfeita); Nome VSL fica com Nova VSL · VSLs. |
 | 2026-09-10 | @devops (Gage) | Fase 2 inteira mergeada: #842 docs → #845 (47.7, substituiu a #843) → #844 (47.8) → #846 (47.9) → #847 (47.10). Deploy da API no Railway ficou parado em contrato 9 até o dono disparar à mão (15:20). Pendente: seed + recálculo em prod, roteiros visuais. |
 | 2026-09-10 | @qa (Quinn) | 47.10 gate CONCERNS → Done (seed dos 7 valores em prod; AC12 visual). Fase 2 inteira com gate. |
 | 2026-09-10 | @dev (Dex) | 47.10 em InReview: tipos `creative_type`/`launch_type` (seed com as descrições do pedido), `naming_ads` (0145), módulo folha do anúncio, rotas `/ads/*` (contrato 12), seção Nome Ads (Novo anúncio · Anúncios · Valores fixos). |

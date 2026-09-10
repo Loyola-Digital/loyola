@@ -207,7 +207,7 @@ export function GeradorDeVsl({ modo }: { modo: Modo }) {
               onChange={escolher(CAMPO_DA_VARIAVEL[tipo])}
               opcoes={opcoesDe(tipo)}
               desabilitado={!estado.expertId}
-              vazio={`nenhum ${ROTULO_DA_VARIAVEL[tipo].toLowerCase()} cadastrado para ${expertCode} — cadastre em Variáveis`}
+              vazio={`nenhum ${ROTULO_DA_VARIAVEL[tipo].toLowerCase()} cadastrado para ${expertCode} — cadastre em Dicionário › Variáveis de VSL`}
               aoCadastrar={() => setCadastro(tipo)}
             />
           ))}

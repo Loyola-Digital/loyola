@@ -1,11 +1,13 @@
 "use client";
 
 /**
- * Story 47.9 — aba Variáveis: filtro por expert (obrigatório — as variáveis
- * são por expert) e três seções na mesma tela, Lead · Mecanismo do problema ·
- * Mecanismo da solução, cada uma com a `TabelaDoDicionario` e o botão Novo já
- * com o expert preenchido. Molde: `AbaValoresFixos`, trocando "global" por
- * "por expert". A oferta (pitch) é cadastrada no Dicionário › Ofertas.
+ * Story 47.9 — Dicionário › Variáveis de VSL (decisão do dono em 2026-09-10:
+ * o cadastro mora no Dicionário, não na seção Nome VSL — desfaz a D20).
+ * Filtro por expert (obrigatório — as variáveis são por expert) e três seções
+ * na mesma tela, Lead · Mecanismo do problema · Mecanismo da solução, cada
+ * uma com a `TabelaDoDicionario` e o botão Novo já com o expert preenchido.
+ * Molde: `AbaValoresFixos`, trocando "global" por "por expert". A oferta
+ * (pitch) é cadastrada no Dicionário › Ofertas.
  */
 
 import { useState } from "react";

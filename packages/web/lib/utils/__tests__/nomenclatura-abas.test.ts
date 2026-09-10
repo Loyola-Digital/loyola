@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ABAS_DE_ADS, ABAS_DE_CAMPANHAS, ABAS_DE_VSL, SECOES, abaAtiva, hrefDaSecao, hrefDe } from "../nomenclatura-abas";
+import { ABAS_DE_ADS, ABAS_DE_CAMPANHAS, ABAS_DE_VSL, ABAS_DO_DICIONARIO, SECOES, abaAtiva, hrefDaSecao, hrefDe } from "../nomenclatura-abas";
 
 const params = (q: Record<string, string>) => new URLSearchParams(q);
 
@@ -56,11 +56,10 @@ describe("Slug de LP é seção própria (Story 47.7)", () => {
 });
 
 describe("Nome VSL é seção com três abas (Story 47.9)", () => {
-  it("AC6: ?secao=vsl abre Nova VSL por padrão; abas nova · lista · variaveis; à direita de Slug de LP", () => {
+  it("AC6: ?secao=vsl abre Nova VSL por padrão; abas nova · lista; à direita de Slug de LP", () => {
     expect(abaAtiva(params({ secao: "vsl" }))).toEqual({ secao: "vsl", aba: "nova" });
-    expect(abaAtiva(params({ secao: "vsl", aba: "variaveis" }))).toEqual({ secao: "vsl", aba: "variaveis" });
     expect(abaAtiva(params({ secao: "vsl", aba: "lps" }))).toEqual({ secao: "vsl", aba: "nova" });
-    expect(ABAS_DE_VSL.map((a) => a.value)).toEqual(["nova", "lista", "variaveis"]);
+    expect(ABAS_DE_VSL.map((a) => a.value)).toEqual(["nova", "lista"]);
     const ordem = SECOES.map((s) => s.value);
     expect(ordem.indexOf("vsl")).toBe(ordem.indexOf("slug") + 1);
     expect(hrefDaSecao("vsl")).toBe("/settings/nomenclatura?secao=vsl&aba=nova");
@@ -77,5 +76,13 @@ describe("Nome Ads é seção com três abas (Story 47.10)", () => {
     const ordem = SECOES.map((s) => s.value);
     expect(ordem.indexOf("ads")).toBe(ordem.indexOf("vsl") + 1);
     expect(hrefDaSecao("ads")).toBe("/settings/nomenclatura?secao=ads&aba=novo");
+  });
+});
+
+describe("Variáveis de VSL moram no Dicionário (decisão do dono, 2026-09-10)", () => {
+  it("é a última aba do Dicionário; o link antigo ?secao=vsl&aba=variaveis abre a mesma tela lá", () => {
+    expect(ABAS_DO_DICIONARIO.map((a) => a.value).at(-1)).toBe("variaveis-vsl");
+    expect(abaAtiva(params({ secao: "dicionario", aba: "variaveis-vsl" }))).toEqual({ secao: "dicionario", aba: "variaveis-vsl" });
+    expect(abaAtiva(params({ secao: "vsl", aba: "variaveis" }))).toEqual({ secao: "dicionario", aba: "variaveis-vsl" });
   });
 });
