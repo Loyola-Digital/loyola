@@ -8,7 +8,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Copy, Files, Pencil, Plus, Search } from "lucide-react";
+import { Copy, ExternalLink, Files, Pencil, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -78,15 +78,16 @@ export function ListaDeVsls() {
               <TableHead>Problema</TableHead>
               <TableHead>Solução</TableHead>
               <TableHead>Oferta</TableHead>
+              <TableHead>Link</TableHead>
               <TableHead>Criada em</TableHead>
               <TableHead className="text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {lista.isLoading ? (
-              [0, 1, 2].map((i) => <TableRow key={i}><TableCell colSpan={9}><Skeleton className="h-5 w-full" /></TableCell></TableRow>)
+              [0, 1, 2].map((i) => <TableRow key={i}><TableCell colSpan={10}><Skeleton className="h-5 w-full" /></TableCell></TableRow>)
             ) : (lista.data?.itens.length ?? 0) === 0 ? (
-              <TableRow><TableCell colSpan={9} className="text-center text-sm text-muted-foreground">Nenhuma VSL ainda. <Link className="underline" href={hrefDe("vsl", "nova")}>Criar a primeira</Link>.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={10} className="text-center text-sm text-muted-foreground">Nenhuma VSL ainda. <Link className="underline" href={hrefDe("vsl", "nova")}>Criar a primeira</Link>.</TableCell></TableRow>
             ) : (
               lista.data!.itens.map((v) => (
                 <TableRow key={v.id}>
@@ -102,6 +103,7 @@ export function ListaDeVsls() {
                   <TableCell className="max-w-[200px] truncate" title={v.problemRotulo}>{v.problemRotulo}</TableCell>
                   <TableCell className="max-w-[200px] truncate" title={v.solutionRotulo}>{v.solutionRotulo}</TableCell>
                   <TableCell className="max-w-[200px] truncate" title={v.offerRotulo}>{v.offerRotulo}</TableCell>
+                  <TableCell>{v.url ? <a href={v.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline underline-offset-2" title={v.url}><ExternalLink className="h-3.5 w-3.5" />abrir</a> : "—"}</TableCell>
                   <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{new Date(v.createdAt).toLocaleDateString("pt-BR")}</TableCell>
                   <TableCell className="whitespace-nowrap text-right">
                     <span className="inline-flex gap-1">

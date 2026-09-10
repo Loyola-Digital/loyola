@@ -348,6 +348,8 @@ export interface Vsl {
   solutionValue: string;
   offerValue: string;
   name: string;
+  /** Link da VSL no Drive (opcional). */
+  url: string | null;
   notes: string | null;
   createdAt: string;
   updatedAt: string;

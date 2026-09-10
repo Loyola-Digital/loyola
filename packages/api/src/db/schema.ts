@@ -5020,6 +5020,8 @@ export const namingVsls = pgTable(
     offerValue: varchar("offer_value", { length: 8 }).notNull(),
     /** GERADO e armazenado. Único: duas VSLs com a mesma combinação são a mesma VSL (D18). */
     name: varchar("name", { length: 160 }).notNull(),
+    /** Pedido do dono (2026-09-10): o link do vídeo/roteiro no Drive, pedido na criação. Opcional. */
+    url: text("url"),
     notes: text("notes"),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
