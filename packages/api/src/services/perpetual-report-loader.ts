@@ -35,6 +35,7 @@ import {
   type AdSpendRow,
 } from "./perpetual-report-metrics.js";
 import type { Database } from "../db/client.js";
+import { mapaDeDimensoes } from "./nomenclatura/mapa-de-campanhas.js";
 
 export interface LoadPerpetualReportParams {
   funnelId: string;
@@ -176,6 +177,15 @@ export async function loadPerpetualReport(
   // 4. Taxas — plataforma vem da planilha, ramo de reembolso vem da coluna status
   const rates = resolvePerpetualRates(config, sheet.platform ?? null, hasStatusCol);
 
+  // Story 47.6 — o mapa do dicionário. Falha aqui não derruba o relatório:
+  // sem mapa, as tabelas por dimensão simplesmente não saem (e o motivo vai no log).
+  const dimensoes = await mapaDeDimensoes(db, config.projectId)
+    .then((m) => Object.fromEntries(m))
+    .catch((e) => {
+      console.warn("[perpetual-report] mapa de dimensões indisponível:", (e as Error).message);
+      return undefined;
+    });
+
   return computePerpetualReport({
     config,
     rates,
@@ -185,6 +195,7 @@ export async function loadPerpetualReport(
     anuncios,
     nomes,
     linkUrlPorAd,
+    dimensoes,
   });
 }
 

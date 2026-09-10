@@ -13,6 +13,19 @@ import type { PerpetualReport, SegmentoRow } from "./perpetual-report-metrics.js
 import { CHAVES_DE_CAUDA } from "./perpetual-report-metrics.js";
 import { buildReadings, buildDataNotes, trendLabel } from "./perpetual-report-readings.js";
 
+/** Story 47.6 — rótulos das dimensões do dicionário (Epic 47) na ordem do nome. */
+const ROTULO_DA_DIMENSAO: Record<"expert" | "product" | "funnel" | "offer" | "year" | "temperature" | "auction" | "format" | "lp", string> = {
+  expert: "Por expert",
+  product: "Por produto",
+  funnel: "Por funil",
+  offer: "Por oferta",
+  year: "Por ano",
+  temperature: "Por temperatura (dicionário)",
+  auction: "Por leilão",
+  format: "Por formato (dicionário)",
+  lp: "Por LP (dicionário)",
+};
+
 const brl = (n: number | null) =>
   n === null ? "—" : n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const num = (n: number | null, casas = 2) =>
@@ -189,6 +202,20 @@ export function renderPerpetualReportHtml(report: PerpetualReport): string {
     // Criativos porque a LP é atributo do anúncio: quem lê chega nela vindo do
     // criativo que a alimenta.
     segmentos.lps ? segTable("Landing pages", segmentos.lps) : "",
+    // Story 47.6 — uma tabela por dimensão do dicionário de nomenclatura (Epic 47),
+    // com a cobertura declarada em cima: sem ela, "Não classificada" a 100% pareceria
+    // uma tabela vazia com cara de resposta.
+    segmentos.porDimensao
+      ? `<h2>Por dimensão do dicionário de nomenclatura</h2>
+         <p class="nota">Cobertura do vínculo: ${
+           report.coberturaVinculo?.gasto.pct == null ? "sem investimento" : `${Math.round(report.coberturaVinculo.gasto.pct * 100)}% do investimento`
+         } e ${
+           report.coberturaVinculo?.vendas.pct == null ? "nenhuma venda atribuída" : `${Math.round(report.coberturaVinculo.vendas.pct * 100)}% das vendas atribuídas`
+         } estão em campanhas com vínculo (${report.coberturaVinculo?.campanhas.comVinculo ?? 0} de ${report.coberturaVinculo?.campanhas.total ?? 0} campanhas). O resto aparece como "Não classificada".</p>` +
+        (["expert", "product", "funnel", "offer", "year", "temperature", "auction", "format", "lp"] as const)
+          .map((campo) => segTable(ROTULO_DA_DIMENSAO[campo], segmentos.porDimensao![campo]))
+          .join("")
+      : "",
   ].join("");
 
   const leituras = buildReadings(report)

@@ -36,6 +36,7 @@ import fp from "fastify-plugin";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { LPMIX, NA, montarSlugDeLp, parseCampaignName, sugerirClassificacao } from "@loyola-x/shared";
 import { CAMPOS_DO_NOME, montarCampanha } from "../services/nomenclatura/campanhas.js";
+import { coberturaDeGasto, invalidarMapa, mapaDeDimensoes } from "../services/nomenclatura/mapa-de-campanhas.js";
 import { listarChangelog } from "../services/nomenclatura/changelog.js";
 import { tabelaInexistente, violaUnicidade } from "../utils/db-errors.js";
 import {
@@ -706,6 +707,7 @@ export default fp(async function nomenclaturaRoutes(fastify) {
         { ...m, fields: undefined, notes: b.notes ?? null, metaCampaignId: b.metaCampaignId ?? null, createdBy: author } as never,
         author,
       );
+      invalidarMapa();
       return reply.code(201).send({ ...linha, ...(await rotulosDeCampanhas(r))(linha) });
     }),
   );
@@ -744,6 +746,7 @@ export default fp(async function nomenclaturaRoutes(fastify) {
       if (b.metaCampaignId !== undefined) patch.metaCampaignId = b.metaCampaignId;
       if (Object.keys(patch).length === 0) return { ...antes, ...(await rotulosDeCampanhas(r))(antes) };
       const depois = await r.atualizar("campanhas", antes, patch as never, author);
+      invalidarMapa();
       return { ...depois, ...(await rotulosDeCampanhas(r))(depois) };
     }),
   );
@@ -758,6 +761,29 @@ export default fp(async function nomenclaturaRoutes(fastify) {
       const antes = await existente(r, "campanhas", id, "Campanha");
       if (antes.publishedAt) return antes;
       return r.atualizar("campanhas", antes, { publishedAt: new Date(), ...(b.metaCampaignId ? { metaCampaignId: b.metaCampaignId } : {}) } as never, author, "publish");
+    }),
+  );
+
+  // ─────────────────── dimensões e cobertura (Story 47.6) ───────────────────
+  fastify.get(
+    "/api/nomenclatura/dimensoes",
+    tentar(async (request) => {
+      autor(request);
+      const q = parse(z.object({ projectId: uuid }), request.query);
+      if (fastify.nomenclaturaRepo) return {}; // teste: sem banco
+      const mapa = await mapaDeDimensoes(fastify.db, q.projectId);
+      return Object.fromEntries(mapa);
+    }),
+  );
+
+  fastify.get(
+    "/api/nomenclatura/cobertura",
+    tentar(async (request) => {
+      autor(request);
+      const q = parse(z.object({ funnelId: uuid, days: z.coerce.number().int().min(1).max(365).default(30) }), request.query);
+      const c = await coberturaDeGasto(fastify.db, q.funnelId, q.days);
+      if (!c) throw new ErroDeNomenclatura(404, "Funil não encontrado.");
+      return { funnelId: q.funnelId, days: q.days, ...c, vendas: { nota: "a cobertura de vendas sai no relatório do perpétuo (coberturaVinculo), que é quem atribui venda a campanha" } };
     }),
   );
 
@@ -824,6 +850,7 @@ export default fp(async function nomenclaturaRoutes(fastify) {
       );
       if (ja) await r.excluir("decisoes", ja, author); // estava "ignorada": a classificação substitui
       await r.inserir("decisoes", { projectId, campaignId, decision: "classificada", namingCampaignId: linha.id, reason: null, author }, author);
+      invalidarMapa(projectId);
       return reply.code(201).send({ ...linha, ...(await rotulosDeCampanhas(r))(linha) });
     }),
   );
@@ -860,6 +887,7 @@ export default fp(async function nomenclaturaRoutes(fastify) {
         if (c) await r.excluir("campanhas", c, author);
       }
       await r.excluir("decisoes", ja, author);
+      invalidarMapa(projectId);
       return reply.code(204).send();
     }),
   );
