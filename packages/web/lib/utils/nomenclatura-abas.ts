@@ -6,13 +6,18 @@
  * abre a aba de LPs para quem receber o link; valor desconhecido cai no
  * default em vez de quebrar a tela.
  *
+ * Story 47.7: "Slug de LP" deixou de ser sub-aba de Campanhas e virou seção
+ * de primeiro nível (`?secao=slug`), sem sub-abas. O link antigo
+ * (`?secao=campanhas&aba=slug`, entregue ao dono na validação visual de
+ * 2026-09-09) continua abrindo a mesma tela — contrato de URL não se quebra.
+ *
  * ⚠️ `.ts` sem JSX de propósito — o runner do web só coleta
  * `lib/utils/**\/*.test.ts` (ver `menu-de-abas.ts`, Story 46.1).
  */
 
-export type Secao = "dicionario" | "campanhas";
+export type Secao = "dicionario" | "campanhas" | "slug";
 export type AbaDoDicionario = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "valores";
-export type AbaDeCampanhas = "nova" | "lista" | "validar" | "slug" | "legadas";
+export type AbaDeCampanhas = "nova" | "lista" | "validar" | "legadas";
 
 export const ABAS_DO_DICIONARIO: { value: AbaDoDicionario; label: string }[] = [
   { value: "experts", label: "Experts" },
@@ -28,21 +33,27 @@ export const ABAS_DE_CAMPANHAS: { value: AbaDeCampanhas; label: string }[] = [
   { value: "nova", label: "Nova campanha" },
   { value: "lista", label: "Campanhas" },
   { value: "validar", label: "Validar um nome" },
-  /** Pedido do dono do produto na validação visual (2026-09-09): montar o slug de LP sem passar pelo cadastro. */
-  { value: "slug", label: "Slug de LP" },
   /** Story 47.5: campanhas antigas do Meta classificadas nos nove campos. */
   { value: "legadas", label: "Legadas" },
 ];
 
+/**
+ * A ordem aqui é a ordem na tela. As seções da Fase 2 do Epic 47 (Nome VSL,
+ * Nome Ads) entram depois de `slug`, nesta lista — o pedido do dono fixa
+ * "à direita de".
+ */
 export const SECOES: { value: Secao; label: string; disponivel: boolean }[] = [
   { value: "dicionario", label: "Dicionário", disponivel: true },
   { value: "campanhas", label: "Campanhas", disponivel: true },
+  /** Story 47.7 — pedido do dono na validação visual (2026-09-09): montar o slug de LP sem passar pelo cadastro. */
+  { value: "slug", label: "Slug de LP", disponivel: true },
 ];
 
-export interface AbaAtiva {
-  secao: Secao;
-  aba: AbaDoDicionario | AbaDeCampanhas;
-}
+/** Seção sem sub-abas não tem `aba` — a barra de abas não é desenhada para ela. */
+export type AbaAtiva =
+  | { secao: "dicionario"; aba: AbaDoDicionario }
+  | { secao: "campanhas"; aba: AbaDeCampanhas }
+  | { secao: "slug" };
 
 const DEFAULT: AbaAtiva = { secao: "dicionario", aba: "experts" };
 
@@ -50,16 +61,29 @@ const DEFAULT: AbaAtiva = { secao: "dicionario", aba: "experts" };
  * Lê `secao` e `aba` da URL. Desconhecido → default do nível. Uma aba que não
  * pertence à seção pedida também cai no default da seção — `?secao=campanhas
  * &aba=lps` não existe.
+ *
+ * Compatibilidade (47.7): `?secao=campanhas&aba=slug` era a URL da tela de
+ * slug até 2026-09-10 e abre a seção `slug`, não "Nova campanha".
  */
 export function abaAtiva(params: { get(k: string): string | null }): AbaAtiva {
   const secao = SECOES.find((s) => s.value === params.get("secao"))?.value ?? DEFAULT.secao;
   const pedida = params.get("aba");
+  if (secao === "slug") return { secao };
   if (secao === "dicionario") {
     return { secao, aba: ABAS_DO_DICIONARIO.find((a) => a.value === pedida)?.value ?? "experts" };
   }
+  if (pedida === "slug") return { secao: "slug" };
   return { secao, aba: ABAS_DE_CAMPANHAS.find((a) => a.value === pedida)?.value ?? "nova" };
 }
 
-export function hrefDe(secao: Secao, aba: AbaDoDicionario | AbaDeCampanhas): string {
-  return `/settings/nomenclatura?secao=${secao}&aba=${aba}`;
+/** Aba inicial de cada seção — o que o clique na seção abre. */
+export function hrefDaSecao(secao: Secao): string {
+  if (secao === "dicionario") return hrefDe("dicionario", "experts");
+  if (secao === "campanhas") return hrefDe("campanhas", "nova");
+  return hrefDe("slug");
+}
+
+export function hrefDe(secao: Secao, aba?: AbaDoDicionario | AbaDeCampanhas): string {
+  const base = `/settings/nomenclatura?secao=${secao}`;
+  return aba ? `${base}&aba=${aba}` : base;
 }
