@@ -1,10 +1,10 @@
 # EPIC 47 — Nomenclatura de campanhas do perpétuo (Dicionário + Gerador)
 
-**Status:** Fase 1 e 47.5 **Done** · **47.6 InReview (fatia A)**: o Resumão já agrupa por dimensão do dicionário com cobertura declarada; fatia B (tabelas diárias do dashboard) aberta · valor depende de o dono classificar legadas e colar ids da Meta (cobertura hoje 0%)
+**Status:** Fase 1 e 47.5 **Done** · **47.6 InReview (fatia A)** (fatia B aberta) · **Fase 2 (2026-09-10): 47.7–47.10 em Draft** — Slug de LP como seção, template v2 do nome, Nome VSL, Nome Ads · valor da 47.6 depende de o dono classificar legadas e colar ids da Meta (cobertura hoje 0%)
 **Origem:** especificação do dono do produto entregue em 2026-09-09 — guardada verbatim em `epic-47-especificacao-nomenclatura.md` (a **fonte de verdade** deste epic; toda AC abaixo rastreia para uma seção dela)
 **Owner:** @sm (stories, por delegação do pedido) → @po (validação) → @dev (implementação) → @qa (gate)
 **Criado:** 2026-09-09 pelo @sm (River). ⚠️ Estrutura de epic é atribuição do @pm (Morgan) — este documento foi criado junto com as stories porque o pedido chegou como spec pronta; o @pm valida ou reescreve a estrutura na primeira leitura.
-**Onde na UI:** aba **Configurações** do bloco *Global* da sidebar (`/settings`) → novo submenu **Nomenclatura**
+**Onde na UI:** aba **Configurações** do bloco *Global* da sidebar (`/settings`) → submenu **Nomenclatura** → seções **Dicionário · Campanhas · Slug de LP · Nome VSL · Nome Ads** (as três últimas pela Fase 2)
 
 ---
 
@@ -70,6 +70,19 @@ Este epic põe dentro do Loyola X, em Configurações → Nomenclatura:
 | 47.5 | Classificação de campanhas legadas do perpétuo | — (pedido pós-validação) | expert ↔ projeto (fecha a D2), `origin`/`meta_campaign_name` em campanhas, decisões, filtro por token, parser de sugestão, aba Legadas, contrato 9 | 8 | **Done** · PASS (validação do dono) · #834 #835 #836 |
 | 47.6 | O cruzamento investimento × faturamento lê o vínculo | — | mapa `campaign_id → 9 campos`, agrupador por dimensão no perpétuo com "não classificada" e cobertura, colar id da Meta | 8 | **InReview (fatia A)** · AC0 = 0% de cobertura hoje · relatório com tabelas por dimensão + cobertura · fatia B (dashboard diário) aberta |
 
+**Fase 2 — pedido do dono em 2026-09-10 (ordem de saída: 47.7 → 47.8 → 47.9 → 47.10)**
+
+| # | Story | Item do pedido | Entrega | Pontos | Status |
+|---|---|---|---|---|---|
+| 47.7 | "Slug de LP" vira seção própria e lista as LPs do expert | 1, 3 | seção `?secao=slug` ao lado de Campanhas (link antigo compatível); ao escolher o expert, tabela Código · Slug · URL · Descrição que a cascata estreita | 3 | Draft |
+| 47.8 | Novo padrão do nome de campanha (template v2) | 2 | `expert_funil_produto_oferta_perpetuo_ano_temp_leilao_formato_lp` (10 campos); build/parse/prévia/validador; recálculo das não publicadas; fila de Legadas exclui ids já vinculados; contrato 10 | 8 | Draft · ⛔ Q1 (`a1` × `a01`) e P4 (planilha) |
+| 47.9 | Seção "Nome VSL" — quatro variáveis por expert + gerador | 4 | `naming_vsl_variables` (lead · problem · solution · pitch) + `naming_vsls`; `vsl_expert_produto_lead_problema_solucao_pitch`; abas Nova VSL · VSLs · Variáveis | 8 | Draft |
+| 47.10 | Seção "Nome Ads" — tipo de criativo, sigla de lançamento e gerador com sequencial | 5 | tipos `creative_type` (ad · adv · carr) e `launch_type` (pg · l · m · pr) em Valores fixos; `naming_ads` com NN reservado na gravação; `{tipo}{NN}_{expert}_{sigla}{NN}_{data}--{descricao}`; copiar estrutura × nome completo | 8 | Draft · ⛔ Q2 (data) e Q3 (escopo do NN) |
+
+Arquivos: `docs/stories/47.7.nomenclatura-slug-de-lp-secao-propria.md` · `47.8.nomenclatura-novo-padrao-do-nome-de-campanha.md` · `47.9.nomenclatura-nome-de-vsl.md` · `47.10.nomenclatura-nome-de-anuncio.md`
+
+**Dependências da Fase 2:** 47.7 primeiro (as seções novas entram à direita dela). 47.8 é independente das outras. 47.10 depende da 47.9 (reaproveita o desenho de seção com cadastro + gerador + lista). As perguntas ⛔ vão ao dono antes do `*develop` de cada uma; a criação das stories não espera por elas.
+
 Arquivos: `docs/stories/47.1.nomenclatura-modelo-de-dados-e-api.md` · `docs/stories/47.2.nomenclatura-submenu-e-telas-do-dicionario.md` · `docs/stories/47.3.nomenclatura-gerador-de-nome-de-campanha.md` · `docs/stories/47.4.nomenclatura-suite-de-aceite-e-validacao-visual.md`
 
 **Ordem obrigatória:** 47.1 → 47.2 → 47.3 → 47.4. A spec (§ 0.3) pede parada para revisão do dono do produto ao fim de cada etapa — cada story termina em InReview e **não** começa a próxima sem esse OK, além do gate do @qa.
@@ -104,14 +117,28 @@ Arquivos: `docs/stories/47.1.nomenclatura-modelo-de-dados-e-api.md` · `docs/sto
 
 O que o número não cobre está declarado na matriz (componentes, `defaultNow()` em `date`, atomicidade da cascata) e vira passo do roteiro visual — que é entregável, não formalidade (regra do Epic 46).
 
+## Adendo 2026-09-10 — template v2 do nome de campanha (Story 47.8)
+
+A spec verbatim (`epic-47-especificacao-nomenclatura.md`) **não é editada**; este adendo é a fonte da mudança pedida pelo dono em 2026-09-10:
+
+```
+v1 (spec § 2)   expert_produto_funil_oferta_ano_temp_leilao_formato_lp            9 campos, 8 "_"
+v2 (47.8)       expert_funil_produto_oferta_perpetuo_ano_temp_leilao_formato_lp   10 campos, 9 "_"
+```
+
+O funil sobe para a 2ª posição, o produto desce para a 3ª, e o campo 5 é a constante `perpetuo`. A regra 2 da spec § 3 passa a ler-se "dez campos, sempre; nome com número diferente de 9 underscores é inválido". As demais regras, o dicionário e as nove dimensões do cruzamento (47.6) não mudam. Nome de campanha **publicada** fica como está (regra 6). Pendente da Q1 da 47.8: o exemplo do pedido usa `a1` onde o dicionário tem `a01`.
+
+**Novas nomenclaturas (47.9, 47.10)** têm template próprio e módulo folha próprio no `shared` (`nomenclatura-de-vsl.ts`, `nomenclatura-de-anuncio.ts`); o de anúncio usa `--` como separador fixo antes da descrição livre — exceção declarada à regra 1, que vale para o nome de campanha.
+
 ## Fora do escopo (spec § 11)
 
-Nomenclatura de conjunto e anúncio · parâmetros de URL · integração Meta · importação da planilha antiga. O modelo fica pronto: `naming_campaigns.id` será pai de conjuntos/anúncios e `naming_landing_pages.code` volta no nome do anúncio.
+Nomenclatura de conjunto · parâmetros de URL · integração Meta · importação da planilha antiga. (Nome de anúncio deixou de estar fora: Story 47.10, com template próprio, diferente do `adNNN_formato_conceito_vNN_lp` previsto na spec § 11 — o dono redefiniu o padrão em 2026-09-10.) O modelo fica pronto: `naming_campaigns.id` será pai de conjuntos/anúncios e `naming_landing_pages.code` volta no nome do anúncio.
 
 ## Change Log
 
 | Data | Autor | Mudança |
 |---|---|---|
+| 2026-09-10 | @sm (River) | Fase 2: stories 47.7 (Slug de LP seção + lista por expert), 47.8 (template v2 do nome, Q1 `a1`×`a01`, P4 planilha), 47.9 (Nome VSL), 47.10 (Nome Ads) criadas a partir do pedido do dono. Adendo do template v2 registrado; spec verbatim intacta. Medido: 1 campanha em `naming_campaigns`, 4 funis `a01`, 11 LPs. |
 | 2026-09-09 | @sm (River) | Epic criado a partir da spec do dono do produto. Spec arquivada verbatim. Decisões D1–D9 registradas; D2 e D3 marcadas para confirmação do @po. Pré-condições P1–P3 declaradas. |
 | 2026-09-09 | @po (Pax) | 47.1 validada: GO 9,5/10 → Ready. D2 confirmada, D3 decidida (não-guest lê e escreve), P3 fechada. Sigla do expert imutável desde a criação (contradição da spec resolvida pelo lado estrito). |
 | 2026-09-10 | @dev (Dex) | 47.6 fatia A em InReview: AC0 (0%), mapa, cobertura, porDimensao no relatório, colar id da Meta. Fatia B (dashboard diário) declarada. |
