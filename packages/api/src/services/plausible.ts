@@ -28,7 +28,9 @@ async function chamar<T>(
   creds: PlausibleCreds,
   caminho: string,
   init?: { method?: string; body?: unknown },
-): Promise<{ ok: true; data: T } | { ok: false; status: number; erro: string }> {
+): Promise<
+  { ok: true; data: T } | { ok: false; status: number; erro: string }
+> {
   const res = await fetch(`${normalizarBaseUrl(creds.baseUrl)}${caminho}`, {
     method: init?.method ?? "GET",
     headers: {
@@ -48,7 +50,11 @@ async function chamar<T>(
   try {
     return { ok: true, data: JSON.parse(texto) as T };
   } catch {
-    return { ok: false, status: res.status, erro: "Resposta não é JSON — a URL aponta pro Plausible?" };
+    return {
+      ok: false,
+      status: res.status,
+      erro: "Resposta não é JSON — a URL aponta pro Plausible?",
+    };
   }
 }
 
@@ -69,12 +75,22 @@ export interface ResultadoTeste {
  * mandaria o admin trocar uma credencial que talvez esteja certa. Quem fecha o
  * diagnóstico é `testarSite`, na hora de escolher o domínio do projeto.
  */
-export async function validarCredenciais(creds: PlausibleCreds): Promise<ResultadoTeste> {
+export async function validarCredenciais(
+  creds: PlausibleCreds,
+): Promise<ResultadoTeste> {
   const r = await chamar<unknown>(creds, "/api/v1/sites?limit=1");
-  if (r.ok) return { ok: true, detalhe: "Conexão ok — chave válida (Sites API respondeu)." };
+  if (r.ok)
+    return {
+      ok: true,
+      detalhe: "Conexão ok — chave válida (Sites API respondeu).",
+    };
 
   if (r.status === 401 || r.status === 403) {
-    return { ok: false, detalhe: "A instância respondeu, mas recusou a chave (401/403). Gere uma nova em Settings → API Keys." };
+    return {
+      ok: false,
+      detalhe:
+        "A instância respondeu, mas recusou a chave (401/403). Gere uma nova em Settings → API Keys.",
+    };
   }
   if (r.status === 404) {
     // 404 na Sites API tanto acontece em instância Plausible sem ela habilitada
@@ -82,9 +98,14 @@ export async function validarCredenciais(creds: PlausibleCreds): Promise<Resulta
     // "https://exemplo.com" passava como configuração válida. `/api/health` é a
     // assinatura do Plausible: responde o status de postgres e clickhouse.
     const saude = await chamar<Record<string, string>>(creds, "/api/health");
-    const pareceePlausible = saude.ok && ("clickhouse" in saude.data || "postgres" in saude.data);
+    const pareceePlausible =
+      saude.ok && ("clickhouse" in saude.data || "postgres" in saude.data);
     if (!pareceePlausible) {
-      return { ok: false, detalhe: "Essa URL não parece ser uma instância Plausible (nem /api/v1/sites nem /api/health responderam)." };
+      return {
+        ok: false,
+        detalhe:
+          "Essa URL não parece ser uma instância Plausible (nem /api/v1/sites nem /api/health responderam).",
+      };
     }
     return {
       ok: true,
@@ -94,7 +115,10 @@ export async function validarCredenciais(creds: PlausibleCreds): Promise<Resulta
         "e a chave só pode ser confirmada ao escolher o site de um projeto.",
     };
   }
-  return { ok: false, detalhe: `A URL não respondeu como uma instância Plausible (HTTP ${r.status}).` };
+  return {
+    ok: false,
+    detalhe: `A URL não respondeu como uma instância Plausible (HTTP ${r.status}).`,
+  };
 }
 
 /**
@@ -104,23 +128,39 @@ export async function validarCredenciais(creds: PlausibleCreds): Promise<Resulta
  * site, o problema é o domínio; se falha em todos, é a chave. A mensagem diz as
  * duas hipóteses porque o Plausible não distingue, mas o teste é o real.
  */
-export async function testarSite(creds: PlausibleCreds, siteId: string): Promise<ResultadoTeste> {
+export async function testarSite(
+  creds: PlausibleCreds,
+  siteId: string,
+): Promise<ResultadoTeste> {
   const r = await chamar<V2Resposta>(creds, "/api/v2/query", {
     method: "POST",
     body: { site_id: siteId, metrics: ["visitors"], date_range: "7d" },
   });
   if (r.ok) {
     const visitantes = r.data.results?.[0]?.metrics?.[0] ?? 0;
-    return { ok: true, detalhe: `Site lido com sucesso — ${visitantes} visitantes nos últimos 7 dias.` };
+    return {
+      ok: true,
+      detalhe: `Site lido com sucesso — ${visitantes} visitantes nos últimos 7 dias.`,
+    };
   }
   if (r.status === 401 || r.status === 403) {
-    return { ok: false, detalhe: `O Plausible recusou "${siteId}": chave sem acesso a esse site, ou domínio inexistente na instância.` };
+    return {
+      ok: false,
+      detalhe: `O Plausible recusou "${siteId}": chave sem acesso a esse site, ou domínio inexistente na instância.`,
+    };
   }
   // Instância antiga (sem v2) — tenta a v1 antes de dar erro.
   if (r.status === 404 || r.status === 400) {
     const v1 = await consultarV1Agregado(creds, siteId, ymd(-7), ymd(0));
-    if (v1) return { ok: true, detalhe: `Site lido pela API v1 — ${v1.visitors?.value ?? 0} visitantes nos últimos 7 dias.` };
-    return { ok: false, detalhe: `Não foi possível ler "${siteId}" em nenhuma versão da API.` };
+    if (v1)
+      return {
+        ok: true,
+        detalhe: `Site lido pela API v1 — ${v1.visitors?.value ?? 0} visitantes nos últimos 7 dias.`,
+      };
+    return {
+      ok: false,
+      detalhe: `Não foi possível ler "${siteId}" em nenhuma versão da API.`,
+    };
   }
   return { ok: false, detalhe: `Erro ao consultar o site (HTTP ${r.status}).` };
 }
@@ -155,9 +195,15 @@ export async function listarSites(
   creds: PlausibleCreds,
   login?: PlausibleLogin | null,
 ): Promise<{ sites: PlausibleSite[]; fonte: FonteDaLista }> {
-  const r = await chamar<{ sites?: { domain: string }[] }>(creds, "/api/v1/sites?limit=100");
+  const r = await chamar<{ sites?: { domain: string }[] }>(
+    creds,
+    "/api/v1/sites?limit=100",
+  );
   if (r.ok) {
-    return { sites: (r.data.sites ?? []).map((s) => ({ domain: s.domain })), fonte: "sites-api" };
+    return {
+      sites: (r.data.sites ?? []).map((s) => ({ domain: s.domain })),
+      fonte: "sites-api",
+    };
   }
 
   if (login?.email && login.senha) {
@@ -193,7 +239,9 @@ export async function listarSitesPorSessao(
 ): Promise<PlausibleSite[] | null> {
   const base = normalizarBaseUrl(baseUrl);
   try {
-    const paginaLogin = await fetch(`${base}/login`, { signal: AbortSignal.timeout(20_000) });
+    const paginaLogin = await fetch(`${base}/login`, {
+      signal: AbortSignal.timeout(20_000),
+    });
     if (!paginaLogin.ok) return null;
     const html = await paginaLogin.text();
     // O Phoenix exige o token do formulário; sem ele o POST é rejeitado antes
@@ -207,7 +255,11 @@ export async function listarSitesPorSessao(
         "Content-Type": "application/x-www-form-urlencoded",
         Cookie: juntarCookies(paginaLogin),
       },
-      body: new URLSearchParams({ _csrf_token: csrf, email: login.email, password: login.senha }),
+      body: new URLSearchParams({
+        _csrf_token: csrf,
+        email: login.email,
+        password: login.senha,
+      }),
       redirect: "manual",
       signal: AbortSignal.timeout(20_000),
     });
@@ -222,9 +274,14 @@ export async function listarSitesPorSessao(
       signal: AbortSignal.timeout(20_000),
     });
     if (!sites.ok) return null;
-    const dados = (await sites.json()) as { data?: Array<{ domain?: string }>; sites?: Array<{ domain?: string }> };
+    const dados = (await sites.json()) as {
+      data?: Array<{ domain?: string }>;
+      sites?: Array<{ domain?: string }>;
+    };
     const lista = dados.data ?? dados.sites ?? [];
-    const dominios = lista.map((s) => s.domain).filter((d): d is string => Boolean(d));
+    const dominios = lista
+      .map((s) => s.domain)
+      .filter((d): d is string => Boolean(d));
     return dominios.length > 0 ? dominios.map((domain) => ({ domain })) : null;
   } catch {
     return null;
@@ -290,7 +347,9 @@ async function consultarV2(
       // Mesmo papel do `ga4_page_filter` da etapa: recortar a instância inteira
       // no pedaço que é daquela etapa. Sem isso, toda etapa do projeto mostraria
       // o número do site todo.
-      ...(pageFilter ? { filters: [["contains", "event:page", [pageFilter]]] } : {}),
+      ...(pageFilter
+        ? { filters: [["contains", "event:page", [pageFilter]]] }
+        : {}),
     },
   });
   // 404 = a rota não existe (instância antiga): vale tentar a v1.
@@ -321,12 +380,16 @@ function mensagemDoPlausible(corpo: string, status: number): string {
   try {
     const j = JSON.parse(corpo) as { error?: string };
     if (j.error) return j.error;
-  } catch { /* corpo não-JSON */ }
+  } catch {
+    /* corpo não-JSON */
+  }
   return `HTTP ${status}`;
 }
 
 /** Só as linhas — para as quebras, onde uma falha não deve derrubar o resto. */
-function linhasOuVazio(r: RespostaV2): Array<{ metrics: number[]; dimensions: string[] }> {
+function linhasOuVazio(
+  r: RespostaV2,
+): Array<{ metrics: number[]; dimensions: string[] }> {
   return r.tipo === "ok" ? r.linhas : [];
 }
 
@@ -335,7 +398,9 @@ function linhasOuVazio(r: RespostaV2): Array<{ metrics: number[]; dimensions: st
  * equivalente mais próximo do CONTAINS que a etapa configurou.
  */
 function filtroV1(pageFilter?: string | null): string {
-  return pageFilter ? `&filters=${encodeURIComponent(`event:page==*${pageFilter}*`)}` : "";
+  return pageFilter
+    ? `&filters=${encodeURIComponent(`event:page==*${pageFilter}*`)}`
+    : "";
 }
 
 async function consultarV1Agregado(
@@ -345,7 +410,8 @@ async function consultarV1Agregado(
   fim: string,
   pageFilter?: string | null,
 ): Promise<Record<string, { value: number }> | null> {
-  const metricas = "visitors,visits,pageviews,bounce_rate,visit_duration,events";
+  const metricas =
+    "visitors,visits,pageviews,bounce_rate,visit_duration,events";
   const r = await chamar<{ results?: Record<string, { value: number }> }>(
     creds,
     `/api/v1/stats/aggregate?site_id=${encodeURIComponent(siteId)}&period=custom&date=${intervalo(inicio, fim)}&metrics=${metricas}${filtroV1(pageFilter)}`,
@@ -411,16 +477,37 @@ export async function montarDashboard(
     configured: Boolean(filtro),
     siteId,
     totals: {
-      sessions: 0, users: 0, activeUsers: 0, newUsers: 0, engagedSessions: 0,
-      engagementRate: 0, conversions: 0, pageViews: 0, revenue: 0,
+      sessions: 0,
+      users: 0,
+      activeUsers: 0,
+      newUsers: 0,
+      engagedSessions: 0,
+      engagementRate: 0,
+      conversions: 0,
+      pageViews: 0,
+      revenue: 0,
     },
     byChannel: [],
     topSources: [],
     topCampaigns: [],
   };
 
-  const METRICAS_V2 = ["visitors", "visits", "pageviews", "events", "bounce_rate"];
-  const agregadoV2 = await consultarV2(creds, siteId, inicio, fim, METRICAS_V2, [], filtro);
+  const METRICAS_V2 = [
+    "visitors",
+    "visits",
+    "pageviews",
+    "events",
+    "bounce_rate",
+  ];
+  const agregadoV2 = await consultarV2(
+    creds,
+    siteId,
+    inicio,
+    fim,
+    METRICAS_V2,
+    [],
+    filtro,
+  );
   if (agregadoV2.tipo === "erro") throw new PlausibleErro(agregadoV2.detalhe);
 
   if (agregadoV2.tipo === "ok") {
@@ -428,13 +515,47 @@ export async function montarDashboard(
     // destructuring de um array vazio virar `undefined` e, na conta de
     // engajamento, NaN — que serializa como `null` e quebra a tela.
     const m = agregadoV2.linhas[0]?.metrics ?? [];
-    const [visitors, visits, pageviews, events, bounce] = [0, 1, 2, 3, 4].map((i) => n(m[i] ?? 0));
+    const [visitors, visits, pageviews, events, bounce] = [0, 1, 2, 3, 4].map(
+      (i) => n(m[i] ?? 0),
+    );
 
     const [canais, origens, campanhas, paginas] = await Promise.all([
-      consultarV2(creds, siteId, inicio, fim, ["visits", "events"], ["visit:channel"], filtro),
-      consultarV2(creds, siteId, inicio, fim, ["visits", "events"], ["visit:source"], filtro),
-      consultarV2(creds, siteId, inicio, fim, ["visits", "events"], ["visit:utm_campaign"], filtro),
-      consultarV2(creds, siteId, inicio, fim, ["visits", "visitors"], ["event:page"], filtro),
+      consultarV2(
+        creds,
+        siteId,
+        inicio,
+        fim,
+        ["visits", "events"],
+        ["visit:channel"],
+        filtro,
+      ),
+      consultarV2(
+        creds,
+        siteId,
+        inicio,
+        fim,
+        ["visits", "events"],
+        ["visit:source"],
+        filtro,
+      ),
+      consultarV2(
+        creds,
+        siteId,
+        inicio,
+        fim,
+        ["visits", "events"],
+        ["visit:utm_campaign"],
+        filtro,
+      ),
+      consultarV2(
+        creds,
+        siteId,
+        inicio,
+        fim,
+        ["visits", "visitors"],
+        ["event:page"],
+        filtro,
+      ),
     ]);
 
     const engajadas = Math.round(visits * (1 - bounce / 100));
@@ -457,17 +578,21 @@ export async function montarDashboard(
         sessions: n(r.metrics[0]),
         conversions: n(r.metrics[1]),
       })),
-      topSources: linhasOuVazio(origens).slice(0, 8).map((r) => ({
-        sourceMedium: r.dimensions[0] || "(direto)",
-        sessions: n(r.metrics[0]),
-        conversions: n(r.metrics[1]),
-      })),
-      topCampaigns: linhasOuVazio(campanhas).slice(0, 8).map((r) => ({
-        campaign: r.dimensions[0] || "(sem campanha)",
-        sessions: n(r.metrics[0]),
-        conversions: n(r.metrics[1]),
-        revenue: 0,
-      })),
+      topSources: linhasOuVazio(origens)
+        .slice(0, 8)
+        .map((r) => ({
+          sourceMedium: r.dimensions[0] || "(direto)",
+          sessions: n(r.metrics[0]),
+          conversions: n(r.metrics[1]),
+        })),
+      topCampaigns: linhasOuVazio(campanhas)
+        .slice(0, 8)
+        .map((r) => ({
+          campaign: r.dimensions[0] || "(sem campanha)",
+          sessions: n(r.metrics[0]),
+          conversions: n(r.metrics[1]),
+          revenue: 0,
+        })),
       byPage: linhasOuVazio(paginas)
         .map((r) => ({
           page: r.dimensions[0] || "/",
@@ -483,7 +608,13 @@ export async function montarDashboard(
   }
 
   // --- v1 (instância antiga) ---
-  const agregado = await consultarV1Agregado(creds, siteId, inicio, fim, filtro);
+  const agregado = await consultarV1Agregado(
+    creds,
+    siteId,
+    inicio,
+    fim,
+    filtro,
+  );
   if (!agregado) {
     throw new PlausibleErro(
       `Nem a API v2 nem a v1 responderam para "${siteId}" — confira o domínio e o acesso da chave a ele.`,
@@ -499,7 +630,14 @@ export async function montarDashboard(
 
   const [origens, campanhas, paginasV1] = await Promise.all([
     consultarV1Breakdown(creds, siteId, inicio, fim, "visit:source", filtro),
-    consultarV1Breakdown(creds, siteId, inicio, fim, "visit:utm_campaign", filtro),
+    consultarV1Breakdown(
+      creds,
+      siteId,
+      inicio,
+      fim,
+      "visit:utm_campaign",
+      filtro,
+    ),
     consultarV1Breakdown(creds, siteId, inicio, fim, "event:page", filtro, 100),
   ]);
 
@@ -528,11 +666,20 @@ export async function montarDashboard(
     byChannel: [],
     topSources: origens.slice(0, 8).map((r) => {
       const x = linhaBreakdown(r, "source");
-      return { sourceMedium: x.nome, sessions: x.sessions, conversions: x.conversions };
+      return {
+        sourceMedium: x.nome,
+        sessions: x.sessions,
+        conversions: x.conversions,
+      };
     }),
     topCampaigns: campanhas.slice(0, 8).map((r) => {
       const x = linhaBreakdown(r, "utm_campaign");
-      return { campaign: x.nome, sessions: x.sessions, conversions: x.conversions, revenue: 0 };
+      return {
+        campaign: x.nome,
+        sessions: x.sessions,
+        conversions: x.conversions,
+        revenue: 0,
+      };
     }),
     byPage: paginasV1.map((r) => ({
       page: String(r.page ?? "") || "/",
@@ -565,7 +712,10 @@ export type PlausiblePeriodo = "day" | "7d" | "30d" | "month" | "6mo" | "12mo";
  * As datas saem no fuso de São Paulo porque o servidor roda em UTC: perto da
  * meia-noite, "hoje" em UTC já é amanhã aqui, e o dia atual sumiria da conta.
  */
-export function intervaloDoPeriodo(periodo: PlausiblePeriodo, agora = new Date()): [string, string] {
+export function intervaloDoPeriodo(
+  periodo: PlausiblePeriodo,
+  agora = new Date(),
+): [string, string] {
   const fmt = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
     year: "numeric",
@@ -588,12 +738,18 @@ export function intervaloDoPeriodo(periodo: PlausiblePeriodo, agora = new Date()
   };
 
   switch (periodo) {
-    case "day": return [hojeIso, hojeIso];
-    case "7d": return [menosDias(6), hojeIso];
-    case "30d": return [menosDias(29), hojeIso];
-    case "month": return [inicioDeMesAtras(0), hojeIso];
-    case "6mo": return [inicioDeMesAtras(5), hojeIso];
-    case "12mo": return [inicioDeMesAtras(11), hojeIso];
+    case "day":
+      return [hojeIso, hojeIso];
+    case "7d":
+      return [menosDias(6), hojeIso];
+    case "30d":
+      return [menosDias(29), hojeIso];
+    case "month":
+      return [inicioDeMesAtras(0), hojeIso];
+    case "6mo":
+      return [inicioDeMesAtras(5), hojeIso];
+    case "12mo":
+      return [inicioDeMesAtras(11), hojeIso];
   }
 }
 
@@ -603,7 +759,10 @@ export function intervaloDoPeriodo(periodo: PlausiblePeriodo, agora = new Date()
  * É o que dá sentido às setinhas de variação do painel: "30 dias" só é bom ou
  * ruim comparado aos 30 dias anteriores.
  */
-export function intervaloAnterior(periodo: PlausiblePeriodo, agora = new Date()): [string, string] {
+export function intervaloAnterior(
+  periodo: PlausiblePeriodo,
+  agora = new Date(),
+): [string, string] {
   const [inicio, fim] = intervaloDoPeriodo(periodo, agora);
   const d0 = new Date(`${inicio}T12:00:00Z`);
   const d1 = new Date(`${fim}T12:00:00Z`);
@@ -612,11 +771,16 @@ export function intervaloAnterior(periodo: PlausiblePeriodo, agora = new Date())
   fimAnterior.setUTCDate(fimAnterior.getUTCDate() - 1);
   const inicioAnterior = new Date(fimAnterior);
   inicioAnterior.setUTCDate(inicioAnterior.getUTCDate() - (dias - 1));
-  return [inicioAnterior.toISOString().slice(0, 10), fimAnterior.toISOString().slice(0, 10)];
+  return [
+    inicioAnterior.toISOString().slice(0, 10),
+    fimAnterior.toISOString().slice(0, 10),
+  ];
 }
 
 /** Granularidade do gráfico: um dia inteiro se lê por hora; o resto, por dia. */
-function granularidade(periodo: PlausiblePeriodo): "time:hour" | "time:day" | "time:month" {
+function granularidade(
+  periodo: PlausiblePeriodo,
+): "time:hour" | "time:day" | "time:month" {
   if (periodo === "day") return "time:hour";
   if (periodo === "12mo" || periodo === "6mo") return "time:month";
   return "time:day";
@@ -730,11 +894,17 @@ function comShare(
  * A resposta deste endpoint é o número puro em texto ("3"), não JSON — por isso
  * não usa `chamar`.
  */
-export async function visitantesAgora(creds: PlausibleCreds, siteId: string): Promise<number> {
+export async function visitantesAgora(
+  creds: PlausibleCreds,
+  siteId: string,
+): Promise<number> {
   try {
     const res = await fetch(
       `${normalizarBaseUrl(creds.baseUrl)}/api/v1/stats/realtime/visitors?site_id=${encodeURIComponent(siteId)}`,
-      { headers: { Authorization: `Bearer ${creds.apiKey}` }, signal: AbortSignal.timeout(15_000) },
+      {
+        headers: { Authorization: `Bearer ${creds.apiKey}` },
+        signal: AbortSignal.timeout(15_000),
+      },
     );
     if (!res.ok) return 0;
     return n((await res.text()).trim());
@@ -759,7 +929,15 @@ async function breakdowns(
 ): Promise<BlocoBreakdown[]> {
   const resultados = await Promise.all(
     defs.map(async (d) => {
-      const r = await consultarV2Periodo(creds, siteId, periodo, ["visitors"], [d.dimensao], filtro, 100);
+      const r = await consultarV2Periodo(
+        creds,
+        siteId,
+        periodo,
+        ["visitors"],
+        [d.dimensao],
+        filtro,
+        100,
+      );
       return { chave: d.chave, rows: comShare(linhasOuVazio(r), d.vazio) };
     }),
   );
@@ -785,7 +963,9 @@ async function consultarV2Periodo(
       metrics,
       date_range: [inicio, fim],
       dimensions,
-      ...(pageFilter ? { filters: [["contains", "event:page", [pageFilter]]] } : {}),
+      ...(pageFilter
+        ? { filters: [["contains", "event:page", [pageFilter]]] }
+        : {}),
     },
   });
   if (!r.ok) {
@@ -813,23 +993,65 @@ export async function montarDashboardCompleto(
   // da lista e é derivada de pageviews/visits, que é a própria definição dela.
   const METRICAS = filtro
     ? ["visitors", "visits", "pageviews", "bounce_rate", "visit_duration"]
-    : ["visitors", "visits", "pageviews", "views_per_visit", "bounce_rate", "visit_duration"];
+    : [
+        "visitors",
+        "visits",
+        "pageviews",
+        "views_per_visit",
+        "bounce_rate",
+        "visit_duration",
+      ];
 
   // Na série `views_per_visit` NUNCA entra: o Plausible a recusa junto de
   // qualquer dimensão ("cannot be queried with `dimensions`"), e time:hour é uma
   // dimensão. Ela é derivada de pageviews/visits ponto a ponto, que é a
   // definição — pedir a métrica derrubaria o gráfico inteiro com 400.
-  const METRICAS_SERIE = ["visitors", "visits", "pageviews", "bounce_rate", "visit_duration"];
+  const METRICAS_SERIE = [
+    "visitors",
+    "visits",
+    "pageviews",
+    "bounce_rate",
+    "visit_duration",
+  ];
 
-  const [agregado, serie, anterior, agora, fontes, paginas, locais, dispositivos] = await Promise.all([
+  const [
+    agregado,
+    serie,
+    anterior,
+    agora,
+    fontes,
+    paginas,
+    locais,
+    dispositivos,
+  ] = await Promise.all([
     consultarV2Periodo(creds, siteId, periodo, METRICAS, [], filtro),
-    consultarV2Periodo(creds, siteId, periodo, METRICAS_SERIE, [granularidade(periodo)], filtro),
-    consultarV2Periodo(creds, siteId, periodo, METRICAS, [], filtro, undefined, intervaloAnterior(periodo)),
+    consultarV2Periodo(
+      creds,
+      siteId,
+      periodo,
+      METRICAS_SERIE,
+      [granularidade(periodo)],
+      filtro,
+    ),
+    consultarV2Periodo(
+      creds,
+      siteId,
+      periodo,
+      METRICAS,
+      [],
+      filtro,
+      undefined,
+      intervaloAnterior(periodo),
+    ),
     visitantesAgora(creds, siteId),
     breakdowns(creds, siteId, periodo, filtro, [
       { chave: "channels", dimensao: "visit:channel", vazio: "Direto" },
       { chave: "sources", dimensao: "visit:source", vazio: "Direto" },
-      { chave: "campaigns", dimensao: "visit:utm_campaign", vazio: "(sem campanha)" },
+      {
+        chave: "campaigns",
+        dimensao: "visit:utm_campaign",
+        vazio: "(sem campanha)",
+      },
     ]),
     breakdowns(creds, siteId, periodo, filtro, [
       { chave: "pages", dimensao: "event:page", vazio: "/" },
@@ -837,8 +1059,16 @@ export async function montarDashboardCompleto(
       { chave: "exit", dimensao: "visit:exit_page", vazio: "/" },
     ]),
     breakdowns(creds, siteId, periodo, filtro, [
-      { chave: "countries", dimensao: "visit:country_name", vazio: "(desconhecido)" },
-      { chave: "regions", dimensao: "visit:region_name", vazio: "(desconhecido)" },
+      {
+        chave: "countries",
+        dimensao: "visit:country_name",
+        vazio: "(desconhecido)",
+      },
+      {
+        chave: "regions",
+        dimensao: "visit:region_name",
+        vazio: "(desconhecido)",
+      },
       { chave: "cities", dimensao: "visit:city_name", vazio: "(desconhecido)" },
     ]),
     breakdowns(creds, siteId, periodo, filtro, [
@@ -860,8 +1090,13 @@ export async function montarDashboardCompleto(
    * quando não está, as métricas seguintes andam uma posição para trás e o
    * valor é derivado de pageviews/visits.
    */
-  const lerTotais = (linha: number[], temVpv: boolean): PlausibleDashboardCompleto["totals"] => {
-    const [visitors, visits, pageviews] = [0, 1, 2].map((i) => n(linha[i] ?? 0));
+  const lerTotais = (
+    linha: number[],
+    temVpv: boolean,
+  ): PlausibleDashboardCompleto["totals"] => {
+    const [visitors, visits, pageviews] = [0, 1, 2].map((i) =>
+      n(linha[i] ?? 0),
+    );
     const desloc = temVpv ? 1 : 0;
     return {
       visitors,
@@ -884,10 +1119,21 @@ export async function montarDashboardCompleto(
   // Filtro que não casou com nada: descobrimos o que existe para poder dizer.
   let sugestoes: Array<{ page: string; visitors: number }> | null = null;
   if (filtro && totais.visitors === 0) {
-    const semFiltro = await consultarV2Periodo(creds, siteId, periodo, ["visitors"], ["event:page"], null, 10);
+    const semFiltro = await consultarV2Periodo(
+      creds,
+      siteId,
+      periodo,
+      ["visitors"],
+      ["event:page"],
+      null,
+      10,
+    );
     const linhas = linhasOuVazio(semFiltro);
     if (linhas.length > 0) {
-      sugestoes = linhas.map((r) => ({ page: r.dimensions[0] || "/", visitors: n(r.metrics[0]) }));
+      sugestoes = linhas.map((r) => ({
+        page: r.dimensions[0] || "/",
+        visitors: n(r.metrics[0]),
+      }));
     }
   }
 
@@ -899,7 +1145,10 @@ export async function montarDashboardCompleto(
     pageFilter: filtro,
     agora,
     totals: totais,
-    anterior: anterior.tipo === "ok" ? lerTotais(anterior.linhas[0]?.metrics ?? [], agregadoTemVpv) : null,
+    anterior:
+      anterior.tipo === "ok"
+        ? lerTotais(anterior.linhas[0]?.metrics ?? [], agregadoTemVpv)
+        : null,
     serie: linhasOuVazio(serie).map((r) => {
       const t = lerTotais(r.metrics, false);
       return {
@@ -917,4 +1166,58 @@ export async function montarDashboardCompleto(
     locais,
     dispositivos,
   };
+}
+
+/**
+ * Visitantes e conversões de UMA variação de teste A/B.
+ *
+ * ## Igualdade, não `contains`
+ *
+ * O resto do arquivo filtra página com `contains` — o recorte de uma etapa quer
+ * pegar tudo abaixo de um prefixo. Aqui seria um erro silencioso: `/vendas`
+ * casaria também com `/vendas-b`, e a variação A somaria as visitas da B. O
+ * teste inteiro ficaria errado sem nenhum sinal de que está.
+ *
+ * ## `visitors`, não `pageviews`
+ *
+ * O teste de proporção precisa de ensaios independentes: cada PESSOA converteu
+ * ou não. `pageviews` conta recarregamento de página, então quem atualiza três
+ * vezes vira três "ensaios" — infla o denominador e derruba a taxa de quem tem
+ * visitante mais engajado.
+ */
+export async function contarVariacao(
+  creds: PlausibleCreds,
+  siteId: string,
+  inicio: string,
+  fim: string,
+  url: string,
+  /** O goal do Plausible. Obrigatório: sem dizer o que é conversão, não há o que medir. */
+  metaConversao: string,
+): Promise<{ visitas: number; conversoes: number }> {
+  const filtroDaPagina = ["is", "event:page", [url]];
+
+  const consulta = async (filtros: unknown[]) => {
+    const r = await chamar<V2Resposta>(creds, "/api/v2/query", {
+      method: "POST",
+      body: {
+        site_id: siteId,
+        metrics: ["visitors"],
+        date_range: [inicio, fim],
+        filters: filtros,
+      },
+    });
+    if (!r.ok) throw new PlausibleErro(mensagemDoPlausible(r.erro, r.status));
+    return Number(r.data.results?.[0]?.metrics?.[0] ?? 0);
+  };
+
+  const visitas = await consulta([filtroDaPagina]);
+  // Sem visita não há o que contar de conversão, e a segunda chamada só
+  // gastaria cota para devolver zero.
+  if (visitas === 0) return { visitas: 0, conversoes: 0 };
+
+  const conversoes = await consulta([
+    filtroDaPagina,
+    ["is", "event:goal", [metaConversao]],
+  ]);
+  return { visitas, conversoes };
 }

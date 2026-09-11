@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronRight, ChevronDown, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Smartphone, Plus, MoreHorizontal, Trash2, Share2, Youtube, Pencil, ArrowUpDown, Settings, Brain, EyeOff, Eye, Archive, RotateCcw, Link2, CreditCard } from "lucide-react";
+import { ChevronRight, ChevronDown, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Smartphone, Plus, MoreHorizontal, Trash2, Share2, Youtube, Pencil, ArrowUpDown, Settings, Brain, EyeOff, Eye, Archive, RotateCcw, Link2, CreditCard, FlaskConical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -99,6 +99,7 @@ const PROJECT_SUBITEMS = [
   { label: "Vendas", href: "sales", icon: ArrowUpDown },
   { label: "Assinaturas", href: "subscriptions", icon: CreditCard },
   { label: "Conversas", href: "conversations", icon: MessageSquare },
+  { label: "Testes A/B", href: "ab-tests", icon: FlaskConical },
   // Switch (Switchy): restrito — guest não vê (esconde no nav + bloqueio na página).
   { label: "Switch", href: "switch", icon: Link2, adminOnly: true },
 ] as const;

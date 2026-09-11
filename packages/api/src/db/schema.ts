@@ -342,16 +342,14 @@ export const projectInvitations = pgTable(
       .references(() => users.id),
     email: text("email").notNull(),
     token: text("token").notNull().unique(),
-    permissions: jsonb("permissions")
-      .notNull()
-      .default({
-        instagram: true,
-        traffic: true,
-        youtubeAds: true,
-        youtubeOrganic: true,
-        conversations: true,
-        mind: true,
-      }),
+    permissions: jsonb("permissions").notNull().default({
+      instagram: true,
+      traffic: true,
+      youtubeAds: true,
+      youtubeOrganic: true,
+      conversations: true,
+      mind: true,
+    }),
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -375,16 +373,14 @@ export const projectMembers = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     role: text("role").notNull().default("guest"),
-    permissions: jsonb("permissions")
-      .notNull()
-      .default({
-        instagram: true,
-        traffic: true,
-        youtubeAds: true,
-        youtubeOrganic: true,
-        conversations: true,
-        mind: true,
-      }),
+    permissions: jsonb("permissions").notNull().default({
+      instagram: true,
+      traffic: true,
+      youtubeAds: true,
+      youtubeOrganic: true,
+      conversations: true,
+      mind: true,
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -4710,8 +4706,14 @@ export const namingDictionaryTypeEnum = pgEnum("naming_dictionary_type", [
 ]);
 
 /** Story 47.5: de onde a campanha veio — do gerador ou classificada a partir do Meta. */
-export const namingCampaignOriginEnum = pgEnum("naming_campaign_origin", ["gerador", "legado"]);
-export const namingLegacyDecisionEnum = pgEnum("naming_legacy_decision", ["classificada", "ignorada"]);
+export const namingCampaignOriginEnum = pgEnum("naming_campaign_origin", [
+  "gerador",
+  "legado",
+]);
+export const namingLegacyDecisionEnum = pgEnum("naming_legacy_decision", [
+  "classificada",
+  "ignorada",
+]);
 
 export const namingChangelogActionEnum = pgEnum("naming_changelog_action", [
   "create",
@@ -4736,12 +4738,21 @@ export const namingExperts = pgTable(
      * expert das campanhas legadas (que pertencem a projetos) sem ninguém
      * escolher à mão — escolher à mão faria o cruzamento por projeto divergir.
      */
-    projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+    projectId: uuid("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
     active: boolean("active").notNull().default(true),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (t) => [uniqueIndex("uq_naming_experts_code").on(t.code), uniqueIndex("uq_naming_experts_project").on(t.projectId)],
+  (t) => [
+    uniqueIndex("uq_naming_experts_code").on(t.code),
+    uniqueIndex("uq_naming_experts_project").on(t.projectId),
+  ],
 );
 
 export const namingProducts = pgTable(
@@ -4756,8 +4767,12 @@ export const namingProducts = pgTable(
     name: varchar("name", { length: 120 }).notNull(),
     description: text("description"),
     active: boolean("active").notNull().default(true),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     uniqueIndex("uq_naming_products_expert_slug").on(t.expertId, t.slug),
@@ -4778,8 +4793,12 @@ export const namingFunnels = pgTable(
     description: text("description").notNull(),
     startedAt: date("started_at").notNull().defaultNow(),
     active: boolean("active").notNull().default(true),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     uniqueIndex("uq_naming_funnels_expert_code").on(t.expertId, t.code),
@@ -4800,8 +4819,12 @@ export const namingOffers = pgTable(
     description: text("description").notNull(),
     startedAt: date("started_at").notNull().defaultNow(),
     active: boolean("active").notNull().default(true),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     uniqueIndex("uq_naming_offers_expert_code").on(t.expertId, t.code),
@@ -4832,8 +4855,12 @@ export const namingLandingPages = pgTable(
     url: text("url"),
     description: text("description"),
     active: boolean("active").notNull().default(true),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     uniqueIndex("uq_naming_lps_combinacao_code").on(
@@ -4858,8 +4885,12 @@ export const namingDictionaryValues = pgTable(
     description: text("description"),
     sortOrder: integer("sort_order").notNull().default(0),
     active: boolean("active").notNull().default(true),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [uniqueIndex("uq_naming_dictionary_type_value").on(t.type, t.value)],
 );
@@ -4878,16 +4909,21 @@ export const namingCampaigns = pgTable(
       .notNull()
       .references(() => namingFunnels.id, { onDelete: "restrict" }),
     /** `null` quando `offer_value = 'ofmix'`. */
-    offerId: uuid("offer_id").references(() => namingOffers.id, { onDelete: "restrict" }),
+    offerId: uuid("offer_id").references(() => namingOffers.id, {
+      onDelete: "restrict",
+    }),
     offerValue: varchar("offer_value", { length: 8 }).notNull(),
     year: varchar("year", { length: 20 }).notNull(),
     temperature: varchar("temperature", { length: 20 }).notNull(),
     auction: varchar("auction", { length: 20 }).notNull(),
     format: varchar("format", { length: 20 }).notNull(),
     /** `null` quando `lp_value` é `lpmix` ou `na`. */
-    landingPageId: uuid("landing_page_id").references(() => namingLandingPages.id, {
-      onDelete: "restrict",
-    }),
+    landingPageId: uuid("landing_page_id").references(
+      () => namingLandingPages.id,
+      {
+        onDelete: "restrict",
+      },
+    ),
     lpValue: varchar("lp_value", { length: 8 }).notNull(),
     /** `vNN`, só para distinguir campanhas idênticas no mesmo ano. Entra no fim. */
     suffix: varchar("suffix", { length: 3 }),
@@ -4901,9 +4937,15 @@ export const namingCampaigns = pgTable(
     /** Story 47.5: o nome ANTIGO no Meta, que não muda. `name` é o rótulo novo. */
     metaCampaignName: varchar("meta_campaign_name", { length: 500 }),
     notes: text("notes"),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     index("idx_naming_campaigns_expert").on(t.expertId),
@@ -4929,12 +4971,22 @@ export const namingLegacyDecisions = pgTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     campaignId: varchar("campaign_id", { length: 64 }).notNull(),
     decision: namingLegacyDecisionEnum("decision").notNull(),
-    namingCampaignId: uuid("naming_campaign_id").references(() => namingCampaigns.id, { onDelete: "set null" }),
+    namingCampaignId: uuid("naming_campaign_id").references(
+      () => namingCampaigns.id,
+      { onDelete: "set null" },
+    ),
     reason: text("reason"),
     author: uuid("author").references(() => users.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (t) => [uniqueIndex("uq_naming_legacy_decisions_campanha").on(t.projectId, t.campaignId)],
+  (t) => [
+    uniqueIndex("uq_naming_legacy_decisions_campanha").on(
+      t.projectId,
+      t.campaignId,
+    ),
+  ],
 );
 
 /**
@@ -4954,9 +5006,54 @@ export const namingChangelog = pgTable(
     before: jsonb("before").$type<Record<string, unknown> | null>(),
     after: jsonb("after").$type<Record<string, unknown> | null>(),
     author: uuid("author").references(() => users.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [index("idx_naming_changelog_entity").on(t.entity, t.entityId)],
+);
+
+/**
+ * Testes A/B de página.
+ *
+ * As variações moram em JSONB: não existem sem o teste, nunca são consultadas
+ * sozinhas e nunca passam de meia dúzia — tabela filha daria join em toda
+ * leitura para ordenar duas linhas.
+ *
+ * Visitas e conversões NÃO ficam aqui. Vêm do Plausible por URL e período na
+ * hora da leitura; guardar contador criaria um segundo lugar onde o número
+ * mora, e os dois divergiriam no primeiro reprocessamento do analytics.
+ */
+export const abTests = pgTable(
+  "ab_tests",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    nome: text("nome").notNull(),
+    /** rascunho | ativo | encerrado — CHECK na migration 0144. */
+    status: varchar("status", { length: 12 }).notNull().default("rascunho"),
+    /** Goal do Plausible que conta como conversão. `null` = qualquer um. */
+    metaConversao: text("meta_conversao"),
+    variacoes: jsonb("variacoes")
+      .$type<{ id: string; nome: string; url: string }[]>()
+      .notNull()
+      .default([]),
+    iniciadoEm: timestamp("iniciado_em", { withTimezone: true }),
+    /** Congela a janela de leitura — sem isso o vencedor de um teste antigo mudaria sozinho. */
+    encerradoEm: timestamp("encerrado_em", { withTimezone: true }),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index("idx_ab_tests_projeto").on(t.projectId, t.createdAt)],
 );
 
 // ─────────────────────── Story 47.9 — Nome de VSL ───────────────────────
