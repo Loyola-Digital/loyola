@@ -123,8 +123,8 @@ describe("imutabilidade, exclusão, coerência — spec § 5", () => {
   it("referenciado → 409 com a lista e podeDesativar", () => {
     const refs = [
       { tipo: "lp" as const, id: "1", rotulo: "bbe-churrasco-a01-of01-lpa" },
-      { tipo: "campanha" as const, id: "2", rotulo: "bbe_churrasco_a01_of01_2026_hot_cbo_videos_lpa" },
-      { tipo: "campanha" as const, id: "3", rotulo: "bbe_churrasco_a01_of01_2026_cold_cbo_videos_lpa" },
+      { tipo: "campanha" as const, id: "2", rotulo: "bbe_a01_churrasco_of01_perpetuo_2026_hot_cbo_videos_lpa" },
+      { tipo: "campanha" as const, id: "3", rotulo: "bbe_a01_churrasco_of01_perpetuo_2026_cold_cbo_videos_lpa" },
     ];
     expect(() => exigirSemReferencias([])).not.toThrow();
     try {

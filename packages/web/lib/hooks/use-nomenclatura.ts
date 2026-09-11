@@ -21,12 +21,16 @@ import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DicionarioSnapshot, ParseResult } from "@loyola-x/shared/src/nomenclatura-de-campanha";
 import type { SugestaoDeClassificacao } from "@loyola-x/shared/src/nomenclatura-legado";
+import type { TipoDeVariavel, VslParseResult, VslSnapshot } from "@loyola-x/shared/src/nomenclatura-de-vsl";
+import type { AdParseResult } from "@loyola-x/shared/src/nomenclatura-de-anuncio";
 
-export type Recurso = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "dicionario";
-export type TipoDeValor = "year" | "temperature" | "auction" | "format";
+/** `vsl/variaveis` (Story 47.9) segue o mesmo contrato CRUD, sob o prefixo `/vsl`. */
+export type Recurso = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "dicionario" | "vsl/variaveis";
+/** `creative_type` e `launch_type` (Story 47.10) são os do nome de anúncio; mesmo CRUD. */
+export type TipoDeValor = "year" | "temperature" | "auction" | "format" | "creative_type" | "launch_type";
 
 export interface Referencia {
-  tipo: "produto" | "funil" | "oferta" | "lp" | "campanha";
+  tipo: "produto" | "funil" | "oferta" | "lp" | "campanha" | "variavel" | "vsl" | "anuncio";
   id: string;
   rotulo: string;
 }
@@ -100,6 +104,14 @@ export interface ValorFixo extends Base {
   description: string | null;
   sortOrder: number;
 }
+/** Story 47.9: lead · mecanismo do problema · mecanismo da solução, por expert. */
+export interface VariavelDeVsl extends Base {
+  expertId: string;
+  type: TipoDeVariavel;
+  code: string;
+  description: string;
+  rotulo: string;
+}
 
 export type LinhaDe<R extends Recurso> = R extends "experts"
   ? Expert
@@ -109,7 +121,9 @@ export type LinhaDe<R extends Recurso> = R extends "experts"
       ? FunilOuOferta
       : R extends "lps"
         ? Lp
-        : ValorFixo;
+        : R extends "vsl/variaveis"
+          ? VariavelDeVsl
+          : ValorFixo;
 
 const BASE = "/api/nomenclatura";
 
@@ -125,7 +139,7 @@ function query(params: Record<string, string | boolean | undefined>): string {
 
 export function useListaDe<R extends Recurso>(
   recurso: R,
-  params: { inativos?: boolean; expertId?: string; productId?: string; funnelId?: string; offerId?: string; type?: TipoDeValor } = {},
+  params: { inativos?: boolean; expertId?: string; productId?: string; funnelId?: string; offerId?: string; type?: TipoDeValor | TipoDeVariavel } = {},
   opts: { enabled?: boolean } = {},
 ) {
   const apiClient = useApiClient();
@@ -139,8 +153,8 @@ export function useListaDe<R extends Recurso>(
 
 /** Sugestão de código no escopo (funis/ofertas por expert; lps pela combinação). */
 export function useProximoCodigo(
-  recurso: "funis" | "ofertas" | "lps",
-  params: { expertId?: string; productId?: string; funnelId?: string; offerId?: string },
+  recurso: "funis" | "ofertas" | "lps" | "vsl/variaveis",
+  params: { expertId?: string; productId?: string; funnelId?: string; offerId?: string; type?: TipoDeVariavel },
   enabled: boolean,
 ) {
   const apiClient = useApiClient();
@@ -157,7 +171,7 @@ export function useImpactoDaDesativacao(expertId: string | null) {
   const apiClient = useApiClient();
   return useQuery({
     queryKey: ["nomenclatura", "experts", expertId, "impacto"],
-    queryFn: () => apiClient<{ produtos: number; funis: number; ofertas: number; lps: number }>(`${BASE}/experts/${expertId}/impacto-da-desativacao`),
+    queryFn: () => apiClient<{ produtos: number; funis: number; ofertas: number; lps: number; variaveisDeVsl?: number }>(`${BASE}/experts/${expertId}/impacto-da-desativacao`),
     enabled: Boolean(expertId),
     staleTime: 0,
   });
@@ -316,6 +330,164 @@ export function useValidarNome() {
   const apiClient = useApiClient();
   return useMutation({
     mutationFn: (name: string) => apiClient<ParseResult>(`${BASE}/validar-nome`, { method: "POST", body: JSON.stringify({ name }) }),
+  });
+}
+
+// ─────────────────── Story 47.9: VSLs ───────────────────
+
+export interface Vsl {
+  id: string;
+  expertId: string;
+  productId: string;
+  leadId: string;
+  problemId: string;
+  solutionId: string;
+  offerId: string;
+  leadValue: string;
+  problemValue: string;
+  solutionValue: string;
+  offerValue: string;
+  name: string;
+  /** Link da VSL no Drive (opcional). */
+  url: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  expertCode: string;
+  productSlug: string;
+  leadRotulo: string;
+  problemRotulo: string;
+  solutionRotulo: string;
+  offerRotulo: string;
+}
+
+export function useSnapshotDeVsl(inativos = false) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["nomenclatura", "vsl", "snapshot", inativos],
+    queryFn: () => apiClient<VslSnapshot>(`${BASE}/vsl/snapshot${query({ inativos })}`),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useVsls(f: { expertId?: string; productId?: string; offerId?: string; q?: string; limit?: number; offset?: number } = {}) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["nomenclatura", "vsl", "vsls", f],
+    queryFn: () =>
+      apiClient<{ itens: Vsl[]; total: number }>(`${BASE}/vsl/vsls${query({ ...f, limit: f.limit === undefined ? undefined : String(f.limit), offset: f.offset === undefined ? undefined : String(f.offset) })}`),
+    staleTime: 15 * 1000,
+  });
+}
+
+export function useVsl(id: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["nomenclatura", "vsl", "vsls", "uma", id],
+    queryFn: () => apiClient<Vsl>(`${BASE}/vsl/vsls/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCriarVsl() {
+  const apiClient = useApiClient();
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: (dados: Record<string, unknown>) => apiClient<Vsl>(`${BASE}/vsl/vsls`, { method: "POST", body: JSON.stringify(dados) }),
+    onSuccess: invalidar,
+  });
+}
+
+export function useEditarVsl() {
+  const apiClient = useApiClient();
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: ({ id, dados }: { id: string; dados: Record<string, unknown> }) =>
+      apiClient<Vsl>(`${BASE}/vsl/vsls/${id}`, { method: "PATCH", body: JSON.stringify(dados) }),
+    onSuccess: invalidar,
+  });
+}
+
+export function useValidarNomeDeVsl() {
+  const apiClient = useApiClient();
+  return useMutation({
+    mutationFn: (name: string) => apiClient<VslParseResult>(`${BASE}/vsl/validar-nome`, { method: "POST", body: JSON.stringify({ name }) }),
+  });
+}
+
+// ─────────────────── Story 47.10: anúncios ───────────────────
+
+export interface Anuncio {
+  id: string;
+  expertId: string;
+  creativeType: string;
+  creativeSeq: number;
+  launchType: string;
+  launchSeq: number;
+  /** `AAAA-MM-01` */
+  adDate: string;
+  description: string | null;
+  structure: string;
+  name: string;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  expertCode: string;
+}
+
+export function useProximoNnDeAnuncio(expertId: string, launchType?: string) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["nomenclatura", "ads", "proximo", expertId, launchType ?? ""],
+    queryFn: () => apiClient<{ creativeSeq: number | null; creativeSeqTexto: string | null; launchSeqSugerido: number | null }>(`${BASE}/ads/proximo${query({ expertId, launchType })}`),
+    enabled: Boolean(expertId),
+    // Nunca velho: alguém acabou de reservar o 03.
+    staleTime: 0,
+  });
+}
+
+export function useAnuncios(f: { expertId?: string; creativeType?: string; launchType?: string; de?: string; ate?: string; q?: string; limit?: number; offset?: number } = {}) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["nomenclatura", "ads", "lista", f],
+    queryFn: () =>
+      apiClient<{ itens: Anuncio[]; total: number }>(`${BASE}/ads${query({ ...f, limit: f.limit === undefined ? undefined : String(f.limit), offset: f.offset === undefined ? undefined : String(f.offset) })}`),
+    staleTime: 15 * 1000,
+  });
+}
+
+export function useAnuncio(id: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["nomenclatura", "ads", "um", id],
+    queryFn: () => apiClient<Anuncio>(`${BASE}/ads/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCriarAnuncio() {
+  const apiClient = useApiClient();
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: (dados: Record<string, unknown>) => apiClient<Anuncio>(`${BASE}/ads`, { method: "POST", body: JSON.stringify(dados) }),
+    onSuccess: invalidar,
+  });
+}
+
+export function useEditarAnuncio() {
+  const apiClient = useApiClient();
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: ({ id, dados }: { id: string; dados: Record<string, unknown> }) =>
+      apiClient<Anuncio>(`${BASE}/ads/${id}`, { method: "PATCH", body: JSON.stringify(dados) }),
+    onSuccess: invalidar,
+  });
+}
+
+export function useValidarNomeDeAnuncio() {
+  const apiClient = useApiClient();
+  return useMutation({
+    mutationFn: (name: string) => apiClient<AdParseResult>(`${BASE}/ads/validar-nome`, { method: "POST", body: JSON.stringify({ name }) }),
   });
 }
 

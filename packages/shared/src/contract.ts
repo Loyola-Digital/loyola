@@ -123,4 +123,18 @@
 //
 // v9 (Story 47.5): rotas novas `/api/nomenclatura/legadas*` e o campo `legado`
 // na resposta de `validar-nome`. ADITIVA; a aba Legadas depende delas.
-export const API_CONTRACT_VERSION = 9;
+//
+// v10 (Story 47.8): template v2 do nome de campanha — dez campos, `perpetuo`
+// na 5ª posição. NÃO aditiva: `partes` de `/validar-nome` passou de 9 para 10
+// pedaços e as posições nas mensagens mudaram; o web antigo desenharia dez
+// pedaços em nove rótulos. `packages/mcp` não é afetado.
+//
+// v11 (Story 47.9): rotas novas `/api/nomenclatura/vsl/*` (variáveis de VSL,
+// snapshot, validador e VSLs) e o campo `variaveisDeVsl` em
+// `impacto-da-desativacao`. ADITIVA; `packages/mcp` não é afetado.
+//
+// v12 (Story 47.10): rotas novas `/api/nomenclatura/ads/*` e dois tipos novos
+// em `naming_dictionary_values` (`creative_type`, `launch_type`) — o web
+// antigo desconhece os tipos e a aba Valores fixos do Dicionário segue com os
+// quatro. ADITIVA; `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 12;

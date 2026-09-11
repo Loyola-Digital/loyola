@@ -135,5 +135,52 @@ export async function montarCampanha(r: Repositorio, e: EntradaDeCampanha): Prom
   };
 }
 
+/**
+ * Story 47.8 (AC5, T5) — recalcula `name` das campanhas NÃO publicadas com o
+ * template vigente. Idempotente: quem já está no padrão não é tocada. Publicada
+ * nunca muda (regra 6) — nem passa por aqui, o repositório só devolve as sem
+ * `published_at`.
+ *
+ * Reconstrói a partir do que a linha guarda (FKs → código; valores fixos e
+ * `offerValue`/`lpValue` são texto na própria linha). Só formato: NÃO revalida
+ * contra o dicionário vigente, porque a campanha já existe — se um valor foi
+ * desativado depois, o nome continua reconstruível (spec § 4.7) e é isso que
+ * se quer preservar. Cada mudança deixa `before`/`after` no changelog.
+ */
+export async function recalcularNomesNaoPublicados(r: Repositorio, author: string | null): Promise<{ examinadas: number; renomeadas: { id: string; de: string; para: string }[]; ignoradas: { id: string; motivo: string }[] }> {
+  const campanhas = await r.campanhas.naoPublicadas();
+  const renomeadas: { id: string; de: string; para: string }[] = [];
+  const ignoradas: { id: string; motivo: string }[] = [];
+  for (const c of campanhas) {
+    const [expert, produto, funil] = await Promise.all([r.porId("experts", c.expertId), r.porId("produtos", c.productId), r.porId("funis", c.funnelId)]);
+    if (!expert || !produto || !funil) {
+      ignoradas.push({ id: c.id, motivo: "expert, produto ou funil não encontrado" });
+      continue;
+    }
+    let name: string;
+    try {
+      name = buildCampaignName({
+        expert: expert.code,
+        product: produto.slug,
+        funnel: funil.code,
+        offer: c.offerValue,
+        year: c.year,
+        temperature: c.temperature,
+        auction: c.auction,
+        format: c.format,
+        lp: c.lpValue,
+        ...(c.suffix ? { suffix: c.suffix } : {}),
+      });
+    } catch (err) {
+      ignoradas.push({ id: c.id, motivo: (err as Error).message });
+      continue;
+    }
+    if (name === c.name) continue;
+    await r.atualizar("campanhas", c, { name } as never, author, "update");
+    renomeadas.push({ id: c.id, de: c.name, para: name });
+  }
+  return { examinadas: campanhas.length, renomeadas, ignoradas };
+}
+
 /** Os campos que congelam depois de publicada (spec § 3, regra 6). */
 export const CAMPOS_DO_NOME = ["expertId", "productId", "funnelId", "offerId", "landingPageId", "lpValue", "year", "temperature", "auction", "format", "suffix"] as const;

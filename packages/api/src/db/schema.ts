@@ -4700,6 +4700,9 @@ export const namingDictionaryTypeEnum = pgEnum("naming_dictionary_type", [
   "temperature",
   "auction",
   "format",
+  /** Story 47.10: tipo de criativo (ad · adv · carr) e sigla de lançamento (pg · l · m · pr) do nome de anúncio. */
+  "creative_type",
+  "launch_type",
 ]);
 
 /** Story 47.5: de onde a campanha veio — do gerador ou classificada a partir do Meta. */
@@ -5051,4 +5054,113 @@ export const abTests = pgTable(
       .notNull(),
   },
   (t) => [index("idx_ab_tests_projeto").on(t.projectId, t.createdAt)],
+);
+
+// ─────────────────────── Story 47.9 — Nome de VSL ───────────────────────
+//
+// `vsl_expert_produto_lead_problema_solucao_oferta`. As três variáveis
+// próprias (lead · mecanismo do problema · mecanismo da solução) são por
+// expert e vivem numa tabela só com `type` — o mesmo desenho de
+// `naming_dictionary_values` com `expert_id` a mais (D17). Expert, produto e
+// oferta são os do dicionário de campanhas (a oferta é o pitch — D19).
+
+export const namingVslVariableTypeEnum = pgEnum("naming_vsl_variable_type", ["lead", "problem", "solution"]);
+
+export const namingVslVariables = pgTable(
+  "naming_vsl_variables",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    expertId: uuid("expert_id")
+      .notNull()
+      .references(() => namingExperts.id, { onDelete: "restrict" }),
+    type: namingVslVariableTypeEnum("type").notNull(),
+    /** `[a-z0-9-]`, até 20. Único por (expert, tipo), inativos inclusos. Imutável depois de usado. */
+    code: varchar("code", { length: 20 }).notNull(),
+    /** Obrigatória: é o que se lê no select do gerador. */
+    description: text("description").notNull(),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("uq_naming_vsl_variables_expert_type_code").on(t.expertId, t.type, t.code),
+    index("idx_naming_vsl_variables_expert").on(t.expertId),
+  ],
+);
+
+export const namingVsls = pgTable(
+  "naming_vsls",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    expertId: uuid("expert_id")
+      .notNull()
+      .references(() => namingExperts.id, { onDelete: "restrict" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => namingProducts.id, { onDelete: "restrict" }),
+    leadId: uuid("lead_id")
+      .notNull()
+      .references(() => namingVslVariables.id, { onDelete: "restrict" }),
+    problemId: uuid("problem_id")
+      .notNull()
+      .references(() => namingVslVariables.id, { onDelete: "restrict" }),
+    solutionId: uuid("solution_id")
+      .notNull()
+      .references(() => namingVslVariables.id, { onDelete: "restrict" }),
+    offerId: uuid("offer_id")
+      .notNull()
+      .references(() => namingOffers.id, { onDelete: "restrict" }),
+    /** Os TEXTOS que entraram no nome — reconstruível mesmo se uma variável for desativada (spec § 4.7). */
+    leadValue: varchar("lead_value", { length: 20 }).notNull(),
+    problemValue: varchar("problem_value", { length: 20 }).notNull(),
+    solutionValue: varchar("solution_value", { length: 20 }).notNull(),
+    offerValue: varchar("offer_value", { length: 8 }).notNull(),
+    /** GERADO e armazenado. Único: duas VSLs com a mesma combinação são a mesma VSL (D18). */
+    name: varchar("name", { length: 160 }).notNull(),
+    /** Pedido do dono (2026-09-10): o link do vídeo/roteiro no Drive, pedido na criação. Opcional. */
+    url: text("url"),
+    notes: text("notes"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("uq_naming_vsls_name").on(t.name), index("idx_naming_vsls_expert").on(t.expertId)],
+);
+
+// ─────────────────────── Story 47.10 — Nome de anúncio ───────────────────────
+//
+// `{tipo}{NN}_{expert}_{sigla}{NN}_{mm-aaaa}--{descricao}`. Tipo de criativo e
+// sigla de lançamento vivem em `naming_dictionary_values` (types novos). O NN
+// do criativo é uma sequência ÚNICA por expert (unique `(expert_id,
+// creative_seq)`), reservada NA GRAVAÇÃO (D22) — o servidor recalcula e o
+// UNIQUE é a garantia contra corrida. `structure` (até o `--`) é o que o
+// designer recebe; `name` é estrutura + descrição.
+
+export const namingAds = pgTable(
+  "naming_ads",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    expertId: uuid("expert_id")
+      .notNull()
+      .references(() => namingExperts.id, { onDelete: "restrict" }),
+    /** Valor de `creative_type` (texto, reconstruível). */
+    creativeType: varchar("creative_type", { length: 20 }).notNull(),
+    creativeSeq: integer("creative_seq").notNull(),
+    /** Valor de `launch_type`. */
+    launchType: varchar("launch_type", { length: 20 }).notNull(),
+    launchSeq: integer("launch_seq").notNull(),
+    /** Primeiro dia do mês; o nome mostra `mm-aaaa`. */
+    adDate: date("ad_date").notNull(),
+    /** A parte depois do `--`, normalizada. Opcional: o designer pode personalizar fora. */
+    description: text("description"),
+    /** GERADA: até o `--` inclusive. */
+    structure: varchar("structure", { length: 80 }).notNull(),
+    /** GERADA: estrutura + descrição (igual à estrutura sem descrição). */
+    name: varchar("name", { length: 160 }).notNull(),
+    notes: text("notes"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("uq_naming_ads_expert_seq").on(t.expertId, t.creativeSeq), index("idx_naming_ads_expert").on(t.expertId)],
 );

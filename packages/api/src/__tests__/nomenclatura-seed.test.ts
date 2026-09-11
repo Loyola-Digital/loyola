@@ -68,7 +68,8 @@ describe("seed da nomenclatura", () => {
     const segunda = await seedNomenclatura(banco.db);
     expect(banco.contagens()).toEqual(depoisDa1);
     expect(Object.values(segunda.inseridos).every((n) => n === 0)).toBe(true);
-    expect(primeira.inseridos.naming_dictionary_values).toBe(10);
+    // 10 da spec § 9.6 (+2025) + 7 do nome de anúncio (Story 47.10: 3 tipos de criativo + 4 siglas)
+    expect(primeira.inseridos.naming_dictionary_values).toBe(17);
   });
 
   it("valores fixos entram na ordem da spec § 9.6 e nada de mix/carrossel fora do lugar", async () => {
@@ -80,6 +81,15 @@ describe("seed da nomenclatura", () => {
     expect(por("temperature")).toEqual(["hot", "cold"]);
     expect(por("auction")).toEqual(["abo", "cbo"]);
     expect(por("format")).toEqual(["videos", "estaticos", "mix"]);
+  });
+
+  it("47.10 AC1: tipo de criativo e sigla de lançamento entram na ordem e com as descrições do pedido", async () => {
+    const banco = bancoEmMemoria();
+    await seedNomenclatura(banco.db);
+    const valores = banco.tabelas.get("naming_dictionary_values")!;
+    const por = (type: string) => valores.filter((v) => v.type === type).sort((a, b) => (a.sortOrder as number) - (b.sortOrder as number)).map((v) => [v.value, v.description]);
+    expect(por("creative_type")).toEqual([["ad", "estático"], ["adv", "vídeo"], ["carr", "carrossel"]]);
+    expect(por("launch_type")).toEqual([["pg", "lançamento pago"], ["l", "lançamento gratuito"], ["m", "meteórico"], ["pr", "evento presencial"]]);
   });
 
   it("changelog: uma linha `create` por registro inserido, e só na primeira rodada", async () => {

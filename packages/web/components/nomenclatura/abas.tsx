@@ -202,7 +202,8 @@ export function AbaValoresFixos({ podeEditar }: { podeEditar: boolean }) {
   );
 }
 
-function SecaoDeValores({ tipo, podeEditar }: { tipo: TipoDeValor; podeEditar: boolean }) {
+/** Uma tabelinha de um tipo de valor fixo — reaproveitada pela seção Nome Ads (Story 47.10). */
+export function SecaoDeValores({ tipo, podeEditar }: { tipo: TipoDeValor; podeEditar: boolean }) {
   const aba = useAba<ValorFixo>();
   const lista = useListaDe("dicionario", { inativos: aba.inativos, type: tipo });
   const reativar = useReativar("dicionario");

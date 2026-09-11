@@ -57,18 +57,67 @@ export {
   OFMIX,
   LPMIX,
   NA,
+  PERPETUO,
+  ORDEM_DO_NOME,
   ORDEM_DOS_CAMPOS,
+  TOTAL_DE_CAMPOS,
+  TOTAL_DE_SEPARADORES,
+  DICA_DO_PADRAO_ANTIGO,
   CAMPO,
   buildCampaignName,
   pedacosDoNome,
   parseCampaignName,
   type CampoDoNome,
+  type PosicaoDoNome,
   type BlocoDoNome,
   type CampaignFields,
   type PedacoDoNome,
   type DicionarioSnapshot,
   type ParseResult,
 } from "./nomenclatura-de-campanha.js";
+// Story 47.9: o nome da VSL — `vsl_expert_produto_lead_problema_solucao_oferta`.
+// Módulo folha: o web importa por `@loyola-x/shared/src/nomenclatura-de-vsl`.
+export {
+  PREFIXO_VSL,
+  ORDEM_DA_VSL,
+  CAMPOS_DA_VSL,
+  CAMPO_DA_VSL,
+  TIPOS_DE_VARIAVEL,
+  PREFIXO_DA_VARIAVEL,
+  TIPO_DE_CODIGO_DA_VARIAVEL,
+  TOTAL_DE_CAMPOS_DA_VSL,
+  buildVslName,
+  pedacosDaVsl,
+  parseVslName,
+  type CampoDaVsl,
+  type PosicaoDaVsl,
+  type BlocoDaVsl,
+  type TipoDeVariavel,
+  type VslFields,
+  type PedacoDaVsl,
+  type VslSnapshot,
+  type VslParseResult,
+} from "./nomenclatura-de-vsl.js";
+// Story 47.10: o nome do anúncio — `{tipo}{NN}_{expert}_{sigla}{NN}_{mm-aaaa}--{descricao}`.
+// Módulo folha: o web importa por `@loyola-x/shared/src/nomenclatura-de-anuncio`.
+export {
+  SEPARADOR_DA_DESCRICAO,
+  FORMATO_DA_DATA_DO_ANUNCIO,
+  ORDEM_DO_ANUNCIO,
+  CAMPO_DO_ANUNCIO,
+  doisDigitos,
+  mesAnoDe,
+  primeiroDiaDoMes,
+  buildAdName,
+  pedacosDoAnuncio,
+  parseAdName,
+  type AdFields,
+  type AdSnapshot,
+  type AdParseResult,
+  type PedacoDoAnuncio,
+  type PosicaoDoAnuncio,
+  type BlocoDoAnuncio,
+} from "./nomenclatura-de-anuncio.js";
 // Story 47.5: campanhas legadas — filtro por token e sugestão de classificação
 // a partir do nome antigo. Módulo folha (web: subpath `src/nomenclatura-legado`).
 export {

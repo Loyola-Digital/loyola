@@ -1,0 +1,68 @@
+alvo: "Story 47.8 — Nomenclatura: novo padrão do nome de campanha (template v2: funil junto do expert, `perpetuo` na 5ª posição)"
+epic: 47
+commit: "86c0720b + correção do gate (branch feat/47.8-template-v2-nome-de-campanha, empilhada em feat/47.7-slug-de-lp-secao / PR #843)"
+revisadoPor: "@qa (Quinn)"
+revisadoEm: "2026-09-10"
+
+decisao: CONCERNS
+condicional: >
+  Aprovada para PR. CONCERNS por três pendências que não são de código:
+  (1) ⛔ P4 — o merge (= deploy) só depois que o fluxo externo que quebra o
+  nome em 9 colunas aceitar 10; (2) T5 — o recálculo roda em produção depois
+  do deploy, com autorização do dono (1 linha hoje); (3) AC11 — roteiro visual
+  de 9 passos com o dono. Um achado corrigido no gate (QA-478-01). Mesmo agente
+  implementou e revisou na mesma sessão; o re-executado de forma independente
+  está em `evidencias`.
+
+rastreabilidade:
+  AC0: "re-medida no develop: 1 campanha, gerador, não publicada, sem id da Meta, ainda no v1 (split_part(name,'_',5) ≠ perpetuo)"
+  AC1: "ORDEM_DO_NOME/PERPETUO/build/parse — nomenclatura-nome.test.ts (reversões B, G)"
+  AC2: "posições novas nas mensagens; dica do padrão antigo com e sem sufixo (reversões A, C); QA-478-01 fecha o falso positivo"
+  AC3: "pedacosDoNome 10 pedaços, kind identidade; web gerador test 55/60 caracteres; ordem dos selects intacta (nomenclatura-gerador.ts sem diff)"
+  AC4: "montarCampanha usa build/parse — 'AC 11 (servidor)' da 47.3 segue verde (publicada 409)"
+  AC5: "recalcularNomesNaoPublicados + script; rotas test AC5 (idempotência, changelog before/after) — reversão F; predicado published_at IS NULL renderizado (repositorio test)"
+  AC6: "GET /legadas exclui metaIdsDoGerador() — rotas test AC6 (reversão D); predicado origin = gerador renderizado; a classificada (origem legado) segue na fila — teste da 47.5 verde"
+  AC7: "perpetual-report-dimensoes.test.ts verde sem alteração; MAS o mapa lia produto/funil pelo nome (a AC7 da story estava errada) — corrigido com codigosDoNome + fallback v1 (reversão E)"
+  AC8: "API_CONTRACT_VERSION 9 → 10 com o motivo no contract.ts"
+  AC9: "page.tsx, previa, validador, cabeçalho do shared; adendo já estava no epic"
+  AC10: "7 reversões medidas (A–G), cada uma derruba de 1 a 8 testes; matriz na story"
+  AC11: "PENDENTE — roteiro de 9 passos na story"
+
+evidencias:
+  - "@qa re-executou: nomenclatura-nome (23), rotas (29), regras, mapa (6), repositorio (23), perpetual-report-dimensoes — 105/105 depois da correção do gate"
+  - "@dev na mesma sessão: API 2.634 + 11 baseline (funnel-stages-lead-inputs, instagram-routes, instagram, projects, schema); web 1.174/1.174; next build verde; tsc API limpo"
+  - "shared rebuildado antes de cada rodada da API (os testes da API leem o dist)"
+  - "CodeRabbit: CLI ausente nesta máquina — não rodou; declarado"
+
+corrigido_no_gate:
+  - id: QA-478-01
+    severidade: medium
+    o_que: >
+      A dica "parece o padrão anterior" disparava para QUALQUER nome com 9
+      pedaços — inclusive um v2 ao qual falta um campo
+      (`bbe_a01_churrasco_of01_perpetuo_2026_hot_cbo_videos`), que não é v1
+      nenhum. O teste do @dev fixava esse comportamento como esperado.
+    correcao: "dica só quando o 5º pedaço NÃO é `perpetuo`; teste novo (QA-478-01) e o antigo apontado para um nome v1 de verdade."
+
+achados_abertos:
+  - id: QA-478-02
+    severidade: low
+    o_que: >
+      `recalcularNomesNaoPublicados` não chama `invalidarMapa()`. Uma campanha
+      não publicada mas com id da Meta colado (possível: AC5 da 47.6 deixa
+      colar antes de publicar) fica com `name` velho no mapa da 47.6 por até
+      60 s depois do recálculo. Só afeta o rótulo `name`; as dimensões vêm das
+      colunas.
+    recomendacao: "chamar invalidarMapa() ao fim do recálculo (uma linha) — ou aceitar os 60 s, já que o script roda uma vez."
+  - id: QA-478-03
+    severidade: info
+    o_que: >
+      Contrato 10 não é aditivo. Web novo + API velha: `partes` vem com 9 e o
+      validador cai no texto plano (`partes.join`) — degrada sem quebrar. API
+      nova + web velho: dez pedaços em nove rótulos — o banner da 29.45 avisa.
+      Ordem de deploy: API antes do web, como sempre.
+  - id: QA-478-04
+    severidade: info
+    o_que: "AC3/AC9/AC11 (tela) só têm prova pelo roteiro visual — componente .tsx sem runner."
+
+debitos_documentados: []

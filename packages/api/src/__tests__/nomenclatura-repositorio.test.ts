@@ -239,6 +239,95 @@ describe("Story 47.3: campanhas.listar — filtros vão para o SQL, não para a 
     await criarRepositorio(c.db).campanhas.listar({ limit: 10, offset: 0 });
     expect(c.registros[0].where).toBeUndefined();
   });
+  it("47.8: metaIdsDoGerador filtra meta_campaign_id IS NOT NULL E origin = gerador (a legada classificada fica fora)", async () => {
+    const a = fakeDb([[{ metaCampaignId: "111" }, { metaCampaignId: "222" }]]);
+    const ids = await criarRepositorio(a.db).campanhas.metaIdsDoGerador();
+    const q = sqlDe(a.registros[0].where);
+    expect(q.sql).toMatch(/"meta_campaign_id" is not null/);
+    expect(q.sql).toMatch(/"origin" = /);
+    expect(q.params).toEqual(["gerador"]);
+    expect([...ids]).toEqual(["111", "222"]);
+  });
+  it("47.9: vslVariaveis.porCode filtra expert + type + code SEM active (unicidade inclui inativos); listar filtra active só sem inativos", async () => {
+    const a = fakeDb([[]]);
+    await criarRepositorio(a.db).vslVariaveis.porCode(EXPERT, "lead", "demissao");
+    const q = sqlDe(a.registros[0].where);
+    expect(q.sql).toMatch(/"expert_id" = /);
+    expect(q.sql).toMatch(/"type" = /);
+    expect(q.sql).toMatch(/"code" = /);
+    expect(q.sql).not.toMatch(/"active"/);
+    expect(q.params).toEqual([EXPERT, "lead", "demissao"]);
+    const b = fakeDb([[]]);
+    await criarRepositorio(b.db).vslVariaveis.listar({ expertId: EXPERT, type: "solution" }, false);
+    expect(sqlDe(b.registros[0].where).sql).toMatch(/"active" = /);
+    const c = fakeDb([[]]);
+    await criarRepositorio(c.db).vslVariaveis.listar({ expertId: EXPERT }, true);
+    expect(sqlDe(c.registros[0].where).sql).not.toMatch(/"active"/);
+  });
+  it("47.9: vslVariaveis.codigos filtra expert + type SEM active (sugestão conta inativos, regra 4)", async () => {
+    const a = fakeDb([[{ code: "lead01" }, { code: "lead02" }]]);
+    const codes = await criarRepositorio(a.db).vslVariaveis.codigos(EXPERT, "lead");
+    expect(codes).toEqual(["lead01", "lead02"]);
+    const q = sqlDe(a.registros[0].where);
+    expect(q.params).toEqual([EXPERT, "lead"]);
+    expect(q.sql).not.toMatch(/"active"/);
+  });
+  it("47.9: vsls.listar por expert/produto/oferta e ILIKE no nome; porNome é igualdade exata", async () => {
+    const a = fakeDb([[], [{ n: 0 }]]);
+    await criarRepositorio(a.db).vsls.listar({ expertId: EXPERT, offerId: "00000000-0000-4000-8000-00000000000f", q: "demissao", limit: 10, offset: 0 });
+    const q = sqlDe(a.registros[0].where);
+    expect(q.sql).toMatch(/"expert_id" = /);
+    expect(q.sql).toMatch(/"offer_id" = /);
+    expect(q.sql).toMatch(/"name" ilike /);
+    expect(q.params).toEqual([EXPERT, "00000000-0000-4000-8000-00000000000f", "%demissao%"]);
+    const b = fakeDb([[]]);
+    await criarRepositorio(b.db).vsls.porNome("vsl_x");
+    expect(sqlDe(b.registros[0].where).params).toEqual(["vsl_x"]);
+  });
+  it("47.9: usoEmVsls agrupa pela coluna pedida e vslsQueUsam conta pela FK", async () => {
+    const a = fakeDb([[{ id: "o1", n: 2 }]]);
+    const m = await criarRepositorio(a.db).usoEmVsls("offerId");
+    expect(m.get("o1")).toBe(2);
+    // groupBy recebe a COLUNA (não um SQL): o nome dela é o que se prova
+    expect((a.registros[0].groupBy as { name: string }).name).toBe("offer_id");
+    const b = fakeDb([[{ n: 3 }]]);
+    expect(await criarRepositorio(b.db).vslsQueUsam("leadId", "l1")).toBe(3);
+    expect(sqlDe(b.registros[0].where).sql).toMatch(/"lead_id" = /);
+  });
+  it("47.10: anuncios.seqsDoExpert lê TODOS os NN do expert (sem filtro de tipo — sequência única); porSeq é expert + seq", async () => {
+    const a = fakeDb([[{ id: "a1", creativeSeq: 1 }]]);
+    await criarRepositorio(a.db).anuncios.seqsDoExpert(EXPERT);
+    const q = sqlDe(a.registros[0].where);
+    expect(q.sql).toMatch(/"expert_id" = /);
+    expect(q.sql).not.toMatch(/creative_type/);
+    expect(q.params).toEqual([EXPERT]);
+    const b = fakeDb([[]]);
+    await criarRepositorio(b.db).anuncios.porSeq(EXPERT, 7);
+    expect(sqlDe(b.registros[0].where).params).toEqual([EXPERT, 7]);
+  });
+  it("47.10: anuncios.listar filtra expert/tipo/sigla/período (ad_date >= e <=) e ILIKE no nome", async () => {
+    const a = fakeDb([[], [{ n: 0 }]]);
+    await criarRepositorio(a.db).anuncios.listar({ expertId: EXPERT, creativeType: "adv", launchType: "pg", de: "2026-09-01", ate: "2026-12-01", q: "gancho", limit: 10, offset: 0 });
+    const q = sqlDe(a.registros[0].where);
+    expect(q.sql).toMatch(/"ad_date" >= /);
+    expect(q.sql).toMatch(/"ad_date" <= /);
+    expect(q.sql).toMatch(/"name" ilike /);
+    expect(q.params).toEqual([EXPERT, "adv", "pg", "2026-09-01", "2026-12-01", "%gancho%"]);
+  });
+  it("47.10: usoPorValor/campanhasComValor de creative_type e launch_type contam em naming_ads, não em naming_campaigns", async () => {
+    const a = fakeDb([[{ valor: "adv", n: 2 }]]);
+    const m = await criarRepositorio(a.db).usoPorValor("creative_type");
+    expect(m.get("adv")).toBe(2);
+    expect((a.registros[0].groupBy as { name: string }).name).toBe("creative_type");
+    const b = fakeDb([[{ n: 1 }]]);
+    expect(await criarRepositorio(b.db).campanhasComValor("launch_type", "pg")).toBe(1);
+    expect(sqlDe(b.registros[0].where).sql).toMatch(/"launch_type" = /);
+  });
+  it("47.8: naoPublicadas é published_at IS NULL — publicada nunca entra no recálculo (regra 6)", async () => {
+    const a = fakeDb([[]]);
+    await criarRepositorio(a.db).campanhas.naoPublicadas();
+    expect(sqlDe(a.registros[0].where).sql).toMatch(/"published_at" is null/);
+  });
 });
 
 describe("Story 47.3: snapshot — por código, com os pais resolvidos", () => {

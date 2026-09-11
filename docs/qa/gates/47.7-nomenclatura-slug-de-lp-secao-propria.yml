@@ -1,0 +1,55 @@
+alvo: "Story 47.7 — Nomenclatura: \"Slug de LP\" vira seção própria e lista as LPs do expert"
+epic: 47
+commit: "b28c3faa (branch feat/47.7-slug-de-lp-secao, empilhada em docs/47.7-47.10-stories / PR #842)"
+revisadoPor: "@qa (Quinn)"
+revisadoEm: "2026-09-10"
+
+decisao: CONCERNS
+condicional: >
+  Aprovada. CONCERNS só porque a AC8 (roteiro visual de 10 passos) depende do
+  dono do produto em produção — as ACs de tela (AC4–AC6) não têm teste
+  automatizado neste repo (runner só coleta lib/utils) e o roteiro é a prova.
+  Dois achados low, nenhum bloqueia. Gate promovido a PASS quando o dono
+  relatar o roteiro. Mesmo agente implementou e revisou na mesma sessão;
+  o que foi re-executado de forma independente está em `evidencias`.
+
+rastreabilidade:
+  AC1: "SECOES com slug depois de campanhas; abaAtiva({secao:'slug'}) → {secao:'slug'} — teste 'AC1' (2 casos)"
+  AC2: "ABAS_DE_CAMPANHAS = nova·lista·validar·legadas — teste 'AC2'"
+  AC3: "?secao=campanhas&aba=slug → {secao:'slug'} — teste 'AC3'; REVERSÃO MEDIDA: sem a linha `if (pedida === \"slug\")` o caso cai (1 de 10)"
+  AC4: "gerador-de-slug.tsx lista com só expertId; colunas Código·Slug(copiar)·URL(link)·Descrição; ordem por slug — roteiro visual passos 4 e 7"
+  AC5: "useListaDe('lps', {expertId, productId?, funnelId?, offerId?}); rota GET /api/nomenclatura/lps passa cada filtro opcional a r.lps.listar (routes/nomenclatura.ts:468) — CONFERIDO no código; roteiro passos 5, 6 e 8"
+  AC6: "vazio ('Nenhuma LP cadastrada para {expert}.' / 'nesta combinação') e erro (erroDaApi().mensagem, role=alert) são ramos distintos — roteiro passo 10"
+  AC7: "sugestão, prévia do slug, Cadastrar esta LP e FormLp intactos no diff; web 1.174/1.174; next build verde"
+  AC8: "PENDENTE — roteiro de 10 passos na story, coluna Resultado vazia"
+
+evidencias:
+  - "nomenclatura-abas.test.ts 10/10 re-executado pelo @qa; eslint limpo nos 2 arquivos principais re-executado pelo @qa"
+  - "suíte do web 1.174/1.174 (81 arquivos) e next build verde — executados pelo @dev na mesma sessão"
+  - "tsc: erros só em cópias '* 2.tsx' de sincronização (491, gitignored, nenhuma rastreada); zero nos arquivos do repo"
+  - "todos os 9 chamadores de hrefDe (gerador-de-campanha.tsx, lista-de-campanhas.tsx) passam aba — a assinatura opcional não muda comportamento"
+  - "CodeRabbit: CLI ausente nesta máquina (macOS, sem WSL) — não rodou; declarado"
+
+achados_abertos:
+  - id: QA-477-01
+    severidade: low
+    o_que: >
+      A marcação "(inativa)" na tabela de LPs é código morto: a lista não pede
+      `inativos`, e `GET /lps` sem esse parâmetro devolve só ativas
+      (`querInativos(q)`). Já era assim antes da story ("como hoje", AC4), mas a
+      tabela nova deixa a marcação mais visível. Ou passa `inativos: true` (e
+      então mostra a marcação de verdade) ou remove a marcação.
+    recomendacao: "Decidir com o dono: a spec § 5 tira inativos dos selects do gerador; a tela de slug é auxiliar, listar só ativas é coerente. Se ficar assim, remover o ramo."
+  - id: QA-477-02
+    severidade: low
+    o_que: >
+      Erro da API na tabela usa `erroDaApi().mensagem` cru; as abas do
+      Dicionário usam `mensagemDeErro()` (privada em abas.tsx) que traduz 404
+      em "a API ainda não tem as rotas" e 500 em "migration pendente". Painel
+      à frente da API (cenário real, 29.45) mostra aqui um texto menos útil.
+    recomendacao: "Exportar `mensagemDeErro` de abas.tsx (ou mover para use-nomenclatura.ts) e usar nos dois lugares. Uma linha."
+  - id: QA-477-03
+    severidade: info
+    o_que: "AC4–AC6 só têm prova pelo roteiro visual (componente .tsx sem runner). Declarado na story e no epic desde a 47.4."
+
+debitos_documentados: []

@@ -73,21 +73,21 @@ describe("ano padrão", () => {
 
 describe("AC 3/4 — prévia com a MESMA função do servidor", () => {
   const t = { experts: [{ id: "e", code: "bbe" }], produtos: [{ id: "p", slug: "churrasco" }], funis: [{ id: "f", code: "a01" }], ofertas: [{ id: "o", code: "of01" }], lps: [{ id: "l", code: "lpa" }] };
-  it("completo: 46 caracteres, exatamente o nome da spec", () => {
+  it("completo: 55 caracteres, exatamente o nome do template v2 (47.8)", () => {
     const p = previaDoNome(camposDoNome(cheio, t));
-    expect(p.nome).toBe("bbe_churrasco_a01_of01_2026_hot_cbo_videos_lpa");
-    expect(p.tamanho).toBe(46);
+    expect(p.nome).toBe("bbe_a01_churrasco_of01_perpetuo_2026_hot_cbo_videos_lpa");
+    expect(p.tamanho).toBe(55);
     expect(p.completo).toBe(true);
   });
   it("sufixo v02 entra no fim; ofmix/na entram como texto", () => {
     expect(previaDoNome(camposDoNome({ ...cheio, suffix: "v02" }, t)).nome).toMatch(/_lpa_v02$/);
-    expect(previaDoNome(camposDoNome({ ...cheio, offerId: "ofmix", lpId: "na" }, t)).nome).toBe("bbe_churrasco_a01_ofmix_2026_hot_cbo_videos_na");
+    expect(previaDoNome(camposDoNome({ ...cheio, offerId: "ofmix", lpId: "na" }, t)).nome).toBe("bbe_a01_churrasco_ofmix_perpetuo_2026_hot_cbo_videos_na");
   });
   it("parcial: `…` no lugar do que falta, sem nome, Salvar bloqueado", () => {
     const p = previaDoNome(camposDoNome({ ...cheio, funnelId: "", lpId: "" }, t));
     expect(p.nome).toBeNull();
     expect(p.completo).toBe(false);
-    expect(p.texto).toBe("bbe_churrasco_…_of01_2026_hot_cbo_videos_…");
+    expect(p.texto).toBe("bbe_…_churrasco_of01_perpetuo_2026_hot_cbo_videos_…");
     expect(p.pedacos.filter((x) => x.faltando).map((x) => x.campo)).toEqual(["funnel", "lp"]);
   });
   it("sufixo fora do formato: completo mas com erro, sem nome", () => {

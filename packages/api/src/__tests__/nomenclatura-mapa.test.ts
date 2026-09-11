@@ -27,7 +27,7 @@ function fakeDb(respostas: unknown[][] = []) {
 
 const campanha = (over: Record<string, unknown> = {}) => ({
   id: "n1", expertId: "e1", productId: "p1", funnelId: "f1", offerId: "o1", offerValue: "of01", year: "2026", temperature: "hot", auction: "cbo", format: "videos",
-  landingPageId: null, lpValue: "na", suffix: null, name: "bbe_churrasco_a01_of01_2026_hot_cbo_videos_na", publishedAt: null, metaCampaignId: "111", origin: "legado",
+  landingPageId: null, lpValue: "na", suffix: null, name: "bbe_a01_churrasco_of01_perpetuo_2026_hot_cbo_videos_na", publishedAt: null, metaCampaignId: "111", origin: "legado",
   metaCampaignName: "bbe-a1-jul-26--venda--perpetuo--hot_cbo", notes: null, createdBy: null, createdAt: new Date(), updatedAt: new Date(), ...over,
 });
 
@@ -40,7 +40,13 @@ describe("mapaDeDimensoes", () => {
     expect(sqlDe(registros[0].join).sql).toMatch(/"project_id" = /);
     expect(sqlDe(registros[0].join).params).toEqual(["proj-1"]);
     expect(sqlDe(registros[0].where).sql).toMatch(/"meta_campaign_id" is not null/);
-    expect(m.get("111")).toMatchObject({ expert: "bbe", product: "churrasco", funnel: "a01", offer: "of01", temperature: "hot", lp: "na", origin: "legado", name: "bbe_churrasco_a01_of01_2026_hot_cbo_videos_na" });
+    expect(m.get("111")).toMatchObject({ expert: "bbe", product: "churrasco", funnel: "a01", offer: "of01", temperature: "hot", lp: "na", origin: "legado", name: "bbe_a01_churrasco_of01_perpetuo_2026_hot_cbo_videos_na" });
+  });
+  it("47.8: nome congelado no v1 (publicado antes do template v2) ainda dá produto e funil nas casas certas", async () => {
+    const { db } = fakeDb([[{ c: campanha({ name: "bbe_churrasco_a01_of01_2026_hot_cbo_videos_na", publishedAt: new Date("2026-09-09") }) }]]);
+    const m = await mapaDeDimensoes(db, "proj-1");
+    // sem o fallback, product viraria "a01" e funnel "churrasco"
+    expect(m.get("111")).toMatchObject({ expert: "bbe", product: "churrasco", funnel: "a01" });
   });
   it("cache de 60s: segunda chamada não consulta; invalidar volta a consultar", async () => {
     const { db, registros } = fakeDb([[{ c: campanha() }], [{ c: campanha({ metaCampaignId: "222" }) }]]);

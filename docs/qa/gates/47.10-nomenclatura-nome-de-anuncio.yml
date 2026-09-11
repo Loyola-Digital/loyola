@@ -1,0 +1,54 @@
+alvo: "Story 47.10 — Nomenclatura: seção \"Nome Ads\" (tipo de criativo, sigla de lançamento e gerador com sequencial)"
+epic: 47
+commit: "47a6526a (branch feat/47.10-nome-de-anuncio, base main)"
+revisadoPor: "@qa (Quinn)"
+revisadoEm: "2026-09-10"
+
+decisao: CONCERNS
+condicional: >
+  Aprovada para PR. CONCERNS por pendências fora do código: (1) a migration
+  0145 (enum + tabela) entra no deploy da API, mas os SETE VALORES só entram
+  com `pnpm --filter @loyola-x/api seed:nomenclatura` em produção — sem isso
+  o gerador mostra "nenhum tipo de criativo ativo"; (2) AC12 — roteiro visual
+  de 13 passos com o dono. Nenhum achado bloqueia; nada corrigido no gate.
+  Mesmo agente implementou e revisou na mesma sessão; o re-executado de forma
+  independente está em `evidencias`.
+
+rastreabilidade:
+  AC1: "enum com 6 valores (0145 ADD VALUE IF NOT EXISTS) + seed `valoresDeAnuncio` com as descrições literais do pedido — nomenclatura-seed.test.ts (17 valores, 2× = 0, ordem e descrições; reversão E)"
+  AC2: "CRUD comum: `type` aceito nas rotas; usadoEm/travado/exclusão bloqueada contam em naming_ads — rotas test AC2; predicados usoPorValor/campanhasComValor em naming_ads"
+  AC3: "naming_ads unique (expert_id, creative_seq); ad_date = 1º dia do mês — migration = drizzle-kit generate coluna a coluna"
+  AC4: "proximoNnDeAnuncio (menor livre, todos os tipos); NN enviado ocupado → 409 com o dono e o próximo (rotas test; reversões C, D); UNIQUE fecha a corrida real via violaUnicidade → 409 (wrapper tentar)"
+  AC5: "rotas /ads, /ads/:id, /ads/proximo, /ads/snapshot, /ads/validar-nome; guest 403 — rotas test; contrato 12"
+  AC6: "buildAdName/parseAdName — 12 casos: primeiro `--` (reversão A), mm-aaaa (reversão B), contagem, dicionário, inativo com aviso"
+  AC7: "SECOES/ABAS_DE_ADS — nomenclatura-abas.test.ts"
+  AC8: "gerador: NN preenchido ao escolher o expert (useProximoNnDeAnuncio, staleTime 0), month input → mm-aaaa, dois copiar, salvar e criar outro mantém expert/sigla/nº/data (cascata: reversão G) — tela só pelo roteiro"
+  AC9: "lista com filtros expert/tipo/sigla/período + busca; PATCH não aceita tipo/NN (schema) e recalcula — rotas test AC9; predicado ad_date >=/<="
+  AC10: "select sem opções → 'nenhum … — cadastre em Valores fixos'; 409 de corrida preenche o NN sugerido no estado — tela só pelo roteiro"
+  AC11: "API 86 (shared 12, rotas 39, predicados 29, seed 6); web 26 (anúncio 7 + abas 19); 7 reversões (A–G); migration vs drizzle-kit"
+  AC12: "PENDENTE — roteiro de 13 passos na story"
+
+evidencias:
+  - "@qa re-executou: API 86/86 nos quatro arquivos; web 19/19 (anúncio + abas)"
+  - "@dev na mesma sessão: API 2.677 + 11 baseline (as de sempre); web 1.190/1.190; next build verde; tsc API e web limpos; eslint limpo nos três pacotes"
+  - "conferido no código: o snapshot do nome de CAMPANHA exclui os dois tipos novos (repositorio.ts) — parseCampaignName e a aba Valores fixos do Dicionário (4 tipos) não mudam; o gerador de campanha filtra por tipo (porTipo)"
+  - "conferido no código: PATCH de anúncio passa ignorarSeqDe para não colidir com o próprio NN"
+  - "CodeRabbit: CLI ausente nesta máquina — não rodou; declarado"
+
+achados_abertos:
+  - id: QA-4710-01
+    severidade: low
+    o_que: >
+      O aviso do NN no gerador dispara quando o valor digitado difere da
+      SUGESTÃO, não quando está ocupado: digitar 05 com 03 livre mostra
+      "próximo livre é 03; um NN já usado é recusado ao salvar" mesmo com 05
+      livre. A API decide certo (409 só se ocupado); só a mensagem é imprecisa.
+    recomendacao: "expor os NN usados em /ads/proximo (ou um /ads/seqs) e avisar só quando o digitado está na lista."
+  - id: QA-4710-02
+    severidade: info
+    o_que: "Q4 (sigla de perpétuo) e Q5 (lançamentos como registro) seguem no default; a aba Valores fixos de Nome Ads avisa. Sem DELETE de anúncio (não pedido)."
+  - id: QA-4710-03
+    severidade: info
+    o_que: "AC8, AC10 e AC12 (tela) só têm prova pelo roteiro visual — componente .tsx sem runner."
+
+debitos_documentados: []
