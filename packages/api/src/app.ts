@@ -78,7 +78,9 @@ import sprintReportsRoutes from "./routes/sprint-reports.js";
 import launchReportConfigRoutes from "./routes/launch-report-config.js";
 import perpetualReportConfigRoutes from "./routes/perpetual-report-config.js";
 import perpetualReportRoutes from "./routes/perpetual-report.js";
-import launchReportsRoutes, { comparativoRoutes } from "./routes/launch-reports.js";
+import launchReportsRoutes, {
+  comparativoRoutes,
+} from "./routes/launch-reports.js";
 import publicSalesRowsRoutes from "./routes/public-sales-rows.js";
 import publicFunnelSalesRoutes from "./routes/public-funnel-sales.js";
 import publicCrossLaunchRoutes from "./routes/public-cross-launch.js";
@@ -110,6 +112,7 @@ import stageSalesPlanRoutes from "./routes/stage-sales-plan.js";
 import ga4Routes from "./routes/ga4.js";
 import funnelMapRoutes from "./routes/funnel-maps.js";
 import plausibleRoutes from "./routes/plausible.js";
+import abTestsRoutes from "./routes/ab-tests.js";
 import vturbRoutes from "./routes/vturb.js";
 import npsRoutes from "./routes/nps.js";
 import debriefingsRoutes from "./routes/debriefings.js";
@@ -133,7 +136,8 @@ export async function buildServer() {
   // na mensagem e os parametros (tokens cifrados, emails) em `cause.parameters`.
   // Loga o erro inteiro no servidor e devolve so o essencial ao cliente.
   app.setErrorHandler((erro: FastifyError, request, reply) => {
-    const status = erro.statusCode && erro.statusCode >= 400 ? erro.statusCode : 500;
+    const status =
+      erro.statusCode && erro.statusCode >= 400 ? erro.statusCode : 500;
 
     if (status >= 500) {
       request.log.error({ err: erro }, "erro nao tratado");
@@ -291,6 +295,7 @@ export async function buildServer() {
   await app.register(ga4Routes);
   await app.register(funnelMapRoutes);
   await app.register(plausibleRoutes);
+  await app.register(abTestsRoutes);
   await app.register(vturbRoutes);
   await app.register(npsRoutes);
   await app.register(debriefingsRoutes);
