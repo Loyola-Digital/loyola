@@ -43,6 +43,20 @@ export interface ResultadoDoTeste {
 
 const base = (projectId: string) => `/api/projects/${projectId}/ab-tests`;
 
+/** As metas do Plausible, para a tela oferecer lista em vez de texto livre. */
+export function useMetasDoPlausible(projectId: string) {
+  const api = useApiClient();
+  return useQuery({
+    queryKey: ["ab-tests", projectId, "metas"],
+    queryFn: () =>
+      api<{ metas: { nome: string; conversoes: number }[] }>(
+        `${base(projectId)}/metas`,
+      ),
+    enabled: Boolean(projectId),
+    staleTime: 5 * 60_000,
+  });
+}
+
 export function useTestesAB(projectId: string) {
   const api = useApiClient();
   return useQuery({
