@@ -33,6 +33,7 @@ import { Label } from "@/components/ui/label";
 import {
   useExcluirTesteAB,
   useResultadoAB,
+  useMetasDoPlausible,
   useSalvarTesteAB,
   useTestesAB,
   type TesteAB,
@@ -200,6 +201,7 @@ function Novo({
   onPronto: () => void;
 }) {
   const salvar = useSalvarTesteAB(projectId);
+  const metas = useMetasDoPlausible(projectId).data?.metas ?? [];
   const [nome, setNome] = useState("");
   const [meta, setMeta] = useState("");
   const [variacoes, setVariacoes] = useState([
@@ -249,16 +251,36 @@ function Novo({
         </div>
         <div className="space-y-1">
           <Label className="text-[11px]">Meta de conversão (Plausible)</Label>
-          <Input
-            value={meta}
-            onChange={(e) => setMeta(e.target.value)}
-            placeholder="Compra"
-            className="h-8 text-sm"
-          />
-          <p className="text-[10px] text-muted-foreground">
-            O nome exato do goal configurado no Plausible — é o que conta como
-            conversão.
-          </p>
+          {/* Lista, não texto livre: o nome precisa bater EXATO com o do
+              Plausible, e "Form: Submission" digitado como "Form Submission"
+              devolve zero sem erro nenhum. */}
+          {metas.length > 0 ? (
+            <select
+              value={meta}
+              onChange={(e) => setMeta(e.target.value)}
+              className="h-8 w-full rounded-md border border-border bg-transparent px-2 text-sm outline-none focus:border-primary"
+            >
+              <option value="">Escolha a meta…</option>
+              {metas.map((m) => (
+                <option key={m.nome} value={m.nome}>
+                  {m.nome} ({m.conversoes} nos últimos 30 dias)
+                </option>
+              ))}
+            </select>
+          ) : (
+            <>
+              <Input
+                value={meta}
+                onChange={(e) => setMeta(e.target.value)}
+                placeholder="Compra"
+                className="h-8 text-sm"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Não consegui listar as metas — digite o nome exato do goal
+                configurado no Plausible.
+              </p>
+            </>
+          )}
         </div>
       </div>
 

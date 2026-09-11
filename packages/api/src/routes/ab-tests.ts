@@ -39,6 +39,7 @@ import { decryptGa4Secret } from "../services/ga4.js";
 import {
   contarVariacao,
   intervaloDoPeriodo,
+  listarMetas,
   type PlausibleCreds,
   type PlausiblePeriodo,
 } from "../services/plausible.js";
@@ -114,6 +115,47 @@ export default fp(async (fastify) => {
   const comIds = (vs: { nome: string; url: string }[]) =>
     vs.map((v) => ({ id: randomUUID(), nome: v.nome, url: v.url }));
 
+  // ---- GET metas do Plausible ----
+  /**
+   * As metas configuradas no site, para a tela oferecer uma LISTA.
+   *
+   * O nome precisa bater exato com o do Plausible: "Form: Submission" digitado
+   * como "Form Submission" devolve zero sem nenhum erro. Campo de texto livre
+   * aqui é uma armadilha, e quem cai nela não tem como saber que caiu.
+   */
+  fastify.get(
+    "/api/projects/:projectId/ab-tests/metas",
+    async (request, reply) => {
+      const p = projectParams.safeParse(request.params);
+      if (!p.success)
+        return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const projeto = await getProjectAccess(
+        p.data.projectId,
+        request.userId!,
+        request.userRole!,
+      );
+      if (!projeto)
+        return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const [site] = await fastify.db
+        .select({ siteId: plausibleProjectSites.siteId })
+        .from(plausibleProjectSites)
+        .where(eq(plausibleProjectSites.projectId, p.data.projectId))
+        .limit(1);
+      const creds = site ? await lerCreds() : null;
+      // Sem Plausible a tela cai no campo de texto — melhor que um erro que
+      // impede de criar o teste.
+      if (!site || !creds) return { metas: [] };
+
+      try {
+        return { metas: await listarMetas(creds, site.siteId) };
+      } catch (err) {
+        request.log.warn({ err }, "[ab-tests] nao consegui listar metas");
+        return { metas: [] };
+      }
+    },
+  );
+
   // ---- GET lista ----
   fastify.get("/api/projects/:projectId/ab-tests", async (request, reply) => {
     const p = projectParams.safeParse(request.params);
@@ -142,12 +184,10 @@ export default fp(async (fastify) => {
     const p = projectParams.safeParse(request.params);
     const b = corpoDoTeste.safeParse(request.body);
     if (!p.success || !b.success) {
-      return reply
-        .code(400)
-        .send({
-          error: "Dados inválidos",
-          details: b.success ? undefined : b.error.flatten().fieldErrors,
-        });
+      return reply.code(400).send({
+        error: "Dados inválidos",
+        details: b.success ? undefined : b.error.flatten().fieldErrors,
+      });
     }
     const projeto = await getProjectAccess(
       p.data.projectId,
@@ -301,12 +341,10 @@ export default fp(async (fastify) => {
         });
       }
       if (teste.variacoes.length < 2) {
-        return reply
-          .code(409)
-          .send({
-            error: "Um teste precisa de pelo menos duas variações.",
-            code: "POUCAS_VARIACOES",
-          });
+        return reply.code(409).send({
+          error: "Um teste precisa de pelo menos duas variações.",
+          code: "POUCAS_VARIACOES",
+        });
       }
 
       const [site] = await fastify.db
@@ -315,12 +353,10 @@ export default fp(async (fastify) => {
         .where(eq(plausibleProjectSites.projectId, p.data.projectId))
         .limit(1);
       if (!site)
-        return reply
-          .code(409)
-          .send({
-            error: "Este projeto não usa Plausible",
-            code: "SEM_PLAUSIBLE",
-          });
+        return reply.code(409).send({
+          error: "Este projeto não usa Plausible",
+          code: "SEM_PLAUSIBLE",
+        });
 
       const creds = await lerCreds();
       if (!creds)

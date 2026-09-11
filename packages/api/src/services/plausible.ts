@@ -1185,6 +1185,34 @@ export async function montarDashboardCompleto(
  * vezes vira três "ensaios" — infla o denominador e derruba a taxa de quem tem
  * visitante mais engajado.
  */
+/**
+ * As duas grafias do mesmo caminho — com e sem a barra final.
+ *
+ * ## Por que isto existe
+ *
+ * O filtro é `is`, exato, e para o Plausible `/captura` e `/captura/` são
+ * páginas DIFERENTES. Qual delas ele registrou depende de como o site serve a
+ * URL, e quem digita o caminho na tela não tem como saber.
+ *
+ * Medido no site do time: `/bbepr2-captura-a/` devolve 15 conversões;
+ * `/bbepr2-captura-a`, a mesma página sem a barra, devolve **0**. Zero sem
+ * erro nenhum — o pior resultado possível, porque parece dado e é engano.
+ *
+ * Mandar as duas resolve: `is` com lista é OR, e `visitors` conta visitante
+ * distinto, então quem passou pelas duas formas não é contado duas vezes.
+ *
+ * A query string também sai. O `event:page` do Plausible nunca a inclui, e um
+ * `?utm_source=x` colado junto daria outro zero silencioso.
+ */
+export function formasDoCaminho(url: string): string[] {
+  const limpo = url.trim().split("?")[0]!.split("#")[0]!;
+  if (!limpo) return [url];
+  // A raiz é só "/" — tirar a barra dela deixaria string vazia.
+  if (limpo === "/") return ["/"];
+  const sem = limpo.replace(/\/+$/, "");
+  return sem === limpo ? [limpo, `${limpo}/`] : [sem, limpo];
+}
+
 export async function contarVariacao(
   creds: PlausibleCreds,
   siteId: string,
@@ -1194,7 +1222,7 @@ export async function contarVariacao(
   /** O goal do Plausible. Obrigatório: sem dizer o que é conversão, não há o que medir. */
   metaConversao: string,
 ): Promise<{ visitas: number; conversoes: number }> {
-  const filtroDaPagina = ["is", "event:page", [url]];
+  const filtroDaPagina = ["is", "event:page", formasDoCaminho(url)];
 
   const consulta = async (filtros: unknown[]) => {
     const r = await chamar<V2Resposta>(creds, "/api/v2/query", {
@@ -1220,4 +1248,38 @@ export async function contarVariacao(
     ["is", "event:goal", [metaConversao]],
   ]);
   return { visitas, conversoes };
+}
+
+/**
+ * As metas (goals) configuradas no site, com quantas conversões cada uma teve.
+ *
+ * Existe para a tela oferecer uma lista em vez de um campo de texto: o nome da
+ * meta precisa bater EXATO com o do Plausible, e "Form: Submission" digitado
+ * como "Form Submission" devolve zero sem nenhum erro — o mesmo engano calado
+ * que a barra final causava no caminho.
+ *
+ * A janela é dos últimos 30 dias só para ordenar por uso; uma meta sem
+ * conversão recente continua existindo e é o caso de um teste que vai começar.
+ */
+export async function listarMetas(
+  creds: PlausibleCreds,
+  siteId: string,
+): Promise<{ nome: string; conversoes: number }[]> {
+  const [inicio, fim] = intervaloDoPeriodo("30d");
+  const r = await chamar<V2Resposta>(creds, "/api/v2/query", {
+    method: "POST",
+    body: {
+      site_id: siteId,
+      metrics: ["visitors"],
+      date_range: [inicio, fim],
+      dimensions: ["event:goal"],
+    },
+  });
+  if (!r.ok) throw new PlausibleErro(mensagemDoPlausible(r.erro, r.status));
+  return (r.data.results ?? [])
+    .map((linha) => ({
+      nome: String(linha.dimensions?.[0] ?? ""),
+      conversoes: Number(linha.metrics?.[0] ?? 0),
+    }))
+    .filter((m) => m.nome);
 }
