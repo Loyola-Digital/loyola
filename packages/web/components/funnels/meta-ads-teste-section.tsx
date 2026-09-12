@@ -73,7 +73,7 @@ import {
 } from "@/lib/formulas/funnels";
 import type { MetricFormula } from "@/lib/types/metric-formula";
 import { StageSalesSection } from "./stage-sales-section";
-import { GroupsDashboardSection } from "./groups-dashboard-section";
+import { GruposDoSendflow } from "./grupos-do-sendflow";
 import { CtrCpmChart, SaturationBadge, FunnelComparisonChart } from "./launch-dashboard";
 import { LeadsByUtmTable } from "./leads-by-utm-table";
 import { RefreshDataButton } from "./refresh-data-button";
@@ -964,7 +964,7 @@ export function MetaAdsTesteTab({
 
               <div className="space-y-4">
                 <GroupHeading icon={Users} title="GRUPOS" subtitle="Tracking de participantes" />
-                <GroupsDashboardSection projectId={projectId} funnelId={funnel.id} />
+                <GruposDoSendflow projectId={projectId} funnelId={funnel.id} />
               </div>
             </>
           )}
