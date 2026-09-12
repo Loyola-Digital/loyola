@@ -23,6 +23,8 @@ import {
   BarChart3,
   ExternalLink,
   Loader2,
+  Minimize2,
+  MousePointer2,
   Plus,
   Trash2,
   Trophy,
@@ -79,30 +81,43 @@ const pct = (t: number | null) =>
  */
 const LARGURA_VIRTUAL = 1280;
 
-/** Quanto da página aparece. 440px de moldura cobrem o herói inteiro. */
+/** Quanto da página aparece no modo comparar. 440px cobrem o herói inteiro. */
 const ALTURA_DA_MOLDURA = 440;
 
+/** No modo navegar a moldura cresce: é para ler a página, não para comparar. */
+const ALTURA_NAVEGANDO = 620;
+
 /**
- * A página da variação, viva, dentro da coluna.
+ * A página da variação, viva, dentro da coluna — em dois modos.
  *
- * ## Por que iframe e não screenshot
+ * ## Comparar (padrão)
  *
- * Screenshot exigiria navegador headless no servidor e ficaria velho no
- * primeiro ajuste de copy. O iframe mostra o que está no ar AGORA, que é o
- * que se está comparando.
+ * Renderiza em 1280px e encolhe com `scale`. As duas colunas mostram o mesmo
+ * recorte na mesma proporção, que é o que faz a comparação valer. Cliques ficam
+ * desligados: a 30% de escala o alvo tem um terço do tamanho, e clicar sem
+ * querer levaria a pessoa para o funil do cliente.
  *
- * ## `allow-scripts` sem `allow-same-origin`
+ * ## Navegar
  *
- * A página é do cliente, não nossa. Nesta combinação ela roda numa origem
- * opaca: sem cookie, sem `localStorage`, sem acesso ao DOM desta tela. Os dois
- * atributos juntos deixariam o script remover o próprio sandbox.
+ * Escala 1, largura real da coluna, scroll liberado. Aqui a página se comporta
+ * como no navegador — dá para descer, ler a oferta, clicar nos links internos.
+ * A página responsiva se ajusta à coluna, então é o layout de celular que
+ * aparece; é o certo para uma coluna estreita, e é como metade do tráfego vê.
  *
- * `pointer-events: none` porque isto é uma prévia, não um navegador — clicar
- * dentro levaria a pessoa para o funil do cliente sem sair da nossa tela.
+ * ## O que NÃO liberei, e por quê
+ *
+ * `allow-forms` fica fora. O formulário da variação é o de captação REAL do
+ * cliente: preencher para "ver se funciona" põe um lead falso no funil dele, no
+ * CRM e na contagem de conversão deste próprio teste.
+ *
+ * `allow-same-origin` NUNCA entra junto com `allow-scripts` — a dupla deixa o
+ * script remover o próprio sandbox. Sem ela a página roda em origem opaca: sem
+ * cookie, sem storage, sem acesso ao DOM desta tela.
  */
 function PreviaDaPagina({ href, nome }: { href: string; nome: string }) {
   const caixa = useRef<HTMLDivElement>(null);
   const [escala, setEscala] = useState(0);
+  const [navegando, setNavegando] = useState(false);
 
   useEffect(() => {
     const no = caixa.current;
@@ -117,29 +132,58 @@ function PreviaDaPagina({ href, nome }: { href: string; nome: string }) {
     return () => obs.disconnect();
   }, []);
 
+  const altura = navegando ? ALTURA_NAVEGANDO : ALTURA_DA_MOLDURA;
+
   return (
     <div
       ref={caixa}
       className="relative overflow-hidden border-y border-border/40 bg-white"
-      style={{ height: ALTURA_DA_MOLDURA }}
+      style={{ height: altura }}
     >
-      {escala > 0 && (
+      {(navegando || escala > 0) && (
         <iframe
           src={href}
           title={`Prévia de ${nome}`}
-          /* NUNCA acrescentar `allow-same-origin` aqui — ver o cabeçalho. */
+          /* NUNCA acrescentar `allow-same-origin` aqui — ver o cabeçalho.
+             `allow-forms` também fica fora: o form é a captação real. */
           sandbox="allow-scripts"
           referrerPolicy="no-referrer"
-          scrolling="no"
+          scrolling={navegando ? "yes" : "no"}
           loading="lazy"
-          className="pointer-events-none absolute left-0 top-0 origin-top-left border-0"
-          style={{
-            width: LARGURA_VIRTUAL,
-            height: ALTURA_DA_MOLDURA / escala,
-            transform: `scale(${escala})`,
-          }}
+          className={`absolute left-0 top-0 border-0 ${
+            navegando ? "h-full w-full" : "pointer-events-none origin-top-left"
+          }`}
+          style={
+            navegando
+              ? undefined
+              : {
+                  width: LARGURA_VIRTUAL,
+                  height: ALTURA_DA_MOLDURA / escala,
+                  transform: `scale(${escala})`,
+                }
+          }
         />
       )}
+
+      {/* Fora do iframe, com `z-10`: dentro ele seria da página do cliente, e
+          sobre o iframe sem z-index o clique passaria por baixo. */}
+      <button
+        type="button"
+        onClick={() => setNavegando((v) => !v)}
+        className="absolute right-2 top-2 z-10 inline-flex items-center gap-1 rounded-md bg-black/70 px-2 py-1 text-[10px] font-medium text-white backdrop-blur-sm transition-colors hover:bg-black/85"
+      >
+        {navegando ? (
+          <>
+            <Minimize2 className="h-3 w-3" />
+            Comparar
+          </>
+        ) : (
+          <>
+            <MousePointer2 className="h-3 w-3" />
+            Navegar
+          </>
+        )}
+      </button>
     </div>
   );
 }
