@@ -30,6 +30,17 @@ import {
   Send,
   Users,
 } from "lucide-react";
+import {
+  Bar,
+  CartesianGrid,
+  ComposedChart,
+  Legend,
+  Line,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
@@ -49,6 +60,7 @@ import {
 import { useSendflowSummary } from "@/lib/hooks/use-sendflow";
 import {
   montarDiario,
+  reconstruirTotais,
   totaisDoDiario,
   type PontoDoDia,
 } from "@/lib/utils/sendflow-diario";
@@ -92,69 +104,123 @@ function Kpi({
   );
 }
 
-function Grafico({ linhas }: { linhas: PontoDoDia[] }) {
+/**
+ * Entradas, saídas e disparos por dia.
+ *
+ * ## Por que Recharts e não barras à mão
+ *
+ * A primeira versão eram `div`s com altura em pixel. Funcionava e era feia: sem
+ * eixo, sem grade, sem escala legível — só tarjas coloridas. O Recharts já está
+ * no projeto (o dashboard de lançamento usa), então o gráfico decente sai de
+ * graça e fica igual ao resto das telas.
+ *
+ * ## Barras para o fluxo, linha para o acumulado
+ *
+ * Entrou e saiu são eventos do dia — barra. O tamanho do grupo é o resultado
+ * acumulado desses eventos, e linha é o que mostra tendência. Os dois no mesmo
+ * gráfico respondem "cresceu?" e "por causa de quê?" de uma vez.
+ *
+ * A saída vai como NEGATIVA: empilhar as duas no mesmo lado esconderia o dia
+ * em que saiu mais gente do que entrou, que é justamente o dia a investigar.
+ */
+function Grafico({
+  linhas,
+  participantesHoje,
+}: {
+  linhas: PontoDoDia[];
+  participantesHoje: number;
+}) {
   // Do mais antigo para o mais novo: o tempo anda para a direita, ao contrário
   // da tabela, onde o recente vem primeiro.
-  const serie = [...linhas].reverse();
-  // Denominador mínimo de 1 evita divisão por zero num período sem movimento.
-  const maior = Math.max(1, ...serie.map((s) => Math.max(s.entrou, s.saiu)));
-  const ALTURA = 90;
+  const cronologico = [...linhas].reverse();
+
+  const dados = reconstruirTotais(cronologico, participantesHoje);
+
+  const dia = (iso: string) => iso.slice(8, 10) + "/" + iso.slice(5, 7);
 
   return (
     <div className="rounded-md border border-border/40 bg-card/30 p-4">
       <h4 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-        Entradas vs. saídas (diário)
+        Entradas, saídas e tamanho do grupo
       </h4>
-      <div className="flex min-h-[120px] items-end gap-1">
-        {serie.map((s) => (
-          <div
-            key={s.date}
-            className="flex min-w-0 flex-1 flex-col items-center justify-end gap-0.5"
-            title={`${dataBR(s.date)} · entrou ${fmt(s.entrou)} · saiu ${fmt(s.saiu)}${
-              s.disparos > 0 ? ` · ${s.disparos} disparo(s)` : ""
-            }`}
-          >
-            <div className="flex w-full flex-col items-stretch gap-0.5">
-              <div
-                className="w-full rounded-t-sm bg-green-500/70"
-                style={{
-                  height: `${Math.max(2, Math.round((s.entrou / maior) * ALTURA))}px`,
-                }}
-              />
-              <div
-                className="w-full rounded-b-sm bg-red-500/70"
-                style={{
-                  height: `${Math.max(2, Math.round((s.saiu / maior) * ALTURA))}px`,
-                }}
-              />
-            </div>
-            {/* Ponto sob o dia que teve disparo: liga a mensagem enviada ao
-                pico de entrada, que é a leitura que a seção existe para dar. */}
-            <div className="h-1.5">
-              {s.disparos > 0 && (
-                <div className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-              )}
-            </div>
-            <div className="mt-1 origin-left rotate-[-30deg] whitespace-nowrap text-[9px] text-muted-foreground">
-              {s.date.slice(5)}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1.5">
-          <span className="h-3 w-3 rounded-sm bg-green-500/70" />
-          Entrou
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-3 w-3 rounded-sm bg-red-500/70" />
-          Saiu
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-          Disparo
-        </span>
-      </div>
+      <ResponsiveContainer width="100%" height={240}>
+        <ComposedChart
+          data={dados}
+          margin={{ top: 4, right: 8, left: -18, bottom: 0 }}
+        >
+          <CartesianGrid
+            strokeDasharray="3 3"
+            stroke="currentColor"
+            className="text-border/40"
+          />
+          <XAxis
+            dataKey="date"
+            tickFormatter={dia}
+            tick={{ fontSize: 10 }}
+            stroke="currentColor"
+            className="text-muted-foreground"
+          />
+          <YAxis
+            yAxisId="fluxo"
+            tick={{ fontSize: 10 }}
+            stroke="currentColor"
+            className="text-muted-foreground"
+          />
+          <YAxis
+            yAxisId="total"
+            orientation="right"
+            tick={{ fontSize: 10 }}
+            stroke="currentColor"
+            className="text-muted-foreground"
+          />
+          <Tooltip
+            contentStyle={{
+              background: "hsl(var(--popover))",
+              border: "1px solid hsl(var(--border))",
+              borderRadius: 8,
+              fontSize: 12,
+            }}
+            labelFormatter={(v) => dataBR(String(v))}
+            formatter={(valor, nome) => {
+              // A saída é plotada negativa para descer do eixo; no balão ela
+              // volta a ser um número de pessoas, que é como se fala dela.
+              const n = Math.abs(Number(valor));
+              return [fmt(n), nome];
+            }}
+          />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <Bar
+            yAxisId="fluxo"
+            dataKey="entrou"
+            name="Entrou"
+            fill="#22c55e"
+            radius={[2, 2, 0, 0]}
+          />
+          <Bar
+            yAxisId="fluxo"
+            dataKey="saiuNegativo"
+            name="Saiu"
+            fill="#ef4444"
+            radius={[0, 0, 2, 2]}
+          />
+          <Bar
+            yAxisId="fluxo"
+            dataKey="disparos"
+            name="Disparos"
+            fill="#3b82f6"
+            radius={[2, 2, 0, 0]}
+          />
+          <Line
+            yAxisId="total"
+            type="monotone"
+            dataKey="total"
+            name="No grupo"
+            stroke="#a855f7"
+            strokeWidth={2}
+            dot={false}
+          />
+        </ComposedChart>
+      </ResponsiveContainer>
     </div>
   );
 }
@@ -294,7 +360,10 @@ export function GruposDoSendflow({
 
       {linhas.length > 0 ? (
         <>
-          <Grafico linhas={linhas} />
+          <Grafico
+            linhas={linhas}
+            participantesHoje={data.totalParticipantes}
+          />
 
           <div className="overflow-x-auto">
             <Table>

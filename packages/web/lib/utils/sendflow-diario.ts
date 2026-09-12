@@ -105,3 +105,35 @@ export function totaisDoDiario(linhas: PontoDoDia[]) {
     { entrou: 0, saiu: 0, cliques: 0, disparos: 0 },
   );
 }
+
+/**
+ * O tamanho do grupo em cada dia, reconstruído a partir de HOJE.
+ *
+ * ## Por que de trás para frente
+ *
+ * O SendFlow dá o tamanho ATUAL do grupo e o fluxo diário — nunca o tamanho de
+ * cada dia. Somar o fluxo desde a primeira linha daria outro número: o período
+ * mostrado não cobre a vida inteira do grupo, e as entradas anteriores a ele
+ * simplesmente não estão na série.
+ *
+ * Descer do total conhecido é o único jeito de a linha terminar no valor que os
+ * cartões mostram. Se ela terminasse em outro número, a tela se contradiria
+ * sozinha — e é o tipo de divergência que ninguém consegue explicar depois.
+ *
+ * Recebe as linhas em ordem CRONOLÓGICA (mais antiga primeiro).
+ */
+export function reconstruirTotais(
+  cronologico: PontoDoDia[],
+  participantesHoje: number,
+): (PontoDoDia & { total: number; saiuNegativo: number })[] {
+  const saida: (PontoDoDia & { total: number; saiuNegativo: number })[] = [];
+  let acumulado = participantesHoje;
+  for (let i = cronologico.length - 1; i >= 0; i--) {
+    const l = cronologico[i]!;
+    // O total DESTE dia é o que havia depois do fluxo dele — por isso o
+    // acumulado só desce depois de gravar a linha.
+    saida[i] = { ...l, total: acumulado, saiuNegativo: -l.saiu };
+    acumulado -= l.saldo;
+  }
+  return saida;
+}
