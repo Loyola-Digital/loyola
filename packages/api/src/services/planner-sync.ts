@@ -24,6 +24,7 @@ import { eq } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { plannerCampaigns, plannerGoogleCalendars } from "../db/schema.js";
 import { normalizarFase, type FaseDoPlanner } from "./planner.js";
+import { chaveDoNome } from "../utils/chave-de-nome.js";
 import {
   corParaCampanha,
   eventosDaAgenda,
@@ -33,22 +34,15 @@ import {
 /**
  * O nome reduzido ao que identifica a campanha.
  *
- * `BBE-Margem 3X`, `BBE Margem 3X` e `BBEMargem3X` são a MESMA campanha
- * escrita por três pessoas diferentes. Casar por nome literal criava uma
- * campanha nova a cada variação — e com a importação automática isso deixa de
- * ser um incômodo ocasional e vira uma cópia por hífen digitado.
+ * Mora em `utils/chave-de-nome.ts` desde que o SendFlow passou a precisar dela
+ * — uma segunda cópia começaria a divergir no primeiro ajuste. Re-exportada
+ * aqui para quem já importava deste módulo.
  *
  * Medido nas agendas do time: unifica exatamente três pares, todos
  * inequívocos (`DG-PG02-MAR-26`/`DG-PG-02-MAR-26`, `BBE-PR2`/`BBEPR2`,
  * `BBE-Margem 3X`/`BBE Margem 3X`). Nenhuma campanha distinta colide.
  */
-export function chaveDoNome(nome: string): string {
-  return nome
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "");
-}
+export { chaveDoNome };
 
 export interface ResultadoDaImportacao {
   lidos: number;
