@@ -30,8 +30,21 @@ export interface LinhaDoResultado extends VariacaoDoTeste {
   vencedora: boolean;
 }
 
+/** Onde a variação vive e como ela responde HOJE. */
+export interface EnderecoDaVariacao {
+  id: string;
+  /** URL completa, montada com o domínio do site no Plausible. */
+  href: string;
+  /** Status HTTP, ou `null` quando não deu para checar. */
+  status: number | null;
+  /** Depois de seguir redirects — revela quando a variação virou outra página. */
+  urlFinal: string;
+}
+
 export interface ResultadoDoTeste {
   teste: { id: string; nome: string; status: string };
+  dominio: string;
+  enderecos: EnderecoDaVariacao[];
   periodo: { inicio: string; fim: string };
   estado: "sem_amostra" | "inconclusivo" | "vencedor";
   linhas: LinhaDoResultado[];
