@@ -17,10 +17,11 @@
  * diferem, e ainda não dá para dizer nada. Sem ele a tela mentiria por omissão.
  */
 
-import { use, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   BarChart3,
+  ExternalLink,
   Loader2,
   Plus,
   Trash2,
@@ -31,6 +32,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  type EnderecoDaVariacao,
+  type LinhaDoResultado,
   useExcluirTesteAB,
   useResultadoAB,
   useMetasDoPlausible,
@@ -66,6 +69,188 @@ const CARA_DO_ESTADO = {
 
 const pct = (t: number | null) =>
   t === null ? "—" : `${(t * 100).toFixed(2)}%`;
+
+/**
+ * A largura que o iframe finge ter.
+ *
+ * 1280 é a largura de desktop que praticamente toda landing page trata como
+ * caso principal. A coluna real tem ~380px, então o `scale` encolhe — é o
+ * mesmo recurso da capa de página no Swipe Files.
+ */
+const LARGURA_VIRTUAL = 1280;
+
+/** Quanto da página aparece. 440px de moldura cobrem o herói inteiro. */
+const ALTURA_DA_MOLDURA = 440;
+
+/**
+ * A página da variação, viva, dentro da coluna.
+ *
+ * ## Por que iframe e não screenshot
+ *
+ * Screenshot exigiria navegador headless no servidor e ficaria velho no
+ * primeiro ajuste de copy. O iframe mostra o que está no ar AGORA, que é o
+ * que se está comparando.
+ *
+ * ## `allow-scripts` sem `allow-same-origin`
+ *
+ * A página é do cliente, não nossa. Nesta combinação ela roda numa origem
+ * opaca: sem cookie, sem `localStorage`, sem acesso ao DOM desta tela. Os dois
+ * atributos juntos deixariam o script remover o próprio sandbox.
+ *
+ * `pointer-events: none` porque isto é uma prévia, não um navegador — clicar
+ * dentro levaria a pessoa para o funil do cliente sem sair da nossa tela.
+ */
+function PreviaDaPagina({ href, nome }: { href: string; nome: string }) {
+  const caixa = useRef<HTMLDivElement>(null);
+  const [escala, setEscala] = useState(0);
+
+  useEffect(() => {
+    const no = caixa.current;
+    if (!no) return;
+    const medir = () => {
+      const largura = no.clientWidth;
+      if (largura > 0) setEscala(largura / LARGURA_VIRTUAL);
+    };
+    medir();
+    const obs = new ResizeObserver(medir);
+    obs.observe(no);
+    return () => obs.disconnect();
+  }, []);
+
+  return (
+    <div
+      ref={caixa}
+      className="relative overflow-hidden border-y border-border/40 bg-white"
+      style={{ height: ALTURA_DA_MOLDURA }}
+    >
+      {escala > 0 && (
+        <iframe
+          src={href}
+          title={`Prévia de ${nome}`}
+          /* NUNCA acrescentar `allow-same-origin` aqui — ver o cabeçalho. */
+          sandbox="allow-scripts"
+          referrerPolicy="no-referrer"
+          scrolling="no"
+          loading="lazy"
+          className="pointer-events-none absolute left-0 top-0 origin-top-left border-0"
+          style={{
+            width: LARGURA_VIRTUAL,
+            height: ALTURA_DA_MOLDURA / escala,
+            transform: `scale(${escala})`,
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Uma variação: cabeçalho, página viva e números — na mesma coluna. */
+function ColunaDaVariacao({
+  linha,
+  endereco,
+  destaque,
+}: {
+  linha: LinhaDoResultado;
+  endereco: EnderecoDaVariacao | undefined;
+  destaque: boolean;
+}) {
+  const href = endereco?.href ?? "#";
+  // Só 2xx e 3xx viram prévia. Pedir o iframe de uma página 404 encheria a
+  // coluna com a tela de erro do cliente, que não é o que se quer comparar.
+  const respondeu = endereco?.status === null || (endereco?.status ?? 0) < 400;
+  const redirecionou = Boolean(
+    endereco?.urlFinal &&
+    endereco.urlFinal.replace(/\/$/, "") !== endereco.href.replace(/\/$/, ""),
+  );
+
+  return (
+    <div
+      className={`flex min-w-0 flex-col overflow-hidden rounded-xl border bg-card transition-colors ${
+        destaque
+          ? "border-emerald-500/60 ring-1 ring-emerald-500/20"
+          : "border-border/60"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2 p-3">
+        <div className="min-w-0">
+          <span className="flex items-center gap-1.5 text-[13px] font-semibold">
+            {destaque && (
+              <Trophy className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+            )}
+            <span className="truncate">{linha.nome}</span>
+          </span>
+          <span className="block truncate font-mono text-[10px] text-muted-foreground">
+            {linha.url}
+          </span>
+        </div>
+        <a
+          href={href}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          aria-label={`Abrir ${linha.nome} em outra aba`}
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      </div>
+
+      {respondeu ? (
+        <PreviaDaPagina href={href} nome={linha.nome} />
+      ) : (
+        <div
+          className="flex flex-col items-center justify-center gap-1.5 border-y border-border/40 bg-muted/30 px-4 text-center"
+          style={{ height: ALTURA_DA_MOLDURA }}
+        >
+          <AlertCircle className="h-6 w-6 text-amber-500" />
+          <p className="text-[12px] font-medium">
+            Esta página responde {endereco?.status} hoje
+          </p>
+          {/* O número acima não invalida a comparação: as visitas são de quando
+              a página estava no ar. Dizer isso evita concluir que o dado está
+              errado quando é a página que saiu. */}
+          <p className="text-[11px] text-muted-foreground">
+            As visitas continuam valendo — elas são de quando ela estava no ar.
+          </p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 divide-x divide-border/40">
+        {[
+          { rotulo: "Visitas", valor: linha.visitas.toLocaleString("pt-BR") },
+          {
+            rotulo: "Conversões",
+            valor: linha.conversoes.toLocaleString("pt-BR"),
+          },
+          { rotulo: "Taxa", valor: pct(linha.taxa), forte: true },
+        ].map((n) => (
+          <div key={n.rotulo} className="px-3 py-2">
+            <span
+              className={`block tabular-nums ${
+                n.forte
+                  ? `text-lg font-bold ${destaque ? "text-emerald-600 dark:text-emerald-500" : ""}`
+                  : "text-[15px] font-semibold"
+              }`}
+            >
+              {n.valor}
+            </span>
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              {n.rotulo}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {redirecionou && (
+        <p className="border-t border-border/40 px-3 py-1.5 text-[10px] text-muted-foreground">
+          Redireciona para{" "}
+          <span className="font-mono">
+            {endereco!.urlFinal.replace(/^https?:\/\/[^/]+/, "")}
+          </span>
+        </p>
+      )}
+    </div>
+  );
+}
 
 function Resultado({
   projectId,
@@ -135,50 +320,27 @@ function Resultado({
         <span>{data.mensagem}</span>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[420px] text-sm">
-          <thead>
-            <tr className="border-b border-border/40">
-              {["Variação", "Visitas", "Conversões", "Taxa"].map((h) => (
-                <th
-                  key={h}
-                  className="whitespace-nowrap px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {data.linhas.map((l) => (
-              <tr
-                key={l.id}
-                className="border-b border-border/30 last:border-b-0"
-              >
-                <td className="px-3 py-2">
-                  <span className="flex items-center gap-1.5 font-medium">
-                    {l.vencedora && (
-                      <Trophy className="h-3.5 w-3.5 text-emerald-500" />
-                    )}
-                    {l.nome}
-                  </span>
-                  <span className="block text-[11px] text-muted-foreground">
-                    {l.url}
-                  </span>
-                </td>
-                <td className="px-3 py-2 tabular-nums">
-                  {l.visitas.toLocaleString("pt-BR")}
-                </td>
-                <td className="px-3 py-2 tabular-nums">
-                  {l.conversoes.toLocaleString("pt-BR")}
-                </td>
-                <td className="px-3 py-2 font-medium tabular-nums">
-                  {pct(l.taxa)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/*
+        Lado a lado, uma coluna por variação.
+
+        Duas variações ocupam metade cada; três ou mais viram grade que quebra,
+        porque abaixo de ~300px a prévia deixa de mostrar a headline — e a
+        headline é o que se está comparando.
+      */}
+      <div
+        className="grid gap-3"
+        style={{
+          gridTemplateColumns: `repeat(auto-fit, minmax(${data.linhas.length > 2 ? 300 : 340}px, 1fr))`,
+        }}
+      >
+        {data.linhas.map((l) => (
+          <ColunaDaVariacao
+            key={l.id}
+            linha={l}
+            endereco={data.enderecos?.find((e) => e.id === l.id)}
+            destaque={l.vencedora}
+          />
+        ))}
       </div>
 
       {data.comparacoes > 1 && (

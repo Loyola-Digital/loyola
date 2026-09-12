@@ -390,8 +390,44 @@ export default fp(async (fastify) => {
           );
           contagens.push({ id: v.id, nome: v.nome, visitas, conversoes });
         }
+        /*
+         * O endereço e o estado de cada variação, para a tela mostrar o preview.
+         *
+         * O `siteId` do Plausible É o domínio (`lp.netaobombeef.com`), então a
+         * URL sai daqui montada — a tela não precisa adivinhar o host.
+         *
+         * O status vai junto porque medido no acervo do time: a página
+         * `/bbepr2-captura-a/` tem 849 visitas no Plausible e responde 404
+         * HOJE — é captura encerrada. Sem o status, o preview apareceria em
+         * branco e pareceria bug nosso.
+         */
+        const enderecos = await Promise.all(
+          teste.variacoes.map(async (v) => {
+            const href = `https://${site.siteId}${v.url}`;
+            try {
+              const r = await fetch(href, {
+                method: "HEAD",
+                redirect: "follow",
+                signal: AbortSignal.timeout(8_000),
+              });
+              return {
+                id: v.id,
+                href,
+                status: r.status,
+                urlFinal: r.url || href,
+              };
+            } catch {
+              // Sem status não é erro: a tela mostra o preview e deixa a
+              // página falar por si.
+              return { id: v.id, href, status: null, urlFinal: href };
+            }
+          }),
+        );
+
         return {
           teste: { id: teste.id, nome: teste.nome, status: teste.status },
+          dominio: site.siteId,
+          enderecos,
           periodo: { inicio, fim },
           ...decidirVencedor(contagens),
         };
