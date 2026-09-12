@@ -13,15 +13,22 @@ import {
 import type { DailyRow } from "@/lib/utils/funnel-metrics";
 import type { StageType } from "@loyola-x/shared";
 import { ehCaptacaoPaga } from "@loyola-x/shared/src/stage-types";
-import { resolveMediumByAdsets, useResolveAdsetNames } from "@/lib/hooks/use-funnel-adsets-map";
 import {
-  useFunnelBatchTurns,
-  useCreateFunnelBatchTurn,
-  useUpdateFunnelBatchTurn,
-  useDeleteFunnelBatchTurn,
+  resolveMediumByAdsets,
+  useResolveAdsetNames,
+} from "@/lib/hooks/use-funnel-adsets-map";
+import {
   type FunnelBatchTurn,
+  useCreateFunnelBatchTurn,
+  useDeleteFunnelBatchTurn,
+  useFunnelBatchTurns,
+  useSalvarMarcaDoDia,
+  useUpdateFunnelBatchTurn,
 } from "@/lib/hooks/use-funnel-batch-turns";
 import { useCampaignLog } from "@/lib/hooks/use-campaign-log";
+import { useSendflowSummary } from "@/lib/hooks/use-sendflow";
+import { montarDiario } from "@/lib/utils/sendflow-diario";
+import { Send, StickyNote, Users } from "lucide-react";
 import { EventosDoDia, agruparPorDia } from "./eventos-do-dia";
 import { fmtInt as fmtIntCompartilhado } from "@/lib/utils/format-number";
 
@@ -38,7 +45,10 @@ interface CrossedFunnelDailyTableProps {
    * colunas de ingresso (Total/Pg/Org/s-track) usam ISSO em vez dos leads.
    * O card "Leads Popup" (fora desta tabela) continua usando leads.
    */
-  ingressosByDay?: Record<string, { pago: number; org: number; semTrack: number; manual?: number }>;
+  ingressosByDay?: Record<
+    string,
+    { pago: number; org: number; semTrack: number; manual?: number }
+  >;
   /**
    * Map de adset_id → adset_name vindo da Meta API. Quando informado, o
    * tooltip de Total Leads resolve `utm_medium` (que armazena o adset_id)
@@ -65,12 +75,23 @@ interface CrossedFunnelDailyTableProps {
    * Paga. `ingressosTotaisByDay` espelha `ingressosByDay`. Presentes só quando há
    * planilha de vendas conectada — `undefined` = sem planilha (AC-BUG.1).
    */
-  ingressosUnicosByDay?: Record<string, { pago: number; org: number; semTrack: number; manual?: number }>;
-  ingressosTotaisByDay?: Record<string, { pago: number; org: number; semTrack: number }>;
+  ingressosUnicosByDay?: Record<
+    string,
+    { pago: number; org: number; semTrack: number; manual?: number }
+  >;
+  ingressosTotaisByDay?: Record<
+    string,
+    { pago: number; org: number; semTrack: number }
+  >;
   faturamentoUnicoByDay?: Record<string, number>;
   faturamentoTotalByDay?: Record<string, number>;
   /** Ingressos (vendas) por produto — todos os produtos. Tooltip de "Ingressos totais". */
-  ingressosPorProduto?: { produto: string; count: number; bruto: number; isOrderBump: boolean }[];
+  ingressosPorProduto?: {
+    produto: string;
+    count: number;
+    bruto: number;
+    isOrderBump: boolean;
+  }[];
 }
 
 function fmtCurrency(v: number | null | undefined): string {
@@ -101,7 +122,11 @@ function renderConnectRate(v: number | null) {
   // Story 18.52 AC8: >70% verde, <=70% amarelo.
   const good = v > 70;
   return (
-    <span className={good ? "text-emerald-600 font-medium" : "text-amber-600 font-medium"}>
+    <span
+      className={
+        good ? "text-emerald-600 font-medium" : "text-amber-600 font-medium"
+      }
+    >
       {good ? "" : "⚠️ "}
       {fmtPercent(v)}
     </span>
@@ -117,9 +142,10 @@ function renderTotalLeadsCell(
   if (totalLeads === 0) {
     return <span className="font-medium">{display}</span>;
   }
-  const resolved = adsetsMap && leadsByMedium
-    ? resolveMediumByAdsets(leadsByMedium, adsetsMap)
-    : (leadsByMedium ?? {});
+  const resolved =
+    adsetsMap && leadsByMedium
+      ? resolveMediumByAdsets(leadsByMedium, adsetsMap)
+      : (leadsByMedium ?? {});
   const entries = Object.entries(resolved).sort((a, b) => b[1] - a[1]);
   if (entries.length === 0) {
     return <span className="font-medium">{display}</span>;
@@ -136,6 +162,53 @@ function renderTotalLeadsCell(
       title={tooltipText}
     >
       {display}
+    </span>
+  );
+}
+
+/**
+ * O movimento de grupo do dia, como um ícone ao lado da data.
+ *
+ * Coluna nova para entrou/saiu deixaria a tabela com vinte colunas — e o
+ * movimento de grupo não se compara linha a linha com investimento, se consulta
+ * no dia que chamou atenção. Ícone com o resumo no balão resolve sem empurrar
+ * as colunas que a pessoa veio ver.
+ *
+ * O disparo tem destaque próprio: é a AÇÃO, e a entrada é a consequência dela.
+ */
+function MovimentoDeGrupo({
+  dados,
+}: {
+  dados: { entrou: number; saiu: number; disparos: number } | undefined;
+}) {
+  if (
+    !dados ||
+    (dados.entrou === 0 && dados.saiu === 0 && dados.disparos === 0)
+  )
+    return null;
+
+  const partes = [
+    dados.entrou > 0 ? `+${dados.entrou} no grupo` : null,
+    dados.saiu > 0 ? `-${dados.saiu} saíram` : null,
+    dados.disparos > 0 ? `${dados.disparos} disparo(s)` : null,
+  ].filter(Boolean);
+
+  return (
+    <span
+      className={`inline-flex cursor-help items-center gap-0.5 ${
+        dados.disparos > 0 ? "text-blue-500" : "text-purple-500"
+      }`}
+      title={`WhatsApp: ${partes.join(" · ")}`}
+      aria-label={`WhatsApp: ${partes.join(", ")}`}
+    >
+      {dados.disparos > 0 ? (
+        <Send className="h-3.5 w-3.5" />
+      ) : (
+        <Users className="h-3.5 w-3.5" />
+      )}
+      {dados.entrou > 0 && (
+        <span className="text-[10px] font-medium">+{dados.entrou}</span>
+      )}
     </span>
   );
 }
@@ -220,11 +293,16 @@ export function CrossedFunnelDailyTable({
   const totalDia = (date: string) => sumOrigem(ingressosTotaisByDay?.[date]);
   const fatUnicoDia = (date: string) => faturamentoUnicoByDay?.[date] ?? 0;
   const fatTotalDia = (date: string) => faturamentoTotalByDay?.[date] ?? 0;
-  const ticket = (fat: number, qtd: number): number | null => (qtd > 0 ? fat / qtd : null);
+  const ticket = (fat: number, qtd: number): number | null =>
+    qtd > 0 ? fat / qtd : null;
 
   // Totais (footer) — soma dos recortes por dia, pra bater com as colunas.
-  const sumAllOrigem = (rec?: Record<string, { pago: number; org: number; semTrack: number }>) =>
-    rec ? Object.values(rec).reduce((a, v) => a + v.pago + v.org + v.semTrack, 0) : 0;
+  const sumAllOrigem = (
+    rec?: Record<string, { pago: number; org: number; semTrack: number }>,
+  ) =>
+    rec
+      ? Object.values(rec).reduce((a, v) => a + v.pago + v.org + v.semTrack, 0)
+      : 0;
   const sumAllNum = (rec?: Record<string, number>) =>
     rec ? Object.values(rec).reduce((a, v) => a + v, 0) : 0;
   const totUnicos = sumAllOrigem(ingressosUnicosByDay);
@@ -233,7 +311,11 @@ export function CrossedFunnelDailyTable({
   const totFatTotal = sumAllNum(faturamentoTotalByDay);
   const totUnicosOrigem = ingressosUnicosByDay
     ? Object.values(ingressosUnicosByDay).reduce(
-        (a, v) => ({ pago: a.pago + v.pago, org: a.org + v.org, semTrack: a.semTrack + v.semTrack }),
+        (a, v) => ({
+          pago: a.pago + v.pago,
+          org: a.org + v.org,
+          semTrack: a.semTrack + v.semTrack,
+        }),
         { pago: 0, org: 0, semTrack: 0 },
       )
     : { pago: 0, org: 0, semTrack: 0 };
@@ -244,26 +326,35 @@ export function CrossedFunnelDailyTable({
       return "Ingresso+OrderBump = todas as vendas (produto da captação + order bumps), sem deduplicar e-mail.";
     }
     const linhas = ingressosPorProduto
-      .map((p) => `  ${p.produto}${p.isOrderBump ? " (order bump)" : ""}: ${fmtInt(p.count)}`)
+      .map(
+        (p) =>
+          `  ${p.produto}${p.isOrderBump ? " (order bump)" : ""}: ${fmtInt(p.count)}`,
+      )
       .join("\n");
-    return "Ingresso+OrderBump = todas as vendas (captação + order bumps), sem dedup.\nPor produto:\n" + linhas;
+    return (
+      "Ingresso+OrderBump = todas as vendas (captação + order bumps), sem dedup.\nPor produto:\n" +
+      linhas
+    );
   }, [ingressosPorProduto]);
 
-  const labels = useMemo(() => ({
-    totalLeads: isPaidCapture ? "Ingressos únicos" : "Total Leads",
-    leadsPg: isPaidCapture ? "Ingressos Pg" : "Leads Pg",
-    leadsOrg: isPaidCapture ? "Ingressos Org" : "Leads Org",
-    leadsSemTrack: isPaidCapture ? "Ingressos s/ track" : "Leads s/ track",
-    // Story 18.34 AC1: Tooltip formatado com quebras de linha legíveis
-    totalLeadsTooltip: isPaidCapture
-      ? "Ingressos únicos = e-mails distintos que compraram o produto da captação (não order bump), deduplicados.\n= Ingressos Pg + Ingressos Org + Ingressos s/ track"
-      : "Total Leads = Leads Pg + Leads Org + Leads s/ track\nLeads Pg = Leads que vieram de mídia paga\nLeads Org = Leads com origem orgânica",
-    // Story 18.52 AC1: "Ingressos totais" → "Ingresso+OrderBump".
-    ingressoTotal: "Ingresso+OrderBump",
-    // Story 18.52 AC2/AC3: CPL por ingressos únicos na Paga.
-    cplPg: isPaidCapture ? "CPL Pago Único" : "CPL Pg",
-    cplG: isPaidCapture ? "CPL Geral Único" : "CPL Geral",
-  }), [isPaidCapture]);
+  const labels = useMemo(
+    () => ({
+      totalLeads: isPaidCapture ? "Ingressos únicos" : "Total Leads",
+      leadsPg: isPaidCapture ? "Ingressos Pg" : "Leads Pg",
+      leadsOrg: isPaidCapture ? "Ingressos Org" : "Leads Org",
+      leadsSemTrack: isPaidCapture ? "Ingressos s/ track" : "Leads s/ track",
+      // Story 18.34 AC1: Tooltip formatado com quebras de linha legíveis
+      totalLeadsTooltip: isPaidCapture
+        ? "Ingressos únicos = e-mails distintos que compraram o produto da captação (não order bump), deduplicados.\n= Ingressos Pg + Ingressos Org + Ingressos s/ track"
+        : "Total Leads = Leads Pg + Leads Org + Leads s/ track\nLeads Pg = Leads que vieram de mídia paga\nLeads Org = Leads com origem orgânica",
+      // Story 18.52 AC1: "Ingressos totais" → "Ingresso+OrderBump".
+      ingressoTotal: "Ingresso+OrderBump",
+      // Story 18.52 AC2/AC3: CPL por ingressos únicos na Paga.
+      cplPg: isPaidCapture ? "CPL Pago Único" : "CPL Pg",
+      cplG: isPaidCapture ? "CPL Geral Único" : "CPL Geral",
+    }),
+    [isPaidCapture],
+  );
   const salesTotal = salesByDay
     ? Object.values(salesByDay).reduce((a, b) => a + b, 0)
     : null;
@@ -271,10 +362,13 @@ export function CrossedFunnelDailyTable({
   // Story 18.51b AC1e: tooltips de cálculo por cabeçalho (reusados no header).
   const TT = {
     investimento: "Investimento = gasto de mídia (Meta Ads) no dia.",
-    fatUnico: "Faturamento único = soma do valorBruto de 1 compra por e-mail (a mais recente) do produto da captação.",
-    fatTotal: "Faturamento Total = soma do valorBruto de TODAS as vendas (produto da captação + order bumps), sem dedup.",
+    fatUnico:
+      "Faturamento único = soma do valorBruto de 1 compra por e-mail (a mais recente) do produto da captação.",
+    fatTotal:
+      "Faturamento Total = soma do valorBruto de TODAS as vendas (produto da captação + order bumps), sem dedup.",
     faturamento: "Faturamento bruto das vendas no dia.",
-    ingUnicos: "Ingressos únicos = e-mails distintos que compraram o produto da captação (dedup por e-mail).",
+    ingUnicos:
+      "Ingressos únicos = e-mails distintos que compraram o produto da captação (dedup por e-mail).",
     tmUnico: "Ticket médio (únicos) = Faturamento único ÷ Ingressos únicos.",
     tmTotal: "Ticket médio (total) = Faturamento Total ÷ Ingressos totais.",
     cplPg: isPaidCapture
@@ -289,7 +383,8 @@ export function CrossedFunnelDailyTable({
     cpc: "CPC = custo por clique no link.",
     ctr: "CTR = cliques ÷ impressões × 100.",
     lpview: "LP View = visualizações da landing page.",
-    connect: "Connect Rate = LP Views ÷ cliques × 100 (quantos cliques chegaram na LP).",
+    connect:
+      "Connect Rate = LP Views ÷ cliques × 100 (quantos cliques chegaram na LP).",
     txconv: isPaidCapture
       ? "Taxa de conversão = Ingressos únicos pagos ÷ cliques × 100."
       : "Taxa de conversão = Leads pagos ÷ cliques × 100.",
@@ -334,9 +429,43 @@ export function CrossedFunnelDailyTable({
   // Os ícones ao lado da data: o que o Log de Campanha registrou naquele dia.
   // Agrupado uma vez para a tabela toda — filtrar a lista dentro de cada linha
   // seria trabalho quadrático à toa.
-  const diasDoLog = useMemo(() => diasParaCobrir(rows.map((r) => r.date)), [rows]);
-  const logQuery = useCampaignLog(projectId ?? null, funnelId ?? null, { days: diasDoLog });
-  const eventosPorDia = useMemo(() => agruparPorDia(logQuery.data?.entries), [logQuery.data]);
+  const diasDoLog = useMemo(
+    () => diasParaCobrir(rows.map((r) => r.date)),
+    [rows],
+  );
+  const logQuery = useCampaignLog(projectId ?? null, funnelId ?? null, {
+    days: diasDoLog,
+  });
+
+  /*
+   * Movimento de grupo por dia, do SendFlow.
+   *
+   * Entra na MESMA linha dos ícones de log: o dia em que a mensagem saiu e o
+   * dia em que 16 pessoas entraram no grupo são a mesma história, e ler isso em
+   * duas telas separadas obriga a pessoa a cruzar datas de cabeça.
+   *
+   * Sem SendFlow no projeto o hook devolve nada e nenhum ícone aparece — a
+   * maioria dos funis não tem operação de WhatsApp.
+   */
+  const grupoQuery = useSendflowSummary(projectId ?? null, funnelId ?? null);
+  const grupoPorDia = useMemo(() => {
+    const d = grupoQuery.data;
+    if (!d || d.semCampanha)
+      return new Map<
+        string,
+        { entrou: number; saiu: number; disparos: number }
+      >();
+    return new Map(
+      montarDiario(d.entradas, d.saidas, d.cliques, d.disparos).map((l) => [
+        l.date,
+        { entrou: l.entrou, saiu: l.saiu, disparos: l.disparos },
+      ]),
+    );
+  }, [grupoQuery.data]);
+  const eventosPorDia = useMemo(
+    () => agruparPorDia(logQuery.data?.entries),
+    [logQuery.data],
+  );
   const deleteTurn = useDeleteFunnelBatchTurn(projectId ?? "", funnelId ?? "");
 
   const turnsByDate = useMemo(() => {
@@ -348,6 +477,7 @@ export function CrossedFunnelDailyTable({
   }, [batchTurnsEnabled, turnsQuery.data]);
 
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
+  const salvarMarca = useSalvarMarcaDoDia(projectId ?? "", funnelId ?? "");
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -375,6 +505,23 @@ export function CrossedFunnelDailyTable({
     setMenu({ date, turn, x: e.clientX, y: e.clientY });
   }
 
+  /**
+   * Escreve ou apaga a observação do dia.
+   *
+   * Manda SÓ `nota`: o servidor preserva a virada de lote que já estava na
+   * linha. Mandar as duas faria anotar um dia apagar a marcação de lote.
+   */
+  function handleObservacao(date: string, atual: string | null) {
+    setMenu(null);
+    const texto = window.prompt(
+      `Observação de ${formatDateLabel(date)} (vazio remove):`,
+      atual ?? "",
+    );
+    // `null` = cancelou o prompt; string vazia = pediu para remover.
+    if (texto === null) return;
+    salvarMarca.mutate({ date, nota: texto });
+  }
+
   function handleMark(date: string) {
     setMenu(null);
     const label = window.prompt(
@@ -399,7 +546,9 @@ export function CrossedFunnelDailyTable({
 
   function handleDelete(turn: FunnelBatchTurn) {
     setMenu(null);
-    if (window.confirm(`Remover virada de lote em ${formatDateLabel(turn.date)}?`)) {
+    if (
+      window.confirm(`Remover virada de lote em ${formatDateLabel(turn.date)}?`)
+    ) {
       deleteTurn.mutate(turn.id);
     }
   }
@@ -411,183 +560,413 @@ export function CrossedFunnelDailyTable({
       <div className="space-y-3">
         <div className="rounded-md border overflow-x-auto">
           <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="sticky left-0 bg-background z-10 min-w-[90px]">Dia</TableHead>
-              <TableHead className="text-right min-w-[110px] cursor-help" title={TT.investimento}>Investimento</TableHead>
-              {isPaidCapture ? (
-                <>
-                  <TableHead className="text-right min-w-[120px] cursor-help" title={TT.fatUnico}>Faturamento único</TableHead>
-                  <TableHead className="text-right min-w-[120px] cursor-help" title={TT.fatTotal}>Faturamento Total</TableHead>
-                </>
-              ) : (
-                <TableHead className="text-right min-w-[110px] cursor-help" title={TT.faturamento}>Faturamento</TableHead>
-              )}
-              <TableHead
-                className="text-right min-w-[110px] font-semibold cursor-help"
-                title={labels.totalLeadsTooltip}
-              >
-                {labels.totalLeads}
-              </TableHead>
-              {isPaidCapture && (
-                <TableHead className="text-right min-w-[130px] font-semibold cursor-help" title={ingressosTotaisTooltip}>
-                  {labels.ingressoTotal}
+            <TableHeader>
+              <TableRow>
+                <TableHead className="sticky left-0 bg-background z-10 min-w-[90px]">
+                  Dia
                 </TableHead>
-              )}
-              <TableHead className="text-right min-w-[110px] cursor-help" title={TT.cplPg}>{labels.cplPg}</TableHead>
-              <TableHead className="text-right min-w-[110px] cursor-help" title={TT.cplG}>{labels.cplG}</TableHead>
-              {isPaidCapture && (
-                <>
-                  <TableHead className="text-right min-w-[120px] cursor-help" title={TT.tmUnico}>Ticket médio (únicos)</TableHead>
-                  <TableHead className="text-right min-w-[120px] cursor-help" title={TT.tmTotal}>Ticket médio (total)</TableHead>
-                </>
-              )}
-              {/* Story 18.52 AC5: Tx Conv. movida para a esquerda de Cliques. */}
-              <TableHead className="text-right min-w-[90px] cursor-help" title={TT.txconv}>Tx Conv.</TableHead>
-              <TableHead className="text-right min-w-[80px] cursor-help" title={TT.cliques}>Cliques</TableHead>
-              <TableHead className="text-right min-w-[100px] cursor-help" title={TT.impressoes}>Impressões</TableHead>
-              <TableHead className="text-right min-w-[80px] cursor-help" title={TT.cpm}>CPM</TableHead>
-              <TableHead className="text-right min-w-[80px] cursor-help" title={TT.cpc}>CPC</TableHead>
-              <TableHead className="text-right min-w-[70px] cursor-help" title={TT.ctr}>CTR</TableHead>
-              <TableHead className="text-right min-w-[80px] cursor-help" title={TT.lpview}>LP View</TableHead>
-              <TableHead className="text-right min-w-[110px] cursor-help" title={TT.connect}>Connect Rate</TableHead>
-              <TableHead className="text-right min-w-[100px] cursor-help" title={labels.totalLeadsTooltip}>{labels.leadsPg}</TableHead>
-              <TableHead className="text-right min-w-[90px] cursor-help" title={labels.totalLeadsTooltip}>{labels.leadsOrg}</TableHead>
-              <TableHead className="text-right min-w-[110px] cursor-help" title={labels.totalLeadsTooltip}>{labels.leadsSemTrack}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((r) => {
-              // Story 18.51b: na Paga, o breakdown Pg/Org/s-track vem dos ingressos
-              // ÚNICOS (dedup por e-mail). Sem planilha de vendas (hasSalesData
-              // false) → null → células "—" (AC-BUG.1: não mostra leads sob rótulo
-              // "Ingressos"). Free segue com leads.
-              const ing = hasSalesData
-                ? getUnicoOrigem(r.date)
-                : isPaidCapture
-                ? null
-                : { pago: r.leadsPagos, org: r.leadsOrg, semTrack: r.leadsSemTrack };
-              const totalLeads = ing ? ing.pago + ing.org + ing.semTrack : 0;
-              const tmU = ticket(fatUnicoDia(r.date), unicoDia(r.date));
-              const tmT = ticket(fatTotalDia(r.date), totalDia(r.date));
-              const turn = turnsByDate.get(r.date);
-              return (
-                <TableRow
-                  key={r.date}
-                  onContextMenu={(e) => handleRowContextMenu(e, r.date)}
-                  className={turn ? "border-l-4 border-l-amber-500/70" : undefined}
+                <TableHead
+                  className="text-right min-w-[110px] cursor-help"
+                  title={TT.investimento}
                 >
-                  <TableCell className="sticky left-0 bg-background z-10 font-medium">
-                    <span className="inline-flex items-center gap-1.5">
-                      {turn && (
-                        <span
-                          className="cursor-help"
-                          title={`Virada de lote: ${turn.label}`}
-                          aria-label={`Virada de lote: ${turn.label}`}
-                        >
-                          📦
-                        </span>
-                      )}
-                      {formatDateLabel(r.date)}
-                      <EventosDoDia entradas={eventosPorDia.get(r.date)} dia={r.date} />
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right">{fmtCurrency(r.spend)}</TableCell>
-                  {isPaidCapture ? (
-                    <>
-                      <TableCell className="text-right">{hasSalesData ? fmtCurrency(fatUnicoDia(r.date)) : "—"}</TableCell>
-                      <TableCell className="text-right">{hasSalesData ? fmtCurrency(fatTotalDia(r.date)) : "—"}</TableCell>
-                    </>
-                  ) : (
-                    <TableCell className="text-right">
-                      {fmtCurrency(salesByDay ? (salesByDay[r.date] ?? 0) : r.faturamento)}
-                    </TableCell>
-                  )}
-                  <TableCell className="text-right">
-                    {isPaidCapture
-                      ? hasSalesData ? fmtInt(unicoDia(r.date)) : "—"
-                      : renderTotalLeadsCell(totalLeads, r.leadsByMedium, effectiveAdsetsMap)}
-                  </TableCell>
-                  {isPaidCapture && (
-                    <TableCell className="text-right">{hasSalesData ? fmtInt(totalDia(r.date)) : "—"}</TableCell>
-                  )}
-                  <TableCell className="text-right">{fmtCurrency(r.cplPg)}</TableCell>
-                  <TableCell className="text-right">{fmtCurrency(r.cplG)}</TableCell>
-                  {isPaidCapture && (
-                    <>
-                      <TableCell className="text-right">{tmU !== null ? fmtCurrency(tmU) : "—"}</TableCell>
-                      <TableCell className="text-right">{tmT !== null ? fmtCurrency(tmT) : "—"}</TableCell>
-                    </>
-                  )}
-                  {/* Story 18.52 AC5: Tx Conv. à esquerda de Cliques. */}
-                  <TableCell className="text-right">{fmtPercent(r.txConv)}</TableCell>
-                  <TableCell className="text-right">{fmtInt(r.linkClicks)}</TableCell>
-                  <TableCell className="text-right">{fmtInt(r.impressions)}</TableCell>
-                  <TableCell className="text-right">{fmtCurrency(r.cpm)}</TableCell>
-                  <TableCell className="text-right">{fmtCurrency(r.cpc)}</TableCell>
-                  <TableCell className="text-right">{fmtPercent(r.ctr)}</TableCell>
-                  <TableCell className="text-right">{fmtInt(r.lpView)}</TableCell>
-                  <TableCell className="text-right">{renderConnectRate(r.connectRate)}</TableCell>
-                  <TableCell className="text-right">{ing ? fmtInt(ing.pago) : "—"}</TableCell>
-                  <TableCell className="text-right">{ing ? fmtInt(ing.org) : "—"}</TableCell>
-                  <TableCell className="text-right">{ing ? fmtInt(ing.semTrack) : "—"}</TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-          <TableFooter>
-            <TableRow className="font-semibold">
-              <TableCell className="sticky left-0 bg-muted/50 z-10">Total</TableCell>
-              <TableCell className="text-right">{fmtCurrency(totals.spend)}</TableCell>
-              {isPaidCapture ? (
-                <>
-                  <TableCell className="text-right">{hasSalesData ? fmtCurrency(totFatUnico) : "—"}</TableCell>
-                  <TableCell className="text-right">{hasSalesData ? fmtCurrency(totFatTotal) : "—"}</TableCell>
-                </>
-              ) : (
-                <TableCell className="text-right">
-                  {fmtCurrency(salesTotal !== null ? salesTotal : totals.faturamento)}
-                </TableCell>
-              )}
-              <TableCell className="text-right">
-                {isPaidCapture
-                  ? hasSalesData ? fmtInt(totUnicos) : "—"
-                  : renderTotalLeadsCell(
-                      totals.leadsPagos + totals.leadsOrg + totals.leadsSemTrack,
-                      totals.leadsByMedium,
-                      effectiveAdsetsMap,
-                    )}
-              </TableCell>
-              {isPaidCapture && (
-                <TableCell className="text-right">{hasSalesData ? fmtInt(totTotais) : "—"}</TableCell>
-              )}
-              <TableCell className="text-right">{fmtCurrency(totals.cplPg)}</TableCell>
-              <TableCell className="text-right">{fmtCurrency(totals.cplG)}</TableCell>
-              {isPaidCapture && (() => {
-                const tmU = ticket(totFatUnico, totUnicos);
-                const tmT = ticket(totFatTotal, totTotais);
-                return (
+                  Investimento
+                </TableHead>
+                {isPaidCapture ? (
                   <>
-                    <TableCell className="text-right">{tmU !== null ? fmtCurrency(tmU) : "—"}</TableCell>
-                    <TableCell className="text-right">{tmT !== null ? fmtCurrency(tmT) : "—"}</TableCell>
+                    <TableHead
+                      className="text-right min-w-[120px] cursor-help"
+                      title={TT.fatUnico}
+                    >
+                      Faturamento único
+                    </TableHead>
+                    <TableHead
+                      className="text-right min-w-[120px] cursor-help"
+                      title={TT.fatTotal}
+                    >
+                      Faturamento Total
+                    </TableHead>
                   </>
+                ) : (
+                  <TableHead
+                    className="text-right min-w-[110px] cursor-help"
+                    title={TT.faturamento}
+                  >
+                    Faturamento
+                  </TableHead>
+                )}
+                <TableHead
+                  className="text-right min-w-[110px] font-semibold cursor-help"
+                  title={labels.totalLeadsTooltip}
+                >
+                  {labels.totalLeads}
+                </TableHead>
+                {isPaidCapture && (
+                  <TableHead
+                    className="text-right min-w-[130px] font-semibold cursor-help"
+                    title={ingressosTotaisTooltip}
+                  >
+                    {labels.ingressoTotal}
+                  </TableHead>
+                )}
+                <TableHead
+                  className="text-right min-w-[110px] cursor-help"
+                  title={TT.cplPg}
+                >
+                  {labels.cplPg}
+                </TableHead>
+                <TableHead
+                  className="text-right min-w-[110px] cursor-help"
+                  title={TT.cplG}
+                >
+                  {labels.cplG}
+                </TableHead>
+                {isPaidCapture && (
+                  <>
+                    <TableHead
+                      className="text-right min-w-[120px] cursor-help"
+                      title={TT.tmUnico}
+                    >
+                      Ticket médio (únicos)
+                    </TableHead>
+                    <TableHead
+                      className="text-right min-w-[120px] cursor-help"
+                      title={TT.tmTotal}
+                    >
+                      Ticket médio (total)
+                    </TableHead>
+                  </>
+                )}
+                {/* Story 18.52 AC5: Tx Conv. movida para a esquerda de Cliques. */}
+                <TableHead
+                  className="text-right min-w-[90px] cursor-help"
+                  title={TT.txconv}
+                >
+                  Tx Conv.
+                </TableHead>
+                <TableHead
+                  className="text-right min-w-[80px] cursor-help"
+                  title={TT.cliques}
+                >
+                  Cliques
+                </TableHead>
+                <TableHead
+                  className="text-right min-w-[100px] cursor-help"
+                  title={TT.impressoes}
+                >
+                  Impressões
+                </TableHead>
+                <TableHead
+                  className="text-right min-w-[80px] cursor-help"
+                  title={TT.cpm}
+                >
+                  CPM
+                </TableHead>
+                <TableHead
+                  className="text-right min-w-[80px] cursor-help"
+                  title={TT.cpc}
+                >
+                  CPC
+                </TableHead>
+                <TableHead
+                  className="text-right min-w-[70px] cursor-help"
+                  title={TT.ctr}
+                >
+                  CTR
+                </TableHead>
+                <TableHead
+                  className="text-right min-w-[80px] cursor-help"
+                  title={TT.lpview}
+                >
+                  LP View
+                </TableHead>
+                <TableHead
+                  className="text-right min-w-[110px] cursor-help"
+                  title={TT.connect}
+                >
+                  Connect Rate
+                </TableHead>
+                <TableHead
+                  className="text-right min-w-[100px] cursor-help"
+                  title={labels.totalLeadsTooltip}
+                >
+                  {labels.leadsPg}
+                </TableHead>
+                <TableHead
+                  className="text-right min-w-[90px] cursor-help"
+                  title={labels.totalLeadsTooltip}
+                >
+                  {labels.leadsOrg}
+                </TableHead>
+                <TableHead
+                  className="text-right min-w-[110px] cursor-help"
+                  title={labels.totalLeadsTooltip}
+                >
+                  {labels.leadsSemTrack}
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((r) => {
+                // Story 18.51b: na Paga, o breakdown Pg/Org/s-track vem dos ingressos
+                // ÚNICOS (dedup por e-mail). Sem planilha de vendas (hasSalesData
+                // false) → null → células "—" (AC-BUG.1: não mostra leads sob rótulo
+                // "Ingressos"). Free segue com leads.
+                const ing = hasSalesData
+                  ? getUnicoOrigem(r.date)
+                  : isPaidCapture
+                    ? null
+                    : {
+                        pago: r.leadsPagos,
+                        org: r.leadsOrg,
+                        semTrack: r.leadsSemTrack,
+                      };
+                const totalLeads = ing ? ing.pago + ing.org + ing.semTrack : 0;
+                const tmU = ticket(fatUnicoDia(r.date), unicoDia(r.date));
+                const tmT = ticket(fatTotalDia(r.date), totalDia(r.date));
+                const turn = turnsByDate.get(r.date);
+                return (
+                  <TableRow
+                    key={r.date}
+                    onContextMenu={(e) => handleRowContextMenu(e, r.date)}
+                    className={
+                      turn ? "border-l-4 border-l-amber-500/70" : undefined
+                    }
+                  >
+                    <TableCell className="sticky left-0 bg-background z-10 font-medium">
+                      <span className="inline-flex items-center gap-1.5">
+                        {turn && (
+                          <span
+                            className="cursor-help"
+                            title={`Virada de lote: ${turn.label}`}
+                            aria-label={`Virada de lote: ${turn.label}`}
+                          >
+                            📦
+                          </span>
+                        )}
+                        {formatDateLabel(r.date)}
+                        <EventosDoDia
+                          entradas={eventosPorDia.get(r.date)}
+                          dia={r.date}
+                        />
+                        <MovimentoDeGrupo dados={grupoPorDia.get(r.date)} />
+                        {turn?.nota && (
+                          <span
+                            className="cursor-help text-amber-600 dark:text-amber-500"
+                            title={turn.nota}
+                            aria-label={`Observação: ${turn.nota}`}
+                          >
+                            <StickyNote className="h-3.5 w-3.5" />
+                          </span>
+                        )}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {fmtCurrency(r.spend)}
+                    </TableCell>
+                    {isPaidCapture ? (
+                      <>
+                        <TableCell className="text-right">
+                          {hasSalesData
+                            ? fmtCurrency(fatUnicoDia(r.date))
+                            : "—"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {hasSalesData
+                            ? fmtCurrency(fatTotalDia(r.date))
+                            : "—"}
+                        </TableCell>
+                      </>
+                    ) : (
+                      <TableCell className="text-right">
+                        {fmtCurrency(
+                          salesByDay
+                            ? (salesByDay[r.date] ?? 0)
+                            : r.faturamento,
+                        )}
+                      </TableCell>
+                    )}
+                    <TableCell className="text-right">
+                      {isPaidCapture
+                        ? hasSalesData
+                          ? fmtInt(unicoDia(r.date))
+                          : "—"
+                        : renderTotalLeadsCell(
+                            totalLeads,
+                            r.leadsByMedium,
+                            effectiveAdsetsMap,
+                          )}
+                    </TableCell>
+                    {isPaidCapture && (
+                      <TableCell className="text-right">
+                        {hasSalesData ? fmtInt(totalDia(r.date)) : "—"}
+                      </TableCell>
+                    )}
+                    <TableCell className="text-right">
+                      {fmtCurrency(r.cplPg)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {fmtCurrency(r.cplG)}
+                    </TableCell>
+                    {isPaidCapture && (
+                      <>
+                        <TableCell className="text-right">
+                          {tmU !== null ? fmtCurrency(tmU) : "—"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {tmT !== null ? fmtCurrency(tmT) : "—"}
+                        </TableCell>
+                      </>
+                    )}
+                    {/* Story 18.52 AC5: Tx Conv. à esquerda de Cliques. */}
+                    <TableCell className="text-right">
+                      {fmtPercent(r.txConv)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {fmtInt(r.linkClicks)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {fmtInt(r.impressions)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {fmtCurrency(r.cpm)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {fmtCurrency(r.cpc)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {fmtPercent(r.ctr)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {fmtInt(r.lpView)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {renderConnectRate(r.connectRate)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {ing ? fmtInt(ing.pago) : "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {ing ? fmtInt(ing.org) : "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {ing ? fmtInt(ing.semTrack) : "—"}
+                    </TableCell>
+                  </TableRow>
                 );
-              })()}
-              {/* Story 18.52 AC5: Tx Conv. à esquerda de Cliques. */}
-              <TableCell className="text-right">{fmtPercent(totals.txConv)}</TableCell>
-              <TableCell className="text-right">{fmtInt(totals.linkClicks)}</TableCell>
-              <TableCell className="text-right">{fmtInt(totals.impressions)}</TableCell>
-              <TableCell className="text-right">{fmtCurrency(totals.cpm)}</TableCell>
-              <TableCell className="text-right">{fmtCurrency(totals.cpc)}</TableCell>
-              <TableCell className="text-right">{fmtPercent(totals.ctr)}</TableCell>
-              <TableCell className="text-right">{fmtInt(totals.lpView)}</TableCell>
-              <TableCell className="text-right">{renderConnectRate(totals.connectRate)}</TableCell>
-              <TableCell className="text-right">{isPaidCapture ? (hasSalesData ? fmtInt(totUnicosOrigem.pago) : "—") : fmtInt(totals.leadsPagos)}</TableCell>
-              <TableCell className="text-right">{isPaidCapture ? (hasSalesData ? fmtInt(totUnicosOrigem.org) : "—") : fmtInt(totals.leadsOrg)}</TableCell>
-              <TableCell className="text-right">{isPaidCapture ? (hasSalesData ? fmtInt(totUnicosOrigem.semTrack) : "—") : fmtInt(totals.leadsSemTrack)}</TableCell>
-            </TableRow>
-          </TableFooter>
-        </Table>
+              })}
+            </TableBody>
+            <TableFooter>
+              <TableRow className="font-semibold">
+                <TableCell className="sticky left-0 bg-muted/50 z-10">
+                  Total
+                </TableCell>
+                <TableCell className="text-right">
+                  {fmtCurrency(totals.spend)}
+                </TableCell>
+                {isPaidCapture ? (
+                  <>
+                    <TableCell className="text-right">
+                      {hasSalesData ? fmtCurrency(totFatUnico) : "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {hasSalesData ? fmtCurrency(totFatTotal) : "—"}
+                    </TableCell>
+                  </>
+                ) : (
+                  <TableCell className="text-right">
+                    {fmtCurrency(
+                      salesTotal !== null ? salesTotal : totals.faturamento,
+                    )}
+                  </TableCell>
+                )}
+                <TableCell className="text-right">
+                  {isPaidCapture
+                    ? hasSalesData
+                      ? fmtInt(totUnicos)
+                      : "—"
+                    : renderTotalLeadsCell(
+                        totals.leadsPagos +
+                          totals.leadsOrg +
+                          totals.leadsSemTrack,
+                        totals.leadsByMedium,
+                        effectiveAdsetsMap,
+                      )}
+                </TableCell>
+                {isPaidCapture && (
+                  <TableCell className="text-right">
+                    {hasSalesData ? fmtInt(totTotais) : "—"}
+                  </TableCell>
+                )}
+                <TableCell className="text-right">
+                  {fmtCurrency(totals.cplPg)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {fmtCurrency(totals.cplG)}
+                </TableCell>
+                {isPaidCapture &&
+                  (() => {
+                    const tmU = ticket(totFatUnico, totUnicos);
+                    const tmT = ticket(totFatTotal, totTotais);
+                    return (
+                      <>
+                        <TableCell className="text-right">
+                          {tmU !== null ? fmtCurrency(tmU) : "—"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {tmT !== null ? fmtCurrency(tmT) : "—"}
+                        </TableCell>
+                      </>
+                    );
+                  })()}
+                {/* Story 18.52 AC5: Tx Conv. à esquerda de Cliques. */}
+                <TableCell className="text-right">
+                  {fmtPercent(totals.txConv)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {fmtInt(totals.linkClicks)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {fmtInt(totals.impressions)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {fmtCurrency(totals.cpm)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {fmtCurrency(totals.cpc)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {fmtPercent(totals.ctr)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {fmtInt(totals.lpView)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {renderConnectRate(totals.connectRate)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {isPaidCapture
+                    ? hasSalesData
+                      ? fmtInt(totUnicosOrigem.pago)
+                      : "—"
+                    : fmtInt(totals.leadsPagos)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {isPaidCapture
+                    ? hasSalesData
+                      ? fmtInt(totUnicosOrigem.org)
+                      : "—"
+                    : fmtInt(totals.leadsOrg)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {isPaidCapture
+                    ? hasSalesData
+                      ? fmtInt(totUnicosOrigem.semTrack)
+                      : "—"
+                    : fmtInt(totals.leadsSemTrack)}
+                </TableCell>
+              </TableRow>
+            </TableFooter>
+          </Table>
         </div>
 
         {batchTurnsEnabled && (
@@ -599,19 +978,38 @@ export function CrossedFunnelDailyTable({
         <div className="rounded-md border border-border/30 bg-muted/20 px-4 py-3 space-y-2 text-sm">
           <div className="flex flex-wrap gap-4">
             <div>
-              <span className="text-muted-foreground">{isPaidCapture ? "Ingressos únicos:" : "Leads:"}</span>
+              <span className="text-muted-foreground">
+                {isPaidCapture ? "Ingressos únicos:" : "Leads:"}
+              </span>
               <span className="font-medium ml-2">
-                {fmtInt(isPaidCapture ? totUnicosOrigem.pago : totals.leadsPagos)} Pagos | {fmtInt(isPaidCapture ? totUnicosOrigem.org : totals.leadsOrg)} Org | {fmtInt(isPaidCapture ? totUnicosOrigem.semTrack : totals.leadsSemTrack)} Sem origem
+                {fmtInt(
+                  isPaidCapture ? totUnicosOrigem.pago : totals.leadsPagos,
+                )}{" "}
+                Pagos |{" "}
+                {fmtInt(isPaidCapture ? totUnicosOrigem.org : totals.leadsOrg)}{" "}
+                Org |{" "}
+                {fmtInt(
+                  isPaidCapture
+                    ? totUnicosOrigem.semTrack
+                    : totals.leadsSemTrack,
+                )}{" "}
+                Sem origem
               </span>
               {isPaidCapture && hasSalesData && (
-                <span className="text-muted-foreground ml-2">· Ingressos totais: <span className="font-medium text-foreground">{fmtInt(totTotais)}</span></span>
+                <span className="text-muted-foreground ml-2">
+                  · Ingressos totais:{" "}
+                  <span className="font-medium text-foreground">
+                    {fmtInt(totTotais)}
+                  </span>
+                </span>
               )}
             </div>
             {surveyTotal != null && (
               <div>
                 <span className="text-muted-foreground">Pesquisa:</span>
                 <span className="font-medium ml-2">
-                  {fmtInt(surveyTotal)} respostas | {fmtInt(surveyMatched)} com match | {fmtInt(surveyUnmatched)} sem match
+                  {fmtInt(surveyTotal)} respostas | {fmtInt(surveyMatched)} com
+                  match | {fmtInt(surveyUnmatched)} sem match
                 </span>
               </div>
             )}
@@ -629,8 +1027,12 @@ export function CrossedFunnelDailyTable({
           {menu.turn ? (
             <>
               <div className="px-3 py-1.5 text-xs text-muted-foreground border-b border-border/50 mb-1">
-                <div className="font-medium text-foreground">📦 {menu.turn.label}</div>
-                <div className="text-[11px]">{formatDateLabel(menu.turn.date)}</div>
+                <div className="font-medium text-foreground">
+                  📦 {menu.turn.label}
+                </div>
+                <div className="text-[11px]">
+                  {formatDateLabel(menu.turn.date)}
+                </div>
               </div>
               <button
                 type="button"
@@ -641,6 +1043,16 @@ export function CrossedFunnelDailyTable({
               </button>
               <button
                 type="button"
+                className="w-full text-left px-3 py-1.5 hover:bg-accent hover:text-accent-foreground"
+                onClick={() =>
+                  handleObservacao(menu.date, menu.turn?.nota ?? null)
+                }
+              >
+                📝{" "}
+                {menu.turn?.nota ? "Editar observação" : "Escrever observação"}
+              </button>
+              <button
+                type="button"
                 className="w-full text-left px-3 py-1.5 hover:bg-accent hover:text-accent-foreground text-destructive"
                 onClick={() => handleDelete(menu.turn!)}
               >
@@ -648,13 +1060,24 @@ export function CrossedFunnelDailyTable({
               </button>
             </>
           ) : (
-            <button
-              type="button"
-              className="w-full text-left px-3 py-1.5 hover:bg-accent hover:text-accent-foreground"
-              onClick={() => handleMark(menu.date)}
-            >
-              📦 Marcar virada de lote
-            </button>
+            <>
+              <button
+                type="button"
+                className="w-full text-left px-3 py-1.5 hover:bg-accent hover:text-accent-foreground"
+                onClick={() => handleMark(menu.date)}
+              >
+                📦 Marcar virada de lote
+              </button>
+              {/* O caso mais comum: anotar um dia que não é virada de lote —
+                  "subiu o CPL", "criativo novo", "feriado". */}
+              <button
+                type="button"
+                className="w-full text-left px-3 py-1.5 hover:bg-accent hover:text-accent-foreground"
+                onClick={() => handleObservacao(menu.date, null)}
+              >
+                📝 Escrever observação
+              </button>
+            </>
           )}
         </div>
       )}

@@ -1550,7 +1550,15 @@ export const funnelBatchTurns = pgTable(
       .notNull()
       .references(() => funnels.id, { onDelete: "cascade" }),
     date: date("date").notNull(),
+    /**
+     * A virada de lote. Vazio = este dia tem observação, mas não é virada.
+     *
+     * Era sempre preenchido, de quando a linha só existia para marcar lote. O
+     * CHECK da migration 0145 garante que label OU nota tenha conteúdo.
+     */
     label: varchar("label", { length: 255 }).notNull(),
+    /** Observação de texto livre do dia. Teto de 2000 no CHECK. */
+    nota: text("nota"),
     createdBy: uuid("created_by").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -5064,7 +5072,11 @@ export const abTests = pgTable(
 // `naming_dictionary_values` com `expert_id` a mais (D17). Expert, produto e
 // oferta são os do dicionário de campanhas (a oferta é o pitch — D19).
 
-export const namingVslVariableTypeEnum = pgEnum("naming_vsl_variable_type", ["lead", "problem", "solution"]);
+export const namingVslVariableTypeEnum = pgEnum("naming_vsl_variable_type", [
+  "lead",
+  "problem",
+  "solution",
+]);
 
 export const namingVslVariables = pgTable(
   "naming_vsl_variables",
@@ -5079,11 +5091,19 @@ export const namingVslVariables = pgTable(
     /** Obrigatória: é o que se lê no select do gerador. */
     description: text("description").notNull(),
     active: boolean("active").notNull().default(true),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
-    uniqueIndex("uq_naming_vsl_variables_expert_type_code").on(t.expertId, t.type, t.code),
+    uniqueIndex("uq_naming_vsl_variables_expert_type_code").on(
+      t.expertId,
+      t.type,
+      t.code,
+    ),
     index("idx_naming_vsl_variables_expert").on(t.expertId),
   ],
 );
@@ -5120,11 +5140,20 @@ export const namingVsls = pgTable(
     /** Pedido do dono (2026-09-10): o link do vídeo/roteiro no Drive, pedido na criação. Opcional. */
     url: text("url"),
     notes: text("notes"),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (t) => [uniqueIndex("uq_naming_vsls_name").on(t.name), index("idx_naming_vsls_expert").on(t.expertId)],
+  (t) => [
+    uniqueIndex("uq_naming_vsls_name").on(t.name),
+    index("idx_naming_vsls_expert").on(t.expertId),
+  ],
 );
 
 // ─────────────────────── Story 47.10 — Nome de anúncio ───────────────────────
@@ -5158,9 +5187,18 @@ export const namingAds = pgTable(
     /** GERADA: estrutura + descrição (igual à estrutura sem descrição). */
     name: varchar("name", { length: 160 }).notNull(),
     notes: text("notes"),
-    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
-  (t) => [uniqueIndex("uq_naming_ads_expert_seq").on(t.expertId, t.creativeSeq), index("idx_naming_ads_expert").on(t.expertId)],
+  (t) => [
+    uniqueIndex("uq_naming_ads_expert_seq").on(t.expertId, t.creativeSeq),
+    index("idx_naming_ads_expert").on(t.expertId),
+  ],
 );

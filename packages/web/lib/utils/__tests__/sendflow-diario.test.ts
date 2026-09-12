@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { montarDiario, totaisDoDiario } from "../sendflow-diario";
+import {
+  montarDiario,
+  reconstruirTotais,
+  totaisDoDiario,
+} from "../sendflow-diario";
 
 const serie = (pares: [string, number][]) => ({
   porDia: pares.map(([date, valor]) => ({ date, valor })),
@@ -147,5 +151,76 @@ describe("totaisDoDiario", () => {
       cliques: 0,
       disparos: 0,
     });
+  });
+});
+
+describe("reconstruirTotais", () => {
+  const ponto = (date: string, entrou: number, saiu: number) => ({
+    date,
+    entrou,
+    saiu,
+    saldo: entrou - saiu,
+    cliques: 0,
+    disparos: 0,
+  });
+
+  it("a linha TERMINA no total que os cartões mostram", () => {
+    // Se terminasse em outro número, a tela se contradiria sozinha — e é o tipo
+    // de divergência que ninguém consegue explicar depois.
+    const r = reconstruirTotais(
+      [ponto("2026-09-10", 4, 0), ponto("2026-09-11", 16, 2)],
+      27,
+    );
+    expect(r[r.length - 1]!.total).toBe(27);
+  });
+
+  it("desce o fluxo do dia para achar o dia anterior", () => {
+    // 27 hoje; o último dia teve saldo +14, então antes dele havia 13.
+    const r = reconstruirTotais(
+      [ponto("2026-09-10", 4, 0), ponto("2026-09-11", 16, 2)],
+      27,
+    );
+    expect(r[0]!.total).toBe(13);
+  });
+
+  it("NÃO soma o fluxo desde o começo", () => {
+    // Somar daria 20 no fim (4+16), não 27: o período não cobre a vida inteira
+    // do grupo, e as entradas anteriores a ele não estão na série.
+    const r = reconstruirTotais(
+      [ponto("2026-09-10", 4, 0), ponto("2026-09-11", 16, 2)],
+      27,
+    );
+    expect(r.map((x) => x.total)).toEqual([13, 27]);
+  });
+
+  it("a saída vira negativa, para descer do eixo", () => {
+    const r = reconstruirTotais([ponto("2026-09-11", 1, 9)], 100);
+    expect(r[0]!.saiuNegativo).toBe(-9);
+  });
+
+  it("dia de esvaziamento sobe o total anterior", () => {
+    // Saiu mais do que entrou: antes desse dia havia MAIS gente.
+    const r = reconstruirTotais([ponto("2026-09-11", 1, 9)], 100);
+    expect(r[0]!.total).toBe(100);
+  });
+
+  it("lista vazia devolve lista vazia", () => {
+    expect(reconstruirTotais([], 27)).toEqual([]);
+  });
+
+  it("preserva a ordem cronológica que recebeu", () => {
+    const r = reconstruirTotais(
+      [
+        ponto("2026-09-01", 1, 0),
+        ponto("2026-09-02", 2, 0),
+        ponto("2026-09-03", 3, 0),
+      ],
+      10,
+    );
+    expect(r.map((x) => x.date)).toEqual([
+      "2026-09-01",
+      "2026-09-02",
+      "2026-09-03",
+    ]);
   });
 });
