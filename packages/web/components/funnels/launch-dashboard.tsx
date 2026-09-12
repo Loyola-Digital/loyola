@@ -85,7 +85,7 @@ import {
 import { useOrganicLeadsByDay } from "@/lib/hooks/use-organic-leads-by-day";
 import { useFunnelAdsetsMap } from "@/lib/hooks/use-funnel-adsets-map";
 import { SurveyQualificationSection } from "./survey-qualification-section";
-import { GroupsDashboardSection } from "./groups-dashboard-section";
+import { GruposDoSendflow } from "./grupos-do-sendflow";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
 import { FormulaChartTooltip } from "@/components/metrics/formula-chart-tooltip";
 import {
@@ -979,7 +979,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
       )}
 
       {/* Grupos — tracking de participantes via planilha (Story 26.1) */}
-      <GroupsDashboardSection projectId={projectId} funnelId={funnel.id} />
+      <GruposDoSendflow projectId={projectId} funnelId={funnel.id} />
 
       {/* Story 18.41: Creative Performance Table for Free stages */}
       {stageType === "free" && stageId && (

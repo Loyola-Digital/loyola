@@ -30,7 +30,9 @@ interface Props {
 /**
  * Card de gerenciamento da planilha de grupos (vincular/desvincular/sincronizar).
  * O vínculo é a nível de funil — aparece igual em qualquer stage do mesmo funil.
- * KPIs e tabela diária ficam no dashboard (GroupsDashboardSection).
+ * KPIs e tabela diária ficam no dashboard, e vêm da API do SendFlow
+ * (`grupos-do-sendflow.tsx`) — não desta planilha. Ela sobrou como entrada
+ * manual para quem não usa SendFlow; nada no dashboard a consome.
  */
 export function GroupsSpreadsheetCard({ projectId, funnelId }: Props) {
   const linkQuery = useFunnelGroupsLink(projectId, funnelId);
