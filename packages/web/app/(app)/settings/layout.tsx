@@ -31,7 +31,11 @@ const BASE_TABS = [
   // Epic 47: o dicionário de onde sai cada campo do nome de campanha do
   // perpétuo. Global pelo mesmo motivo do match de origem — `bbe`, `of01` e
   // `hot` significam a mesma coisa em qualquer projeto.
-  { label: "Nomenclatura", href: "/settings/nomenclatura", value: "nomenclatura" },
+  {
+    label: "Nomenclatura",
+    href: "/settings/nomenclatura",
+    value: "nomenclatura",
+  },
 ] as const;
 
 const META_TABS = [
@@ -46,12 +50,27 @@ const GOOGLE_TABS = [
 
 // Só admin: a instância de analytics é uma só, compartilhada por todos os
 // projetos — quem escolhe o site de cada projeto faz isso na etapa.
-const ANALYTICS_TAB = { label: "Analytics", href: "/settings/analytics", value: "analytics" } as const;
+const ANALYTICS_TAB = {
+  label: "Analytics",
+  href: "/settings/analytics",
+  value: "analytics",
+} as const;
 
 // Mesma razão da Analytics: a conta do SendFlow é uma só, compartilhada por
 // todos os experts — quem casa campanha com funil é o código do funil.
-const WHATSAPP_TAB = { label: "WhatsApp", href: "/settings/whatsapp", value: "whatsapp" } as const;
+const WHATSAPP_TAB = {
+  label: "WhatsApp",
+  href: "/settings/whatsapp",
+  value: "whatsapp",
+} as const;
 
+/**
+ * Só para o breadcrumb — quem monta o MENU é `getAllTabs`.
+ *
+ * As duas listas divergiram: a aba WhatsApp estava aqui e faltava lá, então a
+ * página existia, respondia pela URL e nunca aparecia para clicar. Antes de
+ * acrescentar aba nova, acrescente nas duas.
+ */
 const ADMIN_TABS = [
   ...BASE_TABS,
   ANALYTICS_TAB,
@@ -72,6 +91,10 @@ function getAllTabs(isAdmin: boolean, podeAnalytics = false): readonly Tab[] {
   if (isAdmin) {
     if (podeAnalytics) tabs.push(ANALYTICS_TAB);
     tabs.push(
+      // A aba existia em `ADMIN_TABS` e faltava AQUI — e é esta função que
+      // monta o menu. `ADMIN_TABS` só alimenta o breadcrumb, então a página
+      // respondia pela URL direta e nunca aparecia para clicar.
+      WHATSAPP_TAB,
       { label: "Usuários", href: "/settings/users", value: "users" },
       { label: "Adesão", href: "/settings/adesao", value: "adesao" },
       { label: "API Keys", href: "/settings/api-keys", value: "api-keys" },
@@ -94,7 +117,11 @@ function getActiveBreadcrumb(pathname: string): string {
   return allTabs.find((t) => pathname.startsWith(t.href))?.label ?? "Settings";
 }
 
-export default function SettingsLayout({ children }: { children: React.ReactNode }) {
+export default function SettingsLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const role = useUserRole();
@@ -129,7 +156,15 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     ? [
         ...(podeAnalytics ? [ANALYTICS_TAB as Tab] : []),
         { label: "Usuários", href: "/settings/users", value: "users" },
-        ...(podeAdesao ? [{ label: "Adesão", href: "/settings/adesao", value: "adesao" } as Tab] : []),
+        ...(podeAdesao
+          ? [
+              {
+                label: "Adesão",
+                href: "/settings/adesao",
+                value: "adesao",
+              } as Tab,
+            ]
+          : []),
         { label: "API Keys", href: "/settings/api-keys", value: "api-keys" },
         { label: "Auditoria", href: "/settings/audit", value: "audit" },
       ]
@@ -163,7 +198,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                 "rounded-md px-3 py-2 text-sm font-medium transition-colors",
                 pathname.startsWith(tab.href)
                   ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                  : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
               )}
             >
               {tab.label}
@@ -177,12 +212,15 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
               "flex items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors text-left",
               isMetaActive
                 ? "bg-accent text-accent-foreground"
-                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
             )}
           >
             <span>Meta</span>
             <svg
-              className={cn("h-4 w-4 transition-transform", metaOpen && "rotate-180")}
+              className={cn(
+                "h-4 w-4 transition-transform",
+                metaOpen && "rotate-180",
+              )}
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -202,7 +240,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                     "rounded-md px-3 py-1.5 text-sm transition-colors",
                     pathname.startsWith(tab.href)
                       ? "bg-accent/70 text-accent-foreground font-medium"
-                      : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                      : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
                   )}
                 >
                   {tab.label}
@@ -218,12 +256,15 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
               "flex items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors text-left",
               isGoogleActive
                 ? "bg-accent text-accent-foreground"
-                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
             )}
           >
             <span>Google</span>
             <svg
-              className={cn("h-4 w-4 transition-transform", googleOpen && "rotate-180")}
+              className={cn(
+                "h-4 w-4 transition-transform",
+                googleOpen && "rotate-180",
+              )}
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -243,7 +284,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                     "rounded-md px-3 py-1.5 text-sm transition-colors",
                     pathname.startsWith(tab.href)
                       ? "bg-accent/70 text-accent-foreground font-medium"
-                      : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                      : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
                   )}
                 >
                   {tab.label}
@@ -260,7 +301,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                 "rounded-md px-3 py-2 text-sm font-medium transition-colors",
                 pathname.startsWith(tab.href)
                   ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                  : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
               )}
             >
               {tab.label}
