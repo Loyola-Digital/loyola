@@ -19,13 +19,50 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Icons from "lucide-react";
 import {
-  ChevronDown, ChevronRight, ClipboardCopy, Copy, FileDown, FileText, Keyboard, Library, Loader2, Maximize2, Minimize2, Link2, Minus, Moon, Spline, Sun, Waypoints,
-  PanelLeftClose, PanelLeftOpen, Pencil, Plus, RotateCcw, Save, Scan, Search,
-  StickyNote, Trash2, Type, Undo2, Redo2, Unlink, X, Image as ImageIcon,
-  AlignLeft, AlignCenter, AlignRight,
+  ChevronDown,
+  ChevronRight,
+  ClipboardCopy,
+  Copy,
+  FileDown,
+  FileText,
+  Keyboard,
+  Library,
+  Loader2,
+  Maximize2,
+  Minimize2,
+  Link2,
+  Minus,
+  Moon,
+  Spline,
+  Sun,
+  Waypoints,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Save,
+  Scan,
+  Search,
+  StickyNote,
+  Trash2,
+  Type,
+  Undo2,
+  Redo2,
+  Unlink,
+  X,
+  Image as ImageIcon,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
 } from "lucide-react";
 import { toast } from "sonner";
-import { comEsquema, encurtar, linkAoColar, pedacosDoTexto } from "@/lib/utils/texto-com-links";
+import {
+  comEsquema,
+  encurtar,
+  linkAoColar,
+  pedacosDoTexto,
+} from "@/lib/utils/texto-com-links";
 import { descendentes } from "@/lib/utils/cadeia-do-mapa";
 import {
   Alfinete,
@@ -38,12 +75,19 @@ import {
   useComentar,
   useComentariosDoMapa,
 } from "@/lib/hooks/use-mapa-comentarios";
-import { PDF, imagemDoEvento, useSubirImagemDoMapa } from "@/lib/hooks/use-mapa-imagem";
+import {
+  PDF,
+  imagemDoEvento,
+  useSubirImagemDoMapa,
+} from "@/lib/hooks/use-mapa-imagem";
 import { BotaoDeCompartilhar } from "./compartilhar-mapa";
 import { AnexarSwipeDialog } from "@/components/funnels/funnel-map/anexar-swipe-dialog";
 import { CapaDoSwipe } from "@/components/swipe-files/capa-do-swipe";
 import { SwipeLightbox } from "@/components/swipe-files/swipe-lightbox";
-import { useSwipesPorIds, useUpdateSwipeFile } from "@/lib/hooks/use-swipe-files";
+import {
+  useSwipesPorIds,
+  useUpdateSwipeFile,
+} from "@/lib/hooks/use-swipe-files";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -74,9 +118,15 @@ import {
   metaDoTipo,
   type StatusBloco,
 } from "@/lib/utils/funnel-map-palette";
-import { exportarMapaEmPdf } from "@/lib/utils/funnel-map-pdf";
+import { exportarMapaEmPdf, fundoVisivel } from "@/lib/utils/funnel-map-pdf";
 import {
-  GRADE, ZOOM_MAX, ZOOM_MIN, snap, useHistorico, useSelecao, useZoom,
+  GRADE,
+  ZOOM_MAX,
+  ZOOM_MIN,
+  snap,
+  useHistorico,
+  useSelecao,
+  useZoom,
 } from "@/lib/hooks/use-canvas-ux";
 import {
   useMapaPorEndereco,
@@ -117,7 +167,11 @@ function IconePorNome({
  * dos dois faz metade do time achar que selecionar vários não existe. `metaKey`
  * entra junto porque no Mac o Cmd também soma em quase todo editor.
  */
-function somaASelecao(e: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }): boolean {
+function somaASelecao(e: {
+  shiftKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+}): boolean {
   return e.shiftKey || e.ctrlKey || e.metaKey;
 }
 
@@ -133,12 +187,19 @@ function pontoAfastado(
   return { x: p.x + d, y: p.y };
 }
 
-function pontoDoBloco(b: BlocoDoMapa, ponto: PontoDeConexao): { x: number; y: number } {
+function pontoDoBloco(
+  b: BlocoDoMapa,
+  ponto: PontoDeConexao,
+): { x: number; y: number } {
   switch (ponto) {
-    case "top": return { x: b.x + b.width / 2, y: b.y };
-    case "bottom": return { x: b.x + b.width / 2, y: b.y + b.height };
-    case "left": return { x: b.x, y: b.y + b.height / 2 };
-    case "right": return { x: b.x + b.width, y: b.y + b.height / 2 };
+    case "top":
+      return { x: b.x + b.width / 2, y: b.y };
+    case "bottom":
+      return { x: b.x + b.width / 2, y: b.y + b.height };
+    case "left":
+      return { x: b.x, y: b.y + b.height / 2 };
+    case "right":
+      return { x: b.x + b.width, y: b.y + b.height / 2 };
   }
 }
 
@@ -168,10 +229,14 @@ function caminhoRetoDaSeta(
   const SAIDA = 24;
   const sai = (p: PontoDeConexao, base: { x: number; y: number }) => {
     switch (p) {
-      case "right": return { x: base.x + SAIDA, y: base.y };
-      case "left": return { x: base.x - SAIDA, y: base.y };
-      case "top": return { x: base.x, y: base.y - SAIDA };
-      case "bottom": return { x: base.x, y: base.y + SAIDA };
+      case "right":
+        return { x: base.x + SAIDA, y: base.y };
+      case "left":
+        return { x: base.x - SAIDA, y: base.y };
+      case "top":
+        return { x: base.x, y: base.y - SAIDA };
+      case "bottom":
+        return { x: base.x, y: base.y + SAIDA };
     }
   };
   const a = sai(dePonto, de);
@@ -189,14 +254,23 @@ function caminhoRetoDaSeta(
     .join(" ");
 }
 
-function caminhoDaSeta(de: { x: number; y: number }, dePonto: PontoDeConexao, para: { x: number; y: number }, paraPonto: PontoDeConexao): string {
+function caminhoDaSeta(
+  de: { x: number; y: number },
+  dePonto: PontoDeConexao,
+  para: { x: number; y: number },
+  paraPonto: PontoDeConexao,
+): string {
   const forca = Math.max(40, Math.abs(para.x - de.x) / 2);
   const alca = (p: PontoDeConexao, base: { x: number; y: number }) => {
     switch (p) {
-      case "right": return { x: base.x + forca, y: base.y };
-      case "left": return { x: base.x - forca, y: base.y };
-      case "top": return { x: base.x, y: base.y - forca };
-      case "bottom": return { x: base.x, y: base.y + forca };
+      case "right":
+        return { x: base.x + forca, y: base.y };
+      case "left":
+        return { x: base.x - forca, y: base.y };
+      case "top":
+        return { x: base.x, y: base.y - forca };
+      case "bottom":
+        return { x: base.x, y: base.y + forca };
     }
   };
   const c1 = alca(dePonto, de);
@@ -227,7 +301,10 @@ const ALTURA_COM_REFERENCIA = 112;
 /** Distância em px (na escala do desenho) para o alinhamento "colar". */
 const IMA = 6;
 
-export interface Guia { eixo: "x" | "y"; valor: number }
+export interface Guia {
+  eixo: "x" | "y";
+  valor: number;
+}
 
 /**
  * Alinhamento com os blocos vizinhos.
@@ -241,8 +318,16 @@ function calcularGuias(
   movido: { x: number; y: number; width: number; height: number },
   outros: { x: number; y: number; width: number; height: number }[],
 ): { dx: number; dy: number; guias: Guia[] } {
-  const refsX = (b: { x: number; width: number }) => [b.x, b.x + b.width / 2, b.x + b.width];
-  const refsY = (b: { y: number; height: number }) => [b.y, b.y + b.height / 2, b.y + b.height];
+  const refsX = (b: { x: number; width: number }) => [
+    b.x,
+    b.x + b.width / 2,
+    b.x + b.width,
+  ];
+  const refsY = (b: { y: number; height: number }) => [
+    b.y,
+    b.y + b.height / 2,
+    b.y + b.height,
+  ];
 
   let dx = 0;
   let dy = 0;
@@ -254,13 +339,19 @@ function calcularGuias(
     for (const a of refsX(movido)) {
       for (const b of refsX(o)) {
         const d = Math.abs(a - b);
-        if (d <= melhorX) { melhorX = d; dx = b - a; }
+        if (d <= melhorX) {
+          melhorX = d;
+          dx = b - a;
+        }
       }
     }
     for (const a of refsY(movido)) {
       for (const b of refsY(o)) {
         const d = Math.abs(a - b);
-        if (d <= melhorY) { melhorY = d; dy = b - a; }
+        if (d <= melhorY) {
+          melhorY = d;
+          dy = b - a;
+        }
       }
     }
   }
@@ -268,12 +359,16 @@ function calcularGuias(
   // Só desenha a guia onde houve encaixe — linha sem colagem confunde.
   if (melhorX < IMA) {
     for (const a of refsX({ x: movido.x + dx, width: movido.width })) {
-      for (const o of outros) if (refsX(o).some((b) => Math.abs(a - b) < 0.5)) guias.push({ eixo: "x", valor: a });
+      for (const o of outros)
+        if (refsX(o).some((b) => Math.abs(a - b) < 0.5))
+          guias.push({ eixo: "x", valor: a });
     }
   }
   if (melhorY < IMA) {
     for (const a of refsY({ y: movido.y + dy, height: movido.height })) {
-      for (const o of outros) if (refsY(o).some((b) => Math.abs(a - b) < 0.5)) guias.push({ eixo: "y", valor: a });
+      for (const o of outros)
+        if (refsY(o).some((b) => Math.abs(a - b) < 0.5))
+          guias.push({ eixo: "y", valor: a });
     }
   }
   return { dx: melhorX < IMA ? dx : 0, dy: melhorY < IMA ? dy : 0, guias };
@@ -286,7 +381,13 @@ function calcularGuias(
  * dela casa, em vez de virar um cabeçalho órfão sobre o vazio.
  */
 function Secao({
-  titulo, chave, cor, fechada, alternar, visivel, children,
+  titulo,
+  chave,
+  cor,
+  fechada,
+  alternar,
+  visivel,
+  children,
 }: {
   titulo: string;
   chave: string;
@@ -305,8 +406,17 @@ function Secao({
         onClick={() => alternar(chave)}
         className="mb-1 flex w-full items-center gap-1 rounded text-[10px] font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
       >
-        {aberta ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
-        {cor && <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: cor }} />}
+        {aberta ? (
+          <ChevronDown className="h-3 w-3 shrink-0" />
+        ) : (
+          <ChevronRight className="h-3 w-3 shrink-0" />
+        )}
+        {cor && (
+          <span
+            className="h-2 w-2 shrink-0 rounded-sm"
+            style={{ background: cor }}
+          />
+        )}
         <span className="truncate">{titulo}</span>
       </button>
       {aberta && children}
@@ -339,12 +449,24 @@ interface Props {
   altura?: number | string;
 }
 
-export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, altura = 520 }: Props) {
+export function FunnelMapCanvas({
+  projectId,
+  funnelId,
+  stageId,
+  mapId,
+  token,
+  altura = 520,
+}: Props) {
   const endereco: EnderecoDoMapa = token
     ? { tipo: "compartilhado", token }
     : mapId && !stageId
       ? { tipo: "avulso", mapId }
-      : { tipo: "funil", projectId: projectId!, funnelId: funnelId!, stageId: stageId! };
+      : {
+          tipo: "funil",
+          projectId: projectId!,
+          funnelId: funnelId!,
+          stageId: stageId!,
+        };
   /**
    * Quem abriu pelo link só olha.
    *
@@ -366,9 +488,16 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
   const selecao = useSelecao();
   const historico = useHistorico<AbaDoMapa[]>();
   const zoom = useZoom();
-  const [ligando, setLigando] = useState<{ boxId: string; ponto: PontoDeConexao } | null>(null);
+  const [ligando, setLigando] = useState<{
+    boxId: string;
+    ponto: PontoDeConexao;
+  } | null>(null);
   const [sujo, setSujo] = useState(false);
-  const [menu, setMenu] = useState<{ x: number; y: number; boxId: string } | null>(null);
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    boxId: string;
+  } | null>(null);
   /** Seta selecionada — permite apagar UMA ligação, sem levar as outras junto. */
   const [conectorSel, setConectorSel] = useState<string | null>(null);
   /**
@@ -394,17 +523,28 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
    */
   const [mapaClaro, setMapaClaro] = useState(false);
   useEffect(() => {
-    try { setMapaClaro(localStorage.getItem("mapa:tema") === "claro"); } catch { /* ignora */ }
+    try {
+      setMapaClaro(localStorage.getItem("mapa:tema") === "claro");
+    } catch {
+      /* ignora */
+    }
   }, []);
   function alternarTema() {
     setMapaClaro((v) => {
       const novo = !v;
-      try { localStorage.setItem("mapa:tema", novo ? "claro" : "escuro"); } catch { /* ignora */ }
+      try {
+        localStorage.setItem("mapa:tema", novo ? "claro" : "escuro");
+      } catch {
+        /* ignora */
+      }
       return novo;
     });
   }
   /** O documento aberto no leitor. `null` = nenhum. */
-  const [pdfAberto, setPdfAberto] = useState<{ url: string; titulo: string } | null>(null);
+  const [pdfAberto, setPdfAberto] = useState<{
+    url: string;
+    titulo: string;
+  } | null>(null);
 
   /**
    * Comentários.
@@ -440,17 +580,28 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
   } | null>(null);
 
   /** O campo de link de um BLOCO (não do texto dentro dele). */
-  const [linkDoBloco, setLinkDoBloco] = useState<{ blocoId: string; url: string } | null>(null);
+  const [linkDoBloco, setLinkDoBloco] = useState<{
+    blocoId: string;
+    url: string;
+  } | null>(null);
 
   const [modoComentario, setModoComentario] = useState(false);
   const [conversaAberta, setConversaAberta] = useState<string | null>(null);
-  const [novoComentario, setNovoComentario] = useState<{ x: number; y: number; texto: string } | null>(null);
+  const [novoComentario, setNovoComentario] = useState<{
+    x: number;
+    y: number;
+    texto: string;
+  } | null>(null);
   /** A imagem aberta em tamanho grande. `null` = nenhuma. */
-  const [imagemAmpliada, setImagemAmpliada] = useState<{ url: string; titulo: string } | null>(
-    null,
-  );
+  const [imagemAmpliada, setImagemAmpliada] = useState<{
+    url: string;
+    titulo: string;
+  } | null>(null);
   /** Escrevendo o texto de uma ligação. `null` = ninguém editando. */
-  const [rotulando, setRotulando] = useState<{ id: string; valor: string } | null>(null);
+  const [rotulando, setRotulando] = useState<{
+    id: string;
+    valor: string;
+  } | null>(null);
   function alternarSetas() {
     setSetasRetas((v) => !v);
   }
@@ -468,15 +619,29 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
   } | null>(null);
   const [buscaDoPonto, setBuscaDoPonto] = useState("");
   /** Ponta solta da linha enquanto se arrasta de uma bolinha até outro bloco. */
-  const [previaLigacao, setPreviaLigacao] = useState<{ x: number; y: number } | null>(null);
+  const [previaLigacao, setPreviaLigacao] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const [ajuda, setAjuda] = useState(false);
-  const [marquee, setMarquee] = useState<{ ax: number; ay: number; bx: number; by: number } | null>(null);
+  const [marquee, setMarquee] = useState<{
+    ax: number;
+    ay: number;
+    bx: number;
+    by: number;
+  } | null>(null);
   /** Linhas de alinhamento mostradas durante o arrasto. */
   const [guias, setGuias] = useState<Guia[]>([]);
   /** Bloco em renomeação no próprio card (não no painel lateral). */
-  const [renomeando, setRenomeando] = useState<{ id: string; valor: string } | null>(null);
+  const [renomeando, setRenomeando] = useState<{
+    id: string;
+    valor: string;
+  } | null>(null);
   /** Nota/texto em edição — conteúdo vai em `texto`, não em `label`. */
-  const [editando, setEditando] = useState<{ id: string; valor: string } | null>(null);
+  const [editando, setEditando] = useState<{
+    id: string;
+    valor: string;
+  } | null>(null);
   const areaRef = useRef<HTMLDivElement>(null);
   /** O nó que contém blocos e conectores — é ele que a exportação fotografa. */
   const desenhoRef = useRef<HTMLDivElement>(null);
@@ -510,15 +675,24 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
   }, []);
   function alternarPaleta() {
     setPaletaAberta((v) => {
-      try { localStorage.setItem("mapa:paleta", v ? "0" : "1"); } catch { /* ignora */ }
+      try {
+        localStorage.setItem("mapa:paleta", v ? "0" : "1");
+      } catch {
+        /* ignora */
+      }
       return !v;
     });
   }
   function alternarSecao(chave: string) {
     setFechadas((atual) => {
       const nova = new Set(atual);
-      if (nova.has(chave)) nova.delete(chave); else nova.add(chave);
-      try { localStorage.setItem("mapa:secoes", JSON.stringify([...nova])); } catch { /* ignora */ }
+      if (nova.has(chave)) nova.delete(chave);
+      else nova.add(chave);
+      try {
+        localStorage.setItem("mapa:secoes", JSON.stringify([...nova]));
+      } catch {
+        /* ignora */
+      }
       return nova;
     });
   }
@@ -527,7 +701,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
   /** Zoom corrente pra ler DEPOIS do render, quando o estado ainda não chegou. */
   const zoomRef = useRef(1);
   const acabouDeArrastar = useRef(false);
-  const areaTransferencia = useRef<{ boxes: BlocoDoMapa[]; connectors: ConectorDoMapa[] } | null>(null);
+  const areaTransferencia = useRef<{
+    boxes: BlocoDoMapa[];
+    connectors: ConectorDoMapa[];
+  } | null>(null);
 
   // O servidor manda o rascunho das etapas quando ninguém desenhou ainda; a
   // partir daí o estado é local, senão cada refetch desfaria o que está sendo
@@ -557,7 +734,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
   );
   // As referências vêm de rota autenticada. No link público dariam 401 em todo
   // bloco com card — melhor não pedir.
-  const { data: referencias } = useSwipesPorIds(somenteLeitura ? [] : idsDeReferencia);
+  const { data: referencias } = useSwipesPorIds(
+    somenteLeitura ? [] : idsDeReferencia,
+  );
   const refPorId = useMemo(
     () => new Map((referencias?.items ?? []).map((r) => [r.id, r])),
     [referencias],
@@ -567,7 +746,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
   /** Qual bloco está escolhendo referências. */
   const [anexandoNoBloco, setAnexandoNoBloco] = useState<string | null>(null);
   /** A referência aberta em tela cheia, e a lista onde ela navega. */
-  const [refAberta, setRefAberta] = useState<{ ids: string[]; indice: number } | null>(null);
+  const [refAberta, setRefAberta] = useState<{
+    ids: string[];
+    indice: number;
+  } | null>(null);
 
   /**
    * As referências de um bloco, na ordem em que foram presas e sem as que
@@ -638,11 +820,17 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
 
     // Arrasta o GRUPO. As origens são fotografadas antes do gesto: acumular
     // delta sobre a posição corrente faria o erro do snap somar frame a frame.
-    const alvos = selecao.ids.has(bloco.id) && !somaASelecao(e) ? [...selecao.ids] : [bloco.id];
+    const alvos =
+      selecao.ids.has(bloco.id) && !somaASelecao(e)
+        ? [...selecao.ids]
+        : [bloco.id];
     const origens = new Map(
-      blocos.filter((b) => alvos.includes(b.id)).map((b) => [b.id, { x: b.x, y: b.y }]),
+      blocos
+        .filter((b) => alvos.includes(b.id))
+        .map((b) => [b.id, { x: b.x, y: b.y }]),
     );
-    if (!origens.has(bloco.id)) origens.set(bloco.id, { x: bloco.x, y: bloco.y });
+    if (!origens.has(bloco.id))
+      origens.set(bloco.id, { x: bloco.x, y: bloco.y });
 
     /**
      * Segurar parado prende a CORRENTE: o bloco e tudo que vem depois dele.
@@ -678,7 +866,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
     const mover = (ev: PointerEvent) => {
       // Andou: já não é "segurar parado". Quatro pixels de folga porque a mão
       // treme, e um tremor não pode custar o gesto.
-      if (Math.abs(ev.clientX - inicioX) > 4 || Math.abs(ev.clientY - inicioY) > 4) desarmar();
+      if (
+        Math.abs(ev.clientX - inicioX) > 4 ||
+        Math.abs(ev.clientY - inicioY) > 4
+      )
+        desarmar();
       // Divide pelo zoom: sem isso, com o mapa a 50% o bloco anda o dobro do
       // que o ponteiro.
       const dx = (ev.clientX - inicioX) / zoom.valor;
@@ -689,8 +881,16 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
       let ajusteY = 0;
       let guiasAtivas: Guia[] = [];
       if (origens.size === 1) {
-        const alvo = { x: snap(origens.get(bloco.id)!.x + dx), y: snap(origens.get(bloco.id)!.y + dy), width: bloco.width, height: bloco.height };
-        const r = calcularGuias(alvo, blocos.filter((o) => o.id !== bloco.id));
+        const alvo = {
+          x: snap(origens.get(bloco.id)!.x + dx),
+          y: snap(origens.get(bloco.id)!.y + dy),
+          width: bloco.width,
+          height: bloco.height,
+        };
+        const r = calcularGuias(
+          alvo,
+          blocos.filter((o) => o.id !== bloco.id),
+        );
         ajusteX = r.dx;
         ajusteY = r.dy;
         guiasAtivas = r.guias;
@@ -751,9 +951,13 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
       boxes: alvos.map((b) => ({ ...b })),
       // Só as ligações entre os copiados: uma seta apontando pra fora da
       // seleção não teria destino do outro lado.
-      connectors: (aba?.connectors ?? []).filter((c) => ids.has(c.fromBox) && ids.has(c.toBox)),
+      connectors: (aba?.connectors ?? []).filter(
+        (c) => ids.has(c.fromBox) && ids.has(c.toBox),
+      ),
     };
-    toast.success(alvos.length > 1 ? `${alvos.length} blocos copiados` : "Bloco copiado");
+    toast.success(
+      alvos.length > 1 ? `${alvos.length} blocos copiados` : "Bloco copiado",
+    );
   }
 
   function colar() {
@@ -761,7 +965,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
     if (!area || area.boxes.length === 0) return;
     const sufixo = `${Date.now().toString(36)}`;
     // Mapa id-antigo → id-novo pra reapontar as ligações copiadas.
-    const novoId = new Map(area.boxes.map((b, i) => [b.id, `b-${sufixo}-${i}`]));
+    const novoId = new Map(
+      area.boxes.map((b, i) => [b.id, `b-${sufixo}-${i}`]),
+    );
     const blocosNovos = area.boxes.map((b) => ({
       ...b,
       id: novoId.get(b.id)!,
@@ -781,9 +987,16 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
     }));
     // Cola sobre si mesmo em sequência: colar duas vezes não empilha no mesmo
     // ponto, porque a área guarda a posição já deslocada.
-    areaTransferencia.current = { boxes: blocosNovos, connectors: conectoresNovos };
+    areaTransferencia.current = {
+      boxes: blocosNovos,
+      connectors: conectoresNovos,
+    };
     selecao.definir(blocosNovos.map((b) => b.id));
-    toast.success(blocosNovos.length > 1 ? `${blocosNovos.length} blocos colados` : "Bloco colado");
+    toast.success(
+      blocosNovos.length > 1
+        ? `${blocosNovos.length} blocos colados`
+        : "Bloco colado",
+    );
   }
 
   /**
@@ -852,7 +1065,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
 
   /** Muda um atributo do bloco selecionado (cor, estilo, negrito…). */
   function ajustarBloco(id: string, mudanca: Partial<BlocoDoMapa>) {
-    alterarAba((a) => ({ ...a, boxes: a.boxes.map((b) => (b.id === id ? { ...b, ...mudanca } : b)) }));
+    alterarAba((a) => ({
+      ...a,
+      boxes: a.boxes.map((b) => (b.id === id ? { ...b, ...mudanca } : b)),
+    }));
   }
 
   /** Grava o nome digitado no próprio bloco. */
@@ -875,7 +1091,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
          * de fora; nota e texto têm o tamanho como parte do desenho.
          */
         if (ehBlocoLivre(b.type)) return { ...b, label: nome };
-        return { ...b, label: nome, width: Math.max(b.width, larguraParaTitulo(nome)) };
+        return {
+          ...b,
+          label: nome,
+          width: Math.max(b.width, larguraParaTitulo(nome)),
+        };
       }),
     }));
   }
@@ -892,7 +1112,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
     }));
     alterarAba((a) => ({ ...a, boxes: [...a.boxes, ...novos] }));
     selecao.definir(novos.map((b) => b.id));
-    toast.success(novos.length > 1 ? `${novos.length} blocos duplicados` : "Bloco duplicado");
+    toast.success(
+      novos.length > 1
+        ? `${novos.length} blocos duplicados`
+        : "Bloco duplicado",
+    );
   }
 
   /** Remove os selecionados de uma vez, junto com os conectores órfãos. */
@@ -902,24 +1126,32 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
     alterarAba((a) => ({
       ...a,
       boxes: a.boxes.filter((b) => !alvos.includes(b.id)),
-      connectors: a.connectors.filter((c) => !alvos.includes(c.fromBox) && !alvos.includes(c.toBox)),
+      connectors: a.connectors.filter(
+        (c) => !alvos.includes(c.fromBox) && !alvos.includes(c.toBox),
+      ),
     }));
     selecao.limpar();
-    toast.success(alvos.length > 1 ? `${alvos.length} blocos removidos` : "Bloco removido");
+    toast.success(
+      alvos.length > 1 ? `${alvos.length} blocos removidos` : "Bloco removido",
+    );
   }
 
   /** Solta as ligações do bloco sem apagar o bloco. */
   function desconectar(id: string) {
     alterarAba((a) => ({
       ...a,
-      connectors: a.connectors.filter((c) => c.fromBox !== id && c.toBox !== id),
+      connectors: a.connectors.filter(
+        (c) => c.fromBox !== id && c.toBox !== id,
+      ),
     }));
   }
 
   function adicionarBloco(tipo: string, cor: string, label: string) {
     // Quem estava selecionado vira a origem da ligação — ver `ligarAoAnterior`.
     const anterior = selecao.unico;
-    const blocoAnterior = anterior ? (blocos.find((b) => b.id === anterior) ?? null) : null;
+    const blocoAnterior = anterior
+      ? (blocos.find((b) => b.id === anterior) ?? null)
+      : null;
     const id = `b-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4).toString(36)}`;
     // Encadeando, nasce a frente do anterior; solto, no centro da tela.
     const p = blocoAnterior ? posicaoAFrente(blocoAnterior) : proximaPosicao();
@@ -927,7 +1159,16 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
       ...a,
       boxes: [
         ...a.boxes,
-        { id, type: tipo, label, ...p, width: larguraParaTitulo(label), height: ALTURA_PADRAO, color: cor, status: "ativo" as StatusBloco },
+        {
+          id,
+          type: tipo,
+          label,
+          ...p,
+          width: larguraParaTitulo(label),
+          height: ALTURA_PADRAO,
+          color: cor,
+          status: "ativo" as StatusBloco,
+        },
       ],
     }));
     // Lido ANTES de trocar a seleção: `selecao.definir` já aponta para o novo.
@@ -950,7 +1191,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
    * cursor: sem isso, largar um arquivo com o quadro deslocado ou ampliado
    * põe o bloco longe de onde a pessoa soltou.
    */
-  function posicaoNoQuadro(clientX: number, clientY: number): { x: number; y: number } {
+  function posicaoNoQuadro(
+    clientX: number,
+    clientY: number,
+  ): { x: number; y: number } {
     const el = areaRef.current;
     if (!el) return { x: 200, y: 200 };
     const r = el.getBoundingClientRect();
@@ -981,7 +1225,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
    * jeito que os blocos obrigavam.
    */
   function pertoDoSelecionado(w: number, h: number): { x: number; y: number } {
-    const alvo = selecao.unico ? blocos.find((b) => b.id === selecao.unico) : null;
+    const alvo = selecao.unico
+      ? blocos.find((b) => b.id === selecao.unico)
+      : null;
     return alvo ? posicaoAFrente(alvo, "right", w, h) : proximaPosicao(w, h);
   }
 
@@ -1002,24 +1248,35 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
     let { y } = base[lado];
     const ocupado = () =>
       blocos.some(
-        (b) => b.id !== origem.id && Math.abs(b.x - x) < w * 0.8 && Math.abs(b.y - y) < h * 0.8,
+        (b) =>
+          b.id !== origem.id &&
+          Math.abs(b.x - x) < w * 0.8 &&
+          Math.abs(b.y - y) < h * 0.8,
       );
     for (let i = 0; i < 20 && ocupado(); i += 1) y += h + 40;
     return { x: snap(x), y: snap(y) };
   }
 
-  function proximaPosicao(w = LARGURA_PADRAO, h = ALTURA_PADRAO): { x: number; y: number } {
+  function proximaPosicao(
+    w = LARGURA_PADRAO,
+    h = ALTURA_PADRAO,
+  ): { x: number; y: number } {
     const el = areaRef.current;
     const z = zoom.valor;
     const centro = el
-      ? { x: (el.clientWidth / 2 - pan.x) / z, y: (el.clientHeight / 2 - pan.y) / z }
+      ? {
+          x: (el.clientWidth / 2 - pan.x) / z,
+          y: (el.clientHeight / 2 - pan.y) / z,
+        }
       : { x: 200, y: 200 };
     let x = snap(centro.x - w / 2);
     let y = snap(centro.y - h / 2);
     // Desvia em cascata enquanto o lugar estiver ocupado: nascer exatamente em
     // cima de outro bloco esconderia o novo, que é o problema de origem.
     const ocupado = () =>
-      blocos.some((b) => Math.abs(b.x - x) < GRADE && Math.abs(b.y - y) < GRADE);
+      blocos.some(
+        (b) => Math.abs(b.x - x) < GRADE && Math.abs(b.y - y) < GRADE,
+      );
     for (let i = 0; i < 40 && ocupado(); i += 1) {
       x += GRADE * 2;
       y += GRADE * 2;
@@ -1042,10 +1299,16 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
       boxes: [
         ...a.boxes,
         {
-          id, type: TIPO_NOTA, label: "", ...p,
-          width: NOTA_LARGURA, height: NOTA_ALTURA,
-          color: CORES_NOTA[0].cor, status: "ativo" as StatusBloco,
-          texto: "", estilo: "corpo" as const,
+          id,
+          type: TIPO_NOTA,
+          label: "",
+          ...p,
+          width: NOTA_LARGURA,
+          height: NOTA_ALTURA,
+          color: CORES_NOTA[0].cor,
+          status: "ativo" as StatusBloco,
+          texto: "",
+          estilo: "corpo" as const,
         },
       ],
     }));
@@ -1063,7 +1326,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
    *
    * `posicao` vem do arrastar (onde soltou); colando, cai no fluxo normal.
    */
-  async function adicionarImagem(arquivo: File, posicao?: { x: number; y: number }) {
+  async function adicionarImagem(
+    arquivo: File,
+    posicao?: { x: number; y: number },
+  ) {
     // `alterarAba` já recusaria o bloco — mas o upload abaixo sairia assim
     // mesmo: requisição autenticada, 401 e um toast de erro para quem só
     // soltou um arquivo sem querer em cima do link público.
@@ -1083,10 +1349,14 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
           // o desenho difere. Separar em duas funções duplicaria o tratamento
           // de erro, o "subindo…" e o posicionamento.
           type: ehPdf ? TIPO_PDF : TIPO_IMAGEM,
-          label: arquivo.name.slice(0, 120), ...p,
-          width: IMAGEM_LARGURA, height: ehPdf ? 120 : IMAGEM_ALTURA,
-          color: "#64748b", status: "ativo" as StatusBloco,
-          imageUrl: null, imageKey: null,
+          label: arquivo.name.slice(0, 120),
+          ...p,
+          width: IMAGEM_LARGURA,
+          height: ehPdf ? 120 : IMAGEM_ALTURA,
+          color: "#64748b",
+          status: "ativo" as StatusBloco,
+          imageUrl: null,
+          imageKey: null,
         },
       ],
     }));
@@ -1104,7 +1374,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
       // Sem a imagem o bloco é um retângulo vazio que ninguém sabe o que é —
       // melhor tirá-lo e deixar a pessoa tentar de novo.
       alterarAba((a) => ({ ...a, boxes: a.boxes.filter((b) => b.id !== id) }));
-      toast.error(e instanceof Error ? e.message : "Não consegui subir a imagem");
+      toast.error(
+        e instanceof Error ? e.message : "Não consegui subir a imagem",
+      );
     }
   }
 
@@ -1130,18 +1402,27 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
   function adicionarForma(forma: string, rotulo: string) {
     const id = novoId("f");
     const anterior = selecao.unico;
-    const blocoAnterior = anterior ? (blocos.find((b) => b.id === anterior) ?? null) : null;
-    const p = blocoAnterior ? posicaoAFrente(blocoAnterior, "right", 120, 120) : proximaPosicao(120, 120);
+    const blocoAnterior = anterior
+      ? (blocos.find((b) => b.id === anterior) ?? null)
+      : null;
+    const p = blocoAnterior
+      ? posicaoAFrente(blocoAnterior, "right", 120, 120)
+      : proximaPosicao(120, 120);
     alterarAba((a) => ({
       ...a,
       boxes: [
         ...a.boxes,
         {
-          id, type: TIPO_FORMA, label: rotulo, ...p,
+          id,
+          type: TIPO_FORMA,
+          label: rotulo,
+          ...p,
           // Quadrada por padrão: círculo e losango só ficam certos assim, e
           // quem quiser um retângulo redimensiona.
-          width: 120, height: 120,
-          color: CORES_BLOCO[0].cor, status: "ativo" as StatusBloco,
+          width: 120,
+          height: 120,
+          color: CORES_BLOCO[0].cor,
+          status: "ativo" as StatusBloco,
           forma,
         },
       ],
@@ -1158,11 +1439,16 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
       boxes: [
         ...a.boxes,
         {
-          id, type: TIPO_TEXTO, label: "", ...p,
+          id,
+          type: TIPO_TEXTO,
+          label: "",
+          ...p,
           width: TEXTO_LARGURA,
           height: estilo === "h1" ? 56 : estilo === "h2" ? 46 : TEXTO_ALTURA,
-          color: "transparent", status: "ativo" as StatusBloco,
-          texto: "", estilo,
+          color: "transparent",
+          status: "ativo" as StatusBloco,
+          texto: "",
+          estilo,
         },
       ],
     }));
@@ -1174,7 +1460,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
   function adicionarGenerico(icone: string, rotulo: string) {
     const id = novoId("g");
     const anterior = selecao.unico;
-    const blocoAnterior = anterior ? (blocos.find((b) => b.id === anterior) ?? null) : null;
+    const blocoAnterior = anterior
+      ? (blocos.find((b) => b.id === anterior) ?? null)
+      : null;
     const p = blocoAnterior ? posicaoAFrente(blocoAnterior) : proximaPosicao();
     alterarAba((a) => ({
       ...a,
@@ -1184,9 +1472,14 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
           // Nasce com o nome do próprio ícone, não com um "Novo bloco": o
           // genérico é a FORMA, e um card sem rótulo útil obriga quem lê o
           // mapa depois a abrir um por um pra saber o que é.
-          id, type: TIPO_GENERICO, label: rotulo, ...p,
-          width: LARGURA_PADRAO, height: ALTURA_PADRAO,
-          color: CORES_BLOCO[0].cor, status: "ativo" as StatusBloco,
+          id,
+          type: TIPO_GENERICO,
+          label: rotulo,
+          ...p,
+          width: LARGURA_PADRAO,
+          height: ALTURA_PADRAO,
+          color: CORES_BLOCO[0].cor,
+          status: "ativo" as StatusBloco,
           icone,
         },
       ],
@@ -1235,7 +1528,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
     alterarAba((a) => {
       // Nao repete uma ligacao que ja existe: criar, desfazer e criar de novo
       // no mesmo lugar renderia duas setas sobrepostas.
-      if (a.connectors.some((c) => c.fromBox === anteriorId && c.toBox === novoId)) return a;
+      if (
+        a.connectors.some((c) => c.fromBox === anteriorId && c.toBox === novoId)
+      )
+        return a;
       return {
         ...a,
         connectors: [
@@ -1260,11 +1556,15 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
     pontoDestino: PontoDeConexao,
   ) {
     if (origem === destino) return;
-    const jaLigado = aba?.connectors.some((c) => c.fromBox === origem && c.toBox === destino);
+    const jaLigado = aba?.connectors.some(
+      (c) => c.fromBox === origem && c.toBox === destino,
+    );
     if (jaLigado) {
       alterarAba((a) => ({
         ...a,
-        connectors: a.connectors.filter((c) => !(c.fromBox === origem && c.toBox === destino)),
+        connectors: a.connectors.filter(
+          (c) => !(c.fromBox === origem && c.toBox === destino),
+        ),
       }));
       setConectorSel(null);
       toast.success("Ligação removida");
@@ -1292,20 +1592,33 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
     // De trás pra frente: o último desenhado é o que está por cima.
     for (let i = blocos.length - 1; i >= 0; i--) {
       const b = blocos[i];
-      if (p.x >= b.x && p.x <= b.x + b.width && p.y >= b.y && p.y <= b.y + b.height) return b;
+      if (
+        p.x >= b.x &&
+        p.x <= b.x + b.width &&
+        p.y >= b.y &&
+        p.y <= b.y + b.height
+      )
+        return b;
     }
     return null;
   }
 
   /** Âncora do bloco mais perto de onde a linha chegou — a seta cai natural. */
-  function ancoraMaisProxima(b: BlocoDoMapa, cx: number, cy: number): PontoDeConexao {
+  function ancoraMaisProxima(
+    b: BlocoDoMapa,
+    cx: number,
+    cy: number,
+  ): PontoDeConexao {
     const p = paraDesenho(cx, cy);
     let melhor: PontoDeConexao = "left";
     let dist = Infinity;
     for (const nome of PONTOS) {
       const a = pontoDoBloco(b, nome);
       const d = (a.x - p.x) ** 2 + (a.y - p.y) ** 2;
-      if (d < dist) { dist = d; melhor = nome; }
+      if (d < dist) {
+        dist = d;
+        melhor = nome;
+      }
     }
     return melhor;
   }
@@ -1317,7 +1630,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
    * fecha a ligação onde soltar; se não andou, foi clique e cai no fluxo
    * clicar-clicar, que continua existindo porque é o que funciona no toque.
    */
-  function pontoPointerDown(e: React.PointerEvent, b: BlocoDoMapa, ponto: PontoDeConexao) {
+  function pontoPointerDown(
+    e: React.PointerEvent,
+    b: BlocoDoMapa,
+    ponto: PontoDeConexao,
+  ) {
     // Sem preventDefault: ele suprime os eventos de mouse de compatibilidade,
     // e junto o `click` de que o fluxo clicar-clicar depende. A seleção de
     // texto já é barrada por `touch-none`/`select-none` no bloco.
@@ -1328,7 +1645,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
     setLigando({ boxId: b.id, ponto });
 
     const mover = (ev: PointerEvent) => {
-      if (!arrastou && (Math.abs(ev.clientX - x0) > 4 || Math.abs(ev.clientY - y0) > 4)) arrastou = true;
+      if (
+        !arrastou &&
+        (Math.abs(ev.clientX - x0) > 4 || Math.abs(ev.clientY - y0) > 4)
+      )
+        arrastou = true;
       if (arrastou) setPreviaLigacao(paraDesenho(ev.clientX, ev.clientY));
     };
     const soltar = (ev: PointerEvent) => {
@@ -1342,10 +1663,17 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
       // trava ele rearmaria `ligando` e o próximo clique em qualquer lugar
       // criaria uma ligação fantasma.
       acabouDeArrastar.current = true;
-      setTimeout(() => { acabouDeArrastar.current = false; }, 0);
+      setTimeout(() => {
+        acabouDeArrastar.current = false;
+      }, 0);
       const alvo = blocoSob(ev.clientX, ev.clientY);
       if (alvo && alvo.id !== b.id) {
-        conectarOuDesligar(b.id, ponto, alvo.id, ancoraMaisProxima(alvo, ev.clientX, ev.clientY));
+        conectarOuDesligar(
+          b.id,
+          ponto,
+          alvo.id,
+          ancoraMaisProxima(alvo, ev.clientX, ev.clientY),
+        );
       }
       setLigando(null);
     };
@@ -1382,7 +1710,8 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
       ponto: qual === "to" ? conector.fromPoint : conector.toPoint,
     });
 
-    const mover = (ev: PointerEvent) => setPreviaLigacao(paraDesenho(ev.clientX, ev.clientY));
+    const mover = (ev: PointerEvent) =>
+      setPreviaLigacao(paraDesenho(ev.clientX, ev.clientY));
     const soltar = (ev: PointerEvent) => {
       window.removeEventListener("pointermove", mover);
       window.removeEventListener("pointerup", soltar);
@@ -1513,7 +1842,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
         setSujo(false);
         toast.success("Mapa salvo — agora dá para comentar");
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Preciso salvar o mapa antes de comentar");
+        toast.error(
+          e instanceof Error
+            ? e.message
+            : "Preciso salvar o mapa antes de comentar",
+        );
         return;
       }
     }
@@ -1525,7 +1858,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
 
   /** Apaga uma seta específica — a que estiver selecionada. */
   function removerConector(id: string) {
-    alterarAba((a) => ({ ...a, connectors: a.connectors.filter((c) => c.id !== id) }));
+    alterarAba((a) => ({
+      ...a,
+      connectors: a.connectors.filter((c) => c.id !== id),
+    }));
     setConectorSel(null);
     toast.success("Ligação removida");
   }
@@ -1535,7 +1871,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
       ...a,
       boxes: a.boxes.filter((b) => b.id !== id),
       // Conector órfão vira seta apontando para o nada — some junto.
-      connectors: a.connectors.filter((c) => c.fromBox !== id && c.toBox !== id),
+      connectors: a.connectors.filter(
+        (c) => c.fromBox !== id && c.toBox !== id,
+      ),
     }));
     selecao.limpar();
   }
@@ -1547,15 +1885,18 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
    * O canvas rola (não translada), então entra o scroll; e escala, então entra
    * o zoom. Errar um dos dois faz a seleção por área pegar o bloco errado.
    */
-  const paraDesenho = useCallback((cx: number, cy: number) => {
-    const el = areaRef.current;
-    if (!el) return { x: 0, y: 0 };
-    const r = el.getBoundingClientRect();
-    return {
-      x: (cx - r.left - pan.x) / zoom.valor,
-      y: (cy - r.top - pan.y) / zoom.valor,
-    };
-  }, [zoom.valor, pan]);
+  const paraDesenho = useCallback(
+    (cx: number, cy: number) => {
+      const el = areaRef.current;
+      if (!el) return { x: 0, y: 0 };
+      const r = el.getBoundingClientRect();
+      return {
+        x: (cx - r.left - pan.x) / zoom.valor,
+        y: (cy - r.top - pan.y) / zoom.valor,
+      };
+    },
+    [zoom.valor, pan],
+  );
 
   /**
    * A inversa de `paraDesenho`: coordenada do quadro → ponto na tela.
@@ -1607,7 +1948,8 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
       const p = paraDesenho(ev.clientX, ev.clientY);
       // Só vira marquee depois de um limiar: sem isso, um clique trêmulo pra
       // limpar a seleção viraria uma área de 2px e não limparia nada.
-      if (Math.abs(p.x - ini.x) > 4 || Math.abs(p.y - ini.y) > 4) arrastouMarquee.current = true;
+      if (Math.abs(p.x - ini.x) > 4 || Math.abs(p.y - ini.y) > 4)
+        arrastouMarquee.current = true;
       setMarquee({ ax: ini.x, ay: ini.y, bx: p.x, by: p.y });
     };
     const soltar = () => {
@@ -1620,14 +1962,22 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
           const y1 = Math.min(m.ay, m.by);
           const y2 = Math.max(m.ay, m.by);
           const pegos = blocos
-            .filter((b) => b.x < x2 && b.x + b.width > x1 && b.y < y2 && b.y + b.height > y1)
+            .filter(
+              (b) =>
+                b.x < x2 &&
+                b.x + b.width > x1 &&
+                b.y < y2 &&
+                b.y + b.height > y1,
+            )
             .map((b) => b.id);
           selecao.definir([...new Set([...base, ...pegos])]);
         }
         return null;
       });
       // Deixa o onClick do fundo rodar antes de liberar a trava.
-      setTimeout(() => { arrastouMarquee.current = false; }, 0);
+      setTimeout(() => {
+        arrastouMarquee.current = false;
+      }, 0);
     };
     window.addEventListener("pointermove", mover);
     window.addEventListener("pointerup", soltar);
@@ -1668,7 +2018,12 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
       const area = el!.getBoundingClientRect();
       // `deltaMode` 1 é linha e 2 é página; normalizar evita que um mouse que
       // reporta linhas ande vinte vezes mais que um trackpad.
-      const passo = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+      const passo =
+        e.deltaMode === 1
+          ? e.deltaY * 16
+          : e.deltaMode === 2
+            ? e.deltaY * 400
+            : e.deltaY;
       // 0.001518 = os 0.0012 originais, mais 15% e depois mais 10% — dois
       // pedidos seguidos, cada um sobre o valor anterior. Multiplicar é o que
       // mantém "mais 10%" significando o mesmo na terceira vez.
@@ -1779,16 +2134,22 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
           nome: abasAgora[i].name,
           origemX: (temBloco ? Math.min(...bs.map((b) => b.x)) : 0) - MARGEM,
           origemY: (temBloco ? Math.min(...bs.map((b) => b.y)) : 0) - MARGEM,
-          fimX: (temBloco ? Math.max(...bs.map((b) => b.x + b.width)) : 800) + MARGEM,
-          fimY: (temBloco ? Math.max(...bs.map((b) => b.y + b.height)) : 600) + MARGEM,
+          fimX:
+            (temBloco ? Math.max(...bs.map((b) => b.x + b.width)) : 800) +
+            MARGEM,
+          fimY:
+            (temBloco ? Math.max(...bs.map((b) => b.y + b.height)) : 600) +
+            MARGEM,
         });
       }
       // A cor vem da tela: no tema escuro, fundo branco deixaria o texto claro
-      // ilegível no papel.
-      const fundo =
-        (areaRef.current && getComputedStyle(areaRef.current).backgroundColor) || "#ffffff";
+      // ilegível no papel. `fundoVisivel` sobe até um ancestral opaco — a área
+      // em si é transparente, e ler só ela apagava todo texto branco.
+      const fundo = fundoVisivel(areaRef.current);
       await exportarMapaEmPdf({ areas, titulo: "Mapa do funil", fundo });
-      toast.success(areas.length > 1 ? `PDF gerado — ${areas.length} abas` : "PDF gerado");
+      toast.success(
+        areas.length > 1 ? `PDF gerado — ${areas.length} abas` : "PDF gerado",
+      );
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Não consegui gerar o PDF");
     } finally {
@@ -1882,18 +2243,25 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
         setSujo(false);
         toast.success("Mapa salvo");
       },
-      onError: (e) => toast.error(e instanceof Error ? e.message : "Não consegui salvar o mapa"),
+      onError: (e) =>
+        toast.error(
+          e instanceof Error ? e.message : "Não consegui salvar o mapa",
+        ),
     });
   }
   // O efeito acima chama a versão mais recente sem se re-agendar a cada render.
   salvarRef.current = salvarMapa;
 
-  useEffect(() => { zoomRef.current = zoom.valor; }, [zoom.valor]);
+  useEffect(() => {
+    zoomRef.current = zoom.valor;
+  }, [zoom.valor]);
 
   // Espelho das abas para a exportação: ela troca de aba dentro de um `await`,
   // e a closure enxergaria o valor do render em que começou.
   const abasRef = useRef(abas);
-  useEffect(() => { abasRef.current = abas; }, [abas]);
+  useEffect(() => {
+    abasRef.current = abas;
+  }, [abas]);
 
   /**
    * Traz o conteúdo para dentro da tela ao abrir a aba.
@@ -1932,7 +2300,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
     function digitando(alvo: EventTarget | null): boolean {
       const el = alvo as HTMLElement | null;
       if (!el || !el.tagName) return false;
-      return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable;
+      return (
+        el.tagName === "INPUT" ||
+        el.tagName === "TEXTAREA" ||
+        el.isContentEditable
+      );
     }
 
     function onKey(e: KeyboardEvent) {
@@ -1941,7 +2313,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
         if (e.key === "Escape") (e.target as HTMLElement).blur();
         return;
       }
-      if (e.key === " ") { espaco.current = true; e.preventDefault(); return; }
+      if (e.key === " ") {
+        espaco.current = true;
+        e.preventDefault();
+        return;
+      }
       // Espaço (arrastar a tela) passa; atalho de edição não. Os de zoom têm
       // botão na barra, então nada que quem só olha precisa se perde.
       if (somenteLeitura) return;
@@ -1949,13 +2325,30 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === "z") {
         e.preventDefault();
-        if (e.shiftKey) refazer(); else desfazer();
+        if (e.shiftKey) refazer();
+        else desfazer();
         return;
       }
-      if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); salvarMapa(); return; }
-      if (mod && e.key.toLowerCase() === "a") { e.preventDefault(); selecao.definir(blocos.map((b) => b.id)); return; }
-      if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); duplicarSelecionados(); return; }
-      if (mod && e.key.toLowerCase() === "c") { e.preventDefault(); copiarSelecionados(); return; }
+      if (mod && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        salvarMapa();
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        selecao.definir(blocos.map((b) => b.id));
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        duplicarSelecionados();
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        copiarSelecionados();
+        return;
+      }
       /**
        * O V NÃO é tratado aqui — ver o listener de `paste` abaixo.
        *
@@ -1964,9 +2357,21 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
        * `clipboardData`, tratar o atalho aqui tornaria impossível colar um
        * print no mapa: a imagem nunca chegaria.
        */
-      if (mod && (e.key === "=" || e.key === "+")) { e.preventDefault(); zoom.aumentar(); return; }
-      if (mod && e.key === "-") { e.preventDefault(); zoom.diminuir(); return; }
-      if (mod && e.key === "0") { e.preventDefault(); enquadrarTudo(); return; }
+      if (mod && (e.key === "=" || e.key === "+")) {
+        e.preventDefault();
+        zoom.aumentar();
+        return;
+      }
+      if (mod && e.key === "-") {
+        e.preventDefault();
+        zoom.diminuir();
+        return;
+      }
+      if (mod && e.key === "0") {
+        e.preventDefault();
+        enquadrarTudo();
+        return;
+      }
 
       if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
@@ -1976,7 +2381,16 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
         else removerSelecionados();
         return;
       }
-      if (e.key === "Escape") { selecao.limpar(); setConectorSel(null); setLigando(null); setMenu(null); setAjuda(false); setRenomeando(null); setRotulando(null); return; }
+      if (e.key === "Escape") {
+        selecao.limpar();
+        setConectorSel(null);
+        setLigando(null);
+        setMenu(null);
+        setAjuda(false);
+        setRenomeando(null);
+        setRotulando(null);
+        return;
+      }
       /**
        * T cria um bloco de texto.
        *
@@ -2017,8 +2431,16 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
         adicionarTexto("corpo");
         return;
       }
-      if (e.key === "?") { e.preventDefault(); setAjuda((v) => !v); return; }
-      if (e.key.toLowerCase() === "f" && !mod) { e.preventDefault(); void alternarTelaCheia(); return; }
+      if (e.key === "?") {
+        e.preventDefault();
+        setAjuda((v) => !v);
+        return;
+      }
+      if (e.key.toLowerCase() === "f" && !mod) {
+        e.preventDefault();
+        void alternarTelaCheia();
+        return;
+      }
       if ((e.key === "F2" || e.key === "Enter") && selecao.unico) {
         e.preventDefault();
         const b = blocos.find((x) => x.id === selecao.unico);
@@ -2029,20 +2451,22 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
       if (selecao.ids.size > 0 && e.key.startsWith("Arrow")) {
         e.preventDefault();
         const passo = (e.shiftKey ? 5 : 1) * GRADE;
-        const dx = e.key === "ArrowLeft" ? -passo : e.key === "ArrowRight" ? passo : 0;
-        const dy = e.key === "ArrowUp" ? -passo : e.key === "ArrowDown" ? passo : 0;
+        const dx =
+          e.key === "ArrowLeft" ? -passo : e.key === "ArrowRight" ? passo : 0;
+        const dy =
+          e.key === "ArrowUp" ? -passo : e.key === "ArrowDown" ? passo : 0;
         if (dx === 0 && dy === 0) return;
         alterarAba((a) => ({
           ...a,
           boxes: a.boxes.map((b) =>
-            selecao.ids.has(b.id)
-              ? { ...b, x: b.x + dx, y: b.y + dy }
-              : b,
+            selecao.ids.has(b.id) ? { ...b, x: b.x + dx, y: b.y + dy } : b,
           ),
         }));
       }
     }
-    function onKeyUp(e: KeyboardEvent) { if (e.key === " ") espaco.current = false; }
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.key === " ") espaco.current = false;
+    }
 
     /**
      * Colar: imagem da área de transferência, ou os blocos copiados aqui.
@@ -2054,7 +2478,12 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
     function aoColar(e: ClipboardEvent) {
       const alvo = e.target as HTMLElement | null;
       // Dentro de um campo de texto, colar é colar texto.
-      if (alvo && (alvo.tagName === "INPUT" || alvo.tagName === "TEXTAREA" || alvo.isContentEditable)) {
+      if (
+        alvo &&
+        (alvo.tagName === "INPUT" ||
+          alvo.tagName === "TEXTAREA" ||
+          alvo.isContentEditable)
+      ) {
         return;
       }
       const arquivo = imagemDoEvento(e.clipboardData);
@@ -2076,7 +2505,8 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
     };
   });
 
-  if (isLoading || !abas || !aba) return <Skeleton style={{ height: altura }} />;
+  if (isLoading || !abas || !aba)
+    return <Skeleton style={{ height: altura }} />;
 
   // O painel de propriedades só faz sentido com UM bloco: com vários, editar
   // "Nome" não teria alvo definido.
@@ -2090,16 +2520,27 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
    * conforme os blocos descem, que é o que essa conta sempre fez.
    */
   const pisoDoDesenho = typeof altura === "number" ? altura : 600;
-  const alturaDoDesenho = Math.max(pisoDoDesenho, ...blocos.map((b) => b.y + b.height + 160));
+  const alturaDoDesenho = Math.max(
+    pisoDoDesenho,
+    ...blocos.map((b) => b.y + b.height + 160),
+  );
   // Origem do desenho. Os blocos podem ficar em coordenada negativa (arrastar
   // para cima/esquerda é livre), e o <svg> recorta no próprio box — sem
   // esticá-lo para trás, os conectores que passam acima de zero sumiriam.
   // ---- Filtro da paleta ----------------------------------------------------
   // Normaliza acento: quem digita "trafego" tem que achar "Tráfego".
-  const alvoDaBusca = busca.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const alvoDaBusca = busca
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
   const casa = (texto: string) =>
     !alvoDaBusca ||
-    texto.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").includes(alvoDaBusca);
+    texto
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .includes(alvoDaBusca);
 
   /** Casa ignorando caixa e acento — "trafego" acha "Tráfego". */
   function casaComBusca(texto: string, alvo: string): boolean {
@@ -2113,10 +2554,18 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
     // Terceiro caminho da imagem, ao lado de colar e arrastar: é o que a
     // pessoa procura quando o arquivo está no disco e não na área de
     // transferência.
-    { chave: "imagem", rotulo: "Imagem", acao: () => escolherImagem("image/*") },
+    {
+      chave: "imagem",
+      rotulo: "Imagem",
+      acao: () => escolherImagem("image/*"),
+    },
     // Item próprio, e não um "Imagem ou PDF": quem procura anexar um briefing
     // não pensa em "imagem", e um rótulo duplo esconde as duas coisas.
-    { chave: "pdf", rotulo: "PDF", acao: () => escolherImagem("application/pdf") },
+    {
+      chave: "pdf",
+      rotulo: "PDF",
+      acao: () => escolherImagem("application/pdf"),
+    },
     ...FORMAS.map((f) => ({
       chave: f.id,
       rotulo: f.rotulo,
@@ -2138,7 +2587,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
   const ANOTACOES_DO_PONTO = [
     { rotulo: "Nota", Icone: StickyNote, acao: adicionarNota },
     { rotulo: "Texto", Icone: Type, acao: () => adicionarTexto("corpo") },
-    { rotulo: "Imagem", Icone: ImageIcon, acao: () => escolherImagem("image/*") },
+    {
+      rotulo: "Imagem",
+      Icone: ImageIcon,
+      acao: () => escolherImagem("image/*"),
+    },
   ];
 
   const filtroLivres = SECOES_LIVRES.filter(
@@ -2152,10 +2605,14 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
   );
   // Ícone casa pelo grupo OU pelo próprio rótulo — o emoji antigo só dava pra
   // achar pelo grupo, porque não tinha nome nenhum.
-  const filtrarIcones = (g: { grupo: string; itens: { icone: string; rotulo: string }[] }) =>
-    casa(g.grupo) ? g.itens : g.itens.filter((i) => casa(i.rotulo));
-  const filtrarItens = (cat: { name: string; items: { type: string; label: string; icon: string }[] }) =>
-    casa(cat.name) ? cat.items : cat.items.filter((i) => casa(i.label));
+  const filtrarIcones = (g: {
+    grupo: string;
+    itens: { icone: string; rotulo: string }[];
+  }) => (casa(g.grupo) ? g.itens : g.itens.filter((i) => casa(i.rotulo)));
+  const filtrarItens = (cat: {
+    name: string;
+    items: { type: string; label: string; icon: string }[];
+  }) => (casa(cat.name) ? cat.items : cat.items.filter((i) => casa(i.label)));
   const semResultado =
     !!alvoDaBusca &&
     filtroLivres.length === 0 &&
@@ -2185,7 +2642,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold">
-            {somenteLeitura ? ((data as { nome?: string } | undefined)?.nome ?? "Mapa do funil") : "Mapa do funil"}
+            {somenteLeitura
+              ? ((data as { nome?: string } | undefined)?.nome ??
+                "Mapa do funil")
+              : "Mapa do funil"}
           </h3>
           <p className="text-[11px] text-muted-foreground">
             {somenteLeitura ? (
@@ -2195,113 +2655,207 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
                 Somente leitura · atualiza sozinho quando alguém edita
               </span>
-            ) : data?.rascunho && !sujo
-              ? "Sugestão a partir das etapas cadastradas — arraste, adicione e salve para tornar seu."
-              : ligando
-                ? "Solte em cima de outro bloco para ligar — ou clique nele. Esc cancela."
-                : "Arraste os blocos; clique nas bolinhas da borda para ligar dois blocos."}
+            ) : data?.rascunho && !sujo ? (
+              "Sugestão a partir das etapas cadastradas — arraste, adicione e salve para tornar seu."
+            ) : ligando ? (
+              "Solte em cima de outro bloco para ligar — ou clique nele. Esc cancela."
+            ) : (
+              "Arraste os blocos; clique nas bolinhas da borda para ligar dois blocos."
+            )}
           </p>
         </div>
         <div className="flex items-center gap-1">
           <div className="mr-1 inline-flex items-center rounded-md border border-border/50 p-0.5">
-            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={zoom.diminuir} aria-label="Diminuir zoom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={zoom.diminuir}
+              aria-label="Diminuir zoom"
+            >
               <Minus className="h-3 w-3" />
             </Button>
             <span className="min-w-[38px] text-center font-mono text-[10px] tabular-nums text-muted-foreground">
               {Math.round(zoom.valor * 100)}%
             </span>
-            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={zoom.aumentar} aria-label="Aumentar zoom">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={zoom.aumentar}
+              aria-label="Aumentar zoom"
+            >
               <Plus className="h-3 w-3" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={enquadrarTudo} aria-label="Enquadrar tudo" title="Enquadrar tudo (⌘0)">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={enquadrarTudo}
+              aria-label="Enquadrar tudo"
+              title="Enquadrar tudo (⌘0)"
+            >
               <Scan className="h-3 w-3" />
             </Button>
           </div>
-          {!somenteLeitura && (<>
+          {!somenteLeitura && (
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={desfazer}
+                disabled={!historico.podeDesfazer}
+                aria-label="Desfazer"
+              >
+                <Undo2 className="h-3 w-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={refazer}
+                disabled={!historico.podeRefazer}
+                aria-label="Refazer"
+              >
+                <Redo2 className="h-3 w-3" />
+              </Button>
+              <BotaoDeComentarios
+                mapId={mapaId}
+                ativo={modoComentario}
+                onAlternar={alternarComentarios}
+              />
+              <BotaoDeCompartilhar mapId={mapaId} />
+            </>
+          )}
           <Button
-            variant="ghost" size="icon" className="h-6 w-6"
-            onClick={desfazer} disabled={!historico.podeDesfazer} aria-label="Desfazer"
-          >
-            <Undo2 className="h-3 w-3" />
-          </Button>
-          <Button
-            variant="ghost" size="icon" className="h-6 w-6"
-            onClick={refazer} disabled={!historico.podeRefazer} aria-label="Refazer"
-          >
-            <Redo2 className="h-3 w-3" />
-          </Button>
-          <BotaoDeComentarios
-            mapId={mapaId}
-            ativo={modoComentario}
-            onAlternar={alternarComentarios}
-          />
-          <BotaoDeCompartilhar mapId={mapaId} />
-          </>)}
-          <Button
-            variant="ghost" size="icon" className="h-6 w-6"
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
             onClick={alternarTema}
             aria-label={mapaClaro ? "Mapa escuro" : "Mapa claro"}
             title={mapaClaro ? "Mapa escuro" : "Mapa claro"}
           >
-            {mapaClaro ? <Moon className="h-3 w-3" /> : <Sun className="h-3 w-3" />}
+            {mapaClaro ? (
+              <Moon className="h-3 w-3" />
+            ) : (
+              <Sun className="h-3 w-3" />
+            )}
           </Button>
           <Button
-            variant="ghost" size="icon" className="h-6 w-6"
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
             onClick={alternarSetas}
             aria-label={setasRetas ? "Setas curvas" : "Setas retas"}
             title={setasRetas ? "Usar setas curvas" : "Usar setas retas"}
           >
-            {setasRetas ? <Spline className="h-3 w-3" /> : <Waypoints className="h-3 w-3" />}
+            {setasRetas ? (
+              <Spline className="h-3 w-3" />
+            ) : (
+              <Waypoints className="h-3 w-3" />
+            )}
           </Button>
           <Button
-            variant="ghost" size="icon" className="h-6 w-6"
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
             onClick={alternarTelaCheia}
             aria-label={telaCheia ? "Sair da tela cheia" : "Tela cheia"}
             title={telaCheia ? "Sair da tela cheia" : "Tela cheia"}
           >
-            {telaCheia ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
+            {telaCheia ? (
+              <Minimize2 className="h-3 w-3" />
+            ) : (
+              <Maximize2 className="h-3 w-3" />
+            )}
           </Button>
           {!somenteLeitura && (
-          <Button
-            variant="ghost" size="icon"
-            /* Realçado quando a barra está OCULTA: sem a coluna na tela, um
+            <Button
+              variant="ghost"
+              size="icon"
+              /* Realçado quando a barra está OCULTA: sem a coluna na tela, um
                ícone ghost no meio de outros seis não diz que ela existe. */
-            className={`hidden h-6 w-6 md:inline-flex ${
-              paletaAberta ? "" : "bg-primary/10 text-primary hover:bg-primary/20"
-            }`}
-            onClick={alternarPaleta}
-            aria-label={paletaAberta ? "Ocultar barra lateral (B)" : "Mostrar barra lateral (B)"}
-            title={paletaAberta ? "Ocultar barra lateral · B" : "Mostrar barra lateral · B"}
-          >
-            {paletaAberta ? <PanelLeftClose className="h-3 w-3" /> : <PanelLeftOpen className="h-3 w-3" />}
-          </Button>
+              className={`hidden h-6 w-6 md:inline-flex ${
+                paletaAberta
+                  ? ""
+                  : "bg-primary/10 text-primary hover:bg-primary/20"
+              }`}
+              onClick={alternarPaleta}
+              aria-label={
+                paletaAberta
+                  ? "Ocultar barra lateral (B)"
+                  : "Mostrar barra lateral (B)"
+              }
+              title={
+                paletaAberta
+                  ? "Ocultar barra lateral · B"
+                  : "Mostrar barra lateral · B"
+              }
+            >
+              {paletaAberta ? (
+                <PanelLeftClose className="h-3 w-3" />
+              ) : (
+                <PanelLeftOpen className="h-3 w-3" />
+              )}
+            </Button>
           )}
           <Button
-            variant="ghost" size="icon" className="h-6 w-6"
-            onClick={exportarPdf} disabled={exportando}
-            aria-label="Exportar em PDF" title="Exportar em PDF"
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={exportarPdf}
+            disabled={exportando}
+            aria-label="Exportar em PDF"
+            title="Exportar em PDF"
           >
-            {exportando ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileDown className="h-3 w-3" />}
+            {exportando ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <FileDown className="h-3 w-3" />
+            )}
           </Button>
-          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setAjuda(true)} aria-label="Atalhos">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={() => setAjuda(true)}
+            aria-label="Atalhos"
+          >
             <Keyboard className="h-3 w-3" />
           </Button>
           {ligando && (
-            <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-[11px]" onClick={() => setLigando(null)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 gap-1 px-2 text-[11px]"
+              onClick={() => setLigando(null)}
+            >
               <X className="h-3 w-3" /> Cancelar ligação
             </Button>
           )}
-          {!somenteLeitura && (<>
-          {(sujo || salvar.isPending) && (
-            <span className="mr-1 text-[11px] text-muted-foreground">
-              {salvar.isPending ? "salvando…" : "salva sozinho"}
-            </span>
+          {!somenteLeitura && (
+            <>
+              {(sujo || salvar.isPending) && (
+                <span className="mr-1 text-[11px] text-muted-foreground">
+                  {salvar.isPending ? "salvando…" : "salva sozinho"}
+                </span>
+              )}
+              <Button
+                size="sm"
+                className="h-7 gap-1.5 px-2 text-[11px]"
+                onClick={salvarMapa}
+                disabled={salvar.isPending || !sujo}
+              >
+                {salvar.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Save className="h-3 w-3" />
+                )}
+                Salvar
+              </Button>
+            </>
           )}
-          <Button size="sm" className="h-7 gap-1.5 px-2 text-[11px]" onClick={salvarMapa} disabled={salvar.isPending || !sujo}>
-            {salvar.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-            Salvar
-          </Button>
-          </>)}
         </div>
       </div>
 
@@ -2312,7 +2866,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
           <div key={t.id} className="group/aba flex shrink-0 items-center">
             <button
               type="button"
-              onClick={() => { setAbaAtiva(i); selecao.limpar(); setConectorSel(null); }}
+              onClick={() => {
+                setAbaAtiva(i);
+                selecao.limpar();
+                setConectorSel(null);
+              }}
               onDoubleClick={() => {
                 // Sem isto o prompt abriria para quem só olha, e o nome digitado
                 // sumiria sem explicação.
@@ -2342,81 +2900,99 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
           </div>
         ))}
         {!somenteLeitura && (
-        <button
-          type="button"
-          onClick={adicionarAba}
-          className="shrink-0 rounded px-1.5 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          aria-label="Nova aba"
-        >
-          <Plus className="h-3 w-3" />
-        </button>
+          <button
+            type="button"
+            onClick={adicionarAba}
+            className="shrink-0 rounded px-1.5 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="Nova aba"
+          >
+            <Plus className="h-3 w-3" />
+          </button>
         )}
       </div>
 
       <div className="flex gap-3">
         {/* Paleta */}
         {paletaAberta && !somenteLeitura && (
-        <div className="hidden w-48 shrink-0 flex-col gap-2 md:flex" style={{ maxHeight: alturaDaArea }}>
-          <div className="relative shrink-0">
-            <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              placeholder="Buscar elemento"
-              className="h-7 pl-7 text-[11px]"
-            />
-          </div>
+          <div
+            className="hidden w-48 shrink-0 flex-col gap-2 md:flex"
+            style={{ maxHeight: alturaDaArea }}
+          >
+            <div className="relative shrink-0">
+              <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                placeholder="Buscar elemento"
+                className="h-7 pl-7 text-[11px]"
+              />
+            </div>
 
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
-          {SECOES_LIVRES.length > 0 && (
-            <Secao titulo="Anotar" chave="anotar" fechada={fechadas} alternar={alternarSecao} visivel={!!filtroLivres.length}>
-              <div className="space-y-0.5">
-                {filtroLivres.map((l) => (
-                  <button
-                    key={l.chave}
-                    type="button"
-                    onClick={l.acao}
-                    className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[11px] transition-colors hover:bg-muted"
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
+              {SECOES_LIVRES.length > 0 && (
+                <Secao
+                  titulo="Anotar"
+                  chave="anotar"
+                  fechada={fechadas}
+                  alternar={alternarSecao}
+                  visivel={!!filtroLivres.length}
+                >
+                  <div className="space-y-0.5">
+                    {filtroLivres.map((l) => (
+                      <button
+                        key={l.chave}
+                        type="button"
+                        onClick={l.acao}
+                        className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[11px] transition-colors hover:bg-muted"
+                      >
+                        {l.chave === "nota" ? (
+                          <StickyNote className="h-3 w-3 shrink-0" />
+                        ) : (
+                          <Type className="h-3 w-3 shrink-0" />
+                        )}
+                        {l.rotulo}
+                      </button>
+                    ))}
+                  </div>
+                </Secao>
+              )}
+
+              {CATEGORIAS.map((cat) => {
+                const itens = filtrarItens(cat);
+                return (
+                  <Secao
+                    key={cat.name}
+                    titulo={cat.name}
+                    chave={`c:${cat.name}`}
+                    cor={cat.color}
+                    fechada={fechadas}
+                    alternar={alternarSecao}
+                    visivel={itens.length > 0}
                   >
-                    {l.chave === "nota" ? <StickyNote className="h-3 w-3 shrink-0" /> : <Type className="h-3 w-3 shrink-0" />}
-                    {l.rotulo}
-                  </button>
-                ))}
-              </div>
-            </Secao>
-          )}
+                    <div className="space-y-0.5">
+                      {itens.map((item) => (
+                        <button
+                          key={item.type}
+                          type="button"
+                          onClick={() =>
+                            adicionarBloco(item.type, cat.color, item.label)
+                          }
+                          className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[11px] transition-colors hover:bg-muted"
+                        >
+                          <IconePorNome
+                            nome={item.icon}
+                            className="h-3 w-3 shrink-0"
+                          />
+                          <span className="truncate">{item.label}</span>
+                          <Plus className="ml-auto h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+                        </button>
+                      ))}
+                    </div>
+                  </Secao>
+                );
+              })}
 
-          {CATEGORIAS.map((cat) => {
-            const itens = filtrarItens(cat);
-            return (
-              <Secao
-                key={cat.name}
-                titulo={cat.name}
-                chave={`c:${cat.name}`}
-                cor={cat.color}
-                fechada={fechadas}
-                alternar={alternarSecao}
-                visivel={itens.length > 0}
-              >
-                <div className="space-y-0.5">
-                  {itens.map((item) => (
-                    <button
-                      key={item.type}
-                      type="button"
-                      onClick={() => adicionarBloco(item.type, cat.color, item.label)}
-                      className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[11px] transition-colors hover:bg-muted"
-                    >
-                      <IconePorNome nome={item.icon} className="h-3 w-3 shrink-0" />
-                      <span className="truncate">{item.label}</span>
-                      <Plus className="ml-auto h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
-                    </button>
-                  ))}
-                </div>
-              </Secao>
-            );
-          })}
-
-          {/*
+              {/*
             Os ícones livres ficam por ÚLTIMO.
 
             São 32 e servem para o que a paleta não nomeia — quem abre a lista
@@ -2424,35 +3000,45 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
             "VSL"), e trinta e dois quadradinhos genéricos na frente delas
             empurravam o que se procura para fora da tela.
           */}
-          {ICONES_GENERICOS.map((g) => {
-            const itens = filtrarIcones(g);
-            return (
-              <Secao key={g.grupo} titulo={g.grupo} chave={`e:${g.grupo}`} fechada={fechadas} alternar={alternarSecao} visivel={itens.length > 0}>
-                <div className="grid grid-cols-4 gap-0.5">
-                  {itens.map((i) => (
-                    <button
-                      key={i.icone}
-                      type="button"
-                      onClick={() => adicionarGenerico(i.icone, i.rotulo)}
-                      title={i.rotulo}
-                      aria-label={`Bloco ${i.rotulo}`}
-                      className="flex h-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    >
-                      <IconePorNome nome={i.icone} className="h-3.5 w-3.5" />
-                    </button>
-                  ))}
-                </div>
-              </Secao>
-            );
-          })}
+              {ICONES_GENERICOS.map((g) => {
+                const itens = filtrarIcones(g);
+                return (
+                  <Secao
+                    key={g.grupo}
+                    titulo={g.grupo}
+                    chave={`e:${g.grupo}`}
+                    fechada={fechadas}
+                    alternar={alternarSecao}
+                    visivel={itens.length > 0}
+                  >
+                    <div className="grid grid-cols-4 gap-0.5">
+                      {itens.map((i) => (
+                        <button
+                          key={i.icone}
+                          type="button"
+                          onClick={() => adicionarGenerico(i.icone, i.rotulo)}
+                          title={i.rotulo}
+                          aria-label={`Bloco ${i.rotulo}`}
+                          className="flex h-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        >
+                          <IconePorNome
+                            nome={i.icone}
+                            className="h-3.5 w-3.5"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  </Secao>
+                );
+              })}
 
-          {semResultado && (
-            <p className="px-1 py-4 text-center text-[11px] text-muted-foreground">
-              Nada com “{busca}”.
-            </p>
-          )}
+              {semResultado && (
+                <p className="px-1 py-4 text-center text-[11px] text-muted-foreground">
+                  Nada com “{busca}”.
+                </p>
+              )}
+            </div>
           </div>
-        </div>
         )}
 
         {/* Canvas */}
@@ -2481,10 +3067,15 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
             if (!arquivo) return;
             e.preventDefault();
             setArrastandoArquivo(false);
-            void adicionarImagem(arquivo, posicaoNoQuadro(e.clientX, e.clientY));
+            void adicionarImagem(
+              arquivo,
+              posicaoNoQuadro(e.clientX, e.clientY),
+            );
           }}
           className={`relative flex-1 touch-none overflow-hidden rounded-lg border ${
-            arrastandoArquivo ? "border-primary ring-2 ring-primary/40" : "border-border/40"
+            arrastandoArquivo
+              ? "border-primary ring-2 ring-primary/40"
+              : "border-border/40"
           } ${
             // O modo comentário precisa aparecer no PONTEIRO. Só o botão
             // realçado na barra não bastava: quem clica está olhando para o
@@ -2503,10 +3094,13 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
              */
             cursor: modoComentario
               ? "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24' fill='%23fbbf24' stroke='%23713f12' stroke-width='1.5'><path d='M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z'/></svg>\") 12 12, crosshair"
-              : espaco.current ? "grab" : "default",
+              : espaco.current
+                ? "grab"
+                : "default",
             // A grade acompanha o pan e o zoom — é a referência visual de que a
             // tela está se movendo.
-            backgroundImage: "radial-gradient(circle, var(--color-border) 1px, transparent 1px)",
+            backgroundImage:
+              "radial-gradient(circle, var(--color-border) 1px, transparent 1px)",
             backgroundSize: `${20 * zoom.valor}px ${20 * zoom.valor}px`,
             backgroundPosition: `${pan.x}px ${pan.y}px`,
           }}
@@ -2518,7 +3112,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
             // seleção" — sobrecarregá-lo faria comentar por acidente.
             if (modoComentario && mapaId) {
               const p = paraDesenho(e.clientX, e.clientY);
-              setNovoComentario({ x: Math.round(p.x), y: Math.round(p.y), texto: "" });
+              setNovoComentario({
+                x: Math.round(p.x),
+                y: Math.round(p.y),
+                texto: "",
+              });
               setConversaAberta(null);
               return;
             }
@@ -2545,8 +3143,19 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
               viewBox={`${origemX} ${origemY} ${largura - origemX} ${alturaDoDesenho - origemY}`}
             >
               <defs>
-                <marker id="seta-mapa" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto">
-                  <path d="M0,0 L0,6 L8,3 z" fill="currentColor" className="text-muted-foreground" />
+                <marker
+                  id="seta-mapa"
+                  markerWidth="9"
+                  markerHeight="9"
+                  refX="8"
+                  refY="3"
+                  orient="auto"
+                >
+                  <path
+                    d="M0,0 L0,6 L8,3 z"
+                    fill="currentColor"
+                    className="text-muted-foreground"
+                  />
                 </marker>
               </defs>
               {aba.connectors.map((c) => {
@@ -2561,7 +3170,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                 // Meio do trecho, para o rotulo. Aproximacao boa o bastante:
                 // medir o caminho real exigiria `getTotalLength`, que so
                 // funciona com o elemento ja no DOM.
-                const meio = { x: (inicio.x + fim.x) / 2, y: (inicio.y + fim.y) / 2 };
+                const meio = {
+                  x: (inicio.x + fim.x) / 2,
+                  y: (inicio.y + fim.y) / 2,
+                };
                 const ativa = conectorSel === c.id;
                 return (
                   <g key={c.id}>
@@ -2574,7 +3186,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                       stroke="transparent"
                       strokeWidth={16}
                       className="pointer-events-auto cursor-pointer"
-                      onClick={(e) => { e.stopPropagation(); setConectorSel(c.id); selecao.limpar(); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConectorSel(c.id);
+                        selecao.limpar();
+                      }}
                       /* Duplo clique ESCREVE o rótulo, não apaga mais a
                          ligação: apagar por duplo clique num alvo de 16px é
                          fácil de fazer sem querer, e agora há a tecla Delete
@@ -2603,8 +3219,14 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                     {c.label && (
                       <g
                         className="pointer-events-auto cursor-pointer"
-                        onClick={(e) => { e.stopPropagation(); setConectorSel(c.id); }}
-                        onDoubleClick={(e) => { e.stopPropagation(); setRotulando({ id: c.id, valor: c.label ?? "" }); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConectorSel(c.id);
+                        }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          setRotulando({ id: c.id, valor: c.label ?? "" });
+                        }}
                       >
                         <rect
                           x={meio.x - (c.label.length * 3.4 + 6)}
@@ -2635,21 +3257,23 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
               })}
 
               {/* Linha solta enquanto se arrasta da bolinha até o alvo. */}
-              {ligando && previaLigacao && (() => {
-                const de = blocos.find((b) => b.id === ligando.boxId);
-                if (!de) return null;
-                const origem = pontoDoBloco(de, ligando.ponto);
-                return (
-                  <path
-                    d={`M ${origem.x} ${origem.y} L ${previaLigacao.x} ${previaLigacao.y}`}
-                    fill="none"
-                    stroke="currentColor"
-                    className="pointer-events-none text-primary"
-                    strokeWidth={2}
-                    strokeDasharray="6 4"
-                  />
-                );
-              })()}
+              {ligando &&
+                previaLigacao &&
+                (() => {
+                  const de = blocos.find((b) => b.id === ligando.boxId);
+                  if (!de) return null;
+                  const origem = pontoDoBloco(de, ligando.ponto);
+                  return (
+                    <path
+                      d={`M ${origem.x} ${origem.y} L ${previaLigacao.x} ${previaLigacao.y}`}
+                      fill="none"
+                      stroke="currentColor"
+                      className="pointer-events-none text-primary"
+                      strokeWidth={2}
+                      strokeDasharray="6 4"
+                    />
+                  );
+                })()}
 
               {/* Guias de alinhamento — some assim que o bloco é solto. */}
               {guias.map((g, i) => (
@@ -2693,7 +3317,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                   <div
                     key={b.id}
                     onPointerDown={(e) => iniciarArrasto(e, b)}
-                    onClick={(e) => { e.stopPropagation(); selecao.clicar(b.id, somaASelecao(e)); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      selecao.clicar(b.id, somaASelecao(e));
+                    }}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -2701,15 +3328,47 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                       setMenu({ x: e.clientX, y: e.clientY, boxId: b.id });
                     }}
                     className={`absolute ${ativo ? "ring-2 ring-primary ring-offset-2" : ""}`}
-                    style={{ left: b.x, top: b.y, width: b.width, height: b.height, zIndex: 0 }}
+                    style={{
+                      left: b.x,
+                      top: b.y,
+                      width: b.width,
+                      height: b.height,
+                      zIndex: 0,
+                    }}
                   >
-                    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full">
+                    <svg
+                      viewBox="0 0 100 100"
+                      preserveAspectRatio="none"
+                      className="h-full w-full"
+                    >
                       {caminho ? (
-                        <path d={caminho} fill={`${b.color}26`} stroke={b.color} strokeWidth={2} />
+                        <path
+                          d={caminho}
+                          fill={`${b.color}26`}
+                          stroke={b.color}
+                          strokeWidth={2}
+                        />
                       ) : f === "circulo" ? (
-                        <ellipse cx="50" cy="50" rx="48" ry="48" fill={`${b.color}26`} stroke={b.color} strokeWidth={2} />
+                        <ellipse
+                          cx="50"
+                          cy="50"
+                          rx="48"
+                          ry="48"
+                          fill={`${b.color}26`}
+                          stroke={b.color}
+                          strokeWidth={2}
+                        />
                       ) : (
-                        <rect x="2" y="2" width="96" height="96" rx="6" fill={`${b.color}26`} stroke={b.color} strokeWidth={2} />
+                        <rect
+                          x="2"
+                          y="2"
+                          width="96"
+                          height="96"
+                          rx="6"
+                          fill={`${b.color}26`}
+                          stroke={b.color}
+                          strokeWidth={2}
+                        />
                       )}
                     </svg>
                     {ativo && (
@@ -2737,10 +3396,14 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                   <div
                     key={b.id}
                     onPointerDown={(e) => iniciarArrasto(e, b)}
-                    onClick={(e) => { e.stopPropagation(); selecao.clicar(b.id, somaASelecao(e)); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      selecao.clicar(b.id, somaASelecao(e));
+                    }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
-                      if (b.imageUrl) setPdfAberto({ url: b.imageUrl, titulo: b.label });
+                      if (b.imageUrl)
+                        setPdfAberto({ url: b.imageUrl, titulo: b.label });
                     }}
                     onContextMenu={(e) => {
                       e.preventDefault();
@@ -2752,13 +3415,21 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                       ativo ? "ring-2 ring-primary" : ""
                     }`}
                     style={{
-                      left: b.x, top: b.y, width: b.width, height: b.height,
-                      borderColor: b.imageUrl ? "#dc2626" : "var(--color-border)",
+                      left: b.x,
+                      top: b.y,
+                      width: b.width,
+                      height: b.height,
+                      borderColor: b.imageUrl
+                        ? "#dc2626"
+                        : "var(--color-border)",
                     }}
                   >
                     {b.imageUrl ? (
                       <>
-                        <FileText className="h-6 w-6 shrink-0" style={{ color: "#dc2626" }} />
+                        <FileText
+                          className="h-6 w-6 shrink-0"
+                          style={{ color: "#dc2626" }}
+                        />
                         <span className="line-clamp-2 text-center text-[11px] font-medium leading-tight">
                           {b.label || "Documento"}
                         </span>
@@ -2789,7 +3460,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                           key={pt}
                           type="button"
                           onPointerDown={(ev) => pontoPointerDown(ev, b, pt)}
-                          onClick={(ev) => { ev.stopPropagation(); clicarNoPonto(b.id, pt); }}
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            clicarNoPonto(b.id, pt);
+                          }}
                           className={`absolute z-20 h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-crosshair touch-none rounded-full border transition-colors ${
                             ligando?.boxId === b.id && ligando.ponto === pt
                               ? "border-primary bg-primary"
@@ -2814,10 +3488,14 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                     // Selecionar de verdade, e não só parar a propagação: sem
                     // seleção não aparecem as âncoras nem a alça de tamanho, e
                     // a imagem virava um bloco de segunda classe no mapa.
-                    onClick={(e) => { e.stopPropagation(); selecao.clicar(b.id, somaASelecao(e)); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      selecao.clicar(b.id, somaASelecao(e));
+                    }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
-                      if (b.imageUrl) setImagemAmpliada({ url: b.imageUrl, titulo: b.label });
+                      if (b.imageUrl)
+                        setImagemAmpliada({ url: b.imageUrl, titulo: b.label });
                     }}
                     onContextMenu={(e) => {
                       e.preventDefault();
@@ -2828,7 +3506,12 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                     className={`group absolute rounded-md ${
                       ativo ? "ring-2 ring-primary" : "ring-1 ring-border/60"
                     }`}
-                    style={{ left: b.x, top: b.y, width: b.width, height: b.height }}
+                    style={{
+                      left: b.x,
+                      top: b.y,
+                      width: b.width,
+                      height: b.height,
+                    }}
                   >
                     {b.imageUrl ? (
                       <img
@@ -2866,12 +3549,20 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                           key={pt}
                           type="button"
                           onPointerDown={(ev) => pontoPointerDown(ev, b, pt)}
-                          onClick={(ev) => { ev.stopPropagation(); clicarNoPonto(b.id, pt); }}
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            clicarNoPonto(b.id, pt);
+                          }}
                           onDoubleClick={(ev) => {
                             ev.stopPropagation();
                             setLigando(null);
                             setPreviaLigacao(null);
-                            setCriarDoPonto({ boxId: b.id, ponto: pt, x: ev.clientX, y: ev.clientY });
+                            setCriarDoPonto({
+                              boxId: b.id,
+                              ponto: pt,
+                              x: ev.clientX,
+                              y: ev.clientY,
+                            });
                             setBuscaDoPonto("");
                           }}
                           className={`absolute z-20 h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-crosshair touch-none rounded-full border transition-colors ${
@@ -2892,7 +3583,8 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
               // de peça do funil. Compartilham só o gesto de arrastar.
               if (b.type === TIPO_NOTA || b.type === TIPO_TEXTO) {
                 const ehNota = b.type === TIPO_NOTA;
-                const tamanho = b.fonte ?? TAMANHO_DO_ESTILO[b.estilo ?? "corpo"] ?? 14;
+                const tamanho =
+                  b.fonte ?? TAMANHO_DO_ESTILO[b.estilo ?? "corpo"] ?? 14;
                 return (
                   <div
                     key={b.id}
@@ -2903,7 +3595,8 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                     // digitação (o clique dentro do textarea também subia).
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (editando?.id !== b.id) selecao.clicar(b.id, somaASelecao(e));
+                      if (editando?.id !== b.id)
+                        selecao.clicar(b.id, somaASelecao(e));
                     }}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
@@ -2922,7 +3615,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                       ehNota ? "rounded-sm p-2 shadow-md" : "p-1"
                     } ${ativo ? "ring-2 ring-primary ring-offset-1" : ""}`}
                     style={{
-                      left: b.x, top: b.y, width: b.width, height: b.height,
+                      left: b.x,
+                      top: b.y,
+                      width: b.width,
+                      height: b.height,
                       background: ehNota ? b.color : "transparent",
                       // Nota tem cor de papel clara sempre: texto escuro nela é
                       // legível nos dois temas, e herdar o foreground do tema
@@ -2932,83 +3628,99 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                   >
                     {editando?.id === b.id ? (
                       <>
-                      <textarea
-                        autoFocus
-                        value={editando.valor}
-                        onChange={(ev) => setEditando({ id: b.id, valor: ev.target.value })}
-                        onBlur={confirmarTexto}
-                        onKeyDown={(ev) => {
-                          if (ev.key === "Escape") { ev.preventDefault(); setEditando(null); }
-                          // Enter quebra linha; ⌘/Ctrl+Enter fecha a edição.
-                          if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); confirmarTexto(); }
-                          /**
-                           * ⌘/Ctrl+K vira link — o atalho que todo editor usa.
-                           *
-                           * A sintaxe `[rótulo](url)` continua funcionando para
-                           * quem a conhece, mas ninguém deveria PRECISAR
-                           * conhecê-la: era a única forma de criar um link com
-                           * texto próprio, e isso é o mesmo que não ter a
-                           * funcionalidade para quem não escreve markdown.
-                           */
-                          if (ev.key.toLowerCase() === "k" && (ev.metaKey || ev.ctrlKey)) {
-                            ev.preventDefault();
-                            const alvo = ev.currentTarget;
-                            const inicio = alvo.selectionStart ?? 0;
-                            const fim = alvo.selectionEnd ?? 0;
-                            if (inicio === fim) {
-                              toast.info("Selecione o texto que vira link.");
-                              return;
-                            }
-                            setCriandoLink({
-                              blocoId: b.id,
-                              inicio,
-                              fim,
-                              rotulo: editando.valor.slice(inicio, fim),
-                              url: "",
-                            });
+                        <textarea
+                          autoFocus
+                          value={editando.valor}
+                          onChange={(ev) =>
+                            setEditando({ id: b.id, valor: ev.target.value })
                           }
-                        }}
-                        onPointerDown={(ev) => ev.stopPropagation()}
-                        /**
-                         * Colar uma URL por cima do texto selecionado vira
-                         * link, como no ClickUp — o atalho que evita ter de
-                         * conhecer a sintaxe `[rótulo](url)`.
-                         *
-                         * Sem seleção, ou colando algo que não é endereço,
-                         * `linkAoColar` devolve `null` e o colar segue o
-                         * caminho normal: interceptar tudo faria o Ctrl+V
-                         * comum parar de funcionar dentro da nota.
-                         */
-                        onPaste={(ev) => {
-                          const alvo = ev.currentTarget;
-                          const r = linkAoColar(
-                            editando.valor,
-                            alvo.selectionStart ?? 0,
-                            alvo.selectionEnd ?? 0,
-                            ev.clipboardData.getData("text"),
-                          );
-                          if (!r) return;
-                          ev.preventDefault();
-                          setEditando({ id: b.id, valor: r.texto });
-                          // O cursor precisa ir para o fim do que entrou, e o
-                          // React ainda não repintou — daí o próximo quadro.
-                          requestAnimationFrame(() => {
-                            alvo.setSelectionRange(r.cursor, r.cursor);
-                          });
-                        }}
-                        className="h-full w-full resize-none bg-transparent outline-none"
-                        style={{
-                          fontSize: tamanho,
-                          fontWeight: b.negrito ? 700 : ehNota ? 400 : 600,
-                          fontStyle: b.italico ? "italic" : "normal",
-                          color: ehNota ? "#1f2937" : "var(--color-foreground)",
-                        }}
-                      />
-                      {/* A dica fica NO lugar onde se digita. Um atalho que só
+                          onBlur={confirmarTexto}
+                          onKeyDown={(ev) => {
+                            if (ev.key === "Escape") {
+                              ev.preventDefault();
+                              setEditando(null);
+                            }
+                            // Enter quebra linha; ⌘/Ctrl+Enter fecha a edição.
+                            if (
+                              ev.key === "Enter" &&
+                              (ev.metaKey || ev.ctrlKey)
+                            ) {
+                              ev.preventDefault();
+                              confirmarTexto();
+                            }
+                            /**
+                             * ⌘/Ctrl+K vira link — o atalho que todo editor usa.
+                             *
+                             * A sintaxe `[rótulo](url)` continua funcionando para
+                             * quem a conhece, mas ninguém deveria PRECISAR
+                             * conhecê-la: era a única forma de criar um link com
+                             * texto próprio, e isso é o mesmo que não ter a
+                             * funcionalidade para quem não escreve markdown.
+                             */
+                            if (
+                              ev.key.toLowerCase() === "k" &&
+                              (ev.metaKey || ev.ctrlKey)
+                            ) {
+                              ev.preventDefault();
+                              const alvo = ev.currentTarget;
+                              const inicio = alvo.selectionStart ?? 0;
+                              const fim = alvo.selectionEnd ?? 0;
+                              if (inicio === fim) {
+                                toast.info("Selecione o texto que vira link.");
+                                return;
+                              }
+                              setCriandoLink({
+                                blocoId: b.id,
+                                inicio,
+                                fim,
+                                rotulo: editando.valor.slice(inicio, fim),
+                                url: "",
+                              });
+                            }
+                          }}
+                          onPointerDown={(ev) => ev.stopPropagation()}
+                          /**
+                           * Colar uma URL por cima do texto selecionado vira
+                           * link, como no ClickUp — o atalho que evita ter de
+                           * conhecer a sintaxe `[rótulo](url)`.
+                           *
+                           * Sem seleção, ou colando algo que não é endereço,
+                           * `linkAoColar` devolve `null` e o colar segue o
+                           * caminho normal: interceptar tudo faria o Ctrl+V
+                           * comum parar de funcionar dentro da nota.
+                           */
+                          onPaste={(ev) => {
+                            const alvo = ev.currentTarget;
+                            const r = linkAoColar(
+                              editando.valor,
+                              alvo.selectionStart ?? 0,
+                              alvo.selectionEnd ?? 0,
+                              ev.clipboardData.getData("text"),
+                            );
+                            if (!r) return;
+                            ev.preventDefault();
+                            setEditando({ id: b.id, valor: r.texto });
+                            // O cursor precisa ir para o fim do que entrou, e o
+                            // React ainda não repintou — daí o próximo quadro.
+                            requestAnimationFrame(() => {
+                              alvo.setSelectionRange(r.cursor, r.cursor);
+                            });
+                          }}
+                          className="h-full w-full resize-none bg-transparent outline-none"
+                          style={{
+                            fontSize: tamanho,
+                            fontWeight: b.negrito ? 700 : ehNota ? 400 : 600,
+                            fontStyle: b.italico ? "italic" : "normal",
+                            color: ehNota
+                              ? "#1f2937"
+                              : "var(--color-foreground)",
+                          }}
+                        />
+                        {/* A dica fica NO lugar onde se digita. Um atalho que só
                           existe na tela de ajuda é um atalho que ninguém usa. */}
-                      <span className="pointer-events-none absolute -bottom-4 left-0 whitespace-nowrap text-[9px] text-muted-foreground">
-                        selecione + ⌘K vira link
-                      </span>
+                        <span className="pointer-events-none absolute -bottom-4 left-0 whitespace-nowrap text-[9px] text-muted-foreground">
+                          selecione + ⌘K vira link
+                        </span>
                       </>
                     ) : (
                       <div
@@ -3048,7 +3760,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                                 onClick={(ev) => ev.stopPropagation()}
                                 title={pedaco.url}
                                 className="underline decoration-dotted underline-offset-2 hover:decoration-solid"
-                                style={{ color: ehNota ? "#1d4ed8" : "var(--color-primary)" }}
+                                style={{
+                                  color: ehNota
+                                    ? "#1d4ed8"
+                                    : "var(--color-primary)",
+                                }}
                               >
                                 {pedaco.rotulo === pedaco.url
                                   ? encurtar(pedaco.rotulo)
@@ -3095,19 +3811,29 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                           key={pt}
                           type="button"
                           onPointerDown={(ev) => pontoPointerDown(ev, b, pt)}
-                          onClick={(ev) => { ev.stopPropagation(); clicarNoPonto(b.id, pt); }}
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            clicarNoPonto(b.id, pt);
+                          }}
                           onDoubleClick={(ev) => {
                             ev.stopPropagation();
                             setLigando(null);
                             setPreviaLigacao(null);
-                            setCriarDoPonto({ boxId: b.id, ponto: pt, x: ev.clientX, y: ev.clientY });
+                            setCriarDoPonto({
+                              boxId: b.id,
+                              ponto: pt,
+                              x: ev.clientX,
+                              y: ev.clientY,
+                            });
                             setBuscaDoPonto("");
                           }}
                           className={`absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-crosshair touch-none rounded-full border transition-opacity ${
                             ligando?.boxId === b.id && ligando.ponto === pt
                               ? "border-primary bg-primary opacity-100"
                               : `border-border bg-background hover:bg-primary ${
-                                  ativo ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                                  ativo
+                                    ? "opacity-100"
+                                    : "opacity-0 group-hover:opacity-100"
                                 }`
                           }`}
                           style={{ left: pos.x, top: pos.y }}
@@ -3123,8 +3849,15 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                 <div
                   key={b.id}
                   onPointerDown={(e) => iniciarArrasto(e, b)}
-                  onClick={(e) => { e.stopPropagation(); selecao.clicar(b.id, somaASelecao(e)); }}
-                  onDoubleClick={(e) => { e.stopPropagation(); selecao.definir([b.id]); setRenomeando({ id: b.id, valor: b.label }); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    selecao.clicar(b.id, somaASelecao(e));
+                  }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    selecao.definir([b.id]);
+                    setRenomeando({ id: b.id, valor: b.label });
+                  }}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -3137,9 +3870,17 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                     // Preso pelo segurar: quem vai junto precisa se anunciar
                     // ANTES de andar, senão o mapa inteiro pula de uma vez sem
                     // aviso e parece que algo quebrou.
-                    cadeiaPresa.has(b.id) ? "ring-2 ring-amber-400 ring-offset-1" : ""
+                    cadeiaPresa.has(b.id)
+                      ? "ring-2 ring-amber-400 ring-offset-1"
+                      : ""
                   }`}
-                  style={{ left: b.x, top: b.y, width: b.width, height: b.height, borderColor: b.color }}
+                  style={{
+                    left: b.x,
+                    top: b.y,
+                    width: b.width,
+                    height: b.height,
+                    borderColor: b.color,
+                  }}
                 >
                   {/* Editando: o input SUBSTITUI o conteúdo do card.
                       Antes ele flutuava por cima e o nome antigo continuava
@@ -3149,16 +3890,26 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                       <Input
                         autoFocus
                         value={renomeando.valor}
-                        onChange={(ev) => setRenomeando({ id: b.id, valor: ev.target.value })}
+                        onChange={(ev) =>
+                          setRenomeando({ id: b.id, valor: ev.target.value })
+                        }
                         onBlur={confirmarRename}
                         onKeyDown={(ev) => {
-                          if (ev.key === "Enter") { ev.preventDefault(); confirmarRename(); }
-                          if (ev.key === "Escape") { ev.preventDefault(); setRenomeando(null); }
+                          if (ev.key === "Enter") {
+                            ev.preventDefault();
+                            confirmarRename();
+                          }
+                          if (ev.key === "Escape") {
+                            ev.preventDefault();
+                            setRenomeando(null);
+                          }
                         }}
                         onFocus={(ev) => ev.currentTarget.select()}
                         className="h-6 px-1 text-[11px]"
                       />
-                      <p className="mt-1 text-[9px] text-muted-foreground">Enter salva · Esc cancela</p>
+                      <p className="mt-1 text-[9px] text-muted-foreground">
+                        Enter salva · Esc cancela
+                      </p>
                     </div>
                   ) : (
                     /**
@@ -3183,32 +3934,34 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                           : "flex h-full w-full items-center justify-center gap-2 px-1"
                       }
                     >
-                    <div className="flex min-h-0 shrink-0 items-center justify-center gap-2 px-1">
-                      {b.emoji ? (
-                        // Bloco criado antes da troca por ícone: mantém o que
-                        // a pessoa escolheu em vez de sumir com o desenho.
-                        <span className="shrink-0 text-lg leading-none">{b.emoji}</span>
-                      ) : (
+                      <div className="flex min-h-0 shrink-0 items-center justify-center gap-2 px-1">
+                        {b.emoji ? (
+                          // Bloco criado antes da troca por ícone: mantém o que
+                          // a pessoa escolheu em vez de sumir com o desenho.
+                          <span className="shrink-0 text-lg leading-none">
+                            {b.emoji}
+                          </span>
+                        ) : (
+                          <span
+                            className="grid h-7 w-7 shrink-0 place-items-center rounded-lg"
+                            // A cor do tipo, bem clara: o ícone precisa de um
+                            // fundo que o destaque sem competir com a borda.
+                            style={{ background: `${b.color}24` }}
+                          >
+                            <IconePorNome
+                              nome={b.icone ?? meta.icon}
+                              className="h-4 w-4"
+                              style={{ color: b.color }}
+                            />
+                          </span>
+                        )}
                         <span
-                          className="grid h-7 w-7 shrink-0 place-items-center rounded-lg"
-                          // A cor do tipo, bem clara: o ícone precisa de um
-                          // fundo que o destaque sem competir com a borda.
-                          style={{ background: `${b.color}24` }}
+                          className="min-w-0 truncate text-[13px] font-semibold leading-tight"
+                          title={b.label}
                         >
-                          <IconePorNome
-                            nome={b.icone ?? meta.icon}
-                            className="h-4 w-4"
-                            style={{ color: b.color }}
-                          />
+                          {b.label}
                         </span>
-                      )}
-                      <span
-                        className="min-w-0 truncate text-[13px] font-semibold leading-tight"
-                        title={b.label}
-                      >
-                        {b.label}
-                      </span>
-                    </div>
+                      </div>
 
                       {/*
                         As referências do Swipe Files, dentro do card.
@@ -3242,7 +3995,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                                 }}
                                 className="min-w-0 flex-1 overflow-hidden rounded-md border border-border/60 transition-colors hover:border-primary"
                               >
-                                <CapaDoSwipe item={r} compacta className="h-full w-full" />
+                                <CapaDoSwipe
+                                  item={r}
+                                  compacta
+                                  className="h-full w-full"
+                                />
                               </button>
                             ))}
                           {refsDoBloco(b).length > 3 && (
@@ -3323,7 +4080,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                         key={p}
                         type="button"
                         onPointerDown={(e) => pontoPointerDown(e, b, p)}
-                        onClick={(e) => { e.stopPropagation(); clicarNoPonto(b.id, p); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          clicarNoPonto(b.id, p);
+                        }}
                         onDoubleClick={(e) => {
                           e.stopPropagation();
                           // O primeiro clique do par já armou `ligando`; deixá-lo
@@ -3331,7 +4091,12 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                           // uma ligação que ninguém pediu.
                           setLigando(null);
                           setPreviaLigacao(null);
-                          setCriarDoPonto({ boxId: b.id, ponto: p, x: e.clientX, y: e.clientY });
+                          setCriarDoPonto({
+                            boxId: b.id,
+                            ponto: p,
+                            x: e.clientX,
+                            y: e.clientY,
+                          });
                           setBuscaDoPonto("");
                         }}
                         className={`absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 cursor-crosshair touch-none rounded-full border transition-colors ${
@@ -3400,7 +4165,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                           r={6}
                           className="pointer-events-auto cursor-grab fill-background stroke-primary"
                           strokeWidth={2}
-                          onPointerDown={(ev) => arrastarPontaDaLigacao(ev, c, qual)}
+                          onPointerDown={(ev) =>
+                            arrastarPontaDaLigacao(ev, c, qual)
+                          }
                         />
                       </g>
                     );
@@ -3428,7 +4195,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
           <div className="w-56 shrink-0 space-y-2 rounded-lg border border-border/40 p-3">
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold">Bloco</p>
-              <button type="button" onClick={() => selecao.limpar()} aria-label="Fechar">
+              <button
+                type="button"
+                onClick={() => selecao.limpar()}
+                aria-label="Fechar"
+              >
                 <X className="h-3.5 w-3.5 text-muted-foreground" />
               </button>
             </div>
@@ -3439,7 +4210,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                 onChange={(e) =>
                   alterarAba((a) => ({
                     ...a,
-                    boxes: a.boxes.map((b) => (b.id === blocoSelecionado.id ? { ...b, label: e.target.value } : b)),
+                    boxes: a.boxes.map((b) =>
+                      b.id === blocoSelecionado.id
+                        ? { ...b, label: e.target.value }
+                        : b,
+                    ),
                   }))
                 }
                 className="h-7 text-xs"
@@ -3450,14 +4225,21 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
             <div className="space-y-1">
               <Label className="text-[10px]">Cor</Label>
               <div className="flex flex-wrap gap-1">
-                {(blocoSelecionado.type === TIPO_NOTA ? CORES_NOTA : CORES_BLOCO).map((c) => (
+                {(blocoSelecionado.type === TIPO_NOTA
+                  ? CORES_NOTA
+                  : CORES_BLOCO
+                ).map((c) => (
                   <button
                     key={c.cor}
                     type="button"
                     title={c.nome}
-                    onClick={() => ajustarBloco(blocoSelecionado.id, { color: c.cor })}
+                    onClick={() =>
+                      ajustarBloco(blocoSelecionado.id, { color: c.cor })
+                    }
                     className={`h-5 w-5 rounded border transition-transform hover:scale-110 ${
-                      blocoSelecionado.color === c.cor ? "ring-2 ring-primary ring-offset-1" : "border-border/60"
+                      blocoSelecionado.color === c.cor
+                        ? "ring-2 ring-primary ring-offset-1"
+                        : "border-border/60"
                     }`}
                     style={{ background: c.cor }}
                   />
@@ -3466,7 +4248,8 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
             </div>
 
             {/* Formatação — só faz sentido em nota e texto. */}
-            {(blocoSelecionado.type === TIPO_NOTA || blocoSelecionado.type === TIPO_TEXTO) && (
+            {(blocoSelecionado.type === TIPO_NOTA ||
+              blocoSelecionado.type === TIPO_TEXTO) && (
               <div className="space-y-1">
                 <Label className="text-[10px]">Texto</Label>
                 <div className="flex flex-wrap gap-1">
@@ -3474,7 +4257,12 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                     <button
                       key={e}
                       type="button"
-                      onClick={() => ajustarBloco(blocoSelecionado.id, { estilo: e, fonte: null })}
+                      onClick={() =>
+                        ajustarBloco(blocoSelecionado.id, {
+                          estilo: e,
+                          fonte: null,
+                        })
+                      }
                       className={`rounded border px-1.5 py-0.5 text-[10px] transition-colors ${
                         (blocoSelecionado.estilo ?? "corpo") === e
                           ? "border-primary bg-primary/10 text-primary"
@@ -3486,18 +4274,30 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                   ))}
                   <button
                     type="button"
-                    onClick={() => ajustarBloco(blocoSelecionado.id, { negrito: !blocoSelecionado.negrito })}
+                    onClick={() =>
+                      ajustarBloco(blocoSelecionado.id, {
+                        negrito: !blocoSelecionado.negrito,
+                      })
+                    }
                     className={`rounded border px-1.5 py-0.5 text-[10px] font-bold transition-colors ${
-                      blocoSelecionado.negrito ? "border-primary bg-primary/10 text-primary" : "border-border/60 hover:bg-muted"
+                      blocoSelecionado.negrito
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border/60 hover:bg-muted"
                     }`}
                   >
                     B
                   </button>
                   <button
                     type="button"
-                    onClick={() => ajustarBloco(blocoSelecionado.id, { italico: !blocoSelecionado.italico })}
+                    onClick={() =>
+                      ajustarBloco(blocoSelecionado.id, {
+                        italico: !blocoSelecionado.italico,
+                      })
+                    }
                     className={`rounded border px-1.5 py-0.5 text-[10px] italic transition-colors ${
-                      blocoSelecionado.italico ? "border-primary bg-primary/10 text-primary" : "border-border/60 hover:bg-muted"
+                      blocoSelecionado.italico
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border/60 hover:bg-muted"
                     }`}
                   >
                     I
@@ -3508,18 +4308,27 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                   natureza de ajuste, e quem procura um procura o outro.
                 */}
                 <div className="flex items-center gap-1 pt-0.5">
-                  <span className="mr-0.5 text-[10px] text-muted-foreground">Alinhar</span>
-                  {([
-                    ["esquerda", AlignLeft],
-                    ["centro", AlignCenter],
-                    ["direita", AlignRight],
-                  ] as const).map(([valor, Icone]) => {
-                    const ativo = (blocoSelecionado.alinhamento ?? "esquerda") === valor;
+                  <span className="mr-0.5 text-[10px] text-muted-foreground">
+                    Alinhar
+                  </span>
+                  {(
+                    [
+                      ["esquerda", AlignLeft],
+                      ["centro", AlignCenter],
+                      ["direita", AlignRight],
+                    ] as const
+                  ).map(([valor, Icone]) => {
+                    const ativo =
+                      (blocoSelecionado.alinhamento ?? "esquerda") === valor;
                     return (
                       <button
                         key={valor}
                         type="button"
-                        onClick={() => ajustarBloco(blocoSelecionado.id, { alinhamento: valor })}
+                        onClick={() =>
+                          ajustarBloco(blocoSelecionado.id, {
+                            alinhamento: valor,
+                          })
+                        }
                         aria-label={`Alinhar à ${valor === "centro" ? "centro" : valor}`}
                         title={`Alinhar à ${valor}`}
                         className={`grid h-6 w-6 place-items-center rounded border transition-colors ${
@@ -3535,17 +4344,29 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                 </div>
 
                 <div className="flex items-center gap-1.5 pt-0.5">
-                  <span className="text-[10px] text-muted-foreground">Tamanho</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    Tamanho
+                  </span>
                   <input
                     type="range"
                     min={10}
                     max={64}
-                    value={blocoSelecionado.fonte ?? TAMANHO_DO_ESTILO[blocoSelecionado.estilo ?? "corpo"] ?? 14}
-                    onChange={(e) => ajustarBloco(blocoSelecionado.id, { fonte: Number(e.target.value) })}
+                    value={
+                      blocoSelecionado.fonte ??
+                      TAMANHO_DO_ESTILO[blocoSelecionado.estilo ?? "corpo"] ??
+                      14
+                    }
+                    onChange={(e) =>
+                      ajustarBloco(blocoSelecionado.id, {
+                        fonte: Number(e.target.value),
+                      })
+                    }
                     className="h-1 flex-1"
                   />
                   <span className="w-6 text-right font-mono text-[10px] text-muted-foreground">
-                    {blocoSelecionado.fonte ?? TAMANHO_DO_ESTILO[blocoSelecionado.estilo ?? "corpo"] ?? 14}
+                    {blocoSelecionado.fonte ??
+                      TAMANHO_DO_ESTILO[blocoSelecionado.estilo ?? "corpo"] ??
+                      14}
                   </span>
                 </div>
               </div>
@@ -3560,7 +4381,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                 onChange={(e) =>
                   alterarAba((a) => ({
                     ...a,
-                    boxes: a.boxes.map((b) => (b.id === blocoSelecionado.id ? { ...b, url: e.target.value || null } : b)),
+                    boxes: a.boxes.map((b) =>
+                      b.id === blocoSelecionado.id
+                        ? { ...b, url: e.target.value || null }
+                        : b,
+                    ),
                   }))
                 }
                 className="h-7 text-xs"
@@ -3595,8 +4420,14 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                         title="Abrir a referência"
                         className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
                       >
-                        <CapaDoSwipe item={r} compacta className="h-7 w-9 shrink-0 overflow-hidden rounded" />
-                        <span className="min-w-0 truncate text-[10px]">{r.title}</span>
+                        <CapaDoSwipe
+                          item={r}
+                          compacta
+                          className="h-7 w-9 shrink-0 overflow-hidden rounded"
+                        />
+                        <span className="min-w-0 truncate text-[10px]">
+                          {r.title}
+                        </span>
                       </button>
                       <button
                         type="button"
@@ -3604,7 +4435,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                         title="Desanexar (a referência continua na biblioteca)"
                         onClick={() =>
                           ajustarBloco(blocoSelecionado.id, {
-                            swipeIds: (blocoSelecionado.swipeIds ?? []).filter((x) => x !== r.id),
+                            swipeIds: (blocoSelecionado.swipeIds ?? []).filter(
+                              (x) => x !== r.id,
+                            ),
                           })
                         }
                         className="shrink-0 text-muted-foreground hover:text-red-500"
@@ -3622,7 +4455,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                 onClick={() => setAnexandoNoBloco(blocoSelecionado.id)}
               >
                 <Library className="h-3 w-3" />
-                {refsDoBloco(blocoSelecionado).length > 0 ? "Trocar" : "Anexar do Swipe Files"}
+                {refsDoBloco(blocoSelecionado).length > 0
+                  ? "Trocar"
+                  : "Anexar do Swipe Files"}
               </Button>
             </div>
 
@@ -3640,14 +4475,19 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
 
       {/* Paleta no celular: a coluna lateral não cabe, então vira uma faixa. */}
       <div className="flex gap-1 overflow-x-auto pb-1 md:hidden">
-        {CATEGORIAS.flatMap((c) => c.items.map((i) => ({ ...i, cor: c.color }))).map((item) => (
+        {CATEGORIAS.flatMap((c) =>
+          c.items.map((i) => ({ ...i, cor: c.color })),
+        ).map((item) => (
           <button
             key={item.type}
             type="button"
             onClick={() => adicionarBloco(item.type, item.cor, item.label)}
             className="flex shrink-0 items-center gap-1 rounded-full border border-border/50 px-2 py-1 text-[10px]"
           >
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: item.cor }} />
+            <span
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ background: item.cor }}
+            />
             {item.label}
           </button>
         ))}
@@ -3657,19 +4497,25 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
       {/* O link do bloco, pelo atalho. */}
       {linkDoBloco && (
         <>
-          <div className="fixed inset-0 z-[59]" onClick={() => setLinkDoBloco(null)} />
+          <div
+            className="fixed inset-0 z-[59]"
+            onClick={() => setLinkDoBloco(null)}
+          />
           <div className="fixed left-1/2 top-24 z-[60] w-80 -translate-x-1/2 rounded-lg border border-border bg-popover p-3 shadow-xl">
             <p className="mb-1.5 text-[11px] font-medium">
               Link de “
               <span className="text-primary">
-                {blocos.find((b) => b.id === linkDoBloco.blocoId)?.label ?? "bloco"}
+                {blocos.find((b) => b.id === linkDoBloco.blocoId)?.label ??
+                  "bloco"}
               </span>
               ”
             </p>
             <Input
               autoFocus
               value={linkDoBloco.url}
-              onChange={(e) => setLinkDoBloco({ ...linkDoBloco, url: e.target.value })}
+              onChange={(e) =>
+                setLinkDoBloco({ ...linkDoBloco, url: e.target.value })
+              }
               onKeyDown={(e) => {
                 if (e.key === "Escape") setLinkDoBloco(null);
                 if (e.key === "Enter") {
@@ -3680,7 +4526,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                     boxes: a.boxes.map((b) =>
                       // Campo esvaziado REMOVE o link: sem isto não haveria
                       // como tirar um endereço colado por engano.
-                      b.id === linkDoBloco.blocoId ? { ...b, url: url || null } : b,
+                      b.id === linkDoBloco.blocoId
+                        ? { ...b, url: url || null }
+                        : b,
                     ),
                   }));
                   setLinkDoBloco(null);
@@ -3699,15 +4547,21 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
       {/* O campo de link: cola a URL e o trecho selecionado vira âncora. */}
       {criandoLink && (
         <>
-          <div className="fixed inset-0 z-[59]" onClick={() => setCriandoLink(null)} />
+          <div
+            className="fixed inset-0 z-[59]"
+            onClick={() => setCriandoLink(null)}
+          />
           <div className="fixed left-1/2 top-24 z-[60] w-80 -translate-x-1/2 rounded-lg border border-border bg-popover p-3 shadow-xl">
             <p className="mb-1.5 text-[11px] font-medium">
-              Link em “<span className="text-primary">{criandoLink.rotulo}</span>”
+              Link em “
+              <span className="text-primary">{criandoLink.rotulo}</span>”
             </p>
             <Input
               autoFocus
               value={criandoLink.url}
-              onChange={(e) => setCriandoLink({ ...criandoLink, url: e.target.value })}
+              onChange={(e) =>
+                setCriandoLink({ ...criandoLink, url: e.target.value })
+              }
               onKeyDown={(e) => {
                 if (e.key === "Escape") setCriandoLink(null);
                 if (e.key === "Enter") {
@@ -3716,9 +4570,12 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                   if (!url) return;
                   // Sem esquema, o navegador trataria como caminho relativo e o
                   // link abriria dentro do próprio app.
-                  const completa = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+                  const completa = /^https?:\/\//i.test(url)
+                    ? url
+                    : `https://${url}`;
                   setEditando((atual) => {
-                    if (!atual || atual.id !== criandoLink.blocoId) return atual;
+                    if (!atual || atual.id !== criandoLink.blocoId)
+                      return atual;
                     const marcado = `[${criandoLink.rotulo}](${completa})`;
                     return {
                       id: atual.id,
@@ -3771,7 +4628,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
             const t = paraTela(alvo.x, alvo.y);
             const aberta = conversaAberta === c.id;
             return (
-              <div key={c.id} className="fixed z-40" style={{ left: t.x, top: t.y }}>
+              <div
+                key={c.id}
+                className="fixed z-40"
+                style={{ left: t.x, top: t.y }}
+              >
                 <Alfinete
                   numero={i + 1}
                   ativo={aberta}
@@ -3808,50 +4669,69 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
           })}
 
       {/* Escrevendo o primeiro comentário de uma conversa nova. */}
-      {novoComentario && mapaId && aba && (() => {
-        const t = paraTela(novoComentario.x, novoComentario.y);
-        return (
-          <div
-            className="fixed z-50 w-64 rounded-lg border border-border bg-popover p-2 shadow-xl"
-            style={{ left: t.x, top: t.y }}
-          >
-            <textarea
-              autoFocus
-              value={novoComentario.texto}
-              onChange={(e) => setNovoComentario({ ...novoComentario, texto: e.target.value })}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") setNovoComentario(null);
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  const texto = novoComentario.texto.trim();
-                  if (!texto) return;
-                  comentar.mutate(
-                    { tabId: aba.id, texto, x: novoComentario.x, y: novoComentario.y },
-                    {
-                      onSuccess: () => setNovoComentario(null),
-                      onError: (err) =>
-                        toast.error(err instanceof Error ? err.message : "Não consegui comentar"),
-                    },
-                  );
+      {novoComentario &&
+        mapaId &&
+        aba &&
+        (() => {
+          const t = paraTela(novoComentario.x, novoComentario.y);
+          return (
+            <div
+              className="fixed z-50 w-64 rounded-lg border border-border bg-popover p-2 shadow-xl"
+              style={{ left: t.x, top: t.y }}
+            >
+              <textarea
+                autoFocus
+                value={novoComentario.texto}
+                onChange={(e) =>
+                  setNovoComentario({
+                    ...novoComentario,
+                    texto: e.target.value,
+                  })
                 }
-              }}
-              placeholder="O que você quer dizer sobre isto?"
-              rows={3}
-              className="w-full resize-none rounded border border-border bg-background px-1.5 py-1 text-[11.5px] outline-none focus:border-primary"
-            />
-            <div className="mt-1 flex items-center justify-between">
-              <span className="text-[9px] text-muted-foreground">Enter envia · Esc cancela</span>
-              <button
-                type="button"
-                onClick={() => setNovoComentario(null)}
-                className="text-[10px] text-muted-foreground hover:text-foreground"
-              >
-                Cancelar
-              </button>
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setNovoComentario(null);
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    const texto = novoComentario.texto.trim();
+                    if (!texto) return;
+                    comentar.mutate(
+                      {
+                        tabId: aba.id,
+                        texto,
+                        x: novoComentario.x,
+                        y: novoComentario.y,
+                      },
+                      {
+                        onSuccess: () => setNovoComentario(null),
+                        onError: (err) =>
+                          toast.error(
+                            err instanceof Error
+                              ? err.message
+                              : "Não consegui comentar",
+                          ),
+                      },
+                    );
+                  }
+                }}
+                placeholder="O que você quer dizer sobre isto?"
+                rows={3}
+                className="w-full resize-none rounded border border-border bg-background px-1.5 py-1 text-[11.5px] outline-none focus:border-primary"
+              />
+              <div className="mt-1 flex items-center justify-between">
+                <span className="text-[9px] text-muted-foreground">
+                  Enter envia · Esc cancela
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setNovoComentario(null)}
+                  className="text-[10px] text-muted-foreground hover:text-foreground"
+                >
+                  Cancelar
+                </button>
+              </div>
             </div>
-          </div>
-        );
-      })()}
+          );
+        })()}
 
       {/*
         O documento, em tela quase cheia.
@@ -3941,39 +4821,48 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
         `foreignObject`, que herda o zoom do quadro — o input encolheria junto
         com o mapa afastado e ficaria impossível de acertar.
       */}
-      {rotulando && (() => {
-        const c = aba?.connectors.find((x) => x.id === rotulando.id);
-        const de = c && blocos.find((b) => b.id === c.fromBox);
-        const para = c && blocos.find((b) => b.id === c.toBox);
-        if (!c || !de || !para) return null;
-        const i = pontoDoBloco(de, c.fromPoint);
-        const f = pontoDoBloco(para, c.toPoint);
-        const centro = paraTela((i.x + f.x) / 2, (i.y + f.y) / 2);
-        return (
-          <>
-            <div className="fixed inset-0 z-40" onClick={confirmarRotulo} />
-            <div
-              className="fixed z-50 w-40"
-              style={{ left: centro.x - 80, top: centro.y - 14 }}
-            >
-              <Input
-                autoFocus
-                value={rotulando.valor}
-                onChange={(e) => setRotulando({ id: rotulando.id, valor: e.target.value })}
-                onBlur={confirmarRotulo}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") { e.preventDefault(); confirmarRotulo(); }
-                  // Esc descarta a edição e mantém o rótulo que estava lá.
-                  if (e.key === "Escape") { e.preventDefault(); setRotulando(null); }
-                }}
-                onFocus={(e) => e.currentTarget.select()}
-                placeholder="Sim, Não, se comprou…"
-                className="h-7 text-center text-[12px] shadow-lg"
-              />
-            </div>
-          </>
-        );
-      })()}
+      {rotulando &&
+        (() => {
+          const c = aba?.connectors.find((x) => x.id === rotulando.id);
+          const de = c && blocos.find((b) => b.id === c.fromBox);
+          const para = c && blocos.find((b) => b.id === c.toBox);
+          if (!c || !de || !para) return null;
+          const i = pontoDoBloco(de, c.fromPoint);
+          const f = pontoDoBloco(para, c.toPoint);
+          const centro = paraTela((i.x + f.x) / 2, (i.y + f.y) / 2);
+          return (
+            <>
+              <div className="fixed inset-0 z-40" onClick={confirmarRotulo} />
+              <div
+                className="fixed z-50 w-40"
+                style={{ left: centro.x - 80, top: centro.y - 14 }}
+              >
+                <Input
+                  autoFocus
+                  value={rotulando.valor}
+                  onChange={(e) =>
+                    setRotulando({ id: rotulando.id, valor: e.target.value })
+                  }
+                  onBlur={confirmarRotulo}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      confirmarRotulo();
+                    }
+                    // Esc descarta a edição e mantém o rótulo que estava lá.
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      setRotulando(null);
+                    }
+                  }}
+                  onFocus={(e) => e.currentTarget.select()}
+                  placeholder="Sim, Não, se comprou…"
+                  className="h-7 text-center text-[12px] shadow-lg"
+                />
+              </div>
+            </>
+          );
+        })()}
 
       {/*
         O seletor do duplo clique na bolinha.
@@ -3986,7 +4875,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
           <div
             className="fixed inset-0 z-40"
             onClick={() => setCriarDoPonto(null)}
-            onContextMenu={(e) => { e.preventDefault(); setCriarDoPonto(null); }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setCriarDoPonto(null);
+            }}
           />
           <div
             className="fixed z-50 w-56 overflow-hidden rounded-lg border border-border bg-popover shadow-lg"
@@ -4008,9 +4900,16 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                   // Enter é mais rápido do que mirar o item com o mouse.
                   if (e.key === "Enter") {
                     const primeiro = CATEGORIAS.flatMap((c) =>
-                      c.items.filter((i) => casaComBusca(i.label, buscaDoPonto)).map((i) => ({ i, cor: c.color })),
+                      c.items
+                        .filter((i) => casaComBusca(i.label, buscaDoPonto))
+                        .map((i) => ({ i, cor: c.color })),
                     )[0];
-                    if (primeiro) criarLigadoAoPonto(primeiro.i.type, primeiro.cor, primeiro.i.label);
+                    if (primeiro)
+                      criarLigadoAoPonto(
+                        primeiro.i.type,
+                        primeiro.cor,
+                        primeiro.i.label,
+                      );
                   }
                 }}
                 placeholder="Que bloco entra aqui?"
@@ -4029,12 +4928,16 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                 Estes nascem NO PONTO mas SEM seta: uma seta saindo de um
                 post-it diria que o funil passa por ele.
               */}
-              {ANOTACOES_DO_PONTO.filter((n) => casaComBusca(n.rotulo, buscaDoPonto)).length > 0 && (
+              {ANOTACOES_DO_PONTO.filter((n) =>
+                casaComBusca(n.rotulo, buscaDoPonto),
+              ).length > 0 && (
                 <div>
                   <p className="px-1.5 pb-0.5 pt-1.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Anotar
                   </p>
-                  {ANOTACOES_DO_PONTO.filter((n) => casaComBusca(n.rotulo, buscaDoPonto)).map((n) => (
+                  {ANOTACOES_DO_PONTO.filter((n) =>
+                    casaComBusca(n.rotulo, buscaDoPonto),
+                  ).map((n) => (
                     <button
                       key={n.rotulo}
                       type="button"
@@ -4053,7 +4956,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
               )}
 
               {CATEGORIAS.map((cat) => {
-                const itens = cat.items.filter((i) => casaComBusca(i.label, buscaDoPonto));
+                const itens = cat.items.filter((i) =>
+                  casaComBusca(i.label, buscaDoPonto),
+                );
                 if (itens.length === 0) return null;
                 return (
                   <div key={cat.name}>
@@ -4064,21 +4969,28 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                       <button
                         key={i.type}
                         type="button"
-                        onClick={() => criarLigadoAoPonto(i.type, cat.color, i.label)}
+                        onClick={() =>
+                          criarLigadoAoPonto(i.type, cat.color, i.label)
+                        }
                         className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[11px] hover:bg-muted"
                       >
                         <span
                           className="h-2 w-2 shrink-0 rounded-sm"
                           style={{ background: cat.color }}
                         />
-                        <IconePorNome nome={i.icon} className="h-3 w-3 shrink-0" />
+                        <IconePorNome
+                          nome={i.icon}
+                          className="h-3 w-3 shrink-0"
+                        />
                         <span className="truncate">{i.label}</span>
                       </button>
                     ))}
                   </div>
                 );
               })}
-              {CATEGORIAS.every((c) => c.items.every((i) => !casaComBusca(i.label, buscaDoPonto))) && (
+              {CATEGORIAS.every((c) =>
+                c.items.every((i) => !casaComBusca(i.label, buscaDoPonto)),
+              ) && (
                 <p className="px-1.5 py-4 text-center text-[11px] text-muted-foreground">
                   Nada com “{buscaDoPonto}”.
                 </p>
@@ -4090,7 +5002,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
 
       {menu && (
         <>
-          <div className="fixed inset-0 z-40" onPointerDown={() => setMenu(null)} />
+          <div
+            className="fixed inset-0 z-40"
+            onPointerDown={() => setMenu(null)}
+          />
           <div
             className="fixed z-50 min-w-[180px] overflow-hidden rounded-lg border border-border/60 bg-popover py-1 shadow-lg"
             style={{ left: menu.x, top: menu.y }}
@@ -4106,11 +5021,43 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
                 if (b) setRenomeando({ id: b.id, valor: b.label });
               }}
             />
-            <ItemDoMenu icon={Copy} label="Duplicar" atalho="⌘D" onClick={() => { duplicarSelecionados(); setMenu(null); }} />
-            <ItemDoMenu icon={ClipboardCopy} label="Copiar" atalho="⌘C" onClick={() => { copiarSelecionados(); setMenu(null); }} />
-            <ItemDoMenu icon={Unlink} label="Remover ligações" onClick={() => { desconectar(menu.boxId); setMenu(null); }} />
+            <ItemDoMenu
+              icon={Copy}
+              label="Duplicar"
+              atalho="⌘D"
+              onClick={() => {
+                duplicarSelecionados();
+                setMenu(null);
+              }}
+            />
+            <ItemDoMenu
+              icon={ClipboardCopy}
+              label="Copiar"
+              atalho="⌘C"
+              onClick={() => {
+                copiarSelecionados();
+                setMenu(null);
+              }}
+            />
+            <ItemDoMenu
+              icon={Unlink}
+              label="Remover ligações"
+              onClick={() => {
+                desconectar(menu.boxId);
+                setMenu(null);
+              }}
+            />
             <div className="my-1 h-px bg-border/60" />
-            <ItemDoMenu icon={Trash2} label="Remover bloco" atalho="Del" destrutivo onClick={() => { removerSelecionados(); setMenu(null); }} />
+            <ItemDoMenu
+              icon={Trash2}
+              label="Remover bloco"
+              atalho="Del"
+              destrutivo
+              onClick={() => {
+                removerSelecionados();
+                setMenu(null);
+              }}
+            />
           </div>
         </>
       )}
@@ -4121,8 +5068,12 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
         <AnexarSwipeDialog
           open
           onOpenChange={(v) => !v && setAnexandoNoBloco(null)}
-          nomeDoBloco={blocos.find((b) => b.id === anexandoNoBloco)?.label ?? ""}
-          jaAnexados={blocos.find((b) => b.id === anexandoNoBloco)?.swipeIds ?? []}
+          nomeDoBloco={
+            blocos.find((b) => b.id === anexandoNoBloco)?.label ?? ""
+          }
+          jaAnexados={
+            blocos.find((b) => b.id === anexandoNoBloco)?.swipeIds ?? []
+          }
           onConfirmar={(ids) => {
             const alvo = blocos.find((b) => b.id === anexandoNoBloco);
             if (!alvo) return;
@@ -4147,7 +5098,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
           onClose={() => setRefAberta(null)}
           onNavigate={(i) => setRefAberta({ ...refAberta, indice: i })}
           onToggleFavorite={(item) =>
-            favoritarSwipe.mutate({ id: item.id, input: { isFavorite: !item.isFavorite } })
+            favoritarSwipe.mutate({
+              id: item.id,
+              input: { isFavorite: !item.isFavorite },
+            })
           }
           /* Sem `onDelete`: aqui apagar tiraria a peça da BIBLIOTECA inteira,
              não do bloco. Desanexar mora no painel. */
@@ -4157,7 +5111,12 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
       {data?.rascunho && sujo && (
         <button
           type="button"
-          onClick={() => { setAbas(data.tabs); setSujo(false); selecao.limpar(); historico.limpar(); }}
+          onClick={() => {
+            setAbas(data.tabs);
+            setSujo(false);
+            selecao.limpar();
+            historico.limpar();
+          }}
           className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
         >
           <RotateCcw className="h-3 w-3" /> Voltar à sugestão das etapas
@@ -4172,7 +5131,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
 // ============================================================
 
 function ItemDoMenu({
-  icon: Icon, label, atalho, onClick, destrutivo,
+  icon: Icon,
+  label,
+  atalho,
+  onClick,
+  destrutivo,
 }: {
   icon: typeof Trash2;
   label: string;
@@ -4190,7 +5153,11 @@ function ItemDoMenu({
     >
       <Icon className="h-3.5 w-3.5 shrink-0" />
       <span className="flex-1">{label}</span>
-      {atalho && <span className="font-mono text-[10px] text-muted-foreground">{atalho}</span>}
+      {atalho && (
+        <span className="font-mono text-[10px] text-muted-foreground">
+          {atalho}
+        </span>
+      )}
     </button>
   );
 }
@@ -4251,30 +5218,48 @@ const ATALHOS: { grupo: string; itens: [string, string][] }[] = [
 function PainelDeAtalhos({ onClose }: { onClose: () => void }) {
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-background/40 backdrop-blur-[1px]" onClick={onClose} />
+      <div
+        className="fixed inset-0 z-40 bg-background/40 backdrop-blur-[1px]"
+        onClick={onClose}
+      />
       <div className="fixed left-1/2 top-1/2 z-50 w-[min(680px,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border/60 bg-popover p-5 shadow-xl">
         <div className="mb-3 flex items-start justify-between">
           <div>
             <h3 className="text-sm font-semibold">Atalhos do mapa</h3>
-            <p className="text-[11px] text-muted-foreground">Tecle ? a qualquer momento pra abrir e fechar</p>
+            <p className="text-[11px] text-muted-foreground">
+              Tecle ? a qualquer momento pra abrir e fechar
+            </p>
           </div>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose} aria-label="Fechar">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={onClose}
+            aria-label="Fechar"
+          >
             <X className="h-4 w-4" />
           </Button>
         </div>
         <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
           {ATALHOS.map((g) => (
             <div key={g.grupo}>
-              <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{g.grupo}</p>
+              <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                {g.grupo}
+              </p>
               <dl className="space-y-1">
                 {g.itens.map(([tecla, oque]) => (
-                  <div key={tecla} className="flex items-baseline justify-between gap-3">
+                  <div
+                    key={tecla}
+                    className="flex items-baseline justify-between gap-3"
+                  >
                     <dt className="shrink-0">
                       <kbd className="rounded border border-border/60 bg-muted px-1.5 py-0.5 font-mono text-[10px]">
                         {tecla}
                       </kbd>
                     </dt>
-                    <dd className="flex-1 text-right text-[11px] text-muted-foreground">{oque}</dd>
+                    <dd className="flex-1 text-right text-[11px] text-muted-foreground">
+                      {oque}
+                    </dd>
                   </div>
                 ))}
               </dl>

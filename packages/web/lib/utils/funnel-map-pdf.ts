@@ -53,7 +53,73 @@ const MAX_PIXELS = 16_000_000;
  */
 const LIMITE_MS = 30_000;
 
-async function capturar(area: AreaParaCapturar, fundo: string): Promise<string> {
+/**
+ * A cor é opaca? `rgba(0, 0, 0, 0)` e `transparent` não servem de fundo.
+ *
+ * Pura para dar teste sem DOM: é a regra que, errada, apagava o texto branco
+ * do PDF.
+ */
+export function corOpaca(cor: string | null | undefined): boolean {
+  const c = (cor ?? "").trim().toLowerCase();
+  if (!c || c === "transparent") return false;
+  // rgba(r, g, b, a) e rgb(r g b / a): o alfa é o último número depois de
+  // vírgula ou barra. Sem alfa explícito, a cor é opaca.
+  const alfa = /(?:,|\/)\s*([\d.]+%?)\s*\)$/.exec(c);
+  if (!alfa) return true;
+  const valor = alfa[1]!.endsWith("%")
+    ? parseFloat(alfa[1]!) / 100
+    : parseFloat(alfa[1]!);
+  return valor >= 0.999;
+}
+
+/**
+ * A cor de fundo que a pessoa VÊ atrás do mapa.
+ *
+ * ## Por que não basta ler o elemento
+ *
+ * A área do mapa não pinta fundo próprio — quem pinta é um ancestral (a seção
+ * no modo claro, a página no escuro). Ler só a área devolvia `rgba(0,0,0,0)`,
+ * que é texto verdadeiro e passava como cor: o PNG saía transparente, o jsPDF
+ * o punha sobre papel branco, e todo texto branco do mapa sumia.
+ *
+ * Sobe até achar uma cor opaca. Camada semitransparente no caminho (o card é
+ * 60%) é ignorada: o tom muda um nada, e o que importa é o contraste.
+ */
+export function fundoVisivel(no: Element | null, reserva = "#ffffff"): string {
+  for (let el = no; el; el = el.parentElement) {
+    const cor = getComputedStyle(el).backgroundColor;
+    if (corOpaca(cor)) return cor;
+  }
+  return reserva;
+}
+
+/**
+ * A mídia deste nó pode virar imagem sem contaminar o canvas?
+ *
+ * O html-to-image clona `<video>` e `<canvas>` desenhando o conteúdo num canvas
+ * e chamando `toDataURL` — sem try/catch. Um único vídeo de origem sem CORS
+ * derrubava o PDF inteiro com "Tainted canvases may not be exported".
+ *
+ * Testar num canvas de 1px antes é barato e exato: o que passa entra no PDF com
+ * o quadro; o que falharia é deixado de fora, e o resto do mapa sai.
+ */
+function midiaLegivel(el: HTMLVideoElement | HTMLCanvasElement): boolean {
+  try {
+    const teste = document.createElement("canvas");
+    teste.width = 1;
+    teste.height = 1;
+    teste.getContext("2d")?.drawImage(el, 0, 0, 1, 1);
+    teste.toDataURL();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function capturar(
+  area: AreaParaCapturar,
+  fundo: string,
+): Promise<string> {
   const { toPng } = await import("html-to-image");
 
   const largura = Math.max(1, Math.round(area.fimX - area.origemX));
@@ -63,11 +129,20 @@ async function capturar(area: AreaParaCapturar, fundo: string): Promise<string> 
   // é melhor que devolver uma página em branco sem explicação.
   const escala = Math.min(ESCALA, Math.sqrt(MAX_PIXELS / (largura * altura)));
 
+  // Decidido ANTES da captura: o filtro roda nó a nó e testar dentro dele
+  // repetiria o desenho de cada vídeo a cada passada.
+  const ilegiveis = new Set<Element>(
+    [...area.no.querySelectorAll("video, canvas")].filter(
+      (el) => !midiaLegivel(el as HTMLVideoElement | HTMLCanvasElement),
+    ),
+  );
+
   const captura = toPng(area.no, {
     width: largura,
     height: altura,
     pixelRatio: Math.max(1, escala),
     backgroundColor: fundo,
+    filter: (no) => !(no instanceof Element && ilegiveis.has(no)),
     // Anula pan e zoom e traz a origem para 0,0: o que vale aqui é o desenho
     // inteiro, não o enquadramento em que a pessoa estava.
     style: {
@@ -124,7 +199,11 @@ export async function exportarMapaEmPdf(opts: OpcoesDoPdf): Promise<void> {
     const A = paisagem ? 210 : 297;
 
     if (!doc) {
-      doc = new jsPDF({ unit: "mm", format: "a4", orientation: paisagem ? "landscape" : "portrait" });
+      doc = new jsPDF({
+        unit: "mm",
+        format: "a4",
+        orientation: paisagem ? "landscape" : "portrait",
+      });
     } else {
       doc.addPage("a4", paisagem ? "landscape" : "portrait");
     }
@@ -147,7 +226,16 @@ export async function exportarMapaEmPdf(opts: OpcoesDoPdf): Promise<void> {
     const fator = Math.min(util.w / dims.largura, util.h / dims.altura);
     const w = dims.largura * fator;
     const h = dims.altura * fator;
-    doc.addImage(png, "PNG", MARGEM + (util.w - w) / 2, TOPO + (util.h - h) / 2, w, h, undefined, "FAST");
+    doc.addImage(
+      png,
+      "PNG",
+      MARGEM + (util.w - w) / 2,
+      TOPO + (util.h - h) / 2,
+      w,
+      h,
+      undefined,
+      "FAST",
+    );
   }
 
   const nome = (semEmoji(opts.titulo) || "mapa-do-funil")
@@ -162,7 +250,8 @@ export async function exportarMapaEmPdf(opts: OpcoesDoPdf): Promise<void> {
 function medir(dataUrl: string): Promise<{ largura: number; altura: number }> {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.onload = () => resolve({ largura: img.naturalWidth, altura: img.naturalHeight });
+    img.onload = () =>
+      resolve({ largura: img.naturalWidth, altura: img.naturalHeight });
     img.onerror = () => reject(new Error("Não consegui ler a imagem do mapa."));
     img.src = dataUrl;
   });
@@ -176,7 +265,10 @@ function medir(dataUrl: string): Promise<{ largura: number; altura: number }> {
  */
 function semEmoji(s: string): string {
   return (s || "")
-    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}]/gu, "")
+    .replace(
+      /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}]/gu,
+      "",
+    )
     .replace(/️/g, "")
     .replace(/\s{2,}/g, " ")
     .trim();
