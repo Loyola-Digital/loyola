@@ -17,8 +17,17 @@ export default fp(async function authPlugin(fastify) {
     // sem cookie de sessão nosso. Quem autoriza é o `state` — segredo de uso
     // único que nós mesmos geramos, com validade curta.
     if (request.url.startsWith("/api/oauth/sendflow/callback")) return;
+    // Mapa compartilhado por link: quem abre não tem conta. Quem autoriza é o
+    // token de 256 bits na própria URL, e a rota é só GET — as rotas de ligar
+    // e revogar o link ficam em /api/funnel-maps/, com auth normal.
+    if (
+      request.method === "GET" &&
+      request.url.startsWith("/api/compartilhado/")
+    )
+      return;
     // Only invite info (GET) is public; the accept endpoint (POST) requires auth
-    if (request.method === "GET" && request.url.startsWith("/api/invitations/")) return;
+    if (request.method === "GET" && request.url.startsWith("/api/invitations/"))
+      return;
 
     const auth = getAuth(request);
     if (!auth.userId) {
@@ -110,7 +119,11 @@ export default fp(async function authPlugin(fastify) {
     // Também sincroniza avatar ausente (login Google tem foto no Clerk mas a
     // linha antiga ficou com avatarUrl null).
     const [current] = await fastify.db
-      .select({ email: users.email, name: users.name, avatarUrl: users.avatarUrl })
+      .select({
+        email: users.email,
+        name: users.name,
+        avatarUrl: users.avatarUrl,
+      })
       .from(users)
       .where(eq(users.id, dbUser[0].id))
       .limit(1);
@@ -161,7 +174,11 @@ export default fp(async function authPlugin(fastify) {
             // usuário ficava "Usuário"/sem avatar pra sempre. Atualiza o que dá.
             await fastify.db
               .update(users)
-              .set({ name: realName, avatarUrl: realAvatar, updatedAt: new Date() })
+              .set({
+                name: realName,
+                avatarUrl: realAvatar,
+                updatedAt: new Date(),
+              })
               .where(eq(users.id, dbUser[0].id));
           }
         }
@@ -174,12 +191,21 @@ export default fp(async function authPlugin(fastify) {
     if (request.url === "/api/me") return;
 
     // Allow pending users to accept invitations (the accept endpoint activates them)
-    if (dbUser[0].status === "pending" && request.method === "POST" && request.url.match(/^\/api\/invitations\/[^/]+\/accept$/)) {
+    if (
+      dbUser[0].status === "pending" &&
+      request.method === "POST" &&
+      request.url.match(/^\/api\/invitations\/[^/]+\/accept$/)
+    ) {
       return;
     }
 
     if (dbUser[0].status === "pending") {
-      reply.code(403).send({ error: "Acesso pendente de aprovação.", code: "PENDING_APPROVAL" });
+      reply
+        .code(403)
+        .send({
+          error: "Acesso pendente de aprovação.",
+          code: "PENDING_APPROVAL",
+        });
       return;
     }
     if (dbUser[0].status === "blocked") {
@@ -198,6 +224,7 @@ export default fp(async function authPlugin(fastify) {
      * em tempo real. Quem grava é o `uso-do-produto` scheduler.
      */
     const area = areaDaRota(request.url);
-    if (area) fastify.usoDoProduto.registrar(dbUser[0].id, area.chave, new Date());
+    if (area)
+      fastify.usoDoProduto.registrar(dbUser[0].id, area.chave, new Date());
   });
 });

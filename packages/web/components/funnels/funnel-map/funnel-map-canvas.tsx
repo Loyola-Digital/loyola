@@ -39,6 +39,7 @@ import {
   useComentariosDoMapa,
 } from "@/lib/hooks/use-mapa-comentarios";
 import { PDF, imagemDoEvento, useSubirImagemDoMapa } from "@/lib/hooks/use-mapa-imagem";
+import { BotaoDeCompartilhar } from "./compartilhar-mapa";
 import { AnexarSwipeDialog } from "@/components/funnels/funnel-map/anexar-swipe-dialog";
 import { CapaDoSwipe } from "@/components/swipe-files/capa-do-swipe";
 import { SwipeLightbox } from "@/components/swipe-files/swipe-lightbox";
@@ -325,16 +326,34 @@ interface Props {
   stageId?: string;
   /** Mapa avulso, criado do Global sem funil. */
   mapId?: string;
+  /**
+   * Link público. Com ele o canvas vira SOMENTE LEITURA e se atualiza sozinho.
+   *
+   * É o mesmo componente do editor de propósito: um visualizador à parte teria
+   * de repetir blocos, textos, imagens, notas e setas — e começaria a desenhar
+   * diferente do original no primeiro ajuste de estilo.
+   */
+  token?: string;
   /** Altura da área de desenho. A etapa dedicada usa a tela quase inteira. */
   /** Px, ou qualquer expressao CSS de altura. */
   altura?: number | string;
 }
 
-export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 520 }: Props) {
-  const endereco: EnderecoDoMapa =
-    mapId && !stageId
+export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, altura = 520 }: Props) {
+  const endereco: EnderecoDoMapa = token
+    ? { tipo: "compartilhado", token }
+    : mapId && !stageId
       ? { tipo: "avulso", mapId }
       : { tipo: "funil", projectId: projectId!, funnelId: funnelId!, stageId: stageId! };
+  /**
+   * Quem abriu pelo link só olha.
+   *
+   * A trava não é só visual. Toda edição local passa por `alterarAba` e pelas
+   * operações de aba, e toda gravação por `salvarMapa` — as três recusam aqui.
+   * E mesmo que algo escapasse, o PUT exige login e devolveria 401: o link
+   * público não é chave de edição.
+   */
+  const somenteLeitura = endereco.tipo === "compartilhado";
   const { data, isLoading } = useMapaPorEndereco(endereco);
   const salvar = useSalvarMapaPorEndereco(endereco);
   const mapaId = (data as { id?: string | null } | undefined)?.id ?? null;
@@ -520,6 +539,12 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
     if (data && abas === null) setAbas(data.tabs);
   }, [data, abas]);
 
+  // No link público o estado NÃO é local: não há arrasto a proteger, e cada
+  // refetch traz o que o dono acabou de mudar. É isto que faz o link ser ao vivo.
+  useEffect(() => {
+    if (somenteLeitura && data) setAbas(data.tabs);
+  }, [somenteLeitura, data]);
+
   const aba = abas?.[abaAtiva];
   const blocos = useMemo(() => aba?.boxes ?? [], [aba]);
 
@@ -533,7 +558,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
     () => [...new Set(blocos.flatMap((b) => b.swipeIds ?? []))],
     [blocos],
   );
-  const { data: referencias } = useSwipesPorIds(idsDeReferencia);
+  // As referências vêm de rota autenticada. No link público dariam 401 em todo
+  // bloco com card — melhor não pedir.
+  const { data: referencias } = useSwipesPorIds(somenteLeitura ? [] : idsDeReferencia);
   const refPorId = useMemo(
     () => new Map((referencias?.items ?? []).map((r) => [r.id, r])),
     [referencias],
@@ -560,6 +587,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
    */
   const alterarAba = useCallback(
     (mudanca: (a: AbaDoMapa) => AbaDoMapa, semHistorico = false) => {
+      // O funil de quase toda edição: arrastar, redimensionar, ligar, apagar,
+      // escrever. Recusar aqui trava 29 caminhos de uma vez.
+      if (somenteLeitura) return;
       setAbas((atuais) => {
         if (!atuais) return atuais;
         if (!semHistorico) historico.registrar(atuais);
@@ -569,10 +599,11 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       });
       setSujo(true);
     },
-    [abaAtiva, historico],
+    [abaAtiva, historico, somenteLeitura],
   );
 
   const desfazer = useCallback(() => {
+    if (somenteLeitura) return;
     setAbas((atuais) => {
       if (!atuais) return atuais;
       const anterior = historico.desfazer(atuais);
@@ -580,9 +611,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       setSujo(true);
       return anterior;
     });
-  }, [historico]);
+  }, [historico, somenteLeitura]);
 
   const refazer = useCallback(() => {
+    if (somenteLeitura) return;
     setAbas((atuais) => {
       if (!atuais) return atuais;
       const proximo = historico.refazer(atuais);
@@ -590,7 +622,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
       setSujo(true);
       return proximo;
     });
-  }, [historico]);
+  }, [historico, somenteLeitura]);
 
   /**
    * Arrastar um bloco.
@@ -1035,6 +1067,10 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
    * `posicao` vem do arrastar (onde soltou); colando, cai no fluxo normal.
    */
   async function adicionarImagem(arquivo: File, posicao?: { x: number; y: number }) {
+    // `alterarAba` já recusaria o bloco — mas o upload abaixo sairia assim
+    // mesmo: requisição autenticada, 401 e um toast de erro para quem só
+    // soltou um arquivo sem querer em cima do link público.
+    if (somenteLeitura) return;
     const ehPdf = arquivo.type === PDF;
     const id = novoId(ehPdf ? "pdf" : "img");
     // Arrastado, vale onde soltou. Colado ou escolhido, entra perto do bloco
@@ -1465,6 +1501,8 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
    * quebrado. Aqui ele grava e segue: o próximo render já traz o `id`.
    */
   async function alternarComentarios() {
+    // Comentário é conversa interna do time; o link público não vê nem abre.
+    if (somenteLeitura) return;
     if (modoComentario) {
       setModoComentario(false);
       setConversaAberta(null);
@@ -1779,6 +1817,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
   // remarketing, o de upsell); faltava a interface.
 
   function adicionarAba() {
+    if (somenteLeitura) return;
     const nova: AbaDoMapa = {
       id: `t-${Date.now().toString(36)}`,
       name: `Aba ${(abas?.length ?? 0) + 1}`,
@@ -1796,6 +1835,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
   }
 
   function renomearAba(indice: number, nome: string) {
+    if (somenteLeitura) return;
     setAbas((atuais) => {
       if (!atuais) return atuais;
       const copia = [...atuais];
@@ -1806,6 +1846,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
   }
 
   function removerAba(indice: number) {
+    if (somenteLeitura) return;
     // Uma aba tem que sobrar: sem nenhuma, o canvas não teria onde desenhar e
     // o `abaAtiva` apontaria pro vazio.
     if ((abas?.length ?? 0) <= 1) {
@@ -1838,7 +1879,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
   }, [sujo, abas]);
 
   function salvarMapa() {
-    if (!abas) return;
+    if (!abas || somenteLeitura) return;
     salvar.mutate(abas, {
       onSuccess: () => {
         setSujo(false);
@@ -1904,6 +1945,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
         return;
       }
       if (e.key === " ") { espaco.current = true; e.preventDefault(); return; }
+      // Espaço (arrastar a tela) passa; atalho de edição não. Os de zoom têm
+      // botão na barra, então nada que quem só olha precisa se perde.
+      if (somenteLeitura) return;
 
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === "z") {
@@ -2143,9 +2187,18 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold">Mapa do funil</h3>
+          <h3 className="text-sm font-semibold">
+            {somenteLeitura ? ((data as { nome?: string } | undefined)?.nome ?? "Mapa do funil") : "Mapa do funil"}
+          </h3>
           <p className="text-[11px] text-muted-foreground">
-            {data?.rascunho && !sujo
+            {somenteLeitura ? (
+              <span className="inline-flex items-center gap-1.5">
+                {/* O ponto pulsando diz "ao vivo" sem texto a mais: quem abre o
+                    link precisa saber que não é um print, que muda sozinho. */}
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+                Somente leitura · atualiza sozinho quando alguém edita
+              </span>
+            ) : data?.rascunho && !sujo
               ? "Sugestão a partir das etapas cadastradas — arraste, adicione e salve para tornar seu."
               : ligando
                 ? "Solte em cima de outro bloco para ligar — ou clique nele. Esc cancela."
@@ -2167,6 +2220,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
               <Scan className="h-3 w-3" />
             </Button>
           </div>
+          {!somenteLeitura && (<>
           <Button
             variant="ghost" size="icon" className="h-6 w-6"
             onClick={desfazer} disabled={!historico.podeDesfazer} aria-label="Desfazer"
@@ -2184,6 +2238,8 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
             ativo={modoComentario}
             onAlternar={alternarComentarios}
           />
+          <BotaoDeCompartilhar mapId={mapaId} />
+          </>)}
           <Button
             variant="ghost" size="icon" className="h-6 w-6"
             onClick={alternarTema}
@@ -2208,6 +2264,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
           >
             {telaCheia ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
           </Button>
+          {!somenteLeitura && (
           <Button
             variant="ghost" size="icon"
             /* Realçado quando a barra está OCULTA: sem a coluna na tela, um
@@ -2221,6 +2278,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
           >
             {paletaAberta ? <PanelLeftClose className="h-3 w-3" /> : <PanelLeftOpen className="h-3 w-3" />}
           </Button>
+          )}
           <Button
             variant="ghost" size="icon" className="h-6 w-6"
             onClick={exportarPdf} disabled={exportando}
@@ -2236,6 +2294,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
               <X className="h-3 w-3" /> Cancelar ligação
             </Button>
           )}
+          {!somenteLeitura && (<>
           {(sujo || salvar.isPending) && (
             <span className="mr-1 text-[11px] text-muted-foreground">
               {salvar.isPending ? "salvando…" : "salva sozinho"}
@@ -2245,6 +2304,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
             {salvar.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
             Salvar
           </Button>
+          </>)}
         </div>
       </div>
 
@@ -2257,6 +2317,9 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
               type="button"
               onClick={() => { setAbaAtiva(i); selecao.limpar(); setConectorSel(null); }}
               onDoubleClick={() => {
+                // Sem isto o prompt abriria para quem só olha, e o nome digitado
+                // sumiria sem explicação.
+                if (somenteLeitura) return;
                 const nome = window.prompt("Nome da aba", t.name);
                 if (nome && nome.trim()) renomearAba(i, nome.trim());
               }}
@@ -2269,7 +2332,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
             >
               {t.name}
             </button>
-            {(abas?.length ?? 0) > 1 && (
+            {!somenteLeitura && (abas?.length ?? 0) > 1 && (
               <button
                 type="button"
                 onClick={() => removerAba(i)}
@@ -2281,6 +2344,7 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
             )}
           </div>
         ))}
+        {!somenteLeitura && (
         <button
           type="button"
           onClick={adicionarAba}
@@ -2289,11 +2353,12 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, altura = 
         >
           <Plus className="h-3 w-3" />
         </button>
+        )}
       </div>
 
       <div className="flex gap-3">
         {/* Paleta */}
-        {paletaAberta && (
+        {paletaAberta && !somenteLeitura && (
         <div className="hidden w-48 shrink-0 flex-col gap-2 md:flex" style={{ maxHeight: alturaDaArea }}>
           <div className="relative shrink-0">
             <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
