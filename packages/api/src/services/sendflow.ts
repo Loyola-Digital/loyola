@@ -50,8 +50,25 @@ export interface SendflowTokens {
 /**
  * Troca o refresh_token por um access_token novo.
  *
- * Devolve também o refresh porque o servidor pode rotacioná-lo: ignorar o novo
- * valor deixaria a conexão morrer silenciosamente na próxima renovação.
+ * Devolve também o refresh porque o servidor ROTACIONA: ignorar o novo valor
+ * deixa a conexão morrer silenciosamente na próxima renovação.
+ *
+ * ## Aconteceu, e o aviso acima não impediu
+ *
+ * 12/09/2026: um script de diagnóstico chamou esta função para inspecionar
+ * campanhas e descartou o retorno. O refresh guardado virou o antigo. O access
+ * ainda valia por uma hora, então nada quebrou na hora — a conexão caiu quando
+ * ele expirou, dois dias depois, e a tela passou a dizer "autorização expirada
+ * ou revogada". Não houve como recuperar: o único caminho foi refazer o OAuth.
+ *
+ * Por isso a regra não é "grave o refresh", é mais dura:
+ *
+ * **Script de diagnóstico NÃO chama esta função.** Para ler dados, use o
+ * `access_token` guardado em `sendflow_connections` enquanto ele valer. Se
+ * expirou, abra a tela — quem renova é a aplicação, que grava.
+ *
+ * Quem PODE chamar: a rota de conexão (`routes/sendflow.ts`), que grava os dois
+ * tokens no mesmo fluxo.
  */
 export async function renovarToken(
   clientId: string,
