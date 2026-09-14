@@ -105,15 +105,20 @@ function base(projectId: string, funnelId: string, stageId: string) {
  */
 export type EnderecoDoMapa =
   | { tipo: "funil"; projectId: string; funnelId: string; stageId: string }
-  | { tipo: "avulso"; mapId: string };
+  | { tipo: "avulso"; mapId: string }
+  /** Link público: lê sem login, só leitura. Ver `compartilhado` na rota. */
+  | { tipo: "compartilhado"; token: string };
 
 export function urlDoMapa(e: EnderecoDoMapa): string {
+  if (e.tipo === "compartilhado") return `/api/compartilhado/mapas/${e.token}`;
   return e.tipo === "avulso"
     ? `/api/funnel-maps/${e.mapId}`
     : base(e.projectId, e.funnelId, e.stageId);
 }
 
 export function chaveDoMapa(e: EnderecoDoMapa): (string | undefined)[] {
+  if (e.tipo === "compartilhado")
+    return ["funnel-map", "compartilhado", e.token];
   return e.tipo === "avulso"
     ? ["funnel-map", "avulso", e.mapId]
     : ["funnel-map", e.projectId, e.funnelId, e.stageId];
@@ -126,6 +131,17 @@ export function useMapaPorEndereco(e: EnderecoDoMapa) {
     queryKey: chaveDoMapa(e),
     queryFn: () => apiClient<MapaDoFunil>(urlDoMapa(e)),
     staleTime: 60 * 1000,
+    /*
+     * O link público é "ao vivo" por polling.
+     *
+     * 5 segundos: perto o bastante para quem está numa call vendo o dono mexer,
+     * e barato — a resposta é o JSON do desenho, sem imagem. SSE seria mais
+     * imediato, mas pediria barramento no servidor e quebraria em silêncio com
+     * mais de uma instância da API. Pausa sozinho com a aba em segundo plano.
+     */
+    refetchInterval: e.tipo === "compartilhado" ? 5_000 : false,
+    // Link revogado devolve 404; tentar de novo só atrasaria a mensagem.
+    retry: e.tipo === "compartilhado" ? false : 3,
   });
 }
 
@@ -160,7 +176,11 @@ export function useSalvarMapaPorEndereco(e: EnderecoDoMapa) {
   });
 }
 
-export function useFunnelMap(projectId: string, funnelId: string, stageId: string) {
+export function useFunnelMap(
+  projectId: string,
+  funnelId: string,
+  stageId: string,
+) {
   const apiClient = useApiClient();
   return useQuery({
     queryKey: ["funnel-map", projectId, funnelId, stageId],
@@ -169,21 +189,73 @@ export function useFunnelMap(projectId: string, funnelId: string, stageId: strin
   });
 }
 
-export function useSaveFunnelMap(projectId: string, funnelId: string, stageId: string) {
+export function useSaveFunnelMap(
+  projectId: string,
+  funnelId: string,
+  stageId: string,
+) {
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (tabs: AbaDoMapa[]) =>
-      apiClient<{ ok: true; updatedAt: string }>(base(projectId, funnelId, stageId), {
-        method: "PUT",
-        body: JSON.stringify({ tabs }),
-      }),
+      apiClient<{ ok: true; updatedAt: string }>(
+        base(projectId, funnelId, stageId),
+        {
+          method: "PUT",
+          body: JSON.stringify({ tabs }),
+        },
+      ),
     onSuccess: (_resposta, tabs) => {
       // Mesmo motivo do `useSalvarMapaPorEndereco`: sem gravar as `tabs`, o
       // cache serve o desenho de antes do save por um minuto inteiro.
-      qc.setQueryData<MapaDoFunil>(["funnel-map", projectId, funnelId, stageId], (atual) =>
-        atual ? { ...atual, tabs, rascunho: false } : atual,
+      qc.setQueryData<MapaDoFunil>(
+        ["funnel-map", projectId, funnelId, stageId],
+        (atual) => (atual ? { ...atual, tabs, rascunho: false } : atual),
       );
     },
+  });
+}
+
+// ---- Compartilhar por link ------------------------------------------------
+
+const chaveDoLink = (mapId: string | null) =>
+  ["funnel-map-link", mapId] as const;
+
+/** O token atual, ou `null` quando o mapa não está compartilhado. */
+export function useLinkDoMapa(mapId: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: chaveDoLink(mapId),
+    queryFn: () =>
+      apiClient<{ token: string | null }>(
+        `/api/funnel-maps/${mapId}/compartilhar`,
+      ),
+    enabled: Boolean(mapId),
+  });
+}
+
+/** Liga o link. Idempotente: se já existe, o servidor devolve o mesmo. */
+export function useLigarLink(mapId: string | null) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiClient<{ token: string }>(`/api/funnel-maps/${mapId}/compartilhar`, {
+        method: "POST",
+      }),
+    onSuccess: (r) => qc.setQueryData(chaveDoLink(mapId), r),
+  });
+}
+
+/** Revoga: o link antigo para de funcionar na hora e nunca volta a valer. */
+export function useRevogarLink(mapId: string | null) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiClient<{ token: null }>(`/api/funnel-maps/${mapId}/compartilhar`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => qc.setQueryData(chaveDoLink(mapId), { token: null }),
   });
 }

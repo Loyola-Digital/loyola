@@ -24,8 +24,17 @@ import {
   projectMembers,
   users,
 } from "../db/schema.js";
-import { abaEmBranco, comAoMenosUmaAba, reidentificarAbas } from "../services/funnel-map-abas.js";
+import {
+  abaEmBranco,
+  comAoMenosUmaAba,
+  reidentificarAbas,
+} from "../services/funnel-map-abas.js";
 import { ordenarMapasPorAtividade } from "../services/funnel-maps-lista.js";
+import {
+  gerarToken,
+  payloadPublico,
+  tokenValido,
+} from "../services/mapa-compartilhado.js";
 import {
   MAX_UPLOAD_BYTES,
   isAllowedMime,
@@ -96,14 +105,16 @@ const connectorSchema = z.object({
   label: z.string().max(80).nullable().optional(),
 });
 
-const tabsSchema = z.array(
-  z.object({
-    id: z.string().min(1).max(64),
-    name: z.string().min(1).max(60),
-    boxes: z.array(boxSchema).max(300),
-    connectors: z.array(connectorSchema).max(600),
-  }),
-).max(12);
+const tabsSchema = z
+  .array(
+    z.object({
+      id: z.string().min(1).max(64),
+      name: z.string().min(1).max(60),
+      boxes: z.array(boxSchema).max(300),
+      connectors: z.array(connectorSchema).max(600),
+    }),
+  )
+  .max(12);
 
 /** Cor de cada etapa no rascunho — a mesma família da paleta do editor. */
 const COR_POR_TIPO: Record<string, string> = {
@@ -130,12 +141,21 @@ const TIPO_POR_ETAPA: Record<string, string> = {
 };
 
 export default fp(async function funnelMapRoutes(fastify) {
-  async function getProjectAccess(projectId: string, userId: string, userRole: string) {
+  async function getProjectAccess(
+    projectId: string,
+    userId: string,
+    userRole: string,
+  ) {
     if (userRole === "guest") {
       const [member] = await fastify.db
         .select({ projectId: projectMembers.projectId })
         .from(projectMembers)
-        .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
+        .where(
+          and(
+            eq(projectMembers.projectId, projectId),
+            eq(projectMembers.userId, userId),
+          ),
+        )
         .limit(1);
       if (!member) return null;
     }
@@ -148,12 +168,18 @@ export default fp(async function funnelMapRoutes(fastify) {
   }
 
   /** A etapa é deste funil, e o funil é deste projeto? */
-  async function etapaDoProjeto(projectId: string, funnelId: string, stageId: string) {
+  async function etapaDoProjeto(
+    projectId: string,
+    funnelId: string,
+    stageId: string,
+  ) {
     const [linha] = await fastify.db
       .select({ id: funnelStages.id, funnelProject: funnels.projectId })
       .from(funnelStages)
       .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
-      .where(and(eq(funnelStages.id, stageId), eq(funnelStages.funnelId, funnelId)))
+      .where(
+        and(eq(funnelStages.id, stageId), eq(funnelStages.funnelId, funnelId)),
+      )
       .limit(1);
     return linha && linha.funnelProject === projectId ? linha : null;
   }
@@ -241,7 +267,11 @@ export default fp(async function funnelMapRoutes(fastify) {
       .where(eq(funnelStages.stageType, "mapa"))
       // A ordem final é por atividade (`ordenarMapasPorAtividade`, no fim
       // desta rota). Esta aqui só desempata o que tem a mesma data.
-      .orderBy(asc(projects.name), asc(funnels.name), asc(funnelStages.sortOrder));
+      .orderBy(
+        asc(projects.name),
+        asc(funnels.name),
+        asc(funnelStages.sortOrder),
+      );
 
     // Guest só enxerga projeto onde é membro — mesma regra de /api/projects.
     let permitidos: Set<string> | null = null;
@@ -275,7 +305,12 @@ export default fp(async function funnelMapRoutes(fastify) {
           blocos: abas.reduce((n, a) => n + (a.boxes?.length ?? 0), 0),
           conectores: abas.reduce((n, a) => n + (a.connectors?.length ?? 0), 0),
           previa: (primeira?.boxes ?? []).slice(0, 80).map((b) => ({
-            x: b.x, y: b.y, width: b.width, height: b.height, color: b.color, type: b.type,
+            x: b.x,
+            y: b.y,
+            width: b.width,
+            height: b.height,
+            color: b.color,
+            type: b.type,
           })),
         };
       });
@@ -306,7 +341,11 @@ export default fp(async function funnelMapRoutes(fastify) {
     const avulsos = soltos
       // Guest não vê mapa avulso: a regra de acesso é "membro do projeto", e o
       // mapa sem projeto não tem a quem perguntar. Com projeto, vale a regra.
-      .filter((m) => !ehGuest && (!m.projectId || !permitidos || permitidos.has(m.projectId)))
+      .filter(
+        (m) =>
+          !ehGuest &&
+          (!m.projectId || !permitidos || permitidos.has(m.projectId)),
+      )
       .map((m) => {
         const abas = m.tabs ?? [];
         const primeira = abas[0];
@@ -325,7 +364,12 @@ export default fp(async function funnelMapRoutes(fastify) {
           blocos: abas.reduce((n, a) => n + (a.boxes?.length ?? 0), 0),
           conectores: abas.reduce((n, a) => n + (a.connectors?.length ?? 0), 0),
           previa: (primeira?.boxes ?? []).slice(0, 80).map((b) => ({
-            x: b.x, y: b.y, width: b.width, height: b.height, color: b.color, type: b.type,
+            x: b.x,
+            y: b.y,
+            width: b.width,
+            height: b.height,
+            color: b.color,
+            type: b.type,
           })),
         };
       });
@@ -342,80 +386,132 @@ export default fp(async function funnelMapRoutes(fastify) {
   });
 
   // ---- GET mapa ----
-  fastify.get("/api/projects/:projectId/funnels/:funnelId/stages/:stageId/map", async (request, reply) => {
-    const params = paramsSchema.safeParse(request.params);
-    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
-    const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
-    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
-    const etapa = await etapaDoProjeto(params.data.projectId, params.data.funnelId, params.data.stageId);
-    if (!etapa) return reply.code(404).send({ error: "Etapa não encontrada" });
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/map",
+    async (request, reply) => {
+      const params = paramsSchema.safeParse(request.params);
+      if (!params.success)
+        return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const project = await getProjectAccess(
+        params.data.projectId,
+        request.userId,
+        request.userRole,
+      );
+      if (!project)
+        return reply.code(404).send({ error: "Projeto não encontrado" });
+      const etapa = await etapaDoProjeto(
+        params.data.projectId,
+        params.data.funnelId,
+        params.data.stageId,
+      );
+      if (!etapa)
+        return reply.code(404).send({ error: "Etapa não encontrada" });
 
-    const [mapa] = await fastify.db
-      .select()
-      .from(funnelMaps)
-      .where(eq(funnelMaps.stageId, params.data.stageId))
-      .limit(1);
+      const [mapa] = await fastify.db
+        .select()
+        .from(funnelMaps)
+        .where(eq(funnelMaps.stageId, params.data.stageId))
+        .limit(1);
 
-    if (mapa && (mapa.tabs ?? []).length > 0) {
-      // O `id` vai junto porque os COMENTÁRIOS são endereçados por ele — a
-      // tela conhece o caminho projeto/funil/etapa, não a chave do desenho.
-      return { id: mapa.id, tabs: mapa.tabs, rascunho: false, updatedAt: mapa.updatedAt.toISOString() };
-    }
+      if (mapa && (mapa.tabs ?? []).length > 0) {
+        // O `id` vai junto porque os COMENTÁRIOS são endereçados por ele — a
+        // tela conhece o caminho projeto/funil/etapa, não a chave do desenho.
+        return {
+          id: mapa.id,
+          tabs: mapa.tabs,
+          rascunho: false,
+          updatedAt: mapa.updatedAt.toISOString(),
+        };
+      }
 
-    // `rascunho: true` diz à tela que isto ainda não foi salvo por ninguém — o
-    // desenho é sugestão, e some se o time preferir começar do zero.
-    // Sem `id`: o mapa não existe ainda, e comentar num rascunho que ninguém
-    // salvou deixaria o comentário órfão no primeiro save.
-    return {
-      id: mapa?.id ?? null,
-      tabs: await rascunhoDasEtapas(params.data.funnelId),
-      rascunho: true,
-      updatedAt: null,
-    };
-  });
+      // `rascunho: true` diz à tela que isto ainda não foi salvo por ninguém — o
+      // desenho é sugestão, e some se o time preferir começar do zero.
+      // Sem `id`: o mapa não existe ainda, e comentar num rascunho que ninguém
+      // salvou deixaria o comentário órfão no primeiro save.
+      return {
+        id: mapa?.id ?? null,
+        tabs: await rascunhoDasEtapas(params.data.funnelId),
+        rascunho: true,
+        updatedAt: null,
+      };
+    },
+  );
 
   // ---- PUT mapa ----
-  fastify.put("/api/projects/:projectId/funnels/:funnelId/stages/:stageId/map", async (request, reply) => {
-    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
-    const params = paramsSchema.safeParse(request.params);
-    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
-    const body = z.object({ tabs: tabsSchema }).safeParse(request.body);
-    if (!body.success) {
-      return reply.code(400).send({ error: "Mapa inválido", details: body.error.flatten() });
-    }
-    const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
-    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
-    const etapa = await etapaDoProjeto(params.data.projectId, params.data.funnelId, params.data.stageId);
-    if (!etapa) return reply.code(404).send({ error: "Etapa não encontrada" });
+  fastify.put(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/map",
+    async (request, reply) => {
+      if (request.userRole === "guest")
+        return reply.code(403).send({ error: "Acesso negado" });
+      const params = paramsSchema.safeParse(request.params);
+      if (!params.success)
+        return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const body = z.object({ tabs: tabsSchema }).safeParse(request.body);
+      if (!body.success) {
+        return reply
+          .code(400)
+          .send({ error: "Mapa inválido", details: body.error.flatten() });
+      }
+      const project = await getProjectAccess(
+        params.data.projectId,
+        request.userId,
+        request.userRole,
+      );
+      if (!project)
+        return reply.code(404).send({ error: "Projeto não encontrado" });
+      const etapa = await etapaDoProjeto(
+        params.data.projectId,
+        params.data.funnelId,
+        params.data.stageId,
+      );
+      if (!etapa)
+        return reply.code(404).send({ error: "Etapa não encontrada" });
 
-    const agora = new Date();
-    await fastify.db
-      .insert(funnelMaps)
-      .values({
-        stageId: params.data.stageId,
-        tabs: body.data.tabs,
-        updatedBy: request.userId,
-        updatedAt: agora,
-      })
-      .onConflictDoUpdate({
-        target: funnelMaps.stageId,
-        set: { tabs: body.data.tabs, updatedBy: request.userId, updatedAt: agora },
-      });
+      const agora = new Date();
+      await fastify.db
+        .insert(funnelMaps)
+        .values({
+          stageId: params.data.stageId,
+          tabs: body.data.tabs,
+          updatedBy: request.userId,
+          updatedAt: agora,
+        })
+        .onConflictDoUpdate({
+          target: funnelMaps.stageId,
+          set: {
+            tabs: body.data.tabs,
+            updatedBy: request.userId,
+            updatedAt: agora,
+          },
+        });
 
-    return { ok: true, updatedAt: agora.toISOString() };
-  });
+      return { ok: true, updatedAt: agora.toISOString() };
+    },
+  );
 
   /** Apaga o desenho — o mapa volta ao rascunho das etapas. */
-  fastify.delete("/api/projects/:projectId/funnels/:funnelId/stages/:stageId/map", async (request, reply) => {
-    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
-    const params = paramsSchema.safeParse(request.params);
-    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
-    const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
-    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+  fastify.delete(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/map",
+    async (request, reply) => {
+      if (request.userRole === "guest")
+        return reply.code(403).send({ error: "Acesso negado" });
+      const params = paramsSchema.safeParse(request.params);
+      if (!params.success)
+        return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const project = await getProjectAccess(
+        params.data.projectId,
+        request.userId,
+        request.userRole,
+      );
+      if (!project)
+        return reply.code(404).send({ error: "Projeto não encontrado" });
 
-    await fastify.db.delete(funnelMaps).where(eq(funnelMaps.stageId, params.data.stageId));
-    return { ok: true };
-  });
+      await fastify.db
+        .delete(funnelMaps)
+        .where(eq(funnelMaps.stageId, params.data.stageId));
+      return { ok: true };
+    },
+  );
 
   // ============================================================
   // Mapa avulso — criado do Global, com ou sem funil
@@ -431,7 +527,8 @@ export default fp(async function funnelMapRoutes(fastify) {
   }
 
   fastify.post("/api/funnel-maps", async (request, reply) => {
-    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (!ehInterno(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const b = z
       .object({
         name: z.string().trim().min(1).max(160),
@@ -454,10 +551,13 @@ export default fp(async function funnelMapRoutes(fastify) {
         .from(funnels)
         .where(eq(funnels.id, b.data.funnelId))
         .limit(1);
-      if (!funil) return reply.code(404).send({ error: "Funil não encontrado" });
+      if (!funil)
+        return reply.code(404).send({ error: "Funil não encontrado" });
 
       const [{ ultimo }] = await fastify.db
-        .select({ ultimo: sql<number>`coalesce(max(${funnelStages.sortOrder}), -1)::int` })
+        .select({
+          ultimo: sql<number>`coalesce(max(${funnelStages.sortOrder}), -1)::int`,
+        })
         .from(funnelStages)
         .where(eq(funnelStages.funnelId, funil.id));
 
@@ -473,7 +573,11 @@ export default fp(async function funnelMapRoutes(fastify) {
 
       const [mapa] = await fastify.db
         .insert(funnelMaps)
-        .values({ stageId: etapa!.id, tabs: [], updatedBy: request.userId ?? null })
+        .values({
+          stageId: etapa!.id,
+          tabs: [],
+          updatedBy: request.userId ?? null,
+        })
         .returning();
       // Com funil, `tabs: []` é seguro: a rota do funil monta o rascunho das
       // etapas quando o desenho está vazio, e ele sempre traz uma aba.
@@ -525,10 +629,14 @@ export default fp(async function funnelMapRoutes(fastify) {
    * reaparecer numa cópia que ninguém discutiu confunde quem os escreveu.
    */
   fastify.post("/api/funnel-maps/:id/duplicar", async (request, reply) => {
-    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (!ehInterno(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
-    const b = z.object({ name: z.string().trim().min(1).max(160).optional() }).safeParse(request.body ?? {});
-    if (!p.success || !b.success) return reply.code(400).send({ error: "Dados inválidos" });
+    const b = z
+      .object({ name: z.string().trim().min(1).max(160).optional() })
+      .safeParse(request.body ?? {});
+    if (!p.success || !b.success)
+      return reply.code(400).send({ error: "Dados inválidos" });
 
     const [origem] = await fastify.db
       .select()
@@ -555,9 +663,11 @@ export default fp(async function funnelMapRoutes(fastify) {
   });
 
   fastify.get("/api/funnel-maps/:id", async (request, reply) => {
-    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (!ehInterno(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
-    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!p.success)
+      return reply.code(400).send({ error: "Parâmetros inválidos" });
 
     const [mapa] = await fastify.db
       .select()
@@ -583,8 +693,134 @@ export default fp(async function funnelMapRoutes(fastify) {
     };
   });
 
+  // ---- Compartilhar por link público --------------------------------------
+
+  /**
+   * O estado do compartilhamento: o token, ou `null`.
+   *
+   * Rota própria, e não um campo no GET do mapa: o mapa de etapa também é lido
+   * por convidados com permissão no projeto, e o token não pode chegar a eles —
+   * quem tem o token publica o mapa para o mundo.
+   */
+  fastify.get("/api/funnel-maps/:id/compartilhar", async (request, reply) => {
+    if (!ehInterno(request))
+      return reply.code(403).send({ error: "Acesso negado" });
+    const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    if (!p.success)
+      return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+    const [mapa] = await fastify.db
+      .select({ token: funnelMaps.shareToken })
+      .from(funnelMaps)
+      .where(eq(funnelMaps.id, p.data.id))
+      .limit(1);
+    if (!mapa) return reply.code(404).send({ error: "Mapa não encontrado" });
+    return { token: mapa.token ?? null };
+  });
+
+  /**
+   * Liga o link público. Idempotente: se já existe, devolve o MESMO token.
+   *
+   * Gerar outro a cada clique quebraria o link que a pessoa já mandou para
+   * alguém — o botão "copiar link" vira armadilha. Trocar o token é revogar e
+   * compartilhar de novo, de propósito.
+   *
+   * O formato do token mora em `gerarToken` — ver lá.
+   */
+  fastify.post("/api/funnel-maps/:id/compartilhar", async (request, reply) => {
+    if (!ehInterno(request))
+      return reply.code(403).send({ error: "Acesso negado" });
+    const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    if (!p.success)
+      return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+    const [mapa] = await fastify.db
+      .select({ token: funnelMaps.shareToken })
+      .from(funnelMaps)
+      .where(eq(funnelMaps.id, p.data.id))
+      .limit(1);
+    if (!mapa) return reply.code(404).send({ error: "Mapa não encontrado" });
+    if (mapa.token) return { token: mapa.token };
+
+    const token = gerarToken();
+    await fastify.db
+      .update(funnelMaps)
+      // Só onde ainda é nulo: dois cliques simultâneos não geram dois tokens,
+      // e o segundo não sobrescreve o link que o primeiro acabou de copiar.
+      .set({ shareToken: token })
+      .where(and(eq(funnelMaps.id, p.data.id), isNull(funnelMaps.shareToken)));
+
+    const [final] = await fastify.db
+      .select({ token: funnelMaps.shareToken })
+      .from(funnelMaps)
+      .where(eq(funnelMaps.id, p.data.id))
+      .limit(1);
+    return { token: final?.token ?? token };
+  });
+
+  /** Revoga: o link antigo para de funcionar na hora e nunca volta a valer. */
+  fastify.delete(
+    "/api/funnel-maps/:id/compartilhar",
+    async (request, reply) => {
+      if (!ehInterno(request))
+        return reply.code(403).send({ error: "Acesso negado" });
+      const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
+      if (!p.success)
+        return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      await fastify.db
+        .update(funnelMaps)
+        .set({ shareToken: null })
+        .where(eq(funnelMaps.id, p.data.id));
+      return { token: null };
+    },
+  );
+
+  /**
+   * A leitura PÚBLICA. Sem login — o middleware de auth deixa `/api/compartilhado/`
+   * passar, e quem autoriza é o token.
+   *
+   * ## O que sai, e o que fica
+   *
+   * Sai: nome, abas (blocos, conectores, textos, imagens) e a hora da última
+   * alteração — é o desenho que a pessoa decidiu mostrar.
+   *
+   * Fica: o `id` do mapa (sem ele os comentários não carregam na tela, e eles
+   * são conversa interna), o projeto, o funil, quem editou. Nada disso é o
+   * desenho.
+   *
+   * Token errado e mapa revogado devolvem o MESMO 404: distinguir "existe mas
+   * foi revogado" de "nunca existiu" daria a quem testa tokens um jeito de saber
+   * que acertou um.
+   */
+  fastify.get("/api/compartilhado/mapas/:token", async (request, reply) => {
+    const { token } = request.params as { token: string };
+    if (!tokenValido(token))
+      return reply.code(404).send({ error: "Link inválido ou revogado" });
+
+    const [mapa] = await fastify.db
+      .select({
+        nome: funnelMaps.name,
+        nomeDaEtapa: funnelStages.name,
+        tabs: funnelMaps.tabs,
+        updatedAt: funnelMaps.updatedAt,
+      })
+      .from(funnelMaps)
+      .leftJoin(funnelStages, eq(funnelStages.id, funnelMaps.stageId))
+      .where(eq(funnelMaps.shareToken, token))
+      .limit(1);
+    if (!mapa)
+      return reply.code(404).send({ error: "Link inválido ou revogado" });
+
+    // Sem cache no caminho: o link é "ao vivo", e um proxy guardando a resposta
+    // mostraria o desenho de minutos atrás para quem abriu agora.
+    reply.header("Cache-Control", "no-store");
+    return payloadPublico(mapa);
+  });
+
   fastify.put("/api/funnel-maps/:id", async (request, reply) => {
-    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (!ehInterno(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
     const b = z
       .object({
@@ -593,15 +829,21 @@ export default fp(async function funnelMapRoutes(fastify) {
         tabs: tabsSchema.optional(),
       })
       .safeParse(request.body);
-    if (!p.success || !b.success) return reply.code(400).send({ error: "Dados inválidos" });
+    if (!p.success || !b.success)
+      return reply.code(400).send({ error: "Dados inválidos" });
 
     const [atualizado] = await fastify.db
       .update(funnelMaps)
-      .set({ ...b.data, updatedBy: request.userId ?? null, updatedAt: new Date() })
+      .set({
+        ...b.data,
+        updatedBy: request.userId ?? null,
+        updatedAt: new Date(),
+      })
       .where(eq(funnelMaps.id, p.data.id))
       .returning();
 
-    if (!atualizado) return reply.code(404).send({ error: "Mapa não encontrado" });
+    if (!atualizado)
+      return reply.code(404).send({ error: "Mapa não encontrado" });
     return atualizado;
   });
 
@@ -613,10 +855,12 @@ export default fp(async function funnelMapRoutes(fastify) {
    * deixa de ser usado.
    */
   fastify.put("/api/funnel-maps/:id/vincular", async (request, reply) => {
-    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (!ehInterno(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
     const b = z.object({ funnelId: z.string().uuid() }).safeParse(request.body);
-    if (!p.success || !b.success) return reply.code(400).send({ error: "Dados inválidos" });
+    if (!p.success || !b.success)
+      return reply.code(400).send({ error: "Dados inválidos" });
 
     const [mapa] = await fastify.db
       .select()
@@ -624,7 +868,8 @@ export default fp(async function funnelMapRoutes(fastify) {
       .where(eq(funnelMaps.id, p.data.id))
       .limit(1);
     if (!mapa) return reply.code(404).send({ error: "Mapa não encontrado" });
-    if (mapa.stageId) return reply.code(409).send({ error: "Este mapa já está num funil." });
+    if (mapa.stageId)
+      return reply.code(409).send({ error: "Este mapa já está num funil." });
 
     const [funil] = await fastify.db
       .select({ id: funnels.id, projectId: funnels.projectId })
@@ -634,7 +879,9 @@ export default fp(async function funnelMapRoutes(fastify) {
     if (!funil) return reply.code(404).send({ error: "Funil não encontrado" });
 
     const [{ ultimo }] = await fastify.db
-      .select({ ultimo: sql<number>`coalesce(max(${funnelStages.sortOrder}), -1)::int` })
+      .select({
+        ultimo: sql<number>`coalesce(max(${funnelStages.sortOrder}), -1)::int`,
+      })
       .from(funnelStages)
       .where(eq(funnelStages.funnelId, funil.id));
 
@@ -663,9 +910,11 @@ export default fp(async function funnelMapRoutes(fastify) {
   });
 
   fastify.delete("/api/funnel-maps/:id", async (request, reply) => {
-    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (!ehInterno(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
-    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!p.success)
+      return reply.code(400).send({ error: "Parâmetros inválidos" });
 
     const apagados = await fastify.db
       .delete(funnelMaps)
@@ -691,9 +940,11 @@ export default fp(async function funnelMapRoutes(fastify) {
    * por aba faria uma ida ao banco a cada troca de aba.
    */
   fastify.get("/api/funnel-maps/:id/comentarios", async (request, reply) => {
-    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (!ehInterno(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
-    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!p.success)
+      return reply.code(400).send({ error: "Parâmetros inválidos" });
 
     const linhas = await fastify.db
       .select({
@@ -715,12 +966,16 @@ export default fp(async function funnelMapRoutes(fastify) {
       .orderBy(asc(funnelMapComments.createdAt));
 
     return {
-      comentarios: linhas.map((c) => ({ ...c, createdAt: c.createdAt.toISOString() })),
+      comentarios: linhas.map((c) => ({
+        ...c,
+        createdAt: c.createdAt.toISOString(),
+      })),
     };
   });
 
   fastify.post("/api/funnel-maps/:id/comentarios", async (request, reply) => {
-    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (!ehInterno(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
     const b = z
       .object({
@@ -732,7 +987,8 @@ export default fp(async function funnelMapRoutes(fastify) {
         y: z.coerce.number().int().min(-100_000).max(100_000).default(0),
       })
       .safeParse(request.body);
-    if (!p.success || !b.success) return reply.code(400).send({ error: "Dados inválidos" });
+    if (!p.success || !b.success)
+      return reply.code(400).send({ error: "Dados inválidos" });
 
     // O mapa precisa existir: sem esta checagem, um id inventado criaria um
     // comentário que nenhuma tela mostra e ninguém consegue apagar.
@@ -761,7 +1017,8 @@ export default fp(async function funnelMapRoutes(fastify) {
   });
 
   fastify.put("/api/funnel-maps/comentarios/:id", async (request, reply) => {
-    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (!ehInterno(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
     const b = z
       .object({
@@ -773,7 +1030,8 @@ export default fp(async function funnelMapRoutes(fastify) {
         boxId: z.string().trim().max(64).nullable().optional(),
       })
       .safeParse(request.body);
-    if (!p.success || !b.success) return reply.code(400).send({ error: "Dados inválidos" });
+    if (!p.success || !b.success)
+      return reply.code(400).send({ error: "Dados inválidos" });
 
     const [atualizado] = await fastify.db
       .update(funnelMapComments)
@@ -781,7 +1039,8 @@ export default fp(async function funnelMapRoutes(fastify) {
       .where(eq(funnelMapComments.id, p.data.id))
       .returning();
 
-    if (!atualizado) return reply.code(404).send({ error: "Comentário não encontrado" });
+    if (!atualizado)
+      return reply.code(404).send({ error: "Comentário não encontrado" });
 
     /**
      * Resolver a conversa resolve as respostas dela.
@@ -801,16 +1060,19 @@ export default fp(async function funnelMapRoutes(fastify) {
 
   /** Apagar a conversa leva as respostas junto (CASCADE no `parent_id`). */
   fastify.delete("/api/funnel-maps/comentarios/:id", async (request, reply) => {
-    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (!ehInterno(request))
+      return reply.code(403).send({ error: "Acesso negado" });
     const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
-    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (!p.success)
+      return reply.code(400).send({ error: "Parâmetros inválidos" });
 
     const apagados = await fastify.db
       .delete(funnelMapComments)
       .where(eq(funnelMapComments.id, p.data.id))
       .returning({ id: funnelMapComments.id });
 
-    if (apagados.length === 0) return reply.code(404).send({ error: "Comentário não encontrado" });
+    if (apagados.length === 0)
+      return reply.code(404).send({ error: "Comentário não encontrado" });
     return { ok: true };
   });
 
@@ -825,7 +1087,8 @@ export default fp(async function funnelMapRoutes(fastify) {
    * dispara o aviso no ClickUp.
    */
   fastify.post("/api/funnel-maps/imagem", async (request, reply) => {
-    if (!ehInterno(request)) return reply.code(403).send({ error: "Acesso negado" });
+    if (!ehInterno(request))
+      return reply.code(403).send({ error: "Acesso negado" });
 
     const cfg = {
       endpoint: fastify.config.STORAGE_ENDPOINT,
@@ -837,10 +1100,14 @@ export default fp(async function funnelMapRoutes(fastify) {
       forcePathStyle: fastify.config.STORAGE_FORCE_PATH_STYLE === "true",
     };
     if (!isStorageConfigured(cfg) || pareceplaceholder(cfg.publicUrl)) {
-      return reply.code(503).send({ error: "Storage não configurado no servidor." });
+      return reply
+        .code(503)
+        .send({ error: "Storage não configurado no servidor." });
     }
 
-    const arquivo = await request.file({ limits: { fileSize: MAX_UPLOAD_BYTES } });
+    const arquivo = await request.file({
+      limits: { fileSize: MAX_UPLOAD_BYTES },
+    });
     if (!arquivo) return reply.code(400).send({ error: "Envie a imagem." });
     /**
      * Imagem ou PDF — os dois tipos que o mapa desenha.
@@ -852,19 +1119,27 @@ export default fp(async function funnelMapRoutes(fastify) {
     const ehImagem = arquivo.mimetype.startsWith("image/");
     const ehPdf = arquivo.mimetype === "application/pdf";
     if ((!ehImagem && !ehPdf) || !isAllowedMime(arquivo.mimetype)) {
-      return reply.code(400).send({ error: `Tipo não permitido: ${arquivo.mimetype}` });
+      return reply
+        .code(400)
+        .send({ error: `Tipo não permitido: ${arquivo.mimetype}` });
     }
 
     try {
       const buffer = await arquivo.toBuffer();
-      if (buffer.length === 0) return reply.code(400).send({ error: "Arquivo vazio." });
+      if (buffer.length === 0)
+        return reply.code(400).send({ error: "Arquivo vazio." });
 
       const r = await uploadDireto(cfg, {
         corpo: Readable.from(buffer),
         mime: arquivo.mimetype,
         prefix: "mapa",
       });
-      return { url: r.publicUrl, key: r.key, bytes: buffer.length, mime: arquivo.mimetype };
+      return {
+        url: r.publicUrl,
+        key: r.key,
+        bytes: buffer.length,
+        mime: arquivo.mimetype,
+      };
     } catch (err) {
       fastify.log.error({ err }, "upload de imagem do mapa falhou");
       return reply.code(502).send({ error: "Não consegui subir a imagem." });

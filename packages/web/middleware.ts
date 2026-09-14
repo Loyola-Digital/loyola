@@ -7,10 +7,16 @@ const isPublicRoute = createRouteMatcher([
   "/sign-up(.*)",
   "/invite(.*)",
   "/pending-approval(.*)",
+  // Mapa de funil compartilhado por link: quem abre não tem conta. O acesso é
+  // decidido pelo token na URL, lá na API — aqui só não se exige login.
+  "/m/(.*)",
 ]);
 
 // Routes that guests are allowed to access
-const isGuestAllowedRoute = createRouteMatcher(["/projects(.*)", "/invite(.*)"]);
+const isGuestAllowedRoute = createRouteMatcher([
+  "/projects(.*)",
+  "/invite(.*)",
+]);
 
 export default clerkMiddleware(async (auth, request) => {
   if (isPublicRoute(request)) return;

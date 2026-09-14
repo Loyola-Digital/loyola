@@ -791,6 +791,15 @@ export const funnelMaps = pgTable("funnel_maps", {
     >()
     .notNull()
     .default([]),
+  /**
+   * Segredo do link público. `null` = mapa não compartilhado.
+   *
+   * Não é o `id`: o id circula em URL interna, log e print, e publicar por ele
+   * tornaria público todo mapa cujo id alguém já viu, sem volta. Revogar é
+   * voltar a `null` — o link antigo morre na hora. Índice único parcial na
+   * migration 0147.
+   */
+  shareToken: varchar("share_token", { length: 64 }),
   updatedBy: uuid("updated_by").references(() => users.id, {
     onDelete: "set null",
   }),
