@@ -372,14 +372,18 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
   /** Seta selecionada — permite apagar UMA ligação, sem levar as outras junto. */
   const [conectorSel, setConectorSel] = useState<string | null>(null);
   /**
-   * Curva ou reta, para o mapa inteiro.
+   * Curva ou reta, para o mapa inteiro — e o mapa SEMPRE abre reto.
    *
-   * Preferencia de quem desenha, nao propriedade da ligacao: um mapa com
-   * metade das setas curvas e metade retas fica sujo, e ninguem escolhe isso
-   * de proposito seta a seta. Fica no `localStorage` porque acompanha a
-   * pessoa, nao o documento.
+   * Vale para o mapa inteiro, não por ligação: metade curva e metade reta fica
+   * sujo, e ninguém escolhe isso seta a seta.
+   *
+   * Já foi preferência guardada no `localStorage`. Deixou de ser por decisão do
+   * time: reta é o padrão da casa, e lembrar a escolha fazia o mesmo mapa abrir
+   * curvo para uma pessoa e reto para outra — inclusive no link público, onde
+   * quem abre nunca escolheu nada. O botão continua trocando durante a sessão,
+   * mas não grava.
    */
-  const [setasRetas, setSetasRetas] = useState(false);
+  const [setasRetas, setSetasRetas] = useState(true);
   /**
    * O mapa em claro, dentro de um app escuro.
    *
@@ -447,15 +451,8 @@ export function FunnelMapCanvas({ projectId, funnelId, stageId, mapId, token, al
   );
   /** Escrevendo o texto de uma ligação. `null` = ninguém editando. */
   const [rotulando, setRotulando] = useState<{ id: string; valor: string } | null>(null);
-  useEffect(() => {
-    try { setSetasRetas(localStorage.getItem("mapa:setas") === "retas"); } catch { /* ignora */ }
-  }, []);
   function alternarSetas() {
-    setSetasRetas((v) => {
-      const novo = !v;
-      try { localStorage.setItem("mapa:setas", novo ? "retas" : "curvas"); } catch { /* ignora */ }
-      return novo;
-    });
+    setSetasRetas((v) => !v);
   }
   /**
    * O seletor que abre no duplo clique de uma bolinha.
