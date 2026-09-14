@@ -31,7 +31,9 @@ export interface ClienteRegistrado {
  * fluxo — por isso um cliente por ambiente (produção e local têm callbacks
  * diferentes).
  */
-export async function registrarCliente(redirectUri: string): Promise<ClienteRegistrado> {
+export async function registrarCliente(
+  redirectUri: string,
+): Promise<ClienteRegistrado> {
   const res = await fetch(`${BASE}/oauth/register`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -47,11 +49,15 @@ export async function registrarCliente(redirectUri: string): Promise<ClienteRegi
   });
   const txt = await res.text();
   if (!res.ok) {
-    throw new Error(`SendFlow recusou o registro do cliente (${res.status}): ${txt.slice(0, 160)}`);
+    throw new Error(
+      `SendFlow recusou o registro do cliente (${res.status}): ${txt.slice(0, 160)}`,
+    );
   }
   const d = JSON.parse(txt) as { client_id?: string; client_secret?: string };
   if (!d.client_id || !d.client_secret) {
-    throw new Error("SendFlow registrou o cliente sem devolver client_id/secret.");
+    throw new Error(
+      "SendFlow registrou o cliente sem devolver client_id/secret.",
+    );
   }
   return { clientId: d.client_id, clientSecret: d.client_secret };
 }
@@ -134,10 +140,15 @@ export interface TokensDoCallback {
   refreshToken: string;
   expiresAt: number;
   userId: string;
+  /** A URI usada nesta autorização — é a que o cliente aceita daqui em diante. */
+  redirectUri: string;
 }
 
 /** Troca o `code` pelos tokens. Consome o `state`: serve uma vez só. */
-export async function trocarCodigo(state: string, code: string): Promise<TokensDoCallback> {
+export async function trocarCodigo(
+  state: string,
+  code: string,
+): Promise<TokensDoCallback> {
   limparVencidos();
   const pedido = pendentes.get(state);
   if (!pedido) {
@@ -163,7 +174,9 @@ export async function trocarCodigo(state: string, code: string): Promise<TokensD
   });
   const txt = await res.text();
   if (!res.ok) {
-    throw new Error(`SendFlow recusou a troca do código (${res.status}): ${txt.slice(0, 160)}`);
+    throw new Error(
+      `SendFlow recusou a troca do código (${res.status}): ${txt.slice(0, 160)}`,
+    );
   }
   const t = JSON.parse(txt) as {
     access_token: string;
@@ -184,5 +197,6 @@ export async function trocarCodigo(state: string, code: string): Promise<TokensD
     refreshToken: t.refresh_token,
     expiresAt: Date.now() + ((t.expires_in ?? 3600) - 60) * 1000,
     userId: pedido.userId,
+    redirectUri: pedido.redirectUri,
   };
 }

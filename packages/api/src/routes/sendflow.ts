@@ -356,14 +356,39 @@ export default fp(async function sendflowRoutes(fastify) {
             clientId: sendflowConnections.clientId,
             secret: sendflowConnections.clientSecretEncrypted,
             iv: sendflowConnections.clientSecretIv,
+            redirectUri: sendflowConnections.redirectUri,
           })
           .from(sendflowConnections)
           .where(isNull(sendflowConnections.projectId))
           .limit(1);
+
+        /*
+         * Só reusa o cliente se ele foi registrado com ESTA `redirect_uri`.
+         *
+         * O SendFlow amarra a URI ao cliente no registro. Mandar outra devolve
+         * `redirect_uri not registered` — e o erro só aparece no navegador,
+         * depois do redirect, enquanto a tela continua dizendo "Conectado"
+         * porque a linha no banco segue lá. Foi exatamente o que aconteceu
+         * quando a URL pública da API mudou depois do registro.
+         *
+         * `null` é conexão anterior a esta coluna: não dá para saber com que
+         * URI foi registrada, então vale a regra antiga (reusa). Se falhar, o
+         * Desconectar + Conectar registra um cliente novo e grava a URI.
+         */
+        const podeReusar =
+          conn &&
+          (conn.redirectUri === null || conn.redirectUri === redirectUri);
+        if (conn && !podeReusar) {
+          request.log.info(
+            { registrada: conn.redirectUri, atual: redirectUri },
+            "[sendflow] redirect_uri mudou — registrando cliente novo",
+          );
+        }
+
         const { url } = await montarUrlDeAutorizacao(
           redirectUri,
           request.userId,
-          conn
+          podeReusar
             ? {
                 clientId: conn.clientId,
                 clientSecret: decrypt(conn.secret, conn.iv),
@@ -372,12 +397,10 @@ export default fp(async function sendflowRoutes(fastify) {
         );
         return { url };
       } catch (err) {
-        return reply
-          .code(502)
-          .send({
-            error:
-              err instanceof Error ? err.message : "Falha ao iniciar a conexão",
-          });
+        return reply.code(502).send({
+          error:
+            err instanceof Error ? err.message : "Falha ao iniciar a conexão",
+        });
       }
     },
   );
@@ -415,6 +438,9 @@ export default fp(async function sendflowRoutes(fastify) {
         accessTokenEncrypted: acc.encrypted,
         accessTokenIv: acc.iv,
         accessTokenExpiresAt: new Date(t.expiresAt),
+        // A URI que ESTE cliente aceita, para a próxima conexão saber se pode
+        // reusá-lo.
+        redirectUri: t.redirectUri,
         updatedAt: new Date(),
       };
       const [existente] = await fastify.db

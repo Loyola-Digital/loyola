@@ -4116,6 +4116,17 @@ export const sendflowConnections = pgTable("sendflow_connections", {
     onDelete: "cascade",
   }),
   clientId: varchar("client_id", { length: 255 }).notNull(),
+  /**
+   * A `redirect_uri` com que ESTE cliente foi registrado.
+   *
+   * O cliente é reusado entre conexões, mas a URI é montada a cada pedido. Se
+   * divergirem, o SendFlow recusa com `redirect_uri not registered` — e a tela
+   * segue dizendo "Conectado", porque a linha continua aqui. Guardar permite
+   * comparar e registrar um cliente novo quando muda.
+   *
+   * `null` = conexão anterior a esta coluna.
+   */
+  redirectUri: text("redirect_uri"),
   clientSecretEncrypted: text("client_secret_encrypted").notNull(),
   clientSecretIv: varchar("client_secret_iv", { length: 64 }).notNull(),
   refreshTokenEncrypted: text("refresh_token_encrypted").notNull(),
