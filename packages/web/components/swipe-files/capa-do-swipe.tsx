@@ -22,7 +22,14 @@
  * fato identifica — título e domínio — sobre uma cor derivada do título.
  */
 
-import { Code2, FileText, FileType, Image as ImageIcon, Link2, Play } from "lucide-react";
+import {
+  Code2,
+  FileText,
+  FileType,
+  Image as ImageIcon,
+  Link2,
+  Play,
+} from "lucide-react";
 import { miniaturaDoSwipe } from "@/lib/utils/miniatura-do-swipe";
 import type { SwipeFile } from "@/lib/hooks/use-swipe-files";
 
@@ -33,8 +40,22 @@ export function corDe(texto: string): string {
   return `hsl(${soma % 360} 42% 32%)`;
 }
 
-const ICONE = { image: ImageIcon, video: Play, pdf: FileText, link: Link2, html: Code2, doc: FileType } as const;
-const ROTULO = { image: "Imagem", video: "Vídeo", pdf: "PDF", link: "Link", html: "Página", doc: "Documento" } as const;
+const ICONE = {
+  image: ImageIcon,
+  video: Play,
+  pdf: FileText,
+  link: Link2,
+  html: Code2,
+  doc: FileType,
+} as const;
+const ROTULO = {
+  image: "Imagem",
+  video: "Vídeo",
+  pdf: "PDF",
+  link: "Link",
+  html: "Página",
+  doc: "Documento",
+} as const;
 
 export function CapaSemImagem({
   item,
@@ -48,7 +69,8 @@ export function CapaSemImagem({
 
   let dominio: string | null = null;
   try {
-    if (item.sourceUrl) dominio = new URL(item.sourceUrl).hostname.replace(/^www\./, "");
+    if (item.sourceUrl)
+      dominio = new URL(item.sourceUrl).hostname.replace(/^www\./, "");
   } catch {
     /* origem inválida: fica sem o domínio, que é só um enfeite aqui */
   }
@@ -60,7 +82,9 @@ export function CapaSemImagem({
       className={`flex h-full w-full flex-col justify-between overflow-hidden text-white ${
         compacta ? "items-center justify-center p-1" : "p-2"
       }`}
-      style={{ background: `linear-gradient(150deg, ${corDe(item.title)}, rgba(0,0,0,.55))` }}
+      style={{
+        background: `linear-gradient(150deg, ${corDe(item.title)}, rgba(0,0,0,.55))`,
+      }}
     >
       {compacta ? (
         <Icone className="h-3.5 w-3.5 opacity-80" />
@@ -68,7 +92,9 @@ export function CapaSemImagem({
         <>
           <Icone className="h-3 w-3 shrink-0 opacity-60" />
           <div className="min-w-0">
-            <p className="line-clamp-3 text-[10px] font-semibold leading-snug">{item.title}</p>
+            <p className="line-clamp-3 text-[10px] font-semibold leading-snug">
+              {item.title}
+            </p>
             <p className="mt-0.5 truncate text-[9px] opacity-70">
               {dominio && !doClickUp ? dominio : ROTULO[item.assetKind]}
             </p>
@@ -110,6 +136,20 @@ export function CapaDoSwipe({
         // `#t=0.1` pede o primeiro quadro: sem isso o player mostra um
         // retângulo preto até alguém dar play, e a miniatura não diz nada.
         src={`${url}#t=0.1`}
+        /*
+         * `anonymous` para o quadro poder virar imagem.
+         *
+         * Sem ele o vídeo carrega em modo no-cors, e qualquer canvas que o
+         * desenhe fica "contaminado": exportar o mapa em PDF quebrava inteiro
+         * com "Tainted canvases may not be exported", porque o html-to-image
+         * clona `<video>` desenhando o quadro e chamando `toDataURL`.
+         *
+         * Seguro porque os vídeos moram todos no bucket do Supabase, que manda
+         * `Access-Control-Allow-Origin: *` (medido: 114 de 114, inclusive na
+         * resposta 206 do range). Um host SEM CORS faria o vídeo nem carregar
+         * com este atributo — se algum dia vier vídeo de fora, revisar aqui.
+         */
+        crossOrigin="anonymous"
         preload="metadata"
         muted
         playsInline
