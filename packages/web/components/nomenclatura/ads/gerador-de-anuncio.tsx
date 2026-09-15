@@ -152,8 +152,8 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
   }, [proximo.data, editando]);
 
   const partes = useMemo(() => [...(hooks.data ?? []), ...(bodies.data ?? [])].map((p) => ({ id: p.id, code: p.code })), [hooks.data, bodies.data]);
-  // AC7: no padrão antigo a prévia é a de 4 campos — o estado não tem os três e o tipo é adv; a prévia normal pediria os três.
-  const previa = useMemo(() => (padraoAntigo ? previaDoAnuncio({ ...estado, creativeType: origem.data?.creativeType ?? estado.creativeType }, experts.data ?? [], partes) : previaDoAnuncio(estado, experts.data ?? [], partes)), [estado, experts.data, partes, padraoAntigo, origem.data?.creativeType]);
+  // AC7: no padrão antigo a prévia é a de 4 campos — mesma opção `legado` do build (achado do QA: sem ela, Salvar ficava desabilitado).
+  const previa = useMemo(() => previaDoAnuncio(estado, experts.data ?? [], partes, { legado: padraoAntigo }), [estado, experts.data, partes, padraoAntigo]);
   const escolher = (campo: keyof EstadoDoAnuncio) => (v: string) => setEstado((e) => aoEscolherNoAnuncio(e, campo, v));
   const nnOcupado = !editando && proximo.data?.creativeSeqTexto && estado.creativeSeq && estado.creativeSeq !== proximo.data.creativeSeqTexto;
   const opcoesDe = (xs: { value: string; description: string | null }[] | undefined) => (xs ?? []).map((v) => ({ value: v.value, rotulo: v.description ? `${v.value} — ${v.description}` : v.value }));

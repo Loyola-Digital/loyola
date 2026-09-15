@@ -81,9 +81,10 @@ export function nnDe(texto: string): number | undefined {
 export type PartesDoExpert = { id: string; code: string }[];
 
 /** Do estado para os campos do nome; a descrição vai normalizada (mesma função do servidor). Story 47.13: origem/hook/body só entram em vídeo. */
-export function camposDoAnuncio(estado: EstadoDoAnuncio, experts: { id: string; code: string }[], partes: PartesDoExpert = []): Partial<AdFields> {
+export function camposDoAnuncio(estado: EstadoDoAnuncio, experts: { id: string; code: string }[], partes: PartesDoExpert = [], opts: { legado?: boolean } = {}): Partial<AdFields> {
   const desc = estado.description.trim() ? normalizarCodigo(estado.description, "anuncio") : null;
-  const video = ehVideo(estado.creativeType);
+  // AC7: vídeo do padrão antigo edita como 4 campos — os três não entram nem que o estado os tenha.
+  const video = ehVideo(estado.creativeType) && !opts.legado;
   const codigo = (id: string) => partes.find((p) => p.id === id)?.code;
   return {
     creativeType: estado.creativeType || undefined,
@@ -111,9 +112,9 @@ export interface PreviaDoAnuncio {
   erroDaDescricao: string | null;
 }
 
-export function previaDoAnuncio(estado: EstadoDoAnuncio, experts: { id: string; code: string }[], partes: PartesDoExpert = []): PreviaDoAnuncio {
-  const campos = camposDoAnuncio(estado, experts, partes);
-  const pedacos = pedacosDoAnuncio(campos);
+export function previaDoAnuncio(estado: EstadoDoAnuncio, experts: { id: string; code: string }[], partes: PartesDoExpert = [], opts: { legado?: boolean } = {}): PreviaDoAnuncio {
+  const campos = camposDoAnuncio(estado, experts, partes, opts);
+  const pedacos = pedacosDoAnuncio(campos, opts);
   const estruturais = pedacos.filter((p) => p.campo !== "description");
   const completo = estruturais.every((p) => !p.faltando);
   const desc = estado.description.trim() ? normalizarCodigo(estado.description, "anuncio") : null;
@@ -123,7 +124,7 @@ export function previaDoAnuncio(estado: EstadoDoAnuncio, experts: { id: string; 
   let erro: string | null = null;
   if (completo && !erroDaDescricao) {
     try {
-      const r = buildAdName(campos as AdFields);
+      const r = buildAdName(campos as AdFields, opts);
       estrutura = r.structure;
       nome = r.name;
     } catch (e) {

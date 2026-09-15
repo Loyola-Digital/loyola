@@ -193,10 +193,11 @@ export interface PedacoDoAnuncio {
 /**
  * Pedaços para a prévia, aceitando campos vazios. A descrição nunca "falta" —
  * é opcional. Story 47.13: com tipo `adv` a prévia tem os 7 pedaços; sem tipo
- * escolhido, ou com `ad`/`carr`, os 4.
+ * escolhido, ou com `ad`/`carr`, os 4. `opts.legado`: vídeo do padrão antigo
+ * sendo editado — 4 pedaços (AC7), como o build.
  */
-export function pedacosDoAnuncio(f: Partial<AdFields>): PedacoDoAnuncio[] {
-  const video = ehVideo(f.creativeType);
+export function pedacosDoAnuncio(f: Partial<AdFields>, opts: { legado?: boolean } = {}): PedacoDoAnuncio[] {
+  const video = ehVideo(f.creativeType) && !opts.legado;
   const creative = f.creativeType && f.creativeSeq ? `${f.creativeType}${doisDigitos(f.creativeSeq)}` : "";
   const launch = f.launchType && f.launchSeq ? `${f.launchType}${doisDigitos(f.launchSeq)}` : "";
   const valorDe: Record<Exclude<PosicaoDoAnuncio, "description">, string> = {

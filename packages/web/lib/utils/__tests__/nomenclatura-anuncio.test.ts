@@ -113,4 +113,13 @@ describe("Story 47.13 — vídeo v2 no gerador", () => {
     expect(estadoDeAnuncio(antigo, "duplicar")).toMatchObject({ creativeType: "adv", creativeSeq: "", origin: "", hookId: "", bodyId: "" });
     expect(previaDoAnuncio(estadoDeAnuncio(antigo, "duplicar"), experts, partes).completo).toBe(false);
   });
+  it("AC7 (achado do QA): EDITAR vídeo do padrão antigo — prévia de 4 campos, completa, estrutura igual à gravada; sem `legado` ficava com 8 pedaços e Salvar desabilitado", () => {
+    const antigo = { expertId: "e", creativeType: "adv", creativeSeq: 7, launchType: "pg", launchSeq: 2, adDate: "2026-09-01", description: null, notes: null, origin: null, hookId: null, bodyId: null };
+    const p = previaDoAnuncio(estadoDeAnuncio(antigo, "editar"), experts, [], { legado: true });
+    expect(p.pedacos.map((x) => x.campo)).toEqual(["creative", "expert", "launch", "date", "description"]);
+    expect(p.completo).toBe(true);
+    expect(p.estrutura).toBe("adv07_dg_pg02_09-2026--");
+    // sem a opção, o mesmo estado é incompleto — é o defeito que o teste protege
+    expect(previaDoAnuncio(estadoDeAnuncio(antigo, "editar"), experts, []).completo).toBe(false);
+  });
 });
