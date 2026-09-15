@@ -58,6 +58,7 @@ import { useFunnelAdsetsMap } from "@/lib/hooks/use-funnel-adsets-map";
 import { overrideCplWithUniqueIngressos, type DailyRow } from "@/lib/utils/funnel-metrics";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StageCreativePerformanceTable } from "./stage-creative-performance-table";
+import { AvisoDeCacheVencido } from "./aviso-de-cache-vencido";
 import { TopCreativesGallery } from "./top-creatives-gallery";
 import { SurveyQualificationSection } from "./survey-qualification-section";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
@@ -1164,7 +1165,7 @@ function TesteLpSection({
   stageType: StageType;
 }) {
   const [publicoFilter, setPublicoFilter] = useState<"todos" | "hot" | "cold">("todos");
-  const { lps, isLoading } = useLpPerformanceData({ projectId, funnelId, stageId, days, publicoFilter });
+  const { lps, isLoading, cache } = useLpPerformanceData({ projectId, funnelId, stageId, days, publicoFilter });
   // Mini-funil por LP: só busca depois que alguém expande a primeira linha.
   const [funilPedido, setFunilPedido] = useState(false);
   const lpFunnel = useLpFunnel(projectId, funnelId, stageId, days, funilPedido);
@@ -1183,6 +1184,8 @@ function TesteLpSection({
 
   return (
     <SectionShell icon={LayoutTemplate} title="TESTES DE LPs" subtitle="Desempenho das landing pages">
+      {/* Story 18.81 (AC4): cache vencido servido por falha da Meta nunca é silêncio. */}
+      <AvisoDeCacheVencido cache={cache} />
       <div className="-mt-1 flex justify-end">
         <div className="flex items-center gap-1 rounded-md border border-border/40 p-0.5">
           {(["todos", "hot", "cold"] as const).map((opt) => (

@@ -14,6 +14,13 @@ import { useMemo } from "react";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useCrossReferenceLeads } from "@/lib/hooks/useCrossReferenceLeads";
 import { applyMetaAdsTax } from "@/lib/utils/funnel-metrics";
+import {
+  CHAVE_CREATIVE_PERFORMANCE,
+  chaveDeRecomputo,
+  montarUrlCreativePerformance,
+  pedidosDeRecomputo,
+  type CacheDaResposta,
+} from "@/lib/utils/recomputo-creative-performance";
 
 export interface CreativePerformanceData {
   adId: string;
@@ -90,6 +97,46 @@ export interface StageCreativePerformanceResponse {
     source: "stage" | "funnel" | "none";
     campaigns: { id: string; name: string }[];
   };
+  /**
+   * Story 18.81: de onde veio a resposta. `stale: true` = a Meta falhou e a
+   * rota serviu o cache VENCIDO em vez de erro — a tela precisa dizer isso.
+   */
+  _cache?: CacheDaResposta;
+}
+
+/**
+ * Story 18.81: a query de `creative-performance` é UMA só, compartilhada pela
+ * tabela de Criativos e pela de LPs (antes eram dois requests idênticos por
+ * página, com queryKeys diferentes). Uma query só é o que garante que o pedido
+ * de recomputo do botão Atualizar vale para as duas tabelas ao mesmo tempo —
+ * com duas, a primeira consumiria o pedido e a segunda leria o cache velho.
+ *
+ * `refresh=1` entra na URL só quando o botão pediu (ver
+ * recomputo-creative-performance.ts); navegação normal lê o cache de 2h.
+ */
+export function opcoesDaQueryCreativePerformance(
+  apiClient: <T>(path: string) => Promise<T>,
+  funnelId: string,
+  stageId: string,
+  days: number,
+) {
+  return {
+    queryKey: [CHAVE_CREATIVE_PERFORMANCE, funnelId, stageId, days] as const,
+    queryFn: () =>
+      apiClient<StageCreativePerformanceResponse>(
+        montarUrlCreativePerformance({
+          funnelId,
+          stageId,
+          days,
+          recomputar: pedidosDeRecomputo.consumir(chaveDeRecomputo(stageId, days)),
+        }),
+      ),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    // Endpoint pode custar até ~25s no 1º compute (Meta ao vivo). Sem cap, o
+    // retry padrão (3×) multiplicava isso e parecia "loading infinito".
+    retry: 1,
+  };
 }
 
 interface UseStageCreativePerformanceOptions {
@@ -109,19 +156,10 @@ export function useStageCreativePerformance({
 }: UseStageCreativePerformanceOptions) {
   const apiClient = useApiClient();
 
-  // Fetch base creative performance data
+  // Fetch base creative performance data (query compartilhada com a tabela de LPs)
   const baseQuery = useQuery<StageCreativePerformanceResponse, Error>({
-    queryKey: ["stage-creative-performance", funnelId, stageId, days],
-    queryFn: () =>
-      apiClient<StageCreativePerformanceResponse>(
-        `/api/funnels/${funnelId}/stages/${stageId}/creative-performance?days=${days}`,
-      ),
+    ...opcoesDaQueryCreativePerformance(apiClient, funnelId, stageId, days),
     enabled: enabled && !!funnelId && !!stageId,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
-    // Endpoint pode custar até ~25s no 1º compute (Meta ao vivo). Sem cap, o
-    // retry padrão (3×) multiplicava isso e parecia "loading infinito".
-    retry: 1,
   });
 
   // Story 18.43: For free stages, enrich leads via crossref.

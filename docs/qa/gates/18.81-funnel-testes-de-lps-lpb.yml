@@ -1,0 +1,39 @@
+schema: 1
+story: '18.81'
+story_title: 'Testes de LPs — a LPB não aparece na Captação Gratuita, e "Atualizar" não recomputa a tabela'
+gate: PASS
+status_reason: 'Causa (cache de 2h) provada e AC3/AC4 implementadas com 11 testes verificados por mutação. REQ-001 corrigido em 8b3d88da (type: "active"); restam 2 apontamentos low, nenhum bloqueia.'
+reviewer: 'Quinn'
+updated: '2026-09-15T15:10:00Z'
+branch: 'fix/18.81-testes-de-lps-lpb'
+commits: ['49a9ab7b', '28c02003', '8b3d88da']
+
+top_issues:
+  - id: 'REQ-001'
+    severity: medium
+    status: resolved
+    finding: 'refresh-data-button.tsx: findAll sem `type` registrava pedido de recomputo também para queries INATIVAS (etapas visitadas nos últimos 30 min); o pedido ficava pendente e virava um recompute ao vivo quando o gestor voltava àquela etapa — contra a AC3.'
+    suggested_action: 'CORRIGIDO em 8b3d88da: findAll({ queryKey: [CHAVE_CREATIVE_PERFORMANCE], type: "active" }). Conferido no diff pelo QA. Sem teste automatizado (a seleção vive no componente); opcional extrair para lib/utils.'
+  - id: 'TEST-001'
+    severity: low
+    finding: 'Se a chamada com refresh=1 falhar na rede, o retry (retry: 1) roda o queryFn de novo com o pedido já consumido — a tentativa seguinte vai sem refresh e pode ler o cache. A rota devolve 200 mesmo quando a Meta falha (serve cache vencido), então o caso é raro (falha de rede, não da Meta).'
+    suggested_action: 'Aceitar; se aparecer na prática, consumir o pedido só após resposta bem-sucedida.'
+  - id: 'DOC-001'
+    severity: low
+    finding: 'T4 (validação visual) reformulada e pendente: o que se valida é o botão Atualizar recomputando (dados/hora mudam). A AC1 foi observada satisfeita em produção pelo gestor, mas os números (LPA/LPB vs Ads Manager) não foram medidos.'
+    suggested_action: 'Gestor clica em Atualizar no preview/produção e confirma que os dados mudam; registrar na story.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Query única (opcoesDaQueryCreativePerformance) usada pelos 2 hooks + top-creatives-gallery; _cache preservado pelo spread em enrichedData; AvisoDeCacheVencido nas 2 seções; REQ-001 no botão.'
+  unit_tests: 'recomputo-creative-performance.test.ts — 11 casos. Mutações pelo QA: (1) URL sem refresh=1 → 1 falha; (2) consumir sem apagar → 1 falha. Suíte 88 arquivos / 1240 verdes. Texto do aviso idêntico sob TZ=UTC e Asia/Tokyo (@dev).'
+  acceptance_criteria: 'AC1 ✓ (observada: LPB na tabela com leads, 15/09) · AC2 ✓ (T0 com P2/P3, #870 e observação) · AC3 ✓ com REQ-001 · AC4 ✓ (_cache no tipo; aviso com carimbo SP) · AC5 N/A (H1 descartada: nome tem lpb colado) · AC6 N/A (H3 descartada: anúncios da LPB em Criativos).'
+  no_regressions: 'packages/api intocado; nenhuma referência a lp-performance-data sobrou; tsc 0; next lint 0/0; next build EXIT=0.'
+  performance: 'Melhora: 1 request de creative-performance por página onde eram 2 idênticos (chaves diferentes).'
+  security: 'N/A'
+  documentation: 'Story com T0 fechada (tabela de provas), implementação, File List e validações.'
+
+notes:
+  - 'Regex de LP NÃO mudou — a causa não era o nome. A variante "outro lp+letra antes de lpb" ficou sem teste porque o nome exato não foi colado; não explica o observado.'
+  - '[scope-override] em lib/utils e lib/hooks autorizado pelo Lucas (informado pelo Danilo, 15/09).'

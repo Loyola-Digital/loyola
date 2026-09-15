@@ -24,6 +24,7 @@ import {
   type CompiledCreativeMetric,
 } from "@/lib/utils/compileCreativeMetrics";
 import { useStageCreativePerformance } from "@/lib/hooks/useStageCreativePerformance";
+import { AvisoDeCacheVencido } from "./aviso-de-cache-vencido";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -526,6 +527,8 @@ export function StageCreativePerformanceTable({
               <span>{bandsEmptyMessage(bandsDiagnostic)}</span>
             </p>
           )}
+          {/* Story 18.81 (AC4): cache vencido servido por falha da Meta nunca é silêncio. */}
+          <AvisoDeCacheVencido cache={data?._cache} />
           {/* Transparencia: mostra qual filtro de campanha esta ativo */}
           {data?.appliedFilter && data.appliedFilter.campaigns.length > 0 && (
             <p

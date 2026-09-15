@@ -20,7 +20,11 @@ import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useCrossReferenceLeads } from "@/lib/hooks/useCrossReferenceLeads";
 import { applyMetaAdsTax } from "@/lib/utils/funnel-metrics";
 import { leadsDaLp, type FonteDeLeads } from "@/lib/utils/leads-da-lp";
-import type { StageCreativePerformanceResponse } from "@/lib/hooks/useStageCreativePerformance";
+import {
+  opcoesDaQueryCreativePerformance,
+  type StageCreativePerformanceResponse,
+} from "@/lib/hooks/useStageCreativePerformance";
+import type { CacheDaResposta } from "@/lib/utils/recomputo-creative-performance";
 
 export interface LpRow {
   lpName: string; // "LPA", "LPB", "LPC", etc.
@@ -45,6 +49,8 @@ interface LpPerformanceResult {
   lps: LpRow[];
   isLoading: boolean;
   error?: string;
+  /** Story 18.81: `_cache` da resposta — a tela avisa quando é cache vencido. */
+  cache?: CacheDaResposta;
 }
 
 interface UseLpPerformanceDataOptions {
@@ -64,19 +70,12 @@ export function useLpPerformanceData({
 }: UseLpPerformanceDataOptions): LpPerformanceResult {
   const apiClient = useApiClient();
 
-  // creative-performance traz `lpBreakdown` (Story 18.46): agregado por LP × temperatura
+  // creative-performance traz `lpBreakdown` (Story 18.46): agregado por LP × temperatura.
+  // Story 18.81: MESMA query da tabela de Criativos (queryKey compartilhada) —
+  // um request por página, e o Atualizar recomputa as duas de uma vez.
   const creativesQuery = useQuery<StageCreativePerformanceResponse, Error>({
-    queryKey: ["lp-performance-data", funnelId, stageId, days],
-    queryFn: () =>
-      apiClient<StageCreativePerformanceResponse>(
-        `/api/funnels/${funnelId}/stages/${stageId}/creative-performance?days=${days}`,
-      ),
+    ...opcoesDaQueryCreativePerformance(apiClient, funnelId, stageId, days),
     enabled: !!funnelId && !!stageId,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
-    // Mesmo endpoint do creative-performance (pode custar ~25s no 1º compute).
-    // Cap o retry pra falha não virar minutos de "loading".
-    retry: 1,
   });
 
   // Leads por LP (via planilha n8n), quebrados por temperatura
@@ -168,5 +167,6 @@ export function useLpPerformanceData({
     lps: result.lps,
     isLoading: creativesQuery.isLoading || leadsQuery.isLoading,
     error: creativesQuery.error?.message || leadsQuery.error,
+    cache: creativesQuery.data?._cache,
   };
 }
