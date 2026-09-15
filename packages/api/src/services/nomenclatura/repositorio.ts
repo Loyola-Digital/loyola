@@ -15,7 +15,7 @@
  *   TEXTO no caso dos valores fixos (o nome guarda o texto, não a FK).
  */
 
-import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lte, max, min, sql, sum } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, lte, max, min, or, sql, sum } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   metaCampaignInsightsDaily,
@@ -209,7 +209,7 @@ export function criarRepositorio(db: Conexao) {
   type ColunaDeFk = "expertId" | "productId" | "funnelId" | "offerId" | "landingPageId";
   type ColunaDeTexto = "year" | "temperature" | "auction" | "format";
   type TipoDeCampanha = "year" | "temperature" | "auction" | "format";
-  type TipoDeAnuncio = "creative_type" | "launch_type";
+  type TipoDeAnuncio = "creative_type" | "launch_type" | "creative_origin";
   const COLUNA_DO_TIPO: Record<TipoDeCampanha, ColunaDeTexto> = {
     year: "year",
     temperature: "temperature",
@@ -217,15 +217,17 @@ export function criarRepositorio(db: Conexao) {
     format: "format",
   };
   /** Story 47.10: os dois tipos do nome de anúncio guardam o texto em `naming_ads`. */
-  const COLUNA_DO_TIPO_DE_ANUNCIO: Record<TipoDeAnuncio, "creativeType" | "launchType"> = { creative_type: "creativeType", launch_type: "launchType" };
-  const ehTipoDeAnuncio = (t: TipoDeValor): t is TipoDeAnuncio => t === "creative_type" || t === "launch_type";
+  /** Story 47.10/47.13: os três tipos do nome de anúncio guardam o texto em `naming_ads` (origem só em vídeo v2). */
+  const COLUNA_DO_TIPO_DE_ANUNCIO: Record<TipoDeAnuncio, "creativeType" | "launchType" | "origin"> = { creative_type: "creativeType", launch_type: "launchType", creative_origin: "origin" };
+  const ehTipoDeAnuncio = (t: TipoDeValor): t is TipoDeAnuncio => t === "creative_type" || t === "launch_type" || t === "creative_origin";
   /**
-   * Story 47.12: a origem do vídeo (`ia` · `h`) é tipo do nome de anúncio, mas
-   * `naming_ads` só ganha a coluna `origin` na 47.13. Até lá o uso é zero — e
-   * o tipo NÃO pode cair no ramo das campanhas (`namingCampaigns[undefined]`).
+   * Tipo do dicionário que ainda não tem coluna em lugar nenhum. Hoje nenhum —
+   * a 47.13 deu coluna à origem. A guarda fica: o próximo valor novo do enum
+   * NÃO pode cair no ramo das campanhas (`namingCampaigns[undefined]`), e o
+   * teste "zero queries" cobre isso.
    */
-  const ehTipoSemColunaAinda = (t: TipoDeValor): t is "creative_origin" => t === "creative_origin";
-  /** Os tipos que pertencem ao nome de anúncio (com ou sem coluna) — fora do snapshot de campanha. */
+  const ehTipoSemColunaAinda = (_t: TipoDeValor): _t is never => false;
+  /** Os tipos que pertencem ao nome de anúncio — fora do snapshot de campanha. */
   const ehTipoDoNomeDeAnuncio = (t: TipoDeValor): boolean => ehTipoDeAnuncio(t) || ehTipoSemColunaAinda(t);
 
   async function usoPorFk(coluna: ColunaDeFk): Promise<Map<string, number>> {
@@ -239,7 +241,8 @@ export function criarRepositorio(db: Conexao) {
     if (ehTipoDeAnuncio(type)) {
       const col = namingAds[COLUNA_DO_TIPO_DE_ANUNCIO[type]];
       const linhas = await db.select({ valor: col, n: count() }).from(namingAds).groupBy(col);
-      return new Map(linhas.map((l) => [l.valor, Number(l.n)]));
+      // `origin` é nullable (ad/carr e padrão antigo): o grupo null não é valor nenhum.
+      return new Map(linhas.filter((l): l is { valor: string; n: number } => l.valor !== null).map((l) => [l.valor, Number(l.n)]));
     }
     const col = namingCampaigns[COLUNA_DO_TIPO[type]];
     const linhas = await db.select({ valor: col, n: count() }).from(namingCampaigns).groupBy(col);
@@ -354,8 +357,8 @@ export function criarRepositorio(db: Conexao) {
       case "anuncios":
         return [];
       case "adPartes":
-        // Story 47.12: `naming_ads` só ganha hook_id/body_id na 47.13 — até lá ninguém referencia.
-        return [];
+        // Story 47.13: anúncios de vídeo que usam este hook/body.
+        return anunciosComParte(id);
       case "lps":
         return campanhasComo("landingPageId", id);
       case "campanhas":
@@ -565,16 +568,20 @@ export function criarRepositorio(db: Conexao) {
       (await db.select({ code: namingAdParts.code }).from(namingAdParts).where(and(eq(namingAdParts.expertId, expertId), eq(namingAdParts.type, type)))).map((x) => x.code),
   };
 
-  /**
-   * Story 47.12: "usado em N anúncios" de um hook/body. `naming_ads` só ganha
-   * `hook_id`/`body_id` na 47.13 — até lá é zero por definição, mas a regra
-   * (código imutável depois de usado) e o teste já entram por aqui.
-   */
-  async function usoEmAnuncios(_type: TipoDeParteDoVideo): Promise<Map<string, number>> {
-    return new Map();
+  /** Story 47.13: "usado em N anúncios" de um hook/body — agrupa por hook_id ou body_id em `naming_ads`. */
+  const COLUNA_DA_PARTE: Record<TipoDeParteDoVideo, "hookId" | "bodyId"> = { hook: "hookId", body: "bodyId" };
+  async function usoEmAnuncios(type: TipoDeParteDoVideo): Promise<Map<string, number>> {
+    const col = namingAds[COLUNA_DA_PARTE[type]];
+    const linhas = await db.select({ id: col, n: count() }).from(namingAds).groupBy(col);
+    return new Map(linhas.filter((l) => l.id).map((l) => [l.id as string, Number(l.n)]));
   }
-  async function anunciosQueUsamParte(_id: string): Promise<number> {
-    return 0;
+  async function anunciosQueUsamParte(id: string): Promise<number> {
+    const [{ n }] = await db.select({ n: count() }).from(namingAds).where(or(eq(namingAds.hookId, id), eq(namingAds.bodyId, id)));
+    return Number(n);
+  }
+  async function anunciosComParte(id: string): Promise<Referencia[]> {
+    const linhas = await db.select({ id: namingAds.id, name: namingAds.name }).from(namingAds).where(or(eq(namingAds.hookId, id), eq(namingAds.bodyId, id))).limit(LIMITE_DE_REFERENCIAS);
+    return linhas.map((a) => ({ tipo: "anuncio" as const, id: a.id, rotulo: a.name }));
   }
 
   const vsls = {
@@ -609,11 +616,15 @@ export function criarRepositorio(db: Conexao) {
 
   // ── Story 47.10: anúncios ─────────────────────────────────────────────
   const anuncios = {
-    listar: async (f: { expertId?: string; creativeType?: string; launchType?: string; de?: string; ate?: string; q?: string; limit: number; offset: number }) => {
+    listar: async (f: { expertId?: string; creativeType?: string; launchType?: string; origin?: string; hookId?: string; bodyId?: string; de?: string; ate?: string; q?: string; limit: number; offset: number }) => {
       const cond = onde(
         f.expertId ? eq(namingAds.expertId, f.expertId) : undefined,
         f.creativeType ? eq(namingAds.creativeType, f.creativeType) : undefined,
         f.launchType ? eq(namingAds.launchType, f.launchType) : undefined,
+        // Story 47.13 (AC11): filtros do vídeo
+        f.origin ? eq(namingAds.origin, f.origin) : undefined,
+        f.hookId ? eq(namingAds.hookId, f.hookId) : undefined,
+        f.bodyId ? eq(namingAds.bodyId, f.bodyId) : undefined,
         f.de ? (gte(namingAds.adDate, f.de) as unknown as ReturnType<typeof eq>) : undefined,
         f.ate ? (lte(namingAds.adDate, f.ate) as unknown as ReturnType<typeof eq>) : undefined,
         f.q ? (ilike(namingAds.name, `%${f.q}%`) as unknown as ReturnType<typeof eq>) : undefined,
@@ -638,12 +649,16 @@ export function criarRepositorio(db: Conexao) {
 
   /** O que `parseAdName` lê: experts e os dois tipos de valor fixo do anúncio. */
   async function snapshotDeAnuncios(inativos: boolean): Promise<AdSnapshot> {
-    const [ex, va] = await Promise.all([experts.listar(true), dicionario.listar(undefined, true)]);
+    const [ex, va, pa] = await Promise.all([experts.listar(true), dicionario.listar(undefined, true), adPartes.listar({}, true)]);
     const filtra = <T extends { active: boolean }>(xs: T[]) => (inativos ? xs : xs.filter((x) => x.active));
+    const codeDoExpert = new Map(ex.map((e) => [e.id, e.code]));
     return {
       experts: filtra(ex).map((e) => ({ code: e.code, active: e.active })),
       creativeTypes: filtra(va.filter((v) => v.type === "creative_type")).map((v) => ({ value: v.value, active: v.active })),
       launchTypes: filtra(va.filter((v) => v.type === "launch_type")).map((v) => ({ value: v.value, active: v.active })),
+      // Story 47.13 (AC4): origem e hooks/bodies POR EXPERT (código, não id) — o que `parseAdName` lê.
+      origins: filtra(va.filter((v) => v.type === "creative_origin")).map((v) => ({ value: v.value, active: v.active })),
+      partes: filtra(pa).map((p) => ({ expert: codeDoExpert.get(p.expertId) ?? "?", type: p.type, code: p.code, active: p.active })),
     };
   }
 

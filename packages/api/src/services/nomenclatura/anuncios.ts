@@ -15,7 +15,7 @@
  *    `naming_ads`, com `ad_date` = primeiro dia do mês.
  */
 
-import { buildAdName, normalizarCodigo, primeiroDiaDoMes, type AdFields } from "@loyola-x/shared";
+import { buildAdName, ehVideo, normalizarCodigo, primeiroDiaDoMes, type AdFields } from "@loyola-x/shared";
 import { ErroDeNomenclatura } from "./regras.js";
 import type { Repositorio } from "./repositorio.js";
 
@@ -29,6 +29,12 @@ export interface EntradaDeAnuncio {
   /** `mm-aaaa`. */
   date: string;
   description?: string | null;
+  /** Story 47.13: só em `adv` — valor de `creative_origin`. */
+  origin?: string | null;
+  /** Story 47.13: só em `adv` — id em `naming_ad_parts` (type hook) DO expert. */
+  hookId?: string | null;
+  /** Story 47.13: só em `adv` — id em `naming_ad_parts` (type body) DO expert. */
+  bodyId?: string | null;
 }
 
 export interface AnuncioMontado {
@@ -39,9 +45,45 @@ export interface AnuncioMontado {
   launchSeq: number;
   adDate: string;
   description: string | null;
+  origin: string | null;
+  hookId: string | null;
+  bodyId: string | null;
   structure: string;
   name: string;
   fields: AdFields;
+}
+
+/**
+ * Story 47.13 (AC6): em `adv`, origem/hook/body são obrigatórios e validados —
+ * origem no dicionário e ativa; hook/body existem, são do TIPO certo, do MESMO
+ * expert e ativos (regra 8). Fora de `adv`, qualquer um dos três é 400.
+ * `legado`: vídeo do padrão antigo sendo re-gravado (AC7) — os três ficam null.
+ */
+async function partesDoVideo(r: Repositorio, e: EntradaDeAnuncio, expert: { id: string; code: string }, legado: boolean) {
+  const video = ehVideo(e.creativeType);
+  const veio = (v: string | null | undefined) => v !== undefined && v !== null && String(v).trim() !== "";
+  if (!video || legado) {
+    if (veio(e.origin)) throw new ErroDeNomenclatura(400, `origin: origem só existe no vídeo (adv)${legado ? " novo — vídeo do padrão antigo não migra por edição; duplique para criar no v2" : ""}`, { campo: "origin" });
+    if (veio(e.hookId)) throw new ErroDeNomenclatura(400, `hookId: hook só existe no vídeo (adv)${legado ? " novo — vídeo do padrão antigo não migra por edição; duplique para criar no v2" : ""}`, { campo: "hookId" });
+    if (veio(e.bodyId)) throw new ErroDeNomenclatura(400, `bodyId: body só existe no vídeo (adv)${legado ? " novo — vídeo do padrão antigo não migra por edição; duplique para criar no v2" : ""}`, { campo: "bodyId" });
+    return { origin: null, hookId: null, bodyId: null, codes: {} as { origin?: string; hookCode?: string; bodyCode?: string } };
+  }
+  if (!veio(e.origin)) throw new ErroDeNomenclatura(422, "origin: obrigatória em vídeo (adv) — ia ou h", { campo: "origin" });
+  const origem = await r.dicionario.porValor("creative_origin", e.origin!);
+  if (!origem) throw new ErroDeNomenclatura(422, `origin: "${e.origin}" não está no dicionário de origem do vídeo`, { campo: "origin" });
+  if (!origem.active) throw new ErroDeNomenclatura(422, `origin: ${origem.value} está inativa (regra 8)`, { campo: "origin" });
+  const parte = async (campo: "hookId" | "bodyId", tipo: "hook" | "body") => {
+    const id = campo === "hookId" ? e.hookId : e.bodyId;
+    if (!veio(id)) throw new ErroDeNomenclatura(422, `${campo}: obrigatório em vídeo (adv) — cadastre em Hooks e bodies`, { campo });
+    const p = await r.porId("adPartes", id!);
+    if (!p) throw new ErroDeNomenclatura(404, `${campo}: ${tipo} não encontrado`, { campo });
+    if (p.type !== tipo) throw new ErroDeNomenclatura(422, `${campo}: ${p.code} é ${p.type}, não ${tipo}`, { campo });
+    if (p.expertId !== expert.id) throw new ErroDeNomenclatura(422, `${campo}: ${p.code} não é de ${expert.code} — hook e body são do expert do anúncio`, { campo });
+    if (!p.active) throw new ErroDeNomenclatura(422, `${campo}: ${p.code} está inativo (regra 8)`, { campo });
+    return p;
+  };
+  const [hook, body] = await Promise.all([parte("hookId", "hook"), parte("bodyId", "body")]);
+  return { origin: origem.value, hookId: hook.id, bodyId: body.id, codes: { origin: origem.value, hookCode: hook.code, bodyCode: body.code } };
 }
 
 /** Menor NN livre de 1 a 99 no expert (inclui tudo — não há "inativo" em anúncio). `null` quando os 99 acabaram. */
@@ -51,7 +93,7 @@ export function proximoNnDeAnuncio(usados: readonly number[]): number | null {
   return null;
 }
 
-export async function montarAnuncio(r: Repositorio, e: EntradaDeAnuncio, opts: { ignorarSeqDe?: string } = {}): Promise<AnuncioMontado> {
+export async function montarAnuncio(r: Repositorio, e: EntradaDeAnuncio, opts: { ignorarSeqDe?: string; legado?: boolean } = {}): Promise<AnuncioMontado> {
   const expert = await r.porId("experts", e.expertId);
   if (!expert) throw new ErroDeNomenclatura(404, "expertId: expert não encontrado", { campo: "expertId" });
   if (!expert.active) throw new ErroDeNomenclatura(422, `expertId: ${expert.code} está inativo — código desativado não entra em nome novo (regra 8)`, { campo: "expertId" });
@@ -89,12 +131,13 @@ export async function montarAnuncio(r: Repositorio, e: EntradaDeAnuncio, opts: {
     description = n.valor;
   }
 
-  const fields: AdFields = { creativeType: tipo.value, creativeSeq, expert: expert.code, launchType: sigla.value, launchSeq: e.launchSeq, date: e.date, ...(description ? { description } : {}) };
+  const partes = await partesDoVideo(r, e, expert, Boolean(opts.legado));
+  const fields: AdFields = { creativeType: tipo.value, creativeSeq, ...partes.codes, expert: expert.code, launchType: sigla.value, launchSeq: e.launchSeq, date: e.date, ...(description ? { description } : {}) };
   let montado: { structure: string; name: string };
   try {
-    montado = buildAdName(fields);
+    montado = buildAdName(fields, { legado: Boolean(opts.legado) });
   } catch (err) {
     throw new ErroDeNomenclatura(400, (err as Error).message);
   }
-  return { expertId: expert.id, creativeType: tipo.value, creativeSeq, launchType: sigla.value, launchSeq: e.launchSeq, adDate: primeiroDiaDoMes(e.date)!, description, ...montado, fields };
+  return { expertId: expert.id, creativeType: tipo.value, creativeSeq, launchType: sigla.value, launchSeq: e.launchSeq, adDate: primeiroDiaDoMes(e.date)!, description, origin: partes.origin, hookId: partes.hookId, bodyId: partes.bodyId, ...montado, fields };
 }

@@ -48,11 +48,14 @@ function memoria() {
         experts: f(t.experts).map((e) => ({ code: e.code, active: e.active })),
         creativeTypes: f(t.dicionario.filter((v) => v.type === "creative_type")).map((v) => ({ value: v.value, active: v.active })),
         launchTypes: f(t.dicionario.filter((v) => v.type === "launch_type")).map((v) => ({ value: v.value, active: v.active })),
+        // Story 47.13
+        origins: f(t.dicionario.filter((v) => v.type === "creative_origin")).map((v) => ({ value: v.value, active: v.active })),
+        partes: f(t.adPartes).map((p) => ({ expert: codeDe("experts", p.expertId), type: p.type, code: p.code, active: p.active })),
       };
     },
     anuncios: {
       listar: async (f: Record<string, unknown>) => {
-        const itens = t.anuncios.filter((a) => ["expertId", "creativeType", "launchType"].every((k) => !f[k] || a[k] === f[k]) && (!f.q || String(a.name).includes(String(f.q))) && (!f.de || String(a.adDate) >= String(f.de)) && (!f.ate || String(a.adDate) <= String(f.ate)));
+        const itens = t.anuncios.filter((a) => ["expertId", "creativeType", "launchType", "origin", "hookId", "bodyId"].every((k) => !f[k] || a[k] === f[k]) && (!f.q || String(a.name).includes(String(f.q))) && (!f.de || String(a.adDate) >= String(f.de)) && (!f.ate || String(a.adDate) <= String(f.ate)));
         return { itens, total: itens.length };
       },
       seqsDoExpert: async (expertId: string) => t.anuncios.filter((a) => a.expertId === expertId).map((a) => ({ id: a.id, creativeSeq: a.creativeSeq as number })),
@@ -83,13 +86,16 @@ function memoria() {
       porCode: async (expertId: string, type: string, code: string) => t.adPartes.find((x) => x.expertId === expertId && x.type === type && x.code === code),
       codigos: async (expertId: string, type: string) => t.adPartes.filter((x) => x.expertId === expertId && x.type === type).map((x) => x.code as string),
     },
-    /** 47.12: `naming_ads` só referencia hook/body na 47.13 — uso vem do que o teste injetar em `usoDePartes`. */
+    /** 47.13: uso de hook/body conta em `naming_ads` (hookId/bodyId); `usoDePartes` é injeção extra do teste da 47.12. */
     usoDePartes: new Map<string, number>(),
-    async usoEmAnuncios(_type: string) {
-      return new Map(this.usoDePartes);
+    async usoEmAnuncios(type: string) {
+      const col = type === "hook" ? "hookId" : "bodyId";
+      const m = new Map(this.usoDePartes);
+      for (const a of t.anuncios) if (a[col]) m.set(a[col] as string, (m.get(a[col] as string) ?? 0) + 1);
+      return m;
     },
     async anunciosQueUsamParte(i: string) {
-      return this.usoDePartes.get(i) ?? 0;
+      return (this.usoDePartes.get(i) ?? 0) + t.anuncios.filter((a) => a.hookId === i || a.bodyId === i).length;
     },
     vsls: {
       listar: async (f: Record<string, unknown>) => {
@@ -146,9 +152,9 @@ function memoria() {
     },
     async usoPorValor(type: string) {
       const m = new Map<string, number>();
-      if (type === "creative_type" || type === "launch_type") {
-        const col = type === "creative_type" ? "creativeType" : "launchType";
-        for (const a of t.anuncios) m.set(a[col] as string, (m.get(a[col] as string) ?? 0) + 1);
+      if (type === "creative_type" || type === "launch_type" || type === "creative_origin") {
+        const col = type === "creative_type" ? "creativeType" : type === "launch_type" ? "launchType" : "origin";
+        for (const a of t.anuncios) if (a[col]) m.set(a[col] as string, (m.get(a[col] as string) ?? 0) + 1);
         return m;
       }
       for (const c of campanhas) m.set(c[type] as string, (m.get(c[type] as string) ?? 0) + 1);
@@ -158,11 +164,13 @@ function memoria() {
       return contar(col, i);
     },
     async campanhasComValor(type: string, v: string) {
-      if (type === "creative_type" || type === "launch_type") return t.anuncios.filter((a) => a[type === "creative_type" ? "creativeType" : "launchType"] === v).length;
+      if (type === "creative_type" || type === "launch_type" || type === "creative_origin") return t.anuncios.filter((a) => a[type === "creative_type" ? "creativeType" : type === "launch_type" ? "launchType" : "origin"] === v).length;
       return contar(type, v);
     },
     async referenciasDe(e: string, linha: Linha) {
       const refs: { tipo: string; id: string; rotulo: string }[] = [];
+      // Story 47.13: hook/body usado em anúncio de vídeo
+      if (e === "adPartes") for (const a of t.anuncios.filter((a) => a.hookId === linha.id || a.bodyId === linha.id)) refs.push({ tipo: "anuncio", id: a.id, rotulo: String(a.name) });
       if (e === "experts") {
         for (const k of ["produtos", "funis", "ofertas"]) for (const x of t[k].filter((x) => x.expertId === linha.id)) refs.push({ tipo: k.slice(0, -1), id: x.id, rotulo: String(x.code ?? x.slug) });
       }
@@ -740,7 +748,8 @@ describe("rotas da nomenclatura", () => {
     }
     return c;
   }
-  const corpoBase = (expertId: string) => ({ expertId, creativeType: "adv", launchType: "pg", launchSeq: 2, date: "09-2026" });
+  // Story 47.13: a amostra genérica de 4 campos passa a ser `ad` — `adv` tem 7 (v2). Os testes da 47.10 seguem iguais com o tipo trocado (AC12).
+  const corpoBase = (expertId: string) => ({ expertId, creativeType: "ad", launchType: "pg", launchSeq: 2, date: "09-2026" });
 
   it("47.10 AC2: os dois tipos novos passam pelo CRUD de valores fixos, com usadoEm por anúncio e código travado quando usado", async () => {
     const { bbe } = await adsBase(app);
@@ -748,11 +757,11 @@ describe("rotas da nomenclatura", () => {
     expect(tipos.map((v: { value: string }) => v.value)).toEqual(["ad", "adv", "carr"]);
     await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: corpoBase(bbe.id) });
     const depois = (await app.inject({ method: "GET", url: "/api/nomenclatura/dicionario?type=creative_type" })).json();
-    expect(depois.find((v: { value: string }) => v.value === "adv").usadoEm).toBe(1);
-    const adv = depois.find((v: { value: string }) => v.value === "adv");
+    expect(depois.find((v: { value: string }) => v.value === "ad").usadoEm).toBe(1);
+    const adv = depois.find((v: { value: string }) => v.value === "ad");
     expect((await app.inject({ method: "PATCH", url: `/api/nomenclatura/dicionario/${adv.id}`, payload: { value: "vid" } })).statusCode).toBe(409);
     const del = await app.inject({ method: "DELETE", url: `/api/nomenclatura/dicionario/${adv.id}` });
-    expect(del.json()).toMatchObject({ podeDesativar: true, referencias: [{ tipo: "anuncio", rotulo: "adv01_bbe_pg02_09-2026--" }] });
+    expect(del.json()).toMatchObject({ podeDesativar: true, referencias: [{ tipo: "anuncio", rotulo: "ad01_bbe_pg02_09-2026--" }] });
   });
 
   it("47.10 AC3/AC4/AC8: NN sequencial ÚNICO por expert, qualquer tipo; sugestão pula os usados; NN ocupado → 409 com o dono e o próximo; estrutura e nome gravados", async () => {
@@ -760,7 +769,7 @@ describe("rotas da nomenclatura", () => {
     const p0 = (await app.inject({ method: "GET", url: `/api/nomenclatura/ads/proximo?expertId=${bbe.id}` })).json();
     expect(p0).toEqual({ creativeSeq: 1, creativeSeqTexto: "01", launchSeqSugerido: null });
     const a1 = (await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), description: "Gancho Demissão" } })).json();
-    expect(a1).toMatchObject({ creativeSeq: 1, structure: "adv01_bbe_pg02_09-2026--", name: "adv01_bbe_pg02_09-2026--gancho-demissao", adDate: "2026-09-01", expertCode: "bbe" });
+    expect(a1).toMatchObject({ creativeSeq: 1, structure: "ad01_bbe_pg02_09-2026--", name: "ad01_bbe_pg02_09-2026--gancho-demissao", adDate: "2026-09-01", expertCode: "bbe", legado: false });
     const a2 = (await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), creativeType: "ad" } })).json();
     expect(a2.structure).toBe("ad02_bbe_pg02_09-2026--"); // Q3: 2º criativo do expert, mesmo sendo outro tipo
     // fz tem a própria sequência
@@ -772,7 +781,7 @@ describe("rotas da nomenclatura", () => {
     const corrida = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), creativeSeq: 1 } });
     expect(corrida.statusCode).toBe(409);
     expect(corrida.json()).toMatchObject({ campo: "creativeSeq", sugestao: "03" });
-    expect(corrida.json().error).toContain("já é de adv01_bbe_pg02_09-2026--gancho-demissao");
+    expect(corrida.json().error).toContain("já é de ad01_bbe_pg02_09-2026--gancho-demissao");
     expect(mem.changelog.filter((l) => l.entity === "naming_ads" && l.action === "create")).toHaveLength(3);
   });
 
@@ -796,16 +805,17 @@ describe("rotas da nomenclatura", () => {
     const { bbe } = await adsBase(app);
     const a = (await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: corpoBase(bbe.id) })).json();
     const r = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${a.id}`, payload: { description: "prova social", launchSeq: 3, date: "10-2026" } });
-    expect(r.json()).toMatchObject({ structure: "adv01_bbe_pg03_10-2026--", name: "adv01_bbe_pg03_10-2026--prova-social", creativeSeq: 1 });
+    expect(r.json()).toMatchObject({ structure: "ad01_bbe_pg03_10-2026--", name: "ad01_bbe_pg03_10-2026--prova-social", creativeSeq: 1 });
     // NN/tipo no corpo do PATCH: ignorados pelo schema (não são campos aceitos) — o NN continua 1
     const tenta = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${a.id}`, payload: { creativeSeq: 9, creativeType: "ad", notes: "n" } });
-    expect(tenta.json()).toMatchObject({ creativeSeq: 1, creativeType: "adv", notes: "n" });
-    await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), creativeType: "ad", launchType: "l", date: "08-2026" } });
-    const lista = (await app.inject({ method: "GET", url: `/api/nomenclatura/ads?expertId=${bbe.id}&creativeType=ad` })).json();
+    expect(tenta.json()).toMatchObject({ creativeSeq: 1, creativeType: "ad", notes: "n" });
+    // o segundo é `carr` para o filtro por tipo ter o que separar (a base virou `ad` na 47.13)
+    await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), creativeType: "carr", launchType: "l", date: "08-2026" } });
+    const lista = (await app.inject({ method: "GET", url: `/api/nomenclatura/ads?expertId=${bbe.id}&creativeType=carr` })).json();
     expect(lista.total).toBe(1);
-    expect(lista.itens[0].structure).toBe("ad02_bbe_l02_08-2026--");
+    expect(lista.itens[0].structure).toBe("carr02_bbe_l02_08-2026--");
     const periodo = (await app.inject({ method: "GET", url: `/api/nomenclatura/ads?de=09-2026&ate=12-2026` })).json();
-    expect(periodo.itens.map((x: { structure: string }) => x.structure)).toEqual(["adv01_bbe_pg03_10-2026--"]);
+    expect(periodo.itens.map((x: { structure: string }) => x.structure)).toEqual(["ad01_bbe_pg03_10-2026--"]);
   });
 
   it("47.8 AC6: campanha do gerador com id da Meta colado NÃO aparece na fila de legadas (o nome v2 casa com o filtro)", async () => {
@@ -961,6 +971,105 @@ describe("rotas da nomenclatura", () => {
     const lista = (await app.inject({ method: "GET", url: "/api/nomenclatura/dicionario?type=creative_origin" })).json();
     expect(lista).toHaveLength(1);
     expect(lista[0]).toMatchObject({ value: "ia", usadoEm: 0 });
+  });
+
+  // ── Story 47.13: nome de vídeo v2 ─────────────────────────────────────────
+  async function videoBase(app: FastifyInstance) {
+    const c = await partesBase(app); // bbe com h01 e b01
+    const post = async (url: string, payload: Record<string, unknown>) => (await app.inject({ method: "POST", url, payload })).json();
+    for (const [type, values] of Object.entries({ creative_type: ["ad", "adv", "carr"], launch_type: ["pg", "l"], creative_origin: ["ia", "h"] })) {
+      for (const value of values) await post("/api/nomenclatura/dicionario", { type, value });
+    }
+    // o gestor do exemplo é `dg` (pg04); aqui o expert com hooks é bbe — o nome sai com bbe
+    const h01Fz = await post("/api/nomenclatura/ads/partes", { expertId: c.fz.id, type: "hook", description: "hook do fz" });
+    return { ...c, h01Fz, post };
+  }
+
+  it("47.13 AC1/AC6: POST adv grava o v2 com origem, hook e body — adv01_h_bbe_pg04_h01_b01_09-2026-- — e a resposta traz hookCode/bodyCode e legado=false", async () => {
+    const { bbe, h01, b01, post } = await videoBase(app);
+    const a = await post("/api/nomenclatura/ads", { expertId: bbe.id, creativeType: "adv", launchType: "pg", launchSeq: 4, date: "09-2026", origin: "h", hookId: h01.id, bodyId: b01.id });
+    expect(a).toMatchObject({ structure: "adv01_h_bbe_pg04_h01_b01_09-2026--", name: "adv01_h_bbe_pg04_h01_b01_09-2026--", origin: "h", hookId: h01.id, bodyId: b01.id, hookCode: "h01", bodyCode: "b01", legado: false, expertCode: "bbe" });
+    // usadoEm passou a contar de verdade → o código do hook trava (47.12 AC6 fecha aqui)
+    const travado = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/partes/${h01.id}`, payload: { code: "h09" } });
+    expect(travado.statusCode).toBe(409);
+    expect(travado.json()).toMatchObject({ usadoEm: 1 });
+    // origem conta como valor usado (imutável), e a referência do hook lista o anúncio
+    const origens = (await app.inject({ method: "GET", url: "/api/nomenclatura/dicionario?type=creative_origin" })).json();
+    expect(origens.find((v: { value: string }) => v.value === "h").usadoEm).toBe(1);
+    const del = await app.inject({ method: "DELETE", url: `/api/nomenclatura/ads/partes/${b01.id}` });
+    expect(del.statusCode).toBe(409);
+    expect(del.json().referencias).toEqual([{ tipo: "anuncio", id: a.id, rotulo: "adv01_h_bbe_pg04_h01_b01_09-2026--" }]);
+  });
+
+  it("47.13 AC6: adv exige os três (422); hook de OUTRO expert → 422; tipo trocado → 422; inativo → 422; origem fora do dicionário → 422", async () => {
+    const { bbe, h01, b01, h01Fz } = await videoBase(app);
+    const base = { expertId: bbe.id, creativeType: "adv", launchType: "pg", launchSeq: 4, date: "09-2026" };
+    const semOrigem = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...base, hookId: h01.id, bodyId: b01.id } });
+    expect(semOrigem.statusCode).toBe(422);
+    expect(semOrigem.json()).toMatchObject({ campo: "origin" });
+    const semHook = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...base, origin: "h", bodyId: b01.id } });
+    expect(semHook.statusCode).toBe(422);
+    expect(semHook.json().error).toContain("cadastre em Hooks e bodies");
+    const outroExpert = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...base, origin: "h", hookId: h01Fz.id, bodyId: b01.id } });
+    expect(outroExpert.statusCode).toBe(422);
+    expect(outroExpert.json().error).toContain("não é de bbe");
+    const tipoTrocado = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...base, origin: "h", hookId: b01.id, bodyId: h01.id } });
+    expect(tipoTrocado.statusCode).toBe(422);
+    expect(tipoTrocado.json().error).toContain("é body, não hook");
+    const origemErrada = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...base, origin: "robo", hookId: h01.id, bodyId: b01.id } });
+    expect(origemErrada.statusCode).toBe(422);
+    await app.inject({ method: "POST", url: `/api/nomenclatura/ads/partes/${h01.id}/desativar` });
+    const inativo = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...base, origin: "h", hookId: h01.id, bodyId: b01.id } });
+    expect(inativo.statusCode).toBe(422);
+    expect(inativo.json().error).toContain("está inativo");
+  });
+
+  it("47.13 AC1/AC6: fora de adv, origem/hook/body são recusados (400) — ad com origem é nome errado", async () => {
+    const { bbe, h01, b01 } = await videoBase(app);
+    const r = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { expertId: bbe.id, creativeType: "ad", launchType: "pg", launchSeq: 1, date: "09-2026", origin: "h" } });
+    expect(r.statusCode).toBe(400);
+    expect(r.json()).toMatchObject({ campo: "origin" });
+    const r2 = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { expertId: bbe.id, creativeType: "carr", launchType: "pg", launchSeq: 1, date: "09-2026", hookId: h01.id, bodyId: b01.id } });
+    expect(r2.statusCode).toBe(400);
+    // null explícito não conta como presente
+    const ok = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { expertId: bbe.id, creativeType: "ad", launchType: "pg", launchSeq: 1, date: "09-2026", origin: null, hookId: null, bodyId: null } });
+    expect(ok.statusCode).toBe(201);
+    expect(ok.json().structure).toBe("ad01_bbe_pg01_09-2026--");
+  });
+
+  it("47.13 AC7: vídeo do padrão antigo edita descrição/lançamento/data sem os três, re-grava em 4 campos e vem marcado legado; mandar origem/hook/body nele → 400", async () => {
+    const { bbe, h01, b01 } = await videoBase(app);
+    // um adv de 4 campos gravado antes da 47.13 — inserido direto no fake, como está em produção
+    mem.t.anuncios.push({ id: USUARIO, expertId: bbe.id, creativeType: "adv", creativeSeq: 7, launchType: "pg", launchSeq: 2, adDate: "2026-09-01", description: null, origin: null, hookId: null, bodyId: null, structure: "adv07_bbe_pg02_09-2026--", name: "adv07_bbe_pg02_09-2026--", notes: null, active: true, createdAt: "2026-09-01", updatedAt: "2026-09-01" });
+    const lista = (await app.inject({ method: "GET", url: `/api/nomenclatura/ads?expertId=${bbe.id}` })).json();
+    expect(lista.itens.find((a: { id: string }) => a.id === USUARIO)).toMatchObject({ legado: true, hookCode: null, bodyCode: null });
+    const r = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${USUARIO}`, payload: { description: "prova social", launchSeq: 3 } });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toMatchObject({ structure: "adv07_bbe_pg03_09-2026--", name: "adv07_bbe_pg03_09-2026--prova-social", origin: null, legado: true });
+    const migra = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${USUARIO}`, payload: { origin: "h", hookId: h01.id, bodyId: b01.id } });
+    expect(migra.statusCode).toBe(400);
+    expect(migra.json().error).toContain("duplique para criar no v2");
+  });
+
+  it("47.13 AC4/AC8/AC11: snapshot traz origens e partes por expert; validar-nome aceita v2 e padrão antigo; listagem filtra por origem/hook/body", async () => {
+    const { bbe, h01, b01, post } = await videoBase(app);
+    const snap = (await app.inject({ method: "GET", url: "/api/nomenclatura/ads/snapshot" })).json();
+    expect(snap.origins.map((o: { value: string }) => o.value)).toEqual(["ia", "h"]);
+    expect(snap.partes).toEqual(expect.arrayContaining([{ expert: "bbe", type: "hook", code: "h01", active: true }, { expert: "bbe", type: "body", code: "b01", active: true }, { expert: "fz", type: "hook", code: "h01", active: true }]));
+    const v2 = (await app.inject({ method: "POST", url: "/api/nomenclatura/ads/validar-nome", payload: { name: "adv01_h_bbe_pg04_h01_b01_09-2026--" } })).json();
+    expect(v2).toMatchObject({ valid: true, video: true, legado: false, avisos: [] });
+    const antigo = (await app.inject({ method: "POST", url: "/api/nomenclatura/ads/validar-nome", payload: { name: "adv03_bbe_pg02_09-2026--" } })).json();
+    expect(antigo).toMatchObject({ valid: true, video: true, legado: true });
+    expect(antigo.avisos).toContain("padrão antigo (47.10): sem origem, hook e body");
+    const errado = (await app.inject({ method: "POST", url: "/api/nomenclatura/ads/validar-nome", payload: { name: "adv01_h_fz_pg04_h01_b01_09-2026--" } })).json();
+    expect(errado.valid).toBe(false);
+    expect(errado.errors).toContain("campo 6 (body): b01 não está cadastrado para fz");
+    await post("/api/nomenclatura/ads", { expertId: bbe.id, creativeType: "adv", launchType: "pg", launchSeq: 4, date: "09-2026", origin: "h", hookId: h01.id, bodyId: b01.id });
+    await post("/api/nomenclatura/ads", { expertId: bbe.id, creativeType: "ad", launchType: "pg", launchSeq: 4, date: "09-2026" });
+    expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads?origin=h` })).json().total).toBe(1);
+    expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads?hookId=${h01.id}` })).json().total).toBe(1);
+    expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads?bodyId=${b01.id}` })).json().itens[0].hookCode).toBe("h01");
+    expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads?expertId=${bbe.id}` })).json().total).toBe(2);
   });
 
   it("id inexistente → 404; id malformado → 400", async () => {

@@ -36,6 +36,8 @@ import {
   aoEscolherNoAnuncio,
   corpoDoAnuncio,
   estadoDeAnuncio,
+  ehVideo,
+  ehVideoDoPadraoAntigo,
   mesAnoDe,
   mesCorrente,
   previaDoAnuncio,
@@ -120,6 +122,13 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
   const experts = useListaDe("experts");
   const tipos = useListaDe("dicionario", { type: "creative_type" });
   const siglas = useListaDe("dicionario", { type: "launch_type" });
+  // Story 47.13: só o vídeo (adv) tem origem, hook e body. Hook/body são DO expert.
+  const video = ehVideo(estado.creativeType);
+  const origens = useListaDe("dicionario", { type: "creative_origin" }, { enabled: video });
+  const hooks = useListaDe("ads/partes", { expertId: estado.expertId, type: "hook" }, { enabled: video && Boolean(estado.expertId) });
+  const bodies = useListaDe("ads/partes", { expertId: estado.expertId, type: "body" }, { enabled: video && Boolean(estado.expertId) });
+  // AC7: vídeo gravado no padrão antigo (4 campos) — a edição não pede os três; o nome não muda de formato.
+  const padraoAntigo = Boolean(origem.data && ehVideoDoPadraoAntigo(origem.data)) && modo.tipo === "editar";
   const proximo = useProximoNnDeAnuncio(editando ? "" : estado.expertId, estado.launchType || undefined);
   // Story 47.11 (AC3): ao escolher o expert, os anúncios já cadastrados dele
   // aparecem abaixo do formulário — mesmo desenho de Nova VSL (47.9), mesma
@@ -142,7 +151,9 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
     if (!editando && proximo.data?.launchSeqSugerido && !estado.launchSeq) setEstado((e) => ({ ...e, launchSeq: String(proximo.data!.launchSeqSugerido).padStart(2, "0") }));
   }, [proximo.data, editando]);
 
-  const previa = useMemo(() => previaDoAnuncio(estado, experts.data ?? []), [estado, experts.data]);
+  const partes = useMemo(() => [...(hooks.data ?? []), ...(bodies.data ?? [])].map((p) => ({ id: p.id, code: p.code })), [hooks.data, bodies.data]);
+  // AC7: no padrão antigo a prévia é a de 4 campos — mesma opção `legado` do build (achado do QA: sem ela, Salvar ficava desabilitado).
+  const previa = useMemo(() => previaDoAnuncio(estado, experts.data ?? [], partes, { legado: padraoAntigo }), [estado, experts.data, partes, padraoAntigo]);
   const escolher = (campo: keyof EstadoDoAnuncio) => (v: string) => setEstado((e) => aoEscolherNoAnuncio(e, campo, v));
   const nnOcupado = !editando && proximo.data?.creativeSeqTexto && estado.creativeSeq && estado.creativeSeq !== proximo.data.creativeSeqTexto;
   const opcoesDe = (xs: { value: string; description: string | null }[] | undefined) => (xs ?? []).map((v) => ({ value: v.value, rotulo: v.description ? `${v.value} — ${v.description}` : v.value }));
@@ -152,11 +163,22 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
     try {
       const corpo = corpoDoAnuncio(estado);
       const salvo = editando
-        ? await editar.mutateAsync({ id: (modo as { id: string }).id, dados: { launchType: corpo.launchType, launchSeq: corpo.launchSeq, date: corpo.date, description: corpo.description, notes: corpo.notes } })
+        ? await editar.mutateAsync({
+            id: (modo as { id: string }).id,
+            dados: {
+              launchType: corpo.launchType,
+              launchSeq: corpo.launchSeq,
+              date: corpo.date,
+              description: corpo.description,
+              notes: corpo.notes,
+              // Story 47.13: num vídeo v2 os três são editáveis (como lançamento/data); no padrão antigo não vão (AC7)
+              ...(video && !padraoAntigo ? { origin: corpo.origin ?? undefined, hookId: corpo.hookId ?? undefined, bodyId: corpo.bodyId ?? undefined } : {}),
+            },
+          })
         : await criar.mutateAsync(corpo);
       await navigator.clipboard.writeText(salvo.structure).catch(() => undefined);
       if (eOutro) {
-        // AC8: mantém expert, sigla, número do lançamento e data; limpa NN (o servidor sugere o próximo), descrição e notas.
+        // AC8: mantém expert, sigla, número do lançamento e data — e (47.13 AC9) origem, hook e body; limpa NN (o servidor sugere o próximo), descrição e notas.
         toast.success(<span>Salvo e estrutura copiada: <code className="font-mono">{salvo.structure}</code>. O próximo NN já vem preenchido.</span>, { duration: 8000 });
         setEstado((e) => ({ ...e, creativeSeq: "", description: "", notes: "" }));
         await proximo.refetch();
@@ -196,11 +218,18 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
 
         <div className="grid gap-3">
           <SeletorDeExpert valor={estado.expertId} onChange={escolher("expertId")} travado={editando} id="a-expert" />
-          {/* Story 47.11 (AC1): Tipo sozinho nesta linha — a 47.13 põe a Origem
-              (IA/humano) ao lado quando o tipo for vídeo. */}
-          <div className="grid gap-3 sm:grid-cols-1">
+          {/* Story 47.11 (AC1): Tipo nesta linha; Story 47.13 (AC9): Origem (IA/humano) ao lado quando o tipo é vídeo. */}
+          <div className={cn("grid gap-3", video && !padraoAntigo ? "sm:grid-cols-[1fr_220px]" : "sm:grid-cols-1")}>
             <SelectDeValor id="a-tipo" label="Tipo de criativo" valor={estado.creativeType} onChange={escolher("creativeType")} opcoes={opcoesDe(tipos.data)} desabilitado={editando} vazio="nenhum tipo de criativo ativo — cadastre em Valores fixos" />
+            {video && !padraoAntigo ? (
+              <SelectDeValor id="a-origem" label="Origem do vídeo" valor={estado.origin} onChange={escolher("origin")} opcoes={opcoesDe(origens.data)} vazio="nenhuma origem ativa — cadastre em Valores fixos (ia · h)" />
+            ) : null}
           </div>
+          {padraoAntigo ? (
+            <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
+              Vídeo do <strong>padrão antigo</strong> (47.10): o nome publicado não muda de formato. Para um nome no v2 (origem, hook e body), use <strong>Duplicar</strong>.
+            </p>
+          ) : null}
           {/* Story 47.11 (AC1): NN do criativo | Sigla do lançamento | Nº do lançamento
               na MESMA linha (pedido do gestor, 15/09). Ordem de tabulação NN → Sigla → Nº. */}
           <div className="grid gap-3 sm:grid-cols-[140px_1fr_140px]">
@@ -218,6 +247,18 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
               <p className="text-xs text-muted-foreground">{proximo.data?.launchSeqSugerido ? `Último usado para esta sigla: ${String(proximo.data.launchSeqSugerido).padStart(2, "0")}.` : "O número do lançamento (pg02 = 2º lançamento pago)."}</p>
             </div>
           </div>
+          {/* Story 47.13 (AC9): hook e body DO expert — só em vídeo; sem cadastro, o link leva à aba Hooks e bodies. */}
+          {video && !padraoAntigo ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <SelectDeValor id="a-hook" label="Hook" valor={estado.hookId} onChange={escolher("hookId")} opcoes={(hooks.data ?? []).map((h) => ({ value: h.id, rotulo: h.rotulo }))} desabilitado={!estado.expertId} vazio={estado.expertId ? `nenhum hook cadastrado para ${expertCode || "este expert"}` : "escolha o expert"} />
+              <SelectDeValor id="a-body" label="Body" valor={estado.bodyId} onChange={escolher("bodyId")} opcoes={(bodies.data ?? []).map((b) => ({ value: b.id, rotulo: b.rotulo }))} desabilitado={!estado.expertId} vazio={estado.expertId ? `nenhum body cadastrado para ${expertCode || "este expert"}` : "escolha o expert"} />
+              {estado.expertId && !hooks.isLoading && !bodies.isLoading && ((hooks.data?.length ?? 0) === 0 || (bodies.data?.length ?? 0) === 0) ? (
+                <p className="text-xs text-muted-foreground sm:col-span-2">
+                  Vídeo exige hook e body do expert. <Link className="underline" href={hrefDe("ads", "partes")}>Cadastrar em Hooks e bodies</Link>.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           <div className="space-y-1">
             <Label htmlFor="a-mes">Mês e ano</Label>
             <Input id="a-mes" type="month" value={estado.date ? `${estado.date.slice(3)}-${estado.date.slice(0, 2)}` : ""} onChange={(e) => { const v = e.target.value; setEstado((s) => ({ ...s, date: v ? `${v.slice(5, 7)}-${v.slice(0, 4)}` : "" })); }} className="w-[200px]" />
@@ -275,7 +316,10 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
                       <TableHead>Estrutura</TableHead>
                       <TableHead>Descrição</TableHead>
                       <TableHead>Tipo</TableHead>
+                      <TableHead>Origem</TableHead>
                       <TableHead>Lançamento</TableHead>
+                      <TableHead>Hook</TableHead>
+                      <TableHead>Body</TableHead>
                       <TableHead>Mês/ano</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -289,8 +333,11 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
                           </span>
                         </TableCell>
                         <TableCell className="max-w-[220px] truncate font-mono text-xs" title={a.description ?? ""}>{a.description ?? "—"}</TableCell>
-                        <TableCell className="font-mono">{a.creativeType}{String(a.creativeSeq).padStart(2, "0")}</TableCell>
+                        <TableCell className="font-mono">{a.creativeType}{String(a.creativeSeq).padStart(2, "0")}{a.legado ? <span className="ml-1 text-[10px] text-warning" title="padrão antigo (47.10): sem origem, hook e body">antigo</span> : null}</TableCell>
+                        <TableCell className="font-mono">{a.origin ?? "—"}</TableCell>
                         <TableCell className="font-mono">{a.launchType}{String(a.launchSeq).padStart(2, "0")}</TableCell>
+                        <TableCell className="font-mono">{a.hookCode ?? "—"}</TableCell>
+                        <TableCell className="font-mono">{a.bodyCode ?? "—"}</TableCell>
                         <TableCell className="font-mono">{mesAnoDe(a.adDate)}</TableCell>
                       </TableRow>
                     ))}

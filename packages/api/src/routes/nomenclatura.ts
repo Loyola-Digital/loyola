@@ -34,7 +34,7 @@
 import { z } from "zod";
 import fp from "fastify-plugin";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { LPMIX, NA, PREFIXO_DA_PARTE_DO_VIDEO, PREFIXO_DA_VARIAVEL, ROTULO_DA_PARTE_DO_VIDEO, TIPO_DE_CODIGO_DA_PARTE_DO_VIDEO, TIPO_DE_CODIGO_DA_VARIAVEL, montarSlugDeLp, parseAdName, parseCampaignName, parseVslName, proximoCodigoNumerado, sugerirClassificacao } from "@loyola-x/shared";
+import { LPMIX, NA, PREFIXO_DA_PARTE_DO_VIDEO, PREFIXO_DA_VARIAVEL, ROTULO_DA_PARTE_DO_VIDEO, TIPO_DE_CODIGO_DA_PARTE_DO_VIDEO, TIPO_DE_CODIGO_DA_VARIAVEL, ehVideo, montarSlugDeLp, parseAdName, parseCampaignName, parseVslName, proximoCodigoNumerado, sugerirClassificacao } from "@loyola-x/shared";
 import { CAMPOS_DO_NOME, montarCampanha } from "../services/nomenclatura/campanhas.js";
 import { CAMPOS_DA_VSL_NO_BANCO, montarVsl } from "../services/nomenclatura/vsl.js";
 import { montarAnuncio, proximoNnDeAnuncio } from "../services/nomenclatura/anuncios.js";
@@ -991,9 +991,19 @@ export default fp(async function nomenclaturaRoutes(fastify) {
     date: mmAaaa,
     description: z.string().trim().max(200).nullable().optional(),
     notes: z.string().trim().max(4000).nullable().optional(),
+    // Story 47.13: só em adv (o serviço recusa fora dele)
+    origin: z.string().trim().max(20).nullable().optional(),
+    hookId: uuid.nullable().optional(),
+    bodyId: uuid.nullable().optional(),
   });
 
-  const rotulosDeAnuncio = (r: Repositorio) => async (a: { expertId: string }) => ({ expertCode: (await r.porId("experts", a.expertId))?.code ?? "?" });
+  /** Story 47.13: além do expert, os códigos do hook/body (a lista mostra hNN/bNN, não ids) e a marca de padrão antigo. */
+  const rotulosDeAnuncio = (r: Repositorio) => async (a: { expertId: string; creativeType: string; origin?: string | null; hookId?: string | null; bodyId?: string | null }) => ({
+    expertCode: (await r.porId("experts", a.expertId))?.code ?? "?",
+    hookCode: a.hookId ? ((await r.porId("adPartes", a.hookId))?.code ?? null) : null,
+    bodyCode: a.bodyId ? ((await r.porId("adPartes", a.bodyId))?.code ?? null) : null,
+    legado: ehVideo(a.creativeType) && !a.origin,
+  });
 
   // ── Story 47.12: hooks e bodies do vídeo (molde literal de vsl/variaveis) ──
   const tipoDeParte = z.enum(["hook", "body"]);
@@ -1114,6 +1124,10 @@ export default fp(async function nomenclaturaRoutes(fastify) {
           expertId: uuid.optional(),
           creativeType: z.string().max(20).optional(),
           launchType: z.string().max(20).optional(),
+          // Story 47.13 (AC11)
+          origin: z.string().max(20).optional(),
+          hookId: uuid.optional(),
+          bodyId: uuid.optional(),
           de: mmAaaa.optional(),
           ate: mmAaaa.optional(),
           q: z.string().max(200).optional(),
@@ -1125,8 +1139,19 @@ export default fp(async function nomenclaturaRoutes(fastify) {
       const r = repo();
       const paraData = (mm?: string) => (mm ? `${mm.slice(3)}-${mm.slice(0, 2)}-01` : undefined);
       const { itens, total } = await r.anuncios.listar({ ...q, de: paraData(q.de), ate: paraData(q.ate) });
-      const experts = new Map((await r.experts.listar(true)).map((e) => [e.id, e.code]));
-      return { itens: itens.map((a) => ({ ...a, expertCode: experts.get(a.expertId) ?? "?" })), total };
+      const [experts, partes] = await Promise.all([r.experts.listar(true), r.adPartes.listar({}, true)]);
+      const codeDoExpert = new Map(experts.map((e) => [e.id, e.code]));
+      const codeDaParte = new Map(partes.map((p) => [p.id, p.code]));
+      return {
+        itens: itens.map((a) => ({
+          ...a,
+          expertCode: codeDoExpert.get(a.expertId) ?? "?",
+          hookCode: a.hookId ? (codeDaParte.get(a.hookId) ?? null) : null,
+          bodyCode: a.bodyId ? (codeDaParte.get(a.bodyId) ?? null) : null,
+          legado: ehVideo(a.creativeType) && !a.origin,
+        })),
+        total,
+      };
     }),
   );
 
@@ -1159,12 +1184,27 @@ export default fp(async function nomenclaturaRoutes(fastify) {
       const author = autor(request);
       const { id } = parse(idParams, request.params);
       // D23: depois de salvo, tipo e NN do criativo não mudam (o nome já foi para o Meta e para o arquivo do designer).
-      const b = parse(z.object({ launchType: z.string().min(1).max(20).optional(), launchSeq: z.number().int().min(1).max(99).optional(), date: mmAaaa.optional(), description: z.string().trim().max(200).nullable().optional(), notes: z.string().trim().max(4000).nullable().optional() }), request.body);
+      const b = parse(
+        z.object({
+          launchType: z.string().min(1).max(20).optional(),
+          launchSeq: z.number().int().min(1).max(99).optional(),
+          date: mmAaaa.optional(),
+          description: z.string().trim().max(200).nullable().optional(),
+          notes: z.string().trim().max(4000).nullable().optional(),
+          // Story 47.13: editáveis num vídeo v2 (como lançamento/data); num vídeo do padrão antigo são recusados (AC7)
+          origin: z.string().trim().max(20).optional(),
+          hookId: uuid.optional(),
+          bodyId: uuid.optional(),
+        }),
+        request.body,
+      );
       const r = repo();
       const antes = await existente(r, "anuncios", id, "Anúncio");
-      const mexeNoNome = b.launchType !== undefined || b.launchSeq !== undefined || b.date !== undefined || b.description !== undefined;
+      const mexeNoNome = b.launchType !== undefined || b.launchSeq !== undefined || b.date !== undefined || b.description !== undefined || b.origin !== undefined || b.hookId !== undefined || b.bodyId !== undefined;
       const patch: Record<string, unknown> = {};
       if (mexeNoNome) {
+        // AC7: vídeo do padrão antigo (adv sem origem) re-grava no formato de 4 campos — o nome publicado não muda de formato.
+        const legado = ehVideo(antes.creativeType) && !antes.origin;
         const m = await montarAnuncio(
           r,
           {
@@ -1175,8 +1215,11 @@ export default fp(async function nomenclaturaRoutes(fastify) {
             launchSeq: b.launchSeq ?? antes.launchSeq,
             date: b.date ?? `${antes.adDate.slice(5, 7)}-${antes.adDate.slice(0, 4)}`,
             description: b.description === undefined ? antes.description : b.description,
+            origin: b.origin ?? antes.origin ?? null,
+            hookId: b.hookId ?? antes.hookId ?? null,
+            bodyId: b.bodyId ?? antes.bodyId ?? null,
           },
-          { ignorarSeqDe: antes.id },
+          { ignorarSeqDe: antes.id, legado },
         );
         Object.assign(patch, { ...m, fields: undefined });
       }

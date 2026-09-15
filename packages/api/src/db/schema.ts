@@ -5236,6 +5236,12 @@ export const namingAds = pgTable(
     /** Valor de `launch_type`. */
     launchType: varchar("launch_type", { length: 20 }).notNull(),
     launchSeq: integer("launch_seq").notNull(),
+    /** Story 47.13: valor de `creative_origin` (`ia` · `h`). Só em `adv`; null = ad/carr ou vídeo do padrão antigo. */
+    origin: varchar("origin", { length: 20 }),
+    /** Story 47.13: hook do vídeo (`naming_ad_parts`, type hook). Null = ad/carr ou padrão antigo. */
+    hookId: uuid("hook_id").references(() => namingAdParts.id, { onDelete: "restrict" }),
+    /** Story 47.13: body do vídeo (`naming_ad_parts`, type body). Null = ad/carr ou padrão antigo. */
+    bodyId: uuid("body_id").references(() => namingAdParts.id, { onDelete: "restrict" }),
     /** Primeiro dia do mês; o nome mostra `mm-aaaa`. */
     adDate: date("ad_date").notNull(),
     /** A parte depois do `--`, normalizada. Opcional: o designer pode personalizar fora. */
@@ -5258,5 +5264,7 @@ export const namingAds = pgTable(
   (t) => [
     uniqueIndex("uq_naming_ads_expert_seq").on(t.expertId, t.creativeSeq),
     index("idx_naming_ads_expert").on(t.expertId),
+    index("idx_naming_ads_hook").on(t.hookId),
+    index("idx_naming_ads_body").on(t.bodyId),
   ],
 );

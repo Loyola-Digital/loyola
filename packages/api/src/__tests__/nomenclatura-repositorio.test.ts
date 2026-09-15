@@ -323,24 +323,40 @@ describe("Story 47.3: campanhas.listar — filtros vão para o SQL, não para a 
     expect(await criarRepositorio(b.db).campanhasComValor("launch_type", "pg")).toBe(1);
     expect(sqlDe(b.registros[0].where).sql).toMatch(/"launch_type" = /);
   });
-  it("47.12: creative_origin não tem coluna ainda — uso 0, referências vazias, e NENHUMA query em naming_campaigns (o ramo que quebraria com namingCampaigns[undefined])", async () => {
-    const a = fakeDb([]);
-    const r = criarRepositorio(a.db);
-    expect((await r.usoPorValor("creative_origin")).size).toBe(0);
-    expect(await r.campanhasComValor("creative_origin", "ia")).toBe(0);
-    expect(await r.referenciasDe("dicionario", { id: "x", type: "creative_origin", value: "ia" })).toEqual([]);
-    expect(a.registros).toHaveLength(0);
+  it("47.13: creative_origin conta em naming_ads.origin (nunca em naming_campaigns); o grupo null (ad/carr/padrão antigo) não vira valor", async () => {
+    const a = fakeDb([[{ valor: "h", n: 2 }, { valor: null, n: 5 }]]);
+    const m = await criarRepositorio(a.db).usoPorValor("creative_origin");
+    expect(m.get("h")).toBe(2);
+    expect(m.size).toBe(1);
+    expect((a.registros[0].groupBy as { name: string }).name).toBe("origin");
+    const b = fakeDb([[{ n: 1 }]]);
+    expect(await criarRepositorio(b.db).campanhasComValor("creative_origin", "ia")).toBe(1);
+    expect(sqlDe(b.registros[0].where).sql).toMatch(/"origin" = /);
+    expect(sqlDe(b.registros[0].where).sql).not.toMatch(/naming_campaigns/);
   });
-  it("47.12: adPartes.codigos lê todos os códigos do (expert, tipo), ativos ou não; usoEmAnuncios é vazio até a 47.13", async () => {
-    const a = fakeDb([[{ code: "h01" }, { code: "h02" }]]);
+  it("47.13: hook/body em uso — usoEmAnuncios agrupa por hook_id/body_id; anunciosQueUsamParte conta hook_id OU body_id; referências listam os anúncios", async () => {
+    const a = fakeDb([[{ id: "H1", n: 3 }, { id: null, n: 9 }]]);
     const r = criarRepositorio(a.db);
-    expect(await r.adPartes.codigos(EXPERT, "hook")).toEqual(["h01", "h02"]);
+    const m = await r.usoEmAnuncios("hook");
+    expect(m.get("H1")).toBe(3);
+    expect(m.size).toBe(1);
+    expect((a.registros[0].groupBy as { name: string }).name).toBe("hook_id");
+    const b = fakeDb([[{ n: 2 }]]);
+    expect(await criarRepositorio(b.db).anunciosQueUsamParte("H1")).toBe(2);
+    const w = sqlDe(b.registros[0].where).sql;
+    expect(w).toMatch(/"hook_id" = /);
+    expect(w).toMatch(/"body_id" = /);
+    expect(w).toMatch(/ or /);
+    const c = fakeDb([[{ id: "A1", name: "adv01_h_dg_pg04_h01_b01_09-2026--" }]]);
+    expect(await criarRepositorio(c.db).referenciasDe("adPartes", { id: "H1" })).toEqual([{ tipo: "anuncio", id: "A1", rotulo: "adv01_h_dg_pg04_h01_b01_09-2026--" }]);
+  });
+  it("47.12/47.13: adPartes.codigos lê todos os códigos do (expert, tipo), ativos ou não", async () => {
+    const a = fakeDb([[{ code: "h01" }, { code: "h02" }]]);
+    expect(await criarRepositorio(a.db).adPartes.codigos(EXPERT, "hook")).toEqual(["h01", "h02"]);
     const q = sqlDe(a.registros[0].where);
     expect(q.sql).toMatch(/"expert_id" = /);
     expect(q.sql).toMatch(/"type" = /);
     expect(q.sql).not.toMatch(/"active"/);
-    expect((await r.usoEmAnuncios("hook")).size).toBe(0);
-    expect(await r.anunciosQueUsamParte("qualquer")).toBe(0);
   });
   it("47.8: naoPublicadas é published_at IS NULL — publicada nunca entra no recálculo (regra 6)", async () => {
     const a = fakeDb([[]]);

@@ -31,10 +31,17 @@ export function ListaDeAnuncios() {
   const [de, setDe] = useState("");
   const [ate, setAte] = useState("");
   const [q, setQ] = useState("");
+  // Story 47.13 (AC11): filtros do vídeo — origem sempre; hook/body só com expert escolhido (são do expert).
+  const [origin, setOrigin] = useState("");
+  const [hookId, setHookId] = useState("");
+  const [bodyId, setBodyId] = useState("");
+  const origens = useListaDe("dicionario", { type: "creative_origin" });
+  const hooks = useListaDe("ads/partes", { expertId, type: "hook" }, { enabled: Boolean(expertId) });
+  const bodies = useListaDe("ads/partes", { expertId, type: "body" }, { enabled: Boolean(expertId) });
   const tipos = useListaDe("dicionario", { type: "creative_type", inativos: true });
   const siglas = useListaDe("dicionario", { type: "launch_type", inativos: true });
   const paraMmAaaa = (mes: string) => (mes ? `${mes.slice(5, 7)}-${mes.slice(0, 4)}` : undefined);
-  const lista = useAnuncios({ expertId: expertId || undefined, creativeType: creativeType || undefined, launchType: launchType || undefined, de: paraMmAaaa(de), ate: paraMmAaaa(ate), q: q.trim() || undefined, limit: 100 });
+  const lista = useAnuncios({ expertId: expertId || undefined, creativeType: creativeType || undefined, launchType: launchType || undefined, origin: origin || undefined, hookId: (expertId && hookId) || undefined, bodyId: (expertId && bodyId) || undefined, de: paraMmAaaa(de), ate: paraMmAaaa(ate), q: q.trim() || undefined, limit: 100 });
 
   const filtro = (id: string, label: string, valor: string, onChange: (v: string) => void, opcoes: { value: string; description: string | null }[]) => (
     <div className="space-y-1">
@@ -61,6 +68,9 @@ export function ListaDeAnuncios() {
         <SeletorDeExpert valor={expertId} onChange={setExpertId} permitirTodos id="f-ad-expert" />
         {filtro("f-ad-tipo", "Tipo", creativeType, setCreativeType, tipos.data ?? [])}
         {filtro("f-ad-sigla", "Sigla", launchType, setLaunchType, siglas.data ?? [])}
+        {filtro("f-ad-origem", "Origem (vídeo)", origin, setOrigin, origens.data ?? [])}
+        {expertId ? filtro("f-ad-hook", "Hook", hookId, setHookId, (hooks.data ?? []).map((h) => ({ value: h.id, description: h.rotulo }))) : null}
+        {expertId ? filtro("f-ad-body", "Body", bodyId, setBodyId, (bodies.data ?? []).map((b) => ({ value: b.id, description: b.rotulo }))) : null}
         <div className="space-y-1">
           <Label htmlFor="f-ad-de" className="text-xs text-muted-foreground">De (mês)</Label>
           <Input id="f-ad-de" type="month" value={de} onChange={(e) => setDe(e.target.value)} />
@@ -88,7 +98,10 @@ export function ListaDeAnuncios() {
               <TableHead>Descrição</TableHead>
               <TableHead>Expert</TableHead>
               <TableHead>Tipo</TableHead>
+              <TableHead>Origem</TableHead>
               <TableHead>Lançamento</TableHead>
+              <TableHead>Hook</TableHead>
+              <TableHead>Body</TableHead>
               <TableHead>Mês</TableHead>
               <TableHead>Criado em</TableHead>
               <TableHead className="text-right">Ações</TableHead>
@@ -96,9 +109,9 @@ export function ListaDeAnuncios() {
           </TableHeader>
           <TableBody>
             {lista.isLoading ? (
-              [0, 1, 2].map((i) => <TableRow key={i}><TableCell colSpan={8}><Skeleton className="h-5 w-full" /></TableCell></TableRow>)
+              [0, 1, 2].map((i) => <TableRow key={i}><TableCell colSpan={11}><Skeleton className="h-5 w-full" /></TableCell></TableRow>)
             ) : (lista.data?.itens.length ?? 0) === 0 ? (
-              <TableRow><TableCell colSpan={8} className="text-center text-sm text-muted-foreground">Nenhum anúncio ainda. <Link className="underline" href={hrefDe("ads", "novo")}>Criar o primeiro</Link>.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={11} className="text-center text-sm text-muted-foreground">Nenhum anúncio ainda. <Link className="underline" href={hrefDe("ads", "novo")}>Criar o primeiro</Link>.</TableCell></TableRow>
             ) : (
               lista.data!.itens.map((a) => (
                 <TableRow key={a.id}>
@@ -111,8 +124,14 @@ export function ListaDeAnuncios() {
                   </TableCell>
                   <TableCell className="max-w-[220px] truncate font-mono text-sm" title={a.description ?? undefined}>{a.description || "—"}</TableCell>
                   <TableCell className="font-mono">{a.expertCode}</TableCell>
-                  <TableCell className="font-mono">{a.creativeType}{String(a.creativeSeq).padStart(2, "0")}</TableCell>
+                  <TableCell className="font-mono">
+                    {a.creativeType}{String(a.creativeSeq).padStart(2, "0")}
+                    {a.legado ? <span className="ml-1 rounded bg-warning/15 px-1 text-[10px] text-warning" title="padrão antigo (47.10): sem origem, hook e body">antigo</span> : null}
+                  </TableCell>
+                  <TableCell className="font-mono">{a.origin ?? "—"}</TableCell>
                   <TableCell className="font-mono">{a.launchType}{String(a.launchSeq).padStart(2, "0")}</TableCell>
+                  <TableCell className="font-mono">{a.hookCode ?? "—"}</TableCell>
+                  <TableCell className="font-mono">{a.bodyCode ?? "—"}</TableCell>
                   <TableCell className="font-mono">{mesAnoDe(a.adDate)}</TableCell>
                   <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{new Date(a.createdAt).toLocaleDateString("pt-BR")}</TableCell>
                   <TableCell className="whitespace-nowrap text-right">

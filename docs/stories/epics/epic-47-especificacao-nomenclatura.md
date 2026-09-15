@@ -429,11 +429,41 @@ Observação: a documentação da convenção também prevê `mix` em temperatur
 
 ---
 
-## 11. Fora do escopo agora (não implementar, mas não bloquear)
+## 11. Fora do escopo desta spec (e o que já saiu do "fora")
 
-- Nomenclatura de conjunto de anúncios e de anúncio (`NN_tipo-publico_descricao_posicionamento`, `adNNN_formato_conceito_vNN_lp`).
+- ~~Nomenclatura de anúncio (`adNNN_formato_conceito_vNN_lp`)~~ — **implementada** na Fase 2/3 com outro formato (o rascunho acima nunca foi usado). Ver § 11.1.
+- Nomenclatura de conjunto de anúncios (`NN_tipo-publico_descricao_posicionamento`) — ainda fora.
 - Montagem dos parâmetros de URL (`s=meta&c=…&t=…`).
 - Integração com a API do Meta.
 - Importação em massa da planilha antiga.
 
-Deixe o modelo pronto para isso: `campaigns.id` será pai de conjuntos e anúncios numa fase 2, e `landing_pages.code` será reutilizado no nome do anúncio.
+`campaigns.id` continua sem ser pai de conjuntos; `landing_pages.code` **não** entrou no nome do anúncio (o lançamento entra por sigla + NN).
+
+### 11.1 Nome de anúncio — como ficou (Story 47.10, e o vídeo v2 na 47.13)
+
+Seção **Nome Ads** (`?secao=ads`): Novo anúncio · Anúncios · Valores fixos · Hooks e bodies.
+
+```
+ad · carr (4 campos):   {tipo}{NN}_{expert}_{sigla}{NN}_{mm-aaaa}--{descricao}
+                        ad03_dg_pg02_09-2026--gancho-demissao
+adv — vídeo (7 campos): {tipo}{NN}_{origem}_{expert}_{sigla}{NN}_{hNN}_{bNN}_{mm-aaaa}--{descricao}
+                        adv01_h_dg_pg04_h01_b01_09-2026--      (pedido do gestor, 15/09/2026; formato com ok do dono)
+```
+
+| campo | valor | regra |
+|---|---|---|
+| tipo + NN | `creative_type` (`ad` · `adv` · `carr`) + dois dígitos | NN **único por expert**, qualquer tipo (o 7º criativo do DG é `07`); sugerido pelo servidor, reservado na gravação (409 na corrida) |
+| origem | `creative_origin` (`ia` — feito por inteligência artificial · `h` — feito por humano) | **só em `adv`**; obrigatória lá, proibida fora |
+| expert | `naming_experts.code` | |
+| sigla + NN | `launch_type` (`pg` · `l` · `m` · `pr`) + número do lançamento | NN escolhido, com sugestão (maior já usado para expert+sigla) |
+| hook · body | `naming_ad_parts` — `hNN` / `bNN` **por expert**, com descrição obrigatória (Dicionário › Nome Ads › Hooks e bodies) | **só em `adv`**; obrigatórios lá; o `h01` do DG não vale para o BBE |
+| data | `mm-aaaa` | |
+| `--` + descrição | livre, do designer; `[a-z0-9-]`; opcional no sistema | o `--` é a única exceção à regra "nunca `--`": marca onde o texto livre começa; o parse quebra no PRIMEIRO |
+
+Regras que valem aqui e em mais lugar nenhum:
+- **"Vídeo" = valor `adv`.** Outro tipo de vídeo no dicionário é decisão nova, não herda o formato.
+- **Vídeo do padrão antigo** (`adv` gravado com 4 campos antes da 47.13) continua **válido com aviso** ("padrão antigo (47.10)"); editar descrição/lançamento/data não exige origem/hook/body e re-grava em 4 campos (regra 6: nome publicado não muda de formato). Para um nome no v2, **duplicar**.
+- Depois de salvo, tipo e NN do criativo **não mudam** (D23). Hook/body/origem de um vídeo v2 editam como lançamento/data.
+- Código de hook/body **imutável depois de usado** em anúncio; excluir só sem uso.
+
+Gerador: expert → tipo (+ origem ao lado, se vídeo) → NN | sigla | nº do lançamento → hook | body (se vídeo) → mês/ano → descrição. Prévia colorida por bloco; "Copiar estrutura" (até o `--`) é o que o designer recebe; "Salvar e criar outro" mantém expert, sigla, nº, data, origem, hook e body. Ao escolher o expert, a tela lista os anúncios já cadastrados dele.

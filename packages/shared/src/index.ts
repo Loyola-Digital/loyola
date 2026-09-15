@@ -123,6 +123,17 @@ export {
   TIPO_DE_CODIGO_DA_PARTE_DO_VIDEO,
   ROTULO_DA_PARTE_DO_VIDEO,
   type TipoDeParteDoVideo,
+  // Story 47.13: nome de vídeo v2
+  TIPO_DE_VIDEO,
+  ehVideo,
+  ORDEM_DO_VIDEO,
+  TOTAL_DE_CAMPOS_ESTRUTURAIS,
+  TOTAL_DE_CAMPOS_DO_VIDEO,
+  ordemDosCampos,
+  posicaoDoCampo,
+  FORMATO_DO_HOOK,
+  FORMATO_DO_BODY,
+  AVISO_DE_PADRAO_ANTIGO,
 } from "./nomenclatura-de-anuncio.js";
 // Story 47.5: campanhas legadas — filtro por token e sugestão de classificação
 // a partir do nome antigo. Módulo folha (web: subpath `src/nomenclatura-legado`).
