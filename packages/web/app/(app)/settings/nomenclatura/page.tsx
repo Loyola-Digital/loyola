@@ -37,6 +37,7 @@ import { AbaVariaveisDeVsl } from "@/components/nomenclatura/vsl/aba-variaveis";
 import { GeradorDeVsl } from "@/components/nomenclatura/vsl/gerador-de-vsl";
 import { ListaDeVsls } from "@/components/nomenclatura/vsl/lista-de-vsls";
 import { AbaValoresDeAds } from "@/components/nomenclatura/ads/aba-valores-de-ads";
+import { AbaHooksEBodies } from "@/components/nomenclatura/ads/aba-hooks-e-bodies";
 import { GeradorDeAnuncio } from "@/components/nomenclatura/ads/gerador-de-anuncio";
 import { ListaDeAnuncios } from "@/components/nomenclatura/ads/lista-de-anuncios";
 
@@ -157,6 +158,8 @@ function Nomenclatura() {
               <ListaDeAnuncios />
             ) : ativa.aba === "valores" ? (
               <AbaValoresDeAds podeEditar={podeEditar} />
+            ) : ativa.aba === "partes" ? (
+              <AbaHooksEBodies podeEditar={podeEditar} />
             ) : (
               <GeradorDeAnuncio
                 key={`ads|${params.get("editar") ?? ""}|${params.get("duplicar") ?? ""}`}

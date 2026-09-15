@@ -4731,6 +4731,8 @@ export const namingDictionaryTypeEnum = pgEnum("naming_dictionary_type", [
   /** Story 47.10: tipo de criativo (ad · adv · carr) e sigla de lançamento (pg · l · m · pr) do nome de anúncio. */
   "creative_type",
   "launch_type",
+  /** Story 47.12: origem do vídeo — `ia` (feito por inteligência artificial) · `h` (feito por humano). Entra no nome do `adv` na 47.13. */
+  "creative_origin",
 ]);
 
 /** Story 47.5: de onde a campanha veio — do gerador ou classificada a partir do Meta. */
@@ -5184,6 +5186,42 @@ export const namingVsls = pgTable(
 // creative_seq)`), reservada NA GRAVAÇÃO (D22) — o servidor recalcula e o
 // UNIQUE é a garantia contra corrida. `structure` (até o `--`) é o que o
 // designer recebe; `name` é estrutura + descrição.
+
+/** Story 47.12: hook e body do vídeo — cadastrados por expert, com descrição obrigatória. */
+export const namingAdPartTypeEnum = pgEnum("naming_ad_part_type", ["hook", "body"]);
+
+/**
+ * Story 47.12 — hooks e bodies do vídeo, por expert (pedido do gestor, 15/09/2026).
+ * Mesmo desenho de `naming_vsl_variables`: `h01` é o 1º hook DO EXPERT, `b01` o 1º
+ * body; descrição obrigatória (é o que se lê no select e "para verificarmos
+ * depois"); código imutável depois de usado em anúncio (a 47.13 passa a gravar
+ * `hook_id`/`body_id` em `naming_ads`).
+ */
+export const namingAdParts = pgTable(
+  "naming_ad_parts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    expertId: uuid("expert_id")
+      .notNull()
+      .references(() => namingExperts.id, { onDelete: "restrict" }),
+    type: namingAdPartTypeEnum("type").notNull(),
+    /** `h` ou `b` + dois dígitos. Único por (expert, tipo), inativos inclusos. */
+    code: varchar("code", { length: 20 }).notNull(),
+    /** Obrigatória: é o que se lê no select do gerador. */
+    description: text("description").notNull(),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("uq_naming_ad_parts_expert_type_code").on(t.expertId, t.type, t.code),
+    index("idx_naming_ad_parts_expert").on(t.expertId),
+  ],
+);
 
 export const namingAds = pgTable(
   "naming_ads",

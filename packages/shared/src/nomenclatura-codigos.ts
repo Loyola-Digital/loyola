@@ -21,7 +21,7 @@
  */
 
 /** Cada tipo de código tem o próprio formato (spec § 4). */
-export type TipoDeCodigo = "expert" | "produto" | "funil" | "oferta" | "lp" | "valor" | "vsl-lead" | "vsl-problem" | "vsl-solution" | "anuncio";
+export type TipoDeCodigo = "expert" | "produto" | "funil" | "oferta" | "lp" | "valor" | "vsl-lead" | "vsl-problem" | "vsl-solution" | "anuncio" | "ad-hook" | "ad-body";
 
 export const FORMATO_DO_CODIGO: Record<TipoDeCodigo, { regex: RegExp; descricao: string }> = {
   expert: { regex: /^[a-z]{2,4}$/, descricao: "2 a 4 letras (ex.: bbe)" },
@@ -36,6 +36,9 @@ export const FORMATO_DO_CODIGO: Record<TipoDeCodigo, { regex: RegExp; descricao:
   "vsl-solution": { regex: /^sol\d{2}$/, descricao: "sol + dois dígitos (ex.: sol01)" },
   /** Story 47.10: a descrição livre do anúncio (depois do `--`), quando digitada no sistema. */
   anuncio: { regex: /^[a-z0-9-]{1,60}$/, descricao: "até 60 caracteres em [a-z0-9-] (ex.: gancho-demissao)" },
+  /** Story 47.12: hook e body do vídeo — sigla + dois dígitos, sequencial por expert e tipo (pedido do gestor, 15/09/2026). */
+  "ad-hook": { regex: /^h\d{2}$/, descricao: "h + dois dígitos (ex.: h01)" },
+  "ad-body": { regex: /^b\d{2}$/, descricao: "b + dois dígitos (ex.: b01)" },
 };
 
 export type Normalizacao =

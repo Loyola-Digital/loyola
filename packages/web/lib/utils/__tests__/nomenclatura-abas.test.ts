@@ -72,7 +72,9 @@ describe("Nome Ads é seção com três abas (Story 47.10)", () => {
     expect(abaAtiva(params({ secao: "ads" }))).toEqual({ secao: "ads", aba: "novo" });
     expect(abaAtiva(params({ secao: "ads", aba: "valores" }))).toEqual({ secao: "ads", aba: "valores" });
     expect(abaAtiva(params({ secao: "ads", aba: "nova" }))).toEqual({ secao: "ads", aba: "novo" });
-    expect(ABAS_DE_ADS.map((a) => a.value)).toEqual(["novo", "lista", "valores"]);
+    // Story 47.12: aba "Hooks e bodies" à direita de Valores fixos
+    expect(ABAS_DE_ADS.map((a) => a.value)).toEqual(["novo", "lista", "valores", "partes"]);
+    expect(abaAtiva(params({ secao: "ads", aba: "partes" }))).toEqual({ secao: "ads", aba: "partes" });
     const ordem = SECOES.map((s) => s.value);
     expect(ordem.indexOf("ads")).toBe(ordem.indexOf("vsl") + 1);
     expect(hrefDaSecao("ads")).toBe("/settings/nomenclatura?secao=ads&aba=novo");

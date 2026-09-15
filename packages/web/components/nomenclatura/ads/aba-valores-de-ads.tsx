@@ -2,7 +2,7 @@
 
 /**
  * Story 47.10 — Valores fixos do nome de anúncio: tipo de criativo (ad · adv ·
- * carr) e sigla de lançamento (pg · l · m · pr). Mesmo CRUD do Dicionário ›
+ * carr) e sigla de lançamento (pg · l · m · pr). Story 47.12: origem do vídeo (ia · h). Mesmo CRUD do Dicionário ›
  * Valores fixos (`SecaoDeValores`), filtrado nos dois tipos novos — a aba do
  * Dicionário segue com os quatro do nome de campanha.
  */
@@ -17,6 +17,8 @@ export function AbaValoresDeAds({ podeEditar }: { podeEditar: boolean }) {
       </p>
       <SecaoDeValores tipo="creative_type" podeEditar={podeEditar} />
       <SecaoDeValores tipo="launch_type" podeEditar={podeEditar} />
+      {/* Story 47.12 (AC4): origem do vídeo — ia · h. Entra no nome do adv na 47.13. */}
+      <SecaoDeValores tipo="creative_origin" podeEditar={podeEditar} />
     </div>
   );
 }

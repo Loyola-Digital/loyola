@@ -364,7 +364,7 @@ export function FormLp(props: { aberto: boolean; linha: Lp | null; cascataInicia
 }
 
 // ─────────────────────────── Valor fixo ───────────────────────────
-export const ROTULO_DO_TIPO: Record<TipoDeValor, string> = { year: "Ano", temperature: "Temperatura", auction: "Leilão", format: "Formato", creative_type: "Tipo de criativo", launch_type: "Sigla de lançamento" };
+export const ROTULO_DO_TIPO: Record<TipoDeValor, string> = { year: "Ano", temperature: "Temperatura", auction: "Leilão", format: "Formato", creative_type: "Tipo de criativo", launch_type: "Sigla de lançamento", creative_origin: "Origem do vídeo" };
 
 export function FormValorFixo(props: { aberto: boolean; tipo: TipoDeValor; linha: ValorFixo | null; onFechar: () => void }) {
   const { aberto, tipo, linha, onFechar } = props;

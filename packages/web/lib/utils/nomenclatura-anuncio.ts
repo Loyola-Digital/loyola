@@ -10,17 +10,28 @@
 
 import {
   FORMATO_DA_DATA_DO_ANUNCIO,
+  PREFIXO_DA_PARTE_DO_VIDEO,
+  ROTULO_DA_PARTE_DO_VIDEO,
   SEPARADOR_DA_DESCRICAO,
+  TIPOS_DE_PARTE_DO_VIDEO,
+  TIPO_DE_CODIGO_DA_PARTE_DO_VIDEO,
   buildAdName,
   mesAnoDe,
   pedacosDoAnuncio,
   type AdFields,
   type BlocoDoAnuncio,
   type PedacoDoAnuncio,
+  type TipoDeParteDoVideo,
 } from "@loyola-x/shared/src/nomenclatura-de-anuncio";
 import { normalizarCodigo } from "@loyola-x/shared/src/nomenclatura-codigos";
 
 export { mesAnoDe, FORMATO_DA_DATA_DO_ANUNCIO, SEPARADOR_DA_DESCRICAO };
+// Story 47.12: hook e body do vídeo (cadastro por expert; entram no nome na 47.13)
+export { TIPOS_DE_PARTE_DO_VIDEO, PREFIXO_DA_PARTE_DO_VIDEO, TIPO_DE_CODIGO_DA_PARTE_DO_VIDEO, ROTULO_DA_PARTE_DO_VIDEO, type TipoDeParteDoVideo };
+export const PLACEHOLDER_DA_PARTE_DO_VIDEO: Record<TipoDeParteDoVideo, { code: string; description: string }> = {
+  hook: { code: "h01", description: "ex.: pergunta direta — você já foi demitido depois dos 40?" },
+  body: { code: "b01", description: "ex.: prova social com três depoimentos e a virada" },
+};
 
 export interface EstadoDoAnuncio {
   expertId: string;

@@ -22,12 +22,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DicionarioSnapshot, ParseResult } from "@loyola-x/shared/src/nomenclatura-de-campanha";
 import type { SugestaoDeClassificacao } from "@loyola-x/shared/src/nomenclatura-legado";
 import type { TipoDeVariavel, VslParseResult, VslSnapshot } from "@loyola-x/shared/src/nomenclatura-de-vsl";
+import type { TipoDeParteDoVideo } from "@loyola-x/shared/src/nomenclatura-de-anuncio";
 import type { AdParseResult } from "@loyola-x/shared/src/nomenclatura-de-anuncio";
 
-/** `vsl/variaveis` (Story 47.9) segue o mesmo contrato CRUD, sob o prefixo `/vsl`. */
-export type Recurso = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "dicionario" | "vsl/variaveis";
-/** `creative_type` e `launch_type` (Story 47.10) são os do nome de anúncio; mesmo CRUD. */
-export type TipoDeValor = "year" | "temperature" | "auction" | "format" | "creative_type" | "launch_type";
+/** `vsl/variaveis` (Story 47.9) e `ads/partes` (Story 47.12) seguem o mesmo contrato CRUD, sob os prefixos `/vsl` e `/ads`. */
+export type Recurso = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "dicionario" | "vsl/variaveis" | "ads/partes";
+/** `creative_type` e `launch_type` (Story 47.10) e `creative_origin` (Story 47.12) são os do nome de anúncio; mesmo CRUD. */
+export type TipoDeValor = "year" | "temperature" | "auction" | "format" | "creative_type" | "launch_type" | "creative_origin";
 
 export interface Referencia {
   tipo: "produto" | "funil" | "oferta" | "lp" | "campanha" | "variavel" | "vsl" | "anuncio";
@@ -112,6 +113,14 @@ export interface VariavelDeVsl extends Base {
   description: string;
   rotulo: string;
 }
+/** Story 47.12: hook ou body do vídeo, por expert. */
+export interface ParteDoVideo extends Base {
+  expertId: string;
+  type: TipoDeParteDoVideo;
+  code: string;
+  description: string;
+  rotulo: string;
+}
 
 export type LinhaDe<R extends Recurso> = R extends "experts"
   ? Expert
@@ -123,7 +132,9 @@ export type LinhaDe<R extends Recurso> = R extends "experts"
         ? Lp
         : R extends "vsl/variaveis"
           ? VariavelDeVsl
-          : ValorFixo;
+          : R extends "ads/partes"
+            ? ParteDoVideo
+            : ValorFixo;
 
 const BASE = "/api/nomenclatura";
 
@@ -139,7 +150,7 @@ function query(params: Record<string, string | boolean | undefined>): string {
 
 export function useListaDe<R extends Recurso>(
   recurso: R,
-  params: { inativos?: boolean; expertId?: string; productId?: string; funnelId?: string; offerId?: string; type?: TipoDeValor | TipoDeVariavel } = {},
+  params: { inativos?: boolean; expertId?: string; productId?: string; funnelId?: string; offerId?: string; type?: TipoDeValor | TipoDeVariavel | TipoDeParteDoVideo } = {},
   opts: { enabled?: boolean } = {},
 ) {
   const apiClient = useApiClient();
@@ -153,8 +164,8 @@ export function useListaDe<R extends Recurso>(
 
 /** Sugestão de código no escopo (funis/ofertas por expert; lps pela combinação). */
 export function useProximoCodigo(
-  recurso: "funis" | "ofertas" | "lps" | "vsl/variaveis",
-  params: { expertId?: string; productId?: string; funnelId?: string; offerId?: string; type?: TipoDeVariavel },
+  recurso: "funis" | "ofertas" | "lps" | "vsl/variaveis" | "ads/partes",
+  params: { expertId?: string; productId?: string; funnelId?: string; offerId?: string; type?: TipoDeVariavel | TipoDeParteDoVideo },
   enabled: boolean,
 ) {
   const apiClient = useApiClient();

@@ -69,7 +69,8 @@ describe("seed da nomenclatura", () => {
     expect(banco.contagens()).toEqual(depoisDa1);
     expect(Object.values(segunda.inseridos).every((n) => n === 0)).toBe(true);
     // 10 da spec § 9.6 (+2025) + 7 do nome de anúncio (Story 47.10: 3 tipos de criativo + 4 siglas)
-    expect(primeira.inseridos.naming_dictionary_values).toBe(17);
+    // + 2 da origem do vídeo (Story 47.12: ia · h)
+    expect(primeira.inseridos.naming_dictionary_values).toBe(19);
   });
 
   it("valores fixos entram na ordem da spec § 9.6 e nada de mix/carrossel fora do lugar", async () => {

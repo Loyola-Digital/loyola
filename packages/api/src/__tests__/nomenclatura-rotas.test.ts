@@ -14,7 +14,7 @@ type Linha = Record<string, unknown> & { id: string; active: boolean };
 type Log = { entity: string; entityId: string; action: string; before: unknown; after: unknown; author: string | null };
 
 function memoria() {
-  const t: Record<string, Linha[]> = { experts: [], produtos: [], funis: [], ofertas: [], lps: [], dicionario: [], campanhas: [], decisoes: [], vslVariaveis: [], vsls: [], anuncios: [] };
+  const t: Record<string, Linha[]> = { experts: [], produtos: [], funis: [], ofertas: [], lps: [], dicionario: [], campanhas: [], decisoes: [], vslVariaveis: [], vsls: [], anuncios: [], adPartes: [] };
   /** Story 47.5: "cache de nomes" do Meta e gasto, em memória. */
   const meta: { projectId: string; projeto: string; campaignId: string; nome: string; statusMeta: string | null }[] = [];
   const gastoMeta: Record<string, { spend: number; de: string; ate: string }> = {};
@@ -76,6 +76,20 @@ function memoria() {
       listar: async (f: { expertId?: string; type?: string }, inativos: boolean) => ativos(t.vslVariaveis.filter((x) => (!f.expertId || x.expertId === f.expertId) && (!f.type || x.type === f.type)), inativos),
       porCode: async (expertId: string, type: string, code: string) => t.vslVariaveis.find((x) => x.expertId === expertId && x.type === type && x.code === code),
       codigos: async (expertId: string, type: string) => t.vslVariaveis.filter((x) => x.expertId === expertId && x.type === type).map((x) => x.code as string),
+    },
+    // Story 47.12: hooks e bodies (mesmo desenho das variáveis de VSL)
+    adPartes: {
+      listar: async (f: { expertId?: string; type?: string }, inativos: boolean) => ativos(t.adPartes.filter((x) => (!f.expertId || x.expertId === f.expertId) && (!f.type || x.type === f.type)), inativos),
+      porCode: async (expertId: string, type: string, code: string) => t.adPartes.find((x) => x.expertId === expertId && x.type === type && x.code === code),
+      codigos: async (expertId: string, type: string) => t.adPartes.filter((x) => x.expertId === expertId && x.type === type).map((x) => x.code as string),
+    },
+    /** 47.12: `naming_ads` só referencia hook/body na 47.13 — uso vem do que o teste injetar em `usoDePartes`. */
+    usoDePartes: new Map<string, number>(),
+    async usoEmAnuncios(_type: string) {
+      return new Map(this.usoDePartes);
+    },
+    async anunciosQueUsamParte(i: string) {
+      return this.usoDePartes.get(i) ?? 0;
     },
     vsls: {
       listar: async (f: Record<string, unknown>) => {
@@ -201,6 +215,8 @@ function memoria() {
         ofertas: t.ofertas.filter((x) => x.expertId === expertId && x.active),
         lps: t.lps.filter((x) => x.expertId === expertId && x.active),
         variaveisDeVsl: t.vslVariaveis.filter((x) => x.expertId === expertId && x.active),
+        // Story 47.12: hooks/bodies do expert entram na cascata
+        partesDoVideo: t.adPartes.filter((x) => x.expertId === expertId && x.active),
       }),
     },
     produtos: {
@@ -407,7 +423,7 @@ describe("rotas da nomenclatura", () => {
     await app.inject({ method: "POST", url: "/api/nomenclatura/lps", payload: { expertId: bbe.id, productId: churrasco.id, funnelId: a01.id, offerId: of01.id } });
 
     const impacto = await app.inject({ method: "GET", url: `/api/nomenclatura/experts/${bbe.id}/impacto-da-desativacao` });
-    expect(impacto.json()).toEqual({ produtos: 1, funis: 1, ofertas: 2, lps: 1, variaveisDeVsl: 0 });
+    expect(impacto.json()).toEqual({ produtos: 1, funis: 1, ofertas: 2, lps: 1, variaveisDeVsl: 0, partesDoVideo: 0 });
     expect(mem.t.produtos[0].active).toBe(true);
 
     const antes = mem.changelog.length;
@@ -870,6 +886,81 @@ describe("rotas da nomenclatura", () => {
     expect((await app.inject({ method: "GET", url: "/api/nomenclatura/legadas" })).json().resumo.pendentes).toBe(2);
     await app.inject({ method: "POST", url: `/api/nomenclatura/legadas/${PROJ_BBE}/111/classificar`, payload: { productId: churrasco.id, funnelId: a01.id, offerId: of01.id, landingPageId: null, lpValue: "na", year: "2026", temperature: "hot", auction: "cbo", format: "videos" } });
     expect((await app.inject({ method: "POST", url: `/api/nomenclatura/legadas/${PROJ_BBE}/111/ignorar`, payload: {} })).statusCode).toBe(409);
+  });
+
+  // ── Story 47.12: dicionário do vídeo — origem (ia · h) e hooks/bodies por expert ──
+  async function partesBase(app: FastifyInstance) {
+    const c = await cenario(app);
+    const post = async (url: string, payload: Record<string, unknown>) => (await app.inject({ method: "POST", url, payload })).json();
+    // sem `code`: o servidor sugere h01 / b01 (mesma regra das variáveis de VSL)
+    const h01 = await post("/api/nomenclatura/ads/partes", { expertId: c.bbe.id, type: "hook", description: "pergunta: você já foi demitido?" });
+    const b01 = await post("/api/nomenclatura/ads/partes", { expertId: c.bbe.id, type: "body", description: "prova social com 3 depoimentos" });
+    return { ...c, h01, b01 };
+  }
+
+  it("47.12 AC5/AC6/AC9: hook/body — código h01/b01 sugerido por (expert, tipo), único inclusive inativo, descrição obrigatória, formato do tipo; rotulo e usadoEm na listagem", async () => {
+    const { bbe, h01, b01 } = await partesBase(app);
+    expect(h01).toMatchObject({ code: "h01", type: "hook", rotulo: "h01 — pergunta: você já foi demitido?", usadoEm: 0 });
+    expect(b01).toMatchObject({ code: "b01", type: "body", usadoEm: 0 });
+    expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads/partes/proximo-codigo?expertId=${bbe.id}&type=hook` })).json()).toEqual({ codigo: "h02" });
+    expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads/partes/proximo-codigo?expertId=${bbe.id}&type=body` })).json()).toEqual({ codigo: "b02" });
+    const dup = await app.inject({ method: "POST", url: "/api/nomenclatura/ads/partes", payload: { expertId: bbe.id, type: "hook", code: "h01", description: "outra" } });
+    expect(dup.statusCode).toBe(409);
+    expect(dup.json().error).toBe('h01 já existe para bbe (hook): "pergunta: você já foi demitido?". Use h02.');
+    await app.inject({ method: "POST", url: `/api/nomenclatura/ads/partes/${h01.id}/desativar` });
+    // inativo continua ocupando o código (regra 4) e a sugestão pula para h02
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/ads/partes", payload: { expertId: bbe.id, type: "hook", code: "h01", description: "x" } })).statusCode).toBe(409);
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/ads/partes", payload: { expertId: bbe.id, type: "hook", description: "segundo" } })).json().code).toBe("h02");
+    // formato: a sigla é do tipo — "h01" não vale para body; texto livre não vale para nada
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/ads/partes", payload: { expertId: bbe.id, type: "body", code: "h01", description: "x" } })).statusCode).toBe(400);
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/ads/partes", payload: { expertId: bbe.id, type: "hook", code: "gancho-forte", description: "x" } })).statusCode).toBe(400);
+    // descrição obrigatória
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/ads/partes", payload: { expertId: bbe.id, type: "body", description: "" } })).statusCode).toBe(400);
+    // listagem por expert e tipo; inativos só com o flag
+    const lista = (await app.inject({ method: "GET", url: `/api/nomenclatura/ads/partes?expertId=${bbe.id}&type=hook` })).json();
+    expect(lista.map((v: { code: string }) => v.code)).toEqual(["h02"]);
+    const comInativos = (await app.inject({ method: "GET", url: `/api/nomenclatura/ads/partes?expertId=${bbe.id}&type=hook&inativos=1` })).json();
+    expect(comInativos.map((v: { code: string }) => v.code)).toEqual(["h01", "h02"]);
+    // guest não lê nem escreve (D3)
+    expect((await app.inject({ method: "GET", url: "/api/nomenclatura/ads/partes", headers: { "x-papel": "guest" } })).statusCode).toBe(403);
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/ads/partes", headers: { "x-papel": "guest" }, payload: { expertId: bbe.id, type: "hook", description: "x" } })).statusCode).toBe(403);
+  });
+
+  it("47.12 AC6: código de hook/body é imutável depois de usado em anúncio (409 com usadoEm); descrição segue editável; sem uso, troca de código vale e respeita unicidade", async () => {
+    const { bbe, h01, b01 } = await partesBase(app);
+    // sem uso: pode trocar (o repositório real só vai contar uso na 47.13)
+    const troca = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/partes/${h01.id}`, payload: { code: "h05" } });
+    expect(troca.statusCode).toBe(200);
+    expect(troca.json().code).toBe("h05");
+    // trocar para um código que já existe → 409 com sugestão
+    const h06 = (await app.inject({ method: "POST", url: "/api/nomenclatura/ads/partes", payload: { expertId: bbe.id, type: "hook", code: "h06", description: "y" } })).json();
+    expect((await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/partes/${h06.id}`, payload: { code: "h05" } })).statusCode).toBe(409);
+    // usado em anúncio (injetado — a 47.13 é quem grava hook_id/body_id): código trava, descrição não
+    // O fake tem `usoDePartes`; o tipo `Repositorio` não — o cast é do teste, não do contrato.
+    (mem.repo as unknown as { usoDePartes: Map<string, number> }).usoDePartes.set(b01.id, 2);
+    const travado = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/partes/${b01.id}`, payload: { code: "b09" } });
+    expect(travado.statusCode).toBe(409);
+    expect(travado.json()).toMatchObject({ usadoEm: 2 });
+    const desc = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/partes/${b01.id}`, payload: { description: "prova social com 5 depoimentos" } });
+    expect(desc.statusCode).toBe(200);
+    expect(desc.json().rotulo).toBe("b01 — prova social com 5 depoimentos");
+    expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads/partes?expertId=${bbe.id}&type=body` })).json()[0].usadoEm).toBe(2);
+  });
+
+  it("47.12 AC3/AC7: desativar o expert desativa hooks/bodies em cascata, e o impacto conta; `creative_origin` é servido pelo GET /dicionario sem código novo e com usadoEm 0", async () => {
+    const { bbe, h01, b01 } = await partesBase(app);
+    const impacto = (await app.inject({ method: "GET", url: `/api/nomenclatura/experts/${bbe.id}/impacto-da-desativacao` })).json();
+    expect(impacto.partesDoVideo).toBe(2);
+    const r = (await app.inject({ method: "POST", url: `/api/nomenclatura/experts/${bbe.id}/desativar` })).json();
+    expect(r.desativados.partesDoVideo).toBe(2);
+    const inativos = (await app.inject({ method: "GET", url: `/api/nomenclatura/ads/partes?expertId=${bbe.id}&inativos=1` })).json();
+    expect(inativos.filter((p: { id: string; active: boolean }) => [h01.id, b01.id].includes(p.id)).every((p: { active: boolean }) => !p.active)).toBe(true);
+    // origem do vídeo: mesmo CRUD de Valores fixos; o tipo novo passa pelo filtro do GET e pelo POST
+    const ia = await app.inject({ method: "POST", url: "/api/nomenclatura/dicionario", payload: { type: "creative_origin", value: "ia", description: "feito por inteligência artificial" } });
+    expect(ia.statusCode).toBe(201);
+    const lista = (await app.inject({ method: "GET", url: "/api/nomenclatura/dicionario?type=creative_origin" })).json();
+    expect(lista).toHaveLength(1);
+    expect(lista[0]).toMatchObject({ value: "ia", usadoEm: 0 });
   });
 
   it("id inexistente → 404; id malformado → 400", async () => {
