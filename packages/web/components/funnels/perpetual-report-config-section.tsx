@@ -191,7 +191,6 @@ export function PerpetualReportConfigSection({ projectId, funnelId }: Props) {
     setOrigemAuto({ produto: aplicado.preencheuProduto, bumps: aplicado.preencheuBumps });
     // `proposta` deriva de `produtosData`; incluí-la na lista faria a hidratação
     // reescrever o formulário a cada refetch, apagando edição em andamento.
-    // eslint-disable-next-line
   }, [data, produtosData]);
 
   if (isLoading) {

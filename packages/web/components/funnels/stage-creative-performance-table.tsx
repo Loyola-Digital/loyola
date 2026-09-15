@@ -15,11 +15,13 @@ import type { StageType } from "@loyola-x/shared";
 import {
   calculateCreativeMetrics,
   formatMetricValue,
+  type CalculatedMetrics,
   type CreativeMetrics,
 } from "@/lib/utils/creative-metrics-calculator";
 import {
   compileCreativeMetricsByName,
   isAllFiltersSelected,
+  type CompiledCreativeMetric,
 } from "@/lib/utils/compileCreativeMetrics";
 import { useStageCreativePerformance } from "@/lib/hooks/useStageCreativePerformance";
 import { Badge } from "@/components/ui/badge";
@@ -439,7 +441,7 @@ export function StageCreativePerformanceTable({
     return sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />;
   }
 
-  function renderCellValue(row: any, colKey: SortableCol): React.ReactNode {
+  function renderCellValue(row: CalculatedMetrics | CompiledCreativeMetric, colKey: SortableCol): React.ReactNode {
     switch (colKey) {
       case "status":
         // Story 18.61: badge Ativo/Pausado/"—" + tooltip de adsets ativos

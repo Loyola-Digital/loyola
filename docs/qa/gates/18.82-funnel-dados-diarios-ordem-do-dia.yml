@@ -1,0 +1,36 @@
+schema: 1
+story: '18.82'
+story_title: 'Dados diários — dia mais recente primeiro, com controle para inverter a ordem'
+gate: PASS
+status_reason: 'As 6 ACs batem com o código e com a validação visual do gestor; suíte 1223/1223 e guarda da AC4 provada por mutação pelo @dev e refeita pelo @qa. Dois apontamentos low, nenhum bloqueia.'
+reviewer: 'Quinn'
+updated: '2026-09-15T14:19:04Z'
+pr: 'https://github.com/Loyola-Digital/loyola/pull/869'
+commits: ['74a50ac0', '1e461e1c', '5d8f29eb']
+
+top_issues:
+  - id: 'MNT-001'
+    severity: low
+    finding: 'meta-ads-spreadsheet-tab.tsx renderiza a mesma tabela (:157) mas não tem nenhum chamador em app/ ou components/ — componente órfão. A AC6 ("se acessível") não se aplica a ele.'
+    suggested_action: 'Confirmar que é órfão e remover num chore próprio; até lá, herda a ordenação sem custo.'
+  - id: 'TEST-001'
+    severity: low
+    finding: 'O clique do botão "Dia" (alternar + seta) não tem teste automatizado: o vitest do web só coleta lib/utils (decisão da 29.35). Coberto pela validação visual do gestor (Gratuita + Paga, 4/4 ok).'
+    suggested_action: 'Quando o web ganhar jsdom + testing-library, cobrir o toggle num .test.tsx.'
+
+waiver: { active: false }
+
+# ── 7 checks ─────────────────────────────────────────────────────────────────
+checks:
+  code_review: 'OK — estado local + cópia ordenada em useMemo([rows, ordemDoDia]); botão type=button com title/aria-label idênticos aos da 29.32 (diff só no nome da variável); rows intocado.'
+  unit_tests: 'OK — lib/utils/__tests__/ordem-do-dia.test.ts: 7 casos (desc padrão, asc na virada de ano, não muta, mesmas linhas nas duas ordens, vazio/1 dia, inverter, guarda de buildDailyRows). Mutação refeita pelo @qa: buildDailyRows invertido → 1 falha. Suíte: 86 arquivos / 1223 verdes.'
+  acceptance_criteria: 'AC1 ✓ corpo lê linhasOrdenadas (:746), rodapé lê totals (:895+) · AC2 ✓ textos/ícones/aria iguais à 29.32 · AC3 ✓ teste "mesmas linhas" + visual (📦/ícones por data) · AC4 ✓ nenhum consumidor de rows tocado (launch-dashboard.tsx:714-791) + teste de guarda · AC5 ✓ helper puro em lib/utils, 4 casos exigidos presentes · AC6 ✓ visual Gratuita + Paga pelo gestor; 2º ponto de render é órfão (MNT-001).'
+  no_regressions: 'OK — vitest 1223/1223; next build EXIT=0; tsc 0; chore(lint) só troca any por tipo real (leadsGoalGastoTotal existe em Funnel; LabelProps do Recharts 3.8 com coerção numérica; CalculatedMetrics | CompiledCreativeMetric cobre os 20 campos lidos).'
+  performance: 'OK — cópia + sort O(n log n) sobre ≤ 365 linhas, memoizado; só recalcula ao trocar rows ou a ordem.'
+  security: 'N/A — sem dado novo, sem rota, sem auth.'
+  documentation: 'OK — story com Dev Agent Record (decisões P1–P4 do gestor, mutação, gate de pré-push), comentários no código apontam a story e o porquê de não ordenar na fonte.'
+
+# ── Contexto que NÃO é desta story ───────────────────────────────────────────
+notes:
+  - 'CI da PR: typecheck/test/gateway/Vercel SUCCESS; lint FAILURE herdado da main (sendflow.ts:39, import órfão desde #855). Lucas pediu para ignorar; mergeStateStatus UNSTABLE (não BLOCKED).'
+  - '[scope-override] em lib/utils/ autorizado pelo Lucas, informado pelo Danilo em 15/09 (canal não informado).'
