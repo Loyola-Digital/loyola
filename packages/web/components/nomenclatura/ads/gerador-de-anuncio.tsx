@@ -24,8 +24,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { erroDaApi, useAnuncio, useCriarAnuncio, useEditarAnuncio, useListaDe, useProximoNnDeAnuncio, type ErroDaApi } from "@/lib/hooks/use-nomenclatura";
+import { erroDaApi, useAnuncio, useAnuncios, useCriarAnuncio, useEditarAnuncio, useListaDe, useProximoNnDeAnuncio, type ErroDaApi } from "@/lib/hooks/use-nomenclatura";
 import { hrefDe } from "@/lib/utils/nomenclatura-abas";
 import {
   CLASSE_DO_BLOCO_DO_ANUNCIO,
@@ -34,6 +36,7 @@ import {
   aoEscolherNoAnuncio,
   corpoDoAnuncio,
   estadoDeAnuncio,
+  mesAnoDe,
   mesCorrente,
   previaDoAnuncio,
   type EstadoDoAnuncio,
@@ -118,6 +121,11 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
   const tipos = useListaDe("dicionario", { type: "creative_type" });
   const siglas = useListaDe("dicionario", { type: "launch_type" });
   const proximo = useProximoNnDeAnuncio(editando ? "" : estado.expertId, estado.launchType || undefined);
+  // Story 47.11 (AC3): ao escolher o expert, os anúncios já cadastrados dele
+  // aparecem abaixo do formulário — mesmo desenho de Nova VSL (47.9), mesma
+  // query da aba Anúncios (salvar invalida ["nomenclatura"] e a lista atualiza).
+  const existentes = useAnuncios({ expertId: estado.expertId || undefined, limit: 100 });
+  const expertCode = experts.data?.find((e) => e.id === estado.expertId)?.code ?? "";
 
   // Pré-preenchimento UMA vez por id (mesma guarda dos outros geradores).
   const carregadoDe = useRef<string | null>(null);
@@ -188,8 +196,14 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
 
         <div className="grid gap-3">
           <SeletorDeExpert valor={estado.expertId} onChange={escolher("expertId")} travado={editando} id="a-expert" />
-          <div className="grid gap-3 sm:grid-cols-[1fr_140px]">
+          {/* Story 47.11 (AC1): Tipo sozinho nesta linha — a 47.13 põe a Origem
+              (IA/humano) ao lado quando o tipo for vídeo. */}
+          <div className="grid gap-3 sm:grid-cols-1">
             <SelectDeValor id="a-tipo" label="Tipo de criativo" valor={estado.creativeType} onChange={escolher("creativeType")} opcoes={opcoesDe(tipos.data)} desabilitado={editando} vazio="nenhum tipo de criativo ativo — cadastre em Valores fixos" />
+          </div>
+          {/* Story 47.11 (AC1): NN do criativo | Sigla do lançamento | Nº do lançamento
+              na MESMA linha (pedido do gestor, 15/09). Ordem de tabulação NN → Sigla → Nº. */}
+          <div className="grid gap-3 sm:grid-cols-[140px_1fr_140px]">
             <div className="space-y-1">
               <Label htmlFor="a-nn">NN do criativo</Label>
               <Input id="a-nn" value={estado.creativeSeq} onChange={(e) => setEstado((s) => ({ ...s, creativeSeq: e.target.value.replace(/\D/g, "").slice(0, 2) }))} placeholder="01" className="font-mono" disabled={editando || !estado.expertId} />
@@ -197,8 +211,6 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
                 {editando ? "Fixo depois de salvo." : !estado.expertId ? "Escolha o expert." : proximo.data?.creativeSeqTexto ? (nnOcupado ? `Próximo livre é ${proximo.data.creativeSeqTexto}; um NN já usado é recusado ao salvar.` : `Próximo livre de ${experts.data?.find((e) => e.id === estado.expertId)?.code ?? "expert"}: ${proximo.data.creativeSeqTexto}.`) : "Sequência única por expert, qualquer tipo."}
               </p>
             </div>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-[1fr_140px]">
             <SelectDeValor id="a-sigla" label="Sigla do lançamento" valor={estado.launchType} onChange={escolher("launchType")} opcoes={opcoesDe(siglas.data)} vazio="nenhuma sigla de lançamento ativa — cadastre em Valores fixos" />
             <div className="space-y-1">
               <Label htmlFor="a-lnn">Nº do lançamento</Label>
@@ -239,6 +251,55 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
             </Button>
           ) : null}
         </div>
+
+        {/* Story 47.11 (AC3–AC5): anúncios já cadastrados do expert escolhido.
+            Molde: gerador-de-vsl.tsx ("VSLs de {expert}"). Vazio e erro
+            declarados (AC4); a lista atualiza ao salvar porque o POST invalida
+            ["nomenclatura"], a mesma chave da aba Anúncios (AC5). */}
+        {estado.expertId ? (
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold">
+              Anúncios de <span className="font-mono">{expertCode || "…"}</span>
+            </h3>
+            {existentes.isLoading ? (
+              <Skeleton className="h-20 w-full" />
+            ) : existentes.error ? (
+              <p className="text-sm text-destructive" role="alert">Não foi possível listar os anúncios: {erroDaApi(existentes.error).mensagem}</p>
+            ) : (existentes.data?.itens.length ?? 0) === 0 ? (
+              <p className="text-sm text-muted-foreground">nenhum anúncio cadastrado para {expertCode || "este expert"} ainda</p>
+            ) : (
+              <div className="overflow-x-auto rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Estrutura</TableHead>
+                      <TableHead>Descrição</TableHead>
+                      <TableHead>Tipo</TableHead>
+                      <TableHead>Lançamento</TableHead>
+                      <TableHead>Mês/ano</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {existentes.data!.itens.map((a) => (
+                      <TableRow key={a.id}>
+                        <TableCell className="whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1">
+                            <code className="font-mono text-sm">{a.structure}</code>
+                            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" title="Copiar estrutura" aria-label={`Copiar ${a.structure}`} onClick={() => void copiarTexto(a.structure)}><Copy className="h-3.5 w-3.5" /></Button>
+                          </span>
+                        </TableCell>
+                        <TableCell className="max-w-[220px] truncate font-mono text-xs" title={a.description ?? ""}>{a.description ?? "—"}</TableCell>
+                        <TableCell className="font-mono">{a.creativeType}{String(a.creativeSeq).padStart(2, "0")}</TableCell>
+                        <TableCell className="font-mono">{a.launchType}{String(a.launchSeq).padStart(2, "0")}</TableCell>
+                        <TableCell className="font-mono">{mesAnoDe(a.adDate)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        ) : null}
       </div>
 
       <aside className="space-y-3 lg:sticky lg:top-4 lg:self-start">

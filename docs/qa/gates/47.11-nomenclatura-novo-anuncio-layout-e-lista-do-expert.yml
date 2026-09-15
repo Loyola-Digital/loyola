@@ -1,0 +1,30 @@
+schema: 1
+story: '47.11'
+story_title: 'Novo anúncio — NN e lançamento na mesma linha, e os anúncios do expert aparecem ao escolhê-lo'
+gate: PASS
+status_reason: 'Diff contém só o grid e a lista do expert; nenhum handler, estado ou regra mudou (AC2 provada pelo diff); lista vem do endpoint existente ordenada por createdAt desc. Um apontamento low.'
+reviewer: 'Quinn'
+updated: '2026-09-15T17:05:00Z'
+branch: 'feat/47.11-novo-anuncio-layout-e-lista'
+commits: ['df78a724']
+
+top_issues:
+  - id: 'MNT-001'
+    severity: low
+    finding: 'A lista do expert pede `limit: 100` sem paginação nem aviso. Um expert com mais de 100 anúncios veria os 100 mais recentes sem saber que há mais (a aba Anúncios pagina).'
+    suggested_action: 'Quando algum expert passar de 100, mostrar "mostrando os 100 mais recentes — veja todos em Anúncios" com link. Hoje nenhum chega perto; não bloqueia.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'OK — linhas removidas do diff são só as duas aberturas de grid antigas; adições: import de useAnuncios, hook existentes + expertCode, comentários e o bloco da lista (molde literal de gerador-de-vsl.tsx:230-270). Tab order NN → Sigla → Nº pela ordem do DOM (:209/:214/:217).'
+  unit_tests: 'N/A por desenho — layout e reuso de query; o vitest do web não coleta .test.tsx. Suíte 89/1271 verde na branch.'
+  acceptance_criteria: 'AC1 ✓ grid (Tipo sozinho; NN | Sigla | Nº) · AC2 ✓ nenhum handler/desabilitação tocado · AC3 ✓ useAnuncios({expertId, limit:100}), repo ordena createdAt desc, colunas estrutura/descrição/tipo/lançamento/mês-ano · AC4 ✓ vazio e erro declarados · AC5 ✓ useCriarAnuncio.onSuccess → invalidateQueries(["nomenclatura"]) cobre a chave da lista · AC6 pendente (visual do gestor, no preview).'
+  no_regressions: 'tsc 0; eslint 0; build EXIT=0 (@dev, mesmo commit); nenhum arquivo além do gerador tocado no código.'
+  performance: 'Uma query a mais por escolha de expert (a mesma da aba Anúncios, staleTime 15s).'
+  security: 'N/A — leitura pela API já protegida (guest 403).'
+  documentation: 'Story com Dev Agent Record e File List; epic doc Fase 3 e story 47.13 entram no mesmo commit (docs).'
+
+notes:
+  - 'Validação visual (T3/AC6) fica para o gestor no preview da PR.'
+  - '[scope-override] em components/nomenclatura autorizado pelo Lucas (informado pelo Danilo, 15/09).'
