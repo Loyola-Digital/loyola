@@ -1,9 +1,16 @@
 import { z } from "zod";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, gt, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { instagramAccounts, instagramMetricsCache, instagramAccountProjects } from "../db/schema.js";
 import { encrypt, decrypt } from "../services/encryption.js";
 import { InstagramApiError } from "../services/instagram.js";
+import {
+  analisarComIa,
+  formatoDoPost,
+  montarDadosDaAnalise,
+  type AnaliseDoPeriodo,
+} from "../services/instagram-analise-ia.js";
+import { tituloDoPost } from "../services/instagram-mensal.js";
 
 // ============================================================
 // SCHEMAS
@@ -899,4 +906,124 @@ export default fp(async function instagramRoutes(fastify) {
       };
     },
   );
+  // ---- Análise do período com IA (itens 3 e 13) ----
+  //
+  // GET devolve a última análise guardada para o período; POST gera uma nova.
+  // Separado de propósito: gerar custa uma chamada ao modelo e leva de 20 a 60
+  // segundos — abrir a tela não pode disparar isso sozinho.
+
+  const ANALISE_IA = "analise_ia_v1";
+  const periodoQuery = z.object({
+    since: z.coerce.number().int().positive(),
+    until: z.coerce.number().int().positive(),
+  });
+  const dia = (s: number) => new Date(s * 1000).toISOString().slice(0, 10);
+
+  type AnaliseGuardada = {
+    analise: AnaliseDoPeriodo;
+    geradoEm: string;
+    posts: { id: string; titulo: string; permalink: string | null; formato: string }[];
+  };
+
+  fastify.get("/api/instagram/accounts/:id/analise-ia", async (request, reply) => {
+    const p = idParamSchema.safeParse(request.params);
+    const q = periodoQuery.safeParse(request.query);
+    if (!p.success || !q.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+    const [linha] = await fastify.db
+      .select({ dados: instagramMetricsCache.metricData })
+      .from(instagramMetricsCache)
+      .where(
+        and(
+          eq(instagramMetricsCache.accountId, p.data.id),
+          eq(instagramMetricsCache.metricType, ANALISE_IA),
+          eq(instagramMetricsCache.periodStart, dia(q.data.since)),
+          eq(instagramMetricsCache.periodEnd, dia(q.data.until)),
+          gt(instagramMetricsCache.expiresAt, new Date()),
+        ),
+      )
+      .limit(1);
+    return { resultado: (linha?.dados as AnaliseGuardada | undefined) ?? null };
+  });
+
+  fastify.post("/api/instagram/accounts/:id/analise-ia", async (request, reply) => {
+    const p = idParamSchema.safeParse(request.params);
+    const q = periodoQuery.safeParse(request.query);
+    if (!p.success || !q.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (q.data.until <= q.data.since) return reply.code(400).send({ error: "Período inválido" });
+
+    const chave = process.env.ANTHROPIC_API_KEY;
+    if (!chave) return reply.code(503).send({ error: "IA não configurada no servidor (ANTHROPIC_API_KEY)." });
+
+    const account = await getAccount(p.data.id);
+    if (!account) return reply.code(404).send({ error: "Conta não encontrada" });
+
+    const { since, until } = q.data;
+    const duracao = until - since;
+    try {
+      const [midia, atual, anterior] = await Promise.all([
+        fastify.instagramService.getMediaList(p.data.id, 100),
+        fastify.instagramService.getAccountInsights(p.data.id, "day", since, until),
+        fastify.instagramService
+          .getAccountInsights(p.data.id, "day", since - duracao, since)
+          // Sem o período anterior a análise ainda sai — só sem as variações.
+          .catch(() => []),
+      ]);
+      const posts = (midia?.data ?? []).filter((m) => {
+        const t = Math.floor(new Date(m.timestamp).getTime() / 1000);
+        return t >= since && t <= until;
+      });
+      if (posts.length === 0) {
+        return reply.code(400).send({ error: "Nenhum post publicado no período para analisar." });
+      }
+
+      const dados = montarDadosDaAnalise({
+        posts,
+        atual,
+        anterior,
+        periodo: { de: dia(since), ate: dia(until) },
+      });
+      const analise = await analisarComIa(chave, dados);
+
+      const guardada: AnaliseGuardada = {
+        analise,
+        geradoEm: new Date().toISOString(),
+        posts: posts.map((m) => ({
+          id: m.id,
+          titulo: tituloDoPost(m.caption),
+          permalink: m.permalink ?? null,
+          formato: formatoDoPost(m),
+        })),
+      };
+      await fastify.db
+        .insert(instagramMetricsCache)
+        .values({
+          accountId: p.data.id,
+          metricType: ANALISE_IA,
+          metricData: guardada,
+          periodStart: dia(since),
+          periodEnd: dia(until),
+          // Uma semana: o período fechado não muda, e o botão refaz quando quiser.
+          expiresAt: new Date(Date.now() + 7 * 86_400_000),
+        })
+        .onConflictDoUpdate({
+          target: [
+            instagramMetricsCache.accountId,
+            instagramMetricsCache.metricType,
+            instagramMetricsCache.periodStart,
+            instagramMetricsCache.periodEnd,
+          ],
+          set: { metricData: guardada, expiresAt: new Date(Date.now() + 7 * 86_400_000) },
+        });
+      return { resultado: guardada };
+    } catch (error) {
+      if (error instanceof InstagramApiError) {
+        return reply.code(error.statusCode).send(errorResponse(error));
+      }
+      fastify.log.error({ err: error }, "[IG] análise com IA falhou");
+      return reply.code(502).send({
+        error: error instanceof Error ? error.message : "A análise com IA falhou.",
+      });
+    }
+  });
 });

@@ -111,7 +111,7 @@ export function janelasMensais(
   return janelas;
 }
 
-function total(insights: EntradaDeInsight[], nome: string): number {
+export function total(insights: EntradaDeInsight[], nome: string): number {
   const e = insights.find((x) => x.name === nome);
   if (typeof e?.total_value?.value === "number") return e.total_value.value;
   // `reach` vem como série diária: a soma dos dias É o alcance do período.
@@ -121,7 +121,7 @@ function total(insights: EntradaDeInsight[], nome: string): number {
   return 0;
 }
 
-function porTipoDeSeguidor(insights: EntradaDeInsight[]): { novos: number; unfollows: number } {
+export function porTipoDeSeguidor(insights: EntradaDeInsight[]): { novos: number; unfollows: number } {
   const e = insights.find((x) => x.name === "follows_and_unfollows");
   const resultados = e?.total_value?.breakdowns?.[0]?.results ?? [];
   const achar = (chave: string) =>
