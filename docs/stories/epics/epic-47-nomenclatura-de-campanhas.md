@@ -83,6 +83,18 @@ Arquivos: `docs/stories/47.7.nomenclatura-slug-de-lp-secao-propria.md` · `47.8.
 
 **Dependências da Fase 2:** 47.7 primeiro (as seções novas entram à direita dela). 47.8 é independente das outras. 47.10 depende da 47.9 (reaproveita o desenho de seção com cadastro + gerador + lista). Perguntas respondidas pelo dono em 2026-09-10 (`a01`; existe fluxo externo em 9 colunas → remapeado para 10, P4 fechada; pitch = oferta; data `mm-aaaa`; NN por expert). **Achado no caminho:** a #843 (47.7) foi fechada pelo GitHub ao apagar a branch de docs que era base dela; substituída pela #845 — ver `feedback_delete_branch_fecha_pr_empilhada`.
 
+**Fase 3 — pedido do gestor de tráfego (Danilo) em 2026-09-15, formato combinado com o dono (ordem de saída: 47.11 ∥ 47.12 → 47.13)**
+
+| # | Story | Item do pedido | Entrega | Pontos | Status |
+|---|---|---|---|---|---|
+| 47.11 | Novo anúncio: NN e lançamento na mesma linha; anúncios do expert na tela | 1, 1c | linha `NN do criativo \| Sigla \| Nº do lançamento`, Tipo sozinho na linha de cima; ao escolher o expert, lista os anúncios dele (`useAnuncios`, molde 47.9) | 2 | **Ready** (PO 9/10, 2026-09-15) |
+| 47.12 | Dicionário do vídeo: origem `ia`/`h` em Valores fixos + hooks/bodies por expert | 1a, 1b (cadastros) | tipo novo em `naming_dictionary_type` + seed (`ia` — feito por inteligência artificial · `h` — feito por humano); tabela de hooks/bodies no molde de `naming_vsl_variables` (`hNN`/`bNN` por expert, descrição obrigatória), rotas + `proximo-codigo`, aba "Hooks e bodies"; **nenhum nome muda** | 5 | **Ready** (PO 10/10, 2026-09-15) |
+| 47.13 | Nome de vídeo v2 — origem, hook e body no nome do `adv` | 1a, 1b (o nome) | `{tipo}{NN}_{origem}_{expert}_{sigla}{NN}_{hNN}_{bNN}_{mm-aaaa}--` só para `adv` (ex.: `adv01_h_dg_pg04_h01_b01_09-2026--`); `ad`/`carr` byte a byte iguais; vídeos antigos válidos com aviso "padrão antigo"; gerador/listagem/snapshot/validar-nome; spec § 11 atualizada | 8 | **Ready** (PO 9/10) · **bloqueada até 47.12 e 47.11 em produção** |
+
+Arquivos: `docs/stories/47.11.nomenclatura-novo-anuncio-layout-e-lista-do-expert.md` · `47.12.nomenclatura-dicionario-do-video-origem-hooks-bodies.md` · `47.13.nomenclatura-nome-de-video-v2-origem-hook-body.md`
+
+**Por que 47.12 antes da 47.13:** o nome de vídeo muda **uma** vez em produção (regra 6 — nome publicado no Meta não muda; ninguém quer anúncios num formato de transição). Decisões do gestor em 15/09: formato com ok do dono; origem como valor fixo; hooks/bodies por expert, NN automático, descrição obrigatória, obrigatórios em todo `adv`; vídeos antigos seguem válidos com aviso.
+
 Arquivos: `docs/stories/47.1.nomenclatura-modelo-de-dados-e-api.md` · `docs/stories/47.2.nomenclatura-submenu-e-telas-do-dicionario.md` · `docs/stories/47.3.nomenclatura-gerador-de-nome-de-campanha.md` · `docs/stories/47.4.nomenclatura-suite-de-aceite-e-validacao-visual.md`
 
 **Ordem obrigatória:** 47.1 → 47.2 → 47.3 → 47.4. A spec (§ 0.3) pede parada para revisão do dono do produto ao fim de cada etapa — cada story termina em InReview e **não** começa a próxima sem esse OK, além do gate do @qa.
