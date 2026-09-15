@@ -55,7 +55,11 @@ export function RefreshDataButton() {
       // creative-performance que estão na tela — só delas, e só desta vez. O
       // queryFn consome o pedido e põe `refresh=1` na URL; a API ignora o cache
       // de 2h e recomputa. Sem isso o botão prometia e não entregava (D1).
-      for (const q of qc.getQueryCache().findAll({ queryKey: [CHAVE_CREATIVE_PERFORMANCE] })) {
+      // `type: "active"` (QA REQ-001): sem ele, o pedido ia também para
+      // queries INATIVAS (etapas visitadas há < 30 min, ainda no cache) e
+      // ficava pendente até o gestor voltar lá — um recompute de ~25 s que
+      // ninguém pediu, contra a AC3.
+      for (const q of qc.getQueryCache().findAll({ queryKey: [CHAVE_CREATIVE_PERFORMANCE], type: "active" })) {
         const chave = chaveDaQueryKey(q.queryKey);
         if (chave) pedidosDeRecomputo.pedir(chave);
       }
