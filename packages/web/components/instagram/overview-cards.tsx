@@ -9,6 +9,7 @@ import {
 import type { InstagramProfile, InsightEntry } from "@/lib/hooks/use-instagram";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
 import type { MetricFormula } from "@/lib/types/metric-formula";
+import { variacao } from "@/lib/utils/instagram-posts";
 import {
   buildFollowersFormula,
   buildFollowersDeltaFormula,
@@ -130,10 +131,31 @@ interface KpiProps {
   sub?: string;
   gradient?: string;
   border?: string;
+  /**
+   * Variação sobre o período anterior (mesma duração, logo antes). `pontos`
+   * para taxa: "subiu 21%" de 4,2% para 5,1% se confundiria com a própria taxa.
+   */
+  delta?: { valor: number | null; pontos?: boolean };
+}
+
+/** "+18% vs anterior", com seta e cor — cor sozinha exclui quem não distingue verde de vermelho. */
+function Delta({ valor, pontos }: { valor: number | null; pontos?: boolean }) {
+  if (valor == null) {
+    return <p className="text-[9px] text-muted-foreground/60 mt-0.5">sem base no período anterior</p>;
+  }
+  const arred = pontos ? Math.round(valor * 10) / 10 : Math.round(valor);
+  const cor = arred > 0 ? "text-emerald-500" : arred < 0 ? "text-red-500" : "text-muted-foreground";
+  const seta = arred > 0 ? "▲" : arred < 0 ? "▼" : "•";
+  const n = pontos ? `${Math.abs(arred).toFixed(1).replace(".", ",")} pp` : `${Math.abs(arred)}%`;
+  return (
+    <p className={`text-[10px] font-medium tabular-nums mt-0.5 ${cor}`}>
+      {seta} {arred > 0 ? "+" : arred < 0 ? "−" : ""}{n} <span className="font-normal text-muted-foreground">vs anterior</span>
+    </p>
+  );
 }
 
 const KpiCard = React.forwardRef<HTMLDivElement, KpiProps & React.HTMLAttributes<HTMLDivElement>>(function KpiCard(
-  { icon: Icon, label, value, sub, gradient = "from-card/80 to-card/40", border = "border-border/30", className, ...rest },
+  { icon: Icon, label, value, sub, gradient = "from-card/80 to-card/40", border = "border-border/30", delta, className, ...rest },
   ref,
 ) {
   return (
@@ -143,6 +165,7 @@ const KpiCard = React.forwardRef<HTMLDivElement, KpiProps & React.HTMLAttributes
         <Icon className="h-3.5 w-3.5 text-muted-foreground/50" />
       </div>
       <p className="text-xl font-bold tracking-tight">{value}</p>
+      {delta && <Delta valor={delta.valor} pontos={delta.pontos} />}
       {sub && <p className="text-[9px] text-muted-foreground mt-0.5">{sub}</p>}
     </div>
   );
@@ -210,6 +233,17 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
 
   const engagementRate = totalReach > 0 ? (totalInteractions / totalReach) * 100 : 0;
 
+  // Mesmas métricas no período anterior. Sem insights de lá, nenhum card mostra
+  // variação — melhor que comparar contra um zero que é só dado faltando.
+  const temAnterior = !!previousInsights && previousInsights.length > 0;
+  const anterior = (nome: string) => (temAnterior ? getInsightValue(previousInsights, nome) : null);
+  const reachAnterior = anterior("reach");
+  const interacoesAnterior = anterior("total_interactions");
+  const engajamentoAnterior =
+    reachAnterior && interacoesAnterior != null ? (interacoesAnterior / reachAnterior) * 100 : null;
+  const deltaDe = (atual: number, nome: string) =>
+    temAnterior ? { valor: variacao(atual, anterior(nome)) } : undefined;
+
   interface CardDef {
     icon: React.ComponentType<{ className?: string }>;
     label: string;
@@ -219,6 +253,7 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
     border?: string;
     show: boolean;
     formula?: MetricFormula;
+    delta?: { valor: number | null; pontos?: boolean };
   }
 
   const cards: CardDef[] = [
@@ -276,6 +311,7 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
       border: "border-cyan-500/20",
       show: totalReach > 0,
       formula: period ? buildReachFormula(totalReach, period) : undefined,
+      delta: deltaDe(totalReach, "reach"),
     },
     {
       icon: Eye,
@@ -285,6 +321,7 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
       border: "border-purple-500/20",
       show: totalViews > 0,
       formula: period ? buildViewsFormula(totalViews, period) : undefined,
+      delta: deltaDe(totalViews, "views"),
     },
     {
       icon: Heart,
@@ -294,6 +331,7 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
       gradient: "from-pink-500/10 to-pink-600/5",
       border: "border-pink-500/20",
       show: totalInteractions > 0,
+      delta: deltaDe(totalInteractions, "total_interactions"),
       formula: period
         ? buildInteractionsFormula(totalInteractions, totalLikes, totalComments, period)
         : undefined,
@@ -306,6 +344,9 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
       gradient: "from-amber-500/10 to-amber-600/5",
       border: "border-amber-500/20",
       show: engagementRate > 0,
+      delta: temAnterior
+        ? { valor: engajamentoAnterior == null ? null : engagementRate - engajamentoAnterior, pontos: true }
+        : undefined,
       formula: period
         ? buildEngagementFormula(totalInteractions, totalReach, period)
         : undefined,
@@ -318,6 +359,7 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
       border: "border-indigo-500/20",
       show: totalSaves > 0,
       formula: period ? buildSavesFormula(totalSaves, period) : undefined,
+      delta: deltaDe(totalSaves, "saves"),
     },
     {
       icon: Share2,
@@ -327,6 +369,7 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
       border: "border-teal-500/20",
       show: totalShares > 0,
       formula: period ? buildSharesFormula(totalShares, period) : undefined,
+      delta: deltaDe(totalShares, "shares"),
     },
     {
       icon: Link2,
@@ -343,7 +386,7 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" style={{ gridTemplateColumns: `repeat(${Math.min(cards.length, 4)}, minmax(0, 1fr))` }}>
       {cards.map((c) => (
         <MetricTooltip key={c.label} label={c.label} value={c.value} formula={c.formula}>
-          <KpiCard icon={c.icon} label={c.label} value={c.value} sub={c.sub} gradient={c.gradient} border={c.border} />
+          <KpiCard icon={c.icon} label={c.label} value={c.value} sub={c.sub} gradient={c.gradient} border={c.border} delta={c.delta} />
         </MetricTooltip>
       ))}
     </div>

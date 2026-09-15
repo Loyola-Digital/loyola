@@ -25,10 +25,12 @@ import {
 import { OverviewCards } from "@/components/instagram/overview-cards";
 import { ReachChart } from "@/components/instagram/reach-chart";
 import { PostsTable } from "@/components/instagram/posts-table";
+import { PerformancePorFormato } from "@/components/instagram/performance-por-formato";
 import { StoriesSection } from "@/components/instagram/stories-section";
 import { ReelsSection } from "@/components/instagram/reels-section";
 import { AudienceCharts } from "@/components/instagram/audience-charts";
 import { TopPostsByFollowersCard } from "@/components/instagram/top-posts-by-followers-card";
+import { TabelaMensal } from "@/components/instagram/tabela-mensal";
 import { GenerateReportDialog } from "@/components/instagram/generate-report-dialog";
 import { FileText } from "lucide-react";
 
@@ -197,6 +199,10 @@ export default function ProjectInstagramPage({ params }: Props) {
         postsCountTruncated={postsCountTruncated}
       />
 
+      {/* O comparativo mensal, igual à página global: "cresceu ou caiu?" vem
+          antes de qualquer detalhe do período. */}
+      <TabelaMensal accountId={selectedAccountId} />
+
       {/* Reach & Impressions chart */}
       <ReachChart
         data={insights?.data}
@@ -204,6 +210,7 @@ export default function ProjectInstagramPage({ params }: Props) {
         error={insightsError as Error | null}
         onRefresh={handleRefreshAll}
         isRefreshing={refresh.isPending}
+        posts={media?.data}
       />
 
       {/* Top Posts por Seguidores — apenas FEED (Meta não expõe pra Reels) */}
@@ -219,6 +226,15 @@ export default function ProjectInstagramPage({ params }: Props) {
         onRefresh={handleRefreshAll}
         isRefreshing={refresh.isPending}
         projectId={projectId}
+        since={period.since}
+        until={period.until}
+      />
+
+      <PerformancePorFormato
+        data={media?.data}
+        isLoading={mediaLoading}
+        since={period.since}
+        until={period.until}
       />
 
       {/* Stories + Reels */}
