@@ -92,7 +92,7 @@ interface LpPerformanceTableProps {
 const COLUMN_TOOLTIPS = {
   lp: "LP identificada pelo Campaign Name da campanha Meta (nome contém \"lpX\"; sem lpX → LPA)",
   investimento: "Soma do gasto Meta das campanhas da LP + imposto de 12,15%",
-  leads: "Leads da planilha atribuídos à LP (utm_term/utm_content contém lpX), respeitando o filtro Hot/Cold",
+  leads: "Leads da planilha atribuídos à LP (utm_term/utm_content contém lpX), respeitando o filtro Hot/Cold. LP sem formulário (nenhum lead na planilha) conta pelo Lead do pixel da Meta — marcada com \"pixel\"",
   cpl: "Investimento ÷ Leads",
   cpm: "(Investimento ÷ Impressões) × 1000",
   cpc: "Investimento ÷ Cliques",
@@ -173,7 +173,11 @@ const FREE_COLUMNS: LpColumn[] = [
 ];
 
 /** Story 18.60: valor numérico por coluna (null = "—"; sort trata null como 0). */
-type LpComputedRow = { lpName: string; values: Record<LpSortKey, number | null> };
+type LpComputedRow = {
+  lpName: string;
+  values: Record<LpSortKey, number | null>;
+  leadsFonte?: "planilha" | "pixel";
+};
 
 function formatCell(value: number | null, kind: LpColKind): React.ReactNode {
   switch (kind) {
@@ -386,6 +390,7 @@ export function LpPerformanceTable({
           });
       return {
         lpName: row.lpName,
+        leadsFonte: row.leadsFonte,
         values: {
           investimento: row.investimento,
           ingressosUnicos: row.ingressosUnicos ?? 0,
@@ -566,6 +571,14 @@ export function LpPerformanceTable({
                   </TableCell>
                   {columns.map((col) => (
                     <TableCell key={col.key} className="text-right tabular-nums">
+                      {col.key === "leads" && row.leadsFonte === "pixel" && (
+                        <span
+                          title="Esta LP não tem formulário: os leads vêm do evento Lead do pixel da Meta"
+                          className="mr-1.5 cursor-help rounded bg-blue-500/10 px-1 py-0.5 text-[10px] font-medium text-blue-500"
+                        >
+                          pixel
+                        </span>
+                      )}
                       {formatCell(row.values[col.key], col.kind)}
                     </TableCell>
                   ))}
