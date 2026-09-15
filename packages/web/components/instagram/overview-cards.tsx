@@ -9,7 +9,7 @@ import {
 import type { InstagramProfile, InsightEntry } from "@/lib/hooks/use-instagram";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
 import type { MetricFormula } from "@/lib/types/metric-formula";
-import { variacao } from "@/lib/utils/instagram-posts";
+import { alcancePorSeguidor, variacao } from "@/lib/utils/instagram-posts";
 import {
   buildFollowersFormula,
   buildFollowersDeltaFormula,
@@ -244,6 +244,9 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
   const deltaDe = (atual: number, nome: string) =>
     temAnterior ? { valor: variacao(atual, anterior(nome)) } : undefined;
 
+  const porSeguidor = alcancePorSeguidor(insights);
+  const porSeguidorAnterior = temAnterior ? alcancePorSeguidor(previousInsights) : null;
+
   interface CardDef {
     icon: React.ComponentType<{ className?: string }>;
     label: string;
@@ -322,6 +325,36 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
       show: totalViews > 0,
       formula: period ? buildViewsFormula(totalViews, period) : undefined,
       delta: deltaDe(totalViews, "views"),
+    },
+    {
+      icon: Users,
+      label: "Não seguidores",
+      value: porSeguidor ? fmtPercent(porSeguidor.pctNaoSeguidores) : "—",
+      sub: porSeguidor
+        ? `do alcance · ${fmtNumber(porSeguidor.naoSeguidores)} não seguem · ${fmtNumber(porSeguidor.seguidores)} seguem`
+        : undefined,
+      gradient: "from-sky-500/10 to-sky-600/5",
+      border: "border-sky-500/20",
+      show: !!porSeguidor,
+      delta: temAnterior && porSeguidor
+        ? {
+            valor: porSeguidorAnterior
+              ? porSeguidor.pctNaoSeguidores - porSeguidorAnterior.pctNaoSeguidores
+              : null,
+            pontos: true,
+          }
+        : undefined,
+      formula: porSeguidor
+        ? {
+            expression: "não seguidores ÷ (seguidores + não seguidores)",
+            values: [
+              { label: "Não seguidores alcançados", value: porSeguidor.naoSeguidores, source: "Instagram Graph API · reach (follow_type)" },
+              { label: "Seguidores alcançados", value: porSeguidor.seguidores, source: "Instagram Graph API · reach (follow_type)" },
+            ],
+            result: fmtPercent(porSeguidor.pctNaoSeguidores),
+            note: "Quanto do alcance do período veio de quem ainda não segue o perfil — é o público novo. A Meta só dá essa divisão para o perfil inteiro, não por post.",
+          }
+        : undefined,
     },
     {
       icon: Heart,

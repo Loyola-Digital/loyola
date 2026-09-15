@@ -34,6 +34,8 @@ export function interacoesDoPost(p: InstagramMedia): number {
 }
 
 export type ChaveDaMetrica =
+  | "gancho"
+  | "tempo_medio"
   | "views"
   | "reach"
   | "like_count"
@@ -52,6 +54,16 @@ export interface MetricaDoPost {
   valor: (p: InstagramMedia) => number | null;
   /** Taxa em %: compara com a média em PONTOS, não em %. */
   taxa?: boolean;
+  /** Segundos: mostra "39,9s". */
+  segundos?: boolean;
+}
+
+/**
+ * Retenção do gancho: % das visualizações que passaram dos 3 primeiros
+ * segundos. A Meta entrega o inverso (`reels_skip_rate`, quem pulou).
+ */
+export function ganchoDoReels(p: InstagramMedia): number | null {
+  return p.skip_rate == null ? null : Math.max(0, 100 - p.skip_rate);
 }
 
 /** Seguidores gerados ÷ views, em %. Só existe onde a Meta dá seguidores. */
@@ -117,6 +129,20 @@ export const METRICAS_DO_POST: MetricaDoPost[] = [
     valor: (p) => p.engagement_rate ?? null,
     taxa: true,
   },
+  {
+    chave: "gancho",
+    rotulo: "Gancho 3s",
+    dica: "Retenção nos primeiros segundos: % das visualizações que passaram dos 3 primeiros segundos (100 − taxa de pulo que a Meta informa).\n\nÉ o \"CTR\" do Reels orgânico: não existe clique, então o que mede se o gancho gerou interesse é quanta gente não pulou. Só Reels.",
+    valor: ganchoDoReels,
+    taxa: true,
+  },
+  {
+    chave: "tempo_medio",
+    rotulo: "Tempo médio",
+    dica: "Tempo médio assistido por visualização do Reels.\n\n% assistido e taxa de conclusão não aparecem porque a Meta não informa a duração do vídeo pela API. Só Reels.",
+    valor: (p) => (p.avg_watch_time_ms == null ? null : p.avg_watch_time_ms / 1000),
+    segundos: true,
+  },
 ];
 
 /**
@@ -161,6 +187,8 @@ export interface LinhaDoFormato {
   seguidores: number | null;
   /** Salvamentos por mil contas alcançadas — compara formatos de alcance diferente. */
   salvosPorMil: number | null;
+  /** Média da retenção nos 3 primeiros segundos. Só Reels tem. */
+  ganchoMedio: number | null;
 }
 
 const media = (xs: (number | null | undefined)[]) => {
@@ -190,6 +218,7 @@ export function performancePorFormato(posts: InstagramMedia[]): LinhaDoFormato[]
           ? comSeguidores.reduce((a, p) => a + (p.follows ?? 0), 0)
           : null,
         salvosPorMil: alcanceTotal > 0 ? (salvos / alcanceTotal) * 1000 : null,
+        ganchoMedio: media(doFormato.map(ganchoDoReels)),
       };
     })
     .filter((l) => l.posts > 0);
@@ -270,6 +299,31 @@ export function diasDePico(pontos: { reach: number }[], n = 3): Set<number> {
 export function variacao(atual: number, anterior: number | null | undefined): number | null {
   if (anterior == null || anterior === 0) return null;
   return ((atual - anterior) / anterior) * 100;
+}
+
+/**
+ * Alcance (ou views) do perfil dividido entre quem já segue e quem não segue.
+ *
+ * Aqui FOLLOWER é quem JÁ SEGUE — não o sentido do `follows_and_unfollows`,
+ * onde FOLLOWER é novo seguidor. A API chama `{metrica}_follow_type`.
+ * `UNKNOWN` fica fora da porcentagem: não é nem um nem outro.
+ */
+export function alcancePorSeguidor(
+  entries: { name: string; total_value?: { breakdowns?: unknown[] } }[] | undefined,
+  metrica: "reach" | "views" = "reach",
+): { seguidores: number; naoSeguidores: number; pctNaoSeguidores: number } | null {
+  const e = entries?.find((x) => x.name === `${metrica}_follow_type`);
+  const results = (e?.total_value?.breakdowns?.[0] as { results?: { dimension_values?: string[]; value?: number }[] } | undefined)?.results;
+  if (!results) return null;
+  let seguidores = 0;
+  let naoSeguidores = 0;
+  for (const r of results) {
+    if (r.dimension_values?.[0] === "FOLLOWER") seguidores = r.value ?? 0;
+    else if (r.dimension_values?.[0] === "NON_FOLLOWER") naoSeguidores = r.value ?? 0;
+  }
+  const soma = seguidores + naoSeguidores;
+  if (soma === 0) return null;
+  return { seguidores, naoSeguidores, pctNaoSeguidores: (naoSeguidores / soma) * 100 };
 }
 
 export function postsNoPeriodo(posts: InstagramMedia[], since: number, until: number): InstagramMedia[] {

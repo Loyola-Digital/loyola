@@ -41,6 +41,8 @@ export interface InstagramMedia {
   media_product_type?: string;
   /** Seguidores gerados pelo post. Só foto/carrossel; null em Reels (a Meta não dá). */
   follows?: number | null;
+  /** % das views do Reels que pularam nos 3 primeiros segundos (`reels_skip_rate`). Só Reels. */
+  skip_rate?: number | null;
 }
 
 export interface InsightValue {
