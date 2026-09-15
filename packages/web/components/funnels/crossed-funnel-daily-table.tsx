@@ -28,9 +28,15 @@ import {
 import { useCampaignLog } from "@/lib/hooks/use-campaign-log";
 import { useSendflowSummary } from "@/lib/hooks/use-sendflow";
 import { montarDiario } from "@/lib/utils/sendflow-diario";
-import { Send, StickyNote, Users } from "lucide-react";
+import { ArrowDown, ArrowUp, Send, StickyNote, Users } from "lucide-react";
 import { EventosDoDia, agruparPorDia } from "./eventos-do-dia";
 import { fmtInt as fmtIntCompartilhado } from "@/lib/utils/format-number";
+import {
+  ORDEM_DO_DIA_PADRAO,
+  type OrdemDoDia,
+  inverterOrdemDoDia,
+  ordenarLinhasPorDia,
+} from "@/lib/utils/ordem-do-dia";
 
 interface CrossedFunnelDailyTableProps {
   rows: DailyRow[];
@@ -468,6 +474,18 @@ export function CrossedFunnelDailyTable({
   );
   const deleteTurn = useDeleteFunnelBatchTurn(projectId ?? "", funnelId ?? "");
 
+  // Story 18.82: ordenação pela coluna Dia. Padrão "desc" = dia mais recente
+  // primeiro — quem abre o painel quer ontem, não o primeiro dia do período.
+  // Estado local, não persistido (decisão do gestor, 2026-09-15): recarregar
+  // volta ao padrão, igual ao perpétuo (29.32).
+  const [ordemDoDia, setOrdemDoDia] = useState<OrdemDoDia>(ORDEM_DO_DIA_PADRAO);
+  // Cópia ordenada só para a EXIBIÇÃO. `rows` segue ascendente para os gráficos
+  // da mesma tela (projeção ancora em rows[rows.length - 1]) — ver ordem-do-dia.ts.
+  const linhasOrdenadas = useMemo(
+    () => ordenarLinhasPorDia(rows, ordemDoDia),
+    [rows, ordemDoDia],
+  );
+
   const turnsByDate = useMemo(() => {
     const map = new Map<string, FunnelBatchTurn>();
     if (batchTurnsEnabled && turnsQuery.data) {
@@ -563,7 +581,26 @@ export function CrossedFunnelDailyTable({
             <TableHeader>
               <TableRow>
                 <TableHead className="sticky left-0 bg-background z-10 min-w-[90px]">
-                  Dia
+                  {/* Story 18.82: ordenação por dia. Alterna asc/desc — mesmo
+                      controle, textos e ícones da tabela do perpétuo (29.32). */}
+                  <button
+                    type="button"
+                    onClick={() => setOrdemDoDia((o) => inverterOrdemDoDia(o))}
+                    className="inline-flex items-center gap-1 font-semibold hover:text-foreground transition-colors"
+                    title={
+                      ordemDoDia === "desc"
+                        ? "Mais recente primeiro — clique para inverter"
+                        : "Mais antigo primeiro — clique para inverter"
+                    }
+                    aria-label={`Ordenar por dia: ${ordemDoDia === "desc" ? "decrescente" : "crescente"}`}
+                  >
+                    Dia
+                    {ordemDoDia === "desc" ? (
+                      <ArrowDown className="h-3 w-3" />
+                    ) : (
+                      <ArrowUp className="h-3 w-3" />
+                    )}
+                  </button>
                 </TableHead>
                 <TableHead
                   className="text-right min-w-[110px] cursor-help"
@@ -706,7 +743,7 @@ export function CrossedFunnelDailyTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((r) => {
+              {linhasOrdenadas.map((r) => {
                 // Story 18.51b: na Paga, o breakdown Pg/Org/s-track vem dos ingressos
                 // ÚNICOS (dedup por e-mail). Sem planilha de vendas (hasSalesData
                 // false) → null → células "—" (AC-BUG.1: não mostra leads sob rótulo
