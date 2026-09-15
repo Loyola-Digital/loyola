@@ -117,6 +117,22 @@ function fmtPercent(v: number | null | undefined): string {
 // Story 18.73: contagem completa — o helper é o mesmo de todo o lançamento.
 const fmtInt = fmtIntCompartilhado;
 
+/**
+ * Quantos dos leads pagos vieram do pixel da Meta — a LP sem formulário (LPB
+ * do FZM3), que não manda lead para a planilha. O número da célula já inclui.
+ */
+function SeloDoPixel({ n }: { n?: number }) {
+  if (!n) return null;
+  return (
+    <span
+      title={`Inclui ${n} lead(s) do pixel da Meta: campanhas de LP sem formulário, que não chegam na planilha`}
+      className="mr-1.5 cursor-help rounded bg-blue-500/10 px-1 py-0.5 text-[10px] font-medium text-blue-500"
+    >
+      {n} pixel
+    </span>
+  );
+}
+
 function formatDateLabel(d: string) {
   if (d === "Total") return d;
   const [y, m, day] = d.split("-");
@@ -880,6 +896,7 @@ export function CrossedFunnelDailyTable({
                       {renderConnectRate(r.connectRate)}
                     </TableCell>
                     <TableCell className="text-right">
+                      {!isPaidCapture && <SeloDoPixel n={r.leadsPixel} />}
                       {ing ? fmtInt(ing.pago) : "—"}
                     </TableCell>
                     <TableCell className="text-right">
@@ -985,7 +1002,12 @@ export function CrossedFunnelDailyTable({
                     ? hasSalesData
                       ? fmtInt(totUnicosOrigem.pago)
                       : "—"
-                    : fmtInt(totals.leadsPagos)}
+                    : (
+                      <>
+                        <SeloDoPixel n={totals.leadsPixel} />
+                        {fmtInt(totals.leadsPagos)}
+                      </>
+                    )}
                 </TableCell>
                 <TableCell className="text-right">
                   {isPaidCapture

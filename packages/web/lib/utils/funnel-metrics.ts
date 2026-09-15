@@ -213,6 +213,11 @@ export interface DailyRow {
    * Counts são deduplicados por email normalizado, igual ao agregado total de leads.
    */
   leadsByMedium: Record<string, number>;
+  /**
+   * Quantos dos `leadsPagos` vieram do pixel da Meta (LP sem formulário — ver
+   * `leads-da-lp.ts`). Ausente quando não houve nenhum.
+   */
+  leadsPixel?: number;
 }
 
 /**
@@ -376,13 +381,14 @@ export function computeTotals(rows: DailyRow[]): DailyRow {
       acc.leadsPagos += r.leadsPagos;
       acc.leadsOrg += r.leadsOrg;
       acc.leadsSemTrack += r.leadsSemTrack;
+      acc.leadsPixel += r.leadsPixel ?? 0;
       acc.faturamento += r.faturamento;
       for (const [medium, count] of Object.entries(r.leadsByMedium ?? {})) {
         totalsByMedium[medium] = (totalsByMedium[medium] ?? 0) + count;
       }
       return acc;
     },
-    { spend: 0, linkClicks: 0, impressions: 0, lpView: 0, checkoutInitiations: 0, leadsPagos: 0, leadsOrg: 0, leadsSemTrack: 0, faturamento: 0 },
+    { spend: 0, linkClicks: 0, impressions: 0, lpView: 0, checkoutInitiations: 0, leadsPagos: 0, leadsOrg: 0, leadsSemTrack: 0, leadsPixel: 0, faturamento: 0 },
   );
   const totalLeads = t.leadsPagos + t.leadsOrg + t.leadsSemTrack;
   return {
@@ -404,6 +410,7 @@ export function computeTotals(rows: DailyRow[]): DailyRow {
     cplG: safeDivide(t.spend, totalLeads),
     faturamento: t.faturamento,
     leadsByMedium: totalsByMedium,
+    ...(t.leadsPixel > 0 ? { leadsPixel: t.leadsPixel } : {}),
   };
 }
 
