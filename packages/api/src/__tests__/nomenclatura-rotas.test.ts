@@ -936,7 +936,8 @@ describe("rotas da nomenclatura", () => {
     const h06 = (await app.inject({ method: "POST", url: "/api/nomenclatura/ads/partes", payload: { expertId: bbe.id, type: "hook", code: "h06", description: "y" } })).json();
     expect((await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/partes/${h06.id}`, payload: { code: "h05" } })).statusCode).toBe(409);
     // usado em anúncio (injetado — a 47.13 é quem grava hook_id/body_id): código trava, descrição não
-    mem.repo.usoDePartes.set(b01.id, 2);
+    // O fake tem `usoDePartes`; o tipo `Repositorio` não — o cast é do teste, não do contrato.
+    (mem.repo as unknown as { usoDePartes: Map<string, number> }).usoDePartes.set(b01.id, 2);
     const travado = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/partes/${b01.id}`, payload: { code: "b09" } });
     expect(travado.statusCode).toBe(409);
     expect(travado.json()).toMatchObject({ usadoEm: 2 });
