@@ -15,9 +15,15 @@ import {
   buildDailyRows,
   computeTotals,
   aggregateHotColdByUtmTerm,
+  getActionValue,
   type DailyRow,
   type HotColdAggregate,
 } from "@/lib/utils/funnel-metrics";
+import {
+  campanhasSemFormulario,
+  lpsDaPlanilha,
+  somarPixelNaPlanilha,
+} from "@/lib/utils/leads-da-lp";
 
 export interface CrossedFunnelMetrics {
   spend: number;
@@ -189,11 +195,28 @@ export function useCrossedFunnelMetrics(
   const { data: salesSheetData, isLoading: salesSheetDataLoading } =
     useFunnelSpreadsheetData(projectId, funnel.id, salesSheet?.id, campaignNames);
 
+  // LP sem formulário (a LPB do FZM3): a planilha não tem os leads dela, então
+  // o Lead do pixel das campanhas dessa LP entra como lead pago do dia. Ver as
+  // travas contra contagem dupla em `leads-da-lp.ts`.
+  const idsSemFormulario = useMemo(
+    () =>
+      sheetData
+        ? campanhasSemFormulario(funnel.campaigns, lpsDaPlanilha(sheetData.rows))
+        : [],
+    [sheetData, funnel.campaigns],
+  );
+  const { data: pixelData, isLoading: pixelLoading } = useCampaignDailyInsightsBulk(
+    projectId,
+    idsSemFormulario.length > 0 ? idsSemFormulario : null,
+    days,
+  );
+
   const { totalResponses, matchedResponses, unmatchedResponses, isLoading: surveyLoading } =
     useSurveyAggregation(projectId, funnel.id, stageId ?? null);
 
   const hasLinkedSheet = !!linkedSheet;
-  const isLoading = metaLoading || sheetsListLoading || sheetDataLoading || surveyLoading || salesSheetDataLoading;
+  const isLoading =
+    metaLoading || sheetsListLoading || sheetDataLoading || surveyLoading || salesSheetDataLoading || pixelLoading;
 
   return useMemo<CrossedFunnelMetrics>(() => {
     const metaMap = aggregateMetaDailyByDate(metaData);
@@ -201,10 +224,20 @@ export function useCrossedFunnelMetrics(
     const filteredSheetRows = sheetData ? filterSheetRowsByDays(sheetData, days) : [];
     const dateMapped = !!sheetData?.mapping.date;
     const utmSourceMapped = !!sheetData?.mapping.utm_source;
-    const sheetMap = aggregateSpreadsheetByDate(filteredSheetRows, utmSourceMapped, dateMapped);
+    const pixelPorDia = new Map<string, number>();
+    for (const d of pixelData ?? []) {
+      const n = getActionValue(d.actions, "offsite_conversion.fb_pixel_lead");
+      if (n > 0) pixelPorDia.set(d.date_start.slice(0, 10), n);
+    }
+    const sheetMap = somarPixelNaPlanilha(
+      aggregateSpreadsheetByDate(filteredSheetRows, utmSourceMapped, dateMapped),
+      pixelPorDia,
+    );
 
     const salesDates = salesByDay ? Object.keys(salesByDay) : undefined;
-    const rows = buildDailyRows(metaMap, sheetMap, salesDates);
+    const rows = buildDailyRows(metaMap, sheetMap, salesDates).map((r) =>
+      pixelPorDia.has(r.date) ? { ...r, leadsPixel: pixelPorDia.get(r.date) } : r,
+    );
     const totals = computeTotals(rows);
 
     const totalLeads = totals.leadsPagos + totals.leadsOrg + totals.leadsSemTrack;
@@ -280,5 +313,5 @@ export function useCrossedFunnelMetrics(
       isLoading,
       hasLinkedSheet,
     };
-  }, [metaData, sheetData, salesSheetData, stageSalesData, salesByDay, days, isLoading, hasLinkedSheet, totalResponses, matchedResponses, unmatchedResponses]);
+  }, [metaData, sheetData, pixelData, salesSheetData, stageSalesData, salesByDay, days, isLoading, hasLinkedSheet, totalResponses, matchedResponses, unmatchedResponses]);
 }
