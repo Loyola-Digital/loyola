@@ -58,6 +58,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useSendflowSummary } from "@/lib/hooks/use-sendflow";
+import { OrigemDosParticipantes } from "./origem-dos-participantes";
 import {
   montarDiario,
   reconstruirTotais,
@@ -420,6 +421,12 @@ export function GruposDoSendflow({
           dias.
         </p>
       )}
+
+      <OrigemDosParticipantes
+        projectId={projectId}
+        funnelId={funnelId}
+        campanhaId={data.campanha.id}
+      />
     </div>
   );
 }

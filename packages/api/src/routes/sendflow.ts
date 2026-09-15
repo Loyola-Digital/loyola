@@ -18,6 +18,10 @@ import { funnels, sendflowConnections } from "../db/schema.js";
 import { alvoDoFunil, casarCampanha } from "../services/sendflow-casamento.js";
 import { conexaoPara } from "../services/sendflow-groups-sync.js";
 import {
+  cruzarOrigem,
+  participantesDaCampanha,
+} from "../services/sendflow-origem.js";
+import {
   montarUrlDeAutorizacao,
   trocarCodigo,
 } from "../services/sendflow-oauth.js";
@@ -485,12 +489,38 @@ export default fp(async function sendflowRoutes(fastify) {
             .code(409)
             .send({ error: "SendFlow não conectado", code: "NOT_CONNECTED" });
         const todas = await listarCampanhas(s);
-        return { releases: todas.filter((r) => !r.archived) };
+        // `?todas=1` inclui as arquivadas: o grupo antigo que se quer comparar
+        // costuma ser de um lançamento que já acabou.
+        const incluirArquivadas =
+          (request.query as { todas?: string }).todas === "1";
+        return {
+          releases: incluirArquivadas ? todas : todas.filter((r) => !r.archived),
+        };
       } catch (err) {
         return erro(reply, err);
       }
     },
   );
+
+  /** O funil e a campanha do SendFlow que casou com ele. */
+  async function campanhaDoFunil(
+    s: SendflowSession,
+    projectId: string,
+    funnelId: string,
+  ) {
+    const [funil] = await fastify.db
+      .select({ name: funnels.name, matchCode: funnels.matchCode })
+      .from(funnels)
+      .where(and(eq(funnels.id, funnelId), eq(funnels.projectId, projectId)))
+      .limit(1);
+    if (!funil) return null;
+    const campanhas = (await listarCampanhas(s)).filter((c) => !c.archived);
+    return {
+      funil,
+      campanhas,
+      campanha: casarCampanha(campanhas, funil.name, funil.matchCode),
+    };
+  }
 
   // ---- Resumo por funil --------------------------------------------------
 
@@ -503,19 +533,6 @@ export default fp(async function sendflowRoutes(fastify) {
       if (!p.success)
         return reply.code(400).send({ error: "Parâmetros inválidos" });
 
-      const [funil] = await fastify.db
-        .select({ name: funnels.name, matchCode: funnels.matchCode })
-        .from(funnels)
-        .where(
-          and(
-            eq(funnels.id, p.data.funnelId),
-            eq(funnels.projectId, p.data.projectId),
-          ),
-        )
-        .limit(1);
-      if (!funil)
-        return reply.code(404).send({ error: "Funil não encontrado" });
-
       try {
         const s = await sessao(p.data.projectId);
         if (!s)
@@ -523,8 +540,14 @@ export default fp(async function sendflowRoutes(fastify) {
             .code(409)
             .send({ error: "SendFlow não conectado", code: "NOT_CONNECTED" });
 
-        const campanhas = (await listarCampanhas(s)).filter((c) => !c.archived);
-        const campanha = casarCampanha(campanhas, funil.name, funil.matchCode);
+        const achado = await campanhaDoFunil(
+          s,
+          p.data.projectId,
+          p.data.funnelId,
+        );
+        if (!achado)
+          return reply.code(404).send({ error: "Funil não encontrado" });
+        const { funil, campanhas, campanha } = achado;
         if (!campanha) {
           // Não é erro: a maioria dos funis do projeto é de outros clientes e
           // não tem operação de WhatsApp. A tela diz isso em vez de "falhou".
@@ -589,6 +612,63 @@ export default fp(async function sendflowRoutes(fastify) {
             sucesso: a.success ?? null,
             erro: a.error ?? null,
           })),
+        };
+      } catch (err) {
+        return erro(reply, err);
+      }
+    },
+  );
+  // ---- Origem dos participantes -------------------------------------------
+
+  const origemQuery = z.object({
+    comparar: z.string().regex(/^[A-Za-z0-9]{8,64}$/),
+  });
+
+  /**
+   * Quem da campanha do funil já estava num grupo antigo, e quem é novo.
+   * Devolve os números: é para o time poder agir sobre eles (ver
+   * `sendflow-origem.ts`). Convidado não chega aqui.
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/sendflow/origem",
+    async (request, reply) => {
+      if (negarGuest(request))
+        return reply.code(403).send({ error: "Acesso negado" });
+      const p = funilParam.safeParse(request.params);
+      const q = origemQuery.safeParse(request.query);
+      if (!p.success || !q.success)
+        return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      try {
+        const s = await sessao(p.data.projectId);
+        if (!s)
+          return reply
+            .code(409)
+            .send({ error: "SendFlow não conectado", code: "NOT_CONNECTED" });
+
+        const achado = await campanhaDoFunil(
+          s,
+          p.data.projectId,
+          p.data.funnelId,
+        );
+        if (!achado)
+          return reply.code(404).send({ error: "Funil não encontrado" });
+        if (!achado.campanha)
+          return reply.code(404).send({
+            error: "Nenhuma campanha do SendFlow casou com este funil",
+          });
+        if (achado.campanha.id === q.data.comparar)
+          return reply
+            .code(400)
+            .send({ error: "Escolha uma campanha diferente da do funil" });
+
+        // Em sequência de propósito: a sessão serializa as chamadas de qualquer
+        // jeito, e assim a primeira fica em cache mesmo se a segunda falhar.
+        const atual = await participantesDaCampanha(s, achado.campanha.id);
+        const antiga = await participantesDaCampanha(s, q.data.comparar);
+        return {
+          campanha: { id: achado.campanha.id, name: achado.campanha.name },
+          ...cruzarOrigem(atual, antiga),
         };
       } catch (err) {
         return erro(reply, err);

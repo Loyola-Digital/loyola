@@ -155,3 +155,56 @@ export function useSendflowSummary(projectId: string | null, funnelId: string | 
     retry: false,
   });
 }
+
+// ---- Origem dos participantes -------------------------------------------
+
+export interface SendflowOrigem {
+  campanha: { id: string; name: string };
+  /** Todo mundo que passou pela campanha do funil, inclusive quem saiu. */
+  total: number;
+  vieramDaAntiga: number;
+  novos: number;
+  aindaNaAntiga: number;
+  tinhamSaidoDaAntiga: number;
+  sairamDaCampanha: number;
+  participantes: { numero: string; veioDaAntiga: boolean; saiu: boolean }[];
+}
+
+/** Todas as campanhas, arquivadas inclusive — o grupo antigo costuma estar. */
+export function useSendflowCampanhas(projectId: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["sendflow-campanhas", projectId],
+    queryFn: () =>
+      apiClient<{ releases: { id: string; name: string; archived?: boolean }[] }>(
+        `/api/projects/${projectId}/sendflow/releases?todas=1`,
+      ),
+    enabled: !!projectId,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+}
+
+/**
+ * Cruza os participantes da campanha do funil com os de `comparar`.
+ *
+ * Lento na primeira vez (o SendFlow monta um CSV de cada campanha); a API
+ * guarda por 30 minutos, e o staleTime acompanha.
+ */
+export function useSendflowOrigem(
+  projectId: string | null,
+  funnelId: string | null,
+  comparar: string | null,
+) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["sendflow-origem", projectId, funnelId, comparar],
+    queryFn: () =>
+      apiClient<SendflowOrigem>(
+        `/api/projects/${projectId}/funnels/${funnelId}/sendflow/origem?comparar=${encodeURIComponent(comparar!)}`,
+      ),
+    enabled: !!projectId && !!funnelId && !!comparar,
+    staleTime: 30 * 60 * 1000,
+    retry: false,
+  });
+}
