@@ -13,6 +13,7 @@ import {
   ResponsiveContainer,
   Legend,
   ReferenceLine,
+  type LabelProps,
 } from "recharts";
 import type { DailyRow } from "@/lib/utils/funnel-metrics";
 import { useLeadsProjection, type ProjectedDayData } from "@/lib/hooks/use-leads-projection";
@@ -179,7 +180,7 @@ export function LeadsProjectionCostBasedChart({
       setInitialMetaTotal(funnel.leadsGoalMeta ?? 0);
       // Note: leadsGoalGastoTotal support depends on schema; fallback to localStorage if not available
       if ('leadsGoalGastoTotal' in funnel) {
-        setInitialGastoTotal((funnel as any).leadsGoalGastoTotal ?? 0);
+        setInitialGastoTotal(funnel.leadsGoalGastoTotal ?? 0);
       } else if (typeof window !== "undefined") {
         const savedGastoTotal = localStorage.getItem(storageKeyGastoTotal);
         setInitialGastoTotal(savedGastoTotal ? parseFloat(savedGastoTotal) : 0);
@@ -413,19 +414,21 @@ export function LeadsProjectionCostBasedChart({
               name={`${term} Orgânicos Projetados (Dia)`}
               radius={[2, 2, 0, 0]}
               stackId="projectedDaily"
-              label={(props: any) => {
+              label={(props: LabelProps) => {
+                // Recharts 3 entrega x/y/width como SVGProps (number | string) e
+                // value como RenderableText — coerção explícita no lugar do `any`.
                 const { x, y, width, value } = props;
                 return (
                   <text
-                    x={x! + (width || 0) / 2}
-                    y={y! - 5}
+                    x={Number(x ?? 0) + Number(width ?? 0) / 2}
+                    y={Number(y ?? 0) - 5}
                     textAnchor="middle"
                     fill="#FFF"
                     stroke="#000"
                     strokeWidth={0.5}
                     fontSize={11}
                   >
-                    {Math.round(value)}
+                    {Math.round(Number(value ?? 0))}
                   </text>
                 );
               }}
