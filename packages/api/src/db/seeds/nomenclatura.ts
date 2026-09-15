@@ -77,7 +77,12 @@ export const DADOS_DO_SEED = {
       { value: "m", description: "meteórico" },
       { value: "pr", description: "evento presencial" },
     ],
-  } as Record<"creative_type" | "launch_type", { value: string; description: string }[]>,
+    /** Story 47.12 (AC2): origem do vídeo — códigos do pedido do gestor, descrições confirmadas por ele em 15/09/2026. */
+    creative_origin: [
+      { value: "ia", description: "feito por inteligência artificial" },
+      { value: "h", description: "feito por humano" },
+    ],
+  } as Record<"creative_type" | "launch_type" | "creative_origin", { value: string; description: string }[]>,
 } as const;
 
 export interface ResultadoDoSeed {

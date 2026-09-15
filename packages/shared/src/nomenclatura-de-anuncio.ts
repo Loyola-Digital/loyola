@@ -28,6 +28,18 @@ export const SEPARADOR_DA_DESCRICAO = "--";
 export const FORMATO_DA_DATA_DO_ANUNCIO = /^(0[1-9]|1[0-2])-\d{4}$/;
 export const NN = /^\d{2}$/;
 
+/**
+ * Story 47.12 — hook e body do vídeo, cadastrados por expert com descrição
+ * (pedido do gestor, 15/09/2026). `h01` é o 1º hook DO EXPERT; `b01`, o 1º
+ * body. Entram no nome do `adv` na 47.13. Mesmo desenho das variáveis de VSL.
+ */
+export type TipoDeParteDoVideo = "hook" | "body";
+export const TIPOS_DE_PARTE_DO_VIDEO: readonly TipoDeParteDoVideo[] = ["hook", "body"];
+export const PREFIXO_DA_PARTE_DO_VIDEO: Record<TipoDeParteDoVideo, "h" | "b"> = { hook: "h", body: "b" };
+/** O tipo de código (para `normalizarCodigo`) de cada parte. */
+export const TIPO_DE_CODIGO_DA_PARTE_DO_VIDEO: Record<TipoDeParteDoVideo, "ad-hook" | "ad-body"> = { hook: "ad-hook", body: "ad-body" };
+export const ROTULO_DA_PARTE_DO_VIDEO: Record<TipoDeParteDoVideo, string> = { hook: "Hook", body: "Body" };
+
 export type PosicaoDoAnuncio = "creative" | "expert" | "launch" | "date" | "description";
 export type BlocoDoAnuncio = "criativo" | "identidade" | "lancamento" | "data" | "descricao";
 

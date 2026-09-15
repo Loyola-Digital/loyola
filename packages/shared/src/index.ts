@@ -117,6 +117,12 @@ export {
   type PedacoDoAnuncio,
   type PosicaoDoAnuncio,
   type BlocoDoAnuncio,
+  // Story 47.12: hook e body do vídeo
+  TIPOS_DE_PARTE_DO_VIDEO,
+  PREFIXO_DA_PARTE_DO_VIDEO,
+  TIPO_DE_CODIGO_DA_PARTE_DO_VIDEO,
+  ROTULO_DA_PARTE_DO_VIDEO,
+  type TipoDeParteDoVideo,
 } from "./nomenclatura-de-anuncio.js";
 // Story 47.5: campanhas legadas — filtro por token e sugestão de classificação
 // a partir do nome antigo. Módulo folha (web: subpath `src/nomenclatura-legado`).

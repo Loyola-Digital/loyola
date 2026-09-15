@@ -34,7 +34,7 @@
 import { z } from "zod";
 import fp from "fastify-plugin";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { LPMIX, NA, PREFIXO_DA_VARIAVEL, TIPO_DE_CODIGO_DA_VARIAVEL, montarSlugDeLp, parseAdName, parseCampaignName, parseVslName, proximoCodigoNumerado, sugerirClassificacao } from "@loyola-x/shared";
+import { LPMIX, NA, PREFIXO_DA_PARTE_DO_VIDEO, PREFIXO_DA_VARIAVEL, ROTULO_DA_PARTE_DO_VIDEO, TIPO_DE_CODIGO_DA_PARTE_DO_VIDEO, TIPO_DE_CODIGO_DA_VARIAVEL, montarSlugDeLp, parseAdName, parseCampaignName, parseVslName, proximoCodigoNumerado, sugerirClassificacao } from "@loyola-x/shared";
 import { CAMPOS_DO_NOME, montarCampanha } from "../services/nomenclatura/campanhas.js";
 import { CAMPOS_DA_VSL_NO_BANCO, montarVsl } from "../services/nomenclatura/vsl.js";
 import { montarAnuncio, proximoNnDeAnuncio } from "../services/nomenclatura/anuncios.js";
@@ -76,12 +76,12 @@ const listaQuery = z.object({
   productId: uuid.optional(),
   funnelId: uuid.optional(),
   offerId: uuid.optional(),
-  type: z.enum(["year", "temperature", "auction", "format", "creative_type", "launch_type"]).optional(),
+  type: z.enum(["year", "temperature", "auction", "format", "creative_type", "launch_type", "creative_origin"]).optional(),
 });
 const dataIso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "data no formato AAAA-MM-DD");
 
-/** Story 47.10: `creative_type` e `launch_type` são os do nome de anúncio; o CRUD é o mesmo. */
-const TIPOS_DE_VALOR = ["year", "temperature", "auction", "format", "creative_type", "launch_type"] as const;
+/** Story 47.10: `creative_type` e `launch_type` são os do nome de anúncio; o CRUD é o mesmo. Story 47.12: `creative_origin` (ia · h) idem. */
+const TIPOS_DE_VALOR = ["year", "temperature", "auction", "format", "creative_type", "launch_type", "creative_origin"] as const;
 
 export default fp(async function nomenclaturaRoutes(fastify) {
   const repo = (): Repositorio => fastify.nomenclaturaRepo ?? criarRepositorio(fastify.db);
@@ -224,7 +224,7 @@ export default fp(async function nomenclaturaRoutes(fastify) {
       const r = repo();
       await existente(r, "experts", id, "Expert");
       const filhos = await r.experts.filhosAtivos(id);
-      return { produtos: filhos.produtos.length, funis: filhos.funis.length, ofertas: filhos.ofertas.length, lps: filhos.lps.length, variaveisDeVsl: filhos.variaveisDeVsl.length };
+      return { produtos: filhos.produtos.length, funis: filhos.funis.length, ofertas: filhos.ofertas.length, lps: filhos.lps.length, variaveisDeVsl: filhos.variaveisDeVsl.length, partesDoVideo: filhos.partesDoVideo.length };
     }),
   );
 
@@ -243,10 +243,11 @@ export default fp(async function nomenclaturaRoutes(fastify) {
         for (const o of filhos.ofertas) await r.alternarAtivo("ofertas", o, false, author);
         for (const l of filhos.lps) await r.alternarAtivo("lps", l, false, author);
         for (const v of filhos.variaveisDeVsl) await r.alternarAtivo("vslVariaveis", v, false, author);
+        for (const h of filhos.partesDoVideo) await r.alternarAtivo("adPartes", h, false, author);
         const depois = antes.active ? await r.alternarAtivo("experts", antes, false, author) : antes;
         return {
           ...depois,
-          desativados: { produtos: filhos.produtos.length, funis: filhos.funis.length, ofertas: filhos.ofertas.length, lps: filhos.lps.length, variaveisDeVsl: filhos.variaveisDeVsl.length },
+          desativados: { produtos: filhos.produtos.length, funis: filhos.funis.length, ofertas: filhos.ofertas.length, lps: filhos.lps.length, variaveisDeVsl: filhos.variaveisDeVsl.length, partesDoVideo: filhos.partesDoVideo.length },
         };
       });
     }),
@@ -262,6 +263,8 @@ export default fp(async function nomenclaturaRoutes(fastify) {
     { entidade: "dicionario", rota: "dicionario", rotulo: "Valor" },
     /** Story 47.9 */
     { entidade: "vslVariaveis", rota: "vsl/variaveis", rotulo: "Variável de VSL" },
+    // Story 47.12: hooks e bodies do vídeo
+    { entidade: "adPartes", rota: "ads/partes", rotulo: "Hook/body" },
   ];
 
   for (const { entidade, rota, rotulo } of ENTIDADES) {
@@ -991,6 +994,84 @@ export default fp(async function nomenclaturaRoutes(fastify) {
   });
 
   const rotulosDeAnuncio = (r: Repositorio) => async (a: { expertId: string }) => ({ expertCode: (await r.porId("experts", a.expertId))?.code ?? "?" });
+
+  // ── Story 47.12: hooks e bodies do vídeo (molde literal de vsl/variaveis) ──
+  const tipoDeParte = z.enum(["hook", "body"]);
+
+  fastify.get(
+    "/api/nomenclatura/ads/partes",
+    tentar(async (request) => {
+      autor(request);
+      const q = parse(z.object({ inativos: z.enum(["1", "true", "0", "false"]).optional(), expertId: uuid.optional(), type: tipoDeParte.optional() }), request.query);
+      const r = repo();
+      const [linhas, hook, body] = await Promise.all([
+        r.adPartes.listar({ expertId: q.expertId, type: q.type }, querInativos(q)),
+        r.usoEmAnuncios("hook"),
+        r.usoEmAnuncios("body"),
+      ]);
+      const uso = { hook, body };
+      return linhas.map((v) => ({ ...v, rotulo: rotuloDe(v.code, v.description), usadoEm: uso[v.type].get(v.id) ?? 0 }));
+    }),
+  );
+
+  /** Sugestão de código por (expert, tipo): `h01`, `b01` — o menor livre, inativos inclusos (mesma regra das variáveis de VSL). */
+  fastify.get(
+    "/api/nomenclatura/ads/partes/proximo-codigo",
+    tentar(async (request) => {
+      autor(request);
+      const q = parse(z.object({ expertId: uuid, type: tipoDeParte }), request.query);
+      const r = repo();
+      await existente(r, "experts", q.expertId, "Expert");
+      return { codigo: proximoCodigoNumerado(PREFIXO_DA_PARTE_DO_VIDEO[q.type], await r.adPartes.codigos(q.expertId, q.type)) };
+    }),
+  );
+
+  fastify.post(
+    "/api/nomenclatura/ads/partes",
+    tentar(async (request, reply) => {
+      const author = autor(request);
+      const b = parse(z.object({ expertId: uuid, type: tipoDeParte, code: z.string().optional(), description: z.string().trim().min(1).max(2000) }), request.body);
+      const r = repo();
+      const expert = await existente(r, "experts", b.expertId, "Expert");
+      const codigos = await r.adPartes.codigos(expert.id, b.type);
+      const sugestao = proximoCodigoNumerado(PREFIXO_DA_PARTE_DO_VIDEO[b.type], codigos);
+      const code = b.code !== undefined && b.code !== "" ? codigoValidado(b.code, TIPO_DE_CODIGO_DA_PARTE_DO_VIDEO[b.type], "code") : sugestao;
+      if (!code) throw new ErroDeNomenclatura(409, `Sequência de ${ROTULO_DA_PARTE_DO_VIDEO[b.type].toLowerCase()} esgotada para ${expert.code} (99 códigos).`, { campo: "code" });
+      const ja = await r.adPartes.porCode(expert.id, b.type, code);
+      if (ja) throw conflitoDeCodigo({ codigo: code, escopo: `${expert.code} (${ROTULO_DA_PARTE_DO_VIDEO[b.type].toLowerCase()})`, descricaoExistente: ja.description, sugestao, campo: "code" });
+      const linha = await r.inserir("adPartes", { expertId: expert.id, type: b.type, code, description: b.description }, author);
+      return reply.code(201).send({ ...linha, rotulo: rotuloDe(linha.code, linha.description), usadoEm: 0 });
+    }),
+  );
+
+  fastify.patch(
+    "/api/nomenclatura/ads/partes/:id",
+    tentar(async (request) => {
+      const author = autor(request);
+      const { id } = parse(idParams, request.params);
+      const b = parse(z.object({ code: z.string().optional(), description: z.string().trim().min(1).max(2000).optional() }), request.body);
+      const r = repo();
+      const antes = await existente(r, "adPartes", id, "Hook/body");
+      const patch: Partial<typeof antes> = {};
+      if (b.code !== undefined) {
+        const code = codigoValidado(b.code, TIPO_DE_CODIGO_DA_PARTE_DO_VIDEO[antes.type], "code");
+        if (code !== antes.code) {
+          // Código imutável depois de usado em anúncio (a 47.13 passa a gravar hook_id/body_id).
+          exigirNaoUsado(await r.anunciosQueUsamParte(id), "code");
+          const ja = await r.adPartes.porCode(antes.expertId, antes.type, code);
+          if (ja) {
+            const sugestao = proximoCodigoNumerado(PREFIXO_DA_PARTE_DO_VIDEO[antes.type], await r.adPartes.codigos(antes.expertId, antes.type));
+            throw conflitoDeCodigo({ codigo: code, escopo: "este expert", descricaoExistente: ja.description, sugestao, campo: "code" });
+          }
+          patch.code = code;
+        }
+      }
+      if (b.description !== undefined) patch.description = b.description;
+      if (Object.keys(patch).length === 0) return { ...antes, rotulo: rotuloDe(antes.code, antes.description) };
+      const depois = await r.atualizar("adPartes", antes, patch, author);
+      return { ...depois, rotulo: rotuloDe(depois.code, depois.description) };
+    }),
+  );
 
   fastify.get(
     "/api/nomenclatura/ads/proximo",

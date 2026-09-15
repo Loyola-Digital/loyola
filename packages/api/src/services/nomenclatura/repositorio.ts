@@ -27,6 +27,7 @@ import {
   namingLandingPages,
   namingLegacyDecisions,
   namingOffers,
+  namingAdParts,
   namingAds,
   namingProducts,
   namingVslVariables,
@@ -48,11 +49,14 @@ export type TipoDeValor = ValorFixo["type"];
 /** Story 47.9 */
 export type VariavelDeVsl = typeof namingVslVariables.$inferSelect;
 export type TipoDeVariavelDeVsl = VariavelDeVsl["type"];
+/** Story 47.12: hook e body do vídeo. */
+export type ParteDoVideo = typeof namingAdParts.$inferSelect;
+export type TipoDeParteDoVideo = ParteDoVideo["type"];
 export type Vsl = typeof namingVsls.$inferSelect;
 /** Story 47.10 */
 export type Anuncio = typeof namingAds.$inferSelect;
 
-export type Entidade = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "dicionario" | "campanhas" | "decisoes" | "vslVariaveis" | "vsls" | "anuncios";
+export type Entidade = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "dicionario" | "campanhas" | "decisoes" | "vslVariaveis" | "vsls" | "anuncios" | "adPartes";
 export type Decisao = typeof namingLegacyDecisions.$inferSelect;
 /** As que têm `active` (campanha não se desativa; publica ou duplica). */
 export type EntidadeAtivavel = Exclude<Entidade, "campanhas" | "decisoes" | "vsls" | "anuncios">;
@@ -71,6 +75,7 @@ export const TABELA: Record<Entidade, string> = {
   vslVariaveis: "naming_vsl_variables",
   vsls: "naming_vsls",
   anuncios: "naming_ads",
+  adPartes: "naming_ad_parts",
 };
 
 const TABELAS = {
@@ -85,6 +90,7 @@ const TABELAS = {
   vslVariaveis: namingVslVariables,
   vsls: namingVsls,
   anuncios: namingAds,
+  adPartes: namingAdParts,
 } as const;
 
 type Linha<E extends Entidade> = (typeof TABELAS)[E]["$inferSelect"];
@@ -213,6 +219,14 @@ export function criarRepositorio(db: Conexao) {
   /** Story 47.10: os dois tipos do nome de anúncio guardam o texto em `naming_ads`. */
   const COLUNA_DO_TIPO_DE_ANUNCIO: Record<TipoDeAnuncio, "creativeType" | "launchType"> = { creative_type: "creativeType", launch_type: "launchType" };
   const ehTipoDeAnuncio = (t: TipoDeValor): t is TipoDeAnuncio => t === "creative_type" || t === "launch_type";
+  /**
+   * Story 47.12: a origem do vídeo (`ia` · `h`) é tipo do nome de anúncio, mas
+   * `naming_ads` só ganha a coluna `origin` na 47.13. Até lá o uso é zero — e
+   * o tipo NÃO pode cair no ramo das campanhas (`namingCampaigns[undefined]`).
+   */
+  const ehTipoSemColunaAinda = (t: TipoDeValor): t is "creative_origin" => t === "creative_origin";
+  /** Os tipos que pertencem ao nome de anúncio (com ou sem coluna) — fora do snapshot de campanha. */
+  const ehTipoDoNomeDeAnuncio = (t: TipoDeValor): boolean => ehTipoDeAnuncio(t) || ehTipoSemColunaAinda(t);
 
   async function usoPorFk(coluna: ColunaDeFk): Promise<Map<string, number>> {
     const col = namingCampaigns[coluna];
@@ -221,6 +235,7 @@ export function criarRepositorio(db: Conexao) {
   }
 
   async function usoPorValor(type: TipoDeValor): Promise<Map<string, number>> {
+    if (ehTipoSemColunaAinda(type)) return new Map();
     if (ehTipoDeAnuncio(type)) {
       const col = namingAds[COLUNA_DO_TIPO_DE_ANUNCIO[type]];
       const linhas = await db.select({ valor: col, n: count() }).from(namingAds).groupBy(col);
@@ -241,6 +256,7 @@ export function criarRepositorio(db: Conexao) {
 
   /** "Usado em N" de um valor fixo: campanhas para os quatro tipos do nome de campanha; anúncios para os dois do nome de anúncio. */
   async function campanhasComValor(type: TipoDeValor, valor: string): Promise<number> {
+    if (ehTipoSemColunaAinda(type)) return 0;
     if (ehTipoDeAnuncio(type)) {
       const [{ n }] = await db.select({ n: count() }).from(namingAds).where(eq(namingAds[COLUNA_DO_TIPO_DE_ANUNCIO[type]], valor));
       return Number(n);
@@ -337,6 +353,9 @@ export function criarRepositorio(db: Conexao) {
         return [];
       case "anuncios":
         return [];
+      case "adPartes":
+        // Story 47.12: `naming_ads` só ganha hook_id/body_id na 47.13 — até lá ninguém referencia.
+        return [];
       case "lps":
         return campanhasComo("landingPageId", id);
       case "campanhas":
@@ -347,6 +366,7 @@ export function criarRepositorio(db: Conexao) {
       case "dicionario": {
         if (!linha.type || !linha.value) return [];
         const tipo = linha.type as TipoDeValor;
+        if (ehTipoSemColunaAinda(tipo)) return [];
         if (ehTipoDeAnuncio(tipo)) {
           const anuncios = await db.select({ id: namingAds.id, name: namingAds.name }).from(namingAds).where(eq(namingAds[COLUNA_DO_TIPO_DE_ANUNCIO[tipo]], linha.value)).limit(LIMITE_DE_REFERENCIAS);
           return anuncios.map((a) => ({ tipo: "anuncio" as const, id: a.id, rotulo: a.name }));
@@ -398,7 +418,9 @@ export function criarRepositorio(db: Conexao) {
       const lps = await db.select().from(namingLandingPages).where(and(eq(namingLandingPages.expertId, expertId), eq(namingLandingPages.active, true)));
       // Story 47.9: as variáveis de VSL do expert vão junto na cascata.
       const variaveisDeVsl = await db.select().from(namingVslVariables).where(and(eq(namingVslVariables.expertId, expertId), eq(namingVslVariables.active, true)));
-      return { produtos, funis, ofertas, lps, variaveisDeVsl };
+      // Story 47.12: hooks/bodies são do expert — desativar o expert desativa os dele, como as variáveis de VSL.
+      const partesDoVideo = await db.select().from(namingAdParts).where(and(eq(namingAdParts.expertId, expertId), eq(namingAdParts.active, true)));
+      return { produtos, funis, ofertas, lps, variaveisDeVsl, partesDoVideo };
     },
   };
 
@@ -521,6 +543,40 @@ export function criarRepositorio(db: Conexao) {
       (await db.select({ code: namingVslVariables.code }).from(namingVslVariables).where(and(eq(namingVslVariables.expertId, expertId), eq(namingVslVariables.type, type)))).map((x) => x.code),
   };
 
+  /** Story 47.12: hooks e bodies por expert — mesmo desenho de `vslVariaveis`. */
+  const adPartes = {
+    listar: (f: { expertId?: string; type?: TipoDeParteDoVideo }, inativos: boolean) =>
+      db
+        .select()
+        .from(namingAdParts)
+        .where(
+          onde(
+            f.expertId ? eq(namingAdParts.expertId, f.expertId) : undefined,
+            f.type ? eq(namingAdParts.type, f.type) : undefined,
+            ativoSe(inativos, namingAdParts.active),
+          ),
+        )
+        .orderBy(asc(namingAdParts.type), asc(namingAdParts.code)),
+    /** Unicidade por (expert, tipo), inativos inclusos (regra 4). */
+    porCode: async (expertId: string, type: TipoDeParteDoVideo, code: string) =>
+      (await db.select().from(namingAdParts).where(and(eq(namingAdParts.expertId, expertId), eq(namingAdParts.type, type), eq(namingAdParts.code, code))).limit(1))[0],
+    /** Todos os códigos do (expert, tipo), inativos inclusos — a base da sugestão `h01 → h02`. */
+    codigos: async (expertId: string, type: TipoDeParteDoVideo) =>
+      (await db.select({ code: namingAdParts.code }).from(namingAdParts).where(and(eq(namingAdParts.expertId, expertId), eq(namingAdParts.type, type)))).map((x) => x.code),
+  };
+
+  /**
+   * Story 47.12: "usado em N anúncios" de um hook/body. `naming_ads` só ganha
+   * `hook_id`/`body_id` na 47.13 — até lá é zero por definição, mas a regra
+   * (código imutável depois de usado) e o teste já entram por aqui.
+   */
+  async function usoEmAnuncios(_type: TipoDeParteDoVideo): Promise<Map<string, number>> {
+    return new Map();
+  }
+  async function anunciosQueUsamParte(_id: string): Promise<number> {
+    return 0;
+  }
+
   const vsls = {
     listar: async (f: { expertId?: string; productId?: string; offerId?: string; q?: string; limit: number; offset: number }) => {
       const cond = onde(
@@ -624,9 +680,9 @@ export function criarRepositorio(db: Conexao) {
         code: l.code,
         active: l.active,
       })),
-      // Story 47.10: os tipos do nome de anúncio não entram no snapshot do nome de campanha.
+      // Story 47.10/47.12: os tipos do nome de anúncio não entram no snapshot do nome de campanha.
       valores: filtra(va)
-        .filter((v) => !ehTipoDeAnuncio(v.type))
+        .filter((v) => !ehTipoDoNomeDeAnuncio(v.type))
         .map((v) => ({ type: v.type as TipoDeCampanha, value: v.value, active: v.active })),
     };
   }
@@ -740,6 +796,9 @@ export function criarRepositorio(db: Conexao) {
     vsls,
     usoEmVsls,
     vslsQueUsam,
+    adPartes,
+    usoEmAnuncios,
+    anunciosQueUsamParte,
     campanhas,
     legadas,
     inserir,

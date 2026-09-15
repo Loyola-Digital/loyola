@@ -22,7 +22,8 @@ export type AbaDeCampanhas = "nova" | "lista" | "validar" | "legadas";
 /** Story 47.9: seção Nome VSL — só gerador e listagem; o cadastro das variáveis é do Dicionário. */
 export type AbaDeVsl = "nova" | "lista";
 /** Story 47.10: seção Nome Ads. */
-export type AbaDeAds = "novo" | "lista" | "valores";
+/** `partes` (Story 47.12): hooks e bodies do vídeo, por expert. */
+export type AbaDeAds = "novo" | "lista" | "valores" | "partes";
 
 export const ABAS_DO_DICIONARIO: { value: AbaDoDicionario; label: string }[] = [
   { value: "experts", label: "Experts" },
@@ -59,6 +60,7 @@ export const ABAS_DE_ADS: { value: AbaDeAds; label: string }[] = [
   { value: "novo", label: "Novo anúncio" },
   { value: "lista", label: "Anúncios" },
   { value: "valores", label: "Valores fixos" },
+  { value: "partes", label: "Hooks e bodies" },
 ];
 
 export const SECOES: { value: Secao; label: string; disponivel: boolean }[] = [
