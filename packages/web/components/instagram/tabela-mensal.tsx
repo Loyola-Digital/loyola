@@ -19,6 +19,20 @@
 
 import { ArrowDown, ArrowUp, ExternalLink, Loader2, Minus } from "lucide-react";
 import { useInstagramMensal, type MesDoOrganico } from "@/lib/hooks/use-instagram-mensal";
+import { Dica } from "@/components/instagram/dica";
+
+/** O que cada coluna é — no "i" ao lado do título. */
+const COLUNAS: [string, string][] = [
+  ["Mês", "Mês do calendário. O mês em curso fica marcado: tem menos dias e ainda vai crescer."],
+  ["Seguidores", "Total de seguidores no fim do mês. A Meta só dá o total de hoje, então os meses passados são reconstruídos subtraindo o crescimento dos meses seguintes."],
+  ["Crescimento", "Saldo do mês: novos seguidores menos unfollows."],
+  ["Novos / unfollows", "Quantas contas começaram a seguir (+) e quantas deixaram de seguir (−) no mês."],
+  ["Alcance", "Contas únicas alcançadas no mês (soma diária). Embaixo, a variação sobre o mês anterior."],
+  ["Views", "Visualizações de todo o conteúdo no mês, contando repetições. Embaixo, a variação sobre o mês anterior."],
+  ["Engajamento", "Interações ÷ alcance do mês. A variação embaixo vai em pontos percentuais (pp)."],
+  ["Posts", "Posts publicados no mês."],
+  ["Melhor post", "O post de maior taxa de engajamento do mês — não o de maior alcance: um post entregue a muita gente e ignorado não é o melhor. Embaixo, a performance dele."],
+];
 
 const MESES = [
   "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -129,22 +143,15 @@ export function TabelaMensal({ accountId }: { accountId: string | null }) {
           <table className="w-full min-w-[860px] text-sm">
             <thead>
               <tr className="border-b border-border/60">
-                {[
-                  "Mês",
-                  "Seguidores",
-                  "Crescimento",
-                  "Novos / unfollows",
-                  "Alcance",
-                  "Views",
-                  "Engajamento",
-                  "Posts",
-                  "Melhor post",
-                ].map((h) => (
+                {COLUNAS.map(([h, dica]) => (
                   <th
                     key={h}
                     className="whitespace-nowrap px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
                   >
-                    {h}
+                    <span className="inline-flex items-center gap-1">
+                      {h}
+                      <Dica>{dica}</Dica>
+                    </span>
                   </th>
                 ))}
               </tr>
@@ -226,9 +233,12 @@ export function TabelaMensal({ accountId }: { accountId: string | null }) {
                       ) : (
                         <span className="text-[12px] text-muted-foreground">—</span>
                       )}
-                      {m.melhorPost?.engajamento !== null && m.melhorPost && (
-                        <span className="text-[10px] text-muted-foreground">
-                          {String(m.melhorPost.engajamento).replace(".", ",")}% de engajamento
+                      {m.melhorPost && (
+                        <span className="block text-[10px] text-muted-foreground">
+                          {m.melhorPost.engajamento !== null &&
+                            `${String(m.melhorPost.engajamento).replace(".", ",")}% de engajamento · `}
+                          {curto(m.melhorPost.alcance)} de alcance ·{" "}
+                          {m.melhorPost.interacoes.toLocaleString("pt-BR")} interações
                         </span>
                       )}
                     </td>

@@ -25,6 +25,7 @@ import {
 import { OverviewCards } from "@/components/instagram/overview-cards";
 import { ReachChart } from "@/components/instagram/reach-chart";
 import { PostsTable } from "@/components/instagram/posts-table";
+import { PerformancePorFormato } from "@/components/instagram/performance-por-formato";
 import { StoriesSection } from "@/components/instagram/stories-section";
 import { ReelsSection } from "@/components/instagram/reels-section";
 import { AudienceCharts } from "@/components/instagram/audience-charts";
@@ -173,6 +174,7 @@ export default function InstagramDashboardPage() {
         error={insightsError as Error | null}
         onRefresh={handleRefreshAll}
         isRefreshing={refresh.isPending}
+        posts={media?.data}
       />
 
       {/* Top Posts por Seguidores — apenas FEED (Meta não expõe pra Reels) */}
@@ -187,6 +189,15 @@ export default function InstagramDashboardPage() {
         isLoading={mediaLoading}
         onRefresh={handleRefreshAll}
         isRefreshing={refresh.isPending}
+        since={period.since}
+        until={period.until}
+      />
+
+      <PerformancePorFormato
+        data={media?.data}
+        isLoading={mediaLoading}
+        since={period.since}
+        until={period.until}
       />
 
       {/* Stories + Reels side by side on large screens */}

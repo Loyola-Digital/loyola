@@ -67,6 +67,13 @@ interface InstagramMedia {
   views?: number | null;
   shares?: number | null;
   avg_watch_time_ms?: number | null;
+  /** FEED | REELS | STORY — `media_type` VIDEO não separa Reels de vídeo no feed. */
+  media_product_type?: string;
+  /**
+   * Seguidores que o post trouxe. A Meta só entrega para FEED (foto e
+   * carrossel); em Reels fica null, não zero.
+   */
+  follows?: number | null;
 }
 
 interface MediaListResponse {
@@ -456,7 +463,7 @@ export default fp(async function instagramServicePlugin(fastify) {
     const { token, igUserId } = await getDecryptedToken(accountId);
     // `permalink` entra para a tabela mensal poder linkar o melhor post do mês
     // — sem ele, o card mostra o título e não leva a lugar nenhum.
-    let path = `/${igUserId}/media?fields=id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count&limit=${limit}`;
+    let path = `/${igUserId}/media?fields=id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count&limit=${limit}`;
     if (after) path += `&after=${after}`;
 
     const result = await graphFetch<MediaListResponse>(path, token);
@@ -471,11 +478,15 @@ export default fp(async function instagramServicePlugin(fastify) {
         const views = pickInsightValue(entries, "views");
         const shares = pickInsightValue(entries, "shares");
         const avgWatch = pickInsightValue(entries, "ig_reels_avg_watch_time");
+        const follows = pickInsightValue(entries, "follows");
         const likes = post.like_count ?? 0;
         const comments = post.comments_count ?? 0;
         let engagementRate: number | null = null;
         if (reach != null && reach > 0) {
-          engagementRate = ((likes + comments + (saved ?? 0)) / reach) * 100;
+          // Compartilhamento entra: é a mesma conta da tabela mensal
+          // (`interacoesDoPost`), senão o "melhor post do mês" de lá e o topo
+          // do ranking daqui discordariam sobre o mesmo post.
+          engagementRate = ((likes + comments + (saved ?? 0) + (shares ?? 0)) / reach) * 100;
         }
         return {
           ...post,
@@ -485,6 +496,7 @@ export default fp(async function instagramServicePlugin(fastify) {
           views,
           shares,
           avg_watch_time_ms: avgWatch,
+          follows,
         } satisfies InstagramMedia;
       }),
     );
@@ -492,7 +504,7 @@ export default fp(async function instagramServicePlugin(fastify) {
     const data: InstagramMedia[] = enriched.map((r, i) =>
       r.status === "fulfilled"
         ? r.value
-        : { ...result.data[i], reach: null, saved: null, engagement_rate: null, views: null, shares: null, avg_watch_time_ms: null },
+        : { ...result.data[i], reach: null, saved: null, engagement_rate: null, views: null, shares: null, avg_watch_time_ms: null, follows: null },
     );
 
     return {
@@ -769,7 +781,10 @@ export default fp(async function instagramServicePlugin(fastify) {
         const comments = post.comments_count ?? 0;
         let engagementRate: number | null = null;
         if (reach != null && reach > 0) {
-          engagementRate = ((likes + comments + (saved ?? 0)) / reach) * 100;
+          // Compartilhamento entra: é a mesma conta da tabela mensal
+          // (`interacoesDoPost`), senão o "melhor post do mês" de lá e o topo
+          // do ranking daqui discordariam sobre o mesmo post.
+          engagementRate = ((likes + comments + (saved ?? 0) + (shares ?? 0)) / reach) * 100;
         }
         return {
           ...post,

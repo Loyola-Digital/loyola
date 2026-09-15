@@ -29,12 +29,18 @@ export interface InstagramMedia {
   comments_count?: number;
   reach?: number | null;
   saved?: number | null;
-  /** (likes + comments + saves) / reach × 100, ou null se reach indisponível */
+  /** (likes + comments + saves + shares) / reach × 100, ou null se reach indisponível */
   engagement_rate?: number | null;
   /** Qualidade de vídeo (reels): plays (views), shares e tempo médio assistido (ms). */
   views?: number | null;
   shares?: number | null;
   avg_watch_time_ms?: number | null;
+  /** Link público do post. */
+  permalink?: string;
+  /** FEED | REELS | STORY — separa Reels de foto/carrossel melhor que `media_type`. */
+  media_product_type?: string;
+  /** Seguidores gerados pelo post. Só foto/carrossel; null em Reels (a Meta não dá). */
+  follows?: number | null;
 }
 
 export interface InsightValue {
