@@ -1,18 +1,19 @@
 schema: 1
 story: '18.81'
 story_title: 'Testes de LPs — a LPB não aparece na Captação Gratuita, e "Atualizar" não recomputa a tabela'
-gate: CONCERNS
-status_reason: 'Causa (cache de 2h) provada e AC3/AC4 implementadas com 11 testes verificados por mutação; um achado medium no botão Atualizar (pede recomputo de etapas fora da tela) contradiz a AC3 num caminho secundário e tem correção de uma palavra.'
+gate: PASS
+status_reason: 'Causa (cache de 2h) provada e AC3/AC4 implementadas com 11 testes verificados por mutação. REQ-001 corrigido em 8b3d88da (type: "active"); restam 2 apontamentos low, nenhum bloqueia.'
 reviewer: 'Quinn'
-updated: '2026-09-15T15:02:00Z'
+updated: '2026-09-15T15:10:00Z'
 branch: 'fix/18.81-testes-de-lps-lpb'
-commits: ['49a9ab7b']
+commits: ['49a9ab7b', '28c02003', '8b3d88da']
 
 top_issues:
   - id: 'REQ-001'
     severity: medium
-    finding: 'refresh-data-button.tsx: findAll({ queryKey: [CHAVE_CREATIVE_PERFORMANCE] }) usa o padrão type "all" e registra pedido de recomputo também para queries INATIVAS (etapas visitadas nos últimos 30 min, ainda no cache). invalidateQueries só refaz as ativas; o pedido fica pendente e é consumido quando o gestor volta àquela etapa — um recompute ao vivo (~25 s de Meta) que ninguém pediu. Contradiz a AC3 ("navegação normal continua lendo o cache de 2h").'
-    suggested_action: 'findAll({ queryKey: [CHAVE_CREATIVE_PERFORMANCE], type: "active" }) — só as queries com observer (as da tela). Opcional: extrair a seleção para lib/utils e testar com queries ativas/inativas.'
+    status: resolved
+    finding: 'refresh-data-button.tsx: findAll sem `type` registrava pedido de recomputo também para queries INATIVAS (etapas visitadas nos últimos 30 min); o pedido ficava pendente e virava um recompute ao vivo quando o gestor voltava àquela etapa — contra a AC3.'
+    suggested_action: 'CORRIGIDO em 8b3d88da: findAll({ queryKey: [CHAVE_CREATIVE_PERFORMANCE], type: "active" }). Conferido no diff pelo QA. Sem teste automatizado (a seleção vive no componente); opcional extrair para lib/utils.'
   - id: 'TEST-001'
     severity: low
     finding: 'Se a chamada com refresh=1 falhar na rede, o retry (retry: 1) roda o queryFn de novo com o pedido já consumido — a tentativa seguinte vai sem refresh e pode ler o cache. A rota devolve 200 mesmo quando a Meta falha (serve cache vencido), então o caso é raro (falha de rede, não da Meta).'
