@@ -1,0 +1,39 @@
+schema: 1
+story: '47.12'
+story_title: 'Dicionário do vídeo — origem (IA/humano) em Valores fixos e cadastro de hooks e bodies por expert'
+gate: PASS
+status_reason: 'Cadastros entregues no molde das variáveis de VSL sem tocar em nome nenhum; guardas provadas por mutação pelo QA. Um erro de tipo no teste (CI de typecheck ficaria vermelha) achado e corrigido antes do push; restam 2 apontamentos low.'
+reviewer: 'Quinn'
+updated: '2026-09-15T17:20:00Z'
+branch: 'feat/47.12-dicionario-do-video'
+commits: ['4c6f9cf7', '5a7e17bc']
+
+top_issues:
+  - id: 'TEST-001'
+    severity: high
+    status: resolved
+    finding: 'nomenclatura-rotas.test.ts:939 acessava `mem.repo.usoDePartes`, campo do fake que não existe no tipo `Repositorio`. O vitest passava (esbuild apaga tipos); `tsc --noEmit` da API acusava 1 erro → o job typecheck da CI falharia. O Dev Agent Record dizia "tsc 0/0" — era verdade antes de os testes entrarem.'
+    suggested_action: 'CORRIGIDO em 5a7e17bc (cast explícito do fake no teste). Lição para o @dev: rodar tsc DEPOIS do último arquivo, não antes.'
+  - id: 'REQ-001'
+    severity: low
+    finding: 'referenciasDe("adPartes") devolve [] e usoEmAnuncios devolve 0 por definição — DELETE e troca de código de hook/body ficam liberados até a 47.13 gravar hook_id/body_id. Coerente com a story ("conta a partir da 47.13"), mas é uma obrigação da 47.13 que nada no código lembra.'
+    suggested_action: 'Na 47.13, trocar usoEmAnuncios/anunciosQueUsamParte/referenciasDe("adPartes") por consultas reais em naming_ads e cobrir com teste — está nas ACs dela (AC6).'
+  - id: 'DOC-001'
+    severity: low
+    finding: 'A conferência "migration × drizzle-kit generate" (AC1/AC5) não pôde rodar: o drizzle-kit é interativo neste repo (pede decisão sobre renomes antigos) e não roda sem TTY. Conferência feita por leitura: 8 colunas, tipos, unique (expert_id, type, code) e índice por expert batem entre schema.ts e 0148.'
+    suggested_action: 'Aceitar; a prova definitiva é a aplicação em produção + information_schema (pendência já registrada na story).'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'OK — rotas são cópia literal de vsl/variaveis com os símbolos das partes; CRUD genérico registrado (ENTIDADES); cascata do expert inclui partes; guarda `ehTipoSemColunaAinda` (type guard) nos 3 pontos que indexavam naming_campaigns; snapshot de campanha exclui o tipo novo; web: recurso ads/partes no CRUD genérico, aba e form copiados dos da VSL, terceira tabelinha de Valores fixos, aba registrada em nomenclatura-abas + page.'
+  unit_tests: 'nomenclatura-*: 164 verdes (3 rotas + 2 repositório novos; seed 2× com 19 valores). Mutações pelo QA: (1) remover o retorno antecipado de campanhasComValor → teste de zero-queries acusa; (2) remover exigirNaoUsado no PATCH → teste de código travado acusa. Teste das abas do web cobre a aba `partes`.'
+  acceptance_criteria: 'AC1 ✓ enum · AC2 ✓ seed (descrições confirmadas) · AC3 ✓ CRUD genérico serve o tipo (teste GET/POST) · AC4 ✓ terceira tabelinha · AC5 ✓ tabela/índices · AC6 ✓ rotas + proximo-codigo + PATCH com trava (usadoEm injetado) · AC7 ✓ aba · AC8 ✓ buildAdName/parseAdName intocados (diff: 12 linhas só de constantes) · AC9 ✓ · AC10 pendente (visual do gestor).'
+  no_regressions: 'tsc API 0 (após 5a7e17bc) e web 0; eslint 0; web 1271 verde; next build EXIT=0; suíte da API: 10 falhas idênticas com e sem as mudanças (5 arquivos alheios) — baseline.'
+  performance: 'N/A — cadastros pequenos por expert; listagem com índice por expert.'
+  security: 'Guest 403 nas rotas novas (testado).'
+  documentation: 'Story com Dev Agent Record, armadilha do tipo documentada, File List; migration narrada.'
+
+notes:
+  - 'Pós-deploy obrigatório: seed:nomenclatura (ia · h) e conferir information_schema (enum + naming_ad_parts). Memória do projeto: push de 10/09 não criou tabela.'
+  - '[scope-override] autorizado pelo Lucas (informado pelo Danilo, 15/09).'
