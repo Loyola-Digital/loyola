@@ -1,0 +1,43 @@
+schema: 1
+story: '47.13'
+story_title: 'Nome de vídeo v2 — origem (IA/humano), hook e body entram no nome do anúncio adv'
+gate: PASS
+status_reason: 'Formato do pedido implementado literalmente com matriz de reversão 7/7 e velho→novo→velho para ad/carr; um defeito high na tela (AC7: editar vídeo antigo deixava Salvar desabilitado) achado pelo QA por teste e corrigido antes do push; restam 3 apontamentos low. Merge condicionado à 47.12 em produção.'
+reviewer: 'Quinn'
+updated: '2026-09-15T19:40:00Z'
+branch: 'feat/47.13-nome-de-video-v2'
+commits: ['eb354420', 'ff3804db']
+
+top_issues:
+  - id: 'REQ-001'
+    severity: high
+    status: resolved
+    finding: 'AC7 na tela: editar um adv gravado antes da 47.13 montava a prévia como vídeo v2 (8 pedaços, 3 "faltando"), completo=false → botão Salvar desabilitado. A API estava certa (buildAdName com legado); a prévia não recebia a opção. Provado com teste na branch antes de afirmar.'
+    suggested_action: 'CORRIGIDO em ff3804db: opção `legado` ponta a ponta (pedacosDoAnuncio → camposDoAnuncio → previaDoAnuncio → gerador). Teste permanente no util do web, com a prova do defeito (sem a opção, incompleto).'
+  - id: 'TEST-002'
+    severity: low
+    finding: 'A guarda "padrão antigo só existe para adv" em buildAdName(…, {legado}) não tem teste: removida, os 20 testes seguem verdes. Sem ela o comportamento para ad/carr é idêntico (4 campos), então é defensiva, não regra de negócio.'
+    suggested_action: 'Um caso: buildAdName({...ad}, {legado:true}) lança "não tem padrão antigo". Não bloqueia.'
+  - id: 'MNT-001'
+    severity: low
+    finding: 'lista-de-anuncios.tsx: os filtros Hook/Body guardam o id escolhido quando o expert muda; o próximo expert lista 0 anúncios por um filtro invisível (o select some, o estado fica).'
+    suggested_action: 'Zerar hookId/bodyId ao trocar o expert (no onChange do SeletorDeExpert).'
+  - id: 'REL-001'
+    severity: low
+    finding: 'PATCH de um vídeo v2 reenvia origem/hook/body atuais ao montarAnuncio, que os revalida (ativo, regra 8). Editar só a descrição de um vídeo cujo hook foi desativado depois responde 422 "está inativo". Coerente com a regra 8 para nome NOVO; para re-gravar o mesmo hook é conservador demais.'
+    suggested_action: 'Aceitar; se aparecer na prática, pular a checagem de ativo quando o id não mudou.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Módulo folha: parse por tipo (7/4/legado), validações por posição do tipo, hook/body contra o expert do nome, snapshot tolerante a API antiga. API: partesDoVideo (obrigatório/proibido/tipo/expert/ativo), PATCH detecta padrão antigo, listagem com códigos/legado/filtros, uso real de hook/body (fecha REQ-001 da 47.12). Web: estado limpa por tipo/expert, selects do expert, vazio com link, selo antigo, legenda com blocos novos. REQ-001 acima.'
+  unit_tests: 'Módulo folha 20 (matriz AC13 7/7 pelo @dev — e ela mesma achou o buraco do hook de outro expert, fechado; QA repetiu 2 mutações: contagem em ad acusa; guarda do legado em ad não acusa → TEST-002). Rotas 47 (5 novos), repositório 32, web util 13 (6 novos, inclusive o do REQ-001). Suítes: web 1277, API nomenclatura 178.'
+  acceptance_criteria: 'AC1 ✓ · AC2 ✓ · AC3 ✓ (blocos origem/gancho com cores próprias) · AC4 ✓ · AC5 ✓ (0149 sem UPDATE; migration × schema conferidos por leitura: 3 colunas, 2 fks RESTRICT, 2 índices) · AC6 ✓ · AC7 ✓ após REQ-001 · AC8 ✓ · AC9 ✓ · AC10 ✓ (duplicar vídeo antigo nasce vazio e exige os três) · AC11 ✓ · AC12 ✓ · AC13 ✓ · AC14 pendente (visual do gestor) · AC15 ✓ (spec § 11/11.1).'
+  no_regressions: 'tsc shared/API/web 0/0/0 depois do último arquivo; eslint 0 nos 3 pacotes; next build EXIT=0; suíte inteira da API: 10 falhas idênticas com e sem as mudanças (schema.test = permissions JSONB, conferido via git stash).'
+  performance: 'Listagem resolve hookCode/bodyCode com uma leitura de partes por página (não N+1); snapshot carrega partes uma vez.'
+  security: 'Rotas herdam guest 403; hook/body de outro expert recusado no servidor (não só na tela).'
+  documentation: 'Story com decisões do dev (legado só para re-gravar; v2 editável no PATCH), provas e File List; spec § 11 atualizada.'
+
+notes:
+  - 'MERGE CONDICIONADO: 47.12 aplicada em produção (enum creative_origin + naming_ad_parts + seed ia/h). Sem isso o gerador de vídeo quebra na hora. Depois deste deploy: conferir naming_ads.origin/hook_id/body_id (0149).'
+  - '[scope-override] autorizado pelo Lucas (informado pelo Danilo, 15/09).'
