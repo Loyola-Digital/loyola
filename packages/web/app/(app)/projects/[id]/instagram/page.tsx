@@ -26,6 +26,7 @@ import { OverviewCards } from "@/components/instagram/overview-cards";
 import { ReachChart } from "@/components/instagram/reach-chart";
 import { PostsTable } from "@/components/instagram/posts-table";
 import { PerformancePorFormato } from "@/components/instagram/performance-por-formato";
+import { AnaliseComIaDoPeriodo } from "@/components/instagram/analise-com-ia";
 import { StoriesSection } from "@/components/instagram/stories-section";
 import { ReelsSection } from "@/components/instagram/reels-section";
 import { AudienceCharts } from "@/components/instagram/audience-charts";
@@ -260,6 +261,14 @@ export default function ProjectInstagramPage({ params }: Props) {
         error={demographicsError as Error | null}
         onRefresh={handleRefreshAll}
         isRefreshing={refresh.isPending}
+      />
+
+      {/* Insights do período (IA) — no fim: é a leitura de tudo que está acima. */}
+      <AnaliseComIaDoPeriodo
+        accountId={selectedAccountId}
+        since={period.since}
+        until={period.until}
+        media={media?.data}
       />
 
       <GenerateReportDialog projectId={projectId} open={reportDialogOpen} onOpenChange={setReportDialogOpen} />

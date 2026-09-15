@@ -193,3 +193,54 @@ export function useRefreshInstagram(accountId: string | null) {
     },
   });
 }
+
+// ============================================================
+// ANÁLISE DO PERÍODO COM IA
+// ============================================================
+
+export interface DestaqueDaIa {
+  post_id: string;
+  por_que: string;
+  fatores: string[];
+}
+
+export interface AnaliseComIa {
+  analise: {
+    insights: { titulo: string; explicacao: string }[];
+    melhores: DestaqueDaIa[];
+    piores: DestaqueDaIa[];
+    padroes: string[];
+  };
+  geradoEm: string;
+  posts: { id: string; titulo: string; permalink: string | null; formato: string }[];
+}
+
+/** A última análise guardada para o período — não gera nada. */
+export function useAnaliseComIa(accountId: string | null, since: number, until: number) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["instagram-analise-ia", accountId, since, until],
+    queryFn: () =>
+      apiClient<{ resultado: AnaliseComIa | null }>(
+        `/api/instagram/accounts/${accountId}/analise-ia?since=${since}&until=${until}`,
+      ),
+    enabled: !!accountId,
+    staleTime: STALE.insights,
+  });
+}
+
+/** Gera (ou refaz) a análise. Leva de 30 a 60 segundos. */
+export function useGerarAnaliseComIa(accountId: string | null, since: number, until: number) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiClient<{ resultado: AnaliseComIa }>(
+        `/api/instagram/accounts/${accountId}/analise-ia?since=${since}&until=${until}`,
+        { method: "POST" },
+      ),
+    onSuccess: (r) => {
+      qc.setQueryData(["instagram-analise-ia", accountId, since, until], r);
+    },
+  });
+}
