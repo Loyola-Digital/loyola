@@ -143,7 +143,10 @@ export class SendflowSession {
     return proximo;
   }
 
-  private async post(body: unknown): Promise<Record<string, unknown>> {
+  private async post(
+    body: unknown,
+    timeoutMs = TIMEOUT_MS,
+  ): Promise<Record<string, unknown>> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       // O transporte Streamable HTTP pode responder em SSE; aceitamos os dois.
@@ -156,7 +159,7 @@ export class SendflowSession {
       method: "POST",
       headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const sid = res.headers.get("mcp-session-id");
     if (sid) this.sessionId = sid;
@@ -198,9 +201,18 @@ export class SendflowSession {
     await this.post({ jsonrpc: "2.0", method: "notifications/initialized" });
   }
 
-  /** Chama uma tool e devolve o JSON já desembrulhado do envelope MCP. */
-  async chamar<T>(name: string, args: Record<string, unknown> = {}): Promise<T> {
-    return this.enfileirar(() => this.chamarAgora<T>(name, args));
+  /**
+   * Chama uma tool e devolve o JSON já desembrulhado do envelope MCP.
+   *
+   * `timeoutMs` só para tool síncrona e lenta (a exportação de leads espera o
+   * SendFlow montar o CSV); o padrão de 25s serve para todo o resto.
+   */
+  async chamar<T>(
+    name: string,
+    args: Record<string, unknown> = {},
+    timeoutMs = TIMEOUT_MS,
+  ): Promise<T> {
+    return this.enfileirar(() => this.chamarAgora<T>(name, args, timeoutMs));
   }
 
   /**
@@ -210,9 +222,13 @@ export class SendflowSession {
    * quando. Então, ao perder a sessão, refazemos o handshake e repetimos UMA
    * vez, em silêncio: quem chama não deveria precisar saber disso.
    */
-  private async chamarAgora<T>(name: string, args: Record<string, unknown>): Promise<T> {
+  private async chamarAgora<T>(
+    name: string,
+    args: Record<string, unknown>,
+    timeoutMs: number,
+  ): Promise<T> {
     try {
-      return await this.tentar<T>(name, args);
+      return await this.tentar<T>(name, args, timeoutMs);
     } catch (err) {
       const perdeuSessao =
         err instanceof SendflowError &&
@@ -221,17 +237,24 @@ export class SendflowSession {
       if (!perdeuSessao) throw err;
       this.sessionId = null;
       await this.conectar();
-      return this.tentar<T>(name, args);
+      return this.tentar<T>(name, args, timeoutMs);
     }
   }
 
-  private async tentar<T>(name: string, args: Record<string, unknown>): Promise<T> {
-    const r = (await this.post({
-      jsonrpc: "2.0",
-      id: Math.floor(Math.random() * 1e6),
-      method: "tools/call",
-      params: { name, arguments: args },
-    })) as {
+  private async tentar<T>(
+    name: string,
+    args: Record<string, unknown>,
+    timeoutMs: number,
+  ): Promise<T> {
+    const r = (await this.post(
+      {
+        jsonrpc: "2.0",
+        id: Math.floor(Math.random() * 1e6),
+        method: "tools/call",
+        params: { name, arguments: args },
+      },
+      timeoutMs,
+    )) as {
       error?: { message?: string };
       result?: { content?: { text?: string }[] };
     };
