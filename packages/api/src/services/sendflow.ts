@@ -276,6 +276,8 @@ export class SendflowSession {
 export interface SendflowRelease {
   id: string;
   name: string;
+  /** Contas de WhatsApp que operam os grupos — é o que diz de qual expert é. */
+  accountIds?: string[];
   archived?: boolean;
   slug?: string | null;
   type?: string | null;

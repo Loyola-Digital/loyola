@@ -12,6 +12,14 @@
  * gente nova. O botão de baixar existe porque o time vai AGIR sobre esses
  * números depois; um gráfico sem a lista não serviria para isso.
  *
+ * ## Só campanhas do mesmo expert
+ *
+ * A conta do SendFlow é uma só para todos os experts, então a lista crua mistura
+ * os grupos do Danilo com os da Fernanda. O que diz de quem é a campanha é a
+ * CONTA de WhatsApp que opera os grupos (`accountIds`): o seletor mostra só as
+ * campanhas que dividem conta com a do funil. Campanha arquivada perde as contas
+ * no SendFlow e por isso não aparece — não há como dizer de quem ela era.
+ *
  * ## A escolha do grupo antigo fica no navegador
  *
  * Cada funil lembra a última campanha comparada (localStorage). Não há como
@@ -134,13 +142,22 @@ export function OrigemDosParticipantes({
   }
 
   const campanhas = useSendflowCampanhas(projectId);
-  const origem = useSendflowOrigem(projectId, funnelId, comparar);
 
-  const opcoes = (campanhas.data?.releases ?? []).filter(
-    (c) => c.id !== campanhaId,
+  const todas = campanhas.data?.releases ?? [];
+  const contasDoFunil = new Set(
+    todas.find((c) => c.id === campanhaId)?.accountIds ?? [],
   );
+  const opcoes = todas.filter(
+    (c) =>
+      c.id !== campanhaId &&
+      (c.accountIds ?? []).some((a) => contasDoFunil.has(a)),
+  );
+  // Escolha salva que não é mais deste expert (ou de antes do filtro) não
+  // dispara cruzamento: só vale o que está na lista.
+  const escolhida = opcoes.some((c) => c.id === comparar) ? comparar : null;
   const nomeDaAntiga =
-    opcoes.find((c) => c.id === comparar)?.name ?? "grupo antigo";
+    opcoes.find((c) => c.id === escolhida)?.name ?? "grupo antigo";
+  const origem = useSendflowOrigem(projectId, funnelId, escolhida);
   const d = origem.data;
 
   return (
@@ -152,7 +169,7 @@ export function OrigemDosParticipantes({
         </h4>
         <div className="flex items-center gap-2">
           <span className="text-[12px] text-muted-foreground">Comparar com</span>
-          <Select value={comparar ?? undefined} onValueChange={escolher}>
+          <Select value={escolhida ?? undefined} onValueChange={escolher}>
             <SelectTrigger className="h-8 w-[240px] text-[12px]">
               <SelectValue
                 placeholder={
@@ -172,7 +189,12 @@ export function OrigemDosParticipantes({
         </div>
       </div>
 
-      {!comparar ? (
+      {!campanhas.isLoading && opcoes.length === 0 ? (
+        <p className="mt-3 text-[13px] text-muted-foreground">
+          Nenhuma outra campanha usa a mesma conta de WhatsApp deste funil no
+          SendFlow.
+        </p>
+      ) : !escolhida ? (
         <p className="mt-3 text-[13px] text-muted-foreground">
           Escolha a campanha antiga (o grupo de avisos, a edição anterior) para
           ver quantos participantes já vinham dela e quantos são novos.

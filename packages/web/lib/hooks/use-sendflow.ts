@@ -176,7 +176,14 @@ export function useSendflowCampanhas(projectId: string | null) {
   return useQuery({
     queryKey: ["sendflow-campanhas", projectId],
     queryFn: () =>
-      apiClient<{ releases: { id: string; name: string; archived?: boolean }[] }>(
+      apiClient<{
+        releases: {
+          id: string;
+          name: string;
+          archived?: boolean;
+          accountIds?: string[];
+        }[];
+      }>(
         `/api/projects/${projectId}/sendflow/releases?todas=1`,
       ),
     enabled: !!projectId,
