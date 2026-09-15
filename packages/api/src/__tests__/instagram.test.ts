@@ -238,9 +238,18 @@ describe("Instagram Service", () => {
     const { service } = await loadService(mockDb);
     const result = await service.getMediaList("account-uuid", 10);
 
-    expect(result).toEqual({
-      data: MOCK_MEDIA_LIST.data,
-      nextCursor: "cursor123",
+    // A lista vem enriquecida com insights de cada post. Sem resposta de
+    // insights no mock, as métricas chegam null — nunca zero, que a tela
+    // mostraria como "post sem alcance".
+    expect(result.nextCursor).toBe("cursor123");
+    expect(result.data).toHaveLength(MOCK_MEDIA_LIST.data.length);
+    expect(result.data[0]).toMatchObject(MOCK_MEDIA_LIST.data[0]!);
+    expect(result.data[0]).toMatchObject({
+      reach: null,
+      views: null,
+      engagement_rate: null,
+      follows: null,
+      skip_rate: null,
     });
   });
 
