@@ -57,6 +57,8 @@ export interface LpBreakdownRow {
   clicks: number;
   impressions: number;
   landingPageViews: number;
+  /** Leads do pixel das campanhas da LP — usado quando a LP não tem formulário. */
+  pixelLeads?: number;
   // Story 18.50: vendas/faturamento por LP (atribuídos via co= → campanha)
   vendas?: number;
   faturamento?: number;

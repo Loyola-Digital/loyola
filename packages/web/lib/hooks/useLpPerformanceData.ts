@@ -9,6 +9,7 @@
  *   Identificação da LP pelo Campaign Name (sem lpX → LPA, decisão Danilo).
  * - LP View real = landing_page_view da API (somado por LP no backend).
  * - Leads contados da planilha n8n-leads-lp-cap-grat (utm_term/utm_content contém lpX),
+ *   ou do pixel da Meta quando a LP não tem formulário (ver `leads-da-lp.ts`),
  *   quebrados por temperatura para o filtro de público.
  * - Filtro de público (hot/cold/todos) efetivo via a temperatura do breakdown.
  */
@@ -18,6 +19,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useCrossReferenceLeads } from "@/lib/hooks/useCrossReferenceLeads";
 import { applyMetaAdsTax } from "@/lib/utils/funnel-metrics";
+import { leadsDaLp, type FonteDeLeads } from "@/lib/utils/leads-da-lp";
 import type { StageCreativePerformanceResponse } from "@/lib/hooks/useStageCreativePerformance";
 
 export interface LpRow {
@@ -28,6 +30,8 @@ export interface LpRow {
   conversoes: number;
   lpViews: number;
   leads: number;
+  /** `pixel` = LP sem formulário; os leads vêm do pixel da Meta. */
+  leadsFonte?: FonteDeLeads;
   vendas?: number;
   faturamento?: number;
   // Story 18.60: Ing. Únicos/Totais + Fat. Único/Total por LP (Captação Paga)
@@ -90,6 +94,8 @@ export function useLpPerformanceData({
     }
 
     const lpTotals: Record<string, LpRow> = {};
+    // Leads do pixel por LP, já no recorte Hot/Cold (cada entry é LP×temperatura).
+    const pixelPorLp: Record<string, number> = {};
 
     // Imposto Meta aplica a partir de 2026; o breakdown é agregado no período,
     // sem data por linha — usamos a data atual (lançamentos correntes são 2026+).
@@ -124,6 +130,7 @@ export function useLpPerformanceData({
       lpTotals[key].impressoes += entry.impressions;
       lpTotals[key].conversoes += entry.clicks; // conversão = clique (chegada à LP)
       lpTotals[key].lpViews += entry.landingPageViews;
+      pixelPorLp[key] = (pixelPorLp[key] ?? 0) + (entry.pixelLeads ?? 0);
       // Story 18.50: vendas/faturamento por LP (atribuídos no backend via co= →
       // campanha). Somados respeitando o mesmo filtro de público do spend, já que
       // cada entry é LP×temperatura — o ROAS por LP fica consistente com o gasto.
@@ -137,19 +144,16 @@ export function useLpPerformanceData({
       lpTotals[key].revenueTotal = (lpTotals[key].revenueTotal ?? 0) + (entry.revenueTotal ?? 0);
     }
 
-    // Story 18.46 (AC6/AC7): leads por LP, respeitando o filtro de público
+    // Story 18.46 (AC6/AC7): leads por LP, respeitando o filtro de público.
+    // LP sem formulário (nenhum lead na planilha) conta pelo pixel.
     for (const key of Object.keys(lpTotals)) {
-      const lpLeads = leadsQuery.leadsByLp?.[key];
-      if (lpLeads) {
-        lpTotals[key].leads =
-          publicoFilter === "hot"
-            ? lpLeads.hot
-            : publicoFilter === "cold"
-              ? lpLeads.cold
-              : lpLeads.total;
-      } else {
-        lpTotals[key].leads = 0;
-      }
+      const { leads, fonte } = leadsDaLp(
+        leadsQuery.leadsByLp?.[key],
+        pixelPorLp[key] ?? 0,
+        publicoFilter,
+      );
+      lpTotals[key].leads = leads;
+      lpTotals[key].leadsFonte = fonte;
     }
 
     // Story 18.46 (AC2): uma linha por LP, ordenado por investimento desc

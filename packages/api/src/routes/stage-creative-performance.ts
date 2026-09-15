@@ -134,6 +134,18 @@ interface CreativePerformanceResponse {
  * Story 18.46 (AC4): extrai Landing Page Views do array `actions` do Meta Ads.
  * Meta retorna `{ action_type: "landing_page_view", value: "123" }`.
  */
+/**
+ * Leads do PIXEL (`offsite_conversion.fb_pixel_lead`), não `lead` — este soma
+ * formulário instantâneo da Meta junto. É a contagem da página que não tem
+ * formulário próprio (a LPB do FZM3): sem planilha, o pixel é o único rastro.
+ */
+function parsePixelLeads(
+  actions: { action_type: string; value: string }[] | undefined,
+): number {
+  const a = actions?.find((x) => x.action_type === "offsite_conversion.fb_pixel_lead");
+  return a ? parseNumber(a.value) : 0;
+}
+
 function parseLandingPageViews(
   actions: { action_type: string; value: string }[] | undefined,
 ): number {
@@ -233,7 +245,9 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
         });
       }
       const { days, refresh } = queryResult.data;
-      const cacheKey = `${stageId}:${days}`;
+      // `:v2` = payload com `pixelLeads` no lpBreakdown. Sem trocar a chave, o
+      // cache de 2h servia a LP sem formulário com zero lead até vencer.
+      const cacheKey = `${stageId}:${days}:v2`;
       // Fora do try pra o catch (serve-stale-on-error) enxergar.
       let staleCached: { payload: unknown; computedAt: Date } | null = null;
 
@@ -934,6 +948,8 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           clicks: number;
           impressions: number;
           landingPageViews: number;
+          /** Leads do pixel das campanhas da LP (ver `parsePixelLeads`). */
+          pixelLeads: number;
           // Story 18.50: vendas/faturamento por LP (atribuídos via co= → campanha)
           vendas: number;
           faturamento: number;
@@ -971,7 +987,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           const key = `${lpName}__${temperature}`;
           let agg = lpBreakdownMap.get(key);
           if (!agg) {
-            agg = { lpName, temperature, spend: 0, clicks: 0, impressions: 0, landingPageViews: 0, vendas: 0, faturamento: 0 };
+            agg = { lpName, temperature, spend: 0, clicks: 0, impressions: 0, landingPageViews: 0, pixelLeads: 0, vendas: 0, faturamento: 0 };
             lpBreakdownMap.set(key, agg);
           }
           const s = parseFloat(ci.spend || "0");
@@ -983,6 +999,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           const ilc = parseFloat(ci.inline_link_clicks || "0");
           if (!isNaN(ilc)) agg.clicks += ilc;
           agg.landingPageViews += parseLandingPageViews(ci.actions);
+          agg.pixelLeads += parsePixelLeads(ci.actions);
         }
         // Story 18.50: injeta vendas/faturamento por LP×temperatura (atribuídos
         // via co= → campanha). Cria linha nova se a LP só tem venda e nenhum
@@ -998,6 +1015,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               clicks: 0,
               impressions: 0,
               landingPageViews: 0,
+              pixelLeads: 0,
               vendas: 0,
               faturamento: 0,
             };
@@ -1018,6 +1036,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               clicks: 0,
               impressions: 0,
               landingPageViews: 0,
+              pixelLeads: 0,
               vendas: 0,
               faturamento: 0,
             };
