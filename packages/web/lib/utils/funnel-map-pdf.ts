@@ -116,6 +116,59 @@ function midiaLegivel(el: HTMLVideoElement | HTMLCanvasElement): boolean {
   }
 }
 
+/**
+ * O que precisa sair do CSS e ir para o próprio elemento SVG.
+ *
+ * ## Por que existe
+ *
+ * O html-to-image copia o estilo computado para os elementos HTML do clone —
+ * mas os filhos de um `<svg>` saem só com a `class`, e a folha de estilo não
+ * vai junto. Medido: o rótulo da seta virava `<rect class="fill-background"/>`
+ * sem atributo `style` nenhum. Sem `fill`, o SVG usa o padrão, que é PRETO:
+ * retângulo preto e texto preto por cima — a tarja preta no lugar do texto.
+ *
+ * Por isso a lista é de propriedades de desenho de SVG: cor de preenchimento e
+ * de traço, espessura, tracejado, opacidade e a fonte do texto (sem ela o
+ * rótulo de 11px sai no padrão de 16px).
+ */
+const PROPRIEDADES_DO_SVG = [
+  "fill",
+  "fill-opacity",
+  "stroke",
+  "stroke-width",
+  "stroke-opacity",
+  "stroke-dasharray",
+  "opacity",
+  "font-size",
+  "font-weight",
+  "font-family",
+] as const;
+
+/**
+ * Escreve o estilo computado direto nos elementos SVG e devolve quem desfaz.
+ *
+ * Mexe no DOM da TELA, e por pouco tempo: grava, captura, restaura o atributo
+ * `style` exatamente como estava (inclusive a ausência dele). Sem restaurar, o
+ * mapa ficaria com cores congeladas e deixaria de acompanhar o modo claro.
+ */
+function fixarEstiloDoSvg(raiz: Element): () => void {
+  const alvos = [...raiz.querySelectorAll<SVGElement>("svg *")];
+  const antes = alvos.map((el) => el.getAttribute("style"));
+  for (const el of alvos) {
+    const computado = getComputedStyle(el);
+    for (const prop of PROPRIEDADES_DO_SVG) {
+      const valor = computado.getPropertyValue(prop);
+      if (valor) el.style.setProperty(prop, valor);
+    }
+  }
+  return () =>
+    alvos.forEach((el, i) => {
+      const original = antes[i];
+      if (original === null) el.removeAttribute("style");
+      else el.setAttribute("style", original);
+    });
+}
+
 async function capturar(
   area: AreaParaCapturar,
   fundo: string,
@@ -136,6 +189,9 @@ async function capturar(
       (el) => !midiaLegivel(el as HTMLVideoElement | HTMLCanvasElement),
     ),
   );
+
+  // Antes do `toPng`, e desfeito no `finally` — ver `fixarEstiloDoSvg`.
+  const desfazerEstilo = fixarEstiloDoSvg(area.no);
 
   const captura = toPng(area.no, {
     width: largura,
@@ -170,6 +226,7 @@ async function capturar(
     return await Promise.race([captura, desistir]);
   } finally {
     clearTimeout(alarme!);
+    desfazerEstilo();
   }
 }
 
