@@ -236,7 +236,10 @@ describe("Instagram Service", () => {
 
     setupFetchResponse(MOCK_MEDIA_LIST);
     const { service } = await loadService(mockDb);
-    const result = await service.getMediaList("account-uuid", 10);
+    const result = (await service.getMediaList("account-uuid", 10)) as {
+      data: Record<string, unknown>[];
+      nextCursor?: string;
+    };
 
     // A lista vem enriquecida com insights de cada post. Sem resposta de
     // insights no mock, as métricas chegam null — nunca zero, que a tela
