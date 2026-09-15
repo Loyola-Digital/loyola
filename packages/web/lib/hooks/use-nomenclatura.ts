@@ -444,6 +444,15 @@ export interface Anuncio {
   createdAt: string;
   updatedAt: string;
   expertCode: string;
+  /** Story 47.13: só em vídeo v2 — `ia` · `h`. Null em ad/carr e no padrão antigo. API anterior à 47.13 não manda (undefined). */
+  origin?: string | null;
+  hookId?: string | null;
+  bodyId?: string | null;
+  /** Story 47.13: códigos `hNN`/`bNN` resolvidos pela API (a lista mostra código, não id). */
+  hookCode?: string | null;
+  bodyCode?: string | null;
+  /** Story 47.13: `adv` gravado no formato de 4 campos (47.10). */
+  legado?: boolean;
 }
 
 export function useProximoNnDeAnuncio(expertId: string, launchType?: string) {
@@ -457,7 +466,7 @@ export function useProximoNnDeAnuncio(expertId: string, launchType?: string) {
   });
 }
 
-export function useAnuncios(f: { expertId?: string; creativeType?: string; launchType?: string; de?: string; ate?: string; q?: string; limit?: number; offset?: number } = {}) {
+export function useAnuncios(f: { expertId?: string; creativeType?: string; launchType?: string; origin?: string; hookId?: string; bodyId?: string; de?: string; ate?: string; q?: string; limit?: number; offset?: number } = {}) {
   const apiClient = useApiClient();
   return useQuery({
     queryKey: ["nomenclatura", "ads", "lista", f],
