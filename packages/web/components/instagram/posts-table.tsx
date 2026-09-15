@@ -65,6 +65,7 @@ const COR_DO_FORMATO = {
 
 function fmtValor(m: MetricaDoPost, v: number | null): string {
   if (v == null) return "—";
+  if (m.segundos) return `${v.toFixed(1).replace(".", ",")}s`;
   if (m.taxa) return `${v.toFixed(2).replace(".", ",")}%`;
   return Math.round(v).toLocaleString("pt-BR");
 }

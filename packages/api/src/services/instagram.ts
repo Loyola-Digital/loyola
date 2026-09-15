@@ -74,6 +74,11 @@ interface InstagramMedia {
    * carrossel); em Reels fica null, não zero.
    */
   follows?: number | null;
+  /**
+   * `reels_skip_rate`: % das visualizações do Reels que pularam nos 3
+   * primeiros segundos. 100 − isto é a retenção do gancho. Só Reels.
+   */
+  skip_rate?: number | null;
 }
 
 interface MediaListResponse {
@@ -478,6 +483,7 @@ export default fp(async function instagramServicePlugin(fastify) {
         const views = pickInsightValue(entries, "views");
         const shares = pickInsightValue(entries, "shares");
         const avgWatch = pickInsightValue(entries, "ig_reels_avg_watch_time");
+        const skipRate = pickInsightValue(entries, "reels_skip_rate");
         const follows = pickInsightValue(entries, "follows");
         const likes = post.like_count ?? 0;
         const comments = post.comments_count ?? 0;
@@ -496,6 +502,7 @@ export default fp(async function instagramServicePlugin(fastify) {
           views,
           shares,
           avg_watch_time_ms: avgWatch,
+          skip_rate: skipRate,
           follows,
         } satisfies InstagramMedia;
       }),
@@ -504,7 +511,7 @@ export default fp(async function instagramServicePlugin(fastify) {
     const data: InstagramMedia[] = enriched.map((r, i) =>
       r.status === "fulfilled"
         ? r.value
-        : { ...result.data[i], reach: null, saved: null, engagement_rate: null, views: null, shares: null, avg_watch_time_ms: null, follows: null },
+        : { ...result.data[i], reach: null, saved: null, engagement_rate: null, views: null, shares: null, avg_watch_time_ms: null, follows: null, skip_rate: null },
     );
 
     return {
@@ -540,7 +547,9 @@ export default fp(async function instagramServicePlugin(fastify) {
     accountId: string,
     mediaType?: string,
   ): Promise<InsightEntry[]> {
-    const cacheKey = `post_insights_${mediaId}`;
+    // v2: Reels passaram a pedir `reels_skip_rate`. Sem trocar a chave, o cache
+    // antigo serviria os Reels sem a retenção do gancho até vencer.
+    const cacheKey = `post_insights_v2_${mediaId}`;
     const cached = await getCachedMetric(accountId, cacheKey);
     if (cached) return cached as InsightEntry[];
 
@@ -550,7 +559,7 @@ export default fp(async function instagramServicePlugin(fastify) {
     // Deprecated: impressions (use views), plays
     let metrics: string;
     if (mediaType === "VIDEO" || mediaType === "REEL") {
-      metrics = "reach,views,likes,comments,saved,shares,ig_reels_avg_watch_time";
+      metrics = "reach,views,likes,comments,saved,shares,ig_reels_avg_watch_time,reels_skip_rate";
     } else if (mediaType === "STORY") {
       metrics = "reach,views,replies,shares,follows,navigation";
     } else {
@@ -567,6 +576,21 @@ export default fp(async function instagramServicePlugin(fastify) {
       );
       entries.push(...result.data);
     } catch {
+      // Fallback 1 (Reels): sem a taxa de pulo, que é a métrica mais nova — se
+      // ela for recusada, as outras não podem ir junto.
+      if (metrics.includes("reels_skip_rate")) {
+        try {
+          const result = await graphFetch<InsightsResponse>(
+            `/${mediaId}/insights?metric=${metrics.replace(",reels_skip_rate", "")}`,
+            token,
+          );
+          entries.push(...result.data);
+        } catch {
+          // segue para o conjunto mínimo
+        }
+      }
+    }
+    if (entries.length === 0) {
       // Fallback: try minimal set
       try {
         const result = await graphFetch<InsightsResponse>(
@@ -595,7 +619,8 @@ export default fp(async function instagramServicePlugin(fastify) {
     const periodEnd = new Date(until * 1000).toISOString().split("T")[0];
 
     // Cache key v3: each metric fetched independently
-    const cacheKey = "account_insights_v3";
+    // v4: + alcance e views quebrados por seguidor × não seguidor.
+    const cacheKey = "account_insights_v4";
     const cached = await getCachedMetric(accountId, cacheKey, periodStart, periodEnd);
     if (cached) return cached as InsightEntry[];
 
@@ -653,6 +678,24 @@ export default fp(async function instagramServicePlugin(fastify) {
         }
       } catch (err) {
         fastify.log.warn(`[IG insights] ${metric}: FAILED - ${err instanceof Error ? err.message.substring(0, 80) : String(err)}`);
+      }
+    }));
+
+    // 3. Alcance e views quebrados por seguidor × não seguidor (só no PERFIL: por
+    // post a Meta recusa, "Incompatible breakdowns (follow_type)").
+    // Renomeados porque "reach" e "views" já existem na lista sem quebra, e quem
+    // procura por nome pegaria o primeiro.
+    //
+    // Aqui FOLLOWER é quem JÁ SEGUE o perfil — não o mesmo sentido do
+    // `follows_and_unfollows`, onde FOLLOWER é novo seguidor.
+    await Promise.all(["reach", "views"].map(async (metric) => {
+      try {
+        const result = await graphFetch<InsightsResponse>(
+          `${base}?metric=${metric}${tsParams}&metric_type=total_value&breakdown=follow_type`, token
+        );
+        for (const e of result?.data ?? []) entries.push({ ...e, name: `${metric}_follow_type` });
+      } catch (err) {
+        fastify.log.warn(`[IG insights] ${metric} follow_type: FAILED - ${err instanceof Error ? err.message.substring(0, 80) : String(err)}`);
       }
     }));
 
@@ -777,6 +820,7 @@ export default fp(async function instagramServicePlugin(fastify) {
         const views = pickInsightValue(entries, "views");
         const shares = pickInsightValue(entries, "shares");
         const avgWatch = pickInsightValue(entries, "ig_reels_avg_watch_time");
+        const skipRate = pickInsightValue(entries, "reels_skip_rate");
         const likes = post.like_count ?? 0;
         const comments = post.comments_count ?? 0;
         let engagementRate: number | null = null;
@@ -794,13 +838,14 @@ export default fp(async function instagramServicePlugin(fastify) {
           views,
           shares,
           avg_watch_time_ms: avgWatch,
+          skip_rate: skipRate,
         } satisfies InstagramMedia;
       }),
     );
     const data: InstagramMedia[] = enriched.map((r, i) =>
       r.status === "fulfilled"
         ? r.value
-        : { ...onlyReels[i], reach: null, saved: null, engagement_rate: null, views: null, shares: null, avg_watch_time_ms: null },
+        : { ...onlyReels[i], reach: null, saved: null, engagement_rate: null, views: null, shares: null, avg_watch_time_ms: null, skip_rate: null },
     );
     const reels = { data, nextCursor: result.paging?.cursors?.after };
 

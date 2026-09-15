@@ -42,6 +42,11 @@ const COLUNAS: { rotulo: string; dica: string; valor: (l: LinhaDoFormato) => str
     valor: (l) => um(l.salvosPorMil),
   },
   {
+    rotulo: "Gancho 3s",
+    dica: "Média da retenção nos 3 primeiros segundos (100 − taxa de pulo da Meta). Só Reels tem esse dado.",
+    valor: (l) => pct(l.ganchoMedio),
+  },
+  {
     rotulo: "Seguidores",
     dica: "Soma dos seguidores gerados pelos posts do formato. A Meta só informa para foto e carrossel — em Reels aparece \"—\".",
     valor: (l) => int(l.seguidores),

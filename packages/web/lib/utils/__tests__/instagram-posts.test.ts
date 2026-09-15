@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { InstagramMedia } from "@/lib/hooks/use-instagram";
 import {
+  alcancePorSeguidor,
+  ganchoDoReels,
   conclusoesDosFormatos,
   conversaoEmSeguidor,
   diasDePico,
@@ -135,5 +137,49 @@ describe("variacao", () => {
   it("base zero ou ausente: null", () => {
     expect(variacao(10, 0)).toBeNull();
     expect(variacao(10, undefined)).toBeNull();
+  });
+});
+
+describe("ganchoDoReels", () => {
+  it("taxa de pulo 38,2% = 61,8% passaram dos 3 segundos", () => {
+    expect(ganchoDoReels(post({ skip_rate: 38.2 }))).toBeCloseTo(61.8);
+  });
+
+  it("sem taxa de pulo (foto, carrossel): null", () => {
+    expect(ganchoDoReels(post({ skip_rate: null }))).toBeNull();
+  });
+});
+
+describe("alcancePorSeguidor", () => {
+  // Números reais de @odanilogato, 28 dias.
+  const entries = [
+    {
+      name: "reach_follow_type",
+      total_value: {
+        breakdowns: [
+          {
+            results: [
+              { dimension_values: ["FOLLOWER"], value: 251_766 },
+              { dimension_values: ["NON_FOLLOWER"], value: 853_895 },
+            ],
+          },
+        ],
+      },
+    },
+  ];
+
+  it("separa quem já segue de quem não segue", () => {
+    const r = alcancePorSeguidor(entries)!;
+    expect(r.seguidores).toBe(251_766);
+    expect(r.naoSeguidores).toBe(853_895);
+    expect(r.pctNaoSeguidores).toBeCloseTo(77.2, 1);
+  });
+
+  it("não confunde com o `reach` sem quebra nem com follows_and_unfollows", () => {
+    expect(alcancePorSeguidor([{ name: "reach" }, { name: "follows_and_unfollows" }])).toBeNull();
+  });
+
+  it("sem dado: null", () => {
+    expect(alcancePorSeguidor(undefined)).toBeNull();
   });
 });
