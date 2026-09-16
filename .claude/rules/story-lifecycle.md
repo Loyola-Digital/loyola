@@ -84,7 +84,7 @@ if CRITICAL persist after 2 iterations:
 
 **Task:** `qa-gate.md`
 
-### 7 Quality Checks
+### 8 Quality Checks
 
 1. **Code review** — patterns, readability, maintainability
 2. **Unit tests** — adequate coverage, all passing
@@ -93,6 +93,7 @@ if CRITICAL persist after 2 iterations:
 5. **Performance** — within acceptable limits
 6. **Security** — OWASP basics verified
 7. **Documentation** — updated if necessary
+8. **API contract** (Story 47.15) — rota, campo de resposta ou snapshot **novo na API** ⇒ `API_CONTRACT_VERSION` subiu em `packages/shared/src/contract.ts` com a linha de histórico; senão **FAIL**. Web e API deployam em ciclos diferentes: sem o bump o painel mostra erro cru ("Not Found", "id: Invalid UUID") em vez do aviso "API atrás". O gate registra em `checks.api_contract`.
 
 ### Gate Decisions
 

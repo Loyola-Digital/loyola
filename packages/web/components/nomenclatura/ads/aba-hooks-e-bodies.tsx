@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { erroDaApi, useAlternarAtivo, useListaDe, type ParteDoVideo } from "@/lib/hooks/use-nomenclatura";
 import { ROTULO_DA_PARTE_DO_VIDEO, TIPOS_DE_PARTE_DO_VIDEO, type TipoDeParteDoVideo } from "@/lib/utils/nomenclatura-anuncio";
+import { mensagemDeApiAtras } from "@/lib/utils/mensagem-de-api-atras";
 import { DialogoDeExclusao, type AlvoDaExclusao } from "../dialogo-de-exclusao";
 import { SeletorDeExpert } from "../seletor-de-expert";
 import { TabelaDoDicionario } from "../tabela-do-dicionario";
@@ -22,7 +23,9 @@ import { FormParte } from "./form-parte";
 function mensagemDeErro(e: unknown) {
   if (!e) return null;
   const err = erroDaApi(e);
-  if (err.status === 404) return "A API ainda não tem as rotas de hooks e bodies — provavelmente está atrás do painel. Veja o aviso de versão no topo.";
+  // Story 47.15: 404 (rota não existe) e 400 "id: Invalid UUID" (caiu em /ads/:id) = API atrás do painel.
+  const atras = mensagemDeApiAtras(err, "hooks e bodies");
+  if (atras) return atras;
   if (err.status === 500) return "Erro interno na API ao ler hooks e bodies. Se este ambiente ainda não recebeu a migration 0148, é isso — não é dado zerado.";
   return err.mensagem;
 }
