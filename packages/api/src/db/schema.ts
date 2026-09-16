@@ -475,6 +475,15 @@ export const instagramPostMetrics = pgTable(
     avgWatchTimeMs: integer("avg_watch_time_ms"),
     /** Quando os insights foram buscados. Null = nunca. */
     insightsAt: timestamp("insights_at", { withTimezone: true }),
+    /**
+     * Seguidores digitados à mão, copiados do painel do Instagram.
+     *
+     * Coluna separada de `follows`: a Meta recusa essa métrica em Reels, e o
+     * que a API devolve não pode se misturar com o que alguém digitou.
+     */
+    followsManual: integer("follows_manual"),
+    followsManualBy: uuid("follows_manual_by").references(() => users.id, { onDelete: "set null" }),
+    followsManualAt: timestamp("follows_manual_at", { withTimezone: true }),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

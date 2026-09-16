@@ -39,8 +39,13 @@ export interface InstagramMedia {
   permalink?: string;
   /** FEED | REELS | STORY — separa Reels de foto/carrossel melhor que `media_type`. */
   media_product_type?: string;
-  /** Seguidores gerados pelo post. Só foto/carrossel; null em Reels (a Meta não dá). */
+  /**
+   * Seguidores gerados pelo post. A Meta só entrega em foto/carrossel; em
+   * Reels é o número digitado do painel do Instagram (ver `follows_fonte`).
+   */
   follows?: number | null;
+  /** `manual` = digitado por alguém do time; `meta` = veio da API. */
+  follows_fonte?: "meta" | "manual" | null;
   /** % das views do Reels que pularam nos 3 primeiros segundos (`reels_skip_rate`). Só Reels. */
   skip_rate?: number | null;
 }
@@ -241,6 +246,27 @@ export function useGerarAnaliseComIa(accountId: string | null, since: number, un
       ),
     onSuccess: (r) => {
       qc.setQueryData(["instagram-analise-ia", accountId, since, until], r);
+    },
+  });
+}
+
+/**
+ * Grava os seguidores que um post trouxe, digitados do painel do Instagram.
+ *
+ * `null` apaga. Invalida a lista de posts para a tabela, a conversão em
+ * seguidor e a média do perfil recalcularem com o número novo.
+ */
+export function useSalvarSeguidoresDoPost(accountId: string | null) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ mediaId, seguidores }: { mediaId: string; seguidores: number | null }) =>
+      apiClient<{ seguidores: number | null }>(
+        `/api/instagram/accounts/${accountId}/posts/${mediaId}/seguidores`,
+        { method: "PUT", body: JSON.stringify({ seguidores }) },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["instagram-media", accountId] });
     },
   });
 }

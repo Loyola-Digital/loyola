@@ -89,9 +89,11 @@ interface InstagramMedia {
   media_product_type?: string;
   /**
    * Seguidores que o post trouxe. A Meta só entrega para FEED (foto e
-   * carrossel); em Reels fica null, não zero.
+   * carrossel); em Reels vem do que o time digita (`follows_fonte`).
    */
   follows?: number | null;
+  /** De onde veio o número acima. `manual` = digitado do painel do Instagram. */
+  follows_fonte?: "meta" | "manual" | null;
   /**
    * `reels_skip_rate`: % das visualizações do Reels que pularam nos 3
    * primeiros segundos. 100 − isto é a retenção do gancho. Só Reels.
@@ -554,6 +556,11 @@ export default fp(async function instagramServicePlugin(fastify) {
     });
     await salvarMetricas(fastify.db, accountId, paraGravar);
 
+    const manuais = new Map(
+      [...guardadas.values()]
+        .filter((m) => m.followsManual != null)
+        .map((m) => [m.mediaId, m.followsManual]),
+    );
     const data: InstagramMedia[] = posts.map((post, i) => {
       const g = paraGravar[i]!;
       const likes = post.like_count ?? 0;
@@ -573,7 +580,11 @@ export default fp(async function instagramServicePlugin(fastify) {
         views: g.views ?? null,
         shares: g.shares ?? null,
         avg_watch_time_ms: g.avgWatchTimeMs ?? null,
-        follows: g.follows ?? null,
+        // O digitado à mão só entra onde a Meta não responde — nunca por cima
+        // do número dela.
+        follows: g.follows ?? manuais.get(post.id) ?? null,
+        follows_fonte:
+          g.follows != null ? "meta" : manuais.get(post.id) != null ? "manual" : null,
         skip_rate: g.skipRate ?? null,
       } satisfies InstagramMedia;
     });
