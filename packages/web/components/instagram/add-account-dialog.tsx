@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Eye, EyeOff, Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
+import { mensagemDeErroDaConta } from "@/lib/utils/erro-de-conta-do-instagram";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -65,11 +66,7 @@ export function AddAccountDialog({ open, onOpenChange }: AddAccountDialogProps) 
     }
   }
 
-  const errorMessage = addAccount.error
-    ? addAccount.error.message.includes("já está cadastrada")
-      ? "Esta conta do Instagram já está cadastrada."
-      : "Token inválido ou sem permissões necessárias."
-    : null;
+  const errorMessage = mensagemDeErroDaConta(addAccount.error);
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
