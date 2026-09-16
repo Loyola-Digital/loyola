@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ABAS_DE_ADS, ABAS_DE_CAMPANHAS, ABAS_DE_VSL, ABAS_DO_DICIONARIO, SECOES, abaAtiva, hrefDaSecao, hrefDe } from "../nomenclatura-abas";
+import { ABAS_DE_ADS, ABAS_DE_CAMPANHAS, ABAS_DE_VSL, ABAS_DO_DICIONARIO, SECOES, abaAtiva, expertInicialDaUrl, hrefDaSecao, hrefDe } from "../nomenclatura-abas";
 
 const params = (q: Record<string, string>) => new URLSearchParams(q);
 
@@ -86,5 +86,37 @@ describe("Variáveis de VSL moram no Dicionário (decisão do dono, 2026-09-10)"
     expect(ABAS_DO_DICIONARIO.map((a) => a.value).at(-1)).toBe("variaveis-vsl");
     expect(abaAtiva(params({ secao: "dicionario", aba: "variaveis-vsl" }))).toEqual({ secao: "dicionario", aba: "variaveis-vsl" });
     expect(abaAtiva(params({ secao: "vsl", aba: "variaveis" }))).toEqual({ secao: "dicionario", aba: "variaveis-vsl" });
+  });
+});
+
+// Story 47.14 — o link do aviso leva o expert; a aba só aceita expert que existe.
+describe("47.14 — expertId na URL da aba Hooks e bodies", () => {
+  it("hrefDe com expertId acrescenta o parâmetro codificado e abaAtiva continua lendo a aba", () => {
+    const href = hrefDe("ads", "partes", { expertId: "b7c1/x y" });
+    expect(href).toBe("/settings/nomenclatura?secao=ads&aba=partes&expertId=b7c1%2Fx%20y");
+    const params = new URLSearchParams(href.split("?")[1]);
+    expect(abaAtiva(params)).toEqual({ secao: "ads", aba: "partes" });
+    expect(params.get("expertId")).toBe("b7c1/x y");
+  });
+
+  it("hrefDe sem expertId (undefined, null ou vazio) não muda a URL de antes", () => {
+    expect(hrefDe("ads", "partes")).toBe("/settings/nomenclatura?secao=ads&aba=partes");
+    expect(hrefDe("ads", "partes", {})).toBe("/settings/nomenclatura?secao=ads&aba=partes");
+    expect(hrefDe("ads", "partes", { expertId: null })).toBe("/settings/nomenclatura?secao=ads&aba=partes");
+    expect(hrefDe("ads", "partes", { expertId: "" })).toBe("/settings/nomenclatura?secao=ads&aba=partes");
+    expect(hrefDe("ads", "valores", { expertId: "abc" })).toBe("/settings/nomenclatura?secao=ads&aba=valores&expertId=abc");
+  });
+
+  it("expertInicialDaUrl devolve o id só quando ele está na lista", () => {
+    const experts = [{ id: "e1" }, { id: "e2" }];
+    expect(expertInicialDaUrl("e2", experts)).toBe("e2");
+    // AC5: parâmetro inválido → seletor vazio, sem erro.
+    expect(expertInicialDaUrl("nao-existe", experts)).toBe("");
+    expect(expertInicialDaUrl("", experts)).toBe("");
+    expect(expertInicialDaUrl(null, experts)).toBe("");
+    expect(expertInicialDaUrl(undefined, experts)).toBe("");
+    // Lista ainda não carregada: nada a aplicar (quem chama espera a lista).
+    expect(expertInicialDaUrl("e1", undefined)).toBe("");
+    expect(expertInicialDaUrl("e1", [])).toBe("");
   });
 });

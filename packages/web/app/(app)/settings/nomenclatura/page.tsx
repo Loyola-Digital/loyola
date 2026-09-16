@@ -159,7 +159,7 @@ function Nomenclatura() {
             ) : ativa.aba === "valores" ? (
               <AbaValoresDeAds podeEditar={podeEditar} />
             ) : ativa.aba === "partes" ? (
-              <AbaHooksEBodies podeEditar={podeEditar} />
+              <AbaHooksEBodies podeEditar={podeEditar} expertInicial={params.get("expertId")} />
             ) : (
               <GeradorDeAnuncio
                 key={`ads|${params.get("editar") ?? ""}|${params.get("duplicar") ?? ""}`}
