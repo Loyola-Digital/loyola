@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { mensagemDeErroDaConta } from "@/lib/utils/erro-de-conta-do-instagram";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -85,9 +86,7 @@ export function EditAccountDialog({
     }
   }
 
-  const errorMessage = updateAccount.error
-    ? "Token inválido ou sem permissões necessárias."
-    : null;
+  const errorMessage = mensagemDeErroDaConta(updateAccount.error);
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
