@@ -1,0 +1,32 @@
+schema: 1
+story: '47.15'
+story_title: 'Contrato da API sobe (dívida da 47.12/47.13) e a tela diz "API atrás do painel" em vez de "Not Found"'
+gate: PASS
+status_reason: 'Contrato 13 com histórico; os dois erros crus de 15/09 viram a frase da API antiga na aba, no form e no gerador; erro deixa de parecer ausência. Um achado medium (todo 404 virava "API atrás", inclusive "Expert não encontrado") corrigido antes do push. Primeiro gate com o check 8.'
+reviewer: 'Quinn'
+updated: '2026-09-16T00:20:00Z'
+branch: 'fix/47.15-contrato-da-api'
+commits: ['4091eadd', '2e88fafd']
+
+top_issues:
+  - id: 'REQ-001'
+    severity: medium
+    status: resolved
+    finding: 'mensagem-de-api-atras.ts tratava TODO 404 como "API atrás". A API lança 404 de domínio com mensagem própria (existente() → "Expert não encontrado", nomenclatura.ts:146); o Fastify de rota inexistente devolve `error: "Not Found"` literal (provado com app.inject numa rota inexistente). Um expert apagado entre abrir o form e salvar viraria "API atrás".'
+    suggested_action: 'CORRIGIDO em 2e88fafd: só 404 com mensagem literal "Not Found" (trim, case-insensitive) é API atrás; 400 "Invalid UUID" mantido. Teste com o 404 de domínio.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'contract.ts v13 com o parágrafo no molde dos anteriores; helper folha sem imports; aba mantém o 500 da migration; form preserva `corpo` do erro (só troca a mensagem); gerador: placeholder "erro ao listar" + linha role=alert, e o vazio verdadeiro segue com o link de cadastro.'
+  unit_tests: 'mensagem-de-api-atras.test.ts 4 casos (404 literal; 400 UUID; 404 de domínio; 400/500/403/rede/null intocados). health.test.ts 9/9 compara /api/health.contract com a constante. web 1280 → 1281.'
+  acceptance_criteria: 'AC1 ✓ · AC2 ✓ · AC3 ✓ · AC4 ✓ (origens e hooks/bodies) · AC5 ✓ (story-lifecycle.md item 8; este gate já registra checks.api_contract).'
+  no_regressions: 'tsc 0/0/0; eslint 0; next build EXIT=0 (@dev, mesmo tree + 1 linha de helper). Efeito esperado em produção: banner "API atrás" enquanto o Railway estiver em 12 — desejado.'
+  performance: 'N/A'
+  security: 'N/A'
+  documentation: 'História do contrato explica a dívida; regra do projeto atualizada.'
+  api_contract: 'SIM — API_CONTRACT_VERSION 12 → 13 em shared/src/contract.ts com linha de histórico; a API não ganhou rota nova nesta story, o bump é o devido pela 47.12/47.13.'
+
+notes:
+  - 'A partir deste gate, checks.api_contract é obrigatório (story-lifecycle.md, item 8).'
+  - '[scope-override] autorizado pelo Lucas (informado pelo Danilo, 15/09).'
