@@ -1,4 +1,5 @@
 import path from "node:path";
+import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
 /**
@@ -17,6 +18,12 @@ import { defineConfig } from "vitest/config";
  * Os `.test.tsx` de componente seguem fora, e isso é DELIBERADO — não um
  * esquecimento. Ligá-los exige jsdom + testing-library e vale uma story própria.
  *
+ * ABERTA UMA EXCEÇÃO em `components/instagram`: o seletor de período derrubou a
+ * tela em produção (16/09/2026) com "`SelectLabel` must be used within
+ * `SelectGroup`" — erro que só existe quando o menu ABRE, e que nem tsc nem
+ * lint pegam. Cada arquivo dessa pasta declara `@vitest-environment jsdom` no
+ * topo, então o resto da suíte segue em `node`.
+ *
  * `environment: node` e `globals: true` espelham `packages/api/vitest.config.ts`
  * para que os dois pacotes se comportem igual.
  */
@@ -27,12 +34,21 @@ export default defineConfig({
   resolve: {
     alias: { "@": path.resolve(__dirname, "./") },
   },
+  // Sem isto, um `.test.tsx` morre em "Unexpected JSX expression": o runner não
+  // herda o transform de JSX do Next.
+  plugins: [react()],
   test: {
     globals: true,
     environment: "node",
     // `lib/bi` entra junto pelo mesmo motivo de `lib/utils`: é lógica pura
     // (aritmética de grade, máquina de estados de salvamento) e roda sem DOM.
-    include: ["lib/utils/**/*.test.ts", "lib/bi/**/*.test.ts", "lib/swipe/**/*.test.ts", "lib/planner/**/*.test.ts"],
+    include: [
+      "lib/utils/**/*.test.ts",
+      "lib/bi/**/*.test.ts",
+      "lib/swipe/**/*.test.ts",
+      "lib/planner/**/*.test.ts",
+      "components/instagram/**/*.test.tsx",
+    ],
     /**
      * Story 18.80 (gate do @qa) — o fuso do runner é FIXADO no do usuário.
      *
