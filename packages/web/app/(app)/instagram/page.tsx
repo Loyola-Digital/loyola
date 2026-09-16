@@ -17,6 +17,7 @@ import {
 } from "@/lib/hooks/use-instagram";
 import { AccountSelector } from "@/components/instagram/account-selector";
 import { TabelaMensal } from "@/components/instagram/tabela-mensal";
+import { ComparativoDeMeses } from "@/components/instagram/comparativo-de-meses";
 import {
   PeriodSelector,
   periodToConfig,
@@ -167,6 +168,9 @@ export default function InstagramDashboardPage() {
         "como foi este período", que só interessa depois dessa.
       */}
       <TabelaMensal accountId={selectedAccountId} />
+
+      {/* Um mês contra outro, à escolha — a comparação de reunião. */}
+      <ComparativoDeMeses accountId={selectedAccountId} />
 
       {/* Reach & Impressions chart */}
       <ReachChart

@@ -202,7 +202,7 @@ interface InstagramService {
   /** Lista leve (1 chamada, sem insights) — Story 38.2b (auto-log de posts). */
   getMediaListBasic(accountId: string, limit?: number): Promise<InstagramMediaBasic[]>;
   getMediaInsights(mediaId: string, accountId: string, mediaType?: string): Promise<InsightEntry[]>;
-  getAccountInsights(accountId: string, period: string, since: number, until: number): Promise<InsightEntry[]>;
+  getAccountInsights(accountId: string, period: string, since: number, until: number, somente?: string[]): Promise<InsightEntry[]>;
   getAudienceDemographics(accountId: string): Promise<InsightEntry[]>;
   getStories(accountId: string): Promise<Array<StoryMedia & { insights?: InsightEntry[] }>>;
   getReels(accountId: string): Promise<{ data: InstagramMedia[]; nextCursor?: string }>;
@@ -692,18 +692,30 @@ export default fp(async function instagramServicePlugin(fastify) {
     return entries;
   }
 
+  /**
+   * Insights do perfil no período.
+   *
+   * `somente` pede um subconjunto de métricas: o comparativo mensal precisa de
+   * quatro (alcance, views, interações e seguidores) e pedia as treze — seis
+   * meses custavam 78 chamadas das 200 que a Meta dá por hora. Cada
+   * subconjunto tem sua própria chave de cache; sem isso, a resposta curta do
+   * mensal serviria o dashboard inteiro com metade das métricas faltando.
+   */
   async function getAccountInsights(
     accountId: string,
     period: string,
     since: number,
     until: number,
+    somente?: string[],
   ): Promise<InsightEntry[]> {
     const periodStart = new Date(since * 1000).toISOString().split("T")[0];
     const periodEnd = new Date(until * 1000).toISOString().split("T")[0];
 
     // Cache key v3: each metric fetched independently
     // v4: + alcance e views quebrados por seguidor × não seguidor.
-    const cacheKey = "account_insights_v4";
+    const cacheKey = somente
+      ? `account_insights_v4_${[...somente].sort().join("-")}`.slice(0, 50)
+      : "account_insights_v4";
     const cached = await getCachedMetric(accountId, cacheKey, periodStart, periodEnd);
     if (cached) return cached as InsightEntry[];
 
@@ -717,8 +729,10 @@ export default fp(async function instagramServicePlugin(fastify) {
 
     const entries: InsightEntry[] = [];
 
+    const querem = (m: string) => !somente || somente.includes(m);
+
     // 1. Time series metrics (return daily values array) — only "reach" supports this
-    const timeSeriesMetrics = ["reach"];
+    const timeSeriesMetrics = ["reach"].filter(querem);
     await Promise.all(timeSeriesMetrics.map(async (metric) => {
       try {
         const result = await graphFetch<InsightsResponse>(
@@ -746,7 +760,7 @@ export default fp(async function instagramServicePlugin(fastify) {
       "replies",
       "profile_links_taps",
       "follower_count",
-    ];
+    ].filter(querem);
     await Promise.all(totalValueMetrics.map(async (metric) => {
       try {
         // `follows_and_unfollows` requer breakdown=follow_type (Meta v25+)
@@ -771,7 +785,7 @@ export default fp(async function instagramServicePlugin(fastify) {
     //
     // Aqui FOLLOWER é quem JÁ SEGUE o perfil — não o mesmo sentido do
     // `follows_and_unfollows`, onde FOLLOWER é novo seguidor.
-    await Promise.all(["reach", "views"].map(async (metric) => {
+    await Promise.all(["reach", "views"].filter(querem).map(async (metric) => {
       try {
         const result = await graphFetch<InsightsResponse>(
           `${base}?metric=${metric}${tsParams}&metric_type=total_value&breakdown=follow_type`, token
