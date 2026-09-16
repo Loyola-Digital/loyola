@@ -7,13 +7,18 @@
  * duas seções na mesma tela, Hook · Body, cada uma com a `TabelaDoDicionario`
  * e o botão Novo já com o expert preenchido. Molde literal de
  * `vsl/aba-variaveis.tsx`. Os códigos entram no nome do vídeo na 47.13.
+ *
+ * Story 47.14 (AC5): `?expertId=` na URL pré-seleciona o expert — é para
+ * onde o aviso "nenhum hook cadastrado para dg" do gerador manda. Aplicado
+ * UMA vez por parâmetro, quando a lista de experts chega; id inválido → vazio.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { erroDaApi, useAlternarAtivo, useListaDe, type ParteDoVideo } from "@/lib/hooks/use-nomenclatura";
 import { ROTULO_DA_PARTE_DO_VIDEO, TIPOS_DE_PARTE_DO_VIDEO, type TipoDeParteDoVideo } from "@/lib/utils/nomenclatura-anuncio";
+import { expertInicialDaUrl } from "@/lib/utils/nomenclatura-abas";
 import { mensagemDeApiAtras } from "@/lib/utils/mensagem-de-api-atras";
 import { DialogoDeExclusao, type AlvoDaExclusao } from "../dialogo-de-exclusao";
 import { SeletorDeExpert } from "../seletor-de-expert";
@@ -30,8 +35,18 @@ function mensagemDeErro(e: unknown) {
   return err.mensagem;
 }
 
-export function AbaHooksEBodies({ podeEditar }: { podeEditar: boolean }) {
+export function AbaHooksEBodies({ podeEditar, expertInicial }: { podeEditar: boolean; expertInicial?: string | null }) {
   const [expertId, setExpertId] = useState("");
+  // Story 47.14 (AC5): a lista é assíncrona — aplica o `expertId` da URL quando ela chega,
+  // uma vez por parâmetro (depois disso a pessoa troca o expert à vontade). A query é a
+  // mesma do SeletorDeExpert (react-query deduplica).
+  const experts = useListaDe("experts");
+  const aplicado = useRef<string | null>(null);
+  useEffect(() => {
+    if (!expertInicial || aplicado.current === expertInicial || !experts.data) return;
+    aplicado.current = expertInicial;
+    setExpertId(expertInicialDaUrl(expertInicial, experts.data));
+  }, [expertInicial, experts.data]);
   return (
     <div className="space-y-6">
       <div className="max-w-sm">

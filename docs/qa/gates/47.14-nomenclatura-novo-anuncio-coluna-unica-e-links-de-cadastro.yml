@@ -1,0 +1,37 @@
+schema: 1
+story: '47.14'
+story_title: 'Novo anúncio em coluna única, e todo aviso de "nenhum X cadastrado" leva ao cadastro'
+gate: PASS
+status_reason: 'Página inteira em coluna única com a prévia acima (D1 confirmada pelo gestor), onze campos um por linha na ordem da AC2, avisos de lista vazia hiperlinkados para o cadastro (Hooks e bodies já com o expert na URL), erro ≠ vazio preservado da 47.15. Sem lógica de estado tocada. Dois lows registrados, nada a corrigir antes do push.'
+reviewer: 'Quinn'
+updated: '2026-09-16T12:40:00Z'
+branch: 'feat/47.14-novo-anuncio-coluna-unica'
+commits: ['4ce43e7c']
+
+top_issues:
+  - id: 'TEST-001'
+    severity: low
+    status: open
+    finding: 'O efeito que aplica `expertInicial` quando a lista de experts chega (aba-hooks-e-bodies.tsx) não tem teste — o runner do web só coleta lib/utils/*.test.ts. O helper puro `expertInicialDaUrl` está coberto (7 asserções; mutação "devolver o param sem checar a lista" derruba o teste — provado neste gate).'
+    suggested_action: 'AC8 (validação visual): abrir ?secao=ads&aba=partes&expertId={id válido} e ver o expert já escolhido; com id inválido, seletor vazio e sem erro.'
+  - id: 'MNT-001'
+    severity: low
+    status: open
+    finding: 'Placeholder "escolha o expert" dos selects Hook/Body é texto morto desde a 47.13: com `desabilitado` (sem expert) o SelectDeValor mostra "Escolha", nunca o `vazio`. Esta story trocou o texto por "nenhum hook cadastrado para …" (só aparece com expert), então o efeito visível é o mesmo — anotado para não confundir quem ler o código.'
+    suggested_action: 'Nenhuma ação nesta story.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'gerador-de-anuncio.tsx: wrapper space-y-6; sem lg:grid-cols, <aside> ou sticky (grep = 0); ordem banner → Prévia → campos (max-w-2xl) → botões → lista do expert. Tudo que o diff remove foi realocado (indentação) ou removido de propósito: `erroPartes` virou erroHooks/erroBodies (um alerta por query, sob o próprio select) e a linha da 47.13 AC9 ("Vídeo exige hook e body…") saiu — substituída pelos links por campo, com cobertura igual (aparecia quando hook OU body estava vazio; agora cada vazio tem o seu). SelectDeValor: `cadastro` (link com a frase inteira), `erro` (alerta em vez de link), `carregando` (placeholder "carregando…", sem linha de ajuda) — a tabela de decisão prioriza desabilitado > carregando > erro > vazio. Aba: `expertInicial` aplicado uma vez por parâmetro via useRef, só com experts.data presente; a query é a mesma do SeletorDeExpert (dedupe do react-query).'
+  unit_tests: 'nomenclatura-abas.test.ts 13 → 16: hrefDe com expertId (codificado; abaAtiva continua lendo a aba), sem/vazio/null inalterado, expertInicialDaUrl válido/inválido/vazio/null/undefined/lista ausente. Mutação executada neste gate: `return param` → 1 falha. web 1281 → 1284 (90 arquivos).'
+  acceptance_criteria: 'AC1 ✓ (prévia acima, D1 do gestor) · AC2 ✓ (a-expert, a-tipo, a-origem, a-nn, a-sigla, a-lnn, a-hook, a-body, a-mes, a-desc, a-notas — nesta ordem no JSX; NN/Nº 140px, mês 200px) · AC3 ✓ (aoEscolherNoAnuncio, sugestões, padraoAntigo, salvar, lista intactos) · AC4 ✓ (textos literais da story: "nenhum body cadastrado para {expert} — cadastrar em Hooks e bodies" → ?secao=ads&aba=partes&expertId=; "nenhuma origem ativa — cadastrar em Valores fixos"; Tipo e Sigla idem) · AC5 ✓ (page.tsx repassa params.get("expertId"); inválido → "") · AC6 ✓ (nada a fazer) · AC7 ✓ (erro → role=alert sob o select, sem link) · AC8 pendente (gestor).'
+  no_regressions: 'next lint 0 nos 5 arquivos; tsc web 0 rodado DEPOIS do último arquivo; next build EXIT=0 (41 páginas); 1284 testes. hrefDe ganhou 3º argumento opcional — 20+ chamadas existentes intocadas (tsc). isLoading do react-query 5 é pending && fetching: com enabled:false (sem expert / não é vídeo) fica falso — "carregando…" não prende o select.'
+  performance: 'N/A — uma query deduplicada a mais na aba; sem cálculo novo.'
+  security: 'expertId da URL só vira filtro de query depois de bater com a lista de experts ativos (expertInicialDaUrl); href com encodeURIComponent.'
+  documentation: 'Story com Dev Agent Record e decisões fora do texto (banner acima da prévia; linha da 47.13 removida; max-w-2xl). Epic doc Fase 3 e Change Log da 47.11 (AC1 superada) atualizados neste gate.'
+  api_contract: 'N/A — só web; nenhuma rota, campo ou snapshot novo na API. API_CONTRACT_VERSION segue 13.'
+
+notes:
+  - 'Validação visual do gestor (AC8): coluna única no celular e no desktop; aviso de body sem cadastro → aba Hooks e bodies com o expert certo; cadastrar b01; voltar e ver o body no select.'
+  - '[scope-override] autorizado pelo Lucas (informado pelo Danilo, 15/09).'

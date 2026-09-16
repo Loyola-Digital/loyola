@@ -116,7 +116,23 @@ export function hrefDaSecao(secao: Secao): string {
   return hrefDe("slug");
 }
 
-export function hrefDe(secao: Secao, aba?: AbaDoDicionario | AbaDeCampanhas | AbaDeVsl | AbaDeAds): string {
+/**
+ * Story 47.14 (AC4/AC5): `extra.expertId` entra como `&expertId=` — o link do
+ * aviso "nenhum hook cadastrado para dg" abre Hooks e bodies já no expert.
+ * Vazio/undefined não entra; o valor vai codificado.
+ */
+export function hrefDe(secao: Secao, aba?: AbaDoDicionario | AbaDeCampanhas | AbaDeVsl | AbaDeAds, extra?: { expertId?: string | null }): string {
   const base = `/settings/nomenclatura?secao=${secao}`;
-  return aba ? `${base}&aba=${aba}` : base;
+  const comAba = aba ? `${base}&aba=${aba}` : base;
+  return extra?.expertId ? `${comAba}&expertId=${encodeURIComponent(extra.expertId)}` : comAba;
+}
+
+/**
+ * Story 47.14 (AC5): o `?expertId=` da URL só vale se for um expert da lista;
+ * inválido, ausente ou lista ainda não carregada → "" (seletor vazio, sem erro).
+ * A lista de experts é assíncrona — quem chama aplica o resultado quando ela chega.
+ */
+export function expertInicialDaUrl(param: string | null | undefined, experts: readonly { id: string }[] | undefined): string {
+  if (!param || !experts) return "";
+  return experts.some((e) => e.id === param) ? param : "";
 }
