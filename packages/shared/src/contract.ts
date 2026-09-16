@@ -137,4 +137,12 @@
 // em `naming_dictionary_values` (`creative_type`, `launch_type`) — o web
 // antigo desconhece os tipos e a aba Valores fixos do Dicionário segue com os
 // quatro. ADITIVA; `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 12;
+//
+// v13 (Stories 47.12/47.13, subido na 47.15): rotas novas
+// `/api/nomenclatura/ads/partes*` (hooks e bodies do vídeo), tipo
+// `creative_origin` em `naming_dictionary_values`, campos `origin`/`hookId`/
+// `bodyId` (+ `hookCode`/`bodyCode`/`legado`) nos anúncios e `origins`/`partes`
+// no snapshot de anúncios. ADITIVA; `packages/mcp` não é afetado. A dívida:
+// 47.12 e 47.13 entraram sem subir isto — o painel foi publicado à frente da
+// API e mostrou "Not Found"/"id: Invalid UUID" em vez do aviso de versão.
+export const API_CONTRACT_VERSION = 13;

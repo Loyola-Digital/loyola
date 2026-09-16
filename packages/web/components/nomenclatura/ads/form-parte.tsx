@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { erroDaApi, useCriar, useEditar, useProximoCodigo, type ErroDaApi, type ParteDoVideo } from "@/lib/hooks/use-nomenclatura";
 import { AVISO_DE_DESCRICAO_USADA } from "@/lib/utils/nomenclatura-cascata";
 import { PLACEHOLDER_DA_PARTE_DO_VIDEO, PREFIXO_DA_PARTE_DO_VIDEO, ROTULO_DA_PARTE_DO_VIDEO, TIPO_DE_CODIGO_DA_PARTE_DO_VIDEO, type TipoDeParteDoVideo } from "@/lib/utils/nomenclatura-anuncio";
+import { mensagemDeApiAtras } from "@/lib/utils/mensagem-de-api-atras";
 import { CampoImutavel } from "../campo-imutavel";
 import { FormularioDialogo } from "../formulario-dialogo";
 import { SeletorDeExpert } from "../seletor-de-expert";
@@ -74,7 +75,9 @@ export function FormParte(props: {
       }
       onFechar();
     } catch (e) {
-      setErro(erroDaApi(e));
+      const err = erroDaApi(e);
+      // Story 47.15: "Not Found" ao salvar = a API ainda não tem a rota; diz isso, não "Not Found".
+      setErro({ ...err, mensagem: mensagemDeApiAtras(err, "hooks e bodies") ?? err.mensagem });
     }
   }
 

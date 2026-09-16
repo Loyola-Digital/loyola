@@ -45,6 +45,7 @@ import {
   type PreviaDoAnuncio,
 } from "@/lib/utils/nomenclatura-anuncio";
 import { copiarTexto } from "../previa-do-nome";
+import { mensagemDeApiAtras } from "@/lib/utils/mensagem-de-api-atras";
 import { SeletorDeExpert } from "../seletor-de-expert";
 
 type Modo = { tipo: "novo" } | { tipo: "editar"; id: string } | { tipo: "duplicar"; id: string };
@@ -152,6 +153,14 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
   }, [proximo.data, editando]);
 
   const partes = useMemo(() => [...(hooks.data ?? []), ...(bodies.data ?? [])].map((p) => ({ id: p.id, code: p.code })), [hooks.data, bodies.data]);
+  // Story 47.15 (AC4): erro da query ≠ lista vazia. API atrás vira a frase do banner; outro erro aparece como veio.
+  const erroDaLista = (e: unknown, recurso: string) => {
+    if (!e) return null;
+    const err = erroDaApi(e);
+    return mensagemDeApiAtras(err, recurso) ?? `Não foi possível listar ${recurso}: ${err.mensagem}`;
+  };
+  const erroOrigens = erroDaLista(origens.error, "origens do vídeo");
+  const erroPartes = erroDaLista(hooks.error ?? bodies.error, "hooks e bodies");
   // AC7: no padrão antigo a prévia é a de 4 campos — mesma opção `legado` do build (achado do QA: sem ela, Salvar ficava desabilitado).
   const previa = useMemo(() => previaDoAnuncio(estado, experts.data ?? [], partes, { legado: padraoAntigo }), [estado, experts.data, partes, padraoAntigo]);
   const escolher = (campo: keyof EstadoDoAnuncio) => (v: string) => setEstado((e) => aoEscolherNoAnuncio(e, campo, v));
@@ -222,9 +231,10 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
           <div className={cn("grid gap-3", video && !padraoAntigo ? "sm:grid-cols-[1fr_220px]" : "sm:grid-cols-1")}>
             <SelectDeValor id="a-tipo" label="Tipo de criativo" valor={estado.creativeType} onChange={escolher("creativeType")} opcoes={opcoesDe(tipos.data)} desabilitado={editando} vazio="nenhum tipo de criativo ativo — cadastre em Valores fixos" />
             {video && !padraoAntigo ? (
-              <SelectDeValor id="a-origem" label="Origem do vídeo" valor={estado.origin} onChange={escolher("origin")} opcoes={opcoesDe(origens.data)} vazio="nenhuma origem ativa — cadastre em Valores fixos (ia · h)" />
+              <SelectDeValor id="a-origem" label="Origem do vídeo" valor={estado.origin} onChange={escolher("origin")} opcoes={opcoesDe(origens.data)} vazio={erroOrigens ? "erro ao listar — veja abaixo" : "nenhuma origem ativa — cadastre em Valores fixos (ia · h)"} />
             ) : null}
           </div>
+          {video && !padraoAntigo && erroOrigens ? <p role="alert" className="text-xs text-destructive">{erroOrigens}</p> : null}
           {padraoAntigo ? (
             <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
               Vídeo do <strong>padrão antigo</strong> (47.10): o nome publicado não muda de formato. Para um nome no v2 (origem, hook e body), use <strong>Duplicar</strong>.
@@ -250,9 +260,11 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
           {/* Story 47.13 (AC9): hook e body DO expert — só em vídeo; sem cadastro, o link leva à aba Hooks e bodies. */}
           {video && !padraoAntigo ? (
             <div className="grid gap-3 sm:grid-cols-2">
-              <SelectDeValor id="a-hook" label="Hook" valor={estado.hookId} onChange={escolher("hookId")} opcoes={(hooks.data ?? []).map((h) => ({ value: h.id, rotulo: h.rotulo }))} desabilitado={!estado.expertId} vazio={estado.expertId ? `nenhum hook cadastrado para ${expertCode || "este expert"}` : "escolha o expert"} />
-              <SelectDeValor id="a-body" label="Body" valor={estado.bodyId} onChange={escolher("bodyId")} opcoes={(bodies.data ?? []).map((b) => ({ value: b.id, rotulo: b.rotulo }))} desabilitado={!estado.expertId} vazio={estado.expertId ? `nenhum body cadastrado para ${expertCode || "este expert"}` : "escolha o expert"} />
-              {estado.expertId && !hooks.isLoading && !bodies.isLoading && ((hooks.data?.length ?? 0) === 0 || (bodies.data?.length ?? 0) === 0) ? (
+              <SelectDeValor id="a-hook" label="Hook" valor={estado.hookId} onChange={escolher("hookId")} opcoes={(hooks.data ?? []).map((h) => ({ value: h.id, rotulo: h.rotulo }))} desabilitado={!estado.expertId} vazio={erroPartes ? "erro ao listar — veja abaixo" : estado.expertId ? `nenhum hook cadastrado para ${expertCode || "este expert"}` : "escolha o expert"} />
+              <SelectDeValor id="a-body" label="Body" valor={estado.bodyId} onChange={escolher("bodyId")} opcoes={(bodies.data ?? []).map((b) => ({ value: b.id, rotulo: b.rotulo }))} desabilitado={!estado.expertId} vazio={erroPartes ? "erro ao listar — veja abaixo" : estado.expertId ? `nenhum body cadastrado para ${expertCode || "este expert"}` : "escolha o expert"} />
+              {erroPartes ? (
+                <p role="alert" className="text-xs text-destructive sm:col-span-2">{erroPartes}</p>
+              ) : estado.expertId && !hooks.isLoading && !bodies.isLoading && ((hooks.data?.length ?? 0) === 0 || (bodies.data?.length ?? 0) === 0) ? (
                 <p className="text-xs text-muted-foreground sm:col-span-2">
                   Vídeo exige hook e body do expert. <Link className="underline" href={hrefDe("ads", "partes")}>Cadastrar em Hooks e bodies</Link>.
                 </p>
