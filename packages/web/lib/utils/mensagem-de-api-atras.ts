@@ -19,7 +19,9 @@ export interface ErroLido {
 /** O que o `erroDaApi` de `use-nomenclatura` devolve, sem depender dele (módulo folha). */
 export function ehApiAtras(erro: ErroLido | null | undefined): boolean {
   if (!erro) return false;
-  if (erro.status === 404) return true;
+  // Só o 404 do Fastify para rota inexistente (`error: "Not Found"` literal). Um 404 de
+  // domínio chega com mensagem própria ("Expert não encontrado") e NÃO é API atrás (QA 47.15).
+  if (erro.status === 404 && /^not found$/i.test(erro.mensagem.trim())) return true;
   // A rota estática nova não existe → a paramétrica `/:id` valida o segmento como uuid e recusa.
   if (erro.status === 400 && /invalid uuid/i.test(erro.mensagem)) return true;
   return false;
