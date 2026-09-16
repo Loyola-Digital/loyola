@@ -27,6 +27,8 @@ import { instagramPostMetrics } from "../db/schema.js";
 
 export interface MetricasDoPost {
   mediaId: string;
+  /** Digitado à mão (Reels): a Meta não entrega seguidores por Reels. */
+  followsManual: number | null;
   reach: number | null;
   views: number | null;
   saved: number | null;
@@ -107,6 +109,7 @@ export async function lerMetricas(
         saved: l.saved,
         shares: l.shares,
         follows: l.follows,
+        followsManual: l.followsManual,
         skipRate: num(l.skipRate),
         avgWatchTimeMs: l.avgWatchTimeMs,
         insightsAt: l.insightsAt,
@@ -187,6 +190,38 @@ export async function salvarMetricas(
         updatedAt: agora,
       },
     });
+}
+
+/**
+ * Grava (ou apaga) os seguidores digitados à mão de um post.
+ *
+ * Só ATUALIZA: a linha do post já existe — ela nasce na primeira leitura da
+ * lista. Se não existir, quem chama recebe `false` e mostra o erro, em vez de
+ * criar uma linha órfã sem data de publicação.
+ */
+export async function salvarSeguidoresManuais(
+  db: Database,
+  accountId: string,
+  mediaId: string,
+  seguidores: number | null,
+  usuarioId: string | null,
+): Promise<boolean> {
+  const r = await db
+    .update(instagramPostMetrics)
+    .set({
+      followsManual: seguidores,
+      followsManualBy: seguidores === null ? null : usuarioId,
+      followsManualAt: seguidores === null ? null : new Date(),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(instagramPostMetrics.accountId, accountId),
+        eq(instagramPostMetrics.mediaId, mediaId),
+      ),
+    )
+    .returning({ mediaId: instagramPostMetrics.mediaId });
+  return r.length > 0;
 }
 
 // `excluded` é a linha que o INSERT tentou gravar — o jeito do Postgres de

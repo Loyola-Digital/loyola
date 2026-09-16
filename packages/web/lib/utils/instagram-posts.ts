@@ -112,7 +112,7 @@ export const METRICAS_DO_POST: MetricaDoPost[] = [
   {
     chave: "follows",
     rotulo: "Seguidores",
-    dica: "Seguidores que começaram a seguir o perfil a partir deste post. A Meta só entrega esse dado para foto e carrossel — em Reels aparece \"—\".",
+    dica: "Seguidores que começaram a seguir o perfil a partir deste post.\n\nA Meta só entrega esse número para foto e carrossel. Em Reels a célula é editável: copie o valor do painel do Instagram e ele passa a valer aqui, na conversão em seguidor e na análise com IA.",
     valor: (p) => p.follows ?? null,
   },
   {

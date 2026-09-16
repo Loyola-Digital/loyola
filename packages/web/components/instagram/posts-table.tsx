@@ -27,8 +27,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowDown, ArrowUp, ArrowUpDown, ExternalLink, Link2, RefreshCw } from "lucide-react";
-import type { InstagramMedia } from "@/lib/hooks/use-instagram";
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, ExternalLink, Link2, Pencil, RefreshCw, X } from "lucide-react";
+import { toast } from "sonner";
+import {
+  useSalvarSeguidoresDoPost,
+  type InstagramMedia,
+} from "@/lib/hooks/use-instagram";
 import { format, parseISO } from "date-fns";
 import { useOrganicPostLinks } from "@/lib/hooks/use-organic-posts";
 import { LinkPostToStageModal } from "@/components/funnels/link-post-to-stage-modal";
@@ -55,6 +59,8 @@ interface PostsTableProps {
   /** Período do seletor, em segundos. Sem ele, a tabela mostra tudo que veio. */
   since?: number;
   until?: number;
+  /** Habilita digitar os seguidores de um Reels (a Meta não entrega esse número). */
+  accountId?: string | null;
 }
 
 const COR_DO_FORMATO = {
@@ -92,6 +98,85 @@ function VsMedia({ m, valor, media }: { m: MetricaDoPost; valor: number | null; 
   );
 }
 
+/**
+ * A célula de "Seguidores" — editável quando a Meta não entrega o número.
+ *
+ * Em Reels a API recusa a métrica, mas ela está no painel do Instagram. Aqui o
+ * time copia de lá. Onde a Meta responde (foto e carrossel), a célula é só
+ * leitura: número digitado não pode competir com o da fonte.
+ */
+function CelulaDeSeguidores({
+  post,
+  accountId,
+  children,
+}: {
+  post: InstagramMedia;
+  accountId: string;
+  children: React.ReactNode;
+}) {
+  const [editando, setEditando] = useState(false);
+  const [texto, setTexto] = useState("");
+  const salvar = useSalvarSeguidoresDoPost(accountId);
+
+  function gravar() {
+    const limpo = texto.trim();
+    const n = limpo === "" ? null : Number(limpo.replace(/\D/g, ""));
+    if (n !== null && !Number.isFinite(n)) return;
+    salvar.mutate(
+      { mediaId: post.id, seguidores: n },
+      {
+        onSuccess: () => setEditando(false),
+        onError: (e) => toast.error(e instanceof Error ? e.message : "Não consegui salvar"),
+      },
+    );
+  }
+
+  if (editando) {
+    return (
+      <div className="flex items-center gap-1">
+        <input
+          autoFocus
+          inputMode="numeric"
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") gravar();
+            if (e.key === "Escape") setEditando(false);
+          }}
+          placeholder="0"
+          aria-label="Seguidores que o post trouxe"
+          className="h-7 w-20 rounded border border-border bg-background px-1.5 text-sm tabular-nums outline-none focus:border-primary"
+        />
+        <button type="button" onClick={gravar} aria-label="Salvar" disabled={salvar.isPending}>
+          <Check className="h-3.5 w-3.5 text-emerald-600" />
+        </button>
+        <button type="button" onClick={() => setEditando(false)} aria-label="Cancelar">
+          <X className="h-3.5 w-3.5 text-muted-foreground" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setTexto(post.follows == null ? "" : String(post.follows));
+        setEditando(true);
+      }}
+      title={
+        post.follows == null
+          ? "A Meta não informa seguidores por Reels — clique e copie o número do painel do Instagram"
+          : "Digitado do painel do Instagram — clique para editar"
+      }
+      className="group inline-flex items-center gap-1 text-sm tabular-nums hover:text-primary"
+    >
+      {children}
+      <Pencil className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-60" />
+    </button>
+  );
+}
+
 export function PostsTable({
   data,
   isLoading,
@@ -100,6 +185,7 @@ export function PostsTable({
   projectId,
   since,
   until,
+  accountId,
 }: PostsTableProps) {
   const [ordem, setOrdem] = useState<Ordem>("timestamp");
   const [crescente, setCrescente] = useState(false);
@@ -276,10 +362,25 @@ Embaixo de cada número: quanto o post ficou acima (↑) ou abaixo (↓) da méd
                       </TableCell>
                       {METRICAS_DO_POST.map((m) => {
                         const v = m.valor(post);
+                        // Seguidores que a Meta não entrega (Reels) viram campo:
+                        // o número existe no painel do Instagram.
+                        const editavel =
+                          m.chave === "follows" && !!accountId && post.follows_fonte !== "meta";
                         return (
                           <TableCell key={m.chave} className="whitespace-nowrap">
-                            <div className="text-sm tabular-nums">{fmtValor(m, v)}</div>
-                            <VsMedia m={m} valor={v} media={medias[m.chave]} />
+                            {editavel ? (
+                              <CelulaDeSeguidores post={post} accountId={accountId}>
+                                {fmtValor(m, v)}
+                              </CelulaDeSeguidores>
+                            ) : (
+                              <div className="text-sm tabular-nums">{fmtValor(m, v)}</div>
+                            )}
+                            {post.follows_fonte === "manual" && m.chave === "follows" && (
+                              <span className="text-[10px] text-muted-foreground">à mão</span>
+                            )}
+                            {!(post.follows_fonte === "manual" && m.chave === "follows") && (
+                              <VsMedia m={m} valor={v} media={medias[m.chave]} />
+                            )}
                           </TableCell>
                         );
                       })}

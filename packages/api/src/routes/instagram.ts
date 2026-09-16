@@ -11,6 +11,7 @@ import {
   type AnaliseDoPeriodo,
 } from "../services/instagram-analise-ia.js";
 import { tituloDoPost } from "../services/instagram-mensal.js";
+import { salvarSeguidoresManuais } from "../services/instagram-post-metrics.js";
 
 // ============================================================
 // SCHEMAS
@@ -1036,4 +1037,44 @@ export default fp(async function instagramRoutes(fastify) {
       });
     }
   });
+  // ---- Seguidores por post, à mão ----
+  //
+  // A Meta recusa `follows` em Reels (medido em 15/09/2026), mas o número está
+  // no painel do Instagram. Aqui o time copia de lá. Vale para qualquer post:
+  // se a API responder, o número dela manda; o digitado preenche o buraco.
+
+  const seguidoresBody = z.object({
+    // `null` apaga o valor digitado. O teto evita que um dedo escorregado
+    // vire 900 milhões de seguidores num post.
+    seguidores: z.number().int().min(0).max(10_000_000).nullable(),
+  });
+
+  fastify.put(
+    "/api/instagram/accounts/:id/posts/:mediaId/seguidores",
+    async (request, reply) => {
+      const p = idParamSchema.safeParse(request.params);
+      const mediaId = (request.params as { mediaId?: string }).mediaId;
+      const body = seguidoresBody.safeParse(request.body);
+      if (!p.success || !mediaId || !/^[0-9]{5,32}$/.test(mediaId) || !body.success) {
+        return reply.code(400).send({ error: "Dados inválidos" });
+      }
+      if (request.userRole === "guest") {
+        return reply.code(403).send({ error: "Acesso negado" });
+      }
+
+      const ok = await salvarSeguidoresManuais(
+        fastify.db,
+        p.data.id,
+        mediaId,
+        body.data.seguidores,
+        request.userId ?? null,
+      );
+      if (!ok) {
+        // A linha nasce na primeira leitura da lista; se não existe, o post não
+        // é desta conta ou a lista nunca foi aberta.
+        return reply.code(404).send({ error: "Post não encontrado nesta conta" });
+      }
+      return { seguidores: body.data.seguidores };
+    },
+  );
 });

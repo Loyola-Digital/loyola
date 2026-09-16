@@ -233,6 +233,7 @@ export default function ProjectInstagramPage({ params }: Props) {
         projectId={projectId}
         since={period.since}
         until={period.until}
+        accountId={selectedAccountId}
       />
 
       <PerformancePorFormato

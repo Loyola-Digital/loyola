@@ -196,6 +196,7 @@ export default function InstagramDashboardPage() {
         isRefreshing={refresh.isPending}
         since={period.since}
         until={period.until}
+        accountId={selectedAccountId}
       />
 
       <PerformancePorFormato
