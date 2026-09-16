@@ -10,10 +10,19 @@ vi.mock("../services/encryption", () => ({
 // ============================================================
 
 function createMockDb() {
+  // `where()` precisa servir aos dois jeitos de consultar do serviço: com
+  // `.limit()` no fim (conta, cache) e sem (as métricas de post, que trazem a
+  // lista inteira). Por isso ele devolve uma Promise COM `limit` pendurado.
   const selectResult = {
     from: vi.fn().mockReturnThis(),
-    where: vi.fn().mockReturnThis(),
+    where: vi.fn(() =>
+      Object.assign(Promise.resolve(selectResult._whereRows), {
+        limit: selectResult.limit,
+      }),
+    ),
     limit: vi.fn().mockResolvedValue([]),
+    /** O que uma consulta sem `.limit()` devolve. */
+    _whereRows: [] as unknown[],
   };
 
   return {

@@ -442,6 +442,47 @@ export const instagramMetricsCache = pgTable(
   ],
 );
 
+/**
+ * Métricas de cada post do Instagram, guardadas de vez.
+ *
+ * A Meta deixa fazer 200 chamadas por hora por conta, e a lista de posts
+ * pedia insights de UM EM UM: 100 posts = 100 chamadas por abertura de tela.
+ * Aqui o número fica guardado — o de um post de ontem não muda mais — e a
+ * tela lê do banco. `insightsAt` diz quando foi buscado e decide se vale
+ * perguntar de novo (ver `precisaBuscarInsights`).
+ */
+export const instagramPostMetrics = pgTable(
+  "instagram_post_metrics",
+  {
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => instagramAccounts.id, { onDelete: "cascade" }),
+    mediaId: varchar("media_id", { length: 64 }).notNull(),
+    postedAt: timestamp("posted_at", { withTimezone: true }).notNull(),
+    mediaType: varchar("media_type", { length: 32 }),
+    mediaProductType: varchar("media_product_type", { length: 32 }),
+    caption: text("caption"),
+    permalink: text("permalink"),
+    likeCount: integer("like_count"),
+    commentsCount: integer("comments_count"),
+    reach: integer("reach"),
+    views: integer("views"),
+    saved: integer("saved"),
+    shares: integer("shares"),
+    follows: integer("follows"),
+    /** % das views do Reels que pularam nos 3 primeiros segundos. */
+    skipRate: numeric("skip_rate", { precision: 5, scale: 2 }),
+    avgWatchTimeMs: integer("avg_watch_time_ms"),
+    /** Quando os insights foram buscados. Null = nunca. */
+    insightsAt: timestamp("insights_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.accountId, table.mediaId] }),
+    index("idx_ig_post_metrics_conta_data").on(table.accountId, table.postedAt),
+  ],
+);
+
 // ============================================================
 // META ADS TABLES (EPIC-6)
 // ============================================================
