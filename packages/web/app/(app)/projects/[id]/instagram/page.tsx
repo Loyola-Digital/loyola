@@ -32,6 +32,7 @@ import { ReelsSection } from "@/components/instagram/reels-section";
 import { AudienceCharts } from "@/components/instagram/audience-charts";
 import { TopPostsByFollowersCard } from "@/components/instagram/top-posts-by-followers-card";
 import { TabelaMensal } from "@/components/instagram/tabela-mensal";
+import { ComparativoDeMeses } from "@/components/instagram/comparativo-de-meses";
 import { GenerateReportDialog } from "@/components/instagram/generate-report-dialog";
 import { FileText } from "lucide-react";
 
@@ -203,6 +204,9 @@ export default function ProjectInstagramPage({ params }: Props) {
       {/* O comparativo mensal, igual à página global: "cresceu ou caiu?" vem
           antes de qualquer detalhe do período. */}
       <TabelaMensal accountId={selectedAccountId} />
+
+      {/* Um mês contra outro, à escolha — a comparação de reunião. */}
+      <ComparativoDeMeses accountId={selectedAccountId} />
 
       {/* Reach & Impressions chart */}
       <ReachChart

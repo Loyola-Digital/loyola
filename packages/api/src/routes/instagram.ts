@@ -428,6 +428,13 @@ export default fp(async function instagramRoutes(fastify) {
    * demora cerca de dois dias para fechar os números de seguidores. A tela
    * marca isso; escondê-lo faria o mês parecer uma queda.
    */
+  const METRICAS_DO_MENSAL = [
+    "reach",
+    "views",
+    "total_interactions",
+    "follows_and_unfollows",
+  ];
+
   fastify.get("/api/instagram/accounts/:id/mensal", async (request, reply) => {
     const paramResult = idParamSchema.safeParse(request.params);
     if (!paramResult.success) return reply.code(400).send({ error: "ID inválido" });
@@ -455,6 +462,9 @@ export default fp(async function instagramRoutes(fastify) {
               "day",
               Math.floor(j.inicio.getTime() / 1000),
               Math.floor(j.fim.getTime() / 1000),
+              // Só o que a tabela mensal usa. Pedir as treze métricas fazia
+              // seis meses custarem 78 chamadas das 200 que a Meta dá por hora.
+              METRICAS_DO_MENSAL,
             )
             // Um mês que a API recusa não pode derrubar os outros cinco: vira
             // linha zerada, que a tela mostra como "sem dado".
