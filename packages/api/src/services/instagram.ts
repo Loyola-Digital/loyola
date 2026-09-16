@@ -1,6 +1,13 @@
 import fp from "fastify-plugin";
 import { eq, and, gt } from "drizzle-orm";
 import { instagramAccounts, instagramMetricsCache } from "../db/schema.js";
+import {
+  lerMetricas,
+  ordemDeBusca,
+  precisaBuscarInsights,
+  salvarMetricas,
+  type LinhaParaGravar,
+} from "./instagram-post-metrics.js";
 import { decrypt } from "./encryption.js";
 
 // ============================================================
@@ -10,6 +17,17 @@ import { decrypt } from "./encryption.js";
 const GRAPH_API_VERSION = "v25.0";
 const GRAPH_API_BASE = `https://graph.instagram.com/${GRAPH_API_VERSION}`;
 const RATE_LIMIT_MAX = 200;
+/**
+ * Quantos posts podem ter os insights buscados numa mesma leitura da lista.
+ *
+ * A Meta dá 200 chamadas por hora por conta e os insights vêm de um em um.
+ * Sem teto, uma lista de 100 posts consumia metade da cota de uma vez — e foi
+ * o que derrubou a tela com 429. O que não couber fica para a próxima leitura
+ * (ou para o backfill), servido do banco enquanto isso.
+ */
+const ORCAMENTO_DE_INSIGHTS = 30;
+/** Chamadas simultâneas à Meta. Baixo de propósito: rajada é o que ela pune. */
+const INSIGHTS_EM_PARALELO = 5;
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
 /** Cache TTL in minutes per metric type */
@@ -460,63 +478,128 @@ export default fp(async function instagramServicePlugin(fastify) {
     return result.data ?? [];
   }
 
+  /**
+   * A lista de posts, com as métricas vindas do BANCO.
+   *
+   * A lista em si é uma chamada à Meta (traz post novo, legenda, thumbnail que
+   * expira, curtidas e comentários). Os insights ficam guardados em
+   * `instagram_post_metrics`: buscamos só os que faltam ou envelheceram, com
+   * teto por leitura, e paramos na hora se a Meta reclamar de cota.
+   */
   async function getMediaList(
     accountId: string,
     limit = 25,
     after?: string,
   ): Promise<{ data: InstagramMedia[]; nextCursor?: string }> {
     const { token, igUserId } = await getDecryptedToken(accountId);
-    // `permalink` entra para a tabela mensal poder linkar o melhor post do mês
-    // — sem ele, o card mostra o título e não leva a lugar nenhum.
     let path = `/${igUserId}/media?fields=id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count&limit=${limit}`;
     if (after) path += `&after=${after}`;
 
     const result = await graphFetch<MediaListResponse>(path, token);
+    const posts = result.data ?? [];
+    const guardadas = await lerMetricas(fastify.db, accountId, posts.map((p) => p.id));
 
-    // Enrich each post with reach + saved (from insights) and engagement_rate.
-    // Promise.allSettled so a single insight failure doesn't kill the whole list.
-    const enriched = await Promise.allSettled(
-      result.data.map(async (post) => {
-        const entries = await getMediaInsights(post.id, accountId, post.media_type);
-        const reach = pickInsightValue(entries, "reach");
-        const saved = pickInsightValue(entries, "saved");
-        const views = pickInsightValue(entries, "views");
-        const shares = pickInsightValue(entries, "shares");
-        const avgWatch = pickInsightValue(entries, "ig_reels_avg_watch_time");
-        const skipRate = pickInsightValue(entries, "reels_skip_rate");
-        const follows = pickInsightValue(entries, "follows");
-        const likes = post.like_count ?? 0;
-        const comments = post.comments_count ?? 0;
-        let engagementRate: number | null = null;
-        if (reach != null && reach > 0) {
-          // Compartilhamento entra: é a mesma conta da tabela mensal
-          // (`interacoesDoPost`), senão o "melhor post do mês" de lá e o topo
-          // do ranking daqui discordariam sobre o mesmo post.
-          engagementRate = ((likes + comments + (saved ?? 0) + (shares ?? 0)) / reach) * 100;
+    const candidatos = posts
+      .map((post) => ({
+        post,
+        postadoEm: new Date(post.timestamp),
+        insightsEm: guardadas.get(post.id)?.insightsAt ?? null,
+      }))
+      .filter((c) => precisaBuscarInsights(c.postadoEm, c.insightsEm));
+    const aBuscar = ordemDeBusca(candidatos).slice(0, ORCAMENTO_DE_INSIGHTS);
+
+    const buscados = new Map<string, { m: MetricasCruas; em: Date }>();
+    let cotaEstourou = false;
+    for (let i = 0; i < aBuscar.length && !cotaEstourou; i += INSIGHTS_EM_PARALELO) {
+      const bloco = aBuscar.slice(i, i + INSIGHTS_EM_PARALELO);
+      const res = await Promise.allSettled(
+        bloco.map(async (c) => {
+          const entries = await getMediaInsights(c.post.id, accountId, c.post.media_type);
+          return { id: c.post.id, m: metricasDasEntradas(entries) };
+        }),
+      );
+      for (const r of res) {
+        if (r.status === "fulfilled") buscados.set(r.value.id, { m: r.value.m, em: new Date() });
+        // 429: parar AGORA. Insistir só aprofunda o bloqueio, e o que já está
+        // no banco basta para a tela abrir.
+        else if (r.reason instanceof InstagramApiError && r.reason.statusCode === 429) {
+          cotaEstourou = true;
+          fastify.log.warn("[IG] cota da Meta estourou; servindo o que está no banco");
         }
-        return {
-          ...post,
-          reach,
-          saved,
-          engagement_rate: engagementRate,
-          views,
-          shares,
-          avg_watch_time_ms: avgWatch,
-          skip_rate: skipRate,
-          follows,
-        } satisfies InstagramMedia;
-      }),
-    );
+      }
+    }
 
-    const data: InstagramMedia[] = enriched.map((r, i) =>
-      r.status === "fulfilled"
-        ? r.value
-        : { ...result.data[i], reach: null, saved: null, engagement_rate: null, views: null, shares: null, avg_watch_time_ms: null, follows: null, skip_rate: null },
-    );
+    const paraGravar: LinhaParaGravar[] = posts.map((p) => {
+      const novo = buscados.get(p.id);
+      const antigo = guardadas.get(p.id);
+      const m = novo?.m;
+      return {
+        mediaId: p.id,
+        postedAt: new Date(p.timestamp),
+        mediaType: p.media_type ?? null,
+        mediaProductType: p.media_product_type ?? null,
+        caption: p.caption ?? null,
+        permalink: p.permalink ?? null,
+        likeCount: p.like_count ?? null,
+        commentsCount: p.comments_count ?? null,
+        reach: m ? m.reach : (antigo?.reach ?? null),
+        views: m ? m.views : (antigo?.views ?? null),
+        saved: m ? m.saved : (antigo?.saved ?? null),
+        shares: m ? m.shares : (antigo?.shares ?? null),
+        follows: m ? m.follows : (antigo?.follows ?? null),
+        skipRate: m ? m.skipRate : (antigo?.skipRate ?? null),
+        avgWatchTimeMs: m ? m.avgWatchTimeMs : (antigo?.avgWatchTimeMs ?? null),
+        insightsAt: novo?.em ?? antigo?.insightsAt ?? null,
+      };
+    });
+    await salvarMetricas(fastify.db, accountId, paraGravar);
 
+    const data: InstagramMedia[] = posts.map((post, i) => {
+      const g = paraGravar[i]!;
+      const likes = post.like_count ?? 0;
+      const comments = post.comments_count ?? 0;
+      const engagementRate =
+        g.reach && g.reach > 0
+          ? // Compartilhamento entra: é a mesma conta da tabela mensal
+            // (`interacoesDoPost`), senão o "melhor post do mês" de lá e o topo
+            // do ranking daqui discordariam sobre o mesmo post.
+            ((likes + comments + (g.saved ?? 0) + (g.shares ?? 0)) / g.reach) * 100
+          : null;
+      return {
+        ...post,
+        reach: g.reach ?? null,
+        saved: g.saved ?? null,
+        engagement_rate: engagementRate,
+        views: g.views ?? null,
+        shares: g.shares ?? null,
+        avg_watch_time_ms: g.avgWatchTimeMs ?? null,
+        follows: g.follows ?? null,
+        skip_rate: g.skipRate ?? null,
+      } satisfies InstagramMedia;
+    });
+
+    return { data, nextCursor: result.paging?.cursors?.after };
+  }
+
+  interface MetricasCruas {
+    reach: number | null;
+    views: number | null;
+    saved: number | null;
+    shares: number | null;
+    follows: number | null;
+    skipRate: number | null;
+    avgWatchTimeMs: number | null;
+  }
+
+  function metricasDasEntradas(entries: InsightEntry[]): MetricasCruas {
     return {
-      data,
-      nextCursor: result.paging?.cursors?.after,
+      reach: pickInsightValue(entries, "reach"),
+      views: pickInsightValue(entries, "views"),
+      saved: pickInsightValue(entries, "saved"),
+      shares: pickInsightValue(entries, "shares"),
+      follows: pickInsightValue(entries, "follows"),
+      skipRate: pickInsightValue(entries, "reels_skip_rate"),
+      avgWatchTimeMs: pickInsightValue(entries, "ig_reels_avg_watch_time"),
     };
   }
 
@@ -547,8 +630,8 @@ export default fp(async function instagramServicePlugin(fastify) {
     accountId: string,
     mediaType?: string,
   ): Promise<InsightEntry[]> {
-    // v2: Reels passaram a pedir `reels_skip_rate`. Sem trocar a chave, o cache
-    // antigo serviria os Reels sem a retenção do gancho até vencer.
+    // O cache curto continua, mas agora é só contra repetição dentro da mesma
+    // rajada — quem guarda de verdade é `instagram_post_metrics`.
     const cacheKey = `post_insights_v2_${mediaId}`;
     const cached = await getCachedMetric(accountId, cacheKey);
     if (cached) return cached as InsightEntry[];
@@ -701,11 +784,15 @@ export default fp(async function instagramServicePlugin(fastify) {
 
     fastify.log.info("[IG insights] returned metrics: " + (entries.map((e) => e.name).join(", ") || "(none)"));
 
+    // Janela que já fechou (terminou há mais de 2 dias) não muda mais: o
+    // comparativo mensal pede seis dessas por abertura, e rebuscá-las a cada 30
+    // minutos era o segundo maior consumidor da cota.
+    const fechada = until * 1000 < Date.now() - 2 * 86_400_000;
     await setCachedMetric(
       accountId,
       cacheKey,
       entries,
-      CACHE_TTL.account_insights,
+      fechada ? 60 * 24 * 30 : CACHE_TTL.account_insights,
       periodStart,
       periodEnd,
     );
@@ -797,60 +884,24 @@ export default fp(async function instagramServicePlugin(fastify) {
     return storiesWithInsights;
   }
 
+  /**
+   * Os Reels recentes — a mesma lista de posts, filtrada.
+   *
+   * Antes esta função repetia a busca e o enriquecimento por conta própria:
+   * numa tela que já mostra a lista completa, eram os MESMOS posts pedidos à
+   * Meta duas vezes. Reusar `getMediaList` corta essa metade e faz os Reels
+   * lerem do banco junto com o resto.
+   */
   async function getReels(
     accountId: string,
   ): Promise<{ data: InstagramMedia[]; nextCursor?: string }> {
-    const cached = await getCachedMetric(accountId, "reels");
-    if (cached) return cached as { data: InstagramMedia[]; nextCursor?: string };
-
-    const { token, igUserId } = await getDecryptedToken(accountId);
-    const result = await graphFetch<MediaListResponse>(
-      `/${igUserId}/media?fields=id,caption,media_type,media_url,thumbnail_url,timestamp,like_count,comments_count&limit=25`,
-      token,
-    );
-
-    // Só VIDEO/REEL — e enriquece cada um com insights (reach/views/shares/
-    // saves/tempo médio assistido) pra mostrar qualidade de vídeo no dashboard.
-    const onlyReels = result.data.filter((m) => m.media_type === "VIDEO" || m.media_type === "REEL");
-    const enriched = await Promise.allSettled(
-      onlyReels.map(async (post) => {
-        const entries = await getMediaInsights(post.id, accountId, post.media_type);
-        const reach = pickInsightValue(entries, "reach");
-        const saved = pickInsightValue(entries, "saved");
-        const views = pickInsightValue(entries, "views");
-        const shares = pickInsightValue(entries, "shares");
-        const avgWatch = pickInsightValue(entries, "ig_reels_avg_watch_time");
-        const skipRate = pickInsightValue(entries, "reels_skip_rate");
-        const likes = post.like_count ?? 0;
-        const comments = post.comments_count ?? 0;
-        let engagementRate: number | null = null;
-        if (reach != null && reach > 0) {
-          // Compartilhamento entra: é a mesma conta da tabela mensal
-          // (`interacoesDoPost`), senão o "melhor post do mês" de lá e o topo
-          // do ranking daqui discordariam sobre o mesmo post.
-          engagementRate = ((likes + comments + (saved ?? 0) + (shares ?? 0)) / reach) * 100;
-        }
-        return {
-          ...post,
-          reach,
-          saved,
-          engagement_rate: engagementRate,
-          views,
-          shares,
-          avg_watch_time_ms: avgWatch,
-          skip_rate: skipRate,
-        } satisfies InstagramMedia;
-      }),
-    );
-    const data: InstagramMedia[] = enriched.map((r, i) =>
-      r.status === "fulfilled"
-        ? r.value
-        : { ...onlyReels[i], reach: null, saved: null, engagement_rate: null, views: null, shares: null, avg_watch_time_ms: null, skip_rate: null },
-    );
-    const reels = { data, nextCursor: result.paging?.cursors?.after };
-
-    await setCachedMetric(accountId, "reels", reels, CACHE_TTL.reels);
-    return reels;
+    const lista = await getMediaList(accountId, 25);
+    return {
+      data: lista.data.filter(
+        (m) => m.media_product_type === "REELS" || m.media_type === "VIDEO" || m.media_type === "REEL",
+      ),
+      nextCursor: lista.nextCursor,
+    };
   }
 
   // ---- Decorate Fastify ----
