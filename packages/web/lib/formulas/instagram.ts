@@ -86,7 +86,7 @@ export function buildReachFormula(
       {
         label: "Alcance acumulado",
         value: totalReach,
-        source: "Instagram Graph API · reach",
+        source: "Instagram Graph API · reach (valor único do período, não a soma dos dias)",
       },
     ],
     result: nf.format(totalReach),
@@ -178,7 +178,7 @@ export function buildEngagementFormula(
       {
         label: "Alcance",
         value: totalReach,
-        source: "Instagram Graph API · reach",
+        source: "Instagram Graph API · reach (valor único do período, não a soma dos dias)",
       },
     ],
     result: `${nf.format(totalInteractions)} ÷ ${nf.format(totalReach)} × 100 = ${rate.toFixed(2)}%`,

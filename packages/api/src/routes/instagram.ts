@@ -429,11 +429,18 @@ export default fp(async function instagramRoutes(fastify) {
    * demora cerca de dois dias para fechar os números de seguidores. A tela
    * marca isso; escondê-lo faria o mês parecer uma queda.
    */
+  // As interações vêm pela SOMA DAS PARTES: `total_interactions` devolve mais
+  // do que a soma (337.700 contra 264.524 em 30 dias de @odanilogato) e o app
+  // do Instagram mostra a soma. Custa quatro chamadas por mês em vez de uma —
+  // e é o número que o time consegue conferir no celular.
   const METRICAS_DO_MENSAL = [
     "reach",
     "views",
-    "total_interactions",
     "follows_and_unfollows",
+    "likes",
+    "comments",
+    "saves",
+    "shares",
   ];
 
   fastify.get("/api/instagram/accounts/:id/mensal", async (request, reply) => {

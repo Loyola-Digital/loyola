@@ -111,6 +111,38 @@ export function janelasMensais(
   return janelas;
 }
 
+/**
+ * Alcance do período, sem contar a mesma pessoa duas vezes.
+ *
+ * `reach_total` é o valor ÚNICO que a Meta calcula para a janela; a série
+ * diária, somada, infla (1.728.838 contra 1.171.564 em 30 dias de
+ * @odanilogato). A soma fica só como reserva, para janela em que a Meta não
+ * devolveu o único.
+ */
+export function alcanceDoPeriodo(insights: EntradaDeInsight[]): number {
+  const unico = insights.find((x) => x.name === "reach_total");
+  if (typeof unico?.total_value?.value === "number") return unico.total_value.value;
+  return total(insights, "reach");
+}
+
+/**
+ * Interações do período: a soma das partes.
+ *
+ * `total_interactions` da Meta devolve MAIS do que a soma de curtidas,
+ * comentários, salvamentos, compartilhamentos e respostas — 337.700 contra
+ * 264.524 nos mesmos 30 dias —, e o app do Instagram mostra a soma (272.857).
+ * Ficamos com o que o time consegue conferir no celular.
+ */
+export function interacoesDoPeriodo(insights: EntradaDeInsight[]): number {
+  return (
+    total(insights, "likes") +
+    total(insights, "comments") +
+    total(insights, "saves") +
+    total(insights, "shares") +
+    total(insights, "replies")
+  );
+}
+
 export function total(insights: EntradaDeInsight[], nome: string): number {
   const e = insights.find((x) => x.name === nome);
   if (typeof e?.total_value?.value === "number") return e.total_value.value;
@@ -179,8 +211,8 @@ export function montarLinha(
   posts: PostDoMes[],
 ): LinhaMensal {
   const { novos, unfollows } = porTipoDeSeguidor(insights);
-  const alcance = total(insights, "reach");
-  const interacoes = total(insights, "total_interactions");
+  const alcance = alcanceDoPeriodo(insights);
+  const interacoes = interacoesDoPeriodo(insights);
 
   return {
     mes,

@@ -28,6 +28,8 @@ const insightsDe = (over: {
   novos?: number;
   unfollows?: number;
   alcanceDiario?: number[];
+  /** Alcance único do período; sem ele, o fixture usa a soma dos dias. */
+  alcanceUnico?: number;
   views?: number;
   interacoes?: number;
 }): EntradaDeInsight[] => [
@@ -50,7 +52,18 @@ const insightsDe = (over: {
     values: (over.alcanceDiario ?? []).map((v, i) => ({ value: v, end_time: `2026-08-0${i + 1}` })),
   },
   { name: "views", total_value: { value: over.views ?? 0 } },
-  { name: "total_interactions", total_value: { value: over.interacoes ?? 0 } },
+  // O alcance do mês é o valor ÚNICO da Meta, não a soma dos dias — somar
+  // conta de novo quem apareceu em mais de um (1,59M contra 1,08M em agosto
+  // de @odanilogato).
+  {
+    name: "reach_total",
+    total_value: {
+      value: over.alcanceUnico ?? (over.alcanceDiario ?? []).reduce((s: number, v: number) => s + v, 0),
+    },
+  },
+  // Interações somam as partes: `total_interactions` devolve mais que a soma,
+  // e o app do Instagram mostra a soma.
+  { name: "likes", total_value: { value: over.interacoes ?? 0 } },
 ];
 
 const post = (id: string, over: Partial<PostDoMes> = {}): PostDoMes => ({
