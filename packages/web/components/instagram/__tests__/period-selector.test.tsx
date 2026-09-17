@@ -9,14 +9,6 @@ import { PeriodSelector, periodToConfig } from "../period-selector";
  * nem lint pegavam. Este teste abre o menu.
  */
 
-// O Radix usa APIs de ponteiro e rolagem que o jsdom não implementa.
-beforeAll(() => {
-  Element.prototype.hasPointerCapture = vi.fn(() => false);
-  Element.prototype.setPointerCapture = vi.fn();
-  Element.prototype.releasePointerCapture = vi.fn();
-  Element.prototype.scrollIntoView = vi.fn();
-});
-
 describe("PeriodSelector", () => {
   it("abre o menu com os meses sem estourar", () => {
     render(

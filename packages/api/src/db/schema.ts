@@ -484,6 +484,10 @@ export const instagramPostMetrics = pgTable(
     followsManual: integer("follows_manual"),
     followsManualBy: uuid("follows_manual_by").references(() => users.id, { onDelete: "set null" }),
     followsManualAt: timestamp("follows_manual_at", { withTimezone: true }),
+    /** Leitura da IA sobre este post (ver `instagram-analise-de-post.ts`). */
+    analise: jsonb("analise"),
+    analiseEm: timestamp("analise_em", { withTimezone: true }),
+    analisePor: uuid("analise_por").references(() => users.id, { onDelete: "set null" }),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

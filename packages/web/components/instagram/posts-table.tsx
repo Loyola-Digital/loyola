@@ -37,6 +37,15 @@ import { format, parseISO } from "date-fns";
 import { useOrganicPostLinks } from "@/lib/hooks/use-organic-posts";
 import { LinkPostToStageModal } from "@/components/funnels/link-post-to-stage-modal";
 import { Dica } from "@/components/instagram/dica";
+import { ModalDoPost } from "@/components/instagram/modal-do-post";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { limitesDoMes, mesesRecentes, rotuloDoMes } from "@/lib/utils/meses-do-instagram";
 import {
   METRICAS_DO_POST,
   NOME_DO_FORMATO,
@@ -187,6 +196,11 @@ export function PostsTable({
   until,
   accountId,
 }: PostsTableProps) {
+  // O mês escolhido AQUI manda na tabela; "periodo" segue o seletor do topo.
+  // Duas fontes de verdade dariam a tela contando duas histórias, então uma
+  // exclui a outra.
+  const [mes, setMes] = useState<string>("periodo");
+  const [aberto, setAberto] = useState<InstagramMedia | null>(null);
   const [ordem, setOrdem] = useState<Ordem>("timestamp");
   const [crescente, setCrescente] = useState(false);
   const [linkModal, setLinkModal] = useState<{ mediaId: string; title: string } | null>(null);
@@ -197,10 +211,14 @@ export function PostsTable({
     linkedCountByMediaId.set(entry.externalId, entry.stageIds.length);
   }
 
-  const posts = useMemo(
-    () => (data && since != null && until != null ? postsNoPeriodo(data, since, until) : data ?? []),
-    [data, since, until],
-  );
+  const posts = useMemo(() => {
+    if (!data) return [];
+    if (mes !== "periodo") {
+      const { since: de, until: ate } = limitesDoMes(mes);
+      return postsNoPeriodo(data, de, ate);
+    }
+    return since != null && until != null ? postsNoPeriodo(data, since, until) : data;
+  }, [data, mes, since, until]);
   const medias = useMemo(() => mediasDoPerfil(posts), [posts]);
 
   function ordenarPor(chave: Ordem) {
@@ -269,6 +287,24 @@ Embaixo de cada número: quanto o post ficou acima (↑) ou abaixo (↓) da méd
             <span className="text-xs text-muted-foreground">({posts.length})</span>
           )}
         </div>
+        <div className="ml-auto mr-2 flex items-center gap-2">
+          <Select value={mes} onValueChange={setMes}>
+            <SelectTrigger className="h-8 w-[150px] text-[12px]" aria-label="Mês dos posts">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="periodo" className="text-[12px]">
+                Período do topo
+              </SelectItem>
+              {mesesRecentes(12).map((m) => (
+                <SelectItem key={m.mes} value={m.mes} className="text-[12px]">
+                  {rotuloDoMes(m.mes)}
+                  {m.parcial ? " (em curso)" : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         {onRefresh && (
           <Button variant="ghost" size="icon" onClick={onRefresh} disabled={isRefreshing}>
             <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
@@ -326,7 +362,12 @@ Embaixo de cada número: quanto o post ficou acima (↑) ou abaixo (↓) da méd
                   const captionPreview = post.caption ?? "—";
                   const formato = formatoDoPost(post);
                   return (
-                    <TableRow key={post.id}>
+                    <TableRow
+                      key={post.id}
+                      onClick={() => setAberto(post)}
+                      className="cursor-pointer"
+                      title="Abrir o post"
+                    >
                       <TableCell>
                         {thumb ? (
                           <div className="relative h-10 w-10 overflow-hidden rounded">
@@ -341,6 +382,7 @@ Embaixo de cada número: quanto o post ficou acima (↑) ou abaixo (↓) da méd
                           <p className="truncate text-sm">{captionPreview}</p>
                           {post.permalink && (
                             <a
+                              onClick={(e) => e.stopPropagation()}
                               href={post.permalink}
                               target="_blank"
                               rel="noreferrer noopener"
@@ -369,9 +411,11 @@ Embaixo de cada número: quanto o post ficou acima (↑) ou abaixo (↓) da méd
                         return (
                           <TableCell key={m.chave} className="whitespace-nowrap">
                             {editavel ? (
-                              <CelulaDeSeguidores post={post} accountId={accountId}>
-                                {fmtValor(m, v)}
-                              </CelulaDeSeguidores>
+                              <span onClick={(e) => e.stopPropagation()} role="presentation">
+                                <CelulaDeSeguidores post={post} accountId={accountId}>
+                                  {fmtValor(m, v)}
+                                </CelulaDeSeguidores>
+                              </span>
                             ) : (
                               <div className="text-sm tabular-nums">{fmtValor(m, v)}</div>
                             )}
@@ -390,15 +434,16 @@ Embaixo de cada número: quanto o post ficou acima (↑) ou abaixo (↓) da méd
                             variant="ghost"
                             size="sm"
                             className="gap-1"
-                            onClick={() =>
+                            onClick={(e) => {
+                              e.stopPropagation();
                               setLinkModal({
                                 mediaId: post.id,
                                 title:
                                   captionPreview.length > 80
                                     ? `${captionPreview.slice(0, 77)}...`
                                     : captionPreview,
-                              })
-                            }
+                              });
+                            }}
                             title="Vincular a uma etapa do funil"
                           >
                             <Link2 className="h-3.5 w-3.5" />
@@ -416,6 +461,14 @@ Embaixo de cada número: quanto o post ficou acima (↑) ou abaixo (↓) da méd
           </div>
         )}
       </CardContent>
+
+      <ModalDoPost
+        post={aberto}
+        accountId={accountId ?? null}
+        medias={medias}
+        aberto={!!aberto}
+        onOpenChange={(v) => { if (!v) setAberto(null); }}
+      />
 
       {projectId && linkModal && (
         <LinkPostToStageModal

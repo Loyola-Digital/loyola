@@ -12,6 +12,13 @@ import {
 } from "../services/instagram-analise-ia.js";
 import { tituloDoPost } from "../services/instagram-mensal.js";
 import { salvarSeguidoresManuais } from "../services/instagram-post-metrics.js";
+import {
+  analisarPostComIa,
+  montarDadosDoPost,
+  type AnaliseDoPost,
+} from "../services/instagram-analise-de-post.js";
+import { instagramPostMetrics } from "../db/schema.js";
+import { desc } from "drizzle-orm";
 
 // ============================================================
 // SCHEMAS
@@ -1094,4 +1101,103 @@ export default fp(async function instagramRoutes(fastify) {
       return { seguidores: body.data.seguidores };
     },
   );
+  // ---- Análise de UM post com IA ----
+  //
+  // Guardada na linha do post: ele não muda depois de publicado, e reanalisar
+  // a cada abertura do modal seria pagar de novo pelo mesmo texto.
+
+  /** O post e os vizinhos que servem de régua (média do perfil). */
+  async function postEReferencia(accountId: string, mediaId: string) {
+    const linhas = await fastify.db
+      .select()
+      .from(instagramPostMetrics)
+      .where(eq(instagramPostMetrics.accountId, accountId))
+      .orderBy(desc(instagramPostMetrics.postedAt))
+      .limit(100);
+    const alvo = linhas.find((l) => l.mediaId === mediaId);
+    return { alvo, referencia: linhas.filter((l) => l.reach != null) };
+  }
+
+  const paramsDoPost = z.object({ id: z.string().uuid(), mediaId: z.string().regex(/^[0-9]{5,32}$/) });
+
+  fastify.get("/api/instagram/accounts/:id/posts/:mediaId/analise", async (request, reply) => {
+    const p = paramsDoPost.safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+    const [linha] = await fastify.db
+      .select({ analise: instagramPostMetrics.analise, em: instagramPostMetrics.analiseEm })
+      .from(instagramPostMetrics)
+      .where(
+        and(
+          eq(instagramPostMetrics.accountId, p.data.id),
+          eq(instagramPostMetrics.mediaId, p.data.mediaId),
+        ),
+      )
+      .limit(1);
+    return {
+      analise: (linha?.analise as AnaliseDoPost | null) ?? null,
+      geradoEm: linha?.em ?? null,
+    };
+  });
+
+  fastify.post("/api/instagram/accounts/:id/posts/:mediaId/analise", async (request, reply) => {
+    const p = paramsDoPost.safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+
+    const chave = process.env.ANTHROPIC_API_KEY;
+    if (!chave) return reply.code(503).send({ error: "IA não configurada no servidor (ANTHROPIC_API_KEY)." });
+
+    const { alvo, referencia } = await postEReferencia(p.data.id, p.data.mediaId);
+    if (!alvo) return reply.code(404).send({ error: "Post não encontrado nesta conta" });
+    if (alvo.reach == null) {
+      // Sem alcance não há o que ler: todas as comparações seriam nulas e a IA
+      // preencheria o vazio com adjetivo.
+      return reply.code(400).send({
+        error: "Este post ainda não tem métricas. Atualize o dashboard e tente de novo.",
+      });
+    }
+
+    const emNumero = (v: string | number | null) => (v == null ? null : Number(v));
+    const paraLeitura = (l: typeof alvo) => ({
+      id: l.mediaId,
+      caption: l.caption,
+      postedAt: l.postedAt,
+      mediaType: l.mediaType,
+      mediaProductType: l.mediaProductType,
+      likeCount: l.likeCount,
+      commentsCount: l.commentsCount,
+      reach: l.reach,
+      views: l.views,
+      saved: l.saved,
+      shares: l.shares,
+      follows: l.follows,
+      followsManual: l.followsManual,
+      skipRate: emNumero(l.skipRate),
+      avgWatchTimeMs: l.avgWatchTimeMs,
+    });
+
+    try {
+      const analise = await analisarPostComIa(
+        chave,
+        montarDadosDoPost(paraLeitura(alvo), referencia.map(paraLeitura)),
+      );
+      const geradoEm = new Date();
+      await fastify.db
+        .update(instagramPostMetrics)
+        .set({ analise, analiseEm: geradoEm, analisePor: request.userId ?? null })
+        .where(
+          and(
+            eq(instagramPostMetrics.accountId, p.data.id),
+            eq(instagramPostMetrics.mediaId, p.data.mediaId),
+          ),
+        );
+      return { analise, geradoEm };
+    } catch (error) {
+      fastify.log.error({ err: error }, "[IG] análise do post falhou");
+      return reply.code(502).send({
+        error: error instanceof Error ? error.message : "A análise falhou.",
+      });
+    }
+  });
 });

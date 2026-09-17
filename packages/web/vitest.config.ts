@@ -65,5 +65,7 @@ export default defineConfig({
      * que faz o teste falar do produto.
      */
     env: { TZ: "America/Sao_Paulo" },
+    // Só remendos do jsdom (ver o arquivo). Em `node` não faz nada.
+    setupFiles: ["./vitest.setup.ts"],
   },
 });

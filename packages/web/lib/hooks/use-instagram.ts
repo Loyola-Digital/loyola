@@ -270,3 +270,42 @@ export function useSalvarSeguidoresDoPost(accountId: string | null) {
     },
   });
 }
+
+// ---- Análise de UM post ---------------------------------------------------
+
+export interface AnaliseDoPost {
+  veredito: "bom" | "mediano" | "ruim";
+  por_que: string;
+  fatores: { nome: string; leitura: string }[];
+  recomendacoes: string[];
+}
+
+/** A análise guardada deste post — não gera nada. */
+export function useAnaliseDoPost(accountId: string | null, mediaId: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["instagram-analise-post", accountId, mediaId],
+    queryFn: () =>
+      apiClient<{ analise: AnaliseDoPost | null; geradoEm: string | null }>(
+        `/api/instagram/accounts/${accountId}/posts/${mediaId}/analise`,
+      ),
+    enabled: !!accountId && !!mediaId,
+    staleTime: 60 * 60 * 1000,
+  });
+}
+
+/** Gera (ou refaz) a análise do post. Fica guardada no banco. */
+export function useGerarAnaliseDoPost(accountId: string | null, mediaId: string | null) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiClient<{ analise: AnaliseDoPost; geradoEm: string }>(
+        `/api/instagram/accounts/${accountId}/posts/${mediaId}/analise`,
+        { method: "POST" },
+      ),
+    onSuccess: (r) => {
+      qc.setQueryData(["instagram-analise-post", accountId, mediaId], r);
+    },
+  });
+}
