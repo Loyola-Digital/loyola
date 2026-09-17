@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { InstagramMedia } from "@/lib/hooks/use-instagram";
 import {
+  alcanceDoPeriodo,
   alcancePorSeguidor,
   cliquesNaBio,
+  interacoesDoPeriodo,
   ganchoDoReels,
   conclusoesDosFormatos,
   conversaoEmSeguidor,
@@ -197,5 +199,45 @@ describe("cliquesNaBio", () => {
 
   it("os dois zerados não quebram", () => {
     expect(cliquesNaBio(0, 0).valor).toBe(0);
+  });
+});
+
+describe("alcanceDoPeriodo", () => {
+  // Números reais de @odanilogato, 30 dias (17/09/2026).
+  const serie = { name: "reach", values: [{ value: 900_000 }, { value: 828_838 }] };
+  const unico = { name: "reach_total", total_value: { value: 1_171_564 } };
+
+  it("usa o valor único, não a soma dos dias", () => {
+    // Somar contaria de novo quem apareceu em mais de um dia: 1,73M contra
+    // 1,17M — 48% de diferença, e o app mostra o único.
+    expect(alcanceDoPeriodo([serie, unico])).toBe(1_171_564);
+  });
+
+  it("sem o único, cai para a soma em vez de mostrar zero", () => {
+    expect(alcanceDoPeriodo([serie])).toBe(1_728_838);
+  });
+
+  it("sem dado nenhum: zero", () => {
+    expect(alcanceDoPeriodo(undefined)).toBe(0);
+  });
+});
+
+describe("interacoesDoPeriodo", () => {
+  const partes = [
+    { name: "likes", total_value: { value: 153_366 } },
+    { name: "comments", total_value: { value: 13_635 } },
+    { name: "saves", total_value: { value: 28_164 } },
+    { name: "shares", total_value: { value: 69_276 } },
+    { name: "replies", total_value: { value: 83 } },
+    // A agregada da Meta devolve mais que a soma — e o app mostra a soma.
+    { name: "total_interactions", total_value: { value: 337_700 } },
+  ];
+
+  it("soma as partes e ignora a agregada da Meta", () => {
+    expect(interacoesDoPeriodo(partes)).toBe(264_524);
+  });
+
+  it("parte ausente conta como zero", () => {
+    expect(interacoesDoPeriodo([{ name: "likes", total_value: { value: 10 } }])).toBe(10);
   });
 });

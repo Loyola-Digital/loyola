@@ -16,7 +16,10 @@ const post = (x: Partial<PostParaAnalise>): PostParaAnalise => ({
 
 const insights = (alcance: number, interacoes: number, views = 0) => [
   { name: "reach", values: [{ value: alcance / 2 }, { value: alcance / 2 }] },
-  { name: "total_interactions", total_value: { value: interacoes } },
+  // Alcance único do período (o que a tela usa) e interações pela soma das
+  // partes — as duas regras conferidas contra o app do Instagram.
+  { name: "reach_total", total_value: { value: alcance } },
+  { name: "likes", total_value: { value: interacoes } },
   { name: "views", total_value: { value: views } },
   {
     name: "reach_follow_type",

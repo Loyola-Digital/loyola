@@ -295,6 +295,50 @@ export function diasDePico(pontos: { reach: number }[], n = 3): Set<number> {
   );
 }
 
+interface EntradaDeInsight {
+  name: string;
+  total_value?: { value?: unknown; breakdowns?: unknown[] };
+  values?: { value: unknown }[];
+}
+
+function somaDaMetrica(entries: EntradaDeInsight[] | undefined, nome: string): number {
+  const e = entries?.find((x) => x.name === nome);
+  if (typeof e?.total_value?.value === "number") return e.total_value.value;
+  return (e?.values ?? []).reduce((s, v) => s + (typeof v.value === "number" ? v.value : 0), 0);
+}
+
+/**
+ * Alcance do período — o valor ÚNICO, não a soma dos dias.
+ *
+ * A série diária diz quantas contas viram EM CADA DIA; somar conta de novo
+ * quem apareceu em mais de um. Medido em @odanilogato (30 dias): 1.728.838
+ * somando contra 1.171.564 de valor único — e é o único que o app mostra.
+ * A soma fica de reserva para janela sem o valor único.
+ */
+export function alcanceDoPeriodo(entries: EntradaDeInsight[] | undefined): number {
+  const e = entries?.find((x) => x.name === "reach_total");
+  if (typeof e?.total_value?.value === "number") return e.total_value.value;
+  return somaDaMetrica(entries, "reach");
+}
+
+/**
+ * Interações do período: a soma das partes.
+ *
+ * `total_interactions` devolve mais que a soma de curtidas, comentários,
+ * salvamentos, compartilhamentos e respostas (337.700 contra 264.524 nos
+ * mesmos 30 dias), e o app mostra a soma (272.857). Fica o número que dá para
+ * conferir no celular.
+ */
+export function interacoesDoPeriodo(entries: EntradaDeInsight[] | undefined): number {
+  return (
+    somaDaMetrica(entries, "likes") +
+    somaDaMetrica(entries, "comments") +
+    somaDaMetrica(entries, "saves") +
+    somaDaMetrica(entries, "shares") +
+    somaDaMetrica(entries, "replies")
+  );
+}
+
 /**
  * Cliques no link da bio.
  *

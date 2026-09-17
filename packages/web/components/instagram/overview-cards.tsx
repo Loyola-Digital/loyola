@@ -9,7 +9,13 @@ import {
 import type { InstagramProfile, InsightEntry } from "@/lib/hooks/use-instagram";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
 import type { MetricFormula } from "@/lib/types/metric-formula";
-import { alcancePorSeguidor, cliquesNaBio, variacao } from "@/lib/utils/instagram-posts";
+import {
+  alcancePorSeguidor,
+  alcanceDoPeriodo,
+  cliquesNaBio,
+  interacoesDoPeriodo,
+  variacao,
+} from "@/lib/utils/instagram-posts";
 import {
   buildFollowersFormula,
   buildFollowersDeltaFormula,
@@ -223,13 +229,19 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
     Minus;
 
   // Core metrics
-  const totalReach = getInsightValue(insights, "reach");
+  //
+  // Alcance é o valor ÚNICO do período (`reach_total`): somar a série diária
+  // conta de novo quem apareceu em mais de um dia — 1.728.838 contra
+  // 1.171.564 em 30 dias de @odanilogato, e o app mostra o único.
+  const totalReach = alcanceDoPeriodo(insights);
   const totalViews = getInsightValue(insights, "views");
-  const totalInteractions = getInsightValue(insights, "total_interactions");
   const totalLikes = getInsightValue(insights, "likes");
   const totalComments = getInsightValue(insights, "comments");
   const totalSaves = getInsightValue(insights, "saves");
   const totalShares = getInsightValue(insights, "shares");
+  // Soma das partes, e não `total_interactions`: a métrica agregada da Meta
+  // devolve mais do que a soma (337.700 contra 264.524) e o app mostra a soma.
+  const totalInteractions = interacoesDoPeriodo(insights);
   const bio = cliquesNaBio(
     getInsightValue(insights, "website_clicks"),
     getInsightValue(insights, "profile_links_taps"),
@@ -243,8 +255,8 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
   // variação — melhor que comparar contra um zero que é só dado faltando.
   const temAnterior = !!previousInsights && previousInsights.length > 0;
   const anterior = (nome: string) => (temAnterior ? getInsightValue(previousInsights, nome) : null);
-  const reachAnterior = anterior("reach");
-  const interacoesAnterior = anterior("total_interactions");
+  const reachAnterior = temAnterior ? alcanceDoPeriodo(previousInsights) : null;
+  const interacoesAnterior = temAnterior ? interacoesDoPeriodo(previousInsights) : null;
   const engajamentoAnterior =
     reachAnterior && interacoesAnterior != null ? (interacoesAnterior / reachAnterior) * 100 : null;
   const deltaDe = (atual: number, nome: string) =>
@@ -320,7 +332,7 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
       border: "border-cyan-500/20",
       show: totalReach > 0,
       formula: period ? buildReachFormula(totalReach, period) : undefined,
-      delta: deltaDe(totalReach, "reach"),
+      delta: temAnterior ? { valor: variacao(totalReach, reachAnterior) } : undefined,
     },
     {
       icon: Eye,
@@ -370,7 +382,7 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
       gradient: "from-pink-500/10 to-pink-600/5",
       border: "border-pink-500/20",
       show: totalInteractions > 0,
-      delta: deltaDe(totalInteractions, "total_interactions"),
+      delta: temAnterior ? { valor: variacao(totalInteractions, interacoesAnterior) } : undefined,
       formula: period
         ? buildInteractionsFormula(totalInteractions, totalLikes, totalComments, period)
         : undefined,

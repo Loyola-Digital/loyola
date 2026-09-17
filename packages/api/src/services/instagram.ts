@@ -725,9 +725,10 @@ export default fp(async function instagramServicePlugin(fastify) {
     // Cache key v3: each metric fetched independently
     // v4: + alcance e views quebrados por seguidor × não seguidor.
     // v5: + website_clicks e profile_views.
+    // v6: alcance único (reach_total) e follower_count como série diária.
     const cacheKey = somente
-      ? `account_insights_v5_${[...somente].sort().join("-")}`.slice(0, 50)
-      : "account_insights_v5";
+      ? `account_insights_v6_${[...somente].sort().join("-")}`.slice(0, 50)
+      : "account_insights_v6";
     const cached = await getCachedMetric(accountId, cacheKey, periodStart, periodEnd);
     if (cached) return cached as InsightEntry[];
 
@@ -743,8 +744,13 @@ export default fp(async function instagramServicePlugin(fastify) {
 
     const querem = (m: string) => !somente || somente.includes(m);
 
-    // 1. Time series metrics (return daily values array) — only "reach" supports this
-    const timeSeriesMetrics = ["reach"].filter(querem);
+    // 1. Séries diárias. Medido em 17/09/2026: das nove métricas testadas, só
+    // estas duas devolvem pontos por dia — `views`, `profile_views`,
+    // `website_clicks`, `total_interactions` e `likes` voltam VAZIAS.
+    //
+    // `follower_count` estava na lista de total_value e por isso o gráfico de
+    // "Novos seguidores" não desenhava nada: sem `values`, não há série.
+    const timeSeriesMetrics = ["reach", "follower_count"].filter(querem);
     await Promise.all(timeSeriesMetrics.map(async (metric) => {
       try {
         const result = await graphFetch<InsightsResponse>(
@@ -777,7 +783,6 @@ export default fp(async function instagramServicePlugin(fastify) {
       "profile_links_taps",
       "website_clicks",
       "profile_views",
-      "follower_count",
     ].filter(querem);
     await Promise.all(totalValueMetrics.map(async (metric) => {
       try {
@@ -795,6 +800,26 @@ export default fp(async function instagramServicePlugin(fastify) {
         fastify.log.warn(`[IG insights] ${metric}: FAILED - ${err instanceof Error ? err.message.substring(0, 80) : String(err)}`);
       }
     }));
+
+    // 2b. Alcance ÚNICO do período.
+    //
+    // A série diária diz quantas contas viram EM CADA DIA; somar os 30 dias
+    // conta de novo quem apareceu em mais de um. Medido em @odanilogato
+    // (30 dias): a soma dá 1.728.838 e o valor único, 1.171.564 — 48% de
+    // diferença, e o app do Instagram mostra o único.
+    //
+    // Nome próprio porque `reach` já existe na lista como série; quem procura
+    // por nome pegaria o primeiro.
+    if (querem("reach")) {
+      try {
+        const r = await graphFetch<InsightsResponse>(
+          `${base}?metric=reach${tsParams}&metric_type=total_value`, token
+        );
+        for (const e of r?.data ?? []) entries.push({ ...e, name: "reach_total" });
+      } catch (err) {
+        fastify.log.warn(`[IG insights] reach total_value: FAILED - ${err instanceof Error ? err.message.substring(0, 80) : String(err)}`);
+      }
+    }
 
     // 3. Alcance e views quebrados por seguidor × não seguidor (só no PERFIL: por
     // post a Meta recusa, "Incompatible breakdowns (follow_type)").

@@ -18,7 +18,13 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import { porTipoDeSeguidor, total, type EntradaDeInsight } from "./instagram-mensal.js";
+import {
+  alcanceDoPeriodo,
+  interacoesDoPeriodo,
+  porTipoDeSeguidor,
+  total,
+  type EntradaDeInsight,
+} from "./instagram-mensal.js";
 
 export interface PostParaAnalise {
   id: string;
@@ -72,8 +78,8 @@ function naoSeguidores(insights: EntradaDeInsight[]): number | null {
 }
 
 function resumoDoPerfil(insights: EntradaDeInsight[]) {
-  const alcance = total(insights, "reach");
-  const inter = total(insights, "total_interactions");
+  const alcance = alcanceDoPeriodo(insights);
+  const inter = interacoesDoPeriodo(insights);
   const { novos, unfollows } = porTipoDeSeguidor(insights);
   return {
     alcance,
