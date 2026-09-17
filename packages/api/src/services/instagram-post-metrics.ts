@@ -21,7 +21,7 @@
  * retenção —, e só deles se paga chamada.
  */
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { instagramPostMetrics } from "../db/schema.js";
 
@@ -228,4 +228,72 @@ export async function salvarSeguidoresManuais(
 // dizer "use o valor novo" sem repetir o objeto inteiro no set.
 function sqlExcluded(coluna: string) {
   return sql.raw(`excluded.${coluna}`);
+}
+
+/**
+ * A lista de posts montada a partir do banco.
+ *
+ * Usada quando a Meta recusa por cota: a tabela guarda legenda, permalink,
+ * formato, data e todas as métricas da última leitura. O que não sobrevive é a
+ * thumbnail — a URL da Meta expira em horas —, então a tela mostra o quadrado
+ * cinza no lugar da imagem e o resto funciona.
+ */
+export async function postsDoBanco(
+  db: Database,
+  accountId: string,
+  limite: number,
+): Promise<
+  {
+    id: string;
+    caption?: string;
+    media_type: string;
+    media_product_type?: string;
+    permalink?: string;
+    timestamp: string;
+    like_count?: number;
+    comments_count?: number;
+    reach: number | null;
+    views: number | null;
+    saved: number | null;
+    shares: number | null;
+    follows: number | null;
+    skip_rate: number | null;
+    avg_watch_time_ms: number | null;
+    engagement_rate: number | null;
+    follows_fonte: "meta" | "manual" | null;
+  }[]
+> {
+  const linhas = await db
+    .select()
+    .from(instagramPostMetrics)
+    .where(eq(instagramPostMetrics.accountId, accountId))
+    .orderBy(desc(instagramPostMetrics.postedAt))
+    .limit(limite);
+
+  return linhas.map((l) => {
+    const follows = l.follows ?? l.followsManual ?? null;
+    const inter =
+      (l.likeCount ?? 0) + (l.commentsCount ?? 0) + (l.saved ?? 0) + (l.shares ?? 0);
+    return {
+      id: l.mediaId,
+      caption: l.caption ?? undefined,
+      // O tipo é obrigatório na lista; sem ele no banco, IMAGE é o palpite
+       // seguro (vira "Estático" na tela, não Reels).
+      media_type: l.mediaType ?? "IMAGE",
+      media_product_type: l.mediaProductType ?? undefined,
+      permalink: l.permalink ?? undefined,
+      timestamp: l.postedAt.toISOString(),
+      like_count: l.likeCount ?? undefined,
+      comments_count: l.commentsCount ?? undefined,
+      reach: l.reach,
+      views: l.views,
+      saved: l.saved,
+      shares: l.shares,
+      follows,
+      skip_rate: l.skipRate == null ? null : Number(l.skipRate),
+      avg_watch_time_ms: l.avgWatchTimeMs,
+      engagement_rate: l.reach && l.reach > 0 ? (inter / l.reach) * 100 : null,
+      follows_fonte: l.follows != null ? "meta" : l.followsManual != null ? "manual" : null,
+    };
+  });
 }

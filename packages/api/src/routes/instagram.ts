@@ -38,6 +38,7 @@ const linkProjectSchema = z.object({
 });
 
 import {
+  type EntradaDeInsight,
   comVariacao,
   janelasMensais,
   montarLinha,
@@ -459,26 +460,35 @@ export default fp(async function instagramRoutes(fastify) {
     const janelas = janelasMensais(quantos, new Date());
 
     try {
-      const [perfil, midia, ...porJanela] = await Promise.all([
+      const [perfil, midia] = await Promise.all([
         fastify.instagramService.getProfile(paramResult.data.id),
         // 100 posts cobrem seis meses com folga em qualquer perfil do time.
         fastify.instagramService.getMediaList(paramResult.data.id, 100),
-        ...janelas.map((j) =>
-          fastify.instagramService
-            .getAccountInsights(
-              paramResult.data.id,
-              "day",
-              Math.floor(j.inicio.getTime() / 1000),
-              Math.floor(j.fim.getTime() / 1000),
-              // Só o que a tabela mensal usa. Pedir as treze métricas fazia
-              // seis meses custarem 78 chamadas das 200 que a Meta dá por hora.
-              METRICAS_DO_MENSAL,
-            )
-            // Um mês que a API recusa não pode derrubar os outros cinco: vira
-            // linha zerada, que a tela mostra como "sem dado".
-            .catch(() => []),
-        ),
       ]);
+
+      // Os meses vão UM DE CADA VEZ.
+      //
+      // Em paralelo, doze meses viravam ~84 chamadas simultâneas — rajada que
+      // estoura a cota da Meta (200/hora) de uma vez e derruba a tela inteira
+      // com 429. Em sequência demora mais na primeira vez e cada mês fechado
+      // fica guardado para sempre, então a segunda abertura não custa nada.
+      const porJanela: EntradaDeInsight[][] = [];
+      for (const j of janelas) {
+        const r = await fastify.instagramService
+          .getAccountInsights(
+            paramResult.data.id,
+            "day",
+            Math.floor(j.inicio.getTime() / 1000),
+            Math.floor(j.fim.getTime() / 1000),
+            // Só o que a tabela mensal usa. Pedir as treze métricas fazia
+            // seis meses custarem 78 chamadas das 200 que a Meta dá por hora.
+            METRICAS_DO_MENSAL,
+          )
+          // Um mês que a API recusa não pode derrubar os outros: vira linha
+          // zerada, que a tela mostra como "sem dado".
+          .catch(() => [] as EntradaDeInsight[]);
+        porJanela.push(r as EntradaDeInsight[]);
+      }
 
       const linhas = janelas.map((j, i) => {
         const doMes = (midia?.data ?? []).filter((m) => {

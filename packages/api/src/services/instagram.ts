@@ -3,6 +3,7 @@ import { eq, and, gt } from "drizzle-orm";
 import { instagramAccounts, instagramMetricsCache } from "../db/schema.js";
 import {
   lerMetricas,
+  postsDoBanco,
   ordemDeBusca,
   precisaBuscarInsights,
   salvarMetricas,
@@ -32,6 +33,12 @@ const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
 /** Cache TTL in minutes per metric type */
 const CACHE_TTL: Record<string, number> = {
+  /**
+   * Janela que já terminou não muda mais: guardar por 5 anos é dizer "nunca
+   * mais pergunte". Era o maior consumidor da cota — seis meses da tabela
+   * mensal viravam dezenas de chamadas a cada troca de versão do cache.
+   */
+  janela_fechada: 60 * 24 * 365 * 5,
   profile: 5,
   post_insights: 15,
   account_insights: 30,
@@ -369,6 +376,32 @@ export default fp(async function instagramServicePlugin(fastify) {
     return rows.length > 0 ? rows[0].metricData : null;
   }
 
+  /**
+   * O cache mesmo VENCIDO.
+   *
+   * Quando a cota da Meta acaba, dado velho é melhor que erro: a tela abre com
+   * os números de ontem em vez de 429. Só é usado nesse caso.
+   */
+  async function lerCacheVencido(
+    accountId: string,
+    metricType: string,
+    periodStart?: string,
+    periodEnd?: string,
+  ): Promise<unknown | null> {
+    const conditions = [
+      eq(instagramMetricsCache.accountId, accountId),
+      eq(instagramMetricsCache.metricType, metricType),
+    ];
+    if (periodStart) conditions.push(eq(instagramMetricsCache.periodStart, periodStart));
+    if (periodEnd) conditions.push(eq(instagramMetricsCache.periodEnd, periodEnd));
+    const rows = await fastify.db
+      .select({ metricData: instagramMetricsCache.metricData })
+      .from(instagramMetricsCache)
+      .where(and(...conditions))
+      .limit(1);
+    return rows.length > 0 ? rows[0].metricData : null;
+  }
+
   async function setCachedMetric(
     accountId: string,
     metricType: string,
@@ -497,7 +530,22 @@ export default fp(async function instagramServicePlugin(fastify) {
     let path = `/${igUserId}/media?fields=id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count&limit=${limit}`;
     if (after) path += `&after=${after}`;
 
-    const result = await graphFetch<MediaListResponse>(path, token);
+    let result: MediaListResponse;
+    try {
+      result = await graphFetch<MediaListResponse>(path, token);
+    } catch (err) {
+      // Sem cota para nem listar: o banco tem os posts da última leitura, com
+      // legenda, permalink e métricas. Sem thumbnail (a URL da Meta expira), mas
+      // a tela abre com os números certos em vez de 429.
+      if (err instanceof InstagramApiError && err.statusCode === 429) {
+        const doBanco = await postsDoBanco(fastify.db, accountId, limit);
+        if (doBanco.length > 0) {
+          fastify.log.warn("[IG] cota esgotada — lista de posts servida do banco");
+          return { data: doBanco };
+        }
+      }
+      throw err;
+    }
     const posts = result.data ?? [];
     const guardadas = await lerMetricas(fastify.db, accountId, posts.map((p) => p.id));
 
@@ -741,6 +789,11 @@ export default fp(async function instagramServicePlugin(fastify) {
     const tsParams = `&period=${period}&since=${since}&until=${until}`;
 
     const entries: InsightEntry[] = [];
+    /** Vira true assim que a Meta (ou o nosso limitador) recusa por cota. */
+    let semCota = false;
+    const marcarCota = (err: unknown) => {
+      if (err instanceof InstagramApiError && err.statusCode === 429) semCota = true;
+    };
 
     const querem = (m: string) => !somente || somente.includes(m);
 
@@ -761,6 +814,7 @@ export default fp(async function instagramServicePlugin(fastify) {
           fastify.log.info(`[IG insights] ${metric}: OK time_series (${result.data[0]?.values?.length ?? 0} values)`);
         }
       } catch (err) {
+        marcarCota(err);
         fastify.log.warn(`[IG insights] ${metric} time_series: FAILED - ${err instanceof Error ? err.message.substring(0, 80) : String(err)}`);
       }
     }));
@@ -797,6 +851,7 @@ export default fp(async function instagramServicePlugin(fastify) {
           fastify.log.info(`[IG insights] ${metric}: OK (total_value)`);
         }
       } catch (err) {
+        marcarCota(err);
         fastify.log.warn(`[IG insights] ${metric}: FAILED - ${err instanceof Error ? err.message.substring(0, 80) : String(err)}`);
       }
     }));
@@ -817,6 +872,7 @@ export default fp(async function instagramServicePlugin(fastify) {
         );
         for (const e of r?.data ?? []) entries.push({ ...e, name: "reach_total" });
       } catch (err) {
+        marcarCota(err);
         fastify.log.warn(`[IG insights] reach total_value: FAILED - ${err instanceof Error ? err.message.substring(0, 80) : String(err)}`);
       }
     }
@@ -835,11 +891,28 @@ export default fp(async function instagramServicePlugin(fastify) {
         );
         for (const e of result?.data ?? []) entries.push({ ...e, name: `${metric}_follow_type` });
       } catch (err) {
+        marcarCota(err);
         fastify.log.warn(`[IG insights] ${metric} follow_type: FAILED - ${err instanceof Error ? err.message.substring(0, 80) : String(err)}`);
       }
     }));
 
     fastify.log.info("[IG insights] returned metrics: " + (entries.map((e) => e.name).join(", ") || "(none)"));
+
+    // Cota estourada no meio da coleta: completa com o que já foi guardado
+    // antes (mesmo vencido) em vez de devolver meia tela. Sem isto, uma troca
+    // de versão do cache derruba o dashboard inteiro até a hora virar.
+    if (semCota) {
+      const velho = (await lerCacheVencido(accountId, cacheKey, periodStart, periodEnd)) as
+        | InsightEntry[]
+        | null;
+      if (velho?.length) {
+        const nomes = new Set(entries.map((e) => e.name));
+        for (const e of velho) if (!nomes.has(e.name)) entries.push(e);
+        fastify.log.warn("[IG insights] cota esgotada — completado com o cache anterior");
+      }
+      // Não grava: a resposta está incompleta e viraria o novo "verdadeiro".
+      return entries;
+    }
 
     // Janela que já fechou (terminou há mais de 2 dias) não muda mais: o
     // comparativo mensal pede seis dessas por abertura, e rebuscá-las a cada 30
@@ -849,7 +922,7 @@ export default fp(async function instagramServicePlugin(fastify) {
       accountId,
       cacheKey,
       entries,
-      fechada ? 60 * 24 * 30 : CACHE_TTL.account_insights,
+      fechada ? CACHE_TTL.janela_fechada : CACHE_TTL.account_insights,
       periodStart,
       periodEnd,
     );
