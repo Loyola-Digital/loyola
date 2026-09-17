@@ -295,6 +295,26 @@ export function diasDePico(pontos: { reach: number }[], n = 3): Set<number> {
   );
 }
 
+/**
+ * Cliques no link da bio.
+ *
+ * A Meta tem duas métricas para isso e elas discordam: medido em
+ * @odanilogato (17/09/2026), `profile_links_taps` deu 3 em 30 dias e
+ * `website_clicks`, 2.196 no mesmo período. O nome novo existe mas vem
+ * zerado em conta que usa link direto na bio.
+ *
+ * Fica com a que tem número, e diz qual usou — um "3" onde houve 2.196 é pior
+ * que não mostrar nada.
+ */
+export function cliquesNaBio(
+  websiteClicks: number,
+  profileLinksTaps: number,
+): { valor: number; fonte: "website_clicks" | "profile_links_taps" } {
+  return websiteClicks >= profileLinksTaps
+    ? { valor: websiteClicks, fonte: "website_clicks" }
+    : { valor: profileLinksTaps, fonte: "profile_links_taps" };
+}
+
 /** Variação % sobre o período anterior. Base zero ou ausente → null, nunca +100%. */
 export function variacao(atual: number, anterior: number | null | undefined): number | null {
   if (anterior == null || anterior === 0) return null;

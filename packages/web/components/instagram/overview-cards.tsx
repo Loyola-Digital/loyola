@@ -9,7 +9,7 @@ import {
 import type { InstagramProfile, InsightEntry } from "@/lib/hooks/use-instagram";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
 import type { MetricFormula } from "@/lib/types/metric-formula";
-import { alcancePorSeguidor, variacao } from "@/lib/utils/instagram-posts";
+import { alcancePorSeguidor, cliquesNaBio, variacao } from "@/lib/utils/instagram-posts";
 import {
   buildFollowersFormula,
   buildFollowersDeltaFormula,
@@ -21,6 +21,7 @@ import {
   buildSavesFormula,
   buildSharesFormula,
   buildBioClicksFormula,
+  buildProfileViewsFormula,
   type InstagramPeriod,
 } from "@/lib/formulas/instagram";
 
@@ -229,7 +230,12 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
   const totalComments = getInsightValue(insights, "comments");
   const totalSaves = getInsightValue(insights, "saves");
   const totalShares = getInsightValue(insights, "shares");
-  const bioClicks = getInsightValue(insights, "profile_links_taps");
+  const bio = cliquesNaBio(
+    getInsightValue(insights, "website_clicks"),
+    getInsightValue(insights, "profile_links_taps"),
+  );
+  const bioClicks = bio.valor;
+  const visitasAoPerfil = getInsightValue(insights, "profile_views");
 
   const engagementRate = totalReach > 0 ? (totalInteractions / totalReach) * 100 : 0;
 
@@ -405,13 +411,35 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
       delta: deltaDe(totalShares, "shares"),
     },
     {
+      icon: Users,
+      label: "Visitas ao perfil",
+      value: fmtNumber(visitasAoPerfil),
+      sub: "abriram o perfil no período",
+      gradient: "from-violet-500/10 to-violet-600/5",
+      border: "border-violet-500/20",
+      show: visitasAoPerfil > 0,
+      delta: deltaDe(visitasAoPerfil, "profile_views"),
+      formula: period ? buildProfileViewsFormula(visitasAoPerfil, period) : undefined,
+    },
+    {
       icon: Link2,
       label: "Cliques na Bio",
       value: fmtNumber(bioClicks),
       gradient: "from-orange-500/10 to-orange-600/5",
       border: "border-orange-500/20",
       show: bioClicks > 0,
-      formula: period ? buildBioClicksFormula(bioClicks, period) : undefined,
+      delta: temAnterior
+        ? {
+            valor: variacao(
+              bioClicks,
+              cliquesNaBio(
+                anterior("website_clicks") ?? 0,
+                anterior("profile_links_taps") ?? 0,
+              ).valor,
+            ),
+          }
+        : undefined,
+      formula: period ? buildBioClicksFormula(bioClicks, period, bio.fonte) : undefined,
     },
   ].filter((c) => c.show);
 

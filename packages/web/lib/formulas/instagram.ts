@@ -235,18 +235,43 @@ export function buildSharesFormula(
 export function buildBioClicksFormula(
   bioClicks: number,
   period: InstagramPeriod,
+  fonte: "website_clicks" | "profile_links_taps" = "website_clicks",
 ): MetricFormula {
   return {
-    expression: "Σ profile_links_taps",
+    expression: `Σ ${fonte}`,
     values: [
       {
         label: "Cliques no link da bio",
         value: bioClicks,
-        source: "Instagram Graph API · profile_links_taps",
+        source: `Instagram Graph API · ${fonte}`,
       },
     ],
     result: nf.format(bioClicks),
     period: formatPeriod(period),
+    note:
+      fonte === "website_clicks"
+        ? "A Meta tem duas métricas para isto e elas discordam: em @odanilogato, `profile_links_taps` deu 3 em 30 dias e `website_clicks`, 2.196. Vale a que tem número."
+        : "Esta conta não reporta `website_clicks`; o número vem de `profile_links_taps`.",
+  };
+}
+
+/** Visitas ao perfil no período (Σ profile_views). */
+export function buildProfileViewsFormula(
+  visitas: number,
+  period: InstagramPeriod,
+): MetricFormula {
+  return {
+    expression: "Σ profile_views",
+    values: [
+      {
+        label: "Visitas ao perfil",
+        value: visitas,
+        source: "Instagram Graph API · profile_views",
+      },
+    ],
+    result: nf.format(visitas),
+    period: formatPeriod(period),
+    note: "Quantas vezes alguém abriu o perfil. É o passo entre ver o conteúdo e clicar no link da bio.",
   };
 }
 
