@@ -82,6 +82,13 @@ function resumoDoPerfil(insights: EntradaDeInsight[]) {
     engajamento_pct: alcance > 0 ? r1((inter / alcance) * 100) : null,
     salvamentos: total(insights, "saves"),
     compartilhamentos: total(insights, "shares"),
+    visitas_ao_perfil: total(insights, "profile_views"),
+    // `website_clicks` e `profile_links_taps` discordam (3 vs 2.196 em
+    // @odanilogato); vale a que tem número, igual à tela.
+    cliques_no_link_da_bio: Math.max(
+      total(insights, "website_clicks"),
+      total(insights, "profile_links_taps"),
+    ),
     novos_seguidores: novos,
     unfollows,
     saldo_seguidores: novos - unfollows,

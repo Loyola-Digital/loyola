@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { InstagramMedia } from "@/lib/hooks/use-instagram";
 import {
   alcancePorSeguidor,
+  cliquesNaBio,
   ganchoDoReels,
   conclusoesDosFormatos,
   conversaoEmSeguidor,
@@ -181,5 +182,20 @@ describe("alcancePorSeguidor", () => {
 
   it("sem dado: null", () => {
     expect(alcancePorSeguidor(undefined)).toBeNull();
+  });
+});
+
+describe("cliquesNaBio", () => {
+  it("fica com a métrica que tem número", () => {
+    // Medido em @odanilogato (30 dias): 3 contra 2.196.
+    expect(cliquesNaBio(2196, 3)).toEqual({ valor: 2196, fonte: "website_clicks" });
+  });
+
+  it("conta que só reporta o nome novo usa o nome novo", () => {
+    expect(cliquesNaBio(0, 540)).toEqual({ valor: 540, fonte: "profile_links_taps" });
+  });
+
+  it("os dois zerados não quebram", () => {
+    expect(cliquesNaBio(0, 0).valor).toBe(0);
   });
 });

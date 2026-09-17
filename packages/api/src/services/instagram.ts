@@ -724,9 +724,10 @@ export default fp(async function instagramServicePlugin(fastify) {
 
     // Cache key v3: each metric fetched independently
     // v4: + alcance e views quebrados por seguidor × não seguidor.
+    // v5: + website_clicks e profile_views.
     const cacheKey = somente
-      ? `account_insights_v4_${[...somente].sort().join("-")}`.slice(0, 50)
-      : "account_insights_v4";
+      ? `account_insights_v5_${[...somente].sort().join("-")}`.slice(0, 50)
+      : "account_insights_v5";
     const cached = await getCachedMetric(accountId, cacheKey, periodStart, periodEnd);
     if (cached) return cached as InsightEntry[];
 
@@ -769,7 +770,13 @@ export default fp(async function instagramServicePlugin(fastify) {
       "saves",
       "shares",
       "replies",
+      // `profile_links_taps` é o nome novo e, medido em @odanilogato
+      // (17/09/2026), vem praticamente zerado: 3 em 30 dias contra 2.196 de
+      // `website_clicks` no mesmo período. Os dois vão; a tela usa o que tem
+      // número (ver `cliquesNaBio` no web).
       "profile_links_taps",
+      "website_clicks",
+      "profile_views",
       "follower_count",
     ].filter(querem);
     await Promise.all(totalValueMetrics.map(async (metric) => {
