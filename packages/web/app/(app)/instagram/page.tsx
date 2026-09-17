@@ -24,7 +24,7 @@ import {
   type PeriodConfig,
 } from "@/components/instagram/period-selector";
 import { OverviewCards } from "@/components/instagram/overview-cards";
-import { ReachChart } from "@/components/instagram/reach-chart";
+import { GraficoDoPerfil } from "@/components/instagram/grafico-do-perfil";
 import { PostsTable } from "@/components/instagram/posts-table";
 import { PerformancePorFormato } from "@/components/instagram/performance-por-formato";
 import { AnaliseComIaDoPeriodo } from "@/components/instagram/analise-com-ia";
@@ -173,13 +173,14 @@ export default function InstagramDashboardPage() {
       <ComparativoDeMeses accountId={selectedAccountId} />
 
       {/* Reach & Impressions chart */}
-      <ReachChart
+      <GraficoDoPerfil
         data={insights?.data}
         isLoading={insightsLoading}
         error={insightsError as Error | null}
         onRefresh={handleRefreshAll}
         isRefreshing={refresh.isPending}
         posts={media?.data}
+        accountId={selectedAccountId}
       />
 
       {/* Top Posts por Seguidores — apenas FEED (Meta não expõe pra Reels) */}
