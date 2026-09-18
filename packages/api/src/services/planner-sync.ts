@@ -44,6 +44,45 @@ import {
  */
 export { chaveDoNome };
 
+/**
+ * Fases "manuais" que na verdade são o mesmo evento que o Google está trazendo.
+ *
+ * ## O defeito que isto fecha
+ *
+ * A importação preserva toda fase SEM `googleEventId` (é do Planner) e soma
+ * os eventos do Google por cima. Se uma fase perde o vínculo — criada aqui e o
+ * id do evento não voltou, ou gravada de uma tela que não o tinha —, o evento
+ * dela volta como fase NOVA e o card aparece duas vezes. Medido na BBEPR2
+ * (18/09/2026): 4 fases duplicadas, o Google com os 6 eventos certos.
+ *
+ * Qualquer caminho que perca o vínculo acaba aqui, então é aqui que se fecha.
+ *
+ * ## Como reconhece
+ *
+ * 1. Pelo id: fase importada nasce com id `g` + começo do id do evento. Se
+ *    ele bate, é o mesmo evento, mesmo com nome ou data mexidos.
+ * 2. Por nome + início: fase criada aqui, cujo evento o Google criou mas o
+ *    id se perdeu. Nome normalizado para "Prod. Captação" e "prod captacao"
+ *    serem a mesma coisa.
+ *
+ * O Google fica com a versão dele: é o que o time vê na agenda e disse estar
+ * certo. A órfã é a cópia que não chegou lá.
+ */
+export function semOrfas(
+  preservadas: FaseDoPlanner[],
+  doGoogle: FaseDoPlanner[],
+): FaseDoPlanner[] {
+  const idsDoGoogle = new Set(doGoogle.map((f) => f.id));
+  const nomeEInicio = new Set(doGoogle.map((f) => `${chaveDoNome(f.name)}|${f.start}`));
+  return preservadas.filter((f) => {
+    // Pendente tem o vínculo e a versão boa: nunca é órfã.
+    if (f.googleEventId) return true;
+    if (idsDoGoogle.has(f.id)) return false;
+    if (f.start && nomeEInicio.has(`${chaveDoNome(f.name)}|${f.start}`)) return false;
+    return true;
+  });
+}
+
 export interface ResultadoDaImportacao {
   lidos: number;
   ignoradosPorTerHora: number;
@@ -152,8 +191,11 @@ export async function importarDaAgenda(
     const fases = atual.phases as FaseDoPlanner[];
 
     // Ver o cabeçalho: manuais e pendentes ficam; o resto o Google manda.
-    const preservadas = fases.filter(
-      (f) => !f.googleEventId || f.googleSyncPendente,
+    // `semOrfas` tira a fase que perdeu o vínculo mas é o MESMO evento que o
+    // Google está devolvendo — sem isso, ela e o evento viravam dois cards.
+    const preservadas = semOrfas(
+      fases.filter((f) => !f.googleEventId || f.googleSyncPendente),
+      fasesDoGoogle,
     );
     const pendentes = new Set(
       fases
