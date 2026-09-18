@@ -121,15 +121,17 @@ const fmtInt = fmtIntCompartilhado;
  * Quantos dos leads pagos vieram do pixel da Meta — a LP sem formulário (LPB
  * do FZM3), que não manda lead para a planilha. O número da célula já inclui.
  */
-function SeloDoPixel({ n }: { n?: number }) {
+function SeloDoPixel({ n, de }: { n?: number; de: number }) {
   if (!n) return null;
+  // Embaixo do número, com "dos quais": ao lado ("11 pixel20") ele era lido
+  // como uma parcela a SOMAR — e o total já inclui o pixel.
   return (
-    <span
-      title={`Inclui ${n} lead(s) do pixel da Meta: campanhas de LP sem formulário, que não chegam na planilha`}
-      className="mr-1.5 cursor-help rounded bg-blue-500/10 px-1 py-0.5 text-[10px] font-medium text-blue-500"
+    <div
+      title={`Dos ${de} leads pagos, ${n} vieram do pixel da Meta (campanhas de LP sem formulário, que não chegam na planilha). O ${de} já inclui esses ${n}.`}
+      className="cursor-help text-[10px] font-medium leading-tight text-blue-500"
     >
-      {n} pixel
-    </span>
+      dos quais {n} pixel
+    </div>
   );
 }
 
@@ -896,8 +898,8 @@ export function CrossedFunnelDailyTable({
                       {renderConnectRate(r.connectRate)}
                     </TableCell>
                     <TableCell className="text-right">
-                      {!isPaidCapture && <SeloDoPixel n={r.leadsPixel} />}
                       {ing ? fmtInt(ing.pago) : "—"}
+                      {!isPaidCapture && <SeloDoPixel n={r.leadsPixel} de={r.leadsPagos} />}
                     </TableCell>
                     <TableCell className="text-right">
                       {ing ? fmtInt(ing.org) : "—"}
@@ -1004,8 +1006,8 @@ export function CrossedFunnelDailyTable({
                       : "—"
                     : (
                       <>
-                        <SeloDoPixel n={totals.leadsPixel} />
                         {fmtInt(totals.leadsPagos)}
+                        <SeloDoPixel n={totals.leadsPixel} de={totals.leadsPagos} />
                       </>
                     )}
                 </TableCell>
