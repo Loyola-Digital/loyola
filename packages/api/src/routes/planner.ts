@@ -153,9 +153,11 @@ export default fp(async function plannerRoutes(fastify) {
     // Campanha nova nasce ja na agenda, quando ha uma escolhida: criar aqui e
     // ter de lembrar de espelhar depois seria o passo que todo mundo esquece.
     const agendaNova = b.data.googleCalendarId ?? null;
-    // O retorno não é lido: a criação já grava o que precisa e o erro sobe por
-    // exceção. Ler numa variável só para descartá-la é o que o lint pega.
-    await espelharNoGoogle({
+    // Os ids que o Google devolveu PRECISAM ir para o banco. Antes o retorno
+    // era descartado: os eventos nasciam na agenda, as fases ficavam sem
+    // vínculo, e a importação seguinte os trazia de volta como fases novas —
+    // cada campanha criada já ligada a uma agenda nascia com cards em dobro.
+    const { fases: comVinculo, aviso } = await espelharNoGoogle({
       agenda: agendaNova,
       nomeAntes: b.data.name,
       nomeDepois: b.data.name,
@@ -171,12 +173,12 @@ export default fp(async function plannerRoutes(fastify) {
         projectId: b.data.projectId ?? null,
         googleCalendarId: agendaNova,
         sortOrder: total ?? 0,
-        phases: fases,
+        phases: comVinculo ?? fases,
         createdBy: request.userId ?? null,
       })
       .returning();
 
-    return reply.code(201).send(criada);
+    return reply.code(201).send(aviso ? { ...criada, avisoGoogle: aviso } : criada);
   });
 
   // ---- PUT /:id — atualiza (a campanha inteira é a unidade) ----
@@ -414,7 +416,16 @@ export default fp(async function plannerRoutes(fastify) {
 
     // Fases ganham id novo: manter os antigos faria a seleção na tela apontar
     // para duas barras ao mesmo tempo.
-    const fases = origem.phases.map((f, i) => ({ ...f, id: novoId(i) }));
+    //
+    // E perdem o vínculo com o Google: a cópia apontando para os eventos da
+    // ORIGINAL faria editar a cópia mover a agenda da original, e excluir a
+    // cópia apagar os eventos dela.
+    const fases = origem.phases.map((f, i) => {
+      const copia = { ...f, id: novoId(i) };
+      delete copia.googleEventId;
+      delete copia.googleSyncPendente;
+      return copia;
+    });
 
     const [copia] = await fastify.db
       .insert(plannerCampaigns)

@@ -268,3 +268,32 @@ export function campanhaConcluida(c: Campanha, hoje = hojeIso()): boolean {
   if (datadas.length === 0) return false;
   return datadas.every((f) => faseTerminou(f, hoje));
 }
+
+/**
+ * Devolve à lista editada as fases que estavam ESCONDIDAS da tela.
+ *
+ * ## O defeito que isto fecha
+ *
+ * Com "esconder o que já terminou" ligado (o padrão), os cards recebem a
+ * campanha sem as fases passadas — e salvavam a partir dessa lista. Renomear,
+ * mudar data, reordenar ou adicionar uma fase gravava a campanha SEM as
+ * terminadas: o servidor entendia que tinham sido excluídas e apagava os
+ * eventos delas no Google.
+ *
+ * Esconder é coisa da tela; o que vai para o banco é sempre a campanha
+ * inteira. Cada escondida volta na posição em que estava.
+ *
+ * Fase VISÍVEL que sumiu da lista foi excluída de propósito e não volta.
+ */
+export function restaurarOcultas(
+  editadas: Fase[],
+  todas: Fase[],
+  oculta: (f: Fase) => boolean,
+): Fase[] {
+  const ids = new Set(editadas.map((f) => f.id));
+  const out = [...editadas];
+  todas.forEach((f, i) => {
+    if (oculta(f) && !ids.has(f.id)) out.splice(Math.min(i, out.length), 0, f);
+  });
+  return out;
+}

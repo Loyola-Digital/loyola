@@ -69,6 +69,7 @@ import {
   campanhaConcluida,
   cruzaMes,
   faseTerminou,
+  restaurarOcultas,
   periodo,
   mesesDoPeriodo,
   normalizar,
@@ -283,15 +284,27 @@ export default function PlannerPage() {
 
   const mudarCampanha = useCallback(
     (campanha: Campanha, dados: { name?: string; color?: string; phases?: Fase[] }) => {
-      anotar({ tipo: "editou", campanha });
+      // Os cards recebem a campanha SEM as fases que já terminaram (quando
+      // "esconder o que já terminou" está ligado). Gravar a partir dela apagava
+      // as terminadas — e os eventos delas no Google. Esconder é da tela; o
+      // banco recebe sempre a campanha inteira.
+      const inteira = campanhas.find((c) => c.id === campanha.id) ?? campanha;
+      const fases = dados.phases
+        ? restaurarOcultas(
+            dados.phases,
+            inteira.phases,
+            esconderPassado ? (f) => faseTerminou(f) : () => false,
+          )
+        : undefined;
+      anotar({ tipo: "editou", campanha: inteira });
       atualizar.mutate({
         id: campanha.id,
         // Normaliza aqui também: o servidor faria de qualquer jeito, mas o
         // otimista precisa mostrar o valor CORRIGIDO, não o digitado.
-        dados: dados.phases ? { ...dados, phases: dados.phases.map(normalizar) } : dados,
+        dados: fases ? { ...dados, phases: fases.map(normalizar) } : dados,
       });
     },
-    [anotar, atualizar],
+    [anotar, atualizar, campanhas, esconderPassado],
   );
 
   /**
@@ -302,9 +315,12 @@ export default function PlannerPage() {
    */
   const excluirFase = useCallback(
     (campanha: Campanha, faseId: string) => {
-      const fase = campanha.phases.find((f) => f.id === faseId);
+      // A campanha inteira, não a que o card recebeu (sem as terminadas): o
+      // "desfazer" abaixo precisa recolocar a fase no lugar dela de verdade.
+      const inteira = campanhas.find((c) => c.id === campanha.id) ?? campanha;
+      const fase = inteira.phases.find((f) => f.id === faseId);
       if (!fase) return;
-      mudarCampanha(campanha, { phases: campanha.phases.filter((f) => f.id !== faseId) });
+      mudarCampanha(inteira, { phases: inteira.phases.filter((f) => f.id !== faseId) });
       toast.success(`Fase "${fase.name}" excluída`, {
         duration: 20_000,
         action: {
@@ -312,15 +328,15 @@ export default function PlannerPage() {
           onClick: () => {
             // Volta na POSIÇÃO original, não no fim: a ordem das fases é o
             // roteiro do lançamento, e recolocá-la no fim mudaria o plano.
-            const indice = campanha.phases.findIndex((f) => f.id === faseId);
-            const novas = [...campanha.phases.filter((f) => f.id !== faseId)];
+            const indice = inteira.phases.findIndex((f) => f.id === faseId);
+            const novas = [...inteira.phases.filter((f) => f.id !== faseId)];
             novas.splice(indice, 0, fase);
-            mudarCampanha(campanha, { phases: novas });
+            mudarCampanha(inteira, { phases: novas });
           },
         },
       });
     },
-    [mudarCampanha],
+    [mudarCampanha, campanhas],
   );
 
   const mudarFase = useCallback(
