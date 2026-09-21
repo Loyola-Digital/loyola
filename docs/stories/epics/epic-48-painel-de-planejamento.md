@@ -71,7 +71,7 @@ Respondidas nesta ordem, uma a uma. "Reproduz" = faz como a planilha; "corrige" 
 | D13 | DV-013 — "Vendas Totais Leads Pagos" só quentes | **A — corrige:** soma os quatro públicos. | 48.4 |
 | D14 | DV-009 — verba de remarketing | **A — informativa:** calculada e mostrada, não entra em conta nenhuma. | 48.4 |
 
-**DV de apresentação (não bloqueiam; entram nas stories como `[FALTA]` para o @po/UX):** DV-011 (texto das legendas intermediárias de CPL — legendas são AR-004, descartadas; a faixa vira cor/rótulo de componente), DV-012 (sentido das cores das faixas de CPL — invertido em relação a leads na planilha), DV-016 (limiar 70 % da sinalização de atingimento), DV-017 (rótulos META PISO/BOA/SUPER), DV-024 (unidades declaradas ≠ conteúdo — as stories usam a unidade **do conteúdo**: fração → %, base → contagem), DV-025 (rótulos "Meta Ads" nas linhas do Google).
+**DV de apresentação:** DV-011 (legendas intermediárias de CPL — AR-004, descartadas), DV-024 (unidades: as stories usam a **do conteúdo**), DV-025 (rótulos "Google Ads", 48.4). **Decididas pelo Danilo em 2026-09-21:** **DV-012 = B** — cores das faixas de CPL no mesmo sentido dos leads (1 azul … 4 vermelho; não reproduz a inversão da planilha); **DV-016 = A** — atingimento verde ≥ 100 %, vermelho ≤ 70 %, neutro no meio (reproduz). Resta DV-017 (rótulos META PISO/BOA/SUPER) para a 48.5.
 
 ## Decisões de estrutura tomadas na criação (para o @pm/@po revisar)
 
@@ -90,8 +90,8 @@ Respondidas nesta ordem, uma a uma. "Reproduz" = faz como a planilha; "corrige" 
 |---|---|---|---|---|
 | 48.1 | Inputs Financeiros — modelo, API e tela (aba 1) | RN-001…009, 037, 040 | P1 ✅, P2 ✅ | **Ready** — @po GO 9/10 em 2026-09-21; sub-página `…/planejamento` + cartão (PO-02); custos > 100 % reproduz o negativo (PO-04); estimativa Alta / L (8–13) proposta |
 | 48.2 | Motor de cenários no `shared` (abas 2 e 3, parte pura) | RN-010…015, 024…026 | — (só testes) | **Ready** — @po GO 10/10 em 2026-09-21; Alta, M (5–8) |
-| 48.3 | Leads orgânicos — parâmetros por canal, seleção, combinações e resumo (aba 2) — `48.3.planejamento-leads-organicos.md` | RN-010…023 (via 48.2), 038, 039 | 48.1 ✅, 48.2 ✅ | **Draft** (@sm 2026-09-21) — `[FALTA]` DV-016 |
-| 48.4 | Leads pagos — parâmetros por fonte, seleção, combinações, tráfego e resumo (aba 3) — `48.4.planejamento-leads-pagos.md` | RN-016…022, 024…029, 038, 039 | 48.1 ✅, 48.2 ✅ | **Draft** (@sm 2026-09-21) — `[FALTA]` DV-012, DV-016 |
+| 48.3 | Leads orgânicos — parâmetros por canal, seleção, combinações e resumo (aba 2) — `48.3.planejamento-leads-organicos.md` | RN-010…023 (via 48.2), 038, 039 | 48.1 ✅, 48.2 ✅ | **Draft** (@sm 2026-09-21); DV-016 decidido |
+| 48.4 | Leads pagos — parâmetros por fonte, seleção, combinações, tráfego e resumo (aba 3) — `48.4.planejamento-leads-pagos.md` | RN-016…022, 024…029, 038, 039 | 48.1 ✅, 48.2 ✅ | **Draft** (@sm 2026-09-21); DV-012 e DV-016 decididos |
 | 48.5 | Resumo Final — consolidação dos cinco cenários (aba 4) | RN-030, 031 (+ 017…020 consolidadas) | 48.3, 48.4 | a rascunhar |
 
 Pontos e prioridade: estimados pelo @po na validação e confirmados pelo Danilo (48.2: Alta, M 5–8); as demais ficam `[FALTA]` até a validação de cada uma.
@@ -139,7 +139,8 @@ Regra do repo mantida: executor ≠ quality gate em todas as linhas.
 | 2026-09-21 | @dev/@qa/@devops | 48.2 implementada, gate PASS (após CONCERNS corrigido), **MERGED #902** (`5f83e4c6`) |
 | 2026-09-21 | @architect (Aria) | Revisão de AC1/T1 da 48.1 feita (A1–A7); 48.1 liberada para `*develop` |
 | 2026-09-21 | @dev/@qa/@devops | 48.1 implementada, gate PASS (após FAIL corrigido), **MERGED #904** (`dafdb12e`); migration 0152 aplicada em produção antes do merge; contrato 14. **Wave 1 completa.** |
-| 2026-09-21 | @sm (River) | 48.3 e 48.4 rascunhadas (wave 2). Tabelas-filhas nomeadas por tipo (`plan_organic_*`, `plan_paid_*`) em vez do `plan_blocks` genérico da nota A3 da 48.1 — mesma intenção, sem arquivo em comum entre as duas stories. Pendentes do Danilo: DV-012 (cores das faixas de CPL) e DV-016 (limiar do atingimento) |
+| 2026-09-21 | @sm (River) | 48.3 e 48.4 rascunhadas (wave 2). Tabelas-filhas nomeadas por tipo (`plan_organic_*`, `plan_paid_*`) em vez do `plan_blocks` genérico da nota A3 da 48.1 — mesma intenção, sem arquivo em comum entre as duas stories |
+| 2026-09-21 | @sm (River) | Danilo decidiu DV-016 = A e DV-012 = B; 48.3 e 48.4 sem `[FALTA]` bloqueante |
 | 2026-09-21 | @pm (Morgan) | **P2 ✅ — estrutura validada.** Acrescentados objetivo, critérios de sucesso S1–S4, ordem de execução em 3 waves com executor/gate por story, riscos R1–R6, roadmap do que ficou fora; E4 corrigido (nomes dos módulos = os das stories). Número 48 confirmado na `main` (#898). |
 
 <!-- clickup:17tqamemnem -->
