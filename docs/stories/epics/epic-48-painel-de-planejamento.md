@@ -35,7 +35,7 @@ Este epic põe isso dentro do Loyola X, ligado ao funil de lançamento:
 |---|---|---|
 | P1 | **Autorização de escopo.** O usuário que abriu o pedido (`danilo@bonsaitrafegopago.com.br`) tem `scope: restricted` em `docs/team/members.md`; a implementação toca `packages/api/src/db/schema.ts`, `app.ts`, rotas novas, `packages/shared/src` e telas do funil — fora dos `allowed_paths`. Pelo `team-scopes.md`: autorização do Lucas documentada no commit (`[scope-override]`) ou outro membro com `scope: full` implementando. Precedente: Epic 47 P2. | Lucas |
 | P2 | **@pm valida esta estrutura** (ou reescreve) e confirma o número 48. | @pm |
-| P3 | **@po valida a 48.1 e a 48.2** (10 pontos) — em especial as leituras marcadas "confirmar no @po" nas decisões D3 e D10 abaixo. | @po |
+| P3 | **@po valida a 48.1 e a 48.2** (10 pontos). As leituras do @sm em D3, D10 e na AC13 da 48.1 já foram confirmadas pelo Danilo (2026-09-21). | @po |
 
 ## Decisões do Danilo (2026-09-21) — as 14 DV que decidem AC
 
@@ -45,14 +45,14 @@ Respondidas nesta ordem, uma a uma. "Reproduz" = faz como a planilha; "corrige" 
 |---|---|---|---|
 | D1 | DV-003 — constante 70 % do cenário 1 | **C — parametrizável por canal/fonte.** Valor inicial 70 % (o da planilha). | 48.2: `fracao_cenario_1` por bloco; 48.3/48.4: campo editável por canal/fonte |
 | D2 | DV-004 — passo da escada de conversão | **A — reproduz:** pontos percentuais fixos; campo "25 %" reduz 0,25 p.p. por nível (÷100). | 48.2 |
-| D3 | DV-007 — zero, vazio, negativo | **A — regra única para orgânicos e pagos:** entrada bloqueada (`ticket > 0`, `conversão ≥ 0`, percentuais em `[0, 1]`) e **"—"** onde não há base (denominador zero). ⚠️ Leitura do @sm, confirmar no @po: a escada de conversão **trava em zero** nas duas abas (era só na de orgânicos), e um nível em zero produz leads e CPL "—". | 48.1, 48.2, 48.3, 48.4 |
+| D3 | DV-007 — zero, vazio, negativo | **A — regra única para orgânicos e pagos:** entrada bloqueada (`ticket > 0`, `conversão ≥ 0`, percentuais em `[0, 1]`) e **"—"** onde não há base (denominador zero). ✅ Confirmado pelo Danilo em 2026-09-21: a escada de conversão **trava em zero** nas duas abas (era só na de orgânicos), e um nível em zero produz leads e CPL "—". | 48.1, 48.2, 48.3, 48.4 |
 | D4 | DV-010 — blocos frios lendo a variação do bloco quente | **A — corrige:** cada bloco usa os próprios campos (`F36`, `F85`, `F86` passam a ser lidos). | 48.2, 48.4 |
 | D5 | DV-001 — Google frio ÷ margem-alvo dos orgânicos | **A — corrige:** as quatro fontes pagas dividem pela margem-alvo dos **pagos** (`F18`). | 48.1 |
 | D6 | DV-002 — meta de margem por fonte reusa os % do investimento | **A — reproduz:** é decisão (meta proporcional à verba). | 48.1 |
 | D7 | DV-006 — Área de Membros, cenário 3 ÷ célula vazia | **A — corrige:** divide pelo ticket como os outros nove. | 48.2 (o motor não tem a anomalia) |
 | D8 | DV-014 — combinações 2–5 do Meta frio leem o bloco quente | **A — corrige:** as cinco combinações leem o bloco Meta frio com o cenário do Meta frio. | 48.4 |
 | D9 | DV-015 — Resumo Final, vendas Google só quente | **A — corrige:** quente + frio, como o Meta. | 48.5 |
-| D10 | DV-026 — vendas e leads fracionários | **B — arredonda para cima antes de calcular:** `vendas = ⌈receita ÷ ticket⌉`, `leads = ⌈vendas ÷ conversão⌉`; conversão efetiva e CPL usam os inteiros. ⚠️ Consequência, confirmar no @po: os valores esperados do apêndice A valem para a **série de receita** e para a **escada** (que não arredondam); vendas/leads/CPL do apêndice são fracionários e servem só para conferir o passo **antes** do arredondamento. | 48.2 (testes em dois estágios) |
+| D10 | DV-026 — vendas e leads fracionários | **B — arredonda para cima antes de calcular:** `vendas = ⌈receita ÷ ticket⌉`, `leads = ⌈vendas ÷ conversão⌉`; conversão efetiva e CPL usam os inteiros. ✅ Confirmado pelo Danilo em 2026-09-21: os valores esperados do apêndice A valem para a **série de receita** e para a **escada** (que não arredondam); vendas/leads/CPL do apêndice são fracionários e servem só para conferir o passo **antes** do arredondamento. | 48.2 (testes em dois estágios) |
 | D11 | DV-005 — multiplicadores 2,5 e 5 das faixas | **A — fixos.** | 48.2 |
 | D12 | DV-008 — caixas do nível de conversão | **A — exatamente uma por bloco, obrigatória (radio); sem marcação, os derivados mostram "—"** (nunca erro em cascata). | 48.3, 48.4 |
 | D13 | DV-013 — "Vendas Totais Leads Pagos" só quentes | **A — corrige:** soma os quatro públicos. | 48.4 |
@@ -88,3 +88,4 @@ Pontos e prioridade: `[FALTA]` — não estimados pelo @sm; @po/Danilo estimam n
 | Data | Agente | Mudança |
 |---|---|---|
 | 2026-09-21 | @sm (River) | Epic criado para reservar o nº 48 e registrar as 14 decisões do Danilo; 48.1 e 48.2 rascunhadas; docs copiados para `docs/specs/epic-48/` |
+| 2026-09-21 | @sm (River) | Danilo confirmou as três leituras do @sm: D3 (escada trava em zero nos pagos), D10 (apêndice A valida o bruto), 48.1 AC13 (permissão = a do funil) |
