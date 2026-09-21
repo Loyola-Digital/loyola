@@ -55,15 +55,53 @@ export interface PostDoMes {
   shares?: number | null;
 }
 
+/**
+ * As métricas que a tabela mensal pede à Meta.
+ *
+ * As interações vêm pela SOMA DAS PARTES: `total_interactions` devolve mais
+ * do que a soma (337.700 contra 264.524 em 30 dias de @odanilogato) e o app
+ * do Instagram mostra a soma.
+ *
+ * Mora aqui, e não na rota, porque a chave do cache é feita desta lista: o
+ * backfill que pedisse outra ordem ou outra métrica gravaria numa chave que a
+ * tela nunca lê.
+ */
+export const METRICAS_DO_MENSAL = [
+  "reach",
+  "views",
+  "follows_and_unfollows",
+  "likes",
+  "comments",
+  "saves",
+  "shares",
+];
+
+/**
+ * Quantos meses a tabela alcança. A Meta só guarda dois anos de insights de
+ * conta — pedir antes disso volta "since param is not valid. Metrics data is
+ * available for the last 2 years" (medido em 21/09/2026).
+ */
+export const MESES_NO_MAXIMO = 24;
+
 export interface LinhaMensal {
   /** `YYYY-MM`. */
   mes: string;
+  /**
+   * A Meta não devolveu NADA para este mês (cota estourada na coleta, ou mês
+   * além dos 2 anos que ela guarda). A tela mostra "sem dado" em vez de uma
+   * fileira de zeros que parece um mês morto.
+   */
+  semDados: boolean;
   seguidoresNoFim: number | null;
   novosSeguidores: number;
   unfollows: number;
   crescimento: number;
   alcance: number;
-  views: number;
+  /**
+   * `null` quando a Meta não tinha a métrica naquele mês: em mar/25 ela devolve
+   * views = 0 com 856 mil de alcance — impossível, é métrica que não existia.
+   */
+  views: number | null;
   interacoes: number;
   /** Interações ÷ alcance, em pontos percentuais. */
   engajamento: number | null;
@@ -134,12 +172,11 @@ export function alcanceDoPeriodo(insights: EntradaDeInsight[]): number {
  * Ficamos com o que o time consegue conferir no celular.
  */
 export function interacoesDoPeriodo(insights: EntradaDeInsight[]): number {
+  // Negativo vira zero: a Meta devolveu curtidas = −2 em mar/25 (medido). Não
+  // existe interação negativa, e somar o −2 tiraria interações reais do total.
+  const parte = (nome: string) => Math.max(0, total(insights, nome));
   return (
-    total(insights, "likes") +
-    total(insights, "comments") +
-    total(insights, "saves") +
-    total(insights, "shares") +
-    total(insights, "replies")
+    parte("likes") + parte("comments") + parte("saves") + parte("shares") + parte("replies")
   );
 }
 
@@ -213,9 +250,11 @@ export function montarLinha(
   const { novos, unfollows } = porTipoDeSeguidor(insights);
   const alcance = alcanceDoPeriodo(insights);
   const interacoes = interacoesDoPeriodo(insights);
+  const views = total(insights, "views");
 
   return {
     mes,
+    semDados: insights.length === 0,
     // Preenchido depois, por `reconstruirSeguidores` — depende dos meses
     // seguintes, que esta função não conhece.
     seguidoresNoFim: null,
@@ -223,7 +262,9 @@ export function montarLinha(
     unfollows,
     crescimento: novos - unfollows,
     alcance,
-    views: total(insights, "views"),
+    // Views não pode ser menor que alcance (toda conta alcançada gerou ao menos
+    // uma visualização). Zero com alcance é a métrica que ainda não existia.
+    views: views === 0 && alcance > 0 ? null : views,
     interacoes,
     // Sobre ALCANCE, não sobre seguidores: é o que o time compara entre meses,
     // e um perfil que cresce diluiria a taxa se o divisor fosse a base.
@@ -243,24 +284,28 @@ export function montarLinha(
  */
 export function reconstruirSeguidores(linhas: LinhaMensal[], totalHoje: number): LinhaMensal[] {
   const saida = [...linhas];
-  let acumulado = totalHoje;
+  let acumulado: number | null = totalHoje;
   for (let i = saida.length - 1; i >= 0; i -= 1) {
     saida[i] = { ...saida[i]!, seguidoresNoFim: acumulado };
-    acumulado -= saida[i]!.crescimento;
+    // Mês sem dado tem crescimento desconhecido, não zero: dali para trás o
+    // total seria chute, então vira "—".
+    acumulado = acumulado === null || saida[i]!.semDados ? null : acumulado - saida[i]!.crescimento;
   }
   return saida;
 }
 
-function variacao(atual: number, anterior: number): number | null {
+function variacao(atual: number | null, anterior: number | null): number | null {
   // Sem base de comparação não existe "cresceu X%": qualquer número aqui seria
   // inventado, e um "+100%" a partir do zero engana mais que um traço.
-  if (!anterior) return null;
+  if (atual === null || !anterior) return null;
   return Math.round(((atual - anterior) / Math.abs(anterior)) * 1000) / 10;
 }
 
 export function comVariacao(linhas: LinhaMensal[]): LinhaComVariacao[] {
   return linhas.map((l, i) => {
-    const ant = i > 0 ? linhas[i - 1] : null;
+    // Mês sem dado não serve de base nem tem variação: comparar com uma
+    // fileira de zeros daria "+100%" em tudo no mês seguinte.
+    const ant = i > 0 && !linhas[i - 1]!.semDados && !l.semDados ? linhas[i - 1] : null;
     return {
       ...l,
       variacao: {

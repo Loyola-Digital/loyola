@@ -86,6 +86,9 @@ export function serieMensal(
   chave: string,
 ): PontoDaSerie[] {
   return (meses ?? [])
+    // Mês sem dado (ou métrica que a Meta ainda não tinha) fica FORA do
+    // gráfico: desenhado como zero, parecia um mês em que o perfil morreu.
+    .filter((m) => !m.semDados && typeof m[chave] === "number")
     .map((m) => {
       const mes = String(m.mes ?? "");
       const [ano, n] = mes.split("-");

@@ -791,7 +791,10 @@ export default fp(async function instagramServicePlugin(fastify) {
     const entries: InsightEntry[] = [];
     /** Vira true assim que a Meta (ou o nosso limitador) recusa por cota. */
     let semCota = false;
+    /** Alguma chamada falhou, por qualquer motivo: a resposta está incompleta. */
+    let incompleta = false;
     const marcarCota = (err: unknown) => {
+      incompleta = true;
       if (err instanceof InstagramApiError && err.statusCode === 429) semCota = true;
     };
 
@@ -917,7 +920,12 @@ export default fp(async function instagramServicePlugin(fastify) {
     // Janela que já fechou (terminou há mais de 2 dias) não muda mais: o
     // comparativo mensal pede seis dessas por abertura, e rebuscá-las a cada 30
     // minutos era o segundo maior consumidor da cota.
-    const fechada = until * 1000 < Date.now() - 2 * 86_400_000;
+    //
+    // Mas só a janela COMPLETA: com uma métrica faltando, "para sempre" era
+    // guardar um buraco para sempre — era o que zerava views e seguidores de
+    // meses inteiros na tabela mensal (auditado em 21/09/2026: 11 meses de
+    // @odanilogato e @fernandazapparoli com só o alcance guardado).
+    const fechada = until * 1000 < Date.now() - 2 * 86_400_000 && !incompleta;
     await setCachedMetric(
       accountId,
       cacheKey,
