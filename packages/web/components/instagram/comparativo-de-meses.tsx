@@ -3,12 +3,12 @@
 /**
  * Um mês contra outro, à escolha.
  *
- * A tabela mensal responde "está crescendo ou caindo?" ao longo de seis meses.
+ * A tabela mensal responde "está crescendo ou caindo?" ao longo dos meses.
  * Esta aqui responde outra pergunta: "como setembro se compara com julho?" —
  * que é a pergunta de reunião, e que a tabela corrida não responde porque os
  * dois meses ficam longe um do outro e cada linha compara com a anterior.
  *
- * Os dois meses saem da MESMA resposta da tabela mensal (`/mensal?meses=12`),
+ * Os dois meses saem da MESMA resposta da tabela mensal (`/mensal?meses=24`),
  * então trocar a escolha não custa chamada à Meta.
  */
 
@@ -37,11 +37,18 @@ const fmt = (n: number | null | undefined) =>
 
 function valorDaLinha(m: MesDoOrganico | undefined, l: LinhaComparavel): string {
   if (!m) return "—";
+  if (m.semDados) return "sem dado";
   const v = m[l.chave as keyof MesDoOrganico] as number | null | undefined;
   if (v == null) return "—";
   if (l.tipo === "taxa") return `${String(v).replace(".", ",")}%`;
   if (l.tipo === "saldo") return `${v > 0 ? "+" : ""}${fmt(v)}`;
   return fmt(v);
+}
+
+/** Mês sem dado não entra na conta: a diferença para um zero falso seria inventada. */
+function numeroDoMes(m: MesDoOrganico | undefined, l: LinhaComparavel): number | null {
+  if (!m || m.semDados) return null;
+  return (m[l.chave as keyof MesDoOrganico] as number | null) ?? null;
 }
 
 /** A diferença, com seta e cor — cor sozinha exclui quem não distingue verde de vermelho. */
@@ -93,7 +100,7 @@ function MelhorPost({ m }: { m: MesDoOrganico | undefined }) {
 }
 
 export function ComparativoDeMeses({ accountId }: { accountId: string | null }) {
-  const { data, isLoading, error } = useInstagramMensal(accountId, 12);
+  const { data, isLoading, error } = useInstagramMensal(accountId);
   const meses = useMemo(() => [...(data?.meses ?? [])].reverse(), [data]); // recente primeiro
   const [a, setA] = useState<string | null>(null);
   const [b, setB] = useState<string | null>(null);
@@ -193,8 +200,8 @@ Os meses vêm da mesma busca da tabela mensal, então trocar a escolha não cust
                     <td className="px-2 py-2 text-right">
                       <Delta
                         d={diferencaEntreMeses(
-                          mesA?.[l.chave as keyof MesDoOrganico] as number | null,
-                          mesB?.[l.chave as keyof MesDoOrganico] as number | null,
+                          numeroDoMes(mesA, l),
+                          numeroDoMes(mesB, l),
                           l.tipo,
                         )}
                         invertido={l.chave === "unfollows"}

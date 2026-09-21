@@ -17,7 +17,9 @@
  * Fica, com o rótulo.
  */
 
+import { useState } from "react";
 import { ArrowDown, ArrowUp, ExternalLink, Loader2, Minus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useInstagramMensal, type MesDoOrganico } from "@/lib/hooks/use-instagram-mensal";
 import { Dica } from "@/components/instagram/dica";
 
@@ -101,12 +103,18 @@ function Celula({
   );
 }
 
+/** Quantos meses a tabela abre mostrando; o resto fica a um clique. */
+const MESES_VISIVEIS = 6;
+
 export function TabelaMensal({ accountId }: { accountId: string | null }) {
-  const { data, isLoading, error } = useInstagramMensal(accountId, 6);
+  // A mesma busca de 24 meses do comparativo e do gráfico: uma consulta só.
+  const { data, isLoading, error } = useInstagramMensal(accountId);
+  const [todos, setTodos] = useState(false);
 
   if (!accountId) return null;
 
-  const meses = data?.meses ?? [];
+  const historico = data?.meses ?? [];
+  const meses = todos ? historico : historico.slice(-MESES_VISIVEIS);
   const mesCorrente = new Date().toISOString().slice(0, 7);
 
   return (
@@ -118,17 +126,29 @@ export function TabelaMensal({ accountId }: { accountId: string | null }) {
             Cada número com a variação sobre o mês anterior
           </p>
         </div>
-        {data?.seguidoresHoje != null && (
-          <span className="text-[11px] tabular-nums text-muted-foreground">
-            {data.seguidoresHoje.toLocaleString("pt-BR")} seguidores hoje
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {data?.seguidoresHoje != null && (
+            <span className="text-[11px] tabular-nums text-muted-foreground">
+              {data.seguidoresHoje.toLocaleString("pt-BR")} seguidores hoje
+            </span>
+          )}
+          {historico.length > MESES_VISIVEIS && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-[11px]"
+              onClick={() => setTodos((v) => !v)}
+            >
+              {todos ? `Só os últimos ${MESES_VISIVEIS}` : `Ver os ${historico.length} meses`}
+            </Button>
+          )}
+        </div>
       </div>
 
       {isLoading ? (
         <p className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Buscando os últimos seis meses…
+          Buscando o histórico de meses…
         </p>
       ) : error ? (
         <p className="px-4 py-10 text-center text-sm text-muted-foreground">
@@ -161,6 +181,22 @@ export function TabelaMensal({ accountId }: { accountId: string | null }) {
                   de cima, e rolar para achá-lo derrotaria o "bater o olho". */}
               {[...meses].reverse().map((m: MesDoOrganico) => {
                 const parcial = m.mes === mesCorrente;
+                if (m.semDados) {
+                  return (
+                    <tr key={m.mes} className="border-b border-border/40 last:border-b-0">
+                      <td className="whitespace-nowrap px-3 py-2.5 font-medium">
+                        {nomeDoMes(m.mes)}
+                      </td>
+                      <td
+                        colSpan={COLUNAS.length - 1}
+                        className="px-3 py-2.5 text-[12px] text-muted-foreground"
+                      >
+                        Sem dado da Meta para este mês ainda — ele entra na próxima
+                        busca (a Meta libera 200 consultas por hora).
+                      </td>
+                    </tr>
+                  );
+                }
                 return (
                   <tr
                     key={m.mes}

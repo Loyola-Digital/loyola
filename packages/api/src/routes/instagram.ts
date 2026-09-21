@@ -11,7 +11,7 @@ import {
   type AnaliseDoPeriodo,
 } from "../services/instagram-analise-ia.js";
 import { tituloDoPost } from "../services/instagram-mensal.js";
-import { salvarSeguidoresManuais } from "../services/instagram-post-metrics.js";
+import { postsDoBanco, salvarSeguidoresManuais } from "../services/instagram-post-metrics.js";
 import {
   analisarPostComIa,
   montarDadosDoPost,
@@ -46,6 +46,8 @@ const linkProjectSchema = z.object({
 
 import {
   type EntradaDeInsight,
+  MESES_NO_MAXIMO,
+  METRICAS_DO_MENSAL,
   comVariacao,
   janelasMensais,
   montarLinha,
@@ -427,30 +429,17 @@ export default fp(async function instagramRoutes(fastify) {
    * `since/until`. Seis meses são seis janelas — e o cache do serviço as guarda
    * por período, então a segunda visita do dia não chama a API nenhuma vez.
    *
-   * ## Os posts vêm de UMA busca só
+   * ## Os posts vêm do BANCO
    *
-   * Buscar mídia mês a mês repetiria os mesmos posts recentes em cada janela.
-   * Aqui vem a lista uma vez e cada post cai no mês da sua data — o que também
-   * evita seis vezes o custo de enriquecer cada post com insights.
+   * A lista ao vivo trazia os últimos 100 posts — uns quatro meses num perfil
+   * que posta todo dia. Os meses de antes apareciam com 0 posts e sem melhor
+   * post (auditado em 21/09/2026). O banco tem o histórico que o backfill
+   * guardou; a lista ao vivo só atualiza os recentes antes da leitura.
    *
    * O último mês fica INCOMPLETO de propósito: é o mês corrente, e a API ainda
    * demora cerca de dois dias para fechar os números de seguidores. A tela
    * marca isso; escondê-lo faria o mês parecer uma queda.
    */
-  // As interações vêm pela SOMA DAS PARTES: `total_interactions` devolve mais
-  // do que a soma (337.700 contra 264.524 em 30 dias de @odanilogato) e o app
-  // do Instagram mostra a soma. Custa quatro chamadas por mês em vez de uma —
-  // e é o número que o time consegue conferir no celular.
-  const METRICAS_DO_MENSAL = [
-    "reach",
-    "views",
-    "follows_and_unfollows",
-    "likes",
-    "comments",
-    "saves",
-    "shares",
-  ];
-
   fastify.get("/api/instagram/accounts/:id/mensal", async (request, reply) => {
     const paramResult = idParamSchema.safeParse(request.params);
     if (!paramResult.success) return reply.code(400).send({ error: "ID inválido" });
@@ -459,7 +448,7 @@ export default fp(async function instagramRoutes(fastify) {
     if (!account) return reply.code(404).send({ error: "Conta não encontrada" });
 
     const q = z
-      .object({ meses: z.coerce.number().int().min(2).max(12).optional() })
+      .object({ meses: z.coerce.number().int().min(2).max(MESES_NO_MAXIMO).optional() })
       .safeParse(request.query);
     if (!q.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
     const quantos = q.data.meses ?? 6;
@@ -467,11 +456,12 @@ export default fp(async function instagramRoutes(fastify) {
     const janelas = janelasMensais(quantos, new Date());
 
     try {
-      const [perfil, midia] = await Promise.all([
+      const [perfil] = await Promise.all([
         fastify.instagramService.getProfile(paramResult.data.id),
-        // 100 posts cobrem seis meses com folga em qualquer perfil do time.
-        fastify.instagramService.getMediaList(paramResult.data.id, 100),
+        // Só para os posts recentes entrarem no banco antes da leitura abaixo.
+        fastify.instagramService.getMediaList(paramResult.data.id, 100).catch(() => null),
       ]);
+      const midia = await postsDoBanco(fastify.db, paramResult.data.id, 5000);
 
       // Os meses vão UM DE CADA VEZ.
       //
@@ -479,8 +469,14 @@ export default fp(async function instagramRoutes(fastify) {
       // estoura a cota da Meta (200/hora) de uma vez e derruba a tela inteira
       // com 429. Em sequência demora mais na primeira vez e cada mês fechado
       // fica guardado para sempre, então a segunda abertura não custa nada.
-      const porJanela: EntradaDeInsight[][] = [];
-      for (const j of janelas) {
+      //
+      // Do mais RECENTE para o mais antigo, parando no primeiro mês que volta
+      // vazio: é a cota que acabou, e seguir queimaria chamada em 429. Os
+      // recentes, que o time mais olha, saem primeiro; os antigos vêm nas
+      // próximas aberturas (ou do `backfill-instagram-mensal`).
+      const porJanela: EntradaDeInsight[][] = janelas.map(() => []);
+      for (let i = janelas.length - 1; i >= 0; i -= 1) {
+        const j = janelas[i]!;
         const r = await fastify.instagramService
           .getAccountInsights(
             paramResult.data.id,
@@ -494,11 +490,12 @@ export default fp(async function instagramRoutes(fastify) {
           // Um mês que a API recusa não pode derrubar os outros: vira linha
           // zerada, que a tela mostra como "sem dado".
           .catch(() => [] as EntradaDeInsight[]);
-        porJanela.push(r as EntradaDeInsight[]);
+        porJanela[i] = r as EntradaDeInsight[];
+        if (porJanela[i]!.length === 0) break;
       }
 
       const linhas = janelas.map((j, i) => {
-        const doMes = (midia?.data ?? []).filter((m) => {
+        const doMes = midia.filter((m) => {
           const t = new Date(m.timestamp);
           return t >= j.inicio && t < j.fim;
         });

@@ -111,6 +111,25 @@ describe("montarLinha", () => {
   it("mês sem post não tem melhor post", () => {
     expect(montarLinha("2026-08", insightsDe({}), []).melhorPost).toBeNull();
   });
+
+  // Medido em @fernandazapparoli, mar/25: 856 mil de alcance e views = 0.
+  // A métrica não existia ainda; zero ali puxaria a variação para −100%.
+  it("views zero com alcance é métrica que não existia — vira null", () => {
+    const l = montarLinha("2025-03", insightsDe({ alcanceDiario: [856_000], views: 0 }), []);
+    expect(l.views).toBeNull();
+  });
+
+  // Mesmo mês: curtidas = −2. Não há interação negativa.
+  it("parte negativa não desconta interações reais", () => {
+    const e = insightsDe({ alcanceDiario: [1000], interacoes: -2 });
+    e.push({ name: "comments", total_value: { value: 30 } });
+    expect(montarLinha("2025-03", e, []).interacoes).toBe(30);
+  });
+
+  it("sem nenhum insight o mês é 'sem dados', não um mês zerado", () => {
+    expect(montarLinha("2026-01", [], []).semDados).toBe(true);
+    expect(montarLinha("2026-01", insightsDe({}), []).semDados).toBe(false);
+  });
 });
 
 describe("melhorPostDoMes", () => {
@@ -175,6 +194,21 @@ describe("reconstruirSeguidores", () => {
     expect(reconstruirSeguidores(linhas, 100_000)[0]!.seguidoresNoFim).toBe(100_000);
   });
 
+  it("mês sem dado corta a reconstrução: dali para trás seria chute", () => {
+    const linhas = [
+      montarLinha("2026-06", insightsDe({ novos: 100 }), []),
+      montarLinha("2026-07", [], []),
+      montarLinha("2026-08", insightsDe({ novos: 2000 }), []),
+    ];
+    // O fim de julho é conhecido (156.000 − agosto); o de junho dependeria do
+    // crescimento de julho, que ninguém sabe.
+    expect(reconstruirSeguidores(linhas, 156_000).map((l) => l.seguidoresNoFim)).toEqual([
+      null,
+      154_000,
+      156_000,
+    ]);
+  });
+
   it("não modifica as linhas recebidas", () => {
     const linhas = [montarLinha("2026-08", insightsDe({ novos: 10 }), [])];
     reconstruirSeguidores(linhas, 500);
@@ -207,6 +241,23 @@ describe("comVariacao", () => {
     ]);
     // 0,9 ponto — e não "+21%", que se confundiria com a própria taxa.
     expect(r[1]!.variacao.engajamento).toBe(0.9);
+  });
+
+  it("vizinho sem dado não vira base de comparação", () => {
+    const r = comVariacao([
+      montarLinha("2026-07", [], []),
+      linha({ alcanceDiario: [500] }),
+    ]);
+    expect(r[1]!.variacao.alcance).toBeNull();
+  });
+
+  it("views sem dado não tem variação", () => {
+    const r = comVariacao([
+      linha({ alcanceDiario: [500], views: 900 }),
+      linha({ alcanceDiario: [500], views: 0 }),
+    ]);
+    expect(r[1]!.views).toBeNull();
+    expect(r[1]!.variacao.views).toBeNull();
   });
 
   it("base zero não vira +100% — vira nada", () => {

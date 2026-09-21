@@ -112,7 +112,7 @@ export function GraficoDoPerfil({
 
   // A mesma busca que a tabela mensal e o comparativo usam — trocar para
   // "Mensal" não custa chamada nova à Meta.
-  const mensal = useInstagramMensal(escala === "mensal" ? accountId ?? null : null, 12);
+  const mensal = useInstagramMensal(escala === "mensal" ? accountId ?? null : null);
 
   const catalogo = escala === "diario" ? METRICAS_DIARIAS : METRICAS_MENSAIS;
   const atual: MetricaDoGrafico =
@@ -156,7 +156,7 @@ export function GraficoDoPerfil({
 
 DIÁRIO: só alcance e novos seguidores — medido na API, as outras métricas a Meta não entrega dia a dia, e virariam uma linha em zero. Os 3 maiores dias ficam marcados, e clicar num ponto mostra os posts publicados nas 72h até ali.
 
-MENSAL: os últimos 12 meses, com tudo — inclusive a curva de seguidores e o saldo, que fica abaixo do zero quando o perfil encolheu. Vem da mesma busca da tabela mensal, então trocar não custa consulta.`}
+MENSAL: os últimos 24 meses (tudo o que a Meta guarda), com tudo — inclusive a curva de seguidores e o saldo, que fica abaixo do zero quando o perfil encolheu. Vem da mesma busca da tabela mensal, então trocar não custa consulta.`}
             </Dica>
           </div>
           {onRefresh && (

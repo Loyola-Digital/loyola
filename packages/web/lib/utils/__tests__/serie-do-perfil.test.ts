@@ -56,9 +56,22 @@ describe("serieMensal", () => {
     expect(serieMensal(meses, "crescimento")[0]!.valor).toBe(-2255);
   });
 
-  it("campo ausente vira zero, sem quebrar o gráfico", () => {
-    expect(serieMensal(meses, "views")[0]!.valor).toBe(0);
+  // Desenhado como zero, o mês sem dado parecia um mês em que o perfil morreu
+  // (auditado em 21/09/2026: views de mar/25 e meses gravados pela metade).
+  it("campo ausente fica FORA do gráfico, não vira zero", () => {
+    expect(serieMensal(meses, "views")).toEqual([]);
     expect(serieMensal(undefined, "alcance")).toEqual([]);
+  });
+
+  it("mês sem dado da Meta fica fora do gráfico", () => {
+    const s = serieMensal(
+      [
+        { mes: "2026-07", semDados: true, alcance: 0 },
+        { mes: "2026-08", semDados: false, alcance: 500 },
+      ],
+      "alcance",
+    );
+    expect(s.map((p) => p.valor)).toEqual([500]);
   });
 });
 
