@@ -110,9 +110,11 @@ function div(numerador: number | null, denominador: number | null): number | nul
 
 /**
  * Arredonda PARA CIMA ao inteiro (D10), imune ao ruído de ponto flutuante:
- * `68 / 0.04` dá `1700.0000000000002` em IEEE-754, e um `Math.ceil` cru
- * devolveria 1701 — um lead a mais que não existe. Seis casas decimais são a
- * precisão com que a spec expressa os seus casos de teste.
+ * `11 / 0.011` dá `1000.0000000000001` em IEEE-754, e um `Math.ceil` cru
+ * devolveria 1001 — um lead a mais que não existe (gate da 48.2, TEST-001:
+ * o exemplo anterior deste comentário, `68 / 0.04`, é exato no V8 e não
+ * provava nada). Seis casas decimais são a precisão com que a spec expressa
+ * os seus casos de teste. Coberto por teste diferencial.
  */
 function paraCima(x: number | null): number | null {
   if (x === null) return null;
@@ -126,8 +128,10 @@ function paraCima(x: number | null): number | null {
 /**
  * RN-011 — série de dez cenários de receita.
  * `c1 = fracaoCenario1 × metaReceita`; `cn = c(n−1) × (1 + variacaoReceita)`.
- * Meta vazia → dez zeros; variação vazia → dez iguais. Sem arredondamento.
- * Cada bloco passa a PRÓPRIA variação (D4 — não reproduz DV-010).
+ * Meta vazia → dez zeros; variação vazia → dez iguais. Fração VAZIA
+ * (`null`/`undefined`) cai para `FRACAO_CENARIO_1_PADRAO` — a mesma regra
+ * das grades (gate da 48.2, MNT-001); zero explícito continua zero. Sem
+ * arredondamento. Cada bloco passa a PRÓPRIA variação (D4 — não reproduz DV-010).
  */
 export function serieDeReceita(
   metaReceita: Entrada,
@@ -135,7 +139,7 @@ export function serieDeReceita(
   variacaoReceita: Entrada,
 ): number[] {
   const meta = n(metaReceita);
-  const fracao = n(fracaoCenario1);
+  const fracao = fracaoCenario1 === null || fracaoCenario1 === undefined ? FRACAO_CENARIO_1_PADRAO : n(fracaoCenario1);
   const variacao = n(variacaoReceita);
   const serie: number[] = [fracao * meta];
   for (let i = 1; i < CENARIOS; i++) serie.push(serie[i - 1] * (1 + variacao));
@@ -281,10 +285,6 @@ export interface GradePaga {
   faixas: Grade<Faixa | null>;
 }
 
-function fracaoDe(p: ParametrosDoBloco): number {
-  return p.fracaoCenario1 === null || p.fracaoCenario1 === undefined ? FRACAO_CENARIO_1_PADRAO : n(p.fracaoCenario1);
-}
-
 /** Vendas por cenário, nas duas cadeias (RN-013; D7: todo cenário divide pelo ticket). */
 function vendasPorCenario(receita: number[], ticketMedio: Entrada): { bruto: (number | null)[]; arredondado: (number | null)[] } {
   const ticket = n(ticketMedio);
@@ -305,7 +305,7 @@ function leadsPorCelula(
 
 /** Bloco de canal orgânico (aba 2). */
 export function gradeOrganica(p: ParametrosOrganicos): GradeOrganica {
-  const receita = serieDeReceita(p.metaReceita, fracaoDe(p), p.variacaoReceita);
+  const receita = serieDeReceita(p.metaReceita, p.fracaoCenario1, p.variacaoReceita);
   const escada = escadaDeConversao(p.conversaoMedia, p.variacaoConversao, NIVEIS_ORGANICOS);
   const v = vendasPorCenario(receita, p.ticketMedio);
   const l = leadsPorCelula(escada, v.bruto, v.arredondado);
@@ -325,7 +325,7 @@ export function gradeOrganica(p: ParametrosOrganicos): GradeOrganica {
 
 /** Bloco de fonte paga (aba 3). */
 export function gradePaga(p: ParametrosPagos): GradePaga {
-  const receita = serieDeReceita(p.metaReceita, fracaoDe(p), p.variacaoReceita);
+  const receita = serieDeReceita(p.metaReceita, p.fracaoCenario1, p.variacaoReceita);
   const escada = escadaDeConversao(p.conversaoMedia, p.variacaoConversao, NIVEIS_PAGOS);
   const { captacao, remarketing } = dividirVerba(p.verba, p.pctCaptacao);
   const v = vendasPorCenario(receita, p.ticketMedio);

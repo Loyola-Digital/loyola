@@ -57,6 +57,13 @@ describe("série de receita (RN-011, AC3)", () => {
     perto(serieDeReceita(100000, 0.5, 0)[0], 50000);
   });
 
+  it("fração vazia cai para 0,70 — a mesma regra das grades (MNT-001); zero explícito é zero", () => {
+    perto(serieDeReceita(1000, null, 0)[0], 700);
+    perto(serieDeReceita(1000, undefined, 0)[0], 700);
+    expect(serieDeReceita(1000, 0, 0)[0]).toBe(0);
+    perto(gradeOrganica({ ...BLOCOS.whatsapp, metaReceita: 1000, fracaoCenario1: null }).receita[0], 700);
+  });
+
   it("meta vazia → dez zeros; variação vazia → dez iguais", () => {
     expect(serieDeReceita(null, 0.7, 0.1)).toEqual(new Array(CENARIOS).fill(0));
     const iguais = serieDeReceita(1000, 0.7, null);
@@ -107,6 +114,14 @@ describe("vendas e leads — duas cadeias (RN-013, RN-014, AC8–AC11)", () => {
     expect(g.leads[0][0]).toBe(1700);
     expect(g.vendas[4]).toBe(99);
     expect(g.leads[2][4]).toBe(2750);
+  });
+
+  it("⌈x⌉ imune ao ruído de ponto flutuante (TEST-001): 11 ÷ 0,011 = 1000,0000000000001 → 1 000 leads, não 1 001", () => {
+    // meta 18 000 × 0,70 = 12 600 → 12 600 ÷ 1 200 = 10,5 → vendas = 11; nível 0,011 sem variação.
+    const g = gradeOrganica({ ...BLOCOS.whatsapp, metaReceita: 18000, conversaoMedia: 0.011, variacaoConversao: 0 });
+    expect(g.vendas[0]).toBe(11);
+    expect(11 / 0.011).toBeGreaterThan(1000); // o ruído existe neste motor — a mutação `Math.ceil(x)` devolve 1001
+    expect(g.leads[0][0]).toBe(1000);
   });
 
   it("o bruto nunca parte do arredondado (PO-01): leads_bruto ≠ ⌈vendas⌉ ÷ conversão", () => {
