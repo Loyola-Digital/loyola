@@ -5,6 +5,7 @@ import { stageSalesSpreadsheets, manualSales, funnelStages, funnels, funnelSprea
 import { readSheetData } from "./google-sheets.js";
 import { classifyOrigem, classifyCanal, type Origem, type Canal } from "../utils/lead-origin.js";
 import { classifyRefundStatus, isRefundBucket } from "./sales-status.js";
+import { juntarPorComprador } from "../utils/comprador.js";
 
 /**
  * Story 36.7 (Buraco 3 / "Dados Diários" — metade de vendas): faturamento +
@@ -210,7 +211,10 @@ export async function resolveSalesSheetsForStage(
 }
 
 export async function computeSalesDailyForStage(db: Database, stageId: string): Promise<SalesDailyPayload | null> {
-  const { sheets } = await resolveSalesSheetsForStage(db, stageId);
+  const { sheets, stageType } = await resolveSalesSheetsForStage(db, stageId);
+  // Etapa de Vendas conta COMPRADORES — mesma regra do painel
+  // (`stage-sales-data.ts`). Ver `juntarPorComprador`.
+  const porComprador = stageType === "sales";
 
   // Brief v5 #1: vendas manuais (Evento Presencial / Vendas / captações) —
   // reembolsadas (refundedAt != null) ficam fora, mesma regra do dashboard.
@@ -221,6 +225,7 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
       valorRecebido: manualSales.valorRecebido,
       product: manualSales.product,
       saleDate: manualSales.saleDate,
+      email: manualSales.customerEmail,
     })
     .from(manualSales)
     .where(and(eq(manualSales.stageId, stageId), isNull(manualSales.refundedAt)));
@@ -232,7 +237,7 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
   // como vendas separadas; retry literal (mesmo pedido+produto) colapsa.
   const sales = new Map<
     string,
-    { bruto: number; liquido: number; utmSource: string | null; utmMedium: string | null; utmTerm: string | null; date: Date | null; produto: string; plataforma: string }
+    { email: string; bruto: number; liquido: number; utmSource: string | null; utmMedium: string | null; utmTerm: string | null; lastDate: Date | null; produto: string; plataforma: string }
   >();
   const subtypesConsidered = new Set<string>();
 
@@ -277,12 +282,13 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
         : `${sheet.id}|row|${rowIndex}`;
       if (txId && sales.has(dedupKey)) continue;
       sales.set(dedupKey, {
+        email,
         bruto: parseNumber(row[brutoIdx] ?? ""),
         liquido: parseNumber(row[liquidoIdx] ?? ""),
         utmSource: utmSourceIdx !== -1 ? sanitizeUtmValue(row[utmSourceIdx]) : null,
         utmMedium: utmMediumIdx !== -1 ? sanitizeUtmValue(row[utmMediumIdx]) : null,
         utmTerm: utmTermIdx !== -1 ? sanitizeUtmValue(row[utmTermIdx]) : null,
-        date: dataIdx !== -1 ? parseDate(row[dataIdx]) : null,
+        lastDate: dataIdx !== -1 ? parseDate(row[dataIdx]) : null,
         produto: produto || "(sem produto)",
         plataforma: sheet.subtype,
       });
@@ -293,12 +299,13 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
     const bruto = parseFloat(m.value ?? "0") || 0;
     const recebido = m.valorRecebido != null ? parseFloat(m.valorRecebido) || 0 : null;
     sales.set(`manual|${m.id}`, {
+      email: (m.email ?? "").trim().toLowerCase(),
       bruto,
       liquido: recebido ?? bruto,
       utmSource: null,
       utmMedium: null,
       utmTerm: null,
-      date: m.saleDate,
+      lastDate: m.saleDate,
       produto: (m.product ?? "").trim() || "(venda manual)",
       plataforma: "manual",
     });
@@ -318,23 +325,15 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
   let minDate: string | null = null;
   let maxDate: string | null = null;
 
-  for (const s of sales.values()) {
-    totalBruto += s.bruto;
-    totalLiquido += s.liquido;
-    const origem = classifyOrigem(s.utmSource);
-    const po = porOrigem.get(origem) ?? { vendas: 0, bruto: 0, liquido: 0 };
-    po.vendas += 1;
-    po.bruto += s.bruto;
-    po.liquido += s.liquido;
-    porOrigem.set(origem, po);
+  /**
+   * Linhas x compradores. Produto e plataforma seguem por LINHA — "quantos
+   * order bumps saíram" é justamente o que essas quebras mostram. Total,
+   * origem, canal e dia contam compradores na etapa de Vendas.
+   */
+  const linhas = [...sales.values()];
+  const contadas = porComprador ? juntarPorComprador(linhas) : linhas;
 
-    const canal = classifyCanal(s.utmSource, s.utmMedium);
-    const pc = porCanal.get(canal) ?? { vendas: 0, bruto: 0, liquido: 0 };
-    pc.vendas += 1;
-    pc.bruto += s.bruto;
-    pc.liquido += s.liquido;
-    porCanal.set(canal, pc);
-
+  for (const s of linhas) {
     const pp = porProduto.get(s.produto) ?? { vendas: 0, bruto: 0, liquido: 0 };
     pp.vendas += 1;
     pp.bruto += s.bruto;
@@ -353,6 +352,24 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
     ppf.bruto += s.bruto;
     ppf.liquido += s.liquido;
     porProdutoPlataforma.set(ppfKey, ppf);
+  }
+
+  for (const s of contadas) {
+    totalBruto += s.bruto;
+    totalLiquido += s.liquido;
+    const origem = classifyOrigem(s.utmSource);
+    const po = porOrigem.get(origem) ?? { vendas: 0, bruto: 0, liquido: 0 };
+    po.vendas += 1;
+    po.bruto += s.bruto;
+    po.liquido += s.liquido;
+    porOrigem.set(origem, po);
+
+    const canal = classifyCanal(s.utmSource, s.utmMedium);
+    const pc = porCanal.get(canal) ?? { vendas: 0, bruto: 0, liquido: 0 };
+    pc.vendas += 1;
+    pc.bruto += s.bruto;
+    pc.liquido += s.liquido;
+    porCanal.set(canal, pc);
 
     const temperatura = classifyTemperaturaVenda(s.utmTerm);
     const otKey = `${origem}|${temperatura ?? "null"}`;
@@ -362,8 +379,8 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
     ot.liquido += s.liquido;
     porOT.set(otKey, ot);
 
-    if (s.date) {
-      const key = ymd(s.date);
+    if (s.lastDate) {
+      const key = ymd(s.lastDate);
       const e = byDay.get(key) ?? { bruto: 0, liquido: 0, pago: 0, org: 0, semTrack: 0 };
       e.bruto += s.bruto;
       e.liquido += s.liquido;
@@ -378,7 +395,7 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
 
   return {
     range: { from: minDate, to: maxDate },
-    totalVendas: sales.size,
+    totalVendas: contadas.length,
     faturamentoBruto: Math.round(totalBruto * 100) / 100,
     faturamentoLiquido: Math.round(totalLiquido * 100) / 100,
     byDay: [...byDay.entries()]
