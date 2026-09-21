@@ -88,7 +88,7 @@ Respondidas nesta ordem, uma a uma. "Reproduz" = faz como a planilha; "corrige" 
 
 | Story | Título | RN cobertas | Depende de | Status |
 |---|---|---|---|---|
-| 48.1 | Inputs Financeiros — modelo, API e tela (aba 1) | RN-001…009, 037, 040 | P1, P2 | Draft |
+| 48.1 | Inputs Financeiros — modelo, API e tela (aba 1) | RN-001…009, 037, 040 | P1 ✅, P2 ✅ | **Ready condicional** — @po GO 8/10 em 2026-09-21; pendentes: PO-02 (onde a tela vive), PO-04 (custos > 100 %), estimativa Alta / L |
 | 48.2 | Motor de cenários no `shared` (abas 2 e 3, parte pura) | RN-010…015, 024…026 | — (só testes) | **Ready** — @po GO 10/10 em 2026-09-21; Alta, M (5–8) |
 | 48.3 | Leads orgânicos — seleção, combinações e resumo (aba 2) | RN-016…023 | 48.1, 48.2 | a rascunhar |
 | 48.4 | Leads pagos — seleção, combinações e resumo (aba 3) | RN-016…022, 027…029 | 48.1, 48.2 | a rascunhar |
@@ -134,6 +134,7 @@ Regra do repo mantida: executor ≠ quality gate em todas as linhas.
 | 2026-09-21 | @sm (River) | Danilo confirmou as três leituras do @sm: D3 (escada trava em zero nos pagos), D10 (apêndice A valida o bruto), 48.1 AC13 (permissão = a do funil) |
 | 2026-09-21 | @devops (Gage) | P1 resolvida: Lucas autorizou o escopo (via Danilo) com a condição "não mexer em nada que ele já implementou"; leitura operacional registrada para confirmação na primeira PR de código |
 | 2026-09-21 | @po (Pax) | 48.2 validada: GO 10/10, Ready; estimativa Alta / M (5–8) confirmada pelo Danilo |
+| 2026-09-21 | @po (Pax) | 48.1 validada: GO condicional 8/10; rota escopada por projeto (PO-01); decisões pendentes do Danilo: onde a tela vive (PO-02) e custos > 100 % (PO-04); estimativa Alta / L (8–13) proposta |
 | 2026-09-21 | @pm (Morgan) | **P2 ✅ — estrutura validada.** Acrescentados objetivo, critérios de sucesso S1–S4, ordem de execução em 3 waves com executor/gate por story, riscos R1–R6, roadmap do que ficou fora; E4 corrigido (nomes dos módulos = os das stories). Número 48 confirmado na `main` (#898). |
 
 <!-- clickup:17tqamemnem -->
