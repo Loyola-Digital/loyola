@@ -71,6 +71,34 @@ interface CampanhaExistente {
 }
 
 /**
+ * Tira os eventos do Google que são CÓPIA de uma fase que já tem evento.
+ *
+ * Evento solto (nenhuma fase aponta para ele) com o mesmo nome e início de um
+ * evento que já tem fase é duplicata no Google — sobra de campanha fantasma
+ * excluída, de renomeação, de duas gravações simultâneas. Somá-lo como fase
+ * nova punha o card em dobro DENTRO da própria campanha (21/09/2026).
+ *
+ * Nome + início, e não só nome: perpétuo repete a mesma fase em ciclos
+ * ("Prod. Carrinho" em outubro, novembro, dezembro), e esses são fases de
+ * verdade.
+ */
+export function semEventosRepetidos(
+  doGoogle: FaseDoPlanner[],
+  ligados: Set<string>,
+): FaseDoPlanner[] {
+  const chave = (f: FaseDoPlanner) => `${chaveDoNome(f.name)}|${f.start}`;
+  const comFase = new Set(doGoogle.filter((f) => ligados.has(f.googleEventId!)).map(chave));
+  const soltos = new Set<string>();
+  return doGoogle.filter((f) => {
+    if (ligados.has(f.googleEventId!)) return true;
+    const k = chave(f);
+    if (comFase.has(k) || soltos.has(k)) return false;
+    soltos.add(k);
+    return true;
+  });
+}
+
+/**
  * De qual campanha JÁ EXISTENTE é o evento. `null` = nenhuma.
  *
  * Em ordem: quem tem o vínculo (o id do evento numa fase), e depois quem tem o
@@ -279,7 +307,7 @@ export async function importarDaAgenda(
         .map((f) => [f.googleEventId as string, f]),
     );
 
-    const novas = fasesDoGoogle
+    const novas = semEventosRepetidos(fasesDoGoogle, new Set(antesPorEvento.keys()))
       .filter((f) => !pendentes.has(f.googleEventId))
       .map((f) => {
         // Preserva o id da fase quando ela já existia: a seleção na tela e o

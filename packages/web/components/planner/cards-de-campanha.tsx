@@ -354,19 +354,15 @@ export function CardDeCampanha({
           </p>
         </div>
 
-        {/* O input de cor cobre o quadradinho, invisível: a área de clique é a
-            do alvo, não a do controle nativo. */}
-        <span className="relative grid h-6 w-6 shrink-0 place-items-center rounded-[5px] hover:bg-foreground/10">
+        {/* A cor é a do expert, fixa (`cor-do-expert.ts`): não há mais o que
+            escolher aqui, só a legenda de quem é a campanha. */}
+        <span
+          className="grid h-6 w-6 shrink-0 place-items-center"
+          title="Cor do expert: PP verde · FZ rosa · DG azul · BBE vinho · Lyrio cinza · Geral amarelo"
+        >
           <span
             className="h-3.5 w-3.5 rounded-[3px] shadow-[inset_0_0_0_1px_rgba(0,0,0,.15)]"
             style={{ backgroundColor: cor }}
-          />
-          <input
-            type="color"
-            value={cor}
-            onChange={(e) => onMudar({ color: e.target.value })}
-            aria-label={`Cor de ${campanha.name}`}
-            className="absolute inset-0 cursor-pointer border-0 p-0 opacity-0"
           />
         </span>
 

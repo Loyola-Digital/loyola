@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { donoDoEvento, faseNoTitulo } from "../services/planner-sync.js";
+import { donoDoEvento, faseNoTitulo, semEventosRepetidos } from "../services/planner-sync.js";
 import { vinculosDoServidor } from "../services/planner.js";
 
 const AGENDA = "dg@group.calendar.google.com";
@@ -110,5 +110,34 @@ describe("vinculosDoServidor", () => {
     const antes = [{ ...fase("a", "X", "ev"), googleSyncPendente: true }];
     const r = vinculosDoServidor([fase("a", "X", "ev")], antes, new Set());
     expect(r[0]!.googleSyncPendente).toBe(true);
+  });
+});
+
+describe("semEventosRepetidos", () => {
+  const ev = (googleEventId: string, name: string, start: string) => ({ id: `g${googleEventId}`, name, start, end: start, googleEventId });
+
+  it("evento solto igual a uma fase que já tem evento é cópia — sai", () => {
+    // O card em dobro dentro da campanha: a fase ligada + a sobra no Google.
+    const r = semEventosRepetidos(
+      [ev("ligado", "Prod. Carrinho", "2026-12-08"), ev("sobra", "Prod. Carrinho", "2026-12-08")],
+      new Set(["ligado"]),
+    );
+    expect(r.map((f) => f.googleEventId)).toEqual(["ligado"]);
+  });
+
+  it("perpétuo repete a fase em ciclos: mesmo nome, outra data, fica", () => {
+    const r = semEventosRepetidos(
+      [ev("out", "Prod. Carrinho", "2026-10-20"), ev("nov", "Prod. Carrinho", "2026-11-20")],
+      new Set(["out"]),
+    );
+    expect(r).toHaveLength(2);
+  });
+
+  it("duas cópias soltas iguais viram uma fase só", () => {
+    const r = semEventosRepetidos(
+      [ev("a", "Definições", "2026-09-08"), ev("b", "definicoes", "2026-09-08")],
+      new Set(),
+    );
+    expect(r).toHaveLength(1);
   });
 });

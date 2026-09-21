@@ -16,18 +16,39 @@
  */
 
 import { toast } from "sonner";
+import { useCallback, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import type { Campanha, Fase } from "@/lib/planner/datas";
+import { corDaCampanha } from "@/lib/planner/cor-do-expert";
 
 const BASE = "/api/planner/campanhas";
 const CHAVE = ["planner", "campanhas"] as const;
 
 export function usePlanner() {
   const api = useApiClient();
+  // A cor é a do EXPERT, fixa (ver `cor-do-expert.ts`). Aplicada aqui, na
+  // leitura, para calendário, linha do tempo e cards pintarem igual sem cada
+  // um lembrar da regra — e para valer também nas campanhas antigas, sem
+  // regravar nada no banco.
+  const { data: agendas } = useAgendasDoGoogle();
+  const rotulos = useMemo(
+    () => new Map((agendas?.agendas ?? []).map((a) => [a.calendarId, a.label])),
+    [agendas],
+  );
+  const comCorDoExpert = useCallback(
+    (d: { campanhas: Campanha[] }) => ({
+      campanhas: d.campanhas.map((c) => ({
+        ...c,
+        color: corDaCampanha(c.name, rotulos.get(c.googleCalendarId ?? "")),
+      })),
+    }),
+    [rotulos],
+  );
   return useQuery({
     queryKey: CHAVE,
     queryFn: () => api<{ campanhas: Campanha[] }>(BASE),
+    select: comCorDoExpert,
   });
 }
 
