@@ -49,8 +49,9 @@ export function paraFormulario(inputs: InputsPersistidos): FormularioDosInputs {
     const v = inputs[k];
     if (v === null || v === undefined) f[k] = "";
     // `toFixed(6)` + `Number()`: 0.07 × 100 = 7.000000000000001 viraria "7.000000000000001" no campo.
-    else if (TIPO_DO_CAMPO[k] === "pct") f[k] = String(Number((v * 100).toFixed(6)));
-    else f[k] = String(v);
+    // Vírgula decimal na volta (MNT-002): é o que o usuário pt-BR digita e o que `lerNumero` lê.
+    else if (TIPO_DO_CAMPO[k] === "pct") f[k] = String(Number((v * 100).toFixed(6))).replace(".", ",");
+    else f[k] = String(v).replace(".", ",");
   }
   return f;
 }
@@ -105,4 +106,20 @@ export function comoEntradas(e: InputsPersistidos): InputsFinanceiros {
 /** Há diferença entre o que está no formulário e o que a API tem? (`NaN` conta como diferente.) */
 export function formularioAlterado(atual: InputsPersistidos, salvo: InputsPersistidos): boolean {
   return CAMPOS_DOS_INPUTS_FINANCEIROS.some((k) => !Object.is(atual[k], salvo[k]));
+}
+
+/**
+ * Estado da tela dos Inputs Financeiros (gate da 48.1, REL-001).
+ *
+ * ERRO vem ANTES de "carregando": em falha da API o formulário nunca é
+ * preenchido, e uma tela que testasse `!temForm` primeiro mostraria o skeleton
+ * para sempre — erro virando ausência, a classe de defeito que o repo bloqueia.
+ * Extraída para `lib/utils` porque `components/funnels` fica fora do vitest.
+ */
+export type EstadoDaTela = "erro" | "carregando" | "pronto";
+
+export function estadoDaTela(q: { isLoading: boolean; isError: boolean; temForm: boolean }): EstadoDaTela {
+  if (q.isError) return "erro";
+  if (q.isLoading || !q.temForm) return "carregando";
+  return "pronto";
 }

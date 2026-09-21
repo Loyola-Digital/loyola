@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   comoEntradas,
+  estadoDaTela,
   formularioAlterado,
   lerNumero,
   paraEntradas,
@@ -74,13 +75,14 @@ describe("paraEntradas — o payload da API", () => {
 });
 
 describe("paraFormulario — ida e volta", () => {
-  it("fração vira pontos como texto curto: 0.04 → '4'; 0.07 → '7' (não '7.000000000000001'); null → ''", () => {
-    const f = paraFormulario(persistido({ pctReembolso: 0.04, pctImposto: 0.07, pctOrgEmail: 0.125, metaMargemTotal: 250000 }));
+  it("fração vira pontos como texto curto com VÍRGULA: 0.04 → '4'; 0.07 → '7' (não '7.000000000000001'); 0.125 → '12,5'; 1200.5 → '1200,5'; null → ''", () => {
+    const f = paraFormulario(persistido({ pctReembolso: 0.04, pctImposto: 0.07, pctOrgEmail: 0.125, metaMargemTotal: 250000, ticketMedio: 1200.5 }));
     expect(f.pctReembolso).toBe("4");
     expect(f.pctImposto).toBe("7");
-    expect(f.pctOrgEmail).toBe("12.5");
+    expect(f.pctOrgEmail).toBe("12,5");
     expect(f.metaMargemTotal).toBe("250000");
-    expect(f.ticketMedio).toBe("");
+    expect(f.ticketMedio).toBe("1200,5");
+    expect(f.baseEmail).toBe("");
   });
 
   it("API → formulário → API devolve o mesmo payload (apêndice A)", () => {
@@ -135,5 +137,20 @@ describe("comoEntradas e formularioAlterado", () => {
     expect(formularioAlterado(persistido({ pctImposto: 0.13 }), salvo)).toBe(true);
     expect(formularioAlterado(persistido({ pctImposto: Number.NaN }), salvo)).toBe(true);
     expect(formularioAlterado(persistido({ pctImposto: 0.12, baseEmail: 1 }), salvo)).toBe(true);
+  });
+});
+
+describe("estadoDaTela — erro vem ANTES de carregando (gate REL-001)", () => {
+  it("falha da API sem formulário → 'erro', nunca 'carregando' eterno", () => {
+    // O cenário do defeito: `isError` true, `isLoading` false, formulário nunca preenchido.
+    expect(estadoDaTela({ isLoading: false, isError: true, temForm: false })).toBe("erro");
+    // Erro também vence quando um formulário antigo ainda existe (refetch que falhou).
+    expect(estadoDaTela({ isLoading: false, isError: true, temForm: true })).toBe("erro");
+  });
+
+  it("carregando enquanto a query roda ou o formulário ainda não foi montado; pronto quando tem formulário", () => {
+    expect(estadoDaTela({ isLoading: true, isError: false, temForm: false })).toBe("carregando");
+    expect(estadoDaTela({ isLoading: false, isError: false, temForm: false })).toBe("carregando");
+    expect(estadoDaTela({ isLoading: false, isError: false, temForm: true })).toBe("pronto");
   });
 });

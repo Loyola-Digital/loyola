@@ -112,7 +112,7 @@ export default function PlanejamentoPage() {
           ))}
         </TabsList>
         <TabsContent value="inputs" className="mt-4">
-          <PlanejamentoInputsFinanceiros projectId={params.id} funnelId={params.funnelId} podeEditar={role !== "guest"} />
+          <PlanejamentoInputsFinanceiros projectId={params.id} funnelId={params.funnelId} podeEditar={role !== null && role !== "guest"} />
         </TabsContent>
       </Tabs>
     </div>

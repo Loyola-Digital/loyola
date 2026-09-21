@@ -13,6 +13,7 @@ import { derivarInputsFinanceiros, type DerivadosFinanceiros } from "@loyola-x/s
 import {
   TIPO_DO_CAMPO,
   comoEntradas,
+  estadoDaTela,
   formularioAlterado,
   paraEntradas,
   paraFormulario,
@@ -48,6 +49,7 @@ function CampoNumerico({
   erro,
   onChange,
   readOnly,
+  ariaLabel,
 }: {
   campo: Campo;
   rotulo: string;
@@ -55,14 +57,18 @@ function CampoNumerico({
   erro?: string;
   onChange: (v: string) => void;
   readOnly: boolean;
+  /** Quando o rótulo visível está vazio (tabela de canais), o leitor de tela recebe este (MNT-003). */
+  ariaLabel?: string;
 }) {
   const tipo = TIPO[campo];
   const sufixo = tipo === "pct" ? "%" : tipo === "moeda" ? "R$" : "#";
   return (
     <div className="space-y-1">
-      <Label htmlFor={campo} className="text-xs text-muted-foreground">
-        {rotulo}
-      </Label>
+      {rotulo && (
+        <Label htmlFor={campo} className="text-xs text-muted-foreground">
+          {rotulo}
+        </Label>
+      )}
       <div className="relative">
         <Input
           id={campo}
@@ -70,6 +76,7 @@ function CampoNumerico({
           value={valor}
           onChange={(ev) => onChange(ev.target.value)}
           readOnly={readOnly}
+          aria-label={rotulo ? undefined : ariaLabel}
           aria-invalid={!!erro}
           className={`pr-8 tabular-nums ${erro ? "border-destructive" : ""}`}
           placeholder="—"
@@ -131,7 +138,18 @@ export function PlanejamentoInputsFinanceiros({
   );
   const temErro = Object.keys(erros).length > 0;
 
-  if (query.isLoading || !form || !derivados || !entradas) {
+  // Ordem decidida em `estadoDaTela` (REL-001): erro ANTES de carregando —
+  // em falha da API o formulário nunca é preenchido, e `!form` primeiro
+  // deixaria o skeleton na tela para sempre.
+  const estadoAtual = estadoDaTela({ isLoading: query.isLoading, isError: query.isError, temForm: form !== null });
+  if (estadoAtual === "erro") {
+    return (
+      <p role="alert" className="text-sm text-destructive">
+        Não foi possível carregar os inputs financeiros: {(query.error as Error).message}
+      </p>
+    );
+  }
+  if (estadoAtual === "carregando" || !form || !derivados || !entradas) {
     return (
       <div className="space-y-3">
         <Skeleton className="h-6 w-48" />
@@ -140,17 +158,10 @@ export function PlanejamentoInputsFinanceiros({
       </div>
     );
   }
-  if (query.isError) {
-    return (
-      <p role="alert" className="text-sm text-destructive">
-        Não foi possível carregar os inputs financeiros: {(query.error as Error).message}
-      </p>
-    );
-  }
 
   const set = (campo: Campo) => (v: string) => setForm((f) => (f ? { ...f, [campo]: v } : f));
-  const campo = (c: Campo, rotulo: string) => (
-    <CampoNumerico campo={c} rotulo={rotulo} valor={form[c]} erro={erros[c]} onChange={set(c)} readOnly={!podeEditar} />
+  const campo = (c: Campo, rotulo: string, ariaLabel?: string) => (
+    <CampoNumerico campo={c} rotulo={rotulo} valor={form[c]} erro={erros[c]} onChange={set(c)} readOnly={!podeEditar} ariaLabel={ariaLabel} />
   );
   const d = derivados;
 
@@ -357,7 +368,7 @@ export function PlanejamentoInputsFinanceiros({
                   <tr key={c.chave}>
                     <td className="py-1">{c.rotulo}</td>
                     <td className="text-right py-1">
-                      <div className="ml-auto w-36">{campo(c.pct, "")}</div>
+                      <div className="ml-auto w-36">{campo(c.pct, "", `% da meta — ${c.rotulo}`)}</div>
                     </td>
                     <td className="text-right">{fmtCurrency(d.canais[c.chave].margem)}</td>
                     <td className="text-right">{fmtCurrency(d.canais[c.chave].receita)}</td>
