@@ -1,6 +1,6 @@
 # EPIC 48 — Painel de Planejamento: simulador de cenários do lançamento
 
-**Status:** Draft — stories 48.1 e 48.2 rascunhadas em 2026-09-21; 48.3–48.5 a rascunhar após validação das duas primeiras
+**Status:** Estrutura **validada pelo @pm (Morgan) em 2026-09-21** (P2 ✅) · P1 ✅ (Lucas, com condição) · 48.1 e 48.2 **Draft, aguardando @po (P3)** · 48.3–48.5 a rascunhar após o GO das duas primeiras
 **Origem:** planilha "Painel de Controle" do lançamento, categoria **Planejamento** (Google Sheets), que será **desativada por completo**. Toda a lógica dela foi lida e documentada em três artefatos guardados verbatim em `docs/specs/epic-48/`:
 - `especificacao_tecnica_painel_planejamento.md` — a **spec**: 8 abas, fórmulas literais, mapa de campos, casos de teste mascarados (apêndice A)
 - `classificacao_regras_painel_planejamento.md` — a **triagem**: 40 regras de negócio (RN), 11 artefatos descartados (AR), 31 dúvidas (DV); os IDs são estáveis e toda AC deste epic rastreia para um RN
@@ -10,6 +10,19 @@
 **Onde na UI:** funil de **lançamento** (`funnel_type = launch`) → aba nova **Planejamento** ao lado das etapas — decisão do Danilo em 2026-09-21 ("um simulador por funil de lançamento")
 
 ---
+
+## Objetivo do epic
+
+Desligar a planilha "Painel de Controle · Planejamento" sem perder a capacidade que ela dá ao time: **dimensionar, por lançamento, quantos leads captar e a que CPL máximo para bater a meta de margem** — com as mesmas regras, seis erros a menos e o dado no mesmo lugar onde já vivem o funil, as etapas e a captação.
+
+## Critérios de sucesso (mensuráveis — o @po confere no fechamento do epic)
+
+| # | Critério | Como medir |
+|---|---|---|
+| S1 | **Cobertura das regras:** cada RN das abas 1–4 (RN-001…031, 037…040) tem pelo menos um AC numa story 48.x que a cita pelo ID. | Grep dos IDs nas cinco stories; nenhum RN dessas abas sem AC. |
+| S2 | **Fidelidade à spec:** os casos mascarados (§1.4, §2.4, §3.4, §4.4, apêndice A) reproduzem nos testes — no bruto com tolerância relativa `1e-6`; as únicas divergências são as seis correções de DV, cada uma com teste `não reproduz DV-xxx`. | Suíte verde; o teste diferencial falha quando a fórmula da planilha volta. |
+| S3 | **Prova com dados reais (o que os dados mascarados não provam):** os inputs do **próximo lançamento** entram no sistema e na planilha; cada número diferente entre os dois é explicado por uma das seis DV corrigidas ou pelo arredondamento D10 — nenhuma diferença sem explicação. | Sessão de conferência Danilo + @qa, registrada no epic. `[FALTA]`: qual lançamento. |
+| S4 | **Planilha desligada:** o time planeja um lançamento inteiro (abas 1–4) só no sistema. | Declaração do Danilo no Change Log. |
 
 ## O que é
 
@@ -67,7 +80,7 @@ Respondidas nesta ordem, uma a uma. "Reproduz" = faz como a planilha; "corrige" 
 | **E1** | **Um simulador por funil `launch`**, 1:1, criado sob demanda ao abrir a aba. | Decisão do Danilo. A planilha é um "Painel de Controle" por lançamento (`ID = PRODUTO-ÍNDICE-ANO-MÊS`, DV-028); no sistema, o lançamento é o funil `launch` (mapa §3.5, M03). |
 | **E2** | **Prefixo `plan_`** para as tabelas novas (`plan_simulator`, `plan_organic_channel`, `plan_paid_source`, …). | Convenção do repo: prefixo por domínio (`stage_*`, `planner_*`, `naming_*`, mapa §8.1). `planner_*` já é o Calendário (M25) — outro domínio. |
 | **E3** | **Taxonomia fixa** (RN-040): seis canais orgânicos (WhatsApp, Email, Instagram, Telegram, YouTube, Área de Membros — nesta ordem) e quatro fontes pagas (Meta quente, Meta frio, Google quente, Google frio) como **enums/constantes no `shared`**, não como cadastro. | É o que a planilha tem; nada no pedido pede canal configurável (Art. IV). Virar cadastro depois é migração aditiva. |
-| **E4** | **A regra mora num módulo folha do `shared`** (`packages/shared/src/simulador-de-cenarios.ts`), sem imports, importado por valor pelo web (subpath) e pela API (bare). Rota e tela **não calculam**. | Convenção documentada (`shared/src/index.ts:8-29`; mapa §8.2 item 1). É o que permite o teste contra o apêndice A rodar sem banco e o mesmo número aparecer na tela e na API pública, se um dia ela expuser. |
+| **E4** | **A regra mora em módulos folha do `shared`** (`packages/shared/src/planejamento-inputs-financeiros.ts` na 48.1, `planejamento-cenarios.ts` na 48.2, e os das stories seguintes), sem imports, importados por valor pelo web (subpath) e pela API (bare). Rota e tela **não calculam**. *(@pm 2026-09-21: nome corrigido para bater com as stories.)* | Convenção documentada (`shared/src/index.ts:8-29`; mapa §8.2 item 1). É o que permite o teste contra o apêndice A rodar sem banco e o mesmo número aparecer na tela e na API pública, se um dia ela expuser. |
 | **E5** | **Recálculo sob demanda, no cliente**, a partir dos inputs persistidos; o banco guarda **só entradas** (o que a planilha marca ✏️), nunca derivados. | A spec (§ "Ordem de cálculo") diz que tudo depende de `'1'!F16` e `G3:G8`; persistir derivados cria o problema clássico de cache desatualizado. Grafo acíclico, milhares de células — trivial em JS. |
 | **E6** | **Números:** percentuais e taxas como **fração decimal** (`0.25`), moeda em **centavos inteiros** ou `NUMERIC(18,2)`, contagens (bases) inteiras. | Spec § "Convenções" sugere `NUMERIC(12,6)`/`NUMERIC(18,2)`; centavos evitam a soma `0.10+0.20+0.70 ≠ 1` que a própria spec alerta (§1.4). O @data-engineer decide o tipo físico. |
 
@@ -83,6 +96,36 @@ Respondidas nesta ordem, uma a uma. "Reproduz" = faz como a planilha; "corrige" 
 
 Pontos e prioridade: `[FALTA]` — não estimados pelo @sm; @po/Danilo estimam na validação.
 
+## Ordem de execução, executores e gates (@pm, 2026-09-21)
+
+Cinco stories é mais do que o molde de epic brownfield (1–3) prevê; o que substitui o processo completo de PRD/arquitetura aqui é (a) a spec já existir com casos de teste, (b) o epic ser **só aditivo** (P1) e (c) a regra ficar em módulos puros testados antes de qualquer tela. Por isso a ordem abaixo — a parte sem risco de integração sai primeiro.
+
+| Wave | Story | Executor | Quality gate | Pode rodar em paralelo com | Observação |
+|---|---|---|---|---|---|
+| 1 | **48.2** motor de cenários | @dev | @qa (gate) | 48.1 | Só `shared` + testes. Começa antes de qualquer decisão de tela. |
+| 1 | **48.1** inputs financeiros | @dev; **T1 (schema `plan_*`) com @data-engineer** | @qa (gate); **@architect revisa AC1/T1** (âncora no funil, tabelas, permissão) antes do `*develop` | 48.2 | Primeira PR de código: é nela que a leitura da condição do Lucas (P1) é confirmada. |
+| 2 | **48.3** orgânicos | @dev | @qa | 48.4 | Consome 48.1 + 48.2. |
+| 2 | **48.4** pagos | @dev | @qa | 48.3 | Idem; carrega as correções D8, D13, D14. |
+| 3 | **48.5** resumo final | @dev | @qa | — | Carrega D9; fecha S1–S3. |
+
+Regra do repo mantida: executor ≠ quality gate em todas as linhas.
+
+## Riscos (@pm, 2026-09-21)
+
+| # | Risco | Prob. | Impacto | Mitigação |
+|---|---|---|---|---|
+| R1 | A condição do Lucas ("não mexer no que ele implementou") for lida de forma mais estrita que a leitura operacional de P1 — nem registrar em `app.ts`/`schema.ts`. | média | alto: trava a 48.1 | Confirmar na **primeira PR de código** (48.2 ou 48.1); plano B: outro membro `full` faz as linhas de registro. |
+| R2 | Os seis números corrigidos (D4, D5, D7, D8, D9, D13) **divergem da planilha** que o time ainda conhece — alguém lê como bug do sistema. | alta | médio | Cada correção tem AC "não reproduz DV-xxx" e a tela mostra memorial (E5/AC10 da 48.2 expõem o bruto); S3 explica diferença a diferença. Comunicar ao time **antes** do primeiro uso. |
+| R3 | D10 (arredondar para cima) muda CPL máximo e leads em relação à planilha em **todo** cenário, não só nos corrigidos. | alta | médio | Mesmo tratamento de R2; o bruto fica visível no memorial. |
+| R4 | Ponto flutuante na soma de percentuais (spec §1.4) — "falta distribuir 0 %". | média | baixo | AC10 da 48.1 fixa o comportamento; E6 sugere inteiros. |
+| R5 | Sem passagem 2 do mapa, a aba Planejamento nasce fora do padrão de navegação do funil (Epic 46). | média | médio | @architect revisa AC1/AC14 da 48.1 antes do `*develop` (tabela acima). |
+| R6 | Os dados mascarados provam a fórmula, não o uso: só o lançamento real prova que a planilha pode ser desligada. | — | alto | S3 é critério de sucesso, não opcional. |
+
+## Fora do epic — registrado para o roadmap
+
+- **Epic futuro: Cronograma + Desafios + Variáveis** (abas 5–8) — estender Planner (M25) e Debriefings (M24), não reconstruir; depende da passagem 2 do mapa e das DV-018…023, 027…030.
+- **Extensão natural (não pedida):** cruzar planejado × realizado (leads e spend da captação paga, vendas da planilha) dentro da mesma aba. Só depois de S4.
+
 ## Change Log
 
 | Data | Agente | Mudança |
@@ -90,3 +133,4 @@ Pontos e prioridade: `[FALTA]` — não estimados pelo @sm; @po/Danilo estimam n
 | 2026-09-21 | @sm (River) | Epic criado para reservar o nº 48 e registrar as 14 decisões do Danilo; 48.1 e 48.2 rascunhadas; docs copiados para `docs/specs/epic-48/` |
 | 2026-09-21 | @sm (River) | Danilo confirmou as três leituras do @sm: D3 (escada trava em zero nos pagos), D10 (apêndice A valida o bruto), 48.1 AC13 (permissão = a do funil) |
 | 2026-09-21 | @devops (Gage) | P1 resolvida: Lucas autorizou o escopo (via Danilo) com a condição "não mexer em nada que ele já implementou"; leitura operacional registrada para confirmação na primeira PR de código |
+| 2026-09-21 | @pm (Morgan) | **P2 ✅ — estrutura validada.** Acrescentados objetivo, critérios de sucesso S1–S4, ordem de execução em 3 waves com executor/gate por story, riscos R1–R6, roadmap do que ficou fora; E4 corrigido (nomes dos módulos = os das stories). Número 48 confirmado na `main` (#898). |
