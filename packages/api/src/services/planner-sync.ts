@@ -71,6 +71,19 @@ interface CampanhaExistente {
 }
 
 /**
+ * As mesmas fases, na mesma ordem, com os mesmos valores.
+ *
+ * Compara ignorando a ORDEM DAS CHAVES: o Postgres devolve jsonb com as chaves
+ * reordenadas (`{"id","end","name","start",…}`), e comparar o texto direto
+ * diria "mudou" sempre.
+ */
+export function mesmasFases(a: FaseDoPlanner[], b: FaseDoPlanner[]): boolean {
+  const canon = (fs: FaseDoPlanner[]) =>
+    JSON.stringify(fs.map((f) => Object.fromEntries(Object.entries(f).sort(([x], [y]) => x.localeCompare(y)))));
+  return canon(a) === canon(b);
+}
+
+/**
  * Tira os eventos do Google que são CÓPIA de uma fase que já tem evento.
  *
  * Evento solto (nenhuma fase aponta para ele) com o mesmo nome e início de um
@@ -316,10 +329,17 @@ export async function importarDaAgenda(
         return normalizarFase(antes ? { ...f, id: antes.id } : f);
       });
 
+    const fasesNovas = [...preservadas, ...novas];
+    // Só grava o que o Google MUDOU. Regravar toda campanha a cada ciclo abria
+    // uma janela em que a importação, com a leitura de segundos antes, desfazia
+    // a edição que alguém acabava de salvar na tela — e com o ciclo de 5
+    // minutos isso passaria a acontecer 6× mais.
+    if (atual.googleCalendarId && mesmasFases(fasesNovas, atual.phases as FaseDoPlanner[])) continue;
+
     await db
       .update(plannerCampaigns)
       .set({
-        phases: [...preservadas, ...novas],
+        phases: fasesNovas,
         // Campanha importada antes de a escrita existir não tinha agenda
         // gravada. A primeira reimportação preenche, e ela passa a espelhar.
         ...(atual.googleCalendarId ? {} : { googleCalendarId: calendarId }),

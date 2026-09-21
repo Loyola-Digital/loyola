@@ -36,7 +36,13 @@ import {
 import { importarDaAgenda, reenviarPendentes } from "../services/planner-sync.js";
 import { PALETA } from "../routes/planner.js";
 
-const PADRAO_MINUTOS = 30;
+/**
+ * De 30 para 5 (21/09/2026): quem mexia no Google Calendar e abria o Planner
+ * em seguida achava que a volta não existia. Cada ciclo são poucas leituras
+ * (uma por agenda) e a importação só grava a campanha que mudou, então rodar
+ * mais não custa dado nem cota que importe. `PLANNER_SYNC_MINUTES` sobrescreve.
+ */
+const PADRAO_MINUTOS = 5;
 
 export default fp(async function plannerSyncSchedulerPlugin(fastify) {
   if (fastify.config.NODE_ENV === "test") return;

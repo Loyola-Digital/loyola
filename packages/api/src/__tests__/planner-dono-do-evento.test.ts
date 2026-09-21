@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { donoDoEvento, faseNoTitulo, semEventosRepetidos } from "../services/planner-sync.js";
+import { donoDoEvento, faseNoTitulo, mesmasFases, semEventosRepetidos } from "../services/planner-sync.js";
 import { vinculosDoServidor } from "../services/planner.js";
 
 const AGENDA = "dg@group.calendar.google.com";
@@ -139,5 +139,18 @@ describe("semEventosRepetidos", () => {
       new Set(),
     );
     expect(r).toHaveLength(1);
+  });
+});
+
+describe("mesmasFases", () => {
+  it("ignora a ordem das chaves (o jsonb reordena)", () => {
+    const daTela = [{ id: "a", name: "X", start: "2026-10-01", end: "2026-10-05", googleEventId: "e" }];
+    const doBanco = [{ id: "a", end: "2026-10-05", name: "X", start: "2026-10-01", googleEventId: "e" }];
+    expect(mesmasFases(daTela, doBanco)).toBe(true);
+  });
+
+  it("data mudada no Google é mudança", () => {
+    const a = [{ id: "a", name: "X", start: "2026-10-01", end: "2026-10-05" }];
+    expect(mesmasFases(a, [{ ...a[0]!, start: "2026-10-02" }])).toBe(false);
   });
 });
