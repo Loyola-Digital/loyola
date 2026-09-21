@@ -29,11 +29,11 @@ Este epic põe isso dentro do Loyola X, ligado ao funil de lançamento:
 - Não lê dados reais de captação (leads, spend da Meta, vendas da planilha) para preencher o simulador. É planejamento, entrada manual, como na planilha. Cruzar realizado × planejado é extensão natural — **não foi pedido** (Constituição, Art. IV).
 - Não reproduz os 11 artefatos descartados (AR-001…011: células espelho, barra em caracteres "█", legendas em texto, verificações identicamente 100 %, re-somas). O que eles mostravam continua existindo como dado ou como componente de UI.
 
-## Pré-condições — ⛔ bloqueiam o `*develop` da 48.1
+## Pré-condições — ⛔ bloqueiam o `*develop` da 48.1 (P1 resolvida; restam P2 e P3)
 
 | # | O quê | Quem |
 |---|---|---|
-| P1 | **Autorização de escopo.** O usuário que abriu o pedido (`danilo@bonsaitrafegopago.com.br`) tem `scope: restricted` em `docs/team/members.md`; a implementação toca `packages/api/src/db/schema.ts`, `app.ts`, rotas novas, `packages/shared/src` e telas do funil — fora dos `allowed_paths`. Pelo `team-scopes.md`: autorização do Lucas documentada no commit (`[scope-override]`) ou outro membro com `scope: full` implementando. Precedente: Epic 47 P2. | Lucas |
+| ~~P1~~ ✅ | **Autorização de escopo — resolvida em 2026-09-21: Lucas autorizou (informado pelo Danilo), com a condição, nas palavras do Danilo: "desde que não mexa em nada que ele já implementou".** Commits do epic levam `[scope-override]`. **Leitura operacional da condição (a confirmar com o Lucas na primeira PR de código):** (a) o epic só **adiciona** — tabelas `plan_*` novas, rotas novas em arquivos novos, módulos novos no `shared`, componentes novos; (b) nos arquivos de registro compartilhados (`schema.ts`, `app.ts`, `shared/src/index.ts`, navegação do funil) entram **só linhas novas** (declaração/registro/export), sem alterar linha existente; (c) nenhum arquivo de feature de autoria do Lucas é editado — o @dev confere `git log --format=%an -- <arquivo>` antes de tocar qualquer arquivo e lista na PR os que têm autoria dele, com o diff restrito ao item (b). Contexto original: o autor do pedido (`danilo@bonsaitrafegopago.com.br`) tem `scope: restricted` em `docs/team/members.md` e o epic toca `packages/api/src/db/schema.ts`, `app.ts`, rotas, `packages/shared/src` e telas do funil. Precedente: Epic 47 P2. | Lucas ✅ |
 | P2 | **@pm valida esta estrutura** (ou reescreve) e confirma o número 48. | @pm |
 | P3 | **@po valida a 48.1 e a 48.2** (10 pontos). As leituras do @sm em D3, D10 e na AC13 da 48.1 já foram confirmadas pelo Danilo (2026-09-21). | @po |
 
@@ -89,3 +89,4 @@ Pontos e prioridade: `[FALTA]` — não estimados pelo @sm; @po/Danilo estimam n
 |---|---|---|
 | 2026-09-21 | @sm (River) | Epic criado para reservar o nº 48 e registrar as 14 decisões do Danilo; 48.1 e 48.2 rascunhadas; docs copiados para `docs/specs/epic-48/` |
 | 2026-09-21 | @sm (River) | Danilo confirmou as três leituras do @sm: D3 (escada trava em zero nos pagos), D10 (apêndice A valida o bruto), 48.1 AC13 (permissão = a do funil) |
+| 2026-09-21 | @devops (Gage) | P1 resolvida: Lucas autorizou o escopo (via Danilo) com a condição "não mexer em nada que ele já implementou"; leitura operacional registrada para confirmação na primeira PR de código |
