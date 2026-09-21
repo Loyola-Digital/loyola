@@ -484,3 +484,19 @@ export {
   type GradeOrganica,
   type GradePaga,
 } from "./planejamento-cenarios.js";
+// Story 48.1: Inputs Financeiros do Painel de Planejamento (aba 1) — as 20
+// entradas e a derivação das metas e receitas necessárias por fonte paga e
+// canal orgânico, mais o status da distribuição (RN-009). Módulo folha: o web
+// importa por `@loyola-x/shared/src/planejamento-inputs-financeiros`.
+export {
+  CAMPOS_DOS_INPUTS_FINANCEIROS,
+  CANAIS_ORGANICOS_DA_ABA_1,
+  derivarInputsFinanceiros,
+  statusDaDistribuicao,
+  type InputsFinanceiros,
+  type DerivadosFinanceiros,
+  type MetaDoCanal,
+  type CanalDaAba1,
+  type StatusDaDistribuicao,
+  type EstadoDaDistribuicao,
+} from "./planejamento-inputs-financeiros.js";

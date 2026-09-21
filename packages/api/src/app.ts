@@ -121,6 +121,7 @@ import eventPaymentAlertsRoutes from "./routes/event-payment-alerts.js";
 import stageComercialRoutes from "./routes/stage-comercial.js";
 import instagramScansRoutes from "./routes/instagram-scans.js";
 import swipeFilesRoutes from "./routes/swipe-files.js";
+import planejamentoRoutes from "./routes/planejamento.js"; // Story 48.1
 import paymentAlertsSchedulerPlugin from "./plugins/payment-alerts-scheduler.js";
 import sendflowGroupsSchedulerPlugin from "./plugins/sendflow-groups-scheduler.js";
 import revenuecatSnapshotSchedulerPlugin from "./plugins/revenuecat-snapshot-scheduler.js";
@@ -306,6 +307,7 @@ export async function buildServer() {
   await app.register(stageComercialRoutes);
   await app.register(instagramScansRoutes);
   await app.register(swipeFilesRoutes);
+  await app.register(planejamentoRoutes); // Story 48.1 — Painel de Planejamento
 
   return app;
 }

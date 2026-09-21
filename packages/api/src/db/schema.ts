@@ -5345,3 +5345,78 @@ export const namingAds = pgTable(
     index("idx_naming_ads_body").on(t.bodyId),
   ],
 );
+
+// ============================================================
+// PLANEJAMENTO (Epic 48) — simulador de cenários do lançamento
+// ============================================================
+
+/**
+ * Story 48.1 — Inputs Financeiros (aba 1 da planilha "Painel de Controle ·
+ * Planejamento"). UMA linha por funil de lançamento (A1: `uniqueIndex` em
+ * `funnel_id` declarado AQUI, e não só no SQL — o boot roda `drizzle-kit push`
+ * a partir deste arquivo; o precedente `perpetual_report_configs` tem o UNIQUE
+ * só na migration 0087, que o boot não aplica).
+ *
+ * Persistem SÓ as 20 entradas manuais (as células ✏️ da planilha), com os
+ * nomes normalizados do mapa de campos da spec (`docs/specs/epic-48/…` §1.1),
+ * todas nullable: vazio = `null`; na derivação, vazio vale zero (V0). Nenhum
+ * derivado é gravado (E5) — a conta vive em
+ * `shared/src/planejamento-inputs-financeiros.ts` e roda na tela.
+ *
+ * Tipos (E6): frações como `numeric(12,6)` (0.25 = 25 %), moeda `numeric(18,2)`
+ * em reais, bases (tamanho de audiência) `integer`. Faixas validadas na rota
+ * (zod); os CHECKs da migration 0152 são cinto.
+ *
+ * Parâmetros por canal/fonte e as combinações NÃO entram aqui (A3): são
+ * tabelas-filhas das stories 48.3/48.4.
+ */
+export const planSimulators = pgTable(
+  "plan_simulators",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    funnelId: uuid("funnel_id")
+      .notNull()
+      .references(() => funnels.id, { onDelete: "cascade" }),
+
+    // ---- Custos variáveis (G3:G8), frações da receita bruta ----
+    pctReembolso: numeric("pct_reembolso", { precision: 12, scale: 6 }),
+    pctMarketplace: numeric("pct_marketplace", { precision: 12, scale: 6 }),
+    pctImposto: numeric("pct_imposto", { precision: 12, scale: 6 }),
+    pctCustoProduto: numeric("pct_custo_produto", { precision: 12, scale: 6 }),
+    pctComissoes: numeric("pct_comissoes", { precision: 12, scale: 6 }),
+    pctOutrosCustos: numeric("pct_outros_custos", { precision: 12, scale: 6 }),
+
+    // ---- Metas (F13, E14, F16, F18) ----
+    metaMargemTotal: numeric("meta_margem_total", { precision: 18, scale: 2 }),
+    pctMargemPagos: numeric("pct_margem_pagos", { precision: 12, scale: 6 }),
+    ticketMedio: numeric("ticket_medio", { precision: 18, scale: 2 }),
+    mcAlvoPagos: numeric("mc_alvo_pagos", { precision: 12, scale: 6 }),
+
+    // ---- Investimento (G23, E24, E25, E28) ----
+    investimentoAnuncios: numeric("investimento_anuncios", { precision: 18, scale: 2 }),
+    pctInvestMeta: numeric("pct_invest_meta", { precision: 12, scale: 6 }),
+    pctMetaQuente: numeric("pct_meta_quente", { precision: 12, scale: 6 }),
+    pctGoogleQuente: numeric("pct_google_quente", { precision: 12, scale: 6 }),
+
+    // ---- Metas por canal orgânico (E42:E47), frações da meta de margem dos orgânicos ----
+    pctOrgWhatsapp: numeric("pct_org_whatsapp", { precision: 12, scale: 6 }),
+    pctOrgEmail: numeric("pct_org_email", { precision: 12, scale: 6 }),
+    pctOrgInstagram: numeric("pct_org_instagram", { precision: 12, scale: 6 }),
+    pctOrgTelegram: numeric("pct_org_telegram", { precision: 12, scale: 6 }),
+    pctOrgYoutube: numeric("pct_org_youtube", { precision: 12, scale: 6 }),
+    pctOrgAreaMembros: numeric("pct_org_area_membros", { precision: 12, scale: 6 }),
+
+    // ---- Bases (G49:G54), contagens ----
+    baseWhatsapp: integer("base_whatsapp"),
+    baseEmail: integer("base_email"),
+    baseInstagram: integer("base_instagram"),
+    baseTelegram: integer("base_telegram"),
+    baseYoutube: integer("base_youtube"),
+    baseAreaMembros: integer("base_area_membros"),
+
+    updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("uq_plan_simulators_funnel_id").on(t.funnelId)],
+);
