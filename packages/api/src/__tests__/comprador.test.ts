@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { chaveDeComprador } from "../utils/comprador.js";
+import { chaveDeComprador, juntarPorComprador } from "../utils/comprador.js";
 
 /**
  * Story 29.53 — a regra que decide quantas vendas a tela mostra.
@@ -108,5 +108,33 @@ describe("o caso do chamado — 08/08 do Netão", () => {
     const investimento = 814.8;
     expect(investimento / 5).toBeCloseTo(162.96, 2);
     expect(investimento / 8).toBeCloseTo(101.85, 2);
+  });
+});
+
+describe("juntarPorComprador", () => {
+  const v = (email: string, bruto: number, utmSource: string, dia: number) => ({
+    email, bruto, liquido: bruto * 0.9, utmSource, lastDate: new Date(2026, 8, dia),
+  });
+
+  it("principal + order bump do mesmo e-mail viram 1 comprador, com o dinheiro somado", () => {
+    // O caso da fz-m3-set-26: R$ 684,39 + bump de R$ 343,80.
+    const r = juntarPorComprador([v("ana@x.com", 684.39, "meta-ads", 10), v("ANA@x.com ", 343.8, "organico", 10)]);
+    expect(r).toHaveLength(1);
+    expect(r[0]!.bruto).toBeCloseTo(1028.19);
+  });
+
+  it("a atribuição vem da compra principal (maior valor), não do bump", () => {
+    const r = juntarPorComprador([v("ana@x.com", 343.8, "organico", 10), v("ana@x.com", 684.39, "meta-ads", 11)]);
+    expect(r[0]!.utmSource).toBe("meta-ads");
+  });
+
+  it("a data é a da primeira compra", () => {
+    const r = juntarPorComprador([v("ana@x.com", 684.39, "meta-ads", 12), v("ana@x.com", 343.8, "meta-ads", 10)]);
+    expect(r[0]!.lastDate!.getDate()).toBe(10);
+  });
+
+  it("pessoas diferentes seguem separadas; venda sem e-mail não colapsa", () => {
+    const r = juntarPorComprador([v("a@x.com", 1, "x", 1), v("b@x.com", 1, "x", 1), v("", 1, "x", 1), v("", 1, "x", 1)]);
+    expect(r).toHaveLength(4);
   });
 });

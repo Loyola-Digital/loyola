@@ -169,8 +169,15 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
   const fatTooltip = breakdown
     ? `${fonteBreakdown.join("\n")}\n\nPlanilha: ${fmtCurrency(breakdown.spreadsheet.bruto)} (${breakdown.spreadsheet.vendas})\nManuais: ${fmtCurrency(breakdown.manual.bruto)} (${breakdown.manual.vendas})`
     : fonteBreakdown.join("\n");
+  // Quando há mais linhas que compradores, diz por quê: senão "54 na planilha,
+  // 47 no card" parece erro de conta.
+  const linhasALem =
+    (breakdown?.spreadsheet.linhas ?? 0) + (breakdown?.manual.linhas ?? 0) - totalVendas;
   const vendasTooltip = breakdown
-    ? `Planilha: ${breakdown.spreadsheet.vendas}\nManuais: ${breakdown.manual.vendas}`
+    ? `Planilha: ${breakdown.spreadsheet.vendas}\nManuais: ${breakdown.manual.vendas}` +
+      (linhasALem > 0
+        ? `\n\nConta compradores (1 por e-mail): ${linhasALem} linha(s) a mais de order bump ou recompra da mesma pessoa não viram outra venda. O faturamento soma tudo.`
+        : "")
     : undefined;
   const roas = spend > 0 ? faturamentoPago / spend : null;
   const cpv = vendasPago > 0 && spend > 0 ? spend / vendasPago : null;

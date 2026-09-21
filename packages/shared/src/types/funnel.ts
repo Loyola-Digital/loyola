@@ -686,8 +686,12 @@ export interface StageSalesData {
   porUtmContent: { content: string; name: string; vendas: number; bruto: number; liquido: number }[];
   /** Story 19.9 ext: detalhamento planilha vs manual pro tooltip de faturamento. */
   breakdown?: {
-    spreadsheet: { vendas: number; bruto: number; liquido: number };
-    manual: { vendas: number; bruto: number; liquido: number };
+    /**
+     * `vendas` na etapa de Vendas conta COMPRADORES (1 por e-mail: order bump e
+     * recompra não somam de novo); `linhas` é quantas linhas havia.
+     */
+    spreadsheet: { vendas: number; linhas?: number; bruto: number; liquido: number };
+    manual: { vendas: number; linhas?: number; bruto: number; liquido: number };
   };
   semDados: boolean;
   /**

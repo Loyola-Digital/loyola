@@ -48,3 +48,43 @@ export function chaveDeComprador(
    */
   return `${pre}row|${indice}`;
 }
+
+/**
+ * As vendas de uma etapa juntadas POR COMPRADOR — 1 por e-mail.
+ *
+ * Order bump chega numa linha própria com o mesmo e-mail da compra principal.
+ * Na etapa de Vendas cada linha contava como venda: a fz-m3-set-26 mostrava 54
+ * vendas para 47 compradores (6 bumps + 1 pessoa nas planilhas Kiwify e TMB),
+ * medido em 21/09/2026. E o produto da planilha nem sempre ajuda a separar o
+ * bump — lá a coluna mapeada como produto trazia o PREÇO.
+ *
+ * O dinheiro não se perde: bruto e líquido somam todas as linhas da pessoa. A
+ * atribuição (UTM, canal, forma de pagamento) vem da linha de MAIOR valor —
+ * a compra principal, não o bump — e a data é a da primeira compra.
+ */
+export function juntarPorComprador<
+  V extends { email: string; bruto: number; liquido: number; lastDate: Date | null },
+>(vendas: V[]): V[] {
+  const porEmail = new Map<string, { principal: V; bruto: number; liquido: number; data: Date | null }>();
+  const semEmail: V[] = [];
+  for (const v of vendas) {
+    const e = v.email.trim().toLowerCase();
+    if (!e) {
+      semEmail.push(v);
+      continue;
+    }
+    const atual = porEmail.get(e);
+    if (!atual) {
+      porEmail.set(e, { principal: v, bruto: v.bruto, liquido: v.liquido, data: v.lastDate });
+      continue;
+    }
+    atual.bruto += v.bruto;
+    atual.liquido += v.liquido;
+    if (v.bruto > atual.principal.bruto) atual.principal = v;
+    if (v.lastDate && (!atual.data || v.lastDate < atual.data)) atual.data = v.lastDate;
+  }
+  return [
+    ...[...porEmail.values()].map((c) => ({ ...c.principal, bruto: c.bruto, liquido: c.liquido, lastDate: c.data })),
+    ...semEmail,
+  ];
+}

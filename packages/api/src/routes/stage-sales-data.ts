@@ -20,6 +20,7 @@ import {
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { temDashboardDeVendas } from "../utils/stage-types.js";
+import { juntarPorComprador } from "../utils/comprador.js";
 import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
 import { ingressosDoEvento } from "../services/kiwify-event-tickets.js";
 // Stories 18.66/18.67 — a regra de order bump por comprador. Módulo puro, para
@@ -675,7 +676,24 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         ingressosByDay[key] = e;
       };
 
-      for (const { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate } of emailMap.values()) {
+      /**
+       * Na etapa de VENDAS, uma venda é um COMPRADOR (1 por e-mail).
+       *
+       * O order bump chega numa linha própria, e cada linha contava como venda:
+       * a fz-m3-set-26 mostrava 54 vendas para 47 compradores (21/09/2026). Só
+       * as CONTAGENS mudam — o faturamento soma todas as linhas da pessoa. A
+       * análise de produto e de order bump, mais abaixo, segue lendo as linhas
+       * separadas do `emailMap`, que é do que ela precisa.
+       *
+       * Só na etapa de Vendas: na Captação Paga o "total" por linha é
+       * proposital e o único já existe à parte (`ingressosUnicos`, 18.51a).
+       */
+      const porComprador = stage.stageType === "sales";
+      const vendasContadas = porComprador
+        ? juntarPorComprador([...emailMap.values()])
+        : [...emailMap.values()];
+
+      for (const { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate } of vendasContadas) {
         vendasValidasPlanilha += 1;
         totalBruto += bruto;
         totalLiquido += liquido;
@@ -756,25 +774,37 @@ export default fp(async function stageSalesDataRoutes(fastify) {
                 : eq(manualSales.stageId, params.data.stageId),
             )
         : [];
-      const manualVendas = manualRows.length;
+      // Mesma regra para a venda manual: quem já comprou pela planilha (ou já
+      // tem outra manual) não vira uma venda a mais — o valor entra, a pessoa
+      // não. Sem e-mail, cada manual segue sendo uma venda.
+      const compradoresDaPlanilha = new Set(vendasContadas.map((v) => v.email.trim().toLowerCase()));
+      const manuaisVistos = new Set<string>();
+      const manualConta = manualRows.map((mr) => {
+        const e = (mr.email ?? "").trim().toLowerCase();
+        if (!porComprador || !e) return true;
+        if (compradoresDaPlanilha.has(e) || manuaisVistos.has(e)) return false;
+        manuaisVistos.add(e);
+        return true;
+      });
+      const manualVendas = manualConta.filter(Boolean).length;
       const manualBruto = manualRows.reduce((s, r) => s + (Number(r.value) || 0), 0);
       // A origem de uma venda manual é QUEM VENDEU — é a única atribuição
       // verdadeira que ela tem. Entra no mapa de fontes com o nome do vendedor,
       // em vez de engrossar "sem track" (ver comentário em `ingressosByDay`).
       const LABEL_MANUAL_SEM_VENDEDOR = "Venda manual";
-      for (const mr of manualRows) {
-        addIngresso(mr.saleDate ? new Date(mr.saleDate) : null, "Manual");
+      manualRows.forEach((mr, i) => {
+        if (manualConta[i]) addIngresso(mr.saleDate ? new Date(mr.saleDate) : null, "Manual");
 
         const vendedor = (mr.sellerName ?? "").trim() || LABEL_MANUAL_SEM_VENDEDOR;
         const bruto = Number(mr.value) || 0;
         const entry = utmSourceMap.get(vendedor) ?? { vendas: 0, bruto: 0, liquido: 0 };
-        entry.vendas += 1;
+        if (manualConta[i]) entry.vendas += 1;
         entry.bruto += bruto;
         // PIX direto não tem taxa de plataforma: bruto e líquido são o mesmo.
         entry.liquido += bruto;
         utmSourceMap.set(vendedor, entry);
         fontesManuais.add(vendedor);
-      }
+      });
 
       const totalVendas = totalVendasPlanilha + manualVendas;
       const totalBrutoCombined = totalBrutoPlanilha + manualBruto;
@@ -1092,11 +1122,15 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         breakdown: {
           spreadsheet: {
             vendas: totalVendasPlanilha,
+            // Linhas da planilha (cada order bump é uma). Na etapa de Vendas
+            // difere de `vendas`, que conta compradores — o tooltip mostra os dois.
+            linhas: emailMap.size,
             bruto: totalBrutoPlanilha,
             liquido: totalLiquidoPlanilha,
           },
           manual: {
             vendas: manualVendas,
+            linhas: manualRows.length,
             bruto: manualBruto,
             liquido: manualBruto,
           },
