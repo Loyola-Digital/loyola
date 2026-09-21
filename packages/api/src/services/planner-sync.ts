@@ -45,6 +45,64 @@ import {
 export { chaveDoNome };
 
 /**
+ * A fase, se o título começa com o nome INTEIRO da campanha. `null` se não.
+ *
+ * `separarTitulo` corta no primeiro hífen, e isso é ambíguo quando o nome da
+ * campanha tem hífen: "DGL3 - BLACK CPDF - Prod. Captação" virava a campanha
+ * "DGL3". Aqui o nome conhecido é que decide onde cortar.
+ */
+export function faseNoTitulo(titulo: string, nomeDaCampanha: string): string | null {
+  const t = titulo.trim();
+  const n = nomeDaCampanha.trim();
+  if (!n || t.length <= n.length) return null;
+  const inicio = t.slice(0, n.length + 2).toLowerCase();
+  if (inicio === `[${n.toLowerCase()}]`) return t.slice(n.length + 2).trim() || n;
+  if (t.slice(0, n.length).toLowerCase() !== n.toLowerCase()) return null;
+  // O nome precisa acabar num separador: "PP" não é dona de "PPX - Fase".
+  const resto = t.slice(n.length).match(/^\s+[-–—]\s+(.+)$/);
+  return resto ? resto[1]!.trim() : null;
+}
+
+interface CampanhaExistente {
+  id: string;
+  name: string;
+  googleCalendarId: string | null;
+  phases: unknown;
+}
+
+/**
+ * De qual campanha JÁ EXISTENTE é o evento. `null` = nenhuma.
+ *
+ * Em ordem: quem tem o vínculo (o id do evento numa fase), e depois quem tem o
+ * nome inteiro no começo do título — o mais longo, para "PP - Perpétuo
+ * Ansiedade" ganhar de "PP". Só vale campanha desta agenda: uma cópia antiga
+ * apontava para eventos da agenda de outro expert.
+ *
+ * Existe porque o corte pelo primeiro hífen criava campanhas fantasmas com os
+ * mesmos eventos da verdadeira (ver o teste `planner-dono-do-evento`).
+ */
+export function donoDoEvento<C extends CampanhaExistente>(
+  evento: { id: string; titulo: string },
+  campanhas: C[],
+  calendarId: string,
+): C | null {
+  const daAgenda = campanhas.filter(
+    (c) => !c.googleCalendarId || c.googleCalendarId === calendarId,
+  );
+  const temOTitulo = (c: C) => faseNoTitulo(evento.titulo, c.name) !== null;
+  const maisLongoPrimeiro = (a: C, b: C) => b.name.length - a.name.length;
+
+  const peloVinculo = daAgenda.filter((c) =>
+    ((c.phases ?? []) as FaseDoPlanner[]).some((f) => f.googleEventId === evento.id),
+  );
+  if (peloVinculo.length > 0) {
+    // Mais de uma com o mesmo id é cópia: a dona é a que o título aponta.
+    return peloVinculo.filter(temOTitulo).sort(maisLongoPrimeiro)[0] ?? peloVinculo[0]!;
+  }
+  return daAgenda.filter(temOTitulo).sort(maisLongoPrimeiro)[0] ?? null;
+}
+
+/**
  * Fases "manuais" que na verdade são o mesmo evento que o Google está trazendo.
  *
  * ## O defeito que isto fecha
@@ -121,6 +179,10 @@ export async function importarDaAgenda(
   const aproveitados = eventos.filter(
     (e) => opcoes.incluirComHora || !e.temHora,
   );
+  // Antes de agrupar: a dona de cada evento sai das campanhas que já existem.
+  const existentes = await db.select().from(plannerCampaigns);
+  /** Campanha existente de cada grupo, quando o grupo é dela. */
+  const donaDoGrupo = new Map<string, (typeof existentes)[number]>();
 
   // Agrupa por campanha ANTES de tocar no banco: assim cada campanha é uma
   // escrita só, e não uma por fase.
@@ -137,8 +199,17 @@ export async function importarDaAgenda(
   const corDaCampanha = new Map<string, string>();
 
   for (const e of aproveitados) {
-    const { campanha, fase } = separarTitulo(e.titulo);
-    const chave = campanha || "Agenda";
+    const dona = donoDoEvento(e, existentes, calendarId);
+    const { campanha, fase } = dona
+      ? {
+          campanha: dona.name,
+          fase: faseNoTitulo(e.titulo, dona.name) ?? separarTitulo(e.titulo).fase,
+        }
+      : separarTitulo(e.titulo);
+    // O grupo da dona é pelo ID: duas campanhas com o mesmo nome existem
+    // (há duas "PP - Perpétuo Ansiedade"), e pelo nome as duas se misturariam.
+    const chave = dona ? `id:${dona.id}` : campanha || "Agenda";
+    if (dona) donaDoGrupo.set(chave, dona);
     const lista = porCampanha.get(chave) ?? [];
     lista.push({
       id: `g${e.id.slice(0, 24)}`,
@@ -151,15 +222,15 @@ export async function importarDaAgenda(
     if (e.cor && !corDaCampanha.has(chave)) corDaCampanha.set(chave, e.cor);
   }
 
-  const existentes = await db.select().from(plannerCampaigns);
   let criadas = 0;
   let atualizadas = 0;
   let fasesTocadas = 0;
 
-  for (const [nome, fasesDoGoogle] of porCampanha) {
-    const atual = existentes.find(
-      (c) => chaveDoNome(c.name) === chaveDoNome(nome),
-    );
+  for (const [chave, fasesDoGoogle] of porCampanha) {
+    const atual =
+      donaDoGrupo.get(chave) ??
+      existentes.find((c) => chaveDoNome(c.name) === chaveDoNome(chave));
+    const nome = chave;
 
     if (!atual) {
       await db.insert(plannerCampaigns).values({

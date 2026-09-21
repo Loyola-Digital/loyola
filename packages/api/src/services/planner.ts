@@ -331,3 +331,41 @@ export function planejarSincronia(entrada: {
 
   return acao;
 }
+
+/**
+ * O vínculo de cada fase com o Google, decidido pelo SERVIDOR.
+ *
+ * A tela devolve a campanha inteira a cada edição, com os `googleEventId` que
+ * ela tinha em cache. Confiar neles quebrou de três jeitos (auditado em
+ * 21/09/2026):
+ *
+ * - Cache velho: o servidor acabava de criar um evento e gravar o id; a
+ *   edição seguinte chegava com o id antigo e o desfazia. O evento novo virava
+ *   órfão e a importação o trazia como campanha nova.
+ * - Cópia: campanha duplicada antes do #894 carregava os ids da original —
+ *   editar a cópia movia os eventos da original, até em outra agenda.
+ * - Desfazer: a fase excluída voltava com o id de um evento já apagado, e o
+ *   Google aceita editar evento apagado sem reaparecê-lo.
+ *
+ * Então: fase que já existe fica com o vínculo do banco; fase nova começa sem
+ * vínculo (ganha evento próprio); e id que pertence a outra campanha é
+ * descartado.
+ */
+export function vinculosDoServidor(
+  depois: FaseDoPlanner[],
+  antes: FaseDoPlanner[],
+  usadosPorOutras: Set<string>,
+): FaseDoPlanner[] {
+  const antesPorId = new Map(antes.map((f) => [f.id, f]));
+  return depois.map((f) => {
+    const a = antesPorId.get(f.id);
+    const fase: FaseDoPlanner = { ...f };
+    delete fase.googleEventId;
+    delete fase.googleSyncPendente;
+    if (a?.googleEventId && !usadosPorOutras.has(a.googleEventId)) {
+      fase.googleEventId = a.googleEventId;
+      if (a.googleSyncPendente) fase.googleSyncPendente = true;
+    }
+    return fase;
+  });
+}

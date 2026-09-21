@@ -125,7 +125,14 @@ export function useRestaurarCampanha() {
     mutationFn: (c: Campanha) =>
       api<Campanha>(BASE, {
         method: "POST",
-        body: JSON.stringify({ name: c.name, color: c.color, phases: c.phases }),
+        // Com a agenda: sem ela a campanha voltava só no Planner, e os eventos
+        // que a exclusão apagou no Google nunca reapareciam.
+        body: JSON.stringify({
+          name: c.name,
+          color: c.color,
+          phases: c.phases,
+          googleCalendarId: c.googleCalendarId ?? null,
+        }),
       }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: CHAVE }),
   });
