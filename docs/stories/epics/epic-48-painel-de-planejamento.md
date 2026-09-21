@@ -103,7 +103,7 @@ Cinco stories é mais do que o molde de epic brownfield (1–3) prevê; o que su
 | Wave | Story | Executor | Quality gate | Pode rodar em paralelo com | Observação |
 |---|---|---|---|---|---|
 | 1 | **48.2** motor de cenários | @dev | @qa (gate) | 48.1 | Só `shared` + testes. Começa antes de qualquer decisão de tela. |
-| 1 | **48.1** inputs financeiros | @dev; **T1 (schema `plan_*`) com @data-engineer** | @qa (gate); **@architect revisa AC1/T1** (âncora no funil, tabelas, permissão) antes do `*develop` | 48.2 | Primeira PR de código: é nela que a leitura da condição do Lucas (P1) é confirmada. |
+| 1 | **48.1** inputs financeiros | @dev; **T1 (schema `plan_*`) com @data-engineer** | @qa (gate); **@architect revisou AC1/T1 em 2026-09-21 ✅** (A1–A7 na story) | 48.2 ✅ | A 48.2 foi a primeira PR de código (#902); a leitura de P1 (só adição) está aplicada lá. |
 | 2 | **48.3** orgânicos | @dev | @qa | 48.4 | Consome 48.1 + 48.2. |
 | 2 | **48.4** pagos | @dev | @qa | 48.3 | Idem; carrega as correções D8, D13, D14. |
 | 3 | **48.5** resumo final | @dev | @qa | — | Carrega D9; fecha S1–S3. |
@@ -136,6 +136,8 @@ Regra do repo mantida: executor ≠ quality gate em todas as linhas.
 | 2026-09-21 | @po (Pax) | 48.2 validada: GO 10/10, Ready; estimativa Alta / M (5–8) confirmada pelo Danilo |
 | 2026-09-21 | @po (Pax) | 48.1 validada: GO condicional 8/10; rota escopada por projeto (PO-01); decisões pendentes do Danilo: onde a tela vive (PO-02) e custos > 100 % (PO-04); estimativa Alta / L (8–13) proposta |
 | 2026-09-21 | @po (Pax) | Danilo decidiu PO-02 (sub-página + cartão) e PO-04 (B); 48.1 **Ready**, GO 9/10 |
+| 2026-09-21 | @dev/@qa/@devops | 48.2 implementada, gate PASS (após CONCERNS corrigido), **MERGED #902** (`5f83e4c6`) |
+| 2026-09-21 | @architect (Aria) | Revisão de AC1/T1 da 48.1 feita (A1–A7); 48.1 liberada para `*develop` |
 | 2026-09-21 | @pm (Morgan) | **P2 ✅ — estrutura validada.** Acrescentados objetivo, critérios de sucesso S1–S4, ordem de execução em 3 waves com executor/gate por story, riscos R1–R6, roadmap do que ficou fora; E4 corrigido (nomes dos módulos = os das stories). Número 48 confirmado na `main` (#898). |
 
 <!-- clickup:17tqamemnem -->
