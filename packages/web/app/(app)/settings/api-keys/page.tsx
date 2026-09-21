@@ -40,6 +40,17 @@ function formatDate(iso: string | null): string {
   });
 }
 
+/**
+ * O que cada permissão abre. Espelha `ESCOPOS_DE_API` da API — que recusa
+ * qualquer outro valor, então um scope digitado errado não vira chave inútil.
+ */
+const ESCOPOS: { id: string; rotulo: string; dica: string }[] = [
+  { id: "meta:read", rotulo: "Dados (leitura)", dica: "Tráfego, leads, vendas e funis — o que o MCP consulta" },
+  { id: "planner:read", rotulo: "Planner (leitura)", dica: "Calendário e esteira anual, só leitura" },
+  { id: "planner:write", rotulo: "Planner (escrita)", dica: "Cria e edita campanhas, fases e a esteira anual. Espelha no Google Calendar e fica auditado" },
+  { id: "reports:write", rotulo: "Relatórios (envio)", dica: "Enviar relatórios da sprint" },
+];
+
 export default function ApiKeysSettingsPage() {
   const role = useUserRole();
   const isAdmin = role === "admin";
@@ -48,6 +59,9 @@ export default function ApiKeysSettingsPage() {
   const revokeKey = useRevokeApiKey();
 
   const [newName, setNewName] = useState("");
+  // Uma chave por uso, com o mínimo que ele precisa: dá para revogar a do
+  // Claude da Ágatha sem derrubar o MCP de leitura de todo mundo.
+  const [escopos, setEscopos] = useState<string[]>(["meta:read"]);
   const [createdKey, setCreatedKey] = useState<CreatedApiKey | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -72,8 +86,12 @@ export default function ApiKeysSettingsPage() {
       toast.error("Dê um nome para a chave.");
       return;
     }
+    if (escopos.length === 0) {
+      toast.error("Marque ao menos uma permissão.");
+      return;
+    }
     createKey.mutate(
-      { name },
+      { name, scopes: escopos },
       {
         onSuccess: (data) => {
           setCreatedKey(data);
@@ -150,6 +168,28 @@ export default function ApiKeysSettingsPage() {
               Gerar
             </Button>
           </div>
+          <fieldset className="mt-4 space-y-2">
+            <legend className="mb-1 text-sm font-medium">Permissões</legend>
+            {ESCOPOS.map((e) => (
+              <label key={e.id} className="flex cursor-pointer items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 accent-primary"
+                  checked={escopos.includes(e.id)}
+                  onChange={(ev) =>
+                    setEscopos((atual) =>
+                      ev.target.checked ? [...atual, e.id] : atual.filter((x) => x !== e.id),
+                    )
+                  }
+                />
+                <span>
+                  <span className="font-medium">{e.rotulo}</span>{" "}
+                  <code className="text-[11px] text-muted-foreground">{e.id}</code>
+                  <span className="block text-[12px] text-muted-foreground">{e.dica}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
         </CardContent>
       </Card>
 

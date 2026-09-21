@@ -47,6 +47,17 @@ async function buildTestApp() {
     ok: true,
     apiKeyId: req.apiKey?.id ?? null,
   }));
+  // Planner: escrita liberada por PREFIXO (rota com parâmetro), leitura aceita read OU write.
+  app.patch(
+    "/api/public/v1/planner/campanhas/:id/fases/:faseId",
+    { preHandler: requireScope("planner:write") },
+    async () => ({ ok: true }),
+  );
+  app.get(
+    "/api/public/v1/planner/agendas",
+    { preHandler: requireScope("planner:read", "planner:write") },
+    async () => ({ ok: true }),
+  );
   app.get("/api/other", async () => ({ ok: true })); // rota não-pública: middleware ignora
 
   await app.ready();
@@ -134,6 +145,44 @@ describe("apiKeyAuth — validação", () => {
     });
     expect(res.statusCode).toBe(403);
     expect(JSON.parse(res.body).code).toBe("SCOPE_REQUIRED");
+  });
+
+  it("Planner: PATCH com parâmetro na rota passa (prefixo liberado) com planner:write", async () => {
+    setKeyRow({ id: "kplanner", keyHash: KEY_HASH, scopes: ["planner:write"], revokedAt: null });
+    const res = await app.inject({
+      method: "PATCH",
+      url: "/api/public/v1/planner/campanhas/abc/fases/p1",
+      headers: { "x-api-key": RAW_KEY },
+      body: { nome: "x" },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("Planner: chave só de leitura não escreve (403, não 405)", async () => {
+    setKeyRow({ id: "kler", keyHash: KEY_HASH, scopes: ["planner:read"], revokedAt: null });
+    const res = await app.inject({
+      method: "PATCH",
+      url: "/api/public/v1/planner/campanhas/abc/fases/p1",
+      headers: { "x-api-key": RAW_KEY },
+      body: { nome: "x" },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("Planner: planner:write também lê", async () => {
+    setKeyRow({ id: "kw", keyHash: KEY_HASH, scopes: ["planner:write"], revokedAt: null });
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/public/v1/planner/agendas",
+      headers: { "x-api-key": RAW_KEY },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("escrita fora dos prefixos liberados continua 405", async () => {
+    setKeyRow({ id: "kw2", keyHash: KEY_HASH, scopes: ["planner:write"], revokedAt: null });
+    const res = await app.inject({ method: "POST", url: "/api/public/meta/test", headers: { "x-api-key": RAW_KEY } });
+    expect(res.statusCode).toBe(405);
   });
 
   it("200 com key válida e popula request.apiKey", async () => {
