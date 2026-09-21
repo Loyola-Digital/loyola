@@ -20,13 +20,19 @@ function describeError(status: number, body: string): string {
     case 401:
       return "API key ausente ou inválida. Verifique a variável LOYOLA_API_KEY.";
     case 403:
-      return "Acesso negado: scope insuficiente ou API key revogada. Gere uma nova key na tela de admin.";
+      return "Acesso negado: a API key não tem o scope necessário (Planner exige planner:read para ler e planner:write para gravar) ou foi revogada. Peça uma chave nova ao admin.";
     case 404:
       return "Recurso não encontrado. Confira o projectId/funnelId/adId (use list_projects → list_funnels para descobrir os IDs).";
     case 429:
       return "Rate limit excedido (120 requisições/min por chave). Aguarde alguns segundos e tente novamente.";
     case 405:
-      return "Método não permitido — a API é read-only (somente GET).";
+      return "Método não permitido — fora do Planner a API é somente leitura (GET).";
+    case 409:
+      return `Já existe: ${body.slice(0, 300)}`;
+    case 400:
+      // O 400 do Planner explica o que corrigir (opções válidas, esteira que
+      // não existe): o corpo inteiro é a mensagem útil.
+      return `Pedido inválido: ${body.slice(0, 1500)}`;
     default: {
       const snippet = body ? `: ${body.slice(0, 200)}` : "";
       return `Erro ${status} da API Loyola X${snippet}`;
@@ -39,6 +45,11 @@ export type QueryValue = string | number | undefined | null;
 export class LoyolaClient {
   constructor(private readonly config: Config) {}
 
+  /** Escrita (Planner): POST / PUT / PATCH / DELETE com corpo JSON. */
+  async send(method: "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<unknown> {
+    return this.request(method, new URL(this.config.baseUrl + path), body);
+  }
+
   async get(path: string, query?: Record<string, QueryValue>): Promise<unknown> {
     const url = new URL(this.config.baseUrl + path);
     if (query) {
@@ -49,11 +60,20 @@ export class LoyolaClient {
       }
     }
 
+    return this.request("GET", url);
+  }
+
+  private async request(method: string, url: URL, body?: unknown): Promise<unknown> {
     let res: Response;
     try {
       res = await fetch(url, {
-        method: "GET",
-        headers: { "X-API-Key": this.config.apiKey, Accept: "application/json" },
+        method,
+        headers: {
+          "X-API-Key": this.config.apiKey,
+          Accept: "application/json",
+          ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
       });
     } catch (err) {
       throw new ApiError(0, `Falha de rede ao chamar ${url.pathname}: ${(err as Error).message}`);

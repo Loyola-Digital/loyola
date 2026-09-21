@@ -1,12 +1,12 @@
 # @loyola-x/mcp
 
-MCP server que embrulha a **API pública Meta Ads Creative Intelligence** do Loyola X como tools, para a IA consultar performance de criativos e a estrutura de funis ao vivo (via stdio).
+MCP server que embrulha a **API pública** do Loyola X como tools (via stdio): a IA consulta performance de criativos, funis, leads e vendas ao vivo — e **lê e grava o Planner** (esteira anual e calendário).
 
 É um **transporte fino**: cada tool mapeia 1:1 num endpoint `/api/public/*`. Toda a regra de negócio vive na API (`packages/api`). Ver o contrato completo em [`docs/llms.txt`](../../docs/llms.txt).
 
 ## Tools
 
-**18 tools**, todas read-only. Cada uma mapeia 1:1 num endpoint `/api/public/*`.
+**29 tools**: 19 de leitura + 10 do Planner (as únicas que gravam). Cada uma mapeia 1:1 num endpoint `/api/public/*`.
 
 Comece por `list_projects` — o `projectId` dele é a entrada de quase todas as
 outras.
@@ -48,6 +48,28 @@ outras.
 | `get_stage_sales_rows` | Row-level, transação a transação |
 | `get_cross_launch` | Recompra entre funis do projeto |
 | `get_stage_operational_costs` | Custos operacionais da etapa |
+| `get_perpetual_metrics` | KPIs do funil perpétuo (CAC, ROAS, margem) |
+
+### Planner — esteira anual e calendário (GRAVAM)
+
+Exigem chave com `planner:write` (ou `planner:read` só para ler). Toda gravação
+fica auditada com a chave. Guia de uso: [`docs/guides/planner-via-claude.md`](../../docs/guides/planner-via-claude.md).
+
+| Tool | Para quê |
+|------|----------|
+| `get_esteira_anual` | Ler a esteira de uma empresa num ano (sempre antes de escrever) |
+| `upsert_esteira_celulas` | Preencher/atualizar meses em lote — `dryRun: true` primeiro |
+| `create_esteira` | Criar uma linha numa faixa |
+| `clear_esteira_celulas` | Limpar meses de uma linha (destrutivo, com dryRun) |
+| `list_planner_agendas` | Agendas do Google conectadas |
+| `list_planner_campanhas` | Campanhas e fases (por nome, empresa ou período) |
+| `create_planner_campanha` | Criar campanha (espelha fases no Google) |
+| `update_planner_campanha` | Renomear, recolorir, trocar empresa/agenda |
+| `upsert_planner_fase` | Criar ou editar UMA fase |
+| `delete_planner_fase` | Excluir fase (e o evento no Google) |
+
+O vocabulário da esteira (faixas, categorias, funis) vem em `src/vocabulario-anual.ts`,
+cópia de `packages/shared/src/planner-anual.ts` — o build falha se divergirem.
 
 ### `AVISO_bundle_do_mcp_desatualizado`
 
@@ -63,7 +85,7 @@ Duas variáveis de ambiente:
 | Variável | Descrição |
 |----------|-----------|
 | `LOYOLA_API_BASE_URL` | Base da API pública (ex.: `https://api.loyoladigital.com`) |
-| `LOYOLA_API_KEY` | API key admin — gere na tela de admin do Loyola X (Story 36.1), revogável |
+| `LOYOLA_API_KEY` | API key — gere em *Configurações → API Keys*, com as permissões do uso (`meta:read` para dados, `planner:write` para o Planner). Revogável |
 
 ## Rodar
 
@@ -101,4 +123,4 @@ Exemplo de configuração MCP (Claude Desktop / Claude Code — `claude_desktop_
 - `spend` já inclui o **imposto Meta** (12,15% para datas ≥2026) — bate com o dashboard.
 - `roas` é do **pixel** Meta, não o ROAS real cruzado com vendas (esse virá na Story 36.5).
 - `partial: true` indica dias sem dado no cache; `lastSyncedAt` informa a idade do dado.
-- A API é **read-only** e tem rate limit de 120 req/min por chave.
+- A API é **read-only fora do Planner** e tem rate limit de 120 req/min por chave.

@@ -30,6 +30,9 @@ import {
   type FaseDoPlanner,
 } from "../services/planner.js";
 import { importarDaAgenda } from "../services/planner-sync.js";
+import { requireScope } from "../middleware/api-key-auth.js";
+import { registrarNoPlanner } from "../services/planner-auditoria.js";
+import { chaveDeTexto } from "../services/planner-anual.js";
 import {
   apagarEvento,
   atualizarEvento,
@@ -134,7 +137,19 @@ export default fp(async function plannerRoutes(fastify) {
       return reply.code(403).send({ error: "Acesso negado" });
     const b = criarSchema.safeParse(request.body);
     if (!b.success) return reply.code(400).send({ error: "Dados inválidos" });
+    const { criada, aviso } = await criarCampanha(b.data, request.userId ?? null);
+    return reply.code(201).send(aviso ? { ...criada, avisoGoogle: aviso } : criada);
+  });
 
+  /**
+   * Cria a campanha e espelha na agenda. Mora fora da rota porque a API
+   * pública (`/api/public/v1/planner`) cria pelo MESMO caminho — uma segunda
+   * cópia divergiria no primeiro ajuste do espelho.
+   */
+  async function criarCampanha(
+    dados: z.infer<typeof criarSchema>,
+    userId: string | null,
+  ) {
     // A cor cicla pela paleta e a ordem vai para o fim: a campanha nova aparece
     // embaixo, onde quem criou está olhando.
     const [{ total }] = await fastify.db
@@ -146,7 +161,7 @@ export default fp(async function plannerRoutes(fastify) {
     // leva `status: confirmed`). Só não vale o id que outra campanha usa.
     const deOutras = await eventosDeOutras(null);
     const fases: FaseDoPlanner[] = (
-      b.data.phases ??
+      dados.phases ??
       FASES_PADRAO.map((name, i) => ({
         id: novoId(i),
         name,
@@ -161,15 +176,15 @@ export default fp(async function plannerRoutes(fastify) {
 
     // Campanha nova nasce ja na agenda, quando ha uma escolhida: criar aqui e
     // ter de lembrar de espelhar depois seria o passo que todo mundo esquece.
-    const agendaNova = b.data.googleCalendarId ?? null;
+    const agendaNova = dados.googleCalendarId ?? null;
     // Os ids que o Google devolveu PRECISAM ir para o banco. Antes o retorno
     // era descartado: os eventos nasciam na agenda, as fases ficavam sem
     // vínculo, e a importação seguinte os trazia de volta como fases novas —
     // cada campanha criada já ligada a uma agenda nascia com cards em dobro.
     const { fases: comVinculo, aviso } = await espelharNoGoogle({
       agenda: agendaNova,
-      nomeAntes: b.data.name,
-      nomeDepois: b.data.name,
+      nomeAntes: dados.name,
+      nomeDepois: dados.name,
       fasesAntes: [],
       fasesDepois: fases,
     });
@@ -177,18 +192,18 @@ export default fp(async function plannerRoutes(fastify) {
     const [criada] = await fastify.db
       .insert(plannerCampaigns)
       .values({
-        name: b.data.name,
-        color: b.data.color ?? PALETA[(total ?? 0) % PALETA.length]!,
-        projectId: b.data.projectId ?? null,
+        name: dados.name,
+        color: dados.color ?? PALETA[(total ?? 0) % PALETA.length]!,
+        projectId: dados.projectId ?? null,
         googleCalendarId: agendaNova,
         sortOrder: total ?? 0,
         phases: comVinculo ?? fases,
-        createdBy: request.userId ?? null,
+        createdBy: userId,
       })
       .returning();
 
-    return reply.code(201).send(aviso ? { ...criada, avisoGoogle: aviso } : criada);
-  });
+    return { criada: criada!, aviso };
+  }
 
   // ---- PUT /:id — atualiza (a campanha inteira é a unidade) ----
   fastify.put(`${base}/:id`, async (request, reply) => {
@@ -198,40 +213,52 @@ export default fp(async function plannerRoutes(fastify) {
     const b = atualizarSchema.safeParse(request.body);
     if (!p.success || !b.success)
       return reply.code(400).send({ error: "Dados inválidos" });
+    const salva = await salvarCampanha(p.data.id, b.data);
+    if (!salva) return reply.code(404).send({ error: "Campanha não encontrada" });
+    // O aviso viaja junto com a campanha salva: o trabalho local NAO se perde
+    // porque o Google recusou, e quem editou fica sabendo que a agenda ficou
+    // para tras.
+    return salva.aviso ? { ...salva.atualizada, avisoGoogle: salva.aviso } : salva.atualizada;
+  });
 
+  /**
+   * Grava a campanha e espelha o que mudou na agenda. `null` = não existe.
+   *
+   * Compartilhada com a API pública pelo mesmo motivo de `criarCampanha`.
+   */
+  async function salvarCampanha(id: string, dados: z.infer<typeof atualizarSchema>) {
     // Precisa do estado ANTERIOR para saber o que mudou na agenda: sem ele
     // nao da para distinguir "fase nova" de "fase que so foi salva de novo",
     // e cada gravacao reescreveria a agenda inteira.
     const [antes] = await fastify.db
       .select()
       .from(plannerCampaigns)
-      .where(eq(plannerCampaigns.id, p.data.id))
+      .where(eq(plannerCampaigns.id, id))
       .limit(1);
-    if (!antes)
-      return reply.code(404).send({ error: "Campanha não encontrada" });
+    if (!antes) return null;
 
     const mudanca: Record<string, unknown> = { updatedAt: new Date() };
-    if (b.data.name !== undefined) mudanca.name = b.data.name;
-    if (b.data.color !== undefined) mudanca.color = b.data.color;
-    if (b.data.projectId !== undefined) mudanca.projectId = b.data.projectId;
-    if (b.data.sortOrder !== undefined) mudanca.sortOrder = b.data.sortOrder;
-    if (b.data.googleCalendarId !== undefined)
-      mudanca.googleCalendarId = b.data.googleCalendarId;
+    if (dados.name !== undefined) mudanca.name = dados.name;
+    if (dados.color !== undefined) mudanca.color = dados.color;
+    if (dados.projectId !== undefined) mudanca.projectId = dados.projectId;
+    if (dados.sortOrder !== undefined) mudanca.sortOrder = dados.sortOrder;
+    if (dados.googleCalendarId !== undefined)
+      mudanca.googleCalendarId = dados.googleCalendarId;
     // A normalização acontece no servidor, sempre: a tela pode confiar que o
     // que voltou está arrumado, e um cliente antigo não grava data inválida.
-    if (b.data.phases !== undefined)
-      mudanca.phases = b.data.phases.map(normalizarFase);
+    if (dados.phases !== undefined)
+      mudanca.phases = dados.phases.map(normalizarFase);
 
-    const nomeDepois = (b.data.name ?? antes.name) as string;
+    const nomeDepois = (dados.name ?? antes.name) as string;
     if (mudanca.phases) {
       mudanca.phases = vinculosDoServidor(
         mudanca.phases as FaseDoPlanner[],
         antes.phases as FaseDoPlanner[],
-        await eventosDeOutras(p.data.id),
+        await eventosDeOutras(id),
       );
     }
     const fasesDepois = (mudanca.phases ?? antes.phases) as FaseDoPlanner[];
-    const agenda = (b.data.googleCalendarId ?? antes.googleCalendarId) as
+    const agenda = (dados.googleCalendarId ?? antes.googleCalendarId) as
       string | null;
 
     const { fases: fasesFinais, aviso } = await espelharNoGoogle({
@@ -249,15 +276,319 @@ export default fp(async function plannerRoutes(fastify) {
     const [atualizada] = await fastify.db
       .update(plannerCampaigns)
       .set(mudanca)
-      .where(eq(plannerCampaigns.id, p.data.id))
+      .where(eq(plannerCampaigns.id, id))
       .returning();
 
-    if (!atualizada)
-      return reply.code(404).send({ error: "Campanha não encontrada" });
-    // O aviso viaja junto com a campanha salva: o trabalho local NAO se perde
-    // porque o Google recusou, e quem editou fica sabendo que a agenda ficou
-    // para tras.
-    return aviso ? { ...atualizada, avisoGoogle: aviso } : atualizada;
+    if (!atualizada) return null;
+    return { atualizada, aviso };
+  }
+
+  // ==========================================================================
+  // API PÚBLICA (X-API-Key) — calendário do Planner para o Claude da Ágatha.
+  //
+  // Mesmo caminho da tela (`criarCampanha` / `salvarCampanha`): o que entra
+  // por aqui espelha no Google Calendar exatamente como uma edição na tela.
+  //
+  // A diferença é a UNIDADE: a tela salva a campanha inteira; aqui a fase é
+  // editada sozinha. Um modelo que precisasse reenviar todas as fases para
+  // mudar uma apagaria, cedo ou tarde, a que ele esqueceu de copiar.
+  //
+  // Contrato completo: `docs/llms.txt` → "Planner".
+  // ==========================================================================
+  const pub = "/api/public/v1/planner";
+  const LER = requireScope("planner:read", "planner:write");
+  const ESCREVER = requireScope("planner:write");
+  const DATA = z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "data no formato AAAA-MM-DD")
+    .nullable()
+    .optional();
+
+  async function agendasConectadas() {
+    return fastify.db
+      .select({ id: plannerGoogleCalendars.calendarId, nome: plannerGoogleCalendars.label })
+      .from(plannerGoogleCalendars);
+  }
+
+  /** A agenda pelo id OU pelo nome ("FZ" acha "🇺🇸 [FZ] Agenda Geral"). */
+  async function resolverAgenda(texto: string) {
+    const agendas = await agendasConectadas();
+    const exata = agendas.find((a) => a.id === texto);
+    if (exata) return { agenda: exata, agendas };
+    const k = chaveDeTexto(texto);
+    const achadas = agendas.filter((a) => chaveDeTexto(a.nome).includes(k));
+    return { agenda: achadas.length === 1 ? achadas[0]! : null, agendas };
+  }
+
+  function campanhaPublica(
+    c: typeof plannerCampaigns.$inferSelect,
+    nomes: Map<string, string>,
+  ) {
+    return {
+      id: c.id,
+      nome: c.name,
+      cor: c.color,
+      projectId: c.projectId,
+      agenda: c.googleCalendarId
+        ? { id: c.googleCalendarId, nome: nomes.get(c.googleCalendarId) ?? null }
+        : null,
+      fases: ((c.phases ?? []) as FaseDoPlanner[]).map((f) => ({
+        id: f.id,
+        nome: f.name,
+        inicio: f.start || null,
+        fim: f.end || null,
+        // Tem evento no Google e ele está em dia com a fase.
+        noGoogle: Boolean(f.googleEventId) && !f.googleSyncPendente,
+      })),
+      atualizadoEm: c.updatedAt,
+    };
+  }
+
+  async function nomesDasAgendas() {
+    return new Map((await agendasConectadas()).map((a) => [a.id, a.nome]));
+  }
+
+  async function campanhaPorId(id: string) {
+    const [c] = await fastify.db
+      .select()
+      .from(plannerCampaigns)
+      .where(eq(plannerCampaigns.id, id))
+      .limit(1);
+    return c ?? null;
+  }
+
+  const idDaChave = (request: { apiKey?: { id: string } }) => request.apiKey?.id ?? null;
+
+  fastify.get(`${pub}/agendas`, { preHandler: LER }, async () => ({
+    agendas: await agendasConectadas(),
+  }));
+
+  fastify.get(`${pub}/campanhas`, { preHandler: LER }, async (request, reply) => {
+    const q = z
+      .object({
+        projectId: z.string().uuid().optional(),
+        de: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        ate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        busca: z.string().max(120).optional(),
+      })
+      .safeParse(request.query);
+    if (!q.success) {
+      return reply.code(400).send({ error: "Filtros: projectId (uuid), de/ate (AAAA-MM-DD), busca (texto)." });
+    }
+    const todas = await fastify.db
+      .select()
+      .from(plannerCampaigns)
+      .orderBy(asc(plannerCampaigns.sortOrder), asc(plannerCampaigns.createdAt));
+    const { projectId, de, ate, busca } = q.data;
+    const filtradas = todas.filter((c) => {
+      if (projectId && c.projectId !== projectId) return false;
+      if (busca && !chaveDeTexto(c.name).includes(chaveDeTexto(busca))) return false;
+      if (de || ate) {
+        // Entra quem tem ALGUMA fase cruzando a janela.
+        return ((c.phases ?? []) as FaseDoPlanner[]).some((f) => {
+          if (!f.start) return false;
+          const fim = f.end || f.start;
+          return (!ate || f.start <= ate) && (!de || fim >= de);
+        });
+      }
+      return true;
+    });
+    const nomes = await nomesDasAgendas();
+    return { campanhas: filtradas.map((c) => campanhaPublica(c, nomes)) };
+  });
+
+  fastify.get(`${pub}/campanhas/:id`, { preHandler: LER }, async (request, reply) => {
+    const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "id inválido" });
+    const c = await campanhaPorId(p.data.id);
+    if (!c) return reply.code(404).send({ error: "Campanha não encontrada" });
+    return campanhaPublica(c, await nomesDasAgendas());
+  });
+
+  fastify.post(`${pub}/campanhas`, { preHandler: ESCREVER }, async (request, reply) => {
+    const b = z
+      .object({
+        nome: z.string().trim().min(1).max(200),
+        projectId: z.string().uuid().nullable().optional(),
+        cor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+        agenda: z.string().max(300).nullable().optional(),
+        fases: z
+          .array(z.object({ nome: z.string().trim().min(1).max(200), inicio: DATA, fim: DATA }))
+          .max(60)
+          .optional(),
+      })
+      .safeParse(request.body);
+    if (!b.success) {
+      return reply.code(400).send({
+        error: "Esperado { nome, projectId?, cor? (#rrggbb), agenda? (id ou nome), fases?: [{ nome, inicio?, fim? }] }.",
+        detalhes: b.error.flatten(),
+      });
+    }
+    let agendaId: string | null = null;
+    if (b.data.agenda) {
+      const { agenda, agendas } = await resolverAgenda(b.data.agenda);
+      if (!agenda) {
+        return reply.code(400).send({
+          error: `Agenda "${b.data.agenda}" não identificada. Conectadas: ${agendas.map((a) => a.nome).join(" | ")}.`,
+        });
+      }
+      agendaId = agenda.id;
+    }
+    const { criada, aviso } = await criarCampanha(
+      {
+        name: b.data.nome,
+        color: b.data.cor,
+        projectId: b.data.projectId ?? null,
+        googleCalendarId: agendaId,
+        // Sem fases = sem fases. As fases-padrão da tela são rascunho para
+        // quem clica; aqui virariam quatro cards vazios que ninguém pediu.
+        phases: (b.data.fases ?? []).map((f, i) => ({
+          id: novoId(i),
+          name: f.nome,
+          start: f.inicio ?? "",
+          end: f.fim ?? "",
+        })),
+      },
+      null,
+    );
+    await registrarNoPlanner(fastify.db, request.log, {
+      apiKeyId: idDaChave(request),
+      acao: "campanha.criar",
+      projectId: criada.projectId,
+      detalhe: { campanhaId: criada.id, pedido: b.data },
+    });
+    return reply
+      .code(201)
+      .send({ ...campanhaPublica(criada, await nomesDasAgendas()), ...(aviso ? { avisoGoogle: aviso } : {}) });
+  });
+
+  fastify.patch(`${pub}/campanhas/:id`, { preHandler: ESCREVER }, async (request, reply) => {
+    const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const b = z
+      .object({
+        nome: z.string().trim().min(1).max(200).optional(),
+        projectId: z.string().uuid().nullable().optional(),
+        cor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+        agenda: z.string().max(300).nullable().optional(),
+      })
+      .safeParse(request.body);
+    if (!p.success || !b.success) {
+      return reply.code(400).send({ error: "Esperado { nome?, projectId?, cor?, agenda? (id, nome ou null para desligar) }." });
+    }
+    const antes = await campanhaPorId(p.data.id);
+    if (!antes) return reply.code(404).send({ error: "Campanha não encontrada" });
+
+    let googleCalendarId: string | null | undefined;
+    if (b.data.agenda === null) googleCalendarId = null;
+    else if (b.data.agenda) {
+      const { agenda, agendas } = await resolverAgenda(b.data.agenda);
+      if (!agenda) {
+        return reply.code(400).send({
+          error: `Agenda "${b.data.agenda}" não identificada. Conectadas: ${agendas.map((a) => a.nome).join(" | ")}.`,
+        });
+      }
+      googleCalendarId = agenda.id;
+    }
+    const salva = await salvarCampanha(p.data.id, {
+      name: b.data.nome,
+      color: b.data.cor,
+      projectId: b.data.projectId,
+      googleCalendarId,
+    });
+    if (!salva) return reply.code(404).send({ error: "Campanha não encontrada" });
+    await registrarNoPlanner(fastify.db, request.log, {
+      apiKeyId: idDaChave(request),
+      acao: "campanha.editar",
+      projectId: salva.atualizada.projectId,
+      detalhe: {
+        campanhaId: antes.id,
+        antes: { nome: antes.name, cor: antes.color, projectId: antes.projectId, agenda: antes.googleCalendarId },
+        pedido: b.data,
+      },
+    });
+    return {
+      ...campanhaPublica(salva.atualizada, await nomesDasAgendas()),
+      ...(salva.aviso ? { avisoGoogle: salva.aviso } : {}),
+    };
+  });
+
+  /** Aplica uma mudança nas fases e salva pelo caminho da tela. */
+  async function mudarFases(
+    request: { apiKey?: { id: string }; log: typeof fastify.log },
+    campanhaId: string,
+    acao: string,
+    mudar: (fases: FaseDoPlanner[]) => FaseDoPlanner[] | string,
+  ) {
+    const antes = await campanhaPorId(campanhaId);
+    if (!antes) return { status: 404 as const, corpo: { error: "Campanha não encontrada" } };
+    const fasesAntes = (antes.phases ?? []) as FaseDoPlanner[];
+    const r = mudar(fasesAntes.map((f) => ({ ...f })));
+    if (typeof r === "string") return { status: 404 as const, corpo: { error: r } };
+    const salva = await salvarCampanha(campanhaId, { phases: r });
+    if (!salva) return { status: 404 as const, corpo: { error: "Campanha não encontrada" } };
+    await registrarNoPlanner(fastify.db, request.log, {
+      apiKeyId: idDaChave(request),
+      acao,
+      projectId: salva.atualizada.projectId,
+      detalhe: {
+        campanhaId,
+        antes: fasesAntes.map(({ id, name, start, end }) => ({ id, name, start, end })),
+        depois: ((salva.atualizada.phases ?? []) as FaseDoPlanner[]).map(({ id, name, start, end }) => ({ id, name, start, end })),
+      },
+    });
+    return {
+      status: 200 as const,
+      corpo: {
+        ...campanhaPublica(salva.atualizada, await nomesDasAgendas()),
+        ...(salva.aviso ? { avisoGoogle: salva.aviso } : {}),
+      },
+    };
+  }
+
+  fastify.post(`${pub}/campanhas/:id/fases`, { preHandler: ESCREVER }, async (request, reply) => {
+    const p = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const b = z
+      .object({ nome: z.string().trim().min(1).max(200), inicio: DATA, fim: DATA })
+      .safeParse(request.body);
+    if (!p.success || !b.success) {
+      return reply.code(400).send({ error: "Esperado { nome, inicio? (AAAA-MM-DD), fim? (AAAA-MM-DD) }." });
+    }
+    let novaId = "";
+    const r = await mudarFases(request, p.data.id, "fase.criar", (fases) => {
+      novaId = novoId(fases.length);
+      return [...fases, { id: novaId, name: b.data.nome, start: b.data.inicio ?? "", end: b.data.fim ?? "" }];
+    });
+    return reply.code(r.status === 200 ? 201 : r.status).send({ ...r.corpo, faseCriada: novaId || undefined });
+  });
+
+  fastify.patch(`${pub}/campanhas/:id/fases/:faseId`, { preHandler: ESCREVER }, async (request, reply) => {
+    const p = z.object({ id: z.string().uuid(), faseId: z.string().min(1).max(64) }).safeParse(request.params);
+    const b = z
+      .object({ nome: z.string().trim().min(1).max(200).optional(), inicio: DATA, fim: DATA })
+      .safeParse(request.body);
+    if (!p.success || !b.success) {
+      return reply.code(400).send({ error: "Esperado { nome?, inicio?, fim? } — data AAAA-MM-DD, null limpa." });
+    }
+    const r = await mudarFases(request, p.data.id, "fase.editar", (fases) => {
+      const f = fases.find((x) => x.id === p.data.faseId);
+      if (!f) return `Fase ${p.data.faseId} não existe nesta campanha.`;
+      if (b.data.nome !== undefined) f.name = b.data.nome;
+      if (b.data.inicio !== undefined) f.start = b.data.inicio ?? "";
+      if (b.data.fim !== undefined) f.end = b.data.fim ?? "";
+      return fases;
+    });
+    return reply.code(r.status).send(r.corpo);
+  });
+
+  fastify.delete(`${pub}/campanhas/:id/fases/:faseId`, { preHandler: ESCREVER }, async (request, reply) => {
+    const p = z.object({ id: z.string().uuid(), faseId: z.string().min(1).max(64) }).safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "id inválido" });
+    const r = await mudarFases(request, p.data.id, "fase.excluir", (fases) =>
+      fases.some((f) => f.id === p.data.faseId)
+        ? fases.filter((f) => f.id !== p.data.faseId)
+        : `Fase ${p.data.faseId} não existe nesta campanha.`,
+    );
+    return reply.code(r.status).send(r.corpo);
   });
 
   /**

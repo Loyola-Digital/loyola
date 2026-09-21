@@ -30,6 +30,11 @@ export const APP_NAME = "Loyola Digital X" as const;
 export { API_CONTRACT_VERSION } from "./contract.js";
 export { TOOLS_DO_MCP, type ToolDoMcp } from "./mcp-tools.js";
 export {
+  FAIXAS_DO_ANUAL,
+  CATEGORIAS_DO_ANUAL,
+  FUNIS_DO_ANUAL,
+} from "./planner-anual.js";
+export {
   ehCaptacaoPaga,
   temDashboardDeVendas,
   ehEtapaDeCaptacao,

@@ -5,6 +5,16 @@ import { apiKeys } from "../db/schema.js";
 import { generateApiKey } from "../services/api-key.js";
 
 /**
+ * Os scopes que existem, e o que cada um abre.
+ *
+ * - `meta:read`     — leitura da API pública (tráfego, leads, vendas, funis)
+ * - `reports:write` — POST /api/public/v1/reports
+ * - `planner:read`  — ler calendário e esteira anual do Planner
+ * - `planner:write` — gravar no Planner (inclui ler). Toda escrita é auditada.
+ */
+export const ESCOPOS_DE_API = ["meta:read", "reports:write", "planner:read", "planner:write"] as const;
+
+/**
  * Gestão de API Keys (Story 36.1) — admin only.
  *
  * Estas rotas passam pelo pipeline Clerk normal (humano logado). O *consumo*
@@ -15,7 +25,9 @@ const idParamSchema = z.object({ id: z.string().uuid() });
 
 const createKeySchema = z.object({
   name: z.string().trim().min(1, "Nome obrigatório").max(100),
-  scopes: z.array(z.string()).min(1).optional(),
+  // Só os scopes que alguma rota confere. Texto livre aqui deixava criar uma
+  // chave com "planner-write" (hífen) que parece certa e não abre nada.
+  scopes: z.array(z.enum(ESCOPOS_DE_API)).min(1).optional(),
 });
 
 // Gestão de chaves é mais restrita que o gate de admin.ts (admin OU manager):

@@ -18,8 +18,15 @@
  * ou "dado que não chegou".
  */
 
-/** As faixas coloridas da lateral. A ordem aqui é a ordem na tela. */
-export const GRUPOS = ["organico", "trafego", "ascensao"] as const;
+import { CATEGORIAS_DO_ANUAL, FAIXAS_DO_ANUAL, FUNIS_DO_ANUAL } from "@loyola-x/shared";
+
+/**
+ * As faixas coloridas da lateral. A ordem aqui é a ordem na tela.
+ *
+ * As três listas vêm do shared: o MCP as usa como `enum` das ferramentas, e
+ * uma cópia aqui divergiria no primeiro funil novo.
+ */
+export const GRUPOS = FAIXAS_DO_ANUAL;
 export type Grupo = (typeof GRUPOS)[number];
 
 export const ROTULO_DO_GRUPO: Record<Grupo, string> = {
@@ -94,16 +101,9 @@ export function gruposDoProjeto(personalizacoes: PersonalizacaoDeGrupo[]): Grupo
   });
 }
 
-export const CATEGORIAS = ["Back-End", "Front-End"] as const;
+export const CATEGORIAS = CATEGORIAS_DO_ANUAL;
 
-export const FUNIS = [
-  "Lançamento",
-  "DR - VSL",
-  "Grupo de Conteúdo",
-  "Reunião Secreta",
-  "Webinar diário",
-  "Time comercial",
-] as const;
+export const FUNIS = FUNIS_DO_ANUAL;
 
 export function ehGrupo(v: string): v is Grupo {
   return (GRUPOS as readonly string[]).includes(v);
@@ -206,3 +206,199 @@ export const ESTEIRAS_INICIAIS: { grupo: Grupo; nome: string }[] = [
   { grupo: "ascensao", nome: "Webinar diário" },
   { grupo: "ascensao", nome: "Time comercial" },
 ];
+
+// ---------------------------------------------------------------------------
+// API pública: o lote de células que o Claude da Ágatha manda.
+//
+// A tela grava uma célula por vez, inteira. A API recebe várias de uma vez e
+// PARCIAIS: campo omitido não muda, `null` limpa. E aceita a esteira pelo
+// nome, porque é assim que uma pessoa pede ("Perpétuo Funil de Lucro, na faixa
+// Tráfego") — e o modelo não tem o id na cabeça.
+// ---------------------------------------------------------------------------
+
+/** Texto para comparar nomes: sem caixa, acento nem espaço sobrando. */
+export function chaveDeTexto(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * A faixa de um texto. Aceita o id (`trafego`), o rótulo padrão (`TRÁFEGO`) e
+ * o rótulo que a empresa deu (`CAMPANHA` na DG) — é o que a pessoa vê na tela.
+ */
+export function resolverFaixa(texto: string, grupos: GrupoDoAnual[]): Grupo | null {
+  const k = chaveDeTexto(texto);
+  for (const g of grupos) {
+    if (k === g.id || k === chaveDeTexto(g.rotulo) || k === chaveDeTexto(ROTULO_DO_GRUPO[g.id])) {
+      return g.id;
+    }
+  }
+  return null;
+}
+
+/** O valor na grafia do vocabulário ("lancamento" → "Lançamento"), ou `null`. */
+function noVocabulario(valor: string, lista: readonly string[]): string | null {
+  const k = chaveDeTexto(valor);
+  return lista.find((v) => chaveDeTexto(v) === k) ?? null;
+}
+
+/** Uma célula como a API a mostra: `nota` é o texto curto acima da célula. */
+export interface CelulaPublica {
+  nota: string | null;
+  produto: string | null;
+  categoria: string | null;
+  funil: string | null;
+}
+
+export function celulaPublica(c: CelulaDoAnual): CelulaPublica {
+  return { nota: c.frequencia, produto: c.produto, categoria: c.categoria, funil: c.funil };
+}
+
+/** O que muda numa célula. Campo omitido (`undefined`) fica; `null` limpa. */
+export type PatchDeCelula = Partial<Record<keyof CelulaPublica, string | null>>;
+
+/**
+ * Categoria e funil na grafia certa, ou os erros.
+ *
+ * A tela DESCARTA valor fora da lista em silêncio (`limparCelula`). A API não
+ * pode: o modelo acharia que gravou "Webinar" e a célula ficaria vazia.
+ */
+export function validarPatch(p: PatchDeCelula): { patch: PatchDeCelula; erros: string[] } {
+  const erros: string[] = [];
+  const patch = { ...p };
+  for (const [campo, lista] of [
+    ["categoria", CATEGORIAS],
+    ["funil", FUNIS],
+  ] as const) {
+    const v = p[campo];
+    if (v == null || v.trim() === "") continue;
+    const certo = noVocabulario(v, lista);
+    if (certo) patch[campo] = certo;
+    else erros.push(`${campo} "${v}" não existe. Opções: ${lista.join(", ")} (ou null para limpar).`);
+  }
+  return { patch, erros };
+}
+
+export function aplicarPatch(atual: CelulaDoAnual, p: PatchDeCelula): CelulaDoAnual {
+  const ou = <T>(novo: T | undefined, velho: T) => (novo === undefined ? velho : novo);
+  return limparCelula({
+    frequencia: ou(p.nota, atual.frequencia),
+    produto: ou(p.produto, atual.produto),
+    categoria: ou(p.categoria, atual.categoria),
+    funil: ou(p.funil, atual.funil),
+  });
+}
+
+export function diffDaCelula(
+  antes: CelulaDoAnual,
+  depois: CelulaDoAnual,
+): Partial<Record<keyof CelulaPublica, { antes: string | null; depois: string | null }>> {
+  const a = celulaPublica(antes);
+  const d = celulaPublica(depois);
+  const saida: Partial<Record<keyof CelulaPublica, { antes: string | null; depois: string | null }>> = {};
+  for (const k of Object.keys(a) as (keyof CelulaPublica)[]) {
+    if (a[k] !== d[k]) saida[k] = { antes: a[k], depois: d[k] };
+  }
+  return saida;
+}
+
+export interface ItemDoLote extends PatchDeCelula {
+  esteira: { id?: string; faixa?: string; nome?: string; criarSeNaoExistir?: boolean };
+  mes: number;
+}
+
+export interface MudancaNoLote {
+  /** `null` quando a esteira ainda vai ser criada. */
+  esteiraId: string | null;
+  faixa: Grupo;
+  esteira: string;
+  mes: number;
+  antes: CelulaDoAnual;
+  depois: CelulaDoAnual;
+}
+
+export interface PlanoDoLote {
+  erros: { indice: number; erro: string }[];
+  /** Esteiras que o lote cria (`criarSeNaoExistir`). */
+  novas: { faixa: Grupo; nome: string }[];
+  mudancas: MudancaNoLote[];
+}
+
+/**
+ * O que o lote faria, sem gravar nada — é o `dryRun`, e é também o plano que a
+ * gravação executa. Os dois saem da mesma função para o diff mostrado à
+ * Ágatha ser exatamente o que vai ao banco.
+ *
+ * Itens repetidos para a mesma esteira e mês se somam na ordem do lote.
+ */
+export function planejarLote(
+  itens: ItemDoLote[],
+  esteiras: (EsteiraDoAnual & { grupo: string })[],
+  grupos: GrupoDoAnual[],
+  celulas: Map<string, CelulaDoAnual>,
+): PlanoDoLote {
+  const erros: PlanoDoLote["erros"] = [];
+  const novas = new Map<string, { faixa: Grupo; nome: string }>();
+  const plano = new Map<string, MudancaNoLote>();
+  const opcoesDeFaixa = grupos.map((g) => `${g.id} ("${g.rotulo}")`).join(", ");
+
+  itens.forEach((item, indice) => {
+    const { esteira: ref, mes, ...campos } = item;
+    const { patch, erros: errosDoPatch } = validarPatch(campos);
+    for (const erro of errosDoPatch) erros.push({ indice, erro });
+
+    let esteiraId: string | null = null;
+    let faixa: Grupo;
+    let nome: string;
+
+    if (ref.id) {
+      const e = esteiras.find((x) => x.id === ref.id);
+      if (!e) {
+        erros.push({ indice, erro: `esteira ${ref.id} não existe nesta empresa.` });
+        return;
+      }
+      esteiraId = e.id;
+      faixa = e.grupo as Grupo;
+      nome = e.nome;
+    } else if (ref.faixa && ref.nome?.trim()) {
+      const f = resolverFaixa(ref.faixa, grupos);
+      if (!f) {
+        erros.push({ indice, erro: `faixa "${ref.faixa}" não existe. Opções: ${opcoesDeFaixa}.` });
+        return;
+      }
+      faixa = f;
+      nome = ref.nome.trim();
+      const e = esteiras.find((x) => x.grupo === f && chaveDeTexto(x.nome) === chaveDeTexto(nome));
+      if (e) {
+        esteiraId = e.id;
+        nome = e.nome;
+      } else if (ref.criarSeNaoExistir) {
+        novas.set(`${f}|${chaveDeTexto(nome)}`, { faixa: f, nome });
+      } else {
+        const irmas = esteiras.filter((x) => x.grupo === f).map((x) => `"${x.nome}"`);
+        erros.push({
+          indice,
+          erro:
+            `esteira "${nome}" não existe na faixa ${f}. ` +
+            `Existem: ${irmas.join(", ") || "nenhuma"}. Para criar, mande criarSeNaoExistir: true.`,
+        });
+        return;
+      }
+    } else {
+      erros.push({ indice, erro: "informe esteira.id, ou esteira.faixa + esteira.nome." });
+      return;
+    }
+
+    const chave = `${esteiraId ?? `nova:${faixa}|${chaveDeTexto(nome)}`}:${mes}`;
+    const anterior = plano.get(chave);
+    const antes = anterior?.antes ?? (esteiraId ? celulas.get(`${esteiraId}:${mes}`) : undefined) ?? { ...VAZIA };
+    const depois = aplicarPatch(anterior?.depois ?? antes, patch);
+    plano.set(chave, { esteiraId, faixa, esteira: nome, mes, antes, depois });
+  });
+
+  return { erros, novas: [...novas.values()], mudancas: [...plano.values()] };
+}
