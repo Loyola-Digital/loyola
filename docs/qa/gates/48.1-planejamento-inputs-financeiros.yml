@@ -1,37 +1,41 @@
 schema: 1
 story: '48.1'
 story_title: 'Planejamento — Inputs Financeiros do lançamento (modelo, API e tela da aba 1)'
-gate: FAIL
-status_reason: 'Modelo, módulo puro e API corretos e provados (27/27, mutações de DV-001, do status em centésimos e do 403 de guest todas caem). A tela tem um defeito da classe que este repo bloqueia: quando a API falha (rede, 404 de guest sem membership, API atrás), o componente mostra o skeleton PARA SEMPRE — o ramo de erro é inalcançável. Fix de 3 linhas; re-gate depois.'
+gate: PASS
+status_reason: 'Modelo, módulo puro e API corretos e provados (27/27; mutações de DV-001, do status em centésimos e do 403 de guest caem). O defeito da tela do primeiro gate (erro da API virava skeleton eterno) foi corrigido em 551b1832 com a decisão de estado numa função pura testada — a mutação da ordem derruba o teste e o componente ramifica por ela, erro antes de carregando. Três lows fechados no mesmo commit. Re-gate PASS.'
 reviewer: 'Quinn'
-updated: '2026-09-21T22:10:00Z'
+updated: '2026-09-21T22:40:00Z'
 branch: 'feat/48.1-inputs-financeiros'
-commits: ['caa79401']
+commits: ['caa79401', 'e9bb9170', '551b1832']
 
 top_issues:
   - id: 'REL-001'
     severity: high
+    status: resolved
     finding: '`planejamento-inputs-financeiros.tsx:134-149`: o primeiro `return` é `if (query.isLoading || !form || …) return <Skeleton/>`; o `if (query.isError)` vem DEPOIS. Em erro, `query.data` é `undefined`, o `useEffect` nunca chama `setForm`, `form` fica `null` e a condição do skeleton é verdadeira para sempre — o ramo `role="alert"` nunca renderiza. Efeito: API fora, 404 (guest sem membership no projeto; funil de outro projeto), 500, ou API atrás do painel (contrato 13 vs 14 — exatamente o cenário da 47.15) aparecem como "carregando…" eterno. É a classe "erro virando ausência na tela" (3 casos em 26/08; regra do repo: testar a falha).'
-    suggested_action: 'Checar `query.isError` ANTES do skeleton (ou condicionar o skeleton a `query.isLoading` apenas e tratar `!form` só quando há `data`). Cobrir com teste: como `components/funnels` está fora do `include` do vitest do web, extrair a decisão de estado para uma função pura em `lib/utils/planejamento-inputs-form.ts` (ex.: `estadoDaTela({ isLoading, isError, temForm }) → "carregando" | "erro" | "pronto"`) e testar os três, com a mutação da ordem derrubando o teste.'
+    suggested_action: 'RESOLVIDO em 551b1832: `estadoDaTela({ isLoading, isError, temForm })` em `lib/utils/planejamento-inputs-form.ts`, erro antes de carregando; o componente ramifica por ela (linhas 144-152, erro primeiro — conferido). Teste com o cenário do defeito; QA re-mutou a ordem: 1 falha.'
   - id: 'MNT-001'
     severity: low
+    status: resolved
     finding: '`planejamento/page.tsx:115`: `podeEditar={role !== "guest"}` com `useUserRole()` devolvendo `null` enquanto `/api/me` carrega → guest vê o botão Salvar por um instante e depois ele some. A API barra (403), então é só cosmético.'
-    suggested_action: '`podeEditar={role !== null && role !== "guest"}` (o botão só aparece quando o papel é conhecido).'
+    suggested_action: 'RESOLVIDO em 551b1832: `podeEditar={role !== null && role !== "guest"}`.'
   - id: 'MNT-002'
     severity: low
+    status: resolved
     finding: 'Percentuais voltam para o campo com PONTO decimal (`paraFormulario` → "12.5") enquanto o usuário pt-BR digita VÍRGULA (e `lerNumero` aceita as duas). Funciona, mas o mesmo campo mostra "12.5" e aceita "12,5".'
-    suggested_action: 'Formatar a volta com vírgula (`.replace(".", ",")`) ou aceitar como está e registrar em UX. Não bloqueia.'
+    suggested_action: 'RESOLVIDO em 551b1832: `paraFormulario` devolve vírgula; teste de ida-e-volta ajustado (`12,5`, `1200,5`).'
   - id: 'MNT-003'
     severity: low
+    status: resolved
     finding: 'Na tabela de canais orgânicos os inputs de % são renderizados com `campo(c.pct, "")` — `<Label>` vazio. Leitor de tela não sabe que campo é.'
-    suggested_action: 'Passar `aria-label={`% da meta — ${c.rotulo}`}` no `Input` (ou o rótulo visualmente oculto).'
+    suggested_action: 'RESOLVIDO em 551b1832: `aria-label="% da meta — {canal}"` quando o rótulo visível está vazio; `<Label>` só renderiza com texto.'
 
 waiver: { active: false }
 
 checks:
   code_review: 'Shared (`planejamento-inputs-financeiros.ts`, folha, 0 imports): RN-001…009 conferidas fórmula a fórmula contra §1.2; D5 (quatro fontes ÷ `mcAlvoPagos`), D6 (% do investimento), D3 (`div` → null só em zero; negativo passa — PO-04 B), RN-009 em centésimos de ponto. Repositório: `numeric` (string do `pg`) → `number | null` na leitura e `String()` na escrita; `onConflictDoUpdate({ target: funnelId })` apoiado no `uniqueIndex` declarado no `schema.ts` (A1). Rota: caminho escopado por projeto; `acessoAoProjeto` = cópia de `getProjectAccess`; guest 403 antes de resolver contexto; 404 fora de `launch`; `.strict()`; GET não cria linha. Web: hook com `setQueryData` no sucesso; formulário ↔ payload em módulo puro testado; página com `?tab=` de `window.location` + `replaceState` (46.1); cartão só em `launch`. Condição do Lucas: `schema.ts` +75/−0, `app.ts` +2/−0, `shared/index.ts` +16/−0, funil `page.tsx` +2/−0 — conferido no `--numstat`; única linha alterada: a constante do contrato.'
-  unit_tests: 'QA rodou: API 27/27 (19 do módulo + 8 de rota), web 12/12. Mutações do QA: DV-001 de volta → 3 falhas ✓; status com soma em ponto flutuante → 1 falha ✓ (o caso `0,7 + 0,2 + 0,1`); rota sem o 403 de guest → 1 falha ✓. Tree restaurado. **Falta teste da máquina de estados da tela** (REL-001): `components/funnels` está fora do `include` do vitest, então a ordem dos early returns não tem cobertura — foi como o defeito passou.'
-  acceptance_criteria: 'AC1 ✓ (1:1, GET não cria, 404 fora de launch) · AC2 ✓ · AC3–AC10 ✓ (§1.4 reproduzido, D5 com G37 = 31 250 e G31 = 208 333,33; invariantes de PO-03; três estados de RN-009; AC10 com os dois ruídos reais do V8) · AC11 ✓ (zod + tela; 10 payloads inválidos → 400) · AC12 ✓ (invariantes: nenhum NaN/Infinity) · AC13 ✓ (caminho, `getProjectAccess`, guest) · AC14 ◐ — seis grupos, derivados ao vivo, salvar explícito, "alterações não salvas" ✓; **estado de erro inalcançável (REL-001)** · AC15 ✓ (formatadores do repo; "—" para null; negativo em vermelho) · AC16 ✓ · AC17 ✓.'
+  unit_tests: 'Re-gate: web 14/14 (2 novos: `estadoDaTela`), API 27/27. Mutações do QA: DV-001 de volta → 3 falhas ✓; status com soma em ponto flutuante → 1 falha ✓; rota sem o 403 de guest → 1 falha ✓; **ordem invertida em `estadoDaTela` → 1 falha ✓** (era o buraco do primeiro gate). Conferido que o componente chama a função e ramifica erro antes de carregando — sem isso o teste protegeria nada.'
+  acceptance_criteria: 'AC1 ✓ (1:1, GET não cria, 404 fora de launch) · AC2 ✓ · AC3–AC10 ✓ (§1.4 reproduzido, D5 com G37 = 31 250 e G31 = 208 333,33; invariantes de PO-03; três estados de RN-009; AC10 com os dois ruídos reais do V8) · AC11 ✓ (zod + tela; 10 payloads inválidos → 400) · AC12 ✓ (invariantes: nenhum NaN/Infinity) · AC13 ✓ (caminho, `getProjectAccess`, guest) · AC14 ✓ — seis grupos, derivados ao vivo, salvar explícito, "alterações não salvas", erro da API visível · AC15 ✓ (formatadores do repo; "—" para null; negativo em vermelho) · AC16 ✓ · AC17 ✓.'
   no_regressions: 'Gates do @dev na mesma árvore (`caa79401`): eslint api/shared/web 0, tsc shared/web/api 0, `next build` 0 com a rota `planejamento` no `.next/server`. Nenhum consumidor existente alterado. **Pendente para o @devops:** conferir `plan_simulators` e `uq_plan_simulators_funnel_id` no `information_schema` de produção antes do merge — o boot roda `drizzle-kit push` (cria tabela e índice do schema), mas os CHECKs da 0152 só entram por aplicação manual.'
   performance: 'N/A — derivação pura por tecla, 26 campos.'
   security: 'Guest: leitura só com membership (404 sem), escrita 403 na API e botão oculto na tela. Payload `.strict()`; faixas validadas. Sem dado sensível.'
@@ -40,5 +44,6 @@ checks:
 
 notes:
   - 'Contagem: a story diz "20 entradas"; são 26 chaves escalares (14 + 6 % de canal + 6 bases). Só texto; @po registra no fechamento.'
-  - 'Re-gate: com REL-001 corrigido e coberto por teste (mutação da ordem derrubando), e MNT-001 fechado (1 linha), o gate vira PASS; MNT-002/003 podem ficar como débito de UX registrado.'
+  - 'Re-gate em 2026-09-21: REL-001 e os três lows fechados; mutação da ordem derruba 1 teste → PASS.'
+  - 'Gates do @dev após o fix: web vitest 14/14, eslint 0, tsc web 0 (sobre o build anterior; nenhuma mudança fora de components/funnels, lib/utils e a página). O @devops confere o CI.'
   - 'Validação visual do Danilo depois do deploy: cartão só em funil de lançamento; seis grupos; status RN-009 nos três estados; "—" sem base; negativo em vermelho; erro da API visível (depois do fix).'
