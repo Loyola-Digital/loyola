@@ -89,12 +89,12 @@ Respondidas nesta ordem, uma a uma. "Reproduz" = faz como a planilha; "corrige" 
 | Story | Título | RN cobertas | Depende de | Status |
 |---|---|---|---|---|
 | 48.1 | Inputs Financeiros — modelo, API e tela (aba 1) | RN-001…009, 037, 040 | P1, P2 | Draft |
-| 48.2 | Motor de cenários no `shared` (abas 2 e 3, parte pura) | RN-010…015, 024…026 | — (só testes) | Draft |
+| 48.2 | Motor de cenários no `shared` (abas 2 e 3, parte pura) | RN-010…015, 024…026 | — (só testes) | **Ready** — @po GO 10/10 em 2026-09-21; Alta, M (5–8) |
 | 48.3 | Leads orgânicos — seleção, combinações e resumo (aba 2) | RN-016…023 | 48.1, 48.2 | a rascunhar |
 | 48.4 | Leads pagos — seleção, combinações e resumo (aba 3) | RN-016…022, 027…029 | 48.1, 48.2 | a rascunhar |
 | 48.5 | Resumo Final — consolidação dos cinco cenários (aba 4) | RN-030, 031 (+ 017…020 consolidadas) | 48.3, 48.4 | a rascunhar |
 
-Pontos e prioridade: `[FALTA]` — não estimados pelo @sm; @po/Danilo estimam na validação.
+Pontos e prioridade: estimados pelo @po na validação e confirmados pelo Danilo (48.2: Alta, M 5–8); as demais ficam `[FALTA]` até a validação de cada uma.
 
 ## Ordem de execução, executores e gates (@pm, 2026-09-21)
 
@@ -133,6 +133,7 @@ Regra do repo mantida: executor ≠ quality gate em todas as linhas.
 | 2026-09-21 | @sm (River) | Epic criado para reservar o nº 48 e registrar as 14 decisões do Danilo; 48.1 e 48.2 rascunhadas; docs copiados para `docs/specs/epic-48/` |
 | 2026-09-21 | @sm (River) | Danilo confirmou as três leituras do @sm: D3 (escada trava em zero nos pagos), D10 (apêndice A valida o bruto), 48.1 AC13 (permissão = a do funil) |
 | 2026-09-21 | @devops (Gage) | P1 resolvida: Lucas autorizou o escopo (via Danilo) com a condição "não mexer em nada que ele já implementou"; leitura operacional registrada para confirmação na primeira PR de código |
+| 2026-09-21 | @po (Pax) | 48.2 validada: GO 10/10, Ready; estimativa Alta / M (5–8) confirmada pelo Danilo |
 | 2026-09-21 | @pm (Morgan) | **P2 ✅ — estrutura validada.** Acrescentados objetivo, critérios de sucesso S1–S4, ordem de execução em 3 waves com executor/gate por story, riscos R1–R6, roadmap do que ficou fora; E4 corrigido (nomes dos módulos = os das stories). Número 48 confirmado na `main` (#898). |
 
 <!-- clickup:17tqamemnem -->
