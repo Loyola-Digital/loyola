@@ -4605,6 +4605,29 @@ export const plannerGoogleCalendars = pgTable("planner_google_calendars", {
   lastImportedAt: timestamp("last_imported_at", { withTimezone: true }),
 });
 
+/**
+ * O que cada chave de API gravou no Planner (migration 0151).
+ *
+ * A escrita pela API pública não tem usuário — quem grava é a chave. `detalhe`
+ * guarda o diff da operação, para responder "quem mudou isso?" e desfazer à
+ * mão uma chamada errada.
+ */
+export const plannerApiAudit = pgTable(
+  "planner_api_audit",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    apiKeyId: uuid("api_key_id").references(() => apiKeys.id, { onDelete: "set null" }),
+    acao: varchar("acao", { length: 60 }).notNull(),
+    projectId: uuid("project_id"),
+    detalhe: jsonb("detalhe").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_planner_api_audit_criado").on(table.createdAt),
+    index("idx_planner_api_audit_chave").on(table.apiKeyId),
+  ],
+);
+
 export const projectSourceRules = pgTable(
   "project_source_rules",
   {

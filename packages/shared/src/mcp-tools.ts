@@ -48,6 +48,17 @@ export const TOOLS_DO_MCP = [
   "get_stage_sales_rows",
   "get_cross_launch",
   "get_stage_operational_costs",
+  // Planner — as únicas que GRAVAM (API key com planner:write). Spec da Ágatha, set/2026.
+  "get_esteira_anual",
+  "upsert_esteira_celulas",
+  "create_esteira",
+  "clear_esteira_celulas",
+  "list_planner_agendas",
+  "list_planner_campanhas",
+  "create_planner_campanha",
+  "update_planner_campanha",
+  "upsert_planner_fase",
+  "delete_planner_fase",
 ] as const;
 
 export type ToolDoMcp = (typeof TOOLS_DO_MCP)[number];

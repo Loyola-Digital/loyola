@@ -127,6 +127,7 @@ import revenuecatSnapshotSchedulerPlugin from "./plugins/revenuecat-snapshot-sch
 import plannerSyncSchedulerPlugin from "./plugins/planner-sync-scheduler.js";
 import usoDoProdutoPlugin from "./plugins/uso-do-produto.js";
 import plannerAnualRoutes from "./routes/planner-anual.js";
+import publicPlannerAnualRoutes from "./routes/public-planner-anual.js";
 import instaScanWorkerPlugin from "./plugins/insta-scan-worker.js";
 
 export async function buildServer() {
@@ -252,6 +253,7 @@ export async function buildServer() {
   await app.register(plannerRoutes);
   // Calendario anual (esteiras x meses). Em teste; arquivo proprio.
   await app.register(plannerAnualRoutes);
+  await app.register(publicPlannerAnualRoutes);
   await app.register(stageApplicationRoutes);
   await app.register(stageSalesDataRoutes);
   await app.register(sellersBreakdownRoutes);

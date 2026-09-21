@@ -1,12 +1,13 @@
 # Loyola X — Meta Ads Creative Intelligence API
 
-> API pública read-only que expõe a performance de criativos do Meta Ads (e a estrutura de funis) do Loyola X para consumo por IA/automação. Lê de um cache no banco — rápida e estável. Protegida por API Key admin. Existe também um MCP server que embrulha esta API como tools (ver seção MCP).
+> API pública que expõe a performance de criativos do Meta Ads (e a estrutura de funis) do Loyola X para consumo por IA/automação — e que LÊ E GRAVA o Planner (esteira anual e calendário; ver seção Planner). Lê de um cache no banco — rápida e estável. Protegida por API Key admin. Existe também um MCP server que embrulha esta API como tools (ver seção MCP).
 
 ## Autenticação
 
 - Header obrigatório: `X-API-Key: <sua-chave>` (gerada na tela de admin do Loyola X; revogável).
 - Uma única chave dá acesso a todos os projetos. O `projectId` vai sempre no path.
-- **Read-only:** somente `GET`/`HEAD`. Qualquer outro método retorna `405`.
+- **Read-only, com duas exceções:** fora delas, somente `GET`/`HEAD` (outro método → `405`). As exceções são o **Planner** (`/api/public/v1/planner/*`, scope `planner:write`) e `POST /api/public/v1/reports` (scope `reports:write`).
+- **Scopes:** `meta:read` (dados) · `planner:read` · `planner:write` · `reports:write`. Cada chave tem os seus; peça ao admin uma chave com o scope do uso.
 - **Rate limit:** 120 requisições/min por chave (`429` quando excedido, com header `Retry-After`).
 - Base URL de produção: `https://api.loyoladigital.com`. Todos os paths abaixo são relativos a ela.
 
@@ -263,6 +264,146 @@ Custos operacionais lançados na etapa (Brief v5 #2 — Evento Presencial): venu
 Resposta: `{ projectId, stageId, totalCosts, byCategory:[{category,total,itens}], items:[{category,description,amount,incurredAt}] }` — ou `{ semDados:true }` se nenhum custo foi lançado.
 **ROAS REAL de evento presencial** = `faturamentoBruto` (sales-daily) ÷ (`spend` do stage-daily + `totalCosts` daqui). O spend Meta sozinho NÃO é o custo total de um evento.
 
+## Planner — esteira anual e calendário (LEITURA E ESCRITA)
+
+A única parte da API que **grava**. Grava nas mesmas tabelas que a tela do Planner usa: o que entra por aqui aparece na tela no próximo reload.
+
+- **Permissão:** `planner:read` lê; `planner:write` lê e grava. Chave sem o scope → `403 SCOPE_REQUIRED`.
+- **Auditoria:** toda gravação fica registrada com a chave que gravou, a hora e o diff (antes → depois).
+- **Fluxo obrigatório para IA:** ler → `dryRun: true` → mostrar o diff ao usuário → gravar só com o ok dele. Operações destrutivas (limpar meses, excluir fase) exigem confirmação explícita.
+- **Empresas (projectId):** DG & CPDF `738cda16-c5be-4268-9c98-92e46c359569` · BBE `e25369be-1d04-4153-8178-14a3b617e70e` · PP `1b89245d-60a4-48a5-a691-c730bd6f48ca` · Lyrio `9bd898eb-531a-45a6-801f-61d50e76f794` · FZ & MFB `4d7f55ea-ff1b-4fa8-b3cc-caed182878b3`. Outras: `GET /api/public/v1/projects`.
+
+### Modelo da esteira anual
+
+```
+Empresa (projectId) + Ano
+└── Faixa: organico | trafego | ascensao   (rótulo muda por empresa: "TRÁFEGO" na FZ, "CAMPANHA" na DG)
+    └── Esteira (linha, ex.: "Perpétuo Funil de Lucro") — vale para TODOS os anos
+        └── Célula por mês (1–12), só no ano pedido
+            ├── nota       texto curto acima da célula (ex.: "REN1 · semana 22–25/02")
+            ├── produto    texto (ex.: "Funil de Lucro (VSL 2)")
+            ├── categoria  Back-End | Front-End
+            └── funil      Lançamento | DR - VSL | Grupo de Conteúdo | Reunião Secreta | Webinar diário | Time comercial
+```
+
+- A **faixa** aceita o id (`trafego`), o rótulo padrão (`TRÁFEGO`) ou o rótulo da empresa (`CAMPANHA`), sem diferenciar maiúsculas/acentos.
+- **categoria** e **funil** só aceitam a lista acima (a grafia é corrigida: `lancamento` → `Lançamento`). Valor fora da lista → `400` com as opções.
+- Célula que fica sem nenhum campo é apagada (vazia e inexistente são a mesma coisa na tela).
+
+### GET /api/public/v1/planner/anual/vocabulario
+Faixas, categorias e funis válidos.
+Resposta: `{ "faixas": ["organico","trafego","ascensao"], "categorias": [...], "funis": [...] }`
+
+### GET /api/public/v1/planner/anual/{projectId}/{ano}
+A esteira de uma empresa num ano. **Leia antes de escrever**: é aqui que estão os nomes exatos das esteiras.
+Resposta:
+```json
+{
+  "projectId": "…", "ano": 2027, "atualizadoEm": "2026-09-21T14:00:00Z",
+  "faixas": [
+    { "faixa": "trafego", "rotulo": "TRÁFEGO", "cor": "#5a7f3c",
+      "esteiras": [
+        { "id": "…", "nome": "Renovação MFB", "posicao": 2,
+          "celulas": [ { "mes": 2, "nota": "REN1 · semana 22–25/02", "produto": "Renovação MFB",
+                         "categoria": "Back-End", "funil": "Lançamento", "atualizadoEm": "…" } ] } ] }
+  ],
+  "vocabulario": { "categorias": [...], "funis": [...] }
+}
+```
+⚠️ `celulas` traz **só os meses preenchidos**. Mês ausente = célula vazia.
+
+### PUT /api/public/v1/planner/anual/{projectId}/{ano}/celulas  ← o principal
+Upsert **em lote** e **parcial**. Até 200 células por chamada.
+```json
+{
+  "dryRun": true,
+  "celulas": [
+    { "esteira": { "id": "…" }, "mes": 2, "nota": "REN1 · semana 22–25/02", "produto": "Renovação MFB",
+      "categoria": "Back-End", "funil": "Lançamento" },
+    { "esteira": { "faixa": "TRÁFEGO", "nome": "Perpétuo Funil de Lucro", "criarSeNaoExistir": true },
+      "mes": 3, "produto": "Funil de Lucro (VSL 2)", "categoria": "Front-End", "funil": "DR - VSL" }
+  ]
+}
+```
+Regras:
+- **Campo omitido não muda. `null` limpa** aquele campo.
+- **Esteira** por `id` ou por `faixa` + `nome` (sem diferenciar maiúsculas/acentos). Sem `criarSeNaoExistir`, esteira inexistente é erro (a resposta lista as que existem na faixa).
+- **Tudo ou nada:** um item inválido → `400` com `erros: [{ indice, erro }]` e **nada é gravado**.
+- **`dryRun: true`** devolve o diff sem gravar. O diff e a gravação saem do mesmo plano — o que foi aprovado é o que grava.
+- Dois itens para a mesma esteira + mês se somam, na ordem do lote.
+
+Resposta (igual no dryRun e na gravação; `atualizadoEm` só na gravação):
+```json
+{
+  "dryRun": true, "projectId": "…", "ano": 2027,
+  "esteirasCriadas": [ { "id": null, "faixa": "trafego", "nome": "Perpétuo Funil de Lucro" } ],
+  "celulas": [
+    { "esteiraId": "…", "faixa": "trafego", "esteira": "Renovação MFB", "mes": 2, "mudou": true,
+      "antes":  { "nota": null, "produto": null, "categoria": null, "funil": null },
+      "depois": { "nota": "REN1 · semana 22–25/02", "produto": "Renovação MFB", "categoria": "Back-End", "funil": "Lançamento" },
+      "diff": { "nota": { "antes": null, "depois": "REN1 · semana 22–25/02" }, "...": "..." } }
+  ],
+  "resumo": { "alteradas": 1, "semMudanca": 0, "esteirasCriadas": 1 }
+}
+```
+No dryRun, esteira que será criada vem com `id: null`.
+
+### DELETE /api/public/v1/planner/anual/{projectId}/{ano}/celulas
+Limpa meses de uma esteira. Corpo: `{ "esteiraId": "…", "meses": [1, 2], "dryRun": true }`.
+Resposta: `{ "dryRun", "esteira": { "id", "faixa", "nome" }, "ano", "limpas": [{ "mes", "antes": {…} }], "jaVazias": [meses] }`. Destrutivo: confirme com o usuário.
+
+### POST /api/public/v1/planner/anual/{projectId}/esteiras
+Cria uma esteira. Corpo: `{ "faixa": "TRÁFEGO", "nome": "Perpétuo Funil de Lucro" }` → `201 { "id", "faixa", "nome", "posicao" }`.
+Já existe com esse nome na faixa → `409 { "error", "esteira": { "id", … } }` (use esse id).
+
+### PATCH /api/public/v1/planner/anual/{projectId}/esteiras/{esteiraId}
+Renomeia, muda de faixa ou reordena. Corpo: `{ "nome"?, "faixa"?, "posicao"? }`.
+
+### Calendário do Planner (campanhas e fases)
+
+O calendário tem **campanhas** (cards) com **fases** datadas. Campanha ligada a uma **agenda do Google** espelha cada fase datada como evento nela, com título `NOME DA CAMPANHA - Fase`. Toda escrita abaixo espelha no Google na hora, pelo mesmo caminho da tela.
+
+- Datas: `AAAA-MM-DD`. `fim` antes de `inicio` vira igual a `inicio`. Fase sem data existe no Planner mas não vai ao Google.
+- Se o Google recusar (permissão da agenda, fora do ar), a campanha **é salva mesmo assim** e a resposta traz `avisoGoogle` — repasse ao usuário. O Planner tenta de novo sozinho.
+- A fase é editada **uma por vez**: mexer numa fase nunca apaga as outras.
+
+Formato de campanha nas respostas:
+```json
+{ "id": "…", "nome": "BBEPR2", "cor": "#…", "projectId": "…|null",
+  "agenda": { "id": "…@group.calendar.google.com", "nome": "🥩 [BBE] Agenda Geral" } | null,
+  "fases": [ { "id": "p1abc", "nome": "Prod. Captação", "inicio": "2026-09-21", "fim": "2026-09-30", "noGoogle": true } ],
+  "atualizadoEm": "…" }
+```
+`noGoogle: false` numa fase datada de campanha com agenda = o evento ainda não chegou ao Google.
+
+### GET /api/public/v1/planner/agendas
+Agendas do Google conectadas: `{ "agendas": [{ "id", "nome" }] }`.
+
+### GET /api/public/v1/planner/campanhas
+Filtros opcionais: `busca` (parte do nome), `projectId`, `de`/`ate` (campanhas com alguma fase cruzando a janela).
+Resposta: `{ "campanhas": [campanha] }`.
+
+### GET /api/public/v1/planner/campanhas/{id}
+Uma campanha.
+
+### POST /api/public/v1/planner/campanhas
+`{ "nome", "agenda"?, "projectId"?, "cor"? ("#rrggbb"), "fases"?: [{ "nome", "inicio"?, "fim"? }] }` → `201 campanha`.
+`agenda` aceita o id ou parte do nome (`"FZ"` acha `🇺🇸 [FZ] Agenda Geral`); nome ambíguo ou inexistente → `400` com as agendas conectadas. Sem `fases`, a campanha nasce vazia.
+
+### PATCH /api/public/v1/planner/campanhas/{id}
+`{ "nome"?, "cor"?, "projectId"?, "agenda"? }` — `agenda: null` desliga o espelho. ⚠️ Renomear muda o título de **todos** os eventos da campanha no Google.
+
+### POST /api/public/v1/planner/campanhas/{id}/fases
+`{ "nome", "inicio"?, "fim"? }` → `201 { ...campanha, "faseCriada": "id-da-fase" }`.
+
+### PATCH /api/public/v1/planner/campanhas/{id}/fases/{faseId}
+`{ "nome"?, "inicio"?, "fim"? }` — omitido não muda, `null` limpa a data (e tira o evento do Google).
+
+### DELETE /api/public/v1/planner/campanhas/{id}/fases/{faseId}
+Exclui a fase **e o evento dela no Google**. Destrutivo: confirme com o usuário.
+
+⚠️ **Não existe** pela API: excluir campanha inteira, importar do Google, conectar agenda nova, personalizar faixa (rótulo/cor). Isso é feito na tela.
+
 ## Como interpretar os números (honestidade)
 
 - **Etapa primeiro:** pra analisar um lançamento/etapa, use SEMPRE a família `get_stage_*` (`stage-daily`, `leads-summary`, `survey`, `sales-daily`, **`cadeia-cac`**). Os endpoints de projeto inteiro (`/daily`, `/campaigns`, `/creatives`) misturam todos os funis + evergreen. ⚠️ **Criativos da etapa saem de `cadeia-cac` (campo `criativos`)**, não de `/creatives` — até a 44.14 a família não tinha criativos, e esta frase mandava fazer algo que a própria lista não oferecia. Para os campos de mídia que o `cadeia-cac` não traz, junte por `adId`: receita no bloco `criativos`.
@@ -279,7 +420,8 @@ Resposta: `{ projectId, stageId, totalCosts, byCategory:[{category,total,itens}]
 ## Erros
 
 Formato: `{ "error": "mensagem", "code": "CODIGO" }`.
-`API_KEY_MISSING` (401) · `API_KEY_INVALID` (401) · `API_KEY_REVOKED` (403) · `SCOPE_REQUIRED` (403) · `NOT_FOUND` (404) · `BAD_REQUEST` (400) · `RATE_LIMITED` (429) · `405` (método de escrita).
+`API_KEY_MISSING` (401) · `API_KEY_INVALID` (401) · `API_KEY_REVOKED` (403) · `SCOPE_REQUIRED` (403) · `NOT_FOUND` (404) · `BAD_REQUEST` (400) · `RATE_LIMITED` (429) · `405` (método de escrita fora do Planner).
+No Planner: `400` traz o que corrigir (`erros: [{ indice, erro }]` no lote, com as opções válidas) · `409` = esteira já existe (traz o id).
 
 ## Ainda NÃO disponível na API (não invente — use só o que está acima)
 
@@ -312,3 +454,18 @@ Tools (mapeiam 1:1 nos endpoints):
 - `get_stage_sales_daily(projectId, stageId)` → GET .../v1/projects/{projectId}/stages/{stageId}/sales-daily
 - `get_stage_sales(stageId, include?)` → GET /api/public/v1/stages/{stageId}/sales (**preferido** p/ UMA etapa: só o stageId, resumo por padrão)
 - `get_funnel_sales(funnelId, include?)` → GET /api/public/v1/funnels/{funnelId}/sales (vendas do FUNIL inteiro — agrega as etapas server-side, sem duplicar a planilha do perpétuo)
+- `get_stage_sales_rows(projectId, stageId, …)` → GET .../v1/projects/{projectId}/stages/{stageId}/sales-rows (transação a transação)
+- `get_cross_launch(projectId)` → GET /api/public/v1/projects/{projectId}/cross-launch
+- `get_stage_operational_costs(projectId, stageId)` → GET .../v1/projects/{projectId}/stages/{stageId}/operational-costs
+
+Planner (as únicas tools que GRAVAM — exigem chave com `planner:write`):
+- `get_esteira_anual(projectId, ano)` → GET /api/public/v1/planner/anual/{projectId}/{ano}
+- `upsert_esteira_celulas(projectId, ano, dryRun, celulas)` → PUT .../anual/{projectId}/{ano}/celulas (**dryRun primeiro**)
+- `create_esteira(projectId, faixa, nome)` → POST .../anual/{projectId}/esteiras
+- `clear_esteira_celulas(projectId, ano, esteiraId, meses, dryRun)` → DELETE .../anual/{projectId}/{ano}/celulas
+- `list_planner_agendas()` → GET /api/public/v1/planner/agendas
+- `list_planner_campanhas(busca?, projectId?, de?, ate?)` → GET /api/public/v1/planner/campanhas
+- `create_planner_campanha(nome, agenda?, projectId?, cor?, fases?)` → POST /api/public/v1/planner/campanhas
+- `update_planner_campanha(campanhaId, nome?, cor?, projectId?, agenda?)` → PATCH .../campanhas/{id}
+- `upsert_planner_fase(campanhaId, faseId?, nome?, inicio?, fim?)` → POST .../campanhas/{id}/fases (sem faseId) ou PATCH .../fases/{faseId}
+- `delete_planner_fase(campanhaId, faseId)` → DELETE .../campanhas/{id}/fases/{faseId}

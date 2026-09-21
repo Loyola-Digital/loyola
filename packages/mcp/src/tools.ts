@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { LoyolaClient, ApiError } from "./client.js";
+import { CATEGORIAS_DO_ANUAL, FAIXAS_DO_ANUAL, FUNIS_DO_ANUAL } from "./vocabulario-anual.js";
 
 /**
  * Registra as tools MCP que embrulham a API pública Loyola X (Story 36.3).
@@ -487,6 +488,284 @@ export function registerTools(server: McpServer, client: LoyolaClient): void {
       run(() =>
         client.get(
           `/api/public/v1/projects/${encodeURIComponent(projectId)}/stages/${encodeURIComponent(stageId)}/operational-costs`
+        )
+      )
+  );
+
+  // =========================================================================
+  // PLANNER — esteira anual e calendário. As ÚNICAS tools que gravam.
+  //
+  // Exigem API key com `planner:write` (ou `planner:read` só para ler). Toda
+  // gravação fica auditada com a chave. Fluxo: ler → dryRun → mostrar o diff
+  // ao usuário → gravar só com o ok dele.
+  // =========================================================================
+
+  const PROJECT = z
+    .string()
+    .uuid()
+    .describe(
+      "ID da empresa (projectId). Conhecidos: DG & CPDF 738cda16-c5be-4268-9c98-92e46c359569 · BBE e25369be-1d04-4153-8178-14a3b617e70e · PP 1b89245d-60a4-48a5-a691-c730bd6f48ca · Lyrio 9bd898eb-531a-45a6-801f-61d50e76f794 · FZ & MFB 4d7f55ea-ff1b-4fa8-b3cc-caed182878b3. Outros: list_projects."
+    );
+  const ANO = z.number().int().min(2020).max(2100).describe("Ano da esteira (ex.: 2027).");
+  const campoDeTexto = (oQue: string) =>
+    z.string().nullable().optional().describe(`${oQue} Omitido = não muda. null = limpa.`);
+  const planner = "/api/public/v1/planner";
+
+  server.registerTool(
+    "get_esteira_anual",
+    {
+      title: "Ler a esteira anual",
+      description:
+        "Lê a visão 'Anual (esteiras)' do Planner de uma empresa num ano: faixas (organico/trafego/ascensao, com o rótulo que a empresa usa na tela) → esteiras (linhas) → células preenchidas por mês (nota, produto, categoria, funil). Mês ausente = célula vazia. USE ANTES DE QUALQUER ESCRITA para ver o estado atual e os nomes exatos das esteiras.",
+      inputSchema: { projectId: PROJECT, ano: ANO },
+    },
+    async ({ projectId, ano }) =>
+      run(() => client.get(`${planner}/anual/${encodeURIComponent(projectId)}/${ano}`))
+  );
+
+  server.registerTool(
+    "upsert_esteira_celulas",
+    {
+      title: "Preencher células da esteira",
+      description:
+        "Preenche ou atualiza células da esteira anual (nota, produto, categoria, funil) por mês, em lote. Upsert PARCIAL: campo omitido não muda, null limpa. A esteira vem por id OU por faixa + nome (sem diferenciar maiúsculas/acentos); com criarSeNaoExistir: true ela é criada. SEMPRE chame primeiro com dryRun: true, mostre ao usuário o diff (antes → depois) de cada célula e só grave (dryRun: false) depois do ok dele. Tudo ou nada: se um item for inválido, nada é gravado e a resposta lista o que corrigir.",
+      inputSchema: {
+        projectId: PROJECT,
+        ano: ANO,
+        dryRun: z.boolean().describe("true = só mostra o diff, não grava. Use true primeiro."),
+        celulas: z
+          .array(
+            z.object({
+              esteira: z
+                .object({
+                  id: z.string().uuid().optional().describe("ID da esteira (de get_esteira_anual)."),
+                  faixa: z
+                    .string()
+                    .optional()
+                    .describe(
+                      `Faixa da esteira: ${FAIXAS_DO_ANUAL.join(" | ")} ou o rótulo da tela (ex.: TRÁFEGO, CAMPANHA).`
+                    ),
+                  nome: z.string().optional().describe("Nome da esteira, como aparece na tela."),
+                  criarSeNaoExistir: z
+                    .boolean()
+                    .optional()
+                    .describe("Cria a esteira se não houver uma com esse nome na faixa."),
+                })
+                .describe("Informe id, ou faixa + nome."),
+              mes: z.number().int().min(1).max(12).describe("1 = janeiro … 12 = dezembro."),
+              nota: campoDeTexto("Texto curto acima da célula (ex.: 'REN1 · semana 22–25/02')."),
+              produto: campoDeTexto("Produto (ex.: 'Funil de Lucro (VSL 2)')."),
+              categoria: z
+                .enum(CATEGORIAS_DO_ANUAL)
+                .nullable()
+                .optional()
+                .describe("Omitido = não muda. null = limpa."),
+              funil: z
+                .enum(FUNIS_DO_ANUAL)
+                .nullable()
+                .optional()
+                .describe("Omitido = não muda. null = limpa."),
+            })
+          )
+          .min(1)
+          .max(200),
+      },
+    },
+    async ({ projectId, ano, dryRun, celulas }) =>
+      run(() =>
+        client.send("PUT", `${planner}/anual/${encodeURIComponent(projectId)}/${ano}/celulas`, {
+          dryRun,
+          celulas,
+        })
+      )
+  );
+
+  server.registerTool(
+    "create_esteira",
+    {
+      title: "Criar esteira",
+      description:
+        "Cria uma nova linha (esteira) dentro de uma faixa da esteira anual. A esteira vale para TODOS os anos (as células é que são por ano). Se já existir uma com o mesmo nome na faixa, devolve erro 409 com o id dela — use esse id. Para criar e já preencher, prefira upsert_esteira_celulas com criarSeNaoExistir: true.",
+      inputSchema: {
+        projectId: PROJECT,
+        faixa: z
+          .string()
+          .describe(`${FAIXAS_DO_ANUAL.join(" | ")} ou o rótulo da tela (ex.: TRÁFEGO).`),
+        nome: z.string().min(1).describe("Nome da esteira (ex.: 'Perpétuo Funil de Lucro')."),
+      },
+    },
+    async ({ projectId, faixa, nome }) =>
+      run(() =>
+        client.send("POST", `${planner}/anual/${encodeURIComponent(projectId)}/esteiras`, {
+          faixa,
+          nome,
+        })
+      )
+  );
+
+  server.registerTool(
+    "clear_esteira_celulas",
+    {
+      title: "Limpar meses da esteira",
+      description:
+        "Apaga as células de uma esteira em meses de um ano. Destrutivo: CONFIRME com o usuário antes, mostrando o que será apagado (chame antes com dryRun: true — a resposta traz o conteúdo de cada mês).",
+      inputSchema: {
+        projectId: PROJECT,
+        ano: ANO,
+        esteiraId: z.string().uuid().describe("ID da esteira (de get_esteira_anual)."),
+        meses: z.array(z.number().int().min(1).max(12)).min(1).describe("Meses a limpar (1–12)."),
+        dryRun: z.boolean().describe("true = só mostra o que seria apagado."),
+      },
+    },
+    async ({ projectId, ano, esteiraId, meses, dryRun }) =>
+      run(() =>
+        client.send("DELETE", `${planner}/anual/${encodeURIComponent(projectId)}/${ano}/celulas`, {
+          esteiraId,
+          meses,
+          dryRun,
+        })
+      )
+  );
+
+  // ---- Calendário do Planner (campanhas e fases) ----
+
+  const DATA = z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional()
+    .describe("AAAA-MM-DD. Omitido = não muda. null = limpa.");
+
+  server.registerTool(
+    "list_planner_agendas",
+    {
+      title: "Listar agendas do Google do Planner",
+      description:
+        "Lista as agendas do Google Calendar conectadas ao Planner (id + nome, ex.: '🇺🇸 [FZ] Agenda Geral'). A campanha ligada a uma agenda espelha cada fase como evento nela.",
+      inputSchema: {},
+    },
+    async () => run(() => client.get(`${planner}/agendas`))
+  );
+
+  server.registerTool(
+    "list_planner_campanhas",
+    {
+      title: "Listar campanhas do calendário",
+      description:
+        "Lista as campanhas (cards) do calendário do Planner com as fases (id, nome, início, fim, noGoogle = já está na agenda). Filtre por busca (parte do nome), projectId ou janela de datas (de/ate: campanhas com alguma fase cruzando a janela). USE ANTES de editar, para achar o id da campanha e da fase.",
+      inputSchema: {
+        busca: z.string().optional().describe("Parte do nome da campanha (ex.: 'BBEPR2')."),
+        projectId: z.string().uuid().optional().describe("Só campanhas desta empresa."),
+        de: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional()
+          .describe("Início da janela (AAAA-MM-DD)."),
+        ate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional()
+          .describe("Fim da janela (AAAA-MM-DD)."),
+      },
+    },
+    async (filtros) => run(() => client.get(`${planner}/campanhas`, filtros))
+  );
+
+  server.registerTool(
+    "create_planner_campanha",
+    {
+      title: "Criar campanha no calendário",
+      description:
+        "Cria uma campanha (card) no calendário do Planner, com fases opcionais. Com `agenda` (id ou parte do nome, ex.: 'FZ'), cada fase datada vira evento no Google Calendar dessa agenda, com título 'NOME - Fase'. Confirme nome, agenda e datas com o usuário antes. Se a resposta trouxer avisoGoogle, a campanha foi salva mas o Google recusou — repasse o aviso.",
+      inputSchema: {
+        nome: z.string().min(1).describe("Nome da campanha (ex.: 'FZ REN1 - Renovação MFB')."),
+        agenda: z
+          .string()
+          .optional()
+          .describe(
+            "Agenda do Google (id ou parte do nome, de list_planner_agendas). Sem agenda, fica só no Planner."
+          ),
+        projectId: z.string().uuid().optional().describe("Empresa da campanha (opcional)."),
+        cor: z
+          .string()
+          .regex(/^#[0-9a-fA-F]{6}$/)
+          .optional()
+          .describe("Cor #rrggbb (opcional)."),
+        fases: z
+          .array(z.object({ nome: z.string().min(1), inicio: DATA, fim: DATA }))
+          .optional()
+          .describe("Fases iniciais. Sem fases = campanha vazia."),
+      },
+    },
+    async (dados) => run(() => client.send("POST", `${planner}/campanhas`, dados))
+  );
+
+  server.registerTool(
+    "update_planner_campanha",
+    {
+      title: "Editar campanha do calendário",
+      description:
+        "Renomeia, recolore, troca a empresa ou a agenda do Google de uma campanha. Renomear muda o título de TODOS os eventos dela no Google. agenda: null desliga o espelho. Para mexer em fases, use upsert_planner_fase / delete_planner_fase.",
+      inputSchema: {
+        campanhaId: z.string().uuid().describe("ID da campanha (de list_planner_campanhas)."),
+        nome: z.string().min(1).optional(),
+        cor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+        projectId: z.string().uuid().nullable().optional(),
+        agenda: z
+          .string()
+          .nullable()
+          .optional()
+          .describe("Id ou parte do nome da agenda; null desliga."),
+      },
+    },
+    async ({ campanhaId, ...dados }) =>
+      run(() =>
+        client.send("PATCH", `${planner}/campanhas/${encodeURIComponent(campanhaId)}`, dados)
+      )
+  );
+
+  server.registerTool(
+    "upsert_planner_fase",
+    {
+      title: "Criar ou editar fase",
+      description:
+        "Cria uma fase numa campanha (sem faseId) ou edita uma existente (com faseId). Só a fase indicada muda — as outras ficam intactas. Com agenda ligada, a fase datada é espelhada no Google Calendar na hora. Confirme datas com o usuário antes de gravar.",
+      inputSchema: {
+        campanhaId: z.string().uuid().describe("ID da campanha (de list_planner_campanhas)."),
+        faseId: z.string().optional().describe("ID da fase para EDITAR. Omitido = cria uma nova."),
+        nome: z.string().min(1).optional().describe("Nome da fase (obrigatório ao criar)."),
+        inicio: DATA,
+        fim: DATA,
+      },
+    },
+    async ({ campanhaId, faseId, ...dados }) =>
+      run(() =>
+        faseId
+          ? client.send(
+              "PATCH",
+              `${planner}/campanhas/${encodeURIComponent(campanhaId)}/fases/${encodeURIComponent(faseId)}`,
+              dados
+            )
+          : client.send("POST", `${planner}/campanhas/${encodeURIComponent(campanhaId)}/fases`, dados)
+      )
+  );
+
+  server.registerTool(
+    "delete_planner_fase",
+    {
+      title: "Excluir fase",
+      description:
+        "Exclui uma fase de uma campanha — e o evento dela no Google Calendar. Destrutivo: CONFIRME com o usuário antes, dizendo campanha, fase e datas.",
+      inputSchema: {
+        campanhaId: z.string().uuid().describe("ID da campanha."),
+        faseId: z.string().describe("ID da fase (de list_planner_campanhas)."),
+      },
+    },
+    async ({ campanhaId, faseId }) =>
+      run(() =>
+        client.send(
+          "DELETE",
+          `${planner}/campanhas/${encodeURIComponent(campanhaId)}/fases/${encodeURIComponent(faseId)}`
         )
       )
   );

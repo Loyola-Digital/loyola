@@ -54,3 +54,29 @@ if (faltamNaLista.length > 0 || sobramNaLista.length > 0) {
 }
 
 console.log(`✓ ${registradas.length} tools do MCP conferem com a lista canônica.`);
+
+// O vocabulário da esteira anual: a cópia do MCP (enum das tools) tem que ser a
+// do shared (o que a API valida). Divergir = o modelo escolhe da lista e a API
+// recusa, ou a API aceita um funil que o modelo nunca vê.
+const listasDe = (arquivo) => {
+  const src = readFileSync(arquivo, "utf8");
+  return Object.fromEntries(
+    [...src.matchAll(/export const (\w+) = \[([\s\S]*?)\] as const/g)].map((m) => [
+      m[1],
+      [...m[2].matchAll(/"([^"]+)"/g)].map((x) => x[1]),
+    ]),
+  );
+};
+const doShared = listasDe(join(aqui, "..", "..", "shared", "src", "planner-anual.ts"));
+const doMcp = listasDe(join(aqui, "..", "src", "vocabulario-anual.ts"));
+for (const nome of ["FAIXAS_DO_ANUAL", "CATEGORIAS_DO_ANUAL", "FUNIS_DO_ANUAL"]) {
+  if (JSON.stringify(doShared[nome]) !== JSON.stringify(doMcp[nome])) {
+    console.error(`
+✗ ${nome} diverge entre shared/src/planner-anual.ts e mcp/src/vocabulario-anual.ts.`);
+    console.error(`  shared: ${JSON.stringify(doShared[nome])}`);
+    console.error(`  mcp:    ${JSON.stringify(doMcp[nome])}
+`);
+    process.exit(1);
+  }
+}
+console.log("✓ vocabulário da esteira anual confere com o shared.");

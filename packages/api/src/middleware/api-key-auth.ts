@@ -21,9 +21,19 @@ const PUBLIC_PREFIX = "/api/public/";
 // rota. Compara só o pathname (ignora querystring).
 const PUBLIC_WRITE_ALLOWLIST = new Set(["/api/public/v1/reports"]);
 
+/**
+ * Prefixos inteiros liberados para escrita. O Planner tem rota com parâmetro
+ * (`/campanhas/:id/fases/:faseId`), que a lista de caminhos exatos não
+ * alcança. Cada rota exige `planner:write` por conta própria.
+ */
+const PUBLIC_WRITE_PREFIXES = ["/api/public/v1/planner/"];
+
 function isPublicWriteAllowed(url: string): boolean {
-  const pathname = url.split("?")[0];
-  return PUBLIC_WRITE_ALLOWLIST.has(pathname);
+  const pathname = url.split("?")[0]!;
+  return (
+    PUBLIC_WRITE_ALLOWLIST.has(pathname) ||
+    PUBLIC_WRITE_PREFIXES.some((p) => pathname.startsWith(p))
+  );
 }
 
 // Rate limit por chave — janela fixa in-memory.
@@ -51,13 +61,18 @@ function checkRateLimit(keyId: string, reply: FastifyReply): boolean {
 /**
  * preHandler de scope para rotas públicas (usado pela Story 36.3).
  * Ex.: `{ preHandler: requireScope("meta:read") }` na definição da rota.
+ *
+ * Com mais de um scope, basta ter UM: a leitura do Planner aceita
+ * `planner:read` ou `planner:write`, porque quem escreve precisa ler antes.
  */
-export function requireScope(scope: string) {
+export function requireScope(...scopes: string[]) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    if (!request.apiKey || !request.apiKey.scopes.includes(scope)) {
-      return reply
-        .code(403)
-        .send({ error: "Escopo insuficiente", code: "SCOPE_REQUIRED", required: scope });
+    if (!request.apiKey || !scopes.some((s) => request.apiKey!.scopes.includes(s))) {
+      return reply.code(403).send({
+        error: "Escopo insuficiente",
+        code: "SCOPE_REQUIRED",
+        required: scopes.length === 1 ? scopes[0] : scopes,
+      });
     }
   };
 }
