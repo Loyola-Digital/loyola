@@ -145,4 +145,9 @@
 // no snapshot de anúncios. ADITIVA; `packages/mcp` não é afetado. A dívida:
 // 47.12 e 47.13 entraram sem subir isto — o painel foi publicado à frente da
 // API e mostrou "Not Found"/"id: Invalid UUID" em vez do aviso de versão.
-export const API_CONTRACT_VERSION = 13;
+// v14 (Story 48.1): rotas novas `GET/PUT /api/projects/:projectId/funnels/
+// :funnelId/planejamento/inputs` (Painel de Planejamento — Inputs Financeiros
+// do funil de lançamento) e a tabela `plan_simulators`. ADITIVA; `packages/mcp`
+// não é afetado. O web novo (sub-página Planejamento) depende delas: sem o
+// bump, um painel à frente da API mostraria "Not Found" em vez do aviso.
+export const API_CONTRACT_VERSION = 14;

@@ -37,6 +37,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SortableStageGrid } from "@/components/funnels/sortable-stage-grid";
 import { CampaignLogCard } from "@/components/funnels/campaign-log-link";
+import { PlanejamentoCard } from "@/components/funnels/planejamento-card"; // Story 48.1
 import { OrphanCampaignsBanner } from "@/components/funnels/orphan-campaigns-banner";
 import { SwitchyFunnelSection } from "@/components/funnels/switchy-funnel-section";
 import { toast } from "sonner";
@@ -356,6 +357,7 @@ export default function FunnelPage() {
       {/* Log de Campanha — entrada FIXA em todo funil (Story 38.1) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         <CampaignLogCard projectId={params.id} funnelId={params.funnelId} />
+        {funnelData.funnelType === "launch" && <PlanejamentoCard projectId={params.id} funnelId={params.funnelId} />}
       </div>
 
       {/* Switch — Gerador de Links atrelado ao funil (Story 33.7) */}
