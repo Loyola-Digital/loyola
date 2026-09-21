@@ -451,3 +451,36 @@ export type {
   SalesPlanSummary,
   SalesPlanResponse,
 } from "./types/sales-plan.js";
+// Story 48.2: motor de cenários do Painel de Planejamento — série de receita,
+// escada de conversão, grades de vendas/leads/CPL (bruto e arredondado) e
+// faixas, por bloco de canal orgânico ou fonte paga. Módulo folha: o web
+// importa por `@loyola-x/shared/src/planejamento-cenarios`.
+export {
+  CANAIS_ORGANICOS,
+  FONTES_PAGAS,
+  CENARIOS,
+  NIVEIS_ORGANICOS,
+  NIVEIS_PAGOS,
+  FRACAO_CENARIO_1_PADRAO,
+  MULTIPLICADOR_FAIXA_INTERNA,
+  MULTIPLICADOR_FAIXA_EXTERNA,
+  serieDeReceita,
+  escadaDeConversao,
+  leadsEsperados,
+  dividirVerba,
+  limitesDaFaixa,
+  faixaDe,
+  gradeOrganica,
+  gradePaga,
+  type CanalOrganico,
+  type FontePaga,
+  type Faixa,
+  type Entrada,
+  type LimitesDaFaixa,
+  type ParametrosDoBloco,
+  type ParametrosOrganicos,
+  type ParametrosPagos,
+  type Grade,
+  type GradeOrganica,
+  type GradePaga,
+} from "./planejamento-cenarios.js";

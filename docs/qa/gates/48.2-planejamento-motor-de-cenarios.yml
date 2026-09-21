@@ -1,0 +1,40 @@
+schema: 1
+story: '48.2'
+story_title: 'Planejamento — motor de cenários no shared (parte pura das abas 2 e 3)'
+gate: PASS
+status_reason: 'Motor correto e fiel à spec: 56/56, apêndice A no bruto com 1e-6, 6 correções de DV com diferencial provado pelo @dev e pelo QA. Os dois achados do primeiro gate (guarda de arredondamento sem teste; fração vazia inconsistente) foram corrigidos em cab78ca1 com testes que caem sob mutação — re-gate PASS.'
+reviewer: 'Quinn'
+updated: '2026-09-21T20:05:00Z'
+branch: 'feat/48.2-motor-de-cenarios'
+commits: ['6f9e228f', 'af89cfa0', 'cab78ca1']
+
+top_issues:
+  - id: 'TEST-001'
+    severity: medium
+    status: resolved
+    finding: '`paraCima` arredonda a 6 casas antes do `Math.ceil` para não inventar um lead por ruído de IEEE-754. A guarda é necessária (`11 ÷ 0,011 = 1000,0000000000001` → `Math.ceil` cru dá 1001), mas (a) o comentário cita `68 ÷ 0,04 = 1700,0000000000002`, que é FALSO neste motor (V8 dá 1700 exato), e (b) nenhum teste exercita a guarda: a mutação `return Math.ceil(x)` passa 54/54. Pela regra do repo, teste que não cai com o bug de volta é decorativo — e um "simplify" futuro removeria a guarda sem a suíte reclamar.'
+    suggested_action: 'RESOLVIDO em cab78ca1: comentário corrigido (`11 ÷ 0,011`); teste `⌈x⌉ imune ao ruído…` (meta 18 000 → vendas 11; nível 0,011 → leads 1 000). QA re-mutou `Math.ceil(x)` cru: 1 falha (o teste novo), 55 passam.'
+  - id: 'MNT-001'
+    severity: low
+    status: resolved
+    finding: '`serieDeReceita(meta, null, v)` trata a fração vazia como ZERO (série toda zero — o teste "meta vazia → dez zeros" não cobre esse caso), enquanto `gradeOrganica`/`gradePaga` tratam a mesma ausência como 0,70 (`fracaoDe`). Quem chamar `serieDeReceita` direto na 48.3/48.4 com o campo vazio verá zeros; quem chamar a grade verá 70 %.'
+    suggested_action: 'RESOLVIDO em cab78ca1: `serieDeReceita` cai para `FRACAO_CENARIO_1_PADRAO` quando a fração é `null`/`undefined`; `fracaoDe` removido — as grades delegam à função. Teste novo; mutação "fração vazia = 0" derruba 11 testes.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Módulo folha confirmado (`grep -c "^import"` = 0). `index.ts` +33/−0 — nenhuma linha existente alterada (P1: Lucas é coautor histórico do arquivo; condição respeitada). Sete funções da AC1 + `limitesDaFaixa` (AC14 pedia limites; devolvidos separados do índice — desenho correto). `div` devolve null para 0, −0, NaN e resultado não finito; `n()` zera vazios/NaN/Infinity nas entradas (AC2, AC19). Duas cadeias separadas por função (`leadsPorCelula` recebe `vendasBruto` e `vendas`) — o bruto nunca parte do arredondado (AC9/AC10; mutação M3 derruba 3 testes). `remarketing = verba − captação` fecha a conta (AC15). Escada com piso zero nos dois tipos (AC5). Faixas: limites e inclusividade exatos (AC13; mutação M1 derruba 2 testes).'
+  unit_tests: 'Re-gate: QA rodou 56/56 nos dois arquivos. Mutações independentes do QA: M1 (`<= mid` → `< mid`) 2 falhas ✓; M2 (`Math.ceil` cru) **1 falha ✓** (era 0 no primeiro gate); M3 (bruto a partir do arredondado) 3 falhas ✓; M4 (passo sem ÷100) 9 falhas ✓; M6 (guarda com 12 casas em vez de 6) 0 falhas — não é achado: 1e-12 também absorve o ruído de 1e-13, as duas guardas são válidas. Diferencial do @dev (fórmulas da planilha): 7 falhas.'
+  acceptance_criteria: 'AC1 ✓ · AC2 ✓ · AC3 ✓ (fração vazia = 0,70 em uma regra só) · AC4 ✓ (12 115,38 / 14 538,46) · AC5 ✓ · AC6 ✓ (0,005/0,004; 0,006/0,005) · AC7 ✓ · AC8 ✓ · AC9 ✓ · AC10 ✓ · AC11 ✓ (67,307692; 98,545192; 1 682,692308; 2 737,366453; 68; 1 700) · AC12 ✓ · AC13 ✓ · AC14 ✓ · AC15 ✓ · AC16 ✓ (3 240,740741 → 8,393143; 3 564,814815 → 7,630130; 5 176,111111 → 5,254910; 39 → 3 250 → 8,369231) · AC17 ✓ · AC18 ✓ (diferenciais dos DV + guarda do D10, todos caem sob mutação) · AC19 ✓ (21 casos de invariante).'
+  no_regressions: 'Nenhum consumidor existente do shared alterado (diff restrito a 1 arquivo novo + 33 linhas de export). `tsc --noEmit` e `eslint` do shared ✓; `eslint` dos testes ✓; `tsc --noEmit` da API ✓ (@dev, mesma árvore). Web não tocado. CI: a confirmar após o push (o job `test` roda `pnpm --filter=@loyola-x/shared build` antes — o import bare resolve).'
+  performance: 'N/A — 6 × (10 + 8×10) + 4 × (10 + 2×10×10) células, aritmética pura.'
+  security: 'N/A.'
+  documentation: 'Cabeçalho do módulo conta as duas cadeias, o `null`, o que reproduz e o que não reproduz da planilha com os IDs das DV. Dev Agent Record com as três decisões de implementação, a prova diferencial e a tabela dos fixes do gate. Comentário de `paraCima` corrigido.'
+  api_contract: 'N/A — nenhuma rota, campo de resposta ou snapshot novo na API; nada em `packages/api/src/routes`. `API_CONTRACT_VERSION` não precisa subir (o bump vem com a 48.1, que cria rota).'
+
+notes:
+  - 'Primeira PR de código do Epic 48: é nela que o Lucas confirma a leitura operacional da condição de P1 ("só adição"). Este commit cumpre a leitura: `index.ts` só com linhas novas.'
+  - 'Referência de faixa igual a zero (base ou taxa vazias) classifica tudo acima de zero como faixa 4 — reproduz a planilha; documentado no Dev Agent Record. Aceitável para o motor; a tela (48.3) pode preferir "—" quando não há base — registrar lá.'
+  - 'As faixas das grades classificam a cadeia do produto (arredondada), não a bruta. A story não fixa qual; a tela mostra a do produto, então é a escolha coerente. Registrado para o @po/48.3 confirmar.'
+  - 'Re-gate em 2026-09-21: TEST-001 e MNT-001 fechados; M2 derruba 1 teste → PASS.'
+  - 'DoD pendente para o @devops depois do push: ler o log do job `test` do CI (passa por configuração) e confirmar que os dois arquivos rodaram e que o `pnpm --filter=@loyola-x/shared build` precedeu o vitest.'
