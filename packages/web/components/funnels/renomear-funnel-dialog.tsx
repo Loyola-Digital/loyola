@@ -27,6 +27,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+import type { useUpdateFunnel } from "@/lib/hooks/use-funnels";
 
 /**
  * O token que casa campanha (Mautic, Log, SendFlow): os dois primeiros
@@ -285,5 +287,57 @@ export function RenomearFunnelDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * O diálogo já ligado ao salvamento — o que a página do funil e o menu de
+ * três pontos da lateral usam.
+ *
+ * Existe para o aviso do Drive não ter duas cópias: renomear pela lateral sem
+ * ele mudaria a pasta procurada no Drive em silêncio, que é justamente o
+ * defeito que este diálogo veio mostrar.
+ */
+export function RenomearFunnel({
+  open,
+  onOpenChange,
+  nomeAtual,
+  matchCodeAtual,
+  updateFunnel,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  nomeAtual: string;
+  matchCodeAtual: string | null;
+  updateFunnel: ReturnType<typeof useUpdateFunnel>;
+}) {
+  return (
+    <RenomearFunnelDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      nomeAtual={nomeAtual}
+      matchCodeAtual={matchCodeAtual}
+      salvando={updateFunnel.isPending}
+      onSalvar={(dados) => {
+        const driveMudou = prefixoDoDrive(nomeAtual) !== prefixoDoDrive(dados.name);
+        updateFunnel.mutate(dados, {
+          onSuccess: () => {
+            onOpenChange(false);
+            // O aviso do Drive fica mais tempo na tela: renomear a pasta lá é
+            // uma ação em OUTRO sistema, e some antes de ser lida num toast
+            // comum.
+            if (driveMudou) {
+              toast.warning(
+                `Renomeado. A pasta de criativos passa a ser procurada como ${prefixoDoDrive(dados.name)} no Drive.`,
+                { duration: 9000 },
+              );
+            } else {
+              toast.success("Funil renomeado");
+            }
+          },
+          onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao renomear"),
+        });
+      }}
+    />
   );
 }

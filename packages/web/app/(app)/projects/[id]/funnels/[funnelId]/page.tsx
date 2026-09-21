@@ -6,10 +6,7 @@ import { Pencil, Plus, Settings2 } from "lucide-react";
 import { useFunnel, useFunnels, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { rotuloDoTipoDeEtapa } from "@/lib/utils/rotulos-de-etapa";
 import { useUserRole } from "@/lib/hooks/use-user-role";
-import {
-  RenomearFunnelDialog,
-  prefixoDoDrive,
-} from "@/components/funnels/renomear-funnel-dialog";
+import { RenomearFunnel } from "@/components/funnels/renomear-funnel-dialog";
 import { useFunnelStages, useCreateStage } from "@/lib/hooks/use-funnel-stages";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTituloDaAba } from "@/components/layout/titulo-da-aba";
@@ -172,32 +169,12 @@ export default function FunnelPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <RenomearFunnelDialog
+      <RenomearFunnel
         open={renomeando}
         onOpenChange={setRenomeando}
         nomeAtual={funnel.name}
         matchCodeAtual={funnel.matchCode ?? null}
-        salvando={updateFunnel.isPending}
-        onSalvar={(dados) => {
-          const driveMudou = prefixoDoDrive(funnel.name) !== prefixoDoDrive(dados.name);
-          updateFunnel.mutate(dados, {
-            onSuccess: () => {
-              setRenomeando(false);
-              // O aviso do Drive fica mais tempo na tela: renomear a pasta lá é
-              // uma ação em OUTRO sistema, e some antes de ser lida num toast
-              // comum.
-              if (driveMudou) {
-                toast.warning(
-                  `Renomeado. A pasta de criativos passa a ser procurada como ${prefixoDoDrive(dados.name)} no Drive.`,
-                  { duration: 9000 },
-                );
-              } else {
-                toast.success("Funil renomeado");
-              }
-            },
-            onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao renomear"),
-          });
-        }}
+        updateFunnel={updateFunnel}
       />
 
       {/* Header */}

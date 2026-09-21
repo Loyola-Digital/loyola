@@ -79,6 +79,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
+import { RenomearFunnel } from "@/components/funnels/renomear-funnel-dialog";
 
 interface ProjectFolderProps {
   project: Project;
@@ -118,6 +119,7 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
   const [createOpen, setCreateOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [matchCodeDraft, setMatchCodeDraft] = useState<string>(funnel.matchCode ?? "");
+  const [renomeando, setRenomeando] = useState(false);
   const { data: allFunnels } = useFunnels(projectId, "all");
   const otherFunnels = (allFunnels ?? [])
     .filter((f) => f.id !== funnel.id)
@@ -207,6 +209,15 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
 
   return (
     <>
+      {isAdmin && (
+        <RenomearFunnel
+          open={renomeando}
+          onOpenChange={setRenomeando}
+          nomeAtual={funnel.name}
+          matchCodeAtual={funnel.matchCode ?? null}
+          updateFunnel={updateFunnel}
+        />
+      )}
       <Collapsible open={open} onOpenChange={setOpen}>
         <div className="group/funnel flex items-center">
           <CollapsibleTrigger asChild>
@@ -236,6 +247,10 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setRenomeando(true)}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Renomear funil
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleOpenSettings}>
                   <Settings className="mr-2 h-4 w-4" />
                   Configurações
