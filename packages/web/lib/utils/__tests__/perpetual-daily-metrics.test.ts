@@ -14,7 +14,6 @@ function dia(over: Partial<DailyMetricsInput> = {}): DailyMetricsInput {
     salesCount: 10,
     impressions: 50_000,
     linkClicks: 500,
-    clicks: 800,
     lpViews: 400,
     ...over,
   };
@@ -67,10 +66,10 @@ describe("deriveDailyMetrics — denominador zerado devolve null, nunca 0", () =
     expect(m.cpm).toBeNull();
   });
 
-  it("sem cliques de link nem totais → CPC null", () => {
-    const m = deriveDailyMetrics(dia({ linkClicks: 0, clicks: 0 }));
+  it("sem cliques no link → CPC null e a base de cliques null (“—”)", () => {
+    const m = deriveDailyMetrics(dia({ linkClicks: 0 }));
     expect(m.cpc).toBeNull();
-    expect(m.costClicks).toBe(0);
+    expect(m.costClicks).toBeNull();
   });
 
   it("sem vendas → CAC null", () => {
@@ -86,29 +85,38 @@ describe("deriveDailyMetrics — denominador zerado devolve null, nunca 0", () =
   });
 });
 
-describe("deriveDailyMetrics — a base de cliques", () => {
-  it("cai para cliques totais quando o dia não reporta link_click", () => {
-    const m = deriveDailyMetrics(dia({ linkClicks: 0, clicks: 800 }));
-    // Mesmo fallback de deriveDetailMetrics: os números do dia batem com os do
-    // Detalhamento por entidade no mesmo recorte.
-    expect(m.costClicks).toBe(800);
-    expect(m.cpc).toBe(1.25);
-    expect(m.ctr).toBeCloseTo(1.6, 10);
+describe("deriveDailyMetrics — a base de cliques é o clique no LINK (Story 29.77)", () => {
+  it("dia sem link_click → Cliques, CTR e CPC em null (“—”), sem cair para cliques totais", () => {
+    // Diferencial: com o fallback da 29.51 de volta (800 cliques totais no
+    // fixture antigo) isto dava costClicks 800, CPC 1,25 e CTR 1,6%. A regra
+    // do produto (shared `clique-no-link`, 18.78) é sem fallback: o dia em
+    // que a Meta não devolveu `link_click` mostra “—” nas três colunas.
+    const m = deriveDailyMetrics(dia({ linkClicks: 0, impressions: 50_000, spend: 1000 }));
+    expect(m.costClicks).toBeNull();
+    expect(m.cpc).toBeNull();
+    expect(m.ctr).toBeNull();
   });
 
-  it("Connect Rate NÃO aceita o fallback — sem link_click, é null", () => {
-    // A exceção deliberada: cliques totais incluem curtida, comentário e clique
-    // no perfil. Usá-los como denominador infla a taxa artificialmente.
-    const m = deriveDailyMetrics(dia({ linkClicks: 0, clicks: 800, lpViews: 400 }));
+  it("CTR e CPC saem das MESMAS funções do shared que o Detalhamento e o Top Criativos usam", async () => {
+    const { ctrDeLink, cpcDeLink } = await import("@loyola-x/shared/src/clique-no-link");
+    const v = dia({ linkClicks: 640, impressions: 40_000, spend: 1280 });
+    const m = deriveDailyMetrics(v);
+    expect(m.ctr).toBe(ctrDeLink(640, 40_000));
+    expect(m.cpc).toBe(cpcDeLink(640, 1280));
+  });
+
+  it("Connect Rate sem link_click é null — mesmo denominador de CPC e CTR", () => {
+    const m = deriveDailyMetrics(dia({ linkClicks: 0, lpViews: 400 }));
     expect(m.connectRate).toBeNull();
   });
 
   it("Cliques, CTR e CPC concordam entre si — a conta na calculadora fecha", () => {
-    const v = dia({ linkClicks: 0, clicks: 640, impressions: 40_000, spend: 1280 });
+    const v = dia({ linkClicks: 640, impressions: 40_000, spend: 1280 });
     const m = deriveDailyMetrics(v);
     // O que a coluna "Cliques" mostra é o que CPC e CTR usaram.
-    expect(m.cpc).toBe(v.spend / m.costClicks);
-    expect(m.ctr).toBe((m.costClicks / v.impressions) * 100);
+    expect(m.costClicks).toBe(640);
+    expect(m.cpc).toBe(v.spend / 640);
+    expect(m.ctr).toBe((640 / v.impressions) * 100);
   });
 
   it("Connect Rate acima de 100% é devolvido como está, não clampado", () => {
@@ -123,7 +131,7 @@ describe("guarda de imposto (Story 29.24 → 29.27)", () => {
   it("o spend entra e sai sem nenhum fator aplicado", () => {
     // spend já tributado: 1000 / (1 − 0,1215) = 1138,3038...
     const spendTributado = 1000 / (1 - 0.1215);
-    const m = deriveDailyMetrics(dia({ spend: spendTributado, clicks: 0, linkClicks: 100 }));
+    const m = deriveDailyMetrics(dia({ spend: spendTributado, linkClicks: 100 }));
 
     // CPC é exatamente spend ÷ cliques. Qualquer gross-up extra aqui daria
     // spend × 1,1383 e este expect falharia — que é todo o ponto do teste.
@@ -145,8 +153,8 @@ describe("sumDailyMetrics + deriveDailyMetrics — os totais do período", () =>
   // Dois dias de volumes MUITO desiguais: é onde média-de-médias diverge dos
   // somatórios. Com volumes iguais o teste passaria dos dois jeitos e não
   // provaria nada.
-  const d1 = dia({ spend: 100, impressions: 1000, linkClicks: 10, clicks: 10, lpViews: 5, revenue: 200, margin: 100, salesCount: 1 });
-  const d2 = dia({ spend: 9900, impressions: 990_000, linkClicks: 9990, clicks: 9990, lpViews: 4995, revenue: 19_800, margin: 9900, salesCount: 99 });
+  const d1 = dia({ spend: 100, impressions: 1000, linkClicks: 10, lpViews: 5, revenue: 200, margin: 100, salesCount: 1 });
+  const d2 = dia({ spend: 9900, impressions: 990_000, linkClicks: 9990, lpViews: 4995, revenue: 19_800, margin: 9900, salesCount: 99 });
 
   const totais = sumDailyMetrics([d1, d2]);
   const m = deriveDailyMetrics(totais);

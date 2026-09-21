@@ -17,8 +17,15 @@
 // REGRA QUE ESTE MÓDULO PROTEGE: nenhuma multiplicação por fator de imposto
 // acontece aqui. Ver o cabeçalho de `perpetual-detail-metrics.ts` para o
 // histórico do bug (Story 29.24 → 29.27).
+//
+// Story 29.77: Cliques, CTR e CPC das linhas da Meta são de CLIQUE NO LINK,
+// sem fallback — a regra única do produto (`shared/src/clique-no-link.ts`,
+// 18.78). Até a 29.77 este módulo caía para cliques totais quando a Meta não
+// devolvia `link_click`; agora a linha mostra `—` nas três colunas. As linhas
+// do Google seguem com os números prontos da API (não são cliques em link).
 // ============================================================
 
+import { ctrDeLink } from "@loyola-x/shared/src/clique-no-link";
 import { deriveDetailMetrics } from "./perpetual-detail-metrics";
 
 export type LyrioPlatform = "meta" | "google";
@@ -56,18 +63,24 @@ export interface LyrioDetailRow {
   status: string | null;
   spend: number;
   impressions: number;
-  clicks: number;
+  /** Meta: cliques no link, `null` (→ `—`) quando a Meta não os devolveu. Google: cliques da campanha. */
+  clicks: number | null;
   ctr: number | null;
-  cpc: number;
+  /** Meta: CPC de clique no link, `null` sem `link_click`. Google: como vem da API. */
+  cpc: number | null;
   cpm: number;
   /** `null` quando não é anúncio de vídeo, ou quando a dimensão não é criativo. */
   hookRate: number | null;
   holdRate: number | null;
 }
 
-/** Cliques que servem de base para CTR e CPC — link click quando houver. */
-function costClicks(e: MetaEntityInput): number {
-  return e.linkClicks && e.linkClicks > 0 ? e.linkClicks : e.clicks;
+/**
+ * Cliques no link, ou `null` quando a Meta não os devolveu. `0` conta como
+ * "não devolvido": a mesma convenção do backend (`buildAnalyticsRow` recebe
+ * `linkClicks > 0 ? n : null`) e do Detalhamento do Perpétuo.
+ */
+function cliquesNoLink(e: MetaEntityInput): number | null {
+  return e.linkClicks && e.linkClicks > 0 ? e.linkClicks : null;
 }
 
 /**
@@ -91,7 +104,7 @@ export function metaRow(e: MetaEntityInput): LyrioDetailRow {
     },
     0, // feeRate irrelevante sem receita — margem não é coluna desta tabela
   );
-  const base = costClicks(e);
+  const linkClicks = cliquesNoLink(e);
   return {
     id: e.campaignId,
     name: e.campaignName,
@@ -99,8 +112,9 @@ export function metaRow(e: MetaEntityInput): LyrioDetailRow {
     status: null,
     spend: e.spend,
     impressions: e.impressions,
-    clicks: base,
-    ctr: e.impressions > 0 ? (base / e.impressions) * 100 : null,
+    // Story 29.77: as três colunas concordam — cliques no link, ou `—`.
+    clicks: linkClicks,
+    ctr: ctrDeLink(linkClicks, e.impressions),
     cpc: m.cpc,
     cpm: m.cpm,
     hookRate: m.hookRate,

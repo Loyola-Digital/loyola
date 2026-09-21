@@ -16,14 +16,23 @@
 // Portanto: NUNCA multiplicar `spend` por um fator de imposto aqui. Fazer isso
 // produz spend × 1,1215², que infla Investimento/CAC/CPC/CPM e deprime
 // ROAS/Margem — foi o bug que a 29.27 corrigiu.
+//
+// Story 29.77: o CPC daqui é de CLIQUE NO LINK, sem fallback — a regra vive
+// em `shared/src/clique-no-link.ts` (18.78). Este módulo sobrescreve o `cpc`
+// da linha (spread em `perpetual-dashboard.tsx`), e até a 29.77 ainda caía
+// para cliques totais: um criativo sem `link_click` mostrava CTR `—` (já era
+// `ctrDeLink`) e CPC preenchido na mesma linha.
 // ============================================================
+
+import { cpcDeLink } from "@loyola-x/shared/src/clique-no-link";
 
 export interface DetailMetricsInput {
   /** Spend da entidade, JÁ com imposto aplicado pelo backend. */
   spend: number;
   impressions: number;
+  /** Cliques totais — só informativo; CPC não os lê (Story 29.77). */
   clicks: number;
-  /** Cliques em link; quando ausente/zero, CPC cai para `clicks`. */
+  /** Cliques no link; `null`/`0` = a Meta não devolveu → CPC `null` → `—`. */
   linkClicks?: number | null;
   /** Faturamento BRUTO atribuído (planilha). */
   revenue?: number | null;
@@ -36,7 +45,8 @@ export interface DetailMetricsInput {
 
 export interface DetailMetricsOutput {
   spend: number;
-  cpc: number;
+  /** CPC de clique no link; `null` (→ `—`) sem `link_click`. */
+  cpc: number | null;
   cpm: number;
   /** Numerador BRUTO (regra da 29.20); só o denominador carrega imposto. */
   roas: number | null;
@@ -80,7 +90,6 @@ export function deriveDetailMetrics(
   const sales = base.sales ?? 0;
   const netRevenue = grossRevenue * (1 - feeRate);
   const margin = netRevenue - spend;
-  const costClicks = base.linkClicks && base.linkClicks > 0 ? base.linkClicks : base.clicks;
 
   // Story 29.29 — funil do criativo. Cada etapa usa a anterior como base, então
   // as três respondem perguntas encadeadas:
@@ -92,7 +101,9 @@ export function deriveDetailMetrics(
 
   return {
     spend,
-    cpc: costClicks > 0 ? spend / costClicks : 0,
+    // Story 29.77: a MESMA função do CTR desta linha e do Top Criativos.
+    // Sem `link_click` → `null` → `—`, nunca `spend ÷ cliques totais`.
+    cpc: cpcDeLink(base.linkClicks, spend),
     cpm: base.impressions > 0 ? (spend / base.impressions) * 1000 : 0,
     roas: spend > 0 ? grossRevenue / spend : null,
     costPerSale: sales > 0 ? spend / sales : null,

@@ -37,7 +37,6 @@ describe("paridade Quadro Diário ⇄ Detalhamento (Story 29.51 AC4)", () => {
     salesCount: base.sales,
     impressions: base.impressions,
     linkClicks: base.linkClicks,
-    clicks: base.clicks,
     lpViews: 400,
   });
 
@@ -61,7 +60,9 @@ describe("paridade Quadro Diário ⇄ Detalhamento (Story 29.51 AC4)", () => {
     expect(daily.marginPct).toBe(detail.marginPct);
   });
 
-  it("a base de cliques é a mesma regra — cai para cliques totais junto", () => {
+  it("a base de cliques é a mesma regra — sem link_click os dois devolvem null, nenhum cai para cliques totais (Story 29.77)", () => {
+    // Diferencial: antes da 29.77 os dois caíam JUNTOS para os 800 cliques
+    // totais (CPC 1,42 nos dois). Continuam em paridade — agora em `—`.
     const semLink = { ...base, linkClicks: 0 };
     const d = deriveDetailMetrics(semLink, feeRate);
     const q = deriveDailyMetrics({
@@ -71,19 +72,24 @@ describe("paridade Quadro Diário ⇄ Detalhamento (Story 29.51 AC4)", () => {
       salesCount: semLink.sales,
       impressions: semLink.impressions,
       linkClicks: 0,
-      clicks: semLink.clicks,
       lpViews: 400,
     });
-    expect(q.costClicks).toBe(semLink.clicks);
+    expect(q.costClicks).toBeNull();
+    expect(q.cpc).toBeNull();
+    expect(d.cpc).toBeNull();
     expect(q.cpc).toBe(d.cpc);
   });
 });
 
-describe("divergência DELIBERADA no caso-zero", () => {
-  // Não é bug: é a 29.51 AC5. O Detalhamento devolve 0 quando falta base, o
-  // Quadro Diário devolve null → a UI mostra "—". "0" lê-se como "a métrica é
-  // zero"; "—" lê-se como "não há base para calcular". Este teste documenta a
-  // diferença para que ninguém a "conserte" achando que é descuido.
+describe("caso-zero: CPC concorda (null nos dois), CPM ainda diverge DELIBERADAMENTE", () => {
+  // A 29.51 AC5 documentava: o Detalhamento devolve 0 quando falta base, o
+  // Quadro Diário devolve null → "—". "0" lê-se como "a métrica é zero"; "—"
+  // lê-se como "não há base para calcular".
+  //
+  // Story 29.77: o CPC saiu dessa exceção — os dois módulos agora usam o
+  // `cpcDeLink` do shared, que devolve null sem clique no link. O CPM segue
+  // como estava (0 no Detalhamento, null no diário); este teste documenta a
+  // diferença restante para que ninguém a "conserte" achando que é descuido.
   const semBase = {
     spend: 100, impressions: 0, clicks: 0, linkClicks: 0, revenue: 0, sales: 0,
   };
@@ -91,16 +97,16 @@ describe("divergência DELIBERADA no caso-zero", () => {
   const detail = deriveDetailMetrics(semBase, 0.0999);
   const daily = deriveDailyMetrics({
     spend: 100, revenue: 0, margin: 0, salesCount: 0,
-    impressions: 0, linkClicks: 0, clicks: 0, lpViews: 0,
+    impressions: 0, linkClicks: 0, lpViews: 0,
   });
 
-  it("Detalhamento devolve 0 para CPC/CPM sem base", () => {
-    expect(detail.cpc).toBe(0);
-    expect(detail.cpm).toBe(0);
-  });
-
-  it("Quadro Diário devolve null para CPC/CPM sem base", () => {
+  it("CPC é null nos dois módulos sem clique no link", () => {
+    expect(detail.cpc).toBeNull();
     expect(daily.cpc).toBeNull();
+  });
+
+  it("CPM: Detalhamento devolve 0, Quadro Diário devolve null (divergência mantida)", () => {
+    expect(detail.cpm).toBe(0);
     expect(daily.cpm).toBeNull();
   });
 });

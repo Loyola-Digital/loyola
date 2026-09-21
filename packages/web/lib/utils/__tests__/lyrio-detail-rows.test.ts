@@ -48,10 +48,23 @@ describe("metaRow", () => {
     expect(r.ctr).toBeCloseTo(0.5, 10); // 500 / 100000 × 100
   });
 
-  it("sem cliques no link cai para os cliques totais", () => {
-    const r = metaRow(meta({ spend: 1000, clicks: 400, linkClicks: 0, impressions: 10_000 }));
-    expect(r.clicks).toBe(400);
-    expect(r.cpc).toBe(2.5);
+  it("sem cliques no link, Cliques/CTR/CPC são null (“—”) — NÃO caem para cliques totais (Story 29.77)", () => {
+    // Diferencial: com o fallback da 42.5 de volta isto dava clicks 400,
+    // CTR 4% e CPC 2,50. A regra do produto (shared `clique-no-link`, 18.78)
+    // é sem fallback, e as três colunas precisam concordar entre si.
+    for (const linkClicks of [0, null, undefined]) {
+      const r = metaRow(meta({ spend: 1000, clicks: 400, linkClicks, impressions: 10_000 }));
+      expect(r.clicks).toBeNull();
+      expect(r.ctr).toBeNull();
+      expect(r.cpc).toBeNull();
+    }
+  });
+
+  it("CTR e CPC saem das MESMAS funções do shared que o Perpétuo usa", async () => {
+    const { ctrDeLink, cpcDeLink } = await import("@loyola-x/shared/src/clique-no-link");
+    const r = metaRow(meta({ spend: 1000, clicks: 2000, linkClicks: 500, impressions: 100_000 }));
+    expect(r.ctr).toBe(ctrDeLink(500, 100_000));
+    expect(r.cpc).toBe(cpcDeLink(500, 1000));
   });
 
   it("CPM é por mil impressões", () => {

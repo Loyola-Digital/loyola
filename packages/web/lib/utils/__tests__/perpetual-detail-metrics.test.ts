@@ -43,7 +43,7 @@ describe("deriveDetailMetrics — Story 29.27 (guarda contra dupla tributação)
     const r = deriveDetailMetrics(base, FEE_KIWIFY);
     expect(r.costPerSale).toBeCloseTo(SPEND_CORRETO / VENDAS, 6);
     expect(r.costPerSale).toBeCloseTo(35.23, 2);
-    expect(r.cpc).toBeCloseTo(SPEND_CORRETO / 8_000, 6); // link clicks têm prioridade
+    expect(r.cpc).toBeCloseTo(SPEND_CORRETO / 8_000, 6); // clique no LINK, nunca os 12.000 totais
     expect(r.cpm).toBeCloseTo((SPEND_CORRETO / 500_000) * 1000, 6);
   });
 
@@ -72,9 +72,19 @@ describe("deriveDetailMetrics — Story 29.27 (guarda contra dupla tributação)
     expect(soma).not.toBeCloseTo(comImposto(SPEND_CORRETO), 1);
   });
 
-  it("CPC cai para clicks quando não há linkClicks", () => {
-    const r = deriveDetailMetrics({ ...base, linkClicks: null }, FEE_KIWIFY);
-    expect(r.cpc).toBeCloseTo(SPEND_CORRETO / 12_000, 6);
+  it("CPC é null (“—”) sem linkClicks — NÃO cai para cliques totais (Story 29.77)", () => {
+    // Diferencial: com o fallback da 29.27 de volta isto dava SPEND ÷ 12.000.
+    // A linha já mostrava CTR “—” pelo `ctrDeLink`; o CPC precisa dizer o
+    // mesmo, senão a mesma linha afirma "não medido" e "medido" ao mesmo tempo.
+    expect(deriveDetailMetrics({ ...base, linkClicks: null }, FEE_KIWIFY).cpc).toBeNull();
+    expect(deriveDetailMetrics({ ...base, linkClicks: 0 }, FEE_KIWIFY).cpc).toBeNull();
+    expect(deriveDetailMetrics({ ...base, linkClicks: undefined }, FEE_KIWIFY).cpc).toBeNull();
+  });
+
+  it("CPC sai da MESMA função do shared que o CTR da linha e o Top Criativos usam", async () => {
+    const { cpcDeLink } = await import("@loyola-x/shared/src/clique-no-link");
+    const r = deriveDetailMetrics(base, FEE_KIWIFY);
+    expect(r.cpc).toBe(cpcDeLink(8_000, SPEND_CORRETO));
   });
 
   it("guardas de divisão por zero", () => {
@@ -82,7 +92,7 @@ describe("deriveDetailMetrics — Story 29.27 (guarda contra dupla tributação)
       { spend: 0, impressions: 0, clicks: 0, linkClicks: 0, revenue: 0, sales: 0 },
       FEE_KIWIFY,
     );
-    expect(vazio.cpc).toBe(0);
+    expect(vazio.cpc).toBeNull(); // 29.77: sem clique no link não há CPC a informar
     expect(vazio.cpm).toBe(0);
     expect(vazio.roas).toBeNull();
     expect(vazio.costPerSale).toBeNull();
