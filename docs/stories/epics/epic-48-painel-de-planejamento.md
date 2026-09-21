@@ -7,7 +7,7 @@
 - `mapa_sistema_loyola_passagem1.md` — inventário do sistema em `bb1608b6` (passagem 1: sem comparação com a spec — a passagem 2 é feita story a story, no Dev Notes)
 **Owner:** @sm (stories, por delegação do pedido do Danilo em 2026-09-21) → @po (validação) → @dev (implementação) → @qa (gate)
 **Criado:** 2026-09-21 pelo @sm (River). ⚠️ Estrutura de epic é atribuição do @pm (Morgan) — este documento foi criado junto com a primeira story para **reservar o número 48** (censo em `origin/main` + branches: livre) e para não perder as 14 decisões abaixo; o @pm valida ou reescreve a estrutura na primeira leitura.
-**Onde na UI:** funil de **lançamento** (`funnel_type = launch`) → aba nova **Planejamento** ao lado das etapas — decisão do Danilo em 2026-09-21 ("um simulador por funil de lançamento")
+**Onde na UI:** funil de **lançamento** (`funnel_type = launch`) → **sub-página** `…/funnels/[funnelId]/planejamento` com cartão de entrada na página do funil e quatro abas `?tab=` (inputs · organicos · pagos · resumo) — decisões do Danilo em 2026-09-21 ("um simulador por funil de lançamento"; PO-02 da 48.1: sub-página, porque a página do funil não tem abas)
 
 ---
 
@@ -88,13 +88,13 @@ Respondidas nesta ordem, uma a uma. "Reproduz" = faz como a planilha; "corrige" 
 
 | Story | Título | RN cobertas | Depende de | Status |
 |---|---|---|---|---|
-| 48.1 | Inputs Financeiros — modelo, API e tela (aba 1) | RN-001…009, 037, 040 | P1, P2 | Draft |
-| 48.2 | Motor de cenários no `shared` (abas 2 e 3, parte pura) | RN-010…015, 024…026 | — (só testes) | Draft |
+| 48.1 | Inputs Financeiros — modelo, API e tela (aba 1) | RN-001…009, 037, 040 | P1 ✅, P2 ✅ | **Ready** — @po GO 9/10 em 2026-09-21; sub-página `…/planejamento` + cartão (PO-02); custos > 100 % reproduz o negativo (PO-04); estimativa Alta / L (8–13) proposta |
+| 48.2 | Motor de cenários no `shared` (abas 2 e 3, parte pura) | RN-010…015, 024…026 | — (só testes) | **Ready** — @po GO 10/10 em 2026-09-21; Alta, M (5–8) |
 | 48.3 | Leads orgânicos — seleção, combinações e resumo (aba 2) | RN-016…023 | 48.1, 48.2 | a rascunhar |
 | 48.4 | Leads pagos — seleção, combinações e resumo (aba 3) | RN-016…022, 027…029 | 48.1, 48.2 | a rascunhar |
 | 48.5 | Resumo Final — consolidação dos cinco cenários (aba 4) | RN-030, 031 (+ 017…020 consolidadas) | 48.3, 48.4 | a rascunhar |
 
-Pontos e prioridade: `[FALTA]` — não estimados pelo @sm; @po/Danilo estimam na validação.
+Pontos e prioridade: estimados pelo @po na validação e confirmados pelo Danilo (48.2: Alta, M 5–8); as demais ficam `[FALTA]` até a validação de cada uma.
 
 ## Ordem de execução, executores e gates (@pm, 2026-09-21)
 
@@ -133,6 +133,9 @@ Regra do repo mantida: executor ≠ quality gate em todas as linhas.
 | 2026-09-21 | @sm (River) | Epic criado para reservar o nº 48 e registrar as 14 decisões do Danilo; 48.1 e 48.2 rascunhadas; docs copiados para `docs/specs/epic-48/` |
 | 2026-09-21 | @sm (River) | Danilo confirmou as três leituras do @sm: D3 (escada trava em zero nos pagos), D10 (apêndice A valida o bruto), 48.1 AC13 (permissão = a do funil) |
 | 2026-09-21 | @devops (Gage) | P1 resolvida: Lucas autorizou o escopo (via Danilo) com a condição "não mexer em nada que ele já implementou"; leitura operacional registrada para confirmação na primeira PR de código |
+| 2026-09-21 | @po (Pax) | 48.2 validada: GO 10/10, Ready; estimativa Alta / M (5–8) confirmada pelo Danilo |
+| 2026-09-21 | @po (Pax) | 48.1 validada: GO condicional 8/10; rota escopada por projeto (PO-01); decisões pendentes do Danilo: onde a tela vive (PO-02) e custos > 100 % (PO-04); estimativa Alta / L (8–13) proposta |
+| 2026-09-21 | @po (Pax) | Danilo decidiu PO-02 (sub-página + cartão) e PO-04 (B); 48.1 **Ready**, GO 9/10 |
 | 2026-09-21 | @pm (Morgan) | **P2 ✅ — estrutura validada.** Acrescentados objetivo, critérios de sucesso S1–S4, ordem de execução em 3 waves com executor/gate por story, riscos R1–R6, roadmap do que ficou fora; E4 corrigido (nomes dos módulos = os das stories). Número 48 confirmado na `main` (#898). |
 
 <!-- clickup:17tqamemnem -->
