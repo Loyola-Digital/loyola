@@ -1,0 +1,31 @@
+schema: 1
+story: '29.77'
+story_title: 'CTR e CPC do Perpétuo sem fallback para cliques totais — quadro diário, CPC do Detalhamento e Lyrio'
+gate: PASS
+status_reason: 'Os três pontos que ainda caíam para cliques totais (quadro diário, CPC do Detalhamento, Lyrio) passam a usar ctrDeLink/cpcDeLink do shared; 7 testes novos falham com os módulos anteriores e 70/70 passam com o fix, reproduzido pelo QA. Impacto medido em produção: 29 de 508 anúncios (5,7%) e 3 de 706 campanha-dias trocam um número por “—”.'
+reviewer: 'Quinn'
+updated: '2026-09-21T13:40:00Z'
+branch: 'fix/29.77-ctr-cpc-clique-no-link'
+commits: ['5c65737a']
+
+top_issues: []
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Diff lido inteiro (10 arquivos, +359/−99). Os três módulos importam do módulo folha `@loyola-x/shared/src/clique-no-link` (mesmo subpath que o dashboard já usava — não arrasta o pacote para o bundle). `costClicks`/`cliquesNoLink` = link ou `null`; `clicks` totais saíram de `DailyMetricsInput`/`sumDailyMetrics` (grep: nenhum consumidor restava). `deriveDetailMetrics.cpc` vira `number | null`; consumidores conferidos: perpetual-dashboard (fmtCurrency/num() aceitam null), perpetual-lp-rows e perpetual-entity-series (não leem `cpc`), lyrio-detail-rows (tipos ajustados, `sortRows` já tratava null). Lyrio: `fmtBRL`/`fmtNum` aceitam null; tooltips deixaram de prometer fallback. Comentário desatualizado da 29.51 corrigido.'
+  unit_tests: 'QA rodou: os 4 arquivos → 70/70. Diferencial reproduzido pelo QA com os três módulos de HEAD~1 e os testes novos: 7 falham (daily ×2, detail ×2, parity ×2, lyrio ×1), 63 passam; tree restaurado (git status limpo). Suíte completa do web (@dev, mesmo commit): 97 arquivos, 1.334/1.334.'
+  acceptance_criteria: 'AC1 ✓ (ctrDeLink/cpcDeLink; sem leitura de clicks totais) · AC2 ✓ (coluna Cliques = costClicks = link ou null → fmtInteger “—”) · AC3 ✓ (cpcDeLink, number|null) · AC4 ✓ (rodapé continua sumDailyMetrics → deriveDailyMetrics; teste dos totais mantido) · AC5 ✓ (7 asserts falham com o fallback de volta — verificado) · AC6 ✓ (4 tooltips + 3 comentários; nenhum texto da UI promete fallback — grep "fallback" nos componentes só em comentários históricos) · AC7 ✓ (ver no_regressions) · AC8 ✓ (Lyrio: Meta em ctrDeLink/cpcDeLink, Google intocado; teste diferencial).'
+  no_regressions: 'Evidência do @dev nesta sessão, mesmo tree (commit 5c65737a, status limpo): shared build EXIT 0, `next build --turbopack` EXIT 0, `tsc --noEmit` EXIT 0 sem saída (scratchpad build.log/tsc.log). QA não re-executou build/tsc: nesta máquina, hoje, cada .d.ts de node_modules leva ~0,3 s para ler (kavd + iCloud) e o tsc levou ~30 min. Medição em produção (meta_campaign_insights_daily / meta_ad_insights_daily, 30 dias, todos os projetos): campanha-dia com impressões 706, sem link_click 5, com cliques totais 3 (0,4% dos dias do quadro diário passam a “—”); anúncio agregado 508, sem link_click 122, com cliques totais 29 (5,7% dos criativos trocam CPC numérico por “—”, coerente com o CTR “—” que a mesma linha já mostrava).'
+  performance: 'N/A — derivação pura; nenhuma chamada nova.'
+  security: 'N/A.'
+  documentation: 'Story com causa, decisões do Danilo (3), fato novo do Lyrio, Dev Agent Record com gates e ambiente, fora-de-escopo registrado (placements, ctr cru do daily bulk, CTR do PDF). Comentários de cabeçalho dos 3 módulos e da tabela do Lyrio contam a história.'
+  api_contract: 'N/A — nenhum arquivo de packages/api ou packages/shared no commit; nenhuma rota/campo novo. API_CONTRACT_VERSION não precisa subir.'
+
+notes:
+  - 'Processo: story rascunhada pelo @dev e implementada sem @sm/@po, por decisão explícita do Danilo (fix pequeno). Registrado na story e aqui; não é achado.'
+  - 'Escopo ampliado ao Lyrio durante a implementação, com pergunta ao Danilo antes de mexer — o caminho certo: a suíte completa acusou o consumidor, o @dev parou e perguntou.'
+  - 'Convenção “0 = não medido” em DailyMetricsInput.linkClicks: dailyActionCount já devolve 0 para action ausente, então a distinção null/0 do shared não existe nesse ponto da cadeia; é a mesma convenção do backend (linkClicks > 0 ? n : null). Aceitável; documentado no tipo.'
+  - 'Rodapé Total do quadro diário: CTR = Σlink ÷ Σimpressões inclui as impressões dos dias sem link_click no denominador — mesma conta de computeOverview na API; com 0,4% dos dias afetados, efeito desprezível.'
+  - 'Validação visual PENDENTE após deploy: (1) quadro diário Detalhado num dia sem link_click → Cliques/CTR/CPC “—”; (2) Detalhamento por criativo, um dos 29 anúncios com cliques mas sem link_click → CTR e CPC “—” na mesma linha; (3) Lyrio → Detalhamento, linha da Meta sem link_click → “—” nas três; linhas do Google com número.'
+  - 'Fora do escopo, ainda com fallback na API: getPlacementBreakdown (traffic-analytics.ts:1392) e o campo ctr cru de getCampaignDailyInsightsBulk (:1280) — o Perpétuo não os lê. CTR do relatório PDF sai “—” porque o loader não passa `entrega` (defeito separado, candidato a story).'

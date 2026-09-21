@@ -305,7 +305,7 @@ interface PerpetualDailyRow extends DailyMetricsInput {
   dateIso: string;
   // spend: Investimento com imposto 12,15% · revenue: Faturamento bruto
   // margin: Margem de Contribuição (líquida − spend c/ tax)
-  // impressions / linkClicks / clicks / lpViews: crus da Meta por dia
+  // impressions / linkClicks / lpViews: crus da Meta por dia
 }
 
 // Story 29.33: quadro enxuto — só o que decide investimento. As 8 colunas de
@@ -397,7 +397,7 @@ const PERPETUAL_DAILY_COLUMNS: DailyColumn[] = [
   {
     key: "cpc",
     label: "CPC",
-    title: "Investimento ÷ Cliques",
+    title: "Investimento ÷ Cliques no link · sem cliques no link o dia mostra “—”",
     render: (_v, m) => fmtCurrency(m.cpc),
   },
   {
@@ -418,14 +418,17 @@ const PERPETUAL_DAILY_COLUMNS: DailyColumn[] = [
   {
     key: "clicks",
     label: "Cliques",
-    title: "Cliques no link do dia (fallback: cliques totais quando o dia não reporta link_click)",
+    // Story 29.77: cliques no LINK, sem fallback para cliques totais — a
+    // mesma base do CTR e do CPC da linha. Dia em que a Meta não devolveu
+    // `link_click` mostra “—” nas três colunas.
+    title: "Cliques no link do dia · “—” quando a Meta não devolveu link_click",
     detailedOnly: true,
     render: (_v, m) => fmtInteger(m.costClicks),
   },
   {
     key: "ctr",
     label: "CTR",
-    title: "Cliques ÷ Impressões × 100",
+    title: "Cliques no link ÷ Impressões × 100 · sem cliques no link o dia mostra “—”",
     detailedOnly: true,
     render: (_v, m) => fmtPercent(m.ctr),
   },
@@ -1592,10 +1595,10 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       const impressions = d ? safeNum(d.impressions) : 0;
       const linkClicks = dailyActionCount(d?.actions, "link_click");
       const lpViews = dailyActionCount(d?.actions, "landing_page_view");
-      // Story 29.51: cliques TOTAIS — já vinham no insight (`CampaignDailyInsight
-      // .clicks`), só não eram propagados. São o fallback de CPC/CTR quando o dia
-      // não reporta `link_click`, o mesmo que o Detalhamento por entidade usa.
-      const clicks = d ? safeNum(d.clicks) : 0;
+      // Story 29.77: cliques TOTAIS (`d.clicks`) não entram mais na linha. A
+      // 29.51 os propagava como fallback de CPC/CTR no dia sem `link_click`;
+      // a regra do produto (shared `clique-no-link`, 18.78) é sem fallback, e
+      // o Detalhamento por entidade já a seguia — o quadro diário divergia.
       // Vendas/dia: planilha (fonte oficial) quando há daily; senão fallback pixel
       // Meta — mesma lógica de fonte da Receita (:596). Sem planilha → 0 (29.10).
       const salesFromSheet = sheetHasDaily ? (sheetSalesByDay[date] ?? 0) : 0;
@@ -1622,7 +1625,6 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         // Story 29.23: campos crus por dia para o Quadro de Dados Diários.
         impressions,
         linkClicks,
-        clicks,
         lpViews,
         salesCount,
         formulasByKey: {

@@ -18,9 +18,11 @@
 //     Vendas por anúncio é exatamente o que falta aqui — mostrariam "—" em
 //     100% das linhas. Se você veio procurar por elas, o motivo é este.
 //
-//   • CTR e CPC já são os de LINK CLICK, com a mesma fórmula do Perpétuo
-//     (`costClicks` em lyrio-detail-rows.ts). O rótulo diz "(link)" para não
-//     mandar ninguém procurar uma coluna que já está na tela. Ressalva que o
+//   • Cliques, CTR e CPC são os de LINK CLICK, com a mesma regra do Perpétuo
+//     (`ctrDeLink`/`cpcDeLink` do shared, via lyrio-detail-rows.ts) — e sem
+//     fallback para cliques totais desde a Story 29.77: linha da Meta sem
+//     `link_click` mostra "—" nas três. O rótulo diz "(link)" para não mandar
+//     ninguém procurar uma coluna que já está na tela. Ressalva que o
 //     Perpétuo não tem: as linhas do Google trazem CTR/CPC prontos da API do
 //     Google, que não são cliques em link — daí o tooltip separar as duas
 //     origens em vez de prometer "link" para a tabela inteira.
@@ -60,12 +62,12 @@ interface LyrioDetailTableProps {
   days: number;
 }
 
-function fmtBRL(v: number): string {
-  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+function fmtBRL(v: number | null): string {
+  return v === null ? "—" : v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-function fmtNum(v: number): string {
-  return v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+function fmtNum(v: number | null): string {
+  return v === null ? "—" : v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
 }
 
 function fmtPct(v: number | null): string {
@@ -233,13 +235,13 @@ export function LyrioDetailTable({
                 <th className={th} onClick={() => toggleSort("impressions")}>
                   Impressões{seta("impressions")}
                 </th>
-                <th className={th} onClick={() => toggleSort("clicks")} title="Meta: cliques no link quando reportados, senão cliques totais. Google: cliques da campanha">
+                <th className={th} onClick={() => toggleSort("clicks")} title="Meta: cliques no link — “—” quando a Meta não devolveu link_click. Google: cliques da campanha">
                   Cliques{seta("clicks")}
                 </th>
-                <th className={th} onClick={() => toggleSort("ctr")} title="Meta: cliques no link ÷ impressões × 100 (cai para cliques totais se a Meta não reportar link). Google: CTR como a API do Google entrega">
+                <th className={th} onClick={() => toggleSort("ctr")} title="Meta: cliques no link ÷ impressões × 100 — “—” sem link_click. Google: CTR como a API do Google entrega">
                   CTR (link){seta("ctr")}
                 </th>
-                <th className={th} onClick={() => toggleSort("cpc")} title="Meta: investimento ÷ cliques no link (cai para cliques totais se a Meta não reportar link). Google: CPC como a API do Google entrega">
+                <th className={th} onClick={() => toggleSort("cpc")} title="Meta: investimento ÷ cliques no link — “—” sem link_click. Google: CPC como a API do Google entrega">
                   CPC (link){seta("cpc")}
                 </th>
                 <th className={th} onClick={() => toggleSort("cpm")} title="Investimento ÷ Impressões × 1000">
