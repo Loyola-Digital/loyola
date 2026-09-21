@@ -304,6 +304,11 @@ export function tituloParaGoogle(campanha: string, fase: string): string {
 function corpoDoEvento(titulo: string, inicio: string, fim: string) {
   return {
     summary: titulo,
+    // O Google NÃO devolve 404 para evento apagado: ele fica "cancelled" e o
+    // PATCH responde 200 sem trazê-lo de volta. A fase existia no Planner e o
+    // evento seguia invisível (FZL4, FZM3 e DGL3 em 21/09/2026). A fase
+    // existe, então o evento dela também.
+    status: "confirmed",
     start: { date: inicio },
     // `end.date` é EXCLUSIVO: um evento de 13 a 17 termina em `18`. A leitura
     // subtrai um dia; aqui é preciso somar. Esquecer encurta toda fase em um

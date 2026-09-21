@@ -26,6 +26,7 @@ import { plannerCampaigns, plannerGoogleCalendars } from "../db/schema.js";
 import {
   normalizarFase,
   planejarSincronia,
+  vinculosDoServidor,
   type FaseDoPlanner,
 } from "../services/planner.js";
 import { importarDaAgenda } from "../services/planner-sync.js";
@@ -140,6 +141,10 @@ export default fp(async function plannerRoutes(fastify) {
       .select({ total: sql<number>`count(*)::int` })
       .from(plannerCampaigns);
 
+    // O desfazer da exclusão volta com os ids dos eventos que a exclusão
+    // apagou: mantê-los faz o Google RESTAURAR os mesmos eventos (o PATCH
+    // leva `status: confirmed`). Só não vale o id que outra campanha usa.
+    const deOutras = await eventosDeOutras(null);
     const fases: FaseDoPlanner[] = (
       b.data.phases ??
       FASES_PADRAO.map((name, i) => ({
@@ -148,7 +153,11 @@ export default fp(async function plannerRoutes(fastify) {
         start: "",
         end: "",
       }))
-    ).map(normalizarFase);
+    ).map((f) => {
+      const n = normalizarFase(f);
+      if (n.googleEventId && deOutras.has(n.googleEventId)) delete n.googleEventId;
+      return n;
+    });
 
     // Campanha nova nasce ja na agenda, quando ha uma escolhida: criar aqui e
     // ter de lembrar de espelhar depois seria o passo que todo mundo esquece.
@@ -214,6 +223,13 @@ export default fp(async function plannerRoutes(fastify) {
       mudanca.phases = b.data.phases.map(normalizarFase);
 
     const nomeDepois = (b.data.name ?? antes.name) as string;
+    if (mudanca.phases) {
+      mudanca.phases = vinculosDoServidor(
+        mudanca.phases as FaseDoPlanner[],
+        antes.phases as FaseDoPlanner[],
+        await eventosDeOutras(p.data.id),
+      );
+    }
     const fasesDepois = (mudanca.phases ?? antes.phases) as FaseDoPlanner[];
     const agenda = (b.data.googleCalendarId ?? antes.googleCalendarId) as
       string | null;
@@ -260,6 +276,26 @@ export default fp(async function plannerRoutes(fastify) {
    * E a retomada mais simples que existe: sem fila, sem estado extra, e o
    * proprio uso normal do Planner conserta o que ficou para tras.
    */
+  /**
+   * Os eventos do Google que JÁ são de alguma campanha (menos `excetoId`).
+   *
+   * Um evento tem uma dona só. Duas campanhas com o mesmo id se atropelavam:
+   * editar uma movia o evento da outra, e excluir uma apagava o da outra.
+   */
+  async function eventosDeOutras(excetoId: string | null): Promise<Set<string>> {
+    const todas = await fastify.db
+      .select({ id: plannerCampaigns.id, phases: plannerCampaigns.phases })
+      .from(plannerCampaigns);
+    const ids = new Set<string>();
+    for (const c of todas) {
+      if (c.id === excetoId) continue;
+      for (const f of (c.phases ?? []) as FaseDoPlanner[]) {
+        if (f.googleEventId) ids.add(f.googleEventId);
+      }
+    }
+    return ids;
+  }
+
   async function espelharNoGoogle(e: {
     agenda: string | null;
     nomeAntes: string;
@@ -481,8 +517,12 @@ export default fp(async function plannerRoutes(fastify) {
      */
     const agenda = apagada.googleCalendarId;
     if (agenda && emailDaServiceAccount()) {
+      // O evento que outra campanha também usa NÃO é desta: era o que
+      // acontecia ao excluir a campanha fantasma — lá se iam os eventos da
+      // verdadeira (FZL4, FZM3, DGL3 em 21/09/2026).
+      const deOutras = await eventosDeOutras(apagada.id);
       for (const f of (apagada.phases ?? []) as FaseDoPlanner[]) {
-        if (!f.googleEventId) continue;
+        if (!f.googleEventId || deOutras.has(f.googleEventId)) continue;
         try {
           await apagarEvento(agenda, f.googleEventId);
         } catch (err) {
