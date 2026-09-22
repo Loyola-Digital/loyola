@@ -13,6 +13,7 @@ import { PlanejamentoInputsFinanceiros } from "@/components/funnels/planejamento
 import { PlanejamentoLeadsOrganicos } from "@/components/funnels/planejamento-leads-organicos"; // Story 48.3
 import { PlanejamentoLeadsPagos } from "@/components/funnels/planejamento-leads-pagos"; // Story 48.4
 import { PlanejamentoResumoFinal } from "@/components/funnels/planejamento-resumo-final"; // Story 48.5
+import { temPainelDePlanejamento } from "@/lib/utils/planejamento-entrada"; // Story 48.7
 
 // Story 48.1 — sub-página "Planejamento" do funil de LANÇAMENTO (Epic 48).
 //
@@ -71,7 +72,7 @@ export default function PlanejamentoPage() {
     );
   }
 
-  if (funnelData.funnelType !== "launch") {
+  if (!temPainelDePlanejamento(funnelData.funnelType)) {
     return (
       <div className="p-6 space-y-3">
         <Button variant="ghost" size="sm" className="-ml-2" asChild>
