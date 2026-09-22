@@ -156,4 +156,9 @@
 // `plan_organic_combinations`. ADITIVA; `packages/mcp` não é afetado. A aba
 // "Leads Orgânicos" do web depende delas: sem o bump, um painel à frente da
 // API mostraria "Not Found" em vez do aviso de versão.
-export const API_CONTRACT_VERSION = 15;
+// v16 (Story 48.4): rotas novas `GET/PUT /api/projects/:projectId/funnels/
+// :funnelId/planejamento/pagos` (aba 3 do Painel de Planejamento — blocos por
+// fonte paga e cinco combinações) e as tabelas `plan_paid_blocks` e
+// `plan_paid_combinations`. ADITIVA; `packages/mcp` não é afetado. A aba
+// "Leads Pagos" do web depende delas.
+export const API_CONTRACT_VERSION = 16;

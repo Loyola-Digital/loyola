@@ -21,7 +21,16 @@
 
 import { z } from "zod";
 import fp from "fastify-plugin";
-import { CAMPOS_DOS_INPUTS_FINANCEIROS, CENARIOS, NIVEIS_ORGANICOS, organicosVazios, type OrganicosDoSimulador } from "@loyola-x/shared";
+import {
+  CAMPOS_DOS_INPUTS_FINANCEIROS,
+  CENARIOS,
+  NIVEIS_ORGANICOS,
+  NIVEIS_PAGOS,
+  organicosVazios,
+  pagosVazios,
+  type OrganicosDoSimulador,
+  type PagosDoSimulador,
+} from "@loyola-x/shared";
 import {
   criarRepositorioDePlanejamento,
   inputsVazios,
@@ -147,6 +156,58 @@ const organicosBodySchema = z
   })
   .strict();
 
+// ---- Story 48.4 — aba 3: blocos por fonte paga e cinco combinações ----
+//
+//   GET /api/projects/:projectId/funnels/:funnelId/planejamento/pagos
+//   PUT /api/projects/:projectId/funnels/:funnelId/planejamento/pagos
+//
+// Mesma semântica da aba 2 (48.3): GET sempre com as QUATRO fontes e as cinco
+// combinações, `null` no que nunca foi salvo, sem criar linha (PO-02); PUT
+// grava o conjunto inteiro e exige os Inputs Financeiros salvos (409).
+
+/** Nível assumido da escada dos pagos (radio, D12): inteiro 1…10 ou vazio. */
+const nivelPago = z.number().int().min(1).max(NIVEIS_PAGOS).nullable();
+
+const blocoPagoSchema = z
+  .object({
+    pctCaptacao: fracao,
+    conversaoMedia: fracao,
+    variacaoConversao: fracao,
+    variacaoReceita: fracao,
+    /** CPL médio histórico em reais, ≥ 0 (referência das faixas). */
+    cplMedioHistorico: moeda,
+    faixaVariacao: fracao,
+    fracaoCenario1: fracao,
+    nivelAssumido: nivelPago,
+  })
+  .strict();
+
+const selecoesPagasSchema = z
+  .object({
+    meta_quente: selecao,
+    meta_frio: selecao,
+    google_quente: selecao,
+    google_frio: selecao,
+  })
+  .strict();
+
+const pagosBodySchema = z
+  .object({
+    blocos: z
+      .object({
+        meta_quente: blocoPagoSchema,
+        meta_frio: blocoPagoSchema,
+        google_quente: blocoPagoSchema,
+        google_frio: blocoPagoSchema,
+      })
+      .strict(),
+    combinacoes: z
+      .array(z.object({ indice: z.number().int().min(1).max(5), selecoes: selecoesPagasSchema }).strict())
+      .length(5)
+      .refine((cs) => new Set(cs.map((c) => c.indice)).size === 5, { message: "índices 1…5 sem repetição" }),
+  })
+  .strict();
+
 export default fp(async function planejamentoRoutes(fastify) {
   const repo = (): RepositorioDePlanejamento => fastify.planejamentoRepo ?? criarRepositorioDePlanejamento(fastify.db);
 
@@ -233,6 +294,38 @@ export default fp(async function planejamentoRoutes(fastify) {
       return reply.code(409).send({ error: "Salve os Inputs Financeiros antes de salvar os cenários dos canais orgânicos" });
     }
     const gravado = await repo().gravarOrganicos(simulatorId, body.data as OrganicosDoSimulador);
+    return { ok: true, funnelId: ctx.funnelId, blocos: gravado.blocos, combinacoes: gravado.combinacoes, updatedAt: gravado.updatedAt };
+  });
+
+  // ---- Story 48.4 — GET/PUT …/planejamento/pagos ----
+  const basePagos = "/api/projects/:projectId/funnels/:funnelId/planejamento/pagos";
+
+  fastify.get(basePagos, async (request, reply) => {
+    const ctx = await resolverContexto(request, reply);
+    if (!ctx) return;
+    const lido = await repo().lerPagos(ctx.funnelId);
+    const vazio = pagosVazios();
+    return {
+      funnelId: ctx.funnelId,
+      blocos: lido?.blocos ?? vazio.blocos,
+      combinacoes: lido?.combinacoes ?? vazio.combinacoes,
+      updatedAt: lido?.updatedAt ?? null,
+    };
+  });
+
+  fastify.put(basePagos, async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const ctx = await resolverContexto(request, reply);
+    if (!ctx) return;
+    const body = pagosBodySchema.safeParse(request.body);
+    if (!body.success) {
+      return reply.code(400).send({ error: "Dados inválidos", details: body.error.flatten() });
+    }
+    const simulatorId = await repo().idDoSimulador(ctx.funnelId);
+    if (simulatorId === null) {
+      return reply.code(409).send({ error: "Salve os Inputs Financeiros antes de salvar os cenários das fontes pagas" });
+    }
+    const gravado = await repo().gravarPagos(simulatorId, body.data as PagosDoSimulador);
     return { ok: true, funnelId: ctx.funnelId, blocos: gravado.blocos, combinacoes: gravado.combinacoes, updatedAt: gravado.updatedAt };
   });
 });

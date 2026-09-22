@@ -5,10 +5,9 @@ import { AlertTriangle, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { fmtCurrency, fmtInt, fmtPercent } from "@/lib/utils/format-number";
+import { fmtCurrency, fmtInt } from "@/lib/utils/format-number";
+import { BarraDeAtingimento, CampoNumerico, LegendaDasFaixas, Moeda, pctPontos } from "@/components/funnels/planejamento-ui";
 import { CANAIS_ORGANICOS, CENARIOS, NIVEIS_ORGANICOS, gradeOrganica, type CanalOrganico, type GradeOrganica } from "@loyola-x/shared/src/planejamento-cenarios";
 import { derivarInputsFinanceiros } from "@loyola-x/shared/src/planejamento-inputs-financeiros";
 import {
@@ -23,17 +22,13 @@ import {
   ROTULO_DO_CANAL,
   blocoComoEntradas,
   classeDaCelulaDeLeads,
-  classeDaFaixa,
   diagnosticoDaAba1,
   estadoDaTela,
-  estadoDoAtingimento,
-  larguraDaBarra,
   lerSelecao,
   organicosAlterados,
   paraFormularioOrganicos,
   paraPayloadOrganicos,
   temErros,
-  temReferenciaDeFaixa,
   validarOrganicos,
   valorDaGrade,
   type CampoDeFracaoDoBloco,
@@ -56,8 +51,6 @@ import { usePlanejamentoOrganicos, useSalvarPlanejamentoOrganicos } from "@/lib/
 
 type Form = FormularioDosOrganicos;
 
-const pctPontos = (fracao: number | null) => fmtPercent(fracao === null ? null : fracao * 100);
-
 const ROTULO_DO_PARAMETRO: Record<CampoDeFracaoDoBloco, string> = {
   conversaoMedia: "Conversão média em vendas",
   variacaoConversao: "Variação cenários conversão em vendas",
@@ -70,89 +63,7 @@ const ROTULO_DO_PARAMETRO: Record<CampoDeFracaoDoBloco, string> = {
 const CENARIOS_LISTA = Array.from({ length: CENARIOS }, (_, i) => i + 1);
 const NIVEIS_LISTA = Array.from({ length: NIVEIS_ORGANICOS }, (_, i) => i + 1);
 
-// ------------------------------------------------------------------
-// Peças de UI
-// ------------------------------------------------------------------
-
-function CampoPct({
-  id,
-  rotulo,
-  valor,
-  erro,
-  placeholder,
-  onChange,
-  readOnly,
-}: {
-  id: string;
-  rotulo: string;
-  valor: string;
-  erro?: string;
-  placeholder?: string;
-  onChange: (v: string) => void;
-  readOnly: boolean;
-}) {
-  return (
-    <div className="space-y-1">
-      <Label htmlFor={id} className="text-xs text-muted-foreground">
-        {rotulo}
-      </Label>
-      <div className="relative">
-        <Input
-          id={id}
-          inputMode="decimal"
-          value={valor}
-          onChange={(ev) => onChange(ev.target.value)}
-          readOnly={readOnly}
-          aria-invalid={!!erro}
-          className={`pr-8 tabular-nums ${erro ? "border-destructive" : ""}`}
-          placeholder={placeholder ?? "—"}
-        />
-        <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-muted-foreground">%</span>
-      </div>
-      {erro && <p className="text-[11px] text-destructive">{erro}</p>}
-    </div>
-  );
-}
-
-/** Legenda das quatro faixas de leads (AR-004 virou componente): 1 azul … 4 vermelho. */
-function LegendaDasFaixas({ grade }: { grade: GradeOrganica }) {
-  const l = grade.limites;
-  const item = (faixa: 1 | 2 | 3 | 4, texto: string) => (
-    <span className={`inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] ${classeDaFaixa(faixa)}`}>{texto}</span>
-  );
-  // UX-001: sem referência (leads esperados = 0) não há faixa — nem cor, nem "# Leads > 0".
-  if (!l || !temReferenciaDeFaixa(grade.leadsEsperados)) {
-    return <p className="text-xs text-muted-foreground">Faixas sem base — informe a taxa de captação e a base do canal.</p>;
-  }
-  return (
-    <div className="flex flex-wrap gap-1.5" aria-label="Legenda das faixas de leads">
-      {item(1, `# Leads < ${fmtInt(l.lo)}`)}
-      {item(2, `${fmtInt(l.lo)} ≤ # Leads ≤ ${fmtInt(l.mid)}`)}
-      {item(3, `${fmtInt(l.mid)} < # Leads ≤ ${fmtInt(l.hi)}`)}
-      {item(4, `# Leads > ${fmtInt(l.hi)}`)}
-    </div>
-  );
-}
-
-/** A "█" de Y3 (AR-005) como barra, com as cores de DV-016 = A. */
-function BarraDeAtingimento({ atingimento }: { atingimento: number | null }) {
-  const estado = estadoDoAtingimento(atingimento);
-  const cor = estado === "verde" ? "bg-emerald-500" : estado === "vermelho" ? "bg-red-500" : estado === "neutro" ? "bg-amber-500" : "bg-muted-foreground/30";
-  const corTexto = estado === "verde" ? "text-emerald-600" : estado === "vermelho" ? "text-destructive" : "";
-  return (
-    <div className="space-y-1">
-      <p className={`tabular-nums text-sm font-semibold ${corTexto}`}>{pctPontos(atingimento)}</p>
-      <div className="h-2 w-full rounded bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={larguraDaBarra(atingimento)}>
-        <div className={`h-2 rounded ${cor}`} style={{ width: `${larguraDaBarra(atingimento)}%` }} />
-      </div>
-    </div>
-  );
-}
-
-function Moeda({ valor, destaque }: { valor: number | null; destaque?: boolean }) {
-  const texto = fmtCurrency(valor);
-  return <span className={`tabular-nums ${destaque ? "font-semibold" : ""} ${texto.startsWith("-") ? "text-destructive" : ""}`}>{texto}</span>;
-}
+// Peças de UI compartilhadas com a 48.4: `components/funnels/planejamento-ui.tsx`.
 
 // ------------------------------------------------------------------
 // Bloco de um canal
@@ -192,19 +103,20 @@ function BlocoDoCanal({
       <CardContent className="space-y-4">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           {CAMPOS_DE_FRACAO_DO_BLOCO.map((k) => (
-            <CampoPct
+            <CampoNumerico
               key={k}
               id={`${canal}-${k}`}
               rotulo={ROTULO_DO_PARAMETRO[k]}
               valor={form.fracoes[k]}
               erro={erros[k]}
               placeholder={k === "fracaoCenario1" ? "70" : undefined}
+              sufixo="%"
               onChange={(v) => onFracao(k, v)}
               readOnly={!podeEditar}
             />
           ))}
         </div>
-        <LegendaDasFaixas grade={grade} />
+        <LegendaDasFaixas limites={grade.limites} referencia={grade.leadsEsperados} grandeza="leads" />
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="text-muted-foreground">

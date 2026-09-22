@@ -5498,3 +5498,81 @@ export const planOrganicCombinations = pgTable(
   },
   (t) => [uniqueIndex("uq_plan_organic_combinations_simulator_indice").on(t.simulatorId, t.indice)],
 );
+
+/**
+ * Story 48.4 — parâmetros por FONTE PAGA do simulador (aba 3 da planilha).
+ *
+ * Tabela-filha de `plan_simulators` (A3 da 48.1): uma linha por (simulador,
+ * fonte), fonte no domínio `FONTES_PAGAS` do shared (`meta_quente`,
+ * `meta_frio`, `google_quente`, `google_frio` — a taxonomia canônica, PO-01).
+ * Persistem SÓ as oito entradas manuais do bloco (E5): a verba e a meta de
+ * receita vêm da 48.1; a grade de CPL máximo × leads é recalculada na tela
+ * pelo `gradePaga` da 48.2.
+ *
+ * `pct_captacao` é a parte da verba que vai para captação (o resto é
+ * remarketing, só informativo — D14). `cpl_medio_historico` é a referência das
+ * faixas de CPL (moeda). `nivel_assumido` é o radio, 1…10 ou vazio (D12).
+ * CHECKs na migration 0154; a rota valida com zod antes.
+ *
+ * Separada de `plan_organic_blocks` (48.3) de propósito: as duas stories da
+ * wave 2 rodam em paralelo e não dividem arquivo de migration.
+ */
+export const planPaidBlocks = pgTable(
+  "plan_paid_blocks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    simulatorId: uuid("simulator_id")
+      .notNull()
+      .references(() => planSimulators.id, { onDelete: "cascade" }),
+    /** `FONTES_PAGAS` do shared; CHECK na migration. */
+    fonte: text("fonte").notNull(),
+
+    // ---- Parâmetros manuais do bloco (E{r0+3}, F{r0+5}…F{r0+9}) ----
+    /** Parte da verba para captação (RN-024); remarketing = 1 − isto. */
+    pctCaptacao: numeric("pct_captacao", { precision: 12, scale: 6 }),
+    conversaoMedia: numeric("conversao_media", { precision: 12, scale: 6 }),
+    /** Exibida como %, mas o passo da escada é `÷ 100` (DV-004, reproduzido). */
+    variacaoConversao: numeric("variacao_conversao", { precision: 12, scale: 6 }),
+    variacaoReceita: numeric("variacao_receita", { precision: 12, scale: 6 }),
+    /** Referência das faixas de CPL (RN-026), em reais. */
+    cplMedioHistorico: numeric("cpl_medio_historico", { precision: 18, scale: 2 }),
+    faixaVariacao: numeric("faixa_variacao", { precision: 12, scale: 6 }),
+    /** D1 — fração do cenário 1 sobre a receita necessária; vazio = 0,70. */
+    fracaoCenario1: numeric("fracao_cenario_1", { precision: 12, scale: 6 }),
+    /** D12 — nível da escada assumido (radio), 1…10 ou vazio. */
+    nivelAssumido: integer("nivel_assumido"),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("uq_plan_paid_blocks_simulator_fonte").on(t.simulatorId, t.fonte)],
+);
+
+/**
+ * Story 48.4 — as cinco COMBINAÇÕES de cenários das fontes pagas (colunas X,
+ * Z, AB, AD, AF da aba 3). Uma linha por (simulador, índice 1…5); em cada
+ * uma, o cenário escolhido por fonte — inteiro 1…10 ou vazio (RN-038). Só
+ * entradas: receita, deduções, tráfego, MC por plataforma, atingimento e o
+ * resumo de marketing são recalculados na tela.
+ */
+export const planPaidCombinations = pgTable(
+  "plan_paid_combinations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    simulatorId: uuid("simulator_id")
+      .notNull()
+      .references(() => planSimulators.id, { onDelete: "cascade" }),
+    /** 1…5, fixo. */
+    indice: integer("indice").notNull(),
+
+    // ---- Cenário escolhido por fonte, 1…10 ou vazio ----
+    selMetaQuente: integer("sel_meta_quente"),
+    selMetaFrio: integer("sel_meta_frio"),
+    selGoogleQuente: integer("sel_google_quente"),
+    selGoogleFrio: integer("sel_google_frio"),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("uq_plan_paid_combinations_simulator_indice").on(t.simulatorId, t.indice)],
+);

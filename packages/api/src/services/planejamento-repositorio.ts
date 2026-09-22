@@ -16,16 +16,21 @@
 
 import { and, eq } from "drizzle-orm";
 import type { Database } from "../db/client.js";
-import { funnels, planOrganicBlocks, planOrganicCombinations, planSimulators, projectMembers, projects } from "../db/schema.js";
+import { funnels, planOrganicBlocks, planOrganicCombinations, planPaidBlocks, planPaidCombinations, planSimulators, projectMembers, projects } from "../db/schema.js";
 import {
   CAMPOS_DOS_INPUTS_FINANCEIROS,
   CAMPOS_DO_BLOCO_ORGANICO,
+  CAMPOS_DO_BLOCO_PAGO,
   CANAIS_ORGANICOS,
+  FONTES_PAGAS,
   INDICES_DAS_COMBINACOES,
   organicosVazios,
+  pagosVazios,
   type CanalOrganico,
+  type FontePaga,
   type InputsFinanceiros,
   type OrganicosDoSimulador,
+  type PagosDoSimulador,
 } from "@loyola-x/shared";
 
 export type CampoDosInputs = (typeof CAMPOS_DOS_INPUTS_FINANCEIROS)[number];
@@ -56,6 +61,17 @@ export interface RepositorioDePlanejamento {
   lerOrganicos(funnelId: string): Promise<OrganicosLidos | null>;
   /** Upsert dos 6 blocos e das 5 combinações, numa transação. Exige o simulador (`idDoSimulador`). */
   gravarOrganicos(simulatorId: string, dados: OrganicosDoSimulador): Promise<OrganicosLidos>;
+
+  // ---- Story 48.4 — blocos e combinações das fontes pagas ----
+  /** Blocos e combinações pagas do simulador; `null` quando não há simulador nem linha-filha. */
+  lerPagos(funnelId: string): Promise<PagosLidos | null>;
+  /** Upsert dos 4 blocos e das 5 combinações, numa transação. Exige o simulador (`idDoSimulador`). */
+  gravarPagos(simulatorId: string, dados: PagosDoSimulador): Promise<PagosLidos>;
+}
+
+/** Story 48.4 — o que a API devolve para a aba 3: só entradas + o carimbo mais recente. */
+export interface PagosLidos extends PagosDoSimulador {
+  updatedAt: string | null;
 }
 
 /** Story 48.3 — o que a API devolve para a aba 2: só entradas + o carimbo mais recente. */
@@ -144,6 +160,45 @@ function linhasParaOrganicos(blocos: LinhaDeBloco[], combinacoes: LinhaDeCombina
     const alvo = out.combinacoes.find((c) => c.indice === linha.indice);
     if (!alvo) continue; // CHECK impede; cinto
     for (const canal of CANAIS_ORGANICOS) alvo.selecoes[canal] = paraNumero(linha[COLUNA_DA_SELECAO[canal]]);
+    marcar(linha.updatedAt);
+  }
+  out.updatedAt = ultimo === null ? null : (ultimo as Date).toISOString();
+  return out;
+}
+
+// ---- Story 48.4 — conversões das tabelas-filhas pagas ----
+
+/** Fonte canônica (48.2) → coluna `sel_*` de `plan_paid_combinations`. */
+const COLUNA_DA_SELECAO_PAGA = {
+  meta_quente: "selMetaQuente",
+  meta_frio: "selMetaFrio",
+  google_quente: "selGoogleQuente",
+  google_frio: "selGoogleFrio",
+} as const satisfies Record<FontePaga, keyof typeof planPaidCombinations.$inferSelect>;
+
+type LinhaDeBlocoPago = typeof planPaidBlocks.$inferSelect;
+type LinhaDeCombinacaoPaga = typeof planPaidCombinations.$inferSelect;
+
+function ehFonte(v: string): v is FontePaga {
+  return (FONTES_PAGAS as readonly string[]).includes(v);
+}
+
+function linhasParaPagos(blocos: LinhaDeBlocoPago[], combinacoes: LinhaDeCombinacaoPaga[]): PagosLidos {
+  const out: PagosLidos = { ...pagosVazios(), updatedAt: null };
+  let ultimo: Date | null = null;
+  const marcar = (d: Date) => {
+    if (ultimo === null || d > ultimo) ultimo = d;
+  };
+  for (const linha of blocos) {
+    if (!ehFonte(linha.fonte)) continue; // CHECK impede; cinto
+    const b = out.blocos[linha.fonte];
+    for (const k of CAMPOS_DO_BLOCO_PAGO) b[k] = paraNumero(linha[k]);
+    marcar(linha.updatedAt);
+  }
+  for (const linha of combinacoes) {
+    const alvo = out.combinacoes.find((c) => c.indice === linha.indice);
+    if (!alvo) continue;
+    for (const fonte of FONTES_PAGAS) alvo.selecoes[fonte] = paraNumero(linha[COLUNA_DA_SELECAO_PAGA[fonte]]);
     marcar(linha.updatedAt);
   }
   out.updatedAt = ultimo === null ? null : (ultimo as Date).toISOString();
@@ -250,6 +305,61 @@ export function criarRepositorioDePlanejamento(db: Database): RepositorioDePlane
         return linhasParaOrganicos(blocos, combinacoes);
       });
     },
+
+    // ---- Story 48.4 ----
+    async lerPagos(funnelId) {
+      const [sim] = await db.select({ id: planSimulators.id }).from(planSimulators).where(eq(planSimulators.funnelId, funnelId)).limit(1);
+      if (!sim) return null;
+      const blocos = await db.select().from(planPaidBlocks).where(eq(planPaidBlocks.simulatorId, sim.id));
+      const combinacoes = await db.select().from(planPaidCombinations).where(eq(planPaidCombinations.simulatorId, sim.id));
+      if (blocos.length === 0 && combinacoes.length === 0) return null;
+      return linhasParaPagos(blocos, combinacoes);
+    },
+
+    async gravarPagos(simulatorId, dados) {
+      const agora = new Date();
+      return db.transaction(async (tx) => {
+        const blocos: LinhaDeBlocoPago[] = [];
+        for (const fonte of FONTES_PAGAS) {
+          const b = dados.blocos[fonte];
+          const valores = {
+            pctCaptacao: paraColuna(b.pctCaptacao),
+            conversaoMedia: paraColuna(b.conversaoMedia),
+            variacaoConversao: paraColuna(b.variacaoConversao),
+            variacaoReceita: paraColuna(b.variacaoReceita),
+            cplMedioHistorico: paraColuna(b.cplMedioHistorico),
+            faixaVariacao: paraColuna(b.faixaVariacao),
+            fracaoCenario1: paraColuna(b.fracaoCenario1),
+            nivelAssumido: b.nivelAssumido,
+            updatedAt: agora,
+          };
+          const [linha] = await tx
+            .insert(planPaidBlocks)
+            .values({ ...valores, simulatorId, fonte })
+            .onConflictDoUpdate({ target: [planPaidBlocks.simulatorId, planPaidBlocks.fonte], set: valores })
+            .returning();
+          blocos.push(linha);
+        }
+        const combinacoes: LinhaDeCombinacaoPaga[] = [];
+        for (const indice of INDICES_DAS_COMBINACOES) {
+          const sel = dados.combinacoes.find((c) => c.indice === indice)?.selecoes;
+          const valores = {
+            selMetaQuente: sel?.meta_quente ?? null,
+            selMetaFrio: sel?.meta_frio ?? null,
+            selGoogleQuente: sel?.google_quente ?? null,
+            selGoogleFrio: sel?.google_frio ?? null,
+            updatedAt: agora,
+          };
+          const [linha] = await tx
+            .insert(planPaidCombinations)
+            .values({ ...valores, simulatorId, indice })
+            .onConflictDoUpdate({ target: [planPaidCombinations.simulatorId, planPaidCombinations.indice], set: valores })
+            .returning();
+          combinacoes.push(linha);
+        }
+        return linhasParaPagos(blocos, combinacoes);
+      });
+    },
   };
 }
 
@@ -257,13 +367,16 @@ export function criarRepositorioDePlanejamento(db: Database): RepositorioDePlane
 export function criarRepositorioEmMemoria(seed: {
   projetos: { id: string; membros?: string[] }[];
   funis: { id: string; projectId: string; type: string }[];
-}): RepositorioDePlanejamento & { linhas: Map<string, InputsLidos>; organicos: Map<string, OrganicosLidos> } {
+}): RepositorioDePlanejamento & { linhas: Map<string, InputsLidos>; organicos: Map<string, OrganicosLidos>; pagos: Map<string, PagosLidos> } {
   const linhas = new Map<string, InputsLidos>();
   /** Story 48.3 — por funil (o simulador em memória usa o `funnelId` como `id`). */
   const organicos = new Map<string, OrganicosLidos>();
+  /** Story 48.4 — idem. */
+  const pagos = new Map<string, PagosLidos>();
   return {
     linhas,
     organicos,
+    pagos,
     async acessoAoProjeto(projectId, userId, userRole) {
       const p = seed.projetos.find((x) => x.id === projectId);
       if (!p) return false;
@@ -294,6 +407,18 @@ export function criarRepositorioEmMemoria(seed: {
         updatedAt: new Date().toISOString(),
       };
       organicos.set(simulatorId, gravado);
+      return gravado;
+    },
+    async lerPagos(funnelId) {
+      return pagos.get(funnelId) ?? null;
+    },
+    async gravarPagos(simulatorId, dados) {
+      const gravado: PagosLidos = {
+        blocos: structuredClone(dados.blocos),
+        combinacoes: structuredClone(dados.combinacoes),
+        updatedAt: new Date().toISOString(),
+      };
+      pagos.set(simulatorId, gravado);
       return gravado;
     },
   };

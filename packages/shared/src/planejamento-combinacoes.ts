@@ -1,6 +1,10 @@
 /**
- * Combinações de cenários dos canais orgânicos — a região direita (U:AG) da
- * aba `[2] Leads Orgânicos` da planilha (Story 48.3).
+ * Combinações de cenários — a região direita (U:AG) das abas
+ * `[2] Leads Orgânicos` (Story 48.3) e `[3] Leads Pagos` (Story 48.4).
+ *
+ * A parte dos PAGOS fica no fim do arquivo ("Fontes pagas"): reaproveita a
+ * cadeia de deduções e o atingimento daqui e acrescenta tráfego, margem por
+ * plataforma e o resumo por fonte com CPL máximo.
  *
  * ## O que uma combinação é
  *
@@ -53,7 +57,7 @@
  * `index.ts` antes da 29.46.
  */
 
-import type { CanalOrganico, Entrada, GradeOrganica, ParametrosOrganicos } from "./planejamento-cenarios.js";
+import type { CanalOrganico, Entrada, FontePaga, GradeOrganica, GradePaga, ParametrosOrganicos, ParametrosPagos } from "./planejamento-cenarios.js";
 import type { CanalDaAba1, DerivadosFinanceiros, InputsFinanceiros } from "./planejamento-inputs-financeiros.js";
 
 // ------------------------------------------------------------------
@@ -322,7 +326,10 @@ export interface ResumoDoCanal {
  *   com seleção e sem nível → vendas do cenário, leads e conversão `null` (D12, não DV-008);
  *   com os dois → a célula `leads[nivel][sel]` e a conversão com os inteiros.
  */
-export function resumoDoCanal(grade: GradeOrganica, sel: Selecao, nivel: number | null): ResumoDoCanal {
+/** O que `resumoDoCanal` lê de uma grade — `GradeOrganica` e `GradePaga` (48.4) satisfazem. */
+export type GradeDeResumo = Pick<GradeOrganica, "receita" | "escada" | "vendas" | "vendasBruto" | "leads" | "leadsBruto">;
+
+export function resumoDoCanal(grade: GradeDeResumo, sel: Selecao, nivel: number | null): ResumoDoCanal {
   if (sel === null || sel === undefined) {
     return { receita: 0, vendas: 0, leads: 0, conversao: null, vendasBruto: 0, leadsBruto: 0, conversaoBruto: null };
   }
@@ -411,5 +418,328 @@ export function combinacaoOrganica(args: {
     meta: atingimentoDaMeta(cadeia.mc, args.metaMargemOrganicos),
     canais,
     totais: totaisDaCombinacao(CANAIS.map((c) => canais[c])),
+  };
+}
+
+// ==================================================================
+// Fontes pagas — aba `[3] Leads Pagos` (Story 48.4)
+// ==================================================================
+//
+// Três diferenças em relação aos orgânicos (spec §3):
+//   1. o TRÁFEGO entra na conta: a verba de cada fonte (aba 1) é descontada
+//      da receita líquida da plataforma (RN-027, RN-028) — e é o mesmo nas
+//      cinco combinações;
+//   2. a grade é de CPL MÁXIMO (RN-025) além de leads;
+//   3. as quatro fontes se agrupam em duas plataformas no resumo (RN-029).
+//
+// O que NÃO reproduz da planilha (decisões do Danilo):
+//   - DV-013 (D13): o total de vendas pagas somava só os públicos quentes.
+//     Aqui soma as quatro fontes.
+//   - DV-014 (D8): nas combinações 2–5, CPL e leads do Meta frio liam o bloco
+//     do Meta QUENTE com a seleção do Google frio. Aqui cada fonte lê o
+//     próprio bloco com a própria seleção, nas cinco.
+//   - o `IFERROR(…, 0)` da barra: margem negativa dá atingimento negativo.
+//   - DV-008, como nos orgânicos: sem nível → `null`, não `#N/A`.
+// E o que reproduz: seleção vazia = 0; remarketing só informativo (D14).
+
+/** As quatro fontes, na ordem da planilha — cópia local da 48.2 (módulo folha). */
+const FONTES = ["meta_quente", "meta_frio", "google_quente", "google_frio"] as const satisfies readonly FontePaga[];
+
+/** As oito entradas manuais de um bloco pago (E{r0+3}, F{r0+5}…F{r0+9}, D1, D12), como a API persiste. */
+export const CAMPOS_DO_BLOCO_PAGO = [
+  "pctCaptacao",
+  "conversaoMedia",
+  "variacaoConversao",
+  "variacaoReceita",
+  "cplMedioHistorico",
+  "faixaVariacao",
+  "fracaoCenario1",
+  "nivelAssumido",
+] as const;
+export type CampoDoBlocoPago = (typeof CAMPOS_DO_BLOCO_PAGO)[number];
+/** Frações como decimal; `cplMedioHistorico` em reais; `nivelAssumido` inteiro 1…10; vazio = `null`. */
+export type BlocoPago = Record<CampoDoBlocoPago, number | null>;
+
+export type SelecoesPorFonte = Record<FontePaga, Selecao>;
+
+export interface CombinacaoPagaPersistida {
+  indice: number;
+  selecoes: SelecoesPorFonte;
+}
+
+/** O que a API guarda e devolve para a aba 3: só entradas (E5). */
+export interface PagosDoSimulador {
+  blocos: Record<FontePaga, BlocoPago>;
+  combinacoes: CombinacaoPagaPersistida[];
+}
+
+export function blocoPagoVazio(): BlocoPago {
+  const b = {} as BlocoPago;
+  for (const k of CAMPOS_DO_BLOCO_PAGO) b[k] = null;
+  return b;
+}
+
+export function selecoesPagasVazias(): SelecoesPorFonte {
+  const s = {} as SelecoesPorFonte;
+  for (const f of FONTES) s[f] = null;
+  return s;
+}
+
+/** Quatro blocos vazios e cinco combinações vazias — a forma fixa da tela (PO-02). */
+export function pagosVazios(): PagosDoSimulador {
+  const blocos = {} as Record<FontePaga, BlocoPago>;
+  for (const f of FONTES) blocos[f] = blocoPagoVazio();
+  return {
+    blocos,
+    combinacoes: INDICES_DAS_COMBINACOES.map((indice) => ({ indice, selecoes: selecoesPagasVazias() })),
+  };
+}
+
+// ------------------------------------------------------------------
+// PO-01 — ponte entre a taxonomia canônica (48.2) e a derivação da 48.1
+// ------------------------------------------------------------------
+
+/** Fonte canônica → campos da derivação da 48.1: receita necessária (D5) e verba (RN-006). */
+export const FONTE_NA_ABA_1: Record<FontePaga, { receita: keyof DerivadosFinanceiros; verba: keyof DerivadosFinanceiros }> = {
+  meta_quente: { receita: "receitaMetaQuente", verba: "investMetaQuente" },
+  meta_frio: { receita: "receitaMetaFrio", verba: "investMetaFrio" },
+  google_quente: { receita: "receitaGoogleQuente", verba: "investGoogleQuente" },
+  google_frio: { receita: "receitaGoogleFrio", verba: "investGoogleFrio" },
+};
+
+/** O que a aba 3 importa da aba 1 para uma fonte (F{r0+1}, F{r0+2} e o ticket). */
+export interface OrigemDaFonteNaAba1 {
+  /** `receita<Fonte>` — `null` quando a margem-alvo dos pagos não tem base. */
+  metaReceita: number | null;
+  /** `invest<Fonte>` — verba da fonte (reais). */
+  verba: number;
+  ticketMedio: Entrada;
+}
+
+export function origemDaFonteNaAba1(
+  entradas: InputsFinanceiros,
+  derivados: DerivadosFinanceiros,
+  fonte: FontePaga,
+): OrigemDaFonteNaAba1 {
+  const campos = FONTE_NA_ABA_1[fonte];
+  return {
+    metaReceita: derivados[campos.receita] as number | null,
+    verba: n(derivados[campos.verba] as number),
+    ticketMedio: entradas.ticketMedio,
+  };
+}
+
+/** Bloco persistido + origem da aba 1 → os parâmetros que `gradePaga` (48.2) recebe. */
+export function parametrosDoBlocoPago(bloco: BlocoPago, origem: OrigemDaFonteNaAba1): ParametrosPagos {
+  return {
+    metaReceita: origem.metaReceita,
+    verba: origem.verba,
+    ticketMedio: origem.ticketMedio,
+    pctCaptacao: bloco.pctCaptacao,
+    conversaoMedia: bloco.conversaoMedia,
+    variacaoConversao: bloco.variacaoConversao,
+    variacaoReceita: bloco.variacaoReceita,
+    fracaoCenario1: bloco.fracaoCenario1,
+    cplMedioHistorico: bloco.cplMedioHistorico,
+    faixaVariacao: bloco.faixaVariacao,
+  };
+}
+
+// ------------------------------------------------------------------
+// RN-027 — tráfego (igual nas cinco combinações)
+// ------------------------------------------------------------------
+
+export interface Trafego {
+  /** Y32, Y33, Y35, Y36 — a verba de cada fonte (aba 1). */
+  porFonte: Record<FontePaga, number>;
+  /** Y31 — quente + frio do Meta. */
+  meta: number;
+  /** Y34 — quente + frio do Google. */
+  google: number;
+  /** Y30 — as quatro. */
+  total: number;
+  /** Y37 — `total ÷ receitaBruta`; `null` quando a receita bruta é zero. */
+  pctDaReceita: number | null;
+}
+
+export function trafegoDaCombinacao(verbas: Record<FontePaga, Entrada>, receitaBruta: number): Trafego {
+  const porFonte = {} as Record<FontePaga, number>;
+  for (const f of FONTES) porFonte[f] = n(verbas[f]);
+  const meta = porFonte.meta_quente + porFonte.meta_frio;
+  const google = porFonte.google_quente + porFonte.google_frio;
+  const total = meta + google;
+  return { porFonte, meta, google, total, pctDaReceita: div(total, receitaBruta) };
+}
+
+// ------------------------------------------------------------------
+// RN-028 / RN-019 — margem de contribuição por plataforma e dos pagos
+// ------------------------------------------------------------------
+
+export interface McDaPlataforma {
+  receita: number;
+  trafego: number;
+  /** `mc_fonte` da spec: `tributável − Σ custos × tributável − tráfego`. */
+  mc: number;
+  /** X40/X41 — `mc ÷ receita`; `null` em receita zero. */
+  pct: number | null;
+}
+
+/** `mc_fonte(receita, trafego)` da spec §3.2 — a cadeia de deduções da plataforma menos o seu tráfego. */
+export function mcDaPlataforma(receita: number, trafego: number, pct: PercentuaisDeCusto): McDaPlataforma {
+  const liquida = cadeiaDeDeducoes([receita], pct).mc;
+  const mc = liquida - trafego;
+  return { receita, trafego, mc, pct: div(mc, receita) };
+}
+
+export interface McPorPlataforma {
+  meta: McDaPlataforma;
+  google: McDaPlataforma;
+  /** Y39 — `mc_meta + mc_google` (≡ receita líquida − tráfego total). */
+  pagos: number;
+  /** Y42 — `pagos ÷ receitaBruta`; `null` em receita zero. */
+  pagosPct: number | null;
+}
+
+export function mcPorPlataforma(
+  receitas: Record<FontePaga, number>,
+  trafego: Trafego,
+  pct: PercentuaisDeCusto,
+  receitaBruta: number,
+): McPorPlataforma {
+  const meta = mcDaPlataforma(receitas.meta_quente + receitas.meta_frio, trafego.meta, pct);
+  const google = mcDaPlataforma(receitas.google_quente + receitas.google_frio, trafego.google, pct);
+  const pagos = meta.mc + google.mc;
+  return { meta, google, pagos, pagosPct: div(pagos, receitaBruta) };
+}
+
+// ------------------------------------------------------------------
+// RN-013 / RN-021 / RN-022 / RN-025 / RN-029 — resumo de marketing
+// ------------------------------------------------------------------
+
+export interface ResumoDaFonte extends ResumoDoCanal {
+  /** Y49 — CPL máximo do produto: `grade.cpl[nivel][sel]` (captação ÷ leads inteiros); `null` sem nível/base. */
+  cpl: number | null;
+  /** Cadeia bruta (§3.4). */
+  cplBruto: number | null;
+}
+
+/**
+ * Resumo de uma fonte numa combinação — o `resumoDoCanal` dos orgânicos mais
+ * o CPL máximo. Cada fonte lê o PRÓPRIO bloco com a PRÓPRIA seleção, nas
+ * cinco combinações (D8 — não reproduz DV-014).
+ */
+export function resumoDaFonte(grade: GradePaga, sel: Selecao, nivel: number | null): ResumoDaFonte {
+  const base = resumoDoCanal(grade, sel, nivel);
+  if (sel === null || sel === undefined || nivel === null || nivel === undefined) {
+    return { ...base, cpl: sel === null || sel === undefined ? 0 : null, cplBruto: sel === null || sel === undefined ? 0 : null };
+  }
+  return {
+    ...base,
+    cpl: grade.cpl[nivel - 1]?.[sel - 1] ?? null,
+    cplBruto: grade.cplBruto[nivel - 1]?.[sel - 1] ?? null,
+  };
+}
+
+export interface ResumoDaPlataforma {
+  /** Y47/Y58 — quente + frio. */
+  vendas: number | null;
+  leads: number | null;
+  /** `vendas ÷ leads` da plataforma; `null` sem base. */
+  conversao: number | null;
+  vendasBruto: number | null;
+  leadsBruto: number | null;
+  conversaoBruto: number | null;
+}
+
+export interface TotaisPagos {
+  meta: ResumoDaPlataforma;
+  google: ResumoDaPlataforma;
+  /** Y46 — as QUATRO fontes (D13 — não reproduz DV-013, que somava só os quentes). */
+  vendas: number | null;
+  leads: number | null;
+  vendasBruto: number | null;
+  leadsBruto: number | null;
+}
+
+function resumoDaPlataforma(fontes: readonly ResumoDaFonte[]): ResumoDaPlataforma {
+  const t = totaisDaCombinacao(fontes);
+  return {
+    vendas: t.vendas,
+    leads: t.leads,
+    conversao: div(t.vendas, t.leads),
+    vendasBruto: t.vendasBruto,
+    leadsBruto: t.leadsBruto,
+    conversaoBruto: div(t.vendasBruto, t.leadsBruto),
+  };
+}
+
+export function totaisPagos(fontes: Record<FontePaga, ResumoDaFonte>): TotaisPagos {
+  const meta = resumoDaPlataforma([fontes.meta_quente, fontes.meta_frio]);
+  const google = resumoDaPlataforma([fontes.google_quente, fontes.google_frio]);
+  const todas = totaisDaCombinacao(FONTES.map((f) => fontes[f]));
+  return { meta, google, vendas: todas.vendas, leads: todas.leads, vendasBruto: todas.vendasBruto, leadsBruto: todas.leadsBruto };
+}
+
+// ------------------------------------------------------------------
+// Uma combinação paga inteira (a coluna Y, AA, … da aba 3)
+// ------------------------------------------------------------------
+
+export interface CombinacaoPaga {
+  indice: number;
+  /** Y12, Y13, Y15, Y16. */
+  receitas: Record<FontePaga, number>;
+  /** Y11 e Y14. */
+  receitaMeta: number;
+  receitaGoogle: number;
+  /** Y10, Y18, Y20, Y22…Y26 e Y28 — aqui `cadeia.mc` é a RECEITA LÍQUIDA (antes do tráfego). */
+  cadeia: CadeiaDeDeducoes;
+  receitaLiquida: number;
+  trafego: Trafego;
+  mc: McPorPlataforma;
+  /** Contra `metaMargemPagos` (F14 da 48.1). */
+  meta: AtingimentoDaMeta;
+  fontes: Record<FontePaga, ResumoDaFonte>;
+  totais: TotaisPagos;
+}
+
+export function combinacaoPaga(args: {
+  indice: number;
+  grades: Record<FontePaga, GradePaga>;
+  selecoes: SelecoesPorFonte;
+  /** `nivelAssumido` de cada bloco. */
+  niveis: Record<FontePaga, number | null>;
+  percentuais: PercentuaisDeCusto;
+  /** `invest<Fonte>` da 48.1 — o tráfego. */
+  verbas: Record<FontePaga, Entrada>;
+  /** `metaMargemPagos` da 48.1 (F14). */
+  metaMargemPagos: Entrada;
+}): CombinacaoPaga {
+  const receitas = {} as Record<FontePaga, number>;
+  const fontes = {} as Record<FontePaga, ResumoDaFonte>;
+  for (const f of FONTES) {
+    const resumo = resumoDaFonte(args.grades[f], args.selecoes[f], args.niveis[f]);
+    fontes[f] = resumo;
+    receitas[f] = resumo.receita;
+  }
+  const receitaMeta = receitas.meta_quente + receitas.meta_frio;
+  const receitaGoogle = receitas.google_quente + receitas.google_frio;
+  const cadeia = cadeiaDeDeducoes(
+    FONTES.map((f) => receitas[f]),
+    args.percentuais,
+  );
+  const trafego = trafegoDaCombinacao(args.verbas, cadeia.receitaBruta);
+  const mc = mcPorPlataforma(receitas, trafego, args.percentuais, cadeia.receitaBruta);
+  return {
+    indice: args.indice,
+    receitas,
+    receitaMeta,
+    receitaGoogle,
+    cadeia,
+    receitaLiquida: cadeia.mc,
+    trafego,
+    mc,
+    meta: atingimentoDaMeta(mc.pagos, args.metaMargemPagos),
+    fontes,
+    totais: totaisPagos(fontes),
   };
 }
