@@ -86,6 +86,25 @@ export interface RepositorioDePlanejamento {
   lerRotulos(funnelId: string): Promise<RotulosLidos | null>;
   /** Upsert dos 5 cenários, numa transação. Exige o simulador (`idDoSimulador`). */
   gravarRotulos(simulatorId: string, dados: RotulosDoSimulador): Promise<RotulosLidos>;
+
+  // ---- Story 48.9 — bases possíveis (lançamentos anteriores do projeto) ----
+  /**
+   * Todos os funis de LANÇAMENTO do projeto, com a data de criação e se já
+   * têm simulador salvo. Quem filtra por tipo e por "anterior" é o módulo puro
+   * do shared — aqui só sai o que o banco sabe.
+   */
+  funisDeLancamento(projectId: string): Promise<FunilDeLancamento[]>;
+}
+
+/** Story 48.9 — um funil de lançamento do projeto, como candidato a base. */
+export interface FunilDeLancamento {
+  id: string;
+  nome: string;
+  criadoEm: string;
+  /** `true` quando existe linha em `plan_simulators` — só quem já preencheu serve de base. */
+  temSimulador: boolean;
+  /** ISO da última gravação dos Inputs Financeiros; `null` sem simulador. */
+  simuladorAtualizadoEm: string | null;
 }
 
 /** Story 48.5 — o que a API devolve para a aba 4: só os rótulos + o carimbo mais recente. */
@@ -428,13 +447,34 @@ export function criarRepositorioDePlanejamento(db: Database): RepositorioDePlane
         return linhasParaRotulos(linhas);
       });
     },
+
+    // ---- Story 48.9 ----
+    async funisDeLancamento(projectId) {
+      const linhas = await db
+        .select({
+          id: funnels.id,
+          nome: funnels.name,
+          criadoEm: funnels.createdAt,
+          simuladorAtualizadoEm: planSimulators.updatedAt,
+        })
+        .from(funnels)
+        .leftJoin(planSimulators, eq(planSimulators.funnelId, funnels.id))
+        .where(and(eq(funnels.projectId, projectId), eq(funnels.type, "launch")));
+      return linhas.map((l) => ({
+        id: l.id,
+        nome: l.nome,
+        criadoEm: l.criadoEm.toISOString(),
+        temSimulador: l.simuladorAtualizadoEm !== null,
+        simuladorAtualizadoEm: l.simuladorAtualizadoEm?.toISOString() ?? null,
+      }));
+    },
   };
 }
 
 /** Só para teste e para a rota: um repositório em memória com a mesma interface. */
 export function criarRepositorioEmMemoria(seed: {
   projetos: { id: string; membros?: string[] }[];
-  funis: { id: string; projectId: string; type: string }[];
+  funis: { id: string; projectId: string; type: string; nome?: string; criadoEm?: string }[];
 }): RepositorioDePlanejamento & {
   linhas: Map<string, InputsLidos>;
   organicos: Map<string, OrganicosLidos>;
@@ -504,6 +544,17 @@ export function criarRepositorioEmMemoria(seed: {
       const gravado: RotulosLidos = { cenarios: structuredClone(dados.cenarios), updatedAt: new Date().toISOString() };
       rotulos.set(simulatorId, gravado);
       return gravado;
+    },
+    async funisDeLancamento(projectId) {
+      return seed.funis
+        .filter((f) => f.projectId === projectId && f.type === "launch")
+        .map((f) => ({
+          id: f.id,
+          nome: f.nome ?? f.id,
+          criadoEm: f.criadoEm ?? "2026-01-01T00:00:00.000Z",
+          temSimulador: linhas.has(f.id),
+          simuladorAtualizadoEm: linhas.get(f.id)?.updatedAt ?? null,
+        }));
     },
   };
 }
