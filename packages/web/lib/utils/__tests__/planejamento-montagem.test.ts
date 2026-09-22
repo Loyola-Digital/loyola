@@ -65,11 +65,15 @@ describe("montarOrganicos", () => {
     expect(m.niveis.whatsapp).toBe(3);
   });
 
-  it("campo inválido (NaN) entra como vazio; payload vazio não quebra (grades zeradas, seleções vazias → receita 0)", () => {
+  it("TEST-001 (gate): campo inválido (NaN) entra como VAZIO — em `fracaoCenario1` isso é observável: vazio = 70 % (D1), NaN cru zeraria a série", () => {
     const v = organicosDoApendice();
+    v.blocos.email.fracaoCenario1 = Number.NaN; // o único campo em que a sanitização muda o número (o motor zera NaN nos outros)
     v.blocos.email.taxaCaptacao = Number.NaN;
     expect(() => montarOrganicos(ABA_1, v)).not.toThrow();
-    expect(montarOrganicos(ABA_1, v).grades.email.leadsEsperados).toBe(0);
+    const m = montarOrganicos(ABA_1, v);
+    expect(m.grades.email.receita[0]).toBeCloseTo(0.7 * m.origens.email.metaReceita!, 6);
+    expect(m.grades.email.receita[0]).not.toBe(0);
+    expect(m.grades.email.leadsEsperados).toBe(0);
     const vazio = montarOrganicos(ABA_1, organicosVazios());
     expect(vazio.combinacoes[0].cadeia.receitaBruta).toBe(0);
     expect(vazio.combinacoes).toHaveLength(5);
@@ -87,6 +91,14 @@ describe("montarPagos", () => {
     expect(m.verbas.google_quente).toBe(45000);
     expect(m.niveis.meta_quente).toBe(4);
     expect(c1.totais.vendas).toBe(176);
+  });
+
+  it("TEST-001 (gate): `fracaoCenario1` = NaN entra como vazio → cenário 1 = 70 % da meta, não zero", () => {
+    const v = pagosDoApendice();
+    v.blocos.google_frio.fracaoCenario1 = Number.NaN;
+    const m = montarPagos(ABA_1, v);
+    expect(m.grades.google_frio.receita[0]).toBeCloseTo(0.7 * 31250, 2);
+    expect(m.grades.google_frio.receita[0]).not.toBe(0);
   });
 
   it("payload vazio não quebra: receita 0, MC = −tráfego", () => {
