@@ -40,13 +40,13 @@ const A: InputsFinanceiros = {
   pctOrgWhatsapp: 0.4,
   pctOrgEmail: 0.3,
   pctOrgInstagram: 0.15,
-  pctOrgTelegram: 0.05,
+  pctOrgManychat: 0.05,
   pctOrgYoutube: 0.05,
   pctOrgAreaMembros: 0.05,
   baseWhatsapp: 25000,
   baseEmail: 50000,
   baseInstagram: 30000,
-  baseTelegram: 8000,
+  baseManychat: 8000,
   baseYoutube: 120000,
   baseAreaMembros: 6000,
 };
@@ -189,7 +189,7 @@ describe("§1.4 tabela 3 — orgânicos (E41, F42:G47) e status E40 (RN-008, RN-
     perto(d.canais.whatsapp.receita, 115384.62);
     perto(d.canais.email.receita, 86538.46);
     perto(d.canais.instagram.receita, 43269.23);
-    perto(d.canais.telegram.receita, 14423.08);
+    perto(d.canais.manychat.receita, 14423.08);
     perto(d.receitaMetaOrganicosSoma, 288461.54);
     // invariante (PO-03 b): com os % fechando 100 %, a soma por canal é a receita dos orgânicos
     expect(d.receitaMetaOrganicosSoma as number).toBeCloseTo(d.receitaMetaOrganicos as number, 6);
@@ -211,7 +211,7 @@ describe("§1.4 tabela 3 — orgânicos (E41, F42:G47) e status E40 (RN-008, RN-
   });
 
   it("linha 4: tudo vazio → ⚠️ Falta distribuir 100%; canais em zero (não null — a base 0,65 existe)", () => {
-    const d = derivarInputsFinanceiros({ ...A, pctOrgWhatsapp: null, pctOrgEmail: null, pctOrgInstagram: null, pctOrgTelegram: null, pctOrgYoutube: null, pctOrgAreaMembros: null });
+    const d = derivarInputsFinanceiros({ ...A, pctOrgWhatsapp: null, pctOrgEmail: null, pctOrgInstagram: null, pctOrgManychat: null, pctOrgYoutube: null, pctOrgAreaMembros: null });
     expect(d.statusOrganicos.texto).toBe("⚠️ Falta distribuir 100%");
     expect(d.canais.whatsapp.margem).toBe(0);
     expect(d.canais.whatsapp.receita).toBe(0);
@@ -227,7 +227,7 @@ describe("§1.4 tabela 3 — orgânicos (E41, F42:G47) e status E40 (RN-008, RN-
     expect(statusDaDistribuicao([0.15, 0.05, 0.4, 0.3, 0.05, 0.05]).texto).toBe("✅ 100%");
     expect(statusDaDistribuicao([0.3, 0.3, 0.1, 0.1, 0.1, 0.1]).texto).toBe("✅ 100%");
     expect(statusDaDistribuicao([0.1, 0.2, 0.7, null, undefined, 0]).estado).toBe("ok");
-    const d = derivarInputsFinanceiros({ ...A, pctOrgWhatsapp: 0.7, pctOrgEmail: 0.2, pctOrgInstagram: 0.1, pctOrgTelegram: 0, pctOrgYoutube: 0, pctOrgAreaMembros: 0 });
+    const d = derivarInputsFinanceiros({ ...A, pctOrgWhatsapp: 0.7, pctOrgEmail: 0.2, pctOrgInstagram: 0.1, pctOrgManychat: 0, pctOrgYoutube: 0, pctOrgAreaMembros: 0 });
     expect(d.statusOrganicos.texto).toBe("✅ 100%");
   });
 

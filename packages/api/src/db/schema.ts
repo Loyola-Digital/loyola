@@ -5402,7 +5402,7 @@ export const planSimulators = pgTable(
     pctOrgWhatsapp: numeric("pct_org_whatsapp", { precision: 12, scale: 6 }),
     pctOrgEmail: numeric("pct_org_email", { precision: 12, scale: 6 }),
     pctOrgInstagram: numeric("pct_org_instagram", { precision: 12, scale: 6 }),
-    pctOrgTelegram: numeric("pct_org_telegram", { precision: 12, scale: 6 }),
+    pctOrgManychat: numeric("pct_org_manychat", { precision: 12, scale: 6 }),
     pctOrgYoutube: numeric("pct_org_youtube", { precision: 12, scale: 6 }),
     pctOrgAreaMembros: numeric("pct_org_area_membros", { precision: 12, scale: 6 }),
 
@@ -5410,7 +5410,7 @@ export const planSimulators = pgTable(
     baseWhatsapp: integer("base_whatsapp"),
     baseEmail: integer("base_email"),
     baseInstagram: integer("base_instagram"),
-    baseTelegram: integer("base_telegram"),
+    baseManychat: integer("base_manychat"),
     baseYoutube: integer("base_youtube"),
     baseAreaMembros: integer("base_area_membros"),
 
@@ -5426,7 +5426,7 @@ export const planSimulators = pgTable(
  *
  * Tabela-filha de `plan_simulators` (A3 da 48.1): uma linha por (simulador,
  * canal), canal no domínio `CANAIS_ORGANICOS` do shared (`whatsapp`, `email`,
- * `instagram`, `telegram`, `youtube`, `area_membros` — a taxonomia canônica,
+ * `instagram`, `manychat`, `youtube`, `area_membros` — a taxonomia canônica,
  * PO-01). Persistem SÓ as sete entradas manuais do bloco (E5): a grade de
  * cenários × níveis é recalculada na tela pelo `gradeOrganica` da 48.2.
  *
@@ -5489,7 +5489,7 @@ export const planOrganicCombinations = pgTable(
     selWhatsapp: integer("sel_whatsapp"),
     selEmail: integer("sel_email"),
     selInstagram: integer("sel_instagram"),
-    selTelegram: integer("sel_telegram"),
+    selManychat: integer("sel_manychat"),
     selYoutube: integer("sel_youtube"),
     selAreaMembros: integer("sel_area_membros"),
 

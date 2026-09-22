@@ -146,7 +146,7 @@ const CAMPOS_INTEIROS: ReadonlySet<CampoDosInputs> = new Set<CampoDosInputs>([
   "baseWhatsapp",
   "baseEmail",
   "baseInstagram",
-  "baseTelegram",
+  "baseManychat",
   "baseYoutube",
   "baseAreaMembros",
 ]);
@@ -174,7 +174,7 @@ const COLUNA_DA_SELECAO = {
   whatsapp: "selWhatsapp",
   email: "selEmail",
   instagram: "selInstagram",
-  telegram: "selTelegram",
+  manychat: "selManychat",
   youtube: "selYoutube",
   area_membros: "selAreaMembros",
 } as const satisfies Record<CanalOrganico, keyof typeof planOrganicCombinations.$inferSelect>;
@@ -350,7 +350,7 @@ export function criarRepositorioDePlanejamento(db: Database): RepositorioDePlane
             selWhatsapp: sel?.whatsapp ?? null,
             selEmail: sel?.email ?? null,
             selInstagram: sel?.instagram ?? null,
-            selTelegram: sel?.telegram ?? null,
+            selManychat: sel?.manychat ?? null,
             selYoutube: sel?.youtube ?? null,
             selAreaMembros: sel?.area_membros ?? null,
             updatedAt: agora,

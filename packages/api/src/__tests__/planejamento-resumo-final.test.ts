@@ -57,15 +57,15 @@ const ABA_1: InputsFinanceiros = {
   pctReembolso: 0.04, pctMarketplace: 0.09, pctImposto: 0.12, pctCustoProduto: 0.06, pctComissoes: 0.03, pctOutrosCustos: 0.01,
   metaMargemTotal: 250000, pctMargemPagos: 0.25, ticketMedio: 1200, mcAlvoPagos: 0.3,
   investimentoAnuncios: 100000, pctInvestMeta: 0.4, pctMetaQuente: 0.8, pctGoogleQuente: 0.75,
-  pctOrgWhatsapp: 0.4, pctOrgEmail: 0.3, pctOrgInstagram: 0.15, pctOrgTelegram: 0.05, pctOrgYoutube: 0.05, pctOrgAreaMembros: 0.05,
-  baseWhatsapp: 25000, baseEmail: 50000, baseInstagram: 30000, baseTelegram: 8000, baseYoutube: 120000, baseAreaMembros: 6000,
+  pctOrgWhatsapp: 0.4, pctOrgEmail: 0.3, pctOrgInstagram: 0.15, pctOrgManychat: 0.05, pctOrgYoutube: 0.05, pctOrgAreaMembros: 0.05,
+  baseWhatsapp: 25000, baseEmail: 50000, baseInstagram: 30000, baseManychat: 8000, baseYoutube: 120000, baseAreaMembros: 6000,
 };
 
 const BLOCOS_ORG: Record<CanalOrganico, BlocoOrganico> = {
   whatsapp: { conversaoMedia: 0.04, variacaoConversao: 0.2, variacaoReceita: 0.1, taxaCaptacao: 0.12, faixaVariacao: 0.1, fracaoCenario1: null, nivelAssumido: 3 },
   email: { conversaoMedia: 0.04, variacaoConversao: 0.3, variacaoReceita: 0.1, taxaCaptacao: 0.05, faixaVariacao: 0.1, fracaoCenario1: null, nivelAssumido: 2 },
   instagram: { conversaoMedia: 0.02, variacaoConversao: 0.25, variacaoReceita: 0.1, taxaCaptacao: 0.03, faixaVariacao: 0.1, fracaoCenario1: null, nivelAssumido: 4 },
-  telegram: { conversaoMedia: 0.04, variacaoConversao: 0.5, variacaoReceita: 0.1, taxaCaptacao: 0.15, faixaVariacao: 0.2, fracaoCenario1: null, nivelAssumido: 1 },
+  manychat: { conversaoMedia: 0.04, variacaoConversao: 0.5, variacaoReceita: 0.1, taxaCaptacao: 0.15, faixaVariacao: 0.2, fracaoCenario1: null, nivelAssumido: 1 },
   youtube: { conversaoMedia: 0.03, variacaoConversao: 0.3, variacaoReceita: 0.2, taxaCaptacao: 0.02, faixaVariacao: 0.1, fracaoCenario1: null, nivelAssumido: 5 },
   area_membros: { conversaoMedia: 0.04, variacaoConversao: 0.4, variacaoReceita: 0.1, taxaCaptacao: 0.06, faixaVariacao: 0.1, fracaoCenario1: null, nivelAssumido: 3 },
 };

@@ -208,7 +208,7 @@ export const ROTULO_DO_CANAL: Record<CanalOrganico, string> = {
   whatsapp: "WhatsApp",
   email: "Email",
   instagram: "Instagram",
-  telegram: "Telegram",
+  manychat: "Manychat",
   youtube: "YouTube",
   area_membros: "Área de Membros",
 };

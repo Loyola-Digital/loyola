@@ -103,7 +103,7 @@ const CANAIS: { chave: keyof DerivadosFinanceiros["canais"]; pct: Campo; base: C
   { chave: "whatsapp", pct: "pctOrgWhatsapp", base: "baseWhatsapp", rotulo: "WhatsApp" },
   { chave: "email", pct: "pctOrgEmail", base: "baseEmail", rotulo: "Email" },
   { chave: "instagram", pct: "pctOrgInstagram", base: "baseInstagram", rotulo: "Instagram" },
-  { chave: "telegram", pct: "pctOrgTelegram", base: "baseTelegram", rotulo: "Telegram" },
+  { chave: "manychat", pct: "pctOrgManychat", base: "baseManychat", rotulo: "Manychat" },
   { chave: "youtube", pct: "pctOrgYoutube", base: "baseYoutube", rotulo: "YouTube" },
   { chave: "areaMembros", pct: "pctOrgAreaMembros", base: "baseAreaMembros", rotulo: "Área de Membros" },
 ];

@@ -35,8 +35,8 @@ const ABA_1: InputsFinanceiros = {
   pctReembolso: 0.04, pctMarketplace: 0.09, pctImposto: 0.12, pctCustoProduto: 0.06, pctComissoes: 0.03, pctOutrosCustos: 0.01,
   metaMargemTotal: 250000, pctMargemPagos: 0.25, ticketMedio: 1200, mcAlvoPagos: 0.3,
   investimentoAnuncios: 100000, pctInvestMeta: 0.4, pctMetaQuente: 0.8, pctGoogleQuente: 0.75,
-  pctOrgWhatsapp: 0.4, pctOrgEmail: 0.3, pctOrgInstagram: 0.15, pctOrgTelegram: 0.05, pctOrgYoutube: 0.05, pctOrgAreaMembros: 0.05,
-  baseWhatsapp: 25000, baseEmail: 50000, baseInstagram: 30000, baseTelegram: 8000, baseYoutube: 120000, baseAreaMembros: 6000,
+  pctOrgWhatsapp: 0.4, pctOrgEmail: 0.3, pctOrgInstagram: 0.15, pctOrgManychat: 0.05, pctOrgYoutube: 0.05, pctOrgAreaMembros: 0.05,
+  baseWhatsapp: 25000, baseEmail: 50000, baseInstagram: 30000, baseManychat: 8000, baseYoutube: 120000, baseAreaMembros: 6000,
 };
 
 describe("paraFormularioPagos / paraPayloadPagos (AC17)", () => {
