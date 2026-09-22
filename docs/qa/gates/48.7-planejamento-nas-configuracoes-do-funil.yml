@@ -1,0 +1,27 @@
+schema: 1
+story: '48.7'
+story_title: 'Planejamento nas Configurações do Funil (a entrada estava escondida)'
+gate: PASS
+status_reason: 'Mudança de navegação mínima e correta: a entrada aparece como primeiro bloco do popover da engrenagem, só em funil de lançamento, e a regra sai de três `=== "launch"` soltos para uma função em `lib/utils` — que é onde o runner do web alcança. O caminho ganha o teste que o incidente pedia: `planejamentoHref` sem `stages/` (o 404 de 22/09) e a condição recusando perpétuo/mobile — QA re-mutou os dois: 2 falhas cada. Cartão e sub-página intactos (decisão do Danilo). Sem API, migration ou contrato.'
+reviewer: 'Quinn'
+updated: '2026-09-22T09:40:00Z'
+branch: 'feat/48.7-planejamento-nas-configuracoes'
+commits: ['f925836a']
+
+top_issues: []
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Diff da tela conferido linha a linha: três imports, um bloco condicional no popover e a troca da condição do cartão pela função. A seção é `Link` + `Button asChild` (padrão do repo) e só renderiza sob `temPainelDePlanejamento(funnelData.funnelType)` — mesma guarda do cartão, então nenhum funil perpétuo/mobile ganha a entrada. `planejamentoHref` migrou para `lib/utils` e o cartão REEXPORTA (nenhum import existente quebra; os consumidores são o próprio cartão, a página do funil e o teste). A sub-página passou a usar a função na guarda de tipo, e não sobrou nenhum `=== "launch"` solto no caminho do planejamento (os 15 restantes no app são de outros domínios, fora do escopo). `ABAS_DO_PLANEJAMENTO` fixa os quatro `value` do contrato de URL do Epic 46 sem renomear nada.'
+  unit_tests: '5 testes novos; suíte do web 1 403/1 403 em 104 arquivos. Mutações do QA: caminho com `stages/x/` → 2 falhas ✓; condição `!== "mobile"` (aceitaria perpétuo) → 2 falhas ✓. Ambas restauradas byte a byte.'
+  acceptance_criteria: 'AC1 ✓ (seção com título, uma linha de explicação e botão; só em lançamento) · AC2 ✓ (`temPainelDePlanejamento` única fonte; `planejamentoHref` em `lib/utils` com reexportação) · AC3 ✓ (caixa/espaço não normalizados; quatro abas; sem `stages/`; sem query vazia) · AC4 ✓ (cartão, sub-página, abas e rotas iguais; guest continua vendo a entrada e sendo bloqueado só no salvar) · AC5 ✓ (eslint 0; `next build` EXIT 0; `tsc` 0 depois do build; vitest verde).'
+  no_regressions: 'Nada de API, migration ou contrato. A rota `/planejamento` e o cartão seguem; o build mantém `/projects/[id]/funnels/[funnelId]/planejamento` como única rota de planejamento. CI remoto indisponível (cota de minutos do mês esgotada) — verificação pelo CI local, pacote a pacote.'
+  performance: 'N/A — um bloco de JSX dentro de um popover.'
+  security: 'N/A — navegação; a permissão continua na sub-página (guest lê, não salva).'
+  documentation: 'Módulo novo explica o incidente que o originou (o 404 com `stages/`) e por que a função vive em `lib/utils`. Comentário no popover diz por que a entrada está em primeiro lugar e que o cartão continua.'
+  api_contract: 'N/A.'
+
+notes:
+  - 'A entrada agora existe em dois lugares (cartão no grid + Configurações do Funil) por decisão do Danilo — o cartão fica porque a URL já estava validada e pode estar salva.'
+  - 'Validação visual pendente: engrenagem → "Painel de Planejamento" → "Abrir Planejamento" abre as quatro abas; em funil perpétuo a seção não aparece.'
