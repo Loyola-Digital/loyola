@@ -64,7 +64,7 @@ export const CANAIS_ORGANICOS = [
   "whatsapp",
   "email",
   "instagram",
-  "telegram",
+  "manychat",
   "youtube",
   "area_membros",
 ] as const;

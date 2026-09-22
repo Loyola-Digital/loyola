@@ -78,14 +78,14 @@ export interface InputsFinanceiros {
   pctOrgWhatsapp: Entrada;
   pctOrgEmail: Entrada;
   pctOrgInstagram: Entrada;
-  pctOrgTelegram: Entrada;
+  pctOrgManychat: Entrada;
   pctOrgYoutube: Entrada;
   pctOrgAreaMembros: Entrada;
   // bases (G49:G54) — contagens
   baseWhatsapp: Entrada;
   baseEmail: Entrada;
   baseInstagram: Entrada;
-  baseTelegram: Entrada;
+  baseManychat: Entrada;
   baseYoutube: Entrada;
   baseAreaMembros: Entrada;
 }
@@ -95,7 +95,7 @@ export const CANAIS_ORGANICOS_DA_ABA_1 = [
   "whatsapp",
   "email",
   "instagram",
-  "telegram",
+  "manychat",
   "youtube",
   "areaMembros",
 ] as const;
@@ -120,13 +120,13 @@ export const CAMPOS_DOS_INPUTS_FINANCEIROS = [
   "pctOrgWhatsapp",
   "pctOrgEmail",
   "pctOrgInstagram",
-  "pctOrgTelegram",
+  "pctOrgManychat",
   "pctOrgYoutube",
   "pctOrgAreaMembros",
   "baseWhatsapp",
   "baseEmail",
   "baseInstagram",
-  "baseTelegram",
+  "baseManychat",
   "baseYoutube",
   "baseAreaMembros",
 ] as const satisfies readonly (keyof InputsFinanceiros)[];
@@ -324,7 +324,7 @@ export function derivarInputsFinanceiros(e: InputsFinanceiros): DerivadosFinance
     whatsapp: e.pctOrgWhatsapp,
     email: e.pctOrgEmail,
     instagram: e.pctOrgInstagram,
-    telegram: e.pctOrgTelegram,
+    manychat: e.pctOrgManychat,
     youtube: e.pctOrgYoutube,
     areaMembros: e.pctOrgAreaMembros,
   };

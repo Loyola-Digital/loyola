@@ -14,15 +14,15 @@ const ABA_1: InputsFinanceiros = {
   pctReembolso: 0.04, pctMarketplace: 0.09, pctImposto: 0.12, pctCustoProduto: 0.06, pctComissoes: 0.03, pctOutrosCustos: 0.01,
   metaMargemTotal: 250000, pctMargemPagos: 0.25, ticketMedio: 1200, mcAlvoPagos: 0.3,
   investimentoAnuncios: 100000, pctInvestMeta: 0.4, pctMetaQuente: 0.8, pctGoogleQuente: 0.75,
-  pctOrgWhatsapp: 0.4, pctOrgEmail: 0.3, pctOrgInstagram: 0.15, pctOrgTelegram: 0.05, pctOrgYoutube: 0.05, pctOrgAreaMembros: 0.05,
-  baseWhatsapp: 25000, baseEmail: 50000, baseInstagram: 30000, baseTelegram: 8000, baseYoutube: 120000, baseAreaMembros: 6000,
+  pctOrgWhatsapp: 0.4, pctOrgEmail: 0.3, pctOrgInstagram: 0.15, pctOrgManychat: 0.05, pctOrgYoutube: 0.05, pctOrgAreaMembros: 0.05,
+  baseWhatsapp: 25000, baseEmail: 50000, baseInstagram: 30000, baseManychat: 8000, baseYoutube: 120000, baseAreaMembros: 6000,
 };
 
 function organicosDoApendice() {
   const v = organicosVazios();
   const p: Record<string, number[]> = {
     whatsapp: [0.04, 0.2, 0.1, 0.12, 0.1, 3], email: [0.04, 0.3, 0.1, 0.05, 0.1, 2], instagram: [0.02, 0.25, 0.1, 0.03, 0.1, 4],
-    telegram: [0.04, 0.5, 0.1, 0.15, 0.2, 1], youtube: [0.03, 0.3, 0.2, 0.02, 0.1, 5], area_membros: [0.04, 0.4, 0.1, 0.06, 0.1, 3],
+    manychat: [0.04, 0.5, 0.1, 0.15, 0.2, 1], youtube: [0.03, 0.3, 0.2, 0.02, 0.1, 5], area_membros: [0.04, 0.4, 0.1, 0.06, 0.1, 3],
   };
   for (const c of Object.keys(v.blocos) as (keyof typeof v.blocos)[]) {
     const [conversaoMedia, variacaoConversao, variacaoReceita, taxaCaptacao, faixaVariacao, nivelAssumido] = p[c];
@@ -30,7 +30,7 @@ function organicosDoApendice() {
   }
   const sel = [[4, 3, 2, 1, 5, 6], [6, 5, 3, 2, 8, 7], [5, 4, 2, 3, 6, 5], [3, 3, 1, 2, 4, 4], [2, 1, 2, 1, 3, 3]];
   v.combinacoes.forEach((c, k) => {
-    (["whatsapp", "email", "instagram", "telegram", "youtube", "area_membros"] as const).forEach((canal, i) => (c.selecoes[canal] = sel[k][i]));
+    (["whatsapp", "email", "instagram", "manychat", "youtube", "area_membros"] as const).forEach((canal, i) => (c.selecoes[canal] = sel[k][i]));
   });
   return v;
 }

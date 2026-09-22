@@ -41,8 +41,8 @@ const ABA_1: InputsFinanceiros = {
   pctReembolso: 0.04, pctMarketplace: 0.09, pctImposto: 0.12, pctCustoProduto: 0.06, pctComissoes: 0.03, pctOutrosCustos: 0.01,
   metaMargemTotal: 250000, pctMargemPagos: 0.25, ticketMedio: 1200, mcAlvoPagos: 0.3,
   investimentoAnuncios: 100000, pctInvestMeta: 0.4, pctMetaQuente: 0.8, pctGoogleQuente: 0.75,
-  pctOrgWhatsapp: 0.4, pctOrgEmail: 0.3, pctOrgInstagram: 0.15, pctOrgTelegram: 0.05, pctOrgYoutube: 0.05, pctOrgAreaMembros: 0.05,
-  baseWhatsapp: 25000, baseEmail: 50000, baseInstagram: 30000, baseTelegram: 8000, baseYoutube: 120000, baseAreaMembros: 6000,
+  pctOrgWhatsapp: 0.4, pctOrgEmail: 0.3, pctOrgInstagram: 0.15, pctOrgManychat: 0.05, pctOrgYoutube: 0.05, pctOrgAreaMembros: 0.05,
+  baseWhatsapp: 25000, baseEmail: 50000, baseInstagram: 30000, baseManychat: 8000, baseYoutube: 120000, baseAreaMembros: 6000,
 };
 
 describe("paraFormularioOrganicos / paraPayloadOrganicos (AC17)", () => {
@@ -93,11 +93,11 @@ describe("validarOrganicos — as faixas da API (AC2)", () => {
   it("fração fora de 0…1, texto (NaN) e nível fora de 1…8 marcam erro no campo certo do canal certo", () => {
     const p = paraPayloadOrganicos(paraFormularioOrganicos(salvo()));
     p.blocos.email.conversaoMedia = 1.5;
-    p.blocos.telegram.faixaVariacao = Number.NaN;
+    p.blocos.manychat.faixaVariacao = Number.NaN;
     p.blocos.youtube.nivelAssumido = 9;
     const erros = validarOrganicos(p);
     expect(erros.email?.conversaoMedia).toBe("Entre 0 % e 100 %");
-    expect(erros.telegram?.faixaVariacao).toBe("Só número");
+    expect(erros.manychat?.faixaVariacao).toBe("Só número");
     expect(erros.youtube?.nivelAssumido).toMatch(/1…8/);
     expect(erros.whatsapp).toBeUndefined();
     expect(temErros(erros)).toBe(true);
@@ -206,12 +206,12 @@ describe("diagnosticoDaAba1 (AC13)", () => {
   });
 
   it("nomeia o input que falta: meta, ticket, % do canal e base do canal — inclusive Área de Membros (PO-01)", () => {
-    const e: InputsFinanceiros = { ...ABA_1, metaMargemTotal: null, ticketMedio: null, pctOrgAreaMembros: null, baseTelegram: null };
+    const e: InputsFinanceiros = { ...ABA_1, metaMargemTotal: null, ticketMedio: null, pctOrgAreaMembros: null, baseManychat: null };
     const faltas = diagnosticoDaAba1(e, derivarInputsFinanceiros(e));
     expect(faltas).toContain("Meta de Margem de Contribuição Total");
     expect(faltas.some((f) => f.startsWith("Ticket Médio"))).toBe(true);
     expect(faltas).toContain("% da meta — Área de Membros");
-    expect(faltas).toContain("Base Telegram");
+    expect(faltas).toContain("Base Manychat");
     expect(faltas).not.toContain("Base WhatsApp");
   });
 

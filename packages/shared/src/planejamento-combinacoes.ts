@@ -71,7 +71,7 @@ export const COMBINACOES = 5;
 /** Índices 1…5, na ordem da tela. */
 export const INDICES_DAS_COMBINACOES = [1, 2, 3, 4, 5] as const;
 /** Os seis canais, na ordem da planilha — cópia local da 48.2 (módulo folha não importa valor). */
-const CANAIS = ["whatsapp", "email", "instagram", "telegram", "youtube", "area_membros"] as const satisfies readonly CanalOrganico[];
+const CANAIS = ["whatsapp", "email", "instagram", "manychat", "youtube", "area_membros"] as const satisfies readonly CanalOrganico[];
 /** Dez cenários — o mesmo `CENARIOS` da 48.2, repetido pelo mesmo motivo. O nº de níveis vem da própria grade (`escada.length`). */
 const CENARIOS = 10;
 
@@ -165,7 +165,7 @@ export const CANAL_NA_ABA_1: Record<CanalOrganico, CanalDaAba1> = {
   whatsapp: "whatsapp",
   email: "email",
   instagram: "instagram",
-  telegram: "telegram",
+  manychat: "manychat",
   youtube: "youtube",
   area_membros: "areaMembros",
 };
@@ -175,7 +175,7 @@ export const BASE_DO_CANAL: Record<CanalOrganico, keyof InputsFinanceiros> = {
   whatsapp: "baseWhatsapp",
   email: "baseEmail",
   instagram: "baseInstagram",
-  telegram: "baseTelegram",
+  manychat: "baseManychat",
   youtube: "baseYoutube",
   area_membros: "baseAreaMembros",
 };

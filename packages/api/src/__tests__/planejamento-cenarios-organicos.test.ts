@@ -38,7 +38,7 @@ const BLOCOS: Record<(typeof CANAIS_ORGANICOS)[number], ParametrosOrganicos> = {
   whatsapp: { metaReceita: 115384.62, base: 25000, ticketMedio: TICKET, conversaoMedia: 0.04, variacaoConversao: 0.2, variacaoReceita: 0.1, taxaCaptacao: 0.12, faixaVariacao: 0.1 },
   email: { metaReceita: 86538.46, base: 50000, ticketMedio: TICKET, conversaoMedia: 0.04, variacaoConversao: 0.3, variacaoReceita: 0.1, taxaCaptacao: 0.05, faixaVariacao: 0.1 },
   instagram: { metaReceita: 43269.23, base: 30000, ticketMedio: TICKET, conversaoMedia: 0.02, variacaoConversao: 0.25, variacaoReceita: 0.1, taxaCaptacao: 0.03, faixaVariacao: 0.1 },
-  telegram: { metaReceita: 14423.08, base: 8000, ticketMedio: TICKET, conversaoMedia: 0.04, variacaoConversao: 0.5, variacaoReceita: 0.1, taxaCaptacao: 0.15, faixaVariacao: 0.2 },
+  manychat: { metaReceita: 14423.08, base: 8000, ticketMedio: TICKET, conversaoMedia: 0.04, variacaoConversao: 0.5, variacaoReceita: 0.1, taxaCaptacao: 0.15, faixaVariacao: 0.2 },
   youtube: { metaReceita: 14423.08, base: 120000, ticketMedio: TICKET, conversaoMedia: 0.03, variacaoConversao: 0.3, variacaoReceita: 0.2, taxaCaptacao: 0.02, faixaVariacao: 0.1 },
   area_membros: { metaReceita: 14423.08, base: 6000, ticketMedio: TICKET, conversaoMedia: 0.04, variacaoConversao: 0.4, variacaoReceita: 0.1, taxaCaptacao: 0.06, faixaVariacao: 0.1 },
 };

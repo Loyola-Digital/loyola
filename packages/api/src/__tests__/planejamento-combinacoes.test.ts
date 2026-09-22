@@ -70,13 +70,13 @@ const ABA_1: InputsFinanceiros = {
   pctOrgWhatsapp: 0.4,
   pctOrgEmail: 0.3,
   pctOrgInstagram: 0.15,
-  pctOrgTelegram: 0.05,
+  pctOrgManychat: 0.05,
   pctOrgYoutube: 0.05,
   pctOrgAreaMembros: 0.05,
   baseWhatsapp: 25000,
   baseEmail: 50000,
   baseInstagram: 30000,
-  baseTelegram: 8000,
+  baseManychat: 8000,
   baseYoutube: 120000,
   baseAreaMembros: 6000,
 };
@@ -86,7 +86,7 @@ const BLOCOS: Record<CanalOrganico, BlocoOrganico> = {
   whatsapp: { conversaoMedia: 0.04, variacaoConversao: 0.2, variacaoReceita: 0.1, taxaCaptacao: 0.12, faixaVariacao: 0.1, fracaoCenario1: null, nivelAssumido: 3 },
   email: { conversaoMedia: 0.04, variacaoConversao: 0.3, variacaoReceita: 0.1, taxaCaptacao: 0.05, faixaVariacao: 0.1, fracaoCenario1: null, nivelAssumido: 2 },
   instagram: { conversaoMedia: 0.02, variacaoConversao: 0.25, variacaoReceita: 0.1, taxaCaptacao: 0.03, faixaVariacao: 0.1, fracaoCenario1: null, nivelAssumido: 4 },
-  telegram: { conversaoMedia: 0.04, variacaoConversao: 0.5, variacaoReceita: 0.1, taxaCaptacao: 0.15, faixaVariacao: 0.2, fracaoCenario1: null, nivelAssumido: 1 },
+  manychat: { conversaoMedia: 0.04, variacaoConversao: 0.5, variacaoReceita: 0.1, taxaCaptacao: 0.15, faixaVariacao: 0.2, fracaoCenario1: null, nivelAssumido: 1 },
   youtube: { conversaoMedia: 0.03, variacaoConversao: 0.3, variacaoReceita: 0.2, taxaCaptacao: 0.02, faixaVariacao: 0.1, fracaoCenario1: null, nivelAssumido: 5 },
   area_membros: { conversaoMedia: 0.04, variacaoConversao: 0.4, variacaoReceita: 0.1, taxaCaptacao: 0.06, faixaVariacao: 0.1, fracaoCenario1: null, nivelAssumido: 3 },
 };
@@ -137,7 +137,7 @@ describe("ponte de chaves 48.1 ↔ 48.2 (PO-01, AC3)", () => {
       whatsapp: [115384.62, 25000],
       email: [86538.46, 50000],
       instagram: [43269.23, 30000],
-      telegram: [14423.08, 8000],
+      manychat: [14423.08, 8000],
       youtube: [14423.08, 120000],
       area_membros: [14423.08, 6000],
     };
@@ -311,7 +311,7 @@ describe("vendas, leads e conversão por canal — Combinação 1 (RN-013, RN-02
       whatsapp: [89.586538, 2488.514957, 0.036],
       email: [61.081731, 1650.857588, 0.037],
       instagram: [27.764423, 2221.153846, 0.0125],
-      telegram: [8.413462, 210.336538, 0.04],
+      manychat: [8.413462, 210.336538, 0.04],
       youtube: [17.446154, 969.230769, 0.018],
       area_membros: [13.549964, 423.436373, 0.032],
     };
@@ -369,9 +369,9 @@ describe("vendas, leads e conversão por canal — Combinação 1 (RN-013, RN-02
 
   it("canal com seleção vazia contribui 0 em vendas e leads e não derruba os totais", () => {
     const s = selecoes(1);
-    s.telegram = null;
+    s.manychat = null;
     const c = combinacaoOrganica({ indice: 1, grades: grades(), selecoes: s, niveis: niveis(), percentuais: ABA_1, metaMargemOrganicos: 187500 });
-    expect(c.canais.telegram).toEqual({ receita: 0, vendas: 0, leads: 0, conversao: null, vendasBruto: 0, leadsBruto: 0, conversaoBruto: null });
+    expect(c.canais.manychat).toEqual({ receita: 0, vendas: 0, leads: 0, conversao: null, vendasBruto: 0, leadsBruto: 0, conversaoBruto: null });
     expect(c.totais.vendas).toBe(221 - 9);
     expect(c.totais.leads).toBe(8079 - 225);
   });

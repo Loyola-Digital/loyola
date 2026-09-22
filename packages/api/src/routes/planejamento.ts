@@ -88,13 +88,13 @@ const bodySchema = z
     pctOrgWhatsapp: fracao,
     pctOrgEmail: fracao,
     pctOrgInstagram: fracao,
-    pctOrgTelegram: fracao,
+    pctOrgManychat: fracao,
     pctOrgYoutube: fracao,
     pctOrgAreaMembros: fracao,
     baseWhatsapp: contagem,
     baseEmail: contagem,
     baseInstagram: contagem,
-    baseTelegram: contagem,
+    baseManychat: contagem,
     baseYoutube: contagem,
     baseAreaMembros: contagem,
   } satisfies Record<(typeof CAMPOS_DOS_INPUTS_FINANCEIROS)[number], z.ZodTypeAny>)
@@ -135,7 +135,7 @@ const selecoesSchema = z
     whatsapp: selecao,
     email: selecao,
     instagram: selecao,
-    telegram: selecao,
+    manychat: selecao,
     youtube: selecao,
     area_membros: selecao,
   })
@@ -148,7 +148,7 @@ const organicosBodySchema = z
         whatsapp: blocoOrganicoSchema,
         email: blocoOrganicoSchema,
         instagram: blocoOrganicoSchema,
-        telegram: blocoOrganicoSchema,
+        manychat: blocoOrganicoSchema,
         youtube: blocoOrganicoSchema,
         area_membros: blocoOrganicoSchema,
       })
