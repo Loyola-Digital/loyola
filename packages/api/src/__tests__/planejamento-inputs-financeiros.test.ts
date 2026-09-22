@@ -282,3 +282,68 @@ describe("D3 — vazio vale zero, denominador zero vale null, nunca NaN/Infinity
     expect(new Set(CAMPOS_DOS_INPUTS_FINANCEIROS).size).toBe(26);
   });
 });
+
+describe("Story 48.6 (DEV-03) — complementos por subtração: exatos, não `(1 − %) × total`", () => {
+  const d = derivarInputsFinanceiros(A);
+
+  it("investMetaFrio === 8 000 e margemMetaFrio === 5 000 com igualdade EXATA (a fórmula antiga dava 7 999,999999999998 e 4 999,999999999999)", () => {
+    expect(d.investMetaFrio).toBe(8000);
+    expect(d.margemMetaFrio).toBe(5000);
+  });
+
+  // TEST-001 (gate): o apêndice A (0,4 / 0,8 / 0,75 / 0,25) só faz ruído em dois
+  // dos sete complementos — os outros cinco "fechavam por acaso" e um revert
+  // isolado passava. Este fixture foi ESCOLHIDO por busca para que reverter
+  // QUALQUER um dos sete, sozinho, mude o próprio valor (a fórmula antiga
+  // difere em 7/7 mesmo com o resto da cadeia já corrigido). A propriedade que
+  // distingue é `complemento === total − parte`, exata — não a identidade
+  // `parte + complemento === total`, que a fórmula antiga também satisfaz na
+  // maioria dos casos (o `a + (1 − p)·a` arredonda de volta para `a`).
+  const RUIDO: InputsFinanceiros = { ...A, investimentoAnuncios: 100000, pctInvestMeta: 0.45, pctMetaQuente: 0.3, pctGoogleQuente: 0.45, metaMargemTotal: 250000, pctMargemPagos: 0.8 };
+  const r = derivarInputsFinanceiros(RUIDO);
+
+  it("TEST-001: os sete complementos são EXATAMENTE `total − parte` (a fórmula antiga difere em 7/7 com este fixture)", () => {
+    expect(r.metaMargemOrganicos).toBe(250000 - r.metaMargemPagos);
+    expect(r.investGoogle).toBe(100000 - r.investMeta);
+    expect(r.investMetaFrio).toBe(r.investMeta - r.investMetaQuente);
+    expect(r.investGoogleFrio).toBe(r.investGoogle - r.investGoogleQuente);
+    expect(r.margemGoogleAds).toBe(r.metaMargemPagos - r.margemMetaAds);
+    expect(r.margemMetaFrio).toBe(r.margemMetaAds - r.margemMetaQuente);
+    expect(r.margemGoogleFrio).toBe(r.margemGoogleAds - r.margemGoogleQuente);
+  });
+
+  it("TEST-001: os sete complementos são os números redondos — 50 000 / 55 000 / 31 500 / 30 250 / 110 000 / 63 000 / 60 500 (a fórmula antiga dá ruído em cada um)", () => {
+    expect(r.metaMargemOrganicos).toBe(50000);
+    expect(r.investGoogle).toBe(55000);
+    expect(r.investMetaFrio).toBe(31500);
+    expect(r.investGoogleFrio).toBe(30250);
+    expect(r.margemGoogleAds).toBe(110000);
+    expect(r.margemMetaFrio).toBe(63000);
+    expect(r.margemGoogleFrio).toBe(60500);
+  });
+
+  it("invariante (não diferencial): as sete identidades `parte + complemento === total` fecham com igualdade exata", () => {
+    expect(d.metaMargemPagos + d.metaMargemOrganicos).toBe(250000);
+    expect(d.investMeta + d.investGoogle).toBe(100000);
+    expect(d.investMetaQuente + d.investMetaFrio).toBe(d.investMeta);
+    expect(d.investGoogleQuente + d.investGoogleFrio).toBe(d.investGoogle);
+    expect(d.margemMetaAds + d.margemGoogleAds).toBe(d.metaMargemPagos);
+    expect(d.margemMetaQuente + d.margemMetaFrio).toBe(d.margemMetaAds);
+    expect(d.margemGoogleQuente + d.margemGoogleFrio).toBe(d.margemGoogleAds);
+  });
+
+  it("os percentuais complementares seguem `1 − %` (exibidos, não multiplicados)", () => {
+    expect(d.pctMetaFrio).toBeCloseTo(0.2, 12);
+    expect(d.pctInvestGoogle).toBeCloseTo(0.6, 12);
+    expect(d.pctGoogleFrio).toBeCloseTo(0.25, 12);
+    expect(d.pctMargemOrganicos).toBeCloseTo(0.75, 12);
+  });
+
+  it("vazio continua valendo zero: total vazio → parte e complemento zero, nunca NaN", () => {
+    const v = derivarInputsFinanceiros({ ...A, investimentoAnuncios: null });
+    expect(v.investMeta).toBe(0);
+    expect(v.investGoogle).toBe(0);
+    expect(v.investMetaFrio).toBe(0);
+    expect(Object.is(v.investGoogleFrio, -0) || v.investGoogleFrio === 0).toBe(true);
+  });
+});

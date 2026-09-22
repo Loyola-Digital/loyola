@@ -270,7 +270,12 @@ export function derivarInputsFinanceiros(e: InputsFinanceiros): DerivadosFinance
   const pctMargemOrganicos = 1 - pctMargemPagos;
   const metaMargemTotal = n(e.metaMargemTotal);
   const metaMargemPagos = pctMargemPagos * metaMargemTotal;
-  const metaMargemOrganicos = pctMargemOrganicos * metaMargemTotal;
+  // Story 48.6 (DEV-03): complementos por SUBTRAÇÃO do total, não `(1 − %) × total`
+  // — em IEEE-754, `(1 − 0,8) × 40 000` dá 7 999,999999999998 e a verba do Meta
+  // frio deixa de ser o que o usuário digitou. Mesma regra de `dividirVerba`
+  // (48.2): a parte é `% × total`; o que sobra é `total − parte`, exato por
+  // construção. Os percentuais complementares (`1 − %`) seguem sendo exibidos.
+  const metaMargemOrganicos = metaMargemTotal - metaMargemPagos;
 
   // RN-003
   const mcAlvoOrganicos = 1 - pctCustosTotal;
@@ -293,19 +298,19 @@ export function derivarInputsFinanceiros(e: InputsFinanceiros): DerivadosFinance
   const pctMetaFrio = 1 - pctMetaQuente;
   const pctGoogleFrio = 1 - pctGoogleQuente;
   const investMeta = pctInvestMeta * investimentoAnuncios;
-  const investGoogle = pctInvestGoogle * investimentoAnuncios;
+  const investGoogle = investimentoAnuncios - investMeta;
   const investMetaQuente = pctMetaQuente * investMeta;
-  const investMetaFrio = pctMetaFrio * investMeta;
+  const investMetaFrio = investMeta - investMetaQuente;
   const investGoogleQuente = pctGoogleQuente * investGoogle;
-  const investGoogleFrio = pctGoogleFrio * investGoogle;
+  const investGoogleFrio = investGoogle - investGoogleQuente;
 
   // RN-007 — D6: reusa os % do investimento; D5: as quatro ÷ mcAlvoPagos
   const margemMetaAds = pctInvestMeta * metaMargemPagos;
   const margemMetaQuente = pctMetaQuente * margemMetaAds;
-  const margemMetaFrio = pctMetaFrio * margemMetaAds;
-  const margemGoogleAds = pctInvestGoogle * metaMargemPagos;
+  const margemMetaFrio = margemMetaAds - margemMetaQuente;
+  const margemGoogleAds = metaMargemPagos - margemMetaAds;
   const margemGoogleQuente = pctGoogleQuente * margemGoogleAds;
-  const margemGoogleFrio = pctGoogleFrio * margemGoogleAds;
+  const margemGoogleFrio = margemGoogleAds - margemGoogleQuente;
   const receitaMetaQuente = div(margemMetaQuente, mcAlvoPagos);
   const receitaMetaFrio = div(margemMetaFrio, mcAlvoPagos);
   const receitaGoogleQuente = div(margemGoogleQuente, mcAlvoPagos);

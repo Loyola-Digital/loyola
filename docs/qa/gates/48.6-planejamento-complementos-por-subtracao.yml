@@ -1,0 +1,38 @@
+schema: 1
+story: '48.6'
+story_title: 'Planejamento — complementos da aba 1 por subtração (DEV-03 da 48.4)'
+gate: PASS
+status_reason: 'Correção certa e mínima (sete linhas; suítes das 48.1–48.5 intactas). Os dois achados do gate 1 foram corrigidos em d849179b: fixture de ruído achado por busca em que reverter qualquer um dos sete complementos, sozinho, muda o próprio valor — QA re-mutou os cinco que passavam: 2 falhas cada; os sete de volta (o módulo original da 48.1): 3 falhas. AC2 reescrita para a propriedade distintiva. Re-gate PASS. Sem migration nem contrato.'
+reviewer: 'Quinn'
+updated: '2026-09-22T07:50:00Z'
+branch: 'feat/48.6-complementos-por-subtracao'
+commits: ['94b22688', '4686745c', 'f2255f29', 'd849179b']
+
+top_issues:
+  - id: 'TEST-001'
+    severity: medium
+    status: resolved
+    finding: 'O teste diferencial (AC2) afirma `investMetaFrio === 8 000` e `margemMetaFrio === 5 000` — os dois únicos complementos que fazem ruído com o apêndice A (0,4 / 0,8 / 0,75 / 0,25). Os outros cinco (`metaMargemOrganicos`, `investGoogle`, `investGoogleFrio`, `margemGoogleAds`, `margemGoogleFrio`) fecham por acaso com esses dados: revertidos um a um à fórmula `(1 − %) × total`, a suíte passa **23/23** em cada caso. E a asserção "as sete identidades `parte + complemento === total`" NÃO é diferencial — com a fórmula antiga, 5 das 7 identidades também fecham (o `a + (1 − p)·a` arredonda de volta para `a` na maioria dos casos). Um "simplify" que restaurasse a multiplicação em qualquer um dos cinco passaria pelo gate.'
+    suggested_action: 'RESOLVIDO em d849179b: fixture `100 000 / 0,45 / 0,3 / 0,45 / 250 000 / 0,8` (achado por busca — o candidato do gate, `0,7/0,9/0,7/0,7`, ainda deixava `margemGoogleFrio` passar num revert isolado) + `complemento === total − parte` e o valor redondo por complemento. QA re-mutou os cinco que passavam: **2 falhas cada**; os sete de volta: 3 falhas.'
+  - id: 'REQ-001'
+    severity: low
+    status: resolved
+    finding: 'A AC2 promete "sete identidades exatas `parte + complemento === total`" como prova. A propriedade que a subtração garante é `complemento === total − parte`; a soma de volta ao total é consequência quase sempre verdadeira nos DOIS lados (velho e novo), então como prova ela é decorativa. Não é defeito de código — é a redação do AC apontando para a asserção errada.'
+    suggested_action: 'RESOLVIDO em d849179b: AC2 reescrita — a prova é `complemento === total − parte`; a identidade fica como invariante declarada.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Diff do módulo: exatamente as sete linhas da tabela do AC1 + um comentário; ordem de definição conferida (cada complemento depois da parte que subtrai — `investGoogle` após `investMeta`, `margemGoogleAds` após `margemMetaAds`, `margemGoogleQuente` após `margemGoogleAds`). Percentuais complementares intactos. `n()` continua na entrada, então total vazio → parte 0 e complemento 0 (teste cobre; `−0` aceito). Nenhuma outra linha, nenhum outro arquivo de código. Sem migration/rota/contrato — correto: a forma do payload não muda.'
+  unit_tests: 'Re-gate: QA re-mutou os cinco complementos que passavam no gate 1 → 2 falhas cada; os sete de volta → 3; suítes dependentes (rotas, combinações, resumo: 88) verdes. Gate 1: QA rodou as dez suítes de planejamento da API (189) e as cinco do web (59) — verdes sem edição (AC3 ✓). Mutação do @dev (dois complementos de volta): 1 falha ✓. Mutações do QA (um complemento de volta por vez): `investGoogle` 0 ✗ · `investGoogleFrio` 0 ✗ · `margemGoogleAds` 0 ✗ · `margemGoogleFrio` 0 ✗ · `metaMargemOrganicos` 0 ✗ (TEST-001); `investMetaFrio` e `margemMetaFrio` 1 ✓ cada.'
+  acceptance_criteria: 'AC1 ✓ · AC2 ✓ (7/7 reverts isolados caem — TEST-001; frase corrigida — REQ-001) · AC3 ✓ · AC4 ✓ (eslint shared/api 0; tsc shared/api/web 0).'
+  no_regressions: 'Suítes das 48.1–48.5 verdes sem edição; os valores derivados dos complementos (receitas, tráfego) mudam só na 12ª casa, dentro das tolerâncias. CI: a confirmar após o push.'
+  performance: 'N/A.'
+  security: 'N/A.'
+  documentation: 'Comentário no módulo cita a story e a regra do `dividirVerba`. Dev Agent Record com a prova (parcial — ver TEST-001).'
+  api_contract: 'N/A — sem rota nem forma nova.'
+
+notes:
+  - 'A lição vale para o epic inteiro: "fecha com o apêndice A" não é prova de exatidão — o apêndice foi mascarado com frações redondas. Para propriedades numéricas, o fixture tem de ser escolhido para PRODUZIR o ruído.'
+  - 'DoD pendente para o @devops após o re-gate: push, CI (log lido) e merge — sem migration.'
+  - 'Re-gate em 2026-09-22: TEST-001 e REQ-001 fechados em d849179b → PASS.'

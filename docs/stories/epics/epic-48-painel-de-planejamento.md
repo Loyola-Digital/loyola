@@ -70,6 +70,8 @@ Respondidas nesta ordem, uma a uma. "Reproduz" = faz como a planilha; "corrige" 
 | D12 | DV-008 — caixas do nível de conversão | **A — exatamente uma por bloco, obrigatória (radio); sem marcação, os derivados mostram "—"** (nunca erro em cascata). | 48.3, 48.4 |
 | D13 | DV-013 — "Vendas Totais Leads Pagos" só quentes | **A — corrige:** soma os quatro públicos. | 48.4 |
 | D14 | DV-009 — verba de remarketing | **A — informativa:** calculada e mostrada, não entra em conta nenhuma. | 48.4 |
+| D15 | DEV-01 (48.3/48.4/48.5) — salvar as abas 2–4 antes dos Inputs Financeiros | **Manter o 409** (confirmado pelo Danilo em 2026-09-22): sem inputs não há meta nem verba; a tela desabilita o Salvar e leva para a aba 1. Criar o simulador às escondidas quebraria o critério da PO-03 ("Salvo em…" para formulário vazio). | 48.3, 48.4, 48.5 |
+| D16 | DEV-03 (48.4) — complementos da aba 1 com ruído de ponto flutuante | **Corrigir por subtração** (Danilo, 2026-09-22): os sete complementos viram `total − parte`, como `dividirVerba` da 48.2. | 48.6 |
 
 **DV de apresentação:** DV-011 (legendas intermediárias de CPL — AR-004, descartadas), DV-024 (unidades: as stories usam a **do conteúdo**), DV-025 (rótulos "Google Ads", 48.4). **Decididas pelo Danilo em 2026-09-21:** **DV-012 = B** — cores das faixas de CPL no mesmo sentido dos leads (1 azul … 4 vermelho; não reproduz a inversão da planilha); **DV-016 = A** — atingimento verde ≥ 100 %, vermelho ≤ 70 %, neutro no meio (reproduz). **DV-017 = A** (Danilo, 2026-09-22) — rótulos META PISO/BOA/SUPER são **anotação por cenário**, persistida, sem regra ligada (48.5).
 
@@ -93,6 +95,7 @@ Respondidas nesta ordem, uma a uma. "Reproduz" = faz como a planilha; "corrige" 
 | 48.3 | Leads orgânicos — parâmetros por canal, seleção, combinações e resumo (aba 2) — `48.3.planejamento-leads-organicos.md` | RN-010…023 (via 48.2), 038, 039 | 48.1 ✅, 48.2 ✅ | **Done** — gate PASS (re-gate) 2026-09-22; **MERGED #911** (`d89305a7`); 0153 em produção; Alta / L (8–13) |
 | 48.4 | Leads pagos — parâmetros por fonte, seleção, combinações, tráfego e resumo (aba 3) — `48.4.planejamento-leads-pagos.md` | RN-016…022, 024…029, 038, 039 | 48.1 ✅, 48.2 ✅ | **Done** — gate PASS (re-gate) 2026-09-22; **MERGED #912** (`73579498`); 0154 em produção; Alta / L (8–13) |
 | 48.5 | Resumo Final — cinco cenários consolidando orgânicos e pagos, meta total e rótulos (aba 4) — `48.5.planejamento-resumo-final.md` | RN-030, 031 (+ 017…020, 022, 027, 029 consolidadas) | 48.3 ✅, 48.4 ✅ | **Done** — gate PASS (re-gate) 2026-09-22; **MERGED #915** (`649bf0a9`); 0155 em produção; DV-017 = A; Alta / M (5–8) |
+| 48.6 | Complementos da aba 1 por subtração (fix de DEV-03) — `48.6.planejamento-complementos-por-subtracao.md` | RN-002, 006, 007 (exatidão) | 48.1 ✅ | **Ready** — @sm + @po em 2026-09-22; Média / XS (1–2) |
 
 Pontos e prioridade: estimados pelo @po na validação e confirmados pelo Danilo — 48.2: Alta, M (5–8); 48.1: Alta, L (8–13) proposta; 48.3 e 48.4: Alta, L (8–13); 48.5: Alta, M (5–8).
 
@@ -145,6 +148,7 @@ Regra do repo mantida: executor ≠ quality gate em todas as linhas.
 | 2026-09-21 | @po (Pax) | Danilo confirmou Alta / L (8–13) para 48.3 e 48.4 → 10/10 |
 | 2026-09-22 | @devops (Gage) | Wave 2 na `main`: 48.3 #911 (`d89305a7`, 0153 em produção) e 48.4 #912 (`73579498`, 0154 em produção); contrato v16. DEV-01 (409 sem inputs nas abas 2/3) e DEV-03 (verba do Meta frio `7 999,999…` na 48.1) registrados para o @po |
 | 2026-09-22 | @sm (River) | 48.5 rascunhada (wave 3): consolidação pura sobre `combinacaoOrganica`/`combinacaoPaga`, D9 aplicado, §4.4 separado em reproduz/recalcula (valores conferidos com o motor); **DV-017 = A** decidido pelo Danilo → `plan_final_scenarios` + rota `…/planejamento/resumo` (contrato 17). Três `[FALTA]` para o @po |
+| 2026-09-22 | @po (Pax) | Danilo decidiu DEV-01 (manter o 409 — D15) e DEV-03 (corrigir por subtração — D16); story 48.6 (fix XS) criada e validada. Validação visual das quatro abas fica para depois do deploy |
 | 2026-09-22 | @devops (Gage) | **Epic fechado no código:** 48.5 MERGED #915 (`649bf0a9`), 0155 em produção, contrato v17 — as quatro abas do simulador no ar. S1 ✓ (grep dos 35 RN) e S2 ✓ (suítes + diferenciais); S3 (conferência com dados reais do próximo lançamento) e S4 (planilha desligada) ficam com o Danilo. Pendências: validação visual das quatro abas; DEV-01 (409 sem Inputs, abas 2–4) e DEV-03 (verba do Meta frio na 48.1) para o @po; lint da `main` (`sendflow.ts:39`, herdado) |
 | 2026-09-22 | @po (Pax) | Danilo confirmou Alta / M (5–8) para a 48.5 → 10/10 |
 | 2026-09-22 | @po (Pax) | 48.5 validada: GO 9/10, Ready; PO-01 (cadeia do produto com igualdade exata — a conversão total difere da bruta em 1,2e-7), PO-02 (S4 é do epic), PO-03 (tráfego repetido, linhas abertas), PO-04 (callback da página); estimativa Alta / M proposta |
