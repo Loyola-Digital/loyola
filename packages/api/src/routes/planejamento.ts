@@ -21,7 +21,7 @@
 
 import { z } from "zod";
 import fp from "fastify-plugin";
-import { CAMPOS_DOS_INPUTS_FINANCEIROS } from "@loyola-x/shared";
+import { CAMPOS_DOS_INPUTS_FINANCEIROS, CENARIOS, NIVEIS_ORGANICOS, organicosVazios, type OrganicosDoSimulador } from "@loyola-x/shared";
 import {
   criarRepositorioDePlanejamento,
   inputsVazios,
@@ -87,6 +87,66 @@ const bodySchema = z
   } satisfies Record<(typeof CAMPOS_DOS_INPUTS_FINANCEIROS)[number], z.ZodTypeAny>)
   .strict();
 
+// ---- Story 48.3 — aba 2: blocos por canal orgânico e cinco combinações ----
+//
+//   GET /api/projects/:projectId/funnels/:funnelId/planejamento/organicos
+//   PUT /api/projects/:projectId/funnels/:funnelId/planejamento/organicos
+//
+// Mesma permissão e mesma guarda de tipo da rota de inputs. O GET devolve
+// SEMPRE os seis canais e as cinco combinações (índices 1…5), com `null` no
+// que nunca foi salvo, sem criar linha (PO-02). O PUT grava o conjunto inteiro
+// e exige que os Inputs Financeiros já tenham sido salvos — as tabelas-filhas
+// pendem de `plan_simulators` (AC1) e um simulador criado às escondidas pelo
+// PUT da aba 2 faria o GET de inputs dizer "salvo" para um formulário vazio
+// (quebraria o critério objetivo da PO-03). Sem simulador: 409.
+
+/** Nível assumido da escada (radio, D12): inteiro 1…8 ou vazio. */
+const nivelOrganico = z.number().int().min(1).max(NIVEIS_ORGANICOS).nullable();
+/** Cenário escolhido (RN-038): inteiro 1…10 ou vazio. `1,5` e `11` são 400 — na planilha eram `#N/A` em cascata. */
+const selecao = z.number().int().min(1).max(CENARIOS).nullable();
+
+const blocoOrganicoSchema = z
+  .object({
+    conversaoMedia: fracao,
+    variacaoConversao: fracao,
+    variacaoReceita: fracao,
+    taxaCaptacao: fracao,
+    faixaVariacao: fracao,
+    fracaoCenario1: fracao,
+    nivelAssumido: nivelOrganico,
+  })
+  .strict();
+
+const selecoesSchema = z
+  .object({
+    whatsapp: selecao,
+    email: selecao,
+    instagram: selecao,
+    telegram: selecao,
+    youtube: selecao,
+    area_membros: selecao,
+  })
+  .strict();
+
+const organicosBodySchema = z
+  .object({
+    blocos: z
+      .object({
+        whatsapp: blocoOrganicoSchema,
+        email: blocoOrganicoSchema,
+        instagram: blocoOrganicoSchema,
+        telegram: blocoOrganicoSchema,
+        youtube: blocoOrganicoSchema,
+        area_membros: blocoOrganicoSchema,
+      })
+      .strict(),
+    combinacoes: z
+      .array(z.object({ indice: z.number().int().min(1).max(5), selecoes: selecoesSchema }).strict())
+      .length(5)
+      .refine((cs) => new Set(cs.map((c) => c.indice)).size === 5, { message: "índices 1…5 sem repetição" }),
+  })
+  .strict();
+
 export default fp(async function planejamentoRoutes(fastify) {
   const repo = (): RepositorioDePlanejamento => fastify.planejamentoRepo ?? criarRepositorioDePlanejamento(fastify.db);
 
@@ -142,5 +202,37 @@ export default fp(async function planejamentoRoutes(fastify) {
     }
     const gravado = await repo().gravarInputs(ctx.funnelId, body.data as InputsPersistidos, request.userId || null);
     return { ok: true, funnelId: ctx.funnelId, inputs: gravado.inputs, updatedAt: gravado.updatedAt };
+  });
+
+  // ---- Story 48.3 — GET/PUT …/planejamento/organicos ----
+  const baseOrganicos = "/api/projects/:projectId/funnels/:funnelId/planejamento/organicos";
+
+  fastify.get(baseOrganicos, async (request, reply) => {
+    const ctx = await resolverContexto(request, reply);
+    if (!ctx) return;
+    const lido = await repo().lerOrganicos(ctx.funnelId);
+    const vazio = organicosVazios();
+    return {
+      funnelId: ctx.funnelId,
+      blocos: lido?.blocos ?? vazio.blocos,
+      combinacoes: lido?.combinacoes ?? vazio.combinacoes,
+      updatedAt: lido?.updatedAt ?? null,
+    };
+  });
+
+  fastify.put(baseOrganicos, async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const ctx = await resolverContexto(request, reply);
+    if (!ctx) return;
+    const body = organicosBodySchema.safeParse(request.body);
+    if (!body.success) {
+      return reply.code(400).send({ error: "Dados inválidos", details: body.error.flatten() });
+    }
+    const simulatorId = await repo().idDoSimulador(ctx.funnelId);
+    if (simulatorId === null) {
+      return reply.code(409).send({ error: "Salve os Inputs Financeiros antes de salvar os cenários dos canais orgânicos" });
+    }
+    const gravado = await repo().gravarOrganicos(simulatorId, body.data as OrganicosDoSimulador);
+    return { ok: true, funnelId: ctx.funnelId, blocos: gravado.blocos, combinacoes: gravado.combinacoes, updatedAt: gravado.updatedAt };
   });
 });

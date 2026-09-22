@@ -5420,3 +5420,81 @@ export const planSimulators = pgTable(
   },
   (t) => [uniqueIndex("uq_plan_simulators_funnel_id").on(t.funnelId)],
 );
+
+/**
+ * Story 48.3 — parâmetros por CANAL ORGÂNICO do simulador (aba 2 da planilha).
+ *
+ * Tabela-filha de `plan_simulators` (A3 da 48.1): uma linha por (simulador,
+ * canal), canal no domínio `CANAIS_ORGANICOS` do shared (`whatsapp`, `email`,
+ * `instagram`, `telegram`, `youtube`, `area_membros` — a taxonomia canônica,
+ * PO-01). Persistem SÓ as sete entradas manuais do bloco (E5): a grade de
+ * cenários × níveis é recalculada na tela pelo `gradeOrganica` da 48.2.
+ *
+ * `fracao_cenario_1` vazio = 0,70 (D1); `nivel_assumido` é o radio do nível de
+ * conversão assumido, 1…8 ou vazio (D12 — sem nível, leads e conversão do
+ * canal são "—", não erro em cascata como a planilha, DV-008). Frações como
+ * `numeric(12,6)`; CHECKs na migration 0153 (domínio do canal, nível 1…8,
+ * frações em [0,1]); a rota valida com zod antes.
+ *
+ * Separada de `plan_paid_blocks` (48.4) de propósito: as duas stories da wave 2
+ * rodam em paralelo e não dividem arquivo de migration.
+ */
+export const planOrganicBlocks = pgTable(
+  "plan_organic_blocks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    simulatorId: uuid("simulator_id")
+      .notNull()
+      .references(() => planSimulators.id, { onDelete: "cascade" }),
+    /** `CANAIS_ORGANICOS` do shared; CHECK na migration. */
+    canal: text("canal").notNull(),
+
+    // ---- Parâmetros manuais do bloco (F{r0+2}…F{r0+5}, F{r0+7}), frações ----
+    conversaoMedia: numeric("conversao_media", { precision: 12, scale: 6 }),
+    /** Exibida como %, mas o passo da escada é `÷ 100` (DV-004, reproduzido). */
+    variacaoConversao: numeric("variacao_conversao", { precision: 12, scale: 6 }),
+    variacaoReceita: numeric("variacao_receita", { precision: 12, scale: 6 }),
+    taxaCaptacao: numeric("taxa_captacao", { precision: 12, scale: 6 }),
+    faixaVariacao: numeric("faixa_variacao", { precision: 12, scale: 6 }),
+    /** D1 — fração do cenário 1 sobre a receita necessária; vazio = 0,70. */
+    fracaoCenario1: numeric("fracao_cenario_1", { precision: 12, scale: 6 }),
+    /** D12 — nível da escada assumido (radio), 1…8 ou vazio. */
+    nivelAssumido: integer("nivel_assumido"),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("uq_plan_organic_blocks_simulator_canal").on(t.simulatorId, t.canal)],
+);
+
+/**
+ * Story 48.3 — as cinco COMBINAÇÕES de cenários dos canais orgânicos (colunas
+ * X, Z, AB, AD, AF da aba 2). Uma linha por (simulador, índice 1…5); em cada
+ * uma, o cenário escolhido por canal — inteiro 1…10 ou vazio (RN-038; vazio
+ * = receita zero, RN-016). Só entradas: receita, cadeia de deduções, MC,
+ * atingimento e vendas/leads/conversão são recalculados na tela
+ * (`planejamento-combinacoes.ts` do shared).
+ */
+export const planOrganicCombinations = pgTable(
+  "plan_organic_combinations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    simulatorId: uuid("simulator_id")
+      .notNull()
+      .references(() => planSimulators.id, { onDelete: "cascade" }),
+    /** 1…5, fixo (a planilha tem cinco colunas; a tela também). */
+    indice: integer("indice").notNull(),
+
+    // ---- Cenário escolhido por canal, 1…10 ou vazio ----
+    selWhatsapp: integer("sel_whatsapp"),
+    selEmail: integer("sel_email"),
+    selInstagram: integer("sel_instagram"),
+    selTelegram: integer("sel_telegram"),
+    selYoutube: integer("sel_youtube"),
+    selAreaMembros: integer("sel_area_membros"),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("uq_plan_organic_combinations_simulator_indice").on(t.simulatorId, t.indice)],
+);

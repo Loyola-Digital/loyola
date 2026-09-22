@@ -500,3 +500,39 @@ export {
   type StatusDaDistribuicao,
   type EstadoDaDistribuicao,
 } from "./planejamento-inputs-financeiros.js";
+// Story 48.3: combinações de cenários dos canais orgânicos (região direita da
+// aba 2) — seleção de cenário, cadeia de deduções, atingimento da meta e
+// vendas/leads/conversão por canal, mais a ponte de chaves entre a 48.1 e a
+// 48.2 (PO-01). Módulo folha por valor: o web importa por
+// `@loyola-x/shared/src/planejamento-combinacoes`.
+export {
+  COMBINACOES,
+  INDICES_DAS_COMBINACOES,
+  CAMPOS_DO_BLOCO_ORGANICO,
+  CANAL_NA_ABA_1,
+  BASE_DO_CANAL,
+  blocoOrganicoVazio,
+  selecoesVazias,
+  organicosVazios,
+  origemDoCanalNaAba1,
+  parametrosDoBloco,
+  selecionarReceita,
+  cadeiaDeDeducoes,
+  atingimentoDaMeta,
+  resumoDoCanal,
+  totaisDaCombinacao,
+  combinacaoOrganica,
+  type CampoDoBlocoOrganico,
+  type BlocoOrganico,
+  type Selecao,
+  type SelecoesPorCanal,
+  type CombinacaoPersistida,
+  type OrganicosDoSimulador,
+  type OrigemDoCanalNaAba1,
+  type PercentuaisDeCusto,
+  type CadeiaDeDeducoes,
+  type AtingimentoDaMeta,
+  type ResumoDoCanal,
+  type TotaisDaCombinacao,
+  type CombinacaoOrganica,
+} from "./planejamento-combinacoes.js";

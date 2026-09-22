@@ -150,4 +150,10 @@
 // do funil de lançamento) e a tabela `plan_simulators`. ADITIVA; `packages/mcp`
 // não é afetado. O web novo (sub-página Planejamento) depende delas: sem o
 // bump, um painel à frente da API mostraria "Not Found" em vez do aviso.
-export const API_CONTRACT_VERSION = 14;
+// v15 (Story 48.3): rotas novas `GET/PUT /api/projects/:projectId/funnels/
+// :funnelId/planejamento/organicos` (aba 2 do Painel de Planejamento — blocos
+// por canal orgânico e cinco combinações) e as tabelas `plan_organic_blocks` e
+// `plan_organic_combinations`. ADITIVA; `packages/mcp` não é afetado. A aba
+// "Leads Orgânicos" do web depende delas: sem o bump, um painel à frente da
+// API mostraria "Not Found" em vez do aviso de versão.
+export const API_CONTRACT_VERSION = 15;
