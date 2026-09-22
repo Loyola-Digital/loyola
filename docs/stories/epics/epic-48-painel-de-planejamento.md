@@ -90,11 +90,11 @@ Respondidas nesta ordem, uma a uma. "Reproduz" = faz como a planilha; "corrige" 
 |---|---|---|---|---|
 | 48.1 | Inputs Financeiros — modelo, API e tela (aba 1) | RN-001…009, 037, 040 | P1 ✅, P2 ✅ | **Ready** — @po GO 9/10 em 2026-09-21; sub-página `…/planejamento` + cartão (PO-02); custos > 100 % reproduz o negativo (PO-04); estimativa Alta / L (8–13) proposta |
 | 48.2 | Motor de cenários no `shared` (abas 2 e 3, parte pura) | RN-010…015, 024…026 | — (só testes) | **Ready** — @po GO 10/10 em 2026-09-21; Alta, M (5–8) |
-| 48.3 | Leads orgânicos — parâmetros por canal, seleção, combinações e resumo (aba 2) — `48.3.planejamento-leads-organicos.md` | RN-010…023 (via 48.2), 038, 039 | 48.1 ✅, 48.2 ✅ | **Ready** — @po GO 9/10 em 2026-09-21; Alta / L (8–13) proposta |
-| 48.4 | Leads pagos — parâmetros por fonte, seleção, combinações, tráfego e resumo (aba 3) — `48.4.planejamento-leads-pagos.md` | RN-016…022, 024…029, 038, 039 | 48.1 ✅, 48.2 ✅ | **Ready** — @po GO 9/10 em 2026-09-21; Alta / L (8–13) proposta |
+| 48.3 | Leads orgânicos — parâmetros por canal, seleção, combinações e resumo (aba 2) — `48.3.planejamento-leads-organicos.md` | RN-010…023 (via 48.2), 038, 039 | 48.1 ✅, 48.2 ✅ | **Ready** — @po GO 10/10 em 2026-09-21; Alta / L (8–13) |
+| 48.4 | Leads pagos — parâmetros por fonte, seleção, combinações, tráfego e resumo (aba 3) — `48.4.planejamento-leads-pagos.md` | RN-016…022, 024…029, 038, 039 | 48.1 ✅, 48.2 ✅ | **Ready** — @po GO 10/10 em 2026-09-21; Alta / L (8–13) |
 | 48.5 | Resumo Final — consolidação dos cinco cenários (aba 4) | RN-030, 031 (+ 017…020 consolidadas) | 48.3, 48.4 | a rascunhar |
 
-Pontos e prioridade: estimados pelo @po na validação e confirmados pelo Danilo (48.2: Alta, M 5–8); as demais ficam `[FALTA]` até a validação de cada uma.
+Pontos e prioridade: estimados pelo @po na validação e confirmados pelo Danilo — 48.2: Alta, M (5–8); 48.1: Alta, L (8–13) proposta; 48.3 e 48.4: Alta, L (8–13); 48.5 fica `[FALTA]` até a validação.
 
 ## Ordem de execução, executores e gates (@pm, 2026-09-21)
 
@@ -142,6 +142,7 @@ Regra do repo mantida: executor ≠ quality gate em todas as linhas.
 | 2026-09-21 | @sm (River) | 48.3 e 48.4 rascunhadas (wave 2). Tabelas-filhas nomeadas por tipo (`plan_organic_*`, `plan_paid_*`) em vez do `plan_blocks` genérico da nota A3 da 48.1 — mesma intenção, sem arquivo em comum entre as duas stories |
 | 2026-09-21 | @sm (River) | Danilo decidiu DV-016 = A e DV-012 = B; 48.3 e 48.4 sem `[FALTA]` bloqueante |
 | 2026-09-21 | @po (Pax) | 48.3 e 48.4 validadas: GO 9/10, Ready; achado comum: chaves de canal/fonte diferem entre os módulos da 48.1 e da 48.2 → mapeamento testado; estimativas Alta / L propostas |
+| 2026-09-21 | @po (Pax) | Danilo confirmou Alta / L (8–13) para 48.3 e 48.4 → 10/10 |
 | 2026-09-21 | @pm (Morgan) | **P2 ✅ — estrutura validada.** Acrescentados objetivo, critérios de sucesso S1–S4, ordem de execução em 3 waves com executor/gate por story, riscos R1–R6, roadmap do que ficou fora; E4 corrigido (nomes dos módulos = os das stories). Número 48 confirmado na `main` (#898). |
 
 <!-- clickup:17tqamemnem -->
