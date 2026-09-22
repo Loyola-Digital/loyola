@@ -80,3 +80,42 @@ export function useUpdateUser() {
     },
   });
 }
+
+/**
+ * O acesso de um convidado: empresa e, dentro dela, um funil e uma etapa.
+ *
+ * Existe para o vendedor contratado — ele cria a conta e aqui alguém decide o
+ * que ele enxerga. Até então, a única forma de dar acesso era o link de
+ * convite, que entregava a empresa inteira.
+ */
+export interface AcessoDoConvidado {
+  projectId: string;
+  funnelId: string | null;
+  stageId: string | null;
+  permissions?: Record<string, boolean>;
+}
+
+export function useAcessoDoUsuario(userId: string | null) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["admin-user-acesso", userId],
+    queryFn: () => apiClient<{ acesso: AcessoDoConvidado | null }>(`/api/admin/users/${userId}/acesso`),
+    enabled: Boolean(userId),
+  });
+}
+
+export function useDefinirAcesso() {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, ...acesso }: AcessoDoConvidado & { userId: string }) =>
+      apiClient<{ ok: true }>(`/api/admin/users/${userId}/acesso`, {
+        method: "PUT",
+        body: JSON.stringify(acesso),
+      }),
+    onSuccess: (_r, v) => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-user-acesso", v.userId] });
+    },
+  });
+}

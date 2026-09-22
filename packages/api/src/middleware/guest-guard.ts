@@ -1,6 +1,11 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { projectMembers } from "../db/schema.js";
+import {
+  algumEscopoPermite,
+  escopoPermite,
+  type EscopoDoConvidado,
+} from "../services/escopo-do-convidado.js";
 
 type GuestPermissions = {
   instagram?: boolean;
@@ -55,6 +60,38 @@ export default fp(async function guestGuardPlugin(fastify) {
     const rawUrl = request.url.split("?")[0];
     const method = request.method.toUpperCase();
 
+    /**
+     * Os acessos do convidado, com o escopo de cada um — buscados só quando
+     * alguma checagem precisa deles. As rotas que o convidado não pode ver de
+     * jeito nenhum são recusadas antes, sem ir ao banco.
+     *
+     * Uma consulta por requisição, quase sempre uma linha, e serve tanto para a
+     * checagem por empresa quanto para as rotas soltas de funil.
+     */
+    let cache: { projectId: string; permissions: unknown; funnelId: string | null; stageId: string | null }[] | null = null;
+    const acessos = async () =>
+      (cache ??= await fastify.db
+        .select({
+          projectId: projectMembers.projectId,
+          permissions: projectMembers.permissions,
+          funnelId: projectMembers.funnelId,
+          stageId: projectMembers.stageId,
+        })
+        .from(projectMembers)
+        .where(eq(projectMembers.userId, request.userId)));
+
+    /**
+     * Rotas de funil que NÃO dizem a empresa (`/api/funnels/:id/...`).
+     *
+     * Duas delas (`lp-campaigns`, `creative-performance`) não checam acesso
+     * nenhum hoje; para o convidado, o escopo passa a ser essa checagem.
+     */
+    if (rawUrl.startsWith("/api/funnels/")) {
+      if (!algumEscopoPermite((await acessos()) as EscopoDoConvidado[], rawUrl)) {
+        return reply.code(403).send({ error: "fora_do_escopo" });
+      }
+    }
+
     // Block write operations on any project route, exceto as rotas que o guest
     // tem permissão explícita de escrever (evento presencial — ver allowlist).
     if (
@@ -86,16 +123,7 @@ export default fp(async function guestGuardPlugin(fastify) {
       const body = request.body as Record<string, unknown> | null;
       const projectId = body?.projectId as string | undefined;
       if (projectId) {
-        const [member] = await fastify.db
-          .select({ permissions: projectMembers.permissions })
-          .from(projectMembers)
-          .where(
-            and(
-              eq(projectMembers.projectId, projectId),
-              eq(projectMembers.userId, request.userId)
-            )
-          )
-          .limit(1);
+        const member = (await acessos()).find((a) => a.projectId === projectId);
 
         if (!member) {
           return reply.code(403).send({ error: "project_access_denied" });
@@ -115,16 +143,7 @@ export default fp(async function guestGuardPlugin(fastify) {
     const projectId = projectMatch[1];
     const subPath = projectMatch[2] ?? "";
 
-    const [member] = await fastify.db
-      .select({ permissions: projectMembers.permissions })
-      .from(projectMembers)
-      .where(
-        and(
-          eq(projectMembers.projectId, projectId),
-          eq(projectMembers.userId, request.userId)
-        )
-      )
-      .limit(1);
+    const member = (await acessos()).find((a) => a.projectId === projectId);
 
     if (!member) {
       return reply.code(403).send({ error: "project_access_denied" });
@@ -136,6 +155,11 @@ export default fp(async function guestGuardPlugin(fastify) {
       if (!perms[module]) {
         return reply.code(403).send({ error: "module_not_allowed", module });
       }
+    }
+
+    // Um funil, uma etapa: o corte fino dentro da empresa.
+    if (!escopoPermite(member as EscopoDoConvidado, rawUrl)) {
+      return reply.code(403).send({ error: "fora_do_escopo" });
     }
   });
 });

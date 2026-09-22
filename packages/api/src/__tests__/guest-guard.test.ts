@@ -12,11 +12,27 @@ const MOCK_GUEST_ID = "10000000-0000-4000-8000-000000000099";
 const MOCK_PROJECT_ID = "30000000-0000-4000-8000-000000000003";
 
 const MOCK_MEMBER_ROW = {
+  projectId: MOCK_PROJECT_ID,
+  funnelId: null,
+  stageId: null,
   permissions: { instagram: true, conversations: true, mind: true },
 };
 
 const MOCK_MEMBER_NO_INSTAGRAM = {
+  projectId: MOCK_PROJECT_ID,
+  funnelId: null,
+  stageId: null,
   permissions: { instagram: false, conversations: true, mind: true },
+};
+
+/** Convidado preso a um funil e uma etapa (vendedor de evento). */
+const MOCK_FUNNEL_ID = "40000000-0000-4000-8000-000000000004";
+const MOCK_STAGE_ID = "50000000-0000-4000-8000-000000000005";
+const MOCK_MEMBER_ESCOPADO = {
+  projectId: MOCK_PROJECT_ID,
+  funnelId: MOCK_FUNNEL_ID,
+  stageId: MOCK_STAGE_ID,
+  permissions: { instagram: false, conversations: false, mind: false },
 };
 
 // ============================================================
@@ -25,13 +41,18 @@ const MOCK_MEMBER_NO_INSTAGRAM = {
 
 const mockSelect = vi.fn();
 
+/**
+ * `select().from().where()` já resolve — o guard lê TODOS os acessos do
+ * convidado de uma vez (com o escopo de funil/etapa de cada um), em vez de uma
+ * consulta por empresa. `.limit()` segue disponível para quem usa.
+ */
 function setupMemberQuery(rows: unknown[]) {
-  // select().from().where().limit()
+  const espera = Promise.resolve(rows);
   mockSelect.mockReturnValueOnce({
     from: vi.fn().mockReturnValue({
-      where: vi.fn().mockReturnValue({
-        limit: vi.fn().mockResolvedValue(rows),
-      }),
+      where: vi.fn().mockReturnValue(
+        Object.assign(espera, { limit: vi.fn().mockResolvedValue(rows) }),
+      ),
     }),
   });
 }
@@ -88,6 +109,11 @@ async function buildTestApp(userRole: string) {
   app.post("/api/projects/:id/funnels/:fid/stages/:sid/manual-sales", async () => ({ ok: true }));
   app.post("/api/projects/:id/funnels/:fid/stages/:sid/manual-sales/:saleId/refund", async () => ({ ok: true }));
   app.delete("/api/projects/:id/funnels/:fid/stages/:sid/manual-sales/:saleId/refund", async () => ({ ok: true }));
+  // Escopo do convidado (funil/etapa) — inclusive a rota solta, que não tem
+  // checagem de acesso própria.
+  app.get("/api/projects/:id/funnels/:fid/stages/:sid/sales-data", async () => ({ ok: true }));
+  app.get("/api/projects/:id/funnels/:fid/stages", async () => ({ ok: true }));
+  app.get("/api/funnels/:fid/stages/:sid/lp-campaigns", async () => ({ ok: true }));
   // Debriefings (Story 37.1) — global, bloqueado pra guest em qualquer método
   app.get("/api/debriefings", async () => ({ ok: true }));
   app.post("/api/debriefings", async () => ({ ok: true }));
@@ -354,5 +380,84 @@ describe("getChatTools — guest role", () => {
     const tools = getChatTools(mockFastify, "admin");
     const hasClickup = tools.some((t) => t.name.startsWith("clickup_"));
     expect(hasClickup).toBe(true);
+  });
+});
+
+// ============================================================
+// TESTS — escopo: um funil, uma etapa (vendedor de evento)
+// ============================================================
+
+describe("guestGuard — convidado preso a um funil e uma etapa", () => {
+  let app: ReturnType<typeof Fastify>;
+  const OUTRO_FUNIL = "60000000-0000-4000-8000-000000000006";
+  const OUTRA_ETAPA = "70000000-0000-4000-8000-000000000007";
+
+  beforeAll(async () => {
+    app = await buildTestApp("guest");
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it("passa na etapa dele", async () => {
+    setupMemberQuery([MOCK_MEMBER_ESCOPADO]);
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/projects/${MOCK_PROJECT_ID}/funnels/${MOCK_FUNNEL_ID}/stages/${MOCK_STAGE_ID}/sales-data`,
+      headers: AUTH,
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("barra outra etapa do mesmo funil", async () => {
+    setupMemberQuery([MOCK_MEMBER_ESCOPADO]);
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/projects/${MOCK_PROJECT_ID}/funnels/${MOCK_FUNNEL_ID}/stages/${OUTRA_ETAPA}/sales-data`,
+      headers: AUTH,
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe("fora_do_escopo");
+  });
+
+  it("barra outro funil da mesma empresa", async () => {
+    setupMemberQuery([MOCK_MEMBER_ESCOPADO]);
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/projects/${MOCK_PROJECT_ID}/funnels/${OUTRO_FUNIL}/stages`,
+      headers: AUTH,
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("a lista de etapas do funil dele passa", async () => {
+    setupMemberQuery([MOCK_MEMBER_ESCOPADO]);
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/projects/${MOCK_PROJECT_ID}/funnels/${MOCK_FUNNEL_ID}/stages`,
+      headers: AUTH,
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("barra a rota SOLTA de outro funil — ela não tem checagem própria", async () => {
+    setupMemberQuery([MOCK_MEMBER_ESCOPADO]);
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/funnels/${OUTRO_FUNIL}/stages/${OUTRA_ETAPA}/lp-campaigns`,
+      headers: AUTH,
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("convidado SEM escopo segue vendo a empresa inteira (como antes)", async () => {
+    setupMemberQuery([MOCK_MEMBER_ROW]);
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/projects/${MOCK_PROJECT_ID}/funnels/${OUTRO_FUNIL}/stages/${OUTRA_ETAPA}/sales-data`,
+      headers: AUTH,
+    });
+    expect(res.statusCode).toBe(200);
   });
 });

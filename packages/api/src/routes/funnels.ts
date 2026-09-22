@@ -6,6 +6,7 @@ import { fetchCampaigns, decryptAccountToken } from "../services/meta-ads.js";
 import { triggerBackgroundSyncForNewCampaigns } from "../services/meta-insights-cache.js";
 import { resolveStagePhaseSuffix } from "../services/stage-phase.js";
 import { fetchGoogleAdsCampaigns, decryptToken as decryptGoogleToken } from "../services/google-ads.js";
+import { funilDoConvidado } from "../services/escopo-do-convidado.js";
 
 // ============================================================
 // SCHEMAS
@@ -213,9 +214,18 @@ export default fp(async function funnelRoutes(fastify) {
         ? isNull(funnels.archivedAt)
         : undefined;
 
-    const whereClause = archiveFilter
-      ? and(eq(funnels.projectId, paramResult.data.projectId), archiveFilter)
-      : eq(funnels.projectId, paramResult.data.projectId);
+    // Convidado preso a um funil vê só ele — a barra lateral dele não pode
+    // listar o que a API barraria depois.
+    const soDoEscopo = await funilDoConvidado(
+      fastify.db,
+      request.userId,
+      request.userRole,
+      paramResult.data.projectId,
+    );
+    const filtros = [eq(funnels.projectId, paramResult.data.projectId)];
+    if (archiveFilter) filtros.push(archiveFilter);
+    if (soDoEscopo) filtros.push(eq(funnels.id, soDoEscopo));
+    const whereClause = and(...filtros);
 
     const rows = await fastify.db
       .select({

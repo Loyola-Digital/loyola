@@ -36,6 +36,9 @@ const tokenParamSchema = z.object({
 
 const createInvitationSchema = z.object({
   email: z.string().email(),
+  /** Escopo do convidado dentro da empresa. Vazio = empresa inteira (como antes). */
+  funnelId: z.string().uuid().nullable().optional(),
+  stageId: z.string().uuid().nullable().optional(),
   permissions: z.object({
     instagram: z.boolean().default(false),
     traffic: z.boolean().default(false),
@@ -224,6 +227,9 @@ export default fp(async function invitationsRoutes(fastify) {
         userId,
         role: "guest",
         permissions: inv.permissions as Permissions,
+        // O escopo vem do convite: quem aceitar já entra limitado.
+        funnelId: inv.funnelId ?? null,
+        stageId: inv.stageId ?? null,
       })
       .onConflictDoNothing();
 
