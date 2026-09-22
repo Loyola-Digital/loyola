@@ -14,10 +14,18 @@
  * `number | null` e a rota nunca vê string.
  */
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import {
+  campanhasDoLancamento,
+  consolidarInvestimento,
+  type GastoDaCampanha,
+  type InvestimentoRealizado,
+} from "../utils/planejamento-investimento.js";
+import {
+  funnelStages,
   funnels,
+  metaCampaignInsightsDaily,
   planFinalScenarios,
   planOrganicBlocks,
   planOrganicCombinations,
@@ -94,6 +102,28 @@ export interface RepositorioDePlanejamento {
    * do shared — aqui só sai o que o banco sabe.
    */
   funisDeLancamento(projectId: string): Promise<FunilDeLancamento[]>;
+
+  // ---- Story 48.11 — o REALIZADO de um lançamento (camada B) ----
+  /** Etapas do funil, para a tela achar a de vendas sem adivinhar por nome. */
+  etapasDoFunil(funnelId: string): Promise<{ id: string; nome: string; stageType: string }[]>;
+  /**
+   * Quantas campanhas do GOOGLE o lançamento tem vinculadas.
+   *
+   * Hoje são zero nos 11 lançamentos reais (medido em 2026-09-22), e é isso que
+   * torna verdadeiro o "100 % Meta" da tela. No dia em que alguém vincular uma,
+   * esse 100 % vira mentira em silêncio — este contador é o que faz a tela
+   * parar de afirmá-lo.
+   */
+  campanhasDeGoogleDoFunil(funnelId: string): Promise<number>;
+  /**
+   * Investimento Meta do lançamento, separado por temperatura.
+   *
+   * As campanhas de um funil vivem em `funnels.campaigns` E em
+   * `funnel_stages.campaigns` — na maioria dos lançamentos o vínculo está no
+   * STAGE (conferido em 2026-09-22: 9 dos 11 com `funnels.campaigns` vazio e
+   * spend real pelo stage). Ler só o funil devolveria zero, calado.
+   */
+  investimentoMetaDoFunil(projectId: string, funnelId: string): Promise<InvestimentoRealizado>;
 }
 
 /** Story 48.9 — um funil de lançamento do projeto, como candidato a base. */
@@ -263,6 +293,22 @@ function linhasParaRotulos(linhas: LinhaDeCenario[]): RotulosLidos {
   }
   out.updatedAt = ultimo === null ? null : (ultimo as Date).toISOString();
   return out;
+}
+
+/**
+ * Story 48.11 — o filtro do gasto, isolado para poder ser INSPECIONADO.
+ *
+ * `projectId` não é decorativo: é a primeira coluna da PK de
+ * `meta_campaign_insights_daily`. Sem ele, o gasto de uma campanha que outro
+ * projeto também vinculou entraria no total deste lançamento — e um teste com
+ * banco mockado não pegaria, porque o recorte estaria na fila, não no
+ * predicado. Por isso o teste serializa ESTA expressão.
+ */
+export function condicaoDoGasto(projectId: string, campaignIds: string[]) {
+  return and(
+    eq(metaCampaignInsightsDaily.projectId, projectId),
+    inArray(metaCampaignInsightsDaily.campaignId, campaignIds),
+  );
 }
 
 export function criarRepositorioDePlanejamento(db: Database): RepositorioDePlanejamento {
@@ -468,13 +514,71 @@ export function criarRepositorioDePlanejamento(db: Database): RepositorioDePlane
         simuladorAtualizadoEm: l.simuladorAtualizadoEm?.toISOString() ?? null,
       }));
     },
+
+    // ---- Story 48.11 ----
+    async etapasDoFunil(funnelId) {
+      const linhas = await db
+        .select({ id: funnelStages.id, nome: funnelStages.name, stageType: funnelStages.stageType })
+        .from(funnelStages)
+        .where(eq(funnelStages.funnelId, funnelId));
+      return linhas.map((l) => ({ id: l.id, nome: l.nome, stageType: String(l.stageType) }));
+    },
+
+    async campanhasDeGoogleDoFunil(funnelId) {
+      const [funil] = await db.select({ google: funnels.googleAdsCampaigns }).from(funnels).where(eq(funnels.id, funnelId)).limit(1);
+      const etapas = await db
+        .select({ google: funnelStages.googleAdsCampaigns })
+        .from(funnelStages)
+        .where(eq(funnelStages.funnelId, funnelId));
+      const ids = new Set<string>();
+      for (const c of funil?.google ?? []) ids.add(c.id);
+      for (const e of etapas) for (const c of e.google ?? []) ids.add(c.id);
+      return ids.size;
+    },
+
+    async investimentoMetaDoFunil(projectId, funnelId) {
+      const [funil] = await db.select({ campaigns: funnels.campaigns }).from(funnels).where(eq(funnels.id, funnelId)).limit(1);
+      const etapas = await db.select({ campaigns: funnelStages.campaigns }).from(funnelStages).where(eq(funnelStages.funnelId, funnelId));
+
+      const campanhas = campanhasDoLancamento(
+        funil?.campaigns,
+        etapas.map((e) => e.campaigns),
+      );
+      if (campanhas.size === 0) return consolidarInvestimento(campanhas, []);
+
+      const gasto = await db
+        .select({
+          campaignId: metaCampaignInsightsDaily.campaignId,
+          spend: sql<string>`sum(${metaCampaignInsightsDaily.spend})`,
+          de: sql<string>`min(${metaCampaignInsightsDaily.dateStart})`,
+          ate: sql<string>`max(${metaCampaignInsightsDaily.dateStart})`,
+        })
+        .from(metaCampaignInsightsDaily)
+        .where(condicaoDoGasto(projectId, [...campanhas.keys()]))
+        .groupBy(metaCampaignInsightsDaily.campaignId);
+
+      return consolidarInvestimento(campanhas, gasto);
+    },
   };
 }
 
 /** Só para teste e para a rota: um repositório em memória com a mesma interface. */
 export function criarRepositorioEmMemoria(seed: {
   projetos: { id: string; membros?: string[] }[];
-  funis: { id: string; projectId: string; type: string; nome?: string; criadoEm?: string }[];
+  funis: {
+    id: string;
+    projectId: string;
+    type: string;
+    nome?: string;
+    criadoEm?: string;
+    /** Story 48.11 — etapas e campanhas do funil, para as rotas que as leem. */
+    etapas?: { id: string; nome: string; stageType: string }[];
+    campanhas?: { id: string; name: string }[];
+    /** Gasto por campanha, como sai do `group by` (o cálculo é da função pura). */
+    gasto?: GastoDaCampanha[];
+    /** Story 48.11 — quantas campanhas do Google estão vinculadas. */
+    campanhasDeGoogle?: number;
+  }[];
 }): RepositorioDePlanejamento & {
   linhas: Map<string, InputsLidos>;
   organicos: Map<string, OrganicosLidos>;
@@ -544,6 +648,18 @@ export function criarRepositorioEmMemoria(seed: {
       const gravado: RotulosLidos = { cenarios: structuredClone(dados.cenarios), updatedAt: new Date().toISOString() };
       rotulos.set(simulatorId, gravado);
       return gravado;
+    },
+    async etapasDoFunil(funnelId) {
+      return seed.funis.find((f) => f.id === funnelId)?.etapas ?? [];
+    },
+    async campanhasDeGoogleDoFunil(funnelId) {
+      return seed.funis.find((f) => f.id === funnelId)?.campanhasDeGoogle ?? 0;
+    },
+    async investimentoMetaDoFunil(_projectId, funnelId) {
+      const f = seed.funis.find((x) => x.id === funnelId);
+      // A MESMA consolidação do repositório real — o duplo troca a consulta,
+      // nunca a conta.
+      return consolidarInvestimento(campanhasDoLancamento(f?.campanhas, []), f?.gasto ?? []);
     },
     async funisDeLancamento(projectId) {
       return seed.funis

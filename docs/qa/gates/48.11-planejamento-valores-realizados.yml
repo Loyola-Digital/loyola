@@ -1,0 +1,54 @@
+schema: 1
+story: '48.11'
+story_title: 'Planejamento — camada B: o realizado do lançamento anterior ao lado do valor planejado'
+gate: PASS
+status_reason: 'Camada B entregue com procedência declarada em cada número: investimento Meta por temperatura (do nome da campanha, a MESMA regra do Detalhamento do perpétuo), ticket médio e conversão por canal reusando as rotas de etapa que o dashboard já usa. 49 testes novos (24 API + 25 web); onze mutações derrubam de 1 a 5 testes cada, inclusive a que põe o gasto sem temperatura no denominador do "% quente" e a que mapeia "Outros" para Área de Membros. Três achados do gate foram corrigidos dentro dele (ver top_issues). Sem migration; contrato 18 → 19 (rota nova + campo novo em buyers-origin).'
+reviewer: 'Quinn'
+updated: '2026-09-22T17:05:00Z'
+branch: 'feat/48.11-realizado'
+
+top_issues:
+  - id: GATE-01
+    severity: medium
+    category: requirements
+    description: '`pctInvestMeta` afirmava "100 % Meta" sempre que houvesse gasto. A afirmação é verdadeira HOJE — medido em produção: zero campanhas do Google vinculadas nos 11 lançamentos, e nenhuma tabela `*_google_*_insights` no banco. Mas `funnels.google_ads_campaigns` e `funnel_stages.google_ads_campaigns` EXISTEM: no dia em que alguém vincular uma campanha do Google, a tela continuaria afirmando 100 % Meta, em silêncio.'
+    recommendation: 'A rota passou a contar as campanhas do Google vinculadas (`google.campanhasVinculadas`) e a tela só afirma 100 % quando são zero; com uma que seja, o campo fica sem `real:` e a declaração diz que a divisão não pode ser medida.'
+    status: resolved
+
+  - id: GATE-02
+    severity: medium
+    category: code
+    description: 'Falha virando ausência na tela (o padrão que já custou três investigações): sem resposta da rota `realizado` — API ainda sem ela, erro de rede —, a linha de procedência diria "esse lançamento não tem etapa de vendas" para uma base que TEM, porque `etapaDeVendas` seria `null` pelos dois motivos.'
+    recommendation: '`RealizadoDaBase.temResposta` separa "não deu para ler" de "não existe"; sem resposta, a tela diz que não conseguiu ler e lembra que a camada A segue válida.'
+    status: resolved
+
+  - id: GATE-03
+    severity: low
+    category: code
+    description: '`buyers-origin` responde 403 a guest (guarda própria da rota, diferente do resto do painel). A tela pedia mesmo assim, garantindo um erro por visita de convidado.'
+    recommendation: 'O `enabled` do hook passou a excluir guest. O convidado perde só a conversão por canal; investimento e ticket médio continuam, porque aquelas rotas deixam o membro convidado ler.'
+    status: resolved
+
+  - id: GATE-04
+    severity: low
+    category: requirements
+    description: 'O ticket médio vem de `sales-data?subtype=main_product,tmb` — produto principal COM order bump. Comparado a um ticket de produto puro digitado no simulador, pareceria alto sem explicação.'
+    recommendation: 'A linha de procedência passou a dizer "ticket médio (produto principal + order bump)".'
+    status: resolved
+
+waiver: { active: false }
+
+checks:
+  code_review: 'O cálculo do investimento ficou em módulo puro (`planejamento-investimento.ts`), separado da consulta: o que pode errar ali é a consolidação — dupla contagem e denominador —, e isso se prova sem banco. `campanhasDoLancamento` une `funnels.campaigns` e `funnel_stages.campaigns` num Map (9 dos 11 lançamentos têm o vínculo SÓ no stage; ler só o funil devolveria R$ 0,00 calado). A temperatura usa `temperaturaDoNome`, a mesma função do Detalhamento do perpétuo (29.62) — não uma regra nova que divergiria da outra tela. `canalComTemperatura` foi extraída para `lead-origin.ts`, ao lado de `classifyCanal`/`classifyTemperatura`, e é composta delas, de modo que uma mudança de convenção mova as duas telas juntas. No web, `planejamento-realizado.ts` é módulo folha e `rotuloComReferencia` ganhou um terceiro argumento OPCIONAL — nenhuma chamada existente mudou.'
+  unit_tests: 'API 24 novos em 3 arquivos (consolidação 13, rota 7, canal×temperatura 4); web 25. Suítes completas: API 3.073 passando com 10 falhas do baseline herdado (funnel-stages-lead-inputs, instagram-routes, instagram, projects, schema — nenhuma desta story); web 1.439/1.439. Onze mutações aplicadas e revertidas byte a byte (`cmp`): denominador = total → 2 falhas; nome do stage sobrescrevendo o do funil → 1; linha de gasto alheia aceita → 1; spend zero contado → 3; `condicaoDoGasto` sem `eq(projectId)` → 1; taxa sem ÷100 → 5; "Outros" → `area_membros` → 2; etapa sempre a primeira → 1; `googleTemFonte` ignorado → 1; ticket zero aceito → 1; ordem real/base invertida → 1.'
+  acceptance_criteria: 'AC1 ✓ · AC2 ✓ · AC3 ✓ (o caso real do `bbe-pr2-ago-26`: R$ 472,02 fora do denominador — 45,1 % e não 44,0 %) · AC4 ✓ · AC5 ✓ (`area_membros`, `pctGoogleQuente` e as duas fontes do Google devolvem `null`, nunca zero) · AC6 ✓ · AC7 ✓ (seletor quando há duas etapas `sales`; frase quando não há nenhuma) · AC8 ✓ (janela, campanhas, Google, etapa e % fora do mapeamento) · AC9 ✓ · AC10 ✓ · AC11 ✓.'
+  no_regressions: 'Nenhuma rota ou tabela existente mudou de forma: a rota do realizado é nova e `fontesPagasPorTemperatura` é um campo a mais em `buyers-origin`. `rotuloComReferencia` e as props `realizado` são opcionais. Sem migration. CI remoto indisponível (cota de minutos do Actions, desde 22/09) — CI local pacote a pacote.'
+  performance: 'A rota do realizado faz três consultas (funil, etapas, agregado de gasto por campanha) e uma a mais para contar campanhas do Google; todas por chave indexada e só quando o usuário escolhe uma base. No web, `staleTime` de 5 min, `retry: false` (404 de API antiga é resposta definitiva, insistir só atrasaria a tela), e as leituras de ticket/conversão só disparam com etapa de vendas escolhida.'
+  security: 'Guardas iguais às outras rotas do painel (404 fora de `launch`, projeto alheio não passa, guest lê). O filtro por `project_id` é provado inspecionando o PREDICADO serializado (`PgDialect().sqlToQuery`), não por um duplo de banco — um mock devolveria o que o teste mandasse mesmo sem o filtro. `buyers-origin` não é chamada para guest, que receberia 403.'
+  documentation: 'A story registra o levantamento de fontes conferido em produção (11 lançamentos, 869 nomes de campanha com temperatura e 0 falsos positivos), os dois fatos que o desenho teve de respeitar e as onze provas diferenciais. Os módulos explicam POR QUE cada decisão — o denominador do % quente, a ausência de balde para Área de Membros, e por que a rota devolve as etapas.'
+  api_contract: '18 → 19 com linha de histórico. ADITIVA nos dois pontos; `packages/mcp` não é afetado. O web tem fallback para os dois (rota ausente e campo ausente), então uma API atrasada não quebra a tela — o bump é o que faz o banner acusar a defasagem.'
+
+notes:
+  - 'Não medido e declarado como tal: insights do Google (não há tabela — só `google_ads_accounts`), custos variáveis realizados, bases de audiência e a conversão da Área de Membros (`classifyCanal` não tem esse balde e joga em "Outros").'
+  - 'Validação visual pendente de deploy. A fila já tinha 48.5, 48.6, 48.9 e a migration 0156 da 48.10; esta story não acrescenta migration, mas acrescenta rota — o painel novo sem a API nova mostra a camada A e diz que não conseguiu ler o realizado.'
+  - 'O que conferir na validação: `fz-m3-set-26` com base `fz-m2-jul26` (100 % quente, R$ 7.574,19); `dg-pg04` com base `dg-pg02` (R$ 126.373,06, 62,3 % quente, DUAS etapas de vendas — o seletor tem de aparecer); e `bbe-pr2-ago-26`, o único com gasto sem temperatura no nome (R$ 472,02), onde a linha de procedência deve declarar a fatia fora do "% quente".'

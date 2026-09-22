@@ -77,6 +77,25 @@ export function classifyTemperatura(utmTerm: string | null | undefined): Tempera
   return "indefinido";
 }
 
+/**
+ * Story 48.11 — o canal NOMEADO junto da temperatura: `"Meta Ads · quente"`.
+ *
+ * O simulador do Painel de Planejamento trabalha com quatro fontes pagas
+ * (plataforma × público), e `classifyCanal` sozinho devolve só a plataforma.
+ * Repetir o número agregado nos dois campos apresentaria o mesmo dado como se
+ * fossem duas medições.
+ *
+ * `indefinido` é um valor como os outros: lead pago sem `utm_term` estruturado
+ * é informação sobre o rastreio, não sujeira a esconder.
+ */
+export function canalComTemperatura(
+  utmSource: string | null | undefined,
+  utmMedium: string | null | undefined,
+  utmTerm: string | null | undefined,
+): string {
+  return `${classifyCanal(utmSource, utmMedium)} · ${classifyTemperatura(utmTerm)}`;
+}
+
 /** Últimos 8 dígitos do telefone (só dígitos). "" se < 8 dígitos. */
 export function phoneTail(phone: string | null | undefined): string {
   const digits = (phone ?? "").replace(/\D/g, "");

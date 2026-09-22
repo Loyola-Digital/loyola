@@ -24,6 +24,7 @@ import {
 } from "@/lib/utils/planejamento-inputs-form";
 import { usePlanejamentoInputs, useSalvarPlanejamentoInputs } from "@/lib/hooks/use-planejamento-inputs";
 import { referenciaDoInput, rotuloComReferencia, type BaseDeReferencia } from "@/lib/utils/planejamento-referencia"; // Story 48.9
+import { realizadoDoInput, type RealizadoDaBase } from "@/lib/utils/planejamento-realizado"; // Story 48.11
 
 // Story 48.1 — seção "Inputs Financeiros" da aba 1 da planilha.
 //
@@ -117,6 +118,7 @@ export function PlanejamentoInputsFinanceiros({
   funnelId,
   podeEditar,
   referencia = null,
+  realizado = null,
 }: {
   projectId: string;
   funnelId: string;
@@ -124,6 +126,8 @@ export function PlanejamentoInputsFinanceiros({
   podeEditar: boolean;
   /** Story 48.9 — lançamento anterior escolhido na página; o valor dele entra entre parênteses no rótulo. */
   referencia?: BaseDeReferencia | null;
+  /** Story 48.11 — o que a base ENTREGOU, ao lado do que ela planejou. */
+  realizado?: RealizadoDaBase | null;
 }) {
   const query = usePlanejamentoInputs(projectId, funnelId);
   const salvar = useSalvarPlanejamentoInputs(projectId, funnelId);
@@ -175,15 +179,16 @@ export function PlanejamentoInputsFinanceiros({
   // texto viria sem contexto; a referência aparece no `aria-label`.
   const campo = (c: Campo, rotulo: string, ariaLabel?: string) => {
     const ref = referenciaDoInput(referencia, c);
+    const real = realizadoDoInput(realizado, c);
     return (
       <CampoNumerico
         campo={c}
-        rotulo={rotulo ? rotuloComReferencia(rotulo, ref) : rotulo}
+        rotulo={rotulo ? rotuloComReferencia(rotulo, ref, real) : rotulo}
         valor={form[c]}
         erro={erros[c]}
         onChange={set(c)}
         readOnly={!podeEditar}
-        ariaLabel={ariaLabel ? rotuloComReferencia(ariaLabel, ref) : ariaLabel}
+        ariaLabel={ariaLabel ? rotuloComReferencia(ariaLabel, ref, real) : ariaLabel}
       />
     );
   };

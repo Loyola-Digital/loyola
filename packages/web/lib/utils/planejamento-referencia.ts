@@ -54,7 +54,14 @@ export function referenciaDaConversaoPaga(base: BaseDeReferencia | null, fonte: 
  *
  * O nome do lançamento fica só no cabeçalho: repeti-lo em 26 rótulos deixaria
  * a coluna ilegível, e "base" já diz de onde vem.
+ *
+ * Story 48.11 — com o valor REALIZADO junto:
+ * `"Investimento em Anúncios (base: R$ 100.000,00 · real: R$ 126.373,06)"`.
+ * Só um dos dois → só ele aparece; nenhum → rótulo limpo.
  */
-export function rotuloComReferencia(rotulo: string, referencia: string | null): string {
-  return referencia === null ? rotulo : `${rotulo} (base: ${referencia})`;
+export function rotuloComReferencia(rotulo: string, referencia: string | null, realizado?: string | null): string {
+  const partes: string[] = [];
+  if (referencia !== null) partes.push(`base: ${referencia}`);
+  if (realizado !== null && realizado !== undefined) partes.push(`real: ${realizado}`);
+  return partes.length === 0 ? rotulo : `${rotulo} (${partes.join(" · ")})`;
 }

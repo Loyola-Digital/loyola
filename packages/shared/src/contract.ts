@@ -169,4 +169,14 @@
 // planejamento/bases` — os lançamentos anteriores do mesmo expert e mesmo tipo
 // que já têm simulador salvo, para servirem de base ao preenchimento. ADITIVA;
 // `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 18;
+// v19 (Story 48.11): rota nova `GET /api/projects/:projectId/funnels/:funnelId/
+// planejamento/realizado` — o investimento Meta REALIZADO do lançamento (total,
+// quente/frio pelo nome da campanha, janela coberta) e as etapas do funil, para
+// a camada B da base de referência. E o campo novo
+// `analiseDeOrigem.fontesPagasPorTemperatura` em `buyers-origin`, o corte canal
+// × temperatura que alimenta a conversão das quatro fontes pagas do simulador.
+// ADITIVA nos dois casos; `packages/mcp` não é afetado. O web tem fallback: sem
+// a rota e sem o campo, a camada A (Story 48.9) segue inteira e nada quebra —
+// o bump é o que faz o banner acusar a defasagem em vez de o gestor concluir
+// que o "real:" não funciona.
+export const API_CONTRACT_VERSION = 19;
