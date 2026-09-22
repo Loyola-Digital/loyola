@@ -165,4 +165,8 @@
 // :funnelId/planejamento/resumo` (aba 4 do Painel de Planejamento — rótulos
 // dos cinco cenários) e a tabela `plan_final_scenarios`. ADITIVA;
 // `packages/mcp` não é afetado. A aba "Resumo Final" do web depende delas.
-export const API_CONTRACT_VERSION = 17;
+// v18 (Story 48.9): rota nova `GET /api/projects/:projectId/funnels/:funnelId/
+// planejamento/bases` — os lançamentos anteriores do mesmo expert e mesmo tipo
+// que já têm simulador salvo, para servirem de base ao preenchimento. ADITIVA;
+// `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 18;

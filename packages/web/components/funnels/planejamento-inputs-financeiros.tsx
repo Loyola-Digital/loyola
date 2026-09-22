@@ -23,6 +23,7 @@ import {
   type FormularioDosInputs,
 } from "@/lib/utils/planejamento-inputs-form";
 import { usePlanejamentoInputs, useSalvarPlanejamentoInputs } from "@/lib/hooks/use-planejamento-inputs";
+import { referenciaDoInput, rotuloComReferencia, type BaseDeReferencia } from "@/lib/utils/planejamento-referencia"; // Story 48.9
 
 // Story 48.1 — seção "Inputs Financeiros" da aba 1 da planilha.
 //
@@ -115,11 +116,14 @@ export function PlanejamentoInputsFinanceiros({
   projectId,
   funnelId,
   podeEditar,
+  referencia = null,
 }: {
   projectId: string;
   funnelId: string;
   /** `false` para guest: a API responde 403 no PUT; a tela nem oferece o botão. */
   podeEditar: boolean;
+  /** Story 48.9 — lançamento anterior escolhido na página; o valor dele entra entre parênteses no rótulo. */
+  referencia?: BaseDeReferencia | null;
 }) {
   const query = usePlanejamentoInputs(projectId, funnelId);
   const salvar = useSalvarPlanejamentoInputs(projectId, funnelId);
@@ -166,9 +170,23 @@ export function PlanejamentoInputsFinanceiros({
   }
 
   const set = (campo: Campo) => (v: string) => setForm((f) => (f ? { ...f, [campo]: v } : f));
-  const campo = (c: Campo, rotulo: string, ariaLabel?: string) => (
-    <CampoNumerico campo={c} rotulo={rotulo} valor={form[c]} erro={erros[c]} onChange={set(c)} readOnly={!podeEditar} ariaLabel={ariaLabel} />
-  );
+  // Story 48.9: o rótulo ganha "(base: 4,99%)" quando há lançamento de
+  // referência escolhido. Rótulo vazio (tabela de canais) não recebe — ali o
+  // texto viria sem contexto; a referência aparece no `aria-label`.
+  const campo = (c: Campo, rotulo: string, ariaLabel?: string) => {
+    const ref = referenciaDoInput(referencia, c);
+    return (
+      <CampoNumerico
+        campo={c}
+        rotulo={rotulo ? rotuloComReferencia(rotulo, ref) : rotulo}
+        valor={form[c]}
+        erro={erros[c]}
+        onChange={set(c)}
+        readOnly={!podeEditar}
+        ariaLabel={ariaLabel ? rotuloComReferencia(ariaLabel, ref) : ariaLabel}
+      />
+    );
+  };
   const d = derivados;
 
   async function onSalvar() {

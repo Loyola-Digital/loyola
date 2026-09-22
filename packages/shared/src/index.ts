@@ -588,3 +588,15 @@ export {
   type MarketingPagos,
   type ResumoFinal,
 } from "./planejamento-combinacoes.js";
+// Story 48.9: qual lançamento serve de base para preencher outro — expert (do
+// projeto) + tipo (do nome, contra o dicionário do Epic 47). Módulo folha.
+export {
+  TIPOS_DE_LANCAMENTO,
+  identificarLancamento,
+  rotuloDoTipoDeLancamento,
+  lancamentosAnteriores,
+  type TipoDeLancamento,
+  type LancamentoIdentificado,
+  type FunilCandidato,
+  type LancamentoAnterior,
+} from "./planejamento-lancamentos.js";

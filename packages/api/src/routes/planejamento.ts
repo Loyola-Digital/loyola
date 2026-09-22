@@ -27,6 +27,7 @@ import {
   NIVEIS_ORGANICOS,
   NIVEIS_PAGOS,
   ROTULOS_DO_CENARIO,
+  lancamentosAnteriores,
   organicosVazios,
   pagosVazios,
   rotulosVazios,
@@ -381,5 +382,47 @@ export default fp(async function planejamentoRoutes(fastify) {
     }
     const gravado = await repo().gravarRotulos(simulatorId, body.data as RotulosDoSimulador);
     return { ok: true, funnelId: ctx.funnelId, cenarios: gravado.cenarios, updatedAt: gravado.updatedAt };
+  });
+
+  // ---- Story 48.9 — bases possíveis: lançamentos anteriores do mesmo tipo ----
+  //
+  //   GET /api/projects/:projectId/funnels/:funnelId/planejamento/bases
+  //
+  // "Mesmo expert" é o PROJETO (a Loyola tem um projeto por expert), e por isso
+  // a busca já nasce escopada; "mesmo tipo" sai do nome do funil contra o
+  // dicionário do Epic 47, no módulo puro do shared. A rota não decide nada —
+  // lê os funis de lançamento do projeto e delega.
+  //
+  // Só entram os que JÁ TÊM simulador salvo: um lançamento sem nada preenchido
+  // não serve de base, e oferecê-lo seria oferecer um formulário vazio.
+  fastify.get("/api/projects/:projectId/funnels/:funnelId/planejamento/bases", async (request, reply) => {
+    const ctx = await resolverContexto(request, reply);
+    if (!ctx) return;
+    const funis = await repo().funisDeLancamento(ctx.projectId);
+    const alvo = funis.find((f) => f.id === ctx.funnelId);
+    if (!alvo) return { funnelId: ctx.funnelId, tipo: null, bases: [] };
+    const anteriores = lancamentosAnteriores(
+      { id: alvo.id, nome: alvo.nome, criadoEm: alvo.criadoEm },
+      funis.map((f) => ({ id: f.id, nome: f.nome, criadoEm: f.criadoEm })),
+    );
+    const porId = new Map(funis.map((f) => [f.id, f]));
+    return {
+      funnelId: ctx.funnelId,
+      // O tipo do PRÓPRIO funil, para a tela poder dizer "sem histórico
+      // anterior" por um motivo (primeiro do tipo) ou pelo outro (nome que o
+      // dicionário não reconhece).
+      tipo: anteriores[0]?.tipo ?? null,
+      bases: anteriores
+        .filter((a) => porId.get(a.id)?.temSimulador)
+        .map((a) => ({
+          funnelId: a.id,
+          nome: a.nome,
+          tipo: a.tipo,
+          rotuloDoTipo: a.rotuloDoTipo,
+          edicao: a.edicao,
+          criadoEm: typeof a.criadoEm === "string" ? a.criadoEm : a.criadoEm.toISOString(),
+          simuladorAtualizadoEm: porId.get(a.id)?.simuladorAtualizadoEm ?? null,
+        })),
+    };
   });
 });

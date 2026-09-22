@@ -29,6 +29,7 @@ import {
   type CampoDeTextoDoBlocoPago,
   type FormularioDosPagos,
 } from "@/lib/utils/planejamento-pagos-form";
+import { referenciaDaConversaoPaga, rotuloComReferencia, type BaseDeReferencia } from "@/lib/utils/planejamento-referencia"; // Story 48.9
 import { usePlanejamentoInputs } from "@/lib/hooks/use-planejamento-inputs";
 import { usePlanejamentoPagos, useSalvarPlanejamentoPagos } from "@/lib/hooks/use-planejamento-pagos";
 
@@ -68,6 +69,7 @@ function BlocoDaFonte({
   cplMedio,
   erros,
   podeEditar,
+  refConversao,
   onCampo,
   onNivel,
 }: {
@@ -78,6 +80,8 @@ function BlocoDaFonte({
   cplMedio: number | null;
   erros: Partial<Record<string, string>>;
   podeEditar: boolean;
+  /** Story 48.9 — conversão média da mesma fonte no lançamento de referência, já formatada. */
+  refConversao: string | null;
   onCampo: (campo: CampoDeTextoDoBlocoPago, v: string) => void;
   onNivel: (nivel: number | null) => void;
 }) {
@@ -100,7 +104,7 @@ function BlocoDaFonte({
             <CampoNumerico
               key={k}
               id={`${fonte}-${k}`}
-              rotulo={ROTULO_DO_PARAMETRO[k]}
+              rotulo={k === "conversaoMedia" ? rotuloComReferencia(ROTULO_DO_PARAMETRO[k], refConversao) : ROTULO_DO_PARAMETRO[k]}
               valor={form.campos[k]}
               erro={erros[k]}
               placeholder={k === "fracaoCenario1" ? "70" : undefined}
@@ -358,11 +362,14 @@ export function PlanejamentoLeadsPagos({
   funnelId,
   podeEditar,
   irParaInputs,
+  referencia = null,
 }: {
   projectId: string;
   funnelId: string;
   podeEditar: boolean;
   irParaInputs: () => void;
+  /** Story 48.9 — lançamento anterior escolhido na página. */
+  referencia?: BaseDeReferencia | null;
 }) {
   const inputs = usePlanejamentoInputs(projectId, funnelId);
   const pagos = usePlanejamentoPagos(projectId, funnelId);
@@ -491,6 +498,7 @@ export function PlanejamentoLeadsPagos({
           cplMedio={blocoPagoComoEntradas(payload.blocos[fonte]).cplMedioHistorico}
           erros={erros[fonte] ?? {}}
           podeEditar={podeEditar}
+          refConversao={referenciaDaConversaoPaga(referencia, fonte)}
           onCampo={(campo, v) => setCampo(fonte, campo, v)}
           onNivel={(nivel) => setNivel(fonte, nivel)}
         />
