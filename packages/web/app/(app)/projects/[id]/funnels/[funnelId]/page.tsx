@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Pencil, Plus, Settings2 } from "lucide-react";
+import Link from "next/link";
+import { Calculator, Pencil, Plus, Settings2 } from "lucide-react";
 import { useFunnel, useFunnels, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { rotuloDoTipoDeEtapa } from "@/lib/utils/rotulos-de-etapa";
 import { useUserRole } from "@/lib/hooks/use-user-role";
@@ -35,6 +36,7 @@ import { Label } from "@/components/ui/label";
 import { SortableStageGrid } from "@/components/funnels/sortable-stage-grid";
 import { CampaignLogCard } from "@/components/funnels/campaign-log-link";
 import { PlanejamentoCard } from "@/components/funnels/planejamento-card"; // Story 48.1
+import { planejamentoHref, temPainelDePlanejamento } from "@/lib/utils/planejamento-entrada"; // Story 48.7
 import { OrphanCampaignsBanner } from "@/components/funnels/orphan-campaigns-banner";
 import { SwitchyFunnelSection } from "@/components/funnels/switchy-funnel-section";
 import { toast } from "sonner";
@@ -217,6 +219,29 @@ export default function FunnelPage() {
             </PopoverTrigger>
             <PopoverContent className="w-80" align="end">
               <div className="space-y-4">
+                {/* Story 48.7 — a entrada do Painel de Planejamento também
+                    AQUI, e em primeiro lugar: é destino, não ajuste. O cartão
+                    no grid continua (Story 48.1), mas foi onde o dono do
+                    produto não achou — ele procurou nas Configurações do
+                    Funil, que é onde o simulador (um por funil de lançamento)
+                    de fato pertence. */}
+                {temPainelDePlanejamento(funnelData.funnelType) && (
+                  <div className="border-b border-border/30 pb-3 space-y-2">
+                    <div>
+                      <p className="text-sm font-medium">Painel de Planejamento</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Metas, custos, investimento e cenários — quantos leads captar e a que CPL. Um simulador por funil de lançamento.
+                      </p>
+                    </div>
+                    <Button size="sm" variant="outline" className="w-full gap-1.5 h-8" asChild>
+                      <Link href={planejamentoHref(params.id, params.funnelId)}>
+                        <Calculator className="h-3.5 w-3.5 text-emerald-600" />
+                        Abrir Planejamento
+                      </Link>
+                    </Button>
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <p className="text-sm font-medium">Tipo do funil</p>
                   <div className="grid grid-cols-3 gap-1.5">
@@ -334,7 +359,7 @@ export default function FunnelPage() {
       {/* Log de Campanha — entrada FIXA em todo funil (Story 38.1) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         <CampaignLogCard projectId={params.id} funnelId={params.funnelId} />
-        {funnelData.funnelType === "launch" && <PlanejamentoCard projectId={params.id} funnelId={params.funnelId} />}
+        {temPainelDePlanejamento(funnelData.funnelType) && <PlanejamentoCard projectId={params.id} funnelId={params.funnelId} />}
       </div>
 
       {/* Switch — Gerador de Links atrelado ao funil (Story 33.7) */}

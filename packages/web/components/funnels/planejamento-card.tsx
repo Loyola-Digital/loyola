@@ -2,21 +2,22 @@
 
 import Link from "next/link";
 import { Calculator, ChevronRight } from "lucide-react";
+import { planejamentoHref as href } from "@/lib/utils/planejamento-entrada";
 
 // Story 48.1 — ponto de entrada do Painel de Planejamento (Epic 48).
 // Cartão FIXO no grid do funil de LANÇAMENTO, ao lado do Log de Campanha
 // (mesmo molde de `campaign-log-link.tsx`, decisão A6 do @architect): o
 // simulador é uma sub-página do funil, não uma etapa.
 
-export function planejamentoHref(projectId: string, funnelId: string, tab?: string): string {
-  const base = `/projects/${projectId}/funnels/${funnelId}/planejamento`;
-  return tab ? `${base}?tab=${tab}` : base;
-}
+// Story 48.7 — a função mora em `lib/utils/planejamento-entrada.ts` (lá o
+// vitest do web a alcança); aqui fica a reexportação para os imports que já
+// existiam não quebrarem.
+export { planejamentoHref } from "@/lib/utils/planejamento-entrada";
 
 /** Card fixo exibido no grid de etapas do funil `launch` (sem drag, sem delete). */
 export function PlanejamentoCard({ projectId, funnelId }: { projectId: string; funnelId: string }) {
   return (
-    <Link href={planejamentoHref(projectId, funnelId)} className="block group">
+    <Link href={href(projectId, funnelId)} className="block group">
       <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 transition-shadow hover:shadow-md">
         <div className="flex items-start justify-between">
           <div className="min-w-0">
