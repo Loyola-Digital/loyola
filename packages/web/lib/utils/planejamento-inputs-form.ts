@@ -42,6 +42,41 @@ export const TIPO_DO_CAMPO: Record<CampoDosInputs, TipoDoCampo> = {
   baseAreaMembros: "contagem",
 };
 
+/**
+ * Story 48.8 — o padrão dos custos variáveis da operação da Loyola, em FRAÇÃO
+ * (a unidade da API). São os números que o time redigita em todo lançamento:
+ * 4 % + 4,99 % + 11 % + 0 % + 0 % + 1 % = 20,99 % de custo total.
+ *
+ * É padrão de PREENCHIMENTO, não regra: vive aqui (tela), não no motor do
+ * shared — a planilha não tem esses valores, a operação tem.
+ */
+export const CUSTOS_PADRAO = {
+  pctReembolso: 0.04,
+  pctMarketplace: 0.0499,
+  pctImposto: 0.11,
+  pctCustoProduto: 0,
+  pctComissoes: 0,
+  pctOutrosCustos: 0.01,
+} as const satisfies Partial<Record<CampoDosInputs, number>>;
+
+/**
+ * Preenche os seis custos com o padrão — só quando o funil NUNCA salvou
+ * (`updatedAt === null` no GET, o mesmo critério objetivo que as abas 2–4 usam
+ * para dizer "a aba 1 está vazia").
+ *
+ * Padrão, não fixo (AC2): depois de salvo, o que está salvo manda — inclusive
+ * campo vazio, que é uma escolha de quem salvou e não pode ser desfeita na
+ * próxima abertura. E mesmo com `nuncaSalvo`, só entra onde está `null`.
+ */
+export function aplicarPadraoDeCustos(inputs: InputsPersistidos, nuncaSalvo: boolean): InputsPersistidos {
+  if (!nuncaSalvo) return inputs;
+  const out = { ...inputs };
+  for (const [campo, valor] of Object.entries(CUSTOS_PADRAO) as [CampoDosInputs, number][]) {
+    if (out[campo] === null || out[campo] === undefined) out[campo] = valor;
+  }
+  return out;
+}
+
 /** Da API (fração/reais/contagem) para o formulário (pontos percentuais/reais/contagem), como texto. */
 export function paraFormulario(inputs: InputsPersistidos): FormularioDosInputs {
   const f = {} as FormularioDosInputs;
