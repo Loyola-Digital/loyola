@@ -282,3 +282,37 @@ describe("D3 — vazio vale zero, denominador zero vale null, nunca NaN/Infinity
     expect(new Set(CAMPOS_DOS_INPUTS_FINANCEIROS).size).toBe(26);
   });
 });
+
+describe("Story 48.6 (DEV-03) — complementos por subtração: exatos, não `(1 − %) × total`", () => {
+  const d = derivarInputsFinanceiros(A);
+
+  it("investMetaFrio === 8 000 e margemMetaFrio === 5 000 com igualdade EXATA (a fórmula antiga dava 7 999,999999999998 e 4 999,999999999999)", () => {
+    expect(d.investMetaFrio).toBe(8000);
+    expect(d.margemMetaFrio).toBe(5000);
+  });
+
+  it("as sete identidades `parte + complemento === total` fecham com igualdade exata", () => {
+    expect(d.metaMargemPagos + d.metaMargemOrganicos).toBe(250000);
+    expect(d.investMeta + d.investGoogle).toBe(100000);
+    expect(d.investMetaQuente + d.investMetaFrio).toBe(d.investMeta);
+    expect(d.investGoogleQuente + d.investGoogleFrio).toBe(d.investGoogle);
+    expect(d.margemMetaAds + d.margemGoogleAds).toBe(d.metaMargemPagos);
+    expect(d.margemMetaQuente + d.margemMetaFrio).toBe(d.margemMetaAds);
+    expect(d.margemGoogleQuente + d.margemGoogleFrio).toBe(d.margemGoogleAds);
+  });
+
+  it("os percentuais complementares seguem `1 − %` (exibidos, não multiplicados)", () => {
+    expect(d.pctMetaFrio).toBeCloseTo(0.2, 12);
+    expect(d.pctInvestGoogle).toBeCloseTo(0.6, 12);
+    expect(d.pctGoogleFrio).toBeCloseTo(0.25, 12);
+    expect(d.pctMargemOrganicos).toBeCloseTo(0.75, 12);
+  });
+
+  it("vazio continua valendo zero: total vazio → parte e complemento zero, nunca NaN", () => {
+    const v = derivarInputsFinanceiros({ ...A, investimentoAnuncios: null });
+    expect(v.investMeta).toBe(0);
+    expect(v.investGoogle).toBe(0);
+    expect(v.investMetaFrio).toBe(0);
+    expect(Object.is(v.investGoogleFrio, -0) || v.investGoogleFrio === 0).toBe(true);
+  });
+});
