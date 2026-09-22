@@ -1,0 +1,28 @@
+schema: 1
+story: '48.9'
+story_title: 'Planejamento — base de referência: os valores do lançamento anterior ao lado de cada campo'
+gate: PASS
+status_reason: 'Camada A entregue como decidido: casamento por expert (projeto) + tipo (nome × dicionário do Epic 47), conferido contra os 11 lançamentos reais; referência entre parênteses no rótulo, sem preencher nem salvar nada. 28 testes novos; cinco mutações derrubam 7/3/2/4/2 — inclusive a que faz o módulo CHUTAR o tipo de `bbe-web-mai-26`, que é o caminho "sem histórico anterior" que o Danilo pediu. Sem migration; contrato 17 → 18 (rota nova).'
+reviewer: 'Quinn'
+updated: '2026-09-22T12:10:00Z'
+branch: 'feat/48.9-base-lancamento-anterior'
+commits: ['517267c6']
+
+top_issues: []
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Módulo folha sem imports; `identificarLancamento` só aceita tipo do dicionário e guarda o cru para a tela explicar o "sem histórico"; `lancamentosAnteriores` filtra por tipo E por data e ordena do mais recente. A rota não decide nada — lê `funisDeLancamento` (projeto + `type=launch`, com `leftJoin` em `plan_simulators`) e delega ao módulo; filtra as bases sem simulador salvo, o que evita oferecer formulário vazio como base. Permissão e 404 herdados de `resolverContexto` (mesma guarda das outras quatro rotas do painel). No web, a base é lida pelos MESMOS hooks das abas com outro `funnelId` — sem endpoint de cópia, sem estado novo; `referencia` é opcional em todos os componentes, então nenhuma chamada existente quebrou. AC5 verificado na leitura: o valor de referência só entra em `rotulo`/`aria-label`, nunca em `setForm`.'
+  unit_tests: 'API 19 (12 do módulo + 7 da rota) e web 9 — verdes; suítes de planejamento da API 49/49 e web 1 417/1 417. Mutações do QA/@dev: tipo ignorado → 7 ✗→falhas; data ignorada → 3; tipo chutado (`web` vira `pg`) → 2; ordem invertida → 4; base sem simulador oferecida → 2. Fixtures são os nomes reais de produção, com as três irregularidades (sem hífen, sem mês, fora do dicionário).'
+  acceptance_criteria: 'AC1 ✓ · AC2 ✓ · AC3 ✓ (as duas frases de "sem histórico" distinguem o motivo) · AC4 ✓ (26 campos + conversão média das abas 2/3; `aria-label` na tabela de canais) · AC5 ✓ · AC6 ✓ · AC7 ✓.'
+  no_regressions: 'Nenhuma rota ou tabela existente mudou; `referencia` opcional. Suíte completa do web verde; planejamento da API verde. Sem migration. CI remoto indisponível (cota de minutos) — CI local pacote a pacote.'
+  performance: 'Uma query a mais (funis do projeto + leftJoin) por abertura da aba; as leituras da base só acontecem quando alguém escolhe uma.'
+  security: 'A base é lida pela rota existente do outro funil, dentro do MESMO projeto — a autorização é a mesma do painel; guest lê e não escreve.'
+  documentation: 'O módulo registra de onde sai expert e tipo e por que não se chuta; a story traz o levantamento de fontes que sustentou a decisão de fazer a camada A antes da B.'
+  api_contract: '17 → 18 com linha de histórico. ADITIVA; `packages/mcp` não afetado.'
+
+notes:
+  - 'Camada B (valores realizados) fica para a story seguinte, com as lacunas já mapeadas: não há tabela de insights do Google no banco; custos variáveis e bases de audiência não existem como dado.'
+  - 'Lição registrada em memória: `toLocaleString("pt-BR")` usa NBSP (U+00A0) na moeda — comparar com espaço comum falha com strings visualmente idênticas.'
+  - 'Validação visual pendente: `fz-m3-set-26` escolhendo `fz-m2-jul26`; e `bbe-web-mai-26` mostrando a frase de "sem histórico".'
