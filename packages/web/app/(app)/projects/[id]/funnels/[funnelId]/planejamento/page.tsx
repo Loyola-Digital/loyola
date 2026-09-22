@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useFunnel } from "@/lib/hooks/use-funnels";
 import { useUserRole } from "@/lib/hooks/use-user-role";
 import { PlanejamentoInputsFinanceiros } from "@/components/funnels/planejamento-inputs-financeiros";
+import { PlanejamentoLeadsOrganicos } from "@/components/funnels/planejamento-leads-organicos"; // Story 48.3
 
 // Story 48.1 — sub-página "Planejamento" do funil de LANÇAMENTO (Epic 48).
 //
@@ -18,13 +19,13 @@ import { PlanejamentoInputsFinanceiros } from "@/components/funnels/planejamento
 // etapa tem. Aqui as quatro abas do simulador vivem em `?tab=` com `value`s
 // fixos — regra não-negociável do Epic 46: o `value` é contrato de URL.
 //
-// Esta story entrega só `inputs`; as outras três aparecem desabilitadas até
-// as stories 48.3 (orgânicos), 48.4 (pagos) e 48.5 (resumo).
+// A 48.1 entregou `inputs`; a 48.3 liga `organicos`. As outras aparecem
+// desabilitadas até as stories 48.4 (pagos) e 48.5 (resumo).
 
 /** Contrato de URL (Epic 46): nunca renomear. */
 const ABAS = [
   { value: "inputs", rotulo: "Inputs Financeiros", pronta: true },
-  { value: "organicos", rotulo: "Leads Orgânicos", pronta: false },
+  { value: "organicos", rotulo: "Leads Orgânicos", pronta: true }, // Story 48.3
   { value: "pagos", rotulo: "Leads Pagos", pronta: false },
   { value: "resumo", rotulo: "Resumo Final", pronta: false },
 ] as const;
@@ -113,6 +114,14 @@ export default function PlanejamentoPage() {
         </TabsList>
         <TabsContent value="inputs" className="mt-4">
           <PlanejamentoInputsFinanceiros projectId={params.id} funnelId={params.funnelId} podeEditar={role !== null && role !== "guest"} />
+        </TabsContent>
+        <TabsContent value="organicos" className="mt-4">
+          <PlanejamentoLeadsOrganicos
+            projectId={params.id}
+            funnelId={params.funnelId}
+            podeEditar={role !== null && role !== "guest"}
+            irParaInputs={() => trocarAba("inputs")}
+          />
         </TabsContent>
       </Tabs>
     </div>
