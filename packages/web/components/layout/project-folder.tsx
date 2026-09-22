@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronRight, ChevronDown, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Smartphone, Plus, MoreHorizontal, Trash2, Share2, Youtube, Pencil, ArrowUpDown, Settings, Brain, EyeOff, Eye, Archive, RotateCcw, Link2, CreditCard, FlaskConical } from "lucide-react";
+import { Calculator, ChevronRight, ChevronDown, Instagram, MessageSquare, TrendingUp, Rocket, Repeat, Smartphone, Plus, MoreHorizontal, Trash2, Share2, Youtube, Pencil, ArrowUpDown, Settings, Brain, EyeOff, Eye, Archive, RotateCcw, Link2, CreditCard, FlaskConical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -33,6 +33,7 @@ import { toast } from "sonner";
 import type { Project } from "@/lib/hooks/use-projects";
 import { useDeleteProject, useUpdateProject } from "@/lib/hooks/use-projects";
 import { useUserRole } from "@/lib/hooks/use-user-role";
+import { planejamentoHref, temPainelDePlanejamento } from "@/lib/utils/planejamento-entrada"; // Story 48.7
 import { useHiddenProjectsStore } from "@/lib/stores/hidden-projects-store";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -391,6 +392,28 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
           </DialogHeader>
 
           <div className="space-y-4">
+            {/* Story 48.7 — a entrada do Painel de Planejamento fica AQUI, em
+                primeiro lugar: é destino, não ajuste. Este é o "Configurações
+                do Funil" que o time abre (menu do funil na barra lateral) — a
+                primeira versão da story pôs a seção no popover da engrenagem
+                da PÁGINA do funil, que é outro lugar, e o dono do produto
+                continuou sem achar. Os dois têm os mesmos três ajustes; a
+                entrada existe nos dois. */}
+            {temPainelDePlanejamento(funnel.type) && (
+              <div className="space-y-2 border-b border-border/30 pb-3">
+                <Label className="text-sm font-medium">Painel de Planejamento</Label>
+                <p className="text-xs text-muted-foreground">
+                  Metas, custos, investimento e cenários — quantos leads captar e a que CPL. Um simulador por funil de lançamento.
+                </p>
+                <Button size="sm" variant="outline" className="w-full gap-1.5 h-9" asChild onClick={() => setSettingsOpen(false)}>
+                  <Link href={planejamentoHref(projectId, funnel.id)}>
+                    <Calculator className="h-3.5 w-3.5 text-emerald-600" />
+                    Abrir Planejamento
+                  </Link>
+                </Button>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label className="text-sm font-medium">Tipo do funil</Label>
               <div className="grid grid-cols-3 gap-1.5">
