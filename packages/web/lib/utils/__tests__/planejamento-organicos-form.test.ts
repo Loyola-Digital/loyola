@@ -7,6 +7,7 @@ import {
   LIMIAR_VERDE,
   LIMIAR_VERMELHO,
   blocoComoEntradas,
+  classeDaCelulaDeLeads,
   classeDaFaixa,
   diagnosticoDaAba1,
   estadoDaTela,
@@ -17,7 +18,9 @@ import {
   paraFormularioOrganicos,
   paraPayloadOrganicos,
   temErros,
+  temReferenciaDeFaixa,
   validarOrganicos,
+  valorDaGrade,
 } from "@/lib/utils/planejamento-organicos-form";
 
 /**
@@ -172,6 +175,28 @@ describe("classeDaFaixa — 1 azul … 4 vermelho (AC9)", () => {
     expect(classeDaFaixa(3)).toMatch(/amber/);
     expect(classeDaFaixa(4)).toMatch(/red/);
     expect(classeDaFaixa(null)).toBe("");
+  });
+});
+
+describe("UX-001 — faixa só com referência", () => {
+  it("leads esperados 0 (base ou taxa vazias) → sem referência: célula sem cor, mesmo com faixa 4 do motor", () => {
+    expect(temReferenciaDeFaixa(3000)).toBe(true);
+    expect(temReferenciaDeFaixa(0)).toBe(false);
+    expect(temReferenciaDeFaixa(Number.NaN)).toBe(false);
+    expect(classeDaCelulaDeLeads(4, 0)).toBe(""); // o motor classifica tudo > 0 como 4 quando a referência é zero
+    expect(classeDaCelulaDeLeads(4, 3000)).toMatch(/red/);
+    expect(classeDaCelulaDeLeads(2, 3000)).toMatch(/emerald/);
+    expect(classeDaCelulaDeLeads(null, 3000)).toBe("");
+  });
+});
+
+describe("REQ-001 — meta de receita null → '—' na grade", () => {
+  it("meta null anula o valor (a grade mostra —); meta zero ou positiva mantém o valor, inclusive zero", () => {
+    expect(valorDaGrade(0, null)).toBeNull();
+    expect(valorDaGrade(1700, null)).toBeNull();
+    expect(valorDaGrade(0, 0)).toBe(0);
+    expect(valorDaGrade(1700, 115384.62)).toBe(1700);
+    expect(valorDaGrade(null, 115384.62)).toBeNull();
   });
 });
 

@@ -22,6 +22,7 @@ import {
   CAMPOS_DE_FRACAO_DO_BLOCO,
   ROTULO_DO_CANAL,
   blocoComoEntradas,
+  classeDaCelulaDeLeads,
   classeDaFaixa,
   diagnosticoDaAba1,
   estadoDaTela,
@@ -32,7 +33,9 @@ import {
   paraFormularioOrganicos,
   paraPayloadOrganicos,
   temErros,
+  temReferenciaDeFaixa,
   validarOrganicos,
+  valorDaGrade,
   type CampoDeFracaoDoBloco,
   type FormularioDosOrganicos,
 } from "@/lib/utils/planejamento-organicos-form";
@@ -117,7 +120,10 @@ function LegendaDasFaixas({ grade }: { grade: GradeOrganica }) {
   const item = (faixa: 1 | 2 | 3 | 4, texto: string) => (
     <span className={`inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] ${classeDaFaixa(faixa)}`}>{texto}</span>
   );
-  if (!l) return <p className="text-xs text-muted-foreground">Faixas sem base — informe a taxa de captação e a base do canal.</p>;
+  // UX-001: sem referência (leads esperados = 0) não há faixa — nem cor, nem "# Leads > 0".
+  if (!l || !temReferenciaDeFaixa(grade.leadsEsperados)) {
+    return <p className="text-xs text-muted-foreground">Faixas sem base — informe a taxa de captação e a base do canal.</p>;
+  }
   return (
     <div className="flex flex-wrap gap-1.5" aria-label="Legenda das faixas de leads">
       {item(1, `# Leads < ${fmtInt(l.lo)}`)}
@@ -172,6 +178,8 @@ function BlocoDoCanal({
   onNivel: (nivel: number | null) => void;
 }) {
   const rotulo = ROTULO_DO_CANAL[canal];
+  // REQ-001: meta de receita null (margem-alvo sem base na 48.1) → "—" na grade, não "0".
+  const meta = origem.metaReceita;
   return (
     <Card>
       <CardHeader>
@@ -216,7 +224,7 @@ function BlocoDoCanal({
                 </th>
                 {grade.receita.map((r, i) => (
                   <th key={i} className="text-right py-1 px-1 tabular-nums font-normal whitespace-nowrap">
-                    {fmtCurrency(r)}
+                    {fmtCurrency(valorDaGrade(r, meta))}
                   </th>
                 ))}
               </tr>
@@ -226,7 +234,7 @@ function BlocoDoCanal({
                 </th>
                 {grade.vendas.map((v, i) => (
                   <th key={i} className="text-right py-1 px-1 tabular-nums font-normal">
-                    {fmtInt(v)}
+                    {fmtInt(valorDaGrade(v, meta))}
                   </th>
                 ))}
               </tr>
@@ -249,8 +257,8 @@ function BlocoDoCanal({
                     </td>
                     <td className="py-0.5 pr-2 whitespace-nowrap text-muted-foreground">{pctPontos(grade.escada[i])}</td>
                     {grade.leads[i].map((leads, j) => (
-                      <td key={j} className={`text-right py-0.5 px-1 ${classeDaFaixa(grade.faixas[i][j])}`}>
-                        {fmtInt(leads)}
+                      <td key={j} className={`text-right py-0.5 px-1 ${meta === null ? "" : classeDaCelulaDeLeads(grade.faixas[i][j], grade.leadsEsperados)}`}>
+                        {fmtInt(valorDaGrade(leads, meta))}
                       </td>
                     ))}
                   </tr>

@@ -172,6 +172,34 @@ export function classeDaFaixa(faixa: Faixa | null): string {
   return faixa === null ? "" : CLASSE_DA_FAIXA[faixa];
 }
 
+/**
+ * UX-001 (gate da 48.3; nota 2 do gate da 48.2): a faixa só tem sentido com
+ * REFERÊNCIA — leads esperados por campanha > 0 (taxa de captação × base).
+ * Com referência zero o motor reproduz a planilha (`limites = {0,0,0}`,
+ * toda célula > 0 cai na faixa 4) e a grade inteira ficaria vermelha com a
+ * legenda "# Leads > 0" — "sem base" lido como "tudo ruim". A tela não pinta
+ * e diz que falta a referência; o motor fica intocado.
+ */
+export function temReferenciaDeFaixa(leadsEsperados: number): boolean {
+  return Number.isFinite(leadsEsperados) && leadsEsperados > 0;
+}
+
+/** Classe da célula de leads: a cor da faixa só quando há referência (UX-001). */
+export function classeDaCelulaDeLeads(faixa: Faixa | null, leadsEsperados: number): string {
+  return temReferenciaDeFaixa(leadsEsperados) ? classeDaFaixa(faixa) : "";
+}
+
+/**
+ * REQ-001 (gate da 48.3): meta de receita `null` na 48.1 (margem-alvo sem
+ * base) é "sem base", e a AC13 manda mostrar "—" na grade. O motor da 48.2
+ * devolve zeros para meta vazia (regra dele: meta vazia → dez zeros), então a
+ * tradução para "—" é da tela: um valor da grade vira `null` quando a META
+ * é `null` — não quando é zero (zero é zero).
+ */
+export function valorDaGrade(valor: number | null, metaReceita: number | null): number | null {
+  return metaReceita === null ? null : valor;
+}
+
 // ------------------------------------------------------------------
 // AC13 — o que falta na aba 1 para a aba 2 ter base
 // ------------------------------------------------------------------

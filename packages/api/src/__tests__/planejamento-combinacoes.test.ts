@@ -337,6 +337,24 @@ describe("vendas, leads e conversão por canal — Combinação 1 (RN-013, RN-02
     expect(w.leads).toBe(grades().whatsapp.leads[2][3]);
   });
 
+  it("TEST-001 (gate): a conversão do produto é a dos INTEIROS, não a bruta — Email 62 ÷ 1 676 = 0,036993 (bruto 0,037), Área 14 ÷ 438 = 0,031963 (bruto 0,032)", () => {
+    // No WhatsApp as duas cadeias coincidem (0,036); aqui elas divergem, e é
+    // isso que impede a mutação `conversao = div(vendasBruto, leadsBruto)`
+    // (mistura de cadeias, proibida por D10) de passar.
+    const email = c1.canais.email;
+    expect(email.vendas).toBe(62);
+    expect(email.leads).toBe(1676);
+    expect(email.conversao).toBe(62 / 1676);
+    perto(email.conversaoBruto, 0.037, 6);
+    expect(email.conversao).not.toBe(email.conversaoBruto);
+    const area = c1.canais.area_membros;
+    expect(area.vendas).toBe(14);
+    expect(area.leads).toBe(438);
+    expect(area.conversao).toBe(14 / 438);
+    perto(area.conversaoBruto, 0.032, 6);
+    expect(area.conversao).not.toBe(area.conversaoBruto);
+  });
+
   it("totais do PRODUTO são a soma dos inteiros: 221 vendas e 8 079 leads", () => {
     expect(c1.totais.vendas).toBe(221);
     expect(c1.totais.leads).toBe(8079);
