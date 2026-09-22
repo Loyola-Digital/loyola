@@ -568,3 +568,23 @@ export {
   type TotaisPagos,
   type CombinacaoPaga,
 } from "./planejamento-combinacoes.js";
+// Story 48.5: Resumo Final (aba 4) — consolidação de uma combinação orgânica
+// com uma paga (receitas, cadeia, tráfego, margens, meta total, marketing) e
+// a lista de rótulos dos cenários (DV-017 = A). Mesmo módulo folha.
+export {
+  ROTULOS_DO_CENARIO,
+  rotulosVazios,
+  ehRotuloDoCenario,
+  resumoFinal,
+  type RotuloDoCenario,
+  type CenarioRotulado,
+  type RotulosDoSimulador,
+  type ReceitasConsolidadas,
+  type CadeiaConsolidada,
+  type TrafegoConsolidado,
+  type McConsolidada,
+  type MarketingOrganicos,
+  type MarketingDaPlataforma,
+  type MarketingPagos,
+  type ResumoFinal,
+} from "./planejamento-combinacoes.js";

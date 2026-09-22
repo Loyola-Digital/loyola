@@ -2,9 +2,11 @@
  * Combinações de cenários — a região direita (U:AG) das abas
  * `[2] Leads Orgânicos` (Story 48.3) e `[3] Leads Pagos` (Story 48.4).
  *
- * A parte dos PAGOS fica no fim do arquivo ("Fontes pagas"): reaproveita a
- * cadeia de deduções e o atingimento daqui e acrescenta tráfego, margem por
- * plataforma e o resumo por fonte com CPL máximo.
+ * A parte dos PAGOS fica na seção "Fontes pagas": reaproveita a cadeia de
+ * deduções e o atingimento daqui e acrescenta tráfego, margem por plataforma
+ * e o resumo por fonte com CPL máximo. A seção "Resumo Final" (Story 48.5,
+ * aba 4) consolida uma combinação orgânica com uma paga — sem recalcular
+ * nada das duas.
  *
  * ## O que uma combinação é
  *
@@ -745,5 +747,256 @@ export function combinacaoPaga(args: {
     meta: atingimentoDaMeta(mc.pagos, args.metaMargemPagos),
     fontes,
     totais: totaisPagos(fontes),
+  };
+}
+
+// ==================================================================
+// Resumo Final — aba `[4] Resumo Final` (Story 48.5)
+// ==================================================================
+//
+// O Cenário k consolida a Combinação k da aba 2 (`combinacaoOrganica`) com a
+// Combinação k da aba 3 (`combinacaoPaga`): soma receitas, deduções e
+// margens, lê o tráfego dos pagos, mede o atingimento contra a META TOTAL
+// (F13 da 48.1) e junta o resumo de marketing das duas origens. Nada aqui
+// refaz uma grade ou uma cadeia (E4): tudo é lido dos dois objetos.
+//
+// O que NÃO reproduz da planilha (decisões do Danilo):
+//   - DV-015 (D9): "Nº de Vendas Google" repetia só o público quente. Aqui
+//     Google = quente + frio, como o Meta — e o total de pagos soma as quatro
+//     fontes (D13, herdado da 48.4).
+//   - DV-008: canal/fonte sem nível dava `#N/A` em cascata até aqui. `null`
+//     por LINHA (D3): um canal sem nível anula os leads orgânicos, não os
+//     pagos, e vice-versa.
+//   - `#DIV/0!` / `#VALUE!` (REPT negativo): denominador zero é `null`;
+//     margem negativa é atingimento negativo, número.
+// E o que reproduz de propósito: RN-031 — a "receita líquida total" é a MC
+// dos orgânicos MAIS a receita líquida dos pagos antes do tráfego (as duas
+// parcelas são "depois dos custos variáveis, antes do tráfego"); e o tráfego
+// é o mesmo nos cinco cenários.
+//
+// AR-006/AR-007 viram invariantes (testadas), não regras: os percentuais
+// consolidados reproduzem os da aba 1, e os totais lidos das combinações são
+// iguais à re-soma por canal/fonte.
+//
+// DV-017 = A: o rótulo do cenário (META PISO / BOA / SUPER) é anotação
+// persistida, sem regra — este módulo só conhece a lista.
+
+/** Lista literal da validação de dados de G6, I6, K6, M6, O6 — constante, não cadastro (E3). */
+export const ROTULOS_DO_CENARIO = ["META PISO", "META BOA", "META SUPER"] as const;
+export type RotuloDoCenario = (typeof ROTULOS_DO_CENARIO)[number];
+
+export interface CenarioRotulado {
+  indice: number;
+  rotulo: RotuloDoCenario | null;
+}
+
+/** O que a API guarda e devolve para a aba 4: só os rótulos (E5). */
+export interface RotulosDoSimulador {
+  cenarios: CenarioRotulado[];
+}
+
+/** Cinco cenários sem rótulo — a forma fixa da tela. */
+export function rotulosVazios(): RotulosDoSimulador {
+  return { cenarios: INDICES_DAS_COMBINACOES.map((indice) => ({ indice, rotulo: null })) };
+}
+
+export function ehRotuloDoCenario(v: unknown): v is RotuloDoCenario {
+  return typeof v === "string" && (ROTULOS_DO_CENARIO as readonly string[]).includes(v);
+}
+
+// ------------------------------------------------------------------
+// Consolidação
+// ------------------------------------------------------------------
+
+export interface ReceitasConsolidadas {
+  /** G11 — `o.cadeia.receitaBruta`. */
+  organicos: number;
+  /** G12 — `p.cadeia.receitaBruta`. */
+  pagos: number;
+  /** G10. */
+  total: number;
+}
+
+export interface CadeiaConsolidada {
+  /** G14 e F14 (`÷ receita bruta total`). */
+  reembolso: number;
+  pctReembolso: number | null;
+  /** G16. */
+  receitaTributavel: number;
+  /** G18…G22, cada uma orgânicos + pagos. */
+  deducoes: CadeiaDeDeducoes["deducoes"];
+  /** F18…F22 — cada dedução `÷ receita tributável`. */
+  pctDeducoes: { marketplace: number | null; imposto: number | null; custoProduto: number | null; comissoes: number | null; outros: number | null };
+  totalDeducoes: number;
+  /** G24 — RN-031: MC dos orgânicos + receita líquida dos pagos (antes do tráfego). */
+  receitaLiquidaTotal: number;
+}
+
+export interface TrafegoConsolidado extends Trafego {
+  /** F26 — `total ÷ receita bruta TOTAL` (o `pctDaReceita` herdado é sobre a receita paga). */
+  pctDaReceitaTotal: number | null;
+}
+
+export interface McConsolidada {
+  /** G35, G36, G34. */
+  organicos: number;
+  pagos: number;
+  total: number;
+  /** F35 (`÷ receita orgânica`), F36 (`÷ receita paga`), F34 (`÷ receita bruta total`). */
+  pctOrganicos: number | null;
+  pctPagos: number | null;
+  pctTotal: number | null;
+}
+
+export interface MarketingOrganicos {
+  /** G40, G56 — lidos de `o.totais` (AR-007: iguais à re-soma por canal). */
+  vendas: number | null;
+  leads: number | null;
+  /** G48 — `vendas ÷ leads` com os inteiros. */
+  conversao: number | null;
+  vendasBruto: number | null;
+  leadsBruto: number | null;
+  conversaoBruto: number | null;
+  /** G41…G46, G49…G54, G57…G62. */
+  canais: Record<CanalOrganico, ResumoDoCanal>;
+}
+
+export interface MarketingDaPlataforma extends ResumoDaPlataforma {
+  /** G81/G84 — RN-030: tráfego da plataforma ÷ leads da plataforma (inteiros); `null` sem base. */
+  cpl: number | null;
+  cplBruto: number | null;
+}
+
+export interface MarketingPagos {
+  /** G64, G88 — as QUATRO fontes (D13). */
+  vendas: number | null;
+  leads: number | null;
+  /** G72. */
+  conversao: number | null;
+  /** G80 — RN-030: tráfego total ÷ leads pagos (inteiros). */
+  cpl: number | null;
+  vendasBruto: number | null;
+  leadsBruto: number | null;
+  conversaoBruto: number | null;
+  cplBruto: number | null;
+  /** G65/G73/G81/G89 — Meta = quente + frio; G68/G76/G84/G92 — Google = quente + frio (D9). */
+  meta: MarketingDaPlataforma;
+  google: MarketingDaPlataforma;
+  /** G66/G67/G69/G70, G74/G75/G77/G78, G82/G83/G85/G86, G90/G91/G93/G94. */
+  fontes: Record<FontePaga, ResumoDaFonte>;
+}
+
+export interface ResumoFinal {
+  indice: number;
+  receitas: ReceitasConsolidadas;
+  cadeia: CadeiaConsolidada;
+  trafego: TrafegoConsolidado;
+  mc: McConsolidada;
+  /** Contra `metaMargemTotal` (F13 da 48.1). */
+  meta: AtingimentoDaMeta;
+  organicos: MarketingOrganicos;
+  pagos: MarketingPagos;
+}
+
+function marketingDaPlataforma(p: ResumoDaPlataforma, trafego: number): MarketingDaPlataforma {
+  return { ...p, cpl: div(trafego, p.leads), cplBruto: div(trafego, p.leadsBruto) };
+}
+
+/**
+ * Cenário k da aba 4 a partir da Combinação k das abas 2 e 3.
+ *
+ * `metaMargemTotal` é a ENTRADA F13 da 48.1 (não um derivado). O tráfego é
+ * lido de `paga.trafego` e só ganha o percentual sobre a receita bruta total.
+ */
+export function resumoFinal(args: {
+  indice: number;
+  organica: CombinacaoOrganica;
+  paga: CombinacaoPaga;
+  metaMargemTotal: Entrada;
+}): ResumoFinal {
+  const { organica: o, paga: p } = args;
+
+  // RN-017 — receitas
+  const receitas: ReceitasConsolidadas = {
+    organicos: o.cadeia.receitaBruta,
+    pagos: p.cadeia.receitaBruta,
+    total: o.cadeia.receitaBruta + p.cadeia.receitaBruta,
+  };
+
+  // RN-018 / RN-031 — cadeia consolidada (cada linha = orgânicos + pagos)
+  const reembolso = o.cadeia.reembolso + p.cadeia.reembolso;
+  const receitaTributavel = o.cadeia.receitaTributavel + p.cadeia.receitaTributavel;
+  const deducoes = {
+    marketplace: o.cadeia.deducoes.marketplace + p.cadeia.deducoes.marketplace,
+    imposto: o.cadeia.deducoes.imposto + p.cadeia.deducoes.imposto,
+    custoProduto: o.cadeia.deducoes.custoProduto + p.cadeia.deducoes.custoProduto,
+    comissoes: o.cadeia.deducoes.comissoes + p.cadeia.deducoes.comissoes,
+    outros: o.cadeia.deducoes.outros + p.cadeia.deducoes.outros,
+  };
+  const cadeia: CadeiaConsolidada = {
+    reembolso,
+    pctReembolso: div(reembolso, receitas.total),
+    receitaTributavel,
+    deducoes,
+    pctDeducoes: {
+      marketplace: div(deducoes.marketplace, receitaTributavel),
+      imposto: div(deducoes.imposto, receitaTributavel),
+      custoProduto: div(deducoes.custoProduto, receitaTributavel),
+      comissoes: div(deducoes.comissoes, receitaTributavel),
+      outros: div(deducoes.outros, receitaTributavel),
+    },
+    totalDeducoes: o.cadeia.totalDeducoes + p.cadeia.totalDeducoes,
+    // RN-031: MC dos orgânicos (o `mc` da cadeia da aba 2) + receita líquida dos pagos (antes do tráfego)
+    receitaLiquidaTotal: o.cadeia.mc + p.receitaLiquida,
+  };
+
+  // RN-027 — tráfego (o mesmo nos cinco cenários), % sobre a receita bruta total
+  const trafego: TrafegoConsolidado = { ...p.trafego, pctDaReceitaTotal: div(p.trafego.total, receitas.total) };
+
+  // RN-031 / RN-019 — margens
+  const mc: McConsolidada = {
+    organicos: o.cadeia.mc,
+    pagos: p.mc.pagos,
+    total: o.cadeia.mc + p.mc.pagos,
+    pctOrganicos: div(o.cadeia.mc, receitas.organicos),
+    pctPagos: div(p.mc.pagos, receitas.pagos),
+    pctTotal: div(o.cadeia.mc + p.mc.pagos, receitas.total),
+  };
+
+  // RN-022 / RN-029 — marketing dos orgânicos (totais lidos; AR-007)
+  const organicos: MarketingOrganicos = {
+    vendas: o.totais.vendas,
+    leads: o.totais.leads,
+    conversao: div(o.totais.vendas, o.totais.leads),
+    vendasBruto: o.totais.vendasBruto,
+    leadsBruto: o.totais.leadsBruto,
+    conversaoBruto: div(o.totais.vendasBruto, o.totais.leadsBruto),
+    canais: o.canais,
+  };
+
+  // RN-022 / RN-029 / RN-030 — marketing dos pagos (D9: Google = quente + frio; D13: total = quatro)
+  const pagos: MarketingPagos = {
+    vendas: p.totais.vendas,
+    leads: p.totais.leads,
+    conversao: div(p.totais.vendas, p.totais.leads),
+    cpl: div(p.trafego.total, p.totais.leads),
+    vendasBruto: p.totais.vendasBruto,
+    leadsBruto: p.totais.leadsBruto,
+    conversaoBruto: div(p.totais.vendasBruto, p.totais.leadsBruto),
+    cplBruto: div(p.trafego.total, p.totais.leadsBruto),
+    meta: marketingDaPlataforma(p.totais.meta, p.trafego.meta),
+    google: marketingDaPlataforma(p.totais.google, p.trafego.google),
+    fontes: p.fontes,
+  };
+
+  return {
+    indice: args.indice,
+    receitas,
+    cadeia,
+    trafego,
+    mc,
+    meta: atingimentoDaMeta(mc.total, args.metaMargemTotal),
+    organicos,
+    pagos,
   };
 }

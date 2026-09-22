@@ -5576,3 +5576,34 @@ export const planPaidCombinations = pgTable(
   },
   (t) => [uniqueIndex("uq_plan_paid_combinations_simulator_indice").on(t.simulatorId, t.indice)],
 );
+
+/**
+ * Story 48.5 — rótulo de cada CENÁRIO do Resumo Final (aba 4 da planilha).
+ *
+ * Tabela-filha de `plan_simulators`: uma linha por (simulador, índice 1…5)
+ * com o rótulo escolhido em lista — `META PISO`, `META BOA`, `META SUPER` —
+ * ou vazio. É a ÚNICA entrada manual da aba 4 (DV-017 = A, decidido pelo
+ * Danilo em 2026-09-22): anotação por cenário, persistida, sem regra ligada
+ * — nenhuma conta, cor ou filtro a lê. Todo o resto da aba 4 é consolidação
+ * das abas 1–3 e roda na tela (`resumoFinal` do shared).
+ *
+ * CHECKs na migration 0155 (domínio do rótulo, índice 1…5); a rota valida
+ * com zod antes.
+ */
+export const planFinalScenarios = pgTable(
+  "plan_final_scenarios",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    simulatorId: uuid("simulator_id")
+      .notNull()
+      .references(() => planSimulators.id, { onDelete: "cascade" }),
+    /** 1…5, fixo (Cenário k = Combinação k das abas 2 e 3). */
+    indice: integer("indice").notNull(),
+    /** `ROTULOS_DO_CENARIO` do shared ou vazio; CHECK na migration. */
+    rotulo: text("rotulo"),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("uq_plan_final_scenarios_simulator_indice").on(t.simulatorId, t.indice)],
+);

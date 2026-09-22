@@ -161,4 +161,8 @@
 // fonte paga e cinco combinações) e as tabelas `plan_paid_blocks` e
 // `plan_paid_combinations`. ADITIVA; `packages/mcp` não é afetado. A aba
 // "Leads Pagos" do web depende delas.
-export const API_CONTRACT_VERSION = 16;
+// v17 (Story 48.5): rotas novas `GET/PUT /api/projects/:projectId/funnels/
+// :funnelId/planejamento/resumo` (aba 4 do Painel de Planejamento — rótulos
+// dos cinco cenários) e a tabela `plan_final_scenarios`. ADITIVA;
+// `packages/mcp` não é afetado. A aba "Resumo Final" do web depende delas.
+export const API_CONTRACT_VERSION = 17;
