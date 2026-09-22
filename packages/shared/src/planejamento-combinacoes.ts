@@ -617,7 +617,7 @@ export function mcPorPlataforma(
 // ------------------------------------------------------------------
 
 export interface ResumoDaFonte extends ResumoDoCanal {
-  /** Y49 — CPL máximo do produto: `grade.cpl[nivel][sel]` (captação ÷ leads inteiros); `null` sem nível/base. */
+  /** Y49 — CPL máximo do produto: `grade.cpl[nivel][sel]` (captação ÷ leads inteiros); `null` sem seleção, sem nível ou sem base (razão, como a conversão). */
   cpl: number | null;
   /** Cadeia bruta (§3.4). */
   cplBruto: number | null;
@@ -627,11 +627,15 @@ export interface ResumoDaFonte extends ResumoDoCanal {
  * Resumo de uma fonte numa combinação — o `resumoDoCanal` dos orgânicos mais
  * o CPL máximo. Cada fonte lê o PRÓPRIO bloco com a PRÓPRIA seleção, nas
  * cinco combinações (D8 — não reproduz DV-014).
+ *
+ * Sem seleção ou sem nível, o CPL é `null` ("—"): é uma RAZÃO (captação ÷
+ * leads), como a conversão — vendas e leads a zero somam nos totais, mas um
+ * "CPL de R$ 0,00" leria como lead de graça (REQ-001 do gate).
  */
 export function resumoDaFonte(grade: GradePaga, sel: Selecao, nivel: number | null): ResumoDaFonte {
   const base = resumoDoCanal(grade, sel, nivel);
   if (sel === null || sel === undefined || nivel === null || nivel === undefined) {
-    return { ...base, cpl: sel === null || sel === undefined ? 0 : null, cplBruto: sel === null || sel === undefined ? 0 : null };
+    return { ...base, cpl: null, cplBruto: null };
   }
   return {
     ...base,

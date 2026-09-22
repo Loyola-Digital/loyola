@@ -368,11 +368,12 @@ describe("resumo de marketing — Combinação 1 (RN-013, RN-021, RN-022, RN-025
     expect(c.totais.meta.leads).not.toBeNull(); // a outra plataforma não é contaminada
   });
 
-  it("fonte com seleção vazia contribui 0 em vendas, leads e CPL, sem derrubar os totais", () => {
+  it("fonte com seleção vazia contribui 0 em vendas e leads, sem derrubar os totais; CPL e conversão são null (razões sem base — REQ-001)", () => {
     const sel = selecoes(1);
     sel.meta_frio = null;
     const c = combinacao(1, BLOCOS, sel);
-    expect(c.fontes.meta_frio).toMatchObject({ receita: 0, vendas: 0, leads: 0, cpl: 0, conversao: null });
+    expect(c.fontes.meta_frio).toMatchObject({ receita: 0, vendas: 0, leads: 0, cpl: null, cplBruto: null, conversao: null });
+    expect(c.fontes.meta_frio.cpl).not.toBe(0);
     expect(c.totais.meta.vendas).toBe(57);
     expect(c.totais.vendas).toBe(176 - 13);
   });

@@ -22,10 +22,13 @@ const urlInputs = () => `/api/projects/${PROJETO}/funnels/${LANCAMENTO}/planejam
 /** Payload válido completo: apêndice A da spec (blocos e as cinco seleções). */
 function payloadValido() {
   const v = pagosVazios();
+  // Níveis 10 e 9 de propósito (TEST-001 do gate): a escada dos pagos tem DEZ
+  // níveis, contra oito nos orgânicos — a ida-e-volta cobre o limite e uma
+  // rota que copiasse `NIVEIS_ORGANICOS` devolveria 400 aqui.
   const parametros: Record<string, number[]> = {
-    meta_quente: [0.85, 0.012, 0.05, 0.1, 4.5, 0.05, 4],
+    meta_quente: [0.85, 0.012, 0.05, 0.1, 4.5, 0.05, 10],
     meta_frio: [0.85, 0.006, 0.1, 0.1, 2.5, 0.05, 3],
-    google_quente: [0.85, 0.01, 0.05, 0.15, 3, 0.1, 5],
+    google_quente: [0.85, 0.01, 0.05, 0.15, 3, 0.1, 9],
     google_frio: [0.85, 0.007, 0.1, 0.2, 2.2, 0.1, 2],
   };
   for (const f of FONTES_PAGAS) {
@@ -112,6 +115,18 @@ describe("rotas de planejamento — pagos (Story 48.4)", () => {
     expect(get.json().blocos).toEqual(p.blocos);
     expect(get.json().combinacoes).toEqual(p.combinacoes);
     expect(get.json().updatedAt).not.toBeNull();
+  });
+
+  it("TEST-001 (gate): nível 10 e nível 9 são VÁLIDOS nos pagos (escada de dez níveis) — 200, e voltam iguais no GET", async () => {
+    await salvarInputs();
+    const p = payloadValido();
+    expect(p.blocos.meta_quente.nivelAssumido).toBe(10);
+    expect(p.blocos.google_quente.nivelAssumido).toBe(9);
+    const put = await app.inject({ method: "PUT", url: url(), payload: p });
+    expect(put.statusCode).toBe(200);
+    const get = await app.inject({ method: "GET", url: url() });
+    expect(get.json().blocos.meta_quente.nivelAssumido).toBe(10);
+    expect(get.json().blocos.google_quente.nivelAssumido).toBe(9);
   });
 
   it("PUT aceita vazio (null) em todos os campos, níveis e seleções; a aba 2 (orgânicos) não é tocada", async () => {
