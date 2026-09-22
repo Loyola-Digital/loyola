@@ -342,6 +342,9 @@ export const projectInvitations = pgTable(
       .references(() => users.id),
     email: text("email").notNull(),
     token: text("token").notNull().unique(),
+    /** O escopo já vai no convite: quem aceitar entra limitado (migration 0152). */
+    funnelId: uuid("funnel_id"),
+    stageId: uuid("stage_id"),
     permissions: jsonb("permissions").notNull().default({
       instagram: true,
       traffic: true,
@@ -373,6 +376,13 @@ export const projectMembers = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     role: text("role").notNull().default("guest"),
+    /**
+     * Até onde o convidado enxerga DENTRO da empresa (migration 0152).
+     * `null` = sem limite, que é o convidado de antes. Ver
+     * `services/escopo-do-convidado.ts`.
+     */
+    funnelId: uuid("funnel_id").references(() => funnels.id, { onDelete: "cascade" }),
+    stageId: uuid("stage_id").references(() => funnelStages.id, { onDelete: "cascade" }),
     permissions: jsonb("permissions").notNull().default({
       instagram: true,
       traffic: true,

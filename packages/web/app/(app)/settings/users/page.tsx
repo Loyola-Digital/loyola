@@ -20,6 +20,7 @@ import {
   type UserRole,
 } from "@/lib/hooks/use-admin-users";
 import { useUserRole } from "@/lib/hooks/use-user-role";
+import { AcessoDoConvidado } from "@/components/settings/acesso-do-convidado";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -137,6 +138,14 @@ export default function UsersSettingsPage() {
                 <p className="text-xs text-muted-foreground">{u.email}</p>
               </div>
               <div className="flex items-center gap-2">
+                {/* Vendedor contratado: aprovar já limitando ao funil e à etapa
+                    dele, em vez de aprovar e depois lembrar de restringir. */}
+                {role === "admin" && (
+                  <AcessoDoConvidado
+                    userId={u.id}
+                    nome={u.name === u.email ? u.email : u.name}
+                  />
+                )}
                 <Button
                   size="sm"
                   variant="outline"
@@ -225,6 +234,12 @@ export default function UsersSettingsPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                {role === "admin" && (
+                  <AcessoDoConvidado
+                    userId={u.id}
+                    nome={u.name === u.email ? u.email : u.name}
+                  />
+                )}
                 <StatusBadge status={u.status} />
                 {u.status === "active" && (
                   <Button

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { eq, like, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { clerkClient } from "@clerk/fastify";
-import { users, messages, conversations, userActivity } from "../db/schema.js";
+import { users, messages, conversations, userActivity, projectMembers } from "../db/schema.js";
 import { ROTULO_DA_AREA } from "../services/adesao.js";
 import { syncMetaPerformance } from "../services/meta-perf-sync.js";
 import { syncLeadOrigin } from "../services/lead-origin-sync.js";
@@ -387,6 +387,99 @@ export default fp(async function adminRoutes(fastify) {
 
     if (!updated) return reply.code(404).send({ error: "Usuário não encontrado" });
     return updated;
+  });
+
+  /**
+   * O acesso de um convidado: empresa, e até onde dentro dela.
+   *
+   * Existe para o vendedor contratado: ele cria a conta, e aqui alguém escolhe
+   * "empresa X, funil Y, etapa Z" e marca como convidado. Sem isto, a única
+   * forma de criar acesso era o link de convite — que dava a empresa inteira.
+   *
+   * Um acesso por vez, e ele SUBSTITUI os outros: o convidado desta tela tem um
+   * escopo só, e somar acessos silenciosamente é o caminho para alguém ver o
+   * que ninguém quis dar.
+   */
+  fastify.put("/api/admin/users/:id/acesso", async (request, reply) => {
+    if (request.userRole !== "admin") {
+      return reply.code(403).send({ error: "Acesso negado" });
+    }
+    const paramResult = idParamSchema.safeParse(request.params);
+    if (!paramResult.success) return reply.code(400).send({ error: "ID inválido" });
+
+    const body = z
+      .object({
+        projectId: z.string().uuid(),
+        funnelId: z.string().uuid().nullable().optional(),
+        stageId: z.string().uuid().nullable().optional(),
+        /** Módulos da empresa (Instagram, conversas, mind). Padrão: nenhum. */
+        permissions: z
+          .object({
+            instagram: z.boolean().default(false),
+            traffic: z.boolean().default(false),
+            youtubeAds: z.boolean().default(false),
+            youtubeOrganic: z.boolean().default(false),
+            conversations: z.boolean().default(false),
+            mind: z.boolean().default(false),
+          })
+          .optional(),
+      })
+      .safeParse(request.body);
+    if (!body.success) {
+      return reply.code(400).send({ error: "Dados inválidos", details: body.error.flatten() });
+    }
+    if (paramResult.data.id === request.userId) {
+      return reply.code(400).send({ error: "Você não pode virar convidado de si mesmo" });
+    }
+
+    const permissoes = body.data.permissions ?? {
+      instagram: false,
+      traffic: false,
+      youtubeAds: false,
+      youtubeOrganic: false,
+      conversations: false,
+      mind: false,
+    };
+
+    await fastify.db.transaction(async (tx) => {
+      await tx
+        .update(users)
+        .set({ role: "guest", status: "active", updatedAt: new Date() })
+        .where(eq(users.id, paramResult.data.id));
+      await tx.delete(projectMembers).where(eq(projectMembers.userId, paramResult.data.id));
+      await tx.insert(projectMembers).values({
+        projectId: body.data.projectId,
+        userId: paramResult.data.id,
+        role: "guest",
+        funnelId: body.data.funnelId ?? null,
+        stageId: body.data.stageId ?? null,
+        permissions: permissoes,
+      });
+    });
+
+    return { ok: true, acesso: { ...body.data, permissions: permissoes } };
+  });
+
+  /** O acesso atual do convidado — o que a tela mostra ao abrir o diálogo. */
+  fastify.get("/api/admin/users/:id/acesso", async (request, reply) => {
+    if (request.userRole !== "admin" && request.userRole !== "manager") {
+      return reply.code(403).send({ error: "Acesso negado" });
+    }
+    const paramResult = idParamSchema.safeParse(request.params);
+    if (!paramResult.success) return reply.code(400).send({ error: "ID inválido" });
+
+    const [acesso] = await fastify.db
+      .select({
+        projectId: projectMembers.projectId,
+        funnelId: projectMembers.funnelId,
+        stageId: projectMembers.stageId,
+        permissions: projectMembers.permissions,
+      })
+      .from(projectMembers)
+      .where(eq(projectMembers.userId, paramResult.data.id))
+      .limit(1);
+
+    return { acesso: acesso ?? null };
   });
 
   // ---- POST /api/admin/sync-users ---- (admin only — fix placeholder users from Clerk)

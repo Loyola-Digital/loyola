@@ -16,6 +16,7 @@ import {
   resolveStagePhaseSuffix,
   findMatchingCampaignsForStage,
 } from "../services/stage-phase.js";
+import { etapaDoConvidado } from "../services/escopo-do-convidado.js";
 
 // ============================================================
 // SCHEMAS
@@ -267,7 +268,16 @@ export default fp(async function funnelStageRoutes(fastify) {
       .where(eq(funnelStages.funnelId, params.data.funnelId))
       .orderBy(funnelStages.sortOrder, funnelStages.createdAt);
 
-    return rows.map((r) => stageShape(r.stage, r.auditUser));
+    // Convidado preso a uma etapa vê só ela.
+    const soDoEscopo = await etapaDoConvidado(
+      fastify.db,
+      request.userId,
+      request.userRole,
+      params.data.projectId,
+    );
+    const visiveis = soDoEscopo ? rows.filter((r) => r.stage.id === soDoEscopo) : rows;
+
+    return visiveis.map((r) => stageShape(r.stage, r.auditUser));
   });
 
   // GET /api/projects/:projectId/funnels/:funnelId/stages/:stageId
