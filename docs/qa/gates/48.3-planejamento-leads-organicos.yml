@@ -1,0 +1,44 @@
+schema: 1
+story: '48.3'
+story_title: 'Planejamento — Leads Orgânicos: parâmetros por canal, seleção de cenários, combinações e resumo (aba 2)'
+gate: CONCERNS
+status_reason: 'Regra correta e fiel à spec: as cinco combinações e os seis canais do apêndice A batem com §2.4 (29 + 8 testes na API, 17 no web); 6 mutações do @dev e 5 das 6 do QA derrubam a suíte. Três achados médios, nenhum de cálculo: (1) o teste da conversão do produto não distingue as duas cadeias (mutação QM3 passa 29/29); (2) bloco sem referência de faixa (base ou taxa vazias) pinta a grade inteira de vermelho com legenda "# Leads > 0" — o caso que o gate da 48.2 pediu para a 48.3 tratar; (3) meta de receita null mostra "0" na grade onde a AC13 pede "—". Correções pequenas e localizadas; re-gate depois delas.'
+reviewer: 'Quinn'
+updated: '2026-09-21T23:40:00Z'
+branch: 'feat/48.3-planejamento-leads-organicos'
+commits: ['8f08ed4d']
+
+top_issues:
+  - id: 'TEST-001'
+    severity: medium
+    status: open
+    finding: 'AC8 fixa `conversao = vendas ÷ leads` com os INTEIROS da cadeia do produto. O único teste que afirma a conversão do produto usa o WhatsApp (90 ÷ 2 500 = 0,036), onde o bruto dá o mesmo 0,036 — a mutação `conversao: div(vendasBruto, leadsBruto)` (mistura de cadeias, exatamente o que D10 proíbe) passa **29/29**. Um "simplify" futuro que unificasse as duas conversões não seria pego.'
+    suggested_action: 'Afirmar a conversão do produto num canal em que as cadeias divergem: Email `62 ÷ 1 676 = 0,036993` (bruto 0,037) e/ou Área de Membros `14 ÷ 438 = 0,031963` (bruto 0,032); e afirmar explicitamente `conversao !== conversaoBruto` nesses canais. Re-mutar QM3 e ver a suíte cair.'
+  - id: 'UX-001'
+    severity: medium
+    status: open
+    finding: 'Bloco sem referência de faixa (base do canal vazia na aba 1 OU taxa de captação vazia no bloco) tem `leadsEsperados = 0`, `limites = {0, 0, 0}` e `faixaDe` classifica toda célula > 0 como faixa 4: a grade inteira fica VERMELHA e a legenda mostra "# Leads < 0 · 0 ≤ # Leads ≤ 0 · 0 < # Leads ≤ 0 · # Leads > 0". Reproduz a planilha (V0), mas é o caso que a nota 2 do gate da 48.2 pediu para a tela desta story tratar ("pode preferir — quando não há base — registrar lá"). O diagnóstico da aba 1 cobre a base vazia, mas não a taxa de captação (parâmetro do bloco), e a grade vermelha lê como "tudo ruim", não como "sem base" — erro virando outra coisa.'
+    suggested_action: 'Na tela: quando `grade.leadsEsperados` não é > 0, não colorir as células e mostrar a legenda "Faixas sem base — informe a taxa de captação e a base do canal" (o ramo já existe para `limites === null`; estender para referência zero). Motor intocado (48.2 reproduz de propósito). Teste no `lib/utils` se a decisão de cor for extraída para função pura.'
+  - id: 'REQ-001'
+    severity: medium
+    status: open
+    finding: 'AC13: "Se foi salva mas com margem-alvo sem base (meta de receita `null`), as grades mostram —". Com meta `null` o motor da 48.2 devolve série de dez zeros e vendas/leads 0 (é a regra da 48.2: meta vazia → zeros), então a grade mostra **"0"** em toda célula, não "—". A tela avisa "Custos variáveis somam 100 % ou mais…" (bom), mas o número na grade contradiz a AC. O mesmo vale para a AC3 ("série toda zero e vendas null") — a metade "vendas null" não é o que o motor faz, e não é desta story mudar o motor.'
+    suggested_action: 'Presentação, sem tocar o motor: em `BlocoDoCanal`, quando `origem.metaReceita === null`, renderizar "—" nas células de receita, vendas e leads (e nas combinações o canal já contribui 0 — manter). Registrar no Dev Agent Record que a AC3 "vendas null" é imprecisa: o motor dá 0 e a tela traduz para "—" só quando a META é null (sem base), não quando é zero.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Diff restrito a 8 arquivos novos + 6 modificados; nos dois de autoria do Lucas (`schema.ts` +78/−0, `index.ts` +36/−0) só apêndice — P1 respeitada. Módulo novo com 0 imports de valor (só `import type`, apagados na compilação; `next build` verde confirma). PO-01: `CANAL_NA_ABA_1` e `BASE_DO_CANAL` cobrem os seis canais e o teste afirma `area_membros → derivados.canais.areaMembros.receita` (mutação M3 do @dev: 14 falhas). AC1: duas tabelas-filhas com `uniqueIndex` declarado no schema e CHECKs na 0153 (canal no domínio, frações [0,1], nível 1…8, índice 1…5, seleção 1…10), `ON DELETE CASCADE`. AC2: GET devolve a forma fixa sem criar linha (teste confirma que nem `plan_simulators` nasce); PUT `.strict()` em três níveis, `.length(5)` + índices únicos (QM5 derruba); guest 403 antes de resolver o contexto; 404 fora de `launch`. Upsert dos 11 registros numa transação, `updatedAt` só no `set`. AC4: radio nativo por bloco (`name` por canal) + "Limpar nível" → exatamente um ou nenhum. AC5–AC8: `resumoDoCanal` com os três ramos (sem seleção → 0; com seleção sem nível → vendas do cenário e leads/conversão null; com os dois → célula) e totais com `null` contaminando só o total que o contém. DEV-01 (409 sem inputs salvos): decisão de desenho coerente com a PO-03 — registrada para o @po confirmar, não é defeito. DEV-02 (`RangeError` fora da faixa): correto para um módulo que a API e o `<select>` já cercam.'
+  unit_tests: 'QA rodou as três suítes: API 29 + 8, web 17 (+ 14 da 48.1) — verdes. Mutações independentes do QA: QM1 gap com sinal invertido → 4 falhas ✓; QM2 MC % sobre a tributável → 1 ✓; **QM3 conversão do produto com o bruto → 0 falhas ✗ (TEST-001)**; QM4 leads pela linha `nivel` em vez de `nivel−1` → 6 ✓; QM5 rota sem `.length(5)`/refine → 1 ✓ ("quatro combinações"); QM6 DV-016 com verde estrito → 1 ✓. Diferenciais do @dev (M1–M6) reproduzidos na leitura do Dev Agent Record. Tolerância do AC14 (`max(1e-6·|b|, meia unidade da casa da spec)`) é a leitura certa da PO-04: Y26 = 2 509,54 tem erro de arredondamento maior que 1e-6 relativo.'
+  acceptance_criteria: 'AC1 ✓ · AC2 ✓ · AC3 ✓ com ressalva (REQ-001: "vendas null" é do motor, que dá 0) · AC4 ✓ · AC5 ✓ · AC6 ✓ (Y18 10 456,43 · Y20 250 954,30 · Y22…Y26 · Y28 173 158,46 · Y29 0,6624) · AC7 ✓ (0,923512 / −14 341,54; DV-016 = A com limiares como constantes; barra em componente) · AC8 ✓ (90 → 2 500 → 0,036; totais 221 / 8 079; sem nível → null) · AC9 ◐ (cores 1 azul … 4 vermelho e legenda com os três limites ✓; referência zero → UX-001) · AC10 ✓ (placeholder 70, motor cai para 0,70) · AC11 ✓ (duas regiões, ordem RN-040, radio na coluna da escada, cinco colunas) · AC12 ✓ (`estadoDaTela` reutilizada, erro antes de carregando; Salvar explícito com "alterações não salvas"; guest sem botão) · AC13 ◐ (nunca salvo → aviso + link que troca a aba via callback ✓; meta null → diz o que falta ✓ mas grade mostra 0 — REQ-001) · AC14 ✓ (Y11…Y16, Y10, cadeia, Y28, Y29, Y2, Y5, AA28, AA2, AC2, AE2, AG2, AG5; vazio → 0) · AC15 ✓ (seis canais em bruto, totais brutos 217,842272 / 7 963,530073, DV-008 diferencial) · AC16 ✓ (19 casos de 400, 404 ×2, 403, 409) · AC17 ✓ (17 testes; build/tsc/lint verdes).'
+  no_regressions: 'Módulos da 48.1 e da 48.2 no shared intocados (AC3). Suíte da API: 2 960 ✓ / 10 ✗ em 5 arquivos = baseline exato (nenhum deles tocado). Web 1 370/1 370. `next build` EXIT 0 e `tsc` do web 0 depois dele. CI: a confirmar após o push.'
+  performance: 'N/A — 6 grades × (10 + 8×10) + 5 combinações; aritmética pura em `useMemo`. Tabela de combinações com ~45 linhas × 5 colunas.'
+  security: 'PUT: guest 403 antes de qualquer leitura; params UUID; `.strict()` em todos os objetos; CHECKs no banco como cinto. Transação no upsert.'
+  documentation: 'Cabeçalho do módulo conta o que reproduz e o que não reproduz da planilha (DV-008, IFERROR, #N/A), a ponte de chaves e o porquê do `import type`. Dev Agent Record com DEV-01…06, seis mutações e os gates. Migration com o aviso do information_schema.'
+  api_contract: '`API_CONTRACT_VERSION` 14 → 15 com linha de histórico (ADITIVA; `packages/mcp` não afetado). Se a 48.4 mergear antes, rebase + novo bump (a story prevê).'
+
+notes:
+  - 'DEV-01 (PUT sem Inputs Financeiros → 409; Salvar desabilitado com o aviso da AC13) não está na story: o @po/Danilo confirma ou pede a alternativa (criar o simulador às escondidas, que quebraria a PO-03). O QA considera a escolha correta.'
+  - 'A AC3 diz "meta null → vendas null"; o motor da 48.2 (na main, gate PASS) dá vendas 0 para meta vazia. Não é regressão nem defeito desta story — é imprecisão do texto. REQ-001 resolve na tela.'
+  - 'Gap positivo fica sem cor (a planilha pintava verde `>0`); a AC7 só fixa as cores do ATINGIMENTO (DV-016). Não é achado — registrado para o @po decidir se quer o verde no gap na 48.5.'
+  - 'DoD pendente para o @devops: aplicar `0153_plan_organic.sql` em produção e conferir no `information_schema` ANTES do merge; ler o log do job `test` do CI.'
