@@ -1,6 +1,6 @@
 # EPIC 48 — Painel de Planejamento: simulador de cenários do lançamento
 
-**Status:** Estrutura **validada pelo @pm (Morgan) em 2026-09-21** (P2 ✅) · P1 ✅ (Lucas, com condição) · 48.1 e 48.2 **Draft, aguardando @po (P3)** · 48.3–48.5 a rascunhar após o GO das duas primeiras
+**Status:** Estrutura **validada pelo @pm (Morgan) em 2026-09-21** (P2 ✅) · P1 ✅ (Lucas, com condição) · **waves 1 e 2 na `main`** (48.1 #904, 48.2 #902, 48.3 #911, 48.4 #912; migrations 0152–0154 em produção; contrato v16) · **48.5 Draft, aguardando @po** (wave 3, fecha o epic)
 **Origem:** planilha "Painel de Controle" do lançamento, categoria **Planejamento** (Google Sheets), que será **desativada por completo**. Toda a lógica dela foi lida e documentada em três artefatos guardados verbatim em `docs/specs/epic-48/`:
 - `especificacao_tecnica_painel_planejamento.md` — a **spec**: 8 abas, fórmulas literais, mapa de campos, casos de teste mascarados (apêndice A)
 - `classificacao_regras_painel_planejamento.md` — a **triagem**: 40 regras de negócio (RN), 11 artefatos descartados (AR), 31 dúvidas (DV); os IDs são estáveis e toda AC deste epic rastreia para um RN
@@ -71,7 +71,7 @@ Respondidas nesta ordem, uma a uma. "Reproduz" = faz como a planilha; "corrige" 
 | D13 | DV-013 — "Vendas Totais Leads Pagos" só quentes | **A — corrige:** soma os quatro públicos. | 48.4 |
 | D14 | DV-009 — verba de remarketing | **A — informativa:** calculada e mostrada, não entra em conta nenhuma. | 48.4 |
 
-**DV de apresentação:** DV-011 (legendas intermediárias de CPL — AR-004, descartadas), DV-024 (unidades: as stories usam a **do conteúdo**), DV-025 (rótulos "Google Ads", 48.4). **Decididas pelo Danilo em 2026-09-21:** **DV-012 = B** — cores das faixas de CPL no mesmo sentido dos leads (1 azul … 4 vermelho; não reproduz a inversão da planilha); **DV-016 = A** — atingimento verde ≥ 100 %, vermelho ≤ 70 %, neutro no meio (reproduz). Resta DV-017 (rótulos META PISO/BOA/SUPER) para a 48.5.
+**DV de apresentação:** DV-011 (legendas intermediárias de CPL — AR-004, descartadas), DV-024 (unidades: as stories usam a **do conteúdo**), DV-025 (rótulos "Google Ads", 48.4). **Decididas pelo Danilo em 2026-09-21:** **DV-012 = B** — cores das faixas de CPL no mesmo sentido dos leads (1 azul … 4 vermelho; não reproduz a inversão da planilha); **DV-016 = A** — atingimento verde ≥ 100 %, vermelho ≤ 70 %, neutro no meio (reproduz). **DV-017 = A** (Danilo, 2026-09-22) — rótulos META PISO/BOA/SUPER são **anotação por cenário**, persistida, sem regra ligada (48.5).
 
 ## Decisões de estrutura tomadas na criação (para o @pm/@po revisar)
 
@@ -88,13 +88,13 @@ Respondidas nesta ordem, uma a uma. "Reproduz" = faz como a planilha; "corrige" 
 
 | Story | Título | RN cobertas | Depende de | Status |
 |---|---|---|---|---|
-| 48.1 | Inputs Financeiros — modelo, API e tela (aba 1) | RN-001…009, 037, 040 | P1 ✅, P2 ✅ | **Ready** — @po GO 9/10 em 2026-09-21; sub-página `…/planejamento` + cartão (PO-02); custos > 100 % reproduz o negativo (PO-04); estimativa Alta / L (8–13) proposta |
-| 48.2 | Motor de cenários no `shared` (abas 2 e 3, parte pura) | RN-010…015, 024…026 | — (só testes) | **Ready** — @po GO 10/10 em 2026-09-21; Alta, M (5–8) |
-| 48.3 | Leads orgânicos — parâmetros por canal, seleção, combinações e resumo (aba 2) — `48.3.planejamento-leads-organicos.md` | RN-010…023 (via 48.2), 038, 039 | 48.1 ✅, 48.2 ✅ | **Ready** — @po GO 10/10 em 2026-09-21; Alta / L (8–13) |
-| 48.4 | Leads pagos — parâmetros por fonte, seleção, combinações, tráfego e resumo (aba 3) — `48.4.planejamento-leads-pagos.md` | RN-016…022, 024…029, 038, 039 | 48.1 ✅, 48.2 ✅ | **Ready** — @po GO 10/10 em 2026-09-21; Alta / L (8–13) |
-| 48.5 | Resumo Final — consolidação dos cinco cenários (aba 4) | RN-030, 031 (+ 017…020 consolidadas) | 48.3, 48.4 | a rascunhar |
+| 48.1 | Inputs Financeiros — modelo, API e tela (aba 1) | RN-001…009, 037, 040 | P1 ✅, P2 ✅ | **Done** — gate PASS (re-gate) 2026-09-21; **MERGED #904** (`dafdb12e`); 0152 em produção; sub-página `…/planejamento` + cartão (PO-02); custos > 100 % reproduz o negativo (PO-04); Alta / L (8–13) |
+| 48.2 | Motor de cenários no `shared` (abas 2 e 3, parte pura) | RN-010…015, 024…026 | — (só testes) | **Done** — gate PASS (re-gate) 2026-09-21; **MERGED #902** (`5f83e4c6`); Alta, M (5–8) |
+| 48.3 | Leads orgânicos — parâmetros por canal, seleção, combinações e resumo (aba 2) — `48.3.planejamento-leads-organicos.md` | RN-010…023 (via 48.2), 038, 039 | 48.1 ✅, 48.2 ✅ | **Done** — gate PASS (re-gate) 2026-09-22; **MERGED #911** (`d89305a7`); 0153 em produção; Alta / L (8–13) |
+| 48.4 | Leads pagos — parâmetros por fonte, seleção, combinações, tráfego e resumo (aba 3) — `48.4.planejamento-leads-pagos.md` | RN-016…022, 024…029, 038, 039 | 48.1 ✅, 48.2 ✅ | **Done** — gate PASS (re-gate) 2026-09-22; **MERGED #912** (`73579498`); 0154 em produção; Alta / L (8–13) |
+| 48.5 | Resumo Final — cinco cenários consolidando orgânicos e pagos, meta total e rótulos (aba 4) — `48.5.planejamento-resumo-final.md` | RN-030, 031 (+ 017…020, 022, 027, 029 consolidadas) | 48.3 ✅, 48.4 ✅ | **Draft** (@sm, 2026-09-22) — DV-017 = A; `[FALTA]` estimativa (proposta Alta / M 5–8) |
 
-Pontos e prioridade: estimados pelo @po na validação e confirmados pelo Danilo — 48.2: Alta, M (5–8); 48.1: Alta, L (8–13) proposta; 48.3 e 48.4: Alta, L (8–13); 48.5 fica `[FALTA]` até a validação.
+Pontos e prioridade: estimados pelo @po na validação e confirmados pelo Danilo — 48.2: Alta, M (5–8); 48.1: Alta, L (8–13) proposta; 48.3 e 48.4: Alta, L (8–13); 48.5: proposta do @sm Alta, M (5–8), `[FALTA]` até a validação.
 
 ## Ordem de execução, executores e gates (@pm, 2026-09-21)
 
@@ -143,6 +143,8 @@ Regra do repo mantida: executor ≠ quality gate em todas as linhas.
 | 2026-09-21 | @sm (River) | Danilo decidiu DV-016 = A e DV-012 = B; 48.3 e 48.4 sem `[FALTA]` bloqueante |
 | 2026-09-21 | @po (Pax) | 48.3 e 48.4 validadas: GO 9/10, Ready; achado comum: chaves de canal/fonte diferem entre os módulos da 48.1 e da 48.2 → mapeamento testado; estimativas Alta / L propostas |
 | 2026-09-21 | @po (Pax) | Danilo confirmou Alta / L (8–13) para 48.3 e 48.4 → 10/10 |
+| 2026-09-22 | @devops (Gage) | Wave 2 na `main`: 48.3 #911 (`d89305a7`, 0153 em produção) e 48.4 #912 (`73579498`, 0154 em produção); contrato v16. DEV-01 (409 sem inputs nas abas 2/3) e DEV-03 (verba do Meta frio `7 999,999…` na 48.1) registrados para o @po |
+| 2026-09-22 | @sm (River) | 48.5 rascunhada (wave 3): consolidação pura sobre `combinacaoOrganica`/`combinacaoPaga`, D9 aplicado, §4.4 separado em reproduz/recalcula (valores conferidos com o motor); **DV-017 = A** decidido pelo Danilo → `plan_final_scenarios` + rota `…/planejamento/resumo` (contrato 17). Três `[FALTA]` para o @po |
 | 2026-09-21 | @pm (Morgan) | **P2 ✅ — estrutura validada.** Acrescentados objetivo, critérios de sucesso S1–S4, ordem de execução em 3 waves com executor/gate por story, riscos R1–R6, roadmap do que ficou fora; E4 corrigido (nomes dos módulos = os das stories). Número 48 confirmado na `main` (#898). |
 
 <!-- clickup:17tqamemnem -->
