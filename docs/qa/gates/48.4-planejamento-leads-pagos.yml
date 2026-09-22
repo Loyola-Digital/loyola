@@ -1,31 +1,31 @@
 schema: 1
 story: '48.4'
 story_title: 'Planejamento — Leads Pagos: parâmetros por fonte, seleção de cenários, combinações, tráfego e resumo (aba 3)'
-gate: CONCERNS
-status_reason: 'Regra correta e fiel à spec com a separação certa do AC15 (o que reproduz §3.4 — Meta quente, Google quente, tráfego, Y13/Y40/X40 — e o que D4/D5 recalculam); os três diferenciais do AC16 (DV-013, DV-014, DV-008) provados sobre o mesmo motor; 29 + 7 testes na API, 15 no web; 6 mutações do @dev e 5 das 6 do QA derrubam a suíte. Dois achados, nenhum de cálculo: (1) a rota aceita nível até 10 por especificação, mas nenhum teste usa nível 9 ou 10 — a mutação "limite dos orgânicos (8)" passa 7/7; (2) fonte sem seleção devolve CPL máximo 0 (a tela mostra "R$ 0,00") onde a conversão, a outra razão, devolve null. Correções pequenas; re-gate depois delas.'
+gate: PASS
+status_reason: 'Regra correta e fiel à spec com a separação certa do AC15 e os três diferenciais do AC16 provados sobre o mesmo motor (29 + 8 testes na API, 15 no web). Os dois achados do gate 1 (nível 9–10 sem teste válido; CPL 0 sem seleção) foram corrigidos em ad8009ad com testes que caem sob mutação — QA re-mutou o limite dos orgânicos na rota: 3 falhas (era 0); QM7 nova (max 9): 3 falhas; CPL 0: 2 falhas. Re-gate PASS. Fora do código: 0154 em produção + information_schema antes do merge; DEV-01/DEV-03 para o @po.'
 reviewer: 'Quinn'
-updated: '2026-09-22T03:10:00Z'
+updated: '2026-09-22T03:40:00Z'
 branch: 'feat/48.4-planejamento-leads-pagos'
-commits: ['c6e413c3']
+commits: ['c6e413c3', 'bb123402', 'ad8009ad']
 
 top_issues:
   - id: 'TEST-001'
     severity: medium
-    status: open
+    status: resolved
     finding: 'AC2 fixa nível 1…10 nos pagos (a escada tem dez níveis, contra oito nos orgânicos). O `payloadValido()` do teste de rotas usa níveis 4, 3, 5 e 2, e o caso de 400 testa só 11 e 0 — nenhum caminho exercita 9 ou 10 como VÁLIDOS. A mutação `nivelPago = …max(NIVEIS_ORGANICOS)` (o copy-paste mais provável entre as duas rotas, que devolveria 400 para um nível legítimo) passa **7/7**. A tela oferece os dez radios, então o usuário marcaria 10, clicaria Salvar e receberia "Dados inválidos".'
-    suggested_action: 'No `payloadValido()`, usar nível 10 numa fonte (e 9 noutra) — ida-e-volta passa a cobrir o limite; e um caso explícito "nível 10 aceito (200)". Re-mutar `max(NIVEIS_ORGANICOS)` e ver a suíte cair.'
+    suggested_action: 'RESOLVIDO em ad8009ad: `payloadValido()` com nível 10 (Meta quente) e 9 (Google quente) + caso explícito `nível 10 e nível 9 são VÁLIDOS`. QA re-mutou `max(NIVEIS_ORGANICOS)`: **3 falhas** (era 0); mutação nova QM7 `max(9)`: 3 falhas.'
   - id: 'REQ-001'
     severity: low
-    status: open
+    status: resolved
     finding: '`resumoDaFonte` com seleção vazia devolve `cpl: 0` e `cplBruto: 0`; a tabela de combinações mostra "R$ 0,00" no CPL máximo da fonte que não participa. CPL é uma RAZÃO (captação ÷ leads), como a conversão — e a conversão, na mesma situação, devolve `null` ("—", D3). Vendas e leads a 0 fazem sentido (somam nos totais); um CPL de zero reais lê como "lead de graça". O teste `fonte com seleção vazia contribui 0 em vendas, leads e CPL` fixa o comportamento errado.'
-    suggested_action: 'Seleção vazia → `cpl: null`, `cplBruto: null` (como `conversao`); ajustar o teste para afirmar `cpl: null` e manter vendas/leads 0. Mutação "cpl 0" tem de cair.'
+    suggested_action: 'RESOLVIDO em ad8009ad: `resumoDaFonte` sem seleção devolve `cpl`/`cplBruto` `null`; teste afirma `cpl: null` e `not.toBe(0)`. QA re-mutou `cpl: 0`: 2 falhas.'
 
 waiver: { active: false }
 
 checks:
   code_review: 'Diff: 8 arquivos novos + 9 modificados; nos dois do Lucas (`schema.ts` +78/−0, `index.ts` +32/−0) só apêndice — P1 respeitada. No módulo de combinações, as únicas linhas da 48.3 tocadas são o cabeçalho, o `import type` e a assinatura de `resumoDoCanal` (`GradeOrganica` → `GradeDeResumo`, estrutural; os 30 testes da 48.3 seguem verdes) — a apensação foi a escolha certa: um módulo irmão não importaria `cadeiaDeDeducoes` por valor sem quebrar a regra "folha". 0 imports de valor. PO-01: `FONTE_NA_ABA_1` cobre as quatro fontes e o teste afirma receita (D5: Google frio 31 250, não 14 423,08) e verba; mutação M5 do @dev derruba 6. AC1: duas tabelas com `uniqueIndex` e CHECKs (fonte no domínio, frações, CPL ≥ 0, nível 1…10). AC2: GET forma fixa sem criar linha; PUT `.strict()` ×3, `.length(5)`, 409 sem simulador (DEV-01, mesma regra da 48.3). AC7: tráfego por fonte = `invest*` da 48.1, igual nas cinco (testado). AC8: `mcDaPlataforma` = `mc_fonte` da spec (cadeia da plataforma − tráfego da plataforma); identidade `mc_pagos = receita_liquida − trafego_total` afirmada nas cinco (QM1 troca de tráfego: 2 falhas; QM2 agrupamento: 5 falhas). AC10: cada fonte lê o próprio bloco (M2 do @dev: 1 falha) e o total soma as quatro (M1: 4 falhas). AC11: `LegendaDasFaixas` compartilhada com `grandeza` e `classeDaCelulaDeCpl` no sentido dos leads (QM6 inversão: 1 falha). AC13: ordem das fontes, "Google Ads" nos rótulos (testado), CPL + leads por célula. AC14: `estadoDaTela`, PO-03, `valorDaGrade` (REQ-001 da 48.3 aplicado desde o início), diagnóstico com cinco inputs. DEV-03 (verba 7 999,999…) é da 48.1 e não afeta nada aqui — registrado para o @po.'
-  unit_tests: 'QA rodou API 29 + 7 (e 30 + 8 + 8 da 48.1/48.3) e web 15 + 19 — verdes. Mutações do QA: QM1 tráfego trocado entre plataformas → 2 ✓; QM2 plataformas agrupadas errado → 5 ✓; QM3 % do tráfego sobre a líquida → 1 ✓; QM4 CPL do produto lido do bruto → 2 ✓; **QM5 rota com `max(NIVEIS_ORGANICOS)` → 0 falhas ✗ (TEST-001)**; QM6 DV-012 reproduzido (inversão) → 1 ✓. Diferenciais do @dev (M1–M6) conferidos na leitura.'
-  acceptance_criteria: 'AC1 ✓ · AC2 ◐ (semântica ✓; nível 9–10 sem teste válido — TEST-001) · AC3 ✓ · AC4 ✓ (D4: Meta frio 0,006/0,005/0,004; D5 + D4: Google frio 21 875/26 250) · AC5 ✓ · AC6 ✓ (Y12/Y13/Y15 reproduzem; Y16 recalculado) · AC7 ✓ (40 000/60 000/100 000; % = total ÷ bruta) · AC8 ✓ (Y40 15 544,23; X40 0,185375; identidade) · AC9 ✓ (negativo é número; DV-016) · AC10 ◐ (D8/D13/D10 ✓; CPL 0 sem seleção — REQ-001) · AC11 ✓ · AC12 ✓ · AC13 ✓ · AC14 ✓ · AC15 ✓ (separação reproduz/recalcula explícita no teste) · AC16 ✓ (a: `!==` contra o bloco Meta quente com Z16; b: quatro > quentes com 140,110074 da spec como prova; c: null em cascata) · AC17 ✓.'
+  unit_tests: 'Re-gate: QA rodou API 29 + 8 e web 15 — verdes. Gate 1: API 29 + 7 (e 30 + 8 + 8 da 48.1/48.3) e web 15 + 19 — verdes. Mutações do QA: QM1 tráfego trocado entre plataformas → 2 ✓; QM2 plataformas agrupadas errado → 5 ✓; QM3 % do tráfego sobre a líquida → 1 ✓; QM4 CPL do produto lido do bruto → 2 ✓; QM5 rota com `max(NIVEIS_ORGANICOS)` → 0 falhas no gate 1 (TEST-001) e **3 no re-gate ✓**; QM7 (nova) `max(9)` → 3 ✓; QM6 DV-012 reproduzido (inversão) → 1 ✓. Diferenciais do @dev (M1–M6) conferidos na leitura.'
+  acceptance_criteria: 'AC1 ✓ · AC2 ✓ (nível 9–10 válidos testados na ida-e-volta — TEST-001 fechado) · AC3 ✓ · AC4 ✓ (D4: Meta frio 0,006/0,005/0,004; D5 + D4: Google frio 21 875/26 250) · AC5 ✓ · AC6 ✓ (Y12/Y13/Y15 reproduzem; Y16 recalculado) · AC7 ✓ (40 000/60 000/100 000; % = total ÷ bruta) · AC8 ✓ (Y40 15 544,23; X40 0,185375; identidade) · AC9 ✓ (negativo é número; DV-016) · AC10 ✓ (D8/D13/D10; CPL null sem seleção — REQ-001 fechado) · AC11 ✓ · AC12 ✓ · AC13 ✓ · AC14 ✓ · AC15 ✓ (separação reproduz/recalcula explícita no teste) · AC16 ✓ (a: `!==` contra o bloco Meta quente com Z16; b: quatro > quentes com 140,110074 da spec como prova; c: null em cascata) · AC17 ✓.'
   no_regressions: 'Suíte da API: 2 997 ✓ / 10 ✗ em 5 arquivos = baseline. Web 1 387/1 387; os 19 testes da 48.3 seguem após a extração das peças de UI. `next build` EXIT 0 e `tsc` do web 0 depois dele. Módulos da 48.1 e 48.2 intocados. CI: a confirmar após o push.'
   performance: 'N/A — 4 grades × (10 + 2×10×10) + 5 combinações; aritmética pura em `useMemo`.'
   security: 'Guest 403 antes de qualquer leitura; params UUID; `.strict()`; CHECKs; transação no upsert.'
@@ -37,3 +37,4 @@ notes:
   - 'DEV-03: `investMetaFrio` chega da 48.1 como 7 999,999999999998 (`(1 − 0,8) × 40 000`). Nada quebra (a soma fecha 40 000, a tela arredonda), mas a 48.1 poderia calcular o frio por subtração como `dividirVerba` faz. Não é desta story; registrado para o @po.'
   - 'Tabela de combinações com ~50 linhas × 5 colunas: é a planilha; cabe ao Danilo, na validação visual, dizer se a ordem das seções (receita → deduções → tráfego → MC → meta → marketing) lê bem.'
   - 'DoD pendente para o @devops: aplicar `0154_plan_paid.sql` em produção e conferir no `information_schema` ANTES do merge; ler o log do job `test` do CI.'
+  - 'Re-gate em 2026-09-22: TEST-001 e REQ-001 fechados em ad8009ad; cada fix com mutação que derruba a suíte → PASS.'
