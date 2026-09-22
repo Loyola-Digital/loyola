@@ -45,10 +45,26 @@ export function usePlanner() {
     }),
     [rotulos],
   );
+  const qc = useQueryClient();
   return useQuery({
     queryKey: CHAVE,
     queryFn: () => api<{ campanhas: Campanha[] }>(BASE),
     select: comCorDoExpert,
+    /**
+     * A tela se atualiza sozinha — várias pessoas mexem no Planner ao mesmo
+     * tempo, e a mudança de uma precisa chegar para quem está olhando sem F5.
+     * Também traz o que a sincronia com o Google importou.
+     *
+     * PAUSA enquanto há gravação em voo: a busca que voltasse no meio dela
+     * traria o estado de antes e a barra recém-arrastada pularia de volta até
+     * a gravação terminar. Com a aba escondida o React Query já não busca.
+     * O campo em edição num card guarda o próprio rascunho (`TextoInline`),
+     * então a atualização não apaga o que está sendo digitado.
+     */
+    refetchInterval: () => (qc.isMutating() > 0 ? false : 10_000),
+    // O staleTime global é de 5 min: sem isto, voltar para a aba não buscava
+    // nada e a tela ficava velha até o F5.
+    staleTime: 5_000,
   });
 }
 
