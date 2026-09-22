@@ -68,8 +68,6 @@ import {
   MESES_LONGOS,
   campanhaConcluida,
   cruzaMes,
-  faseTerminou,
-  restaurarOcultas,
   periodo,
   mesesDoPeriodo,
   normalizar,
@@ -305,21 +303,16 @@ export default function PlannerPage() {
   );
 
   /**
-   * Para os cards e a timeline, as fases passadas também somem.
+   * O card some só quando a campanha INTEIRA terminou — o corte é por
+   * campanha, nunca por fase.
    *
-   * O CALENDÁRIO fica de fora deste corte de propósito: ele mostra um mês que
-   * a pessoa escolheu, e navegar para agosto e não ver nada seria a navegação
-   * de meses deixando de funcionar.
+   * Esconder fase a fase (como era até 22/09/2026) tirava do card a fase que
+   * acabou de passar enquanto o resto da campanha seguia viva: quem cadastrava
+   * datas já passadas via a fase sumir no instante em que digitava, e o
+   * histórico do lançamento em andamento ficava invisível. Quem some é a
+   * campanha concluída, em `noPainel`.
    */
-  const semPassado = useMemo(
-    () =>
-      esconderPassado
-        ? visiveis.map((c) =>
-            tocadas.has(c.id) ? c : { ...c, phases: c.phases.filter((f) => !faseTerminou(f)) },
-          )
-        : visiveis,
-    [visiveis, esconderPassado, tocadas],
-  );
+  const semPassado = visiveis;
   /** Só a LISTA de cards — calendário e timeline usam `semPassado`/`visiveis`. */
   const nosCards = useMemo(
     () => semPassado.filter((c) => !cardsOcultos.has(c.id)),
@@ -338,19 +331,12 @@ export default function PlannerPage() {
 
   const mudarCampanha = useCallback(
     (campanha: Campanha, dados: { name?: string; color?: string; phases?: Fase[] }) => {
-      // Os cards recebem a campanha SEM as fases que já terminaram (quando
-      // "esconder o que já terminou" está ligado). Gravar a partir dela apagava
-      // as terminadas — e os eventos delas no Google. Esconder é da tela; o
-      // banco recebe sempre a campanha inteira.
+      // A campanha inteira, sempre: o card mostra todas as fases (o filtro é
+      // por campanha concluída), e gravar a partir de uma lista filtrada foi o
+      // que já apagou fases e os eventos delas no Google.
       const inteira = campanhas.find((c) => c.id === campanha.id) ?? campanha;
       tocar(campanha.id);
-      const fases = dados.phases
-        ? restaurarOcultas(
-            dados.phases,
-            inteira.phases,
-            esconderPassado ? (f) => faseTerminou(f) : () => false,
-          )
-        : undefined;
+      const fases = dados.phases;
       anotar({ tipo: "editou", campanha: inteira });
       atualizar.mutate({
         id: campanha.id,
@@ -359,7 +345,7 @@ export default function PlannerPage() {
         dados: fases ? { ...dados, phases: fases.map(normalizar) } : dados,
       });
     },
-    [anotar, atualizar, campanhas, esconderPassado, tocar],
+    [anotar, atualizar, campanhas, tocar],
   );
 
   /**
@@ -951,8 +937,8 @@ export default function PlannerPage() {
               onClick={() => setEsconderPassado((v) => !v)}
               titulo={
                 esconderPassado
-                  ? "Mostrar campanhas e fases que já terminaram"
-                  : "Esconder o que já terminou"
+                  ? "Mostrar as campanhas que já terminaram por inteiro"
+                  : "Esconder campanhas que já terminaram por inteiro"
               }
             >
               {esconderPassado ? (
@@ -960,7 +946,7 @@ export default function PlannerPage() {
               ) : (
                 <Eye className="h-3.5 w-3.5" />
               )}
-              {esconderPassado ? "Passado oculto" : "Mostrando tudo"}
+              {esconderPassado ? "Concluídas ocultas" : "Mostrando tudo"}
               {esconderPassado && concluidas.length > 0 && (
                 // O número do que está escondido: sem ele, o filtro é
                 // silencioso e alguém procura uma campanha que está ali.
