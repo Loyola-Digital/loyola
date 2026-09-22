@@ -39,6 +39,7 @@ import { chaveLp, lpDoRegistro, parseUtmTerm, type FonteLp } from "../services/u
 // aqui — se divergirem do resultado desta seção, é defeito e vai para o backlog.
 import {
   phoneTail,
+  canalComTemperatura,
   classifyOrigem,
   classifyCanal,
   classifyTemperatura,
@@ -708,6 +709,21 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
         ),
         fontesPagas: cortarPor((o) =>
           classifyOrigem(o.source) === "Pago" ? classifyCanal(o.source, o.medium) : null,
+        ),
+        /**
+         * Story 48.11 — o mesmo corte das fontes pagas, mas separado por
+         * TEMPERATURA: `"Meta Ads · quente"`, `"Meta Ads · frio"`.
+         *
+         * Existe porque o simulador do Painel de Planejamento trabalha com
+         * quatro fontes pagas (plataforma × público), e `fontesPagas` devolve
+         * a plataforma agregada. Repetir o número agregado nos dois campos
+         * seria apresentar o mesmo dado como se fossem duas medições.
+         *
+         * `indefinido` APARECE, como em `porTemperatura`: lead pago sem
+         * `utm_term` estruturado é informação sobre o rastreio, não sujeira.
+         */
+        fontesPagasPorTemperatura: cortarPor((o) =>
+          classifyOrigem(o.source) === "Pago" ? canalComTemperatura(o.source, o.medium, o.term) : null,
         ),
         /** AC7 — a linha de total: o denominador do fechamento. */
         total: {

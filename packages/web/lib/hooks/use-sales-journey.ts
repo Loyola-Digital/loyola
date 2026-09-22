@@ -74,6 +74,12 @@ export interface BuyersOrigin {
     /** Canais NOMEADOS dentro de Orgânico — o que o balde escondia. */
     fontesOrganicas: LinhaDeOrigem[];
     fontesPagas: LinhaDeOrigem[];
+    /**
+     * Story 48.11 — canal × temperatura ("Meta Ads · quente"). OPCIONAL: uma
+     * API anterior à 48.11 não manda o campo, e a tela que o usa tem de seguir
+     * funcionando sem ele.
+     */
+    fontesPagasPorTemperatura?: LinhaDeOrigem[];
     total: { leads: number; compradores: number; taxa: number | null };
     /** `false` = sem lead cruzável; a tela declara em vez de exibir taxa. */
     cruzamentoPorPessoa: boolean;

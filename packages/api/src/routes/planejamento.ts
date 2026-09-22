@@ -384,6 +384,49 @@ export default fp(async function planejamentoRoutes(fastify) {
     return { ok: true, funnelId: ctx.funnelId, cenarios: gravado.cenarios, updatedAt: gravado.updatedAt };
   });
 
+  // ---- Story 48.11 — o REALIZADO deste lançamento (camada B) ----
+  //
+  //   GET /api/projects/:projectId/funnels/:funnelId/planejamento/realizado
+  //
+  // A tela chama isto com o `funnelId` da BASE — o mesmo padrão da 48.9, em que
+  // os hooks da aba são reusados apontando para o outro funil.
+  //
+  // Devolve só o que sai do BANCO. Ticket médio e conversão por canal já têm
+  // rota própria (`sales-data`, `buyers-origin`), são rotas DE ETAPA, e por isso
+  // o que falta aqui é a lista de etapas: sem ela a tela teria de adivinhar o
+  // `stageId` da base — e, dos 11 lançamentos reais, 5 não têm etapa de vendas
+  // e 3 têm DUAS (Vendas + Downsell).
+  fastify.get("/api/projects/:projectId/funnels/:funnelId/planejamento/realizado", async (request, reply) => {
+    const ctx = await resolverContexto(request, reply);
+    if (!ctx) return;
+    const [investimentoMeta, etapas, campanhasDeGoogle] = await Promise.all([
+      repo().investimentoMetaDoFunil(ctx.projectId, ctx.funnelId),
+      repo().etapasDoFunil(ctx.funnelId),
+      repo().campanhasDeGoogleDoFunil(ctx.funnelId),
+    ]);
+    return {
+      funnelId: ctx.funnelId,
+      investimentoMeta,
+      etapas,
+      // Declarado, não medido: não existe tabela de insights do Google
+      // (conferido em 2026-09-22 — só `google_ads_accounts`, sem `*_insights`).
+      // A tela mostra 100 % Meta COM esta justificativa ao lado; um 100 % sem
+      // fonte declarada seria indistinguível de um dado faltando.
+      //
+      // `campanhasVinculadas` é o que impede o 100 % de virar mentira calada:
+      // hoje são zero nos 11 lançamentos, e no dia em que alguém vincular uma
+      // campanha do Google a tela para de afirmar a divisão.
+      google: {
+        temFonte: false,
+        campanhasVinculadas: campanhasDeGoogle,
+        motivo:
+          campanhasDeGoogle > 0
+            ? `Este lançamento tem ${campanhasDeGoogle} campanha(s) do Google vinculada(s), e o sistema não guarda insights do Google — a divisão Meta/Google não pode ser medida.`
+            : "Nenhuma campanha do Google vinculada a este lançamento; o sistema também não guarda insights do Google.",
+      },
+    };
+  });
+
   // ---- Story 48.9 — bases possíveis: lançamentos anteriores do mesmo tipo ----
   //
   //   GET /api/projects/:projectId/funnels/:funnelId/planejamento/bases

@@ -19,6 +19,17 @@ import { usePlanejamentoInputs } from "@/lib/hooks/use-planejamento-inputs";
 import { usePlanejamentoOrganicos } from "@/lib/hooks/use-planejamento-organicos";
 import { usePlanejamentoPagos } from "@/lib/hooks/use-planejamento-pagos";
 import type { BaseDeReferencia } from "@/lib/utils/planejamento-referencia";
+import { usePlanejamentoRealizado } from "@/lib/hooks/use-planejamento-realizado"; // Story 48.11
+import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
+import { useBuyersOrigin } from "@/lib/hooks/use-sales-journey";
+import {
+  etapaDeVendasPadrao,
+  etapasDeVendas,
+  montarRealizado,
+  type EtapaDaBase,
+  type RealizadoDaBase,
+} from "@/lib/utils/planejamento-realizado";
+import { fmtPercent } from "@/lib/utils/format-number";
 
 // Story 48.1 — sub-página "Planejamento" do funil de LANÇAMENTO (Epic 48).
 //
@@ -81,6 +92,49 @@ export default function PlanejamentoPage() {
         organicos: baseOrganicos.data ?? null,
         pagos: basePagos.data ?? null,
       }
+    : null;
+
+  // Story 48.11 — a camada B: o que a base ENTREGOU.
+  //
+  // Três leituras, todas do funil da BASE: o investimento Meta (rota nova), o
+  // ticket médio e a conversão por canal (rotas de ETAPA que já existem — os
+  // mesmos números do dashboard, não uma segunda conta).
+  const baseRealizado = usePlanejamentoRealizado(baseId ? params.id : null, baseId);
+  const vendasDaBase = etapasDeVendas(baseRealizado.data?.etapas);
+  const [etapaDeVendasId, setEtapaDeVendasId] = useState<string | null>(null);
+  // A escolha padrão segue a base: trocar de lançamento não pode deixar para
+  // trás o `stageId` do anterior.
+  useEffect(() => {
+    setEtapaDeVendasId(etapaDeVendasPadrao(baseRealizado.data?.etapas)?.id ?? null);
+  }, [baseRealizado.data]);
+  const etapaEscolhida: EtapaDaBase | null = vendasDaBase.find((e) => e.id === etapaDeVendasId) ?? null;
+
+  const vendasDaEtapa = useStageSalesData(
+    etapaEscolhida ? params.id : null,
+    etapaEscolhida ? baseId : null,
+    etapaEscolhida?.id ?? null,
+    "main_product,tmb",
+  );
+  // `buyers-origin` responde 403 a guest — pedir assim mesmo seria um erro
+  // garantido no console a cada visita. Sem ela, o guest perde só a conversão
+  // por canal; investimento e ticket médio continuam (aquelas rotas deixam o
+  // convidado membro do projeto ler).
+  const origemDaEtapa = useBuyersOrigin(
+    params.id,
+    baseId ?? "",
+    etapaEscolhida?.id ?? "",
+    undefined,
+    !!baseId && !!etapaEscolhida && role !== null && role !== "guest",
+  );
+
+  const realizado: RealizadoDaBase | null = baseEscolhida
+    ? montarRealizado({
+        api: baseRealizado.data,
+        etapaEscolhida,
+        ticketMedioBruto: vendasDaEtapa.data?.ticketMedioBruto ?? null,
+        fontesOrganicas: origemDaEtapa.data?.analiseDeOrigem?.fontesOrganicas,
+        fontesPagasPorTemperatura: origemDaEtapa.data?.analiseDeOrigem?.fontesPagasPorTemperatura,
+      })
     : null;
 
   const voltar = `/projects/${params.id}/funnels/${params.funnelId}`;
@@ -157,6 +211,20 @@ export default function PlanejamentoPage() {
                   </option>
                 ))}
               </select>
+              {vendasDaBase.length > 1 && (
+                <select
+                  aria-label="Etapa de vendas da base"
+                  value={etapaDeVendasId ?? ""}
+                  onChange={(ev) => setEtapaDeVendasId(ev.target.value === "" ? null : ev.target.value)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                >
+                  {vendasDaBase.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      Etapa de vendas: {e.nome}
+                    </option>
+                  ))}
+                </select>
+              )}
               <span className="text-xs text-muted-foreground">
                 {referencia
                   ? "Os valores desse lançamento aparecem entre parênteses ao lado de cada campo — só como parâmetro; nada é preenchido nem salvo."
@@ -164,6 +232,11 @@ export default function PlanejamentoPage() {
               </span>
             </>
           )}
+          {/* Story 48.11 (AC8) — o que o `real:` cobre e o que ele NÃO cobre.
+              Um número sem procedência ao lado de um campo é pior que nenhum:
+              o gestor não tem como saber que o 100 % do Meta é ausência de
+              Google, e não medição. */}
+          {realizado && !baseRealizado.isPending && <DeclaracaoDoRealizado realizado={realizado} />}
         </div>
       )}
 
@@ -176,7 +249,7 @@ export default function PlanejamentoPage() {
           ))}
         </TabsList>
         <TabsContent value="inputs" className="mt-4">
-          <PlanejamentoInputsFinanceiros projectId={params.id} funnelId={params.funnelId} podeEditar={role !== null && role !== "guest"} referencia={referencia} />
+          <PlanejamentoInputsFinanceiros projectId={params.id} funnelId={params.funnelId} podeEditar={role !== null && role !== "guest"} referencia={referencia} realizado={realizado} />
         </TabsContent>
         <TabsContent value="organicos" className="mt-4">
           <PlanejamentoLeadsOrganicos
@@ -185,6 +258,7 @@ export default function PlanejamentoPage() {
             podeEditar={role !== null && role !== "guest"}
             irParaInputs={() => trocarAba("inputs")}
             referencia={referencia}
+            realizado={realizado}
           />
         </TabsContent>
         <TabsContent value="pagos" className="mt-4">
@@ -194,6 +268,7 @@ export default function PlanejamentoPage() {
             podeEditar={role !== null && role !== "guest"}
             irParaInputs={() => trocarAba("inputs")}
             referencia={referencia}
+            realizado={realizado}
           />
         </TabsContent>
         <TabsContent value="resumo" className="mt-4">
@@ -201,5 +276,74 @@ export default function PlanejamentoPage() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+/**
+ * Story 48.11 (AC8) — a procedência do `real:`, em uma linha.
+ *
+ * Declara: a janela do gasto, quantas campanhas entraram, que o 0 % do Google
+ * é ausência de lançamento (não medição), qual etapa de vendas alimentou o
+ * ticket e a conversão, e quanto dos leads orgânicos ficou fora dos cinco
+ * canais nomeados.
+ */
+function DeclaracaoDoRealizado({ realizado }: { realizado: RealizadoDaBase }) {
+  const inv = realizado.investimentoMeta;
+
+  // Falha NÃO é ausência: sem resposta, a tela diz que não conseguiu ler, em
+  // vez de afirmar que o lançamento não tem etapa de vendas nem campanha.
+  if (!realizado.temResposta) {
+    return (
+      <p className="basis-full text-xs text-muted-foreground">
+        <strong>real:</strong> os valores realizados desse lançamento não puderam ser lidos agora — a API pode ainda não ter
+        essa rota. Os valores <strong>planejados</strong> (base) seguem válidos.
+      </p>
+    );
+  }
+
+  const partes: string[] = [];
+
+  if (inv && inv.campanhasComSpend > 0) {
+    const janela = inv.janela.de && inv.janela.ate ? ` entre ${inv.janela.de} e ${inv.janela.ate}` : "";
+    partes.push(`investimento de ${inv.campanhasComSpend} de ${inv.campanhasVinculadas} campanhas${janela}`);
+    if (inv.indefinido > 0) {
+      partes.push(
+        `${fmtPercent((inv.indefinido / inv.total) * 100)} do gasto está em campanha sem quente/frio no nome e fica fora do "% em público quente"`,
+      );
+    }
+  } else if (inv) {
+    partes.push("nenhuma campanha com gasto registrado nesse lançamento");
+  }
+
+  if (realizado.googleCampanhasVinculadas > 0) {
+    partes.push(
+      `${realizado.googleCampanhasVinculadas} campanha(s) do Google vinculada(s) e sem insights no sistema — a divisão Meta/Google não pode ser medida`,
+    );
+  } else if (!realizado.googleTemFonte) {
+    partes.push("Google aparece como 0 % por não haver campanha do Google vinculada — não é medição");
+  }
+
+  if (realizado.etapaDeVendas) {
+    // O subtype pedido é `main_product,tmb`: o ticket médio traz o produto
+    // principal COM order bump. Dizer isso evita o gestor comparar com um
+    // ticket de produto puro e concluir que a medição está alta.
+    partes.push(
+      `ticket médio (produto principal + order bump) e conversão vêm da etapa "${realizado.etapaDeVendas.nome}"`,
+    );
+  } else {
+    partes.push("esse lançamento não tem etapa de vendas — sem ticket médio nem conversão realizada");
+  }
+
+  const fora = realizado.foraDoMapeamento;
+  if (fora.fracao !== null && fora.leads > 0) {
+    partes.push(
+      `${fmtPercent(fora.fracao * 100)} dos leads orgânicos ficaram fora dos cinco canais nomeados (Closer, Outros, Sem Track)`,
+    );
+  }
+
+  return (
+    <p className="basis-full text-xs text-muted-foreground">
+      <strong>real:</strong> {partes.join(" · ")}.
+    </p>
   );
 }
