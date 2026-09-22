@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { CalendarDays, GripVertical, Trash2 } from "lucide-react";
+import { CalendarDays, EyeOff, GripVertical, Trash2 } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -207,6 +207,7 @@ export function CardDeCampanha({
   onDuplicar,
   onSelecionarFase,
   onExcluirFase,
+  onOcultarCard,
   agendas,
   arrastavel = true,
 }: {
@@ -230,6 +231,8 @@ export function CardDeCampanha({
   onExcluirFase: (faseId: string) => void;
   /** Fora de uma lista ordenável, a alça não teria o que fazer. */
   arrastavel?: boolean;
+  /** Tira SÓ o card da lista — a campanha segue no calendário e na timeline. */
+  onOcultarCard?: () => void;
 }) {
   const p = periodo(campanha.phases);
   const total = p ? dias(p.inicio, p.fim) : null;
@@ -366,6 +369,17 @@ export function CardDeCampanha({
           />
         </span>
 
+        {onOcultarCard && (
+          <button
+            type="button"
+            onClick={onOcultarCard}
+            aria-label={`Ocultar o card de ${campanha.name}`}
+            title="Ocultar só o card — a campanha continua na agenda e na timeline"
+            className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-[5px] text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+          >
+            <EyeOff className="h-3.5 w-3.5" />
+          </button>
+        )}
         <button
           type="button"
           onClick={onExcluir}

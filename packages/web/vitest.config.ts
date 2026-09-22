@@ -48,6 +48,7 @@ export default defineConfig({
       "lib/swipe/**/*.test.ts",
       "lib/planner/**/*.test.ts",
       "components/instagram/**/*.test.tsx",
+      "components/planner/**/*.test.tsx",
     ],
     /**
      * Story 18.80 (gate do @qa) — o fuso do runner é FIXADO no do usuário.
