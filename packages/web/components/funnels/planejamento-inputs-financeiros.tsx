@@ -12,6 +12,7 @@ import { fmtCurrency, fmtInt, fmtPercent } from "@/lib/utils/format-number";
 import { derivarInputsFinanceiros, type DerivadosFinanceiros } from "@loyola-x/shared/src/planejamento-inputs-financeiros";
 import {
   TIPO_DO_CAMPO,
+  aplicarPadraoDeCustos,
   comoEntradas,
   estadoDaTela,
   formularioAlterado,
@@ -125,8 +126,13 @@ export function PlanejamentoInputsFinanceiros({
   const [form, setForm] = useState<Formulario | null>(null);
 
   // Carrega o formulário UMA vez por resposta da API; depois é o usuário que manda.
+  // Story 48.8: funil que nunca salvou abre com o padrão dos custos variáveis
+  // (4 / 4,99 / 11 / 0 / 0 / 1) — preenchido, não fixo: nada é gravado até
+  // alguém clicar em Salvar, e depois de salvo o que está salvo manda.
   useEffect(() => {
-    if (query.data && form === null) setForm(paraFormulario(query.data.inputs));
+    if (query.data && form === null) {
+      setForm(paraFormulario(aplicarPadraoDeCustos(query.data.inputs, query.data.updatedAt === null)));
+    }
   }, [query.data, form]);
 
   const entradas = useMemo(() => (form ? paraEntradas(form) : null), [form]);

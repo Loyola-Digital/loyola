@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { CAMPOS_DOS_INPUTS_FINANCEIROS } from "@loyola-x/shared/src/planejamento-inputs-financeiros";
 import {
+  CUSTOS_PADRAO,
+  aplicarPadraoDeCustos,
   comoEntradas,
   estadoDaTela,
   formularioAlterado,
@@ -10,7 +13,6 @@ import {
   type FormularioDosInputs,
   type InputsPersistidos,
 } from "@/lib/utils/planejamento-inputs-form";
-import { CAMPOS_DOS_INPUTS_FINANCEIROS } from "@loyola-x/shared/src/planejamento-inputs-financeiros";
 
 /**
  * Story 48.1 — o CORPO que a tela manda para a API (AC11, AC13, AC15).
@@ -152,5 +154,58 @@ describe("estadoDaTela — erro vem ANTES de carregando (gate REL-001)", () => {
     expect(estadoDaTela({ isLoading: true, isError: false, temForm: false })).toBe("carregando");
     expect(estadoDaTela({ isLoading: false, isError: false, temForm: false })).toBe("carregando");
     expect(estadoDaTela({ isLoading: false, isError: false, temForm: true })).toBe("pronto");
+  });
+});
+
+describe("Story 48.8 — padrão dos custos variáveis (preenchido, não fixo)", () => {
+  const vazio = (): InputsPersistidos =>
+    Object.fromEntries(CAMPOS_DOS_INPUTS_FINANCEIROS.map((k) => [k, null])) as unknown as InputsPersistidos;
+
+  it("funil que NUNCA salvou abre com 4 % / 4,99 % / 11 % / 0 % / 0 % / 1 %", () => {
+    const p = aplicarPadraoDeCustos(vazio(), true);
+    expect(p.pctReembolso).toBe(0.04);
+    expect(p.pctMarketplace).toBe(0.0499);
+    expect(p.pctImposto).toBe(0.11);
+    expect(p.pctCustoProduto).toBe(0);
+    expect(p.pctComissoes).toBe(0);
+    expect(p.pctOutrosCustos).toBe(0.01);
+  });
+
+  it("os seis somam 20,99 % — o Total derivado da tela (soma em centésimos de ponto, sem ruído)", () => {
+    const p = aplicarPadraoDeCustos(vazio(), true);
+    const soma = [p.pctReembolso, p.pctMarketplace, p.pctImposto, p.pctCustoProduto, p.pctComissoes, p.pctOutrosCustos]
+      .reduce<number>((s, v) => s + Math.round((v ?? 0) * 10000), 0);
+    expect(soma).toBe(2099);
+  });
+
+  it("não é fixo: funil JÁ salvo não recebe padrão — campo vazio continua vazio", () => {
+    const p = aplicarPadraoDeCustos(vazio(), false);
+    expect(p.pctReembolso).toBeNull();
+    expect(p.pctImposto).toBeNull();
+    expect(p).toEqual(vazio());
+  });
+
+  it("valor salvo nunca é sobrescrito, nem quando é zero", () => {
+    const base = { ...vazio(), pctReembolso: 0.07, pctImposto: 0 };
+    const p = aplicarPadraoDeCustos(base, true);
+    expect(p.pctReembolso).toBe(0.07);
+    expect(p.pctImposto).toBe(0);
+    expect(p.pctMarketplace).toBe(0.0499); // os que estavam null recebem
+  });
+
+  it("não toca em nenhum campo fora dos seis custos", () => {
+    const p = aplicarPadraoDeCustos(vazio(), true);
+    for (const k of CAMPOS_DOS_INPUTS_FINANCEIROS) {
+      if (k in CUSTOS_PADRAO) continue;
+      expect(p[k], k).toBeNull();
+    }
+  });
+
+  it("chega ao formulário como texto em PONTOS (4,99 vira \"4,99\", não 0,0499)", () => {
+    const f = paraFormulario(aplicarPadraoDeCustos(vazio(), true));
+    expect(f.pctMarketplace).toBe("4,99");
+    expect(f.pctReembolso).toBe("4");
+    expect(f.pctImposto).toBe("11");
+    expect(f.pctCustoProduto).toBe("0");
   });
 });
