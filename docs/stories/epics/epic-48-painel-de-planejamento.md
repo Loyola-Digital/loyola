@@ -1,6 +1,6 @@
 # EPIC 48 — Painel de Planejamento: simulador de cenários do lançamento
 
-**Status:** Estrutura **validada pelo @pm (Morgan) em 2026-09-21** (P2 ✅) · P1 ✅ (Lucas, com condição) · **waves 1 e 2 na `main`** (48.1 #904, 48.2 #902, 48.3 #911, 48.4 #912; migrations 0152–0154 em produção; contrato v16) · **48.5 Ready** (@po GO 10/10; wave 3, fecha o epic)
+**Status:** **As cinco stories na `main`** (48.2 #902, 48.1 #904, 48.3 #911, 48.4 #912, 48.5 #915); migrations 0152–0155 em produção; contrato **v17**; as quatro abas do simulador no ar em 2026-09-22 · S1 ✓ e S2 ✓ (evidência abaixo) · **S3 e S4 abertos** — dependem do próximo lançamento (Danilo) · P1 ✅ (Lucas, com condição, respeitada nas cinco PRs) · P2 ✅ (@pm)
 **Origem:** planilha "Painel de Controle" do lançamento, categoria **Planejamento** (Google Sheets), que será **desativada por completo**. Toda a lógica dela foi lida e documentada em três artefatos guardados verbatim em `docs/specs/epic-48/`:
 - `especificacao_tecnica_painel_planejamento.md` — a **spec**: 8 abas, fórmulas literais, mapa de campos, casos de teste mascarados (apêndice A)
 - `classificacao_regras_painel_planejamento.md` — a **triagem**: 40 regras de negócio (RN), 11 artefatos descartados (AR), 31 dúvidas (DV); os IDs são estáveis e toda AC deste epic rastreia para um RN
@@ -19,8 +19,8 @@ Desligar a planilha "Painel de Controle · Planejamento" sem perder a capacidade
 
 | # | Critério | Como medir |
 |---|---|---|
-| S1 | **Cobertura das regras:** cada RN das abas 1–4 (RN-001…031, 037…040) tem pelo menos um AC numa story 48.x que a cita pelo ID. | Grep dos IDs nas cinco stories; nenhum RN dessas abas sem AC. |
-| S2 | **Fidelidade à spec:** os casos mascarados (§1.4, §2.4, §3.4, §4.4, apêndice A) reproduzem nos testes — no bruto com tolerância relativa `1e-6`; as únicas divergências são as seis correções de DV, cada uma com teste `não reproduz DV-xxx`. | Suíte verde; o teste diferencial falha quando a fórmula da planilha volta. |
+| S1 | **Cobertura das regras:** cada RN das abas 1–4 (RN-001…031, 037…040) tem pelo menos um AC numa story 48.x que a cita pelo ID. | Grep dos IDs nas cinco stories; nenhum RN dessas abas sem AC. **✓ 2026-09-22 (@devops, no fechamento):** grep de `RN-001…031, 037…040` nas cinco stories — os 35 IDs citados (mínimo 1, máximo 12 ocorrências); nenhum ausente. |
+| S2 | **Fidelidade à spec:** os casos mascarados (§1.4, §2.4, §3.4, §4.4, apêndice A) reproduzem nos testes — no bruto com tolerância relativa `1e-6`; as únicas divergências são as seis correções de DV, cada uma com teste `não reproduz DV-xxx`. | Suíte verde; o teste diferencial falha quando a fórmula da planilha volta. **✓ 2026-09-22:** §1.4 (48.1), §2.4 (48.2/48.3), §3.4 (48.2/48.4), §4.4 (48.5) nas suítes da API; diferenciais `não reproduz DV-001/004/006/007/008/010/013/014/015` e a regra D10 provados por mutação em cada gate (registrados nos Dev Agent Records e nos gates). Tolerância: `max(1e-6·|b|, meia unidade da casa da spec)` — a spec está em 2 casas (PO-04 da 48.3). |
 | S3 | **Prova com dados reais (o que os dados mascarados não provam):** os inputs do **próximo lançamento** entram no sistema e na planilha; cada número diferente entre os dois é explicado por uma das seis DV corrigidas ou pelo arredondamento D10 — nenhuma diferença sem explicação. | Sessão de conferência Danilo + @qa, registrada no epic. `[FALTA]`: qual lançamento. |
 | S4 | **Planilha desligada:** o time planeja um lançamento inteiro (abas 1–4) só no sistema. | Declaração do Danilo no Change Log. |
 
@@ -92,7 +92,7 @@ Respondidas nesta ordem, uma a uma. "Reproduz" = faz como a planilha; "corrige" 
 | 48.2 | Motor de cenários no `shared` (abas 2 e 3, parte pura) | RN-010…015, 024…026 | — (só testes) | **Done** — gate PASS (re-gate) 2026-09-21; **MERGED #902** (`5f83e4c6`); Alta, M (5–8) |
 | 48.3 | Leads orgânicos — parâmetros por canal, seleção, combinações e resumo (aba 2) — `48.3.planejamento-leads-organicos.md` | RN-010…023 (via 48.2), 038, 039 | 48.1 ✅, 48.2 ✅ | **Done** — gate PASS (re-gate) 2026-09-22; **MERGED #911** (`d89305a7`); 0153 em produção; Alta / L (8–13) |
 | 48.4 | Leads pagos — parâmetros por fonte, seleção, combinações, tráfego e resumo (aba 3) — `48.4.planejamento-leads-pagos.md` | RN-016…022, 024…029, 038, 039 | 48.1 ✅, 48.2 ✅ | **Done** — gate PASS (re-gate) 2026-09-22; **MERGED #912** (`73579498`); 0154 em produção; Alta / L (8–13) |
-| 48.5 | Resumo Final — cinco cenários consolidando orgânicos e pagos, meta total e rótulos (aba 4) — `48.5.planejamento-resumo-final.md` | RN-030, 031 (+ 017…020, 022, 027, 029 consolidadas) | 48.3 ✅, 48.4 ✅ | **Ready** — @po GO 10/10 em 2026-09-22; DV-017 = A; Alta / M (5–8) |
+| 48.5 | Resumo Final — cinco cenários consolidando orgânicos e pagos, meta total e rótulos (aba 4) — `48.5.planejamento-resumo-final.md` | RN-030, 031 (+ 017…020, 022, 027, 029 consolidadas) | 48.3 ✅, 48.4 ✅ | **Done** — gate PASS (re-gate) 2026-09-22; **MERGED #915** (`649bf0a9`); 0155 em produção; DV-017 = A; Alta / M (5–8) |
 
 Pontos e prioridade: estimados pelo @po na validação e confirmados pelo Danilo — 48.2: Alta, M (5–8); 48.1: Alta, L (8–13) proposta; 48.3 e 48.4: Alta, L (8–13); 48.5: Alta, M (5–8).
 
@@ -145,6 +145,7 @@ Regra do repo mantida: executor ≠ quality gate em todas as linhas.
 | 2026-09-21 | @po (Pax) | Danilo confirmou Alta / L (8–13) para 48.3 e 48.4 → 10/10 |
 | 2026-09-22 | @devops (Gage) | Wave 2 na `main`: 48.3 #911 (`d89305a7`, 0153 em produção) e 48.4 #912 (`73579498`, 0154 em produção); contrato v16. DEV-01 (409 sem inputs nas abas 2/3) e DEV-03 (verba do Meta frio `7 999,999…` na 48.1) registrados para o @po |
 | 2026-09-22 | @sm (River) | 48.5 rascunhada (wave 3): consolidação pura sobre `combinacaoOrganica`/`combinacaoPaga`, D9 aplicado, §4.4 separado em reproduz/recalcula (valores conferidos com o motor); **DV-017 = A** decidido pelo Danilo → `plan_final_scenarios` + rota `…/planejamento/resumo` (contrato 17). Três `[FALTA]` para o @po |
+| 2026-09-22 | @devops (Gage) | **Epic fechado no código:** 48.5 MERGED #915 (`649bf0a9`), 0155 em produção, contrato v17 — as quatro abas do simulador no ar. S1 ✓ (grep dos 35 RN) e S2 ✓ (suítes + diferenciais); S3 (conferência com dados reais do próximo lançamento) e S4 (planilha desligada) ficam com o Danilo. Pendências: validação visual das quatro abas; DEV-01 (409 sem Inputs, abas 2–4) e DEV-03 (verba do Meta frio na 48.1) para o @po; lint da `main` (`sendflow.ts:39`, herdado) |
 | 2026-09-22 | @po (Pax) | Danilo confirmou Alta / M (5–8) para a 48.5 → 10/10 |
 | 2026-09-22 | @po (Pax) | 48.5 validada: GO 9/10, Ready; PO-01 (cadeia do produto com igualdade exata — a conversão total difere da bruta em 1,2e-7), PO-02 (S4 é do epic), PO-03 (tráfego repetido, linhas abertas), PO-04 (callback da página); estimativa Alta / M proposta |
 | 2026-09-21 | @pm (Morgan) | **P2 ✅ — estrutura validada.** Acrescentados objetivo, critérios de sucesso S1–S4, ordem de execução em 3 waves com executor/gate por story, riscos R1–R6, roadmap do que ficou fora; E4 corrigido (nomes dos módulos = os das stories). Número 48 confirmado na `main` (#898). |
