@@ -26,10 +26,13 @@ import {
   CENARIOS,
   NIVEIS_ORGANICOS,
   NIVEIS_PAGOS,
+  ROTULOS_DO_CENARIO,
   organicosVazios,
   pagosVazios,
+  rotulosVazios,
   type OrganicosDoSimulador,
   type PagosDoSimulador,
+  type RotulosDoSimulador,
 } from "@loyola-x/shared";
 import {
   criarRepositorioDePlanejamento,
@@ -208,6 +211,27 @@ const pagosBodySchema = z
   })
   .strict();
 
+// ---- Story 48.5 — aba 4: rótulos dos cinco cenários (DV-017 = A) ----
+//
+//   GET /api/projects/:projectId/funnels/:funnelId/planejamento/resumo
+//   PUT /api/projects/:projectId/funnels/:funnelId/planejamento/resumo
+//
+// A aba 4 é consolidação das abas 1–3 e roda na tela; a única entrada é o
+// rótulo por cenário (META PISO / META BOA / META SUPER ou vazio). Mesma
+// semântica das abas 2 e 3: GET sempre com os cinco cenários, sem criar linha;
+// PUT grava o conjunto inteiro e exige os Inputs Financeiros salvos (409).
+
+const rotuloSchema = z.enum(ROTULOS_DO_CENARIO).nullable();
+
+const resumoBodySchema = z
+  .object({
+    cenarios: z
+      .array(z.object({ indice: z.number().int().min(1).max(5), rotulo: rotuloSchema }).strict())
+      .length(5)
+      .refine((cs) => new Set(cs.map((c) => c.indice)).size === 5, { message: "índices 1…5 sem repetição" }),
+  })
+  .strict();
+
 export default fp(async function planejamentoRoutes(fastify) {
   const repo = (): RepositorioDePlanejamento => fastify.planejamentoRepo ?? criarRepositorioDePlanejamento(fastify.db);
 
@@ -327,5 +351,35 @@ export default fp(async function planejamentoRoutes(fastify) {
     }
     const gravado = await repo().gravarPagos(simulatorId, body.data as PagosDoSimulador);
     return { ok: true, funnelId: ctx.funnelId, blocos: gravado.blocos, combinacoes: gravado.combinacoes, updatedAt: gravado.updatedAt };
+  });
+
+  // ---- Story 48.5 — GET/PUT …/planejamento/resumo (rótulos) ----
+  const baseResumo = "/api/projects/:projectId/funnels/:funnelId/planejamento/resumo";
+
+  fastify.get(baseResumo, async (request, reply) => {
+    const ctx = await resolverContexto(request, reply);
+    if (!ctx) return;
+    const lido = await repo().lerRotulos(ctx.funnelId);
+    return {
+      funnelId: ctx.funnelId,
+      cenarios: lido?.cenarios ?? rotulosVazios().cenarios,
+      updatedAt: lido?.updatedAt ?? null,
+    };
+  });
+
+  fastify.put(baseResumo, async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const ctx = await resolverContexto(request, reply);
+    if (!ctx) return;
+    const body = resumoBodySchema.safeParse(request.body);
+    if (!body.success) {
+      return reply.code(400).send({ error: "Dados inválidos", details: body.error.flatten() });
+    }
+    const simulatorId = await repo().idDoSimulador(ctx.funnelId);
+    if (simulatorId === null) {
+      return reply.code(409).send({ error: "Salve os Inputs Financeiros antes de rotular os cenários do Resumo Final" });
+    }
+    const gravado = await repo().gravarRotulos(simulatorId, body.data as RotulosDoSimulador);
+    return { ok: true, funnelId: ctx.funnelId, cenarios: gravado.cenarios, updatedAt: gravado.updatedAt };
   });
 });

@@ -16,7 +16,17 @@
 
 import { and, eq } from "drizzle-orm";
 import type { Database } from "../db/client.js";
-import { funnels, planOrganicBlocks, planOrganicCombinations, planPaidBlocks, planPaidCombinations, planSimulators, projectMembers, projects } from "../db/schema.js";
+import {
+  funnels,
+  planFinalScenarios,
+  planOrganicBlocks,
+  planOrganicCombinations,
+  planPaidBlocks,
+  planPaidCombinations,
+  planSimulators,
+  projectMembers,
+  projects,
+} from "../db/schema.js";
 import {
   CAMPOS_DOS_INPUTS_FINANCEIROS,
   CAMPOS_DO_BLOCO_ORGANICO,
@@ -26,11 +36,14 @@ import {
   INDICES_DAS_COMBINACOES,
   organicosVazios,
   pagosVazios,
+  rotulosVazios,
+  ehRotuloDoCenario,
   type CanalOrganico,
   type FontePaga,
   type InputsFinanceiros,
   type OrganicosDoSimulador,
   type PagosDoSimulador,
+  type RotulosDoSimulador,
 } from "@loyola-x/shared";
 
 export type CampoDosInputs = (typeof CAMPOS_DOS_INPUTS_FINANCEIROS)[number];
@@ -67,6 +80,17 @@ export interface RepositorioDePlanejamento {
   lerPagos(funnelId: string): Promise<PagosLidos | null>;
   /** Upsert dos 4 blocos e das 5 combinações, numa transação. Exige o simulador (`idDoSimulador`). */
   gravarPagos(simulatorId: string, dados: PagosDoSimulador): Promise<PagosLidos>;
+
+  // ---- Story 48.5 — rótulos dos cinco cenários do Resumo Final ----
+  /** Rótulos do simulador; `null` quando não há simulador nem linha. */
+  lerRotulos(funnelId: string): Promise<RotulosLidos | null>;
+  /** Upsert dos 5 cenários, numa transação. Exige o simulador (`idDoSimulador`). */
+  gravarRotulos(simulatorId: string, dados: RotulosDoSimulador): Promise<RotulosLidos>;
+}
+
+/** Story 48.5 — o que a API devolve para a aba 4: só os rótulos + o carimbo mais recente. */
+export interface RotulosLidos extends RotulosDoSimulador {
+  updatedAt: string | null;
 }
 
 /** Story 48.4 — o que a API devolve para a aba 3: só entradas + o carimbo mais recente. */
@@ -200,6 +224,23 @@ function linhasParaPagos(blocos: LinhaDeBlocoPago[], combinacoes: LinhaDeCombina
     if (!alvo) continue;
     for (const fonte of FONTES_PAGAS) alvo.selecoes[fonte] = paraNumero(linha[COLUNA_DA_SELECAO_PAGA[fonte]]);
     marcar(linha.updatedAt);
+  }
+  out.updatedAt = ultimo === null ? null : (ultimo as Date).toISOString();
+  return out;
+}
+
+// ---- Story 48.5 — conversão da tabela de rótulos ----
+
+type LinhaDeCenario = typeof planFinalScenarios.$inferSelect;
+
+function linhasParaRotulos(linhas: LinhaDeCenario[]): RotulosLidos {
+  const out: RotulosLidos = { ...rotulosVazios(), updatedAt: null };
+  let ultimo: Date | null = null;
+  for (const linha of linhas) {
+    const alvo = out.cenarios.find((c) => c.indice === linha.indice);
+    if (!alvo) continue; // CHECK impede; cinto
+    alvo.rotulo = ehRotuloDoCenario(linha.rotulo) ? linha.rotulo : null;
+    if (ultimo === null || linha.updatedAt > ultimo) ultimo = linha.updatedAt;
   }
   out.updatedAt = ultimo === null ? null : (ultimo as Date).toISOString();
   return out;
@@ -360,6 +401,33 @@ export function criarRepositorioDePlanejamento(db: Database): RepositorioDePlane
         return linhasParaPagos(blocos, combinacoes);
       });
     },
+
+    // ---- Story 48.5 ----
+    async lerRotulos(funnelId) {
+      const [sim] = await db.select({ id: planSimulators.id }).from(planSimulators).where(eq(planSimulators.funnelId, funnelId)).limit(1);
+      if (!sim) return null;
+      const linhas = await db.select().from(planFinalScenarios).where(eq(planFinalScenarios.simulatorId, sim.id));
+      if (linhas.length === 0) return null;
+      return linhasParaRotulos(linhas);
+    },
+
+    async gravarRotulos(simulatorId, dados) {
+      const agora = new Date();
+      return db.transaction(async (tx) => {
+        const linhas: LinhaDeCenario[] = [];
+        for (const indice of INDICES_DAS_COMBINACOES) {
+          const rotulo = dados.cenarios.find((c) => c.indice === indice)?.rotulo ?? null;
+          const valores = { rotulo, updatedAt: agora };
+          const [linha] = await tx
+            .insert(planFinalScenarios)
+            .values({ ...valores, simulatorId, indice })
+            .onConflictDoUpdate({ target: [planFinalScenarios.simulatorId, planFinalScenarios.indice], set: valores })
+            .returning();
+          linhas.push(linha);
+        }
+        return linhasParaRotulos(linhas);
+      });
+    },
   };
 }
 
@@ -367,16 +435,24 @@ export function criarRepositorioDePlanejamento(db: Database): RepositorioDePlane
 export function criarRepositorioEmMemoria(seed: {
   projetos: { id: string; membros?: string[] }[];
   funis: { id: string; projectId: string; type: string }[];
-}): RepositorioDePlanejamento & { linhas: Map<string, InputsLidos>; organicos: Map<string, OrganicosLidos>; pagos: Map<string, PagosLidos> } {
+}): RepositorioDePlanejamento & {
+  linhas: Map<string, InputsLidos>;
+  organicos: Map<string, OrganicosLidos>;
+  pagos: Map<string, PagosLidos>;
+  rotulos: Map<string, RotulosLidos>;
+} {
   const linhas = new Map<string, InputsLidos>();
   /** Story 48.3 — por funil (o simulador em memória usa o `funnelId` como `id`). */
   const organicos = new Map<string, OrganicosLidos>();
   /** Story 48.4 — idem. */
   const pagos = new Map<string, PagosLidos>();
+  /** Story 48.5 — idem. */
+  const rotulos = new Map<string, RotulosLidos>();
   return {
     linhas,
     organicos,
     pagos,
+    rotulos,
     async acessoAoProjeto(projectId, userId, userRole) {
       const p = seed.projetos.find((x) => x.id === projectId);
       if (!p) return false;
@@ -419,6 +495,14 @@ export function criarRepositorioEmMemoria(seed: {
         updatedAt: new Date().toISOString(),
       };
       pagos.set(simulatorId, gravado);
+      return gravado;
+    },
+    async lerRotulos(funnelId) {
+      return rotulos.get(funnelId) ?? null;
+    },
+    async gravarRotulos(simulatorId, dados) {
+      const gravado: RotulosLidos = { cenarios: structuredClone(dados.cenarios), updatedAt: new Date().toISOString() };
+      rotulos.set(simulatorId, gravado);
       return gravado;
     },
   };

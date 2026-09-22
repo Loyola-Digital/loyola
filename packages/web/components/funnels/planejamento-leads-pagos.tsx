@@ -8,16 +8,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { fmtCurrency, fmtInt } from "@/lib/utils/format-number";
 import { BarraDeAtingimento, CampoNumerico, LegendaDasFaixas, Moeda, pctPontos } from "@/components/funnels/planejamento-ui";
-import { FONTES_PAGAS, CENARIOS, NIVEIS_PAGOS, gradePaga, type FontePaga, type GradePaga } from "@loyola-x/shared/src/planejamento-cenarios";
-import { derivarInputsFinanceiros } from "@loyola-x/shared/src/planejamento-inputs-financeiros";
-import {
-  INDICES_DAS_COMBINACOES,
-  combinacaoPaga,
-  origemDaFonteNaAba1,
-  parametrosDoBlocoPago,
-  type CombinacaoPaga,
-  type OrigemDaFonteNaAba1,
-} from "@loyola-x/shared/src/planejamento-combinacoes";
+import { FONTES_PAGAS, CENARIOS, NIVEIS_PAGOS, type FontePaga, type GradePaga } from "@loyola-x/shared/src/planejamento-cenarios";
+import type { CombinacaoPaga, OrigemDaFonteNaAba1 } from "@loyola-x/shared/src/planejamento-combinacoes";
+import { montarPagos } from "@/lib/utils/planejamento-montagem";
 import {
   CAMPOS_DE_TEXTO_DO_BLOCO_PAGO,
   ROTULO_DA_FONTE,
@@ -383,42 +376,12 @@ export function PlanejamentoLeadsPagos({
   const payload = useMemo(() => (form ? paraPayloadPagos(form) : null), [form]);
   const erros = useMemo(() => (payload ? validarPagos(payload) : {}), [payload]);
   const entradas = inputs.data?.inputs ?? null;
-  const derivados = useMemo(() => (entradas ? derivarInputsFinanceiros(entradas) : null), [entradas]);
-
-  const origens = useMemo(() => {
-    if (!entradas || !derivados) return null;
-    const o = {} as Record<FontePaga, OrigemDaFonteNaAba1>;
-    for (const f of FONTES_PAGAS) o[f] = origemDaFonteNaAba1(entradas, derivados, f);
-    return o;
-  }, [entradas, derivados]);
-
-  const grades = useMemo(() => {
-    if (!payload || !origens) return null;
-    const g = {} as Record<FontePaga, GradePaga>;
-    for (const f of FONTES_PAGAS) g[f] = gradePaga(parametrosDoBlocoPago(blocoPagoComoEntradas(payload.blocos[f]), origens[f]));
-    return g;
-  }, [payload, origens]);
-
-  const combinacoes = useMemo(() => {
-    if (!payload || !entradas || !derivados || !grades || !origens) return null;
-    const niveis = {} as Record<FontePaga, number | null>;
-    const verbas = {} as Record<FontePaga, number>;
-    for (const f of FONTES_PAGAS) {
-      niveis[f] = payload.blocos[f].nivelAssumido;
-      verbas[f] = origens[f].verba;
-    }
-    return INDICES_DAS_COMBINACOES.map((indice, i) =>
-      combinacaoPaga({
-        indice,
-        grades,
-        selecoes: payload.combinacoes[i].selecoes,
-        niveis,
-        percentuais: entradas,
-        verbas,
-        metaMargemPagos: derivados.metaMargemPagos,
-      }),
-    );
-  }, [payload, entradas, derivados, grades, origens]);
+  // Story 48.5 (AC12): a montagem grades → combinações é a mesma função pura da aba 4.
+  const montagem = useMemo(() => (payload && entradas ? montarPagos(entradas, payload) : null), [payload, entradas]);
+  const derivados = montagem?.derivados ?? null;
+  const origens: Record<FontePaga, OrigemDaFonteNaAba1> | null = montagem?.origens ?? null;
+  const grades: Record<FontePaga, GradePaga> | null = montagem?.grades ?? null;
+  const combinacoes = montagem?.combinacoes ?? null;
 
   const alterado = useMemo(() => (payload && pagos.data ? pagosAlterados(payload, pagos.data) : false), [payload, pagos.data]);
   const temErro = temErrosPagos(erros);

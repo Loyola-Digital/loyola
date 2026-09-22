@@ -8,19 +8,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { fmtCurrency, fmtInt } from "@/lib/utils/format-number";
 import { BarraDeAtingimento, CampoNumerico, LegendaDasFaixas, Moeda, pctPontos } from "@/components/funnels/planejamento-ui";
-import { CANAIS_ORGANICOS, CENARIOS, NIVEIS_ORGANICOS, gradeOrganica, type CanalOrganico, type GradeOrganica } from "@loyola-x/shared/src/planejamento-cenarios";
-import { derivarInputsFinanceiros } from "@loyola-x/shared/src/planejamento-inputs-financeiros";
-import {
-  INDICES_DAS_COMBINACOES,
-  combinacaoOrganica,
-  origemDoCanalNaAba1,
-  parametrosDoBloco,
-  type CombinacaoOrganica,
-} from "@loyola-x/shared/src/planejamento-combinacoes";
+import { CANAIS_ORGANICOS, CENARIOS, NIVEIS_ORGANICOS, type CanalOrganico, type GradeOrganica } from "@loyola-x/shared/src/planejamento-cenarios";
+import type { CombinacaoOrganica } from "@loyola-x/shared/src/planejamento-combinacoes";
+import { montarOrganicos } from "@/lib/utils/planejamento-montagem";
 import {
   CAMPOS_DE_FRACAO_DO_BLOCO,
   ROTULO_DO_CANAL,
-  blocoComoEntradas,
   classeDaCelulaDeLeads,
   diagnosticoDaAba1,
   estadoDaTela,
@@ -351,32 +344,11 @@ export function PlanejamentoLeadsOrganicos({
   const payload = useMemo(() => (form ? paraPayloadOrganicos(form) : null), [form]);
   const erros = useMemo(() => (payload ? validarOrganicos(payload) : {}), [payload]);
   const entradas = inputs.data?.inputs ?? null;
-  const derivados = useMemo(() => (entradas ? derivarInputsFinanceiros(entradas) : null), [entradas]);
-
-  const grades = useMemo(() => {
-    if (!payload || !entradas || !derivados) return null;
-    const g = {} as Record<CanalOrganico, GradeOrganica>;
-    for (const c of CANAIS_ORGANICOS) {
-      g[c] = gradeOrganica(parametrosDoBloco(blocoComoEntradas(payload.blocos[c]), origemDoCanalNaAba1(entradas, derivados, c)));
-    }
-    return g;
-  }, [payload, entradas, derivados]);
-
-  const combinacoes = useMemo(() => {
-    if (!payload || !entradas || !derivados || !grades) return null;
-    const niveis = {} as Record<CanalOrganico, number | null>;
-    for (const c of CANAIS_ORGANICOS) niveis[c] = payload.blocos[c].nivelAssumido;
-    return INDICES_DAS_COMBINACOES.map((indice, i) =>
-      combinacaoOrganica({
-        indice,
-        grades,
-        selecoes: payload.combinacoes[i].selecoes,
-        niveis,
-        percentuais: entradas,
-        metaMargemOrganicos: derivados.metaMargemOrganicos,
-      }),
-    );
-  }, [payload, entradas, derivados, grades]);
+  // Story 48.5 (AC12): a montagem grades → combinações é a mesma função pura da aba 4.
+  const montagem = useMemo(() => (payload && entradas ? montarOrganicos(entradas, payload) : null), [payload, entradas]);
+  const derivados = montagem?.derivados ?? null;
+  const grades = montagem?.grades ?? null;
+  const combinacoes = montagem?.combinacoes ?? null;
 
   const alterado = useMemo(() => (payload && organicos.data ? organicosAlterados(payload, organicos.data) : false), [payload, organicos.data]);
   const temErro = temErros(erros);
@@ -487,7 +459,7 @@ export function PlanejamentoLeadsOrganicos({
           canal={canal}
           form={form.blocos[canal]}
           grade={grades[canal]}
-          origem={origemDoCanalNaAba1(entradas, derivados, canal)}
+          origem={montagem!.origens[canal]}
           erros={erros[canal] ?? {}}
           podeEditar={podeEditar}
           onFracao={(campo, v) => setFracao(canal, campo, v)}

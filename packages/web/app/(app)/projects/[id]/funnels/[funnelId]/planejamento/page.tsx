@@ -12,6 +12,7 @@ import { useUserRole } from "@/lib/hooks/use-user-role";
 import { PlanejamentoInputsFinanceiros } from "@/components/funnels/planejamento-inputs-financeiros";
 import { PlanejamentoLeadsOrganicos } from "@/components/funnels/planejamento-leads-organicos"; // Story 48.3
 import { PlanejamentoLeadsPagos } from "@/components/funnels/planejamento-leads-pagos"; // Story 48.4
+import { PlanejamentoResumoFinal } from "@/components/funnels/planejamento-resumo-final"; // Story 48.5
 
 // Story 48.1 — sub-página "Planejamento" do funil de LANÇAMENTO (Epic 48).
 //
@@ -20,15 +21,15 @@ import { PlanejamentoLeadsPagos } from "@/components/funnels/planejamento-leads-
 // etapa tem. Aqui as quatro abas do simulador vivem em `?tab=` com `value`s
 // fixos — regra não-negociável do Epic 46: o `value` é contrato de URL.
 //
-// A 48.1 entregou `inputs`; a 48.3 ligou `organicos`; a 48.4 liga `pagos`.
-// `resumo` aparece desabilitada até a 48.5.
+// A 48.1 entregou `inputs`; a 48.3 ligou `organicos`; a 48.4 `pagos`; a 48.5
+// liga `resumo` — as quatro abas do simulador estão no ar.
 
 /** Contrato de URL (Epic 46): nunca renomear. */
 const ABAS = [
   { value: "inputs", rotulo: "Inputs Financeiros", pronta: true },
   { value: "organicos", rotulo: "Leads Orgânicos", pronta: true }, // Story 48.3
   { value: "pagos", rotulo: "Leads Pagos", pronta: true }, // Story 48.4
-  { value: "resumo", rotulo: "Resumo Final", pronta: false },
+  { value: "resumo", rotulo: "Resumo Final", pronta: true }, // Story 48.5
 ] as const;
 type Aba = (typeof ABAS)[number]["value"];
 
@@ -131,6 +132,9 @@ export default function PlanejamentoPage() {
             podeEditar={role !== null && role !== "guest"}
             irParaInputs={() => trocarAba("inputs")}
           />
+        </TabsContent>
+        <TabsContent value="resumo" className="mt-4">
+          <PlanejamentoResumoFinal projectId={params.id} funnelId={params.funnelId} podeEditar={role !== null && role !== "guest"} irParaAba={trocarAba} />
         </TabsContent>
       </Tabs>
     </div>
