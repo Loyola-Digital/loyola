@@ -82,6 +82,8 @@ import { useProjects } from "@/lib/hooks/use-projects";
 import { Calendario } from "@/components/planner/calendario";
 import { Timeline } from "@/components/planner/timeline";
 
+const CHAVE_CARDS_OCULTOS = "planner:cards-ocultos";
+
 type Visao = "split" | "cards" | "timeline" | "anual";
 
 type Passo = { tipo: "editou"; campanha: Campanha } | { tipo: "excluiu"; campanha: Campanha };
@@ -203,6 +205,44 @@ export default function PlannerPage() {
   const [anoAnual, setAnoAnual] = useState(() => new Date().getFullYear());
   const { data: empresas } = useProjects();
   const [ocultas, setOcultas] = useState<Set<string>>(new Set());
+  /**
+   * Campanhas criadas ou editadas NESTA sessão — o filtro de passado não as
+   * esconde até recarregar a página.
+   *
+   * Sem isto, cadastrar uma campanha com datas que já passaram fazia cada fase
+   * sumir do card no instante em que a data era digitada (e a campanha inteira,
+   * quando todas eram passadas), enquanto o calendário seguia mostrando — "a
+   * campanha some do card mas continua na timeline" (21/09/2026). Quem está
+   * mexendo numa campanha precisa vê-la inteira.
+   */
+  const [tocadas, setTocadas] = useState<Set<string>>(new Set());
+  /**
+   * Cards que a pessoa escolheu não ver — SÓ o card: a campanha continua no
+   * calendário, na timeline e na legenda. É preferência de quem olha, então
+   * fica no navegador dela (cada um esconde o que não acompanha).
+   */
+  const [cardsOcultos, setCardsOcultos] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(CHAVE_CARDS_OCULTOS) ?? "[]") as string[]);
+    } catch {
+      return new Set();
+    }
+  });
+  const mudarCardsOcultos = useCallback((mudar: (s: Set<string>) => Set<string>) => {
+    setCardsOcultos((atual) => {
+      const novo = mudar(atual);
+      try {
+        localStorage.setItem(CHAVE_CARDS_OCULTOS, JSON.stringify([...novo]));
+      } catch {
+        // Sem armazenamento (aba anônima, bloqueio): vale só nesta sessão.
+      }
+      return novo;
+    });
+  }, []);
+  const tocar = useCallback(
+    (id: string) => setTocadas((t) => (t.has(id) ? t : new Set(t).add(id))),
+    [],
+  );
   const [selecionada, setSelecionada] = useState<string | null>(null);
   const [mostrarCards, setMostrarCards] = useState(true);
   const [rail, setRail] = useState(true);
@@ -252,8 +292,11 @@ export default function PlannerPage() {
 
   /** O que a legenda, a timeline e os cards mostram. */
   const noPainel = useMemo(
-    () => (esconderPassado ? campanhas.filter((c) => !campanhaConcluida(c)) : campanhas),
-    [campanhas, esconderPassado],
+    () =>
+      esconderPassado
+        ? campanhas.filter((c) => tocadas.has(c.id) || !campanhaConcluida(c))
+        : campanhas,
+    [campanhas, esconderPassado, tocadas],
   );
 
   const visiveis = useMemo(
@@ -271,9 +314,20 @@ export default function PlannerPage() {
   const semPassado = useMemo(
     () =>
       esconderPassado
-        ? visiveis.map((c) => ({ ...c, phases: c.phases.filter((f) => !faseTerminou(f)) }))
+        ? visiveis.map((c) =>
+            tocadas.has(c.id) ? c : { ...c, phases: c.phases.filter((f) => !faseTerminou(f)) },
+          )
         : visiveis,
-    [visiveis, esconderPassado],
+    [visiveis, esconderPassado, tocadas],
+  );
+  /** Só a LISTA de cards — calendário e timeline usam `semPassado`/`visiveis`. */
+  const nosCards = useMemo(
+    () => semPassado.filter((c) => !cardsOcultos.has(c.id)),
+    [semPassado, cardsOcultos],
+  );
+  const cardsEscondidos = useMemo(
+    () => campanhas.filter((c) => cardsOcultos.has(c.id)),
+    [campanhas, cardsOcultos],
   );
   const meses = useMemo(() => mesesDoPeriodo(campanhas), [campanhas]);
 
@@ -289,6 +343,7 @@ export default function PlannerPage() {
       // as terminadas — e os eventos delas no Google. Esconder é da tela; o
       // banco recebe sempre a campanha inteira.
       const inteira = campanhas.find((c) => c.id === campanha.id) ?? campanha;
+      tocar(campanha.id);
       const fases = dados.phases
         ? restaurarOcultas(
             dados.phases,
@@ -304,7 +359,7 @@ export default function PlannerPage() {
         dados: fases ? { ...dados, phases: fases.map(normalizar) } : dados,
       });
     },
-    [anotar, atualizar, campanhas, esconderPassado],
+    [anotar, atualizar, campanhas, esconderPassado, tocar],
   );
 
   /**
@@ -337,6 +392,15 @@ export default function PlannerPage() {
       });
     },
     [mudarCampanha, campanhas],
+  );
+
+  /** O calendário conhece a campanha pelo id; a exclusão (com desfazer) quer ela inteira. */
+  const excluirFaseDoCalendario = useCallback(
+    (campanhaId: string, faseId: string) => {
+      const c = campanhas.find((x) => x.id === campanhaId);
+      if (c) excluirFase(c, faseId);
+    },
+    [campanhas, excluirFase],
   );
 
   const mudarFase = useCallback(
@@ -547,7 +611,7 @@ export default function PlannerPage() {
 
   const listaDeCards = (
     <>
-      {semPassado.map((c) => (
+      {nosCards.map((c) => (
         <CardDeCampanha
           key={c.id}
           campanha={c}
@@ -557,13 +621,40 @@ export default function PlannerPage() {
           onDuplicar={() => duplicar.mutate(c.id)}
           onSelecionarFase={setSelecionada}
           onExcluirFase={(faseId) => excluirFase(c, faseId)}
+          onOcultarCard={() => mudarCardsOcultos((s) => new Set(s).add(c.id))}
           agendas={agendasConectadas}
         />
       ))}
+      {cardsEscondidos.length > 0 && (
+        <div className="rounded-[10px] border border-dashed border-border px-3 py-2 text-[12px] text-muted-foreground">
+          <span className="mr-1.5">
+            {cardsEscondidos.length} {cardsEscondidos.length === 1 ? "card oculto" : "cards ocultos"} (seguem na agenda):
+          </span>
+          {cardsEscondidos.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => mudarCardsOcultos((s) => { const n = new Set(s); n.delete(c.id); return n; })}
+              title="Mostrar o card de novo"
+              className="mr-1 mt-1 inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 hover:bg-foreground/5 hover:text-foreground"
+            >
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: c.color }} />
+              {c.name}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => mudarCardsOcultos(() => new Set())}
+            className="ml-1 mt-1 underline-offset-2 hover:text-foreground hover:underline"
+          >
+            mostrar todos
+          </button>
+        </div>
+      )}
       <button
         type="button"
         onClick={async () => {
-          await criar.mutateAsync({ name: "Nova campanha" });
+          tocar((await criar.mutateAsync({ name: "Nova campanha" })).id);
           setVisao("cards");
         }}
         className="grid min-h-[110px] place-items-center rounded-[10px] border border-dashed border-border text-[13px] font-medium text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-card hover:text-foreground"
@@ -901,7 +992,7 @@ export default function PlannerPage() {
             <Acao
               primary
               onClick={async () => {
-                await criar.mutateAsync({ name: "Nova campanha" });
+                tocar((await criar.mutateAsync({ name: "Nova campanha" })).id);
                 setVisao("cards");
               }}
             >
@@ -982,7 +1073,7 @@ export default function PlannerPage() {
               onDragEnd={soltarCampanha}
             >
               <SortableContext
-                items={semPassado.map((c) => c.id)}
+                items={nosCards.map((c) => c.id)}
                 strategy={rectSortingStrategy}
               >
                 <div className="grid items-start gap-4 p-5 [grid-template-columns:repeat(auto-fill,minmax(500px,1fr))] max-[560px]:[grid-template-columns:1fr]">
@@ -1008,7 +1099,7 @@ export default function PlannerPage() {
                   onDragEnd={soltarCampanha}
                 >
                   <SortableContext
-                    items={semPassado.map((c) => c.id)}
+                    items={nosCards.map((c) => c.id)}
                     strategy={rectSortingStrategy}
                   >
                     {listaDeCards}
@@ -1022,15 +1113,16 @@ export default function PlannerPage() {
                 ano={ano}
                 mes={mes}
                 faseSelecionada={selecionada}
-                onSelecionarFase={(campanhaId, faseId) => {
-                  setSelecionada(faseId);
-                  // Leva o card à vista: clicar numa barra e não achar onde
-                  // editá-la é o atrito que a visão dividida existe para tirar.
+                onSelecionarFase={(_c, faseId) => setSelecionada(faseId)}
+                onMudarFase={mudarFase}
+                onExcluirFase={excluirFaseDoCalendario}
+                // Leva o card à vista — agora pelo botão do popover, e não a
+                // cada clique na barra.
+                onAbrirCard={(campanhaId) =>
                   document
                     .querySelector(`#campanha-${campanhaId}`)
-                    ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-                }}
-                onMudarFase={mudarFase}
+                    ?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+                }
               />
             </div>
           </div>
@@ -1100,6 +1192,7 @@ export default function PlannerPage() {
               faseSelecionada={selecionada}
               onSelecionarFase={(_c, f) => setSelecionada(f)}
               onMudarFase={mudarFase}
+              onExcluirFase={excluirFaseDoCalendario}
             />
           )}
         </div>
