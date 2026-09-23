@@ -78,7 +78,14 @@ export interface EventLeadSale {
 
 /** Lead do mapa do evento: dados + status computado (+ venda, se comprou). */
 export interface EventMapLead {
+  /**
+   * A chave do participante: o e-mail, ou `sem-email:tel:…` / `sem-email:nome:…`
+   * para quem a planilha não traz e-mail (cortesia, fornecedor, parceiro). Ver
+   * `semEmail` antes de mostrar isto na tela.
+   */
   email: string;
+  /** `true` quando a chave acima é inventada — a planilha não tinha e-mail. */
+  semEmail?: boolean;
   name: string;
   phone: string;
   /** Tipo da pessoa (comprador / 2ª cadeira / iFood / fornecedor); "" se não mapeado. */

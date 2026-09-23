@@ -19,6 +19,7 @@ import {
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { parseFaturamento } from "../services/parse-faturamento.js";
+import { chaveDoParticipante } from "../services/chave-do-participante.js";
 import {
   acharColunaDeEmail,
   acharColunaDeIngresso,
@@ -344,7 +345,19 @@ export default fp(async function stageEventConfigRoutes(fastify) {
   // deduplicados por email. O Mapa do Evento usa esta lista de participantes.
   async function loadEventLeads(
     stageId: string,
-  ): Promise<{ email: string; name: string; phone: string; tipo: string; invitedBy: string; saleEmail: string; buyAt: string; ticket: string }[]> {
+  ): Promise<
+    {
+      email: string;
+      semEmail: boolean;
+      name: string;
+      phone: string;
+      tipo: string;
+      invitedBy: string;
+      saleEmail: string;
+      buyAt: string;
+      ticket: string;
+    }[]
+  > {
     const sources = await fastify.db
       .select({
         spreadsheetId: stageSalesPlanSources.spreadsheetId,
@@ -362,7 +375,17 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       .orderBy(asc(stageSalesPlanSources.sortOrder));
     if (sources.length === 0) return [];
 
-    type Lead = { email: string; name: string; phone: string; tipo: string; invitedBy: string; saleEmail: string; buyAt: string; ticket: string };
+    type Lead = {
+      email: string;
+      semEmail: boolean;
+      name: string;
+      phone: string;
+      tipo: string;
+      invitedBy: string;
+      saleEmail: string;
+      buyAt: string;
+      ticket: string;
+    };
     const MAX_LEADS = 10000;
     const byEmail = new Map<string, Lead>();
     for (const src of sources) {
@@ -395,18 +418,28 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       const dataIdx = headers.findIndex((h) => norm(h) === "data");
       // Tipo de ingresso — "Ingresso" numa planilha, "Categoria" noutra.
       const ingressoIdx = acharColunaDeIngresso(headers, mapping.ingresso);
-      if (emailIdx === -1) continue;
       for (const row of rows) {
         if (byEmail.size >= MAX_LEADS) break;
-        const email = (row[emailIdx] ?? "").trim().toLowerCase();
-        if (!email) continue;
-        if (byEmail.has(email)) continue;
+        const email = emailIdx !== -1 ? (row[emailIdx] ?? "").trim().toLowerCase() : "";
+        const nome = nameIdx !== -1 ? (row[nameIdx] ?? "").trim() : "";
+        const telefone = phoneIdx !== -1 ? (row[phoneIdx] ?? "").trim() : "";
+        /**
+         * Quem não tem e-mail entra pelo celular, e por último pelo nome.
+         *
+         * Antes a linha sem e-mail era descartada: na Leads-Evento do
+         * BBE-PR2-OUT/26 isso derrubava 31 das 70 — as cortesias, 3 VIPs e
+         * quase todos os parceiros e fornecedores (23/09/2026).
+         */
+        const chave = chaveDoParticipante(email, telefone, nome);
+        if (!chave) continue;
+        if (byEmail.has(chave)) continue;
         // tipo da coluna mapeada; se não houver, cai no rótulo livre da fonte (src.tipo).
         const tipoCell = tipoIdx !== -1 ? (row[tipoIdx] ?? "").trim() : "";
-        byEmail.set(email, {
-          email,
-          name: nameIdx !== -1 ? (row[nameIdx] ?? "").trim() : "",
-          phone: phoneIdx !== -1 ? (row[phoneIdx] ?? "").trim() : "",
+        byEmail.set(chave, {
+          email: chave,
+          semEmail: !email,
+          name: nome,
+          phone: telefone,
           tipo: tipoCell || (src.tipo ?? "").trim(),
           invitedBy: convIdx !== -1 ? (row[convIdx] ?? "").trim() : "",
           saleEmail: saleEmailIdx !== -1 ? (row[saleEmailIdx] ?? "").trim() : "",
@@ -774,9 +807,20 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     return { leads: out, summary };
   });
 
+  /**
+   * A chave de um participante: e-mail de verdade ou a inventada para quem não
+   * tem (`sem-email:tel:...`). Exigir formato de e-mail aqui barrava justamente
+   * as cortesias e os fornecedores, que agora aparecem no mapa.
+   */
+  const chaveDeLead = z
+    .string()
+    .trim()
+    .max(255)
+    .refine((v) => v.includes("@") || v.startsWith("sem-email:"), "Chave de participante inválida");
+
   // ---- SET status de um lead (closer marca negativa / em negociação / pendente) ----
   const leadStatusBodySchema = z.object({
-    email: z.string().trim().email().max(255),
+    email: chaveDeLead,
     status: z.enum(["pending", "negotiating", "declined"]),
     note: z.string().trim().max(2000).nullable().optional(),
   });
@@ -813,7 +857,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
 
   // ---- ATRIBUIR vendedor a um lead (ortogonal ao status) ----
   const leadSellerBodySchema = z.object({
-    email: z.string().trim().email().max(255),
+    email: chaveDeLead,
     // null limpa a atribuição. String vazia também é tratada como null.
     seller: z.string().trim().max(255).nullable().optional(),
   });
@@ -853,7 +897,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
 
   // ---- ATRIBUIR vendedor a VÁRIOS leads de uma vez (bulk) ----
   const leadSellerBulkBodySchema = z.object({
-    emails: z.array(z.string().trim().email().max(255)).min(1).max(5000),
+    emails: z.array(chaveDeLead).min(1).max(5000),
     seller: z.string().trim().max(255).nullable().optional(),
   });
 
@@ -897,7 +941,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
   // linhas de TODAS as fontes conectadas (participants + survey) que casam pelo
   // email, agrupadas por planilha.
   const leadAnswersQuerySchema = z.object({
-    email: z.string().trim().email().max(255),
+    email: chaveDeLead,
     // telefone e nome do lead — fallback quando o email não casa numa fonte
     // (comprou com um email e respondeu a pesquisa com outro).
     phone: z.string().trim().max(40).optional(),
