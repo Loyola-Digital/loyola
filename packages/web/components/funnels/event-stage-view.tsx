@@ -1514,7 +1514,11 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
                         </div>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 text-[#9ca3af] max-w-[180px] truncate">{l.email}</td>
+                    <td className="px-3 py-2.5 text-[#9ca3af] max-w-[180px] truncate">
+                      {/* Sem e-mail, mostra o celular: a chave interna
+                          ("sem-email:tel:…") não diz nada a quem lê. */}
+                      {l.semEmail ? l.phone || "sem e-mail" : l.email}
+                    </td>
                     <td className="px-3 py-2.5 text-[#9ca3af]">{l.phone || "—"}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums font-bold text-[#d4af37]">
                       {l.revenue != null ? formatCurrency(l.revenue) : <span className="text-[#6b7280] font-normal">—</span>}
@@ -1558,7 +1562,9 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
                       <TicketBadge ticket={l.ticket} />
                       <span className="font-semibold text-[#f3f4f6] truncate">{l.name || l.email}</span>
                     </div>
-                    <div className="text-[12px] text-[#9ca3af] truncate mt-0.5">{l.email}</div>
+                    <div className="text-[12px] text-[#9ca3af] truncate mt-0.5">
+                      {l.semEmail ? l.phone || "sem e-mail" : l.email}
+                    </div>
                     {l.phone && <div className="text-[12px] text-[#6b7280] truncate">{l.phone}</div>}
                     {normTipo(l.tipo).includes("cadeira") && l.invitedBy && (
                       <div className="text-[11px] text-[#9ca3af] truncate mt-0.5">
