@@ -5,9 +5,10 @@
  *
  * Vive logo abaixo do gráfico "Aplicações por dia" e responde a outra pergunta:
  * o gráfico diz "quantas por dia, por página"; a tabela diz "quem, e de que
- * página veio". A coluna LP sai do mesmo `utm_term` e pela mesma função da
- * Story 43.6 — se as duas telas discordassem sobre a página de uma aplicação,
- * nenhuma das duas serviria.
+ * página veio". Story 18.84: a coluna LP sai do mesmo link do anúncio que o
+ * gráfico usa (`utm_content → anúncio → link`) — se as duas telas discordassem
+ * sobre a página de uma aplicação, nenhuma das duas serviria. Com a API
+ * anterior, é a letra da 43.6.
  *
  * Mais recente primeiro: quem abre esta tela está acompanhando um lançamento em
  * curso, e a pergunta é "quem entrou agora".
@@ -24,7 +25,35 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useStageApplicationsList } from "@/lib/hooks/use-stage-applications";
+import { useStageApplicationsList, type AplicacaoLinha } from "@/lib/hooks/use-stage-applications";
+import { tooltipDaPaginaDaAplicacao } from "@/lib/utils/aplicacoes-por-link";
+
+/**
+ * Story 18.84 (AC3) — a página pelo link do anúncio: link puro, hiperlinkado,
+ * ou "Sem link resolvido" com a causa. A evidência (o anúncio) vai no tooltip,
+ * como o `utm_term` ia antes.
+ */
+function PaginaPeloLink({ linha }: { linha: AplicacaoLinha }) {
+  const titulo = tooltipDaPaginaDaAplicacao(linha);
+  if (linha.lp && linha.lpUrl) {
+    return (
+      <a
+        href={linha.lpUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={`${titulo} · ${linha.lpUrl}`}
+        className="block max-w-[220px] truncate text-[11px] text-primary hover:underline"
+      >
+        {linha.lp}
+      </a>
+    );
+  }
+  return (
+    <span className="text-xs italic text-muted-foreground" title={titulo}>
+      Sem link resolvido
+    </span>
+  );
+}
 
 const POR_PAGINA = 6;
 
@@ -106,7 +135,9 @@ export function ApplicationsListTable({
                       {l.utmSource || "—"}
                     </TableCell>
                     <TableCell>
-                      {l.lp ? (
+                      {l.lpCausa !== undefined ? (
+                        <PaginaPeloLink linha={l} />
+                      ) : l.lp ? (
                         /* O utm_term vai no tooltip: ele passa de 100 caracteres
                            e não cabe como coluna, mas é DELE que a LP sai —
                            sem acesso a ele a coluna vira um rótulo inauditável. */

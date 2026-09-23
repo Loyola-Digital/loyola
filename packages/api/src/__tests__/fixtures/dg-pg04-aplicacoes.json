@@ -1,0 +1,425 @@
+{
+ "_origem": "dg-pg04 › Vendas, aplicações das abas Pesquisa-Aplicacao-Comercial (aba-base) e Pesquisa-Aplicacao-Comercial-PaginaB, medidas em produção em 2026-09-23 (planilha + meta_ad_creatives_cache do projeto). Só aba, dia, utm_content e o link do anúncio — sem nome/e-mail. 'letraAntes' é a página que a regra da 43.6 dava (sufixo da aba ou lpX do utm_term).",
+ "aplicacoes": [
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial",
+   "dia": "2026-08-03",
+   "utm_content": "org",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial",
+   "dia": "2026-08-03",
+   "utm_content": "org",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial",
+   "dia": "2026-08-04",
+   "utm_content": "120248370052610208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-a/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial",
+   "dia": "2026-08-04",
+   "utm_content": "org",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial",
+   "dia": "2026-08-05",
+   "utm_content": "org",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial",
+   "dia": "2026-08-06",
+   "utm_content": "link_in_bio",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial",
+   "dia": "2026-08-07",
+   "utm_content": "link_in_bio",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial",
+   "dia": "2026-08-07",
+   "utm_content": "",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial",
+   "dia": "2026-08-12",
+   "utm_content": "org",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial",
+   "dia": "2026-08-12",
+   "utm_content": "org",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial",
+   "dia": "2026-08-12",
+   "utm_content": "org",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial",
+   "dia": "2026-08-12",
+   "utm_content": "org",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial",
+   "dia": "2026-08-13",
+   "utm_content": "org",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial",
+   "dia": "2026-08-14",
+   "utm_content": "120248559395130208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-a/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial",
+   "dia": "2026-08-14",
+   "utm_content": "120248559359170208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-c/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial",
+   "dia": "2026-08-14",
+   "utm_content": "org",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial",
+   "dia": "2026-08-14",
+   "utm_content": "org",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-04",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-04",
+   "utm_content": "120248402798630208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-05",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-05",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-05",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-05",
+   "utm_content": "120248402798630208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-05",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-06",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-06",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-06",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-06",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-06",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-07",
+   "utm_content": "120248402798590208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-07",
+   "utm_content": "120248402798630208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-07",
+   "utm_content": "120248402798590208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-07",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-07",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-07",
+   "utm_content": "org",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-07",
+   "utm_content": "org",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-07",
+   "utm_content": "org",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-07",
+   "utm_content": "org",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-07",
+   "utm_content": "org",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-08",
+   "utm_content": "120248402798630208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-08",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-08",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-08",
+   "utm_content": "120248402798630208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-08",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-08",
+   "utm_content": "org",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-08",
+   "utm_content": "120248402798630208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-08",
+   "utm_content": "",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-08",
+   "utm_content": "120248402798630208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-09",
+   "utm_content": "120248402798630208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-09",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-09",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-09",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-09",
+   "utm_content": "120248402798630208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-09",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-09",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-09",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-10",
+   "utm_content": "120248402798630208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-10",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-10",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-10",
+   "utm_content": "120248402798530208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-10",
+   "utm_content": "120248530414380208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-10",
+   "utm_content": "120248530414380208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-11",
+   "utm_content": "120248530414380208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-11",
+   "utm_content": "120248530447760208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-11",
+   "utm_content": "120248530447760208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-11",
+   "utm_content": "120248530414380208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-11",
+   "utm_content": "120248530414380208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-11",
+   "utm_content": "120248530414380208",
+   "linkUrl": "https://lps.danilogato.com.br/dgpg04-vendas-b/"
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-11",
+   "utm_content": "{{ad.id}}",
+   "linkUrl": null
+  },
+  {
+   "aba": "Pesquisa-Aplicacao-Comercial-PaginaB",
+   "dia": "2026-08-13",
+   "utm_content": "org",
+   "linkUrl": null
+  }
+ ]
+}

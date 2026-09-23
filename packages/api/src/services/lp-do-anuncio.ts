@@ -18,7 +18,7 @@
  * O que não está lá vira causa de "Sem link resolvido", nunca palpite.
  */
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, gt, gte, inArray } from "drizzle-orm";
 import { normalizeLpUrl } from "@loyola-x/shared";
 import { metaAdCreativesCache, metaAdInsightsDaily } from "../db/schema.js";
 import { LINK_URL_RESOLVER_VERSION } from "./meta-ads.js";
@@ -168,4 +168,36 @@ export function linkComCorrecao(
   const chave = normalizeLpUrl(url);
   if (!chave) return { ...link, corrigido: false };
   return { url: url ?? null, chave, causa: null, corrigido: true };
+}
+
+/**
+ * Story 18.84 (AC4/PO-05) — o recorte dos anúncios com gasto para o aviso de
+ * página órfã da etapa de Vendas: PROJETO + campanhas da ETAPA + janela + gasto.
+ *
+ * O filtro por projeto inteiro (43.1) acusava página de outro funil do mesmo
+ * projeto; o por funil acusaria as capturas. Exportado para o teste renderizar
+ * a SQL — um banco mockado aceitaria o `where` sem o `campaign_id`.
+ */
+export function condicaoDosAnunciosComGasto(projectId: string, campaignIds: string[], desde: string) {
+  return and(
+    eq(metaAdInsightsDaily.projectId, projectId),
+    inArray(metaAdInsightsDaily.campaignId, campaignIds),
+    gte(metaAdInsightsDaily.dateStart, desde),
+    gt(metaAdInsightsDaily.spend, "0"),
+  );
+}
+
+/** `ad_id`s com gasto desde `desde` nas campanhas dadas (banco, sem Meta). */
+export async function lerAnunciosComGasto(
+  db: Database,
+  projectId: string,
+  campaignIds: string[],
+  desde: string,
+): Promise<string[]> {
+  if (campaignIds.length === 0) return [];
+  const linhas = await db
+    .selectDistinct({ adId: metaAdInsightsDaily.adId })
+    .from(metaAdInsightsDaily)
+    .where(condicaoDosAnunciosComGasto(projectId, campaignIds, desde));
+  return linhas.map((l) => l.adId);
 }

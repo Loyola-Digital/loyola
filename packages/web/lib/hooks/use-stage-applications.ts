@@ -3,11 +3,11 @@
 /**
  * Aplicações por dia — uma série por PÁGINA (Story 43.6).
  *
- * O time pode ter mais de uma planilha de aplicação no mesmo lançamento (ex.:
- * "form com ticket" e "form sem ticket"). Uma planilha pode virar VÁRIAS
- * séries: na aba-base — o formulário genérico — quem decide a página é a LP do
- * `utm_term` da linha, não o label. Aba com sufixo (`…-PaginaB`) continua
- * produzindo uma série só.
+ * Story 18.84: a página de cada aplicação é o LINK DO ANÚNCIO de onde ela veio
+ * (a página de vendas): `utm_content → ad_id → URL`. Aplicação sem anúncio de
+ * origem (orgânica, link na bio) vai para "Sem link resolvido", com a causa.
+ * Com a API anterior à 18.84, a página era a letra da aba ou do `utm_term`
+ * (43.6) — os tipos abaixo aceitam as duas respostas.
  *
  * As séries vêm alinhadas pelo dia relativo (não pela data) porque a pergunta é
  * "estamos melhor que o lançamento passado NESTA altura?" — comparar por data
@@ -26,13 +26,29 @@ export interface ApplicationDay {
   acumulado: number;
 }
 
+/** Story 18.84 — por que as aplicações da série "Sem link resolvido" estão ali. */
+export interface SemLinkDaAplicacao {
+  /** Orgânica, link na bio, texto, vazia, macro não resolvida. */
+  semAnuncio: number;
+  foraDoCache: number;
+  cacheDesatualizado: number;
+  semLinkNaMeta: number;
+}
+
 export interface ApplicationForm {
-  /** id da planilha (funnel_spreadsheets) — chave estável de série. */
+  /** chave estável de série. */
   sheetId: string;
-  /** nome amigável da forma (label da planilha) — mostrado no tooltip/legenda. */
+  /**
+   * Nome mostrado no tooltip/legenda: a URL normalizada (18.84), "Sem link
+   * resolvido", ou — API anterior — "PAGINA B"/label da planilha.
+   */
   label: string;
   total: number;
   points: ApplicationDay[];
+  /** Story 18.84: `href` da série. Ausente/`null` = série sem link. */
+  url?: string | null;
+  /** Story 18.84: só na série "Sem link resolvido". */
+  semLink?: SemLinkDaAplicacao;
 }
 
 /** Story 43.1 — aba que não entrou no gráfico, e o motivo (AC4). */
@@ -77,6 +93,11 @@ export interface StageApplications {
    */
   paginasVieramDoUtmTerm: boolean;
   /**
+   * Story 18.84 — as séries são o link do anúncio de origem. Ausente na API
+   * anterior (a tela segue os textos da 43.6).
+   */
+  paginasPeloLinkDoAnuncio?: boolean;
+  /**
    * Uma série por PÁGINA (Story 43.6) — não mais por planilha.
    *
    * A aba-base é o formulário genérico onde caem todas as páginas sem aba
@@ -116,7 +137,9 @@ export function useStageApplications(
 // ============================================================
 
 /**
- * Mesma lista de formas do gráfico acima, agora quebrada por faixa de
+ * Faixas por FORMULÁRIO (planilha) — não por página: depois da Story 18.84 o
+ * gráfico acima agrupa pelo link do anúncio, e esta seção continua agrupando
+ * por planilha (PO-07, fora do escopo). Cada forma quebrada por faixa de
  * qualificação e cruzada com quem comprou — responde "qual página traz lead
  * melhor", não só "qual página traz mais lead".
  *
@@ -205,8 +228,17 @@ export interface AplicacaoLinha {
    * evidência tornaria a coluna LP inauditável.
    */
   utmTerm: string;
-  /** "PAGINA C" ou null quando o `utm_term` não declara a LP. */
+  /**
+   * A página: a URL normalizada do anúncio de origem (18.84), `null` quando
+   * sem link. API anterior: "PAGINA C" ou `null`.
+   */
   lp: string | null;
+  /** Story 18.84: `href` da página. */
+  lpUrl?: string | null;
+  /** Story 18.84: por que não há página. `null` quando há. */
+  lpCausa?: "sem_anuncio" | "fora_do_cache" | "cache_desatualizado" | "sem_link_na_meta" | null;
+  /** Story 18.84: o anúncio de origem (`utm_content`), a evidência da página. */
+  adId?: string;
   /** Label da aba de origem — desempata quando duas páginas têm o mesmo nome. */
   aba: string;
 }
