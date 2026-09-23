@@ -256,6 +256,17 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
                   <Settings className="mr-2 h-4 w-4" />
                   Configurações
                 </DropdownMenuItem>
+                {/* Story 48.12 — atalho direto para o Painel de Planejamento,
+                    sem passar pelo dialog de Configurações. Mesma regra (E1)
+                    e mesmo caminho das outras três entradas (48.7). */}
+                {temPainelDePlanejamento(funnel.type) && (
+                  <DropdownMenuItem asChild>
+                    <Link href={planejamentoHref(projectId, funnel.id)}>
+                      <Calculator className="mr-2 h-4 w-4" />
+                      Painel de Planejamento
+                    </Link>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={handleTypeChange} disabled={updateFunnel.isPending}>
                   {funnel.type === "launch" ? (
                     <Repeat className="mr-2 h-4 w-4" />
