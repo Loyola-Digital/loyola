@@ -7,8 +7,14 @@ import type {
   PerpetualSalesDataDaily,
   PerpetualHourlyData,
 } from "@loyola-x/shared";
+// Story 29.80 — o recorte por funil/oferta (29.79). Ausente ou `{}` = a URL e a
+// resposta de sempre; o painel só o monta depois que a API declarou suporte.
+import { sufixoDoRecorte, type RecorteDeVendas } from "@/lib/utils/filtro-funil-oferta";
 
 const STALE_TIME = 2 * 60 * 1000;
+
+/** A parte da queryKey que muda com o recorte — `null`/`null` em "Todos". */
+const chaveDoRecorte = (r: RecorteDeVendas | undefined) => [r?.funil ?? null, r?.oferta ?? null] as const;
 
 function buildRangeQuery(days: number, startDate?: string, endDate?: string): string {
   if (startDate && endDate) return `startDate=${startDate}&endDate=${endDate}`;
@@ -21,13 +27,14 @@ export function usePerpetualSalesData(
   days: number,
   startDate?: string,
   endDate?: string,
+  recorte?: RecorteDeVendas,
 ) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["perpetual-sales-data", projectId, funnelId, days, startDate, endDate],
+    queryKey: ["perpetual-sales-data", projectId, funnelId, days, startDate, endDate, ...chaveDoRecorte(recorte)],
     queryFn: () =>
       apiClient<PerpetualSalesData>(
-        `/api/projects/${projectId}/funnels/${funnelId}/perpetual/sales-data?${buildRangeQuery(days, startDate, endDate)}`,
+        `/api/projects/${projectId}/funnels/${funnelId}/perpetual/sales-data?${buildRangeQuery(days, startDate, endDate)}${sufixoDoRecorte(recorte)}`,
       ),
     enabled: !!projectId && !!funnelId,
     staleTime: STALE_TIME,
@@ -40,13 +47,14 @@ export function usePerpetualSalesDataDaily(
   days: number,
   startDate?: string,
   endDate?: string,
+  recorte?: RecorteDeVendas,
 ) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["perpetual-sales-data-daily", projectId, funnelId, days, startDate, endDate],
+    queryKey: ["perpetual-sales-data-daily", projectId, funnelId, days, startDate, endDate, ...chaveDoRecorte(recorte)],
     queryFn: () =>
       apiClient<PerpetualSalesDataDaily>(
-        `/api/projects/${projectId}/funnels/${funnelId}/perpetual/sales-data-daily?${buildRangeQuery(days, startDate, endDate)}`,
+        `/api/projects/${projectId}/funnels/${funnelId}/perpetual/sales-data-daily?${buildRangeQuery(days, startDate, endDate)}${sufixoDoRecorte(recorte)}`,
       ),
     enabled: !!projectId && !!funnelId,
     staleTime: STALE_TIME,
@@ -85,17 +93,18 @@ export function usePerpetualSalesDataDailyByEntity(
   days: number,
   startDate?: string,
   endDate?: string,
+  recorte?: RecorteDeVendas,
 ) {
   const apiClient = useApiClient();
   return useQuery({
     queryKey: [
       "perpetual-sales-data-daily-by-entity",
-      projectId, funnelId, groupBy, days, startDate, endDate,
+      projectId, funnelId, groupBy, days, startDate, endDate, ...chaveDoRecorte(recorte),
     ],
     queryFn: () =>
       apiClient<PerpetualSalesDataDailyGrouped>(
         `/api/projects/${projectId}/funnels/${funnelId}/perpetual/sales-data-daily` +
-          `?${buildRangeQuery(days, startDate, endDate)}&groupBy=${groupBy}`,
+          `?${buildRangeQuery(days, startDate, endDate)}&groupBy=${groupBy}${sufixoDoRecorte(recorte)}`,
       ),
     enabled: !!projectId && !!funnelId && !!groupBy,
     staleTime: STALE_TIME,
@@ -117,13 +126,14 @@ export function usePerpetualHourly(
   days: number,
   startDate?: string,
   endDate?: string,
+  recorte?: RecorteDeVendas,
 ) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["perpetual-hourly", projectId, funnelId, days, startDate, endDate],
+    queryKey: ["perpetual-hourly", projectId, funnelId, days, startDate, endDate, ...chaveDoRecorte(recorte)],
     queryFn: () =>
       apiClient<PerpetualHourlyData>(
-        `/api/projects/${projectId}/funnels/${funnelId}/perpetual/hourly?${buildRangeQuery(days, startDate, endDate)}`,
+        `/api/projects/${projectId}/funnels/${funnelId}/perpetual/hourly?${buildRangeQuery(days, startDate, endDate)}${sufixoDoRecorte(recorte)}`,
       ),
     enabled: !!projectId && !!funnelId,
     staleTime: STALE_TIME,

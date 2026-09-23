@@ -193,9 +193,10 @@ function Nomenclatura() {
           ) : ativa.aba === "produtos" ? (
             <AbaProdutos podeEditar={podeEditar} />
           ) : ativa.aba === "funis" ? (
-            <AbaFunisOuOfertas recurso="funis" podeEditar={podeEditar} />
+            // Story 29.80 (AC6): `?expertId=` também em Funis e Ofertas.
+            <AbaFunisOuOfertas recurso="funis" podeEditar={podeEditar} expertInicial={params.get("expertId")} />
           ) : ativa.aba === "ofertas" ? (
-            <AbaFunisOuOfertas recurso="ofertas" podeEditar={podeEditar} />
+            <AbaFunisOuOfertas recurso="ofertas" podeEditar={podeEditar} expertInicial={params.get("expertId")} />
           ) : ativa.aba === "lps" ? (
             <AbaLps podeEditar={podeEditar} />
           ) : ativa.aba === "variaveis-vsl" ? (

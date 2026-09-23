@@ -1,3 +1,6 @@
+// Story 29.79: o eco do filtro de funil/oferta nas leituras de vendas do perpétuo.
+import type { FiltroAplicado, LinhaForaDoFiltro } from "../funil-e-oferta.js";
+
 // "mobile" = funil de app mobile (RevenueCat + Meta), dashboard da etapa Lyrio.
 export type FunnelType = "launch" | "perpetual" | "mobile";
 
@@ -365,6 +368,13 @@ export interface PerpetualSalesData {
   porUtmCampaign: { campaign: string; vendas: number; bruto: number; liquido: number }[];
   porFormaPagamento: { forma: string; vendas: number; bruto: number; liquido: number }[];
   semDados: boolean;
+  /**
+   * Story 29.79 (AC5) — presentes SÓ quando a leitura recebeu `funil`/`oferta`.
+   * `filtro` é o que a API aplicou (o painel confere o eco); `foraDoFiltro`, o
+   * que ficou de fora e por quê (compradores distintos, faturamento bruto).
+   */
+  filtro?: FiltroAplicado;
+  foraDoFiltro?: LinhaForaDoFiltro[];
 }
 
 /**
@@ -429,6 +439,13 @@ export interface PerpetualHourlyData {
     janela: { since: string; until: string };
   };
   semDados: boolean;
+  /**
+   * Story 29.79 (AC5) — presentes SÓ quando a leitura recebeu `funil`/`oferta`.
+   * `filtro` é o que a API aplicou (o painel confere o eco); `foraDoFiltro`, o
+   * que ficou de fora e por quê (compradores distintos, faturamento bruto).
+   */
+  filtro?: FiltroAplicado;
+  foraDoFiltro?: LinhaForaDoFiltro[];
 }
 
 export interface PerpetualSalesDataDaily {
@@ -441,6 +458,13 @@ export interface PerpetualSalesDataDaily {
    */
   salesByDay?: Record<string, number>;
   semDados: boolean;
+  /**
+   * Story 29.79 (AC5) — presentes SÓ quando a leitura recebeu `funil`/`oferta`.
+   * `filtro` é o que a API aplicou (o painel confere o eco); `foraDoFiltro`, o
+   * que ficou de fora e por quê (compradores distintos, faturamento bruto).
+   */
+  filtro?: FiltroAplicado;
+  foraDoFiltro?: LinhaForaDoFiltro[];
 }
 
 /**
