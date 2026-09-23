@@ -27,6 +27,7 @@ import {
   NIVEIS_ORGANICOS,
   NIVEIS_PAGOS,
   ROTULOS_DO_CENARIO,
+  identificarLancamento, // Story 48.13
   lancamentosAnteriores,
   organicosVazios,
   pagosVazios,
@@ -436,14 +437,17 @@ export default fp(async function planejamentoRoutes(fastify) {
   // dicionário do Epic 47, no módulo puro do shared. A rota não decide nada —
   // lê os funis de lançamento do projeto e delega.
   //
-  // Só entram os que JÁ TÊM simulador salvo: um lançamento sem nada preenchido
-  // não serve de base, e oferecê-lo seria oferecer um formulário vazio.
+  // Story 48.13 — entram TODOS os anteriores do mesmo tipo, COM e SEM
+  // simulador salvo (decisão 2.3 = B do Danilo). A 48.9 só oferecia quem já
+  // tinha simulador, e no sistema inteiro só o fz-m3 tinha: o fz-m1 e o fz-m2,
+  // com realizado medido (48.11), nunca apareciam como base. Sem simulador, a
+  // tela mostra só o `real:` deles — `temSimulador` diz qual é qual.
   fastify.get("/api/projects/:projectId/funnels/:funnelId/planejamento/bases", async (request, reply) => {
     const ctx = await resolverContexto(request, reply);
     if (!ctx) return;
     const funis = await repo().funisDeLancamento(ctx.projectId);
     const alvo = funis.find((f) => f.id === ctx.funnelId);
-    if (!alvo) return { funnelId: ctx.funnelId, tipo: null, bases: [] };
+    if (!alvo) return { funnelId: ctx.funnelId, tipo: null, incluiSemSimulador: true, bases: [] };
     const anteriores = lancamentosAnteriores(
       { id: alvo.id, nome: alvo.nome, criadoEm: alvo.criadoEm },
       funis.map((f) => ({ id: f.id, nome: f.nome, criadoEm: f.criadoEm })),
@@ -451,21 +455,29 @@ export default fp(async function planejamentoRoutes(fastify) {
     const porId = new Map(funis.map((f) => [f.id, f]));
     return {
       funnelId: ctx.funnelId,
-      // O tipo do PRÓPRIO funil, para a tela poder dizer "sem histórico
-      // anterior" por um motivo (primeiro do tipo) ou pelo outro (nome que o
-      // dicionário não reconhece).
-      tipo: anteriores[0]?.tipo ?? null,
-      bases: anteriores
-        .filter((a) => porId.get(a.id)?.temSimulador)
-        .map((a) => ({
-          funnelId: a.id,
-          nome: a.nome,
-          tipo: a.tipo,
-          rotuloDoTipo: a.rotuloDoTipo,
-          edicao: a.edicao,
-          criadoEm: typeof a.criadoEm === "string" ? a.criadoEm : a.criadoEm.toISOString(),
-          simuladorAtualizadoEm: porId.get(a.id)?.simuladorAtualizadoEm ?? null,
-        })),
+      // O tipo do PRÓPRIO funil, lido do nome DELE (Story 48.13, AC2), para a
+      // tela poder dizer "sem histórico anterior" por um motivo (primeiro do
+      // tipo) ou pelo outro (nome que o dicionário não reconhece). A 48.9 lia
+      // `anteriores[0]?.tipo` — no primeiro do tipo não há anterior, saía
+      // `null`, e a tela culpava o nome do funil.
+      tipo: identificarLancamento(alvo.nome).tipo,
+      // Story 48.13 (AC7, PO-03) — o sinal de que ESTA lista já inclui os
+      // anteriores sem simulador. Fica no nível de cima porque, com `bases: []`,
+      // não há item onde procurar `temSimulador`: sem o sinal (API antiga), uma
+      // lista vazia pode ser só "ninguém tem simulador" — e a tela não pode
+      // afirmar "primeiro do tipo".
+      incluiSemSimulador: true,
+      bases: anteriores.map((a) => ({
+        funnelId: a.id,
+        nome: a.nome,
+        tipo: a.tipo,
+        rotuloDoTipo: a.rotuloDoTipo,
+        edicao: a.edicao,
+        criadoEm: typeof a.criadoEm === "string" ? a.criadoEm : a.criadoEm.toISOString(),
+        // Sem simulador, a tela não usa as leituras da base: só o realizado.
+        temSimulador: porId.get(a.id)?.temSimulador ?? false,
+        simuladorAtualizadoEm: porId.get(a.id)?.simuladorAtualizadoEm ?? null,
+      })),
     };
   });
 });

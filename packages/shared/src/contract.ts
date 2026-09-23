@@ -179,4 +179,12 @@
 // a rota e sem o campo, a camada A (Story 48.9) segue inteira e nada quebra —
 // o bump é o que faz o banner acusar a defasagem em vez de o gestor concluir
 // que o "real:" não funciona.
-export const API_CONTRACT_VERSION = 19;
+// v20 (Story 48.13): `GET /api/projects/:projectId/funnels/:funnelId/
+// planejamento/bases` passa a devolver TAMBÉM os lançamentos anteriores sem
+// simulador salvo, cada item com o campo novo `temSimulador`; a resposta ganha
+// `incluiSemSimulador: true` no nível de cima (o sinal de que a lista já segue
+// a regra nova — com `bases: []` não há item onde procurá-lo) e o `tipo` passa
+// a ser o do próprio funil. ADITIVA; `packages/mcp` não é afetado. O web tem
+// fallback: sem os campos, trata toda base como "com simulador" e mantém a
+// frase de hoje para a lista vazia.
+export const API_CONTRACT_VERSION = 20;

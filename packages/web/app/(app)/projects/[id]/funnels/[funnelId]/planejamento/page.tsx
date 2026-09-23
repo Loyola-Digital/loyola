@@ -18,7 +18,14 @@ import { usePlanejamentoBases } from "@/lib/hooks/use-planejamento-bases"; // St
 import { usePlanejamentoInputs } from "@/lib/hooks/use-planejamento-inputs";
 import { usePlanejamentoOrganicos } from "@/lib/hooks/use-planejamento-organicos";
 import { usePlanejamentoPagos } from "@/lib/hooks/use-planejamento-pagos";
-import type { BaseDeReferencia } from "@/lib/utils/planejamento-referencia";
+import {
+  baseTemSimulador,
+  fraseSemBase,
+  montarReferencia,
+  rotuloDaOpcaoDeBase,
+  textoDoCabecalhoDaBase,
+  type BaseDeReferencia,
+} from "@/lib/utils/planejamento-referencia"; // Story 48.13
 import { usePlanejamentoRealizado } from "@/lib/hooks/use-planejamento-realizado"; // Story 48.11
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
 import { useBuyersOrigin } from "@/lib/hooks/use-sales-journey";
@@ -82,17 +89,18 @@ export default function PlanejamentoPage() {
   const [baseId, setBaseId] = useState<string | null>(null);
   const bases = usePlanejamentoBases(params.id, params.funnelId);
   const baseEscolhida = bases.data?.bases.find((b) => b.funnelId === baseId) ?? null;
-  const baseInputs = usePlanejamentoInputs(baseId ? params.id : null, baseId);
-  const baseOrganicos = usePlanejamentoOrganicos(baseId ? params.id : null, baseId);
-  const basePagos = usePlanejamentoPagos(baseId ? params.id : null, baseId);
-  const referencia: BaseDeReferencia | null = baseEscolhida
-    ? {
-        nome: baseEscolhida.nome,
-        inputs: baseInputs.data?.inputs ?? null,
-        organicos: baseOrganicos.data ?? null,
-        pagos: basePagos.data ?? null,
-      }
-    : null;
+  // Story 48.13 — base SEM Planejamento salvo: as três leituras nem são
+  // pedidas. Um simulador que não existe não vira `base:` (o GET devolveria os
+  // vazios), e a referência sai só com o nome — ver `montarReferencia`.
+  const simuladorDaBase = baseEscolhida && baseTemSimulador(baseEscolhida) ? baseEscolhida.funnelId : null;
+  const baseInputs = usePlanejamentoInputs(simuladorDaBase ? params.id : null, simuladorDaBase);
+  const baseOrganicos = usePlanejamentoOrganicos(simuladorDaBase ? params.id : null, simuladorDaBase);
+  const basePagos = usePlanejamentoPagos(simuladorDaBase ? params.id : null, simuladorDaBase);
+  const referencia: BaseDeReferencia | null = montarReferencia(baseEscolhida, {
+    inputs: baseInputs.data?.inputs ?? null,
+    organicos: baseOrganicos.data ?? null,
+    pagos: basePagos.data ?? null,
+  });
 
   // Story 48.11 — a camada B: o que a base ENTREGOU.
   //
@@ -191,11 +199,7 @@ export default function PlanejamentoPage() {
         <div className="flex items-center gap-2 flex-wrap rounded-md border border-border/50 bg-muted/30 px-3 py-2">
           <span className="text-sm font-medium">Base de referência</span>
           {bases.data.bases.length === 0 ? (
-            <span className="text-xs text-muted-foreground">
-              {bases.data.tipo === null
-                ? "Sem histórico anterior — o nome deste funil não identifica o tipo de lançamento (pago, gratuito, meteórico ou presencial)."
-                : "Sem histórico anterior — nenhum lançamento anterior do mesmo tipo tem o Planejamento preenchido."}
-            </span>
+            <span className="text-xs text-muted-foreground">{fraseSemBase(bases.data)}</span>
           ) : (
             <>
               <select
@@ -207,7 +211,7 @@ export default function PlanejamentoPage() {
                 <option value="">Selecionar campanha anterior…</option>
                 {bases.data.bases.map((b) => (
                   <option key={b.funnelId} value={b.funnelId}>
-                    {b.nome} · {b.rotuloDoTipo}
+                    {rotuloDaOpcaoDeBase(b)}
                   </option>
                 ))}
               </select>
@@ -225,18 +229,16 @@ export default function PlanejamentoPage() {
                   ))}
                 </select>
               )}
-              <span className="text-xs text-muted-foreground">
-                {referencia
-                  ? "Os valores desse lançamento aparecem entre parênteses ao lado de cada campo — só como parâmetro; nada é preenchido nem salvo."
-                  : "Escolha um lançamento anterior do mesmo tipo para ver os valores dele ao lado de cada campo."}
-              </span>
+              <span className="text-xs text-muted-foreground">{textoDoCabecalhoDaBase(referencia)}</span>
             </>
           )}
           {/* Story 48.11 (AC8) — o que o `real:` cobre e o que ele NÃO cobre.
               Um número sem procedência ao lado de um campo é pior que nenhum:
               o gestor não tem como saber que o 100 % do Meta é ausência de
               Google, e não medição. */}
-          {realizado && !baseRealizado.isPending && <DeclaracaoDoRealizado realizado={realizado} />}
+          {realizado && !baseRealizado.isPending && (
+            <DeclaracaoDoRealizado realizado={realizado} semSimulador={referencia?.semSimulador === true} />
+          )}
         </div>
       )}
 
@@ -287,7 +289,7 @@ export default function PlanejamentoPage() {
  * ticket e a conversão, e quanto dos leads orgânicos ficou fora dos cinco
  * canais nomeados.
  */
-function DeclaracaoDoRealizado({ realizado }: { realizado: RealizadoDaBase }) {
+function DeclaracaoDoRealizado({ realizado, semSimulador }: { realizado: RealizadoDaBase; semSimulador: boolean }) {
   const inv = realizado.investimentoMeta;
 
   // Falha NÃO é ausência: sem resposta, a tela diz que não conseguiu ler, em
@@ -296,7 +298,15 @@ function DeclaracaoDoRealizado({ realizado }: { realizado: RealizadoDaBase }) {
     return (
       <p className="basis-full text-xs text-muted-foreground">
         <strong>real:</strong> os valores realizados desse lançamento não puderam ser lidos agora — a API pode ainda não ter
-        essa rota. Os valores <strong>planejados</strong> (base) seguem válidos.
+        essa rota.
+        {/* Story 48.13 — base sem Planejamento não tem valores planejados a
+            "seguir válidos": a frase contradiria a linha ao lado. */}
+        {!semSimulador && (
+          <>
+            {" "}
+            Os valores <strong>planejados</strong> (base) seguem válidos.
+          </>
+        )}
       </p>
     );
   }

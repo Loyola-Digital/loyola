@@ -5,7 +5,12 @@ import { criarRepositorioEmMemoria, inputsVazios } from "../services/planejament
 
 /**
  * Story 48.9 — `GET …/planejamento/bases`: os lançamentos anteriores do mesmo
- * expert (projeto) e mesmo tipo que JÁ TÊM simulador salvo.
+ * expert (projeto) e mesmo tipo.
+ *
+ * Story 48.13 — COM e SEM simulador salvo (decisão 2.3 = B do Danilo): o que
+ * não tem simulador entra com `temSimulador: false` e a tela mostra só o
+ * realizado dele. Dois testes da 48.9 foram INVERTIDOS (marcados abaixo) —
+ * eles afirmavam a regra antiga.
  *
  * Os funis do seed são os reais de produção do projeto FZ & MFB, na ordem de
  * criação.
@@ -61,27 +66,41 @@ describe("rotas de planejamento — bases (Story 48.9)", () => {
   const salvar = async (funnelId: string) =>
     expect((await app.inject({ method: "PUT", url: urlInputs(funnelId), payload: inputsVazios() })).statusCode).toBe(200);
 
-  it("sem nenhum simulador salvo, não há base — mesmo existindo meteóricos anteriores", async () => {
+  // Story 48.13 — INVERTE o teste da 48.9 "sem nenhum simulador salvo, não há
+  // base". É o caso que originou o pedido: fz-m3-set-26 sem oferecer fz-m2 e
+  // fz-m1, que estão arquivados, sem simulador e com realizado medido.
+  it("sem nenhum simulador salvo, os meteóricos anteriores APARECEM, com `temSimulador: false` (Story 48.13)", async () => {
     const r = await app.inject({ method: "GET", url: url(M3) });
     expect(r.statusCode).toBe(200);
-    expect(r.json().bases).toEqual([]);
-    expect(r.json().tipo).toBe("m");
+    const body = r.json();
+    expect(body.tipo).toBe("m");
+    expect(body.incluiSemSimulador).toBe(true);
+    expect(body.bases.map((b: { nome: string }) => b.nome)).toEqual(["fz-m2-jul26", "fz-m1-mai26"]);
+    expect(body.bases.map((b: { temSimulador: boolean }) => b.temSimulador)).toEqual([false, false]);
+    expect(body.bases.map((b: { simuladorAtualizadoEm: string | null }) => b.simuladorAtualizadoEm)).toEqual([null, null]);
   });
 
-  it("só os anteriores do MESMO tipo e COM simulador salvo entram, do mais recente para o mais antigo", async () => {
+  it("só os anteriores do MESMO tipo entram, do mais recente para o mais antigo — com simulador, `temSimulador: true`", async () => {
     await salvar(M1);
     await salvar(M2);
     await salvar(L2); // gratuito — não pode aparecer para um meteórico
     const body = (await app.inject({ method: "GET", url: url(M3) })).json();
     expect(body.bases.map((b: { nome: string }) => b.nome)).toEqual(["fz-m2-jul26", "fz-m1-mai26"]);
-    expect(body.bases[0]).toMatchObject({ funnelId: M2, tipo: "m", rotuloDoTipo: "meteórico", edicao: 2 });
+    expect(body.bases[0]).toMatchObject({ funnelId: M2, tipo: "m", rotuloDoTipo: "meteórico", edicao: 2, temSimulador: true });
     expect(body.bases[0].simuladorAtualizadoEm).not.toBeNull();
   });
 
-  it("o anterior sem simulador é omitido, mesmo sendo do tipo certo", async () => {
+  // Story 48.13 — INVERTE o teste da 48.9 "o anterior sem simulador é omitido,
+  // mesmo sendo do tipo certo": agora ele aparece, identificado.
+  it("o anterior sem simulador APARECE, identificado como tal, ao lado do que tem (Story 48.13)", async () => {
     await salvar(M1);
     const body = (await app.inject({ method: "GET", url: url(M3) })).json();
-    expect(body.bases.map((b: { nome: string }) => b.nome)).toEqual(["fz-m1-mai26"]);
+    expect(body.bases.map((b: { nome: string; temSimulador: boolean }) => [b.nome, b.temSimulador])).toEqual([
+      ["fz-m2-jul26", false],
+      ["fz-m1-mai26", true],
+    ]);
+    expect(body.bases[0].simuladorAtualizadoEm).toBeNull();
+    expect(body.bases[1].simuladorAtualizadoEm).not.toBeNull();
   });
 
   it("funil sem tipo identificado (bbe-web-mai-26) → sem base e `tipo: null`", async () => {
@@ -92,9 +111,22 @@ describe("rotas de planejamento — bases (Story 48.9)", () => {
     expect(body.tipo).toBeNull();
   });
 
-  it("primeiro do tipo → sem base", async () => {
+  it("primeiro do tipo → sem base, e o `tipo` é o do PRÓPRIO funil (Story 48.13, AC2)", async () => {
     await salvar(M2);
-    expect((await app.inject({ method: "GET", url: url(M1) })).json().bases).toEqual([]);
+    const body = (await app.inject({ method: "GET", url: url(M1) })).json();
+    expect(body.bases).toEqual([]);
+    // Antes saía `null` (o tipo vinha do primeiro anterior, que não existe) e a
+    // tela culpava o nome do funil.
+    expect(body.tipo).toBe("m");
+    expect(body.incluiSemSimulador).toBe(true);
+  });
+
+  it("fz-l2-jun-26, o primeiro gratuito do projeto → `tipo: 'l'` com `bases: []` (Story 48.13, AC2)", async () => {
+    await salvar(M1);
+    await salvar(M2);
+    const body = (await app.inject({ method: "GET", url: url(L2) })).json();
+    expect(body.bases).toEqual([]);
+    expect(body.tipo).toBe("l");
   });
 
   it("não oferece funil de outro projeto nem funil perpétuo", async () => {
