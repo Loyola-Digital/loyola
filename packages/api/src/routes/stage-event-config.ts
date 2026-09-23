@@ -19,6 +19,11 @@ import {
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { parseFaturamento } from "../services/parse-faturamento.js";
+import {
+  acharColunaDeEmail,
+  acharColunaDeNome,
+  acharColunaDeTelefone,
+} from "../services/colunas-da-pesquisa.js";
 
 const stageParamsSchema = z.object({
   projectId: z.string().uuid(),
@@ -457,20 +462,6 @@ export default fp(async function stageEventConfigRoutes(fastify) {
   }
 
   // Detecta a coluna de NOME da pessoa numa survey pelo header (heurística):
-  // contém "nome" mas não se refere a restaurante/empresa/negócio.
-  function findNameIdx(headers: string[]): number {
-    return headers.findIndex((h) => {
-      const n = h.trim().toLowerCase();
-      return (
-        n.includes("nome") &&
-        !n.includes("restaurante") &&
-        !n.includes("empresa") &&
-        !n.includes("negócio") &&
-        !n.includes("negocio") &&
-        !n.includes("fantasia")
-      );
-    });
-  }
 
   // Normaliza telefone p/ match: só dígitos, tira DDI 55, mantém os últimos 8
   // (núcleo do número) — tolerante a DDD/9º dígito/formatação. "" se inválido.
@@ -480,13 +471,6 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     return d.length >= 8 ? d.slice(-8) : "";
   }
 
-  // Detecta a coluna de telefone/WhatsApp numa survey pelo header.
-  function findPhoneIdx(headers: string[]): number {
-    return headers.findIndex((h) => {
-      const n = h.trim().toLowerCase();
-      return n.includes("whatsapp") || n.includes("telefone") || n.includes("celular");
-    });
-  }
 
   // Parse "DD/MM/YYYY HH:MM[:SS]" (compra, planilha) → epoch ms (componentes
   // tratados como UTC, só p/ comparação relativa). null se não casar.
@@ -547,12 +531,15 @@ export default fp(async function stageEventConfigRoutes(fastify) {
         continue;
       }
       const { headers, rows } = data;
-      const emailIdx = mapping.email ? headers.indexOf(mapping.email) : -1;
+      // Mapeamento primeiro; se a coluna mapeada não existir na planilha, acha
+      // pelo cabeçalho. Sem isso, um mapeamento defasado (formulário refeito,
+      // "email" contra "Qual é o seu e-mail") zerava o casamento por e-mail em
+      // silêncio — era o caso do bbe-pr2-out-26 em 23/09/2026.
+      const emailIdx = acharColunaDeEmail(headers, mapping.email);
       const fatIdx = mapping.faturamento ? headers.indexOf(mapping.faturamento) : -1;
       if (fatIdx === -1) continue;
-      // nome: usa o mapping se houver, senão detecta pelo header.
-      const nameIdx = mapping.name ? headers.indexOf(mapping.name) : findNameIdx(headers);
-      const phoneIdx = findPhoneIdx(headers);
+      const nameIdx = acharColunaDeNome(headers, mapping.name);
+      const phoneIdx = acharColunaDeTelefone(headers);
       // horário da resposta (Tally) — pra evidência temporal do match por nome.
       const subIdx = headers.findIndex((h) => h.trim().toLowerCase() === "submitted at");
       // helper de conflito → marca ambíguo (null) p/ não chutar.
@@ -952,19 +939,21 @@ export default fp(async function stageEventConfigRoutes(fastify) {
         continue;
       }
       const { headers, rows } = data;
-      const emailIdx = headers.indexOf(mapping.email);
-      if (emailIdx === -1) continue;
-      let match = rows.find((row) => (row[emailIdx] ?? "").trim().toLowerCase() === target);
+      const emailIdx = acharColunaDeEmail(headers, mapping.email);
+      let match =
+        emailIdx === -1
+          ? undefined
+          : rows.find((row) => (row[emailIdx] ?? "").trim().toLowerCase() === target);
       // Fallback por telefone e depois por nome: o lead pode ter comprado com um
       // email e respondido a pesquisa com outro — aí o match por email falha aqui.
       if (!match && targetPhone) {
-        const phoneIdx = findPhoneIdx(headers);
+        const phoneIdx = acharColunaDeTelefone(headers);
         if (phoneIdx !== -1) {
           match = rows.find((row) => normPhone(row[phoneIdx] ?? "") === targetPhone);
         }
       }
       if (!match && targetName) {
-        const nameIdx = mapping.name ? headers.indexOf(mapping.name) : findNameIdx(headers);
+        const nameIdx = acharColunaDeNome(headers, mapping.name);
         if (nameIdx !== -1) {
           match = rows.find((row) => normName(row[nameIdx] ?? "") === targetName);
         }
