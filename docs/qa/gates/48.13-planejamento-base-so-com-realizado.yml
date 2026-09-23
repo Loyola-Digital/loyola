@@ -1,0 +1,53 @@
+schema: 1
+storyId: '48.13'
+story: '48.13'
+story_title: 'Planejamento — lançamento anterior sem Planejamento serve de base (só o realizado)'
+verdict: PASS
+gate: PASS
+status_reason: 'A rota `/bases` passa a oferecer os anteriores sem simulador (`temSimulador`), lê o tipo do próprio funil e carrega o sinal `incluiSemSimulador` no topo; o web decide tudo em `lib/utils` com fallback para a API antiga, e as três mutações próprias na regra derrubam exatamente o teste dedicado a cada armadilha. Dois achados baixos: o fio da página não tem teste e a linha do cabeçalho promete `real:` "ao lado de cada campo".'
+reviewer: 'Quinn'
+updated: '2026-09-23T13:45:00-03:00'
+branch: 'feat/48.13-base-so-realizado'
+commit_reviewed: '84aa299c'
+
+issues:
+  - id: TEST-001
+    severity: low
+    category: tests
+    description: 'O fio da página não tem teste. Mutação do gate em `planejamento/page.tsx`: as três leituras da base disparadas sempre (`simuladorDaBase = baseEscolhida ? baseEscolhida.funnelId : null`) e `semSimulador={false}` na `DeclaracaoDoRealizado` → `lib/utils` segue 90/1.315 verde. O efeito visível é pequeno — `montarReferencia` descarta as leituras de qualquer jeito, então nenhum `base:` aparece —, mas volta o `select()` que dava 500 sem a 0156 e a frase "os valores planejados seguem válidos" numa base que não tem planejado.'
+    recommendation: 'Mesma saída da 48.12: um teste de contrato que leia o fonte da página e afirme `baseTemSimulador(baseEscolhida)` no `simuladorDaBase` e `semSimulador={referencia?.semSimulador === true}`. Não bloqueia: a regra que decide o que aparece está em `lib/utils` e é provada.'
+    status: open
+
+  - id: DOC-001
+    severity: low
+    category: docs
+    description: 'O cabeçalho da base sem simulador diz "só o realizado (real:) aparece ao lado de cada campo". O `real:` cobre quatro campos dos Inputs (`investimentoAnuncios`, `pctInvestMeta`, `pctMetaQuente`, `ticketMedio`) e as conversões por canal (`planejamento-realizado.ts:220-250`) — a maioria dos campos não recebe nada. A declaração de cobertura da 48.11 logo abaixo desfaz a impressão, mas a frase de cima continua prometendo mais do que entrega (lição da 18.58: o texto tem de bater com a regra).'
+    recommendation: 'Trocar "ao lado de cada campo" por "ao lado dos campos que ele cobre (lista abaixo)" numa próxima passada na página. É texto, não regra.'
+    status: open
+
+top_issues:
+  - id: TEST-001
+    severity: low
+    finding: 'Fio da página sem teste (leituras sempre disparadas + `semSimulador={false}` → 0 falhas).'
+    suggested_action: 'Teste de contrato por leitura de fonte, como na 48.12.'
+  - id: DOC-001
+    severity: low
+    finding: 'Cabeçalho promete `real:` "ao lado de cada campo"; cobre só 4 inputs e as conversões por canal.'
+    suggested_action: 'Ajustar o texto para "ao lado dos campos que ele cobre".'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Diff de 8 arquivos contra `ff1fa772` (a `origin/main` só avançou com docs, #934). API: sai o `.filter(temSimulador)`, cada item ganha `temSimulador: porId.get(a.id)?.temSimulador ?? false`, `tipo = identificarLancamento(alvo.nome).tipo` — a MESMA leitura que `lancamentosAnteriores` já faz do alvo, então tipo e lista não podem divergir — e `incluiSemSimulador: true` no topo, também no ramo defensivo `!alvo`. Web: a regra saiu da página para cinco funções puras em `planejamento-referencia.ts`; `baseTemSimulador` trata o campo ausente como "com simulador" (API antiga só devolvia esses); `montarReferencia` devolve referência EXISTENTE com as três leituras `null` (evita a armadilha do cabeçalho, PO-06). O realizado da 48.11 continua pedido com `baseId`, não com `simuladorDaBase` — base sem simulador segue com `real:`. `rotuloDoTipoDeLancamento` importado por subpath do módulo folha (import de valor do barrel quebraria o `next build`). Sem PII nem token na resposta.'
+  unit_tests: 'API `planejamento-*` 14 arquivos / 231 testes verdes (`planejamento-rotas-bases` 8/8); web `lib/utils` 90 / 1.315 (+9 desta story). Mutações do gate, diferentes das oito do @dev: (A) `incluiSemSimulador: anteriores.length > 0` — o sinal some justo na lista vazia, que é o caso para o qual ele existe → 1 falha, "primeiro do tipo… tipo do PRÓPRIO funil"; (B) `montarReferencia` sem simulador vazando SÓ `pagos` → 1 falha, "base SEM simulador → nenhuma referência `base:`…" (cada uma das três leituras tem asserção própria); (C) `fraseSemBase` com `incluiSemSimulador !== false` (ausência lida como API nova) → 1 falha, "API ANTIGA (PO-03)… NUNCA primeiro"; (D) fio da página → 0 falhas (TEST-001). Restauração conferida com `shasum -c` e `git status` limpo.'
+  acceptance_criteria: 'AC1 ✓ (todos os anteriores, `temSimulador`, `simuladorAtualizadoEm: null`, ordem e arquivados preservados — testes invertidos da 48.9 declarados) · AC2 ✓ (`fz-m1` → `m`, `fz-l2-jun-26` → `l` com `bases: []`, `bbe-web-mai-26` → `null`) · AC3 ✓ (três frases; "o primeiro lançamento gratuito", sem "lançamento lançamento") · AC4 ✓ (`… · só realizado`) · AC5 ✓ (nenhum `base:` mesmo com leituras COM valores; linha do cabeçalho; declaração da 48.11 mantida) · AC6 ✓ · AC7 ✓ (API antiga = com simulador; lista vazia sem o sinal mantém a frase de hoje; contrato 19 → 20) · AC8 ✓ (fixture com os nomes reais) · AC9 ✓ (eslint 0 nos 7 arquivos no gate; `tsc --noEmit` da API 0 no gate; build e tsc do web pelo @dev, não refeitos).'
+  no_regressions: 'Os dois testes da 48.9 que afirmavam a regra antiga foram invertidos e marcados no próprio arquivo; os outros seguem. A suíte completa da API não foi refeita no gate — o @dev registrou 3.108/3.119 com as 10 falhas da baseline + 1 timeout de `chat.test.ts` reexecutado verde; nenhuma dessas toca `/bases`.'
+  performance: 'Melhor que antes para base sem simulador: as três leituras (`inputs`/`organicos`/`pagos`) nem são pedidas. A rota não ganhou consulta — `funisDeLancamento` já trazia `temSimulador` via `leftJoin`.'
+  security: 'Guarda da rota intacta (`resolverContexto`); o teste "não oferece funil de outro projeto nem funil perpétuo" segue verde. O campo novo é booleano; nenhum dado pessoal.'
+  documentation: 'Textos da tela coerentes com a regra, salvo DOC-001. Comentários do código explicam por que o sinal fica no topo e por que a referência existe sem as leituras.'
+  api_contract: '19 → 20 com linha de histórico em `packages/shared/src/contract.ts`; ADITIVA; `packages/mcp` não consome `/planejamento/bases` (grep). ATENÇÃO @devops: a 29.78 também sobe 19 → 20 — a segunda a mergear precisa rebasear e subir para 21 (com a própria linha de histórico). Não é FAIL desta story.'
+
+notes:
+  - 'Validação visual (DoD) pendente e depende da 0156 aplicada em produção: `fz-m3-set-26` oferece `fz-m2-jul26` e `fz-m1-mai26` como "só realizado"; escolher `fz-m2-jul26` mostra `real:` (R$ 7.574,19, 27/07 → 08/08) e nenhum `base:`; `fz-l2-jun-26` diz "primeiro lançamento gratuito".'
+  - 'Fora do escopo, já registrado pelo @po: se `/bases` falhar, o bloco do seletor inteiro some (`bases.data && …`) — erro virando ausência, candidato a story futura.'
+  - 'CodeRabbit não executado (CLI ausente no macOS). Revisão manual.'

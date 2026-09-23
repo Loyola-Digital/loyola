@@ -3,11 +3,16 @@ import { organicosVazios, pagosVazios } from "@loyola-x/shared/src/planejamento-
 import { CAMPOS_DOS_INPUTS_FINANCEIROS } from "@loyola-x/shared/src/planejamento-inputs-financeiros";
 import type { InputsPersistidos } from "@/lib/utils/planejamento-inputs-form";
 import {
+  baseTemSimulador,
+  fraseSemBase,
+  montarReferencia,
   referenciaDaConversaoOrganica,
   referenciaDaConversaoPaga,
   referenciaDoInput,
   rotuloComReferencia,
+  rotuloDaOpcaoDeBase,
   textoDeReferencia,
+  textoDoCabecalhoDaBase,
   type BaseDeReferencia,
 } from "@/lib/utils/planejamento-referencia";
 
@@ -89,5 +94,90 @@ describe("rotuloComReferencia", () => {
   it("com referência, entra entre parênteses depois do rótulo", () => {
     expect(rotuloComReferencia("Reembolso", "4,00%")).toBe("Reembolso (base: 4,00%)");
     expect(rotuloComReferencia("Ticket Médio", "R$ 1.200,00")).toBe("Ticket Médio (base: R$ 1.200,00)"); // aqui a entrada já é texto comum
+  });
+});
+
+/**
+ * Story 48.13 — lançamento anterior SEM Planejamento serve de base, mostrando
+ * só o realizado (decisão 2.3 = B do Danilo).
+ *
+ * ⚠️ As leituras da base vêm COM VALORES de propósito (PO-07): hoje, uma base
+ * sem simulador já devolve tudo `null` nas três rotas — uma fixture vazia
+ * passaria com ou sem a regra. Só valores discriminam.
+ */
+describe("montarReferencia — base sem simulador não vira `base:` (AC5/AC6)", () => {
+  const leituras = () => {
+    const b = base();
+    return { inputs: b.inputs, organicos: b.organicos, pagos: b.pagos };
+  };
+
+  it("base SEM simulador → nenhuma referência `base:`, mesmo recebendo inputs com valores", () => {
+    const r = montarReferencia({ nome: "fz-m2-jul26", temSimulador: false }, leituras());
+    expect(referenciaDoInput(r, "pctReembolso")).toBeNull();
+    expect(referenciaDoInput(r, "ticketMedio")).toBeNull();
+    expect(referenciaDaConversaoOrganica(r, "whatsapp")).toBeNull();
+    expect(referenciaDaConversaoPaga(r, "meta_quente")).toBeNull();
+  });
+
+  it("…mas a referência EXISTE (PO-06): com `null` a tela voltaria a pedir 'Escolha um lançamento…'", () => {
+    const r = montarReferencia({ nome: "fz-m2-jul26", temSimulador: false }, leituras());
+    expect(r).not.toBeNull();
+    expect(r?.nome).toBe("fz-m2-jul26");
+    expect(r?.semSimulador).toBe(true);
+    expect(textoDoCabecalhoDaBase(r)).toContain("não tem Planejamento salvo");
+    expect(textoDoCabecalhoDaBase(r)).not.toContain("Escolha um lançamento");
+  });
+
+  it("base COM simulador → referência como hoje", () => {
+    const r = montarReferencia({ nome: "fz-m2-jul26", temSimulador: true }, leituras());
+    expect(referenciaDoInput(r, "pctReembolso")).toBe("4,00%");
+    expect(referenciaDaConversaoOrganica(r, "whatsapp")).toBe("4,00%");
+    expect(referenciaDaConversaoPaga(r, "meta_quente")).toBe("1,20%");
+    expect(r?.semSimulador).toBeFalsy();
+    expect(textoDoCabecalhoDaBase(r)).toContain("aparecem entre parênteses");
+  });
+
+  it("API antiga (sem `temSimulador`) → toda base é 'com simulador', exatamente como hoje (AC7)", () => {
+    const r = montarReferencia({ nome: "fz-m2-jul26" }, leituras());
+    expect(referenciaDoInput(r, "pctReembolso")).toBe("4,00%");
+    expect(baseTemSimulador({})).toBe(true);
+  });
+
+  it("sem base escolhida → sem referência, e o cabeçalho pede a escolha", () => {
+    expect(montarReferencia(null, leituras())).toBeNull();
+    expect(textoDoCabecalhoDaBase(null)).toContain("Escolha um lançamento anterior");
+  });
+});
+
+describe("rotuloDaOpcaoDeBase — o seletor diz qual é 'só realizado' (AC4)", () => {
+  it("sem simulador → `nome · tipo · só realizado`; com simulador ou API antiga → como hoje", () => {
+    expect(rotuloDaOpcaoDeBase({ nome: "fz-m2-jul26", rotuloDoTipo: "meteórico", temSimulador: false })).toBe(
+      "fz-m2-jul26 · meteórico · só realizado",
+    );
+    expect(rotuloDaOpcaoDeBase({ nome: "fz-m2-jul26", rotuloDoTipo: "meteórico", temSimulador: true })).toBe("fz-m2-jul26 · meteórico");
+    expect(rotuloDaOpcaoDeBase({ nome: "fz-m2-jul26", rotuloDoTipo: "meteórico" })).toBe("fz-m2-jul26 · meteórico");
+  });
+});
+
+describe("fraseSemBase — o motivo de não haver base (AC3/AC7)", () => {
+  it("nome sem tipo identificado → a frase de hoje sobre o nome", () => {
+    expect(fraseSemBase({ tipo: null, incluiSemSimulador: true })).toBe(
+      "Sem histórico anterior — o nome deste funil não identifica o tipo de lançamento (pago, gratuito, meteórico ou presencial).",
+    );
+  });
+
+  it("API nova + nenhum anterior → 'primeiro {rótulo} deste expert', sem 'lançamento lançamento' (PO-02)", () => {
+    expect(fraseSemBase({ tipo: "l", incluiSemSimulador: true })).toBe("Sem histórico anterior — este é o primeiro lançamento gratuito deste expert.");
+    expect(fraseSemBase({ tipo: "m", incluiSemSimulador: true })).toBe("Sem histórico anterior — este é o primeiro meteórico deste expert.");
+    expect(fraseSemBase({ tipo: "pg", incluiSemSimulador: true })).toBe("Sem histórico anterior — este é o primeiro lançamento pago deste expert.");
+    expect(fraseSemBase({ tipo: "pr", incluiSemSimulador: true })).toBe("Sem histórico anterior — este é o primeiro evento presencial deste expert.");
+  });
+
+  it("API ANTIGA (PO-03): `bases: []` + tipo + sem o sinal → a frase de hoje, NUNCA 'primeiro…'", () => {
+    // É o fz-m3-set-26 com a API antiga: ela filtra fz-m1/fz-m2 (sem simulador)
+    // e devolve lista vazia — afirmar "primeiro meteórico" seria falso.
+    const f = fraseSemBase({ tipo: "m" });
+    expect(f).toBe("Sem histórico anterior — nenhum lançamento anterior do mesmo tipo tem o Planejamento preenchido.");
+    expect(f).not.toContain("primeiro");
   });
 });
