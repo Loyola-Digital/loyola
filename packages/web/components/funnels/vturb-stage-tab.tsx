@@ -12,7 +12,7 @@
  * sólido, tooltip com o valor liderando, tabela equivalente.
  */
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Video, Plus, Trash2, AlertCircle, Link2, Loader2, Target, TrendingDown,
 } from "lucide-react";
@@ -30,9 +30,11 @@ import {
 } from "@/components/ui/dialog";
 import {
   useVturbConnection, useSaveVturbConnection, useVturbPlayers, useVturbStagePlayers,
-  useLinkVturbPlayer, useUnlinkVturbPlayer, useVturbOverview, type VturbPlayer,
+  useLinkVturbPlayer, useUnlinkVturbPlayer, useVturbOverview, useVturbFunnelVsls, type VturbPlayer,
 } from "@/lib/hooks/use-vturb";
 import { ChartCard, StatTile, VizTooltip, axisProps, gridProps, nf, nfCompact, VIZ_SERIES_1 } from "@/components/spy-conteudo/viz";
+import { estadoDaTabela, intervaloDoBloco } from "@/lib/utils/vturb-tabela"; // Story 29.78
+import { TabelaDasVsls } from "./vturb-tabela-das-vsls"; // Story 29.78
 
 /**
  * Formatadores tolerantes de propósito. A API do VTurb devolve taxa como string
@@ -131,10 +133,29 @@ function mmss(s: number): string {
   return `${m}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 }
 
-function isoDaysAgo(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
+/**
+ * Story 29.78 (AC6) — o seletor de período do BLOCO. Um seletor, uma janela:
+ * a tabela das VSLs e o painel do vídeo leem o mesmo intervalo, calculado no
+ * fuso da conexão (`intervaloDoBloco`) — antes era `toISOString()`, em UTC, e
+ * entre 21h e meia-noite o "hoje" já era amanhã.
+ */
+function SeletorDePeriodo({ dias, onChange }: { dias: number; onChange: (d: number) => void }) {
+  return (
+    <div className="inline-flex rounded-md border border-border/50 p-0.5 text-xs">
+      {[7, 30, 90].map((d) => (
+        <button
+          key={d}
+          type="button"
+          onClick={() => onChange(d)}
+          className={`rounded px-2.5 py-1 transition-colors ${
+            dias === d ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {d}d
+        </button>
+      ))}
+    </div>
+  );
 }
 
 // ============================================================
@@ -392,10 +413,17 @@ function PlayerPicker({
 // ============================================================
 
 function VslDashboard({
-  projectId, stageId, linkId,
-}: { projectId: string; stageId: string; linkId: string }) {
-  const [dias, setDias] = useState(30);
-  const range = { startDate: isoDaysAgo(dias), endDate: isoDaysAgo(0) };
+  projectId, stageId, linkId, dias, range, seletor,
+}: {
+  projectId: string;
+  stageId: string;
+  linkId: string;
+  /** Story 29.78 — o período é do bloco (subiu para `VturbStageTab`). */
+  dias: number;
+  range: { startDate: string; endDate: string };
+  /** O seletor, quando fica aqui — some quando a tabela das VSLs o leva. */
+  seletor: ReactNode;
+}) {
   const { data, isLoading, isFetching } = useVturbOverview(projectId, stageId, linkId, range);
 
   if (isLoading) return <Skeleton className="h-[420px] rounded-xl" />;
@@ -460,20 +488,7 @@ function VslDashboard({
             {pitch ? ` · pitch em ${mmss(pitch)}` : " · sem ponto de pitch"}
           </p>
         </div>
-        <div className="inline-flex rounded-md border border-border/50 p-0.5 text-xs">
-          {[7, 30, 90].map((d) => (
-            <button
-              key={d}
-              type="button"
-              onClick={() => setDias(d)}
-              className={`rounded px-2.5 py-1 transition-colors ${
-                dias === d ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {d}d
-            </button>
-          ))}
-        </div>
+        {seletor}
       </div>
 
       {data.statsReconstruidos && (
@@ -749,7 +764,18 @@ function VslDashboard({
 // ABA
 // ============================================================
 
-export function VturbStageTab({ projectId, stageId }: { projectId: string; stageId: string }) {
+export function VturbStageTab({
+  projectId,
+  stageId,
+  funnelId = null,
+  funnelType = null,
+}: {
+  projectId: string;
+  stageId: string;
+  /** Story 29.78 — o funil da etapa, para a tabela das VSLs (só perpétuo). */
+  funnelId?: string | null;
+  funnelType?: string | null;
+}) {
   const { data: conn } = useVturbConnection(projectId);
   const { data: links, isLoading } = useVturbStagePlayers(projectId, stageId);
   const unlink = useUnlinkVturbPlayer(projectId, stageId);
@@ -758,6 +784,28 @@ export function VturbStageTab({ projectId, stageId }: { projectId: string; stage
 
   const vinculadas = links?.players ?? [];
   const linkId = ativo ?? vinculadas[0]?.id ?? null;
+
+  // Story 29.78 (AC6, PO-06) — o período SUBIU para o bloco: antes era estado
+  // do painel de UM vídeo e só existia com vídeo selecionado. Datas no fuso
+  // da conexão; a tabela e o painel leem este mesmo intervalo.
+  const [dias, setDias] = useState(30);
+  const range = intervaloDoBloco(dias, conn?.timezone);
+
+  // Story 29.78 (AC1) — a tabela das VSLs é do PERPÉTUO; o bloco é
+  // compartilhado com lançamento e mobile, que seguem como eram.
+  const ehPerpetuo = funnelType === "perpetual" && !!funnelId;
+  const vsls = useVturbFunnelVsls(ehPerpetuo && conn?.connected ? projectId : null, funnelId, range);
+  const erroDaTabela = vsls.error as (Error & { status?: number }) | null;
+  const estado = estadoDaTabela({
+    ehPerpetuo,
+    carregando: vsls.isLoading,
+    temErro: !!erroDaTabela,
+    statusDoErro: erroDaTabela?.status,
+    quantidade: vsls.data?.videos.length,
+  });
+  // O seletor fica na tabela quando ela aparece (ela lista o funil inteiro e
+  // vem primeiro); senão, no painel do vídeo, onde sempre esteve.
+  const seletor = <SeletorDePeriodo dias={dias} onChange={setDias} />;
 
   return (
     <div className="space-y-4">
@@ -809,8 +857,26 @@ export function VturbStageTab({ projectId, stageId }: { projectId: string; stage
             </Button>
           </div>
 
+          {estado !== "oculta" && (
+            <TabelaDasVsls
+              estado={estado}
+              dados={vsls.data}
+              erro={erroDaTabela?.message ?? null}
+              atualizando={vsls.isFetching && !vsls.isLoading}
+              range={range}
+              seletor={seletor}
+            />
+          )}
+
           {linkId ? (
-            <VslDashboard projectId={projectId} stageId={stageId} linkId={linkId} />
+            <VslDashboard
+              projectId={projectId}
+              stageId={stageId}
+              linkId={linkId}
+              dias={dias}
+              range={range}
+              seletor={estado === "oculta" ? seletor : null}
+            />
           ) : (
             <div className="rounded-xl border border-dashed border-border/40 p-10 text-center">
               <AlertCircle className="mx-auto mb-2 h-6 w-6 text-muted-foreground" />

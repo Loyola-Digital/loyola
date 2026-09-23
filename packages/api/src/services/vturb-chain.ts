@@ -88,6 +88,18 @@ function taxa(numerador: number, denominador: number, campo: string): TaxaMedida
 }
 
 /**
+ * Pitch que não serve para medir "chegou ao pitch": nulo, não numérico ou
+ * ≤ 0. Com pitch 0 todo mundo que deu play está tecnicamente acima dele e a
+ * taxa dá ~100 % — plausível e vazia (GR-01).
+ *
+ * Story 29.78 — exportada para a tabela das VSLs usar a MESMA regra (lá a
+ * fórmula é outra, a do VTurb; a regra do pitch é esta).
+ */
+export function pitchInvalido(pitchTime: number | null | undefined): boolean {
+  return pitchTime == null || !Number.isFinite(pitchTime) || pitchTime <= 0;
+}
+
+/**
  * Deriva a cadeia a partir dos brutos.
  *
  * @param stats     resposta de `/sessions/stats`
@@ -109,8 +121,8 @@ export function derivarCadeia(stats: VturbSessionStats, pitchTime: number | null
   // todo mundo que deu play está tecnicamente acima do pitch, a taxa dá ~100%
   // e o número é plausível e vazio — exatamente o que GR-01 proíbe. Não
   // calculamos, e dizemos por quê.
-  const pitchInvalido = pitchTime == null || !Number.isFinite(pitchTime) || pitchTime <= 0;
-  const pitchRate: TaxaMedida = pitchInvalido
+  const semPitch = pitchInvalido(pitchTime);
+  const pitchRate: TaxaMedida = semPitch
     ? {
         valor: null,
         motivo: "pitch_time não configurado no VTurb",
@@ -123,7 +135,7 @@ export function derivarCadeia(stats: VturbSessionStats, pitchTime: number | null
     playRate,
     // CHAIN-01: `startedUniq` aparece como numerador acima e denominador aqui.
     pitchRate,
-    convPostPitchDenominador: pitchInvalido ? 0 : overPitch,
+    convPostPitchDenominador: semPitch ? 0 : overPitch,
   };
 }
 

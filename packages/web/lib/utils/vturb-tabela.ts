@@ -1,0 +1,228 @@
+// ============================================================
+// Story 29.78 — as contas da tabela das VSLs do funil perpétuo.
+//
+// Pedido do Danilo (23/09): Play Rate e Retenção ao pitch por vídeo, "igual o
+// VTurb", com linha de Total. A API entrega só BRUTOS; as taxas nascem aqui,
+// num lugar só, porque a linha de Total não tem taxa pronta no VTurb.
+//
+// ## "Igual o VTurb" (conferido contra os brutos de 5 players, 23/09)
+//
+//   Play Rate          = started_device_uniq ÷ viewed_device_uniq
+//   Retenção ao pitch  = over_pitch ÷ (over_pitch + under_pitch)
+//
+// e as duas TRUNCADAS a 2 casas: PPS 13/164 = 7,9268 → o VTurb mostra 7,92,
+// não 7,93. ⚠️ `over + under` NÃO é "quem deu play" (NETÃO: 4.032 contra
+// 3.903 plays únicos) — é a conta do cartão da Análise MVP (29.41), que fica
+// como está (Fora do escopo da story).
+//
+// ## Truncar com INTEIROS (PO-09)
+//
+// Truncar em ponto flutuante erra em razão redonda: 57/100 dá 0,57, ×10000 =
+// 5699,999… e o piso vira 56,99 %. Conferido em 23/09 contra o piso exato
+// (BigInt), em todos os pares p ≤ t ≤ 5.000: `⌊p ÷ t × 100 × 100⌋` diverge em
+// 3.457 pares (o número do @po) e `⌊p ÷ t × 10000⌋` em 1.680. A conta aqui é
+// `⌊p × 10000 ÷ t⌋`, com a correção feita por MULTIPLICAÇÃO de inteiros —
+// nunca confiando no arredondamento da divisão.
+// ============================================================
+
+import { shiftDayKey } from "@loyola-x/shared/src/janela-de-dias";
+
+/** Os quatro brutos por vídeo, como a API devolve. */
+export interface BrutosDaVsl {
+  viewedUniq: number;
+  startedUniq: number;
+  overPitch: number;
+  underPitch: number;
+}
+
+/** Uma linha da resposta de `GET …/funnels/:funnelId/vturb/vsls`. */
+export interface VslDoFunil {
+  playerId: string;
+  nome: string;
+  /** Pitch ATUAL do VTurb, em segundos; `null` quando não configurado. */
+  pitchTime: number | null;
+  pitchConfigurado: boolean;
+  /** `null` quando a leitura deste vídeo falhou. */
+  brutos: BrutosDaVsl | null;
+  erro: string | null;
+}
+
+export interface TabelaDeVslsDoFunil {
+  funnelId: string;
+  range: { startDate: string; endDate: string; timezone: string };
+  videos: VslDoFunil[];
+}
+
+export const MOTIVO_SEM_DADOS = "sem dados no período";
+export const MOTIVO_SEM_PITCH = "pitch não configurado no VTurb";
+export const MOTIVO_FALHA = "falha na leitura";
+
+/** Uma célula de taxa: o texto (`"7,92%"`) ou `null` com o motivo — nunca 0 % no lugar de ausência. */
+export interface CelulaDeTaxa {
+  texto: string | null;
+  motivo: string | null;
+}
+
+const ausente = (motivo: string): CelulaDeTaxa => ({ texto: null, motivo });
+
+/**
+ * `parte ÷ todo` em CENTÉSIMOS DE PONTO PERCENTUAL, truncado: 13/164 → 792
+ * (7,92 %). `null` quando o denominador é zero ou os números não são contagens
+ * válidas — zero no denominador é ausência de medição, não taxa zero.
+ */
+export function centesimosTruncados(parte: number, todo: number): number | null {
+  if (!Number.isInteger(parte) || !Number.isInteger(todo) || todo <= 0 || parte < 0) return null;
+  const alvo = parte * 10000;
+  // Estimativa pela divisão e correção EXATA por multiplicação de inteiros: o
+  // resultado é o maior q com q × todo ≤ parte × 10000, sem depender de como a
+  // divisão em ponto flutuante arredondou.
+  let q = Math.floor(alvo / todo);
+  while (q > 0 && q * todo > alvo) q--;
+  while ((q + 1) * todo <= alvo) q++;
+  return q;
+}
+
+/** 792 → `"7,92%"`; 5700 → `"57,00%"`. Montado a partir dos inteiros, sem `toFixed`. */
+export function textoDePercentual(centesimos: number): string {
+  const inteiro = Math.trunc(centesimos / 100);
+  const fracao = String(centesimos % 100).padStart(2, "0");
+  return `${inteiro},${fracao}%`;
+}
+
+function celula(parte: number, todo: number, motivoDoZero: string): CelulaDeTaxa {
+  const c = centesimosTruncados(parte, todo);
+  return c === null ? ausente(motivoDoZero) : { texto: textoDePercentual(c), motivo: null };
+}
+
+export interface LinhaDaTabela {
+  playerId: string;
+  nome: string;
+  playRate: CelulaDeTaxa;
+  retencao: CelulaDeTaxa;
+  /** Mensagem da falha deste vídeo, para aparecer NA LINHA dele (AC8). */
+  erro: string | null;
+}
+
+/** Story 29.78 (AC3/AC4/AC7/AC8) — uma linha por vídeo. */
+export function linhaDaTabela(v: VslDoFunil): LinhaDaTabela {
+  if (!v.brutos) {
+    return { playerId: v.playerId, nome: v.nome, playRate: ausente(MOTIVO_FALHA), retencao: ausente(MOTIVO_FALHA), erro: v.erro ?? MOTIVO_FALHA };
+  }
+  const b = v.brutos;
+  return {
+    playerId: v.playerId,
+    nome: v.nome,
+    playRate: celula(b.startedUniq, b.viewedUniq, MOTIVO_SEM_DADOS),
+    retencao: v.pitchConfigurado ? celula(b.overPitch, b.overPitch + b.underPitch, MOTIVO_SEM_DADOS) : ausente(MOTIVO_SEM_PITCH),
+    erro: null,
+  };
+}
+
+export interface TotalDaTabela {
+  playRate: CelulaDeTaxa;
+  retencao: CelulaDeTaxa;
+  /** Vídeos que ficaram FORA do Total inteiro — a leitura falhou (AC8). */
+  foraPorFalha: string[];
+  /** Vídeos que entram no Play Rate e ficam fora da Retenção — sem pitch (AC4). */
+  foraDaRetencao: string[];
+}
+
+/**
+ * Story 29.78 (AC2) — a linha de Total, pela SOMA DOS BRUTOS.
+ *
+ * Nunca média de taxas: um vídeo com 50 views e 80 % de play não pesa o mesmo
+ * que um com 5.000 views e 30 %. Um aparelho que viu dois vídeos conta nos
+ * dois — a tela declara.
+ */
+export function totalDaTabela(videos: readonly VslDoFunil[]): TotalDaTabela {
+  let viewed = 0;
+  let started = 0;
+  let over = 0;
+  let under = 0;
+  const foraPorFalha: string[] = [];
+  const foraDaRetencao: string[] = [];
+  for (const v of videos) {
+    if (!v.brutos) {
+      foraPorFalha.push(v.nome);
+      continue;
+    }
+    viewed += v.brutos.viewedUniq;
+    started += v.brutos.startedUniq;
+    if (v.pitchConfigurado) {
+      over += v.brutos.overPitch;
+      under += v.brutos.underPitch;
+    } else {
+      foraDaRetencao.push(v.nome);
+    }
+  }
+  const lidos = videos.filter((v) => v.brutos);
+  if (lidos.length === 0) {
+    // Nenhum vídeo lido: o Total não é "sem dados", é falha — dizer o motivo certo.
+    return { playRate: ausente(MOTIVO_FALHA), retencao: ausente(MOTIVO_FALHA), foraPorFalha, foraDaRetencao };
+  }
+  const semPitchNenhum = lidos.every((v) => !v.pitchConfigurado);
+  return {
+    playRate: celula(started, viewed, MOTIVO_SEM_DADOS),
+    retencao: semPitchNenhum ? ausente(MOTIVO_SEM_PITCH) : celula(over, over + under, MOTIVO_SEM_DADOS),
+    foraPorFalha,
+    foraDaRetencao,
+  };
+}
+
+/** O que o bloco faz com a leitura da tabela. */
+export type EstadoDaTabela = "oculta" | "carregando" | "erro" | "pronta";
+
+/**
+ * Story 29.78 (AC1/AC8/AC9) — a tabela aparece?
+ *
+ * - Só no funil PERPÉTUO: o bloco é compartilhado com lançamento e mobile.
+ * - 404 = a API no ar ainda não tem a rota (deploys em ciclos diferentes): o
+ *   bloco fica como era, sem erro. A rota nova responde 200 com lista vazia
+ *   para funil sem vídeo (PO-08), então o 404 não é ambíguo.
+ * - Qualquer outra falha aparece como erro — nunca uma tabela vazia calada.
+ * - Lista vazia: nenhum vídeo vinculado; o bloco já diz isso.
+ */
+export function estadoDaTabela(input: {
+  ehPerpetuo: boolean;
+  carregando: boolean;
+  statusDoErro: number | null | undefined;
+  temErro: boolean;
+  quantidade: number | undefined;
+}): EstadoDaTabela {
+  if (!input.ehPerpetuo) return "oculta";
+  if (input.temErro) return input.statusDoErro === 404 ? "oculta" : "erro";
+  if (input.carregando) return "carregando";
+  return (input.quantidade ?? 0) > 0 ? "pronta" : "oculta";
+}
+
+const FUSO_PADRAO = "America/Sao_Paulo";
+
+/** O dia civil de `instante` no fuso dado (`YYYY-MM-DD`). Fuso inválido cai no de São Paulo. */
+export function diaNoFuso(instante: Date, timezone: string | null | undefined): string {
+  const formatar = (tz: string) =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(instante);
+  try {
+    return formatar(timezone || FUSO_PADRAO);
+  } catch {
+    return formatar(FUSO_PADRAO);
+  }
+}
+
+/**
+ * Story 29.78 (AC6) — a janela do bloco VSL, no FUSO DA CONEXÃO do VTurb.
+ *
+ * Antes era `toISOString()` (UTC): entre 21h e meia-noite em São Paulo o
+ * "hoje" já era amanhã, e a tela pedia ao VTurb um dia que não começou.
+ *
+ * A régua do período continua a de sempre — de `hoje − dias` até hoje —, só
+ * que com "hoje" no fuso certo. Um seletor, uma janela: tabela e painel do
+ * vídeo leem este mesmo intervalo.
+ */
+export function intervaloDoBloco(
+  dias: number,
+  timezone: string | null | undefined,
+  agora: Date = new Date(),
+): { startDate: string; endDate: string } {
+  const hoje = diaNoFuso(agora, timezone);
+  return { startDate: shiftDayKey(hoje, -dias), endDate: hoje };
+}

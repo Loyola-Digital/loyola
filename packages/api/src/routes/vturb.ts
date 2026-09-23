@@ -19,6 +19,12 @@ import {
   userEngagement, validateToken,
 } from "../services/vturb.js";
 import { ProtocolViolation, derivarCadeia, fonteVturb } from "../services/vturb-chain.js";
+import {
+  condicaoDoFunilNoProjeto,
+  condicaoDosVinculosDoFunil,
+  lerTabelaDasVsls,
+  unirVideosDoFunil,
+} from "../services/vturb-tabela.js"; // Story 29.78
 
 const projectParam = z.object({ projectId: z.string().uuid() });
 const stageParam = z.object({ projectId: z.string().uuid(), stageId: z.string().uuid() });
@@ -478,6 +484,69 @@ export default fp(async function vturbRoutes(fastify) {
         if (err instanceof ProtocolViolation) {
           return reply.code(422).send({ error: err.message, code: "PROTOCOL_VIOLATION" });
         }
+        return replyVturbError(reply, err);
+      }
+    },
+  );
+
+  // ---- GET /funnels/:funnelId/vturb/vsls ---- (Story 29.78)
+  /**
+   * A tabela das VSLs do funil perpétuo: TODOS os vídeos vinculados às etapas
+   * do funil, com os brutos de Play Rate e Retenção ao pitch no período.
+   *
+   * Rota NOVA de propósito: a `/chain` da Análise MVP (29.41) segue igual,
+   * com o `.limit(1)` dela (PO-05). Aqui:
+   *   - funil sem vídeo → 200 com lista vazia, não 404 (PO-08): o 404 fica
+   *     para "a rota não existe" (API antiga), que o front trata como "sem
+   *     tabela" — os dois não podem se confundir;
+   *   - pitch ATUAL, de uma `/players/list` por leitura (AC4/PO-04);
+   *   - uma `sessions/stats` por vídeo, no máximo 3 ao mesmo tempo (AC7);
+   *   - falha de um vídeo fica na linha dele; falha da lista de players é
+   *     falha geral, com o status do VTurb (AC8).
+   * As taxas e o Total nascem no web, dos brutos (`lib/utils/vturb-tabela.ts`).
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/vturb/vsls",
+    async (request, reply) => {
+      if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+      const p = funnelParam.safeParse(request.params);
+      const q = rangeQuery.safeParse(request.query);
+      if (!p.success || !q.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const [funnel] = await fastify.db
+        .select({ id: funnels.id })
+        .from(funnels)
+        .where(condicaoDoFunilNoProjeto(p.data.projectId, p.data.funnelId))
+        .limit(1);
+      if (!funnel) return reply.code(404).send({ error: "Funil não encontrado neste projeto", code: "FUNNEL_NOT_FOUND" });
+
+      const conn = await tokenFor(p.data.projectId);
+      if (!conn) return reply.code(409).send({ error: "VTurb não conectado", code: "NOT_CONNECTED" });
+
+      const vinculos = await fastify.db
+        .select({ playerId: vturbPlayers.playerId, playerName: vturbPlayers.playerName })
+        .from(vturbPlayers)
+        .innerJoin(funnelStages, eq(funnelStages.id, vturbPlayers.stageId))
+        .where(condicaoDosVinculosDoFunil(p.data.projectId, p.data.funnelId));
+
+      const range = { startDate: q.data.startDate, endDate: q.data.endDate, timezone: conn.timezone };
+      try {
+        const videos = await lerTabelaDasVsls({
+          videos: unirVideosDoFunil(vinculos),
+          listarPlayers: () => listPlayers(conn.token, { timezone: conn.timezone }),
+          lerStats: (v) =>
+            sessionStats(conn.token, {
+              playerId: v.playerId,
+              startDate: range.startDate,
+              endDate: range.endDate,
+              timezone: range.timezone,
+              videoDuration: v.videoDuration,
+              pitchTime: v.pitchTime,
+            }),
+        });
+        // A janela devolvida é a ENVIADA ao VTurb — a tela mostra esta, não a pedida.
+        return { funnelId: p.data.funnelId, range, videos };
+      } catch (err) {
         return replyVturbError(reply, err);
       }
     },
