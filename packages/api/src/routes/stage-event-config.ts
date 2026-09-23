@@ -21,6 +21,7 @@ import { readSheetData } from "../services/google-sheets.js";
 import { parseFaturamento } from "../services/parse-faturamento.js";
 import {
   acharColunaDeEmail,
+  acharColunaDeIngresso,
   acharColunaDeNome,
   acharColunaDeTelefone,
 } from "../services/colunas-da-pesquisa.js";
@@ -366,7 +367,13 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     const byEmail = new Map<string, Lead>();
     for (const src of sources) {
       if (byEmail.size >= MAX_LEADS) break;
-      const mapping = (src.mapping ?? {}) as { name?: string; email?: string; telefone?: string; tipo?: string };
+      const mapping = (src.mapping ?? {}) as {
+        name?: string;
+        email?: string;
+        telefone?: string;
+        tipo?: string;
+        ingresso?: string;
+      };
       let data;
       try {
         data = await readSheetData(src.spreadsheetId, src.sheetName);
@@ -386,8 +393,8 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       // Data/hora da compra do ingresso (coluna "data") — usada como evidência
       // temporal nos matches por nome (compra × resposta da pesquisa).
       const dataIdx = headers.findIndex((h) => norm(h) === "data");
-      // Tipo de ingresso (coluna "Ingresso") — ex.: VIP, BLACK, Empreendedor.
-      const ingressoIdx = headers.findIndex((h) => norm(h) === "ingresso");
+      // Tipo de ingresso — "Ingresso" numa planilha, "Categoria" noutra.
+      const ingressoIdx = acharColunaDeIngresso(headers, mapping.ingresso);
       if (emailIdx === -1) continue;
       for (const row of rows) {
         if (byEmail.size >= MAX_LEADS) break;

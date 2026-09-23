@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 import {
   acharColunaDeEmail,
+  acharColunaDeIngresso,
   acharColunaDeNome,
   acharColunaDeTelefone,
 } from "../services/colunas-da-pesquisa.js";
@@ -58,5 +59,21 @@ describe("acharColunaDeTelefone", () => {
   it("acha celular e telefone", () => {
     expect(acharColunaDeTelefone(["Celular"])).toBe(0);
     expect(acharColunaDeTelefone(["Telefone de contato"])).toBe(0);
+  });
+});
+
+describe("acharColunaDeIngresso", () => {
+  const LEADS = ["Nome", "Email", "CPF/CNPJ", "Celular", "Tipo", "Empresa", "Categoria", "Observação"];
+
+  it('acha "Categoria" — a planilha do BBE-PR2-OUT/26 chama assim', () => {
+    expect(acharColunaDeIngresso(LEADS)).toBe(6);
+  });
+
+  it('acha "Ingresso" — o nome usado nas outras', () => {
+    expect(acharColunaDeIngresso(["Nome", "Ingresso"])).toBe(1);
+  });
+
+  it("não confunde com coluna que só CONTÉM a palavra", () => {
+    expect(acharColunaDeIngresso(["Nome", "Quantos ingressos comprou?"])).toBe(-1);
   });
 });

@@ -1105,6 +1105,22 @@ function TicketBadge({ ticket }: { ticket: string }) {
       </span>
     );
   }
+  /**
+   * Qualquer outro ingresso aparece do mesmo jeito, em cinza.
+   *
+   * Devolver `null` escondia "Empreendedor" e "Upgrade" no mapa — a coluna
+   * existia na planilha e a pessoa ficava sem ingresso na tela (23/09/2026).
+   */
+  if (t) {
+    return (
+      <span
+        className="shrink-0 inline-flex items-center rounded-full border border-border px-1.5 py-0.5 text-[9px] font-semibold uppercase text-muted-foreground"
+        title={`Ingresso ${ticket.trim()}`}
+      >
+        {ticket.trim()}
+      </span>
+    );
+  }
   return null;
 }
 
