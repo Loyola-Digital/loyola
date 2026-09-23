@@ -17,6 +17,10 @@ import {
   findMatchingCampaignsForStage,
 } from "../services/stage-phase.js";
 import { etapaDoConvidado } from "../services/escopo-do-convidado.js";
+import {
+  correcoesPorCampanhaSchema,
+  normalizarCorrecoesPorCampanha,
+} from "../utils/lp-correcao-campanha.js";
 
 // ============================================================
 // SCHEMAS
@@ -70,6 +74,9 @@ const updateStageSchema = z.object({
       ]),
     )
     .optional(),
+  // Story 18.83 (AC5): correção manual da tabela de LPs por campanha
+  // (chave = campaign_id; valor vazio remove). Ver `utils/lp-correcao-campanha.ts`.
+  lpCampaignUrls: correcoesPorCampanhaSchema.optional(),
   // Controle Diário: observação por dia (chave = data YYYY-MM-DD). Valor vazio =
   // remover a nota (handler descarta chaves vazias antes de gravar).
   dayNotes: z.record(z.string().max(10), z.string().max(2000)).optional(),
@@ -127,6 +134,8 @@ function stageShape(
     switchyLinkedLinks: (row.switchyLinkedLinks ?? []) as { uniq: number; id: string; domain: string }[],
     ga4PageFilter: row.ga4PageFilter ?? null,
     lpLinks: (row.lpLinks ?? {}) as Record<string, string>,
+    // Story 18.83 (AC5): correção manual por campanha da tabela de LPs.
+    lpCampaignUrls: (row.lpCampaignUrls ?? {}) as Record<string, string>,
     dayNotes: (row.dayNotes ?? {}) as Record<string, string>,
     sortOrder: row.sortOrder,
     lastAuditAt: row.lastAuditAt ? row.lastAuditAt.toISOString() : null,
@@ -428,6 +437,10 @@ export default fp(async function funnelStageRoutes(fastify) {
         if (key && value) cleaned[key] = value;
       }
       updates.lpLinks = cleaned;
+    }
+    // Story 18.83 (AC5): mesma convenção do lpLinks — mapa inteiro, vazio remove.
+    if (body.lpCampaignUrls !== undefined) {
+      updates.lpCampaignUrls = normalizarCorrecoesPorCampanha(body.lpCampaignUrls);
     }
 
     // Controle Diário: observação por dia. Chave = data (trim, sem lowercase);

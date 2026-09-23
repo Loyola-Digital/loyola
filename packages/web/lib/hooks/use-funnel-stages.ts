@@ -1,8 +1,10 @@
 "use client";
 
 import { useApiClient } from "@/lib/hooks/use-api-client";
+import { useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { FunnelStage } from "@loyola-x/shared";
+import { mesclarCorrecao } from "@/lib/utils/lps-do-lancamento";
 
 const STAGE_STALE_TIME = 2 * 60 * 1000; // 2 min
 
@@ -18,6 +20,8 @@ export interface CreateStageInput {
   ga4PageFilter?: string | null;
   /** Story 18.56: URL manual por LP (chave = lpName trim+lowercase; valor vazio remove). */
   lpLinks?: Record<string, string>;
+  /** Story 18.83: correção manual por campanha (chave = campaign_id; valor vazio remove). */
+  lpCampaignUrls?: Record<string, string>;
   /** Controle Diário: observação por dia (chave = data YYYY-MM-DD; valor vazio remove). */
   dayNotes?: Record<string, string>;
 }
@@ -119,4 +123,26 @@ export function useReorderStages(projectId: string, funnelId: string) {
       queryClient.invalidateQueries({ queryKey: ["funnel-stages", projectId, funnelId] });
     },
   });
+}
+
+/**
+ * Story 18.83 (AC5) — grava/remove (url vazia) a correção manual de UMA
+ * campanha da tabela de LPs.
+ *
+ * O PUT substitui o mapa inteiro, então o merge por chave acontece aqui. Depois
+ * de gravar, o mini-funil da etapa é invalidado: ele aplica a mesma correção no
+ * servidor (PO-15b), e sem isso o card da linha nova ficaria até 5 min sem o
+ * lead que a linha ganhou.
+ */
+export function useSalvarCorrecaoDeLp(projectId: string, funnelId: string, stageId: string) {
+  const updateStage = useUpdateStage(projectId, funnelId, stageId);
+  const queryClient = useQueryClient();
+  const { mutateAsync } = updateStage;
+  return useCallback(
+    async (atuais: Record<string, string>, campaignId: string, url: string) => {
+      await mutateAsync({ lpCampaignUrls: mesclarCorrecao(atuais, campaignId, url) });
+      await queryClient.invalidateQueries({ queryKey: ["lp-funnel", projectId, funnelId, stageId] });
+    },
+    [mutateAsync, queryClient, projectId, funnelId, stageId],
+  );
 }

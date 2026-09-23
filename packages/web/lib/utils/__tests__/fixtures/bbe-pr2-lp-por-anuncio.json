@@ -1,0 +1,347 @@
+{
+ "_origem": "bbe-pr2-out-26 › Captação Paga, 90 dias (26/06–23/09/2026), medido no banco em 2026-09-23 (meta_ad_insights_daily + meta_ad_creatives_cache + planilha n8n-leads-lp). Cada 'anúncio' é o grupo (campanha × URL de destino) com os ad_ids reais fundidos — o ad_id é o do primeiro anúncio do grupo; 'anuncios' diz quantos foram fundidos. Os dois grupos 120247625370380489/120247625370600489 são a leva03: campanhas …videos-lpa que levam à captura-d (R$ 3.149,84 sem imposto, 16 leads).",
+ "leadsByLpAntes": {
+  "lpa": {
+   "hot": 20,
+   "cold": 16,
+   "total": 36
+  },
+  "lpd": {
+   "hot": 3,
+   "cold": 28,
+   "total": 31
+  },
+  "lpe": {
+   "hot": 2,
+   "cold": 0,
+   "total": 2
+  }
+ },
+ "leadsPagosForaDaEtapa": 2,
+ "anuncios": [
+  {
+   "adId": "120247233964490489",
+   "campaignId": "120247233964330489",
+   "campaignName": "2026-08-10_netao_bbe-pr2-out-26_venda-ingresso-bbe-escala-lp01_hot_cbo_videos-lpa",
+   "temperature": "hot",
+   "url": "https://lps.netaobombeef.com/bbepr2-captura-a/",
+   "lpKey": "lps.netaobombeef.com/bbepr2-captura-a",
+   "causa": null,
+   "spend": 2856.37,
+   "impressions": 69323,
+   "clicks": 827,
+   "landingPageViews": 689,
+   "pixelLeads": 15,
+   "vendas": 0,
+   "faturamento": 0
+  },
+  {
+   "adId": "120247234266910489",
+   "campaignId": "120247234266950489",
+   "campaignName": "2026-08-10_netao_bbe-pr2-out-26_venda-ingresso-bbe-escala-lp01_cold_cbo_videos-lpa",
+   "temperature": "cold",
+   "url": "https://lps.netaobombeef.com/bbepr2-captura-a/",
+   "lpKey": "lps.netaobombeef.com/bbepr2-captura-a",
+   "causa": null,
+   "spend": 3318.44,
+   "impressions": 63668,
+   "clicks": 694,
+   "landingPageViews": 576,
+   "pixelLeads": 12,
+   "vendas": 0,
+   "faturamento": 0
+  },
+  {
+   "adId": "120247249903270489",
+   "campaignId": "120247249903060489",
+   "campaignName": "2026-08-10_netao_bbe-pr2-out-26_venda-ingresso-bbe-escala-lp01_hot_cbo_estaticos-lpa",
+   "temperature": "hot",
+   "url": "https://lps.netaobombeef.com/bbepr2-captura-a/",
+   "lpKey": "lps.netaobombeef.com/bbepr2-captura-a",
+   "causa": null,
+   "spend": 1125.69,
+   "impressions": 31140,
+   "clicks": 407,
+   "landingPageViews": 301,
+   "pixelLeads": 2,
+   "vendas": 0,
+   "faturamento": 0
+  },
+  {
+   "adId": "120247250397770489",
+   "campaignId": "120247250343220489",
+   "campaignName": "2026-08-10_netao_bbe-pr2-out-26_venda-ingresso-bbe-escala-lp01_cold_cbo_estaticos-lpa",
+   "temperature": "cold",
+   "url": "https://lps.netaobombeef.com/bbepr2-captura-a/",
+   "lpKey": "lps.netaobombeef.com/bbepr2-captura-a",
+   "causa": null,
+   "spend": 618.32,
+   "impressions": 13207,
+   "clicks": 157,
+   "landingPageViews": 87,
+   "pixelLeads": 2,
+   "vendas": 0,
+   "faturamento": 0
+  },
+  {
+   "adId": "120247295862590489",
+   "campaignId": "120247295862580489",
+   "campaignName": "2026-08-12_netao_bbe-pr2-out-26_venda-ingresso-bbe-escala-lp01_cold_cbo_videos-novos-lpa",
+   "temperature": "cold",
+   "url": "https://lps.netaobombeef.com/bbepr2-captura-a/",
+   "lpKey": "lps.netaobombeef.com/bbepr2-captura-a",
+   "causa": null,
+   "spend": 936.57,
+   "impressions": 16825,
+   "clicks": 213,
+   "landingPageViews": 160,
+   "pixelLeads": 1,
+   "vendas": 0,
+   "faturamento": 0
+  },
+  {
+   "adId": "120247296076600489",
+   "campaignId": "120247296069430489",
+   "campaignName": "2026-08-12_netao_bbe-pr2-out-26_venda-ingresso-bbe-escala-lp01_hot_cbo_videos-novos-lpa",
+   "temperature": "hot",
+   "url": "https://lps.netaobombeef.com/bbepr2-captura-a/",
+   "lpKey": "lps.netaobombeef.com/bbepr2-captura-a",
+   "causa": null,
+   "spend": 1233.88,
+   "impressions": 30016,
+   "clicks": 403,
+   "landingPageViews": 335,
+   "pixelLeads": 3,
+   "vendas": 0,
+   "faturamento": 0
+  },
+  {
+   "adId": "120247555388900489",
+   "campaignId": "120247555388890489",
+   "campaignName": "netao_bbe-pr2-out-26_post-25-08-26--trafego-site",
+   "temperature": "unknown",
+   "url": "https://lps.netaobombeef.com/bbepr2-captura-a/",
+   "lpKey": "lps.netaobombeef.com/bbepr2-captura-a",
+   "causa": null,
+   "spend": 382.69,
+   "impressions": 53775,
+   "clicks": 2057,
+   "landingPageViews": 1957,
+   "pixelLeads": 0,
+   "vendas": 0,
+   "faturamento": 0
+  },
+  {
+   "adId": "120247569245770489",
+   "campaignId": "120247569245710489",
+   "campaignName": "2026-08-10_netao_bbe-pr2-out-26_venda-ingresso-bbe-escala-lp01_cold_cbo_videos-lpd",
+   "temperature": "cold",
+   "url": "https://lps.netaobombeef.com/bbepr2-captura-d",
+   "lpKey": "lps.netaobombeef.com/bbepr2-captura-d",
+   "causa": null,
+   "spend": 3396.44,
+   "impressions": 66679,
+   "clicks": 638,
+   "landingPageViews": 537,
+   "pixelLeads": 45,
+   "vendas": 0,
+   "faturamento": 0
+  },
+  {
+   "adId": "120247569245790489",
+   "campaignId": "120247569245720489",
+   "campaignName": "2026-08-10_netao_bbe-pr2-out-26_venda-ingresso-bbe-escala-lp01_hot_cbo_videos-lpd",
+   "temperature": "hot",
+   "url": "https://lps.netaobombeef.com/bbepr2-captura-d",
+   "lpKey": "lps.netaobombeef.com/bbepr2-captura-d",
+   "causa": null,
+   "spend": 301.79,
+   "impressions": 6882,
+   "clicks": 78,
+   "landingPageViews": 61,
+   "pixelLeads": 4,
+   "vendas": 0,
+   "faturamento": 0
+  },
+  {
+   "adId": "120247625370380489",
+   "campaignId": "120247234266950489",
+   "campaignName": "2026-08-10_netao_bbe-pr2-out-26_venda-ingresso-bbe-escala-lp01_cold_cbo_videos-lpa",
+   "temperature": "cold",
+   "url": "https://lps.netaobombeef.com/bbepr2-captura-d",
+   "lpKey": "lps.netaobombeef.com/bbepr2-captura-d",
+   "causa": null,
+   "spend": 1333.09,
+   "impressions": 28643,
+   "clicks": 288,
+   "landingPageViews": 237,
+   "pixelLeads": 8,
+   "vendas": 0,
+   "faturamento": 0
+  },
+  {
+   "adId": "120247625370600489",
+   "campaignId": "120247233964330489",
+   "campaignName": "2026-08-10_netao_bbe-pr2-out-26_venda-ingresso-bbe-escala-lp01_hot_cbo_videos-lpa",
+   "temperature": "hot",
+   "url": "https://lps.netaobombeef.com/bbepr2-captura-d",
+   "lpKey": "lps.netaobombeef.com/bbepr2-captura-d",
+   "causa": null,
+   "spend": 1816.75,
+   "impressions": 39506,
+   "clicks": 340,
+   "landingPageViews": 285,
+   "pixelLeads": 12,
+   "vendas": 0,
+   "faturamento": 0
+  },
+  {
+   "adId": "120247625407600489",
+   "campaignId": "120247625408050489",
+   "campaignName": "2026-08-10_netao_bbe-pr2-out-26_venda-ingresso-bbe-escala-lp01_cold_cbo_videos-lpe",
+   "temperature": "cold",
+   "url": "https://lps.netaobombeef.com/bbepr2-captura-e/",
+   "lpKey": "lps.netaobombeef.com/bbepr2-captura-e",
+   "causa": null,
+   "spend": 1079.88,
+   "impressions": 20985,
+   "clicks": 226,
+   "landingPageViews": 192,
+   "pixelLeads": 0,
+   "vendas": 0,
+   "faturamento": 0
+  },
+  {
+   "adId": "120247625407660489",
+   "campaignId": "120247625407590489",
+   "campaignName": "2026-08-10_netao_bbe-pr2-out-26_venda-ingresso-bbe-escala-lp01_hot_cbo_videos-lpe",
+   "temperature": "hot",
+   "url": "https://lps.netaobombeef.com/bbepr2-captura-e/",
+   "lpKey": "lps.netaobombeef.com/bbepr2-captura-e",
+   "causa": null,
+   "spend": 1079.14,
+   "impressions": 22380,
+   "clicks": 188,
+   "landingPageViews": 154,
+   "pixelLeads": 2,
+   "vendas": 0,
+   "faturamento": 0
+  },
+  {
+   "adId": "120247640350480489",
+   "campaignId": "120247640350210489",
+   "campaignName": "2026-09_netao_bbe-pr2-out-26_venda-ingresso-bbe-escala_hot-remarketing_cbo_estaticos-lpa",
+   "temperature": "hot",
+   "url": "https://lps.netaobombeef.com/bbepr2-captura-a/",
+   "lpKey": "lps.netaobombeef.com/bbepr2-captura-a",
+   "causa": null,
+   "spend": 456.51,
+   "impressions": 11703,
+   "clicks": 92,
+   "landingPageViews": 74,
+   "pixelLeads": 1,
+   "vendas": 0,
+   "faturamento": 0
+  },
+  {
+   "adId": "120247789432340489",
+   "campaignId": "120247789432400489",
+   "campaignName": "netao_bbe-pr2-out-26_post-06-09-26--trafego-site",
+   "temperature": "unknown",
+   "url": "https://lps.netaobombeef.com/bbepr2-captura-a/",
+   "lpKey": "lps.netaobombeef.com/bbepr2-captura-a",
+   "causa": null,
+   "spend": 96.51,
+   "impressions": 41846,
+   "clicks": 1169,
+   "landingPageViews": 828,
+   "pixelLeads": 0,
+   "vendas": 0,
+   "faturamento": 0
+  },
+  {
+   "adId": "120247965960380489",
+   "campaignId": "120247965960530489",
+   "campaignName": "2026-09-22_netao_bbe-pr2-out-26_venda-ingresso-bbe-escala_hot_cbo_videos_a02-lpa",
+   "temperature": "hot",
+   "url": "https://lps.netaobombeef.com/bbe-pr2-a02-lpa/",
+   "lpKey": "lps.netaobombeef.com/bbe-pr2-a02-lpa",
+   "causa": null,
+   "spend": 83,
+   "impressions": 1310,
+   "clicks": 17,
+   "landingPageViews": 12,
+   "pixelLeads": 0,
+   "vendas": 0,
+   "faturamento": 0
+  },
+  {
+   "adId": "120247965990790489",
+   "campaignId": "120247965975260489",
+   "campaignName": "2026-09-22_netao_bbe-pr2-out-26_venda-ingresso-bbe-escala_cold_cbo_videos_a02-lpa",
+   "temperature": "cold",
+   "url": "https://lps.netaobombeef.com/bbe-pr2-a02-lpa/",
+   "lpKey": "lps.netaobombeef.com/bbe-pr2-a02-lpa",
+   "causa": null,
+   "spend": 50.19,
+   "impressions": 889,
+   "clicks": 12,
+   "landingPageViews": 12,
+   "pixelLeads": 0,
+   "vendas": 0,
+   "faturamento": 0
+  }
+ ],
+ "leadsPagosPorAnuncio": {
+  "120247625370600489": {
+   "hot": 9,
+   "cold": 0,
+   "total": 9
+  },
+  "120247234266910489": {
+   "hot": 0,
+   "cold": 8,
+   "total": 8
+  },
+  "120247296076600489": {
+   "hot": 2,
+   "cold": 0,
+   "total": 2
+  },
+  "120247295862590489": {
+   "hot": 0,
+   "cold": 1,
+   "total": 1
+  },
+  "120247249903270489": {
+   "hot": 1,
+   "cold": 0,
+   "total": 1
+  },
+  "120247233964490489": {
+   "hot": 8,
+   "cold": 0,
+   "total": 8
+  },
+  "120247569245790489": {
+   "hot": 3,
+   "cold": 0,
+   "total": 3
+  },
+  "120247569245770489": {
+   "hot": 0,
+   "cold": 28,
+   "total": 28
+  },
+  "120247625407660489": {
+   "hot": 2,
+   "cold": 0,
+   "total": 2
+  },
+  "120247625370380489": {
+   "hot": 0,
+   "cold": 7,
+   "total": 7
+  }
+ }
+}

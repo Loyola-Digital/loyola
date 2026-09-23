@@ -40,8 +40,9 @@ import { useStageSalesByDay } from "@/lib/hooks/use-stage-sales-by-day";
 import { useStageHotColdBuyers } from "@/lib/hooks/use-stage-hot-cold-buyers";
 import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
 import { useLpPerformanceData } from "@/lib/hooks/useLpPerformanceData";
+import { useUserRole } from "@/lib/hooks/use-user-role";
 import { useLpFunnel, useLpFunnelView } from "@/lib/hooks/use-sales-journey";
-import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
+import { useFunnelStage, useSalvarCorrecaoDeLp, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { toast } from "sonner";
 import { useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { expandChartDataV2, calculateProjectionPercentage } from "@/lib/utils/lead-trend-calculations";
@@ -1165,7 +1166,7 @@ function TesteLpSection({
   stageType: StageType;
 }) {
   const [publicoFilter, setPublicoFilter] = useState<"todos" | "hot" | "cold">("todos");
-  const { lps, isLoading, cache } = useLpPerformanceData({ projectId, funnelId, stageId, days, publicoFilter });
+  const { lps, isLoading, cache, correcoes } = useLpPerformanceData({ projectId, funnelId, stageId, days, publicoFilter });
   // Mini-funil por LP: só busca depois que alguém expande a primeira linha.
   const [funilPedido, setFunilPedido] = useState(false);
   const lpFunnel = useLpFunnel(projectId, funnelId, stageId, days, funilPedido);
@@ -1179,6 +1180,13 @@ function TesteLpSection({
       await updateStage.mutateAsync({ lpLinks: next });
     },
     [lpLinks, updateStage],
+  );
+  // Story 18.83 (AC5): correção manual por campanha (guest não edita).
+  const papel = useUserRole();
+  const salvarCorrecao = useSalvarCorrecaoDeLp(projectId, funnelId, stageId);
+  const handleSalvarCorrecao = useCallback(
+    (campaignId: string, url: string) => salvarCorrecao(correcoes, campaignId, url),
+    [correcoes, salvarCorrecao],
   );
   const isPaid = ehCaptacaoPaga(stageType);
 
@@ -1205,6 +1213,7 @@ function TesteLpSection({
           isLoading={false}
           lpLinks={lpLinks}
           onSaveLpLink={handleSaveLpLink}
+          onSalvarCorrecao={papel && papel !== "guest" ? handleSalvarCorrecao : undefined}
           funnelByLp={funil.byLp}
           funnelLoading={lpFunnel.isLoading}
           refConversao={funil.refConversao}

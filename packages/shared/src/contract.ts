@@ -223,4 +223,13 @@
 // `formato`. NÃO aditiva: a API antiga recusa o `perpetuo` sem número com 400
 // do zod — o gerador reconhece (`mensagemDeApiAtrasAoSalvarAnuncio`) e o
 // banner acusa. `packages/mcp` não é afetado (nenhuma tool lê o nome de anúncio).
-export const API_CONTRACT_VERSION = 24;
+// v25 (Story 18.83): campo novo `lpPorAnuncio` em `creative-performance` (a
+// tabela "Desempenho de Testes de LPs" do lançamento passa a identificar a
+// página pela URL do anúncio), `cobertura.anuncio` em `lp-funnel` (o mini-funil
+// atribui pelo `utm_content → ad_id → URL`), e `lpCampaignUrls` na etapa
+// (correção manual por campanha, coluna `funnel_stages.lp_campaign_urls`,
+// migration 0158). ADITIVA; `packages/mcp` não é afetado. O web tem fallback:
+// sem `lpPorAnuncio`, a tabela segue pelo rótulo da campanha, com o lápis.
+// Número do lote de 23/09 — o @devops renumera no merge se outra story do
+// lote subir antes.
+export const API_CONTRACT_VERSION = 25;

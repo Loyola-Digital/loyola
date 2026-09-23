@@ -8,7 +8,7 @@
  */
 
 import { z } from "zod";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   funnels,
@@ -28,6 +28,31 @@ import {
 } from "../utils/creative-sales-metrics.js";
 import { utmContentEfetivo, normalizeNumericId } from "../utils/utm-value.js";
 import { parseValorPlanilha } from "@loyola-x/shared";
+import {
+  classificarLinkDoCache,
+  condicaoDoCacheDeCriativos,
+  listasDaCura,
+  type LinkDoAnuncio,
+} from "../services/lp-do-anuncio.js";
+import { avaliarCura, curarCacheDeLpEmSegundoPlano } from "../services/lp-cache-selfheal.js";
+import { montarLpPorAnuncio } from "../utils/lp-por-anuncio.js";
+
+/**
+ * Story 18.83 (AC10) — versão da chave do cache de 2 h desta rota.
+ *
+ * `:v2` = payload com `pixelLeads` no lpBreakdown (18.81). `:v3` = payload com
+ * `lpPorAnuncio` (a URL de cada anúncio). Sem trocar a chave, o cache servia a
+ * resposta SEM URL por até 2 h depois do deploy — foi exatamente o que
+ * aconteceu com o `pixelLeads` na 18.81. Exportada para o teste travar a versão.
+ *
+ * A troca esfria também a tabela de Criativos (mesma entrada): a primeira
+ * abertura depois do deploy paga a Meta ao vivo.
+ */
+export const VERSAO_DO_CACHE_CREATIVE_PERFORMANCE = "v3";
+
+export function chaveDoCacheCreativePerformance(stageId: string, days: number): string {
+  return `${stageId}:${days}:${VERSAO_DO_CACHE_CREATIVE_PERFORMANCE}`;
+}
 
 const paramsSchema = z.object({
   funnelId: z.string().uuid(),
@@ -245,9 +270,8 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
         });
       }
       const { days, refresh } = queryResult.data;
-      // `:v2` = payload com `pixelLeads` no lpBreakdown. Sem trocar a chave, o
-      // cache de 2h servia a LP sem formulário com zero lead até vencer.
-      const cacheKey = `${stageId}:${days}:v2`;
+      // Versão da chave: ver `VERSAO_DO_CACHE_CREATIVE_PERFORMANCE`.
+      const cacheKey = chaveDoCacheCreativePerformance(stageId, days);
       // Fora do try pra o catch (serve-stale-on-error) enxergar.
       let staleCached: { payload: unknown; computedAt: Date } | null = null;
 
@@ -409,6 +433,10 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
         // herdar a LP da venda a partir do co=. Vendas cujo co= não casa com
         // anúncio do stage (orgânico/recuperação) ficam de fora naturalmente.
         const campaignByAdId = new Map<string, string>();
+        // Story 18.83 (AC4): a MESMA venda dedupada do 18.50, guardada por
+        // anúncio em vez de por rótulo — a tabela de LPs agrupa por URL no web.
+        // Mesmo universo: só `ad_id` das campanhas da etapa (`campaignByAdId`).
+        const vendasPorAnuncio = new Map<string, { vendas: number; faturamento: number }>();
         for (const ad of filteredAds) {
           const aid = normalizeNumericId(ad.ad_id || "");
           if (aid && ad.campaign_name && !campaignByAdId.has(aid)) {
@@ -508,6 +536,10 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               const attributeSaleToLp = (adId: string, value: number) => {
                 const campaignName = campaignByAdId.get(adId);
                 if (!campaignName) return;
+                const porAnuncio = vendasPorAnuncio.get(adId) ?? { vendas: 0, faturamento: 0 };
+                porAnuncio.vendas += 1;
+                porAnuncio.faturamento += value;
+                vendasPorAnuncio.set(adId, porAnuncio);
                 const { lpName, temperature } = lpAndTempFromCampaignName(campaignName);
                 const key = `${lpName}__${temperature}`;
                 const agg = salesByLp.get(key) ?? { vendas: 0, faturamento: 0 };
@@ -792,22 +824,26 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
         // o cache é mantido pelos jobs de sync. Sem cache, a linha simplesmente
         // não ganha link.
         const videoIdByAdId = new Map<string, string>();
+        // Story 18.83 (AC1): a URL de destino sai da MESMA leitura do cache
+        // (PO-13) — `creative.linkUrl`, com a causa quando não há (29.43).
+        // Chave normalizada como o `campaignByAdId`, para casar com a venda.
+        const linkPorAnuncio = new Map<string, LinkDoAnuncio>();
         if (allAdIds.length > 0) {
+          const idsUnicos = Array.from(new Set(allAdIds));
           const linhas = await fastify.db
             .select({
               adId: metaAdCreativesCache.adId,
               creative: metaAdCreativesCache.creative,
             })
             .from(metaAdCreativesCache)
-            .where(
-              and(
-                eq(metaAdCreativesCache.projectId, funnel.projectId),
-                inArray(metaAdCreativesCache.adId, Array.from(new Set(allAdIds))),
-              ),
-            );
+            .where(condicaoDoCacheDeCriativos(funnel.projectId, idsUnicos));
+          const linhaPorId = new Map(linhas.map((l) => [l.adId, l]));
           for (const l of linhas) {
             const v = l.creative?.videoId;
             if (v) videoIdByAdId.set(l.adId, v);
+          }
+          for (const id of idsUnicos) {
+            linkPorAnuncio.set(normalizeNumericId(id), classificarLinkDoCache(linhaPorId.get(id)));
           }
         }
 
@@ -1049,12 +1085,53 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
         }
         const lpBreakdown = Array.from(lpBreakdownMap.values());
 
+        // Story 18.83: a tabela de LPs passa a identificar a página pela URL do
+        // anúncio. O `lpBreakdown` (rótulo da campanha) continua na resposta
+        // para o web ANTERIOR a esta story — web e API sobem em deploys
+        // separados, e um painel antigo diante desta API segue funcionando.
+        const lpPorAnuncio = montarLpPorAnuncio({
+          anuncios: filteredAds,
+          campanhas: campaignInsights,
+          campanhasPermitidas: campaignIdsForFetch,
+          links: linkPorAnuncio,
+          vendas: {
+            vendas: vendasPorAnuncio,
+            ingressos: creativeSaleMetrics,
+          },
+        });
+
+        // Story 18.83 (AC8): a leitura da tabela aciona a mesma auto-cura do
+        // perpétuo (29.56) — sem ela, os anúncios de cache velho do lançamento
+        // nunca saem de "Sem link resolvido" (o sync diário só busca criativo
+        // de anúncio com gasto). Teto de 100 e cooldown de 10 min por projeto
+        // valem aqui também; o disparo NÃO é aguardado.
+        {
+          const { staleInCache, missingFromCache } = listasDaCura(linkPorAnuncio);
+          const agoraMs = Date.now();
+          const { fila } = avaliarCura(funnel.projectId, agoraMs, staleInCache, missingFromCache);
+          if (fila.length > 0) {
+            curarCacheDeLpEmSegundoPlano(
+              {
+                db: fastify.db,
+                projectId: funnel.projectId,
+                metaAccountId: metaAccount.metaAccountId,
+                accessToken: metaAccount.accessToken,
+                staleInCache,
+                missingFromCache,
+                agoraMs,
+              },
+              (erro) => fastify.log.warn({ erro, projectId: funnel.projectId }, "[18.83] cura do cache de LP falhou"),
+            );
+          }
+        }
+
         const payload = {
           stageId,
           stageType: stage.stageType,
           days,
           creatives,
           lpBreakdown,
+          lpPorAnuncio,
           summary: {
             totalSpend,
             totalLeads,

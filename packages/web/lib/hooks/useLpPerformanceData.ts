@@ -3,47 +3,35 @@
 /**
  * Story 18.44 / 18.46: Hook para agregação de performance de Landing Pages (LPs)
  *
- * Story 18.46:
- * - Usa o corte `lpBreakdown` do endpoint creative-performance (agregado por LP ×
- *   temperatura sobre os ads BRUTOS, sem o colapso por ad_name). Cada LP vira 1 linha.
- *   Identificação da LP pelo Campaign Name (sem lpX → LPA, decisão Danilo).
- * - LP View real = landing_page_view da API (somado por LP no backend).
- * - Leads contados da planilha n8n-leads-lp-cap-grat (utm_term/utm_content contém lpX),
- *   ou do pixel da Meta quando a LP não tem formulário (ver `leads-da-lp.ts`),
- *   quebrados por temperatura para o filtro de público.
- * - Filtro de público (hot/cold/todos) efetivo via a temperatura do breakdown.
+ * Story 18.83 — a LP é o link que a pessoa viu:
+ * - Com a API nova, a resposta traz `lpPorAnuncio` (uma entrada por anúncio, com
+ *   a URL de destino do criativo). Cada linha é uma URL normalizada; gasto,
+ *   cliques, LP View, pixel, vendas e ingressos entram POR ANÚNCIO, e o lead
+ *   pago entra pelo `utm_content` dele — todos pelo mesmo mapa `ad_id → URL`,
+ *   que também aplica a correção manual por campanha (`lpCampaignUrls` da
+ *   etapa). A regra mora em `lib/utils/lps-do-lancamento.ts`, com teste.
+ * - Com a API anterior (sem `lpPorAnuncio`), segue o caminho da 18.46: uma linha
+ *   por rótulo `lpX` do nome da campanha (sem lpX → LPA) — a tela fica como era,
+ *   sem erro.
+ * - Filtro de público (hot/cold/todos): gasto e vendas pela temperatura da
+ *   CAMPANHA; o lead pelo texto do próprio lead (PO-07).
  */
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useCrossReferenceLeads } from "@/lib/hooks/useCrossReferenceLeads";
+import { useFunnelStage } from "@/lib/hooks/use-funnel-stages";
 import { applyMetaAdsTax } from "@/lib/utils/funnel-metrics";
-import { leadsDaLp, type FonteDeLeads } from "@/lib/utils/leads-da-lp";
+import { leadsDaLp } from "@/lib/utils/leads-da-lp";
+import { montarLinhasDeLpPorUrl, type LpRow } from "@/lib/utils/lps-do-lancamento";
 import {
   opcoesDaQueryCreativePerformance,
   type StageCreativePerformanceResponse,
 } from "@/lib/hooks/useStageCreativePerformance";
 import type { CacheDaResposta } from "@/lib/utils/recomputo-creative-performance";
 
-export interface LpRow {
-  lpName: string; // "LPA", "LPB", "LPC", etc.
-  investimento: number;
-  cliques: number;
-  impressoes: number;
-  conversoes: number;
-  lpViews: number;
-  leads: number;
-  /** `pixel` = LP sem formulário; os leads vêm do pixel da Meta. */
-  leadsFonte?: FonteDeLeads;
-  vendas?: number;
-  faturamento?: number;
-  // Story 18.60: Ing. Únicos/Totais + Fat. Único/Total por LP (Captação Paga)
-  ingressosUnicos?: number;
-  ingressosTotais?: number;
-  revenueUnico?: number;
-  revenueTotal?: number;
-}
+export type { LpRow };
 
 interface LpPerformanceResult {
   lps: LpRow[];
@@ -51,6 +39,14 @@ interface LpPerformanceResult {
   error?: string;
   /** Story 18.81: `_cache` da resposta — a tela avisa quando é cache vencido. */
   cache?: CacheDaResposta;
+  /**
+   * Story 18.83: `url` = linhas por URL do anúncio (API nova); `rotulo` = por
+   * `lpX` do nome da campanha (API anterior). A tabela escolhe o lápis ou a
+   * correção por campanha por aqui.
+   */
+  modo: "url" | "rotulo";
+  /** Correções por campanha em vigor na etapa (campaign_id → URL). */
+  correcoes: Record<string, string>;
 }
 
 interface UseLpPerformanceDataOptions {
@@ -70,7 +66,7 @@ export function useLpPerformanceData({
 }: UseLpPerformanceDataOptions): LpPerformanceResult {
   const apiClient = useApiClient();
 
-  // creative-performance traz `lpBreakdown` (Story 18.46): agregado por LP × temperatura.
+  // creative-performance traz `lpPorAnuncio` (18.83) e `lpBreakdown` (18.46).
   // Story 18.81: MESMA query da tabela de Criativos (queryKey compartilhada) —
   // um request por página, e o Atualizar recomputa as duas de uma vez.
   const creativesQuery = useQuery<StageCreativePerformanceResponse, Error>({
@@ -86,19 +82,39 @@ export function useLpPerformanceData({
     days,
   });
 
+  // Story 18.83 (AC5): a correção manual por campanha vive na etapa. A query é
+  // a mesma que o dashboard já usa (queryKey compartilhada) — sem fetch novo.
+  const { data: stage } = useFunnelStage(projectId, funnelId, stageId);
+  const correcoes = useMemo(() => stage?.lpCampaignUrls ?? {}, [stage?.lpCampaignUrls]);
+
+  const lpPorAnuncio = creativesQuery.data?.lpPorAnuncio;
+
   const result = useMemo(() => {
+    // Imposto Meta aplica a partir de 2026; o breakdown é agregado no período,
+    // sem data por linha — usamos a data atual (lançamentos correntes são 2026+).
+    const taxDate = new Date().toISOString().slice(0, 10);
+
+    if (lpPorAnuncio) {
+      return {
+        lps: montarLinhasDeLpPorUrl({
+          lpPorAnuncio,
+          correcoes,
+          leadsPorAnuncio: leadsQuery.leadsPagosPorAnuncio,
+          publico: publicoFilter,
+          dataDoImposto: taxDate,
+        }),
+        modo: "url" as const,
+      };
+    }
+
     const breakdown = creativesQuery.data?.lpBreakdown;
     if (!breakdown || breakdown.length === 0) {
-      return { lps: [] as LpRow[], isLoading: false };
+      return { lps: [] as LpRow[], modo: "rotulo" as const };
     }
 
     const lpTotals: Record<string, LpRow> = {};
     // Leads do pixel por LP, já no recorte Hot/Cold (cada entry é LP×temperatura).
     const pixelPorLp: Record<string, number> = {};
-
-    // Imposto Meta aplica a partir de 2026; o breakdown é agregado no período,
-    // sem data por linha — usamos a data atual (lançamentos correntes são 2026+).
-    const taxDate = new Date().toISOString().slice(0, 10);
 
     for (const entry of breakdown) {
       // Story 18.46 (AC7): filtro de público pela temperatura do breakdown
@@ -160,11 +176,20 @@ export function useLpPerformanceData({
       (a, b) => b.investimento - a.investimento,
     );
 
-    return { lps, isLoading: false };
-  }, [creativesQuery.data, leadsQuery.leadsByLp, publicoFilter]);
+    return { lps, modo: "rotulo" as const };
+  }, [
+    lpPorAnuncio,
+    correcoes,
+    creativesQuery.data?.lpBreakdown,
+    leadsQuery.leadsByLp,
+    leadsQuery.leadsPagosPorAnuncio,
+    publicoFilter,
+  ]);
 
   return {
     lps: result.lps,
+    modo: result.modo,
+    correcoes,
     isLoading: creativesQuery.isLoading || leadsQuery.isLoading,
     error: creativesQuery.error?.message || leadsQuery.error,
     cache: creativesQuery.data?._cache,

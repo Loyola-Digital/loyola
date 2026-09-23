@@ -530,6 +530,12 @@ export interface FunnelStage {
   /** Story 18.56: URL manual por LP da tabela de Testes de LPs.
    * Chave = lpName normalizado (trim+lowercase, ex. "lpa"); valor = URL http(s). */
   lpLinks: Record<string, string>;
+  /**
+   * Story 18.83 (AC5): correção manual da tabela de LPs, por campanha.
+   * Chave = campaign_id da Meta; valor = URL http(s). Opcional porque a API
+   * anterior à 18.83 não manda o campo — o web trata ausência como "nenhuma".
+   */
+  lpCampaignUrls?: Record<string, string>;
   /** Controle Diário (Meta Ads TESTE): observação de texto livre por dia.
    * Chave = data YYYY-MM-DD; valor = texto da observação. */
   dayNotes: Record<string, string>;

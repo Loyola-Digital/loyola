@@ -9,6 +9,11 @@
  * - Cliques/Impressões ocultadas (Story 18.45 AC4); Leads/CPL (free) ou Vendas/CPV (paid)
  *   logo após Investimento.
  * - O filtro de público (Hot/Cold/Todos) é controlado pela seção pai (botões temáticos).
+ *
+ * Story 18.83: com a API nova, cada linha é a URL de destino do anúncio (link
+ * puro, hiperlinkado — padrão do perpétuo), a linha "Sem link resolvido" traz as
+ * causas e a correção manual POR CAMPANHA, e o lápis do `lp_links` sai. Com a
+ * API anterior (rótulos "LPA"), a tabela é a de antes, com o lápis.
  */
 
 import React, { useMemo, useState } from "react";
@@ -19,6 +24,7 @@ import {
   ChevronDown,
   ChevronRight,
   ExternalLink,
+  Link2,
   Pencil,
 } from "lucide-react";
 import {
@@ -47,6 +53,13 @@ import {
 import type { LpRow } from "@/lib/hooks/useLpPerformanceData";
 import { LpFunnelCard } from "@/components/funnels/lp-funnel-card";
 import type { LpFunnelRow } from "@/lib/hooks/use-sales-journey";
+import {
+  CHAVE_SEM_LINK,
+  ROTULO_SEM_LINK,
+  chaveDoCardDaLp,
+  descreverSemLink,
+  type SemLinkDaLinha,
+} from "@/lib/utils/lps-do-lancamento";
 
 /** Story 18.60: inteiro pt-BR para colunas de contagem (Ing. Únicos/Totais, LP View). */
 function formatInt(value: number | null | undefined): string {
@@ -60,8 +73,17 @@ interface LpPerformanceTableProps {
   isLoading?: boolean;
   /** Story 18.56: URL por LP (chave = lpName trim+lowercase). */
   lpLinks?: Record<string, string>;
-  /** Story 18.56: salva/remove (url vazia) o link de uma LP. */
+  /**
+   * Story 18.56: salva/remove (url vazia) o link de uma LP. Só vale no modo
+   * rótulo (API anterior à 18.83): no modo URL o lápis sai (AC6) — a linha já é
+   * o link, e o caminho manual é a correção por campanha.
+   */
   onSaveLpLink?: (lpName: string, url: string) => Promise<void>;
+  /**
+   * Story 18.83 (AC5): grava/remove (url vazia) a correção de UMA campanha.
+   * Ausente = sem correção na tela (guest, ou tela sem etapa editável).
+   */
+  onSalvarCorrecao?: (campaignId: string, url: string) => Promise<void>;
   /**
    * Mini-funil por LP (chave = lpName UPPERCASE, como o backend devolve).
    * Ausente = a coluna de expansão não aparece e a tabela fica idêntica à antiga.
@@ -111,6 +133,21 @@ const COLUMN_TOOLTIPS = {
 } as const;
 
 /**
+ * Story 18.83 (PO-02) — com a API nova, a LP é a URL de destino do ANÚNCIO, e
+ * os textos acima (regra do nome da campanha) ficariam falsos. Lição 18.58: o
+ * tooltip é a documentação da fórmula. Só as chaves que mudam.
+ */
+const COLUMN_TOOLTIPS_POR_URL: Partial<Record<keyof typeof COLUMN_TOOLTIPS, string>> = {
+  lp: "URL de destino do anúncio (link do criativo na Meta), sem query, sem www e sem barra final. Uma campanha que leva a duas páginas é dividida entre elas, anúncio a anúncio. Anúncio sem link no cache de criativos vai para \"Sem link resolvido\"",
+  investimento: "Soma do gasto Meta dos anúncios que levam a esta URL + imposto de 12,15%",
+  leads: "Leads pagos da planilha cujo utm_content (ad_id) é de um anúncio que leva a esta URL, respeitando o filtro Hot/Cold. URL sem formulário (nenhum lead na planilha) conta pelo Lead do pixel da Meta desses anúncios — marcada com \"pixel\"",
+  ingressosUnicos: "Compradores únicos de ingresso (dedup por email, sem order bump), atribuídos via co= da venda → anúncio → URL",
+  ingressosTotais: "Todas as vendas (ingresso + order bump) atribuídas via co= da venda → anúncio → URL",
+  faturamentoUnico: "Faturamento das compras únicas de captação (dedup por email, sem order bump), via co= → anúncio → URL",
+  faturamentoTotal: "Faturamento bruto de todas as vendas (ingresso + order bump) atribuídas via co= → anúncio → URL",
+};
+
+/**
  * Story 18.60: modelo de colunas dirigido por descritor — habilita reorder,
  * tooltip e sort clicável (padrão da tabela de Criativos). A coluna "LP"
  * (texto/link via LpNameCell) fica FORA deste array (não é ordenável).
@@ -141,35 +178,37 @@ interface LpColumn {
   kind: LpColKind;
 }
 
+type Tooltips = Record<keyof typeof COLUMN_TOOLTIPS, string>;
+
 // Ordem da Captação Paga (elicitação 18.60): Investimento → Ing. Únicos/Totais →
 // Fat. Único/Total → ROAS → CPL Pago Único → Tx Conv. → CPM/CPC/CTR → LP View → Connect Rate.
-const PAID_COLUMNS: LpColumn[] = [
-  { key: "investimento", label: "Investimento (R$)", tooltip: COLUMN_TOOLTIPS.investimento, kind: "currency" },
-  { key: "ingressosUnicos", label: "Ing. Únicos", tooltip: COLUMN_TOOLTIPS.ingressosUnicos, kind: "int" },
-  { key: "ingressosTotais", label: "Ing. Totais", tooltip: COLUMN_TOOLTIPS.ingressosTotais, kind: "int" },
-  { key: "revenueUnico", label: "Fat. Único (R$)", tooltip: COLUMN_TOOLTIPS.faturamentoUnico, kind: "currency" },
-  { key: "revenueTotal", label: "Fat. Total (R$)", tooltip: COLUMN_TOOLTIPS.faturamentoTotal, kind: "currency" },
-  { key: "roas", label: "ROAS", tooltip: COLUMN_TOOLTIPS.roas, kind: "ratio" },
-  { key: "cplPagoUnico", label: "CPL Pago Único", tooltip: COLUMN_TOOLTIPS.cplPagoUnico, kind: "currency" },
-  { key: "txConv", label: "Tx Conv. (%)", tooltip: COLUMN_TOOLTIPS.txConvPaid, kind: "percent" },
-  { key: "cpm", label: "CPM", tooltip: COLUMN_TOOLTIPS.cpm, kind: "currency" },
-  { key: "cpc", label: "CPC", tooltip: COLUMN_TOOLTIPS.cpc, kind: "currency" },
-  { key: "ctr", label: "CTR (%)", tooltip: COLUMN_TOOLTIPS.ctr, kind: "percent" },
-  { key: "lpViews", label: "LP View", tooltip: COLUMN_TOOLTIPS.lpView, kind: "int" },
-  { key: "connectRate", label: "Connect Rate (%)", tooltip: COLUMN_TOOLTIPS.connectRate, kind: "percent" },
+const paidColumns = (t: Tooltips): LpColumn[] => [
+  { key: "investimento", label: "Investimento (R$)", tooltip: t.investimento, kind: "currency" },
+  { key: "ingressosUnicos", label: "Ing. Únicos", tooltip: t.ingressosUnicos, kind: "int" },
+  { key: "ingressosTotais", label: "Ing. Totais", tooltip: t.ingressosTotais, kind: "int" },
+  { key: "revenueUnico", label: "Fat. Único (R$)", tooltip: t.faturamentoUnico, kind: "currency" },
+  { key: "revenueTotal", label: "Fat. Total (R$)", tooltip: t.faturamentoTotal, kind: "currency" },
+  { key: "roas", label: "ROAS", tooltip: t.roas, kind: "ratio" },
+  { key: "cplPagoUnico", label: "CPL Pago Único", tooltip: t.cplPagoUnico, kind: "currency" },
+  { key: "txConv", label: "Tx Conv. (%)", tooltip: t.txConvPaid, kind: "percent" },
+  { key: "cpm", label: "CPM", tooltip: t.cpm, kind: "currency" },
+  { key: "cpc", label: "CPC", tooltip: t.cpc, kind: "currency" },
+  { key: "ctr", label: "CTR (%)", tooltip: t.ctr, kind: "percent" },
+  { key: "lpViews", label: "LP View", tooltip: t.lpView, kind: "int" },
+  { key: "connectRate", label: "Connect Rate (%)", tooltip: t.connectRate, kind: "percent" },
 ];
 
 // Captação Gratuita: ordem/colunas idênticas a hoje (só ganha sort + tooltips).
-const FREE_COLUMNS: LpColumn[] = [
-  { key: "investimento", label: "Investimento (R$)", tooltip: COLUMN_TOOLTIPS.investimento, kind: "currency" },
-  { key: "leads", label: "Leads", tooltip: COLUMN_TOOLTIPS.leads, kind: "int" },
-  { key: "cpl", label: "CPL", tooltip: COLUMN_TOOLTIPS.cpl, kind: "currency" },
-  { key: "cpm", label: "CPM", tooltip: COLUMN_TOOLTIPS.cpm, kind: "currency" },
-  { key: "cpc", label: "CPC", tooltip: COLUMN_TOOLTIPS.cpc, kind: "currency" },
-  { key: "ctr", label: "CTR (%)", tooltip: COLUMN_TOOLTIPS.ctr, kind: "percent" },
-  { key: "lpViews", label: "LP View", tooltip: COLUMN_TOOLTIPS.lpView, kind: "int" },
-  { key: "connectRate", label: "Connect Rate (%)", tooltip: COLUMN_TOOLTIPS.connectRate, kind: "percent" },
-  { key: "txConv", label: "Tx Conv. (%)", tooltip: COLUMN_TOOLTIPS.txConvFree, kind: "percent" },
+const freeColumns = (t: Tooltips): LpColumn[] => [
+  { key: "investimento", label: "Investimento (R$)", tooltip: t.investimento, kind: "currency" },
+  { key: "leads", label: "Leads", tooltip: t.leads, kind: "int" },
+  { key: "cpl", label: "CPL", tooltip: t.cpl, kind: "currency" },
+  { key: "cpm", label: "CPM", tooltip: t.cpm, kind: "currency" },
+  { key: "cpc", label: "CPC", tooltip: t.cpc, kind: "currency" },
+  { key: "ctr", label: "CTR (%)", tooltip: t.ctr, kind: "percent" },
+  { key: "lpViews", label: "LP View", tooltip: t.lpView, kind: "int" },
+  { key: "connectRate", label: "Connect Rate (%)", tooltip: t.connectRate, kind: "percent" },
+  { key: "txConv", label: "Tx Conv. (%)", tooltip: t.txConvFree, kind: "percent" },
 ];
 
 /** Story 18.60: valor numérico por coluna (null = "—"; sort trata null como 0). */
@@ -177,6 +216,11 @@ type LpComputedRow = {
   lpName: string;
   values: Record<LpSortKey, number | null>;
   leadsFonte?: "planilha" | "pixel";
+  /** Story 18.83: identidade da linha no modo URL (ausente no modo rótulo). */
+  lpKey?: string;
+  url?: string | null;
+  semLink?: SemLinkDaLinha;
+  correcoes?: { campaignId: string; campaignName: string }[];
 };
 
 function formatCell(value: number | null, kind: LpColKind): React.ReactNode {
@@ -316,12 +360,236 @@ function LpNameCell({
   );
 }
 
+/**
+ * Story 18.83 (AC2/AC5) — célula da LP no modo URL.
+ *
+ * - Linha de URL: link puro, hiperlinkado, no formato do perpétuo (texto = URL
+ *   normalizada sem protocolo). Sem lápis (AC6). Se recebeu gasto por correção
+ *   manual, um selo lista as campanhas e deixa remover cada uma.
+ * - Linha "Sem link resolvido": as causas no tooltip e a correção POR CAMPANHA.
+ */
+function LpUrlCell({
+  row,
+  onSalvarCorrecao,
+}: {
+  row: LpComputedRow;
+  onSalvarCorrecao?: (campaignId: string, url: string) => Promise<void>;
+}) {
+  if (row.lpKey === CHAVE_SEM_LINK) {
+    return (
+      <span className="inline-flex items-center gap-1.5 italic text-muted-foreground">
+        <span
+          title={row.semLink ? descreverSemLink(row.semLink) : "sem LP identificada"}
+          className="cursor-help underline decoration-dotted decoration-border/60 underline-offset-2"
+        >
+          {ROTULO_SEM_LINK}
+        </span>
+        {onSalvarCorrecao && row.semLink && row.semLink.campanhas.length > 0 && (
+          <CorrecaoPorCampanha campanhas={row.semLink.campanhas} onSalvar={onSalvarCorrecao} />
+        )}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {row.url ? (
+        <a
+          href={row.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={row.url}
+          className="inline-flex max-w-[360px] items-center gap-1 truncate text-primary hover:underline"
+        >
+          <span className="truncate">{row.lpName}</span>
+          <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+        </a>
+      ) : (
+        row.lpName
+      )}
+      {row.correcoes && row.correcoes.length > 0 && (
+        <CorrecoesAplicadas correcoes={row.correcoes} onSalvar={onSalvarCorrecao} />
+      )}
+    </span>
+  );
+}
+
+/** AC5: escolhe uma campanha com gasto em "Sem link resolvido" e informa a URL. */
+function CorrecaoPorCampanha({
+  campanhas,
+  onSalvar,
+}: {
+  campanhas: SemLinkDaLinha["campanhas"];
+  onSalvar: (campaignId: string, url: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [campanha, setCampanha] = useState("");
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const trimmed = draft.trim();
+  const canSave = !!campanha && trimmed !== "" && isValidLpUrl(trimmed);
+
+  async function handleSave() {
+    if (!canSave) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onSalvar(campanha, trimmed);
+      setOpen(false);
+    } catch {
+      setError("Falha ao salvar — tente novamente.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) {
+          setCampanha(campanhas[0]?.id ?? "");
+          setDraft("");
+          setError(null);
+        }
+      }}
+    >
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded px-1 text-[11px] not-italic text-muted-foreground/70 hover:bg-muted hover:text-foreground transition-colors"
+          aria-label="Corrigir o link por campanha"
+          title="Corrigir o link por campanha"
+        >
+          <Link2 className="h-3 w-3" />
+          Corrigir
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-96 space-y-2 not-italic">
+        <p className="text-sm font-medium">Corrigir o link por campanha</p>
+        <p className="text-[11px] text-muted-foreground">
+          Tudo o que a campanha tem nesta linha — os anúncios dela sem link ou, se ela não tem dado
+          por anúncio, a campanha inteira — passa para a URL informada, com gasto, cliques, LP View,
+          leads, vendas e ingressos. Anúncios que já têm link não mudam.
+        </p>
+        <select
+          className="h-8 w-full rounded-md border border-border/50 bg-background px-1.5 text-xs"
+          value={campanha}
+          onChange={(e) => setCampanha(e.target.value)}
+          aria-label="Campanha"
+        >
+          {campanhas.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.nome || c.id} — {formatCurrency(c.investimento)}
+            </option>
+          ))}
+        </select>
+        <Input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="https://exemplo.com/lp"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void handleSave();
+          }}
+          autoFocus
+        />
+        {trimmed !== "" && !isValidLpUrl(trimmed) && (
+          <p className="text-xs text-destructive">URL inválida — use http:// ou https://</p>
+        )}
+        {error && <p className="text-xs text-destructive">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setOpen(false)} disabled={saving}>
+            Cancelar
+          </Button>
+          <Button size="sm" onClick={handleSave} disabled={!canSave || saving}>
+            {saving ? "Salvando..." : "Salvar"}
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** AC5: a linha recebeu gasto por correção — o selo lista e deixa remover. */
+function CorrecoesAplicadas({
+  correcoes,
+  onSalvar,
+}: {
+  correcoes: { campaignId: string; campaignName: string }[];
+  onSalvar?: (campaignId: string, url: string) => Promise<void>;
+}) {
+  const [removendo, setRemovendo] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const nomes = correcoes.map((c) => c.campaignName || c.campaignId).join(", ");
+
+  async function remover(campaignId: string) {
+    if (!onSalvar) return;
+    setRemovendo(campaignId);
+    setError(null);
+    try {
+      await onSalvar(campaignId, "");
+    } catch {
+      setError("Falha ao remover — tente novamente.");
+    } finally {
+      setRemovendo(null);
+    }
+  }
+
+  const selo = (
+    <span
+      className="cursor-help rounded bg-amber-500/10 px-1 py-0.5 text-[10px] font-medium text-amber-600"
+      title={`Correção manual por campanha: ${nomes}`}
+    >
+      correção manual
+    </span>
+  );
+  if (!onSalvar) return selo;
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" aria-label="Correções manuais desta LP">
+          {selo}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-96 space-y-2">
+        <p className="text-sm font-medium">Correção manual por campanha</p>
+        <p className="text-[11px] text-muted-foreground">
+          O que estas campanhas tinham sem link veio para esta URL. Remover devolve para
+          &quot;Sem link resolvido&quot;.
+        </p>
+        <ul className="space-y-1">
+          {correcoes.map((c) => (
+            <li key={c.campaignId} className="flex items-center justify-between gap-2 text-xs">
+              <span className="truncate" title={c.campaignName}>
+                {c.campaignName || c.campaignId}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void remover(c.campaignId)}
+                disabled={removendo !== null}
+              >
+                {removendo === c.campaignId ? "Removendo..." : "Remover"}
+              </Button>
+            </li>
+          ))}
+        </ul>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function LpPerformanceTable({
   rows,
   stageType,
   isLoading = false,
   lpLinks,
   onSaveLpLink,
+  onSalvarCorrecao,
   funnelByLp,
   funnelLoading = false,
   refConversao = null,
@@ -331,7 +599,13 @@ export function LpPerformanceTable({
   onFirstExpand,
 }: LpPerformanceTableProps) {
   const isPaid = stageType === "paid";
-  const columns = isPaid ? PAID_COLUMNS : FREE_COLUMNS;
+  // Story 18.83: modo URL = a API mandou a URL do anúncio (linhas com `lpKey`).
+  // Sem ela, a tabela é a de antes — rótulos da campanha, com o lápis.
+  const modoUrl = rows.some((r) => r.lpKey !== undefined);
+  const tooltips: Tooltips = modoUrl
+    ? { ...COLUMN_TOOLTIPS, ...COLUMN_TOOLTIPS_POR_URL }
+    : COLUMN_TOOLTIPS;
+  const columns = isPaid ? paidColumns(tooltips) : freeColumns(tooltips);
 
   // Várias LPs podem ficar abertas ao mesmo tempo: comparar página A com página
   // B é o motivo de existir do mini-funil, e um acordeão de uma linha só
@@ -391,6 +665,10 @@ export function LpPerformanceTable({
       return {
         lpName: row.lpName,
         leadsFonte: row.leadsFonte,
+        lpKey: row.lpKey,
+        url: row.url,
+        semLink: row.semLink,
+        correcoes: row.correcoes,
         values: {
           investimento: row.investimento,
           ingressosUnicos: row.ingressosUnicos ?? 0,
@@ -411,6 +689,11 @@ export function LpPerformanceTable({
       };
     });
     return computed.sort((a, b) => {
+      // Story 18.83: "Sem link resolvido" fica no fim em qualquer ordenação,
+      // como no perpétuo — é o resto, não uma página que compete com as outras.
+      const sa = a.lpKey === CHAVE_SEM_LINK ? 1 : 0;
+      const sb = b.lpKey === CHAVE_SEM_LINK ? 1 : 0;
+      if (sa !== sb) return sa - sb;
       const av = a.values[sortCol] ?? 0;
       const bv = b.values[sortCol] ?? 0;
       return sortDir === "asc" ? av - bv : bv - av;
@@ -510,7 +793,7 @@ export function LpPerformanceTable({
             {/* Coluna LP: tooltip, sem sort (texto/link via LpNameCell) */}
             <TableHead>
               <span
-                title={COLUMN_TOOLTIPS.lp}
+                title={tooltips.lp}
                 className="cursor-help underline decoration-dotted decoration-muted-foreground/40 underline-offset-4"
               >
                 LP
@@ -539,15 +822,19 @@ export function LpPerformanceTable({
         </TableHeader>
         <TableBody>
           {sortedRows.map((row, i) => {
-            const aberta = expandidas.has(row.lpName);
+            // Story 18.83: a identidade da linha é a URL (modo URL) ou o rótulo.
+            const id = row.lpKey ?? row.lpName;
+            const semLink = row.lpKey === CHAVE_SEM_LINK;
+            const aberta = expandidas.has(id);
             return (
-              <React.Fragment key={row.lpName}>
+              <React.Fragment key={id}>
                 <TableRow className={aberta ? "border-b-0 bg-muted/30" : undefined}>
-                  {expansivel && (
+                  {expansivel && semLink && <TableCell className="px-1" />}
+                  {expansivel && !semLink && (
                     <TableCell className="px-1">
                       <button
                         type="button"
-                        onClick={() => toggleExpandir(row.lpName)}
+                        onClick={() => toggleExpandir(id)}
                         aria-expanded={aberta}
                         aria-label={`${aberta ? "Recolher" : "Expandir"} funil da ${row.lpName}`}
                         className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -561,13 +848,18 @@ export function LpPerformanceTable({
                     </TableCell>
                   )}
                   <TableCell className="font-medium">
-                    {/* Story 18.56: nome hiperlinkado + lápis (match pela chave
-                        normalizada, mesma do lpTotals no useLpPerformanceData) */}
-                    <LpNameCell
-                      lpName={row.lpName}
-                      url={lpLinks?.[row.lpName.trim().toLowerCase()]}
-                      onSave={onSaveLpLink}
-                    />
+                    {modoUrl ? (
+                      // Story 18.83: a linha É o link — sem lápis (AC6).
+                      <LpUrlCell row={row} onSalvarCorrecao={onSalvarCorrecao} />
+                    ) : (
+                      // Story 18.56 (API anterior à 18.83): nome hiperlinkado +
+                      // lápis (match pela chave normalizada, mesma do lpTotals).
+                      <LpNameCell
+                        lpName={row.lpName}
+                        url={lpLinks?.[row.lpName.trim().toLowerCase()]}
+                        onSave={onSaveLpLink}
+                      />
+                    )}
                   </TableCell>
                   {columns.map((col) => (
                     <TableCell key={col.key} className="text-right tabular-nums">
@@ -604,7 +896,9 @@ export function LpPerformanceTable({
                           stageType={stageType}
                           lpViews={row.values.lpViews ?? 0}
                           investimento={row.values.investimento ?? 0}
-                          funil={funnelByLp?.[row.lpName.toUpperCase()] ?? null}
+                          // Story 18.83 (AC9): casa pela URL (exata) ou pelo
+                          // rótulo em maiúsculas (API anterior).
+                          funil={funnelByLp?.[chaveDoCardDaLp(id)] ?? null}
                           refConversao={refConversao}
                           pctHeranca={pctHeranca}
                           temFonte={temFonte}

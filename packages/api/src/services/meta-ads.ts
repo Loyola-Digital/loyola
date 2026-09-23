@@ -944,7 +944,12 @@ async function fetchAllAdInsightsImpl(
         ? `&filtering=${encodeURIComponent(JSON.stringify([{ field: "campaign.id", operator: "EQUAL", value: idList[0] }]))}`
         : `&filtering=${encodeURIComponent(JSON.stringify([{ field: "campaign.id", operator: "IN", value: idList }]))}`;
 
-  const fields = "impressions,reach,clicks,spend,ctr,cpc,cpm,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,actions,action_values,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_thruplay_watched_actions,video_play_actions";
+  // Story 18.83 (AC3): `inline_link_clicks` entra por ACRÉSCIMO. A tabela de
+  // LPs do lançamento media cliques no link com ele no nível campanha; ao
+  // passar a dividir por anúncio, pedir a mesma métrica no nível anúncio é o
+  // que evita trocar `inline_link_clicks` por `actions.link_click` de carona.
+  // Os outros consumidores desta função ignoram o campo.
+  const fields = "impressions,reach,clicks,spend,ctr,cpc,cpm,inline_link_clicks,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,actions,action_values,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_thruplay_watched_actions,video_play_actions";
 
   // Paginate — Meta defaults to 25 results per page
   type PageResponse = { data: RawAllAdInsight[]; paging?: { next?: string } };
