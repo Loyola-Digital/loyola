@@ -149,6 +149,36 @@ export {
   type SugestaoDeClassificacao,
   type CampoSugerido,
 } from "./nomenclatura-legado.js";
+// Story 29.79: funil e oferta lidos do NOME ATUAL da campanha (nunca da
+// `utm_term`), e o contrato do filtro de funil/oferta do perpétuo. Módulo
+// folha: o web importa por subpath (`@loyola-x/shared/src/funil-e-oferta`).
+export {
+  MOTIVO_SEM_CODIGO,
+  MOTIVO_MAIS_DE_UM_CODIGO,
+  MOTIVO_OFERTA_MISTA,
+  MOTIVO_NOME_NAO_SINCRONIZADO,
+  MOTIVO_SEM_EXPERT,
+  FORA_SEM_UTM_CAMPAIGN,
+  FORA_MACRO_NAO_RESOLVIDA,
+  FORA_CAMPANHA_FORA_DA_ETAPA,
+  FORA_SEM_FUNIL,
+  FORA_SEM_OFERTA,
+  FORA_PLANILHA_SEM_UTM,
+  lerFunilDoNome,
+  lerOfertaDoNome,
+  lerFunilEOfertaDoNome,
+  type MotivoSemDimensao,
+  type LeituraDeDimensao,
+  type OrigemDaDimensao,
+  type CampanhaComFunilEOferta,
+  type OpcaoDoDicionario,
+  type CodigoNaoCadastrado,
+  type CampanhaSemDimensao,
+  type FunilOfertaDoFunil,
+  type MotivoForaDoFiltro,
+  type LinhaForaDoFiltro,
+  type FiltroAplicado,
+} from "./funil-e-oferta.js";
 // Story 18.71: o `utm_content` efetivo de uma célula de planilha — o `co=` chega
 // em três formatos e só um deles é o ad_id puro. Módulo folha: o web importa por
 // subpath (`@loyola-x/shared/src/utm-value`), a API por aqui.

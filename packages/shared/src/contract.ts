@@ -187,4 +187,15 @@
 // a ser o do próprio funil. ADITIVA; `packages/mcp` não é afetado. O web tem
 // fallback: sem os campos, trata toda base como "com simulador" e mantém a
 // frase de hoje para a lista vazia.
-export const API_CONTRACT_VERSION = 20;
+// v21 (Stories 29.79 + 29.80, um bump para o par): rota nova `GET /api/projects/
+// :projectId/funnels/:funnelId/perpetual/funil-oferta` (funil e oferta de cada
+// campanha da etapa, pelo nome ATUAL; dicionário do expert do projeto) e os
+// parâmetros `funil`/`oferta` em `perpetual/sales-data`, `sales-data-daily` e
+// `hourly`, que com filtro devolvem também `filtro` e `foraDoFiltro`. ADITIVA:
+// sem os parâmetros a resposta é byte a byte a de antes, inclusive a rota
+// pública do Inácio — `packages/mcp` não é afetado. ⚠️ Uma API anterior IGNORA
+// `funil`/`oferta` calada (o `z.object` descarta chave desconhecida) e
+// devolveria vendas sem filtro ao lado de mídia filtrada: o painel só manda o
+// parâmetro quando a rota nova respondeu (29.80 AC7). Outras stories do lote de
+// 23/09 também sobem: quem mergear depois rebaseia e recalcula (PO-13).
+export const API_CONTRACT_VERSION = 21;
