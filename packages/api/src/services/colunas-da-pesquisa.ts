@@ -1,5 +1,6 @@
 /**
- * Achar e-mail, nome e telefone numa planilha de pesquisa pelo CABEÇALHO.
+ * Achar e-mail, nome, telefone e ingresso nas planilhas da etapa de evento,
+ * pelo CABEÇALHO.
  *
  * ## Por que existe
  *
@@ -71,5 +72,23 @@ export function acharColunaDeTelefone(headers: string[], mapeada?: string): numb
   return headers.findIndex((h) => {
     const n = semAcento(h);
     return n.includes("whatsapp") || n.includes("telefone") || n.includes("celular");
+  });
+}
+
+/**
+ * A coluna do tipo de ingresso do participante (VIP, Black, Empreendedor).
+ *
+ * Cada planilha de participantes chama isso de um jeito: "Ingresso" numa,
+ * "Categoria" na do BBE-PR2-OUT/26. Antes só "Ingresso" era lido, e a coluna
+ * do outro nome ficava invisível no mapa e no plano.
+ */
+export function acharColunaDeIngresso(headers: string[], mapeada?: string): number {
+  if (mapeada) {
+    const i = headers.indexOf(mapeada);
+    if (i !== -1) return i;
+  }
+  return headers.findIndex((h) => {
+    const n = semAcento(h);
+    return n === "ingresso" || n === "ingressos" || n === "categoria" || n === "tipo de ingresso";
   });
 }
