@@ -93,6 +93,7 @@ import {
 import { EventSourcesTab } from "@/components/funnels/event-sources-tab";
 import { LeadDetailDialog, RevenueMatchBadge, type RoiLead } from "@/components/funnels/roi-calculator";
 import type { EventLeadStatus, EventMapLead } from "@loyola-x/shared";
+import { ehApoioDoEvento } from "@/lib/utils/apoio-do-evento";
 
 interface EventStageViewProps {
   projectId: string;
@@ -1149,6 +1150,15 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
   const setSellerBulk = useSetEventLeadSellerBulk(projectId, funnelId, stageId);
   const closersQ = useEventClosers(projectId, funnelId, stageId);
   const closerNames = useMemo(() => closersQ.data?.closers.map((c) => c.name) ?? [], [closersQ.data]);
+  /**
+   * Patrocinador e empreendedor ficam FORA da lista por padrão.
+   *
+   * A lista do mapa é de quem o closer vai abordar. Patrocinador, fornecedor e
+   * as equipes deles entram no evento por cortesia ou acordo — no BBE-PR2-OUT/26
+   * são 35 das 70 pessoas, e elas empurravam os compradores para a segunda
+   * página. O botão mostra quando alguém precisar.
+   */
+  const [mostrarApoio, setMostrarApoio] = useState(false);
   const [filter, setFilter] = useState<"all" | EventLeadStatus>("all");
   const [sellerFilter, setSellerFilter] = useState<string>("all"); // "all" | "none" | nome do closer
   const [query, setQuery] = useState("");
@@ -1163,6 +1173,7 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
   // por maior faturamento (sem faturamento vai por último dentro do tipo).
   const visible = useMemo(() => {
     let arr = leads;
+    if (!mostrarApoio) arr = arr.filter((l) => !ehApoioDoEvento(l));
     if (filter !== "all") arr = arr.filter((l) => l.status === filter);
     if (sellerFilter !== "all") {
       arr = arr.filter((l) => (sellerFilter === "none" ? !l.assignedSeller : l.assignedSeller === sellerFilter));
@@ -1182,7 +1193,10 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
       if (pa !== pb) return pa - pb;
       return (b.revenue ?? -1) - (a.revenue ?? -1);
     });
-  }, [leads, filter, sellerFilter, query]);
+  }, [leads, mostrarApoio, filter, sellerFilter, query]);
+
+  /** Quantos estão escondidos agora — o número que o botão mostra. */
+  const apoio = useMemo(() => leads.filter(ehApoioDoEvento).length, [leads]);
 
   // Emails visíveis (base do "selecionar todos").
   const visibleEmails = useMemo(() => visible.map((l) => l.email), [visible]);
@@ -1398,6 +1412,21 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
             </button>
           ))}
         </div>
+        {apoio > 0 && (
+          <button
+            type="button"
+            onClick={() => setMostrarApoio((v) => !v)}
+            title="Patrocinador, fornecedor e empreendedor não são leads de venda"
+            className={`shrink-0 rounded-lg border px-2.5 py-1 text-[12px] font-medium transition-colors ${
+              mostrarApoio
+                ? "border-[#d4af37]/50 bg-[#d4af37]/10 text-[#d4af37]"
+                : "border-[#1f2937] bg-[#111827] text-[#9ca3af] hover:text-[#f3f4f6]"
+            }`}
+          >
+            {mostrarApoio ? "Ocultar" : "Mostrar"} patrocinador e empreendedor
+            <span className="ml-1 tabular-nums opacity-80">{apoio}</span>
+          </button>
+        )}
         <div className="sm:ml-auto shrink-0">
           <Select value={sellerFilter} onValueChange={setSellerFilter}>
             <SelectTrigger className="h-8 w-[200px] text-[12px] bg-[#111827] border-[#1f2937] text-[#f3f4f6]">
