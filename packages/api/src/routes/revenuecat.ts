@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { calcularMetricasDerivadas } from "../utils/metricas-revenuecat.js";
+import { consultaDaJornada, consultaDoInicioDaAssinatura, lerLinhaDaJornada, montarJornada } from "../utils/jornada-lyrio.js";
 import { eq, and, gte, inArray, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import fp from "fastify-plugin";
@@ -468,6 +469,56 @@ export default fp(async function revenuecatRoutes(fastify) {
         daily,
         byStore: byStore.filter((s) => s.store),
         byProduct: byProduct.filter((p) => p.productId),
+      };
+    },
+  );
+
+  // ---- GET jornada por canal ---- (Story 42.11)
+  /**
+   * A jornada do usuário por canal: Novos → viu paywall → interagiu → iniciou
+   * (teste) → pagou, com a receita. Coorte = primeiro evento do usuário na
+   * janela `days`; etapas contadas até hoje (AC2). Guarda igual à de `/sales`:
+   * `getProjectAccess` (guest sem vínculo → 404) E `getStage` (a etapa é deste
+   * funil e deste projeto) — não o modelo de `/metricas-derivadas`, que pula o
+   * `getStage` e traz a tabela inteira para a memória (PO-06).
+   *
+   * Agrega NO BANCO (uma linha por usuário, sem o id) e classifica o canal em
+   * `utils/jornada-lyrio.ts`. Só contagens na resposta — nunca `app_user_id`.
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/revenuecat/jornada",
+    async (request, reply) => {
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const query = salesQuerySchema.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+      const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const desde = new Date(Date.now() - query.data.days * 86_400_000);
+      const [usuarios, inicio] = await Promise.all([
+        fastify.db.execute(consultaDaJornada(params.data.stageId, desde)),
+        fastify.db.execute(consultaDoInicioDaAssinatura(params.data.stageId)),
+      ]);
+      const jornada = montarJornada(
+        (usuarios.rows as Record<string, unknown>[]).map(lerLinhaDaJornada),
+        desde,
+      );
+      const primeiraAssinatura = (inicio.rows[0] as { desde?: unknown } | undefined)?.desde;
+      const assinaturaDesde =
+        primeiraAssinatura instanceof Date
+          ? primeiraAssinatura.toISOString().slice(0, 10)
+          : typeof primeiraAssinatura === "string" && primeiraAssinatura
+            ? new Date(primeiraAssinatura).toISOString().slice(0, 10)
+            : null;
+
+      return {
+        days: query.data.days,
+        desde: desde.toISOString().slice(0, 10),
+        assinaturaDesde,
+        ...jornada,
       };
     },
   );

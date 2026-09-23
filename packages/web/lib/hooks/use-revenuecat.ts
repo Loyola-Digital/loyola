@@ -6,6 +6,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api-client";
+import { tentarDeNovoAJornada, type JornadaDoLyrio } from "@/lib/utils/jornada-lyrio";
 
 const STALE = 60 * 1000;
 
@@ -278,5 +279,27 @@ export function useRevenuecatMetricasDerivadas(
         `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/metricas-derivadas`,
       ),
     staleTime: STALE,
+  });
+}
+
+// ============================================================
+// Story 42.11 — jornada do usuário por canal (webhook, agregada na API).
+// ============================================================
+
+/**
+ * ⚠️ Rota NOVA: a API em produção pode ser mais velha que o painel e responder
+ * 404 — o bloco some (`estadoDoBlocoDaJornada`) e o banner de versão explica.
+ * Insistir não adianta: a rota não passa a existir entre um retry e outro.
+ */
+export function useRevenuecatJornada(projectId: string, funnelId: string, stageId: string, days: number) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["revenuecat-jornada", stageId, days],
+    queryFn: () =>
+      apiClient<JornadaDoLyrio>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/jornada?days=${days}`,
+      ),
+    staleTime: STALE,
+    retry: tentarDeNovoAJornada,
   });
 }
