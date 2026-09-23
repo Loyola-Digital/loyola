@@ -1,0 +1,43 @@
+schema: 1
+story: '47.16'
+story_title: 'Nome de anúncio v3 — `perpetuo` sem número, hook e body saem do nome'
+gate: CONCERNS
+status_reason: 'Código correto e os 13 ACs atendidos no código, com a opção (B) aplicada como o Danilo decidiu. Das quatro mutações próprias, duas caíram e duas sobreviveram. A mais séria: o `.nullable()` do zod do PATCH é o que deixa o gerador editar QUALQUER anúncio de `perpetuo`, os 6 do dg inclusive, porque ele manda sempre `launchSeq: null`; tirá-lo derruba 0 de 94 testes. Migration 0157, script do AC9 e validação visual continuam pendentes, e são operação, não código.'
+reviewer: 'Quinn'
+updated: '2026-09-23T18:30:00Z'
+branch: 'feat/47.16-nome-de-anuncio-v3'
+commit_reviewed: '21aa73f1'
+
+top_issues:
+  - id: TEST-001
+    severity: medium
+    category: tests
+    description: 'O corpo que o gerador manda no PATCH (`gerador-de-anuncio.tsx`: `launchSeq: corpo.launchSeq`, que é `null` com `perpetuo`) não tem teste de rota. Mutação M4 tirou `.nullable()` do `launchSeq` do zod do PATCH (`routes/nomenclatura.ts:1193`) e as três suítes da story passaram (94/94). Em produção, essa regressão devolve 400 do zod a toda edição de anúncio de `perpetuo`, inclusive trocar só a descrição de um dos 6 do dg. Os testes de PATCH da 47.16 omitem o campo (`{ launchType: "perpetuo" }`, `{ notes }`, `{ date }`), e é justamente o caminho que a tela NÃO usa.'
+    recommendation: 'Um teste em `nomenclatura-rotas.test.ts` com o corpo que o gerador monta: PATCH num registro de `perpetuo` com `{ launchType: "perpetuo", launchSeq: null, date, description, notes }` → 200, `launchSeq: null` e nome sem número. Melhor ainda: montar o corpo com `corpoDoAnuncio` e não à mão.'
+    status: open
+
+  - id: TEST-002
+    severity: low
+    category: tests
+    description: 'Mutação M2: `numeroDoLancamentoNoPatch` passou a tratar `null` explícito como "não veio" (`b.launchSeq !== undefined && b.launchSeq !== null`), e 0 testes caíram. Com essa mudança, um PATCH `{ launchSeq: null }` num registro `pg04` mantém o 4 calado, quando deveria dar 400 em `launchSeq`. Pela tela não dá para chegar lá: sem número numa sigla que exige número, a prévia fica incompleta e o Salvar desabilitado. Pela API direta, dá.'
+    recommendation: 'Uma linha no teste da função: `numeroDoLancamentoNoPatch({ launchSeq: null }, pg04)` → `null` (e a rota dá 400 com `campo: "launchSeq"`).'
+    status: open
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Diff de 22 arquivos lido inteiro. Regra do número em um lugar só por camada: `validarLancamento` (build), regex `^([a-z]+)(\d{2})?$` com a regra depois (parse) e 400 com `campo: "launchSeq"` no serviço, antes do build. `numeroDoLancamentoNoPatch` cobre PO-03/PO-04. O formato do vídeo é lido do `name` gravado (`formatoDoVideoGravado`: 7 = v2, 4 = antigo, resto = v3), o que resolve o AC8 sem coluna nova, e o serviço ainda força `v3` fora do vídeo (defesa em profundidade). `SIGLA_SEM_NUMERO` foi redeclarada no módulo folha, com teste que a iguala a `PERPETUO` (PO-09); não há import de valor entre módulos do shared. O script do AC9 não passa por `montarAnuncio` (usa os 6 literais), confere o `information_schema` antes de tudo, faz o plano (inserir / já registrado / colisão → para) e grava numa transação, pelo `inserir` do repositório, que registra changelog. Modo planejamento conferido no código: só SELECTs. Não rodei: não há `DATABASE_URL` na worktree e, com a 0157 ainda não aplicada, a guarda sairia com código 1 antes de planejar. Decisões das 5.x conferidas: 5.1 (número proibido só em `perpetuo`) ✓ · 5.2 (constante fixa, não atributo do dicionário) ✓ · 5.3 (hook/body escolhidos, obrigatórios, gravados, fora do nome; origem fica) ✓ · 5.5 (`--` opcional no parse) ✓ · opção (B) (`name` sem descrição termina na data, `structure` mantém o `--`) ✓.'
+  autonomous_decisions: '(1) "Opção B vale para todo tipo": CORRETA. O AC2 dá `ad07_dg_perpetuo_09-2026` como exemplo, um `ad` sem `--`, e nem o AC4 nem a 5.5 restringem ao vídeo. Aplicar só ao `adv` criaria duas regras para o mesmo separador. (2) "Copiar nome completo" habilitado sem descrição: é a consequência NECESSÁRIA da opção B. O nome gravado deixou de ser igual à estrutura, e o botão é o único jeito de copiar o nome exato que o registro e o parse consideram o nome; desabilitado, esconderia justamente isso. (3) AC11 por dois sinais (veredito do contrato OU assinatura em inglês do zod 4 em `launchSeq`), excluindo as recusas em português da própria API nova: correto, e a assinatura do zod 4.3.6 está fixada por teste na API. (4) Migration sem CHECK `perpetuo ↔ NULL`: coerente com a 5.2, porque a regra é da constante no código.'
+  unit_tests: 'Suítes da story: API 94/94 (nome 32 · rotas 53 · registro 9), web 35/35 (nomenclatura-anuncio 18 · fio 8 · mensagem-de-api-atras 9; o Dev Record fala em "web 34"). Suítes completas: web 1464/1464 (108 arquivos); API 3135 passando / 10 falhando, as 10 do baseline em 5 arquivos (funnel-stages-lead-inputs 3, projects 3, schema 2, instagram-routes 1, instagram 1). Mutações próprias, cada uma aplicada, rodada e revertida com `git checkout` (`git status` vazio depois de cada uma): M1 `structure` perde o `--` no `buildAdName` → 13 falhas na API + 6 no web · M2 `null` explícito no PATCH tratado como "não veio" → SOBREVIVEU (TEST-002) · M3 `formatoDoAnuncioGravado` sem a guarda `ehVideo` (um `ad` seria editado como "antigo" e o build lançaria) → 1 falha · M4 zod do PATCH sem `.nullable()` → SOBREVIVEU (TEST-001).'
+  acceptance_criteria: 'AC1 ✓ · AC2 ✓ · AC3 ✓ (422 no v3 sem hook/body; `faltaForaDoNome` bloqueia o Salvar) · AC4 ✓ opção B · AC5 ✓ (5/7/4 campos, aviso próprio do v2) · AC6 ✓ no código (ver TEST-001: o PATCH com `null` é o caminho da tela e não tem teste) · AC7 ✓ · AC8 ✓ · AC9 ✓ no código (script e lógica testados; execução pendente, DoD) · AC10 ✓ (§ 11.1 reescrita; a linha do "Copiar estrutura (até o `--`)" não mudou, como pede o PO-06) · AC11 ✓ · AC12 ✓ · AC13 ✓ (eslint dos 19 arquivos tocados: 0; tsc da API rodado aqui: 0; tsc e `next build` do web conforme o Dev Record, não refeitos).'
+  no_regressions: 'Nenhum nome hoje válido deixa de ser, exceto `perpetuoNN` (proibido pelo AC1), e `naming_ads` está vazia em produção. O v2 e o padrão antigo seguem válidos, cada um com o seu aviso. Leitores de `naming_ads.launch_seq`: `maiorLancamento` (o `max` do SQL ignora NULL) e as duas tabelas do web, que agora passam por `textoDoLancamento`. `packages/mcp` não lê nome de anúncio.'
+  performance: 'N/A: nenhuma consulta nova no caminho da tela. `/ads/proximo` deixa de consultar `maiorLancamento` com `perpetuo`. O gerador passou a ler `useApiHealth` (query `["api-health"]` compartilhada com o banner, staleTime de 30 min).'
+  security: 'Rotas e guardas iguais às da 47.10–47.15. Entrada validada no zod e no serviço. Sem PII (o nome do anúncio é código). O script lê `DATABASE_URL` do `.env` e só grava com `--aplicar`, numa transação.'
+  documentation: 'Spec § 11.1 atualizada (v3, `perpetuo` sem número, `--` opcional, v2 com aviso próprio, os 6 do dg). Migration com cabeçalho: ordem de aplicação e SELECT de prova. Textos da tela conferidos: "perpétuo não tem número — o lançamento entra no nome só como perpetuo."; aviso "escolha hook e body — não entram no nome, mas são obrigatórios e gravados."; e a mensagem de API atrás do AC11. Pendência do @po, fora desta story: a 47.16 ainda não aparece na tabela da Fase 3 do `epic-47-nomenclatura-de-campanhas.md`.'
+  api_contract: '19 → 20 com linha de histórico, declarado NÃO aditivo (a API antiga recusa `perpetuo` sem número). A `main` segue em 19 (conferido em `origin/main` 9a9dcde8). 29.78, 29.79, 18.83, 48.13 e 42.11 também sobem para 20; a renumeração no merge é do @devops.'
+
+notes:
+  - 'ORDEM DE PRODUÇÃO (PO-12), a cumprir pelo @devops/Danilo: (1) aplicar a 0157 e provar `is_nullable = YES`, ANTES do deploy da API, senão o INSERT de `perpetuo` quebra; (2) deploy; (3) script do AC9 com `--aplicar`, ANTES de qualquer cadastro do dg (entre o deploy e o script, o gerador sugere `01`); (4) SELECT de prova e segunda rodada = 0.'
+  - 'Migrations do lote sem colisão: 47.16 = 0157, 18.83 = 0158; 42.11, 29.78, 29.79 e 48.13 não trazem migration.'
+  - 'Consequência da opção B, para a validação visual: depois de Salvar, a área de transferência recebe a `structure` (com `--`). Se o designer colar no Meta sem descrição, o nome no Meta termina em `--` e o `name` gravado não. O parse aceita as duas grafias; hoje nada casa o nome do Meta com `naming_ads.name` por igualdade.'
+  - '`.git` compartilhado: há refs com nome quebrado de sync do iCloud (`refs/heads/feat/42 2.11-…`, `feat/29.79-29 2.80-…`). O git as ignora com aviso. Não mexi; é do @devops.'
