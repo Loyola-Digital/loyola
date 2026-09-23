@@ -3,13 +3,17 @@ import {
   ESTADO_VAZIO_DO_ANUNCIO,
   aoEscolherNoAnuncio,
   camposDoAnuncio,
+  comSugestaoDoLancamento,
   corpoDoAnuncio,
   ehVideoDoPadraoAntigo,
   estadoDeAnuncio,
+  formatoDoAnuncioGravado,
   mesAnoDe,
   mesCorrente,
   nnDe,
   previaDoAnuncio,
+  siglaParaSugestao,
+  textoDoLancamento,
 } from "../nomenclatura-anuncio";
 
 const experts = [{ id: "e", code: "dg" }];
@@ -36,21 +40,24 @@ describe("estado do gerador (AC8)", () => {
 });
 
 describe("prévia = função do servidor (AC8)", () => {
-  it("completa: estrutura até o -- e nome igual sem descrição; com descrição normalizada, nome completo", () => {
+  // 47.16 (AC4, opção B — PO-11): sem descrição o nome termina na data; a estrutura (o "Copiar estrutura") segue com `--`.
+  it("completa: estrutura até o -- e nome sem o -- quando não há descrição; com descrição normalizada, nome completo", () => {
     const p = previaDoAnuncio(cheio, experts);
     expect(p.estrutura).toBe("ad03_dg_pg02_09-2026--");
-    expect(p.nome).toBe("ad03_dg_pg02_09-2026--");
+    expect(p.nome).toBe("ad03_dg_pg02_09-2026");
     expect(p.completo).toBe(true);
     const q = previaDoAnuncio({ ...cheio, description: "Gancho Demissão" }, experts);
     expect(q.nome).toBe("ad03_dg_pg02_09-2026--gancho-demissao");
     expect(q.estrutura).toBe("ad03_dg_pg02_09-2026--");
     expect(q.tamanho).toBe(q.nome!.length);
   });
-  it("parcial: … no que falta, -- sempre desenhado, Salvar bloqueado", () => {
+  // 47.16 (PO-08): o fallback desenha o NOME — o `--` só com descrição (antes: sempre).
+  it("parcial: … no que falta, -- só com descrição, Salvar bloqueado", () => {
     const p = previaDoAnuncio({ ...cheio, launchSeq: "", date: "" }, experts);
     expect(p.completo).toBe(false);
     expect(p.nome).toBeNull();
-    expect(p.texto).toBe("ad03_dg_…_…--");
+    expect(p.texto).toBe("ad03_dg_…_…");
+    expect(previaDoAnuncio({ ...cheio, launchSeq: "", description: "gancho" }, experts).texto).toBe("ad03_dg_…_09-2026--gancho");
     expect(p.pedacos.filter((x) => x.faltando).map((x) => x.campo)).toEqual(["launch", "date"]);
   });
   it("descrição com _ ou -- é rejeitada pela MESMA normalização do servidor e trava o nome", () => {
@@ -83,16 +90,23 @@ describe("Story 47.13 — vídeo v2 no gerador", () => {
     // ad → adv não inventa nada: os três continuam vazios até a pessoa escolher
     expect(aoEscolherNoAnuncio(cheio, "creativeType", "adv")).toMatchObject({ creativeType: "adv", origin: "", hookId: "", bodyId: "" });
   });
-  it("AC3/AC9: prévia do vídeo tem 7 pedaços na ordem do pedido, com os códigos (não os ids) do hook e body; sem hook escolhido, Salvar fica bloqueado", () => {
+  // 47.16 (AC2/AC3): o vídeo novo é v3 — 5 pedaços, hook/body fora do nome MAS exigidos (faltaForaDoNome trava o Salvar).
+  it("AC3/AC9 + 47.16: prévia do vídeo v3 tem 5 pedaços; hook e body não entram no nome, mas sem eles Salvar fica bloqueado", () => {
     const p = previaDoAnuncio(video, experts, partes);
-    expect(p.pedacos.map((x) => x.campo)).toEqual(["creative", "origin", "expert", "launch", "hook", "body", "date", "description"]);
-    expect(p.estrutura).toBe("adv01_h_dg_pg04_h01_b01_09-2026--");
-    expect(p.completo).toBe(true);
+    expect(p.pedacos.map((x) => x.campo)).toEqual(["creative", "origin", "expert", "launch", "date", "description"]);
+    expect(p.estrutura).toBe("adv01_h_dg_pg04_09-2026--");
+    expect(p.nome).toBe("adv01_h_dg_pg04_09-2026");
+    expect(p).toMatchObject({ completo: true, faltaForaDoNome: [] });
     const semHook = previaDoAnuncio({ ...video, hookId: "" }, experts, partes);
-    expect(semHook.completo).toBe(false);
-    expect(semHook.texto).toBe("adv01_h_dg_pg04_…_b01_09-2026--");
+    expect(semHook).toMatchObject({ completo: false, faltaForaDoNome: ["hook"], nome: "adv01_h_dg_pg04_09-2026" });
+    expect(previaDoAnuncio({ ...video, hookId: "", bodyId: "" }, experts, partes).faltaForaDoNome).toEqual(["hook", "body"]);
     // hook de id desconhecido (outro expert) não vira código: fica faltando
     expect(previaDoAnuncio({ ...video, hookId: "X" }, experts, partes).completo).toBe(false);
+    // no v2 (editar um publicado) eles voltam a ser pedaços do nome
+    const v2 = previaDoAnuncio(video, experts, partes, { formato: "v2" });
+    expect(v2.pedacos.map((x) => x.campo)).toEqual(["creative", "origin", "expert", "launch", "hook", "body", "date", "description"]);
+    expect(v2).toMatchObject({ estrutura: "adv01_h_dg_pg04_h01_b01_09-2026--", completo: true, faltaForaDoNome: [] });
+    expect(previaDoAnuncio({ ...video, hookId: "" }, experts, partes, { formato: "v2" }).texto).toBe("adv01_h_dg_pg04_…_b01_09-2026");
   });
   it("AC1 na prévia: ad continua com 4 pedaços e nunca leva origem/hook/body mesmo que o estado os tenha", () => {
     const p = previaDoAnuncio({ ...cheio, origin: "h", hookId: "H1", bodyId: "B1" }, experts, partes);
@@ -115,11 +129,69 @@ describe("Story 47.13 — vídeo v2 no gerador", () => {
   });
   it("AC7 (achado do QA): EDITAR vídeo do padrão antigo — prévia de 4 campos, completa, estrutura igual à gravada; sem `legado` ficava com 8 pedaços e Salvar desabilitado", () => {
     const antigo = { expertId: "e", creativeType: "adv", creativeSeq: 7, launchType: "pg", launchSeq: 2, adDate: "2026-09-01", description: null, notes: null, origin: null, hookId: null, bodyId: null };
-    const p = previaDoAnuncio(estadoDeAnuncio(antigo, "editar"), experts, [], { legado: true });
+    const p = previaDoAnuncio(estadoDeAnuncio(antigo, "editar"), experts, [], { formato: "antigo" });
     expect(p.pedacos.map((x) => x.campo)).toEqual(["creative", "expert", "launch", "date", "description"]);
     expect(p.completo).toBe(true);
     expect(p.estrutura).toBe("adv07_dg_pg02_09-2026--");
     // sem a opção, o mesmo estado é incompleto — é o defeito que o teste protege
     expect(previaDoAnuncio(estadoDeAnuncio(antigo, "editar"), experts, []).completo).toBe(false);
+  });
+});
+
+describe("Story 47.16 — perpetuo sem número e o formato do registro", () => {
+  const perpetuo = { ...video, origin: "ia", launchType: "perpetuo", launchSeq: "" };
+
+  it("AC1/AC7 (PO-08): com perpetuo a prévia fica COMPLETA sem número — adv01_ia_dg_perpetuo_09-2026; Salvar libera", () => {
+    const p = previaDoAnuncio(perpetuo, experts, partes);
+    expect(p.pedacos.find((x) => x.campo === "launch")).toMatchObject({ valor: "perpetuo", faltando: false });
+    expect(p).toMatchObject({ nome: "adv01_ia_dg_perpetuo_09-2026", estrutura: "adv01_ia_dg_perpetuo_09-2026--", completo: true, erro: null });
+    expect(previaDoAnuncio({ ...cheio, launchType: "perpetuo", launchSeq: "" }, experts).nome).toBe("ad03_dg_perpetuo_09-2026");
+    // um número que sobrou no estado (ex.: digitado antes de trocar a sigla) NÃO entra — nem no nome, nem no corpo
+    expect(previaDoAnuncio({ ...perpetuo, launchSeq: "04" }, experts, partes).nome).toBe("adv01_ia_dg_perpetuo_09-2026");
+    expect(camposDoAnuncio({ ...perpetuo, launchSeq: "04" }, experts, partes).launchSeq).toBeUndefined();
+    // outra sigla sem número continua incompleta
+    expect(previaDoAnuncio({ ...perpetuo, launchType: "pg" }, experts, partes).completo).toBe(false);
+  });
+
+  it("AC6: corpoDoAnuncio manda launchSeq null com perpetuo (nunca 0) e null sem número (o 0 de antes era sentinela)", () => {
+    expect(corpoDoAnuncio(perpetuo).launchSeq).toBeNull();
+    expect(corpoDoAnuncio({ ...perpetuo, launchSeq: "04" }).launchSeq).toBeNull();
+    expect(corpoDoAnuncio({ ...cheio, launchSeq: "" }).launchSeq).toBeNull();
+    expect(corpoDoAnuncio(cheio).launchSeq).toBe(2);
+  });
+
+  it("AC6: gravado com launchSeq null → estado com campo vazio e lista com `perpetuo` — nunca perpetuonull/perpetuo00/perpetuo0", () => {
+    const gravado = { expertId: "e", creativeType: "adv", creativeSeq: 1, launchType: "perpetuo", launchSeq: null, adDate: "2026-09-01", description: null, notes: null, origin: "ia", hookId: "H1", bodyId: "B1" };
+    const e = estadoDeAnuncio(gravado, "editar");
+    expect(e.launchSeq).toBe("");
+    expect(JSON.stringify(e)).not.toMatch(/null|perpetuo0/);
+    expect(textoDoLancamento(gravado.launchType, gravado.launchSeq)).toBe("perpetuo");
+    expect(previaDoAnuncio(e, experts, partes).nome).toBe("adv01_ia_dg_perpetuo_09-2026");
+  });
+
+  it("AC7: a sugestão do número não roda com perpetuo — nem a sigla vai para /ads/proximo, nem uma resposta velha preenche o campo", () => {
+    expect(siglaParaSugestao(perpetuo)).toBeUndefined();
+    expect(siglaParaSugestao(cheio)).toBe("pg");
+    expect(siglaParaSugestao({ launchType: "" })).toBeUndefined();
+    expect(comSugestaoDoLancamento(perpetuo, 4)).toBe(perpetuo);
+    expect(comSugestaoDoLancamento({ ...cheio, launchSeq: "" }, 4).launchSeq).toBe("04");
+    // não sobrescreve o que a pessoa digitou; sem sugestão, nada muda
+    expect(comSugestaoDoLancamento(cheio, 9)).toBe(cheio);
+    expect(comSugestaoDoLancamento({ ...cheio, launchSeq: "" }, null).launchSeq).toBe("");
+  });
+
+  it("AC8/AC4: um dos 6 do dg (v2, sem `--`) é editado no v2 — 7 pedaços, prévia completa e o NOME igual ao do Meta, sem `--`", () => {
+    const seis = { expertId: "e", creativeType: "adv", creativeSeq: 1, launchType: "perpetuo", launchSeq: null, adDate: "2026-09-01", description: null, notes: null, origin: "ia", hookId: "H1", bodyId: "B1", name: "adv01_ia_dg_perpetuo_h01_b01_09-2026" };
+    const formato = formatoDoAnuncioGravado(seis);
+    expect(formato).toBe("v2");
+    const p = previaDoAnuncio(estadoDeAnuncio(seis, "editar"), experts, partes, { formato });
+    expect(p.pedacos).toHaveLength(8);
+    expect(p).toMatchObject({ completo: true, nome: seis.name, estrutura: `${seis.name}--` });
+    // sem o formato (defeito que o teste protege) a prévia viraria v3 e mudaria o nome publicado
+    expect(previaDoAnuncio(estadoDeAnuncio(seis, "editar"), experts, partes).nome).not.toBe(seis.name);
+    // anúncio que não é vídeo, e vídeo v3 / antigo
+    expect(formatoDoAnuncioGravado({ creativeType: "ad", name: "ad01_dg_pg02_09-2026" })).toBe("v3");
+    expect(formatoDoAnuncioGravado({ creativeType: "adv", name: "adv01_ia_dg_perpetuo_09-2026" })).toBe("v3");
+    expect(formatoDoAnuncioGravado({ creativeType: "adv", name: "adv07_bbe_pg02_09-2026--" })).toBe("antigo");
   });
 });

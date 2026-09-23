@@ -16,6 +16,12 @@
  * lista do expert. Todo aviso de "nenhum X cadastrado" vira linha com link
  * para o cadastro (Hooks e bodies já com o expert na URL).
  *
+ * Story 47.16: nome v3 — com a sigla `perpetuo` o "Nº do lançamento" fica
+ * desabilitado e a sugestão não roda; no vídeo, hook e body seguem escolhidos
+ * (e exigidos) mas saem do nome; editar um vídeo publicado mantém o formato
+ * dele (v2/antigo, lido do `name`); com a API atrás, Salvar explica em vez de
+ * repassar o 400 do zod.
+ *
  * As decisões estão em `lib/utils/nomenclatura-anuncio.ts`, com teste.
  */
 
@@ -33,24 +39,33 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { erroDaApi, useAnuncio, useAnuncios, useCriarAnuncio, useEditarAnuncio, useListaDe, useProximoNnDeAnuncio, type ErroDaApi } from "@/lib/hooks/use-nomenclatura";
+// Subpath direto (ver `contract.ts`): o índice do shared não passa pelo webpack do Next.
+import { API_CONTRACT_VERSION } from "@loyola-x/shared/src/contract";
+import { useApiHealth } from "@/lib/hooks/use-api-health";
+import { compareApiContract } from "@/lib/utils/api-contract";
 import { hrefDe } from "@/lib/utils/nomenclatura-abas";
 import {
   CLASSE_DO_BLOCO_DO_ANUNCIO,
   ESTADO_VAZIO_DO_ANUNCIO,
   LEGENDA_DO_ANUNCIO,
   aoEscolherNoAnuncio,
+  comSugestaoDoLancamento,
   corpoDoAnuncio,
   estadoDeAnuncio,
   ehVideo,
-  ehVideoDoPadraoAntigo,
+  formatoDoAnuncioGravado,
   mesAnoDe,
   mesCorrente,
   previaDoAnuncio,
+  siglaParaSugestao,
+  siglaSemNumero,
+  textoDoLancamento,
   type EstadoDoAnuncio,
+  type FormatoDoVideo,
   type PreviaDoAnuncio,
 } from "@/lib/utils/nomenclatura-anuncio";
 import { copiarTexto } from "../previa-do-nome";
-import { mensagemDeApiAtras } from "@/lib/utils/mensagem-de-api-atras";
+import { mensagemDeApiAtras, mensagemDeApiAtrasAoSalvarAnuncio } from "@/lib/utils/mensagem-de-api-atras";
 import { SeletorDeExpert } from "../seletor-de-expert";
 
 type Modo = { tipo: "novo" } | { tipo: "editar"; id: string } | { tipo: "duplicar"; id: string };
@@ -119,7 +134,8 @@ function PreviaDoAnuncioView({ previa }: { previa: PreviaDoAnuncio }) {
         {previa.pedacos.map((p, i) => (
           <span key={p.campo}>
             {i > 0 && p.campo !== "description" ? <span className="text-muted-foreground">_</span> : null}
-            {p.campo === "description" ? <span className="text-muted-foreground">--</span> : null}
+            {/* Story 47.16 (AC4, opção B): a prévia é o NOME — o `--` só aparece com descrição. */}
+            {p.campo === "description" && p.valor ? <span className="text-muted-foreground">--</span> : null}
             <span className={p.faltando ? "text-muted-foreground" : CLASSE_DO_BLOCO_DO_ANUNCIO[p.bloco]} title={p.campo}>
               {p.faltando ? "…" : p.valor}
             </span>
@@ -135,7 +151,13 @@ function PreviaDoAnuncioView({ previa }: { previa: PreviaDoAnuncio }) {
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        {previa.nome ? `${previa.tamanho} caracteres` : previa.erro ? <span className="text-destructive">{previa.erro}</span> : previa.erroDaDescricao ? <span className="text-destructive">descrição: {previa.erroDaDescricao}</span> : "Preencha expert, tipo, sigla, número do lançamento e mês para liberar a estrutura."}
+        {previa.nome ? (
+          previa.faltaForaDoNome.length ? (
+            <span className="text-warning">{`${previa.tamanho} caracteres · escolha ${previa.faltaForaDoNome.join(" e ")} — não entram no nome, mas são obrigatórios e gravados.`}</span>
+          ) : (
+            `${previa.tamanho} caracteres`
+          )
+        ) : previa.erro ? <span className="text-destructive">{previa.erro}</span> : previa.erroDaDescricao ? <span className="text-destructive">descrição: {previa.erroDaDescricao}</span> : "Preencha expert, tipo, sigla, número do lançamento (menos no perpétuo) e mês para liberar a estrutura."}
       </p>
     </div>
   );
@@ -159,9 +181,15 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
   const origens = useListaDe("dicionario", { type: "creative_origin" }, { enabled: video });
   const hooks = useListaDe("ads/partes", { expertId: estado.expertId, type: "hook" }, { enabled: video && Boolean(estado.expertId) });
   const bodies = useListaDe("ads/partes", { expertId: estado.expertId, type: "body" }, { enabled: video && Boolean(estado.expertId) });
-  // AC7: vídeo gravado no padrão antigo (4 campos) — a edição não pede os três; o nome não muda de formato.
-  const padraoAntigo = Boolean(origem.data && ehVideoDoPadraoAntigo(origem.data)) && modo.tipo === "editar";
-  const proximo = useProximoNnDeAnuncio(editando ? "" : estado.expertId, estado.launchType || undefined);
+  // 47.13 AC7 / 47.16 AC8: EDITAR mantém o formato do nome gravado (antigo, v2 ou v3 — lido do `name`); novo e duplicar nascem v3.
+  const formato: FormatoDoVideo = modo.tipo === "editar" && origem.data ? formatoDoAnuncioGravado(origem.data) : "v3";
+  const padraoAntigo = formato === "antigo";
+  // Story 47.16 (AC7): com `perpetuo` não há número — nem campo, nem sugestão.
+  const semNumero = siglaSemNumero(estado.launchType);
+  const proximo = useProximoNnDeAnuncio(editando ? "" : estado.expertId, siglaParaSugestao(estado));
+  // Story 47.16 (AC11): o veredito do contrato (29.46) — com a API atrás, Salvar explica em vez de repassar o 400.
+  const saude = useApiHealth();
+  const apiAtras = compareApiContract(saude.data?.contract, API_CONTRACT_VERSION).kind === "api-atras";
   // Story 47.11 (AC3): ao escolher o expert, os anúncios já cadastrados dele
   // aparecem abaixo do formulário — mesmo desenho de Nova VSL (47.9), mesma
   // query da aba Anúncios (salvar invalida ["nomenclatura"] e a lista atualiza).
@@ -180,7 +208,7 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
   // AC8: o NN do criativo vem preenchido com o próximo livre; se a pessoa já digitou, não sobrescreve.
   useEffect(() => {
     if (!editando && proximo.data?.creativeSeqTexto && !estado.creativeSeq) setEstado((e) => ({ ...e, creativeSeq: proximo.data!.creativeSeqTexto! }));
-    if (!editando && proximo.data?.launchSeqSugerido && !estado.launchSeq) setEstado((e) => ({ ...e, launchSeq: String(proximo.data!.launchSeqSugerido).padStart(2, "0") }));
+    if (!editando) setEstado((e) => comSugestaoDoLancamento(e, proximo.data?.launchSeqSugerido));
   }, [proximo.data, editando]);
 
   const partes = useMemo(() => [...(hooks.data ?? []), ...(bodies.data ?? [])].map((p) => ({ id: p.id, code: p.code })), [hooks.data, bodies.data]);
@@ -194,8 +222,8 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
   // Story 47.14: cada select acusa a própria query — o alerta fica sob o campo que falhou, uma vez.
   const erroHooks = erroDaLista(hooks.error, "hooks e bodies");
   const erroBodies = erroDaLista(bodies.error, "hooks e bodies");
-  // AC7: no padrão antigo a prévia é a de 4 campos — mesma opção `legado` do build (achado do QA: sem ela, Salvar ficava desabilitado).
-  const previa = useMemo(() => previaDoAnuncio(estado, experts.data ?? [], partes, { legado: padraoAntigo }), [estado, experts.data, partes, padraoAntigo]);
+  // 47.13 AC7 / 47.16 AC8: a prévia usa o formato do build (achado do QA na 47.13: sem ele, Salvar ficava desabilitado).
+  const previa = useMemo(() => previaDoAnuncio(estado, experts.data ?? [], partes, { formato }), [estado, experts.data, partes, formato]);
   const escolher = (campo: keyof EstadoDoAnuncio) => (v: string) => setEstado((e) => aoEscolherNoAnuncio(e, campo, v));
   const nnOcupado = !editando && proximo.data?.creativeSeqTexto && estado.creativeSeq && estado.creativeSeq !== proximo.data.creativeSeqTexto;
   const opcoesDe = (xs: { value: string; description: string | null }[] | undefined) => (xs ?? []).map((v) => ({ value: v.value, rotulo: v.description ? `${v.value} — ${v.description}` : v.value }));
@@ -276,7 +304,7 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
         ) : null}
         {padraoAntigo ? (
           <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
-            Vídeo do <strong>padrão antigo</strong> (47.10): o nome publicado não muda de formato. Para um nome no v2 (origem, hook e body), use <strong>Duplicar</strong>.
+            Vídeo do <strong>padrão antigo</strong> (47.10): o nome publicado não muda de formato. Para um nome no formato atual (com origem, hook e body), use <strong>Duplicar</strong>.
           </p>
         ) : null}
         <div className="space-y-1">
@@ -289,8 +317,8 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
         <SelectDeValor id="a-sigla" label="Sigla do lançamento" valor={estado.launchType} onChange={escolher("launchType")} opcoes={opcoesDe(siglas.data)} carregando={siglas.isLoading} vazio="nenhuma sigla de lançamento ativa" cadastro={valoresFixos} />
         <div className="space-y-1">
           <Label htmlFor="a-lnn">Nº do lançamento</Label>
-          <Input id="a-lnn" value={estado.launchSeq} onChange={(e) => setEstado((s) => ({ ...s, launchSeq: e.target.value.replace(/\D/g, "").slice(0, 2) }))} placeholder="01" className="w-[140px] font-mono" disabled={!estado.launchType} />
-          <p className="text-xs text-muted-foreground">{proximo.data?.launchSeqSugerido ? `Último usado para esta sigla: ${String(proximo.data.launchSeqSugerido).padStart(2, "0")}.` : "O número do lançamento (pg02 = 2º lançamento pago)."}</p>
+          <Input id="a-lnn" value={semNumero ? "" : estado.launchSeq} onChange={(e) => setEstado((s) => ({ ...s, launchSeq: e.target.value.replace(/\D/g, "").slice(0, 2) }))} placeholder={semNumero ? "—" : "01"} className="w-[140px] font-mono" disabled={!estado.launchType || semNumero} />
+          <p className="text-xs text-muted-foreground">{semNumero ? "perpétuo não tem número — o lançamento entra no nome só como perpetuo." : proximo.data?.launchSeqSugerido ? `Último usado para esta sigla: ${String(proximo.data.launchSeqSugerido).padStart(2, "0")}.` : "O número do lançamento (pg02 = 2º lançamento pago)."}</p>
         </div>
         {/* Story 47.13 (AC9): hook e body DO expert — só em vídeo. Story 47.14 (AC4): sem cadastro, a própria frase é o link, com o expert. */}
         {video && !padraoAntigo ? (
@@ -317,7 +345,7 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
 
       {erro ? (
         <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {erro.mensagem}
+          {mensagemDeApiAtrasAoSalvarAnuncio(erro, apiAtras) ?? erro.mensagem}
         </p>
       ) : null}
 
@@ -375,7 +403,7 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
                       <TableCell className="max-w-[220px] truncate font-mono text-xs" title={a.description ?? ""}>{a.description ?? "—"}</TableCell>
                       <TableCell className="font-mono">{a.creativeType}{String(a.creativeSeq).padStart(2, "0")}{a.legado ? <span className="ml-1 text-[10px] text-warning" title="padrão antigo (47.10): sem origem, hook e body">antigo</span> : null}</TableCell>
                       <TableCell className="font-mono">{a.origin ?? "—"}</TableCell>
-                      <TableCell className="font-mono">{a.launchType}{String(a.launchSeq).padStart(2, "0")}</TableCell>
+                      <TableCell className="font-mono">{textoDoLancamento(a.launchType, a.launchSeq)}</TableCell>
                       <TableCell className="font-mono">{a.hookCode ?? "—"}</TableCell>
                       <TableCell className="font-mono">{a.bodyCode ?? "—"}</TableCell>
                       <TableCell className="font-mono">{mesAnoDe(a.adDate)}</TableCell>

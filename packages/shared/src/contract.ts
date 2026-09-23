@@ -215,4 +215,12 @@
 // `player.pitchTime` o pitch ATUAL do VTurb (`null` quando 0 ou ausente), não
 // a cópia do vínculo — mesma forma, sem campo novo; o web decide o "—" do
 // cartão "Chegaram no pitch" pelo valor, o que também funciona com a API antiga.
+// v24 (Story 47.16): nome de anúncio v3 — `launchSeq` passou a aceitar
+// ausência/`null` em `POST`/`PATCH /api/nomenclatura/ads` (obrigatória só fora
+// da sigla `perpetuo`), `naming_ads.launch_seq` nullable (migration 0157), o
+// vídeo novo sai com 5 campos (hook/body fora do nome, gravados), o `name` sem
+// descrição termina na data e `validar-nome` aceita nome sem `--` e devolve
+// `formato`. NÃO aditiva: a API antiga recusa o `perpetuo` sem número com 400
+// do zod — o gerador reconhece (`mensagemDeApiAtrasAoSalvarAnuncio`) e o
+// banner acusa. `packages/mcp` não é afetado (nenhuma tool lê o nome de anúncio).
 export const API_CONTRACT_VERSION = 23;

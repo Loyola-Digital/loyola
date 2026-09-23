@@ -61,7 +61,8 @@ function memoria() {
       seqsDoExpert: async (expertId: string) => t.anuncios.filter((a) => a.expertId === expertId).map((a) => ({ id: a.id, creativeSeq: a.creativeSeq as number })),
       porSeq: async (expertId: string, seq: number) => t.anuncios.find((a) => a.expertId === expertId && a.creativeSeq === seq),
       maiorLancamento: async (expertId: string, launchType: string) => {
-        const xs = t.anuncios.filter((a) => a.expertId === expertId && a.launchType === launchType).map((a) => a.launchSeq as number);
+        // Story 47.16 (PO-11): como o `max` do SQL, ignora o NULL do `perpetuo`
+        const xs = t.anuncios.filter((a) => a.expertId === expertId && a.launchType === launchType).map((a) => a.launchSeq).filter((x): x is number => typeof x === "number");
         return xs.length ? Math.max(...xs) : null;
       },
     },
@@ -743,7 +744,7 @@ describe("rotas da nomenclatura", () => {
   // ─────────────── Story 47.10: Nome de anúncio ───────────────
   async function adsBase(app: FastifyInstance) {
     const c = await cenario(app);
-    for (const [type, values] of Object.entries({ creative_type: ["ad", "adv", "carr"], launch_type: ["pg", "l", "m", "pr"] })) {
+    for (const [type, values] of Object.entries({ creative_type: ["ad", "adv", "carr"], launch_type: ["pg", "l", "m", "pr", "perpetuo"] })) {
       for (const value of values) await app.inject({ method: "POST", url: "/api/nomenclatura/dicionario", payload: { type, value, description: value } });
     }
     return c;
@@ -761,7 +762,8 @@ describe("rotas da nomenclatura", () => {
     const adv = depois.find((v: { value: string }) => v.value === "ad");
     expect((await app.inject({ method: "PATCH", url: `/api/nomenclatura/dicionario/${adv.id}`, payload: { value: "vid" } })).statusCode).toBe(409);
     const del = await app.inject({ method: "DELETE", url: `/api/nomenclatura/dicionario/${adv.id}` });
-    expect(del.json()).toMatchObject({ podeDesativar: true, referencias: [{ tipo: "anuncio", rotulo: "ad01_bbe_pg02_09-2026--" }] });
+    // 47.16 (AC4, opção B): o nome sem descrição termina na data
+    expect(del.json()).toMatchObject({ podeDesativar: true, referencias: [{ tipo: "anuncio", rotulo: "ad01_bbe_pg02_09-2026" }] });
   });
 
   it("47.10 AC3/AC4/AC8: NN sequencial ÚNICO por expert, qualquer tipo; sugestão pula os usados; NN ocupado → 409 com o dono e o próximo; estrutura e nome gravados", async () => {
@@ -977,7 +979,7 @@ describe("rotas da nomenclatura", () => {
   async function videoBase(app: FastifyInstance) {
     const c = await partesBase(app); // bbe com h01 e b01
     const post = async (url: string, payload: Record<string, unknown>) => (await app.inject({ method: "POST", url, payload })).json();
-    for (const [type, values] of Object.entries({ creative_type: ["ad", "adv", "carr"], launch_type: ["pg", "l"], creative_origin: ["ia", "h"] })) {
+    for (const [type, values] of Object.entries({ creative_type: ["ad", "adv", "carr"], launch_type: ["pg", "l", "perpetuo"], creative_origin: ["ia", "h"] })) {
       for (const value of values) await post("/api/nomenclatura/dicionario", { type, value });
     }
     // o gestor do exemplo é `dg` (pg04); aqui o expert com hooks é bbe — o nome sai com bbe
@@ -985,10 +987,11 @@ describe("rotas da nomenclatura", () => {
     return { ...c, h01Fz, post };
   }
 
-  it("47.13 AC1/AC6: POST adv grava o v2 com origem, hook e body — adv01_h_bbe_pg04_h01_b01_09-2026-- — e a resposta traz hookCode/bodyCode e legado=false", async () => {
+  // 47.16 (AC2/AC3): o POST de vídeo passou a gerar o v3 — hook e body GRAVADOS (hookId/bodyId, hookCode/bodyCode), fora do nome.
+  it("47.13 AC1/AC6 + 47.16 AC2/AC3: POST adv grava origem, hook e body — nome v3 adv01_h_bbe_pg04_09-2026 — e a resposta traz hookCode/bodyCode e legado=false", async () => {
     const { bbe, h01, b01, post } = await videoBase(app);
     const a = await post("/api/nomenclatura/ads", { expertId: bbe.id, creativeType: "adv", launchType: "pg", launchSeq: 4, date: "09-2026", origin: "h", hookId: h01.id, bodyId: b01.id });
-    expect(a).toMatchObject({ structure: "adv01_h_bbe_pg04_h01_b01_09-2026--", name: "adv01_h_bbe_pg04_h01_b01_09-2026--", origin: "h", hookId: h01.id, bodyId: b01.id, hookCode: "h01", bodyCode: "b01", legado: false, expertCode: "bbe" });
+    expect(a).toMatchObject({ structure: "adv01_h_bbe_pg04_09-2026--", name: "adv01_h_bbe_pg04_09-2026", origin: "h", hookId: h01.id, bodyId: b01.id, hookCode: "h01", bodyCode: "b01", legado: false, expertCode: "bbe" });
     // usadoEm passou a contar de verdade → o código do hook trava (47.12 AC6 fecha aqui)
     const travado = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/partes/${h01.id}`, payload: { code: "h09" } });
     expect(travado.statusCode).toBe(409);
@@ -998,7 +1001,7 @@ describe("rotas da nomenclatura", () => {
     expect(origens.find((v: { value: string }) => v.value === "h").usadoEm).toBe(1);
     const del = await app.inject({ method: "DELETE", url: `/api/nomenclatura/ads/partes/${b01.id}` });
     expect(del.statusCode).toBe(409);
-    expect(del.json().referencias).toEqual([{ tipo: "anuncio", id: a.id, rotulo: "adv01_h_bbe_pg04_h01_b01_09-2026--" }]);
+    expect(del.json().referencias).toEqual([{ tipo: "anuncio", id: a.id, rotulo: "adv01_h_bbe_pg04_09-2026" }]);
   });
 
   it("47.13 AC6: adv exige os três (422); hook de OUTRO expert → 422; tipo trocado → 422; inativo → 422; origem fora do dicionário → 422", async () => {
@@ -1048,7 +1051,8 @@ describe("rotas da nomenclatura", () => {
     expect(r.json()).toMatchObject({ structure: "adv07_bbe_pg03_09-2026--", name: "adv07_bbe_pg03_09-2026--prova-social", origin: null, legado: true });
     const migra = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${USUARIO}`, payload: { origin: "h", hookId: h01.id, bodyId: b01.id } });
     expect(migra.statusCode).toBe(400);
-    expect(migra.json().error).toContain("duplique para criar no v2");
+    // 47.16: duplicar cria no formato atual — o v3, não mais o v2
+    expect(migra.json().error).toContain("duplique para criar no formato atual (v3)");
   });
 
   it("47.13 AC4/AC8/AC11: snapshot traz origens e partes por expert; validar-nome aceita v2 e padrão antigo; listagem filtra por origem/hook/body", async () => {
@@ -1057,7 +1061,8 @@ describe("rotas da nomenclatura", () => {
     expect(snap.origins.map((o: { value: string }) => o.value)).toEqual(["ia", "h"]);
     expect(snap.partes).toEqual(expect.arrayContaining([{ expert: "bbe", type: "hook", code: "h01", active: true }, { expert: "bbe", type: "body", code: "b01", active: true }, { expert: "fz", type: "hook", code: "h01", active: true }]));
     const v2 = (await app.inject({ method: "POST", url: "/api/nomenclatura/ads/validar-nome", payload: { name: "adv01_h_bbe_pg04_h01_b01_09-2026--" } })).json();
-    expect(v2).toMatchObject({ valid: true, video: true, legado: false, avisos: [] });
+    // 47.16 (AC5, PO-02): o v2 passou a vir com aviso PRÓPRIO
+    expect(v2).toMatchObject({ valid: true, video: true, legado: false, formato: "v2", avisos: ["padrão v2 (47.13): hook e body no nome — o nome novo (47.16) não os leva"] });
     const antigo = (await app.inject({ method: "POST", url: "/api/nomenclatura/ads/validar-nome", payload: { name: "adv03_bbe_pg02_09-2026--" } })).json();
     expect(antigo).toMatchObject({ valid: true, video: true, legado: true });
     expect(antigo.avisos).toContain("padrão antigo (47.10): sem origem, hook e body");
@@ -1070,6 +1075,106 @@ describe("rotas da nomenclatura", () => {
     expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads?hookId=${h01.id}` })).json().total).toBe(1);
     expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads?bodyId=${b01.id}` })).json().itens[0].hookCode).toBe("h01");
     expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads?expertId=${bbe.id}` })).json().total).toBe(2);
+  });
+
+  // ── Story 47.16: nome v3 — `perpetuo` sem número, hook/body fora do nome, `--` opcional ──
+  it("47.16 AC1/AC6: POST com perpetuo SEM número grava launchSeq null e o nome v3; COM número → 400 em launchSeq; outra sigla sem número → 400 em launchSeq", async () => {
+    const { bbe, h01, b01, post } = await videoBase(app);
+    const v = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { expertId: bbe.id, creativeType: "adv", launchType: "perpetuo", date: "09-2026", origin: "ia", hookId: h01.id, bodyId: b01.id } });
+    expect(v.statusCode).toBe(201);
+    expect(v.json()).toMatchObject({ launchSeq: null, name: "adv01_ia_bbe_perpetuo_09-2026", structure: "adv01_ia_bbe_perpetuo_09-2026--", hookId: h01.id, bodyId: b01.id, hookCode: "h01", bodyCode: "b01" });
+    // `null` explícito também é ausente
+    const ad = await post("/api/nomenclatura/ads", { expertId: bbe.id, creativeType: "ad", launchType: "perpetuo", launchSeq: null, date: "09-2026" });
+    expect(ad).toMatchObject({ launchSeq: null, name: "ad02_bbe_perpetuo_09-2026" });
+    // o que chega na coluna: NULL — nenhum valor-sentinela
+    expect(mem.t.anuncios.map((a) => a.launchSeq)).toEqual([null, null]);
+    const comNumero = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { expertId: bbe.id, creativeType: "ad", launchType: "perpetuo", launchSeq: 4, date: "09-2026" } });
+    expect(comNumero.statusCode).toBe(400);
+    expect(comNumero.json()).toMatchObject({ campo: "launchSeq" });
+    for (const semNumero of [{}, { launchSeq: null }]) {
+      const r = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { expertId: bbe.id, creativeType: "ad", launchType: "pg", date: "09-2026", ...semNumero } });
+      expect(r.statusCode).toBe(400);
+      expect(r.json()).toMatchObject({ campo: "launchSeq" });
+      expect(r.json().error).toContain("exige o número do lançamento");
+    }
+    expect(mem.t.anuncios).toHaveLength(2);
+  });
+
+  it("47.16 AC11: o 400 que a API ANTERIOR dá ao perpetuo sem número tem o texto que o web reconhece (fixa a assinatura do zod)", async () => {
+    // O schema de `launchSeq` antes da 47.16, e o mesmo formato de `parse` (`caminho: mensagem`). O web
+    // (`mensagemDeApiAtrasAoSalvarAnuncio`) reconhece estes dois textos; se o zod mudar a frase, é aqui que cai.
+    const { z } = await import("zod");
+    const antigo = z.object({ launchSeq: z.number().int().min(1).max(99) });
+    const texto = (corpo: unknown) => {
+      const i = antigo.safeParse(corpo).error!.issues[0]!;
+      return `${i.path.join(".")}: ${i.message}`;
+    };
+    expect(texto({ launchSeq: null })).toBe("launchSeq: Invalid input: expected number, received null");
+    expect(texto({})).toBe("launchSeq: Invalid input: expected number, received undefined");
+    // e a API da 47.16 não devolve texto do zod nesse campo: aceita null/ausente
+    const { bbe, post } = await videoBase(app);
+    expect((await post("/api/nomenclatura/ads", { expertId: bbe.id, creativeType: "ad", launchType: "perpetuo", launchSeq: null, date: "09-2026" })).launchSeq).toBeNull();
+  });
+
+  it("47.16 AC3: no v3 hook e body continuam OBRIGATÓRIOS (422) — só saíram do nome", async () => {
+    const { bbe, h01, b01 } = await videoBase(app);
+    const base = { expertId: bbe.id, creativeType: "adv", launchType: "perpetuo", date: "09-2026", origin: "ia" };
+    const semHook = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...base, bodyId: b01.id } });
+    expect(semHook.statusCode).toBe(422);
+    expect(semHook.json()).toMatchObject({ campo: "hookId" });
+    const semBody = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...base, hookId: h01.id } });
+    expect(semBody.statusCode).toBe(422);
+    expect(semBody.json()).toMatchObject({ campo: "bodyId" });
+  });
+
+  it("47.16 AC6 (PO-03/PO-04): PATCH para perpetuo ZERA o número; de perpetuo para pg sem número → 400 em launchSeq (nada gravado); com número → pg03", async () => {
+    const { bbe, post } = await videoBase(app);
+    const a = await post("/api/nomenclatura/ads", { expertId: bbe.id, creativeType: "ad", launchType: "pg", launchSeq: 4, date: "09-2026" });
+    const paraPerpetuo = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${a.id}`, payload: { launchType: "perpetuo" } });
+    expect(paraPerpetuo.statusCode).toBe(200);
+    expect(paraPerpetuo.json()).toMatchObject({ launchType: "perpetuo", launchSeq: null, name: "ad01_bbe_perpetuo_09-2026" });
+    const volta = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${a.id}`, payload: { launchType: "pg" } });
+    expect(volta.statusCode).toBe(400);
+    expect(volta.json()).toMatchObject({ campo: "launchSeq" });
+    expect(volta.json().error).not.toMatch(/pg00|pgnull/);
+    expect(mem.t.anuncios[0]).toMatchObject({ launchType: "perpetuo", launchSeq: null, name: "ad01_bbe_perpetuo_09-2026" });
+    const comNumero = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${a.id}`, payload: { launchType: "pg", launchSeq: 3 } });
+    expect(comNumero.json()).toMatchObject({ launchType: "pg", launchSeq: 3, name: "ad01_bbe_pg03_09-2026" });
+    const errado = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${a.id}`, payload: { launchType: "perpetuo", launchSeq: 2 } });
+    expect(errado.statusCode).toBe(400);
+    expect(errado.json()).toMatchObject({ campo: "launchSeq" });
+  });
+
+  it("47.16 AC7: /ads/proximo com perpetuo não sugere número; o maior da outra sigla ignora o NULL do perpetuo", async () => {
+    const { bbe, post } = await videoBase(app);
+    await post("/api/nomenclatura/ads", { expertId: bbe.id, creativeType: "ad", launchType: "perpetuo", date: "09-2026" });
+    await post("/api/nomenclatura/ads", { expertId: bbe.id, creativeType: "ad", launchType: "pg", launchSeq: 4, date: "09-2026" });
+    expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads/proximo?expertId=${bbe.id}&launchType=perpetuo` })).json()).toEqual({ creativeSeq: 3, creativeSeqTexto: "03", launchSeqSugerido: null });
+    expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads/proximo?expertId=${bbe.id}&launchType=pg` })).json().launchSeqSugerido).toBe(4);
+    // dado inconsistente (perpetuo COM número, só possível por escrita manual no banco): a rota nem pergunta ao repositório
+    mem.t.anuncios.push({ id: USUARIO, expertId: bbe.id, creativeType: "ad", creativeSeq: 9, launchType: "perpetuo", launchSeq: 3, adDate: "2026-09-01", description: null, origin: null, hookId: null, bodyId: null, structure: "x", name: "x", notes: null, active: true, createdAt: "2026-09-01", updatedAt: "2026-09-01" });
+    expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads/proximo?expertId=${bbe.id}&launchType=perpetuo` })).json().launchSeqSugerido).toBeNull();
+  });
+
+  it("47.16 AC8/AC4/AC9: um dos 6 no ar (v2, sem `--`) edita SEM mudar de formato e SEM ganhar `--`; notas não re-gravam; o próximo NN é 07", async () => {
+    const { bbe, h01, b01 } = await videoBase(app);
+    const linha = (n: number, id: string) => {
+      const nome = `adv0${n}_ia_bbe_perpetuo_h01_b01_09-2026`;
+      return { id, expertId: bbe.id, creativeType: "adv", creativeSeq: n, launchType: "perpetuo", launchSeq: null, adDate: "2026-09-01", description: null, origin: "ia", hookId: h01.id, bodyId: b01.id, structure: `${nome}--`, name: nome, notes: null, active: true, createdAt: "2026-09-23", updatedAt: "2026-09-23" };
+    };
+    // como o script do AC9 grava: name = o do Meta, structure = name + `--`, launch_seq NULL
+    mem.t.anuncios.push(linha(1, USUARIO), ...[2, 3, 4, 5, 6].map((n) => linha(n, `20000000-0000-4000-8000-00000000000${n}`)));
+    expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads/proximo?expertId=${bbe.id}` })).json()).toMatchObject({ creativeSeq: 7, creativeSeqTexto: "07" });
+    const notas = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${USUARIO}`, payload: { notes: "no ar desde 21/09" } });
+    expect(notas.json()).toMatchObject({ name: "adv01_ia_bbe_perpetuo_h01_b01_09-2026", structure: "adv01_ia_bbe_perpetuo_h01_b01_09-2026--", notes: "no ar desde 21/09" });
+    const data = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${USUARIO}`, payload: { date: "10-2026" } });
+    expect(data.statusCode).toBe(200);
+    expect(data.json()).toMatchObject({ name: "adv01_ia_bbe_perpetuo_h01_b01_10-2026", structure: "adv01_ia_bbe_perpetuo_h01_b01_10-2026--", launchSeq: null, legado: false });
+    const desc = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${USUARIO}`, payload: { description: "prova social" } });
+    expect(desc.json().name).toBe("adv01_ia_bbe_perpetuo_h01_b01_10-2026--prova-social");
+    // validar-nome aceita o nome do Meta como está
+    const val = (await app.inject({ method: "POST", url: "/api/nomenclatura/ads/validar-nome", payload: { name: "adv02_ia_bbe_perpetuo_h01_b01_09-2026" } })).json();
+    expect(val).toMatchObject({ valid: true, formato: "v2", errors: [] });
   });
 
   it("id inexistente → 404; id malformado → 400", async () => {

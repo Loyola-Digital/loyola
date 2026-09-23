@@ -34,10 +34,10 @@
 import { z } from "zod";
 import fp from "fastify-plugin";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { LPMIX, NA, PREFIXO_DA_PARTE_DO_VIDEO, PREFIXO_DA_VARIAVEL, ROTULO_DA_PARTE_DO_VIDEO, TIPO_DE_CODIGO_DA_PARTE_DO_VIDEO, TIPO_DE_CODIGO_DA_VARIAVEL, ehVideo, montarSlugDeLp, parseAdName, parseCampaignName, parseVslName, proximoCodigoNumerado, sugerirClassificacao } from "@loyola-x/shared";
+import { LPMIX, NA, PREFIXO_DA_PARTE_DO_VIDEO, PREFIXO_DA_VARIAVEL, ROTULO_DA_PARTE_DO_VIDEO, TIPO_DE_CODIGO_DA_PARTE_DO_VIDEO, TIPO_DE_CODIGO_DA_VARIAVEL, ehVideo, formatoDoVideoGravado, montarSlugDeLp, parseAdName, parseCampaignName, parseVslName, proximoCodigoNumerado, siglaSemNumero, sugerirClassificacao } from "@loyola-x/shared";
 import { CAMPOS_DO_NOME, montarCampanha } from "../services/nomenclatura/campanhas.js";
 import { CAMPOS_DA_VSL_NO_BANCO, montarVsl } from "../services/nomenclatura/vsl.js";
-import { montarAnuncio, proximoNnDeAnuncio } from "../services/nomenclatura/anuncios.js";
+import { montarAnuncio, numeroDoLancamentoNoPatch, proximoNnDeAnuncio } from "../services/nomenclatura/anuncios.js";
 import { coberturaDeGasto, invalidarMapa, mapaDeDimensoes } from "../services/nomenclatura/mapa-de-campanhas.js";
 import { listarChangelog } from "../services/nomenclatura/changelog.js";
 import { tabelaInexistente, violaUnicidade } from "../utils/db-errors.js";
@@ -987,7 +987,8 @@ export default fp(async function nomenclaturaRoutes(fastify) {
     creativeType: z.string().min(1).max(20),
     creativeSeq: z.number().int().min(1).max(99).nullable().optional(),
     launchType: z.string().min(1).max(20),
-    launchSeq: z.number().int().min(1).max(99),
+    // Story 47.16 (AC6): ausente/null com `perpetuo` (e só com ela — o serviço decide pela sigla, com 400 no campo)
+    launchSeq: z.number().int().min(1).max(99).nullable().optional(),
     date: mmAaaa,
     description: z.string().trim().max(200).nullable().optional(),
     notes: z.string().trim().max(4000).nullable().optional(),
@@ -1092,7 +1093,8 @@ export default fp(async function nomenclaturaRoutes(fastify) {
       await existente(r, "experts", q.expertId, "Expert");
       const usados = (await r.anuncios.seqsDoExpert(q.expertId)).map((s) => s.creativeSeq);
       const nn = proximoNnDeAnuncio(usados);
-      const maiorLancamento = q.launchType ? await r.anuncios.maiorLancamento(q.expertId, q.launchType) : null;
+      // Story 47.16 (AC7): `perpetuo` não tem número — nada a sugerir.
+      const maiorLancamento = q.launchType && !siglaSemNumero(q.launchType) ? await r.anuncios.maiorLancamento(q.expertId, q.launchType) : null;
       return { creativeSeq: nn, creativeSeqTexto: nn === null ? null : String(nn).padStart(2, "0"), launchSeqSugerido: maiorLancamento };
     }),
   );
@@ -1187,7 +1189,8 @@ export default fp(async function nomenclaturaRoutes(fastify) {
       const b = parse(
         z.object({
           launchType: z.string().min(1).max(20).optional(),
-          launchSeq: z.number().int().min(1).max(99).optional(),
+          // Story 47.16: `null` = sem número (só com `perpetuo`); omitido = regra de `numeroDoLancamentoNoPatch`
+          launchSeq: z.number().int().min(1).max(99).nullable().optional(),
           date: mmAaaa.optional(),
           description: z.string().trim().max(200).nullable().optional(),
           notes: z.string().trim().max(4000).nullable().optional(),
@@ -1203,8 +1206,9 @@ export default fp(async function nomenclaturaRoutes(fastify) {
       const mexeNoNome = b.launchType !== undefined || b.launchSeq !== undefined || b.date !== undefined || b.description !== undefined || b.origin !== undefined || b.hookId !== undefined || b.bodyId !== undefined;
       const patch: Record<string, unknown> = {};
       if (mexeNoNome) {
-        // AC7: vídeo do padrão antigo (adv sem origem) re-grava no formato de 4 campos — o nome publicado não muda de formato.
-        const legado = ehVideo(antes.creativeType) && !antes.origin;
+        // 47.13 AC7 / 47.16 AC8: o vídeo re-grava no formato em que foi publicado (antigo, v2 ou v3), lido do `name`
+        // gravado — v2 e v3 têm os dois hook_id, a coluna não distingue. O nome publicado não muda de formato (regra 6).
+        const formato = ehVideo(antes.creativeType) ? formatoDoVideoGravado(antes.name) : "v3";
         const m = await montarAnuncio(
           r,
           {
@@ -1212,14 +1216,15 @@ export default fp(async function nomenclaturaRoutes(fastify) {
             creativeType: antes.creativeType,
             creativeSeq: antes.creativeSeq,
             launchType: b.launchType ?? antes.launchType,
-            launchSeq: b.launchSeq ?? antes.launchSeq,
+            // Story 47.16 (PO-03/PO-04): trocar para `perpetuo` zera; de `perpetuo` para outra sigla sem número → 400 em launchSeq
+            launchSeq: numeroDoLancamentoNoPatch(b, antes),
             date: b.date ?? `${antes.adDate.slice(5, 7)}-${antes.adDate.slice(0, 4)}`,
             description: b.description === undefined ? antes.description : b.description,
             origin: b.origin ?? antes.origin ?? null,
             hookId: b.hookId ?? antes.hookId ?? null,
             bodyId: b.bodyId ?? antes.bodyId ?? null,
           },
-          { ignorarSeqDe: antes.id, legado },
+          { ignorarSeqDe: antes.id, formato },
         );
         Object.assign(patch, { ...m, fields: undefined });
       }

@@ -139,6 +139,15 @@ export {
   FORMATO_DO_HOOK,
   FORMATO_DO_BODY,
   AVISO_DE_PADRAO_ANTIGO,
+  // Story 47.16: nome v3 — `perpetuo` sem número, hook/body fora do nome do vídeo, `--` opcional
+  SIGLA_SEM_NUMERO,
+  siglaSemNumero,
+  textoDoLancamento,
+  formatoDoVideoGravado,
+  ORDEM_DO_VIDEO_V2,
+  TOTAL_DE_CAMPOS_DO_VIDEO_V2,
+  AVISO_DO_V2,
+  type FormatoDoVideo,
 } from "./nomenclatura-de-anuncio.js";
 // Story 47.5: campanhas legadas — filtro por token e sugestão de classificação
 // a partir do nome antigo. Módulo folha (web: subpath `src/nomenclatura-legado`).

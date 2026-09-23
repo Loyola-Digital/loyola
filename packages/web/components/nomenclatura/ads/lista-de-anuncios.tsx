@@ -18,7 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { erroDaApi, useAnuncios, useListaDe } from "@/lib/hooks/use-nomenclatura";
 import { hrefDe } from "@/lib/utils/nomenclatura-abas";
-import { mesAnoDe } from "@/lib/utils/nomenclatura-anuncio";
+import { mesAnoDe, textoDoLancamento } from "@/lib/utils/nomenclatura-anuncio";
 import { copiarTexto } from "../previa-do-nome";
 import { SeletorDeExpert } from "../seletor-de-expert";
 
@@ -129,7 +129,8 @@ export function ListaDeAnuncios() {
                     {a.legado ? <span className="ml-1 rounded bg-warning/15 px-1 text-[10px] text-warning" title="padrão antigo (47.10): sem origem, hook e body">antigo</span> : null}
                   </TableCell>
                   <TableCell className="font-mono">{a.origin ?? "—"}</TableCell>
-                  <TableCell className="font-mono">{a.launchType}{String(a.launchSeq).padStart(2, "0")}</TableCell>
+                  {/* Story 47.16 (AC6): `perpetuo` sem número — nunca "perpetuonull"/"perpetuo00". */}
+                  <TableCell className="font-mono">{textoDoLancamento(a.launchType, a.launchSeq)}</TableCell>
                   <TableCell className="font-mono">{a.hookCode ?? "—"}</TableCell>
                   <TableCell className="font-mono">{a.bodyCode ?? "—"}</TableCell>
                   <TableCell className="font-mono">{mesAnoDe(a.adDate)}</TableCell>

@@ -5322,7 +5322,12 @@ export const namingAds = pgTable(
     creativeSeq: integer("creative_seq").notNull(),
     /** Valor de `launch_type`. */
     launchType: varchar("launch_type", { length: 20 }).notNull(),
-    launchSeq: integer("launch_seq").notNull(),
+    /**
+     * Story 47.16: nullable (migration 0157) — `perpetuo` não tem número do
+     * lançamento (AC1); toda outra sigla tem, e quem garante é o serviço
+     * (`montarAnuncio`, 400 no campo). Sem `$type`: o inferido é `number | null`.
+     */
+    launchSeq: integer("launch_seq"),
     /** Story 47.13: valor de `creative_origin` (`ia` · `h`). Só em `adv`; null = ad/carr ou vídeo do padrão antigo. */
     origin: varchar("origin", { length: 20 }),
     /** Story 47.13: hook do vídeo (`naming_ad_parts`, type hook). Null = ad/carr ou padrão antigo. */
@@ -5335,7 +5340,7 @@ export const namingAds = pgTable(
     description: text("description"),
     /** GERADA: até o `--` inclusive. */
     structure: varchar("structure", { length: 80 }).notNull(),
-    /** GERADA: estrutura + descrição (igual à estrutura sem descrição). */
+    /** GERADA: estrutura + descrição. Story 47.16 (AC4, opção B): sem descrição, termina na data — a estrutura sem o `--`. */
     name: varchar("name", { length: 160 }).notNull(),
     notes: text("notes"),
     createdBy: uuid("created_by").references(() => users.id, {
