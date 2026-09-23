@@ -1,0 +1,41 @@
+schema: 1
+storyId: '48.12'
+story: '48.12'
+story_title: 'Planejamento — atalho no menu de três pontos do funil'
+verdict: PASS
+gate: PASS
+status_reason: 'Onze linhas só adicionadas em `FunnelItem`, na posição pedida (abaixo de "Configurações"), sob a mesma regra E1 e o mesmo helper de caminho das outras três entradas. O fio (guarda + argumentos do call site) não tem teste — declarado pela story; fica como recomendação baixa, porque existe um padrão de teste por leitura de fonte que o travaria sem infra nova.'
+reviewer: 'Quinn'
+updated: '2026-09-23T13:20:00-03:00'
+branch: 'feat/48.12-atalho-planejamento-menu'
+commit_reviewed: 'a909ab58'
+
+issues:
+  - id: TEST-001
+    severity: low
+    category: tests
+    description: 'O fio do atalho não tem nenhum teste que caia. Mutação do gate no CALL SITE — guarda trocada por `true &&` e argumentos invertidos em `planejamentoHref(funnel.id, projectId)` — e a suíte `lib/utils` inteira segue verde (90 arquivos, 1.306 testes). A prova diferencial do @dev foi na biblioteca (`temPainelDePlanejamento`), que já era coberta pela 48.7; ela não diz nada sobre este item. A story trata isso como "componente fora do vitest → prova só visual", mas o runner do web já lê fonte de componente: `lib/swipe/__tests__/pdf-capa-efeito.test.ts` faz `readFileSync` de `components/swipe-files/pdf-capa.tsx`.'
+    recommendation: 'Numa story futura que toque `project-folder.tsx` (ou num follow-up XS), um teste em `lib/utils/__tests__/` que leia o fonte e afirme: o item existe entre "Configurações" e "Alterar para", sob `temPainelDePlanejamento(funnel.type) &&`, com `planejamentoHref(projectId, funnel.id)`. Não foi feito aqui porque o DoD desta story restringe o diff a um arquivo, só linhas novas.'
+    status: open
+
+top_issues:
+  - id: TEST-001
+    severity: low
+    finding: 'Fio do atalho sem teste (guarda e argumentos do call site mutados → 0 falhas).'
+    suggested_action: 'Teste de contrato por leitura de fonte, no padrão de `pdf-capa-efeito.test.ts`.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Diff `11 0` em `packages/web/components/layout/project-folder.tsx:259-269` (conferido com `git diff origin/main...HEAD --numstat`; a `origin/main` só avançou com docs, #934). Forma `DropdownMenuItem asChild` + `Link` idêntica ao item "Configurações" do menu do projeto; `Calculator`, `Link`, `planejamentoHref` e `temPainelDePlanejamento` já estavam importados — nenhuma linha existente editada. O conteúdo do dropdown é portalado, então o clique não aciona o `CollapsibleTrigger` nem o arrasto do `SortableFunnelItem`. Sem erro silencioso possível (não há leitura de dado), sem PII.'
+  unit_tests: 'Sem teste novo (declarado). `planejamento-entrada.test.ts` 5/5; `lib/utils` 90 arquivos / 1.306 testes verdes. Mutações do gate (diferentes da do @dev): (1) `temPainelDePlanejamento` normalizando caixa/espaço → 1 falha, a do teste "não normaliza caixa nem espaço"; (2) `planejamentoHref` com projectId/funnelId invertidos NA BIBLIOTECA → 2 falhas; (3) guarda `true &&` + argumentos invertidos NO CALL SITE → 0 falhas (TEST-001). Restauração conferida por `shasum` idêntico e `git status` limpo.'
+  acceptance_criteria: 'AC1 ✓ (ordem Renomear · Configurações · Painel de Planejamento · Alterar para · Arquivar · Deletar, `:251-311`) · AC2 ✓ (`temPainelDePlanejamento(funnel.type) &&`, `:262`) · AC3 ✓ (`<Link href={planejamentoHref(projectId, funnel.id)}>`, mesma aba, sem abrir o dialog) · AC4 ✓ (diff só aditivo; seção do dialog em `:413` intacta, cartão e popover em outros arquivos não tocados) · AC5 ✓ (item dentro do `{isAdmin && (` de `:240`, sem mudança de visibilidade) · AC6 ✓ (eslint do arquivo 0 no gate; build/tsc/vitest completos do @dev, não refeitos — o review não deu motivo).'
+  no_regressions: 'Só linhas novas; a suíte `lib/utils` do web segue 1.306/1.306.'
+  performance: 'N/A — um item de menu condicionado a uma comparação de string.'
+  security: 'Visibilidade herdada do menu (todo papel menos convidado, `isAdmin` de `:536` — a story cita `:525`, que é o número antes das 11 linhas desta story); a barra do convidado é outra (`guest-sidebar.tsx`, `GuestFunnelItem`, read-only, sem menu de três pontos). Nenhuma rota nova.'
+  documentation: 'Rótulo "Painel de Planejamento" igual ao das outras entradas; comentário no código cita a regra E1 e a 48.7.'
+  api_contract: 'N/A — web apenas; `packages/shared/src/contract.ts` fora do diff. Nenhuma rota ou campo novo, bump não se aplica.'
+
+notes:
+  - 'Validação visual (DoD) pendente, depois do merge: funil de lançamento mostra o item logo abaixo de "Configurações" e abre o painel; perpétuo e mobile não mostram; funil arquivado não tem menu (PO-04).'
+  - 'CodeRabbit não executado (CLI ausente no macOS). Revisão manual.'
