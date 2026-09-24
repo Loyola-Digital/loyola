@@ -1,0 +1,66 @@
+schema: 1
+storyId: '29.80'
+story: '29.80'
+story_title: 'Perpétuo — filtros de Funil e Oferta na barra do painel, com aviso do que ficou de fora'
+verdict: CONCERNS
+gate: CONCERNS
+status_reason: 'O código atende AC1–AC9 e as guardas do vazio (R1) e da API antiga (R2) estão no lugar certo. Há três ressalvas. Quatro das cinco mutações do QA sobreviveram no fio: dois consumidores Meta podem voltar à lista da etapa, e o componente do aviso não tem teste nenhum. O selo "planilha sem UTM" aparece também quando não há planilha. E a validação visual continua pendente.'
+reviewer: 'Quinn'
+updated: '2026-09-24T11:40:00Z'
+branch: 'feat/29.79-29.80-filtros-funil-oferta'
+commits: ['da4ee779']
+
+top_issues:
+  - id: 'TEST-001'
+    severity: medium
+    finding: 'Dois consumidores Meta do painel podem voltar à lista NÃO estreitada sem que nenhum teste caia. (a) `<TopCreativesGallery campaignIds={campaignIdsDaEtapa}>`: o teste de fio só confere a guarda `temMidia && campaignIds &&`, não a prop. (b) `const campaignIdSet = new Set(campaignIdsDaEtapa)`: com filtro, `funnelCampaigns` (Quente/Frio e o overlay da planilha por campanha) mostraria todas as campanhas da etapa. Nos dois casos, 38/38 seguem verdes. É exatamente o defeito "bloco sem o campaignIds estreitado" do AC2.'
+    suggested_action: 'No filtro-funil-oferta-fio.test.ts, asserir `campaignIds={campaignIds}` dentro do trecho de `<TopCreativesGallery` e `const campaignIdSet = new Set(campaignIds ?? [])`. Melhor ainda: asserir que `campaignIdsDaEtapa` só aparece nas duas linhas permitidas (plano e hasCampaigns).'
+  - id: 'TEST-002'
+    severity: medium
+    finding: 'Nenhum teste lê `components/funnels/perpetual-filtro-funil-oferta.tsx`. Duas remoções passaram com 38/38 verdes: o parágrafo `{aviso.regra}` (a regra "tudo separado", exigida pelo AC4 e pela decisão (ii)) e o selo `<SeloNaoFiltrado ativo={plano.vendasNaoFiltraveis}>` (AC3, dg-a1). A função pura `montarAvisoDoFiltro` está protegida (R2 caiu), mas o desenho que a mostra não está.'
+    suggested_action: 'Estender o teste de fio ao componente (mesmo padrão de readFileSync): `{aviso.regra}`, `{aviso.unidades}`, `ativo={plano.vendasNaoFiltraveis}`, e `s.href ? <Link` com o ramo sem link.'
+  - id: 'REQ-001'
+    severity: low
+    finding: '`planilhaTemUtmCampaign: !!perpetualSpreadsheet?.columnMapping?.utm_campaign` também é falso quando o funil NÃO tem planilha, ou enquanto ela carrega. Aí o painel, com filtro, mostra o selo "a planilha de vendas não tem a coluna utm_campaign — as vendas não têm como ser filtradas", mas as vendas da tela vêm do pixel, que É filtrado pelas campanhas. Durante o carregamento, sales-data também sai uma vez sem o recorte e é pedida de novo quando a planilha chega.'
+    suggested_action: 'Distinguir "sem planilha" (sem selo) de "planilha sem utm_campaign" (selo) em `planoDoFiltro`, e só ligar o recorte depois que `usePerpetualSpreadsheet` resolver.'
+  - id: 'DOC-001'
+    severity: low
+    finding: 'A validação visual (DoD) está pendente: depende do deploy da 29.79 e do cadastro 6.6 (os 4 experts sem projeto). Até lá, todo perpétuo mostra os filtros desabilitados com "Vincular o expert".'
+    suggested_action: 'Depois do deploy e do vínculo dos experts, o Danilo confere no hambúrguer (a01+of01), no churrasco (of01 = gasto 0, com link para Legadas) e no FZ (a01 inclui [FZA1]).'
+
+waiver: { active: false }
+
+own_mutations:
+  - id: R1
+    mutation: 'componente: parágrafo `{aviso.regra}` (regra "tudo separado") removido do aviso'
+    result: 'SOBREVIVEU — 38/38 → TEST-002'
+  - id: R2
+    mutation: 'regra: `montarAvisoDoFiltro` devolve `regra: ""`'
+    result: 'CAIU (1) — "declara a regra tudo separado"'
+  - id: R3
+    mutation: 'painel: `<TopCreativesGallery campaignIds={campaignIdsDaEtapa}>` (bloco sem o campaignIds estreitado)'
+    result: 'SOBREVIVEU — 38/38 → TEST-001'
+  - id: R4
+    mutation: 'painel: `campaignIdSet = new Set(campaignIdsDaEtapa)` (Quente/Frio e tabela por campanha com a lista da etapa)'
+    result: 'SOBREVIVEU — 38/38 → TEST-001'
+  - id: R5
+    mutation: 'componente: selo "planilha sem UTM" desligado (`ativo={false}`)'
+    result: 'SOBREVIVEU — 38/38 → TEST-002'
+
+checks:
+  code_review: 'Diff lido inteiro. A decisão fica toda em `lib/utils/filtro-funil-oferta.ts`, que é pura: o vazio tem tipo próprio (`{tipo:"vazio"}`) e `idsDaMidia` devolve null, nunca []. `hasCampaigns` vem da lista original; `metaProjectId` e os 6 hooks Meta usam `temMidia`; camadas de vídeo e Top criativos não montam no vazio. Os cards mostram gasto 0 medido, não "carregando". O recorte só vai às 4 leituras de vendas com a rota respondendo (AC7), e o eco `filtro` é conferido (`vendasRespeitaramORecorte`). A queryKey ganha o recorte, e a invalidação por prefixo (use-perpetual-spreadsheet.ts:46) continua valendo. O AC6 segue o padrão da 47.14 (ref por valor aplicado).'
+  unit_tests: 'Rodado pelo QA: as 2 suítes da story dão 38/38 e o vitest do web inteiro 109 arquivos, 1.484/1.484. As 97 da 29.79 continuam verdes com os tipos do shared alterados. Mutações do QA: 1/5 caiu (R2); R1, R3, R4 e R5 sobreviveram (TEST-001/TEST-002). As 19 do @dev não foram refeitas.'
+  acceptance_criteria: 'AC1 ✓ (dois selects ao lado de "Classificar produtos"; opções com "(inativo)"; combinação E; só com `funnel.type === "perpetual"`). AC2 ✓ no código (lado Meta estreitado, hasCampaigns original, nunca []), mas o fio de 2 consumidores está desprotegido (TEST-001). AC3 ✓ (selo na Ascensão e na seção Vendas; comparativo oculto com aviso no card; dg-a1 sem recorte e com selo, com a ressalva REQ-001). AC4 ✓ (aviso expansível com unidades, motivos, gasto das campanhas sem a dimensão e a regra "tudo separado"). AC5 ✓ (sem expert, sem funis/ofertas, naoCadastrados, Legadas só com `ehCandidataALegada`; guest sem href). AC6 ✓. AC7 ✓ (404 desabilita com a frase, e o recorte só vai com a rota). AC8 ✓. AC9 ✓ (eslint 0 nos 9 arquivos tocados, rodado pelo QA; o next build e o tsc web do @dev não foram refeitos — o briefing dispensou e nada no diff pede).'
+  no_regressions: 'Sem filtro, a URL das 4 leituras não muda (`sufixoDoRecorte` devolve ""), a lista de mídia é a original e nenhum selo aparece. A queryKey passa a terminar em null,null, e a invalidação por prefixo continua pegando. O vitest do web está verde.'
+  performance: 'A rota funil-oferta é consultada uma vez por janela (staleTime de 2 min, 404 sem retry). Com filtro, as 4 leituras de vendas são refeitas uma vez. O placeholderData evita pedir as vendas duas vezes ao trocar o período.'
+  security: 'Guest não recebe link (o Dicionário é rota global e o middleware o devolveria a /projects); o papel vem de useUserRole, e `papel === null` também fica sem link. Sem PII nova na tela.'
+  documentation: 'A story traz File List, as decisões autônomas, 19 mutações com as de fio marcadas e a limitação declarada (os testes de fio leem o fonte). Os comentários no painel explicam as duas listas.'
+  api_contract: 'O web consome a rota e os campos da 29.79, cujo bump 19 → 20 está no commit 8938318f (um para o par). O front não exige API nova: com 404, os filtros ficam desabilitados e a tela segue como hoje (AC7). A renumeração no merge é do @devops (PO-13).'
+
+notes:
+  - 'Decisão 5 — dg-a1 (planilha sem utm_campaign): vendas sem recorte e com selo. APROVADA: é o AC3 literal ("todo o lado de vendas… não filtrado"). A alternativa daria 0 venda, com tudo em "planilha sem UTM", que é número filtrado pela metade. Consequência declarada pelo selo: com filtro, CAC/ROAS do dg-a1 misturam gasto filtrado com vendas sem filtro (hoje o gasto do funil é R$ 0).'
+  - 'Decisão 6 — o comparativo some do card de Investimento e o card explica por quê: APROVADA. O comparativo é um número dentro do card, não um bloco; mostrar a variação compararia um recorte com o todo, contra o AC3 ("nunca um número filtrado pela metade calado").'
+  - 'Decisão 7 — placeholderData da rota funil-oferta, só do MESMO projeto/funil: APROVADA. A classificação não depende da janela, só o gasto depende. Sem isso o filtro se desligaria durante a troca de período e as vendas seriam pedidas sem e com o recorte. Residual: por um instante, o aviso mostra o gasto das campanhas sem dimensão na janela anterior.'
+  - 'Demais decisões do @dev: filtros desabilitados (não ocultos) com a API antiga, previsto no AC7; sem expert, filtros desabilitados (AC5); link de Legadas também para campanha sem funil (a fila classifica os dois); no aviso, só o gasto de campanha que poderia ser do filtro (mesma regra da decisão 3 da 29.79). Todas coerentes.'
+  - 'Top criativos: a receita por criativo vem de `useCreativeRevenue`, por anúncio. Como cada anúncio pertence a uma campanha, com a lista estreitada o bloco fica consistente com o filtro, sem precisar do parâmetro da 29.79.'
+  - 'CodeRabbit não executado: a skill roda em WSL e este host é macOS.'
