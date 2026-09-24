@@ -198,4 +198,10 @@
 // devolveria vendas sem filtro ao lado de mídia filtrada: o painel só manda o
 // parâmetro quando a rota nova respondeu (29.80 AC7). Outras stories do lote de
 // 23/09 também sobem: quem mergear depois rebaseia e recalcula (PO-13).
-export const API_CONTRACT_VERSION = 21;
+// v22 (Story 42.11): rota nova `GET /api/projects/:projectId/funnels/:funnelId/
+// stages/:stageId/revenuecat/jornada?days=` — a jornada do usuário do Lyrio por
+// canal (Novos → viu paywall → interagiu → iniciou → pagou, com a receita),
+// agregada no banco a partir de `revenuecat_sales`. ADITIVA; `packages/mcp` não
+// é afetado. O web tem fallback: 404 (API atrás) some com o bloco e deixa o
+// banner acusar a defasagem — o bump é o que faz o banner aparecer.
+export const API_CONTRACT_VERSION = 22;

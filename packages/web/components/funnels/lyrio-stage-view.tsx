@@ -55,6 +55,7 @@ import { CampaignLogButton } from "./campaign-log-link";
 import { SalesMetaKpis } from "./sales-meta-kpis";
 import { RevenuecatOverviewBlock } from "./revenuecat-overview-block";
 import { LyrioDetailTable } from "./lyrio-detail-table";
+import { LyrioJornadaPorCanal } from "./lyrio-jornada-por-canal";
 import {
   useRevenuecatConnection,
   useSaveRevenuecatConnection,
@@ -978,6 +979,11 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
           days={days}
         />
       )}
+
+      {/* Story 42.11 — Jornada por canal. Logo depois do Detalhamento e FORA da
+          condição dele: lê o webhook do RevenueCat, não depende de campanha
+          vinculada (PO-03). Segue o seletor de dias do cabeçalho. */}
+      <LyrioJornadaPorCanal projectId={projectId} funnelId={funnelId} stageId={stage.id} days={days} />
 
       {/* RevenueCat — métricas ao vivo (API) + vendas do período (webhook) */}
       <section className="space-y-3">
