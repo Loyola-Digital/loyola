@@ -1,0 +1,57 @@
+schema: 1
+story: '18.84'
+story_title: 'Etapa de Vendas — aplicações por página pelo link do anúncio (página de vendas)'
+gate: PASS
+status_reason: 'Re-gate 2026-09-24: TEST-001 e DOC-001 fechados e provados pelo QA. A mutação M4 (gráfico lê a coluna do utm_term) agora derruba 1 teste; reverter o tooltip ao texto antigo derruba 1 teste do web. Suítes da story verdes (API 19/19, web 8/8). Resta REQ-001 (low) e a validação visual, que não bloqueiam.'
+reviewer: 'Quinn'
+updated: '2026-09-24T12:00:00Z'
+branch: 'feat/18.83-18.85-lps-lancamento'
+commits: ['9b474f94', '6d1dbe50']
+top_issues:
+  - id: 'TEST-001'
+    severity: medium
+    finding: 'Mutação M4 do QA SOBREVIVEU: em `stage-applications.ts`, trocar `acharColunaUtmContent(data.headers, data.rows)` por `acharColunaUtmTerm(...)` na leitura do GRÁFICO (`lerLinhas`) deixa 19/19 verdes. Com a coluna errada, `anuncioDaAplicacao` devolve null para quase tudo e o gráfico inteiro vira "Sem link resolvido" — erro virando ausência na tela. A lista tem essa trava (`lista` confere `acharColunaUtmContent`), o gráfico não.'
+    suggested_action: '@dev: em `aplicacoes-por-link-1884.test.ts`, no teste "o gráfico agrupa pelo link…", acrescentar `expect(rota).toMatch(/const idxConteudo = acharColunaUtmContent\(data\.headers, data\.rows\);/)` e provar revertendo.'
+    status: resolved
+    resolved_in: '6d1dbe50'
+    evidence: 'Re-gate: QA refez a M4 (linha 315 de `stage-applications.ts`, `acharColunaUtmContent(` → `acharColunaUtmTerm(`). Resultado: 1 falha ("o gráfico agrupa pelo link, resolvido no cache do PROJETO da rota"), 18 verdes. Revertido, `git status` limpo.'
+  - id: 'DOC-001'
+    severity: low
+    finding: 'O tooltip da série "Sem link resolvido" (`descreverSemLinkDaAplicacao`) promete remédio que esta tela não entrega: "o backfill de criativos resolve" e "abrir a aba Criativos sincroniza". A própria story declara que a auto-cura NÃO dispara para anúncio de Vendas, e a tabela de Criativos do lançamento não roda nas etapas de Vendas.'
+    suggested_action: 'Trocar por texto neutro (ex.: "cache desatualizado — sai quando o cache do anúncio for atualizado") ou apontar a ação que de fato cura.'
+    status: resolved
+    resolved_in: '6d1dbe50'
+    evidence: 'Re-gate: o texto novo diz "sai daqui quando o cache do anúncio for atualizado (esta tela não o atualiza)" e "sai daqui quando o anúncio entrar no cache (esta tela não sincroniza)". A trava é `not.toMatch(/backfill|aba Criativos|resolve/)` + `toContain` dos dois textos. O QA voltou o texto de fora do cache para "abrir a aba Criativos sincroniza": 1 falha no web. O único consumidor (`applications-daily-chart.tsx:126`) usa a função, e não há cópia do texto antigo fora dos testes.'
+  - id: 'REQ-001'
+    severity: low
+    finding: 'Divergência medida pelo @dev e registrada: a `PaginaB` do `dg-pg04` tem 9 aplicações sem link (não 7) e o `dg-pg02` hoje já é série única (não "quatro páginas pela letra"). A consequência que o PO declarou (uma série "Sem link resolvido" com 49) se confirma.'
+    suggested_action: 'Nenhuma no código; Danilo confere na validação visual (pendência 2 do PO).'
+    status: open
+
+waiver: { active: false }
+
+checks:
+  code_review: '`agruparPorLink` é pura e fecha a soma por construção (cada linha vai para uma URL ou para "Sem link resolvido"); `anuncioDaAplicacao` só aceita dígitos (org, link_in_bio, vazio e macro são "sem anúncio"); causas de anúncio reaproveitadas da 18.83/29.43. `lerLinksDosAnuncios` sempre com o `projectId` da rota. Aviso de órfã: `condicaoDosAnunciosComGasto` = projeto + campanhas da etapa + 30 dias + gasto > 0 (coluna `numeric`, comparação correta), e a porta `avisoDeOrfasSeAplica` cala sem campanha ou sem nenhuma aplicação com link (D4 justificado). A comparação com o lançamento anterior não lê o cache (só o total conta).'
+  unit_tests: 'Re-gate 2026-09-24: API 19/19 e web 8/8 verdes; M4 refeita = 1 ✗ (TEST-001 fechado); tooltip antigo = 1 ✗ no web (DOC-001 travado). Gate original: API 19/19 no arquivo da story; web 8. Mutações PRÓPRIAS do QA (revertidas, `git diff` vazio): M1 aviso de órfã volta ao projeto inteiro (sem `campaign_id` na SQL) — 1 falha; M2 aplicação orgânica somada na maior página — 2; M3 porta do aviso ignora "nenhuma aplicação com link" (dg-pg02) — 1; M4 gráfico lê a coluna do utm_term como conteúdo — 0 (SOBREVIVEU → TEST-001).'
+  acceptance_criteria: 'AC1 ✓ (URL do anúncio, link puro; textos do `utm_term` substituídos em `aplicacoes-por-link.ts`) · AC2 ✓ (4 causas; aba e letra deixaram de ser chave) · AC3 ✓ (coluna com link ou "Sem link resolvido"; paginação de 6 e 403 de guest intactos) · AC4 ✓ (só campanhas da etapa; sem campanha → sem aviso; teste da SQL) · AC5 ✓ · AC6 ✓ (20 → 21, com histórico; web novo × API antiga cai nos textos da 43.6) · AC7 ✓ (trava do fio do gráfico adicionada no re-gate) · AC8 ✓.'
+  no_regressions: 'Faixas por formulário intocadas (só o comentário do hook, PO-07). `paginasVieramDoUtmTerm` vai sempre `false` para o web antigo não afirmar a regra velha; `lpsOrfas` com URLs no web antigo é cosmético e declarado.'
+  performance: 'Duas leituras de banco por abertura (anúncios com gasto + cache de criativos), sem Meta.'
+  security: 'Cache e insights sempre filtrados por `project_id` validado na cadeia etapa → funil → projeto. Guest continua 403 na lista.'
+  documentation: 'Dev Agent Record com 10 decisões, medição antes × depois (dg-pg04 70 = 70; dg-pg02 49 = 49) e as divergências com a story registradas.'
+  api_contract: '20 → 21 com linha de histórico (`forms[].url`, `forms[].semLink`, `paginasPeloLinkDoAnuncio`, `adId`/`lpUrl`/`lpCausa` na lista). Renumerar no merge é do @devops.'
+
+notes:
+  - 'Validação visual pendente: `dg-pg04 › Vendas` (3 URLs + "Sem link resolvido", total igual ao de antes) e `dg-pg02 › Vendas` (série única de 49).'
+  - 'Sai no mesmo deploy da 18.83 — a migration 0158 (DEPLOY-001 da 18.83) vale para esta branch inteira.'
+
+history:
+  - at: '2026-09-24T11:40:00Z'
+    gate: CONCERNS
+    reviewer: 'Quinn'
+    commit: '9b474f94'
+    note: 'TEST-001 medium (M4 sobreviveu), DOC-001 low (tooltip promete remédio), REQ-001 low.'
+  - at: '2026-09-24T12:00:00Z'
+    gate: PASS
+    reviewer: 'Quinn'
+    commit: '6d1dbe50'
+    note: 'Re-gate: TEST-001 e DOC-001 resolvidos e provados por mutação do QA (M4: 1 ✗; tooltip antigo: 1 ✗). REQ-001 e validação visual seguem abertos, sem bloquear.'

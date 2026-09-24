@@ -9,6 +9,7 @@
 
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useQuery } from "@tanstack/react-query";
+import { montarVisaoDoLpFunnel, type VisaoDoLpFunnel } from "@/lib/utils/lp-funnel-view";
 
 export interface SalesDay {
   /** 1 = primeiro dia com venda daquele funil. */
@@ -122,7 +123,10 @@ export interface LeadJourney {
 
 /** Uma LP no mini-funil: o meio do funil que só existe nas planilhas. */
 export interface LpFunnelRow {
-  /** "LPA" — mesma chave que a tabela de LPs usa. */
+  /**
+   * A mesma chave da linha da tabela de LPs: a URL normalizada do anúncio
+   * (Story 18.83) ou "LPA" quando a API é anterior a ela.
+   */
   lp: string;
   /** Rótulos finos fundidos nesta chave ("LPAA"). Vazio quando não houve. */
   variantes: string[];
@@ -142,7 +146,14 @@ export interface LpFunnel {
    * Como cada pessoa foi atribuída. `heranca` alto significa que a LP veio do
    * lead de captação, não do registro da própria etapa — o card avisa.
    */
-  cobertura: { term: number; campanha: number; heranca: number; semLp: number };
+  cobertura: {
+    term: number;
+    campanha: number;
+    /** Story 18.83: `utm_content → ad_id → URL`. Ausente na API anterior. */
+    anuncio?: number;
+    heranca: number;
+    semLp: number;
+  };
   fontes: {
     label: string;
     tipo: "pesquisa" | "aplicacao" | "captacao";
@@ -183,59 +194,18 @@ export function useLpFunnel(
   });
 }
 
-export interface LpFunnelView {
-  byLp: Record<string, LpFunnelRow>;
-  /** Conversão lead → compra somando TODAS as LPs — a régua de cada card. */
-  refConversao: number | null;
-  /** % das atribuições que vieram por herança do lead de captação. */
-  pctHeranca: number | null;
-  /** Que tipos de planilha a etapa tem. Etapa sem fonte sai da cadeia do card. */
-  temFonte: { aplicacao: boolean; pesquisa: boolean };
-  /** Rótulos das planilhas por etapa, para o tooltip dizer de ONDE veio o número. */
-  fontesPorEtapa: { captacao: string[]; aplicacao: string[]; pesquisa: string[] };
-  /** Linhas descartadas por data ilegível — some do card sem isso. */
-  dataIlegivel: number;
-}
+export type LpFunnelView = VisaoDoLpFunnel<LpFunnelRow>;
 
 /**
- * Deriva o que o card precisa a partir da resposta crua. Vive aqui, e não em
- * cada dashboard, porque as duas telas que mostram a tabela de LPs (lançamento e
- * Meta Ads Teste) precisam exatamente das mesmas contas — e uma régua calculada
- * de dois jeitos diferentes é como o mesmo número acaba divergindo entre abas.
+ * Deriva o que o card precisa a partir da resposta crua. Vive num lugar só, e
+ * não em cada dashboard, porque as duas telas que mostram a tabela de LPs
+ * (lançamento e Meta Ads Teste) precisam exatamente das mesmas contas — e uma
+ * régua calculada de dois jeitos diferentes é como o mesmo número acaba
+ * divergindo entre abas. A regra mora em `lib/utils/lp-funnel-view.ts`, com
+ * teste (Story 18.83, PO-11); o hook só a chama.
  */
 export function useLpFunnelView(data: LpFunnel | undefined): LpFunnelView {
-  const byLp: Record<string, LpFunnelRow> = {};
-  let leads = 0;
-  let compras = 0;
-  for (const l of data?.lps ?? []) {
-    byLp[l.lp.toUpperCase()] = l;
-    leads += l.leads;
-    compras += l.compras;
-  }
-
-  const c = data?.cobertura;
-  const atribuidos = c ? c.term + c.campanha + c.heranca : 0;
-
-  // Antes de carregar (`data` undefined) nada é afirmável: dizer "sem fonte"
-  // aqui removeria etapas da cadeia e elas voltariam ao chegar a resposta.
-  const labels = (tipo: "captacao" | "aplicacao" | "pesquisa"): string[] =>
-    (data?.fontes ?? []).filter((f) => f.tipo === tipo && !f.erro).map((f) => f.label);
-
-  return {
-    byLp,
-    refConversao: leads > 0 ? (compras / leads) * 100 : null,
-    pctHeranca: atribuidos > 0 ? (c!.heranca / atribuidos) * 100 : null,
-    temFonte: {
-      aplicacao: !data || labels("aplicacao").length > 0,
-      pesquisa: !data || labels("pesquisa").length > 0,
-    },
-    fontesPorEtapa: {
-      captacao: labels("captacao"),
-      aplicacao: labels("aplicacao"),
-      pesquisa: labels("pesquisa"),
-    },
-    dataIlegivel: (data?.fontes ?? []).reduce((s, f) => s + (f.dataIlegivel ?? 0), 0),
-  };
+  return montarVisaoDoLpFunnel(data);
 }
 
 export function useSalesDailyComparison(projectId: string, funnelId: string, stageId: string) {

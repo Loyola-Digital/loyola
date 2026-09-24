@@ -21,6 +21,7 @@ import {
   pedidosDeRecomputo,
   type CacheDaResposta,
 } from "@/lib/utils/recomputo-creative-performance";
+import type { LpPorAnuncio } from "@/lib/utils/lps-do-lancamento";
 
 export interface CreativePerformanceData {
   adId: string;
@@ -82,6 +83,12 @@ export interface StageCreativePerformanceResponse {
   days: number;
   creatives: CreativePerformanceData[];
   lpBreakdown?: LpBreakdownRow[];
+  /**
+   * Story 18.83: o material da tabela de LPs POR ANÚNCIO, com a URL de destino
+   * de cada um. Ausente = API anterior à 18.83 → a tabela segue pelo
+   * `lpBreakdown` (rótulo da campanha), como era.
+   */
+  lpPorAnuncio?: LpPorAnuncio;
   summary: {
     totalSpend: number;
     totalLeads: number;

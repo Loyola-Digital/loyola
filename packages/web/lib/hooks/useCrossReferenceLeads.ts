@@ -19,6 +19,11 @@ import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useFunnelSpreadsheets } from "@/lib/hooks/use-funnel-spreadsheets";
 import { utmContentEfetivo } from "@/lib/utils/normalize-answer";
 import { useResolveMetaNames } from "@/lib/hooks/use-funnel-adsets-map";
+import {
+  contarLeadsDaPlanilha,
+  hojeNoNavegador,
+  type LeadsPorTemperatura,
+} from "@/lib/utils/contagem-de-leads";
 
 // Story 18.47: extrai um mapa ad_id (content/utm_content) → Ad Name de uma aba
 // (leads OU sales). Usado para nomear as respostas da pesquisa (que só têm
@@ -72,7 +77,12 @@ interface CrossReferencedLeads {
   // Story 18.46 (AC6/AC7): contagem de leads por LP via utm_content, quebrada
   // por temperatura (hot/cold) para o filtro de público.
   // { "lpa": { hot: N, cold: M, total: N+M } }
-  leadsByLp: Record<string, { hot: number; cold: number; total: number }>;
+  leadsByLp: Record<string, LeadsPorTemperatura>;
+  /**
+   * Story 18.83 (AC4): leads PAGOS por `ad_id` (`utm_content`), com a
+   * temperatura do texto. A tabela de LPs do lançamento soma por URL do anúncio.
+   */
+  leadsPagosPorAnuncio: Record<string, LeadsPorTemperatura>;
   totalLeads: number;
   isLoading: boolean;
   error?: string;
@@ -89,7 +99,7 @@ export function useCrossReferenceLeads({
   projectId,
   funnelId,
   stageId,
-  days: _days = 30,
+  days = 30,
 }: UseCrossReferenceLeadsOptions): CrossReferencedLeads {
   // Buscar surveys vinculadas ao stage
   const surveysQuery = useFunnelSurveys(projectId, funnelId, stageId);
@@ -183,100 +193,23 @@ export function useCrossReferenceLeads({
     };
   }, [sheetQuery.data, salesSheetQuery.data, metaAdNames]);
 
-  // Computar cruzamento: coluna 5 = utm_content (adId), coluna 7 = utm_term (lpa/hot/cold/etc)
-  const result = useMemo(() => {
-    const leads: Record<string, number> = {};
-    const leadsByAdName: Record<string, number> = {};
-    const terms: Record<string, string> = {};
-    const termsMapping: Record<string, string> = {};
-    const leadsByLp: Record<string, { hot: number; cold: number; total: number }> = {};
-    let totalLeads = 0;
-
-    if (!sheetQuery.data?.rows || sheetQuery.data.rows.length === 0) {
-      return { leads, leadsByAdName, terms, termsMapping, leadsByLp, totalLeads, isLoading: false };
-    }
-
-    const headers = (sheetQuery.data as unknown as { headers?: string[] }).headers ?? [];
-    // Story 18.47: localiza colunas por CABEÇALHO (robusto entre abas de etapas
-    // diferentes); cai pras posições legadas (5/7) quando o header não existe.
-    const findCol = (names: string[], fallback: number): number => {
-      const idx = headers.findIndex((h) => names.includes((h ?? "").trim().toLowerCase()));
-      return idx >= 0 ? idx : fallback;
-    };
-    const CONTENT_INDEX = findCol(["content", "utm_content", "co="], 5); // utm_content = adId
-    const TERM_INDEX = findCol(["utm_term", "term", "t="], 7);           // utm_term (lpX/hot/cold)
-
-    // Story 18.46: localiza a coluna `source` (utm_source) pelo cabeçalho.
-    // Lead pago = source ∈ {meta, google}; o resto (ig, etc.) é orgânico.
-    const SOURCE_INDEX = headers.findIndex((h) => {
-      const n = (h ?? "").trim().toLowerCase();
-      return n === "source" || n === "utm_source";
-    });
-    // Story 18.47: coluna "Ad Name" da planilha — agrupar leads por nome do
-    // criativo (soma todos os ad_ids). Localiza por cabeçalho (robusto).
-    const AD_NAME_INDEX = headers.findIndex((h) => {
-      const n = (h ?? "").trim().toLowerCase();
-      return n === "ad name" || n === "ad_name" || n === "adname" || n === "nome do anúncio" || n === "nome do anuncio";
-    });
-    const PAID_SOURCES = new Set(["meta", "google"]);
-    const isPaidRow = (row: string[]): boolean => {
-      if (SOURCE_INDEX < 0) return true; // sem coluna source → não filtra (fallback)
-      const src = (row[SOURCE_INDEX] ?? "").trim().toLowerCase();
-      return PAID_SOURCES.has(src);
-    };
-
-    // Contar leads por utm_content e armazenar termo
-    for (const row of sheetQuery.data.rows) {
-      const termString = (row[TERM_INDEX]?.trim() ?? "").toLowerCase();
-      const utmContentRaw = (row[CONTENT_INDEX]?.trim() ?? "").toLowerCase();
-
-      // Story 18.47: conta leads por Ad Name (TODAS as linhas daquele criativo,
-      // somando os vários ad_ids). Corrige a contagem que antes usava 1 só ad_id.
-      if (AD_NAME_INDEX >= 0) {
-        const adName = (row[AD_NAME_INDEX] ?? "").trim();
-        if (adName) leadsByAdName[adName] = (leadsByAdName[adName] ?? 0) + 1;
-      }
-
-      // Story 18.46 (AC6): identificar a LP e a temperatura do lead.
-      // Os dados reais mostram que lpX/hot/cold vivem no utm_term (col 7), mas
-      // procuramos em ambas as colunas (5 e 7) para robustez.
-      // Conta APENAS leads pagos (source = meta/google) — Tx Conv usa esse número.
-      const haystack = `${utmContentRaw} ${termString}`;
-      const lpMatch = haystack.match(/lp([a-z])/);
-      if (lpMatch && isPaidRow(row)) {
-        const lpKey = `lp${lpMatch[1]}`;
-        if (!leadsByLp[lpKey]) leadsByLp[lpKey] = { hot: 0, cold: 0, total: 0 };
-        leadsByLp[lpKey].total += 1;
-        if (haystack.includes("hot")) leadsByLp[lpKey].hot += 1;
-        else if (haystack.includes("cold")) leadsByLp[lpKey].cold += 1;
-      }
-
-      const utmContent = row[CONTENT_INDEX]?.trim() ?? "";
-      if (!utmContent) continue;
-
-      const adId = utmContentEfetivo(utmContent);
-
-      leads[adId] = (leads[adId] ?? 0) + 1;
-
-      // Store full utm_term for LP identification (Story 18.44)
-      if (!termsMapping[adId]) {
-        termsMapping[adId] = termString;
-      }
-
-      // Extract hot/cold from the term string (Story 18.43)
-      if (!terms[adId]) {
-        if (termString.includes("hot")) {
-          terms[adId] = "hot";
-        } else if (termString.includes("cold")) {
-          terms[adId] = "cold";
-        }
-      }
-
-      totalLeads += 1;
-    }
-
-    return { leads, leadsByAdName, terms, termsMapping, leadsByLp, totalLeads, isLoading: false };
-  }, [sheetQuery.data]);
+  // Computar cruzamento: coluna 5 = utm_content (adId), coluna 7 = utm_term (lpa/hot/cold/etc).
+  // A contagem mora em `lib/utils/contagem-de-leads.ts` — com teste; aqui só
+  // a chamada, para o hook e o teste falarem da MESMA regra.
+  //
+  // Story 18.85 (AC2/PO-07): a contagem respeita o `days` do seletor, pela
+  // coluna de data MAPEADA da planilha (`columnMapping.date`). O memo depende
+  // de `days` e da coluna — senão trocar o seletor não reconta.
+  const colunaDeData = leadsSheet?.columnMapping?.date;
+  const result = useMemo(
+    () =>
+      contarLeadsDaPlanilha(sheetQuery.data as unknown as { headers?: string[]; rows?: string[][] }, {
+        days,
+        colunaDeData,
+        hoje: hojeNoNavegador(),
+      }),
+    [sheetQuery.data, days, colunaDeData],
+  );
 
   // Story 18.47: faixas por Ad Name a partir da aba de PESQUISA.
   // Cada linha = um respondente, com utm_content (ad_id) + "Faixa N".
@@ -361,6 +294,7 @@ export function useCrossReferenceLeads({
     terms: result.terms,
     termsMapping: result.termsMapping,
     leadsByLp: result.leadsByLp,
+    leadsPagosPorAnuncio: result.leadsPagosPorAnuncio,
     totalLeads: result.totalLeads,
     isLoading,
     error: error ? error : undefined,

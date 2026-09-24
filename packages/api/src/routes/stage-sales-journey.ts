@@ -33,7 +33,18 @@ import {
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
-import { chaveLp, lpDoRegistro, parseUtmTerm, type FonteLp } from "../services/utm-term.js";
+import { parseUtmTerm } from "../services/utm-term.js";
+import {
+  lerCampanhasDosAnuncios,
+  lerLinksDosAnuncios,
+  linkComCorrecao,
+} from "../services/lp-do-anuncio.js";
+import {
+  atribuirLpFunnel,
+  type EtapaLp,
+  type PessoaDaPlanilha,
+} from "../utils/lp-funnel-atribuicao.js";
+import { utmContentEfetivo } from "../utils/utm-value.js";
 // Story 18.77 (AC4): UMA classificação só. A regex de temperatura do
 // `lead-scoring.ts` e o `classifyFonte` do `stage-sales-data.ts` NÃO são usados
 // aqui — se divergirem do resultado desta seção, é defeito e vai para o backlog.
@@ -53,6 +64,13 @@ import {
  * 800 vendas" seria.
  */
 const PISO_DE_LEADS_POR_ORIGEM = 10;
+
+/**
+ * Story 18.83 — apelidos da coluna de `utm_content` quando o mapeamento não a
+ * declara. Os mesmos do web (`useCrossReferenceLeads`): "content",
+ * "utm_content" e "co=" (decisão do Danilo, 18.47).
+ */
+const APELIDOS_DE_CONTEUDO = /^utm_?content$|^content$|^co=$/i;
 
 const paramsSchema = z.object({
   projectId: z.string().uuid(),
@@ -150,6 +168,12 @@ interface VendaLida {
   term: string;
   /** utm_campaign cru — reserva pra achar a LP quando o term não tem. */
   campaign: string;
+  /**
+   * Story 18.83 (AC9): `utm_content` cru do checkout (o `co=`). Acréscimo — o
+   * mini-funil da LP chaveia pela URL do anúncio; `buyers-origin` e a jornada
+   * não leem o campo.
+   */
+  content: string;
 }
 
 export default fp(async function stageSalesJourneyRoutes(fastify) {
@@ -182,6 +206,7 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
         utm_source?: string;
         utm_term?: string;
         utm_campaign?: string;
+        utm_content?: string;
         canalOrigem?: string;
       };
 
@@ -208,6 +233,10 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
       const cmpIdx = col(mapping.utm_campaign) !== -1
         ? col(mapping.utm_campaign)
         : data.headers.findIndex((h) => /^utm_?campaign$|^ca=$/i.test(h.trim()));
+      // Story 18.83: mesmos apelidos do web (`useCrossReferenceLeads`).
+      const contentIdx = col(mapping.utm_content) !== -1
+        ? col(mapping.utm_content)
+        : data.headers.findIndex((h) => APELIDOS_DE_CONTEUDO.test(h.trim()));
 
       // Pass 1: transações reembolsadas.
       const reembolsados = new Set<string>();
@@ -252,6 +281,7 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
           source: srcRaw || "(sem origem)",
           term: termIdx !== -1 ? (row[termIdx] ?? "").trim() : "",
           campaign: cmpIdx !== -1 ? (row[cmpIdx] ?? "").trim() : "",
+          content: contentIdx !== -1 ? (row[contentIdx] ?? "").trim() : "",
         });
       }
     }
@@ -295,6 +325,7 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
         // que é o correto: ninguém sabe de qual página ela veio.
         term: "",
         campaign: "",
+        content: "",
       });
     }
 
@@ -1285,32 +1316,15 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
    * Meta. O que ela não responde é o meio do funil, que só existe nas planilhas.
    * Este endpoint entrega esse meio; o card une os dois lados.
    *
-   * **Atribuição, nesta ordem (cada linha é classificada uma vez):**
+   * **Story 18.83 (AC9): a página é a URL do anúncio**, como a linha da tabela
+   * que o card expande. A atribuição (UTM própria pelo `utm_content → ad_id →
+   * URL`, depois herança do lead; aplicação SÓ por herança) mora em
+   * `utils/lp-funnel-atribuicao.ts`, com teste. Esta rota lê as planilhas, o
+   * cache de criativos e a correção manual por campanha, e entrega lá.
    *
-   *  1. `utm_term` estruturado → `parseUtmTerm().lp`. É a fonte boa: o term é
-   *     escrito pelo time no Meta e carrega a LP explicitamente.
-   *  2. `utm_campaign` com `lp{letra}` — mesma regra que a tabela usa sobre o
-   *     campaign_name, para o card não brigar com a linha que ele expande.
-   *  3. Herança do lead de captação (por e-mail, telefone como reserva). Existe
-   *     porque planilha de aplicação e de pesquisa quase nunca carregam o term:
-   *     sem este degrau, essas duas etapas apareceriam zeradas mesmo com o funil
-   *     inteiro rastreado. É o degrau mais fraco, então vem contado separado em
-   *     `cobertura` — o card avisa quando a maior parte do número veio daqui.
-   *
-   * Quem não casa em nenhum dos três NÃO é distribuído entre as LPs: vai para
-   * `semLp`. Ratear "não sei" entre as páginas inflaria a vencedora.
+   * Quem não casa em nada NÃO é distribuído entre as LPs: vai para `semLp`.
+   * Ratear "não sei" entre as páginas inflaria a vencedora.
    */
-
-  /** `heranca` só existe aqui: as duas outras vêm de `lpDoRegistro`. */
-  type FonteAtribuicao = FonteLp | "heranca";
-  type EtapaLp = "leads" | "aplicacoes" | "pesquisas";
-
-  interface RegistroLp {
-    email: string;
-    phone: string;
-    lp: string | null;
-    fonte: FonteAtribuicao | null;
-  }
 
   fastify.get(
     "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/lp-funnel",
@@ -1320,7 +1334,7 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
       if (!p.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
 
       const [stage] = await fastify.db
-        .select({ id: funnelStages.id })
+        .select({ id: funnelStages.id, lpCampaignUrls: funnelStages.lpCampaignUrls })
         .from(funnelStages)
         .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
         .where(
@@ -1349,8 +1363,8 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
         return `${c.getFullYear()}-${String(c.getMonth() + 1).padStart(2, "0")}-${String(c.getDate()).padStart(2, "0")}`;
       })();
 
-      // --- Passada 1: lê cada planilha e classifica o que dá pelo term/campanha ---
-      const porEtapa: Record<EtapaLp, Map<string, RegistroLp>> = {
+      // --- Passada 1: lê cada planilha; a atribuição vem depois, em lote ---
+      const porEtapa: Record<EtapaLp, Map<string, PessoaDaPlanilha>> = {
         leads: new Map(),
         aplicacoes: new Map(),
         pesquisas: new Map(),
@@ -1365,9 +1379,13 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
         comLp: number;
         erro: boolean;
         semColunaTerm: boolean;
+        /** Story 18.83: sem coluna de `utm_content` — a UTM própria não existe. */
+        semColunaConteudo: boolean;
         /** Linhas jogadas fora por data ilegível — descarte deixa de ser silencioso. */
         dataIlegivel: number;
       }[] = [];
+      // Linhas com `utm_content` por fonte — `comLp` só se sabe depois do lote.
+      const adIdsPorFonte: string[][] = [];
 
       for (const f of fontes) {
         const etapa: EtapaLp =
@@ -1384,8 +1402,10 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
             comLp: 0,
             erro: true,
             semColunaTerm: false,
+            semColunaConteudo: false,
             dataIlegivel: 0,
           });
+          adIdsPorFonte.push([]);
           continue;
         }
 
@@ -1401,13 +1421,17 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
             comLp: 0,
             erro: false,
             semColunaTerm: false,
+            semColunaConteudo: false,
             dataIlegivel: 0,
           });
+          adIdsPorFonte.push([]);
           continue;
         }
 
         const termIdx = acharCol(data.headers, f.mapping.utm_term, /^utm_?term$|^te=$/i);
         const cmpIdx = acharCol(data.headers, f.mapping.utm_campaign, /^utm_?campaign$|^ca=$/i);
+        // Story 18.83 (PO-09a): a coluna de conteúdo — a UTM própria da cadeia nova.
+        const contentIdx = acharCol(data.headers, f.mapping.utm_content, APELIDOS_DE_CONTEUDO);
         const dataIdx = acharCol(
           data.headers,
           f.mapping.timestamp ?? f.mapping.date,
@@ -1415,8 +1439,8 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
         );
 
         let linhas = 0;
-        let comLp = 0;
         let dataIlegivel = 0;
+        const adIdsDaFonte: string[] = [];
 
         for (const row of data.rows) {
           // Janela só se a aba tem data: filtrar planilha sem data mataria
@@ -1443,53 +1467,22 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
           // pessoa só, e a primeira passagem é a que tem a origem real.
           if (porEtapa[etapa].has(chave)) continue;
 
-          const achado = lpDoRegistro(
-            termIdx !== -1 ? (row[termIdx] ?? "").trim() : "",
-            cmpIdx !== -1 ? (row[cmpIdx] ?? "").trim() : "",
-          );
-          if (achado) comLp++;
-          porEtapa[etapa].set(chave, {
-            email,
-            phone,
-            lp: achado?.rotulo ?? null,
-            fonte: achado?.fonte ?? null,
-          });
+          const adId = contentIdx !== -1 ? utmContentEfetivo(row[contentIdx] ?? "") : "";
+          adIdsDaFonte.push(adId);
+          porEtapa[etapa].set(chave, { email, phone, adId });
         }
 
         fontesOut.push({
           label: f.label,
           tipo: f.tipo,
           linhas,
-          comLp,
+          comLp: 0,
           erro: false,
           semColunaTerm: termIdx === -1 && cmpIdx === -1,
+          semColunaConteudo: contentIdx === -1,
           dataIlegivel,
         });
-      }
-
-      // --- Índice de herança: a LP que o contato tinha na CAPTAÇÃO ---
-      const lpPorEmail = new Map<string, string>();
-      const lpPorTelefone = new Map<string, string>();
-      for (const r of porEtapa.leads.values()) {
-        if (!r.lp) continue;
-        if (r.email && !lpPorEmail.has(r.email)) lpPorEmail.set(r.email, r.lp);
-        if (r.phone && !lpPorTelefone.has(r.phone)) lpPorTelefone.set(r.phone, r.lp);
-      }
-      const herdar = (email: string, phone: string): string | null =>
-        (email ? lpPorEmail.get(email) : undefined) ??
-        (phone ? lpPorTelefone.get(phone) : undefined) ??
-        null;
-
-      // --- Passada 2: herança para quem ficou sem LP própria ---
-      for (const etapa of ["aplicacoes", "pesquisas"] as const) {
-        for (const r of porEtapa[etapa].values()) {
-          if (r.lp) continue;
-          const h = herdar(r.email, r.phone);
-          if (h) {
-            r.lp = h;
-            r.fonte = "heranca";
-          }
-        }
+        adIdsPorFonte.push(etapa === "aplicacoes" ? [] : adIdsDaFonte);
       }
 
       // --- Vendas: ingresso da captação e/ou produto principal ---
@@ -1504,84 +1497,47 @@ export default fp(async function stageSalesJourneyRoutes(fastify) {
       const vendas = cutoffYmd
         ? vendasRaw.filter((v) => !v.dated || (v.day !== null && v.day >= cutoffYmd))
         : vendasRaw;
+      const compras = vendas.map((v) => ({
+        email: v.email,
+        adId: utmContentEfetivo(v.content),
+        bruto: v.bruto,
+      }));
 
-      const compradores = new Map<string, { lp: string | null; fonte: FonteAtribuicao | null; receita: number }>();
-      for (const v of vendas) {
-        if (!v.email) continue;
-        const existente = compradores.get(v.email);
-        if (existente) {
-          existente.receita += v.bruto;
-          continue;
-        }
-        const achado = lpDoRegistro(v.term, v.campaign);
-        const lp = achado?.rotulo ?? herdar(v.email, "");
-        compradores.set(v.email, {
-          lp,
-          fonte: achado?.fonte ?? (lp ? "heranca" : null),
-          receita: v.bruto,
-        });
-      }
-
-      // --- Agregação por LP ---
-      interface Acc {
-        lp: string;
-        variantes: Set<string>;
-        leads: number;
-        aplicacoes: number;
-        pesquisas: number;
-        compras: number;
-        receita: number;
-      }
-      const acc = new Map<string, Acc>();
-      const pegar = (rotulo: string): Acc => {
-        const k = chaveLp(rotulo);
-        let a = acc.get(k);
-        if (!a) {
-          a = { lp: k, variantes: new Set(), leads: 0, aplicacoes: 0, pesquisas: 0, compras: 0, receita: 0 };
-          acc.set(k, a);
-        }
-        if (rotulo !== k) a.variantes.add(rotulo);
-        return a;
+      // --- `ad_id → URL`, em lote, do cache do projeto (sem Meta) ---
+      // Aplicação não entra (PO-17): o link próprio dela é página de vendas.
+      const adIds = [
+        ...[...porEtapa.leads.values(), ...porEtapa.pesquisas.values()].map((r) => r.adId),
+        ...compras.map((c) => c.adId),
+      ].filter(Boolean);
+      const links = await lerLinksDosAnuncios(fastify.db, p.data.projectId, adIds);
+      // AC5 (PO-15b): a correção manual por campanha vale no MESMO mapa que
+      // conta as pessoas — senão o gasto muda de linha na tabela e o card da
+      // linha nova não ganha o lead. Só os sem link precisam da campanha.
+      const correcoes = (stage.lpCampaignUrls ?? {}) as Record<string, string>;
+      const semLink = [...links].filter(([, l]) => !l.chave).map(([id]) => id);
+      const campanhaDe =
+        Object.keys(correcoes).length > 0 && semLink.length > 0
+          ? await lerCampanhasDosAnuncios(fastify.db, p.data.projectId, semLink)
+          : new Map<string, string>();
+      const urlDoAnuncio = (adId: string): string | null => {
+        const link = links.get(adId);
+        if (!link) return null;
+        return linkComCorrecao(link, campanhaDe.get(adId), correcoes).chave;
       };
 
-      const semLp = { leads: 0, aplicacoes: 0, pesquisas: 0, compras: 0 };
-      const cobertura = { term: 0, campanha: 0, heranca: 0, semLp: 0 };
+      fontesOut.forEach((f, i) => {
+        f.comLp = (adIdsPorFonte[i] ?? []).filter((id) => id && urlDoAnuncio(id)).length;
+      });
 
-      for (const etapa of ["leads", "aplicacoes", "pesquisas"] as const) {
-        for (const r of porEtapa[etapa].values()) {
-          if (!r.lp) {
-            semLp[etapa]++;
-            cobertura.semLp++;
-            continue;
-          }
-          pegar(r.lp)[etapa]++;
-          if (r.fonte) cobertura[r.fonte]++;
-        }
-      }
-      for (const c of compradores.values()) {
-        if (!c.lp) {
-          semLp.compras++;
-          cobertura.semLp++;
-          continue;
-        }
-        const a = pegar(c.lp);
-        a.compras++;
-        a.receita += c.receita;
-        if (c.fonte) cobertura[c.fonte]++;
-      }
-
-      const lps = [...acc.values()]
-        .map((a) => ({
-          lp: a.lp,
-          variantes: [...a.variantes].sort(),
-          leads: a.leads,
-          aplicacoes: a.aplicacoes,
-          pesquisas: a.pesquisas,
-          compras: a.compras,
-          receita: +a.receita.toFixed(2),
-        }))
-        // Ordena pelo topo do funil: é o número que dá escala à página.
-        .sort((x, y) => y.leads - x.leads || y.compras - x.compras);
+      const { lps, semLp, cobertura } = atribuirLpFunnel({
+        porEtapa: {
+          leads: [...porEtapa.leads.values()],
+          aplicacoes: [...porEtapa.aplicacoes.values()],
+          pesquisas: [...porEtapa.pesquisas.values()],
+        },
+        compras,
+        urlDoAnuncio,
+      });
 
       return {
         // Nenhuma planilha do funil rendeu uma linha sequer — o card explica o

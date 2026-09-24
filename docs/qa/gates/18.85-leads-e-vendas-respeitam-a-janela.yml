@@ -1,0 +1,35 @@
+schema: 1
+story: '18.85'
+story_title: 'Lançamento — leads, vendas e ingressos por LP e por criativo respeitam a janela de datas'
+gate: PASS
+status_reason: 'A janela é corrigida na fonte, pela régua do shared (`inicioDaJanela`), nas duas pontas: os quatro laços da rota leem as linhas recortadas e a contagem do web (extraída e chamada pelo hook) recorta antes de contar; coluna de data ausente não zera (PO-04). Seis mutações próprias derrubam 1/1/1/1/1/1; cache v4, sem campo novo e sem contrato.'
+reviewer: 'Quinn'
+updated: '2026-09-24T11:40:00Z'
+branch: 'feat/18.83-18.85-lps-lancamento'
+commits: ['cbd08e44']
+
+top_issues:
+  - id: 'REQ-001'
+    severity: low
+    finding: 'A medição de linhas com data ilegível (PO-03) ficou [FALTA] para bbe-pr2 leads e fz-m3 leads (planilhas no Google Sheets, sem credencial na worktree). Nas duas fixtures medidas deu 0 e 0.'
+    suggested_action: 'Depois do deploy, ler `janelaLeads.semData`/`janelaVendas.semData` no log `creative-performance-leads-walk` dessas etapas; se > 0, o @po leva a dica ao Danilo como story própria.'
+  - id: 'REL-001'
+    severity: low
+    finding: 'Entre os deploys, leads (web) e vendas (API) podem estar em janelas diferentes. Declarado na story.'
+    suggested_action: 'Declarar na PR; subir web e API no mesmo ciclo.'
+
+waiver: { active: false }
+
+checks:
+  code_review: '`recortarLinhasPelaJanela` (API) e `recortarPelaJanela` (web) usam `inicioDaJanela` e o dia da linha (`saleDayKey`/`normaliseDate`), com teto em hoje. Índice -1 (sem coluna ou coluna renomeada) não filtra; data ilegível sai e é contada em `semData`. Na rota, `hoje = businessToday()` e as linhas são recortadas ANTES do dedup `co=`, do `computeCreativeSalesMetrics`, do `salesByEmail` e do laço de leads. No web, o memo depende de `[sheetQuery.data, days, colunaDeData]`.'
+  unit_tests: 'Novas verdes (API 29 com o arquivo da 18.83; web 10). Relógio fixo em 2026-09-23; web em `TZ=America/Sao_Paulo`. Desvio declarado aceito: o teste da 18.83 passou a exigir `≥ v3` e a trava exata `v4` mora no teste da 18.85 — a mutação M3 da 18.83 (`:v2`) derrubou os DOIS. Mutações PRÓPRIAS do QA (revertidas, `git diff` vazio): M1 laço do dedup `co=` volta às linhas cruas — 1 falha; M2 laço `salesByEmail` volta às linhas cruas — 1; M3 API: sem coluna de data zera tudo — 1; M4 fio: leads da rota com `days + 1` — 1; M5 hook com "hoje" em UTC — 1; M6 web sem teto (data futura entra) — 1.'
+  acceptance_criteria: 'AC1 ✓ · AC2 ✓ · AC3 ✓ (os quatro laços) · AC4 ✓ (descarte pela regra do projeto; PO-04 sem zerar calado; medição parcial — REQ-001) · AC5 ✓ (`v3` → `v4`) · AC6 ✓ (fz-m2 30 d → 0, derrubado por "ignorar days" que volta a 525; bbe-pr2 vendas 7 d → 0; borda do shared) · AC7 ✓.'
+  no_regressions: 'Faixas por criativo, mini-funil e faturamento do Top Criativos fora, como a story manda. Os números da tabela de LPs, Criativos e Top Criativos só caem ou ficam iguais (a janela só tira linhas).'
+  performance: 'Um `filter` por planilha por cômputo; nenhuma leitura nova.'
+  security: 'Sem superfície nova.'
+  documentation: 'Dev Agent Record com o que mudou, a medição e o desvio do teste da 18.83 declarados.'
+  api_contract: 'Sem campo, rota ou snapshot novo → não sobe; continua 21 (18.83/18.84). Correto pela regra do gate.'
+
+notes:
+  - 'Validação visual pendente: comparar antes × depois do deploy no mesmo dia e janela (fz-m2 em 30 dias fica 0).'
+  - 'A `:v4` esfria o cache da tabela de LPs e da Criativos no deploy (primeira abertura paga a Meta).'

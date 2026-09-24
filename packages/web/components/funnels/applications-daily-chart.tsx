@@ -3,10 +3,11 @@
 /**
  * Aplicações por dia — uma linha por PÁGINA (Story 43.6), alinhadas em D1/D2/D3.
  *
- * O time pode mapear mais de uma planilha de aplicação no mesmo lançamento (ex.:
- * "form com ticket" e "form sem ticket"). Uma planilha pode virar várias séries:
- * na aba-base, quem decide a página é a LP do `utm_term` da linha. O nome
- * aparece na legenda e no tooltip.
+ * Story 18.84: cada série é o LINK DO ANÚNCIO de onde a aplicação veio (a
+ * página de vendas, `utm_content → anúncio → link`), hiperlinkado; aplicação
+ * sem anúncio de origem fica em "Sem link resolvido", com a causa no tooltip.
+ * Com a API anterior, a série era a letra da aba ou do `utm_term` (43.6) — os
+ * textos de cada regra só aparecem com a resposta que os sustenta.
  *
  * A comparação com o lançamento anterior é AGREGADA (uma tracejada só, total vs
  * total) — não casada forma a forma, como este cabeçalho afirmou por um tempo
@@ -28,6 +29,12 @@ import {
   type ApplicationForm,
   type ApplicationDay,
 } from "@/lib/hooks/use-stage-applications";
+import {
+  TEXTO_PAGINAS_PELO_LINK,
+  descreverSemLinkDaAplicacao,
+  textoAplicacoesSemLink,
+  textoPaginasOrfas,
+} from "@/lib/utils/aplicacoes-por-link";
 
 // Paleta de séries do design system (.spy-viz). Categoria nominal: identidade
 // nunca é só cor — legenda e tooltip sempre trazem o nome da forma.
@@ -95,6 +102,37 @@ function buildRows(forms: ApplicationForm[], comparison: Comparison, campo: Camp
   return rows;
 }
 
+/**
+ * Story 18.84 (AC1/AC2) — o rótulo de uma série: link puro, hiperlinkado
+ * (padrão da 18.83), ou "Sem link resolvido" com as causas no tooltip.
+ */
+function RotuloDaSerie({ form }: { form: ApplicationForm }) {
+  if (form.url) {
+    return (
+      <a
+        href={form.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={form.url}
+        className="normal-case tracking-normal text-primary hover:underline"
+      >
+        {form.label}
+      </a>
+    );
+  }
+  if (form.semLink) {
+    return (
+      <span
+        title={descreverSemLinkDaAplicacao(form.semLink)}
+        className="cursor-help underline decoration-dotted underline-offset-2"
+      >
+        {form.label}
+      </span>
+    );
+  }
+  return <>{form.label}</>;
+}
+
 export function ApplicationsDailyChart({
   projectId,
   funnelId,
@@ -151,7 +189,14 @@ export function ApplicationsDailyChart({
               deixou de ser o que determina a página: agora quem decide é o
               `utm_term` da linha. Dizer "crie a aba" mandaria o time criar uma
               aba que não recuperaria a aplicação já registrada. */}
-          {data.lpsOrfas?.length > 0 && (
+          {/* Story 18.84 (AC4): páginas de VENDA (URL) com gasto nas campanhas
+              da etapa e nenhuma aplicação — o texto da regra nova. */}
+          {data.paginasPeloLinkDoAnuncio && data.lpsOrfas?.length > 0 && (
+            <p className="text-[11px] text-amber-700 dark:text-amber-400">
+              {textoPaginasOrfas(data.lpsOrfas, data.aplicacoesSemPagina)}
+            </p>
+          )}
+          {!data.paginasPeloLinkDoAnuncio && data.lpsOrfas?.length > 0 && (
             <p className="text-[11px] text-amber-700 dark:text-amber-400">
               <span className="font-medium">{data.lpsOrfas.join(", ")}</span>{" "}
               {data.lpsOrfas.length === 1 ? "está rodando" : "estão rodando"} na Meta e não
@@ -176,6 +221,11 @@ export function ApplicationsDailyChart({
               série continua única e idêntica ao que era; dizer ali que "49
               aplicações estão sem página identificada" é verdade inútil, e
               aviso que aparece com tudo certo ensina o time a ignorar avisos. */}
+          {data.paginasPeloLinkDoAnuncio && !data.lpsOrfas?.length && data.aplicacoesSemPagina > 0 && (
+            <p className="text-[11px] text-amber-700 dark:text-amber-400">
+              {textoAplicacoesSemLink(data.aplicacoesSemPagina)}
+            </p>
+          )}
           {data.paginasVieramDoUtmTerm && !data.lpsOrfas?.length && data.aplicacoesSemPagina > 0 && (
             <p className="text-[11px] text-amber-700 dark:text-amber-400">
               <span className="font-medium">{data.aplicacoesSemPagina}</span>{" "}
@@ -232,7 +282,7 @@ export function ApplicationsDailyChart({
                 className="inline-block h-2 w-2 shrink-0 rounded-full"
                 style={{ background: colorFor(i) }}
               />
-              {f.label}
+              <RotuloDaSerie form={f} />
             </p>
             <p className="text-2xl font-semibold leading-none">{nf(f.total)}</p>
           </div>
@@ -248,6 +298,13 @@ export function ApplicationsDailyChart({
           O gatilho é `paginasVieramDoUtmTerm`, não "há órfãs" (QA-43.6-01): uma
           aba-base pode quebrar em três páginas sem sobrar nenhuma linha órfã, e
           os números mudam do mesmo jeito. */}
+      {/* Story 18.84 — a regra nova tem a sua explicação: a página é o link do
+          anúncio, e o número de uma página pode mudar (a aba não decide mais). */}
+      {data.paginasPeloLinkDoAnuncio && (
+        <div className="mb-4 rounded-lg border border-border/40 bg-muted/30 px-3 py-2">
+          <p className="text-[11px] text-muted-foreground">{TEXTO_PAGINAS_PELO_LINK}</p>
+        </div>
+      )}
       {data.paginasVieramDoUtmTerm && (
         <div className="mb-4 rounded-lg border border-border/40 bg-muted/30 px-3 py-2">
           <p className="text-[11px] text-muted-foreground">

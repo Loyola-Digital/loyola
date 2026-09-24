@@ -68,9 +68,10 @@ import { StageCreativePerformanceTable } from "./stage-creative-performance-tabl
 import { CamadasDeVideoSection } from "./camadas-de-video-section";
 import { LpPerformanceTable } from "@/lib/components/funnels/lp-performance-table";
 import { useLpPerformanceData } from "@/lib/hooks/useLpPerformanceData";
+import { useUserRole } from "@/lib/hooks/use-user-role";
 import { useLpFunnel, useLpFunnelView } from "@/lib/hooks/use-sales-journey";
 // Story 18.56: links manuais por LP (lê o stage e salva via PUT existente)
-import { useFunnelStage, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
+import { useFunnelStage, useSalvarCorrecaoDeLp, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useCrossedFunnelMetrics } from "@/lib/hooks/use-crossed-funnel-metrics";
 import { overrideCplWithUniqueIngressos } from "@/lib/utils/funnel-metrics";
@@ -1765,7 +1766,7 @@ function LpPerformanceSection({
   // Story 18.46 (AC7): filtro de público efetivo, controlado nesta seção
   const [publicoFilter, setPublicoFilter] = useState<"todos" | "hot" | "cold">("todos");
 
-  const { lps, isLoading } = useLpPerformanceData({
+  const { lps, isLoading, correcoes } = useLpPerformanceData({
     projectId,
     funnelId,
     stageId,
@@ -1792,6 +1793,16 @@ function LpPerformanceSection({
       await updateStage.mutateAsync({ lpLinks: next });
     },
     [lpLinks, updateStage],
+  );
+
+  // Story 18.83 (AC5): correção manual por campanha — mapa inteiro no PUT,
+  // merge por chave aqui; vazio remove. Guest não edita (o PUT devolve 403, e
+  // a tela nem oferece — mesma regra do `lp_links`).
+  const papel = useUserRole();
+  const salvarCorrecao = useSalvarCorrecaoDeLp(projectId, funnelId, stageId);
+  const handleSalvarCorrecao = useCallback(
+    (campaignId: string, url: string) => salvarCorrecao(correcoes, campaignId, url),
+    [correcoes, salvarCorrecao],
   );
 
   const isPaid = ehCaptacaoPaga(stageType);
@@ -1828,6 +1839,7 @@ function LpPerformanceSection({
           isLoading={false}
           lpLinks={lpLinks}
           onSaveLpLink={handleSaveLpLink}
+          onSalvarCorrecao={papel && papel !== "guest" ? handleSalvarCorrecao : undefined}
           funnelByLp={funil.byLp}
           funnelLoading={lpFunnel.isLoading}
           refConversao={funil.refConversao}

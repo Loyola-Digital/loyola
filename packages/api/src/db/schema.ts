@@ -957,6 +957,14 @@ export const funnelStages = pgTable(
       .notNull()
       .default({})
       .$type<Record<string, string>>(),
+    // Story 18.83 (AC5): correção manual da tabela de LPs, POR CAMPANHA. Chave =
+    // campaign_id da Meta; valor = URL http(s). Vale só para o que da campanha
+    // está em "Sem link resolvido" — anúncio com URL no cache não muda. Por
+    // etapa, como o `lp_links` (que deixa de ser editável e não é apagado).
+    lpCampaignUrls: jsonb("lp_campaign_urls")
+      .notNull()
+      .default({})
+      .$type<Record<string, string>>(),
     // Controle Diário (Meta Ads TESTE): observação de texto livre por dia.
     // Chave = data YYYY-MM-DD; valor = texto da observação. Nota vazia = removida.
     dayNotes: jsonb("day_notes")

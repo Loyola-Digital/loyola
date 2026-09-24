@@ -12,6 +12,9 @@
 // Tudo aqui é função pura. Nenhuma I/O.
 // ============================================================
 
+import { utmContentEfetivo } from "../utils/utm-value.js";
+import type { CausaSemLink, LinkDoAnuncio } from "./lp-do-anuncio.js";
+
 /**
  * Sufixo de página no fim do nome da aba.
  *
@@ -377,6 +380,177 @@ export function agruparPorPagina(
     });
   }
   return grupos;
+}
+
+// ============================================================
+// Story 18.84 — a página da aplicação é o LINK DO ANÚNCIO (página de vendas).
+//
+// A 43.6 agrupava pela letra (sufixo da aba ou `lpX` no `utm_term`). A 18.83
+// levou a tabela de LPs do lançamento para a URL de destino do anúncio, e a
+// 7.7 pediu que as aplicações mudassem junto; a 7.10 decidiu que a página de
+// uma aplicação é a página de VENDAS — o link do anúncio de onde ela veio:
+// `utm_content → ad_id → meta_ad_creatives_cache → normalizeLpUrl`.
+//
+// O nome da aba e a letra do `utm_term` deixam de ser chave (PO-01: a regra
+// de "sem link" da 7.6, aplicada pela 7.7). Aplicação sem anúncio de origem
+// (orgânica, link na bio, vazia, macro) vai para "Sem link resolvido" com a
+// causa — nunca somada calada numa página, nunca descartada do total.
+// ============================================================
+
+/**
+ * A coluna do `utm_content` — a PREENCHIDA (PO-08), como a do `utm_term`: a
+ * aba-base do `dg-pg04` tem colunas homônimas. Apelidos do web
+ * (`useCrossReferenceLeads`): `utm_content`, `content`, `co=`.
+ */
+export function acharColunaUtmContent(headers: string[], rows: string[][]): number | null {
+  return acharColunaPreenchida(headers, rows, /^(utm[_ ]?content|content|co=)$/i);
+}
+
+/**
+ * O anúncio de origem da aplicação, ou `null` quando ela não veio de anúncio.
+ *
+ * `utm_content` de anúncio é o `ad_id` — só dígitos (com o `_` de texto
+ * forçado já tirado por `utmContentEfetivo`). O resto é origem sem anúncio:
+ * `org`, `link_in_bio`, texto solto, vazio, macro não resolvida (`{{ad.id}}`,
+ * que `utmContentEfetivo` já devolve vazia).
+ */
+export function anuncioDaAplicacao(conteudoCru: string | null | undefined): string | null {
+  const id = utmContentEfetivo(conteudoCru);
+  return /^\d+$/.test(id) ? id : null;
+}
+
+/** Rótulo da série e da coluna das aplicações sem página (mesmo da 18.83). */
+export const SEM_LINK_RESOLVIDO = "Sem link resolvido";
+
+/**
+ * Por que as aplicações da série "Sem link resolvido" estão ali (AC2/PO-02).
+ * As três causas de anúncio são as da 18.83/29.43, cada uma com uma ação; a
+ * quarta é própria da aplicação: não veio de anúncio nenhum.
+ */
+export interface SemLinkDaAplicacao {
+  /** Orgânica, link na bio, texto, vazia, macro não resolvida. */
+  semAnuncio: number;
+  foraDoCache: number;
+  cacheDesatualizado: number;
+  semLinkNaMeta: number;
+}
+
+export type CausaSemLinkDaAplicacao = "sem_anuncio" | CausaSemLink;
+
+export interface LinhaPorLink {
+  /** Dia já normalizado (YYYY-MM-DD). */
+  dia: string;
+  /** `anuncioDaAplicacao` da linha. `null` = sem anúncio de origem. */
+  adId: string | null;
+}
+
+export interface GrupoDeLink {
+  /** Sufixo estável do id da série: a URL normalizada, ou `sem-link`. */
+  chave: string;
+  /** O que a tela mostra: a URL normalizada (link puro) ou "Sem link resolvido". */
+  label: string;
+  /** `href` da série. `null` na série sem link. */
+  url: string | null;
+  /** É página conhecida? Só as de URL — a série sem link não prova nada (AC4). */
+  ehPagina: boolean;
+  counts: Map<string, number>;
+  total: number;
+  /** Só na série "Sem link resolvido". */
+  semLink?: SemLinkDaAplicacao;
+}
+
+/** A causa de UMA aplicação sem página. `null` = ela tem página. */
+export function causaDaAplicacao(
+  adId: string | null,
+  links: Map<string, LinkDoAnuncio>,
+): CausaSemLinkDaAplicacao | null {
+  if (!adId) return "sem_anuncio";
+  const link = links.get(adId);
+  if (!link) return "fora_do_cache";
+  return link.chave ? null : (link.causa ?? "sem_link_na_meta");
+}
+
+/**
+ * Agrupa as aplicações pela URL do anúncio de origem (AC1).
+ *
+ * Invariante (AC5): a soma dos `total` das séries é o número de linhas —
+ * nenhuma aplicação some e nenhuma é contada duas vezes.
+ */
+export function agruparPorLink(
+  linhas: LinhaPorLink[],
+  links: Map<string, LinkDoAnuncio>,
+): GrupoDeLink[] {
+  const porUrl = new Map<string, { url: string | null; counts: Map<string, number>; total: number }>();
+  const semLink: SemLinkDaAplicacao = { semAnuncio: 0, foraDoCache: 0, cacheDesatualizado: 0, semLinkNaMeta: 0 };
+  const semLinkCounts = new Map<string, number>();
+  let semLinkTotal = 0;
+
+  for (const l of linhas) {
+    const causa = causaDaAplicacao(l.adId, links);
+    if (causa) {
+      if (causa === "sem_anuncio") semLink.semAnuncio++;
+      else if (causa === "fora_do_cache") semLink.foraDoCache++;
+      else if (causa === "cache_desatualizado") semLink.cacheDesatualizado++;
+      else semLink.semLinkNaMeta++;
+      semLinkCounts.set(l.dia, (semLinkCounts.get(l.dia) ?? 0) + 1);
+      semLinkTotal++;
+      continue;
+    }
+    const link = links.get(l.adId!)!;
+    const chave = link.chave!;
+    const g = porUrl.get(chave) ?? { url: link.url, counts: new Map<string, number>(), total: 0 };
+    g.counts.set(l.dia, (g.counts.get(l.dia) ?? 0) + 1);
+    g.total++;
+    porUrl.set(chave, g);
+  }
+
+  const grupos: GrupoDeLink[] = [...porUrl.entries()]
+    // Maior primeiro; empate pela URL, para a ordem (e a cor) não dançar.
+    .sort(([ka, a], [kb, b]) => b.total - a.total || ka.localeCompare(kb))
+    .map(([chave, g]) => ({ chave, label: chave, url: g.url, ehPagina: true, counts: g.counts, total: g.total }));
+
+  if (semLinkTotal > 0) {
+    grupos.push({
+      chave: "sem-link",
+      label: SEM_LINK_RESOLVIDO,
+      url: null,
+      ehPagina: false,
+      counts: semLinkCounts,
+      total: semLinkTotal,
+      semLink,
+    });
+  }
+  return grupos;
+}
+
+/**
+ * AC4 — páginas com gasto e sem aplicação.
+ *
+ * `comGasto` são as URLs dos anúncios das campanhas da ETAPA DE VENDAS com
+ * gasto nos últimos 30 dias (PO-05); `comAplicacao`, as URLs que têm ao menos
+ * uma aplicação. Aplicação sem link não prova forma para página nenhuma (é o
+ * `semPagina` de antes) — ela não entra em `comAplicacao`.
+ */
+export function paginasOrfas(comGasto: Iterable<string>, comAplicacao: Iterable<string>): string[] {
+  const tem = new Set(comAplicacao);
+  return [...new Set(comGasto)].filter((u) => !tem.has(u)).sort();
+}
+
+/**
+ * A porta de entrada do aviso de página órfã no mundo das URLs (substitui a
+ * da 43.1, `nomes.some(ehNomeDePagina)`, que era da língua das letras).
+ *
+ * - Etapa sem campanha vinculada → sem aviso (PO-05). Cair para as campanhas
+ *   do funil traria as páginas de CAPTURA de volta, e toda captura seria
+ *   acusada a cada abertura.
+ * - Nenhuma aplicação com link → sem aviso. A planilha não carrega o anúncio de
+ *   origem (ou não tem a coluna), então "a página X não teve aplicação" não é
+ *   afirmável: é a mesma dúvida que calava o aviso da 43.1 quando uma forma não
+ *   tinha letra. No `dg-pg02` (0 de 49 com link) isto evita acusar todas as
+ *   páginas de venda que tiverem gasto.
+ */
+export function avisoDeOrfasSeAplica(campanhasDaEtapa: number, aplicacoesComLink: number): boolean {
+  return campanhasDaEtapa > 0 && aplicacoesComLink > 0;
 }
 
 /**

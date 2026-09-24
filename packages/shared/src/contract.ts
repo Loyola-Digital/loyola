@@ -223,4 +223,21 @@
 // `formato`. NÃO aditiva: a API antiga recusa o `perpetuo` sem número com 400
 // do zod — o gerador reconhece (`mensagemDeApiAtrasAoSalvarAnuncio`) e o
 // banner acusa. `packages/mcp` não é afetado (nenhuma tool lê o nome de anúncio).
-export const API_CONTRACT_VERSION = 24;
+// v25 (Story 18.83): campo novo `lpPorAnuncio` em `creative-performance` (a
+// tabela "Desempenho de Testes de LPs" do lançamento passa a identificar a
+// página pela URL do anúncio), `cobertura.anuncio` em `lp-funnel` (o mini-funil
+// atribui pelo `utm_content → ad_id → URL`), e `lpCampaignUrls` na etapa
+// (correção manual por campanha, coluna `funnel_stages.lp_campaign_urls`,
+// migration 0158). ADITIVA; `packages/mcp` não é afetado. O web tem fallback:
+// sem `lpPorAnuncio`, a tabela segue pelo rótulo da campanha, com o lápis.
+// Número do lote de 23/09 — o @devops renumera no merge se outra story do
+// lote subir antes.
+// v26 (Story 18.84): `applications-daily` agrupa as aplicações pelo LINK DO
+// ANÚNCIO de origem (página de vendas) — campos novos `forms[].url`,
+// `forms[].semLink` (causas da série "Sem link resolvido") e
+// `paginasPeloLinkDoAnuncio`; `lpsOrfas` passa a trazer URLs (só campanhas da
+// etapa de Vendas) e `paginasVieramDoUtmTerm` vai sempre `false`.
+// `applications-list` ganha `adId`, `lpUrl` e `lpCausa` (e `lp` vira a URL).
+// ADITIVA no formato; `packages/mcp` não é afetado. O web tem fallback: sem
+// `paginasPeloLinkDoAnuncio`, o gráfico e a lista seguem os textos da 43.6.
+export const API_CONTRACT_VERSION = 26;

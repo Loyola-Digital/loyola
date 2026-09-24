@@ -18,6 +18,12 @@
  * em qualquer forma), não por planilha: assim todas as formas do mesmo
  * lançamento compartilham o mesmo eixo e ficam comparáveis entre si.
  *
+ * Story 18.84 — a página é o LINK DO ANÚNCIO de onde a aplicação veio (a página
+ * de vendas, decisão 7.10): `utm_content → ad_id → meta_ad_creatives_cache →
+ * normalizeLpUrl`, a mesma cadeia da 18.83. O nome da aba e a letra do
+ * `utm_term` deixaram de ser chave; aplicação sem anúncio de origem vai para
+ * "Sem link resolvido", com a causa. Ver `agruparPorLink`.
+ *
  * A comparação com o lançamento anterior (`compareFunnelId`, configurado no
  * funil) é AGREGADA: total do lançamento contra total do anterior, via
  * `aggregateForms`. Não é casada forma a forma — o cabeçalho afirmou isso por
@@ -27,32 +33,33 @@
  */
 
 import { z } from "zod";
-import { and, eq, gte } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import fp from "fastify-plugin";
-import {
-  funnelSpreadsheets,
-  funnelStages,
-  funnels,
-  metaCampaignInsightsDaily,
-  metaEntityNamesCache,
-} from "../db/schema.js";
-import { extractLPName } from "./lp-campaigns.js";
+import { funnelSpreadsheets, funnelStages, funnels } from "../db/schema.js";
 import { getSpreadsheetSheets, readSheetData } from "../services/google-sheets.js";
 import { origemDaLinha, regrasDoProjeto } from "../services/source-rules-store.js";
 import {
   abasParaDescobrir,
+  acharColunaUtmContent,
   acharColunaUtmTerm,
-  agruparPorPagina,
+  agruparPorLink,
+  anuncioDaAplicacao,
+  avisoDeOrfasSeAplica,
+  causaDaAplicacao,
   derivarPrefixos,
-  ehNomeDePagina,
   acharColunaEmail,
   acharColunaNome,
   acharColunaUtmSource,
   labelDaAbaDescoberta,
-  letraDaLpNoUtmTerm,
-  letraDaPagina,
-  type LinhaParaAgrupar,
+  paginasOrfas,
+  type LinhaPorLink,
+  type SemLinkDaAplicacao,
 } from "../services/application-sheets.js";
+import {
+  lerAnunciosComGasto,
+  lerLinksDosAnuncios,
+  type LinkDoAnuncio,
+} from "../services/lp-do-anuncio.js";
 
 /**
  * A linha da planilha como objeto `{cabeçalho: valor}`.
@@ -110,15 +117,14 @@ interface RawForm {
   /** Nome da aba de origem — identifica a página quando o label não identifica. */
   sheetName: string;
   /**
-   * Story 43.6 — a série corresponde a uma página CONHECIDA?
-   *
-   * `false` para a série "Sem página identificada" e para a aba-base que não
-   * conseguiu quebrar. É o que impede o aviso de LP órfã de afirmar mais do que
-   * se sabe: enquanto houver aplicação sem página, ela pode ser da LP acusada.
+   * A série corresponde a uma página CONHECIDA? Story 18.84: só as séries de
+   * URL. A "Sem link resolvido" não prova forma para página nenhuma (AC4).
    */
   ehPagina: boolean;
-  /** Story 43.6 — a página veio do `utm_term` (a aba-base foi quebrada)? */
-  veioDoUtmTerm: boolean;
+  /** Story 18.84: `href` da série (URL do anúncio). `null` = sem link. */
+  url: string | null;
+  /** Story 18.84: por que a série "Sem link resolvido" existe (AC2). */
+  semLink?: SemLinkDaAplicacao;
   /** data (aaaa-mm-dd) -> nº de aplicações naquele dia. */
   counts: Map<string, number>;
   total: number;
@@ -141,29 +147,12 @@ interface AvisoForma {
 interface FormsResult {
   forms: RawForm[];
   avisos: AvisoForma[];
-  /** Nomes (aba + label) considerados, para a porta de entrada do AC5. */
-  nomes: string[];
-  /**
-   * Por forma, os nomes que podem identificá-la como página (label e aba).
-   *
-   * É uma lista por forma, e não um conjunto achatado, porque o AC5 precisa
-   * saber se ALGUMA forma ficou sem letra identificável — ver `lpsSemForma`.
-   */
-  identificadores: string[][];
-  /** Story 43.6 — letras das séries que SÃO página (base do aviso, AC5). */
-  letrasComForma: string[];
-  /** Story 43.6 — aplicações que não deu para atribuir a nenhuma página. */
+  /** Story 18.84 — URLs das séries que SÃO página (base do aviso, AC4). */
+  urlsComForma: string[];
+  /** Aplicações que chegaram a uma URL — a outra porta de entrada do aviso. */
+  aplicacoesComLink: number;
+  /** Aplicações em "Sem link resolvido" (antes: sem página identificada). */
   semPagina: number;
-  /**
-   * Story 43.6 (QA-43.6-01) — alguma série de página nasceu da quebra da
-   * aba-base?
-   *
-   * É o gatilho da explicação na tela. Antes eu usava `semPagina > 0` para
-   * isso, e o @qa mostrou o furo: uma aba-base pode quebrar em três páginas
-   * sem sobrar nenhuma órfã — os números mudam igual e a tela ficava calada.
-   * São dois sinais diferentes e cada um responde a sua pergunta.
-   */
-  quebrouPorUtmTerm: boolean;
 }
 
 interface FormSeries {
@@ -171,6 +160,8 @@ interface FormSeries {
   label: string;
   points: DailyPoint[];
   total: number;
+  url: string | null;
+  semLink?: SemLinkDaAplicacao;
 }
 
 /**
@@ -266,45 +257,35 @@ export default fp(async function stageApplicationsRoutes(fastify) {
   }
 
   /**
-   * Lê TODAS as planilhas de aplicação de um funil e devolve, por planilha, a
-   * contagem por data (calendário). O alinhamento em D-day é feito depois
-   * (alignForms), no nível do lançamento.
+   * Lê TODAS as planilhas de aplicação de um funil e devolve as séries por
+   * PÁGINA, com a contagem por data (calendário). O alinhamento em D-day é
+   * feito depois (alignForms), no nível do lançamento.
+   *
+   * Story 18.84: a página é o link do anúncio de origem, resolvido no cache de
+   * criativos do `projectId` da rota — sempre o projeto validado na cadeia
+   * etapa → funil → projeto, nunca `ad_id` solto. `projectId: null` (a
+   * comparação com o lançamento anterior, que só usa o TOTAL) pula a leitura
+   * do cache: tudo cai numa série só e o agregado não muda.
    */
-  async function rawFormsFor(funnelId: string): Promise<FormsResult> {
+  async function rawFormsFor(funnelId: string, projectId: string | null): Promise<FormsResult> {
     // Story 43.7: a descoberta vive em `resolverAbas` para que a lista de
     // aplicações leia exatamente o mesmo conjunto de abas que o gráfico.
     const { abas: abasResolvidas, avisos } = await resolverAbas(funnelId);
 
     if (!abasResolvidas.length)
-      return {
-        forms: [],
-        avisos,
-        nomes: [],
-        identificadores: [],
-        letrasComForma: [],
-        semPagina: 0,
-        quebrouPorUtmTerm: false,
-      };
+      return { forms: [], avisos, urlsComForma: [], aplicacoesComLink: 0, semPagina: 0 };
 
     /**
-     * Conta as linhas de UMA aba e devolve as séries que ela produz.
-     *
-     * Story 43.6: uma aba pode virar VÁRIAS séries. A aba-base é o formulário
-     * genérico onde caem todas as páginas sem aba própria, então quem decide a
-     * página é o `utm_term` da linha, não o nome do arquivo. Aba com sufixo
-     * (`…-PaginaB`) continua produzindo uma série só.
-     *
-     * Devolve `[]` (com aviso) em vez de série zerada quando a aba não dá para
-     * ler ou não tem a coluna de data — zerado mente, dizendo "essa página não
-     * teve aplicação".
+     * Lê as linhas de UMA aba. Devolve `[]` (com aviso) quando a aba não dá
+     * para ler ou não tem a coluna de data — uma página faltando COM aviso é
+     * problema que alguém resolve; zerada, mente.
      */
-    async function contar(
-      sheetId: string,
+    async function lerLinhas(
       label: string,
       spreadsheetId: string,
       sheetName: string,
       dateCol: string | undefined,
-    ): Promise<RawForm[]> {
+    ): Promise<LinhaPorLink[]> {
       if (!dateCol) {
         avisos.push({ aba: sheetName, motivo: `a planilha "${label}" está sem coluna de data mapeada` });
         return [];
@@ -330,67 +311,54 @@ export default fp(async function stageApplicationsRoutes(fastify) {
         return [];
       }
 
-      // AC7: a coluna PREENCHIDA, não a primeira homônima — a aba-base do
-      // `dg-pg04` tem três colunas `utm_term` e só uma com dado.
-      const idxUtm = acharColunaUtmTerm(data.headers, data.rows);
+      // PO-08: a coluna PREENCHIDA, não a primeira homônima (como o utm_term).
+      const idxConteudo = acharColunaUtmContent(data.headers, data.rows);
 
-      const linhas: LinhaParaAgrupar[] = [];
+      const linhas: LinhaPorLink[] = [];
       for (const row of data.rows) {
         const day = parseDay(row[idx]);
         // Linha sem data válida (arrasto no fim da planilha, célula em branco)
         // não entra: entraria como "hoje" e inflaria o último dia.
         if (!day) continue;
-        linhas.push({ dia: day, identificador: idxUtm === null ? "" : (row[idxUtm] ?? "") });
+        linhas.push({
+          dia: day,
+          adId: idxConteudo === null ? null : anuncioDaAplicacao(row[idxConteudo]),
+        });
       }
-
-      return agruparPorPagina(sheetName, label, linhas).map((g) => ({
-        // Id composto para as séries não colidirem quando uma aba gera várias.
-        sheetId: g.chave === "todas" ? sheetId : `${sheetId}::${g.chave}`,
-        label: g.label,
-        sheetName,
-        ehPagina: g.ehPagina,
-        veioDoUtmTerm: g.veioDoUtmTerm,
-        counts: g.counts,
-        total: g.total,
-      }));
+      return linhas;
     }
 
-    const forms = (
+    const linhas = (
       await Promise.all(
-        abasResolvidas.map((a) => contar(a.id, a.label, a.spreadsheetId, a.sheetName, a.dateCol)),
+        abasResolvidas.map((a) => lerLinhas(a.label, a.spreadsheetId, a.sheetName, a.dateCol)),
       )
     ).flat();
 
-    // Aba e label alimentam a porta de entrada do AC5: se NENHUM deles segue a
-    // nomenclatura por página, este funil não fala a língua de "LPA/LPB" e o
-    // aviso de LP órfã não faz sentido nele.
-    const identificadores = forms.map((f) => [f.label, f.sheetName]);
-    const nomes = identificadores.flat();
+    // Um lote só para o cache, com o projeto da rota (sem chamada à Meta).
+    const links: Map<string, LinkDoAnuncio> = projectId
+      ? await lerLinksDosAnuncios(
+          fastify.db,
+          projectId,
+          linhas.map((l) => l.adId).filter((id): id is string => !!id),
+        )
+      : new Map();
 
-    // Story 43.6 — a prova de que uma página TEM aplicação passa a ser a série
-    // do gráfico, não o label cadastrado à mão. Era o label "PAGINA A" da
-    // aba-base que anulava a guarda da 43.1 e fazia o aviso acusar LPC–LPI.
-    const letrasComForma = [
-      ...new Set(
-        forms
-          .filter((f) => f.ehPagina)
-          .map((f) => letraDaPagina(f.label) ?? letraDaPagina(f.sheetName))
-          .filter((l): l is string => l !== null),
-      ),
-    ];
+    const forms: RawForm[] = agruparPorLink(linhas, links).map((g) => ({
+      sheetId: `link:${g.chave}`,
+      label: g.label,
+      sheetName: g.label,
+      ehPagina: g.ehPagina,
+      url: g.url,
+      ...(g.semLink ? { semLink: g.semLink } : {}),
+      counts: g.counts,
+      total: g.total,
+    }));
+
+    const urlsComForma = forms.filter((f) => f.ehPagina).map((f) => f.label);
+    const aplicacoesComLink = forms.filter((f) => f.ehPagina).reduce((n, f) => n + f.total, 0);
     const semPagina = forms.filter((f) => !f.ehPagina).reduce((n, f) => n + f.total, 0);
 
-    const quebrouPorUtmTerm = forms.some((f) => f.veioDoUtmTerm);
-
-    return {
-      forms,
-      avisos,
-      nomes,
-      identificadores,
-      letrasComForma,
-      semPagina,
-      quebrouPorUtmTerm,
-    };
+    return { forms, avisos, urlsComForma, aplicacoesComLink, semPagina };
   }
 
   /**
@@ -400,12 +368,13 @@ export default fp(async function stageApplicationsRoutes(fastify) {
    * omiti-los distorceria o D-day dos dias seguintes.
    */
   function alignForms(forms: RawForm[]): FormSeries[] {
+    const extras = (f: RawForm) => ({ url: f.url, ...(f.semLink ? { semLink: f.semLink } : {}) });
     const dates = new Set<string>();
     for (const f of forms) for (const k of f.counts.keys()) dates.add(k);
     const sorted = [...dates].sort();
 
     if (!sorted.length) {
-      return forms.map((f) => ({ sheetId: f.sheetId, label: f.label, points: [], total: f.total }));
+      return forms.map((f) => ({ sheetId: f.sheetId, label: f.label, points: [], total: f.total, ...extras(f) }));
     }
 
     const inicio = new Date(`${sorted[0]}T00:00:00Z`);
@@ -422,85 +391,35 @@ export default fp(async function stageApplicationsRoutes(fastify) {
         points.push({ dia: i, date: key, aplicacoes: n, acumulado });
         i++;
       }
-      return { sheetId: f.sheetId, label: f.label, points, total: f.total };
+      return { sheetId: f.sheetId, label: f.label, points, total: f.total, ...extras(f) };
     });
   }
 
   /**
-   * AC5 — LPs que estão rodando na Meta mas não têm forma no gráfico.
+   * Story 18.84 (AC4) — páginas de VENDA com gasto recente e nenhuma aplicação.
    *
-   * Lê do BANCO, não da API da Meta: campanhas com investimento nos últimos 30
-   * dias (evidência de entrega, mais confiável que um `effective_status` que
-   * pode estar desatualizado) e o nome resolvido pelo cache de entidades.
-   * Chamar `fetchAllAdInsights` aqui — como faz `lp-campaigns` — colocaria uma
-   * requisição pesada à Meta no caminho de um gráfico aberto o dia inteiro,
-   * exatamente o que o AC8 manda evitar.
+   * Lê do BANCO, não da API da Meta: anúncios com gasto nos últimos 30 dias
+   * (evidência de entrega) nas campanhas da ETAPA de Vendas (`stageCampaigns`,
+   * PO-05) e a URL de cada um no cache de criativos. Nem o projeto inteiro (a
+   * 43.1 acusava página de outro funil) nem o funil (acusaria as capturas).
+   * A janela de 30 dias segue a da 43.1 — mudar a régua não é escopo.
    */
-  async function lpsSemForma(
+  async function paginasSemAplicacao(
     projectId: string,
-    nomes: string[],
-    identificadores: string[][],
-    letrasComForma: string[],
+    stageCampaigns: string[],
+    urlsComForma: string[],
+    aplicacoesComLink: number,
   ): Promise<string[]> {
-    // Porta de entrada: funil que nomeia as formas por formulário ("form com
-    // ticket") não fala a língua de LPA/LPB. Ali, "a LPA não tem aba" não
-    // significa nada — e um aviso que aparece com tudo certo ensina o time a
-    // ignorar avisos, matando o valor do AC4.
-    if (!nomes.some(ehNomeDePagina)) return [];
-
-    // Segunda guarda (QA-17). A aba-base de um grupo — a que não tem sufixo,
-    // como `Pesquisa-Aplicacao-Comercial` — NÃO carrega letra nem no nome nem
-    // no label quando vem pela descoberta. Ela é a "Página A" só por convenção
-    // do time, e cravar essa convenção no código seria inventar semântica.
-    //
-    // Enquanto existir uma forma que não sabemos identificar, não dá para
-    // afirmar que uma LP está órfã: essa forma pode ser exatamente a página em
-    // questão. Silêncio aqui é um falso negativo; o contrário seria acusar erro
-    // com a página na tela — a mesma armadilha que a porta de entrada acima
-    // evita, e a única que o gate anterior deixou passar.
-    // Story 43.6 — a prova de que uma página tem aplicação é a SÉRIE do gráfico,
-    // não o label cadastrado no banco.
-    //
-    // Antes vinha de `letrasDasFormas(identificadores)`, que lia labels. A
-    // guarda dela — devolver `null` quando alguma forma não tem letra — existia
-    // justamente para calar o aviso na dúvida, e foi anulada no `dg-pg04` por
-    // alguém ter cadastrado a aba-base com o label "PAGINA A". Ler as séries
-    // resolve na origem: a aba-base agora se declara por linha, via `utm_term`.
-    //
-    // `letrasDasFormas` continua exportada e testada — segue valendo para quem
-    // precise da pergunta antiga, e mudá-la não é escopo desta story.
-    const comForma = new Set(letrasComForma);
+    if (!avisoDeOrfasSeAplica(stageCampaigns.length, aplicacoesComLink)) return [];
 
     const desde = new Date();
     desde.setDate(desde.getDate() - 30);
     const desdeStr = desde.toISOString().slice(0, 10);
 
-    const ativas = await fastify.db
-      .selectDistinct({ nome: metaEntityNamesCache.entityName })
-      .from(metaCampaignInsightsDaily)
-      .innerJoin(
-        metaEntityNamesCache,
-        and(
-          eq(metaEntityNamesCache.projectId, metaCampaignInsightsDaily.projectId),
-          eq(metaEntityNamesCache.entityId, metaCampaignInsightsDaily.campaignId),
-          eq(metaEntityNamesCache.entityType, "campaign"),
-        ),
-      )
-      .where(
-        and(
-          eq(metaCampaignInsightsDaily.projectId, projectId),
-          gte(metaCampaignInsightsDaily.dateStart, desdeStr),
-        ),
-      );
-
-    const faltando = new Set<string>();
-    for (const { nome } of ativas) {
-      const lp = extractLPName(nome); // REUSE — mesma definição da Story 18.44
-      if (!lp) continue;
-      const letra = lp.replace(/^LP/i, "").toUpperCase();
-      if (!comForma.has(letra)) faltando.add(lp.toUpperCase());
-    }
-    return [...faltando].sort();
+    const adIds = await lerAnunciosComGasto(fastify.db, projectId, stageCampaigns, desdeStr);
+    const links = await lerLinksDosAnuncios(fastify.db, projectId, adIds);
+    const comGasto = [...links.values()].map((l) => l.chave).filter((c): c is string => !!c);
+    return paginasOrfas(comGasto, urlsComForma);
   }
 
   /** Soma todas as planilhas de aplicação de um lançamento numa forma única. */
@@ -519,7 +438,7 @@ export default fp(async function stageApplicationsRoutes(fastify) {
       label: "Total",
       sheetName: "__total__",
       ehPagina: false,
-      veioDoUtmTerm: false,
+      url: null,
       counts,
       total,
     };
@@ -558,6 +477,8 @@ export default fp(async function stageApplicationsRoutes(fastify) {
         .select({
           funnelName: funnels.name,
           compareFunnelId: funnels.compareFunnelId,
+          // Story 18.84 (PO-05): as campanhas da ETAPA — base do aviso de órfã.
+          stageCampaigns: funnelStages.campaigns,
         })
         .from(funnelStages)
         .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
@@ -571,7 +492,7 @@ export default fp(async function stageApplicationsRoutes(fastify) {
         .limit(1);
       if (!ctx) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-      const atualRaw = await rawFormsFor(funnelId);
+      const atualRaw = await rawFormsFor(funnelId, projectId);
       const atual = alignForms(atualRaw.forms);
 
       // Comparação com o lançamento anterior é AGREGADA (total vs total), não
@@ -590,7 +511,7 @@ export default fp(async function stageApplicationsRoutes(fastify) {
         if (cmpFunnel) {
           compareFunnelName = cmpFunnel.name;
           const prevTotal = alignForms([
-            aggregateForms((await rawFormsFor(ctx.compareFunnelId)).forms),
+            aggregateForms((await rawFormsFor(ctx.compareFunnelId, null)).forms),
           ]);
           const p = prevTotal[0];
           if (p && p.points.length) comparison = { points: p.points, total: p.total };
@@ -617,11 +538,11 @@ export default fp(async function stageApplicationsRoutes(fastify) {
       const semPlanilha = atualRaw.forms.length === 0 && atualRaw.avisos.length === 0;
       const lpsOrfas = semPlanilha
         ? []
-        : await lpsSemForma(
+        : await paginasSemAplicacao(
             projectId,
-            atualRaw.nomes,
-            atualRaw.identificadores,
-            atualRaw.letrasComForma,
+            (ctx.stageCampaigns ?? []).map((c) => c.id),
+            atualRaw.urlsComForma,
+            atualRaw.aplicacoesComLink,
           );
 
       return {
@@ -633,13 +554,19 @@ export default fp(async function stageApplicationsRoutes(fastify) {
           label: f.label,
           total: f.total,
           points: f.points,
+          // Story 18.84 (AC1/AC2): o link da série e as causas da sem link.
+          url: f.url,
+          ...(f.semLink ? { semLink: f.semLink } : {}),
         })),
         comparison,
         currentTotal,
         deltaPercent,
         /** Story 43.1 — abas que ficaram de fora, e por quê (AC4). */
         avisos: atualRaw.avisos,
-        /** Story 43.1 — LPs rodando na Meta sem forma no gráfico (AC5). */
+        /**
+         * Story 18.84 (AC4) — URLs de página de VENDA com gasto recente nas
+         * campanhas da etapa e nenhuma aplicação atribuída.
+         */
         lpsOrfas,
         /**
          * Story 43.6 — aplicações que entraram no gráfico sem página conhecida.
@@ -650,12 +577,19 @@ export default fp(async function stageApplicationsRoutes(fastify) {
          */
         aplicacoesSemPagina: atualRaw.semPagina,
         /**
-         * Story 43.6 — a tela deve explicar que os números mudaram de forma.
+         * Story 43.6 — a tela explicava que as páginas vinham do `utm_term`.
          *
-         * Separado de `aplicacoesSemPagina` porque a quebra acontece com ou sem
-         * órfãs, e foi confundir os dois que produziu o QA-43.6-01.
+         * Story 18.84: a quebra pelo `utm_term` não existe mais — o campo vai
+         * sempre `false`, para o web ANTERIOR não afirmar uma regra que deixou
+         * de valer. O sinal da regra nova é `paginasPeloLinkDoAnuncio`.
          */
-        paginasVieramDoUtmTerm: atualRaw.quebrouPorUtmTerm,
+        paginasVieramDoUtmTerm: false,
+        /**
+         * Story 18.84 — as séries são o link do anúncio de origem. É o gatilho
+         * da explicação na tela (os números mudam: a aba e a letra deixaram de
+         * ser chave). `false` só quando não há série nenhuma.
+         */
+        paginasPeloLinkDoAnuncio: atual.length > 0,
       };
     },
   );
@@ -664,8 +598,9 @@ export default fp(async function stageApplicationsRoutes(fastify) {
    * Story 43.7 — a lista das aplicações, linha a linha.
    *
    * O gráfico responde "quantas por dia, por página"; esta rota responde "quem
-   * aplicou, e de que página veio". A LP sai do mesmo `utm_term` e pela mesma
-   * função da 43.6 — se as duas telas discordassem sobre a página de uma
+   * aplicou, e de que página veio". Story 18.84: a página sai do mesmo link do
+   * anúncio (`utm_content → ad_id → URL`) e pela mesma função do gráfico
+   * (`causaDaAplicacao`) — se as duas telas discordassem sobre a página de uma
    * aplicação, nenhuma das duas serviria.
    *
    * Sem paginação no servidor de propósito: são dezenas de linhas por
@@ -717,7 +652,7 @@ export default fp(async function stageApplicationsRoutes(fastify) {
       // mês e a lista tem centenas de linhas.
       const regrasDeOrigem = await regrasDoProjeto(fastify.db as never, projectId);
 
-      const aplicacoes = (
+      const aplicacoesLidas = (
         await Promise.all(
           abas.map(async (aba) => {
             if (!aba.dateCol) return [];
@@ -738,23 +673,19 @@ export default fp(async function stageApplicationsRoutes(fastify) {
             // sobrevive à próxima versão do formulário.
             const iNome = acharColunaNome(data.headers, data.rows);
             const iEmail = acharColunaEmail(data.headers, data.rows);
-            // O `utm_term` continua sendo lido: é dele que sai a LP. A tabela
-            // exibe o `utm_source` (o canal), que é curto e legível — o
-            // `utm_term` passa de 100 caracteres e vai como tooltip da LP.
+            // O `utm_term` continua sendo lido e vai na resposta (dado da
+            // linha), mas a página NÃO sai mais dele (18.84): sai do
+            // `utm_content`, pela coluna preenchida (PO-08).
             const iUtm = acharColunaUtmTerm(data.headers, data.rows);
+            const iConteudo = acharColunaUtmContent(data.headers, data.rows);
             const iSource = acharColunaUtmSource(data.headers, data.rows);
             const nomeDaColunaDeOrigem = iSource === null ? null : data.headers[iSource]!;
-
-            // A aba com sufixo declara a página (mesma regra da 43.6): ali o
-            // `utm_term` não sobrepõe o que o nome já disse.
-            const letraDaAba = letraDaPagina(aba.sheetName);
 
             const out = [];
             for (const row of data.rows) {
               const dia = parseDay(row[iData]);
               if (!dia) continue;
               const utmTerm = iUtm === null ? "" : (row[iUtm] ?? "").trim();
-              const letra = letraDaAba ?? letraDaLpNoUtmTerm(utmTerm);
               out.push({
                 data: dia,
                 nome: iNome === null ? "" : (row[iNome] ?? "").trim(),
@@ -769,7 +700,8 @@ export default fp(async function stageApplicationsRoutes(fastify) {
                   nomeDaColunaDeOrigem ?? undefined,
                 ),
                 utmTerm,
-                lp: letra ? `PAGINA ${letra}` : null,
+                // Story 18.84: o anúncio de origem — a página sai dele, abaixo.
+                adId: iConteudo === null ? null : anuncioDaAplicacao(row[iConteudo]),
                 aba: aba.label,
               });
             }
@@ -777,6 +709,26 @@ export default fp(async function stageApplicationsRoutes(fastify) {
           }),
         )
       ).flat();
+
+      // Story 18.84 (AC3): a página de cada aplicação pelo link do anúncio, num
+      // lote só para o cache do projeto da rota (sem Meta). Mesma regra do
+      // gráfico — `causaDaAplicacao` decide "tem página" e "por que não tem".
+      const links = await lerLinksDosAnuncios(
+        fastify.db,
+        projectId,
+        aplicacoesLidas.map((a) => a.adId).filter((id): id is string => !!id),
+      );
+      const aplicacoes = aplicacoesLidas.map((a) => {
+        const causa = causaDaAplicacao(a.adId, links);
+        const link = a.adId ? links.get(a.adId) : undefined;
+        return {
+          ...a,
+          adId: a.adId ?? "",
+          lp: causa ? null : (link?.chave ?? null),
+          lpUrl: causa ? null : (link?.url ?? null),
+          lpCausa: causa,
+        };
+      });
 
       // Mais recente primeiro. `parseDay` normaliza para aaaa-mm-dd, então a
       // ordem lexicográfica é a cronológica — sem custo de Date por linha.

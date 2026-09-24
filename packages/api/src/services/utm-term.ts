@@ -170,8 +170,14 @@ export function idDoAnuncio(anuncio: string | null): string | null {
 // Identificação da LP a partir das UTMs de uma linha de planilha
 // ============================================================
 
-/** De onde a LP foi deduzida — o consumidor decide o quanto confiar. */
-export type FonteLp = "term" | "campanha";
+/**
+ * De onde a LP foi deduzida — o consumidor decide o quanto confiar.
+ *
+ * Story 18.83 (AC9): `anuncio` = `utm_content → ad_id → URL` do criativo. É a
+ * fonte do mini-funil do lançamento, que passou a chavear pela URL; `term` e
+ * `campanha` continuam sendo o que `lpDoRegistro` devolve (rótulo "LPA").
+ */
+export type FonteLp = "term" | "campanha" | "anuncio";
 
 /** "lpa" / "LPAA" → "LPA"; qualquer outra coisa → null. */
 export function rotuloLp(bruto: string | null | undefined): string | null {
