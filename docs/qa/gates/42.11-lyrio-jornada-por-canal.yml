@@ -1,0 +1,42 @@
+schema: 1
+story: '42.11'
+story_title: 'Lyrio — jornada do usuário por canal (Google, Meta, orgânico, iOS)'
+gate: CONCERNS
+status_reason: 'O código está correto, os ACs 1–8 estão atendidos e o SQL exato da rota reproduziu a medição em produção. Duas das quatro mutações próprias sobreviveram, as duas na ligação entre o SQL e a função pura. A mais séria: filtrar a janela no WHERE transforma a coorte de "novos" em "ativos na janela" e as 28 passam. Esse filtro é exatamente a otimização que o índice (stage_id, event_at) convida alguém a fazer.'
+reviewer: 'Quinn'
+updated: '2026-09-24T12:20:00Z'
+branch: 'feat/42.11-lyrio-jornada-por-canal'
+commit_reviewed: '778705ea'
+
+top_issues:
+  - id: TEST-001
+    severity: medium
+    category: tests
+    description: 'Mutação N2: `consultaDaJornada` ganhou `AND event_at >= desde` no WHERE. Com isso, o `min(event_at)` passa a ser calculado só dentro da janela, o HAVING vira tautologia e todo usuário ativo na janela vira "novo" (e as etapas também passam a contar só dentro da janela, não "até hoje"). É o inverso da definição central do AC2. Mesmo assim, as 19 da API e as 9 do web passam. O caso "usuário antigo com evento novo NÃO entra" do AC7 só é testado na função pura, que recebe `primeiroEvento` pronto. O teste do SQL confere que o HAVING existe, mas não que o WHERE está livre de filtro de data. O risco é concreto: o índice é `(stage_id, event_at)`, e quem otimizar a consulta vai querer justamente esse filtro.'
+    recommendation: 'Em `jornada-lyrio.test.ts`: `expect(q.sql.slice(q.sql.search(/ where /i), q.sql.search(/ group by /i))).not.toMatch(/event_at/)`, com um comentário de que a série inteira é a regra do AC2. O mesmo vale para o SQL capturado no teste de fio.'
+    status: open
+
+  - id: TEST-002
+    severity: low
+    category: tests
+    description: 'Mutação N1: troquei as condições das colunas `c_gclid` e `c_install` no SQL (a ligação SQL → `lerLinhaDaJornada` → `canalDoUsuario`), e as 28 passam. Na tela, as linhas Google (≈2,4 mil) e Meta ig4a/fb4a (≈5 mil) trocariam de números, e a prioridade gclid > ig4a ficaria invertida para quem tem os dois. O "inverter derruba" do AC7 está provado só na função pura. O teste do SQL confere que cada condição aparece no texto, mas não o alias a que ela está ligada. Só `viu_paywall` e `pagou` estão amarrados ao nome. O código de hoje está certo: o SQL exato reproduziu a medição em produção (Google 2.383 × 2.368, Meta 5.034 × 5.020). O que falta é teste contra a regressão.'
+    recommendation: 'Amarrar cada condição de canal ao seu alias no teste do PgDialect, por exemplo `toContain(\`coalesce(bool_or("revenuecat_sales"."gclid" IS NOT NULL), false) AS "c_gclid"\`)` e as equivalentes de `c_fbclid`, `c_install`, `c_organico`, `c_ios` e `c_campanha`.'
+    status: open
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Diff de 10 arquivos lido inteiro. SQL por usuário SEM o id (`GROUP BY app_user_id`, id fora do SELECT), `bool_or` com `coalesce`, `sum … FILTER (revenue_usd > 0)` em `REVENUE_EVENT_TYPES` e coorte no HAVING e também na função pura (defesa dupla). Prioridade e contagem ficam em funções puras. As regras de canal batem com a tabela "Regra de canal medida" (PO-02), inclusive `jsonb_exists(... coupom_code)`, `upper(platform) = IOS OR store = APP_STORE` e `acquisition_source` fora. A rota tem a guarda de `/sales` (`getProjectAccess` + `getStage`, não o modelo de `/metricas-derivadas`) e `days` via `salesQuerySchema` (1–365, default 90). A resposta traz só `days`, `desde`, `assinaturaDesde`, `linhas` e `total`. O bloco fica fora da condição do Detalhamento e usa o `days` do cabeçalho. O hook tem `retry` sem 404. Nada no código a corrigir.'
+  autonomous_decisions: '(1) "Só o 404 da ROTA (corpo `Not Found`) esconde o bloco; 404 de domínio vira erro": CORRETA. O AC6 fala em "404 da rota (API ainda sem ela)". A lição da 47.15 já mostrou que 404 de domínio não é API atrás, e a decisão reaproveita `ehApiAtras` (IDS REUSE). Conferido no `api-client.ts`: o Fastify responde `{ error: "Not Found" }`, e esse texto vira `message`. Então a rota inexistente dá "Not Found" e "Etapa não encontrada" dá erro. Há teste para os dois. (2) "Falha com dado antigo em cache mostra o erro": CORRETA e coerente com "erro não vira ausência nem dado velho". Para o React Query, os números de outra janela ou de antes da falha não são os da janela pedida. O custo é que um refetch em segundo plano que falhe troca uma tabela válida por erro. Esse custo é atenuado pelo `retry` de até 2 e fica registrado para a validação visual. Mutação N3 (dado antes do erro) → 1 falha, então a decisão está protegida por teste.'
+  unit_tests: 'Suítes da story: API 19/19, web 9/9. Suítes completas: web 1455/1455 (108 arquivos); API 3127 passando e 10 falhando, as 10 do baseline em 5 arquivos (funnel-stages-lead-inputs 3, projects 3, schema 2, instagram-routes 1, instagram 1). Mutações próprias, cada uma aplicada, rodada e revertida com `git checkout` (`git status` vazio depois de cada uma): N1 FIO SQL→TS, condições de `c_gclid` × `c_install` trocadas (a prioridade invertida no SQL real) → SOBREVIVEU (TEST-002) · N2 REGRA, coorte na janela em vez da série (`event_at >= desde` no WHERE) → SOBREVIVEU (TEST-001) · N3 decisão autônoma, dado em cache vence o erro → 1 falha · N4 PII, `app_user_id` no SELECT → 1 falha.'
+  acceptance_criteria: 'AC1 ✓ (7 linhas + Total, colunas e as duas taxas; "—" com denominador 0; posição e `days` conforme o PO-03) · AC2 ✓ no código (ver TEST-001: a coorte "pela série" só está protegida na função pura) · AC3 ✓ (prioridade e valores medidos; probe do PO-04 registrado ANTES de codar: `platform` em 100% dos paywalls, então iOS e Android ficam separados) · AC4 ✓ (as três declarações; data (a) vem da API, `assinaturaDesde`) · AC5 ✓ (rota, guarda, agregação no banco, sem PII, contrato 19 → 20) · AC6 ✓ · AC7 ✓ com as lacunas de TEST-001/002 · AC8 ✓ (eslint dos arquivos tocados 0; tsc da API 0; tsc do web 0; `next build` conforme o Dev Record, não refeito).'
+  no_regressions: 'Rota e componente novos. O `lyrio-stage-view.tsx` ganhou só o import e o bloco. `webhooks.ts` e `services/revenuecat.ts` não mudaram (PO-10). As suítes completas estão iguais ao baseline.'
+  performance: 'Duas consultas por requisição, em paralelo. A da jornada agrupa cerca de 110 mil eventos da etapa (medido em produção: 346 ms para 10.150 usuários) e usa o índice `(stage_id, …)`. O `staleTime` é de 60 s. Aceitável para um bloco de análise. Se o volume crescer, a candidata natural é cache no banco, não filtro de janela no WHERE (ver TEST-001).'
+  security: 'Guarda `getProjectAccess` (guest sem vínculo → 404) + `getStage` (etapa do funil e do projeto → 404 sem consultar eventos), ambas testadas no fio. SQL parametrizado (drizzle `sql`). O `app_user_id` só aparece no GROUP BY. Não há log do resultado. A resposta tem 5 chaves conhecidas e nenhum id (teste de fio).'
+  documentation: 'Story com Dev Agent Record completo: probe do PO-04, riscos medidos (`UNCANCELLATION` 0 com receita > 0; 1 evento SANDBOX) e conferência do SQL exato em produção. Tooltips das colunas trazem as definições do PO-03.'
+  api_contract: '19 → 20, com linha de histórico e declarada ADITIVA (rota nova). O web tem fallback: 404 da rota esconde o bloco e o banner acusa a versão. O briefing informa a `main` já em 20; o `origin/main` local (9a9dcde8, sem fetch) ainda mostra 19. Nos dois casos, esta branch e a 47.16 (que também sobe para 20) precisam de renumeração no merge, com histórico, e isso é do @devops, não FAIL.'
+
+notes:
+  - 'Pendências do DoD (fora do código): conferência pela rota no ar depois do deploy (o SQL já foi provado em produção antes) e validação visual do Danilo (colunas, 7 linhas, posição; a proposta é do @sm/PO, AC1).'
+  - 'Para a validação visual: um refetch em segundo plano que falhe (foco da janela, rede) substitui a tabela pelo erro. É consequência da decisão (2); se incomodar, a alternativa é mostrar os dados com um aviso de "não atualizado", o que exige outra decisão do Danilo.'
+  - 'A worktree está compartilhada com a 47.16. `pnpm --filter @loyola-x/shared build` foi refeito ao trocar de branch.'
