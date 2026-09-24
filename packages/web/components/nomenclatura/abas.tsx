@@ -5,10 +5,11 @@
  * `TabelaDoDicionario` e o mesmo `DialogoDeExclusao`, com o formulário certo.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { erroDaApi, useAlternarAtivo, useListaDe, type Expert, type FunilOuOferta, type Lp, type Produto, type TipoDeValor, type ValorFixo } from "@/lib/hooks/use-nomenclatura";
 import { CASCATA_VAZIA, type Cascata } from "@/lib/utils/nomenclatura-cascata";
+import { expertInicialDaUrl } from "@/lib/utils/nomenclatura-abas";
 import { DialogoDeExclusao, type AlvoDaExclusao } from "./dialogo-de-exclusao";
 import { CascataDeSelects, FormExpert, FormFunilOuOferta, FormLp, FormProduto, FormValorFixo, ROTULO_DO_TIPO } from "./forms";
 import { SeletorDeExpert } from "./seletor-de-expert";
@@ -116,12 +117,22 @@ export function AbaProdutos({ podeEditar }: { podeEditar: boolean }) {
   );
 }
 
-export function AbaFunisOuOfertas({ recurso, podeEditar }: { recurso: "funis" | "ofertas"; podeEditar: boolean }) {
+export function AbaFunisOuOfertas({ recurso, podeEditar, expertInicial }: { recurso: "funis" | "ofertas"; podeEditar: boolean; expertInicial?: string | null }) {
   const ehFunil = recurso === "funis";
   const aba = useAba<FunilOuOferta>();
   const [expertId, setExpertId] = useState("");
   const lista = useListaDe(recurso, { inativos: aba.inativos, expertId: expertId || undefined });
   const experts = useListaDe("experts", { inativos: true });
+  // Story 29.80 (AC6) — o `?expertId=` dos links do painel do perpétuo ("Cadastrar
+  // funis do …", "{código} não está no Dicionário — cadastrar"). Mesmo padrão da
+  // 47.14 em Hooks e bodies: a lista de experts é assíncrona, então o parâmetro é
+  // aplicado quando ela chega, UMA vez por valor — depois a pessoa troca à vontade.
+  const aplicado = useRef<string | null>(null);
+  useEffect(() => {
+    if (!expertInicial || aplicado.current === expertInicial || !experts.data) return;
+    aplicado.current = expertInicial;
+    setExpertId(expertInicialDaUrl(expertInicial, experts.data));
+  }, [expertInicial, experts.data]);
   const reativar = useReativar(recurso);
   const codeDo = (id: string) => experts.data?.find((e) => e.id === id)?.code ?? "?";
   return (

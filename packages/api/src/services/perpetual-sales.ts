@@ -38,7 +38,7 @@
 
 import { eq, and } from "drizzle-orm";
 import type { Database } from "../db/client.js";
-import { funnelSpreadsheets, funnelStages } from "../db/schema.js";
+import { funnelSpreadsheets } from "../db/schema.js";
 import { chaveDeComprador } from "../utils/comprador.js";
 import { quebraVazia, tipoDoProduto, type TipoDeProduto } from "../utils/produto.js";
 // Story 29.61 — a MESMA regra da Captação Paga (18.66/18.67), reusada.
@@ -58,6 +58,17 @@ import { classifyOrigem, classifyCanal, classifyTemperatura } from "../utils/lea
 import { parseActionCount } from "../utils/meta-metrics.js";
 import { getCampaignInsightsFromDb } from "./meta-db-source.js";
 import { PLATFORM_RATE_BREAKDOWN } from "./perpetual-report-config.js";
+// Story 29.79 — o filtro de funil/oferta. Tudo opcional: sem `filtro`, nenhuma
+// linha abaixo muda de comportamento (AC6, diferencial byte a byte).
+import type { FiltroAplicado, LinhaForaDoFiltro } from "@loyola-x/shared";
+import {
+  acumuladorForaDoFiltro,
+  campanhasParaMidia,
+  decidirLinhaNoFiltro,
+  idsDeCampanhaDasEtapas,
+  resumoDoFiltro,
+  type FiltroDeCampanhas,
+} from "./funil-e-oferta.js";
 
 /**
  * Story 29.68 (AC7) — piso de amostra por origem.
@@ -195,6 +206,33 @@ export interface JanelaDeVendas {
 }
 
 /**
+ * Story 29.79 (AC4) — o recorte por funil/oferta. Ausente = "Todos", e aí a
+ * leitura é exatamente a de antes da story.
+ *
+ * Presente, entram só as linhas de venda cujo `utm_campaign` está em
+ * `filtro.campanhas`, ANTES da deduplicação — decisão (ii) do Danilo, "tem
+ * que ser tudo separado": quem comprou em a01 e em a02 conta nos dois, cada um
+ * com o faturamento da sua compra. O que ficou fora e não é de outro
+ * funil/oferta volta em `foraDoFiltro`, com o motivo (AC5).
+ */
+export interface RecorteDeFunilEOferta {
+  filtro?: FiltroDeCampanhas;
+}
+
+/**
+ * O que a resposta ganha com filtro: `filtro` (o que foi aplicado) e
+ * `foraDoFiltro`. Sem filtro, `{}` — espalhado no fim do objeto, não acrescenta
+ * chave nenhuma, nem vazia (AC6, diferencial byte a byte).
+ */
+function extrasDoRecorte(
+  filtro: FiltroDeCampanhas | undefined,
+  fora: ReturnType<typeof acumuladorForaDoFiltro> | null,
+): { filtro?: FiltroAplicado; foraDoFiltro?: LinhaForaDoFiltro[] } {
+  if (!filtro) return {};
+  return { filtro: resumoDoFiltro(filtro), foraDoFiltro: fora ? fora.lista() : [] };
+}
+
+/**
  * Story 44.28 (T6) — deixar a falha de LEITURA subir, em vez de virar ausência.
  *
  * O default (`false`) é o comportamento histórico do handler autenticado: uma
@@ -223,14 +261,15 @@ export interface OpcoesDeLeitura {
  */
 export async function calcularVendasDoPerpetuo(
   db: Database,
-  { projectId, funnelId, days, startDate, endDate }: JanelaDeVendas & {
-    projectId: string;
-    funnelId: string;
-  },
+  { projectId, funnelId, days, startDate, endDate, filtro }: JanelaDeVendas &
+    RecorteDeFunilEOferta & {
+      projectId: string;
+      funnelId: string;
+    },
   opcoes: OpcoesDeLeitura = {},
 ) {
   const spreadsheet = await loadPerpetualSpreadsheet(db, funnelId);
-  if (!spreadsheet) return EMPTY_SALES_DATA;
+  if (!spreadsheet) return { ...EMPTY_SALES_DATA, ...extrasDoRecorte(filtro, null) };
 
   const mapping = spreadsheet.columnMapping as {
     email: string;
@@ -271,11 +310,11 @@ export async function calcularVendasDoPerpetuo(
     // ⚠️ Ver `OpcoesDeLeitura`: só sobe para quem pediu. Engolir aqui é o
     // comportamento histórico e continua sendo o default.
     if (opcoes.propagarErroDeLeitura) throw err;
-    return { ...EMPTY_SALES_DATA, semDados: true };
+    return { ...EMPTY_SALES_DATA, semDados: true, ...extrasDoRecorte(filtro, null) };
   }
 
   const { headers, rows } = sheetData;
-  if (rows.length === 0) return { ...EMPTY_SALES_DATA, semDados: true };
+  if (rows.length === 0) return { ...EMPTY_SALES_DATA, semDados: true, ...extrasDoRecorte(filtro, null) };
 
   const colIdx = (fieldName: string | undefined): number =>
     fieldName ? headers.indexOf(fieldName) : -1;
@@ -296,7 +335,7 @@ export async function calcularVendasDoPerpetuo(
   // Story 29.61 — a temperatura vem do `utm_term`, como no resto do projeto.
   const utmTermIdx = colIdx(mapping.utm_term);
 
-  if (emailIdx === -1) return { ...EMPTY_SALES_DATA, semDados: true };
+  if (emailIdx === -1) return { ...EMPTY_SALES_DATA, semDados: true, ...extrasDoRecorte(filtro, null) };
 
   // Fix 1 (29.8): suporta startDate/endDate explicitos (custom range no passado)
   // OU days retroativos (presets). Sem nenhum dos dois = todos os dados.
@@ -365,6 +404,28 @@ export async function calcularVendasDoPerpetuo(
   // txIds reembolsados → remove a linha "paid" pareada (mesmo id) das vendas.
   const refundedTxIds = new Set<string>();
 
+  /** Story 29.79 (AC5) — o que ficou fora do filtro, por motivo. `null` sem filtro. */
+  const fora = filtro ? acumuladorForaDoFiltro() : null;
+  const temColunaDeCampanha = utmCampaignIdx !== -1;
+  const campanhaDaLinha = (row: string[]) =>
+    temColunaDeCampanha ? sanitizeUtmValue(row[utmCampaignIdx]) : null;
+  /**
+   * Story 29.79 (PO-07) — a campanha da COMPRA de cada transação, lida da
+   * planilha INTEIRA (sem janela, sem filtro).
+   *
+   * O estorno chega numa linha própria, às vezes sem `utm_campaign`. Atribuído
+   * só pela própria linha, ele sumiria de todo filtro; pela compra pareada,
+   * cai no funil/oferta onde a compra foi feita. Só existe com filtro.
+   */
+  const campanhaDaCompra = new Map<string, string | null>();
+  if (filtro && txIdx !== -1) {
+    for (const row of rows) {
+      if (!isRevenueBucket(classifyRefundStatus(hasStatusCol ? (row[statusIdx] ?? "").trim() : "", hasStatusCol))) continue;
+      const tx = (row[txIdx] ?? "").trim();
+      if (tx && !campanhaDaCompra.has(tx)) campanhaDaCompra.set(tx, campanhaDaLinha(row));
+    }
+  }
+
   for (const [idxDaLinha, row] of rows.entries()) {
     const email = (row[emailIdx] ?? "").trim().toLowerCase();
     if (!email) continue;
@@ -405,10 +466,16 @@ export async function calcularVendasDoPerpetuo(
     // Precisa vir ANTES do filtro de receita: tem efeito colateral (alimenta
     // reembolsoBruto e refundedTxIds) que se perderia num descarte genérico.
     if (isRefundBucket(bucket)) {
+      // Story 29.79 (PO-07): o pareamento enxerga a planilha inteira — o id
+      // entra no conjunto ANTES do filtro, sempre.
+      if (txId) refundedTxIds.add(txId);
+      if (filtro) {
+        const campanha = campanhaDaLinha(row) ?? (txId ? (campanhaDaCompra.get(txId) ?? null) : null);
+        if (!campanha || !filtro.campanhas.has(campanha)) continue;
+      }
       reembolsoBruto += bruto;
       reembolsoLiquido += liquido;
       vendasReembolsadas += 1;
-      if (txId) refundedTxIds.add(txId);
       continue;
     }
 
@@ -416,6 +483,17 @@ export async function calcularVendasDoPerpetuo(
     // Sai antes da dedup — não conta em vendas, faturamento, ticket médio
     // nem em nenhum corte por UTM.
     if (!isRevenueBucket(bucket)) continue;
+
+    // Story 29.79 (AC4) — o recorte vem ANTES da dedup e de todo cálculo
+    // abaixo (quebra, público, bump, UTMs): cada um roda sobre as linhas do
+    // filtro, com as fórmulas de sempre.
+    if (filtro) {
+      const decisao = decidirLinhaNoFiltro(campanhaDaLinha(row), filtro, temColunaDeCampanha);
+      if (!decisao.dentro) {
+        if (decisao.motivo) fora!.somar(decisao, chaveDeComprador(email, txId, idxDaLinha), bruto);
+        continue;
+      }
+    }
 
     // Story 29.53 (AC1/AC3): classifica a linha paga. Produto ausente do
     // mapa — ou coluna não mapeada — é `principal`, o default da 29.49.
@@ -505,7 +583,10 @@ export async function calcularVendasDoPerpetuo(
   // reembolsada não é receita realizada).
   for (const txId of refundedTxIds) dedupMap.delete(`tx|${txId}`);
 
-  if (dedupMap.size === 0 && vendasReembolsadas === 0) return { ...EMPTY_SALES_DATA, semDados: false };
+  if (dedupMap.size === 0 && vendasReembolsadas === 0) {
+    // Com filtro, "nenhuma venda nele" ainda tem o que declarar: o que ficou fora.
+    return { ...EMPTY_SALES_DATA, semDados: false, ...extrasDoRecorte(filtro, fora) };
+  }
 
   let totalBruto = 0;
   let totalLiquido = 0;
@@ -549,16 +630,7 @@ export async function calcularVendasDoPerpetuo(
    * declara a ausência em vez de dividir por zero e mostrar `0%`.
    */
   const cliquesNoLinkDoFunil = await (async (): Promise<number | null> => {
-    const stages = await db
-      .select({ campaigns: funnelStages.campaigns })
-      .from(funnelStages)
-      .where(eq(funnelStages.funnelId, funnelId));
-    const ids = stages
-      .flatMap((st) => (Array.isArray(st.campaigns) ? st.campaigns : []))
-      .map((c: unknown) =>
-        typeof c === "string" ? c : ((c as { id?: string })?.id ?? ""),
-      )
-      .filter(Boolean);
+    const ids = await idsDeCampanhaDasEtapas(db, funnelId);
     if (ids.length === 0) return null;
 
     /**
@@ -580,12 +652,19 @@ export async function calcularVendasDoPerpetuo(
       ? cutoffStart.toISOString().slice(0, 10)
       : inicioDaJanela(days ?? 30, until);
     const ate = cutoffEnd ? cutoffEnd.toISOString().slice(0, 10) : until;
+    /**
+     * Story 29.79 (R1/PO-03) — com filtro, só as campanhas dele. E se nenhuma
+     * casou, ZERO cliques medidos: repassar `[]` ao leitor devolveria os
+     * cliques do projeto inteiro (ele só recorta com `length > 0`).
+     */
+    const alvo = campanhasParaMidia(ids, filtro);
+    if (alvo === null) return 0;
     const campanhas = await getCampaignInsightsFromDb(
       db,
       projectId,
       since,
       ate,
-      ids,
+      alvo,
     );
     if (campanhas.length === 0) return null;
     const total = campanhas.reduce(
@@ -744,6 +823,8 @@ export async function calcularVendasDoPerpetuo(
       .map(([forma, v]) => ({ forma, ...v }))
       .sort((a, b) => b.vendas - a.vendas),
     semDados: false,
+    // Story 29.79 (AC5): só com filtro — ver `extrasDoRecorte`.
+    ...extrasDoRecorte(filtro, fora),
   };
 }
 
@@ -770,13 +851,14 @@ export async function calcularVendasDiariasDoPerpetuo(
   db: Database,
   // ⚠️ Sem `projectId` de propósito: a leitura é por funil, e o controle de
   // acesso ao projeto mora na rota, que é de quem ele é.
-  { funnelId, days, startDate, endDate, groupBy }: JanelaDeVendas & {
-    funnelId: string;
-    groupBy?: "campaign" | "adset" | "ad";
-  },
+  { funnelId, days, startDate, endDate, groupBy, filtro }: JanelaDeVendas &
+    RecorteDeFunilEOferta & {
+      funnelId: string;
+      groupBy?: "campaign" | "adset" | "ad";
+    },
 ) {
   const spreadsheet = await loadPerpetualSpreadsheet(db, funnelId);
-  if (!spreadsheet) return { byDay: {} as Record<string, number>, semDados: true };
+  if (!spreadsheet) return { byDay: {} as Record<string, number>, semDados: true, ...extrasDoRecorte(filtro, null) };
 
   const mapping = spreadsheet.columnMapping as {
     email: string;
@@ -794,11 +876,11 @@ export async function calcularVendasDiariasDoPerpetuo(
   try {
     sheetData = await readSheetData(spreadsheet.spreadsheetId, spreadsheet.sheetName);
   } catch {
-    return { byDay: {} as Record<string, number>, semDados: true };
+    return { byDay: {} as Record<string, number>, semDados: true, ...extrasDoRecorte(filtro, null) };
   }
 
   const { headers, rows } = sheetData;
-  if (rows.length === 0) return { byDay: {} as Record<string, number>, semDados: true };
+  if (rows.length === 0) return { byDay: {} as Record<string, number>, semDados: true, ...extrasDoRecorte(filtro, null) };
 
   const colIdx = (fieldName: string | undefined): number =>
     fieldName ? headers.indexOf(fieldName) : -1;
@@ -819,7 +901,11 @@ export async function calcularVendasDiariasDoPerpetuo(
     : groupBy === "ad" ? colIdx(mapping.utm_content)
     : -1;
 
-  if (dataIdx === -1) return { byDay: {} as Record<string, number>, semDados: true };
+  if (dataIdx === -1) return { byDay: {} as Record<string, number>, semDados: true, ...extrasDoRecorte(filtro, null) };
+
+  /** Story 29.79 (AC4/AC5) — o recorte e o que ficou de fora. `null` sem filtro. */
+  const fora = filtro ? acumuladorForaDoFiltro() : null;
+  const utmCampaignIdx = colIdx(mapping.utm_campaign);
 
   // Pass 1: coleta ids reembolsados pra excluir tanto a linha refunded quanto
   // a compra "paid" pareada (mesmo id) da série de receita no tempo.
@@ -903,6 +989,27 @@ export async function calcularVendasDiariasDoPerpetuo(
     const bruto = parseNumber(row[brutoIdx] ?? "");
     if (bruto <= 0) continue;
 
+    // Story 29.79 (AC4): a linha que entraria na receita passa pelo filtro. O
+    // pareamento de reembolso do passe 1 já viu a planilha INTEIRA (PO-07): o
+    // estorno sem `utm_campaign` continua tirando a compra daqui.
+    if (filtro) {
+      const decisao = decidirLinhaNoFiltro(
+        utmCampaignIdx === -1 ? null : sanitizeUtmValue(row[utmCampaignIdx]),
+        filtro,
+        utmCampaignIdx !== -1,
+      );
+      if (!decisao.dentro) {
+        if (decisao.motivo) {
+          fora!.somar(
+            decisao,
+            chaveDeComprador(emailIdx === -1 ? null : row[emailIdx], txIdx === -1 ? null : row[txIdx], idxDaLinha),
+            bruto,
+          );
+        }
+        continue;
+      }
+    }
+
     // Story 41.7 (§C.7): `rowDay` já é o dia civil de São Paulo. Antes daqui
     // saía `getFullYear/getMonth/getDate`, que usava o fuso do processo.
     // O FATURAMENTO soma todas as linhas — o order bump E receita (AC4).
@@ -958,6 +1065,7 @@ export async function calcularVendasDiariasDoPerpetuo(
       salesByDay: {} as Record<string, number>,
       ...(groupBy ? { byEntity: {} as typeof byEntity, groupBy } : {}),
       semDados: false,
+      ...extrasDoRecorte(filtro, fora),
     };
   }
   return {
@@ -965,5 +1073,6 @@ export async function calcularVendasDiariasDoPerpetuo(
     salesByDay,
     ...(groupBy ? { byEntity, groupBy } : {}),
     semDados: false,
+    ...extrasDoRecorte(filtro, fora),
   };
 }

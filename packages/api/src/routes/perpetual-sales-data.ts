@@ -2,9 +2,9 @@ import { chaveDeComprador } from "../utils/comprador.js";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
+import { FORMATO_DO_CODIGO } from "@loyola-x/shared";
 import {
   funnels,
-  funnelStages,
   projects,
   projectMembers,
 } from "../db/schema.js";
@@ -35,7 +35,18 @@ import {
   loadPerpetualSpreadsheet,
   parseNumber,
   effectivePlatformFeeRate,
+  sanitizeUtmValue,
 } from "../services/perpetual-sales.js";
+// Story 29.79 — funil e oferta de cada campanha, e o filtro das vendas por eles.
+import {
+  acumuladorForaDoFiltro,
+  campanhasParaMidia,
+  carregarFunilOferta,
+  decidirLinhaNoFiltro,
+  filtroDaQuery,
+  idsDeCampanhaDasEtapas,
+  resumoDoFiltro,
+} from "../services/funil-e-oferta.js";
 import { getMetaAccountForProject } from "../services/traffic-analytics.js";
 import {
   getHourlyInsightsFromDb,
@@ -67,6 +78,18 @@ const querySchema = z.object({
    *   campaign -> utm_campaign · adset -> utm_medium · ad -> utm_content
    */
   groupBy: z.enum(["campaign", "adset", "ad"]).optional(),
+  /**
+   * Story 29.79 (AC4) — o recorte por funil e/ou oferta, no formato do
+   * dicionário (`a01`, `of01`). Os dois combinam (E). Ausentes = "Todos", e a
+   * resposta é byte a byte a de antes (AC6).
+   *
+   * ⚠️ Uma API anterior a esta story DESCARTA as duas chaves calada (o
+   * `z.object` ignora o que não conhece) e devolveria vendas sem filtro. Por
+   * isso a resposta ecoa `filtro` quando o aplicou — e o painel só manda o
+   * parâmetro depois de a API declarar suporte (29.80 AC7).
+   */
+  funil: z.string().regex(FORMATO_DO_CODIGO.funil.regex).optional(),
+  oferta: z.string().regex(FORMATO_DO_CODIGO.oferta.regex).optional(),
 });
 
 
@@ -118,12 +141,14 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       const funnel = await getFunnel(params.data.funnelId, params.data.projectId);
       if (!funnel) return reply.code(404).send({ error: "Funil não encontrado" });
 
+      const filtro = await filtroDaQuery(fastify.db, params.data, query.data);
       const dados = await calcularVendasDoPerpetuo(fastify.db, {
         projectId: params.data.projectId,
         funnelId: params.data.funnelId,
         days: query.data.days,
         startDate: query.data.startDate,
         endDate: query.data.endDate,
+        filtro,
       });
       return dados;
     },
@@ -145,12 +170,14 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       const funnel = await getFunnel(params.data.funnelId, params.data.projectId);
       if (!funnel) return reply.code(404).send({ error: "Funil não encontrado" });
 
+      const filtro = await filtroDaQuery(fastify.db, params.data, query.data);
       return await calcularVendasDiariasDoPerpetuo(fastify.db, {
         funnelId: params.data.funnelId,
         days: query.data.days,
         startDate: query.data.startDate,
         endDate: query.data.endDate,
         groupBy: query.data.groupBy,
+        filtro,
       });
     },
   );
@@ -203,16 +230,15 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       }
 
       // ---- campanhas do funil ----
-      const stages = await fastify.db
-        .select({ campaigns: funnelStages.campaigns })
-        .from(funnelStages)
-        .where(eq(funnelStages.funnelId, params.data.funnelId));
-      const campaignIds = stages
-        .flatMap((s) => (Array.isArray(s.campaigns) ? s.campaigns : []))
-        .map((c: unknown) =>
-          typeof c === "string" ? c : ((c as { id?: string })?.id ?? ""),
-        )
-        .filter(Boolean);
+      const campaignIds = await idsDeCampanhaDasEtapas(fastify.db, params.data.funnelId);
+      /**
+       * Story 29.79 — o recorte por funil/oferta. `campanhasDaMidia === null`
+       * quando o filtro não casou nenhuma campanha (R1/PO-03): aí os leitores
+       * NÃO são chamados — com `[]` eles devolveriam o projeto inteiro.
+       */
+      const filtro = await filtroDaQuery(fastify.db, params.data, query.data);
+      const campanhasDaMidia = campanhasParaMidia(campaignIds, filtro);
+      const fora = filtro ? acumuladorForaDoFiltro() : null;
 
       // ---- as 24 e as 7 posições, sempre todas (AC5) ----
       type Bucket = {
@@ -253,6 +279,8 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
           valorBruto?: string;
           dataVenda?: string;
           status?: string;
+          // Story 29.79: o id da campanha da venda — a chave do filtro.
+          utm_campaign?: string;
         };
         let sheetData;
         try {
@@ -268,6 +296,7 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
           const brutoIdx = colIdx(mapping.valorBruto);
           const dataIdx = colIdx(mapping.dataVenda);
           const statusIdx = colIdx(mapping.status);
+          const utmCampaignIdx = colIdx(mapping.utm_campaign);
           const hasStatusCol = statusIdx !== -1;
           feeRate = effectivePlatformFeeRate(spreadsheet.platform, hasStatusCol);
 
@@ -311,14 +340,28 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
               }
             }
 
-            totalLinhas += 1;
             const bruto = parseNumber(row[brutoIdx] ?? "");
-            const liquido = bruto * (1 - feeRate);
             const chave = chaveDeComprador(
               (row[emailIdx] ?? "").trim().toLowerCase(),
               txIdx === -1 ? "" : row[txIdx],
               idxDaLinha,
             );
+            // Story 29.79 (AC4): a linha paga passa pelo filtro. O conjunto de
+            // reembolsos acima já viu a planilha inteira (PO-07).
+            if (filtro) {
+              const decisao = decidirLinhaNoFiltro(
+                utmCampaignIdx === -1 ? null : sanitizeUtmValue(row[utmCampaignIdx]),
+                filtro,
+                utmCampaignIdx !== -1,
+              );
+              if (!decisao.dentro) {
+                if (decisao.motivo) fora!.somar(decisao, chave, bruto);
+                continue;
+              }
+            }
+
+            totalLinhas += 1;
+            const liquido = bruto * (1 - feeRate);
 
             // Dia da semana NÃO depende da hora (AC7): basta o dia.
             const dow = weekdayFromDayKey(dh.dia);
@@ -359,13 +402,16 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       const metaAccount = await getMetaAccountForProject(fastify.db, params.data.projectId);
 
       // por HORA: do banco (AC4). A Meta só é consultada pelo sync.
-      const horario = await getHourlyInsightsFromDb(
-        fastify.db,
-        params.data.projectId,
-        since,
-        until,
-        campaignIds,
-      );
+      const horario =
+        campanhasDaMidia === null
+          ? { porDiaEHora: [], primeiroDiaComCache: null, accountTimezone: null, ultimoSync: null }
+          : await getHourlyInsightsFromDb(
+              fastify.db,
+              params.data.projectId,
+              since,
+              until,
+              campanhasDaMidia,
+            );
       for (const linha of horario.porDiaEHora) {
         if (linha.hour < 0 || linha.hour > 23) continue;
         // Imposto aplicado UMA vez, aqui — o cache guarda o spend cru da Meta.
@@ -375,13 +421,16 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
       }
 
       // por DIA DA SEMANA: do insight DIÁRIO (AC7) — funciona sem o cache novo.
-      const diario = await getCampaignDailySpendFromDb(
-        fastify.db,
-        params.data.projectId,
-        since,
-        until,
-        campaignIds,
-      );
+      const diario =
+        campanhasDaMidia === null
+          ? []
+          : await getCampaignDailySpendFromDb(
+              fastify.db,
+              params.data.projectId,
+              since,
+              until,
+              campanhasDaMidia,
+            );
       for (const d of diario) {
         const dow = weekdayFromDayKey(d.dateStart);
         if (dow === null) continue;
@@ -438,7 +487,54 @@ export default fp(async function perpetualSalesDataRoutes(fastify) {
           janela: { since, until },
         },
         semDados: !spreadsheet,
+        // Story 29.79 (AC5): só com filtro — sem ele, nenhuma chave nova (AC6).
+        ...(filtro ? { filtro: resumoDoFiltro(filtro), foraDoFiltro: fora!.lista() } : {}),
       };
+    },
+  );
+
+  // ---- GET /perpetual/funil-oferta ---- (Story 29.79, AC3)
+  /**
+   * O funil e a oferta de cada campanha da etapa, o dicionário do expert do
+   * projeto e o que não se sabe classificar — é o que a barra de filtros do
+   * painel (29.80) consome: as opções dos dois selects, a lista `campanhas[]`
+   * pela qual ela estreita os `campaignIds`, e as sinalizações com link.
+   *
+   * Só leitura; guest com a MESMA regra das vizinhas (membro do projeto).
+   * Janela: `startDate`/`endDate` ou `days` (padrão 30, como a `hourly`) — só
+   * o `gasto` de cada campanha depende dela.
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/perpetual/funil-oferta",
+    async (request, reply) => {
+      const params = paramsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const query = querySchema.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: "Query inválida" });
+
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const funnel = await getFunnel(params.data.funnelId, params.data.projectId);
+      if (!funnel) return reply.code(404).send({ error: "Funil não encontrado" });
+
+      let since: string;
+      let until: string;
+      if (query.data.startDate && query.data.endDate) {
+        since = query.data.startDate;
+        until = query.data.endDate;
+      } else {
+        until = businessToday();
+        since = inicioDaJanela(query.data.days ?? 30, until);
+      }
+
+      return await carregarFunilOferta(fastify.db, {
+        projectId: params.data.projectId,
+        funnelId: params.data.funnelId,
+        since,
+        until,
+      });
     },
   );
 });

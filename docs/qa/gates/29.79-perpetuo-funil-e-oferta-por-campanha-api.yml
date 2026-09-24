@@ -1,0 +1,79 @@
+schema: 1
+storyId: '29.79'
+story: '29.79'
+story_title: 'Perpétuo — funil e oferta de cada campanha, e as vendas filtráveis por eles (API)'
+verdict: PASS
+gate: PASS
+status_reason: 'Re-gate (2026-09-24, a5f891c3): TEST-001 fechado — a recompra do bob na legada entrou na fixture fora de LINHAS, e a Q8, refeita pelo QA, cai agora (compradores 4 contra 3). Nenhum item aberto no código. Gate original: AC1–AC9 têm evidência. O nome atual vence o vínculo no ponto de uso (decisão (i)) e a linha é filtrada antes da dedup (decisão (ii)). A lista vazia fica guardada nas três leituras, e "Todos" sai byte a byte, reproduzido contra o código de antes da story. Das 7 mutações do QA, 6 caíram; a que sobreviveu é uma lacuna de teste de severidade baixa (TEST-001), e o código está correto.'
+reviewer: 'Quinn'
+updated: '2026-09-24T12:10:00Z'
+branch: 'feat/29.79-29.80-filtros-funil-oferta'
+commits: ['8938318f', 'a5f891c3']
+
+top_issues: []
+
+resolved_issues:
+  - id: 'TEST-001'
+    severity: low
+    resolved_in: 'a5f891c3'
+    resolution: 'fixtures/perpetuo-funil-oferta.ts ganhou RECOMPRA_DO_BOB e LINHAS_COM_RECOMPRA, FORA de LINHAS (o arquivo congelado do AC6 continua valendo: a suíte "todos" segue 2/2). O teste novo em perpetual-funil-oferta-filtro.test.ts assere compradores 3 com 4 linhas pagas e R$ 490, e o filtrado inalterado (2 vendas, R$ 400). O beforeEach devolve LINHAS às outras.'
+    finding: 'O `compradores` do `foraDoFiltro` é contado por `chaveDeComprador` no call site de `calcularVendasDoPerpetuo` (perpetual-sales.ts:493), e nenhum teste de rota exerce isso. Trocar a chave por `String(idxDaLinha)` (uma linha = um comprador) deixa as 79 verdes: na fixture, nenhum comprador tem duas linhas pagas fora do filtro. A deduplicação só é provada no acumulador puro.'
+    suggested_action: 'Acrescentar à fixture um comprador com duas compras pagas na mesma campanha sem oferta (ex.: bob com uma segunda linha na legada) e asserir `compradores` = 3 (e não 4) no teste "a01 + of01" de sales-data.'
+
+waiver: { active: false }
+
+own_mutations:
+  - id: Q1
+    mutation: 'hourly: gasto por dia da semana lido de campaignIds (etapa inteira) em vez de campanhasDaMidia'
+    result: 'CAIU (1) — "o investimento é só das campanhas do filtro" (8.852 contra 7,97)'
+  - id: Q2
+    mutation: 'sales-data: cliques da análise de origem lidos de `ids` (etapa inteira) em vez de `alvo`'
+    result: 'CAIU (1) — "os cliques da análise de origem são só das campanhas do filtro" (1.561 contra 140)'
+  - id: Q4
+    mutation: 'rota funil-oferta: getProjectAccess com "admin" fixo'
+    result: 'CAIU (1) — "guest que não é membro do projeto: 404"'
+  - id: Q5
+    mutation: 'classificarCampanhas: o VÍNCULO vence no FUNIL (ordem trocada no ponto de uso, não em resolverDimensao)'
+    result: 'CAIU (3) — caso DG (a01 em vez de a02), legada (a02 do vínculo em vez de a01 do nome) e a rota funil-oferta'
+  - id: Q6
+    mutation: 'hourly: filtro só no lado Meta — o bloco `if (filtro)` das VENDAS desligado'
+    result: 'CAIU (2) — totalVendas 10 em vez de 2 (a02) e 10 em vez de 0 (sem campanha)'
+  - id: Q7
+    mutation: 'rota sales-data-daily: `filtro: undefined` (a rota não repassa o recorte ao serviço)'
+    result: 'CAIU (3) — PO-07, groupBy e "filtro sem campanha"'
+  - id: Q8
+    mutation: 'foraDoFiltro do card contado por linha (`String(idxDaLinha)`) em vez de `chaveDeComprador`'
+    result: 'SOBREVIVEU no gate original — 79/79 verdes → TEST-001 (low). Re-gate (a5f891c3): CAIU (1) — compradores 4 contra 3'
+  - id: AC6-antes
+    mutation: 'routes/perpetual-sales-data.ts e services/perpetual-sales.ts trocados pela versão de 5702ee8a (antes da story); teste do AC6 rodado'
+    result: '2/2 passam: o arquivo congelado é a saída do código de antes, e com o código da branch dá o mesmo resultado. Arquivos restaurados; `git status` só com o gate.'
+
+checks:
+  code_review: 'Diff lido inteiro (API/shared). O parser é um módulo folha no shared: token delimitado por ^/$/_/-, mais [SIGLA+A<N>], com a1≡a01; dois códigos distintos viram "mais de um código"; ofmix vira motivo. Em services/funil-e-oferta.ts, os nomes vêm do meta_entity_names_cache (project_id + entity_type + in), e o vínculo só entra quando o nome não deu UM código. campanhasParaMidia devolve null quando o recorte fica vazio. decidirLinhaNoFiltro manda ao aviso só o que não se sabe atribuir. Em perpetual-sales.ts, o filtro roda depois do bucket de receita e ANTES da dedup; refundedTxIds é montado antes do filtro nas três leituras; sem filtro, extrasDoRecorte devolve {}. A refatoração idsDeCampanhaDasEtapas é equivalente às duas cópias. As 7 decisões autônomas foram avaliadas (ver notes): nenhuma contradiz AC nem decisão do Danilo.'
+  unit_tests: 'Rodado pelo QA: as 4 suítes novas dão 79/79. A API completa tem 191 arquivos, 3.187 testes passando e 10 falhando. As 10 falhas estão nos 5 arquivos da baseline (funnel-stages-lead-inputs, projects, schema, instagram-routes, instagram), confirmado rodando só esses 5: 10/10 falham lá, e nenhum deles foi tocado pela story. Mutações do QA: 6/7 caíram; Q8 sobreviveu (TEST-001).'
+  acceptance_criteria: 'AC1 ✓ (positivos dos 6 perpétuos; [30-14-7-5A1] e lança1 são negativos; "mais de um código" e ofmix cobertos; sugerirClassificacao intocado). AC2 ✓ (nome atual > vínculo > null com motivo, provado por Q5 e M7/M8 do @dev). AC3 ✓ (rota por funil; campanhas = funnel_stages do funil; campos expert/opcoes/campanhas/naoCadastrados/semFunil/semOferta; guest segue getProjectAccess, provado por Q4). AC4 ✓ (as 3 leituras filtram vendas e Meta pelo mesmo conjunto, provado por Q1/Q2/Q6/Q7; guarda do [] nos 3 leitores; reembolso lido sobre a planilha inteira). AC5 ✓ (5 motivos + detalhe; só linhas pagas). AC6 ✓ (12 requisições, inclusive a rota pública do Inácio; o arquivo não é regenerado — o teste só faz readFileSync — e foi reproduzido contra o código de antes). AC7 ✓. AC8 ✓. AC9 ✓ (eslint 0 nos arquivos tocados de api e shared; tsc shared e api EXIT 0 pelo binário direto; vitest igual à baseline).'
+  no_regressions: 'Sem filtro, a resposta não ganha chave nova e a Nomenclatura não é consultada (há teste para isso). O AC6 foi provado nos dois sentidos. public-perpetual-metrics.ts, mapa-de-campanhas.ts, meta-db-source.ts e nomenclatura-legado.ts não mudaram.'
+  performance: 'Com filtro, cada leitura de vendas faz +2 consultas indexadas (ids da etapa e nomes) e usa o mapaDeDimensoes, que tem cache de 60 s; a planilha continua no cache de 30 s. A rota funil-oferta faz 5 consultas pequenas. A horária lê os ids da etapa duas vezes, o que é desprezível. Sem filtro, o custo é zero.'
+  security: 'project_id entra no predicado de nomes, gasto e expert (asserido no SQL renderizado); o dicionário é filtrado por expert_id; o funil é verificado por (id, project_id); guest segue a mesma regra das rotas vizinhas (Q4). Sem PII: foraDoFiltro só tem contagens e somas. A pendência 4 do @po (guest ver os códigos do dicionário) continua com o Danilo e não bloqueia.'
+  documentation: 'Cabeçalhos dos módulos explicam a regra (três passos, lista vazia, "tudo separado", PO-07). A story traz o R3 medido em produção, a conferência READ ONLY, as decisões autônomas e as 21 mutações.'
+  api_contract: 'SIM — API_CONTRACT_VERSION 19 → 20 com a linha de histórico (rota funil-oferta; parâmetros funil/oferta; eco filtro/foraDoFiltro; aditiva; packages/mcp não afetado). Um bump só para o par 29.79+29.80. A main já tem ou terá o 20 por outra story do lote de 23/09: a renumeração para o próximo número no merge é do @devops (PO-13). Não é FAIL.'
+
+notes:
+  - 'Decisão 1 — motivo "nome atual não sincronizado": APROVADA. O AC2 proíbe o name de funnel_stages e manda nunca chutar; "sem código no nome" afirmaria a leitura de um nome que não existe no cache. O motivo vai ao detalhe do foraDoFiltro e a semFunil/semOferta. Em produção, 0 de 52 campanhas caem nele.'
+  - 'Decisão 2 — estorno sem utm_campaign atribuído pela compra do mesmo transactionId: APROVADA, é o que o PO-07 pede (sem isso o estorno sumiria de todo filtro). Residual aceito: o estorno sem utm_campaign e sem compra pareável sai do card de reembolso filtrado sem ir ao foraDoFiltro, que pelo AC5 só declara linhas PAGAS.'
+  - 'Decisão 3 — venda de outro funil/oferta CONHECIDO fica fora do foraDoFiltro: APROVADA. Segue a lista fechada de motivos do AC5 e a decisão (ii). O invariante do DoD (filtrado + Σ fora = Todos) vale no hambúrguer, onde 100 % é a01/of01; a forma geral (+ outro funil) está provada em teste.'
+  - 'Decisão 4 — 400 para código fora do formato, mais o eco `filtro`: APROVADA. É defensiva: código inválido não vira "Todos" calado (R2 da 29.80). O dicionário só aceita código no formato, então nenhuma opção do select gera 400. O eco só aparece com filtro (AC6 intacto).'
+  - 'Vínculo preenche também quando o nome diz ofmix ou "mais de um código": é a leitura literal de "a dimensão que o nome não traz"; com 0 vínculos hoje, nenhum número muda. O R6 (painel × relatório da 47.6) continua declarado.'
+  - 'Funcionalidade inerte em produção até o cadastro 6.6: os 4 naming_experts.project_id estão NULL, e a 29.80 desabilita os filtros ("Vincular o expert").'
+  - 'DoD aberta, e com razão: conferência em produção depois do deploy (no hambúrguer, a01+of01: filtrado + Σ foraDoFiltro = Todos; no churrasco, of01 com gasto 0, não o do projeto).'
+  - 'CodeRabbit não executado: a skill roda em WSL e este host é macOS.'
+
+history:
+  - at: '2026-09-24T11:40:00Z'
+    commit: '8938318f'
+    gate: PASS
+    note: 'Gate original: 6 de 7 mutações do QA caíram; Q8 sobreviveu → TEST-001 (low).'
+  - at: '2026-09-24T12:10:00Z'
+    commit: 'a5f891c3'
+    gate: PASS
+    note: 'Re-gate do QA loop 1. Q8 refeita pelo QA em perpetual-sales.ts:493 (`String(idxDaLinha)` no lugar de `chaveDeComprador`): CAIU (1), "TEST-001 (gate) — o foraDoFiltro conta COMPRADORES". Arquivo restaurado, git status limpo. As 4 suítes da story: 80/80. eslint 0 na fixture e no teste tocados. O fix mexe só em teste e fixture: o código de produção da 29.79 é o mesmo do gate original.'

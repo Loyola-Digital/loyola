@@ -134,6 +134,24 @@ import { PerpetualUpsellSection } from "./perpetual-upsell-section";
 import { PerpetualUpsellWizardDialog } from "./perpetual-upsell-wizard-dialog";
 import { usePerpetualUpsellSpreadsheet } from "@/lib/hooks/use-perpetual-upsell";
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
+// Story 29.80 — filtros de Funil e Oferta (rota e parâmetros da 29.79).
+import { usePerpetualFunilOferta } from "@/lib/hooks/use-perpetual-funil-oferta";
+import { useUserRole } from "@/lib/hooks/use-user-role";
+import {
+  planoDoFiltro,
+  estadoDaPlanilhaDeVendas,
+  idsDaMidia,
+  vendasRespeitaramORecorte,
+  SEM_FILTRO,
+  NAO_FILTRADO,
+  FRASE_NENHUMA_CAMPANHA,
+  type FiltroFunilOferta,
+} from "@/lib/utils/filtro-funil-oferta";
+import {
+  FiltrosDeFunilEOferta,
+  PainelDoFiltroFunilOferta,
+  SeloNaoFiltrado,
+} from "./perpetual-filtro-funil-oferta";
 import { useMetaAdsComparison } from "@/lib/hooks/use-meta-ads-comparison";
 import { useResolveMetaNames } from "@/lib/hooks/use-funnel-adsets-map";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
@@ -1366,6 +1384,12 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
    */
   const [filtroPublico, setFiltroPublico] = useState<FiltroDePublico>("todos");
   const temperatura = useTemperaturaDePublico(projectId);
+  /**
+   * Story 29.80 — o funil e a oferta PEDIDOS nos dois selects. O que vale de
+   * fato é `planoFunilOferta.filtro`: o pedido só vira filtro com a rota da
+   * 29.79 respondendo e o expert do projeto vinculado (AC5/AC7).
+   */
+  const [pedidoFunilOferta, setPedidoFunilOferta] = useState<FiltroFunilOferta>(SEM_FILTRO);
   // Story 29.19: ordenação de colunas + largura da coluna Dimensão no Detalhamento
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -1397,14 +1421,48 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   // Story 29.32: `useSurveyAggregation` saiu junto com o card "Resposta
   // Pesquisa" — era seu único consumidor neste dashboard, e mantê-lo faria
   // requisições de pesquisa a cada render sem nada para exibir.
-  const { data: perpetualSpreadsheet } = usePerpetualSpreadsheet(projectId, funnel.id);
+  const consultaDaPlanilha = usePerpetualSpreadsheet(projectId, funnel.id);
+  const perpetualSpreadsheet = consultaDaPlanilha.data;
   const { data: upsellSpreadsheet } = usePerpetualUpsellSpreadsheet(projectId, funnel.id);
+
+  // ============================================================
+  // Story 29.80 — o plano do filtro de Funil/Oferta. Decide TUDO num lugar
+  // puro (`lib/utils/filtro-funil-oferta.ts`): se os selects aparecem (só no
+  // perpétuo), o que vai às leituras de vendas (só depois de a API declarar
+  // suporte — AC7) e qual lista de campanhas cada bloco Meta recebe (AC2).
+  // ============================================================
+  const campaignIdsDaEtapa = funnel.campaigns.map((c) => c.id);
+  const funilOferta = usePerpetualFunilOferta(
+    funnel.type === "perpetual" ? projectId : null,
+    funnel.id,
+    days,
+    customRange?.startDate,
+    customRange?.endDate,
+  );
+  const planoFunilOferta = planoDoFiltro({
+    tipoDoFunil: funnel.type,
+    campaignIdsDaEtapa,
+    pedido: pedidoFunilOferta,
+    consulta: {
+      dados: funilOferta.data,
+      carregando: funilOferta.isLoading,
+      erroStatus: funilOferta.error ? ((funilOferta.error as { status?: number }).status ?? 0) : null,
+    },
+    // REQ-001: "sem planilha" (vendas do pixel, já filtradas) não é "planilha
+    // sem utm_campaign" (selo), e "carregando" não é nenhum dos dois.
+    planilhaDeVendas: estadoDaPlanilhaDeVendas({ dados: perpetualSpreadsheet, falhou: consultaDaPlanilha.isError }),
+  });
+  const recorteDeVendas = planoFunilOferta.recorteDeVendas;
+  const filtroFunilOfertaAtivo = planoFunilOferta.filtro !== null;
+  const papel = useUserRole();
+
   const { data: salesData } = usePerpetualSalesData(
     projectId,
     funnel.id,
     days,
     customRange?.startDate,
     customRange?.endDate,
+    recorteDeVendas,
   );
   /**
    * Stories 29.70/29.71/29.72 — as duas agregações da seção "Análise detalhada
@@ -1418,6 +1476,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     days,
     customRange?.startDate,
     customRange?.endDate,
+    recorteDeVendas,
   );
   const { data: salesDataDaily } = usePerpetualSalesDataDaily(
     projectId,
@@ -1425,17 +1484,32 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     days,
     customRange?.startDate,
     customRange?.endDate,
+    recorteDeVendas,
   );
   const usingSpreadsheet = !!perpetualSpreadsheet && !!salesData && !salesData.semDados;
   const { data: pickerData } = useCampaignPicker(showCampaignManager ? projectId : null);
   const updateFunnel = useUpdateFunnel(projectId, funnel.id);
-  const campaignIds = funnel.campaigns.map((c) => c.id);
-  const campaignIdSet = new Set(campaignIds);
+  /**
+   * Story 29.80 (AC2/PO-02) — duas listas, e a diferença é o que impede o
+   * filtro de mentir:
+   *
+   * - `hasCampaigns` sai da lista ORIGINAL da etapa. Vindo da filtrada, um
+   *   filtro sem campanha (o churrasco em `of01`) jogaria a tela no modo
+   *   "100 % planilha", como se o funil não tivesse campanha vinculada;
+   * - `campaignIds` é a lista da MÍDIA: a original sem filtro, a estreitada
+   *   com filtro — e `null` quando o filtro não casou nenhuma. Nunca `[]`:
+   *   para quase todo hook Meta, `[]` é "sem filtro de campanha", o PROJETO
+   *   INTEIRO. Com `null`, `temMidia` é falso e os hooks ficam desligados.
+   */
+  const hasCampaigns = campaignIdsDaEtapa.length > 0;
+  const campaignIds = idsDaMidia(planoFunilOferta.midia);
+  const midiaVazia = campaignIds === null;
+  const temMidia = hasCampaigns && !midiaVazia;
+  const campaignIdSet = new Set(campaignIds ?? []);
   // Sem campanha Meta vinculada o dashboard opera 100% da planilha. Os hooks
   // Meta são desabilitados (projectId null) — sem o filtro de campanha os
   // endpoints retornariam dados do PROJETO inteiro (spend de outros funis).
-  const hasCampaigns = campaignIds.length > 0;
-  const metaProjectId = hasCampaigns ? projectId : null;
+  const metaProjectId = temMidia ? projectId : null;
   // Story 29.21: status (Ativo/Pausado/Arquivado) por campanha p/ a coluna do
   // Detalhamento. Reusa o picker meta-campaigns (mesma queryKey → sem request
   // novo). Só o modo Por Campanha consulta o mapa (id da linha = id da campanha).
@@ -1448,7 +1522,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
 
   // Data hooks — Fix 1 (29.8): propaga startDate/endDate quando custom range
   const { data: overview, isLoading: overviewLoading } = useTrafficOverview(
-    metaProjectId, days, hasCampaigns ? campaignIds : null,
+    metaProjectId, days, temMidia ? campaignIds : null,
     customRange?.startDate, customRange?.endDate,
   );
   const { data: campaignData } = useTrafficCampaigns(
@@ -1457,17 +1531,17 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   const { data: dailyData, isLoading: dailyLoading } =
     useCampaignDailyInsightsBulk(
       projectId,
-      hasCampaigns ? campaignIds : null,
+      temMidia ? campaignIds : null,
       days,
       customRange?.startDate,
       customRange?.endDate,
     );
   const { data: adSetsData } = useAllAdSets(
-    metaProjectId, days, hasCampaigns ? campaignIds : null,
+    metaProjectId, days, temMidia ? campaignIds : null,
     customRange?.startDate, customRange?.endDate,
   );
   const { data: adsData } = useAllAds(
-    metaProjectId, days, hasCampaigns ? campaignIds : null,
+    metaProjectId, days, temMidia ? campaignIds : null,
     customRange?.startDate, customRange?.endDate,
   );
 
@@ -1491,8 +1565,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     refetch: refetchEntityDaily,
   } = useEntityDaily(
     metaProjectId,
-    hasCampaigns ? tableFilter : null,
-    hasCampaigns ? campaignIds : null,
+    temMidia ? tableFilter : null,
+    temMidia ? campaignIds : null,
     days,
     customRange?.startDate,
     customRange?.endDate,
@@ -1504,6 +1578,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     days,
     customRange?.startDate,
     customRange?.endDate,
+    recorteDeVendas,
   );
 
   // Story 29.13: resolve utm_medium (adset id) → adset name e utm_content
@@ -1781,7 +1856,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   const effectiveMetrics = useMemo(() => {
     const m = calcularMetricasDoPerpetuo({
       temCampanhas: hasCampaigns,
-      midia: overview ? { totalSpend: overview.totalSpend } : null,
+      // Story 29.80: filtro sem campanha = mídia ZERO medida, não "carregando".
+      midia: overview ? { totalSpend: overview.totalSpend } : midiaVazia ? { totalSpend: 0 } : null,
       vendas:
         usingSpreadsheet && salesData
           ? {
@@ -1795,7 +1871,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     if (!m) return null;
     // Sem campanha, não há `overview` para espalhar — o ramo 1 devolve só os KPIs.
     return hasCampaigns && overview ? { ...overview, ...m } : m;
-  }, [overview, salesData, usingSpreadsheet, spendAggregates, hasCampaigns]);
+  }, [overview, salesData, usingSpreadsheet, spendAggregates, hasCampaigns, midiaVazia]);
 
   // Revenue by audience (ad sets)
   const revenueByAudience = useMemo(() => {
@@ -2151,8 +2227,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   // usuário está olhando o Detalhamento.
   const { data: lpEntityDaily } = useEntityDaily(
     metaProjectId,
-    hasCampaigns ? "ad" : null,
-    hasCampaigns ? campaignIds : null,
+    temMidia ? "ad" : null,
+    temMidia ? campaignIds : null,
     days,
     customRange?.startDate,
     customRange?.endDate,
@@ -2389,6 +2465,14 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
               )}
             </Button>
           )}
+          {/* Story 29.80 (AC1) — Funil e Oferta, ao lado de "Classificar
+              produtos". Só no perpétuo; valem para a tela toda (AC2). */}
+          <FiltrosDeFunilEOferta
+            plano={planoFunilOferta}
+            dados={funilOferta.data}
+            pedido={pedidoFunilOferta}
+            onChange={setPedidoFunilOferta}
+          />
           <Button
             variant="outline"
             size="sm"
@@ -2439,6 +2523,17 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         funnelId={funnel.id}
         open={showProductTypes}
         onOpenChange={setShowProductTypes}
+      />
+
+      {/* Story 29.80 (AC4/AC5) — o que falta cadastrar e, com filtro, o que
+          ficou de fora e por quê. Guest vê o texto sem link (PO-03). */}
+      <PainelDoFiltroFunilOferta
+        plano={planoFunilOferta}
+        dados={funilOferta.data}
+        foraDoFiltro={salesData?.foraDoFiltro}
+        vendasRespeitaramOFiltro={vendasRespeitaramORecorte(salesData, recorteDeVendas)}
+        comLink={papel !== null && papel !== "guest"}
+        formatarMoeda={fmtCurrencyCheio}
       />
 
       {showCampaignManager && pickerData && (
@@ -2550,7 +2645,10 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                     valor comparado acompanha, ou a variação ficaria entre um
                     número cheio e um abreviado. */}
                 <KpiCard icon={DollarSign} label="Investimento" value={fmtCurrencyCheio(m.totalSpend)} hintTooltip
-                  comparison={compSpend !== null && m.totalSpend != null ? {
+                  // Story 29.80 (AC3): o comparativo lê o OUTRO funil inteiro — com
+                  // filtro, a variação compararia um recorte com um todo.
+                  warning={filtroFunilOfertaAtivo && compSpend !== null ? `Comparativo não filtrado — ${NAO_FILTRADO.comparativo}` : undefined}
+                  comparison={!filtroFunilOfertaAtivo && compSpend !== null && m.totalSpend != null ? {
                     display: fmtCurrencyCheio(compSpend),
                     delta: calcDelta(m.totalSpend, compSpend),
                     higherIsBetter: false,
@@ -3450,9 +3548,17 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           pergunta de período (quando investir), não de criativo. */}
       <PerpetualAnaliseHoraria data={horaria} isLoading={carregandoHoraria} />
 
-      <CamadasDeVideoSection projectId={projectId} campaignIds={campaignIds} />
+      {/* Story 29.80 (AC2/PO-02): com filtro sem campanha, NADA de `[]` —
+          `useCamadasDeVideo([])` busca o projeto inteiro. */}
+      {campaignIds === null ? (
+        <p className="rounded-xl border border-border/30 bg-card/60 p-4 text-xs text-muted-foreground">
+          Camadas do vídeo e Top criativos: {FRASE_NENHUMA_CAMPANHA}.
+        </p>
+      ) : (
+        <CamadasDeVideoSection projectId={projectId} campaignIds={campaignIds} />
+      )}
 
-      {hasCampaigns && (
+      {temMidia && campaignIds && (
       <TopCreativesGallery
         projectId={projectId}
         days={days}
@@ -3470,6 +3576,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       {/* UPSELL HIGH TICKET — Story 29.22: cross-sell perpétuo → high ticket */}
       {/* ================================================================ */}
       <div className="space-y-6 pt-2 border-t border-border/30">
+        <SeloNaoFiltrado ativo={filtroFunilOfertaAtivo} motivo={`Ascensão: ${NAO_FILTRADO.ascensao}.`} />
         <PerpetualUpsellSection
           projectId={projectId}
           funnelId={funnel.id}
@@ -3485,6 +3592,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       {ehCaptacaoPaga(stageType) && stageId && (
         <div className="space-y-6 pt-2 border-t border-border/30">
           <h3 className="text-base font-semibold">Vendas</h3>
+          <SeloNaoFiltrado ativo={filtroFunilOfertaAtivo} motivo={`Vendas de Captação e Produto Principal: ${NAO_FILTRADO.vendasDaEtapa}.`} />
           <StageSalesSection
             projectId={projectId}
             funnelId={funnel.id}
