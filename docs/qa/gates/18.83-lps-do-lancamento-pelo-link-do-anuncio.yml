@@ -1,0 +1,45 @@
+schema: 1
+story: '18.83'
+story_title: 'Lançamento — "Desempenho de Testes de LPs" identifica a LP pelo link que a pessoa viu (padrão do perpétuo)'
+gate: CONCERNS
+status_reason: 'AC1–AC12 entregues e provados: a correção por campanha só move o que estava sem URL e vale no MESMO mapa ad_id → URL do gasto e do lead (PO-15b), o Total de Investimento é invariante e o imposto entra uma vez; 5 mutações próprias derrubam 3/10/2/1/1. CONCERNS porque a API nova lê `funnel_stages.lp_campaign_urls` em toda leitura de etapa e a migration 0158 NÃO está aplicada — sem ela, toda tela de etapa quebra no deploy.'
+reviewer: 'Quinn'
+updated: '2026-09-24T11:40:00Z'
+branch: 'feat/18.83-18.85-lps-lancamento'
+commits: ['6866fc45']
+
+top_issues:
+  - id: 'DEPLOY-001'
+    severity: medium
+    finding: 'Migration `0158_stage_lp_campaign_urls.sql` não aplicada. `schema.ts` declara `lpCampaignUrls` e os `select()` de `funnel_stages` passam a pedir a coluna: sem ela em produção, toda leitura de etapa dá 500. Nada no repositório executa o arquivo .sql (o `_journal.json` do drizzle para no 0007). O boot roda `drizzle-kit push --force` (Dockerfile CMD e `server.ts`), que PODE criar a coluna a partir do `schema.ts` — mas isso já falhou em 10/09 e 16/09 e não é garantia.'
+    suggested_action: '@devops: aplicar a 0158 em produção ANTES do merge e provar no `information_schema` (a consulta está no cabeçalho do arquivo). Confirmação verbal não vale.'
+  - id: 'REL-001'
+    severity: low
+    finding: 'Janela entre deploys, web antigo × API nova: o `lp-funnel` passa a devolver chaves por URL, e o card do mini-funil do web antigo (que casa por `lpName.toUpperCase()`) não acha o funil da linha até o web subir. Declarado no Dev Agent Record (D9).'
+    suggested_action: 'Declarar na PR; subir web e API no mesmo ciclo.'
+  - id: 'SEC-001'
+    severity: low
+    finding: 'O `href` da linha de URL é o `creative.linkUrl` CRU do cache. `normalizeLpUrl` aceita URL sem esquema (tenta `https://` na frente) e recusa `javascript:`, então não há XSS; mas um `linkUrl` gravado sem esquema viraria link RELATIVO ao painel. A correção manual já trata o caso (`linkDoAnuncio`); o caminho do cache não.'
+    suggested_action: 'Opcional: montar o `href` com `https://` quando o `linkUrl` não tiver esquema, como `linkDoAnuncio` já faz para a correção.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Cadeia ad_id → URL no back (`services/lp-do-anuncio.ts`: leitura do cache SEMPRE com `project_id`, 3 causas de cache na precedência da 29.43) e agrupamento por URL no front (`lib/utils/lps-do-lancamento.ts`), com um mapa só (`linkDoAnuncio`) para gasto, lead e venda. `montarLpPorAnuncio` separa a 5ª causa (campanha sem dado por anúncio entra inteira; com anúncios, só o GASTO que nenhum anúncio explica — D3, justificado). `linkComCorrecao`/`linkDoAnuncio` só corrigem o que está sem chave. A auto-cura usa `avaliarCura` + `curarCacheDeLpEmSegundoPlano` como o `/ad-link-urls` (teto 100, cooldown 10 min, não aguardada). Fallback para a API antiga preservado (`lpBreakdown` continua; sem `lpPorAnuncio` a tabela é a de antes, com o lápis).'
+  unit_tests: 'API: 5 arquivos novos/tocados das três stories 78/78; web: 6 arquivos 61/61. Suíte web 113 arquivos / 1 507 testes verde. API 3 186/3 196 — as 10 falhas são as do baseline (funnel-stages-lead-inputs 3 [data fixa: "Data final não pode ser menor que hoje"], projects 3, schema 2, instagram 1, instagram-routes 1), nenhuma nova. Mutações PRÓPRIAS do QA (todas revertidas, `git diff` vazio): M1 correção move anúncio que JÁ tinha URL — web 3 falhas, API 1; M2 grão campanha (a campanha inteira segue a URL do 1º anúncio) — 10 falhas; M3 cache de volta a `:v2` — 2 falhas (1883 e 1885); M4 campanha sem dado por anúncio some do Total — 1; M5 guest ganha a correção na aba Meta Ads Teste — 1.'
+  acceptance_criteria: 'AC1 ✓ (URL por anúncio, `normalizeLpUrl`) · AC2 ✓ (link puro, `target=_blank`, `rel=noopener`) · AC3 ✓ (colunas e fórmulas iguais; imposto uma vez sobre a soma crua da linha — `applyMetaAdsTax` linear; cliques por `inline_link_clicks` nos dois níveis; tooltips por URL; Criativos intocada; Total de Leads medido e registrado) · AC4 ✓ (lead pago por `utm_content`; vendas no universo `campaignByAdId`) · AC5 ✓ (5 causas; correção por campanha; guest sem botão e PUT 403) · AC6 ✓ (lápis só no modo rótulo; `lp_links` intacto) · AC7 ✓ · AC8 ✓ · AC9 ✓ (fonte `anuncio` em `FonteLp`/`cobertura`/`atribuidos`; aplicação só por herança) · AC10 ✓ (cache hoje em `:v4` pela 18.85; contrato 20) · AC11 ✓ · AC12 ✓ (eslint 0 novo — só o herdado `sendflow.ts:39`; tsc shared/api/web 0 depois do `next build`; `next build` EXIT 0).'
+  no_regressions: '`fetchAllAdInsights` ganhou `inline_link_clicks` só por acréscimo; `lerVendas` ganhou `content` só por acréscimo (`buyers-origin` e jornada não leem). `useCrossReferenceLeads` extraiu o laço para `contagem-de-leads.ts` sem mudar as saídas antigas (`leadsByLp` continua).'
+  performance: 'A URL sai da MESMA leitura do cache de criativos que já buscava o `videoId`; nenhuma chamada nova à Meta. A troca da chave do cache esfria a tabela de Criativos no deploy (primeira abertura paga a Meta) — declarado.'
+  security: 'Correção validada nas três camadas (zod: chave só dígitos, URL http(s) até 2048; normalização; `$type`). PUT já devolve 403 para guest; a tela não oferece o botão (`papel !== "guest"` nas duas telas, com teste de fio). Leitura do cache sempre por `project_id` (predicado renderizado no teste).'
+  documentation: 'Dev Agent Record com 12 decisões, medições de produção (Total de Investimento Δ 0 em 90 d; Leads 69 = 69 em 90 d, com a explicação das entradas e saídas) e o aviso da migration no topo.'
+  api_contract: '19 → 20 com linha de histórico (`lpPorAnuncio`, `cobertura.anuncio`, `lpCampaignUrls`). A `main` pode já estar em 20 por outra story do lote — renumerar no merge é do @devops, não defeito desta story.'
+
+migration_0158:
+  aplicada: false
+  o_que_faz: 'ALTER TABLE "funnel_stages" ADD COLUMN IF NOT EXISTS "lp_campaign_urls" jsonb DEFAULT ''{}''::jsonb NOT NULL; — uma coluna, aditiva, idempotente, sem backfill (o default preenche as linhas existentes com {}). Rollback comentado: DROP COLUMN IF EXISTS.'
+  quem_aplica: 'Ninguém no repositório executa o .sql. O `drizzle-kit push --force` do boot pode criar a coluna a partir do `schema.ts`, sem garantia.'
+  narrada: 'Sim — cabeçalho explica a decisão 7.9, a chave (campaign_id) e a ordem de aplicação, com a consulta de prova no `information_schema`.'
+
+notes:
+  - 'Validação visual pendente (DoD): anotar o Total de Investimento da `bbe-pr2 › Captação Paga` ANTES do deploy, no mesmo dia e janela.'
+  - 'CodeRabbit não rodou (macOS sem WSL).'
