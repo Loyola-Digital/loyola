@@ -31,6 +31,10 @@ function parametroDe(q: { sql: string; params: unknown[] }, alvo: string): unkno
   const m = new RegExp(`${alvo.replace(/[.*+?^${}()|[\]\\"]/g, "\\$&")} (?:=|<>|>=) \\$(\\d+)`).exec(q.sql);
   return m ? q.params[Number(m[1]) - 1] : undefined;
 }
+/** O trecho entre WHERE e GROUP BY — o escopo dos eventos, antes da agregação. */
+function clausulaWhere(texto: string): string {
+  return texto.slice(texto.search(/ where /i), texto.search(/ group by /i));
+}
 const DESDE = new Date("2026-06-25T12:00:00.000Z");
 const STAGE = "54366a93-ff30-4e2e-9542-c44e55e9bf71";
 
@@ -139,6 +143,54 @@ describe("o SQL da jornada — lido pelo PgDialect (PO-08)", () => {
     expect(q.sql).toMatch(/having min\("revenuecat_sales"\."event_at"\) >= \$\d+::timestamptz$/i);
     expect(parametroDe(q, 'HAVING min("revenuecat_sales"."event_at")')).toBe(DESDE.toISOString());
   });
+  it("QA 42.11 TEST-001 — a coorte vem da SÉRIE INTEIRA: nenhum filtro de data no WHERE", () => {
+    // AC2: "novo" = primeiro evento do usuário em TODA a série da etapa. Um
+    // `event_at >= desde` no WHERE faria o min() ver só a janela: o HAVING vira
+    // tautologia, todo ATIVO na janela vira "novo" e as etapas deixam de contar
+    // "até hoje". O índice (stage_id, event_at) convida essa "otimização" — não faça.
+    expect(q.sql).toMatch(/ where [\s\S]* group by /i);
+    expect(clausulaWhere(q.sql)).not.toMatch(/event_at/i);
+    // e o event_at só aparece nos dois min(): a coluna primeiro_evento e o HAVING —
+    // nenhum FILTER/CASE de janela escondido em outra coluna
+    expect(q.sql.match(/event_at/g)).toHaveLength(2);
+    expect(q.sql.match(/min\("revenuecat_sales"\."event_at"\)/g)).toHaveLength(2);
+  });
+  it("QA 42.11 TEST-002 — cada condição de canal amarrada ao SEU alias (trocar duas derruba)", () => {
+    const col = (cond: string, alias: string) => `coalesce(bool_or(${cond}), false) AS "${alias}"`;
+    expect(q.sql).toContain(
+      col(
+        `"revenuecat_sales"."utm_campaign" LIKE '1202%' OR "revenuecat_sales"."utm_content" LIKE '1202%' OR "revenuecat_sales"."utm_medium" LIKE '1202%' OR "revenuecat_sales"."utm_source" = 'google-ads' OR "revenuecat_sales"."utm_campaign" ~ '^2[0-9]{10}$'`,
+        "c_campanha",
+      ),
+    );
+    expect(q.sql).toContain(col(`"revenuecat_sales"."gclid" IS NOT NULL`, "c_gclid"));
+    expect(q.sql).toContain(col(`"revenuecat_sales"."fbclid" IS NOT NULL`, "c_fbclid"));
+    expect(q.sql).toContain(
+      col(`"revenuecat_sales"."utm_campaign" IN ('ig4a', 'fb4a') OR "revenuecat_sales"."utm_source" IN ('apps.instagram.com', 'apps.facebook.com')`, "c_install"),
+    );
+    expect(q.sql).toContain(
+      col(
+        `"revenuecat_sales"."utm_medium" = 'organic' OR "revenuecat_sales"."utm_source" IN ('ig', 'website', 'google', 'chatgpt.com', 'latam_Med', 'google-play') OR "revenuecat_sales"."utm_content" = 'link_in_bio' OR jsonb_exists("revenuecat_sales"."payload"->'event'->'subscriber_attributes', 'coupom_code')`,
+        "c_organico",
+      ),
+    );
+    expect(q.sql).toContain(col(`upper("revenuecat_sales"."payload"->'event'->>'platform') = 'IOS' OR "revenuecat_sales"."store" = 'APP_STORE'`, "c_ios"));
+  });
+  it("QA 42.11 TEST-002 — o fio alias → sinal → canal: cada alias sozinho cai no canal dele", () => {
+    const soEste = (alias: string) =>
+      canalDoUsuario(
+        lerLinhaDaJornada({ c_campanha: false, c_gclid: false, c_fbclid: false, c_install: false, c_organico: false, c_ios: false, [alias]: true }),
+      );
+    expect(soEste("c_campanha")).toBe("campanha");
+    expect(soEste("c_gclid")).toBe("google_gclid");
+    expect(soEste("c_fbclid")).toBe("meta_fbclid");
+    expect(soEste("c_install")).toBe("meta_install");
+    expect(soEste("c_organico")).toBe("organico");
+    expect(soEste("c_ios")).toBe("sem_ios");
+    expect(soEste("nenhum")).toBe("sem_android");
+    // e todo alias que a leitura consome existe no SELECT
+    for (const alias of ["c_campanha", "c_gclid", "c_fbclid", "c_install", "c_organico", "c_ios"]) expect(select).toContain(`AS "${alias}"`);
+  });
   it("canais com os valores medidos — a lista de orgânicos é FECHADA (valor novo de utm_source cai em iOS/Android)", () => {
     expect(q.sql).toContain(`"revenuecat_sales"."utm_source" IN ('ig', 'website', 'google', 'chatgpt.com', 'latam_Med', 'google-play')`);
     expect(q.sql).toContain(`jsonb_exists("revenuecat_sales"."payload"->'event'->'subscriber_attributes', 'coupom_code')`);
@@ -220,6 +272,9 @@ describe("GET …/revenuecat/jornada — o fio da rota (AC5)", () => {
     expect(parametroDe(jornada, '"revenuecat_sales"."stage_id"')).toBe(STAGE);
     const inicioDaJanela = new Date(String(parametroDe(jornada, 'HAVING min("revenuecat_sales"."event_at")'))).getTime();
     expect(Math.abs(inicioDaJanela - (antes - 30 * 86_400_000))).toBeLessThan(5_000);
+    // QA TEST-001: a janela entra SÓ no HAVING — o SQL executado não filtra event_at no WHERE (coorte pela série inteira, AC2)
+    expect(clausulaWhere(jornada.sql)).not.toMatch(/event_at/i);
+    expect(jornada.sql.match(/event_at/g)).toHaveLength(2);
     const corpo = r.json();
     expect(corpo).toMatchObject({ days: 30, assinaturaDesde: "2026-08-10" });
     expect(corpo.total).toMatchObject({ novos: 1, iniciou: 1, pagou: 1, receitaUsd: 9.99 });
