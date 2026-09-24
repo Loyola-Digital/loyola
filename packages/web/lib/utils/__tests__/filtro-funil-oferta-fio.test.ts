@@ -17,6 +17,7 @@ const painel = ler("../../../components/funnels/perpetual-dashboard.tsx");
 const hooks = ler("../../hooks/use-perpetual-sales-data.ts");
 const abas = ler("../../../components/nomenclatura/abas.tsx");
 const pagina = ler("../../../app/(app)/settings/nomenclatura/page.tsx");
+const componente = ler("../../../components/funnels/perpetual-filtro-funil-oferta.tsx");
 
 /** O texto da chamada `nome(` até o `);` que a fecha. */
 function chamada(fonte: string, nome: string, aPartirDe = 0): string {
@@ -57,6 +58,38 @@ describe("o painel do perpétuo usa o plano do filtro (AC1/AC2/AC7)", () => {
     // `useCamadasDeVideo([])` busca o projeto inteiro: no vazio, a seção não monta.
     expect(painel).toMatch(/\{campaignIds === null \? \([\s\S]{0,300}\) : \(\s*<CamadasDeVideoSection projectId=\{projectId\} campaignIds=\{campaignIds\} \/>/);
     expect(painel).toMatch(/\{temMidia && campaignIds && \(\s*<TopCreativesGallery/);
+  });
+
+  it("TEST-001 (gate) — a lista da ETAPA só aparece onde deve: a declaração, o plano e `hasCampaigns`", () => {
+    // Qualquer outro consumidor que a leia (Top criativos, a base do
+    // Quente/Frio e da tabela por campanha) mostraria a etapa inteira com o
+    // filtro ativo. `funnel.campaigns.map(` fora da declaração é o mesmo desvio.
+    const usos = painel.split("\n").filter((l) => /\bcampaignIdsDaEtapa\b/.test(l)).map((l) => l.trim());
+    expect(usos).toEqual([
+      "const campaignIdsDaEtapa = funnel.campaigns.map((c) => c.id);",
+      "campaignIdsDaEtapa,",
+      "const hasCampaigns = campaignIdsDaEtapa.length > 0;",
+    ]);
+    expect(painel.match(/funnel\.campaigns\.map\(/g)).toHaveLength(1);
+  });
+
+  it("TEST-001 (gate) — Top criativos recebe a lista da MÍDIA (estreitada), não a da etapa", () => {
+    const i = painel.indexOf("<TopCreativesGallery");
+    const bloco = painel.slice(i, painel.indexOf("/>", i));
+    expect(bloco).toMatch(/\bcampaignIds=\{campaignIds\}/);
+  });
+
+  it("TEST-001 (gate) — a base do Quente/Frio e da tabela por campanha (`campaignIdSet`) é a lista da MÍDIA", () => {
+    expect(painel).toMatch(/const campaignIdSet = new Set\(campaignIds \?\? \[\]\);/);
+    // e é ela que recorta as campanhas do overlay por campanha
+    expect(painel).toMatch(/campaignData\.campaigns\.filter\(\(c\) => campaignIdSet\.has\(c\.campaignId\)\)/);
+  });
+
+  it("REQ-001 (gate) — o plano recebe o ESTADO da planilha (carregando / sem planilha / sem coluna), não um booleano", () => {
+    expect(painel).toMatch(/const consultaDaPlanilha = usePerpetualSpreadsheet\(projectId, funnel\.id\);/);
+    expect(painel).toMatch(
+      /planilhaDeVendas: estadoDaPlanilhaDeVendas\(\{ dados: perpetualSpreadsheet, falhou: consultaDaPlanilha\.isError \}\),/,
+    );
   });
 
   it("filtro sem campanha: mídia ZERO medida nos cards, não 'carregando'", () => {
@@ -103,5 +136,36 @@ describe("AC6 — o Dicionário respeita `?expertId=` em Funis e Ofertas", () =>
   it("a página passa o `expertId` da URL às duas abas", () => {
     expect(pagina).toMatch(/<AbaFunisOuOfertas recurso="funis" podeEditar=\{podeEditar\} expertInicial=\{params\.get\("expertId"\)\} \/>/);
     expect(pagina).toMatch(/<AbaFunisOuOfertas recurso="ofertas" podeEditar=\{podeEditar\} expertInicial=\{params\.get\("expertId"\)\} \/>/);
+  });
+});
+
+describe("TEST-002 (gate) — o componente do aviso desenha o que a regra monta (AC3/AC4/AC5)", () => {
+  const painelDoAviso = componente.slice(componente.indexOf("export function PainelDoFiltroFunilOferta"));
+
+  it("AC4 — a regra 'tudo separado' e as unidades aparecem no aviso", () => {
+    expect(painelDoAviso).toMatch(/<p className="[^"]*">\{aviso\.regra\}<\/p>/);
+    expect(painelDoAviso).toMatch(/<p className="[^"]*">\{aviso\.unidades\}<\/p>/);
+  });
+
+  it("AC3 — o selo 'planilha sem utm_campaign' segue o plano, com o motivo declarado", () => {
+    expect(painelDoAviso).toMatch(
+      /<SeloNaoFiltrado ativo=\{plano\.vendasNaoFiltraveis\} motivo=\{`Vendas e faturamento: \$\{NAO_FILTRADO\.planilhaSemUtm\}\.`\} \/>/,
+    );
+    // e o selo só desenha quando ativo
+    const selo = componente.slice(componente.indexOf("export function SeloNaoFiltrado"), componente.indexOf("export function PainelDoFiltroFunilOferta"));
+    expect(selo).toMatch(/if \(!ativo\) return null;/);
+  });
+
+  it("AC4 — as vendas fora e o gasto sem a dimensão vêm do `montarAvisoDoFiltro`", () => {
+    expect(painelDoAviso).toMatch(/montarAvisoDoFiltro\(\{ filtro, foraDoFiltro, campanhas: dados\.campanhas, comLink \}\)/);
+    expect(painelDoAviso).toMatch(/aviso\.vendas\.map\(/);
+    expect(painelDoAviso).toMatch(/aviso\.campanhas\.map\(/);
+    expect(painelDoAviso).toMatch(/!vendasRespeitaramOFiltro &&/);
+  });
+
+  it("AC5/PO-03 — a sinalização só vira link com `href`; sem ele (guest), o texto sem link", () => {
+    const linha = componente.slice(componente.indexOf("function LinhaDeSinalizacao"), componente.indexOf("export function SeloNaoFiltrado"));
+    expect(linha).toMatch(/\{s\.href \? \(\s*<Link href=\{s\.href\}/);
+    expect(linha).toMatch(/\) : \(\s*<span className="[^"]*">\(\{s\.acao\} — peça a quem administra o projeto\)<\/span>/);
   });
 });

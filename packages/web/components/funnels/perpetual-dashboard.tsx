@@ -139,6 +139,7 @@ import { usePerpetualFunilOferta } from "@/lib/hooks/use-perpetual-funil-oferta"
 import { useUserRole } from "@/lib/hooks/use-user-role";
 import {
   planoDoFiltro,
+  estadoDaPlanilhaDeVendas,
   idsDaMidia,
   vendasRespeitaramORecorte,
   SEM_FILTRO,
@@ -1420,7 +1421,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   // Story 29.32: `useSurveyAggregation` saiu junto com o card "Resposta
   // Pesquisa" — era seu único consumidor neste dashboard, e mantê-lo faria
   // requisições de pesquisa a cada render sem nada para exibir.
-  const { data: perpetualSpreadsheet } = usePerpetualSpreadsheet(projectId, funnel.id);
+  const consultaDaPlanilha = usePerpetualSpreadsheet(projectId, funnel.id);
+  const perpetualSpreadsheet = consultaDaPlanilha.data;
   const { data: upsellSpreadsheet } = usePerpetualUpsellSpreadsheet(projectId, funnel.id);
 
   // ============================================================
@@ -1446,7 +1448,9 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       carregando: funilOferta.isLoading,
       erroStatus: funilOferta.error ? ((funilOferta.error as { status?: number }).status ?? 0) : null,
     },
-    planilhaTemUtmCampaign: !!perpetualSpreadsheet?.columnMapping?.utm_campaign,
+    // REQ-001: "sem planilha" (vendas do pixel, já filtradas) não é "planilha
+    // sem utm_campaign" (selo), e "carregando" não é nenhum dos dois.
+    planilhaDeVendas: estadoDaPlanilhaDeVendas({ dados: perpetualSpreadsheet, falhou: consultaDaPlanilha.isError }),
   });
   const recorteDeVendas = planoFunilOferta.recorteDeVendas;
   const filtroFunilOfertaAtivo = planoFunilOferta.filtro !== null;

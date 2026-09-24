@@ -102,7 +102,10 @@ export interface PlanoDoFiltro {
    * parâmetro calada e devolveria vendas sem filtro ao lado de mídia filtrada.
    */
   recorteDeVendas: RecorteDeVendas;
-  /** A planilha não tem `utm_campaign`: as vendas ficam sem filtro, com selo (AC3). */
+  /**
+   * A planilha EXISTE e não tem `utm_campaign`: as vendas ficam sem filtro,
+   * com selo (AC3). Falso sem planilha (as vendas são do pixel, filtrado).
+   */
   vendasNaoFiltraveis: boolean;
   midia: RecorteDeMidia;
 }
@@ -112,14 +115,45 @@ export interface RecorteDeVendas {
   oferta?: string;
 }
 
+/**
+ * Story 29.80 (REQ-001 do gate) — a planilha de vendas do funil, em cinco
+ * estados. "Sem planilha" e "planilha sem `utm_campaign`" NÃO são a mesma
+ * coisa: sem planilha, as vendas da tela vêm do pixel, que já é filtrado
+ * pelas campanhas — o selo "a planilha não tem utm_campaign" seria falso ali.
+ */
+export type EstadoDaPlanilhaDeVendas =
+  /** A consulta ainda não resolveu: não se sabe se o recorte vale. */
+  | "carregando"
+  /** A consulta falhou sem dado anterior. */
+  | "erro"
+  /** O funil não tem planilha de vendas (a API devolveu `null`). */
+  | "sem-planilha"
+  /** Tem planilha, sem a coluna `utm_campaign` mapeada (dg-a1). */
+  | "sem-utm-campaign"
+  | "com-utm-campaign";
+
+export const FRASE_CARREGANDO_PLANILHA = "carregando a planilha de vendas…";
+export const FRASE_ERRO_PLANILHA = "não foi possível carregar a planilha de vendas";
+
+/** O estado da planilha a partir da consulta `usePerpetualSpreadsheet`. */
+export function estadoDaPlanilhaDeVendas(consulta: {
+  dados: { columnMapping?: { utm_campaign?: string | null } | null } | null | undefined;
+  falhou: boolean;
+}): EstadoDaPlanilhaDeVendas {
+  const { dados, falhou } = consulta;
+  if (dados === undefined) return falhou ? "erro" : "carregando";
+  if (dados === null) return "sem-planilha";
+  return dados.columnMapping?.utm_campaign ? "com-utm-campaign" : "sem-utm-campaign";
+}
+
 export function planoDoFiltro(input: {
   tipoDoFunil: string;
   campaignIdsDaEtapa: string[];
   pedido: FiltroFunilOferta;
   consulta: ConsultaDoFunilOferta;
-  planilhaTemUtmCampaign: boolean;
+  planilhaDeVendas: EstadoDaPlanilhaDeVendas;
 }): PlanoDoFiltro {
-  const { tipoDoFunil, campaignIdsDaEtapa, pedido, consulta, planilhaTemUtmCampaign } = input;
+  const { tipoDoFunil, campaignIdsDaEtapa, pedido, consulta, planilhaDeVendas } = input;
   const desligado = (mostrar: boolean, desabilitado: string | null): PlanoDoFiltro => ({
     mostrar,
     desabilitado,
@@ -139,11 +173,21 @@ export function planoDoFiltro(input: {
   }
   // AC5: sem expert não há dicionário — filtros desabilitados, com o link para vincular.
   if (!consulta.dados.expert) return desligado(true, FRASE_SEM_EXPERT);
+  // REQ-001: enquanto a planilha não resolveu, não se sabe se as vendas
+  // filtram — ligar o filtro agora daria mídia filtrada ao lado de vendas
+  // que talvez não sejam, e as leituras de vendas seriam pedidas duas vezes.
+  if (planilhaDeVendas === "carregando") return desligado(true, FRASE_CARREGANDO_PLANILHA);
+  if (planilhaDeVendas === "erro") return desligado(true, FRASE_ERRO_PLANILHA);
   if (!temFiltro(pedido)) return desligado(true, null);
 
   const filtro = { funil: pedido.funil, oferta: pedido.oferta };
+  // Só a planilha SEM a coluna deixa as vendas sem filtro (AC3, dg-a1). Sem
+  // planilha, o recorte vai do mesmo jeito: as vendas da tela são do pixel
+  // (filtrado pelas campanhas) e o investimento por dia da semana da rota
+  // horária também se estreita.
+  const vendasNaoFiltraveis = planilhaDeVendas === "sem-utm-campaign";
   const recorteDeVendas: RecorteDeVendas = {};
-  if (planilhaTemUtmCampaign) {
+  if (!vendasNaoFiltraveis) {
     if (filtro.funil) recorteDeVendas.funil = filtro.funil;
     if (filtro.oferta) recorteDeVendas.oferta = filtro.oferta;
   }
@@ -152,7 +196,7 @@ export function planoDoFiltro(input: {
     desabilitado: null,
     filtro,
     recorteDeVendas,
-    vendasNaoFiltraveis: !planilhaTemUtmCampaign,
+    vendasNaoFiltraveis,
     midia: estreitarCampanhas(campaignIdsDaEtapa, consulta.dados.campanhas, filtro),
   };
 }

@@ -44,6 +44,7 @@ import {
   db,
   CABECALHO,
   LINHAS,
+  LINHAS_COM_RECOMPRA,
   FUNIL,
   PROJ,
   DE,
@@ -107,6 +108,16 @@ describe("sales-data com filtro (AC4/AC5)", () => {
       // fay@ veio da campanha de outro funil do projeto (a do "hambúrguer na planilha do churrasco")
       { motivo: FORA_CAMPANHA_FORA_DA_ETAPA, detalhe: null, compradores: 1, faturamentoBruto: 90 },
     ]);
+  });
+
+  it("TEST-001 (gate) — o `foraDoFiltro` conta COMPRADORES: a recompra do bob na legada não vira um comprador a mais", async () => {
+    mockReadSheetData.mockResolvedValue({ headers: CABECALHO, rows: LINHAS_COM_RECOMPRA });
+    const r = await json(`${base}/sales-data?${janela}&funil=a01&oferta=of01`);
+    // bob (300 + 40), joe (70), hal (80): 4 linhas pagas, 3 compradores distintos.
+    expect(r.foraDoFiltro[0]).toEqual({ motivo: FORA_SEM_OFERTA, detalhe: MOTIVO_SEM_CODIGO, compradores: 3, faturamentoBruto: 490 });
+    // o filtrado não muda
+    expect(r.totalVendas).toBe(2);
+    expect(r.faturamentoBruto).toBe(400);
   });
 
   it("invariante do DoD: filtrado + Σ foraDoFiltro + o que é de outro funil conhecido = 'Todos'", async () => {

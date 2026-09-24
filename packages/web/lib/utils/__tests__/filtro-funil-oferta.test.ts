@@ -8,9 +8,12 @@ import { describe, expect, it } from "vitest";
 import type { CampanhaComFunilEOferta, FunilOfertaDoFunil } from "@loyola-x/shared";
 import {
   FRASE_API_SEM_FILTRO,
+  FRASE_CARREGANDO_PLANILHA,
+  FRASE_ERRO_PLANILHA,
   FRASE_SEM_EXPERT,
   REGRA_TUDO_SEPARADO,
   SEM_FILTRO,
+  estadoDaPlanilhaDeVendas,
   estreitarCampanhas,
   idsDaMidia,
   montarAvisoDoFiltro,
@@ -19,6 +22,7 @@ import {
   sinalizacoesDoCadastro,
   sufixoDoRecorte,
   vendasRespeitaramORecorte,
+  type EstadoDaPlanilhaDeVendas,
 } from "../filtro-funil-oferta";
 
 const camp = (over: Partial<CampanhaComFunilEOferta>): CampanhaComFunilEOferta => ({
@@ -95,7 +99,7 @@ describe("planoDoFiltro (AC1/AC5/AC7)", () => {
     campaignIdsDaEtapa: DA_ETAPA,
     pedido: { funil: "a01", oferta: "of01" },
     consulta: { dados: dados(), carregando: false, erroStatus: null },
-    planilhaTemUtmCampaign: true,
+    planilhaDeVendas: "com-utm-campaign" as EstadoDaPlanilhaDeVendas,
   };
 
   it("só no funil perpétuo (o `mobile` e o `launch` não mostram nada)", () => {
@@ -157,10 +161,55 @@ describe("planoDoFiltro (AC1/AC5/AC7)", () => {
   });
 
   it("AC3 — planilha sem utm_campaign (dg-a1): vendas NÃO filtradas (sem recorte, com selo); a mídia se estreita", () => {
-    const p = planoDoFiltro({ ...base, planilhaTemUtmCampaign: false });
+    const p = planoDoFiltro({ ...base, planilhaDeVendas: "sem-utm-campaign" });
     expect(p.vendasNaoFiltraveis).toBe(true);
     expect(p.recorteDeVendas).toEqual({});
     expect(p.midia.tipo).toBe("filtrado");
+  });
+
+  it("REQ-001 — funil SEM planilha: sem selo (as vendas são do pixel, filtrado) e o recorte vai", () => {
+    const p = planoDoFiltro({ ...base, planilhaDeVendas: "sem-planilha" });
+    expect(p.filtro).toEqual({ funil: "a01", oferta: "of01" });
+    expect(p.vendasNaoFiltraveis).toBe(false);
+    expect(p.recorteDeVendas).toEqual({ funil: "a01", oferta: "of01" });
+    expect(p.midia).toEqual({ tipo: "filtrado", ids: ["111"] });
+  });
+
+  it("REQ-001 — planilha carregando: filtro ainda não liga — sem selo, sem recorte, mídia intacta", () => {
+    const p = planoDoFiltro({ ...base, planilhaDeVendas: "carregando" });
+    expect(p.desabilitado).toBe(FRASE_CARREGANDO_PLANILHA);
+    expect(p.filtro).toBeNull();
+    expect(p.vendasNaoFiltraveis).toBe(false);
+    expect(p.recorteDeVendas).toEqual({});
+    expect(p.midia).toEqual({ tipo: "todos", ids: DA_ETAPA });
+  });
+
+  it("REQ-001 — a consulta da planilha falhou: desabilitado com a frase, sem selo", () => {
+    const p = planoDoFiltro({ ...base, planilhaDeVendas: "erro" });
+    expect(p.desabilitado).toBe(FRASE_ERRO_PLANILHA);
+    expect(p.filtro).toBeNull();
+    expect(p.vendasNaoFiltraveis).toBe(false);
+  });
+});
+
+describe("estadoDaPlanilhaDeVendas (REQ-001)", () => {
+  it("`undefined` é carregando — ou erro, se a consulta falhou", () => {
+    expect(estadoDaPlanilhaDeVendas({ dados: undefined, falhou: false })).toBe("carregando");
+    expect(estadoDaPlanilhaDeVendas({ dados: undefined, falhou: true })).toBe("erro");
+  });
+
+  it("`null` (a API disse que o funil não tem planilha) é SEM planilha, não 'sem utm_campaign'", () => {
+    expect(estadoDaPlanilhaDeVendas({ dados: null, falhou: false })).toBe("sem-planilha");
+  });
+
+  it("planilha com e sem a coluna utm_campaign mapeada", () => {
+    expect(estadoDaPlanilhaDeVendas({ dados: { columnMapping: { utm_campaign: "UTM Campaign" } }, falhou: false })).toBe("com-utm-campaign");
+    expect(estadoDaPlanilhaDeVendas({ dados: { columnMapping: {} }, falhou: false })).toBe("sem-utm-campaign");
+    expect(estadoDaPlanilhaDeVendas({ dados: { columnMapping: { utm_campaign: "" } }, falhou: false })).toBe("sem-utm-campaign");
+  });
+
+  it("dado anterior vence a falha de um refetch", () => {
+    expect(estadoDaPlanilhaDeVendas({ dados: { columnMapping: { utm_campaign: "c" } }, falhou: true })).toBe("com-utm-campaign");
   });
 });
 

@@ -115,6 +115,17 @@ export const LINHAS = [
   ["joe@x.com", "t12", "Curso", "70,00", "56,00", "pix", "07/09/2026 12:00:00", "paid", "fb", "as3", "ad3", C.legada, "fb_bbe-a1-jul-26|hot|ad"],
 ];
 
+/**
+ * Story 29.79 (TEST-001 do gate) — `bob@` RECOMPRA na legada: duas linhas
+ * pagas fora do filtro `a01 + of01`, um comprador só. Sem ela, contar o
+ * `foraDoFiltro` por LINHA daria o mesmo número que por comprador (Q8).
+ *
+ * Fica fora de `LINHAS` de propósito: `perpetuo-todos-antes-29-79.json`
+ * congela a saída de "Todos" sobre `LINHAS` com o código de antes da story.
+ */
+export const RECOMPRA_DO_BOB = ["bob@x.com", "t13", "Curso", "40,00", "32,00", "pix", "03/09/2026 10:00:00", "paid", "fb", "as3", "ad3", C.legada, "fb_bbe-a1-jul-26|hot|ad"];
+export const LINHAS_COM_RECOMPRA = [...LINHAS, RECOMPRA_DO_BOB];
+
 export const PLANILHA = {
   id: "s1",
   funnelId: FUNIL,
