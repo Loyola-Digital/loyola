@@ -204,4 +204,15 @@
 // agregada no banco a partir de `revenuecat_sales`. ADITIVA; `packages/mcp` não
 // é afetado. O web tem fallback: 404 (API atrás) some com o bloco e deixa o
 // banner acusar a defasagem — o bump é o que faz o banner aparecer.
-export const API_CONTRACT_VERSION = 22;
+// v23 (Story 29.78 — nasceu v20; renumerada no rebase sobre 48.13, 29.79/80 e 42.11): rota
+// nova `GET /api/projects/:projectId/funnels/:funnelId/vturb/vsls` — todos os
+// vídeos VTurb vinculados às etapas do funil, com os brutos de Play Rate e
+// Retenção ao pitch (pitch ATUAL do VTurb) no período,
+// para a tabela das VSLs do bloco VSL do perpétuo. Funil sem vídeo = 200 com
+// lista vazia. ADITIVA; a `/chain` da Análise MVP não muda; `packages/mcp` não
+// é afetado. O web tem fallback: 404 (API antiga) = bloco como era, sem tabela.
+// E (AC12) o `overview` do painel por vídeo passa a devolver em
+// `player.pitchTime` o pitch ATUAL do VTurb (`null` quando 0 ou ausente), não
+// a cópia do vínculo — mesma forma, sem campo novo; o web decide o "—" do
+// cartão "Chegaram no pitch" pelo valor, o que também funciona com a API antiga.
+export const API_CONTRACT_VERSION = 23;

@@ -11,6 +11,7 @@
 
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { TabelaDeVslsDoFunil } from "@/lib/utils/vturb-tabela"; // Story 29.78
 
 export interface VturbPlayer {
   id: string;
@@ -140,7 +141,11 @@ export function useLinkVturbPlayer(projectId: string, stageId: string) {
         method: "POST",
         body: JSON.stringify(input),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["vturb-stage-players", projectId, stageId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["vturb-stage-players", projectId, stageId] });
+      // Story 29.78 — o vídeo novo entra na tabela das VSLs do funil já.
+      qc.invalidateQueries({ queryKey: ["vturb-vsls", projectId] });
+    },
   });
 }
 
@@ -153,7 +158,10 @@ export function useUnlinkVturbPlayer(projectId: string, stageId: string) {
         `/api/projects/${projectId}/stages/${stageId}/vturb/players/${id}`,
         { method: "DELETE" },
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["vturb-stage-players", projectId, stageId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["vturb-stage-players", projectId, stageId] });
+      qc.invalidateQueries({ queryKey: ["vturb-vsls", projectId] }); // Story 29.78
+    },
   });
 }
 
@@ -244,6 +252,39 @@ export function useVturbChain(
           `?startDate=${range!.startDate}&endDate=${range!.endDate}`,
       ),
     enabled: !!projectId && !!funnelId && !!range?.startDate && !!range?.endDate,
+    staleTime: 2 * 60 * 1000,
+    retry: false,
+    placeholderData: (prev) => prev,
+  });
+}
+
+// ============================================================
+// Story 29.78 — a tabela das VSLs do funil perpétuo (bloco VSL).
+// ============================================================
+
+/**
+ * Todos os vídeos vinculados às etapas do funil, com os brutos de Play Rate e
+ * Retenção ao pitch no período.
+ *
+ * Custa cota do VTurb (uma `/players/list` + uma `sessions/stats` por vídeo,
+ * 60/min por conta): só é pedida com o bloco aberto (o `Collapsible` só monta
+ * o conteúdo aberto), fica 2 min em cache e não repete em erro — um 404 aqui é
+ * a API antiga, sem a rota, e insistir não muda isso.
+ */
+export function useVturbFunnelVsls(
+  projectId: string | null,
+  funnelId: string | null,
+  range: { startDate: string; endDate: string },
+) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["vturb-vsls", projectId, funnelId, range.startDate, range.endDate],
+    queryFn: () =>
+      apiClient<TabelaDeVslsDoFunil>(
+        `/api/projects/${projectId}/funnels/${funnelId}/vturb/vsls` +
+          `?startDate=${range.startDate}&endDate=${range.endDate}`,
+      ),
+    enabled: !!projectId && !!funnelId,
     staleTime: 2 * 60 * 1000,
     retry: false,
     placeholderData: (prev) => prev,

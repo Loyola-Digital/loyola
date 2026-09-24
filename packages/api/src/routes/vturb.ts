@@ -19,6 +19,13 @@ import {
   userEngagement, validateToken,
 } from "../services/vturb.js";
 import { ProtocolViolation, derivarCadeia, fonteVturb } from "../services/vturb-chain.js";
+import {
+  condicaoDoFunilNoProjeto,
+  condicaoDosVinculosDoFunil,
+  lerTabelaDasVsls,
+  pitchDoPainel,
+  unirVideosDoFunil,
+} from "../services/vturb-tabela.js"; // Story 29.78
 
 const projectParam = z.object({ projectId: z.string().uuid() });
 const stageParam = z.object({ projectId: z.string().uuid(), stageId: z.string().uuid() });
@@ -255,14 +262,27 @@ export default fp(async function vturbRoutes(fastify) {
         timezone: conn.timezone,
       };
       const base = { ...range, playerId: link.playerId };
+      /** O corpo das chamadas que medem o pitch — sempre com o pitch ATUAL (AC12). */
+      const comPitchAtual = (pitchTime: number | null) => ({ ...base, videoDuration: link.duration, pitchTime });
 
       try {
-        // Em paralelo no servidor: 4 chamadas, uma vez, em vez de 4 por aba
-        // aberta. A curva de retenção só é pedida quando há duration — sem ele
-        // a API não sabe normalizar o eixo e devolveria erro.
-        const [stats, byDay, engagement, clicks] = await Promise.all([
-          sessionStats(conn.token, { ...base, videoDuration: link.duration, pitchTime: link.pitchTime }),
-          sessionStatsByDay(conn.token, { ...base, videoDuration: link.duration, pitchTime: link.pitchTime }),
+        // Story 29.78 (AC12) — o pitch é o ATUAL do VTurb, de uma `/players/list`
+        // (a mesma fonte da tabela das VSLs, AC4), nunca a cópia gravada no
+        // vínculo: ela só se regrava num novo vínculo e envelhece em silêncio.
+        // Pitch 0 ou ausente → `null`, e o cartão "Chegaram no pitch" diz "—".
+        // Falha da lista é falha do painel, como na tabela (AC8): sem o pitch
+        // atual não há número honesto para o cartão.
+        const pitchAtual = listPlayers(conn.token, { timezone: conn.timezone })
+          .then((daConta) => pitchDoPainel(link, daConta).pitchTime);
+
+        // Em paralelo no servidor, uma vez, em vez de uma leva por aba aberta.
+        // Só as duas que levam o pitch esperam a lista; a curva e os cliques não
+        // dependem dele. A curva de retenção só é pedida quando há duration —
+        // sem ele a API não sabe normalizar o eixo e devolveria erro.
+        const [pitchTime, stats, byDay, engagement, clicks] = await Promise.all([
+          pitchAtual,
+          pitchAtual.then((pitch) => sessionStats(conn.token, comPitchAtual(pitch))),
+          pitchAtual.then((pitch) => sessionStatsByDay(conn.token, comPitchAtual(pitch))),
           link.duration
             ? userEngagement(conn.token, { ...base, videoDuration: link.duration })
             : Promise.resolve(null),
@@ -297,16 +317,8 @@ export default fp(async function vturbRoutes(fastify) {
         let diarioBruto = byDay;
         if (pareceVazio(agregado) && !temMovimento(diarioBruto) && houveAudiencia) {
           const [s2, d2] = await Promise.all([
-            sessionStats(conn.token, {
-              ...base,
-              videoDuration: link.duration,
-              pitchTime: link.pitchTime,
-            }).catch(() => stats),
-            sessionStatsByDay(conn.token, {
-              ...base,
-              videoDuration: link.duration,
-              pitchTime: link.pitchTime,
-            }).catch(() => byDay),
+            sessionStats(conn.token, comPitchAtual(pitchTime)).catch(() => stats),
+            sessionStatsByDay(conn.token, comPitchAtual(pitchTime)).catch(() => byDay),
           ]);
           agregado = s2;
           diarioBruto = d2;
@@ -335,11 +347,7 @@ export default fp(async function vturbRoutes(fastify) {
         let diario = diarioBruto;
         let diarioIncompleto = false;
         if (!temMovimento(diario) && !pareceVazio(statsFinal)) {
-          diario = await sessionStatsByDay(conn.token, {
-            ...base,
-            videoDuration: link.duration,
-            pitchTime: link.pitchTime,
-          }).catch(() => diarioBruto);
+          diario = await sessionStatsByDay(conn.token, comPitchAtual(pitchTime)).catch(() => diarioBruto);
           // Se nem na segunda veio, a tela precisa DIZER isso. Um gráfico
           // chapado no zero ao lado de um total de 7 mil views faz o time
           // investigar uma queda que não existiu.
@@ -352,7 +360,9 @@ export default fp(async function vturbRoutes(fastify) {
             playerId: link.playerId,
             name: link.playerName,
             duration: link.duration,
-            pitchTime: link.pitchTime,
+            // AC12 — o ATUAL: é ele que marca o pitch na curva e nos rótulos da
+            // tela, e `null` faz o cartão "Chegaram no pitch" dizer "—".
+            pitchTime,
           },
           range: { startDate: q.data.startDate, endDate: q.data.endDate, timezone: conn.timezone },
           stats: statsFinal,
@@ -478,6 +488,69 @@ export default fp(async function vturbRoutes(fastify) {
         if (err instanceof ProtocolViolation) {
           return reply.code(422).send({ error: err.message, code: "PROTOCOL_VIOLATION" });
         }
+        return replyVturbError(reply, err);
+      }
+    },
+  );
+
+  // ---- GET /funnels/:funnelId/vturb/vsls ---- (Story 29.78)
+  /**
+   * A tabela das VSLs do funil perpétuo: TODOS os vídeos vinculados às etapas
+   * do funil, com os brutos de Play Rate e Retenção ao pitch no período.
+   *
+   * Rota NOVA de propósito: a `/chain` da Análise MVP (29.41) segue igual,
+   * com o `.limit(1)` dela (PO-05). Aqui:
+   *   - funil sem vídeo → 200 com lista vazia, não 404 (PO-08): o 404 fica
+   *     para "a rota não existe" (API antiga), que o front trata como "sem
+   *     tabela" — os dois não podem se confundir;
+   *   - pitch ATUAL, de uma `/players/list` por leitura (AC4/PO-04);
+   *   - uma `sessions/stats` por vídeo, no máximo 3 ao mesmo tempo (AC7);
+   *   - falha de um vídeo fica na linha dele; falha da lista de players é
+   *     falha geral, com o status do VTurb (AC8).
+   * As taxas e o Total nascem no web, dos brutos (`lib/utils/vturb-tabela.ts`).
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/vturb/vsls",
+    async (request, reply) => {
+      if (denyGuest(request)) return reply.code(403).send({ error: "Acesso negado" });
+      const p = funnelParam.safeParse(request.params);
+      const q = rangeQuery.safeParse(request.query);
+      if (!p.success || !q.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const [funnel] = await fastify.db
+        .select({ id: funnels.id })
+        .from(funnels)
+        .where(condicaoDoFunilNoProjeto(p.data.projectId, p.data.funnelId))
+        .limit(1);
+      if (!funnel) return reply.code(404).send({ error: "Funil não encontrado neste projeto", code: "FUNNEL_NOT_FOUND" });
+
+      const conn = await tokenFor(p.data.projectId);
+      if (!conn) return reply.code(409).send({ error: "VTurb não conectado", code: "NOT_CONNECTED" });
+
+      const vinculos = await fastify.db
+        .select({ playerId: vturbPlayers.playerId, playerName: vturbPlayers.playerName })
+        .from(vturbPlayers)
+        .innerJoin(funnelStages, eq(funnelStages.id, vturbPlayers.stageId))
+        .where(condicaoDosVinculosDoFunil(p.data.projectId, p.data.funnelId));
+
+      const range = { startDate: q.data.startDate, endDate: q.data.endDate, timezone: conn.timezone };
+      try {
+        const videos = await lerTabelaDasVsls({
+          videos: unirVideosDoFunil(vinculos),
+          listarPlayers: () => listPlayers(conn.token, { timezone: conn.timezone }),
+          lerStats: (v) =>
+            sessionStats(conn.token, {
+              playerId: v.playerId,
+              startDate: range.startDate,
+              endDate: range.endDate,
+              timezone: range.timezone,
+              videoDuration: v.videoDuration,
+              pitchTime: v.pitchTime,
+            }),
+        });
+        // A janela devolvida é a ENVIADA ao VTurb — a tela mostra esta, não a pedida.
+        return { funnelId: p.data.funnelId, range, videos };
+      } catch (err) {
         return replyVturbError(reply, err);
       }
     },

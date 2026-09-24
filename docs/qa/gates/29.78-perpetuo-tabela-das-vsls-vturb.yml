@@ -1,0 +1,79 @@
+schema: 1
+storyId: '29.78'
+story: '29.78'
+story_title: 'Perpétuo — tabela das VSLs do funil (VTurb): Play Rate e Retenção ao pitch, com Total'
+verdict: PASS
+gate: PASS
+status_reason: 'Re-gate (ciclo 2). O AC12 está implementado como o AC pede: o `overview` lê o pitch atual de uma `/players/list` via `pitchDoPainel` e não usa mais a cópia do vínculo em lugar nenhum. As 5 chamadas que levam pitch usam o mesmo corpo `comPitchAtual`, `player.pitchTime` é o atual, o cartão "Chegaram no pitch" mostra "—" com o motivo da tabela, e a `/chain` não foi tocada. Os três achados do gate anterior estão fechados. As mutações 3 e 5 do gate e as duas do AC12 caem no teste dedicado. Ficam dois buracos low nos testes de fio (TEST-003), e o código atual está certo nos dois.'
+reviewer: 'Quinn'
+updated: '2026-09-24T11:10:00-03:00'
+branch: 'feat/29.78-tabela-vsls-vturb'
+commit_reviewed: '9e8fb4eb'
+
+issues:
+  - id: TEST-001
+    severity: medium
+    category: tests
+    description: '(Gate 23/09.) O fio da rota `/vturb/vsls` (recorte por projeto) e o fio do bloco (guarda de tipo de funil), cortados no call site, derrubavam 0 testes.'
+    recommendation: 'Teste de contrato por leitura de fonte para os dois fios.'
+    status: resolved
+    resolution: 'Re-gate 24/09: `vturb-rotas-fio.test.ts` (API) e `vturb-bloco-fio.test.ts` (web). Refeitas pelo @qa: mutação #3 (`ehPerpetuo = !!funnelId` + `funnelType="perpetual"`) → 2 falhas; mutação #5 (os dois predicados trocados por `eq(funnels.id, …)` / `eq(funnelStages.funnelId, …)`) → 2 falhas.'
+
+  - id: TEST-002
+    severity: low
+    category: tests
+    description: '(Gate 23/09.) (a) motivo do "—" no Total no caso misto; (b) o valor padrão da concorrência (3) não estava travado.'
+    recommendation: 'Caso misto no teste do Total; asserção de pico ≤ 3 sem `concorrencia`.'
+    status: resolved
+    resolution: 'Re-gate 24/09: caso `[falhou com pitch, lido sem pitch]` → `MOTIVO_SEM_PITCH`; `lerTabelaDasVsls` sem `concorrencia` tem pico 3 com 7 vídeos, e `CONCORRENCIA_DA_TABELA` = 3 fica travado. O @dev registrou G2c → 1 e G4 → 1. O @qa leu os dois testes e não refez as mutações.'
+
+  - id: DOC-001
+    severity: low
+    category: docs
+    description: '(Gate 23/09.) Cabeçalho da tabela mostrava a janela pedida, não a devolvida.'
+    recommendation: 'Usar `dados.range` quando há linhas.'
+    status: resolved
+    resolution: 'Re-gate 24/09: `periodoDoCabecalho(estado, dados, range)` mostra a janela devolvida com a tabela pronta e a pedida só no esqueleto e no erro. Tem teste de regra e teste de fio (D1/D2 do @dev).'
+
+  - id: TEST-003
+    severity: low
+    category: tests
+    description: 'Duas mutações do re-gate sobrevivem nos testes de fio (os testes são por leitura de fonte e só pegam a grafia que conhecem). (a) Pôr `.catch(() => null)` na `/players/list` do `overview` faz a falha da lista virar "pitch não configurado no VTurb": vira ausência, que é exatamente o que a AUTO-DECISION do @dev proíbe. Resultado: 60/60 verde, porque a regex do fio não é ancorada no fim da expressão. (b) Trocar `pitchOk &&` por `pitch !== null &&` na linha do pitch da curva de cliques dá 34/34 verde: o teste "nada usa o pitch cru" só barra `pitch != null` e `{pitch ?`. O efeito é pequeno: a API nova já manda `null` para pitch 0, e o impacto fica só na API antiga, onde a cópia pode ser 0 e a linha apareceria em 0:00.'
+    recommendation: '(a) Na regex do `overview`, exigir `;` logo depois de `.pitchTime)` (ou `expect(bloco).not.toMatch(/listPlayers[\s\S]*?\.catch\(/)`). (b) Em vez de uma lista de grafias proibidas, exigir que toda `ReferenceLine` do pitch esteja sob `pitchOk &&` (contar ocorrências de `x={mmss(pitch)}` = ocorrências de `pitchOk && (\n…<ReferenceLine x={mmss(pitch)}`). Cabe em uma follow-up XS, ou na story da Análise MVP que vai mexer em `routes/vturb.ts`.'
+    status: open
+
+top_issues:
+  - id: TEST-003
+    severity: low
+    finding: 'O fio do `overview` aceita engolir a falha da `/players/list`, e o fio do painel aceita `pitch !== null` na curva: as duas mutações passam verdes.'
+    suggested_action: 'Ancorar a regex do `overview` e trocar a lista de grafias proibidas por uma exigência positiva.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Re-gate, ciclo 2 (`9e8fb4eb`), diff contra a base rebaseada `15093c2f`. `overview`: uma `/players/list` com o fuso da conexão, depois `pitchDoPainel(link, daConta).pitchTime`, que é o atual, com `null` para 0, ausente ou vídeo fora da conta. `sessionStats` e `sessionStatsByDay` esperam a lista; curva e cliques seguem em paralelo. As 3 segundas tentativas usam `comPitchAtual(pitchTime)` e `player.pitchTime` é o atual. `link.pitchTime` não aparece mais no bloco da rota. A falha da lista rejeita o `Promise.all` e cai em `replyVturbError`, sem rejeição solta: todas as derivadas estão no mesmo `Promise.all`. `pitchAtualDoPlayer` foi extraída de `lerTabelaDasVsls` sem mudança de comportamento (A8r do @dev), então a tabela e o painel usam a mesma regra (`pitchInvalido`). `/chain` (linhas 395–492) sem hunk no diff. No web, `pitchConfiguradoNoPainel` (número finito > 0) governa o cartão ("—" + `MOTIVO_SEM_PITCH` + série vazia), o rótulo, o subtítulo de "Assistiram até o fim" e as duas `ReferenceLine`, e também protege a API antiga, que manda a cópia. `periodoDoCabecalho` fecha o DOC-001.'
+  unit_tests: 'Suítes re-rodadas pelo @qa: API `src/__tests__/vturb*` 4 arquivos, **60/60**; web `lib/utils/__tests__/vturb*` 2 arquivos, **34/34**. Mutações do re-gate: runner aplica, roda a suíte-alvo, restaura; `shasum -c` OK nos 5 arquivos; `git diff` vazio fora de `.claude/agent-memory/**`. **Pedidas:** G3 (gate #3, fio do bloco) → 2 falhas · G5 (gate #5, fio da rota) → 2 · A12a (`pitchDoPainel` devolve a cópia) → 4 · A12b (`overview` com `.then(() => link.pitchTime)`) → 2. **Próprias:** Q2 (cópia sem o texto literal, `?? link["pitchTime"]`) → 1, porque a regex do fio exige `.pitchTime)` · Q4 (`pitchAtualDoPlayer` sem `Number()`, pitch em texto) → 2 · **Q1 (`.catch(() => null)` na lista do `overview`) → 0** (TEST-003a) · **Q3 (`pitch !== null` na curva de cliques) → 0** (TEST-003b).'
+  acceptance_criteria: 'AC1–AC11: sem mudança desde o gate de 23/09 (✓), e o DOC-001 fechou a ressalva transitória do AC6. **AC12 ✓**: o `overview` usa o `pitch_time` atual da `/players/list` e não a cópia (`:264-265/303/308/341` do AC viraram `comPitchAtual`). `player.pitchTime` é o atual e marca a curva e os rótulos. Com pitch 0 ou ausente o cartão mostra "—" com "pitch não configurado no VTurb", o mesmo texto da tabela. A mudança vale para lançamento e mobile (painel compartilhado, declarado). Custo de +1 `/players/list` por abertura. `/chain` intocada. A escolha do pitch é função pura com prova diferencial: A12a derruba 4.'
+  no_regressions: '`vturb-chain` e `vturb-stats-reconstrucao` seguem verdes (dentro dos 60). A suíte completa da API e do web não foi refeita pelo @qa por causa do I/O do iCloud. O @dev registrou a API = baseline (10 falhas alheias, mais 7 timeouts sob carga que passam sozinhos: 193/193) e o web 1.489/1.489, com os 4 `.test.tsx` jsdom em rodada separada. Tudo sobre a árvore rebaseada.'
+  performance: 'Painel: +1 `/players/list` por abertura (`useVturbOverview` segura 30 s), e `sessions/stats`/`stats_by_day` passam a esperar uma ida a mais. Com o bloco do perpétuo aberto são 2 `/players/list` (tabela e painel), sem compartilhamento, o que não foi pedido. Irrelevante hoje, com 1 vídeo; vale observar com a cota de 60/min da conta.'
+  security: 'Sem mudança no recorte: `denyGuest`, funil do projeto da URL e vínculos por etapa E `project_id`, agora com o fio travado por teste (TEST-001 resolvido). O `overview` segue exigindo o vínculo na etapa da URL. Sem PII nem token na resposta.'
+  documentation: 'Dev Agent Record do ciclo 2 completo (decisões, provas, gates). Linha de histórico do contrato atualizada com o AC12 ("mesma forma, sem campo novo; muda o significado de `player.pitchTime`"). O cartão e a tabela usam o mesmo texto de motivo.'
+  api_contract: 'Branch em **v21** (a 29.78 nasceu v20 e subiu no rebase sobre a 48.13), com a linha de histórico da rota nova e do AC12. A `main` já está em **v22**. **ATENÇÃO @devops:** no merge, a 29.78 rebaseia e sobe para a próxima versão livre, com a própria linha. É renumeração de merge, não FAIL desta story.'
+  lint: 'eslint re-rodado pelo @qa: API 5 arquivos (rota, `vturb-tabela`, `vturb-chain`, 2 testes) com EXIT 0; web 7 arquivos (3 componentes, `lib/utils/vturb-tabela`, `use-vturb`, 2 testes) com EXIT 0, conferido com `--format json` (0/0) e 88 regras ativas.'
+  build_typecheck: '`next build` e `tsc` do web e da API não foram refeitos (instrução: I/O do iCloud; o @dev rodou depois do rebase: api 0, web 0 depois do build, build EXIT 0). `shared build` re-rodado: EXIT 0.'
+
+notes:
+  - 'Validação visual (DoD) pendente: ≥ 2 vídeos vinculados no `bbe_churrasco` (hoje há 1). Conferir a Retenção por vídeo contra o painel do VTurb, e agora também que o cartão "Chegaram no pitch" bate com a Retenção da tabela para o mesmo vídeo (formato diferente: 1 casa arredondada × 2 truncadas, declarado no PO-11).'
+  - 'Pré-existente, com um ponto de falha a mais: `VslDashboard` faz `if (!data) return null`, então o painel some sem aviso quando o `overview` falha, e a `/players/list` nova é mais um motivo de falha. É "erro virando ausência" fora do AC12, declarado pelo @dev. Candidato a follow-up.'
+  - 'Régua do período ("30d" = 31 dias civis) segue com o @po. MVP com `.limit(1)` a partir do 2º vídeo (PO-10) segue até a story nova da Análise MVP.'
+  - 'CodeRabbit não executado (CLI ausente no macOS). Revisão manual do diff do ciclo 2.'
+
+history:
+  - at: '2026-09-23T14:20:00-03:00'
+    commit: '6500c245'
+    verdict: CONCERNS
+    summary: 'AC1–AC11 atendidos, matemática travada. TEST-001 medium (fio da rota e do bloco sem teste: mutações 3 e 5 → 0 falhas), TEST-002 low (motivo do Total no caso misto; concorrência padrão), DOC-001 low (cabeçalho com a janela pedida). Contrato 19 → 20 colidia com a 48.13.'
+  - at: '2026-09-24T11:10:00-03:00'
+    commit: '9e8fb4eb'
+    verdict: PASS
+    summary: 'Re-gate depois do AC12 (painel por vídeo com o pitch atual). AC12 ✓. TEST-001, TEST-002 e DOC-001 resolvidos: mutações 3 e 5 caem com 2 falhas cada; A12a cai com 4 e A12b com 2. TEST-003 low novo: `.catch(() => null)` na lista do `overview` e `pitch !== null` na curva passam verdes. Suítes: API vturb 60/60, web vturb 34/34, eslint 0. Contrato v21 na branch; `main` em v22, renumeração no merge (@devops).'

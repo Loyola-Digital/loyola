@@ -12,8 +12,10 @@
  */
 
 import { useState } from "react";
+import { useParams } from "next/navigation";
 import { ChevronDown, Video } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { useFunnel } from "@/lib/hooks/use-funnels";
 import { VturbStageTab } from "./vturb-stage-tab";
 
 export function VslCollapsibleSection({
@@ -24,6 +26,13 @@ export function VslCollapsibleSection({
   stageId: string;
 }) {
   const [aberto, setAberto] = useState(false);
+  // Story 29.78 (PO-02) — o bloco precisa saber o FUNIL e o tipo dele: a
+  // tabela das VSLs é só do perpétuo e lê os vídeos do funil inteiro. Vêm da
+  // URL e do `useFunnel` que a página da etapa já carregou (mesma chave do
+  // React Query — sem chamada nova), sem mudar quem chama o bloco.
+  const params = useParams<{ funnelId?: string }>();
+  const funnelId = typeof params?.funnelId === "string" ? params.funnelId : null;
+  const { data: funnelData } = useFunnel(projectId, funnelId);
 
   return (
     <Collapsible open={aberto} onOpenChange={setAberto} className="mt-6">
@@ -40,7 +49,12 @@ export function VslCollapsibleSection({
         />
       </CollapsibleTrigger>
       <CollapsibleContent className="mt-4">
-        <VturbStageTab projectId={projectId} stageId={stageId} />
+        <VturbStageTab
+          projectId={projectId}
+          stageId={stageId}
+          funnelId={funnelId}
+          funnelType={funnelData?.funnelType ?? null}
+        />
       </CollapsibleContent>
     </Collapsible>
   );
