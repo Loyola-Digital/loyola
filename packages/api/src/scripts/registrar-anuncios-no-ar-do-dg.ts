@@ -23,13 +23,13 @@ import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import * as schema from "../db/schema.js";
 import { criarRepositorio } from "../services/nomenclatura/repositorio.js";
-import { ANUNCIOS_DO_DG_NO_AR, EXPERT_DOS_ANUNCIOS_NO_AR, provarRegistro, registrarAnunciosNoAr, type LinhaDeProva } from "../services/nomenclatura/anuncios-no-ar.js";
+import { ANUNCIOS_DO_DG_NO_AR, EXPERT_DOS_ANUNCIOS_NO_AR, modoDoRegistro, provarRegistro, registrarAnunciosNoAr, type LinhaDeProva } from "../services/nomenclatura/anuncios-no-ar.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
 async function main(): Promise<number> {
-  const aplicar = process.argv.includes("--aplicar");
+  const { aplicar } = modoDoRegistro(process.argv);
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   const db = drizzle(pool, { schema });
   try {

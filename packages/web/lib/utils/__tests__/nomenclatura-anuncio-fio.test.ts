@@ -42,9 +42,14 @@ describe("gerador de anúncio — as ligações da 47.16", () => {
     expect(gerador).toMatch(/\{mensagemDeApiAtrasAoSalvarAnuncio\(erro, apiAtras\) \?\? erro\.mensagem\}/);
   });
   it("AC6: o corpo do Salvar vem de corpoDoAnuncio (launchSeq null com perpetuo) — no POST e no PATCH", () => {
-    expect(gerador).toMatch(/const corpo = corpoDoAnuncio\(estado\)/);
-    expect(gerador).toMatch(/launchSeq: corpo\.launchSeq,/);
-    expect(gerador).toMatch(/: await criar\.mutateAsync\(corpo\)/);
+    // QA 47.16 TEST-001: o PATCH manda exatamente o corpo testado em corpoDaEdicaoDoAnuncio (nada montado à mão)
+    expect(gerador).toMatch(/await editar\.mutateAsync\(\{ id: \(modo as \{ id: string \}\)\.id, dados: corpoDaEdicaoDoAnuncio\(estado, \{ padraoAntigo \}\) \}\)/);
+    expect(gerador).toMatch(/: await criar\.mutateAsync\(corpoDoAnuncio\(estado\)\)/);
+    expect(gerador).not.toMatch(/launchSeq: corpo\.launchSeq/);
+  });
+  it("MNT-001: \"Copiar nome completo\" depende só de haver nome (a comparação com a estrutura era código morto)", () => {
+    expect(gerador).toMatch(/disabled=\{!previa\.nome\} onClick=\{\(\) => previa\.nome && void copiarTexto\(previa\.nome\)\}/);
+    expect(gerador).not.toMatch(/previa\.nome === previa\.estrutura/);
   });
 });
 

@@ -50,6 +50,7 @@ import {
   LEGENDA_DO_ANUNCIO,
   aoEscolherNoAnuncio,
   comSugestaoDoLancamento,
+  corpoDaEdicaoDoAnuncio,
   corpoDoAnuncio,
   estadoDeAnuncio,
   ehVideo,
@@ -146,7 +147,8 @@ function PreviaDoAnuncioView({ previa }: { previa: PreviaDoAnuncio }) {
         <Button type="button" variant="outline" size="sm" disabled={!previa.estrutura} onClick={() => previa.estrutura && void copiarTexto(previa.estrutura)} title="Até o -- inclusive: o que o designer recebe">
           <Copy className="mr-1 h-4 w-4" /> Copiar estrutura
         </Button>
-        <Button type="button" variant="outline" size="sm" disabled={!previa.nome || previa.nome === previa.estrutura} onClick={() => previa.nome && void copiarTexto(previa.nome)}>
+        {/* 47.16 (AC4, opção B): a estrutura sempre termina em `--` e o nome nunca — basta haver nome (QA MNT-001) */}
+        <Button type="button" variant="outline" size="sm" disabled={!previa.nome} onClick={() => previa.nome && void copiarTexto(previa.nome)}>
           <Copy className="mr-1 h-4 w-4" /> Copiar nome completo
         </Button>
       </div>
@@ -231,21 +233,11 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
   async function salvar(eOutro = false) {
     setErro(null);
     try {
-      const corpo = corpoDoAnuncio(estado);
+      // 47.16 AC6: os dois corpos saem de corpoDoAnuncio (launchSeq null com perpetuo); o do PATCH, via
+      // corpoDaEdicaoDoAnuncio — que também decide origem/hook/body (47.13 AC7) — testado no corpo enviado.
       const salvo = editando
-        ? await editar.mutateAsync({
-            id: (modo as { id: string }).id,
-            dados: {
-              launchType: corpo.launchType,
-              launchSeq: corpo.launchSeq,
-              date: corpo.date,
-              description: corpo.description,
-              notes: corpo.notes,
-              // Story 47.13: num vídeo v2 os três são editáveis (como lançamento/data); no padrão antigo não vão (AC7)
-              ...(video && !padraoAntigo ? { origin: corpo.origin ?? undefined, hookId: corpo.hookId ?? undefined, bodyId: corpo.bodyId ?? undefined } : {}),
-            },
-          })
-        : await criar.mutateAsync(corpo);
+        ? await editar.mutateAsync({ id: (modo as { id: string }).id, dados: corpoDaEdicaoDoAnuncio(estado, { padraoAntigo }) })
+        : await criar.mutateAsync(corpoDoAnuncio(estado));
       await navigator.clipboard.writeText(salvo.structure).catch(() => undefined);
       if (eOutro) {
         // AC8: mantém expert, sigla, número do lançamento e data — e (47.13 AC9) origem, hook e body; limpa NN (o servidor sugere o próximo), descrição e notas.

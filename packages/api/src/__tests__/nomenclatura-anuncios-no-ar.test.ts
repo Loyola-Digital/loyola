@@ -12,6 +12,7 @@ import {
   ANUNCIOS_DO_DG_NO_AR,
   ErroDoRegistro,
   conferirNomes,
+  modoDoRegistro,
   planejarRegistro,
   provarRegistro,
   registrarAnunciosNoAr,
@@ -124,6 +125,16 @@ describe("47.16 AC9 — os 6 anúncios do dg no ar", () => {
     expect(semHook.inseridos).toEqual([]);
   });
 
+  it("QA 47.16 TEST-003: modoDoRegistro — sem --aplicar PLANEJA (é o que autoriza rodar o plano em produção); só --aplicar exato grava", () => {
+    expect(modoDoRegistro([])).toEqual({ aplicar: false });
+    expect(modoDoRegistro(["node", "dist/scripts/registrar-anuncios-no-ar-do-dg.js"])).toEqual({ aplicar: false });
+    expect(modoDoRegistro(["node", "x.js", "--plano"])).toEqual({ aplicar: false });
+    expect(modoDoRegistro(["node", "x.js", "--APLICAR"])).toEqual({ aplicar: false });
+    expect(modoDoRegistro(["node", "x.js", "--aplicar=true"])).toEqual({ aplicar: false });
+    expect(modoDoRegistro(["node", "x.js", "--aplicar"])).toEqual({ aplicar: true });
+    expect(modoDoRegistro(["node", "x.js", "--plano", "--aplicar"])).toEqual({ aplicar: true });
+  });
+
   it("provarRegistro (PO-05b): discrimina — 6 linhas certas passam; nome com `--`, launch_seq 0, origem h ou hook trocado não", () => {
     const certas: LinhaDeProva[] = ANUNCIOS_DO_DG_NO_AR.map((a) => ({ creativeSeq: a.creativeSeq, name: a.name, structure: `${a.name}--`, launchType: "perpetuo", launchSeq: null, origin: "ia", hookCode: a.hook, bodyCode: a.body }));
     expect(provarRegistro(certas)).toEqual([]);
@@ -154,8 +165,14 @@ describe("47.16 AC9 — o script chama a lógica testada", async () => {
   });
   it("grava numa transação pelo repositório (changelog), sem montarAnuncio; só com --aplicar", () => {
     expect(fonte).toMatch(/db\.transaction\(async \(tx\) => registrarAnunciosNoAr\(criarRepositorio\(tx\), \{ aplicar \}\)\)/);
-    expect(fonte).toMatch(/process\.argv\.includes\("--aplicar"\)/);
     expect(fonte).not.toMatch(/montarAnuncio|buildAdName/);
+  });
+  it("QA 47.16 TEST-003: planejar × aplicar sai SÓ de modoDoRegistro(process.argv) — nada no script reescreve a decisão", () => {
+    expect(fonte).toMatch(/const \{ aplicar \} = modoDoRegistro\(process\.argv\);/);
+    // um único ponto lê os argumentos, e `aplicar` não é reatribuído nem combinado com outra condição
+    expect(fonte.match(/process\.argv/g)).toHaveLength(1);
+    expect(fonte).not.toMatch(/\baplicar\s*(=[^=]|\|\||&&|\?\?)/);
+    expect(fonte).not.toMatch(/let aplicar|var aplicar/);
   });
   it("termina com a prova byte a byte e sai ≠ 0 se divergir", () => {
     expect(fonte).toMatch(/const divergencias = provarRegistro\(prova\)/);

@@ -1145,6 +1145,35 @@ describe("rotas da nomenclatura", () => {
     expect(errado.json()).toMatchObject({ campo: "launchSeq" });
   });
 
+  // QA 47.16 TEST-001: o corpo REAL do PATCH do gerador. Os literais abaixo são os que o web prova sair de
+  // `corpoDaEdicaoDoAnuncio` (packages/web/lib/utils/__tests__/nomenclatura-anuncio.test.ts, "TEST-001") —
+  // com `perpetuo`, `launchSeq: null` vai SEMPRE, explícito. Tirar o `.nullable()` do zod do PATCH dá 400 aqui.
+  it("QA 47.16 TEST-001: PATCH com o corpo que o gerador envia (launchSeq: null explícito com perpetuo) → 200, sem número", async () => {
+    const { bbe, h01, b01, post } = await videoBase(app);
+    const a = await post("/api/nomenclatura/ads", { expertId: bbe.id, creativeType: "ad", launchType: "perpetuo", launchSeq: null, date: "09-2026" });
+    const corpoDoGerador = { launchType: "perpetuo", launchSeq: null, date: "10-2026", description: "prova social", notes: null };
+    const ad = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${a.id}`, payload: corpoDoGerador });
+    expect(ad.statusCode).toBe(200);
+    expect(ad.json()).toMatchObject({ launchType: "perpetuo", launchSeq: null, name: "ad01_bbe_perpetuo_10-2026--prova-social" });
+
+    // um dos 6 do dg no ar (v2): o gerador manda também origem, hook e body — trocar só a descrição
+    const nome = "adv02_ia_bbe_perpetuo_h01_b01_09-2026";
+    mem.t.anuncios.push({ id: USUARIO, expertId: bbe.id, creativeType: "adv", creativeSeq: 2, launchType: "perpetuo", launchSeq: null, adDate: "2026-09-01", description: null, origin: "ia", hookId: h01.id, bodyId: b01.id, structure: `${nome}--`, name: nome, notes: null, active: true, createdAt: "2026-09-23", updatedAt: "2026-09-23" });
+    const corpoDoVideo = { launchType: "perpetuo", launchSeq: null, date: "09-2026", description: "prova social", notes: null, origin: "ia", hookId: h01.id, bodyId: b01.id };
+    const v = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${USUARIO}`, payload: corpoDoVideo });
+    expect(v.statusCode).toBe(200);
+    expect(v.json()).toMatchObject({ launchSeq: null, name: "adv02_ia_bbe_perpetuo_h01_b01_09-2026--prova-social", legado: false });
+  });
+
+  it("QA 47.16 TEST-002: PATCH { launchSeq: null } num pg04 → 400 em launchSeq (null explícito NÃO mantém o 4 calado); nada gravado", async () => {
+    const { bbe, post } = await videoBase(app);
+    const a = await post("/api/nomenclatura/ads", { expertId: bbe.id, creativeType: "ad", launchType: "pg", launchSeq: 4, date: "09-2026" });
+    const r = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${a.id}`, payload: { launchSeq: null } });
+    expect(r.statusCode).toBe(400);
+    expect(r.json()).toMatchObject({ campo: "launchSeq" });
+    expect(mem.t.anuncios[0]).toMatchObject({ launchType: "pg", launchSeq: 4, name: "ad01_bbe_pg04_09-2026" });
+  });
+
   it("47.16 AC7: /ads/proximo com perpetuo não sugere número; o maior da outra sigla ignora o NULL do perpetuo", async () => {
     const { bbe, post } = await videoBase(app);
     await post("/api/nomenclatura/ads", { expertId: bbe.id, creativeType: "ad", launchType: "perpetuo", date: "09-2026" });

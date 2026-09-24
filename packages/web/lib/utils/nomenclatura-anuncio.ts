@@ -202,6 +202,26 @@ export function corpoDoAnuncio(estado: EstadoDoAnuncio) {
 }
 
 /**
+ * O corpo do PATCH ao EDITAR (QA 47.16 TEST-001: extraído do `salvar` do
+ * gerador para que o corpo enviado seja testado, não só o tipo). Sai de
+ * `corpoDoAnuncio`, então com `perpetuo` o `launchSeq: null` vai SEMPRE,
+ * explícito — é o caminho que a API precisa aceitar. Tipo e NN do criativo não
+ * vão (D23). Story 47.13: num vídeo fora do padrão antigo, origem/hook/body
+ * vão (editáveis como lançamento/data); no padrão antigo, não (AC7).
+ */
+export function corpoDaEdicaoDoAnuncio(estado: EstadoDoAnuncio, opts: { padraoAntigo: boolean }) {
+  const corpo = corpoDoAnuncio(estado);
+  return {
+    launchType: corpo.launchType,
+    launchSeq: corpo.launchSeq,
+    date: corpo.date,
+    description: corpo.description,
+    notes: corpo.notes,
+    ...(ehVideo(estado.creativeType) && !opts.padraoAntigo ? { origin: corpo.origin ?? undefined, hookId: corpo.hookId ?? undefined, bodyId: corpo.bodyId ?? undefined } : {}),
+  };
+}
+
+/**
  * De um anúncio gravado para o estado do gerador. `duplicar` limpa o NN (o
  * servidor sugere o próximo). Story 47.13: origem/hook/body vêm junto; um
  * vídeo do padrão antigo (sem origem) duplicado nasce com os três vazios — o

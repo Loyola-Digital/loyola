@@ -387,5 +387,8 @@ describe("Story 47.16 — nome v3", () => {
     expect(numeroDoLancamentoNoPatch({ launchType: "l" }, pg04)).toBe(4);
     // corpo com número E perpetuo: vale o do corpo — quem recusa é o serviço (400), não esta função
     expect(numeroDoLancamentoNoPatch({ launchType: "perpetuo", launchSeq: 2 }, pg04)).toBe(2);
+    // QA 47.16 TEST-002: `null` EXPLÍCITO é "sem número", não "não veio" — num pg04 não mantém o 4 calado (o serviço dá 400)
+    expect(numeroDoLancamentoNoPatch({ launchSeq: null }, pg04)).toBeNull();
+    expect(numeroDoLancamentoNoPatch({ launchType: "pg", launchSeq: null }, pg04)).toBeNull();
   });
 });

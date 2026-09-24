@@ -146,6 +146,16 @@ export function provarRegistro(linhas: readonly LinhaDeProva[], alvo: readonly A
 
 export class ErroDoRegistro extends Error {}
 
+/**
+ * Planejar × aplicar, a partir dos argumentos do script (QA 47.16 TEST-003).
+ * Grava SÓ com `--aplicar` exato; sem argumento, com qualquer outro, ou com
+ * grafia parecida (`--APLICAR`, `--aplicar=true`), planeja — é essa promessa
+ * que autoriza rodar o plano em produção sem risco.
+ */
+export function modoDoRegistro(argv: readonly string[]): { aplicar: boolean } {
+  return { aplicar: argv.includes("--aplicar") };
+}
+
 export interface ResultadoDoRegistro {
   plano: PlanoDoRegistro;
   aplicado: boolean;

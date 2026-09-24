@@ -4,6 +4,7 @@ import {
   aoEscolherNoAnuncio,
   camposDoAnuncio,
   comSugestaoDoLancamento,
+  corpoDaEdicaoDoAnuncio,
   corpoDoAnuncio,
   ehVideoDoPadraoAntigo,
   estadoDeAnuncio,
@@ -193,5 +194,49 @@ describe("Story 47.16 — perpetuo sem número e o formato do registro", () => {
     expect(formatoDoAnuncioGravado({ creativeType: "ad", name: "ad01_dg_pg02_09-2026" })).toBe("v3");
     expect(formatoDoAnuncioGravado({ creativeType: "adv", name: "adv01_ia_dg_perpetuo_09-2026" })).toBe("v3");
     expect(formatoDoAnuncioGravado({ creativeType: "adv", name: "adv07_bbe_pg02_09-2026--" })).toBe("antigo");
+  });
+});
+
+describe("QA 47.16 — o corpo ENVIADO no PATCH e o botão \"Copiar nome completo\"", () => {
+  const seis = { expertId: "e", creativeType: "adv", creativeSeq: 2, launchType: "perpetuo", launchSeq: null, adDate: "2026-09-01", description: null, notes: null, origin: "ia", hookId: "H1", bodyId: "B1" };
+
+  it("TEST-001: editar um perpetuo manda `launchSeq: null` EXPLÍCITO no JSON — o corpo que a rota testa em nomenclatura-rotas.test.ts", () => {
+    const ad = corpoDaEdicaoDoAnuncio({ ...cheio, launchType: "perpetuo", launchSeq: "", date: "10-2026", description: "prova social" }, { padraoAntigo: false });
+    expect(ad).toEqual({ launchType: "perpetuo", launchSeq: null, date: "10-2026", description: "prova social", notes: null });
+    // o que o useEditarAnuncio envia é JSON.stringify(dados): `undefined` sumiria, `null` fica
+    expect(JSON.parse(JSON.stringify(ad))).toHaveProperty("launchSeq", null);
+
+    // um dos 6 do dg (v2): trocar só a descrição manda também origem, hook e body — e o launchSeq null
+    const video = corpoDaEdicaoDoAnuncio({ ...estadoDeAnuncio(seis, "editar"), description: "prova social" }, { padraoAntigo: false });
+    expect(video).toEqual({ launchType: "perpetuo", launchSeq: null, date: "09-2026", description: "prova social", notes: null, origin: "ia", hookId: "H1", bodyId: "B1" });
+    expect(JSON.parse(JSON.stringify(video))).toHaveProperty("launchSeq", null);
+  });
+
+  it("TEST-001: com número vai o número; tipo e NN nunca vão (D23); vídeo do padrão antigo não manda origem/hook/body (47.13 AC7)", () => {
+    const pg = corpoDaEdicaoDoAnuncio(cheio, { padraoAntigo: false });
+    expect(pg).toEqual({ launchType: "pg", launchSeq: 2, date: "09-2026", description: null, notes: null });
+    expect(pg).not.toHaveProperty("creativeType");
+    expect(pg).not.toHaveProperty("creativeSeq");
+    const antigo = corpoDaEdicaoDoAnuncio(video, { padraoAntigo: true });
+    expect(antigo).not.toHaveProperty("origin");
+    expect(antigo).not.toHaveProperty("hookId");
+    expect(antigo).not.toHaveProperty("bodyId");
+    expect(corpoDaEdicaoDoAnuncio(video, { padraoAntigo: false })).toMatchObject({ origin: "h", hookId: "H1", bodyId: "B1" });
+  });
+
+  it("MNT-001: nome e estrutura nunca coincidem (opção B) — por isso o botão só depende de haver nome", () => {
+    for (const [estado, formato] of [
+      [cheio, undefined],
+      [{ ...cheio, description: "gancho" }, undefined],
+      [{ ...cheio, launchType: "perpetuo", launchSeq: "" }, undefined],
+      [video, undefined],
+      [{ ...video, description: "gancho" }, "v2"],
+      [estadoDeAnuncio(seis, "editar"), "v2"],
+    ] as const) {
+      const p = previaDoAnuncio(estado, experts, partes, { formato });
+      expect(p.nome).toBeTruthy();
+      expect(p.estrutura?.endsWith("--")).toBe(true);
+      expect(p.nome).not.toBe(p.estrutura);
+    }
   });
 });
