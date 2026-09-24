@@ -2,50 +2,82 @@ schema: 1
 storyId: '29.80'
 story: '29.80'
 story_title: 'Perpétuo — filtros de Funil e Oferta na barra do painel, com aviso do que ficou de fora'
-verdict: CONCERNS
-gate: CONCERNS
-status_reason: 'O código atende AC1–AC9 e as guardas do vazio (R1) e da API antiga (R2) estão no lugar certo. Há três ressalvas. Quatro das cinco mutações do QA sobreviveram no fio: dois consumidores Meta podem voltar à lista da etapa, e o componente do aviso não tem teste nenhum. O selo "planilha sem UTM" aparece também quando não há planilha. E a validação visual continua pendente.'
+verdict: PASS
+gate: PASS
+status_reason: 'Re-gate (2026-09-24, a5f891c3): TEST-001, TEST-002 e REQ-001 fechados. As 4 mutações que sobreviviam (R1, R3, R4, R5), refeitas pelo QA, caem agora, e 5 mutações novas do QA também caem (R3b, R6, R7, R8, R10). O estado da planilha em 5 valores e as 2 decisões novas do @dev estão coerentes com AC2, AC3 e AC7. Ficam dois itens de severidade baixa: o estado desabilitado dos selects não tem teste (TEST-003, R9 e R11 sobrevivem; a regra pura já impede o filtro de ligar) e a validação visual (DOC-001). Gate original: o código atende AC1–AC9 e as guardas do vazio (R1) e da API antiga (R2) estão no lugar certo. Há três ressalvas. Quatro das cinco mutações do QA sobreviveram no fio: dois consumidores Meta podem voltar à lista da etapa, e o componente do aviso não tem teste nenhum. O selo "planilha sem UTM" aparece também quando não há planilha. E a validação visual continua pendente.'
 reviewer: 'Quinn'
-updated: '2026-09-24T11:40:00Z'
+updated: '2026-09-24T12:10:00Z'
 branch: 'feat/29.79-29.80-filtros-funil-oferta'
-commits: ['da4ee779']
+commits: ['da4ee779', 'a5f891c3']
 
 top_issues:
-  - id: 'TEST-001'
-    severity: medium
-    finding: 'Dois consumidores Meta do painel podem voltar à lista NÃO estreitada sem que nenhum teste caia. (a) `<TopCreativesGallery campaignIds={campaignIdsDaEtapa}>`: o teste de fio só confere a guarda `temMidia && campaignIds &&`, não a prop. (b) `const campaignIdSet = new Set(campaignIdsDaEtapa)`: com filtro, `funnelCampaigns` (Quente/Frio e o overlay da planilha por campanha) mostraria todas as campanhas da etapa. Nos dois casos, 38/38 seguem verdes. É exatamente o defeito "bloco sem o campaignIds estreitado" do AC2.'
-    suggested_action: 'No filtro-funil-oferta-fio.test.ts, asserir `campaignIds={campaignIds}` dentro do trecho de `<TopCreativesGallery` e `const campaignIdSet = new Set(campaignIds ?? [])`. Melhor ainda: asserir que `campaignIdsDaEtapa` só aparece nas duas linhas permitidas (plano e hasCampaigns).'
-  - id: 'TEST-002'
-    severity: medium
-    finding: 'Nenhum teste lê `components/funnels/perpetual-filtro-funil-oferta.tsx`. Duas remoções passaram com 38/38 verdes: o parágrafo `{aviso.regra}` (a regra "tudo separado", exigida pelo AC4 e pela decisão (ii)) e o selo `<SeloNaoFiltrado ativo={plano.vendasNaoFiltraveis}>` (AC3, dg-a1). A função pura `montarAvisoDoFiltro` está protegida (R2 caiu), mas o desenho que a mostra não está.'
-    suggested_action: 'Estender o teste de fio ao componente (mesmo padrão de readFileSync): `{aviso.regra}`, `{aviso.unidades}`, `ativo={plano.vendasNaoFiltraveis}`, e `s.href ? <Link` com o ramo sem link.'
-  - id: 'REQ-001'
+  - id: 'TEST-003'
     severity: low
-    finding: '`planilhaTemUtmCampaign: !!perpetualSpreadsheet?.columnMapping?.utm_campaign` também é falso quando o funil NÃO tem planilha, ou enquanto ela carrega. Aí o painel, com filtro, mostra o selo "a planilha de vendas não tem a coluna utm_campaign — as vendas não têm como ser filtradas", mas as vendas da tela vêm do pixel, que É filtrado pelas campanhas. Durante o carregamento, sales-data também sai uma vez sem o recorte e é pedida de novo quando a planilha chega.'
-    suggested_action: 'Distinguir "sem planilha" (sem selo) de "planilha sem utm_campaign" (selo) em `planoDoFiltro`, e só ligar o recorte depois que `usePerpetualSpreadsheet` resolver.'
+    finding: 'O estado desabilitado dos selects não tem teste. Tirar `disabled={desabilitado}` do select de Funil (R9) ou esconder a frase `{plano.desabilitado && <span …>}` (R11) deixa 53/53 verdes. Com o REQ-001, o "carregando a planilha de vendas…" passou a depender desse desenho. O dano é limitado: `planoDoFiltro` devolve filtro null enquanto está desabilitado (REQ-b caiu), então um select clicável só guardaria o pedido para depois, sem número filtrado pela metade. Mas a frase do AC7 ("a API ainda não tem este filtro") também sumiria calada.'
+    suggested_action: 'No teste de fio do componente, asserir `disabled={desabilitado}` nos dois `<Select` e `{plano.desabilitado && <span`. Pode entrar na próxima story que tocar o componente.'
   - id: 'DOC-001'
     severity: low
     finding: 'A validação visual (DoD) está pendente: depende do deploy da 29.79 e do cadastro 6.6 (os 4 experts sem projeto). Até lá, todo perpétuo mostra os filtros desabilitados com "Vincular o expert".'
     suggested_action: 'Depois do deploy e do vínculo dos experts, o Danilo confere no hambúrguer (a01+of01), no churrasco (of01 = gasto 0, com link para Legadas) e no FZ (a01 inclui [FZA1]).'
 
+resolved_issues:
+  - id: 'TEST-001'
+    severity: medium
+    resolved_in: 'a5f891c3'
+    resolution: 'Três testes de fio: `campaignIdsDaEtapa` só aparece em 3 linhas (declaração, argumento do plano, hasCampaigns) e `funnel.campaigns.map(` só uma vez; `<TopCreativesGallery … />` com `campaignIds={campaignIds}`; `campaignIdSet = new Set(campaignIds ?? [])` recortando `campaignData.campaigns`. R3, R3b e R4 caem.'
+    finding: 'Dois consumidores Meta do painel podem voltar à lista NÃO estreitada sem que nenhum teste caia. (a) `<TopCreativesGallery campaignIds={campaignIdsDaEtapa}>`: o teste de fio só confere a guarda `temMidia && campaignIds &&`, não a prop. (b) `const campaignIdSet = new Set(campaignIdsDaEtapa)`: com filtro, `funnelCampaigns` (Quente/Frio e o overlay da planilha por campanha) mostraria todas as campanhas da etapa. Nos dois casos, 38/38 seguem verdes. É exatamente o defeito "bloco sem o campaignIds estreitado" do AC2.'
+    previous_suggested_action: 'No filtro-funil-oferta-fio.test.ts, asserir `campaignIds={campaignIds}` dentro do trecho de `<TopCreativesGallery` e `const campaignIdSet = new Set(campaignIds ?? [])`. Melhor ainda: asserir que `campaignIdsDaEtapa` só aparece nas duas linhas permitidas (plano e hasCampaigns).'
+  - id: 'TEST-002'
+    severity: medium
+    resolved_in: 'a5f891c3'
+    resolution: 'O teste de fio lê `perpetual-filtro-funil-oferta.tsx`: `{aviso.regra}` e `{aviso.unidades}`, o selo `ativo={plano.vendasNaoFiltraveis}` com o motivo e o `if (!ativo) return null`, o aviso montado por `montarAvisoDoFiltro` e o ramo com e sem link. R1 e R5 caem.'
+    finding: 'Nenhum teste lê `components/funnels/perpetual-filtro-funil-oferta.tsx`. Duas remoções passaram com 38/38 verdes: o parágrafo `{aviso.regra}` (a regra "tudo separado", exigida pelo AC4 e pela decisão (ii)) e o selo `<SeloNaoFiltrado ativo={plano.vendasNaoFiltraveis}>` (AC3, dg-a1). A função pura `montarAvisoDoFiltro` está protegida (R2 caiu), mas o desenho que a mostra não está.'
+    previous_suggested_action: 'Estender o teste de fio ao componente (mesmo padrão de readFileSync): `{aviso.regra}`, `{aviso.unidades}`, `ativo={plano.vendasNaoFiltraveis}`, e `s.href ? <Link` com o ramo sem link.'
+  - id: 'REQ-001'
+    severity: low
+    resolved_in: 'a5f891c3'
+    resolution: '`estadoDaPlanilhaDeVendas` devolve 5 estados (undefined → carregando/erro; null → sem-planilha; mapeada ou não → com/sem-utm-campaign) e `planoDoFiltro` só liga o selo em sem-utm-campaign. O `null` chega de fato ao web: o QA conferiu que o Fastify 5.8.2 serializa `return null` como corpo "null" (200, application/json) e o apiClient faz JSON.parse dele (o corpo vazio é que viraria `{}`). R6, R7 e R8 caem.'
+    finding: '`planilhaTemUtmCampaign: !!perpetualSpreadsheet?.columnMapping?.utm_campaign` também é falso quando o funil NÃO tem planilha, ou enquanto ela carrega. Aí o painel, com filtro, mostra o selo "a planilha de vendas não tem a coluna utm_campaign — as vendas não têm como ser filtradas", mas as vendas da tela vêm do pixel, que É filtrado pelas campanhas. Durante o carregamento, sales-data também sai uma vez sem o recorte e é pedida de novo quando a planilha chega.'
+    previous_suggested_action: 'Distinguir "sem planilha" (sem selo) de "planilha sem utm_campaign" (selo) em `planoDoFiltro`, e só ligar o recorte depois que `usePerpetualSpreadsheet` resolver.'
 waiver: { active: false }
 
 own_mutations:
   - id: R1
     mutation: 'componente: parágrafo `{aviso.regra}` (regra "tudo separado") removido do aviso'
-    result: 'SOBREVIVEU — 38/38 → TEST-002'
+    result: 'SOBREVIVEU no gate original — 38/38 → TEST-002. Re-gate (a5f891c3): CAIU (1) — "AC4 — a regra tudo separado e as unidades aparecem no aviso"'
   - id: R2
     mutation: 'regra: `montarAvisoDoFiltro` devolve `regra: ""`'
     result: 'CAIU (1) — "declara a regra tudo separado"'
   - id: R3
     mutation: 'painel: `<TopCreativesGallery campaignIds={campaignIdsDaEtapa}>` (bloco sem o campaignIds estreitado)'
-    result: 'SOBREVIVEU — 38/38 → TEST-001'
+    result: 'SOBREVIVEU no gate original — 38/38 → TEST-001. Re-gate: CAIU (2) — "a lista da ETAPA só aparece onde deve" e "Top criativos recebe a lista da MÍDIA"'
   - id: R4
     mutation: 'painel: `campaignIdSet = new Set(campaignIdsDaEtapa)` (Quente/Frio e tabela por campanha com a lista da etapa)'
-    result: 'SOBREVIVEU — 38/38 → TEST-001'
+    result: 'SOBREVIVEU no gate original — 38/38 → TEST-001. Re-gate: CAIU (2) — "a lista da ETAPA só aparece onde deve" e "a base do Quente/Frio … é a lista da MÍDIA"'
   - id: R5
     mutation: 'componente: selo "planilha sem UTM" desligado (`ativo={false}`)'
-    result: 'SOBREVIVEU — 38/38 → TEST-002'
+    result: 'SOBREVIVEU no gate original — 38/38 → TEST-002. Re-gate: CAIU (1) — "AC3 — o selo planilha sem utm_campaign segue o plano"'
+  - id: R3b
+    mutation: '(re-gate) painel: Top criativos com a lista recriada na mão, `campaignIds={funnel.campaigns.map((c) => c.id)}` — contorna o nome `campaignIdsDaEtapa`'
+    result: 'CAIU (2) — a contagem de `funnel.campaigns.map(` pega o desvio'
+  - id: R6
+    mutation: '(re-gate) painel: `estadoDaPlanilhaDeVendas({ …, falhou: false })` — o estado "erro" nunca aparece'
+    result: 'CAIU (1) — "REQ-001 (gate) — o plano recebe o ESTADO da planilha"'
+  - id: R7
+    mutation: '(re-gate) regra: `dados === null` devolve "sem-utm-campaign" (o defeito do REQ-001 por outro caminho)'
+    result: 'CAIU (1) — "`null` … é SEM planilha"'
+  - id: R8
+    mutation: '(re-gate) regra: `vendasNaoFiltraveis` também em "sem-planilha"'
+    result: 'CAIU (1) — "REQ-001 — funil SEM planilha: sem selo … e o recorte vai"'
+  - id: R9
+    mutation: '(re-gate) componente: `disabled={desabilitado}` removido do select de Funil'
+    result: 'SOBREVIVEU — 53/53 → TEST-003 (low)'
+  - id: R10
+    mutation: '(re-gate) painel: selo da Ascensão com `ativo={false}`'
+    result: 'CAIU (1) — "AC3 — selo não filtrado na Ascensão e na seção Vendas"'
+  - id: R11
+    mutation: '(re-gate) componente: frase do desabilitado escondida (`{false && <span`)'
+    result: 'SOBREVIVEU — 53/53 → TEST-003 (low)'
 
 checks:
   code_review: 'Diff lido inteiro. A decisão fica toda em `lib/utils/filtro-funil-oferta.ts`, que é pura: o vazio tem tipo próprio (`{tipo:"vazio"}`) e `idsDaMidia` devolve null, nunca []. `hasCampaigns` vem da lista original; `metaProjectId` e os 6 hooks Meta usam `temMidia`; camadas de vídeo e Top criativos não montam no vazio. Os cards mostram gasto 0 medido, não "carregando". O recorte só vai às 4 leituras de vendas com a rota respondendo (AC7), e o eco `filtro` é conferido (`vendasRespeitaramORecorte`). A queryKey ganha o recorte, e a invalidação por prefixo (use-perpetual-spreadsheet.ts:46) continua valendo. O AC6 segue o padrão da 47.14 (ref por valor aplicado).'
@@ -64,3 +96,15 @@ notes:
   - 'Demais decisões do @dev: filtros desabilitados (não ocultos) com a API antiga, previsto no AC7; sem expert, filtros desabilitados (AC5); link de Legadas também para campanha sem funil (a fila classifica os dois); no aviso, só o gasto de campanha que poderia ser do filtro (mesma regra da decisão 3 da 29.79). Todas coerentes.'
   - 'Top criativos: a receita por criativo vem de `useCreativeRevenue`, por anúncio. Como cada anúncio pertence a uma campanha, com a lista estreitada o bloco fica consistente com o filtro, sem precisar do parâmetro da 29.79.'
   - 'CodeRabbit não executado: a skill roda em WSL e este host é macOS.'
+  - 'Re-gate, decisão 8 — funil SEM planilha manda o recorte e não mostra selo: APROVADA. AC2 manda o lado de vendas pelo parâmetro da 29.79, e o AC3 põe selo só no que não filtra (dg-a1, planilha sem UTM). Sem planilha, as vendas da tela são do pixel, que já vem das campanhas estreitadas. A API ecoa `filtro` também nesse caminho (`extrasDoRecorte(filtro, null)` em perpetual-sales.ts:272/313/317/338/861), então `vendasRespeitaramORecorte` não acusa falso alarme; o `foraDoFiltro` vem [] e o aviso lida com isso. O AC7 continua valendo: o recorte só vai com a rota da 29.79 respondendo, e essa guarda vem antes.'
+  - 'Re-gate, decisão 9 — planilha carregando: filtros desabilitados com "carregando a planilha de vendas…", sem recorte e com a mídia intacta: APROVADA. É o AC3 ("nunca um número filtrado pela metade calado") e o mesmo padrão da frase do AC7. O `usePerpetualSpreadsheet` tem `enabled: !!projectId && !!funnelId`, e o painel recebe `projectId: string` e `funnel`, então o estado "carregando" não fica preso. Durante os retries do react-query o estado segue "carregando"; só vira "erro" depois deles. Um refetch que falha com dado anterior mantém o dado (testado). O pedido começa em SEM_FILTRO e não vem da URL, então não há select mostrando um filtro que não está aplicado.'
+
+history:
+  - at: '2026-09-24T11:40:00Z'
+    commit: 'da4ee779'
+    gate: CONCERNS
+    note: 'Gate original: 1 de 5 mutações do QA caiu (R2); TEST-001/TEST-002 medium, REQ-001 e DOC-001 low.'
+  - at: '2026-09-24T12:10:00Z'
+    commit: 'a5f891c3'
+    gate: PASS
+    note: 'Re-gate do QA loop 1. O QA refez R1, R3, R4 e R5: as quatro caem. Mutações novas do QA: R3b, R6, R7, R8 e R10 caem; R9 e R11 sobrevivem (TEST-003 low). Todas restauradas por script que compara o arquivo depois; git status limpo. Suítes da story 53/53; vitest do web inteiro 109 arquivos, 1.499/1.499; eslint 0 nos 5 arquivos do web tocados. next build e tsc web do @dev (EXIT 0, 66 s) não refeitos, como pediu o briefing. Ficam abertos TEST-003 e DOC-001, ambos low.'

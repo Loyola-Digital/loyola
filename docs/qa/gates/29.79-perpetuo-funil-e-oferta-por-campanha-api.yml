@@ -4,15 +4,19 @@ story: '29.79'
 story_title: 'Perpétuo — funil e oferta de cada campanha, e as vendas filtráveis por eles (API)'
 verdict: PASS
 gate: PASS
-status_reason: 'AC1–AC9 têm evidência. O nome atual vence o vínculo no ponto de uso (decisão (i)) e a linha é filtrada antes da dedup (decisão (ii)). A lista vazia fica guardada nas três leituras, e "Todos" sai byte a byte, reproduzido contra o código de antes da story. Das 7 mutações do QA, 6 caíram; a que sobreviveu é uma lacuna de teste de severidade baixa (TEST-001), e o código está correto.'
+status_reason: 'Re-gate (2026-09-24, a5f891c3): TEST-001 fechado — a recompra do bob na legada entrou na fixture fora de LINHAS, e a Q8, refeita pelo QA, cai agora (compradores 4 contra 3). Nenhum item aberto no código. Gate original: AC1–AC9 têm evidência. O nome atual vence o vínculo no ponto de uso (decisão (i)) e a linha é filtrada antes da dedup (decisão (ii)). A lista vazia fica guardada nas três leituras, e "Todos" sai byte a byte, reproduzido contra o código de antes da story. Das 7 mutações do QA, 6 caíram; a que sobreviveu é uma lacuna de teste de severidade baixa (TEST-001), e o código está correto.'
 reviewer: 'Quinn'
-updated: '2026-09-24T11:40:00Z'
+updated: '2026-09-24T12:10:00Z'
 branch: 'feat/29.79-29.80-filtros-funil-oferta'
-commits: ['8938318f']
+commits: ['8938318f', 'a5f891c3']
 
-top_issues:
+top_issues: []
+
+resolved_issues:
   - id: 'TEST-001'
     severity: low
+    resolved_in: 'a5f891c3'
+    resolution: 'fixtures/perpetuo-funil-oferta.ts ganhou RECOMPRA_DO_BOB e LINHAS_COM_RECOMPRA, FORA de LINHAS (o arquivo congelado do AC6 continua valendo: a suíte "todos" segue 2/2). O teste novo em perpetual-funil-oferta-filtro.test.ts assere compradores 3 com 4 linhas pagas e R$ 490, e o filtrado inalterado (2 vendas, R$ 400). O beforeEach devolve LINHAS às outras.'
     finding: 'O `compradores` do `foraDoFiltro` é contado por `chaveDeComprador` no call site de `calcularVendasDoPerpetuo` (perpetual-sales.ts:493), e nenhum teste de rota exerce isso. Trocar a chave por `String(idxDaLinha)` (uma linha = um comprador) deixa as 79 verdes: na fixture, nenhum comprador tem duas linhas pagas fora do filtro. A deduplicação só é provada no acumulador puro.'
     suggested_action: 'Acrescentar à fixture um comprador com duas compras pagas na mesma campanha sem oferta (ex.: bob com uma segunda linha na legada) e asserir `compradores` = 3 (e não 4) no teste "a01 + of01" de sales-data.'
 
@@ -39,7 +43,7 @@ own_mutations:
     result: 'CAIU (3) — PO-07, groupBy e "filtro sem campanha"'
   - id: Q8
     mutation: 'foraDoFiltro do card contado por linha (`String(idxDaLinha)`) em vez de `chaveDeComprador`'
-    result: 'SOBREVIVEU — 79/79 verdes → TEST-001 (low)'
+    result: 'SOBREVIVEU no gate original — 79/79 verdes → TEST-001 (low). Re-gate (a5f891c3): CAIU (1) — compradores 4 contra 3'
   - id: AC6-antes
     mutation: 'routes/perpetual-sales-data.ts e services/perpetual-sales.ts trocados pela versão de 5702ee8a (antes da story); teste do AC6 rodado'
     result: '2/2 passam: o arquivo congelado é a saída do código de antes, e com o código da branch dá o mesmo resultado. Arquivos restaurados; `git status` só com o gate.'
@@ -63,3 +67,13 @@ notes:
   - 'Funcionalidade inerte em produção até o cadastro 6.6: os 4 naming_experts.project_id estão NULL, e a 29.80 desabilita os filtros ("Vincular o expert").'
   - 'DoD aberta, e com razão: conferência em produção depois do deploy (no hambúrguer, a01+of01: filtrado + Σ foraDoFiltro = Todos; no churrasco, of01 com gasto 0, não o do projeto).'
   - 'CodeRabbit não executado: a skill roda em WSL e este host é macOS.'
+
+history:
+  - at: '2026-09-24T11:40:00Z'
+    commit: '8938318f'
+    gate: PASS
+    note: 'Gate original: 6 de 7 mutações do QA caíram; Q8 sobreviveu → TEST-001 (low).'
+  - at: '2026-09-24T12:10:00Z'
+    commit: 'a5f891c3'
+    gate: PASS
+    note: 'Re-gate do QA loop 1. Q8 refeita pelo QA em perpetual-sales.ts:493 (`String(idxDaLinha)` no lugar de `chaveDeComprador`): CAIU (1), "TEST-001 (gate) — o foraDoFiltro conta COMPRADORES". Arquivo restaurado, git status limpo. As 4 suítes da story: 80/80. eslint 0 na fixture e no teste tocados. O fix mexe só em teste e fixture: o código de produção da 29.79 é o mesmo do gate original.'
