@@ -223,4 +223,4 @@
 // `formato`. NÃO aditiva: a API antiga recusa o `perpetuo` sem número com 400
 // do zod — o gerador reconhece (`mensagemDeApiAtrasAoSalvarAnuncio`) e o
 // banner acusa. `packages/mcp` não é afetado (nenhuma tool lê o nome de anúncio).
-export const API_CONTRACT_VERSION = 23;
+export const API_CONTRACT_VERSION = 24;
