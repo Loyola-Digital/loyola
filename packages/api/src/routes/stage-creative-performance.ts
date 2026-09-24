@@ -36,6 +36,8 @@ import {
 } from "../services/lp-do-anuncio.js";
 import { avaliarCura, curarCacheDeLpEmSegundoPlano } from "../services/lp-cache-selfheal.js";
 import { montarLpPorAnuncio } from "../utils/lp-por-anuncio.js";
+import { recortarLinhasPelaJanela } from "../utils/janela-das-linhas.js";
+import { businessToday } from "../utils/sale-date.js";
 
 /**
  * Story 18.83 (AC10) — versão da chave do cache de 2 h desta rota.
@@ -45,10 +47,13 @@ import { montarLpPorAnuncio } from "../utils/lp-por-anuncio.js";
  * resposta SEM URL por até 2 h depois do deploy — foi exatamente o que
  * aconteceu com o `pixelLeads` na 18.81. Exportada para o teste travar a versão.
  *
+ * `:v4` (Story 18.85) = vendas, ingressos e leads recortados pela janela do
+ * seletor. Sem subir, o cache serviria números sem janela por até 2 h.
+ *
  * A troca esfria também a tabela de Criativos (mesma entrada): a primeira
  * abertura depois do deploy paga a Meta ao vivo.
  */
-export const VERSAO_DO_CACHE_CREATIVE_PERFORMANCE = "v3";
+export const VERSAO_DO_CACHE_CREATIVE_PERFORMANCE = "v4";
 
 export function chaveDoCacheCreativePerformance(stageId: string, days: number): string {
   return `${stageId}:${days}:${VERSAO_DO_CACHE_CREATIVE_PERFORMANCE}`;
@@ -484,6 +489,8 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               email?: string;
               utm_content?: string;
               utm_term?: string;
+              // Story 18.85: a data do lead (o `$type` da coluna já tem o campo).
+              date?: string;
             };
             const salesMapping = salesData && salesSheet ? (salesSheet.columnMapping as {
               email: string;
@@ -519,6 +526,20 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             const saleProductIdx = salesMapping ? findCol(salesData!.headers, salesMapping.productName) : -1;
             const saleDataIdx = salesMapping ? findCol(salesData!.headers, salesMapping.dataVenda) : -1;
 
+            // Story 18.85 (AC1/AC3): vendas, ingressos e leads no MESMO período
+            // do investimento ao lado — `inicioDaJanela(days, hoje)` no fuso do
+            // negócio. As LINHAS são recortadas antes de qualquer contagem
+            // (inclusive do `computeCreativeSalesMetrics`): como a janela termina
+            // hoje, a compra mais recente de quem comprou no período está no
+            // período, e o Único não muda de dono. Coluna de data não mapeada ou
+            // ausente do cabeçalho → sem recorte (PO-04).
+            const hoje = businessToday();
+            const leadDateIdx = findCol(leadsData.headers, leadsMapping.date);
+            const leadsNaJanela = recortarLinhasPelaJanela(leadsData.rows, leadDateIdx, days, hoje);
+            const vendasNaJanela = salesData
+              ? recortarLinhasPelaJanela(salesData.rows, saleDataIdx, days, hoje)
+              : null;
+
             // 5a-bis. Story 18.49: atribuição DIRETA de revenue pelo `co=`
             // (utm_content) da própria VENDA → ad_id → ad_name. Resolve
             // Faturamento/ROAS zerados na Paga: o comprador frequentemente NÃO é
@@ -552,7 +573,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               // (18.50, semântica intacta). O revenue por criativo passou pro
               // computeCreativeSalesMetrics abaixo (Fat. Total linha-a-linha).
               const saleDedup = new Map<string, { adId: string; value: number }>();
-              for (const row of salesData.rows) {
+              for (const row of vendasNaJanela!.linhas) {
                 const adId = utmContentEfetivo(row[saleUtmContentIdx] ?? "");
                 if (!adId) continue;
                 const bruto = saleBrutoIdx !== -1 ? parseNumber(row[saleBrutoIdx]) : 0;
@@ -583,7 +604,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
 
               // Story 18.55: Único/Total por criativo (regras 18.51a).
               creativeSaleMetrics = computeCreativeSalesMetrics(
-                salesData.rows,
+                vendasNaJanela!.linhas,
                 {
                   utmContent: saleUtmContentIdx,
                   email: saleEmailIdx,
@@ -637,7 +658,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             // lead × venda. Só roda quando NÃO atribuímos via `co=` da venda.
             const salesByEmail = new Map<string, number>();
             if (!revenueFromSaleContent && salesData && salesMapping && saleEmailIdx !== -1) {
-              for (const row of salesData.rows) {
+              for (const row of vendasNaJanela!.linhas) {
                 const email = normalizeEmail(row[saleEmailIdx] ?? "");
                 if (!email) continue;
                 const bruto =
@@ -659,10 +680,16 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               stageId,
               leadUtmContentIdx,
               totalLeadsRows: leadsData.rows.length,
+              // Story 18.85 (PO-03): o que a janela tirou — só no log, a
+              // resposta não ganha campo (não sobe o contrato).
+              janelaLeads: { ...leadsNaJanela, linhas: leadsNaJanela.linhas.length },
+              janelaVendas: vendasNaJanela
+                ? { ...vendasNaJanela, linhas: vendasNaJanela.linhas.length }
+                : null,
             });
 
             if (leadUtmContentIdx !== -1) {
-              for (const row of leadsData.rows) {
+              for (const row of leadsNaJanela.linhas) {
                 const adIdRaw = row[leadUtmContentIdx] ?? "";
                 const adId = utmContentEfetivo(adIdRaw);
                 if (!adId) continue;

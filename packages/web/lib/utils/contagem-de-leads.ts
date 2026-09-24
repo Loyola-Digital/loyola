@@ -10,9 +10,16 @@
  * `ad_id` (`utm_content`), para a tabela de LPs do lançamento somá-lo na linha
  * da URL do anúncio. O `leadsByLp` (letra no texto) continua, para o web ver o
  * que via antes quando a API ainda não manda a URL.
+ *
+ * Story 18.85 (AC2): a contagem respeita a JANELA do seletor — o mesmo período
+ * do investimento ao lado, pela régua do shared (`inicioDaJanela`, 18.80). Antes
+ * o hook recebia `days` e nunca usava: no `fz-m2` em 30 dias a tabela mostrava
+ * 525 leads de julho/agosto ao lado de R$ 0 de investimento.
  */
 
+import { inicioDaJanela } from "@loyola-x/shared/src/janela-de-dias";
 import { utmContentEfetivo } from "@/lib/utils/normalize-answer";
+import { normaliseDate } from "@/lib/utils/spreadsheet-filters";
 
 /** Leads pagos com a temperatura que o TEXTO do lead declara (AC7/PO-07). */
 export interface LeadsPorTemperatura {
@@ -41,13 +48,79 @@ export interface ContagemDeLeads {
    */
   leadsPagosPorAnuncio: Record<string, LeadsPorTemperatura>;
   totalLeads: number;
+  /**
+   * Story 18.85 — o que a janela fez. Só diagnóstico (a dica na tela foi
+   * retirada, PO-03): `semData` = linhas descartadas por data ilegível numa
+   * planilha que TEM a coluna; `colunaAusente` = coluna mapeada que não está no
+   * cabeçalho (renomeada) — aí NÃO se filtra (PO-04).
+   */
+  janela: { aplicada: boolean; foraDaJanela: number; semData: number; colunaAusente: boolean };
 }
 
 type Planilha = { headers?: string[]; rows?: string[][] } | null | undefined;
 
+/** Story 18.85 — o período do seletor, com o "hoje" explícito (o do navegador). */
+export interface JanelaDaContagem {
+  days: number;
+  /** `columnMapping.date` da planilha de leads. Vazio = sem coluna de data. */
+  colunaDeData: string | null | undefined;
+  /** `YYYY-MM-DD` de hoje no navegador — ver `hojeNoNavegador`. */
+  hoje: string;
+}
+
+/**
+ * Hoje no fuso do navegador, `YYYY-MM-DD` — a mesma conta de
+ * `filterSheetRowsByDays`. É o "hoje" do front; a API usa o do fuso do negócio
+ * (`businessToday`), diferença que a 18.80 deixou explícita de propósito.
+ */
+export function hojeNoNavegador(agora: Date = new Date()): string {
+  return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * As linhas dentro da janela. Mesma regra de `filterSheetRowsByDays` — data
+ * ilegível numa planilha COM coluna de data fica fora (AC4) — com UMA
+ * diferença deliberada (PO-04): coluna mapeada que não existe no cabeçalho
+ * (renomeada na planilha) não zera a contagem calada. Conta como "sem coluna
+ * de data" e não filtra, como o mini-funil faz (`dataIdx !== -1`). O
+ * `filterSheetRowsByDays` zera nesse caso — não copiado.
+ */
+export function recortarPelaJanela(
+  headers: string[],
+  rows: string[][],
+  janela: JanelaDaContagem | undefined,
+): { linhas: string[][]; janela: ContagemDeLeads["janela"] } {
+  const semFiltro = (colunaAusente: boolean) => ({
+    linhas: rows,
+    janela: { aplicada: false, foraDaJanela: 0, semData: 0, colunaAusente },
+  });
+  const coluna = (janela?.colunaDeData ?? "").trim().toLowerCase();
+  if (!janela || !coluna) return semFiltro(false);
+  // Mesmo casamento do servidor (`funnel-spreadsheets.ts`, `findCol`).
+  const idx = headers.findIndex((h) => (h ?? "").trim().toLowerCase() === coluna);
+  if (idx === -1) return semFiltro(true);
+
+  const inicio = inicioDaJanela(janela.days, janela.hoje);
+  let foraDaJanela = 0;
+  let semData = 0;
+  const linhas = rows.filter((row) => {
+    const dia = normaliseDate(row[idx]);
+    if (!dia) {
+      semData++;
+      return false;
+    }
+    if (dia < inicio || dia > janela.hoje) {
+      foraDaJanela++;
+      return false;
+    }
+    return true;
+  });
+  return { linhas, janela: { aplicada: true, foraDaJanela, semData, colunaAusente: false } };
+}
+
 const PAID_SOURCES = new Set(["meta", "google"]);
 
-export function contarLeadsDaPlanilha(planilha: Planilha): ContagemDeLeads {
+export function contarLeadsDaPlanilha(planilha: Planilha, janelaPedida?: JanelaDaContagem): ContagemDeLeads {
   const leads: Record<string, number> = {};
   const leadsByAdName: Record<string, number> = {};
   const terms: Record<string, string> = {};
@@ -56,12 +129,18 @@ export function contarLeadsDaPlanilha(planilha: Planilha): ContagemDeLeads {
   const leadsPagosPorAnuncio: Record<string, LeadsPorTemperatura> = {};
   let totalLeads = 0;
 
-  const rows = planilha?.rows;
-  if (!rows || rows.length === 0) {
-    return { leads, leadsByAdName, terms, termsMapping, leadsByLp, leadsPagosPorAnuncio, totalLeads };
+  const todas = planilha?.rows;
+  if (!todas || todas.length === 0) {
+    return {
+      leads, leadsByAdName, terms, termsMapping, leadsByLp, leadsPagosPorAnuncio, totalLeads,
+      janela: { aplicada: false, foraDaJanela: 0, semData: 0, colunaAusente: false },
+    };
   }
 
   const headers = planilha?.headers ?? [];
+  // Story 18.85: recorta ANTES de contar — todas as contagens abaixo (por
+  // anúncio, por Ad Name, por LP) passam a ser do período do seletor.
+  const { linhas: rows, janela } = recortarPelaJanela(headers, todas, janelaPedida);
   // Story 18.47: localiza colunas por CABEÇALHO (robusto entre abas de etapas
   // diferentes); cai pras posições legadas (5/7) quando o header não existe.
   const findCol = (names: string[], fallback: number): number => {
@@ -143,5 +222,5 @@ export function contarLeadsDaPlanilha(planilha: Planilha): ContagemDeLeads {
     totalLeads += 1;
   }
 
-  return { leads, leadsByAdName, terms, termsMapping, leadsByLp, leadsPagosPorAnuncio, totalLeads };
+  return { leads, leadsByAdName, terms, termsMapping, leadsByLp, leadsPagosPorAnuncio, totalLeads, janela };
 }

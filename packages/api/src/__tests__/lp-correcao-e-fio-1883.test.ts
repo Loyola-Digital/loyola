@@ -76,10 +76,14 @@ describe("correção por campanha — ligação nas três camadas", () => {
 describe("creative-performance — o fio da tabela de LPs (AC1/AC8/AC10)", () => {
   const rota = src("routes/stage-creative-performance.ts");
 
-  it("a chave do cache é `:v3` e a rota usa a função da chave", async () => {
+  it("a chave do cache passou da `:v2` e a rota usa a função da chave", async () => {
     // Mutação: voltar a `:v2` → o cache de 2 h serve a resposta SEM URL.
-    const { chaveDoCacheCreativePerformance } = await import("../routes/stage-creative-performance.js");
-    expect(chaveDoCacheCreativePerformance("s1", 30)).toBe("s1:30:v3");
+    // (A 18.83 levou a `:v3`; a 18.85 subiu para `:v4` — ver o teste dela.)
+    const { chaveDoCacheCreativePerformance, VERSAO_DO_CACHE_CREATIVE_PERFORMANCE } = await import(
+      "../routes/stage-creative-performance.js"
+    );
+    expect(Number(VERSAO_DO_CACHE_CREATIVE_PERFORMANCE.slice(1))).toBeGreaterThanOrEqual(3);
+    expect(chaveDoCacheCreativePerformance("s1", 30)).toBe(`s1:30:${VERSAO_DO_CACHE_CREATIVE_PERFORMANCE}`);
     expect(rota).toMatch(/const cacheKey = chaveDoCacheCreativePerformance\(stageId, days\);/);
   });
 

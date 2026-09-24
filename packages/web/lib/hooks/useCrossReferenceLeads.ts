@@ -19,7 +19,11 @@ import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useFunnelSpreadsheets } from "@/lib/hooks/use-funnel-spreadsheets";
 import { utmContentEfetivo } from "@/lib/utils/normalize-answer";
 import { useResolveMetaNames } from "@/lib/hooks/use-funnel-adsets-map";
-import { contarLeadsDaPlanilha, type LeadsPorTemperatura } from "@/lib/utils/contagem-de-leads";
+import {
+  contarLeadsDaPlanilha,
+  hojeNoNavegador,
+  type LeadsPorTemperatura,
+} from "@/lib/utils/contagem-de-leads";
 
 // Story 18.47: extrai um mapa ad_id (content/utm_content) → Ad Name de uma aba
 // (leads OU sales). Usado para nomear as respostas da pesquisa (que só têm
@@ -95,7 +99,7 @@ export function useCrossReferenceLeads({
   projectId,
   funnelId,
   stageId,
-  days: _days = 30,
+  days = 30,
 }: UseCrossReferenceLeadsOptions): CrossReferencedLeads {
   // Buscar surveys vinculadas ao stage
   const surveysQuery = useFunnelSurveys(projectId, funnelId, stageId);
@@ -192,9 +196,19 @@ export function useCrossReferenceLeads({
   // Computar cruzamento: coluna 5 = utm_content (adId), coluna 7 = utm_term (lpa/hot/cold/etc).
   // A contagem mora em `lib/utils/contagem-de-leads.ts` — com teste; aqui só
   // a chamada, para o hook e o teste falarem da MESMA regra.
+  //
+  // Story 18.85 (AC2/PO-07): a contagem respeita o `days` do seletor, pela
+  // coluna de data MAPEADA da planilha (`columnMapping.date`). O memo depende
+  // de `days` e da coluna — senão trocar o seletor não reconta.
+  const colunaDeData = leadsSheet?.columnMapping?.date;
   const result = useMemo(
-    () => contarLeadsDaPlanilha(sheetQuery.data as unknown as { headers?: string[]; rows?: string[][] }),
-    [sheetQuery.data],
+    () =>
+      contarLeadsDaPlanilha(sheetQuery.data as unknown as { headers?: string[]; rows?: string[][] }, {
+        days,
+        colunaDeData,
+        hoje: hojeNoNavegador(),
+      }),
+    [sheetQuery.data, days, colunaDeData],
   );
 
   // Story 18.47: faixas por Ad Name a partir da aba de PESQUISA.
