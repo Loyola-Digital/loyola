@@ -2,65 +2,78 @@ schema: 1
 storyId: '29.78'
 story: '29.78'
 story_title: 'Perpétuo — tabela das VSLs do funil (VTurb): Play Rate e Retenção ao pitch, com Total'
-verdict: CONCERNS
-gate: CONCERNS
-status_reason: 'Os ACs estão atendidos e a matemática está bem travada: truncamento exato, Total pela soma dos brutos, pitch atual e pitch 0 fora do Σ, cada um com o teste dedicado caindo. O que fica como concern é o fio: cortar no call site o recorte por projeto da rota nova, ou a guarda de tipo de funil no bloco, não derruba teste nenhum. O código que está lá hoje está certo; o que falta é a rede de proteção.'
+verdict: PASS
+gate: PASS
+status_reason: 'Re-gate (ciclo 2). O AC12 está implementado como o AC pede: o `overview` lê o pitch atual de uma `/players/list` via `pitchDoPainel` e não usa mais a cópia do vínculo em lugar nenhum. As 5 chamadas que levam pitch usam o mesmo corpo `comPitchAtual`, `player.pitchTime` é o atual, o cartão "Chegaram no pitch" mostra "—" com o motivo da tabela, e a `/chain` não foi tocada. Os três achados do gate anterior estão fechados. As mutações 3 e 5 do gate e as duas do AC12 caem no teste dedicado. Ficam dois buracos low nos testes de fio (TEST-003), e o código atual está certo nos dois.'
 reviewer: 'Quinn'
-updated: '2026-09-23T14:20:00-03:00'
+updated: '2026-09-24T11:10:00-03:00'
 branch: 'feat/29.78-tabela-vsls-vturb'
-commit_reviewed: '6500c245'
+commit_reviewed: '9e8fb4eb'
 
 issues:
   - id: TEST-001
     severity: medium
     category: tests
-    description: 'O fio da rota e o do bloco não têm teste. Mutação do gate no CALL SITE da rota `GET …/funnels/:funnelId/vturb/vsls`: `condicaoDoFunilNoProjeto(...)` trocado por `eq(funnels.id, funnelId)` e `condicaoDosVinculosDoFunil(...)` por `eq(funnelStages.funnelId, funnelId)`. Resultado: `vturb*` 47/47 verde. Os predicados são provados serializados (A6 do @dev), mas nada prova que a rota os usa, e esse é o recorte que impede um `funnelId` de outro projeto de listar os vídeos alheios (e de gastar a cota do VTurb com eles). O mesmo vale para o bloco: `ehPerpetuo = !!funnelId` em `vturb-stage-tab.tsx` mais `funnelType="perpetual"` em `vsl-collapsible-section.tsx` → `lib/utils` 91/1.326 verde. A regra (`estadoDaTabela`) é testada; quem a alimenta não é. Com esse fio regredido, lançamento e mobile passariam a chamar o VTurb (1 + N chamadas por abertura) mesmo com a tabela escondida.'
-    recommendation: 'Teste de contrato por leitura de fonte (padrão de `lib/swipe/__tests__/pdf-capa-efeito.test.ts` no web e de `llms-txt-contrato.test.ts` na API): na rota, o bloco `/vturb/vsls` chama `denyGuest`, `condicaoDoFunilNoProjeto(p.data.projectId, p.data.funnelId)` e `condicaoDosVinculosDoFunil(p.data.projectId, p.data.funnelId)`; no bloco, `ehPerpetuo` depende de `funnelType === "perpetual"` e o hook só recebe `projectId` quando `ehPerpetuo`. Cabe numa follow-up XS ou na próxima story que tocar esses arquivos.'
-    status: open
+    description: '(Gate 23/09.) O fio da rota `/vturb/vsls` (recorte por projeto) e o fio do bloco (guarda de tipo de funil), cortados no call site, derrubavam 0 testes.'
+    recommendation: 'Teste de contrato por leitura de fonte para os dois fios.'
+    status: resolved
+    resolution: 'Re-gate 24/09: `vturb-rotas-fio.test.ts` (API) e `vturb-bloco-fio.test.ts` (web). Refeitas pelo @qa: mutação #3 (`ehPerpetuo = !!funnelId` + `funnelType="perpetual"`) → 2 falhas; mutação #5 (os dois predicados trocados por `eq(funnels.id, …)` / `eq(funnelStages.funnelId, …)`) → 2 falhas.'
 
   - id: TEST-002
     severity: low
     category: tests
-    description: 'Duas lacunas sem efeito no número. (a) No Total, calcular `semPitchNenhum` sobre TODOS os vídeos em vez dos lidos → 0 falhas. No caso misto (um vídeo falhou e o restante não tem pitch) o "—" da Retenção passaria a dizer "sem dados no período" em vez de "pitch não configurado no VTurb": o número continua ausente, mas o motivo fica errado. (b) `CONCORRENCIA_DA_TABELA = 30` → 0 falhas: o teste prova o MECANISMO do freio com `3` explícito, mas não o valor que a rota usa.'
-    recommendation: 'Um caso de Total com [falhou, sem pitch] esperando `MOTIVO_SEM_PITCH`, e uma asserção de que `lerTabelaDasVsls` sem `concorrencia` não passa de 3 em voo.'
-    status: open
+    description: '(Gate 23/09.) (a) motivo do "—" no Total no caso misto; (b) o valor padrão da concorrência (3) não estava travado.'
+    recommendation: 'Caso misto no teste do Total; asserção de pico ≤ 3 sem `concorrencia`.'
+    status: resolved
+    resolution: 'Re-gate 24/09: caso `[falhou com pitch, lido sem pitch]` → `MOTIVO_SEM_PITCH`; `lerTabelaDasVsls` sem `concorrencia` tem pico 3 com 7 vídeos, e `CONCORRENCIA_DA_TABELA` = 3 fica travado. O @dev registrou G2c → 1 e G4 → 1. O @qa leu os dois testes e não refez as mutações.'
 
   - id: DOC-001
     severity: low
     category: docs
-    description: 'O cabeçalho da tabela mostra o `range` calculado na tela, não o `dados.range` devolvido pela rota. O comentário da rota diz o oposto ("a tela mostra esta, não a pedida"). Hoje as duas strings são iguais, e a diferença só aparece na troca de período: com `placeholderData`, o cabeçalho já mostra a janela nova enquanto as linhas (esmaecidas) ainda são da janela anterior. É o que o AC6 quer evitar ("o período exibido é o enviado"), só que de forma transitória.'
-    recommendation: 'Mostrar `dados.range` quando houver dados e o `range` local só no esqueleto e no erro, ou então corrigir o comentário da rota.'
+    description: '(Gate 23/09.) Cabeçalho da tabela mostrava a janela pedida, não a devolvida.'
+    recommendation: 'Usar `dados.range` quando há linhas.'
+    status: resolved
+    resolution: 'Re-gate 24/09: `periodoDoCabecalho(estado, dados, range)` mostra a janela devolvida com a tabela pronta e a pedida só no esqueleto e no erro. Tem teste de regra e teste de fio (D1/D2 do @dev).'
+
+  - id: TEST-003
+    severity: low
+    category: tests
+    description: 'Duas mutações do re-gate sobrevivem nos testes de fio (os testes são por leitura de fonte e só pegam a grafia que conhecem). (a) Pôr `.catch(() => null)` na `/players/list` do `overview` faz a falha da lista virar "pitch não configurado no VTurb": vira ausência, que é exatamente o que a AUTO-DECISION do @dev proíbe. Resultado: 60/60 verde, porque a regex do fio não é ancorada no fim da expressão. (b) Trocar `pitchOk &&` por `pitch !== null &&` na linha do pitch da curva de cliques dá 34/34 verde: o teste "nada usa o pitch cru" só barra `pitch != null` e `{pitch ?`. O efeito é pequeno: a API nova já manda `null` para pitch 0, e o impacto fica só na API antiga, onde a cópia pode ser 0 e a linha apareceria em 0:00.'
+    recommendation: '(a) Na regex do `overview`, exigir `;` logo depois de `.pitchTime)` (ou `expect(bloco).not.toMatch(/listPlayers[\s\S]*?\.catch\(/)`). (b) Em vez de uma lista de grafias proibidas, exigir que toda `ReferenceLine` do pitch esteja sob `pitchOk &&` (contar ocorrências de `x={mmss(pitch)}` = ocorrências de `pitchOk && (\n…<ReferenceLine x={mmss(pitch)}`). Cabe em uma follow-up XS, ou na story da Análise MVP que vai mexer em `routes/vturb.ts`.'
     status: open
 
 top_issues:
-  - id: TEST-001
-    severity: medium
-    finding: 'Recorte por projeto da rota nova e guarda de tipo de funil do bloco cortados no call site → 0 falhas.'
-    suggested_action: 'Teste de contrato por leitura de fonte para os dois fios.'
-  - id: TEST-002
+  - id: TEST-003
     severity: low
-    finding: 'Motivo do Total no caso misto (falha + sem pitch) e valor padrão da concorrência sem teste.'
-    suggested_action: 'Dois casos a mais em `vturb-tabela.test.ts` (web e API).'
-  - id: DOC-001
-    severity: low
-    finding: 'Cabeçalho mostra a janela pedida, e não a devolvida; na troca de período ela descola das linhas.'
-    suggested_action: 'Usar `dados.range` no cabeçalho.'
+    finding: 'O fio do `overview` aceita engolir a falha da `/players/list`, e o fio do painel aceita `pitch !== null` na curva: as duas mutações passam verdes.'
+    suggested_action: 'Ancorar a regex do `overview` e trocar a lista de grafias proibidas por uma exigência positiva.'
 
 waiver: { active: false }
 
 checks:
-  code_review: 'Diff de 12 arquivos contra `5702ee8a` (a própria base; a `origin/main` não andou depois). API: a rota é NOVA e a `/chain` da MVP fica intocada (o diff de `routes/vturb.ts` só acrescenta). A regra do pitch foi extraída para `pitchInvalido` sem mudar `derivarCadeia`, e os testes da cadeia seguem verdes. A rota devolve só brutos, e a conta fica num lugar só (web). `lerTabelaDasVsls` recebe as chamadas por injeção: a falha de um vídeo fica na linha dele, a falha da `/players/list` sobe. As mensagens de erro são de `mensagemDoErro` (sem token; o token vai no header). Web: taxas por `⌊p·10000/t⌋` com texto montado de inteiros; Total por soma de brutos; "—" sempre com motivo. `estadoDaTabela` separa 404 (API antiga → oculta) de outras falhas (erro). O tipo do funil vem de `useFunnel` com a mesma chave da página; o `dias` subiu para o bloco. Nenhum `page.tsx` tocado.'
-  unit_tests: 'API `vturb*` 3 arquivos / 47 verdes (`vturb-tabela` 14). Web `vturb-tabela` 20/20; `lib/utils` 91 / 1.326 (+20). A varredura exaustiva p ≤ t ≤ 5.000 leva ~0,7 s. Mutações do gate, diferentes das 18 do @dev: (1a) sem os DOIS laços de correção → 20/20 verde, e isso está certo: com o numerador inteiro, `⌊(p·10000)/t⌋` já é exato nessa faixa (uma divisão corretamente arredondada não atravessa um vão ≥ 1/t), então os laços são rede de segurança e não o que garante o resultado; (1b) estimativa em ponto flutuante (`p/t` primeiro) COM os laços → 20/20 (os laços corrigem; o W3 do @dev, sem laços, derruba 2); (2a) API aceita pitch 0 no call site da tabela → 1 falha, "pitch 0, ausente ou vídeo fora da conta…"; (2b) linha ignora `pitchConfigurado` → 1 falha, "pitch não configurado → Retenção —"; (2c) `semPitchNenhum` sobre todos os vídeos → 0 (TEST-002a); (3) fio do tipo de funil no bloco → 0 (TEST-001); (4) concorrência padrão 30 → 0 (TEST-002b); (5) recorte por projeto cortado na rota → 0 (TEST-001). Tudo restaurado, `shasum -c` OK.'
-  acceptance_criteria: 'AC1 ✓ (tabela só com `funnelType === "perpetual"`; tipo e funil via `useParams` + `useFunnel`) · AC2 ✓ (Σ brutos; dica "soma dos vídeos" com o aparelho contado duas vezes) · AC3 ✓ (5,58 · 7,92 · 2,99 · 44,73 · 30,32; 57/100 → 57,00) · AC4 ✓ (pitch da `/players/list`; 0/ausente → "—" com motivo e fora do Σ da Retenção, dentro do Play Rate) · AC5 ✓ (união por `player_id`, ordem por nome pt-BR + `player_id`; `/chain` intocada) · AC6 ✓ (`intervaloDoBloco` no fuso da conexão, um seletor para tabela e painel; ressalva transitória em DOC-001) · AC7 ✓ (1 + N chamadas, 3 em voo, `staleTime` 2 min, só com o bloco aberto e conectado; zero → "sem dados no período") · AC8 ✓ (falha na linha e fora do Total com indicação; falha geral como erro) · AC9 ✓ (404 → bloco como era; contrato 19 → 20) · AC10 ✓ · AC11 ✓ (eslint 0 nos 11 arquivos e `tsc --noEmit` da API 0, no gate; `next build` e `tsc` do web pelo @dev, não refeitos — o review não deu motivo).'
-  no_regressions: '`vturb-chain` e `vturb-stats-reconstrucao` verdes com `pitchInvalido` extraído. O painel por vídeo passou a receber `dias`/`range` por prop e mudou só de fuso, também no lançamento e no mobile (PO-03, declarado). A suíte completa da API não foi refeita: o @dev registrou 3.122/3.132, exatamente a baseline de 10 falhas em 5 arquivos alheios.'
-  performance: 'Uma `/players/list` mais uma `sessions/stats` por vídeo, no máximo 3 simultâneas; o cliente do VTurb já faz backoff em 429/5xx. Sem cache no servidor: cada abertura do bloco ou troca de período (7/30/90) gasta 1 + N da cota de 60/min da conta. Com 1 vídeo hoje, é irrelevante; com muitos vídeos e vários usuários, vale observar. Nada é pedido com o bloco fechado ou no lançamento/mobile (enquanto o fio de TEST-001 estiver como está).'
-  security: '`denyGuest` na rota; funil precisa ser do projeto da URL (404 `FUNNEL_NOT_FOUND`); vínculos recortados por etapa do funil E `vturb_players.project_id`. Predicados provados por serialização (`PgDialect`), mas o uso deles pela rota não tem teste (TEST-001). A resposta leva nomes de player e contadores agregados, sem PII e sem token.'
-  documentation: 'Os textos batem com as contas. Play Rate = "plays únicos ÷ carregamentos únicos do player (dispositivo)"; Retenção = "passaram ÷ (passaram + não passaram) — a conta do VTurb, com o pitch cadastrado lá hoje"; o Total diz "soma dos vídeos" e declara a dupla contagem. Os vídeos fora do Total aparecem listados com o motivo. A ressalva é o cabeçalho de período (DOC-001).'
-  api_contract: '19 → 20 com linha de histórico (rota nova, ADITIVA; `packages/mcp` não afetado). ATENÇÃO @devops: a 48.13 também sobe 19 → 20. A segunda a mergear rebaseia e sobe para 21, com a própria linha de histórico. Não é FAIL desta story.'
+  code_review: 'Re-gate, ciclo 2 (`9e8fb4eb`), diff contra a base rebaseada `15093c2f`. `overview`: uma `/players/list` com o fuso da conexão, depois `pitchDoPainel(link, daConta).pitchTime`, que é o atual, com `null` para 0, ausente ou vídeo fora da conta. `sessionStats` e `sessionStatsByDay` esperam a lista; curva e cliques seguem em paralelo. As 3 segundas tentativas usam `comPitchAtual(pitchTime)` e `player.pitchTime` é o atual. `link.pitchTime` não aparece mais no bloco da rota. A falha da lista rejeita o `Promise.all` e cai em `replyVturbError`, sem rejeição solta: todas as derivadas estão no mesmo `Promise.all`. `pitchAtualDoPlayer` foi extraída de `lerTabelaDasVsls` sem mudança de comportamento (A8r do @dev), então a tabela e o painel usam a mesma regra (`pitchInvalido`). `/chain` (linhas 395–492) sem hunk no diff. No web, `pitchConfiguradoNoPainel` (número finito > 0) governa o cartão ("—" + `MOTIVO_SEM_PITCH` + série vazia), o rótulo, o subtítulo de "Assistiram até o fim" e as duas `ReferenceLine`, e também protege a API antiga, que manda a cópia. `periodoDoCabecalho` fecha o DOC-001.'
+  unit_tests: 'Suítes re-rodadas pelo @qa: API `src/__tests__/vturb*` 4 arquivos, **60/60**; web `lib/utils/__tests__/vturb*` 2 arquivos, **34/34**. Mutações do re-gate: runner aplica, roda a suíte-alvo, restaura; `shasum -c` OK nos 5 arquivos; `git diff` vazio fora de `.claude/agent-memory/**`. **Pedidas:** G3 (gate #3, fio do bloco) → 2 falhas · G5 (gate #5, fio da rota) → 2 · A12a (`pitchDoPainel` devolve a cópia) → 4 · A12b (`overview` com `.then(() => link.pitchTime)`) → 2. **Próprias:** Q2 (cópia sem o texto literal, `?? link["pitchTime"]`) → 1, porque a regex do fio exige `.pitchTime)` · Q4 (`pitchAtualDoPlayer` sem `Number()`, pitch em texto) → 2 · **Q1 (`.catch(() => null)` na lista do `overview`) → 0** (TEST-003a) · **Q3 (`pitch !== null` na curva de cliques) → 0** (TEST-003b).'
+  acceptance_criteria: 'AC1–AC11: sem mudança desde o gate de 23/09 (✓), e o DOC-001 fechou a ressalva transitória do AC6. **AC12 ✓**: o `overview` usa o `pitch_time` atual da `/players/list` e não a cópia (`:264-265/303/308/341` do AC viraram `comPitchAtual`). `player.pitchTime` é o atual e marca a curva e os rótulos. Com pitch 0 ou ausente o cartão mostra "—" com "pitch não configurado no VTurb", o mesmo texto da tabela. A mudança vale para lançamento e mobile (painel compartilhado, declarado). Custo de +1 `/players/list` por abertura. `/chain` intocada. A escolha do pitch é função pura com prova diferencial: A12a derruba 4.'
+  no_regressions: '`vturb-chain` e `vturb-stats-reconstrucao` seguem verdes (dentro dos 60). A suíte completa da API e do web não foi refeita pelo @qa por causa do I/O do iCloud. O @dev registrou a API = baseline (10 falhas alheias, mais 7 timeouts sob carga que passam sozinhos: 193/193) e o web 1.489/1.489, com os 4 `.test.tsx` jsdom em rodada separada. Tudo sobre a árvore rebaseada.'
+  performance: 'Painel: +1 `/players/list` por abertura (`useVturbOverview` segura 30 s), e `sessions/stats`/`stats_by_day` passam a esperar uma ida a mais. Com o bloco do perpétuo aberto são 2 `/players/list` (tabela e painel), sem compartilhamento, o que não foi pedido. Irrelevante hoje, com 1 vídeo; vale observar com a cota de 60/min da conta.'
+  security: 'Sem mudança no recorte: `denyGuest`, funil do projeto da URL e vínculos por etapa E `project_id`, agora com o fio travado por teste (TEST-001 resolvido). O `overview` segue exigindo o vínculo na etapa da URL. Sem PII nem token na resposta.'
+  documentation: 'Dev Agent Record do ciclo 2 completo (decisões, provas, gates). Linha de histórico do contrato atualizada com o AC12 ("mesma forma, sem campo novo; muda o significado de `player.pitchTime`"). O cartão e a tabela usam o mesmo texto de motivo.'
+  api_contract: 'Branch em **v21** (a 29.78 nasceu v20 e subiu no rebase sobre a 48.13), com a linha de histórico da rota nova e do AC12. A `main` já está em **v22**. **ATENÇÃO @devops:** no merge, a 29.78 rebaseia e sobe para a próxima versão livre, com a própria linha. É renumeração de merge, não FAIL desta story.'
+  lint: 'eslint re-rodado pelo @qa: API 5 arquivos (rota, `vturb-tabela`, `vturb-chain`, 2 testes) com EXIT 0; web 7 arquivos (3 componentes, `lib/utils/vturb-tabela`, `use-vturb`, 2 testes) com EXIT 0, conferido com `--format json` (0/0) e 88 regras ativas.'
+  build_typecheck: '`next build` e `tsc` do web e da API não foram refeitos (instrução: I/O do iCloud; o @dev rodou depois do rebase: api 0, web 0 depois do build, build EXIT 0). `shared build` re-rodado: EXIT 0.'
 
 notes:
-  - 'Validação visual (DoD) pendente e exige ao menos 2 vídeos vinculados no `bbe_churrasco` (hoje há 1). Conferir a Retenção de cada vídeo contra o painel do VTurb no mesmo período.'
-  - 'Régua do período: "30d" continua pedindo 31 dias civis (`hoje − 30` até hoje), como já era; o @dev deixou a decisão com o @po. O cartão "Período" do painel mostra "30d" ao lado das datas.'
-  - 'Riscos já declarados pelo @po e não tocados: MVP com `.limit(1)` indefinido a partir do 2º vídeo (PO-10); cartão "Chegaram no pitch" com a cópia do pitch × tabela com o pitch atual (PO-11).'
-  - '`placeholderData: (prev) => prev` também atravessa troca de funil no mesmo componente: a tabela do funil anterior aparece esmaecida até a nova chegar. É o mesmo padrão dos outros hooks do VTurb; transitório.'
-  - 'CodeRabbit não executado (CLI ausente no macOS). Revisão manual.'
+  - 'Validação visual (DoD) pendente: ≥ 2 vídeos vinculados no `bbe_churrasco` (hoje há 1). Conferir a Retenção por vídeo contra o painel do VTurb, e agora também que o cartão "Chegaram no pitch" bate com a Retenção da tabela para o mesmo vídeo (formato diferente: 1 casa arredondada × 2 truncadas, declarado no PO-11).'
+  - 'Pré-existente, com um ponto de falha a mais: `VslDashboard` faz `if (!data) return null`, então o painel some sem aviso quando o `overview` falha, e a `/players/list` nova é mais um motivo de falha. É "erro virando ausência" fora do AC12, declarado pelo @dev. Candidato a follow-up.'
+  - 'Régua do período ("30d" = 31 dias civis) segue com o @po. MVP com `.limit(1)` a partir do 2º vídeo (PO-10) segue até a story nova da Análise MVP.'
+  - 'CodeRabbit não executado (CLI ausente no macOS). Revisão manual do diff do ciclo 2.'
+
+history:
+  - at: '2026-09-23T14:20:00-03:00'
+    commit: '6500c245'
+    verdict: CONCERNS
+    summary: 'AC1–AC11 atendidos, matemática travada. TEST-001 medium (fio da rota e do bloco sem teste: mutações 3 e 5 → 0 falhas), TEST-002 low (motivo do Total no caso misto; concorrência padrão), DOC-001 low (cabeçalho com a janela pedida). Contrato 19 → 20 colidia com a 48.13.'
+  - at: '2026-09-24T11:10:00-03:00'
+    commit: '9e8fb4eb'
+    verdict: PASS
+    summary: 'Re-gate depois do AC12 (painel por vídeo com o pitch atual). AC12 ✓. TEST-001, TEST-002 e DOC-001 resolvidos: mutações 3 e 5 caem com 2 falhas cada; A12a cai com 4 e A12b com 2. TEST-003 low novo: `.catch(() => null)` na lista do `overview` e `pitch !== null` na curva passam verdes. Suítes: API vturb 60/60, web vturb 34/34, eslint 0. Contrato v21 na branch; `main` em v22, renumeração no merge (@devops).'
