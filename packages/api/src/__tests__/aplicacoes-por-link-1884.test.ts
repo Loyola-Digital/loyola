@@ -176,6 +176,10 @@ describe("o fio das rotas de aplicação (Story 18.84)", () => {
     expect(rota).toMatch(/const atualRaw = await rawFormsFor\(funnelId, projectId\);/);
     expect(rota).toMatch(/await lerLinksDosAnuncios\(\s*fastify\.db,\s*projectId,/);
     expect(rota).toMatch(/agruparPorLink\(linhas, links\)/);
+    // TEST-001 (gate 18.84): a coluna do anúncio é a do utm_content. Com a do
+    // utm_term, `anuncioDaAplicacao` devolve null para quase tudo e o gráfico
+    // inteiro vira "Sem link resolvido" com a suíte verde.
+    expect(rota).toMatch(/const idxConteudo = acharColunaUtmContent\(data\.headers, data\.rows\);/);
     expect(rota).toMatch(/adId: idxConteudo === null \? null : anuncioDaAplicacao\(row\[idxConteudo\]\)/);
   });
 

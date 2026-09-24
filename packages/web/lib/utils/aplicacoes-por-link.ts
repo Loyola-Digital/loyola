@@ -19,17 +19,22 @@ export interface SemLinkDaAplicacao {
 
 export type CausaDaAplicacao = "sem_anuncio" | "fora_do_cache" | "cache_desatualizado" | "sem_link_na_meta";
 
-/** Tooltip da série "Sem link resolvido": cada causa com a ação que pede (PO-02). */
+/**
+ * Tooltip da série "Sem link resolvido": cada causa (PO-02). DOC-001 (gate
+ * 18.84): esta tela não dispara a auto-cura do cache de criativos (fora do
+ * escopo, PO-07), então o texto diz o que tira a aplicação daqui sem prometer
+ * que a tela — ou uma aba que não roda nas etapas de Vendas — faz isso.
+ */
 export function descreverSemLinkDaAplicacao(s: SemLinkDaAplicacao): string {
   const partes = [
     s.semAnuncio > 0
       ? `${s.semAnuncio} aplicação(ões) sem anúncio de origem (orgânica, link na bio ou sem utm_content)`
       : null,
     s.cacheDesatualizado > 0
-      ? `${s.cacheDesatualizado} de anúncio com cache desatualizado — o backfill de criativos resolve`
+      ? `${s.cacheDesatualizado} de anúncio com cache desatualizado — sai daqui quando o cache do anúncio for atualizado (esta tela não o atualiza)`
       : null,
     s.foraDoCache > 0
-      ? `${s.foraDoCache} de anúncio fora do cache de criativos — abrir a aba Criativos sincroniza`
+      ? `${s.foraDoCache} de anúncio fora do cache de criativos — sai daqui quando o anúncio entrar no cache (esta tela não sincroniza)`
       : null,
     s.semLinkNaMeta > 0 ? `${s.semLinkNaMeta} de anúncio sem link na Meta` : null,
   ].filter(Boolean);

@@ -37,6 +37,10 @@ describe("textos da regra nova — nenhum fala do utm_term como fonte da página
     expect(t).toContain("1 de anúncio fora do cache de criativos");
     expect(t).toContain("2 de anúncio com cache desatualizado");
     expect(t).toContain("3 de anúncio sem link na Meta");
+    // DOC-001: esta tela não dispara a auto-cura — o texto não promete remédio.
+    expect(t).not.toMatch(/backfill|aba Criativos|resolve/);
+    expect(t).toContain("esta tela não o atualiza");
+    expect(t).toContain("esta tela não sincroniza");
   });
 
   it("tooltip da lista: a evidência é o anúncio; a causa quando não há página", () => {
