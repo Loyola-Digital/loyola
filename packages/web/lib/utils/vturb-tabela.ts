@@ -169,8 +169,38 @@ export function totalDaTabela(videos: readonly VslDoFunil[]): TotalDaTabela {
   };
 }
 
+/**
+ * Story 29.78 (AC12) — o painel por vídeo tem pitch para medir "Chegaram no
+ * pitch"? Sem ele, o cartão mostra "—" com `MOTIVO_SEM_PITCH`, como a tabela.
+ *
+ * A API nova manda em `player.pitchTime` o pitch ATUAL do VTurb, já `null`
+ * quando é 0 ou ausente. A regra aqui também cobre a API antiga, que manda a
+ * cópia do vínculo — e a cópia pode ser 0 (498 de 574 players da conta em
+ * 23/09): com pitch 0 o VTurb conta todo mundo "acima do pitch" (~100 %).
+ */
+export function pitchConfiguradoNoPainel(pitchTime: number | null | undefined): pitchTime is number {
+  return typeof pitchTime === "number" && Number.isFinite(pitchTime) && pitchTime > 0;
+}
+
 /** O que o bloco faz com a leitura da tabela. */
 export type EstadoDaTabela = "oculta" | "carregando" | "erro" | "pronta";
+
+/**
+ * Story 29.78 (DOC-001 do gate) — o período no cabeçalho da tabela.
+ *
+ * Com linhas na tela, é a janela DEVOLVIDA pela rota — a enviada ao VTurb, a
+ * das linhas. Na troca de período as linhas antigas ficam esmaecidas até as
+ * novas chegarem (`placeholderData`), e o cabeçalho acompanha as linhas, não o
+ * seletor. A janela pedida só aparece no esqueleto e no erro, quando não há
+ * linha para descrever.
+ */
+export function periodoDoCabecalho(
+  estado: Exclude<EstadoDaTabela, "oculta">,
+  dados: Pick<TabelaDeVslsDoFunil, "range"> | undefined,
+  pedido: { startDate: string; endDate: string },
+): { startDate: string; endDate: string } {
+  return estado === "pronta" && dados ? { startDate: dados.range.startDate, endDate: dados.range.endDate } : pedido;
+}
 
 /**
  * Story 29.78 (AC1/AC8/AC9) — a tabela aparece?

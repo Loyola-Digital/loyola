@@ -11,7 +11,8 @@
 //   2. QUAL pitch: o ATUAL do VTurb, lido de `/players/list` — nunca a cópia
 //      gravada no vínculo, que não se atualiza (AC4, PO-04). Pitch 0 ou
 //      ausente é "não configurado", pela mesma regra da cadeia
-//      (`pitchInvalido`, `vturb-chain.ts`).
+//      (`pitchInvalido`, `vturb-chain.ts`). O painel por vídeo (`overview`)
+//      usa a mesma escolha (AC12, `pitchDoPainel`).
 //   3. QUANTAS chamadas: uma `/players/list` por leitura e uma `sessions/stats`
 //      por vídeo, com concorrência limitada — a cota do VTurb é de 60/min POR
 //      CONTA, dividida entre todos os projetos (AC7). Funil sem vídeo não
@@ -143,6 +144,43 @@ export function brutosDaVsl(stats: VturbSessionStats): BrutosDaVsl {
   };
 }
 
+/** O pitch de um vídeo como a tela o usa: o número, ou `null` com `pitchConfigurado: false`. */
+export interface PitchAtual {
+  /** Em segundos; `null` quando 0, ausente, não numérico ou o vídeo sumiu da conta. */
+  pitchTime: number | null;
+  pitchConfigurado: boolean;
+}
+
+/**
+ * Story 29.78 (AC4) — o pitch ATUAL de um player, a partir da linha dele na
+ * `/players/list` (`undefined` = o vídeo não está mais na conta).
+ *
+ * `/players/list` não passa pela normalização de `sessions/stats`; o número
+ * pode chegar como texto. A regra de "pitch não configurado" é a da cadeia
+ * (`pitchInvalido`): 0, ausente ou não numérico.
+ */
+export function pitchAtualDoPlayer(atual: Pick<VturbPlayer, "pitch_time"> | undefined): PitchAtual {
+  const bruto = atual?.pitch_time == null ? null : Number(atual.pitch_time);
+  const pitchConfigurado = !pitchInvalido(bruto);
+  return { pitchTime: pitchConfigurado ? bruto : null, pitchConfigurado };
+}
+
+/**
+ * Story 29.78 (AC12) — o pitch do PAINEL por vídeo: o atual do VTurb para o
+ * player do vínculo, nunca a cópia gravada no vínculo (`vturb_players.pitch_time`
+ * só se regrava num novo vínculo e envelhece em silêncio).
+ *
+ * Recebe o vínculo inteiro — com a cópia — de propósito: a decisão "o atual,
+ * nunca a cópia" mora aqui, e o teste a prova com cópia ≠ atual. É a mesma
+ * fonte da tabela das VSLs (AC4), então os dois números do bloco não divergem.
+ */
+export function pitchDoPainel(
+  vinculo: { playerId: string; pitchTime: number | null },
+  daConta: readonly Pick<VturbPlayer, "id" | "pitch_time">[],
+): PitchAtual {
+  return pitchAtualDoPlayer(daConta.find((p) => p.id === vinculo.playerId));
+}
+
 /** Quantas `sessions/stats` ao mesmo tempo. Três deixa folga na cota de 60/min da conta. */
 export const CONCORRENCIA_DA_TABELA = 3;
 
@@ -166,11 +204,7 @@ export async function lerTabelaDasVsls(input: {
 
   return mapearComConcorrencia(input.videos, input.concorrencia ?? CONCORRENCIA_DA_TABELA, async (video) => {
     const atual = daConta.get(video.playerId);
-    // `/players/list` não passa pela normalização de `sessions/stats`; o
-    // número pode chegar como texto. `pitchInvalido` recusa o que não for número.
-    const pitchBruto = atual?.pitch_time == null ? null : Number(atual.pitch_time);
-    const pitchConfigurado = !pitchInvalido(pitchBruto);
-    const pitchTime = pitchConfigurado ? pitchBruto : null;
+    const { pitchTime, pitchConfigurado } = pitchAtualDoPlayer(atual);
     try {
       const stats = await input.lerStats({
         playerId: video.playerId,

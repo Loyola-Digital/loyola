@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 import {
+  CONCORRENCIA_DA_TABELA,
   condicaoDoFunilNoProjeto,
   condicaoDosVinculosDoFunil,
   lerTabelaDasVsls,
   mapearComConcorrencia,
+  pitchDoPainel,
   unirVideosDoFunil,
 } from "../services/vturb-tabela.js";
 import { VturbError, type VturbSessionStats } from "../services/vturb.js";
@@ -185,6 +187,54 @@ describe("mapearComConcorrencia — o freio da cota (AC7)", () => {
     });
     expect(pico).toBe(3);
     expect(r).toEqual([0, 1, 2, 3, 4, 5, 6]);
+  });
+
+  // TEST-002b (gate) — o teste acima prova o MECANISMO com `3` explícito; este
+  // trava o VALOR que a rota usa, que chama `lerTabelaDasVsls` sem `concorrencia`.
+  it("a leitura da tabela, sem `concorrencia`, põe no máximo 3 sessions/stats em voo", async () => {
+    const atrasos = [40, 5, 25, 1, 15, 8, 2];
+    const videos = atrasos.map((_, i) => ({ playerId: `p${i}`, nome: `VSL ${i}` }));
+    let emVoo = 0;
+    let pico = 0;
+    await lerTabelaDasVsls({
+      videos,
+      listarPlayers: async () => videos.map((v) => ({ id: v.playerId, pitch_time: 90, duration: 600 })),
+      lerStats: async ({ playerId }) => {
+        emVoo++;
+        pico = Math.max(pico, emVoo);
+        await new Promise((res) => setTimeout(res, atrasos[Number(playerId.slice(1))]));
+        emVoo--;
+        return stats({});
+      },
+    });
+    expect(CONCORRENCIA_DA_TABELA).toBe(3);
+    expect(pico).toBe(3);
+  });
+});
+
+describe("pitchDoPainel — AC12: o painel por vídeo usa o pitch ATUAL, nunca a cópia do vínculo", () => {
+  // O vínculo guarda a cópia de quando foi feito (120 s); o VTurb, hoje, diz outra coisa.
+  const vinculo = { playerId: "netao", pitchTime: 120 };
+
+  it("pitch atual válido → o atual (95), não a cópia (120)", () => {
+    expect(pitchDoPainel(vinculo, [
+      { id: "outro", pitch_time: 300 },
+      { id: "netao", pitch_time: 95 },
+    ])).toEqual({ pitchTime: 95, pitchConfigurado: true });
+  });
+
+  it("pitch atual 0 → não configurado, mesmo com a cópia válida", () => {
+    expect(pitchDoPainel(vinculo, [{ id: "netao", pitch_time: 0 }])).toEqual({ pitchTime: null, pitchConfigurado: false });
+  });
+
+  it("pitch atual ausente ou vídeo fora da conta → não configurado, mesmo com a cópia válida", () => {
+    expect(pitchDoPainel(vinculo, [{ id: "netao", pitch_time: null }])).toEqual({ pitchTime: null, pitchConfigurado: false });
+    expect(pitchDoPainel(vinculo, [{ id: "outro", pitch_time: 95 }])).toEqual({ pitchTime: null, pitchConfigurado: false });
+  });
+
+  it("cópia vazia e pitch atual como texto → o atual, em número", () => {
+    expect(pitchDoPainel({ playerId: "netao", pitchTime: null }, [{ id: "netao", pitch_time: "95" as unknown as number }]))
+      .toEqual({ pitchTime: 95, pitchConfigurado: true });
   });
 });
 

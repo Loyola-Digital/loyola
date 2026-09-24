@@ -8,6 +8,8 @@ import {
   estadoDaTabela,
   intervaloDoBloco,
   linhaDaTabela,
+  periodoDoCabecalho,
+  pitchConfiguradoNoPainel,
   textoDePercentual,
   totalDaTabela,
   type VslDoFunil,
@@ -137,6 +139,49 @@ describe("AC2 — Total pela soma dos brutos, nunca média de taxas", () => {
     const t = totalDaTabela([vsl({ nome: "Y", brutos: null, erro: "x" })]);
     expect(t.playRate).toEqual({ texto: null, motivo: MOTIVO_FALHA });
     expect(t.retencao).toEqual({ texto: null, motivo: MOTIVO_FALHA });
+  });
+
+  // TEST-002a (gate) — o caso misto: o vídeo que falhou TEM pitch (o pitch vem
+  // da `/players/list`, independente da `sessions/stats` que falhou), e o único
+  // lido não tem. O "—" da Retenção do Total é pelo pitch, não "sem dados".
+  it("caso misto [falhou com pitch, lido sem pitch] → Retenção do Total '—' pelo pitch", () => {
+    const falhou = vsl({ nome: "Falhou", pitchConfigurado: true, pitchTime: 160, brutos: null, erro: "VTurb respondeu 500" });
+    const semPitch = vsl({ nome: "Sem pitch", pitchConfigurado: false, pitchTime: null, brutos: { viewedUniq: 1000, startedUniq: 500, overPitch: 999, underPitch: 1 } });
+    const t = totalDaTabela([falhou, semPitch]);
+    expect(t.retencao).toEqual({ texto: null, motivo: MOTIVO_SEM_PITCH });
+    expect(t.playRate.texto).toBe("50,00%");
+    expect(t.foraPorFalha).toEqual(["Falhou"]);
+    expect(t.foraDaRetencao).toEqual(["Sem pitch"]);
+  });
+});
+
+describe("AC12 — o painel por vídeo só fala em pitch com pitch válido", () => {
+  it("pitch atual positivo → configurado", () => {
+    expect(pitchConfiguradoNoPainel(95)).toBe(true);
+    expect(pitchConfiguradoNoPainel(1)).toBe(true);
+  });
+
+  it("0 (a cópia da API antiga em 498 de 574 players), ausente ou inválido → '—' com o motivo", () => {
+    expect(pitchConfiguradoNoPainel(0)).toBe(false);
+    expect(pitchConfiguradoNoPainel(null)).toBe(false);
+    expect(pitchConfiguradoNoPainel(undefined)).toBe(false);
+    expect(pitchConfiguradoNoPainel(-5)).toBe(false);
+    expect(pitchConfiguradoNoPainel(Number.NaN)).toBe(false);
+  });
+});
+
+describe("DOC-001 — o período do cabeçalho é o das linhas na tela", () => {
+  const pedido = { startDate: "2026-09-16", endDate: "2026-09-23" };
+  const devolvido = { funnelId: "f", videos: [], range: { startDate: "2026-08-24", endDate: "2026-09-23", timezone: "America/Sao_Paulo" } };
+
+  it("com linhas (inclusive as antigas, esmaecidas na troca de período) → a janela devolvida pela rota", () => {
+    expect(periodoDoCabecalho("pronta", devolvido, pedido)).toEqual({ startDate: "2026-08-24", endDate: "2026-09-23" });
+  });
+
+  it("sem linhas (esqueleto, erro) → a janela pedida", () => {
+    expect(periodoDoCabecalho("carregando", undefined, pedido)).toEqual(pedido);
+    expect(periodoDoCabecalho("erro", devolvido, pedido)).toEqual(pedido);
+    expect(periodoDoCabecalho("erro", undefined, pedido)).toEqual(pedido);
   });
 });
 

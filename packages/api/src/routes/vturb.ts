@@ -23,6 +23,7 @@ import {
   condicaoDoFunilNoProjeto,
   condicaoDosVinculosDoFunil,
   lerTabelaDasVsls,
+  pitchDoPainel,
   unirVideosDoFunil,
 } from "../services/vturb-tabela.js"; // Story 29.78
 
@@ -261,14 +262,27 @@ export default fp(async function vturbRoutes(fastify) {
         timezone: conn.timezone,
       };
       const base = { ...range, playerId: link.playerId };
+      /** O corpo das chamadas que medem o pitch — sempre com o pitch ATUAL (AC12). */
+      const comPitchAtual = (pitchTime: number | null) => ({ ...base, videoDuration: link.duration, pitchTime });
 
       try {
-        // Em paralelo no servidor: 4 chamadas, uma vez, em vez de 4 por aba
-        // aberta. A curva de retenção só é pedida quando há duration — sem ele
-        // a API não sabe normalizar o eixo e devolveria erro.
-        const [stats, byDay, engagement, clicks] = await Promise.all([
-          sessionStats(conn.token, { ...base, videoDuration: link.duration, pitchTime: link.pitchTime }),
-          sessionStatsByDay(conn.token, { ...base, videoDuration: link.duration, pitchTime: link.pitchTime }),
+        // Story 29.78 (AC12) — o pitch é o ATUAL do VTurb, de uma `/players/list`
+        // (a mesma fonte da tabela das VSLs, AC4), nunca a cópia gravada no
+        // vínculo: ela só se regrava num novo vínculo e envelhece em silêncio.
+        // Pitch 0 ou ausente → `null`, e o cartão "Chegaram no pitch" diz "—".
+        // Falha da lista é falha do painel, como na tabela (AC8): sem o pitch
+        // atual não há número honesto para o cartão.
+        const pitchAtual = listPlayers(conn.token, { timezone: conn.timezone })
+          .then((daConta) => pitchDoPainel(link, daConta).pitchTime);
+
+        // Em paralelo no servidor, uma vez, em vez de uma leva por aba aberta.
+        // Só as duas que levam o pitch esperam a lista; a curva e os cliques não
+        // dependem dele. A curva de retenção só é pedida quando há duration —
+        // sem ele a API não sabe normalizar o eixo e devolveria erro.
+        const [pitchTime, stats, byDay, engagement, clicks] = await Promise.all([
+          pitchAtual,
+          pitchAtual.then((pitch) => sessionStats(conn.token, comPitchAtual(pitch))),
+          pitchAtual.then((pitch) => sessionStatsByDay(conn.token, comPitchAtual(pitch))),
           link.duration
             ? userEngagement(conn.token, { ...base, videoDuration: link.duration })
             : Promise.resolve(null),
@@ -303,16 +317,8 @@ export default fp(async function vturbRoutes(fastify) {
         let diarioBruto = byDay;
         if (pareceVazio(agregado) && !temMovimento(diarioBruto) && houveAudiencia) {
           const [s2, d2] = await Promise.all([
-            sessionStats(conn.token, {
-              ...base,
-              videoDuration: link.duration,
-              pitchTime: link.pitchTime,
-            }).catch(() => stats),
-            sessionStatsByDay(conn.token, {
-              ...base,
-              videoDuration: link.duration,
-              pitchTime: link.pitchTime,
-            }).catch(() => byDay),
+            sessionStats(conn.token, comPitchAtual(pitchTime)).catch(() => stats),
+            sessionStatsByDay(conn.token, comPitchAtual(pitchTime)).catch(() => byDay),
           ]);
           agregado = s2;
           diarioBruto = d2;
@@ -341,11 +347,7 @@ export default fp(async function vturbRoutes(fastify) {
         let diario = diarioBruto;
         let diarioIncompleto = false;
         if (!temMovimento(diario) && !pareceVazio(statsFinal)) {
-          diario = await sessionStatsByDay(conn.token, {
-            ...base,
-            videoDuration: link.duration,
-            pitchTime: link.pitchTime,
-          }).catch(() => diarioBruto);
+          diario = await sessionStatsByDay(conn.token, comPitchAtual(pitchTime)).catch(() => diarioBruto);
           // Se nem na segunda veio, a tela precisa DIZER isso. Um gráfico
           // chapado no zero ao lado de um total de 7 mil views faz o time
           // investigar uma queda que não existiu.
@@ -358,7 +360,9 @@ export default fp(async function vturbRoutes(fastify) {
             playerId: link.playerId,
             name: link.playerName,
             duration: link.duration,
-            pitchTime: link.pitchTime,
+            // AC12 — o ATUAL: é ele que marca o pitch na curva e nos rótulos da
+            // tela, e `null` faz o cartão "Chegaram no pitch" dizer "—".
+            pitchTime,
           },
           range: { startDate: q.data.startDate, endDate: q.data.endDate, timezone: conn.timezone },
           stats: statsFinal,

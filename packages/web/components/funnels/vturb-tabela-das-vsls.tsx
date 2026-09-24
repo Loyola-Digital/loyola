@@ -17,6 +17,7 @@ import { AlertCircle } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   linhaDaTabela,
+  periodoDoCabecalho,
   totalDaTabela,
   type CelulaDeTaxa,
   type TabelaDeVslsDoFunil,
@@ -46,16 +47,19 @@ export function TabelaDasVsls({
   erro: string | null;
   /** Trocando de período com a tabela anterior na tela. */
   atualizando?: boolean;
+  /** A janela PEDIDA — no cabeçalho só sem linhas (esqueleto, erro). */
   range: { startDate: string; endDate: string };
   /** O seletor de período do bloco — aqui quando a tabela aparece. */
   seletor: ReactNode;
 }) {
+  // DOC-001 — com linhas na tela, o período é o devolvido (o das linhas).
+  const periodo = periodoDoCabecalho(estado, dados, range);
   const cabecalho = (
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div>
         <h3 className="text-sm font-semibold">VSLs do funil</h3>
         <p className="text-[11px] text-muted-foreground">
-          {range.startDate} → {range.endDate} · Play Rate e Retenção ao pitch como o VTurb calcula, truncados a 2 casas
+          {periodo.startDate} → {periodo.endDate} · Play Rate e Retenção ao pitch como o VTurb calcula, truncados a 2 casas
         </p>
       </div>
       {seletor}

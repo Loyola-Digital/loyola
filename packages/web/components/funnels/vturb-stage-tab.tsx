@@ -33,7 +33,9 @@ import {
   useLinkVturbPlayer, useUnlinkVturbPlayer, useVturbOverview, useVturbFunnelVsls, type VturbPlayer,
 } from "@/lib/hooks/use-vturb";
 import { ChartCard, StatTile, VizTooltip, axisProps, gridProps, nf, nfCompact, VIZ_SERIES_1 } from "@/components/spy-conteudo/viz";
-import { estadoDaTabela, intervaloDoBloco } from "@/lib/utils/vturb-tabela"; // Story 29.78
+import {
+  MOTIVO_SEM_PITCH, estadoDaTabela, intervaloDoBloco, pitchConfiguradoNoPainel,
+} from "@/lib/utils/vturb-tabela"; // Story 29.78
 import { TabelaDasVsls } from "./vturb-tabela-das-vsls"; // Story 29.78
 
 /**
@@ -430,7 +432,11 @@ function VslDashboard({
   if (!data) return null;
 
   const s = data.stats;
+  // Story 29.78 (AC12) — o pitch ATUAL do VTurb (a API não manda mais a cópia
+  // do vínculo). Sem pitch válido, nada no painel fala em "pitch": o cartão
+  // diz "—" com o motivo, como a tabela, e a curva fica sem a linha.
   const pitch = data.player.pitchTime;
+  const pitchOk = pitchConfiguradoNoPainel(pitch);
   const duracao = data.player.duration;
 
   // Curva de retenção em % da audiência inicial: comparar "quantos usuários" em
@@ -485,7 +491,7 @@ function VslDashboard({
           <h3 className="text-sm font-semibold">{data.player.name}</h3>
           <p className="text-[11px] text-muted-foreground">
             {data.player.duration ? `${mmss(data.player.duration)} de vídeo` : "sem duração"}
-            {pitch ? ` · pitch em ${mmss(pitch)}` : " · sem ponto de pitch"}
+            {pitchOk ? ` · pitch em ${mmss(pitch)}` : " · sem ponto de pitch"}
           </p>
         </div>
         {seletor}
@@ -531,11 +537,13 @@ function VslDashboard({
           sub="tempo médio ÷ duração"
           serie={serieDe((d) => numero(d.engagement_rate) ?? 0)}
         />
+        {/* AC12 — pitch 0 ou ausente no VTurb: "—" com o motivo, nunca o ~100 %
+            que o VTurb calcula com pitch 0; e sem tendência, pelo mesmo motivo. */}
         <CardComTendencia
           label="Chegaram no pitch"
-          value={pct(s.over_pitch_rate)}
-          sub={pitch ? `${nfCompact(s.total_over_pitch)} pessoas · ${mmss(pitch)}` : "pitch não configurado"}
-          serie={serieDe((d) => numero(d.over_pitch_rate) ?? 0)}
+          value={pitchOk ? pct(s.over_pitch_rate) : "—"}
+          sub={pitchOk ? `${nfCompact(s.total_over_pitch)} pessoas · ${mmss(pitch)}` : MOTIVO_SEM_PITCH}
+          serie={pitchOk ? serieDe((d) => numero(d.over_pitch_rate) ?? 0) : []}
         />
         <CardComTendencia
           label="Cliques no player"
@@ -560,7 +568,7 @@ function VslDashboard({
           label="Assistiram até o fim"
           value={nfCompact(s.total_finished)}
           sub={
-            pitch != null
+            pitchOk
               ? `${duracao ? mmss(duracao) : "fim"} · ${nfCompact(s.total_over_pitch)} chegaram no pitch`
               : duracao
                 ? `vídeo de ${mmss(duracao)}`
@@ -660,7 +668,7 @@ function VslDashboard({
                 />
                 {/* O pitch é a linha que importa: tudo à direita dela é gente que
                     ouviu a oferta. Rótulo direto, não escondido no tooltip. */}
-                {pitch != null && (
+                {pitchOk && (
                   <ReferenceLine
                     x={mmss(pitch)}
                     stroke="var(--viz-series-2)"
@@ -740,7 +748,7 @@ function VslDashboard({
                     );
                   }}
                 />
-                {pitch != null && (
+                {pitchOk && (
                   <ReferenceLine x={mmss(pitch)} stroke="var(--viz-series-2)" strokeWidth={2} />
                 )}
                 <Area
