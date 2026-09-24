@@ -18,16 +18,22 @@ import {
   TIPOS_DE_PARTE_DO_VIDEO,
   TIPO_DE_CODIGO_DA_PARTE_DO_VIDEO,
   buildAdName,
+  formatoDoVideoGravado,
   mesAnoDe,
   pedacosDoAnuncio,
+  siglaSemNumero,
+  textoDoLancamento,
   type AdFields,
   type BlocoDoAnuncio,
+  type FormatoDoVideo,
   type PedacoDoAnuncio,
   type TipoDeParteDoVideo,
 } from "@loyola-x/shared/src/nomenclatura-de-anuncio";
 import { normalizarCodigo } from "@loyola-x/shared/src/nomenclatura-codigos";
 
 export { mesAnoDe, FORMATO_DA_DATA_DO_ANUNCIO, SEPARADOR_DA_DESCRICAO, TIPO_DE_VIDEO, ehVideo };
+// Story 47.16: `perpetuo` sem número; formato do vídeo lido do nome gravado
+export { siglaSemNumero, textoDoLancamento, type FormatoDoVideo };
 // Story 47.12: hook e body do vídeo (cadastro por expert; entram no nome na 47.13)
 export { TIPOS_DE_PARTE_DO_VIDEO, PREFIXO_DA_PARTE_DO_VIDEO, TIPO_DE_CODIGO_DA_PARTE_DO_VIDEO, ROTULO_DA_PARTE_DO_VIDEO, type TipoDeParteDoVideo };
 export const PLACEHOLDER_DA_PARTE_DO_VIDEO: Record<TipoDeParteDoVideo, { code: string; description: string }> = {
@@ -80,18 +86,23 @@ export function nnDe(texto: string): number | undefined {
 /** Story 47.13: o que a prévia precisa das partes cadastradas — id → código. */
 export type PartesDoExpert = { id: string; code: string }[];
 
-/** Do estado para os campos do nome; a descrição vai normalizada (mesma função do servidor). Story 47.13: origem/hook/body só entram em vídeo. */
-export function camposDoAnuncio(estado: EstadoDoAnuncio, experts: { id: string; code: string }[], partes: PartesDoExpert = [], opts: { legado?: boolean } = {}): Partial<AdFields> {
+/**
+ * Do estado para os campos do nome; a descrição vai normalizada (mesma função
+ * do servidor). Story 47.13: origem/hook/body só entram em vídeo. Story 47.16:
+ * no v3 hook e body seguem nos campos (a prévia exige os dois) mas o build não
+ * os põe no nome; com `perpetuo` o número do lançamento não vai (AC1).
+ */
+export function camposDoAnuncio(estado: EstadoDoAnuncio, experts: { id: string; code: string }[], partes: PartesDoExpert = [], opts: { formato?: FormatoDoVideo } = {}): Partial<AdFields> {
   const desc = estado.description.trim() ? normalizarCodigo(estado.description, "anuncio") : null;
-  // AC7: vídeo do padrão antigo edita como 4 campos — os três não entram nem que o estado os tenha.
-  const video = ehVideo(estado.creativeType) && !opts.legado;
+  // 47.13 AC7: vídeo do padrão antigo edita como 4 campos — os três não entram nem que o estado os tenha.
+  const video = ehVideo(estado.creativeType) && opts.formato !== "antigo";
   const codigo = (id: string) => partes.find((p) => p.id === id)?.code;
   return {
     creativeType: estado.creativeType || undefined,
     creativeSeq: nnDe(estado.creativeSeq),
     expert: experts.find((e) => e.id === estado.expertId)?.code,
     launchType: estado.launchType || undefined,
-    launchSeq: nnDe(estado.launchSeq),
+    launchSeq: siglaSemNumero(estado.launchType) ? undefined : nnDe(estado.launchSeq),
     date: FORMATO_DA_DATA_DO_ANUNCIO.test(estado.date) ? estado.date : undefined,
     description: desc?.ok ? desc.valor : undefined,
     ...(video ? { origin: estado.origin || undefined, hookCode: estado.hookId ? codigo(estado.hookId) : undefined, bodyCode: estado.bodyId ? codigo(estado.bodyId) : undefined } : {}),
@@ -100,9 +111,9 @@ export function camposDoAnuncio(estado: EstadoDoAnuncio, experts: { id: string; 
 
 export interface PreviaDoAnuncio {
   pedacos: PedacoDoAnuncio[];
-  /** Até o `--` inclusive — o que o designer recebe (5d). */
+  /** Até o `--` inclusive — o que o designer recebe (5d). Story 47.16 (opção B): SEMPRE termina em `--`. */
   estrutura: string | null;
-  /** Estrutura + descrição; igual à estrutura sem descrição. */
+  /** Estrutura + descrição. Story 47.16 (AC4, opção B): sem descrição termina na data, sem o `--`. */
   nome: string | null;
   texto: string;
   tamanho: number;
@@ -110,19 +121,28 @@ export interface PreviaDoAnuncio {
   erro: string | null;
   /** Descrição digitada mas rejeitada pela normalização (`_`, `--`, …). */
   erroDaDescricao: string | null;
+  /**
+   * Story 47.16 (AC3): obrigatórios que NÃO entram no nome e ainda faltam —
+   * hook e body do vídeo v3. Com algum aqui, `completo` é `false` (o Salvar
+   * fica bloqueado como no v2, em que eles eram pedaços do nome).
+   */
+  faltaForaDoNome: ("hook" | "body")[];
 }
 
-export function previaDoAnuncio(estado: EstadoDoAnuncio, experts: { id: string; code: string }[], partes: PartesDoExpert = [], opts: { legado?: boolean } = {}): PreviaDoAnuncio {
+export function previaDoAnuncio(estado: EstadoDoAnuncio, experts: { id: string; code: string }[], partes: PartesDoExpert = [], opts: { formato?: FormatoDoVideo } = {}): PreviaDoAnuncio {
   const campos = camposDoAnuncio(estado, experts, partes, opts);
   const pedacos = pedacosDoAnuncio(campos, opts);
   const estruturais = pedacos.filter((p) => p.campo !== "description");
-  const completo = estruturais.every((p) => !p.faltando);
+  // v3: hook e body não são pedaços do nome, mas continuam obrigatórios (47.16 AC3) — sem isto o Salvar liberaria e a API daria 422.
+  const naoNoNome = ehVideo(estado.creativeType) && (opts.formato ?? "v3") === "v3";
+  const faltaForaDoNome = naoNoNome ? (["hook", "body"] as const).filter((c) => !(c === "hook" ? campos.hookCode : campos.bodyCode)) : [];
+  const completo = estruturais.every((p) => !p.faltando) && faltaForaDoNome.length === 0;
   const desc = estado.description.trim() ? normalizarCodigo(estado.description, "anuncio") : null;
   const erroDaDescricao = desc && !desc.ok ? desc.motivo : null;
   let estrutura: string | null = null;
   let nome: string | null = null;
   let erro: string | null = null;
-  if (completo && !erroDaDescricao) {
+  if (estruturais.every((p) => !p.faltando) && !erroDaDescricao) {
     try {
       const r = buildAdName(campos as AdFields, opts);
       estrutura = r.structure;
@@ -131,8 +151,9 @@ export function previaDoAnuncio(estado: EstadoDoAnuncio, experts: { id: string; 
       erro = (e as Error).message;
     }
   }
-  const texto = nome ?? estruturais.map((p) => (p.faltando ? "…" : p.valor)).join("_") + SEPARADOR_DA_DESCRICAO + (campos.description ?? "");
-  return { pedacos, estrutura, nome, texto, tamanho: nome?.length ?? 0, completo: completo && nome !== null, erro, erroDaDescricao };
+  // Fallback (incompleto) desenha o NOME como vai ficar: `--` só com descrição (47.16 AC4, opção B — PO-08).
+  const texto = nome ?? estruturais.map((p) => (p.faltando ? "…" : p.valor)).join("_") + (campos.description ? SEPARADOR_DA_DESCRICAO + campos.description : "");
+  return { pedacos, estrutura, nome, texto, tamanho: nome?.length ?? 0, completo: completo && nome !== null, erro, erroDaDescricao, faltaForaDoNome: [...faltaForaDoNome] };
 }
 
 /** Classes de cor por bloco — só tokens que existem em `globals.css`. */
@@ -157,7 +178,12 @@ export const LEGENDA_DO_ANUNCIO: { bloco: BlocoDoAnuncio; rotulo: string; descri
   { bloco: "descricao", rotulo: "Descrição", descricao: "livre, do designer — depois do --" },
 ];
 
-/** O corpo que a API espera. `creativeSeq` vazio = deixar o servidor escolher. Story 47.13: origem/hook/body vão só em vídeo (null fora dele — a API recusa valor). */
+/**
+ * O corpo que a API espera. `creativeSeq` vazio = deixar o servidor escolher.
+ * Story 47.13: origem/hook/body vão só em vídeo (null fora dele — a API recusa
+ * valor). Story 47.16 (AC6): sem número do lançamento vai `null` — nunca o
+ * `0` de antes (sentinela que a API recusava); com `perpetuo`, sempre `null`.
+ */
 export function corpoDoAnuncio(estado: EstadoDoAnuncio) {
   const video = ehVideo(estado.creativeType);
   return {
@@ -165,7 +191,7 @@ export function corpoDoAnuncio(estado: EstadoDoAnuncio) {
     creativeType: estado.creativeType,
     creativeSeq: nnDe(estado.creativeSeq) ?? null,
     launchType: estado.launchType,
-    launchSeq: nnDe(estado.launchSeq) ?? 0,
+    launchSeq: siglaSemNumero(estado.launchType) ? null : (nnDe(estado.launchSeq) ?? null),
     date: estado.date,
     description: estado.description.trim() || null,
     notes: estado.notes.trim() || null,
@@ -176,18 +202,39 @@ export function corpoDoAnuncio(estado: EstadoDoAnuncio) {
 }
 
 /**
+ * O corpo do PATCH ao EDITAR (QA 47.16 TEST-001: extraído do `salvar` do
+ * gerador para que o corpo enviado seja testado, não só o tipo). Sai de
+ * `corpoDoAnuncio`, então com `perpetuo` o `launchSeq: null` vai SEMPRE,
+ * explícito — é o caminho que a API precisa aceitar. Tipo e NN do criativo não
+ * vão (D23). Story 47.13: num vídeo fora do padrão antigo, origem/hook/body
+ * vão (editáveis como lançamento/data); no padrão antigo, não (AC7).
+ */
+export function corpoDaEdicaoDoAnuncio(estado: EstadoDoAnuncio, opts: { padraoAntigo: boolean }) {
+  const corpo = corpoDoAnuncio(estado);
+  return {
+    launchType: corpo.launchType,
+    launchSeq: corpo.launchSeq,
+    date: corpo.date,
+    description: corpo.description,
+    notes: corpo.notes,
+    ...(ehVideo(estado.creativeType) && !opts.padraoAntigo ? { origin: corpo.origin ?? undefined, hookId: corpo.hookId ?? undefined, bodyId: corpo.bodyId ?? undefined } : {}),
+  };
+}
+
+/**
  * De um anúncio gravado para o estado do gerador. `duplicar` limpa o NN (o
  * servidor sugere o próximo). Story 47.13: origem/hook/body vêm junto; um
  * vídeo do padrão antigo (sem origem) duplicado nasce com os três vazios — o
  * gerador vai exigi-los (AC10: o novo nome nasce no v2).
  */
-export function estadoDeAnuncio(a: { expertId: string; creativeType: string; creativeSeq: number; launchType: string; launchSeq: number; adDate: string; description: string | null; notes: string | null; origin?: string | null; hookId?: string | null; bodyId?: string | null }, modo: "editar" | "duplicar"): EstadoDoAnuncio {
+export function estadoDeAnuncio(a: { expertId: string; creativeType: string; creativeSeq: number; launchType: string; launchSeq: number | null; adDate: string; description: string | null; notes: string | null; origin?: string | null; hookId?: string | null; bodyId?: string | null }, modo: "editar" | "duplicar"): EstadoDoAnuncio {
   return {
     expertId: a.expertId,
     creativeType: a.creativeType,
     creativeSeq: modo === "editar" ? String(a.creativeSeq).padStart(2, "0") : "",
     launchType: a.launchType,
-    launchSeq: String(a.launchSeq).padStart(2, "0"),
+    // Story 47.16 (AC6): `perpetuo` gravado sem número → campo vazio, nunca "null"/"00".
+    launchSeq: a.launchSeq === null || a.launchSeq === undefined ? "" : String(a.launchSeq).padStart(2, "0"),
     date: mesAnoDe(a.adDate),
     description: a.description ?? "",
     notes: a.notes ?? "",
@@ -200,6 +247,33 @@ export function estadoDeAnuncio(a: { expertId: string; creativeType: string; cre
 /** Story 47.13 (AC7): vídeo gravado no formato de 4 campos — a edição não exige os três; o nome não muda de formato. */
 export function ehVideoDoPadraoAntigo(a: { creativeType: string; origin?: string | null }): boolean {
   return ehVideo(a.creativeType) && !a.origin;
+}
+
+/**
+ * Story 47.16 (AC8): o formato em que um anúncio GRAVADO é editado — lido do
+ * `name` (v2 e v3 têm os dois hook_id). Fora do vídeo, e em anúncio novo, é
+ * `v3` (o default do build, que para `ad`/`carr` não muda nada).
+ */
+export function formatoDoAnuncioGravado(a: { creativeType: string; name: string }): FormatoDoVideo {
+  return ehVideo(a.creativeType) ? formatoDoVideoGravado(a.name) : "v3";
+}
+
+/**
+ * Story 47.16 (AC7): a sigla que vai para `GET /ads/proximo` — a sugestão do
+ * número do lançamento NÃO roda com `perpetuo` (não há número a sugerir).
+ */
+export function siglaParaSugestao(estado: Pick<EstadoDoAnuncio, "launchType">): string | undefined {
+  return estado.launchType && !siglaSemNumero(estado.launchType) ? estado.launchType : undefined;
+}
+
+/**
+ * Story 47.16 (AC7): aplica o número do lançamento sugerido pela API — só
+ * quando o campo está vazio e a sigla TEM número. Com `perpetuo`, devolve o
+ * mesmo estado (a resposta de uma sigla anterior não pode preencher o campo).
+ */
+export function comSugestaoDoLancamento(estado: EstadoDoAnuncio, sugerido: number | null | undefined): EstadoDoAnuncio {
+  if (!sugerido || estado.launchSeq || siglaSemNumero(estado.launchType)) return estado;
+  return { ...estado, launchSeq: String(sugerido).padStart(2, "0") };
 }
 
 /** Mês corrente em `mm-aaaa` (default do campo). */

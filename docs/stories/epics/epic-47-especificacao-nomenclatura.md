@@ -439,31 +439,40 @@ Observação: a documentação da convenção também prevê `mix` em temperatur
 
 `campaigns.id` continua sem ser pai de conjuntos; `landing_pages.code` **não** entrou no nome do anúncio (o lançamento entra por sigla + NN).
 
-### 11.1 Nome de anúncio — como ficou (Story 47.10, e o vídeo v2 na 47.13)
+### 11.1 Nome de anúncio — como ficou (Story 47.10, o vídeo v2 na 47.13 e o v3 na 47.16)
 
 Seção **Nome Ads** (`?secao=ads`): Novo anúncio · Anúncios · Valores fixos · Hooks e bodies.
 
 ```
-ad · carr (4 campos):   {tipo}{NN}_{expert}_{sigla}{NN}_{mm-aaaa}--{descricao}
-                        ad03_dg_pg02_09-2026--gancho-demissao
-adv — vídeo (7 campos): {tipo}{NN}_{origem}_{expert}_{sigla}{NN}_{hNN}_{bNN}_{mm-aaaa}--{descricao}
-                        adv01_h_dg_pg04_h01_b01_09-2026--      (pedido do gestor, 15/09/2026; formato com ok do dono)
+ad · carr (4 campos):      {tipo}{NN}_{expert}_{lançamento}_{mm-aaaa}[--{descricao}]
+                           ad07_dg_perpetuo_09-2026 · ad03_dg_pg02_09-2026--gancho-demissao
+adv — vídeo v3 (5 campos): {tipo}{NN}_{origem}_{expert}_{lançamento}_{mm-aaaa}[--{descricao}]
+                           adv01_ia_dg_perpetuo_09-2026 · adv01_h_dg_pg04_09-2026   (Story 47.16, 23/09/2026; formato aprovado pelo Lucas)
+
+{lançamento} = {sigla}{NN} (pg04) — ou só `perpetuo`, que não tem número
 ```
+
+**Story 47.16 — o que mudou do v2 para o v3:**
+- **Hook e body saíram do NOME do vídeo** — continuam escolhidos no gerador, obrigatórios e gravados (`naming_ads.hook_id`/`body_id`); o dicionário (Hooks e bodies), o "usado em N" e a trava do código não mudam. A origem (`ia`/`h`) **ficou** no nome.
+- **`perpetuo` não tem número:** com essa sigla o lançamento é só `perpetuo`; número com `perpetuo` é erro (build, API e parse); toda outra sigla segue exigindo `NN` (01–99). A regra é da constante `perpetuo` no código (decisão 5.2), não de um atributo do dicionário. `naming_ads.launch_seq` aceita `NULL` (migration 0157).
+- **O `--` é opcional:** o parse lê nome com ou sem `--` (sem ele, a descrição é vazia). Sem descrição, o **nome** gravado termina na data; a **estrutura** — o "Copiar estrutura" do designer — continua terminando em `--` (opção B, decidida pelo Danilo em 23/09).
+- **Formatos publicados não mudam (regra 6):** o vídeo **v2** (7 campos, `…_{sigla}{NN}_{hNN}_{bNN}_{mm-aaaa}`) e o **padrão antigo** (4 campos) continuam válidos, cada um com o **seu** aviso; editar um registro re-grava no formato em que ele nasceu, lido do `name` gravado. Todo anúncio **novo** sai no v3. Os 6 anúncios do dg no ar desde 21–23/09 (`adv01_ia_dg_perpetuo_h01_b01_09-2026` … `adv06_…`) ficam registrados em v2, com o nome exato do Meta.
 
 | campo | valor | regra |
 |---|---|---|
 | tipo + NN | `creative_type` (`ad` · `adv` · `carr`) + dois dígitos | NN **único por expert**, qualquer tipo (o 7º criativo do DG é `07`); sugerido pelo servidor, reservado na gravação (409 na corrida) |
 | origem | `creative_origin` (`ia` — feito por inteligência artificial · `h` — feito por humano) | **só em `adv`**; obrigatória lá, proibida fora |
 | expert | `naming_experts.code` | |
-| sigla + NN | `launch_type` (`pg` · `l` · `m` · `pr`) + número do lançamento | NN escolhido, com sugestão (maior já usado para expert+sigla) |
-| hook · body | `naming_ad_parts` — `hNN` / `bNN` **por expert**, com descrição obrigatória (Dicionário › Nome Ads › Hooks e bodies) | **só em `adv`**; obrigatórios lá; o `h01` do DG não vale para o BBE |
+| sigla + NN | `launch_type` (`pg` · `l` · `m` · `pr` · `perpetuo`) + número do lançamento | NN escolhido, com sugestão (maior já usado para expert+sigla); **`perpetuo` sem número** (47.16) — o campo fica desabilitado e não há sugestão |
+| hook · body | `naming_ad_parts` — `hNN` / `bNN` **por expert**, com descrição obrigatória (Dicionário › Nome Ads › Hooks e bodies) | **só em `adv`**; obrigatórios e gravados lá; o `h01` do DG não vale para o BBE; **fora do nome desde a 47.16** (só o v2 publicado os leva) |
 | data | `mm-aaaa` | |
-| `--` + descrição | livre, do designer; `[a-z0-9-]`; opcional no sistema | o `--` é a única exceção à regra "nunca `--`": marca onde o texto livre começa; o parse quebra no PRIMEIRO |
+| `--` + descrição | livre, do designer; `[a-z0-9-]`; opcional no sistema | o `--` é a única exceção à regra "nunca `--`": marca onde o texto livre começa; o parse quebra no PRIMEIRO; **opcional no parse** e ausente do nome sem descrição (47.16) |
 
 Regras que valem aqui e em mais lugar nenhum:
 - **"Vídeo" = valor `adv`.** Outro tipo de vídeo no dicionário é decisão nova, não herda o formato.
-- **Vídeo do padrão antigo** (`adv` gravado com 4 campos antes da 47.13) continua **válido com aviso** ("padrão antigo (47.10)"); editar descrição/lançamento/data não exige origem/hook/body e re-grava em 4 campos (regra 6: nome publicado não muda de formato). Para um nome no v2, **duplicar**.
-- Depois de salvo, tipo e NN do criativo **não mudam** (D23). Hook/body/origem de um vídeo v2 editam como lançamento/data.
+- **Vídeo do padrão antigo** (`adv` gravado com 4 campos antes da 47.13) continua **válido com aviso** ("padrão antigo (47.10)"); editar descrição/lançamento/data não exige origem/hook/body e re-grava em 4 campos (regra 6: nome publicado não muda de formato). Para um nome no formato atual, **duplicar**.
+- **Vídeo v2** (7 campos, 47.13) continua **válido com aviso próprio** ("padrão v2 (47.13)") e edita no v2 (47.16).
+- Depois de salvo, tipo e NN do criativo **não mudam** (D23). Hook/body/origem de um vídeo (v2 ou v3) editam como lançamento/data.
 - Código de hook/body **imutável depois de usado** em anúncio; excluir só sem uso.
 
 Gerador: expert → tipo (+ origem ao lado, se vídeo) → NN | sigla | nº do lançamento → hook | body (se vídeo) → mês/ano → descrição. Prévia colorida por bloco; "Copiar estrutura" (até o `--`) é o que o designer recebe; "Salvar e criar outro" mantém expert, sigla, nº, data, origem, hook e body. Ao escolher o expert, a tela lista os anúncios já cadastrados dele.

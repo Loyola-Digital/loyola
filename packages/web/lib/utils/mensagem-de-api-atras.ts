@@ -35,3 +35,38 @@ export function mensagemDeApiAtras(erro: ErroLido | null | undefined, recurso: s
   if (!ehApiAtras(erro)) return null;
   return `A API ainda não tem as rotas de ${recurso} — provavelmente está atrás do painel. Veja o aviso de versão no topo.`;
 }
+
+/**
+ * Story 47.16 (AC11, PO-07) — Salvar anúncio de `perpetuo` com a API ANTERIOR
+ * à 47.16. A API antiga exige `launchSeq` (zod `.min(1)`, sem `.nullable()`) e
+ * recusa o `null` com um 400 do zod NO CAMPO `launchSeq` — um erro que
+ * `ehApiAtras` não reconhece (não é 404 nem "Invalid UUID"). Sem isto, o
+ * gerador repassaria cru o texto do zod 4 (medido na 4.3.6 da API):
+ * "launchSeq: Invalid input: expected number, received null".
+ *
+ * Reconhece por DOIS sinais, qualquer um basta:
+ *  - o veredito do contrato (`compareApiContract` → `api-atras`, Story 29.46)
+ *    com um 400 no campo `launchSeq`;
+ *  - a assinatura do zod em inglês nesse campo — a API da 47.16 aceita
+ *    `null`/ausente e responde em português, então o texto em inglês só sai
+ *    de uma API antiga (vale mesmo com o `/api/health` fora do ar).
+ * As duas recusas da PRÓPRIA API da 47.16 nesse campo (`launchSeq: a sigla pg
+ * exige…`, `launchSeq: "perpetuo" não tem…`) nunca viram esta frase — com o
+ * contrato à frente por OUTRA story, elas são erro de verdade.
+ * Qualquer outro erro: `mensagemDeApiAtras` (404/Invalid UUID) ou `null` —
+ * mostre como veio.
+ */
+export function mensagemDeApiAtrasAoSalvarAnuncio(
+  erro: (ErroLido & { corpo?: { campo?: string } | null }) | null | undefined,
+  apiAtras: boolean,
+): string | null {
+  if (!erro) return null;
+  const noCampoDoNumero = erro.status === 400 && (erro.corpo?.campo === "launchSeq" || /^launchSeq:/.test(erro.mensagem));
+  // zod 4 ("Invalid input: expected number, received null"); o "Required" do zod 3 fica por robustez.
+  const assinaturaDoZod = /^launchSeq: (Invalid input: )?(expected number|required)/i.test(erro.mensagem);
+  const recusaDaApiNova = /^launchSeq: (a sigla |")/.test(erro.mensagem);
+  if (noCampoDoNumero && !recusaDaApiNova && (apiAtras || assinaturaDoZod)) {
+    return "A API ainda não aceita anúncio sem número do lançamento (perpetuo) — ela está numa versão anterior à do painel. Veja o aviso de versão no topo e salve de novo depois do deploy da API.";
+  }
+  return mensagemDeApiAtras(erro, "anúncios");
+}

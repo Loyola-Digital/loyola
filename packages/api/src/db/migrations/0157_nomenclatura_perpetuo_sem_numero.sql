@@ -1,0 +1,30 @@
+-- Epic 47 / Story 47.16 — Nome de anúncio v3: `perpetuo` sem número.
+--
+-- Pedido do Danilo em 2026-09-23 (itens 5a/5b), formato aprovado pelo Lucas
+-- (decisão 5.6): com a sigla de lançamento `perpetuo`, o nome do anúncio NÃO
+-- leva número — `adv01_ia_dg_perpetuo_09-2026`, e não `perpetuo01`. O número
+-- continua obrigatório (01–99) em toda outra sigla; quem garante isso é o
+-- serviço (`montarAnuncio`, 400 no campo `launchSeq`), não o banco: a regra é
+-- da constante `perpetuo` no código (decisão 5.2), não de um atributo aqui.
+--
+-- O que muda: `naming_ads.launch_seq` deixa de ser NOT NULL. Ausente = NULL —
+-- sem valor-sentinela (0, 00) que vaze para a tela (AC6).
+--
+-- NENHUMA linha existente muda (regra 6: nome publicado no Meta não muda) —
+-- esta migration não tem UPDATE. Em 2026-09-23 a tabela estava vazia; as 6
+-- linhas do dg (AC9) entram DEPOIS desta migration, por script próprio
+-- (`src/scripts/registrar-anuncios-no-ar-do-dg.ts`), com `launch_seq` NULL.
+--
+-- ⚠️ ORDEM: aplicar em produção ANTES do deploy da API da 47.16 — a API nova
+-- grava NULL e, com a coluna ainda NOT NULL, o INSERT de um anúncio de
+-- `perpetuo` quebra. Provar depois de aplicar (lição de 10/09 e 16/09: o
+-- `drizzle-kit push` do CMD não garante schema):
+--
+--   SELECT is_nullable FROM information_schema.columns
+--    WHERE table_name = 'naming_ads' AND column_name = 'launch_seq';
+--   -- esperado: YES
+--
+-- Idempotente: `DROP NOT NULL` numa coluna que já aceita NULL não faz nada e
+-- não dá erro — rodar duas vezes é seguro.
+
+ALTER TABLE naming_ads ALTER COLUMN launch_seq DROP NOT NULL;

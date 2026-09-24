@@ -13,9 +13,13 @@
  * 3. normaliza a descrição (`normalizarCodigo`, tipo `anuncio`);
  * 4. monta `{ structure, name }` com `buildAdName` e devolve o que vai para
  *    `naming_ads`, com `ad_date` = primeiro dia do mês.
+ *
+ * Story 47.16: o NN do lançamento é PROIBIDO com a sigla `perpetuo` e
+ * obrigatório nas outras — ausente é gravado como `null` (AC1/AC6). Nome novo
+ * sai no v3; re-gravar um vídeo publicado mantém o formato dele (AC8).
  */
 
-import { buildAdName, ehVideo, normalizarCodigo, primeiroDiaDoMes, type AdFields } from "@loyola-x/shared";
+import { buildAdName, ehVideo, normalizarCodigo, primeiroDiaDoMes, siglaSemNumero, type AdFields, type FormatoDoVideo } from "@loyola-x/shared";
 import { ErroDeNomenclatura } from "./regras.js";
 import type { Repositorio } from "./repositorio.js";
 
@@ -25,7 +29,8 @@ export interface EntradaDeAnuncio {
   /** Opcional: sem ele o servidor usa o próximo livre do expert. */
   creativeSeq?: number | null;
   launchType: string;
-  launchSeq: number;
+  /** Story 47.16: proibido com `perpetuo`, obrigatório (1–99) nas outras siglas — ausente = `null`/omitido. */
+  launchSeq?: number | null;
   /** `mm-aaaa`. */
   date: string;
   description?: string | null;
@@ -42,7 +47,8 @@ export interface AnuncioMontado {
   creativeType: string;
   creativeSeq: number;
   launchType: string;
-  launchSeq: number;
+  /** Story 47.16: `null` com `perpetuo` — a coluna `naming_ads.launch_seq` passou a aceitar ausência (migration 0157). */
+  launchSeq: number | null;
   adDate: string;
   description: string | null;
   origin: string | null;
@@ -58,14 +64,17 @@ export interface AnuncioMontado {
  * origem no dicionário e ativa; hook/body existem, são do TIPO certo, do MESMO
  * expert e ativos (regra 8). Fora de `adv`, qualquer um dos três é 400.
  * `legado`: vídeo do padrão antigo sendo re-gravado (AC7) — os três ficam null.
+ * Story 47.16 (AC3): no v3 hook e body saem do NOME, mas continuam exigidos e
+ * gravados aqui — esta função não mudou de regra, só de formato de nome.
  */
 async function partesDoVideo(r: Repositorio, e: EntradaDeAnuncio, expert: { id: string; code: string }, legado: boolean) {
   const video = ehVideo(e.creativeType);
   const veio = (v: string | null | undefined) => v !== undefined && v !== null && String(v).trim() !== "";
+  const naoMigra = " novo — vídeo do padrão antigo não migra por edição; duplique para criar no formato atual (v3)";
   if (!video || legado) {
-    if (veio(e.origin)) throw new ErroDeNomenclatura(400, `origin: origem só existe no vídeo (adv)${legado ? " novo — vídeo do padrão antigo não migra por edição; duplique para criar no v2" : ""}`, { campo: "origin" });
-    if (veio(e.hookId)) throw new ErroDeNomenclatura(400, `hookId: hook só existe no vídeo (adv)${legado ? " novo — vídeo do padrão antigo não migra por edição; duplique para criar no v2" : ""}`, { campo: "hookId" });
-    if (veio(e.bodyId)) throw new ErroDeNomenclatura(400, `bodyId: body só existe no vídeo (adv)${legado ? " novo — vídeo do padrão antigo não migra por edição; duplique para criar no v2" : ""}`, { campo: "bodyId" });
+    if (veio(e.origin)) throw new ErroDeNomenclatura(400, `origin: origem só existe no vídeo (adv)${legado ? naoMigra : ""}`, { campo: "origin" });
+    if (veio(e.hookId)) throw new ErroDeNomenclatura(400, `hookId: hook só existe no vídeo (adv)${legado ? naoMigra : ""}`, { campo: "hookId" });
+    if (veio(e.bodyId)) throw new ErroDeNomenclatura(400, `bodyId: body só existe no vídeo (adv)${legado ? naoMigra : ""}`, { campo: "bodyId" });
     return { origin: null, hookId: null, bodyId: null, codes: {} as { origin?: string; hookCode?: string; bodyCode?: string } };
   }
   if (!veio(e.origin)) throw new ErroDeNomenclatura(422, "origin: obrigatória em vídeo (adv) — ia ou h", { campo: "origin" });
@@ -86,6 +95,23 @@ async function partesDoVideo(r: Repositorio, e: EntradaDeAnuncio, expert: { id: 
   return { origin: origem.value, hookId: hook.id, bodyId: body.id, codes: { origin: origem.value, hookCode: hook.code, bodyCode: body.code } };
 }
 
+/**
+ * Story 47.16 (AC6, PO-03/PO-04) — o NN do lançamento que o PATCH manda para
+ * `montarAnuncio`. Veio no corpo (número ou `null`): vale o do corpo. Não veio
+ * e a sigla final é `perpetuo`: ZERA (`null`) — manter o antigo daria
+ * `perpetuo04`. Não veio e a sigla final é outra: o gravado — que é `null` num
+ * registro de `perpetuo`, e aí o serviço devolve 400 em `launchSeq` (trocar de
+ * `perpetuo` para `pg` exige mandar o número). Nunca inventa `pg00`.
+ */
+export function numeroDoLancamentoNoPatch(
+  b: { launchType?: string; launchSeq?: number | null },
+  antes: { launchType: string; launchSeq: number | null },
+): number | null {
+  if (b.launchSeq !== undefined) return b.launchSeq;
+  if (siglaSemNumero(b.launchType ?? antes.launchType)) return null;
+  return antes.launchSeq;
+}
+
 /** Menor NN livre de 1 a 99 no expert (inclui tudo — não há "inativo" em anúncio). `null` quando os 99 acabaram. */
 export function proximoNnDeAnuncio(usados: readonly number[]): number | null {
   const set = new Set(usados);
@@ -93,7 +119,11 @@ export function proximoNnDeAnuncio(usados: readonly number[]): number | null {
   return null;
 }
 
-export async function montarAnuncio(r: Repositorio, e: EntradaDeAnuncio, opts: { ignorarSeqDe?: string; legado?: boolean } = {}): Promise<AnuncioMontado> {
+/**
+ * `opts.formato`: o formato em que um vídeo publicado é RE-GRAVADO ao ser
+ * editado (lido do `name` gravado — AC8, regra 6). Sem ele, nome novo: v3.
+ */
+export async function montarAnuncio(r: Repositorio, e: EntradaDeAnuncio, opts: { ignorarSeqDe?: string; formato?: FormatoDoVideo } = {}): Promise<AnuncioMontado> {
   const expert = await r.porId("experts", e.expertId);
   if (!expert) throw new ErroDeNomenclatura(404, "expertId: expert não encontrado", { campo: "expertId" });
   if (!expert.active) throw new ErroDeNomenclatura(422, `expertId: ${expert.code} está inativo — código desativado não entra em nome novo (regra 8)`, { campo: "expertId" });
@@ -103,6 +133,15 @@ export async function montarAnuncio(r: Repositorio, e: EntradaDeAnuncio, opts: {
   if (!tipo.active) throw new ErroDeNomenclatura(422, `creativeType: ${tipo.value} está inativo (regra 8)`, { campo: "creativeType" });
   if (!sigla) throw new ErroDeNomenclatura(422, `launchType: "${e.launchType}" não está no dicionário de sigla de lançamento`, { campo: "launchType" });
   if (!sigla.active) throw new ErroDeNomenclatura(422, `launchType: ${sigla.value} está inativa (regra 8)`, { campo: "launchType" });
+
+  // Story 47.16 (AC1): número PROIBIDO em `perpetuo`, OBRIGATÓRIO nas outras — 400 no campo, antes de montar o nome.
+  const launchSeq = e.launchSeq === undefined || e.launchSeq === null ? null : e.launchSeq;
+  if (siglaSemNumero(sigla.value) && launchSeq !== null) {
+    throw new ErroDeNomenclatura(400, `launchSeq: "${sigla.value}" não tem número do lançamento — mande sem launchSeq`, { campo: "launchSeq" });
+  }
+  if (!siglaSemNumero(sigla.value) && launchSeq === null) {
+    throw new ErroDeNomenclatura(400, `launchSeq: a sigla ${sigla.value} exige o número do lançamento (01 a 99)`, { campo: "launchSeq" });
+  }
 
   if (!primeiroDiaDoMes(e.date)) throw new ErroDeNomenclatura(400, `date: "${e.date}" não está em mm-aaaa`, { campo: "date" });
 
@@ -131,13 +170,15 @@ export async function montarAnuncio(r: Repositorio, e: EntradaDeAnuncio, opts: {
     description = n.valor;
   }
 
-  const partes = await partesDoVideo(r, e, expert, Boolean(opts.legado));
-  const fields: AdFields = { creativeType: tipo.value, creativeSeq, ...partes.codes, expert: expert.code, launchType: sigla.value, launchSeq: e.launchSeq, date: e.date, ...(description ? { description } : {}) };
+  const formato = ehVideo(tipo.value) ? (opts.formato ?? "v3") : "v3";
+  const partes = await partesDoVideo(r, e, expert, formato === "antigo");
+  // v3: os códigos de hook/body vão junto, mas `buildAdName` não os põe no nome (AC2/AC3); v2 os põe; antigo não os tem.
+  const fields: AdFields = { creativeType: tipo.value, creativeSeq, ...partes.codes, expert: expert.code, launchType: sigla.value, ...(launchSeq === null ? {} : { launchSeq }), date: e.date, ...(description ? { description } : {}) };
   let montado: { structure: string; name: string };
   try {
-    montado = buildAdName(fields, { legado: Boolean(opts.legado) });
+    montado = buildAdName(fields, { formato });
   } catch (err) {
     throw new ErroDeNomenclatura(400, (err as Error).message);
   }
-  return { expertId: expert.id, creativeType: tipo.value, creativeSeq, launchType: sigla.value, launchSeq: e.launchSeq, adDate: primeiroDiaDoMes(e.date)!, description, origin: partes.origin, hookId: partes.hookId, bodyId: partes.bodyId, ...montado, fields };
+  return { expertId: expert.id, creativeType: tipo.value, creativeSeq, launchType: sigla.value, launchSeq, adDate: primeiroDiaDoMes(e.date)!, description, origin: partes.origin, hookId: partes.hookId, bodyId: partes.bodyId, ...montado, fields };
 }

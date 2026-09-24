@@ -434,7 +434,8 @@ export interface Anuncio {
   creativeType: string;
   creativeSeq: number;
   launchType: string;
-  launchSeq: number;
+  /** Story 47.16: `null` com a sigla `perpetuo` (não tem número). */
+  launchSeq: number | null;
   /** `AAAA-MM-01` */
   adDate: string;
   description: string | null;
