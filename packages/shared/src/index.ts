@@ -640,3 +640,8 @@ export {
   type FunilCandidato,
   type LancamentoAnterior,
 } from "./planejamento-lancamentos.js";
+// Story 29.81 (PO-07): o percentual "igual o VTurb", truncado a 2 casas com
+// inteiros. Nasceu no web na 29.78; o feed público (43.5) passou a precisar da
+// mesma conta. Módulo folha: o web importa por subpath
+// (`@loyola-x/shared/src/percentual-truncado`), a API por aqui.
+export { centesimosTruncados, textoDePercentual, fracaoTruncada } from "./percentual-truncado.js";

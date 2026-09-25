@@ -5,14 +5,12 @@ import { projects, funnelStages, vturbConnections, vturbPlayers } from "../db/sc
 import { decrypt } from "../services/encryption.js";
 import { requireScope } from "../middleware/api-key-auth.js";
 import { PUBLIC_READ_SCOPE } from "./public-discovery.js";
-import { sessionStats, quotaUsage } from "../services/vturb.js";
-import { derivarCadeia, ProtocolViolation } from "../services/vturb-chain.js";
+import { sessionStats, quotaUsage, listPlayers, VturbError } from "../services/vturb.js";
 import {
-  montarEtapa,
-  pitchTimeUtil,
+  lerEtapasDoFeed,
   consultasRestantes,
   quotaComporta,
-  type EtapaVsl,
+  PITCH_RATE_BASE,
 } from "../services/vsl-funnel.js";
 
 /**
@@ -34,6 +32,13 @@ import {
  *     por isso tudo é derivado dos números crus, e eles vão na resposta
  *   • janela por `days=N` ≠ janela por datas explícitas — aqui são datas
  *   • `pitch_time = 0` produz Pitch rate de 100% falso — tratado como ausente
+ *
+ * Story 29.81 (AC8) — o `pitchRate` passou a ser a Retenção ao pitch "igual o
+ * VTurb" (over ÷ (over + under), truncada, pitch ATUAL de `/players/list`), e a
+ * resposta declara a base em `pitchRateBase`. O `playRate`, o `convPostPitch*`
+ * e UMA linha por vínculo seguem como eram. `derivarCadeia` não mudou: a linha
+ * sai de `montarEtapaDoFeed` (`services/vsl-funnel.ts`), que a usa para o resto
+ * e troca só o `pitchRate`.
  */
 
 const projectParam = z.object({ projectId: z.string().uuid() });
@@ -90,7 +95,7 @@ export default fp(async function publicVslRoutes(fastify) {
         .limit(1);
 
       if (!conn) {
-        return { projectId, range: { since, until }, conectado: false, etapas: [] };
+        return { projectId, range: { since, until }, conectado: false, pitchRateBase: PITCH_RATE_BASE, etapas: [] };
       }
 
       const players = await fastify.db
@@ -110,19 +115,18 @@ export default fp(async function publicVslRoutes(fastify) {
       // existe aqui. Zero em Play rate se lê como "o vídeo não engaja";
       // ausência se lê como "não há vídeo nesta etapa", que é o fato.
       if (players.length === 0) {
-        return { projectId, range: { since, until }, conectado: true, etapas: [] };
+        return { projectId, range: { since, until }, conectado: true, pitchRateBase: PITCH_RATE_BASE, etapas: [] };
       }
 
       const token = decrypt(conn.enc, conn.iv);
-      const etapas: EtapaVsl[] = [];
-      const avisos: { stageId: string; motivo: string }[] = [];
 
       // QA-33 — uma consulta de quota antes do lote. Sem isto, um projeto perto
       // do limite gastaria o saldo restante para colher N falhas opacas ("não
       // foi possível consultar"), sem ninguém saber que a causa era quota.
       try {
         const restantes = consultasRestantes(await quotaUsage(token));
-        if (!quotaComporta(restantes, players.length)) {
+        // 29.81 (PO-10): + 1 — a `/players/list` do pitch atual também é consulta.
+        if (!quotaComporta(restantes, players.length + 1)) {
           fastify.log.warn(
             { projectId, restantes, players: players.length },
             "[43.5] quota do VTurb insuficiente para o funil",
@@ -131,11 +135,12 @@ export default fp(async function publicVslRoutes(fastify) {
             projectId,
             range: { since, until },
             conectado: true,
+            pitchRateBase: PITCH_RATE_BASE,
             etapas: [],
             avisos: [
               {
                 stageId: "*",
-                motivo: `quota do VTurb insuficiente: ${restantes} consultas restantes para ${players.length} etapas`,
+                motivo: `quota do VTurb insuficiente: ${restantes} consultas restantes para ${players.length} etapas + a lista de players`,
               },
             ],
           };
@@ -146,56 +151,54 @@ export default fp(async function publicVslRoutes(fastify) {
         fastify.log.warn({ err, projectId }, "[43.5] não foi possível ler a quota do VTurb");
       }
 
-      for (const p of players) {
-        try {
-          const stats = await sessionStats(token, {
-            playerId: p.playerId,
-            // AC6 — datas explícitas. `days=N` produz janela diferente, e a
-            // 29.41 mediu essa divergência.
-            startDate: since,
-            endDate: until,
-            timezone: conn.timezone,
-            videoDuration: p.duration,
-            pitchTime: p.pitchTime,
-          });
+      // Story 29.81 (AC8, AC3) — o pitch ATUAL de cada vídeo, de UMA
+      // `/players/list` (dentro de `lerEtapasDoFeed`). A cópia gravada no
+      // vínculo (`vturb_players.pitch_time`) não se atualiza e não vale: é o
+      // pitch ENVIADO ao `sessions/stats` que define over e under. Se a lista
+      // falhar, a resposta inteira falha com o status do VTurb — nunca a cópia
+      // no lugar, nem um feed calado.
+      //
+      // A montagem — `convPostPitch: null` e, desde a 29.81, o `pitchRate` na
+      // base do VTurb — vive em `services/vsl-funnel.ts`, para que o teste
+      // exercite a MESMA função que roda aqui (QA-32). Uma linha por vínculo.
+      let lidas: Awaited<ReturnType<typeof lerEtapasDoFeed>>;
+      try {
+        lidas = await lerEtapasDoFeed({
+          vinculos: players,
+          listarPlayers: () => listPlayers(token, { timezone: conn.timezone }),
+          lerStats: (v) =>
+            sessionStats(token, {
+              playerId: v.playerId,
+              // AC6 — datas explícitas. `days=N` produz janela diferente, e a
+              // 29.41 mediu essa divergência.
+              startDate: since,
+              endDate: until,
+              timezone: conn.timezone,
+              videoDuration: v.videoDuration,
+              pitchTime: v.pitchTime,
+            }),
+        });
+      } catch (err) {
+        fastify.log.warn({ err, projectId }, "[43.5] falha ao ler o pitch atual (/players/list) do VTurb");
+        const status = err instanceof VturbError && err.status === 429 ? 429 : 502;
+        return reply.code(status).send({
+          error: `não foi possível ler o pitch atual dos vídeos no VTurb: ${err instanceof Error ? err.message : "erro desconhecido"}`,
+          code: "VTURB_ERROR",
+        });
+      }
 
-          // AC5 — `pitch_time` ausente OU zero: `derivarCadeia` já devolve
-          // `pitchRate` com `valor: null` e o motivo, preservando o `playRate`.
-          // Zero aqui produziria 100% falso (medido na 29.41).
-          const cadeia = derivarCadeia(stats, pitchTimeUtil(p.pitchTime));
-
-          // A montagem — inclusive a decisão de `convPostPitch: null` — vive em
-          // `services/vsl-funnel.ts`, para que o teste exercite a MESMA função
-          // que roda aqui. Ver QA-32.
-          etapas.push(
-            montarEtapa(
-              {
-                stageId: p.stageId,
-                stageName: p.stageName,
-                playerId: p.playerId,
-                playerName: p.playerName,
-              },
-              cadeia,
-            ),
-          );
-        } catch (err) {
-          // `derivarCadeia` ABORTA em taxa fora de [0,1] em vez de degradar
-          // (vturb-chain.ts:61-65) — uma etapa com dado inconsistente não pode
-          // derrubar a resposta inteira. A etapa sai da lista e o motivo fica
-          // visível em `avisos`.
-          const motivo =
-            err instanceof ProtocolViolation
-              ? `dado inconsistente do VTurb: ${err.message}`
-              : "não foi possível consultar o VTurb para esta etapa";
-          fastify.log.warn({ err, stageId: p.stageId, playerId: p.playerId }, "[43.5] etapa fora do funil de VSL");
-          avisos.push({ stageId: p.stageId, motivo });
-        }
+      const { etapas } = lidas;
+      const avisos: { stageId: string; motivo: string }[] = [];
+      for (const f of lidas.falhas) {
+        fastify.log.warn({ err: f.err, stageId: f.stageId, playerId: f.playerId }, "[43.5] etapa fora do funil de VSL");
+        avisos.push({ stageId: f.stageId, motivo: f.motivo });
       }
 
       return {
         projectId,
         range: { since, until },
         conectado: true,
+        pitchRateBase: PITCH_RATE_BASE,
         etapas,
         ...(avisos.length ? { avisos } : {}),
       };

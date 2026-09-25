@@ -8,7 +8,14 @@ import { Label } from "@/components/ui/label";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { janelaDaAba, janelaAnterior } from "@/lib/utils/mvp-window";
 import { buildMeasuredRates } from "@/lib/utils/mvp-chain-rates";
-import { useVturbChain, type TaxaMedida } from "@/lib/hooks/use-vturb";
+import { useVturbChain, useVturbFunnelVsls, type TaxaMedida } from "@/lib/hooks/use-vturb";
+import {
+  AVISO_DA_CADEIA,
+  DICA_DA_SOMA,
+  leituraDaChainNecessaria,
+  montarVturbDaMvp,
+  type VturbDaMvp,
+} from "@/lib/utils/mvp-vsl-somada";
 import { toast } from "sonner";
 import { apiErrorMessage, logApiError } from "@/lib/utils/api-error";
 import { fracaoParaPP, ppParaFracao } from "@/lib/utils/percent";
@@ -179,6 +186,124 @@ function VturbChainCard({
   );
 }
 
+/**
+ * Story 29.81 — o cartão da cadeia medida com TODOS os vídeos do funil.
+ *
+ * Tudo o que ele mostra sai pronto de `montarVturbDaMvp` (`lib/utils/
+ * mvp-vsl-somada.ts`, testada); aqui só há apresentação. O cartão da 29.41
+ * (`VturbChainCard`) segue para o fallback da API antiga.
+ */
+function VturbVslSomadaCard({
+  mvp,
+  janela,
+}: {
+  mvp: VturbDaMvp;
+  janela: { startDate: string; endDate: string };
+}) {
+  // AC7: falha geral aparece como erro — nunca um cartão calado.
+  if (mvp.erro) {
+    return (
+      <div className="rounded-xl border border-border/30 bg-card/60 p-4">
+        <p className="text-xs text-muted-foreground">
+          Não foi possível medir a cadeia pelo VTurb: {mvp.erro}
+        </p>
+      </div>
+    );
+  }
+  if (mvp.origem === "pendente") return null;
+  const cartao = mvp.cartao;
+  if (!cartao) {
+    return (
+      <div className="rounded-xl border border-border/30 bg-card/60 p-4">
+        <p className="text-xs text-muted-foreground">
+          Nenhuma VSL vinculada a este funil — as taxas da cadeia seguem digitadas manualmente. Vincule um player do VTurb na etapa para que sejam medidas.
+        </p>
+      </div>
+    );
+  }
+
+  // 29.41 AC6 / PO-15: a janela DEVOLVIDA pela leitura é a enviada ao VTurb.
+  const janelaDivergente =
+    cartao.janela.startDate !== janela.startDate || cartao.janela.endDate !== janela.endDate;
+
+  return (
+    <div className="rounded-xl border border-border/30 bg-card/60 p-5 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">Cadeia da VSL — medida</h3>
+        <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+          soma de {cartao.entraram} de {cartao.totalDeVideos} {cartao.totalDeVideos === 1 ? "vídeo" : "vídeos"}
+        </span>
+      </div>
+
+      {janelaDivergente ? (
+        <p className="text-xs text-red-600 dark:text-red-400">
+          Janela divergente: a aba usa {janela.startDate} → {janela.endDate}, o VTurb respondeu{" "}
+          {cartao.janela.startDate} → {cartao.janela.endDate}. A cadeia não é exibida — misturar
+          janelas produziria uma taxa que não corresponde a período nenhum.
+        </p>
+      ) : (
+        <div className="divide-y divide-border/20">
+          <TaxaMedidaLinha rotulo="Play rate (plays únicos ÷ pageviews)" taxa={cartao.playRate} />
+          <div className="flex items-baseline justify-between gap-3 py-1.5">
+            <span className="text-xs text-muted-foreground">
+              Retenção ao pitch (acima do pitch ÷ (acima + abaixo)) — igual ao VTurb
+            </span>
+            {cartao.retencao.texto == null ? (
+              <span className="text-xs text-amber-600 dark:text-amber-400" title={cartao.retencao.motivo ?? undefined}>
+                não medida — {cartao.retencao.motivo}
+              </span>
+            ) : (
+              <span
+                className="text-sm font-medium tabular-nums"
+                title={`${cartao.retencao.numerador.toLocaleString("pt-BR")} ÷ ${cartao.retencao.denominador.toLocaleString("pt-BR")} (truncada)`}
+              >
+                {cartao.retencao.texto}
+              </span>
+            )}
+          </div>
+          <div className="flex items-baseline justify-between gap-3 py-1.5">
+            <span className="text-xs text-muted-foreground">Conversão pós-pitch</span>
+            {cartao.convPostPitch.denominador == null ? (
+              <span className="text-xs text-amber-600 dark:text-amber-400" title={cartao.convPostPitch.motivo ?? undefined}>
+                não medida — {cartao.convPostPitch.motivo}
+              </span>
+            ) : (
+              <span className="text-xs text-muted-foreground">
+                denominador medido: {cartao.convPostPitch.denominador.toLocaleString("pt-BR")} · numerador manual
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-0.5 text-[11px] text-muted-foreground">
+        <p>{DICA_DA_SOMA}</p>
+        <p>{AVISO_DA_CADEIA}</p>
+        {cartao.foraDaRetencao.length > 0 && (
+          <p className="text-amber-600 dark:text-amber-400">
+            Fora da Retenção (pitch não configurado no VTurb): {cartao.foraDaRetencao.join(", ")}
+          </p>
+        )}
+        {cartao.foraPorFalha.map((f) => (
+          <p key={f.nome} className="text-red-600 dark:text-red-400">
+            Fora da soma — falha na leitura: {f.nome} ({f.erro})
+          </p>
+        ))}
+      </div>
+
+      <div className="space-y-0.5 border-t border-border/20 pt-2 text-[10px] text-muted-foreground">
+        <p>VTurb — /sessions/stats, pitch atual de /players/list:</p>
+        {cartao.proveniencia.map((linha) => (
+          <p key={linha}>{linha}</p>
+        ))}
+        <p className="tabular-nums">
+          Janela {cartao.janela.startDate} → {cartao.janela.endDate} ({cartao.janela.timezone})
+        </p>
+      </div>
+    </div>
+  );
+}
+
 interface Props {
   funnel: Funnel;
   projectId: string;
@@ -222,13 +347,31 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
   // permite afirmar que a cadeia mede a MESMA janela do resto da aba — e
   // exibi-la na tela é o que torna isso conferível.
   const janela = useMemo(() => janelaDaAba(mvpDays, mvpRange), [mvpDays, mvpRange]);
-  const { data: vturbChain, error: vturbError } = useVturbChain(projectId, funnel.id, janela);
+  // Story 29.81 (AC2/AC3, caminho A): TODOS os vídeos do funil pela `/vsls` da
+  // 29.78, com o pitch atual. A `/chain` (um vídeo, cópia do pitch) só é pedida
+  // quando a `/vsls` responde 404 — API antiga (AC9); pedir as duas dobraria a
+  // cota do VTurb.
+  const vsls = useVturbFunnelVsls(projectId, funnel.id, janela);
+  const usarChain = leituraDaChainNecessaria(vsls.error);
+  const { data: vturbChain, error: vturbError } = useVturbChain(usarChain ? projectId : null, funnel.id, janela);
+  const vturbMvp = useMemo(
+    () => montarVturbDaMvp({ vsls: vsls.data, erroVsls: vsls.error, chain: vturbChain }),
+    [vsls.data, vsls.error, vturbChain],
+  );
 
   // Story 29.44 (AC5): a janela imediatamente anterior, de mesma duração. A
   // aritmética vive em `mvp-window.ts` com teste próprio — foi exatamente aqui
   // que a story errou por um dia na primeira escrita.
+  // Story 29.81 (AC6): a mesma leitura e as mesmas regras na janela anterior —
+  // senão o delta compararia um Σ com um vídeo só.
   const janelaPrev = useMemo(() => janelaAnterior(janela), [janela]);
-  const { data: vturbChainAnterior } = useVturbChain(projectId, funnel.id, janelaPrev);
+  const vslsAnterior = useVturbFunnelVsls(projectId, funnel.id, janelaPrev);
+  const usarChainAnterior = leituraDaChainNecessaria(vslsAnterior.error);
+  const { data: vturbChainAnterior } = useVturbChain(usarChainAnterior ? projectId : null, funnel.id, janelaPrev);
+  const vturbMvpAnterior = useMemo(
+    () => montarVturbDaMvp({ vsls: vslsAnterior.data, erroVsls: vslsAnterior.error, chain: vturbChainAnterior }),
+    [vslsAnterior.data, vslsAnterior.error, vturbChainAnterior],
+  );
 
   const { data: salesData } = usePerpetualSalesData(
     projectId,
@@ -359,19 +502,11 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
               totalSales: overview.totalSales ?? null,
             }
           : null,
-        vturb: vturbChain
-          ? {
-              playerName: vturbChain.player.name,
-              playerId: vturbChain.player.playerId,
-              viewedUniq: vturbChain.brutos.viewedUniq,
-              startedUniq: vturbChain.brutos.startedUniq,
-              overPitch: vturbChain.brutos.overPitch,
-              playRate: vturbChain.cadeia.playRate,
-              pitchRate: vturbChain.cadeia.pitchRate,
-            }
-          : null,
+        // Story 29.81 (AC4): o Σ dos vídeos (ou, na API antiga, a `/chain`).
+        vturb: vturbMvp.fontes,
+        motivoSemVturb: vturbMvp.motivoSemVturb,
       }),
-    [overview, vturbChain],
+    [overview, vturbMvp],
   );
 
   /**
@@ -390,19 +525,10 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
               totalSales: overviewAnterior.totalSales ?? null,
             }
           : null,
-        vturb: vturbChainAnterior
-          ? {
-              playerName: vturbChainAnterior.player.name,
-              playerId: vturbChainAnterior.player.playerId,
-              viewedUniq: vturbChainAnterior.brutos.viewedUniq,
-              startedUniq: vturbChainAnterior.brutos.startedUniq,
-              overPitch: vturbChainAnterior.brutos.overPitch,
-              playRate: vturbChainAnterior.cadeia.playRate,
-              pitchRate: vturbChainAnterior.cadeia.pitchRate,
-            }
-          : null,
+        vturb: vturbMvpAnterior.fontes,
+        motivoSemVturb: vturbMvpAnterior.motivoSemVturb,
       }),
-    [overviewAnterior, vturbChainAnterior],
+    [overviewAnterior, vturbMvpAnterior],
   );
 
   /**
@@ -523,7 +649,12 @@ export function PerpetualMvpAnalysis({ funnel, projectId, days, customRange }: P
       {/* ---- Story 29.41 — a cadeia da VSL medida pelo VTurb (AC3, AC4, AC5).
            Taxa medida e taxa digitada convivem na aba; sem distinção visual o
            usuário não sabe em qual confiar. ---- */}
-      <VturbChainCard chain={vturbChain} error={vturbError} janela={janela} />
+      {/* Story 29.81: o Σ dos vídeos; o cartão da 29.41 só no fallback da API antiga. */}
+      {vturbMvp.origem === "chain" ? (
+        <VturbChainCard chain={vturbChain} error={vturbError} janela={janela} />
+      ) : (
+        <VturbVslSomadaCard mvp={vturbMvp} janela={janela} />
+      )}
 
       {/* ---- Story 29.38 — falha ao CARREGAR a config.
            Sem isto, erro de carga e "funil ainda não configurado" produzem a

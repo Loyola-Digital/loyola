@@ -240,4 +240,14 @@
 // `applications-list` ganha `adId`, `lpUrl` e `lpCausa` (e `lp` vira a URL).
 // ADITIVA no formato; `packages/mcp` não é afetado. O web tem fallback: sem
 // `paginasPeloLinkDoAnuncio`, o gráfico e a lista seguem os textos da 43.6.
-export const API_CONTRACT_VERSION = 26;
+// v27 (Story 29.81): o feed público de VSL (43.5, `GET /api/public/meta/v1/
+// projects/:projectId/vsl-funnel`) passa a entregar em `pitchRate` a Retenção
+// ao pitch "igual o VTurb" — over ÷ (over + under), TRUNCADA em centésimos de
+// ponto percentual, com o pitch ATUAL de `/players/list` — e declara a base no
+// campo novo `pitchRateBase` (ADITIVO). A CHAVE é a mesma e o número muda
+// (NETÃO 5,76 % → 5,58 %): quem consome é externo (Slide 20), avisar antes.
+// Uma linha por vínculo, `playRate`/`convPostPitch*` iguais; `packages/mcp` não
+// é afetado (não tem tool de VSL). A Análise MVP passa a ler a `/vsls` da 29.78
+// (rota que já existe desde a v23); o web tem fallback: 404 da `/vsls` (API
+// antiga) = cartão e cadeia pela `/chain`, como eram.
+export const API_CONTRACT_VERSION = 27;

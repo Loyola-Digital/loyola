@@ -270,6 +270,10 @@ export function useVturbChain(
  * 60/min por conta): só é pedida com o bloco aberto (o `Collapsible` só monta
  * o conteúdo aberto), fica 2 min em cache e não repete em erro — um 404 aqui é
  * a API antiga, sem a rota, e insistir não muda isso.
+ *
+ * Story 29.81 — a aba Análise MVP também lê esta rota (nas duas janelas, a da
+ * aba e a anterior), no lugar da `/chain`; a `/chain` fica de fallback para o
+ * 404. Mesma chave de cache: janela igual à do bloco VSL não repete a chamada.
  */
 export function useVturbFunnelVsls(
   projectId: string | null,
