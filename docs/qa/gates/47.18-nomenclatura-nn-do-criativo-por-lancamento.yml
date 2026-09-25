@@ -1,0 +1,57 @@
+schema: 1
+story: '47.18'
+story_title: 'Nomenclatura — o NN do criativo reinicia por lançamento e por tipo'
+gate: PASS
+status_reason: 'O NN passou para o escopo (expert, sigla, nº, tipo) em todos os pontos que o leem: sugestão, montarAnuncio, 409, PATCH e script da 47.16. A migration 0159 é idempotente pela definição, e a prova do drizzle-kit 0.31.9 em PGlite, que re-rodei, confirma que o push do boot não a desfaz. Minhas 6 mutações: 5 caem; a que sobrevive é a ordem do CREATE/DROP, que só se confere lendo. Os 4 achados são low e não bloqueiam.'
+reviewer: 'Quinn'
+updated: '2026-09-25T20:55:00Z'
+branch: 'feat/47.18-nn-por-lancamento'
+commit_reviewed: 'a372c5da'
+
+top_issues:
+  - id: REL-001
+    severity: low
+    category: reliability
+    description: 'O AC2(a) depende de um comportamento do drizzle-kit 0.31.9: a introspecção de ÍNDICE não lê `indnullsnotdistinct` (bin.cjs ~19707). O `package.json` da API declara `^0.31.9`. Se um bump passar a ler a cláusula, o `schema.ts` (sem ela) e o banco (com ela) ficam diferentes, e o `push --force` do CMD derruba e recria o índice SEM `NULLS NOT DISTINCT` a cada boot. O índice perde a proteção do `perpetuo` (NULL) sem avisar. O serviço continua recusando a colisão, então sobra só a corrida.'
+    recommendation: 'Em todo bump de drizzle-kit/drizzle-orm, re-rodar a prova (S1: "boot seguinte, banco migrado → 0 statements"). Uma linha no comentário do `schema.ts` que aponte para essa verificação já basta. Opcional: fixar a versão exata.'
+    status: open
+
+  - id: TEST-001
+    severity: low
+    category: tests
+    description: 'Duas garantias da migration só se sustentam fora da suíte. (a) A prova do drizzle-kit está em `scratchpad/dk-proof/prova.mjs`, fora do repo. (b) A ordem "cria o novo antes de dropar o antigo" não tem guarda: na mutação M5 movi o `DROP INDEX IF EXISTS uq_naming_ads_expert_seq` para antes do `CREATE`, e a prova passou inteira ("TODAS AS EXIGÊNCIAS OK"). Esperado, porque a ordem só importa na janela entre os dois statements. Hoje o arquivo está correto e a garantia é a leitura dele.'
+    recommendation: 'Nada a fazer nesta story. Se o padrão "índice com NULLS NOT DISTINCT + push" se repetir, versionar a prova como script de `packages/api/src/scripts/` (PGlite em memória, sem produção).'
+    status: open
+
+  - id: DOC-001
+    severity: low
+    category: documentation
+    description: 'A 0159 é a primeira migration do repo com bloco `DO $$ … $$`, que tem `;` internos. O cabeçalho diz QUANDO aplicar, mas não COMO. Há scripts `apply-*-migration.ts` no repo que dividem o arquivo por `;` (ex.: `apply-funnel-mobile-migration.ts:19`). Por esse caminho o bloco quebra em pedaços e dá erro de sintaxe. A falha seria visível, não silenciosa.'
+    recommendation: 'Aplicar o arquivo inteiro em uma só chamada: `psql -f` ou `pool.query(conteúdoDoArquivo)`, sem dividir por `;`. Vale anotar no cabeçalho ou no passo do @devops.'
+    status: open
+
+  - id: REQ-001
+    severity: low
+    category: requirements
+    description: 'Borda do AC3b. `aoEscolherNoAnuncio` compara o nº do lançamento como TEXTO, e a chave da query usa `String(nnDe(...))`. Trocar "04" por "4" (apagar o zero) limpa o NN, mas a chave não muda, e com ela não mudam `proximo.data` nem o `useEffect`. O campo fica vazio, e a linha abaixo dele mostra "Próximo livre … : 0N". Como a prévia exige o NN, Salvar fica desabilitado até a pessoa digitar. É raro e não grava nada errado. Encontrei lendo o código; não reproduzi na tela.'
+    recommendation: 'Opcional: comparar pelo valor (`nnDe`) antes de limpar, ou limpar só quando o escopo calculado (`escopoDoNnDoEstado`) mudar.'
+    status: open
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Li o diff inteiro (21 arquivos). Um só predicado (`predicadoDoEscopoDoNn`) serve `seqsDoEscopo` e `porSeq`; `perpetuo` usa `IS NULL`. Um só decisor do escopo (`escopoDoNnDoCriativo`, no shared) roda na rota, no `montarAnuncio` e no gerador. O `!` em `montarAnuncio:157` é seguro, porque tipo, sigla e nº já foram validados acima. Rota: `launchSeq` com `z.coerce…min(1).max(99)`; o web só o envia quando é válido e a sigla não é `perpetuo`. Removidos sem resto: `seqsDoExpert`, `siglaParaSugestao` e `uq_naming_ads_expert_seq` (git grep: só comentários de teste invertido e a própria migration). Migration: o bloco `DO` confere `indisunique`, `indnullsnotdistinct`, `indpred`/`indexprs` nulos, a tabela e as 5 colunas NA ORDEM (via `indkey WITH ORDINALITY`); `NULL` = não existe, `false` = recria. Depois `CREATE … IF NOT EXISTS … NULLS NOT DISTINCT` e só então o `DROP` do antigo. Cabeçalho com a ordem segura (merge → deploy da API → contract 28 → 0159 → prova no `pg_indexes`), o re-rodar em caso de restart da API antiga, a prova e o rollback.'
+  migration_proof: 'Re-rodei `scratchpad/dk-proof/prova.mjs` com drizzle-kit 0.31.9 + drizzle-orm 0.45.1 (as mesmas versões de `packages/api/node_modules`) sobre o arquivo 0159 da branch, em PGlite, sem tocar em produção: TODAS AS EXIGÊNCIAS OK. S1 (push da API nova antes da migration cria o índice sem a cláusula; a migration corrige; boot seguinte = 0 statements; 2ª execução idêntica; 23505 nos dois repetidos, e os de outro lançamento ou tipo passam). S2 (migration antes do merge, deploy = 0 statements). S3 (restart da API antiga desfaz; re-rodar restaura). S4 (`unique().nullsNotDistinct()` = DROP+ADD a cada boot). O índice da prova é cópia literal do `schema.ts` (mesmas 5 colunas, mesma ordem; tipos e nulidade conferidos em `schema.ts:5320-5378`). Mutação M4 (bloco `DO` sem `AND ix.indnullsnotdistinct`) → 2 exigências FALHAM ("corrige pela definição" e "re-rodar restaura"). Mutação M5 (DROP antes do CREATE) → sobrevive (TEST-001).'
+  autonomous_decisions: '(1) `siglaParaSugestao` removida: CORRETA. Sem chamador depois de o `perpetuo` ir à rota. A sugestão do nº com `perpetuo` segue suspensa na rota (`!siglaSemNumero`) e em `comSugestaoDoLancamento:366`. O teste foi invertido (fio: `not.toMatch(/siglaParaSugestao/)`). (2) Prova do script filtra (dg, adv, perpetuo) SEM `launch_seq`: CORRETA. Um `perpetuo` com nº aparece como divergência em vez de sumir, e o `porSeq` usa o escopo completo do índice. (3) 409 da edição com `sugestao: null` e `campo: creativeSeq`: é o AC5 literal. No web, `!editando &&` antes de aplicar a sugestão. (4) API antiga, sem `escopo`: não rotula E não preenche. Mais conservadora que o AC7, que pedia só "não rotula". O número da API antiga é por expert e preenchê-lo repetiria o sintoma do pedido, então está CORRETA. (5) `carr` por tipo: é o default do PO-09; continua [FALTA — Danilo] não bloqueante. (6) Contrato 28: é o próximo livre (main = 27), com a linha de histórico.'
+  unit_tests: 'Nomenclatura: API 4 arquivos 144/144; web 2 arquivos 41/41. Web completo: 121 arquivos, todos verdes. API completa: 5 arquivos com falha, as 10 do baseline alheio (funnel-stages-lead-inputs 3, projects 3, schema 2, instagram-routes 1, instagram 1), nenhuma de nomenclatura. MUTAÇÕES PRÓPRIAS, cada uma revertida com `git checkout`, `git diff` vazio no fim: M1 predicado sem `creative_type` (a sugestão ignora o tipo) → 3 falhas (repositório, `PgDialect`) · M1b web não manda o tipo para `/ads/proximo` → 1 falha · M2 `porSeq` sem o `launchSeq` → 1 falha (AC4, `PgDialect`) · M3 AC3b: trocar a sigla não limpa o NN → 1 falha · M4 migration sem `indnullsnotdistinct` → 2 exigências da prova falham · M5 migration DROP antes do CREATE → sobrevive (TEST-001).'
+  acceptance_criteria: 'AC1 ✓ (índice nas 5 colunas com NULLS NOT DISTINCT; testes com `perpetuo` repetido → 409, `pg02` × `pg03` e `ad` × `carr` aceitos) · AC2 ✓ (a) push = 0 statements no banco migrado (prova re-rodada); (b) idempotente pela definição (M4 cai); (c) SELECT de prova no cabeçalho; o SELECT só leitura do @dev registra 0 colisões nas 6 linhas · AC3 ✓ (`pg05` → 01; `perpetuo` → sequência própria; escopo incompleto → `escopo: null` e o texto do que falta; `launchSeqSugerido` intacto) · AC3b ✓ (M3 cai; borda em REQ-001) · AC4 ✓ (dono NO escopo na mensagem; corrida com `uq_naming_ads_escopo_seq` → 409) · AC5 ✓ (PATCH para escopo ocupado → 409 sem sugestão e nada gravado, inclusive `pg` → `perpetuo`; escopo livre → 200 com o mesmo NN) · AC6 ✓ ("Próximo livre de dg em pg05 (ad): 01", "em perpetuo (adv)"; o texto antigo saiu) · AC7 ✓ (27 → 28; fallback por ausência de `escopo`) · AC8 ✓ (os testes pedidos existem e os da regra antiga foram invertidos) · AC9 ✓ (rodados aqui: eslint dos 18 .ts/.tsx = 0; tsc shared 0, api 0, web 0 depois do `next build`; `next build --turbopack` EXIT 0).'
+  no_regressions: 'Web 100% verde. API sem falha nova. 47.16: script dos 6 no escopo (adv, perpetuo), com testes invertidos e PO-05 coberto. 47.10: duplicar continua limpando o NN, e editar outro campo no mesmo escopo não colide consigo (`ignorarSeqDe`).'
+  performance: 'N/A: tabela com 6 linhas. O índice novo cobre o predicado do escopo (prefixo `expert_id, launch_type, launch_seq, creative_type`). A query do próximo NN troca de chave quando o escopo muda, com `staleTime: 0` como antes.'
+  security: 'N/A: sem rota nova; os 2 parâmetros novos da GET passam pelo zod (tamanho e faixa) e vão ao SQL por parâmetro do drizzle. Guest → 403 inalterado.'
+  documentation: 'Spec do epic `:463` reescrita (PO-08) e regra do D23 complementada. Comentários do `schema.ts`, da migration e do `contract.ts` explicam o porquê. Achado sobre o método de aplicação: DOC-001.'
+  api_contract: 'SOBE 27 → 28, com a linha de histórico em `packages/shared/src/contract.ts` (base `origin/main` = 27). A rota `GET /ads/proximo` ganha parâmetros, muda o significado de `creativeSeq` e ganha o campo `escopo`. `packages/mcp` não chama a rota (git grep).'
+
+notes:
+  - 'Pendente (DoD, operação, @devops/Danilo): merge → deploy da API → `contract: 28` em `/api/health` → aplicar a 0159 (arquivo inteiro, ver DOC-001) → `SELECT indexname, indexdef FROM pg_indexes WHERE tablename = ''naming_ads''` colado na story. Se a API antiga reiniciar depois da migration, re-rodar a 0159.'
+  - 'Pendente: validação visual (dg + ad + pg05 → 01; dg + adv + perpetuo → 07; trocar de um para o outro troca o NN) e confirmação do `carr` (PO-09).'
+  - 'Não apliquei nada em produção e não abri conexão com o banco nesta rodada.'
