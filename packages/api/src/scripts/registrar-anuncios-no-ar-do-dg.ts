@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import * as schema from "../db/schema.js";
 import { criarRepositorio } from "../services/nomenclatura/repositorio.js";
-import { ANUNCIOS_DO_DG_NO_AR, EXPERT_DOS_ANUNCIOS_NO_AR, modoDoRegistro, provarRegistro, registrarAnunciosNoAr, type LinhaDeProva } from "../services/nomenclatura/anuncios-no-ar.js";
+import { ANUNCIOS_DO_DG_NO_AR, ESCOPO_DOS_ANUNCIOS_NO_AR, EXPERT_DOS_ANUNCIOS_NO_AR, modoDoRegistro, provarRegistro, registrarAnunciosNoAr, type LinhaDeProva } from "../services/nomenclatura/anuncios-no-ar.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
@@ -48,17 +48,21 @@ async function main(): Promise<number> {
     if (!aplicar) return 0;
 
     // PO-05b — a prova: os 6 `name` byte a byte, NN 1–6, launch_seq NULL, origem ia, hook/body do dg.
-    const linhas = await pool.query<{ creative_seq: number; name: string; structure: string; launch_type: string; launch_seq: number | null; origin: string | null; hook: string | null; body: string | null }>(
-      `SELECT a.creative_seq, a.name, a.structure, a.launch_type, a.launch_seq, a.origin, h.code AS hook, b.code AS body
+    // Story 47.18 (PO-05): NO ESCOPO dos 6 (dg, adv, perpetuo) — o NN reinicia por lançamento e tipo, e um
+    // `ad01` num `pg` do dg também tem NN 1. O `launch_seq` fica fora do WHERE: um `perpetuo` com número tem de
+    // aparecer na prova como divergência, não sumir dela.
+    const linhas = await pool.query<{ creative_type: string; creative_seq: number; name: string; structure: string; launch_type: string; launch_seq: number | null; origin: string | null; hook: string | null; body: string | null }>(
+      `SELECT a.creative_type, a.creative_seq, a.name, a.structure, a.launch_type, a.launch_seq, a.origin, h.code AS hook, b.code AS body
          FROM naming_ads a
          JOIN naming_experts e ON e.id = a.expert_id
     LEFT JOIN naming_ad_parts h ON h.id = a.hook_id AND h.expert_id = a.expert_id AND h.type = 'hook'
     LEFT JOIN naming_ad_parts b ON b.id = a.body_id AND b.expert_id = a.expert_id AND b.type = 'body'
         WHERE e.code = $1 AND a.creative_seq = ANY($2::int[])
+          AND a.creative_type = $3 AND a.launch_type = $4
      ORDER BY a.creative_seq`,
-      [EXPERT_DOS_ANUNCIOS_NO_AR, ANUNCIOS_DO_DG_NO_AR.map((a) => a.creativeSeq)],
+      [EXPERT_DOS_ANUNCIOS_NO_AR, ANUNCIOS_DO_DG_NO_AR.map((a) => a.creativeSeq), ESCOPO_DOS_ANUNCIOS_NO_AR.creativeType, ESCOPO_DOS_ANUNCIOS_NO_AR.launchType],
     );
-    const prova: LinhaDeProva[] = linhas.rows.map((l) => ({ creativeSeq: l.creative_seq, name: l.name, structure: l.structure, launchType: l.launch_type, launchSeq: l.launch_seq, origin: l.origin, hookCode: l.hook, bodyCode: l.body }));
+    const prova: LinhaDeProva[] = linhas.rows.map((l) => ({ creativeType: l.creative_type, creativeSeq: l.creative_seq, name: l.name, structure: l.structure, launchType: l.launch_type, launchSeq: l.launch_seq, origin: l.origin, hookCode: l.hook, bodyCode: l.body }));
     for (const l of prova) console.log(`  ${String(l.creativeSeq).padStart(2, "0")} ${JSON.stringify(l.name)} launch_seq=${l.launchSeq} origin=${l.origin} ${l.hookCode}/${l.bodyCode}`);
     const divergencias = provarRegistro(prova);
     if (divergencias.length) {

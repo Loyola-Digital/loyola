@@ -17,10 +17,14 @@ import { describe, expect, it } from "vitest";
 const ler = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf-8");
 const gerador = ler("../../../components/nomenclatura/ads/gerador-de-anuncio.tsx");
 const lista = ler("../../../components/nomenclatura/ads/lista-de-anuncios.tsx");
+const hooks = ler("../../hooks/use-nomenclatura.ts");
 
 describe("gerador de anúncio — as ligações da 47.16", () => {
-  it("AC7: a sugestão do número não roda com perpetuo — sigla via siglaParaSugestao, preenchimento via comSugestaoDoLancamento", () => {
-    expect(gerador).toMatch(/useProximoNnDeAnuncio\(editando \? "" : estado\.expertId, siglaParaSugestao\(estado\)\)/);
+  // Story 47.18 (AC3, PO-06) — INVERTIDO: na 47.16 a sigla ia por `siglaParaSugestao` (que omitia perpetuo); agora o
+  // escopo inteiro vai por `parametrosDoProximoNn` — perpetuo inclusive. O preenchimento do NÚMERO segue em comSugestaoDoLancamento.
+  it("AC7 + 47.18: o escopo do NN vai por parametrosDoProximoNn (perpetuo chega à rota); o número, via comSugestaoDoLancamento", () => {
+    expect(gerador).toMatch(/useProximoNnDeAnuncio\(editando \? "" : estado\.expertId, parametrosDoProximoNn\(estado\)\)/);
+    expect(gerador).not.toMatch(/siglaParaSugestao/);
     expect(gerador).toMatch(/setEstado\(\(e\) => comSugestaoDoLancamento\(e, proximo\.data\?\.launchSeqSugerido\)\)/);
     // o preenchimento inline antigo (que ignorava a sigla) não pode voltar
     expect(gerador).not.toMatch(/launchSeq: String\(proximo\.data!?\.launchSeqSugerido\)/);
@@ -50,6 +54,32 @@ describe("gerador de anúncio — as ligações da 47.16", () => {
   it("MNT-001: \"Copiar nome completo\" depende só de haver nome (a comparação com a estrutura era código morto)", () => {
     expect(gerador).toMatch(/disabled=\{!previa\.nome\} onClick=\{\(\) => previa\.nome && void copiarTexto\(previa\.nome\)\}/);
     expect(gerador).not.toMatch(/previa\.nome === previa\.estrutura/);
+  });
+});
+
+describe("gerador de anúncio — as ligações da 47.18 (NN por lançamento e por tipo)", () => {
+  it("AC3/AC7: o NN só é preenchido por comSugestaoDoNn (escopo igual, API nova) — o preenchimento inline antigo não volta", () => {
+    expect(gerador).toMatch(/if \(!editando\) setEstado\(\(e\) => comSugestaoDoNn\(e, proximo\.data\)\);/);
+    expect(gerador).not.toMatch(/creativeSeq: proximo\.data!?\.creativeSeqTexto/);
+  });
+  it("AC3b: tipo, sigla e nº passam por aoEscolherNoAnuncio com { editando } — o nº do lançamento também (não mais setEstado inline)", () => {
+    expect(gerador).toMatch(/const escolher = \(campo: keyof EstadoDoAnuncio\) => \(v: string\) => setEstado\(\(e\) => aoEscolherNoAnuncio\(e, campo, v, \{ editando \}\)\);/);
+    expect(gerador).toMatch(/setEstado\(\(s\) => aoEscolherNoAnuncio\(s, "launchSeq", v, \{ editando \}\)\)/);
+    expect(gerador).not.toMatch(/launchSeq: e\.target\.value/);
+  });
+  it("AC6/AC7: a linha do NN vem de textoDoNnDoCriativo (com a falha da consulta); o texto \"Sequência única por expert\" saiu", () => {
+    expect(gerador).toMatch(/const dicaDoNn = textoDoNnDoCriativo\(\{ estado, resposta: proximo\.data, expertCode, editando, erro: proximo\.error \? erroDaApi\(proximo\.error\)\.mensagem : null \}\);/);
+    expect(gerador).toMatch(/dicaDoNn\.aviso \? "text-warning" : "text-muted-foreground"\)\}>\{dicaDoNn\.texto\}/);
+    expect(gerador).not.toMatch(/Sequência única por expert/);
+    expect(gerador).not.toMatch(/nnOcupado/);
+  });
+  it("AC5: o 409 com sugestão só troca o NN fora da edição", () => {
+    expect(gerador).toMatch(/if \(!editando && err\.status === 409 && err\.corpo\?\.sugestao\) setEstado/);
+  });
+  it("AC7: o hook manda tipo e nº à rota e os põe na chave da query (trocar o escopo refaz a consulta)", () => {
+    expect(hooks).toMatch(/queryKey: \["nomenclatura", "ads", "proximo", expertId, p\.launchType \?\? "", p\.creativeType \?\? "", p\.launchSeq \?\? ""\]/);
+    expect(hooks).toMatch(/query\(\{ expertId, launchType: p\.launchType, creativeType: p\.creativeType, launchSeq: p\.launchSeq \}\)/);
+    expect(hooks).toMatch(/apiClient<RespostaDoProximoNn>/);
   });
 });
 

@@ -296,16 +296,29 @@ describe("Story 47.3: campanhas.listar — filtros vão para o SQL, não para a 
     expect(await criarRepositorio(b.db).vslsQueUsam("leadId", "l1")).toBe(3);
     expect(sqlDe(b.registros[0].where).sql).toMatch(/"lead_id" = /);
   });
-  it("47.10: anuncios.seqsDoExpert lê TODOS os NN do expert (sem filtro de tipo — sequência única); porSeq é expert + seq", async () => {
+  // Story 47.18 — INVERTIDO: na 47.10 o NN era "de TODOS os anúncios do expert (sem filtro de tipo)";
+  // agora é do ESCOPO (expert, sigla, nº do lançamento, tipo), com `perpetuo` (nº null) como IS NULL.
+  it("47.18: anuncios.seqsDoEscopo filtra expert + sigla + nº do lançamento + TIPO (o NN reinicia por lançamento e por tipo)", async () => {
     const a = fakeDb([[{ id: "a1", creativeSeq: 1 }]]);
-    await criarRepositorio(a.db).anuncios.seqsDoExpert(EXPERT);
+    await criarRepositorio(a.db).anuncios.seqsDoEscopo(EXPERT, { creativeType: "ad", launchType: "pg", launchSeq: 5 });
     const q = sqlDe(a.registros[0].where);
-    expect(q.sql).toMatch(/"expert_id" = /);
-    expect(q.sql).not.toMatch(/creative_type/);
-    expect(q.params).toEqual([EXPERT]);
+    expect(q.sql).toBe('("naming_ads"."expert_id" = $1 and "naming_ads"."launch_type" = $2 and "naming_ads"."launch_seq" = $3 and "naming_ads"."creative_type" = $4)');
+    expect(q.params).toEqual([EXPERT, "pg", 5, "ad"]);
+  });
+  it("47.18: com perpetuo (nº null) o escopo é launch_seq IS NULL — `= null` não casaria com nada e o NN recomeçaria em 01 no dg", async () => {
+    const a = fakeDb([[]]);
+    await criarRepositorio(a.db).anuncios.seqsDoEscopo(EXPERT, { creativeType: "adv", launchType: "perpetuo", launchSeq: null });
+    const q = sqlDe(a.registros[0].where);
+    expect(q.sql).toMatch(/"naming_ads"\."launch_seq" is null/);
+    expect(q.sql).not.toMatch(/"launch_seq" = /);
+    expect(q.params).toEqual([EXPERT, "perpetuo", "adv"]);
+  });
+  it("47.18 (AC4): porSeq procura o dono NO ESCOPO — expert + sigla + nº + tipo + NN", async () => {
     const b = fakeDb([[]]);
-    await criarRepositorio(b.db).anuncios.porSeq(EXPERT, 7);
-    expect(sqlDe(b.registros[0].where).params).toEqual([EXPERT, 7]);
+    await criarRepositorio(b.db).anuncios.porSeq(EXPERT, { creativeType: "adv", launchType: "pg", launchSeq: 1 }, 7);
+    const q = sqlDe(b.registros[0].where);
+    expect(q.sql).toMatch(/"creative_type" = .*"creative_seq" = /);
+    expect(q.params).toEqual([EXPERT, "pg", 1, "adv", 7]);
   });
   it("47.10: anuncios.listar filtra expert/tipo/sigla/período (ad_date >= e <=) e ILIKE no nome", async () => {
     const a = fakeDb([[], [{ n: 0 }]]);

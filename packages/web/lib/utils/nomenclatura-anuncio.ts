@@ -18,12 +18,16 @@ import {
   TIPOS_DE_PARTE_DO_VIDEO,
   TIPO_DE_CODIGO_DA_PARTE_DO_VIDEO,
   buildAdName,
+  escopoDoNnDoCriativo,
   formatoDoVideoGravado,
+  mesmoEscopoDoNn,
   mesAnoDe,
   pedacosDoAnuncio,
   siglaSemNumero,
+  textoDoEscopoDoNn,
   textoDoLancamento,
   type AdFields,
+  type EscopoDoNnDoCriativo,
   type BlocoDoAnuncio,
   type FormatoDoVideo,
   type PedacoDoAnuncio,
@@ -63,14 +67,23 @@ export interface EstadoDoAnuncio {
 export const ESTADO_VAZIO_DO_ANUNCIO: EstadoDoAnuncio = { expertId: "", creativeType: "", creativeSeq: "", launchType: "", launchSeq: "", date: "", description: "", notes: "", origin: "", hookId: "", bodyId: "" };
 
 /**
- * Trocar o expert limpa o NN do criativo (a sequência é por expert), o NN do
- * lançamento (a sugestão é por expert+sigla) e — Story 47.13 — hook e body
- * (são do expert). Trocar o tipo para algo que não é vídeo limpa origem, hook
- * e body (AC9: somem E são limpos). O resto fica.
+ * Story 47.18 (AC3b): os campos que formam o ESCOPO do NN do criativo — além
+ * do expert. Trocar qualquer um num anúncio NOVO limpa o NN (a sugestão do
+ * escopo novo o preenche), como já era ao trocar o expert.
  */
-export function aoEscolherNoAnuncio(estado: EstadoDoAnuncio, campo: keyof EstadoDoAnuncio, valor: string): EstadoDoAnuncio {
+const CAMPOS_DO_ESCOPO_DO_NN: readonly (keyof EstadoDoAnuncio)[] = ["creativeType", "launchType", "launchSeq"];
+
+/**
+ * Trocar o expert limpa o NN do criativo, o NN do lançamento (a sugestão é
+ * por expert+sigla) e — Story 47.13 — hook e body (são do expert). Trocar o
+ * tipo para algo que não é vídeo limpa origem, hook e body (AC9: somem E são
+ * limpos). Story 47.18 (AC3b): trocar tipo, sigla ou nº do lançamento também
+ * limpa o NN do criativo — ele é do escopo — MENOS na edição (`editando`),
+ * em que o NN é fixo depois de salvo (D23). O resto fica.
+ */
+export function aoEscolherNoAnuncio(estado: EstadoDoAnuncio, campo: keyof EstadoDoAnuncio, valor: string, opts: { editando?: boolean } = {}): EstadoDoAnuncio {
   if (estado[campo] === valor) return estado;
-  const proximo = { ...estado, [campo]: valor };
+  const proximo = { ...estado, [campo]: valor, ...(CAMPOS_DO_ESCOPO_DO_NN.includes(campo) && !opts.editando ? { creativeSeq: "" } : {}) };
   if (campo === "expertId") return { ...proximo, creativeSeq: "", launchSeq: "", hookId: "", bodyId: "" };
   if (campo === "launchType") return { ...proximo, launchSeq: "" };
   if (campo === "creativeType" && !ehVideo(valor)) return { ...proximo, origin: "", hookId: "", bodyId: "" };
@@ -169,7 +182,7 @@ export const CLASSE_DO_BLOCO_DO_ANUNCIO: Record<BlocoDoAnuncio, string> = {
 };
 
 export const LEGENDA_DO_ANUNCIO: { bloco: BlocoDoAnuncio; rotulo: string; descricao: string }[] = [
-  { bloco: "criativo", rotulo: "Criativo", descricao: "tipo + NN sequencial do expert" },
+  { bloco: "criativo", rotulo: "Criativo", descricao: "tipo + NN sequencial do lançamento, por tipo" },
   { bloco: "origem", rotulo: "Origem", descricao: "só vídeo: ia ou h" },
   { bloco: "identidade", rotulo: "Expert", descricao: "" },
   { bloco: "lancamento", rotulo: "Lançamento", descricao: "sigla + número do lançamento" },
@@ -259,11 +272,89 @@ export function formatoDoAnuncioGravado(a: { creativeType: string; name: string 
 }
 
 /**
- * Story 47.16 (AC7): a sigla que vai para `GET /ads/proximo` — a sugestão do
- * número do lançamento NÃO roda com `perpetuo` (não há número a sugerir).
+ * Story 47.18 — a resposta de `GET /ads/proximo`. `escopo` AUSENTE = API
+ * anterior ao contrato 28: ela descarta `creativeType`/`launchSeq` em silêncio
+ * e devolve o NN por expert (AC7). `escopo: null` = API nova com o escopo
+ * incompleto (nada a sugerir).
  */
-export function siglaParaSugestao(estado: Pick<EstadoDoAnuncio, "launchType">): string | undefined {
-  return estado.launchType && !siglaSemNumero(estado.launchType) ? estado.launchType : undefined;
+export interface RespostaDoProximoNn {
+  creativeSeq: number | null;
+  creativeSeqTexto: string | null;
+  launchSeqSugerido: number | null;
+  escopo?: EscopoDoNnDoCriativo | null;
+}
+
+/** A resposta veio de uma API que calcula o NN por escopo (contrato 28+) — reconhecida pela PRESENÇA de `escopo`. */
+export function respostaComEscopo(r: RespostaDoProximoNn | undefined): boolean {
+  return Boolean(r) && Object.prototype.hasOwnProperty.call(r, "escopo");
+}
+
+/** Story 47.18: o escopo do NN que o formulário tem agora — `null` enquanto falta tipo, sigla ou (fora do `perpetuo`) o nº. */
+export function escopoDoNnDoEstado(estado: Pick<EstadoDoAnuncio, "creativeType" | "launchType" | "launchSeq">): EscopoDoNnDoCriativo | null {
+  return escopoDoNnDoCriativo({ creativeType: estado.creativeType, launchType: estado.launchType, launchSeq: nnDe(estado.launchSeq) ?? null });
+}
+
+/**
+ * Story 47.18 (AC3, PO-06): os parâmetros de `GET /ads/proximo`. A sigla vai
+ * SEMPRE — inclusive `perpetuo`, que agora é escopo do NN (na 47.16 ela era
+ * omitida porque a rota só servia à sugestão do nº; essa sugestão continua
+ * suspensa com `perpetuo` na rota e em `comSugestaoDoLancamento`). O nº só vai
+ * válido e fora do `perpetuo`.
+ */
+export function parametrosDoProximoNn(estado: Pick<EstadoDoAnuncio, "creativeType" | "launchType" | "launchSeq">): { launchType?: string; creativeType?: string; launchSeq?: string } {
+  const n = siglaSemNumero(estado.launchType) ? undefined : nnDe(estado.launchSeq);
+  return { launchType: estado.launchType || undefined, creativeType: estado.creativeType || undefined, launchSeq: n === undefined ? undefined : String(n) };
+}
+
+/**
+ * Story 47.18 (AC3/AC3b/AC7): aplica o NN sugerido — só com o campo vazio, só
+ * de uma API que calcula por escopo, e só se a resposta é do escopo que o
+ * formulário tem AGORA (a resposta de um escopo anterior, ou a de uma API
+ * antiga, que conta por expert, não preenche).
+ */
+export function comSugestaoDoNn(estado: EstadoDoAnuncio, r: RespostaDoProximoNn | undefined): EstadoDoAnuncio {
+  if (estado.creativeSeq || !r?.creativeSeqTexto) return estado;
+  // Um só teste cobre os dois casos: a API antiga não manda `escopo` (undefined nunca casa) e a resposta velha manda outro.
+  if (!mesmoEscopoDoNn(r.escopo, escopoDoNnDoEstado(estado))) return estado;
+  return { ...estado, creativeSeq: r.creativeSeqTexto };
+}
+
+/** O que ainda falta para o escopo do NN, na ordem do formulário (AC3: a tela diz o que falta em vez de sugerir). */
+export function faltaNoEscopoDoNn(estado: Pick<EstadoDoAnuncio, "creativeType" | "launchType" | "launchSeq">): string[] {
+  const falta: string[] = [];
+  if (!estado.creativeType) falta.push("o tipo de criativo");
+  if (!estado.launchType) falta.push("a sigla do lançamento");
+  else if (!siglaSemNumero(estado.launchType) && nnDe(estado.launchSeq) === undefined) falta.push("o nº do lançamento");
+  return falta;
+}
+
+const juntarComE = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} e ${xs.at(-1)}`);
+
+/**
+ * Story 47.18 (AC3/AC6/AC7): a linha sob o campo "NN do criativo". `aviso`
+ * pinta de amarelo. Com a API antiga, NÃO rotula com escopo o número que ela
+ * calculou por expert — diz que a API está atrás e pede o NN digitado. `erro`:
+ * a consulta falhou (não é "buscando" nem "sem sugestão").
+ */
+export function textoDoNnDoCriativo(p: { estado: EstadoDoAnuncio; resposta: RespostaDoProximoNn | undefined; expertCode: string; editando: boolean; erro?: string | null }): { texto: string; aviso: boolean } {
+  const { estado, resposta, expertCode, editando, erro } = p;
+  if (editando) return { texto: "Fixo depois de salvo.", aviso: false };
+  if (!estado.expertId) return { texto: "Escolha o expert.", aviso: false };
+  // erro ≠ "buscando": a falha da consulta aparece como falha (lição de 26/08, erro virando ausência)
+  if (erro) return { texto: `Não foi possível buscar o próximo NN: ${erro}. Digite o NN ou tente de novo.`, aviso: true };
+  const expert = expertCode || "o expert";
+  if (resposta && !respostaComEscopo(resposta)) {
+    return { texto: `A API ainda não foi atualizada: o número que ela sugere conta todos os anúncios de ${expert}, não só os deste lançamento e tipo. Digite o NN.`, aviso: true };
+  }
+  const escopo = escopoDoNnDoEstado(estado);
+  if (!escopo) return { texto: `Escolha ${juntarComE(faltaNoEscopoDoNn(estado))} para sugerir o NN — ele conta por lançamento e por tipo.`, aviso: false };
+  const onde = textoDoEscopoDoNn(escopo);
+  if (!resposta || !mesmoEscopoDoNn(resposta.escopo, escopo)) return { texto: `Buscando o próximo livre de ${expert} em ${onde}…`, aviso: false };
+  if (!resposta.creativeSeqTexto) return { texto: `Os 99 NN de ${expert} em ${onde} estão usados.`, aviso: true };
+  if (estado.creativeSeq && estado.creativeSeq !== resposta.creativeSeqTexto) {
+    return { texto: `Próximo livre de ${expert} em ${onde}: ${resposta.creativeSeqTexto}. Um NN já usado neste lançamento e tipo é recusado ao salvar.`, aviso: true };
+  }
+  return { texto: `Próximo livre de ${expert} em ${onde}: ${resposta.creativeSeqTexto}.`, aviso: false };
 }
 
 /**

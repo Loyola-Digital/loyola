@@ -22,6 +22,12 @@
  * dele (v2/antigo, lido do `name`); com a API atrás, Salvar explica em vez de
  * repassar o 400 do zod.
  *
+ * Story 47.18: o NN do criativo reinicia por lançamento e por tipo — a
+ * sugestão pede o escopo (tipo, sigla com `perpetuo` inclusive, nº), só
+ * preenche com o escopo completo e da resposta do escopo atual; trocar tipo,
+ * sigla ou nº num anúncio novo limpa o NN; com a API atrás (sem `escopo` na
+ * resposta) a tela não rotula nem preenche; o 409 da edição não troca o NN.
+ *
  * As decisões estão em `lib/utils/nomenclatura-anuncio.ts`, com teste.
  */
 
@@ -50,6 +56,7 @@ import {
   LEGENDA_DO_ANUNCIO,
   aoEscolherNoAnuncio,
   comSugestaoDoLancamento,
+  comSugestaoDoNn,
   corpoDaEdicaoDoAnuncio,
   corpoDoAnuncio,
   estadoDeAnuncio,
@@ -57,10 +64,11 @@ import {
   formatoDoAnuncioGravado,
   mesAnoDe,
   mesCorrente,
+  parametrosDoProximoNn,
   previaDoAnuncio,
-  siglaParaSugestao,
   siglaSemNumero,
   textoDoLancamento,
+  textoDoNnDoCriativo,
   type EstadoDoAnuncio,
   type FormatoDoVideo,
   type PreviaDoAnuncio,
@@ -188,7 +196,8 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
   const padraoAntigo = formato === "antigo";
   // Story 47.16 (AC7): com `perpetuo` não há número — nem campo, nem sugestão.
   const semNumero = siglaSemNumero(estado.launchType);
-  const proximo = useProximoNnDeAnuncio(editando ? "" : estado.expertId, siglaParaSugestao(estado));
+  // Story 47.18 (AC3): o escopo do NN vai inteiro para a rota — `perpetuo` inclusive (PO-06).
+  const proximo = useProximoNnDeAnuncio(editando ? "" : estado.expertId, parametrosDoProximoNn(estado));
   // Story 47.16 (AC11): o veredito do contrato (29.46) — com a API atrás, Salvar explica em vez de repassar o 400.
   const saude = useApiHealth();
   const apiAtras = compareApiContract(saude.data?.contract, API_CONTRACT_VERSION).kind === "api-atras";
@@ -207,9 +216,10 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
     }
   }, [origem.data, modo.tipo]);
 
-  // AC8: o NN do criativo vem preenchido com o próximo livre; se a pessoa já digitou, não sobrescreve.
+  // AC8 (47.10) + 47.18 (AC3/AC7): o NN vem preenchido com o próximo livre DO ESCOPO atual — só com o campo vazio,
+  // só de resposta com `escopo` igual ao do formulário (resposta velha ou da API antiga, por expert, não preenche).
   useEffect(() => {
-    if (!editando && proximo.data?.creativeSeqTexto && !estado.creativeSeq) setEstado((e) => ({ ...e, creativeSeq: proximo.data!.creativeSeqTexto! }));
+    if (!editando) setEstado((e) => comSugestaoDoNn(e, proximo.data));
     if (!editando) setEstado((e) => comSugestaoDoLancamento(e, proximo.data?.launchSeqSugerido));
   }, [proximo.data, editando]);
 
@@ -226,8 +236,10 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
   const erroBodies = erroDaLista(bodies.error, "hooks e bodies");
   // 47.13 AC7 / 47.16 AC8: a prévia usa o formato do build (achado do QA na 47.13: sem ele, Salvar ficava desabilitado).
   const previa = useMemo(() => previaDoAnuncio(estado, experts.data ?? [], partes, { formato }), [estado, experts.data, partes, formato]);
-  const escolher = (campo: keyof EstadoDoAnuncio) => (v: string) => setEstado((e) => aoEscolherNoAnuncio(e, campo, v));
-  const nnOcupado = !editando && proximo.data?.creativeSeqTexto && estado.creativeSeq && estado.creativeSeq !== proximo.data.creativeSeqTexto;
+  // 47.18 (AC3b): trocar tipo/sigla/nº num anúncio novo limpa o NN (é do escopo); na edição o NN é fixo.
+  const escolher = (campo: keyof EstadoDoAnuncio) => (v: string) => setEstado((e) => aoEscolherNoAnuncio(e, campo, v, { editando }));
+  // 47.18 (AC6/AC7): "Próximo livre de dg em pg05 (ad): 01" — ou o que falta, ou a API atrás, ou a falha da consulta.
+  const dicaDoNn = textoDoNnDoCriativo({ estado, resposta: proximo.data, expertCode, editando, erro: proximo.error ? erroDaApi(proximo.error).mensagem : null });
   const opcoesDe = (xs: { value: string; description: string | null }[] | undefined) => (xs ?? []).map((v) => ({ value: v.value, rotulo: v.description ? `${v.value} — ${v.description}` : v.value }));
 
   async function salvar(eOutro = false) {
@@ -254,8 +266,8 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
     } catch (e) {
       const err = erroDaApi(e);
       setErro(err);
-      // AC10: corrida no NN — a API manda o próximo livre; já preenche.
-      if (err.status === 409 && err.corpo?.sugestao) setEstado((s) => ({ ...s, creativeSeq: String(err.corpo!.sugestao) }));
+      // AC10: corrida no NN — a API manda o próximo livre; já preenche. 47.18 (AC5): NUNCA na edição — o NN é fixo.
+      if (!editando && err.status === 409 && err.corpo?.sugestao) setEstado((s) => ({ ...s, creativeSeq: String(err.corpo!.sugestao) }));
     }
   }
 
@@ -302,14 +314,12 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
         <div className="space-y-1">
           <Label htmlFor="a-nn">NN do criativo</Label>
           <Input id="a-nn" value={estado.creativeSeq} onChange={(e) => setEstado((s) => ({ ...s, creativeSeq: e.target.value.replace(/\D/g, "").slice(0, 2) }))} placeholder="01" className="w-[140px] font-mono" disabled={editando || !estado.expertId} />
-          <p className={cn("text-xs", nnOcupado ? "text-warning" : "text-muted-foreground")}>
-            {editando ? "Fixo depois de salvo." : !estado.expertId ? "Escolha o expert." : proximo.data?.creativeSeqTexto ? (nnOcupado ? `Próximo livre é ${proximo.data.creativeSeqTexto}; um NN já usado é recusado ao salvar.` : `Próximo livre de ${experts.data?.find((e) => e.id === estado.expertId)?.code ?? "expert"}: ${proximo.data.creativeSeqTexto}.`) : "Sequência única por expert, qualquer tipo."}
-          </p>
+          <p className={cn("text-xs", dicaDoNn.aviso ? "text-warning" : "text-muted-foreground")}>{dicaDoNn.texto}</p>
         </div>
         <SelectDeValor id="a-sigla" label="Sigla do lançamento" valor={estado.launchType} onChange={escolher("launchType")} opcoes={opcoesDe(siglas.data)} carregando={siglas.isLoading} vazio="nenhuma sigla de lançamento ativa" cadastro={valoresFixos} />
         <div className="space-y-1">
           <Label htmlFor="a-lnn">Nº do lançamento</Label>
-          <Input id="a-lnn" value={semNumero ? "" : estado.launchSeq} onChange={(e) => setEstado((s) => ({ ...s, launchSeq: e.target.value.replace(/\D/g, "").slice(0, 2) }))} placeholder={semNumero ? "—" : "01"} className="w-[140px] font-mono" disabled={!estado.launchType || semNumero} />
+          <Input id="a-lnn" value={semNumero ? "" : estado.launchSeq} onChange={(e) => { const v = e.target.value.replace(/\D/g, "").slice(0, 2); setEstado((s) => aoEscolherNoAnuncio(s, "launchSeq", v, { editando })); }} placeholder={semNumero ? "—" : "01"} className="w-[140px] font-mono" disabled={!estado.launchType || semNumero} />
           <p className="text-xs text-muted-foreground">{semNumero ? "perpétuo não tem número — o lançamento entra no nome só como perpetuo." : proximo.data?.launchSeqSugerido ? `Último usado para esta sigla: ${String(proximo.data.launchSeqSugerido).padStart(2, "0")}.` : "O número do lançamento (pg02 = 2º lançamento pago)."}</p>
         </div>
         {/* Story 47.13 (AC9): hook e body DO expert — só em vídeo. Story 47.14 (AC4): sem cadastro, a própria frase é o link, com o expert. */}

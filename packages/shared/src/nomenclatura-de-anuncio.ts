@@ -184,6 +184,44 @@ export function textoDoLancamento(launchType: string, launchSeq: number | null |
   return temNumero(launchSeq) ? `${launchType}${doisDigitos(launchSeq)}` : launchType;
 }
 
+/**
+ * Story 47.18 — o escopo do NN do criativo, além do expert: o NN reinicia por
+ * lançamento (`{sigla}{NN}`) e por tipo — no `pg01` convivem `ad01`, `ad02`,
+ * `adv01`, `adv02`, e o `pg02` recomeça em `ad01`. Com `perpetuo` (sem número,
+ * 47.16) o nº é `null` e conta como UM valor (no banco, `NULLS NOT DISTINCT`
+ * na migration 0159). Era "único por expert, qualquer tipo" na 47.10.
+ */
+export interface EscopoDoNnDoCriativo {
+  creativeType: string;
+  launchType: string;
+  /** `null` só com `perpetuo`. */
+  launchSeq: number | null;
+}
+
+/**
+ * O escopo completo, ou `null` enquanto falta algo: tipo, sigla e — fora do
+ * `perpetuo` — o nº do lançamento. Com `perpetuo`, um nº que tenha vindo é
+ * ignorado (o lançamento não tem número). A MESMA função decide na rota do
+ * próximo NN e no gerador — a tela não sugere NN com escopo incompleto (AC3).
+ */
+export function escopoDoNnDoCriativo(p: { creativeType?: string | null; launchType?: string | null; launchSeq?: number | null }): EscopoDoNnDoCriativo | null {
+  if (!p.creativeType || !p.launchType) return null;
+  if (siglaSemNumero(p.launchType)) return { creativeType: p.creativeType, launchType: p.launchType, launchSeq: null };
+  if (!temNumero(p.launchSeq)) return null;
+  return { creativeType: p.creativeType, launchType: p.launchType, launchSeq: p.launchSeq };
+}
+
+/** Mesmo escopo — `null` nunca é igual a nada (escopo incompleto não casa com resposta nenhuma). */
+export function mesmoEscopoDoNn(a: EscopoDoNnDoCriativo | null | undefined, b: EscopoDoNnDoCriativo | null | undefined): boolean {
+  if (!a || !b) return false;
+  return a.creativeType === b.creativeType && a.launchType === b.launchType && a.launchSeq === b.launchSeq;
+}
+
+/** `pg05 (ad)` · `perpetuo (adv)` — como o escopo aparece em mensagem e na tela (AC6). */
+export function textoDoEscopoDoNn(e: EscopoDoNnDoCriativo): string {
+  return `${textoDoLancamento(e.launchType, e.launchSeq)} (${e.creativeType})`;
+}
+
 /** `Date` (ou `AAAA-MM-DD`) → `mm-aaaa`, no fuso de quem chama. */
 export function mesAnoDe(d: Date | string): string {
   if (typeof d === "string") {

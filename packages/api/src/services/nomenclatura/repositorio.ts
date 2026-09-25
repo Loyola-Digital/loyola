@@ -37,7 +37,7 @@ import {
 import { registrarNoChangelog, type AcaoDoChangelog } from "./changelog.js";
 import type { Conexao } from "./conexao.js";
 import type { Referencia } from "./regras.js";
-import { REGEX_LEGADA_SQL, type AdSnapshot, type DicionarioSnapshot, type VslSnapshot } from "@loyola-x/shared";
+import { REGEX_LEGADA_SQL, type AdSnapshot, type DicionarioSnapshot, type EscopoDoNnDoCriativo, type VslSnapshot } from "@loyola-x/shared";
 
 export type Expert = typeof namingExperts.$inferSelect;
 export type Produto = typeof namingProducts.$inferSelect;
@@ -127,6 +127,19 @@ export interface FiltrosDeCampanha {
   publicada?: boolean;
   limit: number;
   offset: number;
+}
+
+/**
+ * Story 47.18 — o predicado do escopo do NN do criativo, exportado para o teste
+ * renderizar com `PgDialect` (a lição do banco mockado: só o SQL prova o filtro).
+ */
+export function predicadoDoEscopoDoNn(expertId: string, escopo: EscopoDoNnDoCriativo) {
+  return and(
+    eq(namingAds.expertId, expertId),
+    eq(namingAds.launchType, escopo.launchType),
+    escopo.launchSeq === null ? isNull(namingAds.launchSeq) : eq(namingAds.launchSeq, escopo.launchSeq),
+    eq(namingAds.creativeType, escopo.creativeType),
+  );
 }
 
 export function criarRepositorio(db: Conexao) {
@@ -635,11 +648,17 @@ export function criarRepositorio(db: Conexao) {
       ]);
       return { itens, total: Number(n) };
     },
-    /** Todos os NN do expert — a base do "próximo livre" (regra 4: número não se reaproveita). */
-    seqsDoExpert: async (expertId: string) =>
-      db.select({ id: namingAds.id, creativeSeq: namingAds.creativeSeq }).from(namingAds).where(eq(namingAds.expertId, expertId)),
-    porSeq: async (expertId: string, creativeSeq: number) =>
-      (await db.select().from(namingAds).where(and(eq(namingAds.expertId, expertId), eq(namingAds.creativeSeq, creativeSeq))).limit(1))[0],
+    /**
+     * Story 47.18: todos os NN do ESCOPO — expert + sigla + nº do lançamento +
+     * tipo (era "do expert" na 47.10). A base do "próximo livre" (regra 4:
+     * número não se reaproveita dentro do escopo). `launchSeq` null (`perpetuo`)
+     * vira `IS NULL` — `= NULL` não casaria com nada.
+     */
+    seqsDoEscopo: async (expertId: string, escopo: EscopoDoNnDoCriativo) =>
+      db.select({ id: namingAds.id, creativeSeq: namingAds.creativeSeq }).from(namingAds).where(predicadoDoEscopoDoNn(expertId, escopo)),
+    /** O dono de um NN NO ESCOPO — o nome que o 409 mostra (AC4) e a colisão do script da 47.16. */
+    porSeq: async (expertId: string, escopo: EscopoDoNnDoCriativo, creativeSeq: number) =>
+      (await db.select().from(namingAds).where(and(predicadoDoEscopoDoNn(expertId, escopo), eq(namingAds.creativeSeq, creativeSeq))).limit(1))[0],
     /** Maior NN de lançamento já usado para (expert, sigla) — sugestão, não sequência (Q5). */
     maiorLancamento: async (expertId: string, launchType: string) => {
       const [r] = await db.select({ m: max(namingAds.launchSeq) }).from(namingAds).where(and(eq(namingAds.expertId, expertId), eq(namingAds.launchType, launchType)));
