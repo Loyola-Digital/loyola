@@ -19,12 +19,18 @@
  * duas vezes grava 6 e depois 0.
  */
 
-import { parseAdName, primeiroDiaDoMes, SIGLA_SEM_NUMERO, TIPO_DE_VIDEO, type AdSnapshot } from "@loyola-x/shared";
+import { parseAdName, primeiroDiaDoMes, SIGLA_SEM_NUMERO, TIPO_DE_VIDEO, type AdSnapshot, type EscopoDoNnDoCriativo } from "@loyola-x/shared";
 import type { Repositorio } from "./repositorio.js";
 
 export const EXPERT_DOS_ANUNCIOS_NO_AR = "dg";
 export const ORIGEM_DOS_ANUNCIOS_NO_AR = "ia";
 export const MES_DOS_ANUNCIOS_NO_AR = "09-2026";
+/**
+ * Story 47.18 (PO-05): o NN do criativo passou a ser único por (expert, sigla,
+ * nº, tipo). Os 6 são `adv` de `perpetuo` (sem número) — é NESTE escopo que o
+ * NN 1–6 colide; um `ad01` num `pg` do dg não é colisão.
+ */
+export const ESCOPO_DOS_ANUNCIOS_NO_AR: EscopoDoNnDoCriativo = { creativeType: TIPO_DE_VIDEO, launchType: SIGLA_SEM_NUMERO, launchSeq: null };
 
 export interface AnuncioNoAr {
   creativeSeq: number;
@@ -44,7 +50,7 @@ export const ANUNCIOS_DO_DG_NO_AR: readonly AnuncioNoAr[] = [
   { creativeSeq: 6, hook: "h06", body: "b06", name: "adv06_ia_dg_perpetuo_h06_b06_09-2026" },
 ];
 
-/** O que já ocupa o NN no expert (só o que a decisão precisa). */
+/** O que já ocupa o NN no escopo `(dg, adv, perpetuo)` (só o que a decisão precisa). */
 export interface NnOcupado {
   creativeSeq: number;
   name: string;
@@ -107,6 +113,8 @@ export function conferirNomes(snapshot: AdSnapshot, alvo: readonly AnuncioNoAr[]
 
 /** Uma linha de `naming_ads` do dg, com os códigos de hook/body já resolvidos — o que o SELECT de prova devolve. */
 export interface LinhaDeProva {
+  /** Story 47.18: o tipo entra na linha — a prova só olha o escopo `(adv, perpetuo, sem nº)`. */
+  creativeType: string;
   creativeSeq: number;
   name: string;
   structure: string;
@@ -117,10 +125,25 @@ export interface LinhaDeProva {
   bodyCode: string | null;
 }
 
-/** PO-05b — compara as linhas gravadas com os 6 literais, byte a byte. Vazio = provado. */
+/**
+ * Story 47.18 (PO-05): a linha é `adv` de `perpetuo` do dg — o escopo dos 6. O
+ * `launch_seq` fica FORA do filtro de propósito: um `perpetuo` com número é
+ * defeito de dado e tem de aparecer como divergência ("launch_seq: lido 0"),
+ * não sumir da prova.
+ */
+export function noEscopoDosAnunciosNoAr(l: Pick<LinhaDeProva, "creativeType" | "launchType">): boolean {
+  return l.creativeType === ESCOPO_DOS_ANUNCIOS_NO_AR.creativeType && l.launchType === ESCOPO_DOS_ANUNCIOS_NO_AR.launchType;
+}
+
+/**
+ * PO-05b — compara as linhas gravadas com os 6 literais, byte a byte. Vazio = provado.
+ * Story 47.18: só as linhas DO ESCOPO contam — com o NN reiniciando por
+ * lançamento e tipo, um `ad01` num `pg` do dg tem NN 1 e não é um dos 6 (sem
+ * o filtro, "esperadas 6, encontradas 7").
+ */
 export function provarRegistro(linhas: readonly LinhaDeProva[], alvo: readonly AnuncioNoAr[] = ANUNCIOS_DO_DG_NO_AR): string[] {
   const divergencias: string[] = [];
-  const doAlvo = linhas.filter((l) => alvo.some((a) => a.creativeSeq === l.creativeSeq));
+  const doAlvo = linhas.filter((l) => noEscopoDosAnunciosNoAr(l) && alvo.some((a) => a.creativeSeq === l.creativeSeq));
   if (doAlvo.length !== alvo.length) divergencias.push(`esperadas ${alvo.length} linhas com NN ${alvo.map((a) => a.creativeSeq).join(",")}, encontradas ${doAlvo.length}`);
   for (const a of alvo) {
     const l = doAlvo.find((x) => x.creativeSeq === a.creativeSeq);
@@ -193,12 +216,13 @@ export async function registrarAnunciosNoAr(r: Porta, opts: { aplicar: boolean; 
 
   const ocupados: NnOcupado[] = [];
   for (const a of alvo) {
-    const dono = await r.anuncios.porSeq(expert.id, a.creativeSeq);
+    // Story 47.18 (PO-05): o dono NO ESCOPO dos 6 — `ad01` de um `pg` do dg não colide com `adv01` de `perpetuo`.
+    const dono = await r.anuncios.porSeq(expert.id, ESCOPO_DOS_ANUNCIOS_NO_AR, a.creativeSeq);
     if (dono) ocupados.push({ creativeSeq: dono.creativeSeq, name: dono.name });
   }
   const plano = planejarRegistro(ocupados, alvo);
   if (plano.colisoes.length) {
-    throw new ErroDoRegistro(`NN já ocupado por OUTRO nome no ${expert.code} — nada foi gravado (PO-05c):\n  ${plano.colisoes.map((c) => `${c.anuncio.name} × ${c.ocupadoPor}`).join("\n  ")}`);
+    throw new ErroDoRegistro(`NN já ocupado por OUTRO nome no ${expert.code} (adv de perpetuo) — nada foi gravado (PO-05c):\n  ${plano.colisoes.map((c) => `${c.anuncio.name} × ${c.ocupadoPor}`).join("\n  ")}`);
   }
   if (!opts.aplicar) return { plano, aplicado: false, inseridos: [] };
 

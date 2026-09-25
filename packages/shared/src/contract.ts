@@ -250,4 +250,14 @@
 // é afetado (não tem tool de VSL). A Análise MVP passa a ler a `/vsls` da 29.78
 // (rota que já existe desde a v23); o web tem fallback: 404 da `/vsls` (API
 // antiga) = cartão e cadeia pela `/chain`, como eram.
-export const API_CONTRACT_VERSION = 27;
+// v28 (Story 47.18): o NN do criativo reinicia por lançamento e por tipo —
+// `GET /api/nomenclatura/ads/proximo` ganha `creativeType` e `launchSeq` (e
+// passa a considerar `launchType = perpetuo`), e `creativeSeq` muda de
+// significado: o próximo livre NO ESCOPO (expert, sigla, nº, tipo), `null`
+// enquanto o escopo está incompleto; campo novo `escopo` (o escopo calculado,
+// ou `null`). POST/PATCH `ads` validam o NN no escopo (índice
+// `uq_naming_ads_escopo_seq`, migration 0159). NÃO aditiva no significado: o
+// `z.object` da rota antiga descarta os parâmetros novos em silêncio e devolve
+// o NN por expert — o web reconhece a API antiga pela AUSÊNCIA de `escopo` e
+// não rotula nem preenche com escopo. `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 28;

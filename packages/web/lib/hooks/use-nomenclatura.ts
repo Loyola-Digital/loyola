@@ -24,6 +24,7 @@ import type { SugestaoDeClassificacao } from "@loyola-x/shared/src/nomenclatura-
 import type { TipoDeVariavel, VslParseResult, VslSnapshot } from "@loyola-x/shared/src/nomenclatura-de-vsl";
 import type { TipoDeParteDoVideo } from "@loyola-x/shared/src/nomenclatura-de-anuncio";
 import type { AdParseResult } from "@loyola-x/shared/src/nomenclatura-de-anuncio";
+import type { RespostaDoProximoNn } from "@/lib/utils/nomenclatura-anuncio";
 
 /** `vsl/variaveis` (Story 47.9) e `ads/partes` (Story 47.12) seguem o mesmo contrato CRUD, sob os prefixos `/vsl` e `/ads`. */
 export type Recurso = "experts" | "produtos" | "funis" | "ofertas" | "lps" | "dicionario" | "vsl/variaveis" | "ads/partes";
@@ -456,11 +457,17 @@ export interface Anuncio {
   legado?: boolean;
 }
 
-export function useProximoNnDeAnuncio(expertId: string, launchType?: string) {
+/**
+ * Story 47.18: o NN é do escopo (expert + sigla + nº + tipo) — os parâmetros
+ * saem de `parametrosDoProximoNn` e entram na chave (trocar o escopo refaz a
+ * consulta). A API anterior ao contrato 28 descarta os novos e responde sem
+ * `escopo` — quem decide o que fazer com isso é `comSugestaoDoNn`/`textoDoNnDoCriativo`.
+ */
+export function useProximoNnDeAnuncio(expertId: string, p: { launchType?: string; creativeType?: string; launchSeq?: string } = {}) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["nomenclatura", "ads", "proximo", expertId, launchType ?? ""],
-    queryFn: () => apiClient<{ creativeSeq: number | null; creativeSeqTexto: string | null; launchSeqSugerido: number | null }>(`${BASE}/ads/proximo${query({ expertId, launchType })}`),
+    queryKey: ["nomenclatura", "ads", "proximo", expertId, p.launchType ?? "", p.creativeType ?? "", p.launchSeq ?? ""],
+    queryFn: () => apiClient<RespostaDoProximoNn>(`${BASE}/ads/proximo${query({ expertId, launchType: p.launchType, creativeType: p.creativeType, launchSeq: p.launchSeq })}`),
     enabled: Boolean(expertId),
     // Nunca velho: alguém acabou de reservar o 03.
     staleTime: 0,

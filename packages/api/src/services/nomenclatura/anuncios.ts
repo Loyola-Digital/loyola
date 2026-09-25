@@ -7,9 +7,12 @@
  *
  * 1. exige expert ativo; tipo e sigla existentes E ativos no dicionário
  *    (regra 8 — valor desativado não entra em nome novo);
- * 2. resolve o NN do criativo: se veio, tem que estar livre no expert
- *    (contando TODOS os anúncios — regra 4, número não se reaproveita); se
- *    não veio, é o menor livre. O UNIQUE do banco fecha a corrida (D22);
+ * 2. resolve o NN do criativo: se veio, tem que estar livre no ESCOPO —
+ *    expert + sigla + nº do lançamento + tipo (Story 47.18; era "no expert",
+ *    qualquer tipo, na 47.10) — contando todos os anúncios do escopo (regra 4,
+ *    número não se reaproveita); se não veio, é o menor livre do escopo. O
+ *    UNIQUE do banco (`uq_naming_ads_escopo_seq`, migration 0159) fecha a
+ *    corrida (D22);
  * 3. normaliza a descrição (`normalizarCodigo`, tipo `anuncio`);
  * 4. monta `{ structure, name }` com `buildAdName` e devolve o que vai para
  *    `naming_ads`, com `ad_date` = primeiro dia do mês.
@@ -19,14 +22,14 @@
  * sai no v3; re-gravar um vídeo publicado mantém o formato dele (AC8).
  */
 
-import { buildAdName, ehVideo, normalizarCodigo, primeiroDiaDoMes, siglaSemNumero, type AdFields, type FormatoDoVideo } from "@loyola-x/shared";
+import { buildAdName, ehVideo, escopoDoNnDoCriativo, normalizarCodigo, primeiroDiaDoMes, siglaSemNumero, textoDoEscopoDoNn, type AdFields, type FormatoDoVideo } from "@loyola-x/shared";
 import { ErroDeNomenclatura } from "./regras.js";
 import type { Repositorio } from "./repositorio.js";
 
 export interface EntradaDeAnuncio {
   expertId: string;
   creativeType: string;
-  /** Opcional: sem ele o servidor usa o próximo livre do expert. */
+  /** Opcional: sem ele o servidor usa o próximo livre do escopo (expert + sigla + nº + tipo — Story 47.18). */
   creativeSeq?: number | null;
   launchType: string;
   /** Story 47.16: proibido com `perpetuo`, obrigatório (1–99) nas outras siglas — ausente = `null`/omitido. */
@@ -112,7 +115,7 @@ export function numeroDoLancamentoNoPatch(
   return antes.launchSeq;
 }
 
-/** Menor NN livre de 1 a 99 no expert (inclui tudo — não há "inativo" em anúncio). `null` quando os 99 acabaram. */
+/** Menor NN livre de 1 a 99 entre os `usados` (os do escopo — Story 47.18; não há "inativo" em anúncio). `null` quando os 99 acabaram. */
 export function proximoNnDeAnuncio(usados: readonly number[]): number | null {
   const set = new Set(usados);
   for (let n = 1; n <= 99; n++) if (!set.has(n)) return n;
@@ -122,6 +125,10 @@ export function proximoNnDeAnuncio(usados: readonly number[]): number | null {
 /**
  * `opts.formato`: o formato em que um vídeo publicado é RE-GRAVADO ao ser
  * editado (lido do `name` gravado — AC8, regra 6). Sem ele, nome novo: v3.
+ * `opts.ignorarSeqDe`: a EDIÇÃO (PATCH) — o próprio anúncio não conta como
+ * dono do NN dele. Story 47.18 (AC5): trocar sigla/nº revalida o NN no escopo
+ * NOVO, e a colisão é 409 que nomeia o dono SEM oferecer outro NN (o NN é fixo
+ * depois de salvo — D23).
  */
 export async function montarAnuncio(r: Repositorio, e: EntradaDeAnuncio, opts: { ignorarSeqDe?: string; formato?: FormatoDoVideo } = {}): Promise<AnuncioMontado> {
   const expert = await r.porId("experts", e.expertId);
@@ -145,18 +152,29 @@ export async function montarAnuncio(r: Repositorio, e: EntradaDeAnuncio, opts: {
 
   if (!primeiroDiaDoMes(e.date)) throw new ErroDeNomenclatura(400, `date: "${e.date}" não está em mm-aaaa`, { campo: "date" });
 
-  // NN do criativo: sequência única por expert, reservada na gravação.
-  const usados = (await r.anuncios.seqsDoExpert(expert.id)).filter((s) => s.id !== opts.ignorarSeqDe).map((s) => s.creativeSeq);
+  // NN do criativo: sequência por ESCOPO (Story 47.18) — expert + sigla + nº do lançamento + tipo —, reservada na gravação.
+  // Aqui o escopo é sempre completo: tipo e sigla existem e o nº já foi validado contra a sigla acima.
+  const escopo = escopoDoNnDoCriativo({ creativeType: tipo.value, launchType: sigla.value, launchSeq })!;
+  const edicao = opts.ignorarSeqDe !== undefined;
+  const usados = (await r.anuncios.seqsDoEscopo(expert.id, escopo)).filter((s) => s.id !== opts.ignorarSeqDe).map((s) => s.creativeSeq);
   const sugestao = proximoNnDeAnuncio(usados);
   let creativeSeq: number;
   if (e.creativeSeq === undefined || e.creativeSeq === null) {
-    if (sugestao === null) throw new ErroDeNomenclatura(409, `Sequência de criativos esgotada para ${expert.code} (99).`, { campo: "creativeSeq" });
+    if (sugestao === null) throw new ErroDeNomenclatura(409, `Sequência de criativos esgotada para ${expert.code} em ${textoDoEscopoDoNn(escopo)} (99).`, { campo: "creativeSeq" });
     creativeSeq = sugestao;
   } else {
     creativeSeq = e.creativeSeq;
     if (usados.includes(creativeSeq)) {
-      const dono = (await r.anuncios.porSeq(expert.id, creativeSeq))?.name ?? "?";
-      throw new ErroDeNomenclatura(409, `O NN ${String(creativeSeq).padStart(2, "0")} já é de ${dono}.${sugestao ? ` O próximo livre é ${String(sugestao).padStart(2, "0")}.` : ""}`, {
+      const nn = String(creativeSeq).padStart(2, "0");
+      const dono = (await r.anuncios.porSeq(expert.id, escopo, creativeSeq))?.name ?? "?";
+      // AC5: na edição o NN não muda — o 409 nomeia o dono e NÃO oferece outro NN (a tela não troca o campo).
+      if (edicao) {
+        throw new ErroDeNomenclatura(409, `O NN ${nn} já é de ${dono} em ${textoDoEscopoDoNn(escopo)}. O NN do criativo não muda depois de salvo — mantenha o lançamento ou duplique o anúncio.`, {
+          campo: "creativeSeq",
+          sugestao: null,
+        });
+      }
+      throw new ErroDeNomenclatura(409, `O NN ${nn} já é de ${dono} em ${textoDoEscopoDoNn(escopo)}.${sugestao ? ` O próximo livre é ${String(sugestao).padStart(2, "0")}.` : ""}`, {
         campo: "creativeSeq",
         sugestao: sugestao === null ? null : String(sugestao).padStart(2, "0"),
       });

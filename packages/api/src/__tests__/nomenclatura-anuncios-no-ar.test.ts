@@ -32,15 +32,22 @@ const snapDeProducao = (): AdSnapshot => ({
   ]),
 });
 
-/** Repositório em memória com só o que o registro usa. */
-function fake(opts: { anuncios?: { creativeSeq: number; name: string }[]; semParte?: string } = {}) {
+type Escopo = { creativeType: string; launchType: string; launchSeq: number | null };
+/** Repositório em memória com só o que o registro usa. Story 47.18: `porSeq` procura NO ESCOPO, como o de verdade. */
+function fake(opts: { anuncios?: ({ creativeSeq: number; name: string } & Escopo)[]; semParte?: string } = {}) {
   const anuncios: Record<string, unknown>[] = (opts.anuncios ?? []).map((a, i) => ({ id: `x${i}`, expertId: "DG", ...a }));
   const inseridos: Record<string, unknown>[] = [];
+  const escoposPedidos: Escopo[] = [];
   const repo = {
     experts: { porCode: async (code: string) => (code === "dg" ? { id: "DG", code: "dg", active: true } : undefined) },
     dicionario: { porValor: async (_t: string, value: string) => ({ value, active: true }) },
     adPartes: { porCode: async (_e: string, type: string, code: string) => (code === opts.semParte ? undefined : { id: `${type}-${code}`, code, type }) },
-    anuncios: { porSeq: async (_e: string, seq: number) => anuncios.find((a) => a.creativeSeq === seq) },
+    anuncios: {
+      porSeq: async (e: string, escopo: Escopo, seq: number) => {
+        escoposPedidos.push(escopo);
+        return anuncios.find((a) => a.expertId === e && a.creativeSeq === seq && a.creativeType === escopo.creativeType && a.launchType === escopo.launchType && a.launchSeq === escopo.launchSeq);
+      },
+    },
     snapshotDeAnuncios: async () => snapDeProducao(),
     inserir: async (_e: string, v: Record<string, unknown>) => {
       const linha = { id: `novo-${v.creativeSeq}`, ...v };
@@ -49,7 +56,7 @@ function fake(opts: { anuncios?: { creativeSeq: number; name: string }[]; semPar
       return linha;
     },
   };
-  return { repo: repo as unknown as Repositorio, anuncios, inseridos };
+  return { repo: repo as unknown as Repositorio, anuncios, inseridos, escoposPedidos };
 }
 
 describe("47.16 AC9 — os 6 anúncios do dg no ar", () => {
@@ -109,9 +116,10 @@ describe("47.16 AC9 — os 6 anúncios do dg no ar", () => {
   });
 
   it("registrarAnunciosNoAr: colisão PARA sem gravar nada (nem os 5 livres); sem --aplicar só planeja; hook ausente para", async () => {
-    const colide = fake({ anuncios: [{ creativeSeq: 2, name: "ad02_dg_pg04_09-2026" }] });
+    // Story 47.18: a colisão é NO ESCOPO dos 6 (adv, perpetuo, sem nº) — outro nome com o mesmo NN ali
+    const colide = fake({ anuncios: [{ creativeSeq: 2, name: "adv02_h_dg_perpetuo_09-2026", creativeType: "adv", launchType: "perpetuo", launchSeq: null }] });
     await expect(registrarAnunciosNoAr(colide.repo, { aplicar: true })).rejects.toThrow(ErroDoRegistro);
-    await expect(registrarAnunciosNoAr(colide.repo, { aplicar: true })).rejects.toThrow(/adv02_ia_dg_perpetuo_h02_b02_09-2026 × ad02_dg_pg04_09-2026/);
+    await expect(registrarAnunciosNoAr(colide.repo, { aplicar: true })).rejects.toThrow(/adv02_ia_dg_perpetuo_h02_b02_09-2026 × adv02_h_dg_perpetuo_09-2026/);
     expect(colide.inseridos).toEqual([]);
 
     const plano = fake();
@@ -125,6 +133,20 @@ describe("47.16 AC9 — os 6 anúncios do dg no ar", () => {
     expect(semHook.inseridos).toEqual([]);
   });
 
+  // Story 47.18 (PO-05) — INVERTIDO: na 47.16 o `ad02_dg_pg04_09-2026` colidia com o `adv02` (NN único por expert).
+  it("47.18 (PO-05): NN 1–6 do dg em OUTRO escopo (ad de pg04, adv de pg01) NÃO é colisão — grava os 6; porSeq recebe (adv, perpetuo, null)", async () => {
+    const f = fake({
+      anuncios: [
+        { creativeSeq: 2, name: "ad02_dg_pg04_09-2026", creativeType: "ad", launchType: "pg", launchSeq: 4 },
+        { creativeSeq: 1, name: "adv01_ia_dg_pg01_09-2026", creativeType: "adv", launchType: "pg", launchSeq: 1 },
+      ],
+    });
+    const r = await registrarAnunciosNoAr(f.repo, { aplicar: true });
+    expect(r.plano.colisoes).toEqual([]);
+    expect(r.inseridos).toHaveLength(6);
+    expect(new Set(f.escoposPedidos.map((e) => JSON.stringify(e)))).toEqual(new Set([JSON.stringify({ creativeType: "adv", launchType: "perpetuo", launchSeq: null })]));
+  });
+
   it("QA 47.16 TEST-003: modoDoRegistro — sem --aplicar PLANEJA (é o que autoriza rodar o plano em produção); só --aplicar exato grava", () => {
     expect(modoDoRegistro([])).toEqual({ aplicar: false });
     expect(modoDoRegistro(["node", "dist/scripts/registrar-anuncios-no-ar-do-dg.js"])).toEqual({ aplicar: false });
@@ -136,7 +158,7 @@ describe("47.16 AC9 — os 6 anúncios do dg no ar", () => {
   });
 
   it("provarRegistro (PO-05b): discrimina — 6 linhas certas passam; nome com `--`, launch_seq 0, origem h ou hook trocado não", () => {
-    const certas: LinhaDeProva[] = ANUNCIOS_DO_DG_NO_AR.map((a) => ({ creativeSeq: a.creativeSeq, name: a.name, structure: `${a.name}--`, launchType: "perpetuo", launchSeq: null, origin: "ia", hookCode: a.hook, bodyCode: a.body }));
+    const certas: LinhaDeProva[] = ANUNCIOS_DO_DG_NO_AR.map((a) => ({ creativeType: "adv", creativeSeq: a.creativeSeq, name: a.name, structure: `${a.name}--`, launchType: "perpetuo", launchSeq: null, origin: "ia", hookCode: a.hook, bodyCode: a.body }));
     expect(provarRegistro(certas)).toEqual([]);
     const com = (i: number, patch: Partial<LinhaDeProva>) => certas.map((l, j) => (j === i ? { ...l, ...patch } : l));
     expect(provarRegistro(com(0, { name: `${certas[0].name}--` }))).toEqual([expect.stringContaining("NN 1 name")]);
@@ -145,6 +167,15 @@ describe("47.16 AC9 — os 6 anúncios do dg no ar", () => {
     expect(provarRegistro(com(3, { hookCode: "h01" }))).toEqual(['NN 4 hook: lido "h01", esperado "h04"']);
     // contagem sozinha não basta, mas falta de linha também acusa
     expect(provarRegistro(certas.slice(0, 5))).toEqual(["esperadas 6 linhas com NN 1,2,3,4,5,6, encontradas 5", "NN 6: ausente"]);
+  });
+
+  it("47.18 (PO-05): provarRegistro só conta o escopo dos 6 — um ad01 do pg05 e um adv02 do pg01 do dg não viram \"encontradas 8\"", () => {
+    const certas: LinhaDeProva[] = ANUNCIOS_DO_DG_NO_AR.map((a) => ({ creativeType: "adv", creativeSeq: a.creativeSeq, name: a.name, structure: `${a.name}--`, launchType: "perpetuo", launchSeq: null, origin: "ia", hookCode: a.hook, bodyCode: a.body }));
+    const outrosEscopos: LinhaDeProva[] = [
+      { creativeType: "ad", creativeSeq: 1, name: "ad01_dg_pg05_09-2026", structure: "ad01_dg_pg05_09-2026--", launchType: "pg", launchSeq: 5, origin: null, hookCode: null, bodyCode: null },
+      { creativeType: "adv", creativeSeq: 2, name: "adv02_ia_dg_pg01_09-2026", structure: "adv02_ia_dg_pg01_09-2026--", launchType: "pg", launchSeq: 1, origin: "ia", hookCode: "h02", bodyCode: "b02" },
+    ];
+    expect(provarRegistro([...outrosEscopos, ...certas])).toEqual([]);
   });
 });
 
@@ -173,6 +204,11 @@ describe("47.16 AC9 — o script chama a lógica testada", async () => {
     expect(fonte.match(/process\.argv/g)).toHaveLength(1);
     expect(fonte).not.toMatch(/\baplicar\s*(=[^=]|\|\||&&|\?\?)/);
     expect(fonte).not.toMatch(/let aplicar|var aplicar/);
+  });
+  it("47.18 (PO-05): o SELECT de prova filtra o escopo dos 6 — tipo e sigla, além do expert e do NN", () => {
+    expect(fonte).toMatch(/AND a\.creative_type = \$3 AND a\.launch_type = \$4\n/);
+    expect(fonte).toMatch(/ESCOPO_DOS_ANUNCIOS_NO_AR\.creativeType, ESCOPO_DOS_ANUNCIOS_NO_AR\.launchType\]/);
+    expect(fonte).toMatch(/creativeType: l\.creative_type/);
   });
   it("termina com a prova byte a byte e sai ≠ 0 se divergir", () => {
     expect(fonte).toMatch(/const divergencias = provarRegistro\(prova\)/);

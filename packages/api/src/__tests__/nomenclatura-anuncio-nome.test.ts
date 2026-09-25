@@ -9,12 +9,15 @@ import {
   PERPETUO,
   SIGLA_SEM_NUMERO,
   buildAdName,
+  escopoDoNnDoCriativo,
   formatoDoVideoGravado,
+  mesmoEscopoDoNn,
   mesAnoDe,
   parseAdName,
   pedacosDoAnuncio,
   primeiroDiaDoMes,
   siglaSemNumero,
+  textoDoEscopoDoNn,
   textoDoLancamento,
   type AdSnapshot,
 } from "@loyola-x/shared";
@@ -101,11 +104,39 @@ describe("mm-aaaa", () => {
   });
 });
 
-describe("proximoNnDeAnuncio — sequência única por expert (Q3)", () => {
-  it("menor livre, contando todos os tipos; null depois de 99", () => {
+// Story 47.18 — INVERTIDO: na 47.10 (Q3) a lista era "todos os NN do expert, qualquer tipo"; agora quem chama
+// passa os NN do ESCOPO (expert + sigla + nº + tipo). A função em si é a mesma: menor livre de 1 a 99.
+describe("proximoNnDeAnuncio — menor livre entre os NN do escopo (47.18)", () => {
+  it("menor livre entre os usados do escopo; null depois de 99", () => {
     expect(proximoNnDeAnuncio([])).toBe(1);
     expect(proximoNnDeAnuncio([1, 2, 4])).toBe(3);
     expect(proximoNnDeAnuncio(Array.from({ length: 99 }, (_, i) => i + 1))).toBeNull();
+  });
+});
+
+describe("escopoDoNnDoCriativo — Story 47.18 (AC1/AC3)", () => {
+  it("completo: tipo + sigla + nº; com perpetuo o nº é null e um nº que venha é ignorado", () => {
+    expect(escopoDoNnDoCriativo({ creativeType: "ad", launchType: "pg", launchSeq: 5 })).toEqual({ creativeType: "ad", launchType: "pg", launchSeq: 5 });
+    expect(escopoDoNnDoCriativo({ creativeType: "adv", launchType: "perpetuo" })).toEqual({ creativeType: "adv", launchType: "perpetuo", launchSeq: null });
+    expect(escopoDoNnDoCriativo({ creativeType: "adv", launchType: "perpetuo", launchSeq: 4 })).toEqual({ creativeType: "adv", launchType: "perpetuo", launchSeq: null });
+  });
+  it("incompleto → null: sem tipo, sem sigla, ou sigla com número sem o nº", () => {
+    expect(escopoDoNnDoCriativo({ launchType: "pg", launchSeq: 5 })).toBeNull();
+    expect(escopoDoNnDoCriativo({ creativeType: "ad", launchSeq: 5 })).toBeNull();
+    expect(escopoDoNnDoCriativo({ creativeType: "ad", launchType: "pg" })).toBeNull();
+    expect(escopoDoNnDoCriativo({ creativeType: "ad", launchType: "pg", launchSeq: null })).toBeNull();
+    expect(escopoDoNnDoCriativo({ creativeType: "", launchType: "perpetuo" })).toBeNull();
+  });
+  it("mesmoEscopoDoNn compara os três (null ≠ tudo); textoDoEscopoDoNn = lançamento (tipo), perpetuo sem número", () => {
+    const pg05ad = { creativeType: "ad", launchType: "pg", launchSeq: 5 };
+    expect(mesmoEscopoDoNn(pg05ad, { ...pg05ad })).toBe(true);
+    expect(mesmoEscopoDoNn(pg05ad, { ...pg05ad, launchSeq: 4 })).toBe(false);
+    expect(mesmoEscopoDoNn(pg05ad, { ...pg05ad, creativeType: "adv" })).toBe(false);
+    expect(mesmoEscopoDoNn(pg05ad, { ...pg05ad, launchType: "l" })).toBe(false);
+    expect(mesmoEscopoDoNn(null, null)).toBe(false);
+    expect(mesmoEscopoDoNn(pg05ad, undefined)).toBe(false);
+    expect(textoDoEscopoDoNn(pg05ad)).toBe("pg05 (ad)");
+    expect(textoDoEscopoDoNn({ creativeType: "adv", launchType: "perpetuo", launchSeq: null })).toBe("perpetuo (adv)");
   });
 });
 

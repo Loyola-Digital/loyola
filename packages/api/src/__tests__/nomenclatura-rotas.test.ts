@@ -11,6 +11,9 @@ import nomenclaturaRoutes from "../routes/nomenclatura.js";
 import type { Repositorio } from "../services/nomenclatura/repositorio.js";
 
 type Linha = Record<string, unknown> & { id: string; active: boolean };
+type Escopo = { creativeType: string; launchType: string; launchSeq: number | null };
+/** Story 47.18: `launch_seq` NULL do `perpetuo` conta como UM valor (NULLS NOT DISTINCT) — `null === null`. */
+const noEscopo = (a: Record<string, unknown>, expertId: string, e: Escopo) => a.expertId === expertId && a.launchType === e.launchType && (a.launchSeq ?? null) === e.launchSeq && a.creativeType === e.creativeType;
 type Log = { entity: string; entityId: string; action: string; before: unknown; after: unknown; author: string | null };
 
 function memoria() {
@@ -58,8 +61,9 @@ function memoria() {
         const itens = t.anuncios.filter((a) => ["expertId", "creativeType", "launchType", "origin", "hookId", "bodyId"].every((k) => !f[k] || a[k] === f[k]) && (!f.q || String(a.name).includes(String(f.q))) && (!f.de || String(a.adDate) >= String(f.de)) && (!f.ate || String(a.adDate) <= String(f.ate)));
         return { itens, total: itens.length };
       },
-      seqsDoExpert: async (expertId: string) => t.anuncios.filter((a) => a.expertId === expertId).map((a) => ({ id: a.id, creativeSeq: a.creativeSeq as number })),
-      porSeq: async (expertId: string, seq: number) => t.anuncios.find((a) => a.expertId === expertId && a.creativeSeq === seq),
+      // Story 47.18: o NN é do ESCOPO (expert + sigla + nº + tipo) — o mesmo filtro que `predicadoDoEscopoDoNn` monta (provado com PgDialect no teste do repositório)
+      seqsDoEscopo: async (expertId: string, e: Escopo) => t.anuncios.filter((a) => noEscopo(a, expertId, e)).map((a) => ({ id: a.id, creativeSeq: a.creativeSeq as number })),
+      porSeq: async (expertId: string, e: Escopo, seq: number) => t.anuncios.find((a) => noEscopo(a, expertId, e) && a.creativeSeq === seq),
       maiorLancamento: async (expertId: string, launchType: string) => {
         // Story 47.16 (PO-11): como o `max` do SQL, ignora o NULL do `perpetuo`
         const xs = t.anuncios.filter((a) => a.expertId === expertId && a.launchType === launchType).map((a) => a.launchSeq).filter((x): x is number => typeof x === "number");
@@ -766,25 +770,90 @@ describe("rotas da nomenclatura", () => {
     expect(del.json()).toMatchObject({ podeDesativar: true, referencias: [{ tipo: "anuncio", rotulo: "ad01_bbe_pg02_09-2026" }] });
   });
 
-  it("47.10 AC3/AC4/AC8: NN sequencial ÚNICO por expert, qualquer tipo; sugestão pula os usados; NN ocupado → 409 com o dono e o próximo; estrutura e nome gravados", async () => {
+  // Story 47.18 — INVERTIDO: na 47.10 (AC3/AC8, Q3) o NN era "ÚNICO por expert, qualquer tipo" e o 2º criativo do
+  // expert era `02` mesmo sendo de outro tipo. Agora o NN reinicia por lançamento (`{sigla}{NN}`) e por tipo.
+  it("47.18 AC1/AC3/AC4: NN por (expert, sigla, nº, tipo) — sugestão no escopo; mesmo NN em outro lançamento ou outro tipo aceito; NN ocupado NO escopo → 409 com o dono DO escopo e o próximo", async () => {
     const { bbe, fz } = await adsBase(app);
+    // escopo incompleto (sem tipo e sem nº): nada a sugerir — a tela diz o que falta
     const p0 = (await app.inject({ method: "GET", url: `/api/nomenclatura/ads/proximo?expertId=${bbe.id}` })).json();
-    expect(p0).toEqual({ creativeSeq: 1, creativeSeqTexto: "01", launchSeqSugerido: null });
+    expect(p0).toEqual({ creativeSeq: null, creativeSeqTexto: null, launchSeqSugerido: null, escopo: null });
     const a1 = (await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), description: "Gancho Demissão" } })).json();
     expect(a1).toMatchObject({ creativeSeq: 1, structure: "ad01_bbe_pg02_09-2026--", name: "ad01_bbe_pg02_09-2026--gancho-demissao", adDate: "2026-09-01", expertCode: "bbe", legado: false });
-    const a2 = (await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), creativeType: "ad" } })).json();
-    expect(a2.structure).toBe("ad02_bbe_pg02_09-2026--"); // Q3: 2º criativo do expert, mesmo sendo outro tipo
+    // outro TIPO no mesmo lançamento: sequência própria (na 47.10 era carr02)
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), creativeType: "carr" } })).json().structure).toBe("carr01_bbe_pg02_09-2026--");
+    // outro LANÇAMENTO do mesmo tipo: recomeça (o pedido: "pg02 pode ter o ad01, ad02 também")
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), launchSeq: 3 } })).json().structure).toBe("ad01_bbe_pg03_09-2026--");
+    // mesmo escopo: segue a sequência
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: corpoBase(bbe.id) })).json().structure).toBe("ad02_bbe_pg02_09-2026--");
     // fz tem a própria sequência
     expect((await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: corpoBase(fz.id) })).json().creativeSeq).toBe(1);
-    // sugestão pula 01 e 02; o número do lançamento sugerido é o maior usado para (expert, sigla)
-    const p = (await app.inject({ method: "GET", url: `/api/nomenclatura/ads/proximo?expertId=${bbe.id}&launchType=pg` })).json();
-    expect(p).toEqual({ creativeSeq: 3, creativeSeqTexto: "03", launchSeqSugerido: 2 });
-    // NN ocupado → 409 com quem ocupa e o próximo livre
-    const corrida = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), creativeSeq: 1 } });
-    expect(corrida.statusCode).toBe(409);
-    expect(corrida.json()).toMatchObject({ campo: "creativeSeq", sugestao: "03" });
-    expect(corrida.json().error).toContain("já é de ad01_bbe_pg02_09-2026--gancho-demissao");
-    expect(mem.changelog.filter((l) => l.entity === "naming_ads" && l.action === "create")).toHaveLength(3);
+    // sugestão no escopo; o nº do lançamento sugerido segue sendo o maior usado para (expert, sigla)
+    const p = (await app.inject({ method: "GET", url: `/api/nomenclatura/ads/proximo?expertId=${bbe.id}&launchType=pg&creativeType=ad&launchSeq=2` })).json();
+    expect(p).toEqual({ creativeSeq: 3, creativeSeqTexto: "03", launchSeqSugerido: 3, escopo: { creativeType: "ad", launchType: "pg", launchSeq: 2 } });
+    // AC3, exemplo de aceite: lançamento novo → 01
+    expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads/proximo?expertId=${bbe.id}&launchType=pg&creativeType=ad&launchSeq=5` })).json()).toMatchObject({ creativeSeq: 1, creativeSeqTexto: "01" });
+    // sigla com número sem o nº: escopo incompleto, mas a sugestão do nº funciona com o que já há
+    expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads/proximo?expertId=${bbe.id}&launchType=pg&creativeType=ad` })).json()).toEqual({ creativeSeq: null, creativeSeqTexto: null, launchSeqSugerido: 3, escopo: null });
+    // AC4: NN ocupado NO ESCOPO → 409 nomeando o dono DO ESCOPO (o NN 1 do bbe tem três donos: ad pg02, carr pg02, ad pg03)
+    const ocupado = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), launchSeq: 3, creativeSeq: 1 } });
+    expect(ocupado.statusCode).toBe(409);
+    expect(ocupado.json()).toMatchObject({ campo: "creativeSeq", sugestao: "02" });
+    expect(ocupado.json().error).toBe("O NN 01 já é de ad01_bbe_pg03_09-2026 em pg03 (ad). O próximo livre é 02.");
+    // AC4: o mesmo NN em outro escopo é aceito (o 02 está ocupado no pg02, não no pg03)
+    const livre = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), launchSeq: 3, creativeSeq: 2 } });
+    expect(livre.statusCode).toBe(201);
+    expect(livre.json().structure).toBe("ad02_bbe_pg03_09-2026--");
+    expect(mem.changelog.filter((l) => l.entity === "naming_ads" && l.action === "create")).toHaveLength(6);
+  });
+
+  it("47.18 AC1/AC4: perpetuo (nº NULL) conta como UM valor — dois ad01 de perpetuo do mesmo expert colidem; a sugestão de perpetuo segue a sequência", async () => {
+    const { bbe } = await adsBase(app);
+    const perp = { expertId: bbe.id, creativeType: "ad", launchType: "perpetuo", date: "09-2026" };
+    expect((await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: perp })).json()).toMatchObject({ creativeSeq: 1, launchSeq: null, name: "ad01_bbe_perpetuo_09-2026" });
+    const dup = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...perp, creativeSeq: 1 } });
+    expect(dup.statusCode).toBe(409);
+    expect(dup.json().error).toBe("O NN 01 já é de ad01_bbe_perpetuo_09-2026 em perpetuo (ad). O próximo livre é 02.");
+    // a rota recebe `perpetuo` sem nº (um nº que venha é ignorado — o lançamento não tem número)
+    for (const extra of ["", "&launchSeq=4"]) {
+      expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads/proximo?expertId=${bbe.id}&launchType=perpetuo&creativeType=ad${extra}` })).json()).toEqual({ creativeSeq: 2, creativeSeqTexto: "02", launchSeqSugerido: null, escopo: { creativeType: "ad", launchType: "perpetuo", launchSeq: null } });
+    }
+  });
+
+  it("47.18 AC5: PATCH que muda sigla/nº revalida o NN no escopo NOVO — ocupado → 409 com o dono e SEM oferecer outro NN; nada gravado; livre → 200 com o mesmo NN", async () => {
+    const { bbe } = await adsBase(app);
+    const a = (await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: corpoBase(bbe.id) })).json();
+    await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), launchSeq: 3 } });
+    await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { expertId: bbe.id, creativeType: "ad", launchType: "perpetuo", date: "09-2026" } });
+    const antes = mem.changelog.length;
+    const r = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${a.id}`, payload: { launchSeq: 3 } });
+    expect(r.statusCode).toBe(409);
+    expect(r.json()).toMatchObject({ campo: "creativeSeq", sugestao: null });
+    expect(r.json().error).toBe("O NN 01 já é de ad01_bbe_pg03_09-2026 em pg03 (ad). O NN do criativo não muda depois de salvo — mantenha o lançamento ou duplique o anúncio.");
+    // de pg para perpetuo: o NULL do perpetuo também é escopo ocupado
+    const paraPerpetuo = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${a.id}`, payload: { launchType: "perpetuo", launchSeq: null } });
+    expect(paraPerpetuo.statusCode).toBe(409);
+    expect(paraPerpetuo.json().error).toContain("já é de ad01_bbe_perpetuo_09-2026 em perpetuo (ad)");
+    expect(mem.changelog.length).toBe(antes);
+    expect(mem.t.anuncios.find((x) => x.id === a.id)).toMatchObject({ launchSeq: 2, creativeSeq: 1 });
+    // escopo novo livre: o NN não muda, só o lançamento
+    const ok = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${a.id}`, payload: { launchSeq: 4 } });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toMatchObject({ creativeSeq: 1, structure: "ad01_bbe_pg04_09-2026--" });
+    // editar outra coisa no mesmo escopo não colide consigo mesmo (ignorarSeqDe)
+    expect((await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${a.id}`, payload: { date: "10-2026" } })).statusCode).toBe(200);
+  });
+
+  it("47.18 AC4: corrida no índice novo (uq_naming_ads_escopo_seq) → 409, não 500", async () => {
+    const { bbe } = await adsBase(app);
+    const original = mem.repo.inserir;
+    mem.repo.inserir = (async () => {
+      const erroDoDriver = Object.assign(new Error('duplicate key value violates unique constraint "uq_naming_ads_escopo_seq"'), { code: "23505", constraint: "uq_naming_ads_escopo_seq" });
+      throw Object.assign(new Error("Failed query: insert into naming_ads"), { cause: erroDoDriver });
+    }) as typeof original;
+    const r = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: corpoBase(bbe.id) });
+    mem.repo.inserir = original;
+    expect(r.statusCode).toBe(409);
+    expect(r.json().error).toContain("acabou de ser cadastrado");
   });
 
   it("47.10 AC4/AC6: tipo/sigla fora do dicionário ou inativos → 422; data fora de mm-aaaa e descrição com _ → 400; guest → 403", async () => {
@@ -815,7 +884,8 @@ describe("rotas da nomenclatura", () => {
     await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { ...corpoBase(bbe.id), creativeType: "carr", launchType: "l", date: "08-2026" } });
     const lista = (await app.inject({ method: "GET", url: `/api/nomenclatura/ads?expertId=${bbe.id}&creativeType=carr` })).json();
     expect(lista.total).toBe(1);
-    expect(lista.itens[0].structure).toBe("carr02_bbe_l02_08-2026--");
+    // Story 47.18: outro tipo e outro lançamento — sequência própria (na 47.10 era carr02)
+    expect(lista.itens[0].structure).toBe("carr01_bbe_l02_08-2026--");
     const periodo = (await app.inject({ method: "GET", url: `/api/nomenclatura/ads?de=09-2026&ate=12-2026` })).json();
     expect(periodo.itens.map((x: { structure: string }) => x.structure)).toEqual(["ad01_bbe_pg03_10-2026--"]);
   });
@@ -1085,7 +1155,8 @@ describe("rotas da nomenclatura", () => {
     expect(v.json()).toMatchObject({ launchSeq: null, name: "adv01_ia_bbe_perpetuo_09-2026", structure: "adv01_ia_bbe_perpetuo_09-2026--", hookId: h01.id, bodyId: b01.id, hookCode: "h01", bodyCode: "b01" });
     // `null` explícito também é ausente
     const ad = await post("/api/nomenclatura/ads", { expertId: bbe.id, creativeType: "ad", launchType: "perpetuo", launchSeq: null, date: "09-2026" });
-    expect(ad).toMatchObject({ launchSeq: null, name: "ad02_bbe_perpetuo_09-2026" });
+    // Story 47.18: `ad` é outro tipo — sequência própria no perpetuo (na 47.16 era ad02)
+    expect(ad).toMatchObject({ launchSeq: null, name: "ad01_bbe_perpetuo_09-2026" });
     // o que chega na coluna: NULL — nenhum valor-sentinela
     expect(mem.t.anuncios.map((a) => a.launchSeq)).toEqual([null, null]);
     const comNumero = await app.inject({ method: "POST", url: "/api/nomenclatura/ads", payload: { expertId: bbe.id, creativeType: "ad", launchType: "perpetuo", launchSeq: 4, date: "09-2026" } });
@@ -1178,7 +1249,8 @@ describe("rotas da nomenclatura", () => {
     const { bbe, post } = await videoBase(app);
     await post("/api/nomenclatura/ads", { expertId: bbe.id, creativeType: "ad", launchType: "perpetuo", date: "09-2026" });
     await post("/api/nomenclatura/ads", { expertId: bbe.id, creativeType: "ad", launchType: "pg", launchSeq: 4, date: "09-2026" });
-    expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads/proximo?expertId=${bbe.id}&launchType=perpetuo` })).json()).toEqual({ creativeSeq: 3, creativeSeqTexto: "03", launchSeqSugerido: null });
+    // Story 47.18: o NN é do escopo (bbe, perpetuo, ad) — 1 anúncio ali → 02 (na 47.16, por expert, era 03)
+    expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads/proximo?expertId=${bbe.id}&launchType=perpetuo&creativeType=ad` })).json()).toEqual({ creativeSeq: 2, creativeSeqTexto: "02", launchSeqSugerido: null, escopo: { creativeType: "ad", launchType: "perpetuo", launchSeq: null } });
     expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads/proximo?expertId=${bbe.id}&launchType=pg` })).json().launchSeqSugerido).toBe(4);
     // dado inconsistente (perpetuo COM número, só possível por escrita manual no banco): a rota nem pergunta ao repositório
     mem.t.anuncios.push({ id: USUARIO, expertId: bbe.id, creativeType: "ad", creativeSeq: 9, launchType: "perpetuo", launchSeq: 3, adDate: "2026-09-01", description: null, origin: null, hookId: null, bodyId: null, structure: "x", name: "x", notes: null, active: true, createdAt: "2026-09-01", updatedAt: "2026-09-01" });
@@ -1193,7 +1265,9 @@ describe("rotas da nomenclatura", () => {
     };
     // como o script do AC9 grava: name = o do Meta, structure = name + `--`, launch_seq NULL
     mem.t.anuncios.push(linha(1, USUARIO), ...[2, 3, 4, 5, 6].map((n) => linha(n, `20000000-0000-4000-8000-00000000000${n}`)));
-    expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads/proximo?expertId=${bbe.id}` })).json()).toMatchObject({ creativeSeq: 7, creativeSeqTexto: "07" });
+    // Story 47.18 (AC3, exemplos de aceite): adv + perpetuo → 07 (o escopo dos 6); ad + pg05 → 01 (na 47.16 o 07 valia para tudo)
+    expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads/proximo?expertId=${bbe.id}&launchType=perpetuo&creativeType=adv` })).json()).toMatchObject({ creativeSeq: 7, creativeSeqTexto: "07" });
+    expect((await app.inject({ method: "GET", url: `/api/nomenclatura/ads/proximo?expertId=${bbe.id}&launchType=pg&launchSeq=5&creativeType=ad` })).json()).toMatchObject({ creativeSeq: 1, creativeSeqTexto: "01" });
     const notas = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${USUARIO}`, payload: { notes: "no ar desde 21/09" } });
     expect(notas.json()).toMatchObject({ name: "adv01_ia_bbe_perpetuo_h01_b01_09-2026", structure: "adv01_ia_bbe_perpetuo_h01_b01_09-2026--", notes: "no ar desde 21/09" });
     const data = await app.inject({ method: "PATCH", url: `/api/nomenclatura/ads/${USUARIO}`, payload: { date: "10-2026" } });

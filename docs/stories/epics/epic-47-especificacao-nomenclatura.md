@@ -460,7 +460,7 @@ adv — vídeo v3 (5 campos): {tipo}{NN}_{origem}_{expert}_{lançamento}_{mm-aaa
 
 | campo | valor | regra |
 |---|---|---|
-| tipo + NN | `creative_type` (`ad` · `adv` · `carr`) + dois dígitos | NN **único por expert**, qualquer tipo (o 7º criativo do DG é `07`); sugerido pelo servidor, reservado na gravação (409 na corrida) |
+| tipo + NN | `creative_type` (`ad` · `adv` · `carr`) + dois dígitos | NN **único por (expert, lançamento, tipo)** — reinicia a cada `{sigla}{NN}` e a cada tipo: no `pg01` convivem `ad01`, `ad02`, `adv01`, `adv02`, e o `pg02` recomeça em `ad01`; no `perpetuo` (sem número) a sequência é a de (expert, `perpetuo`, tipo). Sugerido pelo servidor **só com tipo e lançamento escolhidos**, reservado na gravação (409 na corrida; índice `uq_naming_ads_escopo_seq`, `NULLS NOT DISTINCT`, migration 0159). *Story 47.18 (25/09/2026); até ela era "único por expert, qualquer tipo" (47.10).* |
 | origem | `creative_origin` (`ia` — feito por inteligência artificial · `h` — feito por humano) | **só em `adv`**; obrigatória lá, proibida fora |
 | expert | `naming_experts.code` | |
 | sigla + NN | `launch_type` (`pg` · `l` · `m` · `pr` · `perpetuo`) + número do lançamento | NN escolhido, com sugestão (maior já usado para expert+sigla); **`perpetuo` sem número** (47.16) — o campo fica desabilitado e não há sugestão |
@@ -472,7 +472,7 @@ Regras que valem aqui e em mais lugar nenhum:
 - **"Vídeo" = valor `adv`.** Outro tipo de vídeo no dicionário é decisão nova, não herda o formato.
 - **Vídeo do padrão antigo** (`adv` gravado com 4 campos antes da 47.13) continua **válido com aviso** ("padrão antigo (47.10)"); editar descrição/lançamento/data não exige origem/hook/body e re-grava em 4 campos (regra 6: nome publicado não muda de formato). Para um nome no formato atual, **duplicar**.
 - **Vídeo v2** (7 campos, 47.13) continua **válido com aviso próprio** ("padrão v2 (47.13)") e edita no v2 (47.16).
-- Depois de salvo, tipo e NN do criativo **não mudam** (D23). Hook/body/origem de um vídeo (v2 ou v3) editam como lançamento/data.
+- Depois de salvo, tipo e NN do criativo **não mudam** (D23). Hook/body/origem de um vídeo (v2 ou v3) editam como lançamento/data. Trocar a sigla ou o nº do lançamento revalida o NN **no lançamento novo** (47.18): se ele já é de outro anúncio ali, 409 nomeando o dono — o NN não é trocado; mantenha o lançamento ou duplique.
 - Código de hook/body **imutável depois de usado** em anúncio; excluir só sem uso.
 
 Gerador: expert → tipo (+ origem ao lado, se vídeo) → NN | sigla | nº do lançamento → hook | body (se vídeo) → mês/ano → descrição. Prévia colorida por bloco; "Copiar estrutura" (até o `--`) é o que o designer recebe; "Salvar e criar outro" mantém expert, sigla, nº, data, origem, hook e body. Ao escolher o expert, a tela lista os anúncios já cadastrados dele.

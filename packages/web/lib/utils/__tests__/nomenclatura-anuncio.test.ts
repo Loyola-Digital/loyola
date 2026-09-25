@@ -4,17 +4,23 @@ import {
   aoEscolherNoAnuncio,
   camposDoAnuncio,
   comSugestaoDoLancamento,
+  comSugestaoDoNn,
   corpoDaEdicaoDoAnuncio,
   corpoDoAnuncio,
   ehVideoDoPadraoAntigo,
+  escopoDoNnDoEstado,
   estadoDeAnuncio,
+  faltaNoEscopoDoNn,
   formatoDoAnuncioGravado,
   mesAnoDe,
   mesCorrente,
   nnDe,
+  parametrosDoProximoNn,
   previaDoAnuncio,
-  siglaParaSugestao,
+  respostaComEscopo,
   textoDoLancamento,
+  textoDoNnDoCriativo,
+  type RespostaDoProximoNn,
 } from "../nomenclatura-anuncio";
 
 const experts = [{ id: "e", code: "dg" }];
@@ -25,11 +31,21 @@ const video = { expertId: "e", creativeType: "adv", creativeSeq: "01", launchTyp
 const partes = [{ id: "H1", code: "h01" }, { id: "B1", code: "b01" }, { id: "H2", code: "h02" }];
 
 describe("estado do gerador (AC8)", () => {
-  it("trocar o expert limpa os dois NN; trocar a sigla limpa o NN do lançamento; o resto fica", () => {
+  // Story 47.18 (AC3b) — INVERTIDO: na 47.10 trocar sigla ou tipo MANTINHA o NN do criativo ("03"); agora o NN é do
+  // escopo e é limpo (a sugestão do escopo novo o preenche). Na edição, continua fixo (D23).
+  it("trocar o expert limpa os dois NN; trocar a sigla limpa o NN do lançamento E o do criativo; trocar tipo ou nº limpa o NN do criativo; o resto fica", () => {
     expect(aoEscolherNoAnuncio(cheio, "expertId", "e2")).toMatchObject({ expertId: "e2", creativeSeq: "", launchSeq: "", creativeType: "ad", date: "09-2026" });
-    expect(aoEscolherNoAnuncio(cheio, "launchType", "l")).toMatchObject({ launchType: "l", launchSeq: "", creativeSeq: "03" });
-    expect(aoEscolherNoAnuncio(cheio, "creativeType", "carr")).toMatchObject({ creativeType: "carr", creativeSeq: "03" });
+    expect(aoEscolherNoAnuncio(cheio, "launchType", "l")).toMatchObject({ launchType: "l", launchSeq: "", creativeSeq: "" });
+    expect(aoEscolherNoAnuncio(cheio, "creativeType", "carr")).toMatchObject({ creativeType: "carr", creativeSeq: "", launchSeq: "02" });
+    expect(aoEscolherNoAnuncio(cheio, "launchSeq", "05")).toMatchObject({ launchSeq: "05", creativeSeq: "", launchType: "pg" });
     expect(aoEscolherNoAnuncio(cheio, "expertId", "e")).toBe(cheio);
+    expect(aoEscolherNoAnuncio(cheio, "launchSeq", "02")).toBe(cheio);
+    // descrição, data, notas não são escopo: o NN fica
+    expect(aoEscolherNoAnuncio(cheio, "date", "10-2026").creativeSeq).toBe("03");
+  });
+  it("47.18 (AC5/D23): na EDIÇÃO trocar sigla ou nº NÃO limpa o NN do criativo — ele é fixo depois de salvo", () => {
+    expect(aoEscolherNoAnuncio(cheio, "launchType", "l", { editando: true })).toMatchObject({ launchType: "l", launchSeq: "", creativeSeq: "03" });
+    expect(aoEscolherNoAnuncio(cheio, "launchSeq", "05", { editando: true })).toMatchObject({ launchSeq: "05", creativeSeq: "03" });
   });
   it("nnDe aceita 1–99 com um ou dois dígitos; vazio e 0/100 não", () => {
     expect(nnDe("3")).toBe(3);
@@ -85,7 +101,8 @@ describe("mm-aaaa e ida e volta com a API", () => {
 
 describe("Story 47.13 — vídeo v2 no gerador", () => {
   it("AC9: trocar o tipo para algo que não é vídeo LIMPA origem, hook e body; trocar o expert limpa hook e body (são do expert) e mantém a origem", () => {
-    expect(aoEscolherNoAnuncio(video, "creativeType", "ad")).toMatchObject({ creativeType: "ad", origin: "", hookId: "", bodyId: "", creativeSeq: "01" });
+    // 47.18 (AC3b): o NN do criativo também é limpo (o tipo é escopo) — na 47.13 ficava "01"
+    expect(aoEscolherNoAnuncio(video, "creativeType", "ad")).toMatchObject({ creativeType: "ad", origin: "", hookId: "", bodyId: "", creativeSeq: "" });
     expect(aoEscolherNoAnuncio(video, "creativeType", "adv")).toBe(video);
     expect(aoEscolherNoAnuncio(video, "expertId", "e2")).toMatchObject({ expertId: "e2", hookId: "", bodyId: "", origin: "h", creativeSeq: "", launchSeq: "" });
     // ad → adv não inventa nada: os três continuam vazios até a pessoa escolher
@@ -170,10 +187,14 @@ describe("Story 47.16 — perpetuo sem número e o formato do registro", () => {
     expect(previaDoAnuncio(e, experts, partes).nome).toBe("adv01_ia_dg_perpetuo_09-2026");
   });
 
-  it("AC7: a sugestão do número não roda com perpetuo — nem a sigla vai para /ads/proximo, nem uma resposta velha preenche o campo", () => {
-    expect(siglaParaSugestao(perpetuo)).toBeUndefined();
-    expect(siglaParaSugestao(cheio)).toBe("pg");
-    expect(siglaParaSugestao({ launchType: "" })).toBeUndefined();
+  // Story 47.18 (AC3, PO-06) — INVERTIDO: na 47.16 a sigla `perpetuo` NÃO ia para /ads/proximo (`siglaParaSugestao`);
+  // agora ela é escopo do NN e vai sempre. A sugestão do NÚMERO continua não rodando com perpetuo (rota + comSugestaoDoLancamento).
+  it("AC7 + 47.18: perpetuo CHEGA a /ads/proximo (escopo do NN), sem nº; a sugestão do número não preenche com perpetuo", () => {
+    expect(parametrosDoProximoNn(perpetuo)).toEqual({ launchType: "perpetuo", creativeType: "adv", launchSeq: undefined });
+    expect(parametrosDoProximoNn({ ...perpetuo, launchSeq: "04" }).launchSeq).toBeUndefined();
+    expect(parametrosDoProximoNn(cheio)).toEqual({ launchType: "pg", creativeType: "ad", launchSeq: "2" });
+    expect(parametrosDoProximoNn({ ...cheio, launchSeq: "0" }).launchSeq).toBeUndefined();
+    expect(parametrosDoProximoNn({ launchType: "", creativeType: "", launchSeq: "" })).toEqual({ launchType: undefined, creativeType: undefined, launchSeq: undefined });
     expect(comSugestaoDoLancamento(perpetuo, 4)).toBe(perpetuo);
     expect(comSugestaoDoLancamento({ ...cheio, launchSeq: "" }, 4).launchSeq).toBe("04");
     // não sobrescreve o que a pessoa digitou; sem sugestão, nada muda
@@ -238,5 +259,80 @@ describe("QA 47.16 — o corpo ENVIADO no PATCH e o botão \"Copiar nome complet
       expect(p.estrutura?.endsWith("--")).toBe(true);
       expect(p.nome).not.toBe(p.estrutura);
     }
+  });
+});
+
+describe("Story 47.18 — o NN do criativo por lançamento e por tipo no gerador", () => {
+  const dg = { ...ESTADO_VAZIO_DO_ANUNCIO, expertId: "e", date: "09-2026" };
+  const advPerpetuo = { ...dg, creativeType: "adv", launchType: "perpetuo" };
+  const adPg05 = { ...dg, creativeType: "ad", launchType: "pg", launchSeq: "05" };
+  const resp = (escopo: RespostaDoProximoNn["escopo"], nn: string | null, lseq: number | null = null): RespostaDoProximoNn => ({ creativeSeq: nn === null ? null : Number(nn), creativeSeqTexto: nn, launchSeqSugerido: lseq, escopo });
+  const E_ADV_PERP = { creativeType: "adv", launchType: "perpetuo", launchSeq: null };
+  const E_AD_PG05 = { creativeType: "ad", launchType: "pg", launchSeq: 5 };
+  /** A API anterior ao contrato 28: descarta os parâmetros novos e responde por expert, SEM `escopo`. */
+  const apiAntiga = { creativeSeq: 7, creativeSeqTexto: "07", launchSeqSugerido: 4 } as RespostaDoProximoNn;
+
+  it("AC3: o escopo do formulário — completo só com tipo + sigla (+ nº fora do perpetuo); o que falta, na ordem", () => {
+    expect(escopoDoNnDoEstado(advPerpetuo)).toEqual(E_ADV_PERP);
+    expect(escopoDoNnDoEstado(adPg05)).toEqual(E_AD_PG05);
+    expect(escopoDoNnDoEstado({ ...adPg05, launchSeq: "" })).toBeNull();
+    expect(faltaNoEscopoDoNn(dg)).toEqual(["o tipo de criativo", "a sigla do lançamento"]);
+    expect(faltaNoEscopoDoNn({ ...adPg05, launchSeq: "" })).toEqual(["o nº do lançamento"]);
+    expect(faltaNoEscopoDoNn(advPerpetuo)).toEqual([]);
+  });
+
+  it("AC3b (exemplo do PO): dg + adv + perpetuo preenche 07 → trocar para ad + pg05 limpa e o campo mostra 01, não 07", () => {
+    let e = comSugestaoDoNn(advPerpetuo, resp(E_ADV_PERP, "07"));
+    expect(e.creativeSeq).toBe("07");
+    e = aoEscolherNoAnuncio(e, "creativeType", "ad");
+    e = aoEscolherNoAnuncio(e, "launchType", "pg");
+    expect(e.creativeSeq).toBe("");
+    // a resposta do escopo ANTERIOR (ainda na tela enquanto a nova não chega) não preenche
+    expect(comSugestaoDoNn(e, resp(E_ADV_PERP, "07")).creativeSeq).toBe("");
+    // PO-06: o nº do lançamento sugerido muda a chave da query — antes do escopo completo o NN não é preenchido
+    const semNumero = resp(null, null, 5);
+    e = comSugestaoDoNn(e, semNumero);
+    expect(e.creativeSeq).toBe("");
+    e = comSugestaoDoLancamento(e, semNumero.launchSeqSugerido);
+    expect(e.launchSeq).toBe("05");
+    expect(comSugestaoDoNn(e, resp(E_ADV_PERP, "07")).creativeSeq).toBe("");
+    e = comSugestaoDoNn(e, resp(E_AD_PG05, "01"));
+    expect(e.creativeSeq).toBe("01");
+  });
+
+  it("comSugestaoDoNn: não sobrescreve o NN digitado; resposta sem sugestão não muda nada", () => {
+    expect(comSugestaoDoNn({ ...adPg05, creativeSeq: "09" }, resp(E_AD_PG05, "01")).creativeSeq).toBe("09");
+    expect(comSugestaoDoNn(adPg05, resp(E_AD_PG05, null))).toBe(adPg05);
+    expect(comSugestaoDoNn(adPg05, undefined)).toBe(adPg05);
+  });
+
+  it("AC7: resposta da API antiga (sem `escopo`) NÃO preenche nem é rotulada com escopo — a tela diz que a API está atrás", () => {
+    expect(respostaComEscopo(apiAntiga)).toBe(false);
+    expect(respostaComEscopo(resp(null, null))).toBe(true);
+    expect(respostaComEscopo(undefined)).toBe(false);
+    expect(comSugestaoDoNn(adPg05, apiAntiga)).toBe(adPg05);
+    const t = textoDoNnDoCriativo({ estado: adPg05, resposta: apiAntiga, expertCode: "dg", editando: false });
+    expect(t.aviso).toBe(true);
+    expect(t.texto).toMatch(/^A API ainda não foi atualizada/);
+    expect(t.texto).not.toMatch(/pg05|07/);
+  });
+
+  it("AC6: o texto da tela — \"Próximo livre de dg em pg05 (ad): 01\"; com perpetuo, \"em perpetuo (adv)\"; o texto antigo saiu", () => {
+    const texto = (estado: typeof dg, resposta?: RespostaDoProximoNn, extra: { editando?: boolean; erro?: string } = {}) => textoDoNnDoCriativo({ estado, resposta, expertCode: "dg", editando: extra.editando ?? false, erro: extra.erro });
+    expect(texto(adPg05, resp(E_AD_PG05, "01"))).toEqual({ texto: "Próximo livre de dg em pg05 (ad): 01.", aviso: false });
+    expect(texto(advPerpetuo, resp(E_ADV_PERP, "07"))).toEqual({ texto: "Próximo livre de dg em perpetuo (adv): 07.", aviso: false });
+    // escopo incompleto: diz o que falta, sem número
+    expect(texto({ ...adPg05, launchSeq: "" }, resp(null, null, 4)).texto).toBe("Escolha o nº do lançamento para sugerir o NN — ele conta por lançamento e por tipo.");
+    expect(texto(dg, resp(null, null)).texto).toBe("Escolha o tipo de criativo e a sigla do lançamento para sugerir o NN — ele conta por lançamento e por tipo.");
+    // NN digitado diferente do sugerido: aviso no escopo
+    expect(texto({ ...adPg05, creativeSeq: "03" }, resp(E_AD_PG05, "01"))).toEqual({ texto: "Próximo livre de dg em pg05 (ad): 01. Um NN já usado neste lançamento e tipo é recusado ao salvar.", aviso: true });
+    // resposta de outro escopo (a nova ainda não chegou): não rotula o número velho
+    expect(texto(adPg05, resp(E_ADV_PERP, "07")).texto).toBe("Buscando o próximo livre de dg em pg05 (ad)…");
+    expect(texto(adPg05, resp(E_AD_PG05, null))).toEqual({ texto: "Os 99 NN de dg em pg05 (ad) estão usados.", aviso: true });
+    // erro da consulta ≠ "buscando"
+    expect(texto(adPg05, undefined, { erro: "Erro interno" })).toEqual({ texto: "Não foi possível buscar o próximo NN: Erro interno. Digite o NN ou tente de novo.", aviso: true });
+    expect(texto(adPg05, undefined, { editando: true }).texto).toBe("Fixo depois de salvo.");
+    expect(texto({ ...adPg05, expertId: "" }, undefined).texto).toBe("Escolha o expert.");
+    for (const r of [resp(E_AD_PG05, "01"), resp(null, null), apiAntiga]) expect(texto(adPg05, r).texto).not.toMatch(/Sequência única por expert/);
   });
 });

@@ -5362,7 +5362,17 @@ export const namingAds = pgTable(
       .notNull(),
   },
   (t) => [
-    uniqueIndex("uq_naming_ads_expert_seq").on(t.expertId, t.creativeSeq),
+    /**
+     * Story 47.18: o NN do criativo é único no escopo (expert, sigla, nº do
+     * lançamento, tipo) — era (expert, NN) na 47.10. No banco o índice tem
+     * `NULLS NOT DISTINCT` (migration 0159: `launch_seq` NULL do `perpetuo`
+     * conta como UM valor); aqui NÃO — o `uniqueIndex` do drizzle-orm 0.45.1
+     * não expressa a cláusula e a introspecção do drizzle-kit 0.31.9 não a lê,
+     * então o `push --force` do boot vê os dois como iguais e não mexe. Trocar
+     * por `unique().nullsNotDistinct()` faria o push derrubar e recriar a cada
+     * subida (PO-01; prova no Dev Agent Record da 47.18).
+     */
+    uniqueIndex("uq_naming_ads_escopo_seq").on(t.expertId, t.launchType, t.launchSeq, t.creativeType, t.creativeSeq),
     index("idx_naming_ads_expert").on(t.expertId),
     index("idx_naming_ads_hook").on(t.hookId),
     index("idx_naming_ads_body").on(t.bodyId),

@@ -34,7 +34,7 @@
 import { z } from "zod";
 import fp from "fastify-plugin";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { LPMIX, NA, PREFIXO_DA_PARTE_DO_VIDEO, PREFIXO_DA_VARIAVEL, ROTULO_DA_PARTE_DO_VIDEO, TIPO_DE_CODIGO_DA_PARTE_DO_VIDEO, TIPO_DE_CODIGO_DA_VARIAVEL, ehVideo, formatoDoVideoGravado, montarSlugDeLp, parseAdName, parseCampaignName, parseVslName, proximoCodigoNumerado, siglaSemNumero, sugerirClassificacao } from "@loyola-x/shared";
+import { LPMIX, NA, PREFIXO_DA_PARTE_DO_VIDEO, PREFIXO_DA_VARIAVEL, ROTULO_DA_PARTE_DO_VIDEO, TIPO_DE_CODIGO_DA_PARTE_DO_VIDEO, TIPO_DE_CODIGO_DA_VARIAVEL, ehVideo, escopoDoNnDoCriativo, formatoDoVideoGravado, montarSlugDeLp, parseAdName, parseCampaignName, parseVslName, proximoCodigoNumerado, siglaSemNumero, sugerirClassificacao } from "@loyola-x/shared";
 import { CAMPOS_DO_NOME, montarCampanha } from "../services/nomenclatura/campanhas.js";
 import { CAMPOS_DA_VSL_NO_BANCO, montarVsl } from "../services/nomenclatura/vsl.js";
 import { montarAnuncio, numeroDoLancamentoNoPatch, proximoNnDeAnuncio } from "../services/nomenclatura/anuncios.js";
@@ -1088,14 +1088,26 @@ export default fp(async function nomenclaturaRoutes(fastify) {
     "/api/nomenclatura/ads/proximo",
     tentar(async (request) => {
       autor(request);
-      const q = parse(z.object({ expertId: uuid, launchType: z.string().max(20).optional() }), request.query);
+      // Story 47.18 (AC3/AC7): `creativeType` e `launchSeq` entram — o NN é do ESCOPO (expert + sigla + nº + tipo), e
+      // `launchType = perpetuo` também (escopo sem número). O `escopo` na resposta é como o web reconhece esta versão:
+      // a API antiga descarta os parâmetros novos em silêncio e não o devolve.
+      const q = parse(
+        z.object({
+          expertId: uuid,
+          launchType: z.string().max(20).optional(),
+          creativeType: z.string().max(20).optional(),
+          launchSeq: z.coerce.number().int().min(1).max(99).optional(),
+        }),
+        request.query,
+      );
       const r = repo();
       await existente(r, "experts", q.expertId, "Expert");
-      const usados = (await r.anuncios.seqsDoExpert(q.expertId)).map((s) => s.creativeSeq);
-      const nn = proximoNnDeAnuncio(usados);
-      // Story 47.16 (AC7): `perpetuo` não tem número — nada a sugerir.
+      // Escopo incompleto (sem tipo, sem sigla, ou sigla com número sem o nº): nada a sugerir — a tela diz o que falta.
+      const escopo = escopoDoNnDoCriativo(q);
+      const nn = escopo ? proximoNnDeAnuncio((await r.anuncios.seqsDoEscopo(q.expertId, escopo)).map((s) => s.creativeSeq)) : null;
+      // Story 47.16 (AC7): `perpetuo` não tem número — nada a sugerir. A sugestão do nº segue por expert + sigla.
       const maiorLancamento = q.launchType && !siglaSemNumero(q.launchType) ? await r.anuncios.maiorLancamento(q.expertId, q.launchType) : null;
-      return { creativeSeq: nn, creativeSeqTexto: nn === null ? null : String(nn).padStart(2, "0"), launchSeqSugerido: maiorLancamento };
+      return { creativeSeq: nn, creativeSeqTexto: nn === null ? null : String(nn).padStart(2, "0"), launchSeqSugerido: maiorLancamento, escopo };
     }),
   );
 

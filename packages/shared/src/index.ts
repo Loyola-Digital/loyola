@@ -148,6 +148,11 @@ export {
   TOTAL_DE_CAMPOS_DO_VIDEO_V2,
   AVISO_DO_V2,
   type FormatoDoVideo,
+  // Story 47.18: o NN do criativo reinicia por lançamento e por tipo
+  escopoDoNnDoCriativo,
+  mesmoEscopoDoNn,
+  textoDoEscopoDoNn,
+  type EscopoDoNnDoCriativo,
 } from "./nomenclatura-de-anuncio.js";
 // Story 47.5: campanhas legadas — filtro por token e sugestão de classificação
 // a partir do nome antigo. Módulo folha (web: subpath `src/nomenclatura-legado`).
