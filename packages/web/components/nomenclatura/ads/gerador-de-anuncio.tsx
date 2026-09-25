@@ -299,9 +299,16 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
         <PreviaDoAnuncioView previa={previa} />
       </section>
 
-      {/* Story 47.14 (AC2): onze campos, um por linha — desempilha as linhas duplas/triplas da 47.11/47.13. Ordem inalterada. */}
+      {/* Story 47.14 (AC2): onze campos, um por linha — desempilha as linhas duplas/triplas da 47.11/47.13. Ordem inalterada (a 47.19 subiu o lançamento). */}
       <div className="grid max-w-2xl gap-3">
         <SeletorDeExpert valor={estado.expertId} onChange={escolher("expertId")} travado={editando} id="a-expert" />
+        {/* Story 47.19 (AC1): o lançamento vem logo depois do expert — o próximo NN (47.18) depende dele, então ele se escolhe antes do tipo e do NN. */}
+        <SelectDeValor id="a-sigla" label="Sigla do lançamento" valor={estado.launchType} onChange={escolher("launchType")} opcoes={opcoesDe(siglas.data)} carregando={siglas.isLoading} vazio="nenhuma sigla de lançamento ativa" cadastro={valoresFixos} />
+        <div className="space-y-1">
+          <Label htmlFor="a-lnn">Nº do lançamento</Label>
+          <Input id="a-lnn" value={semNumero ? "" : estado.launchSeq} onChange={(e) => { const v = e.target.value.replace(/\D/g, "").slice(0, 2); setEstado((s) => aoEscolherNoAnuncio(s, "launchSeq", v, { editando })); }} placeholder={semNumero ? "—" : "01"} className="w-[140px] font-mono" disabled={!estado.launchType || semNumero} />
+          <p className="text-xs text-muted-foreground">{semNumero ? "perpétuo não tem número — o lançamento entra no nome só como perpetuo." : proximo.data?.launchSeqSugerido ? `Último usado para esta sigla: ${String(proximo.data.launchSeqSugerido).padStart(2, "0")}.` : "O número do lançamento (pg02 = 2º lançamento pago)."}</p>
+        </div>
         <SelectDeValor id="a-tipo" label="Tipo de criativo" valor={estado.creativeType} onChange={escolher("creativeType")} opcoes={opcoesDe(tipos.data)} desabilitado={editando} carregando={tipos.isLoading} vazio="nenhum tipo de criativo ativo" cadastro={valoresFixos} />
         {video && !padraoAntigo ? (
           <SelectDeValor id="a-origem" label="Origem do vídeo" valor={estado.origin} onChange={escolher("origin")} opcoes={opcoesDe(origens.data)} carregando={origens.isLoading} erro={erroOrigens} vazio="nenhuma origem ativa" cadastro={valoresFixos} />
@@ -315,12 +322,6 @@ export function GeradorDeAnuncio({ modo }: { modo: Modo }) {
           <Label htmlFor="a-nn">NN do criativo</Label>
           <Input id="a-nn" value={estado.creativeSeq} onChange={(e) => setEstado((s) => ({ ...s, creativeSeq: e.target.value.replace(/\D/g, "").slice(0, 2) }))} placeholder="01" className="w-[140px] font-mono" disabled={editando || !estado.expertId} />
           <p className={cn("text-xs", dicaDoNn.aviso ? "text-warning" : "text-muted-foreground")}>{dicaDoNn.texto}</p>
-        </div>
-        <SelectDeValor id="a-sigla" label="Sigla do lançamento" valor={estado.launchType} onChange={escolher("launchType")} opcoes={opcoesDe(siglas.data)} carregando={siglas.isLoading} vazio="nenhuma sigla de lançamento ativa" cadastro={valoresFixos} />
-        <div className="space-y-1">
-          <Label htmlFor="a-lnn">Nº do lançamento</Label>
-          <Input id="a-lnn" value={semNumero ? "" : estado.launchSeq} onChange={(e) => { const v = e.target.value.replace(/\D/g, "").slice(0, 2); setEstado((s) => aoEscolherNoAnuncio(s, "launchSeq", v, { editando })); }} placeholder={semNumero ? "—" : "01"} className="w-[140px] font-mono" disabled={!estado.launchType || semNumero} />
-          <p className="text-xs text-muted-foreground">{semNumero ? "perpétuo não tem número — o lançamento entra no nome só como perpetuo." : proximo.data?.launchSeqSugerido ? `Último usado para esta sigla: ${String(proximo.data.launchSeqSugerido).padStart(2, "0")}.` : "O número do lançamento (pg02 = 2º lançamento pago)."}</p>
         </div>
         {/* Story 47.13 (AC9): hook e body DO expert — só em vídeo. Story 47.14 (AC4): sem cadastro, a própria frase é o link, com o expert. */}
         {video && !padraoAntigo ? (
