@@ -134,9 +134,11 @@ describe("as duas dimensões juntas", () => {
 });
 
 describe("PO-12 — o parser das Legadas NÃO serve aqui (e fica intocado)", () => {
-  // Documenta por que o CREATE: `sugerirClassificacao` só casa `a` + um dígito,
-  // exige o snapshot e nunca lê oferta. Se um dia ele passar a casar `[FZA1]`,
-  // este teste avisa que a justificativa do módulo novo mudou.
+  // Documenta por que o CREATE: `sugerirClassificacao` só casa `a` + um dígito
+  // na forma delimitada, exige o snapshot e nunca lê oferta.
+  // Story 47.17: este teste avisou — a sugestão passou a casar `[FZA1]`. A
+  // justificativa do módulo novo continua de pé (snapshot, oferta, `a01`), e a
+  // forma entre colchetes agora é UMA regra nos dois (`FUNIL_ENTRE_COLCHETES`).
   const snapshot = {
     experts: [{ code: "fz", active: true }],
     produtos: [],
@@ -145,8 +147,9 @@ describe("PO-12 — o parser das Legadas NÃO serve aqui (e fica intocado)", () 
     lps: [],
     valores: [],
   };
-  it("não casa `[FZA1]` nem `a01`, e não lê oferta", () => {
-    expect(sugerirClassificacao("[FZA1][FB/IG][LEADS]", snapshot, "fz").campos.funnel).toBeUndefined();
+  it("não casa `a01` e não lê oferta; `[FZA1]` casa desde a 47.17, com o mesmo código que aqui", () => {
+    expect(sugerirClassificacao("[FZA1][FB/IG][LEADS]", snapshot, "fz").campos.funnel).toBe("a01");
+    expect(lerFunilDoNome("[FZA1][FB/IG][LEADS]")).toEqual(ok("a01"));
     expect(sugerirClassificacao("fz_a01_x_of01", snapshot, "fz").campos.funnel).toBeUndefined();
     expect(sugerirClassificacao("fz_a1_x_of01", snapshot, "fz").campos.offer).toBeUndefined();
   });

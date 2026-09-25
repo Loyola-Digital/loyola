@@ -28,17 +28,26 @@
  * mesma dimensão (depois de normalizar) → `null` com "mais de um código no
  * nome" (PO-08): escolher um seria inventar a atribuição.
  *
- * ⚠️ Não é `sugerirClassificacao` (`nomenclatura-legado.ts`): aquele parser só
- * casa `a` + UM dígito, exige o snapshot do dicionário e, por desenho, nunca lê
- * oferta. A fila de Legadas depende dele como está (PO-12) — por isso este é
- * outro módulo, e aquele fica intocado.
+ * ⚠️ Não é `sugerirClassificacao` (`nomenclatura-legado.ts`): aquele parser
+ * exige o snapshot do dicionário e, por desenho, nunca lê oferta; a forma
+ * delimitada dele só casa `a` + UM dígito (PO-12). A forma entre colchetes, sim,
+ * é a MESMA nos dois desde a 47.17: `FUNIL_ENTRE_COLCHETES`, definida lá.
  *
- * ## Módulo folha, sem imports
+ * ## Um import só, de outra folha (Story 47.17)
  *
- * Mesmo desenho de `nomenclatura-legado.ts`: a API importa pelo índice (bare),
- * o web por subpath (`@loyola-x/shared/src/funil-e-oferta`). Os dois caminhos
- * não são intercambiáveis — ver a tabela em `index.ts`.
+ * A API importa este módulo pelo índice (bare). O único import é
+ * `nomenclatura-legado.ts`, folha sem imports: a regra entre colchetes mora lá
+ * porque aquele é importado por VALOR no web (subpath) e não pode ganhar
+ * dependência.
+ *
+ * ⚠️ Por causa desse import, o web NÃO pode importar VALOR deste módulo por
+ * subpath: o webpack do Next não troca `./nomenclatura-legado.js` por `.ts`
+ * (sem `experimental.extensionAlias`). Hoje o web só importa TIPOS daqui, pelo
+ * índice — e tipo some na compilação. Precisando de valor no web, importar
+ * `FUNIL_ENTRE_COLCHETES` de `@loyola-x/shared/src/nomenclatura-legado`.
  */
+
+import { FUNIL_ENTRE_COLCHETES } from "./nomenclatura-legado.js";
 
 // ── motivos de uma dimensão ausente (AC2) ──────────────────────────────
 
@@ -70,8 +79,8 @@ const OFMIX = "ofmix";
 
 /** `a1`/`a01` delimitado. O delimitador de ANTES é consumido; o de depois, não (dois tokens seguidos casam). */
 const FUNIL_DELIMITADO = /(?:^|[_-])a(\d{1,2})(?=$|[_-])/g;
-/** `[FZA1]`: sigla do expert (2–4 letras, o formato de `naming_experts.code`) colada ao `A<N>`. */
-const FUNIL_COLADO = /\[[a-z]{2,4}a(\d{1,2})\]/g;
+/** `[FZA1]`: sigla do expert (2–4 letras, o formato de `naming_experts.code`) colada ao `A<N>` — a regra da fila de Legadas (47.17). */
+const FUNIL_COLADO = new RegExp(FUNIL_ENTRE_COLCHETES, "g");
 const OFERTA_DELIMITADA = /(?:^|[_-])of(\d{1,2}|mix)(?=$|[_-])/g;
 
 const doisDigitos = (n: string) => n.padStart(2, "0");

@@ -285,9 +285,10 @@ export function sinalizacoesDoCadastro(dados: FunilOfertaDoFunil, comLink: boole
 
 /**
  * A campanha sem funil/oferta identificado. Link para Campanhas › Legadas SÓ
- * se ela entra na fila (`ehCandidataALegada`): um `[FZA1]…` sem `perpetuo` não
- * aparece lá (29.79 R3) — o link mandaria a pessoa procurar o que não existe
- * (PO-08).
+ * se ela entra na fila (`ehCandidataALegada`) — sem isso o link mandaria a
+ * pessoa procurar o que não existe (PO-08). Desde a 47.17 o `[FZA1]…` entra
+ * (era o R3 da 29.79); fica fora o nome sem `perpetuo`, a1/a2 separado nem
+ * sigla entre colchetes.
  */
 export function sinalizacaoDaCampanhaSemDimensao(
   campanha: { campaignId: string; nome: string | null },

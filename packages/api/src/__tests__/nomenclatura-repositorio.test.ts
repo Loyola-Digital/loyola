@@ -9,6 +9,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
+import { REGEX_LEGADA_SQL } from "@loyola-x/shared";
 import { criarRepositorio } from "../services/nomenclatura/repositorio.js";
 
 const dialeto = new PgDialect();
@@ -22,6 +23,7 @@ function fakeDb(respostas: unknown[][] = []) {
   const cadeia = (reg: Registro): Record<string, unknown> => {
     const eu: Record<string, unknown> = {
       from: vi.fn(() => cadeia(reg)),
+      innerJoin: vi.fn(() => cadeia(reg)),
       where: vi.fn((w: unknown) => {
         reg.where = w;
         return cadeia(reg);
@@ -399,3 +401,28 @@ describe("Story 47.3: snapshot — por código, com os pais resolvidos", () => {
   });
 });
 
+
+describe("Story 47.17: legadas.listar — o `~*` da fila recebe a constante do shared", () => {
+  // Nenhum teste roda Postgres: aqui se prova o FIO (o predicado usa
+  // `REGEX_LEGADA_SQL` como parâmetro, sem cópia); o dialeto `~*` foi provado
+  // pelo SELECT somente leitura em produção (DoD da story).
+  it("o predicado é `entity_name ~* $n` com o parâmetro === REGEX_LEGADA_SQL, que contém a forma entre colchetes", async () => {
+    const a = fakeDb([[]]);
+    const r = await criarRepositorio(a.db).legadas.listar({});
+    const q = sqlDe(a.registros[0].where);
+    expect(q.sql).toMatch(/"entity_type" = \$1/);
+    expect(q.sql).toMatch(/"entity_name" ~\* \$2/);
+    expect(q.params).toEqual(["campaign", REGEX_LEGADA_SQL]);
+    expect(q.params[1]).toBe(REGEX_LEGADA_SQL);
+    expect(new RegExp(q.params[1] as string, "i").test("[FZA1][FB/IG][LEADS][2025.08.25][COLD][ASC]")).toBe(true);
+    // vazio: não consulta gasto nem decisões
+    expect(a.registros).toHaveLength(1);
+    expect(r.nomes).toEqual([]);
+  });
+  it("projeto e busca entram no MESMO where, depois da regex", async () => {
+    const a = fakeDb([[]]);
+    await criarRepositorio(a.db).legadas.listar({ projectId: EXPERT, q: "fza1" });
+    const q = sqlDe(a.registros[0].where);
+    expect(q.params).toEqual(["campaign", REGEX_LEGADA_SQL, EXPERT, "%fza1%"]);
+  });
+});
