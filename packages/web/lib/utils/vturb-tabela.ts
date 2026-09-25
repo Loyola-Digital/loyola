@@ -12,20 +12,22 @@
 //
 // e as duas TRUNCADAS a 2 casas: PPS 13/164 = 7,9268 → o VTurb mostra 7,92,
 // não 7,93. ⚠️ `over + under` NÃO é "quem deu play" (NETÃO: 4.032 contra
-// 3.903 plays únicos) — é a conta do cartão da Análise MVP (29.41), que fica
-// como está (Fora do escopo da story).
+// 3.903 plays únicos). A partir da 29.81 o cartão da Análise MVP também usa
+// esta conta (soma dos vídeos, `somaDasVsls`); a CADEIA da 29.36 mantém a base
+// encadeada (over ÷ plays únicos) — ver `mvp-vsl-somada.ts`.
 //
 // ## Truncar com INTEIROS (PO-09)
 //
-// Truncar em ponto flutuante erra em razão redonda: 57/100 dá 0,57, ×10000 =
-// 5699,999… e o piso vira 56,99 %. Conferido em 23/09 contra o piso exato
-// (BigInt), em todos os pares p ≤ t ≤ 5.000: `⌊p ÷ t × 100 × 100⌋` diverge em
-// 3.457 pares (o número do @po) e `⌊p ÷ t × 10000⌋` em 1.680. A conta aqui é
-// `⌊p × 10000 ÷ t⌋`, com a correção feita por MULTIPLICAÇÃO de inteiros —
-// nunca confiando no arredondamento da divisão.
+// A conta inteira (`centesimosTruncados`, `textoDePercentual`) mudou para o
+// módulo folha `packages/shared/src/percentual-truncado.ts` na Story 29.81
+// (PO-07): o feed público da 43.5 passou a precisar dela na API. Continua
+// reexportada daqui para os consumidores do web não mudarem de import.
 // ============================================================
 
 import { shiftDayKey } from "@loyola-x/shared/src/janela-de-dias";
+import { centesimosTruncados, textoDePercentual } from "@loyola-x/shared/src/percentual-truncado";
+
+export { centesimosTruncados, textoDePercentual };
 
 /** Os quatro brutos por vídeo, como a API devolve. */
 export interface BrutosDaVsl {
@@ -64,30 +66,6 @@ export interface CelulaDeTaxa {
 }
 
 const ausente = (motivo: string): CelulaDeTaxa => ({ texto: null, motivo });
-
-/**
- * `parte ÷ todo` em CENTÉSIMOS DE PONTO PERCENTUAL, truncado: 13/164 → 792
- * (7,92 %). `null` quando o denominador é zero ou os números não são contagens
- * válidas — zero no denominador é ausência de medição, não taxa zero.
- */
-export function centesimosTruncados(parte: number, todo: number): number | null {
-  if (!Number.isInteger(parte) || !Number.isInteger(todo) || todo <= 0 || parte < 0) return null;
-  const alvo = parte * 10000;
-  // Estimativa pela divisão e correção EXATA por multiplicação de inteiros: o
-  // resultado é o maior q com q × todo ≤ parte × 10000, sem depender de como a
-  // divisão em ponto flutuante arredondou.
-  let q = Math.floor(alvo / todo);
-  while (q > 0 && q * todo > alvo) q--;
-  while ((q + 1) * todo <= alvo) q++;
-  return q;
-}
-
-/** 792 → `"7,92%"`; 5700 → `"57,00%"`. Montado a partir dos inteiros, sem `toFixed`. */
-export function textoDePercentual(centesimos: number): string {
-  const inteiro = Math.trunc(centesimos / 100);
-  const fracao = String(centesimos % 100).padStart(2, "0");
-  return `${inteiro},${fracao}%`;
-}
 
 function celula(parte: number, todo: number, motivoDoZero: string): CelulaDeTaxa {
   const c = centesimosTruncados(parte, todo);
@@ -128,17 +106,30 @@ export interface TotalDaTabela {
 }
 
 /**
- * Story 29.78 (AC2) — a linha de Total, pela SOMA DOS BRUTOS.
+ * Story 29.81 (AC2, PO-07) — o Σ dos brutos da linha de Total, EXTRAÍDO de
+ * `totalDaTabela` para a Análise MVP usar a mesma soma em vez de reescrevê-la.
  *
- * Nunca média de taxas: um vídeo com 50 views e 80 % de play não pesa o mesmo
- * que um com 5.000 views e 30 %. Um aparelho que viu dois vídeos conta nos
- * dois — a tela declara.
+ * - vídeo com a leitura falha: fora de tudo (`foraPorFalha`);
+ * - vídeo sem pitch: entra no Play Rate e fica fora da Retenção (`foraDaRetencao`);
+ * - `over`/`under` somam só os vídeos com pitch.
  */
-export function totalDaTabela(videos: readonly VslDoFunil[]): TotalDaTabela {
+export interface SomaDasVsls {
+  viewed: number;
+  started: number;
+  over: number;
+  under: number;
+  /** Os vídeos que entraram no Σ (a leitura deu certo), na ordem da resposta. */
+  lidos: VslDoFunil[];
+  foraPorFalha: string[];
+  foraDaRetencao: string[];
+}
+
+export function somaDasVsls(videos: readonly VslDoFunil[]): SomaDasVsls {
   let viewed = 0;
   let started = 0;
   let over = 0;
   let under = 0;
+  const lidos: VslDoFunil[] = [];
   const foraPorFalha: string[] = [];
   const foraDaRetencao: string[] = [];
   for (const v of videos) {
@@ -146,6 +137,7 @@ export function totalDaTabela(videos: readonly VslDoFunil[]): TotalDaTabela {
       foraPorFalha.push(v.nome);
       continue;
     }
+    lidos.push(v);
     viewed += v.brutos.viewedUniq;
     started += v.brutos.startedUniq;
     if (v.pitchConfigurado) {
@@ -155,7 +147,18 @@ export function totalDaTabela(videos: readonly VslDoFunil[]): TotalDaTabela {
       foraDaRetencao.push(v.nome);
     }
   }
-  const lidos = videos.filter((v) => v.brutos);
+  return { viewed, started, over, under, lidos, foraPorFalha, foraDaRetencao };
+}
+
+/**
+ * Story 29.78 (AC2) — a linha de Total, pela SOMA DOS BRUTOS.
+ *
+ * Nunca média de taxas: um vídeo com 50 views e 80 % de play não pesa o mesmo
+ * que um com 5.000 views e 30 %. Um aparelho que viu dois vídeos conta nos
+ * dois — a tela declara.
+ */
+export function totalDaTabela(videos: readonly VslDoFunil[]): TotalDaTabela {
+  const { viewed, started, over, under, lidos, foraPorFalha, foraDaRetencao } = somaDasVsls(videos);
   if (lidos.length === 0) {
     // Nenhum vídeo lido: o Total não é "sem dados", é falha — dizer o motivo certo.
     return { playRate: ausente(MOTIVO_FALHA), retencao: ausente(MOTIVO_FALHA), foraPorFalha, foraDaRetencao };

@@ -8,10 +8,20 @@
 // Com a montagem aqui, o teste chama a MESMA função que a rota chama. Se alguém
 // resolver a ausência com `total_clicked_device_uniq`, o teste quebra.
 //
-// Tudo puro. Nenhuma I/O.
+// Tudo puro. Nenhuma I/O — a de `lerEtapasDoFeed` é injetada.
+//
+// Story 29.81 (AC8) — o `pitchRate` do feed passa a ser a Retenção ao pitch
+// "igual o VTurb": over ÷ (over + under), TRUNCADA em centésimos de ponto
+// percentual, com o pitch ATUAL do VTurb. Sai de `retencaoDoVturb`, função
+// nova — `derivarCadeia` não muda (a cadeia da Análise MVP segue nela, AC5).
+// Uma linha por vínculo etapa↔vídeo, como antes: a soma dos vídeos não foi
+// pedida para o feed.
 // ============================================================
 
-import type { CadeiaVturb, TaxaMedida } from "./vturb-chain.js";
+import { fracaoTruncada } from "@loyola-x/shared";
+import { derivarCadeia, pitchInvalido, ProtocolViolation, type CadeiaVturb, type TaxaMedida } from "./vturb-chain.js";
+import { pitchAtualDoPlayer } from "./vturb-tabela.js";
+import type { VturbPlayer, VturbSessionStats } from "./vturb.js";
 
 /** Forma pública de uma taxa: nunca só o valor. */
 export interface TaxaPublica {
@@ -109,4 +119,128 @@ export function consultasRestantes(quota: { quotas: { queries: { remaining: numb
  */
 export function quotaComporta(restantes: number, players: number): boolean {
   return restantes >= players;
+}
+
+/**
+ * Story 29.81 (AC8) — a declaração da base do `pitchRate`, num campo ADITIVO da
+ * resposta (`pitchRateBase`).
+ *
+ * A chave `pitchRate` continua a mesma e o número muda: é a armadilha "outra
+ * métrica com o mesmo nome" que `vturb-chain.ts` registra. Quem consome o feed
+ * (o Slide 20, por chave de API) precisa saber que a base mudou e que
+ * `pitchRate.denominador` deixou de ser `playRate.numerador` — as taxas do feed
+ * não se multiplicam mais.
+ */
+export const PITCH_RATE_BASE = {
+  metrica: "retencao_ao_pitch_vturb",
+  formula: "total_over_pitch ÷ (total_over_pitch + total_under_pitch)",
+  arredondamento: "truncado em centésimos de ponto percentual (valor com 4 casas), igual ao painel do VTurb",
+  pitch: "pitch_time ATUAL do player no VTurb (/players/list), não a cópia gravada no vínculo",
+  desde: "Story 29.81 (contrato v27). Antes: total_over_pitch ÷ total_started_device_uniq, com a cópia do pitch.",
+  nota: "pitchRate.denominador (acima + abaixo do pitch) não é playRate.numerador (plays únicos): as taxas do feed não se multiplicam.",
+} as const;
+
+const MOTIVO_SEM_PITCH_DO_FEED = "pitch_time não configurado no VTurb";
+
+/**
+ * Story 29.81 (AC8) — a Retenção ao pitch "igual o VTurb" de UM vídeo.
+ *
+ * `over ÷ (over + under)`, truncada com a mesma conta inteira da tabela das
+ * VSLs (`fracaoTruncada`, shared): 225/4032 → 0,0558; 13/164 → 0,0792, e não
+ * 0,0793. Pitch 0 ou ausente → `valor: null` com o motivo (com pitch 0 o VTurb
+ * conta todo mundo "acima", ~100 % falso). Denominador zero → ausência.
+ */
+export function retencaoDoVturb(stats: VturbSessionStats, pitchTimeAtual: number | null): TaxaPublica {
+  const over = Number(stats.total_over_pitch ?? 0);
+  const under = Number(stats.total_under_pitch ?? 0);
+  const denominador = over + under;
+  if (pitchInvalido(pitchTimeAtual)) {
+    return { valor: null, motivo: MOTIVO_SEM_PITCH_DO_FEED, numerador: over, denominador: Math.max(0, denominador || 0) };
+  }
+  if (!(denominador > 0)) {
+    return { valor: null, motivo: "denominador zero — não houve medição na janela", numerador: over, denominador: 0 };
+  }
+  const valor = fracaoTruncada(over, denominador);
+  if (valor === null) {
+    return { valor: null, motivo: "brutos do VTurb não são contagens válidas", numerador: over, denominador };
+  }
+  return { valor, numerador: over, denominador };
+}
+
+/**
+ * Story 29.81 (AC8) — a linha do feed: a de sempre (`montarEtapa` sobre
+ * `derivarCadeia`, com o pitch ATUAL), trocando SÓ o `pitchRate` pela
+ * Retenção do VTurb. `playRate`, `convPostPitch*` e o conjunto de linhas não
+ * mudam — o teste diferencial compara as duas montagens com os mesmos brutos.
+ */
+export function montarEtapaDoFeed(
+  info: { stageId: string; stageName: string; playerId: string; playerName: string },
+  stats: VturbSessionStats,
+  pitchTimeAtual: number | null,
+): EtapaVsl {
+  const cadeia = derivarCadeia(stats, pitchTimeAtual);
+  return { ...montarEtapa(info, cadeia), pitchRate: retencaoDoVturb(stats, pitchTimeAtual) };
+}
+
+/** Um vínculo etapa↔vídeo do projeto, como sai do banco. */
+export interface VinculoDoFeed {
+  stageId: string;
+  stageName: string;
+  playerId: string;
+  playerName: string;
+  duration: number | null;
+  /** A CÓPIA do pitch gravada no vínculo. NÃO é usada (AC8) — está aqui para o teste provar isso. */
+  pitchTime: number | null;
+}
+
+export interface FalhaDaEtapa {
+  stageId: string;
+  playerId: string;
+  motivo: string;
+  err: unknown;
+}
+
+/**
+ * Story 29.81 (AC8) — as linhas do feed, com as chamadas ao VTurb injetadas
+ * (padrão de `lerTabelaDasVsls`, 29.78), para o teste exercitar o laço que a
+ * rota roda:
+ *
+ * - UMA `/players/list` para o pitch ATUAL de todos; se falhar, a exceção
+ *   SOBE — a rota responde com o status do VTurb. Nunca a cópia do vínculo.
+ * - UMA linha por vínculo, na ordem do banco (sem soma — decisão 3).
+ * - o pitch enviado ao `sessions/stats` é o atual: é ele que define over/under.
+ * - falha de um vínculo vira `falhas` (o motivo vai para `avisos`); as outras
+ *   linhas seguem. Mesmo motivo de antes (`ProtocolViolation` × consulta).
+ */
+export async function lerEtapasDoFeed(input: {
+  vinculos: readonly VinculoDoFeed[];
+  listarPlayers: () => Promise<Pick<VturbPlayer, "id" | "pitch_time">[]>;
+  lerStats: (v: { playerId: string; pitchTime: number | null; videoDuration: number | null }) => Promise<VturbSessionStats>;
+}): Promise<{ etapas: EtapaVsl[]; falhas: FalhaDaEtapa[] }> {
+  const daConta = new Map((await input.listarPlayers()).map((pl) => [pl.id, pl]));
+  const etapas: EtapaVsl[] = [];
+  const falhas: FalhaDaEtapa[] = [];
+  for (const v of input.vinculos) {
+    try {
+      // Pitch 0, ausente ou vídeo fora da conta → `null` (regra `pitchInvalido`).
+      const { pitchTime } = pitchAtualDoPlayer(daConta.get(v.playerId));
+      const stats = await input.lerStats({ playerId: v.playerId, pitchTime, videoDuration: v.duration });
+      etapas.push(
+        montarEtapaDoFeed(
+          { stageId: v.stageId, stageName: v.stageName, playerId: v.playerId, playerName: v.playerName },
+          stats,
+          pitchTime,
+        ),
+      );
+    } catch (err) {
+      // `derivarCadeia` ABORTA em taxa fora de [0,1] em vez de degradar — uma
+      // etapa com dado inconsistente não pode derrubar a resposta inteira.
+      const motivo =
+        err instanceof ProtocolViolation
+          ? `dado inconsistente do VTurb: ${err.message}`
+          : "não foi possível consultar o VTurb para esta etapa";
+      falhas.push({ stageId: v.stageId, playerId: v.playerId, motivo, err });
+    }
+  }
+  return { etapas, falhas };
 }

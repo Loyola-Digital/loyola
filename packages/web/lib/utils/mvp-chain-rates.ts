@@ -20,6 +20,12 @@
  * 29.41 já os deriva dos brutos com a guarda de `pitch_time` (AC2 daquela
  * story). Recalcular aqui duplicaria a regra e as duas cópias divergiriam.
  *
+ * Story 29.81 — com a leitura de TODOS os vídeos do funil (`/vsls`), os brutos
+ * que chegam aqui são os Σ montados em `mvp-vsl-somada.ts` (AC4), e as duas
+ * taxas herdadas vêm de lá, na MESMA base encadeada (AC5: a cadeia não muda de
+ * base; CHAIN-01 segue). Os elos que cruzam com a Meta podem chegar com um
+ * motivo de ausência (vídeo que falhou, funil misto — AC3/AC7).
+ *
  * ## CHAIN-01: por que o numerador do connect rate vem do VTurb
  *
  * Existem dois "pageviews": `totalLandingPageViews` (Meta, evento do pixel) e
@@ -67,19 +73,44 @@ export interface ChainSourcesOverview {
 }
 
 export interface ChainSourcesVturb {
-  playerName: string;
-  playerId: string;
+  /** Player da `/chain` (29.41). Com a soma dos vídeos (29.81), vale `fonte`. */
+  playerName?: string;
+  playerId?: string;
+  /**
+   * Story 29.81 — a proveniência já escrita (ex.: "soma de 2 vídeos: A (id), B
+   * (id)"), no lugar de `player {nome} ({id})`. GR-01.e: lista os vídeos.
+   */
+  fonte?: string;
   viewedUniq: number;
   startedUniq: number;
   overPitch: number;
   /** Herdadas do backend da 29.41 — não recalcular. */
   playRate: TaxaMedida;
   pitchRate: TaxaMedida;
+  /**
+   * Story 29.81 (AC7, PO-05) — o `connect_rate` fica AUSENTE com este motivo:
+   * um Σ de pageviews sem um vídeo que falhou não descreve o funil que a Meta
+   * mediu. `null`/ausente = o elo é calculável.
+   */
+  motivoSemConnect?: string | null;
+  /**
+   * Story 29.81 (AC3/AC7, PO-04/PO-05) — o `conv_post_pitch` fica AUSENTE com
+   * este motivo: os checkouts da Meta cobrem o funil inteiro, e um Σ parcial de
+   * "acima do pitch" (vídeo sem pitch com plays, ou vídeo que falhou) daria uma
+   * taxa inflada com cara de medida.
+   */
+  motivoSemConvPostPitch?: string | null;
 }
 
 export interface ChainSources {
   overview: ChainSourcesOverview | null;
   vturb: ChainSourcesVturb | null;
+  /**
+   * Story 29.81 (AC7) — por que não há `vturb`. Sem isto, uma FALHA da leitura
+   * do VTurb aparecia como "VSL não vinculada" — erro virando ausência.
+   * Com motivo, os elos de vídeo saem ausentes com ele.
+   */
+  motivoSemVturb?: string | null;
 }
 
 const AUSENTE = (motivo: string, numerador: number | null, denominador: number | null): MeasuredRate => ({
@@ -130,12 +161,14 @@ function daTaxaMedida(t: TaxaMedida | undefined, source: string): MeasuredRate {
  * tela — a regra de editabilidade da 29.36 é "editável quando o sistema não
  * fornece", e ela permanece intacta.
  */
-export function buildMeasuredRates({ overview, vturb }: ChainSources): Record<string, MeasuredRate> {
+export function buildMeasuredRates({ overview, vturb, motivoSemVturb }: ChainSources): Record<string, MeasuredRate> {
   const out: Record<string, MeasuredRate> = {};
-  const player = vturb ? `player ${vturb.playerName} (${vturb.playerId})` : "";
+  const player = vturb ? (vturb.fonte ?? `player ${vturb.playerName} (${vturb.playerId})`) : "";
 
   // --- connect_rate: pageviews (VTurb) ÷ cliques no link (Meta) ---
-  if (vturb && overview) {
+  if (vturb?.motivoSemConnect) {
+    out.connect_rate = AUSENTE(vturb.motivoSemConnect, vturb.viewedUniq, overview?.totalLinkClicks ?? null);
+  } else if (vturb && overview) {
     out.connect_rate = taxa(
       vturb.viewedUniq,
       overview.totalLinkClicks,
@@ -143,6 +176,13 @@ export function buildMeasuredRates({ overview, vturb }: ChainSources): Record<st
       "acima de 100% — a página recebe visitas fora do anúncio (orgânico, e-mail, direto); " +
         "o numerador do VTurb não é subconjunto dos cliques da Meta neste período",
     );
+  } else if (!vturb && motivoSemVturb) {
+    // 29.81 (AC7): falha da leitura não é "sem VSL" — os elos de vídeo saem
+    // ausentes com o motivo da falha e voltam a aceitar digitação.
+    out.connect_rate = AUSENTE(motivoSemVturb, null, null);
+    out.play_rate = AUSENTE(motivoSemVturb, null, null);
+    out.pitch_rate = AUSENTE(motivoSemVturb, null, null);
+    out.conv_post_pitch = AUSENTE(motivoSemVturb, null, null);
   } else if (!vturb) {
     out.connect_rate = AUSENTE("VSL não vinculada — sem contagem de pageviews", null, null);
   }
@@ -153,13 +193,15 @@ export function buildMeasuredRates({ overview, vturb }: ChainSources): Record<st
     out.pitch_rate = daTaxaMedida(vturb.pitchRate, `VTurb /sessions/stats — ${player}`);
 
     // --- conv_post_pitch: checkouts (Meta) ÷ únicos no pitch (VTurb) ---
-    out.conv_post_pitch = taxa(
-      overview?.totalCheckouts,
-      vturb.overPitch,
-      `Meta insights initiate_checkout ÷ VTurb total_over_pitch — ${player}`,
-      "acima de 100% — a Meta atribui checkout por janela de conversão do pixel e o VTurb " +
-        "conta por sessão do vídeo; há checkout de quem não passou pelo pitch neste período",
-    );
+    out.conv_post_pitch = vturb.motivoSemConvPostPitch
+      ? AUSENTE(vturb.motivoSemConvPostPitch, overview?.totalCheckouts ?? null, vturb.overPitch)
+      : taxa(
+          overview?.totalCheckouts,
+          vturb.overPitch,
+          `Meta insights initiate_checkout ÷ VTurb total_over_pitch — ${player}`,
+          "acima de 100% — a Meta atribui checkout por janela de conversão do pixel e o VTurb " +
+            "conta por sessão do vídeo; há checkout de quem não passou pelo pitch neste período",
+        );
   }
 
   // --- conv_checkout: compras aprovadas ÷ checkouts iniciados (ambos Meta) ---

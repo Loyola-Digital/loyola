@@ -75,6 +75,23 @@ describe("derivarCadeia — Story 29.41", () => {
       // 0,4 × 0,25 = 0,10 — e 100/1000 = 0,10. É isso que CHAIN-01 garante.
       expect(c.playRate.valor! * c.pitchRate.valor!).toBeCloseTo(100 / 1000, 10);
     });
+
+    // Story 29.81 (AC5) — a Análise MVP passa a somar os brutos de TODOS os
+    // vídeos do funil, e a cadeia MANTÉM a base encadeada. CHAIN-01 tem que
+    // valer sobre o Σ, não só sobre um vídeo. `derivarCadeia` não mudou.
+    it("com 2 vídeos somados, CHAIN-01 segue: Σ plays únicos é numerador e denominador", () => {
+      const a = { total_viewed_device_uniq: 9000, total_started_device_uniq: 3903, total_over_pitch: 225 };
+      const b = { total_viewed_device_uniq: 500, total_started_device_uniq: 170, total_over_pitch: 13 };
+      const soma = stats({
+        total_viewed_device_uniq: a.total_viewed_device_uniq + b.total_viewed_device_uniq,
+        total_started_device_uniq: a.total_started_device_uniq + b.total_started_device_uniq,
+        total_over_pitch: a.total_over_pitch + b.total_over_pitch,
+      });
+      const c = derivarCadeia(soma, 160);
+      expect(c.playRate.numerador).toBe(4073);
+      expect(c.pitchRate.denominador).toBe(4073);
+      expect(c.playRate.valor! * c.pitchRate.valor!).toBeCloseTo(238 / 9500, 10);
+    });
   });
 
   describe("AC2 — pitch_time inválido bloqueia, não estima", () => {
