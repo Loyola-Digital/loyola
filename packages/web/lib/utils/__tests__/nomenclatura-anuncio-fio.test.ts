@@ -92,3 +92,22 @@ describe("AC6: nenhuma tela monta sigla + número à mão (perpetuonull/perpetuo
     });
   }
 });
+
+describe("Story 47.19 — no Novo anúncio, o lançamento vem antes do tipo de criativo", () => {
+  // Posição de cada campo pelo `id` no fonte: um por linha no grid (47.14), então a ordem no fonte É a ordem na tela.
+  const posicao = (id: string) => {
+    const i = gerador.indexOf(`id="${id}"`);
+    expect(i, `campo ${id} não encontrado no gerador`).toBeGreaterThan(-1);
+    return i;
+  };
+  it("AC3: Sigla (a-sigla) e Nº do lançamento (a-lnn) aparecem antes do Tipo de criativo (a-tipo) e do NN (a-nn)", () => {
+    for (const lancamento of ["a-sigla", "a-lnn"]) {
+      for (const depois of ["a-tipo", "a-nn"]) expect(posicao(lancamento)).toBeLessThan(posicao(depois));
+    }
+  });
+  it("AC1: a ordem completa — Expert → Sigla → Nº → Tipo → Origem → NN → Hook → Body → Mês e ano → Descrição → Observações", () => {
+    const ordem = ["a-expert", "a-sigla", "a-lnn", "a-tipo", "a-origem", "a-nn", "a-hook", "a-body", "a-mes", "a-desc", "a-notas"];
+    const posicoes = ordem.map(posicao);
+    expect(posicoes).toEqual([...posicoes].sort((x, y) => x - y));
+  });
+});
