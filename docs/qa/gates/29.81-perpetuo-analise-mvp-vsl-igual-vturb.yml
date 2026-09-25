@@ -1,0 +1,78 @@
+schema: 1
+storyId: '29.81'
+story: '29.81'
+story_title: 'Perpétuo — Análise MVP: "Cadeia da VSL" igual ao VTurb e somando todos os vídeos do funil'
+verdict: PASS
+gate: PASS
+status_reason: 'AC1–AC11 atendidos no caminho A: o cartão mostra a Retenção do Total da 29.78 (Σ dos vídeos, truncada) e avisa a base; a cadeia da 29.36 fica na base encadeada, com CHAIN-01 travado em 2 vídeos. `derivarCadeia`, `funnel-templates.ts` e `cac-protocol.ts` estão sem hunk. O feed muda só o `pitchRate` e segue com uma linha por vínculo. As 4 mutações próprias do @qa derrubam testes. Ficam 4 achados low e a operação: validação visual, aviso ao Slide 20 e renumeração do contrato no merge.'
+reviewer: 'Quinn'
+updated: '2026-09-25T00:20:00-03:00'
+branch: 'feat/29.81-analise-mvp-vturb'
+commit_reviewed: '14b616a2'
+base: 'origin/main d0f5b43d'
+
+issues:
+  - id: REL-001
+    severity: low
+    category: reliability
+    description: 'O feed 43.5 ganha um modo de falha novo. Antes ele respondia 200 sempre que havia conexão, e a falha de VTurb por etapa ia para `avisos`. Agora, se a `/players/list` falhar, a resposta inteira sai 502 (ou 429). O AC8 autoriza essa opção ("a resposta inteira falha com o status do VTurb"), e ela é mais honesta que o 200 calado de antes: com o VTurb fora, as `sessions/stats` falhariam todas e o feed vinha com `etapas: []`. O impacto prático é pequeno, porque a lista é 1 chamada entre 1+N e a checagem de quota já conta com ela. Mas o consumidor externo (Slide 20) nunca tinha recebido um status ≠ 200 por causa do VTurb.'
+    recommendation: 'Incluir no aviso ao Slide 20, junto com o R4 (a mudança de base do `pitchRate`): o feed pode responder 502/429 com `code: "VTURB_ERROR"`, e isso significa tentar de novo, não "sem VSL".'
+    status: open
+
+  - id: SEC-001
+    severity: low
+    category: security
+    description: 'O 502 do feed público devolve `err.message`. Num `VturbError` genérico, isso inclui até 200 caracteres do corpo da resposta do VTurb (`mensagemDoErro`, `services/vturb.ts:41-42`), e um erro que não é `VturbError` sai com a mensagem crua. É o mesmo padrão de `replyVturbError` nas rotas internas, só que agora numa rota de API pública. O consumidor é autenticado por chave do projeto e o token não aparece na mensagem.'
+    recommendation: 'Numa follow-up: no feed público, mandar só a mensagem mapeada (401/429/404/504) e trocar o resto por um texto fixo, com o detalhe no log.'
+    status: open
+
+  - id: MNT-001
+    severity: low
+    category: code
+    description: '(a) Um projeto sem VTurb conectado recebe 409 `NOT_CONNECTED` da `/vsls`. Hoje isso marca os 4 elos de vídeo da cadeia como "falha na leitura do VTurb: VTurb não conectado". Antes só o `connect_rate` dizia "VSL não vinculada". A editabilidade não muda (`value == null` continua digitável, `perpetual-chain-section.tsx:125`). O cartão já mostrava o mesmo texto antes. É uma ausência rotulada como falha, e o efeito é só de texto. (b) `pitchTimeUtil` (`vsl-funnel.ts:98`) deixou de ter uso em produção e só os testes a chamam.'
+    recommendation: '(a) Em `montarVturbDaMvp`, tratar `code === "NOT_CONNECTED"` como "VTurb não conectado", não como falha. (b) Remover `pitchTimeUtil` ou marcá-la como legado.'
+    status: open
+
+  - id: REL-002
+    severity: low
+    category: reliability
+    description: '`montarEtapaDoFeed` ainda calcula `derivarCadeia(stats, pitchAtual)` para aproveitar o `playRate` e o `convPostPitchDenominador`. Essa função ABORTA (`ProtocolViolation`) se over ÷ plays únicos passar de 1, e aí a linha sai do feed com o aviso "dado inconsistente", mesmo quando a Retenção publicada (over ÷ (over + under)) seria válida. Esse comportamento já existia antes da story, com a outra base. Ninguém mediu isso acontecendo: no NETÃO, 225 ≪ 3.903.'
+    recommendation: 'Nada agora. Se aparecer um aviso "dado inconsistente: pitch_rate" no feed, calcular o `playRate` sem passar pelo `taxa("pitch_rate")` que o feed descarta.'
+    status: open
+
+top_issues:
+  - id: REL-001
+    severity: low
+    finding: 'O feed público passa a responder 502/429 quando a `/players/list` falha (antes era sempre 200). O AC8 autoriza, mas o Slide 20 nunca recebeu esse status.'
+    suggested_action: 'Avisar o Slide 20 junto com o R4 (a base do `pitchRate` mudou).'
+  - id: SEC-001
+    severity: low
+    finding: 'O 502 público devolve até 200 caracteres do corpo do VTurb.'
+    suggested_action: 'Follow-up: só a mensagem mapeada na rota pública.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Diff `origin/main...14b616a2` com 16 arquivos. **CHAIN-01 intacto:** `vturb-chain.ts`, `funnel-templates.ts`, `cac-protocol.ts`, `perpetual-chain-section.tsx` e `routes/vturb.ts` estão sem hunk. Na cadeia, `pitchRateEncadeado` = Σ over ÷ Σ started; `connect_rate` = Σ viewed; `conv_post_pitch` = checkouts ÷ Σ over. O numerador de cada elo é o denominador do seguinte. **Cartão:** `retencao` = `totalDaTabela(videos).retencao` (a mesma função do Total da 29.78, com o Σ extraído em `somaDasVsls`); o Play rate segue arredondado; o `AVISO_DA_CADEIA` declara a base encadeada; `DICA_DA_SOMA`, "soma de X de Y vídeos", proveniência por vídeo com o pitch atual, e a guarda de janela com `tabela.range`. **Funil misto** (vídeo lido, sem pitch, com `startedUniq > 0`): `pitch_rate` e `conv_post_pitch` saem ausentes com o motivo nomeando o vídeo, e a Retenção do cartão cobre os vídeos com pitch, com "Fora da Retenção". **Falha parcial:** fica fora do Σ com linha vermelha no cartão, e `connect_rate`/`conv_post_pitch` saem ausentes com o motivo. **Falha geral:** erro no cartão e os 4 elos ausentes com o motivo, sem número calado. **Fallback:** a `/chain` só é pedida no 404 da `/vsls` (`enabled` via `projectId` nulo). **Feed:** `montarEtapaDoFeed` = `montarEtapa(derivarCadeia(stats, pitchAtual))` trocando só `pitchRate` por `retencaoDoVturb` (`fracaoTruncada` do shared). `lerEtapasDoFeed` faz uma linha por vínculo, em sequência; o pitch atual vem de uma `/players/list` e é o enviado ao `sessions/stats`; a quota conta +1; `pitchRateBase` vai nas 4 respostas de sucesso. O truncamento foi movido, sem reescrita, para o módulo folha `shared/src/percentual-truncado.ts`: o web importa por subpath e a API pelo índice.'
+  unit_tests: 'Re-rodado pelo @qa: web completo **1.673/1.673** (121 arquivos); API `public-vsl`, `public-vsl-fio`, `vturb-chain`, `vturb-tabela` e `vturb-rotas-fio` com **81/81**; web `mvp-vsl-somada(-fio)`, `mvp-chain-rates` e `vturb-tabela` com **78/78**. **Mutações próprias** (runner em scratchpad: aplica, roda, restaura com `git checkout`; `git status`/`git diff` vazios no fim): **Q1** fonte da cadeia com `overPitch: soma.over + soma.under` (CHAIN-01 no elo pitch→pós-pitch, a cadeia com a base do VTurb) → **3 falhas**; **Q2** funil misto com `startedUniq >= 0` (vídeo sem pitch e sem plays tornando o funil misto) → **1**; **Q3** feed trocando também o `convPostPitchDenominador` por over+under (muda mais que o `pitchRate`) → **3**; **Q4** `lerEtapasDoFeed` engolindo a falha da `/players/list` com `.catch(() => [])` (feed calado, com pitch nulo em tudo) → **1**. As 21 provas do @dev (W-a…W-l, A-a…A-h) não foram refeitas. Observação: o teste novo de `vturb-chain.test.ts` (2 vídeos) soma à mão e chama `derivarCadeia`, mas o Σ de produção da MVP não passa por `derivarCadeia`. A prova real do CHAIN-01 com 2 vídeos é a do web (`mvp-vsl-somada.test.ts:133-137`), e a Q1 a derruba.'
+  acceptance_criteria: '**AC1** ✓: Retenção sobre over+under, truncada pela conta inteira do shared, rótulo "igual ao VTurb", Play rate arredondado. **AC2** ✓: `/vsls` (união, ordem, recorte da 29.78), Σ de `somaDasVsls` extraído de `totalDaTabela`, contagem de vídeos, dica da soma, proveniência lista os vídeos, guarda com a janela devolvida. **AC3** ✓: pitch atual (`/players/list` na `/vsls`), rodapé sem a cópia, vídeo sem pitch fora do Σ da Retenção com indicação, funil misto → elos ausentes com motivo. **AC4** ✓: `connect_rate` com Σ viewed, `conv_post_pitch` com Σ over. **AC5** ✓ (padrão): a cadeia continua encadeada, os 3 arquivos estão intocados, o aviso aparece no cartão e o item 5 do mapa foi estendido a 2 vídeos em `mvp-vsl-somada.test.ts` (não em `mvp-chain-rates.test.ts`, que ficou intacto e verde). **AC6** ✓: a janela anterior passa pela mesma montagem. **AC7** ✓. **AC8** ✓: todos os subitens, com a opção "a resposta inteira falha" para a lista (REL-001). **AC9** ✓. **AC10** ✓: fio web e API por leitura de fonte; `PgDialect` não se aplica no caminho A (o recorte é o da `/vsls`, provado na 29.78). **AC11** ✓ (ver lint e build_typecheck).'
+  no_regressions: 'Com a API antiga (404 da `/vsls`), o cartão e a cadeia voltam a ser os da `/chain`, sem mudança. Funil sem vídeo (200 `[]`) continua "Nenhuma VSL vinculada". A cadeia só muda onde o AC manda: o Σ e os elos ausentes com motivo. O feed muda o `pitchRate` (pedido) e ganha o 502/429 da lista (REL-001). A suíte completa da API não foi refeita pelo @qa; o @dev registrou 3.366/3.376 com as 10 falhas da baseline alheia.'
+  performance: 'Cota do VTurb: a MVP passa de 2 para 2 × (1 + N) chamadas por abertura (duas janelas, cada uma com `/players/list` + N `sessions/stats`), com cache de 2 min. Com N = 2 são 6 contra 2. O R6 aceitou isso. A chave `vturb-vsls` é compartilhada com o bloco VSL, mas as janelas quase nunca coincidem (calendário × 7/30/90), então na prática não há economia. Funil com muitos vídeos e várias abas abertas na mesma conta pode chegar perto de 60/min; vale observar. Feed: +1 chamada por requisição, já contada na quota.'
+  security: 'O recorte não mudou. Feed: `requireScope(PUBLIC_READ_SCOPE)`, vínculos do projeto da URL; o `pitchRateBase` é constante. MVP: `/vsls` com `denyGuest`, funil do projeto e vínculos por etapa E `project_id` (29.78). Novidade menor: o 502 público repassa o texto do erro do VTurb (SEC-001, low).'
+  documentation: 'Dev Agent Record completo: caminho A com a razão, 4 decisões e desvios declarados, 21 provas com contagem, gates. JSDoc de `PITCH_RATE_BASE`, `retencaoDoVturb`, `lerEtapasDoFeed` e `montarVturbDaMvp` explica o porquê. O texto "· numerador manual" do `conv_post_pitch` ficou mantido de propósito (Fora do escopo, AUTO-DECISION registrada).'
+  api_contract: '**v26 → v27**, com a linha de histórico (`pitchRateBase` aditivo; a chave `pitchRate` muda de significado, 5,76 → 5,58 no NETÃO; consumidor externo; `packages/mcp` não afetado; o web não exige API nova porque a `/vsls` existe desde a v23 e o 404 cai na `/chain`). A `main` está em v26. Se outra PR subir o contrato antes do merge, renumerar é do @devops, não é FAIL desta story.'
+  lint: 'eslint re-rodado pelo @qa nos tocados: web 7 arquivos (componente, `mvp-vsl-somada`, `mvp-chain-rates`, `vturb-tabela`, `use-vturb`, 2 testes) com EXIT 0; API 5 arquivos (rota, `vsl-funnel`, 3 testes) com EXIT 0.'
+  build_typecheck: '`shared build` re-rodado: EXIT 0. `tsc --noEmit` da API (binário direto) re-rodado: 0 erros, em 10 s. `next build` e `tsc` do web não foram refeitos (instrução do lead; o @dev registrou web 0 e build EXIT 0). O import novo do web é por subpath de módulo folha sem imports, no padrão de `janela-de-dias`.'
+
+notes:
+  - 'Validação visual pendente (DoD, Danilo): ≥ 2 vídeos vinculados no `bbe_churrasco`, com as MESMAS datas no calendário da MVP e no bloco VSL. A Retenção do cartão tem que bater com a linha de Total da tabela; por construção é a mesma função (`totalDaTabela`).'
+  - 'Feed (DoD): conferir com a chave de API que o `pitchRate` de uma linha bate com a Retenção daquele vídeo na tabela, e que há uma linha por vídeo.'
+  - 'Operacional antes ou junto do deploy: avisar quem monta o Slide 20 sobre a mudança de base do `pitchRate` (R4) e sobre o 502/429 novo (REL-001).'
+  - 'Consultas antigas ao feed guardadas pelo Slide 20 não são comparáveis com as novas: a base mudou (as taxas do feed não se multiplicam mais). Está dito em `pitchRateBase.nota`.'
+  - 'CodeRabbit não executado (CLI em WSL, ausente no macOS). Revisão manual do diff.'
+
+history:
+  - at: '2026-09-25T00:20:00-03:00'
+    commit: '14b616a2'
+    verdict: PASS
+    summary: 'Primeiro gate. AC1–AC11 ✓ (AC5 no padrão: CHAIN-01 intacto, 3 arquivos sem hunk). Mutações próprias Q1 → 3, Q2 → 1, Q3 → 3, Q4 → 1; diff vazio depois. Web 1.673/1.673; API-alvo 81/81; tsc api 0; eslint 0. Contrato v27 sobre main v26. 4 low abertos: REL-001 (502/429 novo no feed, autorizado pelo AC8), SEC-001 (corpo do VTurb no 502 público), MNT-001 (NOT_CONNECTED rotulado como falha; `pitchTimeUtil` órfã), REL-002 (`ProtocolViolation` do `pitch_rate` descartado derruba a linha).'
