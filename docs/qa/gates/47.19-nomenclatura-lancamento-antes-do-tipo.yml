@@ -1,0 +1,26 @@
+schema: 1
+story: '47.19'
+story_title: 'Nomenclatura — no "Novo anúncio", o lançamento vem antes do tipo de criativo'
+gate: PASS
+status_reason: 'Só a posição mudou. Ordenadas, as linhas do componente na main e na branch são idênticas, com 2 exceções: o comentário novo da 47.19 e o complemento no comentário da 47.14. Os 6 trechos removidos e os 6 adicionados batem byte a byte (regras, estados, textos e prévia intactos). Minha mutação (só o Nº do lançamento de volta para depois do NN, com a Sigla em cima) derruba os 2 testes da 47.19. Web 1687/1687 e eslint 0.'
+reviewer: 'Quinn'
+updated: '2026-09-25T20:05:00Z'
+branch: 'feat/47.19-lancamento-antes-do-tipo'
+commit_reviewed: 'd3a02146'
+
+top_issues: []
+
+waiver: { active: false }
+
+checks:
+  code_review: '`git diff origin/main...HEAD`: 3 arquivos (componente, teste do fio, story). No `gerador-de-anuncio.tsx`, o `SelectDeValor` `a-sigla` e o bloco `a-lnn` (Label + Input + ajuda) saíram de depois do NN e foram para logo depois do `SeletorDeExpert`. Prova de "só posição": sem as linhas `{/* */}`, o conjunto de linhas removidas é igual ao de adicionadas (`diff` vazio, 6 e 6). O `sort` do arquivo inteiro, main contra branch, só difere nos 2 comentários. Os 11 `id="a-*"` são únicos no fonte (conferido), então o `indexOf` do teste não pega o campo errado. `semNumero`, `proximo` e `aoEscolherNoAnuncio` estão no mesmo escopo da função, e mudar JSX de lugar não altera a ordem de hooks.'
+  unit_tests: 'Teste do fio: 16/16. Web completo: 121 arquivos, 1687/1687. eslint nos 2 arquivos: EXIT 0. MUTAÇÃO PRÓPRIA (diferente da prova do @dev, que voltou o arquivo inteiro): só o bloco `a-lnn` foi movido para depois do bloco do NN, com a `a-sigla` ainda logo após o Expert. Resultado: 2 falhas (AC3 e AC1), 14 passam. Revertida com `git checkout`; `git diff` vazio.'
+  acceptance_criteria: 'AC1 ✓ (Expert → Sigla → Nº → Tipo → Origem → NN → Hook → Body → Mês → Descrição → Observações; o teste confere os 11 em ordem) · AC2 ✓ (linhas movidas sem alteração; prévia e montagem do nome não foram tocadas) · AC3 ✓ (teste de leitura de fonte; a volta parcial do Nº também cai) · AC4 ✓ (eslint 0 e vitest verde rodados aqui; `next build` EXIT 0 e `tsc` 0 registrados pelo @dev, não refeitos por instrução)'
+  no_regressions: 'Os 14 testes anteriores do arquivo do fio (47.16/47.18) continuam verdes. A suíte do web está 100% verde.'
+  performance: 'N/A: reordenação de JSX.'
+  security: 'N/A: só web e só ordem de campos.'
+  api_contract: 'N/A: sem API, sem contrato, sem migration.'
+
+notes:
+  - 'Pendente (DoD, Danilo): validação visual em Nome Ads › Novo anúncio (Sigla e Nº logo abaixo do Expert).'
+  - 'O teste lê a ordem no FONTE; ela equivale à ordem na tela porque o grid tem um campo por linha (47.14) e não há classe `order-*`. Se o layout voltar a agrupar campos, o teste deixa de provar a ordem visual.'
