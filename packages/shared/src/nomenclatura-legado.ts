@@ -9,7 +9,8 @@
  *
  * O filtro é por TOKEN: `a1`/`a2` com borda não alfanumérica dos dois lados e
  * sem dígito depois, ou `perpetuo`. Como substring, `a1` casaria `a10`, `ba1`
- * e trouxe +28 campanhas que não são perpétuo na medição.
+ * e trouxe +28 campanhas que não são perpétuo na medição. Story 47.17: também
+ * a sigla colada ao funil entre colchetes (`[FZA1]`) — ver `FUNIL_ENTRE_COLCHETES`.
  *
  * A sugestão só devolve valores que EXISTEM no snapshot do dicionário — o
  * parser reconhece `vencedores` no nome, mas não é formato cadastrado, então
@@ -18,9 +19,27 @@
  * Módulo folha, sem imports (ver `nomenclatura-codigos.ts`).
  */
 
+/**
+ * Story 47.17 — a forma `[<sigla do expert>A<N>]` (`[FZA1]`, `[DGA1]`): sigla de
+ * 2 a 4 letras (o formato de `naming_experts.code`) colada ao funil, entre
+ * colchetes; o grupo 1 é o N (1–2 dígitos).
+ *
+ * UMA definição só, lida em três lugares: a fila de Legadas (dentro de
+ * `REGEX_LEGADA_SQL`, no `~*` do Postgres e no `RegExp` do JS), a sugestão de
+ * funil de `sugerirClassificacao` e a leitura de funil da 29.79
+ * (`funil-e-oferta.ts`, que importa daqui). Por isso é texto válido nos DOIS
+ * dialetos: `\[`/`\]` literais e `[0-9]` em vez de `\d`. Casa em minúsculas
+ * — quem lê sem `i` precisa baixar a caixa antes.
+ *
+ * Mora aqui, e não na 29.79, porque este módulo é importado por VALOR no web
+ * (subpath) e tem que continuar folha, sem imports.
+ */
+export const FUNIL_ENTRE_COLCHETES = "\\[[a-z]{2,4}a([0-9]{1,2})\\]";
+
 /** A MESMA expressão que a consulta SQL usa (`~*`). Mudar aqui é mudar lá. */
-export const REGEX_LEGADA_SQL = "(^|[^a-z0-9])(a1|a2)([^a-z0-9]|$)|perpetuo|perpétuo";
+export const REGEX_LEGADA_SQL = `(^|[^a-z0-9])(a1|a2)([^a-z0-9]|$)|perpetuo|perpétuo|${FUNIL_ENTRE_COLCHETES}`;
 const REGEX_LEGADA = new RegExp(REGEX_LEGADA_SQL, "i");
+const FUNIL_COLADO = new RegExp(FUNIL_ENTRE_COLCHETES);
 
 export function ehCandidataALegada(nome: string | null | undefined): boolean {
   if (!nome) return false;
@@ -73,10 +92,11 @@ export function sugerirClassificacao(nomeAntigo: string, snapshot: Snapshot, exp
     confianca.expert = expertHint ? "alta" : "media";
   } else if (prefixo) naoCadastrado.push(`expert ${prefixo}`);
 
-  // funil: `-a1-` → a01
-  const fun = nome.match(/(^|[^a-z0-9])a(\d)([^0-9]|$)/)?.[2];
+  // funil: `-a1-` → a01; senão `[fza1]` → a01 (47.17). A forma delimitada vem
+  // primeiro para que nenhum nome que já tinha sugestão mude de funil.
+  const fun = nome.match(/(^|[^a-z0-9])a(\d)([^0-9]|$)/)?.[2] ?? nome.match(FUNIL_COLADO)?.[1];
   if (fun && expert) {
-    const code = `a0${fun}`;
+    const code = `a${fun.padStart(2, "0")}`; // `[fza10]` → a10, nunca a010
     if (ativos(snapshot.funis).some((f) => f.expert === expert && f.code === code)) {
       campos.funnel = code;
       confianca.funnel = "media";

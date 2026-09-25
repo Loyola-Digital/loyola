@@ -152,6 +152,7 @@ export {
 // Story 47.5: campanhas legadas — filtro por token e sugestão de classificação
 // a partir do nome antigo. Módulo folha (web: subpath `src/nomenclatura-legado`).
 export {
+  FUNIL_ENTRE_COLCHETES,
   REGEX_LEGADA_SQL,
   ehCandidataALegada,
   sugerirClassificacao,

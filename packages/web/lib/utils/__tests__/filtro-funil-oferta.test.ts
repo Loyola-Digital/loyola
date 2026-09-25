@@ -276,8 +276,14 @@ describe("sinalizações com link para o cadastro (AC5)", () => {
     expect(sinalizacaoDaCampanhaSemDimensao(CAMPANHAS[1], false).href).toBeNull();
   });
 
-  it("PO-08 — `[FZA1]…` não entra na fila: o texto diz isso e NÃO leva link", () => {
+  it("47.17 — `[FZA1]…` ENTRA na fila (era o R3 da 29.79): leva o link para Campanhas › Legadas", () => {
     const s = sinalizacaoDaCampanhaSemDimensao(CAMPANHAS[3], true);
+    expect(s.acao).toBe("Classificar em Campanhas › Legadas");
+    expect(s.href).toBe("/settings/nomenclatura?secao=campanhas&aba=legadas");
+  });
+
+  it("PO-08 — campanha que não entra na fila: o texto diz isso e NÃO leva link", () => {
+    const s = sinalizacaoDaCampanhaSemDimensao(camp({ campaignId: "666", nome: "[30-14-7-5A1] captação" }), true);
     expect(s.href).toBeNull();
     expect(s.acao).toBeNull();
     expect(s.texto).toMatch(/Não entra na fila de Legadas/);
@@ -310,7 +316,7 @@ describe("montarAvisoDoFiltro (AC4)", () => {
     expect(a.campanhas.map((c) => [c.campaignId, c.gasto])).toEqual([["444", 7000], ["222", 70]]);
     expect(a.gastoSemDimensao).toBe(7070);
     expect(a.campanhas[0].motivo).toBe("sem oferta identificada — sem código no nome");
-    expect(a.campanhas[0].sinalizacao.href).toBeNull(); // [FZA1] fora da fila
+    expect(a.campanhas[0].sinalizacao.href).toBe("/settings/nomenclatura?secao=campanhas&aba=legadas"); // [FZA1] na fila desde a 47.17
     expect(a.campanhas[1].sinalizacao.href).toBe("/settings/nomenclatura?secao=campanhas&aba=legadas");
   });
 
