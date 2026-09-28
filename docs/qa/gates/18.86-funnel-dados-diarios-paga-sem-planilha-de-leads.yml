@@ -1,0 +1,34 @@
+schema: 1
+story: '18.86'
+story_title: 'Dados diários da Captação Paga aparecem com a planilha de vendas, sem exigir planilha de leads'
+gate: CONCERNS
+status_reason: 'AC1–AC4 batem com o código e com os testes (6 casos, mutação do @dev e do @qa derrubam). AC5 (validação visual na dgpg05-out-26 e bbe-pr2-out-26) segue aberta — depende do gestor na tela. Nenhum achado de código.'
+reviewer: 'Quinn'
+updated: '2026-09-28T17:37:52Z'
+pr: 'https://github.com/Loyola-Digital/loyola/pull/950'
+commits: ['fa5778e6', '056ca350']
+
+top_issues:
+  - id: 'REQ-001'
+    severity: medium
+    finding: 'AC5 (validação visual) não executada: a tabela na dgpg05-out-26 e a bbe-pr2-out-26 inalterada só se provam com a tela e dados reais.'
+    suggested_action: 'Gestor confere no preview da PR (ou em produção após o merge) e registra no Dev Agent Record.'
+  - id: 'TEST-001'
+    severity: low
+    finding: 'A ligação no launch-dashboard.tsx (qual valor vai em temVendas/temPlanilhaDeLeads) não tem teste: o vitest do web não coleta .tsx. O helper é que está coberto.'
+    suggested_action: 'Coberto pela AC5; se o web ganhar jsdom + testing-library, testar a montagem.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'OK — condição extraída para deveMostrarDadosDiarios; temVendas = salesTableData !== undefined (já undefined com semDados); só a montagem da tabela (:713) muda; os 5 blocos vizinhos intocados, como o escopo manda.'
+  unit_tests: 'OK — 6 casos (AC1 + 4 combinações do AC3 + Gratuita com leads). Mutação @dev: regra antiga → 1 falha (AC1). Mutação @qa: sem ehPaga → 1 falha (Gratuita sem leads). Suíte web 1701/1701.'
+  acceptance_criteria: 'AC1 ✓ teste · AC2 ✓ por leitura: na Paga com vendas a tabela já lê ingressos de salesTableData e CPL de paidRows (inalterado) · AC3 ✓ testes · AC4 ✓ helper puro em lib/utils com prova por reversão · AC5 ⏳ visual pendente (REQ-001).'
+  no_regressions: 'OK — next build EXIT=0; tsc 0; eslint 0 nos arquivos tocados. Com planilha de leads o resultado é idêntico ao anterior (teste).'
+  performance: 'OK — uma função booleana por render.'
+  security: 'N/A — sem rota, sem dado novo.'
+  documentation: 'OK — story com investigação, dados de produção e Dev Agent Record; comentário no código aponta a story e o porquê.'
+  api_contract: 'N/A — nenhuma rota ou campo novo na API; API_CONTRACT_VERSION não muda.'
+
+notes:
+  - '[scope-override] em lib/utils/ autorizado pelo Lucas, informado pelo Danilo em 28/09 (canal não informado).'

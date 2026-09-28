@@ -1,0 +1,34 @@
+schema: 1
+story: '18.87'
+story_title: 'Desempenho de Criativos — filtro Vídeo / Estático / Todos pelo nome do anúncio'
+gate: CONCERNS
+status_reason: 'Regra, combinação com Hot/Cold, Total e paginação batem com o código e com os testes (8 casos; mutações do @dev e do @qa derrubam). AC8 (validação visual nas telas) segue aberta. Nenhum achado de código.'
+reviewer: 'Quinn'
+updated: '2026-09-28T17:37:52Z'
+pr: 'https://github.com/Loyola-Digital/loyola/pull/950'
+commits: ['fa5778e6', 'b159aa51']
+
+top_issues:
+  - id: 'REQ-001'
+    severity: medium
+    finding: 'AC8 (validação visual em Paga + Gratuita, e Meta Ads Teste se acessível) não executada.'
+    suggested_action: 'Gestor confere Vídeo + Total, Estático + Total e Vídeo + Estático ≤ Todos; registrar no Dev Agent Record.'
+  - id: 'TEST-001'
+    severity: low
+    finding: 'O clique dos botões e o filtro aplicado no processedData não têm teste automatizado (vitest do web não coleta .tsx). O helper passaNoFiltroDeMidia está coberto.'
+    suggested_action: 'Coberto pela AC8; testar o componente quando o web ganhar jsdom + testing-library.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'OK — filtro antes da compilação (mesmo conjunto, compila menos); isAllFiltersSelected NÃO recebe o filtro de mídia (risco da story respeitado); filtroDeMidia nas deps do useMemo e do reset de página; botões type=button com aria-pressed e role=group; cards de resumo e texto do vazio intocados (AC4b, AC6).'
+  unit_tests: 'OK — 8 casos exigidos pelo AC7. Mutação @dev: Estático sem excluir adv → 3 falhas. Mutação @qa: sem toLowerCase → 2 falhas (ADS/ADV). Suíte web 1701/1701.'
+  acceptance_criteria: 'AC1 ✓ botões ao lado do Todos/Hot/Cold, padrão Todos · AC2 ✓ testes · AC3 ✓ filtro de mídia e de temperatura em sequência (E lógico); compilação por nome só depende da temperatura · AC4 ✓ totalsRow e totalRows derivam de sortedData · AC4b ✓ cards leem data inteiro (não tocados) · AC5 ✓ reset de página · AC6 ✓ estado vazio e texto existentes · AC7 ✓ · AC8 ⏳ visual pendente (REQ-001).'
+  no_regressions: 'OK — com Todos o filter é identidade (passaNoFiltroDeMidia retorna true antes de ler o nome); next build EXIT=0; tsc 0; eslint 0.'
+  performance: 'OK — um includes por criativo, dentro do useMemo já existente.'
+  security: 'N/A — sem rota, sem dado novo.'
+  documentation: 'OK — decisões P1–P7 do gestor na story; comentário no helper avisa que "ADS…" em Estático é o comportamento pedido.'
+  api_contract: 'N/A — nenhuma mudança na API.'
+
+notes:
+  - '[scope-override] em lib/utils/ autorizado pelo Lucas, informado pelo Danilo em 28/09 (canal não informado).'

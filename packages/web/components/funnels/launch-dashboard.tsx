@@ -75,6 +75,7 @@ import { useFunnelStage, useSalvarCorrecaoDeLp, useUpdateStage } from "@/lib/hoo
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useCrossedFunnelMetrics } from "@/lib/hooks/use-crossed-funnel-metrics";
 import { overrideCplWithUniqueIngressos } from "@/lib/utils/funnel-metrics";
+import { deveMostrarDadosDiarios } from "@/lib/utils/dados-diarios-visivel";
 import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
 import { useStageSalesByDay } from "@/lib/hooks/use-stage-sales-by-day";
@@ -709,8 +710,14 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
         <LotesDeIngresso lotes={salesData!.lotesDeIngresso!} />
       )}
 
-      {/* Dados diários — tabela cruzada (Story 18.3) */}
-      {metrics.hasLinkedSheet && metrics.rows.length > 0 ? (
+      {/* Dados diários — tabela cruzada (Story 18.3). Story 18.86: na Paga
+          aparece também só com a planilha de vendas, sem a de leads. */}
+      {deveMostrarDadosDiarios({
+        ehPaga,
+        temPlanilhaDeLeads: metrics.hasLinkedSheet,
+        temVendas: salesTableData !== undefined,
+        qtdDias: metrics.rows.length,
+      }) ? (
         <CrossedFunnelDailyTable
           rows={paidRows}
           totals={paidTotals}
