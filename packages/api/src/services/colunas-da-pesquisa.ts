@@ -92,3 +92,22 @@ export function acharColunaDeIngresso(headers: string[], mapeada?: string): numb
     return n === "ingresso" || n === "ingressos" || n === "categoria" || n === "tipo de ingresso";
   });
 }
+
+/**
+ * A coluna de FATURAMENTO do negócio na pesquisa.
+ *
+ * "renda" fica de fora de propósito: o mesmo formulário pergunta as duas
+ * coisas ("Qual é o faturamento médio mensal do seu negócio?" e "Qual é a sua
+ * renda mensal média pessoal"), e trocar uma pela outra põe na tela um número
+ * dez vezes menor sem ninguém notar.
+ */
+export function acharColunaDeFaturamento(headers: string[], mapeada?: string): number {
+  if (mapeada) {
+    const i = headers.indexOf(mapeada);
+    if (i !== -1) return i;
+  }
+  return headers.findIndex((h) => {
+    const n = semAcento(h);
+    return n.includes("faturamento") && !n.includes("renda");
+  });
+}
