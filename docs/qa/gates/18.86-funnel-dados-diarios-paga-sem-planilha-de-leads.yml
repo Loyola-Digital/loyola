@@ -5,7 +5,7 @@ gate: CONCERNS
 status_reason: 'AC1–AC4 batem com o código e com os testes (6 casos, mutação do @dev e do @qa derrubam). AC5 (validação visual na dgpg05-out-26 e bbe-pr2-out-26) segue aberta — depende do gestor na tela. Nenhum achado de código.'
 reviewer: 'Quinn'
 updated: '2026-09-28T17:37:52Z'
-pr: ''
+pr: 'https://github.com/Loyola-Digital/loyola/pull/950'
 commits: ['fa5778e6', '056ca350']
 
 top_issues:

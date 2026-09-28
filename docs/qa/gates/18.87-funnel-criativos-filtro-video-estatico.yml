@@ -5,7 +5,7 @@ gate: CONCERNS
 status_reason: 'Regra, combinação com Hot/Cold, Total e paginação batem com o código e com os testes (8 casos; mutações do @dev e do @qa derrubam). AC8 (validação visual nas telas) segue aberta. Nenhum achado de código.'
 reviewer: 'Quinn'
 updated: '2026-09-28T17:37:52Z'
-pr: ''
+pr: 'https://github.com/Loyola-Digital/loyola/pull/950'
 commits: ['fa5778e6', 'b159aa51']
 
 top_issues:
