@@ -23,6 +23,12 @@ import {
   isAllFiltersSelected,
   type CompiledCreativeMetric,
 } from "@/lib/utils/compileCreativeMetrics";
+import {
+  FILTRO_DE_MIDIA_PADRAO,
+  OPCOES_DE_FILTRO_DE_MIDIA,
+  passaNoFiltroDeMidia,
+  type TipoDeMidia,
+} from "@/lib/utils/filtro-de-midia-do-criativo";
 import { useStageCreativePerformance } from "@/lib/hooks/useStageCreativePerformance";
 import { AvisoDeCacheVencido } from "./aviso-de-cache-vencido";
 import { Badge } from "@/components/ui/badge";
@@ -242,6 +248,8 @@ export function StageCreativePerformanceTable({
   stageType,
 }: StageCreativePerformanceTableProps) {
   const [temperatureFilter, setTemperatureFilter] = useState<TemperatureFilter>("all");
+  // Story 18.87: Vídeo / Estático / Todos pelo nome do anúncio; combina com a temperatura.
+  const [filtroDeMidia, setFiltroDeMidia] = useState<TipoDeMidia>(FILTRO_DE_MIDIA_PADRAO);
   const [sortCol, setSortCol] = useState<SortableCol>("spend");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [pageSize, setPageSize] = useState<number>(10);
@@ -295,7 +303,12 @@ export function StageCreativePerformanceTable({
     if (!data?.creatives) return [];
     const totalSpend = data.summary.totalSpend;
 
+    // Story 18.87: o filtro de mídia vem ANTES da compilação por nome — ela
+    // agrupa pelo próprio adName, então filtrar antes ou depois dá o mesmo
+    // conjunto, e antes evita compilar o que seria descartado. A linha Total
+    // soma `sortedData`, então segue o recorte sem mudar o cálculo dela.
     const metrics = data.creatives
+      .filter((creative) => passaNoFiltroDeMidia(creative.adName, filtroDeMidia))
       .map((creative) => {
         const metricsInput: CreativeMetrics = {
           adId: creative.adId,
@@ -343,7 +356,7 @@ export function StageCreativePerformanceTable({
 
     // Modo normal: filtrar por temperatura (hot/cold)
     return metrics.filter((m) => m.temperature === temperatureFilter);
-  }, [data, temperatureFilter, stageType]);
+  }, [data, temperatureFilter, filtroDeMidia, stageType]);
 
   const sortedData = useMemo(() => {
     // Story 18.61: rank de status para ordenar Ativo → Pausado → "—". No sentido
@@ -419,7 +432,7 @@ export function StageCreativePerformanceTable({
   // Volta pra pagina 0 quando filtro/sort/pageSize muda — evita ficar em pagina inexistente
   useEffect(() => {
     setPageIndex(0);
-  }, [temperatureFilter, sortCol, sortDir, pageSize]);
+  }, [temperatureFilter, filtroDeMidia, sortCol, sortDir, pageSize]);
 
   const totalRows = sortedData.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
@@ -545,6 +558,35 @@ export function StageCreativePerformanceTable({
           )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Story 18.87: filtro de mídia pelo nome — mesmo estilo do de temperatura */}
+          <div
+            className="flex items-center gap-1 rounded-md border border-border/40 p-0.5"
+            role="group"
+            aria-label="Filtrar por tipo de criativo"
+          >
+            {OPCOES_DE_FILTRO_DE_MIDIA.map((opt) => (
+              <button
+                key={opt.valor}
+                type="button"
+                onClick={() => setFiltroDeMidia(opt.valor)}
+                aria-pressed={filtroDeMidia === opt.valor}
+                title={
+                  opt.valor === "video"
+                    ? 'Anúncios com "adv" no nome'
+                    : opt.valor === "estatico"
+                      ? 'Anúncios com "ad" no nome, sem "adv"'
+                      : "Todos os anúncios"
+                }
+                className={`px-2.5 h-6 rounded text-[11px] font-medium transition-colors ${
+                  filtroDeMidia === opt.valor
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted/50"
+                }`}
+              >
+                {opt.rotulo}
+              </button>
+            ))}
+          </div>
           {/* Filtro temperatura */}
           <div className="flex items-center gap-1 rounded-md border border-border/40 p-0.5">
             {(["all", "hot", "cold"] as const).map((opt) => (
