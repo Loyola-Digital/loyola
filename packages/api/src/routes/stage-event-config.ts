@@ -22,6 +22,7 @@ import { parseFaturamento } from "../services/parse-faturamento.js";
 import { chaveDoParticipante } from "../services/chave-do-participante.js";
 import {
   acharColunaDeEmail,
+  acharColunaDeFaturamento,
   acharColunaDeIngresso,
   acharColunaDeNome,
   acharColunaDeTelefone,
@@ -462,9 +463,16 @@ export default fp(async function stageEventConfigRoutes(fastify) {
         mapping: stageSalesPlanSources.mapping,
       })
       .from(stageSalesPlanSources)
-      .where(
-        and(eq(stageSalesPlanSources.stageId, stageId), eq(stageSalesPlanSources.role, "survey")),
-      )
+      /**
+       * TODAS as planilhas da etapa, não só as de papel "pesquisa".
+       *
+       * Quem conecta escolhe o papel na tela, e conectar a pesquisa como
+       * "participantes" é fácil de fazer — foi o que aconteceu no
+       * BBE-PR2-OUT/26 (28/09/2026): a resposta aparecia na ficha do lead e o
+       * faturamento ficava "—" no mapa. O que decide é a planilha ter a
+       * coluna, não o rótulo que alguém escolheu.
+       */
+      .where(eq(stageSalesPlanSources.stageId, stageId))
       .orderBy(asc(stageSalesPlanSources.sortOrder));
 
     const TARGET = "empresário(a) dono de restaurante";
@@ -478,7 +486,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
         continue;
       }
       const { headers, rows } = data;
-      const emailIdx = mapping.email ? headers.indexOf(mapping.email) : -1;
+      const emailIdx = acharColunaDeEmail(headers, mapping.email);
       const norm = (s: string) => s.trim().toLowerCase();
       const vidx = headers.findIndex((h) => norm(h).startsWith("você é") || norm(h).startsWith("voce e"));
       if (emailIdx === -1 || vidx === -1) continue;
@@ -553,9 +561,16 @@ export default fp(async function stageEventConfigRoutes(fastify) {
         mapping: stageSalesPlanSources.mapping,
       })
       .from(stageSalesPlanSources)
-      .where(
-        and(eq(stageSalesPlanSources.stageId, stageId), eq(stageSalesPlanSources.role, "survey")),
-      )
+      /**
+       * TODAS as planilhas da etapa, não só as de papel "pesquisa".
+       *
+       * Quem conecta escolhe o papel na tela, e conectar a pesquisa como
+       * "participantes" é fácil de fazer — foi o que aconteceu no
+       * BBE-PR2-OUT/26 (28/09/2026): a resposta aparecia na ficha do lead e o
+       * faturamento ficava "—" no mapa. O que decide é a planilha ter a
+       * coluna, não o rótulo que alguém escolheu.
+       */
+      .where(eq(stageSalesPlanSources.stageId, stageId))
       .orderBy(asc(stageSalesPlanSources.sortOrder));
 
     const byEmail = new Map<string, Rev>();
@@ -576,7 +591,9 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       // "email" contra "Qual é o seu e-mail") zerava o casamento por e-mail em
       // silêncio — era o caso do bbe-pr2-out-26 em 23/09/2026.
       const emailIdx = acharColunaDeEmail(headers, mapping.email);
-      const fatIdx = mapping.faturamento ? headers.indexOf(mapping.faturamento) : -1;
+      // Sem coluna de faturamento, a planilha não tem o que dizer aqui — é o
+      // caso da lista de participantes.
+      const fatIdx = acharColunaDeFaturamento(headers, mapping.faturamento);
       if (fatIdx === -1) continue;
       const nameIdx = acharColunaDeNome(headers, mapping.name);
       const phoneIdx = acharColunaDeTelefone(headers);

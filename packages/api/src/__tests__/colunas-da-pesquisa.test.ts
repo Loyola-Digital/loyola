@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 import {
   acharColunaDeEmail,
+  acharColunaDeFaturamento,
   acharColunaDeIngresso,
   acharColunaDeNome,
   acharColunaDeTelefone,
@@ -75,5 +76,20 @@ describe("acharColunaDeIngresso", () => {
 
   it("não confunde com coluna que só CONTÉM a palavra", () => {
     expect(acharColunaDeIngresso(["Nome", "Quantos ingressos comprou?"])).toBe(-1);
+  });
+});
+
+describe("acharColunaDeFaturamento", () => {
+  it("acha a pergunta do formulário", () => {
+    expect(acharColunaDeFaturamento(HEADERS)).toBe(7);
+  });
+
+  it("NÃO confunde com a renda pessoal — são perguntas diferentes no mesmo form", () => {
+    const h = ["Qual é a sua renda mensal média pessoal (não do seu negócio)?"];
+    expect(acharColunaDeFaturamento(h)).toBe(-1);
+  });
+
+  it("planilha de participantes não tem faturamento", () => {
+    expect(acharColunaDeFaturamento(["Nome", "Email", "Celular", "Categoria"])).toBe(-1);
   });
 });
