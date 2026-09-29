@@ -33,6 +33,8 @@ export interface CreativeMetrics {
    * na tabela fica texto puro, sem link morto.
    */
   previewUrl?: string;
+  /** Story 18.88: post publicado (Instagram → Facebook) — a coluna Preview. */
+  postUrl?: string;
 }
 
 export interface CalculatedMetrics {
@@ -67,6 +69,8 @@ export interface CalculatedMetrics {
   videoViews75: number;
   /** Prévia do criativo no Facebook. Ausente para imagem/carrossel. */
   previewUrl?: string;
+  /** Story 18.88: post publicado (Instagram → Facebook). Ausente → "—". */
+  postUrl?: string;
 }
 
 /**
@@ -214,6 +218,8 @@ export function calculateCreativeMetrics(
     videoViews75: creative.videoViews75 ?? 0,
     // Aditivo — não afeta métrica nenhuma, só habilita o link no nome.
     previewUrl: creative.previewUrl,
+    // Story 18.88: aditivo — só o link da coluna Preview.
+    postUrl: creative.postUrl,
     ...(isPaidMode
       ? {
           ingressosUnicos: creative.ingressosUnicos,

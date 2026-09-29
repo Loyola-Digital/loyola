@@ -38,6 +38,7 @@ import { avaliarCura, curarCacheDeLpEmSegundoPlano } from "../services/lp-cache-
 import { montarLpPorAnuncio } from "../utils/lp-por-anuncio.js";
 import { recortarLinhasPelaJanela } from "../utils/janela-das-linhas.js";
 import { businessToday } from "../utils/sale-date.js";
+import { postDoAnuncio, postDoGrupo } from "../utils/post-do-criativo.js";
 
 /**
  * Story 18.83 (AC10) — versão da chave do cache de 2 h desta rota.
@@ -158,6 +159,13 @@ interface CreativePerformanceResponse {
    * o número da linha está medindo.
    */
   previewUrl?: string;
+  /**
+   * Story 18.88 — o post publicado do criativo (coluna Preview): Instagram,
+   * depois Facebook, do ad_id de maior investimento entre os que têm link.
+   * Ausente quando nenhum ad_id do grupo tem post no cache. Ver
+   * `utils/post-do-criativo.ts`.
+   */
+  postUrl?: string;
 }
 
 /**
@@ -855,6 +863,9 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
         // (PO-13) — `creative.linkUrl`, com a causa quando não há (29.43).
         // Chave normalizada como o `campaignByAdId`, para casar com a venda.
         const linkPorAnuncio = new Map<string, LinkDoAnuncio>();
+        // Story 18.88 (AC1): o post publicado por ad_id, da MESMA leitura do
+        // cache — sem consulta nova e sem chamada à Meta.
+        const postPorAdId = new Map<string, string>();
         if (allAdIds.length > 0) {
           const idsUnicos = Array.from(new Set(allAdIds));
           const linhas = await fastify.db
@@ -868,6 +879,8 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           for (const l of linhas) {
             const v = l.creative?.videoId;
             if (v) videoIdByAdId.set(l.adId, v);
+            const post = postDoAnuncio(l.creative);
+            if (post) postPorAdId.set(l.adId, post);
           }
           for (const id of idsUnicos) {
             linkPorAnuncio.set(normalizeNumericId(id), classificarLinkDoCache(linhaPorId.get(id)));
@@ -960,6 +973,9 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               previewUrl = `https://www.facebook.com/watch/?v=${v}`;
             }
           }
+          // Story 18.88 (AC1): o post do ad_id de maior investimento entre os
+          // que têm link — mesma regra do vídeo acima.
+          const postUrl = postDoGrupo(group.adIds, group.spendByAdId, postPorAdId);
 
           // adId representativo = primeiro adId do grupo (uso pra link Ads Library)
           creatives.push({
@@ -979,6 +995,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             videoViews100: group.videoViews100,
             videoViews75: group.videoViews75,
             ...(previewUrl ? { previewUrl } : {}),
+            ...(postUrl ? { postUrl } : {}),
             // Story 18.61: status agregado (OR) + adsets ativos (aditivo)
             status,
             ...(activeAdsets.length > 0 ? { activeAdsets } : {}),

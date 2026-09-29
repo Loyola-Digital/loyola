@@ -260,4 +260,9 @@
 // `z.object` da rota antiga descarta os parâmetros novos em silêncio e devolve
 // o NN por expert — o web reconhece a API antiga pela AUSÊNCIA de `escopo` e
 // não rotula nem preenche com escopo. `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 28;
+// v29 (Story 18.88): campo novo `postUrl` em `creative-performance` — o post
+// publicado de cada Ad Name (Instagram, depois Facebook, do ad_id de maior
+// investimento entre os que têm link), lido do `meta_ad_creatives_cache`.
+// ADITIVA; `packages/mcp` não é afetado. O web tem fallback: sem `postUrl`, a
+// coluna Preview mostra "—".
+export const API_CONTRACT_VERSION = 29;

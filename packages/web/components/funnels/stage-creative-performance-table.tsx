@@ -6,7 +6,7 @@
  */
 
 import { useMemo, useState, useEffect } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, ExternalLink, Info } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, ExternalLink, Facebook, Info, Instagram } from "lucide-react";
 // Story 19.14: recebe `stageType` cru dos call sites (launch-dashboard e
 // stage-sales-section), então precisa do helper — Captação de Evento tem as
 // mesmas colunas de ingresso/faturamento da Paga.
@@ -30,6 +30,7 @@ import {
   type TipoDeMidia,
 } from "@/lib/utils/filtro-de-midia-do-criativo";
 import { useStageCreativePerformance } from "@/lib/hooks/useStageCreativePerformance";
+import { redeDoPermalink } from "@/lib/utils/creative-permalink";
 import { AvisoDeCacheVencido } from "./aviso-de-cache-vencido";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -240,6 +241,39 @@ function renderRateWithGoal(value: number | undefined, goal: number): React.Reac
   );
 }
 
+/**
+ * Story 18.88 (AC2): a célula Preview abre o post publicado. Ícone e `title`
+ * saem da URL (`redeDoPermalink`), nunca de texto fixo: ~4% dos anúncios não
+ * têm post no Instagram e caem no Facebook (29.63). Sem URL → "—", sem href.
+ */
+const PREVIEW_DO_POST = {
+  instagram: { Icone: Instagram, rede: "no Instagram" },
+  facebook: { Icone: Facebook, rede: "no Facebook" },
+} as const;
+
+function PreviewDoPost({ url, adName }: { url?: string; adName: string }) {
+  if (!url) return <span className="text-muted-foreground">—</span>;
+  const rede = redeDoPermalink(url);
+  // Host desconhecido (nunca visto, mas o dado vem da Meta): link genérico e
+  // honesto em vez de afirmar a rede errada — mesmo critério do rotuloDoPermalink.
+  const { Icone, rede: onde } = rede
+    ? PREVIEW_DO_POST[rede]
+    : { Icone: ExternalLink, rede: "publicado" };
+  const title = `Abrir o post ${onde} de "${adName}"`;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={title}
+      aria-label={title}
+      className="inline-flex text-muted-foreground hover:text-foreground transition-colors"
+    >
+      <Icone className="h-3.5 w-3.5" />
+    </a>
+  );
+}
+
 export function StageCreativePerformanceTable({
   projectId,
   funnelId,
@@ -327,6 +361,8 @@ export function StageCreativePerformanceTable({
           videoViews3s: creative.videoViews3s,
           videoViews75: creative.videoViews75,
           previewUrl: creative.previewUrl,
+          // Story 18.88: o post publicado → coluna Preview
+          postUrl: creative.postUrl,
           // Story 18.55: só na Paga — repassar Único/Total muda CPL (÷ Ing.
           // Únicos) e ROAS (Fat. Total ÷ Invest) dentro do calculator. Nas
           // demais etapas os campos ficam de fora e nada muda (AC8).
@@ -729,16 +765,12 @@ export function StageCreativePerformanceTable({
                       </TableCell>
                     );
                   })}
+                  {/* Story 18.88: o post publicado (Instagram → Facebook), o
+                      mesmo do "Ver criativo publicado" do Top Criativos. Sem
+                      post → "—". A Ads Library saiu: na visão Todos ela recebia
+                      `compiled_<nome>` como id. */}
                   <TableCell className="text-center">
-                    <a
-                      href={`https://www.facebook.com/ads/library/?id=${row.adId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title="Abrir no Meta Ads Library"
-                      className="inline-flex text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
+                    <PreviewDoPost url={row.postUrl} adName={row.adName} />
                   </TableCell>
                 </TableRow>
               ))

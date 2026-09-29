@@ -106,6 +106,19 @@ export function compileCreativeMetricsByName(
       new Set(group.flatMap((m) => m.activeAdsets ?? [])),
     );
 
+    // Story 18.88 (AC3): o post da linha de maior spend entre as que têm link
+    // (mesma regra da rota). Empate: a primeira. A rota já entrega 1 linha por
+    // Ad Name, então na tela o grupo tem 1 linha; o laço é defensivo.
+    let postUrl: string | undefined;
+    let melhorSpendDoPost = -1;
+    for (const m of group) {
+      if (!m.postUrl) continue;
+      if (m.spend > melhorSpendDoPost) {
+        melhorSpendDoPost = m.spend;
+        postUrl = m.postUrl;
+      }
+    }
+
     compiled.push({
       adId: `compiled_${adName}`, // ID fake para ser único
       adName,
@@ -136,6 +149,8 @@ export function compileCreativeMetricsByName(
       // Story 18.61: status agregado (OR) + união dos adsets ativos
       status: mergedStatus,
       ...(mergedActiveAdsets.length > 0 ? { activeAdsets: mergedActiveAdsets } : {}),
+      // Story 18.88 (AC3): sem isto o link some na visão Todos.
+      ...(postUrl ? { postUrl } : {}),
       // Story 18.55: Único/Total somados por Ad Name (só na Paga)
       ...(isPaidMode
         ? {
