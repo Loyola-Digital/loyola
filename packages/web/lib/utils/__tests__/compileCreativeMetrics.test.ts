@@ -4,6 +4,8 @@
  * AC2: Compilar métricas corretamente
  */
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 import {
   compileCreativeMetricsByName,
@@ -11,6 +13,7 @@ import {
   type CompiledCreativeMetric,
 } from "../compileCreativeMetrics";
 import type { CreativeMetrics } from "../creative-metrics-calculator";
+import { calculateCreativeMetrics } from "../creative-metrics-calculator";
 
 // Mock de dados
 const mockMetrics: CreativeMetrics[] = [
@@ -213,5 +216,77 @@ describe("compileCreativeMetrics", () => {
       expect(result[0].cpc).toBe(0);
       expect(Number.isFinite(result[0].cpc)).toBe(true);
     });
+  });
+});
+
+/**
+ * Story 18.88 (AC3): a visão Todos (compilada por nome) leva o post publicado
+ * adiante. Linhas montadas por `calculateCreativeMetrics` para provar também o
+ * repasse do calculator (um dos 4 pontos campo a campo).
+ */
+describe("Story 18.88: postUrl na compilação (AC3)", () => {
+  const IG = "https://www.instagram.com/p/DbWVvjAgMnH/";
+  const IG_MENOR = "https://www.instagram.com/p/MENOR/";
+  const FB = "https://www.facebook.com/100/posts/200";
+
+  const linha = (adId: string, spend: number, postUrl?: string) =>
+    calculateCreativeMetrics({
+      adId,
+      adName: "adv02--ia--pg04--cap-ads-claude",
+      spend,
+      impressions: 1000,
+      clicks: 10,
+      leads: 1,
+      revenue: 0,
+      utmTerm: null,
+      ...(postUrl ? { postUrl } : {}),
+    });
+
+  it("o calculator repassa o postUrl", () => {
+    expect(linha("a", 10, IG).postUrl).toBe(IG);
+  });
+
+  it("uma linha compilada mantém o link", () => {
+    const [c] = compileCreativeMetricsByName([linha("a", 10, IG)]);
+    expect(c.adId).toBe("compiled_adv02--ia--pg04--cap-ads-claude");
+    expect(c.postUrl).toBe(IG);
+  });
+
+  it("grupo com duas linhas fica com o link da de maior spend", () => {
+    // A de menor spend vem primeiro: "primeira linha" daria o link errado.
+    const [c] = compileCreativeMetricsByName([linha("menor", 10, IG_MENOR), linha("maior", 90, FB)]);
+    expect(c.postUrl).toBe(FB);
+  });
+
+  it("a linha de maior spend sem link → fica o link da que tem", () => {
+    const [c] = compileCreativeMetricsByName([linha("maior", 90), linha("menor", 10, IG_MENOR)]);
+    expect(c.postUrl).toBe(IG_MENOR);
+  });
+
+  it("nenhuma linha com link → sem postUrl (a tabela mostra —)", () => {
+    const [c] = compileCreativeMetricsByName([linha("a", 10), linha("b", 20)]);
+    expect(c.postUrl).toBeUndefined();
+  });
+});
+
+/**
+ * Story 18.88 — o FIO na tabela. `.tsx` de `components/funnels` não roda no
+ * vitest do web, então se prova o fonte (padrão de
+ * `nomenclatura-anuncio-fio.test.ts`): o `metricsInput` monta o objeto campo a
+ * campo, e esquecer o `postUrl` ali não dá erro de tsc — o link some calado.
+ */
+describe("Story 18.88: o fio da coluna Preview na tabela", () => {
+  const tabela = readFileSync(
+    fileURLToPath(new URL("../../../components/funnels/stage-creative-performance-table.tsx", import.meta.url)),
+    "utf-8",
+  );
+
+  it("o metricsInput repassa o postUrl da resposta", () => {
+    expect(tabela).toMatch(/postUrl: creative\.postUrl,/);
+  });
+
+  it("a Preview usa o post da linha e a Ads Library saiu (AC2)", () => {
+    expect(tabela).toMatch(/<PreviewDoPost url=\{row\.postUrl\} adName=\{row\.adName\} \/>/);
+    expect(tabela).not.toMatch(/facebook\.com\/ads\/library/);
   });
 });

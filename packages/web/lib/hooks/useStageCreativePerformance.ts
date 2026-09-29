@@ -55,6 +55,12 @@ export interface CreativePerformanceData {
    * vídeo diferente.
    */
   previewUrl?: string;
+  /**
+   * Story 18.88 — o post publicado (coluna Preview): Instagram, depois
+   * Facebook, do ad_id de maior investimento entre os que têm link. Ausente
+   * quando não há post no cache ou a API é anterior ao contrato v29 → "—".
+   */
+  postUrl?: string;
 }
 
 // Story 18.46: corte por LP × temperatura (para a tabela de Testes de LPs)

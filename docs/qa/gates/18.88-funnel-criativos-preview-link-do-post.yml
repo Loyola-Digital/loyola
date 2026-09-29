@@ -1,0 +1,43 @@
+schema: 1
+story: '18.88'
+story_title: 'Desempenho de Criativos — coluna Preview abre o post publicado (Instagram → Facebook)'
+gate: CONCERNS
+status_reason: 'AC1–AC7 conferidos no código e nos testes; 8 mutações independentes do @qa derrubam a suíte e a restauração volta ao verde. Condição do Lucas respeitada: fora do escopo do Danilo, a única linha removida é API_CONTRACT_VERSION = 28. Contrato subiu para 29 com histórico (check 8 OK). Em aberto: AC8 (validação visual, medium) e a chave do cache de 2 h que não subiu (low, decisão do gestor).'
+reviewer: 'Quinn'
+updated: '2026-09-29T18:10:00Z'
+pr: null
+branch: 'feat/18.88-preview-link-do-post (local, não pushada)'
+commits: ['a0099620']
+base: '6afe1365 (origin/main)'
+
+top_issues:
+  - id: 'REQ-001'
+    severity: medium
+    finding: 'AC8 (validação visual) não executada. Depende do deploy da API com contrato 29: antes dele a Preview mostra "—" em toda linha (AC6). Pela T0, o dg-pg04 teve a última entrega em 08/08/2026, então a janela padrão de 30 dias traz a tabela vazia.'
+    suggested_action: 'Depois do deploy da API: Paga do dg-pg04 com janela que cubra agosto, Todos / Hot / Cold, e uma etapa gratuita. Clicar "Atualizar" antes de conferir (ver OPS-001). Nenhuma Preview pode abrir a Ads Library ou "?id=compiled_…". Registrar o resultado no Dev Agent Record.'
+  - id: 'OPS-001'
+    severity: low
+    finding: 'VERSAO_DO_CACHE_CREATIVE_PERFORMANCE continua "v4". O cache é persistido no banco (publicMetricsCache, rota :334 e :1211), então o deploy não o limpa: por até 2 h, uma etapa com resposta em cache vem sem postUrl e a Preview mostra "—". O serve-stale-on-error também pode servir o payload antigo por mais tempo enquanto a Meta falhar. O comentário da própria constante registra que isso já aconteceu na 18.81 (pixelLeads); 18.83 e 18.85 subiram a chave pelo mesmo motivo. Mitigação existente: AC6 ("—", a tela não quebra) e o botão Atualizar (refresh=1).'
+    suggested_action: 'Decisão do gestor. Subir para "v5" é 1 linha na constante mais o comentário. O teste lp-correcao-e-fio-1883 exige só >= 3 e NÃO precisa mudar (o Dev Agent Record diz o contrário). Mas é alteração de linha existente em arquivo fora do escopo: exige OK explícito do Lucas. Custo de subir: a primeira abertura de cada etapa depois do deploy paga a Meta ao vivo. Se não subir, basta avisar o gestor para clicar Atualizar na validação visual.'
+  - id: 'TEST-001'
+    severity: low
+    finding: 'A célula PreviewDoPost (ícone e title pela rede, "—" sem href) não tem teste de comportamento: o vitest do web não coleta .tsx de components/funnels. Mutação do @qa trocando o ícone do Instagram pelo do Facebook sobreviveu (26/26 verdes). O fio (url={row.postUrl}) e a saída da Ads Library estão presos por leitura do fonte.'
+    suggested_action: 'Coberto pela AC8 (o AC7 já prevê isso). Se quiser prender sem runner de componente: extrair o mapa rede → ícone/título para lib/utils e testar a função.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'OK — postDoAnuncio: igPermalinkUrl || adPermalinkUrl || null (lê o nome do cache, adPermalinkUrl; string vazia cai para o próximo). postDoGrupo: maior spend entre os ad_ids com link, `>` estrito (empate = primeiro), igual ao laço do previewUrl de vídeo. Na rota, postPorAdId sai da MESMA leitura de metaAdCreativesCache (única .from na rota); nenhuma consulta nova e nenhuma chamada à Meta. Campo só entra na resposta quando há link. Repasse nos 4 pontos campo a campo (metricsInput, CreativeMetrics/CalculatedMetrics, retorno do calculator, compiled.push). CompiledCreativeMetric herda postUrl de CalculatedMetrics. Linha Total segue com a célula vazia.'
+  unit_tests: 'OK — API post-do-criativo-1888 12/12; web compileCreativeMetrics 26/26 (+7). Mutações do @qa, todas vermelhas e restauradas com git checkout: M1 IG/FB invertidos → 1 falha; M2 "primeiro com link" no lugar de maior spend → 2; M3 empate fica com o último (>=) → 1; M4 rota não grava postPorAdId → 1; M5 postUrl fora do compiled.push → 3; M6 compilação pega a primeira linha → 1; M7 calculator não repassa → 4. M8 (ícone do Instagram trocado pelo do Facebook na célula) sobreviveu → TEST-001. Suíte web completa 1708/1708. API: schema.test.ts 2 falhas amostradas, arquivo não tocado pela story (as 10 pré-existentes do relato do @dev).'
+  acceptance_criteria: 'AC1 ✓ maior spend entre os ad_ids com link; IG → FB por ad_id; empate = primeiro · AC2 ✓ IG/FB/"—" sem <a>, ícone e title/aria-label por redeDoPermalink, Ads Library removida (sem href vazio: !url → span) · AC3 ✓ compilação leva o campo; grupo de 2 → o de maior spend · AC4 ✓ Hot/Cold usam as linhas do calculator (postUrl repassado); filtro de mídia só filtra; Total sem Preview · AC5 ✓ nenhuma montagem do componente mudou (diff só no componente) · AC6 ✓ campo opcional ponta a ponta, sem campo → "—"; contrato 28 → 29 com linha de histórico · AC7 ✓ testes em packages/api/src/__tests__ e lib/utils/__tests__ (pastas coletadas) · AC8 ⏳ visual pendente (REQ-001).'
+  no_regressions: 'OK — eslint (binário da raiz) 0 nos 5 arquivos do web e nos 3 da API + shared/src/contract.ts; tsc API --noEmit 0 (binário direto, 23 s); tsc web --noEmit 0 (depois do next build do @dev, .next/types de 29/09 15:00; shared/dist com v29); health.test (contrato) 9/9.'
+  performance: 'OK — um Map por requisição e um laço por grupo, sobre dados já lidos.'
+  security: 'OK — URL vem do cache da Meta; target=_blank com rel="noopener noreferrer"; host decidido por new URL().hostname em redeDoPermalink. Sem segredo, sem input do usuário.'
+  documentation: 'OK — P1–P6 rastreáveis ao gestor; T0 medida (365/413 com Instagram, 66/66 Ad Names no Instagram); decisões autônomas registradas; comentários com o número da story.'
+  api_contract: 'OK — campo novo postUrl em creative-performance ⇒ API_CONTRACT_VERSION 28 → 29 em packages/shared/src/contract.ts com a linha de histórico v29; packages/mcp não afetado; web com fallback.'
+  scope_condition: 'OK — git diff origin/main...feat/18.88-preview-link-do-post (três pontos): fora do escopo do Danilo a única linha removida é `export const API_CONTRACT_VERSION = 28;`. As demais remoções (import do lucide e o <a> da Ads Library) estão em stage-creative-performance-table.tsx, dentro do escopo, e são pedidas pelo AC2.'
+
+notes:
+  - '[scope-override] em rota da API, packages/api/src/utils, lib/utils, lib/hooks, contract.ts e testes: autorização do Lucas relatada pelo gestor em 29/09 (canal não informado), com a condição "só acréscimo". Conferida no diff.'
+  - 'CodeRabbit não rodado: o CLI deste ambiente está configurado para WSL e a máquina é macOS.'
+  - 'CI do GitHub parado por billing desde 25/09: lint, tsc e vitest rodados localmente.'
