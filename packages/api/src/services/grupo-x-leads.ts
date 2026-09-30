@@ -28,7 +28,7 @@
 
 import { eq, and } from "drizzle-orm";
 import type { Database } from "../db/client.js";
-import { funnelSpreadsheets } from "../db/schema.js";
+import { funnelSpreadsheets, funnelSurveys } from "../db/schema.js";
 import { readSheetData } from "./google-sheets.js";
 import { ALIASES, resolveColIdx } from "./lead-origin-sync.js";
 import {
@@ -132,11 +132,78 @@ export function cruzarGrupoComLeads(
   };
 }
 
+interface PlanilhaDeLead {
+  spreadsheetId: string;
+  sheetName: string;
+  columnMapping: Record<string, string | undefined> | null;
+}
+
+/**
+ * Toda planilha do funil que tem gente com telefone: as de captação
+ * (`funnel_spreadsheets` type `leads`) E as de pesquisa (`funnel_surveys`).
+ *
+ * As duas, porque conectar leads no Loyola X tem mais de um caminho e o funil
+ * não avisa qual foi usado. O `dgpg05-out-26` não tem uma linha sequer em
+ * `funnel_spreadsheets`: a captação inteira dele está numa pesquisa
+ * ("Pesquisa-Captação"). Lendo só as de captação, o funil vinha sem nenhum lead
+ * e TODO MUNDO do grupo caía em "Sem cadastro" — sem erro nenhum na tela.
+ *
+ * ⚠️ De propósito **não** se aplica aqui a regra do `lead-origin-sync` que
+ * descarta planilha com campo de valor mapeado ("planilha de leads com valor
+ * não é planilha de leads"). Lá o número em jogo é *quantos leads existem*, e
+ * contar uma venda como lead corrompe o total. Aqui a pergunta é outra: de
+ * onde veio uma pessoa que **já se sabe** que entrou no grupo. Uma linha a mais
+ * com telefone e UTM só identifica mais gente — não inventa participante
+ * nenhum, porque quem manda no total é o grupo, não a planilha.
+ */
+async function planilhasComLeads(
+  db: Database,
+  funnelId: string,
+): Promise<PlanilhaDeLead[]> {
+  const [captacao, pesquisas] = await Promise.all([
+    db
+      .select({
+        spreadsheetId: funnelSpreadsheets.spreadsheetId,
+        sheetName: funnelSpreadsheets.sheetName,
+        columnMapping: funnelSpreadsheets.columnMapping,
+      })
+      .from(funnelSpreadsheets)
+      .where(
+        and(
+          eq(funnelSpreadsheets.funnelId, funnelId),
+          eq(funnelSpreadsheets.type, "leads"),
+        ),
+      ),
+    db
+      .select({
+        spreadsheetId: funnelSurveys.spreadsheetId,
+        sheetName: funnelSurveys.sheetName,
+        columnMapping: funnelSurveys.columnMapping,
+      })
+      .from(funnelSurveys)
+      .where(eq(funnelSurveys.funnelId, funnelId)),
+  ]);
+
+  const vistas = new Set<string>();
+  const saida: PlanilhaDeLead[] = [];
+  for (const p of [...captacao, ...pesquisas]) {
+    const chave = `${p.spreadsheetId}:${p.sheetName}`;
+    if (vistas.has(chave)) continue;
+    vistas.add(chave);
+    saida.push({
+      spreadsheetId: p.spreadsheetId,
+      sheetName: p.sheetName,
+      columnMapping: (p.columnMapping ?? null) as PlanilhaDeLead["columnMapping"],
+    });
+  }
+  return saida;
+}
+
 /**
  * Os leads captados do funil, indexados pelos últimos 8 dígitos do telefone.
  *
- * Lê as planilhas de captação (`type: "leads"`) ao vivo, como o resto do
- * sistema faz — nada de lead vai para o banco, e este cruzamento não muda isso.
+ * Lê as planilhas ao vivo, como o resto do sistema faz — nada de lead vai para
+ * o banco, e este cruzamento não muda isso.
  *
  * Quando o mesmo telefone aparece duas vezes, a PRIMEIRA linha vence: as
  * planilhas do n8n são append-only, então a primeira é o primeiro cadastro — o
@@ -153,19 +220,7 @@ export async function leadsDoFunil(
   db: Database,
   funnelId: string,
 ): Promise<Map<string, LeadCaptado>> {
-  const planilhas = await db
-    .select({
-      spreadsheetId: funnelSpreadsheets.spreadsheetId,
-      sheetName: funnelSpreadsheets.sheetName,
-      columnMapping: funnelSpreadsheets.columnMapping,
-    })
-    .from(funnelSpreadsheets)
-    .where(
-      and(
-        eq(funnelSpreadsheets.funnelId, funnelId),
-        eq(funnelSpreadsheets.type, "leads"),
-      ),
-    );
+  const planilhas = await planilhasComLeads(db, funnelId);
 
   const leads = new Map<string, LeadCaptado>();
   for (const p of planilhas) {
