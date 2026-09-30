@@ -105,7 +105,7 @@ export function findColIdx(headers: string[], aliases: string[]): number {
  * causa de um número que estava errado sem ninguém saber. Índice é explícito:
  * alguém escreveu `2`, alguém responde por ele.
  */
-function resolveColIdx(headers: string[], mapped: string | undefined, aliases: string[]): number {
+export function resolveColIdx(headers: string[], mapped: string | undefined, aliases: string[]): number {
   const m = mapped?.toString().trim();
   if (m) {
     const porNome = headers.map(norm).indexOf(norm(m));

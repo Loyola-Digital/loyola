@@ -215,3 +215,38 @@ export function useSendflowOrigem(
     retry: false,
   });
 }
+
+export interface SendflowCanais {
+  campanha: { id: string; name: string };
+  leadsCaptados: number;
+  total: number;
+  dentro: number;
+  sairam: number;
+  identificados: number;
+  semCadastro: number;
+  canais: { canal: string; dentro: number; sairam: number; total: number }[];
+  pessoas: { numero: string; nome: string; canal: string; saiu: boolean }[];
+}
+
+/**
+ * De que canal veio quem entrou no grupo da campanha.
+ *
+ * Mesma exportação lenta da origem (a API guarda por 30 minutos), mais a
+ * leitura das planilhas de captação — daí o staleTime igual.
+ */
+export function useSendflowCanais(
+  projectId: string | null,
+  funnelId: string | null,
+) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["sendflow-canais", projectId, funnelId],
+    queryFn: () =>
+      apiClient<SendflowCanais>(
+        `/api/projects/${projectId}/funnels/${funnelId}/sendflow/canais`,
+      ),
+    enabled: !!projectId && !!funnelId,
+    staleTime: 30 * 60 * 1000,
+    retry: false,
+  });
+}
