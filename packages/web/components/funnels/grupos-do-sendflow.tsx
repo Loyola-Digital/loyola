@@ -58,6 +58,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useSendflowSummary } from "@/lib/hooks/use-sendflow";
+import { CanalDeQuemEntrou } from "./canal-de-quem-entrou";
 import { OrigemDosParticipantes } from "./origem-dos-participantes";
 import {
   montarDiario,
@@ -421,6 +422,8 @@ export function GruposDoSendflow({
           dias.
         </p>
       )}
+
+      <CanalDeQuemEntrou projectId={projectId} funnelId={funnelId} />
 
       <OrigemDosParticipantes
         projectId={projectId}

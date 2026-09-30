@@ -22,6 +22,10 @@ import {
   participantesDaCampanha,
 } from "../services/sendflow-origem.js";
 import {
+  cruzarGrupoComLeads,
+  leadsDoFunil,
+} from "../services/grupo-x-leads.js";
+import {
   montarUrlDeAutorizacao,
   trocarCodigo,
 } from "../services/sendflow-oauth.js";
@@ -669,6 +673,60 @@ export default fp(async function sendflowRoutes(fastify) {
         return {
           campanha: { id: achado.campanha.id, name: achado.campanha.name },
           ...cruzarOrigem(atual, antiga),
+        };
+      } catch (err) {
+        return erro(reply, err);
+      }
+    },
+  );
+
+  // ---- Canal de quem entrou no grupo --------------------------------------
+
+  /**
+   * De que canal veio cada pessoa que entrou no grupo (ver `grupo-x-leads.ts`).
+   *
+   * Junta o que o SendFlow sabe (quem está no grupo, pelo número) com o que a
+   * planilha de captação sabe (as UTMs de cada lead). Medido em produção:
+   * 79,1% de cobertura no dg-pg04 e 65,0% no dg-pg02. Devolve os números, como
+   * a rota de origem — é dado para agir, e convidado não chega aqui.
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/sendflow/canais",
+    async (request, reply) => {
+      if (negarGuest(request))
+        return reply.code(403).send({ error: "Acesso negado" });
+      const p = funilParam.safeParse(request.params);
+      if (!p.success)
+        return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      try {
+        const s = await sessao(p.data.projectId);
+        if (!s)
+          return reply
+            .code(409)
+            .send({ error: "SendFlow não conectado", code: "NOT_CONNECTED" });
+
+        const achado = await campanhaDoFunil(
+          s,
+          p.data.projectId,
+          p.data.funnelId,
+        );
+        if (!achado)
+          return reply.code(404).send({ error: "Funil não encontrado" });
+        if (!achado.campanha)
+          return reply.code(404).send({
+            error: "Nenhuma campanha do SendFlow casou com este funil",
+          });
+
+        // Em paralelo: um lado é o MCP do SendFlow, o outro é o Google Sheets.
+        const [grupo, leads] = await Promise.all([
+          participantesDaCampanha(s, achado.campanha.id),
+          leadsDoFunil(fastify.db, p.data.funnelId),
+        ]);
+        return {
+          campanha: { id: achado.campanha.id, name: achado.campanha.name },
+          leadsCaptados: leads.size,
+          ...cruzarGrupoComLeads(grupo, leads),
         };
       } catch (err) {
         return erro(reply, err);
