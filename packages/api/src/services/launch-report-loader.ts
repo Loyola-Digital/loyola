@@ -32,8 +32,15 @@ import { computeSurveyForStage } from "./survey-aggregation.js";
 import { applyMetaTax } from "../utils/meta-tax.js";
 import { businessYesterday, saleDayKey } from "../utils/sale-date.js";
 import { loadReportConfig, type LaunchReportConfig } from "./launch-report-config.js";
-import { resolverColunaPreco, valorBrl, type LinhaVendaValor } from "./launch-report-sales-value.js";
+import {
+  resolverColunaPreco,
+  valorBrl,
+  type LinhaVendaValor,
+  type ResultadoValorBrl,
+} from "./launch-report-sales-value.js";
 import { adNameDoTerm } from "./launch-report-normalize.js";
+import { deduplicarPorIdDaVenda } from "../utils/dedup-por-id-da-venda.js";
+import type { DedupNaoAplicada, ResumoDedupVendas } from "./launch-report-guards.js";
 import type { AdInput, FaixaPorAd } from "./launch-report-ads.js";
 import {
   computeLaunchReportMetrics,
@@ -67,11 +74,22 @@ export class LaunchReportDataError extends Error {
 
 type AccessTokenFor = (accountId: string) => Promise<string | null>;
 
+/**
+ * Resultado do loader: as métricas (o que a rota devolve e persiste, contrato
+ * inalterado) e o resumo da dedup por ID da venda (Story 41.10), que a rota
+ * repassa às guardas para virar W9/W10 dentro de `alertas[]`. Fica fora de
+ * `metricas` de propósito — a 41.10 não cria campo de resposta novo.
+ */
+export interface LaunchReportCarregado {
+  metricas: LaunchReportMetrics;
+  dedup: ResumoDedupVendas;
+}
+
 export async function loadLaunchReport(
   db: Database,
   accessTokenFor: AccessTokenFor,
   params: LoadLaunchReportParams,
-): Promise<LaunchReportMetrics> {
+): Promise<LaunchReportCarregado> {
   // 1. Config + gate do §12. Lança ReportScopeError se a combinação não passou.
   const config = await loadReportConfig(db, params.stageId);
 
@@ -95,11 +113,12 @@ export async function loadLaunchReport(
 
   // 3. Vendas da planilha (sem recorte de período ainda — o §2.8 precisa da
   //    menor data de venda para derivar o início).
-  const { linhas: vendasBrutas, mappingPrecoDivergente } = await carregarVendas(
-    db,
-    params.stageId,
-    config.tipo,
-  );
+  const {
+    linhas: vendasBrutas,
+    removidas,
+    dedupNaoAplicada,
+    mappingPrecoDivergente,
+  } = await carregarVendas(db, params.stageId, config.tipo);
 
   // 4. Período (§2.8)
   const periodo = await resolverPeriodo(db, {
@@ -109,27 +128,13 @@ export async function loadLaunchReport(
     campanhaIds: campanhasDoStage.map((c) => c.id),
   });
 
-  // 5. Recorte no período e valor em BRL (§2.4)
-  const noPeriodo = vendasBrutas.filter((v) => v.dia >= periodo.inicio && v.dia <= periodo.fim);
-  const paraValor: LinhaVendaValor[] = noPeriodo.map((v) => ({
-    produto: v.produto,
-    preco: v.precoCru,
-    moeda: v.moeda,
-    data: v.dia,
-  }));
-  const resultadoValor = valorBrl(paraValor);
-
-  const vendas: VendaInput[] = noPeriodo.map((v, i) => ({
-    email: v.email,
-    txId: v.txId,
-    produto: v.produto,
-    valorBrl: resultadoValor.valores[i] ?? v.precoCru,
-    dia: v.dia,
-    utmSource: v.utmSource,
-    utmTerm: v.utmTerm,
-    utmContent: v.utmContent,
-    isOrderBump: v.isOrderBump,
-  }));
+  // 5. Recorte no período e valor em BRL (§2.4). A dedup já rodou na planilha
+  //    inteira; aqui só se mede o efeito dela dentro da janela (W9).
+  const { vendas, resultadoValor, removidasNaJanela } = prepararVendasDoPeriodo(
+    vendasBrutas,
+    removidas,
+    periodo,
+  );
 
   // 6. Mídia — cache do banco, com reconciliação campaign × ad (§2.3b)
   const campanhas = await carregarMidia(db, accessTokenFor, {
@@ -167,7 +172,7 @@ export async function loadLaunchReport(
     params.stageId,
   );
 
-  return computeLaunchReportMetrics({
+  const metricas = computeLaunchReportMetrics({
     periodo,
     impostoPct: config.impostoPct,
     impostoOrigem: config.impostoOrigem,
@@ -183,13 +188,16 @@ export async function loadLaunchReport(
     ads,
     faixas: extrairFaixas(survey, nomePorAdId),
   });
+
+  return { metricas, dedup: { removidasNaJanela, naoAplicada: dedupNaoAplicada } };
 }
 
 // ---------------------------------------------------------------------------
 // Vendas
 // ---------------------------------------------------------------------------
 
-interface LinhaCrua {
+/** Linha de venda lida da planilha, antes do recorte de período. */
+export interface LinhaCrua {
   email: string | null;
   txId: string | null;
   produto: string | null;
@@ -213,12 +221,222 @@ function parseNumberBr(val: string | undefined): number {
   return Number.parseFloat(normalized) || 0;
 }
 
+/** Uma planilha de vendas já lida: o que `readSheetData` devolve + o mapping. */
+export interface PlanilhaDeVendasLida {
+  /** `sheetName` — é como a etapa exibe a planilha no wizard. */
+  nome: string;
+  headers: readonly string[];
+  rows: readonly string[][];
+  mapping: Record<string, string | undefined>;
+}
+
+export interface VendasDaPlanilha {
+  /** Linhas que contam (já sem reembolso e, se aplicável, sem duplicatas). */
+  linhas: LinhaCrua[];
+  /** Duplicatas por `(ID da venda, produto)` descartadas — planilha inteira. */
+  removidas: LinhaCrua[];
+  /** Preenchido quando a dedup não pôde rodar nesta planilha (W10). */
+  dedupNaoAplicada: DedupNaoAplicada | null;
+  mappingPrecoDivergente: { colunaDoMapping: string; colunaUsada: string } | null;
+}
+
+/**
+ * Lê as vendas de UMA planilha: status/reembolso, dia, preço > 0, classificação
+ * de order bump e — Story 41.10 — dedup por `(ID da venda, produto)`.
+ *
+ * Pura (sem I/O): é o miolo de `carregarVendas`, exportado para ser testado com
+ * fixture sem banco nem Google.
+ *
+ * A dedup roda **depois** dos filtros de linha (só disputa a vaga quem contaria
+ * como venda) e **antes** de qualquer soma e do corte de período. Consequências:
+ * - a venda ganha UM dia, o da sobrevivente, e cai em exatamente uma janela;
+ * - transação reembolsada sai inteira, duplicatas incluídas, porque o passe de
+ *   reembolso usa a mesma coluna de ID e roda antes.
+ *
+ * Planilha sem `transactionId` ou sem `productName` mapeado (ou apontando para
+ * cabeçalho inexistente): a dedup **não** roda — sem ID não há chave; sem
+ * produto, ingresso e order bump do mesmo pedido colapsariam — e o motivo volta
+ * em `dedupNaoAplicada` para o W10. Decisão por planilha, nunca por célula.
+ */
+export function lerVendasDaPlanilha(
+  planilha: PlanilhaDeVendasLida,
+  isOrderBump: (produto: string | null) => boolean,
+): VendasDaPlanilha {
+  const { nome, headers, rows, mapping } = planilha;
+
+  // §2.4 — a coluna de VALOR é resolvida aqui, não pelo mapping cego.
+  const colPreco = resolverColunaPreco(mapping.valorBruto, headers);
+  if (!colPreco.coluna) {
+    throw new LaunchReportDataError(
+      `a planilha "${nome}" não tem coluna de preço nem mapeamento de valor`,
+      "Mapear a coluna de preço no wizard de planilhas",
+    );
+  }
+  const mappingPrecoDivergente =
+    colPreco.mappingDivergente && colPreco.colunaDoMapping
+      ? { colunaDoMapping: colPreco.colunaDoMapping, colunaUsada: colPreco.coluna }
+      : null;
+
+  const idx = (nomeColuna: string | undefined | null) =>
+    nomeColuna ? headers.indexOf(nomeColuna) : -1;
+  const precoIdx = headers.indexOf(colPreco.coluna);
+  const emailIdx = idx(mapping.email);
+  const dataIdx = idx(mapping.dataVenda);
+  const statusIdx = idx(mapping.status);
+  const txIdx = idx(mapping.transactionId);
+  const produtoIdx = idx(mapping.productName);
+  const sourceIdx = idx(mapping.utm_source);
+  const termIdx = idx(mapping.utm_term);
+  const contentIdx = idx(mapping.utm_content);
+  const moedaIdx = headers.findIndex((h) => /moeda|currency/i.test(h));
+
+  if (dataIdx === -1) {
+    throw new LaunchReportDataError(
+      `a planilha "${nome}" não tem a data da venda mapeada`,
+      "Mapear a coluna de data no wizard de planilhas",
+    );
+  }
+
+  const hasStatusCol = statusIdx !== -1;
+
+  // Passe 1 — transação reembolsada sai inteira (a linha paga pareada também).
+  const reembolsadas = new Set<string>();
+  if (hasStatusCol && txIdx !== -1) {
+    for (const row of rows) {
+      if (isRefundBucket(classifyRefundStatus(row[statusIdx], hasStatusCol))) {
+        const tx = (row[txIdx] ?? "").trim();
+        if (tx) reembolsadas.add(tx);
+      }
+    }
+  }
+
+  const limpo = (i: number, row: readonly string[]): string | null => {
+    if (i === -1) return null;
+    const v = (row[i] ?? "").trim();
+    if (!v) return null;
+    const low = v.toLowerCase();
+    if (low === "null" || low === "undefined" || low === "-" || low === "n/a") return null;
+    return v;
+  };
+
+  const candidatas: LinhaCrua[] = [];
+  for (const row of rows) {
+    if (hasStatusCol) {
+      if (isRefundBucket(classifyRefundStatus(row[statusIdx], hasStatusCol))) continue;
+      if (txIdx !== -1) {
+        const tx = (row[txIdx] ?? "").trim();
+        if (tx && reembolsadas.has(tx)) continue;
+      }
+    }
+
+    const dia = saleDayKey(row[dataIdx]);
+    if (!dia) continue;
+
+    const preco = parseNumberBr(row[precoIdx]);
+    if (preco <= 0) continue;
+
+    const produto = limpo(produtoIdx, row);
+    candidatas.push({
+      email: limpo(emailIdx, row)?.toLowerCase() ?? null,
+      txId: limpo(txIdx, row),
+      produto,
+      precoCru: preco,
+      moeda: limpo(moedaIdx, row),
+      dia,
+      utmSource: limpo(sourceIdx, row),
+      utmTerm: limpo(termIdx, row),
+      utmContent: limpo(contentIdx, row),
+      isOrderBump: isOrderBump(produto),
+    });
+  }
+
+  // Story 41.10 — dedup por (ID da venda, produto), só onde as duas colunas existem.
+  const faltando: DedupNaoAplicada["faltando"] = [];
+  if (txIdx === -1) {
+    faltando.push({ campo: "transactionId", colunaDoMapping: mapping.transactionId?.trim() || null });
+  }
+  if (produtoIdx === -1) {
+    faltando.push({ campo: "productName", colunaDoMapping: mapping.productName?.trim() || null });
+  }
+  if (faltando.length > 0) {
+    return {
+      linhas: candidatas,
+      removidas: [],
+      dedupNaoAplicada: { planilha: nome, faltando },
+      mappingPrecoDivergente,
+    };
+  }
+
+  const { mantidas, removidas } = deduplicarPorIdDaVenda(candidatas, (l) => ({
+    idDaVenda: l.txId,
+    produto: l.produto,
+  }));
+  return { linhas: mantidas, removidas, dedupNaoAplicada: null, mappingPrecoDivergente };
+}
+
+/**
+ * Recorte no período, valor em BRL (§2.4) e o efeito da dedup na janela.
+ *
+ * Pura. O valor das removidas usa a mesma régua do §2.4, calculada sobre o
+ * conjunto com elas — e à parte, para não mexer no valor das que ficam. É a
+ * queda exata de faturamento que o W9 reporta.
+ */
+export function prepararVendasDoPeriodo(
+  vendasBrutas: readonly LinhaCrua[],
+  removidas: readonly LinhaCrua[],
+  periodo: { inicio: string; fim: string },
+): {
+  vendas: VendaInput[];
+  resultadoValor: ResultadoValorBrl;
+  removidasNaJanela: { linhas: number; valor: number };
+} {
+  const naJanela = (v: LinhaCrua) => v.dia >= periodo.inicio && v.dia <= periodo.fim;
+  const paraValor = (v: LinhaCrua): LinhaVendaValor => ({
+    produto: v.produto,
+    preco: v.precoCru,
+    moeda: v.moeda,
+    data: v.dia,
+  });
+
+  const noPeriodo = vendasBrutas.filter(naJanela);
+  const resultadoValor = valorBrl(noPeriodo.map(paraValor));
+
+  const vendas: VendaInput[] = noPeriodo.map((v, i) => ({
+    email: v.email,
+    txId: v.txId,
+    produto: v.produto,
+    valorBrl: resultadoValor.valores[i] ?? v.precoCru,
+    dia: v.dia,
+    utmSource: v.utmSource,
+    utmTerm: v.utmTerm,
+    utmContent: v.utmContent,
+    isOrderBump: v.isOrderBump,
+  }));
+
+  const removidasNoPeriodo = removidas.filter(naJanela);
+  let valorRemovido = 0;
+  if (removidasNoPeriodo.length > 0) {
+    const comRemovidas = valorBrl([...noPeriodo, ...removidasNoPeriodo].map(paraValor));
+    for (let i = noPeriodo.length; i < comRemovidas.valores.length; i++) {
+      valorRemovido += comRemovidas.valores[i] ?? 0;
+    }
+  }
+
+  return {
+    vendas,
+    resultadoValor,
+    removidasNaJanela: { linhas: removidasNoPeriodo.length, valor: valorRemovido },
+  };
+}
+
 async function carregarVendas(
   db: Database,
   stageId: string,
   tipo: string,
 ): Promise<{
   linhas: LinhaCrua[];
+  removidas: LinhaCrua[];
+  dedupNaoAplicada: DedupNaoAplicada[];
   mappingPrecoDivergente: { colunaDoMapping: string; colunaUsada: string } | null;
 }> {
   const { sheets } = await resolveSalesSheetsForStage(db, stageId);
@@ -265,6 +483,8 @@ async function carregarVendas(
     orderBumpSet.has((produto ?? "").trim().toLowerCase());
 
   const linhas: LinhaCrua[] = [];
+  const removidas: LinhaCrua[] = [];
+  const dedupNaoAplicada: DedupNaoAplicada[] = [];
   let mappingPrecoDivergente: { colunaDoMapping: string; colunaUsada: string } | null = null;
 
   for (const sheet of sheets) {
@@ -280,96 +500,19 @@ async function carregarVendas(
       );
     }
 
-    const { headers, rows } = dados;
-
-    // §2.4 — a coluna de VALOR é resolvida aqui, não pelo mapping cego.
-    const colPreco = resolverColunaPreco(mapping.valorBruto, headers);
-    if (!colPreco.coluna) {
-      throw new LaunchReportDataError(
-        `a planilha "${sheet.sheetName}" não tem coluna de preço nem mapeamento de valor`,
-        "Mapear a coluna de preço no wizard de planilhas",
-      );
-    }
-    if (colPreco.mappingDivergente && colPreco.colunaDoMapping) {
-      mappingPrecoDivergente = {
-        colunaDoMapping: colPreco.colunaDoMapping,
-        colunaUsada: colPreco.coluna,
-      };
-    }
-
-    const idx = (nome: string | undefined | null) => (nome ? headers.indexOf(nome) : -1);
-    const precoIdx = headers.indexOf(colPreco.coluna);
-    const emailIdx = idx(mapping.email);
-    const dataIdx = idx(mapping.dataVenda);
-    const statusIdx = idx(mapping.status);
-    const txIdx = idx(mapping.transactionId);
-    const produtoIdx = idx(mapping.productName);
-    const sourceIdx = idx(mapping.utm_source);
-    const termIdx = idx(mapping.utm_term);
-    const contentIdx = idx(mapping.utm_content);
-    const moedaIdx = headers.findIndex((h) => /moeda|currency/i.test(h));
-
-    if (dataIdx === -1) {
-      throw new LaunchReportDataError(
-        `a planilha "${sheet.sheetName}" não tem a data da venda mapeada`,
-        "Mapear a coluna de data no wizard de planilhas",
-      );
-    }
-
-    const hasStatusCol = statusIdx !== -1;
-
-    // Passe 1 — transação reembolsada sai inteira (a linha paga pareada também).
-    const reembolsadas = new Set<string>();
-    if (hasStatusCol && txIdx !== -1) {
-      for (const row of rows) {
-        if (isRefundBucket(classifyRefundStatus(row[statusIdx], hasStatusCol))) {
-          const tx = (row[txIdx] ?? "").trim();
-          if (tx) reembolsadas.add(tx);
-        }
-      }
-    }
-
-    const limpo = (i: number, row: string[]): string | null => {
-      if (i === -1) return null;
-      const v = (row[i] ?? "").trim();
-      if (!v) return null;
-      const low = v.toLowerCase();
-      if (low === "null" || low === "undefined" || low === "-" || low === "n/a") return null;
-      return v;
-    };
-
-    for (const row of rows) {
-      if (hasStatusCol) {
-        if (isRefundBucket(classifyRefundStatus(row[statusIdx], hasStatusCol))) continue;
-        if (txIdx !== -1) {
-          const tx = (row[txIdx] ?? "").trim();
-          if (tx && reembolsadas.has(tx)) continue;
-        }
-      }
-
-      const dia = saleDayKey(row[dataIdx]);
-      if (!dia) continue;
-
-      const preco = parseNumberBr(row[precoIdx]);
-      if (preco <= 0) continue;
-
-      const produto = limpo(produtoIdx, row);
-      linhas.push({
-        email: limpo(emailIdx, row)?.toLowerCase() ?? null,
-        txId: limpo(txIdx, row),
-        produto,
-        precoCru: preco,
-        moeda: limpo(moedaIdx, row),
-        dia,
-        utmSource: limpo(sourceIdx, row),
-        utmTerm: limpo(termIdx, row),
-        utmContent: limpo(contentIdx, row),
-        isOrderBump: isOrderBump(produto),
-      });
-    }
+    // Dedup é por planilha: a chave não atravessa planilhas (mesma regra dos
+    // dedups inline do painel e do sync).
+    const lida = lerVendasDaPlanilha(
+      { nome: sheet.sheetName, headers: dados.headers, rows: dados.rows, mapping },
+      isOrderBump,
+    );
+    linhas.push(...lida.linhas);
+    removidas.push(...lida.removidas);
+    if (lida.dedupNaoAplicada) dedupNaoAplicada.push(lida.dedupNaoAplicada);
+    if (lida.mappingPrecoDivergente) mappingPrecoDivergente = lida.mappingPrecoDivergente;
   }
 
-  return { linhas, mappingPrecoDivergente };
+  return { linhas, removidas, dedupNaoAplicada, mappingPrecoDivergente };
 }
 
 // ---------------------------------------------------------------------------

@@ -27,7 +27,22 @@ import type { LaunchReportMetrics } from "./launch-report-engine.js";
 // ---------------------------------------------------------------------------
 
 export type CodigoInvariante = "A1" | "A2" | "A3" | "A4" | "A5" | "A6" | "A7" | "A8" | "A9";
-export type CodigoAlerta = "W1" | "W2" | "W3" | "W4" | "W5" | "W6" | "W7" | "W8";
+/**
+ * W1–W8 são os da §8.2. **W9/W10** (Story 41.10) são aditivos e falam da dedup
+ * por ID da venda: W9 = duplicatas removidas na janela; W10 = planilha em que a
+ * dedup não pôde rodar.
+ */
+export type CodigoAlerta =
+  | "W1"
+  | "W2"
+  | "W3"
+  | "W4"
+  | "W5"
+  | "W6"
+  | "W7"
+  | "W8"
+  | "W9"
+  | "W10";
 export type StatusInvariante = "passed" | "failed" | "skipped";
 
 export interface ResultadoInvariante {
@@ -74,6 +89,31 @@ export interface ValidateOptions {
    * (provável truncagem silenciosa). Insumo do W8.
    */
   loteNoLimite?: boolean;
+  /**
+   * Story 41.10 — o que a dedup por `(ID da venda, produto)` fez nas planilhas
+   * do loader. Insumo do W9 e do W10. Ausente = nada a reportar.
+   */
+  dedup?: ResumoDedupVendas | null;
+}
+
+/** Planilha em que a dedup por ID da venda não rodou, e por quê. */
+export interface DedupNaoAplicada {
+  /** Nome da aba (`sheetName`), que é como a etapa a exibe no wizard. */
+  planilha: string;
+  /** Campos do `columnMapping` ausentes ou apontando para cabeçalho inexistente. */
+  faltando: { campo: "transactionId" | "productName"; colunaDoMapping: string | null }[];
+}
+
+/**
+ * Resumo da dedup do loader do Resumão (Story 41.10).
+ *
+ * ⚠️ `removidasNaJanela` conta só as duplicatas cujo **dia cai no período** do
+ * relatório: o loader deduplica a planilha inteira (antes do corte), e o que o
+ * usuário vê cair em vendas/faturamento é o efeito dentro da janela.
+ */
+export interface ResumoDedupVendas {
+  removidasNaJanela: { linhas: number; valor: number };
+  naoAplicada: DedupNaoAplicada[];
 }
 
 /** Erro pronto para virar 422, no formato do §9.1. */
@@ -492,7 +532,7 @@ function checarA9(m: LaunchReportMetrics): ResultadoInvariante {
 }
 
 // ---------------------------------------------------------------------------
-// Os 8 alertas — nunca bloqueiam
+// Os alertas — nunca bloqueiam (W1–W8 da §8.2; W9/W10 da Story 41.10)
 // ---------------------------------------------------------------------------
 
 function coletarAlertas(m: LaunchReportMetrics, opts: ValidateOptions): Alerta[] {
@@ -587,6 +627,44 @@ function coletarAlertas(m: LaunchReportMetrics, opts: ValidateOptions): Alerta[]
       mensagem:
         "um lote de consulta à Meta voltou exatamente no limite de paginação — " +
         "pode haver campanha faltando no investimento",
+    });
+  }
+
+  // W9 — duplicatas por ID da venda removidas na janela (Story 41.10). É
+  // informação, não inconsistência do motor: alerta, nunca invariante.
+  const removidas = opts.dedup?.removidasNaJanela;
+  if (removidas && removidas.linhas > 0) {
+    const n = removidas.linhas;
+    const texto =
+      n === 1
+        ? "1 linha duplicada por ID da venda removida"
+        : `${int(n)} linhas duplicadas por ID da venda removidas`;
+    alertas.push({
+      codigo: "W9",
+      mensagem:
+        `${texto} (R$ ${brl(removidas.valor)}) — mesmo ID da venda e mesmo produto na ` +
+        "mesma planilha contam uma vez (vale a primeira linha)",
+    });
+  }
+
+  // W10 — planilha em que a dedup não rodou (Story 41.10). Decisão por planilha:
+  // sem a coluna de ID não há chave; sem a de produto, ingresso e order bump do
+  // mesmo pedido colapsariam.
+  for (const p of opts.dedup?.naoAplicada ?? []) {
+    const faltas = p.faltando
+      .map((f) => {
+        const nome = f.campo === "transactionId" ? "ID da venda (transactionId)" : "produto (productName)";
+        return f.colunaDoMapping
+          ? `${nome} aponta para "${f.colunaDoMapping}", que não existe na planilha`
+          : `${nome} não está mapeada`;
+      })
+      .join("; ");
+    alertas.push({
+      codigo: "W10",
+      mensagem:
+        `dedup por ID da venda não aplicada na planilha "${p.planilha}": coluna de ${faltas} — ` +
+        "linhas repetidas do gateway estão sendo somadas. Mapear a coluna no wizard de " +
+        "planilhas da etapa",
     });
   }
 
