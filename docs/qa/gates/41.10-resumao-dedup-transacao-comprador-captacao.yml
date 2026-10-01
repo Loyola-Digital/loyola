@@ -1,0 +1,134 @@
+schema: 1
+story: '41.10'
+story_title: 'Correção do Resumão: dedup por ID da venda antes de somar; comprador de captação = Imersão OU Combo'
+gate: CONCERNS
+status_reason: >-
+  O código está correto e bem testado. A dedup usa (ID da venda, produto), roda antes do corte,
+  sobrevive a primeira linha, linha sem ID nunca colapsa, e as planilhas sem ID ou sem produto
+  mapeado recebem W10 em vez de ficarem em silêncio. Seis mutações próprias foram pegas pela suíte.
+  Os números do PG04 e do PG02 foram reconferidos em produção, em leitura. O que impede o PASS
+  está fora do código: (1) a tabela da janela 09/05 nos AC2/AC4 diverge da regra do AC1
+  (15 / R$ 1.485,00 contra 13 / R$ 1.287,00) e precisa ser ratificada pelo @po; (2) a P-8 tem
+  objeto (o Resumão 6b4c3492 do PG04 muda) e, pela própria story, bloqueia o merge até o dono
+  decidir; (3) no PG02 a dedup fica inerte até o gestor mapear `ID` como transactionId. Por fim,
+  a conferência em produção dos AC5, AC7 e AC7b só pode acontecer depois do deploy.
+reviewer: 'Quinn'
+updated: '2026-10-01T04:17:19Z'
+commit_reviewed: 'a2d1f6d2'
+base: 'docs/epic-49-gerador-debriefing (diff com três pontos)'
+
+checks:
+  code_review: PASS      # função pura, miolo do loader extraído sem mudar parse/status/reembolso; routes/launch-reports.ts fora do IN, mas é mínimo e necessário (AC1e sem campo novo)
+  unit_tests: PASS       # 7 + 17 novos; launch-report-* 328/328; 6 mutações próprias pegas
+  acceptance_criteria: CONCERNS  # AC1/AC3/AC6/AC8 ok; AC2/AC4 janela 09/05 a ratificar; AC4/AC4b registro do dono; AC5/AC7/AC7b com etapas pós-deploy
+  no_regressions: PASS   # suíte da API: as mesmas 10 falhas em 5 arquivos, idênticas às de origin/main 667d35b2
+  performance: PASS      # Set O(n) por planilha
+  security: PASS         # o nome da planilha no W10 passa por escaparHtml no render; sem input novo; scripts de medição com default_transaction_read_only=on
+  documentation: PASS    # spec ganhou a "Correção 41.10", com os antigos rotulados como supersedidos
+  api_contract: N/A      # sem rota e sem campo novos; W9/W10 entram no `alertas[]` que já existe; web e shared não enumeram os códigos
+
+evidence:
+  tests_new: 'dedup-por-id-da-venda.test.ts 7/7; launch-report-dedup.test.ts 17/17'
+  suite_launch_report: '10 arquivos, 328/328'
+  suite_api_full: '3440 passam / 10 falham em 5 arquivos (funnel-stages-lead-inputs, instagram-routes, instagram, projects, schema)'
+  suite_api_origin_main: 'origin/main 667d35b2 num worktree: 3416 passam / as mesmas 10 falham (diff da lista de FAIL = idêntico). São pré-existentes; 3440 − 3416 = os 24 testes novos'
+  tsc: 'packages/api tsc --noEmit (binário direto): exit 0'
+  lint: 'eslint nos 6 arquivos alterados: exit 0, sem saída'
+  coderabbit: 'não executado (CLI exige WSL; macOS)'
+  mutations:
+    - id: M1
+      what: 'chave só por ID, sem o produto'
+      result: 'pega: 4 testes falham (util "mesmo ID, produto diferente", AC3(e) e os 2 do escopo item 7)'
+    - id: M2
+      what: 'sobrevive a ÚLTIMA ocorrência'
+      result: 'pega: 3 testes do util + AC3(g). O teste do loader "a sobrevivente é a primeira" NÃO pega (TEST-002)'
+    - id: M3
+      what: 'produto sem toLowerCase na chave'
+      result: 'pega: teste de normalização'
+    - id: M4
+      what: 'dedup DEPOIS do corte de janela (o vício que gerou os 13)'
+      result: 'pega: AC3(g) janelas adjacentes, "sobrevivente" e (h)'
+    - id: M5
+      what: 'W9 conta as removidas da planilha inteira, não só as da janela'
+      result: 'pega: AC3(g)'
+    - id: M6
+      what: 'W10 silenciado nas guardas'
+      result: 'pega: (h), (i) e "W10 cita a coluna"'
+    - id: M7
+      what: 'dedup roda mesmo sem productName mapeado'
+      result: 'pega: (h)'
+    - id: M8
+      what: 'corte do fio: rota deixa de passar `dedup` às guardas (Resumão e Comparativo)'
+      result: 'NÃO pega: suíte inalterada (as mesmas 10 falhas pré-existentes) e tsc limpo (TEST-001)'
+  production_readonly:
+    session: 'default_transaction_read_only=on; Google Sheets só leitura; sem PII na saída'
+    t0: 'PG02 89617d93 transactionId=null, productName=Produto, status=null, lista {Gravação, GPT}; PG04 4c867489 transactionId=Transaction; BBE-PR2 3a0717e7 transactionId=ID; 0 etapas com combo/"3 em 1" em order_bump_products'
+    pg04: '1289 candidatas; chave (ID, produto) remove 5; chave só ID removeria 133; 126 IDs cobrem mais de um produto. 09/07–30/07: 1150→1145 vendas, R$ 100.477,53→100.049,03, W9 5/R$ 428,50; 09/07–27/07: 939→935, R$ 72.266,51→72.161,91, W9 4/R$ 104,60. O W9 é exatamente a queda'
+    pg02_hoje: 'W10 (transactionId não mapeado); 2222 / R$ 233.572,94 (11/05) e 2189 / R$ 230.305,94 (09/05), sem nenhuma mudança'
+    pg02_simulado_ID: '11/05: 2197 / R$ 231.097,94, W9 25/R$ 2.475,00; 09/05: 2174 / R$ 228.820,94, W9 15/R$ 1.485,00'
+  snapshot_15_vs_13: 'Recontado de forma independente no snapshot CSV do n8n (só contagens): dedup antes do corte = 15 / R$ 1.485,00; depois do corte = 13 / R$ 1.287,00. 2 pares cruzam a meia-noite (sobrevivente 10/05 02:00:54 e 02:45:06; duplicata 09/05 23:00 e 23:45). O export cru da Kiwify data essas 2 vendas em 10/05, no mesmo horário da sobrevivente'
+  no_prod_writes: 'testes puros (sem db/pool); nenhum script, migration ou SQL no diff; os scripts de medição do @dev ficam fora do repo e todos usam read_only'
+
+top_issues:
+  - id: 'REQ-001'
+    severity: medium
+    category: requirements
+    finding: >-
+      A janela 17/04–09/05 dos AC2/AC4 não bate com a regra que o AC1 manda e o código implementa:
+      W9 = 15 / R$ 1.485,00 (story: 13 / R$ 1.287,00); vendas 2.174 (story: 2.176); faturamento
+      R$ 228.820,94 (story: 229.018,94); OB 274 / R$ 30.084,54 (story: 276 / 30.282,54). Com a regra
+      antiga, os únicos vão a 1.406, e a story afirma que eles não mudam. Os 13 vêm da estimativa,
+      que deduplicava depois do corte. O QA reconfirmou os 15 de forma independente, no snapshot e
+      na produção. A spec já declara a tabela com 15 como oráculo, mas o texto dos AC é do @po.
+    suggested_action: >-
+      @po ratifica (ou não) a tabela 09/05 com 15 / 1.485,00 e corrige os AC2/AC4. O QA não decide.
+      Nota para a ratificação: a duplicata −3 h tem cara de conversão de fuso no n8n. O dia da
+      sobrevivente é o mesmo do export da Kiwify e de todas as demais linhas da planilha, então a
+      regra é coerente com o resto do relatório.
+  - id: 'REL-001'
+    severity: medium
+    category: requirements
+    finding: >-
+      A P-8 tem objeto: o Resumão 6b4c3492 do PG04 (09/07–30/07) muda com a dedup (−5 vendas /
+      −R$ 428,50), e isso foi reconferido em produção. Pela story, uma P-8 com objeto bloqueia o
+      merge, e a comunicação ao usuário (AC7) também tem de vir antes do merge.
+    suggested_action: 'O dono decide a P-8 e a comunicação do AC7 é feita. Só então @devops faz o merge.'
+  - id: 'OPS-001'
+    severity: medium
+    category: requirements
+    finding: >-
+      No PG02, o `transactionId` não está mapeado em produção. No merge, o Resumão do PG02 só ganha
+      o W10 e os números não mudam. As 25 duplicatas só saem depois que o gestor mapear `ID` pela UI
+      (o painel Captação Paga também é afetado, porque deduplica pelo mesmo mapping). AC4/AC4b: a
+      config R2-1 já está aplicada, mas não há registro de quem fez nem quando.
+    suggested_action: >-
+      O gestor mapeia `ID` no wizard e registra o antes→depois. O dono registra o AC4/AC4b. Depois
+      do deploy, o @qa gera o PG02 (09/05 e 11/05) e o PG04 em produção e preenche os pendentes
+      do AC5 (UTM, decomposição, A1–A9). Por último, a regeração do AC7b.
+  - id: 'TEST-001'
+    severity: low
+    category: tests
+    finding: >-
+      O fio rota→guardas não tem teste. Cortei `dedup: carregado.dedup` (Resumão) e
+      `{ dedup: c.dedup }` (Comparativo): a suíte ficou idêntica e o tsc, limpo, porque
+      `ValidateOptions.dedup` é opcional e não há teste de rota. O código atual está ligado
+      (conferido na leitura), mas um refactor pode fazer os números caírem sem W9/W10.
+    suggested_action: >-
+      Tornar `dedup` obrigatório na chamada (por exemplo, `assertLaunchReport(carregado.metricas,
+      { dedup: carregado.dedup })` via helper tipado) ou cobrir o handler com um teste que afirme
+      W9/W10 no `alertas[]` da resposta.
+  - id: 'TEST-002'
+    severity: low
+    category: tests
+    finding: >-
+      O teste do loader "a sobrevivente é a primeira (a com Transaction preenchida)" é tautológico:
+      passa com a mutação "sobrevive a última". Quem protege a regra são os testes do util e o AC3(g).
+    suggested_action: 'Afirmar o `dia`/horário (ou `txId`/campo distintivo) da linha mantida, e não só a contagem.'
+
+notes:
+  - 'routes/launch-reports.ts está fora da lista IN, mas a mudança é mínima e necessária para entregar o W9/W10 sem criar campo em `metricas`. Aceito.'
+  - 'Observação, não é defeito desta story: o PG02 também não tem `status` mapeado, então o passe de reembolso fica inativo lá. Mapear `Evento` mudaria números e exigiria decisão registrada à parte.'
+  - 'O valor do W9 usa valorBrl sobre o conjunto com as removidas. Para moeda estrangeira, a moda pode variar marginalmente. Está documentado pelo @dev e não tem efeito no PG02/PG04 (BRL).'
+  - 'Status da story não alterado pelo QA (escopo: só QA Results). Recomendação: manter fora de Done até REQ-001 e REL-001 fecharem.'
+
+waiver: { active: false }
