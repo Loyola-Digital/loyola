@@ -2,47 +2,63 @@ schema: 1
 story: '49.1'
 story_title: 'Config do debriefing + gates (datas-chave, etapas do lançamento, perguntas da pesquisa, combinação não validada)'
 gate: CONCERNS
-status_reason: 'Os ACs 1–8, 10 e 11 estão implementados e conferidos no código. Os testes passam (85/85), o tsc e o lint também, e o store Drizzle REAL foi exercitado em PGlite pelo @qa (19/19). Ficam pontos médios: rede de testes (2 mutações do @qa na lógica sobreviveram e nenhum teste cobre o store real), uma segunda porta crua exportada (montarConfigBruta) que o teste do R1 não enxerga, e o AC9 "em dev" feito em PGlite, com a migration 0160 ainda não aplicada em produção.'
+status_reason: 'Re-review da QA fix 1 (c1822b0b). ARCH-001, TEST-001, TEST-002, REL-001 e REL-002 estão FECHADOS e provados: 97/97 nas 3 suítes, 14/14 mutações do @qa mortas (inclusive nas mudanças novas: upsert, reset por precaução, comparação ausente), scanner de imports pegou 2 portas dos fundos injetadas, tsc 0, eslint 0, suíte inteira da API com as mesmas 10 falhas pré-existentes. Nada do lado do código impede o merge. O CONCERNS fica por REQ-001 (AC9 "em dev" provado em PGlite e 0160 ainda não aplicada em produção — só o dono faz WAIVED ou aplica) e pelas pendências do dono P-49.1-a/b/c. Achados novos são todos low.'
 reviewer: 'Quinn'
-updated: '2026-10-01T05:15:00Z'
+updated: '2026-10-01T06:10:00Z'
 pr: null
 branch: 'feat/49.1-debriefing-config-gate (local)'
-commits: ['8e6aa754']
+commits: ['8e6aa754', 'c1822b0b']
 base: 'docs/epic-49-gerador-debriefing (diff com três pontos)'
+history:
+  - { at: '2026-10-01T05:15:00Z', commit: '8e6aa754', gate: CONCERNS, gate_commit: '2478dc49', note: '4 mediums (REQ-001, TEST-001, TEST-002, ARCH-001) + 4 lows' }
+  - { at: '2026-10-01T06:10:00Z', commit: 'c1822b0b', gate: CONCERNS, note: 'QA fix 1 fechou ARCH-001, TEST-001, TEST-002, REL-001 e REL-002; resta REQ-001 (dono/@devops) + lows' }
+
+resolved:
+  - id: 'ARCH-001'
+    how: 'montarConfigBruta não é mais exportada; a rota GET usa loadDebriefingConfigRaw(fastify.db, stageId, s), passando o store injetado. O R1 virou inventário das 27 exportações de runtime (Object.keys(servico) === SUPERFICIE, sem filtro por nome) + scanner de src/ (import nomeado, alias, * as, import(), re-export, citação da tabela).'
+    proof: 'Probe do @qa: services/zz-probe.ts com import multilinha "type ContextoDaEtapa, criarDebriefingConfigStore as fab" + lib/zz-probe2.ts com "export * from ../services/debriefing-config.js" → o teste do scanner falhou listando as 2 violações (arquivos removidos depois). Mutação Q13 (rota chamando loadDebriefingConfigRaw sem o store injetado) → 5 falhas.'
+  - id: 'TEST-001'
+    how: 'debriefing-config-store.test.ts (16 testes): PGlite + drizzle pg-proxy + Fastify inject, migration 0160 real sobre DDL mínima, parsers DATE/TIMESTAMP/NUMERIC como o node-postgres. Só perguntasDaEtapa (planilha) é trocada.'
+    proof: 'Re-execução das mutações que sobreviviam: M11 (sem reset nos dois lados) → 5 falhas; M12 (funnel_surveys ignorado) → 4; M13 (projects.id → funnels.id) → 13.'
+  - id: 'TEST-002'
+    how: '2 casos novos: fora da lista + sem validado + incompleta ⇒ COMBINACAO_NAO_VALIDADA (assertDebriefingScope e carregador); troca só de papel ⇒ premissaMudou true (e reset no banco no teste do store).'
+    proof: 'M6 (completude antes da combinação) → 5 falhas; M10 (papel fora da chave da premissa) → 2.'
+  - id: 'REL-001'
+    how: 'gravar = INSERT … ON CONFLICT (stage_id) DO UPDATE; a rota manda resetarValidado: true quando não leu linha (corrida do 1º salvar). Teste de 2 PUTs simultâneos com barreira depois da leitura.'
+    proof: 'Q4 (onConflictDoNothing) → 4 falhas; Q5 (conflito sem reset) → 3; Q6 (rota sem o reset por precaução) → 1.'
+  - id: 'REL-002'
+    how: 'lancamento_comparacao_funnel_id sem FK na 0160 e no schema.ts (os dois iguais: um drizzle-kit push não geraria drift). montarConfigBruta calcula comparacaoAusente (só launch e só com comparação gravada), derruba validado nessa leitura e lista o campo em camposFaltantes.'
+    proof: 'Q1 (comparação ausente não invalida) → 2 falhas; Q2 (camposFaltantes ignora) → 3; Q3 (sempre false) → 3; Q12 (FK RESTRICT de volta na migration) → 1; Q14 (confere o funil errado) → 3. Migration re-provada em PGlite pelo @qa: 18 colunas, reaplicada 18, constraints = pkey + stage_id_fkey + validado_por_fkey + CHECK (2 FKs), índices pkey + stage_uniq, rollback 0, reaplicada 18.'
 
 top_issues:
   - id: 'REQ-001'
     severity: medium
-    finding: 'O AC9 pede a migration "aplicada em dev e revertida ao menos uma vez". A aplicação e a reversão foram feitas em PGlite (Postgres 16 em WASM) porque não existe banco de dev: o .env local aponta para produção. O @qa reproduziu a prova em PGlite: 18 colunas; reaplicação idempotente; índices pkey e stage_uniq; FKs stage→CASCADE, comparação→SET NULL e validado_por→SET NULL; CHECK barra "carrossel"; UNIQUE barra duplicata; rollback do topo do .sql deixa 0 colunas; reaplicada depois do rollback. A DDL é simples, e o padrão inline REFERENCES é o mesmo das 0086/0087. O risco residual não está na DDL. Está na aplicação manual em produção: to_regclass(debriefing_configs) = null em 01/10, e sem a tabela as 3 rotas dão 500.'
-    suggested_action: 'Classificação do @qa: CONCERNS, aceitável como prova de DDL. Não equivale ao texto do AC9. WAIVED só com o dono. O dono ou o @devops aplica a 0160 à mão ANTES de qualquer consumidor das rotas (a 49.6) ir ao ar, e registra a prova por information_schema na story (consultas no topo do .sql). Se o dono aceitar PGlite como "dev", basta registrar o waiver.'
-  - id: 'TEST-001'
-    severity: medium
-    finding: 'Nenhum teste exercita o store Drizzle real (criarDebriefingConfigStore). As rotas e o carregador são testados só com o store em memória. Mutações do @qa que sobreviveram (73/73 verdes): M11, gravar() deixa de zerar validado no UPDATE (o reset de premissa vira decorativo no banco); M12, etapasComPesquisa ignora funnel_surveys; M13, contextoDaEtapa troca projects.id por funnels.id (a checagem de IDOR da rota passa a comparar o id errado). O comportamento real foi provado pelo @qa num harness PGlite com drizzle pg-proxy, parsers iguais aos do node-postgres e Fastify inject. Resultado 19/19: IDOR 404 por projeto e funil da URL; guest 403; sem config → COMBINACAO_NAO_VALIDADA; validate sem config → 404; PUT grava mediums normalizados e validado=false; validate grava validado_por; o load real devolve o contrato launch com faixa:null e imposto de origem project; PUT reordenado não reseta; PUT trocando papel reseta no banco; faixa ausente em etapa com funnel_surveys → CONFIG_INCOMPLETA; comparação de outro projeto → 400; mobile → 422; CASCADE e SET NULL. O código está correto hoje. O que falta é a rede de regressão.'
-    suggested_action: 'Transformar o harness em teste. Opção 1: @electric-sql/pglite como devDependency da API e um debriefing-config-store.test.ts que aplica a 0160 + DDL mínima. Opção 2: no mínimo, um teste que prenda o reset no UPDATE e o join do contexto. Ver [[feedback-sql-mais-funcao-pura]].'
-  - id: 'TEST-002'
-    severity: medium
-    finding: 'M6 sobreviveu. A mutação faz o gate checar a completude ANTES da combinação: config fora da lista, sem validado e incompleta passa a devolver CONFIG_INCOMPLETA em vez de COMBINACAO_NAO_VALIDADA. O AC6 fixa a semântica: CONFIG_INCOMPLETA só "quando a combinação está liberada". O código está certo, mas nenhum teste combina "fora da lista + sem validado + incompleta". M10 também sobreviveu: trocar só o papel de uma etapa (stageId igual) não reseta validado. O código reseta (provado no harness PGlite), mas nenhum teste cobre. O papel decide headline × apêndice na 49.3.'
-    suggested_action: 'Adicionar 2 casos em debriefing-config.test.ts: (a) incompleta + fora da lista + validado=false ⇒ erro COMBINACAO_NAO_VALIDADA; (b) premissaMudou com a mesma lista de stageIds e um papel trocado ⇒ true. Reverter M6 e M10 para provar.'
-  - id: 'ARCH-001'
-    severity: medium
-    finding: 'Existe uma segunda porta crua exportada. A rota de leitura usa montarConfigBruta(store, ctx), que devolve DebriefingConfigRaw com todas as datas, etapas e perguntas sem gate, e não usa loadDebriefingConfigRaw. Esta só é chamada pelos testes: é código morto em produção. O teste do R1 filtra as exportações por /^load/ e por isso não enxerga montarConfigBruta nem criarDebriefingConfigStore().linhaDaConfig. Um gerador da 49.3+ que importe montarConfigBruta pula o gate sem quebrar teste. Isso enfraquece o AC7 ("essa é a única porta") e a mitigação do R1, que é risco alto na story.'
-    suggested_action: 'A rota de leitura passa a usar loadDebriefingConfigRaw (ou essa função é renomeada para ser a única variante crua), e montarConfigBruta deixa de ser exportada (teste via loadDebriefingConfigRaw). Além disso, um teste de superfície que lê src/ e falha se algum arquivo fora de routes/debriefing-config.ts importar a variante crua ou o store. Ver [[feedback-runner-que-enxerga-o-arquivo]].'
-  - id: 'REL-001'
+    finding: 'Inalterado. O AC9 pede a migration "aplicada em dev e revertida ao menos uma vez"; foi feito em PGlite (não há banco de dev; o .env local é produção). O @qa re-provou a 0160 de c1822b0b em PGlite (18 colunas, idempotente, 2 FKs + CHECK + pkey, stage_uniq, rollback → 0, reaplicada → 18). Em produção, to_regclass(debriefing_configs) = null em 01/10 (SELECT com default_transaction_read_only = on). Sem a tabela, as 3 rotas dão 500. A consulta de prova do topo do .sql agora espera "pkey, 2 FKs, 1 CHECK".'
+    suggested_action: 'Dono ou @devops: aplicar a 0160 à mão ANTES de qualquer consumidor das rotas (49.6) ir ao ar e colar a prova por information_schema/pg_constraint na story; ou registrar WAIVED aceitando PGlite como "dev". O @qa não decide.'
+  - id: 'INFRA-001'
     severity: low
-    finding: 'O PUT faz select-then-insert. Dois "salvar" simultâneos na primeira gravação de uma etapa batem no UNIQUE debriefing_configs_stage_uniq e o segundo recebe 500. A 41.1 tem o mesmo padrão.'
-    suggested_action: 'insert … onConflictDoUpdate(target: stageId) no store, mantendo o cálculo de resetarValidado a partir da linha lida. Pode ficar para a 49.6, que traz o formulário.'
-  - id: 'REL-002'
+    finding: '@electric-sql/pglite@0.5.8 entra como devDependency da API (25 MB em node_modules/.pnpm). Conferido: (1) pnpm install --frozen-lockfile passa ("Lockfile is up to date"; o CI usa o mesmo comando); (2) o único importador é src/__tests__/debriefing-config-store.test.ts, nenhum código de produção; (3) o lockfile só muda o id do snapshot do drizzle-orm (peer opcional) e não há outro importador do drizzle-orm com o id antigo; (4) o drizzle-kit do CMD só usa pglite com driver: "pglite", que o drizzle.config.ts não declara, então o push do boot continua no pg. Custo: o Dockerfile instala sem --prod e o estágio runtime copia /app/node_modules inteiro, então a imagem cresce ~25 MB. A imagem já carrega todas as devDependencies (typescript, vitest, eslint…), então o padrão é anterior à story. Também o tsc do build compila src/__tests__ para dist/ (dist/__tests__ existe), e por isso o build precisa dos tipos do pglite: um --prod no estágio de build quebraria (como já quebraria por causa do vitest).'
+    suggested_action: 'Classificação: aceitável, low, não bloqueia. Alternativa para o @devops avaliar (fora desta story): estágio runtime com node_modules de "pnpm install --prod --frozen-lockfile" (ou pnpm deploy --prod), mantendo drizzle-kit (é dependency) — isso tira pglite E as demais devDeps da imagem; e/ou excluir src/__tests__ do tsconfig de build. O @qa não muda o Dockerfile.'
+  - id: 'DEC-001'
     severity: low
-    finding: 'Apagar o funil de comparação faz a FK zerar lancamento_comparacao_funnel_id (SET NULL), comprovado em PGlite. Isso muda uma premissa sem resetar validado: a 49.6 passa a gerar edição única numa config "validada" com comparação.'
-    suggested_action: 'Aceitável (apagar funil é raro e a comparação é opcional). Se quiser fechar: o carregador trata "comparação apagada" como campo a reconfirmar, ou a 49.6 avisa. Decisão do @po.'
+    finding: 'Remover a FK da comparação é coerente com o AC1 (que só exige FK de stage CASCADE e de validado_por SET NULL) e com o princípio do epic "premissa mudou → reconferir"; o SET NULL anterior tornava "comparação apagada" indistinguível de "sem comparação" e deixava a config validada. Integridade: o PUT continua exigindo funil do mesmo projeto e o carregador re-confere a cada leitura; o id órfão fica como rastro. O efeito colateral é de produto: numa combinação LIBERADA, apagar o funil de comparação (que é OPCIONAL, AC3) passa a bloquear o debriefing inteiro com CONFIG_INCOMPLETA até alguém trocar ou remover a comparação. O AC3 diz "ausência nunca bloqueia o gate"; aqui não é ausência, é premissa quebrada, mas o nome comparacaoAusente convida à leitura contrária.'
+    suggested_action: '@po confirma que bloquear (em vez de gerar sem comparação com aviso) é o comportamento desejado. Se sim, nada a fazer; opcionalmente renomear para comparacaoOrfa numa story futura.'
+  - id: 'UX-001'
+    severity: low
+    finding: 'Com a comparação órfã, a leitura derruba validado mas o GET continua devolvendo validadoEm, validadoPor e validadoPorNome da conferência antiga, e o POST /validate responde 200 sem que a leitura volte a valer (validado sai false de novo). Numa combinação fora da lista, o bloqueio é COMBINACAO_NAO_VALIDADA com o detalhe "ainda não foi conferido para esta combinação", que manda conferir de novo em vez de trocar a comparação. O caminho certo está em camposFaltantes. Lido no código (montarConfigBruta e rota validate); não há defeito de dado.'
+    suggested_action: 'Na 49.6 (formulário): exibir camposFaltantes junto do bloqueio e não mostrar "validado por X" quando validado = false; opcionalmente o /validate recusar com 409 enquanto comparacaoAusente.'
+  - id: 'TEST-003'
+    severity: low
+    finding: 'O scanner do R1 percorre só packages/api/src (sem __tests__). packages/api/scripts/*.ts já importam services de src/ (confere-contagem-perpetuo.ts, confere-db-first-ads.ts, mede-panorama.ts…), e um script ali que importe loadDebriefingConfigRaw não seria pego. São scripts de diagnóstico, não geradores, por isso o risco é baixo. Limites conhecidos do regex (import com especificador montado em runtime) são aceitáveis.'
+    suggested_action: 'Opcional, na 49.3: incluir ../scripts na varredura.'
   - id: 'PERF-001'
     severity: low
-    finding: 'Cada GET da config abre a planilha de TODAS as etapas do funil que têm pesquisa (computeSurveyForStage em Promise.all), inclusive quando o formulário só precisa do estado do gate.'
-    suggested_action: 'Na 49.6, avaliar cache ou um parâmetro ?perguntas=1. Não bloqueia: hoje nenhuma tela consome a rota.'
+    finding: 'Inalterado: cada GET abre a planilha de todas as etapas do funil com pesquisa. Agora o GET também lê o contexto da etapa duas vezes (resolver + porta crua), por PK, custo aceito pelo @dev para ter uma porta crua só.'
+    suggested_action: 'Na 49.6: cache ou ?perguntas=1.'
   - id: 'DOC-001'
     severity: low
-    finding: 'Inconsistência entre stories: a 49.3 (linha ~143) fala em "etapas com papel = captacao", mas o vocabulário fixado pela 49.1 é DEBRIEFING_PAPEIS = leads-captacao | vendas-captacao | vendas-principal | leads-downsell | vendas-downsell | reabertura. Não há defeito na 49.1.'
-    suggested_action: '@po ajusta o texto da 49.3 para o papel exato (provavelmente vendas-captacao).'
+    finding: 'Inalterado: a 49.3 (linha ~143) fala em "etapas com papel = captacao"; o vocabulário é leads-captacao | vendas-captacao | … Não é defeito da 49.1.'
+    suggested_action: '@po ajusta o texto da 49.3.'
 
 owner_pending:
   - 'P-49.1-a (dono): a lista "dia 1" tem 17 funis. O @qa conferiu em produção, com SELECT em sessão read-only: 17/17 pares (projeto, funil) existem e batem com o tipo, e não há outro funil launch/perpetual nesses 3 projetos fora da lista. Só 6 têm etapa Debriefing hoje: dg-pg02, dg-pg04, fz-l2-jun-26, fz-m2-jul26, bbe-pr1-mar-26 e bbe-pr2-out-26. Contradição com o AC6: o PG05 (dgpg05-out-26) era o exemplo de funil que NÃO entraria sozinho, mas ele já existe e está na lista, assim como fz-m3-set-26 e bbe-pr2-out-26 (sem fixture) e 5 perpétuos sem conferência. O dono decide se mantém os 17 ou tira os que não têm fixture.'
@@ -52,18 +68,17 @@ owner_pending:
 waiver: { active: false }
 
 checks:
-  code_review: 'OK com ressalvas (ARCH-001). Tabela própria: a 41.1 está intocada (git diff origin/main vazio em service, rota e teste da 41.1). O gate mora numa função só (aplicarGateDebriefing: tipo → sem config → combinação → completude), usada pelo carregador e pelo bloqueio do GET. O carregador checa o tipo antes de ler a config. A rota resolve guest → 400 → 404 (etapa inexistente, de outro funil ou projeto, ou que não é Debriefing). Perpétuo aceita só corpo {}, mobile dá 422 no PUT e no validate, e a falha da planilha dá 503 no PUT e "falha" (≠ sem-pesquisa) no GET. premissaMudou compara JSON estável e ignora ordem de chaves e listas. Contrato DebriefingConfig em união por tipoDeFunil, com os nomes da seção "Contrato exportado".'
-  unit_tests: 'OK — debriefing-config 43 + routes 30 + launch-report-config 12 = 85/85 (vitest 4.1, 3,2 s). Mutações do @qa (15, cada uma restaurada com git checkout). Mortas: M1 (&& → || na combinação), M2 (chave só por funnelId), M3 (IDOR projeto), M4 (IDOR funil), M5 (guest liberado), M7/M8/M9 (perguntas/comparação/closerPorSellerName fora da premissa), M14 (validate aceita mobile), M15 (faixa não exigida). Sobreviveram: M6 e M10 (TEST-002); M11, M12 e M13 no store Drizzle (TEST-001), com o comportamento real provado em PGlite (19/19).'
-  acceptance_criteria: 'AC1 ✓ (PGlite; 41.1 intacta) · AC2 ✓ · AC3 ✓ · AC4 ✓ · AC5 ✓ (faixa null explícita chega ao contrato; chave inexistente → 400; planilha fora → 503 sem gravar) · AC6 ✓ corpo exato; lista = constante única, 17 pares conferidos em produção · AC7 ✓ com ressalva ARCH-001 · AC8 ✓ (3 rotas, guest 403, 404 de tipo/IDOR, imposto com procedência, contrato 29→30 com histórico) · AC9 ⚠ tsc/testes/41.1 ✓; "em dev" = PGlite (REQ-001); prova em produção pendente pós-deploy · AC10 ✓ (zod enum + $type + CHECK; mediums trim/lower/dedup; [] ≠ ausente) · AC11 ✓ (perpetual corpo exato; mobile com o tipo no detalhe; antes do gate de combinação).'
-  no_regressions: 'OK — tsc --noEmit da API (binário direto, 36 s) e do shared: 0 erros. eslint (binário da raiz) nos 7 arquivos da API: 0. As 10 falhas pré-existentes da suíte completa (relato do @dev, iguais às da origin/main) não foram re-rodadas pelo @qa: nenhum arquivo delas é tocado pelo diff.'
-  performance: 'OK para o escopo (PERF-001 low para a 49.6).'
-  security: 'OK — guest 403 nos 3 endpoints, antes de qualquer leitura. IDOR: a etapa precisa pertencer ao funil e ao projeto da URL, provado com o join real em PGlite. validado_por = request.userId (FK users SET NULL). Corpo .strict() em todos os níveis. Nenhuma escrita em produção: o @qa só fez SELECT com default_transaction_read_only = on (conferido com show).'
-  migration: 'OK em PGlite — aditiva, IF NOT EXISTS, rollback documentado no topo. 0160 livre: origin/main e todas as branches locais e remotas param em 0159; o worktree do outro agente (feat/49.2) também. Nomes de constraint no padrão das 0086/0087. FK stage CASCADE coerente (config sem etapa não tem sentido), enquanto debriefings.stage_id é SET NULL (os documentos sobrevivem): desenhos diferentes e corretos. NÃO aplicada em produção (REQ-001).'
-  three_layers: 'OK — dimensaoDeCriativo: z.enum(DIMENSOES_DE_CRIATIVO) → $type<DimensaoDeCriativo> → CHECK no banco. papel: z.enum(DEBRIEFING_PAPEIS) (derivado de LAUNCH_REPORT_ETAPAS por spread) → jsonb $type<EtapaDoLancamento[]>, e o gate re-checa o enum na leitura. faixa null: zod nullable → jsonb → contrato (provado ponta a ponta em PGlite). closerMediums: zod trim/min(1) → normalizarCloserMediums → jsonb. Datas: regex + dataExiste no zod; o date do banco volta como string (o parser do node-postgres no drizzle sobrescreve DATE; o harness usou o mesmo).'
-  api_contract: 'OK — API_CONTRACT_VERSION 29 → 30 com histórico. Nenhuma outra branch reserva o 30. O web NÃO quebra: ninguém consome as rotas novas, e o bump só aciona o banner (web-atras/api-atras) na janela entre os deploys Railway/Vercel, que é o comportamento desenhado na 29.46. O único outro uso, em gerador-de-anuncio, troca a mensagem de erro ao salvar. O histórico já manda a 49.6 tratar 404 como "API atrás". packages/mcp não é afetado.'
-  downstream_contract: 'OK — 49.6 AC1 passo 3: ordem tipo → combinação/incompleta e rotas …/debriefing/config(/validate) batem. 49.10: o ramo perpetual de montarDebriefingConfig existe; a remoção do bloqueio é 1 linha em assertTipoDeFunilSuportado. 49.4: perguntasConfirmadas {[stageId]:{faixa:string|null,…}} e dimensaoDeCriativo batem. 49.3: datasChave.inicioCaptacao e aberturaCarrinho batem (DOC-001 é o texto da 49.3). 49.2: closerMediums e closerPorSellerName batem; closerNomes não é desta config (decisão da story).'
+  code_review: 'OK. Diff c1822b0b lido inteiro. Uma porta crua só (loadDebriefingConfigRaw), usada só pela rota GET e com o store injetado; montarConfigBruta privada; montarDebriefingConfig continua privada. Interface do store sem o parâmetro "existe". schema.ts e .sql sem FK na comparação, iguais entre si.'
+  unit_tests: 'OK: debriefing-config 51 + routes 30 + store 16 = 97/97 (vitest 4.1, 6 s); launch-report-config 12/12. Suíte inteira da API: 3.513 passam, 10 falham, nos 5 arquivos pré-existentes (funnel-stages-lead-inputs, instagram-routes, instagram, projects, schema: defaults de permissions). Nenhum é tocado pelo diff. 14 mutações do @qa (script em scratchpad, restauração por conteúdo original, git status limpo depois): Q1–Q14 todas MORTAS, incluindo as antigas sobreviventes M6, M10, M11, M12, M13 e as novas sobre upsert, reset por precaução, comparação ausente, FK de volta e store injetado.'
+  acceptance_criteria: 'AC1 ✓ (FK de comparação não é exigida pelo AC1; stage CASCADE + validado_por SET NULL presentes) · AC2 ✓ · AC3 ✓ (null/omitido não bloqueia; órfã bloqueia, ver DEC-001) · AC4 ✓ · AC5 ✓ · AC6 ✓ (M6 agora preso) · AC7 ✓ (ARCH-001 fechado) · AC8 ✓ · AC9 ⚠ REQ-001 · AC10 ✓ · AC11 ✓.'
+  no_regressions: 'OK: tsc --noEmit da API (binário direto, 26 s) 0 erros; eslint (binário da raiz) nos 7 arquivos da API: 0; 41.1 intacta (git diff origin/main...HEAD vazio no service, rota e teste).'
+  performance: 'OK (PERF-001 low para a 49.6).'
+  security: 'OK: IDOR e guest agora presos pelo join REAL (M13 mata 13 testes). Nenhuma escrita em produção: o @qa fez 1 SELECT com default_transaction_read_only = on (conferido com show).'
+  migration: 'OK em PGlite (re-provado pelo @qa sobre c1822b0b). 0160 continua não aplicada em produção (REQ-001).'
+  dependencies: 'INFRA-001 low: pglite só devDependency, frozen-lockfile ok, nenhum import de produção, drizzle-kit do boot não o seleciona; +25 MB na imagem por causa do Dockerfile sem --prod (padrão anterior).'
+  api_contract: 'Inalterado desde o gate anterior (30). O GET ganhou só dados derivados (comparacaoAusente entra em camposFaltantes, não no corpo).'
 
 notes:
-  - '[scope-override]: autorização do Lucas (decisão 12 do epic, relatada pelo Danilo em 30/09). Os caminhos tocados são os listados nas Dev Notes.'
+  - '[scope-override]: autorização do Lucas (decisão 12 do epic, relatada pelo Danilo em 30/09).'
   - 'CodeRabbit não rodado: o CLI deste ambiente é WSL e a máquina é macOS.'
-  - 'Harness do @qa (efêmero, scratchpad): pg/store-real.mts (store + rotas sobre PGlite via drizzle pg-proxy) e pg/mig.mjs (idempotência/rollback). SELECT de conferência da lista em ro.cjs, sessão read-only.'
+  - 'Recomendação: do lado do código, pronto para merge. Antes da 49.6 ir ao ar: a 0160 aplicada em produção com prova (REQ-001), e as respostas do dono P-49.1-a/b/c. Lows para a 49.6/@po/@devops.'
