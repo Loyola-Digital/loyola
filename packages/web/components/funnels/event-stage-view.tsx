@@ -94,6 +94,7 @@ import { EventSourcesTab } from "@/components/funnels/event-sources-tab";
 import { LeadDetailDialog, RevenueMatchBadge, type RoiLead } from "@/components/funnels/roi-calculator";
 import type { EventLeadStatus, EventMapLead } from "@loyola-x/shared";
 import { ehApoioDoEvento } from "@/lib/utils/apoio-do-evento";
+import { TentativasDeContato } from "./tentativas-de-contato";
 
 interface EventStageViewProps {
   projectId: string;
@@ -1284,6 +1285,21 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
     );
   }
 
+  // Tentativas de contato por lead — o vendedor registra que ligou e consulta
+  // o histórico sem sair da linha.
+  function contatoControl(l: (typeof leads)[number]) {
+    return (
+      <TentativasDeContato
+        projectId={projectId}
+        funnelId={funnelId}
+        stageId={stageId}
+        email={l.email}
+        nome={l.name}
+        attempts={l.attempts ?? []}
+      />
+    );
+  }
+
   function statusControl(l: (typeof leads)[number]) {
     if (l.status === "bought") {
       return (
@@ -1510,6 +1526,7 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
                   <th className="text-right px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Faturamento</th>
                   <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Produto</th>
                   <th className="text-right px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px]">Valor</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px] w-[120px]">Contato</th>
                   <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px] w-[170px]">Status</th>
                   <th className="text-left px-3 py-2.5 font-semibold text-[11px] uppercase tracking-[1px] w-[160px]">Vendedor</th>
                 </tr>
@@ -1560,6 +1577,7 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
                     <td className="px-3 py-2.5 text-right tabular-nums font-bold text-[#d4af37]">
                       {l.sale ? formatCurrency(l.sale.value) : <span className="text-[#6b7280] font-normal">—</span>}
                     </td>
+                    <td className="px-3 py-2.5">{contatoControl(l)}</td>
                     <td className="px-3 py-2.5">{statusControl(l)}</td>
                     <td className="px-3 py-2.5">{sellerControl(l)}</td>
                   </tr>
@@ -1619,9 +1637,15 @@ function EventMapTab({ projectId, funnelId, stageId }: { projectId: string; funn
                   )}
                   {statusControl(l)}
                 </div>
-                <div className="mt-2.5 pt-2.5 border-t border-[#1f2937]">
-                  <div className="text-[10px] uppercase tracking-[1px] text-[#6b7280] mb-1">Vendedor</div>
-                  {sellerControl(l)}
+                <div className="mt-2.5 pt-2.5 border-t border-[#1f2937] flex items-end gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[10px] uppercase tracking-[1px] text-[#6b7280] mb-1">Vendedor</div>
+                    {sellerControl(l)}
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[1px] text-[#6b7280] mb-1">Contato</div>
+                    {contatoControl(l)}
+                  </div>
                 </div>
               </div>
             ))}
