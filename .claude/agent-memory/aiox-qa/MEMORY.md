@@ -10,3 +10,5 @@
 - [Story 44.24 QA CONCERNS](project_story_44_24.md) — `offset` na tool MCP; AC5 pende de rebuild do gateway e o detector da 44.22 é cego a schema; probe = `limit: 300`
 - [Desempate inalcançável](feedback_desempate_inalcancavel.md) — `-Infinity - -Infinity` = NaN e a guarda `d !== 0` pula o tiebreak; execute o comparador, não leia a linha
 - [Runner que enxerga o arquivo](feedback_runner_que_enxerga_o_arquivo.md) — "este pacote não tem runner" ≠ "não dá para testar"; procure quem já faz readFileSync do arquivo
+- [Story 49.2 QA CONCERNS](project_story_49_2.md) — classificador único em shared; código limpo, 14/14 mutações; pergunta 2 do dono (FZ letalk+x1) move 72/107 compradores
+- [Medir a regra no snapshot da skill](feedback_snapshot_da_skill_mede_regra.md) — risco teórico se mede antes de perguntar ao dono; o token inteiro perderia 15 campanhas reais

@@ -1,0 +1,51 @@
+schema: 1
+story: '49.2'
+story_title: 'Classificador único de origem/canal em `shared` (função pura)'
+gate: CONCERNS
+status_reason: 'Implementação correta e fiel ao AC, às decisões 3 e 4 e à R2-5: módulo folha sem imports, os dois eixos nunca se somam, Sem track real = sem UTM no lead E na venda. 159 + 2 testes verdes. As 14 mutações do QA morrem todas, entre 1 e 42 falhas cada. O CONCERNS não aponta defeito de código. Ele vem da pergunta 2 do @dev, que continua aberta com o DONO e tem impacto medido: no FZ-L1, 72 dos 107 compradores do produto (67%) mudam de balde de aquisição conforme a resposta. Se o dono escolher "só closer", a `ConfigClassificador` ganha um campo novo e o `CLASSIFICADOR_VERSAO` sobe. Isso precisa estar decidido antes de a 49.3 e a 49.5 consumirem o módulo.'
+reviewer: 'Quinn'
+updated: '2026-10-01T05:40:00Z'
+branch: 'feat/49.2-classificador-unico'
+commits: ['808868d1']
+
+top_issues:
+  - id: 'QA-492-01'
+    severity: medium
+    finding: 'Pergunta 2 (pendência do DONO, não decidida pelo QA): no FZ, a ferramenta (`letalk`/`chatwoot`) combinada com medium de closer (`x1`/`comercial`) dá hoje aquisição "Outros orgânicos" + fechamento closer. É a leitura literal do AC2: só o campo que é sinal de closer é apagado. Pelo snapshot da skill (`dados/fernanda-zapparolli/FZ-L1-FEV26 - n8n-tmb-produto.csv`), 88 dos 107 compradores do produto têm `letalk + x1` na venda. Desses, 72 não têm UTM de aquisição em nenhuma planilha de lead do FZ-L1, e só esses 72 mudam de balde: "Outros orgânicos" passa a ser o maior canal de aquisição do principal, quando pela leitura do perfil seria "Aquisição não rastreada (só closer)". Os outros 16 têm lead com UTM (`ig` 8, `meta` 5, `manychat` 3) e não mudam. Dado útil para a decisão: nos snapshots, TODAS as 131 linhas com source `letalk` têm medium `x1`, então pôr `letalk` em `closerNomes` (via config da 49.1, sem mudar código) seria equivalente para o `letalk`. Para o `chatwoot` não: só 54 das 331 linhas têm `x1`.'
+    suggested_owner: dono (Danilo) → @po
+    refs: ['packages/shared/src/classificador-de-origem.ts:245-252', 'docs/stories/49.2.origem-canal-classificador-unico.md (Dev Agent Record, pergunta 2)']
+  - id: 'QA-492-02'
+    severity: low
+    finding: 'Pergunta 1 (pendência do DONO): `facebook`, `google` e `google-ads` caem em "Outros orgânicos" porque a skill lista só `cbo/abo/meta/fb`. Exposição medida nos snapshots da skill (181.842 linhas, 4 experts): `facebook` 0, `google` 0, `google-ads` 7 linhas (BBE-PR1 do Netão, planilhas de lead `Leads-Cap-Paga` e `Tally-Captação`, todas com `utm_medium` = id numérico de campanha Google). Para DG e FZ o risco é zero hoje. No Netão são 7 leads pagos que viram orgânicos.'
+    suggested_owner: dono (Danilo) → @po
+    refs: ['packages/shared/src/classificador-de-origem.ts:175']
+  - id: 'QA-492-03'
+    severity: low
+    finding: 'Pergunta 3 (pendência do DONO; o QA RECOMENDA manter a substring): o Quente/Frio por substring foi medido nas duas fontes. (a) `utm_term`: 23.749 valores não vazios em 45 arquivos; a substring decide 14.942, e substring × token inteiro divergem em 0 casos. Nenhum `hotmart`, `photo` ou `shot`. (b) `campaignName` (produção, transação READ ONLY: `meta_ad_insights_daily` + `meta_entity_names_cache` + `funnel_stages.campaigns`, 1.265 nomes distintos): a substring decide 898 e o token 883. As 15 divergências são todas acertos da substring (`QUENTES` 7, `SUPERHOT` 6, `FRIOS` 2). Falso positivo encontrado: zero. Trocar para token inteiro custaria 15 campanhas reais e não evitaria nenhum erro observado.'
+    suggested_owner: dono (Danilo)
+    refs: ['packages/shared/src/classificador-de-origem.ts:195-201']
+  - id: 'QA-492-04'
+    severity: low
+    finding: 'O `next build` verde não exercita o módulo. Nenhum arquivo de produção do web o importa ainda; só o teste do vitest, que resolve pelo Vite e não pelo webpack. O risco é baixo: o módulo não tem imports (há teste que trava isso), e outros módulos folha já são importados POR VALOR, por subpath, em produção (`stage-types`, `cadeia-cac`, `perpetuo-metricas`, `contract`), com `transpilePackages: ["@loyola-x/shared"]`. A prova de verdade fica para a primeira tela que o importar.'
+    suggested_owner: '@dev da story que primeiro importar no web'
+    refs: ['packages/web/next.config.*:13']
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Módulo folha (`grep import` = 0, travado por teste). Função pura: sem I/O, sem relógio, sem `Math.random`, sem estado global, e não muta a entrada. O sinal de closer é apagado campo a campo antes das regras 1–7. A UTM efetiva é a do lead quando ele tem UTM de aquisição; senão, a da venda. As regras 8 e 9 dependem de `temAlgumCampo`, que IGNORA `campaignName` e `sellerName`: Netão = Sem track real + closer. O fechamento lê o lead, a venda e o `sellerName` (este só com a flag). Os helpers são um por eixo, e a superfície exportada é travada por teste no web: nenhum soma aquisição com fechamento. Valor fora da união lança, em vez de cair num balde. Nenhum nome ou medium de closer no código.'
+  unit_tests: 'API: 159/159 do arquivo novo. Suíte completa: 3.575 verdes e 10 falhas em 5 arquivos (`funnel-stages-lead-inputs`, `instagram-routes`, `instagram`, `projects`, `schema`). O QA reproduziu essas mesmas 10 na BASE, com o módulo e o re-export removidos e o dist reconstruído: são pré-existentes. Web: 2/2. Mutações do QA, com o dist reconstruído a cada uma: Q1 Pago N/D antes da temperatura → 42 falhas; Q2 lead só com UTM de closer bloqueando o fallback para a venda → 1; Q3 Sem track real olhando só o lead → 4; Q4 `sellerName` tirando da regra 9 → 4; Q5 `sellerName` sem a flag → 1; Q6 `campaignName` antes do `utm_term` → 1; Q7 rótulo `temperaturaDecididaPor` trocado → 24; Q8 `campaignName` contando como UTM → 1; Q9 `_` deixando de separar token → 1; Q10 `\bhot\b` no lugar de substring → 2; Q11 temperatura exigindo token pago → 6; Q12 só-closer engolido por Sem track no segmento → 1; Q13 fechamento ignorando o lead → 9; Q14 `fonteUtm` = venda na regra 8 → 1. Resultado: 14/14 mortas.'
+  acceptance_criteria: 'AC1 ✓ (assinaturas, união `Canal` sem Closer, `CLASSIFICADOR_VERSAO = "49.2-v1"`, re-export + subpath) · AC2 ✓ (9 regras na ordem; eixo de fechamento à parte) · AC3 ✓ · AC4 ✓ (testes nomeados: Closer 22/R2-5, config vazia → Outros orgânicos, decisão 3) · AC5 ✓ (Netão nomeado, nos dois valores da flag) · AC6 ✓ (Σ por eixo = total, ordem fixa, segmento próprio do só-closer) · AC7 ✓ (2.000 combinações sujas; `utm_content` não entra) · AC8 ✓ (17 coincidem e 22 divergem, com 9 motivos fechados; divergência fora da lista falha, e a listada que volta a coincidir também; Quente/Frio ≡ `temperaturaDoNome` ≡ `classifyTemperatura` em 20 textos pelos dois campos) · AC9 ✓ (`lead-origin.ts`, rotas e telas intocados).'
+  no_regressions: 'Diff com 5 arquivos: módulo novo, re-export aditivo, 2 testes e a story. Nenhum consumidor existente muda. `next build` verde (3,1 min). `tsc --noEmit` verde no web (depois do build), na API e no shared. ESLint limpo no shared e no teste novo da API.'
+  performance: 'O(campos) por chamada, com o Set de closers montado por chamada. Irrelevante perto do I/O do loader. Se a 49.3 classificar dezenas de milhares de linhas, dá para pré-montar os Sets, mas não é necessário agora.'
+  security: 'Sem I/O, PII ou rede. A consulta de quantificação do QA rodou em transação `BEGIN READ ONLY` + `ROLLBACK`, só com SELECT.'
+  documentation: 'O cabeçalho do módulo explica o porquê (armadilhas #5 e #9, decisão 3) e o que a função NÃO faz. O Dev Agent Record traz as AUTO-DECISIONs e as 3 perguntas ao dono.'
+  skill_conformance: '`data/classificador-unico.md`: "Sem track real = sem UTM no lead E na venda" ✓; Pago N/D com `cbo/abo/meta/fb` ✓; ig → whatsapp → manychat → demais ✓; mutuamente exclusivos por eixo ✓; Comunidade/Front fora ✓. As diferenças em relação à skill vêm das decisões do dono e estão documentadas: Closer saiu da 1ª linha e virou eixo (decisão 3); "Campaign com hot" virou `utm_term` + fallback em `campaignName` (decisão 4); balde próprio do só-closer (R2-5). Rodada 3: sem impacto nesta story (R3-1..R3-5 são 41.10/41.11/49.10).'
+
+data_evidence:
+  - 'Campo de casamento (R2 da story) medido nos snapshots da skill: das linhas que o novo classificador mandaria para um canal orgânico, só 8 carregam sinal de pago (7 `google-ads` do BBE + 1 `ig/paid` com id Meta). As 177 linhas com source orgânico (`ig`) e `utm_term` hot/cold são, na verdade, anúncios: o term é o nome do conjunto (`..._hot_cbo_...`). Por isso, temperatura antes do canal (regras 1–2 antes da 4) é o comportamento CERTO no dado real.'
+
+notes:
+  - 'As três perguntas do @dev ficam com o DONO. O QA não decidiu nenhuma; a recomendação sobre a 3 vem só dos dados.'
+  - 'Se a pergunta 2 virar "só closer", a mudança provável é um campo novo na config da 49.1, algo como "ferramentas que contam como closer só junto com o medium". O `CLASSIFICADOR_VERSAO` sobe para 49.2-v2.'
+  - 'Os snapshots locais da skill são uma amostra (DG, FZ, Netão, Pacheco) e não as planilhas vivas. A conferência de verdade fica na 49.5, contra DG-PG02.'
