@@ -1,0 +1,77 @@
+schema: 1
+storyId: '49.8'
+story: '49.8'
+story_title: 'Viewer do Debriefing — links do Ads Manager (allow-popups), salvar após edição inline com Chart.js e teto de 20.000 px'
+verdict: CONCERNS
+gate: CONCERNS
+status_reason: 'Código, testes e segurança do sandbox conferidos de verdade: 24/24 testes, 8 mutações próprias derrubam o teste certo, o defeito do canvas reaparece no Chrome com o fix revertido, o popup que escapa do sandbox não lê cookie nem storage do app e não navega a aba do app, e o bodyLimit fica só no PUT. Fica CONCERNS porque a verificação visual do AC8 na página do app não foi feita, e o gate achou um defeito antigo no "Abrir em nova aba": é o botão que o aviso novo oferece e ele mostra um toast falso de "Permita pop-ups".'
+reviewer: 'Quinn'
+updated: '2026-09-30T23:55:00-03:00'
+branch: 'feat/49.8-debriefing-viewer-popups'
+commit_reviewed: '99a35edf'
+base: 'docs/epic-49-gerador-debriefing (8d8ea5cc, só docs sobre a main 667d35b2)'
+
+issues:
+  - id: TEST-001
+    severity: medium
+    category: tests
+    description: 'AC8 pede verificação visual da página de detalhe no app, e ela não foi feita: o stack local aponta para o banco de PRODUÇÃO e salvar gravaria lá. O harness em Chrome real usa o código REAL de `debriefing-frame.ts` (agente, sandbox, clamp), mas o pai é uma página reimplementada. O fio da `page.tsx` (`sandbox={DEBRIEFING_IFRAME_SANDBOX}`, `clampFrameHeight` → `setTruncada`, o aviso `role="alert"`, `toast.error(mensagemDeErroAoSalvar(e))` e a recriação do iframe por `key`) só foi conferido por leitura, `tsc` e `next build`. A página é client component e não roda no vitest. Este gate NÃO pode ser WAIVED por evidência: o harness não exercita o React da página, e WAIVED exige quem aprove (@po/dono), não o @qa.'
+    recommendation: 'Danilo, no app (sem salvar em produção, ou num debriefing de teste): (1) clicar o link do Ads Manager no DG; (2) Editar → mudar o título → Salvar → reabrir e conferir 17/17 gráficos e a largura com a janela mais estreita; (3) pins/comentários; (4) "Abrir em nova aba"; (5) lista da etapa. Registrar na story. Isso fecha TEST-001 e também deixa visível o REL-001.'
+    status: open
+
+  - id: REL-001
+    severity: medium
+    category: reliability
+    description: 'Defeito antigo (`30ed8dcf8`, 2026-07-29), achado no gate e não introduzido pela story. O `handleOpenExternal` chama `window.open(url, "_blank", "noopener,noreferrer")`, e com `noopener` o `window.open` devolve `null` POR ESPECIFICAÇÃO. Por isso a função SEMPRE cai no ramo "pop-up bloqueado": revoga o blob na hora e mostra o toast de erro "Permita pop-ups para abrir o documento em nova aba." mesmo quando a aba abriu. O ramo do `revokeObjectURL` em 60 s (citado no AC7) nunca roda. Provado no Chrome 154: `__popupBloqueado: true` e a nova aba com o documento inteiro (26.130 px, `FIM-DO-DOC`). O harness do @dev gravava essa flag mas não a reportava. Pesa nesta story porque o aviso novo do AC6 aponta justamente para esse botão, como saída para documentos acima de 20.000 px. No Chrome o blob carrega antes da revogação; em navegadores que resolvem o blob depois, a aba pode abrir vazia.'
+    recommendation: 'Correção pequena, em arquivo do escopo: não tratar `null` como bloqueio quando se usa `noopener`. Opções: abrir sem `noopener` e anular `win.opener`, ou manter `noopener` e revogar só pelo `setTimeout`. Pode entrar nesta story antes do merge (preferível, porque o aviso novo depende dele) ou numa story curta logo depois. Não bloqueia: o documento abre.'
+    status: open
+
+  - id: REL-002
+    severity: medium
+    category: reliability
+    description: 'Limitação antiga, registrada pelo próprio @dev e reproduzida por ele no DG (`#chTable`). Texto editado dentro de conteúdo montado por script (tabelas geradas com `innerHTML` a partir do `const D`) é gravado no HTML salvo, mas some na reabertura, porque o script do documento remonta a tabela. Para o usuário isso é perda silenciosa da edição. O AC3(b) é atendido (o texto está no HTML salvo), mas os documentos do Epic 49 montam muitas tabelas assim.'
+    recommendation: 'Decisão de produto do @po / insumo da 49.6: o gerador escreve as tabelas como HTML estático, ou o viewer/skill avisa que aquelas tabelas não são editáveis. Não bloqueia esta story; precisa entrar na 49.6 antes de o gerador ir para produção.'
+    status: open
+
+  - id: SEC-001
+    severity: low
+    category: security
+    description: 'Antigo, do Epic 37. "Abrir em nova aba" cria o blob na origem do app, então o documento enviado roda SEM sandbox e COM a origem do app. Provado no Chrome com servidor local: a nova aba leu `location.origin` = origem do app e `localStorage` do app (`SEGREDO_LS`); `document.cookie` veio vazio. O comentário da `page.tsx` assume isso ("dá ao doc uma origem real"). Mitigação existente: upload restrito à equipe (guest-guard). A story não cria esse caminho, mas o aviso do AC6 passa a recomendá-lo.'
+    recommendation: 'Story futura, fora do escopo: abrir a nova aba numa página que embrulhe o documento no mesmo sandbox (iframe de altura livre com `DEBRIEFING_IFRAME_SANDBOX`), em vez do blob cru. Enquanto isso, o risco é o mesmo de hoje.'
+    status: open
+
+top_issues:
+  - id: TEST-001
+    severity: medium
+    finding: 'Verificação visual do AC8 na página do app não feita; o fio da page.tsx só foi conferido por leitura, tsc e build.'
+    suggested_action: 'Danilo confere no app os 5 pontos (link, editar/salvar/reabrir, pins, nova aba, lista) e registra na story.'
+  - id: REL-001
+    severity: medium
+    finding: '`window.open` com `noopener` devolve null: "Abrir em nova aba" (inclusive o botão do aviso novo) sempre mostra o toast falso "Permita pop-ups" e revoga o blob na hora. Defeito antigo.'
+    suggested_action: 'Não tratar null como bloqueio com noopener (corrigir nesta story ou logo depois).'
+  - id: REL-002
+    severity: medium
+    finding: 'Edição dentro de tabela montada por script se perde na reabertura (o doc remonta a partir do `const D`).'
+    suggested_action: '@po / 49.6: tabelas estáticas no gerador ou aviso de não editável.'
+  - id: SEC-001
+    severity: low
+    finding: 'A nova aba roda o documento com a origem do app e sem sandbox (lê o localStorage do app). Antigo; o aviso novo passa a recomendar esse caminho.'
+    suggested_action: 'Story futura: nova aba com o mesmo sandbox.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Diff de 3 pontos com 6 arquivos. Constante `DEBRIEFING_IFRAME_SANDBOX` usada em `page.tsx:378`, sem nenhum literal restante no viewer do debriefing; os outros iframes do web (`ab-tests`, `pdi-viewer`, `swipe-files`, relatórios do funil) seguem com `allow-scripts`, fora do escopo. `clampFrameHeight` repete a fórmula antiga (margem 24, mínimo 400, teto 20.000), devolve `truncada` só quando passa do teto e trata não finito/negativo como o mínimo. `restaurarCanvas` age só no CLONE, casando canvas por índice (o clone é do mesmo DOM no mesmo instante), lê `canvas.$chartjs.initial` e fica dentro de `try/catch` para nunca impedir o salvar. API: `bodyLimit` de 11 MiB declarado na rota; 413 conferido por BYTES (`Buffer.byteLength`) com a mesma mensagem do upload, agora numa constante; `errorHandler` da rota só intercepta `FST_ERR_CTP_BODY_TOO_LARGE` e relança o resto. Aviso de altura sem dado do usuário: só texto fixo e `DEBRIEFING_FRAME_MAX_HEIGHT.toLocaleString` dentro de JSX, sem `dangerouslySetInnerHTML`, portanto sem vetor de XSS. `API_CONTRACT_VERSION` sem bump é correto: nenhuma rota ou campo novo, e o web funciona com a API antiga.'
+  unit_tests: 'Rodados no gate: web `debriefing-frame.test.ts` 17/17; api `debriefings-put-limite.test.ts` 7/7. Oito mutações do gate, todas restauradas com `git checkout` e `git status` limpo: (M1) remoção do agente comentada → 1 falha ("devolve o DOCTYPE e NÃO leva o script-agente"); (M2) `restaurarCanvas` desligado → 1 falha ("desfaz no HTML salvo o tamanho…"); (M6) `>` → `>=` no teto → 1 falha (19.976); (M8) `allow-same-origin` na constante → 2 falhas; (M3) sem `bodyLimit` → 2 falhas (~2 MB e 5 MB exatos); (M4) sem checagem de tamanho → 2 falhas; (M7) caracteres em vez de bytes (`.length`) → 1 falha ("conta BYTES… é"); (M5) sem o 413 do `errorHandler` → 1 falha. Teste temporário do gate (criado e apagado): com um handler global igual ao de `app.ts`, um erro de banco no PUT sobe para ele e devolve 500 "Erro interno" SEM "Failed query" (o `throw` do errorHandler da rota chega ao pai, então não abre vazamento de SQL); JSON inválido → 400 `{error}`; `POST /api/debriefings/:id/comments` e `POST /api/debriefings` com 2 MB seguem 413 pelo default de 1 MiB (o bodyLimit não vazou para outras rotas).'
+  browser_real: 'Refeito no gate com o harness do @dev (`run.sh` copia o `debriefing-frame.ts` REAL), Chrome/154.0.8037.92 headless. DG salvo a 1.400 px e reaberto a 1.000: 17/17 → 17/17 gráficos, 0 erros, altura 7.643 → 7.643, documento a 1.000 px, 0 canvas com largura diferente, agente fora, DOCTYPE, marca editada presente, 0 PNG, `const D` presente; link do Ads Manager abriu (`business.facebook.com/…adsmanager…`), 0 erros "allow-popups", `localStorage` e `document.cookie` → SecurityError, `window.origin` = null. Netão 1.400 → 1.000: 22/22, Δ0, documento a 1.000 px, 0 canvas errados. Netão com `restaurarCanvas` DESLIGADO: documento a 1.138 px, 16 canvas errados, Δ −37 px, que é exatamente o defeito descrito pelo @dev. AC6 refeito (`teto.mts`): 26.130 → `{20000, truncada}`, aviso visível, nova aba com o documento inteiro, mas com `__popupBloqueado: true` (REL-001).'
+  security: 'Sonda própria do gate (`qa-sec.mts`, servidor HTTP local fazendo papel do app, com cookie e localStorage). Dentro do documento: cookie, localStorage, `parent.document` e `top.location` → SecurityError. `window.open` agora abre o popup (com o sandbox antigo devolvia null). DENTRO do popup que escapou do sandbox: `window.origin` = null (opaca, herdada do criador), cookie e localStorage → SecurityError, `opener.top.document` → SecurityError, e `opener.top.location = …` foi BLOQUEADO pelo Chrome ("Unsafe attempt to initiate navigation"). A URL do app não mudou e o servidor não recebeu o `/pwned`. Conclusão: `allow-popups-to-escape-sandbox` sem `allow-same-origin` não dá ao documento acesso a cookie, storage, DOM nem navegação do app. O que sobra é abrir abas arbitrárias, inerente a `allow-popups` e aceito no R-49-8 (upload só da equipe). Os links `target=_blank` saem com `noopener` implícito. SEC-001 trata da OUTRA saída (blob na nova aba), que é antiga.'
+  acceptance_criteria: 'AC1 ✓ (constante exata, `page.tsx` a usa, teste falha com `allow-same-origin`). AC2 ✓ (refeito no gate). AC3 ✓ (refeito no DG e no Netão; defeito real corrigido e provado nos dois sentidos; REL-002 é limitação registrada). AC4 ✓ (jsdom com `runScripts`, prova de mutação refeita). AC5 ✓ (11 MiB, 413 por bytes, teste de ~2 MB falha sem o bodyLimit, toast do 413 com o limite. Os bytes dos 3 docs ficaram registrados pelo @dev e não foram remedidos no gate, salvo o DG: 274.365 / 293.360 B, que bate). AC6 ✓ na função e no harness; o botão do aviso cai no REL-001. AC7 ✓ no código; o "revoke em 60 s" citado nunca roda (REL-001, antigo). AC8 parcial: `tsc` api 0, `next build` web verde refeito no gate (`/debriefings/[id]` 14,3 kB), `tsc --noEmit` web 0 depois do build, `next lint` 0 nos 3 arquivos do web, `eslint` 0 nos 2 arquivos da api (o `eslint src/` acusa só `sendflow.ts:43`, que é igual na `origin/main`). Falta a verificação visual (TEST-001).'
+  no_regressions: 'PUT multipart, PUT só de nome e JSON inválido seguem iguais (testes). Erro não tratado continua saneado pelo handler global (sonda do gate). Outras rotas mantêm o limite default. Serializar não altera o DOM vivo (teste). A suíte completa do web não foi refeita no gate; o @dev registrou 1.723/1.725 com 2 timeouts em arquivos não tocados.'
+  performance: 'Restaurar o canvas é O(n canvas) só no salvar. O HTML salvo cresce (DG +81%) porque leva as tabelas já montadas, e cabe com folga no novo teto.'
+  documentation: 'Dev Agent Record detalhado, com a tabela antes/depois do defeito, as mutações e as pendências declaradas. Faltou reportar a flag `__popupBloqueado` que o próprio harness media (REL-001).'
+
+notes:
+  - 'Decisão sobre WAIVED do AC8 [AUTO-DECISION]: não. A evidência de navegador real cobre a biblioteca, não o fio React da página, e quem aprova WAIVED é o @po/dono. CONCERNS deixa o merge seguir com a pendência visível.'
+  - 'Recomendação de ordem: corrigir o REL-001 nesta branch (2 linhas, arquivo do escopo) antes da verificação visual, assim o Danilo confere o botão do aviso já certo.'
+  - 'CodeRabbit não executado (CLI ausente no macOS). Revisão manual mais sondas em Chrome real.'
+  - 'Harness e sondas do gate em scratchpad/iframe-test/ (`qa-sec.mts`, `qa-blob.mts`, `qa-teto.mts`, `out/qa-*.json`), fora do repo.'
