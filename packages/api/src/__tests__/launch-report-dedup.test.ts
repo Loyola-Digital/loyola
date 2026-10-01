@@ -165,10 +165,38 @@ describe("AC3 — padrão do PG02: 25 duplicatas com o mesmo ID e Transaction va
     expect(comDedup.g.alertas.find((a) => a.codigo === "W10")).toBeUndefined();
   });
 
-  it("a sobrevivente é a primeira (a com Transaction preenchida) — o dia não muda", () => {
-    const v01 = comDedup.lida.linhas.filter((l) => l.txId === "V01");
-    expect(v01).toHaveLength(1);
-    expect(comDedup.lida.removidas.every((l) => l.txId && Number(l.txId.slice(1)) <= 25)).toBe(true);
+  it("a sobrevivente é a primeira (a com Transaction preenchida) — dia, UTM e preço são os dela", () => {
+    // QA-41.10 TEST-002: no fixture do PG02 as duas linhas de cada par têm o
+    // mesmo dia, a mesma UTM e o mesmo preço — trocar a sobrevivente não muda
+    // nada observável. Aqui cada par difere no que o relatório soma, então a
+    // escolha da sobrevivente aparece no resultado.
+    //   S1: primeira em 09/05 (dentro), Pago, R$ 99 · duplicata em 08/05 (fora), sem UTM, R$ 79
+    //   S2: primeira em 10/05, sem UTM, R$ 99      · duplicata em 10/05, Pago, R$ 149
+    const rows = [
+      row({ id: "S1", tx: "S1", data: "09/05/2026 10:04:33", email: "s1@x.com", produto: INGRESSO, preco: "99,00", source: "meta", term: "Instagram_Feed_dg--hot|adset|ad" }),
+      row({ id: "S2", tx: "S2", data: "10/05/2026 11:00:00", email: "s2@x.com", produto: INGRESSO, preco: "99,00" }),
+      row({ id: "S1", tx: "", data: "08/05/2026 23:04:00", email: "s1@x.com", produto: INGRESSO, preco: "79,00" }),
+      row({ id: "S2", tx: "", data: "10/05/2026 08:00:00", email: "s2@x.com", produto: INGRESSO, preco: "149,00", source: "meta", term: "Instagram_Feed_dg--hot|adset|ad" }),
+    ];
+    const r = rodar(planilha(rows), { inicio: "2026-05-09", fim: "2026-05-11" });
+
+    // a linha mantida de cada ID é a primeira da planilha
+    const s1 = r.lida.linhas.find((l) => l.txId === "S1");
+    const s2 = r.lida.linhas.find((l) => l.txId === "S2");
+    expect(s1).toMatchObject({ dia: "2026-05-09", precoCru: 99, utmSource: "meta" });
+    expect(s2).toMatchObject({ dia: "2026-05-10", precoCru: 99, utmSource: null });
+    expect(r.lida.removidas.map((l) => [l.txId, l.dia, l.precoCru])).toEqual([
+      ["S1", "2026-05-08", 79],
+      ["S2", "2026-05-10", 149],
+    ]);
+
+    // e é ela que o relatório soma: as duas vendas caem na janela, R$ 198,
+    // uma paga (S1) e uma não paga (S2); só a duplicata de S2 cai na janela (W9).
+    expect(r.m.ingressos.totais).toBe(2);
+    expect(r.m.faturamento.total).toBeCloseTo(198, 6);
+    expect(r.m.ingressos.porOrigem.Pago).toBe(1);
+    expect(r.m.faturamento.pago).toBeCloseTo(99, 6);
+    expect(r.removidasNaJanela).toEqual({ linhas: 1, valor: 149 });
   });
 
   it("dedup por `Transaction` NÃO pega nenhuma — é por isso que o T0 lê o mapeamento", () => {
