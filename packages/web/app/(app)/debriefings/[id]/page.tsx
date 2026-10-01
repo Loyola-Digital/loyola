@@ -43,6 +43,7 @@ import {
   useUpdateDebriefing,
 } from "@/lib/hooks/use-debriefings";
 import {
+  abrirDebriefingEmNovaAba,
   buildDebriefingSrcDoc,
   clampFrameHeight,
   isDebriefingFrameMessage,
@@ -184,25 +185,21 @@ export default function DebriefingDetailPage() {
     );
   }
 
-  // Fallback para docs multi-página: o iframe roda em sandbox SEM
-  // allow-same-origin (origem opaca), então HTMLs que navegam entre páginas
-  // via JS/localStorage/history quebram. Abrir numa aba nova dá ao doc uma
-  // origem real (blob:) onde todo o JS de navegação funciona. Usa o HTML
-  // original (sem o script-agente injetado do iframe).
+  // Nova aba: útil para docs multi-página/etapas e para docs acima do teto de
+  // altura (sem o limite de 20.000 px, com scroll próprio). O documento abre
+  // dentro de uma moldura com o MESMO sandbox do viewer (sem allow-same-origin)
+  // — antes ia cru num blob com a origem do app e lia o storage do Loyola X
+  // (SEC-001, gate da 49.8). Usa o HTML original (sem o script-agente).
   function handleOpenExternal() {
     if (!debriefing) return;
     try {
-      const blob = new Blob([debriefing.html], { type: "text/html" });
-      const url = URL.createObjectURL(blob);
-      const win = window.open(url, "_blank", "noopener,noreferrer");
-      if (!win) {
-        URL.revokeObjectURL(url);
+      const resultado = abrirDebriefingEmNovaAba(
+        debriefing.html,
+        `Debriefing — ${debriefing.campaignName}`,
+      );
+      if (resultado === "bloqueada") {
         toast.error("Permita pop-ups para abrir o documento em nova aba.");
-        return;
       }
-      // Revoga depois de carregar (a aba já tem o doc em memória). O atraso
-      // cobre navegações que recarregam a mesma URL logo de início.
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch {
       toast.error("Não foi possível abrir o documento em nova aba.");
     }

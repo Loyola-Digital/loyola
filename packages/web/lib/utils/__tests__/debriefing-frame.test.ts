@@ -1,13 +1,17 @@
 import { JSDOM } from "jsdom";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  abrirDebriefingEmNovaAba,
+  buildDebriefingNovaAbaHtml,
   buildDebriefingSrcDoc,
   clampFrameHeight,
   DEBRIEFING_FRAME_MAX_HEIGHT,
   DEBRIEFING_FRAME_MIN_HEIGHT,
   DEBRIEFING_IFRAME_SANDBOX,
   DEBRIEFING_MSG,
+  DEBRIEFING_NOVA_ABA_REVOKE_MS,
   mensagemDeErroAoSalvar,
+  type NovaAbaDeps,
 } from "@/lib/debriefing-frame";
 
 // Story 49.8 — viewer do Debriefing.
@@ -259,5 +263,120 @@ describe("mensagemDeErroAoSalvar (Story 49.8, AC5)", () => {
   it("sem mensagem cai no genérico", () => {
     expect(mensagemDeErroAoSalvar(undefined)).toBe("Erro ao salvar");
     expect(mensagemDeErroAoSalvar(new Error(""))).toBe("Erro ao salvar");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// QA fix da 49.8 — "Abrir em nova aba" (REL-001 + SEC-001)
+// ---------------------------------------------------------------------------
+
+/** Documento hostil: tenta fechar o atributo/a tag da moldura e rodar script nela. */
+const DOC_HOSTIL = `<!DOCTYPE html><html><body>
+<h1 title='aspas "duplas" e &amp; entidade'>Doc &lt;b&gt;</h1>
+"></iframe><script>parent.__fugiu = localStorage.getItem("seg")</script>
+<a target="_blank" href="https://adsmanager.facebook.com/adsmanager/manage/ads?act=1&selected_ad_ids=2">Ads</a>
+</body></html>`;
+
+describe("buildDebriefingNovaAbaHtml — moldura sandbox da nova aba (SEC-001)", () => {
+  function moldura(html = DOC_HOSTIL, titulo = "Debriefing — Teste") {
+    return inspecionar(buildDebriefingNovaAbaHtml(html, titulo));
+  }
+
+  it("a moldura (que tem a origem do app) não tem NENHUM script, só um iframe", () => {
+    const doc = moldura();
+    expect(doc.querySelectorAll("script")).toHaveLength(0);
+    expect(doc.body.children).toHaveLength(1);
+    expect(doc.body.firstElementChild!.tagName).toBe("IFRAME");
+  });
+
+  it("o iframe usa o MESMO sandbox do viewer, sem allow-same-origin", () => {
+    const iframe = moldura().querySelector("iframe")!;
+    expect(iframe.getAttribute("sandbox")).toBe(DEBRIEFING_IFRAME_SANDBOX);
+    expect(iframe.getAttribute("sandbox")).not.toContain("allow-same-origin");
+  });
+
+  it("o documento vai inteiro e intacto no srcdoc, sem virar markup da moldura", () => {
+    const iframe = moldura().querySelector("iframe")!;
+    expect(iframe.getAttribute("srcdoc")).toBe(DOC_HOSTIL);
+  });
+
+  it("título escapado e o iframe ocupando a janela (sem o teto de altura do viewer)", () => {
+    const doc = moldura(DOC_HOSTIL, 'Lançamento "X" <b>&</b>');
+    expect(doc.title).toBe('Lançamento "X" <b>&</b>');
+    expect(doc.querySelectorAll("b")).toHaveLength(0);
+    const css = doc.querySelector("style")!.textContent!;
+    expect(css).toContain("height:100%");
+    expect(css).not.toContain("20000");
+  });
+});
+
+/**
+ * Navegador falso que segue a especificação do `window.open`: com `noopener`
+ * ou `noreferrer` nas features a aba abre, mas o retorno é `null`.
+ */
+function navegadorFalso(opts: { bloqueia?: boolean } = {}) {
+  const aba = { opener: { app: true } as unknown };
+  const chamadas: { features?: string }[] = [];
+  const revogadas: string[] = [];
+  const agendados: { fn: () => void; ms: number }[] = [];
+  let blobAberto: Blob | null = null;
+  const deps: NovaAbaDeps = {
+    open: (_url, _target, features) => {
+      chamadas.push({ features });
+      if (opts.bloqueia) return null;
+      if (features && /noopener|noreferrer/.test(features)) return null;
+      return aba;
+    },
+    createObjectURL: (blob) => {
+      blobAberto = blob;
+      return "blob:app/1";
+    },
+    revokeObjectURL: (url) => {
+      revogadas.push(url);
+    },
+    agendar: (fn, ms) => {
+      agendados.push({ fn, ms });
+    },
+  };
+  return { deps, aba, chamadas, revogadas, agendados, blob: () => blobAberto };
+}
+
+describe("abrirDebriefingEmNovaAba (REL-001)", () => {
+  it("aba aberta NÃO vira 'bloqueada' nem revoga o blob na hora", () => {
+    const nav = navegadorFalso();
+    expect(abrirDebriefingEmNovaAba("<p>x</p>", "t", nav.deps)).toBe("aberta");
+    expect(nav.revogadas).toEqual([]);
+  });
+
+  it("anula o opener da aba nova (o isolamento que o noopener dava)", () => {
+    const nav = navegadorFalso();
+    abrirDebriefingEmNovaAba("<p>x</p>", "t", nav.deps);
+    expect(nav.aba.opener).toBeNull();
+  });
+
+  it("revoga o blob só depois do prazo", () => {
+    const nav = navegadorFalso();
+    abrirDebriefingEmNovaAba("<p>x</p>", "t", nav.deps);
+    expect(nav.agendados).toHaveLength(1);
+    expect(nav.agendados[0].ms).toBe(DEBRIEFING_NOVA_ABA_REVOKE_MS);
+    nav.agendados[0].fn();
+    expect(nav.revogadas).toEqual(["blob:app/1"]);
+  });
+
+  it("pop-up bloqueado de verdade → 'bloqueada' e o blob é revogado já", () => {
+    const nav = navegadorFalso({ bloqueia: true });
+    expect(abrirDebriefingEmNovaAba("<p>x</p>", "t", nav.deps)).toBe("bloqueada");
+    expect(nav.revogadas).toEqual(["blob:app/1"]);
+    expect(nav.agendados).toEqual([]);
+  });
+
+  it("o blob aberto é a moldura sandbox, não o HTML cru (SEC-001)", async () => {
+    const nav = navegadorFalso();
+    abrirDebriefingEmNovaAba(DOC_HOSTIL, "Debriefing — Teste", nav.deps);
+    const blob = nav.blob()!;
+    expect(blob.type).toBe("text/html;charset=utf-8");
+    const texto = await blob.text();
+    expect(texto).toBe(buildDebriefingNovaAbaHtml(DOC_HOSTIL, "Debriefing — Teste"));
+    expect(inspecionar(texto).querySelectorAll("script")).toHaveLength(0);
   });
 });
