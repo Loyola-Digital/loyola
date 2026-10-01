@@ -7,6 +7,9 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { readFileSync, readdirSync } from "node:fs";
+import { dirname, join, normalize, relative, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import * as servico from "../services/debriefing-config.js";
 import {
   DEBRIEFING_COMBINACOES_LIBERADAS,
@@ -19,7 +22,6 @@ import {
   isCombinacaoLiberada,
   loadDebriefingConfig,
   loadDebriefingConfigRaw,
-  montarConfigBruta,
   normalizarCloserMediums,
   premissaMudou,
   problemasDasDatasChave,
@@ -57,6 +59,7 @@ function raw(over: Partial<DebriefingConfigRaw> = {}): DebriefingConfigRaw {
     imposto: { valor: META_TAX_RATE, origem: "default" },
     etapasComPesquisa: [IDS.captacao],
     etapasForaDoFunil: [],
+    comparacaoAusente: false,
     ...over,
   };
 }
@@ -164,6 +167,36 @@ describe("loadDebriefingConfig — gate dentro do carregador (AC7)", () => {
     });
     expect(premissaMudou(antes, depois)).toBe(false);
   });
+
+  it("trocar SÓ o papel de uma etapa (mesmos stageIds) é premissa: reseta (QA M10)", () => {
+    // O papel decide headline × apêndice na 49.3; a lista de ids não muda.
+    const antes = valoresCompletos();
+    const etapas = antes.etapas.map((e) =>
+      e.stageId === IDS.vendasCaptacao ? { ...e, papel: "vendas-principal" as const } : e,
+    );
+    expect(etapas.map((e) => e.stageId)).toEqual(antes.etapas.map((e) => e.stageId));
+    expect(premissaMudou(antes, valoresCompletos({ etapas }))).toBe(true);
+  });
+
+  it("fora da lista + sem validado + INCOMPLETA → COMBINACAO_NAO_VALIDADA, não CONFIG_INCOMPLETA (AC6, QA M6)", async () => {
+    // AC6: CONFIG_INCOMPLETA só "quando a combinação está liberada". A combinação
+    // é checada antes da completude.
+    const incompleta = raw({ closerMediums: null, dimensaoDeCriativo: null });
+    expect(camposFaltantesDebriefing(incompleta)).not.toEqual([]);
+    let err: unknown;
+    try {
+      assertDebriefingScope(incompleta);
+    } catch (e) {
+      err = e;
+    }
+    expect((err as DebriefingConfigError).erro).toBe("COMBINACAO_NAO_VALIDADA");
+
+    const m = mundoPadrao();
+    m.linhas.set(IDS.debriefing, linha(IDS.debriefing, valoresCompletos({ closerMediums: null, dimensaoDeCriativo: null })));
+    expect((await erroDe(loadDebriefingConfig(db, IDS.debriefing, storeEmMemoria(m)))).erro).toBe(
+      "COMBINACAO_NAO_VALIDADA",
+    );
+  });
 });
 
 // ------------------------------------------------------------------
@@ -245,12 +278,140 @@ describe("AC11 — tipo de funil", () => {
 // R1 — não há porta dos fundos
 // ------------------------------------------------------------------
 
-describe("R1 — superfície exportada do service", () => {
-  it("só loadDebriefingConfig (com gate) e loadDebriefingConfigRaw (UI) carregam config", () => {
-    const carregadores = Object.keys(servico).filter((k) => /^load/.test(k)).sort();
-    expect(carregadores).toEqual(["loadDebriefingConfig", "loadDebriefingConfigRaw"]);
-    // O conversor raw → contrato não é exportado: só o gate o chama.
+/**
+ * Inventário COMPLETO das exportações de runtime do service, cada uma
+ * classificada. Exportação nova quebra o teste até alguém classificá-la: se ela
+ * devolve config, ou passa pelo gate, ou é a porta crua da UI (e aí o teste de
+ * imports abaixo a prende na rota). Não filtra por nome (QA ARCH-001).
+ */
+const SUPERFICIE = {
+  // Portas que devolvem config
+  loadDebriefingConfig: "gate", // a ÚNICA porta dos geradores
+  aplicarGateDebriefing: "gate", // raw já lido → contrato, aplicando o gate inteiro
+  loadDebriefingConfigRaw: "crua-so-rota", // a ÚNICA porta crua — só routes/debriefing-config.ts
+  criarDebriefingConfigStore: "crua-so-rota", // o store lê a linha crua — só a rota o instancia
+  // Estado do gate / erros
+  avaliarBloqueioDebriefing: "gate",
+  assertDebriefingScope: "puro",
+  assertEtapaDeDebriefing: "puro",
+  assertTipoDeFunilSuportado: "puro",
+  DebriefingConfigError: "puro",
+  erroSemConfig: "puro",
+  erroTipoDeFunilNaoSuportado: "puro",
+  // Validações e helpers puros (não leem nada)
+  camposFaltantesDebriefing: "puro",
+  dataExiste: "puro",
+  etapasComChaveConfirmada: "puro",
+  isCombinacaoLiberada: "puro",
+  normalizarCloserMediums: "puro",
+  premissaMudou: "puro",
+  problemasDasDatasChave: "puro",
+  problemasDasPerguntas: "puro",
+  problemasDoCorpoLancamento: "puro",
+  problemasPapelXDatas: "puro",
+  tipoAceitaConfig: "puro",
+  valoresDaLinha: "puro", // converte uma linha; a linha só sai do store
+  // Constantes
+  DEBRIEFING_COMBINACOES_LIBERADAS: "constante",
+  DEBRIEFING_PAPEIS: "constante",
+  DIMENSOES_DE_CRIATIVO: "constante",
+  VALORES_VAZIOS: "constante",
+} as const satisfies Record<string, "gate" | "crua-so-rota" | "puro" | "constante">;
+
+const RESTRITAS = Object.entries(SUPERFICIE)
+  .filter(([, c]) => c === "crua-so-rota")
+  .map(([k]) => k);
+
+const SRC = join(dirname(fileURLToPath(import.meta.url)), "..");
+const ROTA = ["routes", "debriefing-config.ts"].join(sep);
+const SERVICO = ["services", "debriefing-config.ts"].join(sep);
+const SCHEMA = ["db", "schema.ts"].join(sep);
+
+function arquivosDeSrc(dir = SRC): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((d) => {
+    const p = join(dir, d.name);
+    if (d.isDirectory()) return d.name === "__tests__" ? [] : arquivosDeSrc(p);
+    return /\.(m|c)?tsx?$/.test(d.name) && !d.name.endsWith(".d.ts") ? [p] : [];
+  });
+}
+
+/** O especificador (relativo ao arquivo) aponta para o service? Pacote externo nunca. */
+function apontaParaOServico(arquivo: string, modulo: string): boolean {
+  if (!modulo.startsWith(".")) return false;
+  const alvo = normalize(join(dirname(arquivo), modulo)).replace(/\.(js|ts|mjs|cjs)$/, "");
+  return alvo === SERVICO.replace(/\.ts$/, "");
+}
+
+/** Violações de UM arquivo: porta crua/store importados, import em namespace, re-export, tabela crua. */
+function violacoes(arquivo: string, codigo: string): string[] {
+  const v: string[] = [];
+  const doServico = { test: (modulo: string) => apontaParaOServico(arquivo, modulo) };
+  const declaracoes = /(import|export)\s+(type\s+)?([\s\S]*?)\s+from\s+["']([^"']+)["']/g;
+  for (const m of codigo.matchAll(declaracoes)) {
+    const [, tipo, soTipo, clausula, modulo] = m;
+    if (!doServico.test(modulo)) continue;
+    if (tipo === "export") v.push(`${arquivo}: re-exporta ${modulo} (abre outra porta)`);
+    if (soTipo) continue;
+    if (/\*\s+as\s+/.test(clausula)) v.push(`${arquivo}: import * de ${modulo} (enxerga a porta crua)`);
+    const nomes = (clausula.match(/\{([\s\S]*)\}/)?.[1] ?? "")
+      .split(",")
+      .map((n) => n.trim().replace(/^type\s+/, "").split(/\s+as\s+/)[0])
+      .filter(Boolean);
+    for (const n of nomes) if (RESTRITAS.includes(n)) v.push(`${arquivo}: importa ${n}`);
+  }
+  for (const m of codigo.matchAll(/import\(\s*["']([^"']+)["']\s*\)/g)) {
+    if (doServico.test(m[1])) v.push(`${arquivo}: import() dinâmico de ${m[1]}`);
+  }
+  if (arquivo !== SERVICO && arquivo !== SCHEMA && /\bdebriefingConfigs\b|\bdebriefing_configs\b/.test(codigo)) {
+    v.push(`${arquivo}: lê a tabela debriefing_configs sem passar pelo service`);
+  }
+  return v;
+}
+
+describe("R1 — superfície exportada do service (não há porta dos fundos)", () => {
+  it("TODA exportação de runtime está classificada (nova exportação quebra até ser classificada)", () => {
+    expect(Object.keys(servico).sort()).toEqual(Object.keys(SUPERFICIE).sort());
+    // O conversor raw → contrato e o montador da forma crua não são exportados.
     expect(Object.keys(servico)).not.toContain("montarDebriefingConfig");
+    expect(Object.keys(servico)).not.toContain("montarConfigBruta");
+    expect(RESTRITAS.sort()).toEqual(["criarDebriefingConfigStore", "loadDebriefingConfigRaw"]);
+  });
+
+  it("nenhum arquivo de src/ fora da rota importa a porta crua ou o store, nem lê a tabela", () => {
+    const todas = arquivosDeSrc().flatMap((p) => {
+      const rel = relative(SRC, p);
+      return rel === ROTA ? [] : violacoes(rel, readFileSync(p, "utf8"));
+    });
+    expect(todas).toEqual([]);
+  });
+
+  it("a rota usa a porta crua oficial (o scanner enxerga o import — controle positivo)", () => {
+    const rota = readFileSync(join(SRC, ROTA), "utf8");
+    expect(violacoes(ROTA, rota)).toEqual([
+      `${ROTA}: importa criarDebriefingConfigStore`,
+      `${ROTA}: importa loadDebriefingConfigRaw`,
+    ]);
+    expect(rota).not.toMatch(/montarConfigBruta/);
+  });
+
+  it("o scanner pega cada forma de porta dos fundos", () => {
+    const f = ["services", "gerador-49-3.ts"].join(sep);
+    expect(violacoes(f, `import { loadDebriefingConfig } from "./debriefing-config.js";`)).toEqual([]);
+    expect(violacoes(f, `import type { DebriefingConfigStore } from "./debriefing-config.js";`)).toEqual([]);
+    expect(violacoes(f, `import {\n  premissaMudou,\n  loadDebriefingConfigRaw as cru,\n} from "../services/debriefing-config.js";`)).toEqual([
+      `${f}: importa loadDebriefingConfigRaw`,
+    ]);
+    expect(violacoes(f, `import { criarDebriefingConfigStore } from "./debriefing-config";`)).toHaveLength(1);
+    expect(violacoes(f, `import * as svc from "./debriefing-config.js";`)).toHaveLength(1);
+    expect(violacoes(f, `export { loadDebriefingConfig } from "./debriefing-config.js";`)).toHaveLength(1);
+    expect(violacoes(f, `const m = await import("./debriefing-config.js");`)).toHaveLength(1);
+    expect(violacoes(f, `db.select().from(debriefingConfigs)`)).toHaveLength(1);
+    expect(violacoes(f, "sql`select * from debriefing_configs`")).toHaveLength(1);
+    // O caminho é resolvido a partir do arquivo: outro módulo homônimo não conta…
+    expect(violacoes(f, `import x from "../routes/debriefing-config.js";`)).toEqual([]);
+    // …e o service visto de outra pasta conta.
+    const r = ["routes", "debriefing-49-6.ts"].join(sep);
+    expect(violacoes(r, `import { loadDebriefingConfigRaw } from "../services/debriefing-config.js";`)).toHaveLength(1);
   });
 
   it("a variante crua devolve a config sem aplicar o gate (para a UI exibir o bloqueio)", async () => {
@@ -526,14 +687,18 @@ describe("AC10 — closerMediums / closerPorSellerName / dimensaoDeCriativo", ()
 // Forma crua: etapas que saíram do funil depois de salvar
 // ------------------------------------------------------------------
 
-describe("montarConfigBruta", () => {
+describe("forma crua (loadDebriefingConfigRaw)", () => {
+  async function cru(m: ReturnType<typeof mundoPadrao>) {
+    return (await loadDebriefingConfigRaw(db, IDS.debriefing, storeEmMemoria(m)))?.config ?? null;
+  }
+
   it("etapa da lista que não pertence mais ao funil vira campo faltante", async () => {
     const m = mundoPadrao();
     m.linhas.set(
       IDS.debriefing,
       linha(IDS.debriefing, valoresCompletos({ etapas: [...valoresCompletos().etapas, { stageId: IDS.etapaDeOutroFunil, papel: "vendas-principal" }] })),
     );
-    const cfg = await montarConfigBruta(storeEmMemoria(m), contexto());
+    const cfg = await cru(m);
     expect(cfg?.etapasForaDoFunil).toEqual([IDS.etapaDeOutroFunil]);
     expect(camposFaltantesDebriefing(cfg!)).toEqual([`etapas[${IDS.etapaDeOutroFunil}] não pertence mais ao funil`]);
   });
@@ -541,7 +706,52 @@ describe("montarConfigBruta", () => {
   it("imposto: sem override do projeto cai no default, com procedência", async () => {
     const m = mundoPadrao();
     m.linhas.set(IDS.debriefing, linha(IDS.debriefing, valoresCompletos()));
-    const cfg = await montarConfigBruta(storeEmMemoria(m), contexto());
+    const cfg = await cru(m);
     expect(cfg?.imposto).toEqual({ valor: META_TAX_RATE, origem: "default" });
+  });
+
+  it("comparação que não é mais funil do projeto: validado sai false e vira campo faltante (QA REL-002)", async () => {
+    const m = mundoPadrao();
+    m.linhas.set(
+      IDS.debriefing,
+      linha(IDS.debriefing, valoresCompletos({ lancamentoComparacaoFunnelId: IDS.funilComparacao }), { validado: true }),
+    );
+    // Com o funil de comparação no projeto: validado e completa.
+    let cfg = await cru(m);
+    expect(cfg?.comparacaoAusente).toBe(false);
+    expect(cfg?.validado).toBe(true);
+    expect(camposFaltantesDebriefing(cfg!)).toEqual([]);
+
+    // Funil de comparação apagado (ou movido para outro projeto).
+    m.funisPorProjeto.set(IDS.projeto, [IDS.funil]);
+    cfg = await cru(m);
+    expect(cfg?.comparacaoAusente).toBe(true);
+    expect(cfg?.validado).toBe(false);
+    expect(camposFaltantesDebriefing(cfg!)).toEqual([
+      `lancamentoComparacaoFunnelId (${IDS.funilComparacao}) não é mais um funil do projeto — escolher outra comparação ou remover`,
+    ]);
+    expect((await erroDe(loadDebriefingConfig(db, IDS.debriefing, storeEmMemoria(m)))).erro).toBe(
+      "COMBINACAO_NAO_VALIDADA",
+    );
+  });
+
+  it("comparação ausente bloqueia também a combinação LIBERADA (CONFIG_INCOMPLETA)", async () => {
+    const ctx = contexto({ projectId: DG_PG02.projectId, funnelId: DG_PG02.funnelId });
+    const m = mundoPadrao(ctx);
+    m.funisPorProjeto.set(DG_PG02.projectId, [DG_PG02.funnelId]);
+    m.linhas.set(IDS.debriefing, linha(IDS.debriefing, valoresCompletos({ lancamentoComparacaoFunnelId: IDS.funilComparacao })));
+    const err = await erroDe(loadDebriefingConfig(db, IDS.debriefing, storeEmMemoria(m)));
+    expect(err.erro).toBe("CONFIG_INCOMPLETA");
+    expect(err.detalhe).toContain("lancamentoComparacaoFunnelId");
+  });
+
+  it("sem comparação gravada: não consulta os funis do projeto e nada muda (AC3)", async () => {
+    const m = mundoPadrao();
+    m.linhas.set(IDS.debriefing, linha(IDS.debriefing, valoresCompletos(), { validado: true }));
+    const store = storeEmMemoria(m);
+    const r = await loadDebriefingConfigRaw(db, IDS.debriefing, store);
+    expect(r?.config?.comparacaoAusente).toBe(false);
+    expect(r?.config?.validado).toBe(true);
+    expect(store.funisDoProjeto).not.toHaveBeenCalled();
   });
 });

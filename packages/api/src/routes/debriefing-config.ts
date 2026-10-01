@@ -30,7 +30,7 @@ import {
   erroTipoDeFunilNaoSuportado,
   etapasComChaveConfirmada,
   isCombinacaoLiberada,
-  montarConfigBruta,
+  loadDebriefingConfigRaw,
   normalizarCloserMediums,
   premissaMudou,
   problemasDasPerguntas,
@@ -188,7 +188,11 @@ export default fp<DebriefingConfigRoutesOptions>(async function debriefingConfig
     const ctx = await resolver(request, reply, s);
     if (!ctx) return reply;
 
-    const raw = tipoAceitaConfig(ctx.funnelType) ? await montarConfigBruta(s, ctx) : null;
+    // A porta crua oficial (só UI). `resolver` já garantiu etapa, funil e
+    // projeto da URL; mobile nem tem config (o PUT recusa).
+    const raw = tipoAceitaConfig(ctx.funnelType)
+      ? ((await loadDebriefingConfigRaw(fastify.db, ctx.stageId, s))?.config ?? null)
+      : null;
     const bloqueio = avaliarBloqueioDebriefing(ctx, raw);
     const imposto = raw?.imposto ?? resolveImpostoPct(null, await s.impostoDoProjeto(ctx.projectId));
     const validadoPorNome = raw?.validadoPor ? await s.nomeDoUsuario(raw.validadoPor) : null;
@@ -320,9 +324,11 @@ export default fp<DebriefingConfigRoutesOptions>(async function debriefingConfig
       }
     }
 
-    // Mudou qualquer premissa → a conferência anterior não vale mais.
+    // Mudou qualquer premissa → a conferência anterior não vale mais. Sem linha
+    // lida, o upsert reseta por precaução: se outra requisição criou a linha no
+    // meio (corrida do primeiro "salvar"), não há premissa para comparar.
     const resetar = !!existente && premissaMudou(valoresDaLinha(existente), valores);
-    await s.gravar(ctx.stageId, valores, { existe: !!existente, resetarValidado: resetar });
+    await s.gravar(ctx.stageId, valores, { resetarValidado: !existente || resetar });
     return { ok: true, validacaoResetada: resetar };
   });
 

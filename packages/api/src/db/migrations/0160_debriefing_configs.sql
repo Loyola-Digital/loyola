@@ -15,7 +15,10 @@
 --
 --   inicio_captacao / abertura_carrinho / fim_carrinho  → datas-chave (YYYY-MM-DD)
 --   reabertura / downsell (jsonb) → {"houve": false} | {"houve": true, "abertura", "fim"}
---   lancamento_comparacao_funnel_id → funil do MESMO projeto (opcional)
+--   lancamento_comparacao_funnel_id → funil do MESMO projeto (opcional). SEM FK
+--     de propósito: um ON DELETE SET NULL apagaria a premissa sem deixar rastro
+--     (a config seguiria "validada" sem a comparação). O carregador confere se
+--     o funil ainda é do projeto e, se não for, bloqueia (CONFIG_INCOMPLETA).
 --   etapas (jsonb) → [{"stageId", "papel"}], papel ∈ LAUNCH_REPORT_ETAPAS + 'reabertura'
 --   perguntas_confirmadas (jsonb) → {stageId: {"faixa": chave|null, campo?: chave}}
 --   closer_mediums (jsonb) / closer_por_seller_name / dimensao_de_criativo → config
@@ -40,7 +43,7 @@
 --   WHERE tablename = 'debriefing_configs';                     -- pkey + stage_uniq
 --
 --   SELECT conname FROM pg_constraint
---   WHERE conrelid = 'debriefing_configs'::regclass;            -- pkey, 3 FKs, 1 CHECK
+--   WHERE conrelid = 'debriefing_configs'::regclass;            -- pkey, 2 FKs, 1 CHECK
 --
 -- Aditiva e idempotente (IF NOT EXISTS): não toca tabela existente; a API
 -- antiga ignora a tabela.
@@ -56,7 +59,7 @@ CREATE TABLE IF NOT EXISTS "debriefing_configs" (
   "fim_carrinho" date,
   "reabertura" jsonb,
   "downsell" jsonb,
-  "lancamento_comparacao_funnel_id" uuid REFERENCES "funnels"("id") ON DELETE SET NULL,
+  "lancamento_comparacao_funnel_id" uuid,
   "etapas" jsonb DEFAULT '[]'::jsonb NOT NULL,
   "perguntas_confirmadas" jsonb DEFAULT '{}'::jsonb NOT NULL,
   "closer_mediums" jsonb,

@@ -8,8 +8,11 @@
  *
  * Mesmo princípio da 41.1: o gate mora AQUI DENTRO, no carregador.
  * `loadDebriefingConfig` é a ÚNICA porta dos geradores (49.3+): devolve config
- * liberada ou lança. `loadDebriefingConfigRaw` existe só para a rota de leitura
- * da UI, que precisa exibir justamente o estado bloqueado.
+ * liberada ou lança. `loadDebriefingConfigRaw` é a ÚNICA porta crua e existe só
+ * para a rota de leitura da UI (`routes/debriefing-config.ts`), que precisa
+ * exibir justamente o estado bloqueado. O montador da forma crua não é
+ * exportado, e um teste de superfície falha se outro arquivo de `src/` importar
+ * a porta crua, o store ou a tabela `debriefingConfigs` (49.1 QA ARCH-001).
  *
  * Ordem dos portões (49.1 AC11 + AC6; 49.6 AC1 passo 3):
  *   1. tipo do funil — `perpetual` (até a 49.10) e qualquer tipo fora de
@@ -240,6 +243,12 @@ export interface DebriefingConfigRaw extends ContextoDaEtapa, ValoresDaConfig {
   etapasComPesquisa: string[];
   /** Etapas da lista que não pertencem mais ao funil (apagadas/movidas depois de salvar). */
   etapasForaDoFunil: string[];
+  /**
+   * A comparação gravada não é mais um funil do projeto (apagado ou movido
+   * depois de salvar). Premissa quebrada: vira campo faltante e `validado` sai
+   * false nesta leitura (49.1 QA REL-002).
+   */
+  comparacaoAusente: boolean;
 }
 
 export type DebriefingConfigRow = typeof debriefingConfigs.$inferSelect;
@@ -434,6 +443,11 @@ export function camposFaltantesDebriefing(cfg: DebriefingConfigRaw): string[] {
     }
   }
   for (const id of cfg.etapasForaDoFunil) f.push(`etapas[${id}] não pertence mais ao funil`);
+  if (cfg.comparacaoAusente) {
+    f.push(
+      `lancamentoComparacaoFunnelId (${cfg.lancamentoComparacaoFunnelId}) não é mais um funil do projeto — escolher outra comparação ou remover`,
+    );
+  }
   f.push(...problemasPapelXDatas(cfg.etapas, cfg));
 
   for (const stageId of cfg.etapasComPesquisa) {
@@ -642,7 +656,13 @@ export interface DebriefingConfigStore {
   impostoDoProjeto(projectId: string): Promise<string | null>;
   /** Perguntas reais (mesma fonte do Resumão). `null` = sem pesquisa; LANÇA se a planilha falhar. */
   perguntasDaEtapa(stageId: string): Promise<PerguntaDaPesquisa[] | null>;
-  gravar(stageId: string, valores: ValoresDaConfig, opcoes: { existe: boolean; resetarValidado: boolean }): Promise<void>;
+  /**
+   * Upsert por etapa (`ON CONFLICT (stage_id)`): dois "salvar" simultâneos na
+   * primeira gravação não dão 500 (49.1 QA REL-001). `resetarValidado` só pesa
+   * quando a linha já existe; a rota manda `true` quando não viu linha nenhuma,
+   * porque, se outra requisição a criou no meio, não há premissa para comparar.
+   */
+  gravar(stageId: string, valores: ValoresDaConfig, opcoes: { resetarValidado: boolean }): Promise<void>;
   /** Devolve o `validado_em` gravado, ou `null` se não existe config. */
   marcarValidado(stageId: string, userId: string): Promise<Date | null>;
   nomeDoUsuario(userId: string): Promise<string | null>;
@@ -710,19 +730,18 @@ export function criarDebriefingConfigStore(db: Database): DebriefingConfigStore 
       if (!payload) return null;
       return payload.questions.map((q) => ({ key: q.key, label: q.label }));
     },
-    async gravar(stageId, valores, { existe, resetarValidado }) {
-      if (!existe) {
-        await db.insert(debriefingConfigs).values({ stageId, ...valores });
-        return;
-      }
+    async gravar(stageId, valores, { resetarValidado }) {
       await db
-        .update(debriefingConfigs)
-        .set({
-          ...valores,
-          updatedAt: new Date(),
-          ...(resetarValidado ? { validado: false, validadoEm: null, validadoPor: null } : {}),
-        })
-        .where(eq(debriefingConfigs.stageId, stageId));
+        .insert(debriefingConfigs)
+        .values({ stageId, ...valores })
+        .onConflictDoUpdate({
+          target: debriefingConfigs.stageId,
+          set: {
+            ...valores,
+            updatedAt: new Date(),
+            ...(resetarValidado ? { validado: false, validadoEm: null, validadoPor: null } : {}),
+          },
+        });
     },
     async marcarValidado(stageId, userId) {
       const agora = new Date();
@@ -744,8 +763,12 @@ export function criarDebriefingConfigStore(db: Database): DebriefingConfigStore 
 // Carregadores
 // ------------------------------------------------------------------
 
-/** Monta a forma crua a partir do que está gravado. `null` = etapa sem config. */
-export async function montarConfigBruta(
+/**
+ * Monta a forma crua a partir do que está gravado. `null` = etapa sem config.
+ * NÃO exportado: a forma crua só sai por `loadDebriefingConfigRaw` (UI) ou
+ * passa pelo gate em `loadDebriefingConfig`.
+ */
+async function montarConfigBruta(
   store: DebriefingConfigStore,
   ctx: ContextoDaEtapa,
 ): Promise<DebriefingConfigRaw | null> {
@@ -762,6 +785,13 @@ export async function montarConfigBruta(
     etapasComPesquisa = await store.etapasComPesquisa(ids.filter((id) => doFunil.has(id)));
   }
 
+  // A comparação não tem FK (um SET NULL apagaria a premissa sem deixar
+  // rastro): confere aqui se o funil ainda é do projeto.
+  const comparacaoAusente =
+    ctx.funnelType === "launch" &&
+    valores.lancamentoComparacaoFunnelId !== null &&
+    !(await store.funisDoProjeto(ctx.projectId)).includes(valores.lancamentoComparacaoFunnelId);
+
   // A config do debriefing não tem override de imposto próprio: cai no do
   // projeto → META_TAX_RATE, com procedência (nunca ×1,13 — decisão ✅2).
   const imposto = resolveImpostoPct(null, await store.impostoDoProjeto(ctx.projectId));
@@ -769,19 +799,23 @@ export async function montarConfigBruta(
   return {
     ...ctx,
     ...valores,
-    validado: row.validado,
+    // Comparação que sumiu: a conferência anterior não vale mais.
+    validado: row.validado && !comparacaoAusente,
     validadoEm: row.validadoEm ?? null,
     validadoPor: row.validadoPor ?? null,
     imposto,
     etapasComPesquisa,
     etapasForaDoFunil,
+    comparacaoAusente,
   };
 }
 
 /**
- * Config CRUA (sem gate). USO EXCLUSIVO da rota de leitura da UI, que precisa
- * renderizar o estado bloqueado. Gerador nenhum chama isto — use
- * `loadDebriefingConfig`. `null` = a etapa não existe.
+ * Config CRUA (sem gate) — a ÚNICA porta crua. USO EXCLUSIVO da rota de
+ * leitura da UI (`routes/debriefing-config.ts`), que precisa renderizar o
+ * estado bloqueado. Gerador nenhum chama isto — use `loadDebriefingConfig`.
+ * O teste de superfície (R1) falha se outro arquivo de `src/` importar esta
+ * função. `null` = a etapa não existe.
  */
 export async function loadDebriefingConfigRaw(
   db: Database,

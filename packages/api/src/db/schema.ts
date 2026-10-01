@@ -3608,10 +3608,12 @@ export const debriefingConfigs = pgTable(
     /** `{houve:false}` | `{houve:true, abertura, fim}`. Nulo = sem resposta (≠ não houve). */
     reabertura: jsonb("reabertura").$type<RespostaEtapaExtra>(),
     downsell: jsonb("downsell").$type<RespostaEtapaExtra>(),
-    /** Opcional; funil do MESMO projeto. */
-    lancamentoComparacaoFunnelId: uuid(
-      "lancamento_comparacao_funnel_id",
-    ).references(() => funnels.id, { onDelete: "set null" }),
+    /**
+     * Opcional; funil do MESMO projeto. SEM FK de propósito: um ON DELETE SET
+     * NULL apagaria a premissa sem rastro; o carregador confere se o funil
+     * ainda é do projeto e, se não for, bloqueia (49.1 QA REL-002).
+     */
+    lancamentoComparacaoFunnelId: uuid("lancamento_comparacao_funnel_id"),
     /** Etapas do funil que compõem o lançamento, com o papel de cada uma. */
     etapas: jsonb("etapas")
       .notNull()

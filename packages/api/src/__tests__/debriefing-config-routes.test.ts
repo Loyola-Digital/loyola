@@ -117,7 +117,8 @@ describe("PUT — corpo gravado", () => {
     expect(store.gravar).toHaveBeenCalledWith(
       IDS.debriefing,
       { ...valoresCompletos(), closerMediums: ["x1", "comercial"] },
-      { existe: false, resetarValidado: false },
+      // Sem linha lida: o upsert reseta por precaução (corrida do 1º salvar).
+      { resetarValidado: true },
     );
   });
 
@@ -152,7 +153,7 @@ describe("PUT — corpo gravado", () => {
       payload: corpo(valoresCompletos({ closerPorSellerName: true })),
     });
     expect(res.json()).toEqual({ ok: true, validacaoResetada: true });
-    expect(store.gravar.mock.calls[0][2]).toEqual({ existe: true, resetarValidado: true });
+    expect(store.gravar.mock.calls[0][2]).toEqual({ resetarValidado: true });
     expect(mundo.linhas.get(IDS.debriefing)?.validado).toBe(false);
   });
 

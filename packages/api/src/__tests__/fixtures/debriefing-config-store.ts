@@ -152,9 +152,10 @@ export function storeEmMemoria(m: Mundo) {
       return p ?? null;
     }),
     gravar: vi.fn(
-      async (stageId: string, valores: ValoresDaConfig, opcoes: { existe: boolean; resetarValidado: boolean }) => {
+      async (stageId: string, valores: ValoresDaConfig, opcoes: { resetarValidado: boolean }) => {
+        // Upsert, como o store real (ON CONFLICT (stage_id)).
         const atual = m.linhas.get(stageId);
-        if (!opcoes.existe || !atual) {
+        if (!atual) {
           m.linhas.set(stageId, linha(stageId, valores));
           return;
         }
