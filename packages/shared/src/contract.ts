@@ -265,4 +265,14 @@
 // investimento entre os que têm link), lido do `meta_ad_creatives_cache`.
 // ADITIVA; `packages/mcp` não é afetado. O web tem fallback: sem `postUrl`, a
 // coluna Preview mostra "—".
-export const API_CONTRACT_VERSION = 29;
+// v30 (Story 49.1): rotas novas da config do gerador de debriefing, por etapa
+// do tipo Debriefing — `GET`/`PUT /api/projects/:projectId/funnels/:funnelId/
+// stages/:stageId/debriefing/config` e `POST …/debriefing/config/validate`
+// (tabela `debriefing_configs`, migration 0160 — aplicada à mão, o deploy não
+// a aplica). O GET devolve `config`, `bloqueio` (gate: TIPO_DE_FUNIL_NAO_
+// SUPORTADO / COMBINACAO_NAO_VALIDADA / CONFIG_INCOMPLETA), `camposFaltantes`,
+// `combinacaoLiberada`, `imposto` com procedência e `perguntasDisponiveis` por
+// etapa (`ok` | `sem-pesquisa` | `falha`). ADITIVA: nenhuma rota existente muda;
+// o web ainda não consome (formulário e botão são da 49.6, que precisa tratar
+// 404 da rota como "API atrás"). `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 30;
