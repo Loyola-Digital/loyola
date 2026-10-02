@@ -429,6 +429,8 @@ const janela = { inicio: "2026-04-17", fim: "2026-05-15", fimPor: "fimCarrinho" 
 
 let pg: PGlite;
 let db: Database;
+/** Tempo para o PGlite subir (WASM + DDL + seed) sob carga — o default do vitest é 10 s. */
+const PGLITE_BEFORE_ALL_TIMEOUT_MS = 60_000;
 
 beforeAll(async () => {
   const comoString = (v: string) => v;
@@ -443,7 +445,8 @@ beforeAll(async () => {
     { schema },
   ) as unknown as Database;
   readSheetData.mockImplementation(lerFalso);
-});
+  // REL-001 (gate 49.4): o default de 10 s do vitest estourou com load average 13 (PGlite sobe o WASM aqui).
+}, PGLITE_BEFORE_ALL_TIMEOUT_MS);
 
 afterAll(async () => {
   await pg?.close();
@@ -548,6 +551,42 @@ describe("AC11 — loadDebriefingAudienceInput sobre Postgres real", () => {
     }
   });
 
+  it("TEST-002 (QA-M14): pesquisa de etapa do funil FORA da config não é lida nem conta — vai ao diagnóstico", async () => {
+    PLANILHAS["g-pesq-outra|respostas"] = {
+      headers: ["E-mail", "Faixa 1"],
+      rows: [["fora@x.com", "A"]],
+    };
+    await pg.exec(`INSERT INTO funnel_surveys (id, funnel_id, stage_id, spreadsheet_id, spreadsheet_name, sheet_name, column_mapping) VALUES
+      ('50000000-0000-4000-8000-000000000004', '${F}', '${OUTRA}', 'g-pesq-outra', 'Pesquisa Gratuita', 'respostas', '{"email":"E-mail","faixa":"Faixa 1"}')`);
+    try {
+      leituras.length = 0;
+      const r = await loadDebriefingAudienceInput(db, { config }, { lerPlanilha: lerFalso });
+      expect(r.diagnostico.pesquisasForaDaConfig).toContainEqual({ rotulo: "Pesquisa Gratuita / respostas", stageId: OUTRA });
+      expect(r.pesquisas.map((p) => p.stageId)).toEqual([CAP]);
+      expect(r.respondentes).toHaveLength(3);
+      expect(leituras).not.toContain("g-pesq-outra|respostas");
+    } finally {
+      await pg.exec(`DELETE FROM funnel_surveys WHERE id = '50000000-0000-4000-8000-000000000004'`);
+      delete PLANILHAS["g-pesq-outra|respostas"];
+    }
+  });
+
+  it("DEC-OWNER-1 (mecanismo): pesquisasExcluidas tira a pesquisa da etapa; sem o parâmetro nada muda", async () => {
+    const PESQ_ID = "50000000-0000-4000-8000-000000000001";
+    const padrao = await loadDebriefingAudienceInput(db, { config }, { lerPlanilha: lerFalso });
+    const vazio = await loadDebriefingAudienceInput(db, { config, pesquisasExcluidas: [] }, { lerPlanilha: lerFalso });
+    // o classificador é uma closure nova por carga: compara-se o que sai dele (o motor), não a função
+    expect(JSON.stringify(computeDebriefingAudience(vazio))).toBe(JSON.stringify(computeDebriefingAudience(padrao)));
+    expect(vazio.diagnostico).toEqual(padrao.diagnostico);
+    expect(padrao.diagnostico.pesquisasExcluidas).toEqual([]);
+    leituras.length = 0;
+    const sem = await loadDebriefingAudienceInput(db, { config, pesquisasExcluidas: [PESQ_ID] }, { lerPlanilha: lerFalso });
+    expect(sem.pesquisas).toEqual([]);
+    expect(sem.respondentes).toEqual([]);
+    expect(sem.diagnostico.pesquisasExcluidas).toEqual([{ pesquisaId: PESQ_ID, rotulo: "Pesquisa / respostas", stageId: CAP }]);
+    expect(sem.compradores).toEqual(padrao.compradores); // as vendas não dependem da pesquisa
+  });
+
   it("ponta a ponta: casamento por telefone, taxa de resposta, cross-launch e nenhum dado pessoal no payload", async () => {
     const r = computeDebriefingAudience(await loadDebriefingAudienceInput(db, { config }, { lerPlanilha: lerFalso }));
     expect(r.pesquisa).toMatchObject({ linhasLidas: 3, vazias: 1, duplicadasRemovidas: 0, respondentes: 2 });
@@ -559,6 +598,61 @@ describe("AC11 — loadDebriefingAudienceInput sobre Postgres real", () => {
       linkAdsManager: `https://adsmanager.facebook.com/adsmanager/manage/ads?act=3717530711643512&selected_ad_ids=${AD1}`,
     });
     expect(JSON.stringify(r)).not.toMatch(/@x\.com|97777/);
+  });
+});
+
+describe("merge da 49.3 iteração 2 (REL-001 herdado) — a aba ligada a duas etapas entra UMA vez no Motor II", () => {
+  const LC = "30000000-0000-4000-8000-0000000000a1";
+  const VC = "30000000-0000-4000-8000-0000000000a2";
+  const cfgDup: DebriefingConfigLancamento = {
+    ...config,
+    etapas: [
+      { stageId: LC, papel: "leads-captacao" }, // a cópia SEM ID/produto vem primeiro na config
+      { stageId: VC, papel: "vendas-captacao" },
+      { stageId: PRIN, papel: "vendas-principal" },
+    ],
+    perguntasConfirmadas: {},
+    lancamentoComparacaoFunnelId: null,
+  };
+
+  it("vale o vínculo que o Motor I leu: linhas uma vez, compradoresCaptacao = 49.3, utm_content e diagnóstico do vínculo certo", async () => {
+    PLANILHAS["g-dup|n8n-dup"] = {
+      headers: ["ID", "Email", "Telefone", "Produto", "Preço", "Data", "Status", "conteudo"],
+      rows: [
+        ["D1", "", "11 96666-5555", "Imersão", "99", "20/04/2026", "paid", AD1], // sem e-mail: a camada 2 não a pegaria
+        ["D2", "dup@x.com", "", "Imersão", "99", "20/04/2026", "paid", ""],
+      ],
+    };
+    await pg.exec(`INSERT INTO funnel_stages VALUES ('${LC}', '${F}', 'paid', '[]'), ('${VC}', '${F}', 'paid', '[]');
+      INSERT INTO stage_sales_spreadsheets (stage_id, subtype, spreadsheet_id, sheet_name, column_mapping, product_types) VALUES
+        ('${LC}', 'capture', 'g-dup', 'n8n-dup', '{"email":"Email","telefone":"Telefone","valorBruto":"Preço","dataVenda":"Data","status":"Status"}', NULL),
+        ('${VC}', 'capture', 'g-dup', 'n8n-dup',
+         '{"transactionId":"ID","email":"Email","telefone":"Telefone","productName":"Produto","valorBruto":"Preço","dataVenda":"Data","status":"Status","utm_content":"conteudo"}',
+         '{"Imersão":"ingresso"}');`);
+    try {
+      const { loadDebriefingMoneyTimeInput } = await import("../services/debriefing-money-time-loader.js");
+      const mt = await loadDebriefingMoneyTimeInput(db, { config: cfgDup }, { lerPlanilha: lerFalso });
+      expect(mt.diagnostico.fontesDuplicadas.map((f) => [f.aba, f.stageIdQueVale])).toEqual([["n8n-dup", VC]]);
+
+      const r = await loadDebriefingAudienceInput(db, { config: cfgDup }, { lerPlanilha: lerFalso });
+      const daAba = r.compradores.filter((c) => c.grupo === "captacao");
+      expect(daAba).toHaveLength(2); // sem o REL-001 da 49.3: 4 (a aba entrava pelas duas etapas)
+      expect(daAba.every((c) => c.planilhaId === mt.diagnostico.fontesDuplicadas[0]!.vale)).toBe(true);
+      expect(daAba.map((c) => [c.comprouCaptacao, c.utmContentCru])).toEqual([
+        [true, AD1],
+        [true, null],
+      ]);
+      // o vínculo descartado (sem utm_content mapeado) não é relido — nem aparece como fonte sem utm_content
+      expect(r.diagnostico.planilhasDeVendaSemUtmContent).not.toContain("n8n-dup");
+
+      const motorII = computeDebriefingAudience(r);
+      const motorI = computeDebriefingMoneyTime({ ...mt, criterioDeUnico: "porEmail" });
+      expect(motorII.compradoresCaptacao).toEqual(motorI.compradoresCaptacao);
+      expect(motorII.compradoresCaptacao.porEmail).toHaveLength(2);
+    } finally {
+      await pg.exec(`DELETE FROM stage_sales_spreadsheets WHERE stage_id IN ('${LC}', '${VC}'); DELETE FROM funnel_stages WHERE id IN ('${LC}', '${VC}');`);
+      delete PLANILHAS["g-dup|n8n-dup"];
+    }
   });
 });
 

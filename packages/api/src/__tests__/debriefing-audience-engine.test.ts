@@ -649,3 +649,115 @@ describe("AC10 — cross-launch (e-mail ∪ telefone)", () => {
     expect(r.crossLaunch.retornoDaBase.valor).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// QA fix iteração 1 (gate CONCERNS de 2026-10-02) — os fios que um AC ou uma
+// decisão fixa. Cada caso morre com a mutação do QA citada no nome.
+// ---------------------------------------------------------------------------
+
+describe("TEST-001 — fios fixados por AC/decisão", () => {
+  it("(a) QA-M15 — o sellerName da venda casada chega ao classificador (caso Netão, R2-5)", () => {
+    const r = rodar((e) => {
+      e.respondentes.push(resp({ email: "netao@x.com", faixa: "C" }));
+      // venda casada SÓ com o vendedor: nenhuma UTM, nenhum medium de closer
+      e.compradores.push(venda({ email: "netao@x.com", linha: 30, comprouCaptacao: true, sellerName: "  Netão " }));
+    });
+    const t = r.tuplasClassificadas.find((x) => x.sellerName === "Netão")!;
+    expect(t).toMatchObject({ lead: { source: null }, venda: { source: null, medium: null }, fechamento: "closer", segmento: "Sem track" });
+    expect(r.fechamento).toEqual({ closer: { n: 2 }, semCloser: { n: 6 } }); // e@ (x1) + netao@ (sellerName)
+    expect(r.segmentos.find((s) => s.segmento === "Sem track")!.n).toBe(2); // o sellerName não tira da regra 9
+  });
+
+  it("(b) QA-M1 — o principal casa pelo TELEFONE quando o e-mail difere (AC7: e-mail → telefone)", () => {
+    const r = rodar((e) => {
+      // e2@ comprou o ingresso; o principal foi comprado com OUTRO e-mail e o mesmo telefone
+      e.compradores.push(
+        venda({ email: "outro@x.com", telefoneCru: "(11) 98888-7777", planilhaId: "prin:s1", linha: 2, grupo: "principal", comprouPrincipal: true }),
+      );
+    });
+    // e2@ é o respondente e@ (casado pelo telefone), sem faixa
+    const semFaixa = r.faixa.conversaoPorFaixa.find((x) => x.faixa === "semFaixa")!;
+    expect(semFaixa).toMatchObject({ n: 1, comprouPrincipal: 1 });
+    expect(semFaixa.ingressoPrincipal.valor).toBe(1);
+    expect(r.conversaoPorSegmento.find((x) => x.segmento === "Aquisição não rastreada (só closer)")).toMatchObject({ n: 1, comprouPrincipal: 1 });
+  });
+
+  it("(c) QA-M12 — a dedup por e-mail ATRAVESSA as pesquisas da etapa (PG02: 23 e-mails nas duas)", () => {
+    const PESQ2 = "pesq-alunos";
+    const r = rodar((e) => {
+      e.pesquisas = [pesquisa, { ...pesquisa, pesquisaId: PESQ2, rotulo: "Pesquisa - Alunos / respostas" }];
+      // a@ respondeu as duas: a da 2ª planilha é de 25/04 (mais recente) e vem ANTES na lista — vale ela
+      e.respondentes.unshift({ ...resp({ email: " A@x.com", faixa: "D", dataRespostaCru: "25/04/2026" }), pesquisaId: PESQ2 });
+      e.respondentes.push({ ...resp({ email: "n@x.com", faixa: "B", dataRespostaCru: "25/04/2026" }), pesquisaId: PESQ2 });
+    });
+    expect(r.pesquisa).toMatchObject({ linhasLidas: 12, vazias: 2, duplicadasRemovidas: 2, respondentes: 8 });
+    expect(r.pesquisa.porPesquisa.map((p) => [p.pesquisaId, p.linhasLidas])).toEqual([
+      [PESQ, 10],
+      [PESQ2, 2],
+    ]);
+    // a@ passa de A (1ª pesquisa, 17/04) para D (2ª, 25/04); n@ entra como B
+    expect(r.faixa.distribuicao).toEqual({ A: 1, B: 2, C: 1, D: 2, semFaixa: 1, foraDoPadrao: 1 });
+    expect(r.somas).toEqual({ segmentos: 8, fechamento: 8, respondentes: 8 });
+  });
+});
+
+describe("TEST-002 — sobreviventes sem impacto medido", () => {
+  it("QA-M5 — o link usa o Ad ID de MAIOR volume do grupo (não o menor, não o primeiro na ordem)", () => {
+    const r = rodar((e) => {
+      // AD3 (cópia do ia-01) passa a ter 3 respondentes contra 1 do AD1
+      e.respondentes.push(resp({ email: "p1@x.com", faixa: "A", utmContentCru: AD3 }), resp({ email: "p2@x.com", faixa: "B", utmContentCru: AD3 }));
+    });
+    const ia = r.criativoXFaixa.criativos.find((c) => c.adIds.includes(AD1))!;
+    expect(ia).toMatchObject({ adIds: [AD1, AD3], n: 4, adIdPrincipal: AD3, nome: "dg-pg02-ia-01 - Cópia" });
+    expect(ia.linkAdsManager).toBe(`https://adsmanager.facebook.com/adsmanager/manage/ads?act=3717530711643512&selected_ad_ids=${AD3}`);
+  });
+
+  it("QA-M8 — a venda representativa do respondente é a de CAPTAÇÃO, mesmo com o principal antes na lista", () => {
+    const r = rodar((e) => {
+      // o principal de a@ vem primeiro e tem medium de closer: se ele representasse a@, a@ viraria closer
+      const prin = e.compradores.pop()!;
+      e.compradores.unshift({ ...prin, utm: { medium: "x1" } });
+    });
+    const t = r.tuplasClassificadas.find((x) => x.lead?.term === HOT.term && x.venda !== null)!;
+    expect(t.venda).toMatchObject({ source: "fb", medium: null });
+    expect(t.fechamento).toBe("sem-closer");
+    expect(r.fechamento.closer.n).toBe(1); // só o e@ (medium x1 da própria venda de captação)
+  });
+
+  it("QA-M17 — grupo de criativo com tipos DISTINTOS entre os Ad IDs vira conflito, não o primeiro tipo", () => {
+    const r = rodar((e) => {
+      // mesmo nome normalizado (sufixo de cópia sai), tipos diferentes: "-ia" no fim só casa sem o sufixo
+      e.criativos.nomesDeAnuncio = { [AD1]: "dg-pg02-01-ia", [AD3]: "dg-pg02-01-ia - Cópia" };
+    });
+    const g = r.criativoXFaixa.criativos.find((c) => c.adIds.includes(AD1))!;
+    expect(g.adIds).toEqual([AD1, AD3]);
+    expect(["dg-pg02-01-ia", "dg-pg02-01-ia - Cópia"].map((n) => tipoPeloNome(n, "ia-humano"))).toEqual(["ia", "card-estatico"]);
+    expect(g.tipo).toBe("conflito");
+    expect(r.tipoDeCriativo.naoClassificados).toMatchObject({ criativos: 1, respondentes: 2 });
+  });
+});
+
+describe("merge da 49.3 iteração 2 — UTM em array (regra 9) desembrulhada antes do classificador", () => {
+  it('{"fb","fb"} classifica como fb — a mesma UTM que a 49.3 entrega ao classificador', () => {
+    const recebidas: unknown[] = [];
+    const r = rodar((e) => {
+      e.classificador = {
+        versao: classificador.versao,
+        classificar: (x) => {
+          recebidas.push(x.lead);
+          return classificador.classificar(x);
+        },
+      };
+      e.respondentes[1] = { ...e.respondentes[1]!, utm: { source: '{"fb","fb"}', term: '{"lp|cold|dg-pg02-h-02","lp|cold|dg-pg02-h-02"}' } };
+    });
+    expect(r.segmentos.find((s) => s.segmento === "Pago Frio")!.n).toBe(1); // b@ continua Pago Frio
+    expect(recebidas).toContainEqual({ source: "fb", medium: null, campaign: null, term: "lp|cold|dg-pg02-h-02", campaignName: null });
+    // o nome do criativo pelo utm_term também sai da UTM desembrulhada (AD2 não está no cache)
+    expect(r.criativoXFaixa.criativos.find((c) => c.adIds.includes(AD2))).toMatchObject({ nome: "dg-pg02-h-02", origemDoNome: "utm_term" });
+    // valores distintos ficam crus (escolher um seria inventar atribuição)
+    const ambiguo = rodar((e) => {
+      e.respondentes[1] = { ...e.respondentes[1]!, utm: { source: '{"fb","ig"}', term: "lp|cold|x" } };
+    });
+    expect(ambiguo.tuplasClassificadas.some((t) => t.lead?.source === '{"fb","ig"}')).toBe(true);
+  });
+});

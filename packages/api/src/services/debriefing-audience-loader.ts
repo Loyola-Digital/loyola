@@ -394,12 +394,22 @@ function numeroDoBanco(v: string | number | null | undefined): number {
 export interface LoadDebriefingAudienceParams {
   /** A janela sai de `config.datasChave` (`janelaDoDebriefing`, decisão 2A) — a mesma da 49.3. */
   config: DebriefingConfigLancamento;
+  /**
+   * `funnel_surveys.id` de pesquisas de etapa do lançamento que NÃO entram na
+   * qualificação (ex.: "Pesquisa-Captação - Alunos" do PG02, pergunta aberta ao
+   * dono — DEC-OWNER-1). Default: nenhuma — toda pesquisa das etapas com
+   * pergunta confirmada entra, como antes. Só o mecanismo: quem decide e onde a
+   * lista mora (config da 49.1) fica para depois da decisão do dono.
+   */
+  pesquisasExcluidas?: readonly string[];
 }
 
 export interface DiagnosticoDoLoaderDePublico {
   pesquisas: { pesquisaId: string; stageId: string; rotulo: string; linhas: number }[];
   /** Pesquisas do funil fora das etapas com pergunta confirmada (sem etapa ou de etapa fora do lançamento). */
   pesquisasForaDaConfig: { rotulo: string; stageId: string | null }[];
+  /** Pesquisas de etapa do lançamento tiradas por `params.pesquisasExcluidas` (não lidas). */
+  pesquisasExcluidas: { pesquisaId: string; rotulo: string; stageId: string }[];
   vendasLidas: number;
   vendasHigienizadas: number;
   /** Fontes de venda sem `utm_content` (coluna ausente, ou fonte que não é aba de planilha): o ingresso por criativo não conta com elas. */
@@ -440,10 +450,15 @@ export async function loadDebriefingAudienceInput(
   const conteudo = new Map<string, string | null>();
   const planilhasSemConteudo: string[] = [];
   const planilhasVistas = new Set<string>();
+  // REL-001 da 49.3: a aba ligada a mais de uma etapa vale com UM vínculo (o que
+  // o Motor I leu, `escolherVinculoDaFonte`). Os outros vínculos não são
+  // relidos aqui — nem para o utm_content, nem para o diagnóstico.
+  const planilhasDoMotorI = new Set(mt.planilhas.map((p) => p.planilhaId));
   for (const etapa of config.etapas) {
     const { sheets } = await resolveSalesSheetsForStage(db, etapa.stageId);
     for (const sheet of sheets) {
       const planilhaId = `${etapa.stageId}:${sheet.id}`;
+      if (!planilhasDoMotorI.has(planilhaId)) continue;
       planilhasVistas.add(planilhaId);
       const dados = await lerOuFalhar(ler, sheet.spreadsheetId, sheet.sheetName, "a planilha de vendas");
       const doSheet = conteudoDaPlanilhaDeVenda(planilhaId, dados.headers, dados.rows, (sheet.columnMapping ?? {}) as Record<string, unknown>);
@@ -461,6 +476,7 @@ export async function loadDebriefingAudienceInput(
 
   // ---- Pesquisa: etapas com pergunta confirmada (49.1) ----
   const etapasComPesquisa = new Set(Object.keys(config.perguntasConfirmadas));
+  const excluidas = new Set(params.pesquisasExcluidas ?? []);
   const surveys = await db
     .select({
       id: funnelSurveys.id,
@@ -484,6 +500,7 @@ export async function loadDebriefingAudienceInput(
   const diagnostico: DiagnosticoDoLoaderDePublico = {
     pesquisas: [],
     pesquisasForaDaConfig: [],
+    pesquisasExcluidas: [],
     vendasLidas: mt.vendas.length,
     vendasHigienizadas: compradores.length,
     planilhasDeVendaSemUtmContent: planilhasSemConteudo,
@@ -496,6 +513,10 @@ export async function loadDebriefingAudienceInput(
     const rotulo = `${s.spreadsheetName} / ${s.sheetName}`;
     if (!s.stageId || !etapasComPesquisa.has(s.stageId)) {
       diagnostico.pesquisasForaDaConfig.push({ rotulo, stageId: s.stageId });
+      continue;
+    }
+    if (excluidas.has(s.id)) {
+      diagnostico.pesquisasExcluidas.push({ pesquisaId: s.id, rotulo, stageId: s.stageId });
       continue;
     }
     const dados = await lerOuFalhar(ler, s.spreadsheetId, s.sheetName, "a pesquisa");

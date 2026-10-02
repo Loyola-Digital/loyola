@@ -52,6 +52,7 @@ import {
   aplicarImposto,
   chavesDeComprador,
   dataBrt,
+  desembrulharUtm,
   normalizarEmail,
   normalizarTelefone,
   type CriterioDeUnico,
@@ -445,14 +446,23 @@ function nula(motivo: string, memoria: string): Metrica {
   return { valor: null, motivo, memoria };
 }
 
-/** UTM com campos vazios → `null` — mesma forma da tupla da 49.3 (a F6 da 49.5 compara as duas). */
+/**
+ * UTM aparada, campos vazios → `null` e array do Postgres desembrulhado
+ * (`{"qr","qr"}` → `qr`, regra 9 de higiene da skill — `desembrulharUtm`). É a
+ * MESMA regra do `utmLimpa` da 49.3 (iteração 2): a tupla tem a mesma forma e o
+ * classificador recebe a mesma UTM nos dois motores (a F6 da 49.5 compara as
+ * duas). `campaignName` vem do loader, nunca de célula — só é aparado.
+ */
 function utmLimpa(u: Utm | null | undefined): Utm | null {
   if (!u) return null;
-  const s = (x: string | null | undefined) => {
-    const t = (x ?? "").trim();
-    return t ? t : null;
+  const t = (x: string | null | undefined) => (x ?? "").trim() || null;
+  return {
+    source: desembrulharUtm(u.source).valor,
+    medium: desembrulharUtm(u.medium).valor,
+    campaign: desembrulharUtm(u.campaign).valor,
+    term: desembrulharUtm(u.term).valor,
+    campaignName: t(u.campaignName),
   };
-  return { source: s(u.source), medium: s(u.medium), campaign: s(u.campaign), term: s(u.term), campaignName: s(u.campaignName) };
 }
 
 /**
@@ -990,7 +1000,7 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
     }
     const contagem = new Map<string, number>();
     for (const r of resps) {
-      const n = adNameDoTerm(r.r.utm.term);
+      const n = adNameDoTerm(desembrulharUtm(r.r.utm.term).valor);
       if (n) contagem.set(n, (contagem.get(n) ?? 0) + 1);
     }
     const melhor = [...contagem.entries()].sort((a, b) => b[1] - a[1] || porOrdem(a[0], b[0]))[0];
