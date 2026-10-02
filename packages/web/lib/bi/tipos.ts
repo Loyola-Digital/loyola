@@ -77,6 +77,18 @@ export interface Slicer {
   values: string[];
 }
 
+/** Uma pergunta já feita à IA neste dashboard. */
+export interface PerguntaGuardada {
+  texto: string;
+  /** ISO. */
+  em: string;
+  por: string;
+  /** Quantos widgets nasceram. 0 também é resposta — e é a que interessa rever. */
+  widgets: number;
+  /** Preenchido quando a pergunta falhou. */
+  erro?: string;
+}
+
 export interface Dashboard {
   id: string;
   projectId: string;
@@ -86,6 +98,8 @@ export interface Dashboard {
   dateRange: DateRange;
   /** O recorte que vale para o canvas inteiro — estado do dashboard, não da tela. */
   slicers: Slicer[];
+  /** O que já foi perguntado aqui, da mais antiga para a mais nova. */
+  perguntas: PerguntaGuardada[];
   /**
    * `projeto` = só o projeto onde o dashboard mora.
    * `todos` = todos os projetos que QUEM ESTÁ OLHANDO enxerga.

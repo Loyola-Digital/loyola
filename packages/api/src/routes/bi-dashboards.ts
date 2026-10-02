@@ -11,7 +11,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { and, desc, eq } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { biDashboards, projectMembers, projects } from "../db/schema.js";
+import { biDashboards, projectMembers, projects, users } from "../db/schema.js";
 import {
   LIMITE_DE_WIDGETS,
   PADRAO_POR_TIPO,
@@ -22,6 +22,8 @@ import {
   resolverPeriodo,
   widgetSchema,
   widgetsGuardados,
+  perguntasGuardadas,
+  MAX_PERGUNTAS,
   type DateRange,
   type Widget,
 } from "../services/bi/dashboard.js";
@@ -153,6 +155,7 @@ export default fp(async function biDashboardsRoutes(fastify) {
       // chegue num dia diferente do servidor por causa do fuso do navegador.
       periodo: resolverPeriodo(dateRange),
       slicers: slicersGuardados(linha.slicers),
+      perguntas: perguntasGuardadas(linha.perguntas),
       escopo: linha.escopo === "todos" ? ("todos" as const) : ("projeto" as const),
       createdBy: linha.createdBy,
       createdAt: linha.createdAt.toISOString(),
@@ -336,6 +339,50 @@ export default fp(async function biDashboardsRoutes(fastify) {
    * as demais. Elas existem justamente para poder ter **filtros diferentes**, e
    * as colunas derivadas as combinam depois.
    */
+  /**
+   * Guarda a pergunta no histórico do dashboard.
+   *
+   * Lê a coluna e regrava o array inteiro em vez de usar `||` do Postgres por um
+   * motivo: o teto precisa ser aplicado na mesma operação, e duas perguntas
+   * simultâneas no MESMO dashboard não acontecem — é uma pessoa digitando, e o
+   * agente leva dezenas de segundos. Perder uma corrida aqui custaria uma linha
+   * de histórico, nunca um dado de verdade.
+   */
+  /** O nome de quem perguntou; vazio se o usuário sumiu da tabela. */
+  async function nomeDoUsuario(userId: string): Promise<string> {
+    const [u] = await fastify.db
+      .select({ nome: users.name })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    return u?.nome ?? "";
+  }
+
+  async function registrarPergunta(
+    dashboardId: string,
+    entrada: { texto: string; por: string; widgets: number; erro?: string },
+  ) {
+    try {
+      const [linha] = await fastify.db
+        .select({ perguntas: biDashboards.perguntas })
+        .from(biDashboards)
+        .where(eq(biDashboards.id, dashboardId))
+        .limit(1);
+      const anteriores = perguntasGuardadas(linha?.perguntas);
+      const nova = { ...entrada, em: new Date().toISOString() };
+      await fastify.db
+        .update(biDashboards)
+        // As mais RECENTES ficam: um dashboard antigo com 200 perguntas não
+        // pode fazer a tela carregar o histórico inteiro de 2024.
+        .set({ perguntas: [...anteriores, nova].slice(-MAX_PERGUNTAS) })
+        .where(eq(biDashboards.id, dashboardId));
+    } catch (erro) {
+      // Histórico é registro, não resultado: falhar aqui não pode derrubar a
+      // resposta que a pessoa já está vendo na tela.
+      fastify.log.warn({ erro }, "não consegui guardar a pergunta no histórico");
+    }
+  }
+
   async function executarWidget(
     widget: Widget,
     projectIds: string[],
@@ -760,15 +807,30 @@ export default fp(async function biDashboardsRoutes(fastify) {
         escrever({ tipo: "widget", widget: w, resultado });
       }
 
+      await registrarPergunta(p.data.id, {
+        texto: corpo.data.pergunta,
+        por: await nomeDoUsuario(request.userId!),
+        widgets: cabem.length,
+      });
+
       escrever({ tipo: "fim", explicacao: resposta.explicacao, avisos });
     } catch (erro) {
       // O motivo sobe até a tela: "tente de novo" não distingue sobrecarga de
       // saldo esgotado, e deixa quem está olhando sem ação possível.
       fastify.log.error({ erro }, "agente de BI falhou");
+      const motivo =
+        erro instanceof ErroDoAgente ? erro.message : "Falha inesperada ao falar com a IA.";
+      // A pergunta que FALHOU é a que a pessoa mais quer rever: foi ela que não
+      // deu resposta, e é dela que vem a próxima tentativa.
+      await registrarPergunta(p.data.id, {
+        texto: corpo.data.pergunta,
+        por: await nomeDoUsuario(request.userId!),
+        widgets: 0,
+        erro: motivo,
+      });
       escrever({
         tipo: "erro",
-        error:
-          erro instanceof ErroDoAgente ? erro.message : "Falha inesperada ao falar com a IA.",
+        error: motivo,
       });
     }
 

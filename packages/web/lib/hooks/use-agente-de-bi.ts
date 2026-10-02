@@ -11,6 +11,7 @@
  */
 
 import { useCallback, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
 import { lerNdjson } from "@/lib/bi/ndjson";
 import type { Widget } from "@/lib/bi/tipos";
@@ -60,6 +61,7 @@ export function textoDoPasso(p: PassoDoAgente): string {
 
 export function useAgenteDeBi(projectId: string | null, dashboardId: string | null) {
   const { getToken } = useAuth();
+  const qc = useQueryClient();
   const [passos, setPassos] = useState<PassoDoAgente[]>([]);
   const [pensando, setPensando] = useState(false);
   const [explicacao, setExplicacao] = useState<string | null>(null);
@@ -133,9 +135,14 @@ export function useAgenteDeBi(projectId: string | null, dashboardId: string | nu
           setPensando(false);
           emVoo.current = null;
         }
+        // O servidor guardou a pergunta no documento do dashboard — inclusive
+        // quando ela falhou. Sem recarregar aqui, o histórico só apareceria no
+        // próximo F5, e a pergunta que a pessoa acabou de fazer é justamente a
+        // que ela vai querer repetir.
+        void qc.invalidateQueries({ queryKey: ["bi", "dashboard", projectId, dashboardId] });
       }
     },
-    [projectId, dashboardId, getToken],
+    [projectId, dashboardId, getToken, qc],
   );
 
   return { perguntar, passos, pensando, explicacao, avisos };

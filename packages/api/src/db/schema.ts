@@ -4856,6 +4856,32 @@ export const biDashboards = pgTable(
      * dashboard salvo viraria uma forma de ver projeto alheio.
      */
     escopo: varchar("escopo", { length: 20 }).notNull().default("projeto"),
+    /**
+     * As perguntas já feitas à IA neste dashboard, da mais antiga para a mais
+     * nova.
+     *
+     * Existe porque a pergunta sumia assim que a resposta chegava: quem montou
+     * um widget bom na terça não tinha como lembrar o que digitou, e quem pegou
+     * o dashboard depois não tinha ideia do que já havia sido tentado. É também
+     * o registro de quem pediu o quê.
+     *
+     * No documento do dashboard, e não em tabela própria, porque a tela já
+     * carrega esse documento inteiro — o histórico chega junto, sem query nova.
+     */
+    perguntas: jsonb("perguntas")
+      .$type<
+        {
+          texto: string;
+          em: string;
+          por: string;
+          /** Quantos widgets nasceram. 0 também é resposta — e é a que interessa. */
+          widgets: number;
+          /** Preenchido quando a pergunta falhou, em vez de só não render nada. */
+          erro?: string;
+        }[]
+      >()
+      .notNull()
+      .default([]),
     createdBy: uuid("created_by").references(() => users.id, {
       onDelete: "set null",
     }),
