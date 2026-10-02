@@ -8,6 +8,7 @@
  */
 
 import { vi } from "vitest";
+import { comparacoesDe } from "../../services/debriefing-config.js";
 import type {
   ContextoDaEtapa,
   DebriefingConfigRow,
@@ -32,6 +33,11 @@ export const IDS = {
   etapaDeOutroFunil: "30000000-0000-4000-8000-000000000007",
   etapaNaoDebriefing: "30000000-0000-4000-8000-000000000008",
   usuario: "40000000-0000-4000-8000-000000000001",
+  // Story 49.11
+  funilComparacao2: "20000000-0000-4000-8000-000000000004",
+  funilComparacao3: "20000000-0000-4000-8000-000000000005",
+  pesquisaCaptacao: "60000000-0000-4000-8000-000000000001",
+  pesquisaAlunos: "60000000-0000-4000-8000-000000000002",
 } as const;
 
 export function contexto(over: Partial<ContextoDaEtapa> = {}): ContextoDaEtapa {
@@ -80,6 +86,9 @@ export function linha(
   return {
     id: "50000000-0000-4000-8000-000000000001",
     stageId,
+    // Colunas da 0162 (49.11) com o default do banco; valores na forma nova as sobrescrevem.
+    lancamentosComparacao: [],
+    pesquisaDeCaptacaoPorEtapa: {},
     ...valores,
     validado: false,
     validadoEm: null,
@@ -99,6 +108,8 @@ export interface Mundo {
   perguntas: Map<string, PerguntaDaPesquisa[] | Error>;
   impostoPorProjeto: Map<string, string | null>;
   usuarios: Map<string, string>;
+  /** Story 49.11 — `funnel_surveys.id` por etapa. */
+  pesquisasPorEtapa: Map<string, string[]>;
 }
 
 /** Funil de lançamento padrão: 6 etapas + a de debriefing; captação tem pesquisa. */
@@ -136,6 +147,7 @@ export function mundoPadrao(ctx: ContextoDaEtapa = contexto()): Mundo {
     ]),
     impostoPorProjeto: new Map(),
     usuarios: new Map([[IDS.usuario, "Fulano do Time"]]),
+    pesquisasPorEtapa: new Map([[IDS.captacao, [IDS.pesquisaCaptacao, IDS.pesquisaAlunos]]]),
   };
 }
 
@@ -152,17 +164,28 @@ export function storeEmMemoria(m: Mundo) {
       if (p instanceof Error) throw p;
       return p ?? null;
     }),
+    pesquisasDasEtapas: vi.fn(async (ids: string[]) =>
+      ids.flatMap((stageId) => (m.pesquisasPorEtapa.get(stageId) ?? []).map((id) => ({ id, stageId }))),
+    ),
     gravar: vi.fn(
       async (stageId: string, valores: ValoresDaConfig, opcoes: { resetarValidado: boolean }) => {
-        // Upsert, como o store real (ON CONFLICT (stage_id)).
+        // Upsert, como o store real (ON CONFLICT (stage_id)). Como ele (49.11),
+        // grava as duas colunas da comparação coerentes.
+        const lista = comparacoesDe(valores);
+        const normal: ValoresDaConfig = {
+          ...valores,
+          lancamentoComparacaoFunnelId: lista[0] ?? null,
+          lancamentosComparacao: lista,
+          pesquisaDeCaptacaoPorEtapa: valores.pesquisaDeCaptacaoPorEtapa ?? {},
+        };
         const atual = m.linhas.get(stageId);
         if (!atual) {
-          m.linhas.set(stageId, linha(stageId, valores));
+          m.linhas.set(stageId, linha(stageId, normal));
           return;
         }
         m.linhas.set(stageId, {
           ...atual,
-          ...valores,
+          ...normal,
           ...(opcoes.resetarValidado ? { validado: false, validadoEm: null, validadoPor: null } : {}),
         });
       },

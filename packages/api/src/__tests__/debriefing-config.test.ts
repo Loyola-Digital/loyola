@@ -135,6 +135,8 @@ describe("loadDebriefingConfig — gate dentro do carregador (AC7)", () => {
         downsell: { houve: true, abertura: "2026-05-18", fim: "2026-05-20" },
       },
       lancamentoComparacaoFunnelId: null,
+      lancamentosComparacao: [], // 49.11 AC6 (acréscimo)
+      pesquisaDeCaptacaoPorEtapa: {}, // 49.11 AC6 (acréscimo)
       etapas: valoresCompletos().etapas,
       perguntasConfirmadas: { [IDS.captacao]: { faixa: "faixa", renda: "q_renda" } },
       closerMediums: ["x1", "comercial"],
@@ -317,6 +319,13 @@ const SUPERFICIE = {
   problemasPapelXDatas: "puro",
   tipoAceitaConfig: "puro",
   valoresDaLinha: "puro", // converte uma linha; a linha só sai do store
+  // Story 49.11 (acréscimo) — lista de comparação e pesquisa de captação
+  comparacaoDoCorpo: "puro", // corpo do PUT: campo antigo, lista ou os dois coerentes
+  comparacoesDe: "puro", // a lista de uns valores (forma da 49.1 = [antiga])
+  comparacoesRemovidasDe: "puro", // R4-14 por item
+  listaDeComparacaoDaLinha: "puro", // a coluna antiga manda na divergência
+  problemasDaPesquisaDeCaptacao: "puro", // R6-7 — a pesquisa marcada é da etapa
+  MAX_LANCAMENTOS_COMPARACAO: "constante",
   // Constantes
   DEBRIEFING_COMBINACOES_LIBERADAS: "constante",
   DEBRIEFING_PAPEIS: "constante",

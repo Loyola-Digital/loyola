@@ -36,7 +36,7 @@ import {
 } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { funnelGroupSnapshots, manualSales, metaAdInsightsDaily, projects } from "../../db/schema.js";
-import { campo, type CampoDoCatalogo, type EntidadeDoCatalogo } from "./catalogo.js";
+import { campo, ENTIDADES, type CampoDoCatalogo, type EntidadeDoCatalogo } from "./catalogo.js";
 
 // ============================================================
 // O contrato
@@ -68,7 +68,12 @@ export const filtroSchema = z.object({
 export const TETO_DE_LINHAS = 10_000;
 
 export const querySpecSchema = z.object({
-  entity: z.enum(["trafego", "vendas", "faturamento", "aplicacoes", "grupos"]),
+  // Derivado do CATÁLOGO, não escrito à mão: a lista literal que morava aqui
+  // ficou para trás quando a entidade `produtos` nasceu, e o sintoma foi a IA
+  // montando o widget certo e o validador recusando com "entidade inválida" —
+  // ela então refazia tudo numa entidade pior, dizendo na explicação que
+  // `produtos` "não estava disponível".
+  entity: z.enum(ENTIDADES.map((e) => e.key) as [EntidadeDoCatalogo, ...EntidadeDoCatalogo[]]),
   metrics: z.array(z.string()).min(1).max(20),
   dimensions: z.array(z.string()).max(5).default([]),
   filters: z.record(z.string(), filtroSchema).default({}),
@@ -231,6 +236,60 @@ const FONTES: Partial<Record<EntidadeDoCatalogo, Fonte>> = {
   },
 
   /**
+   * O que cada PRODUTO vendeu, dia a dia.
+   *
+   * ## Por que é uma entidade e não uma quebra do faturamento
+   *
+   * Produto segue a LINHA da venda; `faturamento` conta COMPRADOR. Quem leva o
+   * ingresso e dois order bumps é três linhas aqui e um comprador lá. Abrir
+   * produto dentro de `faturamento` faria a soma das linhas estourar o total do
+   * dia — um número maior que o certo, com cara de certo.
+   *
+   * ## De onde sai
+   *
+   * Do mesmo cache `sales-daily`, da lista `porProdutoDia` que o sync grava. A
+   * lista antiga (`porProduto`) é o total do range inteiro e por isso não serve
+   * aqui: num dashboard filtrado em 01/10 ela mostraria o acumulado do funil.
+   */
+  produtos: {
+    tabela: sql`(
+      SELECT
+        pmc.project_id AS project_id,
+        pmc.key        AS stage_id,
+        (d->>'date')    AS dia,
+        (d->>'produto') AS produto,
+        COALESCE((d->>'bruto')::numeric, 0)   AS bruto,
+        COALESCE((d->>'liquido')::numeric, 0) AS liquido,
+        COALESCE((d->>'vendas')::numeric, 0)  AS vendas
+      FROM public_metrics_cache pmc,
+           LATERAL jsonb_array_elements(pmc.payload->'porProdutoDia') d
+      WHERE pmc.scope = 'sales-daily'
+        AND jsonb_typeof(pmc.payload->'porProdutoDia') = 'array'
+    ) AS produtos`,
+    escopo: (ids) =>
+      sql`produtos.project_id IN (${sql.join(ids.map((i) => sql`${i}::uuid`), sql`, `)})`,
+    campos: {
+      "produtos.date": sql`produtos.dia`,
+      "produtos.produto": sql`produtos.produto`,
+      "produtos.projeto": sql`(SELECT p.name FROM projects p WHERE p.id = produtos.project_id)`,
+      "produtos.funil": sql`(
+        SELECT f.name FROM funnel_stages fs
+          JOIN funnels f ON f.id = fs.funnel_id
+         WHERE fs.id = produtos.stage_id::uuid
+      )`,
+      "produtos.etapa": sql`(
+        SELECT fs.name FROM funnel_stages fs WHERE fs.id = produtos.stage_id::uuid
+      )`,
+    },
+    metricas: {
+      "produtos.bruto": sql`COALESCE(SUM(produtos.bruto), 0)`,
+      "produtos.liquido": sql`COALESCE(SUM(produtos.liquido), 0)`,
+      "produtos.vendas": sql`COALESCE(SUM(produtos.vendas), 0)`,
+    },
+    derivadas: {},
+  },
+
+  /**
    * O faturamento de verdade — o que as planilhas de venda registram.
    *
    * ## Por que não é a tabela `manual_sales`
@@ -328,6 +387,7 @@ const ROTULO_DA_ENTIDADE: Record<EntidadeDoCatalogo, string> = {
   trafego: "Tráfego pago",
   vendas: "Vendas lançadas",
   faturamento: "Faturamento",
+  produtos: "Produtos vendidos",
   aplicacoes: "Aplicações",
   grupos: "Grupos de WhatsApp",
 };
@@ -337,6 +397,7 @@ export const CAMPO_DE_DATA: Record<EntidadeDoCatalogo, string> = {
   trafego: "trafego.date",
   vendas: "vendas.date",
   faturamento: "faturamento.date",
+  produtos: "produtos.date",
   aplicacoes: "aplicacoes.date",
   grupos: "grupos.date",
 };
@@ -699,6 +760,56 @@ export function planejarEmprestimo(spec: QuerySpec):
 }
 
 /** Executa o spec contra o banco — ou contra a planilha, no caso de aplicações. */
+/**
+ * Os valores que uma dimensão realmente tem no banco, dentro do escopo.
+ *
+ * ## Por que existe
+ *
+ * O agente escolhe CHAVES de um catálogo, mas sempre escolheu VALORES de
+ * cabeça. Pergunta real do Alberto em 01/10/2026 — "as vendas dos workshops do
+ * netão" — virou `faturamento.funil $like "netão"`, e nenhum funil do BBE se
+ * chama assim (são `bbe-pr2-out-26` e parentes). O card nasceu com R$ 0, a IA
+ * disse que tinha feito, e nada na tela explicava o zero.
+ *
+ * Com a lista na mão o modelo escolhe em vez de inventar — a mesma troca que o
+ * catálogo de chaves já fazia, aplicada ao outro lado do filtro.
+ *
+ * Devolve `null` quando a dimensão tem mais valores que o teto: listar 4 mil
+ * campanhas não cabe no prompt e não ajuda ninguém. `null` significa "não sei
+ * enumerar", e quem valida trata isso como "não valide" — nunca como "vazio".
+ */
+export async function valoresDaDimensao(
+  chave: string,
+  ctx: ContextoDaQuery,
+  teto = 60,
+): Promise<string[] | null> {
+  const def = campo(chave);
+  if (!def || def.role !== "dimension" || def.semanticType === "date") return null;
+
+  const fonte = FONTES[def.entity];
+  if (!fonte) return null; // `aplicacoes` é planilha: não tem SQL para perguntar.
+  const expressao = fonte.campos[chave];
+  if (!expressao) return null;
+
+  // `GROUP BY` em vez de `SELECT DISTINCT` porque é o que o executor sabe
+  // montar (ver o tipo `Db`) — o resultado é o mesmo.
+  // Teto + 1 para distinguir "a lista inteira" de "tem mais do que cabe".
+  const linhas = (await ctx.db
+    .select({ v: expressao })
+    .from(fonte.tabela as never)
+    .where(fonte.escopo(ctx.projectIds))
+    .groupBy(expressao)
+    .orderBy(expressao)
+    .limit(teto + 1)) as { v: unknown }[];
+
+  if (linhas.length > teto) return null;
+  const valores = linhas
+    .map((l) => (l.v == null ? "" : String(l.v).trim()))
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, "pt-BR"));
+  return valores;
+}
+
 export async function executarQuery(
   spec: QuerySpec,
   ctx: ContextoDaQuery,

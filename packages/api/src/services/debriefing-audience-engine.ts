@@ -15,7 +15,12 @@
  *
  * Regras do dono que valem aqui (epic §Decisões — não reabrir):
  * - pesquisa respondida 2×: vale a resposta MAIS RECENTE (decisão 8) — maior
- *   dia de resposta; empate ou sem data → a linha de posição posterior;
+ *   dia de resposta; empate ou sem data → a da PESQUISA DE CAPTAÇÃO marcada
+ *   na config quando as duas linhas são de pesquisas diferentes da mesma etapa
+ *   (R6-7, Story 49.11); senão a linha de posição posterior;
+ * - série histórica (49.11, R5-3/R6-6): a pergunta tem resposta no lançamento
+ *   atual E em TODOS os lançamentos de comparação da lista — só a qualificação,
+ *   sem % por lançamento; o cross-launch continua só com a principal;
  * - `%` por dimensão sobre o SEGMENTO INTEIRO, com a linha `semResposta`
  *   (decisão 9): valores + `semResposta` = 100% do segmento;
  * - dois eixos que nunca se somam: segmentos de aquisição × fechamento
@@ -114,6 +119,12 @@ export interface PesquisaInput {
    * histórica casa pelos dois.
    */
   cabecalhoDaChave: Readonly<Record<string, string>>;
+  /**
+   * Story 49.11 (R6-7): é a pesquisa de captação marcada na config para a etapa
+   * (`pesquisaDeCaptacaoPorEtapa`) — a sua linha vence o desempate sem data.
+   * O loader decide pelo id; o motor não conhece nome de aba.
+   */
+  pesquisaDeCaptacao?: boolean;
 }
 
 /** Uma linha crua da pesquisa. E-mail, telefone e data chegam COMO NA CÉLULA. */
@@ -198,6 +209,18 @@ export interface BaseAnteriorInput {
   chavesDePerguntaComResposta: readonly string[] | null;
 }
 
+/**
+ * Story 49.11 — um lançamento de comparação da série histórica, na ordem da
+ * lista da config (o 1º é a principal).
+ */
+export interface SerieDeComparacaoInput {
+  funnelId: string;
+  /** Nome do funil (para o documento declarar a composição). `null` = não resolvido. */
+  nome: string | null;
+  /** Como `BaseAnteriorInput.chavesDePerguntaComResposta`: `null` = o lançamento não tem pesquisa. */
+  chavesDePerguntaComResposta: readonly string[] | null;
+}
+
 export interface DebriefingAudienceInput {
   config: Pick<DebriefingConfigLancamento, "perguntasConfirmadas" | "dimensaoDeCriativo" | "imposto">;
   /** A janela do debriefing (`janelaDoDebriefing`, decisão 2A) — a mesma da 49.3; o loader já cortou vendas e ad-level nela. */
@@ -207,6 +230,11 @@ export interface DebriefingAudienceInput {
   compradores: readonly VendaHigienizadaInput[];
   criativos: CriativosInput;
   baseAnterior?: BaseAnteriorInput | null;
+  /**
+   * Story 49.11 — todos os lançamentos da lista, na ordem (o 1º é o da
+   * `baseAnterior`). Ausente = só o da `baseAnterior` (n = 1, o caso de antes).
+   */
+  seriesDeComparacao?: readonly SerieDeComparacaoInput[];
   classificador: ClassificadorInjetado;
 }
 
@@ -215,7 +243,12 @@ export interface DebriefingAudienceInput {
 // ---------------------------------------------------------------------------
 
 export interface LacunaDePublico {
-  codigo: "LISTAS_FRONT_COMUNIDADE" | "SEM_AD_LEVEL" | "BASE_ANTERIOR_SEM_LEADS" | "PESQUISA_SEM_COLUNA_DE_EMAIL";
+  codigo:
+    | "LISTAS_FRONT_COMUNIDADE"
+    | "SEM_AD_LEVEL"
+    | "BASE_ANTERIOR_SEM_LEADS"
+    | "PESQUISA_SEM_COLUNA_DE_EMAIL"
+    | "DESEMPATE_SEM_PESQUISA_DE_CAPTACAO";
   motivo: string;
   detalhe?: string;
 }
@@ -246,6 +279,13 @@ export interface DimensaoDePublico {
   perguntas: PerguntaDaDimensao[];
   serieHistorica: boolean;
   serieHistoricaMotivo: string;
+  /**
+   * Story 49.11, só com 2+ lançamentos na lista: os que NÃO têm resposta para
+   * a pergunta (`AUSENTE_EM_LANCAMENTO_DA_LISTA`) — quais, nunca só "algum".
+   */
+  lancamentosAusentes?: string[];
+  /** Story 49.11, só com 2+ lançamentos: os da lista sem pesquisa conectada (`COMPARACAO_SEM_PESQUISA`). */
+  lancamentosSemPesquisa?: string[];
   /** Pesquisa inteira deduplicada. */
   total: TabelaDaDimensao;
   porSegmento: Record<SegmentoDeQualificacao, TabelaDaDimensao>;
@@ -331,6 +371,13 @@ export interface DebriefingAudience {
     linhasLidas: number;
     vazias: number;
     duplicadasRemovidas: number;
+    /**
+     * Story 49.11 (R6-7): das `duplicadasRemovidas`, quantas foram decididas SEM
+     * data (mesmo dia ou data ilegível) — pela pesquisa de captação ou pela posição.
+     */
+    duplicadasSemData: number;
+    /** Das `duplicadasSemData`, quantas a pesquisa de captação marcada decidiu. */
+    duplicadasDecididasPelaPesquisaDeCaptacao: number;
     respondentes: number;
     memoria: string;
     porPesquisa: { pesquisaId: string; stageId: string; rotulo: string; linhasLidas: number; vazias: number }[];
@@ -401,6 +448,12 @@ export interface DebriefingAudience {
   };
 
   lacunas: LacunaDePublico[];
+  /**
+   * Story 49.11 — a composição da série histórica, presente só com 2+
+   * lançamentos na lista (com 1, o payload é o de antes: o lançamento é o
+   * `crossLaunch.funnelIdAnterior`). `posicao` 1 = a principal.
+   */
+  serieHistorica?: { lancamentos: { funnelId: string; nome: string | null; posicao: number; principal: boolean }[] };
 }
 
 // ---------------------------------------------------------------------------
@@ -565,6 +618,65 @@ interface CompradorDeCaptacao {
   respondente: Respondente | null;
 }
 
+/**
+ * Série histórica de UMA dimensão (Story 49.11). `temResposta(chaves)` diz se
+ * a pergunta (chave ou cabeçalho, normalizados) tem resposta num lançamento.
+ * - lista vazia → `SEM_LANCAMENTO_DE_COMPARACAO`;
+ * - n = 1 → os quatro códigos e o texto de antes (`COMPARACAO_SEM_PESQUISA`,
+ *   `PRESENTE_NOS_DOIS_LANCAMENTOS`, `AUSENTE_NO_LANCAMENTO_DE_COMPARACAO`);
+ * - n ≥ 2 → série SÓ se a pergunta tem resposta em TODOS: lançamento sem
+ *   pesquisa → `COMPARACAO_SEM_PESQUISA` + `lancamentosSemPesquisa`; algum sem
+ *   a pergunta → `AUSENTE_EM_LANCAMENTO_DA_LISTA` + `lancamentosAusentes`;
+ *   todos → `PRESENTE_EM_TODOS_OS_LANCAMENTOS`.
+ */
+export function qualificarSerie(
+  series: readonly { funnelId: string; chaves: ReadonlySet<string> | null }[],
+  temResposta: (chaves: ReadonlySet<string>) => boolean,
+): { serieHistorica: boolean; serieHistoricaMotivo: string; lancamentosAusentes?: string[]; lancamentosSemPesquisa?: string[] } {
+  if (series.length === 0) return { serieHistorica: false, serieHistoricaMotivo: "SEM_LANCAMENTO_DE_COMPARACAO" };
+  if (series.length === 1) {
+    const chaves = series[0]!.chaves;
+    if (!chaves) return { serieHistorica: false, serieHistoricaMotivo: "COMPARACAO_SEM_PESQUISA" };
+    return temResposta(chaves)
+      ? { serieHistorica: true, serieHistoricaMotivo: "PRESENTE_NOS_DOIS_LANCAMENTOS" }
+      : { serieHistorica: false, serieHistoricaMotivo: "AUSENTE_NO_LANCAMENTO_DE_COMPARACAO" };
+  }
+  const semPesquisa = series.filter((sr) => !sr.chaves).map((sr) => sr.funnelId);
+  const ausentes = series.filter((sr) => sr.chaves && !temResposta(sr.chaves)).map((sr) => sr.funnelId);
+  if (semPesquisa.length > 0) {
+    return {
+      serieHistorica: false,
+      serieHistoricaMotivo: "COMPARACAO_SEM_PESQUISA",
+      lancamentosSemPesquisa: semPesquisa,
+      ...(ausentes.length > 0 ? { lancamentosAusentes: ausentes } : {}),
+    };
+  }
+  if (ausentes.length > 0) {
+    return { serieHistorica: false, serieHistoricaMotivo: "AUSENTE_EM_LANCAMENTO_DA_LISTA", lancamentosAusentes: ausentes };
+  }
+  return { serieHistorica: true, serieHistoricaMotivo: "PRESENTE_EM_TODOS_OS_LANCAMENTOS" };
+}
+
+/**
+ * Decisão 8 + R6-7 (Story 49.11) — a ÚNICA regra entre duas respostas do mesmo
+ * e-mail: datas legíveis e diferentes → a mais recente; empate de dia ou sem
+ * data → a da pesquisa de captação marcada, quando as duas são de pesquisas
+ * DIFERENTES da mesma etapa e só uma está marcada; senão a de posição posterior.
+ */
+export function desempatarResposta<
+  T extends { dia: string | null; ordem: number; pesquisa: Pick<PesquisaInput, "pesquisaId" | "stageId" | "pesquisaDeCaptacao"> },
+>(a: T, b: T): { vencedora: T; decididaPor: "data" | "pesquisaDeCaptacao" | "posicao" } {
+  if (a.dia !== null && b.dia !== null && a.dia !== b.dia) {
+    return { vencedora: a.dia > b.dia ? a : b, decididaPor: "data" };
+  }
+  const ma = a.pesquisa.pesquisaDeCaptacao === true;
+  const mb = b.pesquisa.pesquisaDeCaptacao === true;
+  if (a.pesquisa.pesquisaId !== b.pesquisa.pesquisaId && a.pesquisa.stageId === b.pesquisa.stageId && ma !== mb) {
+    return { vencedora: ma ? a : b, decididaPor: "pesquisaDeCaptacao" };
+  }
+  return { vencedora: a.ordem > b.ordem ? a : b, decididaPor: "posicao" };
+}
+
 // ---------------------------------------------------------------------------
 // Motor
 // ---------------------------------------------------------------------------
@@ -610,20 +722,41 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
     });
   });
 
-  // Decisão 8: a mais recente vence — maior dia legível; empate ou sem data → posição posterior.
-  const maisRecente = <T extends { dia: string | null; ordem: number }>(a: T, b: T): T => {
-    if (a.dia !== null && b.dia !== null && a.dia !== b.dia) return a.dia > b.dia ? a : b;
-    return a.ordem > b.ordem ? a : b;
-  };
+  // Decisão 8 + R6-7: UMA função decide entre duas respostas do mesmo e-mail.
   const vencedoraPorEmail = new Map<string, (typeof validas)[number]>();
+  const decididasPor = { data: 0, pesquisaDeCaptacao: 0, posicao: 0 };
   for (const v of validas) {
     if (!v.email) continue;
     const atual = vencedoraPorEmail.get(v.email);
-    vencedoraPorEmail.set(v.email, atual ? maisRecente(atual, v) : v);
+    if (!atual) {
+      vencedoraPorEmail.set(v.email, v);
+      continue;
+    }
+    const d = desempatarResposta(atual, v);
+    decididasPor[d.decididaPor] += 1;
+    vencedoraPorEmail.set(v.email, d.vencedora);
   }
   const dedupadas = validas.filter((v) => !v.email || vencedoraPorEmail.get(v.email) === v);
   const duplicadasRemovidas = validas.length - dedupadas.length;
+  const duplicadasSemData = decididasPor.pesquisaDeCaptacao + decididasPor.posicao;
   const nRespondentes = dedupadas.length;
+  const temPesquisaMarcada = input.pesquisas.some((p) => p.pesquisaDeCaptacao === true);
+
+  // R6-7: etapa com 2+ pesquisas e nenhuma marcada → o desempate sem data cai
+  // na posição (ordem de leitura); a lacuna diz — nunca em silêncio.
+  const pesquisasPorEtapa = new Map<string, PesquisaInput[]>();
+  for (const p of input.pesquisas) pesquisasPorEtapa.set(p.stageId, [...(pesquisasPorEtapa.get(p.stageId) ?? []), p]);
+  for (const [stageId, ps] of [...pesquisasPorEtapa.entries()].sort((a, b) => porOrdem(a[0], b[0]))) {
+    if (ps.length < 2 || ps.some((p) => p.pesquisaDeCaptacao === true)) continue;
+    lacunas.push({
+      codigo: "DESEMPATE_SEM_PESQUISA_DE_CAPTACAO",
+      motivo:
+        "etapa com mais de uma pesquisa sem a pesquisa de captação marcada na config — resposta repetida sem data (ou do mesmo dia) fica com a linha lida por último",
+      detalhe:
+        `etapa ${stageId}: ${ps.map((p) => p.rotulo).join("; ")} — respostas repetidas decididas sem data: ` +
+        `${fmtInt(duplicadasSemData)} de ${fmtInt(duplicadasRemovidas)} removidas`,
+    });
+  }
 
   const semEmail = input.pesquisas.filter((p) => !p.temColunaEmail);
   if (semEmail.length > 0) {
@@ -713,8 +846,17 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
     return (resp.r.respostas[chave] ?? "").trim();
   };
 
-  const comparaveis = input.baseAnterior?.chavesDePerguntaComResposta ?? null;
-  const chavesAnteriores = comparaveis ? new Set(comparaveis.map(normalizarResposta)) : null;
+  // Série histórica (49.11): a lista inteira, na ordem; sem ela, o lançamento
+  // da `baseAnterior` (n = 1, o caso de antes).
+  const series: readonly SerieDeComparacaoInput[] =
+    input.seriesDeComparacao ??
+    (input.baseAnterior
+      ? [{ funnelId: input.baseAnterior.funnelId, nome: null, chavesDePerguntaComResposta: input.baseAnterior.chavesDePerguntaComResposta }]
+      : []);
+  const chavesPorSerie = series.map((sr) => ({
+    funnelId: sr.funnelId,
+    chaves: sr.chavesDePerguntaComResposta ? new Set(sr.chavesDePerguntaComResposta.map(normalizarResposta)) : null,
+  }));
   /** A chave e o cabeçalho da pergunta (normalizados) — a série casa por qualquer um dos dois. */
   const nomesDaPergunta = (p: PerguntaDaDimensao): string[] => {
     const nomes = [p.chave];
@@ -765,15 +907,12 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
     }
     if (campo === "faixa") perguntasDaFaixa = presentes;
 
-    // Série histórica: a mesma chave precisa ter resposta no lançamento de comparação.
-    let serieHistorica = false;
-    let serieHistoricaMotivo: string;
-    if (!input.baseAnterior) serieHistoricaMotivo = "SEM_LANCAMENTO_DE_COMPARACAO";
-    else if (!chavesAnteriores) serieHistoricaMotivo = "COMPARACAO_SEM_PESQUISA";
-    else if (presentes.every((p) => nomesDaPergunta(p).some((nome) => chavesAnteriores.has(nome)))) {
-      serieHistorica = true;
-      serieHistoricaMotivo = "PRESENTE_NOS_DOIS_LANCAMENTOS";
-    } else serieHistoricaMotivo = "AUSENTE_NO_LANCAMENTO_DE_COMPARACAO";
+    // Série histórica: a pergunta precisa ter resposta no lançamento atual (já
+    // garantido acima) E em TODOS os lançamentos da lista (49.11, R5-3/R6-6).
+    const { serieHistorica, serieHistoricaMotivo, lancamentosAusentes, lancamentosSemPesquisa } = qualificarSerie(
+      chavesPorSerie,
+      (chaves) => presentes.every((p) => nomesDaPergunta(p).some((nome) => chaves.has(nome))),
+    );
 
     const tabela = (linhas: readonly Respondente[], rotuloDoRecorte: string): TabelaDaDimensao => {
       const grupos = new Map<string, { brutos: Map<string, number>; n: number }>();
@@ -817,6 +956,8 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
       perguntas: presentes,
       serieHistorica,
       serieHistoricaMotivo,
+      ...(lancamentosAusentes ? { lancamentosAusentes } : {}),
+      ...(lancamentosSemPesquisa ? { lancamentosSemPesquisa } : {}),
       total: tabela(respondentes, "pesquisa inteira deduplicada"),
       porSegmento: Object.fromEntries(
         SEGMENTOS_DE_QUALIFICACAO.map((s) => [s, tabela(respondentes.filter((r) => r.segmento === s), s)]),
@@ -1366,9 +1507,14 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
       vazias,
       duplicadasRemovidas,
       respondentes: nRespondentes,
+      duplicadasSemData,
+      duplicadasDecididasPelaPesquisaDeCaptacao: decididasPor.pesquisaDeCaptacao,
       memoria:
         `linhas lidas ${fmtInt(input.respondentes.length)} − sem respondente ${fmtInt(vazias)} − e-mail repetido ${fmtInt(duplicadasRemovidas)}` +
-        ` = ${fmtInt(nRespondentes)} respondente(s) (vale a resposta mais recente: maior dia; empate ou sem data → linha posterior)`,
+        ` = ${fmtInt(nRespondentes)} respondente(s) (vale a resposta mais recente: maior dia; empate ou sem data → ` +
+        (temPesquisaMarcada
+          ? `a da pesquisa de captação marcada na config (${fmtInt(decididasPor.pesquisaDeCaptacao)}), senão a linha posterior)`
+          : "linha posterior)"),
       porPesquisa,
     },
     perguntasConfirmadas: config.perguntasConfirmadas,
@@ -1388,5 +1534,12 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
     tipoDeCriativo,
     crossLaunch,
     lacunas,
+    ...(series.length >= 2
+      ? {
+          serieHistorica: {
+            lancamentos: series.map((sr, i) => ({ funnelId: sr.funnelId, nome: sr.nome, posicao: i + 1, principal: i === 0 })),
+          },
+        }
+      : {}),
   };
 }

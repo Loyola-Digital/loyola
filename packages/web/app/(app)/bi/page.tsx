@@ -264,10 +264,17 @@ export default function BiPage() {
 
   function perguntarAIa(pergunta: string) {
     // Cada widget entra no canvas assim que o número dele chega — não no fim.
-    void agente.perguntar(pergunta, (widget, resultado) => {
-      setWidgets((atuais) => [...atuais, widget]);
-      semear(widget.id, resultado);
-    });
+    void agente.perguntar(
+      pergunta,
+      (widget, resultado) => {
+        setWidgets((atuais) => [...atuais, widget]);
+        semear(widget.id, resultado);
+      },
+      // A pergunta trouxe uma data: o servidor já trocou o período do
+      // dashboard, e aqui a barra de cima acompanha e os widgets antigos são
+      // recalculados — senão a tela mostra dois períodos ao mesmo tempo.
+      (novo) => aplicarPeriodo(novo),
+    );
   }
 
   /** Copia um widget com id novo — mesma pergunta, outro recorte. */

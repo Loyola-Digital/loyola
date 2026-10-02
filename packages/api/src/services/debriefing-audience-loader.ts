@@ -29,7 +29,14 @@
  *   `funnel_surveys`), lidas ao vivo. Com fonte de leads legível → base
  *   `leads+compradores`; sem → `compradores` (lacuna `BASE_ANTERIOR_SEM_LEADS`).
  *   Os compradores do anterior vêm das planilhas de venda (status pago) e das
- *   `manual_sales` não reembolsadas (decisão 3A da 49.3).
+ *   `manual_sales` não reembolsadas (decisão 3A da 49.3). Story 49.11: a base
+ *   é SÓ a comparação principal (o 1º da lista) — nada soma entre lançamentos;
+ * - **série histórica** (49.11): para CADA lançamento da lista
+ *   (`lancamentosComparacao`), as chaves de pergunta com resposta nas pesquisas
+ *   do funil (`seriesDeComparacao`, na ordem), com o mesmo leitor memoizado;
+ * - **pesquisa de captação** (49.11, R6-7): a pesquisa marcada em
+ *   `pesquisaDeCaptacaoPorEtapa[stageId]` sai com `pesquisaDeCaptacao: true` —
+ *   o motor a usa no desempate sem data, sem conhecer nome de aba.
  *
  * Nenhuma chamada à Meta, nenhum fan-out por criativo (regra de rate limit do
  * projeto). Planilha configurada que falha ao ler lança `DADO_INDISPONIVEL` —
@@ -79,6 +86,7 @@ import type {
   IdentidadeInput,
   PesquisaInput,
   RespostaInput,
+  SerieDeComparacaoInput,
   VendaHigienizadaInput,
 } from "./debriefing-audience-engine.js";
 
@@ -524,7 +532,9 @@ export async function loadDebriefingAudienceInput(
       { pesquisaId: s.id, stageId: s.stageId, rotulo, headers: dados.headers, rows: dados.rows, mapping: s.columnMapping },
       nomesDeCampanha,
     );
-    pesquisas.push(lida.pesquisa);
+    // R6-7: a pesquisa de captação marcada na config (por id — nunca por nome de aba).
+    const marcada = config.pesquisaDeCaptacaoPorEtapa?.[s.stageId] === s.id;
+    pesquisas.push(marcada ? { ...lida.pesquisa, pesquisaDeCaptacao: true } : lida.pesquisa);
     respondentes.push(...lida.respostas);
     diagnostico.pesquisas.push({ pesquisaId: s.id, stageId: s.stageId, rotulo, linhas: lida.respostas.length });
   }
@@ -644,9 +654,10 @@ export async function loadDebriefingAudienceInput(
     }
   }
 
-  // ---- Base do lançamento de comparação (AC10) ----
+  // ---- Base do lançamento de comparação (AC10) — SÓ a principal (49.11) ----
+  const lista = comparacoesDoContrato(config);
   let baseAnterior: BaseAnteriorInput | null = null;
-  const funilAnterior = config.lancamentoComparacaoFunnelId;
+  const funilAnterior = lista[0] ?? null;
   if (funilAnterior) {
     const etapasAnt = await db
       .select({ id: funnelStages.id })
@@ -745,6 +756,25 @@ export async function loadDebriefingAudienceInput(
     };
   }
 
+  // ---- Série histórica (49.11): as chaves de pergunta de CADA lançamento da lista ----
+  // A principal já foi lida acima (mesmas pesquisas); as demais leem só as
+  // pesquisas do funil, com o leitor memoizado. Falha = DADO_INDISPONIVEL.
+  const seriesDeComparacao: SerieDeComparacaoInput[] = [];
+  if (lista.length > 0) {
+    // Nome só com 2+ (a composição só é declarada aí; com 1, o payload é o de antes).
+    const nomes = new Map<string, string>();
+    if (lista.length >= 2) {
+      for (const f of await db.select({ id: funnels.id, name: funnels.name }).from(funnels).where(inArray(funnels.id, lista))) {
+        nomes.set(f.id, f.name);
+      }
+    }
+    for (const [i, funnelId] of lista.entries()) {
+      const chaves =
+        i === 0 ? (baseAnterior?.chavesDePerguntaComResposta ?? null) : await chavesDePerguntaDoFunil(db, ler, funnelId);
+      seriesDeComparacao.push({ funnelId, nome: nomes.get(funnelId) ?? null, chavesDePerguntaComResposta: chaves });
+    }
+  }
+
   return {
     config: {
       perguntasConfirmadas: config.perguntasConfirmadas,
@@ -757,7 +787,45 @@ export async function loadDebriefingAudienceInput(
     compradores,
     criativos: { anuncios, nomesDeAnuncio, contaDeAnuncios },
     baseAnterior,
+    seriesDeComparacao,
     classificador: mt.classificador,
     diagnostico,
   };
+}
+
+/**
+ * A lista de comparação do contrato (49.11). Contrato montado na forma
+ * anterior (sem `lancamentosComparacao`) vale `[lancamentoComparacaoFunnelId]`.
+ */
+function comparacoesDoContrato(config: Pick<DebriefingConfigLancamento, "lancamentoComparacaoFunnelId" | "lancamentosComparacao">): string[] {
+  if (config.lancamentosComparacao !== undefined) return [...config.lancamentosComparacao];
+  return config.lancamentoComparacaoFunnelId ? [config.lancamentoComparacaoFunnelId] : [];
+}
+
+/**
+ * Chaves (e cabeçalhos) de pergunta com resposta nas pesquisas de um funil de
+ * comparação — a mesma leitura da principal (`chavesComResposta`), aba lida uma
+ * vez. `null` = o funil não tem pesquisa conectada.
+ */
+async function chavesDePerguntaDoFunil(db: Database, ler: LerPlanilha, funnelId: string): Promise<string[] | null> {
+  const pesquisas = await db
+    .select({
+      spreadsheetId: funnelSurveys.spreadsheetId,
+      sheetName: funnelSurveys.sheetName,
+      columnMapping: funnelSurveys.columnMapping,
+    })
+    .from(funnelSurveys)
+    .where(eq(funnelSurveys.funnelId, funnelId));
+  if (pesquisas.length === 0) return null;
+  pesquisas.sort((a, b) => a.spreadsheetId.localeCompare(b.spreadsheetId) || a.sheetName.localeCompare(b.sheetName));
+  const chaves = new Set<string>();
+  const vistas = new Set<string>();
+  for (const p of pesquisas) {
+    const k = `${p.spreadsheetId}|${p.sheetName}`;
+    if (vistas.has(k)) continue;
+    vistas.add(k);
+    const dados = await lerOuFalhar(ler, p.spreadsheetId, p.sheetName, "a pesquisa do lançamento de comparação");
+    for (const c of chavesComResposta(dados.headers, dados.rows, p.columnMapping as MappingDaPesquisa)) chaves.add(c);
+  }
+  return [...chaves].sort();
 }

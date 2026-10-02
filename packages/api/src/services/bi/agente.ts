@@ -26,6 +26,7 @@ import { CAMPOS, ENTIDADES, campo } from "./catalogo.js";
 import { PADRAO_POR_TIPO, TIPOS_DE_WIDGET, primeiroEspacoLivre, type Widget } from "./dashboard.js";
 import { CAMPO_DE_DATA, ErroDeQuery, planejar, querySpecSchema, OPERADORES } from "./query.js";
 import { validarSpecDeAplicacoes } from "./aplicacoes.js";
+import { listarParaMensagem, valorExiste, type ValoresConhecidos } from "./valores.js";
 
 /** Teto de widgets por pergunta. Acima disto vira despejo, não resposta. */
 export const MAX_WIDGETS_POR_PERGUNTA = 6;
@@ -46,6 +47,15 @@ export interface WidgetProposto {
 export interface RespostaDoAgente {
   explicacao: string;
   widgets: Widget[];
+  /**
+   * O período que a pergunta pediu, quando pediu.
+   *
+   * Vem separado dos widgets porque no Loyola X o período é do DASHBOARD: é ele
+   * que a execução injeta em cada consulta. Sem este campo, "as vendas do dia
+   * 01/10/26" montava widgets corretos que liam o período antigo da tela — e
+   * voltavam vazios sem ninguém entender por quê.
+   */
+  periodo?: { start: string; end: string };
   /** O que foi descartado e por quê — nunca some em silêncio. */
   avisos: string[];
 }
@@ -62,7 +72,7 @@ export interface RespostaDoAgente {
  * porque são elas que distinguem CPL geral de CPL atribuído — a diferença que a
  * pessoa não sabe pedir mas espera ver respeitada.
  */
-export function catalogoEmTexto(): string {
+export function catalogoEmTexto(valores: ValoresConhecidos = {}): string {
   const linhas: string[] = [];
 
   for (const entidade of ENTIDADES) {
@@ -77,7 +87,16 @@ export function catalogoEmTexto(): string {
 
     if (dims.length) {
       linhas.push("\nDimensões (para agrupar e filtrar):");
-      for (const d of dims) linhas.push(`- \`${d.key}\` — ${d.label}. ${d.description}`);
+      for (const d of dims) {
+        // Os valores reais entram na linha da dimensão. É a diferença entre o
+        // modelo ESCOLHER o funil "bbe-pr2-out-26" e ele INVENTAR "netão" —
+        // que foi o que aconteceu com a pergunta do Alberto em 01/10/2026.
+        const existentes = valores[d.key];
+        const lista = existentes?.length
+          ? ` Valores existentes: ${existentes.slice(0, 40).join(" | ")}${existentes.length > 40 ? " | …" : ""}.`
+          : "";
+        linhas.push(`- \`${d.key}\` — ${d.label}. ${d.description}${lista}`);
+      }
     }
     if (mets.length) {
       linhas.push("\nMétricas (para medir):");
@@ -97,7 +116,10 @@ REGRAS QUE NÃO SE NEGOCIAM
 
 1. Use SOMENTE as chaves do catálogo abaixo, escritas exatamente como estão. Não invente chave, não traduza chave, não abrevie.
 2. Métrica e dimensão de um mesmo widget precisam ser da MESMA entidade. Para cruzar entidades, faça dois widgets.
-3. NÃO inclua filtro de data. O período é do dashboard e é injetado depois — se você puser data, ela será substituída.
+3. NÃO inclua filtro de data NOS WIDGETS: o período é do dashboard e é injetado depois.
+   Se a pergunta citar uma data ou um intervalo ("dia 01/10/26", "semana passada", "setembro"),
+   devolva isso em \`periodo\` (formato YYYY-MM-DD, início e fim; um dia só repete a mesma data).
+   É assim que a data pedida chega aos números — posta no filtro do widget, ela seria descartada.
 4. Escolha o tipo de gráfico pela forma da resposta:
    - \`kpi\` para um número do período (sem dimensão);
    - \`linha\` para evolução no tempo (dimensão de data);
@@ -108,6 +130,16 @@ REGRAS QUE NÃO SE NEGOCIAM
 5. Ao comparar categorias, ordene pela métrica principal e ponha um limite (10 a 30).
 6. Prefira POUCOS widgets bem escolhidos. No máximo ${MAX_WIDGETS_POR_PERGUNTA}.
 7. Títulos em português, curtos, dizendo o que o número é — não repita a pergunta.
+8. Ao filtrar, o VALOR também precisa existir. Quando a dimensão traz "Valores existentes",
+   use um deles, copiado como está — não traduza, não abrevie, não escreva o apelido que a
+   pergunta usou — mas procure o valor que CORRESPONDE ao apelido antes de desistir
+   ("workshops do netão" é o produto "Workshop Burgers Netão", não um funil chamado netão).
+   Se nada corresponder, NÃO troque por outro valor da lista só porque ele existe: monte sem
+   esse filtro e diga na explicação o que não deu. Um widget filtrado pelo produto errado é
+   pior que um widget sem filtro, porque ninguém percebe.
+   Apelido no PLURAL costuma cobrir mais de um valor: "os workshops do netão" são
+   "Workshop Burgers Netão" E "Churrasco com Netão" — nesse caso use \`$in\` com todos, não
+   escolha um.
 
 O QUE FAZER COM PEDIDO IMPOSSÍVEL
 
@@ -124,6 +156,7 @@ const OPERADOR_VALIDO = new Set<string>(OPERADORES);
 export function propostaParaWidget(
   proposta: WidgetProposto,
   ocupados: { x: number; y: number; w: number; h: number }[],
+  conhecidos: ValoresConhecidos = {},
 ): { widget: Widget } | { erro: string } {
   const tipo = TIPOS_DE_WIDGET.includes(proposta.tipo) ? proposta.tipo : "tabela";
 
@@ -132,6 +165,18 @@ export function propostaParaWidget(
     if (!campo(f.campo)) return { erro: `filtro sobre campo inexistente: ${f.campo}` };
     if (!OPERADOR_VALIDO.has(f.operador)) return { erro: `operador desconhecido: ${f.operador}` };
     const valores = f.valores ?? [];
+    // O valor é recusado como a chave sempre foi — e a mensagem leva a lista,
+    // que é o que faz a segunda tentativa acertar em vez de repetir o chute.
+    for (const v of valores) {
+      if (!valorExiste(f.campo, f.operador, v, conhecidos)) {
+        return {
+          erro:
+            `o filtro "${f.campo}" nao tem o valor "${v}". ` +
+            `Valores existentes: ${listarParaMensagem(f.campo, conhecidos)}. ` +
+            `Use um deles ou monte sem este filtro.`,
+        };
+      }
+    }
     filters[f.campo] =
       f.operador === "$in" || f.operador === "$nin" || f.operador === "$between"
         ? { operator: f.operador, value: valores }
@@ -203,6 +248,16 @@ const FERRAMENTA: Anthropic.Tool = {
         description:
           "Uma ou duas frases dizendo o que foi montado e, se for o caso, o que não foi possível.",
       },
+      periodo: {
+        type: "object",
+        description:
+          "Só quando a pergunta citar data ou intervalo. Datas em YYYY-MM-DD; para um dia só, inicio e fim iguais.",
+        properties: {
+          inicio: { type: "string" },
+          fim: { type: "string" },
+        },
+        required: ["inicio", "fim"],
+      },
       widgets: {
         type: "array",
         maxItems: MAX_WIDGETS_POR_PERGUNTA,
@@ -245,17 +300,40 @@ type ClienteMinimo = {
   };
 };
 
+/**
+ * O período proposto, só se as duas datas forem ISO de verdade e estiverem em
+ * ordem. Data torta vira `undefined`: aí vale o período do dashboard, que é o
+ * comportamento de sempre — nunca uma consulta com data inventada.
+ */
+function periodoValido(p?: { inicio?: string; fim?: string }): { start: string; end: string } | undefined {
+  const ISO = /^\d{4}-\d{2}-\d{2}$/;
+  const start = (p?.inicio ?? "").trim();
+  const end = (p?.fim ?? "").trim();
+  if (!ISO.test(start) || !ISO.test(end) || start > end) return undefined;
+  return { start, end };
+}
+
 function extrairProposta(
   mensagem: Anthropic.Message,
-): { explicacao: string; widgets: WidgetProposto[]; toolUseId: string } | null {
+): {
+  explicacao: string;
+  widgets: WidgetProposto[];
+  periodo?: { start: string; end: string };
+  toolUseId: string;
+} | null {
   for (const bloco of mensagem.content) {
     if (bloco.type === "tool_use" && bloco.name === FERRAMENTA.name) {
-      const entrada = bloco.input as { explicacao?: string; widgets?: WidgetProposto[] };
+      const entrada = bloco.input as {
+        explicacao?: string;
+        widgets?: WidgetProposto[];
+        periodo?: { inicio?: string; fim?: string };
+      };
       // O id vem junto: a correção precisa responder ESTE `tool_use` com um
       // `tool_result`, ou a API recusa a conversa inteira. Ver `pedirCorrecao`.
       return {
         explicacao: entrada.explicacao ?? "",
         widgets: entrada.widgets ?? [],
+        periodo: periodoValido(entrada.periodo),
         toolUseId: bloco.id,
       };
     }
@@ -319,6 +397,14 @@ export interface ContextoDoAgente {
   ocupados: { x: number; y: number; w: number; h: number }[];
   /** Chamado a cada passo. A rota transforma em linha NDJSON. */
   aoProgredir?: (passo: PassoDoAgente) => void;
+  /**
+   * Os valores reais das dimensões enumeráveis (ver `valores.ts`).
+   *
+   * Vazio é um estado legítimo — nada é validado e o modelo escolhe de cabeça,
+   * que é o comportamento antigo. Serve para teste e para o caso de o
+   * carregamento falhar: melhor montar como antes do que não montar.
+   */
+  valores?: ValoresConhecidos;
 }
 
 /**
@@ -405,7 +491,7 @@ export async function montarWidgets(
   pergunta: string,
   ctx: ContextoDoAgente,
 ): Promise<RespostaDoAgente> {
-  const sistema = `${INSTRUCOES}\n\n# Catálogo\n${catalogoEmTexto()}`;
+  const sistema = `${INSTRUCOES}\n\n# Catálogo\n${catalogoEmTexto(ctx.valores ?? {})}`;
   const conversa: Anthropic.MessageParam[] = [{ role: "user", content: pergunta }];
   const passo = ctx.aoProgredir ?? (() => {});
 
@@ -437,7 +523,7 @@ export async function montarWidgets(
     const ocupados = [...ctx.ocupados];
 
     for (const p of proposta.widgets.slice(0, MAX_WIDGETS_POR_PERGUNTA)) {
-      const r = propostaParaWidget(p, ocupados);
+      const r = propostaParaWidget(p, ocupados, ctx.valores ?? {});
       if ("widget" in r) {
         aceitos.push(r.widget);
         ocupados.push(r.widget.geometria);
@@ -447,7 +533,8 @@ export async function montarWidgets(
       }
     }
 
-    if (recusados.length === 0) return { explicacao, widgets: aceitos, avisos };
+    if (recusados.length === 0)
+      return { explicacao, widgets: aceitos, avisos, periodo: proposta.periodo };
 
     if (tentativa === 0) {
       passo({ tipo: "corrigindo", motivo: recusados[0] ?? "" });
@@ -458,7 +545,7 @@ export async function montarWidgets(
 
     // Segunda tentativa também falhou: entrega o que passou e diz o que caiu.
     avisos.push(...recusados);
-    return { explicacao, widgets: aceitos, avisos };
+    return { explicacao, widgets: aceitos, avisos, periodo: proposta.periodo };
   }
 
   return { explicacao, widgets: [], avisos };
