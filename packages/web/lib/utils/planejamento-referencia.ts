@@ -19,7 +19,7 @@ import type { OrganicosDoSimulador, PagosDoSimulador } from "@loyola-x/shared/sr
 import { rotuloDoTipoDeLancamento, type TipoDeLancamento } from "@loyola-x/shared/src/planejamento-lancamentos";
 
 export interface BaseDeReferencia {
-  /** Nome do funil que serve de base — aparece uma vez, no cabeçalho. */
+  /** Nome do funil que serve de base. Story 48.14: identifica o grupo dela em cada rótulo (`dg-pg04 real: …`). */
   nome: string;
   inputs: InputsPersistidos | null;
   organicos: OrganicosDoSimulador | null;
@@ -59,22 +59,10 @@ export function referenciaDaConversaoPaga(base: BaseDeReferencia | null, fonte: 
   return textoDeReferencia(base.pagos.blocos[fonte]?.conversaoMedia, "pct");
 }
 
-/**
- * `"Reembolso"` + `"4,00%"` → `"Reembolso (base: 4,00%)"`.
- *
- * O nome do lançamento fica só no cabeçalho: repeti-lo em 26 rótulos deixaria
- * a coluna ilegível, e "base" já diz de onde vem.
- *
- * Story 48.11 — com o valor REALIZADO junto:
- * `"Investimento em Anúncios (base: R$ 100.000,00 · real: R$ 126.373,06)"`.
- * Só um dos dois → só ele aparece; nenhum → rótulo limpo.
- */
-export function rotuloComReferencia(rotulo: string, referencia: string | null, realizado?: string | null): string {
-  const partes: string[] = [];
-  if (referencia !== null) partes.push(`base: ${referencia}`);
-  if (realizado !== null && realizado !== undefined) partes.push(`real: ${realizado}`);
-  return partes.length === 0 ? rotulo : `${rotulo} (${partes.join(" · ")})`;
-}
+// Story 48.14 — o rótulo deixou de ser montado aqui. `rotuloComReferencia`
+// (`"Reembolso (base: 4,00%)"`, uma base só e sem o nome dela) foi trocada por
+// `rotuloComBases` em `planejamento-bases.ts`, que recebe a LISTA de bases
+// marcadas e identifica cada grupo pelo nome do funil.
 
 // ---- Story 48.13 — base SEM Planejamento: só o realizado ----
 //
@@ -143,11 +131,23 @@ export function fraseSemBase(resposta: { tipo: TipoDeLancamento | null; incluiSe
   return "Sem histórico anterior — nenhum lançamento anterior do mesmo tipo tem o Planejamento preenchido.";
 }
 
-/** A linha ao lado do seletor, conforme a base escolhida (AC5 e PO-06). */
-export function textoDoCabecalhoDaBase(referencia: BaseDeReferencia | null): string {
-  if (!referencia) return "Escolha um lançamento anterior do mesmo tipo para ver os valores dele ao lado de cada campo.";
-  if (referencia.semSimulador) {
-    return "Esse lançamento não tem Planejamento salvo — por isso só o realizado (real:) aparece ao lado de cada campo; nada é preenchido nem salvo.";
+/**
+ * A linha ao lado do seletor, conforme as bases marcadas.
+ *
+ * Story 48.14 (AC4, PO-01) — com várias bases marcadas, o texto fala de várias
+ * e diz que cada valor vem com o nome do lançamento; continua pedindo
+ * "Escolha…" só quando NENHUMA está marcada. A frase da base sem Planejamento
+ * (48.13 AC5) saiu daqui e foi para a linha da própria base, na declaração do
+ * realizado — com duas bases, uma com e outra sem simulador, uma frase única
+ * aqui seria falsa para uma delas.
+ *
+ * DOC-001 (gate da 48.14): "ao lado dos campos que eles cobrem", não "de cada
+ * campo" — o realizado cobre 4 dos 26 campos da aba 1, a conversão por canal
+ * e os dois cartões quente/frio.
+ */
+export function textoDoCabecalhoDasBases(referencias: readonly BaseDeReferencia[]): string {
+  if (referencias.length === 0) {
+    return "Escolha um ou mais lançamentos anteriores do mesmo tipo para ver os valores deles ao lado de cada campo.";
   }
-  return "Os valores desse lançamento aparecem entre parênteses ao lado de cada campo — só como parâmetro; nada é preenchido nem salvo.";
+  return "Os valores dos lançamentos marcados aparecem entre parênteses ao lado dos campos que eles cobrem, cada um com o nome dele — só como parâmetro; nada é preenchido nem salvo.";
 }

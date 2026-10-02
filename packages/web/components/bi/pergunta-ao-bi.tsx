@@ -13,10 +13,22 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Check, Loader2, Sparkles } from "lucide-react";
+import { AlertTriangle, Check, History, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { textoDoPasso, type PassoDoAgente } from "@/lib/hooks/use-agente-de-bi";
+import type { PerguntaGuardada } from "@/lib/bi/tipos";
+
+/** "hoje", "ontem", "há 3 dias" — a idade basta para achar o que se procura. */
+function quando(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (Number.isNaN(ms)) return "";
+  const dias = Math.floor(ms / 86_400_000);
+  if (dias <= 0) return "hoje";
+  if (dias === 1) return "ontem";
+  if (dias < 30) return `há ${dias} dias`;
+  return new Date(iso).toLocaleDateString("pt-BR");
+}
 
 /** Perguntas de partida — tirar a tela em branco é metade do uso. */
 const EXEMPLOS = [
@@ -32,12 +44,15 @@ export function PerguntaAoBi({
   passos,
   explicacao,
   avisos,
+  historico = [],
 }: {
   onPerguntar: (pergunta: string) => void;
   pensando: boolean;
   passos: PassoDoAgente[];
   explicacao: string | null;
   avisos: string[];
+  /** O que já foi perguntado neste dashboard — ver `perguntasGuardadas`. */
+  historico?: PerguntaGuardada[];
 }) {
   const [texto, setTexto] = useState("");
   const fim = useRef<HTMLDivElement>(null);
@@ -90,6 +105,48 @@ export function PerguntaAoBi({
           </button>
         ))}
       </div>
+
+      {/*
+        O histórico fica ANTES do botão, junto dos exemplos: ele é a outra
+        forma de começar uma pergunta. Antes a pergunta sumia assim que a
+        resposta chegava — quem montou um widget bom na terça não tinha como
+        lembrar o que digitou, e quem pegava o dashboard depois não sabia o
+        que já havia sido tentado.
+      */}
+      {historico.length > 0 && (
+        <details className="rounded-md bg-background px-2.5 py-1.5">
+          <summary className="flex cursor-pointer select-none items-center gap-1.5 text-[11px] text-muted-foreground">
+            <History className="size-3" />
+            Já perguntado aqui ({historico.length})
+          </summary>
+          <ul className="mt-1.5 max-h-44 space-y-1 overflow-y-auto">
+            {[...historico].reverse().map((h, i) => (
+              <li key={`${h.em}-${i}`}>
+                <button
+                  type="button"
+                  disabled={pensando}
+                  onClick={() => setTexto(h.texto)}
+                  title="Usar esta pergunta de novo"
+                  className="w-full rounded px-1 py-0.5 text-left text-[11px] transition hover:bg-accent disabled:opacity-50"
+                >
+                  <span className="line-clamp-2">{h.texto}</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {quando(h.em)}
+                    {h.por ? ` · ${h.por}` : ""} ·{" "}
+                    {h.erro ? (
+                      <span className="text-amber-600 dark:text-amber-500">falhou</span>
+                    ) : h.widgets === 0 ? (
+                      "sem widget"
+                    ) : (
+                      `${h.widgets} widget${h.widgets > 1 ? "s" : ""}`
+                    )}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
 
       <Button
         size="sm"

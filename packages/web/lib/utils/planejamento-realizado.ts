@@ -23,6 +23,7 @@
 //      Google (não existe tabela; nenhum lançamento usou), custos variáveis
 //      realizados, bases de audiência
 
+import { fmtPercent } from "@/lib/utils/format-number";
 import { textoDeReferencia } from "@/lib/utils/planejamento-referencia";
 import type { CampoDosInputs } from "@/lib/utils/planejamento-inputs-form";
 import type { CanalOrganico, FontePaga } from "@loyola-x/shared/src/planejamento-cenarios";
@@ -78,6 +79,20 @@ export function etapaDeVendasPadrao(etapas: readonly EtapaDaBase[] | undefined):
   const vendas = etapasDeVendas(etapas);
   if (vendas.length === 0) return null;
   return vendas.find((e) => !/down\s*sell/i.test(e.nome)) ?? vendas[0];
+}
+
+/**
+ * Story 48.14 (AC3) — a etapa de vendas em uso numa base: a que o gestor
+ * escolheu PARA ELA, se ainda for uma etapa `sales` dessa base; senão o padrão
+ * (`etapaDeVendasPadrao`). Uma escolha que não pertence à base (id de outra,
+ * etapa que deixou de existir) nunca é usada — cai no padrão.
+ */
+export function etapaEscolhidaDaBase(
+  etapas: readonly EtapaDaBase[] | undefined,
+  escolhidaId: string | null | undefined,
+): EtapaDaBase | null {
+  const escolhida = etapasDeVendas(etapas).find((e) => e.id === escolhidaId);
+  return escolhida ?? etapaDeVendasPadrao(etapas);
 }
 
 /**
@@ -250,4 +265,84 @@ export function realizadoDaConversaoOrganica(real: RealizadoDaBase | null, canal
 export function realizadoDaConversaoPaga(real: RealizadoDaBase | null, fonte: FontePaga): string | null {
   if (!real) return null;
   return textoDeReferencia(real.conversaoPaga[fonte] ?? null, "pct");
+}
+
+/**
+ * Story 48.14 (AC5) — o investimento Meta REALIZADO de uma temperatura, em R$,
+ * para os cartões calculados "Meta · quente" e "Meta · frio".
+ *
+ * Sem conta nova: é `investimentoMeta.quente`/`.frio` da rota `/realizado`. Sem
+ * valor (→ `null`, o rótulo omite a base) quando o lançamento não gastou ou
+ * quando NENHUMA campanha traz a temperatura no nome (`pctQuente === null`):
+ * aí os dois zeros seriam ausência de classificação, não medição. O gasto
+ * `indefinido` não entra em nenhum dos dois — a declaração já diz quanto é.
+ */
+export function realizadoDoInvestimentoMeta(real: RealizadoDaBase | null, temperatura: "quente" | "frio"): string | null {
+  const inv = real?.investimentoMeta;
+  if (!inv || inv.campanhasComSpend === 0 || inv.pctQuente === null) return null;
+  return textoDeReferencia(inv[temperatura], "moeda");
+}
+
+/**
+ * Story 48.11 (AC8), movida da página na 48.14 — a procedência do `real:` de
+ * UMA base, em uma linha.
+ *
+ * Declara: a janela do gasto, quantas campanhas entraram, que o 0 % do Google
+ * é ausência de lançamento (não medição), qual etapa de vendas alimentou o
+ * ticket e a conversão, e quanto dos leads orgânicos ficou fora dos cinco
+ * canais nomeados.
+ *
+ * Falha NÃO é ausência: sem resposta (`temResposta: false`), a linha diz que
+ * não conseguiu ler, em vez de afirmar que o lançamento não tem etapa de
+ * vendas nem campanha.
+ */
+export function declaracaoDoRealizado(realizado: RealizadoDaBase, semSimulador: boolean): { falha: boolean; texto: string } {
+  if (!realizado.temResposta) {
+    // Story 48.13 — base sem Planejamento não tem valores planejados a
+    // "seguir válidos": a frase contradiria a linha ao lado.
+    const planejados = semSimulador ? "" : " Os valores planejados (base) seguem válidos.";
+    return {
+      falha: true,
+      texto: `os valores realizados desse lançamento não puderam ser lidos agora — a API pode ainda não ter essa rota.${planejados}`,
+    };
+  }
+
+  const inv = realizado.investimentoMeta;
+  const partes: string[] = [];
+
+  if (inv && inv.campanhasComSpend > 0) {
+    const janela = inv.janela.de && inv.janela.ate ? ` entre ${inv.janela.de} e ${inv.janela.ate}` : "";
+    partes.push(`investimento de ${inv.campanhasComSpend} de ${inv.campanhasVinculadas} campanhas${janela}`);
+    if (inv.indefinido > 0) {
+      partes.push(
+        `${fmtPercent((inv.indefinido / inv.total) * 100)} do gasto está em campanha sem quente/frio no nome e fica fora do "% em público quente"`,
+      );
+    }
+  } else if (inv) {
+    partes.push("nenhuma campanha com gasto registrado nesse lançamento");
+  }
+
+  if (realizado.googleCampanhasVinculadas > 0) {
+    partes.push(
+      `${realizado.googleCampanhasVinculadas} campanha(s) do Google vinculada(s) e sem insights no sistema — a divisão Meta/Google não pode ser medida`,
+    );
+  } else if (!realizado.googleTemFonte) {
+    partes.push("Google aparece como 0 % por não haver campanha do Google vinculada — não é medição");
+  }
+
+  if (realizado.etapaDeVendas) {
+    // O subtype pedido é `main_product,tmb`: o ticket médio traz o produto
+    // principal COM order bump. Dizer isso evita o gestor comparar com um
+    // ticket de produto puro e concluir que a medição está alta.
+    partes.push(`ticket médio (produto principal + order bump) e conversão vêm da etapa "${realizado.etapaDeVendas.nome}"`);
+  } else {
+    partes.push("esse lançamento não tem etapa de vendas — sem ticket médio nem conversão realizada");
+  }
+
+  const fora = realizado.foraDoMapeamento;
+  if (fora.fracao !== null && fora.leads > 0) {
+    partes.push(`${fmtPercent(fora.fracao * 100)} dos leads orgânicos ficaram fora dos cinco canais nomeados (Closer, Outros, Sem Track)`);
+  }
+
+  return { falha: false, texto: `${partes.join(" · ")}.` };
 }

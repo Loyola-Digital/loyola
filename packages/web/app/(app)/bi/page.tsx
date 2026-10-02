@@ -547,6 +547,7 @@ export default function BiPage() {
             </div>
             <PerguntaAoBi
               onPerguntar={perguntarAIa}
+              historico={dashboard?.perguntas ?? []}
               pensando={agente.pensando}
               passos={agente.passos}
               explicacao={agente.explicacao}

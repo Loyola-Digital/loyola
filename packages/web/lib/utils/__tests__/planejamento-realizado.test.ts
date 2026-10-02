@@ -14,7 +14,7 @@ import {
   type LinhaDeOrigemLida,
   type RealizadoDaApi,
 } from "@/lib/utils/planejamento-realizado";
-import { rotuloComReferencia } from "@/lib/utils/planejamento-referencia";
+import { rotuloComBases } from "@/lib/utils/planejamento-bases";
 
 /**
  * Story 48.11 — a camada B: o valor REALIZADO ao lado do planejado.
@@ -298,7 +298,7 @@ describe("AC9 — API antiga não derruba a camada A", () => {
     expect(comResposta.temResposta).toBe(true);
   });
 
-  it("sem a rota `realizado`, o `real:` some e o `base:` fica", () => {
+  it("sem a rota `realizado`, o `real:` some e o `base:` fica [48.14 inverte: o grupo leva o nome da base]", () => {
     const real = montarRealizado({
       api: null,
       etapaEscolhida: null,
@@ -308,8 +308,11 @@ describe("AC9 — API antiga não derruba a camada A", () => {
     });
     expect(realizadoDoInput(real, "investimentoAnuncios")).toBeNull();
     expect(realizadoDaConversaoOrganica(real, "whatsapp")).toBeNull();
-    expect(rotuloComReferencia("Investimento em Anúncios", "R$ 100.000,00", realizadoDoInput(real, "investimentoAnuncios")))
-      .toBe("Investimento em Anúncios (base: R$ 100.000,00)");
+    expect(
+      rotuloComBases("Investimento em Anúncios", [
+        { nome: "dg-pg02", base: "R$ 100.000,00", real: realizadoDoInput(real, "investimentoAnuncios") },
+      ]),
+    ).toBe("Investimento em Anúncios (dg-pg02 base: R$ 100.000,00)");
   });
 
   it("sem `fontesPagasPorTemperatura` no payload, as fontes pagas ficam sem `real:`", () => {
@@ -327,21 +330,27 @@ describe("AC9 — API antiga não derruba a camada A", () => {
   });
 });
 
-describe("rotuloComReferencia — as duas leituras", () => {
-  it("base e real juntos, na ordem", () => {
-    expect(rotuloComReferencia("Investimento em Anúncios", "R$ 100.000,00", "R$ 126.373,06")).toBe(
-      "Investimento em Anúncios (base: R$ 100.000,00 · real: R$ 126.373,06)",
+/**
+ * ⚠️ INVERTIDOS DE PROPÓSITO na Story 48.14 (AC2/AC8). A 48.11 afirmava
+ * `(base: X · real: Y)`; agora cada base é um grupo com o nome do funil, as
+ * duas leituras DELA separadas por espaço e os grupos separados por " · ":
+ * `(dg-pg02 base: X real: Y)`.
+ */
+describe("rotuloComBases — as duas leituras (formato invertido na 48.14)", () => {
+  it("[48.14 inverte: era `(base: X · real: Y)`] base e real juntos, na ordem, depois do nome da base", () => {
+    expect(rotuloComBases("Investimento em Anúncios", [{ nome: "dg-pg02", base: "R$ 100.000,00", real: "R$ 126.373,06" }])).toBe(
+      "Investimento em Anúncios (dg-pg02 base: R$ 100.000,00 real: R$ 126.373,06)",
     );
   });
 
-  it("só um dos dois, ou nenhum", () => {
-    expect(rotuloComReferencia("Ticket Médio", "R$ 1.200,00", null)).toBe("Ticket Médio (base: R$ 1.200,00)");
-    expect(rotuloComReferencia("Ticket Médio", null, "R$ 1.187,00")).toBe("Ticket Médio (real: R$ 1.187,00)");
-    expect(rotuloComReferencia("Ticket Médio", null, null)).toBe("Ticket Médio");
-    expect(rotuloComReferencia("Ticket Médio", null)).toBe("Ticket Médio");
+  it("[48.14 inverte: sem o nome antes] só um dos dois, ou nenhum", () => {
+    expect(rotuloComBases("Ticket Médio", [{ nome: "dg-pg02", base: "R$ 1.200,00", real: null }])).toBe("Ticket Médio (dg-pg02 base: R$ 1.200,00)");
+    expect(rotuloComBases("Ticket Médio", [{ nome: "dg-pg02", base: null, real: "R$ 1.187,00" }])).toBe("Ticket Médio (dg-pg02 real: R$ 1.187,00)");
+    expect(rotuloComBases("Ticket Médio", [{ nome: "dg-pg02", base: null, real: null }])).toBe("Ticket Médio");
+    expect(rotuloComBases("Ticket Médio", [])).toBe("Ticket Médio");
   });
 
-  it("zero é valor e aparece; ausência é `null` e não aparece", () => {
-    expect(rotuloComReferencia("Comissões", "0,00%", null)).toBe("Comissões (base: 0,00%)");
+  it("[48.14 inverte: com o nome] zero é valor e aparece; ausência é `null` e não aparece", () => {
+    expect(rotuloComBases("Comissões", [{ nome: "dg-pg02", base: "0,00%", real: null }])).toBe("Comissões (dg-pg02 base: 0,00%)");
   });
 });
