@@ -27,6 +27,15 @@ export type PassoDoAgente =
 
 type LinhaDoAgente =
   | { tipo: "passo"; passo: PassoDoAgente }
+  /**
+   * A pergunta trouxe uma data, e o servidor já trocou o período do dashboard.
+   *
+   * Chega antes dos widgets. Quem escuta precisa recalcular os widgets ANTIGOS:
+   * os novos já vêm com o período certo, os de antes ainda mostram o anterior —
+   * e dois períodos no mesmo dashboard é o tipo de número errado com cara de
+   * certo.
+   */
+  | { tipo: "periodo"; periodo: { start: string; end: string } }
   | { tipo: "widget"; widget: Widget; resultado: ResultadoDoWidget }
   | { tipo: "fim"; explicacao: string; avisos: string[] }
   | { tipo: "erro"; error: string };
@@ -61,6 +70,7 @@ export function useAgenteDeBi(projectId: string | null, dashboardId: string | nu
     async (
       pergunta: string,
       aoChegarWidget: (widget: Widget, resultado: ResultadoDoWidget) => void,
+      aoMudarPeriodo?: (periodo: { start: string; end: string }) => void,
     ) => {
       if (!projectId || !dashboardId) return;
 
@@ -102,6 +112,8 @@ export function useAgenteDeBi(projectId: string | null, dashboardId: string | nu
           (linha) => {
             if (linha.tipo === "passo") {
               setPassos((atuais) => [...atuais, linha.passo]);
+            } else if (linha.tipo === "periodo") {
+              aoMudarPeriodo?.(linha.periodo);
             } else if (linha.tipo === "widget") {
               aoChegarWidget(linha.widget, linha.resultado);
             } else if (linha.tipo === "fim") {

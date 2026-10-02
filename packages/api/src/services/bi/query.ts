@@ -699,6 +699,56 @@ export function planejarEmprestimo(spec: QuerySpec):
 }
 
 /** Executa o spec contra o banco — ou contra a planilha, no caso de aplicações. */
+/**
+ * Os valores que uma dimensão realmente tem no banco, dentro do escopo.
+ *
+ * ## Por que existe
+ *
+ * O agente escolhe CHAVES de um catálogo, mas sempre escolheu VALORES de
+ * cabeça. Pergunta real do Alberto em 01/10/2026 — "as vendas dos workshops do
+ * netão" — virou `faturamento.funil $like "netão"`, e nenhum funil do BBE se
+ * chama assim (são `bbe-pr2-out-26` e parentes). O card nasceu com R$ 0, a IA
+ * disse que tinha feito, e nada na tela explicava o zero.
+ *
+ * Com a lista na mão o modelo escolhe em vez de inventar — a mesma troca que o
+ * catálogo de chaves já fazia, aplicada ao outro lado do filtro.
+ *
+ * Devolve `null` quando a dimensão tem mais valores que o teto: listar 4 mil
+ * campanhas não cabe no prompt e não ajuda ninguém. `null` significa "não sei
+ * enumerar", e quem valida trata isso como "não valide" — nunca como "vazio".
+ */
+export async function valoresDaDimensao(
+  chave: string,
+  ctx: ContextoDaQuery,
+  teto = 60,
+): Promise<string[] | null> {
+  const def = campo(chave);
+  if (!def || def.role !== "dimension" || def.semanticType === "date") return null;
+
+  const fonte = FONTES[def.entity];
+  if (!fonte) return null; // `aplicacoes` é planilha: não tem SQL para perguntar.
+  const expressao = fonte.campos[chave];
+  if (!expressao) return null;
+
+  // `GROUP BY` em vez de `SELECT DISTINCT` porque é o que o executor sabe
+  // montar (ver o tipo `Db`) — o resultado é o mesmo.
+  // Teto + 1 para distinguir "a lista inteira" de "tem mais do que cabe".
+  const linhas = (await ctx.db
+    .select({ v: expressao })
+    .from(fonte.tabela as never)
+    .where(fonte.escopo(ctx.projectIds))
+    .groupBy(expressao)
+    .orderBy(expressao)
+    .limit(teto + 1)) as { v: unknown }[];
+
+  if (linhas.length > teto) return null;
+  const valores = linhas
+    .map((l) => (l.v == null ? "" : String(l.v).trim()))
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, "pt-BR"));
+  return valores;
+}
+
 export async function executarQuery(
   spec: QuerySpec,
   ctx: ContextoDaQuery,
