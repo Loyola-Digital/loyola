@@ -240,9 +240,21 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
           {isAdmin && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
+                {/*
+                  Sempre visível (fraquinho), não só no hover.
+
+                  Era `opacity-0 group-hover`, e aí o menu do funil — renomear,
+                  arquivar, excluir — só existia para quem passasse o mouse
+                  exatamente em cima da linha. Em tela de toque não há hover
+                  nenhum, e a queixa que chegou foi "o botão some dependendo do
+                  monitor": ninguém descobre um alvo de 24px que é invisível até
+                  ser encontrado. Medido na sidebar em produção, o botão fica em
+                  x=287 com a sidebar terminando em 320 — nunca foi corte de
+                  largura, era a opacidade.
+                */}
                 <Button
                   variant="ghost"
-                  className="h-6 w-6 p-0 opacity-0 group-hover/funnel:opacity-100 transition-opacity shrink-0"
+                  className="h-6 w-6 p-0 opacity-60 hover:opacity-100 transition-opacity shrink-0"
                 >
                   <MoreHorizontal className="h-3.5 w-3.5" />
                 </Button>
@@ -616,7 +628,7 @@ export function ProjectFolder({ project, collapsed = false, isHidden = false, on
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
-              className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+              className="h-7 w-7 p-0 opacity-60 hover:opacity-100 transition-opacity shrink-0"
             >
               <MoreHorizontal className="h-4 w-4" />
             </Button>
@@ -1252,7 +1264,7 @@ function ArchivedFunnelItem({
         <Button
           variant="ghost"
           size="icon"
-          className="h-6 w-6 p-0 opacity-0 group-hover/archived:opacity-100 transition-opacity shrink-0"
+          className="h-6 w-6 p-0 opacity-60 hover:opacity-100 transition-opacity shrink-0"
           disabled={unarchiveFunnel.isPending}
           aria-label="Desarquivar funil"
           onClick={() => {
