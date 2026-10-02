@@ -2,128 +2,105 @@ schema: 1
 storyId: '49.4'
 story: '49.4'
 story_title: 'Motor II do Debriefing — público (qualificação por origem, faixa × criativo, tipo de criativo, cross-launch)'
-verdict: CONCERNS
-gate: CONCERNS
-status_reason: 'O código atende o AC1–AC12 e as decisões do dono (3, 4, 8, 9, 11, R2-1, R2-5); 62/62 testes, `tsc` e `eslint` limpos, as 22 mutações do @dev morrem também na rodada do QA. A conferência em produção (só leitura) reproduz os números do @dev, agora com as datas REAIS do PG02 (janela 2A até 13/06, com o downsell): 1.605 respondentes, 1.807/1.806 compradores de captação (= 49.3), PG04 faixa D 117 e 13 sem faixa; payload sem e-mail e sem telefone (varredura por valor, não só por "@"), determinístico. O que segura o PASS é TEST-001 (medium): 7 de 18 mutações próprias sobrevivem, e três delas cortam um FIO que um AC ou uma decisão fixa — o `sellerName` que vai ao classificador (caso Netão, R2-5), o casamento do principal pelo telefone (AC7) e a dedup que atravessa as pesquisas da etapa (é exatamente o caso da pesquisa "Alunos", pergunta aberta ao dono). São três testes curtos. Há duas pendências do dono e uma ratificação do @po, que não bloqueiam o código.'
+verdict: PASS
+gate: PASS
+status_reason: 'Re-gate da iteração 1 (c1ebeb18 + merge d2e49400). Fechados: TEST-001 (medium), TEST-002 e REL-001 (low). O merge da 49.3 iteração 2 está adaptado: a aba ligada a duas etapas é lida uma vez, e a UTM em array é desembrulhada antes do classificador e no nome do criativo. 72/72 na story, regressão 890/890, tsc e eslint limpos. Das 28 mutações do QA, 23 morrem; as 18 do gate anterior morrem todas. O PG02 em produção (só leitura, COM o downsell) reproduz o relato do @dev: 1.807/1.806 compradores com as chaves iguais às da 49.3, 1.605 respondentes, A97 B264 C463 D781, IA × Humano 15,3% × 0%. O downsell da 49.3 fica em R$ 20.714,40. Sem `pesquisasExcluidas`, a saída é idêntica à de `[]` (entrada, payload e diagnóstico). Não resta medium nem high no código. RESSALVA: o merge aguarda a decisão do dono sobre a "Pesquisa-Captação - Alunos", que muda o número da qualificação (22,49% × 13,92%).'
 reviewer: 'Quinn'
-updated: '2026-10-02T00:45:00-03:00'
+updated: '2026-10-02T01:30:00-03:00'
 branch: 'feat/49.4-debriefing-motor-publico'
-commit_reviewed: '74af63a5'
-base: 'empilhada em origin/feat/49.3-debriefing-motor-dinheiro-tempo (b5ad6c2d, merge-base); o retrabalho 974839a8 da 49.3 já está dentro'
-qa_loop: { iteration: 0, verdict: 'REJECT leve — TEST-001 pede uma iteração curta (3 testes de fio)' }
+commit_reviewed: 'd2e49400'
+base: 'empilhada em origin/feat/49.3-debriefing-motor-dinheiro-tempo (6aa20e4f, re-gate PASS da 49.3 iteração 2)'
+qa_loop: { iteration: 1, verdict: 'APPROVE — merge condicionado à decisão do dono DEC-OWNER-1' }
+gate_anterior: { commit: '7850d9f3', verdict: CONCERNS, motivo: 'TEST-001 (medium): três fios sem teste' }
 
 checks:
-  1_requirements: 'PASS — AC1–AC12 atendidos (rastreio abaixo). Desvio declarado no AC11: conta do Ads Manager cai para a única conta ativa do projeto (0/19 funis têm `meta_account_id`) — ratificação do @po.'
-  2_tests: 'CONCERNS — 62/62 nas 2 suítes da story; regressão `debriefing-*`, `survey*`, `launch-report-*`, `classificador*`, `dedup*`: 23 arquivos, 860/860 (uma rodada com load average 13 teve timeout de `beforeAll` do PGlite nas duas suítes de loader — REL-001). Mutações: 22/22 do @dev mortas; 11/18 próprias mortas — TEST-001.'
-  3_lint_typecheck: 'PASS — `tsc --noEmit` da API (binário direto) exit 0; `eslint` nos 5 arquivos exit 0.'
-  4_security_pii: 'PASS — PG02 em produção: varredura de TODAS as folhas string do payload contra os e-mails e os 8 últimos dígitos dos telefones da própria entrada: 0 ocorrências; 0 "@"; chaves de comprador `x:` + sha256 (66 caracteres); `tuplasClassificadas` sem `sellerName` preenchido no DG (0 distintos). O loader não seleciona nome do cliente de `manual_sales`.'
-  5_performance: 'PASS — sem chamada à Meta e sem fan-out por criativo (nenhum import de cliente Meta); leitura de planilha memoizada (o loader da 49.3 recebe o mesmo leitor); ad-level e nomes de anúncio em 2 consultas com `inArray`.'
-  6_regression: 'PASS — a única linha fora de arquivo novo é `export` em `resolveColumnIndexes` (diff de 1 linha); `computeSurveyForStage` inalterado, com snapshot gravado antes do export. Nenhum número do Resumão muda.'
-  7_docs: 'PASS — Dev Agent Record com as AUTO-DECISIONs, File List e Change Log completos. Uma correção de número para a pergunta 1 ao dono (abaixo: sem a "Alunos" o Loyola dá 13,92%, não 13,8%).'
-  8_api_contract: 'N/A — sem rota, sem migration, sem bump de `API_CONTRACT_VERSION` (AC12c).'
+  1_requirements: 'PASS. AC1–AC12 seguem atendidos. Desvio declarado no AC11: a conta do Ads Manager cai para a única conta ativa do projeto (falta a ratificação do @po).'
+  2_tests: 'PASS. 72/72 nas 2 suítes (engine 50, loader 22). Regressão `debriefing-*`/`survey*`/`launch-report-*`/`classificador*`/`dedup*`: 22 arquivos, 890/890. Suíte inteira da API: 3.995/4.005; as 10 falhas são as pré-existentes, em 5 arquivos fora da story (funnel-stages-lead-inputs, instagram-routes, instagram, projects, schema). Mutações do QA: 23/28 mortas. Os 5 sobreviventes estão em TEST-003 (low) e não cortam um fio fixado por AC.'
+  3_lint_typecheck: 'PASS. `tsc --noEmit` da API (binário direto) com exit 0; `eslint` nos 5 arquivos com exit 0.'
+  4_security_pii: 'PASS. PG02 em produção: 0 "@" no payload, e o JSON sai igual nas duas execuções.'
+  5_performance: 'PASS. Leitura memoizada: cada aba é lida 1× no Google, inclusive a aba do downsell ligada a duas etapas. Sem Meta e sem fan-out.'
+  6_regression: 'PASS. O diff fora de arquivo novo segue sendo só o `export` de `resolveColumnIndexes`. O parâmetro novo é opcional e, ausente, não muda a saída.'
+  7_docs: 'PASS. O Dev Agent Record traz a seção do QA fix 1, o File List e o Change Log atualizados.'
+  8_api_contract: 'N/A. Sem rota, sem migration, sem bump.'
 
-rastreio_ac:
-  AC1: 'PASS — determinismo provado em produção (2 execuções, JSON idêntico); `razao` devolve null + motivo com denominador 0; entrada congelada no teste.'
-  AC2: 'PASS — identidade `linhasLidas − vazias − duplicadasRemovidas = respondentes` no PG02: 1.669 − 0 − 64 = 1.605; "mais recente" por dia e depois posição (mutação M02 do @dev morre).'
-  AC3: 'PASS — gate por `perguntasConfirmadas[stage]`; `faixa: null` explícito vira `aplicavel = false`; série histórica no PG04 (comparação PG02): faixa/renda/profissão = true.'
-  AC4: 'PASS no código — origem só por `classificador.classificar` injetado (o mesmo `ClassificadorInjetado` do loader da 49.3: `CLASSIFICADOR_VERSAO = "49.2-v2"` + `montarConfigClassificador`); `SEGMENTO_DE_QUALIFICACAO[canal]`; sem `PAID_*` (teste de superfície). PG02: segmentos 308/246/21/699/0/331 = 1.605; fechamento 40/1.565 = 1.605. Ressalva: o fio `sellerName` não tem teste (TEST-001).'
-  AC5: 'PASS — PG02 distribuição A97 B264 C463 D781; cobertura 1.212 ÷ 1.807 = 67,07% sobre as MESMAS chaves `compradoresCaptacao` da 49.3 (1.807/1.806 nos dois motores). PG04: semFaixa 13 mantido.'
-  AC6: 'PASS — taxa de resposta com os dois números na memória.'
-  AC7: 'PASS — denominador = compradores de captação (ingresso ∪ combo) do recorte. Ressalva de contrato: CONTRACT-001. O telefone no casamento do principal não tem teste (TEST-001).'
-  AC8: 'PASS — só `^\d{10,}$`; `semCriativo` 1.068 = 413 vazio + 655 rótulo/macro no PG02; nome cache > utm_term > Ad ID; proporção; 40/40 criativos com link (conta do projeto).'
-  AC9: 'PASS — IA × Humano PG02: 15,3% × 0,0% (skill 15,5% × 0%); `SEM_AD_LEVEL` no PG02; PG04 com 1.524 linhas de ad-level; `COPY_NAO_PAREADA` (mutação própria QA-M16 morre).'
-  AC10: 'PASS — e-mail ∪ telefone; `tipo` da base declarado; PG04: leads+compradores, retorno 172 ÷ 3.120 = 5,51%, já na base 182 ÷ 1.067 = 17,06%. A base de "leads" do PG02 inclui a planilha de venda cadastrada como `leads` (achado do QA na 49.3) — a 49.5 classifica.'
-  AC11: 'PASS — DB-first; `DADO_INDISPONIVEL` para falha de leitura (teste); conta pelo funil, senão a única ativa do projeto (desvio para o @po).'
-  AC12: 'PASS — tsc verde; diff de 1 linha em `survey-aggregation.ts`; check 8 N/A.'
+verificacao_itens_do_gate_anterior:
+  TEST-001: 'FECHADO. (a) QA-M15 sellerName, (b) QA-M1 principal pelo telefone, (c) QA-M12 dedup entre as pesquisas: as três mutações agora morrem.'
+  TEST-002: 'FECHADO. QA-M5, QA-M8, QA-M14 e QA-M17 morrem.'
+  REL-001: 'FECHADO. `PGLITE_BEFORE_ALL_TIMEOUT_MS = 60_000` no `beforeAll` (loader.test.ts:433/449).'
+  merge_49_3_it2: 'OK. O loader percorre só `mt.planilhas`. A mutação que tira esse filtro (QA-N8b) morre. O `utmLimpa` da 49.4 é idêntico ao da 49.3: os quatro campos passam por `desembrulharUtm` e o `campaignName` é só aparado.'
+  pesquisasExcluidas: 'OK. Em produção, com o downsell, ausente e `[]` dão a mesma entrada, o mesmo payload e o mesmo diagnóstico (`pesquisasExcluidas: []`). Com o id da "Alunos", a carga dá exatamente o "sem Alunos" que o QA mediu no gate anterior: 1.272 respondentes e 13,92%, com os compradores inalterados.'
 
 verificacao_producao:
-  ambiente: 'banco de produção com `default_transaction_read_only = on`; Google só leitura; loader + motor da branch (74af63a5); script do QA em scratchpad/qa494/conf.mts e pii.mts'
-  config_usada: 'DG; PG02 com as datas REAIS do perfil §1b (16/04, abertura 09/05, fim 27/05, downsell 03/06 → 13/06 — o @dev rodou sem o downsell, o que não mudou nenhum número); PG04 09/07, 01/08, 15/08, comparação PG02; `dimensaoDeCriativo = ia-humano`; perguntas confirmadas = faixa + as chaves reais da pesquisa.'
-  pg02: 'pesquisa 1.669 → 1.605 (−64); A+B 361 / 1.605 = 22,49%; D 781; compradores de captação 1.807/1.806 (= 49.3); cobertura e taxa de resposta 67,07%; casamento 1.260 e-mail / 35 telefone / 310 sem; IA 15,3% (366 resp.) · Humano 0,0% (59) · card 16,1% (112)'
-  pg04: 'pesquisa 699 → 604 (−95); A+B 246 / 604 = 40,73%; D 117; 13 sem faixa; compradores 1.067/1.064; cobertura 52,20%; taxa 53,23%'
-  alunos_pg02: 'As duas pesquisas da Captação Paga: "Pesquisa-Captação" (1.281 linhas → 1.272 e-mails) e "Pesquisa-Captação - Alunos" (388 → 356). 23 e-mails estão nas duas (a dedup atravessa as planilhas: 1.272 + 356 − 23 = 1.605). SEM a "Alunos": 1.272 respondentes, A+B 177 / 1.272 = 13,92% (skill 176 / 13,8%), D 744 (skill 745), cobertura 66,80%, IA 15,2% · Humano 0%. Só a "Alunos": 356 respondentes, A+B 52,25%, e só 9 deles são compradores de captação (0,50% dos 1.807). Ou seja: a "Alunos" quase não toca a cobertura e a taxa de resposta, mas leva o A+B de 13,9% para 22,5% e infla o Orgânico.'
+  ambiente: 'banco de produção com `default_transaction_read_only = on`; Google só leitura; loader + motor de d2e49400; scripts scratchpad/qa494/conf-it1.mts, conf-n9.mts e conf-n9b.mts'
+  config_usada: 'DG-PG02, datas do perfil §1b (16/04, 09/05, 27/05, downsell 03/06 → 13/06); etapas: captação, principal, leads-downsell e vendas-downsell; perguntas faixa, renda_mensal, funcionarios e profissao; ia-humano'
+  fontesDuplicadas: 'n8n-kiwify-downsell: 2 vínculos, 83 linhas não relidas; leitura por aba = 1'
+  compradores: '1.807 / 1.806, chaves idênticas às da 49.3; downsell da 49.3: 34 vendas e R$ 20.714,40'
+  com_alunos: 'pesquisa 1.669 → 1.605 (64 dups); A97 B264 C463 D781; A+B 361 / 1.605 = 22,49%; cobertura e taxa 67,07%; casamento 1.260/35/310; segmentos 308/246/21/699/0/331; fechamento 40/1.565; IA 15,3% (366) · Humano 0,0% (59) · card 16,1% (112); Σ comprouPrincipal por segmento 23'
+  sem_alunos: '1.281 → 1.272; A45 B132 C351 D744; A+B 177 / 1.272 = 13,92%; cobertura 66,80%; casamento 1.221/33/18; segmentos 306/247/21/667/0/31; fechamento 24/1.248; IA 15,2% · Humano 0,0%'
 
 mutacoes_qa:
-  total: 18
-  mortas: 11
-  lista:
-    - 'QA-M1 principal casado só por e-mail (sem o telefone, AC7) — SOBREVIVEU → TEST-001'
-    - 'QA-M2 cobertura conta respondente sem faixa A→D — MORTA'
-    - 'QA-M3 comprador → respondente sem fallback por telefone — MORTA'
-    - 'QA-M4 criativos por n crescente — MORTA'
-    - 'QA-M5 link com o Ad ID de MENOR volume — SOBREVIVEU (o teste "maior volume" usa grupo de 1 Ad ID) → TEST-002'
-    - 'QA-M6 jaEmBaseAnterior.principal ÷ compradores de captação — MORTA'
-    - 'QA-M7 retornoDaBase conta o principal — MORTA'
-    - 'QA-M8 venda representativa prefere o principal à captação — SOBREVIVEU → TEST-002'
-    - 'QA-M9 ad-level sem o corte da janela — MORTA'
-    - 'QA-M10 data da pesquisa ignora `timestamp` do mapping — MORTA'
-    - 'QA-M11 sem a linha `semResposta` — MORTA'
-    - 'QA-M12 dedup por e-mail restrita a cada planilha (não atravessa a etapa) — SOBREVIVEU → TEST-001'
-    - 'QA-M13 conversão por faixa sem recortar a faixa — MORTA'
-    - 'QA-M14 pesquisa de etapa FORA da config entra (o teste só cobre a pesquisa sem etapa) — SOBREVIVEU → TEST-002'
-    - 'QA-M15 `sellerName: null` no call site do classificador — SOBREVIVEU → TEST-001'
-    - 'QA-M16 ressalva COPY_NAO_PAREADA some — MORTA'
-    - 'QA-M17 grupo de criativo com tipos distintos vira o primeiro tipo — SOBREVIVEU → TEST-002'
-    - 'QA-M18 série histórica sempre true — MORTA'
-  mutacoes_do_dev_rodadas_pelo_qa: '22/22 mortas (scratchpad/mutacoes-49-4.py, árvore limpa depois)'
+  total: 28
+  mortas: 23
+  rodada_do_gate_anterior: '18/18 mortas (QA-M1…M18)'
+  novas:
+    - 'QA-N1 utmLimpa: medium sem desembrulhar — SOBREVIVEU → TEST-003'
+    - 'QA-N2 utmLimpa: term sem desembrulhar — MORTA'
+    - 'QA-N3 utmLimpa: campaign sem desembrulhar — SOBREVIVEU → TEST-003'
+    - 'QA-N4 utmLimpa: source sem desembrulhar — MORTA'
+    - 'QA-N5 pesquisa excluída é LIDA antes de ser descartada — SOBREVIVEU → TEST-003'
+    - 'QA-N6 pesquisa excluída registrada como fora da config — MORTA'
+    - 'QA-N7 fonte do Motor I fora das abas some do diagnóstico de utm_content — MORTA'
+    - 'QA-N8 vínculo descartado relido depois do 1º — SOBREVIVEU (quase equivalente: as chaves de utm_content são por planilhaId, que nenhuma venda do Motor I referencia; muda no máximo o diagnóstico). A variante QA-N8b, sem o filtro, MORRE'
+    - 'QA-N9 ordem das pesquisas no loader (planilha decrescente) — SOBREVIVEU → DATA-002'
+    - 'QA-N10 pesquisasExcluidas só com >1 id — MORTA'
+  arvore: 'limpa depois de cada rodada (`git status` vazio)'
 
 issues:
-  - id: TEST-001
-    severity: medium
+  - id: TEST-003
+    severity: low
     category: tests
-    description: 'Três fios fixados por AC ou decisão não têm teste — a mutação que corta o ARGUMENTO no call site passa verde: (a) QA-M15, `sellerName` da venda casada não chega a `classificar` — é o caso Netão da R2-5 (só `sellerName` → `Sem track` + fechamento `closer`); o helper do teste aceita `sellerName`, mas nenhum caso o preenche; (b) QA-M1, `c.principal` só por e-mail — o AC7 manda casar e-mail → telefone; (c) QA-M12, a dedup por e-mail que atravessa as planilhas da etapa (AUTO-DECISION do @dev) — no PG02 são 23 e-mails nas duas pesquisas e é o cenário da pergunta 1 ao dono.'
-    recommendation: 'Três casos no `debriefing-audience-engine.test.ts`: venda casada só com `sellerName` (closerPorSellerName = true) → segmento `Sem track` + fechamento `closer`; comprador de captação cujo principal só casa pelo telefone → `comprouPrincipal` 1; mesmo e-mail em duas `PesquisaInput` da etapa → 1 respondente, a mais recente.'
+    description: 'Sobreviventes nos fios novos. QA-N1 e QA-N3: o teste de UTM em array cobre `source` e `term`, mas não `medium` (é dele que sai o closer `x1`) nem `campaign`. QA-N5: o teste de `pesquisasExcluidas` zera `leituras`, mas não afirma que a pesquisa excluída deixou de ser lida. A doc diz "não é lida"; se ela fosse lida e falhasse, uma pesquisa excluída de propósito derrubaria a carga com DADO_INDISPONIVEL.'
+    recommendation: 'Mais um caso no teste de UTM em array, com `{"x1","x1"}` no medium (deve sair fechamento closer) e array no campaign. No teste DEC-OWNER-1, `expect(leituras).not.toContain(<aba da pesquisa>)`.'
     owner: '@dev'
     status: open
 
-  - id: TEST-002
+  - id: DATA-002
     severity: low
-    category: tests
-    description: 'Sobreviventes sem impacto medido: QA-M5 (Ad ID de maior volume no link — o teste com esse nome não tem grupo de 2 IDs), QA-M8 (prioridade da venda representativa: captação antes do principal), QA-M14 (pesquisa de etapa fora da config), QA-M17 (grupo com tipos distintos).'
-    recommendation: 'Casos de 1 linha cada quando a iteração de TEST-001 abrir o arquivo.'
-    owner: '@dev'
-    status: open
-
-  - id: REL-001
-    severity: low
-    category: reliability/tests
-    description: 'Com load average 13 (outro @dev na máquina), as duas suítes de loader sobre PGlite (49.4 e 49.3) falharam por `Hook timed out in 10000ms` no `beforeAll`; passam na rodada seguinte e isoladas. O timeout é o default do vitest.'
-    recommendation: 'Timeout explícito no `beforeAll` do PGlite (ex.: 60 s) nas duas suítes.'
-    owner: '@dev'
+    category: data/definition
+    description: 'No PG02, nenhuma das duas pesquisas da Captação Paga tem data de resposta legível (0/1.281 e 0/388). Para os 23 e-mails presentes nas duas, a "mais recente" (decisão 8) cai na posição. Entre planilhas diferentes, essa posição é a ordem do loader (stageId, spreadsheetId, sheetName, id), ou seja, a ordem ALFABÉTICA do nome da aba, e não a ordem de chegada. Hoje a "Alunos" vence os 23. Com a ordem invertida (QA-N9, simulado sobre a entrada de produção), A+B cai de 361 para 352 (22,49% → 21,93%), D sobe de 781 para 789 e os segmentos mudam em 1–2. A regra está documentada no Dev Agent Record e o resultado é determinístico; o problema é que ela é arbitrária entre planilhas. Só pesa se a "Alunos" ficar na qualificação.'
+    recommendation: 'Junto com a DEC-OWNER-1: se a "Alunos" ficar, o dono (via @po) define qual pesquisa vence quando nenhuma das duas tem data. Mapear a coluna de data das pesquisas do PG02 também resolve. Se ela sair, o caso some no PG02.'
+    owner: 'dono via @po'
     status: open
 
   - id: CONTRACT-001
     severity: low
     category: contract
-    description: 'AC7 pede a "mesma definição" de `conversaoIngressoPrincipal` da 49.3. A 49.3 divide VENDAS do principal (71 no PG02) por compradores de captação; a 49.4, por recorte, conta PESSOAS (comprador de captação do recorte com venda do principal) — e só os que responderam a pesquisa entram num recorte. No PG02 a Σ dos numeradores por faixa e por segmento é 23. A memória de cada linha declara a definição, então não é erro, mas a 49.5 não pode esperar que os recortes fechem com o headline da 49.3.'
-    recommendation: '@po registrar na 49.5 (F3/F6) que Σ recortes ≠ headline por definição (pessoa × venda, e só respondentes).'
+    description: 'Mantido como NOTA PARA A 49.5. Os recortes de conversão por faixa e por segmento contam PESSOAS, e só entre os compradores de captação que RESPONDERAM a pesquisa. O headline da 49.3 conta VENDAS do principal sobre todos os compradores de captação. No PG02 a soma dos recortes é 23, contra 71 vendas na 49.3. A memória declara a definição, então não é erro.'
+    recommendation: '@po registrar na 49.5 (F3/F6) que Σ recortes ≠ headline por definição (pessoa × venda e só respondentes). A F3 não deve comparar esses números.'
     owner: '@po (49.5)'
     status: open
 
 pendencias_do_dono:
   - id: DEC-OWNER-1
     pergunta: 'A "Pesquisa-Captação - Alunos" do PG02 entra na qualificação do público?'
-    com: '1.605 respondentes; A+B 361 / 1.605 = 22,49%; D 781; cobertura 67,07%'
-    sem: '1.272 respondentes; A+B 177 / 1.272 = 13,92% (a skill dá 176 / 13,8%); D 744; cobertura 66,80%'
-    nota: 'A "Alunos" tem 356 respondentes, A+B 52,25%, e só 9 são compradores de captação. O QA não decide.'
+    com: '1.605 respondentes; A+B 22,49%; D 781; cobertura 67,07%'
+    sem: '1.272 respondentes; A+B 177 / 1.272 = 13,92% (skill 176 / 13,8%); D 744; cobertura 66,80%'
+    nota: 'O QA não decide. Já existe o mecanismo `pesquisasExcluidas`; se a decisão for excluir, falta o campo na config da 49.1, repassado pela composição da 49.5. BLOQUEIA O MERGE (ressalva do PASS).'
   - id: DEC-OWNER-2
-    pergunta: '"Série histórica" é só o lançamento de comparação (como está), ou a config precisa de uma lista de lançamentos (o perfil DG §7 fala nos três)?'
+    pergunta: '"Série histórica" basta com o lançamento de comparação, ou a config precisa de uma lista de lançamentos (perfil DG §7: três)?'
 
 pendencias_po:
   - id: PO-RATIFY-1
-    item: 'Fallback da conta do Ads Manager: `funnels.metaAccountId` → a ÚNICA conta ativa de `meta_ads_account_projects`; duas ou mais → `null` + `contaDeAnuncios: "ambigua"`. O texto do AC11 cita só `funnels.metaAccountId`; em produção 0/19 funis têm conta, então sem o fallback todo link sairia `null`. No DG a conta resolvida é a do link da skill.'
-
-dependencias:
-  - 'REL-001 da 49.3 (aba ligada a duas etapas lida 2×) é herdada: a 49.4 consome as vendas do loader da 49.3. Quando a 49.3 corrigir, o diferencial `compradoresCaptacao` desta story acusa qualquer divergência.'
+    item: 'Fallback da conta do Ads Manager: `funnels.metaAccountId`, depois a ÚNICA conta ativa do projeto, e `null` + `ambigua` quando há mais de uma. Hoje 0/19 funis têm conta.'
 
 top_issues:
-  - id: TEST-001
+  - id: DEC-OWNER-1
     severity: medium
-    finding: 'Três fios sem teste: `sellerName` → classificador (R2-5), principal pelo telefone (AC7), dedup entre as pesquisas da etapa (caso "Alunos").'
-    suggested_action: '@dev: 3 testes curtos.'
-  - id: REL-001
+    finding: 'O número da qualificação do PG02 depende da decisão do dono sobre a pesquisa "Alunos" (22,49% × 13,92%). Não é defeito de código.'
+    suggested_action: 'Merge só depois da decisão.'
+  - id: DATA-002
     severity: low
-    finding: '`beforeAll` do PGlite estoura 10 s sob carga.'
-    suggested_action: '@dev: timeout explícito.'
+    finding: 'Sem data nas pesquisas, a vencedora entre duas planilhas é a da ordem alfabética da aba.'
+    suggested_action: 'Decidir junto com a DEC-OWNER-1.'
 
 waiver: { active: false }
