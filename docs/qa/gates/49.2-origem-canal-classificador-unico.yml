@@ -1,0 +1,64 @@
+schema: 1
+story: '49.2'
+story_title: 'Classificador único de origem/canal em `shared` (função pura)'
+gate: PASS
+status_reason: 'Re-review R4 (49.2-v2, commit 472ccbaf). As três pendências do dono que seguravam o CONCERNS foram decididas e implementadas fielmente. R4-11: `facebook`/`google`/`google-ads`, casados pelo valor inteiro do `utm_source`, entram na regra 3 → `Pago N/D`, depois da temperatura e antes do Instagram. R4-12: `ConfigClassificador.ferramentasDeAtendimento` (só da config), e ferramenta + medium de closer na MESMA UTM → `Aquisição não rastreada (só closer)`. R4-13: substring mantida. O contrato bate com a 49.1 (`ferramentasDeAtendimento: string[]` obrigatório em `DebriefingConfigLancamento`, normalizado, `[]` = "nenhuma", nulo bloqueia o gate). API 179/179, web 2/2, tsc/ESLint limpos. 9 mutações próprias nas regras novas: 8 mortas e 1 equivalente (provado). Restam só lows, nenhum bloqueante.'
+reviewer: 'Quinn'
+updated: '2026-10-01T22:10:00Z'
+branch: 'feat/49.2-classificador-unico'
+commits: ['808868d1', '472ccbaf']
+
+top_issues:
+  - id: 'QA-492-01'
+    severity: resolved
+    finding: 'RESOLVIDO pela R4-12 (dono, 2026-10-01). `letalk`/`chatwoot` + `x1`/`comercial` na mesma UTM agora apaga a ferramenta da aquisição → regra 8, fechamento closer por `medium`. Testes nomeados FZ-L1 (venda `letalk + x1`, lead sem UTM) e FZ-L2 (`chatwoot + comercial` no lead e na venda). Mais três provas: com a config vazia, cai em Outros orgânicos; ferramenta sozinha segue UTM comum + sem-closer; o lead com a combinação não bloqueia o fallback para a venda. Impacto esperado (medição do gate anterior): os 72 compradores do FZ-L1 sem UTM de aquisição no lead saem de Outros orgânicos para o balde só-closer.'
+    suggested_owner: '—'
+    refs: ['packages/shared/src/classificador-de-origem.ts:259-272']
+  - id: 'QA-492-02'
+    severity: resolved
+    finding: 'RESOLVIDO pela R4-11. `SOURCES_PAGOS` = {facebook, google, google-ads}: são os itens de `PAID_UTM_SOURCES` (`lead-origin.ts:11`) que a skill não lista (`meta`/`meta-ads`/`fb` já casam pelo token `meta`/`fb`). Casam pelo valor inteiro, depois do trim+lowercase. Os 7 leads `google-ads` do BBE (Netão) passam a pago.'
+    suggested_owner: '—'
+    refs: ['packages/shared/src/classificador-de-origem.ts:185-192', 'packages/shared/src/classificador-de-origem.ts:376']
+  - id: 'QA-492-03'
+    severity: resolved
+    finding: 'RESOLVIDO pela R4-13: substring mantida, como o QA recomendava pelos dados (0 divergência em 23.749 `utm_term`; 15 acertos em 1.265 `campaignName`). O diferencial com `temperaturaDoNome`/`classifyTemperatura` continua travando.'
+    suggested_owner: '—'
+    refs: []
+  - id: 'QA-492-04'
+    severity: low
+    finding: 'Mantido. O `next build` verde não exercita o módulo: nenhum arquivo de produção do web o importa ainda. O risco é baixo (zero imports, travado por teste; outros módulos folha já são importados por valor via subpath).'
+    suggested_owner: '@dev da story que primeiro importar no web'
+    refs: ['packages/web/next.config.*:13']
+  - id: 'QA-492-05'
+    severity: low
+    finding: 'Documentação defasada no Dev Agent Record (round 1), sem nota de que foi superada. (a) `[AUTO-DECISION]` da linha 191 ainda diz que `chatwoot + comercial` = Outros orgânicos + closer, o oposto da R4-12. (b) A linha 45 (Decisões de escopo) diz "A 49.1 ainda NÃO tem o campo", mas a 49.1 já expõe `ferramentasDeAtendimento` em 5f70cbc0. O código e os testes estão certos; só o texto engana quem ler de cima para baixo.'
+    suggested_owner: '@dev (marcar como superado) ou @po'
+    refs: ['docs/stories/49.2.origem-canal-classificador-unico.md:45', 'docs/stories/49.2.origem-canal-classificador-unico.md:191']
+  - id: 'QA-492-06'
+    severity: low
+    finding: 'Residual da AUTO-DECISION "combinação só na mesma UTM": lead com `source = chatwoot` (sem medium) e venda com `x1` dá aquisição Outros orgânicos + closer, e não só-closer. A leitura é coerente com o texto da R4-12 ("ferramenta sozinha segue UTM comum") e está travada por teste. Mas a exposição real (quantos compradores do FZ têm ferramenta no lead e closer só na venda) NÃO foi medida nesta rodada: a leitura dos snapshots foi negada por permissão (PII). Conferir na 49.5, contra os dados do FZ, antes de fixar números.'
+    suggested_owner: '@qa na 49.5'
+    refs: ['packages/api/src/__tests__/classificador-de-origem.test.ts (R4-12, "a combinação vale DENTRO de uma UTM")']
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Re-review R4 (472ccbaf): o diff de código é de 43 linhas em `classificador-de-origem.ts`. R4-11: `SOURCES_PAGOS.includes(utm.source)` em OR com o token pago, na posição da regra 3 (depois das regras 1–2 de temperatura, antes do Instagram), sobre o `source` já normalizado e sem o campo de closer. R4-12: em `lerUtm`, `ferramentaDeCloser = closerPorMedium && ferramentas.has(source)`, por UTM, apaga só o `source` da aquisição. O fechamento continua vindo do `medium` (a ferramenta nunca marca closer sozinha). `campaign`/`term` sobrevivem, então ferramenta + closer + campanha Meta = Pago N/D. Ferramentas montadas por `conjuntoNormalizado` (trim + lowercase, ausente/malformado = vazio, nunca lança). Nenhuma ferramenta no código (o teste do AC1 proíbe `"letalk"`/`"chatwoot"`). Base (round 1) mantida: módulo folha, função pura, eixos nunca somados.'
+  contract_49_1: 'Conferido em `origin/feat/49.1-debriefing-config-gate` 5f70cbc0, `services/debriefing-config.ts`. `DebriefingConfigLancamento.ferramentasDeAtendimento: string[]`, com a mesma semântica ("o classificador as lê junto do medium de closer"). Normalizado por `normalizarCloserMediums` (trim + lowercase + dedup). `[]` = resposta explícita "nenhuma"; `null` na forma crua entra em `camposFaltando`, então o gate bloqueia e o classificador nunca recebe nulo em produção (e, se receber, trata como vazio). Também conta como premissa (`premissaMudou`). O tipo da 49.2 é obrigatório e bate. `closerNomes` não está na 49.1 por desenho (vem de `seller_aliases` no loader da 49.3).'
+  unit_tests: 'API 179/179 (159 + 20: 9 em "R4-11", 8 em "R4-12", ajustes em AC1/AC4/AC8). Web 2/2. Diferencial do AC8 recontado: 42 casos = 20 iguais + 22 divergentes, 10 motivos (novo `pagoSemPlataforma`; `facebook` migrou para coincidência). Mutações PRÓPRIAS do QA nas regras novas, com o dist do shared reconstruído a cada uma: Q1 SOURCES_PAGOS por substring → 1 falha; Q2 SOURCES_PAGOS depois do Instagram → 1; Q3 SOURCES_PAGOS antes da temperatura → 1; Q4 balde errado (Pago Frio) → 6; Q5 ferramenta casando medium de closer de qualquer UTM (cruzada) → 2; Q6 ferramenta + closer apagando também o campaign → 1; Q8 lead com a combinação bloqueando o fallback para a venda → 5; Q9 ferramentas sem normalização → 1. Q7 (ferramenta + closer também como `closerPorSource`) sobreviveu, mas é EQUIVALENTE: a condição exige `closerMediums.has(medium)`, então `closerPorMedium` já é verdadeiro, `regraDeFechamento` já é "medium" e o `source` já está apagado. Não há saída observável diferente. Resultado: 8/8 não equivalentes mortas. Restaurado: 179/179. As 11 reversões do @dev complementam.'
+  acceptance_criteria: 'AC1 ✓ (`ferramentasDeAtendimento` no tipo; `CLASSIFICADOR_VERSAO = "49.2-v2"`, travado por teste) · AC2 ✓ (regra 3 com SOURCES_PAGOS; regra 8 inclui ferramenta + closer na mesma UTM) · AC3 ✓ · AC4 ✓ (FZ-L1 `letalk + x1` nomeado; config sem ferramentas → Outros orgânicos; ferramenta sozinha → Outros + sem-closer) · AC5 ✓ (ferramenta só da config; `botconversa` arbitrária vale; case/espaço dos dois lados) · AC6 ✓ · AC7 ✓ · AC8 ✓ (google/google-ads com motivo `pagoSemPlataforma`; facebook coincide com Meta Ads) · AC9 ✓ (`lead-origin.ts`, rotas e telas intocados).'
+  no_regressions: 'O commit R4 toca 4 arquivos: o módulo, 2 testes e a story. O classificador ainda não tem consumidor de produção. `classificarOrigem` em `launch-report-normalize.ts` é o legado (`classifyOrigemBase`) e não muda. `tsc --noEmit` limpo na API, no shared e no web (0 erros); ESLint limpo no módulo e nos dois testes. A suíte completa da API não foi re-rodada: o diff não alcança outro arquivo, e as 10 falhas pré-existentes já estavam provadas na base.'
+  performance: 'Um Set a mais por chamada. Irrelevante (a nota do round 1 vale: a 49.3 pode pré-montar os Sets se precisar).'
+  security: 'Sem I/O, PII ou rede no módulo. Nesta rodada o QA NÃO leu snapshots com dados de pessoas (a permissão foi negada; ver QA-492-06).'
+  documentation: 'A seção "Rodada R4" do Dev Agent Record está completa e as AUTO-DECISIONs estão justificadas. Há dois trechos defasados do round 1 (QA-492-05).'
+  auto_decisions: 'Avaliadas. (1) Sem canal Google → Pago N/D: CONCORDO. A união `Canal` e os segmentos separam pago por temperatura; um canal novo quebraria o contrato fechado de 49.3/49.4/49.6 sem pedido do dono, e a origem `Pago` coincide com `classifyOrigem`. (2) Combinação só na mesma UTM: CONCORDO. É a leitura literal da R4-12 e do perfil FZ ("quando combinadas"), coerente com "ferramenta sozinha = UTM comum". A exposição do caso cruzado ficou para a 49.5 (QA-492-06). (3) Campo obrigatório no tipo: CONCORDO, porque bate com a 49.1 (obrigatório no tipo validado).'
+  skill_conformance: 'Como no round 1, mais as decisões R4-11/12/13 do dono, documentadas na story. `facebook`/`google` como pago diverge da skill (que só lista `cbo/abo/meta/fb`) por decisão do dono, alinhado a `PAID_UTM_SOURCES`.'
+
+data_evidence:
+  - 'Campo de casamento (R2 da story) medido nos snapshots da skill: das linhas que o novo classificador mandaria para um canal orgânico, só 8 carregam sinal de pago (7 `google-ads` do BBE + 1 `ig/paid` com id Meta). As 177 linhas com source orgânico (`ig`) e `utm_term` hot/cold são, na verdade, anúncios: o term é o nome do conjunto (`..._hot_cbo_...`). Por isso, temperatura antes do canal (regras 1–2 antes da 4) é o comportamento CERTO no dado real.'
+
+notes:
+  - 'Re-review R4 (2026-10-01): CONCERNS → PASS. As 3 pendências do dono foram decididas (R4-11/12/13) e implementadas; o contrato bate com a 49.1 (5f70cbc0). A 49.3 e a 49.5 podem consumir o módulo 49.2-v2.'
+  - 'As três perguntas do @dev ficam com o DONO. O QA não decidiu nenhuma; a recomendação sobre a 3 vem só dos dados.'
+  - 'Se a pergunta 2 virar "só closer", a mudança provável é um campo novo na config da 49.1, algo como "ferramentas que contam como closer só junto com o medium". O `CLASSIFICADOR_VERSAO` sobe para 49.2-v2.'
+  - 'Os snapshots locais da skill são uma amostra (DG, FZ, Netão, Pacheco) e não as planilhas vivas. A conferência de verdade fica na 49.5, contra DG-PG02.'
