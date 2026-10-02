@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ImportarDoTally } from "./importar-do-tally";
+import { EnvioAoMeta } from "./envio-ao-meta";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -258,6 +259,22 @@ export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabP
           {saveSchema.isPending ? "Salvando..." : "Salvar Schema"}
         </Button>
       </div>
+
+      {/*
+        A volta do ciclo: o que o modelo descobriu vira evento no Meta. As
+        faixas oferecidas saem do próprio schema salvo — oferecer uma faixa que
+        o modelo não tem produziria envio que nunca acontece.
+      */}
+      <EnvioAoMeta
+        projectId={projectId}
+        funnelId={funnelId}
+        stageId={stageId}
+        faixasDoModelo={
+          ((saved?.schemaJson as { bands?: { id: string }[] } | undefined)?.bands ?? []).map(
+            (b) => b.id,
+          )
+        }
+      />
 
       {/* Project info */}
       {results?.project && <ProjectInfoCard project={results.project} />}
