@@ -308,6 +308,24 @@ describe("buildDebriefingNovaAbaHtml — moldura sandbox da nova aba (SEC-001)",
     expect(css).toContain("height:100%");
     expect(css).not.toContain("20000");
   });
+
+  // TEST-002 (gate da 49.8): `<title>` é RCDATA — um `<b>` ali dentro vira
+  // texto com ou sem escape, então conferir só `document.title` não prova
+  // nada. O nome da campanha vem do usuário: um `</title>` fecha a tag e um
+  // `"` fecha o atributo `title` do iframe. As duas saídas ficam travadas.
+  it("nome de campanha hostil não fecha o <title> nem o atributo title do iframe (TEST-002)", () => {
+    const titulo =
+      'Debriefing — Camp "X" </title><script>parent.__fugiu=1</script><b>&</b>';
+    const doc = moldura(DOC_HOSTIL, titulo);
+    expect(doc.title).toBe(titulo);
+    expect(doc.querySelectorAll("script")).toHaveLength(0);
+    expect(doc.querySelectorAll("b")).toHaveLength(0);
+    expect(doc.body.children).toHaveLength(1);
+    const iframe = doc.querySelector("iframe")!;
+    expect(iframe.getAttribute("title")).toBe(titulo);
+    expect(iframe.getAttribute("sandbox")).toBe(DEBRIEFING_IFRAME_SANDBOX);
+    expect(iframe.getAttribute("srcdoc")).toBe(DOC_HOSTIL);
+  });
 });
 
 /**

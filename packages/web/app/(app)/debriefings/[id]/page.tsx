@@ -185,8 +185,10 @@ export default function DebriefingDetailPage() {
     );
   }
 
-  // Nova aba: útil para docs multi-página/etapas e para docs acima do teto de
-  // altura (sem o limite de 20.000 px, com scroll próprio). O documento abre
+  // Nova aba: o documento em tela cheia, sem o teto de altura do viewer (sem o
+  // limite de 20.000 px, com scroll próprio). NÃO é fallback para doc que usa
+  // localStorage/sessionStorage/pushState: o isolamento é o mesmo do viewer, e
+  // esse doc falha nos dois (DEC-001, decidido pelo dono na R4-6). O documento abre
   // dentro de uma moldura com o MESMO sandbox do viewer (sem allow-same-origin)
   // — antes ia cru num blob com a origem do app e lia o storage do Loyola X
   // (SEC-001, gate da 49.8). Usa o HTML original (sem o script-agente).
@@ -252,7 +254,7 @@ export default function DebriefingDetailPage() {
               size="sm"
               variant="outline"
               onClick={handleOpenExternal}
-              title="Abrir o HTML original em uma nova aba (útil para docs com várias páginas)"
+              title="Abrir o documento em tela cheia, com a mesma proteção daqui"
             >
               <ExternalLink className="h-4 w-4 mr-2" />
               Abrir em nova aba
@@ -391,7 +393,7 @@ export default function DebriefingDetailPage() {
           )}
           {!editMode && (
             <p className="mt-2 text-xs text-muted-foreground">
-              Documento com várias páginas ou etapas não carregou aqui?{" "}
+              Quer ver o documento em tela cheia, sem limite de altura?{" "}
               <button
                 type="button"
                 onClick={handleOpenExternal}
@@ -400,7 +402,8 @@ export default function DebriefingDetailPage() {
                 <ExternalLink className="h-3 w-3" />
                 Abra em uma nova aba
               </button>{" "}
-              para ver o HTML completo.
+              — ele abre com a mesma proteção daqui. Documentos que guardam dados
+              no navegador podem não funcionar em nenhum dos dois.
             </p>
           )}
         </div>
