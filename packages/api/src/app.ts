@@ -95,6 +95,7 @@ import metaAdsComparisonRoutes from "./routes/meta-ads-comparison.js";
 import leadScoringRoutes from "./routes/lead-scoring.js";
 import tallyRoutes from "./routes/tally.js";
 import leadCapiRoutes from "./routes/lead-capi.js";
+import leadCapiSchedulerPlugin from "./plugins/lead-capi-scheduler.js";
 import organicPostsRoutes from "./routes/organic-posts.js";
 import instagramReportsRoutes from "./routes/instagram-reports.js";
 import funnelGroupsRoutes from "./routes/funnel-groups.js";
@@ -285,6 +286,7 @@ export async function buildServer() {
   await app.register(leadScoringRoutes);
   await app.register(tallyRoutes);
   await app.register(leadCapiRoutes);
+  await app.register(leadCapiSchedulerPlugin);
   await app.register(organicPostsRoutes);
   await app.register(instagramReportsRoutes);
   await app.register(funnelGroupsRoutes);
