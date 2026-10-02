@@ -21,6 +21,13 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+// Story 49.1 — só tipos (apagados no build): o vocabulário vive no service.
+import type {
+  DimensaoDeCriativo,
+  EtapaDoLancamento,
+  PerguntasConfirmadasGravadas,
+  RespostaEtapaExtra,
+} from "../services/debriefing-config.js";
 
 /**
  * `bytea` — binário cru no Postgres.
@@ -3594,6 +3601,82 @@ export const expertReportConfigs = pgTable(
   },
   (table) => [
     uniqueIndex("expert_report_configs_project_uniq").on(table.projectId),
+  ],
+);
+
+// ============================================================
+// Story 49.1 — Config do GERADOR DE DEBRIEFING (Epic 49) + gates
+// ============================================================
+// 1 linha por ETAPA DE DEBRIEFING (`stageType = "debriefing"`). Tabela própria
+// — não colunas em `launchReportConfigs` — para o gate do Resumão (41.1) ficar
+// intocado por construção. Nulo = "sem resposta": o gate lista o campo como
+// faltante (CONFIG_INCOMPLETA) em vez de presumir. Os vocabulários
+// (`DEBRIEFING_PAPEIS`, `DIMENSOES_DE_CRIATIVO`) moram no service
+// `services/debriefing-config.ts`; aqui só o tipo (import type, sem ciclo em
+// runtime). Migration 0161.
+
+export const debriefingConfigs = pgTable(
+  "debriefing_configs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    /** Datas-chave (gate `datas-chave` da skill, Fase 0). Só funil `launch`. */
+    inicioCaptacao: date("inicio_captacao"),
+    aberturaCarrinho: date("abertura_carrinho"),
+    fimCarrinho: date("fim_carrinho"),
+    /** `{houve:false}` | `{houve:true, abertura, fim}`. Nulo = sem resposta (≠ não houve). */
+    reabertura: jsonb("reabertura").$type<RespostaEtapaExtra>(),
+    downsell: jsonb("downsell").$type<RespostaEtapaExtra>(),
+    /**
+     * Opcional; funil do MESMO projeto. SEM FK de propósito: um ON DELETE SET
+     * NULL apagaria a premissa sem rastro; o carregador confere se o funil
+     * ainda é do projeto e, se não for, gera como edição única com o aviso
+     * COMPARACAO_REMOVIDA (49.1 QA REL-002 + decisão do dono R4-14).
+     */
+    lancamentoComparacaoFunnelId: uuid("lancamento_comparacao_funnel_id"),
+    /** Etapas do funil que compõem o lançamento, com o papel de cada uma. */
+    etapas: jsonb("etapas")
+      .notNull()
+      .default([])
+      .$type<EtapaDoLancamento[]>(),
+    /** Por etapa com pesquisa: `{ faixa: chave | null, [campo]?: chave }` (gate da Fase 8). */
+    perguntasConfirmadas: jsonb("perguntas_confirmadas")
+      .notNull()
+      .default({})
+      .$type<PerguntasConfirmadasGravadas>(),
+    /** `utm_medium` que indicam closer (49.2). Nulo = sem resposta; `[]` = resposta explícita. */
+    closerMediums: jsonb("closer_mediums").$type<string[]>(),
+    closerPorSellerName: boolean("closer_por_seller_name"),
+    /**
+     * `utm_source` de ferramentas de atendimento (ex.: `letalk`, `chatwoot`) que
+     * o classificador lê junto do medium de closer (49.2, R4-12). Como
+     * `closerMediums`: nulo = sem resposta; `[]` = resposta explícita.
+     */
+    ferramentasDeAtendimento: jsonb("ferramentas_de_atendimento").$type<string[]>(),
+    dimensaoDeCriativo: varchar("dimensao_de_criativo", {
+      length: 20,
+    }).$type<DimensaoDeCriativo>(),
+    /** Default false — só o time marca true; o PUT reseta quando muda premissa. */
+    validado: boolean("validado").notNull().default(false),
+    validadoEm: timestamp("validado_em", { withTimezone: true }),
+    validadoPor: uuid("validado_por").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("debriefing_configs_stage_uniq").on(table.stageId),
+    check(
+      "ck_debriefing_configs_dimensao_de_criativo",
+      sql`${table.dimensaoDeCriativo} IS NULL OR ${table.dimensaoDeCriativo} IN ('ia-humano', 'video-estatico', 'nenhuma')`,
+    ),
   ],
 );
 

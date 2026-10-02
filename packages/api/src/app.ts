@@ -77,6 +77,7 @@ import stageOperationalCostsRoutes from "./routes/stage-operational-costs.js";
 import sprintReportsRoutes from "./routes/sprint-reports.js";
 import launchReportConfigRoutes from "./routes/launch-report-config.js";
 import perpetualReportConfigRoutes from "./routes/perpetual-report-config.js";
+import debriefingConfigRoutes from "./routes/debriefing-config.js";
 import perpetualReportRoutes from "./routes/perpetual-report.js";
 import launchReportsRoutes, {
   comparativoRoutes,
@@ -264,6 +265,8 @@ export async function buildServer() {
   await app.register(sprintReportsRoutes);
   await app.register(launchReportConfigRoutes);
   await app.register(perpetualReportConfigRoutes);
+  // Story 49.1 — config + gate do gerador de debriefing (Epic 49).
+  await app.register(debriefingConfigRoutes);
   await app.register(perpetualReportRoutes);
   await app.register(launchReportsRoutes);
   await app.register(comparativoRoutes);
