@@ -19,6 +19,7 @@ import {
   DebriefingDadoIndisponivelError,
   comNomeDeCampanha,
   configClassificadorDe,
+  escolherVinculoDaFonte,
   lerFonteDeLead,
   lerPlanilhaDeVenda,
   lerVendasManuais,
@@ -171,6 +172,25 @@ describe("leads, nome de campanha e config do classificador (puros)", () => {
     expect(utm).toEqual({ source: "fb", campaign: "111" });
   });
 
+  it("regra 9: comNomeDeCampanha casa o id desembrulhado ({\"111\",\"111\"}) e deixa a célula como veio", () => {
+    const nomes = new Map([["111", "dg--vendas-captacao--hot"]]);
+    expect(comNomeDeCampanha({ campaign: '{"111","111"}' }, nomes)).toEqual({ campaign: '{"111","111"}', campaignName: "dg--vendas-captacao--hot" });
+    expect(comNomeDeCampanha({ campaign: '{"111","222"}' }, nomes).campaignName).toBeUndefined();
+  });
+
+  it("TEST-005 (QA-M5): venda manual com produto no product_types segue o mapa, não o default da etapa", () => {
+    const m = { id: "m", value: "296.00", customerEmail: null, customerPhone: null, sellerName: null, saleDate: "2026-04-25T12:00:00Z" };
+    const tipos = normalizarTiposDeProduto([{ "Combo VIP": "combo", "Gravação": "order_bump" }]);
+    const r = lerVendasManuais("cap", "paid", [{ ...m, product: " combo vip " }, { ...m, id: "m2", product: "Gravação" }, { ...m, id: "m3", product: "Outro" }], tipos);
+    expect(r.vendas.map((v) => [v.tipo, v.tipoClassificado])).toEqual([
+      ["combo", true],
+      ["order_bump", true],
+      ["ingresso", false], // fora do mapa: default da etapa paga
+    ]);
+    // no principal, o mapa também vence o default ("principal")
+    expect(lerVendasManuais("prin", "sales", [{ ...m, product: "Gravação" }], tipos).vendas[0]).toMatchObject({ tipo: "order_bump", tipoClassificado: true });
+  });
+
   it("configClassificadorDe normaliza e une aliases e closers", () => {
     const c = configClassificadorDe(
       { closerMediums: ["x1"], closerPorSellerName: false, ferramentasDeAtendimento: [] },
@@ -178,6 +198,71 @@ describe("leads, nome de campanha e config do classificador (puros)", () => {
       [{ name: "Netão" }],
     );
     expect(c).toEqual({ closerMediums: ["x1"], closerNomes: ["isa", "isabela", "netão"], closerPorSellerName: false, ferramentasDeAtendimento: [] });
+  });
+});
+
+describe("REL-001 — escolherVinculoDaFonte: qual vínculo vale quando a aba está em mais de uma etapa", () => {
+  const headers = ["ID", "Produto", "Email", "Preço"];
+  const completo = { transactionId: "ID", productName: "Produto" };
+  it("mais colunas da camada 1 mapeadas vence, mesmo vindo depois e sendo de etapa leads-*", () => {
+    const r = escolherVinculoDaFonte(
+      [
+        { stageId: "a", papel: "vendas-downsell", mapping: { transactionId: "ID" } },
+        { stageId: "b", papel: "leads-downsell", mapping: completo },
+      ],
+      headers,
+    );
+    expect(r).toEqual({
+      indice: 1,
+      criterio: "mapeamento-id-e-produto",
+      colunas: [
+        { temColunaId: true, temColunaProduto: false },
+        { temColunaId: true, temColunaProduto: true },
+      ],
+    });
+  });
+
+  it("mapeamento que aponta para cabeçalho inexistente não conta", () => {
+    const r = escolherVinculoDaFonte(
+      [
+        { stageId: "a", papel: "leads-downsell", mapping: { transactionId: "Transaction", productName: "Product" } },
+        { stageId: "b", papel: "leads-captacao", mapping: { productName: "Produto" } },
+      ],
+      headers,
+    );
+    expect(r.indice).toBe(1);
+    expect(r.criterio).toBe("mapeamento-id-e-produto");
+  });
+
+  it("empate no mapeamento → etapa vendas-*; empate também no papel → primeira na ordem da config, registrado", () => {
+    expect(
+      escolherVinculoDaFonte(
+        [
+          { stageId: "a", papel: "leads-downsell", mapping: completo },
+          { stageId: "b", papel: "vendas-downsell", mapping: completo },
+        ],
+        headers,
+      ),
+    ).toMatchObject({ indice: 1, criterio: "papel-de-vendas" });
+    expect(
+      escolherVinculoDaFonte(
+        [
+          { stageId: "c", papel: "leads-captacao", mapping: {} },
+          { stageId: "a", papel: "vendas-captacao", mapping: completo },
+          { stageId: "b", papel: "vendas-principal", mapping: completo },
+        ],
+        headers,
+      ),
+    ).toMatchObject({ indice: 1, criterio: "empate-ordem-da-config" });
+    expect(
+      escolherVinculoDaFonte(
+        [
+          { stageId: "a", papel: "leads-captacao", mapping: {} },
+          { stageId: "b", papel: "leads-downsell", mapping: {} },
+        ],
+        headers,
+      ),
+    ).toMatchObject({ indice: 0, criterio: "empate-ordem-da-config" });
   });
 });
 
@@ -193,6 +278,8 @@ const CAP = "30000000-0000-4000-8000-000000000001";
 const PRIN = "30000000-0000-4000-8000-000000000002";
 const OUTRA = "30000000-0000-4000-8000-000000000003";
 const DE_OUTRO_FUNIL = "30000000-0000-4000-8000-000000000004";
+const DS_VENDAS = "30000000-0000-4000-8000-000000000005";
+const DS_LEADS = "30000000-0000-4000-8000-000000000006";
 
 const DDL = `
 CREATE TABLE funnel_stages (
@@ -243,20 +330,26 @@ INSERT INTO funnel_stages VALUES
   ('${CAP}', '${F}', 'paid', '[{"id":"111","name":"dg--vendas-captacao--hot"},{"id":"333","name":"dg--vendas-captacao--cold"}]'),
   ('${PRIN}', '${F}', 'sales', '[{"id":"222","name":"dg--vendas-principal--hot"},{"id":"333","name":"dg--vendas-captacao--cold"}]'),
   ('${OUTRA}', '${F}', 'free', '[{"id":"999","name":"outra-etapa"}]'),
-  ('${DE_OUTRO_FUNIL}', '${F2}', 'sales', '[]');
+  ('${DE_OUTRO_FUNIL}', '${F2}', 'sales', '[]'),
+  ('${DS_VENDAS}', '${F}', 'sales', '[]'),
+  ('${DS_LEADS}', '${F}', 'free', '[]');
 INSERT INTO stage_sales_spreadsheets (stage_id, subtype, spreadsheet_id, sheet_name, column_mapping, product_types) VALUES
   ('${CAP}', 'capture', 'g-cap', 'n8n-captacao',
    '{"transactionId":"ID","email":"Email","telefone":"Telefone","productName":"Produto","valorBruto":"Valor líquido","dataVenda":"Data","status":"Status","utm_source":"utm_source","utm_medium":"utm_medium","utm_campaign":"utm_campaign","utm_term":"utm_term"}',
    '{"Imersão":"ingresso","Gravação":"order_bump"}'),
   ('${PRIN}', 'main_product', 'g-prin', 'vendas-principal',
-   '{"transactionId":"ID","email":"Email","productName":"Produto","valorBruto":"Preço","dataVenda":"Data","status":"Status","closer":"Closer"}', NULL);
+   '{"transactionId":"ID","email":"Email","productName":"Produto","valorBruto":"Preço","dataVenda":"Data","status":"Status","closer":"Closer"}', NULL),
+  -- REL-001: a MESMA aba ligada à Downsell Vendas (com ID + produto) e, abaixo, à Downsell Captação (sem).
+  ('${DS_VENDAS}', 'main_product', 'g-ds', 'n8n-kiwify-downsell',
+   '{"transactionId":"ID","email":"Email","productName":"Produto","valorBruto":"Preço","dataVenda":"Data","status":"Status"}', NULL);
 INSERT INTO funnel_surveys (funnel_id, stage_id, spreadsheet_id, spreadsheet_name, sheet_name, column_mapping) VALUES
   ('${F}', '${CAP}', 'g-pesq', 'Pesquisa', 'respostas', '{}');
 INSERT INTO funnel_spreadsheets (funnel_id, stage_id, label, type, spreadsheet_id, spreadsheet_name, sheet_name, column_mapping) VALUES
   ('${F}', NULL, 'Leads gerais', 'leads', 'g-leads', 'Leads', 'base', '{"email":"email","phone":"telefone","date":"data"}'),
   ('${F}', NULL, 'Upsell', 'perpetual_upsell', 'g-nao-ler-1', 'Upsell', 'x', '{}'),
   ('${F}', '${OUTRA}', 'Leads da outra etapa', 'leads', 'g-nao-ler-2', 'Outra', 'x', '{}'),
-  ('${F}', '${CAP}', 'Lista sem contato', 'leads', 'g-semid', 'Sem contato', 'nomes', '{}');
+  ('${F}', '${CAP}', 'Lista sem contato', 'leads', 'g-semid', 'Sem contato', 'nomes', '{}'),
+  ('${F}', '${DS_LEADS}', 'Downsell', 'sales', 'g-ds', 'Downsell', 'n8n-kiwify-downsell', '{"email":"Email","valorBruto":"Preço","dataVenda":"Data","status":"Status"}');
 INSERT INTO meta_campaign_insights_daily (project_id, campaign_id, date_start, spend, impressions, actions) VALUES
   ('${P}', '111', '2026-04-20', 1000.50, 50000, '${lk("700")}'),
   ('${P}', '111', '2026-04-21', 10, 800, NULL),
@@ -302,6 +395,13 @@ const PLANILHAS: Record<string, { headers: string[]; rows: string[][] }> = {
     rows: [["17/04/2026", "a@x.com", "553175058180", "facebook", "lp|hot|ad"]],
   },
   "g-semid|nomes": { headers: ["nome"], rows: [["Fulano"]] },
+  "g-ds|n8n-kiwify-downsell": {
+    headers: ["ID", "Email", "Produto", "Preço", "Data", "Status"],
+    rows: [
+      ["D1", "d1@x.com", "Downsell", "197,00", "17/05/2026", "paid"],
+      ["D2", "d2@x.com", "Downsell", "297,00", "17/05/2026", "paid"],
+    ],
+  },
   "g-leads|base": {
     headers: ["data", "email", "telefone"],
     rows: [
@@ -501,5 +601,59 @@ describe("AC12 — loadDebriefingMoneyTimeInput sobre Postgres real", () => {
     });
     expect(r.coorte.basePreLancamento).toBe(1);
     expect(JSON.stringify(r)).not.toMatch(/@x\.com|75058180/);
+  });
+});
+
+describe("REL-001 — a mesma aba ligada a duas etapas é lida UMA vez (PGlite)", () => {
+  const comDownsell = (etapas: DebriefingConfigLancamento["etapas"]): DebriefingConfigLancamento => ({
+    ...config,
+    datasChave: { ...config.datasChave, downsell: { houve: true, abertura: "2026-05-16", fim: "2026-05-18" } },
+    etapas: [...config.etapas, ...etapas],
+  });
+
+  it("Downsell Captação (leads-downsell, sem ID/produto) ANTES da Downsell Vendas: vale a de vendas; faturamento simples; declarado", async () => {
+    const lidas: string[] = [];
+    const ler = (id: string, aba: string) => {
+      lidas.push(`${id}|${aba}`);
+      return lerFalso(id, aba);
+    };
+    const cfg = comDownsell([
+      { stageId: DS_LEADS, papel: "leads-downsell" },
+      { stageId: DS_VENDAS, papel: "vendas-downsell" },
+    ]);
+    const carregado = await loadDebriefingMoneyTimeInput(db, { config: cfg }, { lerPlanilha: ler });
+    expect(lidas.filter((x) => x === "g-ds|n8n-kiwify-downsell")).toHaveLength(1);
+    expect(carregado.vendas.filter((v) => v.idDaVendaCru === "D1" || v.idDaVendaCru === "D2")).toHaveLength(2);
+    const daAba = carregado.diagnostico.planilhasDeVenda.filter((p) => p.nome === "n8n-kiwify-downsell");
+    expect(daAba.map((p) => [p.stageId, p.linhas])).toEqual([[DS_VENDAS, 2]]);
+    expect(carregado.diagnostico.fontesDuplicadas).toHaveLength(1);
+    const f = carregado.diagnostico.fontesDuplicadas[0]!;
+    expect(f).toMatchObject({
+      aba: "n8n-kiwify-downsell",
+      stageIdQueVale: DS_VENDAS,
+      criterio: "mapeamento-id-e-produto",
+      linhasNaoRelidas: 2,
+    });
+    expect(f.vinculos.map((v) => [v.stageId, v.papel, v.temColunaId, v.temColunaProduto])).toEqual([
+      [DS_LEADS, "leads-downsell", false, false],
+      [DS_VENDAS, "vendas-downsell", true, true],
+    ]);
+    expect(f.vale).toBe(daAba[0]!.planilhaId);
+    expect(carregado.fontesDuplicadas).toEqual(carregado.diagnostico.fontesDuplicadas);
+
+    const r = computeDebriefingMoneyTime({ ...carregado, criterioDeUnico: CRITERIO_DE_UNICO_HEADLINE });
+    expect(r.downsell).toEqual({ aplicavel: true, vendas: 2, faturamento: 197 + 297 });
+    expect(r.higiene.fontesDuplicadas).toEqual(carregado.diagnostico.fontesDuplicadas);
+    expect(r.lacunas.map((l) => l.codigo)).toContain("FONTE_EM_MAIS_DE_UMA_ETAPA");
+    // a cópia sem ID/produto não chega ao motor — a lacuna genérica da camada 1 não aparece por ela
+    expect(r.higiene.dedupNaoAplicada).toEqual([]);
+  });
+
+  it("aba ligada a uma etapa só: nada declarado", async () => {
+    const carregado = await loadDebriefingMoneyTimeInput(db, { config: comDownsell([{ stageId: DS_VENDAS, papel: "vendas-downsell" }]) }, { lerPlanilha: lerFalso });
+    expect(carregado.diagnostico.fontesDuplicadas).toEqual([]);
+    const r = computeDebriefingMoneyTime({ ...carregado, criterioDeUnico: CRITERIO_DE_UNICO_HEADLINE });
+    expect(r.downsell.faturamento).toBe(494);
+    expect(r.lacunas.some((l) => l.codigo === "FONTE_EM_MAIS_DE_UMA_ETAPA")).toBe(false);
   });
 });

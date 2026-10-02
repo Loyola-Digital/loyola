@@ -16,6 +16,7 @@ import {
   chavesDeComprador,
   dataBrt,
   deduplicarVendas,
+  desembrulharUtm,
   diasEntre,
   ehManual,
   ehTmb,
@@ -350,6 +351,17 @@ describe("decisão 2A — janelaDoDebriefing: inicioCaptacao → maior fim", () 
     expect(janelaDoDebriefing({ ...base, reabertura: { houve: true, fim: "2026-05-15" } }).fimPor).toBe("fimCarrinho");
   });
 
+  it("TEST-005 (QA-M2): empate do fim do downsell com o fim do carrinho fica com o carrinho", () => {
+    expect(janelaDoDebriefing({ ...base, downsell: { houve: true, fim: "2026-05-15" } })).toMatchObject({
+      fim: "2026-05-15",
+      fimPor: "fimCarrinho",
+    });
+    // empate triplo: continua o carrinho
+    expect(
+      janelaDoDebriefing({ ...base, downsell: { houve: true, fim: "2026-05-15" }, reabertura: { houve: true, fim: "2026-05-15" } }).fimPor,
+    ).toBe("fimCarrinho");
+  });
+
   it("a regra vai por extenso e data inválida lança (nunca janela inventada)", () => {
     expect(janelaDoDebriefing(base).regra).toMatch(/inicioCaptacao.*maior entre fimCarrinho, reabertura\.fim e downsell\.fim/);
     expect(() => janelaDoDebriefing({ ...base, fimCarrinho: "15/05/2026" })).toThrow(RangeError);
@@ -363,5 +375,39 @@ describe("decisão 3A — plataforma manual", () => {
     expect(ehManual(" Manual ")).toBe(true);
     expect(ehManual("main_product")).toBe(false);
     expect(ehTmb("manual")).toBe(false);
+  });
+});
+
+describe("regra 9 da skill — UTM em array do Postgres ({\"qr\",\"qr\"} → qr)", () => {
+  it.each([
+    ["qr", "qr", "texto"],
+    ["  qr  ", "qr", "texto"],
+    ['{"qr"}', "qr", "array"],
+    ['{"qr","qr"}', "qr", "array"],
+    ['{ "qr" , "qr" }', "qr", "array"],
+    ["{qr,qr,qr}", "qr", "array"],
+    ['{"qr",""}', "qr", "array"],
+    ["{qr,NULL}", "qr", "array"],
+    ['{"dg pg02","dg pg02"}', "dg pg02", "array"],
+    ['{"a \\"b\\"","a \\"b\\""}', 'a "b"', "array"],
+    ["{}", null, "array"],
+    ['{"",""}', null, "array"],
+  ])("%j → %j (%s)", (celula, valor, formato) => {
+    expect(desembrulharUtm(celula)).toEqual({ valor, formato });
+  });
+
+  it("valores DISTINTOS ficam como o texto cru (array-ambiguo) — nunca escolhe um deles", () => {
+    expect(desembrulharUtm('{"backend","lote-3"}')).toEqual({ valor: '{"backend","lote-3"}', formato: "array-ambiguo" });
+    expect(desembrulharUtm("{fb,ig,fb}")).toEqual({ valor: "{fb,ig,fb}", formato: "array-ambiguo" });
+  });
+
+  it("o que só parece array fica como texto: JSON, macro do Meta, chave aberta, vazio", () => {
+    expect(desembrulharUtm('{"co":"123"}')).toEqual({ valor: '{"co":"123"}', formato: "texto" });
+    expect(desembrulharUtm("{{adset.id}}")).toEqual({ valor: "{{adset.id}}", formato: "texto" });
+    expect(desembrulharUtm('{"qr"')).toEqual({ valor: '{"qr"', formato: "texto" });
+    expect(desembrulharUtm('{"qr}')).toEqual({ valor: '{"qr}', formato: "texto" });
+    expect(desembrulharUtm("")).toEqual({ valor: null, formato: "texto" });
+    expect(desembrulharUtm(null)).toEqual({ valor: null, formato: "texto" });
+    expect(desembrulharUtm(undefined)).toEqual({ valor: null, formato: "texto" });
   });
 });

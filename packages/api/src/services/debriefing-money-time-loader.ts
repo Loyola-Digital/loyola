@@ -12,7 +12,11 @@
  *   para ausente;
  * - **vendas**: as planilhas de `resolveSalesSheetsForStage` lidas por
  *   `readSheetData`, com preço, data e telefone entregues COMO NA CÉLULA
- *   (R-49-4: os `parseNumber*` locais leem `"4.000"` como 4);
+ *   (R-49-4: os `parseNumber*` locais leem `"4.000"` como 4). A mesma aba
+ *   (`spreadsheetId` + `sheetName`) ligada a mais de uma etapa é lida UMA vez,
+ *   com o vínculo de `escolherVinculoDaFonte`, e declarada em
+ *   `fontesDuplicadas` (REL-001 — no PG02 a `n8n-kiwify-downsell` dobrava o
+ *   downsell);
  * - **leads**: as fontes da jornada (`funnel_surveys` + `funnel_spreadsheets`
  *   que não são de venda, filtradas pela etapa) — mesmo critério de
  *   `fontesDeOrigem` em `routes/stage-sales-journey.ts`, replicado aqui sem
@@ -51,12 +55,13 @@ import {
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { readSheetData } from "./google-sheets.js";
-import { resolveSalesSheetsForStage } from "./sales-daily-sync.js";
-import type { DebriefingConfigLancamento } from "./debriefing-config.js";
+import { resolveSalesSheetsForStage, type ResolvedSalesSheet } from "./sales-daily-sync.js";
+import type { DebriefingConfigLancamento, DebriefingPapel } from "./debriefing-config.js";
 import { TIPOS_DE_PRODUTO, productKey, tipoDoProduto, type TipoDeProduto } from "../utils/produto.js";
 import { tipoPadraoDaEtapa } from "../utils/order-bump.js";
 import {
   PLATAFORMA_MANUAL,
+  desembrulharUtm,
   janelaDoDebriefing,
   resolverColunaPrecoDebriefing,
   type JanelaDoDebriefing,
@@ -64,6 +69,7 @@ import {
 import type {
   ClassificadorInjetado,
   DebriefingMoneyTimeInput,
+  FonteDuplicada,
   LeadInput,
   MidiaCampanhaDiaInput,
   PlanilhaDeVendaInput,
@@ -375,9 +381,51 @@ export function lerVendasManuais(
   };
 }
 
-/** Preenche `Utm.campaignName` a partir do id em `utm_campaign`. Não muta a entrada. */
+/** Um vínculo de uma aba de venda a uma etapa do lançamento. */
+export interface VinculoDeAba {
+  stageId: string;
+  papel: DebriefingPapel;
+  mapping: Record<string, unknown>;
+}
+
+/**
+ * REL-001 — qual vínculo vale quando a MESMA aba está ligada a mais de uma
+ * etapa (a aba é lida uma vez só; ler de novo dobra o faturamento). Pura.
+ *
+ * 1. mais colunas da camada 1 mapeadas e existentes no cabeçalho
+ *    (`transactionId`, `productName`) — é o vínculo em que a dedup por ID roda;
+ * 2. empate → o de etapa de papel `vendas-*`;
+ * 3. empate → o primeiro na ordem recebida (a de `config.etapas`), registrado
+ *    como `"empate-ordem-da-config"`.
+ *
+ * `criterio` diz qual dos três passos decidiu.
+ */
+export function escolherVinculoDaFonte(
+  vinculos: readonly VinculoDeAba[],
+  headers: readonly string[],
+): { indice: number; criterio: FonteDuplicada["criterio"]; colunas: { temColunaId: boolean; temColunaProduto: boolean }[] } {
+  if (vinculos.length === 0) throw new Error("escolherVinculoDaFonte: nenhum vínculo");
+  const colunas = vinculos.map((v) => ({
+    temColunaId: acharColuna(headers, v.mapping.transactionId, null) !== -1,
+    temColunaProduto: acharColuna(headers, v.mapping.productName, null) !== -1,
+  }));
+  const pontos = colunas.map((c) => Number(c.temColunaId) + Number(c.temColunaProduto));
+  const max = Math.max(...pontos);
+  const porMapeamento = vinculos.map((_, i) => i).filter((i) => pontos[i] === max);
+  if (porMapeamento.length === 1) return { indice: porMapeamento[0]!, criterio: "mapeamento-id-e-produto", colunas };
+  const deVendas = porMapeamento.filter((i) => vinculos[i]!.papel.startsWith("vendas-"));
+  if (deVendas.length === 1) return { indice: deVendas[0]!, criterio: "papel-de-vendas", colunas };
+  const restantes = deVendas.length > 1 ? deVendas : porMapeamento;
+  return { indice: restantes[0]!, criterio: "empate-ordem-da-config", colunas };
+}
+
+/**
+ * Preenche `Utm.campaignName` a partir do id em `utm_campaign` — desembrulhado
+ * (`{"123","123"}` → `123`, regra 9 da skill) para casar com o cadastro. A
+ * célula fica como veio (o motor desembrulha na higiene). Não muta a entrada.
+ */
 export function comNomeDeCampanha(utm: Utm, nomes: ReadonlyMap<string, string>): Utm {
-  const id = (utm.campaign ?? "").trim();
+  const id = desembrulharUtm(utm.campaign).valor ?? "";
   const nome = id ? nomes.get(id) : undefined;
   return nome ? { ...utm, campaignName: nome } : { ...utm };
 }
@@ -456,6 +504,8 @@ export interface DiagnosticoDoLoader {
   precoMappingDivergente: string[];
   /** Campanha vinculada a mais de uma etapa do lançamento: conta só na primeira (ordem de `config.etapas`). */
   campanhasEmMaisDeUmaEtapa: { campaignId: string; etapas: string[] }[];
+  /** REL-001: aba de venda ligada a mais de uma etapa — lida uma vez (também vai ao motor). */
+  fontesDuplicadas: FonteDuplicada[];
 }
 
 export type DebriefingMoneyTimeInputCarregado = Omit<DebriefingMoneyTimeInput, "criterioDeUnico" | "maxD"> & {
@@ -537,33 +587,67 @@ export async function loadDebriefingMoneyTimeInput(
     fontesDeLead: [],
     precoMappingDivergente: [],
     campanhasEmMaisDeUmaEtapa: [],
+    fontesDuplicadas: [],
   };
+  // REL-001: a mesma aba ligada a mais de uma etapa é UMA fonte — agrupa os
+  // vínculos por `spreadsheetId|sheetName` (na ordem de `config.etapas`), lê a
+  // aba uma vez e usa só o vínculo que vale; os demais vão a `fontesDuplicadas`.
+  type Vinculo = { etapa: (typeof config.etapas)[number]; stageType: string | null; sheet: ResolvedSalesSheet };
+  const vinculosPorAba = new Map<string, Vinculo[]>();
   for (const etapa of config.etapas) {
     const { sheets, stageType } = await resolveSalesSheetsForStage(db, etapa.stageId);
     for (const sheet of sheets) {
-      const dados = await lerOuFalhar(lerPlanilha, sheet.spreadsheetId, sheet.sheetName, "a planilha de vendas");
-      const lida = lerPlanilhaDeVenda(
-        {
-          planilhaId: `${etapa.stageId}:${sheet.id}`,
-          stageId: etapa.stageId,
-          stageType,
-          nome: sheet.sheetName,
-          plataforma: sheet.subtype,
-          headers: dados.headers,
-          rows: dados.rows,
-          mapping: (sheet.columnMapping ?? {}) as Record<string, unknown>,
-        },
-        tiposPorEtapa.get(etapa.stageId) ?? {},
-      );
-      planilhas.push(lida.planilha);
-      vendas.push(...lida.vendas);
-      if (lida.precoMappingDivergente) diagnostico.precoMappingDivergente.push(lida.precoMappingDivergente);
-      diagnostico.planilhasDeVenda.push({
-        planilhaId: lida.planilha.planilhaId,
+      const chave = `${sheet.spreadsheetId}|${sheet.sheetName}`;
+      const lista = vinculosPorAba.get(chave) ?? [];
+      lista.push({ etapa, stageType, sheet });
+      vinculosPorAba.set(chave, lista);
+    }
+  }
+  for (const vinculos of vinculosPorAba.values()) {
+    const primeiro = vinculos[0]!;
+    const dados = await lerOuFalhar(lerPlanilha, primeiro.sheet.spreadsheetId, primeiro.sheet.sheetName, "a planilha de vendas");
+    const mappingDe = (v: Vinculo) => (v.sheet.columnMapping ?? {}) as Record<string, unknown>;
+    const escolha = escolherVinculoDaFonte(
+      vinculos.map((v) => ({ stageId: v.etapa.stageId, papel: v.etapa.papel, mapping: mappingDe(v) })),
+      dados.headers,
+    );
+    const { etapa, stageType, sheet } = vinculos[escolha.indice]!;
+    const lida = lerPlanilhaDeVenda(
+      {
+        planilhaId: `${etapa.stageId}:${sheet.id}`,
         stageId: etapa.stageId,
+        stageType,
         nome: sheet.sheetName,
         plataforma: sheet.subtype,
-        linhas: lida.vendas.length,
+        headers: dados.headers,
+        rows: dados.rows,
+        mapping: mappingDe(vinculos[escolha.indice]!),
+      },
+      tiposPorEtapa.get(etapa.stageId) ?? {},
+    );
+    planilhas.push(lida.planilha);
+    vendas.push(...lida.vendas);
+    if (lida.precoMappingDivergente) diagnostico.precoMappingDivergente.push(lida.precoMappingDivergente);
+    diagnostico.planilhasDeVenda.push({
+      planilhaId: lida.planilha.planilhaId,
+      stageId: etapa.stageId,
+      nome: sheet.sheetName,
+      plataforma: sheet.subtype,
+      linhas: lida.vendas.length,
+    });
+    if (vinculos.length > 1) {
+      diagnostico.fontesDuplicadas.push({
+        aba: sheet.sheetName,
+        vinculos: vinculos.map((v, i) => ({
+          stageId: v.etapa.stageId,
+          papel: v.etapa.papel,
+          planilhaId: `${v.etapa.stageId}:${v.sheet.id}`,
+          ...escolha.colunas[i]!,
+        })),
+        vale: lida.planilha.planilhaId,
+        stageIdQueVale: etapa.stageId,
+        criterio: escolha.criterio,
+        linhasNaoRelidas: lida.vendas.length * (vinculos.length - 1),
       });
     }
   }
@@ -704,7 +788,7 @@ export async function loadDebriefingMoneyTimeInput(
   // ---- Nome da campanha das UTMs: funnel_stages.campaigns → meta_ad_insights_daily ----
   const idsDeUtm = new Set<string>();
   for (const u of [...vendas.map((v) => v.utm), ...leads.map((l) => l.utm)]) {
-    const id = (u.campaign ?? "").trim();
+    const id = desembrulharUtm(u.campaign).valor ?? "";
     if (id && !nomeDaCampanha.has(id)) idsDeUtm.add(id);
   }
   if (idsDeUtm.size > 0) {
@@ -740,6 +824,7 @@ export async function loadDebriefingMoneyTimeInput(
     leads: leadsComNome,
     midia,
     classificador,
+    fontesDuplicadas: diagnostico.fontesDuplicadas,
     configClassificador,
     diagnostico,
   };

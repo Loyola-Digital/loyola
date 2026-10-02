@@ -34,6 +34,8 @@
  *   maior entre o fim do carrinho, da reabertura e do downsell.
  * - **Vendas manuais** (`ehManual`, decisão 3A): `manual_sales` entram como
  *   venda da etapa, com a origem marcada.
+ * - **UTM em array** (`desembrulharUtm`, regra 9 da skill): `{"qr","qr"}` →
+ *   `qr` antes do classificador, para lead e venda.
  *
  * Nada aqui lê banco, planilha, relógio ou `Math.random`.
  */
@@ -610,3 +612,108 @@ export function ehManual(plataforma: string | null | undefined): boolean {
 
 /** De onde veio a linha de venda — para a auditoria (3A). */
 export type FonteDaVenda = "planilha" | "manual";
+
+// ---------------------------------------------------------------------------
+// UTM em array do Postgres (regra 9 de higiene da skill: `{"qr","qr"}` → `qr`)
+// ---------------------------------------------------------------------------
+
+/**
+ * Como a célula de UTM foi lida:
+ * - `texto`: célula comum (ou que só parece array e não é), devolvida aparada;
+ * - `array`: array do Postgres cujos elementos não vazios são TODOS iguais —
+ *   desembrulhado para esse valor (ou `null` se não sobrou nenhum);
+ * - `array-ambiguo`: array com valores DISTINTOS — fica como o texto cru.
+ */
+export type FormatoDaUtm = "texto" | "array" | "array-ambiguo";
+
+export interface UtmDesembrulhada {
+  valor: string | null;
+  formato: FormatoDaUtm;
+}
+
+/** `{{ad.id}}` — macro do Meta não resolvida; não é array (fica como texto). */
+const MACRO_DO_META = /^\{\{.*\}\}$/;
+
+/**
+ * Elementos de um literal de array do Postgres (`{"a","b"}`, `{a,b}`, `{a}`,
+ * `{"a \"b\"",NULL}`), ou `null` quando o texto não tem essa forma (JSON com
+ * `:`, chaves desbalanceadas, aspas abertas). `NULL` sem aspas vira `""`.
+ */
+function elementosDoArrayPostgres(texto: string): string[] | null {
+  if (!texto.startsWith("{") || !texto.endsWith("}") || MACRO_DO_META.test(texto)) return null;
+  const corpo = texto.slice(1, -1);
+  if (corpo.trim() === "") return [];
+  const elementos: string[] = [];
+  let i = 0;
+  while (i <= corpo.length) {
+    while (corpo[i] === " ") i++;
+    let el = "";
+    if (corpo[i] === '"') {
+      i++;
+      let fechou = false;
+      while (i < corpo.length) {
+        const ch = corpo[i]!;
+        if (ch === "\\" && i + 1 < corpo.length) {
+          el += corpo[i + 1];
+          i += 2;
+          continue;
+        }
+        if (ch === '"') {
+          fechou = true;
+          i++;
+          break;
+        }
+        el += ch;
+        i++;
+      }
+      if (!fechou) return null;
+      while (corpo[i] === " ") i++;
+    } else {
+      const ini = i;
+      while (i < corpo.length && corpo[i] !== ",") {
+        if (corpo[i] === '"' || corpo[i] === "{" || corpo[i] === "}" || corpo[i] === ":") return null;
+        i++;
+      }
+      el = corpo.slice(ini, i).trim();
+      if (el.toUpperCase() === "NULL") el = "";
+    }
+    elementos.push(el);
+    if (i >= corpo.length) break;
+    if (corpo[i] !== ",") return null;
+    i++;
+  }
+  return elementos;
+}
+
+/**
+ * Uma célula de UTM (source/medium/campaign/term) depois da regra 9 de higiene
+ * da skill (`config/coding-standards.md`; `insights-recorrentes.md`: "UTMs em
+ * array `{"x","x"}` (webhook n8n/Postgres) precisam de unwrap antes de
+ * classificar"). Pura, nunca lança.
+ *
+ * | célula | valor | formato |
+ * |---|---|---|
+ * | `qr` / ` qr ` | `qr` | texto |
+ * | `{"qr"}` / `{"qr","qr"}` / `{qr,qr,qr}` | `qr` | array |
+ * | `{"qr",""}` / `{qr,NULL}` | `qr` | array |
+ * | `{}` / `{"",""}` | `null` | array |
+ * | `{"fb","ig"}` (valores distintos) | o texto cru | array-ambiguo |
+ * | `{"co":"123"}` (JSON), `{{ad.id}}` (macro), `{qr` | o texto cru | texto |
+ * | vazio / nulo | `null` | texto |
+ *
+ * Valores DISTINTOS ficam como o texto cru — mesma regra de
+ * `utmContentEfetivo` (`shared/src/utm-value.ts`, Story 18.71): escolher um
+ * deles seria inventar atribuição. A linha fica visível como o dado estranho
+ * que é (o classificador a põe em "Outros orgânicos") e o motor a conta em
+ * `higiene.utmsEmArray.ambiguas`.
+ */
+export function desembrulharUtm(celula: string | null | undefined): UtmDesembrulhada {
+  const texto = (celula ?? "").trim();
+  if (!texto) return { valor: null, formato: "texto" };
+  const elementos = elementosDoArrayPostgres(texto);
+  if (elementos === null) return { valor: texto, formato: "texto" };
+  const distintos = [...new Set(elementos.map((e) => e.trim()).filter((e) => e !== ""))];
+  if (distintos.length === 0) return { valor: null, formato: "array" };
+  if (distintos.length === 1) return { valor: distintos[0]!, formato: "array" };
+  return { valor: texto, formato: "array-ambiguo" };
+}

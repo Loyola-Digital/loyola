@@ -63,6 +63,7 @@ import {
   chavesDeComprador,
   dataBrt,
   deduplicarVendas,
+  desembrulharUtm,
   diasEntre,
   ehManual,
   ehTmb,
@@ -188,6 +189,34 @@ export interface MidiaCampanhaDiaInput {
   linkClicks: number | null;
 }
 
+/**
+ * REL-001 — uma aba (`spreadsheetId` + `sheetName`) ligada a MAIS de uma etapa
+ * do lançamento. O loader a lê uma vez só, com UM vínculo (o que vale); os
+ * outros ficam aqui, declarados — nunca em silêncio.
+ *
+ * Critério (nesta ordem): 1) o vínculo com mais colunas da camada 1 mapeadas e
+ * existentes (`transactionId`, `productName`); 2) empate → o de etapa de papel
+ * `vendas-*`; 3) empate → o da primeira etapa na ordem de `config.etapas`
+ * (registrado como `"empate-ordem-da-config"`).
+ */
+export interface FonteDuplicada {
+  /** Nome da aba (não é PII). */
+  aba: string;
+  vinculos: {
+    stageId: string;
+    papel: DebriefingPapel;
+    planilhaId: string;
+    temColunaId: boolean;
+    temColunaProduto: boolean;
+  }[];
+  /** `planilhaId` do vínculo que valeu (o único lido). */
+  vale: string;
+  stageIdQueVale: string;
+  criterio: "mapeamento-id-e-produto" | "papel-de-vendas" | "empate-ordem-da-config";
+  /** Linhas da aba que deixaram de entrar uma 2ª (3ª…) vez. */
+  linhasNaoRelidas: number;
+}
+
 /** O classificador da 49.2, injetado (o loader fecha a config dentro). */
 export interface ClassificadorInjetado {
   versao: string;
@@ -210,6 +239,8 @@ export interface DebriefingMoneyTimeInput {
   leads: readonly LeadInput[];
   midia: readonly MidiaCampanhaDiaInput[];
   classificador: ClassificadorInjetado;
+  /** REL-001: abas em mais de uma etapa, já lidas uma vez pelo loader. Default `[]`. */
+  fontesDuplicadas?: readonly FonteDuplicada[];
 }
 
 // ---------------------------------------------------------------------------
@@ -236,7 +267,8 @@ export interface Lacuna {
     | "VENDAS_SEM_DATA"
     | "PRECO_ORIGINAL_NAO_MAPEADO"
     | "VENDAS_EXCLUIDAS_AUTOMATICAMENTE"
-    | "DEDUP_POR_ID_NAO_APLICADA";
+    | "DEDUP_POR_ID_NAO_APLICADA"
+    | "FONTE_EM_MAIS_DE_UMA_ETAPA";
   motivo: string;
   detalhe?: string;
 }
@@ -412,6 +444,19 @@ export interface DebriefingMoneyTime {
     linhasSemValor: number;
     dedup: { camada1: ContagemDedup; camada2: ContagemDedup };
     dedupNaoAplicada: DedupPorIdNaoAplicada[];
+    /**
+     * REL-001: abas ligadas a mais de uma etapa do lançamento que o loader leu
+     * UMA vez (com o vínculo que valeu e o critério). Também vira a lacuna
+     * `FONTE_EM_MAIS_DE_UMA_ETAPA`.
+     */
+    fontesDuplicadas: FonteDuplicada[];
+    /**
+     * Regra 9 da skill: registros com UTM em array do Postgres. `vendas`/`leads`
+     * = registros com algum campo desembrulhado (`{"qr","qr"}` → `qr`);
+     * `ambiguas` = registros com array de valores DISTINTOS, que ficam como o
+     * texto cru (`desembrulharUtm`).
+     */
+    utmsEmArray: { vendas: number; leads: number; ambiguas: number };
     foraDoPeriodo: Record<GrupoDaEtapa, GrupoMonetario>;
     vendasSemDia: number;
     linhasConvertidas: number;
@@ -669,19 +714,36 @@ function itemSemPii(l: Linha): ItemDeVendaSemPii {
   return { txId: l.idDaVenda, produto: l.v.produto, valor: reais(l.centavosDaPlanilha), dataBrt: l.dia, fonte: l.fonte };
 }
 
+const CAMPOS_DE_UTM = ["source", "medium", "campaign", "term"] as const;
+
+/**
+ * UTM aparada e com o array do Postgres desembrulhado (`{"qr","qr"}` → `qr`,
+ * regra 9 de higiene da skill — `desembrulharUtm`). É ela que chega ao
+ * classificador, para lead e venda. `campaignName` vem do loader (nome da
+ * campanha), nunca de célula — só é aparado.
+ */
 function utmLimpa(u: Utm | null | undefined): Utm | null {
   if (!u) return null;
-  const s = (x: string | null | undefined) => {
-    const t = (x ?? "").trim();
-    return t ? t : null;
-  };
+  const t = (x: string | null | undefined) => (x ?? "").trim() || null;
   return {
-    source: s(u.source),
-    medium: s(u.medium),
-    campaign: s(u.campaign),
-    term: s(u.term),
-    campaignName: s(u.campaignName),
+    source: desembrulharUtm(u.source).valor,
+    medium: desembrulharUtm(u.medium).valor,
+    campaign: desembrulharUtm(u.campaign).valor,
+    term: desembrulharUtm(u.term).valor,
+    campaignName: t(u.campaignName),
   };
+}
+
+/** Quais formatos de array aparecem nos campos de UTM de um registro. */
+function formatosDeArray(u: Utm | null | undefined): { array: boolean; ambiguo: boolean } {
+  let array = false;
+  let ambiguo = false;
+  for (const campo of CAMPOS_DE_UTM) {
+    const f = desembrulharUtm(u?.[campo]).formato;
+    if (f === "array") array = true;
+    if (f === "array-ambiguo") ambiguo = true;
+  }
+  return { array, ambiguo };
 }
 
 // ---------------------------------------------------------------------------
@@ -954,6 +1016,30 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
       detalhe: dedup.dedupNaoAplicada.map((d) => `${d.planilha}: falta ${d.faltando.join(" e ")}`).join("; "),
     });
   }
+  const fontesDuplicadas = [...(input.fontesDuplicadas ?? [])].map((f) => ({ ...f, vinculos: f.vinculos.map((v) => ({ ...v })) }));
+  if (fontesDuplicadas.length > 0) {
+    lacunas.push({
+      codigo: "FONTE_EM_MAIS_DE_UMA_ETAPA",
+      motivo:
+        "a mesma aba de planilha está ligada a mais de uma etapa do lançamento — foi lida UMA vez, com o vínculo que vale (REL-001); revisar os vínculos na configuração do funil",
+      detalhe: fontesDuplicadas
+        .map(
+          (f) =>
+            `${f.aba}: ${f.vinculos.length} vínculos (${f.vinculos.map((v) => v.papel).join(", ")}); vale o da etapa ${f.stageIdQueVale} (${f.criterio}); ${f.linhasNaoRelidas} linha(s) não relidas`,
+        )
+        .join("; "),
+    });
+  }
+
+  // Regra 9 da skill: UTM em array do Postgres — contada aqui, desembrulhada em `utmLimpa`.
+  const utmsEmArray = { vendas: 0, leads: 0, ambiguas: 0 };
+  const contarArray = (u: Utm, quem: "vendas" | "leads") => {
+    const f = formatosDeArray(u);
+    if (f.array) utmsEmArray[quem] += 1;
+    if (f.ambiguo) utmsEmArray.ambiguas += 1;
+  };
+  for (const l of lidas) contarArray(l.v.utm, "vendas");
+  for (const l of input.leads) contarArray(l.utm, "leads");
 
   // Valor em BRL (moeda estrangeira por mediana × 0,5 → preço modal BRL).
   const naoTmb = dedup.mantidas.filter((l) => !l.tmb);
@@ -1607,6 +1693,8 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
       linhasSemValor,
       dedup: dedupResumo,
       dedupNaoAplicada: dedup.dedupNaoAplicada,
+      fontesDuplicadas,
+      utmsEmArray,
       foraDoPeriodo,
       vendasSemDia,
       linhasConvertidas: resultadoValor.linhasConvertidas,

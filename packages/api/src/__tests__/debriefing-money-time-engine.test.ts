@@ -1178,3 +1178,115 @@ describe("decisão 3A — manual_sales no motor, fonte marcada, Closer por selle
     expect(r.vendasManuais.porGrupo.principal.vendas).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// QA fix iteração 2
+// ---------------------------------------------------------------------------
+
+describe("TEST-005 (QA-M9) — venda manual conta nas vendas do downsell, da reabertura e na nota de TMB", () => {
+  const configComExtras = configBase({
+    datasChave: {
+      ...configBase().datasChave,
+      downsell: { houve: true, abertura: "2026-05-16", fim: "2026-05-18" },
+      reabertura: { houve: true, abertura: "2026-05-19", fim: "2026-05-22" },
+    },
+    etapas: [
+      { stageId: CAP, papel: "vendas-captacao" },
+      { stageId: PRIN, papel: "vendas-principal" },
+      { stageId: DOWN, papel: "vendas-downsell" },
+      { stageId: REAB, papel: "reabertura" },
+    ],
+  });
+  const planilhas = [
+    ...PLANILHAS_PADRAO,
+    planilha("p-tmb", PRIN, { plataforma: "tmb" }),
+    planilha("p-man-prin", PRIN, { plataforma: "manual", temColunaStatus: false }),
+    planilha("p-down", DOWN),
+    planilha("p-man-down", DOWN, { plataforma: "manual", temColunaStatus: false }),
+    planilha("p-man-reab", REAB, { plataforma: "manual", temColunaStatus: false }),
+  ];
+  const manual = (planilhaId: string, over: Partial<VendaCruaInput> = {}) =>
+    venda(planilhaId, { statusCru: null, sellerName: "Netão", produto: "Mentoria", tipo: "principal", valorBrutoCru: "500,00", ...over });
+
+  it("downsell 1 planilha + 1 manual = 2 vendas; reabertura só manual = 1 venda; principal 'N vendas' inclui a manual", () => {
+    const r = rodar({
+      config: configComExtras,
+      planilhas,
+      vendas: [
+        principal({ idDaVendaCru: "PLA" }),
+        venda("p-tmb", { produto: "Mentoria", tipo: "principal", valorBrutoCru: "1.000,00", dataVendaCru: "12/05/2026", idDaVendaCru: "TMB" }),
+        manual("p-man-prin", { idDaVendaCru: "MP", dataVendaCru: "2026-05-13T15:00:00.000Z" }),
+        venda("p-down", { produto: "Downsell", valorBrutoCru: "200,00", dataVendaCru: "17/05/2026", idDaVendaCru: "DP" }),
+        manual("p-man-down", { produto: "Downsell", valorBrutoCru: "300,00", idDaVendaCru: "DM", dataVendaCru: "2026-05-17T15:00:00.000Z" }),
+        manual("p-man-reab", { idDaVendaCru: "RM", dataVendaCru: "2026-05-20T15:00:00.000Z" }),
+      ],
+    });
+    expect(r.downsell).toEqual({ aplicavel: true, vendas: 2, faturamento: 500 });
+    expect(r.apendiceReabertura).toMatchObject({ aplicavel: true, vendas: 1, faturamento: 500 });
+    expect(r.vendasPrincipal).toBe(3);
+    expect(r.faturamentoPrincipal.memoria).toContain("(3 vendas, 1 via TMB (valor não considerado))");
+    expect(r.vendasManuais.porGrupo).toMatchObject({
+      downsell: { vendas: 1, faturamento: 300 },
+      reabertura: { vendas: 1, faturamento: 500 },
+    });
+  });
+});
+
+describe("regra 9 da skill — UTM em array desembrulhada antes do classificador (lead e venda)", () => {
+  it("venda sem lead: source {\"facebook\",\"facebook\"} vira Pago N/D (cru seria Outros orgânicos)", () => {
+    const r = rodar({
+      vendas: [principal({ idDaVendaCru: "ARR", utm: { source: '{"facebook","facebook"}', medium: '{"cpc","cpc"}' } })],
+    });
+    const a = r.auditoriaDeVendas.find((x) => x.txId === "ARR")!;
+    expect(a.utmVenda).toMatchObject({ source: "facebook", medium: "cpc" });
+    expect(a.canal).toBe("Pago N/D");
+    expect(r.higiene.utmsEmArray).toEqual({ vendas: 1, leads: 0, ambiguas: 0 });
+  });
+
+  it("lead: medium {\"x1\",\"x1\"} fecha como closer e term {\"lp|hot|ad\"} decide Pago Quente", () => {
+    const leads: LeadInput[] = [
+      { emailCru: "a@x.com", telefoneCru: null, dataCriacaoCru: "17/04/2026", utm: { source: '{"meta"}', medium: "{x1,x1}", term: '{"lp|hot|ad","lp|hot|ad"}' } },
+    ];
+    const r = rodar({ vendas: [principal({ emailCru: "a@x.com", idDaVendaCru: "LD" })], leads });
+    const a = r.auditoriaDeVendas.find((x) => x.txId === "LD")!;
+    expect(a.utmLead).toMatchObject({ source: "meta", medium: "x1", term: "lp|hot|ad" });
+    expect(a).toMatchObject({ canal: "Pago Quente", fechamento: "closer" });
+    expect(r.higiene.utmsEmArray).toEqual({ vendas: 0, leads: 1, ambiguas: 0 });
+  });
+
+  it("valores distintos ficam crus (Outros orgânicos) e são contados em ambiguas — nunca em silêncio", () => {
+    const r = rodar({
+      vendas: [principal({ idDaVendaCru: "AMB", utm: { source: '{"facebook","google"}', term: '{"backend","lote-3"}' } })],
+    });
+    const a = r.auditoriaDeVendas.find((x) => x.txId === "AMB")!;
+    expect(a.utmVenda.source).toBe('{"facebook","google"}');
+    expect(a.canal).toBe("Outros orgânicos");
+    expect(r.higiene.utmsEmArray).toEqual({ vendas: 0, leads: 0, ambiguas: 1 });
+  });
+});
+
+describe("REL-001 — aba em mais de uma etapa: declarada no payload, nunca em silêncio", () => {
+  it("fontesDuplicadas do loader vira higiene.fontesDuplicadas + lacuna FONTE_EM_MAIS_DE_UMA_ETAPA", () => {
+    const fonte = {
+      aba: "n8n-kiwify-downsell",
+      vinculos: [
+        { stageId: DOWN, papel: "vendas-downsell" as const, planilhaId: "p-down", temColunaId: true, temColunaProduto: true },
+        { stageId: "leads-ds", papel: "leads-downsell" as const, planilhaId: "p-leads-ds", temColunaId: false, temColunaProduto: false },
+      ],
+      vale: "p-down",
+      stageIdQueVale: DOWN,
+      criterio: "mapeamento-id-e-produto" as const,
+      linhasNaoRelidas: 83,
+    };
+    const r = rodar({ fontesDuplicadas: [fonte] });
+    expect(r.higiene.fontesDuplicadas).toEqual([fonte]);
+    const l = r.lacunas.find((x) => x.codigo === "FONTE_EM_MAIS_DE_UMA_ETAPA")!;
+    expect(l.detalhe).toBe(
+      `n8n-kiwify-downsell: 2 vínculos (vendas-downsell, leads-downsell); vale o da etapa ${DOWN} (mapeamento-id-e-produto); 83 linha(s) não relidas`,
+    );
+    // sem duplicata: sem lacuna, lista vazia
+    const limpo = rodar();
+    expect(limpo.higiene.fontesDuplicadas).toEqual([]);
+    expect(limpo.lacunas.some((x) => x.codigo === "FONTE_EM_MAIS_DE_UMA_ETAPA")).toBe(false);
+  });
+});
