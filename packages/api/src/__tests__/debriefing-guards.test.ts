@@ -366,6 +366,19 @@ describe("AC4 — alertas WF1–WF9", () => {
   it("WF8 não lista recorte vazio (n = 0) como amostra baixa", () => {
     expect(alerta(payloadMinimo(), "WF8")!.mensagem).not.toMatch(/\(n=0\)/);
   });
+
+  it("WF7 aparece com SÓ vendas excluídas (sem além da janela nem fora da coorte) — decisão 7 (TEST-002 do QA, QA-M5)", () => {
+    const p = mutado((q) => {
+      const m = q.dinheiroTempo;
+      m.coorte.alemDaJanela = [];
+      m.coorte.foraDaCoorte = [];
+      m.vendasExcluidas = m.vendasExcluidas.slice(0, 1);
+    });
+    expect(p.dinheiroTempo.vendasExcluidas).toHaveLength(1);
+    const wf7 = alerta(p, "WF7");
+    expect(wf7?.quantidade).toBe(1);
+    expect(wf7?.mensagem).toMatch(/excluídas automaticamente antes da abertura 1 \(/);
+  });
 });
 
 // ---------------------------------------------------------------------------

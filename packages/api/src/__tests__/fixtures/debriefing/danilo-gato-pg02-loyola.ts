@@ -75,6 +75,16 @@ export const fixture: FixtureDeDebriefing = {
     classificada("faturamentoTotal"),
     classificada("faturamentoCaptacao"),
     classificada("faturamentoOrderBump"),
+    {
+      chave: "investimentoCaptacao",
+      causa: "fonte-janela",
+      nota:
+        "drift de reprocessamento dos dados da Meta: o payload lê R$ 126.616,38 contra R$ 126.566,14 da spec (+R$ 50,24 / +0,04%), " +
+        "a mesma diferença já registrada na story 41.2 (docs/specs/epic-41-valores-conferencia.md §As duas diferenças que sobraram, item 1) — " +
+        "a Meta reprocessou o spend depois da conferência; abaixo do limiar de alerta de 0,05% e do de bloqueio de 0,5%",
+      classificadaPor: "coordenador (decisão de 2026-10-02, QA loop iteração 1 / REQ-001) — registrada pelo dev Dex na 49.5",
+      data: "2026-10-02",
+    },
   ],
 };
 

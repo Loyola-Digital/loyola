@@ -88,7 +88,7 @@ describe("AC7 — formato das 7 fixtures", () => {
     expect(r.linhas.map((l) => l.chave)).not.toContain("custosFixosEventoMaisMidia");
   });
 
-  it("governante do PG02: valores da Correção 41.10 e as divergências de camada 2 classificadas como definição (até a 41.12 fatia A)", () => {
+  it("governante do PG02: valores da Correção 41.10 e as divergências de camada 2 classificadas como definição (até a 41.12 fatia A) + o drift da Meta no investimento como fonte-janela (REQ-001)", () => {
     const v = Object.fromEntries(dgPg02Loyola.metricas.map((m) => [m.chave, m.valor]));
     expect(v).toMatchObject({
       vendas: 2197,
@@ -113,7 +113,7 @@ describe("AC7 — formato das 7 fixtures", () => {
     });
     const classificadas = (dgPg02Loyola.divergenciasClassificadas ?? []).map((d) => [d.chave, d.causa]);
     expect(classificadas).toEqual(
-      ["vendas", "vendasCaptacao", "vendasOrderBump", "faturamentoTotal", "faturamentoCaptacao", "faturamentoOrderBump"].map((c) => [c, "definicao"]),
+      ["vendas", "vendasCaptacao", "vendasOrderBump", "faturamentoTotal", "faturamentoCaptacao", "faturamentoOrderBump"].map((c) => [c, "definicao"]).concat([["investimentoCaptacao", "fonte-janela"]]),
     );
   });
 
@@ -209,6 +209,27 @@ describe("AC8 — separação do fator de imposto", () => {
     ]));
     expect(r.linhas.map((l) => l.status)).toEqual(["diverge", "diverge"]);
     expect(toleranciaDaClasse("volume")).toBe(0);
+  });
+
+  it("(d') com K ≠ 1, `dinheiro` e `taxa-de-volume` ficam imunes ao fator: igual ao payload sai ok, payload × K sai diverge (TEST-001 do QA, QA-M3)", () => {
+    const p = payloadMinimo();
+    const K = fatorK(p.dinheiroTempo.imposto.impostoPct, FATOR_SKILL);
+    expect(Math.abs(K - 1)).toBeGreaterThan(1e-3);
+    const fat = CAMPOS_COMPARAVEIS.faturamentoCaptacao!.extrair(p)!;
+    const tx = CAMPOS_COMPARAVEIS.conversaoIngressoPrincipal!.extrair(p)!;
+    // A diferença de K precisa passar da tolerância da classe, senão o teste não distingue nada.
+    expect(fat * (K - 1)).toBeGreaterThan(toleranciaDaClasse("dinheiro"));
+    expect(tx * (K - 1)).toBeGreaterThan(toleranciaDaClasse("taxa-de-volume"));
+    const r = compararComFixture(p, fixtureSkill([
+      metrica({ chave: "fat", valor: fat, classe: "dinheiro", unidade: "BRL", mapeamento: "faturamentoCaptacao" }),
+      metrica({ chave: "fat-k", valor: fat * K, classe: "dinheiro", unidade: "BRL", mapeamento: "faturamentoCaptacao" }),
+      metrica({ chave: "tx", valor: tx, classe: "taxa-de-volume", unidade: "pct", mapeamento: "conversaoIngressoPrincipal" }),
+      metrica({ chave: "tx-k", valor: tx * K, classe: "taxa-de-volume", unidade: "pct", mapeamento: "conversaoIngressoPrincipal" }),
+    ]));
+    expect(r.K).toBe(K);
+    expect(r.linhas.map((l) => [l.chave, l.status])).toEqual([["fat", "ok"], ["fat-k", "diverge"], ["tx", "ok"], ["tx-k", "diverge"]]);
+    // O esperado de dinheiro/taxa não é ajustado: é o próprio valor da fonte.
+    expect(r.linhas.map((l) => l.esperadoAjustado)).toEqual([fat, fat * K, tx, tx * K]);
   });
 
   it("(e) motor que usasse o ×1,13 da skill no lugar do gross-up produz custo = esperado ORIGINAL e é marcado diverge", () => {
