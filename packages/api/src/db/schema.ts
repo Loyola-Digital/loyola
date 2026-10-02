@@ -3611,7 +3611,8 @@ export const debriefingConfigs = pgTable(
     /**
      * Opcional; funil do MESMO projeto. SEM FK de propósito: um ON DELETE SET
      * NULL apagaria a premissa sem rastro; o carregador confere se o funil
-     * ainda é do projeto e, se não for, bloqueia (49.1 QA REL-002).
+     * ainda é do projeto e, se não for, gera como edição única com o aviso
+     * COMPARACAO_REMOVIDA (49.1 QA REL-002 + decisão do dono R4-14).
      */
     lancamentoComparacaoFunnelId: uuid("lancamento_comparacao_funnel_id"),
     /** Etapas do funil que compõem o lançamento, com o papel de cada uma. */
@@ -3627,6 +3628,12 @@ export const debriefingConfigs = pgTable(
     /** `utm_medium` que indicam closer (49.2). Nulo = sem resposta; `[]` = resposta explícita. */
     closerMediums: jsonb("closer_mediums").$type<string[]>(),
     closerPorSellerName: boolean("closer_por_seller_name"),
+    /**
+     * `utm_source` de ferramentas de atendimento (ex.: `letalk`, `chatwoot`) que
+     * o classificador lê junto do medium de closer (49.2, R4-12). Como
+     * `closerMediums`: nulo = sem resposta; `[]` = resposta explícita.
+     */
+    ferramentasDeAtendimento: jsonb("ferramentas_de_atendimento").$type<string[]>(),
     dimensaoDeCriativo: varchar("dimensao_de_criativo", {
       length: 20,
     }).$type<DimensaoDeCriativo>(),

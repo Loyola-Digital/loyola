@@ -164,16 +164,30 @@ export interface DebriefingConfigLancamento {
   funnelId: string;
   projectId: string;
   datasChave: DatasChave;
+  /**
+   * `null` = edição única (49.6). Também `null` quando a comparação gravada foi
+   * apagada/saiu do projeto depois de salvar — nesse caso `avisos` traz
+   * `COMPARACAO_REMOVIDA` (R4-14: gera como edição única, com aviso).
+   */
   lancamentoComparacaoFunnelId: string | null;
   etapas: EtapaDoLancamento[];
   perguntasConfirmadas: PerguntasConfirmadas;
   closerMediums: string[];
   closerPorSellerName: boolean;
+  /**
+   * `utm_source` de ferramentas de atendimento do expert (ex.: `letalk`,
+   * `chatwoot`) — não são pessoa nem canal; o classificador (49.2, R4-12,
+   * `ConfigClassificador.ferramentasDeAtendimento`) as lê junto do medium de
+   * closer. Normalizados; `[]` = resposta explícita "nenhuma".
+   */
+  ferramentasDeAtendimento: string[];
   dimensaoDeCriativo: DimensaoDeCriativo;
   imposto: ImpostoResolvido;
   validado: boolean;
   validadoEm: Date | null;
   validadoPor: string | null;
+  /** Avisos que NÃO bloqueiam e que o documento precisa declarar (49.6). */
+  avisos: DebriefingAviso[];
 }
 
 export interface DebriefingConfigPerpetuo {
@@ -216,6 +230,8 @@ export interface ValoresDaConfig {
   perguntasConfirmadas: PerguntasConfirmadasGravadas;
   closerMediums: string[] | null;
   closerPorSellerName: boolean | null;
+  /** R4-12 (pedido da 49.2): mesmo comportamento de `closerMediums` — nulo = sem resposta. */
+  ferramentasDeAtendimento: string[] | null;
   dimensaoDeCriativo: DimensaoDeCriativo | null;
 }
 
@@ -230,6 +246,7 @@ export const VALORES_VAZIOS: Readonly<ValoresDaConfig> = Object.freeze({
   perguntasConfirmadas: {},
   closerMediums: null,
   closerPorSellerName: null,
+  ferramentasDeAtendimento: null,
   dimensaoDeCriativo: null,
 });
 
@@ -245,10 +262,11 @@ export interface DebriefingConfigRaw extends ContextoDaEtapa, ValoresDaConfig {
   etapasForaDoFunil: string[];
   /**
    * A comparação gravada não é mais um funil do projeto (apagado ou movido
-   * depois de salvar). Premissa quebrada: vira campo faltante e `validado` sai
-   * false nesta leitura (49.1 QA REL-002).
+   * depois de salvar). Decisão do dono R4-14: NÃO bloqueia nem derruba
+   * `validado` — o contrato sai como edição única (`lancamentoComparacaoFunnelId
+   * = null`) com o aviso `COMPARACAO_REMOVIDA`. O id gravado fica como rastro.
    */
-  comparacaoAusente: boolean;
+  comparacaoRemovida: boolean;
 }
 
 export type DebriefingConfigRow = typeof debriefingConfigs.$inferSelect;
@@ -282,6 +300,37 @@ export class DebriefingConfigError extends Error {
   toResponse(): { erro: DebriefingErroCodigo; detalhe: string; acao: string } {
     return { erro: this.erro, detalhe: this.detalhe, acao: this.acao };
   }
+}
+
+// ------------------------------------------------------------------
+// Avisos (não bloqueiam)
+// ------------------------------------------------------------------
+
+export type DebriefingAvisoCodigo = "COMPARACAO_REMOVIDA";
+
+/** Mesma forma do corpo de erro, mas não bloqueia: o documento declara (49.6). */
+export interface DebriefingAviso {
+  codigo: DebriefingAvisoCodigo;
+  detalhe: string;
+  acao: string;
+}
+
+/**
+ * Avisos da config crua, em ordem estável. Usado pelo contrato (49.6 mostra no
+ * documento) e pelo GET (o formulário mostra ao lado do campo).
+ */
+export function avisosDebriefing(cfg: DebriefingConfigRaw): DebriefingAviso[] {
+  const avisos: DebriefingAviso[] = [];
+  if (cfg.comparacaoRemovida) {
+    avisos.push({
+      codigo: "COMPARACAO_REMOVIDA",
+      detalhe:
+        `o funil de comparação (${cfg.lancamentoComparacaoFunnelId}) foi apagado ou não é mais do projeto ${cfg.projectName} — ` +
+        `o debriefing será gerado como edição única, sem comparação`,
+      acao: "Escolher outra comparação na configuração do debriefing, ou remover a comparação para tirar este aviso",
+    });
+  }
+  return avisos;
 }
 
 const ACAO_COMBINACAO =
@@ -443,11 +492,7 @@ export function camposFaltantesDebriefing(cfg: DebriefingConfigRaw): string[] {
     }
   }
   for (const id of cfg.etapasForaDoFunil) f.push(`etapas[${id}] não pertence mais ao funil`);
-  if (cfg.comparacaoAusente) {
-    f.push(
-      `lancamentoComparacaoFunnelId (${cfg.lancamentoComparacaoFunnelId}) não é mais um funil do projeto — escolher outra comparação ou remover`,
-    );
-  }
+  // Comparação apagada NÃO entra aqui (R4-14): vira aviso, não bloqueio.
   f.push(...problemasPapelXDatas(cfg.etapas, cfg));
 
   for (const stageId of cfg.etapasComPesquisa) {
@@ -459,6 +504,7 @@ export function camposFaltantesDebriefing(cfg: DebriefingConfigRaw): string[] {
 
   if (cfg.closerMediums === null) f.push("closerMediums (lista vazia é resposta válida)");
   if (cfg.closerPorSellerName === null) f.push("closerPorSellerName");
+  if (cfg.ferramentasDeAtendimento === null) f.push("ferramentasDeAtendimento (lista vazia é resposta válida)");
   if (cfg.dimensaoDeCriativo === null) {
     f.push("dimensaoDeCriativo");
   } else if (!(DIMENSOES_DE_CRIATIVO as readonly string[]).includes(cfg.dimensaoDeCriativo)) {
@@ -549,7 +595,8 @@ function montarDebriefingConfig(cfg: DebriefingConfigRaw): DebriefingConfig {
       reabertura: cfg.reabertura as RespostaEtapaExtra,
       downsell: cfg.downsell as RespostaEtapaExtra,
     },
-    lancamentoComparacaoFunnelId: cfg.lancamentoComparacaoFunnelId,
+    // Comparação removida → edição única (R4-14); o aviso vai em `avisos`.
+    lancamentoComparacaoFunnelId: cfg.comparacaoRemovida ? null : cfg.lancamentoComparacaoFunnelId,
     etapas: cfg.etapas.map((e) => ({ stageId: e.stageId, papel: e.papel })),
     // Só etapas com pesquisa (AC5), e todas com `faixa` explícita (exigida acima).
     perguntasConfirmadas: Object.fromEntries(
@@ -560,8 +607,10 @@ function montarDebriefingConfig(cfg: DebriefingConfigRaw): DebriefingConfig {
     ) as PerguntasConfirmadas,
     closerMediums: [...(cfg.closerMediums as string[])],
     closerPorSellerName: cfg.closerPorSellerName as boolean,
+    ferramentasDeAtendimento: [...(cfg.ferramentasDeAtendimento as string[])],
     dimensaoDeCriativo: cfg.dimensaoDeCriativo as DimensaoDeCriativo,
     imposto: cfg.imposto,
+    avisos: avisosDebriefing(cfg),
   };
 }
 
@@ -598,22 +647,38 @@ function chaveDasPremissas(v: ValoresDaConfig): string {
     perguntasConfirmadas: v.perguntasConfirmadas,
     closerMediums: v.closerMediums === null ? null : [...v.closerMediums].sort(),
     closerPorSellerName: v.closerPorSellerName,
+    ferramentasDeAtendimento: v.ferramentasDeAtendimento === null ? null : [...v.ferramentasDeAtendimento].sort(),
     dimensaoDeCriativo: v.dimensaoDeCriativo,
   });
 }
 
 /**
  * Toda coluna desta config é premissa (datas-chave, comparação, etapas,
- * perguntas, closer, criativo): mudou qualquer uma → a conferência anterior não
- * vale mais (mesma lógica da 41.1).
+ * perguntas, closer, ferramentas de atendimento, criativo): mudou qualquer uma
+ * → a conferência anterior não vale mais (mesma lógica da 41.1).
  */
 export function premissaMudou(antes: ValoresDaConfig, depois: ValoresDaConfig): boolean {
   return chaveDasPremissas(antes) !== chaveDasPremissas(depois);
 }
 
-/** `trim` + minúsculas, sem repetição (49.1 AC10). Item vazio é rejeitado antes. */
+/**
+ * `trim` + minúsculas, sem repetição (49.1 AC10). Item vazio é rejeitado antes.
+ * Vale para qualquer lista de valores de UTM da config: `closerMediums` e
+ * `ferramentasDeAtendimento` (R4-12).
+ */
 export function normalizarCloserMediums(lista: readonly string[]): string[] {
   return [...new Set(lista.map((m) => m.trim().toLowerCase()))];
+}
+
+/**
+ * Premissa EFETIVA de valores gravados: comparação que não é mais funil do
+ * projeto já vale como "sem comparação" (R4-14 — o gerador já faz edição
+ * única). Assim, limpar a comparação órfã no PUT não derruba `validado`;
+ * trocar por OUTRO funil continua derrubando.
+ */
+export function premissaEfetiva(v: ValoresDaConfig, funisDoProjeto: readonly string[]): ValoresDaConfig {
+  if (v.lancamentoComparacaoFunnelId === null || funisDoProjeto.includes(v.lancamentoComparacaoFunnelId)) return v;
+  return { ...v, lancamentoComparacaoFunnelId: null };
 }
 
 export function valoresDaLinha(row: DebriefingConfigRow): ValoresDaConfig {
@@ -629,6 +694,7 @@ export function valoresDaLinha(row: DebriefingConfigRow): ValoresDaConfig {
       row.perguntasConfirmadas && typeof row.perguntasConfirmadas === "object" ? row.perguntasConfirmadas : {},
     closerMediums: Array.isArray(row.closerMediums) ? row.closerMediums : null,
     closerPorSellerName: row.closerPorSellerName ?? null,
+    ferramentasDeAtendimento: Array.isArray(row.ferramentasDeAtendimento) ? row.ferramentasDeAtendimento : null,
     dimensaoDeCriativo: row.dimensaoDeCriativo ?? null,
   };
 }
@@ -786,8 +852,9 @@ async function montarConfigBruta(
   }
 
   // A comparação não tem FK (um SET NULL apagaria a premissa sem deixar
-  // rastro): confere aqui se o funil ainda é do projeto.
-  const comparacaoAusente =
+  // rastro): confere aqui se o funil ainda é do projeto. Se não for, o
+  // contrato sai como edição única com aviso (R4-14) — não bloqueia.
+  const comparacaoRemovida =
     ctx.funnelType === "launch" &&
     valores.lancamentoComparacaoFunnelId !== null &&
     !(await store.funisDoProjeto(ctx.projectId)).includes(valores.lancamentoComparacaoFunnelId);
@@ -799,14 +866,13 @@ async function montarConfigBruta(
   return {
     ...ctx,
     ...valores,
-    // Comparação que sumiu: a conferência anterior não vale mais.
-    validado: row.validado && !comparacaoAusente,
+    validado: row.validado,
     validadoEm: row.validadoEm ?? null,
     validadoPor: row.validadoPor ?? null,
     imposto,
     etapasComPesquisa,
     etapasForaDoFunil,
-    comparacaoAusente,
+    comparacaoRemovida,
   };
 }
 

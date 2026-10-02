@@ -17,12 +17,14 @@ import {
   DIMENSOES_DE_CRIATIVO,
   DebriefingConfigError,
   assertDebriefingScope,
+  avisosDebriefing,
   camposFaltantesDebriefing,
   dataExiste,
   isCombinacaoLiberada,
   loadDebriefingConfig,
   loadDebriefingConfigRaw,
   normalizarCloserMediums,
+  premissaEfetiva,
   premissaMudou,
   problemasDasDatasChave,
   problemasDasPerguntas,
@@ -59,7 +61,7 @@ function raw(over: Partial<DebriefingConfigRaw> = {}): DebriefingConfigRaw {
     imposto: { valor: META_TAX_RATE, origem: "default" },
     etapasComPesquisa: [IDS.captacao],
     etapasForaDoFunil: [],
-    comparacaoAusente: false,
+    comparacaoRemovida: false,
     ...over,
   };
 }
@@ -137,11 +139,13 @@ describe("loadDebriefingConfig — gate dentro do carregador (AC7)", () => {
       perguntasConfirmadas: { [IDS.captacao]: { faixa: "faixa", renda: "q_renda" } },
       closerMediums: ["x1", "comercial"],
       closerPorSellerName: false,
+      ferramentasDeAtendimento: [],
       dimensaoDeCriativo: "ia-humano",
       imposto: { valor: 0.08, origem: "project" },
       validado: false,
       validadoEm: null,
       validadoPor: null,
+      avisos: [],
     });
   });
 
@@ -293,6 +297,7 @@ const SUPERFICIE = {
   // Estado do gate / erros
   avaliarBloqueioDebriefing: "gate",
   assertDebriefingScope: "puro",
+  avisosDebriefing: "puro", // R4-14 — avisos que não bloqueiam
   assertEtapaDeDebriefing: "puro",
   assertTipoDeFunilSuportado: "puro",
   DebriefingConfigError: "puro",
@@ -304,6 +309,7 @@ const SUPERFICIE = {
   etapasComChaveConfirmada: "puro",
   isCombinacaoLiberada: "puro",
   normalizarCloserMediums: "puro",
+  premissaEfetiva: "puro", // R4-14 — comparação órfã vale como "sem comparação"
   premissaMudou: "puro",
   problemasDasDatasChave: "puro",
   problemasDasPerguntas: "puro",
@@ -657,6 +663,50 @@ describe("AC5 — perguntas confirmadas", () => {
 // AC10 — classificador e criativo
 // ------------------------------------------------------------------
 
+describe("R4-12 (pedido da 49.2) — ferramentasDeAtendimento, mesmo comportamento de closerMediums", () => {
+  it("ausente → CONFIG_INCOMPLETA nomeando o campo", async () => {
+    expect(camposFaltantesDebriefing(raw({ ferramentasDeAtendimento: null }))).toEqual([
+      "ferramentasDeAtendimento (lista vazia é resposta válida)",
+    ]);
+    const ctx = contexto({ projectId: DG_PG02.projectId, funnelId: DG_PG02.funnelId });
+    const m = mundoPadrao(ctx);
+    m.linhas.set(IDS.debriefing, linha(IDS.debriefing, valoresCompletos({ ferramentasDeAtendimento: null })));
+    const err = await erroDe(loadDebriefingConfig(db, IDS.debriefing, storeEmMemoria(m)));
+    expect(err.erro).toBe("CONFIG_INCOMPLETA");
+    expect(err.camposFaltantes).toEqual(["ferramentasDeAtendimento (lista vazia é resposta válida)"]);
+  });
+
+  it("[] é resposta válida (completa a config)", () => {
+    expect(camposFaltantesDebriefing(raw({ ferramentasDeAtendimento: [] }))).toEqual([]);
+  });
+
+  it("mudança zera validado (premissa); a ordem não é premissa; null → [] também é mudança", () => {
+    const antes = valoresCompletos({ ferramentasDeAtendimento: ["letalk", "chatwoot"] });
+    expect(premissaMudou(antes, valoresCompletos({ ferramentasDeAtendimento: ["chatwoot", "letalk"] }))).toBe(false);
+    expect(premissaMudou(antes, valoresCompletos({ ferramentasDeAtendimento: ["letalk"] }))).toBe(true);
+    expect(premissaMudou(valoresCompletos(), antes)).toBe(true);
+    expect(premissaMudou(valoresCompletos({ ferramentasDeAtendimento: null }), valoresCompletos())).toBe(true);
+  });
+
+  it("o contrato entrega a lista gravada; jsonb que não é lista lê como sem resposta", async () => {
+    const m = mundoPadrao();
+    m.linhas.set(
+      IDS.debriefing,
+      linha(IDS.debriefing, valoresCompletos({ ferramentasDeAtendimento: ["letalk", "chatwoot"] }), { validado: true }),
+    );
+    expect(await loadDebriefingConfig(db, IDS.debriefing, storeEmMemoria(m))).toMatchObject({
+      ferramentasDeAtendimento: ["letalk", "chatwoot"],
+    });
+    m.linhas.set(
+      IDS.debriefing,
+      linha(IDS.debriefing, valoresCompletos(), { validado: true, ferramentasDeAtendimento: { x: 1 } as unknown as string[] }),
+    );
+    expect((await erroDe(loadDebriefingConfig(db, IDS.debriefing, storeEmMemoria(m)))).camposFaltantes).toEqual([
+      "ferramentasDeAtendimento (lista vazia é resposta válida)",
+    ]);
+  });
+});
+
 describe("AC10 — closerMediums / closerPorSellerName / dimensaoDeCriativo", () => {
   it("closerMediums normalizados (trim + minúsculas, sem repetição)", () => {
     expect(normalizarCloserMediums([" X1 ", "Comercial", "x1"])).toEqual(["x1", "comercial"]);
@@ -710,39 +760,78 @@ describe("forma crua (loadDebriefingConfigRaw)", () => {
     expect(cfg?.imposto).toEqual({ valor: META_TAX_RATE, origem: "default" });
   });
 
-  it("comparação que não é mais funil do projeto: validado sai false e vira campo faltante (QA REL-002)", async () => {
+  it("R4-14 — comparação apagada depois de validar: validado mantido, NÃO é campo faltante, contrato em edição única com COMPARACAO_REMOVIDA", async () => {
     const m = mundoPadrao();
     m.linhas.set(
       IDS.debriefing,
       linha(IDS.debriefing, valoresCompletos({ lancamentoComparacaoFunnelId: IDS.funilComparacao }), { validado: true }),
     );
-    // Com o funil de comparação no projeto: validado e completa.
+    // Com o funil de comparação no projeto: comparação no contrato, sem aviso.
     let cfg = await cru(m);
-    expect(cfg?.comparacaoAusente).toBe(false);
-    expect(cfg?.validado).toBe(true);
-    expect(camposFaltantesDebriefing(cfg!)).toEqual([]);
+    expect(cfg?.comparacaoRemovida).toBe(false);
+    const comComparacao = await loadDebriefingConfig(db, IDS.debriefing, storeEmMemoria(m));
+    expect(comComparacao).toMatchObject({ lancamentoComparacaoFunnelId: IDS.funilComparacao, avisos: [] });
 
     // Funil de comparação apagado (ou movido para outro projeto).
     m.funisPorProjeto.set(IDS.projeto, [IDS.funil]);
     cfg = await cru(m);
-    expect(cfg?.comparacaoAusente).toBe(true);
-    expect(cfg?.validado).toBe(false);
-    expect(camposFaltantesDebriefing(cfg!)).toEqual([
-      `lancamentoComparacaoFunnelId (${IDS.funilComparacao}) não é mais um funil do projeto — escolher outra comparação ou remover`,
+    expect(cfg?.comparacaoRemovida).toBe(true);
+    expect(cfg?.validado).toBe(true); // a conferência continua valendo (decisão do dono)
+    expect(cfg?.lancamentoComparacaoFunnelId).toBe(IDS.funilComparacao); // rastro do id gravado
+    expect(camposFaltantesDebriefing(cfg!)).toEqual([]);
+
+    const contrato = await loadDebriefingConfig(db, IDS.debriefing, storeEmMemoria(m));
+    if (contrato.tipoDeFunil !== "launch") throw new Error("esperava launch");
+    expect(contrato.lancamentoComparacaoFunnelId).toBeNull(); // 49.6: null ⇒ edição única
+    expect(contrato.validado).toBe(true);
+    expect(contrato.avisos).toEqual([
+      {
+        codigo: "COMPARACAO_REMOVIDA",
+        detalhe:
+          `o funil de comparação (${IDS.funilComparacao}) foi apagado ou não é mais do projeto Expert Teste — ` +
+          "o debriefing será gerado como edição única, sem comparação",
+        acao: "Escolher outra comparação na configuração do debriefing, ou remover a comparação para tirar este aviso",
+      },
     ]);
-    expect((await erroDe(loadDebriefingConfig(db, IDS.debriefing, storeEmMemoria(m)))).erro).toBe(
-      "COMBINACAO_NAO_VALIDADA",
-    );
   });
 
-  it("comparação ausente bloqueia também a combinação LIBERADA (CONFIG_INCOMPLETA)", async () => {
+  it("R4-14 — combinação LIBERADA com a comparação apagada gera (edição única), não CONFIG_INCOMPLETA", async () => {
     const ctx = contexto({ projectId: DG_PG02.projectId, funnelId: DG_PG02.funnelId });
     const m = mundoPadrao(ctx);
     m.funisPorProjeto.set(DG_PG02.projectId, [DG_PG02.funnelId]);
     m.linhas.set(IDS.debriefing, linha(IDS.debriefing, valoresCompletos({ lancamentoComparacaoFunnelId: IDS.funilComparacao })));
+    const cfg = await loadDebriefingConfig(db, IDS.debriefing, storeEmMemoria(m));
+    expect(cfg).toMatchObject({ tipoDeFunil: "launch", lancamentoComparacaoFunnelId: null, validado: false });
+    if (cfg.tipoDeFunil !== "launch") throw new Error("esperava launch");
+    expect(cfg.avisos.map((a) => a.codigo)).toEqual(["COMPARACAO_REMOVIDA"]);
+  });
+
+  it("R4-14 — fora da lista e SEM validado, a comparação apagada não muda o motivo do bloqueio", async () => {
+    const m = mundoPadrao();
+    m.funisPorProjeto.set(IDS.projeto, [IDS.funil]);
+    m.linhas.set(IDS.debriefing, linha(IDS.debriefing, valoresCompletos({ lancamentoComparacaoFunnelId: IDS.funilComparacao })));
     const err = await erroDe(loadDebriefingConfig(db, IDS.debriefing, storeEmMemoria(m)));
-    expect(err.erro).toBe("CONFIG_INCOMPLETA");
-    expect(err.detalhe).toContain("lancamentoComparacaoFunnelId");
+    expect(err.erro).toBe("COMBINACAO_NAO_VALIDADA");
+    expect(err.detalhe).not.toContain("lancamentoComparacaoFunnelId");
+  });
+
+  it("avisosDebriefing — sem comparação removida não há aviso", () => {
+    expect(avisosDebriefing(raw())).toEqual([]);
+    expect(avisosDebriefing(raw({ lancamentoComparacaoFunnelId: IDS.funilComparacao }))).toEqual([]);
+    expect(
+      avisosDebriefing(raw({ lancamentoComparacaoFunnelId: IDS.funilComparacao, comparacaoRemovida: true })).map((a) => a.codigo),
+    ).toEqual(["COMPARACAO_REMOVIDA"]);
+  });
+
+  it("premissaEfetiva — comparação órfã vale como null; válida e nula ficam como estão", () => {
+    const funis = [IDS.funil, IDS.funilComparacao];
+    const valida = valoresCompletos({ lancamentoComparacaoFunnelId: IDS.funilComparacao });
+    expect(premissaEfetiva(valida, funis)).toBe(valida);
+    const nula = valoresCompletos();
+    expect(premissaEfetiva(nula, funis)).toBe(nula);
+    const orfa = valoresCompletos({ lancamentoComparacaoFunnelId: IDS.funilDeOutroProjeto });
+    expect(premissaEfetiva(orfa, funis)).toEqual(valoresCompletos());
+    expect(orfa.lancamentoComparacaoFunnelId).toBe(IDS.funilDeOutroProjeto); // não muta a entrada
   });
 
   it("sem comparação gravada: não consulta os funis do projeto e nada muda (AC3)", async () => {
@@ -750,7 +839,7 @@ describe("forma crua (loadDebriefingConfigRaw)", () => {
     m.linhas.set(IDS.debriefing, linha(IDS.debriefing, valoresCompletos(), { validado: true }));
     const store = storeEmMemoria(m);
     const r = await loadDebriefingConfigRaw(db, IDS.debriefing, store);
-    expect(r?.config?.comparacaoAusente).toBe(false);
+    expect(r?.config?.comparacaoRemovida).toBe(false);
     expect(r?.config?.validado).toBe(true);
     expect(store.funisDoProjeto).not.toHaveBeenCalled();
   });

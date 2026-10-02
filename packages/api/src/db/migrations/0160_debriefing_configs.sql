@@ -18,11 +18,15 @@
 --   lancamento_comparacao_funnel_id → funil do MESMO projeto (opcional). SEM FK
 --     de propósito: um ON DELETE SET NULL apagaria a premissa sem deixar rastro
 --     (a config seguiria "validada" sem a comparação). O carregador confere se
---     o funil ainda é do projeto e, se não for, bloqueia (CONFIG_INCOMPLETA).
+--     o funil ainda é do projeto e, se não for, gera como EDIÇÃO ÚNICA com o
+--     aviso COMPARACAO_REMOVIDA (decisão do dono R4-14 — não bloqueia).
 --   etapas (jsonb) → [{"stageId", "papel"}], papel ∈ LAUNCH_REPORT_ETAPAS + 'reabertura'
 --   perguntas_confirmadas (jsonb) → {stageId: {"faixa": chave|null, campo?: chave}}
 --   closer_mediums (jsonb) / closer_por_seller_name / dimensao_de_criativo → config
 --     do classificador (49.2) e do criativo (49.4); lista vazia é resposta válida
+--   ferramentas_de_atendimento (jsonb) → utm_source de ferramentas (letalk,
+--     chatwoot…) lidas pelo classificador com o medium de closer (49.2, R4-12).
+--     Como closer_mediums: nulo = sem resposta; '[]' = resposta explícita.
 --
 -- Funil perpétuo: a linha existe só para ancorar a etapa e guardar `validado`
 -- (49.1 AC11); nenhuma coluna de lançamento é exigida.
@@ -37,7 +41,7 @@
 --   SELECT column_name, data_type, is_nullable, column_default
 --   FROM information_schema.columns
 --   WHERE table_name = 'debriefing_configs'
---   ORDER BY ordinal_position;                                  -- 18 colunas
+--   ORDER BY ordinal_position;                                  -- 19 colunas
 --
 --   SELECT indexname FROM pg_indexes
 --   WHERE tablename = 'debriefing_configs';                     -- pkey + stage_uniq
@@ -64,6 +68,7 @@ CREATE TABLE IF NOT EXISTS "debriefing_configs" (
   "perguntas_confirmadas" jsonb DEFAULT '{}'::jsonb NOT NULL,
   "closer_mediums" jsonb,
   "closer_por_seller_name" boolean,
+  "ferramentas_de_atendimento" jsonb,
   "dimensao_de_criativo" varchar(20),
   "validado" boolean DEFAULT false NOT NULL,
   "validado_em" timestamp with time zone,

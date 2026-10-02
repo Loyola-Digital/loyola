@@ -24,6 +24,7 @@ import {
   DIMENSOES_DE_CRIATIVO,
   VALORES_VAZIOS,
   avaliarBloqueioDebriefing,
+  avisosDebriefing,
   camposFaltantesDebriefing,
   criarDebriefingConfigStore,
   dataExiste,
@@ -32,6 +33,7 @@ import {
   isCombinacaoLiberada,
   loadDebriefingConfigRaw,
   normalizarCloserMediums,
+  premissaEfetiva,
   premissaMudou,
   problemasDasPerguntas,
   problemasDoCorpoLancamento,
@@ -99,6 +101,10 @@ const corpoLancamentoSchema = z
       .array(z.string().trim().min(1, "item vazio não é um utm_medium"))
       .optional(),
     closerPorSellerName: z.boolean().optional(),
+    /** R4-12 (49.2): como `closerMediums` — omitido = sem resposta (CONFIG_INCOMPLETA); `[]` vale. */
+    ferramentasDeAtendimento: z
+      .array(z.string().trim().min(1, "item vazio não é um utm_source"))
+      .optional(),
     dimensaoDeCriativo: z.enum(DIMENSOES_DE_CRIATIVO).optional(),
   })
   .strict();
@@ -213,7 +219,10 @@ export default fp<DebriefingConfigRoutesOptions>(async function debriefingConfig
             perguntasConfirmadas: raw.perguntasConfirmadas,
             closerMediums: raw.closerMediums,
             closerPorSellerName: raw.closerPorSellerName,
+            ferramentasDeAtendimento: raw.ferramentasDeAtendimento,
             dimensaoDeCriativo: raw.dimensaoDeCriativo,
+            /** O id acima foi apagado/saiu do projeto: o gerador faz edição única (R4-14). */
+            comparacaoRemovida: raw.comparacaoRemovida,
             validado: raw.validado,
             validadoEm: raw.validadoEm,
             validadoPor: raw.validadoPor,
@@ -224,6 +233,8 @@ export default fp<DebriefingConfigRoutesOptions>(async function debriefingConfig
       bloqueio,
       /** O que falta preencher (lançamento). Vazio também quando não há config. */
       camposFaltantes: raw ? camposFaltantesDebriefing(raw) : [],
+      /** Não bloqueiam; o documento os declara (ex.: COMPARACAO_REMOVIDA → edição única). */
+      avisos: raw ? avisosDebriefing(raw) : [],
       /** A combinação (projeto + funil) consta da lista liberada da decisão 2. */
       combinacaoLiberada: isCombinacaoLiberada(ctx),
       /** Alíquota efetiva + procedência (stage | project | default). */
@@ -245,6 +256,7 @@ export default fp<DebriefingConfigRoutesOptions>(async function debriefingConfig
 
     const existente = await s.linhaDaConfig(ctx.stageId);
     let valores: ValoresDaConfig;
+    let funisDoProjeto: string[] = [];
 
     if (ctx.funnelType === "perpetual") {
       // AC11: perpétuo não tem campo nenhum — a linha só ancora a etapa e
@@ -276,10 +288,13 @@ export default fp<DebriefingConfigRoutesOptions>(async function debriefingConfig
         perguntasConfirmadas: (b.perguntasConfirmadas ?? {}) as ValoresDaConfig["perguntasConfirmadas"],
         closerMediums: b.closerMediums === undefined ? null : normalizarCloserMediums(b.closerMediums),
         closerPorSellerName: b.closerPorSellerName ?? null,
+        ferramentasDeAtendimento:
+          b.ferramentasDeAtendimento === undefined ? null : normalizarCloserMediums(b.ferramentasDeAtendimento),
         dimensaoDeCriativo: b.dimensaoDeCriativo ?? null,
       };
 
-      const [etapasDoFunil, funisDoProjeto] = await Promise.all([
+      let etapasDoFunil: { id: string }[];
+      [etapasDoFunil, funisDoProjeto] = await Promise.all([
         s.etapasDoFunil(ctx.funnelId),
         s.funisDoProjeto(ctx.projectId),
       ]);
@@ -327,7 +342,10 @@ export default fp<DebriefingConfigRoutesOptions>(async function debriefingConfig
     // Mudou qualquer premissa → a conferência anterior não vale mais. Sem linha
     // lida, o upsert reseta por precaução: se outra requisição criou a linha no
     // meio (corrida do primeiro "salvar"), não há premissa para comparar.
-    const resetar = !!existente && premissaMudou(valoresDaLinha(existente), valores);
+    // Comparação órfã gravada conta como "sem comparação" (R4-14): limpá-la não
+    // muda o que o gerador faz (já era edição única), então não reseta.
+    const resetar =
+      !!existente && premissaMudou(premissaEfetiva(valoresDaLinha(existente), funisDoProjeto), valores);
     await s.gravar(ctx.stageId, valores, { resetarValidado: !existente || resetar });
     return { ok: true, validacaoResetada: resetar };
   });

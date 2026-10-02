@@ -59,6 +59,7 @@ function corpo(v: ValoresDaConfig = valoresCompletos()): Record<string, unknown>
     perguntasConfirmadas: v.perguntasConfirmadas,
     closerMediums: v.closerMediums,
     closerPorSellerName: v.closerPorSellerName,
+    ferramentasDeAtendimento: v.ferramentasDeAtendimento,
     dimensaoDeCriativo: v.dimensaoDeCriativo,
   };
 }
@@ -266,6 +267,124 @@ describe("PUT — validações (400 indicando o campo; nada gravado)", () => {
   });
 });
 
+describe("R4-12 (pedido da 49.2) — ferramentasDeAtendimento no PUT", () => {
+  it("normalizada (trim + minúsculas, sem repetição); omitida grava null (sem resposta); [] grava []", async () => {
+    const b = corpo();
+    b.ferramentasDeAtendimento = [" LeTalk ", "chatwoot", "letalk"];
+    expect((await app.inject({ method: "PUT", url: URL, payload: b })).statusCode).toBe(200);
+    expect(store.gravar.mock.calls[0][1].ferramentasDeAtendimento).toEqual(["letalk", "chatwoot"]);
+
+    const semCampo = corpo();
+    delete semCampo.ferramentasDeAtendimento;
+    expect((await app.inject({ method: "PUT", url: URL, payload: semCampo })).statusCode).toBe(200);
+    expect(store.gravar.mock.calls[1][1].ferramentasDeAtendimento).toBeNull();
+
+    expect((await app.inject({ method: "PUT", url: URL, payload: corpo() })).statusCode).toBe(200);
+    expect(store.gravar.mock.calls[2][1].ferramentasDeAtendimento).toEqual([]);
+  });
+
+  it("omitida → GET com bloqueio CONFIG_INCOMPLETA listando o campo", async () => {
+    const dg = DEBRIEFING_COMBINACOES_LIBERADAS[0];
+    mundo = mundoPadrao(contexto({ projectId: dg.projectId, funnelId: dg.funnelId }));
+    store = storeEmMemoria(mundo);
+    app = await montarApp();
+    const url = `/api/projects/${dg.projectId}/funnels/${dg.funnelId}/stages/${IDS.debriefing}/debriefing/config`;
+    const b = corpo();
+    delete b.ferramentasDeAtendimento;
+    expect((await app.inject({ method: "PUT", url, payload: b })).statusCode).toBe(200);
+    const body = (await app.inject({ method: "GET", url })).json();
+    expect(body.bloqueio.erro).toBe("CONFIG_INCOMPLETA");
+    expect(body.camposFaltantes).toEqual(["ferramentasDeAtendimento (lista vazia é resposta válida)"]);
+  });
+
+  it("mudar a lista no PUT zera validado", async () => {
+    mundo.linhas.set(IDS.debriefing, linha(IDS.debriefing, valoresCompletos(), { validado: true }));
+    const res = await app.inject({
+      method: "PUT",
+      url: URL,
+      payload: corpo(valoresCompletos({ ferramentasDeAtendimento: ["letalk"] })),
+    });
+    expect(res.json()).toEqual({ ok: true, validacaoResetada: true });
+    expect(mundo.linhas.get(IDS.debriefing)?.validado).toBe(false);
+  });
+
+  it("item vazio → 400 apontando o item; nada gravado", async () => {
+    const res = await app.inject({ method: "PUT", url: URL, payload: { ...corpo(), ferramentasDeAtendimento: ["letalk", " "] } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().erros.join("\n")).toContain("ferramentasDeAtendimento.1");
+    expect(store.gravar).not.toHaveBeenCalled();
+  });
+
+  it("GET devolve a lista gravada", async () => {
+    mundo.linhas.set(IDS.debriefing, linha(IDS.debriefing, valoresCompletos({ ferramentasDeAtendimento: ["letalk"] })));
+    expect((await app.inject({ method: "GET", url: URL })).json().config.ferramentasDeAtendimento).toEqual(["letalk"]);
+  });
+});
+
+describe("R4-14 — comparação apagada depois de validar (edição única, com aviso)", () => {
+  /** Comparação gravada que não é mais funil do projeto (movida para outro projeto). */
+  function comComparacaoOrfa(validado: boolean) {
+    mundo.linhas.set(
+      IDS.debriefing,
+      linha(IDS.debriefing, valoresCompletos({ lancamentoComparacaoFunnelId: IDS.funilDeOutroProjeto }), {
+        validado,
+        validadoPor: validado ? IDS.usuario : null,
+        validadoEm: validado ? new Date("2026-10-01T10:00:00Z") : null,
+      }),
+    );
+  }
+
+  it("GET: sem bloqueio, validado mantido, comparação marcada como removida e aviso COMPARACAO_REMOVIDA", async () => {
+    comComparacaoOrfa(true);
+    const body = (await app.inject({ method: "GET", url: URL })).json();
+    expect(body.bloqueio).toBeNull();
+    expect(body.camposFaltantes).toEqual([]);
+    expect(body.config.lancamentoComparacaoFunnelId).toBe(IDS.funilDeOutroProjeto);
+    expect(body.config.comparacaoRemovida).toBe(true);
+    expect(body.config.validado).toBe(true);
+    expect(body.config.validadoPorNome).toBe("Fulano do Time");
+    expect(body.avisos.map((a: { codigo: string }) => a.codigo)).toEqual(["COMPARACAO_REMOVIDA"]);
+    expect(body.avisos[0].detalhe).toContain("edição única");
+  });
+
+  it("GET sem comparação removida: avisos [] e comparacaoRemovida false", async () => {
+    mundo.linhas.set(IDS.debriefing, linha(IDS.debriefing, valoresCompletos(), { validado: true }));
+    const body = (await app.inject({ method: "GET", url: URL })).json();
+    expect(body.avisos).toEqual([]);
+    expect(body.config.comparacaoRemovida).toBe(false);
+  });
+
+  it("PUT limpando a comparação órfã NÃO reseta validado (o gerador já fazia edição única)", async () => {
+    comComparacaoOrfa(true);
+    const res = await app.inject({ method: "PUT", url: URL, payload: corpo(valoresCompletos()) });
+    expect(res.json()).toEqual({ ok: true, validacaoResetada: false });
+    expect(store.gravar.mock.calls[0][2]).toEqual({ resetarValidado: false });
+    expect(mundo.linhas.get(IDS.debriefing)?.validado).toBe(true);
+  });
+
+  it("PUT trocando a comparação órfã por OUTRO funil reseta validado (premissa nova)", async () => {
+    comComparacaoOrfa(true);
+    const res = await app.inject({
+      method: "PUT",
+      url: URL,
+      payload: corpo(valoresCompletos({ lancamentoComparacaoFunnelId: IDS.funilComparacao })),
+    });
+    expect(res.json()).toEqual({ ok: true, validacaoResetada: true });
+    expect(mundo.linhas.get(IDS.debriefing)?.validado).toBe(false);
+  });
+
+  it("PUT reenviando o id órfão → 400 (não é funil do projeto); nada gravado", async () => {
+    comComparacaoOrfa(true);
+    const res = await app.inject({
+      method: "PUT",
+      url: URL,
+      payload: corpo(valoresCompletos({ lancamentoComparacaoFunnelId: IDS.funilDeOutroProjeto })),
+    });
+    expect(res.statusCode).toBe(400);
+    expect(store.gravar).not.toHaveBeenCalled();
+  });
+});
+
 describe("AC11 — tipo de funil nas rotas", () => {
   it("perpétuo: PUT sem campos cria a linha (ancora validado); campo de lançamento → 400", async () => {
     mundo = mundoPadrao(contexto({ funnelType: "perpetual" }));
@@ -285,6 +404,7 @@ describe("AC11 — tipo de funil nas rotas", () => {
       perguntasConfirmadas: {},
       closerMediums: null,
       closerPorSellerName: null,
+      ferramentasDeAtendimento: null,
       dimensaoDeCriativo: null,
     });
 

@@ -271,7 +271,9 @@
 // (tabela `debriefing_configs`, migration 0160 — aplicada à mão, o deploy não
 // a aplica). O GET devolve `config`, `bloqueio` (gate: TIPO_DE_FUNIL_NAO_
 // SUPORTADO / COMBINACAO_NAO_VALIDADA / CONFIG_INCOMPLETA), `camposFaltantes`,
-// `combinacaoLiberada`, `imposto` com procedência e `perguntasDisponiveis` por
+// `avisos` (não bloqueiam; `COMPARACAO_REMOVIDA` = comparação apagada depois de
+// salvar → edição única, R4-14), `combinacaoLiberada`, `imposto` com
+// procedência e `perguntasDisponiveis` por
 // etapa (`ok` | `sem-pesquisa` | `falha`). ADITIVA: nenhuma rota existente muda;
 // o web ainda não consome (formulário e botão são da 49.6, que precisa tratar
 // 404 da rota como "API atrás"). `packages/mcp` não é afetado.

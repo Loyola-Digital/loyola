@@ -66,6 +66,7 @@ export function valoresCompletos(over: Partial<ValoresDaConfig> = {}): ValoresDa
     perguntasConfirmadas: { [IDS.captacao]: { faixa: "faixa", renda: "q_renda" } },
     closerMediums: ["x1", "comercial"],
     closerPorSellerName: false,
+    ferramentasDeAtendimento: [],
     dimensaoDeCriativo: "ia-humano",
     ...over,
   };

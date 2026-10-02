@@ -14,8 +14,9 @@
  *   M12 — `etapasComPesquisa` ignora `funnel_surveys`;
  *   M13 — o join do contexto troca `projects.id` → a checagem de IDOR compara
  *         o id errado;
- * mais REL-001 (dois "salvar" simultâneos → 500) e REL-002 (funil de
- * comparação apagado sem a conferência cair).
+ * mais REL-001 (dois "salvar" simultâneos → 500), REL-002 + R4-14 (funil de
+ * comparação apagado: gera como edição única com COMPARACAO_REMOVIDA, sem
+ * bloquear) e R4-12 (coluna `ferramentas_de_atendimento`).
  */
 
 import { readFileSync } from "node:fs";
@@ -149,6 +150,7 @@ function corpo(over: Record<string, unknown> = {}): Record<string, unknown> {
     perguntasConfirmadas: { [CAP]: { faixa: null, renda: "q_renda" } },
     closerMediums: [" X1 ", "comercial"],
     closerPorSellerName: false,
+    ferramentasDeAtendimento: [],
     dimensaoDeCriativo: "nenhuma",
     ...over,
   };
@@ -341,6 +343,7 @@ describe("store real — gravação, reset de validado e upsert (QA M11, REL-001
       perguntasConfirmadas: {},
       closerMediums: [],
       closerPorSellerName: false,
+      ferramentasDeAtendimento: [],
       dimensaoDeCriativo: "nenhuma",
     });
     await store.gravar(D, v("2026-05-16"), { resetarValidado: true });
@@ -426,8 +429,8 @@ describe("store real — carregador e contrato", () => {
   });
 });
 
-describe("store real — funil de comparação apagado (QA REL-002)", () => {
-  it("a comparação continua gravada; a leitura derruba validado e lista o campo; o gate bloqueia", async () => {
+describe("store real — funil de comparação apagado (QA REL-002 + decisão do dono R4-14)", () => {
+  it("a comparação continua gravada; a config segue validada e gera como edição única com COMPARACAO_REMOVIDA", async () => {
     await put(corpo({ lancamentoComparacaoFunnelId: FC }));
     await validar();
     await expect(loadDebriefingConfig(db, D)).resolves.toMatchObject({ lancamentoComparacaoFunnelId: FC });
@@ -437,17 +440,44 @@ describe("store real — funil de comparação apagado (QA REL-002)", () => {
     expect((await linhaDoBanco())?.lancamento_comparacao_funnel_id).toBe(FC);
 
     const cru = await loadDebriefingConfigRaw(db, D);
-    expect(cru?.config?.comparacaoAusente).toBe(true);
-    expect(cru?.config?.validado).toBe(false);
-    expect((await erroDe(loadDebriefingConfig(db, D))).erro).toBe("COMBINACAO_NAO_VALIDADA");
+    expect(cru?.config?.comparacaoRemovida).toBe(true);
+    expect(cru?.config?.validado).toBe(true);
+    const cfg = await loadDebriefingConfig(db, D);
+    if (cfg.tipoDeFunil !== "launch") throw new Error("esperava launch");
+    expect(cfg.lancamentoComparacaoFunnelId).toBeNull();
+    expect(cfg.avisos.map((a) => a.codigo)).toEqual(["COMPARACAO_REMOVIDA"]);
 
     const get = (await app.inject({ method: "GET", url: url() })).json();
-    expect(get.config.validado).toBe(false);
-    expect(get.camposFaltantes).toEqual([
-      `lancamentoComparacaoFunnelId (${FC}) não é mais um funil do projeto — escolher outra comparação ou remover`,
-    ]);
+    expect(get.bloqueio).toBeNull();
+    expect(get.config.validado).toBe(true);
+    expect(get.config.comparacaoRemovida).toBe(true);
+    expect(get.camposFaltantes).toEqual([]);
+    expect(get.avisos.map((a: { codigo: string }) => a.codigo)).toEqual(["COMPARACAO_REMOVIDA"]);
 
-    // Escolher de novo (sem comparação) é premissa nova: exige conferir outra vez.
-    expect((await put(corpo())).json().validacaoResetada).toBe(true);
+    // Limpar a comparação órfã não muda o que o gerador faz: não reseta.
+    expect((await put(corpo())).json().validacaoResetada).toBe(false);
+    expect((await linhaDoBanco())?.validado).toBe(true);
+    // Trocar por outro funil do projeto É premissa nova.
+    await pg.exec(`INSERT INTO funnels (id, project_id, name, type) VALUES ('${FC}', '${P}', 'xx-pg08', 'launch')`);
+    expect((await put(corpo({ lancamentoComparacaoFunnelId: FC }))).json().validacaoResetada).toBe(true);
+  });
+
+  it("ferramentas_de_atendimento (R4-12): omitida grava NULL e bloqueia; lista normalizada no banco e no contrato", async () => {
+    const semFerramentas = corpo();
+    delete semFerramentas.ferramentasDeAtendimento;
+    await put(semFerramentas);
+    await validar();
+    expect((await pg.query<{ f: unknown }>("SELECT ferramentas_de_atendimento AS f FROM debriefing_configs")).rows[0].f).toBeNull();
+    expect((await erroDe(loadDebriefingConfig(db, D))).camposFaltantes).toEqual([
+      "ferramentasDeAtendimento (lista vazia é resposta válida)",
+    ]);
+    // Responder é premissa nova: zera validado no banco.
+    expect((await put(corpo({ ferramentasDeAtendimento: [" LeTalk ", "chatwoot"] }))).json().validacaoResetada).toBe(true);
+    expect((await pg.query<{ f: unknown }>("SELECT ferramentas_de_atendimento AS f FROM debriefing_configs")).rows[0].f).toEqual([
+      "letalk",
+      "chatwoot",
+    ]);
+    await validar();
+    expect(await loadDebriefingConfig(db, D)).toMatchObject({ ferramentasDeAtendimento: ["letalk", "chatwoot"] });
   });
 });
