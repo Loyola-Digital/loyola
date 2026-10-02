@@ -118,7 +118,7 @@ function entradaBase(): EntradaMutavel {
       dimensaoDeCriativo: "ia-humano",
       imposto: { valor: 0.1215, origem: "default" },
     },
-    periodo: { inicio: "2026-04-17", fim: "2026-05-31" },
+    janela: { inicio: "2026-04-17", fim: "2026-05-31", fimPor: "fimCarrinho", regra: "teste" },
     pesquisas: [pesquisa],
     respondentes,
     compradores,

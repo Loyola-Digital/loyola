@@ -55,6 +55,7 @@ import {
   normalizarEmail,
   normalizarTelefone,
   type CriterioDeUnico,
+  type JanelaDoDebriefing,
 } from "./debriefing-hygiene.js";
 import {
   fmtNumero,
@@ -198,7 +199,8 @@ export interface BaseAnteriorInput {
 
 export interface DebriefingAudienceInput {
   config: Pick<DebriefingConfigLancamento, "perguntasConfirmadas" | "dimensaoDeCriativo" | "imposto">;
-  periodo: { inicio: string; fim: string };
+  /** A janela do debriefing (`janelaDoDebriefing`, decisão 2A) — a mesma da 49.3; o loader já cortou vendas e ad-level nela. */
+  janela: JanelaDoDebriefing;
   pesquisas: readonly PesquisaInput[];
   respondentes: readonly RespostaInput[];
   compradores: readonly VendaHigienizadaInput[];
@@ -318,7 +320,8 @@ export interface LinhaDoTipoDeCriativo {
 
 export interface DebriefingAudience {
   versao: 1;
-  periodo: { inicio: string; fim: string };
+  /** Decisão 2A: a janela que cortou vendas e ad-level (a mesma da 49.3). */
+  janela: JanelaDoDebriefing;
   classificadorVersao: string;
   /** Único grupo monetário deste motor: o custo por tipo de criativo. */
   origemDoValor: { investimentoPorTipoDeCriativo: "meta_ad_insights_daily.spend" };
@@ -557,7 +560,7 @@ interface CompradorDeCaptacao {
 // ---------------------------------------------------------------------------
 
 export function computeDebriefingAudience(input: DebriefingAudienceInput): DebriefingAudience {
-  const { config, periodo, classificador } = input;
+  const { config, janela, classificador } = input;
   const pctImposto = config.imposto.valor;
   const lacunas: LacunaDePublico[] = [];
 
@@ -1345,7 +1348,7 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
   const tuplasClassificadas = [...tuplas.values()];
   return {
     versao: 1,
-    periodo: { ...periodo },
+    janela: { ...janela },
     classificadorVersao: classificador.versao,
     origemDoValor: { investimentoPorTipoDeCriativo: "meta_ad_insights_daily.spend" },
     pesquisa: {

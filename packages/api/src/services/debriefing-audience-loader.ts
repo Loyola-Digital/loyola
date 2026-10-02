@@ -28,19 +28,22 @@
  *   referência às planilhas (`funnel_spreadsheets` tipo `leads` e
  *   `funnel_surveys`), lidas ao vivo. Com fonte de leads legível → base
  *   `leads+compradores`; sem → `compradores` (lacuna `BASE_ANTERIOR_SEM_LEADS`).
+ *   Os compradores do anterior vêm das planilhas de venda (status pago) e das
+ *   `manual_sales` não reembolsadas (decisão 3A da 49.3).
  *
  * Nenhuma chamada à Meta, nenhum fan-out por criativo (regra de rate limit do
  * projeto). Planilha configurada que falha ao ler lança `DADO_INDISPONIVEL` —
  * nunca vira lista vazia ("erro virando ausência na tela").
  */
 
-import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 import { utmContentEfetivo, type Utm } from "@loyola-x/shared";
 import {
   funnelSpreadsheets,
   funnelStages,
   funnelSurveys,
   funnels,
+  manualSales,
   metaAdInsightsDaily,
   metaAdsAccountProjects,
   metaAdsAccounts,
@@ -65,6 +68,7 @@ import {
   deduplicarVendas,
   ehTmb,
   filtrarPorStatus,
+  janelaDoDebriefing,
   lerValorMonetario,
   type PlanilhaParaDedup,
 } from "./debriefing-hygiene.js";
@@ -111,7 +115,8 @@ export function memoizarLeitura(ler: LerPlanilha): LerPlanilha {
  * `debriefing-hygiene.ts`: etapa fora da config sai; `filtrarPorStatus`
  * (transação reembolsada sai inteira); valor negativo e linha sem valor (fora
  * do TMB) saem; `deduplicarVendas` (camada 1 por ID da venda, camada 2 por
- * e-mail + produto); corte do período depois da dedup (venda sem dia fica);
+ * e-mail + produto); corte pela janela `janelaDoDebriefing(datasChave)`
+ * (decisão 2A) depois da dedup (venda sem dia fica);
  * venda do principal antes da abertura do carrinho sai (decisão 7).
  *
  * Um teste diferencial trava `compradoresCaptacao` idêntico ao do Motor I
@@ -120,10 +125,11 @@ export function memoizarLeitura(ler: LerPlanilha): LerPlanilha {
  * `conteudoPorLinha`: `planilhaId#linha` → célula de `utm_content` da venda.
  */
 export function higienizarVendasDoDebriefing(
-  entrada: Pick<DebriefingMoneyTimeInput, "config" | "periodo" | "planilhas" | "vendas">,
+  entrada: Pick<DebriefingMoneyTimeInput, "config" | "planilhas" | "vendas">,
   conteudoPorLinha: ReadonlyMap<string, string | null> = new Map(),
 ): VendaHigienizadaInput[] {
-  const { config, periodo } = entrada;
+  const { config } = entrada;
+  const janela = janelaDoDebriefing(config.datasChave);
   const grupoDaEtapa = new Map<string, GrupoDaEtapa>(config.etapas.map((e) => [e.stageId, GRUPO_DO_PAPEL[e.papel]]));
   const planilhaPorId = new Map(entrada.planilhas.map((p) => [p.planilhaId, p]));
 
@@ -170,7 +176,7 @@ export function higienizarVendasDoDebriefing(
     ),
   );
   const contaveis = dedup.mantidas.filter((l) => {
-    if (l.dia !== null && (l.dia < periodo.inicio || l.dia > periodo.fim)) return false;
+    if (l.dia !== null && (l.dia < janela.inicio || l.dia > janela.fim)) return false;
     return !(l.grupo === "principal" && l.dia !== null && l.dia < config.datasChave.aberturaCarrinho);
   });
 
@@ -386,9 +392,8 @@ function numeroDoBanco(v: string | number | null | undefined): number {
 }
 
 export interface LoadDebriefingAudienceParams {
+  /** A janela sai de `config.datasChave` (`janelaDoDebriefing`, decisão 2A) — a mesma da 49.3. */
   config: DebriefingConfigLancamento;
-  /** Janela do lançamento (BRT, inclusive) — a mesma da 49.3. */
-  periodo: { inicio: string; fim: string };
 }
 
 export interface DiagnosticoDoLoaderDePublico {
@@ -407,6 +412,8 @@ export interface DiagnosticoDoLoaderDePublico {
     funnelId: string;
     fontesDeLeads: { rotulo: string; linhas: number; semIdentificador: boolean }[];
     planilhasDeVenda: number;
+    /** Decisão 3A: `manual_sales` do funil de comparação (reembolsadas fora). */
+    vendasManuais: number;
   } | null;
 }
 
@@ -424,11 +431,12 @@ export async function loadDebriefingAudienceInput(
   params: LoadDebriefingAudienceParams,
   deps: { lerPlanilha?: LerPlanilha; entradaMoneyTime?: DebriefingMoneyTimeInputCarregado } = {},
 ): Promise<DebriefingAudienceInputCarregado> {
-  const { config, periodo } = params;
+  const { config } = params;
+  const janela = janelaDoDebriefing(config.datasChave);
   const ler = memoizarLeitura(deps.lerPlanilha ?? readSheetData);
 
   // ---- Vendas: as do Motor I, higienizadas pela mesma sequência ----
-  const mt = deps.entradaMoneyTime ?? (await loadDebriefingMoneyTimeInput(db, { config, periodo }, { lerPlanilha: ler }));
+  const mt = deps.entradaMoneyTime ?? (await loadDebriefingMoneyTimeInput(db, { config }, { lerPlanilha: ler }));
   const conteudo = new Map<string, string | null>();
   const planilhasSemConteudo: string[] = [];
   const planilhasVistas = new Set<string>();
@@ -532,8 +540,8 @@ export async function loadDebriefingAudienceInput(
         and(
           eq(metaAdInsightsDaily.projectId, config.projectId),
           inArray(metaAdInsightsDaily.campaignId, [...campanhasCaptacao]),
-          gte(metaAdInsightsDaily.dateStart, periodo.inicio),
-          lte(metaAdInsightsDaily.dateStart, periodo.fim),
+          gte(metaAdInsightsDaily.dateStart, janela.inicio),
+          lte(metaAdInsightsDaily.dateStart, janela.fim),
         ),
       );
     for (const l of linhas) {
@@ -637,6 +645,20 @@ export async function loadDebriefingAudienceInput(
         );
       }
     }
+    // Decisão 3A (49.3): venda lançada à mão também é comprador; a reembolsada fica fora.
+    const manuaisAnt =
+      etapasAnt.length > 0
+        ? await db
+            .select({ email: manualSales.customerEmail, telefone: manualSales.customerPhone })
+            .from(manualSales)
+            .where(and(inArray(manualSales.stageId, etapasAnt.map((e) => e.id)), isNull(manualSales.refundedAt)))
+            .orderBy(asc(manualSales.saleDate), asc(manualSales.id))
+        : [];
+    for (const m of manuaisAnt) {
+      const email = (m.email ?? "").trim() || null;
+      const telefone = (m.telefone ?? "").trim() || null;
+      if (email || telefone) compradoresAnt.push({ emailCru: email, telefoneCru: telefone });
+    }
 
     const fontesLeads = await db
       .select({
@@ -694,7 +716,12 @@ export async function loadDebriefingAudienceInput(
       compradores: compradoresAnt,
       chavesDePerguntaComResposta: chaves ? [...chaves].sort() : null,
     };
-    diagnostico.baseAnterior = { funnelId: funilAnterior, fontesDeLeads: fontesDiag, planilhasDeVenda: sheetsVistas.size };
+    diagnostico.baseAnterior = {
+      funnelId: funilAnterior,
+      fontesDeLeads: fontesDiag,
+      planilhasDeVenda: sheetsVistas.size,
+      vendasManuais: manuaisAnt.length,
+    };
   }
 
   return {
@@ -703,7 +730,7 @@ export async function loadDebriefingAudienceInput(
       dimensaoDeCriativo: config.dimensaoDeCriativo,
       imposto: config.imposto,
     },
-    periodo: { ...periodo },
+    janela,
     pesquisas,
     respondentes,
     compradores,

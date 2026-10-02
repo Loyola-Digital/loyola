@@ -39,6 +39,7 @@ const { computeSurveyForStage } = await import("../services/survey-aggregation.j
 const { computeDebriefingMoneyTime } = await import("../services/debriefing-money-time-engine.js");
 const { DebriefingDadoIndisponivelError } = await import("../services/debriefing-money-time-loader.js");
 const { computeDebriefingAudience } = await import("../services/debriefing-audience-engine.js");
+const { janelaDoDebriefing } = await import("../services/debriefing-hygiene.js");
 const {
   chavesComResposta,
   contaDoAdsManager,
@@ -157,6 +158,8 @@ describe("higiene de vendas = a sequência da 49.3 (compradoresCaptacao idêntic
     { planilhaId: "cap:tmb", stageId: CAP, nome: "tmb", plataforma: "tmb", temColunaStatus: false, temColunaId: false, temColunaProduto: true },
     { planilhaId: "prin:s1", stageId: PRIN, nome: "principal", plataforma: "main_product", temColunaStatus: true, temColunaId: true, temColunaProduto: true },
     { planilhaId: "outra:s1", stageId: "fora", nome: "fora", plataforma: "sales", temColunaStatus: false, temColunaId: false, temColunaProduto: false },
+    // decisão 3A: vendas manuais chegam como uma "planilha" a mais da etapa (`lerVendasManuais`)
+    { planilhaId: "cap:manual", stageId: CAP, nome: "Vendas manuais", plataforma: "manual", temColunaStatus: false, temColunaId: true, temColunaProduto: true },
   ];
   let n = 0;
   const v = (p: Partial<VendaCruaInput>): VendaCruaInput => ({
@@ -196,6 +199,8 @@ describe("higiene de vendas = a sequência da 49.3 (compradoresCaptacao idêntic
     v({ planilhaId: "prin:s1", idDaVendaCru: "P1", emailCru: "a@x.com", produto: "Mentoria", tipo: "principal", valorBrutoCru: "4.000", dataVendaCru: "15/05/2026" }),
     v({ planilhaId: "prin:s1", idDaVendaCru: "P2", emailCru: "k@x.com", produto: "Mentoria", tipo: "principal", valorBrutoCru: "4.000", dataVendaCru: "05/05/2026" }), // antes da abertura
     v({ planilhaId: "outra:s1", emailCru: "n@x.com" }), // etapa fora da config
+    v({ planilhaId: "cap:manual", idDaVendaCru: "m-1", emailCru: "pix@x.com", statusCru: null, valorBrutoCru: "99,00" }), // PIX lançado à mão
+    v({ planilhaId: "cap:manual", idDaVendaCru: "m-2", emailCru: "a@x.com", statusCru: null, valorBrutoCru: "99,00" }), // camada 2 com a planilha
   ];
   const config = {
     datasChave: {
@@ -211,7 +216,6 @@ describe("higiene de vendas = a sequência da 49.3 (compradoresCaptacao idêntic
     ],
     imposto: { valor: 0.1215, origem: "default" as const },
   };
-  const periodo = { inicio: "2026-04-17", fim: "2026-05-31" };
   const classificador = {
     versao: CLASSIFICADOR_VERSAO,
     classificar: (e: Parameters<typeof classificarOrigem>[0]) =>
@@ -219,11 +223,11 @@ describe("higiene de vendas = a sequência da 49.3 (compradoresCaptacao idêntic
   };
 
   it("as mesmas chaves nos dois critérios, linha a linha das armadilhas", () => {
-    const motorI = computeDebriefingMoneyTime({ config, periodo, criterioDeUnico: "porEmail", planilhas, vendas, leads: [], midia: [], classificador });
-    const higienizadas = higienizarVendasDoDebriefing({ config, periodo, planilhas, vendas });
+    const motorI = computeDebriefingMoneyTime({ config, criterioDeUnico: "porEmail", planilhas, vendas, leads: [], midia: [], classificador });
+    const higienizadas = higienizarVendasDoDebriefing({ config, planilhas, vendas });
     const motorII = computeDebriefingAudience({
       config: { perguntasConfirmadas: {}, dimensaoDeCriativo: "nenhuma", imposto: config.imposto },
-      periodo,
+      janela: janelaDoDebriefing(config.datasChave),
       pesquisas: [],
       respondentes: [],
       compradores: higienizadas,
@@ -231,9 +235,9 @@ describe("higiene de vendas = a sequência da 49.3 (compradoresCaptacao idêntic
       classificador,
     });
     expect(motorII.compradoresCaptacao).toEqual(motorI.compradoresCaptacao);
-    // a, b (só Combo), h (sem dia), K9 (sem e-mail), i, l, j (TMB) — c (só bump) fica fora
-    expect(motorII.compradoresCaptacao.porEmail).toHaveLength(7);
-    expect(motorII.compradoresCaptacao.porEmailOuTelefone).toHaveLength(6); // K9 e l@ são a mesma pessoa pelo telefone
+    // a, b (só Combo), h (sem dia), K9 (sem e-mail), i, l, j (TMB), pix (manual) — c (só bump) fica fora
+    expect(motorII.compradoresCaptacao.porEmail).toHaveLength(8);
+    expect(motorII.compradoresCaptacao.porEmailOuTelefone).toHaveLength(7); // K9 e l@ são a mesma pessoa pelo telefone
     expect(higienizadas.filter((x) => x.comprouPrincipal)).toHaveLength(motorI.vendasPrincipal);
     expect(higienizadas.find((x) => x.emailCru === "b@x.com")).toMatchObject({ comprouCaptacao: true, comprouTierSuperior: true });
     expect(higienizadas.find((x) => x.emailCru === "c@x.com")).toMatchObject({ comprouCaptacao: false, comprouTierSuperior: true });
@@ -305,6 +309,11 @@ CREATE TABLE seller_aliases (
 );
 CREATE TABLE stage_event_closers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), stage_id uuid NOT NULL, name varchar(255) NOT NULL
+);
+CREATE TABLE manual_sales (
+  id uuid PRIMARY KEY, stage_id uuid NOT NULL, customer_name varchar(255) NOT NULL, customer_email varchar(255),
+  customer_phone varchar(50), value numeric(12,2) NOT NULL, product varchar(255), seller_name varchar(255) NOT NULL,
+  sale_date timestamptz NOT NULL, refunded_at timestamptz
 );
 `;
 
@@ -416,7 +425,7 @@ const config: DebriefingConfigLancamento = {
   validadoPor: null,
   avisos: [],
 };
-const periodo = { inicio: "2026-04-17", fim: "2026-05-31" };
+const janela = { inicio: "2026-04-17", fim: "2026-05-15", fimPor: "fimCarrinho" as const, regra: "teste" };
 
 let pg: PGlite;
 let db: Database;
@@ -443,7 +452,7 @@ afterAll(async () => {
 describe("AC11 — loadDebriefingAudienceInput sobre Postgres real", () => {
   it("pesquisa das etapas confirmadas; a sem etapa vai para o diagnóstico; cada aba lida UMA vez", async () => {
     leituras.length = 0;
-    const r = await loadDebriefingAudienceInput(db, { config, periodo }, { lerPlanilha: lerFalso });
+    const r = await loadDebriefingAudienceInput(db, { config }, { lerPlanilha: lerFalso });
     expect(r.pesquisas.map((p) => [p.stageId, p.chavesDePergunta])).toEqual([[CAP, ["Sexo", "faixa"]]]);
     expect(r.respondentes).toHaveLength(3);
     expect(r.diagnostico.pesquisasForaDaConfig).toEqual([{ rotulo: "Outra / x", stageId: null }]);
@@ -453,7 +462,7 @@ describe("AC11 — loadDebriefingAudienceInput sobre Postgres real", () => {
   });
 
   it("vendas higienizadas com utm_content; status reembolsado fora; flags por tipo", async () => {
-    const r = await loadDebriefingAudienceInput(db, { config, periodo }, { lerPlanilha: lerFalso });
+    const r = await loadDebriefingAudienceInput(db, { config }, { lerPlanilha: lerFalso });
     expect(r.compradores.map((c) => [c.grupo, c.comprouCaptacao, c.comprouPrincipal, c.comprouTierSuperior, c.utmContentCru])).toEqual([
       ["captacao", true, false, false, AD1],
       ["captacao", true, false, true, "120000000000000009"],
@@ -462,8 +471,21 @@ describe("AC11 — loadDebriefingAudienceInput sobre Postgres real", () => {
     expect(r.classificador.versao).toBe(CLASSIFICADOR_VERSAO);
   });
 
+  it("vendas manuais (decisão 3A da 49.3): o PIX conta como comprador; sem utm_content, a fonte aparece no diagnóstico", async () => {
+    await pg.exec(`INSERT INTO manual_sales (id, stage_id, customer_name, customer_email, customer_phone, value, product, seller_name, sale_date)
+      VALUES ('60000000-0000-4000-8000-000000000001', '${CAP}', 'Cliente Pix', 'pix@x.com', NULL, 99.00, 'Imersão', 'Ana', '2026-04-25 15:00:00+00')`);
+    try {
+      const r = await loadDebriefingAudienceInput(db, { config }, { lerPlanilha: lerFalso });
+      expect(r.compradores.filter((c) => c.comprouCaptacao)).toHaveLength(3);
+      expect(r.diagnostico.planilhasDeVendaSemUtmContent).toEqual(["vendas-principal", "Vendas manuais"]); // a do principal não tem a coluna
+      expect(computeDebriefingAudience(r).compradoresCaptacao.porEmail).toHaveLength(3);
+    } finally {
+      await pg.exec(`DELETE FROM manual_sales`);
+    }
+  });
+
   it("ad-level só das campanhas de captação e do período; nome: insight mais recente > entity cache; conta do funil", async () => {
-    const r = await loadDebriefingAudienceInput(db, { config, periodo }, { lerPlanilha: lerFalso });
+    const r = await loadDebriefingAudienceInput(db, { config }, { lerPlanilha: lerFalso });
     expect(r.criativos.anuncios.map((a) => [a.adId, a.dia, a.spendBruto, a.linkClicks])).toEqual([[AD1, "2026-04-20", 100, 50]]);
     expect(r.criativos.nomesDeAnuncio).toEqual({ [AD1]: "dg-pg02-ia-01", "120000000000000009": "dg-pg02-h-09" });
     expect(r.criativos.contaDeAnuncios).toBe("3717530711643512");
@@ -472,14 +494,14 @@ describe("AC11 — loadDebriefingAudienceInput sobre Postgres real", () => {
 
   it("funil sem conta (o caso de produção): a única conta ATIVA do projeto; projeto com duas contas → sem link", async () => {
     const semConta = { ...config, funnelId: F_ANT, etapas: [], perguntasConfirmadas: {}, lancamentoComparacaoFunnelId: null };
-    const r = await loadDebriefingAudienceInput(db, { config: semConta, periodo }, { lerPlanilha: lerFalso });
+    const r = await loadDebriefingAudienceInput(db, { config: semConta }, { lerPlanilha: lerFalso });
     expect([r.criativos.contaDeAnuncios, r.diagnostico.contaDeAnuncios]).toEqual(["555000111", "projeto"]);
-    const duas = await loadDebriefingAudienceInput(db, { config: { ...semConta, projectId: P_DUAS }, periodo }, { lerPlanilha: lerFalso });
+    const duas = await loadDebriefingAudienceInput(db, { config: { ...semConta, projectId: P_DUAS } }, { lerPlanilha: lerFalso });
     expect([duas.criativos.contaDeAnuncios, duas.diagnostico.contaDeAnuncios]).toEqual([null, "ambigua"]);
   });
 
   it("base anterior com planilha de leads: leads+compradores, só compradores pagos, série pela pesquisa do anterior", async () => {
-    const r = await loadDebriefingAudienceInput(db, { config, periodo }, { lerPlanilha: lerFalso });
+    const r = await loadDebriefingAudienceInput(db, { config }, { lerPlanilha: lerFalso });
     expect(r.baseAnterior).toEqual({
       funnelId: F_ANT,
       tipo: "leads+compradores",
@@ -493,8 +515,24 @@ describe("AC11 — loadDebriefingAudienceInput sobre Postgres real", () => {
     });
   });
 
+  it("base anterior: venda manual não reembolsada também é comprador (decisão 3A)", async () => {
+    await pg.exec(`INSERT INTO manual_sales (id, stage_id, customer_name, customer_email, customer_phone, value, product, seller_name, sale_date, refunded_at) VALUES
+      ('60000000-0000-4000-8000-000000000002', '${CAP_ANT}', 'Pix Anterior', NULL, '11 95555-4444', 99.00, 'Imersão', 'Ana', '2026-04-25 15:00:00+00', NULL),
+      ('60000000-0000-4000-8000-000000000003', '${CAP_ANT}', 'Reembolsado', 'r@x.com', NULL, 99.00, 'Imersão', 'Ana', '2026-04-25 15:00:00+00', '2026-04-26 10:00:00+00')`);
+    try {
+      const r = await loadDebriefingAudienceInput(db, { config }, { lerPlanilha: lerFalso });
+      expect(r.baseAnterior!.compradores).toEqual([
+        { emailCru: "b@x.com", telefoneCru: null },
+        { emailCru: null, telefoneCru: "11 95555-4444" },
+      ]);
+      expect(r.diagnostico.baseAnterior).toMatchObject({ vendasManuais: 1 });
+    } finally {
+      await pg.exec(`DELETE FROM manual_sales`);
+    }
+  });
+
   it("base anterior SEM leads nem pesquisa: tipo compradores (o motor declara BASE_ANTERIOR_SEM_LEADS)", async () => {
-    const r = await loadDebriefingAudienceInput(db, { config: { ...config, lancamentoComparacaoFunnelId: F_ANT2 }, periodo }, { lerPlanilha: lerFalso });
+    const r = await loadDebriefingAudienceInput(db, { config: { ...config, lancamentoComparacaoFunnelId: F_ANT2 } }, { lerPlanilha: lerFalso });
     expect(r.baseAnterior).toMatchObject({ tipo: "compradores", leads: [], chavesDePerguntaComResposta: null });
     const m = computeDebriefingAudience(r);
     expect(m.lacunas.map((l) => l.codigo)).toContain("BASE_ANTERIOR_SEM_LEADS");
@@ -504,14 +542,14 @@ describe("AC11 — loadDebriefingAudienceInput sobre Postgres real", () => {
     for (const quebrada of ["g-pesq|respostas", "g-leads-ant|base", "g-ant|vendas-anterior"]) {
       const ler = (id: string, aba: string) =>
         `${id}|${aba}` === quebrada ? Promise.reject(new Error("Sheets data error (500)")) : lerFalso(id, aba);
-      const erro = await loadDebriefingAudienceInput(db, { config, periodo }, { lerPlanilha: ler }).catch((e: unknown) => e);
+      const erro = await loadDebriefingAudienceInput(db, { config }, { lerPlanilha: ler }).catch((e: unknown) => e);
       expect(erro).toBeInstanceOf(DebriefingDadoIndisponivelError);
       expect((erro as InstanceType<typeof DebriefingDadoIndisponivelError>).toResponse()).toMatchObject({ erro: "DADO_INDISPONIVEL" });
     }
   });
 
   it("ponta a ponta: casamento por telefone, taxa de resposta, cross-launch e nenhum dado pessoal no payload", async () => {
-    const r = computeDebriefingAudience(await loadDebriefingAudienceInput(db, { config, periodo }, { lerPlanilha: lerFalso }));
+    const r = computeDebriefingAudience(await loadDebriefingAudienceInput(db, { config }, { lerPlanilha: lerFalso }));
     expect(r.pesquisa).toMatchObject({ linhasLidas: 3, vazias: 1, duplicadasRemovidas: 0, respondentes: 2 });
     expect(r.casamento).toEqual({ porEmail: 1, porTelefone: 1, semMatch: 0 }); // x@ casa com b@ pelo telefone
     expect(r.taxaDeResposta).toMatchObject({ numerador: 2, denominador: 2 });
@@ -827,7 +865,7 @@ describe("decisão 9 — diferencial contra o Resumão: mesmo % sem e-mail repet
     );
     return computeDebriefingAudience({
       config: { perguntasConfirmadas: { [ST_RESUMAO]: { faixa: "faixa", sexo: "Sexo" } }, dimensaoDeCriativo: "nenhuma", imposto: config.imposto },
-      periodo,
+      janela,
       pesquisas: [lida.pesquisa],
       respondentes: lida.respostas,
       compradores: [],
