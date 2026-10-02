@@ -140,10 +140,14 @@ export function fraseSemBase(resposta: { tipo: TipoDeLancamento | null; incluiSe
  * (48.13 AC5) saiu daqui e foi para a linha da própria base, na declaração do
  * realizado — com duas bases, uma com e outra sem simulador, uma frase única
  * aqui seria falsa para uma delas.
+ *
+ * DOC-001 (gate da 48.14): "ao lado dos campos que eles cobrem", não "de cada
+ * campo" — o realizado cobre 4 dos 26 campos da aba 1, a conversão por canal
+ * e os dois cartões quente/frio.
  */
 export function textoDoCabecalhoDasBases(referencias: readonly BaseDeReferencia[]): string {
   if (referencias.length === 0) {
     return "Escolha um ou mais lançamentos anteriores do mesmo tipo para ver os valores deles ao lado de cada campo.";
   }
-  return "Os valores dos lançamentos marcados aparecem entre parênteses ao lado de cada campo, cada um com o nome dele — só como parâmetro; nada é preenchido nem salvo.";
+  return "Os valores dos lançamentos marcados aparecem entre parênteses ao lado dos campos que eles cobrem, cada um com o nome dele — só como parâmetro; nada é preenchido nem salvo.";
 }
