@@ -1,0 +1,121 @@
+schema: 1
+storyId: '49.6'
+story: '49.6'
+story_title: 'Render do Debriefing no padrão visual da skill + persistência (HTML e payload) + botão "Gerar debriefing" com formulário dos gates (+ AC7/AC9 absorvidos da 49.11)'
+verdict: CONCERNS
+gate: CONCERNS
+status_reason: 'Nenhum defeito funcional encontrado no código. Testes, tsc, next build, lint, render em Chrome headless no sandbox real do viewer, migration em PGlite e varredura de PII passam, todos rodados pelo QA. As CONCERNS são duas. (1) TEST-496-1: 4 das 8 mutações do QA sobrevivem à suíte, exatamente em propriedades que o lead pediu: datalabels desligados, abas quebradas, 422 CONFERENCIA_EXTERNA com detalhe vazio e script que esvazia as tabelas sem innerHTML. O comportamento atual está correto (lido no código e visto no headless), mas uma regressão nesses pontos passaria verde. (2) FMT-496-1: no PG02 real o texto visível traz "2293 vendas" sem separador de milhar (AC7). O número vem do texto pronto `textoTmb` (49.3) que o render repassa cru. Os dois são baratos e recomendados ANTES do merge, mas não bloqueiam. Done continua dependendo do AC13 e da 0164 em produção, que são do dono e do @devops.'
+reviewer: 'Quinn'
+updated: '2026-10-02T15:40:00-03:00'
+branch: 'feat/49.6-debriefing-render-botao'
+commit_reviewed: 'be45f3b1'
+base: 'origin/main 7fd149f5 (sem avanço da main desde o branch; merge-base = origin/main)'
+coderabbit_status: 'SKIPPED (CLI só WSL; ambiente macOS — prática do repo)'
+
+coverage:
+  AC1: 'PASS. Ordem guest → etapa (404/422 ETAPA_NAO_E_DEBRIEFING) → gate 49.1 → config da comparação ANTES da carga → carga → guardas (atual e comparação) → render → 413 → persistência (`debriefing-generate.ts:120-226`). Nada é gravado em falha (testes 1–7 + comparação).'
+  AC2: 'PASS no código, com prova em PGlite. Tabela irmã 1:1 com FK CASCADE, CHECK de tipo/imposto, gravação na mesma transação (`gravarDebriefingGerado`), PUT do viewer não toca, DELETE remove, upload manual sem linha. PENDENTE: 0164 aplicada à mão em produção + information_schema (condição de merge).'
+  AC3: 'PASS. PG02 real: 18 seções 00→17 na ordem do §4, Definições primeiro, Base de Conhecimento por último; edição única com Diferenças omitida e justificada.'
+  AC4: 'PASS. :root idêntico ao §1 (conferido no HTML real), classes canônicas, só os 2 scripts externos.'
+  AC5: 'PASS no código; TESTE FRACO (Q1). Chart.js 4.4.1 + datalabels 2.2.0 fixos, um `const D`, 17/17 canvases desenhados. Rótulo oculto só em null/0, igual à referência (`display:c=>…>0`).'
+  AC6: 'PASS (testes de eixo D+n, empilhado por etapa, Tabela 2 lacuna, só-closer em linha própria).'
+  AC7: 'CONCERNS (FMT-496-1). Teste de payloads opostos passa e Q3 morre. No PG02 real, "2293 vendas" sai sem milhar na seção 00 e no tnote de TMB.'
+  AC8: 'PASS. Lacunas escritas no lugar do bloco; vendas excluídas com txId/valor/data/motivo.'
+  AC9: 'PASS para DG/PG02 e sintéticos (medido pelo QA: maior aba 7.024 px, 17/17 gráficos, 0 erros na página e no iframe). PENDENTE: FZ e Netão, porque não há config de debriefing em produção.'
+  AC10: 'PASS. Render puro (relógio injetado), imposto não reaplicado, null → —.'
+  AC11: 'PASS na lógica testável (`debriefing-config-form.ts`): faltantes nomeados, corpo do PUT, erro persistente. Bloqueio com motivo antes do clique, passos e link ao viewer estão lidos no tsx. Validação visual do dono PENDENTE.'
+  AC12: 'PASS. Contrato 31 → 32 com histórico; botão desabilitado com motivo se API < 32; 404 "Not Found" vira "API atrás" (Q8 e M17 do @dev morrem).'
+  AC13: 'PARCIAL. tsc api/web, next build e lint verdes (QA). A geração real no viewer de produção e a conferência com a 49.5 AC10 são condição de Done, PENDENTE.'
+  '49.11 AC7': 'PASS. Lista ordenada, ≤1 item envia só o campo antigo, 2º item desabilitado com motivo se API < 31, pesquisa de captação só com API ≥ 31 (Q6 morre).'
+  '49.11 AC9': 'PASS. Série com composição e ausentes por nome; Definições lista a ordem e a principal.'
+
+quality_checks:
+  1_requirements: 'CONCERNS. Todos os ACs implementados. Pendências externas: 0164 em produção, AC13, FZ/Netão, P-49.6-1, P-49.6-2, alerta de produto novo (só gancho).'
+  2_tests: 'CONCERNS. Suítes da story: 203/203 (render 27, generate 19, payloads-store 6, config-get-49-6 6, config 58, config-routes, config-store, lista). O scanner R1 da debriefing-config estourou 1× sob carga e passou na repetição. Web completo: 1.793/1.793 após next build. Suíte inteira da API (1 rodada): 17 falhas em 14 arquivos. Rodados isolados, na branch e em origin/main 7fd149f5 (worktree próprio), ficam as MESMAS 10 falhas em 5 arquivos nas mesmas linhas (funnel-stages-lead-inputs, instagram, instagram-routes, projects, schema). As outras 7 são timeouts de carga e passam isoladas. Mutações do QA: 4/8 mortas (TEST-496-1).'
+  3_lint_typecheck: 'PASS. `tsc --noEmit` (binário): api 0, web 0 após `next build` (exit 0). `eslint` nos 11 arquivos da API e `next lint` nos 5 do web: limpos.'
+  4_security_pii: 'PASS. Payload PG02 real (1,9 MB) e HTML: 0 e-mails. Os candidatos a telefone eram decimais de moeda (ex.: 11885.554923164484). Chaves "email" são utm_medium. Teste de PII no payload persistido morre com o e-mail injetado na auditoria (Q4). Escape de nomes testado; target=_blank com noopener noreferrer; sem storage/cookie/window.open (regex no HTML e no harness).'
+  5_performance: 'PASS. Sem chamada nova à Meta: só loaders 49.3/49.4 que leem banco/planilha. Config da comparação conferida antes da carga pesada. Cache de 60 s das perguntas no GET (PERF-001). HTML real tem 99 KB, longe dos 5 MB.'
+  6_regression: 'PASS. Suítes da 49.1/49.11 sem edição; falhas da API idênticas às de origin/main; rotas de debriefings (GET/PUT/DELETE) provadas em PGlite com as rotas reais.'
+  7_docs: 'PASS. Dev Agent Record, decisões, provas, File List e Change Log completos; migration com prova e rollback no topo.'
+  8_api_contract: 'PASS COM CONDIÇÃO. 31 → 32, aditivo, com linha de histórico. A 41.12A também quer 32: quem mergear depois renumera.'
+
+meta_api_impact:
+  adds_meta_calls: 'NO'
+  evidence: 'debriefing-generate.ts só chama loadDebriefingMoneyTimeInput/loadDebriefingAudienceInput (banco + planilha, 49.3/49.4); nenhum fetch/sync novo à Meta.'
+
+verificacao_render_headless:
+  harness: 'scratchpad/iframe-test/medir-496.mts com frame-lib-496.mts (diff vazio contra packages/web/lib/debriefing-frame.ts)'
+  sandbox: 'allow-scripts allow-popups allow-popups-to-escape-sandbox (o real do viewer)'
+  documento: 'scratchpad/debriefing-pg02-49.6.html (99.387 bytes; gerado 14:24, depois da última edição do render, 14:21)'
+  resultado: 'abas geral 7.024 px / 5 de 5 · midia 5.507 / 4 de 4 · qual 2.410 / 4 de 4 · faixa 3.826 / 4 de 4 · notas 2.290 / 0; total 17 canvases, 17 instâncias Chart; altura no viewer 7.024; 0 erros na página, 0 no iframe; proibidos false'
+  padrao_visual_secao_7: 'Paleta/fontes OK · seções numeradas 00→17 OK · KPI gêmeo N/A na edição única (justificado), tnote de TMB OK · datalabels + const D OK · evolução diária OK · auditoria com UTMs: 71 linhas OK · 00 Definições e Base de Conhecimento OK · densidade 17 gráficos / 18 seções OK'
+
+verificacao_migration_pglite:
+  suite: 'debriefing-payloads-store.test.ts (migration real + rotas reais do viewer): 6/6'
+  script_qa: 'scratchpad/qa496-mig.mts (independente): 9 colunas (nulável só comparacao); reaplicada continua 9; pkey + FK com confdeltype c (cascade) + 2 CHECK; os CHECK barram tipo e imposto inválidos; UPDATE do html mantém o payload; DELETE do debriefing remove o payload; o rollback do topo zera; colunas do Drizzle (getTableConfig) iguais às do banco, na mesma ordem.'
+
+mutacoes_qa:
+  total: 8
+  mortas: 4
+  arvore: 'restaurada depois de cada mutação; `git status` limpo no fim'
+  lista:
+    - 'Q1 datalabels `display:false` em todos os gráficos — SOBREVIVEU (o teste só procura `formatter:function` e o register)'
+    - 'Q2 abas: id comparado com "aba-" em vez de "tab-" (nenhuma aba troca) — SOBREVIVEU (só o harness headless pega)'
+    - 'Q3 edição única com delta fabricado no KPI — MORTA'
+    - 'Q4 e-mail do comprador na auditoria do payload (engine 49.3) — MORTA (teste AC2 de PII)'
+    - 'Q5 422 CONFERENCIA_EXTERNA com `detalhe: ""` — SOBREVIVEU (o teste só confere `erro`)'
+    - 'Q6 web: API sem `contract` (anterior à 29.46) tratada como nova no PUT — MORTA'
+    - 'Q7 script esvazia todo `tbody` (textContent) sem innerHTML — SOBREVIVEU (REL-002 testado por lista negra de APIs)'
+    - 'Q8 web: 422 com detalhe/ação descartados (tela "vazia") — MORTA'
+
+top_issues:
+  - id: 'TEST-496-1'
+    severity: medium
+    finding: 'Q1, Q2, Q5 e Q7 sobrevivem. Rótulo em todos os pontos, troca de abas, corpo explicado do 422 de conferência e "o JS não toca nas tabelas" não estão protegidos por teste. Hoje estão certos.'
+    suggested_action: '(a) Afirmar o `display` do datalabels: não pode ser false, e só oculta null/0. (b) Teste de que cada `data-tab` dos botões tem `id="tab-<x>"` e que o script usa o mesmo prefixo, ou rodar o harness headless num teste. (c) `toMatchObject({erro, detalhe: expect.stringMatching(/\S/), acao: expect.stringMatching(/\S/)})` em TODO 422. (d) REL-002 por lista branca: o script de gráficos só referencia `canvas`/`.sem-grafico`, nenhum seletor de `table`/`tbody`/`tr`.'
+    owner: dev
+  - id: 'FMT-496-1'
+    severity: low
+    finding: 'No PG02 real aparece "2293 vendas, 5 via TMB" sem milhar, na seção 00 (Definições) e no tnote "s/ TMB — …". A origem é `textoTmb` (`debriefing-hygiene.ts:593`), que interpola o inteiro cru no texto do payload, e o render (`debriefing-render.ts:437`) o repassa. Fere o AC7 ("inteiro 1.234"). O teste de formato US não pega porque a fixture sintética tem menos de 1.000 vendas.'
+    suggested_action: 'O render deve compor a frase com `inteiroBr` a partir dos números (tmb.vendas / tmb.viaTmb), sem usar `tmb.texto`. Também vale um caso ≥ 1.000 na fixture do teste de formatação. Corrigir no `textoTmb` mexe no payload da 49.3, então preferir o render.'
+    owner: dev
+  - id: 'UX-496-1'
+    severity: low
+    finding: 'A coluna de origem da data na auditoria mostra o código cru `SEM_DATA_DO_LEAD`.'
+    suggested_action: 'Mapear para rótulo legível (ex.: "sem data do lead").'
+    owner: dev
+  - id: 'PERF-496-1'
+    severity: low
+    finding: 'O cache do GET memoiza também o `null` (etapa sem pesquisa). Pesquisa recém-conectada aparece como "sem pesquisa" por até 60 s.'
+    suggested_action: 'Aceitável. Se incomodar, não cachear `null`.'
+    owner: dev
+  - id: 'UX-496-2'
+    severity: low
+    finding: 'O erro de "marcar combinação como validada" sai em toast, que some. O AC11 exige tela persistente só para a geração.'
+    suggested_action: 'Opcional: mostrar no bloco do gate do formulário.'
+    owner: dev
+
+auto_decisions_avaliadas:
+  tabela_irma: 'ACEITA. Atende ao AC2 por construção: o PUT não toca, a lista não carrega o payload e o upload manual não tem linha. Provado em PGlite.'
+  migration_0164: 'ACEITA. Pula a 0163 citada pela 41.12B, e não há colisão na main.'
+  origem_do_delta: 'NÃO DECIDIDA PELO QA. É pergunta do dono (P-49.6-1). A implementação nunca inventa Δ e nunca cai em edição única silenciosa (M9 do @dev).'
+  titulo_edicao_unica: 'NÃO DECIDIDA PELO QA. É pergunta do dono (P-49.6-2). O código usa "· edição única" e o AC3 diz "· 1ª edição".'
+  alerta_produto_novo: 'NÃO DECIDIDA PELO QA. Só existe o gancho `data-gancho`; nada é exibido.'
+
+pendencias_do_dono:
+  - 'P-49.6-1: origem do Δ. A implementação recalcula pelos motores com a config do lançamento de comparação e dá 422 COMPARACAO_SEM_CONFIG sem ela. A alternativa é o último payload salvo.'
+  - 'P-49.6-2: título sem comparação, "edição única" ou "1ª edição".'
+  - 'Alerta de produto novo fora do mapa na captação (hoje só o gancho).'
+  - 'Validação visual do formulário e do documento (`scratchpad/debriefing-pg02-49.6.html`).'
+
+condicoes_de_merge:
+  - '@devops aplica `0164_debriefing_payloads.sql` à mão em produção, pelo nome completo, e cola as provas do topo (9 colunas; pkey, 1 FK cascade, 2 CHECK). Sem ela, "Gerar debriefing" dá 500.'
+  - 'Contrato 32: quem mergear depois da 41.12A renumera.'
+  - 'Recomendado (não bloqueante): TEST-496-1 e FMT-496-1.'
+
+condicoes_de_done:
+  - 'AC13: geração real do PG02 no viewer de produção, conferida com o script da 49.5 AC10 contra a fixture governante.'
+  - 'AC9: FZ e Netão medidos (< 20.000 px, 0 erros), depois que houver config deles.'
+  - 'Respostas P-49.6-1 e P-49.6-2 e validação visual do dono.'
+
+recommended_action: 'Status segue Ready for Review, sem ir a Done: a condição de Done (AC13) é posterior ao merge. Caminho: @dev fecha TEST-496-1 e FMT-496-1 (barato), @devops faz merge com a 0164 aplicada, e o dono valida e responde às pendências.'
