@@ -43,8 +43,14 @@ import {
   useUpdateDebriefing,
 } from "@/lib/hooks/use-debriefings";
 import {
+  abrirDebriefingEmNovaAba,
   buildDebriefingSrcDoc,
+  clampFrameHeight,
   isDebriefingFrameMessage,
+  mensagemDeErroAoSalvar,
+  DEBRIEFING_FRAME_MAX_HEIGHT,
+  DEBRIEFING_FRAME_MIN_HEIGHT,
+  DEBRIEFING_IFRAME_SANDBOX,
   DEBRIEFING_MSG,
 } from "@/lib/debriefing-frame";
 import { EditDebriefingDialog } from "@/components/debriefings/edit-debriefing-dialog";
@@ -52,14 +58,13 @@ import { DebriefingComments } from "@/components/debriefings/debriefing-comments
 import { DebriefingPinLayer } from "@/components/debriefings/debriefing-pin-layer";
 
 // Story 37.1/37.2 — detalhe do debriefing. O HTML é renderizado FIELMENTE num
-// iframe com sandbox="allow-scripts" e SEM allow-same-origin (nunca usar
-// dangerouslySetInnerHTML). O script-agente injetado (debriefing-frame.ts)
-// reporta a altura real (doc inteiro visível, sem scroll interno) e habilita a
-// edição inline via designMode — o Lucas clica no texto renderizado e altera
-// direto; Salvar extrai o HTML editado por postMessage e persiste.
-
-const MIN_FRAME_HEIGHT = 400;
-const MAX_FRAME_HEIGHT = 20000;
+// iframe sandbox SEM allow-same-origin (permissões em
+// DEBRIEFING_IFRAME_SANDBOX — a Story 49.8 liberou popups para os links do Ads
+// Manager; nunca usar dangerouslySetInnerHTML). O script-agente injetado
+// (debriefing-frame.ts) reporta a altura real (doc inteiro visível, sem scroll
+// interno) e habilita a edição inline via designMode — o Lucas clica no texto
+// renderizado e altera direto; Salvar extrai o HTML editado por postMessage e
+// persiste.
 
 export default function DebriefingDetailPage() {
   const params = useParams<{ id: string }>();
@@ -71,7 +76,10 @@ export default function DebriefingDetailPage() {
   // Story 37.3 — pins estilo Figma
   const [placing, setPlacing] = useState(false);
   const [focusedCommentId, setFocusedCommentId] = useState<string | null>(null);
-  const [frameHeight, setFrameHeight] = useState(MIN_FRAME_HEIGHT);
+  const [frameHeight, setFrameHeight] = useState(DEBRIEFING_FRAME_MIN_HEIGHT);
+  // Story 49.8 — doc mais alto que o teto: o iframe (scrolling="no") corta o
+  // final, então a página avisa e oferece abrir em nova aba.
+  const [truncada, setTruncada] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const savingRef = useRef(false);
   // Epic 37 (etapa): quando aberto de dentro de uma etapa de Debriefing, o link
@@ -106,12 +114,9 @@ export default function DebriefingDetailPage() {
       if (!isDebriefingFrameMessage(event.data)) return;
 
       if (event.data.type === DEBRIEFING_MSG.height) {
-        setFrameHeight(
-          Math.min(
-            Math.max(event.data.height + 24, MIN_FRAME_HEIGHT),
-            MAX_FRAME_HEIGHT,
-          ),
-        );
+        const altura = clampFrameHeight(event.data.height);
+        setFrameHeight(altura.height);
+        setTruncada(altura.truncada);
         return;
       }
 
@@ -125,8 +130,7 @@ export default function DebriefingDetailPage() {
             toast.success("Documento atualizado!");
             setEditMode(false);
           },
-          onError: (e) =>
-            toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
+          onError: (e) => toast.error(mensagemDeErroAoSalvar(e)),
         },
       );
     },
@@ -181,25 +185,23 @@ export default function DebriefingDetailPage() {
     );
   }
 
-  // Fallback para docs multi-página: o iframe roda com sandbox="allow-scripts"
-  // SEM allow-same-origin (origem opaca), então HTMLs que navegam entre páginas
-  // via JS/localStorage/history quebram. Abrir numa aba nova dá ao doc uma
-  // origem real (blob:) onde todo o JS de navegação funciona. Usa o HTML
-  // original (sem o script-agente injetado do iframe).
+  // Nova aba: o documento em tela cheia, sem o teto de altura do viewer (sem o
+  // limite de 20.000 px, com scroll próprio). NÃO é fallback para doc que usa
+  // localStorage/sessionStorage/pushState: o isolamento é o mesmo do viewer, e
+  // esse doc falha nos dois (DEC-001, decidido pelo dono na R4-6). O documento abre
+  // dentro de uma moldura com o MESMO sandbox do viewer (sem allow-same-origin)
+  // — antes ia cru num blob com a origem do app e lia o storage do Loyola X
+  // (SEC-001, gate da 49.8). Usa o HTML original (sem o script-agente).
   function handleOpenExternal() {
     if (!debriefing) return;
     try {
-      const blob = new Blob([debriefing.html], { type: "text/html" });
-      const url = URL.createObjectURL(blob);
-      const win = window.open(url, "_blank", "noopener,noreferrer");
-      if (!win) {
-        URL.revokeObjectURL(url);
+      const resultado = abrirDebriefingEmNovaAba(
+        debriefing.html,
+        `Debriefing — ${debriefing.campaignName}`,
+      );
+      if (resultado === "bloqueada") {
         toast.error("Permita pop-ups para abrir o documento em nova aba.");
-        return;
       }
-      // Revoga depois de carregar (a aba já tem o doc em memória). O atraso
-      // cobre navegações que recarregam a mesma URL logo de início.
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch {
       toast.error("Não foi possível abrir o documento em nova aba.");
     }
@@ -252,7 +254,7 @@ export default function DebriefingDetailPage() {
               size="sm"
               variant="outline"
               onClick={handleOpenExternal}
-              title="Abrir o HTML original em uma nova aba (útil para docs com várias páginas)"
+              title="Abrir o documento em tela cheia, com a mesma proteção daqui"
             >
               <ExternalLink className="h-4 w-4 mr-2" />
               Abrir em nova aba
@@ -342,6 +344,27 @@ export default function DebriefingDetailPage() {
         </div>
       )}
 
+      {/* Story 49.8 — doc acima do teto de altura: nada é cortado em silêncio */}
+      {truncada && (
+        <div
+          role="alert"
+          className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5"
+        >
+          <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <p className="text-sm min-w-0 flex-1">
+            <span className="font-medium">
+              Documento maior que o limite de visualização
+            </span>{" "}
+            ({DEBRIEFING_FRAME_MAX_HEIGHT.toLocaleString("pt-BR")} px) — o final
+            não aparece aqui. Abra em nova aba para ver o documento inteiro.
+          </p>
+          <Button size="sm" variant="outline" onClick={handleOpenExternal}>
+            <ExternalLink className="h-4 w-4 mr-2" />
+            Abrir em nova aba
+          </Button>
+        </div>
+      )}
+
       {/* Doc + comentários lado a lado (desktop); empilhado no mobile */}
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-6 space-y-6 lg:space-y-0">
         {/* Renderização fiel e isolada — altura acompanha o doc (sem scroll
@@ -351,7 +374,7 @@ export default function DebriefingDetailPage() {
             ref={iframeRef}
             key={editMode ? "edit" : "view"}
             srcDoc={srcDoc}
-            sandbox="allow-scripts"
+            sandbox={DEBRIEFING_IFRAME_SANDBOX}
             scrolling="no"
             title={`Debriefing — ${debriefing.campaignName}`}
             className={`w-full rounded-xl border bg-white ${
@@ -370,7 +393,7 @@ export default function DebriefingDetailPage() {
           )}
           {!editMode && (
             <p className="mt-2 text-xs text-muted-foreground">
-              Documento com várias páginas ou etapas não carregou aqui?{" "}
+              Quer ver o documento em tela cheia, sem limite de altura?{" "}
               <button
                 type="button"
                 onClick={handleOpenExternal}
@@ -379,7 +402,8 @@ export default function DebriefingDetailPage() {
                 <ExternalLink className="h-3 w-3" />
                 Abra em uma nova aba
               </button>{" "}
-              para ver o HTML completo.
+              — ele abre com a mesma proteção daqui. Documentos que guardam dados
+              no navegador podem não funcionar em nenhum dos dois.
             </p>
           )}
         </div>

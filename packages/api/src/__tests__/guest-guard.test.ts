@@ -106,6 +106,8 @@ async function buildTestApp(userRole: string) {
   app.delete("/api/projects/:id", async () => ({ ok: true }));
   app.post("/api/chat", async () => ({ ok: true }));
   app.put("/api/projects/:id/funnels/:fid/stages/:sid/event-lead-status", async () => ({ ok: true }));
+  app.post("/api/projects/:id/funnels/:fid/stages/:sid/event-lead-contact", async () => ({ ok: true }));
+  app.delete("/api/projects/:id/funnels/:fid/stages/:sid/event-lead-contact", async () => ({ ok: true }));
   app.post("/api/projects/:id/funnels/:fid/stages/:sid/manual-sales", async () => ({ ok: true }));
   app.post("/api/projects/:id/funnels/:fid/stages/:sid/manual-sales/:saleId/refund", async () => ({ ok: true }));
   app.delete("/api/projects/:id/funnels/:fid/stages/:sid/manual-sales/:saleId/refund", async () => ({ ok: true }));
@@ -309,6 +311,42 @@ describe("guestGuard — guest project membership checks", () => {
     const res = await app.inject({
       method: "PUT",
       url: `/api/projects/${MOCK_PROJECT_ID}/funnels/${MOCK_PROJECT_ID}/stages/${MOCK_PROJECT_ID}/event-lead-status`,
+      headers: AUTH,
+      body: {},
+    });
+    expect(res.statusCode).toBe(403);
+    expect(JSON.parse(res.body).error).toBe("project_access_denied");
+  });
+
+  // É o vendedor (convidado) que liga para o participante — então é ele que
+  // registra a tentativa, e que desfaz o clique errado.
+  it("guest allowed to POST event-lead-contact when member", async () => {
+    setupMemberQuery([MOCK_MEMBER_ROW]);
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/projects/${MOCK_PROJECT_ID}/funnels/${MOCK_PROJECT_ID}/stages/${MOCK_PROJECT_ID}/event-lead-contact`,
+      headers: AUTH,
+      body: {},
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("guest allowed to DELETE event-lead-contact (desfazer) when member", async () => {
+    setupMemberQuery([MOCK_MEMBER_ROW]);
+    const res = await app.inject({
+      method: "DELETE",
+      url: `/api/projects/${MOCK_PROJECT_ID}/funnels/${MOCK_PROJECT_ID}/stages/${MOCK_PROJECT_ID}/event-lead-contact`,
+      headers: AUTH,
+      body: {},
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("guest blocked on POST event-lead-contact when not a member", async () => {
+    setupMemberQuery([]);
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/projects/${MOCK_PROJECT_ID}/funnels/${MOCK_PROJECT_ID}/stages/${MOCK_PROJECT_ID}/event-lead-contact`,
       headers: AUTH,
       body: {},
     });

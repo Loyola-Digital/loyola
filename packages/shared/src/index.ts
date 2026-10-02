@@ -481,6 +481,9 @@ export type {
   EventLeadAnswer,
   EventLeadAnswerGroup,
   EventLeadAnswersResponse,
+  EventContactAttempt,
+  EventContactChannel,
+  AddEventContactAttemptInput,
 } from "./types/event-config.js";
 
 export type {
@@ -650,3 +653,28 @@ export {
 // mesma conta. Módulo folha: o web importa por subpath
 // (`@loyola-x/shared/src/percentual-truncado`), a API por aqui.
 export { centesimosTruncados, textoDePercentual, fracaoTruncada } from "./percentual-truncado.js";
+// Story 49.2: o classificador ÚNICO de origem do debriefing — dois eixos
+// (aquisição × fechamento) que nunca se somam. Os motores 49.3/49.4 chamam só
+// `classificarOrigem`. Módulo folha: o web importa por subpath
+// (`@loyola-x/shared/src/classificador-de-origem`), a API por aqui.
+export {
+  CLASSIFICADOR_VERSAO,
+  CANAIS,
+  FECHAMENTOS,
+  SEGMENTOS_DE_QUALIFICACAO,
+  SEGMENTO_DE_QUALIFICACAO,
+  classificarOrigem,
+  agruparPorCanal,
+  agruparPorFechamento,
+  type Utm,
+  type EntradaClassificador,
+  type ConfigClassificador,
+  type Canal,
+  type Fechamento,
+  type RegraDeAquisicao,
+  type RegraDeFechamento,
+  type ResultadoClassificacao,
+  type SegmentoDeQualificacao,
+  type GrupoDeCanal,
+  type GrupoDeFechamento,
+} from "./classificador-de-origem.js";

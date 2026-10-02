@@ -2,7 +2,7 @@
 // MemberKit cada) e closers cadastrados. PUT substitui a lista inteira.
 
 import { z } from "zod";
-import { eq, and, asc, desc, ne, inArray } from "drizzle-orm";
+import { eq, and, asc, desc, ne, inArray, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   stageEventProducts,
@@ -16,6 +16,7 @@ import {
   funnels,
   projects,
   projectMembers,
+  users,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
 import { parseFaturamento } from "../services/parse-faturamento.js";
@@ -702,6 +703,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
         leadEmail: stageEventLeadStatus.leadEmail,
         status: stageEventLeadStatus.status,
         assignedSeller: stageEventLeadStatus.assignedSeller,
+        contactAttempts: stageEventLeadStatus.contactAttempts,
       })
       .from(stageEventLeadStatus)
       .where(eq(stageEventLeadStatus.stageId, params.data.stageId));
@@ -709,6 +711,9 @@ export default fp(async function stageEventConfigRoutes(fastify) {
     // Atribuição de vendedor é ortogonal ao status: vale para qualquer lead (até "comprou").
     const sellerByEmail = new Map(
       statusRows.filter((r) => r.assignedSeller).map((r) => [r.leadEmail.toLowerCase(), r.assignedSeller]),
+    );
+    const attemptsByEmail = new Map(
+      statusRows.map((r) => [r.leadEmail.toLowerCase(), r.contactAttempts ?? []]),
     );
 
     // Offset sistemático (fuso/relógio) entre a compra (planilha, BRT) e a resposta
@@ -783,6 +788,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
         revenueMatch: revenueMatch as "email" | "phone" | "name" | "time" | null,
         revenueMatchInfo,
         assignedSeller: sellerByEmail.get(l.email) ?? null,
+        attempts: attemptsByEmail.get(l.email) ?? [],
         isRestaurantOwner: restaurantOwners.has(l.email),
       };
     });
@@ -870,6 +876,129 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       });
 
     return { email, status: body.data.status };
+  });
+
+  // ---- REGISTRAR tentativa de contato (vendedor ligou / mandou mensagem) ----
+
+  /**
+   * Teto de tentativas por lead.
+   *
+   * O array vive na linha do lead, que a tela carrega inteira para montar o
+   * mapa — sem teto, um clique repetido por engano engorda a resposta de todo
+   * mundo. 60 é mais do que qualquer operação de evento real usa; quem bater
+   * nisso tem outro problema, e a mensagem diz isso em vez de falhar torto.
+   */
+  const MAX_TENTATIVAS = 60;
+
+  const leadContactBodySchema = z.object({
+    email: chaveDeLead,
+    canal: z.enum(["ligacao", "whatsapp", "presencial", "outro"]),
+    falou: z.boolean(),
+    nota: z.string().trim().max(1000).nullable().optional(),
+  });
+
+  fastify.post(`${base}/event-lead-contact`, async (request, reply) => {
+    // Convidados PODEM registrar tentativa: é o vendedor no evento que liga.
+    const params = stageParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const body = leadContactBodySchema.safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: "Dados inválidos", details: body.error.flatten() });
+    const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+    const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+    if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+    const email = body.data.email.toLowerCase();
+    const [quem] = await fastify.db
+      .select({ nome: users.name })
+      .from(users)
+      .where(eq(users.id, request.userId))
+      .limit(1);
+
+    const tentativa = {
+      at: new Date().toISOString(),
+      canal: body.data.canal,
+      falou: body.data.falou,
+      ...(body.data.nota ? { nota: body.data.nota } : {}),
+      por: quem?.nome ?? "",
+    };
+
+    const [atual] = await fastify.db
+      .select({ attempts: stageEventLeadStatus.contactAttempts })
+      .from(stageEventLeadStatus)
+      .where(
+        and(
+          eq(stageEventLeadStatus.stageId, params.data.stageId),
+          eq(stageEventLeadStatus.leadEmail, email),
+        ),
+      )
+      .limit(1);
+    if ((atual?.attempts?.length ?? 0) >= MAX_TENTATIVAS) {
+      return reply
+        .code(409)
+        .send({ error: `Este lead já tem ${MAX_TENTATIVAS} tentativas registradas.` });
+    }
+
+    const now = new Date();
+    // O append é do Postgres (`||`): dois vendedores registrando no mesmo
+    // segundo somam as duas tentativas, em vez de uma sobrescrever a outra —
+    // que é o que aconteceria lendo o array aqui e regravando inteiro.
+    const [linha] = await fastify.db
+      .insert(stageEventLeadStatus)
+      .values({
+        stageId: params.data.stageId,
+        leadEmail: email,
+        contactAttempts: [tentativa],
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [stageEventLeadStatus.stageId, stageEventLeadStatus.leadEmail],
+        set: {
+          contactAttempts: sql`${stageEventLeadStatus.contactAttempts} || ${JSON.stringify([tentativa])}::jsonb`,
+          updatedAt: now,
+        },
+      })
+      .returning({ attempts: stageEventLeadStatus.contactAttempts });
+
+    return { email, attempts: linha?.attempts ?? [tentativa] };
+  });
+
+  /**
+   * Desfaz a ÚLTIMA tentativa do lead.
+   *
+   * Existe porque registrar é um clique no meio do evento, e sem desfazer o
+   * erro de digitação fica no histórico para sempre — aí o vendedor para de
+   * confiar na contagem, que é justamente o que a feature entrega. Remove só a
+   * última: corrigir é apagar o que você acabou de pôr, não editar o passado.
+   */
+  fastify.delete(`${base}/event-lead-contact`, async (request, reply) => {
+    const params = stageParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const body = z.object({ email: chaveDeLead }).safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: "Dados inválidos" });
+    const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+    const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+    if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+    const email = body.data.email.toLowerCase();
+    // `#-` tira o último elemento no próprio Postgres: nada de ler, cortar e
+    // regravar, que apagaria a tentativa que outro vendedor acabou de somar.
+    const [linha] = await fastify.db
+      .update(stageEventLeadStatus)
+      .set({
+        contactAttempts: sql`${stageEventLeadStatus.contactAttempts} #- '{-1}'`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(stageEventLeadStatus.stageId, params.data.stageId),
+          eq(stageEventLeadStatus.leadEmail, email),
+        ),
+      )
+      .returning({ attempts: stageEventLeadStatus.contactAttempts });
+
+    return { email, attempts: linha?.attempts ?? [] };
   });
 
   // ---- ATRIBUIR vendedor a um lead (ortogonal ao status) ----

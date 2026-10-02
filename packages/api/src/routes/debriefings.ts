@@ -15,6 +15,21 @@ import { debriefingComments, debriefings, users } from "../db/schema.js";
 // comentário é só do autor.
 
 const MAX_HTML_BYTES = 5 * 1024 * 1024; // 5MB
+const MSG_LIMITE_HTML = "Arquivo muito grande. Máximo: 5MB";
+
+/**
+ * Story 49.8 — teto do corpo JSON do `PUT /api/debriefings/:id`.
+ *
+ * O salvar da edição inline manda o HTML inteiro em JSON. O app não define
+ * `bodyLimit` (`Fastify({ logger: true })`), então valia o default do Fastify 5
+ * (1 MiB) — abaixo dos 5 MB que o upload aceita: um doc que subia pelo upload
+ * não salvava pela edição. O teto do HTML continua `MAX_HTML_BYTES`, conferido
+ * no handler; este limite só precisa caber o HTML depois do escape do JSON.
+ * `"`, `\` e quebras de linha viram 2 bytes, então 2× o teto cobre o pior caso
+ * realista (nos documentos da skill o JSON saiu 2%–7% maior que o HTML), e
+ * 1 MiB sobra para os demais campos.
+ */
+const PUT_JSON_BODY_LIMIT = 2 * MAX_HTML_BYTES + 1024 * 1024;
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 const commentParamSchema = z.object({
@@ -90,10 +105,10 @@ async function readHtmlUpload(
   try {
     buffer = await file.toBuffer();
   } catch {
-    return { ok: false, code: 413, error: "Arquivo muito grande. Máximo: 5MB" };
+    return { ok: false, code: 413, error: MSG_LIMITE_HTML };
   }
   if (buffer.byteLength > MAX_HTML_BYTES) {
-    return { ok: false, code: 413, error: "Arquivo muito grande. Máximo: 5MB" };
+    return { ok: false, code: 413, error: MSG_LIMITE_HTML };
   }
 
   return { ok: true, html: buffer.toString("utf-8"), fileName: file.filename };
@@ -231,62 +246,82 @@ export default fp(async function debriefingsRoutes(fastify) {
   // PUT /api/debriefings/:id — JSON { campaignName?, html? } OU multipart
   // (novo arquivo substitui o html; campaignName opcional junto)
   // ----------------------------------------------------------
-  fastify.put("/api/debriefings/:id", async (request, reply) => {
-    const params = idParamSchema.safeParse(request.params);
-    if (!params.success) {
-      return reply.code(400).send({ error: "id inválido" });
+  fastify.put(
+    "/api/debriefings/:id",
+    {
+      bodyLimit: PUT_JSON_BODY_LIMIT,
+      // Corpo acima do bodyLimit nem chega ao handler: responde com a mesma
+      // mensagem de limite do upload. Qualquer outro erro sobe para o handler
+      // global do app (relançado).
+      errorHandler(erro, _request, reply) {
+        if (erro.code === "FST_ERR_CTP_BODY_TOO_LARGE") {
+          return reply.code(413).send({ error: MSG_LIMITE_HTML });
+        }
+        throw erro;
+      },
+    },
+    async (request, reply) => {
+      const params = idParamSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send({ error: "id inválido" });
+      }
+
+      const [existing] = await fastify.db
+        .select({ id: debriefings.id })
+        .from(debriefings)
+        .where(eq(debriefings.id, params.data.id))
+        .limit(1);
+      if (!existing) {
+        return reply.code(404).send({ error: "debriefing não encontrado" });
+      }
+
+      const changes: Partial<{
+        campaignName: string;
+        html: string;
+        fileName: string;
+        stageId: string | null;
+      }> = {};
+
+      if (request.isMultipart()) {
+        const file = await request.file();
+        if (!file) {
+          return reply.code(400).send({ error: "Nenhum arquivo enviado" });
+        }
+        const upload = await readHtmlUpload(file);
+        if (!upload.ok) {
+          return reply.code(upload.code).send({ error: upload.error });
+        }
+        changes.html = upload.html;
+        changes.fileName = upload.fileName;
+        const campaignName = multipartFieldValue(file.fields.campaignName)?.trim();
+        if (campaignName) changes.campaignName = campaignName;
+      } else {
+        const body = updateBodySchema.safeParse(request.body);
+        if (!body.success) {
+          return reply
+            .code(400)
+            .send({ error: body.error.issues[0]?.message ?? "body inválido" });
+        }
+        if (body.data.campaignName !== undefined) {
+          changes.campaignName = body.data.campaignName;
+        }
+        if (body.data.html !== undefined) {
+          if (Buffer.byteLength(body.data.html, "utf8") > MAX_HTML_BYTES) {
+            return reply.code(413).send({ error: MSG_LIMITE_HTML });
+          }
+          changes.html = body.data.html;
+        }
+        if (body.data.stageId !== undefined) changes.stageId = body.data.stageId;
+      }
+
+      await fastify.db
+        .update(debriefings)
+        .set({ ...changes, updatedBy: request.userId, updatedAt: new Date() })
+        .where(eq(debriefings.id, params.data.id));
+
+      return { ok: true };
     }
-
-    const [existing] = await fastify.db
-      .select({ id: debriefings.id })
-      .from(debriefings)
-      .where(eq(debriefings.id, params.data.id))
-      .limit(1);
-    if (!existing) {
-      return reply.code(404).send({ error: "debriefing não encontrado" });
-    }
-
-    const changes: Partial<{
-      campaignName: string;
-      html: string;
-      fileName: string;
-      stageId: string | null;
-    }> = {};
-
-    if (request.isMultipart()) {
-      const file = await request.file();
-      if (!file) {
-        return reply.code(400).send({ error: "Nenhum arquivo enviado" });
-      }
-      const upload = await readHtmlUpload(file);
-      if (!upload.ok) {
-        return reply.code(upload.code).send({ error: upload.error });
-      }
-      changes.html = upload.html;
-      changes.fileName = upload.fileName;
-      const campaignName = multipartFieldValue(file.fields.campaignName)?.trim();
-      if (campaignName) changes.campaignName = campaignName;
-    } else {
-      const body = updateBodySchema.safeParse(request.body);
-      if (!body.success) {
-        return reply
-          .code(400)
-          .send({ error: body.error.issues[0]?.message ?? "body inválido" });
-      }
-      if (body.data.campaignName !== undefined) {
-        changes.campaignName = body.data.campaignName;
-      }
-      if (body.data.html !== undefined) changes.html = body.data.html;
-      if (body.data.stageId !== undefined) changes.stageId = body.data.stageId;
-    }
-
-    await fastify.db
-      .update(debriefings)
-      .set({ ...changes, updatedBy: request.userId, updatedAt: new Date() })
-      .where(eq(debriefings.id, params.data.id));
-
-    return { ok: true };
-  });
+  );
 
   // ----------------------------------------------------------
   // DELETE /api/debriefings/:id — comentários caem em cascade
