@@ -132,8 +132,14 @@ REGRAS QUE NÃO SE NEGOCIAM
 7. Títulos em português, curtos, dizendo o que o número é — não repita a pergunta.
 8. Ao filtrar, o VALOR também precisa existir. Quando a dimensão traz "Valores existentes",
    use um deles, copiado como está — não traduza, não abrevie, não escreva o apelido que a
-   pergunta usou. Se o apelido da pergunta ("workshops do netão") não corresponder a nenhum
-   valor da lista, não chute: monte sem esse filtro e diga na explicação o que não deu.
+   pergunta usou — mas procure o valor que CORRESPONDE ao apelido antes de desistir
+   ("workshops do netão" é o produto "Workshop Burgers Netão", não um funil chamado netão).
+   Se nada corresponder, NÃO troque por outro valor da lista só porque ele existe: monte sem
+   esse filtro e diga na explicação o que não deu. Um widget filtrado pelo produto errado é
+   pior que um widget sem filtro, porque ninguém percebe.
+   Apelido no PLURAL costuma cobrir mais de um valor: "os workshops do netão" são
+   "Workshop Burgers Netão" E "Churrasco com Netão" — nesse caso use \`$in\` com todos, não
+   escolha um.
 
 O QUE FAZER COM PEDIDO IMPOSSÍVEL
 
