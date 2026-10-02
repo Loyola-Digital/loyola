@@ -1,0 +1,162 @@
+schema: 1
+story: '41.12'
+story_title: 'Camada 2 em todas as pontas — "mesma pessoa (e-mail) + mesmo produto conta uma vez" — PARTE A (lançamento)'
+gate: CONCERNS
+status_reason: >-
+  O código da fatia A está correto. A chave mora numa função só (`deduplicarPorPessoaEProduto`),
+  o Debriefing a chama com saída idêntica (SHA do resultado completo do PG02 igual na base e na
+  branch, com e sem as etapas de downsell), e o Resumão, os painéis `sales-data`/`sales-data-daily`
+  e a réplica `sales-daily-sync` decidem a sobrevivente na planilha inteira, antes do recorte.
+  Reproduzi em produção, só leitura e com código independente do @dev: PG02 2.197→2.188 /
+  R$ 231.097,94→230.501,64; PG04 −7 / −R$ 284,06; FZ-M2 Vendas 5,55 %. O "velho → novo → velho"
+  deu igual em 17/17 painéis, 7/7 diários e 25/25 réplicas, e as 6 etapas de perpétuo ficaram
+  inalteradas na réplica. A suíte da API tem as mesmas 10 falhas da origin/main. Fiz 10 mutações
+  próprias e 4 sobreviveram — linha de valor zero disputando a vaga, réplica sem a isenção do
+  perpétuo, Resumão decidindo por planilha e manuais da decisão recortadas por `days`. O código
+  está certo nos quatro casos, mas nenhum teste os segura (TEST-001). Não é PASS porque o merge
+  espera a resposta do dono sobre o FZ-M2 (R6-4), a comunicação do AC11 não foi enviada e a
+  validação visual do AC8 não foi feita. A regeração dos três relatórios bloqueia o Done.
+reviewer: 'Quinn'
+updated: '2026-10-02T13:30:00Z'
+commit_reviewed: '7a390c49'
+base: 'origin/main 7c1e70af (diff com três pontos)'
+
+checks:
+  code_review: PASS            # função única; universo do painel isolado em services/vendas-camada2-planilha.ts; laço antigo intacto (duas passadas); comentário 28.4 rotulado como supersedido
+  unit_tests: CONCERNS         # 110/110 nas suítes da story; 6 de 10 mutações próprias pegas; 4 sobreviventes (TEST-001)
+  acceptance_criteria: CONCERNS  # AC1-AC4, AC7, AC8 (código), AC9 (fatia A), AC10, AC12, AC13 ok; AC10/R6-4 FZ-M2 com o dono; AC11 pendente (ato humano + regeração pós-deploy); AC8 visual pendente; AC5/AC6/AC9(j) são da fatia B
+  no_regressions: PASS         # suíte API 4025 ✓ / 10 ✗, as mesmas 10 de origin/main 7c1e70af (5 arquivos)
+  performance: PASS            # a decisão é O(n) por request; as rotas já liam as planilhas inteiras (o recorte de `days` era em memória)
+  security: PASS               # sem input novo; medição com default_transaction_read_only=on; sem PII na saída
+  documentation: PASS          # spec "Correção 41.12", com os valores da 41.10 rotulados como supersedidos; contrato com linha de histórico
+  api_contract: PASS           # API_CONTRACT_VERSION 30 → 31; campo `dedupPessoaProduto` aditivo e opcional; web sem o campo = sem linha (teste)
+
+evidence:
+  tests_story: 'camada2-paridade + dedup-pessoa-produto + debriefing-hygiene: 110/110'
+  suite_api_full: 'HEAD 7a390c49: 4025 passam / 10 falham em 5 arquivos (funnel-stages-lead-inputs ×3, instagram-routes, instagram, projects ×3, schema ×2)'
+  suite_api_origin_main: 'mesmos 5 arquivos com o código de origin/main 7c1e70af: as mesmas 10 falhas, lista idêntica — pré-existentes'
+  tsc_api: 'packages/api tsc --noEmit (binário direto): exit 0, sem saída'
+  lint: 'eslint nos 11 arquivos da API e nos 4 do web: exit 0'
+  web: 'next build: exit 0; DEPOIS dele tsc --noEmit: exit 0; vitest do helper (.test.ts): 4/4'
+  coderabbit: 'não executado (CLI exige WSL; macOS)'
+  mutations_qa:
+    - id: QA-M1
+      what: 'card decide a sobrevivente DEPOIS do recorte de `days`'
+      result: 'pega: 1 (AC9(f) painel com days)'
+    - id: QA-M2
+      what: 'dedup só no Resumão — card ignora a decisão'
+      result: 'pega: 8'
+    - id: QA-M3
+      what: 'réplica decide sem as vendas manuais (diverge do painel)'
+      result: 'pega: 1 (AC9(i))'
+    - id: QA-M4
+      what: 'linha de valor zero disputa a vaga (`bruto <= 0` fora do isenta)'
+      result: 'NÃO pega (TEST-001)'
+    - id: QA-M5
+      what: 'perpétuo afetado: réplica não isenta `perpetual_sales`'
+      result: 'NÃO pega — o fixture devolve `funnel_spreadsheets` vazio (TEST-001). Em produção o código está certo: 6 etapas de perpétuo iguais na base e na branch'
+    - id: QA-M6
+      what: 'Resumão decide por planilha, não entre planilhas (AC2(a))'
+      result: 'NÃO pega — todo fixture tem uma planilha só (TEST-001)'
+    - id: QA-M7
+      what: 'painel decide por planilha'
+      result: 'pega só via manual × planilha (AC9(i)); planilha × planilha não tem teste'
+    - id: QA-M8
+      what: 'sobrevive a ÚLTIMA'
+      result: 'pega: 17'
+    - id: QA-M9
+      what: 'card: manuais da decisão recortadas por `days`'
+      result: 'NÃO pega (TEST-001)'
+    - id: QA-M10
+      what: 'manuais antes das planilhas'
+      result: 'pega: 2'
+  production_readonly:
+    session: 'default_transaction_read_only=on (conferido com show); Sheets só leitura; Meta token nulo para o Resumão; saída só agregada'
+    method: 'três árvores: origin/main (git archive), HEAD e HEAD com a camada 2 desligada na função única; sem copiar os scripts do @dev'
+    debriefing_49_3: 'PG02 (datas do perfil §1b): SHA do resultado completo igual base × HEAD — 0e17c398c90fcaaf (captação+principal) e 9799a306f6079947 (+downsell+leads-downsell); camada 2 = 9; captação R$ 230.501,64; principal 71 / R$ 245.800,00; únicos 1.807; downsell R$ 20.714,40'
+    resumao_pg02: '17/04–11/05: 2.197/1.900/297/1.807 R$ 231.097,94 → 2.188/1.892/296/1.807 R$ 230.501,64 (cap 198.239,10, ob 32.262,54), W9 25/R$ 2.475,00, W11 9/R$ 596,30, A4 Δ 0. 17/04–09/05: 2.174 → 2.165, R$ 228.820,94 → 228.224,64, W11 9/R$ 596,30'
+    resumao_pg04: '09/07–30/07: 1.145 → 1.138 (captação 999 → 992), R$ 100.049,03 → 99.764,97 (−R$ 284,06), W11 7/R$ 284,06, W9 5/R$ 428,50, A4 Δ 0'
+    resumao_bbe_pr2: '10 / R$ 12.864,00 inalterado'
+    painel_fz_m2_vendas: 'compradores 70 = 70; faturamento R$ 82.702,00 → 78.111,00 (−5 linhas / −R$ 4.591,00 = 5,55 %); réplica idem'
+    painel_outros: 'BBE-PR2 36→35 / −R$ 1.347,00 (2,88 %); PG02 Downsell Vendas −R$ 399,50; PG03 −2 / −R$ 116,90; PG04 −11 / −R$ 891,97; FZ-L2 Captação −3 / −R$ 29,70; FZ-L2 Vendas −R$ 4.197,00 (3,62 %); FZ-M1 Vendas −R$ 1.197,00 (2,28 %); ingressosUnicos inalterado em todas'
+    velho_novo_velho: 'sales-data 17/17; sales-data-daily (capture) 7/7; réplica 25/25 (inclui as etapas free/paid de perpétuo)'
+    diario_vs_card: 'cada diário cai exatamente o valor que cai no card (PG02 233.572,94 → 232.976,64; PG04 119.798,21 → 118.906,24)'
+  no_prod_writes: 'sessões read-only; nenhum SQL/migration no diff'
+
+top_issues:
+  - id: 'TEST-001'
+    severity: medium
+    category: tests
+    finding: >-
+      Quatro decisões corretas do código não têm teste que as segure. Cada mutação abaixo passou
+      verde em 169 testes: (a) linha de valor zero ocupando a vaga (o [AUTO-DECISION] "valor zero
+      é isenta"); (b) réplica aplicando a camada 2 de lançamento à planilha `perpetual_sales`, que
+      contradiz a R6-2 — o fixture devolve `funnel_spreadsheets` vazio; (c) Resumão decidindo por
+      planilha em vez de entre planilhas (AC2(a)); (d) o card recortando por `days` as manuais que
+      entram na decisão. O fixture tem uma planilha só, então "entre planilhas" não é provado em
+      ponta nenhuma, exceto no par manual × planilha.
+    suggested_owner: dev
+    action: >-
+      Acrescentar 4 testes em camada2-paridade: (a) zero-valor primeiro + recompra paga conta 1;
+      (b) etapa paid com `perpetual_sales` herdada, recompra na planilha do perpétuo não sai da
+      réplica; (c) duas planilhas na etapa, recompra na 2ª sai no Resumão, no card e no diário;
+      (d) manual antes do `days` + manual dentro, mesmo e-mail e produto, a de dentro não conta.
+      Provar cada um com QA-M4/M5/M6/M9. Pode correr em paralelo à espera do dono.
+  - id: 'OWN-001'
+    severity: high
+    category: owner_decision
+    finding: 'FZ-M2 · Vendas perde 5,55 % do faturamento (5 recompras do mesmo produto, R$ 4.591,00); acima do limiar R6-4.'
+    suggested_owner: dono
+    action: 'Dono responde se a regra vale nessa etapa. BLOQUEIA O MERGE (R6-4). QA não decide.'
+  - id: 'OWN-002'
+    severity: medium
+    category: owner_decision
+    finding: 'BBE-PR2 (event_capture, evento presencial): a regra tira 1 linha / R$ 1.347,00 (2,88 %). A segunda compra do mesmo ingresso pela mesma pessoa pode ser ingresso para outra pessoa.'
+    suggested_owner: dono
+    action: 'Dono decide se a camada 2 vale em captação de evento presencial. QA não decide.'
+  - id: 'OWN-003'
+    severity: medium
+    category: owner_decision
+    finding: 'Etapas de Vendas: recompra do principal pela mesma pessoa pode ser 2ª matrícula/renovação — FZ-L2 −R$ 4.197,00 (3,62 %), FZ-M1 −R$ 1.197,00 (2,28 %), PG02 Downsell Vendas −R$ 399,50 (0,72 %), FZ-M2 (OWN-001).'
+    suggested_owner: dono
+    action: 'Dono decide se a regra vale nas etapas de Vendas. QA não decide.'
+  - id: 'PO-001'
+    severity: medium
+    category: requirements
+    finding: >-
+      AC1(d): a cópia de `n8n-kiwify-downsell` ligada à Downsell Captação do PG02 não tem ID nem
+      produto mapeados. A camada 2 do Debriefing (49.3) colapsa por e-mail qualquer produto dela:
+      6 linhas / R$ 1.358,50 / 4 pessoas, segundo a medição do @dev. A saída da 49.3 ficou
+      idêntica nesta story (confirmado por SHA).
+    suggested_owner: po
+    action: '@po decide se a guarda de productName também entra no Debriefing (o número do Debriefing do PG02 mudaria).'
+  - id: 'PO-002'
+    severity: medium
+    category: requirements
+    finding: 'AC7: cinco leituras candidatas a "entra" não foram implementadas — creative-sales-metrics, stage-creative-performance, cross-launch-sync, all-sales (manual-sales.ts), public-sales-rows. Sem elas, criativo/LP/lançamento e as listas linha a linha seguem somando a recompra.'
+    suggested_owner: po
+    action: '@po decide item a item (entra nesta fatia, fatia nova ou fora).'
+  - id: 'REL-001'
+    severity: low
+    category: reliability
+    finding: >-
+      O card não filtra a venda manual reembolsada (`refundedAt`), e a réplica filtra — divergência
+      anterior à 41.12. Com a camada 2, uma manual reembolsada pode ocupar a vaga no card e não na
+      réplica. Hoje há 1 manual reembolsada em 26, numa etapa só.
+    suggested_owner: dev
+    action: 'Registrar; alinhar o filtro de `refundedAt` no card numa story própria.'
+  - id: 'UX-001'
+    severity: low
+    category: ux
+    finding: 'O tooltip "Ingressos totais" da Captação Paga ainda diz "todas as vendas (todos os produtos), sem dedup"; a nova linha de rodapé contradiz o texto.'
+    suggested_owner: dev
+    action: 'Ajustar o texto junto com a validação visual do AC8.'
+
+pending_before_merge:
+  - 'OWN-001 — resposta do dono sobre o FZ-M2 (R6-4)'
+  - 'AC11 — comunicação aos usuários enviada (rascunho no Dev Agent Record), citando sales_daily, rotas públicas e o CAC da cadeia nas etapas de lançamento'
+  - 'AC8 — validação visual do dono (Captação Paga "Ingressos totais"; Vendas "Faturamento")'
+  - 'TEST-001 — recomendado (não decide o gate)'
+pending_before_done:
+  - 'R6-3 — regerar 6b4c3492, 19c606f4 e 47db006f depois do deploy da fatia A (b789ad43 não muda)'
+  - 'API_CONTRACT_VERSION — se a 49.11 mergear antes, renumerar'
