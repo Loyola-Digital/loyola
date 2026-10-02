@@ -100,7 +100,7 @@ Respondidas nesta ordem, uma a uma. "Reproduz" = faz como a planilha; "corrige" 
 | 48.6 | Complementos da aba 1 por subtração (fix de DEV-03) — `48.6.planejamento-complementos-por-subtracao.md` | RN-002, 006, 007 (exatidão) | 48.1 ✅ | **Done** — gate PASS (re-gate) 2026-09-22; **MERGED #917** (`d09a4a1f`); sem migration; Média / XS (1–2) |
 | 48.14 | Várias bases de referência lado a lado + investimento real quente/frio em R$ — `48.14.planejamento-varias-bases-lado-a-lado.md` | — (camada B, D18) | 48.9 ✅, 48.11 ✅, 48.13 ✅ | **Draft** 2026-10-01 — Alta / M (5–8), estimativa do @sm por delegação do Danilo |
 | 48.15 | Margem de contribuição realizada das bases (total, pagos, por canal orgânico) — `48.15.planejamento-margem-realizada.md` | — (camada B, D18) | 48.14, 48.16 (só a linha Área de Membros) | **Draft** — F1–F5 respondidas em 2026-10-02; aguarda T1 do @architect; Alta / L (8–13), estimativa do @sm por delegação do Danilo |
-| 48.16 | Canal "Área de Membros" nos classificadores do sistema (`utm_source` começando com `cpdf`) — `48.16.origem-canal-area-de-membros.md` | — | — | **Draft** — autorização do Lucas ✅ (2026-10-02); falta a forma da regra da planilha de alunos (AC8); Alta / S (3–5), estimativa do @sm por delegação do Danilo |
+| 48.16 | Canal "Área de Membros" nos classificadores do sistema (`utm_source` começando com `cpdf`) — `48.16.origem-canal-area-de-membros.md` | — | — | **Draft** — sem `[FALTA]`, pronta para o @po (Lucas ✅; planilha de alunos decidida); Alta / M (5–8), estimativa do @sm por delegação do Danilo |
 
 Pontos e prioridade: estimados pelo @po na validação e confirmados pelo Danilo — 48.2: Alta, M (5–8); 48.1: Alta, L (8–13) proposta; 48.3 e 48.4: Alta, L (8–13); 48.5: Alta, M (5–8).
 
