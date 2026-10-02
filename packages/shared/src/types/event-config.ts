@@ -109,6 +109,36 @@ export interface EventMapLead {
   revenueMatchInfo: EventRevenueMatchInfo | null;
   /** Vendedor/closer atribuído ao lead (nome); null se não atribuído. */
   assignedSeller: string | null;
+  /** Tentativas de contato, da mais antiga para a mais nova. */
+  attempts: EventContactAttempt[];
+}
+
+/**
+ * Uma tentativa de contato do vendedor com o participante.
+ *
+ * O número da tentativa ("3ª ligação") é a POSIÇÃO no array, não um campo: a
+ * lista é append-only, e guardar o número junto abriria a chance de ele
+ * discordar da própria lista.
+ */
+export interface EventContactAttempt {
+  /** Quando a tentativa aconteceu (ISO). */
+  at: string;
+  canal: EventContactChannel;
+  /** A pessoa respondeu? `false` = não atendeu, não respondeu, caixa postal. */
+  falou: boolean;
+  /** O que foi dito, se valer registrar. */
+  nota?: string;
+  /** Nome de quem registrou. */
+  por: string;
+}
+
+export type EventContactChannel = "ligacao" | "whatsapp" | "presencial" | "outro";
+
+export interface AddEventContactAttemptInput {
+  email: string;
+  canal: EventContactChannel;
+  falou: boolean;
+  nota?: string | null;
 }
 
 /**

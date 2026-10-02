@@ -2079,6 +2079,27 @@ export const stageEventLeadStatus = pgTable(
     note: text("note"),
     /** Vendedor/closer atribuído ao lead (nome livre; espelha stage_event_closers). */
     assignedSeller: varchar("assigned_seller", { length: 255 }),
+    /**
+     * Tentativas de contato, da mais antiga para a mais nova — o histórico que
+     * o vendedor vai consultando ("já liguei 3 vezes, ninguém atende").
+     *
+     * Array no próprio lead, e não tabela separada, porque a tela já carrega
+     * esta linha inteira: o histórico chega de graça, sem join nem segunda
+     * query. São poucas tentativas por pessoa, e o append é feito em SQL
+     * (`||`), então dois vendedores clicando junto não perdem registro.
+     */
+    contactAttempts: jsonb("contact_attempts")
+      .$type<
+        {
+          at: string;
+          canal: "ligacao" | "whatsapp" | "presencial" | "outro";
+          falou: boolean;
+          nota?: string;
+          por: string;
+        }[]
+      >()
+      .notNull()
+      .default([]),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

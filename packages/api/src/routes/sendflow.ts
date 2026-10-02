@@ -40,7 +40,6 @@ import {
   listarCampanhas,
   renovarToken,
   totalDeParticipantes,
-  type SendflowRelease,
 } from "../services/sendflow.js";
 
 const projetoParam = z.object({ projectId: z.string().uuid() });
