@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Brain, RefreshCw, Bug } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ImportarDoTally } from "./importar-do-tally";
 import { EnvioAoMeta } from "./envio-ao-meta";
+import { EditorDeScoring, type ModeloDeScoring } from "./editor-de-scoring";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -133,6 +134,15 @@ export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabP
 
   const [selectedSurveyId, setSelectedSurveyId] = useState<string>("");
   const [jsonText, setJsonText] = useState("");
+  /**
+   * Visual é o padrão; o JSON fica a um clique.
+   *
+   * A tabela cobre o que se mexe todo dia (pontos, peso, faixas); o JSON
+   * continua existindo para o que ela não cobre — pontuação condicional,
+   * `cpl_ideal`, coluna de faixa pré-calculada — em vez de esconder o que o
+   * motor sabe fazer.
+   */
+  const [modoJson, setModoJson] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
   const [breakdownDays, setBreakdownDays] = useState(90);
   const { data: debug, isLoading: debugLoading, refetch: refetchDebug } =
@@ -151,6 +161,22 @@ export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabP
       lastLoadedUpdatedAtRef.current = saved.updatedAt;
     }
   }, [saved]);
+
+  /**
+   * O modelo que a tabela edita, lido do JSON.
+   *
+   * JSON inválido (alguém mexeu no modo texto e deixou uma vírgula solta) vira
+   * modelo vazio em vez de quebrar a tela — e o botão de salvar já recusa com a
+   * mensagem certa.
+   */
+  const modeloDoTexto: ModeloDeScoring = useMemo(() => {
+    try {
+      const o = JSON.parse(jsonText || "{}");
+      return typeof o === "object" && o && !Array.isArray(o) ? (o as ModeloDeScoring) : {};
+    } catch {
+      return {};
+    }
+  }, [jsonText]);
 
   async function handleSave() {
     let parsed: Record<string, unknown>;
@@ -241,15 +267,34 @@ export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabP
               com todas as perguntas e alternativas. Os pontos ficam zerados —
               é a parte que exige conhecer o lançamento.
             */}
-            <ImportarDoTally projectId={projectId} onImportar={setJsonText} />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setModoJson((v) => !v)}
+                className="rounded-md border px-2 py-1 text-[11px] text-muted-foreground transition hover:bg-accent"
+              >
+                {modoJson ? "Editar na tabela" : "Editar o JSON"}
+              </button>
+              <ImportarDoTally projectId={projectId} onImportar={setJsonText} />
+            </div>
           </div>
-          <Textarea
-            value={jsonText}
-            onChange={(e) => setJsonText(e.target.value)}
-            placeholder={SCHEMA_PLACEHOLDER}
-            rows={16}
-            className="font-mono text-xs"
-          />
+          {modoJson ? (
+            <Textarea
+              value={jsonText}
+              onChange={(e) => setJsonText(e.target.value)}
+              placeholder={SCHEMA_PLACEHOLDER}
+              rows={16}
+              className="font-mono text-xs"
+            />
+          ) : (
+            <EditorDeScoring
+              modelo={modeloDoTexto}
+              // O JSON continua sendo a fonte: a tabela edita e serializa de
+              // volta, então alternar entre os dois modos nunca perde nada —
+              // nem o que a tabela não mostra.
+              onChange={(novo) => setJsonText(JSON.stringify(novo, null, 2))}
+            />
+          )}
         </div>
 
         <Button
