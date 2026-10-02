@@ -53,6 +53,7 @@ import { SURVEY_CANONICAL_FIELDS, type SurveyCanonicalField } from "../db/schema
 import type { DebriefingConfigLancamento, DimensaoDeCriativo } from "./debriefing-config.js";
 import { PISO_DE_AMOSTRA } from "../utils/order-bump.js";
 import { adNameDoTerm } from "./launch-report-normalize.js";
+import { postDoGrupo } from "../utils/post-do-criativo.js";
 import {
   aplicarImposto,
   chavesDeComprador,
@@ -188,6 +189,12 @@ export interface CriativosInput {
   nomesDeAnuncio: Readonly<Record<string, string>>;
   /** Conta de anúncios do funil (`funnels.metaAccountId`), só dígitos; `null` = sem conta. */
   contaDeAnuncios: string | null;
+  /**
+   * R7-9 (49.6): Ad ID → post publicado, já resolvido pela cascata da 18.88
+   * (`postDoAnuncio`: Instagram → Facebook) sobre `meta_ad_creatives_cache`.
+   * Ad ID sem post (ou fora do cache) simplesmente não tem chave.
+   */
+  postsDosAnuncios: Readonly<Record<string, string>>;
 }
 
 export interface IdentidadeInput {
@@ -331,6 +338,13 @@ export interface CriativoXFaixa {
   tipo: TipoDeCriativo | "conflito" | "nao-classificado" | null;
   /** Dado cru — escapar para `href` é da 49.6. */
   linkAdsManager: string | null;
+  /**
+   * R7-9 (49.6): o post publicado do grupo (Instagram → Facebook), do ad_id de
+   * MAIOR investimento entre os que têm post (`postDoGrupo`, 18.88). Sem spend
+   * no período (sem ad-level), o desempate é a ordem por volume de respondentes.
+   * `null` = nenhum ad_id do grupo tem post público — o render cai no Ads Manager.
+   */
+  linkDoPost: string | null;
 }
 
 export interface ConflitoDeTipo {
@@ -1201,8 +1215,14 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
     grupos.set(chave, g);
   }
 
+  // R7-9: investimento por ad_id (spend cru do ad-level) e posts do cache, para o link do grupo.
+  const spendPorAdId = new Map<string, number>();
+  for (const a of input.criativos.anuncios) spendPorAdId.set(a.adId, (spendPorAdId.get(a.adId) ?? 0) + a.spendBruto);
+  const postPorAdId = new Map(Object.entries(input.criativos.postsDosAnuncios));
+
   const criativos: CriativoXFaixa[] = [...grupos.values()].map((g) => {
-    const [adIdPrincipal] = [...g.adIds.entries()].sort((a, b) => b[1] - a[1] || porOrdem(a[0], b[0]))[0]!;
+    const porVolume = [...g.adIds.entries()].sort((a, b) => b[1] - a[1] || porOrdem(a[0], b[0])).map(([id]) => id);
+    const adIdPrincipal = porVolume[0]!;
     const nome = g.nomes.get(adIdPrincipal)!;
     const porFaixa = Object.fromEntries(FAIXAS_DO_RESPONDENTE.map((f) => [f, 0])) as Record<FaixaDoRespondente, number>;
     for (const r of g.resps) porFaixa[r.faixa] += 1;
@@ -1230,6 +1250,7 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
       amostraBaixa: n < PISO_DE_AMOSTRA,
       tipo,
       linkAdsManager: linkDoAdsManager(input.criativos.contaDeAnuncios, adIdPrincipal),
+      linkDoPost: postDoGrupo(porVolume, spendPorAdId, postPorAdId),
     };
   });
   criativos.sort((a, b) => b.n - a.n || porOrdem(a.nome, b.nome) || porOrdem(a.adIdPrincipal, b.adIdPrincipal));

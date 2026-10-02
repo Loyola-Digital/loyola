@@ -129,6 +129,7 @@ function entradaBase(): EntradaMutavel {
       ],
       nomesDeAnuncio: { [AD1]: "dg-pg02-ia-01", [AD3]: "dg-pg02-ia-01 - Cópia" },
       contaDeAnuncios: "3717530711643512",
+      postsDosAnuncios: {},
     },
     baseAnterior: {
       funnelId: "funil-anterior",
@@ -698,6 +699,51 @@ describe("TEST-001 — fios fixados por AC/decisão", () => {
     // a@ passa de A (1ª pesquisa, 17/04) para D (2ª, 25/04); n@ entra como B
     expect(r.faixa.distribuicao).toEqual({ A: 1, B: 2, C: 1, D: 2, semFaixa: 1, foraDoPadrao: 1 });
     expect(r.somas).toEqual({ segmentos: 8, fechamento: 8, respondentes: 8 });
+  });
+});
+
+describe("R7-9 (49.6) — link do criativo = post publicado (cascata da 18.88), Ads Manager só sem post", () => {
+  const IG1 = "https://www.instagram.com/p/AAA111/";
+  const FB1 = "https://www.facebook.com/100/posts/1";
+  const IG3 = "https://www.instagram.com/p/CCC333/";
+  // AD3 (cópia do ia-01) com 3 respondentes contra 1 do AD1: AD3 é o de maior VOLUME; AD1 é o de maior SPEND (100 × 0)
+  const maisRespostasNoAd3 = (e: EntradaMutavel) =>
+    e.respondentes.push(resp({ email: "p1@x.com", faixa: "A", utmContentCru: AD3 }), resp({ email: "p2@x.com", faixa: "B", utmContentCru: AD3 }));
+  const ia = (r: ReturnType<typeof rodar>) => r.criativoXFaixa.criativos.find((c) => c.adIds.includes(AD1))!;
+
+  it("visão compilada por Ad Name: o post do ad_id de MAIOR investimento entre os que têm post (não o de maior volume)", () => {
+    const r = rodar((e) => {
+      maisRespostasNoAd3(e);
+      e.criativos.postsDosAnuncios = { [AD1]: IG1, [AD3]: IG3 };
+    });
+    expect(ia(r)).toMatchObject({ adIdPrincipal: AD3, linkDoPost: IG1 });
+    // o link do Ads Manager continua o do principal (fallback do render)
+    expect(ia(r).linkAdsManager).toContain(`selected_ad_ids=${AD3}`);
+  });
+
+  it("o de maior investimento sem post não ganha: fica o post do outro ad_id do grupo", () => {
+    const r = rodar((e) => {
+      maisRespostasNoAd3(e);
+      e.criativos.postsDosAnuncios = { [AD3]: IG3 };
+    });
+    expect(ia(r).linkDoPost).toBe(IG3);
+  });
+
+  it("sem ad-level no período (PG02): desempate pela ordem de volume — o post do ad_id com mais respondentes", () => {
+    const r = rodar((e) => {
+      maisRespostasNoAd3(e);
+      e.criativos.anuncios = [];
+      e.criativos.postsDosAnuncios = { [AD1]: FB1, [AD3]: IG3 };
+    });
+    expect(ia(r).linkDoPost).toBe(IG3);
+  });
+
+  it("nenhum ad_id com post → linkDoPost null (o render mantém o Ads Manager)", () => {
+    const r = rodar((e) => {
+      e.criativos.postsDosAnuncios = {};
+    });
+    expect(ia(r).linkDoPost).toBeNull();
+    expect(ia(r).linkAdsManager).toMatch(/^https:\/\/adsmanager\.facebook\.com\//);
   });
 });
 

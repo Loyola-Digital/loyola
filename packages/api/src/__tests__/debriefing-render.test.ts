@@ -44,7 +44,7 @@ function entrada(over: Partial<DebriefingRenderInput> = {}): DebriefingRenderInp
 }
 
 function comComparacao(atual = payloadSintetico(), anterior = payloadSintetico()): DebriefingRenderInput {
-  return { payload: atual, comparacao: { funnelId: "f-b", nome: "PG01", payload: anterior }, rotulos: ROT, alertas: [] };
+  return { payload: atual, comparacao: { funnelId: "f-b", nome: "PG01", payload: anterior, origem: { tipo: "recalculada" } }, rotulos: ROT, alertas: [] };
 }
 
 /** `[sec-num, título]` na ordem em que aparecem no documento. */
@@ -386,6 +386,7 @@ describe("AC9 — restrições do documento", () => {
         amostraBaixa: true,
         tipo: null,
         linkAdsManager: 'https://adsmanager.facebook.com/adsmanager/manage/ads?act=1&selected_ad_ids=1"><script>',
+        linkDoPost: null,
       },
     ];
     const html = renderDebriefing(entrada({ payload: p, rotulos: { ...ROT, projeto: xss, lancamento: xss } }));
@@ -396,6 +397,132 @@ describe("AC9 — restrições do documento", () => {
     for (const a of blanks) expect(a).toContain('rel="noopener noreferrer"');
     // `const D` não fecha o <script> com nome malicioso
     expect(html.split("const D=")[1]!.split("</script>")[0]).not.toContain("<");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Iteração 2 — Rodada 7 do dono (R7-6, R7-7, R7-8, R7-9) e a lacuna de criativo
+// ---------------------------------------------------------------------------
+
+type CriativoDoPayload = DebriefingPayload["publico"]["criativoXFaixa"]["criativos"][number];
+function criativo(over: Partial<CriativoDoPayload>): CriativoDoPayload {
+  return {
+    nome: "dg-pg02-ia-01",
+    nomeNaoResolvido: false,
+    origemDoNome: "cache",
+    adIds: ["120000000000000001"],
+    adIdPrincipal: "120000000000000001",
+    n: 10,
+    porFaixa: { A: 4, B: 2, C: 2, D: 2, semFaixa: 0, foraDoPadrao: 0 },
+    pctAB: { valor: 60, memoria: "" },
+    pctCD: { valor: 40, memoria: "" },
+    pctSemFaixa: { valor: 0, memoria: "" },
+    amostraBaixa: false,
+    tipo: "ia",
+    linkAdsManager: "https://adsmanager.facebook.com/adsmanager/manage/ads?act=1&selected_ad_ids=120000000000000001",
+    linkDoPost: null,
+    ...over,
+  };
+}
+const secaoCriativo = (html: string) => html.split('data-secao="Criativo × Faixa"')[1]!.split("</section>")[0]!;
+const ancoras = (html: string) => [...secaoCriativo(html).matchAll(/<a href="([^"]+)" data-link="([^"]+)"[^>]*>([^<]+)<\/a>/g)].map((m) => [m[3], m[2], m[1]]);
+
+describe("R7-9 — o nome do criativo abre o post publicado; sem post, o Ads Manager", () => {
+  it("Instagram, Facebook e Ads Manager, cada um no seu caso", () => {
+    const p = payloadSintetico();
+    p.publico.criativoXFaixa.aplicavel = true;
+    p.publico.criativoXFaixa.criativos = [
+      criativo({ nome: "ig", linkDoPost: "https://www.instagram.com/p/DAbc123/" }),
+      criativo({ nome: "fb", linkDoPost: "https://www.facebook.com/100/posts/200" }),
+      criativo({ nome: "am" }),
+      criativo({ nome: "nada", linkAdsManager: null }),
+    ];
+    const html = renderDebriefing(entrada({ payload: p }));
+    expect(ancoras(html)).toEqual([
+      ["ig", "instagram", "https://www.instagram.com/p/DAbc123/"],
+      ["fb", "facebook", "https://www.facebook.com/100/posts/200"],
+      ["am", "ads-manager", "https://adsmanager.facebook.com/adsmanager/manage/ads?act=1&amp;selected_ad_ids=120000000000000001"],
+    ]);
+    expect(secaoCriativo(html)).toContain("<td>nada</td>");
+    expect(secaoCriativo(html)).toContain("O nome abre o post publicado");
+  });
+
+  it("o post escapa no href (nada de atributo injetado)", () => {
+    const p = payloadSintetico();
+    p.publico.criativoXFaixa.aplicavel = true;
+    p.publico.criativoXFaixa.criativos = [criativo({ linkDoPost: 'https://www.instagram.com/p/x/"><script>alert(1)</script>' })];
+    const html = renderDebriefing(entrada({ payload: p }));
+    expect(secaoCriativo(html)).not.toContain("<script>");
+    expect(secaoCriativo(html)).toContain("&quot;&gt;&lt;script&gt;");
+  });
+});
+
+describe("Lacuna — Criativo × Faixa sem nenhum criativo não vira tabela vazia", () => {
+  it("aplicável e sem criativo → lacuna explicada (com os sem-criativo), sem <table>", () => {
+    const p = payloadSintetico();
+    p.publico.criativoXFaixa.aplicavel = true;
+    p.publico.criativoXFaixa.criativos = [];
+    p.publico.criativoXFaixa.semCriativo = { ...p.publico.criativoXFaixa.semCriativo, n: 1234, vazio: 1200, naoEhAdId: 34 };
+    const sec = secaoCriativo(renderDebriefing(entrada({ payload: p })));
+    expect(sec).toContain('data-lacuna="SEM_CRIATIVO_NA_PESQUISA"');
+    expect(sec).toContain("1.234 respondentes (1.200 sem utm_content, 34 com utm_content que não é ID de anúncio)");
+    expect(sec.split("Criativo por tipo")[0]).not.toContain("<table");
+  });
+
+  it("com criativo → tabela, sem a lacuna", () => {
+    const p = payloadSintetico();
+    p.publico.criativoXFaixa.aplicavel = true;
+    p.publico.criativoXFaixa.criativos = [criativo({})];
+    const sec = secaoCriativo(renderDebriefing(entrada({ payload: p })));
+    expect(sec).toContain("<table");
+    expect(sec).not.toContain("SEM_CRIATIVO_NA_PESQUISA");
+  });
+});
+
+describe("R7-6 — produto novo fora do mapa na captação: alerta NÃO bloqueante", () => {
+  it("lista o produto (vendas, faturamento, como foi contado) no topo e em Principais Pontos; o documento sai", () => {
+    const p = payloadSintetico();
+    p.dinheiroTempo.produtosNaoClassificados = [{ produto: "Ingresso <VIP> 2026", vendas: 1234, faturamento: 5678.9, tiposAssumidos: ["ingresso"] }];
+    const html = renderDebriefing(entrada({ payload: p }));
+    expect(html).toMatch(/<div class="warn" data-alertas>[^]*<li data-alerta="PRODUTO_FORA_DO_MAPA_NA_CAPTACAO">/);
+    const pontos = html.split('data-secao="Principais Pontos &amp; Recomendações"')[1]!.split("</section>")[0]!;
+    const alerta = /<div class="warn" data-alerta="PRODUTO_FORA_DO_MAPA_NA_CAPTACAO">[^]*?<\/div>/.exec(pontos)?.[0] ?? "";
+    expect(alerta).toContain("Ingresso &lt;VIP&gt; 2026");
+    expect(alerta).toContain("1.234 venda(s)");
+    expect(alerta).toContain(moedaBr(5678.9));
+    expect(alerta).toContain("contado como ingresso");
+    expect(html).not.toContain("data-gancho");
+  });
+
+  it("sem produto fora do mapa → nenhum alerta", () => {
+    const p = payloadSintetico();
+    p.dinheiroTempo.produtosNaoClassificados = [];
+    expect(renderDebriefing(entrada({ payload: p }))).not.toContain("PRODUTO_FORA_DO_MAPA_NA_CAPTACAO");
+  });
+});
+
+describe("R7-8 — título sem comparação = “· edição única” (nunca “1ª edição”)", () => {
+  it("h1, <title> e rodapé", () => {
+    const html = renderDebriefing(entrada());
+    expect(html).toContain("<h1>Debriefing — <b>PG02</b> (Expert Teste) · edição única</h1>");
+    expect(html).toContain("<title>Debriefing — PG02 (Expert Teste) · edição única</title>");
+    expect(html).toContain("<footer>Loyola X — Debriefing — PG02 (Expert Teste) · edição única");
+    expect(html).not.toMatch(/1ª edição|primeira edição/i);
+  });
+});
+
+describe("R7-7 — aviso do Δ contra payload salvo", () => {
+  it("origem payload-salvo → aviso no topo com data (Brasília) e motivo; recalculada → sem aviso", () => {
+    const base = comComparacao();
+    const salvo = renderDebriefing({
+      ...base,
+      comparacao: { ...base.comparacao!, origem: { tipo: "payload-salvo", debriefingId: "d1", salvoEm: "2026-06-21T01:00:00.000Z", motivo: "ele não tem etapa Debriefing" } },
+    });
+    const aviso = /<li data-aviso="COMPARACAO_DE_PAYLOAD_SALVO">[^]*?<\/li>/.exec(salvo)?.[0] ?? "";
+    expect(aviso).toContain("<b>PG01</b>");
+    expect(aviso).toContain("gerado em 20/06/26");
+    expect(aviso).toContain("ele não tem etapa Debriefing");
+    expect(renderDebriefing(base)).not.toContain("COMPARACAO_DE_PAYLOAD_SALVO");
   });
 });
 

@@ -20,7 +20,7 @@ import multipart from "@fastify/multipart";
 import * as schema from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import debriefingsRoutes from "../routes/debriefings.js";
-import { gravarDebriefingGerado, type RegistroDoDebriefing } from "../services/debriefing-generate.js";
+import { gravarDebriefingGerado, lerUltimoPayloadSalvoDoFunil, type RegistroDoDebriefing } from "../services/debriefing-generate.js";
 import { payloadSintetico } from "./fixtures/debriefing-payload-sintetico.js";
 
 const MIGRATION = join(dirname(fileURLToPath(import.meta.url)), "..", "db", "migrations", "0164_debriefing_payloads.sql");
@@ -163,5 +163,30 @@ describe("AC2 — rotas do viewer não tocam o payload", () => {
     const r = await app.inject({ method: "GET", url: `/api/debriefings?stageId=${S1}` });
     expect(r.statusCode).toBe(200);
     expect((await pg.query<{ n: number }>("SELECT count(*)::int AS n FROM debriefing_payloads")).rows[0]!.n).toBe(0);
+  });
+});
+
+describe("R7-7 — último payload salvo do lançamento de comparação (Postgres real)", () => {
+  it("o MAIS RECENTE do funil, só do projeto e da versão atual; outro funil/projeto/versão não entra", async () => {
+    const base = payloadSintetico();
+    const { projectId, funnelId } = base.config;
+    const grava = async (over: { funnelId?: string; projectId?: string; versao?: number }, quando: string) => {
+      const r = registro();
+      r.payload.config.funnelId = over.funnelId ?? funnelId;
+      r.payload.config.projectId = over.projectId ?? projectId;
+      if (over.versao) (r.payload as { versao: number }).versao = over.versao;
+      const { id } = await gravarDebriefingGerado(db, r);
+      await pg.query("UPDATE debriefing_payloads SET created_at = $1 WHERE debriefing_id = $2", [quando, id]);
+      return id;
+    };
+    await grava({}, "2026-06-01T12:00:00Z");
+    const maisRecente = await grava({}, "2026-06-20T12:00:00Z");
+    await grava({ funnelId: "20000000-0000-4000-8000-0000000000ff" }, "2026-07-01T12:00:00Z");
+    await grava({ projectId: "10000000-0000-4000-8000-0000000000ff" }, "2026-07-02T12:00:00Z");
+    await grava({ versao: 2 }, "2026-07-03T12:00:00Z");
+    const r = await lerUltimoPayloadSalvoDoFunil(db, projectId, funnelId);
+    expect(r).toMatchObject({ debriefingId: maisRecente, salvoEm: "2026-06-20T12:00:00.000Z" });
+    expect(r!.payload.config.funnelId).toBe(funnelId);
+    expect(await lerUltimoPayloadSalvoDoFunil(db, projectId, "20000000-0000-4000-8000-0000000000ee")).toBeNull();
   });
 });

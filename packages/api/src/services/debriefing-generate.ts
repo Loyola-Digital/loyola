@@ -11,15 +11,17 @@
  * (`config.lancamentoComparacaoFunnelId`, 49.11 CONTRACT-001 — nunca a lista
  * gravada do GET). Os números do lançamento de comparação saem dos MESMOS
  * motores, com a config de debriefing do próprio funil de comparação (a etapa
- * Debriefing dele, pela mesma porta `loadDebriefingConfig`). Sem essa config
- * não há como afirmar as datas-chave do outro lançamento: 422
- * `COMPARACAO_SEM_CONFIG`, nunca Δ inventado nem "edição única" silenciosa.
+ * Debriefing dele, pela mesma porta `loadDebriefingConfig`). R7-7 (dono,
+ * 2026-10-02): sem config liberada nele, vale o ÚLTIMO payload salvo dele
+ * (`debriefing_payloads`, 0164) com aviso visível no documento; sem nenhum dos
+ * dois, 422 `COMPARACAO_SEM_CONFIG` explicado — nunca Δ inventado nem "edição
+ * única" silenciosa. Duas configs liberadas continua 422 (ambíguo, não ausente).
  *
  * As dependências são injetáveis (`DependenciasDaGeracao`): a rota usa as
  * reais; o teste prova a ordem e o "nada persistido" sem banco nem planilha.
  */
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { debriefingPayloads, debriefings, funnelStages, funnels, projects } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import {
@@ -32,9 +34,9 @@ import { DebriefingDadoIndisponivelError, loadDebriefingMoneyTimeInput } from ".
 import { loadDebriefingAudienceInput } from "./debriefing-audience-loader.js";
 import { CRITERIO_DE_UNICO_HEADLINE, MAXD_PADRAO, computeDebriefingMoneyTime } from "./debriefing-money-time-engine.js";
 import { computeDebriefingAudience } from "./debriefing-audience-engine.js";
-import { montarPayloadDebriefing, type DebriefingPayload } from "./debriefing-payload.js";
+import { DEBRIEFING_PAYLOAD_VERSAO, montarPayloadDebriefing, type DebriefingPayload } from "./debriefing-payload.js";
 import { validateDebriefing, type AlertaFase12 } from "./debriefing-guards.js";
-import { renderDebriefing, type ComparacaoDoDebriefing } from "./debriefing-render.js";
+import { renderDebriefing, type ComparacaoDoDebriefing, type OrigemDaComparacao } from "./debriefing-render.js";
 import { diaMesBr } from "./launch-report-narrative.js";
 
 /** Mesmo teto de `routes/debriefings.ts:17` e de `launch-reports.ts:47`. */
@@ -80,7 +82,7 @@ export interface RegistroDoDebriefing {
   html: string;
   createdBy: string;
   payload: DebriefingPayload;
-  comparacao: { funnelId: string; nome: string; payload: DebriefingPayload } | null;
+  comparacao: { funnelId: string; nome: string; payload: DebriefingPayload; origem: OrigemDaComparacao } | null;
   alertas: AlertaFase12[];
 }
 
@@ -91,6 +93,8 @@ export interface DependenciasDaGeracao {
   carregarConfig(stageId: string): Promise<DebriefingConfig>;
   /** Etapas do tipo Debriefing de um funil (para achar a config da comparação). */
   etapasDeDebriefingDoFunil(funnelId: string): Promise<string[]>;
+  /** R7-7: o último payload salvo (0164) que descreve o funil dado, do projeto; `null` = nenhum. */
+  ultimoPayloadSalvoDoFunil(projectId: string, funnelId: string): Promise<PayloadSalvo | null>;
   /** Loaders + motores + composição (49.3/49.4/49.5). Lança `DebriefingDadoIndisponivelError`. */
   calcularPayload(config: DebriefingConfigLancamento, geradoEm: Date): Promise<DebriefingPayload>;
   /** Nomes para o documento: funis do projeto e etapas dos funis dados. */
@@ -99,6 +103,14 @@ export interface DependenciasDaGeracao {
   gravar(registro: RegistroDoDebriefing): Promise<{ id: string }>;
   /** Relógio injetado — o render nunca lê o relógio (AC10). */
   agora(): Date;
+}
+
+/** Um payload persistido pela geração (`debriefing_payloads.payload`) e quando foi salvo. */
+export interface PayloadSalvo {
+  debriefingId: string;
+  /** ISO 8601 (`debriefing_payloads.created_at`). */
+  salvoEm: string;
+  payload: DebriefingPayload;
 }
 
 export interface ParametrosDaGeracao {
@@ -157,16 +169,28 @@ export async function gerarDebriefing(deps: DependenciasDaGeracao, params: Param
     // 4 — carga + motores + composição (atual e, havendo, a comparação principal)
     // A config da comparação é conferida ANTES da carga pesada: sem ela, falha cedo.
     const comparacaoId = config.lancamentoComparacaoFunnelId;
-    let configComparacao: DebriefingConfigLancamento | null = null;
-    if (comparacaoId) configComparacao = await configDaComparacao(deps, comparacaoId);
+    const fonteComparacao = comparacaoId ? await fonteDaComparacao(deps, etapa.projectId, comparacaoId) : null;
     const geradoEm = deps.agora();
     const payload = await deps.calcularPayload(config, geradoEm);
 
     const nomes = await deps.nomes(etapa.projectId, [etapa.funnelId, ...(comparacaoId ? [comparacaoId] : [])]);
     let comparacao: ComparacaoDoDebriefing | null = null;
-    if (comparacaoId && configComparacao) {
-      const payloadComparacao = await deps.calcularPayload(configComparacao, geradoEm);
-      comparacao = { funnelId: comparacaoId, nome: nomes.funis[comparacaoId] ?? comparacaoId, payload: payloadComparacao };
+    if (comparacaoId && fonteComparacao) {
+      const nome = nomes.funis[comparacaoId] ?? comparacaoId;
+      comparacao =
+        fonteComparacao.tipo === "config"
+          ? { funnelId: comparacaoId, nome, payload: await deps.calcularPayload(fonteComparacao.config, geradoEm), origem: { tipo: "recalculada" } }
+          : {
+              funnelId: comparacaoId,
+              nome,
+              payload: fonteComparacao.salvo.payload,
+              origem: {
+                tipo: "payload-salvo",
+                debriefingId: fonteComparacao.salvo.debriefingId,
+                salvoEm: fonteComparacao.salvo.salvoEm,
+                motivo: fonteComparacao.motivo,
+              },
+            };
     }
 
     // 5 — guardas ANTES do render (49.5): invariante e conferência externa bloqueiam;
@@ -205,7 +229,9 @@ export async function gerarDebriefing(deps: DependenciasDaGeracao, params: Param
       html,
       createdBy: params.userId,
       payload,
-      comparacao: comparacao ? { funnelId: comparacao.funnelId, nome: comparacao.nome, payload: comparacao.payload } : null,
+      comparacao: comparacao
+        ? { funnelId: comparacao.funnelId, nome: comparacao.nome, payload: comparacao.payload, origem: comparacao.origem }
+        : null,
       alertas: guardas.alertas,
     });
     return { status: 200, body: { id, html, payload, alertas: guardas.alertas } };
@@ -245,10 +271,18 @@ function corpoDoBloqueio(
 }
 
 /**
- * A config do lançamento de comparação: a etapa Debriefing do funil de
- * comparação, pela mesma porta da 49.1. Exige exatamente UMA liberada.
+ * De onde saem os números do lançamento de comparação (R7-7):
+ * 1. a config de debriefing liberada da etapa Debriefing dele (mesma porta da
+ *    49.1) → recálculo pelos motores; exige exatamente UMA liberada (duas = 422);
+ * 2. sem nenhuma liberada → o último payload salvo dele, com o motivo (vai para
+ *    o aviso do documento);
+ * 3. sem nenhum dos dois → 422 `COMPARACAO_SEM_CONFIG` explicado.
  */
-async function configDaComparacao(deps: DependenciasDaGeracao, funnelId: string): Promise<DebriefingConfigLancamento> {
+type FonteDaComparacao =
+  | { tipo: "config"; config: DebriefingConfigLancamento }
+  | { tipo: "payload-salvo"; salvo: PayloadSalvo; motivo: string };
+
+async function fonteDaComparacao(deps: DependenciasDaGeracao, projectId: string, funnelId: string): Promise<FonteDaComparacao> {
   const etapas = await deps.etapasDeDebriefingDoFunil(funnelId);
   const liberadas: DebriefingConfigLancamento[] = [];
   const motivos: string[] = [];
@@ -261,9 +295,7 @@ async function configDaComparacao(deps: DependenciasDaGeracao, funnelId: string)
       else throw err;
     }
   }
-  if (liberadas.length === 1) return liberadas[0]!;
-  const acao =
-    "Configurar (e validar) o debriefing na etapa Debriefing do lançamento de comparação — ou tirar a comparação do formulário para gerar como edição única";
+  if (liberadas.length === 1) return { tipo: "config", config: liberadas[0]! };
   if (liberadas.length > 1) {
     throw new DebriefingGeracaoError(
       "COMPARACAO_SEM_CONFIG",
@@ -271,12 +303,16 @@ async function configDaComparacao(deps: DependenciasDaGeracao, funnelId: string)
       "Deixar a config de debriefing em uma só etapa Debriefing do lançamento de comparação",
     );
   }
+  const semConfig =
+    etapas.length === 0
+      ? "ele não tem etapa Debriefing"
+      : `ele não tem config de debriefing liberada (${motivos.join(" | ")})`;
+  const salvo = await deps.ultimoPayloadSalvoDoFunil(projectId, funnelId);
+  if (salvo) return { tipo: "payload-salvo", salvo, motivo: semConfig };
   throw new DebriefingGeracaoError(
     "COMPARACAO_SEM_CONFIG",
-    etapas.length === 0
-      ? `o lançamento de comparação (${funnelId}) não tem etapa Debriefing — sem a config dele não há datas-chave nem etapas para calcular os números do Δ`
-      : `o lançamento de comparação (${funnelId}) não tem config de debriefing liberada (${motivos.join(" | ")}) — sem ela não há como calcular os números do Δ`,
-    acao,
+    `o lançamento de comparação (${funnelId}) não tem como entrar no Δ: ${semConfig}, e nenhum debriefing dele foi gerado e salvo pelo Loyola — sem config não há datas-chave nem etapas para recalcular, e sem payload salvo não há números para comparar`,
+    "Configurar (e validar) o debriefing na etapa Debriefing do lançamento de comparação — ou tirar a comparação do formulário para gerar como edição única",
   );
 }
 
@@ -312,6 +348,7 @@ export function dependenciasReais(db: Database): DependenciasDaGeracao {
         .where(and(eq(funnelStages.funnelId, funnelId), eq(funnelStages.stageType, "debriefing")));
       return rows.map((r) => r.id);
     },
+    ultimoPayloadSalvoDoFunil: (projectId, funnelId) => lerUltimoPayloadSalvoDoFunil(db, projectId, funnelId),
     calcularPayload: (config, geradoEm) => calcularPayloadDebriefing(db, config, geradoEm),
     async nomes(projectId, funnelIds) {
       const [fs, es] = await Promise.all([
@@ -328,6 +365,31 @@ export function dependenciasReais(db: Database): DependenciasDaGeracao {
     gravar: (registro) => gravarDebriefingGerado(db, registro),
     agora: () => new Date(),
   };
+}
+
+/**
+ * R7-7: o último payload de LANÇAMENTO salvo que descreve o funil dado
+ * (`payload.config.funnelId`), do mesmo projeto e da versão de payload atual.
+ * Lê pelo `config` do payload, não pela etapa: o documento pode ter sido movido
+ * e a etapa apagada (o `stage_id_origem` não tem FK).
+ */
+export async function lerUltimoPayloadSalvoDoFunil(db: Database, projectId: string, funnelId: string): Promise<PayloadSalvo | null> {
+  const [row] = await db
+    .select({ debriefingId: debriefingPayloads.debriefingId, createdAt: debriefingPayloads.createdAt, payload: debriefingPayloads.payload })
+    .from(debriefingPayloads)
+    .where(
+      and(
+        eq(debriefingPayloads.tipo, "lancamento"),
+        eq(debriefingPayloads.versao, DEBRIEFING_PAYLOAD_VERSAO),
+        sql`${debriefingPayloads.payload} -> 'config' ->> 'funnelId' = ${funnelId}`,
+        sql`${debriefingPayloads.payload} -> 'config' ->> 'projectId' = ${projectId}`,
+      ),
+    )
+    .orderBy(desc(debriefingPayloads.createdAt))
+    .limit(1);
+  if (!row) return null;
+  const salvoEm = row.createdAt instanceof Date ? row.createdAt.toISOString() : new Date(String(row.createdAt)).toISOString();
+  return { debriefingId: row.debriefingId, salvoEm, payload: row.payload as unknown as DebriefingPayload };
 }
 
 /** Loaders + motores (49.3/49.4) + composição (49.5) — a mesma sequência do `debriefing-conferir.ts`. */

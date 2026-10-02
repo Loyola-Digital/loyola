@@ -49,11 +49,39 @@ import {
 // Contrato
 // ---------------------------------------------------------------------------
 
+/**
+ * De onde vieram os números do lançamento de comparação (R7-7):
+ * - `recalculada`: pelos MESMOS motores, com a config de debriefing dele;
+ * - `payload-salvo`: ele não tem config de debriefing liberada — vale o último
+ *   payload persistido dele (`debriefing_payloads`, 0164), com aviso no topo.
+ */
+export type OrigemDaComparacao =
+  | { tipo: "recalculada" }
+  | { tipo: "payload-salvo"; debriefingId: string; salvoEm: string; motivo: string };
+
 /** Lançamento de comparação PRINCIPAL (o 1º da lista efetiva, R6-5) — fonte do Δ. */
 export interface ComparacaoDoDebriefing {
   funnelId: string;
   nome: string;
   payload: DebriefingPayload;
+  origem: OrigemDaComparacao;
+}
+
+/** Código do alerta não bloqueante de produto fora do mapa na captação (R7-6). */
+export const ALERTA_PRODUTO_FORA_DO_MAPA = "PRODUTO_FORA_DO_MAPA_NA_CAPTACAO";
+/** Código do aviso de Δ contra payload salvo (R7-7). */
+export const AVISO_COMPARACAO_DE_PAYLOAD_SALVO = "COMPARACAO_DE_PAYLOAD_SALVO";
+
+/** Dia (YYYY-MM-DD) em Brasília de um instante ISO — BRT é UTC−3 fixo desde 2019. */
+function diaBrtDe(iso: string): string {
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? iso.slice(0, 10) : new Date(t - 3 * 3600_000).toISOString().slice(0, 10);
+}
+
+/** Rede do link do criativo (R7-9): post do Instagram, post do Facebook ou o Ads Manager (sem post). */
+export function redeDoLinkDoCriativo(c: { linkDoPost: string | null; linkAdsManager: string | null }): "instagram" | "facebook" | "ads-manager" | null {
+  if (c.linkDoPost) return /^https:\/\/(www\.)?instagram\.com\//i.test(c.linkDoPost) ? "instagram" : "facebook";
+  return c.linkAdsManager ? "ads-manager" : null;
 }
 
 export interface DebriefingRenderInput {
@@ -668,11 +696,29 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
 
   // ---- Banner de alertas e avisos (AC7) ----
   const avisos: DebriefingAviso[] = p.config.avisos ?? [];
+  const extras: string[] = [];
+  // R7-7: Δ contra o último payload SALVO da comparação (sem config dela) — sempre à vista.
+  if (comp && comp.origem.tipo === "payload-salvo") {
+    extras.push(
+      `<li data-aviso="${AVISO_COMPARACAO_DE_PAYLOAD_SALVO}"><b>${AVISO_COMPARACAO_DE_PAYLOAD_SALVO}</b> — o Δ contra <b>${esc(comp.nome)}</b> usa o último debriefing salvo dele ` +
+        `(gerado em ${esc(dataBr(diaBrtDe(comp.origem.salvoEm)))}), não um recálculo: ${esc(comp.origem.motivo)}. ` +
+        `Números de ${esc(comp.nome)} ficam como estavam naquela geração. Para recalcular, configure (e valide) o debriefing na etapa Debriefing dele e gere de novo.</li>`,
+    );
+  }
+  // R7-6: produto novo fora do mapa na captação — alerta, não bloqueio (o F14 da 49.5 já bloqueia o ambíguo).
+  const foraDoMapa = mt.produtosNaoClassificados;
+  if (foraDoMapa.length > 0) {
+    extras.push(
+      `<li data-alerta="${ALERTA_PRODUTO_FORA_DO_MAPA}"><b>${ALERTA_PRODUTO_FORA_DO_MAPA}</b> (${esc(inteiroBr(foraDoMapa.length))}) — ` +
+        `produto(s) da captação fora do mapa de produtos, contado(s) pela regra padrão do painel; detalhe em “Principais Pontos &amp; Recomendações”.</li>`,
+    );
+  }
   const banner =
-    input.alertas.length + avisos.length > 0
+    input.alertas.length + avisos.length + extras.length > 0
       ? `<div class="warn" data-alertas><b>Sinalizações do gerador (não bloqueiam):</b><ul>` +
         input.alertas.map((a) => `<li><b>${esc(a.codigo)}</b> (${esc(inteiroBr(a.quantidade))}) — ${esc(a.mensagem)}</li>`).join("") +
         avisos.map((a) => `<li><b>${esc(a.codigo)}</b> — ${esc(a.detalhe)}. ${esc(a.acao)}</li>`).join("") +
+        extras.join("") +
         `</ul></div>`
       : "";
 
@@ -1066,12 +1112,20 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
       );
     }
     const recs = mt.pendencias.map((pe) => ({ t: pe.codigo, d: pe.detalhe }));
-    // GANCHO (pendência do dono, NÃO implementada): alerta de produto novo fora
-    // do mapa na captação. O dado já existe no payload
-    // (`dinheiroTempo.captacao.produtosNaoClassificados`); a forma e o lugar do
-    // alerta esperam a resposta do dono. Só o ponto de montagem fica marcado.
-    const ganchoProdutoNovo = `<div data-gancho="alerta-produto-novo-fora-do-mapa" hidden></div>`;
-    const recsHtml = ganchoProdutoNovo + (recs.length
+    // R7-6 (dono, 2026-10-02): produto novo fora do mapa na captação → alerta
+    // NÃO bloqueante, com a lista (produto, vendas, faturamento, como foi contado).
+    const fora = mt.produtosNaoClassificados;
+    const alertaProdutoNovo = fora.length
+      ? `<div class="warn" data-alerta="${ALERTA_PRODUTO_FORA_DO_MAPA}"><b>Produto novo fora do mapa na captação (não bloqueia):</b><ul>` +
+        fora
+          .map(
+            (x) =>
+              `<li><b>${esc(x.produto)}</b> — ${esc(inteiroBr(x.vendas))} venda(s), ${esc(fmt(x.faturamento, "moeda"))}; contado como ${esc(x.tiposAssumidos.join("/") || TRACO)} pela regra padrão do painel.</li>`,
+          )
+          .join("") +
+        `</ul>Classificar o(s) produto(s) no mapa de produtos da etapa de captação e gerar de novo, se o papel for outro.</div>`
+      : "";
+    const recsHtml = alertaProdutoNovo + (recs.length
       ? `<div class="recs" style="margin-top:8px">${recs.map((r, i) => `<div class="rec"><div class="n">${i + 1}</div><h4>${esc(r.t)}</h4><p>${esc(r.d)}</p></div>`).join("")}</div>`
       : nota("Nenhuma pendência de classificação no payload (campanha sem fase/público, mídia ou venda de etapa fora da config)."));
     secoes.geral!.push(
@@ -1461,8 +1515,10 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
       corpo += lacuna("Criativo × Faixa não se aplica", cx.motivo ?? "sem faixa ou sem utm_content");
     } else {
       const linhas = cx.criativos.map((c) => {
-        const nome = c.linkAdsManager
-          ? `<a href="${esc(c.linkAdsManager)}" target="_blank" rel="noopener noreferrer">${esc(c.nome)}</a>`
+        // R7-9: o post publicado (IG → FB, cascata da 18.88); sem post, o Ads Manager de antes.
+        const href = c.linkDoPost ?? c.linkAdsManager;
+        const nome = href
+          ? `<a href="${esc(href)}" data-link="${redeDoLinkDoCriativo(c)}" target="_blank" rel="noopener noreferrer">${esc(c.nome)}</a>`
           : esc(c.nome);
         return tr([
           nome,
@@ -1477,9 +1533,16 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
           c.amostraBaixa ? "amostra baixa" : "",
         ]);
       });
-      corpo +=
-        tabela(["Criativo (Ad)", "n", "A", "B", "C", "D", "% A+B", "% C+D", "Tipo", "Amostra"], linhas, { rolagem: true }) +
-        `<p class="tnote">Ordem do payload (por volume). Sem criativo: ${esc(inteiroBr(cx.semCriativo.n))} respondentes (${esc(inteiroBr(cx.semCriativo.vazio))} sem utm_content, ${esc(inteiroBr(cx.semCriativo.naoEhAdId))} com utm_content que não é ID de anúncio). Links do Ads Manager abrem em nova aba (dependem do viewer da 49.8).</p>`;
+      const semCriativo =
+        `${esc(inteiroBr(cx.semCriativo.n))} respondentes (${esc(inteiroBr(cx.semCriativo.vazio))} sem utm_content, ${esc(inteiroBr(cx.semCriativo.naoEhAdId))} com utm_content que não é ID de anúncio)`;
+      if (cx.criativos.length === 0) {
+        // Tabela sem linha não explica nada: a lacuna diz por que não há criativo.
+        corpo += `<div class="warn" data-lacuna="SEM_CRIATIVO_NA_PESQUISA"><b>Nenhum criativo identificado nas respostas</b> — nenhum respondente da pesquisa trouxe um utm_content que seja ID de anúncio. Sem criativo: ${semCriativo}. Para medir, as UTMs dos anúncios precisam levar o Ad ID no utm_content.</div>`;
+      } else {
+        corpo +=
+          tabela(["Criativo (Ad)", "n", "A", "B", "C", "D", "% A+B", "% C+D", "Tipo", "Amostra"], linhas, { rolagem: true }) +
+          `<p class="tnote">Ordem do payload (por volume). Sem criativo: ${semCriativo}. O nome abre o post publicado (Instagram; sem ele, Facebook) do anúncio de maior investimento do Ad Name; sem post público, o Ads Manager. Abre em nova aba (depende do viewer da 49.8).</p>`;
+      }
     }
     if (!tc.aplicavel) {
       corpo += lacuna(`Dimensão de criativo (${tc.dimensao})`, `não exibida — ${tc.motivo ?? "sem nomenclatura do expert para separar os tipos"}`);

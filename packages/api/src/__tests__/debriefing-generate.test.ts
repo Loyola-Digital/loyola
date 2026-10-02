@@ -15,6 +15,7 @@ import {
   type DependenciasDaGeracao,
   type EtapaResolvida,
   type ParametrosDaGeracao,
+  type PayloadSalvo,
   type RegistroDoDebriefing,
 } from "../services/debriefing-generate.js";
 import { DebriefingConfigError, type DebriefingConfig, type DebriefingConfigLancamento } from "../services/debriefing-config.js";
@@ -42,6 +43,7 @@ function deps(over: {
   config?: (stageId: string) => DebriefingConfig;
   payload?: (c: DebriefingConfigLancamento) => DebriefingPayload;
   etapasDaComparacao?: string[];
+  salvoDaComparacao?: PayloadSalvo | null;
 } = {}): Falsas {
   const chamadas: string[] = [];
   const gravados: RegistroDoDebriefing[] = [];
@@ -60,6 +62,10 @@ function deps(over: {
     async etapasDeDebriefingDoFunil(funnelId) {
       chamadas.push(`etapasDebriefing:${funnelId}`);
       return over.etapasDaComparacao ?? [];
+    },
+    async ultimoPayloadSalvoDoFunil(projectId, funnelId) {
+      chamadas.push(`salvo:${projectId}:${funnelId}`);
+      return over.salvoDaComparacao ?? null;
     },
     async calcularPayload(c) {
       chamadas.push(`payload:${c.stageId}`);
@@ -211,15 +217,70 @@ describe("Comparação (Δ) — config do lançamento de comparação pela mesma
   const comComparacao = (stageId: string) =>
     stageId === S ? configDe(S, { lancamentoComparacaoFunnelId: FB, lancamentosComparacao: [FB] }) : configDe(stageId);
 
-  it("comparação sem etapa Debriefing → 422 COMPARACAO_SEM_CONFIG ANTES da carga pesada, sem gravar", async () => {
+  it("comparação sem etapa Debriefing E sem payload salvo → 422 COMPARACAO_SEM_CONFIG ANTES da carga pesada, sem gravar", async () => {
     const d = deps({ config: comComparacao, etapasDaComparacao: [] });
     const r = await gerarDebriefing(d, PARAMS);
     esperarCorpoExplicado(r, "COMPARACAO_SEM_CONFIG");
+    expect((r.body as { detalhe: string }).detalhe).toMatch(/nenhum debriefing dele foi gerado e salvo/);
+    expect(d.chamadas).toContain(`salvo:${P}:${FB}`);
     expect(d.chamadas.some((c) => c.startsWith("payload:"))).toBe(false);
     expect(d.gravados).toHaveLength(0);
   });
 
-  it("comparação com config bloqueada pelo gate → 422 COMPARACAO_SEM_CONFIG citando o motivo", async () => {
+  const SALVO: PayloadSalvo = {
+    debriefingId: "50000000-0000-4000-8000-0000000000aa",
+    salvoEm: "2026-06-21T01:00:00.000Z", // 22:00 de 20/06 em Brasília
+    payload: payloadSintetico(),
+  };
+
+  it("R7-7 — comparação sem config, COM payload salvo → Δ contra o salvo (sem recálculo), aviso visível e origem gravada", async () => {
+    const d = deps({ config: comComparacao, etapasDaComparacao: [], salvoDaComparacao: SALVO });
+    const r = await gerarDebriefing(d, PARAMS);
+    expect(r.status).toBe(200);
+    // só o atual passa pelos motores; a comparação vem do salvo
+    expect(d.chamadas.filter((c) => c.startsWith("payload:"))).toEqual([`payload:${S}`]);
+    const html = (r.body as { html: string }).html;
+    expect(html).toContain("Debriefing Comparativo <b>PG02</b> × <b>PG01</b>");
+    const aviso = /<li data-aviso="COMPARACAO_DE_PAYLOAD_SALVO">[\s\S]*?<\/li>/.exec(html)?.[0] ?? "";
+    expect(aviso).toContain("gerado em 20/06/26"); // o dia é o de Brasília, não o UTC
+    expect(aviso).toContain("ele não tem etapa Debriefing");
+    expect(d.gravados[0]!.comparacao).toMatchObject({
+      funnelId: FB,
+      origem: { tipo: "payload-salvo", debriefingId: SALVO.debriefingId, salvoEm: SALVO.salvoEm },
+    });
+  });
+
+  it("R7-7 — config da comparação fechada pelo gate + payload salvo → usa o salvo e o aviso cita o motivo", async () => {
+    const d = deps({
+      etapasDaComparacao: [SB],
+      salvoDaComparacao: SALVO,
+      config: (stageId) => {
+        if (stageId === SB) throw new DebriefingConfigError("COMBINACAO_NAO_VALIDADA", "não conferida", "validar");
+        return comComparacao(stageId);
+      },
+    });
+    const r = await gerarDebriefing(d, PARAMS);
+    expect(r.status).toBe(200);
+    expect((r.body as { html: string }).html).toMatch(/data-aviso="COMPARACAO_DE_PAYLOAD_SALVO">[^]*COMBINACAO_NAO_VALIDADA/);
+  });
+
+  it("R7-7 — payload salvo que viola invariante também bloqueia (Δ contra número errado não sai)", async () => {
+    const ruim = payloadSintetico();
+    ruim.dinheiroTempo.ingressosUnicos += 7;
+    const d = deps({ config: comComparacao, etapasDaComparacao: [], salvoDaComparacao: { ...SALVO, payload: ruim } });
+    const r = await gerarDebriefing(d, PARAMS);
+    expect(r.body).toMatchObject({ erro: "INVARIANTE_VIOLADO" });
+    expect(d.gravados).toHaveLength(0);
+  });
+
+  it("R7-7 — duas configs liberadas na comparação continua 422 (ambíguo), mesmo com payload salvo", async () => {
+    const d = deps({ config: comComparacao, etapasDaComparacao: [SB, "30000000-0000-4000-8000-000000000003"], salvoDaComparacao: SALVO });
+    const r = await gerarDebriefing(d, PARAMS);
+    esperarCorpoExplicado(r, "COMPARACAO_SEM_CONFIG");
+    expect(d.chamadas.some((c) => c.startsWith("salvo:"))).toBe(false);
+  });
+
+  it("comparação com config bloqueada pelo gate e sem payload salvo → 422 COMPARACAO_SEM_CONFIG citando o motivo", async () => {
     const d = deps({
       etapasDaComparacao: [SB],
       config: (stageId) => {
@@ -238,7 +299,9 @@ describe("Comparação (Δ) — config do lançamento de comparação pela mesma
     expect(r.status).toBe(200);
     expect(d.chamadas.filter((c) => c.startsWith("payload:"))).toEqual([`payload:${S}`, `payload:${SB}`]);
     expect((r.body as { html: string }).html).toContain("Debriefing Comparativo <b>PG02</b> × <b>PG01</b>");
-    expect(d.gravados[0]!.comparacao).toMatchObject({ funnelId: FB, nome: "PG01" });
+    expect(d.gravados[0]!.comparacao).toMatchObject({ funnelId: FB, nome: "PG01", origem: { tipo: "recalculada" } });
+    expect((r.body as { html: string }).html).not.toContain("COMPARACAO_DE_PAYLOAD_SALVO");
+    expect(d.chamadas.some((c) => c.startsWith("salvo:"))).toBe(false); // recalculou: o salvo nem é lido
     expect(d.gravados[0]!.campaignName).toContain("PG02 × PG01");
   });
 
