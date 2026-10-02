@@ -5,6 +5,7 @@ import { Brain, RefreshCw, Bug } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { ImportarDoTally } from "./importar-do-tally";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -231,7 +232,16 @@ export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabP
         </div>
 
         <div className="space-y-2">
-          <Label>Schema JSON (ctrl+c / ctrl+v do modelo externo)</Label>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Label>Schema JSON</Label>
+            {/*
+              O caminho curto para começar: em vez de transcrever o formulário à
+              mão num fluxo do n8n e colar aqui, o rascunho vem do próprio Tally
+              com todas as perguntas e alternativas. Os pontos ficam zerados —
+              é a parte que exige conhecer o lançamento.
+            */}
+            <ImportarDoTally projectId={projectId} onImportar={setJsonText} />
+          </div>
           <Textarea
             value={jsonText}
             onChange={(e) => setJsonText(e.target.value)}

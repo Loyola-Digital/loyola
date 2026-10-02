@@ -4312,6 +4312,29 @@ export const plausibleProjectSites = pgTable(
 // O MCP do SendFlow só tem authorization_code + refresh_token (não há
 // client_credentials), então guardamos o refresh e renovamos o access sozinhos.
 // client_id/secret ficam junto porque o refresh exige os dois.
+/**
+ * A chave da API do Tally, por projeto.
+ *
+ * Existe para o modelo de Lead Scoring nascer do formulário de verdade, em vez
+ * de ser transcrito à mão num fluxo do n8n e colado na aba. `projectId` é único:
+ * um projeto, uma conta do Tally.
+ *
+ * O token é guardado cifrado, como o do SendFlow — e nunca volta para a tela:
+ * as rotas devolvem só se existe conexão e quando foi salva.
+ */
+export const tallyConnections = pgTable("tally_connections", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  projectId: uuid("project_id")
+    .notNull()
+    .unique()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  tokenEncrypted: text("token_encrypted").notNull(),
+  tokenIv: varchar("token_iv", { length: 64 }).notNull(),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const sendflowConnections = pgTable("sendflow_connections", {
   id: uuid("id").defaultRandom().primaryKey(),
   /** NULL = conexão GLOBAL, vale pra todos os projetos. O SendFlow é uma conta
