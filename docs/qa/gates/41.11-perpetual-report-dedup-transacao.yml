@@ -1,0 +1,149 @@
+schema: 1
+story: '41.11'
+story_title: 'Correção do relatório de Perpétuo (botão 3): dedup por ID da venda antes de somar'
+gate: CONCERNS
+status_reason: >-
+  O código está correto e bem testado. A dedup reusa `deduplicarPorIdDaVenda` da 41.10 e roda depois
+  do reembolso e dos filtros de linha e antes do corte de janela. W-P7 e W-P8 são anexados depois do
+  motor; motor, P1–P7, rota, schema e UI ficaram intactos. Sete mutações próprias: cinco pegas, duas
+  sobrevivem e são de risco baixo. A suíte completa da API, rodada sozinha, tem as mesmas 10 falhas
+  de origin/main b419a7f3. A produção foi reconferida em modo leitura: 0 linhas removidas nos 3 funis,
+  o array `vendas` antigo e o novo têm o mesmo SHA em 7 janelas, e a P-7 fica sem objeto. O PASS não
+  sai porque falta o que a story manda levar ao dono antes do merge. O AC3 exige reportar a dobra
+  por `Transaction` no BBE, e o percentual do relato do @dev está inflado: o efeito no botão 3 é
+  5,3%, não 8,4%. Além disso, os status `refused`/`waiting_payment` são somados como venda. Esse
+  defeito é anterior à 41.11, fica fora do escopo e é maior que a duplicata: 20,8% do faturamento
+  da §C.10 do BBE. Por fim, o AC4 depende do deploy.
+reviewer: 'Quinn'
+updated: '2026-10-02T12:47:02Z'
+commit_reviewed: '8167b270'
+base: 'origin/main b419a7f3 (diff com três pontos)'
+
+checks:
+  code_review: PASS      # 4 passes em parseVendas; chave (clean(ID), produto); decisão W-P8 por planilha (txIdx/produtoIdx === -1, cobre cabeçalho inexistente); W-P7 em centavos; mensagem escapada por esc() no HTML
+  unit_tests: PASS       # 17 novos; perpetual-report-* 9 arquivos 169/169; 7 mutações próprias, 5 pegas (2 sobreviventes = TEST-001/TEST-002, low)
+  acceptance_criteria: CONCERNS  # AC1/AC2/AC5 ok; AC3 medido e reconfirmado, mas o reporte ao dono antes do merge pende (REQ-001); AC4 pós-deploy; AC6 P-7 sem objeto (confirmado); AC7 é da 49.10
+  no_regressions: PASS   # suíte API sozinha: 10 falhas / 4012 passam; origin/main b419a7f3 sozinho: as mesmas 10 / 3995 passam (lista de FAIL idêntica; +17 = testes novos)
+  performance: PASS      # Set O(n) por planilha; um passe a mais sobre as candidatas
+  security: PASS         # coluna do mapping no W-P8 passa por esc() no render; sem input novo; medições com default_transaction_read_only=on
+  documentation: PASS    # Dev Agent Record e Change Log completos; sem "Correção 41.11" porque nenhum valor da §C.10 muda (confirmado)
+  api_contract: N/A      # sem rota/campo novo; W-P7/W-P8 entram no `alertas[]` existente; web e shared não enumeram códigos W-P*
+
+evidence:
+  diff: '3 arquivos: perpetual-report-loader.ts, perpetual-report-loader-dedup.test.ts (novo), story. Motor, rota e testes do 41.8/41.9 não tocados'
+  tests_new: 'perpetual-report-loader-dedup.test.ts 17/17'
+  suite_perpetual_report: '9 arquivos, 169/169'
+  suite_api_full_branch: 'rodada sozinha (sem outro vitest no host): 218 arquivos, 4012 passam / 10 falham em 5 arquivos (funnel-stages-lead-inputs ×3, instagram-routes ×1, instagram ×1, projects ×3, schema ×2), 61,6 s'
+  suite_api_origin_main: >-
+    origin/main b419a7f3 em worktree descartável, rodada sozinha: 217 arquivos, 3995 passam / as mesmas
+    10 falham (diff da lista de FAIL = vazio), 74,9 s. A primeira tentativa (47 falhas, 931 s) coincidiu
+    com outro vitest no wt-41.12a (load average 280): eram timeouts; foi descartada e repetida.
+    As 40 falhas que o @dev viu são o mesmo efeito de contenção.
+  tsc: 'packages/api tsc --noEmit (binário direto): exit 0, sem saída'
+  lint: 'eslint nos 2 arquivos de código alterados: exit 0, sem saída'
+  coderabbit: 'não executado (CLI exige WSL; macOS)'
+  mutations_dev: 'M1–M4, M6 do Dev Agent Record (não repetidas; as próprias abaixo são outras)'
+  mutations:
+    - id: Q1
+      what: 'chave da dedup ignora o produto (produto: null)'
+      result: 'pega: AC2(e) curso + bump do mesmo pedido'
+    - id: Q2
+      what: 'ID cru em vez de clean() — "null"/"-"/"n/a" viram ID'
+      result: 'NÃO pega (TEST-002): o (d) tem um único "null"'
+    - id: Q3
+      what: 'passe 2 deixa de pular a paga pareada com o estorno'
+      result: 'pega: AC2(h)'
+    - id: Q4
+      what: 'W-P7 sai mesmo com 0 removidas'
+      result: 'pega: 9 testes'
+    - id: Q5
+      what: 'W-P8 só quando a chave não está no mapping (ignora cabeçalho inexistente)'
+      result: 'pega: "W-P8 quando o mapeamento aponta para cabeçalho que não existe"'
+    - id: Q6
+      what: 'corte de janela com início exclusivo (>)'
+      result: 'pega: AC2(g)'
+    - id: Q7
+      what: 'loader SOBRESCREVE report.alertas com os da dedup (perde W-P1…W-P6 do motor)'
+      result: 'NÃO pega (TEST-001): o teste do loader só afirma toContain e última posição'
+  production_readonly:
+    session: 'pg com default_transaction_read_only=on (show = on); Google Sheets só leitura; saída só agregados; loader antigo = cópia temporária do origin/main num worktree descartável, apagada'
+    t0: 'BBE ID→col 0 / Produto; PPS ID / Produto; FZ "ID da venda" / Produto. Todos mapeados e existentes — sem W-P8'
+    unicidade_id: 'BBE 381/381 IDs únicos; PPS 617/617; FZ 1736/1736; 0 IDs com >1 produto nos 3'
+    perpetual_reports: 'BBE 1, PPS 0, FZ 0'
+    antes_depois: >-
+      SHA do array `vendas` igual antes/depois em 7 janelas: BBE §C.10 17/07–27/07 (48 linhas / R$ 16.656),
+      setembro (131 / R$ 36.767 todas as origens), salvo 17/07–23/08 (175 / R$ 54.305,50); PPS §C.10
+      09/07–27/07 (343 / R$ 21.241), setembro (39 / R$ 4.093); FZ §C.10 01/06–27/07 (216 / R$ 12.744),
+      setembro (129 / R$ 7.887). dedup removeu 0 / R$ 0,00 em todas. Origem paga (botão 3) conferida:
+      BBE §C.10 48 / R$ 16.656, setembro 100 / R$ 27.745, salvo 150 / R$ 46.845; PPS §C.10 338 / R$ 20.946
+      — batem com a tabela do @dev
+    achado_1_transaction: >-
+      BBE setembro: remapear transactionId→Transaction removeria 9 linhas / R$ 2.329,00 (todas as origens;
+      6,3% de R$ 36.767). Os 9 pares têm o mesmo e-mail e o evento compra_aprovada+compra_aprovada.
+      Só 6 linhas / R$ 1.461,50 são de origem paga: no botão 3 o efeito seria 100→94 transações e
+      R$ 27.745→26.283,50 (−5,3%), não 8,4%. Os 8,4% do @dev dividem as 9 linhas (3 orgânicas) pelo
+      faturamento só pago. Continua acima dos 5% da R6-4, mas por pouco. Nas janelas §C.10 e salvo do
+      BBE: 0. PPS §C.10: 7 linhas / R$ 469,00 (2,2%), todas pagas, `paid+paid`, e-mails DIFERENTES nos
+      7 pares: confirmado que `Transaction` não identifica a venda no PPS. FZ não tem a coluna
+    achado_2_status: >-
+      Código: o passe 2 de parseVendas só pula isRefundBucket; isRevenueBucket (29.26) nunca é
+      consultado — "other" (refused, waiting_payment) vira PerpetualSaleRow. Dado, BBE §C.10: 6 refused
+      (R$ 2.082) + 4 waiting_payment (R$ 1.388) = 10 de 48 transações, todas de origem paga,
+      R$ 3.470 = 20,8% do faturamento. Sem elas sobram 38 / R$ 13.186 = exatamente o painel do Epic 29
+      na tabela do @dev (a divergência AC3(e) da §C.10 é toda isso). Relatório salvo do BBE
+      (17/07–23/08): 16 refused + 13 waiting_payment = 29 de 150, R$ 9.195,50 = 19,6%. Setembro: 1
+      waiting_payment (R$ 347). PPS e FZ: todas as linhas contadas são status pago
+  no_prod_writes: 'nenhum script, SQL ou migration no diff; scripts de medição do QA fora do repo, read_only'
+
+top_issues:
+  - id: 'REQ-001'
+    severity: medium
+    category: requirements
+    finding: >-
+      O AC3 manda reportar ao dono, antes do merge, o funil em que linhas dobradas por evento não colapsam
+      pela coluna mapeada. O BBE em setembro tem esse caso. O relato do @dev já leva o caso, mas com 8,4%,
+      e o efeito real no botão 3 é 6 linhas / R$ 1.461,50 = 5,3%. No total da planilha são 9 linhas /
+      R$ 2.329,00 = 6,3%. A decisão (remapear ou não) é do dono e, se for remapear, é ato do gestor pela UI.
+      O QA não decide. No PPS, a `Transaction` repete com e-mails diferentes, e remapear lá removeria
+      venda legítima.
+    suggested_action: >-
+      O lead leva ao dono o número corrigido (5,3% no botão 3, 6,3% na planilha) e registra a decisão na story.
+      Isso precisa acontecer antes do merge, porque o AC3 manda assim.
+  - id: 'REQ-002'
+    severity: medium
+    category: requirements
+    finding: >-
+      Fora do escopo e anterior à 41.11 (confirmado no código e no dado): o botão 3 soma `refused` e
+      `waiting_payment` como venda, contra a regra "receita = só status pago" (isRevenueBucket, 29.26).
+      Na §C.10 do BBE são 10 de 48 transações (20,8% do faturamento). No único relatório salvo são 29 de
+      150 (19,6%). É bem maior que a duplicata, e a 49.10 herdaria o mesmo defeito ao consumir o loader.
+    suggested_action: >-
+      @po/dono abrem story própria (Epic 41) antes da 49.10 consumir o loader. Ela deve decidir também o
+      destino do relatório salvo do BBE (análogo da P-7, agora com objeto). Não entra nesta PR (No Invention).
+  - id: 'OPS-001'
+    severity: low
+    category: requirements
+    finding: 'AC4 (conferência em produção antes/depois) só pode ser feita depois do deploy.'
+    suggested_action: >-
+      Depois do deploy, o @qa gera BBE-A1, PPS-A1 e FZ-A1 em produção e confere: nada deve mudar e não deve
+      aparecer W-P7 nem W-P8.
+  - id: 'TEST-001'
+    severity: low
+    category: tests
+    finding: >-
+      Q7 sobreviveu: se o loader sobrescrever `report.alertas` com os alertas da dedup, os W-P1…W-P6 do
+      motor somem e nenhum teste falha. O código atual usa push (correto).
+    suggested_action: 'No teste do loadPerpetualReport, afirmar que os alertas do motor (fixture que gere ao menos um) continuam presentes antes do W-P7.'
+  - id: 'TEST-002'
+    severity: low
+    category: tests
+    finding: 'Q2 sobreviveu: trocar clean() por ID cru faria duas linhas com o texto "null" colapsarem; o (d) tem um único "null".'
+    suggested_action: 'No AC2(d), usar dois "null" (ou "-") com o mesmo produto.'
+
+recommendations:
+  immediate:
+    - 'REQ-001: dono recebe o número corrigido da dobra por Transaction no BBE antes do merge'
+  future:
+    - 'REQ-002: story própria para status não pago no botão 3, antes da 49.10'
+    - 'TEST-001/TEST-002: dois ajustes de teste baratos'
+    - 'OPS-001: AC4 pós-deploy'

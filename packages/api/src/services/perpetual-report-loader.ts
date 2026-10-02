@@ -30,12 +30,14 @@ import { getAdLevelDailySpend } from "./meta-entity-daily.js";
 import {
   computePerpetualReport,
   type PerpetualReport,
+  type PerpetualReportAlerta,
   type PerpetualSaleRow,
   type CampaignSpendRow,
   type AdSpendRow,
 } from "./perpetual-report-metrics.js";
 import type { Database } from "../db/client.js";
 import { mapaDeDimensoes } from "./nomenclatura/mapa-de-campanhas.js";
+import { deduplicarPorIdDaVenda } from "../utils/dedup-por-id-da-venda.js";
 
 export interface LoadPerpetualReportParams {
   funnelId: string;
@@ -116,7 +118,7 @@ export async function loadPerpetualReport(
     );
   }
 
-  const { vendas, hasStatusCol } = parseVendas(sheetData, mapping, periodo);
+  const { vendas, hasStatusCol, dedup } = parseVendas(sheetData, mapping, periodo);
 
   // 3. Spend por campanha — do cache do banco (R-E2), nunca fan-out novo.
   const campaignIds = config.campanhas.map((c) => c.id);
@@ -186,7 +188,7 @@ export async function loadPerpetualReport(
       return undefined;
     });
 
-  return computePerpetualReport({
+  const report = computePerpetualReport({
     config,
     rates,
     periodo,
@@ -197,6 +199,12 @@ export async function loadPerpetualReport(
     linkUrlPorAd,
     dimensoes,
   });
+
+  // Story 41.11 — o que a dedup por ID da venda fez (W-P7) ou por que não rodou
+  // (W-P8). Anexado DEPOIS do motor: o motor e as invariantes P1–P7 não mudam,
+  // e duplicata removida é informação, não bug do motor (nunca invariante).
+  report.alertas.push(...alertasDaDedup(dedup));
+  return report;
 }
 
 // ------------------------------------------------------------------
@@ -307,15 +315,55 @@ interface SheetShape {
   rows: string[][];
 }
 
+/** Uma coluna que a dedup precisa e o mapeamento não entrega (W-P8). */
+export interface ColunaDaDedupFaltando {
+  campo: "transactionId" | "productName";
+  /** O cabeçalho para onde o mapeamento aponta — `null` quando nem está mapeado. */
+  colunaDoMapping: string | null;
+}
+
+/**
+ * Story 41.11 — o efeito da dedup por `(ID da venda, produto)` nesta leitura.
+ *
+ * `removidasNaJanela` conta só as removidas cujo `dia` cai na janela: é a queda
+ * de linhas e de faturamento que o usuário vê (a dedup roda na planilha
+ * inteira, mas o que sai fora do período não mudou número nenhum dele).
+ */
+export interface ResumoDedupPerpetuo {
+  removidasNaJanela: { linhas: number; valor: number };
+  /** Preenchido quando a dedup não rodou nesta planilha (W-P8). */
+  naoAplicada: { faltando: ColunaDaDedupFaltando[] } | null;
+}
+
 /**
  * Converte linhas da planilha em `PerpetualSaleRow`, já recortadas no período
- * por **dia civil de São Paulo** (§C.7) e sem as reembolsadas.
+ * por **dia civil de São Paulo** (§C.7), sem as reembolsadas e — Story 41.11 —
+ * sem as repetidas por `(ID da venda, produto)`.
+ *
+ * Pura (sem I/O): exportada para ser testada com fixture, sem banco nem Google.
+ *
+ * Ordem, e por quê:
+ * 1. passe de reembolso — a transação estornada sai inteira (as duplicatas e a
+ *    paga pareada também), porque usa a mesma coluna de ID;
+ * 2. filtros de linha (dia legível, e-mail, valor > 0) — só disputa a vaga
+ *    quem contaria como venda;
+ * 3. dedup na **planilha inteira**, chamando `deduplicarPorIdDaVenda` (41.10):
+ *    sobrevive a primeira, linha sem ID nunca colapsa, mesmo ID com produto
+ *    diferente (ingresso + order bump do mesmo pedido) conta as duas;
+ * 4. só então o corte de janela. A duplicata pode vir 3 h antes e cruzar a
+ *    meia-noite de São Paulo: deduplicar depois do corte faria a mesma venda
+ *    contar uma vez em cada uma de duas janelas adjacentes.
+ *
+ * Planilha sem `transactionId` ou sem `productName` mapeado (ou apontando para
+ * cabeçalho inexistente): a dedup **não** roda — sem ID não há chave; sem
+ * produto, ingresso e bump do mesmo pedido colapsariam — e o motivo volta em
+ * `dedup.naoAplicada` para o W-P8. Decisão por planilha, nunca por célula.
  */
-function parseVendas(
+export function parseVendas(
   sheetData: SheetShape,
   mapping: Record<string, string | undefined>,
   periodo: { inicio: string; fim: string },
-): { vendas: PerpetualSaleRow[]; hasStatusCol: boolean } {
+): { vendas: PerpetualSaleRow[]; hasStatusCol: boolean; dedup: ResumoDedupPerpetuo } {
   const { headers, rows } = sheetData;
   const idx = (field: string | undefined) => (field ? headers.indexOf(field) : -1);
 
@@ -378,7 +426,9 @@ function parseVendas(
     return v;
   };
 
-  const vendas: PerpetualSaleRow[] = [];
+  // Passe 2: as linhas que contariam como venda, na planilha INTEIRA (sem o
+  // corte de janela — ele vem depois da dedup).
+  const candidatas: { venda: PerpetualSaleRow; idDaVenda: string | null }[] = [];
   for (const row of rows) {
     if (hasStatusCol) {
       if (isRefundBucket(classifyRefundStatus(row[statusIdx], hasStatusCol))) continue;
@@ -389,7 +439,7 @@ function parseVendas(
     }
 
     const dia = saleDayKey(row[dataIdx]);
-    if (!dia || dia < periodo.inicio || dia > periodo.fim) continue;
+    if (!dia) continue;
 
     const email = clean(emailIdx, row);
     if (!email) continue;
@@ -397,19 +447,108 @@ function parseVendas(
     const valorBruto = parseNumber(row[brutoIdx]);
     if (valorBruto <= 0) continue;
 
-    vendas.push({
-      email,
-      dia,
-      valorBruto,
-      utmSource: clean(sourceIdx, row),
-      utmCampaign: clean(campaignIdx, row),
-      utmMedium: clean(mediumIdx, row),
-      utmContent: clean(contentIdx, row),
-      produto: clean(produtoIdx, row),
+    candidatas.push({
+      venda: {
+        email,
+        dia,
+        valorBruto,
+        utmSource: clean(sourceIdx, row),
+        utmCampaign: clean(campaignIdx, row),
+        utmMedium: clean(mediumIdx, row),
+        utmContent: clean(contentIdx, row),
+        produto: clean(produtoIdx, row),
+      },
+      idDaVenda: clean(txIdx, row),
     });
   }
 
-  return { vendas, hasStatusCol };
+  // Passe 3 (Story 41.11): dedup por (ID da venda, produto), só onde as duas
+  // colunas existem.
+  const faltando: ColunaDaDedupFaltando[] = [];
+  if (txIdx === -1) {
+    faltando.push({ campo: "transactionId", colunaDoMapping: mapping.transactionId?.trim() || null });
+  }
+  if (produtoIdx === -1) {
+    faltando.push({ campo: "productName", colunaDoMapping: mapping.productName?.trim() || null });
+  }
+
+  let mantidas = candidatas;
+  let removidas: typeof candidatas = [];
+  if (faltando.length === 0) {
+    ({ mantidas, removidas } = deduplicarPorIdDaVenda(candidatas, (c) => ({
+      idDaVenda: c.idDaVenda,
+      produto: c.venda.produto,
+    })));
+  }
+
+  // Passe 4: o corte de janela, sobre as sobreviventes.
+  const naJanela = (c: { venda: PerpetualSaleRow }) =>
+    c.venda.dia >= periodo.inicio && c.venda.dia <= periodo.fim;
+  const vendas = mantidas.filter(naJanela).map((c) => c.venda);
+
+  // Soma em centavos: a mensagem do W-P7 cita o valor exato da queda.
+  const removidasNaJanela = removidas.filter(naJanela);
+  const centavos = removidasNaJanela.reduce((s, c) => s + Math.round(c.venda.valorBruto * 100), 0);
+
+  return {
+    vendas,
+    hasStatusCol,
+    dedup: {
+      removidasNaJanela: { linhas: removidasNaJanela.length, valor: centavos / 100 },
+      naoAplicada: faltando.length > 0 ? { faltando } : null,
+    },
+  };
+}
+
+const brl = (v: number): string =>
+  v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/**
+ * Story 41.11 — os alertas da dedup, para `report.alertas`. Pura.
+ *
+ * - **W-P7**: linhas repetidas removidas na janela, com o valor — explica a
+ *   queda de transações e de faturamento. Sem removida na janela, não sai.
+ * - **W-P8**: a dedup não rodou neste funil e por quê. Existe para que a
+ *   ausência de W-P7 não seja lida como "não havia duplicata".
+ *
+ * Nunca invariante: são informação sobre o dado, não inconsistência do motor.
+ */
+export function alertasDaDedup(dedup: ResumoDedupPerpetuo): PerpetualReportAlerta[] {
+  const alertas: PerpetualReportAlerta[] = [];
+
+  const { linhas, valor } = dedup.removidasNaJanela;
+  if (linhas > 0) {
+    const texto =
+      linhas === 1
+        ? "1 linha duplicada por ID da venda removida"
+        : `${linhas.toLocaleString("pt-BR")} linhas duplicadas por ID da venda removidas`;
+    alertas.push({
+      codigo: "W-P7",
+      mensagem:
+        `${texto} (R$ ${brl(valor)}) — mesmo ID da venda e mesmo produto na planilha ` +
+        "contam uma vez (vale a primeira linha).",
+    });
+  }
+
+  if (dedup.naoAplicada) {
+    const faltas = dedup.naoAplicada.faltando
+      .map((f) => {
+        const nome =
+          f.campo === "transactionId" ? "ID da venda (transactionId)" : "produto (productName)";
+        return f.colunaDoMapping
+          ? `a coluna de ${nome} aponta para "${f.colunaDoMapping}", que não existe na planilha`
+          : `a coluna de ${nome} não está mapeada`;
+      })
+      .join("; ");
+    alertas.push({
+      codigo: "W-P8",
+      mensagem:
+        `Dedup por ID da venda não aplicada: ${faltas} — linhas repetidas da planilha ` +
+        "estão sendo somadas. Mapear a coluna no wizard de planilhas do funil.",
+    });
+  }
+
+  return alertas;
 }
 
 /** Aceita `119.54` (export do Gerenciador) e `119,54` (export BR) — §C.9. */
