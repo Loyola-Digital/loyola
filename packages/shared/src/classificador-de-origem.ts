@@ -29,8 +29,9 @@
  *
  * - Não lê banco: os nomes de closer chegam resolvidos na config
  *   (`seller_aliases` / `stage_event_closers`, montada pelo loader da 49.3).
- *   **Nenhum nome de closer mora no código** — com a config vazia, `x1` é só
- *   uma UTM qualquer.
+ *   **Nenhum nome de closer nem ferramenta de atendimento mora no código** —
+ *   com a config vazia, `x1` é só uma UTM qualquer e `letalk + x1` é uma
+ *   ferramenta qualquer.
  * - Não resolve o nome da campanha: `Utm.campaignName` chega pronto do loader
  *   (a partir do id em `utm_campaign`).
  * - Não olha `utm_content` (ad_id, macro `{{ad.id}}`, JSON de `co=` são
@@ -47,7 +48,7 @@
  * payload dos dois motores como `classificadorVersao`; a guarda F6 (49.5)
  * compara os dois lados.
  */
-export const CLASSIFICADOR_VERSAO = "49.2-v1";
+export const CLASSIFICADOR_VERSAO = "49.2-v2";
 
 // ============================================================
 // Tipos
@@ -81,6 +82,14 @@ export interface ConfigClassificador {
   closerNomes: string[];
   /** Quando `true`, um `sellerName` preenchido marca o fechamento como Closer. */
   closerPorSellerName: boolean;
+  /**
+   * Ferramentas de atendimento que aparecem em `utm_source` (ex. do FZ:
+   * `letalk`, `chatwoot`). Sozinhas são uma UTM como outra qualquer; **na mesma
+   * UTM** que um medium de `closerMediums` elas são sinal de closer e deixam de
+   * contar como aquisição (R4-12, dono 2026-10-01). Por expert, vem da config
+   * (49.1); nunca do código.
+   */
+  ferramentasDeAtendimento: string[];
 }
 
 /** Eixo de AQUISIÇÃO — união fechada. Closer não é canal. */
@@ -173,6 +182,14 @@ export const SEGMENTO_DE_QUALIFICACAO: Readonly<Record<Canal, SegmentoDeQualific
 
 /** Termos de canal, casados por TOKEN inteiro em source, medium e campaign. */
 const TOKENS_PAGOS = ["cbo", "abo", "meta", "fb"];
+/**
+ * `utm_source` que também são pago (R4-11, dono 2026-10-01), casados pelo
+ * VALOR INTEIRO do source — os mesmos de `PAID_UTM_SOURCES`
+ * (`api/utils/lead-origin.ts`) que a skill não lista. Caem no balde `Pago N/D`
+ * (ou Quente/Frio, se a temperatura decidir): o debriefing não separa
+ * plataforma, só temperatura.
+ */
+const SOURCES_PAGOS = ["facebook", "google", "google-ads"];
 const TOKENS_INSTAGRAM = ["ig", "instagram"];
 const TOKENS_WHATSAPP = ["whatsapp"];
 const TOKENS_MANYCHAT = ["manychat"];
@@ -232,6 +249,7 @@ function lerUtm(
   utm: Utm | null | undefined,
   closerMediums: Set<string>,
   closerNomes: Set<string>,
+  ferramentasDeAtendimento: Set<string>,
 ): UtmLida {
   const u = utm && typeof utm === "object" ? utm : {};
   const source = normalizar(u.source);
@@ -241,10 +259,14 @@ function lerUtm(
 
   const closerPorMedium = medium !== "" && closerMediums.has(medium);
   const closerPorSource = source !== "" && closerNomes.has(source);
+  // R4-12: ferramenta de atendimento só é sinal de closer JUNTO de um medium
+  // de closer na mesma UTM. É o medium que marca o fechamento; a ferramenta só
+  // deixa de contar como aquisição.
+  const ferramentaDeCloser = closerPorMedium && ferramentasDeAtendimento.has(source);
 
   // Campo que é sinal de closer não conta como UTM de aquisição (AC2).
   const aquisicao: UtmDeAquisicao = {
-    source: closerPorSource ? "" : source,
+    source: closerPorSource || ferramentaDeCloser ? "" : source,
     medium: closerPorMedium ? "" : medium,
     campaign,
     term,
@@ -282,12 +304,12 @@ function temAlgum(tokens: Set<string>, termos: readonly string[]): boolean {
  * |---|---|---|
  * | 1 | `term` diz hot/quente; ou, se o term não decide, `campaignName` diz | Pago Quente |
  * | 2 | idem com cold/frio | Pago Frio |
- * | 3 | token `cbo`/`abo`/`meta`/`fb` | Pago N/D |
+ * | 3 | token `cbo`/`abo`/`meta`/`fb`; ou `utm_source` = `facebook`/`google`/`google-ads` | Pago N/D |
  * | 4 | token `ig`/`instagram` | Instagram orgânico |
  * | 5 | token `whatsapp` | WhatsApp |
  * | 6 | token `manychat` | ManyChat |
  * | 7 | qualquer outra UTM preenchida | Outros orgânicos |
- * | 8 | sem UTM de aquisição, mas algum campo é sinal de closer | Aquisição não rastreada (só closer) |
+ * | 8 | sem UTM de aquisição, mas algum campo é sinal de closer (inclui ferramenta + medium de closer) | Aquisição não rastreada (só closer) |
  * | 9 | nenhum campo de UTM no lead e na venda | Sem track real |
  *
  * Fechamento — `closer` se `medium ∈ closerMediums`, `source ∈ closerNomes`
@@ -305,9 +327,10 @@ export function classificarOrigem(
 
   const closerMediums = conjuntoNormalizado(c.closerMediums);
   const closerNomes = conjuntoNormalizado(c.closerNomes);
+  const ferramentas = conjuntoNormalizado(c.ferramentasDeAtendimento);
 
-  const lead = lerUtm(e.lead, closerMediums, closerNomes);
-  const venda = lerUtm(e.venda, closerMediums, closerNomes);
+  const lead = lerUtm(e.lead, closerMediums, closerNomes, ferramentas);
+  const venda = lerUtm(e.venda, closerMediums, closerNomes, ferramentas);
 
   // ---- Eixo de fechamento (independente da aquisição) ----
   let regraDeFechamento: RegraDeFechamento | null = null;
@@ -350,7 +373,9 @@ export function classificarOrigem(
   if (temperatura === "frio") return resultado("Pago Frio", 2, fonteUtm, decididaPor);
 
   const tokens = tokensDe(utm);
-  if (temAlgum(tokens, TOKENS_PAGOS)) return resultado("Pago N/D", 3, fonteUtm);
+  if (temAlgum(tokens, TOKENS_PAGOS) || SOURCES_PAGOS.includes(utm.source)) {
+    return resultado("Pago N/D", 3, fonteUtm);
+  }
   if (temAlgum(tokens, TOKENS_INSTAGRAM)) return resultado("Instagram orgânico", 4, fonteUtm);
   if (temAlgum(tokens, TOKENS_WHATSAPP)) return resultado("WhatsApp", 5, fonteUtm);
   if (temAlgum(tokens, TOKENS_MANYCHAT)) return resultado("ManyChat", 6, fonteUtm);

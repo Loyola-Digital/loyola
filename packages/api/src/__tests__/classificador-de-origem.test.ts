@@ -42,6 +42,7 @@ const SEM_CONFIG: ConfigClassificador = {
   closerMediums: [],
   closerNomes: [],
   closerPorSellerName: false,
+  ferramentasDeAtendimento: [],
 };
 
 /** Danilo Gato: `utm_medium = x1`, nomes de closer em `utm_source`. */
@@ -49,13 +50,18 @@ const DG: ConfigClassificador = {
   closerMediums: ["x1"],
   closerNomes: ["isabela", "kayta", "katia", "alberto", "closer", "vendas", "sdr"],
   closerPorSellerName: false,
+  ferramentasDeAtendimento: [],
 };
 
-/** Fernanda Zapparolli: `x1` (L1) / `comercial` (L2); `flaviana` é pessoa. */
+/**
+ * Fernanda Zapparolli: `x1` (L1) / `comercial` (L2); `flaviana` é pessoa;
+ * `letalk` e `chatwoot` são ferramentas de atendimento (R4-12).
+ */
 const FZ: ConfigClassificador = {
   closerMediums: ["x1", "comercial"],
   closerNomes: ["flaviana"],
   closerPorSellerName: false,
+  ferramentasDeAtendimento: ["letalk", "chatwoot"],
 };
 
 /** Netão: closer registrado por `seller_name`, não por UTM. */
@@ -63,6 +69,7 @@ const NETAO: ConfigClassificador = {
   closerMediums: [],
   closerNomes: [],
   closerPorSellerName: true,
+  ferramentasDeAtendimento: [],
 };
 
 function classificar(
@@ -99,15 +106,14 @@ describe("AC1 — módulo folha em shared, função pura", () => {
     }
   });
 
-  it("nenhum nome de closer nem medium de closer mora no código", () => {
-    for (const valor of ["isabela", "kayta", "katia", "alberto", "flaviana", "x1", "comercial", "sdr", "vendedor"]) {
+  it("nenhum nome de closer, medium de closer nem ferramenta de atendimento mora no código", () => {
+    for (const valor of ["isabela", "kayta", "katia", "alberto", "flaviana", "x1", "comercial", "sdr", "vendedor", "letalk", "chatwoot"]) {
       expect(codigo.toLowerCase(), valor).not.toContain(`"${valor}"`);
     }
   });
 
-  it("exporta CLASSIFICADOR_VERSAO como string não vazia", () => {
-    expect(typeof CLASSIFICADOR_VERSAO).toBe("string");
-    expect(CLASSIFICADOR_VERSAO.length).toBeGreaterThan(0);
+  it("exporta CLASSIFICADOR_VERSAO — v2 desde R4-11/R4-12 (dono, 2026-10-01)", () => {
+    expect(CLASSIFICADOR_VERSAO).toBe("49.2-v2");
   });
 
   it("mesma entrada → mesma saída, e não muda a entrada", () => {
@@ -207,7 +213,6 @@ describe("AC2 — regra 3 (Pago N/D): cbo/abo/meta/fb por token inteiro em sourc
 
   it("token inteiro: pedaço de palavra não casa", () => {
     expect(soLead({ source: "metaverso" }).canal).toBe("Outros orgânicos");
-    expect(soLead({ source: "facebook" }).canal).toBe("Outros orgânicos");
     expect(soLead({ source: "fbx" }).canal).toBe("Outros orgânicos");
   });
 
@@ -224,6 +229,44 @@ describe("AC2 — regra 3 (Pago N/D): cbo/abo/meta/fb por token inteiro em sourc
       canal: "Pago N/D",
       temperaturaDecididaPor: null,
     });
+  });
+});
+
+describe("R4-11 (dono, 2026-10-01) — utm_source facebook / google / google-ads é pago (regra 3)", () => {
+  it.each(["facebook", "google", "google-ads"])("source %s → Pago N/D, regra 3", (s) => {
+    expect(soLead({ source: s })).toMatchObject({ canal: "Pago N/D", regra: 3, temperaturaDecididaPor: null });
+  });
+
+  it("case-insensitive e sem espaço nas pontas", () => {
+    expect(soLead({ source: " Facebook " }).canal).toBe("Pago N/D");
+    expect(soLead({ source: "GOOGLE-ADS" }).canal).toBe("Pago N/D");
+  });
+
+  it("BBE do Netão: google-ads com id numérico de campanha Google no medium → pago", () => {
+    expect(soLead({ source: "google-ads", medium: "21483390211" }).canal).toBe("Pago N/D");
+  });
+
+  it("a temperatura decide antes, como em qualquer pago", () => {
+    expect(soLead({ source: "facebook", term: "publico-hot" }).canal).toBe("Pago Quente");
+    expect(soLead({ source: "google", campaign: "1", campaignName: "Pesquisa | FRIO" })).toMatchObject({
+      canal: "Pago Frio",
+      temperaturaDecididaPor: "campaign_name",
+    });
+  });
+
+  it("regra 3 antes da 4: google + medium instagram é pago", () => {
+    expect(soLead({ source: "google", medium: "instagram" }).canal).toBe("Pago N/D");
+  });
+
+  it("campo fixado: casa o VALOR INTEIRO do utm_source (como PAID_UTM_SOURCES), não token nem medium/campaign", () => {
+    expect(soLead({ source: "facebook-ads" }).canal).toBe("Outros orgânicos");
+    expect(soLead({ source: "google_meu_negocio" }).canal).toBe("Outros orgânicos");
+    expect(soLead({ source: "organico", medium: "facebook" }).canal).toBe("Outros orgânicos");
+    expect(soLead({ campaign: "google" }).canal).toBe("Outros orgânicos");
+  });
+
+  it("vale também na UTM da venda (fallback)", () => {
+    expect(classificar({ lead: null, venda: { source: "google-ads" } })).toMatchObject({ canal: "Pago N/D", fonteUtm: "venda" });
   });
 });
 
@@ -255,7 +298,7 @@ describe("AC2 — regras 4 a 7", () => {
     expect(soLead({ medium: "manychat" }).canal).toBe("ManyChat");
   });
 
-  it.each(["chatwoot", "mautic", "qrcode", "bio", "email", "e-mail", "youtube", "google"])(
+  it.each(["chatwoot", "letalk", "mautic", "qrcode", "bio", "email", "e-mail", "youtube"])(
     "regra 7: %s → Outros orgânicos",
     (s) => {
       expect(soLead({ source: s })).toMatchObject({ canal: "Outros orgânicos", regra: 7 });
@@ -467,15 +510,77 @@ describe("AC4 — Sem track real e os casos nomeados", () => {
     });
   });
 
-  it("FZ — ferramenta (chatwoot) + medium de closer: aquisição pela ferramenta, fechamento closer", () => {
-    // Leitura literal da regra: só o campo que é sinal de closer é apagado.
-    expect(classificar({ lead: null, venda: { source: "chatwoot", medium: "comercial" } }, FZ)).toMatchObject({
-      canal: "Outros orgânicos",
+  it("FZ — pessoa (flaviana) + medium de closer → só closer", () => {
+    expect(classificar({ lead: null, venda: { source: "flaviana", medium: "x1" } }, FZ)).toMatchObject({
+      canal: "Aquisição não rastreada (só closer)",
+      fechamento: "closer",
+    });
+  });
+});
+
+describe("R4-12 (dono, 2026-10-01) — ferramenta de atendimento + medium de closer = só closer", () => {
+  it("FZ-L1: venda letalk + x1, lead sem UTM → Aquisição não rastreada (só closer) + closer", () => {
+    expect(classificar({ lead: { source: " " }, venda: { source: "letalk", medium: "x1" } }, FZ)).toMatchObject({
+      canal: "Aquisição não rastreada (só closer)",
+      regra: 8,
+      fonteUtm: "nenhuma",
       fechamento: "closer",
       regraDeFechamento: "medium",
     });
-    expect(classificar({ lead: null, venda: { source: "flaviana", medium: "x1" } }, FZ)).toMatchObject({
+  });
+
+  it("FZ-L2: chatwoot + comercial → só closer (no lead ou na venda)", () => {
+    expect(classificar({ lead: null, venda: { source: "chatwoot", medium: "comercial" } }, FZ)).toMatchObject({
       canal: "Aquisição não rastreada (só closer)",
+      regra: 8,
+      fechamento: "closer",
+    });
+    expect(classificar({ lead: { source: "chatwoot", medium: "comercial" }, venda: null }, FZ).canal).toBe(
+      "Aquisição não rastreada (só closer)",
+    );
+  });
+
+  it("a ferramenta vem da CONFIG: sem ela na config, letalk + x1 é aquisição Outros orgânicos (fechamento segue closer)", () => {
+    const semFerramentas = { ...FZ, ferramentasDeAtendimento: [] };
+    expect(classificar({ lead: null, venda: { source: "letalk", medium: "x1" } }, semFerramentas)).toMatchObject({
+      canal: "Outros orgânicos",
+      regra: 7,
+      fonteUtm: "venda",
+      fechamento: "closer",
+    });
+  });
+
+  it("configurável por expert: uma ferramenta qualquer na config, case-insensitive dos dois lados", () => {
+    const config = { ...DG, ferramentasDeAtendimento: ["  BotConversa "] };
+    expect(classificar({ lead: null, venda: { source: "botconversa", medium: "X1" } }, config).canal).toBe(
+      "Aquisição não rastreada (só closer)",
+    );
+  });
+
+  it("ferramenta SOZINHA (sem medium de closer) segue UTM de aquisição comum e não marca closer", () => {
+    expect(classificar({ lead: null, venda: { source: "chatwoot", medium: "atendimento" } }, FZ)).toMatchObject({
+      canal: "Outros orgânicos",
+      fechamento: "sem-closer",
+    });
+    expect(soLead({ source: "letalk" }, FZ)).toMatchObject({ canal: "Outros orgânicos", fechamento: "sem-closer" });
+  });
+
+  it("a combinação vale DENTRO de uma UTM: ferramenta no lead e x1 na venda não apagam a ferramenta", () => {
+    expect(classificar({ lead: { source: "chatwoot" }, venda: { medium: "x1" } }, FZ)).toMatchObject({
+      canal: "Outros orgânicos",
+      fonteUtm: "lead",
+      fechamento: "closer",
+    });
+  });
+
+  it("ferramenta + closer + outro campo de aquisição não é regra 8 (o campo restante decide)", () => {
+    expect(soLead({ source: "letalk", medium: "x1", campaign: "[FZ][META][CBO]" }, FZ).canal).toBe("Pago N/D");
+  });
+
+  it("lead letalk + x1 não bloqueia o fallback para a UTM da venda", () => {
+    expect(classificar({ lead: { source: "letalk", medium: "x1" }, venda: { source: "ig" } }, FZ)).toMatchObject({
+      canal: "Instagram orgânico",
+      fonteUtm: "venda",
       fechamento: "closer",
     });
   });
@@ -499,7 +604,7 @@ describe("AC5 — Closer 100% da config", () => {
   });
 
   it("case-insensitive e sem espaço nas pontas, dos dois lados", () => {
-    const config = { closerMediums: [" X1 "], closerNomes: ["  Isabela "], closerPorSellerName: false };
+    const config = { closerMediums: [" X1 "], closerNomes: ["  Isabela "], closerPorSellerName: false, ferramentasDeAtendimento: [] };
     expect(soLead({ medium: "x1" }, config).fechamento).toBe("closer");
     expect(soLead({ source: "ISABELA  " }, config).fechamento).toBe("closer");
     expect(soLead({ source: "  isabela" }, config).canal).toBe("Aquisição não rastreada (só closer)");
@@ -787,7 +892,9 @@ const MOTIVOS = {
   campoDeCasamento:
     "o novo casa termos em source, medium E campaign, e campaign/term contam como UTM preenchida; o antigo só lê source+medium",
   termosDaSkill:
-    "termos de canal são os da skill, por token inteiro: `facebook`, `google`, `wpp`, `bio`, `many_chat`, e-mail e YouTube não são canal no debriefing",
+    "termos de canal são os da skill, por token inteiro: `wpp`, `bio`, `many_chat`, e-mail e YouTube não são canal no debriefing",
+  pagoSemPlataforma:
+    "Google pago cai no balde `Pago N/D` (R4-11): o debriefing separa pago por temperatura, não por plataforma; o antigo diz `Google Ads` (a origem `Pago` coincide)",
   ordemDaSkill: "ordem da skill: Instagram antes de WhatsApp; o antigo testa WhatsApp primeiro",
   pagoPorCboAbo: "`cbo`/`abo` são pago na skill; o antigo não os conhece",
 } as const;
@@ -820,6 +927,14 @@ const CASOS: Caso[] = [
   { nome: "meta / frio", entrada: { lead: { source: "fb", term: "frio" }, venda: null }, canal: "Pago Frio" },
   { nome: "chatwoot", entrada: { lead: { source: "chatwoot" }, venda: null }, canal: "Outros orgânicos" },
   { nome: "qrcode", entrada: { lead: { source: "qrcode" }, venda: null }, canal: "Outros orgânicos" },
+  { nome: "facebook (R4-11: agora coincide com Meta Ads)", entrada: { lead: { source: "facebook" }, venda: null }, canal: "Pago N/D" },
+  { nome: "Facebook com espaço", entrada: { lead: { source: " Facebook " }, venda: null }, canal: "Pago N/D" },
+  {
+    nome: "FZ: chatwoot sem medium de closer — ferramenta sozinha coincide (Outros)",
+    entrada: { lead: { source: "chatwoot", medium: "atendimento" }, venda: null },
+    config: FZ,
+    canal: "Outros orgânicos",
+  },
   {
     nome: "lead Meta × venda x1 (decisão 3): o canal coincide, o fechamento é informação nova",
     entrada: { lead: { source: "meta" }, venda: { medium: "x1" } },
@@ -855,9 +970,15 @@ const CASOS: Caso[] = [
   { nome: "só term hot", entrada: { lead: { term: "hot" }, venda: null }, canal: "Pago Quente", diverge: "campoDeCasamento" },
   { nome: "meta só no campaign", entrada: { lead: { campaign: "[PG02][META][CBO]" }, venda: null }, canal: "Pago N/D", diverge: "campoDeCasamento" },
   { nome: "só campaign sem termo", entrada: { lead: { campaign: "lancamento" }, venda: null }, canal: "Outros orgânicos", diverge: "campoDeCasamento" },
-  { nome: "facebook", entrada: { lead: { source: "facebook" }, venda: null }, canal: "Outros orgânicos", diverge: "termosDaSkill" },
-  { nome: "google", entrada: { lead: { source: "google" }, venda: null }, canal: "Outros orgânicos", diverge: "termosDaSkill" },
-  { nome: "google-ads", entrada: { lead: { source: "google-ads" }, venda: null }, canal: "Outros orgânicos", diverge: "termosDaSkill" },
+  { nome: "google (R4-11)", entrada: { lead: { source: "google" }, venda: null }, canal: "Pago N/D", diverge: "pagoSemPlataforma" },
+  { nome: "google-ads (R4-11)", entrada: { lead: { source: "google-ads" }, venda: null }, canal: "Pago N/D", diverge: "pagoSemPlataforma" },
+  {
+    nome: "FZ: letalk / x1 (R4-12)",
+    entrada: { lead: { source: "letalk", medium: "x1" }, venda: null },
+    config: FZ,
+    canal: "Aquisição não rastreada (só closer)",
+    diverge: "soCloser",
+  },
   { nome: "wpp", entrada: { lead: { source: "wpp" }, venda: null }, canal: "Outros orgânicos", diverge: "termosDaSkill" },
   { nome: "bio", entrada: { lead: { source: "bio" }, venda: null }, canal: "Outros orgânicos", diverge: "termosDaSkill" },
   { nome: "many_chat", entrada: { lead: { source: "many_chat" }, venda: null }, canal: "Outros orgânicos", diverge: "termosDaSkill" },

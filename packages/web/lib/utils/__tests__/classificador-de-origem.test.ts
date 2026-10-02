@@ -30,7 +30,7 @@ describe("classificador-de-origem pelo subpath do web", () => {
   it("decisão 3: lead Meta × venda x1 = Pago e Closer, nos dois eixos", () => {
     const r = classificador.classificarOrigem(
       { lead: { source: "meta" }, venda: { medium: "x1" } },
-      { closerMediums: ["x1"], closerNomes: [], closerPorSellerName: false },
+      { closerMediums: ["x1"], closerNomes: [], closerPorSellerName: false, ferramentasDeAtendimento: [] },
     );
     expect(r.canal).toBe("Pago N/D");
     expect(r.fechamento).toBe("closer");
