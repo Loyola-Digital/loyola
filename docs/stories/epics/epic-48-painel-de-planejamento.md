@@ -98,6 +98,8 @@ Respondidas nesta ordem, uma a uma. "Reproduz" = faz como a planilha; "corrige" 
 | 48.4 | Leads pagos — parâmetros por fonte, seleção, combinações, tráfego e resumo (aba 3) — `48.4.planejamento-leads-pagos.md` | RN-016…022, 024…029, 038, 039 | 48.1 ✅, 48.2 ✅ | **Done** — gate PASS (re-gate) 2026-09-22; **MERGED #912** (`73579498`); 0154 em produção; Alta / L (8–13) |
 | 48.5 | Resumo Final — cinco cenários consolidando orgânicos e pagos, meta total e rótulos (aba 4) — `48.5.planejamento-resumo-final.md` | RN-030, 031 (+ 017…020, 022, 027, 029 consolidadas) | 48.3 ✅, 48.4 ✅ | **Done** — gate PASS (re-gate) 2026-09-22; **MERGED #915** (`649bf0a9`); 0155 em produção; DV-017 = A; Alta / M (5–8) |
 | 48.6 | Complementos da aba 1 por subtração (fix de DEV-03) — `48.6.planejamento-complementos-por-subtracao.md` | RN-002, 006, 007 (exatidão) | 48.1 ✅ | **Done** — gate PASS (re-gate) 2026-09-22; **MERGED #917** (`d09a4a1f`); sem migration; Média / XS (1–2) |
+| 48.14 | Várias bases de referência lado a lado + investimento real quente/frio em R$ — `48.14.planejamento-varias-bases-lado-a-lado.md` | — (camada B, D18) | 48.9 ✅, 48.11 ✅, 48.13 ✅ | **Draft** 2026-10-01 — Alta / M (5–8), estimativa do @sm por delegação do Danilo |
+| 48.15 | Margem de contribuição realizada das bases (total, pagos, por canal orgânico) — `48.15.planejamento-margem-realizada.md` | — (camada B, D18) | 48.14 | **Draft** 2026-10-01 — bloqueada por F1–F5; Alta / L (8–13), estimativa do @sm por delegação do Danilo |
 
 Pontos e prioridade: estimados pelo @po na validação e confirmados pelo Danilo — 48.2: Alta, M (5–8); 48.1: Alta, L (8–13) proposta; 48.3 e 48.4: Alta, L (8–13); 48.5: Alta, M (5–8).
 
@@ -156,6 +158,7 @@ Regra do repo mantida: executor ≠ quality gate em todas as linhas.
 | 2026-09-22 | @devops (Gage) | **Epic fechado no código:** 48.5 MERGED #915 (`649bf0a9`), 0155 em produção, contrato v17 — as quatro abas do simulador no ar. S1 ✓ (grep dos 35 RN) e S2 ✓ (suítes + diferenciais); S3 (conferência com dados reais do próximo lançamento) e S4 (planilha desligada) ficam com o Danilo. Pendências: validação visual das quatro abas; DEV-01 (409 sem Inputs, abas 2–4) e DEV-03 (verba do Meta frio na 48.1) para o @po; lint da `main` (`sendflow.ts:39`, herdado) |
 | 2026-09-22 | @po (Pax) | Danilo confirmou Alta / M (5–8) para a 48.5 → 10/10 |
 | 2026-09-22 | @po (Pax) | 48.5 validada: GO 9/10, Ready; PO-01 (cadeia do produto com igualdade exata — a conversão total difere da bruta em 1,2e-7), PO-02 (S4 é do epic), PO-03 (tráfego repetido, linhas abertas), PO-04 (callback da página); estimativa Alta / M proposta |
+| 2026-10-01 | @sm (River) | Pedido do Danilo para o `dg-pg05`: causa do "sem histórico" = nome `dgpg05-out-26` sem hífen (decisão: renomear no app, sem story); **48.14** (várias bases lado a lado + quente/frio em R$) e **48.15** (margem realizada, F1–F5 abertas) rascunhadas |
 | 2026-09-21 | @pm (Morgan) | **P2 ✅ — estrutura validada.** Acrescentados objetivo, critérios de sucesso S1–S4, ordem de execução em 3 waves com executor/gate por story, riscos R1–R6, roadmap do que ficou fora; E4 corrigido (nomes dos módulos = os das stories). Número 48 confirmado na `main` (#898). |
 
 <!-- clickup:17tqamemnem -->
