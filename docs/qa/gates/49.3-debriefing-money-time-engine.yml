@@ -4,174 +4,113 @@ story: '49.3'
 story_title: 'Motor I do Debriefing — dinheiro e tempo (higiene, mídia, captação, canais, coorte, ROAS)'
 verdict: CONCERNS
 gate: CONCERNS
-status_reason: 'O código está correto e bem protegido. Os 13 ACs foram implementados, as 130 suítes da story passam, o tsc e o eslint estão limpos e o Epic 41 segue intacto (768/768). Das 32 mutações do QA, 26 foram mortas. Refiz em produção, só leitura, a conferência do PG02 e cheguei aos mesmos números do @dev, sem PII no payload. Dois achados médios de contrato pedem um ajuste pequeno do @dev antes do merge: a memória do ticket mostra os compradores como "R$ 1.807,00" (MNT-001); o campo `captacao.compradoresUnicos` traz 1.901 compradores, avulsos incluídos, e não o comprador de captação da R2-1, que são 1.807 (CONTRACT-001). Ficam ainda três decisões do DONO que mudam número (camada 2, janela, `manual_sales`) e uma pendência de DADO: a Imersão do PG02 não tem `product_types`.'
+status_reason: 'Re-gate da iteração 1: tudo o que o gate de 2026-10-01 pediu foi corrigido e conferido. MNT-001 e CONTRACT-001 foram lidos no payload REAL do PG02 (memória "÷ compradores de captação 1.807 = R$ 127,56"; `compradoresUnicos` 1.807/1.806; avulsos em `compradoresDaEtapaInclusiveAvulsos` 1.901/1.897). CONTRACT-003 fechado, TEST-001..004 escritos e as 19 mutações do @dev morrem também na rodada do QA. As decisões 1A, 2A e 3A estão implementadas: 7 das 10 mutações próprias do QA morrem, e as 3 sobreviventes são low. A conferência do PG02 foi refeita com as datas REAIS do perfil §1b (janela 16/04 → 13/06): o faturamento do principal s/ TMB dá R$ 245.800,00, exatamente o §8, com as 9 vendas manuais; 0 vendas excluídas por serem anteriores à abertura; 71 × 70 vendas é o mesmo comprador com 2 produtos TMB em 03/06, R$ 0. O que segura o PASS é um achado NOVO (REL-001, medium): a mesma aba de planilha ligada a duas etapas da config é lida duas vezes. No PG02 isso acontece quando a "Downsell Captação" entra como `leads-downsell`, e o faturamento do downsell dobra de R$ 20.714,40 para R$ 41.428,80. Recomendo corrigir antes do merge, numa iteração 2 curta.'
 reviewer: 'Quinn'
-updated: '2026-10-01T23:55:00-03:00'
+updated: '2026-10-02T00:30:00-03:00'
 branch: 'feat/49.3-debriefing-motor-dinheiro-tempo'
-commit_reviewed: 'a38d381a'
-base: 'origin/fix/41.10-resumao-dedup-comprador (aad4f0b7) — empilhada; a camada 1 consome `deduplicarPorIdDaVenda` da 41.10'
-qa_loop: { iteration: 0, verdict: 'REJECT leve — 2 ajustes de contrato (MNT-001, CONTRACT-001) + testes que faltam; decisões do dono não bloqueiam o código' }
+commit_reviewed: '974839a8'
+previous_gates:
+  - { commit_gate: '7bcf7d95', commit_reviewed: 'a38d381a', verdict: CONCERNS, date: '2026-10-01', motivo: 'MNT-001, CONTRACT-001, CONTRACT-003, TEST-001..004 e 3 decisões do dono' }
+base: 'origin/main mergeada na branch (3c6d5b49); a 41.10 entrou na main por squash (3d01ef30)'
+qa_loop: { iteration: 1, verdict: 'REJECT leve — itens da iteração 1 fechados; REL-001 novo (aba duplicada entre etapas) pede uma iteração 2 curta' }
 
 checks:
-  1_requirements: 'PASS — AC1 a AC13 implementados e conferidos no código (detalhe em QA Results). Ressalva de AC1: MNT-001.'
-  2_tests: 'PASS com lacunas — 130/130 nas 3 suítes da story. Suíte da API: 3.876 verdes e 10 falhas em 5 arquivos, as mesmas da main (funnel-stages-lead-inputs, instagram-routes, instagram, projects, schema), nenhum deles importa os módulos novos. Mutações do QA: 26/32 mortas; as 6 sobreviventes estão em TEST-001..004.'
-  3_lint_typecheck: 'PASS — `tsc --noEmit` da API com exit 0 e 0 linhas; `eslint` nos 6 arquivos novos com exit 0.'
-  4_security_pii: 'PASS — chaves sha256 (`e:`/`t:`/`a:`). Produção PG02: 0 caracteres "@" e 0 e-mails no JSON do payload. As mutações de PII (e-mail cru na chave, e-mail na auditoria, telefone em vendasExcluidas) foram todas mortas.'
-  5_performance: 'PASS — loader DB-first, sem chamada à Meta e sem fan-out. Uma leitura por planilha e por fonte de lead, com dedup de fonte.'
-  6_regression: 'PASS — o diff só ACRESCENTA 6 arquivos e a story. Nenhum arquivo do Epic 41 ou de rota foi alterado. `launch-report-*`, `dedup-por-id-da-venda`, `debriefing-*` e `classificador*`: 20 arquivos, 768/768.'
-  7_docs: 'CONCERNS — File List e Change Log completos. MNT-001 é texto de memória que vai para o relatório. CONTRACT-003: os comentários têm o literal que a 49.5 AC9 proíbe.'
-  8_api_contract: 'N/A — sem rota, sem campo de resposta e sem `API_CONTRACT_VERSION` (AC13c).'
+  1_requirements: 'PASS — AC1–AC13 seguem atendidos; 2A (janela pela config) e 3A (manual_sales) implementados como as decisões dizem. A ressalva é o AC12 (loader): REL-001.'
+  2_tests: 'PASS — 150/150 nas 3 suítes da story; regressão `launch-report-*` + `dedup-por-id-da-venda` + `debriefing-*` + `classificador*`: 20 arquivos, 788/788. Mutações: as 19 do @dev, rodadas de novo pelo QA, morrem todas (19/19); as 10 próprias do QA: 7/10 mortas (sobreviventes em TEST-005).'
+  3_lint_typecheck: 'PASS — `tsc --noEmit` da API (binário direto) com exit 0; `eslint` nos 6 arquivos da story com exit 0.'
+  4_security_pii: 'PASS — payload do PG02 com 0 "@"; a leitura de `manual_sales` não seleciona nome, CPF nem endereço do cliente; e-mail e telefone das manuais só entram em hash.'
+  5_performance: 'PASS — uma consulta a mais (`manual_sales` por `inArray` das etapas); sem Meta, sem fan-out.'
+  6_regression: 'PASS — 788/788; o diff da iteração só toca os 3 serviços, as 3 suítes e a story.'
+  7_docs: 'PASS — CONTRACT-003 fechado (nenhum `1,13`/`1.13` nos 3 arquivos da story; o único que resta no repo é um comentário de `debriefing-config.ts`, da 49.1, fora do escopo da 49.5 AC9). Desvio do texto do AC12 (`periodo` deixou de ser entrada) registrado pelo @dev.'
+  8_api_contract: 'N/A — sem rota e sem `API_CONTRACT_VERSION` (AC13c). Contrato interno: `periodo` virou `janela {inicio, fim, fimPor, regra}`; `compradoresUnicos` = R2-1; `compradoresDaEtapaInclusiveAvulsos` novo; `fonte` em auditoria/excluídas; `vendasManuais`.'
+
+itens_do_gate_anterior:
+  MNT-001: 'FECHADO — produção: "faturamento da captação R$ 230.501,64 ÷ compradores de captação 1.807 = R$ 127,56 — o numerador inclui R$ 9.877,07 de 94 comprador(es) só de order bump (avulsos)…". Teste afirma a memória exata; mutação morre.'
+  CONTRACT-001: 'FECHADO — produção: `captacao.compradoresUnicos` 1.807 (porEmail) / 1.806 (porEmailOuTelefone) = `compradoresCaptacao.*.length`; `compradoresDaEtapaInclusiveAvulsos` 1.901 / 1.897; avulsos 94 (R$ 9.877,07). JSDoc nos dois campos.'
+  CONTRACT-003: 'FECHADO — teste estático lê os 3 arquivos como texto, com comentários, `(?<!\d)1[.,]13(?!\d)`; mutação que devolve o literal morre.'
+  TEST-001: 'FECHADO — Q21 morre (cenário do AC11 com imposto 0,1215).'
+  TEST-002: 'FECHADO — Q17′ morre; a Q17 original virou equivalente, porque `compradoresUnicos` agora É o comprador de captação.'
+  TEST-003: 'FECHADO — Q22 morre (TMB na captação).'
+  TEST-004: 'FECHADO — Q23, Q24 e Q8b morrem.'
+  DEC-OWNER-1: 'RESOLVIDO pelo dono (1A, 2026-10-02) — camada 2 fica; −R$ 596,30 do PG02 contra o Resumão é definição.'
+  DEC-OWNER-2: 'RESOLVIDO pelo dono (2A) — implementado em `janelaDoDebriefing`, usado pelo motor e pelo loader.'
+  DEC-OWNER-3: 'RESOLVIDO pelo dono (3A) — `manual_sales` sem reembolsadas, valor bruto, `fonte: "manual"`.'
+  DATA-001: 'RESOLVIDO no dado — `produtosNaoClassificados` do PG02 está vazio (a Imersão já tem `product_types`).'
 
 verificacao_producao:
-  ambiente: 'banco de produção com `default_transaction_read_only = on` e Google só leitura; loader + motor da branch (a38d381a); DG-PG02, etapa Captação Paga (8fbd8031) como `vendas-captacao`, janela 17/04–11/05, imposto default 0,1215'
+  ambiente: 'banco de produção com `default_transaction_read_only = on` e Google só leitura; loader + motor da branch (974839a8); script do QA em scratchpad/qa493/conf.mts'
+  correcao_de_dados: 'A rodada anterior (do QA e do @dev) usou datas INVENTADAS para o PG02 (início 17/04, abertura 11/05, fim 15/05). As datas reais estão no perfil da skill `danilo-gato.md` §1b, conferido: D0 16/04/2026; abertura 09/05 (D+23); fim do carrinho 27/05 (D+41); sem reabertura; downsell 03/06 → 13/06 (D+48 → D+58). Janela 2A = 16/04 → 13/06 (`fimPor: downsell.fim`). As 11 vendas "anteriores à abertura" e as 49 "fora da janela" da rodada anterior eram artefato das datas inventadas.'
+  config_usada: 'Captação Paga (8fbd8031) = vendas-captacao; Vendas (ee2a0783) = vendas-principal; imposto default 0,1215; closerMediums [x1]; closerPorSellerName true. Não há `debriefing_configs` salva para o PG02.'
   resultados:
-    linhas: '2.222; status sem exclusão; 0 sem valor, 0 negativo, 0 fora do período'
-    camada1: '2.222 → 2.197 (−25) = 41.10 AC2'
-    camada2: '2.197 → 2.188 (−9). Das 34 chaves (e-mail, produto) repetidas, 23 têm o mesmo dia. As 11 com dias diferentes = 2 da camada 1 que cruzam a meia-noite (o "3 h antes") + as 9 da camada 2 (recompras, como o @dev disse). Nenhuma chave cruza a borda da janela.'
-    ingressosUnicos_porEmail: '1.807 = 41.10 AC4'
-    compradoresCaptacao_porEmailOuTelefone: '1.806'
-    captacao_compradoresUnicos: '1.901 (porEmail) e 1.897 (porEmailOuTelefone) — incluem os 94 avulsos; ver CONTRACT-001'
-    faturamento_captacao: 'R$ 230.501,64 (ingresso 58.562,90 + combo 139.676,20 + bump 32.262,54) contra R$ 231.097,94 da 41.10, −R$ 596,30 = camada 2'
-    midia: 'bruto R$ 111.232,49 / c/ imposto R$ 126.616,38; impressões 2.397.701; link_click 35.882 (62 campanha×dia sem link_click, que não entram na soma); Quente 58,0% / Frio 42,0% / Indefinido 0'
-    roas: 'só ingresso 0,46 / captação 1,82, tese confirmada; % compradores/cliques 5,04%'
-    tabela1: 'Pago Quente 606, Pago Frio 469, Pago N/D 36, Instagram orgânico 448, WhatsApp 141, ManyChat 36, Outros orgânicos 48, Sem track real 23 = 1.807; fechamento closer 13 + sem-closer 1.794 = 1.807'
-    pico_artefato: 'limiar R$ 550,51 (média R$ 5.505,06 em 23 dias). Marcados: 17/04, 18/04 e 19/04 (R$ 47,83 / 237,03 / 475,77 de gasto; ROAS 29,7 / 18,0 / 7,8) — os dias de rampa do início da captação, como a regra do dono manda'
-    produtosNaoClassificados: '"Imersão Equipe de Agentes Claude", 1.311 vendas, R$ 58.562,90 — confirmado em `stage_sales_spreadsheets.product_types` (só GPT/Gravação = order_bump e Combo = combo)'
-    manual_sales: '9 linhas em `manual_sales` na etapa Vendas (principal) do PG02 — o motor não as lê (pendência 3 do dono)'
+    linhas: '2.293 (2.222 captação + 57 Kiwify principal + 5 TMB + 9 manuais); 0 excluídas por status; 0 sem dia'
+    camadas: 'camada 1 −25; camada 2 −9 (iguais à rodada anterior)'
+    fora_da_janela: '0 vendas em todos os grupos; 0 linhas de mídia'
+    captacao: 'compradoresUnicos 1.807 / 1.806; ingresso 1.311 linhas, combo 581, order bump 296; faturamento R$ 230.501,64 (ingresso 58.562,90 + combo 139.676,20 + bump 32.262,54); ticket R$ 127,56; tier 42,5% (768/1.807)'
+    midia_captacao: 'bruto R$ 111.232,49; c/ imposto R$ 126.616,38; 2.397.701 impressões; 35.882 link_click; CPM R$ 52,81; Quente 58,0% / Frio 42,0%'
+    principal: '71 vendas (57 Kiwify + 5 TMB + 9 manuais), 0 excluídas por serem anteriores a 09/05 (a primeira venda é de 09/05); faturamento s/ TMB R$ 245.800,00, dos quais R$ 31.300,00 são das 9 manuais; cauda depois de 27/05: 18 vendas, R$ 46.500 (§1b: 17 de 70, R$ 46.500)'
+    manuais: '9 lidas, 0 reembolsadas, todas na etapa Vendas, todas dentro da janela, todas `fechamento: closer` (seller_name). Nenhuma repete e-mail/telefone de venda de planilha (sem dupla contagem).'
+    roas: 'só ingresso 0,46; captação 1,82; conversão captação→principal 71 ÷ 1.807 = 3,93%; % compradores/cliques 5,04%'
+    pico_artefato: '17, 18 e 19/04 (limiar R$ 550,51; 23 dias no denominador)'
     pii: '0 "@" no JSON'
-  observacao: 'A fonte de lead "Leads Captação Paga · n8n-kiwify-captação" (2.222 linhas) é a planilha de VENDA da captação, cadastrada em `funnel_spreadsheets` com tipo não-venda. O loader replica o critério da jornada (`fontesDeOrigem`) e por isso a lê como lead: para o comprador do principal, `origemDaData` sai `lead-email` quando a data é, na prática, a do ingresso. O número da coorte não muda. É cadastro, não código desta story.'
+  comparacao_com_skill_secao_8:
+    - 'Compradores de captação: 1.807 (porEmail) / 1.806 (e-mail OU telefone) × 1.845 — FONTE (planilha n8n `n8n-kiwify-captação` × export cru Kiwify do §8) + DEFINIÇÃO (camada 2, R2-1). Governa o Loyola (decisão 1).'
+    - 'Faturamento da captação: R$ 230.501,64 × R$ 227.491,74 (+R$ 3.009,90) — FONTE (n8n × export cru); a camada 2 explica outros −R$ 596,30 contra o Resumão (1A).'
+    - 'Investimento da captação: R$ 126.616,38 × R$ 125.692,71 — IMPOSTO, legítima: o mesmo bruto R$ 111.232,49 com gross-up de 12,15% contra ×1,13 da skill. Impressões e link clicks batem exatamente.'
+    - 'Vendas do principal: 71 × 70 — DEFINIÇÃO, impacto R$ 0: o mesmo comprador levou "Mentoria ClaudeLab Basic" e "…Advanced" pela TMB em 03/06. A camada 2 é `(e-mail, produto)`, então o Loyola conta 2; a skill registra "cruzamento 71→70". Daí também TMB 5 × 4 e cauda 18 × 17.'
+    - 'Faturamento do principal s/ TMB: R$ 245.800,00 × R$ 245.800 — BATE EXATO, e só bate com as 9 manuais da 3A (sem elas seriam R$ 214.500).'
+    - 'Vendas excluídas por serem anteriores à abertura: 0 — com a abertura real 09/05, a exclusão da decisão 7 não pega nada no PG02.'
+    - 'Closer no principal: 56 (47 por utm_medium x1 + 9 manuais por seller_name) × 22 — DEFINIÇÃO do eixo de fechamento da 49.2 (R2-5). A 49.5 deve classificar; não é código desta story.'
+    - 'ROAS captação 1,82 × 1,81 e % compradores/cliques 5,04% × 5,14% — imposto + numerador (fonte).'
+    - 'ROAS só ingresso 0,46 × 0,56 e tier 42,5% × 38,3% — DEFINIÇÃO/CADASTRO: no Loyola a Gravação é `order_bump` pelo `product_types` (bump R$ 32.262,54 × R$ 13.866,55 só GPT na skill). Fica para a 49.5.'
 
 mutacoes_qa:
-  total: 32
-  mortas: 26
+  total: 10
+  mortas: 7
   lista:
-    - 'Q1 imposto reaplicado (gross-up 2×) — morta'
-    - 'Q2 coorte D+x pela data da venda — morta'
-    - 'Q3a/b/c reabertura no numerador / no denominador / no grupo principal — 3 mortas'
-    - 'Q4a/b/c pico com fração 0,2 / limiar sobre o total / dia zero como pico — 3 mortas'
-    - 'Q5 venda pré-carrinho não excluída — morta'
-    - 'Q6 venda-teste de R$ 5,00 excluída (proibido pela R2-4) — morta'
-    - 'Q7a/b/c PII: e-mail cru na chave / e-mail na auditoria / telefone em vendasExcluidas — 3 mortas'
-    - 'Q8a falha de leitura vira vazio — morta'
-    - 'Q9/Q10 ISO com Z e epoch-ms sem converter para BRT (meia-noite) — 2 mortas'
-    - 'Q11 `ferramentasDeAtendimento` não repassada ao classificador — morta'
-    - 'Q12 `closerPorSellerName` fixo — morta'
-    - 'Q13 order bump ancorando comprador de captação — morta'
-    - 'Q14 camada 2 sem produto na chave — morta'
-    - 'Q15 camada 1 roda sem coluna de ID (lacuna some) — morta'
-    - 'Q16 venda excluída ainda na Tabela 1 — morta'
-    - 'Q18 CTR com fallback 0 — morta'
-    - 'Q19 venda sem data do lead cai em D+0 — morta'
-    - 'Q20 comTierSuperior conta avulsos — morta'
-    - 'Q25 coluna de preço pelo mapping cego (líquido) — morta'
-    - 'Q8b SOBREVIVEU — `semIdentificador` da fonte de lead não chega ao diagnóstico (TEST-004)'
-    - 'Q17 SOBREVIVEU — % compradores/cliques com avulsos no numerador (TEST-002)'
-    - 'Q21 SOBREVIVEU — ROAS diário/pico com investimento SEM imposto (TEST-001)'
-    - 'Q22 SOBREVIVEU — valor do TMB na captação entra no faturamento (TEST-003)'
-    - 'Q23 SOBREVIVEU — UTM do lead por telefone antes do e-mail na classificação (TEST-004)'
-    - 'Q24 SOBREVIVEU — data do lead ignora `mapping.timestamp` (TEST-004)'
+    - 'QA-M1 janela ignora a reabertura — MORTA'
+    - 'QA-M2 empate fim do carrinho × fim do downsell vai para o downsell (`>=`) — SOBREVIVEU (só muda `fimPor`; o `fim` é o mesmo) → TEST-005'
+    - 'QA-M3 manual reembolsada DEPOIS da janela conta como venda (`or(isNull(refundedAt), gt(refundedAt, fim))`) — MORTA'
+    - 'QA-M4 ID da manual = produto (a camada 1 colapsaria manuais do mesmo produto) — MORTA'
+    - 'QA-M5 manual ignora `product_types` (sempre o default da etapa) — SOBREVIVEU → TEST-005'
+    - 'QA-M6 motor corta a MÍDIA no fim do carrinho e as vendas na janela — MORTA'
+    - 'QA-M7 `vendasManuais.linhasLidas` conta todas as linhas — MORTA'
+    - 'QA-M8 manual anterior à abertura não é excluída — MORTA'
+    - 'QA-M9 manual entra no faturamento, mas não em `vendasGrupo` (contagem do downsell/reabertura e texto do TMB) — SOBREVIVEU → TEST-005'
+    - 'QA-M10 janela começa na abertura do carrinho — MORTA'
+  mutacoes_do_dev_rodadas_pelo_qa: '19/19 mortas (MNT-001, CONTRACT-001, CONTRACT-003, Q17′, Q21, Q22, Q23, Q24, Q8b, 2A-motor, 2A-regra, 2A-regra-min, 2A-loader, 3A-nao-le, 3A-reembolso, 3A-fonte, 3A-closer, 3A-valor, 3A-nota)'
 
 issues:
-  - id: MNT-001
+  - id: REL-001
     severity: medium
-    category: docs/contract
-    description: 'A memória do `ticketCaptacao` formata o DENOMINADOR como dinheiro. `razao()` usa um único `formatar` para os dois lados, e o ticket passa `fmtReais`. Em produção sai "faturamento da captação R$ 230.501,64 ÷ compradores de captação R$ 1.807,00 = R$ 127,56". A memória é o texto que a 49.6 renderiza e que a 49.7 não pode contradizer (AC1). É a única razão com unidades mistas (ROAS = dinheiro÷dinheiro; conversões e % = contagem÷contagem).'
-    recommendation: '`razao` passa a aceitar `formatarDen`, ou o ticket monta a memória à mão, com o denominador em `fmtInt`. Incluir um teste que afirme a memória exata do ticket ("÷ compradores de captação 5 =").'
+    category: reliability/data
+    description: 'O loader lê as planilhas de venda de CADA etapa da config (`resolveSalesSheetsForStage` por etapa) e não deduplica entre etapas a mesma aba (`spreadsheetId` + `sheetName`). No PG02, a aba `n8n-kiwify-downsell` está ligada à "Downsell Vendas" (`stage_sales_spreadsheets`, subtype main_product, com `transactionId`/`productName` mapeados) E à "Downsell Captação" (`funnel_spreadsheets` tipo `sales`, SEM `transactionId`/`productName`). Com a config natural (Downsell Captação = `leads-downsell`, Downsell Vendas = `vendas-downsell`), as 83 linhas entram duas vezes: a camada 1 é por planilha e não pega; a camada 2 não colapsa porque o produto da cópia sai nulo. Resultado medido em produção: faturamento do downsell R$ 20.714,40 → R$ 41.428,80 (2×). A única pista no payload é a lacuna genérica `DEDUP_POR_ID_NAO_APLICADA` ("falta transactionId e productName"), que não diz que a aba já foi lida em outra etapa. O mesmo pode acontecer (hipótese, não medida) numa captação gratuita (`leads-captacao`) que tenha a planilha do principal ligada para medir conversão: as vendas do principal entrariam também no grupo captação. O defeito existe desde a38d381a, mas a 2A o tornou alcançável no PG02, porque a janela agora vai até o fim do downsell.'
+    recommendation: 'No loader: deduplicar as abas por `spreadsheetId|sheetName` entre as etapas, mantendo a da etapa `vendas-*` (ou a de mapeamento com ID + produto), e registrar `diagnostico.planilhaEmMaisDeUmaEtapa` (como já existe `campanhasEmMaisDeUmaEtapa`), com lacuna própria no motor. Teste no PGlite com a mesma aba em duas etapas, afirmando o faturamento simples. Discutir com o @po se uma etapa `leads-*` deve contribuir VENDAS (a resolução 10 só agrupa os papéis).'
     owner: '@dev'
     status: open
 
-  - id: CONTRACT-001
-    severity: medium
-    category: contract
-    description: '`captacao.compradoresUnicos.{porEmail,porEmailOuTelefone}` conta TODOS os compradores da etapa de captação, avulsos de order bump incluídos (o teste afirma 6 contra 5 ingressos). No PG02 isso dá 1.901/1.897, contra 1.807/1.806 do "comprador de captação = ingresso OU combo" (R2-1). O AC7 chama de "compradores únicos em dois critérios lado a lado" exatamente a comparação com a skill (1.845 × 1.807), e os números certos dela estão em `compradoresCaptacao.*.length`. Um consumidor (49.5 R6/49.6) que leia o campo pelo nome mostra 1.897 como a comparação com a skill. Nenhuma story consumidora cita `compradoresUnicos` hoje (grep).'
-    recommendation: 'Renomear para algo explícito (`compradoresDaEtapaInclusiveAvulsos`) ou fazer `compradoresUnicos` = `compradoresCaptacao[crit].length`, mantendo o total com avulsos em `avulsos`. JSDoc no tipo. Ajustar o teste do AC7.'
+  - id: TEST-005
+    severity: low
+    category: tests
+    description: 'Três mutações próprias sobreviveram: QA-M2 (empate do downsell com o carrinho vira `fimPor: downsell.fim`; o JSDoc diz que o empate fica com o carrinho e só o empate da reabertura é testado); QA-M5 (venda manual com produto marcado no `product_types`, por exemplo como combo, cai no default da etapa; o teste usa "Imersão" = ingresso numa etapa paga, onde o default também é ingresso); QA-M9 (manual fora de `vendasGrupo`: muda a contagem de vendas do downsell e da reabertura e o "N vendas" da nota de TMB; nenhum teste tem manual nesses grupos).'
+    recommendation: 'Três casos: empate downsell × carrinho; manual com produto classificado diferente do default da etapa; manual no downsell afirmando `apendiceReabertura.vendas`/vendas do downsell.'
     owner: '@dev'
     status: open
 
-  - id: CONTRACT-003
+  - id: INFO-001
     severity: low
-    category: contract
-    description: 'A 49.5 AC9 diz que o teste estático lê "como texto" os arquivos de engine/loader das 49.3/49.4/49.5 e exige que nenhum contenha `1.13`/`1,13`. Três comentários desta story têm `× 1,13` (`debriefing-hygiene.ts:32,123`; `debriefing-money-time-engine.ts:18`). O teste da própria 49.3 descarta comentários; o da 49.5, lido ao pé da letra, falharia.'
-    recommendation: 'Reescrever os 3 comentários como "nunca o fator da skill" (fica sem o literal), ou a 49.5 declara que descarta comentários. Mais barato do lado da 49.3.'
-    owner: '@dev (ou @po na 49.5)'
-    status: open
-
-  - id: TEST-001
-    severity: low
-    category: tests
-    description: 'Q21 sobreviveu: o ROAS diário e o pico-artefato podem usar o investimento SEM imposto e a suíte não percebe, porque o cenário do AC11 roda com `imposto = 0`. A armadilha #10 só está travada sem imposto. Em produção o ROAS diário ficaria cerca de 14% alto, e o limiar seria comparado contra uma média com imposto.'
-    recommendation: 'Um caso do AC11 com `imposto 0,1215` e datas ≥ 2026-01-01, afirmando `investimento` do dia = bruto ÷ (1 − pct).'
-    status: open
-
-  - id: TEST-002
-    severity: low
-    category: tests
-    description: 'Q17 sobreviveu: `pctCompradoresPorCliques` com avulsos no numerador (no PG02 seria 5,30% em vez de 5,04%) passa. O teste do AC10 não tem avulso.'
-    recommendation: 'Fixture do AC10 com 1 avulso, afirmando o numerador = `ingressosUnicos`.'
-    status: open
-
-  - id: TEST-003
-    severity: low
-    category: tests
-    description: 'Q22 sobreviveu: o valor do TMB NA CAPTAÇÃO entrando no faturamento/ticket passa. O AC4 diz "TMB na captação segue a mesma regra", mas só o principal é testado.'
-    recommendation: 'Planilha `tmb` na etapa de captação: a venda conta como comprador e o valor fica fora de `faturamentoCaptacao` e do ticket.'
-    status: open
-
-  - id: TEST-004
-    severity: low
-    category: tests
-    description: 'Mutações sobreviventes de menor impacto: Q23 (UTM do lead por telefone antes do e-mail), Q24 (data do lead ignorando `mapping.timestamp`; a memória da 44.12 registra que as fontes de lead mapeiam `timestamp`, e o apelido só salva quando o cabeçalho se chama "timestamp"/"Data"), Q8b (`semIdentificador` da fonte não chega ao `diagnostico`).'
-    recommendation: 'Um caso por item: lead com e-mail e telefone em registros diferentes; `mapping.timestamp` apontando para um cabeçalho fora dos apelidos; fonte sem e-mail nem telefone no teste do loader com PGlite.'
-    status: open
-
-  - id: DEC-OWNER-1
-    severity: medium
-    category: product
-    description: 'Camada 2 (e-mail, produto) contra o número governante. No PG02 o Debriefing sai −R$ 596,30 do Resumão corrigido (R$ 230.501,64 × R$ 231.097,94), com os mesmos 1.807 compradores. As 9 linhas são recompras em outro dia, não evento duplicado. Duas pontas estruturais a decidir junto: (a) a camada 2 roda ANTES do corte de janela, então uma recompra dentro da janela cuja primeira compra está fora é removida, e a sobrevivente é cortada (medido no PG02: 0 casos); (b) a camada 2 roda sobre TODAS as planilhas e grupos (o mesmo produto na reabertura e no principal colapsaria).'
-    recommendation: 'DONO decide: manter a regra da skill (a 49.5 classifica a diferença como `definicao`) ou colapsar só no mesmo pedido/dia. Se mantiver, decidir também se a camada 2 roda depois do corte de janela e por grupo.'
-    owner: 'dono'
-    status: pending_decision
-
-  - id: DEC-OWNER-2
-    severity: medium
-    category: product
-    description: 'Janela do debriefing: nenhuma story fixa o `periodo` que corta vendas e mídia. O motor exige `periodo`; a 49.6 (orquestrador) não o define (grep: nenhuma ocorrência de período/janela na 49.6).'
-    recommendation: 'DONO decide. Sugestão do @dev: de `inicioCaptacao` até o maior entre `fimCarrinho`, `reabertura.fim` e `downsell.fim`. Registrar na 49.6.'
-    owner: 'dono → @po (49.6)'
-    status: pending_decision
-
-  - id: DEC-OWNER-3
-    severity: medium
-    category: product
-    description: '`manual_sales` fora do motor: o AC12 lista só planilhas. Em produção o PG02 tem 9 vendas manuais na etapa Vendas (principal) que o painel soma e o Debriefing não. No Netão, o closer por `seller_name` pode morar nelas.'
-    recommendation: 'DONO decide se as vendas manuais entram (principal e/ou closer). Se entrarem, é AC novo, com loader e teste.'
-    owner: 'dono'
-    status: pending_decision
-
-  - id: DATA-001
-    severity: medium
     category: data
-    description: 'O `product_types` da Captação Paga do PG02 não classifica "Imersão Equipe de Agentes Claude" (1.311 vendas, R$ 58.562,90). Hoje o número sai certo pelo default `ingresso` da etapa paga, mas o motor a lista em `produtosNaoClassificados`, e o F14 da 49.5 bloquearia o PG02, como foi desenhado.'
-    recommendation: 'Alguém do time marca "Imersão Equipe de Agentes Claude" = `ingresso` pela UI de planilhas da etapa, antes da conferência da 49.5. É dado, não código, e não bloqueia o merge desta story.'
-    owner: 'dono/time de tráfego'
+    description: 'Para a 49.5 classificar, não é código desta story: closer no principal 56 × 22 da skill (eixo de fechamento da 49.2: 47 por `utm_medium=x1` + 9 manuais por `seller_name`); 6 vendas do principal com UTM em formato de array do Postgres (`m={"emailm","emailm"}`, `s={"qr","qr"}`) vindas da planilha n8n e classificadas como "Outros orgânicos"; Gravação = `order_bump` no `product_types`, o que move ROAS só ingresso e tier contra o §8.'
+    owner: '@po (49.5)'
     status: open
 
 top_issues:
-  - id: MNT-001
+  - id: REL-001
     severity: medium
-    finding: 'A memória do ticket mostra os compradores como "R$ 1.807,00".'
-    suggested_action: '@dev: formatação própria para o denominador + teste da memória exata.'
-  - id: CONTRACT-001
-    severity: medium
-    finding: '`captacao.compradoresUnicos` inclui os avulsos (1.901) e não é o comprador de captação da R2-1 (1.807).'
-    suggested_action: '@dev: renomear ou alinhar à R2-1; JSDoc.'
-  - id: DEC-OWNER-1..3
-    severity: medium
-    finding: 'Camada 2 × governante, janela do debriefing, `manual_sales` — decisões do dono que mudam número.'
-    suggested_action: 'Dono decide; não bloqueiam o código desta story.'
-  - id: DATA-001
-    severity: medium
-    finding: 'A Imersão do PG02 não tem `product_types`.'
-    suggested_action: 'Marcar como `ingresso` pela UI antes da 49.5.'
+    finding: 'A mesma aba ligada a duas etapas da config é lida duas vezes. No PG02, com a Downsell Captação como `leads-downsell`, o downsell dobra (R$ 20.714,40 → R$ 41.428,80).'
+    suggested_action: '@dev: deduplicar a aba entre etapas no loader + diagnóstico + teste PGlite (iteração 2 curta).'
+  - id: TEST-005
+    severity: low
+    finding: '3 mutações próprias sobreviventes (empate do downsell, `product_types` da manual, manual na contagem do grupo).'
+    suggested_action: '@dev: 3 casos de teste.'
 
 waiver: { active: false }
