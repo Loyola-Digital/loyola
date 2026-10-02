@@ -36,6 +36,8 @@ import { ErroDoAgente, montarWidgets } from "../services/bi/agente.js";
 import { aplicarDerivadas, validarDerivadas } from "../services/bi/derivadas.js";
 import { comPeriodo, preset } from "../services/bi/presets.js";
 import { ErroDeQuery, executarQuery, type ResultadoDaQuery } from "../services/bi/query.js";
+import { valoresConhecidos } from "../services/bi/valores.js";
+import { porQueVazio } from "../services/bi/vazio.js";
 
 const paramsSchema = z.object({ projectId: z.string().uuid() });
 const paramsComIdSchema = paramsSchema.extend({ id: z.string().uuid() });
@@ -688,10 +690,24 @@ export default fp(async function biDashboardsRoutes(fastify) {
     };
 
     try {
+      const alcanceDoAgente = await escopoDe(linha, request.userId!, request.userRole!);
+      // Os valores reais das dimensões vão no prompt: sem eles o modelo escreve
+      // o lado direito do filtro de cabeça. Falha aqui não derruba a pergunta —
+      // sem a lista ele monta como sempre montou.
+      const valores = await valoresConhecidos({
+        db: fastify.db as never,
+        projectIds: alcanceDoAgente,
+        log: fastify.log,
+      }).catch((erro) => {
+        fastify.log.warn({ erro }, "não consegui listar os valores das dimensões");
+        return {};
+      });
+
       const resposta = await montarWidgets(corpo.data.pergunta, {
         cliente: fastify.claude.client,
         ocupados: widgets.map((w) => w.geometria),
         aoProgredir: (passo) => escrever({ tipo: "passo", passo }),
+        valores,
       });
 
       // Cabe o que sobra: o teto vale igual para quem pede à IA.
@@ -711,11 +727,36 @@ export default fp(async function biDashboardsRoutes(fastify) {
       // Cada widget sai assim que o número dele chega: é vendo o valor que a
       // pessoa julga se a pergunta foi entendida, e esperar o último para
       // mostrar o primeiro não ajuda em nada.
-      const ctx = contextoDe(linha);
-      const alcance = await escopoDe(linha, request.userId!, request.userRole!);
+      // A data que a pergunta pediu vira o período do DASHBOARD: é ele que a
+      // execução injeta em cada consulta, então sem isto "as vendas do dia
+      // 01/10/26" liam o período que estava na tela e voltavam vazias. Muda
+      // para todos os widgets, e por isso o aviso é obrigatório.
+      let ctx = contextoDe(linha);
+      if (resposta.periodo && (resposta.periodo.start !== ctx.periodo.start || resposta.periodo.end !== ctx.periodo.end)) {
+        const antes = ctx.periodo;
+        ctx = { ...ctx, periodo: resposta.periodo };
+        await fastify.db
+          .update(biDashboards)
+          .set({ dateRange: resposta.periodo, updatedAt: new Date() })
+          .where(eq(biDashboards.id, p.data.id));
+        avisos.push(
+          `O período do dashboard passou de ${antes.start}–${antes.end} para ` +
+            `${resposta.periodo.start}–${resposta.periodo.end}, como a pergunta pediu. ` +
+            `Os outros widgets também passam a mostrar esse período.`,
+        );
+        escrever({ tipo: "periodo", periodo: resposta.periodo });
+      }
+
       for (const w of cabem) {
         escrever({ tipo: "passo", passo: { tipo: "calculando", titulo: w.titulo } });
-        const resultado = await executarWidget(w, alcance, ctx);
+        const resultado = await executarWidget(w, alcanceDoAgente, ctx);
+        // Widget que nasce sem número nenhum vira aviso, não card mudo. Era
+        // assim que a pergunta do Alberto terminava: a IA dizia que tinha
+        // montado, e os cards vinham zerados sem nada explicando.
+        if ("rows" in resultado) {
+          const motivo = porQueVazio(w.titulo, w.spec, resultado, ctx.periodo);
+          if (motivo) avisos.push(motivo);
+        }
         escrever({ tipo: "widget", widget: w, resultado });
       }
 
