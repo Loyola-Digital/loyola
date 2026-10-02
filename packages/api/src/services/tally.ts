@@ -186,3 +186,121 @@ export function lerPerguntas(bruto: { questions?: QuestionCrua[] }): PerguntaDoT
 export async function perguntasDoFormulario(token: string, formId: string): Promise<PerguntaDoTally[]> {
   return lerPerguntas(await chamar<{ questions?: QuestionCrua[] }>(token, `/forms/${formId}/questions`));
 }
+
+// ============================================================
+// Respostas
+// ============================================================
+
+/**
+ * As respostas no MESMO formato de uma planilha (`{headers, rows}`).
+ *
+ * ## Por que esta forma e não um tipo próprio
+ *
+ * O motor de Lead Scoring casa cada pergunta com uma COLUNA pelo cabeçalho, e
+ * já sabe fazer isso muito bem — inclusive com aliases, acento e pontuação.
+ * Devolver `{headers, rows}` faz o Tally entrar por onde a planilha entrava,
+ * sem tocar em nenhuma linha do cálculo. O que muda é a origem; a conta é a
+ * mesma, e por isso continua comparável com o que já estava no ar.
+ */
+export interface RespostasComoPlanilha {
+  headers: string[];
+  rows: string[][];
+  /** Quantas submissões entraram — para a tela dizer de onde veio o número. */
+  total: number;
+}
+
+/** O valor de uma resposta como texto, qualquer que seja o tipo que o Tally mande. */
+export function textoDaResposta(resposta: {
+  answer?: unknown;
+  formattedAnswer?: unknown;
+}): string {
+  // `formattedAnswer` é o que o Tally mostra na tela dele: para múltipla
+  // escolha vem o TEXTO da alternativa, não o id. É o que casa com o modelo de
+  // pontuação, que fala em texto.
+  const formatado = resposta.formattedAnswer;
+  if (typeof formatado === "string" && formatado.trim()) return formatado.trim();
+
+  const bruto = resposta.answer;
+  if (bruto == null) return "";
+  if (typeof bruto === "string") return bruto.trim();
+  if (typeof bruto === "number" || typeof bruto === "boolean") return String(bruto);
+  if (Array.isArray(bruto)) {
+    // Múltipla seleção: a planilha também traz separado por vírgula, então o
+    // casamento com o modelo continua funcionando do mesmo jeito.
+    return bruto.map((v) => textoDaResposta({ answer: v })).filter(Boolean).join(", ");
+  }
+  if (typeof bruto === "object") {
+    const o = bruto as Record<string, unknown>;
+    for (const chave of ["title", "label", "text", "name", "value"]) {
+      const v = o[chave];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+    return "";
+  }
+  return "";
+}
+
+interface SubmissionCrua {
+  id?: string;
+  isCompleted?: boolean;
+  submittedAt?: string;
+  responses?: { questionId?: string; answer?: unknown; formattedAnswer?: unknown }[];
+}
+
+/**
+ * Monta a "planilha" a partir de uma página de submissões.
+ *
+ * A primeira coluna é a data do envio: o motor e os relatórios precisam dela, e
+ * no Tally ela é metadado da submissão, não uma pergunta. Pura, para ser
+ * testada com o JSON real sem rede.
+ */
+export function montarPlanilha(
+  perguntas: PerguntaDoTally[],
+  submissions: SubmissionCrua[],
+): RespostasComoPlanilha {
+  const headers = ["Submitted at", ...perguntas.map((p) => p.titulo)];
+  const rows: string[][] = [];
+
+  for (const s of submissions) {
+    const porPergunta = new Map<string, string>();
+    for (const r of s.responses ?? []) {
+      if (!r.questionId) continue;
+      const texto = textoDaResposta(r);
+      if (texto) porPergunta.set(r.questionId, texto);
+    }
+    rows.push([s.submittedAt ?? "", ...perguntas.map((p) => porPergunta.get(p.id) ?? "")]);
+  }
+
+  return { headers, rows, total: rows.length };
+}
+
+/**
+ * As respostas do formulário, paginando até acabar.
+ *
+ * Só as COMPLETAS: uma submissão parcial tem metade das perguntas em branco e
+ * pontuaria como lead ruim — o que seria uma afirmação sobre o lead a partir de
+ * um fato sobre o formulário.
+ *
+ * ponytail: teto de páginas; 20 x 500 = 10 mil respostas, acima do maior
+ * lançamento que passou por aqui. Se um dia faltar, o lugar de resolver é um
+ * cache incremental por `afterId`, não aumentar o número.
+ */
+export async function respostasDoFormulario(
+  token: string,
+  formId: string,
+  maxPaginas = 20,
+): Promise<RespostasComoPlanilha> {
+  const perguntas = await perguntasDoFormulario(token, formId);
+  const todas: SubmissionCrua[] = [];
+
+  for (let pagina = 1; pagina <= maxPaginas; pagina += 1) {
+    const r = await chamar<{ submissions?: SubmissionCrua[]; hasMore?: boolean }>(
+      token,
+      `/forms/${formId}/submissions?page=${pagina}&limit=500&filter=completed`,
+    );
+    todas.push(...(r.submissions ?? []));
+    if (!r.hasMore) break;
+  }
+
+  return montarPlanilha(perguntas, todas);
+}
