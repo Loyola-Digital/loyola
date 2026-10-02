@@ -11,6 +11,11 @@
  * tipo Debriefing e pertencer ao funil/projeto da URL (senão 404 — IDOR).
  *
  * Padrão de `routes/launch-report-config.ts` (41.1); o gate do Resumão não muda.
+ *
+ * Story 49.11: a comparação vira LISTA ordenada (`lancamentosComparacao`, o 1º
+ * é a principal) e a config ganha `pesquisaDeCaptacaoPorEtapa` (R6-7). O campo
+ * antigo `lancamentoComparacaoFunnelId` continua aceito no PUT e devolvido no
+ * GET (= o 1º item); o PUT grava as duas colunas coerentes (migration 0162).
  */
 
 import { z } from "zod";
@@ -22,10 +27,14 @@ import { resolveImpostoPct } from "../services/launch-report-config.js";
 import {
   DEBRIEFING_PAPEIS,
   DIMENSOES_DE_CRIATIVO,
+  MAX_LANCAMENTOS_COMPARACAO,
   VALORES_VAZIOS,
   avaliarBloqueioDebriefing,
   avisosDebriefing,
   camposFaltantesDebriefing,
+  comparacaoDoCorpo,
+  comparacoesDe,
+  comparacoesRemovidasDe,
   criarDebriefingConfigStore,
   dataExiste,
   erroTipoDeFunilNaoSuportado,
@@ -35,6 +44,7 @@ import {
   normalizarCloserMediums,
   premissaEfetiva,
   premissaMudou,
+  problemasDaPesquisaDeCaptacao,
   problemasDasPerguntas,
   problemasDoCorpoLancamento,
   tipoAceitaConfig,
@@ -92,7 +102,15 @@ const corpoLancamentoSchema = z
         downsell: respostaEtapaExtra,
       })
       .strict(),
+    /** Forma da 49.1 (API antiga): continua aceito — sozinho vale `[id]` (49.11 AC3 c). */
     lancamentoComparacaoFunnelId: z.string().uuid().nullable().optional(),
+    /** 49.11 — lista ORDENADA (o 1º é a principal, R6-5); `[]` = sem comparação. */
+    lancamentosComparacao: z
+      .array(z.string().uuid())
+      .max(MAX_LANCAMENTOS_COMPARACAO, `no máximo ${MAX_LANCAMENTOS_COMPARACAO} lançamentos de comparação`)
+      .optional(),
+    /** 49.11 (R6-7) — `{ stageId: funnel_surveys.id }`; omitido = `{}`. */
+    pesquisaDeCaptacaoPorEtapa: z.record(z.string().uuid(), z.string().uuid()).optional(),
     etapas: z
       .array(z.object({ stageId: z.string().uuid(), papel: z.enum(DEBRIEFING_PAPEIS) }).strict())
       .min(1, "ao menos 1 etapa compõe o lançamento"),
@@ -214,15 +232,25 @@ export default fp<DebriefingConfigRoutesOptions>(async function debriefingConfig
               reabertura: raw.reabertura,
               downsell: raw.downsell,
             },
+            /** A principal GRAVADA (= `lancamentosComparacao[0]`), mesmo se removida — rastro. */
             lancamentoComparacaoFunnelId: raw.lancamentoComparacaoFunnelId,
+            /**
+             * 49.11 — a lista GRAVADA, na ordem, com os removidos (rastro: o
+             * formulário os mostra riscados). A efetiva é esta menos `comparacoesRemovidas`.
+             */
+            lancamentosComparacao: comparacoesDe(raw),
+            /** 49.11 (R6-7) — `{ stageId: funnel_surveys.id }`. */
+            pesquisaDeCaptacaoPorEtapa: raw.pesquisaDeCaptacaoPorEtapa ?? {},
             etapas: raw.etapas,
             perguntasConfirmadas: raw.perguntasConfirmadas,
             closerMediums: raw.closerMediums,
             closerPorSellerName: raw.closerPorSellerName,
             ferramentasDeAtendimento: raw.ferramentasDeAtendimento,
             dimensaoDeCriativo: raw.dimensaoDeCriativo,
-            /** O id acima foi apagado/saiu do projeto: o gerador faz edição única (R4-14). */
+            /** Algum id da lista foi apagado/saiu do projeto (R4-14; 49.11: por item). */
             comparacaoRemovida: raw.comparacaoRemovida,
+            /** 49.11 — quais ids da lista gravada foram removidos (um aviso por item). */
+            comparacoesRemovidas: comparacoesRemovidasDe(raw),
             validado: raw.validado,
             validadoEm: raw.validadoEm,
             validadoPor: raw.validadoPor,
@@ -277,13 +305,24 @@ export default fp<DebriefingConfigRoutesOptions>(async function debriefingConfig
         return reply.code(400).send({ error: "Dados inválidos", erros: errosDoZod(body.error) });
       }
       const b = body.data;
+      // 49.11 AC3 (c): campo antigo, lista, ou os dois coerentes — divergência é 400.
+      const comparacao = comparacaoDoCorpo(b.lancamentoComparacaoFunnelId, b.lancamentosComparacao);
+      if ("erro" in comparacao) {
+        return reply.code(400).send({ error: "Dados inválidos", erros: [comparacao.erro] });
+      }
       valores = {
         inicioCaptacao: b.datasChave.inicioCaptacao,
         aberturaCarrinho: b.datasChave.aberturaCarrinho,
         fimCarrinho: b.datasChave.fimCarrinho,
         reabertura: b.datasChave.reabertura,
         downsell: b.datasChave.downsell,
-        lancamentoComparacaoFunnelId: b.lancamentoComparacaoFunnelId ?? null,
+        // A principal = o 1º item. Corpo na forma da 49.1 (só o campo antigo) segue
+        // na forma da 49.1; o store grava as DUAS colunas coerentes (49.11 AC3 d).
+        lancamentoComparacaoFunnelId: comparacao.lista[0] ?? null,
+        ...(comparacao.peloCampoAntigo ? {} : { lancamentosComparacao: comparacao.lista }),
+        ...(b.pesquisaDeCaptacaoPorEtapa === undefined
+          ? {}
+          : { pesquisaDeCaptacaoPorEtapa: { ...b.pesquisaDeCaptacaoPorEtapa } }),
         etapas: b.etapas.map((e) => ({ stageId: e.stageId, papel: e.papel })),
         perguntasConfirmadas: (b.perguntasConfirmadas ?? {}) as ValoresDaConfig["perguntasConfirmadas"],
         closerMediums: b.closerMediums === undefined ? null : normalizarCloserMediums(b.closerMediums),
@@ -303,7 +342,16 @@ export default fp<DebriefingConfigRoutesOptions>(async function debriefingConfig
         funnelId: ctx.funnelId,
         etapasDoFunil: etapasDoFunil.map((e) => e.id),
         funisDoProjeto,
+        comparacaoPeloCampoAntigo: comparacao.peloCampoAntigo,
       });
+      // 49.11 (R6-7): a pesquisa marcada é uma pesquisa DAQUELA etapa do lançamento.
+      const marcadas = valores.pesquisaDeCaptacaoPorEtapa ?? {};
+      if (Object.keys(marcadas).length > 0) {
+        const etapasDoLancamento = valores.etapas.map((e) => e.stageId);
+        problemas.push(
+          ...problemasDaPesquisaDeCaptacao(marcadas, etapasDoLancamento, await s.pesquisasDasEtapas(etapasDoLancamento)),
+        );
+      }
       if (problemas.length > 0) {
         return reply.code(400).send({ error: "Dados inválidos", erros: problemas });
       }

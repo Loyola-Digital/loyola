@@ -3613,7 +3613,7 @@ export const expertReportConfigs = pgTable(
 // faltante (CONFIG_INCOMPLETA) em vez de presumir. Os vocabulários
 // (`DEBRIEFING_PAPEIS`, `DIMENSOES_DE_CRIATIVO`) moram no service
 // `services/debriefing-config.ts`; aqui só o tipo (import type, sem ciclo em
-// runtime). Migration 0161.
+// runtime). Migration 0161 (+ 0162, Story 49.11: lista de comparação).
 
 export const debriefingConfigs = pgTable(
   "debriefing_configs",
@@ -3636,6 +3636,25 @@ export const debriefingConfigs = pgTable(
      * COMPARACAO_REMOVIDA (49.1 QA REL-002 + decisão do dono R4-14).
      */
     lancamentoComparacaoFunnelId: uuid("lancamento_comparacao_funnel_id"),
+    /**
+     * Story 49.11 (migration 0162) — lista ORDENADA de funis de comparação do
+     * mesmo projeto; o 1º é a comparação principal (R6-5). Sem FK, como a
+     * coluna acima. A coluna antiga fica (API antiga/rollback): a leitura usa a
+     * lista quando o 1º item é igual a ela; se divergirem, vale a antiga
+     * (`valoresDaLinha`). O PUT grava as duas coerentes.
+     */
+    lancamentosComparacao: jsonb("lancamentos_comparacao")
+      .notNull()
+      .default([])
+      .$type<string[]>(),
+    /**
+     * Story 49.11 (R6-7) — `{ stageId: funnel_surveys.id }`: em etapa com 2+
+     * pesquisas, a pesquisa de captação cuja resposta vence o desempate sem data.
+     */
+    pesquisaDeCaptacaoPorEtapa: jsonb("pesquisa_de_captacao_por_etapa")
+      .notNull()
+      .default({})
+      .$type<Record<string, string>>(),
     /** Etapas do funil que compõem o lançamento, com o papel de cada uma. */
     etapas: jsonb("etapas")
       .notNull()

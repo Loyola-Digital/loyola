@@ -1,0 +1,121 @@
+schema: 1
+storyId: '49.11'
+story: '49.11'
+story_title: 'Série histórica = lista de lançamentos de comparação na config do Debriefing (e a pesquisa dos alunos entra na qualificação)'
+verdict: PASS
+gate: PASS
+status_reason: 'O gate cobre os AC1–AC6, AC8 e AC10–AC12. O AC7 e o AC9 foram transferidos à 49.6. A migration 0162 é aditiva e foi provada em PGlite pelo QA: 19 → 21 colunas, reaplicada 21, rollback 19, reaplicada 21. A linha da 49.1 fica byte a byte igual e não há UPDATE nem DROP fora de comentário. As 20 mutações do QA morrem (20/20), entre elas as 6 pedidas. As suítes da story dão 252/252 (1 timeout de carga, que passa isolado). Na regressão da API, as falhas são as 12 pré-existentes em 5 arquivos, mais 4 timeouts de carga que passam isolados. `tsc` da API e do shared e `eslint` estão limpos. O T0 em produção (só leitura) foi reproduzido de forma independente: 1.272 + 356 − 23 = 1.605; com a marca simulada, A+B 352/1.605 = 21,93% e D 789; sem marca, 361 (22,49%) e 781. Com n = 1, o payload sai idêntico entre a entrada legada e a lista de 1, também com dados reais. Não resta medium nem high. CONDIÇÕES DE MERGE: (1) o @devops aplica a 0162 à mão em produção e cola a prova do information_schema (21 colunas); sem ela, o GET e o PUT da config dão 500. (2) A versão do contrato: quem mergear depois da 41.12A usa 32.'
+reviewer: 'Quinn'
+updated: '2026-10-02T10:30:00-03:00'
+branch: 'feat/49.11-serie-historica-lista'
+commit_reviewed: '63c23f64'
+base: 'origin/main 7c1e70af (a main avançou para 6b54c9ae, #965, que só toca o web: sem conflito e com o contrato ainda em 30)'
+
+checks:
+  1_requirements: 'PASS. AC1–AC6, AC8, AC10 e AC11 estão atendidos. AC7, AC9 e AC11(f) foram transferidos à 49.6 (AUTO-DECISION do @po). O AC12 só tem pendente a aplicação da 0162 em produção, que por instrução do lead não é desta story. Essa pendência é condição de merge.'
+  2_tests: 'PASS. Nas suítes da story (lista, serie-historica, config, config-routes, config-store, audience-engine, audience-loader e launch-report-config) passaram 251 de 252. O 252º é o scanner estático do AC10(a), que estourou os 5 s com load ~80 e passa isolado (18/18) → TEST-001. Na suíte inteira da API: 4.008 passaram, 15 falharam e 35 foram puladas. Dessas 15, 12 são as pré-existentes em 5 arquivos fora da story (funnel-stages-lead-inputs, instagram-routes, instagram, projects, schema). As outras 3, mais 1 erro de hook, são timeouts de carga (load 120–130) em classificador-de-origem, debriefing-config R1, debriefing-money-time-loader e lp-correcao-e-fio-1883, e os 4 arquivos passam isolados (179, 58, 35 e 19). Mutações do QA: 20/20 mortas.'
+  3_lint_typecheck: 'PASS. `tsc --noEmit` com o binário direto: api 0 erros, shared 0 erros. `eslint` nos 10 arquivos do diff da API: exit 0. O web não muda (só a constante do contrato) e o QA não refez o next build do web: vale o do @dev.'
+  4_security_pii: 'PASS. Nenhum "@" nos 5 payloads do T0. As fixtures são sintéticas. A rota mantém o escopo de projeto/funil, e cada item da lista é conferido como funil DO MESMO projeto (sem IDOR entre projetos).'
+  5_performance: 'PASS. Sem chamada à Meta. A principal não é relida: com n = 3, só 1 leitura nova de planilha (a do PG05; o PG03 não tem pesquisa). O nome do funil só é consultado com 2+ itens. O teto de 10 itens está no zod e no service.'
+  6_regression: 'PASS. Com n = 1, as suítes da 49.1 e da 49.4 passam sem edição de asserção (só acréscimos, listados no Dev Agent Record). O golden do motor da main passa byte a byte, fora os 2 contadores do AC10. Em produção, PG02 × PG04 sai igual pela entrada legada e pela lista de 1. A 0162 não muda a premissa de nenhuma linha, e uma linha [X] lida depois da migração vale [X].'
+  7_docs: 'PASS. O Dev Agent Record traz o T0, a prova da migration, as AUTO-DECISIONs, as 15 mutações do @dev, o File List e o Change Log. A 0162 tem o rollback e a prova no topo.'
+  8_api_contract: 'PASS COM CONDIÇÃO. `API_CONTRACT_VERSION` vai de 30 a 31, com linha de histórico. A main segue em 30, e a 41.12A também sobe para 31. Quem mergear depois renumera para 32 e acrescenta a linha (CONTRACT-002). É aditivo: o PUT continua aceitando o campo antigo e o GET continua devolvendo `lancamentoComparacaoFunnelId`. Nenhum consumidor no web nem no mcp.'
+
+compatibilidade:
+  api_antiga_v30_com_0162: 'OK. O Drizzle lista as colunas explicitamente. A API antiga lê `lancamento_comparacao_funnel_id`, que o PUT novo grava = lista[0]. A escrita da API antiga deixa a lista intacta. Se ela trocar a principal, a leitura nova vê a divergência e cai em [antiga] (teste PGlite R1/AC2 + mutação Q6a).'
+  api_nova_sem_0162: 'Dá 500 no GET e no PUT da config. Por isso a 0162 tem de ir antes do (ou junto com o) deploy. Hoje há 0 configs gravadas em produção e nenhuma UI consome a rota.'
+  rollback: 'A coluna antiga fica sempre coerente com o 1º item, então a API da 49.1 continua lendo a principal depois do DROP das colunas novas. A ordem documentada é reverter a API e só depois dar o DROP.'
+  front: 'Sem consumidor no web hoje (grep: só shared/api). A regra "≤1 item envia só o campo antigo" é do AC7, que foi para a 49.6.'
+
+verificacao_migration_pglite:
+  script: 'scratchpad/qa4911/mig.mjs (independente do script do @dev)'
+  resultado: '0161 → 19 colunas, 4 constraints p/f/c, índices pkey + stage_uniq. 0162 → 21, com as mesmas constraints e índices. Colunas novas jsonb NOT NULL com default `[]` e `{}`. A linha da 49.1 fica intacta, e há 0 linhas fora do default. Reaplicada: 21. NOT NULL barra NULL. O rollback do topo volta a 19, com a linha intacta, e a reaplicação dá 21. Fora de comentário não há UPDATE nem DROP. Drizzle `getTableConfig` = 21.'
+
+verificacao_producao:
+  ambiente: 'banco com `default_transaction_read_only = on`; Google só leitura; loader e motor de 63c23f64; script scratchpad/qa4911/t0qa.mts'
+  estado: 'debriefing_configs com 19 colunas (0162 não aplicada) e 0 linhas. 0162 livre na main e nas branches remotas (só esta branch a usa).'
+  respondentes: 'Normalização própria do QA (trim + lowercase): principal 1.272, alunos 356, nas duas 23, união 1.605 = 1.272 + 356 − 23. Linhas lidas 1.669 − 0 vazias − 64 duplicadas = 1.605 (a conta fecha nos 3 cenários).'
+  sem_marca: 'A97 B264 C463 D781; A+B 361/1.605 = 22,49%; 64 duplicadas, todas sem data; lacuna DESEMPATE_SEM_PESQUISA_DE_CAPTACAO presente'
+  marca_principal: 'A96 B256 C464 D789; A+B 352/1.605 = 21,93%; 27 decididas pela marca; sem lacuna — bate com o relato e com o DATA-002 da 49.4'
+  marca_alunos: 'Prova cruzada do QA: dá EXATAMENTE o "sem marca" (361/781), com dimensões e faixa idênticas e 23 decididas pela marca. Hoje a posição favorece a "Alunos" (ordem alfabética da aba), e a marca inverte isso só quando aponta a principal.'
+  serie_real: 'n = 1 (PG04): faixa e renda são série; profissao e funcionarios dão AUSENTE_NO_LANCAMENTO_DE_COMPARACAO; payload legado ≡ lista de 1, sem `serieHistorica`. n = 2 [PG04, PG05]: renda é PRESENTE_EM_TODOS; faixa dá AUSENTE_EM_LANCAMENTO_DA_LISTA [PG05]; profissao e funcionarios dão AUSENTE [PG04]. n = 3 [PG04, PG05, PG03]: tudo COMPARACAO_SEM_PESQUISA com lancamentosSemPesquisa [PG03]. Composição com nome, posição e principal. O cross-launch é o da principal: igual ao de n = 1, e muda quando a lista é invertida.'
+
+mutacoes_qa:
+  total: 20
+  mortas: 20
+  arvore: 'restaurada depois de cada mutação; `git status` limpo no fim'
+  lista:
+    - 'Q1a contrato: principal = último da efetiva — MORTA (rotas b,d)'
+    - 'Q1b loader: base anterior = último da lista — MORTA (loader a,b; e; DADO_INDISPONIVEL)'
+    - 'Q1c valoresDaLinha: principal = último — MORTA (rotas b,d; AC5)'
+    - 'Q2a R6-5: principal removida vira edição única em vez de promover a próxima — MORTA (rotas AC5; PGlite AC5)'
+    - 'Q2b R6-5: aviso nomeia a última efetiva como nova principal — MORTA'
+    - 'Q3a série ignora o último lançamento (marca série com 1 ausente) — MORTA'
+    - 'Q3b loader: lançamentos 2..n reusam as chaves da principal (fio) — MORTA'
+    - 'Q3c loader: funil sem pesquisa vira [] em vez de null — MORTA'
+    - 'Q4a fio: loader nunca marca a pesquisa de captação — MORTA'
+    - 'Q4b desempate: marca sem a condição de mesma etapa — MORTA'
+    - 'Q5a n = 1: AUSENTE passa a levar lancamentosAusentes (payload muda) — MORTA (golden 2 testes)'
+    - 'Q6a divergência: antiga na frente + resto da lista (antiga "vence" só em parte) — MORTA (puro + PGlite)'
+    - 'Q7 premissa com a lista ordenada (sort) — MORTA'
+    - 'Q8 marca fora da premissa — MORTA'
+    - 'Q9 PUT aceita pesquisa de outra etapa — MORTA'
+    - 'Q10 corpo aceita antigo ≠ lista[0] — MORTA'
+    - 'Q11 premissaEfetiva só filtra a principal — MORTA'
+    - 'Q12 GET devolve a efetiva (perde o rastro) — MORTA'
+    - 'Q13 PUT aceita item repetido — MORTA'
+    - 'Q14 gravar: coluna antiga = último item — MORTA (PGlite AC3 d; AC5)'
+
+auto_decisions_avaliadas:
+  get_lista_gravada: 'ACEITA. O AC5(e) é explícito, e o formulário precisa do órfão para riscá-lo. Ressalva CONTRACT-001: o mesmo nome `lancamentosComparacao` quer dizer "gravada" no GET e "efetiva" no contrato do gerador.'
+  composicao_so_com_2: 'ACEITA. É o único jeito de cumprir ao mesmo tempo o AC8(d) e o AC8(g) (n = 1 idêntico). Com 1 item, a 49.6 tira o nome do `crossLaunch.funnelIdAnterior` e da config.'
+  campos_opcionais: 'ACEITA. Toda leitura passa por `comparacoesDe` e `comparacoesRemovidasDe` (fallback para a forma da 49.1). Carregador, PUT e `valoresDaLinha` sempre preenchem. O risco de um produtor novo esquecer o campo fica coberto pelo fallback, que tem o mesmo significado.'
+  n1_com_2_contadores: 'ACEITA. O AC10 exige `duplicadasSemData`, e o teste retira só esses 2 campos antes do byte a byte.'
+  marca_na_PesquisaInput: 'ACEITA. É equivalente à marca por linha, e o motor continua sem nome de aba.'
+  mesmo_dia_e_empate: 'ACEITA. É o texto do AC10(d) ("empate ou sem data").'
+
+nota_para_o_po:
+  - 'No PG02, o `survey_type` SEPARA as duas pesquisas da Captação Paga: `Pesquisa-Captação` = paid, `Pesquisa-Captação - Alunos` = organic (conferido em produção). A premissa da decisão "survey_type não separa as duas" NÃO vale nesse caso. A decisão "por config, nunca por nome" continua de pé, porque `survey_type` diz o canal (pago/orgânico) e não o papel "captação". Registre a premissa corrigida no Change Log da story e na 49.6.'
+  - 'Os dados reais do DG mostram que, com a lista [PG04, PG05, PG03], nenhuma dimensão vira série: o PG03 não tem pesquisa conectada e o PG05 não tem a faixa. É útil para o dono antes de montar a config do DG.'
+
+issues:
+  - id: TEST-001
+    severity: low
+    category: tests/reliability
+    description: 'O scanner estático do AC10(a) (debriefing-serie-historica.test.ts:286) usa o timeout padrão de 5 s e estourou com load ~80. Isolado, leva cerca de 0,4 s. É o mesmo padrão do TEST-004 da 49.1.'
+    recommendation: 'Passar timeout explícito (ex.: 30_000) no `it` do scanner.'
+    owner: '@dev'
+    status: open
+  - id: CONTRACT-001
+    severity: low
+    category: contract/docs
+    description: '`lancamentosComparacao` no GET = lista GRAVADA, com os órfãos (AC5 e). No contrato do gerador = lista EFETIVA (AC6). O nome é o mesmo e os significados são diferentes.'
+    recommendation: 'A 49.6 registra no AC11/AC7 que a efetiva do formulário = GET.lancamentosComparacao − GET.comparacoesRemovidas, e que o "comparação principal" exibido é o 1º da efetiva.'
+    owner: '@po (49.6)'
+    status: open
+  - id: CONTRACT-002
+    severity: low
+    category: contract
+    description: 'A 41.12A também sobe `API_CONTRACT_VERSION` para 31.'
+    recommendation: 'O @devops: quem mergear depois renumera para 32 e acrescenta a linha de histórico (check 8).'
+    owner: '@devops'
+    status: open
+  - id: REL-001
+    severity: low
+    category: ops/migration
+    description: 'A 0162 não está aplicada em produção (19 colunas). Com o deploy da API desta branch, o GET e o PUT da config do debriefing dão 500 até a aplicação. O impacto hoje é baixo: há 0 configs e nenhuma UI consome a rota.'
+    recommendation: 'O @devops aplica `0162_debriefing_lancamentos_comparacao.sql` pelo NOME COMPLETO, junto com o merge, e cola as 3 provas do topo do arquivo (21 colunas; constraints p/f/c inalteradas; 0 linhas fora do default).'
+    owner: '@devops'
+    status: open
+
+top_issues:
+  - id: REL-001
+    severity: low
+    finding: 'A 0162 precisa ser aplicada à mão em produção no merge; sem ela, a rota dá 500.'
+    suggested_action: 'O @devops aplica e prova pelo information_schema.'
+  - id: CONTRACT-002
+    severity: low
+    finding: 'A versão do contrato colide com a 41.12A (as duas em 31).'
+    suggested_action: 'Quem mergear depois renumera para 32.'
+
+waiver: { active: false }
