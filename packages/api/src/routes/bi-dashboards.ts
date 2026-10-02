@@ -11,7 +11,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { and, desc, eq } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { biDashboards, projectMembers, projects } from "../db/schema.js";
+import { biDashboards, projectMembers, projects, users } from "../db/schema.js";
 import {
   LIMITE_DE_WIDGETS,
   PADRAO_POR_TIPO,
@@ -22,6 +22,8 @@ import {
   resolverPeriodo,
   widgetSchema,
   widgetsGuardados,
+  perguntasGuardadas,
+  MAX_PERGUNTAS,
   type DateRange,
   type Widget,
 } from "../services/bi/dashboard.js";
@@ -36,6 +38,8 @@ import { ErroDoAgente, montarWidgets } from "../services/bi/agente.js";
 import { aplicarDerivadas, validarDerivadas } from "../services/bi/derivadas.js";
 import { comPeriodo, preset } from "../services/bi/presets.js";
 import { ErroDeQuery, executarQuery, type ResultadoDaQuery } from "../services/bi/query.js";
+import { valoresConhecidos } from "../services/bi/valores.js";
+import { porQueVazio } from "../services/bi/vazio.js";
 
 const paramsSchema = z.object({ projectId: z.string().uuid() });
 const paramsComIdSchema = paramsSchema.extend({ id: z.string().uuid() });
@@ -151,6 +155,7 @@ export default fp(async function biDashboardsRoutes(fastify) {
       // chegue num dia diferente do servidor por causa do fuso do navegador.
       periodo: resolverPeriodo(dateRange),
       slicers: slicersGuardados(linha.slicers),
+      perguntas: perguntasGuardadas(linha.perguntas),
       escopo: linha.escopo === "todos" ? ("todos" as const) : ("projeto" as const),
       createdBy: linha.createdBy,
       createdAt: linha.createdAt.toISOString(),
@@ -334,6 +339,50 @@ export default fp(async function biDashboardsRoutes(fastify) {
    * as demais. Elas existem justamente para poder ter **filtros diferentes**, e
    * as colunas derivadas as combinam depois.
    */
+  /**
+   * Guarda a pergunta no histórico do dashboard.
+   *
+   * Lê a coluna e regrava o array inteiro em vez de usar `||` do Postgres por um
+   * motivo: o teto precisa ser aplicado na mesma operação, e duas perguntas
+   * simultâneas no MESMO dashboard não acontecem — é uma pessoa digitando, e o
+   * agente leva dezenas de segundos. Perder uma corrida aqui custaria uma linha
+   * de histórico, nunca um dado de verdade.
+   */
+  /** O nome de quem perguntou; vazio se o usuário sumiu da tabela. */
+  async function nomeDoUsuario(userId: string): Promise<string> {
+    const [u] = await fastify.db
+      .select({ nome: users.name })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    return u?.nome ?? "";
+  }
+
+  async function registrarPergunta(
+    dashboardId: string,
+    entrada: { texto: string; por: string; widgets: number; erro?: string },
+  ) {
+    try {
+      const [linha] = await fastify.db
+        .select({ perguntas: biDashboards.perguntas })
+        .from(biDashboards)
+        .where(eq(biDashboards.id, dashboardId))
+        .limit(1);
+      const anteriores = perguntasGuardadas(linha?.perguntas);
+      const nova = { ...entrada, em: new Date().toISOString() };
+      await fastify.db
+        .update(biDashboards)
+        // As mais RECENTES ficam: um dashboard antigo com 200 perguntas não
+        // pode fazer a tela carregar o histórico inteiro de 2024.
+        .set({ perguntas: [...anteriores, nova].slice(-MAX_PERGUNTAS) })
+        .where(eq(biDashboards.id, dashboardId));
+    } catch (erro) {
+      // Histórico é registro, não resultado: falhar aqui não pode derrubar a
+      // resposta que a pessoa já está vendo na tela.
+      fastify.log.warn({ erro }, "não consegui guardar a pergunta no histórico");
+    }
+  }
+
   async function executarWidget(
     widget: Widget,
     projectIds: string[],
@@ -688,10 +737,24 @@ export default fp(async function biDashboardsRoutes(fastify) {
     };
 
     try {
+      const alcanceDoAgente = await escopoDe(linha, request.userId!, request.userRole!);
+      // Os valores reais das dimensões vão no prompt: sem eles o modelo escreve
+      // o lado direito do filtro de cabeça. Falha aqui não derruba a pergunta —
+      // sem a lista ele monta como sempre montou.
+      const valores = await valoresConhecidos({
+        db: fastify.db as never,
+        projectIds: alcanceDoAgente,
+        log: fastify.log,
+      }).catch((erro) => {
+        fastify.log.warn({ erro }, "não consegui listar os valores das dimensões");
+        return {};
+      });
+
       const resposta = await montarWidgets(corpo.data.pergunta, {
         cliente: fastify.claude.client,
         ocupados: widgets.map((w) => w.geometria),
         aoProgredir: (passo) => escrever({ tipo: "passo", passo }),
+        valores,
       });
 
       // Cabe o que sobra: o teto vale igual para quem pede à IA.
@@ -711,23 +774,63 @@ export default fp(async function biDashboardsRoutes(fastify) {
       // Cada widget sai assim que o número dele chega: é vendo o valor que a
       // pessoa julga se a pergunta foi entendida, e esperar o último para
       // mostrar o primeiro não ajuda em nada.
-      const ctx = contextoDe(linha);
-      const alcance = await escopoDe(linha, request.userId!, request.userRole!);
+      // A data que a pergunta pediu vira o período do DASHBOARD: é ele que a
+      // execução injeta em cada consulta, então sem isto "as vendas do dia
+      // 01/10/26" liam o período que estava na tela e voltavam vazias. Muda
+      // para todos os widgets, e por isso o aviso é obrigatório.
+      let ctx = contextoDe(linha);
+      if (resposta.periodo && (resposta.periodo.start !== ctx.periodo.start || resposta.periodo.end !== ctx.periodo.end)) {
+        const antes = ctx.periodo;
+        ctx = { ...ctx, periodo: resposta.periodo };
+        await fastify.db
+          .update(biDashboards)
+          .set({ dateRange: resposta.periodo, updatedAt: new Date() })
+          .where(eq(biDashboards.id, p.data.id));
+        avisos.push(
+          `O período do dashboard passou de ${antes.start}–${antes.end} para ` +
+            `${resposta.periodo.start}–${resposta.periodo.end}, como a pergunta pediu. ` +
+            `Os outros widgets também passam a mostrar esse período.`,
+        );
+        escrever({ tipo: "periodo", periodo: resposta.periodo });
+      }
+
       for (const w of cabem) {
         escrever({ tipo: "passo", passo: { tipo: "calculando", titulo: w.titulo } });
-        const resultado = await executarWidget(w, alcance, ctx);
+        const resultado = await executarWidget(w, alcanceDoAgente, ctx);
+        // Widget que nasce sem número nenhum vira aviso, não card mudo. Era
+        // assim que a pergunta do Alberto terminava: a IA dizia que tinha
+        // montado, e os cards vinham zerados sem nada explicando.
+        if ("rows" in resultado) {
+          const motivo = porQueVazio(w.titulo, w.spec, resultado, ctx.periodo);
+          if (motivo) avisos.push(motivo);
+        }
         escrever({ tipo: "widget", widget: w, resultado });
       }
+
+      await registrarPergunta(p.data.id, {
+        texto: corpo.data.pergunta,
+        por: await nomeDoUsuario(request.userId!),
+        widgets: cabem.length,
+      });
 
       escrever({ tipo: "fim", explicacao: resposta.explicacao, avisos });
     } catch (erro) {
       // O motivo sobe até a tela: "tente de novo" não distingue sobrecarga de
       // saldo esgotado, e deixa quem está olhando sem ação possível.
       fastify.log.error({ erro }, "agente de BI falhou");
+      const motivo =
+        erro instanceof ErroDoAgente ? erro.message : "Falha inesperada ao falar com a IA.";
+      // A pergunta que FALHOU é a que a pessoa mais quer rever: foi ela que não
+      // deu resposta, e é dela que vem a próxima tentativa.
+      await registrarPergunta(p.data.id, {
+        texto: corpo.data.pergunta,
+        por: await nomeDoUsuario(request.userId!),
+        widgets: 0,
+        erro: motivo,
+      });
       escrever({
         tipo: "erro",
-        error:
-          erro instanceof ErroDoAgente ? erro.message : "Falha inesperada ao falar com a IA.",
+        error: motivo,
       });
     }
 

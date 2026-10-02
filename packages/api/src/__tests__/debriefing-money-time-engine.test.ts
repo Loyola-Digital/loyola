@@ -592,7 +592,7 @@ describe("AC7 — captação: ingresso × combo × order bump (armadilha #3)", (
 
   it("produto da captação fora de product_types sai em produtosNaoClassificados", () => {
     const r = rodar({ vendas: vendasCap() });
-    expect(r.produtosNaoClassificados).toEqual([{ produto: "Produto Novo", vendas: 1, faturamento: 99 }]);
+    expect(r.produtosNaoClassificados).toEqual([{ produto: "Produto Novo", vendas: 1, faturamento: 99, tiposAssumidos: ["ingresso"] }]);
   });
 
   it("únicos em dois critérios; o telefone (com .0) une C e F só no porEmailOuTelefone", () => {

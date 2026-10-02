@@ -1,0 +1,1338 @@
+{
+  "versao": 1,
+  "janela": {
+    "inicio": "2026-04-17",
+    "fim": "2026-05-31",
+    "fimPor": "fimCarrinho",
+    "regra": "teste"
+  },
+  "classificadorVersao": "49.2-v2",
+  "origemDoValor": {
+    "investimentoPorTipoDeCriativo": "meta_ad_insights_daily.spend"
+  },
+  "pesquisa": {
+    "linhasLidas": 6,
+    "vazias": 1,
+    "duplicadasRemovidas": 1,
+    "respondentes": 4,
+    "memoria": "linhas lidas 6 − sem respondente 1 − e-mail repetido 1 = 4 respondente(s) (vale a resposta mais recente: maior dia; empate ou sem data → linha posterior)",
+    "porPesquisa": [
+      {
+        "pesquisaId": "pesq-captacao",
+        "stageId": "stage-cap",
+        "rotulo": "Painel / Pesquisa-Captação",
+        "linhasLidas": 6,
+        "vazias": 1
+      }
+    ]
+  },
+  "perguntasConfirmadas": {
+    "stage-cap": {
+      "faixa": "faixa",
+      "renda": "renda_mensal",
+      "sexo": "Sexo"
+    }
+  },
+  "dimensoes": [
+    {
+      "campo": "faixa",
+      "perguntas": [
+        {
+          "stageId": "stage-cap",
+          "chave": "faixa"
+        }
+      ],
+      "serieHistorica": true,
+      "serieHistoricaMotivo": "PRESENTE_NOS_DOIS_LANCAMENTOS",
+      "total": {
+        "n": 4,
+        "valores": [
+          {
+            "rotulo": "C",
+            "n": 2,
+            "pct": {
+              "valor": 50,
+              "memoria": "\"C\" 2 ÷ n do recorte (pesquisa inteira deduplicada) 4 × 100 = 50,00%"
+            }
+          },
+          {
+            "rotulo": "A",
+            "n": 1,
+            "pct": {
+              "valor": 25,
+              "memoria": "\"A\" 1 ÷ n do recorte (pesquisa inteira deduplicada) 4 × 100 = 25,00%"
+            }
+          },
+          {
+            "rotulo": "B",
+            "n": 1,
+            "pct": {
+              "valor": 25,
+              "memoria": "\"B\" 1 ÷ n do recorte (pesquisa inteira deduplicada) 4 × 100 = 25,00%"
+            }
+          }
+        ],
+        "semResposta": {
+          "n": 0,
+          "pct": {
+            "valor": 0,
+            "memoria": "sem resposta 0 ÷ n do recorte (pesquisa inteira deduplicada) 4 × 100 = 0,00%"
+          }
+        }
+      },
+      "porSegmento": {
+        "Pago Quente": {
+          "n": 2,
+          "valores": [
+            {
+              "rotulo": "A",
+              "n": 1,
+              "pct": {
+                "valor": 50,
+                "memoria": "\"A\" 1 ÷ n do recorte (Pago Quente) 2 × 100 = 50,00%"
+              }
+            },
+            {
+              "rotulo": "B",
+              "n": 1,
+              "pct": {
+                "valor": 50,
+                "memoria": "\"B\" 1 ÷ n do recorte (Pago Quente) 2 × 100 = 50,00%"
+              }
+            }
+          ],
+          "semResposta": {
+            "n": 0,
+            "pct": {
+              "valor": 0,
+              "memoria": "sem resposta 0 ÷ n do recorte (Pago Quente) 2 × 100 = 0,00%"
+            }
+          }
+        },
+        "Pago Frio": {
+          "n": 0,
+          "valores": [],
+          "semResposta": {
+            "n": 0,
+            "pct": {
+              "valor": null,
+              "memoria": "sem resposta 0 ÷ n do recorte (Pago Frio) 0 — sem denominador",
+              "motivo": "DIVISAO_POR_ZERO: n do recorte (Pago Frio) = 0"
+            }
+          }
+        },
+        "Pago N/D": {
+          "n": 0,
+          "valores": [],
+          "semResposta": {
+            "n": 0,
+            "pct": {
+              "valor": null,
+              "memoria": "sem resposta 0 ÷ n do recorte (Pago N/D) 0 — sem denominador",
+              "motivo": "DIVISAO_POR_ZERO: n do recorte (Pago N/D) = 0"
+            }
+          }
+        },
+        "Orgânico": {
+          "n": 1,
+          "valores": [
+            {
+              "rotulo": "C",
+              "n": 1,
+              "pct": {
+                "valor": 100,
+                "memoria": "\"C\" 1 ÷ n do recorte (Orgânico) 1 × 100 = 100,00%"
+              }
+            }
+          ],
+          "semResposta": {
+            "n": 0,
+            "pct": {
+              "valor": 0,
+              "memoria": "sem resposta 0 ÷ n do recorte (Orgânico) 1 × 100 = 0,00%"
+            }
+          }
+        },
+        "Aquisição não rastreada (só closer)": {
+          "n": 1,
+          "valores": [
+            {
+              "rotulo": "C",
+              "n": 1,
+              "pct": {
+                "valor": 100,
+                "memoria": "\"C\" 1 ÷ n do recorte (Aquisição não rastreada (só closer)) 1 × 100 = 100,00%"
+              }
+            }
+          ],
+          "semResposta": {
+            "n": 0,
+            "pct": {
+              "valor": 0,
+              "memoria": "sem resposta 0 ÷ n do recorte (Aquisição não rastreada (só closer)) 1 × 100 = 0,00%"
+            }
+          }
+        },
+        "Sem track": {
+          "n": 0,
+          "valores": [],
+          "semResposta": {
+            "n": 0,
+            "pct": {
+              "valor": null,
+              "memoria": "sem resposta 0 ÷ n do recorte (Sem track) 0 — sem denominador",
+              "motivo": "DIVISAO_POR_ZERO: n do recorte (Sem track) = 0"
+            }
+          }
+        }
+      },
+      "porFechamento": {
+        "closer": {
+          "n": 1,
+          "valores": [
+            {
+              "rotulo": "C",
+              "n": 1,
+              "pct": {
+                "valor": 100,
+                "memoria": "\"C\" 1 ÷ n do recorte (closer) 1 × 100 = 100,00%"
+              }
+            }
+          ],
+          "semResposta": {
+            "n": 0,
+            "pct": {
+              "valor": 0,
+              "memoria": "sem resposta 0 ÷ n do recorte (closer) 1 × 100 = 0,00%"
+            }
+          }
+        },
+        "sem-closer": {
+          "n": 3,
+          "valores": [
+            {
+              "rotulo": "A",
+              "n": 1,
+              "pct": {
+                "valor": 33.33333333333333,
+                "memoria": "\"A\" 1 ÷ n do recorte (sem-closer) 3 × 100 = 33,33%"
+              }
+            },
+            {
+              "rotulo": "B",
+              "n": 1,
+              "pct": {
+                "valor": 33.33333333333333,
+                "memoria": "\"B\" 1 ÷ n do recorte (sem-closer) 3 × 100 = 33,33%"
+              }
+            },
+            {
+              "rotulo": "C",
+              "n": 1,
+              "pct": {
+                "valor": 33.33333333333333,
+                "memoria": "\"C\" 1 ÷ n do recorte (sem-closer) 3 × 100 = 33,33%"
+              }
+            }
+          ],
+          "semResposta": {
+            "n": 0,
+            "pct": {
+              "valor": 0,
+              "memoria": "sem resposta 0 ÷ n do recorte (sem-closer) 3 × 100 = 0,00%"
+            }
+          }
+        }
+      }
+    },
+    {
+      "campo": "sexo",
+      "perguntas": [
+        {
+          "stageId": "stage-cap",
+          "chave": "Sexo"
+        }
+      ],
+      "serieHistorica": false,
+      "serieHistoricaMotivo": "AUSENTE_NO_LANCAMENTO_DE_COMPARACAO",
+      "total": {
+        "n": 4,
+        "valores": [
+          {
+            "rotulo": "Feminino",
+            "n": 2,
+            "pct": {
+              "valor": 50,
+              "memoria": "\"Feminino\" 2 ÷ n do recorte (pesquisa inteira deduplicada) 4 × 100 = 50,00%"
+            }
+          },
+          {
+            "rotulo": "Masculino",
+            "n": 1,
+            "pct": {
+              "valor": 25,
+              "memoria": "\"Masculino\" 1 ÷ n do recorte (pesquisa inteira deduplicada) 4 × 100 = 25,00%"
+            }
+          }
+        ],
+        "semResposta": {
+          "n": 1,
+          "pct": {
+            "valor": 25,
+            "memoria": "sem resposta 1 ÷ n do recorte (pesquisa inteira deduplicada) 4 × 100 = 25,00%"
+          }
+        }
+      },
+      "porSegmento": {
+        "Pago Quente": {
+          "n": 2,
+          "valores": [
+            {
+              "rotulo": "Feminino",
+              "n": 1,
+              "pct": {
+                "valor": 50,
+                "memoria": "\"Feminino\" 1 ÷ n do recorte (Pago Quente) 2 × 100 = 50,00%"
+              }
+            },
+            {
+              "rotulo": "Masculino",
+              "n": 1,
+              "pct": {
+                "valor": 50,
+                "memoria": "\"Masculino\" 1 ÷ n do recorte (Pago Quente) 2 × 100 = 50,00%"
+              }
+            }
+          ],
+          "semResposta": {
+            "n": 0,
+            "pct": {
+              "valor": 0,
+              "memoria": "sem resposta 0 ÷ n do recorte (Pago Quente) 2 × 100 = 0,00%"
+            }
+          }
+        },
+        "Pago Frio": {
+          "n": 0,
+          "valores": [],
+          "semResposta": {
+            "n": 0,
+            "pct": {
+              "valor": null,
+              "memoria": "sem resposta 0 ÷ n do recorte (Pago Frio) 0 — sem denominador",
+              "motivo": "DIVISAO_POR_ZERO: n do recorte (Pago Frio) = 0"
+            }
+          }
+        },
+        "Pago N/D": {
+          "n": 0,
+          "valores": [],
+          "semResposta": {
+            "n": 0,
+            "pct": {
+              "valor": null,
+              "memoria": "sem resposta 0 ÷ n do recorte (Pago N/D) 0 — sem denominador",
+              "motivo": "DIVISAO_POR_ZERO: n do recorte (Pago N/D) = 0"
+            }
+          }
+        },
+        "Orgânico": {
+          "n": 1,
+          "valores": [],
+          "semResposta": {
+            "n": 1,
+            "pct": {
+              "valor": 100,
+              "memoria": "sem resposta 1 ÷ n do recorte (Orgânico) 1 × 100 = 100,00%"
+            }
+          }
+        },
+        "Aquisição não rastreada (só closer)": {
+          "n": 1,
+          "valores": [
+            {
+              "rotulo": "Feminino",
+              "n": 1,
+              "pct": {
+                "valor": 100,
+                "memoria": "\"Feminino\" 1 ÷ n do recorte (Aquisição não rastreada (só closer)) 1 × 100 = 100,00%"
+              }
+            }
+          ],
+          "semResposta": {
+            "n": 0,
+            "pct": {
+              "valor": 0,
+              "memoria": "sem resposta 0 ÷ n do recorte (Aquisição não rastreada (só closer)) 1 × 100 = 0,00%"
+            }
+          }
+        },
+        "Sem track": {
+          "n": 0,
+          "valores": [],
+          "semResposta": {
+            "n": 0,
+            "pct": {
+              "valor": null,
+              "memoria": "sem resposta 0 ÷ n do recorte (Sem track) 0 — sem denominador",
+              "motivo": "DIVISAO_POR_ZERO: n do recorte (Sem track) = 0"
+            }
+          }
+        }
+      },
+      "porFechamento": {
+        "closer": {
+          "n": 1,
+          "valores": [
+            {
+              "rotulo": "Feminino",
+              "n": 1,
+              "pct": {
+                "valor": 100,
+                "memoria": "\"Feminino\" 1 ÷ n do recorte (closer) 1 × 100 = 100,00%"
+              }
+            }
+          ],
+          "semResposta": {
+            "n": 0,
+            "pct": {
+              "valor": 0,
+              "memoria": "sem resposta 0 ÷ n do recorte (closer) 1 × 100 = 0,00%"
+            }
+          }
+        },
+        "sem-closer": {
+          "n": 3,
+          "valores": [
+            {
+              "rotulo": "Feminino",
+              "n": 1,
+              "pct": {
+                "valor": 33.33333333333333,
+                "memoria": "\"Feminino\" 1 ÷ n do recorte (sem-closer) 3 × 100 = 33,33%"
+              }
+            },
+            {
+              "rotulo": "Masculino",
+              "n": 1,
+              "pct": {
+                "valor": 33.33333333333333,
+                "memoria": "\"Masculino\" 1 ÷ n do recorte (sem-closer) 3 × 100 = 33,33%"
+              }
+            }
+          ],
+          "semResposta": {
+            "n": 1,
+            "pct": {
+              "valor": 33.33333333333333,
+              "memoria": "sem resposta 1 ÷ n do recorte (sem-closer) 3 × 100 = 33,33%"
+            }
+          }
+        }
+      }
+    },
+    {
+      "campo": "renda",
+      "perguntas": [
+        {
+          "stageId": "stage-cap",
+          "chave": "renda_mensal"
+        }
+      ],
+      "serieHistorica": true,
+      "serieHistoricaMotivo": "PRESENTE_NOS_DOIS_LANCAMENTOS",
+      "total": {
+        "n": 4,
+        "valores": [
+          {
+            "rotulo": "Até 5 mil",
+            "n": 2,
+            "pct": {
+              "valor": 50,
+              "memoria": "\"Até 5 mil\" 2 ÷ n do recorte (pesquisa inteira deduplicada) 4 × 100 = 50,00%"
+            }
+          },
+          {
+            "rotulo": "5 a 10 mil",
+            "n": 1,
+            "pct": {
+              "valor": 25,
+              "memoria": "\"5 a 10 mil\" 1 ÷ n do recorte (pesquisa inteira deduplicada) 4 × 100 = 25,00%"
+            }
+          }
+        ],
+        "semResposta": {
+          "n": 1,
+          "pct": {
+            "valor": 25,
+            "memoria": "sem resposta 1 ÷ n do recorte (pesquisa inteira deduplicada) 4 × 100 = 25,00%"
+          }
+        }
+      },
+      "porSegmento": {
+        "Pago Quente": {
+          "n": 2,
+          "valores": [
+            {
+              "rotulo": "5 a 10 mil",
+              "n": 1,
+              "pct": {
+                "valor": 50,
+                "memoria": "\"5 a 10 mil\" 1 ÷ n do recorte (Pago Quente) 2 × 100 = 50,00%"
+              }
+            },
+            {
+              "rotulo": "Até 5 mil",
+              "n": 1,
+              "pct": {
+                "valor": 50,
+                "memoria": "\"Até 5 mil\" 1 ÷ n do recorte (Pago Quente) 2 × 100 = 50,00%"
+              }
+            }
+          ],
+          "semResposta": {
+            "n": 0,
+            "pct": {
+              "valor": 0,
+              "memoria": "sem resposta 0 ÷ n do recorte (Pago Quente) 2 × 100 = 0,00%"
+            }
+          }
+        },
+        "Pago Frio": {
+          "n": 0,
+          "valores": [],
+          "semResposta": {
+            "n": 0,
+            "pct": {
+              "valor": null,
+              "memoria": "sem resposta 0 ÷ n do recorte (Pago Frio) 0 — sem denominador",
+              "motivo": "DIVISAO_POR_ZERO: n do recorte (Pago Frio) = 0"
+            }
+          }
+        },
+        "Pago N/D": {
+          "n": 0,
+          "valores": [],
+          "semResposta": {
+            "n": 0,
+            "pct": {
+              "valor": null,
+              "memoria": "sem resposta 0 ÷ n do recorte (Pago N/D) 0 — sem denominador",
+              "motivo": "DIVISAO_POR_ZERO: n do recorte (Pago N/D) = 0"
+            }
+          }
+        },
+        "Orgânico": {
+          "n": 1,
+          "valores": [
+            {
+              "rotulo": "Até 5 mil",
+              "n": 1,
+              "pct": {
+                "valor": 100,
+                "memoria": "\"Até 5 mil\" 1 ÷ n do recorte (Orgânico) 1 × 100 = 100,00%"
+              }
+            }
+          ],
+          "semResposta": {
+            "n": 0,
+            "pct": {
+              "valor": 0,
+              "memoria": "sem resposta 0 ÷ n do recorte (Orgânico) 1 × 100 = 0,00%"
+            }
+          }
+        },
+        "Aquisição não rastreada (só closer)": {
+          "n": 1,
+          "valores": [],
+          "semResposta": {
+            "n": 1,
+            "pct": {
+              "valor": 100,
+              "memoria": "sem resposta 1 ÷ n do recorte (Aquisição não rastreada (só closer)) 1 × 100 = 100,00%"
+            }
+          }
+        },
+        "Sem track": {
+          "n": 0,
+          "valores": [],
+          "semResposta": {
+            "n": 0,
+            "pct": {
+              "valor": null,
+              "memoria": "sem resposta 0 ÷ n do recorte (Sem track) 0 — sem denominador",
+              "motivo": "DIVISAO_POR_ZERO: n do recorte (Sem track) = 0"
+            }
+          }
+        }
+      },
+      "porFechamento": {
+        "closer": {
+          "n": 1,
+          "valores": [],
+          "semResposta": {
+            "n": 1,
+            "pct": {
+              "valor": 100,
+              "memoria": "sem resposta 1 ÷ n do recorte (closer) 1 × 100 = 100,00%"
+            }
+          }
+        },
+        "sem-closer": {
+          "n": 3,
+          "valores": [
+            {
+              "rotulo": "Até 5 mil",
+              "n": 2,
+              "pct": {
+                "valor": 66.66666666666666,
+                "memoria": "\"Até 5 mil\" 2 ÷ n do recorte (sem-closer) 3 × 100 = 66,67%"
+              }
+            },
+            {
+              "rotulo": "5 a 10 mil",
+              "n": 1,
+              "pct": {
+                "valor": 33.33333333333333,
+                "memoria": "\"5 a 10 mil\" 1 ÷ n do recorte (sem-closer) 3 × 100 = 33,33%"
+              }
+            }
+          ],
+          "semResposta": {
+            "n": 0,
+            "pct": {
+              "valor": 0,
+              "memoria": "sem resposta 0 ÷ n do recorte (sem-closer) 3 × 100 = 0,00%"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "dimensoesNaoConfirmadas": [
+    {
+      "campo": "idade",
+      "motivo": "nao-confirmada",
+      "perguntas": [
+        {
+          "stageId": "stage-cap",
+          "chave": null
+        }
+      ]
+    },
+    {
+      "campo": "estado_civil",
+      "motivo": "nao-confirmada",
+      "perguntas": [
+        {
+          "stageId": "stage-cap",
+          "chave": null
+        }
+      ]
+    },
+    {
+      "campo": "escolaridade",
+      "motivo": "nao-confirmada",
+      "perguntas": [
+        {
+          "stageId": "stage-cap",
+          "chave": null
+        }
+      ]
+    },
+    {
+      "campo": "profissao",
+      "motivo": "nao-confirmada",
+      "perguntas": [
+        {
+          "stageId": "stage-cap",
+          "chave": null
+        }
+      ]
+    },
+    {
+      "campo": "setor",
+      "motivo": "nao-confirmada",
+      "perguntas": [
+        {
+          "stageId": "stage-cap",
+          "chave": null
+        }
+      ]
+    },
+    {
+      "campo": "funcionarios",
+      "motivo": "nao-confirmada",
+      "perguntas": [
+        {
+          "stageId": "stage-cap",
+          "chave": null
+        }
+      ]
+    },
+    {
+      "campo": "religiao",
+      "motivo": "nao-confirmada",
+      "perguntas": [
+        {
+          "stageId": "stage-cap",
+          "chave": null
+        }
+      ]
+    }
+  ],
+  "casamento": {
+    "porEmail": 2,
+    "porTelefone": 0,
+    "semMatch": 2
+  },
+  "segmentos": [
+    {
+      "segmento": "Pago Quente",
+      "n": 2
+    },
+    {
+      "segmento": "Pago Frio",
+      "n": 0
+    },
+    {
+      "segmento": "Pago N/D",
+      "n": 0
+    },
+    {
+      "segmento": "Orgânico",
+      "n": 1
+    },
+    {
+      "segmento": "Aquisição não rastreada (só closer)",
+      "n": 1
+    },
+    {
+      "segmento": "Sem track",
+      "n": 0
+    }
+  ],
+  "fechamento": {
+    "closer": {
+      "n": 1
+    },
+    "semCloser": {
+      "n": 3
+    }
+  },
+  "somas": {
+    "segmentos": 4,
+    "fechamento": 4,
+    "respondentes": 4
+  },
+  "tuplasClassificadas": [
+    {
+      "lead": {
+        "source": "fb",
+        "medium": null,
+        "campaign": null,
+        "term": "lp|hot|dg-pg02-ia-01",
+        "campaignName": null
+      },
+      "venda": {
+        "source": "fb",
+        "medium": null,
+        "campaign": null,
+        "term": "lp|hot|dg-pg02-ia-01",
+        "campaignName": null
+      },
+      "sellerName": null,
+      "canal": "Pago Quente",
+      "fechamento": "sem-closer",
+      "segmento": "Pago Quente"
+    },
+    {
+      "lead": {
+        "source": "fb",
+        "medium": null,
+        "campaign": null,
+        "term": "lp|hot|dg-pg02-ia-01",
+        "campaignName": null
+      },
+      "venda": {
+        "source": null,
+        "medium": null,
+        "campaign": null,
+        "term": null,
+        "campaignName": null
+      },
+      "sellerName": null,
+      "canal": "Pago Quente",
+      "fechamento": "sem-closer",
+      "segmento": "Pago Quente"
+    },
+    {
+      "lead": {
+        "source": "ig",
+        "medium": null,
+        "campaign": null,
+        "term": null,
+        "campaignName": null
+      },
+      "venda": null,
+      "sellerName": null,
+      "canal": "Instagram orgânico",
+      "fechamento": "sem-closer",
+      "segmento": "Orgânico"
+    },
+    {
+      "lead": {
+        "source": null,
+        "medium": "x1",
+        "campaign": null,
+        "term": null,
+        "campaignName": null
+      },
+      "venda": null,
+      "sellerName": null,
+      "canal": "Aquisição não rastreada (só closer)",
+      "fechamento": "closer",
+      "segmento": "Aquisição não rastreada (só closer)"
+    }
+  ],
+  "tuplasSemNomeDeCampanha": 0,
+  "compradoresCaptacao": {
+    "porEmail": [
+      "e:478abec7430569163161dfea8513b8ce89d05f559456a26e945c66e1fe55a29d",
+      "e:628baf61a9fc294006758855b9e921c1b4aaaa518743edc4019646f1523a7774",
+      "e:d2e87fa97059800526a17d47411565f78bf08bb07877a806ec7013a04f8e567d"
+    ],
+    "porEmailOuTelefone": [
+      "e:478abec7430569163161dfea8513b8ce89d05f559456a26e945c66e1fe55a29d",
+      "e:628baf61a9fc294006758855b9e921c1b4aaaa518743edc4019646f1523a7774",
+      "e:d2e87fa97059800526a17d47411565f78bf08bb07877a806ec7013a04f8e567d"
+    ]
+  },
+  "taxaDeResposta": {
+    "valor": 66.66666666666666,
+    "numerador": 2,
+    "denominador": 3,
+    "memoria": "compradores de captação que responderam 2 ÷ compradores de captação 3 × 100 = 66,67%"
+  },
+  "faixa": {
+    "aplicavel": true,
+    "perguntas": [
+      {
+        "stageId": "stage-cap",
+        "chave": "faixa"
+      }
+    ],
+    "distribuicao": {
+      "A": 1,
+      "B": 1,
+      "C": 2,
+      "D": 0,
+      "semFaixa": 0,
+      "foraDoPadrao": 0
+    },
+    "volumeAB": 2,
+    "pctAB": {
+      "valor": 50,
+      "numerador": 2,
+      "denominador": 4,
+      "memoria": "respondentes A+B 2 ÷ respondentes (pesquisa inteira deduplicada) 4 × 100 = 50,00%"
+    },
+    "volumeD": 0,
+    "coberturaDeFaixa": {
+      "valor": 66.66666666666666,
+      "numerador": 2,
+      "denominador": 3,
+      "memoria": "compradores de captação com faixa A→D 2 ÷ compradores de captação 3 × 100 = 66,67%"
+    },
+    "conversaoPorFaixa": [
+      {
+        "faixa": "A",
+        "n": 1,
+        "comprouPrincipal": 1,
+        "comTierSuperior": 0,
+        "ingressoPrincipal": {
+          "valor": 1,
+          "numerador": 1,
+          "denominador": 1,
+          "memoria": "compradores de captação (faixa A) que compraram o principal 1 ÷ compradores de captação (faixa A) 1 = 1,0000"
+        },
+        "ingressoBump": {
+          "valor": 0,
+          "numerador": 0,
+          "denominador": 1,
+          "memoria": "compradores de captação (faixa A) com combo ou order bump 0 ÷ compradores de captação (faixa A) 1 = 0,0000"
+        },
+        "amostraBaixa": true
+      },
+      {
+        "faixa": "B",
+        "n": 1,
+        "comprouPrincipal": 0,
+        "comTierSuperior": 1,
+        "ingressoPrincipal": {
+          "valor": 0,
+          "numerador": 0,
+          "denominador": 1,
+          "memoria": "compradores de captação (faixa B) que compraram o principal 0 ÷ compradores de captação (faixa B) 1 = 0,0000"
+        },
+        "ingressoBump": {
+          "valor": 1,
+          "numerador": 1,
+          "denominador": 1,
+          "memoria": "compradores de captação (faixa B) com combo ou order bump 1 ÷ compradores de captação (faixa B) 1 = 1,0000"
+        },
+        "amostraBaixa": true
+      },
+      {
+        "faixa": "C",
+        "n": 0,
+        "comprouPrincipal": 0,
+        "comTierSuperior": 0,
+        "ingressoPrincipal": {
+          "valor": null,
+          "numerador": 0,
+          "denominador": 0,
+          "memoria": "compradores de captação (faixa C) que compraram o principal 0 ÷ compradores de captação (faixa C) 0 — sem denominador",
+          "motivo": "DIVISAO_POR_ZERO: compradores de captação (faixa C) = 0"
+        },
+        "ingressoBump": {
+          "valor": null,
+          "numerador": 0,
+          "denominador": 0,
+          "memoria": "compradores de captação (faixa C) com combo ou order bump 0 ÷ compradores de captação (faixa C) 0 — sem denominador",
+          "motivo": "DIVISAO_POR_ZERO: compradores de captação (faixa C) = 0"
+        },
+        "amostraBaixa": true
+      },
+      {
+        "faixa": "D",
+        "n": 0,
+        "comprouPrincipal": 0,
+        "comTierSuperior": 0,
+        "ingressoPrincipal": {
+          "valor": null,
+          "numerador": 0,
+          "denominador": 0,
+          "memoria": "compradores de captação (faixa D) que compraram o principal 0 ÷ compradores de captação (faixa D) 0 — sem denominador",
+          "motivo": "DIVISAO_POR_ZERO: compradores de captação (faixa D) = 0"
+        },
+        "ingressoBump": {
+          "valor": null,
+          "numerador": 0,
+          "denominador": 0,
+          "memoria": "compradores de captação (faixa D) com combo ou order bump 0 ÷ compradores de captação (faixa D) 0 — sem denominador",
+          "motivo": "DIVISAO_POR_ZERO: compradores de captação (faixa D) = 0"
+        },
+        "amostraBaixa": true
+      },
+      {
+        "faixa": "semFaixa",
+        "n": 0,
+        "comprouPrincipal": 0,
+        "comTierSuperior": 0,
+        "ingressoPrincipal": {
+          "valor": null,
+          "numerador": 0,
+          "denominador": 0,
+          "memoria": "compradores de captação (faixa semFaixa) que compraram o principal 0 ÷ compradores de captação (faixa semFaixa) 0 — sem denominador",
+          "motivo": "DIVISAO_POR_ZERO: compradores de captação (faixa semFaixa) = 0"
+        },
+        "ingressoBump": {
+          "valor": null,
+          "numerador": 0,
+          "denominador": 0,
+          "memoria": "compradores de captação (faixa semFaixa) com combo ou order bump 0 ÷ compradores de captação (faixa semFaixa) 0 — sem denominador",
+          "motivo": "DIVISAO_POR_ZERO: compradores de captação (faixa semFaixa) = 0"
+        },
+        "amostraBaixa": true
+      },
+      {
+        "faixa": "foraDoPadrao",
+        "n": 0,
+        "comprouPrincipal": 0,
+        "comTierSuperior": 0,
+        "ingressoPrincipal": {
+          "valor": null,
+          "numerador": 0,
+          "denominador": 0,
+          "memoria": "compradores de captação (faixa foraDoPadrao) que compraram o principal 0 ÷ compradores de captação (faixa foraDoPadrao) 0 — sem denominador",
+          "motivo": "DIVISAO_POR_ZERO: compradores de captação (faixa foraDoPadrao) = 0"
+        },
+        "ingressoBump": {
+          "valor": null,
+          "numerador": 0,
+          "denominador": 0,
+          "memoria": "compradores de captação (faixa foraDoPadrao) com combo ou order bump 0 ÷ compradores de captação (faixa foraDoPadrao) 0 — sem denominador",
+          "motivo": "DIVISAO_POR_ZERO: compradores de captação (faixa foraDoPadrao) = 0"
+        },
+        "amostraBaixa": true
+      }
+    ]
+  },
+  "conversaoPorSegmento": [
+    {
+      "segmento": "Pago Quente",
+      "n": 2,
+      "comprouPrincipal": 1,
+      "comTierSuperior": 1,
+      "ingressoPrincipal": {
+        "valor": 0.5,
+        "numerador": 1,
+        "denominador": 2,
+        "memoria": "compradores de captação (Pago Quente) que compraram o principal 1 ÷ compradores de captação (Pago Quente) 2 = 0,5000"
+      },
+      "ingressoBump": {
+        "valor": 0.5,
+        "numerador": 1,
+        "denominador": 2,
+        "memoria": "compradores de captação (Pago Quente) com combo ou order bump 1 ÷ compradores de captação (Pago Quente) 2 = 0,5000"
+      },
+      "amostraBaixa": true
+    },
+    {
+      "segmento": "Pago Frio",
+      "n": 0,
+      "comprouPrincipal": 0,
+      "comTierSuperior": 0,
+      "ingressoPrincipal": {
+        "valor": null,
+        "numerador": 0,
+        "denominador": 0,
+        "memoria": "compradores de captação (Pago Frio) que compraram o principal 0 ÷ compradores de captação (Pago Frio) 0 — sem denominador",
+        "motivo": "DIVISAO_POR_ZERO: compradores de captação (Pago Frio) = 0"
+      },
+      "ingressoBump": {
+        "valor": null,
+        "numerador": 0,
+        "denominador": 0,
+        "memoria": "compradores de captação (Pago Frio) com combo ou order bump 0 ÷ compradores de captação (Pago Frio) 0 — sem denominador",
+        "motivo": "DIVISAO_POR_ZERO: compradores de captação (Pago Frio) = 0"
+      },
+      "amostraBaixa": true
+    },
+    {
+      "segmento": "Pago N/D",
+      "n": 0,
+      "comprouPrincipal": 0,
+      "comTierSuperior": 0,
+      "ingressoPrincipal": {
+        "valor": null,
+        "numerador": 0,
+        "denominador": 0,
+        "memoria": "compradores de captação (Pago N/D) que compraram o principal 0 ÷ compradores de captação (Pago N/D) 0 — sem denominador",
+        "motivo": "DIVISAO_POR_ZERO: compradores de captação (Pago N/D) = 0"
+      },
+      "ingressoBump": {
+        "valor": null,
+        "numerador": 0,
+        "denominador": 0,
+        "memoria": "compradores de captação (Pago N/D) com combo ou order bump 0 ÷ compradores de captação (Pago N/D) 0 — sem denominador",
+        "motivo": "DIVISAO_POR_ZERO: compradores de captação (Pago N/D) = 0"
+      },
+      "amostraBaixa": true
+    },
+    {
+      "segmento": "Orgânico",
+      "n": 0,
+      "comprouPrincipal": 0,
+      "comTierSuperior": 0,
+      "ingressoPrincipal": {
+        "valor": null,
+        "numerador": 0,
+        "denominador": 0,
+        "memoria": "compradores de captação (Orgânico) que compraram o principal 0 ÷ compradores de captação (Orgânico) 0 — sem denominador",
+        "motivo": "DIVISAO_POR_ZERO: compradores de captação (Orgânico) = 0"
+      },
+      "ingressoBump": {
+        "valor": null,
+        "numerador": 0,
+        "denominador": 0,
+        "memoria": "compradores de captação (Orgânico) com combo ou order bump 0 ÷ compradores de captação (Orgânico) 0 — sem denominador",
+        "motivo": "DIVISAO_POR_ZERO: compradores de captação (Orgânico) = 0"
+      },
+      "amostraBaixa": true
+    },
+    {
+      "segmento": "Aquisição não rastreada (só closer)",
+      "n": 0,
+      "comprouPrincipal": 0,
+      "comTierSuperior": 0,
+      "ingressoPrincipal": {
+        "valor": null,
+        "numerador": 0,
+        "denominador": 0,
+        "memoria": "compradores de captação (Aquisição não rastreada (só closer)) que compraram o principal 0 ÷ compradores de captação (Aquisição não rastreada (só closer)) 0 — sem denominador",
+        "motivo": "DIVISAO_POR_ZERO: compradores de captação (Aquisição não rastreada (só closer)) = 0"
+      },
+      "ingressoBump": {
+        "valor": null,
+        "numerador": 0,
+        "denominador": 0,
+        "memoria": "compradores de captação (Aquisição não rastreada (só closer)) com combo ou order bump 0 ÷ compradores de captação (Aquisição não rastreada (só closer)) 0 — sem denominador",
+        "motivo": "DIVISAO_POR_ZERO: compradores de captação (Aquisição não rastreada (só closer)) = 0"
+      },
+      "amostraBaixa": true
+    },
+    {
+      "segmento": "Sem track",
+      "n": 0,
+      "comprouPrincipal": 0,
+      "comTierSuperior": 0,
+      "ingressoPrincipal": {
+        "valor": null,
+        "numerador": 0,
+        "denominador": 0,
+        "memoria": "compradores de captação (Sem track) que compraram o principal 0 ÷ compradores de captação (Sem track) 0 — sem denominador",
+        "motivo": "DIVISAO_POR_ZERO: compradores de captação (Sem track) = 0"
+      },
+      "ingressoBump": {
+        "valor": null,
+        "numerador": 0,
+        "denominador": 0,
+        "memoria": "compradores de captação (Sem track) com combo ou order bump 0 ÷ compradores de captação (Sem track) 0 — sem denominador",
+        "motivo": "DIVISAO_POR_ZERO: compradores de captação (Sem track) = 0"
+      },
+      "amostraBaixa": true
+    }
+  ],
+  "criativoXFaixa": {
+    "aplicavel": true,
+    "criativos": [
+      {
+        "nome": "dg-pg02-ia-01",
+        "nomeNaoResolvido": false,
+        "origemDoNome": "cache",
+        "adIds": [
+          "120000000000000001",
+          "120000000000000002"
+        ],
+        "adIdPrincipal": "120000000000000001",
+        "n": 2,
+        "porFaixa": {
+          "A": 1,
+          "B": 1,
+          "C": 0,
+          "D": 0,
+          "semFaixa": 0,
+          "foraDoPadrao": 0
+        },
+        "pctAB": {
+          "valor": 100,
+          "memoria": "respondentes A+B do criativo 2 ÷ respondentes do criativo 2 × 100 = 100,00%"
+        },
+        "pctCD": {
+          "valor": 0,
+          "memoria": "respondentes C+D do criativo 0 ÷ respondentes do criativo 2 × 100 = 0,00%"
+        },
+        "pctSemFaixa": {
+          "valor": 0,
+          "memoria": "respondentes sem faixa A→D do criativo 0 ÷ respondentes do criativo 2 × 100 = 0,00%"
+        },
+        "amostraBaixa": true,
+        "tipo": "ia",
+        "linkAdsManager": "https://adsmanager.facebook.com/adsmanager/manage/ads?act=3717530711643512&selected_ad_ids=120000000000000001"
+      }
+    ],
+    "semCriativo": {
+      "n": 2,
+      "vazio": 2,
+      "naoEhAdId": 0
+    },
+    "somas": {
+      "criativos": 2,
+      "semCriativo": 2,
+      "respondentes": 4
+    }
+  },
+  "tipoDeCriativo": {
+    "aplicavel": true,
+    "dimensao": "ia-humano",
+    "tipos": [
+      {
+        "tipo": "ia",
+        "criativos": 1,
+        "respondentes": 2,
+        "pctAB": {
+          "valor": 100,
+          "memoria": "respondentes A+B (ia) 2 ÷ respondentes (ia) 2 × 100 = 100,00%"
+        },
+        "pctCD": {
+          "valor": 0,
+          "memoria": "respondentes C+D (ia) 0 ÷ respondentes (ia) 2 × 100 = 0,00%"
+        },
+        "amostraBaixa": true,
+        "investimentoComImposto": {
+          "valor": 113.83039271485485,
+          "memoria": "Σ spend ÷ (1 − 12,15%) por dia a partir de 2026-01-01, 1 linha(s) anúncio×dia = R$ 113,83"
+        },
+        "impressoes": 1000,
+        "linkClicks": 50,
+        "ctr": {
+          "valor": 5,
+          "memoria": "link_click 50 ÷ impressões 1.000 × 100 = 5,00%"
+        },
+        "cpc": {
+          "valor": 2.276607854297097,
+          "memoria": "investimento c/ imposto R$ 113,83 ÷ link_click 50 = R$ 2,28"
+        },
+        "ingressos": {
+          "valor": 1,
+          "memoria": "compradores de captação cujo ingresso veio de anúncio \"ia\" (utm_content da venda) = 1"
+        },
+        "conversaoCliqueIngresso": {
+          "valor": 2,
+          "memoria": "ingressos (ia) 1 ÷ link_click (ia) 50 × 100 = 2,00%"
+        },
+        "custoPorIngresso": {
+          "valor": 113.83039271485485,
+          "memoria": "investimento c/ imposto (ia) R$ 113,83 ÷ ingressos (ia) R$ 1,00 = 113,8304"
+        }
+      },
+      {
+        "tipo": "humano",
+        "criativos": 0,
+        "respondentes": 0,
+        "pctAB": {
+          "valor": null,
+          "memoria": "respondentes A+B (humano) 0 ÷ respondentes (humano) 0 — sem denominador",
+          "motivo": "DIVISAO_POR_ZERO: respondentes (humano) = 0"
+        },
+        "pctCD": {
+          "valor": null,
+          "memoria": "respondentes C+D (humano) 0 ÷ respondentes (humano) 0 — sem denominador",
+          "motivo": "DIVISAO_POR_ZERO: respondentes (humano) = 0"
+        },
+        "amostraBaixa": true,
+        "investimentoComImposto": {
+          "valor": 0,
+          "memoria": "Σ spend ÷ (1 − 12,15%) por dia a partir de 2026-01-01, 0 linha(s) anúncio×dia = R$ 0,00"
+        },
+        "impressoes": 0,
+        "linkClicks": null,
+        "ctr": {
+          "valor": null,
+          "motivo": "LINK_CLICK_AUSENTE",
+          "memoria": "a Meta não devolveu link_click — CTR não medido (nunca cliques totais)"
+        },
+        "cpc": {
+          "valor": null,
+          "motivo": "LINK_CLICK_AUSENTE",
+          "memoria": "a Meta não devolveu link_click — CPC não medido"
+        },
+        "ingressos": {
+          "valor": 0,
+          "memoria": "compradores de captação cujo ingresso veio de anúncio \"humano\" (utm_content da venda) = 0"
+        },
+        "conversaoCliqueIngresso": {
+          "valor": null,
+          "motivo": "LINK_CLICK_AUSENTE",
+          "memoria": "a Meta não devolveu link_click — conversão clique→ingresso não medida"
+        },
+        "custoPorIngresso": {
+          "valor": null,
+          "memoria": "investimento c/ imposto (humano) R$ 0,00 ÷ ingressos (humano) R$ 0,00 — sem denominador",
+          "motivo": "DIVISAO_POR_ZERO: ingressos (humano) = 0"
+        }
+      },
+      {
+        "tipo": "card-estatico",
+        "criativos": 0,
+        "respondentes": 0,
+        "pctAB": {
+          "valor": null,
+          "memoria": "respondentes A+B (card-estatico) 0 ÷ respondentes (card-estatico) 0 — sem denominador",
+          "motivo": "DIVISAO_POR_ZERO: respondentes (card-estatico) = 0"
+        },
+        "pctCD": {
+          "valor": null,
+          "memoria": "respondentes C+D (card-estatico) 0 ÷ respondentes (card-estatico) 0 — sem denominador",
+          "motivo": "DIVISAO_POR_ZERO: respondentes (card-estatico) = 0"
+        },
+        "amostraBaixa": true,
+        "investimentoComImposto": {
+          "valor": 0,
+          "memoria": "Σ spend ÷ (1 − 12,15%) por dia a partir de 2026-01-01, 0 linha(s) anúncio×dia = R$ 0,00"
+        },
+        "impressoes": 0,
+        "linkClicks": null,
+        "ctr": {
+          "valor": null,
+          "motivo": "LINK_CLICK_AUSENTE",
+          "memoria": "a Meta não devolveu link_click — CTR não medido (nunca cliques totais)"
+        },
+        "cpc": {
+          "valor": null,
+          "motivo": "LINK_CLICK_AUSENTE",
+          "memoria": "a Meta não devolveu link_click — CPC não medido"
+        },
+        "ingressos": {
+          "valor": 0,
+          "memoria": "compradores de captação cujo ingresso veio de anúncio \"card-estatico\" (utm_content da venda) = 0"
+        },
+        "conversaoCliqueIngresso": {
+          "valor": null,
+          "motivo": "LINK_CLICK_AUSENTE",
+          "memoria": "a Meta não devolveu link_click — conversão clique→ingresso não medida"
+        },
+        "custoPorIngresso": {
+          "valor": null,
+          "memoria": "investimento c/ imposto (card-estatico) R$ 0,00 ÷ ingressos (card-estatico) R$ 0,00 — sem denominador",
+          "motivo": "DIVISAO_POR_ZERO: ingressos (card-estatico) = 0"
+        }
+      }
+    ],
+    "naoClassificados": {
+      "criativos": 0,
+      "respondentes": 0
+    },
+    "conflitosDeTipo": [],
+    "ressalvas": [
+      "COPY_NAO_PAREADA"
+    ],
+    "adLevel": {
+      "aplicavel": true,
+      "linhas": 1
+    }
+  },
+  "crossLaunch": {
+    "aplicavel": true,
+    "funnelIdAnterior": "funil-pg01",
+    "tipoDaBase": "leads+compradores",
+    "criterio": "email-ou-telefone",
+    "leadsAnteriores": 2,
+    "compradoresAnteriores": 1,
+    "retornoDaBase": {
+      "valor": 50,
+      "numerador": 1,
+      "denominador": 2,
+      "memoria": "leads do anterior que compraram a captação agora 1 ÷ leads do anterior (únicos por e-mail ∪ telefone) 2 × 100 = 50,00%"
+    },
+    "retornoDaBasePrincipal": {
+      "valor": 50,
+      "numerador": 1,
+      "denominador": 2,
+      "memoria": "leads do anterior que compraram o principal agora 1 ÷ leads do anterior (únicos por e-mail ∪ telefone) 2 × 100 = 50,00%"
+    },
+    "jaEmBaseAnterior": {
+      "captacao": {
+        "valor": 66.66666666666666,
+        "numerador": 2,
+        "denominador": 3,
+        "memoria": "compradores de captação presentes na base anterior (leads ∪ compradores) 2 ÷ compradores de captação 3 × 100 = 66,67%"
+      },
+      "principal": {
+        "valor": 100,
+        "numerador": 1,
+        "denominador": 1,
+        "memoria": "compradores do principal presentes na base anterior (leads ∪ compradores) 1 ÷ compradores do principal (únicos por e-mail ∪ telefone) 1 × 100 = 100,00%"
+      }
+    }
+  },
+  "lacunas": [
+    {
+      "codigo": "LISTAS_FRONT_COMUNIDADE",
+      "motivo": "sem fonte no Loyola",
+      "detalhe": "Comunidade/Front não são segmentos nem são aproximados — Comunidade→Principal e Front→Principal não são calculadas"
+    }
+  ]
+}

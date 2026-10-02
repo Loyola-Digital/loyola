@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useQueries } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowLeft, Calculator } from "lucide-react";
@@ -15,28 +16,32 @@ import { PlanejamentoLeadsPagos } from "@/components/funnels/planejamento-leads-
 import { PlanejamentoResumoFinal } from "@/components/funnels/planejamento-resumo-final"; // Story 48.5
 import { temPainelDePlanejamento } from "@/lib/utils/planejamento-entrada"; // Story 48.7
 import { usePlanejamentoBases } from "@/lib/hooks/use-planejamento-bases"; // Story 48.9
-import { usePlanejamentoInputs } from "@/lib/hooks/use-planejamento-inputs";
-import { usePlanejamentoOrganicos } from "@/lib/hooks/use-planejamento-organicos";
-import { usePlanejamentoPagos } from "@/lib/hooks/use-planejamento-pagos";
+import { useApiClient } from "@/lib/hooks/use-api-client";
+import { planejamentoInputsQueryKey, type PlanejamentoInputsResponse } from "@/lib/hooks/use-planejamento-inputs";
+import { planejamentoOrganicosQueryKey, type PlanejamentoOrganicosResponse } from "@/lib/hooks/use-planejamento-organicos";
+import { planejamentoPagosQueryKey, type PlanejamentoPagosResponse } from "@/lib/hooks/use-planejamento-pagos";
+import type { BuyersOrigin } from "@/lib/hooks/use-sales-journey";
+import type { StageSalesData } from "@loyola-x/shared";
 import {
   baseTemSimulador,
   fraseSemBase,
   montarReferencia,
   rotuloDaOpcaoDeBase,
-  textoDoCabecalhoDaBase,
-  type BaseDeReferencia,
+  textoDoCabecalhoDasBases,
 } from "@/lib/utils/planejamento-referencia"; // Story 48.13
-import { usePlanejamentoRealizado } from "@/lib/hooks/use-planejamento-realizado"; // Story 48.11
-import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
-import { useBuyersOrigin } from "@/lib/hooks/use-sales-journey";
 import {
-  etapaDeVendasPadrao,
+  etapaEscolhidaDaBase,
   etapasDeVendas,
   montarRealizado,
-  type EtapaDaBase,
-  type RealizadoDaBase,
-} from "@/lib/utils/planejamento-realizado";
-import { fmtPercent } from "@/lib/utils/format-number";
+  type RealizadoDaApi,
+} from "@/lib/utils/planejamento-realizado"; // Story 48.11
+import {
+  alternarBase,
+  basesMarcadasNaOrdemDaLista,
+  escolherEtapaDaBase,
+  linhasDaDeclaracao,
+  type ReferenciaDeBase,
+} from "@/lib/utils/planejamento-bases"; // Story 48.14
 
 // Story 48.1 — sub-página "Planejamento" do funil de LANÇAMENTO (Epic 48).
 //
@@ -84,66 +89,120 @@ export default function PlanejamentoPage() {
   }
 
   // Story 48.9 — a BASE: um lançamento anterior do mesmo expert e mesmo tipo,
-  // escolhido uma vez e lido pelas quatro abas. Os dados vêm das MESMAS rotas
-  // da aba, só que com o funnelId do outro funil — nada novo a manter.
-  const [baseId, setBaseId] = useState<string | null>(null);
+  // lido pelas quatro abas. Os dados vêm das MESMAS rotas da aba, só que com o
+  // funnelId do outro funil — nada novo a manter.
+  //
+  // Story 48.14 — VÁRIAS bases lado a lado (decisão 2 = (a) do Danilo). A lista
+  // marcada é só leitura (AC6): não toca no formulário nem no "alterações não
+  // salvas". A ordem em toda a tela é a da lista de `/bases`, não a da marcação.
+  const [basesIds, setBasesIds] = useState<string[]>([]);
   const bases = usePlanejamentoBases(params.id, params.funnelId);
-  const baseEscolhida = bases.data?.bases.find((b) => b.funnelId === baseId) ?? null;
-  // Story 48.13 — base SEM Planejamento salvo: as três leituras nem são
-  // pedidas. Um simulador que não existe não vira `base:` (o GET devolveria os
-  // vazios), e a referência sai só com o nome — ver `montarReferencia`.
-  const simuladorDaBase = baseEscolhida && baseTemSimulador(baseEscolhida) ? baseEscolhida.funnelId : null;
-  const baseInputs = usePlanejamentoInputs(simuladorDaBase ? params.id : null, simuladorDaBase);
-  const baseOrganicos = usePlanejamentoOrganicos(simuladorDaBase ? params.id : null, simuladorDaBase);
-  const basePagos = usePlanejamentoPagos(simuladorDaBase ? params.id : null, simuladorDaBase);
-  const referencia: BaseDeReferencia | null = montarReferencia(baseEscolhida, {
-    inputs: baseInputs.data?.inputs ?? null,
-    organicos: baseOrganicos.data ?? null,
-    pagos: basePagos.data ?? null,
+  const marcadas = basesMarcadasNaOrdemDaLista(bases.data?.bases ?? [], basesIds);
+  const apiClient = useApiClient();
+  const pid = params.id;
+
+  // As leituras são feitas POR BASE MARCADA (AC7) — `useQueries`, porque hook
+  // dentro de laço quebra a regra dos hooks. Cada entrada usa a MESMA
+  // `queryKey`/rota do hook de uma base só (citado ao lado), para o cache valer
+  // entre as duas formas; desmarcar uma base tira a entrada dela do array sem
+  // mudar a chave das outras, então nada é lido de novo.
+  //
+  // Story 48.13 — base SEM Planejamento salvo: as três leituras do simulador
+  // nem são pedidas (um simulador que não existe não vira `base:`).
+  const comSimulador = marcadas.filter((b) => baseTemSimulador(b));
+  const inputsQ = useQueries({
+    queries: comSimulador.map((b) => ({
+      queryKey: planejamentoInputsQueryKey(pid, b.funnelId), // = usePlanejamentoInputs
+      queryFn: () => apiClient<PlanejamentoInputsResponse>(`/api/projects/${pid}/funnels/${b.funnelId}/planejamento/inputs`),
+    })),
+  });
+  const organicosQ = useQueries({
+    queries: comSimulador.map((b) => ({
+      queryKey: planejamentoOrganicosQueryKey(pid, b.funnelId), // = usePlanejamentoOrganicos
+      queryFn: () => apiClient<PlanejamentoOrganicosResponse>(`/api/projects/${pid}/funnels/${b.funnelId}/planejamento/organicos`),
+    })),
+  });
+  const pagosQ = useQueries({
+    queries: comSimulador.map((b) => ({
+      queryKey: planejamentoPagosQueryKey(pid, b.funnelId), // = usePlanejamentoPagos
+      queryFn: () => apiClient<PlanejamentoPagosResponse>(`/api/projects/${pid}/funnels/${b.funnelId}/planejamento/pagos`),
+    })),
   });
 
-  // Story 48.11 — a camada B: o que a base ENTREGOU.
-  //
-  // Três leituras, todas do funil da BASE: o investimento Meta (rota nova), o
-  // ticket médio e a conversão por canal (rotas de ETAPA que já existem — os
-  // mesmos números do dashboard, não uma segunda conta).
-  const baseRealizado = usePlanejamentoRealizado(baseId ? params.id : null, baseId);
-  const vendasDaBase = etapasDeVendas(baseRealizado.data?.etapas);
-  const [etapaDeVendasId, setEtapaDeVendasId] = useState<string | null>(null);
-  // A escolha padrão segue a base: trocar de lançamento não pode deixar para
-  // trás o `stageId` do anterior.
-  useEffect(() => {
-    setEtapaDeVendasId(etapaDeVendasPadrao(baseRealizado.data?.etapas)?.id ?? null);
-  }, [baseRealizado.data]);
-  const etapaEscolhida: EtapaDaBase | null = vendasDaBase.find((e) => e.id === etapaDeVendasId) ?? null;
+  // Story 48.11 — a camada B: o que cada base ENTREGOU. O investimento Meta
+  // (rota `/realizado`), o ticket médio e a conversão por canal (rotas de ETAPA
+  // que já existem — os mesmos números do dashboard, não uma segunda conta).
+  const realizadoQ = useQueries({
+    queries: marcadas.map((b) => ({
+      queryKey: ["planejamento-realizado", pid, b.funnelId], // = usePlanejamentoRealizado
+      queryFn: () => apiClient<RealizadoDaApi>(`/api/projects/${pid}/funnels/${b.funnelId}/planejamento/realizado`),
+      // Numa API ainda sem a rota, o 404 é resposta definitiva (48.11 AC9).
+      retry: false,
+      staleTime: 5 * 60 * 1000,
+    })),
+  });
 
-  const vendasDaEtapa = useStageSalesData(
-    etapaEscolhida ? params.id : null,
-    etapaEscolhida ? baseId : null,
-    etapaEscolhida?.id ?? null,
-    "main_product,tmb",
-  );
+  // Story 48.14 (AC3) — a "Etapa de vendas da base" é POR BASE: um mapa
+  // funnelId → stageId. Sem escolha (ou escolha que não é etapa de vendas
+  // daquela base), vale o padrão — a etapa que não é downsell.
+  const [etapaPorBase, setEtapaPorBase] = useState<Record<string, string>>({});
+  const etapasDasBases = marcadas.map((b, i) => etapaEscolhidaDaBase(realizadoQ[i]?.data?.etapas, etapaPorBase[b.funnelId]));
+
+  const vendasQ = useQueries({
+    queries: marcadas.map((b, i) => {
+      const etapa = etapasDasBases[i];
+      return {
+        // = useStageSalesData(pid, funnelId, stageId, "main_product,tmb") — `days` ausente.
+        queryKey: ["stage-sales-data", pid, b.funnelId, etapa?.id ?? null, "main_product,tmb", undefined],
+        queryFn: () =>
+          apiClient<StageSalesData>(
+            `/api/projects/${pid}/funnels/${b.funnelId}/stages/${etapa?.id ?? ""}/sales-data?${new URLSearchParams({ subtype: "main_product,tmb", debug: "1" })}`,
+          ),
+        enabled: !!etapa,
+        staleTime: 30 * 1000,
+      };
+    }),
+  });
   // `buyers-origin` responde 403 a guest — pedir assim mesmo seria um erro
   // garantido no console a cada visita. Sem ela, o guest perde só a conversão
   // por canal; investimento e ticket médio continuam (aquelas rotas deixam o
   // convidado membro do projeto ler).
-  const origemDaEtapa = useBuyersOrigin(
-    params.id,
-    baseId ?? "",
-    etapaEscolhida?.id ?? "",
-    undefined,
-    !!baseId && !!etapaEscolhida && role !== null && role !== "guest",
-  );
+  const podeLerOrigem = role !== null && role !== "guest";
+  const origemQ = useQueries({
+    queries: marcadas.map((b, i) => {
+      const etapa = etapasDasBases[i];
+      return {
+        queryKey: ["buyers-origin", pid, b.funnelId, etapa?.id ?? "", null], // = useBuyersOrigin
+        queryFn: () => apiClient<BuyersOrigin>(`/api/projects/${pid}/funnels/${b.funnelId}/stages/${etapa?.id ?? ""}/buyers-origin`),
+        enabled: !!etapa && podeLerOrigem,
+        staleTime: 5 * 60 * 1000,
+      };
+    }),
+  });
 
-  const realizado: RealizadoDaBase | null = baseEscolhida
-    ? montarRealizado({
-        api: baseRealizado.data,
-        etapaEscolhida,
-        ticketMedioBruto: vendasDaEtapa.data?.ticketMedioBruto ?? null,
-        fontesOrganicas: origemDaEtapa.data?.analiseDeOrigem?.fontesOrganicas,
-        fontesPagasPorTemperatura: origemDaEtapa.data?.analiseDeOrigem?.fontesPagasPorTemperatura,
-      })
-    : null;
+  const referencias: ReferenciaDeBase[] = marcadas.map((b, i) => {
+    const iSim = comSimulador.indexOf(b);
+    const leituras = {
+      inputs: iSim >= 0 ? (inputsQ[iSim]?.data?.inputs ?? null) : null,
+      organicos: iSim >= 0 ? (organicosQ[iSim]?.data ?? null) : null,
+      pagos: iSim >= 0 ? (pagosQ[iSim]?.data ?? null) : null,
+    };
+    const origem = origemQ[i]?.data?.analiseDeOrigem;
+    return {
+      funnelId: b.funnelId,
+      nome: b.nome,
+      referencia: montarReferencia(b, leituras) ?? { nome: b.nome, ...leituras },
+      realizado: montarRealizado({
+        api: realizadoQ[i]?.data,
+        etapaEscolhida: etapasDasBases[i],
+        ticketMedioBruto: vendasQ[i]?.data?.ticketMedioBruto ?? null,
+        fontesOrganicas: origem?.fontesOrganicas,
+        fontesPagasPorTemperatura: origem?.fontesPagasPorTemperatura,
+      }),
+      lendoRealizado: realizadoQ[i]?.isPending ?? true,
+    };
+  });
+  const linhasDoRealizado = linhasDaDeclaracao(referencias);
 
   const voltar = `/projects/${params.id}/funnels/${params.funnelId}`;
 
@@ -202,43 +261,55 @@ export default function PlanejamentoPage() {
             <span className="text-xs text-muted-foreground">{fraseSemBase(bases.data)}</span>
           ) : (
             <>
-              <select
-                aria-label="Selecionar campanha anterior"
-                value={baseId ?? ""}
-                onChange={(ev) => setBaseId(ev.target.value === "" ? null : ev.target.value)}
-                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-              >
-                <option value="">Selecionar campanha anterior…</option>
+              {/* Story 48.14 (AC1) — uma caixa por base, na ordem da lista. */}
+              <fieldset aria-label="Selecionar campanhas anteriores" className="flex items-center gap-x-3 gap-y-1 flex-wrap">
                 {bases.data.bases.map((b) => (
-                  <option key={b.funnelId} value={b.funnelId}>
+                  <label key={b.funnelId} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={basesIds.includes(b.funnelId)}
+                      onChange={() => setBasesIds((ids) => alternarBase(ids, b.funnelId))}
+                      className="h-3.5 w-3.5 accent-emerald-600"
+                    />
                     {rotuloDaOpcaoDeBase(b)}
-                  </option>
+                  </label>
                 ))}
-              </select>
-              {vendasDaBase.length > 1 && (
-                <select
-                  aria-label="Etapa de vendas da base"
-                  value={etapaDeVendasId ?? ""}
-                  onChange={(ev) => setEtapaDeVendasId(ev.target.value === "" ? null : ev.target.value)}
-                  className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-                >
-                  {vendasDaBase.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      Etapa de vendas: {e.nome}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <span className="text-xs text-muted-foreground">{textoDoCabecalhoDaBase(referencia)}</span>
+              </fieldset>
+              {/* Story 48.14 (AC3) — o seletor da etapa de vendas é por base,
+                  e só aparece para a base com mais de uma etapa `sales`. */}
+              {marcadas.map((b, i) => {
+                const vendas = etapasDeVendas(realizadoQ[i]?.data?.etapas);
+                if (vendas.length <= 1) return null;
+                return (
+                  <select
+                    key={b.funnelId}
+                    aria-label={`Etapa de vendas da base ${b.nome}`}
+                    value={etapasDasBases[i]?.id ?? ""}
+                    onChange={(ev) => setEtapaPorBase((m) => escolherEtapaDaBase(m, b.funnelId, ev.target.value))}
+                    className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                  >
+                    {vendas.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {b.nome} · etapa de vendas: {e.nome}
+                      </option>
+                    ))}
+                  </select>
+                );
+              })}
+              <span className="text-xs text-muted-foreground">{textoDoCabecalhoDasBases(referencias.map((r) => r.referencia))}</span>
             </>
           )}
           {/* Story 48.11 (AC8) — o que o `real:` cobre e o que ele NÃO cobre.
               Um número sem procedência ao lado de um campo é pior que nenhum:
               o gestor não tem como saber que o 100 % do Meta é ausência de
-              Google, e não medição. */}
-          {realizado && !baseRealizado.isPending && (
-            <DeclaracaoDoRealizado realizado={realizado} semSimulador={referencia?.semSimulador === true} />
-          )}
+              Google, e não medição. Story 48.14 (AC4) — uma linha por base,
+              começando pelo nome; a falha de uma fica só na linha dela. */}
+          {linhasDoRealizado.map((l) => (
+            <p key={l.funnelId} className="basis-full text-xs text-muted-foreground">
+              <strong>{l.nome}</strong>
+              {l.avisoSemSimulador && <> · {l.avisoSemSimulador}</>} · <strong>real:</strong> {l.texto}
+            </p>
+          ))}
         </div>
       )}
 
@@ -251,7 +322,7 @@ export default function PlanejamentoPage() {
           ))}
         </TabsList>
         <TabsContent value="inputs" className="mt-4">
-          <PlanejamentoInputsFinanceiros projectId={params.id} funnelId={params.funnelId} podeEditar={role !== null && role !== "guest"} referencia={referencia} realizado={realizado} />
+          <PlanejamentoInputsFinanceiros projectId={params.id} funnelId={params.funnelId} podeEditar={role !== null && role !== "guest"} bases={referencias} />
         </TabsContent>
         <TabsContent value="organicos" className="mt-4">
           <PlanejamentoLeadsOrganicos
@@ -259,8 +330,7 @@ export default function PlanejamentoPage() {
             funnelId={params.funnelId}
             podeEditar={role !== null && role !== "guest"}
             irParaInputs={() => trocarAba("inputs")}
-            referencia={referencia}
-            realizado={realizado}
+            bases={referencias}
           />
         </TabsContent>
         <TabsContent value="pagos" className="mt-4">
@@ -269,8 +339,7 @@ export default function PlanejamentoPage() {
             funnelId={params.funnelId}
             podeEditar={role !== null && role !== "guest"}
             irParaInputs={() => trocarAba("inputs")}
-            referencia={referencia}
-            realizado={realizado}
+            bases={referencias}
           />
         </TabsContent>
         <TabsContent value="resumo" className="mt-4">
@@ -278,82 +347,5 @@ export default function PlanejamentoPage() {
         </TabsContent>
       </Tabs>
     </div>
-  );
-}
-
-/**
- * Story 48.11 (AC8) — a procedência do `real:`, em uma linha.
- *
- * Declara: a janela do gasto, quantas campanhas entraram, que o 0 % do Google
- * é ausência de lançamento (não medição), qual etapa de vendas alimentou o
- * ticket e a conversão, e quanto dos leads orgânicos ficou fora dos cinco
- * canais nomeados.
- */
-function DeclaracaoDoRealizado({ realizado, semSimulador }: { realizado: RealizadoDaBase; semSimulador: boolean }) {
-  const inv = realizado.investimentoMeta;
-
-  // Falha NÃO é ausência: sem resposta, a tela diz que não conseguiu ler, em
-  // vez de afirmar que o lançamento não tem etapa de vendas nem campanha.
-  if (!realizado.temResposta) {
-    return (
-      <p className="basis-full text-xs text-muted-foreground">
-        <strong>real:</strong> os valores realizados desse lançamento não puderam ser lidos agora — a API pode ainda não ter
-        essa rota.
-        {/* Story 48.13 — base sem Planejamento não tem valores planejados a
-            "seguir válidos": a frase contradiria a linha ao lado. */}
-        {!semSimulador && (
-          <>
-            {" "}
-            Os valores <strong>planejados</strong> (base) seguem válidos.
-          </>
-        )}
-      </p>
-    );
-  }
-
-  const partes: string[] = [];
-
-  if (inv && inv.campanhasComSpend > 0) {
-    const janela = inv.janela.de && inv.janela.ate ? ` entre ${inv.janela.de} e ${inv.janela.ate}` : "";
-    partes.push(`investimento de ${inv.campanhasComSpend} de ${inv.campanhasVinculadas} campanhas${janela}`);
-    if (inv.indefinido > 0) {
-      partes.push(
-        `${fmtPercent((inv.indefinido / inv.total) * 100)} do gasto está em campanha sem quente/frio no nome e fica fora do "% em público quente"`,
-      );
-    }
-  } else if (inv) {
-    partes.push("nenhuma campanha com gasto registrado nesse lançamento");
-  }
-
-  if (realizado.googleCampanhasVinculadas > 0) {
-    partes.push(
-      `${realizado.googleCampanhasVinculadas} campanha(s) do Google vinculada(s) e sem insights no sistema — a divisão Meta/Google não pode ser medida`,
-    );
-  } else if (!realizado.googleTemFonte) {
-    partes.push("Google aparece como 0 % por não haver campanha do Google vinculada — não é medição");
-  }
-
-  if (realizado.etapaDeVendas) {
-    // O subtype pedido é `main_product,tmb`: o ticket médio traz o produto
-    // principal COM order bump. Dizer isso evita o gestor comparar com um
-    // ticket de produto puro e concluir que a medição está alta.
-    partes.push(
-      `ticket médio (produto principal + order bump) e conversão vêm da etapa "${realizado.etapaDeVendas.nome}"`,
-    );
-  } else {
-    partes.push("esse lançamento não tem etapa de vendas — sem ticket médio nem conversão realizada");
-  }
-
-  const fora = realizado.foraDoMapeamento;
-  if (fora.fracao !== null && fora.leads > 0) {
-    partes.push(
-      `${fmtPercent(fora.fracao * 100)} dos leads orgânicos ficaram fora dos cinco canais nomeados (Closer, Outros, Sem Track)`,
-    );
-  }
-
-  return (
-    <p className="basis-full text-xs text-muted-foreground">
-      <strong>real:</strong> {partes.join(" · ")}.
-    </p>
   );
 }

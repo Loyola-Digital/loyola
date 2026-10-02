@@ -12,6 +12,9 @@ import {
   metaAdsAccounts,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
+import { respostasDoFormulario } from "../services/tally.js";
+import { tallyConnections } from "../db/schema.js";
+import { decrypt } from "../services/encryption.js";
 import { fetchCampaignInsights, fetchAllAdSetInsights, fetchAllAdInsights, decryptAccountToken } from "../services/meta-ads.js";
 import { applyMetaTax } from "../utils/meta-tax.js";
 import { phoneTail } from "../utils/lead-origin.js";
@@ -28,6 +31,8 @@ const paramsSchema = z.object({
 
 const putBodySchema = z.object({
   surveyId: z.string().uuid().nullable().optional(),
+  /** Formulário do Tally como fonte das respostas. `null` volta para a planilha. */
+  tallyFormId: z.string().trim().max(100).nullable().optional(),
   schemaJson: z.record(z.string(), z.unknown()),
 });
 
@@ -108,6 +113,44 @@ export type LeadScoringSchema = {
  *   4. survey.columnMapping.faixa (Survey Mapping dialog)
  * Retorna null se nenhuma fonte configurada.
  */
+/**
+ * As respostas da etapa, venham da planilha ou do Tally.
+ *
+ * Um ponto só para as seis telas que leem respostas (resultados, debug, quebra
+ * por campanha, por conjunto, por criativo). Trocar a fonte em seis lugares é
+ * como se esquece um — e o esquecido mostra número de outra origem ao lado dos
+ * demais, sem nada na tela dizendo isso.
+ *
+ * O formato é o da planilha de propósito: `{headers, rows}` é o que o motor
+ * sabe casar com as perguntas, com aliases, acento e pontuação. O Tally entra
+ * por onde a planilha entrava, e a conta continua sendo exatamente a mesma.
+ */
+async function respostasDaEtapa(
+  db: { select: (f?: unknown) => never },
+  scoring: { tallyFormId?: string | null },
+  survey: { spreadsheetId: string; sheetName: string },
+  projectId: string,
+): Promise<{ headers: string[]; rows: string[][] }> {
+  if (!scoring.tallyFormId) return readSheetData(survey.spreadsheetId, survey.sheetName);
+
+  const [conexao] = await (db as unknown as {
+    select: (f: unknown) => {
+      from: (t: unknown) => { where: (c: unknown) => { limit: (n: number) => Promise<{ enc: string; iv: string }[]> } };
+    };
+  })
+    .select({ enc: tallyConnections.tokenEncrypted, iv: tallyConnections.tokenIv })
+    .from(tallyConnections)
+    .where(eq(tallyConnections.projectId, projectId))
+    .limit(1);
+
+  // Sem conexão, a planilha segura — melhor o número de ontem do que tela
+  // vazia, e a aba de configuração é quem avisa que o Tally não está ligado.
+  if (!conexao) return readSheetData(survey.spreadsheetId, survey.sheetName);
+
+  const r = await respostasDoFormulario(decrypt(conexao.enc, conexao.iv), scoring.tallyFormId);
+  return { headers: r.headers, rows: r.rows };
+}
+
 export function resolvePrecomputedBandColumn(
   schema: LeadScoringSchema,
   surveyMapping: unknown,
@@ -509,6 +552,79 @@ export function computeLeadBandMap(
   return result;
 }
 
+export interface LeadClassificado {
+  /** Índice da linha na planilha — é o que liga de volta à origem. */
+  linha: number;
+  score: number;
+  /** A faixa, ou `null` quando o score não caiu em nenhuma. */
+  faixa: string | null;
+}
+
+/**
+ * Classifica CADA lead da planilha — o caminho único que conta e que envia.
+ *
+ * `computeBands` existia para contar por faixa, e o envio para o Meta precisa
+ * saber QUEM é de cada faixa. Fossem dois cálculos, um dia a tela mostraria 120
+ * leads A e o Meta receberia 118, sem ninguém saber qual dos dois está certo.
+ * Então a contagem passou a ser derivada daqui.
+ */
+export function classificarLeads(
+  schema: LeadScoringSchema,
+  sheet: { headers: string[]; rows: string[][] },
+  faixaColumnName?: string | null,
+): LeadClassificado[] {
+  const questions = schema.scoring_model?.questions ?? [];
+  const bands = schema.bands ?? [];
+  const { headers, rows } = sheet;
+
+  const faixaIdx = faixaColumnName
+    ? headers.findIndex((h) => h.trim().toLowerCase() === faixaColumnName.trim().toLowerCase())
+    : -1;
+  const leDireto = faixaIdx !== -1;
+  const idsValidos = new Set(bands.map((b) => b.id.toUpperCase()));
+
+  const colMap = new Map<string, number>();
+  if (!leDireto) {
+    for (const q of questions) colMap.set(q.id, findQuestionColumnIndex(headers, q));
+  }
+  const q4Idx = colMap.get("Q4") ?? -1;
+
+  return rows.map((row, linha) => {
+    // Faixa já calculada fora: a planilha manda, como sempre mandou.
+    if (leDireto) {
+      const bruto = (row[faixaIdx] ?? "").trim().toUpperCase();
+      return { linha, score: 0, faixa: bruto && idsValidos.has(bruto) ? bruto : null };
+    }
+
+    let score = 0;
+    const q4Raw = q4Idx === -1 ? "" : (row[q4Idx] ?? "").trim();
+    const q4Filled = q4Raw !== "" && q4Raw.toLowerCase() !== NO_ANSWER_SENTINEL;
+
+    for (const q of questions) {
+      const colIdx = colMap.get(q.id) ?? -1;
+      const fallback = q.unmapped_default ?? 0;
+      if (colIdx === -1) {
+        score += fallback;
+        continue;
+      }
+      const answer = resolveAnswerCellValue(row[colIdx]);
+      const match = findAnswerMatch(q.answers, answer);
+      if (!match) {
+        score += fallback;
+        continue;
+      }
+      score += isAnswerConditional(match)
+        ? match.points_conditional[q4Filled ? "if_q4_filled" : "if_q4_empty"]
+        : match.points;
+    }
+
+    const band =
+      bands.find((b) => score >= b.range.min && score < b.range.max) ??
+      bands.find((b) => score === b.range.max);
+    return { linha, score, faixa: band?.id ?? null };
+  });
+}
+
 function computeBands(
   schema: LeadScoringSchema,
   sheet: { headers: string[]; rows: string[][] },
@@ -540,55 +656,11 @@ function computeBands(
   for (const b of bands) bandCounts.set(b.id, 0);
   let unclassified = 0;
 
-  for (const row of rows) {
-    // Path 1 (Story 18.17): faixa pré-calculada — lê direto da planilha
-    if (useDirectFaixa) {
-      const raw = (row[faixaIdx] ?? "").trim().toUpperCase();
-      if (raw && validBandIds.has(raw)) {
-        bandCounts.set(raw, (bandCounts.get(raw) ?? 0) + 1);
-      } else {
-        unclassified++;
-      }
-      continue;
-    }
-
-    // Path 2 (legacy): recalcula score do zero rodando o scoring_model no CSV
-    let totalScore = 0;
-    // Q4 "filled" = lead respondeu (tem funcionários). Vazio ou "(sem resposta)" = não-filled.
-    const q4Raw = q4Idx === -1 ? "" : (row[q4Idx] ?? "").trim();
-    const q4Filled = q4Raw !== "" && q4Raw.toLowerCase() !== NO_ANSWER_SENTINEL;
-
-    for (const q of questions) {
-      const colIdx = colMap.get(q.id) ?? -1;
-      const fallback = q.unmapped_default ?? 0;
-      if (colIdx === -1) {
-        totalScore += fallback;
-        continue;
-      }
-      const answer = resolveAnswerCellValue(row[colIdx]);
-      const match = findAnswerMatch(q.answers, answer);
-      if (!match) {
-        totalScore += fallback;
-        continue;
-      }
-      if (isAnswerConditional(match)) {
-        const rule = match.points_conditional;
-        totalScore += q4Filled ? rule.if_q4_filled : rule.if_q4_empty;
-      } else {
-        totalScore += match.points;
-      }
-    }
-
-    // Classificar (range: min <= score < max). Caso especial pra última banda inclusiva.
-    let band = bands.find((b) => totalScore >= b.range.min && totalScore < b.range.max);
-    if (!band) {
-      band = bands.find((b) => totalScore === b.range.max);
-    }
-    if (band) {
-      bandCounts.set(band.id, (bandCounts.get(band.id) ?? 0) + 1);
-    } else {
-      unclassified++;
-    }
+  // A contagem é DERIVADA da classificação lead a lead — o mesmo cálculo que
+  // decide quem vai para o Meta. Ver `classificarLeads`.
+  for (const lead of classificarLeads(schema, sheet, faixaColumnName)) {
+    if (lead.faixa) bandCounts.set(lead.faixa, (bandCounts.get(lead.faixa) ?? 0) + 1);
+    else unclassified++;
   }
 
   const total = rows.length;
@@ -1530,6 +1602,7 @@ export default fp(async function leadScoringRoutes(fastify) {
         .values({
           stageId: params.data.stageId,
           surveyId: body.data.surveyId ?? null,
+          tallyFormId: body.data.tallyFormId || null,
           schemaJson: body.data.schemaJson,
           updatedAt: now,
         })
@@ -1537,6 +1610,7 @@ export default fp(async function leadScoringRoutes(fastify) {
           target: stageLeadScoringSchemas.stageId,
           set: {
             surveyId: body.data.surveyId ?? null,
+            tallyFormId: body.data.tallyFormId || null,
             schemaJson: body.data.schemaJson,
             updatedAt: now,
           },
@@ -1585,7 +1659,7 @@ export default fp(async function leadScoringRoutes(fastify) {
         .limit(1);
       if (!survey) return reply.code(404).send({ error: "Survey não encontrado" });
 
-      const sheet = await readSheetData(survey.spreadsheetId, survey.sheetName);
+      const sheet = await respostasDaEtapa(fastify.db as never, scoringRow, survey, params.data.projectId);
       const schema = scoringRow.schemaJson as LeadScoringSchema;
       const questions = schema.scoring_model?.questions ?? [];
 
@@ -1728,7 +1802,7 @@ export default fp(async function leadScoringRoutes(fastify) {
 
       let sheetData: { headers: string[]; rows: string[][] };
       try {
-        const res = await readSheetData(survey.spreadsheetId, survey.sheetName);
+        const res = await respostasDaEtapa(fastify.db as never, scoringRow, survey, params.data.projectId);
         sheetData = { headers: res.headers, rows: res.rows };
       } catch {
         return EMPTY_ORIGINS;
@@ -1790,7 +1864,7 @@ export default fp(async function leadScoringRoutes(fastify) {
 
       let sheetData: { headers: string[]; rows: string[][] };
       try {
-        const res = await readSheetData(survey.spreadsheetId, survey.sheetName);
+        const res = await respostasDaEtapa(fastify.db as never, scoringRow, survey, params.data.projectId);
         sheetData = { headers: res.headers, rows: res.rows };
       } catch {
         return EMPTY;
@@ -1854,7 +1928,7 @@ export default fp(async function leadScoringRoutes(fastify) {
 
       let sheetData: { headers: string[]; rows: string[][] };
       try {
-        const res = await readSheetData(survey.spreadsheetId, survey.sheetName);
+        const res = await respostasDaEtapa(fastify.db as never, scoringRow, survey, params.data.projectId);
         sheetData = { headers: res.headers, rows: res.rows };
       } catch {
         return EMPTY;
@@ -1961,7 +2035,7 @@ export default fp(async function leadScoringRoutes(fastify) {
 
       let sheetData: { headers: string[]; rows: string[][] };
       try {
-        const res = await readSheetData(survey.spreadsheetId, survey.sheetName);
+        const res = await respostasDaEtapa(fastify.db as never, scoringRow, survey, params.data.projectId);
         sheetData = { headers: res.headers, rows: res.rows };
       } catch {
         return EMPTY;
@@ -2065,7 +2139,7 @@ export default fp(async function leadScoringRoutes(fastify) {
 
       let sheetData: { headers: string[]; rows: string[][] };
       try {
-        const res = await readSheetData(survey.spreadsheetId, survey.sheetName);
+        const res = await respostasDaEtapa(fastify.db as never, scoringRow, survey, params.data.projectId);
         sheetData = { headers: res.headers, rows: res.rows };
       } catch {
         return EMPTY;

@@ -98,6 +98,29 @@ export interface SalesDailyPayload {
   porOrigemTemperatura: { origem: Origem; temperatura: "hot" | "cold" | null; vendas: number; bruto: number; liquido: number }[];
   /** Story 39.5 (parcial): quebra por produto (top 30) — base pra separar ingresso × order bump. */
   porProduto: { produto: string; vendas: number; bruto: number; liquido: number }[];
+  /**
+   * O mesmo por produto, mas DIA A DIA — é o que torna produto consultável no BI.
+   *
+   * `porProduto` é o total do range inteiro do cache: mostrá-lo num dashboard
+   * que filtra "01/10" daria o acumulado do funil com cara de resultado do dia.
+   * Com a data em cada linha, a entidade `produtos` do BI respeita o período
+   * como todas as outras.
+   *
+   * Conta LINHA de venda, não comprador: dois order bumps do mesmo cliente são
+   * duas linhas aqui e um comprador no `byDay`. Por isso vive numa entidade
+   * separada do faturamento, em vez de virar uma quebra dele.
+   */
+  porProdutoDia: {
+    date: string;
+    produto: string;
+    /** Canal NOMEADO da própria linha de venda (utm_source + utm_medium). */
+    canal: Canal;
+    /** O balde grosso: Pago, Orgânico ou Sem Track. */
+    origem: Origem;
+    vendas: number;
+    bruto: number;
+    liquido: number;
+  }[];
   /** Brief v6 #6: quebra por plataforma (= subtype da planilha de origem, ou
    * "manual"). Permite excluir TMB do total sem depender do nome do produto. */
   porPlataforma: { plataforma: string; vendas: number; bruto: number; liquido: number }[];
@@ -359,6 +382,10 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
   const porCanal = new Map<Canal, { vendas: number; bruto: number; liquido: number }>();
   const porOT = new Map<string, { origem: Origem; temperatura: "hot" | "cold" | null; vendas: number; bruto: number; liquido: number }>();
   const porProduto = new Map<string, { vendas: number; bruto: number; liquido: number }>();
+  const porProdutoDia = new Map<
+    string,
+    { date: string; produto: string; canal: Canal; origem: Origem; vendas: number; bruto: number; liquido: number }
+  >();
   const porPlataforma = new Map<string, { vendas: number; bruto: number; liquido: number }>();
   const porProdutoPlataforma = new Map<string, { produto: string; plataforma: string; vendas: number; bruto: number; liquido: number }>();
   let totalBruto = 0;
@@ -386,6 +413,21 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
     pf.bruto += s.bruto;
     pf.liquido += s.liquido;
     porPlataforma.set(s.plataforma, pf);
+
+    if (s.lastDate) {
+      const dia = ymd(s.lastDate);
+      // O canal sai da UTM da PRÓPRIA linha de venda — é o que a plataforma de
+      // pagamento gravou junto da compra, não um palpite a partir dos leads.
+      // Era a resposta que faltava para "de onde vem quem compra".
+      const canal = classifyCanal(s.utmSource, s.utmMedium);
+      const origem = classifyOrigem(s.utmSource);
+      const chave = `${dia}|${s.produto}|${canal}|${origem}`;
+      const pd = porProdutoDia.get(chave) ?? { date: dia, produto: s.produto, canal, origem, vendas: 0, bruto: 0, liquido: 0 };
+      pd.vendas += 1;
+      pd.bruto += s.bruto;
+      pd.liquido += s.liquido;
+      porProdutoDia.set(chave, pd);
+    }
 
     const ppfKey = `${s.produto}|${s.plataforma}`;
     const ppf = porProdutoPlataforma.get(ppfKey) ?? { produto: s.produto, plataforma: s.plataforma, vendas: 0, bruto: 0, liquido: 0 };
@@ -447,6 +489,23 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
         faturamentoLiquido: Math.round(e.liquido * 100) / 100,
         ingressos: { pago: e.pago, org: e.org, semTrack: e.semTrack, total: e.pago + e.org + e.semTrack },
       })),
+    // Teto de segurança: 374 dias x 9 produtos é o pior caso medido hoje (o
+    // payload maior tem 5,7 kB), mas um funil com catálogo grande poderia
+    // explodir o cache. Corta pelos dias mais RECENTES, que é o que alguém
+    // pergunta.
+    porProdutoDia: [...porProdutoDia.values()]
+      .sort((a, b) => (a.date === b.date ? b.bruto - a.bruto : a.date < b.date ? 1 : -1))
+      .slice(0, 2000)
+      .map((v) => ({
+        date: v.date,
+        produto: v.produto,
+        canal: v.canal,
+        origem: v.origem,
+        vendas: v.vendas,
+        bruto: Math.round(v.bruto * 100) / 100,
+        liquido: Math.round(v.liquido * 100) / 100,
+      }))
+      .sort((a, b) => (a.date < b.date ? -1 : 1)),
     porOrigem: [...porOrigem.entries()].map(([origem, v]) => ({
       origem,
       vendas: v.vendas,

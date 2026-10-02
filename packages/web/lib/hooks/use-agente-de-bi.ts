@@ -11,6 +11,7 @@
  */
 
 import { useCallback, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
 import { lerNdjson } from "@/lib/bi/ndjson";
 import type { Widget } from "@/lib/bi/tipos";
@@ -27,6 +28,15 @@ export type PassoDoAgente =
 
 type LinhaDoAgente =
   | { tipo: "passo"; passo: PassoDoAgente }
+  /**
+   * A pergunta trouxe uma data, e o servidor já trocou o período do dashboard.
+   *
+   * Chega antes dos widgets. Quem escuta precisa recalcular os widgets ANTIGOS:
+   * os novos já vêm com o período certo, os de antes ainda mostram o anterior —
+   * e dois períodos no mesmo dashboard é o tipo de número errado com cara de
+   * certo.
+   */
+  | { tipo: "periodo"; periodo: { start: string; end: string } }
   | { tipo: "widget"; widget: Widget; resultado: ResultadoDoWidget }
   | { tipo: "fim"; explicacao: string; avisos: string[] }
   | { tipo: "erro"; error: string };
@@ -51,6 +61,7 @@ export function textoDoPasso(p: PassoDoAgente): string {
 
 export function useAgenteDeBi(projectId: string | null, dashboardId: string | null) {
   const { getToken } = useAuth();
+  const qc = useQueryClient();
   const [passos, setPassos] = useState<PassoDoAgente[]>([]);
   const [pensando, setPensando] = useState(false);
   const [explicacao, setExplicacao] = useState<string | null>(null);
@@ -61,6 +72,7 @@ export function useAgenteDeBi(projectId: string | null, dashboardId: string | nu
     async (
       pergunta: string,
       aoChegarWidget: (widget: Widget, resultado: ResultadoDoWidget) => void,
+      aoMudarPeriodo?: (periodo: { start: string; end: string }) => void,
     ) => {
       if (!projectId || !dashboardId) return;
 
@@ -102,6 +114,8 @@ export function useAgenteDeBi(projectId: string | null, dashboardId: string | nu
           (linha) => {
             if (linha.tipo === "passo") {
               setPassos((atuais) => [...atuais, linha.passo]);
+            } else if (linha.tipo === "periodo") {
+              aoMudarPeriodo?.(linha.periodo);
             } else if (linha.tipo === "widget") {
               aoChegarWidget(linha.widget, linha.resultado);
             } else if (linha.tipo === "fim") {
@@ -121,9 +135,14 @@ export function useAgenteDeBi(projectId: string | null, dashboardId: string | nu
           setPensando(false);
           emVoo.current = null;
         }
+        // O servidor guardou a pergunta no documento do dashboard — inclusive
+        // quando ela falhou. Sem recarregar aqui, o histórico só apareceria no
+        // próximo F5, e a pergunta que a pessoa acabou de fazer é justamente a
+        // que ela vai querer repetir.
+        void qc.invalidateQueries({ queryKey: ["bi", "dashboard", projectId, dashboardId] });
       }
     },
-    [projectId, dashboardId, getToken],
+    [projectId, dashboardId, getToken, qc],
   );
 
   return { perguntar, passos, pensando, explicacao, avisos };

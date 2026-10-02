@@ -187,7 +187,7 @@ export function StageCard({ stage, projectId, funnelId, isLastStage, funnelType 
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="h-7 w-7 opacity-60 hover:opacity-100 transition-opacity"
                   >
                     <MoreHorizontal className="h-4 w-4" />
                   </Button>

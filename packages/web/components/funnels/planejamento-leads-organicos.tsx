@@ -27,8 +27,8 @@ import {
   type CampoDeFracaoDoBloco,
   type FormularioDosOrganicos,
 } from "@/lib/utils/planejamento-organicos-form";
-import { referenciaDaConversaoOrganica, rotuloComReferencia, type BaseDeReferencia } from "@/lib/utils/planejamento-referencia"; // Story 48.9
-import { realizadoDaConversaoOrganica, type RealizadoDaBase } from "@/lib/utils/planejamento-realizado"; // Story 48.11
+// Story 48.9 (base:) + 48.11 (real:) — desde a 48.14, um grupo por base marcada.
+import { gruposDaConversaoOrganica, rotuloComBases, type GrupoDaBase, type ReferenciaDeBase } from "@/lib/utils/planejamento-bases";
 import { usePlanejamentoInputs } from "@/lib/hooks/use-planejamento-inputs";
 import { usePlanejamentoOrganicos, useSalvarPlanejamentoOrganicos } from "@/lib/hooks/use-planejamento-organicos";
 
@@ -71,8 +71,7 @@ function BlocoDoCanal({
   origem,
   erros,
   podeEditar,
-  refConversao,
-  realConversao,
+  gruposDaConversao,
   onFracao,
   onNivel,
 }: {
@@ -82,10 +81,8 @@ function BlocoDoCanal({
   origem: { metaReceita: number | null; base: number | null | undefined };
   erros: Partial<Record<string, string>>;
   podeEditar: boolean;
-  /** Story 48.9 — conversão média do mesmo canal no lançamento de referência, já formatada. */
-  refConversao: string | null;
-  /** Story 48.11 — a conversão REALIZADA da base, ao lado da planejada. */
-  realConversao: string | null;
+  /** Story 48.9/48.11 — conversão média planejada e realizada do mesmo canal, um grupo por base marcada (Story 48.14). */
+  gruposDaConversao: readonly GrupoDaBase[];
   onFracao: (campo: CampoDeFracaoDoBloco, v: string) => void;
   onNivel: (nivel: number | null) => void;
 }) {
@@ -107,7 +104,7 @@ function BlocoDoCanal({
             <CampoNumerico
               key={k}
               id={`${canal}-${k}`}
-              rotulo={k === "conversaoMedia" ? rotuloComReferencia(ROTULO_DO_PARAMETRO[k], refConversao, realConversao) : ROTULO_DO_PARAMETRO[k]}
+              rotulo={k === "conversaoMedia" ? rotuloComBases(ROTULO_DO_PARAMETRO[k], gruposDaConversao) : ROTULO_DO_PARAMETRO[k]}
               valor={form.fracoes[k]}
               erro={erros[k]}
               placeholder={k === "fracaoCenario1" ? "70" : undefined}
@@ -327,13 +324,15 @@ function TabelaDeCombinacoes({
 // Seção
 // ------------------------------------------------------------------
 
+/** Referência estável: um `[]` literal no padrão da prop seria um array novo a cada render. */
+const SEM_BASES: ReadonlyArray<ReferenciaDeBase> = [];
+
 export function PlanejamentoLeadsOrganicos({
   projectId,
   funnelId,
   podeEditar,
   irParaInputs,
-  referencia = null,
-  realizado = null,
+  bases = SEM_BASES,
 }: {
   projectId: string;
   funnelId: string;
@@ -341,10 +340,8 @@ export function PlanejamentoLeadsOrganicos({
   podeEditar: boolean;
   /** Troca para a aba `inputs` (a página é dona do `?tab=`). */
   irParaInputs: () => void;
-  /** Story 48.9 — lançamento anterior escolhido na página. */
-  referencia?: BaseDeReferencia | null;
-  /** Story 48.11 — a conversão que a base de fato teve naquele canal. */
-  realizado?: RealizadoDaBase | null;
+  /** Story 48.14 — lançamentos anteriores marcados na página (planejado + realizado de cada um), na ordem da lista. */
+  bases?: ReadonlyArray<ReferenciaDeBase>;
 }) {
   const inputs = usePlanejamentoInputs(projectId, funnelId);
   const organicos = usePlanejamentoOrganicos(projectId, funnelId);
@@ -476,8 +473,7 @@ export function PlanejamentoLeadsOrganicos({
           origem={montagem!.origens[canal]}
           erros={erros[canal] ?? {}}
           podeEditar={podeEditar}
-          refConversao={referenciaDaConversaoOrganica(referencia, canal)}
-          realConversao={realizadoDaConversaoOrganica(realizado, canal)}
+          gruposDaConversao={gruposDaConversaoOrganica(bases, canal)}
           onFracao={(campo, v) => setFracao(canal, campo, v)}
           onNivel={(nivel) => setNivel(canal, nivel)}
         />

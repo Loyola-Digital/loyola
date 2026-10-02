@@ -15,6 +15,8 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pg-proxy";
 import { CLASSIFICADOR_VERSAO, classificarOrigem } from "@loyola-x/shared";
@@ -995,5 +997,86 @@ describe("decisão 9 — diferencial contra o Resumão: mesmo % sem e-mail repet
     expect(resumao.totalResponses).toBe(5);
     expect(motor.pesquisa).toMatchObject({ respondentes: 4, duplicadasRemovidas: 1 });
     PLANILHAS["g-resumao|respostas"] = PESQ_RESUMAO;
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 49.11 — série histórica com a LISTA de comparação (AC8) e a pesquisa
+// de captação marcada (AC10 d). Acréscimo: os testes acima não mudam.
+// ---------------------------------------------------------------------------
+
+describe("Story 49.11 — loader: uma série por lançamento da lista; a base anterior é só a principal", () => {
+  const F_ANT3 = "20000000-0000-4000-8000-0000000000b3";
+  const PESQ_ANT3 = "50000000-0000-4000-8000-0000000000b1";
+  const PESQ_ID = "50000000-0000-4000-8000-000000000001";
+
+  beforeAll(async () => {
+    await pg.exec(`
+      ALTER TABLE funnels ADD COLUMN IF NOT EXISTS name varchar(255);
+      UPDATE funnels SET name = 'xx-pg01' WHERE id = '${F_ANT}';
+      UPDATE funnels SET name = 'xx-pg00' WHERE id = '${F_ANT2}';
+      INSERT INTO funnels (id, meta_account_id, name) VALUES ('${F_ANT3}', NULL, 'xx-pg03');
+      INSERT INTO funnel_surveys (id, funnel_id, stage_id, spreadsheet_id, spreadsheet_name, sheet_name, column_mapping) VALUES
+        ('${PESQ_ANT3}', '${F_ANT3}', NULL, 'g-pesq-ant3', 'Pesquisa PG03', 'respostas',
+         '{"email":"E-mail","faixa":"Faixa","questions":[{"columnName":"Qual seu sexo?","label":"Sexo","showInDashboard":true}]}');
+    `);
+    PLANILHAS["g-pesq-ant3|respostas"] = { headers: ["E-mail", "Faixa", "Qual seu sexo?"], rows: [["k@x.com", "A", ""]] };
+  }, PGLITE_BEFORE_ALL_TIMEOUT_MS);
+
+  afterAll(async () => {
+    delete PLANILHAS["g-pesq-ant3|respostas"];
+  });
+
+  const comLista = (lista: string[]): DebriefingConfigLancamento => ({ ...config, lancamentoComparacaoFunnelId: lista[0] ?? null, lancamentosComparacao: lista });
+
+  it("(a, b) chaves por lançamento, na ordem da lista, com o nome; sem pesquisa = null; cada aba lida UMA vez", async () => {
+    leituras.length = 0;
+    const r = await loadDebriefingAudienceInput(db, { config: comLista([F_ANT, F_ANT3, F_ANT2]) }, { lerPlanilha: lerFalso });
+    expect(r.seriesDeComparacao).toEqual([
+      { funnelId: F_ANT, nome: "xx-pg01", chavesDePerguntaComResposta: ["Sexo"] },
+      { funnelId: F_ANT3, nome: "xx-pg03", chavesDePerguntaComResposta: ["Faixa", "faixa"] }, // sexo sem resposta não conta
+      { funnelId: F_ANT2, nome: "xx-pg00", chavesDePerguntaComResposta: null },
+    ]);
+    expect(leituras.filter((l, i) => leituras.indexOf(l) !== i)).toEqual([]);
+    const m = computeDebriefingAudience(r);
+    expect(m.serieHistorica?.lancamentos.map((l) => [l.funnelId, l.posicao, l.principal])).toEqual([
+      [F_ANT, 1, true],
+      [F_ANT3, 2, false],
+      [F_ANT2, 3, false],
+    ]);
+    expect(m.dimensoes.every((d) => d.serieHistoricaMotivo === "COMPARACAO_SEM_PESQUISA" && d.lancamentosSemPesquisa?.[0] === F_ANT2)).toBe(true);
+  });
+
+  it("(e) base anterior e cross-launch = só a principal: idênticos aos de n = 1", async () => {
+    const n1 = await loadDebriefingAudienceInput(db, { config }, { lerPlanilha: lerFalso });
+    const n3 = await loadDebriefingAudienceInput(db, { config: comLista([F_ANT, F_ANT3, F_ANT2]) }, { lerPlanilha: lerFalso });
+    expect(n3.baseAnterior).toEqual(n1.baseAnterior);
+    expect(n3.diagnostico.baseAnterior).toEqual(n1.diagnostico.baseAnterior);
+    expect(computeDebriefingAudience(n3).crossLaunch).toEqual(computeDebriefingAudience(n1).crossLaunch);
+    // n = 1 pelo contrato novo: a série de 1 item e o MESMO payload do contrato antigo
+    const novo1 = await loadDebriefingAudienceInput(db, { config: comLista([F_ANT]) }, { lerPlanilha: lerFalso });
+    expect(novo1.seriesDeComparacao).toEqual([{ funnelId: F_ANT, nome: null, chavesDePerguntaComResposta: ["Sexo"] }]);
+    expect(JSON.stringify(computeDebriefingAudience(novo1))).toBe(JSON.stringify(computeDebriefingAudience(n1)));
+  });
+
+  it("(a) falha de leitura de QUALQUER lançamento da lista = DADO_INDISPONIVEL, nunca 'sem série'", async () => {
+    const ler = (id: string, aba: string) => (id === "g-pesq-ant3" ? Promise.reject(new Error("Sheets data error (500)")) : lerFalso(id, aba));
+    const erro = await loadDebriefingAudienceInput(db, { config: comLista([F_ANT, F_ANT3]) }, { lerPlanilha: ler }).catch((e: unknown) => e);
+    expect(erro).toBeInstanceOf(DebriefingDadoIndisponivelError);
+    expect((erro as InstanceType<typeof DebriefingDadoIndisponivelError>).detalhe).toContain("a pesquisa do lançamento de comparação");
+  });
+
+  it("(a) sem chamada nova à Meta: o loader não importa cliente da Meta nem faz fetch", () => {
+    const fonte = readFileSync(fileURLToPath(new URL("../services/debriefing-audience-loader.ts", import.meta.url)), "utf8");
+    expect(fonte).not.toMatch(/\bfetch\(|graph\.facebook|from "\.\/meta-(api|graph|client)/);
+  });
+
+  it("AC10 (d) — a pesquisa marcada em pesquisaDeCaptacaoPorEtapa sai marcada (por id, não por nome de aba)", async () => {
+    const sem = await loadDebriefingAudienceInput(db, { config }, { lerPlanilha: lerFalso });
+    expect(sem.pesquisas[0]!.pesquisaDeCaptacao).toBeUndefined();
+    const marcada = await loadDebriefingAudienceInput(db, { config: { ...config, pesquisaDeCaptacaoPorEtapa: { [CAP]: PESQ_ID } } }, { lerPlanilha: lerFalso });
+    expect(marcada.pesquisas.map((p) => [p.pesquisaId, p.pesquisaDeCaptacao])).toEqual([[PESQ_ID, true]]);
+    const outra = await loadDebriefingAudienceInput(db, { config: { ...config, pesquisaDeCaptacaoPorEtapa: { [CAP]: PESQ_ANT3 } } }, { lerPlanilha: lerFalso });
+    expect(outra.pesquisas[0]!.pesquisaDeCaptacao).toBeUndefined();
   });
 });

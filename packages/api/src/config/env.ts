@@ -22,6 +22,9 @@ const envSchema = z.object({
   PLANNER_SYNC_ENABLED: z.string().optional(),
   /** Minutos entre ciclos. Mínimo de 5 aplicado no agendador. */
   PLANNER_SYNC_MINUTES: z.coerce.number().int().min(1).max(1440).optional(),
+  /** Envio automático da faixa ao Meta: "false" desliga o agendador inteiro. */
+  LEAD_CAPI_ENABLED: z.string().optional(),
+  LEAD_CAPI_MINUTES: z.coerce.number().int().min(1).max(1440).optional(),
   ENCRYPTION_KEY: z.string().length(64).regex(/^[0-9a-fA-F]+$/, "Must be 64-char hex string").optional(),
   GOOGLE_ADS_CLIENT_ID: z.string().min(1).optional(),
   GOOGLE_ADS_CLIENT_SECRET: z.string().min(1).optional(),

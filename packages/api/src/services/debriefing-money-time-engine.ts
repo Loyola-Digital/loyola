@@ -418,6 +418,19 @@ export interface CompradorDeCaptacao {
   tipos: TipoDeProdutoNaVenda[];
 }
 
+/**
+ * Produto da captação fora de `product_types` (armadilha #3). `tiposAssumidos`
+ * = o tipo que o default da etapa (`tipoPadraoDaEtapa`, a mesma regra do
+ * painel) deu às suas vendas — a 49.5 (F14) só bloqueia quando o default não
+ * resolve o papel do produto na captação.
+ */
+export interface ProdutoNaoClassificado {
+  produto: string;
+  vendas: number;
+  faturamento: number;
+  tiposAssumidos: TipoDeProdutoNaVenda[];
+}
+
 export interface GrupoMonetario {
   vendas: number;
   faturamento: number;
@@ -536,7 +549,7 @@ export interface DebriefingMoneyTime {
     comTierSuperior: Metrica;
     avulsos: { compradores: number; faturamento: number };
     ticketCaptacao: Metrica;
-    produtosNaoClassificados: { produto: string; vendas: number; faturamento: number }[];
+    produtosNaoClassificados: ProdutoNaoClassificado[];
     diferencaDeFonte: { codigo: "LEADS_DO_PAINEL"; texto: string };
     pctCompradoresPorCliques: Metrica;
   };
@@ -545,7 +558,7 @@ export interface DebriefingMoneyTime {
   /** Compradores de captação (critério headline), dos quais saem as quebras. */
   compradores: CompradorDeCaptacao[];
   diferencaDeFonte: { codigo: "LEADS_DO_PAINEL"; texto: string };
-  produtosNaoClassificados: { produto: string; vendas: number; faturamento: number }[];
+  produtosNaoClassificados: ProdutoNaoClassificado[];
 
   // ---- Principal ----
   vendasPrincipalBrutas: number;
@@ -1335,7 +1348,7 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
 
   const vendasPorTipoCap: Record<TipoDeProdutoNaVenda, number> = { ingresso: 0, combo: 0, order_bump: 0, principal: 0, upsell: 0 };
   const fatTipoCapCent: Record<TipoDeProdutoNaVenda, number> = { ingresso: 0, combo: 0, order_bump: 0, principal: 0, upsell: 0 };
-  const naoClassificados = new Map<string, { produto: string; vendas: number; centavos: number }>();
+  const naoClassificados = new Map<string, { produto: string; vendas: number; centavos: number; tipos: Set<TipoDeProdutoNaVenda> }>();
   for (const l of linhasCap) {
     vendasPorTipoCap[l.v.tipo] += 1;
     fatTipoCapCent[l.v.tipo] += l.centavos;
@@ -1346,7 +1359,8 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
       if (n) {
         n.vendas += 1;
         n.centavos += l.centavos;
-      } else naoClassificados.set(k, { produto: nome, vendas: 1, centavos: l.centavos });
+        n.tipos.add(l.v.tipo);
+      } else naoClassificados.set(k, { produto: nome, vendas: 1, centavos: l.centavos, tipos: new Set([l.v.tipo]) });
     }
   }
   for (const t of ["principal", "upsell"] as const) {
@@ -1358,7 +1372,12 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
     }
   }
   const produtosNaoClassificados = [...naoClassificados.values()]
-    .map((n) => ({ produto: n.produto, vendas: n.vendas, faturamento: reais(n.centavos) }))
+    .map((n) => ({
+      produto: n.produto,
+      vendas: n.vendas,
+      faturamento: reais(n.centavos),
+      tiposAssumidos: TIPOS.filter((t) => n.tipos.has(t)),
+    }))
     .sort((a, b) => (a.produto < b.produto ? -1 : a.produto > b.produto ? 1 : 0));
 
   const fatCapCent = fatTipoCapCent.ingresso + fatTipoCapCent.combo + fatTipoCapCent.order_bump;

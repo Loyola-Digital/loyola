@@ -340,6 +340,19 @@ export interface LeadOriginPayload {
    * Ads, E-mail, YouTube, Outros, Sem Track) por utm_source+utm_medium — os canais
    * finos que os 3 baldes de byOrigin escondem. */
   byCanal: { canal: Canal; leads: number; uniqueLeads: number }[];
+  /**
+   * O mesmo por canal, mas DIA A DIA — é o que torna a origem dos leads
+   * consultável no BI.
+   *
+   * `byCanal` é o total do range inteiro: num dashboard filtrado em 01/10 ele
+   * mostraria o acumulado da captação com cara de resultado do dia. Com a data
+   * em cada linha, a entidade `leads` respeita o período como as outras.
+   *
+   * Conta LINHA de planilha, não lead único: o dedup (`uniqueLeads`) é global
+   * ao range e não se reparte por dia sem mentir — a mesma pessoa cadastrada
+   * terça e quinta é uma pessoa no total e dois cadastros nos dois dias.
+   */
+  porCanalDia: { date: string; canal: Canal; origem: Origem; leads: number }[];
   /** Quantas linhas têm o identificador PREENCHIDO — explica uniqueLeads baixo/0
    * (cabeçalho pode existir mas os valores estarem vazios na planilha). */
   identifiersFilled: { email: number; phone: number };
@@ -432,6 +445,7 @@ export async function computeLeadOriginForStage(
   const byTemp = new Map<Temperatura, Bucket>();
   const byOT = new Map<string, Bucket>();
   const byCanal = new Map<Canal, Bucket>();
+  const porCanalDia = new Map<string, { date: string; canal: Canal; origem: Origem; leads: number }>();
   // Story 39.2: contagens cruas por valor de UTM (base do classificador fino).
   const utmCounts = {
     source: new Map<string, number>(),
@@ -542,6 +556,14 @@ export async function computeLeadOriginForStage(
       if (d) {
         if (!minDate || d < minDate) minDate = d;
         if (!maxDate || d > maxDate) maxDate = d;
+      }
+
+      if (d) {
+        const canal = classifyCanal(cell(row, idx.utmSource), cell(row, idx.utmMedium));
+        const chaveDia = `${d}|${canal}|${origem}`;
+        const pcd = porCanalDia.get(chaveDia) ?? { date: d, canal, origem, leads: 0 };
+        pcd.leads += 1;
+        porCanalDia.set(chaveDia, pcd);
       }
 
       // Story 44.12: só linha COM identificador entra na cobertura — sem
@@ -692,6 +714,13 @@ export async function computeLeadOriginForStage(
     byCanal: [...byCanal.entries()]
       .map(([canal, b]) => ({ canal, leads: b.leads, uniqueLeads: b.keys.size }))
       .sort((a, b) => b.leads - a.leads),
+    // Teto igual ao dos produtos: canal x dia é pequeno (9 canais), mas um
+    // range de anos ainda poderia engordar o cache sem necessidade. Corta pelos
+    // dias mais RECENTES, que é o que alguém pergunta.
+    porCanalDia: [...porCanalDia.values()]
+      .sort((a, b) => (a.date === b.date ? b.leads - a.leads : a.date < b.date ? 1 : -1))
+      .slice(0, 2000)
+      .sort((a, b) => (a.date < b.date ? -1 : 1)),
     identifiersFilled: { email: emailFilled, phone: phoneFilled },
     byUtm: {
       source: topCounts(utmCounts.source),

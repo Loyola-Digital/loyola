@@ -60,6 +60,8 @@ export type EntidadeDoCatalogo =
   | "trafego"
   | "vendas"
   | "faturamento"
+  | "produtos"
+  | "leads"
   | "aplicacoes"
   | "grupos";
 
@@ -89,7 +91,7 @@ export const ENTIDADES: DescricaoDeEntidade[] = [
     // `kiwify_cache`), então não há como somá-lo aqui. Um número chamado
     // "Vendas" sem essa ressalva mente por omissão.
     descricao:
-      "APENAS o que foi lançado à mão no Kanban comercial — 25 registros em toda a história. Para faturamento, receita, ticket ou volume de venda use a entidade `faturamento`. Esta aqui só serve para quebrar por PRODUTO, que é a única coisa que ela tem e a outra não",
+      "APENAS o que foi lançado à mão no Kanban comercial — 25 registros em toda a história, e quase nada do que a operação vende passa por aqui. Para faturamento, receita, ticket ou volume de venda use `faturamento`; para QUAL produto vendeu use `produtos`. Praticamente nenhuma pergunta é respondida por esta entidade",
   },
   {
     key: "faturamento",
@@ -102,10 +104,33 @@ export const ENTIDADES: DescricaoDeEntidade[] = [
       "O que as planilhas de venda registraram, por dia · funil · etapa. É a mesma fonte do dashboard de funil — use esta para faturamento e volume de compradores",
   },
   {
+    key: "produtos",
+    label: "Produtos vendidos",
+    fonte: "banco",
+    // A quebra que faltava: `faturamento` sabe quanto entrou por funil e por
+    // dia, e não sabe DE QUE produto. Quem pergunta "as vendas dos workshops"
+    // está pedindo isto — e antes a IA tentava achar "workshop" num nome de
+    // funil, que nunca casava.
+    descricao:
+      "O que cada venda foi: PRODUTO, CANAL e ORIGEM, por dia · funil · etapa. É AQUI que se vê de onde veio quem COMPROU — o canal sai da UTM da própria linha de venda, não dos leads. Conta LINHA de venda (dois order bumps do mesmo cliente são duas linhas), então o total daqui pode passar do número de compradores de `faturamento` — para volume de compradores use `faturamento`, para produto, canal ou origem da compra use esta",
+  },
+  {
+    key: "leads",
+    label: "Leads captados",
+    fonte: "banco",
+    // A entidade que faltava: `aplicacoes` lê as planilhas do tipo APLICAÇÕES
+    // (o formulário comercial), e a captação mora em planilha do tipo LEADS,
+    // que o BI não enxergava. "A origem dos leads de 01/10" voltava vazio com a
+    // planilha conectada e cheia.
+    descricao:
+      "Quantos leads se cadastraram, por dia · CANAL · origem · funil · etapa. É AQUI que mora a origem do lead (Meta Ads, Instagram, ManyChat, WhatsApp, YouTube, Closer, Sem Track) — use esta para qualquer pergunta sobre de onde veio quem se cadastrou. Conta CADASTRO, não pessoa única",
+  },
+  {
     key: "aplicacoes",
     label: "Aplicações",
     fonte: "planilha",
-    descricao: "Respostas de formulário de captação — lidas ao vivo da planilha",
+    descricao:
+      "Respostas do formulário de APLICAÇÃO comercial — lidas ao vivo da planilha. Não é a captação de lead: para quantos leads entraram e de que canal, use `leads`",
   },
   {
     key: "grupos",
@@ -442,6 +467,180 @@ export const CAMPOS: CampoDoCatalogo[] = [
     dataType: "string",
     description:
       "De qual projeto o dado veio. Só faz sentido quando o dashboard está no escopo de todos os projetos",
+  },
+  {
+    key: "leads.date",
+    label: "Data",
+    entity: "leads",
+    role: "dimension",
+    semanticType: "date",
+    aggregation: "none",
+    dataType: "string",
+    description: "Dia em que o lead se cadastrou, pela data da própria planilha",
+  },
+  {
+    key: "leads.canal",
+    label: "Canal",
+    entity: "leads",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description:
+      "Canal NOMEADO de onde o lead veio: Meta Ads, Google Ads, Instagram, ManyChat, WhatsApp, E-mail, YouTube, Closer, Outros ou Sem Track",
+  },
+  {
+    key: "leads.origem",
+    label: "Origem",
+    entity: "leads",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description: "O balde grosso do canal: Pago, Orgânico ou Sem Track",
+  },
+  {
+    key: "leads.funil",
+    label: "Funil",
+    entity: "leads",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description: "Funil em que o lead se cadastrou",
+  },
+  {
+    key: "leads.etapa",
+    label: "Etapa",
+    entity: "leads",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description: "Etapa do funil em que o lead se cadastrou",
+  },
+  {
+    key: "leads.projeto",
+    label: "Projeto",
+    entity: "leads",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description: "De qual projeto o dado veio. Só faz sentido no escopo de todos os projetos",
+  },
+  {
+    key: "leads.count",
+    label: "Leads",
+    entity: "leads",
+    role: "metric",
+    semanticType: "number",
+    aggregation: "sum",
+    dataType: "number",
+    description:
+      "Quantos CADASTROS entraram. Não é pessoa única: quem se cadastra em dois dias conta duas vezes",
+  },
+  {
+    key: "produtos.date",
+    label: "Data",
+    entity: "produtos",
+    role: "dimension",
+    semanticType: "date",
+    aggregation: "none",
+    dataType: "string",
+    description: "Dia em que a venda do produto foi registrada pela plataforma",
+  },
+  {
+    key: "produtos.produto",
+    label: "Produto",
+    entity: "produtos",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description: "Nome do produto como a plataforma de pagamento registrou",
+  },
+  {
+    key: "produtos.canal",
+    label: "Canal da venda",
+    entity: "produtos",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description:
+      "De onde veio quem comprou, pela UTM da própria linha de venda: Meta Ads, Google Ads, Instagram, ManyChat, WhatsApp, E-mail, YouTube, Closer, Outros ou Sem Track",
+  },
+  {
+    key: "produtos.origem",
+    label: "Origem da venda",
+    entity: "produtos",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description: "O balde grosso do canal da venda: Pago, Orgânico ou Sem Track",
+  },
+  {
+    key: "produtos.funil",
+    label: "Funil",
+    entity: "produtos",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description: "Funil em que a venda do produto aconteceu",
+  },
+  {
+    key: "produtos.etapa",
+    label: "Etapa",
+    entity: "produtos",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description: "Etapa do funil em que a venda do produto aconteceu",
+  },
+  {
+    key: "produtos.projeto",
+    label: "Projeto",
+    entity: "produtos",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description: "De qual projeto o dado veio. Só faz sentido no escopo de todos os projetos",
+  },
+  {
+    key: "produtos.bruto",
+    label: "Faturamento do produto",
+    entity: "produtos",
+    role: "metric",
+    semanticType: "currency",
+    aggregation: "sum",
+    dataType: "number",
+    description: "Faturamento bruto das linhas desse produto",
+  },
+  {
+    key: "produtos.liquido",
+    label: "Líquido do produto",
+    entity: "produtos",
+    role: "metric",
+    semanticType: "currency",
+    aggregation: "sum",
+    dataType: "number",
+    description: "O que sobrou depois das deduções da plataforma",
+  },
+  {
+    key: "produtos.vendas",
+    label: "Linhas de venda",
+    entity: "produtos",
+    role: "metric",
+    semanticType: "number",
+    aggregation: "sum",
+    dataType: "number",
+    description:
+      "Quantas LINHAS de venda o produto teve. Não é o mesmo que comprador: um cliente que levou dois produtos conta duas vezes",
   },
   {
     key: "faturamento.bruto",

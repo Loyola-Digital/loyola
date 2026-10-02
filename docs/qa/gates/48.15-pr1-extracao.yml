@@ -1,0 +1,62 @@
+schema: 1
+storyId: '48.15'
+story: '48.15'
+story_title: 'Planejamento — margem de contribuição realizada das bases (total, pagos e por canal orgânico) — PR-1 (AC7: extração)'
+scope: 'Só a PR-1: AC7 (extração de `lerVendas`/`fontesDeOrigem` sem mudança de comportamento). AC1–AC6 e AC8–AC10 ficam para a PR-3.'
+verdict: PASS
+gate: PASS
+status_reason: 'Extração idêntica por diff normalizado (212/212 linhas não vazias, só `export`, `fastify.db` → `db` e o bloco de `TIPOS_DE_VENDA` movido para o topo do módulo, permitido pelo AC7). As 8 chamadas estão iguais. Na rota mudaram só o import e a linha da fábrica, e nenhum consumidor externo foi afetado. Prova byte a byte: jsonl do @dev 64/64, com mutante 5/64. Reexecução do @qa no `fz-m3-set-26`: 12/12. Controle novo em `fontesDeOrigem`: 3/12. Banco só-leitura. Fio do teste 18.83 provado por mutação. eslint, tsc da API e vitest (168/168) limpos. Três achados low, nenhum bloqueia.'
+reviewer: 'Quinn'
+updated: '2026-10-02T13:31:00-03:00'
+branch: 'feat/48.15-pr1-extracao'
+commit_reviewed: '5ecbacf1'
+extraction_commit: 'b8a7148e'
+
+issues:
+  - id: DOC-001
+    severity: low
+    category: docs
+    description: 'O Dev Agent Record diz que as linhas removidas são recompostas "idênticas e na mesma ordem". Pelo diff normalizado, a ordem mudou num ponto: o bloco de `TIPOS_DE_VENDA` (os comentários "Fontes de origem do lead…" e "Planilhas que NÃO servem de origem…" mais a `const`, 12 linhas) estava entre `lerVendas` e `fontesDeOrigem`, dentro do plugin, e foi para o nível do módulo, antes de `criarLeitoresDeVendasEOrigem` (`vendas-e-origem-do-funil.ts:80-91`). Não muda comportamento: o `Set` é constante e só recebe `.has`. O AC7 lista `TIPOS_DE_VENDA` entre as definições que saem junto. Efeito colateral cosmético: o comentário "Fontes de origem do lead…", que já era órfão na rota, agora fica longe de `fontesDeOrigem`.'
+    recommendation: 'Opcional, na PR-3: mover o comentário "Fontes de origem do lead…" para cima de `fontesDeOrigem`. Não bloqueia.'
+    status: open
+
+  - id: MNT-001
+    severity: low
+    category: maintainability
+    description: '`services/debriefing-money-time-loader.ts:22` ainda diz que `fontesDeOrigem` mora em `routes/stage-sales-journey.ts`. O @dev já tinha apontado isso. É só um comentário: o loader não importa nada da rota.'
+    recommendation: 'Atualizar o comentário para `services/vendas-e-origem-do-funil.ts` na PR-3.'
+    status: open
+
+  - id: TEST-001
+    severity: low
+    category: tests
+    description: 'Informativo. Nenhum teste do repositório registra `stage-sales-journey` nem importa o módulo novo; o único teste que toca o par é `lp-correcao-e-fio-1883.test.ts`, que lê o fonte. A equivalência de comportamento está provada pelo harness `fastify.inject`, que vive no scratchpad da sessão, fora do repositório, e não pode ser reexecutado depois.'
+    recommendation: 'Aceitável para uma extração pura. Na PR-3, `lerVendasDaMargem` (T1 A3) deve ter teste executável próprio. Não bloqueia.'
+    status: open
+
+top_issues:
+  - id: DOC-001
+    severity: low
+    finding: 'O bloco de `TIPOS_DE_VENDA` mudou de posição, e o registro diz "mesma ordem".'
+    suggested_action: 'Opcional: reposicionar o comentário órfão na PR-3.'
+  - id: MNT-001
+    severity: low
+    finding: 'Comentário desatualizado em `debriefing-money-time-loader.ts:22`.'
+    suggested_action: 'Corrigir na PR-3.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Diff de três pontos contra `origin/main` (`34690a3e`, merge-base = origin/main): 4 arquivos (rota, módulo novo, teste 18.83, story). Comparação por script (`cmp.mjs` no scratchpad do @qa): as linhas removidas da rota, normalizadas só por `fastify.db` → `db`, contra o corpo do módulo, normalizado só por `export `, dão 212 = 212 linhas não vazias. A sequência com recuo é igual, exceto pelo bloco de `TIPOS_DE_VENDA` movido (DOC-001), e os multiconjuntos são iguais exceto pelo recuo desse bloco. Na rota, as linhas acrescentadas são só o `import` (5 símbolos) e `const { lerVendas, fontesDeOrigem } = criarLeitoresDeVendasEOrigem(fastify.db);` (`:126`). As 8 chamadas têm texto igual ao de antes (`:141, :142, :324, :335, :940, :1148, :1268, :1269`; antes `:305, :306, :550, :561, :1166, :1374, :1494, :1495`). Os imports do módulo resolvem para os mesmos alvos da rota (`google-sheets`, `sales-status`, `db/schema`, `drizzle-orm`). Consumidores: só `app.ts:66` importa a rota. Leitura de `fastify.db` agora acontece no registro do plugin, e não mais a cada chamada: seguro, porque `dbPlugin` decora de forma síncrona (`db/client.ts:26`) e é registrado em `app.ts:174`, antes da rota (`:251`).'
+  unit_tests: 'Rodado pelo @qa: vitest dos 8 arquivos com `buildApp` local + `lp-correcao-e-fio-1883.test.ts` → 9/9 arquivos, 168/168. M1 (`content: contentIdx !== -1 ? … : ""` → `content: ""` no módulo) → 1 falha ("a compra carrega o `co=` da venda"), 18/19. Arquivo restaurado de cópia, com `git diff` vazio. Suíte inteira da API não rodada: nenhum teste importa a rota nem o módulo.'
+  behavior_proof: 'Artefatos do @dev (`prova-48.15/*.jsonl`): 4 × 64 linhas, todas 200; velho1 = novo = velho2 em 64/64; mutante (`"(sem origem)"` em `lerVendas`) 5/64, as `sales-daily-comparison` das etapas de vendas. 32 SHAs distintos em 64, com respostas não triviais nas 4 rotas (até 10.791 bytes). `velho/packages/api/src` é igual, por `diff -rq`, a `b8a7148e^` e não tem o módulo novo. Banco: Pool com `default_transaction_read_only=on`, conferido por `SHOW` antes de rodar (o harness aborta caso contrário). Reexecução do @qa (cópia do harness com filtro por funil, `fz-m3-set-26`, 12 respostas): velho1 = novo = velho2 12/12, Google 6 chamadas por execução, 0 não-OK; o velho1 do @qa bate com o do @dev em 12/12; `printRoutes()` velho = novo. Controle novo em `fontesDeOrigem` (`daEtapa(todas)` sem o filtro de `TIPOS_DE_VENDA`, numa cópia do src do HEAD): 3/12 divergentes (`buyers-origin` em Vendas e em Downsell, `lp-funnel` na Captação Gratuita).'
+  acceptance_criteria: 'AC7 ✓: as funções saíram idênticas para `services/vendas-e-origem-do-funil.ts` (T1 A1) e o plugin as importa pela fábrica. As quatro rotas (T1 A2) são iguais byte a byte para `dg-pg02`, `dg-pg04` e um FZ, pelo método velho → novo → velho. Na rota mudaram só as definições auxiliares listadas no AC, o `import` e a linha da fábrica. O desvio do T1 no teste 18.83 (procurar a linha `content:` no módulo e exigir a fábrica na rota) mantém o fio coberto (M1).'
+  no_regressions: 'tsc da API exit 0 (binário direto, 15 s). eslint nos 3 arquivos de código exit 0. As respostas das quatro rotas não mudam (prova acima).'
+  performance: 'Sem mudança: a fábrica roda uma vez por registro do plugin; `TIPOS_DE_VENDA` agora é avaliado uma vez por carga de módulo, e não por registro.'
+  security: 'Nenhuma rota nova, nenhuma mudança de autorização. O harness usou o banco de produção só em modo de leitura.'
+  documentation: 'Dev Agent Record coerente com o diff, salvo a "mesma ordem" (DOC-001). O File List da story continua "a preencher" e deve ser preenchido na PR-3 ou no fechamento.'
+
+notes:
+  - 'Aceitos do registro, sem refazer: eslint do `src` inteiro (0 erros, 1 aviso preexistente) e as chamadas de `dg-pg02`/`dg-pg04` (jsonl conferidos, chamadas não refeitas). Também aceito: o `fz-m3-set-26` como funil "sem `cpdf` nem aba de alunos".'
+  - 'O merge `49ab48ef` trouxe de `origin/main` só a 41.11 (`perpetual-report-loader`), que não toca nenhum arquivo desta PR. A prova do @dev foi feita em `b8a7148e`; a reexecução do @qa, no HEAD pós-merge.'
+  - 'CodeRabbit não executado (CLI ausente no macOS). Revisão manual com diff por script.'

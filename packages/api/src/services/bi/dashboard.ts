@@ -238,3 +238,43 @@ export function primeiroEspacoLivre(
   }
   return { x: 0, y: limite };
 }
+
+// ============================================================
+// Histórico de perguntas
+// ============================================================
+
+/**
+ * Quantas perguntas um dashboard guarda.
+ *
+ * O histórico vai junto do documento em toda abertura de tela, então ele não
+ * pode crescer sem fim. Cinquenta cobre a memória útil ("o que eu digitei
+ * semana passada?") sem virar peso em cada carregamento.
+ */
+export const MAX_PERGUNTAS = 50;
+
+export const perguntaSchema = z.object({
+  texto: z.string().min(1).max(1000),
+  em: z.string(),
+  por: z.string().max(200).default(""),
+  widgets: z.number().int().min(0).default(0),
+  erro: z.string().max(500).optional(),
+});
+
+export type PerguntaGuardada = z.infer<typeof perguntaSchema>;
+
+/**
+ * Lê o histórico do JSONB, descartando o que não tem forma válida.
+ *
+ * Linha torta é descartada em silêncio, ao contrário do widget ilegível (que
+ * vira aviso): widget que não abre é buraco no canvas, pergunta antiga que não
+ * abre é só uma linha a menos numa lista de memória.
+ */
+export function perguntasGuardadas(bruto: unknown): PerguntaGuardada[] {
+  if (!Array.isArray(bruto)) return [];
+  const saida: PerguntaGuardada[] = [];
+  for (const item of bruto) {
+    const r = perguntaSchema.safeParse(item);
+    if (r.success) saida.push(r.data);
+  }
+  return saida.slice(-MAX_PERGUNTAS);
+}
