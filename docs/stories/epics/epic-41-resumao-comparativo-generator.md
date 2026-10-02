@@ -64,17 +64,21 @@ Qualquer outra combinação (Gratuito/FZ, Perpétuo/BBE, `vendas-principal`, dow
 
 **Ordem de merge:** 41.7 → 41.8 → 41.9. **Independente da trilha 41.2–41.6** — as duas podem correr em paralelo; só compartilham `utils/meta-tax.ts` e o padrão de persistência de HTML.
 
-### Correções: rodadas 2 e 3 do Epic 49 (2026-09-30)
+### Correções: rodadas 2, 3 e 5 do Epic 49 (2026-09-30 e 2026-10-02)
 
 | Story | Título | Depende de | Estimativa |
 |-------|--------|-----------|-----------|
 | **41.10** | Correção: dedup por ID de transação + regra de comprador de captação (Imersão ou Combo) | 41.2, 41.3, 41.6 (Done) | M |
 | **41.11** | Dedup por (ID da venda, produto) no loader do relatório de Perpétuo (botão 3) | **41.10** (função `deduplicarPorIdDaVenda`); 41.7–41.9 (Done) | S–M |
+| **41.12** | Camada 2 de dedup: mesma pessoa (e-mail) + mesmo produto conta uma vez, em todas as pontas (R5-1): Resumão/Comparativo, painéis Captação Paga e Vendas (e a réplica `sales-daily-sync`), relatório do botão 3 e painel do Perpétuo | 41.10 e 49.3 (na `main`); **41.11** | L |
 
 **Ordem de merge:** depois de todas as stories do epic, que já estão na `main`.
 - **41.10 → 41.11.** A 41.11 chama a função que a 41.10 extrai; não cria outra.
 - **41.10 antes da 49.3** do Epic 49, que consome a mesma função. A fixture governante da 49.5 usa os números corrigidos pela 41.10.
 - **41.11 antes da 49.10** do Epic 49, que lê o loader do botão 3 (R3-1). A 41.11 corre em paralelo com a trilha 49.3 → 49.7.
+- **41.11 → 41.12 → 49.10.** A 41.11 e a 41.12 mexem em `parseVendas` do loader do botão 3. Em sequência, a medição de cada uma isola o próprio efeito (camada 1 × camada 2) e a ordem das camadas fica fixada. A 49.10 lê esse loader.
+- **41.12, de preferência antes da 49.5** do Epic 49 (ver "Story 41.12", Dependências).
+- Se o @po preferir fatiar a 41.12, a parte de lançamento (Resumão + painéis) **não** depende da 41.11. Só a parte do perpétuo depende.
 
 ### Decisões do dono, rodada 3 (2026-09-30): ✅ são lei, não reabrir
 
@@ -142,6 +146,7 @@ Fonte: `decisoes-dono-epic-49.md`, seção "Rodada 3" (scratchpad da sessão de 
 8. **Comunicação ao usuário antes do merge** (ver R-E7): o que muda, por quê (a ponte) e onde (Resumão, Comparativo e painel Captação Paga do PG02, mais as etapas corrigidas pela R3-5, com o antes → depois de cada uma).
 9. **Gerar de novo os relatórios do PG02 (R3-3).** Depois do deploy e da troca de config, os Resumões do PG02 e o Comparativo PG02×PG04 já persistidos em `launch_reports` são **gerados de novo**. A geração nova é a mesma que o @qa confere contra produção.
    - A R3-3 manda gerar de novo e não manda apagar. Os relatórios antigos não são removidos por esta story.
+   - **Supersedido em parte pela R6-3 (2026-10-02):** os Comparativos PG02×PG04 (`19c606f4`, `47db006f`) e o Resumão do PG04 (`6b4c3492`) são gerados de novo **uma vez só, depois da 41.12** — não depois da 41.10 (41.10 AC7b, 41.12 AC11).
    - A R3-3 cita só o PG02 e o PG02×PG04. Relatórios já gerados de **outros** lançamentos cujo número mude, seja pela dedup (que vale para todo Resumão) ou pela troca do Combo (R3-5), **não** estão cobertos. É a **P-8** do Epic 49, que só existe se o levantamento encontrar etapa afetada com relatório já gerado.
 
 **Fora:**
@@ -219,6 +224,112 @@ Fonte: `decisoes-dono-epic-49.md`, seção "Rodada 3" (scratchpad da sessão de 
 
 **Estimativa: S–M** (a mesma da story). O código é uma chamada a uma função que já existe, mais o alerta e os testes. O peso está no levantamento por funil, na conferência da §C.10 e na comunicação.
 
+### Decisão do dono, rodada 5 (2026-10-02): ✅ é lei, não reabrir
+
+Fonte: `decisoes-dono-epic-49.md`, seção "Rodada 5" (scratchpad da sessão). Responde à pergunta 1 da 49.3, "Camada 2 × número governante" (`docs/stories/49.3.debriefing-money-time-engine.md:419`). A resposta 1A tinha mantido a camada 2 só no debriefing, "até a 41.12 alinhar o Resumão" (`:428`).
+
+| # | Decisão | Onde se aplica |
+|---|---|---|
+| R5-1 (1B) | **Story 41.12.** A regra da skill **"mesma pessoa (e-mail) + mesmo produto conta uma vez"** (camada 2, decisão 1A da 49.3) vale em: **debriefing + Resumão/Comparativo + painéis Captação Paga e Vendas + relatório e painel do Perpétuo**. Os números passam a bater entre todos (PG02: −9 linhas / −R$ 596,30 na captação). Exige medição antes → depois por etapa/funil e comunicação aos usuários antes do merge (padrão 41.10). | **41.12** |
+
+A R5-1 revoga, para o Resumão, a linha de escopo da 41.10 que dizia "Dedup por (e-mail, produto) como a camada 2 da 49.3? **Não aqui**" (`docs/stories/41.10.resumao-dedup-transacao-comprador-captacao.md:56`). A revogação vem por story própria; a 41.10 não é reaberta.
+
+### Decisões do dono, rodada 6 (2026-10-02): ✅ são lei, não reabrir
+
+Fonte: `decisoes-dono-epic-49.md`, seção "Rodada 6". Respondem às perguntas P-9, P-10, P-14 e ao limiar da 41.12 (as P-11 a P-13 são da 49.11, no Epic 49).
+
+| # | Decisão | Onde se aplica |
+|---|---|---|
+| R6-1 (P-14) | A autorização do Lucas **cobre a 41.12**. Commits com `[scope-override]`. | 41.12 (autoridade) |
+| R6-2 (P-10) | **Perpétuo:** a camada 2 vale **só dentro da janela do relatório**; recompra em outro período é venda nova. | 41.12 AC5, AC6, AC9(j) |
+| R6-3 (P-9) | Relatórios já gerados cujo número muda: **gerar de novo**. Resumão do PG04 `6b4c3492` e Comparativos PG02×PG04 `19c606f4`/`47db006f`: **uma vez só, depois da 41.12** (não depois da 41.10). | 41.12 AC11 · supersede a R4-4 e o AC7b da 41.10 nesses três relatórios |
+| R6-4 | Limiar de **5%** do faturamento por etapa/funil para reportar ao dono antes do merge: **mantido**. | 41.12 AC10 |
+| R6-8 (P-10b) | Produtos de **assinatura/renovação** ficam **fora** da camada 2 no perpétuo, identificados por **config** de produto, não por nome. | 41.12 (marca `recurring_products`, fatia B) |
+
+### Story 41.12: camada 2 de dedup (mesma pessoa + mesmo produto conta uma vez) em todas as pontas
+
+**A regra, como existe hoje** (conferido na `main` `63781b31` em 2026-10-02):
+- Só o debriefing a aplica. A função é `deduplicarVendas` (`api/src/services/debriefing-hygiene.ts:510`), e a camada 2 está **inline** em `:548-562`. A chave é `(normalizarEmail(e-mail), produto com trim e minúsculas)`, sobre todas as planilhas, depois da camada 1. Sobrevive a primeira, e linha sem e-mail nunca colapsa. **Não existe função exportada só para a camada 2.**
+- Produto nulo vale `""` (`:558`). Logo, duas linhas do mesmo e-mail **sem produto mapeado** colapsam.
+- **Efeito medido no PG02** pela 49.3, em produção e só leitura (`49.3…md:406-411`):
+  - linhas: 2.197 → 2.188 (−9). São 7 ingressos (R$ 300,30), 1 combo (R$ 197) e 1 bump (R$ 99);
+  - faturamento da captação: R$ 231.097,94 (41.10) → R$ 230.501,64 (−R$ 596,30);
+  - compradores únicos: 1.807 nos dois.
+  - As 9 linhas são **recompras em dia diferente da sobrevivente**, e não evento duplicado.
+
+**As pontas e o que cada uma faz hoje:**
+
+| Ponta | Onde (`api/src/`) | Hoje | Muda com a camada 2 |
+|---|---|---|---|
+| Resumão / Comparativo | `services/launch-report-loader.ts:353-374` (camada 1 por planilha, antes do corte; `prepararVendasDoPeriodo` em `:383`). O engine soma toda linha (`launch-report-engine.ts:543-545`) e conta comprador por e-mail (`:440-444`) | Camada 1 (41.10), alertas W9/W10 (`launch-report-guards.ts:31-45`) | Vendas totais, faturamento (total, captação/OB, por origem), ticket, ROAS e a decomposição da 41.6. Os únicos mudam só na borda da janela (item 3) |
+| Painéis Captação Paga e Vendas | `routes/stage-sales-data.ts`: `GET …/sales-data` (`:362`), dedup `(planilha, txId, produto)` em `:606-611`, únicos em `:946`, `manual_sales` em `:417`. `GET …/sales-data-daily` (`:1449`) soma o faturamento por dia "sem dedup por email" (`:1496-1499`) | Recompra do mesmo cliente conta como venda separada **de propósito** (comentário em `:588-592`) | Vendas, faturamento (card, por dia e por produto). "Ingressos únicos" só na borda |
+| Relatório do Perpétuo (botão 3) | `services/perpetual-report-loader.ts`, `parseVendas` (`:314`); toda linha paga entra (`:381-410`) | Sem dedup. A 41.11 é Ready e ainda não tem branch | Transações, faturamento, ticket, CAC, ROAS, margem |
+| Painel do Perpétuo | `services/perpetual-sales.ts`, `calcularVendasDoPerpetuo` (`:262`). A chave é `chaveDeComprador`, por e-mail (`:562`; `utils/comprador.ts:31`), e **soma** o bruto de todas as linhas do comprador (`:564-570`). A mesma função serve a rota pública `routes/public-perpetual-metrics.ts:52` (Inácio, 44.28) | Conta compradores; o faturamento inclui a recompra | Faturamento, ticket, margem e CAC/ROAS por valor, **e a API pública do perpétuo junto** |
+
+**Escopo (entra):**
+1. **Uma regra num lugar só.**
+   - A chave da camada 2 sai para uma função pura em `api/src/utils/`, ao lado de `dedup-por-id-da-venda.ts`, com "Contrato exportado" na story. O nome é fixado pelo @sm.
+   - `deduplicarVendas` passa a chamá-la. Teste estático: o arquivo de higiene não redefine a chave, como já acontece com a camada 1 na 49.3.
+   - **[AUTO-DECISION]** A função mora em `utils/` e ninguém importa de `debriefing-hygiene.ts`. (reason: é o padrão da 41.10. O loader do Resumão, a rota do painel e o serviço do perpétuo não devem depender do serviço do debriefing.)
+2. **[AUTO-DECISION] Produto vazio ou nulo não colapsa.** A planilha sem `productName` mapeado não passa pela camada 2 e vira alerta "não aplicada".
+   - (reason: sem produto não há "mesmo produto", leitura literal da R5-1. É a política que a 41.10 (W10) e a 41.11 (W-P8) fixaram para a camada 1, pela mesma razão. No painel do perpétuo, 17 dos 20 bumps do Netão têm o e-mail da compra principal (`perpetual-sales.ts:551-553`); com produto `""`, o bump colapsaria no principal e o faturamento dele sumiria.)
+   - A camada 2 do debriefing **não tem essa guarda hoje**: `debriefing-hygiene.ts:558` usa `""`. O rascunho da 41.12 mantém a saída da 49.3 idêntica. O @dev mede se alguma planilha de debriefing em produção está nesse caso, por exemplo a cópia do downsell do PG02 (`49.3…md:641,737`); se estiver, reporta ao @po, porque alinhar a 49.3 muda o número dela. **Conferida pelo @po em 2026-10-02:** mantida (41.12 AC1(d)).
+3. **Ordem:** a camada 2 roda depois do status/reembolso e da camada 1, e **antes do corte de janela**.
+   - A sobrevivente é decidida na planilha inteira. É a ordem da 49.3 (`49.3…md:376`) e a que a 41.10 ratificou para a camada 1 (REQ-001).
+   - Consequência: uma recompra dentro da janela cuja primeira compra está fora some da janela. A 49.3 mediu 0 casos no PG02 (`49.3…md:842`).
+   - **No perpétuo, a janela é mensal e o funil não acaba.** **R6-2:** no perpétuo a camada 2 vale **só dentro da janela** (corte primeiro, camada 2 depois); recompra em outro período é venda nova. **R6-8:** assinatura/renovação marcada na config fica fora (41.12, marca `recurring_products`).
+4. **Aplicar nas pontas da tabela.**
+   - **Lançamento:** Resumão/Comparativo e painéis, tanto `sales-data` quanto `sales-data-daily`, para o gráfico diário somar o mesmo que o card. As `manual_sales` seguem a regra da 49.3 (decisão 3A).
+   - **Perpétuo:** botão 3, depois da camada 1 da 41.11, e painel do perpétuo.
+   - **Réplica do painel:** `services/sales-daily-sync.ts`, que se declara "réplica FIEL" do painel (`:11-14`) e alimenta `routes/public-funnel-sales.ts`, `services/cadeia-cac-payload.ts` (Inácio) e `routes/meta-ads-comparison.ts`.
+     - **[AUTO-DECISION @sm, no rascunho]** Entra. (reason: sem ela, `sales_daily`, as rotas públicas e o MCP divergiriam do dashboard, que é o oposto do objetivo da R5-1.)
+     - Efeito colateral a comunicar: muda o CAC da cadeia do Inácio.
+     - As demais leituras de vendas, como `routes/public-sales-rows.ts`, passam pelo inventário da story, que decide item a item.
+5. **O que saiu é reportado.**
+   - No Resumão e no botão 3: alerta no padrão W9 / `W-P7`, contando o efeito na janela.
+   - Nos painéis: sinalização na resposta, no padrão de `dedupeStrategy` (`stage-sales-data.ts:1186`). Os códigos ficam com o @sm e o @po.
+   - Campo novo em rota ⇒ bump de `API_CONTRACT_VERSION` (hoje **30**, `shared/src/contract.ts:280`) e fallback no web.
+6. **Levantamento em produção antes do código (só leitura).** Abrange **toda etapa com planilha de vendas**, porque o painel vale para todas, e **todo funil perpétuo**. Para cada um, registra:
+   - linhas e valor que a camada 2 removeria, separando mesmo dia e dia diferente da sobrevivente;
+   - os produtos envolvidos;
+   - as planilhas sem `productName`;
+   - **quantos relatórios já gerados** (`launch_reports`, `perpetual_reports`) mudam de número. É o que dá objeto à P-9.
+7. **Medição antes → depois por etapa/funil** (padrão dos itens 5 e 8 da 41.10).
+   - Etapas medidas: PG02, PG04 e as etapas com config de Resumão, nos períodos já conferidos; no perpétuo, os funis da §C.10.
+   - No PG02, o esperado é −9 linhas / −R$ 596,30 na captação, com os únicos em 1.807.
+   - As invariantes da 41.3 e as P1–P7 continuam passando.
+   - Se algum valor de conferência mudar, `docs/specs/epic-41-valores-conferencia.md` ganha a seção "Correção 41.12", e a §C.10 de `epic-41-complemento-perpetuo.md` também. A original fica como histórico.
+8. **Diferencial entre as pontas.** Depois da 41.12, o debriefing (49.3) e o Resumão do PG02 dão o mesmo faturamento de captação: a diferença de `definicao` de −R$ 596,30 zera. Painel e Resumão batem na mesma janela. A medição registra o que ainda divergir e por quê.
+9. **Testes:**
+   - mesma pessoa e mesmo produto contam uma vez, no mesmo dia e em dia diferente;
+   - produtos diferentes do mesmo e-mail (ingresso + combo + bump) não colapsam;
+   - linha sem e-mail nunca colapsa, e linha sem produto também não;
+   - o reembolso continua saindo inteiro;
+   - **revertida a regra em cada ponta, os testes da ponta falham.**
+10. **Comunicação aos usuários antes do merge** (padrão do item 8 da 41.10).
+    - O quê: o que muda em cada ponta.
+    - Por quê: a recompra do mesmo produto pelo mesmo e-mail passa a contar uma vez, que é a regra da skill.
+    - Onde: a lista do levantamento, com antes → depois.
+    - **Ponto contraintuitivo:** o painel conta recompra como venda hoje por decisão documentada (`stage-sales-data.ts:588-592`). A comunicação explica a troca.
+11. **Relatórios já gerados (R6-3):** os afetados são **gerados de novo**; PG04 `6b4c3492` e Comparativos `19c606f4`/`47db006f`, uma vez só, depois da 41.12. A regeração bloqueia o Done, não o merge.
+
+**Fora:**
+- Migrar para `deduplicarPorIdDaVenda` os dedups por ID que estão inline (`stage-sales-data.ts:606-611`, `sales-daily-sync.ts:278-281`). A camada 2 é **adicional** e não substitui a chave por ID.
+- Unificar `order_bump_products` e `product_types`.
+- Os `parseNumber` locais (R-49-4 do Epic 49).
+
+**Dependências.** A 41.10 e a 49.3 já estão na `main` (`3d01ef30`, `63781b31`); a camada 2 nasce da 49.3. A **41.11** mergeia antes.
+- **De preferência antes da 49.5** do Epic 49. A fixture governante do PG02 vem da conferência. Se a 49.5 entrar antes, a 41.12 atualiza essa fixture na mesma PR, e o degrau `definicao` de −R$ 596,30 deixa de existir.
+- **Antes da 49.10.** A 49.10 lê o loader do botão 3, e as fixtures de perpétuo dela usam a §C.10 depois da 41.11 e da 41.12.
+- **Conflito previsível de `API_CONTRACT_VERSION` com a 49.11**, porque as duas sobem a versão. Quem mergear depois rebaseia para o número seguinte.
+
+**Autoridade.** O código fica fora do scope `restricted` do Danilo (`api/src/utils/`, `services/`, `routes/stage-sales-data.ts`).
+- A autorização do Lucas foi registrada para a 49.1–49.10 (decisão 12) e para a 41.10/41.11 (R3-2).
+- O rascunho da 41.12 a dava como concedida pela decisão 12. O precedente é a P-3: a 41.10 só foi coberta depois de perguntar, na R3-2.
+- **Confirmada pela R6-1 (2026-10-02), resposta à P-14.** A 41.12 pode começar.
+
+**Estimativa: L.** O código é a extração e as chamadas. O peso está no levantamento em todas as etapas e funis, na medição e na comunicação.
+
 ## 🚧 Fora do escopo do epic
 
 - ~~Perpétuo~~ — **entrou** em 2026-07-28 via complemento §C (stories 41.7–41.9).
@@ -264,6 +375,17 @@ Connect Rate.
   - Os relatórios em `perpetual_reports` ficam com o número antigo. Os três funis da §C.10 são o oráculo conferido.
   - **Risco de colapso indevido:** com `productName` não mapeado, a chave `(ID, "")` juntaria ingresso e bump do mesmo pedido.
   - **Mitigação:** levantamento e medição por funil antes do merge; dedup inativa em funil sem `productName` mapeado (AUTO-DECISION, item 2); §C.10 conferida e, se mudar, corrigida sem apagar o histórico; comunicação antes do merge; destino dos relatórios já gerados com o dono se a medição achar funil afetado (P-7).
+- **R-E9 (alto): a 41.12 muda números em cinco pontas de uma vez, e uma delas conta recompra de propósito hoje.**
+  - O painel de lançamento conta a recompra como venda por decisão documentada (`stage-sales-data.ts:588-592`). A R5-1 inverte isso. Sem comunicação, a queda parece bug.
+  - A API pública do perpétuo (Inácio) muda junto com o painel, porque é a mesma função. A réplica `sales-daily-sync.ts` também muda (item 4), e com ela o CAC da cadeia do Inácio.
+  - **Perpétuo:** mitigado pela R6-2 (camada 2 só dentro da janela) e pela R6-8 (assinatura/renovação marcada fica fora). Resta o produto recorrente **não marcado** (default vazio): o T0 da fatia B lista candidatos e a marcação vem antes do merge.
+  - Colapso indevido com produto não mapeado: mitigado pela AUTO-DECISION do item 2 (planilha sem produto fica sem a camada 2).
+  - **Mitigação:**
+    - levantamento em toda etapa e funil antes do código, e medição antes → depois;
+    - comunicação antes do merge;
+    - candidatos a `recurring_products` revisados antes do merge da fatia B (R6-8);
+    - relatórios afetados gerados de novo (R6-3);
+    - comunicação cita a cadeia do Inácio e as rotas públicas (41.12 AC11).
 - **R-E6 (alto) — Fuso horário.** `perpetual-sales-data.ts:490` deriva o dia com `getFullYear/getMonth/getDate`, que usa o fuso do **processo**: em produção (UTC) uma venda `01:18Z` cai no dia seguinte ao do Brasil. O mesmo relatório dá números diferentes local vs Railway. §C.7 exige conversão explícita para `America/Sao_Paulo` — é pré-requisito de qualquer conferência contra a §C.10 e foi puxado para 41.7.
 
 ## Change Log
@@ -274,6 +396,8 @@ Connect Rate.
 | 2026-09-30 | @po (Pax) | **PO validation da 41.10** (`*validate-story-draft`): 8/10, GO condicional, **Draft** — bloqueada pela P-3 do Epic 49 (autorização do Lucas para esta story); P-4 bloqueia o merge. A story foi alinhada ao escopo desta seção: chave `(ID, produto)` (itens 2 e 7), função `deduplicarPorIdDaVenda` exportada para a 49.3, `product_types` do PG02 (item 3), lista × mapa (item 4), PG04 no T0 e na medição (itens 1 e 5), comunicação antes do merge (item 8). Achado: no snapshot do DG-PG01 a dobra por evento repete `Transaction` com `ID` distinto — o levantamento da story mede o impacto da dedup em cada etapa antes do merge. |
 | 2026-09-30 | @pm (Morgan) | **Rodada 3 do dono (R3-1 a R3-5) incorporada.** Fecha as perguntas P-2 a P-6 do Epic 49. Este registro toca **só os docs de epic**; as stories são do @sm.<br>**Story 41.11 adicionada (R3-1):** dedup por `(ID da venda, produto)` no loader do relatório de Perpétuo, chamando a `deduplicarPorIdDaVenda` da 41.10. Depende da 41.10, bloqueia a 49.10, estimativa S–M. Conferido no código: `perpetual-report-loader.ts` lê uma planilha por funil (`:90-100`), usa o `transactionId` só no passe de reembolso (`:361-370`, `:383-388`) e toda linha paga entra em `vendas` (`:381-410`). **[AUTO-DECISION]** Em funil sem `productName` mapeado, a dedup não age e vira alerta, porque a chave `(ID, "")` juntaria ingresso e bump do mesmo pedido. **Esta decisão não está no rascunho do @sm: o @po confere.** Risco **R-E8** adicionado.<br>**41.10:** R3-2 (a autorização do Lucas cobre a story, `[scope-override]`); R3-3 (item 9: gerar de novo os Resumões do PG02 e o Comparativo PG02×PG04, sem apagar os antigos); R3-4 (item 6: os degraus do n8n entram na ponte como diferença de fonte declarada); R3-5 (item 3: a troca do Combo vale para toda etapa com o Combo na lista de bumps, com ou sem config de Resumão, com lista e mapa antes → depois por etapa). **[AUTO-DECISION]** Mapa coerente com a lista em cada etapa; ingressos únicos antes → depois no registro; troca depois da medição "antes". R-E7 ampliado.<br>**Ordem de merge:** 41.10 → 41.11 → 49.10, com a 41.11 em paralelo à trilha 49.3–49.7.<br>**Perguntas novas, no Epic 49:** P-7 (relatórios de perpétuo já gerados; bloqueia o merge da 41.11, como a story já registra) e P-8 (Resumões já gerados de outros lançamentos que mudem pela dedup ou pela R3-5; condicional ao levantamento). |
 | 2026-09-30 | @po (Pax) | **PO validation final 2026-09-30** da **41.10** e da **41.11**: as duas **Draft → Ready** (9/10). **41.11:** a [AUTO-DECISION] deste epic (funil sem `productName` → dedup não age e vira alerta) entrou na story como `W-P8`, estendida a `transactionId` não mapeado; o teste "duplicata na virada do dia" foi reescrito com janelas adjacentes (o do rascunho passava com o bug de volta); alerta de removidas = efeito na janela (`W-P7`); "Correção 41.11" na spec se a §C.10 mudar; divergência botão 3 × painel do Epic 29 registrada. **41.10:** mesma política de chamador (W10) e W9 contando a janela; itens 6 (decomposição PG02→PG04 recalculada; oráculo declarado) e 41.6 no `Depends On`. **P-7** (41.11) e **P-8** (41.10, agora cobrindo também relatório que muda só pela dedup): condicionais ao levantamento e bloqueiam o **merge**, não início nem Ready. |
+| 2026-10-02 | @pm (Morgan) | **Rodada 5 do dono (R5-1) incorporada. Story 41.12 adicionada:** camada 2 de dedup, "mesma pessoa (e-mail) + mesmo produto conta uma vez", em todas as pontas, reusando a regra da 49.3. Este registro toca **só os docs de epic**; o arquivo da story é do @sm.<br>**Conferido na `main` (`63781b31`):** a camada 2 existe só **inline** em `deduplicarVendas` (`debriefing-hygiene.ts:548-562`) e não há função exportada para ela. Por isso a 41.12 a extrai para `utils/`. Pontas mapeadas: Resumão (`launch-report-loader.ts:353-374`); painéis (`stage-sales-data.ts`, `sales-data` e `sales-data-daily`; a recompra conta como venda de propósito, `:588-592`); botão 3 (`perpetual-report-loader.ts:381-410`, ainda sem a 41.11); painel do perpétuo (`perpetual-sales.ts:562-570`, que também serve a API pública). Impacto esperado no PG02, medido pela 49.3: −9 linhas / −R$ 596,30 na captação, únicos 1.807 inalterados.<br>**Alinhado ao rascunho do @sm** (`docs/stories/41.12.camada2-dedup-pessoa-produto-todas-as-pontas.md`, escrito em paralelo): depende da 41.11 por inteiro; a réplica `sales-daily-sync` entra; a numeração das perguntas é a do rascunho.<br>**[AUTO-DECISION]** (1) a função mora em `utils/` e todas as pontas a chamam; (2) planilha sem `productName` fica sem a camada 2 e com alerta. A 49.3 só muda se o @po decidir, depois da medição. Risco **R-E9** adicionado.<br>**Perguntas, no Epic 49:** P-9 (relatórios já gerados), P-10 (recompra no perpétuo contínuo) e P-14 (autorização do Lucas para a 41.12; bloqueia o início da implementação). |
+| 2026-10-02 | @po (Pax) | **PO validation 2026-10-02 da 41.12** (`*validate-story-draft`): **9/10, GO → Ready.** Rodada 6 do dono registrada nesta seção (R6-1, R6-2, R6-3, R6-4, R6-8). **Fatiamento decidido (`[AUTO-DECISION @po]`):** fatia A (lançamento: função, Resumão, painéis `sales-data` **e** `sales-data-daily`, réplica) sem depender da 41.11; fatia B (perpétuo) depois da 41.11, com a marca `recurring_products` (migration própria, 0163 a reconferir). Correções na story: `sales-data-daily` entrou (item 4 deste epic); comunicação cita o CAC da cadeia do Inácio nas etapas de lançamento (sobe, via `sales_daily`) e a API pública do perpétuo; filtro de campanha do painel do perpétuo decide depois da camada 2; caso conhecido da cópia do downsell do PG02 no AC1(d). **41.10:** AC7b ajustado pela R6-3 (os três relatórios saem uma vez só, depois da 41.12). Nenhuma pendência do dono na 41.12. |
 | 2026-07-31 | @dev (Dex) | **Connect Rate definido** pelo dono do produto: `Visualização da LP ÷ Link click`, ambos da Meta Ads — a fonte já existe no código (`parseLandingPageViews` / `parseLinkClicks`). Destrava conceitualmente o §12.3, mas o Gratuito **segue fora do escopo por decisão**: terminar o pago primeiro. |
 | 2026-07-31 | @dev (Dex) | **41.2–41.6 implementadas** e conferidas contra a §10 (versionada em `docs/specs/epic-41-valores-conferencia.md`): faturamento do PG02 bate ao centavo, A9 fecha com diferença 0,000000, A6 fecha com 0,0000 no PG04 e a decomposição PG02→PG04 reproduz os quatro fatores da spec. O epic inteiro passa a **InReview**. Handoff: `epic-41-HANDOFF-2026-07-31.md`. Risco **R-E1 mitigado** — os números batem. Achado que afeta o epic: `meta_ad_insights_daily` do DG começa em 2026-05-20, então o PG02 nunca terá ad-level e o A6 fica `skipped` para ele em definitivo. |
 | 2026-07-28 | @sm (River) | **Complemento §C incorporado** (`docs/specs/epic-41-complemento-perpetuo.md`). Perpétuo saiu de "fora do escopo" e virou 3 stories (41.7–41.9), em trilha paralela à 41.2–41.6. **3 decisões do usuário:** (1) **taxas** — a spec fixa 83,01% de receita líquida, mas o código (29.7/29.8) já tem dois ramos: 83,01% com coluna de status na planilha (`reembolsoReal`), 79,01% sem ela, e Hotmart a 26%. Mantidos os dois ramos, com as taxas expostas na config; os 3 funis da §C.10 caem no ramo de 83,01% — conferido: 14.495,61 × 0,8301 − 4.209,17 = R$ 7.823,64 vs 7.823,63 da spec. (2) **formato** — relatório HTML persistido (contrato §C.8), não dashboard novo. (3) **fatiamento** — 3 stories. Riscos R-E5 (duplicação do Epic 29) e R-E6 (fuso horário) adicionados. |

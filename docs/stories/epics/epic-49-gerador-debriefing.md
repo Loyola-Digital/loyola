@@ -11,6 +11,13 @@
 - **Ready:** 49.1–49.10 e, no Epic 41, **41.10** e **41.11**.
 - **Pendências do dono que bloqueiam merge (nunca início nem Ready), ambas condicionais:** **P-7** (merge da 41.11) e **P-8** (merge da 41.10) — ver "Perguntas abertas".
 - A 49.3 é Ready, mas não começa antes de a 41.10 mergear (ordem de merge), porque consome a função de dedup que a 41.10 extrai. A 49.10 não mergeia antes da 41.11 (R3-1).
+- **Estado em 2026-10-02:**
+  - Na `main` (`63781b31`): 49.8, 41.10, 49.1, 49.2 e 49.3.
+  - A 49.4 (`origin/feat/49.4-debriefing-motor-publico`) tem gate PASS e aguarda o merge.
+  - A rodada 4 (2026-10-01) e a rodada 5 (2026-10-02) do dono estão registradas abaixo.
+  - A rodada 5 cria a **49.11** (série histórica com lista de lançamentos de comparação) e, no Epic 41, a **41.12** (camada 2 de dedup em todas as pontas).
+  - A **rodada 6** (2026-10-02) responde P-9 a P-14 e o limiar (seção "Decisões do dono, rodada 6").
+  - **PO validation 2026-10-02:** **49.11** e **41.12** passam a **Ready** (9/10), sem pendência do dono. A 49.11 começa depois da 49.4 na `main`; a 41.12 fatia A pode começar já, a fatia B depois da 41.11.
 
 ---
 
@@ -120,6 +127,142 @@ O número mais defensável na janela é **1.806 pessoas / R$ 230.289,04** (expor
 2. **A fixture governante muda.** A fixture `governante` do PG02 na 49.5 usa os valores de `epic-41-valores-conferencia.md` (1.410 / R$ 233.572,94), e a 41.10 corrige esses valores. Se a 49.5 entrar antes, nasce com o oráculo errado.
 3. **O dado de produção precisa estar certo.** A correção da lista e do mapa do PG02 tem de estar em produção antes de a 49.3 e a 49.5 serem conferidas contra produção.
 
+## Decisões do dono, rodada 4 (2026-10-01): ✅ são lei, não reabrir
+
+Fonte: `decisoes-dono-epic-49.md`, seção "Rodada 4" (depois do "visual ok" da 49.8). As stories já as aplicam (49.1 "Pós-gate: decisões R4"; 49.2, tabela de decisões). Este registro só as traz para o epic.
+
+| # | Decisão | Onde se aplica |
+|---|---|---|
+| R4-1 | Lint da `main` (`sendflow.ts:43`): corrigir numa PR de 1 linha | @sm/@devops |
+| R4-2 | Mergear a #954 (docs) e a #955 (49.8) já; as demais quando as pendências de cada uma fecharem | ordem de merge |
+| R4-3 | Mapear `transactionId = ID` na Captação Paga do PG02 em produção: **River faz**, com antes → depois registrado. Etapa Vendas do PG02: **não respondido** | 41.10 (OPS-001) |
+| R4-4 | Resumão do PG04 já salvo (`6b4c3492`): **gerar de novo** depois do deploy da 41.10 — **supersedida pela R6-3**: uma vez só, depois da 41.12 | 41.10 · **fecha a P-8** |
+| R4-5 | Migration da 49.1 (hoje `0161_debriefing_configs.sql`, ex-0160): aplicar junto com o merge da #958 | 49.1 · pré-requisito da 49.11 |
+| R4-6 | Nova aba isolada (DEC-001 da 49.8): aceitar e ajustar o texto de ajuda | 49.8 |
+| R4-7 | Quem trocou a regra do Combo no PG02: investigar, só leitura | 41.10 (achado do @dev) |
+| R4-8 | Funis do dia 1: liberar os 17 | 49.1 AC6 |
+| R4-9 | "DG & CPDF" e "FZ & MFB": entram todos os funis | 49.1 |
+| R4-10 | Netão = projeto BBE, inclusive `bbe-web-mai-26` | 49.1, 49.5 |
+| R4-11 | `facebook`, `google` e `google-ads` = pago | 49.2 |
+| R4-12 | FZ `letalk`/`chatwoot` + medium de closer (`x1`/`comercial`): aquisição = "Aquisição não rastreada (só closer)" (campo `ferramentasDeAtendimento`) | 49.2, 49.1 |
+| R4-13 | Quente/Frio: manter substring | 49.2 |
+| R4-14 | Funil de comparação apagado depois de validar: gerar como "edição única", com aviso, sem bloquear | 49.1, 49.6 · **49.11** (vale por item da lista) |
+
+## Decisões do dono, rodada 5 (2026-10-02): ✅ são lei, não reabrir
+
+Fonte: `decisoes-dono-epic-49.md`, seção "Rodada 5". Respondem às perguntas da 49.3 (camada 2 × número governante) e da 49.4 (DEC-OWNER-1 e DEC-OWNER-2).
+
+| # | Decisão | Onde se aplica |
+|---|---|---|
+| R5-1 (1B) | **Story 41.12:** a regra da skill "mesma pessoa (e-mail) + mesmo produto conta uma vez" (camada 2, decisão 1A da 49.3) vale em: debriefing + Resumão/Comparativo + painéis Captação Paga e Vendas + relatório e painel do Perpétuo. Os números passam a bater entre todos (PG02: −9 linhas / −R$ 596,30 na captação). Exige medição antes → depois por etapa/funil e comunicação aos usuários antes do merge (padrão 41.10) | **41.12** (Epic 41, definição completa lá) · 49.3 · 49.5 · 49.10 |
+| R5-2 (2B) | **A "Pesquisa-Captação - Alunos" ENTRA na qualificação** (PG02: 1.605 respondentes). O desempate das 23 pessoas que responderam às duas pesquisas sem data está **PENDENTE**: a pergunta foi enviada ao dono | 49.4 · 49.5 · **P-13** |
+| R5-3 (3B) | **Série histórica = lista de lançamentos de comparação na config** (não só um). Story nova **49.11**: campo novo na config da 49.1 + uso nos motores e no render (perguntas que existem em todos os lançamentos da lista viram série) | **49.11** · 49.4 · 49.6 |
+
+## Decisões do dono, rodada 6 (2026-10-02): ✅ são lei, não reabrir
+
+Fonte: `decisoes-dono-epic-49.md`, seção "Rodada 6". Fecham as perguntas P-9 a P-14 da rodada 5.
+
+| # | Decisão | Onde se aplica |
+|---|---|---|
+| R6-1 (P-14) | A autorização do Lucas **cobre a 41.12**; commits com `[scope-override]` | 41.12 |
+| R6-2 (P-10) | Perpétuo: camada 2 **só dentro da janela do relatório**; recompra em outro período é venda nova | 41.12 (fatia B) · 49.10 herda |
+| R6-3 (P-9) | Relatórios já gerados cujo número muda: **gerar de novo**. PG04 `6b4c3492` e Comparativos `19c606f4`/`47db006f`: **uma vez só, depois da 41.12** | 41.12 AC11 · supersede a R4-4 e o AC7b da 41.10 |
+| R6-4 | Limiar de **5%** por etapa/funil para reportar ao dono antes do merge: mantido | 41.12 AC10 |
+| R6-5 (P-11) | **O primeiro da lista é a comparação principal**; se for apagado, o próximo vira principal, com aviso | 49.11 |
+| R6-6 (P-12) | A série mostra **só** se a pergunta existe em todos os lançamentos (sem % por lançamento) | 49.11 · 49.6 |
+| R6-7 (P-13) | Desempate sem data entre as duas pesquisas: **vale a resposta da pesquisa de captação**. PG02: A+B 21,93% (era 22,49%) | **49.11** (AC10(d)) · 49.5 |
+| R6-8 (P-10b) | Assinatura/renovação **fora** da camada 2 no perpétuo, identificada por config de produto (não por nome) | 41.12 (fatia B) |
+
+### R5-1 no Epic 49 (a 41.12 mora no Epic 41)
+
+- **O que a 41.12 faz:**
+  - extrai para `api/src/utils/` a chave da camada 2, que hoje está inline em `deduplicarVendas` (`api/src/services/debriefing-hygiene.ts:548-562`);
+  - passa a aplicá-la no Resumão, nos painéis (e na réplica `sales-daily-sync`) e no perpétuo;
+  - a 49.3 passa a chamar a função extraída, com saída idêntica.
+- Depende da 41.11. Ver `epic-41-resumao-comparativo-generator.md`, "Story 41.12", e o rascunho `docs/stories/41.12.camada2-dedup-pessoa-produto-todas-as-pontas.md`.
+- **Efeito no debriefing:**
+  - a diferença de `definicao` de −R$ 596,30 entre o debriefing e o Resumão do PG02 (`49.3…md:406-411,428`) **zera**;
+  - nas outras pontas, a planilha sem `productName` fica sem a camada 2 e com alerta. A camada 2 do debriefing não tem essa guarda (`debriefing-hygiene.ts:558` usa `""`), e alinhá-la é decisão do @po depois da medição da 41.12.
+- **49.10:** passa a depender também da **41.12**. Ela lê o loader do botão 3, e as fixtures de perpétuo dela usam a §C.10 depois da 41.11 **e** da 41.12.
+
+### R5-2 na 49.4 (ajuste; a 49.4 tem gate PASS e aguarda merge)
+
+- **Comportamento mantido.** O motor já usa as duas pesquisas da Captação Paga do PG02: 1.605 respondentes e A+B 22,49%; sem a "Alunos", seriam 1.272 e 13,92% (`49.4…md` na branch, `:363,447`). A ressalva de merge DEC-OWNER-1 (`:425`) **fecha**.
+- **`pesquisasExcluidas` fica sem uso.** O parâmetro opcional que a QA fix 1 criou (`debriefing-audience-loader.ts:404` na branch) não tem chamador, e a config da 49.1 não ganha campo de exclusão.
+  - **[AUTO-DECISION]** Nenhum campo novo na config. (reason: a 2B não exclui pesquisa nenhuma. A 49.4 já prova que, sem o parâmetro, a saída é idêntica.)
+  - O rascunho da 49.11 (AC10) põe uma guarda: um teste de que ninguém preenche o parâmetro. Removê-lo é decisão do @po; nenhum dos dois caminhos muda número.
+- **Desempate dos 23 — respondido pela R6-7:** vale a resposta da **pesquisa de captação**. Como a 49.4 mergeia sem isso, a regra entra na **49.11** (AC10(d)), com a pesquisa de captação marcada na config (`pesquisaDeCaptacaoPorEtapa`, **[AUTO-DECISION @po]**: `funnel_surveys` não distingue as duas pesquisas da mesma etapa; sem marca, posição + lacuna `DESEMPATE_SEM_PESQUISA_DE_CAPTACAO`). Texto anterior, histórico:
+  - Hoje vale a posição. Entre planilhas, a posição é a ordem alfabética da aba, e a "Alunos" vence (`49.4…md:455-457`). A regra é determinística e documentada.
+  - **[AUTO-DECISION]** A P-13 **não bloqueia o merge** da 49.4. (reason: no máximo 23 de 1.605 respondentes mudam de resposta; se o dono escolher outra regra, o ajuste é localizado no desempate.) O rascunho da 49.11 também diz que ela não bloqueia o Ready. Se o dono quiser o desempate antes do merge, a decisão dele prevalece.
+- **49.5:** na comparação com a skill, a divergência da "Alunos" (Loyola 1.605 / 22,49% × skill 1.272 / 13,8%) é classificada como `definicao`. O número do Loyola governa (decisão 1).
+
+### Story 49.11: série histórica com lista de lançamentos de comparação (R5-3)
+
+Rascunho do @sm, escrito em paralelo: `docs/stories/49.11.debriefing-serie-historica-lista.md`. Esta seção é a definição de epic e está alinhada a ele.
+
+**O que existe hoje** (conferido na `main` `63781b31` e em `origin/feat/49.4-debriefing-motor-publico`, em 2026-10-02):
+- **Config da 49.1 (na `main`):**
+  - campo único `lancamentoComparacaoFunnelId`, coluna `lancamento_comparacao_funnel_id uuid` **sem FK** (`api/src/db/migrations/0161_debriefing_configs.sql:18-22,71`; `schema.ts:3638`);
+  - zod do PUT em `routes/debriefing-config.ts:95`;
+  - validação "mesmo projeto e diferente do próprio funil" em `services/debriefing-config.ts:937-941`;
+  - funil apagado depois de validar vira `null` + aviso `COMPARACAO_REMOVIDA` (R4-14; `:309-328`, `:599`);
+  - mudar premissa zera `validado` (49.1, tabela de decisões).
+- **Motor II (49.4, branch com PASS):**
+  - `serieHistorica` é **um booleano por dimensão**, com motivo (`debriefing-audience-engine.ts:247-248,768-776`). É série a pergunta, por chave ou cabeçalho, que tem resposta nas pesquisas do **único** lançamento de comparação.
+  - O motor **não tabula** a dimensão no lançamento anterior: recebe só `chavesDePerguntaComResposta` (`:195-198`).
+  - O loader lê a base anterior de `config.lancamentoComparacaoFunnelId` (`debriefing-audience-loader.ts:649`), e o cross-launch usa a mesma base (`debriefing-audience-engine.ts:1242+`).
+- **Motor I (49.3): não lê a comparação.** Não há referência a ela em `debriefing-money-time-engine.ts` nem em `debriefing-money-time-loader.ts`.
+- **Render (49.6, Ready, sem código):**
+  - título "Debriefing Comparativo {A} × {B}" e Δ;
+  - "edição única" quando `lancamentoComparacaoFunnelId === null` (`49.6…md:62,90-92`);
+  - o formulário tem "lançamento de comparação opcional" (`:138`).
+- **Skill:**
+  - "Só as dimensões marcadas ✅ nos três podem virar série histórica" (`data/expert-profiles/danilo-gato.md:82`).
+  - A "série completa dos três", PG01 × PG02 × PG04 (`data/insights-recorrentes.md:54-66`), compara também valores e KPIs: A+B 46,5% → 13,8% → 40,7%, ROAS só-ingresso, cross-launch PG01→PG04, ticket.
+- **Migration:** a última da `main` é `0161_debriefing_configs.sql`. A **0162 está livre** na `main` e nas 40 branches remotas mais recentes (conferido em 2026-10-02; reconferir no dia).
+
+**Entra:**
+1. **Campo novo na config:** lista **ordenada** de funis de comparação (`lancamentosComparacao` no rascunho).
+   - Coluna `jsonb` nova em `debriefing_configs`, pela migration **`0162_…sql`**, sem FK (mesma razão da 0161): aditiva, idempotente, com rollback no topo e provada por `information_schema` depois do deploy (o deploy não aplica migration).
+   - **Pré-requisito:** a 0161 aplicada em produção (R4-5).
+   - Cada item é validado como o campo de hoje (mesmo projeto, diferente do próprio funil), sem repetição. A ordem é preservada e tem significado.
+   - Vale só para `tipoDeFunil = "launch"`. O perpétuo não tem comparação (49.10).
+   - Adicionar, remover ou reordenar é mudar premissa e zera `validado`. Limpar id órfão não zera (`premissaEfetiva`, R4-14).
+2. **O primeiro item é a comparação principal** (Δ, título "A × B", cross-launch), que é o papel do `lancamentoComparacaoFunnelId` de hoje. O contrato continua devolvendo esse campo como `lista[0] ?? null`, então a 49.4 (com PASS) e a 49.6 seguem lendo o mesmo campo.
+   - O rascunho atribuía "o primeiro é a principal" à R5-3, cujo texto não diz isso. **Confirmado pelo dono na R6-5** (2026-10-02).
+3. **Compatibilidade com o campo único, sem backfill por UPDATE** (AUTO-DECISION do @sm).
+   - **Leitura:** a lista efetiva é a coluna nova quando ela não está vazia e o primeiro item bate com a coluna antiga. Se divergirem, o que acontece em escrita de API antiga durante rollout ou rollback, **vale a coluna antiga**. Linha de antes da migration (lista vazia, coluna antiga preenchida) vira `[antigo]`.
+   - **Escrita:** o PUT novo grava as duas colunas coerentes (coluna antiga = `lista[0]`).
+   - **Efeito:** nenhuma config validada muda de premissa pela migração.
+   - Remover a coluna antiga fica para uma story futura, depois que a lista for a única fonte em produção.
+4. **R4-14 por item.** Um funil da lista apagado, ou que saiu do projeto, sai da lista efetiva com um aviso `COMPARACAO_REMOVIDA` por item. Não bloqueia nem zera `validado`. Lista efetiva vazia gera edição única.
+   - Se o removido for a **principal**, o rascunho **promove** a próxima válida e o aviso diz qual é a nova (AUTO-DECISION do @sm).
+   - **Decidido pela R6-5:** o próximo da lista vira principal, com aviso.
+5. **Motor II (49.4).**
+   - Uma dimensão é série quando a pergunta tem resposta no lançamento atual **e em todos** os da lista efetiva (R5-3; `danilo-gato.md:82`). O casamento reusa `nomesDaPergunta` (chave ou cabeçalho), sem criar um segundo.
+   - Lista de 1 item gera exatamente o payload de hoje (diferencial).
+   - Leitura DB-first, sem fan-out. Falha de leitura vira `DADO_INDISPONIVEL` (AC11 da 49.4), nunca série vazia.
+   - **Só o flag "existe em todos".** Os **valores** de cada lançamento (o % da série) não são calculados nesta story, porque as perguntas confirmadas da 49.1 são da etapa atual, não das anteriores (AUTO-DECISION do @sm). É a **P-12**, junto com série de KPIs do Motor I e cross-launch por lançamento.
+6. **Motor I (49.3): nada nesta story**, porque ele não lê a comparação hoje.
+7. **Contrato de API:** campo novo na config ⇒ bump de `API_CONTRACT_VERSION`, hoje 30 (`shared/src/contract.ts:280`), com fallback no web. Conflito previsível com a 41.12, que também sobe a versão: quem mergear depois rebaseia.
+8. **Render e formulário (49.6):** o rascunho da 49.11 os traz como AC sobre a 49.6.
+   - O formulário edita a lista ordenada.
+   - O título continua com B = a principal.
+   - A Qualificação marca as dimensões que são série.
+   - A 49.6 ainda não tem código, então **a 49.11 mergeia antes dela**: a 49.6 nasce no contrato final e ninguém retoca um render já mergeado.
+   - O R-49-6 (altura do HTML) só cresce se a P-12 trouxer valores por lançamento.
+
+**Fora:** valores por lançamento (R6-6: sem %), série de KPIs e cross-launch por lançamento; perpétuo; remoção da coluna antiga.
+
+**Entra também (R6-7):** o desempate sem data pela pesquisa de captação marcada na config, na mesma migration 0162 (AC10(d) da 49.11). **[AUTO-DECISION @po]** AC7 e AC9 da 49.11 (formulário e render) **transferidos à 49.6**, que não está na `main`.
+
+**Depende de:** 49.1 (na `main`, com a 0161 aplicada) e **49.4**, cujos motor e loader ela altera. A 49.4 precisa estar na `main` para a 49.11 começar.
+- **Antes da 49.6.**
+- Corre **em paralelo com a 49.5**, porque `montarPayloadDebriefing` carrega `publico` inteiro (`49.5…md:98`).
+- Não depende da 41.12.
+
+**Estimativa:** M. **Autoridade:** código fora do scope (`api/src/db/`, `services/`, `routes/`, migration), coberto pela decisão 12 como story do Epic 49.
+
 ## Perpétuo (decisão 2): o que os artefatos definem e o que fica com o dono
 
 ### O que existe
@@ -191,8 +334,9 @@ As opções descartadas ficam aqui só como histórico:
 **Fora:** alterar o relatório e o botão 3 (41.9) e o `perpetual-dashboard`; metodologia de lançamento no perpétuo; qualquer cálculo que o 41.8 não faz.
 
 **Depende de:** 49.1 (gate), 49.6 (render, persistência, botão), **49.7** (textos) e, no Epic 41, **41.7–41.9** (Done) e **41.11** (R3-1). A 41.11 põe a dedup por `(ID da venda, produto)` no loader do botão 3, que a 49.10 consome. A 49.10 **não** deduplica por conta própria: recebe as vendas já deduplicadas do loader.
+- **Rodada 5 (R5-1):** depende também da **41.12**, que põe a camada 2, (e-mail, produto), no mesmo loader, depois da camada 1 da 41.11. Continua sem deduplicar por conta própria.
 
-**Estimativa:** **M**. **Ordem de merge:** depois da 49.7 **e da 41.11**, e antes da 49.9.
+**Estimativa:** **M**. **Ordem de merge:** depois da 49.7, **da 41.11 e da 41.12** (R5-1), e antes da 49.9.
 
 **Achados que a 49.10 herda (verificados no código em 2026-09-30):**
 - **Sem dedup por transação.** `perpetual-report-loader.ts:381-410` não deduplica por ID de transação: o `txId` só retira o par de reembolso (`:363-388`) e toda linha entra no faturamento. É o mesmo defeito que a 41.10 corrige no Resumão. **Resolvido pela R3-1:** é a 41.11, da qual a 49.10 depende.
@@ -289,8 +433,18 @@ A skill exige `link_click` em toda métrica de clique (`data/parametros-constant
 | **49.10** | Debriefing de **funil perpétuo** (decisão 2, **R2-3 opção A**). Os números vêm do motor do botão 3 (41.8), renderizados no padrão visual da skill, com os textos da IA (49.7), e são salvos em `debriefings`. O que o 41.8 não calcula vira lacuna declarada. A janela início/fim substitui as datas-chave. O gate é o da 49.1 + `perpetual_report_configs.validado` (41.7). CTR/CPC por `link_click`, com `entrega` montada na composição da 49.10. Definição completa na seção "Perpétuo" | 49.1, 49.6, **49.7**; Epic 41: **41.7–41.9** (Done) e **41.11** (R3-1) | M |
 | *41.10 (Epic 41)* | *Dependência externa:* correção do Resumão com dedup por ID de transação e regra de comprador Imersão OU Combo (R2-1, R2-2), com a troca do Combo em todos os lançamentos onde ele é bump (R3-5) e os relatórios do PG02 gerados de novo (R3-3). Ver `epic-41-resumao-comparativo-generator.md` | — | M |
 | *41.11 (Epic 41)* | *Dependência externa (R3-1):* dedup por `(ID da venda, produto)` no loader do relatório de Perpétuo (botão 3), com a função da 41.10. Ver `epic-41-resumao-comparativo-generator.md` | 41.10 | S–M |
+| **49.11** | **Série histórica com lista de lançamentos de comparação** (R5-3). Lista ordenada na config da 49.1 (migration **0162**), compatível com `lancamentoComparacaoFunnelId`: o campo vira `lista[0]`, com dupla leitura e escrita e sem backfill. Motor II: é série a pergunta que existe em **todos** os lançamentos da lista (só o flag; valores por lançamento = P-12). Traz AC sobre o render e o formulário da 49.6. Definição na seção "Story 49.11" | 49.1, **49.4** | M |
+| *41.12 (Epic 41)* | *Dependência externa (R5-1):* camada 2 de dedup, (e-mail, produto), em todas as pontas, com a regra da 49.3 extraída para `utils/`, mais a réplica `sales-daily-sync`. Ver `epic-41-resumao-comparativo-generator.md` | 41.10, 49.3 (na `main`); 41.11 | L |
 
-**Ordem de merge (final, depois da rodada 3):** 49.8 (independente, pode ir primeiro) · (**41.10** ‖ 49.1 ‖ 49.2) → [ **41.11** ‖ (49.3 → 49.4 → 49.5 → 49.6 → 49.7) ] → **49.10** → 49.9.
+**Ordem de merge (rodada 3, histórico):** 49.8 (independente, pode ir primeiro) · (**41.10** ‖ 49.1 ‖ 49.2) → [ **41.11** ‖ (49.3 → 49.4 → 49.5 → 49.6 → 49.7) ] → **49.10** → 49.9.
+
+**Ordem de merge (atual, depois da rodada 5):** ✅ 49.8 · ✅ 41.10 · ✅ 49.1 · ✅ 49.2 · ✅ 49.3 (na `main`) → **49.4** → [ **49.11** ‖ 49.5 ] → 49.6 → 49.7 → **49.10** → 49.9. A trilha do Epic 41 é **41.11 → 41.12**, de preferência com a 41.12 antes da 49.5, e as duas antes da 49.10.
+- ***49.4 → 49.11:*** a 49.11 altera o motor e o loader da 49.4 (série por lista).
+- ***49.11 antes da 49.6:*** avaliado pelo contrato. O contrato entre as duas é o payload, mais a config que o formulário edita. Com a 49.11 antes, a 49.6 nasce lendo a lista e a série, e ninguém retoca um render já mergeado. `lancamentoComparacaoFunnelId` continua no contrato como `lista[0]`, então o que a 49.4 e a 49.6 já leem não quebra.
+- ***49.11 ‖ 49.5:*** a 49.5 carrega `publico` inteiro em `montarPayloadDebriefing` (`49.5…md:98`), então a série passa sem mudança nela.
+- ***41.12, de preferência antes da 49.5:*** a fixture governante do PG02 deixa de ter o degrau `definicao` de −R$ 596,30. Se a 49.5 entrar antes, a 41.12 atualiza a fixture na mesma PR.
+- ***41.11 → 41.12 → 49.10:*** o mesmo loader do botão 3. A sequência isola a medição de cada camada, e as fixtures de perpétuo da 49.10 usam a §C.10 depois das duas. Se o @po fatiar a 41.12, a parte de lançamento não depende da 41.11.
+- **Contrato de API:** 49.11 e 41.12 sobem `API_CONTRACT_VERSION` (hoje 30). Quem mergear depois rebaseia para o número seguinte.
 - ***41.10 → 41.11:*** a 41.11 chama a função `deduplicarPorIdDaVenda` que a 41.10 extrai.
 - ***41.11 antes da 49.10:*** R3-1. A 49.10 consome o loader do botão 3 já deduplicado, e as fixtures de perpétuo dela usam a §C.10 conferida pela 41.11. A 41.11 corre em paralelo com a trilha 49.3–49.7, porque nenhuma delas toca o loader do perpétuo.
 - *49.3 antes da 49.4:* alterado pelo @po em 2026-09-30, pela resolução 9 do @sm. A 49.4 importa helpers da 49.3 (ver Change Log).
@@ -308,7 +462,33 @@ A skill exige `link_click` em toda métrica de clique (`data/parametros-constant
 - **49.7** — Decisão ✅4. Reusa o cliente de `api/src/services/claude.ts`. O LLM recebe o payload e devolve texto; o texto é escapado (`escaparHtml`) e nunca injeta HTML ou links. Separada da 49.6 para que o relatório determinístico possa ir ao ar e ser conferido contra as fixtures sem depender do LLM. **Decisão 10:** depois que a 49.7 entra, falha do LLM **bloqueia** a geração. O botão mostra código, motivo e ação, no padrão do botão do Resumão, e não sai relatório sem texto. **Decisão 11:** o LLM recebe só identificador anônimo do comprador; nome, e-mail e telefone não saem do servidor. UTMs, produto e valores podem ir.
 - **49.8** — Testado em Chrome headless em 2026-09-30 com o mesmo sandbox e o mesmo agente de altura: referência DG 17/17 gráficos, 0 erros, 7.509 px; FZ L1×M1×L2 37/37, 0 erros, 12.423 px; Netão 22/22, 0 erros, 16.957 px. Chart.js 4.4.1 + datalabels 2.2.0 carregam; `localStorage` lança SecurityError (a referência não usa). O link do Ads Manager (`target="_blank"`, `selected_ad_ids`, exigido pela Fase 9) é **bloqueado** sem `allow-popups`; com `allow-popups allow-popups-to-escape-sandbox` abre, e `localStorage` segue bloqueado (isolamento mantido, `allow-same-origin` continua fora). **Não testado:** salvar após edição inline com gráficos já desenhados (o serializador grava o DOM mutado pelo Chart.js) — é AC da story. A mudança vale para todo documento do viewer, inclusive os HTMLs da skill que já sobem manualmente hoje com os mesmos links.
 - **49.9** — Minds = `squads/<squad>/agents/*.md`, arquivo inteiro vira system prompt (`services/prompt-builder.ts`, `services/mind-registry.ts`, `MINDS_BASE_PATH=./squads`). A tool nova entra em `services/chat-tools.ts` e é **read-only** sobre o payload persistido na 49.6. A mente vê o payload, não o HTML: edições inline feitas no viewer não chegam a ela. **Decisão 11:** a tool entrega o payload sem dado pessoal de comprador (só identificador anônimo).
-- **49.10** — Definição completa na seção "Perpétuo" → "Story 49.10: definição" (R2-3, opção A). Fonte de números = Loyola via 41.8 (decisão 1); CTR/CPC por `link_click` com `entrega` montada na composição da 49.10; o que o 41.8 não calcula vira lacuna; textos da 49.7; dedup por transação vem do loader do perpétuo corrigido pela **41.11** (R3-1), da qual a 49.10 depende.
+- **49.10** — Definição completa na seção "Perpétuo" → "Story 49.10: definição" (R2-3, opção A). Fonte de números = Loyola via 41.8 (decisão 1); CTR/CPC por `link_click` com `entrega` montada na composição da 49.10; o que o 41.8 não calcula vira lacuna; textos da 49.7; dedup por transação vem do loader do perpétuo corrigido pela **41.11** (R3-1), da qual a 49.10 depende. **R5-1:** depende também da **41.12 fatia B**, que põe a camada 2 no mesmo loader.
+- **49.11** — Definição completa na seção "Story 49.11" (R5-3).
+  - Pontos que o @sm carrega para o draft:
+    - `lista[0]` é a principal (AUTO-DECISION; o texto da R5-3 não diz isso);
+    - dupla leitura e escrita do campo único, sem backfill;
+    - R4-14 por item, com a promoção da principal (R6-5);
+    - só o flag "existe em todos";
+    - migration 0162, com a 0161 aplicada antes.
+  - Valores por lançamento ficam fora (R6-6); série de KPIs do Motor I e cross-launch por lançamento, também.
+
+**Ajustes da rodada 5 nas stories existentes** (o @sm aplica em paralelo; este doc não edita story):
+- **49.3 (na `main`):** a camada 2 passa a chamar a função que a 41.12 extrai, com saída idêntica; a troca é feita pela própria 41.12. A guarda "planilha sem produto" das outras pontas só chega à 49.3 se o @po decidir, depois da medição da 41.12.
+- **49.4 (PASS, aguardando merge):**
+  - R5-2: comportamento mantido e DEC-OWNER-1 fechada;
+  - `pesquisasExcluidas` sem chamador, e o @po decide se o mantém;
+  - P-13 respondida pela R6-7; o ajuste vai na 49.11, e o merge da 49.4 não espera;
+  - DEC-OWNER-2 respondida pela R5-3, que vira a 49.11, depois do merge.
+- **49.5:**
+  - a fixture governante do PG02 segue a conferência corrigida pela 41.12;
+  - a divergência da "Alunos" (1.605 / 22,49% × skill 1.272 / 13,8%) é `definicao`.
+- **49.6:**
+  - o formulário edita a lista ordenada;
+  - a Qualificação marca as dimensões que são série, sem valores por lançamento (R6-6);
+  - **absorve o AC7 e o AC9 da 49.11** (formulário com a lista ordenada e o seletor da pesquisa de captação; render da composição da série) — a 49.6 registra isso antes de começar;
+  - Δ e título continuam pela principal (`lista[0]`);
+  - depende da 49.11.
+- **49.10:** depende também da 41.12.
 
 ### Divergências em relação à proposta do @sm (River) e por quê
 
@@ -336,7 +516,8 @@ A skill exige `link_click` em toda métrica de clique (`data/parametros-constant
 - Substituir o upload manual de HTML do módulo Debriefing — continua existindo.
 - Aplicar ao perpétuo a metodologia de lançamento (carrinho, coorte D+x, ROAS em 3 níveis): não se aplica. A forma do perpétuo é a da **R2-3 (opção A)**, story 49.10.
 - Substituir ou alterar o relatório perpétuo do botão 3 (Epic 41, 41.7–41.9) e o `perpetual-dashboard`: continuam como estão. A 49.10 **consome** o motor 41.8 e monta a `entrega` na própria composição. Mudar número do botão 3 só acontece por story do Epic 41: a dedup é a **41.11** (R3-1).
-- A correção do Resumão (dedup por transação + regra de comprador) **não é deste epic**: é a 41.10, no Epic 41 (R2-2). A dedup do relatório de Perpétuo também não: é a 41.11, no Epic 41 (R3-1).
+- A correção do Resumão (dedup por transação + regra de comprador) **não é deste epic**: é a 41.10, no Epic 41 (R2-2). A dedup do relatório de Perpétuo também não: é a 41.11, no Epic 41 (R3-1). A camada 2 nas outras pontas (Resumão, painéis, perpétuo) também não: é a 41.12, no Epic 41 (R5-1).
+- Valores por lançamento da série (R6-6), série de KPIs do Motor I e cross-launch contra cada lançamento da lista. A 49.11 cobre o flag das perguntas da pesquisa, que é o texto da R5-3.
 
 ## Lacunas declaradas (o relatório diz, não inventa)
 
@@ -397,6 +578,16 @@ A skill exige `link_click` em toda métrica de clique (`data/parametros-constant
   - O Resumão (e o painel Captação Paga) lê a lista `order_bump_products`. O debriefing (49.3), o checkout/order bump (18.68–18.70) e o perpétuo leem o mapa `product_types`.
   - Se as duas divergirem num lançamento, o debriefing e o Resumão do mesmo lançamento mostram compradores diferentes, a armadilha #9 entre telas.
   - **Mitigação:** a 41.10 confere que lista e mapa concordam nas etapas com config de Resumão e em toda etapa corrigida pela R3-5, e registra o resultado. **[AUTO-DECISION]** Em cada etapa corrigida pela R3-5, o mapa fica coerente com a lista, como no PG02. A unificação numa configuração só fica **fora** da 41.10 e vira insumo para o @architect.
+- **R-49-14 (alto). A 41.12 muda números em cinco pontas, e o painel de lançamento hoje conta recompra de propósito.**
+  - Pela R5-1, a recompra do mesmo produto pelo mesmo e-mail passa a contar uma vez no Resumão, nos painéis Captação Paga e Vendas, no relatório e no painel do Perpétuo, e também na API pública do perpétuo (Inácio), que lê a mesma função (`perpetual-sales.ts:262`, `public-perpetual-metrics.ts:52`).
+  - O painel de lançamento contava a recompra como venda por decisão documentada (`stage-sales-data.ts:588-592`).
+  - A réplica `sales-daily-sync.ts` entra (AUTO-DECISION do @sm), e com ela muda o CAC da cadeia do Inácio.
+  - No perpétuo, "conta uma vez" antes do corte de janela tira do mês a recompra de quem comprou em outro mês. Com produto recorrente, tira receita real (P-10).
+  - **Mitigação:** levantamento e medição antes → depois em toda etapa e funil, comunicação antes do merge, P-10 antes do merge do perpétuo se o efeito for relevante, e destino dos relatórios já gerados com o dono (P-9). Detalhe no R-E9 do Epic 41.
+- **R-49-15 (médio). Duas fontes para "a comparação" durante a transição da 49.11.**
+  - A coluna antiga e a lista nova podem divergir se alguém gravar só uma: API antiga no intervalo entre deploys, ou rollback.
+  - **Mitigação:** na divergência vale a coluna antiga; o PUT novo grava as duas coerentes (coluna antiga = `lista[0]`); há teste de cada caminho. A coluna antiga só sai em story futura.
+  - Se a P-12 trouxer valores por lançamento, a altura do HTML cresce (R-49-6).
 
 ## Perguntas ao dono (depois da rodada 3)
 
@@ -418,6 +609,37 @@ Ficam abertas duas perguntas, que nascem das próprias respostas. As duas tratam
   - **Condicional:** só existe se o AC3 da 41.11 achar funil cujo número muda **e** que tem relatório em `perpetual_reports` (AC3(d) conta). Sem esse funil, a pergunta perde o objeto.
 - **P-8: Resumões e Comparativos já gerados de outros lançamentos**, fora do PG02, cujo número mude pela dedup da 41.10 (que vale para todo Resumão) ou pela troca do Combo da R3-5. Manter com aviso, gerar de novo ou remover?
   - **Condicional:** só existe se o levantamento da 41.10 (AC6(b)) achar etapa afetada fora do PG02 que tenha relatório em `launch_reports` (o AC6(b) conta). Se existir, **bloqueia o merge** da 41.10 (como a P-7 na 41.11), não o início nem o Ready.
+  - **✅ Respondida pela R4-4 (2026-10-01).** O levantamento da 41.10 achou um único relatório fora do PG02 que muda: o Resumão do PG04 `6b4c3492` (−5 vendas / −R$ 428,50 na janela). O do BBE-PR2 (`b789ad43`) não muda (`41.10…md:244,328`). O PG04 é **gerado de novo** depois do deploy da 41.10.
+
+### Perguntas novas (rodada 5, 2026-10-02) — **todas respondidas na rodada 6** (ver "Decisões do dono, rodada 6"): P-9 → R6-3, P-10 → R6-2 (+ P-10b → R6-8), P-11 → R6-5, P-12 → R6-6, P-13 → R6-7, P-14 → R6-1. Texto original mantido como histórico.
+
+A numeração é a dos rascunhos do @sm (41.12: P-9 e P-10; 49.11: P-11 a P-13), mais a P-14 deste @pm. Nenhuma bloqueia a escrita das stories. O que cada uma bloqueia está dito nela.
+
+- **P-9: relatórios já gerados cujo número muda pela camada 2 (41.12)** — `launch_reports` (Resumões e Comparativos) e `perpetual_reports`. Manter com aviso, gerar de novo ou remover?
+  - Sub-pergunta: o Resumão do PG04 e os Comparativos PG02×PG04 que a R3-3/R4-4 mandou gerar de novo depois da 41.10 são gerados agora e de novo depois da 41.12, ou esperam a 41.12 para gerar uma vez só?
+  - A R5-1 não diz nada sobre o destino desses relatórios, e este doc não o inventa.
+  - **Condicional** ao levantamento da 41.12. Se houver relatório afetado, **bloqueia o merge**, não o início nem o Ready.
+- **P-10: recompra do mesmo produto no perpétuo (41.12).** O funil perpétuo não acaba, e o relatório é por janela (mês).
+  - Literal da R5-1: a primeira compra vale, e toda recompra do mesmo produto pela mesma pessoa, em qualquer data, sai do faturamento do período em que cair.
+  - A alternativa é a repetição valer só dentro de uma janela, ou só no período do relatório.
+  - Se o levantamento achar produto recorrente (renovação, assinatura), ele fica fora da regra?
+  - Provisório no rascunho: o literal, com o efeito medido por funil.
+  - **Bloqueia o merge da parte do perpétuo** se a medição mostrar efeito relevante.
+- **P-11: a principal removida (49.11).** Se o funil que era a comparação principal (`lista[0]`) for apagado depois de validar, o rascunho promove o próximo da lista e avisa qual é a nova principal.
+  - A alternativa é gerar em edição única até alguém reconfirmar a lista.
+  - Junto: confirmar que **o primeiro da lista é a principal**. O rascunho atribui isso à R5-3, mas o texto da R5-3 não diz.
+  - Não bloqueia.
+- **P-12: o que a série mostra (49.11).** Mostra só "existe em todos os lançamentos" (o que a 49.11 entrega) ou também o % de cada lançamento? E mostra série de KPIs do Motor I e cross-launch contra cada lançamento, como a "série completa dos três" da skill (`insights-recorrentes.md:54-66`)?
+  - Valores por lançamento exigem confirmar a pergunta equivalente em cada lançamento anterior.
+  - KPIs exigem datas-chave de cada lançamento (janela 2A), talvez da config de Debriefing validada dele.
+  - Nos dois casos é story nova. Não bloqueia a 49.11.
+- **P-13: desempate das 23 pessoas que responderam às duas pesquisas do PG02 sem data** (R5-2). **Pendente; a pergunta já foi enviada ao dono.**
+  - Hoje vale a posição, e a "Alunos" vence pela ordem alfabética da aba (`49.4…md:455-457`).
+  - **[AUTO-DECISION]** Não bloqueia o merge da 49.4 nem o Ready da 49.11: a regra é determinística e afeta no máximo 23 de 1.605 respondentes. Se o dono quiser o desempate antes do merge, a decisão dele prevalece.
+- **P-14: a autorização do Lucas cobre a 41.12?**
+  - A decisão 12 foi registrada para a 49.1–49.10, e a 49.11 entra por ser do mesmo epic. A 41.12 é do Epic 41 e toca código fora do scope `restricted`.
+  - Para a 41.10/41.11 foi preciso perguntar (P-3 → R3-2). O rascunho da 41.12 dá a autorização como concedida.
+  - **Bloqueia o início da implementação** da 41.12, não a escrita nem a validação da story.
 
 ## Escopo de autoridade
 
@@ -436,6 +658,8 @@ Ficam abertas duas perguntas, que nascem das próprias respostas. As duas tratam
 | 49.10 | `api/src/services/` (composição do debriefing perpétuo sobre o 41.8), `api/src/routes/` (geração), `web/components/funnels/` (despacho do botão) | **Misto**: o mesmo critério da 49.6 |
 | 41.10 (Epic 41) | `api/src/services/launch-report-loader.ts`, `api/src/utils/`, `__tests__/` | **Não**: autorizado pela **R3-2**, `[scope-override]` |
 | 41.11 (Epic 41) | `api/src/services/perpetual-report-loader.ts`, `__tests__/` | **Não**: autorizado pela **R3-2**, `[scope-override]` |
+| 49.11 | `api/src/db/schema.ts` + migration 0162, `api/src/services/debriefing-config.ts`, `api/src/routes/debriefing-config.ts`, `api/src/services/debriefing-audience-*.ts`, `shared/src/contract.ts` | **Não**: coberta pela decisão 12 (story do Epic 49), `[scope-override]` |
+| 41.12 (Epic 41) | `api/src/utils/`, `api/src/services/launch-report-*.ts`, `api/src/routes/stage-sales-data.ts`, `api/src/services/perpetual-report-loader.ts`, `api/src/services/perpetual-sales.ts`, `api/src/services/debriefing-hygiene.ts`, `api/src/services/sales-daily-sync.ts` | **Não**: autorizado pela **R6-1** (resposta à P-14), `[scope-override]` |
 
 **Autorização registrada (decisão 12):**
 - O Lucas autorizou o código fora do scope `restricted`. O Danilo informou em 2026-09-30, e esta é a fonte: o relato do Danilo, sem registro direto do Lucas neste repo.
@@ -458,5 +682,7 @@ Ficam abertas duas perguntas, que nascem das próprias respostas. As duas tratam
 | 2026-09-30 | @po (Pax) | **PO re-validation 2026-09-30** de 49.1–49.10 e 41.10, com foco em contrato cruzado depois das rodadas 1 e 2. **Ready:** 49.1–49.9. **Draft:** 49.10 (P-2) e 41.10 (P-3; P-4 bloqueia o merge). **Correções:** (1) **chave da dedup** da 41.10 era só o ID — passou a `(ID, produto)`, a do epic 41 e dos dedups inline; nos snapshots do squad o ID do pedido cobre mais de um produto em 127 pedidos do DG-PG04 e 14 do BBE-A1; no PG02, nenhum (números da 41.10 inalterados); (2) a função compartilhada que o epic manda a 41.10 extrair não existia nas stories — `deduplicarPorIdDaVenda` fixada na 41.10 e consumida pela 49.3 (que ganhou a 41.10 no `Depends On`); sobrevivente = a primeira (a regra "com `Transaction` preenchida" lia coluna não mapeada); (3) a 41.10 não trazia itens do escopo do epic 41 (`product_types` do PG02, PG04 no T0 e na medição, lista × mapa, comunicação antes do merge) — incluídos; (4) a 41.10 dava a autorização do Lucas como concedida — é a P-3; (5) **comprador = ingresso OU combo** aplicado na 49.4 AC7 (dividia por "compraram ingresso"); (6) a fixture governante da 49.5 ainda citava 1.410 / R$ 233.572,94 — agora os valores corrigidos pela 41.10, com mapeamento de vocabulário Resumão → payload; (7) **Netão** entrou nas fixtures da 49.5 (decisão 2); fixtures de perpétuo movidas para a 49.10; (8) `payload.tipo`: a 49.10 dependia de um campo que 49.5/49.6 não criavam — discriminador `"lancamento"` nasce na 49.5, gravado pela 49.6, lido pela 49.7 e pela 49.9 (que passou a depender da 49.10 e lê os dois formatos); (9) `DebriefingConfig` da 49.1 virou união por `tipoDeFunil`; `TIPO_DE_FUNIL_NAO_SUPORTADO` vale também para `mobile`; lista de combinações da decisão 2 = funis `launch`/`perpetual` dos três projetos por id. **Resolução do coordenador aplicada:** comprador sem UTM e só com `sellerName` = `Sem track real` + Closer (49.2–49.5). **Achado novo:** no snapshot do DG-PG01 cada venda aparece 2× (`PURCHASE_APPROVED`/`PURCHASE_COMPLETE`) com `ID` distinto e `Transaction` igual — o oposto do PG02; como a dedup vale para todo Resumão, a 41.10 AC6(b) mede o impacto por etapa antes do merge. **P-6** acrescentada às perguntas. |
 | 2026-09-30 | @pm (Morgan) | **Rodada 3 do dono (R3-1 a R3-5) incorporada.** Fecha as perguntas P-2 a P-6. Este registro toca **só os docs de epic** (49 e 41). As stories (41.11 nova; ajustes em 41.10, 49.5 e 49.10) são do @sm, em paralelo.<br>**Seção nova** "Decisões do dono, rodada 3".<br>**R3-1:** a dedup do loader do botão 3 virou a **41.11** no Epic 41, com a função da 41.10, dependendo da 41.10. A **49.10 passa a depender da 41.11** e não deduplica por conta própria. As fixtures de perpétuo dela usam a §C.10 depois da medição da 41.11.<br>**R3-2:** as linhas 41.10 e 41.11 entram no "Escopo de autoridade". **R3-3:** R-49-12 atualizado (relatórios do PG02 gerados de novo). **R3-4:** os degraus do n8n são diferença de fonte (nota da 49.5). **R3-5:** R-49-12 e R-49-13 ampliados (troca do Combo em todos os lançamentos onde ele é bump; **[AUTO-DECISION]** mapa coerente com a lista em cada etapa).<br>**Ordem de merge final:** 49.8 · (41.10 ‖ 49.1 ‖ 49.2) → [41.11 ‖ (49.3 → 49.4 → 49.5 → 49.6 → 49.7)] → 49.10 → 49.9.<br>**Status:** os bloqueios da 49.10 e da 41.10 foram respondidos; 49.10, 41.10 e 41.11 aguardam a re-validação do @po (transição de status é dele).<br>**Perguntas novas:** **P-7** (relatórios de perpétuo já gerados; o rascunho da 41.11 já a registra como bloqueio do merge) e **P-8** (relatórios já gerados de outros lançamentos afetados pela dedup ou pela R3-5; condicional ao levantamento da 41.10). Nenhuma bloqueia início de story.<br>**Ponto para o @po:** a [AUTO-DECISION] do Epic 41 para funil perpétuo sem `productName` mapeado (a dedup não age e vira alerta) não está no rascunho da 41.11. Com produto `null` = `""`, a chave juntaria ingresso e bump do mesmo pedido. |
 | 2026-09-30 | @po (Pax) | **PO validation final 2026-09-30** (`*validate-story-draft`) de **41.10, 41.11, 49.10 e 49.5**, com consistência cruzada contra os epics 41/49 e a 49.3. **Draft → Ready:** 41.10 (9/10), 41.11 (9/10), 49.10 (9/10). **49.5** segue Ready (9/10). **[AUTO-DECISION] do @pm (41.11: funil sem `productName` → dedup não age e vira alerta) incorporada** na 41.11 (alerta `W-P8`, testes) e estendida, por ser a mesma função, a `transactionId` não mapeado e aos outros chamadores: W10 na 41.10, lacuna `DEDUP_POR_ID_NAO_APLICADA` na 49.3 (cobrada pelo F11 da 49.5), lacuna `PERPETUO_DEDUP_NAO_APLICADA` na 49.10; a 41.10 registra isso como "política de quem chama" no contrato exportado. **[AUTO-DECISION] do @sm na 41.11 conferidas:** dedup antes do corte de janela (coerente; teste reescrito com janelas adjacentes, o único que falha com o bug de volta); alertas não bloqueantes (`W-P7`/`W-P8`, códigos conferidos livres); T0 ler o mapeamento (ampliado a `productName`). **Alerta = efeito na janela** nas duas stories do Epic 41 (o W9 da 41.10 só fecha 25 / 13 assim). **49.10:** o `PerpetualReport` consumido é o de `loadPerpetualReport` (os alertas da 41.11 entram depois do motor); suíte do perpétuo "intacta em relação à `main` com a 41.11". **P-7/P-8:** condicionais e bloqueiam só o merge (41.11/41.10), não início nem Ready. |
+| 2026-10-02 | @pm (Morgan) | **Rodadas 4 e 5 do dono incorporadas.** Este registro toca **só os docs de epic** (49 e 41). Os arquivos de story (49.11 e 41.12 novas; ajustes em 49.3–49.6 e 49.10) são do @sm, que os escreveu em paralelo; este registro foi **alinhado aos rascunhos dele**.<br>**Rodada 4** (já aplicada nas stories, agora registrada no epic): **R4-4 fecha a P-8** (o Resumão do PG04 `6b4c3492` é gerado de novo depois da 41.10); R4-5 (0161) vira pré-requisito da 49.11; R4-14 vale por item da lista na 49.11.<br>**R5-1:** a **41.12** foi definida no Epic 41: camada 2 em todas as pontas, mais a réplica `sales-daily-sync`, depois da 41.11. Conferido na `main`: a camada 2 só existe inline em `debriefing-hygiene.ts:548-562`. A 49.10 passa a depender da 41.12.<br>**R5-2:** comportamento da 49.4 mantido e DEC-OWNER-1 fechada; `pesquisasExcluidas` fica sem chamador e nenhum campo entra na config (**[AUTO-DECISION]**); desempate = P-13, **[AUTO-DECISION]** sem bloquear o merge da 49.4.<br>**R5-3: story 49.11** definida. Conferido: o campo único `lancamentoComparacaoFunnelId` (0161, sem FK); o Motor II só marca `serieHistorica` e não tabula o anterior; o Motor I não lê a comparação; a 0162 está livre. Do rascunho: `lista[0]` é a principal; dupla leitura e escrita sem backfill (na divergência vale a coluna antiga); R4-14 por item, com a promoção da principal pendente da P-11; só o flag "existe em todos" (valores = P-12); AC sobre o render e o formulário da 49.6. ⚠️ "O primeiro é a principal" não está no texto da R5-3: tratado como AUTO-DECISION até o dono confirmar (P-11).<br>**Ordem de merge:** 49.4 → [49.11 ‖ 49.5] → 49.6 → 49.7 → 49.10 → 49.9, avaliada pelo contrato: a 49.11 vem antes da 49.6, e a 49.5 carrega `publico` inteiro. Trilha 41.11 → 41.12, de preferência antes da 49.5, e as duas antes da 49.10.<br>**Riscos:** R-49-14 (a 41.12 muda números em cinco pontas, mais a réplica) e R-49-15 (duas fontes para "a comparação" na transição).<br>**Perguntas:** P-9 (relatórios já gerados), P-10 (recompra no perpétuo), P-11 (principal removida; confirmar `lista[0]`), P-12 (valores e KPIs na série), P-13 (desempate, já enviada) e P-14 (autorização do Lucas para a 41.12; bloqueia o início da implementação). |
+| 2026-10-02 | @po (Pax) | **PO validation 2026-10-02** (`*validate-story-draft`, 10 pontos) da **49.11** e da **41.12**: as duas **Draft → Ready** (9/10), sem pendência do dono. **Rodada 6 registrada** (R6-1 a R6-8). **49.11:** "o primeiro é a principal" estava atribuído à R5-3 — virou decisão pela R6-5; R6-6 fecha a série em "existe em todos"; R6-7 entra como AC10(d) com o campo `pesquisaDeCaptacaoPorEtapa` (**[AUTO-DECISION @po]**, mesma 0162, 21 colunas; nada em `funnel_surveys` distingue as duas pesquisas); `Depends On` da 49.6 virou `Bloqueia`; **AC7/AC9 transferidos à 49.6** (**[AUTO-DECISION @po]**). **41.12:** R6-1 (autorização), R6-2 (perpétuo por janela), R6-3 (regerar uma vez só depois da 41.12; a R4-4 e o AC7b da 41.10 ajustados), R6-4 (5%), R6-8 (marca `recurring_products`, **[AUTO-DECISION @po]**, fatia B); fatias A/B; `sales-data-daily`; comunicação com o CAC da cadeia do Inácio. **49.5:** nota de dependência da 41.12 (fim da classificação `definicao` dos −R$ 596,30) e lacuna nova da 49.11 no F11. **Follow-up de doc:** a 49.6 registra a absorção do AC7/AC9 da 49.11 antes de começar. |
 
 <!-- clickup:17tqameqcth -->
