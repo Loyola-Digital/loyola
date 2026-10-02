@@ -289,4 +289,15 @@
 // segue = o 1º item. ADITIVA: a API v30 rejeita as chaves novas (corpo
 // `.strict()`), então o web só as envia com a API ≥ 31 (49.6 AC7/AC11).
 // `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 31;
+// v32 (Story 49.6): rota NOVA `POST /api/projects/:projectId/funnels/:funnelId/
+// stages/:stageId/debriefing/generate` (corpo opcional `{ investimentoOficial }`;
+// a config vem da 49.1) → 200 `{ id, html, payload, alertas }` e grava o HTML em
+// `debriefings` + o payload em `debriefing_payloads` (migration 0164 — aplicada
+// à mão, o deploy não a aplica). 422 `{ erro, detalhe, acao }`:
+// ETAPA_NAO_E_DEBRIEFING, os do gate da 49.1, COMPARACAO_SEM_CONFIG,
+// DADO_INDISPONIVEL, INVARIANTE_VIOLADO (+ `codigo`, `violacoes`),
+// CONFERENCIA_EXTERNA; 413 PAYLOAD_TOO_LARGE. O GET `…/debriefing/config` ganha
+// `pesquisasPorEtapa` (aditivo). ADITIVA: nenhuma rota existente muda de forma;
+// o web trata 404 da rota nova como "API atrás". ⚠️ A 41.12 parte A (não
+// mergeada) também quer 32 — quem mergear depois renumera. `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 32;

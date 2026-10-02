@@ -888,6 +888,12 @@ export interface DebriefingConfigStore {
   /** Story 49.11 (R6-7) — as pesquisas (`funnel_surveys.id`) de cada etapa, sem abrir planilha. */
   pesquisasDasEtapas(stageIds: string[]): Promise<{ id: string; stageId: string }[]>;
   /**
+   * Story 49.6 — as mesmas pesquisas, com o nome da aba, para o seletor
+   * "pesquisa de captação" do formulário (49.11 AC7). Opcional: store sem ele
+   * (fixtures da 49.1) faz o GET omitir `pesquisasPorEtapa`.
+   */
+  pesquisasComRotulo?(stageIds: string[]): Promise<{ id: string; stageId: string; rotulo: string }[]>;
+  /**
    * Upsert por etapa (`ON CONFLICT (stage_id)`): dois "salvar" simultâneos na
    * primeira gravação não dão 500 (49.1 QA REL-001). `resetarValidado` só pesa
    * quando a linha já existe; a rota manda `true` quando não viu linha nenhuma,
@@ -970,6 +976,16 @@ export function criarDebriefingConfigStore(db: Database): DebriefingConfigStore 
       return rows
         .filter((r): r is { id: string; stageId: string } => !!r.stageId)
         .sort((a, b) => a.stageId.localeCompare(b.stageId) || a.id.localeCompare(b.id));
+    },
+    async pesquisasComRotulo(stageIds) {
+      if (stageIds.length === 0) return [];
+      const rows = await db
+        .select({ id: funnelSurveys.id, stageId: funnelSurveys.stageId, rotulo: funnelSurveys.sheetName })
+        .from(funnelSurveys)
+        .where(inArray(funnelSurveys.stageId, stageIds));
+      return rows
+        .filter((r): r is { id: string; stageId: string; rotulo: string } => !!r.stageId)
+        .sort((a, b) => a.stageId.localeCompare(b.stageId) || a.rotulo.localeCompare(b.rotulo) || a.id.localeCompare(b.id));
     },
     async gravar(stageId, valores, { resetarValidado }) {
       // 49.11: as DUAS colunas sempre coerentes (a antiga = o 1º item da lista),
