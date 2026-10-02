@@ -2,24 +2,27 @@ schema: 1
 storyId: '49.8'
 story: '49.8'
 story_title: 'Viewer do Debriefing — links do Ads Manager (allow-popups), salvar após edição inline com Chart.js e teto de 20.000 px'
-verdict: CONCERNS
-gate: CONCERNS
-status_reason: 'Re-review do QA Loop (iteração 1). REL-001 e SEC-001 FECHADOS, conferidos de verdade: 26/26 testes, 10 mutações próprias (8 mortas, 1 equivalente, 1 sobrevivente que expõe lacuna de teste e não defeito), Chrome 154 real com o código novo, bloqueador de pop-up real distingue bloqueio de aba aberta, e um documento hostil (aspas, &, </iframe>, <script>, comentário) mais um título hostil (</title><script>, "><script>) não injetam nada na moldura, que tem a origem do app. Segue CONCERNS porque a verificação visual na página do app (TEST-001) continua por fazer e só o dono pode fazê-la no preview da PR; WAIVED não cabe sem aprovação do dono. Há ainda uma decisão do @po pendente sobre o efeito colateral do isolamento (DEC-001) e um teste fraco no escape do título (TEST-002, low).'
+verdict: PASS
+gate: PASS
+status_reason: 'Visual do dono feito: TEST-001 FECHADO. Danilo conferiu no localhost em 2026-10-01 (`pnpm dev` na branch, web e API locais sobre o banco de PRODUÇÃO) e respondeu "visual ok": o link do Ads Manager abre; Editar → Salvar → recarregar mantém a edição e os gráficos normais; "Abrir em nova aba" abre o documento inteiro sem aviso de pop-up. Com isso o AC8 fecha e todos os ACs estão atendidos. O que sobra não bloqueia: DEC-001 (low) é escolha do dono e só muda o texto de ajuda sob o viewer; REL-002 foi transferido para a 49.6 e é comportamento do gerador, não do viewer; TEST-002 (low) é teste que falta, com o código já provado correto no Chrome. Nenhum issue high, nenhum medium aberto nesta story. PASS, com os 3 itens registrados como follow-up.'
 reviewer: 'Quinn'
-updated: '2026-10-01T01:10:00-03:00'
+updated: '2026-10-01T12:00:00-03:00'
 branch: 'feat/49.8-debriefing-viewer-popups'
 commit_reviewed: 'ce0a7d86'
-previous_gate: { commit_gate: '3fa1b704', commit_reviewed: '99a35edf', verdict: CONCERNS, date: '2026-09-30' }
-qa_loop: { iteration: 1, verdict: 'REJECT parcial → os 2 itens corrigíveis no código foram fechados; o que sobra é verificação do dono e decisão do @po' }
+commit_visual: 'e3029ae3 (HEAD da branch no momento do visual; código idêntico a ce0a7d86, o commit seguinte só mexe em docs)'
+previous_gates:
+  - { commit_gate: '3fa1b704', commit_reviewed: '99a35edf', verdict: CONCERNS, date: '2026-09-30' }
+  - { commit_gate: 'e3029ae3', commit_reviewed: 'ce0a7d86', verdict: CONCERNS, date: '2026-10-01', motivo: 'faltava o visual do dono (TEST-001)' }
+qa_loop: { iteration: 1, verdict: 'APPROVE — itens de código fechados na iteração 1; visual do dono fechado em 2026-10-01; o resto é follow-up' }
 base: 'docs/epic-49-gerador-debriefing (8d8ea5cc, só docs sobre a main 667d35b2)'
 
 issues:
   - id: TEST-001
     severity: medium
     category: tests
-    description: 'AC8 pede verificação visual da página de detalhe no app, e ela continua não feita. Localmente é impossível: o stack aponta para o banco de PRODUÇÃO, e salvar gravaria lá. As sondas em Chrome real usam o código REAL de `debriefing-frame.ts`, mas o pai é uma página reimplementada. O fio da `page.tsx` (`handleOpenExternal` → `abrirDebriefingEmNovaAba` → toast só em "bloqueada", nos 3 botões; `sandbox`, aviso `role="alert"`, toast do 413, recriação do iframe por `key`) só foi conferido por leitura, `tsc` e `eslint`. A página é client component e não roda no vitest.'
-    recommendation: 'O DONO faz no PREVIEW da PR (não no local), num debriefing de teste: (1) clicar o link do Ads Manager no DG; (2) Editar → mudar o título → Salvar → reabrir e conferir 17/17 gráficos e a largura com a janela mais estreita; (3) pins/comentários; (4) "Abrir em nova aba" pelos 3 botões (cabeçalho, aviso de 20.000 px, texto sob o viewer): abre SEM toast, mostra o documento inteiro e a aba do app não muda; (5) lista da etapa. Registrar na story.'
-    status: open
+    description: 'AC8 pede verificação visual da página de detalhe no app. O fio da `page.tsx` (`sandbox` vindo da constante, aviso de 20.000 px, toast só em "bloqueada", toast do 413, recriação do iframe por `key`) tinha sido conferido só por leitura, `tsc` e `eslint`; as sondas de Chrome usavam o pai reimplementado.'
+    resolution: 'FECHADO em 2026-10-01 pela verificação visual do DONO (Danilo), resposta "visual ok". Ambiente: localhost, `pnpm dev` na branch `feat/49.8-debriefing-viewer-popups` (HEAD e3029ae3, código = ce0a7d86), web e API locais apontando para o banco de PRODUÇÃO. Coberto: (1) o link do Ads Manager abre; (2) Editar → Salvar → recarregar mantém a edição e os gráficos aparecem normais; (3) "Abrir em nova aba" abre o documento inteiro sem aviso de pop-up. Não coberto explicitamente pelo relato e aceito pelo QA como risco residual baixo: a janela mais estreita na reabertura (provado no Chrome real, DG 1.400 → 1.000 px com 17/17 e Δ0); pins/comentários, editar nome, excluir e a lista da etapa (o diff de `page.tsx` não toca nesses componentes, `debriefing-stage-view.tsx` fora do diff; a única mudança que os alcança é o `sandbox`, que só ACRESCENTA popups); o aviso de 20.000 px e os outros 2 botões de nova aba (só aparecem com documento ≥ 20.000 px; os 3 botões chamam o mesmo `handleOpenExternal`, conferido no código, e o documento de 26.130 px foi provado no Chrome). Observação: o visual foi feito no local e não no preview recomendado, então o Salvar gravou no `debriefings` de PRODUÇÃO; se o documento usado não era de teste, a edição feita na conferência ficou lá (decisão do dono, não do gate).'
+    status: resolved
 
   - id: REL-001
     severity: medium
@@ -31,9 +34,10 @@ issues:
   - id: REL-002
     severity: medium
     category: reliability
-    description: 'Edição dentro de tabela montada por script some ao reabrir (o documento remonta a partir do `const D`). Inalterado nesta iteração.'
-    recommendation: 'Decisão de produto do @po / insumo da 49.6: tabelas estáticas no gerador ou aviso de não editável. Não bloqueia esta story.'
-    status: open
+    description: 'Edição dentro de tabela montada por script some ao reabrir (o documento remonta a partir do `const D`). Comportamento do DOCUMENTO gerado, não do viewer; existia antes desta story.'
+    recommendation: 'TRANSFERIDO para a 49.6 (gerador): tabelas estáticas no HTML ou aviso de não editável. O texto atual da story 49.6 ainda não menciona o achado; o @po precisa registrá-lo lá (o QA só edita a QA Results desta story). Não bloqueia a 49.8.'
+    status: deferred
+    owner: '@po → Story 49.6'
 
   - id: SEC-001
     severity: low
@@ -47,32 +51,31 @@ issues:
     category: product
     description: 'Efeito colateral declarado pelo @dev e confirmado: com o isolamento, a nova aba deixa de ser o fallback para documentos que dependem de `localStorage`/`sessionStorage`/`history.pushState` (SecurityError nos dois lugares; `location.hash` funciona). Classificação do QA: regressão funcional de baixo impacto e risco conhecido. Nenhum template da skill `loyola-debriefing` (`apresentacao-html`, `relatorio-html`, `referencia-relatorio-dg`) usa storage ou history, então os documentos do Epic 49 não são afetados. O impacto possível fica nos HTMLs antigos do Epic 37, que estão no banco de produção e não foram inspecionados. Consequência de texto: sob o viewer, "Documento com várias páginas ou etapas não carregou aqui? Abra em uma nova aba" passa a prometer um fallback que não existe para esse tipo de documento.'
     recommendation: 'DECISÃO DO DONO/@po, não do QA. Opções: (a) aceitar o isolamento e ajustar o texto sob o viewer (sugestão: nova aba = documento inteiro, sem limite de altura); (b) reabrir um fallback sem sandbox, explícito e com aceite formal do risco do SEC-001. Se (a), vale conferir com uma consulta só de leitura se algum HTML salvo em `debriefings` contém `localStorage`/`pushState`.'
+    gate_impact: 'Não bloqueia: a escolha do dono só muda o texto de ajuda sob o viewer (opção a) ou reabre um caminho sem sandbox (opção b, nova story com aceite de risco). Nenhum template da skill usa storage/history.'
     status: pending_decision
+    owner: 'dono/@po'
 
   - id: TEST-002
     severity: low
     category: tests
     description: 'Mutação sobrevivente: trocar `const t = escaparHtml(titulo)` por `const t = titulo` mantém 26/26. O teste do título confere só `document.title` e a ausência de `<b>`; como `<title>` é RCDATA, o título hostil passa sem escape. O ponto frágil é o atributo `title="…"` do iframe e um `</title><script>` no nome da campanha, que viraria script na moldura, que tem a ORIGEM DO APP. O código está correto, e isso foi provado no Chrome com o título `</title><script>…</script>"><script>…</script>&amp;`: 0 scripts e o título chega literal à aba e ao atributo. Falta só o teste travar isso.'
+    owner: '@dev (follow-up; pode ir junto com o ajuste de texto do DEC-001)'
     recommendation: 'No teste do título, usar `</title><script>x</script>"><script>y</script>` e afirmar: 0 `script`, `iframe.getAttribute("title")` igual ao título cru e `srcdoc` ainda igual ao documento. Pode entrar junto com qualquer ajuste do DEC-001. Não bloqueia.'
     status: open
 
 top_issues:
-  - id: TEST-001
-    severity: medium
-    finding: 'Verificação visual na página do app continua por fazer; impossível no local (stack em produção).'
-    suggested_action: 'Dono confere os 5 pontos no preview da PR (incluindo "Abrir em nova aba" pelos 3 botões) e registra na story.'
-  - id: REL-002
-    severity: medium
-    finding: 'Edição em tabela montada por script se perde na reabertura.'
-    suggested_action: '@po / 49.6.'
   - id: DEC-001
     severity: low
     finding: 'A nova aba isolada não serve mais de fallback para documento com storage/pushState; o texto sob o viewer ainda promete isso.'
-    suggested_action: 'Dono/@po decide: aceitar e ajustar o texto, ou reabrir o fallback sem sandbox com aceite de risco.'
+    suggested_action: 'Dono/@po decide: (a) aceitar e ajustar o texto, ou (b) fallback sem sandbox com aceite de risco. Follow-up, não bloqueia.'
   - id: TEST-002
     severity: low
     finding: 'Escape do título não é travado por teste (mutação sobrevive); o código está certo.'
-    suggested_action: 'Título hostil com `</title>` e `"` no teste.'
+    suggested_action: 'Título hostil com `</title>` e `"` no teste. Follow-up.'
+  - id: REL-002
+    severity: medium
+    finding: 'Edição em tabela montada por script se perde na reabertura (comportamento do documento gerado).'
+    suggested_action: 'Transferido para a 49.6; @po registra lá.'
 
 waiver: { active: false }
 
@@ -81,12 +84,17 @@ checks:
   unit_tests: 'Re-review: `debriefing-frame.test.ts` 26/26. Dez mutações próprias, aplicadas a partir de cópia e restauradas (`git status` limpo): (M1) sem escape de `&` → 1 falha; (M2) sem escape de `"` → 1; (M3) `&` escapado por último (escape duplo) → 2; (M5) `allow-same-origin` no iframe da moldura → 1; (M6) `noopener,noreferrer` de volta → 3; (M7) sem `aba.opener = null` → 1; (M9) HTML cru no blob → 1; (M10) revoga na hora → 2. (M4) sem escape de `apóstrofo` → sobrevive, mutante EQUIVALENTE (o atributo usa aspas duplas). (M8) título sem escape → SOBREVIVE (TEST-002). Suíte completa do web refeita no re-review: 1.734/1.734 (124 arquivos), igual ao relato do @dev.'
   browser_real: 'Chrome/154.0.8037.92. Sonda própria `qa-novaaba.mts` com documento hostil (`"></iframe></body></html><script>…`, `<!-- </iframe><script> -->`, `&amp; &quot; &#x27; &nbsp;`, atributo com aspas, CRLF) e título hostil. Retorno "aberta"; moldura: protocolo `blob:`, origem do app, 0 scripts, 1 iframe, 1 filho no body, título literal na aba e no atributo, `opener` = null, nenhuma flag de injeção setada (`__xssTitulo`, `__xssAttr`, `__fugiuMoldura`, `__fugiu2`, `__pwn` = null). `srcdoc` igual ao documento exceto CRLF→LF (normalização do parser HTML, também aplicada a qualquer documento parseado; sem efeito no conteúdo). Texto e atributo do `<h1>` chegaram decodificados certo. `dev-novaaba.mts` refeito: documento de 26.130 px inteiro (scrollHeight 26.148, FIM visível), DG 17/17, link do Ads Manager abre, `pushState` → SecurityError e `location.hash` funciona; o código antigo, em contraste, deu "bloqueada (toast)" com a aba aberta e leu `SEGREDO_LS`. `dev-bloqueio.mts` refeito (headful, bloqueador real): sem gesto → "bloqueada" e 0 abas; com clique → "aberta" e 1 aba. Nota: o cenário 3 do `dev-novaaba.mts` (`--block-new-web-contents`) NÃO bloqueia no Chrome 154 (deu "aberta" e aba criada). Não é citado na story; a prova de bloqueio é o `dev-bloqueio.mts`.'
   security: 'SEC-001 fechado (ver issue). Escape do `srcdoc` resistente a `"`, `&`, `</iframe>`, `<script>` e comentário, no teste (jsdom) e no Chrome. O título com `</title>` e `"` também não injeta (Chrome; o teste não trava, TEST-002). O residual é o mesmo do viewer: o documento abre abas arbitrárias (`allow-popups`), já aceito no R-49-8 (upload só da equipe).'
-  acceptance_criteria: 'Inalterados desde o gate anterior: AC1–AC5 ✓. AC6 ✓, agora com o botão do aviso funcionando (REL-001 fechado). AC7 ✓, com o "revoke em 60 s" rodando de fato. AC8 parcial: falta a verificação visual (TEST-001).'
+  acceptance_criteria: 'Inalterados desde o gate anterior: AC1–AC5 ✓. AC6 ✓, agora com o botão do aviso funcionando (REL-001 fechado). AC7 ✓, com o "revoke em 60 s" rodando de fato. AC8 ✓: tsc, next build, lint e vitest verdes (re-review) e verificação visual feita pelo dono em 2026-10-01 (TEST-001). O AC8 pedia a verificação "pelo @dev"; a do dono é evidência mais forte e foi aceita.'
   no_regressions: 'Viewer inalterado (`DEBRIEFING_IFRAME_SANDBOX`, agente e clamp sem diff nesta iteração). Mudança de comportamento intencional na nova aba (DEC-001). `tsc --noEmit` do web: 0 erros. `eslint` nos 3 arquivos do web: 0.'
+  visual_owner: 'Danilo, 2026-10-01, localhost (`pnpm dev` na branch, HEAD e3029ae3), web+API locais sobre o banco de produção: "visual ok" — link do Ads Manager abre; editar → salvar → recarregar mantém a edição e os gráficos normais; "Abrir em nova aba" abre o documento inteiro sem aviso de pop-up.'
+  api_contract: 'N/A. Nenhuma rota, campo de resposta ou snapshot novo: o PUT existente ganhou `bodyLimit` e um 413 com a mesma mensagem do upload. Sem bump de `API_CONTRACT_VERSION` necessário.'
   performance: 'O documento é escapado uma vez por clique (O(n) no tamanho do HTML, ≤ 5 MB). O blob passa a ter o documento escapado (um pouco maior). Irrelevante.'
   documentation: 'Dev Agent Record da iteração detalhado, com as mutações, os cenários de Chrome e o efeito colateral declarado ao @po. Desta vez o harness reporta o que mede (`resultadoNoApp`, `abaCriada`).'
 
 notes:
+  - '[AUTO-DECISION] Decisão após o visual do dono → PASS (razão: com TEST-001 fechado todos os ACs estão atendidos; não há issue high; o único medium restante, REL-002, é do gerador e foi transferido para a 49.6; DEC-001 e TEST-002 são low e viram follow-up. Manter CONCERNS por eles transformaria follow-up em bloqueio).'
+  - 'Follow-ups registrados: DEC-001 (dono/@po), TEST-002 (@dev), REL-002 (@po → 49.6).'
+  - 'Histórico: o primeiro re-review (CONCERNS, e3029ae3) está preservado em `previous_gates`; os achados de lá seguem abaixo.'
   - '[AUTO-DECISION] Decisão do re-review → CONCERNS (razão: os dois itens corrigíveis no código foram fechados e provados; o que sobra, TEST-001, só o dono fecha no preview e WAIVED exige aprovação dele, que não existe). PASS sem a verificação visual repetiria o erro de aprovar o fio React só por leitura.'
   - '[AUTO-DECISION] Efeito colateral do isolamento → registrado como DEC-001 pending_decision, sem decidir (razão: escolha de produto/risco do dono/@po, conforme o pedido).'
   - 'TEST-001 deve ser feita pelo dono NO PREVIEW DA PR, não no local: o local lê e grava no banco de produção.'
