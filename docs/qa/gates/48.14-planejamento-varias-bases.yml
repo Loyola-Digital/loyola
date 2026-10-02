@@ -1,0 +1,75 @@
+schema: 1
+storyId: '48.14'
+story: '48.14'
+story_title: 'Planejamento — várias bases de referência lado a lado (e o investimento real quente/frio em R$)'
+verdict: CONCERNS
+gate: CONCERNS
+status_reason: 'A regra está toda em `lib/utils/planejamento-bases.ts` e é provada: cinco mutações próprias na biblioteca (contaminação entre bases, aviso sem simulador, ramo "lendo", lista mutada, `base:` vazando no cartão quente/frio) derrubam o teste dedicado a cada uma. O fio não tem teste: trocar `"quente"` por `"frio"` no cartão, pôr a referência antes do percentual do frio, ler o simulador de TODAS as bases da lista e pedir `buyers-origin` para guest — as quatro juntas deixaram a suíte inteira do web verde (126 arquivos, 1.762 testes). É a segunda vez na mesma página (TEST-001 da 48.13 segue aberto) e o projeto já tem o padrão `*-fio.test.ts`.'
+reviewer: 'Quinn'
+updated: '2026-10-02T12:05:30-03:00'
+branch: 'feat/48.14-varias-bases'
+commit_reviewed: '5a7eed41'
+
+issues:
+  - id: TEST-001
+    severity: medium
+    category: tests
+    description: 'O fio da página e do componente não tem teste. Mutações do gate aplicadas juntas — W1 `gruposDoInvestimentoMeta(bases, "frio")` no cartão "Meta · quente" (`planejamento-inputs-financeiros.tsx:311`); W2 cartão do frio montado como `${rotuloComBases("Meta · frio", …"quente")} (${pct})` (referência ANTES do percentual e com a temperatura trocada, `:312-314`); W3 `comSimulador` a partir de `bases.data?.bases` em vez de `marcadas` (leituras do simulador para todas as bases da lista, `page.tsx:112`); W4 `enabled: !!etapa` sem `podeLerOrigem` (`buyers-origin` para guest, `page.tsx:177`) → `vitest run` do web 126/126 arquivos, 1.762/1.762 testes. O AC8 pede "trocar `.quente` por `.frio` derruba": derruba na biblioteca (M3 do @dev), não no ponto de chamada. O AC7 inteiro (leituras só das marcadas, mesmas chaves dos hooks) e a guarda de guest só têm leitura de código como prova.'
+    recommendation: 'Criar `packages/web/lib/utils/__tests__/planejamento-bases-fio.test.ts` no padrão dos `*-fio.test.ts` existentes (readFileSync do fonte + regex), afirmando: (1) o cartão "Meta · quente" chama `gruposDoInvestimentoMeta(bases, "quente")` e o "Meta · frio" chama `rotuloComBases(\`Meta · frio (${pctPontos(d.pctMetaFrio)})\`, gruposDoInvestimentoMeta(bases, "frio"))`; (2) na página, `comSimulador` deriva de `marcadas` e os `useQueries` de `/realizado`, `sales-data` e `buyers-origin` mapeiam `marcadas`; (3) o `enabled` do `buyers-origin` contém `podeLerOrigem` e `podeLerOrigem` exclui `guest`; (4) as três chaves copiadas (`planejamento-realizado`, `stage-sales-data`, `buyers-origin`) batem com as dos hooks (ler os dois fontes). Provar com W1–W4: cada uma tem de derrubar pelo menos um teste.'
+    status: open
+
+  - id: MNT-001
+    severity: low
+    category: maintainability
+    description: 'Três `queryKey` foram copiadas à mão dos hooks (`page.tsx:137`, `:156`, `:175`: `planejamento-realizado`, `stage-sales-data`, `buyers-origin`), com comentário apontando o hook. Hoje batem (conferido contra `use-planejamento-realizado.ts:17`, `use-stage-sales-data.ts:21`, `use-sales-journey.ts:230`); se um hook mudar a chave, o cache entre as duas formas deixa de valer em silêncio. Inputs/orgânicos/pagos já usam as fábricas exportadas.'
+    recommendation: 'Exportar fábricas de chave dos três hooks (como `planejamentoInputsQueryKey`) ou cobrir no teste de fio do TEST-001 (item 4). Não bloqueia.'
+    status: open
+
+  - id: REL-001
+    severity: low
+    category: reliability
+    description: 'Preexistente (48.9/48.11), não introduzido: falha de `sales-data`, `buyers-origin` ou das três leituras do simulador de UMA base vira ausência — o `real:` do ticket/conversão ou o `base:` somem do rótulo e a linha da procedência continua dizendo que "ticket médio … e conversão vêm da etapa X". Só a falha de `/realizado` aparece (AC4, provado). Com várias bases o efeito fica por base, sem vazar para as outras.'
+    recommendation: 'Candidato a story futura: levar `isError` das leituras por base para `linhasDaDeclaracao` ("ticket não pôde ser lido"). Fora do escopo desta.'
+    status: open
+
+  - id: DOC-001
+    severity: low
+    category: docs
+    description: 'Herdado da 48.13 (DOC-001 de lá): o cabeçalho novo diz que os valores "aparecem entre parênteses ao lado de cada campo" (`planejamento-referencia.ts`, `textoDoCabecalhoDasBases`); o `real:` cobre 4 dos 26 campos, a conversão por canal e agora os 2 cartões quente/frio.'
+    recommendation: 'Trocar por "ao lado dos campos que eles cobrem" junto com o TEST-001. Texto, não regra.'
+    status: open
+
+top_issues:
+  - id: TEST-001
+    severity: medium
+    finding: 'Fio sem teste: quente↔frio no cartão, ordem do frio, leituras de todas as bases e guest → 0 falhas em 1.762.'
+    suggested_action: '`planejamento-bases-fio.test.ts` por leitura de fonte; W1–W4 têm de derrubar.'
+  - id: MNT-001
+    severity: low
+    finding: 'Três `queryKey` copiadas dos hooks.'
+    suggested_action: 'Exportar fábricas ou cobrir no teste de fio.'
+  - id: REL-001
+    severity: low
+    finding: 'Falha de `sales-data`/`buyers-origin`/simulador de uma base vira ausência (preexistente).'
+    suggested_action: 'Story futura.'
+  - id: DOC-001
+    severity: low
+    finding: 'Cabeçalho promete "ao lado de cada campo".'
+    suggested_action: 'Ajustar o texto.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Diff de três pontos contra `origin/main` (11 arquivos, só `packages/web` e a story; `packages/api` e `packages/shared` intocados → sem bump de `API_CONTRACT_VERSION`, front não exige API nova). `planejamento-bases.ts` só formata e ordena; `rotuloComBases` omite o grupo sem leitura; `basesMarcadasNaOrdemDaLista` filtra a LISTA. Página: `basesIds: string[]`, hooks antes dos `return` antecipados, seis `useQueries` (sem hook em laço), `etapaPorBase` como mapa (o `useEffect` de reset sumiu sem deixar `stageId` de outra base para trás). Chaves e URLs conferidas uma a uma contra os hooks. AC6: nenhum `setForm`/efeito novo; o `useEffect` dos componentes carrega o formulário só com `form === null`. Imports de valor do shared só por subpath de módulo folha; `StageSalesData` do barrel é `import type`. NBSP: a moeda passa por `textoDeReferencia`/`fmtCurrency`; os testes normalizam ` `. Atenção: a config de eslint da raiz não carrega `react-hooks` — a regra dos hooks foi conferida lendo o código, não por lint.'
+  unit_tests: 'Rodado no gate: `vitest run` dos 3 arquivos da story 68/68; `vitest run lib/utils/` 109 arquivos / 1.622 testes; `vitest run` completo 126 / 1.762 (com as mutações W1–W4 aplicadas, isto é, a suíte não as vê). Mutações próprias na biblioteca, todas diferenciais: Q1 conversão paga de `bases[0]` em todos os grupos → 1 falha; Q2 `declaracaoDoRealizado(…, false)` → 1; Q3 sem o ramo "lendo" → 1; Q4 `alternarBase` com `push` na lista recebida → 1; Q5 cartão quente/frio com `base:` = `real:` → 3. Fio: W1–W4 → 0 (TEST-001). Restauração conferida com `shasum -c` (4 arquivos OK) e `git status` sem código modificado.'
+  acceptance_criteria: 'AC1 ✓ (`page.tsx:264-277` caixas na ordem de `/bases`; `basesMarcadasNaOrdemDaLista` `planejamento-bases.ts:120`) · AC2 ✓ (`rotuloComBases` `:65`; 26 campos via `gruposDoInput` em `planejamento-inputs-financeiros.tsx:185-198`, inclusive `aria-label`; abas 2/3 em `planejamento-leads-organicos.tsx:107,476` e `planejamento-leads-pagos.tsx:108,505`) · AC3 ✓ (`etapaEscolhidaDaBase` `planejamento-realizado.ts:90`; mapa `page.tsx:148-149`; seletor por base `:280-298`) · AC4 ✓ (`linhasDaDeclaracao` `planejamento-bases.ts:164`; render `page.tsx:307-312`; cabeçalho plural `textoDoCabecalhoDasBases`) · AC5 ✓ no código (`realizadoDoInvestimentoMeta` `planejamento-realizado.ts:280`; cartões `planejamento-inputs-financeiros.tsx:311-314`) — fio sem teste (TEST-001) · AC6 ✓ · AC7 ✓ por leitura (`page.tsx:112-181`) — sem teste (TEST-001) · AC8 ✓ na biblioteca, parcial no fio (a mutação "trocar `.quente` por `.frio`" no call site sobrevive) · AC9 ✓ eslint 0/0 no gate; tsc shared/api/web e `next build` aceitos do registro do @dev, não refeitos.'
+  no_regressions: 'Testes da 48.9/48.11/48.13 que afirmavam `(base: X · real: Y)` e o cabeçalho singular foram invertidos com `[48.14 inverte: …]` no título; nenhum outro teste mudou. Suíte inteira do web 1.762/1.762 no gate (a falha por timeout de `vturb-tabela` registrada pelo @dev não se repetiu).'
+  performance: 'Leituras por base marcada (AC7) e com as mesmas chaves dos hooks: desmarcar tira só a entrada daquela base do array; os observers das outras são reaproveitados pelo hash da chave e não refazem a leitura. Base sem simulador não pede inputs/orgânicos/pagos (48.13).'
+  security: 'Guest: `buyers-origin` só com `podeLerOrigem` (`role !== null && role !== "guest"`), por base. Nenhuma rota nova, nenhum dado pessoal novo.'
+  documentation: 'Story com File List, decisões [AUTO-DECISION] e M1–M10 coerentes com o diff. Ver DOC-001.'
+  api_contract: 'Sem mudança na API nem no shared; sem bump de contrato.'
+
+notes:
+  - 'Validação visual (DoD) pendente — Danilo, em produção, no `dg-pg05-out-26` (rename feito em 02/10, conferido pelo @po) com `dg-pg04` e `dg-pg02` marcados: Meta · quente R$ 40.815,28 / R$ 78.784,44; Meta · frio R$ 18.764,18 / R$ 47.588,62 depois do `(NN,NN%)`; uma linha de procedência por base. Essa validação pegaria W1/W2, mas não W3/W4.'
+  - 'tsc do web, tsc da API e `next build` não foram refeitos no gate (I/O do iCloud deixa o build em ~1h); aceitos do registro do @dev (EXIT 0).'
+  - 'CodeRabbit não executado (CLI ausente no macOS). Revisão manual.'
