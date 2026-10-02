@@ -203,6 +203,8 @@ beforeAll(async () => {
   pg = new PGlite({ parsers: { 1082: comoString, 1114: comoString, 1184: comoString, 1700: comoString } });
   await pg.exec(DDL);
   await pg.exec(readFileSync(MIGRATION, "utf8"));
+  // Story 49.11: a 0162 (aditiva) acrescenta as colunas da lista de comparação.
+  await pg.exec(readFileSync(join(dirname(MIGRATION), "0162_debriefing_lancamentos_comparacao.sql"), "utf8"));
   db = drizzle(
     async (sql, params) => {
       const r = await pg.query(sql, params as unknown[], { rowMode: "array" });
