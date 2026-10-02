@@ -481,6 +481,13 @@ export interface PlanilhaParaDedup {
   temColunaId: boolean;
   /** `mapping.productName` aponta para uma coluna que existe. */
   temColunaProduto: boolean;
+  /**
+   * A camada 2 age nas linhas desta planilha — `camada2ValeNaEtapa` do tipo da
+   * etapa dela (Story 41.12, R7-4/R7-5: só captação, fora o evento presencial).
+   * `false` = as linhas não colapsam nem ocupam a vaga, como no painel e no
+   * Resumão da mesma etapa.
+   */
+  camada2Vale: boolean;
 }
 
 export interface ResultadoDedupVendas<T> {
@@ -507,6 +514,9 @@ export interface ResultadoDedupVendas<T> {
  * distintos do mesmo e-mail (ingresso + combo + bump) não colapsam; linha sem
  * e-mail nunca colapsa. Pega a dobra `PURCHASE_APPROVED` + `PURCHASE_COMPLETE`
  * (perfil DG §10.3), que tem IDs diferentes.
+ *
+ * A camada 2 só age nas planilhas com `camada2Vale` (escopo por tipo de etapa,
+ * R7-4/R7-5 — o mesmo ponto único dos painéis e do Resumão).
  *
  * Nas duas, sobrevive a PRIMEIRA ocorrência; a ordem de `linhas` é preservada.
  */
@@ -549,10 +559,15 @@ export function deduplicarVendas<T>(
   const removidasCamada1 = linhas.filter((l) => removidas1.has(l));
 
   // ---- Camada 2 ---- (Story 41.12: a chave mora em `utils/dedup-pessoa-produto.ts`)
-  const { mantidas, removidas: removidasCamada2 } = deduplicarPorPessoaEProduto(depois1, (l) => ({
+  // Só as linhas de planilha cuja etapa está no escopo (`camada2Vale`) disputam
+  // a vaga; as demais passam inteiras e na mesma posição.
+  const noEscopo = depois1.filter((l) => planilhas.get(acesso.planilhaId(l))?.camada2Vale === true);
+  const { removidas: removidasCamada2 } = deduplicarPorPessoaEProduto(noEscopo, (l) => ({
     email: acesso.emailCru(l),
     produto: acesso.produto(l),
   }));
+  const saem2 = new Set<T>(removidasCamada2);
+  const mantidas = depois1.filter((l) => !saem2.has(l));
 
   return {
     mantidas,

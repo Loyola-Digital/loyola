@@ -102,7 +102,7 @@ describe("AC1 — deduplicarPorPessoaEProduto", () => {
 
 describe("AC1/AC13 — uma função só: nenhuma ponta redefine a chave", () => {
   const pontas: { arquivo: string; chamada: RegExp }[] = [
-    { arquivo: "services/debriefing-hygiene.ts", chamada: /deduplicarPorPessoaEProduto\(depois1,/ },
+    { arquivo: "services/debriefing-hygiene.ts", chamada: /deduplicarPorPessoaEProduto\(noEscopo,/ }, // 41.12 R7: só as linhas no escopo da etapa
     { arquivo: "services/launch-report-loader.ts", chamada: /deduplicarPorPessoaEProduto\(\s*todas,/ },
     { arquivo: "services/vendas-camada2-planilha.ts", chamada: /deduplicarPorPessoaEProduto\(\s*candidatos,/ },
     { arquivo: "routes/stage-sales-data.ts", chamada: /decidirCamada2DasPlanilhas\(/ },

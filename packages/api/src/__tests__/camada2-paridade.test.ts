@@ -63,7 +63,7 @@ const { lerVendasDaPlanilha, carregarVendas, prepararVendasDoPeriodo } = await i
 const { computeLaunchReportMetrics } = await import("../services/launch-report-engine.js");
 const { validateLaunchReport } = await import("../services/launch-report-guards.js");
 const { deduplicarVendas } = await import("../services/debriefing-hygiene.js");
-const { ETAPAS_SEM_CAMADA2 } = await import("../services/vendas-camada2-planilha.js");
+const { ETAPAS_SEM_CAMADA2, camada2ValeNaEtapa } = await import("../services/vendas-camada2-planilha.js");
 
 // ---------------------------------------------------------------------------
 // Fixture
@@ -395,13 +395,19 @@ describe("AC9(a)(b) — paridade: as pontas de lançamento chegam ao mesmo núme
     expect(g.byDay["2026-05-07"]).toBeCloseTo(99, 6); // Y31 (estorno + recompra)
   });
 
-  it("painel Vendas (etapa sales): faturamento e linhas iguais; vendas = compradores", async () => {
+  it("painel Vendas (etapa sales): fora da regra (R7-4) — o número de antes; vendas = compradores", async () => {
+    // Rodada 7 (R7-4): a camada 2 vale só nas etapas de captação. Antes da
+    // decisão este teste esperava DEPOIS e 9 removidas na etapa de Vendas.
     preparar(fixturePg02(), { stageType: "sales", subtype: "main_product" });
     const d = await card("main_product");
-    expect(d.faturamentoBruto).toBeCloseTo(DEPOIS.faturamento, 6);
-    expect(d.breakdown.spreadsheet.linhas).toBe(DEPOIS.linhas);
+    expect(d.faturamentoBruto).toBeCloseTo(ANTES.faturamento, 6);
+    expect(d.breakdown.spreadsheet.linhas).toBe(ANTES.linhas);
     expect(d.totalVendas).toBe(COMPRADORES); // 1 por e-mail (juntarPorComprador)
-    expect(d.dedupPessoaProduto.removidas.linhas).toBe(9);
+    expect(d.dedupPessoaProduto).toEqual({
+      aplicada: false,
+      removidas: { linhas: 0, valor: 0 },
+      naoAplicadaMotivo: "a regra não vale neste tipo de etapa",
+    });
   });
 
   it("réplica sales-daily-sync: mesmo total e faturamento do card", async () => {
@@ -430,7 +436,7 @@ describe("AC9(a)(b) — paridade: as pontas de lançamento chegam ao mesmo núme
         produto: (l) => l.produto,
         emailCru: (l) => l.email,
       },
-      new Map([["a", { planilhaId: "a", nome: "A", temColunaId: true, temColunaProduto: true }]]),
+      new Map([["a", { planilhaId: "a", nome: "A", temColunaId: true, temColunaProduto: true, camada2Vale: true }]]),
     );
     expect(r.mantidas.length).toBe(DEPOIS.linhas);
     expect(r.mantidas.reduce((s, l) => s + l.precoCru, 0)).toBeCloseTo(DEPOIS.faturamento, 6);
@@ -703,8 +709,34 @@ describe("REL-001 — venda manual reembolsada: o card filtra como a réplica", 
 });
 
 describe("Escopo da regra por tipo de etapa — ponto único (`camada2ValeNaEtapa`)", () => {
-  it("hoje a regra vale em toda etapa de lançamento (OWN-002/OWN-003 com o dono)", () => {
-    expect([...ETAPAS_SEM_CAMADA2]).toEqual([]);
+  it("R7-4/R7-5: vale só na captação, fora o evento presencial", () => {
+    expect([...ETAPAS_SEM_CAMADA2]).toEqual(["event_capture"]);
+    for (const t of ["paid", "free", "application"]) expect(camada2ValeNaEtapa(t)).toBe(true);
+    for (const t of ["event_capture", "sales", "event", "cpl", "debriefing", "comercial", "lyrio", "mapa", "", null, undefined]) {
+      expect(camada2ValeNaEtapa(t)).toBe(false);
+    }
+  });
+
+  it("R7-5: Captação de Evento (event_capture) — card, diário, réplica e Resumão com o número de antes", async () => {
+    preparar(fixturePg02(), { stageType: "event_capture" });
+    const d = await card();
+    expect(d.faturamentoBruto).toBeCloseTo(ANTES.faturamento, 6);
+    expect(d.dedupPessoaProduto.aplicada).toBe(false);
+    expect((await diario()).soma).toBeCloseTo(ANTES.faturamento, 6);
+    const s = await computeSalesDailyForStage(bancoFalso(), IDS.etapa);
+    expect(s!.faturamentoBruto).toBeCloseTo(ANTES.faturamento + 99, 6); // + X31 (ver a réplica acima)
+    const c = await carregarVendas(bancoFalso(), IDS.etapa, "pago");
+    expect(c.linhas.length).toBe(ANTES.linhas);
+    expect(c.removidasCamada2.length).toBe(0);
+  });
+
+  it("R7-4: Vendas (sales) — a réplica e o Resumão também ficam com o número de antes", async () => {
+    preparar(fixturePg02(), { stageType: "sales", subtype: "main_product" });
+    const c = await carregarVendas(bancoFalso(), IDS.etapa, "pago");
+    expect(c.linhas.length).toBe(ANTES.linhas);
+    expect(c.removidasCamada2.length).toBe(0);
+    const s = await computeSalesDailyForStage(bancoFalso(), IDS.etapa);
+    expect(s!.faturamentoBruto).toBeCloseTo(ANTES.faturamento + 99, 6);
   });
 
   it("um tipo fora da regra: card, diário, réplica e Resumão voltam ao número sem a camada 2", async () => {

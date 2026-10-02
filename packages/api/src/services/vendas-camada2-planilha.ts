@@ -34,27 +34,32 @@
 
 import { classifyRefundStatus, isRefundBucket } from "./sales-status.js";
 import { deduplicarPorPessoaEProduto } from "../utils/dedup-pessoa-produto.js";
+import { ehEtapaDeCaptacao } from "../utils/stage-types.js";
 
 /**
  * PONTO ÚNICO do escopo da camada 2 por tipo de etapa (Story 41.12).
  *
- * Pendente com o dono (gate da parte A): se a regra vale nas etapas de Vendas
- * (`sales` — a recompra do principal pode ser 2ª matrícula/renovação, OWN-003)
- * e na captação de evento presencial (`event_capture` — a 2ª compra do mesmo
- * ingresso pode ser para outra pessoa, OWN-002). Até a resposta, a regra vale em
- * todas as etapas de lançamento: o conjunto está vazio.
+ * Decidido pelo dono (Rodada 7, 2026-10-02):
+ * - **R7-4** — a regra vale só nas etapas de CAPTAÇÃO (`ehEtapaDeCaptacao`:
+ *   `paid`, `free`, `application`, `event_capture`). Etapas de Vendas
+ *   (`sales`) e de venda de evento presencial (`event`) ficam fora: a recompra
+ *   do principal pela mesma pessoa pode ser 2ª matrícula ou renovação (OWN-003).
+ * - **R7-5** — dentro da captação, a Captação de Evento presencial
+ *   (`event_capture`) também fica fora: a 2ª compra do mesmo ingresso pode ser
+ *   para outra pessoa (OWN-002). É a exceção listada aqui.
  *
- * Tirar um tipo de etapa da regra = acrescentá-lo aqui. As quatro leituras de
- * lançamento — card (`sales-data`), gráfico diário (`sales-data-daily`),
- * réplica (`sales-daily-sync`) e Resumão (`launch-report-loader`) — consultam
- * `camada2ValeNaEtapa` e obedecem juntas. O Debriefing (49.3) não passa por
- * aqui: a regra dele é a da skill e vale em toda etapa.
+ * Etapa sem tipo (`null`) ou de tipo desconhecido = fora (a regra só age onde
+ * foi decidida). As cinco leituras de lançamento — card (`sales-data`), gráfico
+ * diário (`sales-data-daily`), réplica (`sales-daily-sync`), Resumão
+ * (`launch-report-loader`) e Debriefing (49.3, pelo `camada2Vale` que o
+ * `debriefing-money-time-loader` grava em cada planilha) — consultam
+ * `camada2ValeNaEtapa` e obedecem juntas.
  */
-export const ETAPAS_SEM_CAMADA2: ReadonlySet<string> = new Set<string>();
+export const ETAPAS_SEM_CAMADA2: ReadonlySet<string> = new Set<string>(["event_capture"]);
 
 /** `true` = a camada 2 age nas vendas desta etapa. Ver `ETAPAS_SEM_CAMADA2`. */
 export function camada2ValeNaEtapa(stageType: string | null | undefined): boolean {
-  return !stageType || !ETAPAS_SEM_CAMADA2.has(stageType);
+  return !!stageType && ehEtapaDeCaptacao(stageType) && !ETAPAS_SEM_CAMADA2.has(stageType);
 }
 
 export interface PlanilhaParaCamada2 {

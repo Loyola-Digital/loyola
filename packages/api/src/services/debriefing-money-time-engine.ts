@@ -143,6 +143,11 @@ export interface PlanilhaDeVendaInput {
   temColunaId: boolean;
   /** `mapping.productName` existe na planilha (camada 1 da dedup). */
   temColunaProduto: boolean;
+  /**
+   * A camada 2 (pessoa + produto) vale na etapa desta planilha —
+   * `camada2ValeNaEtapa(stageType)`, gravado pelo loader (Story 41.12, R7-4/R7-5).
+   */
+  camada2Vale: boolean;
 }
 
 /** Uma linha crua de venda. Dinheiro, data e telefone chegam COMO NA CÉLULA. */
@@ -1009,7 +1014,13 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
   const planilhasParaDedup = new Map<string, PlanilhaParaDedup>(
     input.planilhas.map((p) => [
       p.planilhaId,
-      { planilhaId: p.planilhaId, nome: p.nome, temColunaId: p.temColunaId, temColunaProduto: p.temColunaProduto },
+      {
+        planilhaId: p.planilhaId,
+        nome: p.nome,
+        temColunaId: p.temColunaId,
+        temColunaProduto: p.temColunaProduto,
+        camada2Vale: p.camada2Vale,
+      },
     ]),
   );
   const dedup = deduplicarVendas(

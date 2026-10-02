@@ -250,8 +250,8 @@ describe("AC3 — dedup em duas camadas (armadilha #1)", () => {
   };
   const planilhas = (sem?: Partial<PlanilhaParaDedup>) =>
     new Map<string, PlanilhaParaDedup>([
-      ["a", { planilhaId: "a", nome: "Vendas A", temColunaId: true, temColunaProduto: true, ...sem }],
-      ["b", { planilhaId: "b", nome: "Vendas B", temColunaId: true, temColunaProduto: true }],
+      ["a", { planilhaId: "a", nome: "Vendas A", temColunaId: true, temColunaProduto: true, camada2Vale: true, ...sem }],
+      ["b", { planilhaId: "b", nome: "Vendas B", temColunaId: true, temColunaProduto: true, camada2Vale: true }],
     ]);
 
   it("camada 1: mesmo ID e produto colapsa (sobrevive a primeira); bump do mesmo pedido não; sem ID nunca", () => {
@@ -288,6 +288,23 @@ describe("AC3 — dedup em duas camadas (armadilha #1)", () => {
     expect(r.removidasCamada2.map((l) => l.n)).toEqual([2]);
     expect(r.camada2).toEqual({ antes: 6, depois: 5, removidas: 1 });
     for (const c of [r.camada1, r.camada2]) expect(c.antes - c.depois).toBe(c.removidas);
+  });
+
+  it("41.12 R7-4/R7-5: planilha de etapa fora do escopo (`camada2Vale: false`) não colapsa nem ocupa a vaga", () => {
+    const linhas: L[] = [
+      { p: "b", id: "B1", prod: "Imersão", email: "x@x.com", n: 1 }, // etapa fora (ex.: Vendas) — vem antes
+      { p: "b", id: "B2", prod: "Imersão", email: "x@x.com", n: 2 }, // recompra na etapa fora: fica
+      { p: "a", id: "A1", prod: "Imersão", email: "x@x.com", n: 3 }, // captação: 1ª no escopo, sobrevive
+      { p: "a", id: "A2", prod: "Imersão", email: "x@x.com", n: 4 }, // recompra na captação: sai
+    ];
+    const pl = new Map<string, PlanilhaParaDedup>([
+      ["a", { planilhaId: "a", nome: "Vendas A", temColunaId: true, temColunaProduto: true, camada2Vale: true }],
+      ["b", { planilhaId: "b", nome: "Vendas B", temColunaId: true, temColunaProduto: true, camada2Vale: false }],
+    ]);
+    const r = deduplicarVendas<L>(linhas, acesso, pl);
+    expect(r.removidasCamada2.map((l) => l.n)).toEqual([4]);
+    expect(r.mantidas.map((l) => l.n)).toEqual([1, 2, 3]); // ordem preservada
+    expect(r.camada2).toEqual({ antes: 4, depois: 3, removidas: 1 });
   });
 
   it("planilha sem transactionId ou productName mapeado: camada 1 não roda nela e é declarada", () => {
