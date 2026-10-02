@@ -10,6 +10,7 @@
  */
 
 import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -21,6 +22,7 @@ import {
   type DebriefingRenderInput,
 } from "../services/debriefing-render.js";
 import { validateDebriefing } from "../services/debriefing-guards.js";
+import { textoTmb } from "../services/debriefing-hygiene.js";
 import type { DebriefingPayload } from "../services/debriefing-payload.js";
 import { moedaBr } from "../services/launch-report-narrative.js";
 import { payloadSintetico } from "./fixtures/debriefing-payload-sintetico.js";
@@ -64,6 +66,84 @@ function textoVisivel(html: string): string {
     .replace(/<style[\s\S]*?<\/style>/g, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/g, " ");
+}
+
+
+/** Os dois scripts INLINE do documento, na ordem: [abas, D + gráficos]. */
+function scriptsInline(html: string): [string, string] {
+  const s = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]!);
+  expect(s).toHaveLength(2);
+  return [s[0]!, s[1]!];
+}
+
+interface Alvo {
+  id?: string;
+  dataTab?: string;
+  classes: Set<string>;
+  clique?: () => void;
+}
+
+/**
+ * Roda os scripts REAIS do documento numa VM com um `document` mínimo que
+ * REGISTRA tudo o que o script pede (TEST-496-1). Botões e abas vêm do HTML;
+ * cada `canvas` é um alvo falso. `comChart` decide se a CDN "carregou".
+ */
+function executarScripts(html: string, comChart = true) {
+  const [abas, graficos] = scriptsInline(html);
+  const botoes: Alvo[] = [...html.matchAll(/<button(?: class="on")? data-tab="([^"]+)">/g)].map((m, i) => ({
+    dataTab: m[1]!,
+    classes: new Set(i === 0 ? ["on"] : []),
+  }));
+  const paineis: Alvo[] = [...html.matchAll(/<div class="tab( on)?" id="([^"]+)">/g)].map((m) => ({
+    id: m[2]!,
+    classes: new Set(m[1] ? ["on"] : []),
+  }));
+  const acessos: string[] = [];
+  const seletores: string[] = [];
+  const idsPedidos: string[] = [];
+  const configs: { options: { plugins: Record<string, unknown> }; data: { datasets: { data: unknown[]; datalabels: { display: unknown } }[] } }[] = [];
+  const registrados: unknown[] = [];
+  // Como no DOM real, o mesmo nó volta a cada consulta (o script compara `x===b`).
+  const nos = new Map<Alvo, unknown>();
+  const elemento = (a: Alvo) => nos.get(a) ?? nos.set(a, criarNo(a)).get(a);
+  const criarNo = (a: Alvo) => ({
+    get id() {
+      return a.id;
+    },
+    getAttribute: (n: string) => (n === "data-tab" ? a.dataTab : null),
+    addEventListener: (_t: string, fn: () => void) => {
+      a.clique = fn;
+    },
+    classList: { toggle: (c: string, on: boolean) => (on ? a.classes.add(c) : a.classes.delete(c)) },
+  });
+  const permitido: Record<string, unknown> = {
+    querySelectorAll: (sel: string) => {
+      seletores.push(sel);
+      if (sel === ".nav button") return botoes.map(elemento);
+      if (sel === ".tab") return paineis.map(elemento);
+      return [];
+    },
+    getElementById: (id: string) => {
+      idsPedidos.push(id);
+      return { style: {}, parentNode: { appendChild: () => undefined } };
+    },
+    createElement: () => ({ style: {} }),
+  };
+  const document = new Proxy(permitido, {
+    get(alvo, prop) {
+      acessos.push(String(prop));
+      return alvo[String(prop)];
+    },
+  });
+  function Chart(_el: unknown, cfg: (typeof configs)[number]) {
+    configs.push(cfg);
+  }
+  Chart.register = (p: unknown) => registrados.push(p);
+  Chart.defaults = { font: {} };
+  const ctx: Record<string, unknown> = { document, ChartDataLabels: { id: "datalabels" } };
+  if (comChart) ctx.Chart = Chart;
+  runInNewContext(`${abas}\n${graficos}`, ctx);
+  return { botoes, paineis, acessos, seletores, idsPedidos, configs, registrados };
 }
 
 describe("AC3 — estrutura e ordem canônica", () => {
@@ -135,6 +215,22 @@ describe("AC5 — gráficos e const D", () => {
   it("datalabels em todos os gráficos (registrado e com formatter em todo dataset)", () => {
     expect(html).toContain("Chart.register(ChartDataLabels)");
     expect(html).toMatch(/datalabels:\{color:CREAM[\s\S]*?formatter:function/);
+  });
+  it("datalabels LIGADOS em todo dataset (rodando o script real): rótulo em todo valor, oculto só em null/undefined/0 (TEST-496-1 Q1)", () => {
+    const r = executarScripts(html);
+    expect(r.registrados).toEqual([{ id: "datalabels" }]);
+    const canvases = [...html.matchAll(/<canvas id="([^"]+)"/g)].length;
+    expect(r.configs).toHaveLength(canvases);
+    for (const cfg of r.configs) {
+      // nenhum `display:false` no nível do gráfico
+      expect((cfg.options.plugins.datalabels as { display?: unknown } | undefined)?.display).not.toBe(false);
+      for (const ds of cfg.data.datasets) {
+        const display = ds.datalabels.display as (c: { dataset: { data: unknown[] }; dataIndex: number }) => boolean;
+        expect(typeof display).toBe("function");
+        const dataset = { data: [12, 0.5, -3, 0, null, undefined] };
+        expect([0, 1, 2, 3, 4, 5].map((dataIndex) => display({ dataset, dataIndex }))).toEqual([true, true, true, false, false, false]);
+      }
+    }
   });
   it("sem a CDN o documento declara o gráfico ausente (não quebra as tabelas)", () => {
     expect(html).toContain("if(typeof Chart==='undefined')");
@@ -209,6 +305,15 @@ describe("AC7 — zero literal narrativo", () => {
     expect(t).toContain("Ingressos");
   });
 
+  it("TMB com milhar pt-BR: o texto da engine (≥ 1.000 vendas) sai \"2.293 vendas\" na Definição e no tnote (FMT-496-1)", () => {
+    const p = payloadSintetico();
+    p.dinheiroTempo.tmb = { ...p.dinheiroTempo.tmb, sinalizado: true, vendas: 5, texto: textoTmb(2293, 5) };
+    const t = textoVisivel(renderDebriefing(entrada({ payload: p, alertas: [] })));
+    expect(t).toContain("2.293 vendas, 5 via TMB");
+    expect(t).toContain("s/ TMB — 2.293 vendas");
+    expect(t).not.toMatch(/\b\d{4,} vendas/);
+  });
+
   it("alertas viram banner no topo, por código com contagem, sem bloquear", () => {
     const html = renderDebriefing(entrada({ alertas: [{ codigo: "WF5", quantidade: 3, mensagem: "etapa sem link_click" }] }));
     const banner = html.split("data-alertas")[1]!.split("</div>")[0]!;
@@ -231,6 +336,19 @@ describe("AC8 — lacunas declaradas renderizadas", () => {
     expect(html).toContain('data-lacuna="VENDAS_EXCLUIDAS_AUTOMATICAMENTE"');
     expect(html).toContain(`<td>${exc.txId}</td>`);
     expect(html).toContain("ANTERIOR_A_ABERTURA");
+  });
+  it("fora da coorte: a situação sai em rótulo legível, o código só no title (UX-496-1)", () => {
+    const p = payloadSintetico();
+    const base = { ...p.dinheiroTempo.vendasExcluidas[0]!, txId: "TX-COORTE" };
+    p.dinheiroTempo.coorte.foraDaCoorte = [
+      { txId: base.txId, produto: base.produto, valor: base.valor, dataBrt: base.dataBrt, fonte: base.fonte, motivo: "SEM_DATA_DO_LEAD" },
+      { txId: "TX-ILEGIVEL", produto: base.produto, valor: base.valor, dataBrt: null, fonte: base.fonte, motivo: "DATA_DA_VENDA_ILEGIVEL" },
+    ];
+    const h = renderDebriefing(entrada({ payload: p, alertas: [] }));
+    const tabela = h.split("Fora da coorte / além da janela")[1]!.split("</table>")[0]!;
+    expect(tabela).toContain('<span title="SEM_DATA_DO_LEAD">sem data do lead</span>');
+    expect(tabela).toContain('<span title="DATA_DA_VENDA_ILEGIVEL">data da venda ilegível</span>');
+    expect(textoVisivel(h)).not.toMatch(/SEM_DATA_DO_LEAD|DATA_DA_VENDA_ILEGIVEL/);
   });
   it("IA×Humano sem nomenclatura: dimensão não exibida, dito no documento", () => {
     const p = payloadSintetico();
@@ -310,6 +428,27 @@ describe("AC10 — render puro", () => {
   });
 });
 
+describe("Abas (TEST-496-1 Q2)", () => {
+  const html = renderDebriefing(comComparacao());
+  it("estrutura: cada botão `data-tab=x` tem o painel `id=\"tab-x\"` e vice-versa; um só aberto de início, o do botão ativo", () => {
+    const botoes = [...html.matchAll(/<button(?: class="on")? data-tab="([^"]+)">/g)].map((m) => m[1]!);
+    const paineis = [...html.matchAll(/<div class="tab( on)?" id="([^"]+)">/g)].map((m) => ({ id: m[2]!, on: !!m[1] }));
+    expect(botoes.length).toBeGreaterThan(1);
+    expect(paineis.map((p) => p.id)).toEqual(botoes.map((b) => `tab-${b}`));
+    expect(paineis.filter((p) => p.on).map((p) => p.id)).toEqual([`tab-${/<button class="on" data-tab="([^"]+)">/.exec(html)![1]}`]);
+    // O script das abas usa o MESMO prefixo dos ids.
+    expect(scriptsInline(html)[0]).toContain("t.id==='tab-'+b.getAttribute('data-tab')");
+  });
+  it("comportamento (script real): clicar em cada botão abre exatamente o seu painel e marca só ele", () => {
+    const r = executarScripts(html);
+    for (const b of r.botoes) {
+      b.clique!();
+      expect(r.paineis.filter((p) => p.classes.has("on")).map((p) => p.id)).toEqual([`tab-${b.dataTab}`]);
+      expect(r.botoes.filter((x) => x.classes.has("on"))).toEqual([b]);
+    }
+  });
+});
+
 describe("REL-002 — tabelas estáticas (a edição inline sobrevive ao reabrir)", () => {
   it("nenhuma tabela é montada por script: o JS só lê D e desenha canvas", () => {
     const html = renderDebriefing(comComparacao());
@@ -317,6 +456,22 @@ describe("REL-002 — tabelas estáticas (a edição inline sobrevive ao reabrir
     const auditoria = payloadSintetico().dinheiroTempo.auditoriaDeVendas.length;
     const aud = html.split("Auditoria — todas as vendas do principal")[1]!.split("</table>")[0]!;
     expect(aud.match(/<tr>/g)!.length - 1).toBe(auditoria); // −1 = cabeçalho
+  });
+  it("as linhas estão NO HTML, dentro do tbody (a auditoria tem uma por venda)", () => {
+    const html = renderDebriefing(comComparacao());
+    const comLinhas = [...html.matchAll(/<tbody>([\s\S]*?)<\/tbody>/g)].filter((m) => m[1]!.startsWith("<tr"));
+    expect(comLinhas.length).toBeGreaterThan(5);
+    const aud = html.split("Auditoria — todas as vendas do principal")[1]!.split("</tbody>")[0]!.split("<tbody>")[1]!;
+    expect(aud.match(/<tr>/g)).toHaveLength(payloadSintetico().dinheiroTempo.auditoriaDeVendas.length);
+  });
+  it.each([true, false])("lista BRANCA (script real, CDN carregada = %s): o JS só pede .nav button/.tab e os canvas de D — nunca tabela", (comChart) => {
+    const html = renderDebriefing(comComparacao());
+    const r = executarScripts(html, comChart);
+    for (const b of r.botoes) b.clique!(); // o script das abas também roda
+    expect(new Set(r.acessos)).toEqual(new Set(comChart ? ["querySelectorAll", "getElementById"] : ["querySelectorAll", "getElementById", "createElement"]));
+    expect(new Set(r.seletores)).toEqual(new Set([".nav button", ".tab"]));
+    expect(new Set(r.idsPedidos)).toEqual(new Set(Object.keys(dadosD(html).graficos)));
+    for (const sc of scriptsInline(html)) expect(sc).not.toMatch(/tbody|table|\btr\b|\.rows|\.cells|getElementsBy|querySelector\(/);
   });
 });
 

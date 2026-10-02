@@ -336,3 +336,32 @@ export function erroDaGeracao(e: unknown): ErroDaGeracao {
     acao: "Tentar de novo; se repetir, avisar o time com este código",
   };
 }
+
+/**
+ * QA 49.6 UX-496-2 — o erro de "Marcar combinação como validada" vai para a
+ * TELA (bloco do gate no formulário), com código, detalhe e ação, como o da
+ * geração — nunca toast que some. 422 do gate da 49.1 (corpo `erro/detalhe/
+ * acao`) reaproveita `erroDaGeracao`; o resto ganha o título da validação.
+ */
+export function erroDaValidacao(e: unknown): ErroDaGeracao {
+  const err = e as { status?: number; message?: string; body?: Record<string, unknown> } | null;
+  const body = (err?.body ?? null) as Record<string, unknown> | null;
+  const status = err?.status ?? 0;
+  if (body && typeof body.erro === "string") return erroDaGeracao(e);
+  const cru = String(body?.error ?? err?.message ?? "").trim();
+  if (status === 404 && /^not found$/i.test(cru)) {
+    return {
+      titulo: "API atrás do painel",
+      codigo: null,
+      detalhe: "A API ainda não tem a rota de validação da combinação — provavelmente está atrás do painel. Veja o aviso de versão no topo.",
+      acao: "Aguardar o deploy da API e tentar de novo",
+    };
+  }
+  if (status === 403) return { titulo: "Acesso negado", codigo: null, detalhe: "Convidados não validam a combinação.", acao: "Entrar com um usuário do time" };
+  return {
+    titulo: "Não foi possível marcar a combinação como validada",
+    codigo: status ? `HTTP ${status}` : null,
+    detalhe: cru || "erro desconhecido",
+    acao: status === 404 ? "Salvar a config do debriefing e validar de novo" : "Tentar de novo; se repetir, avisar o time com este código",
+  };
+}

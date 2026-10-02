@@ -72,6 +72,21 @@ describe("PERF-001 — memoização das perguntas no GET", () => {
     }
     expect(store.perguntasDaEtapa).toHaveBeenCalledTimes(2);
   });
+
+  it("ausência (sem pesquisa = null) não é memoizada: pesquisa recém-conectada aparece no GET seguinte (QA PERF-496-1)", async () => {
+    const perguntas = mundo.perguntas.get(IDS.captacao)!;
+    mundo.perguntas.delete(IDS.captacao);
+    const { a, store } = await montar({ cachePerguntasMs: 60_000 });
+    const status = async () =>
+      (await a.inject({ method: "GET", url: URL })).json().perguntasDisponiveis.find((e: { stageId: string }) => e.stageId === IDS.captacao).status;
+    expect(await status()).toBe("sem-pesquisa");
+    mundo.perguntas.set(IDS.captacao, perguntas); // a pesquisa foi conectada agora
+    expect(await status()).toBe("ok");
+    expect(store.perguntasDaEtapa).toHaveBeenCalledTimes(2);
+    // e o sucesso continua memoizado
+    expect(await status()).toBe("ok");
+    expect(store.perguntasDaEtapa).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("49.11 AC7 — pesquisas por etapa para o seletor da pesquisa de captação", () => {

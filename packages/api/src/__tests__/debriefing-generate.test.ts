@@ -84,6 +84,16 @@ const configDe = (stageId: string, extra: Partial<DebriefingConfigLancamento> = 
   ...extra,
 });
 
+/**
+ * TEST-496-1 (QA 49.6): todo 422 da geração é EXPLICADO — `detalhe` e `acao`
+ * não vazios. Conferir só `erro` deixava passar um 422 com `detalhe: ""`, que a
+ * tela mostraria como um código sem motivo.
+ */
+function esperarCorpoExplicado(r: { status: number; body: Record<string, unknown> }, erro: string): void {
+  expect(r.status).toBe(422);
+  expect(r.body).toMatchObject({ erro, detalhe: expect.stringMatching(/\S/), acao: expect.stringMatching(/\S/) });
+}
+
 describe("AC1 — ordem fixa dos portões e nada persistido em falha", () => {
   it("1. guest → 403 sem tocar em nada", async () => {
     const d = deps();
@@ -101,10 +111,7 @@ describe("AC1 — ordem fixa dos portões e nada persistido em falha", () => {
   it("2b. etapa de outro tipo → 422 ETAPA_NAO_E_DEBRIEFING, antes do gate", async () => {
     const d = deps({ etapa: { stageType: "sales", stageName: "Vendas" } });
     const r = await gerarDebriefing(d, PARAMS);
-    expect(r.status).toBe(422);
-    expect(r.body).toMatchObject({ erro: "ETAPA_NAO_E_DEBRIEFING" });
-    expect(r.body).toHaveProperty("detalhe");
-    expect(r.body).toHaveProperty("acao");
+    esperarCorpoExplicado(r, "ETAPA_NAO_E_DEBRIEFING");
     expect(d.chamadas).toEqual(["etapa"]);
   });
 
@@ -139,8 +146,7 @@ describe("AC1 — ordem fixa dos portões e nada persistido em falha", () => {
     expect(validateDebriefing(quebrado).bloqueado).toBe(true); // pré-condição
     const d = deps({ payload: () => quebrado });
     const r = await gerarDebriefing(d, PARAMS);
-    expect(r.status).toBe(422);
-    expect(r.body).toMatchObject({ erro: "INVARIANTE_VIOLADO" });
+    esperarCorpoExplicado(r, "INVARIANTE_VIOLADO");
     expect(r.body).toHaveProperty("codigo");
     expect((r.body as { violacoes: unknown[] }).violacoes.length).toBeGreaterThan(0);
     expect(d.chamadas).not.toContain("gravar");
@@ -149,8 +155,11 @@ describe("AC1 — ordem fixa dos portões e nada persistido em falha", () => {
   it("5. conferência externa fora do limite → 422 CONFERENCIA_EXTERNA, sem gravar", async () => {
     const d = deps();
     const r = await gerarDebriefing(d, { ...PARAMS, investimentoOficial: 999_999 });
-    expect(r.status).toBe(422);
-    expect(r.body).toMatchObject({ erro: "CONFERENCIA_EXTERNA" });
+    esperarCorpoExplicado(r, "CONFERENCIA_EXTERNA");
+    // O detalhe é o da conferência da 49.5 (o que divergiu e por quanto), não um texto qualquer.
+    const conferencia = validateDebriefing(payloadSintetico(), { investimentoOficial: 999_999 }).conferencia;
+    expect(conferencia.detalhe).toMatch(/\S/); // pré-condição
+    expect((r.body as { detalhe: string }).detalhe).toBe(conferencia.detalhe);
     expect(d.gravados).toHaveLength(0);
   });
 
@@ -205,8 +214,7 @@ describe("Comparação (Δ) — config do lançamento de comparação pela mesma
   it("comparação sem etapa Debriefing → 422 COMPARACAO_SEM_CONFIG ANTES da carga pesada, sem gravar", async () => {
     const d = deps({ config: comComparacao, etapasDaComparacao: [] });
     const r = await gerarDebriefing(d, PARAMS);
-    expect(r.status).toBe(422);
-    expect(r.body).toMatchObject({ erro: "COMPARACAO_SEM_CONFIG" });
+    esperarCorpoExplicado(r, "COMPARACAO_SEM_CONFIG");
     expect(d.chamadas.some((c) => c.startsWith("payload:"))).toBe(false);
     expect(d.gravados).toHaveLength(0);
   });
@@ -220,7 +228,7 @@ describe("Comparação (Δ) — config do lançamento de comparação pela mesma
       },
     });
     const r = await gerarDebriefing(d, PARAMS);
-    expect(r.body).toMatchObject({ erro: "COMPARACAO_SEM_CONFIG" });
+    esperarCorpoExplicado(r, "COMPARACAO_SEM_CONFIG");
     expect((r.body as { detalhe: string }).detalhe).toContain("COMBINACAO_NAO_VALIDADA");
   });
 

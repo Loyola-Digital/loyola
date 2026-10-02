@@ -273,6 +273,17 @@ const ROTULO_PAPEL: Readonly<Record<string, string>> = {
   reabertura: "reabertura",
 };
 
+/**
+ * Situação da venda fora da coorte (QA 49.6 UX-496-1): o documento mostra o
+ * rótulo; o código do motor fica no `title`, para quem audita.
+ */
+const ROTULO_FORA_DA_COORTE: Readonly<Record<string, string>> = {
+  SEM_DATA_DO_LEAD: "sem data do lead",
+  DATA_DA_VENDA_ILEGIVEL: "data da venda ilegível",
+};
+const situacaoForaDaCoorte = (motivo: string): string =>
+  `<span title="${esc(motivo)}">${esc(ROTULO_FORA_DA_COORTE[motivo] ?? motivo)}</span>`;
+
 const ROTULO_ORIGEM_IMPOSTO: Readonly<Record<string, string>> = {
   stage: "alíquota da etapa",
   project: "alíquota do expert (projeto)",
@@ -1216,7 +1227,7 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
           tabela(
             ["ID venda", "Produto", "Valor", "Data", "Situação"],
             [
-              ...mt.coorte.foraDaCoorte.map((v) => tr([esc(v.txId ?? TRACO), esc(v.produto ?? TRACO), esc(fmt(v.valor, "moeda")), esc(v.dataBrt ? dataBr(v.dataBrt) : TRACO), esc(v.motivo)])),
+              ...mt.coorte.foraDaCoorte.map((v) => tr([esc(v.txId ?? TRACO), esc(v.produto ?? TRACO), esc(fmt(v.valor, "moeda")), esc(v.dataBrt ? dataBr(v.dataBrt) : TRACO), situacaoForaDaCoorte(v.motivo)])),
               ...mt.coorte.alemDaJanela.map((v) => tr([esc(v.txId ?? TRACO), esc(v.produto ?? TRACO), esc(fmt(v.valor, "moeda")), esc(v.dataBrt ? dataBr(v.dataBrt) : TRACO), esc(`além de D+${mt.coorte.maxD} (${rotuloD(v.dMais)})`)])),
             ],
           ),

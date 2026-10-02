@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   corpoDoPut,
   erroDaGeracao,
+  erroDaValidacao,
   faltantesDoForm,
   formDoGet,
   formVazio,
@@ -165,5 +166,34 @@ describe("AC11/AC12 — erro da geração na tela", () => {
   });
   it("404 de domínio (etapa não encontrada) NÃO é API atrás", () => {
     expect(erroDaGeracao({ status: 404, body: { error: "Etapa não encontrada" } }).titulo).not.toBe("API atrás do painel");
+  });
+});
+
+describe("UX-496-2 — erro de \"Marcar combinação como validada\" na tela (código, detalhe, ação)", () => {
+  it("422 do gate da 49.1 → o corpo inteiro, como na geração", () => {
+    expect(
+      erroDaValidacao({ status: 422, body: { erro: "TIPO_DE_FUNIL_NAO_SUPORTADO", detalhe: "funil perpétuo", acao: "Aguardar a Story 49.10" } }),
+    ).toEqual({ titulo: "Tipo de funil não suportado", codigo: "TIPO_DE_FUNIL_NAO_SUPORTADO", detalhe: "funil perpétuo", acao: "Aguardar a Story 49.10" });
+  });
+  it("404 de config ausente → título da VALIDAÇÃO (não 'gerar'), código HTTP, o motivo da API e a ação de salvar antes", () => {
+    const e = erroDaValidacao({ status: 404, body: { error: "Configuração não encontrada — salve a config do debriefing antes de validar" } });
+    expect(e).toEqual({
+      titulo: "Não foi possível marcar a combinação como validada",
+      codigo: "HTTP 404",
+      detalhe: "Configuração não encontrada — salve a config do debriefing antes de validar",
+      acao: "Salvar a config do debriefing e validar de novo",
+    });
+  });
+  it("API atrás (404 Not Found cru) → frase padrão, nunca 'Not Found'", () => {
+    const e = erroDaValidacao({ status: 404, message: "Not Found", body: { error: "Not Found" } });
+    expect(e.titulo).toBe("API atrás do painel");
+    expect(e.detalhe).not.toMatch(/^Not Found$/);
+  });
+  it("todo caminho tem detalhe e ação não vazios (falha de rede sem status inclusive)", () => {
+    for (const x of [{ message: "Failed to fetch" }, { status: 500, body: {} }, { status: 403 }, null]) {
+      const e = erroDaValidacao(x);
+      expect(e.detalhe).toMatch(/\S/);
+      expect(e.acao).toMatch(/\S/);
+    }
   });
 });

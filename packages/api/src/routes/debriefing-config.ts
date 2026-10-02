@@ -139,7 +139,9 @@ export interface DebriefingConfigRoutesOptions {
    * Story 49.6 (PERF-001 da 49.1) — o GET memoiza por etapa, por este tempo, as
    * perguntas lidas da planilha da pesquisa (abrir o formulário não reabre todas
    * as planilhas a cada GET). Só o GET usa o cache: o PUT confere a chave sempre
-   * na planilha. Falha de leitura NUNCA é memoizada. Ausente/0 = sem cache.
+   * na planilha. Falha de leitura NUNCA é memoizada, nem a ausência (`null` =
+   * etapa sem pesquisa): pesquisa recém-conectada aparece no GET seguinte, não
+   * 60 s depois (QA 49.6 PERF-496-1). Ausente/0 = sem cache.
    */
   cachePerguntasMs?: number;
 }
@@ -148,15 +150,16 @@ export default fp<DebriefingConfigRoutesOptions>(async function debriefingConfig
   const store = (): DebriefingConfigStore => (opts.criarStore ?? criarDebriefingConfigStore)(fastify.db);
   const base = "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/debriefing/config";
   const ttlPerguntas = opts.cachePerguntasMs ?? 0;
-  const cachePerguntas = new Map<string, { ate: number; perguntas: PerguntaDaPesquisa[] | null }>();
-  /** Perguntas da etapa, pelo cache do GET (PERF-001). Só sucesso entra no cache. */
+  const cachePerguntas = new Map<string, { ate: number; perguntas: PerguntaDaPesquisa[] }>();
+  /** Perguntas da etapa, pelo cache do GET (PERF-001). Só sucesso COM pesquisa entra no cache. */
   async function perguntasDoGet(s: DebriefingConfigStore, stageId: string): Promise<PerguntaDaPesquisa[] | null> {
     if (ttlPerguntas <= 0) return s.perguntasDaEtapa(stageId);
     const agora = Date.now();
     const hit = cachePerguntas.get(stageId);
     if (hit && hit.ate > agora) return hit.perguntas;
     const perguntas = await s.perguntasDaEtapa(stageId);
-    cachePerguntas.set(stageId, { ate: agora + ttlPerguntas, perguntas });
+    if (perguntas) cachePerguntas.set(stageId, { ate: agora + ttlPerguntas, perguntas });
+    else cachePerguntas.delete(stageId);
     return perguntas;
   }
 

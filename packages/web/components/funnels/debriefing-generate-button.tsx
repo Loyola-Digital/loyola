@@ -41,6 +41,7 @@ import {
   ROTULO_DO_PAPEL,
   corpoDoPut,
   erroDaGeracao,
+  erroDaValidacao,
   faltantesDoForm,
   formDoGet,
   formVazio,
@@ -235,6 +236,7 @@ function FormularioDaConfig({
   const [f, setF] = useState<FormDaConfig>(formVazio());
   const [carregado, setCarregado] = useState(false);
   const [erroSalvar, setErroSalvar] = useState<string[] | null>(null);
+  const [erroValidar, setErroValidar] = useState<ErroDaGeracao | null>(null);
   useEffect(() => {
     if (cfg && !carregado) {
       setF(formDoGet(cfg));
@@ -318,15 +320,35 @@ function FormularioDaConfig({
             size="sm"
             variant="outline"
             disabled={!cfg.config || validar.isPending}
-            onClick={() =>
+            onClick={() => {
+              setErroValidar(null);
               validar.mutate(undefined, {
                 onSuccess: () => toast.success("Combinação marcada como validada"),
-                onError: (e) => toast.error((e as Error).message),
-              })
-            }
+                // Erro fica NA TELA, com código/detalhe/ação (UX-496-2) — não em toast.
+                onError: (e) => setErroValidar(erroDaValidacao(e)),
+              });
+            }}
           >
             Marcar combinação como validada
           </Button>
+        )}
+        {erroValidar && (
+          <div role="alert" className="space-y-1 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3">
+            <div className="flex items-start justify-between gap-2">
+              <p className="flex items-center gap-2 text-xs font-medium text-amber-600">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                {erroValidar.titulo}
+              </p>
+              <button type="button" aria-label="Fechar o aviso" className="text-muted-foreground" onClick={() => setErroValidar(null)}>
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            {erroValidar.codigo && <p className="text-[11px] font-mono text-muted-foreground">{erroValidar.codigo}</p>}
+            <p className="text-xs text-muted-foreground">{erroValidar.detalhe}</p>
+            <p className="text-xs text-muted-foreground">
+              <strong>O que fazer:</strong> {erroValidar.acao}
+            </p>
+          </div>
         )}
         <p className="text-[11px] text-muted-foreground">
           Validar = alguém do time conferiu os números contra as fixtures do expert. Mudar uma premissa zera a validação.
