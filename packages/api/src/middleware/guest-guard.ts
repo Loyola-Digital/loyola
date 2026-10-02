@@ -34,6 +34,8 @@ const GUEST_WRITABLE_PROJECT_PATHS: RegExp[] = [
   /\/event-lead-status$/,
   /\/event-lead-seller$/,
   /\/event-lead-seller-bulk$/,
+  // Tentativa de contato: é o vendedor (guest) quem registra que ligou.
+  /\/event-lead-contact$/,
   // Vendas manuais do evento presencial: guest (vendedor no evento) lança,
   // edita, deleta e matricula no MemberKit. Membership validada nos handlers.
   /\/manual-sales$/,

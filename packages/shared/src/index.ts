@@ -481,6 +481,9 @@ export type {
   EventLeadAnswer,
   EventLeadAnswerGroup,
   EventLeadAnswersResponse,
+  EventContactAttempt,
+  EventContactChannel,
+  AddEventContactAttemptInput,
 } from "./types/event-config.js";
 
 export type {

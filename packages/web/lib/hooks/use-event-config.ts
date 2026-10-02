@@ -14,6 +14,8 @@ import type {
   SetEventLeadSellerInput,
   SetEventLeadSellerBulkInput,
   EventLeadAnswersResponse,
+  AddEventContactAttemptInput,
+  EventContactAttempt,
 } from "@loyola-x/shared";
 
 // Story 19.12 — config da etapa de Evento: produtos (com turma) e closers.
@@ -132,6 +134,43 @@ export function useSetEventLeadSeller(projectId: string, funnelId: string, stage
         method: "PUT",
         body: JSON.stringify(input),
       }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["event-map", projectId, funnelId, stageId] });
+    },
+  });
+}
+
+/**
+ * Registra uma tentativa de contato (o vendedor ligou / mandou mensagem).
+ *
+ * Append no servidor: a resposta traz a lista inteira, e o mapa é invalidado
+ * para a contagem na linha do lead acompanhar.
+ */
+export function useAddEventContactAttempt(projectId: string, funnelId: string, stageId: string) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: AddEventContactAttemptInput) =>
+      apiClient<{ email: string; attempts: EventContactAttempt[] }>(
+        `${stageBase(projectId, funnelId, stageId)}/event-lead-contact`,
+        { method: "POST", body: JSON.stringify(input) },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["event-map", projectId, funnelId, stageId] });
+    },
+  });
+}
+
+/** Desfaz a última tentativa registrada — erro de clique no meio do evento. */
+export function useUndoEventContactAttempt(projectId: string, funnelId: string, stageId: string) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (email: string) =>
+      apiClient<{ email: string; attempts: EventContactAttempt[] }>(
+        `${stageBase(projectId, funnelId, stageId)}/event-lead-contact`,
+        { method: "DELETE", body: JSON.stringify({ email }) },
+      ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["event-map", projectId, funnelId, stageId] });
     },
