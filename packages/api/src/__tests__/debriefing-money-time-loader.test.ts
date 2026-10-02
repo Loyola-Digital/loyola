@@ -575,7 +575,7 @@ describe("AC12 — loadDebriefingMoneyTimeInput sobre Postgres real", () => {
   it("ponta a ponta: '4.000' sai do motor como 4000, '1.097,00' como 1097, D+0 pelo ingresso que cruza a meia-noite", async () => {
     const carregado = await loadDebriefingMoneyTimeInput(db, { config }, { lerPlanilha: lerFalso });
     const r = computeDebriefingMoneyTime({ ...carregado, criterioDeUnico: CRITERIO_DE_UNICO_HEADLINE });
-    expect(r.produtosNaoClassificados).toEqual([{ produto: "Produto Novo", vendas: 1, faturamento: 99 }]);
+    expect(r.produtosNaoClassificados).toEqual([{ produto: "Produto Novo", vendas: 1, faturamento: 99, tiposAssumidos: ["ingresso"] }]);
     // 3A: a manual da captação (PIX, R$ 99) é ingresso e conta como comprador.
     expect(r.captacao.faturamentoIngresso.valor).toBe(4000 + 99 + 99);
     expect(r.ingressosUnicos).toBe(3); // a (Imersão), c (Produto Novo → ingresso), pix (manual)
