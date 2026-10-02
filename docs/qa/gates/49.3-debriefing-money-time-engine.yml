@@ -2,115 +2,94 @@ schema: 1
 storyId: '49.3'
 story: '49.3'
 story_title: 'Motor I do Debriefing — dinheiro e tempo (higiene, mídia, captação, canais, coorte, ROAS)'
-verdict: CONCERNS
-gate: CONCERNS
-status_reason: 'Re-gate da iteração 1: tudo o que o gate de 2026-10-01 pediu foi corrigido e conferido. MNT-001 e CONTRACT-001 foram lidos no payload REAL do PG02 (memória "÷ compradores de captação 1.807 = R$ 127,56"; `compradoresUnicos` 1.807/1.806; avulsos em `compradoresDaEtapaInclusiveAvulsos` 1.901/1.897). CONTRACT-003 fechado, TEST-001..004 escritos e as 19 mutações do @dev morrem também na rodada do QA. As decisões 1A, 2A e 3A estão implementadas: 7 das 10 mutações próprias do QA morrem, e as 3 sobreviventes são low. A conferência do PG02 foi refeita com as datas REAIS do perfil §1b (janela 16/04 → 13/06): o faturamento do principal s/ TMB dá R$ 245.800,00, exatamente o §8, com as 9 vendas manuais; 0 vendas excluídas por serem anteriores à abertura; 71 × 70 vendas é o mesmo comprador com 2 produtos TMB em 03/06, R$ 0. O que segura o PASS é um achado NOVO (REL-001, medium): a mesma aba de planilha ligada a duas etapas da config é lida duas vezes. No PG02 isso acontece quando a "Downsell Captação" entra como `leads-downsell`, e o faturamento do downsell dobra de R$ 20.714,40 para R$ 41.428,80. Recomendo corrigir antes do merge, numa iteração 2 curta.'
+verdict: PASS
+gate: PASS
+status_reason: 'Re-gate da iteração 2: REL-001 (medium) fechado e conferido em produção. Com `--downsell --leads-downsell`, o PG02 dá downsell de R$ 20.714,40 (34 vendas). A aba `n8n-kiwify-downsell` é lida uma vez, vale a Downsell Vendas pelo critério `mapeamento-id-e-produto`, e a lacuna `FONTE_EM_MAIS_DE_UMA_ETAPA` aparece. Com a Downsell Captação ANTES na config, o resultado é o mesmo. Sem as flags, o downsell dá R$ 0, e só com `--downsell` dá R$ 20.714,40. Captação (R$ 230.501,64) e principal (71, R$ 245.800,00) não mudam em nenhuma das 5 configs. O unwrap de UTM em array foi conferido venda a venda contra um motor sem unwrap, rodado sobre o mesmo input carregado (com o nome da campanha também revertido): 0 de 71 vendas do principal e 0 de 1.807 compradores de captação mudam de canal ou de fechamento. As únicas diferenças no payload são os campos de UTM exibidos (`utmVenda`/`tuplas`). TEST-005 está fechado. As 4 mutações pedidas morrem: escolha do vínculo cortada no fio, dedup da aba desligada, unwrap escolhendo um valor, unwrap só no lead. No total, 9 de 12 mutações próprias morrem, e as 3 sobreviventes são low. Suítes 177/177; regressão 808/808; `tsc` e `eslint` limpos. Não resta nada médio ou alto.'
 reviewer: 'Quinn'
-updated: '2026-10-02T00:30:00-03:00'
+updated: '2026-10-02T00:45:00-03:00'
 branch: 'feat/49.3-debriefing-motor-dinheiro-tempo'
-commit_reviewed: '974839a8'
+commit_reviewed: '60eb3158'
 previous_gates:
+  - { commit_gate: 'b5ad6c2d', commit_reviewed: '974839a8', verdict: CONCERNS, date: '2026-10-02', motivo: 'REL-001 (aba em 2 etapas dobra o downsell do PG02) + TEST-005' }
   - { commit_gate: '7bcf7d95', commit_reviewed: 'a38d381a', verdict: CONCERNS, date: '2026-10-01', motivo: 'MNT-001, CONTRACT-001, CONTRACT-003, TEST-001..004 e 3 decisões do dono' }
 base: 'origin/main mergeada na branch (3c6d5b49); a 41.10 entrou na main por squash (3d01ef30)'
-qa_loop: { iteration: 1, verdict: 'REJECT leve — itens da iteração 1 fechados; REL-001 novo (aba duplicada entre etapas) pede uma iteração 2 curta' }
+qa_loop: { iteration: 2, verdict: 'APPROVE — REL-001 e TEST-005 fechados; sobreviventes low (TEST-006) não bloqueiam' }
 
 checks:
-  1_requirements: 'PASS — AC1–AC13 seguem atendidos; 2A (janela pela config) e 3A (manual_sales) implementados como as decisões dizem. A ressalva é o AC12 (loader): REL-001.'
-  2_tests: 'PASS — 150/150 nas 3 suítes da story; regressão `launch-report-*` + `dedup-por-id-da-venda` + `debriefing-*` + `classificador*`: 20 arquivos, 788/788. Mutações: as 19 do @dev, rodadas de novo pelo QA, morrem todas (19/19); as 10 próprias do QA: 7/10 mortas (sobreviventes em TEST-005).'
-  3_lint_typecheck: 'PASS — `tsc --noEmit` da API (binário direto) com exit 0; `eslint` nos 6 arquivos da story com exit 0.'
-  4_security_pii: 'PASS — payload do PG02 com 0 "@"; a leitura de `manual_sales` não seleciona nome, CPF nem endereço do cliente; e-mail e telefone das manuais só entram em hash.'
-  5_performance: 'PASS — uma consulta a mais (`manual_sales` por `inArray` das etapas); sem Meta, sem fan-out.'
-  6_regression: 'PASS — 788/788; o diff da iteração só toca os 3 serviços, as 3 suítes e a story.'
-  7_docs: 'PASS — CONTRACT-003 fechado (nenhum `1,13`/`1.13` nos 3 arquivos da story; o único que resta no repo é um comentário de `debriefing-config.ts`, da 49.1, fora do escopo da 49.5 AC9). Desvio do texto do AC12 (`periodo` deixou de ser entrada) registrado pelo @dev.'
-  8_api_contract: 'N/A — sem rota e sem `API_CONTRACT_VERSION` (AC13c). Contrato interno: `periodo` virou `janela {inicio, fim, fimPor, regra}`; `compradoresUnicos` = R2-1; `compradoresDaEtapaInclusiveAvulsos` novo; `fonte` em auditoria/excluídas; `vendasManuais`.'
+  1_requirements: 'PASS — AC1–AC13 atendidos. AC12 (loader): a aba é lida uma vez entre etapas e declarada (`fontesDuplicadas[]` + lacuna). A regra 9 da skill (UTM em array) foi aplicada antes do classificador, para lead e venda.'
+  2_tests: 'PASS — 177/177 nas 3 suítes da story. Regressão (`debriefing*`, `launch-report*`, `resumao*`, `classif*`, `sales-daily*`, `stage-sales*`): 19 arquivos, 808/808. Mutações próprias: 9/12 mortas, incluindo as 4 pedidas; as 3 sobreviventes são low (TEST-006).'
+  3_lint_typecheck: 'PASS — `tsc --noEmit` da API (binário direto): exit 0, 18 s. `eslint` nos 6 arquivos da story: exit 0.'
+  4_security_pii: 'PASS — o payload do PG02 tem 0 "@" nas 5 configs rodadas. `fontesDuplicadas` leva o nome da aba e ids de etapa e de planilha, sem dado de cliente.'
+  5_performance: 'PASS — a mudança REDUZ leitura de planilha (a aba repetida não é relida). O unwrap é O(tamanho da célula) por campo.'
+  6_regression: 'PASS — 808/808. Captação, principal e Tabela 1 do PG02 ficam idênticos aos do re-gate anterior.'
+  7_docs: 'PASS — o Dev Agent Record descreve o critério, as AUTO-DECISIONs e a conferência do PG02. Um detalhe de redação, sem efeito: a 6ª venda com array TEM lead (por e-mail), mas o lead não tem UTM. O @dev escreveu "não tem lead". O desfecho é o mesmo.'
+  8_api_contract: 'N/A — sem rota e sem `API_CONTRACT_VERSION`. Contrato interno: `higiene.fontesDuplicadas[]`, `higiene.utmsEmArray {vendas, leads, ambiguas}`, lacuna `FONTE_EM_MAIS_DE_UMA_ETAPA` e input opcional `fontesDuplicadas` (default `[]`).'
 
 itens_do_gate_anterior:
-  MNT-001: 'FECHADO — produção: "faturamento da captação R$ 230.501,64 ÷ compradores de captação 1.807 = R$ 127,56 — o numerador inclui R$ 9.877,07 de 94 comprador(es) só de order bump (avulsos)…". Teste afirma a memória exata; mutação morre.'
-  CONTRACT-001: 'FECHADO — produção: `captacao.compradoresUnicos` 1.807 (porEmail) / 1.806 (porEmailOuTelefone) = `compradoresCaptacao.*.length`; `compradoresDaEtapaInclusiveAvulsos` 1.901 / 1.897; avulsos 94 (R$ 9.877,07). JSDoc nos dois campos.'
-  CONTRACT-003: 'FECHADO — teste estático lê os 3 arquivos como texto, com comentários, `(?<!\d)1[.,]13(?!\d)`; mutação que devolve o literal morre.'
-  TEST-001: 'FECHADO — Q21 morre (cenário do AC11 com imposto 0,1215).'
-  TEST-002: 'FECHADO — Q17′ morre; a Q17 original virou equivalente, porque `compradoresUnicos` agora É o comprador de captação.'
-  TEST-003: 'FECHADO — Q22 morre (TMB na captação).'
-  TEST-004: 'FECHADO — Q23, Q24 e Q8b morrem.'
-  DEC-OWNER-1: 'RESOLVIDO pelo dono (1A, 2026-10-02) — camada 2 fica; −R$ 596,30 do PG02 contra o Resumão é definição.'
-  DEC-OWNER-2: 'RESOLVIDO pelo dono (2A) — implementado em `janelaDoDebriefing`, usado pelo motor e pelo loader.'
-  DEC-OWNER-3: 'RESOLVIDO pelo dono (3A) — `manual_sales` sem reembolsadas, valor bruto, `fonte: "manual"`.'
-  DATA-001: 'RESOLVIDO no dado — `produtosNaoClassificados` do PG02 está vazio (a Imersão já tem `product_types`).'
+  REL-001: 'FECHADO — produção, com `--downsell --leads-downsell`: downsell R$ 20.714,40 (34), antes R$ 41.428,80. Com a Downsell Captação antes na config, também R$ 20.714,40 (o critério vence a ordem). `fontesDuplicadas`: n8n-kiwify-downsell, vínculos vendas-downsell (ID+produto) e leads-downsell (sem), vale 34885def, `mapeamento-id-e-produto`, 83 linhas não relidas. As mutações QA2-M1 (fio) e QA2-M2 (dedup desligada) morrem no PGlite.'
+  TEST-005: 'FECHADO — QA-M2, QA-M5 e QA-M9 têm caso próprio (relato do @dev). Conferi os testes no diff.'
+  INFO-001: 'PARCIALMENTE RESOLVIDO no dado — as 6 vendas com UTM em array NÃO estão todas em "Outros orgânicos". Ficam 2 Pago Quente, 2 Pago Frio, 1 Instagram orgânico e 1 Outros orgânicos, decididas pela UTM do lead, e iguais com ou sem unwrap. Seguem para a 49.5: closer 56 × 22 e Gravação = order_bump.'
 
 verificacao_producao:
-  ambiente: 'banco de produção com `default_transaction_read_only = on` e Google só leitura; loader + motor da branch (974839a8); script do QA em scratchpad/qa493/conf.mts'
-  correcao_de_dados: 'A rodada anterior (do QA e do @dev) usou datas INVENTADAS para o PG02 (início 17/04, abertura 11/05, fim 15/05). As datas reais estão no perfil da skill `danilo-gato.md` §1b, conferido: D0 16/04/2026; abertura 09/05 (D+23); fim do carrinho 27/05 (D+41); sem reabertura; downsell 03/06 → 13/06 (D+48 → D+58). Janela 2A = 16/04 → 13/06 (`fimPor: downsell.fim`). As 11 vendas "anteriores à abertura" e as 49 "fora da janela" da rodada anterior eram artefato das datas inventadas.'
-  config_usada: 'Captação Paga (8fbd8031) = vendas-captacao; Vendas (ee2a0783) = vendas-principal; imposto default 0,1215; closerMediums [x1]; closerPorSellerName true. Não há `debriefing_configs` salva para o PG02.'
-  resultados:
-    linhas: '2.293 (2.222 captação + 57 Kiwify principal + 5 TMB + 9 manuais); 0 excluídas por status; 0 sem dia'
-    camadas: 'camada 1 −25; camada 2 −9 (iguais à rodada anterior)'
-    fora_da_janela: '0 vendas em todos os grupos; 0 linhas de mídia'
-    captacao: 'compradoresUnicos 1.807 / 1.806; ingresso 1.311 linhas, combo 581, order bump 296; faturamento R$ 230.501,64 (ingresso 58.562,90 + combo 139.676,20 + bump 32.262,54); ticket R$ 127,56; tier 42,5% (768/1.807)'
-    midia_captacao: 'bruto R$ 111.232,49; c/ imposto R$ 126.616,38; 2.397.701 impressões; 35.882 link_click; CPM R$ 52,81; Quente 58,0% / Frio 42,0%'
-    principal: '71 vendas (57 Kiwify + 5 TMB + 9 manuais), 0 excluídas por serem anteriores a 09/05 (a primeira venda é de 09/05); faturamento s/ TMB R$ 245.800,00, dos quais R$ 31.300,00 são das 9 manuais; cauda depois de 27/05: 18 vendas, R$ 46.500 (§1b: 17 de 70, R$ 46.500)'
-    manuais: '9 lidas, 0 reembolsadas, todas na etapa Vendas, todas dentro da janela, todas `fechamento: closer` (seller_name). Nenhuma repete e-mail/telefone de venda de planilha (sem dupla contagem).'
-    roas: 'só ingresso 0,46; captação 1,82; conversão captação→principal 71 ÷ 1.807 = 3,93%; % compradores/cliques 5,04%'
-    pico_artefato: '17, 18 e 19/04 (limiar R$ 550,51; 23 dias no denominador)'
-    pii: '0 "@" no JSON'
-  comparacao_com_skill_secao_8:
-    - 'Compradores de captação: 1.807 (porEmail) / 1.806 (e-mail OU telefone) × 1.845 — FONTE (planilha n8n `n8n-kiwify-captação` × export cru Kiwify do §8) + DEFINIÇÃO (camada 2, R2-1). Governa o Loyola (decisão 1).'
-    - 'Faturamento da captação: R$ 230.501,64 × R$ 227.491,74 (+R$ 3.009,90) — FONTE (n8n × export cru); a camada 2 explica outros −R$ 596,30 contra o Resumão (1A).'
-    - 'Investimento da captação: R$ 126.616,38 × R$ 125.692,71 — IMPOSTO, legítima: o mesmo bruto R$ 111.232,49 com gross-up de 12,15% contra ×1,13 da skill. Impressões e link clicks batem exatamente.'
-    - 'Vendas do principal: 71 × 70 — DEFINIÇÃO, impacto R$ 0: o mesmo comprador levou "Mentoria ClaudeLab Basic" e "…Advanced" pela TMB em 03/06. A camada 2 é `(e-mail, produto)`, então o Loyola conta 2; a skill registra "cruzamento 71→70". Daí também TMB 5 × 4 e cauda 18 × 17.'
-    - 'Faturamento do principal s/ TMB: R$ 245.800,00 × R$ 245.800 — BATE EXATO, e só bate com as 9 manuais da 3A (sem elas seriam R$ 214.500).'
-    - 'Vendas excluídas por serem anteriores à abertura: 0 — com a abertura real 09/05, a exclusão da decisão 7 não pega nada no PG02.'
-    - 'Closer no principal: 56 (47 por utm_medium x1 + 9 manuais por seller_name) × 22 — DEFINIÇÃO do eixo de fechamento da 49.2 (R2-5). A 49.5 deve classificar; não é código desta story.'
-    - 'ROAS captação 1,82 × 1,81 e % compradores/cliques 5,04% × 5,14% — imposto + numerador (fonte).'
-    - 'ROAS só ingresso 0,46 × 0,56 e tier 42,5% × 38,3% — DEFINIÇÃO/CADASTRO: no Loyola a Gravação é `order_bump` pelo `product_types` (bump R$ 32.262,54 × R$ 13.866,55 só GPT na skill). Fica para a 49.5.'
+  ambiente: 'banco de produção com `default_transaction_read_only = on` e Google só leitura; loader + motor de 60eb3158; scripts do QA em scratchpad/qa493/ (conf.mts, re2.mts, soleads.mts, engine-sem-unwrap.ts)'
+  datas: 'perfil §1b: D0 16/04, abertura 09/05, fim 27/05, sem reabertura, downsell 03/06 → 13/06'
+  configs:
+    - 'captação + principal: downsell R$ 0; captação R$ 230.501,64; principal 71 / R$ 245.800,00; sem FONTE_EM_MAIS_DE_UMA_ETAPA'
+    - '+ vendas-downsell: downsell R$ 20.714,40; investimento do downsell R$ 4.022,29'
+    - '+ vendas-downsell + leads-downsell (ordem natural): downsell 34 / R$ 20.714,40; lacuna FONTE_EM_MAIS_DE_UMA_ETAPA; 4 planilhas lidas (downsell 83 linhas, uma vez); investimento do downsell R$ 11.885,55 (as campanhas da etapa leads-downsell entram no grupo, por GRUPO_DO_PAPEL)'
+    - '+ leads-downsell ANTES de vendas-downsell: idêntico (vale 34885def, mapeamento-id-e-produto)'
+    - 'só leads-downsell (sem vendas-downsell): downsell 34 / R$ 20.714,40 vindos da etapa leads-*; investimento do downsell R$ 7.863,26 (só as campanhas dela); a cópia sem ID/produto entra só com a camada 2 e a lacuna DEDUP_POR_ID_NAO_APLICADA; sem FONTE_EM_MAIS_DE_UMA_ETAPA (a aba é só dela)'
+  unwrap_venda_a_venda: 'Mesmo input carregado, rodado em dois motores: o de 60eb3158 e uma cópia com `utmLimpa` só aparando, sem `campaignName` para id em array (simulando o loader antigo). Principal: 71/71 com canal e fechamento iguais. Compradores de captação: 1.807/1.807 iguais. Tabela 1 idêntica. Diferenças no payload só em `tuplasClassificadas[].venda.{source,medium,campaign}` e `auditoriaDeVendas[].utmVenda` das 6 vendas, além de `higiene.utmsEmArray`. As 6 vendas (Kiwify principal, 09/05) têm s={"qr","qr"}, m={"emailm","emailm"}, c={"dgpg02","dgpg02"} e t={"backend","lote-N"} (ambíguo, fica cru). Canais: 2 Pago Quente, 2 Pago Frio, 1 Instagram orgânico (pela UTM do lead) e 1 Outros orgânicos (lead por e-mail com UTM toda nula; cai na UTM da venda, que não casa regra com ou sem unwrap). Leads com array: 0. `utmsEmArray` = {vendas 6, leads 0, ambiguas 6}.'
 
 mutacoes_qa:
-  total: 10
-  mortas: 7
+  total: 12
+  mortas: 9
   lista:
-    - 'QA-M1 janela ignora a reabertura — MORTA'
-    - 'QA-M2 empate fim do carrinho × fim do downsell vai para o downsell (`>=`) — SOBREVIVEU (só muda `fimPor`; o `fim` é o mesmo) → TEST-005'
-    - 'QA-M3 manual reembolsada DEPOIS da janela conta como venda (`or(isNull(refundedAt), gt(refundedAt, fim))`) — MORTA'
-    - 'QA-M4 ID da manual = produto (a camada 1 colapsaria manuais do mesmo produto) — MORTA'
-    - 'QA-M5 manual ignora `product_types` (sempre o default da etapa) — SOBREVIVEU → TEST-005'
-    - 'QA-M6 motor corta a MÍDIA no fim do carrinho e as vendas na janela — MORTA'
-    - 'QA-M7 `vendasManuais.linhasLidas` conta todas as linhas — MORTA'
-    - 'QA-M8 manual anterior à abertura não é excluída — MORTA'
-    - 'QA-M9 manual entra no faturamento, mas não em `vendasGrupo` (contagem do downsell/reabertura e texto do TMB) — SOBREVIVEU → TEST-005'
-    - 'QA-M10 janela começa na abertura do carrinho — MORTA'
-  mutacoes_do_dev_rodadas_pelo_qa: '19/19 mortas (MNT-001, CONTRACT-001, CONTRACT-003, Q17′, Q21, Q22, Q23, Q24, Q8b, 2A-motor, 2A-regra, 2A-regra-min, 2A-loader, 3A-nao-le, 3A-reembolso, 3A-fonte, 3A-closer, 3A-valor, 3A-nota)'
+    - 'QA2-M1 fio: o loader lê com o vínculo [0], não o escolhido (destructure + mapping) — MORTA'
+    - 'QA2-M2 dedup de aba desligada (chave inclui a etapa) — MORTA'
+    - 'QA2-M3 unwrap escolhe o primeiro dos valores distintos — MORTA (3 testes)'
+    - 'QA2-M4 unwrap só no lead (venda só aparada, nos 3 call sites) — MORTA'
+    - 'QA2-M5 unwrap só na venda (lead só aparado) — MORTA'
+    - 'QA2-M6 unwrap some só na classificação do comprador de captação (`rep.v.utm`) — SOBREVIVEU → TEST-006'
+    - 'QA2-M7 critério ignora o cabeçalho (mapeado conta mesmo sem coluna) — MORTA'
+    - 'QA2-M8 com >1 vínculo `vendas-*` empatado, a escolha cai em `porMapeamento[0]` (pode ser um `leads-*` que vem antes) — SOBREVIVEU → TEST-006'
+    - 'QA2-M9 `fontesDuplicadas` não chega ao motor — MORTA'
+    - 'QA2-M10 `linhasNaoRelidas` sem multiplicar por (vínculos − 1) — SOBREVIVEU (só difere com 3+ vínculos) → TEST-006'
+    - 'QA2-M11 contagem de ambíguas some — MORTA'
+    - 'QA2-M12 nome de campanha pelo id cru — MORTA'
 
 issues:
-  - id: REL-001
-    severity: medium
-    category: reliability/data
-    description: 'O loader lê as planilhas de venda de CADA etapa da config (`resolveSalesSheetsForStage` por etapa) e não deduplica entre etapas a mesma aba (`spreadsheetId` + `sheetName`). No PG02, a aba `n8n-kiwify-downsell` está ligada à "Downsell Vendas" (`stage_sales_spreadsheets`, subtype main_product, com `transactionId`/`productName` mapeados) E à "Downsell Captação" (`funnel_spreadsheets` tipo `sales`, SEM `transactionId`/`productName`). Com a config natural (Downsell Captação = `leads-downsell`, Downsell Vendas = `vendas-downsell`), as 83 linhas entram duas vezes: a camada 1 é por planilha e não pega; a camada 2 não colapsa porque o produto da cópia sai nulo. Resultado medido em produção: faturamento do downsell R$ 20.714,40 → R$ 41.428,80 (2×). A única pista no payload é a lacuna genérica `DEDUP_POR_ID_NAO_APLICADA` ("falta transactionId e productName"), que não diz que a aba já foi lida em outra etapa. O mesmo pode acontecer (hipótese, não medida) numa captação gratuita (`leads-captacao`) que tenha a planilha do principal ligada para medir conversão: as vendas do principal entrariam também no grupo captação. O defeito existe desde a38d381a, mas a 2A o tornou alcançável no PG02, porque a janela agora vai até o fim do downsell.'
-    recommendation: 'No loader: deduplicar as abas por `spreadsheetId|sheetName` entre as etapas, mantendo a da etapa `vendas-*` (ou a de mapeamento com ID + produto), e registrar `diagnostico.planilhaEmMaisDeUmaEtapa` (como já existe `campanhasEmMaisDeUmaEtapa`), com lacuna própria no motor. Teste no PGlite com a mesma aba em duas etapas, afirmando o faturamento simples. Discutir com o @po se uma etapa `leads-*` deve contribuir VENDAS (a resolução 10 só agrupa os papéis).'
+  - id: TEST-006
+    severity: low
+    category: tests
+    description: 'Três mutações próprias sobreviveram. QA2-M6: tirar o unwrap só da classificação do comprador de CAPTAÇÃO (`classificar(..., utmLimpa(rep.v.utm), ...)`) passa, porque os testes de UTM em array só olham `auditoriaDeVendas` (principal). QA2-M8: no desempate, com dois ou mais `vendas-*` empatados e um `leads-*` com o mesmo mapeamento antes deles, a escolha pode cair no `leads-*`; o caso testado tem o `leads-*` com mapping vazio, então o mutante é equivalente ali. QA2-M10: `linhasNaoRelidas` só difere com 3+ vínculos e o teste tem 2. Nenhuma tem efeito no PG02: os arrays estão só no principal, e há 2 vínculos com mapeamentos diferentes.'
+    recommendation: 'Na 49.5 (fixtures/guardas) ou num follow-up: (a) ingresso com `{"facebook","facebook"}` sem lead, afirmando o canal em `captacao.compradores`/`tabela1.canais[].ingressos`; (b) `escolherVinculoDaFonte([leads completo, vendas-a completo, vendas-b completo])` → índice 1, `empate-ordem-da-config`; (c) aba em 3 etapas → `linhasNaoRelidas = 2 × linhas`.'
     owner: '@dev'
     status: open
 
-  - id: TEST-005
+  - id: PO-001
     severity: low
-    category: tests
-    description: 'Três mutações próprias sobreviveram: QA-M2 (empate do downsell com o carrinho vira `fimPor: downsell.fim`; o JSDoc diz que o empate fica com o carrinho e só o empate da reabertura é testado); QA-M5 (venda manual com produto marcado no `product_types`, por exemplo como combo, cai no default da etapa; o teste usa "Imersão" = ingresso numa etapa paga, onde o default também é ingresso); QA-M9 (manual fora de `vendasGrupo`: muda a contagem de vendas do downsell e da reabertura e o "N vendas" da nota de TMB; nenhum teste tem manual nesses grupos).'
-    recommendation: 'Três casos: empate downsell × carrinho; manual com produto classificado diferente do default da etapa; manual no downsell afirmando `apendiceReabertura.vendas`/vendas do downsell.'
-    owner: '@dev'
+    category: requirements
+    description: 'Registro para o @po decidir (QA não decide): uma etapa `leads-*` contribui VENDAS quando a aba de venda está ligada só a ela. Medido no PG02, com config captação + principal + `leads-downsell` (sem `vendas-downsell`): o downsell sai com 34 vendas e R$ 20.714,40, vindos da cópia em `funnel_spreadsheets` (tipo `sales`, plataforma `sales`, mapping SEM `transactionId`/`productName`). Só a camada 2 roda, e a lacuna é a genérica `DEDUP_POR_ID_NAO_APLICADA`, sem dizer que veio de uma etapa de leads. Vem de `GRUPO_DO_PAPEL` (leads-downsell → downsell; leads-captacao → captacao) + `resolveSalesSheetsForStage`, que também devolve `funnel_spreadsheets` tipo `sales`. As campanhas dela também entram no grupo downsell: R$ 7.863,26 c/ imposto sozinha; R$ 11.885,55 junto com a `vendas-downsell` (R$ 4.022,29). O @dev registrou a mesma pergunta como AUTO-DECISION ("continua podendo contribuir").'
+    recommendation: '@po: decidir se `leads-*` contribui só mídia/leads (e as vendas exigem um vínculo `vendas-*`) ou também vendas. Se decidir pelo primeiro, o loader passa a ignorar as abas de venda de etapas `leads-*`, com uma lacuna própria.'
+    owner: '@po'
     status: open
 
   - id: INFO-001
     severity: low
     category: data
-    description: 'Para a 49.5 classificar, não é código desta story: closer no principal 56 × 22 da skill (eixo de fechamento da 49.2: 47 por `utm_medium=x1` + 9 manuais por `seller_name`); 6 vendas do principal com UTM em formato de array do Postgres (`m={"emailm","emailm"}`, `s={"qr","qr"}`) vindas da planilha n8n e classificadas como "Outros orgânicos"; Gravação = `order_bump` no `product_types`, o que move ROAS só ingresso e tier contra o §8.'
+    description: 'Para a 49.5 classificar: closer no principal 56 × 22 da skill (eixo de fechamento da 49.2); Gravação = `order_bump` no `product_types` move ROAS só ingresso e tier. A parte "6 vendas com array em Outros orgânicos" do INFO-001 anterior NÃO se confirmou: só 1 das 6 está lá, e ficaria lá com ou sem array.'
     owner: '@po (49.5)'
     status: open
 
 top_issues:
-  - id: REL-001
-    severity: medium
-    finding: 'A mesma aba ligada a duas etapas da config é lida duas vezes. No PG02, com a Downsell Captação como `leads-downsell`, o downsell dobra (R$ 20.714,40 → R$ 41.428,80).'
-    suggested_action: '@dev: deduplicar a aba entre etapas no loader + diagnóstico + teste PGlite (iteração 2 curta).'
-  - id: TEST-005
+  - id: TEST-006
     severity: low
-    finding: '3 mutações próprias sobreviventes (empate do downsell, `product_types` da manual, manual na contagem do grupo).'
-    suggested_action: '@dev: 3 casos de teste.'
+    finding: '3 mutações sobreviventes: unwrap no comprador de captação, desempate com 2+ vendas-* e um leads-* antes, `linhasNaoRelidas` com 3+ vínculos.'
+    suggested_action: '@dev: 3 casos de teste (follow-up ou 49.5).'
+  - id: PO-001
+    severity: low
+    finding: 'Etapa `leads-*` contribui vendas quando a aba é só dela (PG02: 34 / R$ 20.714,40, sem dedup por ID).'
+    suggested_action: '@po decide se `leads-*` pode contribuir vendas.'
 
 waiver: { active: false }
