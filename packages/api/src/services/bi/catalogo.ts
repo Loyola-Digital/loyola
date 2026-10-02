@@ -61,6 +61,7 @@ export type EntidadeDoCatalogo =
   | "vendas"
   | "faturamento"
   | "produtos"
+  | "leads"
   | "aplicacoes"
   | "grupos";
 
@@ -114,10 +115,22 @@ export const ENTIDADES: DescricaoDeEntidade[] = [
       "O que cada PRODUTO vendeu, por dia · funil · etapa. Conta LINHA de venda (dois order bumps do mesmo cliente são duas linhas), então o total daqui pode passar do número de compradores de `faturamento` — para volume de compradores use `faturamento`, para saber QUAL produto vendeu use esta",
   },
   {
+    key: "leads",
+    label: "Leads captados",
+    fonte: "banco",
+    // A entidade que faltava: `aplicacoes` lê as planilhas do tipo APLICAÇÕES
+    // (o formulário comercial), e a captação mora em planilha do tipo LEADS,
+    // que o BI não enxergava. "A origem dos leads de 01/10" voltava vazio com a
+    // planilha conectada e cheia.
+    descricao:
+      "Quantos leads se cadastraram, por dia · CANAL · origem · funil · etapa. É AQUI que mora a origem do lead (Meta Ads, Instagram, ManyChat, WhatsApp, YouTube, Closer, Sem Track) — use esta para qualquer pergunta sobre de onde veio quem se cadastrou. Conta CADASTRO, não pessoa única",
+  },
+  {
     key: "aplicacoes",
     label: "Aplicações",
     fonte: "planilha",
-    descricao: "Respostas de formulário de captação — lidas ao vivo da planilha",
+    descricao:
+      "Respostas do formulário de APLICAÇÃO comercial — lidas ao vivo da planilha. Não é a captação de lead: para quantos leads entraram e de que canal, use `leads`",
   },
   {
     key: "grupos",
@@ -454,6 +467,78 @@ export const CAMPOS: CampoDoCatalogo[] = [
     dataType: "string",
     description:
       "De qual projeto o dado veio. Só faz sentido quando o dashboard está no escopo de todos os projetos",
+  },
+  {
+    key: "leads.date",
+    label: "Data",
+    entity: "leads",
+    role: "dimension",
+    semanticType: "date",
+    aggregation: "none",
+    dataType: "string",
+    description: "Dia em que o lead se cadastrou, pela data da própria planilha",
+  },
+  {
+    key: "leads.canal",
+    label: "Canal",
+    entity: "leads",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description:
+      "Canal NOMEADO de onde o lead veio: Meta Ads, Google Ads, Instagram, ManyChat, WhatsApp, E-mail, YouTube, Closer, Outros ou Sem Track",
+  },
+  {
+    key: "leads.origem",
+    label: "Origem",
+    entity: "leads",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description: "O balde grosso do canal: Pago, Orgânico ou Sem Track",
+  },
+  {
+    key: "leads.funil",
+    label: "Funil",
+    entity: "leads",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description: "Funil em que o lead se cadastrou",
+  },
+  {
+    key: "leads.etapa",
+    label: "Etapa",
+    entity: "leads",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description: "Etapa do funil em que o lead se cadastrou",
+  },
+  {
+    key: "leads.projeto",
+    label: "Projeto",
+    entity: "leads",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description: "De qual projeto o dado veio. Só faz sentido no escopo de todos os projetos",
+  },
+  {
+    key: "leads.count",
+    label: "Leads",
+    entity: "leads",
+    role: "metric",
+    semanticType: "number",
+    aggregation: "sum",
+    dataType: "number",
+    description:
+      "Quantos CADASTROS entraram. Não é pessoa única: quem se cadastra em dois dias conta duas vezes",
   },
   {
     key: "produtos.date",
