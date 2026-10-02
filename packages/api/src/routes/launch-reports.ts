@@ -31,6 +31,7 @@ import { decryptAccountToken } from "../services/meta-ads.js";
 import { ReportScopeError } from "../services/launch-report-config.js";
 import {
   loadLaunchReport,
+  type LaunchReportCarregado,
   LaunchReportDataError,
 } from "../services/launch-report-loader.js";
 import {
@@ -123,9 +124,9 @@ export default fp(async function launchReportsRoutes(fastify) {
     if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
     // 1 e 2 — gate (dentro de loadReportConfig) e carga dos dados.
-    let metricas;
+    let carregado;
     try {
-      metricas = await loadLaunchReport(fastify.db, accessTokenFor, {
+      carregado = await loadLaunchReport(fastify.db, accessTokenFor, {
         stageId: params.data.stageId,
         dataInicio: body.data.dataInicio ?? null,
         dataFim: body.data.dataFim ?? null,
@@ -138,11 +139,15 @@ export default fp(async function launchReportsRoutes(fastify) {
       throw err;
     }
 
-    // 3 — guardas ANTES de renderizar.
+    const { metricas } = carregado;
+
+    // 3 — guardas ANTES de renderizar. A dedup por ID da venda (41.10) entra
+    // como W9/W10 dentro de `alertas[]` — não muda o formato de `metricas`.
     let guardas;
     try {
       guardas = assertLaunchReport(metricas, {
         investimentoOficial: body.data.investimentoOficial ?? null,
+        dedup: carregado.dedup,
       });
     } catch (err) {
       if (err instanceof InvarianteVioladoError) return reply.code(422).send(err.toResponse());
@@ -347,7 +352,7 @@ export const comparativoRoutes = fp(async function comparativoRoutes(fastify) {
     if (!infoB) return reply.code(404).send({ error: "Etapa do lado B não encontrada", lado: "b" });
 
     // Gate + carga dos DOIS lados. O 422 identifica qual lado falhou.
-    const carregado: LaunchReportMetrics[] = [];
+    const carregado: LaunchReportCarregado[] = [];
     for (const [lado, cfg] of [["a", body.data.a], ["b", body.data.b]] as const) {
       try {
         carregado.push(
@@ -367,13 +372,15 @@ export const comparativoRoutes = fp(async function comparativoRoutes(fastify) {
         throw err;
       }
     }
-    const [ma, mb] = carregado as [LaunchReportMetrics, LaunchReportMetrics];
+    const [ca, cb] = carregado as [LaunchReportCarregado, LaunchReportCarregado];
+    const ma: LaunchReportMetrics = ca.metricas;
+    const mb: LaunchReportMetrics = cb.metricas;
 
     // Guardas nos dois — violação em qualquer um aborta ambos (§9.2).
     const guardas: LaunchReportGuardResult[] = [];
-    for (const [lado, m] of [["a", ma], ["b", mb]] as const) {
+    for (const [lado, c] of [["a", ca], ["b", cb]] as const) {
       try {
-        guardas.push(assertLaunchReport(m));
+        guardas.push(assertLaunchReport(c.metricas, { dedup: c.dedup }));
       } catch (err) {
         if (err instanceof InvarianteVioladoError) {
           return reply.code(422).send({ ...err.toResponse(), lado });

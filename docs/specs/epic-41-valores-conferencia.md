@@ -12,6 +12,10 @@
 
 ## DG-PG02-ABR26 · etapa `vendas-captacao` · 17/04 a 11/05/2026
 
+> ⚠️ **Supersedido pela Correção 41.10** (seção no fim deste documento) — esta
+> tabela refletia **Combo = order bump** e a **duplicata de 25 linhas** do n8n.
+> Fica como histórico; não é mais oráculo do PG02.
+
 | Métrica | Valor |
 |---|---|
 | campanhas | 33 |
@@ -70,6 +74,10 @@
 ---
 
 ## Decomposição PG02 → PG04 (valida §7.3 / Story 41.6 AC8)
+
+> ⚠️ **Supersedida pela Correção 41.10** — o ticket e a conversão do PG02 mudam
+> com a regra de comprador e a dedup; a decomposição é recalculada pelo @qa
+> (ver "Correção 41.10", item (f)).
 
 | Fator | ratio | efeito | peso | direção |
 |---|---|---|---|---|
@@ -159,6 +167,10 @@ da etapa **não passa pelo motor** e continua lendo o mapping direto.
 ---
 
 ## Resultado da conferência real — 2026-07-30 (Story 41.2)
+
+> ⚠️ **Supersedido pela Correção 41.10** — refletia Combo = order bump e a
+> duplicata de 25 linhas. O motor "batia ao centavo" com as regras que tinha; as
+> regras é que estavam erradas em dois pontos.
 
 O motor (`launch-report-loader` + `launch-report-engine`) rodou contra o banco de
 produção no stage `8fbd8031` (DG-PG02 · Captação Paga), em modo somente leitura
@@ -379,8 +391,188 @@ A config foi criada com fim em **30/07**, não 27/07. Com 30/07 o relatório fic
 lançamento rodou até lá, mas **não é comparável com a spec**. Para conferir
 contra a §10, usar 27/07.
 
+## Correção 41.10 — dedup por ID e comprador de captação (2026-09-30)
+
+> **Oráculo a partir de agora (g):** as tabelas desta seção são o oráculo do
+> **PG02** e do **PG04** — é o que a fixture `governante` da 49.5 lê. As tabelas
+> antigas acima ficam como histórico, rotuladas "supersedido".
+>
+> **Como os números foram medidos (2026-10-01, @dev):** pelo **código do loader**
+> (`lerVendasDaPlanilha` → `prepararVendasDoPeriodo` → `computeLaunchReportMetrics`),
+> lendo a planilha de produção do PG02 (`n8n-kiwify-captação`, 2.222 linhas) e
+> o banco em **sessão somente leitura** (`default_transaction_read_only=on`),
+> sem fetch na Meta. Nada foi gravado. Os snapshots CSV e o export cru da Kiwify
+> usados na ponte têm PII e **não** entram no repo.
+
+### (a) A ponte skill → Loyola (DG-PG02), resíduo zero
+
+Da `loyola-debriefing` (1.845 compradores / R$ 227.491,74; export cru da Kiwify,
+`paid`, todas as datas, comprador = Imersão **ou** Combo, dedup por e-mail **ou**
+8 últimos dígitos do telefone) ao Resumão antigo (1.410 / R$ 233.572,94).
+
+**Contagem de compradores**
+
+| # | Degrau | Δ | Acumulado | Natureza |
+|---|---|---:|---:|---|
+| 0 | skill (export cru, Imersão ou Combo, e-mail ou telefone) | | 1.845 | |
+| 1 | chave só por e-mail (o Loyola não une por telefone) | +1 | 1.846 | definição |
+| 2 | regra de produto: Imersão ou **Gravação** (Combo = bump) | −384 | 1.462 | **R2-1: errado no Loyola, corrigido** |
+| 3 | janela 17/04–11/05 (a skill não corta) | −50 | 1.412 | decisão de negócio do Resumão |
+| 4 | 5 vendas pagas de 11/05 ausentes no n8n | −3 | 1.409 | **diferença de fonte declarada** (R3-4) |
+| 5 | data do n8n no lugar da do export | 0 | 1.409 | — |
+| 6 | 7 vendas estornadas depois, ainda `paid` no n8n | +1 | 1.410 | **diferença de fonte declarada** (R3-4) |
+| 7 | e-mail como está no n8n | 0 | 1.410 | — |
+| 8 | 25 linhas duplicadas no n8n | 0 | **1.410** | mesmo e-mail — não mexe em comprador |
+
+**Faturamento**
+
+| # | Degrau | Δ (R$) | Acumulado (R$) | Natureza |
+|---|---|---:|---:|---|
+| 0 | skill: todas as linhas dos compradores | | 227.491,74 | |
+| 1 | + linhas de quem não comprou Imersão/Combo (114 linhas) | +11.751,66 | 239.243,40 | definição (o Resumão soma toda linha paga) |
+| 2 | janela 17/04–11/05 | −8.954,36 | 230.289,04 | decisão de negócio |
+| 3 | 5 vendas de 11/05 ausentes no n8n | −381,70 | 229.907,34 | **diferença de fonte declarada** (R3-4) |
+| 4 | data do n8n | 0,00 | 229.907,34 | — |
+| 5 | 7 estornos posteriores ainda `paid` no n8n | +1.190,60 | 231.097,94 | **diferença de fonte declarada** (R3-4) |
+| 6 | coluna `Preço` do n8n no lugar de `Preço base` | 0,00 | 231.097,94 | — |
+| 7 | **25 vendas de R$ 99 duplicadas no n8n** | **+2.475,00** | **233.572,94** | **R2-1/R2-2: dedup obrigatória — corrigido** |
+
+Os degraus 4 e 6 (contagem) / 3 e 5 (faturamento) ficam **só declarados** (R3-4):
+não há story de sincronização do n8n.
+
+### (b) Tabelas corrigidas do PG02 (`vendas-captacao`)
+
+Medidas pelo código, sobre a planilha de produção. "Dedup" = `transactionId`
+mapeado para a coluna **`ID`** (ver T0 abaixo: em produção ele **não** está mapeado).
+
+**Só a dedup, com a regra antiga (Combo = order bump) — AC2**
+
+| Janela | | vendas | captação | order bump | ingressos únicos | faturamento total | captação (R$) | order bump (R$) | W9 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| 17/04–11/05 | antes | 2.222 | 1.597 | 625 | 1.410 | 233.572,94 | 90.388,74 | 143.184,20 | — |
+| 17/04–11/05 | depois | **2.197** | **1.572** | 625 | **1.410** | **231.097,94** | **87.913,74** | 143.184,20 | 25 / R$ 2.475,00 |
+| 17/04–09/05 | antes | 2.189 | 1.564 | 625 | 1.407 | 230.305,94 | 87.121,74 | 143.184,20 | — |
+| 17/04–09/05 | depois | **2.174** | **1.549** | 625 | **1.406** | **228.820,94** | **85.636,74** | 143.184,20 | 15 / R$ 1.485,00 |
+
+**Dedup + regra R2-1 (Imersão ou Combo = captação; Gravação e GPT = bump) — AC4, o oráculo**
+
+| Janela | vendas | captação | order bump | ingressos únicos | faturamento total | captação (R$) | order bump (R$) | ticket captação | ticket total | W9 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 17/04–11/05 | **2.197** | **1.900** | **297** | **1.807** | **231.097,94** | **198.736,40** | **32.361,54** | 104,60 | 105,19 | 25 / R$ 2.475,00 |
+| 17/04–09/05 (config) | **2.174** | **1.900** | **274** | **1.807** | **228.820,94** | **198.736,40** | **30.084,54** | 104,60 | 105,25 | 15 / R$ 1.485,00 |
+
+- **Composição (janela 11/05):** Imersão 1.318 + Combo 582 = 1.900 vendas de
+  captação; Gravação 254 + GPT 43 = 297 de order bump. O Combo traz **581**
+  e-mails, dos quais **496 não compraram Imersão** — é a mudança 1.410 → 1.807.
+- **A4 nas duas janelas:** 198.736,40 + 32.361,54 = 231.097,94 e
+  198.736,40 + 30.084,54 = 228.820,94 — diferença **0,000000**.
+- ⚠️ **Janela 09/05 — 15 e não 13.** A story e o epic estimaram 13 / R$ 1.287,00
+  na janela 09/05, com o script de investigação deduplicando **depois** do corte
+  de janela. O AC1 manda deduplicar **antes** do corte (a venda ganha o dia da
+  sobrevivente, que é a **primeira** linha): 2 dos 25 pares cruzam a meia-noite
+  — a primeira linha em **10/05** 02:00:54 e 02:45:06, a duplicata em **09/05**
+  23:00 e 23:45. Essas 2 vendas valem em 10/05 (fora da janela 09/05), e as duas
+  duplicatas de 09/05 saem da janela: 15 linhas / R$ 1.485,00, e a queda de
+  vendas é exatamente 15. O dia da primeira linha é o mesmo do export cru da
+  Kiwify (a ponte não achou nenhuma venda com dia diferente entre o export e a
+  primeira linha do n8n). Com a regra antiga, isso tirava 1 comprador da janela
+  09/05 (1.407 → 1.406); com a R2-1, os 1.807 não mudam.
+- **Atribuição por UTM** (pago × orgânico, quente × frio, ROAS, CPV, ticket pago,
+  conversão clique→venda): **a recalcular pelo @qa** rodando o motor contra o
+  banco de produção em modo leitura, depois do mapeamento do T0 e do deploy.
+  Sem número inventado aqui.
+
+### (c) A duplicata
+
+Na planilha n8n do PG02, as 25 linhas duplicadas têm o **mesmo `ID`** da venda,
+o mesmo produto (`Curso / Gravação da Imersão`), R$ 99, o mesmo e-mail — e a
+coluna **`Transaction` vazia**, com horário **3 h antes** e segundos `:00`
+(ex.: `09/05/2026 14:04:33` × `09/05/2026 11:04:00`). Nenhuma das 25 tem
+`Transaction`: dedup pela coluna `Transaction` não pega nenhuma (37 linhas da
+planilha têm `Transaction` vazia). A duplicata aparece **depois** da original na
+planilha. Dias: 15 em 09/05 e 10 em 10/05.
+
+### (d) A regra de comprador
+
+"Imersão **ou** Combo = comprador de captação" é **configuração do estágio**,
+não código: a lista `stage_sales_spreadsheets.order_bump_products` (o loader
+classifica bump por ela; produto fora da lista = captação) e o mapa
+`product_types` (lido pela 49.3). O código do Resumão não conhece nome de
+produto — teste estático em `launch-report-dedup.test.ts`.
+
+### (e) Comparação com a skill (não é critério de bloqueio)
+
+Número mais defensável pelo export cru (Imersão ou Combo, só `paid`, janela
+17/04–11/05): **1.806 pessoas / R$ 230.289,04**. É **comparação, nunca critério de
+bloqueio** (decisão 1 do Epic 49). A diferença de **1 pessoa** contra os 1.807 do
+Loyola fica **a classificar pelo @qa** — a causa provável é o bucket dos 7
+estornos posteriores ainda `paid` no n8n, mas isso **não** foi provado. A
+diferença de faturamento até o Loyola (R$ 231.097,94) é +R$ 808,90 =
++R$ 1.190,60 (7 estornos `paid` no n8n) − R$ 381,70 (5 vendas ausentes).
+
+### T0 — mapeamento real em produção (2026-10-01, somente leitura)
+
+| Etapa | Planilha | `transactionId` | `productName` | Dedup do Resumão |
+|---|---|---|---|---|
+| DG-PG02 Captação Paga (`8fbd8031`) | n8n-kiwify-captação | **não mapeado** | `Produto` | **não roda — W10** até o mapeamento apontar para `ID` |
+| DG-PG04 Captação Paga (`1744c927`) | n8n-kiwify-captação | `Transaction` | `Produto` | roda |
+| BBE-PR2 Captação Paga (`81ea6018`) | n8n-Kiwify | `ID` | `Produto` | roda |
+| FZ-M2 Captação Gratuita (`b28c093c`) | n8n-Kiwify (funil) | não mapeado | não mapeado | o Resumão já falha antes (planilha sem coluna de preço) |
+
+**Consequência:** o código sozinho **não** corrige o PG02 — ele emite W10 e mantém
+os números. Os números das tabelas (b) só valem depois de o gestor mapear
+`transactionId → ID` na planilha do estágio, pelo wizard de planilhas
+(`stage-sales-wizard-dialog.tsx`, campo "ID da Transação"). No PG02,
+`Transaction` e `ID` são iguais onde `Transaction` existe, então a troca não
+muda a chave de nenhuma outra linha. Como `mapping.status` também não está
+mapeado no PG02, o passe de reembolso por transação segue inativo lá — mapear o
+ID não tira nenhuma outra linha.
+
+### Configuração da regra de comprador em produção (2026-10-01)
+
+| Etapa | `order_bump_products` | `product_types` | Lista × mapa |
+|---|---|---|---|
+| DG-PG02 Captação Paga | `Curso / Gravação da Imersão`, `GPT para Negócios` | Combo = `combo`; Gravação e GPT = `order_bump` | concordam |
+| DG-PG04 Captação Paga | 6 produtos de Gravação/GPT/Claude (nenhum Combo) | 2 Combos = `combo`; 6 = `order_bump` | concordam |
+| BBE-PR2 Captação Paga | vazia | vazio | — |
+
+A lista do PG02 **já está** no estado da R2-1 em produção; os Comparativos
+PG02×PG04 de 30/07 e 01/08 ainda mostram o PG02 com 1.407 únicos (regra antiga),
+então a troca ocorreu depois de 01/08. Não há trilha de auditoria da UI para
+dizer quem e quando. Nenhuma etapa tem Combo na lista de bumps: a lista de
+trocas da R3-5 está vazia.
+
+### PG04 — só a dedup muda (coluna `Transaction`)
+
+| Janela | | vendas | captação | order bump | únicos | faturamento | captação (R$) | order bump (R$) | W9 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| 09/07–30/07 (config) | antes | 1.150 | 1.004 | 146 | 991 | 100.477,53 | 71.293,43 | 29.184,10 | — |
+| 09/07–30/07 (config) | depois | **1.145** | **999** | 146 | 991 | **100.049,03** | **70.864,93** | 29.184,10 | 5 / R$ 428,50 |
+| 09/07–27/07 (§10) | antes | 939 | 827 | 112 | 817 | 72.266,51 | 49.798,95 | 22.467,56 | — |
+| 09/07–27/07 (§10) | depois | **935** | **823** | 112 | 817 | **72.161,91** | **49.694,35** | 22.467,56 | 4 / R$ 104,60 |
+
+As 5 são retentativas do n8n: mesmo `Transaction`, mesmo `ID`, mesmo produto
+(4 Imersão, 1 Combo), segundos a 3 minutos de distância. 126 transações cobrem
+mais de um produto (ingresso + bump no mesmo pedido) e **não** colapsam — a
+chave inclui o produto. A dedup por `ID` daria o mesmo resultado (5 linhas).
+⚠️ O PG04 já não reproduz a conferência de 31/07 (751 únicos na janela 27/07;
+hoje 817 **antes** de qualquer mudança da 41.10): a planilha cresceu para datas
+passadas. A diferença é anterior a esta story e fica para o @qa classificar.
+
+### (f) Decomposição PG02 → PG04 e gate A1–A9
+
+- **Decomposição (41.6):** a recalcular pelo @qa rodando o motor em produção
+  (modo leitura) depois do mapeamento do T0 e do deploy; a antiga está rotulada
+  "supersedida".
+- **Gate A1–A9 (medição do @dev, 2026-10-01, código novo, somente leitura):**
+  PG02 (as duas janelas) e PG04 (as duas janelas) — A1–A5, A7–A9 `passed`, A6
+  `skipped` no PG02 (sem ad-level) e `passed` no PG04; nada bloqueia. O PG02
+  ainda sem a dedup (W10). O gate oficial com a dedup ativa no PG02 é do @qa,
+  depois do mapeamento e do deploy.
+
 ## Change Log
 
 | Data | Autor | Mudança |
 |------|-------|---------|
 | 2026-07-30 | @dev (Dex) | §10 versionada a partir do que o usuário forneceu. Adicionadas 5 observações do cruzamento com o banco de produção: prefixos confirmados, em-dash em posição variável, divergência de contagem de campanhas, período do PG02 e ausência de config do PG04. |
+| 2026-10-01 | @dev (Dex) | **Correção 41.10** (Story 41.10): ponte skill → Loyola versionada degrau a degrau; tabelas do PG02 (dedup; dedup + R2-1) e do PG04 (dedup) medidas pelo código do loader contra a planilha de produção em modo leitura; T0 do mapeamento; regra de comprador em produção; oráculo declarado. Tabela do PG02, decomposição e "Resultado da conferência real" rotulados "supersedido" (não apagados). Janela 09/05: 15 / R$ 1.485,00, não 13 / R$ 1.287,00 (dedup antes do corte). |
