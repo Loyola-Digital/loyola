@@ -1,0 +1,129 @@
+schema: 1
+storyId: '49.4'
+story: '49.4'
+story_title: 'Motor II do Debriefing — público (qualificação por origem, faixa × criativo, tipo de criativo, cross-launch)'
+verdict: CONCERNS
+gate: CONCERNS
+status_reason: 'O código atende o AC1–AC12 e as decisões do dono (3, 4, 8, 9, 11, R2-1, R2-5); 62/62 testes, `tsc` e `eslint` limpos, as 22 mutações do @dev morrem também na rodada do QA. A conferência em produção (só leitura) reproduz os números do @dev, agora com as datas REAIS do PG02 (janela 2A até 13/06, com o downsell): 1.605 respondentes, 1.807/1.806 compradores de captação (= 49.3), PG04 faixa D 117 e 13 sem faixa; payload sem e-mail e sem telefone (varredura por valor, não só por "@"), determinístico. O que segura o PASS é TEST-001 (medium): 7 de 18 mutações próprias sobrevivem, e três delas cortam um FIO que um AC ou uma decisão fixa — o `sellerName` que vai ao classificador (caso Netão, R2-5), o casamento do principal pelo telefone (AC7) e a dedup que atravessa as pesquisas da etapa (é exatamente o caso da pesquisa "Alunos", pergunta aberta ao dono). São três testes curtos. Há duas pendências do dono e uma ratificação do @po, que não bloqueiam o código.'
+reviewer: 'Quinn'
+updated: '2026-10-02T00:45:00-03:00'
+branch: 'feat/49.4-debriefing-motor-publico'
+commit_reviewed: '74af63a5'
+base: 'empilhada em origin/feat/49.3-debriefing-motor-dinheiro-tempo (b5ad6c2d, merge-base); o retrabalho 974839a8 da 49.3 já está dentro'
+qa_loop: { iteration: 0, verdict: 'REJECT leve — TEST-001 pede uma iteração curta (3 testes de fio)' }
+
+checks:
+  1_requirements: 'PASS — AC1–AC12 atendidos (rastreio abaixo). Desvio declarado no AC11: conta do Ads Manager cai para a única conta ativa do projeto (0/19 funis têm `meta_account_id`) — ratificação do @po.'
+  2_tests: 'CONCERNS — 62/62 nas 2 suítes da story; regressão `debriefing-*`, `survey*`, `launch-report-*`, `classificador*`, `dedup*`: 23 arquivos, 860/860 (uma rodada com load average 13 teve timeout de `beforeAll` do PGlite nas duas suítes de loader — REL-001). Mutações: 22/22 do @dev mortas; 11/18 próprias mortas — TEST-001.'
+  3_lint_typecheck: 'PASS — `tsc --noEmit` da API (binário direto) exit 0; `eslint` nos 5 arquivos exit 0.'
+  4_security_pii: 'PASS — PG02 em produção: varredura de TODAS as folhas string do payload contra os e-mails e os 8 últimos dígitos dos telefones da própria entrada: 0 ocorrências; 0 "@"; chaves de comprador `x:` + sha256 (66 caracteres); `tuplasClassificadas` sem `sellerName` preenchido no DG (0 distintos). O loader não seleciona nome do cliente de `manual_sales`.'
+  5_performance: 'PASS — sem chamada à Meta e sem fan-out por criativo (nenhum import de cliente Meta); leitura de planilha memoizada (o loader da 49.3 recebe o mesmo leitor); ad-level e nomes de anúncio em 2 consultas com `inArray`.'
+  6_regression: 'PASS — a única linha fora de arquivo novo é `export` em `resolveColumnIndexes` (diff de 1 linha); `computeSurveyForStage` inalterado, com snapshot gravado antes do export. Nenhum número do Resumão muda.'
+  7_docs: 'PASS — Dev Agent Record com as AUTO-DECISIONs, File List e Change Log completos. Uma correção de número para a pergunta 1 ao dono (abaixo: sem a "Alunos" o Loyola dá 13,92%, não 13,8%).'
+  8_api_contract: 'N/A — sem rota, sem migration, sem bump de `API_CONTRACT_VERSION` (AC12c).'
+
+rastreio_ac:
+  AC1: 'PASS — determinismo provado em produção (2 execuções, JSON idêntico); `razao` devolve null + motivo com denominador 0; entrada congelada no teste.'
+  AC2: 'PASS — identidade `linhasLidas − vazias − duplicadasRemovidas = respondentes` no PG02: 1.669 − 0 − 64 = 1.605; "mais recente" por dia e depois posição (mutação M02 do @dev morre).'
+  AC3: 'PASS — gate por `perguntasConfirmadas[stage]`; `faixa: null` explícito vira `aplicavel = false`; série histórica no PG04 (comparação PG02): faixa/renda/profissão = true.'
+  AC4: 'PASS no código — origem só por `classificador.classificar` injetado (o mesmo `ClassificadorInjetado` do loader da 49.3: `CLASSIFICADOR_VERSAO = "49.2-v2"` + `montarConfigClassificador`); `SEGMENTO_DE_QUALIFICACAO[canal]`; sem `PAID_*` (teste de superfície). PG02: segmentos 308/246/21/699/0/331 = 1.605; fechamento 40/1.565 = 1.605. Ressalva: o fio `sellerName` não tem teste (TEST-001).'
+  AC5: 'PASS — PG02 distribuição A97 B264 C463 D781; cobertura 1.212 ÷ 1.807 = 67,07% sobre as MESMAS chaves `compradoresCaptacao` da 49.3 (1.807/1.806 nos dois motores). PG04: semFaixa 13 mantido.'
+  AC6: 'PASS — taxa de resposta com os dois números na memória.'
+  AC7: 'PASS — denominador = compradores de captação (ingresso ∪ combo) do recorte. Ressalva de contrato: CONTRACT-001. O telefone no casamento do principal não tem teste (TEST-001).'
+  AC8: 'PASS — só `^\d{10,}$`; `semCriativo` 1.068 = 413 vazio + 655 rótulo/macro no PG02; nome cache > utm_term > Ad ID; proporção; 40/40 criativos com link (conta do projeto).'
+  AC9: 'PASS — IA × Humano PG02: 15,3% × 0,0% (skill 15,5% × 0%); `SEM_AD_LEVEL` no PG02; PG04 com 1.524 linhas de ad-level; `COPY_NAO_PAREADA` (mutação própria QA-M16 morre).'
+  AC10: 'PASS — e-mail ∪ telefone; `tipo` da base declarado; PG04: leads+compradores, retorno 172 ÷ 3.120 = 5,51%, já na base 182 ÷ 1.067 = 17,06%. A base de "leads" do PG02 inclui a planilha de venda cadastrada como `leads` (achado do QA na 49.3) — a 49.5 classifica.'
+  AC11: 'PASS — DB-first; `DADO_INDISPONIVEL` para falha de leitura (teste); conta pelo funil, senão a única ativa do projeto (desvio para o @po).'
+  AC12: 'PASS — tsc verde; diff de 1 linha em `survey-aggregation.ts`; check 8 N/A.'
+
+verificacao_producao:
+  ambiente: 'banco de produção com `default_transaction_read_only = on`; Google só leitura; loader + motor da branch (74af63a5); script do QA em scratchpad/qa494/conf.mts e pii.mts'
+  config_usada: 'DG; PG02 com as datas REAIS do perfil §1b (16/04, abertura 09/05, fim 27/05, downsell 03/06 → 13/06 — o @dev rodou sem o downsell, o que não mudou nenhum número); PG04 09/07, 01/08, 15/08, comparação PG02; `dimensaoDeCriativo = ia-humano`; perguntas confirmadas = faixa + as chaves reais da pesquisa.'
+  pg02: 'pesquisa 1.669 → 1.605 (−64); A+B 361 / 1.605 = 22,49%; D 781; compradores de captação 1.807/1.806 (= 49.3); cobertura e taxa de resposta 67,07%; casamento 1.260 e-mail / 35 telefone / 310 sem; IA 15,3% (366 resp.) · Humano 0,0% (59) · card 16,1% (112)'
+  pg04: 'pesquisa 699 → 604 (−95); A+B 246 / 604 = 40,73%; D 117; 13 sem faixa; compradores 1.067/1.064; cobertura 52,20%; taxa 53,23%'
+  alunos_pg02: 'As duas pesquisas da Captação Paga: "Pesquisa-Captação" (1.281 linhas → 1.272 e-mails) e "Pesquisa-Captação - Alunos" (388 → 356). 23 e-mails estão nas duas (a dedup atravessa as planilhas: 1.272 + 356 − 23 = 1.605). SEM a "Alunos": 1.272 respondentes, A+B 177 / 1.272 = 13,92% (skill 176 / 13,8%), D 744 (skill 745), cobertura 66,80%, IA 15,2% · Humano 0%. Só a "Alunos": 356 respondentes, A+B 52,25%, e só 9 deles são compradores de captação (0,50% dos 1.807). Ou seja: a "Alunos" quase não toca a cobertura e a taxa de resposta, mas leva o A+B de 13,9% para 22,5% e infla o Orgânico.'
+
+mutacoes_qa:
+  total: 18
+  mortas: 11
+  lista:
+    - 'QA-M1 principal casado só por e-mail (sem o telefone, AC7) — SOBREVIVEU → TEST-001'
+    - 'QA-M2 cobertura conta respondente sem faixa A→D — MORTA'
+    - 'QA-M3 comprador → respondente sem fallback por telefone — MORTA'
+    - 'QA-M4 criativos por n crescente — MORTA'
+    - 'QA-M5 link com o Ad ID de MENOR volume — SOBREVIVEU (o teste "maior volume" usa grupo de 1 Ad ID) → TEST-002'
+    - 'QA-M6 jaEmBaseAnterior.principal ÷ compradores de captação — MORTA'
+    - 'QA-M7 retornoDaBase conta o principal — MORTA'
+    - 'QA-M8 venda representativa prefere o principal à captação — SOBREVIVEU → TEST-002'
+    - 'QA-M9 ad-level sem o corte da janela — MORTA'
+    - 'QA-M10 data da pesquisa ignora `timestamp` do mapping — MORTA'
+    - 'QA-M11 sem a linha `semResposta` — MORTA'
+    - 'QA-M12 dedup por e-mail restrita a cada planilha (não atravessa a etapa) — SOBREVIVEU → TEST-001'
+    - 'QA-M13 conversão por faixa sem recortar a faixa — MORTA'
+    - 'QA-M14 pesquisa de etapa FORA da config entra (o teste só cobre a pesquisa sem etapa) — SOBREVIVEU → TEST-002'
+    - 'QA-M15 `sellerName: null` no call site do classificador — SOBREVIVEU → TEST-001'
+    - 'QA-M16 ressalva COPY_NAO_PAREADA some — MORTA'
+    - 'QA-M17 grupo de criativo com tipos distintos vira o primeiro tipo — SOBREVIVEU → TEST-002'
+    - 'QA-M18 série histórica sempre true — MORTA'
+  mutacoes_do_dev_rodadas_pelo_qa: '22/22 mortas (scratchpad/mutacoes-49-4.py, árvore limpa depois)'
+
+issues:
+  - id: TEST-001
+    severity: medium
+    category: tests
+    description: 'Três fios fixados por AC ou decisão não têm teste — a mutação que corta o ARGUMENTO no call site passa verde: (a) QA-M15, `sellerName` da venda casada não chega a `classificar` — é o caso Netão da R2-5 (só `sellerName` → `Sem track` + fechamento `closer`); o helper do teste aceita `sellerName`, mas nenhum caso o preenche; (b) QA-M1, `c.principal` só por e-mail — o AC7 manda casar e-mail → telefone; (c) QA-M12, a dedup por e-mail que atravessa as planilhas da etapa (AUTO-DECISION do @dev) — no PG02 são 23 e-mails nas duas pesquisas e é o cenário da pergunta 1 ao dono.'
+    recommendation: 'Três casos no `debriefing-audience-engine.test.ts`: venda casada só com `sellerName` (closerPorSellerName = true) → segmento `Sem track` + fechamento `closer`; comprador de captação cujo principal só casa pelo telefone → `comprouPrincipal` 1; mesmo e-mail em duas `PesquisaInput` da etapa → 1 respondente, a mais recente.'
+    owner: '@dev'
+    status: open
+
+  - id: TEST-002
+    severity: low
+    category: tests
+    description: 'Sobreviventes sem impacto medido: QA-M5 (Ad ID de maior volume no link — o teste com esse nome não tem grupo de 2 IDs), QA-M8 (prioridade da venda representativa: captação antes do principal), QA-M14 (pesquisa de etapa fora da config), QA-M17 (grupo com tipos distintos).'
+    recommendation: 'Casos de 1 linha cada quando a iteração de TEST-001 abrir o arquivo.'
+    owner: '@dev'
+    status: open
+
+  - id: REL-001
+    severity: low
+    category: reliability/tests
+    description: 'Com load average 13 (outro @dev na máquina), as duas suítes de loader sobre PGlite (49.4 e 49.3) falharam por `Hook timed out in 10000ms` no `beforeAll`; passam na rodada seguinte e isoladas. O timeout é o default do vitest.'
+    recommendation: 'Timeout explícito no `beforeAll` do PGlite (ex.: 60 s) nas duas suítes.'
+    owner: '@dev'
+    status: open
+
+  - id: CONTRACT-001
+    severity: low
+    category: contract
+    description: 'AC7 pede a "mesma definição" de `conversaoIngressoPrincipal` da 49.3. A 49.3 divide VENDAS do principal (71 no PG02) por compradores de captação; a 49.4, por recorte, conta PESSOAS (comprador de captação do recorte com venda do principal) — e só os que responderam a pesquisa entram num recorte. No PG02 a Σ dos numeradores por faixa e por segmento é 23. A memória de cada linha declara a definição, então não é erro, mas a 49.5 não pode esperar que os recortes fechem com o headline da 49.3.'
+    recommendation: '@po registrar na 49.5 (F3/F6) que Σ recortes ≠ headline por definição (pessoa × venda, e só respondentes).'
+    owner: '@po (49.5)'
+    status: open
+
+pendencias_do_dono:
+  - id: DEC-OWNER-1
+    pergunta: 'A "Pesquisa-Captação - Alunos" do PG02 entra na qualificação do público?'
+    com: '1.605 respondentes; A+B 361 / 1.605 = 22,49%; D 781; cobertura 67,07%'
+    sem: '1.272 respondentes; A+B 177 / 1.272 = 13,92% (a skill dá 176 / 13,8%); D 744; cobertura 66,80%'
+    nota: 'A "Alunos" tem 356 respondentes, A+B 52,25%, e só 9 são compradores de captação. O QA não decide.'
+  - id: DEC-OWNER-2
+    pergunta: '"Série histórica" é só o lançamento de comparação (como está), ou a config precisa de uma lista de lançamentos (o perfil DG §7 fala nos três)?'
+
+pendencias_po:
+  - id: PO-RATIFY-1
+    item: 'Fallback da conta do Ads Manager: `funnels.metaAccountId` → a ÚNICA conta ativa de `meta_ads_account_projects`; duas ou mais → `null` + `contaDeAnuncios: "ambigua"`. O texto do AC11 cita só `funnels.metaAccountId`; em produção 0/19 funis têm conta, então sem o fallback todo link sairia `null`. No DG a conta resolvida é a do link da skill.'
+
+dependencias:
+  - 'REL-001 da 49.3 (aba ligada a duas etapas lida 2×) é herdada: a 49.4 consome as vendas do loader da 49.3. Quando a 49.3 corrigir, o diferencial `compradoresCaptacao` desta story acusa qualquer divergência.'
+
+top_issues:
+  - id: TEST-001
+    severity: medium
+    finding: 'Três fios sem teste: `sellerName` → classificador (R2-5), principal pelo telefone (AC7), dedup entre as pesquisas da etapa (caso "Alunos").'
+    suggested_action: '@dev: 3 testes curtos.'
+  - id: REL-001
+    severity: low
+    finding: '`beforeAll` do PGlite estoura 10 s sob carga.'
+    suggested_action: '@dev: timeout explícito.'
+
+waiver: { active: false }
