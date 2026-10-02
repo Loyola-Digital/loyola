@@ -110,7 +110,7 @@ interface ColumnIndexes {
   /** -1 quando a planilha não tem coluna de e-mail identificável. */
   email: number;
 }
-function resolveColumnIndexes(headers: string[], mapping: Mapping): { indexes: ColumnIndexes; usedFallback: boolean } {
+export function resolveColumnIndexes(headers: string[], mapping: Mapping): { indexes: ColumnIndexes; usedFallback: boolean } {
   const questions = new Map<string, number>();
   const questionLabels = new Map<string, string>();
   let usedFallback = false;
