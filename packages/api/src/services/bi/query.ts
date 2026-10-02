@@ -236,6 +236,63 @@ const FONTES: Partial<Record<EntidadeDoCatalogo, Fonte>> = {
   },
 
   /**
+   * De onde vieram os LEADS, dia a dia.
+   *
+   * ## Por que não é `aplicacoes`
+   *
+   * `aplicacoes` lê, ao vivo, as planilhas do tipo **Aplicações** — o
+   * formulário de aplicação comercial. A captação de lead mora em planilha do
+   * tipo **Leads**, que o BI inteiro não enxergava: perguntar "a origem dos
+   * leads de 01/10" no `bbe_churrasco_perpétuo` devolvia vazio enquanto a
+   * planilha conectada tinha quatro cadastros naquele dia.
+   *
+   * ## De onde sai
+   *
+   * Do cache `leads-origin`, que o sync de origem já grava por etapa — a mesma
+   * fonte dos splits Pago/Orgânico do resto do app, e sem nenhum dado pessoal:
+   * o que vai para o banco é contagem por canal e por dia, nunca o lead.
+   *
+   * Conta LINHA de cadastro, não pessoa única: o dedup do sync é global ao
+   * range e não se reparte por dia sem mentir — quem se cadastra terça e quinta
+   * é uma pessoa no total e dois cadastros nos dois dias.
+   */
+  leads: {
+    tabela: sql`(
+      SELECT
+        pmc.project_id AS project_id,
+        pmc.key        AS stage_id,
+        (d->>'date')   AS dia,
+        (d->>'canal')  AS canal,
+        (d->>'origem') AS origem,
+        COALESCE((d->>'leads')::numeric, 0) AS leads
+      FROM public_metrics_cache pmc,
+           LATERAL jsonb_array_elements(pmc.payload->'porCanalDia') d
+      WHERE pmc.scope = 'leads-origin'
+        AND jsonb_typeof(pmc.payload->'porCanalDia') = 'array'
+    ) AS leads`,
+    escopo: (ids) =>
+      sql`leads.project_id IN (${sql.join(ids.map((i) => sql`${i}::uuid`), sql`, `)})`,
+    campos: {
+      "leads.date": sql`leads.dia`,
+      "leads.canal": sql`leads.canal`,
+      "leads.origem": sql`leads.origem`,
+      "leads.projeto": sql`(SELECT p.name FROM projects p WHERE p.id = leads.project_id)`,
+      "leads.funil": sql`(
+        SELECT f.name FROM funnel_stages fs
+          JOIN funnels f ON f.id = fs.funnel_id
+         WHERE fs.id = leads.stage_id::uuid
+      )`,
+      "leads.etapa": sql`(
+        SELECT fs.name FROM funnel_stages fs WHERE fs.id = leads.stage_id::uuid
+      )`,
+    },
+    metricas: {
+      "leads.count": sql`COALESCE(SUM(leads.leads), 0)`,
+    },
+    derivadas: {},
+  },
+
+  /**
    * O que cada PRODUTO vendeu, dia a dia.
    *
    * ## Por que é uma entidade e não uma quebra do faturamento
@@ -388,6 +445,7 @@ const ROTULO_DA_ENTIDADE: Record<EntidadeDoCatalogo, string> = {
   vendas: "Vendas lançadas",
   faturamento: "Faturamento",
   produtos: "Produtos vendidos",
+  leads: "Leads captados",
   aplicacoes: "Aplicações",
   grupos: "Grupos de WhatsApp",
 };
@@ -398,6 +456,7 @@ export const CAMPO_DE_DATA: Record<EntidadeDoCatalogo, string> = {
   vendas: "vendas.date",
   faturamento: "faturamento.date",
   produtos: "produtos.date",
+  leads: "leads.date",
   aplicacoes: "aplicacoes.date",
   grupos: "grupos.date",
 };

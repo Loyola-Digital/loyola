@@ -52,6 +52,27 @@ describe("entidades do catálogo x do validador", () => {
   });
 });
 
+describe("catálogo de leads", () => {
+  const daEntidade = CAMPOS.filter((c) => c.entity === "leads");
+
+  it("tem CANAL e origem — é a pergunta que mandava o agente para a entidade errada", () => {
+    const chaves = daEntidade.map((c) => c.key);
+    expect(chaves).toContain("leads.canal");
+    expect(chaves).toContain("leads.origem");
+    expect(chaves).toContain("leads.count");
+  });
+
+  it("a descrição avisa que conta CADASTRO, não pessoa única", () => {
+    const count = daEntidade.find((c) => c.key === "leads.count");
+    expect(count?.description.toLowerCase()).toContain("única");
+  });
+
+  it("`aplicacoes` manda quem procura origem de lead para cá", () => {
+    const aplicacoes = ENTIDADES.find((e) => e.key === "aplicacoes");
+    expect(aplicacoes?.descricao).toContain("`leads`");
+  });
+});
+
 describe("catálogo de produtos", () => {
   const daEntidade = CAMPOS.filter((c) => c.entity === "produtos");
 
