@@ -17,10 +17,12 @@ import {
   dataBrt,
   deduplicarVendas,
   diasEntre,
+  ehManual,
   ehTmb,
   fatorDoImposto,
   filtrarPorStatus,
   hashDeEmail,
+  janelaDoDebriefing,
   lerValorMonetario,
   normalizarTelefone,
   resolverColunaPrecoDebriefing,
@@ -116,12 +118,10 @@ describe("AC6 — imposto uma vez, regra do Loyola (nunca × 1,13)", () => {
     expect(() => fatorDoImposto(-0.1)).toThrow(RangeError);
   });
 
-  it("nenhum 1,13 / 1.13 no CÓDIGO do motor (comentários que proíbem o fator não contam)", () => {
+  it("nenhum 1,13 / 1.13 nos arquivos do motor — nem em comentário (CONTRACT-003: a 49.5 AC9 lê como texto)", () => {
     for (const f of ["debriefing-hygiene.ts", "debriefing-money-time-engine.ts", "debriefing-money-time-loader.ts"]) {
-      const src = readFileSync(join(AQUI, "..", "services", f), "utf8")
-        .replace(/\/\*[\s\S]*?\*\//g, "")
-        .replace(/^\s*\/\/.*$/gm, "");
-      expect(src, f).not.toMatch(/\b1[.,]13\b/);
+      const src = readFileSync(join(AQUI, "..", "services", f), "utf8");
+      expect(src, f).not.toMatch(/(?<!\d)1[.,]13(?!\d)/);
     }
   });
 });
@@ -315,5 +315,53 @@ describe("AC4 — TMB", () => {
     expect(ehTmb(" TMB ")).toBe(true);
     expect(ehTmb("main_product")).toBe(false);
     expect(textoTmb(70, 3)).toBe("70 vendas, 3 via TMB (valor não considerado)");
+  });
+});
+
+describe("decisão 2A — janelaDoDebriefing: inicioCaptacao → maior fim", () => {
+  const base = {
+    inicioCaptacao: "2026-04-17",
+    fimCarrinho: "2026-05-15",
+    reabertura: { houve: false } as const,
+    downsell: { houve: false } as const,
+  };
+
+  it("só carrinho: fim do carrinho", () => {
+    expect(janelaDoDebriefing(base)).toMatchObject({ inicio: "2026-04-17", fim: "2026-05-15", fimPor: "fimCarrinho" });
+  });
+
+  it("downsell depois do carrinho estica; reabertura depois do downsell estica mais", () => {
+    const ds = { houve: true as const, fim: "2026-05-18" };
+    expect(janelaDoDebriefing({ ...base, downsell: ds })).toMatchObject({ fim: "2026-05-18", fimPor: "downsell.fim" });
+    expect(
+      janelaDoDebriefing({ ...base, downsell: ds, reabertura: { houve: true, fim: "2026-05-22" } }),
+    ).toMatchObject({ fim: "2026-05-22", fimPor: "reabertura.fim" });
+    // ordem não importa: downsell depois da reabertura
+    expect(
+      janelaDoDebriefing({ ...base, downsell: { houve: true, fim: "2026-05-30" }, reabertura: { houve: true, fim: "2026-05-22" } }),
+    ).toMatchObject({ fim: "2026-05-30", fimPor: "downsell.fim" });
+  });
+
+  it("extra que acaba antes do carrinho não encurta; empate fica com o carrinho", () => {
+    expect(janelaDoDebriefing({ ...base, downsell: { houve: true, fim: "2026-05-10" } })).toMatchObject({
+      fim: "2026-05-15",
+      fimPor: "fimCarrinho",
+    });
+    expect(janelaDoDebriefing({ ...base, reabertura: { houve: true, fim: "2026-05-15" } }).fimPor).toBe("fimCarrinho");
+  });
+
+  it("a regra vai por extenso e data inválida lança (nunca janela inventada)", () => {
+    expect(janelaDoDebriefing(base).regra).toMatch(/inicioCaptacao.*maior entre fimCarrinho, reabertura\.fim e downsell\.fim/);
+    expect(() => janelaDoDebriefing({ ...base, fimCarrinho: "15/05/2026" })).toThrow(RangeError);
+    expect(() => janelaDoDebriefing({ ...base, inicioCaptacao: "2026-06-01" })).toThrow(RangeError);
+  });
+});
+
+describe("decisão 3A — plataforma manual", () => {
+  it("ehManual só para a plataforma 'manual'; manual não é TMB", () => {
+    expect(ehManual("manual")).toBe(true);
+    expect(ehManual(" Manual ")).toBe(true);
+    expect(ehManual("main_product")).toBe(false);
+    expect(ehTmb("manual")).toBe(false);
   });
 });

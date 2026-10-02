@@ -17,6 +17,14 @@
  *   que não são de venda, filtradas pela etapa) — mesmo critério de
  *   `fontesDeOrigem` em `routes/stage-sales-journey.ts`, replicado aqui sem
  *   mudar a rota;
+ * - **vendas manuais** (`manual_sales`, decisão 3A): as da etapa, sem as
+ *   reembolsadas (`refunded_at`), com o valor BRUTO (`value`) — a mesma leitura
+ *   de `computeSalesDailyForStage` (`sales-daily-sync.ts`), replicada aqui sem
+ *   mudar o serviço. Viram uma "planilha" a mais da etapa, de plataforma
+ *   `"manual"`; o `seller_name` vai como `sellerName` (Closer do Netão). Nome,
+ *   CPF e endereço do cliente nunca são lidos;
+ * - **janela** (decisão 2A): `janelaDoDebriefing(config.datasChave)` — a mesma
+ *   que o motor usa para cortar vendas e mídia;
  * - **nome da campanha das UTMs** (decisão 4): `utm_campaign` (id) → nome em
  *   `funnel_stages.campaigns` e, na falta, em `meta_ad_insights_daily`;
  * - **config do classificador** (`montarConfigClassificador`, reusada pela
@@ -28,12 +36,13 @@
  * `DADO_INDISPONIVEL` — nunca vira lista vazia ("erro virando ausência na tela").
  */
 
-import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 import { CLASSIFICADOR_VERSAO, classificarOrigem, type ConfigClassificador, type Utm } from "@loyola-x/shared";
 import {
   funnelSpreadsheets,
   funnelStages,
   funnelSurveys,
+  manualSales,
   metaAdInsightsDaily,
   metaCampaignInsightsDaily,
   sellerAliases,
@@ -46,7 +55,12 @@ import { resolveSalesSheetsForStage } from "./sales-daily-sync.js";
 import type { DebriefingConfigLancamento } from "./debriefing-config.js";
 import { TIPOS_DE_PRODUTO, productKey, tipoDoProduto, type TipoDeProduto } from "../utils/produto.js";
 import { tipoPadraoDaEtapa } from "../utils/order-bump.js";
-import { resolverColunaPrecoDebriefing } from "./debriefing-hygiene.js";
+import {
+  PLATAFORMA_MANUAL,
+  janelaDoDebriefing,
+  resolverColunaPrecoDebriefing,
+  type JanelaDoDebriefing,
+} from "./debriefing-hygiene.js";
 import type {
   ClassificadorInjetado,
   DebriefingMoneyTimeInput,
@@ -287,6 +301,80 @@ export function lerFonteDeLead(f: FonteDeLeadLida): { leads: LeadInput[]; semIde
   return { leads, semIdentificador: false };
 }
 
+/** Uma linha de `manual_sales` como o loader a lê (sem nome, CPF nem endereço do cliente). */
+export interface VendaManualLida {
+  id: string;
+  /** `numeric` do Postgres (chega string). */
+  value: string | number;
+  product: string | null;
+  customerEmail: string | null;
+  customerPhone: string | null;
+  sellerName: string | null;
+  saleDate: Date | string;
+}
+
+/**
+ * `numeric(12,2)` do banco → texto pt-BR sem ambiguidade (`"4000.00"` →
+ * `"4000,00"`), para o motor ler pelo parser único como lê toda célula. Sem
+ * isto, uma escala de 3 casas (`"4.000"`) seria lida como milhar.
+ */
+function numericComoCelula(v: string | number): string | null {
+  const n = typeof v === "number" ? v : Number.parseFloat(v);
+  return Number.isFinite(n) ? n.toFixed(2).replace(".", ",") : null;
+}
+
+/**
+ * As vendas manuais de UMA etapa → uma "planilha" a mais para o motor. Pura.
+ *
+ * Plataforma `"manual"` (o motor marca `fonte: "manual"`); sem coluna de status
+ * (a reembolsada já ficou fora na leitura); o ID é o da linha em `manual_sales`
+ * (nunca colapsa na camada 1); o tipo segue a regra das planilhas:
+ * `product_types` quando o produto consta lá, senão o default da etapa — o
+ * mesmo recorte do painel (`subtypeDasVendasManuais`: etapa de Vendas =
+ * produto principal; as demais = ingresso).
+ */
+export function lerVendasManuais(
+  stageId: string,
+  stageType: string | null,
+  linhas: readonly VendaManualLida[],
+  tiposDeProduto: Record<string, TipoDeProduto>,
+): { planilha: PlanilhaDeVendaInput; vendas: VendaCruaInput[] } {
+  const planilhaId = `${stageId}:${PLATAFORMA_MANUAL}`;
+  const vendas = linhas.map((m, i): VendaCruaInput => {
+    const produto = (m.product ?? "").trim() || null;
+    const classificado = !!produto && Object.prototype.hasOwnProperty.call(tiposDeProduto, productKey(produto));
+    const dia = m.saleDate instanceof Date ? m.saleDate.toISOString() : String(m.saleDate ?? "").trim() || null;
+    return {
+      planilhaId,
+      linha: i + 1,
+      idDaVendaCru: m.id,
+      produto,
+      tipo: classificado ? tipoDoProduto(produto, tiposDeProduto) : tipoPadraoDaEtapa(stageType),
+      tipoClassificado: classificado,
+      valorBrutoCru: numericComoCelula(m.value),
+      moeda: null,
+      statusCru: null,
+      emailCru: (m.customerEmail ?? "").trim() || null,
+      telefoneCru: (m.customerPhone ?? "").trim() || null,
+      dataVendaCru: dia,
+      utm: {},
+      sellerName: (m.sellerName ?? "").trim() || null,
+    };
+  });
+  return {
+    planilha: {
+      planilhaId,
+      stageId,
+      nome: "Vendas manuais",
+      plataforma: PLATAFORMA_MANUAL,
+      temColunaStatus: false,
+      temColunaId: true,
+      temColunaProduto: true,
+    },
+    vendas,
+  };
+}
+
 /** Preenche `Utm.campaignName` a partir do id em `utm_campaign`. Não muta a entrada. */
 export function comNomeDeCampanha(utm: Utm, nomes: ReadonlyMap<string, string>): Utm {
   const id = (utm.campaign ?? "").trim();
@@ -354,12 +442,15 @@ export async function montarConfigClassificador(
 }
 
 export interface LoadDebriefingMoneyTimeParams {
+  /** A janela sai de `config.datasChave` (`janelaDoDebriefing`, decisão 2A) — não é parâmetro. */
   config: DebriefingConfigLancamento;
-  /** Janela do lançamento (BRT, inclusive) — a mídia é lida nela. */
-  periodo: { inicio: string; fim: string };
 }
 
 export interface DiagnosticoDoLoader {
+  /** Decisão 2A: a janela em que a mídia foi lida (a mesma que o motor corta). */
+  janela: JanelaDoDebriefing;
+  /** Decisão 3A: vendas manuais lidas por etapa (reembolsadas já fora). */
+  vendasManuais: { stageId: string; linhas: number }[];
   planilhasDeVenda: { planilhaId: string; stageId: string; nome: string; plataforma: string; linhas: number }[];
   fontesDeLead: { label: string; linhas: number; semIdentificador: boolean }[];
   precoMappingDivergente: string[];
@@ -394,7 +485,8 @@ export async function loadDebriefingMoneyTimeInput(
   params: LoadDebriefingMoneyTimeParams,
   deps: { lerPlanilha?: LerPlanilha } = {},
 ): Promise<DebriefingMoneyTimeInputCarregado> {
-  const { config, periodo } = params;
+  const { config } = params;
+  const janela = janelaDoDebriefing(config.datasChave);
   const lerPlanilha: LerPlanilha = deps.lerPlanilha ?? readSheetData;
 
   // ---- Etapas do funil (campanhas vinculadas + tipo) ----
@@ -439,6 +531,8 @@ export async function loadDebriefingMoneyTimeInput(
   const planilhas: PlanilhaDeVendaInput[] = [];
   const vendas: VendaCruaInput[] = [];
   const diagnostico: DiagnosticoDoLoader = {
+    janela,
+    vendasManuais: [],
     planilhasDeVenda: [],
     fontesDeLead: [],
     precoMappingDivergente: [],
@@ -472,6 +566,35 @@ export async function loadDebriefingMoneyTimeInput(
         linhas: lida.vendas.length,
       });
     }
+  }
+
+  // ---- Vendas manuais (decisão 3A): as da etapa, sem as reembolsadas ----
+  const manuais = await db
+    .select({
+      id: manualSales.id,
+      stageId: manualSales.stageId,
+      value: manualSales.value,
+      product: manualSales.product,
+      customerEmail: manualSales.customerEmail,
+      customerPhone: manualSales.customerPhone,
+      sellerName: manualSales.sellerName,
+      saleDate: manualSales.saleDate,
+    })
+    .from(manualSales)
+    .where(and(inArray(manualSales.stageId, idsDasEtapas), isNull(manualSales.refundedAt)))
+    .orderBy(asc(manualSales.saleDate), asc(manualSales.id));
+  for (const etapa of config.etapas) {
+    const manuaisDaEtapa = manuais.filter((m) => m.stageId === etapa.stageId);
+    if (manuaisDaEtapa.length === 0) continue;
+    const lida = lerVendasManuais(
+      etapa.stageId,
+      etapaPorId.get(etapa.stageId)?.stageType ?? null,
+      manuaisDaEtapa,
+      tiposPorEtapa.get(etapa.stageId) ?? {},
+    );
+    planilhas.push(lida.planilha);
+    vendas.push(...lida.vendas);
+    diagnostico.vendasManuais.push({ stageId: etapa.stageId, linhas: lida.vendas.length });
   }
 
   // ---- Leads (fontes da jornada, por etapa do lançamento) ----
@@ -558,8 +681,8 @@ export async function loadDebriefingMoneyTimeInput(
         and(
           eq(metaCampaignInsightsDaily.projectId, config.projectId),
           inArray(metaCampaignInsightsDaily.campaignId, idsCampanha),
-          gte(metaCampaignInsightsDaily.dateStart, periodo.inicio),
-          lte(metaCampaignInsightsDaily.dateStart, periodo.fim),
+          gte(metaCampaignInsightsDaily.dateStart, janela.inicio),
+          lte(metaCampaignInsightsDaily.dateStart, janela.fim),
         ),
       );
     for (const l of linhas) {
@@ -612,7 +735,6 @@ export async function loadDebriefingMoneyTimeInput(
 
   return {
     config: { datasChave: config.datasChave, etapas: config.etapas, imposto: config.imposto },
-    periodo: { ...periodo },
     planilhas,
     vendas: vendasComNome,
     leads: leadsComNome,

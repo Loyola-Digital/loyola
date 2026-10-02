@@ -29,7 +29,11 @@
  *   pelas telas da jornada e não é alterado aqui (story própria).
  * - **Imposto** (`aplicarImposto`): gross-up "por dentro" uma única vez, com o
  *   mesmo corte de data de `applyMetaTax` (antes de 2026-01-01 não há gross-up,
- *   com ou sem override — resolução 6). Nunca `× 1,13`.
+ *   com ou sem override — resolução 6). Nunca o fator fixo da skill.
+ * - **Janela** (`janelaDoDebriefing`, decisão 2A): de `inicioCaptacao` até o
+ *   maior entre o fim do carrinho, da reabertura e do downsell.
+ * - **Vendas manuais** (`ehManual`, decisão 3A): `manual_sales` entram como
+ *   venda da etapa, com a origem marcada.
  *
  * Nada aqui lê banco, planilha, relógio ou `Math.random`.
  */
@@ -120,7 +124,7 @@ export function resolverColunaPrecoDebriefing(
 }
 
 // ---------------------------------------------------------------------------
-// Imposto (decisão 2 do dono: regra do Loyola, nunca × 1,13)
+// Imposto (decisão 2 do dono: regra do Loyola, nunca o fator fixo da skill)
 // ---------------------------------------------------------------------------
 
 /**
@@ -221,6 +225,66 @@ export function somarDias(dia: string, n: number): string {
   const [a, m, d] = dia.split("-").map(Number) as [number, number, number];
   const x = new Date(Date.UTC(a, m - 1, d + n));
   return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, "0")}-${String(x.getUTCDate()).padStart(2, "0")}`;
+}
+
+// ---------------------------------------------------------------------------
+// Janela do debriefing (decisão 2A do dono, 2026-10-02)
+// ---------------------------------------------------------------------------
+
+/** Qual data fechou a janela. */
+export type FimDaJanelaPor = "fimCarrinho" | "reabertura.fim" | "downsell.fim";
+
+export interface JanelaDoDebriefing {
+  /** `datasChave.inicioCaptacao` (BRT, inclusive). */
+  inicio: string;
+  /** O maior entre `fimCarrinho`, `reabertura.fim` e `downsell.fim` (BRT, inclusive). */
+  fim: string;
+  fimPor: FimDaJanelaPor;
+  regra: string;
+}
+
+export const REGRA_DA_JANELA =
+  "de inicioCaptacao até o maior entre fimCarrinho, reabertura.fim e downsell.fim (decisão 2A do dono, 2026-10-02) — corta vendas e mídia";
+
+const RE_YMD = /^\d{4}-\d{2}-\d{2}$/;
+
+/** As datas da config da 49.1 que fecham a janela. */
+export interface DatasDaJanela {
+  inicioCaptacao: string;
+  fimCarrinho: string;
+  reabertura: { houve: false } | { houve: true; fim: string };
+  downsell: { houve: false } | { houve: true; fim: string };
+}
+
+/**
+ * A janela que corta vendas e mídia do debriefing — UMA regra, usada pelo
+ * loader (leitura da mídia) e pelo motor (corte de vendas e mídia): de
+ * `inicioCaptacao` até o MAIOR entre o fim do carrinho, o da reabertura e o do
+ * downsell (as duas últimas só quando houve). Empate fica com o fim do
+ * carrinho. Data fora de `YYYY-MM-DD` ou fim antes do início lança — janela
+ * inventada seria número errado sem aviso.
+ */
+export function janelaDoDebriefing(d: DatasDaJanela): JanelaDoDebriefing {
+  let fim = d.fimCarrinho;
+  let fimPor: FimDaJanelaPor = "fimCarrinho";
+  if (d.reabertura.houve && d.reabertura.fim > fim) {
+    fim = d.reabertura.fim;
+    fimPor = "reabertura.fim";
+  }
+  if (d.downsell.houve && d.downsell.fim > fim) {
+    fim = d.downsell.fim;
+    fimPor = "downsell.fim";
+  }
+  for (const [campo, v] of [
+    ["inicioCaptacao", d.inicioCaptacao],
+    [fimPor, fim],
+  ] as const) {
+    if (!RE_YMD.test(v ?? "")) throw new RangeError(`janelaDoDebriefing: ${campo} não é YYYY-MM-DD: ${String(v)}`);
+  }
+  if (fim < d.inicioCaptacao) {
+    throw new RangeError(`janelaDoDebriefing: fim (${fim}, ${fimPor}) antes de inicioCaptacao (${d.inicioCaptacao})`);
+  }
+  return { inicio: d.inicioCaptacao, fim, fimPor, regra: REGRA_DA_JANELA };
 }
 
 // ---------------------------------------------------------------------------
@@ -527,3 +591,22 @@ export function ehTmb(plataforma: string | null | undefined): boolean {
 export function textoTmb(vendas: number, viaTmb: number): string {
   return `${vendas} vendas, ${viaTmb} via TMB (valor não considerado)`;
 }
+
+// ---------------------------------------------------------------------------
+// Vendas manuais (decisão 3A do dono, 2026-10-02)
+// ---------------------------------------------------------------------------
+
+/**
+ * Plataforma das vendas lançadas à mão (`manual_sales`). É o mesmo rótulo que
+ * `sales-daily-sync.ts` dá a elas (`plataforma: "manual"`). O loader as entrega
+ * como uma "planilha" a mais da etapa, com esta plataforma; o motor marca a
+ * origem `fonte: "manual"` na auditoria a partir daqui.
+ */
+export const PLATAFORMA_MANUAL = "manual";
+
+export function ehManual(plataforma: string | null | undefined): boolean {
+  return (plataforma ?? "").trim().toLowerCase() === PLATAFORMA_MANUAL;
+}
+
+/** De onde veio a linha de venda — para a auditoria (3A). */
+export type FonteDaVenda = "planilha" | "manual";
