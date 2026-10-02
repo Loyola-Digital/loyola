@@ -5,7 +5,7 @@
 // Current implementation: porUtmMedium and porUtmTerm are basic aggregates - need refactor to fetch Meta entities and group by name
 
 import { z } from "zod";
-import { eq, and, inArray, gte, sql } from "drizzle-orm";
+import { eq, and, inArray, gte, isNull, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   stageSalesSpreadsheets,
@@ -26,6 +26,7 @@ import { ingressosDoEvento } from "../services/kiwify-event-tickets.js";
 // Story 41.12 — camada 2 (mesma pessoa + mesmo produto conta uma vez), decidida
 // na planilha inteira, antes do recorte de `days`.
 import {
+  camada2ValeNaEtapa,
   decidirCamada2DasPlanilhas,
   refDaLinha,
   refDaManual,
@@ -424,7 +425,8 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         const [{ n } = { n: 0 }] = await fastify.db
           .select({ n: sql<number>`count(*)::int` })
           .from(manualSales)
-          .where(eq(manualSales.stageId, params.data.stageId));
+          // REL-001 (41.12): reembolsada não conta — mesmo critério da réplica.
+          .where(and(eq(manualSales.stageId, params.data.stageId), isNull(manualSales.refundedAt)));
         if (n === 0) return { ...EMPTY_RESPONSE, semDados: true };
       }
 
@@ -668,7 +670,9 @@ export default fp(async function stageSalesDataRoutes(fastify) {
 
       // Story 41.12 — camada 2. As vendas manuais entram no universo (depois das
       // planilhas: a planilha vence por vir antes) — todas as da etapa, sem o
-      // recorte de `days`, pela mesma razão das linhas da planilha.
+      // recorte de `days`, pela mesma razão das linhas da planilha. A manual
+      // reembolsada fica fora (REL-001), como na réplica `sales-daily-sync`:
+      // senão ela ocupava a vaga só no card.
       const incluiManuais = deveIncluirVendasManuais(stage.stageType, requestedSubtypes);
       const manuaisDaEtapa = incluiManuais
         ? await fastify.db
@@ -680,7 +684,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
               product: manualSales.product,
             })
             .from(manualSales)
-            .where(eq(manualSales.stageId, params.data.stageId))
+            .where(and(eq(manualSales.stageId, params.data.stageId), isNull(manualSales.refundedAt)))
         : [];
       const decisaoCamada2 = decidirCamada2DasPlanilhas(
         planilhasParaCamada2,
@@ -692,6 +696,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           valor: Number(m.value) || 0,
           saleDate: m.saleDate ? new Date(m.saleDate) : null,
         })),
+        { valeNaEtapa: camada2ValeNaEtapa(stage.stageType) },
       );
       for (const entry of emailMap.values()) {
         if (decisaoCamada2.removidas.has(entry.ref)) entry.recompra = true;
@@ -838,13 +843,16 @@ export default fp(async function stageSalesDataRoutes(fastify) {
               sellerName: manualSales.sellerName,
             })
             .from(manualSales)
+            // REL-001 (41.12): reembolsada não conta — o mesmo critério do
+            // universo da camada 2 acima e da réplica `sales-daily-sync`.
             .where(
               manualCutoff
                 ? and(
                     eq(manualSales.stageId, params.data.stageId),
+                    isNull(manualSales.refundedAt),
                     gte(manualSales.saleDate, manualCutoff),
                   )
-                : eq(manualSales.stageId, params.data.stageId),
+                : and(eq(manualSales.stageId, params.data.stageId), isNull(manualSales.refundedAt)),
             )
         : [];
       // Mesma regra para a venda manual: quem já comprou pela planilha (ou já
@@ -1637,6 +1645,8 @@ export default fp(async function stageSalesDataRoutes(fastify) {
             mapping: l.mapping,
           })),
         parseNumber,
+        [],
+        { valeNaEtapa: camada2ValeNaEtapa(stage.stageType) },
       );
 
       for (const { spreadsheet, headers, rows, mapping } of lidas) {

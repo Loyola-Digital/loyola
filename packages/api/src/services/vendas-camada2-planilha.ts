@@ -35,6 +35,28 @@
 import { classifyRefundStatus, isRefundBucket } from "./sales-status.js";
 import { deduplicarPorPessoaEProduto } from "../utils/dedup-pessoa-produto.js";
 
+/**
+ * PONTO ÚNICO do escopo da camada 2 por tipo de etapa (Story 41.12).
+ *
+ * Pendente com o dono (gate da parte A): se a regra vale nas etapas de Vendas
+ * (`sales` — a recompra do principal pode ser 2ª matrícula/renovação, OWN-003)
+ * e na captação de evento presencial (`event_capture` — a 2ª compra do mesmo
+ * ingresso pode ser para outra pessoa, OWN-002). Até a resposta, a regra vale em
+ * todas as etapas de lançamento: o conjunto está vazio.
+ *
+ * Tirar um tipo de etapa da regra = acrescentá-lo aqui. As quatro leituras de
+ * lançamento — card (`sales-data`), gráfico diário (`sales-data-daily`),
+ * réplica (`sales-daily-sync`) e Resumão (`launch-report-loader`) — consultam
+ * `camada2ValeNaEtapa` e obedecem juntas. O Debriefing (49.3) não passa por
+ * aqui: a regra dele é a da skill e vale em toda etapa.
+ */
+export const ETAPAS_SEM_CAMADA2: ReadonlySet<string> = new Set<string>();
+
+/** `true` = a camada 2 age nas vendas desta etapa. Ver `ETAPAS_SEM_CAMADA2`. */
+export function camada2ValeNaEtapa(stageType: string | null | undefined): boolean {
+  return !stageType || !ETAPAS_SEM_CAMADA2.has(stageType);
+}
+
 export interface PlanilhaParaCamada2 {
   /** Identificador estável da planilha no request (o `id` do vínculo). */
   chave: string;
@@ -83,6 +105,8 @@ export interface DecisaoCamada2 {
   removidas: Set<string>;
   /** Planilhas lidas sem `productName` mapeado (a camada 2 não age nelas). */
   planilhasSemProduto: string[];
+  /** `true` = o tipo da etapa está fora da regra (`camada2ValeNaEtapa`). */
+  naoValeNaEtapa?: boolean;
 }
 
 /** Ref de uma linha de planilha — a mesma que as rotas guardam ao ler a linha. */
@@ -100,13 +124,18 @@ export function refDaManual(id: string): string {
  * linhas são recompra do mesmo produto pela mesma pessoa.
  *
  * Pura. `parseValor` é o parser da rota que chama — o universo usa a mesma
- * leitura de valor que o card soma.
+ * leitura de valor que o card soma. `opcoes.valeNaEtapa === false` (o
+ * `camada2ValeNaEtapa` da etapa) = nada sai.
  */
 export function decidirCamada2DasPlanilhas(
   planilhas: readonly PlanilhaParaCamada2[],
   parseValor: (celula: string | undefined) => number,
   manuais: readonly VendaManualParaCamada2[] = [],
+  opcoes: { valeNaEtapa?: boolean } = {},
 ): DecisaoCamada2 {
+  if (opcoes.valeNaEtapa === false) {
+    return { removidas: new Set(), planilhasSemProduto: [], naoValeNaEtapa: true };
+  }
   const col = (headers: readonly string[], nome: string | undefined) =>
     nome ? headers.indexOf(nome) : -1;
 
@@ -211,6 +240,13 @@ export function resumoDedupPessoaProduto(
   totalDePlanilhas: number,
   removidasNoPeriodo: { linhas: number; valor: number },
 ): DedupPessoaProduto {
+  if (decisao.naoValeNaEtapa) {
+    return {
+      aplicada: false,
+      removidas: { linhas: 0, valor: 0 },
+      naoAplicadaMotivo: "a regra não vale neste tipo de etapa",
+    };
+  }
   const sem = decisao.planilhasSemProduto;
   const aplicada = sem.length === 0 || sem.length < totalDePlanilhas;
   return {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { linhaDedupPessoaProduto } from "../dedup-pessoa-produto";
+import { linhaDedupPessoaProduto, textoDedupDosTotais } from "../dedup-pessoa-produto";
 
 const NBSP = " ";
 
@@ -28,5 +28,24 @@ describe("Story 41.12 AC8 — linha da camada 2 no tooltip dos painéis", () => 
       naoAplicadaMotivo: 'coluna de produto não mapeada em "n8n"',
     });
     expect(linha).toBe('Recompra do mesmo produto não deduplicada: coluna de produto não mapeada em "n8n"');
+  });
+});
+
+describe("Story 41.12 UX-001 — o texto dos tooltips de totais não contradiz a camada 2", () => {
+  it("aplicada: a recompra do mesmo produto conta uma vez (não mais \"sem dedup\")", () => {
+    expect(textoDedupDosTotais({ aplicada: true, removidas: { linhas: 9, valor: 596.3 } })).toBe(
+      "recompra do mesmo produto pela mesma pessoa conta uma vez",
+    );
+  });
+
+  it("API antiga ou regra não aplicada: o texto de antes, que segue verdadeiro", () => {
+    expect(textoDedupDosTotais(undefined)).toBe("sem deduplicar e-mail");
+    expect(
+      textoDedupDosTotais({
+        aplicada: false,
+        removidas: { linhas: 0, valor: 0 },
+        naoAplicadaMotivo: 'coluna de produto não mapeada em "n8n"',
+      }),
+    ).toBe("sem deduplicar e-mail");
   });
 });

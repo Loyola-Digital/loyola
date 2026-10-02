@@ -7,6 +7,7 @@ import { classifyOrigem, classifyCanal, type Origem, type Canal } from "../utils
 import { classifyRefundStatus, isRefundBucket } from "./sales-status.js";
 import { juntarPorComprador } from "../utils/comprador.js";
 import {
+  camada2ValeNaEtapa,
   decidirCamada2DasPlanilhas,
   refDaLinha,
   refDaManual,
@@ -282,6 +283,7 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
       valor: parseFloat(m.value ?? "0") || 0,
       saleDate: m.saleDate,
     })),
+    { valeNaEtapa: camada2ValeNaEtapa(stageType) },
   );
 
   for (const { sheet, data } of lidas) {

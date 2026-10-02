@@ -29,3 +29,16 @@ export function linhaDedupPessoaProduto(d: StageSalesData["dedupPessoaProduto"])
   }
   return partes.length > 0 ? partes.join("\n") : null;
 }
+
+/**
+ * Story 41.12 (UX-001 do gate) — o que os tooltips de TOTAIS ("Ingressos
+ * totais", "Faturamento Total") dizem sobre dedup. Com a camada 2 aplicada, a
+ * recompra do mesmo produto pela mesma pessoa conta uma vez — "sem dedup"
+ * passou a ser falso. Campo ausente (API antiga) ou regra não aplicada: o texto
+ * de antes, que segue verdadeiro nesses casos.
+ */
+export function textoDedupDosTotais(d: StageSalesData["dedupPessoaProduto"]): string {
+  return d?.aplicada
+    ? "recompra do mesmo produto pela mesma pessoa conta uma vez"
+    : "sem deduplicar e-mail";
+}

@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import {
   funnelSpreadsheets,
@@ -41,6 +43,17 @@ vi.mock("../services/google-sheets.js", () => ({
 vi.mock("../services/kiwify-event-tickets.js", () => ({
   ingressosDoEvento: async () => null,
 }));
+// O ponto único do escopo (`camada2ValeNaEtapa`) passa pelo mock para o teste de
+// fiação poder tirar um tipo de etapa da regra. Com `fora` vazio, delega ao real.
+const escopo = vi.hoisted(() => ({ fora: new Set<string>() }));
+vi.mock("../services/vendas-camada2-planilha.js", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../services/vendas-camada2-planilha.js")>();
+  return {
+    ...real,
+    camada2ValeNaEtapa: (t: string | null | undefined) =>
+      !escopo.fora.has(t ?? "") && real.camada2ValeNaEtapa(t),
+  };
+});
 
 const { default: stageSalesDataRoutes } = await import("../routes/stage-sales-data.js");
 const { computeSalesDailyForStage } = await import("../services/sales-daily-sync.js");
@@ -50,6 +63,7 @@ const { lerVendasDaPlanilha, carregarVendas, prepararVendasDoPeriodo } = await i
 const { computeLaunchReportMetrics } = await import("../services/launch-report-engine.js");
 const { validateLaunchReport } = await import("../services/launch-report-guards.js");
 const { deduplicarVendas } = await import("../services/debriefing-hygiene.js");
+const { ETAPAS_SEM_CAMADA2 } = await import("../services/vendas-camada2-planilha.js");
 
 // ---------------------------------------------------------------------------
 // Fixture
@@ -129,12 +143,34 @@ interface Mundo {
   stageType: string;
   subtype: string;
   sheets: { id: string; spreadsheetId: string; nome: string; mapping: Record<string, string> }[];
-  manuais: { id: string; value: string; saleDate: Date; email: string | null; product: string | null }[];
+  manuais: {
+    id: string;
+    value: string;
+    saleDate: Date;
+    email: string | null;
+    product: string | null;
+    refundedAt?: Date | null;
+  }[];
+  /** Planilha `perpetual_sales` do FUNIL (herdada pela réplica nas etapas free/paid). */
+  perpetuo?: { id: string; spreadsheetId: string; nome: string; mapping: Record<string, string> } | null;
 }
 let mundo: Mundo;
 
+/**
+ * O banco falso honra os dois predicados que decidem o resultado aqui — o
+ * `refunded_at is null` e o `sale_date >= corte` das vendas manuais, e o tipo da
+ * planilha do funil —, lendo o SQL que a consulta montou. Ignorá-los fazia o
+ * teste aprovar consulta sem o filtro (a manual reembolsada e o recorte de
+ * `days` das manuais são exatamente o que se prova abaixo).
+ */
+const dialeto = new PgDialect();
+function lerPredicado(cond: SQL | undefined): { sql: string; params: unknown[] } | null {
+  return cond ? dialeto.sqlToQuery(cond) : null;
+}
+
 function bancoFalso(): Database {
-  const linhasDe = (tabela: unknown): unknown[] => {
+  const linhasDe = (tabela: unknown, cond: SQL | undefined): unknown[] => {
+    const pred = lerPredicado(cond);
     if (tabela === projects) return [{ id: IDS.projeto }];
     if (tabela === funnelStages) {
       return [{ id: IDS.etapa, stageType: mundo.stageType, funnelId: IDS.funil }];
@@ -153,24 +189,40 @@ function bancoFalso(): Database {
       }));
     }
     if (tabela === manualSales) {
-      return mundo.manuais.map((m) => ({
+      let manuais = mundo.manuais;
+      if (pred && /"refunded_at" is null/.test(pred.sql)) manuais = manuais.filter((m) => !m.refundedAt);
+      const corte = pred?.sql.match(/"sale_date" >= \$(\d+)/);
+      if (pred && corte) {
+        const desde = new Date(pred.params[Number(corte[1]) - 1] as string | Date);
+        manuais = manuais.filter((m) => m.saleDate >= desde);
+      }
+      return manuais.map((m) => ({
         ...m,
+        refundedAt: m.refundedAt ?? null,
         customerEmail: m.email,
         sellerName: null,
         valorRecebido: null,
       }));
     }
-    if (tabela === funnelSpreadsheets) return [];
+    if (tabela === funnelSpreadsheets) {
+      if (!mundo.perpetuo || !pred?.params.includes("perpetual_sales")) return [];
+      const p = mundo.perpetuo;
+      return [{ id: p.id, spreadsheetId: p.spreadsheetId, sheetName: p.nome, columnMapping: p.mapping }];
+    }
     return [];
   };
   const consulta = (tabela: unknown) => {
+    let cond: SQL | undefined;
     const q = {
       innerJoin: () => q,
-      where: () => q,
+      where: (c: SQL | undefined) => {
+        cond = c;
+        return q;
+      },
       limit: () => q,
       orderBy: () => q,
       then: (ok: (v: unknown[]) => unknown, erro?: (e: unknown) => unknown) =>
-        Promise.resolve(linhasDe(tabela)).then(ok, erro),
+        Promise.resolve(linhasDe(tabela, cond)).then(ok, erro),
     };
     return q;
   };
@@ -209,6 +261,22 @@ function preparar(rows: string[][], opts: Partial<Mundo> = {}, mapping: Record<s
   };
 }
 
+/** Etapa com várias planilhas (`ss-1`, `ss-2`, …), na ordem dada. */
+function prepararVarias(planilhas: string[][][], opts: Partial<Mundo> = {}) {
+  SHEETS.clear();
+  const sheets = planilhas.map((rows, i) => {
+    const n = i + 1;
+    SHEETS.set(`ss-${n}`, { headers: [...HEADERS], rows });
+    return {
+      id: `40000000-0000-4000-8000-00000000000${n}`,
+      spreadsheetId: `ss-${n}`,
+      nome: `planilha-${n}`,
+      mapping: MAPPING,
+    };
+  });
+  mundo = { stageType: "paid", subtype: "capture", sheets, manuais: [], ...opts };
+}
+
 const base = `/api/projects/${IDS.projeto}/funnels/${IDS.funil}/stages/${IDS.etapa}`;
 async function card(subtype = "capture", days?: number) {
   const qs = new URLSearchParams({ subtype });
@@ -232,8 +300,12 @@ const bumpsDe = (p: string | null) => (p ?? "").trim().toLowerCase() === BUMP.to
  * Resumão pelo caminho de produção: `carregarVendas` (planilha falsa, banco
  * falso) → `prepararVendasDoPeriodo` → motor → guardas.
  */
-async function resumao(rows: string[][], periodo: { inicio: string; fim: string }, mapping = MAPPING) {
-  preparar(rows, {}, mapping);
+async function resumao(
+  rows: string[][] | null,
+  periodo: { inicio: string; fim: string },
+  mapping = MAPPING,
+) {
+  if (rows) preparar(rows, {}, mapping); // `null` = o mundo já preparado (várias planilhas)
   const c = await carregarVendas(bancoFalso(), IDS.etapa, "pago");
   const p = prepararVendasDoPeriodo(c.linhas, c.removidas, periodo, c.removidasCamada2);
   const m = computeLaunchReportMetrics({
@@ -515,5 +587,146 @@ describe("AC9(g) — planilha sem `productName` mapeado: nada colapsa e o aviso 
     expect(d.dedupPessoaProduto.removidas).toEqual({ linhas: 0, valor: 0 });
     expect(d.dedupPessoaProduto.naoAplicadaMotivo).toContain("coluna de produto não mapeada");
     expect((await diario()).soma).toBeCloseTo(ANTES.faturamento, 6);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// QA fix iteração 1 (gate 41.12 parte A, TEST-001 / REL-001 / ponto do escopo).
+// Cada teste abaixo nomeia a mutação do @qa que ele pega (QA-M4/M5/M6/M7/M9).
+// ---------------------------------------------------------------------------
+
+describe("TEST-001 — as quatro decisões que nenhum teste segurava", () => {
+  it("(a) linha de valor zero não disputa a vaga: a compra paga depois dela conta (QA-M4)", async () => {
+    // Cortesia/convite de R$ 0 primeiro; a compra paga do mesmo ingresso, depois.
+    const rows = [
+      linha("Z1", 1, "a@x.com", INGRESSO, "0,00"),
+      linha("A1", 3, "a@x.com", INGRESSO, "99,00"),
+      linha("B1", 2, "b@x.com", INGRESSO, "99,00"),
+    ];
+    const r = await resumao(rows, MAIO);
+    expect(r.m.faturamento.total).toBeCloseTo(198, 6);
+    expect(r.p.removidasCamada2NaJanela.linhas).toBe(0);
+    preparar(rows);
+    const d = await card();
+    expect(d.faturamentoBruto).toBeCloseTo(198, 6);
+    expect(d.dedupPessoaProduto.removidas).toEqual({ linhas: 0, valor: 0 });
+    expect((await diario()).soma).toBeCloseTo(198, 6);
+    const s = await computeSalesDailyForStage(bancoFalso(), IDS.etapa);
+    expect(s!.faturamentoBruto).toBeCloseTo(198, 6);
+  });
+
+  it("(b) réplica: a planilha de perpétuo herdada pelo funil fica fora da regra de lançamento (QA-M5)", async () => {
+    // Etapa paga com a planilha de captação + a `perpetual_sales` do funil. No
+    // perpétuo a camada 2 é por janela (R6-2, fatia B): a recompra dentro da
+    // planilha do perpétuo e a compra que repete a da captação seguem contando.
+    preparar([linha("B1", 1, "a@x.com", INGRESSO, "99,00")], {
+      perpetuo: { id: "50000000-0000-4000-8000-000000000005", spreadsheetId: "ss-perp", nome: "n8n-perpetuo", mapping: MAPPING },
+    });
+    SHEETS.set("ss-perp", {
+      headers: [...HEADERS],
+      rows: [
+        linha("P1", 2, "b@x.com", INGRESSO, "47,00"),
+        linha("P2", 9, "b@x.com", INGRESSO, "47,00"), // recompra no perpétuo
+        linha("P3", 4, "a@x.com", INGRESSO, "47,00"), // repete a compra da captação
+      ],
+    });
+    const s = await computeSalesDailyForStage(bancoFalso(), IDS.etapa);
+    expect(s!.totalVendas).toBe(4);
+    expect(s!.faturamentoBruto).toBeCloseTo(99 + 3 * 47, 6);
+  });
+
+  it("(c) duas planilhas na etapa: a recompra na 2ª sai no Resumão, no card, no diário e na réplica (QA-M6/QA-M7)", async () => {
+    const planilhas = [
+      [linha("A1", 1, "a@x.com", INGRESSO, "99,00")],
+      [linha("A2", 5, "a@x.com", INGRESSO, "42,90"), linha("B1", 2, "b@x.com", INGRESSO, "99,00")],
+    ];
+    prepararVarias(planilhas);
+    const r = await resumao(null, MAIO);
+    expect(r.m.ingressos.totais).toBe(2);
+    expect(r.m.faturamento.total).toBeCloseTo(198, 6);
+    expect(r.p.removidasCamada2NaJanela).toEqual({ linhas: 1, valor: 42.9 });
+
+    prepararVarias(planilhas);
+    const d = await card();
+    expect(d.totalVendas).toBe(2);
+    expect(d.faturamentoBruto).toBeCloseTo(198, 6);
+    expect(d.dedupPessoaProduto.removidas).toEqual({ linhas: 1, valor: 42.9 });
+    const g = await diario();
+    expect(g.soma).toBeCloseTo(198, 6);
+    expect(g.byDay["2026-05-05"]).toBeUndefined();
+    const s = await computeSalesDailyForStage(bancoFalso(), IDS.etapa);
+    expect(s!.faturamentoBruto).toBeCloseTo(198, 6);
+  });
+
+  it("(d) card com `days`: a manual de antes do corte decide, e a de dentro (mesma pessoa e produto) não conta (QA-M9)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 4, 10, 12, 0, 0));
+    try {
+      preparar([linha("B1", 9, "b@x.com", INGRESSO, "99,00")], {
+        manuais: [
+          { id: "m-antes", value: "120.00", saleDate: new Date(2026, 4, 1), email: "a@x.com", product: INGRESSO },
+          { id: "m-dentro", value: "80.00", saleDate: new Date(2026, 4, 8), email: "a@x.com", product: INGRESSO },
+        ],
+      });
+      const d = await card("capture", 6); // corte em 04/05 12h: só m-dentro está no período
+      expect(d.faturamentoBruto).toBeCloseTo(99, 6);
+      expect(d.breakdown.manual).toEqual({ vendas: 0, linhas: 0, bruto: 0, liquido: 0 });
+      expect(d.dedupPessoaProduto.removidas).toEqual({ linhas: 1, valor: 80 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("REL-001 — venda manual reembolsada: o card filtra como a réplica", () => {
+  it("a manual reembolsada não soma nem ocupa a vaga; card = réplica", async () => {
+    preparar([linha("B1", 1, "b@x.com", INGRESSO, "99,00")], {
+      manuais: [
+        {
+          id: "m-reemb",
+          value: "120.00",
+          saleDate: new Date(2026, 4, 1),
+          email: "a@x.com",
+          product: INGRESSO,
+          refundedAt: new Date(2026, 4, 3),
+        },
+        { id: "m-paga", value: "80.00", saleDate: new Date(2026, 4, 2), email: "a@x.com", product: INGRESSO },
+      ],
+    });
+    const d = await card();
+    expect(d.faturamentoBruto).toBeCloseTo(99 + 80, 6);
+    expect(d.breakdown.manual).toEqual({ vendas: 1, linhas: 1, bruto: 80, liquido: 80 });
+    expect(d.dedupPessoaProduto.removidas).toEqual({ linhas: 0, valor: 0 });
+    const s = await computeSalesDailyForStage(bancoFalso(), IDS.etapa);
+    expect(s!.faturamentoBruto).toBeCloseTo(d.faturamentoBruto, 6);
+  });
+});
+
+describe("Escopo da regra por tipo de etapa — ponto único (`camada2ValeNaEtapa`)", () => {
+  it("hoje a regra vale em toda etapa de lançamento (OWN-002/OWN-003 com o dono)", () => {
+    expect([...ETAPAS_SEM_CAMADA2]).toEqual([]);
+  });
+
+  it("um tipo fora da regra: card, diário, réplica e Resumão voltam ao número sem a camada 2", async () => {
+    escopo.fora = new Set(["paid"]);
+    try {
+      preparar(fixturePg02());
+      const d = await card();
+      expect(d.faturamentoBruto).toBeCloseTo(ANTES.faturamento, 6);
+      expect(d.dedupPessoaProduto).toEqual({
+        aplicada: false,
+        removidas: { linhas: 0, valor: 0 },
+        naoAplicadaMotivo: "a regra não vale neste tipo de etapa",
+      });
+      expect((await diario()).soma).toBeCloseTo(ANTES.faturamento, 6);
+      const s = await computeSalesDailyForStage(bancoFalso(), IDS.etapa);
+      expect(s!.faturamentoBruto).toBeCloseTo(ANTES.faturamento + 99, 6); // + X31 (ver a réplica acima)
+      const r = await resumao(fixturePg02(), MAIO);
+      expect(r.m.ingressos.totais).toBe(ANTES.linhas);
+      expect(r.g.alertas.find((a) => a.codigo === "W11")).toBeUndefined();
+      expect(r.g.alertas.find((a) => a.codigo === "W12")).toBeUndefined();
+    } finally {
+      escopo.fora = new Set();
+    }
   });
 });

@@ -41,6 +41,7 @@ import {
 import { adNameDoTerm } from "./launch-report-normalize.js";
 import { deduplicarPorIdDaVenda } from "../utils/dedup-por-id-da-venda.js";
 import { deduplicarPorPessoaEProduto } from "../utils/dedup-pessoa-produto.js";
+import { camada2ValeNaEtapa } from "./vendas-camada2-planilha.js";
 import type {
   Camada2NaoAplicada,
   DedupNaoAplicada,
@@ -419,13 +420,20 @@ export function lerVendasDaPlanilha(
  * - planilha sem `productName` mapeado não colapsa nem ocupa a chave (com
  *   produto sempre `""`, ingresso e bump da mesma pessoa colapsariam) e volta em
  *   `naoAplicada` para o W12;
- * - linha sem e-mail nunca colapsa.
+ * - linha sem e-mail nunca colapsa;
+ * - `valeNaEtapa === false` (o `camada2ValeNaEtapa` da etapa) = nada colapsa.
  */
-export function deduplicarCamada2DaEtapa(lidas: readonly VendasDaPlanilha[]): {
+export function deduplicarCamada2DaEtapa(
+  lidas: readonly VendasDaPlanilha[],
+  valeNaEtapa = true,
+): {
   linhas: LinhaCrua[];
   removidas: LinhaCrua[];
   naoAplicada: Camada2NaoAplicada[];
 } {
+  if (!valeNaEtapa) {
+    return { linhas: lidas.flatMap((l) => l.linhas), removidas: [], naoAplicada: [] };
+  }
   const isentas = new Set<LinhaCrua>();
   const todas: LinhaCrua[] = [];
   const naoAplicada: Camada2NaoAplicada[] = [];
@@ -524,7 +532,7 @@ export async function carregarVendas(
   camada2NaoAplicada: Camada2NaoAplicada[];
   mappingPrecoDivergente: { colunaDoMapping: string; colunaUsada: string } | null;
 }> {
-  const { sheets } = await resolveSalesSheetsForStage(db, stageId);
+  const { sheets, stageType } = await resolveSalesSheetsForStage(db, stageId);
   if (sheets.length === 0) {
     // Etapa gratuita costuma não ter planilha de VENDAS por natureza — ela capta
     // lead, não ingresso. E o Resumão inteiro é construído sobre venda
@@ -599,7 +607,7 @@ export async function carregarVendas(
 
   // Story 41.12 — camada 2 (pessoa + produto) ENTRE as planilhas da etapa,
   // depois da camada 1 e antes do corte de período.
-  const camada2 = deduplicarCamada2DaEtapa(lidas);
+  const camada2 = deduplicarCamada2DaEtapa(lidas, camada2ValeNaEtapa(stageType));
 
   return {
     linhas: camada2.linhas,
