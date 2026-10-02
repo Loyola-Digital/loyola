@@ -1,0 +1,89 @@
+schema: 1
+storyId: '49.5'
+story: '49.5'
+story_title: 'Guardas do Debriefing (checks da Fase 12 como código) + fixtures de regressão com separação do fator de imposto'
+verdict: APPROVED
+gate: PASS
+status_reason: 'Re-gate do QA loop 1. Os três achados do gate anterior estão fechados. (1) REQ-001: a fixture governante do PG02 registra o +R$ 50,24 do investimento de captação como `fonte-janela`; reexecutada em produção só leitura pelo QA, a conferência termina em "dg-pg02-loyola [governante]: 0 divergência(s) sem classificação — conferência ok". (2) TEST-001 e TEST-002: as mutações QA-M3 e QA-M5, reaplicadas, agora falham, e a variante QA-M3b (K em `taxa-de-volume`) também. REC-001 fica como débito registrado para a 49.6.'
+reviewer: 'Quinn'
+updated: '2026-10-02T16:30:00-03:00'
+branch: 'feat/49.5-debriefing-guardas'
+commit_reviewed: '8ecc116e'
+previous_gate: { commit: '26d08b63', reviewed: 'd560df91', gate: CONCERNS, verdict: NEEDS_WORK }
+base: 'origin/main (34690a3e)'
+qa_loop: { iteration: 1, verdict: 'APPROVE — REQ-001, TEST-001 e TEST-002 fechados; REC-001 vira débito da 49.6' }
+
+regate_1:
+  escopo: 'Re-gate econômico, só os itens do gate anterior, sem a suíte inteira da API. O diff 26d08b63..8ecc116e só toca 3 arquivos de teste/fixture e a story; nenhum arquivo de produção mudou, então a baseline da suíte inteira (10 falhas pré-existentes, idênticas às de origin/main) segue válida.'
+  REQ-001: 'FECHADO. `danilo-gato-pg02-loyola.ts:78-87` tem a entrada `investimentoCaptacao` / `fonte-janela`, com nota, classificadaPor e data. Script `debriefing-conferir.ts` reexecutado pelo QA (produção, só leitura, config scratchpad/pg02-config.json): F1–F15 passed, bloqueado false; linha "investimentoCaptacao | 126.616,3802 | 126.566,14 diverge (fonte-janela — diferença de fonte declarada)"; resultado "0 divergência(s) sem classificação — conferência ok". A comparação com a skill segue em 27 linhas, só relatório. 0 "@" na saída. Story: a pergunta 2 foi para "Decidido".'
+  TEST-001: 'FECHADO. QA-M3 (`custo || dinheiro` recebe ×K em debriefing-fixture-compare.ts:362): 1 falha, no AC8-(d''). QA-M3b (`custo || taxa-de-volume`): 1 falha, no mesmo teste. O teste confere antes que a diferença de K passa da tolerância da classe, então não é decorativo.'
+  TEST-002: 'FECHADO. QA-M5 (condição do WF7 sem `excl.length`, debriefing-guards.ts:812): 1 falha, no teste "WF7 aparece com SÓ vendas excluídas".'
+  REC-001: 'ACEITO COMO DÉBITO DA 49.6. A justificativa do @dev procede: a versão barata (`mantidas.length === camada2.depois`) mede o mesmo array que gera o contador e seria quase tautológica. A versão honesta pede o destino de toda linha mantida no payload do Motor I, uma mudança de contrato que pertence à 49.6 junto do fio da AC13. A cobertura atual da dedup depende do ponta a ponta das armadilhas (QA-M6 morre ali).'
+  arvore: 'limpa depois de cada mutação (`git checkout` do arquivo; `git status` vazio)'
+  testes: 'As 15 suítes `debriefing*` com 575/575, um superconjunto das 6 do debriefing (248/248 segundo o @dev). `tsc --noEmit` da API (binário direto) com exit 0.'
+
+checks:
+  1_requirements: 'CONCERNS. AC1–AC6 e AC8–AC11 atendidos. AC7/AC10: o comparador e o script funcionam, mas a divergência do investimento de captação contra a governante não está classificada, apesar de já decidida (REQ-001).'
+  2_tests: 'CONCERNS. 6 suítes debriefing: 246/246 (inclui as 149 novas). Suíte inteira da API (uma vez): 4.242/4.252. As 10 falhas são idênticas às de origin/main (34690a3e), conferidas num worktree temporário com os mesmos 5 arquivos (funnel-stages-lead-inputs 3, instagram-routes 1, instagram 1, projects 3, schema 2), então são pré-existentes. Mutações do QA: 4 de 6 morrem; as 2 sobreviventes estão em TEST-001 e TEST-002.'
+  3_lint_typecheck: 'PASS. `tsc --noEmit` da API (binário direto) com exit 0 e sem saída.'
+  4_security_pii: 'PASS. Script em `default_transaction_read_only=on` com verificação que aborta (debriefing-conferir.ts:91-95); 0 "@" na saída do PG02; fixtures só com números.'
+  5_performance: 'PASS. As guardas e o comparador são funções puras. O script lê o banco e as planilhas uma vez e não chama a Meta.'
+  6_regression: 'PASS. A mudança no Motor I é aditiva (`tiposAssumidos`), e só 2 asserções da 49.3 foram ajustadas por causa dela. Nenhum arquivo `launch-report-*` foi alterado.'
+  7_docs: 'PASS. Dev Agent Record, File List e Change Log presentes, com o limite do F1 declarado.'
+  8_api_contract: 'N/A. Sem rota, sem migration, sem bump de API_CONTRACT_VERSION (o bump é da 49.6).'
+
+verificacao_producao:
+  ambiente: 'banco de produção em modo só leitura; script `src/scripts/debriefing-conferir.ts` de d560df91; config scratchpad/pg02-config.json (16/04 · 09/05 · 27/05 · downsell 03/06→13/06)'
+  guardas: 'F1–F15 passed, bloqueado: false (reproduz o relato do @dev)'
+  governante: 'ingressosUnicos 1.807 ok; principal 71 / R$ 245.800 ok. Vendas 2.188×2.197, 1.892×1.900, 296×297 e faturamento 230.501,64×231.097,94 (−596,30) saem `diverge (definicao)`, camada 2 até a 41.12A. investimentoCaptacao 126.616,38 × 126.566,14 sai `diverge` SEM classificação, e a conferência FALHA.'
+  comparacao_skill: 'investimentoCaptacao 125.692,71 × K = 126.616,38 sai `ok-explicada-por-imposto`. As 27 divergências são relatório e nunca bloqueiam.'
+
+mutacoes_qa:
+  total: 6
+  mortas: 4
+  lista:
+    - 'QA-M1 F14 bloqueia produto que o painel trata como ingresso (`tiposAssumidos.length > 0`): MORTA (11 falhas)'
+    - 'QA-M2 F3 compara compradores com vendas (Σ captacao.vendasPorTipo ≠ ingressosUnicos): MORTA (9 falhas)'
+    - 'QA-M3 comparador aplica K também à classe `dinheiro`: SOBREVIVEU → TEST-001'
+    - 'QA-M4 fixture governante tratada como comparação (`bloqueiaConferencia` para `comparacao`): MORTA (2 falhas)'
+    - 'QA-M5 WF7 some quando só há `vendasExcluidas` (condição sem `excl.length`): SOBREVIVEU → TEST-002'
+    - 'QA-M6 dedup removida de forma consistente no Motor I (`dedup.mantidas = candidatas`, contadores intactos): MORTA (1 falha, no ponta a ponta das armadilhas)'
+  arvore: 'limpa depois de cada mutação (`git checkout` do arquivo; `git status` vazio)'
+
+limite_do_f1:
+  avaliacao: 'O limite é real. O F1 confere a consistência entre os caminhos de soma, não a dedup. Uma dedup desligada em todos os caminhos passa no F1. A QA-M6 mostra que quem a pega é o teste de origem: só 1 teste morre, o ponta a ponta com dup 2× no motor real. A cobertura existe, mas depende de um único teste.'
+  recomendacao: 'Guarda complementar NÃO bloqueia este gate (REC-001). Sugestão barata: amarrar o contador ao que foi contado, com Σ vendas mantidas nos grupos === dedup.camada2.depois. Isso pega o "contador diz que removeu, mas a linha seguiu", que é exatamente a QA-M6.'
+
+issues_gate_anterior:
+  - id: REQ-001
+    severity: medium
+    finding: 'A classificação `fonte-janela` do investimentoCaptacao do PG02 (+R$ 50,24, +0,04%), decidida pelo coordenador (reprocessamento da Meta, precedente da 41.2), não está registrada. `danilo-gato-pg02-loyola.ts` só lista as 6 linhas `definicao` em `divergenciasClassificadas`. A story ainda a trata como pergunta aberta (Dev Agent Record, Perguntas ao dono 2). Em produção, a conferência governante FALHA.'
+    suggested_action: 'Adicionar `{ chave: "investimentoCaptacao", causa: "fonte-janela", nota: "drift de reprocessamento da Meta (spec §As duas diferenças que sobraram, 41.2): +R$ 50,24 / +0,04%", classificadaPor: "coordenador (decisão de 2026-10-02)", data: "2026-10-02" }`. Mover a pergunta 2 para "decidido" e reexecutar o script: a governante deve terminar sem divergência não classificada.'
+  - id: TEST-001
+    severity: medium
+    finding: 'Nenhum teste prova que K não se aplica a `dinheiro`/`taxa-de-volume` quando K ≠ 1 (AC7: "o imposto não a afeta"). O AC8(d) cobre só `volume`. A QA-M3 sobrevive.'
+    suggested_action: 'Na fixture da skill (K = 1,0073486), criar uma métrica `dinheiro` igual ao payload, que tem de sair `ok`, e uma igual a payload × K, que tem de sair `diverge`. Fazer o mesmo para `taxa-de-volume`.'
+  - id: TEST-002
+    severity: low
+    finding: 'O WF7 não tem teste com SÓ `vendasExcluidas` (decisão 7). O payload sintético também tem vendas fora da coorte ou além da janela, então a QA-M5 (alerta sumindo em silêncio) sobrevive.'
+    suggested_action: 'Teste com `alemDaJanela = []`, `foraDaCoorte = []` e 1 venda excluída. O WF7 tem de aparecer com "excluídas automaticamente antes da abertura 1".'
+  - id: REC-001
+    severity: low
+    finding: 'O limite do F1 está declarado e coberto por um único teste de origem (ver limite_do_f1).'
+    suggested_action: 'Opcional: invariante contador × contados. Pode ficar para a 49.6.'
+
+issues: []
+
+follow_ups:
+  - 'REC-001 → 49.6: invariante "contador × contados" (destino de cada linha mantida exposto no payload do Motor I).'
+  - 'DEC-OWNER-F14 → 49.6, SE o dono decidir pelo alerta: WF não bloqueante "produto fora do mapa na captação". Não bloqueia este gate.'
+
+pergunta_ao_dono:
+  DEC-OWNER-F14: 'Registrado, NÃO decidido pelo QA. Pela regra do painel, um combo ou produto novo fora do mapa numa etapa de captação entra como ingresso sem bloquear; o F14 só o lista no `detalhe` de um invariante `passed`. Hoje esse caso não gera WF no banner. Pergunta ao dono: quer um alerta não bloqueante (WF novo, "produto fora do mapa na captação: N vendas, R$ X") ou aceita só a listagem no F14? Risco: a armadilha #3 (combo contado como ingresso) passa sem aviso visível. No PG02 a lista está vazia hoje.'
+
+meta_api_impact: { adds_meta_calls: 'NO', evidence: 'diff sem fetch/sync à Meta; o script declara "zero chamada à Meta"' }
+blast_radius: 'Só arquivos novos, mais o campo aditivo `tiposAssumidos` no Motor I da 49.3. Sem rota, sem migration, sem UI.'
+coderabbit_status: SKIPPED
+coderabbit_reason: 'CLI só WSL; ambiente macOS (prática desde 18.54)'
+recommended_action_gate_anterior: 'Devolver ao @dev: REQ-001 (1 entrada na fixture + story), TEST-001 e TEST-002 (2 testes). Re-gate curto: reexecutar o script do PG02 e as mutações QA-M3 e QA-M5. Levar a DEC-OWNER-F14 ao dono em paralelo; ela não bloqueia o re-gate.'
+recommended_action: 'Aprovar e seguir para @devops (PR). Levar REC-001 e, se o dono decidir pelo alerta, a DEC-OWNER-F14 para a 49.6.'
