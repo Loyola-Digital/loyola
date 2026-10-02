@@ -150,6 +150,9 @@ describe("lp-funnel — o fio do mini-funil (AC9)", () => {
 
   it("a compra carrega o `co=` da venda (lerVendas ganhou o campo)", () => {
     expect(trecho).toMatch(/adId: utmContentEfetivo\(v\.content\)/);
-    expect(rota).toMatch(/content: contentIdx !== -1 \? \(row\[contentIdx\] \?\? ""\)\.trim\(\) : ""/);
+    // Story 48.15 (AC7): `lerVendas` saiu da rota para o serviço, idêntica.
+    const leitores = src("services/vendas-e-origem-do-funil.ts");
+    expect(leitores).toMatch(/content: contentIdx !== -1 \? \(row\[contentIdx\] \?\? ""\)\.trim\(\) : ""/);
+    expect(rota).toMatch(/const \{ lerVendas, fontesDeOrigem \} = criarLeitoresDeVendasEOrigem\(fastify\.db\);/);
   });
 });
