@@ -3,7 +3,7 @@
  * (`criarDebriefingConfigStore`) e as rotas sobre um Postgres de verdade.
  *
  * O banco é PGlite (Postgres em WASM, em memória, devDependency da API): roda
- * a migration 0160 de verdade sobre uma DDL mínima das tabelas que o store lê.
+ * a migration 0161 de verdade sobre uma DDL mínima das tabelas que o store lê.
  * Nada toca o `.env` (que aponta para produção). O drizzle fala com ele pelo
  * `pg-proxy`, e os parsers de DATE/TIMESTAMP/NUMERIC devolvem string como o
  * node-postgres de produção — sem isso a comparação de premissa por JSON
@@ -40,7 +40,7 @@ import {
   type ValoresDaConfig,
 } from "../services/debriefing-config.js";
 
-const MIGRATION = join(dirname(fileURLToPath(import.meta.url)), "..", "db", "migrations", "0160_debriefing_configs.sql");
+const MIGRATION = join(dirname(fileURLToPath(import.meta.url)), "..", "db", "migrations", "0161_debriefing_configs.sql");
 
 const P = "10000000-0000-4000-8000-000000000001";
 const P2 = "10000000-0000-4000-8000-000000000002";

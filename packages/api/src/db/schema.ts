@@ -3592,7 +3592,7 @@ export const expertReportConfigs = pgTable(
 // faltante (CONFIG_INCOMPLETA) em vez de presumir. Os vocabulários
 // (`DEBRIEFING_PAPEIS`, `DIMENSOES_DE_CRIATIVO`) moram no service
 // `services/debriefing-config.ts`; aqui só o tipo (import type, sem ciclo em
-// runtime). Migration 0160.
+// runtime). Migration 0161.
 
 export const debriefingConfigs = pgTable(
   "debriefing_configs",

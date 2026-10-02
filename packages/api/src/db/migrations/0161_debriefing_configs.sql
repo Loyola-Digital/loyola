@@ -34,6 +34,9 @@
 -- `validado` nasce false; só o time marca true (POST …/debriefing/config/validate)
 -- e o PUT volta para false quando qualquer premissa muda.
 --
+-- Número 0161: a main já tem outro 0160 (0160_event_lead_contact_attempts.sql).
+-- Aplicar sempre pelo NOME COMPLETO do arquivo.
+--
 -- ⚠️ APLICAÇÃO: o deploy (merge na main) NÃO aplica migration — o `drizzle-kit
 -- push` do boot deixou de criar tabela nova em setembro/2026. Aplicar à mão em
 -- produção ANTES de liberar as rotas e provar pelo information_schema:
@@ -46,8 +49,10 @@
 --   SELECT indexname FROM pg_indexes
 --   WHERE tablename = 'debriefing_configs';                     -- pkey + stage_uniq
 --
---   SELECT conname FROM pg_constraint
---   WHERE conrelid = 'debriefing_configs'::regclass;            -- pkey, 2 FKs, 1 CHECK
+--   SELECT conname, contype FROM pg_constraint
+--   WHERE conrelid = 'debriefing_configs'::regclass
+--     AND contype IN ('p', 'f', 'c');                           -- pkey, 2 FKs, 1 CHECK
+--   (sem o filtro, o PG 18 lista também os NOT NULL — contype 'n')
 --
 -- Aditiva e idempotente (IF NOT EXISTS): não toca tabela existente; a API
 -- antiga ignora a tabela.

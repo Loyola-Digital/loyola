@@ -268,7 +268,7 @@
 // v30 (Story 49.1): rotas novas da config do gerador de debriefing, por etapa
 // do tipo Debriefing — `GET`/`PUT /api/projects/:projectId/funnels/:funnelId/
 // stages/:stageId/debriefing/config` e `POST …/debriefing/config/validate`
-// (tabela `debriefing_configs`, migration 0160 — aplicada à mão, o deploy não
+// (tabela `debriefing_configs`, migration 0161 — aplicada à mão, o deploy não
 // a aplica). O GET devolve `config`, `bloqueio` (gate: TIPO_DE_FUNIL_NAO_
 // SUPORTADO / COMBINACAO_NAO_VALIDADA / CONFIG_INCOMPLETA), `camposFaltantes`,
 // `avisos` (não bloqueiam; `COMPARACAO_REMOVIDA` = comparação apagada depois de

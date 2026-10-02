@@ -19,7 +19,7 @@ merge_action:
   owner: '@devops'
   decided_by: 'dono, R4-5 (2026-10-01)'
   required: true
-  what: 'Aplicar à mão, em produção, o arquivo packages/api/src/db/migrations/0160_debriefing_configs.sql (pelo NOME COMPLETO — a main já tem outro 0160, ver MIG-001) junto com o merge da #958, e antes de qualquer consumidor das rotas (49.6). O deploy não aplica migration.'
+  what: 'Aplicar à mão, em produção, o arquivo packages/api/src/db/migrations/0161_debriefing_configs.sql (renumerado de 0160 pelo @dev por MIG-001; aplicar pelo NOME COMPLETO) junto com o merge da #958, e antes de qualquer consumidor das rotas (49.6). O deploy não aplica migration.'
   proof: 'Colar na story: information_schema.columns de debriefing_configs = 19 colunas (com ferramentas_de_atendimento jsonb nulável, sem default); pg_indexes = pkey + debriefing_configs_stage_uniq; pg_constraint com contype IN (''p'',''f'',''c'') = pkey + stage_id_fkey + validado_por_fkey + ck_debriefing_configs_dimensao_de_criativo (ver DOC-002 sobre NOT NULL no PG 18).'
   if_skipped: 'As 3 rotas de /debriefing/config respondem 500.'
 
