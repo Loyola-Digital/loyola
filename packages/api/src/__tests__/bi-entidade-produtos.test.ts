@@ -76,9 +76,13 @@ describe("catálogo de leads", () => {
 describe("catálogo de produtos", () => {
   const daEntidade = CAMPOS.filter((c) => c.entity === "produtos");
 
-  it("dá para quebrar por produto e por funil, e medir faturamento", () => {
+  it("dá para quebrar por produto, canal e funil, e medir faturamento", () => {
     const chaves = daEntidade.map((c) => c.key);
     expect(chaves).toContain("produtos.produto");
+    // "de onde vem quem compra, qual UTM" — a pergunta que não tinha resposta:
+    // a UTM mora na própria linha de venda, não só nos leads.
+    expect(chaves).toContain("produtos.canal");
+    expect(chaves).toContain("produtos.origem");
     expect(chaves).toContain("produtos.funil");
     expect(chaves).toContain("produtos.bruto");
     expect(chaves).toContain("produtos.vendas");
@@ -87,6 +91,13 @@ describe("catálogo de produtos", () => {
   it("a descrição avisa que conta LINHA, não comprador — a diferença dos order bumps", () => {
     const vendas = daEntidade.find((c) => c.key === "produtos.vendas");
     expect(vendas?.description.toLowerCase()).toContain("comprador");
+  });
+
+  it("a descrição diz que o canal é da VENDA, não dos leads — são perguntas diferentes", () => {
+    const produtos = ENTIDADES.find((e) => e.key === "produtos");
+    expect(produtos?.descricao).toContain("COMPROU");
+    const canal = daEntidade.find((c) => c.key === "produtos.canal");
+    expect(canal?.description).toContain("linha de venda");
   });
 
   it("a entidade `vendas` manda quem procura produto para cá, não para si mesma", () => {

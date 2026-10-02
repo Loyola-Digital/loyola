@@ -112,7 +112,7 @@ export const ENTIDADES: DescricaoDeEntidade[] = [
     // está pedindo isto — e antes a IA tentava achar "workshop" num nome de
     // funil, que nunca casava.
     descricao:
-      "O que cada PRODUTO vendeu, por dia · funil · etapa. Conta LINHA de venda (dois order bumps do mesmo cliente são duas linhas), então o total daqui pode passar do número de compradores de `faturamento` — para volume de compradores use `faturamento`, para saber QUAL produto vendeu use esta",
+      "O que cada venda foi: PRODUTO, CANAL e ORIGEM, por dia · funil · etapa. É AQUI que se vê de onde veio quem COMPROU — o canal sai da UTM da própria linha de venda, não dos leads. Conta LINHA de venda (dois order bumps do mesmo cliente são duas linhas), então o total daqui pode passar do número de compradores de `faturamento` — para volume de compradores use `faturamento`, para produto, canal ou origem da compra use esta",
   },
   {
     key: "leads",
@@ -559,6 +559,27 @@ export const CAMPOS: CampoDoCatalogo[] = [
     aggregation: "none",
     dataType: "string",
     description: "Nome do produto como a plataforma de pagamento registrou",
+  },
+  {
+    key: "produtos.canal",
+    label: "Canal da venda",
+    entity: "produtos",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description:
+      "De onde veio quem comprou, pela UTM da própria linha de venda: Meta Ads, Google Ads, Instagram, ManyChat, WhatsApp, E-mail, YouTube, Closer, Outros ou Sem Track",
+  },
+  {
+    key: "produtos.origem",
+    label: "Origem da venda",
+    entity: "produtos",
+    role: "dimension",
+    semanticType: "text",
+    aggregation: "none",
+    dataType: "string",
+    description: "O balde grosso do canal da venda: Pago, Orgânico ou Sem Track",
   },
   {
     key: "produtos.funil",
