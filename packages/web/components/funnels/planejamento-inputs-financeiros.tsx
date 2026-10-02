@@ -23,8 +23,8 @@ import {
   type FormularioDosInputs,
 } from "@/lib/utils/planejamento-inputs-form";
 import { usePlanejamentoInputs, useSalvarPlanejamentoInputs } from "@/lib/hooks/use-planejamento-inputs";
-import { referenciaDoInput, rotuloComReferencia, type BaseDeReferencia } from "@/lib/utils/planejamento-referencia"; // Story 48.9
-import { realizadoDoInput, type RealizadoDaBase } from "@/lib/utils/planejamento-realizado"; // Story 48.11
+// Story 48.9 (base:) + 48.11 (real:) — desde a 48.14, um grupo por base marcada.
+import { gruposDoInput, gruposDoInvestimentoMeta, rotuloComBases, type ReferenciaDeBase } from "@/lib/utils/planejamento-bases";
 
 // Story 48.1 — seção "Inputs Financeiros" da aba 1 da planilha.
 //
@@ -113,21 +113,25 @@ const CANAIS: { chave: keyof DerivadosFinanceiros["canais"]; pct: Campo; base: C
 // Seção
 // ------------------------------------------------------------------
 
+/** Referência estável: um `[]` literal no padrão da prop seria um array novo a cada render. */
+const SEM_BASES: ReadonlyArray<ReferenciaDeBase> = [];
+
 export function PlanejamentoInputsFinanceiros({
   projectId,
   funnelId,
   podeEditar,
-  referencia = null,
-  realizado = null,
+  bases = SEM_BASES,
 }: {
   projectId: string;
   funnelId: string;
   /** `false` para guest: a API responde 403 no PUT; a tela nem oferece o botão. */
   podeEditar: boolean;
-  /** Story 48.9 — lançamento anterior escolhido na página; o valor dele entra entre parênteses no rótulo. */
-  referencia?: BaseDeReferencia | null;
-  /** Story 48.11 — o que a base ENTREGOU, ao lado do que ela planejou. */
-  realizado?: RealizadoDaBase | null;
+  /**
+   * Lançamentos anteriores marcados na página, na ordem da lista. O planejado
+   * (Story 48.9) e o realizado (Story 48.11) de cada um entram entre parênteses
+   * no rótulo, um grupo por base (Story 48.14).
+   */
+  bases?: ReadonlyArray<ReferenciaDeBase>;
 }) {
   const query = usePlanejamentoInputs(projectId, funnelId);
   const salvar = useSalvarPlanejamentoInputs(projectId, funnelId);
@@ -174,21 +178,21 @@ export function PlanejamentoInputsFinanceiros({
   }
 
   const set = (campo: Campo) => (v: string) => setForm((f) => (f ? { ...f, [campo]: v } : f));
-  // Story 48.9: o rótulo ganha "(base: 4,99%)" quando há lançamento de
-  // referência escolhido. Rótulo vazio (tabela de canais) não recebe — ali o
-  // texto viria sem contexto; a referência aparece no `aria-label`.
+  // Story 48.9: o rótulo ganha a referência entre parênteses quando há
+  // lançamento de referência marcado — desde a 48.14, um grupo por base
+  // ("dg-pg04 real: … · dg-pg02 real: …"). Rótulo vazio (tabela de canais) não
+  // recebe — ali o texto viria sem contexto; a referência aparece no `aria-label`.
   const campo = (c: Campo, rotulo: string, ariaLabel?: string) => {
-    const ref = referenciaDoInput(referencia, c);
-    const real = realizadoDoInput(realizado, c);
+    const grupos = gruposDoInput(bases, c);
     return (
       <CampoNumerico
         campo={c}
-        rotulo={rotulo ? rotuloComReferencia(rotulo, ref, real) : rotulo}
+        rotulo={rotulo ? rotuloComBases(rotulo, grupos) : rotulo}
         valor={form[c]}
         erro={erros[c]}
         onChange={set(c)}
         readOnly={!podeEditar}
-        ariaLabel={ariaLabel ? rotuloComReferencia(ariaLabel, ref, real) : ariaLabel}
+        ariaLabel={ariaLabel ? rotuloComBases(ariaLabel, grupos) : ariaLabel}
       />
     );
   };
@@ -302,8 +306,13 @@ export function PlanejamentoInputsFinanceiros({
           <Derivado rotulo="Meta Ads" valor={fmtCurrency(d.investMeta)} />
           <Derivado rotulo={`Google Ads (${pctPontos(d.pctInvestGoogle)})`} valor={fmtCurrency(d.investGoogle)} />
           {campo("pctMetaQuente", "Público quente (sob Meta)")}
-          <Derivado rotulo="Meta · quente" valor={fmtCurrency(d.investMetaQuente)} />
-          <Derivado rotulo={`Meta · frio (${pctPontos(d.pctMetaFrio)})`} valor={fmtCurrency(d.investMetaFrio)} />
+          {/* Story 48.14 (AC5) — o investimento REAL de cada temperatura, por
+              base. No frio, depois do percentual planejado que já estava lá. */}
+          <Derivado rotulo={rotuloComBases("Meta · quente", gruposDoInvestimentoMeta(bases, "quente"))} valor={fmtCurrency(d.investMetaQuente)} />
+          <Derivado
+            rotulo={rotuloComBases(`Meta · frio (${pctPontos(d.pctMetaFrio)})`, gruposDoInvestimentoMeta(bases, "frio"))}
+            valor={fmtCurrency(d.investMetaFrio)}
+          />
           <div />
           {campo("pctGoogleQuente", "Público quente (sob Google)")}
           <Derivado rotulo="Google · quente" valor={fmtCurrency(d.investGoogleQuente)} />

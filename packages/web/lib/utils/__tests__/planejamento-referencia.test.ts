@@ -9,12 +9,12 @@ import {
   referenciaDaConversaoOrganica,
   referenciaDaConversaoPaga,
   referenciaDoInput,
-  rotuloComReferencia,
   rotuloDaOpcaoDeBase,
   textoDeReferencia,
-  textoDoCabecalhoDaBase,
+  textoDoCabecalhoDasBases,
   type BaseDeReferencia,
 } from "@/lib/utils/planejamento-referencia";
+import { rotuloComBases } from "@/lib/utils/planejamento-bases";
 
 /**
  * Story 48.9 — a referência do lançamento anterior ao lado do rótulo.
@@ -86,14 +86,23 @@ describe("referenciaDoInput / conversões", () => {
   });
 });
 
-describe("rotuloComReferencia", () => {
+/**
+ * ⚠️ INVERTIDOS DE PROPÓSITO na Story 48.14 (AC2/AC8). Até a 48.13 o rótulo era
+ * `Reembolso (base: 4,00%)` — uma base só, sem o nome dela. Com várias bases
+ * lado a lado, cada grupo leva o nome do funil, inclusive quando só uma está
+ * marcada (um formato só). `rotuloComReferencia` deu lugar a `rotuloComBases`.
+ */
+describe("rotuloComBases (era rotuloComReferencia — formato invertido na 48.14)", () => {
   it("sem referência, o rótulo não muda", () => {
-    expect(rotuloComReferencia("Reembolso", null)).toBe("Reembolso");
+    expect(rotuloComBases("Reembolso", [])).toBe("Reembolso");
+    expect(rotuloComBases("Reembolso", [{ nome: "fz-m2-jul26", base: null, real: null }])).toBe("Reembolso");
   });
 
-  it("com referência, entra entre parênteses depois do rótulo", () => {
-    expect(rotuloComReferencia("Reembolso", "4,00%")).toBe("Reembolso (base: 4,00%)");
-    expect(rotuloComReferencia("Ticket Médio", "R$ 1.200,00")).toBe("Ticket Médio (base: R$ 1.200,00)"); // aqui a entrada já é texto comum
+  it("[48.14 inverte: era `(base: 4,00%)`] com referência, entra entre parênteses COM o nome da base", () => {
+    expect(rotuloComBases("Reembolso", [{ nome: "fz-m2-jul26", base: "4,00%", real: null }])).toBe("Reembolso (fz-m2-jul26 base: 4,00%)");
+    expect(rotuloComBases("Ticket Médio", [{ nome: "fz-m2-jul26", base: "R$ 1.200,00", real: null }])).toBe(
+      "Ticket Médio (fz-m2-jul26 base: R$ 1.200,00)",
+    ); // aqui a entrada já é texto comum
   });
 });
 
@@ -119,13 +128,16 @@ describe("montarReferencia — base sem simulador não vira `base:` (AC5/AC6)", 
     expect(referenciaDaConversaoPaga(r, "meta_quente")).toBeNull();
   });
 
-  it("…mas a referência EXISTE (PO-06): com `null` a tela voltaria a pedir 'Escolha um lançamento…'", () => {
+  // [48.14 inverte: o cabeçalho dizia "não tem Planejamento salvo"] — a frase
+  // da base sem simulador foi para a linha DELA na declaração (AC4); o
+  // cabeçalho fala de várias bases. Ver `planejamento-bases.test.ts`.
+  it("…mas a referência EXISTE (PO-06): com `null` a tela voltaria a pedir 'Escolha…' [48.14: cabeçalho no plural]", () => {
     const r = montarReferencia({ nome: "fz-m2-jul26", temSimulador: false }, leituras());
     expect(r).not.toBeNull();
     expect(r?.nome).toBe("fz-m2-jul26");
     expect(r?.semSimulador).toBe(true);
-    expect(textoDoCabecalhoDaBase(r)).toContain("não tem Planejamento salvo");
-    expect(textoDoCabecalhoDaBase(r)).not.toContain("Escolha um lançamento");
+    expect(textoDoCabecalhoDasBases([r!])).toContain("cada um com o nome dele");
+    expect(textoDoCabecalhoDasBases([r!])).not.toContain("Escolha");
   });
 
   it("base COM simulador → referência como hoje", () => {
@@ -134,7 +146,7 @@ describe("montarReferencia — base sem simulador não vira `base:` (AC5/AC6)", 
     expect(referenciaDaConversaoOrganica(r, "whatsapp")).toBe("4,00%");
     expect(referenciaDaConversaoPaga(r, "meta_quente")).toBe("1,20%");
     expect(r?.semSimulador).toBeFalsy();
-    expect(textoDoCabecalhoDaBase(r)).toContain("aparecem entre parênteses");
+    expect(textoDoCabecalhoDasBases([r!])).toContain("aparecem entre parênteses");
   });
 
   it("API antiga (sem `temSimulador`) → toda base é 'com simulador', exatamente como hoje (AC7)", () => {
@@ -143,9 +155,9 @@ describe("montarReferencia — base sem simulador não vira `base:` (AC5/AC6)", 
     expect(baseTemSimulador({})).toBe(true);
   });
 
-  it("sem base escolhida → sem referência, e o cabeçalho pede a escolha", () => {
+  it("sem base escolhida → sem referência, e o cabeçalho pede a escolha [48.14: 'um ou mais']", () => {
     expect(montarReferencia(null, leituras())).toBeNull();
-    expect(textoDoCabecalhoDaBase(null)).toContain("Escolha um lançamento anterior");
+    expect(textoDoCabecalhoDasBases([])).toContain("Escolha um ou mais lançamentos anteriores");
   });
 });
 
