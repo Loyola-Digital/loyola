@@ -26,7 +26,7 @@ import {
   type PlanilhaDeVendaInput,
   type VendaCruaInput,
 } from "../services/debriefing-money-time-engine.js";
-import { aplicarImposto } from "../services/debriefing-hygiene.js";
+import { REGRA_DA_JANELA, aplicarImposto } from "../services/debriefing-hygiene.js";
 import { lerPlanilhaDeVenda } from "../services/debriefing-money-time-loader.js";
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -118,7 +118,6 @@ const PLANILHAS_PADRAO = [planilha("p-cap", CAP), planilha("p-prin", PRIN, { pla
 
 const input = (over: Partial<DebriefingMoneyTimeInput> = {}): DebriefingMoneyTimeInput => ({
   config: configBase(),
-  periodo: { inicio: "2026-04-17", fim: "2026-05-31" },
   criterioDeUnico: CRITERIO_DE_UNICO_HEADLINE,
   planilhas: PLANILHAS_PADRAO,
   vendas: [],
@@ -492,7 +491,9 @@ describe("AC6 — mídia por etapa: link_click, imposto uma vez, Quente × Frio"
 
   it("período que cruza 2026-01-01: imposto POR DIA (a razão global não é 1/(1−pct))", () => {
     const r = rodar({
-      periodo: { inicio: "2025-12-30", fim: "2026-05-31" },
+      config: configBase({
+        datasChave: { ...configBase().datasChave, inicioCaptacao: "2025-12-30" },
+      }),
       midia: [midia({ dia: "2025-12-31", spendBruto: 1000 }), midia({ dia: "2026-01-01", spendBruto: 1000 })],
     });
     const cap = r.midia.porEtapa[CAP]!;
@@ -570,11 +571,20 @@ describe("AC7 — captação: ingresso × combo × order bump (armadilha #3)", (
     expect(c.faturamentoOrderBump.valor).toBe(197 + 47);
     expect(c.faturamentoCaptacao.valor).toBe(396 + 296 + 244);
     // B só comprou o Combo e é comprador; D só comprou o GPT e é avulso.
-    expect(c.compradoresUnicos.porEmail).toBe(6);
+    // CONTRACT-001: `compradoresUnicos` é o comprador de captação da R2-1 (sem avulso).
+    expect(c.compradoresUnicos).toEqual({ porEmail: 5, porEmailOuTelefone: 4 });
+    expect(c.compradoresUnicos.porEmail).toBe(r.compradoresCaptacao.porEmail.length);
+    expect(c.compradoresUnicos.porEmailOuTelefone).toBe(r.compradoresCaptacao.porEmailOuTelefone.length);
+    expect(c.compradoresDaEtapaInclusiveAvulsos).toEqual({ porEmail: 6, porEmailOuTelefone: 5 });
+    expect(c.compradoresUnicos.porEmail + c.avulsos.compradores).toBe(c.compradoresDaEtapaInclusiveAvulsos.porEmail);
     expect(r.ingressosUnicos).toBe(5);
     expect(c.avulsos).toEqual({ compradores: 1, faturamento: 47 });
     expect(c.ticketCaptacao.valor).toBeCloseTo(936 / 5, 12);
-    expect(c.ticketCaptacao.memoria).toContain("só de order bump (avulsos)");
+    // MNT-001: o denominador é contagem de pessoas, não dinheiro.
+    expect(c.ticketCaptacao.memoria).toBe(
+      "faturamento da captação R$ 936,00 ÷ compradores de captação 5 = R$ 187,20" +
+        " — o numerador inclui R$ 47,00 de 1 comprador(es) só de order bump (avulsos), que não entram no denominador",
+    );
     expect(c.comCombo).toBe(1);
     expect(c.comOrderBump).toBe(1);
     expect(c.comTierSuperior.valor).toBeCloseTo(2 / 5, 12);
@@ -779,7 +789,7 @@ describe("AC9 — coorte D+x pela data do LEAD (armadilhas #4 e #7)", () => {
   it("exclusão automática SÓ por data anterior à abertura (estrito <); venda de R$ 5 depois fica (R2-4)", () => {
     const r = rodar({ vendas: vendas(), leads });
     expect(r.vendasExcluidas).toEqual([
-      { txId: "s10", produto: "Mentoria", valor: 800, dataBrt: "2026-05-05", motivo: "ANTERIOR_A_ABERTURA" },
+      { txId: "s10", produto: "Mentoria", valor: 800, dataBrt: "2026-05-05", fonte: "planilha", motivo: "ANTERIOR_A_ABERTURA" },
     ]);
     expect(r.vendasPrincipalBrutas).toBe(r.vendasPrincipal + r.vendasExcluidas.length);
     expect(r.auditoriaDeVendas.map((a) => a.txId)).not.toContain("s10");
@@ -959,5 +969,212 @@ describe("corte de janela depois da dedup — nada some", () => {
     expect(r.higiene.foraDoPeriodo.captacao).toEqual({ vendas: 1, faturamento: 99 });
     expect(r.higiene.vendasSemDia).toBe(1);
     expect(r.ingressosUnicos).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// QA fix iteração 1 (gate 49.3): mutações sobreviventes Q17, Q21, Q22, Q23
+// ---------------------------------------------------------------------------
+
+describe("TEST-001 (Q21) — ROAS diário e pico-artefato usam o investimento COM imposto", () => {
+  const PCT = 0.1215;
+  const cenario = () =>
+    rodar({
+      config: configBase({ imposto: { valor: PCT, origem: "default" } }),
+      vendas: [
+        venda("p-cap", { valorBrutoCru: "300,00", dataVendaCru: "18/04/2026" }),
+        venda("p-cap", { valorBrutoCru: "4.000,00", dataVendaCru: "19/04/2026" }),
+        venda("p-cap", { valorBrutoCru: "1.000,00", dataVendaCru: "20/04/2026" }),
+      ],
+      midia: [
+        midia({ dia: "2026-04-17", spendBruto: 1000 }),
+        // Bruto 55 fica ABAIXO do limiar (57,06); com imposto (62,61) fica acima.
+        midia({ dia: "2026-04-19", spendBruto: 55 }),
+        midia({ dia: "2026-04-20", spendBruto: 950 }),
+      ],
+    });
+
+  it("investimento do dia = bruto ÷ (1 − pct), e a série fecha com o investimento de captação", () => {
+    const r = cenario();
+    const d17 = r.roasDiarioCaptacao.find((d) => d.dia === "2026-04-17")!;
+    expect(d17.investimento).toBeCloseTo(1000 / (1 - PCT), 9);
+    expect(d17.investimentoPorEtapa[CAP]).toBeCloseTo(1000 / (1 - PCT), 9);
+    const soma = r.roasDiarioCaptacao.reduce((s, d) => s + d.investimento, 0);
+    expect(soma).toBeCloseTo(r.midia.porGrupo.captacao.investimentoComImposto, 9);
+  });
+
+  it("o limiar (com imposto) é comparado com o gasto do dia com imposto: 62,61 ≥ 57,06 não é pico", () => {
+    const r = cenario();
+    const limiar = (2005 / (1 - PCT) / 4) * FRACAO_LIMIAR_PICO_ARTEFATO;
+    expect(r.limiarPicoArtefato.limiarPicoArtefato).toBeCloseTo(limiar, 9);
+    const d19 = r.roasDiarioCaptacao.find((d) => d.dia === "2026-04-19")!;
+    expect(d19.investimento).toBeCloseTo(55 / (1 - PCT), 9);
+    expect(d19.investimento).toBeGreaterThan(limiar);
+    expect(55).toBeLessThan(limiar); // o bruto seria pico — é a armadilha que o teste trava
+    expect(d19.picoArtefato).toBe(false);
+    expect(d19.roas).toBeCloseTo(4000 / (55 / (1 - PCT)), 9);
+  });
+});
+
+describe("TEST-002 (Q17) — % compradores/cliques: avulso de order bump fora do numerador", () => {
+  it("3 compradores de captação + 1 avulso ÷ 100 link_click = 3,00% (nunca 4%)", () => {
+    const r = rodar({
+      vendas: [
+        venda("p-cap", { emailCru: "a@x.com" }),
+        venda("p-cap", { emailCru: "b@x.com", produto: "Combo", tipo: "combo", valorBrutoCru: "296,00" }),
+        venda("p-cap", { emailCru: "c@x.com" }),
+        venda("p-cap", { emailCru: "avulso@x.com", produto: "GPT", tipo: "order_bump", valorBrutoCru: "47,00" }),
+      ],
+      midia: [midia({ linkClicks: 100 })],
+    });
+    expect(r.captacao.avulsos.compradores).toBe(1);
+    expect(r.captacao.pctCompradoresPorCliques.valor).toBeCloseTo(3, 12);
+    expect(r.captacao.pctCompradoresPorCliques.memoria).toBe(
+      "compradores de captação 3 ÷ link_click da captação 100 × 100 = 3,00%",
+    );
+  });
+});
+
+describe("TEST-003 (Q22) — TMB na captação: conta o comprador, o valor fica fora do faturamento e do ticket", () => {
+  it("planilha tmb na etapa de captação", () => {
+    const r = rodar({
+      planilhas: [...PLANILHAS_PADRAO, planilha("p-cap-tmb", CAP, { plataforma: "tmb" })],
+      vendas: [
+        venda("p-cap", { emailCru: "a@x.com" }),
+        venda("p-cap-tmb", { emailCru: "t@x.com", valorBrutoCru: "497,00" }),
+      ],
+    });
+    expect(r.ingressosUnicos).toBe(2);
+    expect(r.captacao.faturamentoIngresso.valor).toBe(99);
+    expect(r.captacao.faturamentoCaptacao.valor).toBe(99);
+    expect(r.faturamentoTotal).toBe(99);
+    expect(r.captacao.ticketCaptacao.valor).toBeCloseTo(99 / 2, 12);
+    expect(r.captacao.ticketCaptacao.memoria).toContain("2 vendas, 1 via TMB (valor não considerado)");
+    expect(r.captacao.faturamentoCaptacao.memoria).toContain("2 vendas, 1 via TMB (valor não considerado)");
+    expect(r.tmb).toMatchObject({ vendas: 1, valorExcluido: 497, vendasNoPrincipal: 0, sinalizado: true });
+  });
+});
+
+describe("TEST-004 (Q23) — UTM do lead: e-mail antes do telefone na classificação", () => {
+  it("lead do e-mail (facebook, hot) vence o lead do telefone (ig) em registros diferentes", () => {
+    const leads: LeadInput[] = [
+      { emailCru: "a@x.com", telefoneCru: null, dataCriacaoCru: "17/04/2026", utm: { source: "facebook", term: "lp1|hot|ad" } },
+      { emailCru: "outro@x.com", telefoneCru: "31 99999-1111", dataCriacaoCru: "20/04/2026", utm: { source: "ig" } },
+    ];
+    const r = rodar({ vendas: [principal({ emailCru: "a@x.com", telefoneCru: "(31) 99999-1111", idDaVendaCru: "Q23" })], leads });
+    const a = r.auditoriaDeVendas.find((x) => x.txId === "Q23")!;
+    expect(a.utmLead?.source).toBe("facebook");
+    expect(a.canal).toBe("Pago Quente");
+    expect(a).toMatchObject({ origemDaData: "lead-email", dataDoLead: "2026-04-17" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Decisão 2A (dono, 2026-10-02) — janela = inicioCaptacao → maior fim
+// ---------------------------------------------------------------------------
+
+describe("decisão 2A — a janela sai da config e corta vendas E mídia", () => {
+  const comExtras = (extras: Partial<Config["datasChave"]>) =>
+    configBase({ datasChave: { ...configBase().datasChave, ...extras } });
+  const dados = () => ({
+    vendas: [
+      principal({ idDaVendaCru: "D17", dataVendaCru: "17/05/2026" }),
+      principal({ idDaVendaCru: "D19", dataVendaCru: "19/05/2026" }),
+    ],
+    midia: [
+      midia({ stageId: PRIN, campaignId: "p", campaignName: "x--vendas-principal--hot", dia: "2026-05-17", spendBruto: 100 }),
+      midia({ stageId: PRIN, campaignId: "p", campaignName: "x--vendas-principal--hot", dia: "2026-05-19", spendBruto: 100 }),
+    ],
+  });
+
+  it("só carrinho: fim = fimCarrinho (15/05); 17/05 e 19/05 ficam fora, contados", () => {
+    const r = rodar(dados());
+    expect(r.janela).toEqual({ inicio: "2026-04-17", fim: "2026-05-15", fimPor: "fimCarrinho", regra: REGRA_DA_JANELA });
+    expect(r.vendasPrincipal).toBe(0);
+    expect(r.higiene.foraDoPeriodo.principal).toEqual({ vendas: 2, faturamento: 2000 });
+    expect(r.midia.linhasForaDoPeriodo).toBe(2);
+    expect(r.midia.porGrupo.principal.investimentoBruto).toBe(0);
+  });
+
+  it("downsell até 18/05 estica a janela: 17/05 entra (venda e mídia), 19/05 fica fora", () => {
+    const r = rodar({ ...dados(), config: comExtras({ downsell: { houve: true, abertura: "2026-05-16", fim: "2026-05-18" } }) });
+    expect(r.janela).toMatchObject({ fim: "2026-05-18", fimPor: "downsell.fim" });
+    expect(r.auditoriaDeVendas.map((a) => a.txId)).toEqual(["D17"]);
+    expect(r.higiene.foraDoPeriodo.principal.vendas).toBe(1);
+    expect(r.midia.porGrupo.principal.investimentoBruto).toBe(100);
+    expect(r.midia.linhasForaDoPeriodo).toBe(1);
+  });
+
+  it("reabertura depois do downsell: o maior fim vence", () => {
+    const r = rodar({
+      ...dados(),
+      config: comExtras({
+        downsell: { houve: true, abertura: "2026-05-16", fim: "2026-05-18" },
+        reabertura: { houve: true, abertura: "2026-05-19", fim: "2026-05-22" },
+      }),
+    });
+    expect(r.janela).toMatchObject({ fim: "2026-05-22", fimPor: "reabertura.fim" });
+    expect(r.vendasPrincipal).toBe(2);
+    expect(r.midia.linhasForaDoPeriodo).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Decisão 3A (dono, 2026-10-02) — vendas manuais entram, com a origem marcada
+// ---------------------------------------------------------------------------
+
+describe("decisão 3A — manual_sales no motor, fonte marcada, Closer por seller_name", () => {
+  const planilhasComManual = [
+    ...PLANILHAS_PADRAO,
+    planilha("p-man", PRIN, { plataforma: "manual", nome: "Vendas manuais", temColunaStatus: false }),
+  ];
+  const vendaManual = (over: Partial<VendaCruaInput> = {}) =>
+    venda("p-man", {
+      produto: "Mentoria",
+      tipo: "principal",
+      valorBrutoCru: "2500,00",
+      dataVendaCru: "2026-05-13T15:00:00.000Z",
+      statusCru: null,
+      emailCru: "m@x.com",
+      sellerName: "Netão",
+      idDaVendaCru: "MAN1",
+      ...over,
+    });
+
+  it("a manual soma no principal e no faturamento; a auditoria marca fonte; o resumo declara", () => {
+    const r = rodar({ planilhas: planilhasComManual, vendas: [principal({ idDaVendaCru: "PLA1" }), vendaManual()] });
+    expect(r.vendasPrincipal).toBe(2);
+    expect(r.faturamentoPrincipal.valor).toBe(1000 + 2500);
+    expect(r.faturamentoPrincipal.memoria).toContain("(inclui 1 venda(s) manual(is), R$ 2.500,00)");
+    expect(r.auditoriaDeVendas.map((a) => [a.txId, a.fonte])).toEqual([
+      ["PLA1", "planilha"],
+      ["MAN1", "manual"],
+    ]);
+    expect(r.vendasManuais).toEqual({
+      linhasLidas: 1,
+      porGrupo: {
+        captacao: { vendas: 0, faturamento: 0 },
+        principal: { vendas: 1, faturamento: 2500 },
+        downsell: { vendas: 0, faturamento: 0 },
+        reabertura: { vendas: 0, faturamento: 0 },
+      },
+      origemDoValor: "manual_sales.value",
+    });
+    expect(r.tmb.vendas).toBe(0); // manual não é TMB
+  });
+
+  it("Netão: sem UTM e com seller_name = Sem track real na aquisição e Closer no fechamento", () => {
+    const r = rodar({ planilhas: planilhasComManual, vendas: [vendaManual()] });
+    expect(r.auditoriaDeVendas[0]).toMatchObject({ fonte: "manual", canal: "Sem track real", fechamento: "closer" });
+    expect(r.tabela1.fechamento.closer.vendas).toBe(1);
+    expect(JSON.stringify(r)).not.toMatch(/m@x\.com/);
+  });
+
+  it("manual antes da abertura é excluída e listada com fonte manual (decisão 7 vale para ela)", () => {
+    const r = rodar({ planilhas: planilhasComManual, vendas: [vendaManual({ dataVendaCru: "2026-05-05T15:00:00.000Z" })] });
+    expect(r.vendasExcluidas).toEqual([
+      { txId: "MAN1", produto: "Mentoria", valor: 2500, dataBrt: "2026-05-05", fonte: "manual", motivo: "ANTERIOR_A_ABERTURA" },
+    ]);
+    expect(r.vendasManuais.porGrupo.principal.vendas).toBe(0);
   });
 });

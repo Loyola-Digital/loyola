@@ -21,6 +21,7 @@ import {
   configClassificadorDe,
   lerFonteDeLead,
   lerPlanilhaDeVenda,
+  lerVendasManuais,
   linkClicksDeActions,
   loadDebriefingMoneyTimeInput,
   normalizarTiposDeProduto,
@@ -108,6 +109,61 @@ describe("leads, nome de campanha e config do classificador (puros)", () => {
     });
   });
 
+  it("TEST-004 (Q24): a data do lead vem de mapping.timestamp mesmo com cabeçalho fora dos apelidos", () => {
+    const r = lerFonteDeLead({
+      label: "pesquisa",
+      headers: ["Quando respondeu", "E-mail"],
+      rows: [["17/04/2026 10:00:00", "a@x.com"]],
+      mapping: { timestamp: "Quando respondeu", email: "E-mail" },
+    });
+    expect(r.leads).toEqual([
+      { emailCru: "a@x.com", telefoneCru: null, dataCriacaoCru: "17/04/2026 10:00:00", utm: { source: null, medium: null, campaign: null, term: null } },
+    ]);
+  });
+
+  it("decisão 3A: venda manual → linha crua, valor do numeric sem ambiguidade, tipo pela regra da etapa, sem nome do cliente", () => {
+    const r = lerVendasManuais(
+      "prin",
+      "sales",
+      [
+        { id: "m1", value: "4000.00", product: " Mentoria ", customerEmail: " m@x.com ", customerPhone: "553199990000.0", sellerName: " Netão ", saleDate: new Date("2026-05-13T15:00:00Z") },
+        { id: "m2", value: 1097, product: null, customerEmail: null, customerPhone: null, sellerName: "", saleDate: "2026-05-14T15:00:00Z" },
+      ],
+      { "imersão": "ingresso" },
+    );
+    expect(r.planilha).toEqual({
+      planilhaId: "prin:manual",
+      stageId: "prin",
+      nome: "Vendas manuais",
+      plataforma: "manual",
+      temColunaStatus: false,
+      temColunaId: true,
+      temColunaProduto: true,
+    });
+    expect(r.vendas[0]).toEqual({
+      planilhaId: "prin:manual",
+      linha: 1,
+      idDaVendaCru: "m1",
+      produto: "Mentoria",
+      tipo: "principal",
+      tipoClassificado: false,
+      valorBrutoCru: "4000,00",
+      moeda: null,
+      statusCru: null,
+      emailCru: "m@x.com",
+      telefoneCru: "553199990000.0",
+      dataVendaCru: "2026-05-13T15:00:00.000Z",
+      utm: {},
+      sellerName: "Netão",
+    });
+    expect(r.vendas[1]).toMatchObject({ valorBrutoCru: "1097,00", produto: null, emailCru: null, sellerName: null });
+    // Na captação (etapa paga) a manual é ingresso, como no painel.
+    expect(lerVendasManuais("cap", "paid", [{ ...r.vendas[0]!, id: "x", value: "99.00", product: "Imersão", customerEmail: null, customerPhone: null, sellerName: null, saleDate: "2026-04-20T12:00:00Z" }], { "imersão": "ingresso" }).vendas[0]).toMatchObject({
+      tipo: "ingresso",
+      tipoClassificado: true,
+    });
+  });
+
   it("comNomeDeCampanha preenche pelo id e não muta a entrada", () => {
     const utm = { source: "fb", campaign: "111" };
     const r = comNomeDeCampanha(utm, new Map([["111", "dg--vendas-captacao--hot"]]));
@@ -174,6 +230,11 @@ CREATE TABLE seller_aliases (
 CREATE TABLE stage_event_closers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), stage_id uuid NOT NULL, name varchar(255) NOT NULL
 );
+CREATE TABLE manual_sales (
+  id uuid PRIMARY KEY, stage_id uuid NOT NULL, customer_name varchar(255) NOT NULL, customer_email varchar(255),
+  customer_phone varchar(50), value numeric(12,2) NOT NULL, product varchar(255), seller_name varchar(255) NOT NULL,
+  sale_date timestamptz NOT NULL, refunded_at timestamptz
+);
 `;
 
 const lk = (n: string) => `[{"action_type":"link_click","value":"${n}"}]`;
@@ -194,11 +255,13 @@ INSERT INTO funnel_surveys (funnel_id, stage_id, spreadsheet_id, spreadsheet_nam
 INSERT INTO funnel_spreadsheets (funnel_id, stage_id, label, type, spreadsheet_id, spreadsheet_name, sheet_name, column_mapping) VALUES
   ('${F}', NULL, 'Leads gerais', 'leads', 'g-leads', 'Leads', 'base', '{"email":"email","phone":"telefone","date":"data"}'),
   ('${F}', NULL, 'Upsell', 'perpetual_upsell', 'g-nao-ler-1', 'Upsell', 'x', '{}'),
-  ('${F}', '${OUTRA}', 'Leads da outra etapa', 'leads', 'g-nao-ler-2', 'Outra', 'x', '{}');
+  ('${F}', '${OUTRA}', 'Leads da outra etapa', 'leads', 'g-nao-ler-2', 'Outra', 'x', '{}'),
+  ('${F}', '${CAP}', 'Lista sem contato', 'leads', 'g-semid', 'Sem contato', 'nomes', '{}');
 INSERT INTO meta_campaign_insights_daily (project_id, campaign_id, date_start, spend, impressions, actions) VALUES
   ('${P}', '111', '2026-04-20', 1000.50, 50000, '${lk("700")}'),
   ('${P}', '111', '2026-04-21', 10, 800, NULL),
   ('${P}', '222', '2026-05-12', 300, 9000, '${lk("0")}'),
+  ('${P}', '222', '2026-05-17', 40, 900, '${lk("5")}'),
   ('${P}', '333', '2026-04-20', 50, 1000, '[{"action_type":"landing_page_view","value":"9"}]'),
   ('${P}', '111', '2026-03-01', 999, 1, NULL),
   ('${P}', '999', '2026-04-20', 777, 1, NULL),
@@ -210,6 +273,11 @@ INSERT INTO seller_aliases (project_id, canonical_name, aliases) VALUES
   ('${P}', 'Isabela Comercial', '["isabela","isa"]'),
   ('${P2}', 'Outro Projeto', '["outro"]');
 INSERT INTO stage_event_closers (stage_id, name) VALUES ('${PRIN}', 'Netão'), ('${DE_OUTRO_FUNIL}', 'Fulano');
+INSERT INTO manual_sales (id, stage_id, customer_name, customer_email, customer_phone, value, product, seller_name, sale_date, refunded_at) VALUES
+  ('40000000-0000-4000-8000-000000000001', '${PRIN}', 'Cliente Manual Um', 'm@x.com', '553199990000', 2500.00, 'Mentoria', 'Netão', '2026-05-13 15:00:00+00', NULL),
+  ('40000000-0000-4000-8000-000000000002', '${PRIN}', 'Cliente Reembolsado', 'r@x.com', NULL, 900.00, 'Mentoria', 'Netão', '2026-05-13 16:00:00+00', '2026-05-20 10:00:00+00'),
+  ('40000000-0000-4000-8000-000000000003', '${OUTRA}', 'Cliente Outra Etapa', 'o@x.com', NULL, 700.00, 'X', 'Ana', '2026-05-13 16:00:00+00', NULL),
+  ('40000000-0000-4000-8000-000000000004', '${CAP}', 'Cliente Pix Captacao', 'pix@x.com', NULL, 99.00, 'Imersão', 'Ana', '2026-04-25 15:00:00+00', NULL);
 `;
 
 const PLANILHAS: Record<string, { headers: string[]; rows: string[][] }> = {
@@ -233,6 +301,7 @@ const PLANILHAS: Record<string, { headers: string[]; rows: string[][] }> = {
     headers: ["Carimbo de data/hora", "E-mail", "WhatsApp", "utm_source", "utm_term"],
     rows: [["17/04/2026", "a@x.com", "553175058180", "facebook", "lp|hot|ad"]],
   },
+  "g-semid|nomes": { headers: ["nome"], rows: [["Fulano"]] },
   "g-leads|base": {
     headers: ["data", "email", "telefone"],
     rows: [
@@ -276,7 +345,6 @@ const config: DebriefingConfigLancamento = {
   validadoPor: null,
   avisos: [],
 };
-const periodo = { inicio: "2026-04-17", fim: "2026-05-31" };
 
 let pg: PGlite;
 let db: Database;
@@ -301,7 +369,7 @@ afterAll(async () => {
 
 describe("AC12 — loadDebriefingMoneyTimeInput sobre Postgres real", () => {
   it("vendas: célula crua, coluna bruta, tipo, telefone com .0, linha vazia ignorada", async () => {
-    const r = await loadDebriefingMoneyTimeInput(db, { config, periodo }, { lerPlanilha: lerFalso });
+    const r = await loadDebriefingMoneyTimeInput(db, { config }, { lerPlanilha: lerFalso });
     const k1 = r.vendas.find((v) => v.idDaVendaCru === "K1")!;
     expect(k1.valorBrutoCru).toBe("4.000");
     expect(k1.telefoneCru).toBe("553175058180.0");
@@ -309,22 +377,24 @@ describe("AC12 — loadDebriefingMoneyTimeInput sobre Postgres real", () => {
     expect(r.vendas.find((v) => v.idDaVendaCru === "K2")).toMatchObject({ tipo: "order_bump", tipoClassificado: true });
     expect(r.vendas.find((v) => v.idDaVendaCru === "K3")).toMatchObject({ tipo: "ingresso", tipoClassificado: false });
     expect(r.vendas.find((v) => v.idDaVendaCru === "P2")!.sellerName).toBe("Netão");
-    expect(r.vendas).toHaveLength(5);
+    expect(r.vendas.filter((v) => !v.planilhaId.endsWith(":manual"))).toHaveLength(5);
     expect(r.diagnostico.precoMappingDivergente).toEqual(['n8n-captacao: mapping "Valor líquido" trocado por "Preço"']);
     expect(r.planilhas.map((p) => [p.plataforma, p.temColunaId, p.temColunaProduto])).toEqual([
       ["capture", true, true],
       ["main_product", true, true],
+      ["manual", true, true],
+      ["manual", true, true],
     ]);
   });
 
   it("nome da campanha das UTMs: funnel_stages.campaigns primeiro, meta_ad_insights_daily depois", async () => {
-    const r = await loadDebriefingMoneyTimeInput(db, { config, periodo }, { lerPlanilha: lerFalso });
+    const r = await loadDebriefingMoneyTimeInput(db, { config }, { lerPlanilha: lerFalso });
     expect(r.vendas.find((v) => v.idDaVendaCru === "K1")!.utm.campaignName).toBe("dg--vendas-captacao--hot");
     expect(r.vendas.find((v) => v.idDaVendaCru === "K3")!.utm.campaignName).toBe("dg--vendas-captacao--cold--abo");
   });
 
   it("mídia: spend cru só das campanhas vinculadas, no período, do projeto; link_click null × 0; campanha em 2 etapas conta 1×", async () => {
-    const r = await loadDebriefingMoneyTimeInput(db, { config, periodo }, { lerPlanilha: lerFalso });
+    const r = await loadDebriefingMoneyTimeInput(db, { config }, { lerPlanilha: lerFalso });
     const m = r.midia.map((x) => [x.stageId, x.campaignId, x.dia, x.spendBruto, x.linkClicks]);
     expect(m).toEqual([
       [CAP, "111", "2026-04-20", 1000.5, 700],
@@ -335,17 +405,46 @@ describe("AC12 — loadDebriefingMoneyTimeInput sobre Postgres real", () => {
     expect(r.diagnostico.campanhasEmMaisDeUmaEtapa).toEqual([{ campaignId: "333", etapas: [CAP, PRIN] }]);
   });
 
+  it("decisão 2A: a mídia é lida na janela da config — o downsell até 18/05 traz a linha de 17/05", async () => {
+    const semExtra = await loadDebriefingMoneyTimeInput(db, { config }, { lerPlanilha: lerFalso });
+    expect(semExtra.diagnostico.janela).toMatchObject({ inicio: "2026-04-17", fim: "2026-05-15", fimPor: "fimCarrinho" });
+    expect(semExtra.midia.some((m) => m.dia === "2026-05-17")).toBe(false);
+    const comDownsell = {
+      ...config,
+      datasChave: { ...config.datasChave, downsell: { houve: true as const, abertura: "2026-05-16", fim: "2026-05-18" } },
+    };
+    const r = await loadDebriefingMoneyTimeInput(db, { config: comDownsell }, { lerPlanilha: lerFalso });
+    expect(r.diagnostico.janela).toMatchObject({ fim: "2026-05-18", fimPor: "downsell.fim" });
+    expect(r.midia.filter((m) => m.dia === "2026-05-17").map((m) => [m.campaignId, m.spendBruto, m.linkClicks])).toEqual([["222", 40, 5]]);
+  });
+
+  it("decisão 3A: vendas manuais da etapa, sem as reembolsadas e sem as de etapa fora do lançamento", async () => {
+    const r = await loadDebriefingMoneyTimeInput(db, { config }, { lerPlanilha: lerFalso });
+    expect(r.diagnostico.vendasManuais).toEqual([
+      { stageId: CAP, linhas: 1 },
+      { stageId: PRIN, linhas: 1 },
+    ]);
+    const manuais = r.vendas.filter((v) => v.planilhaId.endsWith(":manual"));
+    expect(manuais.map((v) => [v.idDaVendaCru, v.valorBrutoCru, v.tipo, v.sellerName, v.dataVendaCru])).toEqual([
+      ["40000000-0000-4000-8000-000000000004", "99,00", "ingresso", "Ana", "2026-04-25T15:00:00.000Z"],
+      ["40000000-0000-4000-8000-000000000001", "2500,00", "principal", "Netão", "2026-05-13T15:00:00.000Z"],
+    ]);
+    expect(JSON.stringify(r.vendas)).not.toMatch(/Cliente/); // nome do cliente nunca é lido
+  });
+
   it("leads: fontes da etapa + do funil sem etapa; nunca as de venda nem as de etapa fora do lançamento", async () => {
-    const r = await loadDebriefingMoneyTimeInput(db, { config, periodo }, { lerPlanilha: lerFalso });
-    expect(r.diagnostico.fontesDeLead.map((f) => [f.label, f.linhas])).toEqual([
-      ["Pesquisa / respostas", 1],
-      ["Leads gerais · base", 1],
+    const r = await loadDebriefingMoneyTimeInput(db, { config }, { lerPlanilha: lerFalso });
+    expect(r.diagnostico.fontesDeLead.map((f) => [f.label, f.linhas, f.semIdentificador])).toEqual([
+      ["Pesquisa / respostas", 1, false],
+      ["Leads gerais · base", 1, false],
+      // TEST-004 (Q8b): fonte sem e-mail nem telefone chega ao diagnóstico, não some.
+      ["Lista sem contato · nomes", 0, true],
     ]);
     expect(r.leads[0]).toMatchObject({ emailCru: "a@x.com", telefoneCru: "553175058180", dataCriacaoCru: "17/04/2026" });
   });
 
   it("config do classificador montada uma vez: aliases do projeto + closers do funil, versão da 49.2", async () => {
-    const r = await loadDebriefingMoneyTimeInput(db, { config, periodo }, { lerPlanilha: lerFalso });
+    const r = await loadDebriefingMoneyTimeInput(db, { config }, { lerPlanilha: lerFalso });
     expect(r.configClassificador).toEqual({
       closerMediums: ["x1"],
       closerNomes: ["isa", "isabela", "isabela comercial", "netão"],
@@ -359,7 +458,7 @@ describe("AC12 — loadDebriefingMoneyTimeInput sobre Postgres real", () => {
     for (const quebrada of ["g-cap|n8n-captacao", "g-leads|base"]) {
       const ler = (id: string, aba: string) =>
         `${id}|${aba}` === quebrada ? Promise.reject(new Error("Sheets data error (500)")) : lerFalso(id, aba);
-      const erro = await loadDebriefingMoneyTimeInput(db, { config, periodo }, { lerPlanilha: ler }).catch((e: unknown) => e);
+      const erro = await loadDebriefingMoneyTimeInput(db, { config }, { lerPlanilha: ler }).catch((e: unknown) => e);
       expect(erro).toBeInstanceOf(DebriefingDadoIndisponivelError);
       expect((erro as DebriefingDadoIndisponivelError).toResponse()).toMatchObject({ erro: "DADO_INDISPONIVEL" });
       expect((erro as DebriefingDadoIndisponivelError).detalhe).toContain(quebrada.split("|")[1]!);
@@ -368,17 +467,27 @@ describe("AC12 — loadDebriefingMoneyTimeInput sobre Postgres real", () => {
 
   it("etapa da config que saiu do funil lança DADO_INDISPONIVEL", async () => {
     const outra = { ...config, etapas: [...config.etapas, { stageId: DE_OUTRO_FUNIL, papel: "vendas-downsell" as const }] };
-    await expect(loadDebriefingMoneyTimeInput(db, { config: outra, periodo }, { lerPlanilha: lerFalso })).rejects.toThrow(
+    await expect(loadDebriefingMoneyTimeInput(db, { config: outra }, { lerPlanilha: lerFalso })).rejects.toThrow(
       DebriefingDadoIndisponivelError,
     );
   });
 
   it("ponta a ponta: '4.000' sai do motor como 4000, '1.097,00' como 1097, D+0 pelo ingresso que cruza a meia-noite", async () => {
-    const carregado = await loadDebriefingMoneyTimeInput(db, { config, periodo }, { lerPlanilha: lerFalso });
+    const carregado = await loadDebriefingMoneyTimeInput(db, { config }, { lerPlanilha: lerFalso });
     const r = computeDebriefingMoneyTime({ ...carregado, criterioDeUnico: CRITERIO_DE_UNICO_HEADLINE });
-    expect(r.captacao.faturamentoIngresso.valor).toBe(4000 + 99);
     expect(r.produtosNaoClassificados).toEqual([{ produto: "Produto Novo", vendas: 1, faturamento: 99 }]);
-    expect(r.faturamentoPrincipal.valor).toBe(2 * 1097);
+    // 3A: a manual da captação (PIX, R$ 99) é ingresso e conta como comprador.
+    expect(r.captacao.faturamentoIngresso.valor).toBe(4000 + 99 + 99);
+    expect(r.ingressosUnicos).toBe(3); // a (Imersão), c (Produto Novo → ingresso), pix (manual)
+    // 3A: a manual do principal (R$ 2.500, Netão) entra; a reembolsada (R$ 900) não.
+    expect(r.faturamentoPrincipal.valor).toBe(2 * 1097 + 2500);
+    expect(r.vendasManuais.porGrupo.principal).toEqual({ vendas: 1, faturamento: 2500 });
+    expect(r.auditoriaDeVendas.find((x) => x.fonte === "manual")).toMatchObject({
+      canal: "Sem track real",
+      fechamento: "closer",
+      valor: 2500,
+    });
+    expect(JSON.stringify(r)).not.toMatch(/Cliente|553199990000/);
     expect(r.midia.porEtapa[CAP]!.investimentoBruto).toBeCloseTo(1060.5, 9);
     expect(r.midia.porEtapa[CAP]!.linkClicks).toBe(700);
     expect(r.midia.porEtapa[PRIN]!.linkClicks).toBe(0);

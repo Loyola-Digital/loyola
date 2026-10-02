@@ -15,7 +15,7 @@
  * 1, 2, 3, 4, 5, 7, 9 e 10.
  *
  * Regras do dono que valem aqui (epic §Decisões — não reabrir):
- * - imposto do Loyola, uma vez, por dia (`aplicarImposto`); nunca `× 1,13`;
+ * - imposto do Loyola, uma vez, por dia (`aplicarImposto`); nunca o fator fixo da skill;
  * - clique = `link_click`; ausente = `null`, nunca `0` nem cliques totais;
  * - comprador de captação = `ingresso` OU `combo` (R2-1); headline `porEmail`;
  * - dedup por ID da venda (camada 1, função da 41.10) antes do corte de janela;
@@ -24,6 +24,11 @@
  * - venda do principal antes da abertura do carrinho sai e é listada
  *   (decisão 7); venda-teste NÃO é excluída (R2-4);
  * - aquisição × fechamento: dois eixos, nunca somados (decisão 3, R2-5);
+ * - janela = `inicioCaptacao` → maior entre fim do carrinho, da reabertura e do
+ *   downsell, para vendas E mídia (decisão 2A, 2026-10-02);
+ * - vendas manuais (`manual_sales`) entram como venda da etapa, `fonte:
+ *   "manual"` na auditoria (decisão 3A); a camada 2 `(e-mail, produto)` da
+ *   skill fica (decisão 1A — a diferença para o Resumão é de definição);
  * - sem PII: chaves em hash; nenhum e-mail, telefone ou nome no payload.
  *
  * Unidades: dinheiro em reais (somado em centavos inteiros, para que toda
@@ -59,10 +64,12 @@ import {
   dataBrt,
   deduplicarVendas,
   diasEntre,
+  ehManual,
   ehTmb,
   emCentavos,
   fatorDoImposto,
   filtrarPorStatus,
+  janelaDoDebriefing,
   lerValorMonetario,
   normalizarEmail,
   normalizarTelefone,
@@ -72,11 +79,13 @@ import {
   type CriterioDeUnico,
   type DedupPorIdNaoAplicada,
   type ExcluidasPorStatus,
+  type FonteDaVenda,
+  type JanelaDoDebriefing,
   type PlanilhaParaDedup,
   type ValorLido,
 } from "./debriefing-hygiene.js";
 
-export type { CriterioDeUnico } from "./debriefing-hygiene.js";
+export type { CriterioDeUnico, FonteDaVenda, JanelaDoDebriefing } from "./debriefing-hygiene.js";
 
 // ---------------------------------------------------------------------------
 // Constantes nomeadas
@@ -121,7 +130,12 @@ export interface PlanilhaDeVendaInput {
   stageId: string;
   /** Nome da aba — só para a lacuna/auditoria. */
   nome: string;
-  /** Subtype da planilha (`main_product | sales | tmb | event_sales | capture`). */
+  /**
+   * Subtype da planilha (`main_product | sales | tmb | event_sales | capture`),
+   * ou `"manual"` (`PLATAFORMA_MANUAL`) para as vendas lançadas à mão
+   * (`manual_sales`, decisão 3A) — o loader as entrega como uma planilha a mais
+   * da etapa.
+   */
   plataforma: string;
   temColunaStatus: boolean;
   /** `mapping.transactionId` existe na planilha (camada 1 da dedup). */
@@ -181,9 +195,12 @@ export interface ClassificadorInjetado {
 }
 
 export interface DebriefingMoneyTimeInput {
+  /**
+   * A janela do debriefing NÃO é parâmetro: sai de `config.datasChave` por
+   * `janelaDoDebriefing` (decisão 2A). Vendas e mídia fora dela saem e são
+   * contadas.
+   */
   config: Pick<DebriefingConfigLancamento, "datasChave" | "etapas" | "imposto">;
-  /** Janela do lançamento (BRT, inclusive). Vendas e mídia fora dela saem e são contadas. */
-  periodo: { inicio: string; fim: string };
   /** Obrigatório e sem default — o orquestrador passa `CRITERIO_DE_UNICO_HEADLINE`. */
   criterioDeUnico: CriterioDeUnico;
   /** Janela da coorte; default `MAXD_PADRAO` (45). */
@@ -275,6 +292,8 @@ export interface ItemDeVendaSemPii {
   produto: string | null;
   valor: number;
   dataBrt: string | null;
+  /** `"manual"` = `manual_sales` (decisão 3A); `"planilha"` = planilha de venda da etapa. */
+  fonte: FonteDaVenda;
 }
 
 export interface VendaExcluida extends ItemDeVendaSemPii {
@@ -285,6 +304,8 @@ export interface VendaExcluida extends ItemDeVendaSemPii {
 export type OrigemDaData = "lead-email" | "lead-telefone" | "ingresso-email" | "ingresso-telefone" | "nenhuma";
 
 export interface AuditoriaDeVenda {
+  /** `"manual"` = `manual_sales` (decisão 3A); `"planilha"` = planilha de venda da etapa. */
+  fonte: FonteDaVenda;
   txId: string | null;
   produto: string | null;
   /** Valor da planilha em BRL. */
@@ -372,11 +393,15 @@ export interface GrupoMonetario {
 
 export interface DebriefingMoneyTime {
   versao: 1;
-  periodo: { inicio: string; fim: string };
+  /** Decisão 2A: a janela que cortou vendas e mídia, com a regra por extenso. */
+  janela: JanelaDoDebriefing;
   criterioDeUnico: CriterioDeUnico;
   classificadorVersao: string;
 
-  /** R-49-4: todo valor de venda saiu da célula crua pelo parser único. */
+  /**
+   * R-49-4: todo valor de venda de PLANILHA saiu da célula crua pelo parser
+   * único. As vendas manuais vêm do banco (`vendasManuais.origemDoValor`).
+   */
   origemDoValor: Record<GrupoDaEtapa | "tmb" | "excluidas", "celula-crua">;
 
   // ---- Higiene ----
@@ -402,6 +427,17 @@ export interface DebriefingMoneyTime {
     vendasNoPrincipal: number;
     sinalizado: boolean;
     texto: string | null;
+  };
+
+  /**
+   * Decisão 3A: vendas lançadas à mão (`manual_sales`, reembolsadas fora) que
+   * ENTRARAM na conta, por grupo, depois de toda a higiene. Cada uma aparece
+   * com `fonte: "manual"` na auditoria.
+   */
+  vendasManuais: {
+    linhasLidas: number;
+    porGrupo: Record<GrupoDaEtapa, GrupoMonetario>;
+    origemDoValor: "manual_sales.value";
   };
 
   faturamentoTotal: number;
@@ -436,7 +472,20 @@ export interface DebriefingMoneyTime {
     faturamentoCaptacao: Metrica;
     compradoresCaptacao: Record<CriterioDeUnico, string[]>;
     ingressosUnicos: number;
+    /**
+     * Compradores de captação (R2-1: comprador = `ingresso` OU `combo`) nos dois
+     * critérios, lado a lado — `porEmail` é o headline (decisão 1),
+     * `porEmailOuTelefone` é a comparação com a skill. É sempre
+     * `compradoresCaptacao[critério].length`; os avulsos (só order bump) NÃO
+     * entram (estão em `avulsos` e em `compradoresDaEtapaInclusiveAvulsos`).
+     */
     compradoresUnicos: Record<CriterioDeUnico, number>;
+    /**
+     * Toda pessoa que comprou algo na etapa de captação, avulsos de order bump
+     * incluídos. NÃO é o comprador de captação da R2-1 — serve só para fechar
+     * `compradoresUnicos + avulsos` (no critério headline).
+     */
+    compradoresDaEtapaInclusiveAvulsos: Record<CriterioDeUnico, number>;
     comCombo: number;
     comOrderBump: number;
     comTierSuperior: Metrica;
@@ -557,17 +606,23 @@ function razao(
   rotuloNum: string,
   rotuloDen: string,
   formatar: (v: number) => string,
-  opts: { multiplicador?: number; formatarResultado?: (v: number) => string } = {},
+  opts: {
+    multiplicador?: number;
+    formatarResultado?: (v: number) => string;
+    /** Unidade do denominador quando difere da do numerador (ex.: ticket = R$ ÷ pessoas). */
+    formatarDenominador?: (v: number) => string;
+  } = {},
 ): MetricaRazao {
   const mult = opts.multiplicador ?? 1;
   const fRes = opts.formatarResultado ?? ((v: number) => fmtNumero(v, 2));
+  const fDen = opts.formatarDenominador ?? formatar;
   const textoDen = rotuloDen;
   if (!Number.isFinite(denominador) || denominador === 0 || !Number.isFinite(numerador)) {
     return {
       valor: null,
       numerador,
       denominador,
-      memoria: `${rotuloNum} ${formatar(numerador)} ÷ ${textoDen} ${formatar(denominador)} — sem denominador`,
+      memoria: `${rotuloNum} ${formatar(numerador)} ÷ ${textoDen} ${fDen(denominador)} — sem denominador`,
       motivo: `DIVISAO_POR_ZERO: ${textoDen} = 0`,
     };
   }
@@ -577,7 +632,7 @@ function razao(
     numerador,
     denominador,
     memoria:
-      `${rotuloNum} ${formatar(numerador)} ÷ ${textoDen} ${formatar(denominador)}` +
+      `${rotuloNum} ${formatar(numerador)} ÷ ${textoDen} ${fDen(denominador)}` +
       `${mult !== 1 ? ` × ${fmtInt(mult)}` : ""} = ${fRes(valor)}`,
   };
 }
@@ -596,6 +651,7 @@ interface Linha {
   stageId: string;
   grupo: GrupoDaEtapa;
   tmb: boolean;
+  fonte: FonteDaVenda;
   idDaVenda: string | null;
   email: string;
   telefone: string | null;
@@ -610,7 +666,7 @@ interface Linha {
 const reais = (centavos: number) => centavos / 100;
 
 function itemSemPii(l: Linha): ItemDeVendaSemPii {
-  return { txId: l.idDaVenda, produto: l.v.produto, valor: reais(l.centavosDaPlanilha), dataBrt: l.dia };
+  return { txId: l.idDaVenda, produto: l.v.produto, valor: reais(l.centavosDaPlanilha), dataBrt: l.dia, fonte: l.fonte };
 }
 
 function utmLimpa(u: Utm | null | undefined): Utm | null {
@@ -783,13 +839,15 @@ function coorteVazia(d0: string, maxD: number): Coorte {
 // ---------------------------------------------------------------------------
 
 export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): DebriefingMoneyTime {
-  const { config, periodo, criterioDeUnico, classificador } = input;
+  const { config, criterioDeUnico, classificador } = input;
   if (criterioDeUnico !== "porEmail" && criterioDeUnico !== "porEmailOuTelefone") {
     throw new Error(`computeDebriefingMoneyTime: criterioDeUnico obrigatório ("porEmail" | "porEmailOuTelefone"), veio ${String(criterioDeUnico)}`);
   }
   const maxD = input.maxD ?? MAXD_PADRAO;
   if (!Number.isInteger(maxD) || maxD < 0) throw new Error(`computeDebriefingMoneyTime: maxD inválido: ${String(maxD)}`);
   const d0 = config.datasChave.inicioCaptacao;
+  // Decisão 2A: uma regra só para a janela (o loader lê a mídia nela também).
+  const janela = janelaDoDebriefing(config.datasChave);
   const abertura = config.datasChave.aberturaCarrinho;
   const pct = config.imposto.valor;
 
@@ -823,6 +881,7 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
       stageId: planilha.stageId,
       grupo,
       tmb: ehTmb(planilha.plataforma),
+      fonte: ehManual(planilha.plataforma) ? "manual" : "planilha",
       idDaVenda: (v.idDaVendaCru ?? "").trim() || null,
       email: normalizarEmail(v.emailCru),
       telefone: normalizarTelefone(v.telefoneCru),
@@ -860,6 +919,7 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
         produto: l.v.produto,
         valor: -l.lido.valor,
         dataBrt: l.dia,
+        fonte: l.fonte,
       });
       continue;
     }
@@ -931,7 +991,7 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
       noPeriodo.push(l);
       continue;
     }
-    if (l.dia < periodo.inicio || l.dia > periodo.fim) {
+    if (l.dia < janela.inicio || l.dia > janela.fim) {
       foraDoPeriodo[l.grupo].vendas += 1;
       foraCent[l.grupo] += l.centavos;
       continue;
@@ -975,7 +1035,13 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
   let tmbCent = 0;
   let tmbNoPrincipal = 0;
   const tmbPorGrupo: Record<GrupoDaEtapa, number> = { captacao: 0, principal: 0, downsell: 0, reabertura: 0 };
+  const manualPorGrupo: Record<GrupoDaEtapa, number> = { captacao: 0, principal: 0, downsell: 0, reabertura: 0 };
+  const manualCentPorGrupo: Record<GrupoDaEtapa, number> = { captacao: 0, principal: 0, downsell: 0, reabertura: 0 };
   for (const l of contaveis) {
+    if (l.fonte === "manual") {
+      manualPorGrupo[l.grupo] += 1;
+      manualCentPorGrupo[l.grupo] += l.centavos;
+    }
     vendasGrupo[l.grupo] += 1;
     fatGrupoCent[l.grupo] += l.centavos;
     fatTipoCent[l.v.tipo] += l.centavos;
@@ -989,7 +1055,10 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
   }
   const faturamentoTotalCent = GRUPOS.reduce((s, g) => s + fatGrupoCent[g], 0);
   const notaTmb = (g: GrupoDaEtapa): string =>
-    tmbPorGrupo[g] > 0 ? ` (${textoTmb(vendasGrupo[g], tmbPorGrupo[g])})` : "";
+    (tmbPorGrupo[g] > 0 ? ` (${textoTmb(vendasGrupo[g], tmbPorGrupo[g])})` : "") +
+    (manualPorGrupo[g] > 0
+      ? ` (inclui ${manualPorGrupo[g]} venda(s) manual(is), ${fmtReais(reais(manualCentPorGrupo[g]))})`
+      : "");
 
   // ===================================================================
   // 3. Mídia
@@ -998,7 +1067,7 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
   let linhasMidiaFora = 0;
   const midiaForaDaConfig = new Map<string, number>();
   for (const m of input.midia) {
-    if (m.dia < periodo.inicio || m.dia > periodo.fim) {
+    if (m.dia < janela.inicio || m.dia > janela.fim) {
       linhasMidiaFora += 1;
       continue;
     }
@@ -1123,6 +1192,7 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
 
   const compradoresCaptacao: Record<CriterioDeUnico, string[]> = { porEmail: [], porEmailOuTelefone: [] };
   const compradoresUnicos: Record<CriterioDeUnico, number> = { porEmail: 0, porEmailOuTelefone: 0 };
+  const compradoresDaEtapaInclusiveAvulsos: Record<CriterioDeUnico, number> = { porEmail: 0, porEmailOuTelefone: 0 };
   for (const crit of ["porEmail", "porEmailOuTelefone"] as const) {
     const todos = new Set<string>();
     const ancorados = new Set<string>();
@@ -1132,7 +1202,9 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
       if (ancora(l.v.tipo)) ancorados.add(k);
     });
     compradoresCaptacao[crit] = [...ancorados].sort();
-    compradoresUnicos[crit] = todos.size;
+    // R2-1: comprador de captação = ingresso OU combo. Avulso de bump fica fora.
+    compradoresUnicos[crit] = compradoresCaptacao[crit].length;
+    compradoresDaEtapaInclusiveAvulsos[crit] = todos.size;
   }
 
   // Por comprador (critério headline): tipos e linha representativa.
@@ -1224,8 +1296,10 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
 
   const ticketCaptacao: Metrica = capAplicavel
     ? (() => {
+        // MNT-001: dinheiro ÷ pessoas — o denominador é contagem, não R$.
         const r = razao(reais(fatCapCent), ingressosUnicos, "faturamento da captação", "compradores de captação", fmtReais, {
           formatarResultado: fmtReais,
+          formatarDenominador: fmtInt,
         });
         const extra =
           avulsos > 0
@@ -1284,6 +1358,7 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
 
     const dMais = dataDoLead !== null && l.dia !== null ? diasEntre(d0, dataDoLead) : null;
     auditoriaDeVendas.push({
+      fonte: l.fonte,
       txId: l.idDaVenda,
       produto: l.v.produto,
       valor: reais(l.centavosDaPlanilha),
@@ -1514,7 +1589,7 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
 
   return {
     versao: 1,
-    periodo: { ...periodo },
+    janela,
     criterioDeUnico,
     classificadorVersao: classificador.versao,
     origemDoValor: {
@@ -1548,6 +1623,13 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
       vendasNoPrincipal: tmbNoPrincipal,
       sinalizado: tmbVendas > 0,
       texto: tmbVendas > 0 ? textoTmb(contaveis.length, tmbVendas) : null,
+    },
+    vendasManuais: {
+      linhasLidas: lidas.filter((l) => l.fonte === "manual").length,
+      porGrupo: Object.fromEntries(
+        GRUPOS.map((g) => [g, { vendas: manualPorGrupo[g], faturamento: reais(manualCentPorGrupo[g]) }]),
+      ) as Record<GrupoDaEtapa, GrupoMonetario>,
+      origemDoValor: "manual_sales.value",
     },
     faturamentoTotal: reais(faturamentoTotalCent),
     faturamentoPorEtapa: {
@@ -1588,6 +1670,7 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
       compradoresCaptacao,
       ingressosUnicos,
       compradoresUnicos,
+      compradoresDaEtapaInclusiveAvulsos,
       comCombo,
       comOrderBump,
       comTierSuperior,
