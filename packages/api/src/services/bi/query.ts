@@ -315,6 +315,8 @@ const FONTES: Partial<Record<EntidadeDoCatalogo, Fonte>> = {
         pmc.key        AS stage_id,
         (d->>'date')    AS dia,
         (d->>'produto') AS produto,
+        COALESCE(d->>'canal', 'Sem Track')  AS canal,
+        COALESCE(d->>'origem', 'Sem Track') AS origem,
         COALESCE((d->>'bruto')::numeric, 0)   AS bruto,
         COALESCE((d->>'liquido')::numeric, 0) AS liquido,
         COALESCE((d->>'vendas')::numeric, 0)  AS vendas
@@ -328,6 +330,8 @@ const FONTES: Partial<Record<EntidadeDoCatalogo, Fonte>> = {
     campos: {
       "produtos.date": sql`produtos.dia`,
       "produtos.produto": sql`produtos.produto`,
+      "produtos.canal": sql`produtos.canal`,
+      "produtos.origem": sql`produtos.origem`,
       "produtos.projeto": sql`(SELECT p.name FROM projects p WHERE p.id = produtos.project_id)`,
       "produtos.funil": sql`(
         SELECT f.name FROM funnel_stages fs

@@ -97,7 +97,17 @@ export interface SalesDailyPayload {
    * duas linhas aqui e um comprador no `byDay`. Por isso vive numa entidade
    * separada do faturamento, em vez de virar uma quebra dele.
    */
-  porProdutoDia: { date: string; produto: string; vendas: number; bruto: number; liquido: number }[];
+  porProdutoDia: {
+    date: string;
+    produto: string;
+    /** Canal NOMEADO da própria linha de venda (utm_source + utm_medium). */
+    canal: Canal;
+    /** O balde grosso: Pago, Orgânico ou Sem Track. */
+    origem: Origem;
+    vendas: number;
+    bruto: number;
+    liquido: number;
+  }[];
   /** Brief v6 #6: quebra por plataforma (= subtype da planilha de origem, ou
    * "manual"). Permite excluir TMB do total sem depender do nome do produto. */
   porPlataforma: { plataforma: string; vendas: number; bruto: number; liquido: number }[];
@@ -331,7 +341,10 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
   const porCanal = new Map<Canal, { vendas: number; bruto: number; liquido: number }>();
   const porOT = new Map<string, { origem: Origem; temperatura: "hot" | "cold" | null; vendas: number; bruto: number; liquido: number }>();
   const porProduto = new Map<string, { vendas: number; bruto: number; liquido: number }>();
-  const porProdutoDia = new Map<string, { date: string; produto: string; vendas: number; bruto: number; liquido: number }>();
+  const porProdutoDia = new Map<
+    string,
+    { date: string; produto: string; canal: Canal; origem: Origem; vendas: number; bruto: number; liquido: number }
+  >();
   const porPlataforma = new Map<string, { vendas: number; bruto: number; liquido: number }>();
   const porProdutoPlataforma = new Map<string, { produto: string; plataforma: string; vendas: number; bruto: number; liquido: number }>();
   let totalBruto = 0;
@@ -362,8 +375,13 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
 
     if (s.lastDate) {
       const dia = ymd(s.lastDate);
-      const chave = `${dia}|${s.produto}`;
-      const pd = porProdutoDia.get(chave) ?? { date: dia, produto: s.produto, vendas: 0, bruto: 0, liquido: 0 };
+      // O canal sai da UTM da PRÓPRIA linha de venda — é o que a plataforma de
+      // pagamento gravou junto da compra, não um palpite a partir dos leads.
+      // Era a resposta que faltava para "de onde vem quem compra".
+      const canal = classifyCanal(s.utmSource, s.utmMedium);
+      const origem = classifyOrigem(s.utmSource);
+      const chave = `${dia}|${s.produto}|${canal}|${origem}`;
+      const pd = porProdutoDia.get(chave) ?? { date: dia, produto: s.produto, canal, origem, vendas: 0, bruto: 0, liquido: 0 };
       pd.vendas += 1;
       pd.bruto += s.bruto;
       pd.liquido += s.liquido;
@@ -440,6 +458,8 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
       .map((v) => ({
         date: v.date,
         produto: v.produto,
+        canal: v.canal,
+        origem: v.origem,
         vendas: v.vendas,
         bruto: Math.round(v.bruto * 100) / 100,
         liquido: Math.round(v.liquido * 100) / 100,
