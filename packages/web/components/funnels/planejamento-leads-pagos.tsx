@@ -29,8 +29,8 @@ import {
   type CampoDeTextoDoBlocoPago,
   type FormularioDosPagos,
 } from "@/lib/utils/planejamento-pagos-form";
-import { referenciaDaConversaoPaga, rotuloComReferencia, type BaseDeReferencia } from "@/lib/utils/planejamento-referencia"; // Story 48.9
-import { realizadoDaConversaoPaga, type RealizadoDaBase } from "@/lib/utils/planejamento-realizado"; // Story 48.11
+// Story 48.9 (base:) + 48.11 (real:) — desde a 48.14, um grupo por base marcada.
+import { gruposDaConversaoPaga, rotuloComBases, type GrupoDaBase, type ReferenciaDeBase } from "@/lib/utils/planejamento-bases";
 import { usePlanejamentoInputs } from "@/lib/hooks/use-planejamento-inputs";
 import { usePlanejamentoPagos, useSalvarPlanejamentoPagos } from "@/lib/hooks/use-planejamento-pagos";
 
@@ -70,8 +70,7 @@ function BlocoDaFonte({
   cplMedio,
   erros,
   podeEditar,
-  refConversao,
-  realConversao,
+  gruposDaConversao,
   onCampo,
   onNivel,
 }: {
@@ -82,10 +81,8 @@ function BlocoDaFonte({
   cplMedio: number | null;
   erros: Partial<Record<string, string>>;
   podeEditar: boolean;
-  /** Story 48.9 — conversão média da mesma fonte no lançamento de referência, já formatada. */
-  refConversao: string | null;
-  /** Story 48.11 — a conversão REALIZADA da base, ao lado da planejada. */
-  realConversao: string | null;
+  /** Story 48.9/48.11 — conversão média planejada e realizada da mesma fonte, um grupo por base marcada (Story 48.14). */
+  gruposDaConversao: readonly GrupoDaBase[];
   onCampo: (campo: CampoDeTextoDoBlocoPago, v: string) => void;
   onNivel: (nivel: number | null) => void;
 }) {
@@ -108,7 +105,7 @@ function BlocoDaFonte({
             <CampoNumerico
               key={k}
               id={`${fonte}-${k}`}
-              rotulo={k === "conversaoMedia" ? rotuloComReferencia(ROTULO_DO_PARAMETRO[k], refConversao, realConversao) : ROTULO_DO_PARAMETRO[k]}
+              rotulo={k === "conversaoMedia" ? rotuloComBases(ROTULO_DO_PARAMETRO[k], gruposDaConversao) : ROTULO_DO_PARAMETRO[k]}
               valor={form.campos[k]}
               erro={erros[k]}
               placeholder={k === "fracaoCenario1" ? "70" : undefined}
@@ -361,22 +358,22 @@ function TabelaDeCombinacoesPagas({
 // Seção
 // ------------------------------------------------------------------
 
+/** Referência estável: um `[]` literal no padrão da prop seria um array novo a cada render. */
+const SEM_BASES: ReadonlyArray<ReferenciaDeBase> = [];
+
 export function PlanejamentoLeadsPagos({
   projectId,
   funnelId,
   podeEditar,
   irParaInputs,
-  referencia = null,
-  realizado = null,
+  bases = SEM_BASES,
 }: {
   projectId: string;
   funnelId: string;
   podeEditar: boolean;
   irParaInputs: () => void;
-  /** Story 48.9 — lançamento anterior escolhido na página. */
-  referencia?: BaseDeReferencia | null;
-  /** Story 48.11 — a conversão que a base de fato teve naquela fonte paga. */
-  realizado?: RealizadoDaBase | null;
+  /** Story 48.14 — lançamentos anteriores marcados na página (planejado + realizado de cada um), na ordem da lista. */
+  bases?: ReadonlyArray<ReferenciaDeBase>;
 }) {
   const inputs = usePlanejamentoInputs(projectId, funnelId);
   const pagos = usePlanejamentoPagos(projectId, funnelId);
@@ -505,8 +502,7 @@ export function PlanejamentoLeadsPagos({
           cplMedio={blocoPagoComoEntradas(payload.blocos[fonte]).cplMedioHistorico}
           erros={erros[fonte] ?? {}}
           podeEditar={podeEditar}
-          refConversao={referenciaDaConversaoPaga(referencia, fonte)}
-          realConversao={realizadoDaConversaoPaga(realizado, fonte)}
+          gruposDaConversao={gruposDaConversaoPaga(bases, fonte)}
           onCampo={(campo, v) => setCampo(fonte, campo, v)}
           onNivel={(nivel) => setNivel(fonte, nivel)}
         />
