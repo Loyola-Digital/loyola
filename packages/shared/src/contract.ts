@@ -277,4 +277,13 @@
 // etapa (`ok` | `sem-pesquisa` | `falha`). ADITIVA: nenhuma rota existente muda;
 // o web ainda não consome (formulário e botão são da 49.6, que precisa tratar
 // 404 da rota como "API atrás"). `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 30;
+// v31 (Story 41.12, fatia A): campo novo `dedupPessoaProduto` em
+// `GET …/stages/:stageId/sales-data` — `{ aplicada, removidas: { linhas, valor },
+// naoAplicadaMotivo? }`, o que a camada 2 (a mesma pessoa não compra duas vezes
+// o mesmo produto, decisão R5-1 do dono) tirou do período. ADITIVO no formato;
+// os NÚMEROS de `sales-data`, `sales-data-daily` e da réplica `sales_daily`
+// (rotas públicas de vendas, MCP e o CAC da cadeia do Inácio nas etapas de
+// lançamento) mudam — avisar antes (AC11). O web tem fallback: sem o campo,
+// nenhuma linha de aviso. `packages/mcp` não é afetado no formato. Se a 49.11
+// subir antes, o @devops renumera.
+export const API_CONTRACT_VERSION = 31;

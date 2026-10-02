@@ -40,7 +40,12 @@ import {
 } from "./launch-report-sales-value.js";
 import { adNameDoTerm } from "./launch-report-normalize.js";
 import { deduplicarPorIdDaVenda } from "../utils/dedup-por-id-da-venda.js";
-import type { DedupNaoAplicada, ResumoDedupVendas } from "./launch-report-guards.js";
+import { deduplicarPorPessoaEProduto } from "../utils/dedup-pessoa-produto.js";
+import type {
+  Camada2NaoAplicada,
+  DedupNaoAplicada,
+  ResumoDedupVendas,
+} from "./launch-report-guards.js";
 import type { AdInput, FaixaPorAd } from "./launch-report-ads.js";
 import {
   computeLaunchReportMetrics,
@@ -76,9 +81,10 @@ type AccessTokenFor = (accountId: string) => Promise<string | null>;
 
 /**
  * Resultado do loader: as métricas (o que a rota devolve e persiste, contrato
- * inalterado) e o resumo da dedup por ID da venda (Story 41.10), que a rota
- * repassa às guardas para virar W9/W10 dentro de `alertas[]`. Fica fora de
- * `metricas` de propósito — a 41.10 não cria campo de resposta novo.
+ * inalterado) e o resumo da dedup — por ID da venda (Story 41.10, W9/W10) e por
+ * pessoa + produto (Story 41.12, W11/W12) —, que a rota repassa às guardas para
+ * virar alertas dentro de `alertas[]`. Fica fora de `metricas` de propósito —
+ * nem a 41.10 nem a 41.12 criam campo de resposta novo.
  */
 export interface LaunchReportCarregado {
   metricas: LaunchReportMetrics;
@@ -117,6 +123,8 @@ export async function loadLaunchReport(
     linhas: vendasBrutas,
     removidas,
     dedupNaoAplicada,
+    removidasCamada2,
+    camada2NaoAplicada,
     mappingPrecoDivergente,
   } = await carregarVendas(db, params.stageId, config.tipo);
 
@@ -128,13 +136,11 @@ export async function loadLaunchReport(
     campanhaIds: campanhasDoStage.map((c) => c.id),
   });
 
-  // 5. Recorte no período e valor em BRL (§2.4). A dedup já rodou na planilha
-  //    inteira; aqui só se mede o efeito dela dentro da janela (W9).
-  const { vendas, resultadoValor, removidasNaJanela } = prepararVendasDoPeriodo(
-    vendasBrutas,
-    removidas,
-    periodo,
-  );
+  // 5. Recorte no período e valor em BRL (§2.4). As duas camadas da dedup já
+  //    rodaram na planilha inteira; aqui só se mede o efeito delas dentro da
+  //    janela (W9 e W11).
+  const { vendas, resultadoValor, removidasNaJanela, removidasCamada2NaJanela } =
+    prepararVendasDoPeriodo(vendasBrutas, removidas, periodo, removidasCamada2);
 
   // 6. Mídia — cache do banco, com reconciliação campaign × ad (§2.3b)
   const campanhas = await carregarMidia(db, accessTokenFor, {
@@ -189,7 +195,14 @@ export async function loadLaunchReport(
     faixas: extrairFaixas(survey, nomePorAdId),
   });
 
-  return { metricas, dedup: { removidasNaJanela, naoAplicada: dedupNaoAplicada } };
+  return {
+    metricas,
+    dedup: {
+      removidasNaJanela,
+      naoAplicada: dedupNaoAplicada,
+      camada2: { removidasNaJanela: removidasCamada2NaJanela, naoAplicada: camada2NaoAplicada },
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -237,6 +250,11 @@ export interface VendasDaPlanilha {
   removidas: LinhaCrua[];
   /** Preenchido quando a dedup não pôde rodar nesta planilha (W10). */
   dedupNaoAplicada: DedupNaoAplicada | null;
+  /**
+   * Story 41.12 — preenchido quando a planilha não tem `productName` mapeado: a
+   * camada 2 (pessoa + produto) não age nas linhas dela (W12).
+   */
+  camada2NaoAplicada: Camada2NaoAplicada | null;
   mappingPrecoDivergente: { colunaDoMapping: string; colunaUsada: string } | null;
 }
 
@@ -350,6 +368,12 @@ export function lerVendasDaPlanilha(
     });
   }
 
+  // Story 41.12 — sem a coluna de produto a camada 2 não age nesta planilha.
+  const camada2NaoAplicada: Camada2NaoAplicada | null =
+    produtoIdx === -1
+      ? { planilha: nome, colunaDoMapping: mapping.productName?.trim() || null }
+      : null;
+
   // Story 41.10 — dedup por (ID da venda, produto), só onde as duas colunas existem.
   const faltando: DedupNaoAplicada["faltando"] = [];
   if (txIdx === -1) {
@@ -363,6 +387,7 @@ export function lerVendasDaPlanilha(
       linhas: candidatas,
       removidas: [],
       dedupNaoAplicada: { planilha: nome, faltando },
+      camada2NaoAplicada,
       mappingPrecoDivergente,
     };
   }
@@ -371,7 +396,52 @@ export function lerVendasDaPlanilha(
     idDaVenda: l.txId,
     produto: l.produto,
   }));
-  return { linhas: mantidas, removidas, dedupNaoAplicada: null, mappingPrecoDivergente };
+  return {
+    linhas: mantidas,
+    removidas,
+    dedupNaoAplicada: null,
+    camada2NaoAplicada,
+    mappingPrecoDivergente,
+  };
+}
+
+/**
+ * Story 41.12 — camada 2 da dedup: a mesma pessoa (e-mail) não compra duas vezes
+ * o mesmo produto (regra 1A/R5-1 do dono, a mesma do Debriefing).
+ *
+ * Pura. Recebe as planilhas da etapa já lidas por `lerVendasDaPlanilha` (status,
+ * reembolso, preço > 0 e camada 1 por planilha já aplicados) e decide a
+ * sobrevivente sobre as linhas de **todas** elas, na ordem lida (planilha a
+ * planilha), **antes** do corte de período — a venda ganha um dia, o da
+ * primeira, e cai em uma janela só. A chave é a da função única
+ * (`deduplicarPorPessoaEProduto`); aqui só se decide o escopo:
+ *
+ * - planilha sem `productName` mapeado não colapsa nem ocupa a chave (com
+ *   produto sempre `""`, ingresso e bump da mesma pessoa colapsariam) e volta em
+ *   `naoAplicada` para o W12;
+ * - linha sem e-mail nunca colapsa.
+ */
+export function deduplicarCamada2DaEtapa(lidas: readonly VendasDaPlanilha[]): {
+  linhas: LinhaCrua[];
+  removidas: LinhaCrua[];
+  naoAplicada: Camada2NaoAplicada[];
+} {
+  const isentas = new Set<LinhaCrua>();
+  const todas: LinhaCrua[] = [];
+  const naoAplicada: Camada2NaoAplicada[] = [];
+  for (const lida of lidas) {
+    if (lida.camada2NaoAplicada) {
+      naoAplicada.push(lida.camada2NaoAplicada);
+      for (const l of lida.linhas) isentas.add(l);
+    }
+    todas.push(...lida.linhas);
+  }
+  const { mantidas, removidas } = deduplicarPorPessoaEProduto(
+    todas,
+    (l) => ({ email: l.email, produto: l.produto }),
+    (l) => isentas.has(l),
+  );
+  return { linhas: mantidas, removidas, naoAplicada };
 }
 
 /**
@@ -379,16 +449,19 @@ export function lerVendasDaPlanilha(
  *
  * Pura. O valor das removidas usa a mesma régua do §2.4, calculada sobre o
  * conjunto com elas — e à parte, para não mexer no valor das que ficam. É a
- * queda exata de faturamento que o W9 reporta.
+ * queda exata de faturamento que o W9 (camada 1) e o W11 (camada 2, Story
+ * 41.12) reportam — cada camada medida em separado.
  */
 export function prepararVendasDoPeriodo(
   vendasBrutas: readonly LinhaCrua[],
   removidas: readonly LinhaCrua[],
   periodo: { inicio: string; fim: string },
+  removidasCamada2: readonly LinhaCrua[] = [],
 ): {
   vendas: VendaInput[];
   resultadoValor: ResultadoValorBrl;
   removidasNaJanela: { linhas: number; valor: number };
+  removidasCamada2NaJanela: { linhas: number; valor: number };
 } {
   const naJanela = (v: LinhaCrua) => v.dia >= periodo.inicio && v.dia <= periodo.fim;
   const paraValor = (v: LinhaCrua): LinhaVendaValor => ({
@@ -413,23 +486,33 @@ export function prepararVendasDoPeriodo(
     isOrderBump: v.isOrderBump,
   }));
 
-  const removidasNoPeriodo = removidas.filter(naJanela);
-  let valorRemovido = 0;
-  if (removidasNoPeriodo.length > 0) {
-    const comRemovidas = valorBrl([...noPeriodo, ...removidasNoPeriodo].map(paraValor));
-    for (let i = noPeriodo.length; i < comRemovidas.valores.length; i++) {
-      valorRemovido += comRemovidas.valores[i] ?? 0;
+  const medirRemovidas = (lista: readonly LinhaCrua[]) => {
+    const removidasNoPeriodo = lista.filter(naJanela);
+    let valorRemovido = 0;
+    if (removidasNoPeriodo.length > 0) {
+      const comRemovidas = valorBrl([...noPeriodo, ...removidasNoPeriodo].map(paraValor));
+      for (let i = noPeriodo.length; i < comRemovidas.valores.length; i++) {
+        valorRemovido += comRemovidas.valores[i] ?? 0;
+      }
     }
-  }
+    return { linhas: removidasNoPeriodo.length, valor: valorRemovido };
+  };
 
   return {
     vendas,
     resultadoValor,
-    removidasNaJanela: { linhas: removidasNoPeriodo.length, valor: valorRemovido },
+    removidasNaJanela: medirRemovidas(removidas),
+    removidasCamada2NaJanela: medirRemovidas(removidasCamada2),
   };
 }
 
-async function carregarVendas(
+/**
+ * Lê as planilhas de venda da etapa e aplica, na planilha inteira, status,
+ * reembolso, camada 1 (por planilha) e camada 2 (entre planilhas). Exportada
+ * para os testes de paridade e de janelas adjacentes da 41.12 rodarem o caminho
+ * de produção (com banco e planilha falsos).
+ */
+export async function carregarVendas(
   db: Database,
   stageId: string,
   tipo: string,
@@ -437,6 +520,8 @@ async function carregarVendas(
   linhas: LinhaCrua[];
   removidas: LinhaCrua[];
   dedupNaoAplicada: DedupNaoAplicada[];
+  removidasCamada2: LinhaCrua[];
+  camada2NaoAplicada: Camada2NaoAplicada[];
   mappingPrecoDivergente: { colunaDoMapping: string; colunaUsada: string } | null;
 }> {
   const { sheets } = await resolveSalesSheetsForStage(db, stageId);
@@ -482,7 +567,7 @@ async function carregarVendas(
   const isOrderBump = (produto: string | null) =>
     orderBumpSet.has((produto ?? "").trim().toLowerCase());
 
-  const linhas: LinhaCrua[] = [];
+  const lidas: VendasDaPlanilha[] = [];
   const removidas: LinhaCrua[] = [];
   const dedupNaoAplicada: DedupNaoAplicada[] = [];
   let mappingPrecoDivergente: { colunaDoMapping: string; colunaUsada: string } | null = null;
@@ -500,19 +585,30 @@ async function carregarVendas(
       );
     }
 
-    // Dedup é por planilha: a chave não atravessa planilhas (mesma regra dos
-    // dedups inline do painel e do sync).
+    // Camada 1 é por planilha: a chave por ID não atravessa planilhas (mesma
+    // regra dos dedups inline do painel e do sync).
     const lida = lerVendasDaPlanilha(
       { nome: sheet.sheetName, headers: dados.headers, rows: dados.rows, mapping },
       isOrderBump,
     );
-    linhas.push(...lida.linhas);
+    lidas.push(lida);
     removidas.push(...lida.removidas);
     if (lida.dedupNaoAplicada) dedupNaoAplicada.push(lida.dedupNaoAplicada);
     if (lida.mappingPrecoDivergente) mappingPrecoDivergente = lida.mappingPrecoDivergente;
   }
 
-  return { linhas, removidas, dedupNaoAplicada, mappingPrecoDivergente };
+  // Story 41.12 — camada 2 (pessoa + produto) ENTRE as planilhas da etapa,
+  // depois da camada 1 e antes do corte de período.
+  const camada2 = deduplicarCamada2DaEtapa(lidas);
+
+  return {
+    linhas: camada2.linhas,
+    removidas,
+    dedupNaoAplicada,
+    removidasCamada2: camada2.removidas,
+    camada2NaoAplicada: camada2.naoAplicada,
+    mappingPrecoDivergente,
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useCampaignDailyInsightsBulk } from "@/lib/hooks/use-traffic-analytics";
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
 import { sumMetaInsights } from "@/lib/utils/funnel-metrics";
+import { linhaDedupPessoaProduto } from "@/lib/utils/dedup-pessoa-produto";
 
 interface SalesMetaKpisProps {
   projectId: string;
@@ -166,9 +167,13 @@ export function SalesMetaKpis({ projectId, funnelId, stageId, campaignIds, days 
 
     return [...fixas, ...vendedores];
   })();
-  const fatTooltip = breakdown
-    ? `${fonteBreakdown.join("\n")}\n\nPlanilha: ${fmtCurrency(breakdown.spreadsheet.bruto)} (${breakdown.spreadsheet.vendas})\nManuais: ${fmtCurrency(breakdown.manual.bruto)} (${breakdown.manual.vendas})`
-    : fonteBreakdown.join("\n");
+  // Story 41.12 (AC8): o que a regra "mesma pessoa + mesmo produto conta uma
+  // vez" tirou do período. Campo ausente (API antiga) = nenhuma linha.
+  const dedupPessoaProduto = linhaDedupPessoaProduto(salesData?.dedupPessoaProduto);
+  const fatTooltip =
+    (breakdown
+      ? `${fonteBreakdown.join("\n")}\n\nPlanilha: ${fmtCurrency(breakdown.spreadsheet.bruto)} (${breakdown.spreadsheet.vendas})\nManuais: ${fmtCurrency(breakdown.manual.bruto)} (${breakdown.manual.vendas})`
+      : fonteBreakdown.join("\n")) + (dedupPessoaProduto ? `\n\n${dedupPessoaProduto}` : "");
   // Quando há mais linhas que compradores, diz por quê: senão "54 na planilha,
   // 47 no card" parece erro de conta.
   const linhasALem =

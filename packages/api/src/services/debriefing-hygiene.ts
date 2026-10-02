@@ -43,6 +43,7 @@
 import { createHash } from "node:crypto";
 import { parseValorPlanilha } from "@loyola-x/shared";
 import { deduplicarPorIdDaVenda } from "../utils/dedup-por-id-da-venda.js";
+import { deduplicarPorPessoaEProduto } from "../utils/dedup-pessoa-produto.js";
 import { normalizeEmail } from "../utils/lead-origin.js";
 import { META_TAX_EFFECTIVE_DATE } from "../utils/meta-tax.js";
 import { toBusinessDayKey } from "../utils/sale-date.js";
@@ -500,7 +501,9 @@ export interface ResultadoDedupVendas<T> {
  * `removidas = 0` ali e a planilha volta em `dedupNaoAplicada`.
  *
  * Camada 2 — `(e-mail normalizado, produto normalizado)` sobre todas as
- * planilhas (passo 2 da skill: um e-mail não compra 2× o mesmo produto). Produtos
+ * planilhas (passo 2 da skill: um e-mail não compra 2× o mesmo produto), pela
+ * função única `deduplicarPorPessoaEProduto` (Story 41.12 — a chave não é
+ * redefinida aqui; o Resumão, os painéis e a réplica diária chamam a mesma). Produtos
  * distintos do mesmo e-mail (ingresso + combo + bump) não colapsam; linha sem
  * e-mail nunca colapsa. Pega a dobra `PURCHASE_APPROVED` + `PURCHASE_COMPLETE`
  * (perfil DG §10.3), que tem IDs diferentes.
@@ -545,24 +548,11 @@ export function deduplicarVendas<T>(
   const depois1 = linhas.filter((l) => !removidas1.has(l));
   const removidasCamada1 = linhas.filter((l) => removidas1.has(l));
 
-  // ---- Camada 2 ----
-  const vistas = new Set<string>();
-  const mantidas: T[] = [];
-  const removidasCamada2: T[] = [];
-  for (const l of depois1) {
-    const email = normalizarEmail(acesso.emailCru(l));
-    if (!email) {
-      mantidas.push(l);
-      continue;
-    }
-    const chave = `${email}\u0000${(acesso.produto(l) ?? "").trim().toLowerCase()}`;
-    if (vistas.has(chave)) {
-      removidasCamada2.push(l);
-      continue;
-    }
-    vistas.add(chave);
-    mantidas.push(l);
-  }
+  // ---- Camada 2 ---- (Story 41.12: a chave mora em `utils/dedup-pessoa-produto.ts`)
+  const { mantidas, removidas: removidasCamada2 } = deduplicarPorPessoaEProduto(depois1, (l) => ({
+    email: acesso.emailCru(l),
+    produto: acesso.produto(l),
+  }));
 
   return {
     mantidas,

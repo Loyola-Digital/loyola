@@ -105,6 +105,7 @@ import { ClipboardList, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { fmtCurrency as fmtCurrencyCompleto, fmtInt, fmtPercent as fmtPercentCompleto } from "@/lib/utils/format-number";
+import { linhaDedupPessoaProduto } from "@/lib/utils/dedup-pessoa-produto";
 
 interface LaunchDashboardProps {
   funnel: Funnel;
@@ -394,14 +395,18 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           // Tooltip "Ingressos totais" = detalhamento por produto (mesmo formato da
           // tabela 18.51b). Reusado nos cards Ingressos e Venda ingressos.
           const ingressosTotaisTooltip = (() => {
+            // Story 41.12 (AC8): a recompra do mesmo produto pela mesma pessoa
+            // não soma — uma linha diz quanto saiu (ausente na API antiga).
+            const dedup = linhaDedupPessoaProduto(salesData?.dedupPessoaProduto);
+            const rodape = dedup ? `\n\n${dedup}` : "";
             const pp = salesData?.ingressosPorProduto;
             if (!pp || pp.length === 0) {
-              return "Ingressos totais = todas as vendas (todos os produtos), sem deduplicar e-mail.";
+              return "Ingressos totais = todas as vendas (todos os produtos), sem deduplicar e-mail." + rodape;
             }
             const linhas = pp
               .map((p) => `  ${p.produto}${p.isOrderBump ? " (order bump)" : ""}: ${fmtNumber(p.count)}`)
               .join("\n");
-            return "Ingressos totais = todas as vendas (todos os produtos), sem dedup.\nPor produto:\n" + linhas;
+            return "Ingressos totais = todas as vendas (todos os produtos), sem dedup.\nPor produto:\n" + linhas + rodape;
           })();
           const ingressosUnicosTooltip =
             "Ingressos únicos = e-mails distintos que compraram o produto da captação (order bumps não contam). Por e-mail, a compra mais recente.";

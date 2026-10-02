@@ -449,6 +449,9 @@ const config: DebriefingConfigLancamento = {
 let pg: PGlite;
 let db: Database;
 
+// O PGlite (WASM) leva dezenas de segundos para subir num disco frio; com o
+// timeout padrão de hook (10 s) o arquivo falhava de forma intermitente no
+// merge da 49.4. Mesmo orçamento do `debriefing-config-store.test.ts`.
 beforeAll(async () => {
   const comoString = (v: string) => v;
   pg = new PGlite({ parsers: { 1082: comoString, 1114: comoString, 1184: comoString, 1700: comoString } });
@@ -461,7 +464,7 @@ beforeAll(async () => {
     },
     { schema },
   ) as unknown as Database;
-});
+}, 60_000);
 
 afterAll(async () => {
   await pg?.close();

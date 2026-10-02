@@ -30,7 +30,9 @@ export type CodigoInvariante = "A1" | "A2" | "A3" | "A4" | "A5" | "A6" | "A7" | 
 /**
  * W1–W8 são os da §8.2. **W9/W10** (Story 41.10) são aditivos e falam da dedup
  * por ID da venda: W9 = duplicatas removidas na janela; W10 = planilha em que a
- * dedup não pôde rodar.
+ * dedup não pôde rodar. **W11/W12** (Story 41.12) são o par da camada 2 — mesma
+ * pessoa (e-mail) + mesmo produto: W11 = recompras removidas na janela; W12 =
+ * planilha sem a coluna de produto, onde a camada 2 não age.
  */
 export type CodigoAlerta =
   | "W1"
@@ -42,7 +44,9 @@ export type CodigoAlerta =
   | "W7"
   | "W8"
   | "W9"
-  | "W10";
+  | "W10"
+  | "W11"
+  | "W12";
 export type StatusInvariante = "passed" | "failed" | "skipped";
 
 export interface ResultadoInvariante {
@@ -104,16 +108,30 @@ export interface DedupNaoAplicada {
   faltando: { campo: "transactionId" | "productName"; colunaDoMapping: string | null }[];
 }
 
+/** Story 41.12 — planilha em que a camada 2 (pessoa + produto) não agiu. */
+export interface Camada2NaoAplicada {
+  /** Nome da aba (`sheetName`), que é como a etapa a exibe no wizard. */
+  planilha: string;
+  /** `mapping.productName` quando aponta para cabeçalho inexistente; `null` = não mapeada. */
+  colunaDoMapping: string | null;
+}
+
 /**
- * Resumo da dedup do loader do Resumão (Story 41.10).
+ * Resumo da dedup do loader do Resumão (Story 41.10; camada 2 na 41.12).
  *
  * ⚠️ `removidasNaJanela` conta só as duplicatas cujo **dia cai no período** do
  * relatório: o loader deduplica a planilha inteira (antes do corte), e o que o
- * usuário vê cair em vendas/faturamento é o efeito dentro da janela.
+ * usuário vê cair em vendas/faturamento é o efeito dentro da janela. A camada 2
+ * segue a mesma régua, em contagem separada.
  */
 export interface ResumoDedupVendas {
   removidasNaJanela: { linhas: number; valor: number };
   naoAplicada: DedupNaoAplicada[];
+  /** Story 41.12 — camada 2. Ausente = nada a reportar (chamadas anteriores à 41.12). */
+  camada2?: {
+    removidasNaJanela: { linhas: number; valor: number };
+    naoAplicada: Camada2NaoAplicada[];
+  } | null;
 }
 
 /** Erro pronto para virar 422, no formato do §9.1. */
@@ -532,7 +550,7 @@ function checarA9(m: LaunchReportMetrics): ResultadoInvariante {
 }
 
 // ---------------------------------------------------------------------------
-// Os alertas — nunca bloqueiam (W1–W8 da §8.2; W9/W10 da Story 41.10)
+// Os alertas — nunca bloqueiam (W1–W8 da §8.2; W9/W10 da 41.10; W11/W12 da 41.12)
 // ---------------------------------------------------------------------------
 
 function coletarAlertas(m: LaunchReportMetrics, opts: ValidateOptions): Alerta[] {
@@ -665,6 +683,38 @@ function coletarAlertas(m: LaunchReportMetrics, opts: ValidateOptions): Alerta[]
         `dedup por ID da venda não aplicada na planilha "${p.planilha}": coluna de ${faltas} — ` +
         "linhas repetidas do gateway estão sendo somadas. Mapear a coluna no wizard de " +
         "planilhas da etapa",
+    });
+  }
+
+  // W11 — recompras do mesmo produto pela mesma pessoa removidas na janela
+  // (Story 41.12, camada 2). Informação, nunca invariante.
+  const removidas2 = opts.dedup?.camada2?.removidasNaJanela;
+  if (removidas2 && removidas2.linhas > 0) {
+    const n = removidas2.linhas;
+    const texto =
+      n === 1
+        ? "1 linha repetida (mesmo e-mail e mesmo produto) removida"
+        : `${int(n)} linhas repetidas (mesmo e-mail e mesmo produto) removidas`;
+    alertas.push({
+      codigo: "W11",
+      mensagem:
+        `${texto} (R$ ${brl(removidas2.valor)}) — a recompra do mesmo produto pela mesma ` +
+        "pessoa conta uma vez (vale a primeira linha, entre todas as planilhas da etapa)",
+    });
+  }
+
+  // W12 — planilha em que a camada 2 não agiu (Story 41.12): sem a coluna de
+  // produto, ingresso e order bump da mesma pessoa colapsariam.
+  for (const p of opts.dedup?.camada2?.naoAplicada ?? []) {
+    const falta = p.colunaDoMapping
+      ? `a coluna de produto (productName) aponta para "${p.colunaDoMapping}", que não existe na planilha`
+      : "a coluna de produto (productName) não está mapeada";
+    alertas.push({
+      codigo: "W12",
+      mensagem:
+        `dedup por pessoa + produto não aplicada na planilha "${p.planilha}": ${falta} — ` +
+        "recompras do mesmo produto pela mesma pessoa estão sendo somadas. Mapear " +
+        "`productName` no wizard de planilhas da etapa",
     });
   }
 

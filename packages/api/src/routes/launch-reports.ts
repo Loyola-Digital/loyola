@@ -142,7 +142,8 @@ export default fp(async function launchReportsRoutes(fastify) {
     const { metricas } = carregado;
 
     // 3 — guardas ANTES de renderizar. A dedup por ID da venda (41.10) entra
-    // como W9/W10 dentro de `alertas[]` — não muda o formato de `metricas`.
+    // como W9/W10 e a por pessoa + produto (41.12) como W11/W12, dentro de
+    // `alertas[]` — não muda o formato de `metricas`.
     let guardas;
     try {
       guardas = assertLaunchReport(metricas, {
