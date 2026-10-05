@@ -632,26 +632,13 @@ function computeBands(
    * Quando passado, computeBands lê direto da célula em vez de recalcular. */
   faixaColumnName?: string | null,
 ) {
-  const questions = schema.scoring_model?.questions ?? [];
   const bands = schema.bands ?? [];
-  const { headers, rows } = sheet;
+  const { rows } = sheet;
 
-  // Story 18.17: se faixa pré-calculada está mapeada, encontra o índice da coluna
-  const faixaIdx = faixaColumnName
-    ? headers.findIndex((h) => h.trim().toLowerCase() === faixaColumnName.trim().toLowerCase())
-    : -1;
-  const useDirectFaixa = faixaIdx !== -1;
-  const validBandIds = new Set(bands.map((b) => b.id.toUpperCase()));
-
-  // Mapa: questionId -> índice da coluna na planilha (só usado no fallback)
-  const colMap = new Map<string, number>();
-  if (!useDirectFaixa) {
-    for (const q of questions) {
-      colMap.set(q.id, findQuestionColumnIndex(headers, q));
-    }
-  }
-  const q4Idx = colMap.get("Q4") ?? -1;
-
+  // A resolução de coluna, a faixa pré-calculada e o Q4 vivem dentro de
+  // `classificarLeads` — este bloco repetia tudo isso e ficou órfão quando a
+  // contagem passou a derivar de lá (PR #979). Manter a cópia significaria duas
+  // regras para a mesma coisa, que é exatamente o que a extração removeu.
   const bandCounts = new Map<string, number>();
   for (const b of bands) bandCounts.set(b.id, 0);
   let unclassified = 0;
