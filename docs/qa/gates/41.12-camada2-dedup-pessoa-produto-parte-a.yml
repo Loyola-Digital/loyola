@@ -1,7 +1,7 @@
 schema: 1
 story: '41.12'
 story_title: 'Camada 2 em todas as pontas — "mesma pessoa (e-mail) + mesmo produto conta uma vez" — PARTE A (lançamento)'
-gate: CONCERNS
+gate: PASS
 status_reason: >-
   Re-gate (QA fix iteração 1 + Rodada 7). O código está correto e não há trabalho de @dev pendente.
   As 4 mutações que sobreviviam (TEST-001) agora são pegas, e o card filtra a manual reembolsada
@@ -13,12 +13,19 @@ status_reason: >-
   no card, no diário, na réplica e no Resumão. Mudam só PG02, PG03, PG04 e FZ-L2 Captação Paga,
   todas abaixo de 5 % (a maior é 1,78 %). No Debriefing PG02, o SHA é igual à main sem o downsell;
   com o downsell, só a contagem da camada 2 cai de 14 para 9 e nenhum valor muda. Das minhas 14
-  mutações, 12 foram pegas e 2 de baixa severidade sobreviveram (TEST-002). Não é PASS porque o
-  lint da API está vermelho, e está vermelho na própria origin/main: são 2 erros em
-  `routes/lead-scoring.ts`, vindos de 5058c502 (#979), e o arquivo é idêntico na branch. O merge
-  também espera a comunicação do AC11, que ainda não foi enviada, e a validação visual do AC8.
+  mutações, 12 foram pegas e 2 de baixa severidade sobreviveram (TEST-002). As três pendências do
+  gate anterior fecharam: LINT-001 pela PR #981 (o bloco órfão que a #979 deixou em
+  `routes/lead-scoring.ts` saiu inteiro — `eslint src` zerado na main), AC11 confirmada enviada
+  pelo dono, e AC8 validado pelo dono sobre a prévia dos tooltips gerada com a função real
+  (`linhaDedupPessoaProduto`/`textoDedupDosTotais`), incluindo o singular de uma venda e o texto
+  da planilha sem coluna de produto (W12). Re-rodado sobre a main 045d8b3e com a main já mergeada
+  na branch: build da API limpo, `eslint src` com 0 erros, tsc e lint do web limpos. A suíte tem
+  13 testes vermelhos na API e 1 no web que falham IGUAL na main limpa — `debriefing-serie-historica`
+  é diferença de fim de linha (golden LF contra checkout CRLF no Windows), e os demais são os
+  pré-existentes de instagram, projects, schema, vturb, nomenclatura e lead-inputs. Nenhum deles
+  encosta na 41.12.
 reviewer: 'Quinn'
-updated: '2026-10-02T20:45:00Z'
+updated: '2026-10-05T00:00:00Z'
 commit_reviewed: 'c0219d39'
 base: 'origin/main 56db2af5 (diff com três pontos; merge c704e7f2 já trouxe a main)'
 history:
@@ -30,6 +37,10 @@ history:
     commit: 'c0219d39'
     date: '2026-10-02T20:45:00Z'
     reason: 'código ok; lint vermelho herdado da main (lead-scoring.ts), AC11 não enviada, AC8 visual pendente'
+  - gate: PASS
+    commit: 'c0219d39 + merge da main 045d8b3e'
+    date: '2026-10-05T00:00:00Z'
+    reason: 'LINT-001 fechado pela #981; AC11 enviada; AC8 validado na prévia dos tooltips'
 
 checks:
   code_review: PASS            # escopo num ponto só (vendas-camada2-planilha.ts:61), consultado pelas 4 leituras + Debriefing; out-of-scope passa inteiro e na mesma posição em deduplicarVendas
@@ -127,10 +138,11 @@ resolved_since_previous_gate:
   - 'OWN-001/002/003 — respondidas na Rodada 7 (R7-4/R7-5); FZ-M2 Vendas e BBE-PR2 deixam de mudar'
   - 'contrato renumerado 31 → 33 após a 49.11'
 
-pending_before_merge:
-  - 'LINT-001 — main verde no lint (fix em PR própria, fora da 41.12)'
-  - 'AC11 — comunicação aos usuários enviada (texto final no Dev Agent Record)'
-  - 'AC8 — validação visual do dono (inclui UX-002)'
+pending_before_merge: []
+cleared_before_merge:
+  - 'LINT-001 — PR #981 (fix próprio, fora da 41.12): bloco órfão removido, eslint src zerado'
+  - 'AC11 — comunicação aos usuários enviada (confirmada pelo dono em 05/10)'
+  - 'AC8 — validação visual do dono sobre a prévia dos tooltips (inclui UX-002)'
 pending_before_done:
   - 'R6-3 — regerar 6b4c3492, 19c606f4 e 47db006f depois do deploy (b789ad43 não muda)'
 
