@@ -1,0 +1,153 @@
+schema: 1
+story: '41.12'
+story_title: 'Camada 2 em todas as pontas — "mesma pessoa (e-mail) + mesmo produto conta uma vez" — PARTE A (lançamento)'
+gate: PASS
+status_reason: >-
+  Re-gate (QA fix iteração 1 + Rodada 7). O código está correto e não há trabalho de @dev pendente.
+  As 4 mutações que sobreviviam (TEST-001) agora são pegas, e o card filtra a manual reembolsada
+  como a réplica (REL-001). A Rodada 7 (R7-4/R7-5) foi implementada no ponto único
+  `camada2ValeNaEtapa`: vale em `paid`, `free` e `application`, e fica fora em `event_capture`,
+  `sales`, `event` e etapa sem tipo. O Debriefing segue o mesmo ponto (`camada2Vale` por planilha).
+  Reproduzi em produção, só leitura, `origin/main` 56db2af5 × HEAD c0219d39. FZ-M2 Vendas não muda
+  (70 / R$ 82.702,00, igual no card e na réplica). PG02 Captação Paga: 2.197 → 2.188, −R$ 596,30,
+  no card, no diário, na réplica e no Resumão. Mudam só PG02, PG03, PG04 e FZ-L2 Captação Paga,
+  todas abaixo de 5 % (a maior é 1,78 %). No Debriefing PG02, o SHA é igual à main sem o downsell;
+  com o downsell, só a contagem da camada 2 cai de 14 para 9 e nenhum valor muda. Das minhas 14
+  mutações, 12 foram pegas e 2 de baixa severidade sobreviveram (TEST-002). As três pendências do
+  gate anterior fecharam: LINT-001 pela PR #981 (o bloco órfão que a #979 deixou em
+  `routes/lead-scoring.ts` saiu inteiro — `eslint src` zerado na main), AC11 confirmada enviada
+  pelo dono, e AC8 validado pelo dono sobre a prévia dos tooltips gerada com a função real
+  (`linhaDedupPessoaProduto`/`textoDedupDosTotais`), incluindo o singular de uma venda e o texto
+  da planilha sem coluna de produto (W12). Re-rodado sobre a main 045d8b3e com a main já mergeada
+  na branch: build da API limpo, `eslint src` com 0 erros, tsc e lint do web limpos. A suíte tem
+  13 testes vermelhos na API e 1 no web que falham IGUAL na main limpa — `debriefing-serie-historica`
+  é diferença de fim de linha (golden LF contra checkout CRLF no Windows), e os demais são os
+  pré-existentes de instagram, projects, schema, vturb, nomenclatura e lead-inputs. Nenhum deles
+  encosta na 41.12.
+reviewer: 'Quinn'
+updated: '2026-10-05T00:00:00Z'
+commit_reviewed: 'c0219d39'
+base: 'origin/main 56db2af5 (diff com três pontos; merge c704e7f2 já trouxe a main)'
+history:
+  - gate: CONCERNS
+    commit: '7a390c49'
+    date: '2026-10-02T13:30:00Z'
+    reason: 'TEST-001 (4 mutações sobreviventes), OWN-001/002/003 com o dono, AC11 e AC8 visual pendentes'
+  - gate: CONCERNS
+    commit: 'c0219d39'
+    date: '2026-10-02T20:45:00Z'
+    reason: 'código ok; lint vermelho herdado da main (lead-scoring.ts), AC11 não enviada, AC8 visual pendente'
+  - gate: PASS
+    commit: 'c0219d39 + merge da main 045d8b3e'
+    date: '2026-10-05T00:00:00Z'
+    reason: 'LINT-001 fechado pela #981; AC11 enviada; AC8 validado na prévia dos tooltips'
+
+checks:
+  code_review: PASS            # escopo num ponto só (vendas-camada2-planilha.ts:61), consultado pelas 4 leituras + Debriefing; out-of-scope passa inteiro e na mesma posição em deduplicarVendas
+  unit_tests: PASS             # 883/883 nas 30 suítes da story e vizinhas; 12/14 mutações próprias pegas; 2 sobreviventes low (TEST-002)
+  acceptance_criteria: CONCERNS  # AC1–AC4, AC7, AC8 (código), AC9 (fatia A), AC10, AC12, AC13 ok; AC11 pendente (envio humano antes do merge + regeração pós-deploy); AC8 visual pendente
+  no_regressions: PASS         # suíte API 4324 ✓ / 10 ✗ — as mesmas 10 em 5 arquivos do baseline da main (funnel-stages-lead-inputs ×3, instagram-routes, instagram, projects ×3, schema ×2)
+  lint: CONCERNS               # API eslint src/: 2 errors (lead-scoring.ts:644 validBandIds, :653 q4Idx) + 1 warning (lp-campaigns.ts:57) — IDÊNTICOS em origin/main 56db2af5; nenhum em arquivo da story
+  performance: PASS            # filtro O(n) adicional; sem I/O novo
+  security: PASS               # sem input novo; medição com default_transaction_read_only=on; saída só agregada
+  documentation: PASS          # story com R7, medição refeita e texto final do AC11; contrato com histórico v31 (49.11) e v33 (41.12)
+  api_contract: PASS           # API_CONTRACT_VERSION 31 (main) → 33; campo aditivo/opcional; web: campo ausente → sem linha (linhaDedupPessoaProduto/textoDedupDosTotais)
+
+evidence:
+  tests_story: 'vitest camada2 dedup debriefing-hygiene debriefing-money-time debriefing-audience launch-report stage-sales sales-daily cadeia-cac health: 30 arquivos, 883/883'
+  suite_api_full: 'HEAD c0219d39 (1 execução): 4324 passam / 10 falham, 5 arquivos — mesma lista do baseline da main do gate anterior'
+  tsc_api: 'packages/api tsc --noEmit (binário direto): exit 0'
+  lint_api_head: 'eslint src/: 2 errors + 1 warning, todos fora da story'
+  lint_origin_main: 'git show origin/main:packages/api/src/routes/lead-scoring.ts | eslint --stdin: os mesmos 2 errors; arquivo sem diff entre origin/main e HEAD; introduzidos em 5058c502 (#979)'
+  web: 'não tocado na Rodada 7 (só o número do contrato no shared); fallback do campo ausente coberto pelo vitest do helper desde o gate anterior'
+  coderabbit: 'SKIPPED (CLI exige WSL; macOS)'
+  prior_survivors_rerun:
+    QA-M4: 'pega — TEST-001 (a)'
+    QA-M5: 'pega — TEST-001 (b)'
+    QA-M6: 'pega — TEST-001 (c)'
+    QA-M9: 'pega — TEST-001 (d)'
+  mutations_qa_r7:
+    - {id: QR1, what: 'camada 2 aplicada em sales', result: 'pega (5)'}
+    - {id: QR2, what: 'camada 2 aplicada em event_capture (conjunto vazio)', result: 'pega (3)'}
+    - {id: QR2b, what: 'camada 2 aplicada em event', result: 'pega (2)'}
+    - {id: QR3, what: 'Debriefing ignora o escopo (noEscopo = depois1)', result: 'pega (1)'}
+    - {id: QR3b, what: 'Debriefing descarta as linhas fora do escopo', result: 'pega (5)'}
+    - {id: QR3c, what: 'motor de público grava camada2Vale: true', result: 'NÃO pega (TEST-002)'}
+    - {id: QR4, what: 'réplica aplica em toda etapa', result: 'pega (3)'}
+    - {id: QR4b, what: 'réplica só tira event_capture (aplica em sales)', result: 'pega (2)'}
+    - {id: QR5, what: 'card ignora o escopo', result: 'pega (3)'}
+    - {id: QR6, what: 'diário ignora o escopo', result: 'pega (2)'}
+    - {id: QR7, what: 'Resumão ignora o escopo', result: 'pega (3)'}
+    - {id: QR8, what: 'contagem de "há manual?" (etapa sem planilha) conta reembolsada', result: 'NÃO pega (TEST-002)'}
+    - {id: QR9, what: 'manual reembolsada ocupa a vaga da camada 2 no card', result: 'pega (1)'}
+    - {id: QR10, what: 'totais do card somam manual reembolsada', result: 'pega (1)'}
+  production_readonly:
+    session: 'default_transaction_read_only=on (conferido); Sheets/Meta só leitura; saída só agregada; árvores origin/main 56db2af5 (git archive) × HEAD, scripts do QA (não os do @dev)'
+    fz_m2_vendas: 'card 70/R$ 82.702,00 = 70/R$ 82.702,00 (aplicada=false); réplica 70/82.702 = 70/82.702 (SHA igual) — NÃO muda'
+    pg02_captacao_paga: 'card 2.197→2.188, R$ 231.097,94→230.501,64 (−R$ 596,30, 0,26 %); diário −596,30; réplica idem; Resumão 17/04–11/05 2.197→2.188, W11 9/R$ 596,30'
+    pg04_resumao: '1.145→1.138, R$ 100.049,03→99.764,97, W11 7/R$ 284,06'
+    painel_mudam: 'só PG02 (0,26 %), PG03 (1,13 %), PG04 (0,75 %), FZ-L2 (1,78 %) Captação Paga; ingressos únicos iguais em todas'
+    painel_nao_mudam: 'as 10 etapas sales com planilha e a event_capture (BBE-PR2 36/R$ 46.786,90): totais iguais; aplicada=false'
+    replica: '20/24 iguais; as 4 que mudam são as 3 Captações Pagas do DG (o FZ-L2 não tem productName na planilha da réplica) + PG02 Vendas numa 1ª rodada — refeita com pausa: 68/R$ 247.877,40 igual (a 1ª leitura foi parcial, sob cota do Sheets)'
+    artefato: 'porUtmMedium/porUtmContent divergiram base×head em 10 etapas só por nomes do Meta ("[Unresolved] …" na 2ª chamada, rate limit); base×base idêntico; contagens e valores iguais'
+    debriefing_pg02: 'captação+principal: SHA 0e17c398c90fcaaf na main e no HEAD (igual ao gate anterior). +downsell+leads-downsell: main 9799a306… × HEAD 250b7607…; diferença só em dedup.camada2 14→9 (as 5 do downsell deixam de sair); captação 230.501,64, principal 71/245.800,00, downsell 20.714,40, únicos 1.807 — iguais'
+  no_prod_writes: 'sessões read-only; nenhum SQL/migration no diff'
+
+top_issues:
+  - id: 'LINT-001'
+    severity: high
+    category: ci
+    finding: >-
+      `eslint src/` da API sai com 2 errors em `routes/lead-scoring.ts` (`validBandIds` :644,
+      `q4Idx` :653, no-unused-vars). Os erros estão em origin/main 56db2af5, vindos de 5058c502
+      (#979, Lucas Vital), e o arquivo é idêntico na branch. A main está vermelha no lint, e isso
+      bloqueia qualquer PR cujo CI exija lint.
+    suggested_owner: 'autor do #979 / @dev numa PR própria'
+    action: 'Corrigir na main (remover as 2 variáveis ou usá-las) numa PR separada; depois, atualizar esta branch. Não corrigir dentro da 41.12 (fora do escopo).'
+  - id: 'TEST-002'
+    severity: low
+    category: tests
+    finding: >-
+      Duas mutações sobrevivem. QR3c: `debriefing-audience-loader` gravando `camada2Vale: true`
+      colapsaria recompras de Vendas no motor de público, e nenhum teste do loader de público
+      confere o campo. QR8: a contagem "etapa sem planilha tem manual?" (`stage-sales-data.ts:429`)
+      contando uma reembolsada muda só `semDados` → resposta zerada.
+    suggested_owner: dev
+    action: 'Opcional, pode ir em story futura: teste no audience-loader com uma planilha fora do escopo; teste da etapa sem planilha com apenas manual reembolsada.'
+  - id: 'UX-002'
+    severity: low
+    category: ux
+    finding: >-
+      Nas etapas de Vendas e na `event_capture`, a API devolve `naoAplicadaMotivo: "a regra não
+      vale neste tipo de etapa"`. O web (`sales-meta-kpis.tsx:172`, `launch-dashboard.tsx:400`)
+      mostra então "Recompra do mesmo produto não deduplicada: a regra não vale neste tipo de etapa".
+      O texto é verdadeiro, mas é uma decisão (R7-4/R7-5), não uma lacuna, e pode soar como alerta.
+    suggested_owner: dono / @ux
+    action: 'Conferir na validação visual do AC8; se incomodar, suprimir a linha quando o motivo é o escopo (ajuste só do helper web).'
+  - id: 'AC11'
+    severity: medium
+    category: owner_action
+    finding: 'Comunicação aos usuários escrita na story (texto final da Rodada 7), não enviada.'
+    suggested_owner: dono
+    action: 'Enviar antes do merge. QA não envia.'
+
+resolved_since_previous_gate:
+  - 'TEST-001 — 4 testes novos (camada2-paridade "TEST-001 (a)–(d)"); QA-M4/M5/M6/M9 pegas'
+  - 'REL-001 — card filtra manual reembolsada como a réplica (QR9/QR10 pegas)'
+  - 'UX-001 — tooltip de totais via textoDedupDosTotais'
+  - 'OWN-001/002/003 — respondidas na Rodada 7 (R7-4/R7-5); FZ-M2 Vendas e BBE-PR2 deixam de mudar'
+  - 'contrato renumerado 31 → 33 após a 49.11'
+
+pending_before_merge: []
+cleared_before_merge:
+  - 'LINT-001 — PR #981 (fix próprio, fora da 41.12): bloco órfão removido, eslint src zerado'
+  - 'AC11 — comunicação aos usuários enviada (confirmada pelo dono em 05/10)'
+  - 'AC8 — validação visual do dono sobre a prévia dos tooltips (inclui UX-002)'
+pending_before_done:
+  - 'R6-3 — regerar 6b4c3492, 19c606f4 e 47db006f depois do deploy (b789ad43 não muda)'
+
+coderabbit_status: SKIPPED
+meta_api_impact:
+  adds_meta_calls: NO
+recommended_action: 'Sem retorno ao @dev. Merge quando LINT-001 (main), AC11 e AC8 visual estiverem resolvidos; Done após a regeração pós-deploy.'
+branch: 'feat/41.12a-camada2-lancamento'

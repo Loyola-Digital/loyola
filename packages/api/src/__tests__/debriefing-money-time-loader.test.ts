@@ -100,6 +100,19 @@ describe("AC2/AC12 — planilha de venda: célula crua até o motor", () => {
     const r = lerPlanilhaDeVenda({ ...base, mapping: { ...base.mapping, transactionId: "Transaction" }, rows: [] }, {});
     expect(r.planilha).toMatchObject({ temColunaId: false, temColunaProduto: true, temColunaStatus: true });
   });
+
+  it("41.12 R7-4/R7-5: `camada2Vale` sai do tipo da etapa pelo ponto único (`camada2ValeNaEtapa`)", () => {
+    const vale = (stageType: string | null) => lerPlanilhaDeVenda({ ...base, stageType, rows: [] }, {}).planilha.camada2Vale;
+    expect(vale("paid")).toBe(true);
+    expect(vale("event_capture")).toBe(false);
+    expect(vale("sales")).toBe(false);
+    expect(vale("event")).toBe(false);
+    expect(vale(null)).toBe(false);
+    const manual = (stageType: string | null) => lerVendasManuais("e", stageType, [], {}).planilha.camada2Vale;
+    expect(manual("paid")).toBe(true);
+    expect(manual("event_capture")).toBe(false);
+    expect(manual("sales")).toBe(false);
+  });
 });
 
 describe("leads, nome de campanha e config do classificador (puros)", () => {
@@ -140,6 +153,7 @@ describe("leads, nome de campanha e config do classificador (puros)", () => {
       temColunaStatus: false,
       temColunaId: true,
       temColunaProduto: true,
+      camada2Vale: false, // etapa `sales`: fora da camada 2 (R7-4)
     });
     expect(r.vendas[0]).toEqual({
       planilhaId: "prin:manual",
@@ -449,6 +463,9 @@ const config: DebriefingConfigLancamento = {
 let pg: PGlite;
 let db: Database;
 
+// O PGlite (WASM) leva dezenas de segundos para subir num disco frio; com o
+// timeout padrão de hook (10 s) o arquivo falhava de forma intermitente no
+// merge da 49.4. Mesmo orçamento do `debriefing-config-store.test.ts`.
 beforeAll(async () => {
   const comoString = (v: string) => v;
   pg = new PGlite({ parsers: { 1082: comoString, 1114: comoString, 1184: comoString, 1700: comoString } });
@@ -461,7 +478,7 @@ beforeAll(async () => {
     },
     { schema },
   ) as unknown as Database;
-});
+}, 60_000);
 
 afterAll(async () => {
   await pg?.close();

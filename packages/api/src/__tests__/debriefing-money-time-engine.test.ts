@@ -76,6 +76,7 @@ const planilha = (planilhaId: string, stageId: string, over: Partial<PlanilhaDeV
   temColunaStatus: true,
   temColunaId: true,
   temColunaProduto: true,
+  camada2Vale: true,
   ...over,
 });
 

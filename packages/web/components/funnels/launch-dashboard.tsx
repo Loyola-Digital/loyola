@@ -105,6 +105,7 @@ import { ClipboardList, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { fmtCurrency as fmtCurrencyCompleto, fmtInt, fmtPercent as fmtPercentCompleto } from "@/lib/utils/format-number";
+import { linhaDedupPessoaProduto, textoDedupDosTotais } from "@/lib/utils/dedup-pessoa-produto";
 
 interface LaunchDashboardProps {
   funnel: Funnel;
@@ -394,14 +395,20 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           // Tooltip "Ingressos totais" = detalhamento por produto (mesmo formato da
           // tabela 18.51b). Reusado nos cards Ingressos e Venda ingressos.
           const ingressosTotaisTooltip = (() => {
+            // Story 41.12 (AC8): a recompra do mesmo produto pela mesma pessoa
+            // não soma — uma linha diz quanto saiu (ausente na API antiga).
+            const dedup = linhaDedupPessoaProduto(salesData?.dedupPessoaProduto);
+            const rodape = dedup ? `\n\n${dedup}` : "";
+            // UX-001 (gate 41.12): com a camada 2, "sem dedup" deixou de ser verdade.
+            const cabeca = `Ingressos totais = todas as vendas (todos os produtos); ${textoDedupDosTotais(salesData?.dedupPessoaProduto)}.`;
             const pp = salesData?.ingressosPorProduto;
             if (!pp || pp.length === 0) {
-              return "Ingressos totais = todas as vendas (todos os produtos), sem deduplicar e-mail.";
+              return cabeca + rodape;
             }
             const linhas = pp
               .map((p) => `  ${p.produto}${p.isOrderBump ? " (order bump)" : ""}: ${fmtNumber(p.count)}`)
               .join("\n");
-            return "Ingressos totais = todas as vendas (todos os produtos), sem dedup.\nPor produto:\n" + linhas;
+            return cabeca + "\nPor produto:\n" + linhas + rodape;
           })();
           const ingressosUnicosTooltip =
             "Ingressos únicos = e-mails distintos que compraram o produto da captação (order bumps não contam). Por e-mail, a compra mais recente.";
@@ -512,7 +519,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
                   label="Faturamento Total"
                   value={fmtCurrency(faturamentoTotalCard)}
                   title={
-                    "Faturamento Total: todos os produtos (captação + order bumps), sem dedup.\n" +
+                    `Faturamento Total: todos os produtos (captação + order bumps); ${textoDedupDosTotais(salesData?.dedupPessoaProduto)}.\n` +
                     "Distribuição por origem abaixo (base: Total).\n" +
                     "Único: produto da captação, dedup por e-mail (compra mais recente)."
                   }

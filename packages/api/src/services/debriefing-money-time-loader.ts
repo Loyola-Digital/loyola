@@ -56,6 +56,7 @@ import {
 import type { Database } from "../db/client.js";
 import { readSheetData } from "./google-sheets.js";
 import { resolveSalesSheetsForStage, type ResolvedSalesSheet } from "./sales-daily-sync.js";
+import { camada2ValeNaEtapa } from "./vendas-camada2-planilha.js";
 import type { DebriefingConfigLancamento, DebriefingPapel } from "./debriefing-config.js";
 import { TIPOS_DE_PRODUTO, productKey, tipoDoProduto, type TipoDeProduto } from "../utils/produto.js";
 import { tipoPadraoDaEtapa } from "../utils/order-bump.js";
@@ -259,6 +260,7 @@ export function lerPlanilhaDeVenda(
       temColunaStatus: statusIdx !== -1,
       temColunaId: txIdx !== -1,
       temColunaProduto: produtoIdx !== -1,
+      camada2Vale: camada2ValeNaEtapa(p.stageType),
     },
     vendas,
     precoMappingDivergente:
@@ -376,6 +378,7 @@ export function lerVendasManuais(
       temColunaStatus: false,
       temColunaId: true,
       temColunaProduto: true,
+      camada2Vale: camada2ValeNaEtapa(stageType),
     },
     vendas,
   };

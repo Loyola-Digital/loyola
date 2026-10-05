@@ -393,6 +393,11 @@ contra a §10, usar 27/07.
 
 ## Correção 41.10 — dedup por ID e comprador de captação (2026-09-30)
 
+> ⚠️ **Supersedido pela Correção 41.12 nas linhas de vendas/faturamento
+> (ingressos únicos inalterados).** As tabelas abaixo continuam valendo como o
+> estado "depois da 41.10, antes da 41.12"; o oráculo do PG02 e do PG04 passa a
+> ser o da seção "Correção 41.12", mais abaixo.
+>
 > **Oráculo a partir de agora (g):** as tabelas desta seção são o oráculo do
 > **PG02** e do **PG04** — é o que a fixture `governante` da 49.5 lê. As tabelas
 > antigas acima ficam como histórico, rotuladas "supersedido".
@@ -454,7 +459,7 @@ mapeado para a coluna **`ID`** (ver T0 abaixo: em produção ele **não** está 
 | 17/04–09/05 | antes | 2.189 | 1.564 | 625 | 1.407 | 230.305,94 | 87.121,74 | 143.184,20 | — |
 | 17/04–09/05 | depois | **2.174** | **1.549** | 625 | **1.406** | **228.820,94** | **85.636,74** | 143.184,20 | 15 / R$ 1.485,00 |
 
-**Dedup + regra R2-1 (Imersão ou Combo = captação; Gravação e GPT = bump) — AC4, o oráculo**
+**Dedup + regra R2-1 (Imersão ou Combo = captação; Gravação e GPT = bump) — AC4, o oráculo** *(supersedido pela Correção 41.12 nas linhas de vendas/faturamento; ingressos únicos inalterados)*
 
 | Janela | vendas | captação | order bump | ingressos únicos | faturamento total | captação (R$) | order bump (R$) | ticket captação | ticket total | W9 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
@@ -542,7 +547,7 @@ então a troca ocorreu depois de 01/08. Não há trilha de auditoria da UI para
 dizer quem e quando. Nenhuma etapa tem Combo na lista de bumps: a lista de
 trocas da R3-5 está vazia.
 
-### PG04 — só a dedup muda (coluna `Transaction`)
+### PG04 — só a dedup muda (coluna `Transaction`) *(supersedido pela Correção 41.12 nas linhas de vendas/faturamento; ingressos únicos inalterados)*
 
 | Janela | | vendas | captação | order bump | únicos | faturamento | captação (R$) | order bump (R$) | W9 |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
@@ -570,9 +575,87 @@ passadas. A diferença é anterior a esta story e fica para o @qa classificar.
   ainda sem a dedup (W10). O gate oficial com a dedup ativa no PG02 é do @qa,
   depois do mapeamento e do deploy.
 
+## Correção 41.12 — camada 2 (e-mail + produto) em todas as pontas (2026-10-02)
+
+> **Oráculo a partir de agora:** as tabelas desta seção são o oráculo do **PG02**
+> e do **PG04** — inclusive o oráculo `governante` do PG02 da 49.5, que passa a
+> ser o número **com** camada 2 (**R$ 230.501,64** na janela 17/04–11/05). As da
+> "Correção 41.10" ficam como histórico, rotuladas "supersedido".
+>
+> **Regra:** a mesma pessoa (e-mail) não compra duas vezes o mesmo produto —
+> a camada 2 da skill `loyola-debriefing`, que a 49.3 pôs no Debriefing e o dono
+> manteve (decisão **1A**, 2026-10-02) e estendeu a todas as pontas (**R5-1**,
+> 2026-10-02). Chave = e-mail normalizado + produto (trim + minúsculas); vale a
+> **primeira** linha; sem e-mail nunca colapsa; produtos diferentes da mesma
+> pessoa não colapsam; planilha sem `productName` mapeado não colapsa (W12).
+> No lançamento a sobrevivente é decidida na planilha inteira (todas as
+> planilhas da etapa), **depois** da camada 1 e **antes** do corte de período.
+> Uma função só: `utils/dedup-pessoa-produto.ts`.
+>
+> **Consequência:** os **−R$ 596,30** do PG02 entre o Resumão e o Debriefing
+> (classificados como `definicao` na 49.3/49.5) **deixam de existir** — os dois
+> leem R$ 230.501,64.
+>
+> **Como foi medido (2026-10-02, @dev):** pelo código do loader, antigo
+> (`origin/main` `b419a7f3`) e novo, sobre a mesma planilha de produção, em
+> sessão `default_transaction_read_only=on`, sem token da Meta. Nada gravado.
+
+### (a) PG02 — as 9 linhas e a repartição (reconferidas)
+
+As 9 recompras (mesmo e-mail + mesmo produto, todas em dia diferente da
+sobrevivente): 7 ingressos (R$ 300,30), 1 Combo (R$ 197,00) e 1 Gravação (bump,
+R$ 99,00) — **todas** dentro de 17/04–09/05. A repartição derivada pelo @sm
+(ingresso e combo = captação; bump = order bump) **bate** com a medida.
+
+| Janela | | vendas | captação | order bump | ingressos únicos | faturamento total | captação (R$) | order bump (R$) | W9 | W11 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|
+| 17/04–11/05 | 41.10 (antes) | 2.197 | 1.900 | 297 | 1.807 | 231.097,94 | 198.736,40 | 32.361,54 | 25 / R$ 2.475,00 | — |
+| 17/04–11/05 | **41.12** | **2.188** | **1.892** | **296** | **1.807** | **230.501,64** | **198.239,10** | **32.262,54** | 25 / R$ 2.475,00 | 9 / R$ 596,30 |
+| 17/04–09/05 (config) | 41.10 (antes) | 2.174 | 1.900 | 274 | 1.807 | 228.820,94 | 198.736,40 | 30.084,54 | 15 / R$ 1.485,00 | — |
+| 17/04–09/05 (config) | **41.12** | **2.165** | **1.892** | **273** | **1.807** | **228.224,64** | **198.239,10** | **29.985,54** | 15 / R$ 1.485,00 | 9 / R$ 596,30 |
+
+- **A4 nas duas janelas:** 198.239,10 + 32.262,54 = 230.501,64 e
+  198.239,10 + 29.985,54 = 228.224,64 — diferença **0,000000**.
+- **Ingressos únicos não mudam** (1.807): as recompras são do mesmo e-mail.
+- **Janela 09/05 medida, não derivada:** as 9 linhas caem dentro dela.
+
+### (b) Ponte do faturamento do PG02 — o degrau da camada 2 entra
+
+Continuação da ponte (a) da Correção 41.10, janela 17/04–11/05:
+
+| # | Degrau | Δ (R$) | Acumulado (R$) | Natureza |
+|---|---|---:|---:|---|
+| 7 | Resumão antigo (25 duplicatas de ID incluídas) | | 233.572,94 | |
+| 8 | camada 1 — 25 duplicatas por ID da venda (41.10) | −2.475,00 | 231.097,94 | R2-1/R2-2 — corrigido |
+| 9 | **camada 2 — 9 recompras do mesmo produto pela mesma pessoa (41.12)** | **−596,30** | **230.501,64** | **1A/R5-1 — corrigido; = Debriefing** |
+
+### (c) PG04 — Resumão da config (09/07–30/07)
+
+| | vendas | captação | order bump | únicos | faturamento | captação (R$) | order bump (R$) | W9 | W11 |
+|---|---:|---:|---:|---:|---:|---:|---:|---|---|
+| 41.10 (antes) | 1.145 | 999 | 146 | 991 | 100.049,03 | 70.864,93 | 29.184,10 | 5 / R$ 428,50 | — |
+| **41.12** | **1.138** | **992** | **146** | **991** | **99.764,97** | **70.580,87** | **29.184,10** | 5 / R$ 428,50 | 7 / R$ 284,06 |
+
+As 7 removidas na janela são todas de produto de captação (o bump não muda).
+
+### (d) Demais etapas (AC10 da 41.12)
+
+A tabela completa por etapa (Resumão, painéis Captação Paga e Vendas, gráfico
+diário e réplica `sales_daily`) está no Dev Agent Record da Story 41.12. Dos
+Resumões configurados, só PG02 e PG04 mudam; o do BBE-PR2 (01/08–24/08) não tem
+recompra na janela. Nenhuma etapa de Resumão passa de 5 % do faturamento.
+
+### (e) §C.10 do perpétuo
+
+Não muda na fatia A: o loader do relatório de Perpétuo não foi tocado, e a
+réplica `sales-daily-sync` deixa a planilha do perpétuo **isenta** (no perpétuo a
+camada 2 é por janela — R6-2 —, fatia B). `epic-41-complemento-perpetuo.md` fica
+como está.
+
 ## Change Log
 
 | Data | Autor | Mudança |
 |------|-------|---------|
 | 2026-07-30 | @dev (Dex) | §10 versionada a partir do que o usuário forneceu. Adicionadas 5 observações do cruzamento com o banco de produção: prefixos confirmados, em-dash em posição variável, divergência de contagem de campanhas, período do PG02 e ausência de config do PG04. |
 | 2026-10-01 | @dev (Dex) | **Correção 41.10** (Story 41.10): ponte skill → Loyola versionada degrau a degrau; tabelas do PG02 (dedup; dedup + R2-1) e do PG04 (dedup) medidas pelo código do loader contra a planilha de produção em modo leitura; T0 do mapeamento; regra de comprador em produção; oráculo declarado. Tabela do PG02, decomposição e "Resultado da conferência real" rotulados "supersedido" (não apagados). Janela 09/05: 15 / R$ 1.485,00, não 13 / R$ 1.287,00 (dedup antes do corte). |
+| 2026-10-02 | @dev (Dex) | **Correção 41.12 (fatia A)** (Story 41.12): camada 2 (e-mail + produto) no Resumão; PG02 reconferido pelo código contra a planilha de produção em modo leitura — 2.188 / 1.892 / 296 / 1.807 / R$ 230.501,64 (11/05) e 2.165 / R$ 228.224,64 (09/05, medida); PG04 1.138 / R$ 99.764,97; ponte do PG02 com o degrau da camada 2; oráculo `governante` do PG02 = R$ 230.501,64. Tabelas da Correção 41.10 rotuladas "supersedido" nas linhas de vendas/faturamento (não apagadas). |

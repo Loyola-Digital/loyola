@@ -594,6 +594,18 @@ export interface StageSalesData {
   faturamentoTotalByDay?: Record<string, number>;
   /** Ingressos (vendas) por produto — todos os produtos, sem dedup. Tooltip de "Ingressos totais". */
   ingressosPorProduto?: { produto: string; count: number; bruto: number; isOrderBump: boolean }[];
+  /**
+   * Story 41.12 (AC8) — o que a camada 2 tirou do período: a mesma pessoa
+   * (e-mail) não compra duas vezes o mesmo produto (vale a primeira linha,
+   * decidida na planilha inteira). `aplicada = false` quando nenhuma planilha
+   * tem a coluna de produto mapeada; `naoAplicadaMotivo` diz quais ficaram de
+   * fora. Ausente = API anterior à 41.12 (o web não exige o campo).
+   */
+  dedupPessoaProduto?: {
+    aplicada: boolean;
+    removidas: { linhas: number; valor: number };
+    naoAplicadaMotivo?: string;
+  };
 
   /**
    * Story 18.66 — representatividade do order bump no faturamento.

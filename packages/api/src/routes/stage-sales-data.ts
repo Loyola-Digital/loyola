@@ -5,7 +5,7 @@
 // Current implementation: porUtmMedium and porUtmTerm are basic aggregates - need refactor to fetch Meta entities and group by name
 
 import { z } from "zod";
-import { eq, and, inArray, gte, sql } from "drizzle-orm";
+import { eq, and, inArray, gte, isNull, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   stageSalesSpreadsheets,
@@ -23,6 +23,16 @@ import { temDashboardDeVendas } from "../utils/stage-types.js";
 import { juntarPorComprador } from "../utils/comprador.js";
 import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
 import { ingressosDoEvento } from "../services/kiwify-event-tickets.js";
+// Story 41.12 — camada 2 (mesma pessoa + mesmo produto conta uma vez), decidida
+// na planilha inteira, antes do recorte de `days`.
+import {
+  camada2ValeNaEtapa,
+  decidirCamada2DasPlanilhas,
+  refDaLinha,
+  refDaManual,
+  resumoDedupPessoaProduto,
+  type PlanilhaParaCamada2,
+} from "../services/vendas-camada2-planilha.js";
 // Stories 18.66/18.67 — a regra de order bump por comprador. Módulo puro, para
 // que a separação acessório/avulso seja provável sem levantar a rota.
 import {
@@ -415,7 +425,8 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         const [{ n } = { n: 0 }] = await fastify.db
           .select({ n: sql<number>`count(*)::int` })
           .from(manualSales)
-          .where(eq(manualSales.stageId, params.data.stageId));
+          // REL-001 (41.12): reembolsada não conta — mesmo critério da réplica.
+          .where(and(eq(manualSales.stageId, params.data.stageId), isNull(manualSales.refundedAt)));
         if (n === 0) return { ...EMPTY_RESPONSE, semDados: true };
       }
 
@@ -431,8 +442,17 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       // cliente nunca colapsam — só retries com transactionId idêntico.
       const emailMap = new Map<
         string,
-        { bruto: number; liquido: number; forma: string; canal: string; utmSource: string | null; utmMedium: string | null; utmTerm: string | null; utmContent: string | null; lastDate: Date | null; txId: string; email: string; product: string }
+        {
+          bruto: number; liquido: number; forma: string; canal: string; utmSource: string | null; utmMedium: string | null; utmTerm: string | null; utmContent: string | null; lastDate: Date | null; txId: string; email: string; product: string;
+          /** Story 41.12 — `"<id da planilha>|<índice da linha>"`, para a camada 2. */
+          ref: string;
+          /** Story 41.12 — recompra do mesmo produto pela mesma pessoa: não soma. */
+          recompra?: boolean;
+        }
       >();
+      // Story 41.12 — as planilhas lidas, inteiras, para a camada 2 decidir a
+      // sobrevivente ANTES do recorte de `days`.
+      const planilhasParaCamada2: PlanilhaParaCamada2[] = [];
 
       // Story 18.51a: união dos productNames marcados como order bump em todas as
       // planilhas do subtype (na Paga há 1 planilha "capture"). Match
@@ -548,6 +568,13 @@ export default fp(async function stageSalesDataRoutes(fastify) {
 
         if (emailIdx === -1) continue;
         if (dataIdx !== -1) anyHasDateFilter = true;
+        planilhasParaCamada2.push({
+          chave: spreadsheet.id,
+          nome: spreadsheet.sheetName,
+          headers,
+          rows,
+          mapping,
+        });
 
         let validRowsForSheet = 0;
         let rowIndex = -1;
@@ -585,11 +612,18 @@ export default fp(async function stageSalesDataRoutes(fastify) {
             continue;
           }
 
-          // Cada linha da planilha é uma venda real. Só deduplicamos retries do
-          // gateway (mesmo transactionId, quando a coluna está mapeada). Sem
-          // txId, a chave inclui o índice da linha — recompras do mesmo cliente
+          // Camada 1: só deduplicamos aqui retries do gateway (mesmo
+          // transactionId, quando a coluna está mapeada). Sem txId, a chave
+          // inclui o índice da linha.
+          //
+          // ⚠️ SUPERSEDIDO em parte (Story 41.12, decisão R5-1 do dono,
+          // 2026-10-02): a Story 28.4 dizia que "recompras do mesmo cliente
           // (mesmo email/valor) contam como vendas separadas, em vez de colapsar
-          // por email e somar (que subcontava vendas e divergia da tabela).
+          // por email". Para o MESMO PRODUTO isso deixou de valer — a mesma
+          // pessoa não compra duas vezes o mesmo produto (camada 2, a regra do
+          // Debriefing), decidida mais abaixo sobre a planilha inteira por
+          // `decidirCamada2DasPlanilhas`. Produtos diferentes da mesma pessoa
+          // (ingresso + bump) seguem contando separados.
           //
           // Story 18.51a: o produto entra na chave por txId em TODAS as etapas
           // (antes só "sales"). No mesmo pedido, ingresso e order bumps
@@ -611,7 +645,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           if (txId && emailMap.has(dedupKey)) continue;
 
           validRowsForSheet += 1;
-          emailMap.set(dedupKey, { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate: rowDate, txId, email, product: productNameRaw });
+          emailMap.set(dedupKey, { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate: rowDate, txId, email, product: productNameRaw, ref: refDaLinha(spreadsheet.id, rowIndex) });
         }
 
         debugCounters.spreadsheetsLoaded.push({
@@ -634,8 +668,51 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         }
       }
 
+      // Story 41.12 — camada 2. As vendas manuais entram no universo (depois das
+      // planilhas: a planilha vence por vir antes) — todas as da etapa, sem o
+      // recorte de `days`, pela mesma razão das linhas da planilha. A manual
+      // reembolsada fica fora (REL-001), como na réplica `sales-daily-sync`:
+      // senão ela ocupava a vaga só no card.
+      const incluiManuais = deveIncluirVendasManuais(stage.stageType, requestedSubtypes);
+      const manuaisDaEtapa = incluiManuais
+        ? await fastify.db
+            .select({
+              id: manualSales.id,
+              value: manualSales.value,
+              saleDate: manualSales.saleDate,
+              email: manualSales.customerEmail,
+              product: manualSales.product,
+            })
+            .from(manualSales)
+            .where(and(eq(manualSales.stageId, params.data.stageId), isNull(manualSales.refundedAt)))
+        : [];
+      const decisaoCamada2 = decidirCamada2DasPlanilhas(
+        planilhasParaCamada2,
+        parseNumber,
+        manuaisDaEtapa.map((m) => ({
+          id: m.id,
+          email: m.email,
+          product: m.product,
+          valor: Number(m.value) || 0,
+          saleDate: m.saleDate ? new Date(m.saleDate) : null,
+        })),
+        { valeNaEtapa: camada2ValeNaEtapa(stage.stageType) },
+      );
+      for (const entry of emailMap.values()) {
+        if (decisaoCamada2.removidas.has(entry.ref)) entry.recompra = true;
+      }
+      /** Linhas da planilha que contam (sem as recompras da camada 2). */
+      const linhasQueContam = [...emailMap.values()].filter((e) => !e.recompra);
+
       if (emailMap.size === 0 && vendasReembolsadas === 0) {
-        return { ...EMPTY_RESPONSE, semDados: false };
+        return {
+          ...EMPTY_RESPONSE,
+          semDados: false,
+          dedupPessoaProduto: resumoDedupPessoaProduto(decisaoCamada2, planilhasParaCamada2.length, {
+            linhas: 0,
+            valor: 0,
+          }),
+        };
       }
 
       let totalBruto = 0;
@@ -689,9 +766,11 @@ export default fp(async function stageSalesDataRoutes(fastify) {
        * proposital e o único já existe à parte (`ingressosUnicos`, 18.51a).
        */
       const porComprador = stage.stageType === "sales";
+      // Story 41.12 — a camada 2 roda ANTES de `juntarPorComprador`: a recompra
+      // do mesmo produto sai do dinheiro; o bump (outro produto) segue somando.
       const vendasContadas = porComprador
-        ? juntarPorComprador([...emailMap.values()])
-        : [...emailMap.values()];
+        ? juntarPorComprador(linhasQueContam)
+        : linhasQueContam;
 
       for (const { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate } of vendasContadas) {
         vendasValidasPlanilha += 1;
@@ -750,14 +829,13 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       //
       // Ver `deveIncluirVendasManuais`: a manual conta uma vez, no subtype
       // principal da etapa.
-      const incluiManuais = deveIncluirVendasManuais(stage.stageType, requestedSubtypes);
-
       const manualCutoff = query.data.days
         ? new Date(Date.now() - query.data.days * 24 * 60 * 60 * 1000)
         : null;
       const manualRows = incluiManuais
         ? await fastify.db
             .select({
+              id: manualSales.id,
               value: manualSales.value,
               saleDate: manualSales.saleDate,
               email: manualSales.customerEmail,
@@ -765,13 +843,16 @@ export default fp(async function stageSalesDataRoutes(fastify) {
               sellerName: manualSales.sellerName,
             })
             .from(manualSales)
+            // REL-001 (41.12): reembolsada não conta — o mesmo critério do
+            // universo da camada 2 acima e da réplica `sales-daily-sync`.
             .where(
               manualCutoff
                 ? and(
                     eq(manualSales.stageId, params.data.stageId),
+                    isNull(manualSales.refundedAt),
                     gte(manualSales.saleDate, manualCutoff),
                   )
-                : eq(manualSales.stageId, params.data.stageId),
+                : and(eq(manualSales.stageId, params.data.stageId), isNull(manualSales.refundedAt)),
             )
         : [];
       // Mesma regra para a venda manual: quem já comprou pela planilha (ou já
@@ -779,7 +860,12 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       // não. Sem e-mail, cada manual segue sendo uma venda.
       const compradoresDaPlanilha = new Set(vendasContadas.map((v) => v.email.trim().toLowerCase()));
       const manuaisVistos = new Set<string>();
-      const manualConta = manualRows.map((mr) => {
+      // Story 41.12 — venda manual que repete o produto de uma compra anterior da
+      // mesma pessoa (na planilha ou em outra manual) não conta nem soma.
+      const manualRecompra = manualRows.map((mr) => decisaoCamada2.removidas.has(refDaManual(mr.id)));
+      const manuaisQueContam = manualRows.filter((_, i) => !manualRecompra[i]);
+      const manualConta = manualRows.map((mr, i) => {
+        if (manualRecompra[i]) return false;
         const e = (mr.email ?? "").trim().toLowerCase();
         if (!porComprador || !e) return true;
         if (compradoresDaPlanilha.has(e) || manuaisVistos.has(e)) return false;
@@ -787,12 +873,13 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         return true;
       });
       const manualVendas = manualConta.filter(Boolean).length;
-      const manualBruto = manualRows.reduce((s, r) => s + (Number(r.value) || 0), 0);
+      const manualBruto = manuaisQueContam.reduce((s, r) => s + (Number(r.value) || 0), 0);
       // A origem de uma venda manual é QUEM VENDEU — é a única atribuição
       // verdadeira que ela tem. Entra no mapa de fontes com o nome do vendedor,
       // em vez de engrossar "sem track" (ver comentário em `ingressosByDay`).
       const LABEL_MANUAL_SEM_VENDEDOR = "Venda manual";
       manualRows.forEach((mr, i) => {
+        if (manualRecompra[i]) return;
         if (manualConta[i]) addIngresso(mr.saleDate ? new Date(mr.saleDate) : null, "Manual");
 
         const vendedor = (mr.sellerName ?? "").trim() || LABEL_MANUAL_SEM_VENDEDOR;
@@ -880,6 +967,13 @@ export default fp(async function stageSalesDataRoutes(fastify) {
 
       for (const entry of emailMap.values()) {
         const bump = isOrderBump(entry.product);
+        // Story 41.12 — a recompra não soma no total nem por produto, mas segue
+        // disputando o "único" (por e-mail): ingressos/faturamento únicos e a
+        // série única por dia não mudam com a camada 2.
+        if (entry.recompra) {
+          if (!bump) considerCaptura(entry.email, entry.bruto, entry.lastDate, entry.utmSource);
+          continue;
+        }
         linhasDeVenda.push({
           email: entry.email.trim().toLowerCase(),
           tipo: tipoDoProdutoNaVenda(entry.product),
@@ -902,11 +996,15 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       // Manuais (PIX): totais sempre; único como captação (salvo se product =
       // order bump). Sem utm_source → origem "Sem Track".
       const MANUAL_PRODUCT_LABEL = "(Venda manual)";
-      for (const mr of manualRows) {
+      for (const [i, mr] of manualRows.entries()) {
         const val = Number(mr.value) || 0;
         const dt = mr.saleDate ? new Date(mr.saleDate) : null;
         const prod = (mr.product ?? "").trim();
         const bump = isOrderBump(prod);
+        if (manualRecompra[i]) {
+          if (!bump) considerCaptura((mr.email ?? "").trim().toLowerCase(), val, dt, null, true);
+          continue;
+        }
         // Venda manual (PIX) não tem UTM — cai em "Sem Track", que é o que ela
         // é. Deixá-la fora subestimaria o faturamento total e a soma do AC5 da
         // 18.67 não fecharia.
@@ -1124,13 +1222,13 @@ export default fp(async function stageSalesDataRoutes(fastify) {
             vendas: totalVendasPlanilha,
             // Linhas da planilha (cada order bump é uma). Na etapa de Vendas
             // difere de `vendas`, que conta compradores — o tooltip mostra os dois.
-            linhas: emailMap.size,
+            linhas: linhasQueContam.length,
             bruto: totalBrutoPlanilha,
             liquido: totalLiquidoPlanilha,
           },
           manual: {
             vendas: manualVendas,
-            linhas: manualRows.length,
+            linhas: manuaisQueContam.length,
             bruto: manualBruto,
             liquido: manualBruto,
           },
@@ -1155,6 +1253,15 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         orderBump: resumirOrderBump(linhasDeVenda, orderBumpSet.size > 0),
         // Story 18.67 — a tabela de conversão de bump e AOV por público.
         publicos: tabelaPorPublico(linhasDeVenda),
+        // Story 41.12 (AC8) — o que a camada 2 tirou do período. ADITIVO.
+        dedupPessoaProduto: resumoDedupPessoaProduto(decisaoCamada2, planilhasParaCamada2.length, {
+          linhas:
+            [...emailMap.values()].filter((e) => e.recompra).length +
+            manualRecompra.filter(Boolean).length,
+          valor:
+            [...emailMap.values()].reduce((s, e) => s + (e.recompra ? e.bruto : 0), 0) +
+            manualRows.reduce((s, r, i) => s + (manualRecompra[i] ? Number(r.value) || 0 : 0), 0),
+        }),
 
         porCanal: Array.from(canalMap.entries())
           .map(([canal, v]) => ({ canal, ...v }))
@@ -1493,30 +1600,56 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         cutoffDate.setDate(cutoffDate.getDate() - query.data.days);
       }
 
-      // Faturamento por dia = soma do bruto de TODAS as linhas na data da própria
-      // linha (de TODAS as planilhas conectadas). Sem dedup por email — cada
-      // linha é uma transação distinta. Local date (não UTC) pra evitar shift
-      // de vendas BRT pós-21h pro dia seguinte.
+      // Faturamento por dia = soma do bruto das linhas na data da própria linha
+      // (de TODAS as planilhas conectadas). Local date (não UTC) pra evitar
+      // shift de vendas BRT pós-21h pro dia seguinte.
+      //
+      // Story 41.12 (R5-1): a recompra do MESMO produto pela mesma pessoa não
+      // soma — a mesma decisão de sobrevivente do card (`sales-data`), tomada na
+      // planilha inteira antes do recorte de `days`, para que o gráfico some o
+      // mesmo que o card. Produtos diferentes da mesma pessoa seguem somando.
       const byDay: Record<string, number> = {};
       let counted = 0;
 
-      for (const spreadsheet of spreadsheets) {
-        const mapping = spreadsheet.columnMapping as {
+      const lidas: {
+        spreadsheet: (typeof spreadsheets)[number];
+        headers: string[];
+        rows: string[][];
+        mapping: {
           email: string;
           transactionId?: string;
+          productName?: string;
           valorBruto?: string;
           dataVenda?: string;
           status?: string;
         };
-
+      }[] = [];
+      for (const spreadsheet of spreadsheets) {
         let sheetData;
         try {
           sheetData = await readSheetData(spreadsheet.spreadsheetId, spreadsheet.sheetName);
         } catch {
           continue;
         }
+        const mapping = spreadsheet.columnMapping as (typeof lidas)[number]["mapping"];
+        lidas.push({ spreadsheet, headers: sheetData.headers, rows: sheetData.rows, mapping });
+      }
+      const decisaoCamada2 = decidirCamada2DasPlanilhas(
+        lidas
+          .filter((l) => l.rows.length > 0)
+          .map((l) => ({
+            chave: l.spreadsheet.id,
+            nome: l.spreadsheet.sheetName,
+            headers: l.headers,
+            rows: l.rows,
+            mapping: l.mapping,
+          })),
+        parseNumber,
+        [],
+        { valeNaEtapa: camada2ValeNaEtapa(stage.stageType) },
+      );
 
-        const { headers, rows } = sheetData;
+      for (const { spreadsheet, headers, rows, mapping } of lidas) {
         if (rows.length === 0) continue;
 
         function colIdx(fieldName: string | undefined): number {
@@ -1544,10 +1677,11 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           }
         }
 
-      for (const row of rows) {
+      for (const [rowIndex, row] of rows.entries()) {
         const rowDate = parseDate(row[dataIdx]);
         if (!rowDate) continue;
         if (cutoffDate && rowDate < cutoffDate) continue;
+        if (decisaoCamada2.removidas.has(refDaLinha(spreadsheet.id, rowIndex))) continue;
 
         // Mantém filtro de email vazio: linhas sem email são geralmente eventos
         // não-venda (boleto gerado, carrinho, etc) e poluiriam o faturamento.
