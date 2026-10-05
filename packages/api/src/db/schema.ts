@@ -1199,6 +1199,15 @@ export const stageLeadScoringSchemas = pgTable(
     surveyId: uuid("survey_id").references(() => funnelSurveys.id, {
       onDelete: "set null",
     }),
+    /**
+     * O formulário do Tally de onde as RESPOSTAS vêm.
+     *
+     * Preenchido = o motor lê a API do Tally; vazio = lê a planilha do Google,
+     * como sempre leu. Guardar a escolha aqui deixa as duas conviverem: etapa
+     * antiga continua na planilha, etapa nova nasce no Tally, e ninguém precisa
+     * migrar nada num domingo.
+     */
+    tallyFormId: varchar("tally_form_id", { length: 100 }),
     schemaJson: jsonb("schema_json").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -1208,6 +1217,79 @@ export const stageLeadScoringSchemas = pgTable(
       .notNull(),
   },
   (table) => [index("idx_lead_scoring_stage").on(table.stageId)],
+);
+
+/**
+ * Para quais faixas o Loyola X devolve evento ao Meta, e por onde.
+ *
+ * ## Por que existe
+ *
+ * O Meta otimiza para "lead", e lead é qualquer formulário preenchido — então
+ * ele persegue o mais barato, que costuma ser o pior. Mandando de volta um
+ * evento só para a faixa que importa, o algoritmo passa a perseguir ESSE: a
+ * conta de mídia aprende o que a pesquisa descobriu.
+ *
+ * A configuração é por ETAPA porque é onde o modelo de scoring vive. `bands`
+ * guarda as faixas escolhidas (`["A"]`, `["A","B"]`), e lista vazia é um estado
+ * legítimo: significa "ainda não quero ensinar nada ao Meta".
+ */
+export const stageLeadCapi = pgTable("stage_lead_capi", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  stageId: uuid("stage_id")
+    .notNull()
+    .unique()
+    .references(() => funnelStages.id, { onDelete: "cascade" }),
+  /** O dataset (pixel) que recebe os eventos. */
+  datasetId: varchar("dataset_id", { length: 50 }).notNull(),
+  /** De qual conta de anúncio sai o token usado no envio. */
+  metaAccountId: uuid("meta_account_id").references(() => metaAdsAccounts.id, {
+    onDelete: "set null",
+  }),
+  /** Nome do evento no Meta. Um por faixa seria pior: a faixa já vai no corpo. */
+  eventName: varchar("event_name", { length: 60 }).notNull().default("LeadQualificado"),
+  /** As faixas que viram evento: `["A"]`, `["A","B"]`… */
+  bands: jsonb("bands").$type<string[]>().notNull().default([]),
+  /**
+   * Código de teste do Gerenciador.
+   *
+   * Com ele o evento aparece em "Test Events" e NÃO entra na otimização — dá
+   * para conferir o formato sem ensinar bobagem ao algoritmo.
+   */
+  testEventCode: varchar("test_event_code", { length: 40 }),
+  ativo: boolean("ativo").notNull().default(false),
+  ultimoEnvioEm: timestamp("ultimo_envio_em", { withTimezone: true }),
+  /** O resumo do último envio, para a tela não precisar reenviar para informar. */
+  ultimoResultado: jsonb("ultimo_resultado"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * Quem já foi enviado — para não ir duas vezes.
+ *
+ * Guarda o HASH do identificador do lead, nunca o e-mail: o dedup funciona
+ * igual e nenhum dado pessoal novo entra no banco por causa desta feature.
+ *
+ * O `event_id` que vai ao Meta também é determinístico, então há duas defesas
+ * contra o envio dobrado — esta, que evita a chamada, e a do próprio Meta, que
+ * descarta o repetido se esta falhar.
+ */
+export const stageLeadCapiEnviados = pgTable(
+  "stage_lead_capi_enviados",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    /** SHA-256 do identificador do lead. */
+    leadHash: varchar("lead_hash", { length: 64 }).notNull(),
+    faixa: varchar("faixa", { length: 10 }).notNull(),
+    enviadoEm: timestamp("enviado_em", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uq_lead_capi_enviado").on(table.stageId, table.leadHash),
+    index("idx_lead_capi_enviado_stage").on(table.stageId),
+  ],
 );
 
 // ============================================================
@@ -3215,7 +3297,7 @@ export const debriefings = pgTable(
 );
 
 /**
- * Story 49.6 — payload do Debriefing GERADO (migration 0164). Tabela irmã 1:1
+ * Story 49.6 — payload do Debriefing GERADO (migration 0165). Tabela irmã 1:1
  * de `debriefings`: o PUT do viewer não a toca por construção, as listas não a
  * carregam e o upload manual não tem linha aqui. `stageIdOrigem` sem FK — é a
  * etapa que o payload descreve, mesmo se o documento for movido ou a etapa
@@ -4346,6 +4428,29 @@ export const plausibleProjectSites = pgTable(
 // O MCP do SendFlow só tem authorization_code + refresh_token (não há
 // client_credentials), então guardamos o refresh e renovamos o access sozinhos.
 // client_id/secret ficam junto porque o refresh exige os dois.
+/**
+ * A chave da API do Tally, por projeto.
+ *
+ * Existe para o modelo de Lead Scoring nascer do formulário de verdade, em vez
+ * de ser transcrito à mão num fluxo do n8n e colado na aba. `projectId` é único:
+ * um projeto, uma conta do Tally.
+ *
+ * O token é guardado cifrado, como o do SendFlow — e nunca volta para a tela:
+ * as rotas devolvem só se existe conexão e quando foi salva.
+ */
+export const tallyConnections = pgTable("tally_connections", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  projectId: uuid("project_id")
+    .notNull()
+    .unique()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  tokenEncrypted: text("token_encrypted").notNull(),
+  tokenIv: varchar("token_iv", { length: 64 }).notNull(),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const sendflowConnections = pgTable("sendflow_connections", {
   id: uuid("id").defaultRandom().primaryKey(),
   /** NULL = conexão GLOBAL, vale pra todos os projetos. O SendFlow é uma conta

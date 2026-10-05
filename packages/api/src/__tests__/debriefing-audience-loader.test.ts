@@ -156,12 +156,12 @@ describe("higiene de vendas = a sequência da 49.3 (compradoresCaptacao idêntic
   const CAP = "cap";
   const PRIN = "prin";
   const planilhas: PlanilhaDeVendaInput[] = [
-    { planilhaId: "cap:s1", stageId: CAP, nome: "captacao", plataforma: "capture", temColunaStatus: true, temColunaId: true, temColunaProduto: true },
-    { planilhaId: "cap:tmb", stageId: CAP, nome: "tmb", plataforma: "tmb", temColunaStatus: false, temColunaId: false, temColunaProduto: true },
-    { planilhaId: "prin:s1", stageId: PRIN, nome: "principal", plataforma: "main_product", temColunaStatus: true, temColunaId: true, temColunaProduto: true },
-    { planilhaId: "outra:s1", stageId: "fora", nome: "fora", plataforma: "sales", temColunaStatus: false, temColunaId: false, temColunaProduto: false },
+    { planilhaId: "cap:s1", stageId: CAP, nome: "captacao", plataforma: "capture", temColunaStatus: true, temColunaId: true, temColunaProduto: true, camada2Vale: true },
+    { planilhaId: "cap:tmb", stageId: CAP, nome: "tmb", plataforma: "tmb", temColunaStatus: false, temColunaId: false, temColunaProduto: true, camada2Vale: true },
+    { planilhaId: "prin:s1", stageId: PRIN, nome: "principal", plataforma: "main_product", temColunaStatus: true, temColunaId: true, temColunaProduto: true, camada2Vale: false },
+    { planilhaId: "outra:s1", stageId: "fora", nome: "fora", plataforma: "sales", temColunaStatus: false, temColunaId: false, temColunaProduto: false, camada2Vale: false },
     // decisão 3A: vendas manuais chegam como uma "planilha" a mais da etapa (`lerVendasManuais`)
-    { planilhaId: "cap:manual", stageId: CAP, nome: "Vendas manuais", plataforma: "manual", temColunaStatus: false, temColunaId: true, temColunaProduto: true },
+    { planilhaId: "cap:manual", stageId: CAP, nome: "Vendas manuais", plataforma: "manual", temColunaStatus: false, temColunaId: true, temColunaProduto: true, camada2Vale: true },
   ];
   let n = 0;
   const v = (p: Partial<VendaCruaInput>): VendaCruaInput => ({

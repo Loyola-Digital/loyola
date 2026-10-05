@@ -53,7 +53,7 @@ import {
  * De onde vieram os números do lançamento de comparação (R7-7):
  * - `recalculada`: pelos MESMOS motores, com a config de debriefing dele;
  * - `payload-salvo`: ele não tem config de debriefing liberada — vale o último
- *   payload persistido dele (`debriefing_payloads`, 0164), com aviso no topo.
+ *   payload persistido dele (`debriefing_payloads`, 0165), com aviso no topo.
  */
 export type OrigemDaComparacao =
   | { tipo: "recalculada" }

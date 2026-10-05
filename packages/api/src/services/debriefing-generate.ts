@@ -13,7 +13,7 @@
  * motores, com a config de debriefing do próprio funil de comparação (a etapa
  * Debriefing dele, pela mesma porta `loadDebriefingConfig`). R7-7 (dono,
  * 2026-10-02): sem config liberada nele, vale o ÚLTIMO payload salvo dele
- * (`debriefing_payloads`, 0164) com aviso visível no documento; sem nenhum dos
+ * (`debriefing_payloads`, 0165) com aviso visível no documento; sem nenhum dos
  * dois, 422 `COMPARACAO_SEM_CONFIG` explicado — nunca Δ inventado nem "edição
  * única" silenciosa. Duas configs liberadas continua 422 (ambíguo, não ausente).
  *
@@ -93,7 +93,7 @@ export interface DependenciasDaGeracao {
   carregarConfig(stageId: string): Promise<DebriefingConfig>;
   /** Etapas do tipo Debriefing de um funil (para achar a config da comparação). */
   etapasDeDebriefingDoFunil(funnelId: string): Promise<string[]>;
-  /** R7-7: o último payload salvo (0164) que descreve o funil dado, do projeto; `null` = nenhum. */
+  /** R7-7: o último payload salvo (0165) que descreve o funil dado, do projeto; `null` = nenhum. */
   ultimoPayloadSalvoDoFunil(projectId: string, funnelId: string): Promise<PayloadSalvo | null>;
   /** Loaders + motores + composição (49.3/49.4/49.5). Lança `DebriefingDadoIndisponivelError`. */
   calcularPayload(config: DebriefingConfigLancamento, geradoEm: Date): Promise<DebriefingPayload>;

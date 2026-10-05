@@ -184,7 +184,13 @@ export function higienizarVendasDoDebriefing(
     new Map<string, PlanilhaParaDedup>(
       entrada.planilhas.map((p) => [
         p.planilhaId,
-        { planilhaId: p.planilhaId, nome: p.nome, temColunaId: p.temColunaId, temColunaProduto: p.temColunaProduto },
+        {
+          planilhaId: p.planilhaId,
+          nome: p.nome,
+          temColunaId: p.temColunaId,
+          temColunaProduto: p.temColunaProduto,
+          camada2Vale: p.camada2Vale,
+        },
       ]),
     ),
   );

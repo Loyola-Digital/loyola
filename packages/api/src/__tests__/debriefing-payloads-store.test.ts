@@ -1,6 +1,6 @@
 /**
  * Story 49.6 AC2 — persistência do debriefing gerado sobre Postgres de verdade
- * (PGlite, em memória) com a migration 0164 REAL e as rotas REAIS de
+ * (PGlite, em memória) com a migration 0165 REAL e as rotas REAIS de
  * `routes/debriefings.ts` (PUT/DELETE do viewer):
  *   - HTML e payload na MESMA transação (falha no 2º insert ⇒ nenhum dos dois);
  *   - o PUT (edição inline, renomear, mover de etapa) não toca o payload;
@@ -23,7 +23,7 @@ import debriefingsRoutes from "../routes/debriefings.js";
 import { gravarDebriefingGerado, lerUltimoPayloadSalvoDoFunil, type RegistroDoDebriefing } from "../services/debriefing-generate.js";
 import { payloadSintetico } from "./fixtures/debriefing-payload-sintetico.js";
 
-const MIGRATION = join(dirname(fileURLToPath(import.meta.url)), "..", "db", "migrations", "0164_debriefing_payloads.sql");
+const MIGRATION = join(dirname(fileURLToPath(import.meta.url)), "..", "db", "migrations", "0165_debriefing_payloads.sql");
 const U = "40000000-0000-4000-8000-000000000001";
 const S1 = "30000000-0000-4000-8000-000000000001";
 const S2 = "30000000-0000-4000-8000-000000000002";
@@ -97,7 +97,7 @@ beforeEach(async () => {
   await pg.exec(`INSERT INTO users VALUES ('${U}', 'Fulano', null); INSERT INTO funnel_stages VALUES ('${S1}', 'Debriefing'), ('${S2}', 'Outra');`);
 });
 
-describe("migration 0164", () => {
+describe("migration 0165", () => {
   it("9 colunas, idempotente (reaplicada continua 9) e o rollback do topo remove a tabela", async () => {
     const colunas = async () =>
       (await pg.query<{ n: number }>("SELECT count(*)::int AS n FROM information_schema.columns WHERE table_name = 'debriefing_payloads'")).rows[0]!.n;

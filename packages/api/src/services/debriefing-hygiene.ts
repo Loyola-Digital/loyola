@@ -43,6 +43,7 @@
 import { createHash } from "node:crypto";
 import { parseValorPlanilha } from "@loyola-x/shared";
 import { deduplicarPorIdDaVenda } from "../utils/dedup-por-id-da-venda.js";
+import { deduplicarPorPessoaEProduto } from "../utils/dedup-pessoa-produto.js";
 import { normalizeEmail } from "../utils/lead-origin.js";
 import { META_TAX_EFFECTIVE_DATE } from "../utils/meta-tax.js";
 import { toBusinessDayKey } from "../utils/sale-date.js";
@@ -481,6 +482,13 @@ export interface PlanilhaParaDedup {
   temColunaId: boolean;
   /** `mapping.productName` aponta para uma coluna que existe. */
   temColunaProduto: boolean;
+  /**
+   * A camada 2 age nas linhas desta planilha — `camada2ValeNaEtapa` do tipo da
+   * etapa dela (Story 41.12, R7-4/R7-5: só captação, fora o evento presencial).
+   * `false` = as linhas não colapsam nem ocupam a vaga, como no painel e no
+   * Resumão da mesma etapa.
+   */
+  camada2Vale: boolean;
 }
 
 export interface ResultadoDedupVendas<T> {
@@ -501,10 +509,15 @@ export interface ResultadoDedupVendas<T> {
  * `removidas = 0` ali e a planilha volta em `dedupNaoAplicada`.
  *
  * Camada 2 — `(e-mail normalizado, produto normalizado)` sobre todas as
- * planilhas (passo 2 da skill: um e-mail não compra 2× o mesmo produto). Produtos
+ * planilhas (passo 2 da skill: um e-mail não compra 2× o mesmo produto), pela
+ * função única `deduplicarPorPessoaEProduto` (Story 41.12 — a chave não é
+ * redefinida aqui; o Resumão, os painéis e a réplica diária chamam a mesma). Produtos
  * distintos do mesmo e-mail (ingresso + combo + bump) não colapsam; linha sem
  * e-mail nunca colapsa. Pega a dobra `PURCHASE_APPROVED` + `PURCHASE_COMPLETE`
  * (perfil DG §10.3), que tem IDs diferentes.
+ *
+ * A camada 2 só age nas planilhas com `camada2Vale` (escopo por tipo de etapa,
+ * R7-4/R7-5 — o mesmo ponto único dos painéis e do Resumão).
  *
  * Nas duas, sobrevive a PRIMEIRA ocorrência; a ordem de `linhas` é preservada.
  */
@@ -546,24 +559,16 @@ export function deduplicarVendas<T>(
   const depois1 = linhas.filter((l) => !removidas1.has(l));
   const removidasCamada1 = linhas.filter((l) => removidas1.has(l));
 
-  // ---- Camada 2 ----
-  const vistas = new Set<string>();
-  const mantidas: T[] = [];
-  const removidasCamada2: T[] = [];
-  for (const l of depois1) {
-    const email = normalizarEmail(acesso.emailCru(l));
-    if (!email) {
-      mantidas.push(l);
-      continue;
-    }
-    const chave = `${email}\u0000${(acesso.produto(l) ?? "").trim().toLowerCase()}`;
-    if (vistas.has(chave)) {
-      removidasCamada2.push(l);
-      continue;
-    }
-    vistas.add(chave);
-    mantidas.push(l);
-  }
+  // ---- Camada 2 ---- (Story 41.12: a chave mora em `utils/dedup-pessoa-produto.ts`)
+  // Só as linhas de planilha cuja etapa está no escopo (`camada2Vale`) disputam
+  // a vaga; as demais passam inteiras e na mesma posição.
+  const noEscopo = depois1.filter((l) => planilhas.get(acesso.planilhaId(l))?.camada2Vale === true);
+  const { removidas: removidasCamada2 } = deduplicarPorPessoaEProduto(noEscopo, (l) => ({
+    email: acesso.emailCru(l),
+    produto: acesso.produto(l),
+  }));
+  const saem2 = new Set<T>(removidasCamada2);
+  const mantidas = depois1.filter((l) => !saem2.has(l));
 
   return {
     mantidas,

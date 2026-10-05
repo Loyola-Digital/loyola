@@ -6,12 +6,25 @@ import { readSheetData } from "./google-sheets.js";
 import { classifyOrigem, classifyCanal, type Origem, type Canal } from "../utils/lead-origin.js";
 import { classifyRefundStatus, isRefundBucket } from "./sales-status.js";
 import { juntarPorComprador } from "../utils/comprador.js";
+import {
+  camada2ValeNaEtapa,
+  decidirCamada2DasPlanilhas,
+  refDaLinha,
+  refDaManual,
+  type PlanilhaParaCamada2,
+} from "./vendas-camada2-planilha.js";
 
 /**
  * Story 36.7 (Buraco 3 / "Dados Diários" — metade de vendas): faturamento +
  * ingressos por dia × origem (Pago/Orgânico/Sem Track), por stage. Réplica FIEL
  * da lógica de `routes/stage-sales-data.ts` (dedup por txId, classifyFonte,
  * ingressosByDay) — mesmos números do dashboard. ZERO PII (só agregados).
+ *
+ * Story 41.12 (R5-1): a camada 2 — a mesma pessoa não compra duas vezes o
+ * mesmo produto — também roda aqui, pela MESMA decisão do painel
+ * (`decidirCamada2DasPlanilhas`, sobre as planilhas inteiras). A planilha do
+ * perpétuo herdada pela etapa fica isenta: no perpétuo a camada 2 é por janela
+ * (R6-2), e isso é da fatia B.
  * Combine com `/meta/v1/projects/:id/daily` (investimento) pra ROAS real.
  */
 
@@ -264,15 +277,40 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
   >();
   const subtypesConsidered = new Set<string>();
 
+  // Story 41.12 — lê as planilhas antes, para a camada 2 decidir sobre todas.
+  const lidas: { sheet: ResolvedSalesSheet; data: { headers: string[]; rows: string[][] } }[] = [];
   for (const sheet of sheets) {
-    const mapping = (sheet.columnMapping ?? {}) as Mapping;
-    let data: { headers: string[]; rows: string[][] };
     try {
       const res = await readSheetData(sheet.spreadsheetId, sheet.sheetName);
-      data = { headers: res.headers, rows: res.rows };
+      lidas.push({ sheet, data: { headers: res.headers, rows: res.rows } });
     } catch {
       continue;
     }
+  }
+  const decisaoCamada2 = decidirCamada2DasPlanilhas(
+    lidas.map(
+      ({ sheet, data }): PlanilhaParaCamada2 => ({
+        chave: sheet.id,
+        nome: sheet.sheetName,
+        headers: data.headers,
+        rows: data.rows,
+        mapping: (sheet.columnMapping ?? {}) as Mapping,
+        isenta: sheet.subtype === "perpetual_sales",
+      }),
+    ),
+    parseNumber,
+    manualRows.map((m) => ({
+      id: m.id,
+      email: m.email,
+      product: m.product,
+      valor: parseFloat(m.value ?? "0") || 0,
+      saleDate: m.saleDate,
+    })),
+    { valeNaEtapa: camada2ValeNaEtapa(stageType) },
+  );
+
+  for (const { sheet, data } of lidas) {
+    const mapping = (sheet.columnMapping ?? {}) as Mapping;
     const col = (name: string | undefined): number => (name ? data.headers.indexOf(name) : -1);
     const emailIdx = col(mapping.email);
     const txIdx = col(mapping.transactionId);
@@ -304,6 +342,8 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
         ? `${sheet.id}|tx|${txId}|${produto.toLowerCase()}`
         : `${sheet.id}|row|${rowIndex}`;
       if (txId && sales.has(dedupKey)) continue;
+      // Story 41.12 — recompra do mesmo produto pela mesma pessoa não conta.
+      if (decisaoCamada2.removidas.has(refDaLinha(sheet.id, rowIndex))) continue;
       sales.set(dedupKey, {
         email,
         bruto: parseNumber(row[brutoIdx] ?? ""),
@@ -319,6 +359,7 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
   }
 
   for (const m of manualRows) {
+    if (decisaoCamada2.removidas.has(refDaManual(m.id))) continue;
     const bruto = parseFloat(m.value ?? "0") || 0;
     const recebido = m.valorRecebido != null ? parseFloat(m.valorRecebido) || 0 : null;
     sales.set(`manual|${m.id}`, {

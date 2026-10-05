@@ -20,7 +20,8 @@
 -- no Δ (payload do lançamento de comparação principal, ou NULL = edição única),
 -- os `alertas` das guardas (49.5) e a procedência do imposto (stage/project/default).
 --
--- Número 0164: a 0163 fica para a Story 41.12 parte B, que a cita no doc
+-- Número 0165 (renumerada de 0164 em 05/10/2026: a #979, lead-capi, levou a
+-- 0164 na main). A 0163 fica para a Story 41.12 parte B, que a cita no doc
 -- (`docs/stories/41.12…md`, "Fatia B, R6-8: 0163_*.sql"). Conferido em
 -- 2026-10-02: `main` 7fd149f5 vai até a 0162; nenhuma branch remota nem PR
 -- aberta tem 0163+. Aplicar sempre pelo NOME COMPLETO.

@@ -311,7 +311,7 @@ export function erroDaGeracao(e: unknown): ErroDaGeracao {
       titulo: "API atrás do painel",
       codigo: null,
       detalhe: "A API ainda não tem a rota de geração do debriefing — provavelmente está atrás do painel. Veja o aviso de versão no topo.",
-      acao: "Aguardar o deploy da API (contrato 32) e tentar de novo",
+      acao: "Aguardar o deploy da API (contrato 34) e tentar de novo",
     };
   }
   if (body && typeof body.erro === "string") {

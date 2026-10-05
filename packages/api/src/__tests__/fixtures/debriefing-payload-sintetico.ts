@@ -141,9 +141,9 @@ export function entradaMoneyTimeSintetica(): DebriefingMoneyTimeInput {
     config: configSintetica(),
     criterioDeUnico: CRITERIO_DE_UNICO_HEADLINE,
     planilhas: [
-      { planilhaId: "p-cap", stageId: CAP, nome: "cap", plataforma: "main_product", temColunaStatus: true, temColunaId: true, temColunaProduto: true },
-      { planilhaId: "p-prin", stageId: PRIN, nome: "prin", plataforma: "sales", temColunaStatus: true, temColunaId: true, temColunaProduto: true },
-      { planilhaId: "p-tmb", stageId: PRIN, nome: "tmb", plataforma: "tmb", temColunaStatus: true, temColunaId: true, temColunaProduto: true },
+      { planilhaId: "p-cap", stageId: CAP, nome: "cap", plataforma: "main_product", temColunaStatus: true, temColunaId: true, temColunaProduto: true, camada2Vale: true },
+      { planilhaId: "p-prin", stageId: PRIN, nome: "prin", plataforma: "sales", temColunaStatus: true, temColunaId: true, temColunaProduto: true, camada2Vale: false },
+      { planilhaId: "p-tmb", stageId: PRIN, nome: "tmb", plataforma: "tmb", temColunaStatus: true, temColunaId: true, temColunaProduto: true, camada2Vale: false },
     ],
     vendas,
     leads: [

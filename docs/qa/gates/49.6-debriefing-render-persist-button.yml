@@ -4,7 +4,7 @@ story: '49.6'
 story_title: 'Render do Debriefing no padrão visual da skill + persistência (HTML e payload) + botão "Gerar debriefing" com formulário dos gates (+ AC7/AC9 absorvidos da 49.11)'
 verdict: CONCERNS
 gate: CONCERNS
-status_reason: 'Nenhum defeito funcional encontrado no código. Testes, tsc, next build, lint, render em Chrome headless no sandbox real do viewer, migration em PGlite e varredura de PII passam, todos rodados pelo QA. As CONCERNS são duas. (1) TEST-496-1: 4 das 8 mutações do QA sobrevivem à suíte, exatamente em propriedades que o lead pediu: datalabels desligados, abas quebradas, 422 CONFERENCIA_EXTERNA com detalhe vazio e script que esvazia as tabelas sem innerHTML. O comportamento atual está correto (lido no código e visto no headless), mas uma regressão nesses pontos passaria verde. (2) FMT-496-1: no PG02 real o texto visível traz "2293 vendas" sem separador de milhar (AC7). O número vem do texto pronto `textoTmb` (49.3) que o render repassa cru. Os dois são baratos e recomendados ANTES do merge, mas não bloqueiam. Done continua dependendo do AC13 e da 0164 em produção, que são do dono e do @devops.'
+status_reason: 'Nenhum defeito funcional encontrado no código. Testes, tsc, next build, lint, render em Chrome headless no sandbox real do viewer, migration em PGlite e varredura de PII passam, todos rodados pelo QA. As CONCERNS são duas. (1) TEST-496-1: 4 das 8 mutações do QA sobrevivem à suíte, exatamente em propriedades que o lead pediu: datalabels desligados, abas quebradas, 422 CONFERENCIA_EXTERNA com detalhe vazio e script que esvazia as tabelas sem innerHTML. O comportamento atual está correto (lido no código e visto no headless), mas uma regressão nesses pontos passaria verde. (2) FMT-496-1: no PG02 real o texto visível traz "2293 vendas" sem separador de milhar (AC7). O número vem do texto pronto `textoTmb` (49.3) que o render repassa cru. Os dois são baratos e recomendados ANTES do merge, mas não bloqueiam. Done continua dependendo do AC13 e da 0165 em produção, que são do dono e do @devops.'
 reviewer: 'Quinn'
 updated: '2026-10-02T15:40:00-03:00'
 branch: 'feat/49.6-debriefing-render-botao'
@@ -14,7 +14,7 @@ coderabbit_status: 'SKIPPED (CLI só WSL; ambiente macOS — prática do repo)'
 
 coverage:
   AC1: 'PASS. Ordem guest → etapa (404/422 ETAPA_NAO_E_DEBRIEFING) → gate 49.1 → config da comparação ANTES da carga → carga → guardas (atual e comparação) → render → 413 → persistência (`debriefing-generate.ts:120-226`). Nada é gravado em falha (testes 1–7 + comparação).'
-  AC2: 'PASS no código, com prova em PGlite. Tabela irmã 1:1 com FK CASCADE, CHECK de tipo/imposto, gravação na mesma transação (`gravarDebriefingGerado`), PUT do viewer não toca, DELETE remove, upload manual sem linha. PENDENTE: 0164 aplicada à mão em produção + information_schema (condição de merge).'
+  AC2: 'PASS no código, com prova em PGlite. Tabela irmã 1:1 com FK CASCADE, CHECK de tipo/imposto, gravação na mesma transação (`gravarDebriefingGerado`), PUT do viewer não toca, DELETE remove, upload manual sem linha. PENDENTE: 0165 aplicada à mão em produção + information_schema (condição de merge).'
   AC3: 'PASS. PG02 real: 18 seções 00→17 na ordem do §4, Definições primeiro, Base de Conhecimento por último; edição única com Diferenças omitida e justificada.'
   AC4: 'PASS. :root idêntico ao §1 (conferido no HTML real), classes canônicas, só os 2 scripts externos.'
   AC5: 'PASS no código; TESTE FRACO (Q1). Chart.js 4.4.1 + datalabels 2.2.0 fixos, um `const D`, 17/17 canvases desenhados. Rótulo oculto só em null/0, igual à referência (`display:c=>…>0`).'
@@ -30,7 +30,7 @@ coverage:
   '49.11 AC9': 'PASS. Série com composição e ausentes por nome; Definições lista a ordem e a principal.'
 
 quality_checks:
-  1_requirements: 'CONCERNS. Todos os ACs implementados. Pendências externas: 0164 em produção, AC13, FZ/Netão, P-49.6-1, P-49.6-2, alerta de produto novo (só gancho).'
+  1_requirements: 'CONCERNS. Todos os ACs implementados. Pendências externas: 0165 em produção, AC13, FZ/Netão, P-49.6-1, P-49.6-2, alerta de produto novo (só gancho).'
   2_tests: 'CONCERNS. Suítes da story: 203/203 (render 27, generate 19, payloads-store 6, config-get-49-6 6, config 58, config-routes, config-store, lista). O scanner R1 da debriefing-config estourou 1× sob carga e passou na repetição. Web completo: 1.793/1.793 após next build. Suíte inteira da API (1 rodada): 17 falhas em 14 arquivos. Rodados isolados, na branch e em origin/main 7fd149f5 (worktree próprio), ficam as MESMAS 10 falhas em 5 arquivos nas mesmas linhas (funnel-stages-lead-inputs, instagram, instagram-routes, projects, schema). As outras 7 são timeouts de carga e passam isoladas. Mutações do QA: 4/8 mortas (TEST-496-1).'
   3_lint_typecheck: 'PASS. `tsc --noEmit` (binário): api 0, web 0 após `next build` (exit 0). `eslint` nos 11 arquivos da API e `next lint` nos 5 do web: limpos.'
   4_security_pii: 'PASS. Payload PG02 real (1,9 MB) e HTML: 0 e-mails. Os candidatos a telefone eram decimais de moeda (ex.: 11885.554923164484). Chaves "email" são utm_medium. Teste de PII no payload persistido morre com o e-mail injetado na auditoria (Q4). Escape de nomes testado; target=_blank com noopener noreferrer; sem storage/cookie/window.open (regex no HTML e no harness).'
@@ -97,7 +97,7 @@ top_issues:
 
 auto_decisions_avaliadas:
   tabela_irma: 'ACEITA. Atende ao AC2 por construção: o PUT não toca, a lista não carrega o payload e o upload manual não tem linha. Provado em PGlite.'
-  migration_0164: 'ACEITA. Pula a 0163 citada pela 41.12B, e não há colisão na main.'
+  migration_0165: 'ACEITA, RENUMERADA de 0164 para 0165 em 05/10/2026: quando o gate foi escrito não havia colisão, mas a #979 (lead-capi) entrou na main com 0164. O número novo não colide com nada; o 0163 segue reservado pela 41.12B.'
   origem_do_delta: 'NÃO DECIDIDA PELO QA. É pergunta do dono (P-49.6-1). A implementação nunca inventa Δ e nunca cai em edição única silenciosa (M9 do @dev).'
   titulo_edicao_unica: 'NÃO DECIDIDA PELO QA. É pergunta do dono (P-49.6-2). O código usa "· edição única" e o AC3 diz "· 1ª edição".'
   alerta_produto_novo: 'NÃO DECIDIDA PELO QA. Só existe o gancho `data-gancho`; nada é exibido.'
@@ -109,7 +109,7 @@ pendencias_do_dono:
   - 'Validação visual do formulário e do documento (`scratchpad/debriefing-pg02-49.6.html`).'
 
 condicoes_de_merge:
-  - '@devops aplica `0164_debriefing_payloads.sql` à mão em produção, pelo nome completo, e cola as provas do topo (9 colunas; pkey, 1 FK cascade, 2 CHECK). Sem ela, "Gerar debriefing" dá 500.'
+  - '@devops aplica `0165_debriefing_payloads.sql` à mão em produção, pelo nome completo, e cola as provas do topo (9 colunas; pkey, 1 FK cascade, 2 CHECK). Sem ela, "Gerar debriefing" dá 500.'
   - 'Contrato 32: quem mergear depois da 41.12A renumera.'
   - 'Recomendado (não bloqueante): TEST-496-1 e FMT-496-1.'
 
@@ -118,4 +118,4 @@ condicoes_de_done:
   - 'AC9: FZ e Netão medidos (< 20.000 px, 0 erros), depois que houver config deles.'
   - 'Respostas P-49.6-1 e P-49.6-2 e validação visual do dono.'
 
-recommended_action: 'Status segue Ready for Review, sem ir a Done: a condição de Done (AC13) é posterior ao merge. Caminho: @dev fecha TEST-496-1 e FMT-496-1 (barato), @devops faz merge com a 0164 aplicada, e o dono valida e responde às pendências.'
+recommended_action: 'Status segue Ready for Review, sem ir a Done: a condição de Done (AC13) é posterior ao merge. Caminho: @dev fecha TEST-496-1 e FMT-496-1 (barato), @devops faz merge com a 0165 aplicada, e o dono valida e responde às pendências.'
