@@ -135,11 +135,33 @@ function errosDoZod(error: z.ZodError): string[] {
 export interface DebriefingConfigRoutesOptions {
   /** Testes injetam um store em memória; produção usa o do Drizzle. */
   criarStore?: (db: Database) => DebriefingConfigStore;
+  /**
+   * Story 49.6 (PERF-001 da 49.1) — o GET memoiza por etapa, por este tempo, as
+   * perguntas lidas da planilha da pesquisa (abrir o formulário não reabre todas
+   * as planilhas a cada GET). Só o GET usa o cache: o PUT confere a chave sempre
+   * na planilha. Falha de leitura NUNCA é memoizada, nem a ausência (`null` =
+   * etapa sem pesquisa): pesquisa recém-conectada aparece no GET seguinte, não
+   * 60 s depois (QA 49.6 PERF-496-1). Ausente/0 = sem cache.
+   */
+  cachePerguntasMs?: number;
 }
 
 export default fp<DebriefingConfigRoutesOptions>(async function debriefingConfigRoutes(fastify, opts) {
   const store = (): DebriefingConfigStore => (opts.criarStore ?? criarDebriefingConfigStore)(fastify.db);
   const base = "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/debriefing/config";
+  const ttlPerguntas = opts.cachePerguntasMs ?? 0;
+  const cachePerguntas = new Map<string, { ate: number; perguntas: PerguntaDaPesquisa[] }>();
+  /** Perguntas da etapa, pelo cache do GET (PERF-001). Só sucesso COM pesquisa entra no cache. */
+  async function perguntasDoGet(s: DebriefingConfigStore, stageId: string): Promise<PerguntaDaPesquisa[] | null> {
+    if (ttlPerguntas <= 0) return s.perguntasDaEtapa(stageId);
+    const agora = Date.now();
+    const hit = cachePerguntas.get(stageId);
+    if (hit && hit.ate > agora) return hit.perguntas;
+    const perguntas = await s.perguntasDaEtapa(stageId);
+    if (perguntas) cachePerguntas.set(stageId, { ate: agora + ttlPerguntas, perguntas });
+    else cachePerguntas.delete(stageId);
+    return perguntas;
+  }
 
   /**
    * Guest → 403; params → 400; etapa inexistente, de outro funil/projeto ou que
@@ -187,7 +209,7 @@ export default fp<DebriefingConfigRoutesOptions>(async function debriefingConfig
           return { stageId: e.id, stageName: e.name, status: "sem-pesquisa" as const, perguntas: [] };
         }
         try {
-          const perguntas = await s.perguntasDaEtapa(e.id);
+          const perguntas = await perguntasDoGet(s, e.id);
           if (!perguntas) {
             return { stageId: e.id, stageName: e.name, status: "sem-pesquisa" as const, perguntas: [] };
           }
@@ -204,6 +226,27 @@ export default fp<DebriefingConfigRoutesOptions>(async function debriefingConfig
         }
       }),
     );
+  }
+
+  async function pesquisasPorEtapa(s: DebriefingConfigStore, ctx: ContextoDaEtapa) {
+    const etapas = (await s.etapasDoFunil(ctx.funnelId)).filter((e) => e.id !== ctx.stageId).map((e) => e.id);
+    const lista = (await s.pesquisasComRotulo?.(etapas)) ?? [];
+    const porEtapa: Record<string, { id: string; rotulo: string }[]> = {};
+    for (const p of lista) (porEtapa[p.stageId] ??= []).push({ id: p.id, rotulo: p.rotulo });
+    return porEtapa;
+  }
+
+  /** Falha ao listar vira estado próprio (`pesquisasPorEtapaFalha`), nunca "sem pesquisa". */
+  async function pesquisasDoGet(
+    s: DebriefingConfigStore,
+    ctx: ContextoDaEtapa,
+  ): Promise<{ pesquisasPorEtapa: Record<string, { id: string; rotulo: string }[]> } | { pesquisasPorEtapaFalha: string }> {
+    try {
+      return { pesquisasPorEtapa: await pesquisasPorEtapa(s, ctx) };
+    } catch (err) {
+      fastify.log.warn({ err, stageId: ctx.stageId }, "[debriefing-config] falha ao listar as pesquisas das etapas");
+      return { pesquisasPorEtapaFalha: "não foi possível listar as pesquisas das etapas — tente de novo" };
+    }
   }
 
   // ---- GET — config, estado do gate, imposto com procedência e perguntas ----
@@ -269,6 +312,12 @@ export default fp<DebriefingConfigRoutesOptions>(async function debriefingConfig
       imposto,
       /** Por etapa do funil: `ok` | `sem-pesquisa` | `falha` (≠ sem pesquisa). Só lançamento. */
       perguntasDisponiveis: ctx.funnelType === "launch" ? await perguntasDisponiveis(s, ctx) : [],
+      /**
+       * Story 49.6 (49.11 AC7) — pesquisas de cada etapa do funil, com o nome da
+       * aba, para o seletor "pesquisa de captação" (etapa com 2+). Omitido quando
+       * o store não sabe listar (fixtures da 49.1).
+       */
+      ...(ctx.funnelType === "launch" && s.pesquisasComRotulo ? await pesquisasDoGet(s, ctx) : {}),
     };
   });
 

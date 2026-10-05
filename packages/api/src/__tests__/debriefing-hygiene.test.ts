@@ -334,6 +334,10 @@ describe("AC4 — TMB", () => {
     expect(ehTmb("main_product")).toBe(false);
     expect(textoTmb(70, 3)).toBe("70 vendas, 3 via TMB (valor não considerado)");
   });
+  it("inteiros com milhar pt-BR (QA 49.6 FMT-496-1: o PG02 saía \"2293 vendas\")", () => {
+    expect(textoTmb(2293, 5)).toBe("2.293 vendas, 5 via TMB (valor não considerado)");
+    expect(textoTmb(12_500, 1_040)).toBe("12.500 vendas, 1.040 via TMB (valor não considerado)");
+  });
 });
 
 describe("decisão 2A — janelaDoDebriefing: inicioCaptacao → maior fim", () => {

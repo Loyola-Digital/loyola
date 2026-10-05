@@ -233,7 +233,7 @@ describe("higiene de vendas = a sequência da 49.3 (compradoresCaptacao idêntic
       pesquisas: [],
       respondentes: [],
       compradores: higienizadas,
-      criativos: { anuncios: [], nomesDeAnuncio: {}, contaDeAnuncios: null },
+      criativos: { anuncios: [], nomesDeAnuncio: {}, contaDeAnuncios: null, postsDosAnuncios: {} },
       classificador,
     });
     expect(motorII.compradoresCaptacao).toEqual(motorI.compradoresCaptacao);
@@ -305,6 +305,9 @@ CREATE TABLE meta_ad_insights_daily (
 CREATE TABLE meta_entity_names_cache (
   project_id uuid NOT NULL, entity_type varchar(20) NOT NULL, entity_id varchar(64) NOT NULL, entity_name varchar(500) NOT NULL
 );
+CREATE TABLE meta_ad_creatives_cache (
+  project_id uuid NOT NULL, ad_id varchar(64) NOT NULL, creative jsonb NOT NULL, PRIMARY KEY (project_id, ad_id)
+);
 CREATE TABLE seller_aliases (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), project_id uuid NOT NULL, canonical_name varchar(255) NOT NULL,
   aliases jsonb NOT NULL DEFAULT '[]'
@@ -356,6 +359,10 @@ INSERT INTO meta_ad_insights_daily VALUES
 INSERT INTO meta_entity_names_cache VALUES
   ('${P}', 'ad', '${AD2}', 'nome-do-entity-cache'),
   ('${P}', 'ad', '120000000000000009', 'dg-pg02-h-09');
+INSERT INTO meta_ad_creatives_cache VALUES
+  ('${P}', '${AD1}', '{"igPermalinkUrl":"https://www.instagram.com/p/IG-AD1/","adPermalinkUrl":"https://www.facebook.com/1/posts/AD1"}'),
+  ('${P}', '120000000000000009', '{"igPermalinkUrl":null,"adPermalinkUrl":"https://www.facebook.com/1/posts/AD9"}'),
+  ('${P_DUAS}', '${AD1}', '{"igPermalinkUrl":"https://www.instagram.com/p/OUTRO-PROJETO/"}');
 `;
 
 const CAP_HEADERS = ["ID", "Email", "Telefone", "Produto", "Preço", "Data", "Status", "utm_source", "utm_campaign", "utm_content"];
@@ -497,6 +504,15 @@ describe("AC11 — loadDebriefingAudienceInput sobre Postgres real", () => {
     expect(r.diagnostico.contaDeAnuncios).toBe("funil");
   });
 
+  it("R7-9: post de cada Ad ID do cache de criativos (IG → FB), só do projeto; sem post = sem chave", async () => {
+    const r = await loadDebriefingAudienceInput(db, { config }, { lerPlanilha: lerFalso });
+    expect(r.criativos.postsDosAnuncios).toEqual({
+      [AD1]: "https://www.instagram.com/p/IG-AD1/",
+      "120000000000000009": "https://www.facebook.com/1/posts/AD9",
+    });
+    expect(r.diagnostico.postsDosAnuncios).toEqual({ instagram: 1, facebook: 1, semPost: 0 });
+  });
+
   it("funil sem conta (o caso de produção): a única conta ATIVA do projeto; projeto com duas contas → sem link", async () => {
     const semConta = { ...config, funnelId: F_ANT, etapas: [], perguntasConfirmadas: {}, lancamentoComparacaoFunnelId: null };
     const r = await loadDebriefingAudienceInput(db, { config: semConta }, { lerPlanilha: lerFalso });
@@ -598,6 +614,7 @@ describe("AC11 — loadDebriefingAudienceInput sobre Postgres real", () => {
     expect(r.criativoXFaixa.criativos[0]).toMatchObject({
       nome: "dg-pg02-ia-01",
       linkAdsManager: `https://adsmanager.facebook.com/adsmanager/manage/ads?act=3717530711643512&selected_ad_ids=${AD1}`,
+      linkDoPost: "https://www.instagram.com/p/IG-AD1/",
     });
     expect(JSON.stringify(r)).not.toMatch(/@x\.com|97777/);
   });
@@ -965,7 +982,7 @@ describe("decisão 9 — diferencial contra o Resumão: mesmo % sem e-mail repet
       pesquisas: [lida.pesquisa],
       respondentes: lida.respostas,
       compradores: [],
-      criativos: { anuncios: [], nomesDeAnuncio: {}, contaDeAnuncios: null },
+      criativos: { anuncios: [], nomesDeAnuncio: {}, contaDeAnuncios: null, postsDosAnuncios: {} },
       classificador: {
         versao: CLASSIFICADOR_VERSAO,
         classificar: (e) => classificarOrigem(e, { closerMediums: [], closerNomes: [], closerPorSellerName: false, ferramentasDeAtendimento: [] }),

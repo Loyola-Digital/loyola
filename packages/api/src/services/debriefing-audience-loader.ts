@@ -18,7 +18,9 @@
  *   data chegam CRUS (a normalização é do motor, que devolve só hash);
  * - **anúncios**: `meta_ad_insights_daily` das campanhas de captação no
  *   período, e o nome do Ad ID no cache do banco (`meta_ad_insights_daily`,
- *   depois `meta_entity_names_cache`);
+ *   depois `meta_entity_names_cache`); o post publicado de cada Ad ID (R7-9)
+ *   sai de `meta_ad_creatives_cache` pela cascata da 18.88 (`postDoAnuncio`:
+ *   Instagram → Facebook), recortado por `project_id` (`condicaoDoCacheDeCriativos`);
  * - **conta do Ads Manager**: `funnels.metaAccountId` → `meta_ads_accounts`; sem
  *   conta no funil, a ÚNICA conta ativa vinculada ao projeto
  *   (`meta_ads_account_projects`, a mesma fonte do backfill de nomes). Em
@@ -51,6 +53,7 @@ import {
   funnelSurveys,
   funnels,
   manualSales,
+  metaAdCreativesCache,
   metaAdInsightsDaily,
   metaAdsAccountProjects,
   metaAdsAccounts,
@@ -58,6 +61,8 @@ import {
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { readSheetData } from "./google-sheets.js";
+import { condicaoDoCacheDeCriativos } from "./lp-do-anuncio.js";
+import { postDoAnuncio } from "../utils/post-do-criativo.js";
 import { resolveSalesSheetsForStage } from "./sales-daily-sync.js";
 import { linhaTemRespondente, resolveColumnIndexes } from "./survey-aggregation.js";
 import type { DebriefingConfigLancamento } from "./debriefing-config.js";
@@ -430,6 +435,8 @@ export interface DiagnosticoDoLoaderDePublico {
   planilhasDeVendaSemUtmContent: string[];
   anuncios: number;
   adIdsSemNomeNoCache: number;
+  /** R7-9: Ad IDs com post no cache, por rede (`instagram` = tem `igPermalinkUrl`), e os sem post. */
+  postsDosAnuncios: { instagram: number; facebook: number; semPost: number };
   /** De onde veio a conta do link do Ads Manager; `ambigua` = projeto com mais de uma conta (link `null`). */
   contaDeAnuncios: "funil" | "projeto" | "ambigua" | null;
   baseAnterior: {
@@ -520,6 +527,7 @@ export async function loadDebriefingAudienceInput(
     planilhasDeVendaSemUtmContent: planilhasSemConteudo,
     anuncios: 0,
     adIdsSemNomeNoCache: 0,
+    postsDosAnuncios: { instagram: 0, facebook: 0, semPost: 0 },
     contaDeAnuncios: null,
     baseAnterior: null,
   };
@@ -604,6 +612,7 @@ export async function loadDebriefingAudienceInput(
     if (/^\d{10,}$/.test(id)) adIds.add(id);
   }
   const nomesDeAnuncio: Record<string, string> = {};
+  const postsDosAnuncios: Record<string, string> = {};
   if (adIds.size > 0) {
     const ids = [...adIds];
     const doInsight = await db
@@ -633,6 +642,20 @@ export async function loadDebriefingAudienceInput(
       }
     }
     diagnostico.adIdsSemNomeNoCache = ids.filter((id) => !(id in nomesDeAnuncio)).length;
+
+    // R7-9: post publicado por Ad ID — DB-first, a MESMA leitura da 18.88 (nenhuma chamada à Meta).
+    const doCacheDeCriativos = await db
+      .select({ adId: metaAdCreativesCache.adId, creative: metaAdCreativesCache.creative })
+      .from(metaAdCreativesCache)
+      .where(condicaoDoCacheDeCriativos(config.projectId, ids));
+    for (const r of doCacheDeCriativos) {
+      const post = postDoAnuncio(r.creative);
+      if (!post) continue;
+      postsDosAnuncios[r.adId] = post;
+      if (r.creative?.igPermalinkUrl) diagnostico.postsDosAnuncios.instagram += 1;
+      else diagnostico.postsDosAnuncios.facebook += 1;
+    }
+    diagnostico.postsDosAnuncios.semPost = ids.length - Object.keys(postsDosAnuncios).length;
   }
 
   // ---- Conta do Ads Manager: a do funil; senão a única conta ativa do projeto ----
@@ -791,7 +814,7 @@ export async function loadDebriefingAudienceInput(
     pesquisas,
     respondentes,
     compradores,
-    criativos: { anuncios, nomesDeAnuncio, contaDeAnuncios },
+    criativos: { anuncios, nomesDeAnuncio, contaDeAnuncios, postsDosAnuncios },
     baseAnterior,
     seriesDeComparacao,
     classificador: mt.classificador,

@@ -52,7 +52,16 @@ function semAcrescimos49_11(r: DebriefingAudience): unknown {
   const pesquisa: Partial<DebriefingAudience["pesquisa"]> = { ...r.pesquisa };
   delete pesquisa.duplicadasSemData;
   delete pesquisa.duplicadasDecididasPelaPesquisaDeCaptacao;
-  return { ...resto, pesquisa };
+  // 49.6 R7-9 acrescenta `linkDoPost` a cada criativo; o resto do criativo segue byte a byte.
+  const criativoXFaixa = {
+    ...r.criativoXFaixa,
+    criativos: r.criativoXFaixa.criativos.map((c) => {
+      const semPost: Partial<typeof c> = { ...c };
+      delete semPost.linkDoPost;
+      return semPost;
+    }),
+  };
+  return { ...resto, pesquisa, criativoXFaixa };
 }
 
 const dim = (r: DebriefingAudience, campo: string) => r.dimensoes.find((d) => d.campo === campo)!;

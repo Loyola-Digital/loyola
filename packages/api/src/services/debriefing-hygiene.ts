@@ -49,6 +49,7 @@ import { META_TAX_EFFECTIVE_DATE } from "../utils/meta-tax.js";
 import { toBusinessDayKey } from "../utils/sale-date.js";
 import { classifyRefundStatus, isRefundBucket, isRevenueBucket } from "./sales-status.js";
 import { resolverColunaPreco, type ColunaPrecoResolvida } from "./launch-report-sales-value.js";
+import { inteiroBr } from "./launch-report-narrative.js";
 
 // ---------------------------------------------------------------------------
 // Dinheiro
@@ -594,9 +595,13 @@ export function ehTmb(plataforma: string | null | undefined): boolean {
   return (plataforma ?? "").trim().toLowerCase() === PLATAFORMA_TMB;
 }
 
-/** O texto de sinalização que acompanha toda métrica afetada por TMB. */
+/**
+ * O texto de sinalização que acompanha toda métrica afetada por TMB. Inteiros
+ * em pt-BR ("2.293 vendas"): o texto vai pronto para o payload e o documento o
+ * repassa (QA 49.6 FMT-496-1 — o PG02 real saía "2293 vendas").
+ */
 export function textoTmb(vendas: number, viaTmb: number): string {
-  return `${vendas} vendas, ${viaTmb} via TMB (valor não considerado)`;
+  return `${inteiroBr(vendas)} vendas, ${inteiroBr(viaTmb)} via TMB (valor não considerado)`;
 }
 
 // ---------------------------------------------------------------------------

@@ -78,6 +78,7 @@ import sprintReportsRoutes from "./routes/sprint-reports.js";
 import launchReportConfigRoutes from "./routes/launch-report-config.js";
 import perpetualReportConfigRoutes from "./routes/perpetual-report-config.js";
 import debriefingConfigRoutes from "./routes/debriefing-config.js";
+import debriefingGenerateRoutes from "./routes/debriefing-generate.js"; // Story 49.6
 import perpetualReportRoutes from "./routes/perpetual-report.js";
 import launchReportsRoutes, {
   comparativoRoutes,
@@ -269,7 +270,9 @@ export async function buildServer() {
   await app.register(launchReportConfigRoutes);
   await app.register(perpetualReportConfigRoutes);
   // Story 49.1 — config + gate do gerador de debriefing (Epic 49).
-  await app.register(debriefingConfigRoutes);
+  // Story 49.6 PERF-001: o GET da config memoiza por 60 s as perguntas lidas da planilha.
+  await app.register(debriefingConfigRoutes, { cachePerguntasMs: 60_000 });
+  await app.register(debriefingGenerateRoutes); // Story 49.6 — POST …/debriefing/generate
   await app.register(perpetualReportRoutes);
   await app.register(launchReportsRoutes);
   await app.register(comparativoRoutes);

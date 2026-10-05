@@ -206,7 +206,7 @@ export function entradaAudienceSintetica(mt: DebriefingMoneyTimeInput): Debriefi
       resp(null, null),
     ],
     compradores: higienizarVendasDoDebriefing(mt),
-    criativos: { anuncios: [], nomesDeAnuncio: {}, contaDeAnuncios: null },
+    criativos: { anuncios: [], nomesDeAnuncio: {}, contaDeAnuncios: null, postsDosAnuncios: {} },
     baseAnterior: null,
     classificador,
   };

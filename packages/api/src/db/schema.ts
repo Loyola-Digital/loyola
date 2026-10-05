@@ -3296,6 +3296,40 @@ export const debriefings = pgTable(
   ],
 );
 
+/**
+ * Story 49.6 — payload do Debriefing GERADO (migration 0165). Tabela irmã 1:1
+ * de `debriefings`: o PUT do viewer não a toca por construção, as listas não a
+ * carregam e o upload manual não tem linha aqui. `stageIdOrigem` sem FK — é a
+ * etapa que o payload descreve, mesmo se o documento for movido ou a etapa
+ * apagada. Sem PII de comprador (decisão 11).
+ */
+export const debriefingPayloads = pgTable(
+  "debriefing_payloads",
+  {
+    debriefingId: uuid("debriefing_id")
+      .primaryKey()
+      .references(() => debriefings.id, { onDelete: "cascade" }),
+    /** Discriminador do payload: "lancamento" (49.6) | "perpetuo" (49.10). */
+    tipo: text("tipo").notNull().$type<"lancamento" | "perpetuo">(),
+    /** `payload.versao` (49.5) — a 49.9 decide como ler por ele. */
+    versao: integer("versao").notNull(),
+    stageIdOrigem: uuid("stage_id_origem").notNull(),
+    payload: jsonb("payload").notNull().$type<Record<string, unknown>>(),
+    /** Lançamento de comparação usado no Δ (`{ funnelId, nome, payload }`); null = edição única. */
+    comparacao: jsonb("comparacao").$type<Record<string, unknown> | null>(),
+    alertas: jsonb("alertas").notNull().default([]).$type<unknown[]>(),
+    impostoOrigem: text("imposto_origem").notNull().$type<"stage" | "project" | "default">(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check("debriefing_payloads_tipo_check", sql`${table.tipo} IN ('lancamento', 'perpetuo')`),
+    check(
+      "debriefing_payloads_imposto_origem_check",
+      sql`${table.impostoOrigem} IN ('stage', 'project', 'default')`,
+    ),
+  ],
+);
+
 // ============================================================
 // COMERCIAL CRM (EPIC-40 — Story 40.1)
 // ============================================================

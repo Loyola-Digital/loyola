@@ -118,6 +118,7 @@ export function entradaDeSerie(): EntradaDeSerie {
       ],
       nomesDeAnuncio: { [AD1]: "dg-pg02-ia-01" },
       contaDeAnuncios: "3717530711643512",
+      postsDosAnuncios: {},
     },
     baseAnterior: {
       funnelId: "funil-pg01",

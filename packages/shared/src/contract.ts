@@ -296,7 +296,20 @@
 // o mesmo produto, decisão R5-1 do dono) tirou do período. ADITIVO no formato;
 // os NÚMEROS de `sales-data`, `sales-data-daily` e da réplica `sales_daily`
 // (rotas públicas de vendas, MCP e o CAC da cadeia do Inácio nas etapas de
-// lançamento) mudam — avisar antes (AC11). O web tem fallback: sem o campo,
-// nenhuma linha de aviso. `packages/mcp` não é afetado no formato. Se a 49.6
-// não subir antes, a 32 fica vaga (a versão só cresce; o salto é inócuo).
-export const API_CONTRACT_VERSION = 33;
+// lançamento) mudam — avisados antes do merge (AC11). O web tem fallback: sem o
+// campo, nenhuma linha de aviso. `packages/mcp` não é afetado no formato.
+// v34 (Story 49.6 — renumerada de 32: a 41.12 fatia A mergeou primeiro e levou
+// a 33, como o aviso da própria v32 previa; a 32 fica vaga, e o salto é inócuo
+// porque a versão só cresce): rota NOVA `POST /api/projects/:projectId/funnels/
+// :funnelId/stages/:stageId/debriefing/generate` (corpo opcional
+// `{ investimentoOficial }`; a config vem da 49.1) → 200
+// `{ id, html, payload, alertas }` e grava o HTML em `debriefings` + o payload
+// em `debriefing_payloads` (migration 0165 — renumerada de 0164, que a 41.12 não
+// usou mas o lead-capi sim; aplicada à mão, o deploy não a aplica). 422
+// `{ erro, detalhe, acao }`: ETAPA_NAO_E_DEBRIEFING, os do gate da 49.1,
+// COMPARACAO_SEM_CONFIG, DADO_INDISPONIVEL, INVARIANTE_VIOLADO (+ `codigo`,
+// `violacoes`), CONFERENCIA_EXTERNA; 413 PAYLOAD_TOO_LARGE. O GET
+// `…/debriefing/config` ganha `pesquisasPorEtapa` (aditivo). ADITIVA: nenhuma
+// rota existente muda de forma; o web trata 404 da rota nova como "API atrás".
+// `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 34;
