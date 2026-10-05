@@ -118,4 +118,17 @@ condicoes_de_done:
   - 'AC9: FZ e Netão medidos (< 20.000 px, 0 erros), depois que houver config deles.'
   - 'Respostas P-49.6-1 e P-49.6-2 e validação visual do dono.'
 
+re_gate_iteracao_2:
+  data: '2026-10-05'
+  base: 'main 0c404670 (41.12A já mergeada) trazida para a branch; conflito do contrato resolvido'
+  resultado: 'PASS para merge'
+  conferido:
+    - 'contrato renumerado 32 → 34 (a 41.12A levou a 33, como o aviso da própria v32 previa); a mensagem do web que citava "contrato 32" acompanhou'
+    - 'migration renumerada 0164 → 0165: a #979 (lead-capi) entrou na main com 0164 depois que este gate foi escrito; nome, teste em PGlite, schema, services, story e gate atualizados'
+    - 'build da API limpo; eslint src com 0 erros; tsc e lint do web limpos'
+    - 'suíte da API: 13 falhas, conjunto IDÊNTICO ao da main limpa (comparado nome a nome) — nenhuma introduzida pela 49.6'
+    - 'suíte do web: 1 falha (jornada-lyrio), também pré-existente na main'
+  pendencias_mantidas:
+    - 'TEST-496-1 e FMT-496-1 seguem como CONCERNS não bloqueantes (recomendados, baratos)'
+    - 'AC13 e a 0165 em produção continuam condição de Done, não de merge'
 recommended_action: 'Status segue Ready for Review, sem ir a Done: a condição de Done (AC13) é posterior ao merge. Caminho: @dev fecha TEST-496-1 e FMT-496-1 (barato), @devops faz merge com a 0165 aplicada, e o dono valida e responde às pendências.'
