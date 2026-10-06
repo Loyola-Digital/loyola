@@ -1386,7 +1386,17 @@ export const manualSales = pgTable(
     /** Story 19.10 — texto livre da negociação (evento presencial). */
     negociacao: text("negociacao"),
     /** Story 19.15 — CPF do cliente p/ nota (Evento Presencial), normalizado (11 dígitos). */
-    customerCpf: varchar("customer_cpf", { length: 11 }),
+    /**
+     * CPF (11) ou CNPJ (14) — venda pode ser para pessoa física ou jurídica.
+     *
+     * Era `varchar(11)`, de quando só havia CPF. A 19.15 passou a aceitar CNPJ
+     * na validação (`isValidCpfOrCnpj`) e no corpo (`max(14)`), mas ninguém
+     * alargou a coluna: toda venda com CNPJ morria com 500 e
+     * `value too long for type character varying(11)` — e como o erro vinha do
+     * banco, não havia mensagem para quem estava preenchendo o formulário.
+     * Descoberto em 06/10/2026; as 16 vendas gravadas até ali tinham 11 dígitos.
+     */
+    customerCpf: varchar("customer_cpf", { length: 14 }),
     /** Story 19.15 — endereço do cliente p/ emissão da nota (Evento Presencial). */
     customerAddress: text("customer_address"),
     /** Story 19.15 — valor da nota fiscal, distinto do valor da venda (Evento Presencial). */
