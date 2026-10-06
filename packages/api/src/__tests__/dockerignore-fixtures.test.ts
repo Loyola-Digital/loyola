@@ -8,7 +8,8 @@
  *     src/scripts/debriefing-conferir.ts(39,20): error TS2307: Cannot find
  *     module '../__tests__/fixtures/debriefing/danilo-gato-pg01.js'
  *
- * O `.dockerignore` exclui `**​/__tests__` — e com razão, teste não roda em
+ * O `.dockerignore` exclui toda pasta `__tests__`, em qualquer nível — e com
+ * razão, teste não roda em
  * produção. Mas `src/scripts/` VAI para a imagem, o `tsconfig` da API inclui
  * `src` inteiro, e o build do deploy roda `tsc` sobre tudo. Um import de
  * produção para `__tests__` só falha no servidor, nunca na máquina de quem

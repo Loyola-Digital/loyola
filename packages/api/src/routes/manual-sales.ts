@@ -72,7 +72,7 @@ function isValidCnpj(value: string): boolean {
 }
 
 /** Aceita CPF (11 dígitos) ou CNPJ (14 dígitos) — venda pode ser p/ PF ou PJ. */
-function isValidCpfOrCnpj(value: string): boolean {
+export function isValidCpfOrCnpj(value: string): boolean {
   return normalizeCpf(value).length === 14 ? isValidCnpj(value) : isValidCpf(value);
 }
 
