@@ -53,6 +53,23 @@ coverage
 tests
 e2e
 
+# EXCEÇÃO: as fixtures do debriefing.
+#
+# `src/scripts/debriefing-conferir.ts` VAI para a imagem (está em `src/`, e o
+# `tsconfig` da API inclui `src` inteiro) e importa estas sete fixtures. Sem
+# elas no contexto, o `tsc` do build morre com sete TS2307 e o deploy inteiro
+# cai — foi o que aconteceu em 06/10/2026, e o sintoma não aparece localmente,
+# onde os arquivos existem.
+#
+# São 64 KB. A alternativa seria tirar o script da imagem, mas aí o `tsc` do
+# deploy deixaria de verificá-lo, e é justamente esse gate que pega erro de
+# tipo antes de subir.
+#
+# `src/__tests__/dockerignore-fixtures.test.ts` falha se outro arquivo de
+# produção passar a importar de `__tests__` sem exceção aqui.
+!packages/api/src/__tests__/fixtures/debriefing
+!packages/api/src/__tests__/fixtures/debriefing/**
+
 # Pacotes que não vão ao ar por esta imagem
 packages/video
 scripts
