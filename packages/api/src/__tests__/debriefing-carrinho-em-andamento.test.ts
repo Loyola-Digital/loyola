@@ -26,14 +26,14 @@ import {
   type LeadInput,
   type VendaCruaInput,
 } from "../services/debriefing-money-time-engine.js";
-import { computeDebriefingAudience } from "../services/debriefing-audience-engine.js";
+import { computeDebriefingAudience, type RespostaInput } from "../services/debriefing-audience-engine.js";
 import { higienizarVendasDoDebriefing } from "../services/debriefing-audience-loader.js";
 import { montarPayloadDebriefing, type DebriefingPayload } from "../services/debriefing-payload.js";
 import { checarF7, checarF8, checarF11, validateDebriefing } from "../services/debriefing-guards.js";
 import { INDICADORES } from "../services/debriefing-render.js";
 import { gerarDebriefing, type DependenciasDaGeracao, type RegistroDoDebriefing } from "../services/debriefing-generate.js";
 import { estadoDaFase, fasesNoCorte, textoDaFaseNoCorte } from "../services/debriefing-hygiene.js";
-import { CAP, PRIN, configSintetica, entradaAudienceSintetica, entradaMoneyTimeSintetica } from "./fixtures/debriefing-payload-sintetico.js";
+import { CAP, PESQ, PRIN, configSintetica, entradaAudienceSintetica, entradaMoneyTimeSintetica } from "./fixtures/debriefing-payload-sintetico.js";
 
 const P = "10000000-0000-4000-8000-000000000001";
 const F = "20000000-0000-4000-8000-000000000001";
@@ -123,9 +123,27 @@ function entradaMt(config: DebriefingConfigLancamento, extras: { vendas?: VendaC
 function calcular(config: DebriefingConfigLancamento, geradoEm: Date | string, extras: { vendas?: VendaCruaInput[] } = {}): DebriefingPayload {
   const mtIn = entradaMt(config, extras);
   const mt = computeDebriefingMoneyTime(mtIn);
-  const au = computeDebriefingAudience({ ...entradaAudienceSintetica(mtIn), janela: mt.janela, compradores: higienizarVendasDoDebriefing(mtIn) });
+  const au0 = entradaAudienceSintetica(mtIn);
+  const au = computeDebriefingAudience({ ...au0, janela: mt.janela, compradores: higienizarVendasDoDebriefing(mtIn), respondentes: [...au0.respondentes, RESPOSTA_DEPOIS_DO_FIM] });
   return montarPayloadDebriefing(mt, au, config, geradoEm);
 }
+
+/**
+ * QA 49.14 TEST-001 — resposta da pesquisa DEPOIS do fim do carrinho (02/07): o
+ * final a lê (a pesquisa não é cortada pela janela); o ponto de virada também
+ * tem de ler (R9-5), e a parcial com o carrinho em curso não (49.12 AC5).
+ */
+const RESPOSTA_DEPOIS_DO_FIM: RespostaInput = {
+  pesquisaId: PESQ,
+  linha: 99,
+  linhaTemRespondente: true,
+  emailCru: "pesquisa-tarde@x.com",
+  telefoneCru: null,
+  dataRespostaCru: "02/07/2026",
+  utm: {},
+  utmContentCru: null,
+  respostas: { faixa: "A", Sexo: "Feminino" },
+};
 
 type Datas = DebriefingConfigLancamentoEmAndamento["datasChave"];
 
@@ -335,16 +353,37 @@ describe("AC4 — reabertura e downsell", () => {
     expect(m.faturamentoPorEtapa.downsell).toBe(500);
     expect(m.roasTotalSemTmb.valor).toBeCloseTo(m.roasTotalSemTmb.semDownsell.valor!, 10);
     expect(m.roasTotalSemTmb.numerador).toBeCloseTo(m.faturamentoPorEtapa.captacao + m.faturamentoPorEtapa.principal, 6);
-    expect(m.roasTotalSemTmb.downsellNoCorte).toEqual({ estado: "nao-comecou", texto: "fora do ROAS total: downsell ainda não começou — dados até 15/05, D+28" });
+    expect(m.roasTotalSemTmb.downsellNoCorte).toEqual({ estado: "nao-comecou", texto: "fora do ROAS total: downsell ainda não começou — dados até 15/05, D+28", faturamentoFora: 500 });
     expect(checarF8(g.payload).status).toBe("passed");
     const k = kpiDe(g.html, "Vendas Downsell");
     expect(k).toContain("<b>—</b>");
     expect(k).toContain("— = downsell ainda não começou — dados até 15/05, D+28");
     expect(kpiDe(g.html, "ROAS Total s/ TMB (fat ÷ invest total)")).toContain("fora do ROAS total: downsell ainda não começou — dados até 15/05, D+28 — o numerador é captação + principal");
-    expect(secaoDe(g.html, "ROAS")).toContain("<span data-downsell-fora>downsell FORA (fora do ROAS total: downsell ainda não começou — dados até 15/05, D+28)</span>");
+    expect(secaoDe(g.html, "ROAS")).toContain(
+      "<span data-downsell-fora>downsell FORA (fora do ROAS total: downsell ainda não começou — dados até 15/05, D+28); R$ 500,00 de venda(s) da etapa de downsell datada(s) antes do início dele estão no Fat. Total e fora deste numerador</span>",
+    );
     expect(secaoDe(g.html, "ROAS")).not.toMatch(/downsell R\$ 0,00/);
     expect(g.payload.lacunas.find((l) => l.codigo === "DOWNSELL_AINDA_NAO_COMECOU")).toMatchObject({ itens: ["downsell.vendas", "downsell.faturamento", "roasTotalSemTmb (downsell fora do numerador)"] });
     expect(validateDebriefing(g.payload, {}).violacoes).toEqual([]);
+  });
+
+  it("MNT-001: a parcela do downsell que ficou fora do ROAS total é declarada no Fat. Total e no ROAS total — a conta fecha para quem lê", async () => {
+    const g = await gerar(deps({ config: () => emAndamento({ downsell: { houve: true, abertura: "2026-05-20", fim: "2026-05-25" } }) }));
+    const m = g.payload.dinheiroTempo;
+    expect(m.roasTotalSemTmb.downsellNoCorte?.faturamentoFora).toBe(500);
+    // a conta que o documento escreve fecha: (Fat. Total − parcela) ÷ investimento total = ROAS total
+    expect((m.faturamentoTotal - 500) / m.roasTotalSemTmb.denominador).toBeCloseTo(m.roasTotalSemTmb.valor!, 10);
+    const brl = (v: number) => `R$ ${v.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
+    const conta = `ROAS total = (Fat. Total ${brl(m.faturamentoTotal)} − R$ 500,00) ÷ investimento total ${brl(m.roasTotalSemTmb.denominador)}`;
+    const fat = kpiDe(g.html, "Fat. Total s/ TMB");
+    expect(fat).toContain("inclui R$ 500,00 de venda(s) da etapa de downsell datada(s) antes do início dele, que ficam FORA do ROAS total (o downsell ainda não começou)");
+    expect(fat).toContain(conta);
+    expect(kpiDe(g.html, "ROAS Total s/ TMB (fat ÷ invest total)")).toContain(conta);
+    // sem venda da etapa de downsell na janela (corte 13/05, antes da venda de 14/05): nada a declarar — Fat. Total ÷ investimento já é o ROAS total
+    const sem = await gerar(deps({ agora: new Date("2026-05-14T15:00:00.000Z"), config: () => emAndamento({ downsell: null }) }));
+    expect(sem.payload.dinheiroTempo.roasTotalSemTmb.downsellNoCorte).toMatchObject({ estado: "nao-comecou", faturamentoFora: 0 });
+    expect(kpiDe(sem.html, "Fat. Total s/ TMB")).not.toContain("FORA do ROAS total");
+    expect(secaoDe(sem.html, "ROAS")).not.toContain("estão no Fat. Total");
   });
 
   it("downsell 'ainda não aconteceu' é o mesmo 'não começou'", async () => {
@@ -487,6 +526,15 @@ describe("AC9 (b) — ponto de virada: PG02 gerado 'em andamento' com o corte no
     expect(secaoDe(semRotulos(parcial.html), "ROAS")).toEqual(secaoDe(final.html, "ROAS"));
     expect(secaoDe(semRotulos(parcial.html), "Vendas do Principal")).toEqual(secaoDe(final.html, "Vendas do Principal"));
     expect(marcos(parcial.html)).toEqual(marcos(final.html));
+    // TEST-001: a resposta de 02/07 (depois do fim) entra nos dois — a pesquisa não é cortada no R9-5
+    expect(parcial.payload.publico.pesquisa.respondentes).toBe(final.payload.publico.pesquisa.respondentes);
+  });
+
+  it("controle da pesquisa (TEST-001): a resposta de 02/07 conta no final e sai da parcial com o carrinho em curso", () => {
+    const final = calcular(encerrado({ fimCarrinho: "2026-06-30" }), "2026-07-01T15:00:00.000Z");
+    const emCurso = calcular({ ...emAndamento({}), corte: "2026-06-29" }, "2026-06-30T15:00:00.000Z");
+    expect(final.publico.pesquisa.linhasLidas).toBe(emCurso.publico.pesquisa.linhasLidas + 1);
+    expect(final.publico.pesquisa.respondentes).toBe(emCurso.publico.pesquisa.respondentes + 1);
   });
 
   it("controle: o lead de 02/07 (depois do corte) muda número se for cortado — a igualdade acima não é coincidência", () => {

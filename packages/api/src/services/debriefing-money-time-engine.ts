@@ -648,7 +648,18 @@ export interface DebriefingMoneyTime {
      * nunca com o downsell como zero); `em-curso` = parcial. Ausente = sem corte
      * ou downsell concluído / que não houve.
      */
-    downsellNoCorte?: { estado: "nao-comecou" | "em-curso"; texto: string };
+    downsellNoCorte?: {
+      estado: "nao-comecou" | "em-curso";
+      texto: string;
+      /**
+       * QA 49.14 MNT-001 — com o downsell que não começou: a parcela do
+       * faturamento total (vendas da etapa de downsell datadas antes do início
+       * dele) que fica FORA do ROAS total, em reais s/ TMB. Continua em
+       * `faturamentoTotal` (sem regra nova de exclusão) — o documento a declara
+       * junto do ROAS total e do Fat. Total, para a conta fechar para quem lê.
+       */
+      faturamentoFora?: number;
+    };
   };
   teseOrderBump: {
     roasSoIngresso: number | null;
@@ -2034,7 +2045,7 @@ function comFasesDoCorte(r: DebriefingMoneyTime, corte: CorteDaJanela, fases: Fa
         numerador: sd.numerador ?? rt.decomposicao.captacao + rt.decomposicao.principal,
         denominador: sd.denominador ?? rt.denominador,
         memoria: `downsell FORA do numerador — ${texto}: ${sd.memoria}`,
-        downsellNoCorte: { estado: "nao-comecou", texto: `fora do ROAS total: ${texto}` },
+        downsellNoCorte: { estado: "nao-comecou", texto: `fora do ROAS total: ${texto}`, faturamentoFora: rt.decomposicao.downsell },
       },
     };
     lacunas.push({ codigo: LACUNA_DOWNSELL_AINDA_NAO_COMECOU, motivo: `${texto} — o downsell fica fora (lacuna escrita, nunca zero) e o ROAS total é o de captação + principal`, detalhe: METRICAS_SEM_DOWNSELL.join(", ") });

@@ -542,7 +542,18 @@ export const INDICADORES: readonly Indicador[] = [
   { grupo: "Faturamento", rotulo: "Fat. Ingresso s/ TMB", ler: (p) => metrica(p.dinheiroTempo.captacao.faturamentoIngresso), unidade: "moeda" },
   { grupo: "Faturamento", rotulo: "Fat. Order Bump s/ TMB", ler: (p) => metrica(p.dinheiroTempo.captacao.faturamentoOrderBump), unidade: "moeda" },
   { grupo: "Faturamento", rotulo: "Fat. Produto Principal s/ TMB", ler: (p) => metrica(p.dinheiroTempo.faturamentoPrincipal), unidade: "moeda", tnote: notaTmb, dependeDoCarrinho: true },
-  { grupo: "Faturamento", rotulo: "Fat. Total s/ TMB", ler: (p) => numero(p.dinheiroTempo.faturamentoTotal), unidade: "moeda", tnote: notaTmb, dependeDoCarrinho: true },
+  {
+    grupo: "Faturamento",
+    rotulo: "Fat. Total s/ TMB",
+    ler: (p) => numero(p.dinheiroTempo.faturamentoTotal),
+    unidade: "moeda",
+    // QA 49.14 MNT-001: a parcela do downsell que não começou fica no total, mas fora do ROAS total — dito aqui.
+    tnote: (p) => {
+      const fora = parcelaForaDoRoasTotal(p);
+      return fora ? `${notaTmb(p)} · ${fora}` : notaTmb(p);
+    },
+    dependeDoCarrinho: true,
+  },
   { grupo: "Faturamento", rotulo: "Ticket médio da captação", ler: (p) => metrica(p.dinheiroTempo.captacao.ticketCaptacao), unidade: "moeda" },
   {
     grupo: "Mídia",
@@ -647,10 +658,30 @@ function rotuloParcialDoIndicador(ind: Indicador, pp: DebriefingPayload): string
   return parcialDaFase(pp, "carrinho");
 }
 
+/**
+ * QA 49.14 MNT-001 — com o downsell que não começou e venda da etapa de
+ * downsell datada antes do início dele: a parcela que está no Fat. Total e fora
+ * do ROAS total, com a conta que fecha ("Fat. Total − parcela ÷ investimento").
+ * `null` quando não há parcela (Fat. Total ÷ investimento já é o ROAS total).
+ */
+function parcelaForaDoRoasTotal(pp: DebriefingPayload): string | null {
+  const mt = pp.dinheiroTempo;
+  const d = mt.roasTotalSemTmb.downsellNoCorte;
+  const fora = d?.estado === "nao-comecou" ? (d.faturamentoFora ?? mt.roasTotalSemTmb.decomposicao.downsell) : 0;
+  if (!(fora > 0)) return null;
+  return (
+    `inclui ${fmt(fora, "moeda")} de venda(s) da etapa de downsell datada(s) antes do início dele, que ficam FORA do ROAS total (o downsell ainda não começou): ` +
+    `ROAS total = (Fat. Total ${fmt(mt.faturamentoTotal, "moeda")} − ${fmt(fora, "moeda")}) ÷ investimento total ${fmt(mt.roasTotalSemTmb.denominador, "moeda")}`
+  );
+}
+
 /** A nota do ROAS total: a decisão 5 de sempre; com corte, o que aconteceu com o downsell (AC4). */
 function notaDoRoasTotal(pp: DebriefingPayload): string {
   const d = pp.dinheiroTempo.roasTotalSemTmb.downsellNoCorte;
-  if (d?.estado === "nao-comecou") return `${d.texto} — o numerador é captação + principal (o downsell entra quando começar; decisão 5 do dono)`;
+  if (d?.estado === "nao-comecou") {
+    const fora = parcelaForaDoRoasTotal(pp);
+    return `${d.texto} — o numerador é captação + principal (o downsell entra quando começar; decisão 5 do dono)${fora ? `; o Fat. Total ${fora}` : ""}`;
+  }
   if (d?.estado === "em-curso") return `inclui o downsell no numerador (decisão 5 do dono) — ${d.texto}`;
   return "inclui o downsell no numerador (decisão 5 do dono)";
 }
@@ -658,7 +689,15 @@ function notaDoRoasTotal(pp: DebriefingPayload): string {
 /** AC4 — a parcela do downsell no numerador do ROAS total, por extenso (fora / parcial / o valor). */
 function parcelaDoDownsell(rt: DebriefingPayload["dinheiroTempo"]["roasTotalSemTmb"]): string {
   const d = rt.downsellNoCorte;
-  if (d?.estado === "nao-comecou") return `<span data-downsell-fora>downsell FORA (${esc(d.texto)})</span>`;
+  if (d?.estado === "nao-comecou") {
+    // MNT-001: a parcela que está no faturamento total e fora deste numerador, por extenso.
+    const fora = d.faturamentoFora ?? rt.decomposicao.downsell;
+    return (
+      `<span data-downsell-fora>downsell FORA (${esc(d.texto)})` +
+      (fora > 0 ? `; ${esc(fmt(fora, "moeda"))} de venda(s) da etapa de downsell datada(s) antes do início dele estão no Fat. Total e fora deste numerador` : "") +
+      `</span>`
+    );
+  }
   const valor = `downsell ${esc(fmt(rt.decomposicao.downsell, "moeda"))}`;
   return d?.estado === "em-curso" ? `${valor} <span data-parcial-da-fase>(${esc(d.texto)})</span>` : valor;
 }
