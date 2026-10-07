@@ -290,3 +290,22 @@ export function abrirDebriefingEmNovaAba(
   deps.agendar(() => deps.revokeObjectURL(url), DEBRIEFING_NOVA_ABA_REVOKE_MS);
   return "aberta";
 }
+
+/**
+ * Story 49.12 (AC14, R9-1) — o aviso de documento PARCIAL do viewer. Fica FORA
+ * do iframe (como o "Documento maior que o limite"): não entra no HTML gerado
+ * nem é gravado pela edição inline, que salva só o que o iframe devolve.
+ * `parcial` ausente (API anterior à v35), `null` (final ou upload manual) → sem
+ * aviso — falha segura, não quebra.
+ */
+export function avisoDeParcialNoViewer(
+  d: { parcial?: { corte: string; dMaisN: number } | null } | null | undefined,
+): string | null {
+  const p = d?.parcial;
+  if (!p) return null;
+  const [a, m, dia] = p.corte.split("-");
+  return (
+    `Documento PARCIAL — lançamento em andamento, dados até ${dia}/${m}/${a} (D+${p.dMaisN}). ` +
+    "A próxima geração substitui este documento, inclusive as edições feitas aqui (os comentários ficam)."
+  );
+}

@@ -44,6 +44,7 @@ import {
 } from "@/lib/hooks/use-debriefings";
 import {
   abrirDebriefingEmNovaAba,
+  avisoDeParcialNoViewer,
   buildDebriefingSrcDoc,
   clampFrameHeight,
   isDebriefingFrameMessage,
@@ -341,6 +342,18 @@ export default function DebriefingDetailPage() {
             <X className="h-4 w-4 mr-1" />
             Cancelar
           </Button>
+        </div>
+      )}
+
+      {/* Story 49.12 (AC14) — documento parcial: aviso FORA do iframe (não entra no HTML salvo) */}
+      {avisoDeParcialNoViewer(debriefing) && (
+        <div
+          role="status"
+          data-aviso-parcial
+          className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5"
+        >
+          <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <p className="text-sm min-w-0 flex-1">{avisoDeParcialNoViewer(debriefing)}</p>
         </div>
       )}
 

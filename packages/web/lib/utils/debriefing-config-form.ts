@@ -19,6 +19,15 @@
 export const CONTRATO_DA_LISTA = 31;
 /** Versão do contrato que tem a rota de geração (49.6). */
 export const CONTRATO_DA_GERACAO = 32;
+/** Versão do contrato que aceita o lançamento "em andamento" (49.12). */
+export const CONTRATO_DO_EM_ANDAMENTO = 35;
+
+/** Story 49.12 (AC1) — "O lançamento terminou?". */
+export type SituacaoDoLancamento = "encerrado" | "em-andamento";
+/** Story 49.12 (AC2) — fases que aceitam "ainda não aconteceu" (só em andamento). */
+export type FaseQuePodeNaoTerAcontecido = "aberturaCarrinho" | "fimCarrinho" | "reabertura" | "downsell";
+/** Resposta "ainda não aconteceu" de reabertura/downsell no formulário (≠ "não houve"). */
+export const AINDA_NAO = "ainda-nao" as const;
 
 export const PAPEIS_DO_DEBRIEFING = [
   "leads-captacao",
@@ -63,12 +72,16 @@ export type RespostaEtapaExtra = { houve: false } | { houve: true; abertura: str
 export interface DebriefingConfigGet {
   tipoDeFunil: string;
   config: {
+    /** 49.12 — ausente = API anterior à 49.12 (só existia o encerrado). */
+    situacaoDoLancamento?: SituacaoDoLancamento;
     datasChave: {
       inicioCaptacao: string | null;
       aberturaCarrinho: string | null;
       fimCarrinho: string | null;
       reabertura: RespostaEtapaExtra | null;
       downsell: RespostaEtapaExtra | null;
+      /** 49.12 — ausente = API anterior à 49.12. */
+      aindaNaoAconteceu?: FaseQuePodeNaoTerAcontecido[];
     };
     lancamentoComparacaoFunnelId: string | null;
     lancamentosComparacao?: string[];
@@ -99,15 +112,22 @@ export interface DebriefingConfigGet {
   }[];
   pesquisasPorEtapa?: Record<string, { id: string; rotulo: string }[]>;
   pesquisasPorEtapaFalha?: string;
+  /** 49.12 (AC11) — a parcial da etapa (`null` = nenhuma; ausente = API anterior). */
+  parcialAtual?: { debriefingId: string; geradaEm: string; corte: string | null; dMaisN: number | null } | null;
 }
 
 /** Estado do formulário. `null` = "não respondido" (nunca um padrão presumido). */
 export interface FormDaConfig {
+  /** 49.12 (AC1) — `null` = não respondido (config nova não vem pré-marcada). */
+  situacao: SituacaoDoLancamento | null;
   inicioCaptacao: string;
   aberturaCarrinho: string;
   fimCarrinho: string;
-  reabertura: { houve: boolean | null; abertura: string; fim: string };
-  downsell: { houve: boolean | null; abertura: string; fim: string };
+  /** 49.12 (AC2) — abertura/fim do carrinho "ainda não aconteceu" (vale só em andamento). */
+  carrinhoAindaNao: { aberturaCarrinho: boolean; fimCarrinho: boolean };
+  /** `houve: "ainda-nao"` = "ainda não aconteceu" (49.12, só em andamento) — ≠ `false` ("não houve"). */
+  reabertura: { houve: boolean | typeof AINDA_NAO | null; abertura: string; fim: string };
+  downsell: { houve: boolean | typeof AINDA_NAO | null; abertura: string; fim: string };
   /** Lista ordenada; a 1ª é a comparação principal. */
   comparacoes: string[];
   /** Papel por etapa do funil; ausente = a etapa não compõe o lançamento. */
@@ -124,8 +144,14 @@ export interface FormDaConfig {
   dimensaoDeCriativo: DimensaoDoCriativo | null;
 }
 
-const extra = (r: RespostaEtapaExtra | null | undefined) =>
-  r ? (r.houve ? { houve: true, abertura: r.abertura, fim: r.fim } : { houve: false, abertura: "", fim: "" }) : { houve: null, abertura: "", fim: "" };
+const extra = (r: RespostaEtapaExtra | null | undefined, aindaNao = false): FormDaConfig["reabertura"] =>
+  aindaNao
+    ? { houve: AINDA_NAO, abertura: "", fim: "" }
+    : r
+      ? r.houve
+        ? { houve: true, abertura: r.abertura, fim: r.fim }
+        : { houve: false, abertura: "", fim: "" }
+      : { houve: null, abertura: "", fim: "" };
 
 /** A lista GRAVADA do GET (com os removidos); API v30 só tem o campo antigo. */
 export function listaGravadaDoGet(c: NonNullable<DebriefingConfigGet["config"]>): string[] {
@@ -149,9 +175,11 @@ export function listaEfetivaDoGet(c: NonNullable<DebriefingConfigGet["config"]>)
 
 export function formVazio(): FormDaConfig {
   return {
+    situacao: null,
     inicioCaptacao: "",
     aberturaCarrinho: "",
     fimCarrinho: "",
+    carrinhoAindaNao: { aberturaCarrinho: false, fimCarrinho: false },
     reabertura: { houve: null, abertura: "", fim: "" },
     downsell: { houve: null, abertura: "", fim: "" },
     comparacoes: [],
@@ -171,12 +199,16 @@ export function formDoGet(r: DebriefingConfigGet): FormDaConfig {
   if (!c) return formVazio();
   const lista = (l: string[] | null, vazio: "nenhum" | "nenhuma") =>
     l === null ? { resposta: null, texto: "" } : l.length === 0 ? { resposta: vazio, texto: "" } : { resposta: "lista" as const, texto: l.join(", ") };
+  // 49.12 (AC1): config salva sem a resposta (API anterior) = encerrado — sem pedir de novo.
+  const ainda = new Set(c.datasChave.aindaNaoAconteceu ?? []);
   return {
+    situacao: c.situacaoDoLancamento ?? "encerrado",
     inicioCaptacao: c.datasChave.inicioCaptacao ?? "",
     aberturaCarrinho: c.datasChave.aberturaCarrinho ?? "",
     fimCarrinho: c.datasChave.fimCarrinho ?? "",
-    reabertura: extra(c.datasChave.reabertura),
-    downsell: extra(c.datasChave.downsell),
+    carrinhoAindaNao: { aberturaCarrinho: ainda.has("aberturaCarrinho"), fimCarrinho: ainda.has("fimCarrinho") },
+    reabertura: extra(c.datasChave.reabertura, ainda.has("reabertura")),
+    downsell: extra(c.datasChave.downsell, ainda.has("downsell")),
     comparacoes: listaGravadaDoGet(c),
     papeis: Object.fromEntries(c.etapas.map((e) => [e.stageId, e.papel])),
     perguntas: c.perguntasConfirmadas ?? {},
@@ -200,12 +232,18 @@ const itens = (texto: string) =>
  */
 export function faltantesDoForm(f: FormDaConfig, etapasComPesquisa: readonly { stageId: string; nome: string }[] = []): string[] {
   const falta: string[] = [];
+  // 49.12 (AC1/AC2): a lista diz só o que falta DE FATO no modo escolhido.
+  if (f.situacao === null) falta.push("O lançamento terminou? (encerrado ou em andamento)");
+  const emAndamento = f.situacao === "em-andamento";
   if (!f.inicioCaptacao) falta.push("Início da captação");
-  if (!f.aberturaCarrinho) falta.push("Abertura do carrinho");
-  if (!f.fimCarrinho) falta.push("Fim do carrinho");
+  for (const [k, rot] of [["aberturaCarrinho", "Abertura do carrinho"], ["fimCarrinho", "Fim do carrinho"]] as const) {
+    if (f[k] || (emAndamento && f.carrinhoAindaNao[k])) continue;
+    falta.push(emAndamento ? `${rot} (a data ou "ainda não aconteceu")` : rot);
+  }
   for (const [rot, e] of [["Reabertura", f.reabertura], ["Downsell", f.downsell]] as const) {
-    if (e.houve === null) falta.push(`${rot}: responda "houve" ou "não houve"`);
-    else if (e.houve && (!e.abertura || !e.fim)) falta.push(`${rot}: datas de abertura e fim`);
+    if (e.houve === null || (e.houve === AINDA_NAO && !emAndamento)) {
+      falta.push(emAndamento ? `${rot}: responda "houve", "não houve" ou "ainda não aconteceu"` : `${rot}: responda "houve" ou "não houve"`);
+    } else if (e.houve === true && (!e.abertura || !e.fim)) falta.push(`${rot}: datas de abertura e fim`);
   }
   if (Object.keys(f.papeis).length === 0) falta.push("Etapas do lançamento (ao menos uma com papel)");
   for (const { stageId, nome } of etapasComPesquisa) {
@@ -235,14 +273,29 @@ export function corpoDoPut(
   const fora = new Set(opts.removidos);
   const lista = f.comparacoes.filter((id) => !fora.has(id));
   const apiTemLista = typeof opts.apiContrato === "number" && opts.apiContrato >= CONTRATO_DA_LISTA;
-  const resp = (e: FormDaConfig["reabertura"]) => (e.houve ? { houve: true, abertura: e.abertura, fim: e.fim } : { houve: false });
+  // 49.12 (AC11): as chaves novas só com a API ≥ 35 (a v34 tem corpo `.strict()`).
+  const apiTemEmAndamento = typeof opts.apiContrato === "number" && opts.apiContrato >= CONTRATO_DO_EM_ANDAMENTO;
+  const emAndamento = apiTemEmAndamento && f.situacao === "em-andamento";
+  const resp = (e: FormDaConfig["reabertura"]) =>
+    emAndamento && e.houve === AINDA_NAO ? null : e.houve === true ? { houve: true, abertura: e.abertura, fim: e.fim } : { houve: false };
+  const data = (k: "aberturaCarrinho" | "fimCarrinho") => (emAndamento && f.carrinhoAindaNao[k] ? null : f[k]);
+  const aindaNao: FaseQuePodeNaoTerAcontecido[] = emAndamento
+    ? [
+        ...(f.carrinhoAindaNao.aberturaCarrinho ? (["aberturaCarrinho"] as const) : []),
+        ...(f.carrinhoAindaNao.fimCarrinho ? (["fimCarrinho"] as const) : []),
+        ...(f.reabertura.houve === AINDA_NAO ? (["reabertura"] as const) : []),
+        ...(f.downsell.houve === AINDA_NAO ? (["downsell"] as const) : []),
+      ]
+    : [];
   const corpo: Record<string, unknown> = {
+    ...(apiTemEmAndamento ? { situacaoDoLancamento: emAndamento ? "em-andamento" : "encerrado" } : {}),
     datasChave: {
       inicioCaptacao: f.inicioCaptacao,
-      aberturaCarrinho: f.aberturaCarrinho,
-      fimCarrinho: f.fimCarrinho,
+      aberturaCarrinho: data("aberturaCarrinho"),
+      fimCarrinho: data("fimCarrinho"),
       reabertura: resp(f.reabertura),
       downsell: resp(f.downsell),
+      ...(apiTemEmAndamento ? { aindaNaoAconteceu: aindaNao } : {}),
     },
     lancamentoComparacaoFunnelId: lista[0] ?? null,
     etapas: Object.entries(f.papeis).map(([stageId, papel]) => ({ stageId, papel })),
@@ -257,6 +310,44 @@ export function corpoDoPut(
     corpo.pesquisaDeCaptacaoPorEtapa = Object.fromEntries(Object.entries(f.pesquisaDeCaptacao).filter(([stageId, id]) => f.papeis[stageId] && id));
   }
   return corpo;
+}
+
+/**
+ * Story 49.12 (AC11) — o "em andamento" só com a API que o aceita; contra a
+ * API anterior, a opção fica desabilitada com a frase de API atrás da 47.15.
+ */
+export function motivoSemEmAndamento(apiContrato: number | null | undefined): string | null {
+  if (typeof apiContrato === "number" && apiContrato >= CONTRATO_DO_EM_ANDAMENTO) return null;
+  return "A API ainda não tem o modo “em andamento” do debriefing — provavelmente está atrás do painel. Veja o aviso de versão no topo.";
+}
+
+/** Story 49.12 (AC3/AC11) — ontem (`YYYY-MM-DD`) no fuso de Brasília, para o texto do botão. */
+export function ontemEmBrasilia(agora: Date): string {
+  const hoje = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(agora);
+  const [a, m, d] = hoje.split("-").map(Number) as [number, number, number];
+  return new Date(Date.UTC(a, m - 1, d - 1)).toISOString().slice(0, 10);
+}
+
+const ddmm = (dia: string) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
+
+/**
+ * Story 49.12 (AC11) — o que o botão "Gerar debriefing" deixa claro no modo em
+ * andamento: gera uma PARCIAL com dados até ontem e, havendo parcial, que vai
+ * substituí-la. `null` = encerrado (o botão de sempre).
+ */
+export function avisoDoBotaoDeGerar(
+  cfg: Pick<DebriefingConfigGet, "config" | "parcialAtual"> | null | undefined,
+  agora: Date,
+): { rotulo: string; detalhe: string } | null {
+  if (cfg?.config?.situacaoDoLancamento !== "em-andamento") return null;
+  const ontem = ddmm(ontemEmBrasilia(agora));
+  const p = cfg.parcialAtual;
+  return {
+    rotulo: `Gerar parcial (dados até ${ontem})`,
+    detalhe: p
+      ? `Lançamento em andamento: gera uma parcial com os dados até ${ontem} e SUBSTITUI a parcial atual${p.corte ? ` (dados até ${ddmm(p.corte)})` : ""} — os comentários ficam; as edições feitas no viewer se perdem.`
+      : `Lançamento em andamento: gera uma parcial com os dados até ${ontem} (ontem, no fuso de Brasília).`,
+  };
 }
 
 /** O 2º item da lista só com a API que a aceita (49.11 AC7) — com o motivo visível. */
@@ -340,6 +431,11 @@ const TITULOS: Record<string, string> = {
   INVARIANTE_VIOLADO: "Os números não fecham",
   CONFERENCIA_EXTERNA: "Investimento diverge do oficial",
   TEXTO_IA_INDISPONIVEL: "Textos da IA indisponíveis",
+  // Story 49.12 — lançamento em andamento
+  SEM_DIA_FECHADO: "Ainda não há dia fechado para analisar",
+  CARRINHO_JA_ABERTO: "O carrinho já abriu",
+  MIDIA_DO_CORTE_NAO_SINCRONIZADA: "Mídia do dia de corte não sincronizada",
+  COMPARACAO_EM_ANDAMENTO: "Lançamento de comparação em andamento",
   TEXTO_IA_REPROVADO: "Textos da IA reprovados",
 };
 
