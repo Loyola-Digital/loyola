@@ -4,11 +4,11 @@ story: '49.14'
 story_title: 'Debriefing em andamento — gerar com o carrinho aberto (e com reabertura/downsell ainda por vir)'
 verdict: CONCERNS
 gate: CONCERNS
-status_reason: 'Os 9 ACs estão implementados e não achei defeito funcional. O ponto de virada (AC9 b) foi reproduzido pelo QA por um caminho independente, e 13 das 14 mutações do QA morreram, inclusive nos chamadores. As CONCERNS são todas low: dois desvios da letra dos ACs que o @po precisa ratificar (versão do payload no AC8; "fim ainda não aconteceu" de reabertura/downsell no AC2), o Δ da comparação no caso R9-5, um teste faltando no R9-5 e dois detalhes de exibição.'
+status_reason: 'Re-gate (iteração 2) sobre 146ea828. FE-001, REQ-002 e TEST-001 estão fechados, REQ-001 foi ratificado e REQ-003 virou a P-20, pendente do dono. 11 das 12 mutações do QA morreram e as suítes, o lint, o tsc e o next build passam. A CONCERN média é o MNT-001: quando a reabertura teve faturamento, a conta que o documento escreve não fecha (o QA reproduziu 33,04 escrito contra 30,24 de ROAS total).'
 reviewer: 'Quinn'
-updated: '2026-10-07T18:30:00-03:00'
+updated: '2026-10-07T20:30:00-03:00'
 branch: 'feat/49.14-debriefing-carrinho-em-andamento'
-commit_reviewed: '9efa5666'
+commit_reviewed: '146ea828 (iteração 2; a iteração 1 revisou 9efa5666 e gravou o gate em 9ff13aa0)'
 base: 'Empilhada na 49.12 @ dcbcd962. A PR #992 da 49.12 está em 117b90c5, que difere só em docs. O diff revisado é `git diff dcbcd962...HEAD` (17 arquivos). A origin/main andou para 30978960, um commit só de docs (49.7, 49.9 e epic-49) sem arquivo em comum com a branch; `git merge-tree` com a origin/main não acusa conflito.'
 coderabbit_status: 'SKIPPED (a CLI só roda no WSL e o ambiente é macOS; é a prática do repo)'
 
@@ -87,6 +87,9 @@ sondas_qa:
   - '(2) Fronteiras do AC2 pela `janelaDaGeracao`: corte 11/05 (= abertura) dá em curso; 30/06 (= fim) dá concluída, todas concluídas e janela 2A; 10/05 dá não começou; carrinho concluído com o downsell "ainda não aconteceu" faz a janela voltar ao corte. PASS.'
   - '(3) SEM_AD_LEVEL no encerrado com convenção "nenhuma": F11 failed. Confirma o achado fora do escopo.'
 
+top_issues_iteracao_1_estado:
+  nota: 'Os achados abaixo são os da iteração 1. O estado de cada um está em iteracao_2.fechamento, e os novos em iteracao_2.achados.'
+
 top_issues:
   - id: 'REQ-001'
     severity: low
@@ -119,12 +122,67 @@ top_issues:
     suggested_action: 'Mostrar `fasesConcluidas` só com a API ≥ 36, como já faz `rotuloDoEmAndamento`.'
     owner: dev
 
+iteracao_2:
+  data: '2026-10-07'
+  commits_revisados: ['2fc63503 @po REQ-001..003', '7105e4c1 MNT-001 + TEST-001', '8d921f4f FE-001', 'e7b8ae5c REQ-002 na API', '69f0cbd0 REQ-002 no formulário', '146ea828 docs']
+  base: 'Continua na 49.12 @ dcbcd962 (diff com `git diff dcbcd962...HEAD`). A origin/main segue em 30978960 (docs), sem arquivo em comum.'
+  fechamento:
+    REQ-001: 'FECHADO. O @po ratificou com a regra da 49.12: campo aditivo e opcional não sobe a versão. A nota está no AC8.'
+    REQ-002: 'FECHADO. Reabertura e downsell abertos com o "fim ainda não aconteceu" são representados por `houve: true`, abertura informada, `fim: null` e `fimReabertura`/`fimDownsell` em `aindaNaoAconteceu`. A mudança fica dentro do jsonb, sem migration. Só vale em andamento. No encerrado o PUT responde 400 com duas mensagens (fase só vale em andamento; fim obrigatório) e o gate dá CONFIG_INCOMPLETA, como mostram os testes do @dev e a mutação C7, que derruba as duas travas e morre. `estadoDaFase` com fim nulo dá em curso (C11 morreu). O render das datas-chave escreve "fim: ainda não aconteceu" (C10 morreu). O zod do PUT aceita o fim nulo (C6 morreu). No formulário, a caixa só aparece em andamento e o corpo do PUT leva a resposta (C8 e C9 morreram). Compatibilidade: a API v35 lê essa linha como CONFIG_INCOMPLETA, porque descarta as fases desconhecidas e exige o fim; ou seja, bloqueia sem inventar.'
+    REQ-003: 'PENDENTE DO DONO (P-20). O código corta a comparação em D+N (opção B). Não é defeito. Segura o fechamento do AC6 no que toca ao Δ.'
+    TEST-001: 'FECHADO. A resposta da pesquisa depois do fim entra no ponto de virada, e a mutação B5 (agora C1) morre.'
+    MNT-001: 'PARCIAL (vira MNT-002). A parcela fica declarada no Fat. Total, no ROAS total e na decomposição (C2 e C3 morreram), e a conta fecha no caso testado. Mas a fórmula escrita "ROAS total = (Fat. Total − parcela) ÷ investimento total" ignora que `faturamentoTotal` inclui a REABERTURA (GRUPOS, engine:134), que o ROAS total headline exclui (decisão 5).'
+    FE-001: 'FECHADO. Contra as APIs 35, 34, null e undefined, o aviso diz que a API está atrás e não promete os números do final (teste do @dev). C4 (limiar na v35) e C5 (botão com contrato fixo) morreram.'
+  conferencias_pedidas:
+    mnt001_conta_escrita: 'NÃO BATE em todo caso. Sonda do QA, com corte 15/05, carrinho 11–12/05 concluído, reabertura 13–14/05 concluída e downsell 20–25/05 que não começou. Faturamento por etapa: captação 641, principal 8.000, downsell 500 (antes do início), reabertura 800. O documento escreve "ROAS total = (Fat. Total R$ 9.941,00 − R$ 500,00) ÷ investimento total R$ 285,71", que dá 33,04. O ROAS total gravado e mostrado é 30,24. A diferença vem dos R$ 800 da reabertura.'
+    fe001_api_atras: 'SIM. Contra as APIs 35, 34 e de contrato desconhecido, o aviso diz "a API em uso … ainda não gera a parcial com o carrinho aberto (contrato 36) — provavelmente está atrás do painel".'
+    req002_encerrado_recusa: 'SIM. O PUT encerrado responde 400 com as duas mensagens, e o gate na linha encerrada com fim nulo dá CONFIG_INCOMPLETA (debriefing-config-fim-ainda-nao.test.ts).'
+  verificacoes:
+    api_debriefing: '767/767 (25 arquivos)'
+    web: '1.854/1.854'
+    lint: 'API: 0 erros e 1 warning pré-existente. next lint: limpo.'
+    typecheck: 'tsc da API 0. next build exit 0, e depois o tsc do web 0. O shared foi compilado antes.'
+  mutacoes_qa:
+    total: 12
+    mortas: 11
+    lista:
+      - 'C1 (= B5) pesquisa cortada no corte no R9-5, no chamador do Motor II: MORTA'
+      - 'C2 MNT-001: o render nunca declara a parcela: MORTA'
+      - 'C3 MNT-001: o motor grava faturamentoFora = 0: MORTA (2)'
+      - 'C4 FE-001: limiar do aviso na v35: MORTA'
+      - 'C5 FE-001: o botão passa o contrato fixo 36 (chamador): MORTA (2)'
+      - 'C6 REQ-002: o zod do PUT não aceita fim nulo (rota): MORTA (3)'
+      - 'C7 REQ-002: o encerrado aceita "fim ainda não aconteceu" (as duas travas de problemasDasDatasChave): MORTA (3)'
+      - 'C8 REQ-002: a caixa "fim ainda não aconteceu" aparece em qualquer modo (.tsx): MORTA'
+      - 'C9 REQ-002: o corpo do PUT sem fimDownsell: MORTA'
+      - 'C10 REQ-002: o render das datas-chave ignora o fim nulo: MORTA (5)'
+      - 'C11 REQ-002: estadoDaFase trata fim nulo como concluída: MORTA (18)'
+      - 'C12 REQ-002: a F10 aceita "fim ainda não aconteceu" sem houve: SOBREVIVEU (TEST-002). O PUT e o gate recusam essa combinação (debriefing-config.ts:710); a F10 é defesa em profundidade sem teste.'
+  achados:
+    - id: 'MNT-002'
+      severity: medium
+      finding: 'A conta escrita pelo fix do MNT-001 está errada quando a reabertura teve faturamento. `parcelaForaDoRoasTotal` (debriefing-render.ts:667-676) escreve "(Fat. Total − parcela) ÷ investimento total". Só que `faturamentoTotal` soma as 4 etapas, reabertura inclusive (engine:134 GRUPOS), e o numerador do ROAS total é captação + principal (+ downsell), sem a reabertura (decisão 5; guards:175 GRUPOS_HEADLINE). Sonda: escrito 33,04 contra 30,24. Isso aparece no KPI Fat. Total e no do ROAS total. O teste do @dev usa reabertura "não houve" e por isso não pega.'
+      suggested_action: 'Escrever o numerador de verdade, com captação e principal por extenso (ou descontar também `faturamentoPorEtapa.reabertura`, nomeando-a), e acrescentar ao teste do MNT-001 um caso com reabertura concluída e faturada. A correção é pequena e é recomendada ANTES do merge.'
+      owner: dev
+    - id: 'TEST-002'
+      severity: low
+      finding: 'A mutação C12 sobrevive: o ramo da F10 que recusa "fim ainda não aconteceu" sem houve = true (debriefing-guards.ts:627) não tem teste.'
+      suggested_action: 'Um caso de checarF10 com fimDownsell em aindaNaoAconteceu e downsell {houve:false}.'
+      owner: dev
+    - id: 'FE-002'
+      severity: low
+      finding: 'A caixa "Fim ainda não aconteceu" (debriefing-generate-button.tsx:470) aparece com a API v35 (o "em andamento" já é liberado a partir da v35). O PUT da v35 recusa `fim: null` e `fimDownsell` no zod. O usuário vê um 400, não "API atrás".'
+      suggested_action: 'Mostrar a caixa só com a API ≥ 36, como o FE-001, ou trocar o 400 pela frase de API atrás.'
+      owner: dev
+  pendencia_do_dono: 'P-20 (o Δ da comparação no R9-5): opção A, B ou C. Sem resposta, o comportamento fica na B. Segura o fechamento do AC6 no que toca à comparação.'
+
 condicoes_de_merge:
   - 'Mergear DEPOIS da 49.12 (PR #992), rebaseando sobre ela. Contrato 36: quem mergear depois renumera, se outra PR subir o contrato antes.'
   - 'Nenhuma migration nesta story. A 0168 da 49.12 é pré-requisito em produção.'
 
 condicoes_de_done:
-  - 'Ratificação do @po: REQ-001, REQ-002 e REQ-003.'
+  - 'Resposta do dono à P-20 (o Δ da comparação no R9-5).'
+  - 'MNT-002 corrigido (a conta escrita no documento).'
   - 'Validação visual do dono com uma parcial com o carrinho aberto.'
 
 waiver: { active: false }
