@@ -5,13 +5,17 @@ import { describe, expect, it } from "vitest";
 import {
   corpoDoPut,
   erroDaGeracao,
+  ESCOPO_DOS_FUNIS_DA_COMPARACAO,
   erroDaValidacao,
   faltantesDoForm,
   formDoGet,
   formVazio,
   listaEfetivaDoGet,
   motivoSemSegundoItem,
+  nomeDoFunilDaComparacao,
+  opcoesDaComparacao,
   type DebriefingConfigGet,
+  type FunilDaComparacao,
   type FormDaConfig,
 } from "../debriefing-config-form";
 
@@ -195,5 +199,47 @@ describe("UX-496-2 — erro de \"Marcar combinação como validada\" na tela (c�
       expect(e.detalhe).toMatch(/\S/);
       expect(e.acao).toMatch(/\S/);
     }
+  });
+});
+
+describe("49.13 — lançamentos arquivados na lista de comparação", () => {
+  // Funis do projeto na ordem em que a API os devolve (arquivado no meio de propósito).
+  const PROJETO: FunilDaComparacao[] = [
+    { id: "f-atual", name: "DG PG05", archivedAt: null },
+    { id: "f-pg03", name: "DG PG03", archivedAt: "2026-08-01T12:00:00.000Z" },
+    { id: "f-pg04", name: "DG PG04", archivedAt: null },
+    { id: "f-pg01", name: "DG PG01", archivedAt: "2026-03-10T12:00:00.000Z" },
+    { id: "f-pg02", name: "DG PG02" },
+  ];
+  // O que `GET /api/projects/:id/funnels?archived=<escopo>` devolve
+  // (`routes/funnels.ts`: "false" → `archivedAt IS NULL`; "all" → sem filtro).
+  const doServidor = (escopo: "false" | "all") => (escopo === "all" ? PROJETO : PROJETO.filter((x) => !x.archivedAt));
+  const funis = doServidor(ESCOPO_DOS_FUNIS_DA_COMPARACAO);
+
+  it("AC1 (a) — o formulário busca ativos E arquivados, e o arquivado está nas opções (menos o próprio e os já na lista)", () => {
+    expect(ESCOPO_DOS_FUNIS_DA_COMPARACAO).toBe("all");
+    const ids = opcoesDaComparacao(funis, "f-atual", ["f-pg04"]).map((o) => o.id);
+    expect(ids).toContain("f-pg03");
+    expect(ids).toContain("f-pg01");
+    expect(ids).not.toContain("f-atual");
+    expect(ids).not.toContain("f-pg04");
+    expect(ids).toHaveLength(3);
+  });
+
+  it("AC2 (b) — arquivado com o sufixo \"(arquivado)\" e ativos antes dos arquivados (ordem da API dentro de cada grupo)", () => {
+    expect(opcoesDaComparacao(PROJETO, "f-atual", [])).toEqual([
+      { id: "f-pg04", rotulo: "DG PG04" },
+      { id: "f-pg02", rotulo: "DG PG02" },
+      { id: "f-pg03", rotulo: "DG PG03 (arquivado)" },
+      { id: "f-pg01", rotulo: "DG PG01 (arquivado)" },
+    ]);
+  });
+
+  it("AC3 (c) — comparação salva que hoje está arquivada aparece pelo nome com \"(arquivado)\", nunca pelo id", () => {
+    expect(nomeDoFunilDaComparacao(funis, "f-pg03")).toBe("DG PG03 (arquivado)");
+    expect(nomeDoFunilDaComparacao(funis, "f-pg04")).toBe("DG PG04");
+    // Funil apagado (não volta nem com "all") continua pelo id, como hoje.
+    expect(nomeDoFunilDaComparacao(funis, "f-apagado")).toBe("f-apagado");
+    expect(nomeDoFunilDaComparacao(undefined, "f-pg03")).toBe("f-pg03");
   });
 });

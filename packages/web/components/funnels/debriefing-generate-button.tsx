@@ -36,6 +36,7 @@ import {
   CONTRATO_DA_LISTA,
   DIMENSOES_DA_PESQUISA,
   DIMENSOES_DO_CRIATIVO,
+  ESCOPO_DOS_FUNIS_DA_COMPARACAO,
   PAPEIS_DO_DEBRIEFING,
   PASSOS_DA_GERACAO,
   ROTULO_DO_PAPEL,
@@ -46,6 +47,8 @@ import {
   formDoGet,
   formVazio,
   motivoSemSegundoItem,
+  nomeDoFunilDaComparacao,
+  opcoesDaComparacao,
   removidosDoGet,
   type ErroDaGeracao,
   type FormDaConfig,
@@ -228,7 +231,8 @@ function FormularioDaConfig({
   apiContrato: number | undefined;
 }) {
   const { data: cfg, isLoading, error } = useDebriefingConfig(projectId, funnelId, stageId);
-  const { data: funis } = useFunnels(projectId);
+  // 49.13: ativos E arquivados (o servidor aceita arquivado como comparação).
+  const { data: funis } = useFunnels(projectId, ESCOPO_DOS_FUNIS_DA_COMPARACAO);
   const { data: etapas } = useFunnelStages(projectId, funnelId);
   const salvar = useSalvarDebriefingConfig(projectId, funnelId, stageId);
   const validar = useValidarDebriefingConfig(projectId, funnelId, stageId);
@@ -245,8 +249,7 @@ function FormularioDaConfig({
   }, [cfg, carregado]);
 
   const removidos = useMemo(() => (cfg?.config ? removidosDoGet(cfg.config) : []), [cfg]);
-  const nomeDoFunil = (id: string) => funis?.find((x) => x.id === id)?.name ?? id;
-  const outrosFunis = (funis ?? []).filter((x) => x.id !== funnelId);
+  const nomeDoFunil = (id: string) => nomeDoFunilDaComparacao(funis, id);
   const etapasDoFunil = (etapas ?? []).filter((e) => e.id !== stageId);
   const comPesquisa = (cfg?.perguntasDisponiveis ?? []).filter((e) => e.status === "ok");
   const falta = faltantesDoForm(
@@ -439,13 +442,11 @@ function FormularioDaConfig({
             onChange={(e) => e.target.value && set({ comparacoes: [...f.comparacoes, e.target.value] })}
           >
             <option value="">+ adicionar lançamento de comparação…</option>
-            {outrosFunis
-              .filter((x) => !f.comparacoes.includes(x.id))
-              .map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.name}
-                </option>
-              ))}
+            {opcoesDaComparacao(funis ?? [], funnelId, f.comparacoes).map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.rotulo}
+              </option>
+            ))}
           </select>
         )}
       </section>
