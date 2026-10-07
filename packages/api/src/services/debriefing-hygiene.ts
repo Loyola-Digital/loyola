@@ -257,6 +257,97 @@ export interface CorteDaJanela {
   dMaisN: number;
   /** O carrinho do principal já tinha aberto até o corte (abertura informada e ≤ `dia`). */
   carrinhoAberto: boolean;
+  /**
+   * Story 49.14 (AC2) — o estado de cada fase no corte (concluída / em curso /
+   * não começou; "não houve" para reabertura/downsell que não existiram).
+   * Ausente = janela de antes da 49.14.
+   */
+  fases?: FasesNoCorte;
+  /**
+   * Story 49.14 (AC6, R9-5) — todas as fases concluídas até o corte: no
+   * lançamento em andamento, a janela termina no fim da regra 2A (os números
+   * do relatório final), não no corte.
+   */
+  todasAsFasesConcluidas?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Story 49.14 — o estado de cada fase no corte (AC2)
+// ---------------------------------------------------------------------------
+
+/**
+ * AC2 — cada fase (carrinho, reabertura, downsell) no dia de corte:
+ * - `concluida`: fim informado e ≤ corte;
+ * - `em-curso`: abertura ≤ corte, e fim depois do corte ou "ainda não aconteceu";
+ * - `nao-comecou`: "ainda não aconteceu", ou abertura depois do corte;
+ * - `nao-houve`: reabertura/downsell respondidos "não houve" (a fase não existe —
+ *   ≠ "ainda não aconteceu", 49.12 AC2).
+ */
+export type EstadoDaFase = "concluida" | "em-curso" | "nao-comecou" | "nao-houve";
+
+export interface FaseNoCorte {
+  estado: EstadoDaFase;
+  /** `null` = "ainda não aconteceu" (ou "não houve"). */
+  abertura: string | null;
+  fim: string | null;
+}
+
+export interface FasesNoCorte {
+  carrinho: FaseNoCorte;
+  reabertura: FaseNoCorte;
+  downsell: FaseNoCorte;
+}
+
+/** A resposta de reabertura/downsell que a janela lê (`null` = "ainda não aconteceu", 49.12). */
+export type RespostaDaFase = { houve: false } | { houve: true; abertura: string; fim: string | null } | null;
+
+/** AC2 — o estado de UMA fase no corte (fronteiras: abertura = corte → em curso; fim = corte → concluída). */
+export function estadoDaFase(abertura: string | null, fim: string | null, corte: string): EstadoDaFase {
+  if (abertura === null || abertura > corte) return "nao-comecou";
+  if (fim !== null && fim <= corte) return "concluida";
+  return "em-curso";
+}
+
+/** AC2 — as três fases no corte, a partir das datas-chave (encerrado ou em andamento). */
+export function fasesNoCorte(
+  d: { aberturaCarrinho: string | null; fimCarrinho: string | null; reabertura: RespostaDaFase; downsell: RespostaDaFase },
+  corte: string,
+): FasesNoCorte {
+  const extra = (r: RespostaDaFase): FaseNoCorte =>
+    r === null
+      ? { estado: "nao-comecou", abertura: null, fim: null }
+      : r.houve
+        ? { estado: estadoDaFase(r.abertura, r.fim, corte), abertura: r.abertura, fim: r.fim }
+        : { estado: "nao-houve", abertura: null, fim: null };
+  return {
+    carrinho: { estado: estadoDaFase(d.aberturaCarrinho, d.fimCarrinho, corte), abertura: d.aberturaCarrinho, fim: d.fimCarrinho },
+    reabertura: extra(d.reabertura),
+    downsell: extra(d.downsell),
+  };
+}
+
+/** AC6 — toda fase terminou até o corte ("não houve" conta como terminada: a fase não existe). */
+export function todasConcluidas(f: FasesNoCorte): boolean {
+  return [f.carrinho, f.reabertura, f.downsell].every((x) => x.estado === "concluida" || x.estado === "nao-houve");
+}
+
+const ORDINAL = (n: number) => `${n}º`;
+
+/**
+ * AC5 — em que fase o lançamento estava no corte, por extenso (ex.: "3º dia de
+ * carrinho"; "carrinho encerrado · 2º dia de downsell"; "captação — carrinho
+ * ainda não abriu"; "todas as fases encerradas").
+ */
+export function textoDaFaseNoCorte(f: FasesNoCorte, corte: string): string {
+  const dia = (x: FaseNoCorte) => ORDINAL(diasEntre(x.abertura as string, corte) + 1);
+  if (f.carrinho.estado === "nao-comecou") return "captação — carrinho ainda não abriu";
+  if (f.carrinho.estado === "em-curso") return `${dia(f.carrinho)} dia de carrinho`;
+  const partes = ["carrinho encerrado"];
+  for (const [nome, x] of [["reabertura", f.reabertura], ["downsell", f.downsell]] as const) {
+    if (x.estado === "em-curso") partes.push(`${dia(x)} dia de ${nome}`);
+    else if (x.estado === "nao-comecou") partes.push(`${nome} ainda não começou`);
+  }
+  return partes.length === 1 ? "todas as fases encerradas" : partes.join(" · ");
 }
 
 export interface JanelaDoDebriefing {
@@ -328,14 +419,32 @@ const TEXTO_DO_CORTE: Readonly<Record<MotivoDoCorte, string>> = {
   "comparacao-no-mesmo-d-mais-n": "comparação cortada no mesmo D+N",
 };
 
+export const REGRA_DA_JANELA_EM_ANDAMENTO_FASES_CONCLUIDAS =
+  "de inicioCaptacao até o maior entre fimCarrinho, reabertura.fim e downsell.fim (decisão 2A do dono) — lançamento em andamento com TODAS as fases concluídas até o corte (R9-5): a janela é a do relatório final, não o corte; corta vendas e mídia";
+
+/** Story 49.14 (AC6) — o motivo do fim quando todas as fases terminaram até o corte. */
+export const TEXTO_FIM_PELA_REGRA_2A = "fim da regra 2A — todas as fases concluídas até o corte (R9-5)";
+
+/** Reabertura/downsell respondidos no encerrado (a 49.1: sempre com abertura e fim quando houve). */
+type RespostaFechada = { houve: false } | { houve: true; abertura: string; fim: string };
+
 /**
  * O que a janela precisa da config (a união da 49.1/49.12): encerrado (as
- * datas da regra 2A, todas presentes) ou em andamento (só o início é certo).
- * `corte` é ENTRADA — quem orquestra o calcula; o motor nunca lê relógio.
+ * datas da regra 2A, todas presentes) ou em andamento (só o início é certo;
+ * `null` = "ainda não aconteceu"). `corte` é ENTRADA — quem orquestra o
+ * calcula; o motor nunca lê relógio.
  */
 export type ConfigDaJanela =
-  | { situacaoDoLancamento?: "encerrado"; datasChave: DatasDaJanela & { aberturaCarrinho: string }; corte?: string }
-  | { situacaoDoLancamento: "em-andamento"; datasChave: { inicioCaptacao: string; aberturaCarrinho: string | null }; corte?: string };
+  | {
+      situacaoDoLancamento?: "encerrado";
+      datasChave: { inicioCaptacao: string; aberturaCarrinho: string; fimCarrinho: string; reabertura: RespostaFechada; downsell: RespostaFechada };
+      corte?: string;
+    }
+  | {
+      situacaoDoLancamento: "em-andamento";
+      datasChave: { inicioCaptacao: string; aberturaCarrinho: string | null; fimCarrinho: string | null; reabertura: RespostaDaFase; downsell: RespostaDaFase };
+      corte?: string;
+    };
 
 function exigirDia(campo: string, v: string | undefined): string {
   if (!RE_YMD.test(v ?? "")) throw new RangeError(`janelaDaGeracao: ${campo} não é YYYY-MM-DD: ${String(v)}`);
@@ -347,31 +456,48 @@ function exigirDia(campo: string, v: string | undefined): string {
  * - encerrado sem corte → `janelaDoDebriefing` (a regra 2A), o MESMO objeto
  *   de antes (o encerrado não muda — AC1, AC13 a);
  * - em andamento → `inicioCaptacao` até o corte (AC5); sem corte, lança
- *   (janela inventada seria número errado sem aviso);
+ *   (janela inventada seria número errado sem aviso). Story 49.14: o corte
+ *   leva o estado de cada fase (AC2); com TODAS as fases concluídas até o
+ *   corte, a janela é a da regra 2A — os números do relatório final (AC6, R9-5);
  * - encerrado COM corte (a comparação em D+N, AC8) → o fim é o menor entre o
  *   da regra 2A e o corte; dentro dela, as regras de sempre (decisão 7 inclusa).
  */
 export function janelaDaGeracao(c: ConfigDaJanela): JanelaDoDebriefing {
   if (c.situacaoDoLancamento === "em-andamento") {
-    const inicio = exigirDia("inicioCaptacao", c.datasChave.inicioCaptacao);
+    const d = c.datasChave;
+    const inicio = exigirDia("inicioCaptacao", d.inicioCaptacao);
     if (c.corte === undefined) {
       throw new RangeError("janelaDaGeracao: o modo em andamento exige a data de corte como entrada (ontem em Brasília) — o motor não lê relógio");
     }
     const corte = exigirDia("corte", c.corte);
     if (corte < inicio) throw new RangeError(`janelaDaGeracao: corte (${corte}) antes de inicioCaptacao (${inicio})`);
-    const abertura = c.datasChave.aberturaCarrinho;
+    const fases = fasesNoCorte(d, corte);
+    const todas = todasConcluidas(fases);
+    const dadosDoCorte = {
+      dia: corte,
+      motivo: "lancamento-em-andamento" as const,
+      dMaisN: diasEntre(inicio, corte),
+      carrinhoAberto: fases.carrinho.estado !== "nao-comecou",
+      fases,
+      todasAsFasesConcluidas: todas,
+    };
+    if (todas) {
+      // AC6 (R9-5): todas concluídas → a janela da regra 2A (a do final); o corte fica como rótulo.
+      // todas concluídas ⇒ todo fim que existe é data (fim "ainda não aconteceu" é em curso ou não começou).
+      const j = janelaDoDebriefing({
+        inicioCaptacao: inicio,
+        fimCarrinho: d.fimCarrinho as string,
+        reabertura: d.reabertura as DatasDaJanela["reabertura"],
+        downsell: d.downsell as DatasDaJanela["downsell"],
+      });
+      return { ...j, regra: REGRA_DA_JANELA_EM_ANDAMENTO_FASES_CONCLUIDAS, corte: { ...dadosDoCorte, texto: TEXTO_FIM_PELA_REGRA_2A } };
+    }
     return {
       inicio,
       fim: corte,
       fimPor: "corte",
       regra: REGRA_DA_JANELA_EM_ANDAMENTO,
-      corte: {
-        dia: corte,
-        motivo: "lancamento-em-andamento",
-        texto: TEXTO_DO_CORTE["lancamento-em-andamento"],
-        dMaisN: diasEntre(inicio, corte),
-        carrinhoAberto: abertura !== null && abertura <= corte,
-      },
+      corte: { ...dadosDoCorte, texto: TEXTO_DO_CORTE["lancamento-em-andamento"] },
     };
   }
   const j = janelaDoDebriefing(c.datasChave);
@@ -379,6 +505,7 @@ export function janelaDaGeracao(c: ConfigDaJanela): JanelaDoDebriefing {
   const corte = exigirDia("corte", c.corte);
   if (corte < j.inicio) throw new RangeError(`janelaDaGeracao: corte (${corte}) antes de inicioCaptacao (${j.inicio})`);
   const cortou = corte < j.fim;
+  const fases = fasesNoCorte(c.datasChave, corte);
   return {
     inicio: j.inicio,
     fim: cortou ? corte : j.fim,
@@ -390,8 +517,23 @@ export function janelaDaGeracao(c: ConfigDaJanela): JanelaDoDebriefing {
       texto: TEXTO_DO_CORTE["comparacao-no-mesmo-d-mais-n"],
       dMaisN: diasEntre(j.inicio, corte),
       carrinhoAberto: c.datasChave.aberturaCarrinho <= corte,
+      fases,
+      todasAsFasesConcluidas: todasConcluidas(fases),
     },
   };
+}
+
+/**
+ * Até que dia entram leads e respostas da pesquisa (49.12 AC5), ou `null` (sem
+ * corte: as de sempre). Story 49.14 (AC6, R9-5): no lançamento em andamento com
+ * todas as fases concluídas, nada é cortado além do que o final corta — os
+ * números saem iguais aos do relatório final.
+ */
+export function diaDoCorteDeLeadsEPesquisa(janela: Pick<JanelaDoDebriefing, "corte">): string | null {
+  const c = janela.corte;
+  if (!c) return null;
+  if (c.motivo === "lancamento-em-andamento" && c.todasAsFasesConcluidas === true) return null;
+  return c.dia;
 }
 
 /**
@@ -408,6 +550,46 @@ export const LACUNA_CARRINHO_AINDA_NAO_ABRIU = "CARRINHO_AINDA_NAO_ABRIU" as con
 /** O corte que deixa o carrinho de fora (AC6), ou `null` quando tudo é calculado. */
 export function corteSemCarrinho(janela: Pick<JanelaDoDebriefing, "corte">): CorteDaJanela | null {
   return janela.corte && !janela.corte.carrinhoAberto ? janela.corte : null;
+}
+
+// ---------------------------------------------------------------------------
+// Story 49.14 — carrinho aberto: fases em curso / não começadas (AC2–AC4)
+// ---------------------------------------------------------------------------
+
+/** AC3 — a coorte do principal com o carrinho em curso: vendas só até o corte. */
+export const LACUNA_COORTE_INCOMPLETA = "COORTE_INCOMPLETA" as const;
+/** AC4 — a reabertura não começou até o corte (o carrinho já abriu). */
+export const LACUNA_REABERTURA_AINDA_NAO_COMECOU = "REABERTURA_AINDA_NAO_COMECOU" as const;
+/** AC4 — o downsell não começou até o corte (o carrinho já abriu). */
+export const LACUNA_DOWNSELL_AINDA_NAO_COMECOU = "DOWNSELL_AINDA_NAO_COMECOU" as const;
+
+/**
+ * As fases no corte quando o carrinho JÁ abriu (49.14) — `null` sem corte, sem
+ * fases (janela anterior à 49.14) ou com o carrinho fechado (aí vale a lacuna
+ * do carrinho da 49.12, que já cobre reabertura e downsell).
+ */
+export function fasesComCarrinhoAberto(janela: Pick<JanelaDoDebriefing, "corte">): { corte: CorteDaJanela; fases: FasesNoCorte } | null {
+  const c = janela.corte;
+  if (!c || !c.fases || !c.carrinhoAberto) return null;
+  return { corte: c, fases: c.fases };
+}
+
+const ddmm = (dia: string) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
+
+/** AC3/AC4 — "parcial — carrinho aberto, dados até 06/10 (D+6)"; "parcial — downsell em curso, …". */
+export function textoDaFaseEmCurso(fase: "carrinho" | "reabertura" | "downsell", corte: Pick<CorteDaJanela, "dia" | "dMaisN">): string {
+  const o = fase === "carrinho" ? "carrinho aberto" : `${fase} em curso`;
+  return `parcial — ${o}, dados até ${ddmm(corte.dia)} (D+${corte.dMaisN})`;
+}
+
+/** AC2/AC4 — "downsell ainda não começou — dados até 06/10, D+6" (a lacuna escrita, nunca zero). */
+export function textoDaFaseQueNaoComecou(fase: "reabertura" | "downsell", corte: Pick<CorteDaJanela, "dia" | "dMaisN">): string {
+  return `${fase} ainda não começou — dados até ${ddmm(corte.dia)}, D+${corte.dMaisN}`;
+}
+
+/** AC3 — "coorte incompleta — vendas do principal até 06/10 (D+6); leads recentes ainda não tiveram tempo de comprar". */
+export function textoDaCoorteIncompleta(corte: Pick<CorteDaJanela, "dia" | "dMaisN">): string {
+  return `coorte incompleta — vendas do principal até ${ddmm(corte.dia)} (D+${corte.dMaisN}); leads recentes ainda não tiveram tempo de comprar`;
 }
 
 /** "carrinho ainda não abriu — dados até 06/10, D+6" (AC6) — a lacuna escrita, nunca zero. */

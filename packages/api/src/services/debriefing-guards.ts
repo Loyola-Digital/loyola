@@ -19,8 +19,16 @@
  */
 
 import { CANAIS, FECHAMENTOS, cpcDeLink, ctrDeLink, type Canal } from "@loyola-x/shared";
-import { dataExiste } from "./debriefing-config.js";
-import { aplicarImposto, corteSemCarrinho, LACUNA_CARRINHO_AINDA_NAO_ABRIU } from "./debriefing-hygiene.js";
+import { dataExiste, FIM_AINDA_NAO_DA_FASE } from "./debriefing-config.js";
+import {
+  aplicarImposto,
+  corteSemCarrinho,
+  fasesComCarrinhoAberto,
+  LACUNA_CARRINHO_AINDA_NAO_ABRIU,
+  LACUNA_COORTE_INCOMPLETA,
+  LACUNA_DOWNSELL_AINDA_NAO_COMECOU,
+  LACUNA_REABERTURA_AINDA_NAO_COMECOU,
+} from "./debriefing-hygiene.js";
 import {
   CRITERIO_DE_UNICO_HEADLINE,
   MAXD_PADRAO,
@@ -33,6 +41,7 @@ import {
 } from "./debriefing-money-time-engine.js";
 import {
   ITENS_DA_LACUNA_DO_CARRINHO,
+  ITENS_DAS_LACUNAS_DAS_FASES,
   LACUNA_DIMENSAO_NAO_CONFIRMADA,
   type CodigoDeLacunaDoDebriefing,
   type DebriefingPayload,
@@ -407,10 +416,16 @@ export function checarF7(p: DebriefingPayload): ResultadoInvarianteFase12 {
     const naSerieTotal = soma(c.serie.filter((s) => s.dMais >= 0).map((s) => s.vendas));
     if (naSerieTotal !== c.naCoorte) problemas.push(`Σ série da coorte ${int(naSerieTotal)} ≠ naCoorte ${int(c.naCoorte)}`);
   }
+  // 49.14 (AC3): com o carrinho em curso no corte, a coorte TEM de se declarar incompleta.
+  const emCurso = fasesComCarrinhoAberto(m.janela)?.fases.carrinho.estado === "em-curso";
+  if (emCurso && (!c.incompleta || !m.coortePaga.incompleta)) {
+    problemas.push("carrinho em curso no corte e a coorte não está marcada incompleta (vendas só até o corte)");
+  }
   return resultado(
     "F7",
     problemas,
-    `coorte por data do lead, maxD ${int(c.maxD)}${c.maxD < MAXD_PADRAO ? ` (< ${MAXD_PADRAO}, cauda em alemDaJanela: ${int(c.alemDaJanela.length)})` : ""}; buckets somam ${int(m.vendasPrincipal)}`,
+    `coorte por data do lead, maxD ${int(c.maxD)}${c.maxD < MAXD_PADRAO ? ` (< ${MAXD_PADRAO}, cauda em alemDaJanela: ${int(c.alemDaJanela.length)})` : ""}; buckets somam ${int(m.vendasPrincipal)}` +
+      (c.incompleta ? ` — ${c.incompleta.texto}` : ""),
   );
 }
 
@@ -459,10 +474,21 @@ export function checarF8(p: DebriefingPayload): ResultadoInvarianteFase12 {
 
   conferirRazao("roasSoIngresso", m.roasSoIngresso, m.captacao.faturamentoIngresso.valor, "faturamentoIngresso", invCap, "investimentoCaptacao");
   conferirRazao("roasCaptacao", m.roasCaptacao, m.captacao.faturamentoCaptacao.valor, "faturamentoCaptacao", invCap, "investimentoCaptacao");
-  conferirRazao("roasTotalSemTmb", m.roasTotalSemTmb, fatTotal, "captação + principal + downsell", invTotal, "investimento total");
+  // 49.14 (AC4/AC7): downsell que não começou até o corte fica FORA do numerador do ROAS total.
+  const downsellFora = m.janela.corte?.carrinhoAberto === true && m.janela.corte.fases?.downsell.estado === "nao-comecou";
+  if (downsellFora) {
+    conferirRazao("roasTotalSemTmb", m.roasTotalSemTmb, fatTotal - m.faturamentoPorEtapa.downsell, "captação + principal (downsell ainda não começou)", invTotal, "investimento total");
+  } else {
+    conferirRazao("roasTotalSemTmb", m.roasTotalSemTmb, fatTotal, "captação + principal + downsell", invTotal, "investimento total");
+  }
 
   const d = m.roasTotalSemTmb.decomposicao;
-  if (!dentro(m.roasTotalSemTmb.numerador, d.captacao + d.principal + d.downsell, TOLERANCIAS_FASE12.dinheiro)) {
+  if (downsellFora) {
+    // 49.14: a decomposição guarda o downsell cru (o rastro); o numerador é captação + principal.
+    if (!dentro(m.roasTotalSemTmb.numerador, d.captacao + d.principal, TOLERANCIAS_FASE12.dinheiro)) {
+      problemas.push(`roasTotalSemTmb.numerador ${fmtReais(m.roasTotalSemTmb.numerador)} ≠ captação + principal da decomposição ${fmtReais(d.captacao + d.principal)} (downsell ainda não começou)`);
+    }
+  } else if (!dentro(m.roasTotalSemTmb.numerador, d.captacao + d.principal + d.downsell, TOLERANCIAS_FASE12.dinheiro)) {
     problemas.push(`roasTotalSemTmb.numerador ${fmtReais(m.roasTotalSemTmb.numerador)} ≠ captação + principal + downsell da decomposição ${fmtReais(d.captacao + d.principal + d.downsell)}`);
   }
   for (const g of GRUPOS_HEADLINE) {
@@ -580,18 +606,26 @@ function checarF10EmAndamento(cfg: Extract<DebriefingPayload["config"], { situac
     if (presentes[i - 1]! > presentes[i]!) problemas.push(`fora de ordem: ${presentes[i - 1]} > ${presentes[i]} (início ≤ abertura ≤ fim, entre as que existem)`);
   }
   for (const nome of ["reabertura", "downsell"] as const) {
-    const r = d[nome] as { houve?: unknown; abertura?: string; fim?: string } | null | undefined;
+    const r = d[nome] as { houve?: unknown; abertura?: string; fim?: string | null } | null | undefined;
+    // 49.14 (REQ-002): aberta com o fim "ainda não aconteceu" (fim nulo + a resposta explícita).
+    const fimAindaNao = aindaNao.has(FIM_AINDA_NAO_DA_FASE[nome]);
     if (aindaNao.has(nome)) {
       if (r) problemas.push(`${nome} respondida e também "ainda não aconteceu"`);
+      if (fimAindaNao) problemas.push(`${nome} "ainda não aconteceu" e também "fim ainda não aconteceu"`);
       continue;
     }
     if (!r || typeof r.houve !== "boolean") {
       problemas.push(`${nome} sem resposta explícita (houve indefinido, sem "ainda não aconteceu")`);
       continue;
     }
-    if (r.houve === true) {
+    if (r.houve === true && fimAindaNao) {
+      if (!r.abertura || !dataExiste(r.abertura)) problemas.push(`${nome} com houve = true sem abertura válida`);
+      if (r.fim !== null && r.fim !== undefined) problemas.push(`${nome}.fim = ${String(r.fim)} e também "fim ainda não aconteceu"`);
+    } else if (r.houve === true) {
       if (!r.abertura || !r.fim || !dataExiste(r.abertura) || !dataExiste(r.fim)) problemas.push(`${nome} com houve = true sem abertura/fim válidas`);
       else if (r.abertura > r.fim) problemas.push(`${nome}: abertura ${r.abertura} > fim ${r.fim}`);
+    } else if (fimAindaNao) {
+      problemas.push(`${nome} "fim ainda não aconteceu" sem houve = true`);
     }
   }
   const papeis = new Set(cfg.etapas.map((e) => e.papel));
@@ -647,6 +681,21 @@ export function lacunasExigidas(p: DebriefingPayload): { codigo: CodigoDeLacunaD
       porque: `carrinho ainda não abriu até o corte ${semCarrinho.dia} (D+${int(semCarrinho.dMaisN)})`,
       itens: [...ITENS_DA_LACUNA_DO_CARRINHO],
     });
+  }
+  // 49.14 (AC3/AC4/AC7): carrinho aberto — coorte incompleta e fases que não começaram, item a item.
+  const comCarrinho = fasesComCarrinhoAberto(m.janela);
+  if (comCarrinho) {
+    const { corte, fases } = comCarrinho;
+    const quando = `até o corte ${corte.dia} (D+${int(corte.dMaisN)})`;
+    if (fases.carrinho.estado === "em-curso") {
+      exigidas.push({ codigo: LACUNA_COORTE_INCOMPLETA, porque: `carrinho em curso ${quando}`, itens: [...ITENS_DAS_LACUNAS_DAS_FASES[LACUNA_COORTE_INCOMPLETA]!] });
+    }
+    if (fases.reabertura.estado === "nao-comecou") {
+      exigidas.push({ codigo: LACUNA_REABERTURA_AINDA_NAO_COMECOU, porque: `reabertura não começou ${quando}`, itens: [...ITENS_DAS_LACUNAS_DAS_FASES[LACUNA_REABERTURA_AINDA_NAO_COMECOU]!] });
+    }
+    if (fases.downsell.estado === "nao-comecou") {
+      exigidas.push({ codigo: LACUNA_DOWNSELL_AINDA_NAO_COMECOU, porque: `downsell não começou ${quando}`, itens: [...ITENS_DAS_LACUNAS_DAS_FASES[LACUNA_DOWNSELL_AINDA_NAO_COMECOU]!] });
+    }
   }
   if (m.higiene.dedupNaoAplicada.length > 0) {
     exigidas.push({ codigo: "DEDUP_POR_ID_NAO_APLICADA", porque: `${int(m.higiene.dedupNaoAplicada.length)} planilha(s) sem ID/produto mapeado` });

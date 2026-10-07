@@ -332,6 +332,7 @@ const SUPERFICIE = {
   aindaNaoAconteceuDe: "puro", // fases "ainda não aconteceu", na ordem canônica
   SITUACOES_DO_LANCAMENTO: "constante",
   FASES_QUE_PODEM_NAO_TER_ACONTECIDO: "constante",
+  FIM_AINDA_NAO_DA_FASE: "constante",
   // Constantes
   DEBRIEFING_COMBINACOES_LIBERADAS: "constante",
   DEBRIEFING_PAPEIS: "constante",

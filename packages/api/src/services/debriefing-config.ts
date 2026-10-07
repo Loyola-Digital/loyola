@@ -74,6 +74,17 @@ export type RespostaEtapaExtra =
   | { houve: true; abertura: string; fim: string };
 
 /**
+ * Story 49.14 (REQ-002, AC2) — reabertura/downsell no modo EM ANDAMENTO podem
+ * estar abertos com o FIM "ainda não aconteceu": `houve: true`, abertura
+ * informada, `fim: null` E `fimReabertura`/`fimDownsell` em
+ * `aindaNaoAconteceu` (a resposta explícita — `null` sozinho nunca é resposta,
+ * como na 49.12). No encerrado, `fim` é sempre data (`RespostaEtapaExtra`).
+ */
+export type RespostaEtapaExtraEmAndamento =
+  | { houve: false }
+  | { houve: true; abertura: string; fim: string | null };
+
+/**
  * Story 49.12 (R8-1, AC1) — "O lançamento terminou?": resposta EXPLÍCITA na
  * config. Config salva antes da 49.12 = `encerrado` (decisão de escopo: o PUT
  * só aceitava as três datas, então toda config gravada descreve um lançamento
@@ -87,7 +98,10 @@ export type SituacaoDoLancamento = (typeof SITUACOES_DO_LANCAMENTO)[number];
  * andamento. "Ainda não aconteceu" ≠ "não houve": "não houve" afirma que a
  * etapa não existiu; "ainda não aconteceu" diz que ela não começou até o corte.
  */
-export const FASES_QUE_PODEM_NAO_TER_ACONTECIDO = ["aberturaCarrinho", "fimCarrinho", "reabertura", "downsell"] as const;
+export const FASES_QUE_PODEM_NAO_TER_ACONTECIDO = ["aberturaCarrinho", "fimCarrinho", "reabertura", "downsell", "fimReabertura", "fimDownsell"] as const;
+
+/** Story 49.14 (REQ-002) — o "fim ainda não aconteceu" de cada fase extra (≠ a fase inteira "ainda não aconteceu"). */
+export const FIM_AINDA_NAO_DA_FASE = { reabertura: "fimReabertura", downsell: "fimDownsell" } as const;
 export type FaseQuePodeNaoTerAcontecido = (typeof FASES_QUE_PODEM_NAO_TER_ACONTECIDO)[number];
 
 export interface EtapaDoLancamento {
@@ -192,8 +206,8 @@ export interface DatasChaveEmAndamento {
   inicioCaptacao: string;
   aberturaCarrinho: string | null;
   fimCarrinho: string | null;
-  reabertura: RespostaEtapaExtra | null;
-  downsell: RespostaEtapaExtra | null;
+  reabertura: RespostaEtapaExtraEmAndamento | null;
+  downsell: RespostaEtapaExtraEmAndamento | null;
 }
 
 interface DebriefingConfigLancamentoBase {
@@ -256,7 +270,7 @@ export interface DebriefingConfigLancamentoEncerrado extends DebriefingConfigLan
   datasChave: DatasChave;
 }
 
-/** Story 49.12 — o lançamento em andamento (captação aberta; carrinho aberto é a 49.14). */
+/** Story 49.12/49.14 — o lançamento em andamento (captação aberta ou carrinho aberto). */
 export interface DebriefingConfigLancamentoEmAndamento extends DebriefingConfigLancamentoBase {
   situacaoDoLancamento: "em-andamento";
   datasChave: DatasChaveEmAndamento;
@@ -300,8 +314,8 @@ export interface ValoresDaConfig {
   inicioCaptacao: string | null;
   aberturaCarrinho: string | null;
   fimCarrinho: string | null;
-  reabertura: RespostaEtapaExtra | null;
-  downsell: RespostaEtapaExtra | null;
+  reabertura: RespostaEtapaExtraEmAndamento | null;
+  downsell: RespostaEtapaExtraEmAndamento | null;
   /** A comparação principal — sempre `lancamentosComparacao[0] ?? null` quando a lista vem junto. */
   lancamentoComparacaoFunnelId: string | null;
   /**
@@ -666,6 +680,9 @@ export function problemasDasDatasChave(d: DatasParciais): string[] {
     const r = d[campo];
     if (emAndamento && aindaNao.has(campo)) {
       if (r) p.push(`datasChave.${campo}: responda "houve"/"não houve" OU "ainda não aconteceu", não os dois`);
+      if (aindaNao.has(FIM_AINDA_NAO_DA_FASE[campo])) {
+        p.push(`datasChave.${campo}: "ainda não aconteceu" (a fase inteira) e "fim ainda não aconteceu" ao mesmo tempo — responda um dos dois`);
+      }
       continue;
     }
     if (!r) {
@@ -676,11 +693,22 @@ export function problemasDasDatasChave(d: DatasParciais): string[] {
       );
       continue;
     }
+    const fimAindaNao = FIM_AINDA_NAO_DA_FASE[campo];
     if (r.houve === true) {
       if (!r.abertura) p.push(`datasChave.${campo}.abertura é obrigatória quando houve ${campo}`);
       else if (!dataExiste(r.abertura)) p.push(`datasChave.${campo}.abertura (${r.abertura}) não é uma data válida`);
-      if (!r.fim) p.push(`datasChave.${campo}.fim é obrigatória quando houve ${campo}`);
-      else if (!dataExiste(r.fim)) p.push(`datasChave.${campo}.fim (${r.fim}) não é uma data válida`);
+      // 49.14 (REQ-002): aberta com o fim "ainda não aconteceu" — só em andamento, só com a resposta explícita.
+      if (emAndamento && aindaNao.has(fimAindaNao)) {
+        if (r.fim) p.push(`datasChave.${campo}.fim: responda a data OU "fim ainda não aconteceu", não os dois`);
+      } else if (!r.fim) {
+        p.push(
+          emAndamento
+            ? `datasChave.${campo}.fim é obrigatória quando houve ${campo} (ou "fim ainda não aconteceu", com o lançamento em andamento)`
+            : `datasChave.${campo}.fim é obrigatória quando houve ${campo}`,
+        );
+      } else if (!dataExiste(r.fim)) p.push(`datasChave.${campo}.fim (${r.fim}) não é uma data válida`);
+    } else if (emAndamento && aindaNao.has(fimAindaNao)) {
+      p.push(`datasChave.${campo}: "fim ainda não aconteceu" exige houve = true com a abertura informada`);
     }
   }
 

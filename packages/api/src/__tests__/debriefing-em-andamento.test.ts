@@ -380,6 +380,13 @@ describe.each(["UTC", "America/Sao_Paulo"])("AC3 — corte = ontem em Brasília,
       janela: { inicio: "2026-04-17", fim: "2026-04-20", motivoDoFim: "corte do lançamento em andamento" },
       carrinhoAberto: false,
       aindaNaoAconteceu: ["aberturaCarrinho", "fimCarrinho", "reabertura", "downsell"],
+      // Story 49.14 (AC2): o estado de cada fase no corte
+      fases: {
+        carrinho: { estado: "nao-comecou", abertura: null, fim: null },
+        reabertura: { estado: "nao-comecou", abertura: null, fim: null },
+        downsell: { estado: "nao-comecou", abertura: null, fim: null },
+      },
+      todasAsFasesConcluidas: false,
     });
     expect(p.geradoEm).toBe(AGORA_NA_VIRADA.toISOString());
   });
@@ -404,20 +411,18 @@ describe.each(["UTC", "America/Sao_Paulo"])("AC3 — corte = ontem em Brasília,
 // AC4 — carrinho já aberto: fora desta story (422 até a 49.14)
 // ---------------------------------------------------------------------------
 
-describe("AC4 — carrinho já aberto até o corte → 422 CARRINHO_JA_ABERTO", () => {
+describe("AC4 — carrinho já aberto até o corte (o 422 CARRINHO_JA_ABERTO saiu com a 49.14 AC1)", () => {
   const comAbertura = (aberturaCarrinho: string) =>
     configEmAndamento({
       datasChave: { inicioCaptacao: "2026-04-17", aberturaCarrinho, fimCarrinho: null, reabertura: null, downsell: null },
       aindaNaoAconteceu: ["fimCarrinho", "reabertura", "downsell"],
     });
 
-  it("abertura informada e ≤ corte → 422 explicado (manda gerar como encerrado depois); nada gravado", async () => {
+  it("49.14 AC1: abertura informada e ≤ corte → gera a parcial com o carrinho aberto (sem o 422 da 49.12)", async () => {
     const d = deps({ config: () => comAbertura("2026-04-21") });
     const r = await gerarDebriefing(d, PARAMS);
-    esperar422(r, "CARRINHO_JA_ABERTO");
-    expect(String((r.body as Record<string, unknown>).detalhe)).toMatch(/carrinho abriu em 21\/04\/26, antes do corte \(dados até 21\/04\/26\).*ainda não existe/);
-    expect(String((r.body as Record<string, unknown>).acao)).toMatch(/encerrado/);
-    expect(d.chamadas).not.toContain("gravar");
+    expect(r.status).toBe(200);
+    expect(d.gravados[0]!.payload.situacao).toMatchObject({ carrinhoAberto: true, fases: { carrinho: { estado: "em-curso" } } });
   });
 
   it("abertura informada e DEPOIS do corte (data planejada) → gera a parcial com o carrinho fechado", async () => {

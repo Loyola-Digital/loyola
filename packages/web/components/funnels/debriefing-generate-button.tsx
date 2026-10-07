@@ -41,18 +41,24 @@ import {
   PAPEIS_DO_DEBRIEFING,
   PASSOS_DA_GERACAO,
   ROTULO_DO_PAPEL,
+  avisoDeFasesConcluidas,
   avisoDoBotaoDeGerar,
   corpoDoPut,
+  datasDasFasesDoForm,
   erroDaGeracao,
   erroDaValidacao,
   faltantesDoForm,
   formDoGet,
   formVazio,
   motivoSemEmAndamento,
+  motivoSemFimAindaNao,
   motivoSemSegundoItem,
   nomeDoFunilDaComparacao,
+  ontemEmBrasilia,
   opcoesDaComparacao,
   removidosDoGet,
+  rotuloDoEmAndamento,
+  todasAsFasesTerminaram,
   type ErroDaGeracao,
   type FormDaConfig,
   type PapelDoDebriefing,
@@ -119,7 +125,7 @@ export function DebriefingGenerateButton({ projectId, funnelId, stageId, from }:
         : null;
   // Story 49.12 (AC11): no modo em andamento, o botão diz que gera uma PARCIAL
   // com dados até ontem e, havendo parcial, que vai substituí-la.
-  const avisoParcial = avisoDoBotaoDeGerar(cfg, new Date());
+  const avisoParcial = avisoDoBotaoDeGerar(cfg, new Date(), apiContrato);
 
   function handleGerar() {
     setErro(null);
@@ -149,6 +155,10 @@ export function DebriefingGenerateButton({ projectId, funnelId, stageId, from }:
         </div>
         {avisoParcial && !motivoBloqueio && (
           <p className="max-w-md text-right text-[11px] text-amber-600">{avisoParcial.detalhe}</p>
+        )}
+        {/* Story 49.14 (AC6): todas as fases terminaram — dá para marcar "encerrado" (a geração não é bloqueada). */}
+        {avisoParcial?.fasesConcluidas && !motivoBloqueio && (
+          <p className="max-w-md text-right text-[11px] text-amber-700">{avisoParcial.fasesConcluidas}</p>
         )}
         {motivoBloqueio && (
           <p className="flex max-w-md items-start gap-1 text-right text-[11px] text-red-500">
@@ -270,6 +280,12 @@ function FormularioDaConfig({
   const motivo2 = motivoSemSegundoItem(apiContrato);
   const motivoEmAndamento = motivoSemEmAndamento(apiContrato);
   const emAndamento = f.situacao === "em-andamento";
+  // Story 49.14: o rótulo do "em andamento" segue o contrato; com todas as fases terminadas até ontem, o aviso do AC6.
+  const rotuloEmAndamento = rotuloDoEmAndamento(apiContrato);
+  // QA FE-002: a caixa "Fim ainda não aconteceu" só com a API que a aceita (≥ 36).
+  const motivoFimAindaNao = motivoSemFimAindaNao(apiContrato);
+  const ontem = ontemEmBrasilia(new Date());
+  const fasesConcluidas = emAndamento && todasAsFasesTerminaram(datasDasFasesDoForm(f), ontem) ? avisoDeFasesConcluidas(ontem, apiContrato) : null;
   const vivos = f.comparacoes.filter((id) => !removidos.includes(id));
 
   if (isLoading) return <p className="p-4 text-sm text-muted-foreground">Carregando…</p>;
@@ -387,17 +403,15 @@ function FormularioDaConfig({
               checked={f.situacao === "em-andamento"}
               onChange={() => set({ situacao: "em-andamento" })}
             />
-            Em andamento (captação aberta)
+            {rotuloEmAndamento.rotulo}
           </label>
         </div>
         {motivoEmAndamento ? (
           <p className="text-[11px] text-red-500">{motivoEmAndamento}</p>
         ) : (
-          <p className="text-[11px] text-muted-foreground">
-            Em andamento: o debriefing sai PARCIAL, com os dados até ontem (fuso de Brasília), e a próxima geração substitui a parcial.
-            Carrinho, reabertura e downsell aceitam “ainda não aconteceu”.
-          </p>
+          <p className="text-[11px] text-muted-foreground">{rotuloEmAndamento.dica}</p>
         )}
+        {fasesConcluidas && <p className="text-[11px] text-amber-700">{fasesConcluidas}</p>}
       </section>
 
       {/* Datas-chave */}
@@ -448,7 +462,26 @@ function FormularioDaConfig({
                 <>
                   <Input className="h-8 w-40" type="date" value={f[k].abertura} onChange={(e) => set({ [k]: { ...f[k], abertura: e.target.value } } as Partial<FormDaConfig>)} />
                   <span>a</span>
-                  <Input className="h-8 w-40" type="date" value={f[k].fim} onChange={(e) => set({ [k]: { ...f[k], fim: e.target.value } } as Partial<FormDaConfig>)} />
+                  <Input
+                    className="h-8 w-40"
+                    type="date"
+                    value={f[k].fim}
+                    disabled={emAndamento && !!f[k].fimAindaNao}
+                    onChange={(e) => set({ [k]: { ...f[k], fim: e.target.value } } as Partial<FormDaConfig>)}
+                  />
+                  {/* Story 49.14 (REQ-002): aberta com o fim "ainda não aconteceu" — só em andamento; limpa a data. */}
+                  {emAndamento && (
+                    <label className={`flex items-center gap-1 text-[11px] ${motivoFimAindaNao ? "opacity-50" : ""}`}>
+                      <input
+                        type="checkbox"
+                        disabled={!!motivoFimAindaNao}
+                        checked={!!f[k].fimAindaNao}
+                        onChange={(e) => set({ [k]: { ...f[k], fimAindaNao: e.target.checked, ...(e.target.checked ? { fim: "" } : {}) } } as Partial<FormDaConfig>)}
+                      />
+                      Fim ainda não aconteceu
+                    </label>
+                  )}
+                  {emAndamento && motivoFimAindaNao && <span className="text-[11px] text-red-500">{motivoFimAindaNao}</span>}
                 </>
               )}
             </div>

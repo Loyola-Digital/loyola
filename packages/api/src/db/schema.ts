@@ -26,7 +26,7 @@ import type {
   DimensaoDeCriativo,
   EtapaDoLancamento,
   PerguntasConfirmadasGravadas,
-  RespostaEtapaExtra,
+  RespostaEtapaExtraEmAndamento,
   FaseQuePodeNaoTerAcontecido,
   SituacaoDoLancamento,
 } from "../services/debriefing-config.js";
@@ -3797,9 +3797,13 @@ export const debriefingConfigs = pgTable(
     inicioCaptacao: date("inicio_captacao"),
     aberturaCarrinho: date("abertura_carrinho"),
     fimCarrinho: date("fim_carrinho"),
-    /** `{houve:false}` | `{houve:true, abertura, fim}`. Nulo = sem resposta (≠ não houve). */
-    reabertura: jsonb("reabertura").$type<RespostaEtapaExtra>(),
-    downsell: jsonb("downsell").$type<RespostaEtapaExtra>(),
+    /**
+     * `{houve:false}` | `{houve:true, abertura, fim}`. Nulo = sem resposta (≠ não houve).
+     * 49.14 (REQ-002): no modo em andamento, `fim: null` = "fim ainda não aconteceu"
+     * (com `fimReabertura`/`fimDownsell` em `ainda_nao_aconteceu`). jsonb: sem migration.
+     */
+    reabertura: jsonb("reabertura").$type<RespostaEtapaExtraEmAndamento>(),
+    downsell: jsonb("downsell").$type<RespostaEtapaExtraEmAndamento>(),
     /**
      * Opcional; funil do MESMO projeto. SEM FK de propósito: um ON DELETE SET
      * NULL apagaria a premissa sem rastro; o carregador confere se o funil

@@ -71,9 +71,12 @@ const dataIso = z
   .refine(dataExiste, "data inexistente");
 
 /** Resposta explícita: `{houve:false}` ou `{houve:true, abertura, fim}`. */
+// 49.14 (REQ-002): `fim: null` passa no zod — "fim ainda não aconteceu", só com a
+// resposta explícita (`fimReabertura`/`fimDownsell`) e no modo em andamento;
+// `problemasDasDatasChave` decide (no encerrado, 400 como sempre).
 const respostaEtapaExtra = z.discriminatedUnion("houve", [
   z.object({ houve: z.literal(false) }).strict(),
-  z.object({ houve: z.literal(true), abertura: dataIso, fim: dataIso }).strict(),
+  z.object({ houve: z.literal(true), abertura: dataIso, fim: dataIso.nullable() }).strict(),
 ]);
 
 /** Chave de pergunta real da pesquisa. */
