@@ -1900,9 +1900,15 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
         // Tabela sem linha não explica nada: a lacuna diz por que não há criativo.
         corpo += `<div class="warn" data-lacuna="SEM_CRIATIVO_NA_PESQUISA"><b>Nenhum criativo identificado nas respostas</b> — nenhum respondente da pesquisa trouxe um utm_content que seja ID de anúncio. Sem criativo: ${semCriativo}. Para medir, as UTMs dos anúncios precisam levar o Ad ID no utm_content.</div>`;
       } else {
+        // 49.16: a nota descreve o critério que `postDoGrupo` usou. Sem ad-level no
+        // período todo investimento por anúncio é 0 e fica o primeiro com post na
+        // ordem de volume — então "maior investimento" seria falso.
+        const doAnuncio = tc.adLevel.aplicavel
+          ? "do anúncio de maior investimento do Ad Name"
+          : "do anúncio com mais respondentes do Ad Name, entre os que têm post publicado, porque não há investimento por anúncio no período (sem ad-level)";
         corpo +=
           tabela(["Criativo (Ad)", "n", "A", "B", "C", "D", "% A+B", "% C+D", "Tipo", "Amostra"], linhas, { rolagem: true }) +
-          `<p class="tnote">Ordem do payload (por volume). Sem criativo: ${semCriativo}. O nome abre o post publicado (Instagram; sem ele, Facebook) do anúncio de maior investimento do Ad Name; sem post público, o Ads Manager. Abre em nova aba (depende do viewer da 49.8).</p>`;
+          `<p class="tnote">Ordem do payload (por volume). Sem criativo: ${semCriativo}. O nome abre o post publicado (Instagram; sem ele, Facebook) ${doAnuncio}; sem post público, o Ads Manager. Abre em nova aba (depende do viewer da 49.8).</p>`;
       }
     }
     if (!tc.aplicavel) {
