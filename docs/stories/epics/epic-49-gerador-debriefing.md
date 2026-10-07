@@ -18,6 +18,9 @@
   - A rodada 5 cria a **49.11** (série histórica com lista de lançamentos de comparação) e, no Epic 41, a **41.12** (camada 2 de dedup em todas as pontas).
   - A **rodada 6** (2026-10-02) responde P-9 a P-14 e o limiar (seção "Decisões do dono, rodada 6").
   - **PO validation 2026-10-02:** **49.11** e **41.12** passam a **Ready** (9/10), sem pendência do dono. A 49.11 começa depois da 49.4 na `main`; a 41.12 fatia A pode começar já, a fatia B depois da 41.11.
+- **Estado em 2026-10-07:**
+  - Na `main` (`33e34273`): 49.8, 49.2, 49.1, 41.10, 49.3, 49.4, 49.11, 41.11, 49.5, 41.12 (fatia A) e 49.6.
+  - As **rodadas 8 e 9** do dono (2026-10-07) criam a **49.12**, a **49.13** e a **49.14**: as três **Ready** (9/10 na última validação do @po), prioridade alta, estimativa `[FALTA — dono]`.
 
 ---
 
@@ -172,6 +175,51 @@ Fonte: `decisoes-dono-epic-49.md`, seção "Rodada 6". Fecham as perguntas P-9 a
 | R6-6 (P-12) | A série mostra **só** se a pergunta existe em todos os lançamentos (sem % por lançamento) | 49.11 · 49.6 |
 | R6-7 (P-13) | Desempate sem data entre as duas pesquisas: **vale a resposta da pesquisa de captação**. PG02: A+B 21,93% (era 22,49%) | **49.11** (AC10(d)) · 49.5 |
 | R6-8 (P-10b) | Assinatura/renovação **fora** da camada 2 no perpétuo, identificada por config de produto (não por nome) | 41.12 (fatia B) |
+
+## Decisões do dono, rodada 7 (2026-10-02): ✅ são lei, não reabrir
+
+Fonte: a memória do projeto, gravada em 2026-10-02 (`project_debriefing_skill_no_loyola.md`, parágrafo "Rodada 7 (dono)"), mais as stories **49.6** e **41.12** (seções "Iteração 2 — Rodada 7"). O arquivo original, `decisoes-dono-epic-49.md`, estava no scratchpad de uma sessão que já não existe. Cada item foi conferido contra o texto das stories; onde divergem, **vale a story**, e a divergência fica anotada na linha.
+
+| # | Decisão | Onde se aplica |
+|---|---|---|
+| Visual da 49.6 | A memória registra "visual 49.6 ok". **Divergência:** a story 49.6 ("Pendências de merge", item 3) e o gate dela (AC11) ainda trazem a validação visual do dono como **pendente**. Vale a story: **pendente** até ela ser atualizada | 49.6 |
+| R7-1 | **Remapear o ID do BBE para a coluna `Transaction`** (`transactionId`). Feito, segundo a memória. Nenhuma story registra a execução nem o antes → depois medido. O efeito calculado na 41.11 para setembro, no botão 3, é 100 → 94 transações e R$ 27.745 → R$ 26.283,50 (−5,3%), só na origem paga (`41.11…md:283`) | 41.11 · relatório de Perpétuo do BBE |
+| R7-2 | **Abrir a story 41.13:** o relatório de Perpétuo conta só status pago. `[FALTA — @sm]`: não há arquivo da 41.13 em `docs/stories/` | 41.13 (Epic 41) |
+| R7-3 | `[FALTA — dono]`: não consta da memória nem das stories | — |
+| R7-4 | **A camada 2 vale só nas etapas de captação** (`paid`, `free`, `application`); Vendas fica fora. Na 41.12 a regra mora num ponto único, `camada2ValeNaEtapa`, e a 49.3 passa a usá-lo pelo campo `camada2Vale` das planilhas | 41.12 (fatia A) · 49.3 |
+| R7-5 | **A captação de evento presencial (`event_capture`) fica fora da camada 2** (`ETAPAS_SEM_CAMADA2 = {"event_capture"}`) | 41.12 (fatia A) · 49.3 |
+| R7-6 | **Produto novo fora do mapa na captação = alerta não bloqueante** (`PRODUTO_FORA_DO_MAPA_NA_CAPTACAO`). O F14 da 49.5 continua bloqueando só o caso ambíguo | 49.6 · 49.5 |
+| R7-7 | **Δ da comparação:** com config liberada, recalcula; sem config, usa o **último payload salvo**, com o aviso `COMPARACAO_DE_PAYLOAD_SALVO`; sem nenhum dos dois, 422 `COMPARACAO_SEM_CONFIG`. A story acrescenta três **[AUTO-DECISION]**: gate fechado conta como "sem config"; duas configs liberadas continuam dando 422; o payload é achado pelo `config` gravado nele, não pela etapa | 49.6 · 49.12 AC8/AC12 · 49.14 AC8 |
+| R7-8 | **Título sem comparação = "· edição única"** ("1ª edição" é proibido), travado em teste | 49.6 |
+| R7-9 | **O link do criativo abre o post publicado** (IG → FB → Ads Manager), pela mesma leitura do `meta_ad_creatives_cache` da 18.88, sem chamada à Meta. No PG02 nenhum criativo abre o Instagram, porque o resolver do IG nunca rodou para os anúncios dele; o backfill é chamada à Meta e fica fora da 49.6 (pergunta aberta na story) | 49.6 · 49.4 (loader e motor II) |
+
+## Decisões do dono, rodada 8 (2026-10-07): ✅ são lei, não reabrir
+
+Fonte: conversa com o dono em 2026-10-07. Motivo: o Danilo tentou configurar o DG PG05 (`dg-pg05-out-26`), cuja captação paga está em andamento desde 30/09/2026 com o carrinho ainda fechado, e o formulário não salva sem "Abertura do carrinho" e "Fim do carrinho" (49.12, "Origem"). Pedido do dono: "analisar o lançamento enquanto ele está em andamento, não somente quando todas as etapas estiverem finalizadas" (49.14, "Origem").
+
+| # | Decisão | Onde se aplica |
+|---|---|---|
+| R8-1 | **Opção A: modo "em andamento" com data de corte**, em **duas stories**: captação em andamento (**49.12**) e carrinho em andamento (**49.14**) | **49.12**, **49.14** |
+| R8-2 | Data de corte = **"ontem (dia fechado)"**, no **fuso de Brasília** (`America/Sao_Paulo`), confirmado pelo dono. Não é editável | 49.12 AC3 · 49.14 |
+| R8-3 | **"Cortar o lançamento anterior no mesmo D+N"**. Se a comparação só tiver payload salvo (sem config), o documento sai **sem Δ, com aviso** | 49.12 AC8 · 49.14 AC5 |
+| R8-4 | **"Nova parcial substitui a anterior e só o final fica guardado"**: a parcial atualiza o **mesmo** debriefing (os comentários ficam), e o final também substitui a última parcial | 49.12 AC10 · R-49-17 |
+| R8-5 | **"Lançamento de comparação deve puxar os lançamentos arquivados também"**: story separada, **antes da 49.12**, com o rótulo **"(arquivado)"** no seletor | **49.13** |
+
+**Autoridade:** o Lucas deu ok; a autorização do Epic 49 (decisão 12) cobre as três stories, e os commits fora do scope `restricted` levam `[scope-override]`. O Lucas também pediu **"atualizar o local antes de seguir com qualquer implementação nova"**: as Dev Notes das três stories pedem `git fetch` + `pull` + `status` e a conferência do `baseRefName` da PR.
+
+**Prioridade (2026-10-07, "prioridades ok"):** alta nas três, na ordem **49.13 → 49.12 → 49.14**. As estimativas que o @po propôs ao dono **não foram confirmadas**: `[FALTA — dono]`.
+
+## Decisões do dono, rodada 9 (2026-10-07): ✅ são lei, não reabrir
+
+Fonte: conversa com o dono em 2026-10-07. Respondem às perguntas P-15 a P-19 (seção "Perguntas novas (rodada 8)"). A numeração R9-N é a das stories.
+
+| # | Decisão | Onde se aplica |
+|---|---|---|
+| R9-1 (P-15) | **Sim:** o viewer avisa quando o documento é parcial (com a data de corte e o D+N) e que a próxima geração substitui o documento, inclusive as edições inline | 49.12 AC14 · R-49-17 |
+| R9-2 (P-16) | **Sim, manter:** preencher depois a data do carrinho zera o `validado` das combinações não liberadas por lista, como qualquer mudança de premissa hoje. Sem mudança de código | 49.12 (R5 da story) |
+| R9-3 (P-17) | **"Bloquear com alerta":** mídia da Meta do dia de corte não sincronizada (em alguma conta do lançamento) bloqueia a geração com 422 explicado. Só no modo em andamento | 49.12 AC15 |
+| R9-4 (P-18) | **"Não acontece de pedir comparação de um lançamento em andamento."** Para o gerador não quebrar se o caso aparecer: 422 explicado, nunca Δ sobre parcial (**[AUTO-DECISION @sm]**, aceita pelo @po) | 49.12 AC8 (última regra) |
+| R9-5 (P-19) | **"A no fim do carrinho (ou da reabertura e do downsell): os números saem iguais aos do relatório final."** Com todas as fases concluídas até o corte e o usuário ainda em "em andamento", gera a parcial com a janela no fim da regra 2A, e o formulário avisa que dá para marcar "encerrado" | 49.14 AC6 |
 
 ### R5-1 no Epic 49 (a 41.12 mora no Epic 41)
 
@@ -435,10 +483,21 @@ A skill exige `link_click` em toda métrica de clique (`data/parametros-constant
 | *41.11 (Epic 41)* | *Dependência externa (R3-1):* dedup por `(ID da venda, produto)` no loader do relatório de Perpétuo (botão 3), com a função da 41.10. Ver `epic-41-resumao-comparativo-generator.md` | 41.10 | S–M |
 | **49.11** | **Série histórica com lista de lançamentos de comparação** (R5-3). Lista ordenada na config da 49.1 (migration **0162**), compatível com `lancamentoComparacaoFunnelId`: o campo vira `lista[0]`, com dupla leitura e escrita e sem backfill. Motor II: é série a pergunta que existe em **todos** os lançamentos da lista (só o flag; valores por lançamento = P-12). Traz AC sobre o render e o formulário da 49.6. Definição na seção "Story 49.11" | 49.1, **49.4** | M |
 | *41.12 (Epic 41)* | *Dependência externa (R5-1):* camada 2 de dedup, (e-mail, produto), em todas as pontas, com a regra da 49.3 extraída para `utils/`, mais a réplica `sales-daily-sync`. Ver `epic-41-resumao-comparativo-generator.md` | 41.10, 49.3 (na `main`); 41.11 | L |
+| **49.12** | **Debriefing em andamento: captação aberta** (R8-1 a R8-4, R9-1 a R9-4). Resposta explícita "encerrado" × "em andamento" na config (config salva = encerrado); carrinho, reabertura e downsell aceitam "ainda não aconteceu"; corte = ontem em Brasília, gravado no payload; janela até o corte; o que depende do carrinho vira lacuna escrita; comparação cortada no mesmo D+N (só payload salvo → sem Δ com aviso); a nova parcial atualiza o mesmo debriefing e o final também; aviso de parcial no viewer (AC14); mídia do dia de corte não sincronizada → 422 (AC15); carrinho já aberto → 422 até a 49.14. Prioridade alta, 2ª | 49.6, 49.11 (na `main`); depois da 49.13 (R8-5), sem código em comum | `[FALTA — dono]` |
+| **49.13** | **Lançamentos arquivados na lista de comparação** (R8-5). O seletor do formulário lista ativos e arquivados, com o rótulo "(arquivado)" e os ativos primeiro; comparação salva arquivada aparece pelo nome, não pelo id. Só front: o servidor já aceita arquivados; sem contrato e sem migration. Prioridade alta, 1ª | 49.6, 49.11 (na `main`) | `[FALTA — dono]` |
+| **49.14** | **Debriefing em andamento: carrinho aberto** (R8-1, R9-5). Tira o 422 da 49.12 AC4; cada fase (carrinho, reabertura, downsell) fica concluída, em curso ou não começou, gravada no payload; carrinho em curso calculado até o corte e rotulado parcial, com a coorte marcada incompleta; Δ do carrinho só quando existe dos dois lados em D+N; todas as fases concluídas e ainda "em andamento" → janela no fim da regra 2A (números iguais aos do final). Prioridade alta, 3ª | **49.12** | `[FALTA — dono]` |
 
 **Ordem de merge (rodada 3, histórico):** 49.8 (independente, pode ir primeiro) · (**41.10** ‖ 49.1 ‖ 49.2) → [ **41.11** ‖ (49.3 → 49.4 → 49.5 → 49.6 → 49.7) ] → **49.10** → 49.9.
 
-**Ordem de merge (atual, depois da rodada 5):** ✅ 49.8 · ✅ 41.10 · ✅ 49.1 · ✅ 49.2 · ✅ 49.3 (na `main`) → **49.4** → [ **49.11** ‖ 49.5 ] → 49.6 → 49.7 → **49.10** → 49.9. A trilha do Epic 41 é **41.11 → 41.12**, de preferência com a 41.12 antes da 49.5, e as duas antes da 49.10.
+**Ordem de merge (atual, depois das rodadas 8 e 9):** ✅ 49.8 · ✅ 49.2 · ✅ 49.1 · ✅ 41.10 · ✅ 49.3 · ✅ 49.4 · ✅ 49.11 · ✅ 41.11 · ✅ 49.5 · ✅ 41.12 fatia A · ✅ 49.6 (na `main` @ `33e34273`) → { 49.7 → 49.10 → 49.9, a trilha da rodada 5 } ‖ { **49.13** ‖ (**49.12** → **49.14**) }.
+- ***49.13 primeiro, pela prioridade:*** R8-5 ("antes da 49.12"). Não há código em comum com a 49.12, e as duas dependem só do que já está na `main` (49.6, 49.11). A 49.13 é só front: não sobe contrato nem cria migration.
+- ***49.12 → 49.14:*** a 49.14 estende o modo em andamento que a 49.12 cria e tira o 422 da 49.12 AC4.
+- ***49.12/49.14 × 49.7, 49.9 e 49.10:*** sem ordem obrigatória. As três estão Ready e sem código; quem mergear depois herda a situação e o corte gravados no payload. A 49.10 (perpétuo) não usa datas-chave e não é afetada (49.12, Dev Notes). Ajustes pendentes na 49.7 e na 49.9: ver "Ajustes da rodada 8 nas stories existentes".
+- **Contrato de API:** `API_CONTRACT_VERSION` = **34** na `main` (`shared/src/contract.ts:315`). A 49.12 e a 49.14 sobem, cada uma, para o próximo inteiro livre no merge (35 e 36 se entrarem nessa ordem e nada mais subir antes); quem mergear depois rebaseia. Nenhuma branch remota usa 35+ (conferido em 2026-10-07).
+- **Migration:** última na `main` = `0167_lead_capi_evento_por_faixa.sql`; livre a partir de **0168** (conferido em 2026-10-07 na `main` e nas 138 branches remotas). Só a 49.12 pode precisar de uma, conforme a forma que o @dev e o @data-engineer escolherem para guardar a situação (49.12 AC12). Aplicada à mão e provada por `information_schema`.
+- **`DEBRIEFING_PAYLOAD_VERSAO`** (hoje 1): se a 49.12 ou a 49.14 o subirem, a comparação pelo payload salvo (R7-7) continua achando os payloads das versões anteriores (49.12 AC12, 49.14 AC8).
+
+**Ordem de merge (rodada 5, histórico):** ✅ 49.8 · ✅ 41.10 · ✅ 49.1 · ✅ 49.2 · ✅ 49.3 (na `main`) → **49.4** → [ **49.11** ‖ 49.5 ] → 49.6 → 49.7 → **49.10** → 49.9. A trilha do Epic 41 é **41.11 → 41.12**, de preferência com a 41.12 antes da 49.5, e as duas antes da 49.10.
 - ***49.4 → 49.11:*** a 49.11 altera o motor e o loader da 49.4 (série por lista).
 - ***49.11 antes da 49.6:*** avaliado pelo contrato. O contrato entre as duas é o payload, mais a config que o formulário edita. Com a 49.11 antes, a 49.6 nasce lendo a lista e a série, e ninguém retoca um render já mergeado. `lancamentoComparacaoFunnelId` continua no contrato como `lista[0]`, então o que a 49.4 e a 49.6 já leem não quebra.
 - ***49.11 ‖ 49.5:*** a 49.5 carrega `publico` inteiro em `montarPayloadDebriefing` (`49.5…md:98`), então a série passa sem mudança nela.
@@ -490,6 +549,24 @@ A skill exige `link_click` em toda métrica de clique (`data/parametros-constant
   - depende da 49.11.
 - **49.10:** depende também da 41.12.
 
+**Notas das stories da rodada 8** (os arquivos são do @sm e já estão Ready; aqui só o que o epic precisa carregar):
+- **49.12:**
+  - O gerador nasceu para lançamento **encerrado**: as três datas-chave são obrigatórias (`problemasDasDatasChave`, `debriefing-config.ts:560-596`) e a janela termina no fim do carrinho (`janelaDoDebriefing`, `debriefing-hygiene.ts:271-292`).
+  - Configs já salvas contam como **encerrado** (AUTO-DECISION do @sm, aceita pelo @po): o PUT só aceitava config com as três datas.
+  - O corte D+N **não** corta a base do cross-launch nem a marcação de série histórica (49.11), que falam do lançamento anterior inteiro (AUTO-DECISION do @sm, aceita pelo @po).
+  - "Ainda não aconteceu" ≠ "não houve", no payload e no documento.
+  - Prova central: o encerrado sai com o mesmo SHA de HTML antes e depois; no payload, só os campos novos diferem (AC13(a)).
+  - Fora: escolher a data de corte (R8-2), perpétuo, carrinho aberto (49.14), arquivados (49.13).
+- **49.13:** o filtro de arquivados está só no front (`useFunnels(projectId)` sem o segundo argumento, `debriefing-generate-button.tsx:231`). O servidor já aceita arquivados na validação e na geração. Hoje, um funil arquivado depois de entrar na lista aparece pelo UUID.
+- **49.14:** cada fase tem três estados (concluída, em curso, não começou). O fim da janela é o corte enquanto alguma fase está em curso ou não começou, e o fim da regra 2A quando todas terminaram (R9-5). Prova mais forte, AC9(b): um encerrado gerado "em andamento" com o corte no último dia da janela dá os números do final.
+
+**Ajustes da rodada 8 nas stories existentes** (o @sm aplica; este doc não edita story):
+- **49.9 (Ready, sem código), nota do @po na 49.12 ("Fora"):**
+  - (i) a mente lê o payload persistido, então precisa ler a **situação (parcial/final) e o corte** que a 49.12 AC3 grava no payload, e dizer que o documento é parcial;
+  - (ii) a 49.9 AC5 marca `htmlEditadoDepoisDeGerado` quando `debriefings.updatedAt > createdAt`. A substituição da parcial (49.12 AC10) atualiza o `updatedAt` e daria **falso positivo em toda parcial substituída**.
+  - Nenhum dos dois muda a 49.12; os dois mudam a 49.9. **`[FALTA — @sm]`: ajuste ainda não aplicado na 49.9.**
+- **49.7 (Ready, sem código):** os textos da IA precisam respeitar as lacunas da parcial (49.12, "Fora"). **`[FALTA — @sm]`: nota ainda não registrada na 49.7.**
+
 ### Divergências em relação à proposta do @sm (River) e por quê
 
 | Proposta do @sm | Final | Justificativa |
@@ -528,6 +605,7 @@ A skill exige `link_click` em toda métrica de clique (`data/parametros-constant
 - **Telefone no cruzamento venda × lead:** existe no journey, não no sales-rows → 49.3.
 - **Coorte D+x no servidor:** não existe → 49.3.
 - **IA×Humano:** depende da nomenclatura do expert; expert sem convenção → dimensão não é exibida.
+- **Parcial (49.12/49.14):** o que depende de fase que ainda não começou até o corte (venda do principal, reabertura, downsell) sai como lacuna escrita ("carrinho ainda não abriu — dados até dd/mm, D+N"), nunca zero, e toda lacuna nova entra no catálogo da guarda F11.
 - **Mídia por criativo do DG-PG02:** `meta_ad_insights_daily` do DG começa em 2026-05-20 (change log do Epic 41, 2026-07-31) — o PG02 não tem ad-level, então o split de investimento por tipo de criativo fica indisponível para ele.
 
 ## Riscos de epic
@@ -588,6 +666,14 @@ A skill exige `link_click` em toda métrica de clique (`data/parametros-constant
   - A coluna antiga e a lista nova podem divergir se alguém gravar só uma: API antiga no intervalo entre deploys, ou rollback.
   - **Mitigação:** na divergência vale a coluna antiga; o PUT novo grava as duas coerentes (coluna antiga = `lista[0]`); há teste de cada caminho. A coluna antiga só sai em story futura.
   - Se a P-12 trouxer valores por lançamento, a altura do HTML cresce (R-49-6).
+- **R-49-16 (médio). Número parcial lido como final.** Fonte: 49.12 R2; 49.14 R1 e R2.
+  - Uma conversão no 2º dia de carrinho é muito menor que a final, e a coorte fica truncada porque leads recentes ainda não tiveram tempo de comprar.
+  - Em D+N, a comparação pode já estar no carrinho e o lançamento atual não. Um Δ entre fases diferentes engana. O risco é de leitura, não de conta.
+  - **Mitigação:** título e topo do documento marcados como parcial, com corte e D+N (49.12 AC7); aviso no viewer (R9-1, 49.12 AC14); Δ "—" com nota quando a métrica só existe de um lado (49.12 AC8, 49.14 AC5); a fase da comparação em D+N escrita no documento (49.14 AC5); a coorte declarada incompleta (49.14 AC3); o que não começou vira lacuna escrita, nunca zero (49.12 AC6, 49.14 AC2).
+- **R-49-17 (médio). A substituição da parcial apaga o que foi feito sobre ela.** Fonte: 49.12 R3 e R4, e a nota do @po para a 49.9.
+  - A próxima parcial, e depois o final, sobrescreve a edição inline feita no viewer (`PUT /api/debriefings/:id`), e um comentário ancorado pode passar a apontar para um trecho que mudou. Os marcadores deslocados foram **aceitos pelo dono** (R8-4).
+  - A 49.9 leria toda parcial substituída como "HTML editado depois de gerado" (`updatedAt > createdAt`).
+  - **Mitigação:** o aviso no viewer diz que a próxima geração substitui as edições (R9-1, 49.12 AC14); o botão avisa que vai substituir a parcial (49.12 AC11); a geração que falha não toca a parcial existente (49.12 AC10, AC15); um final nunca é sobrescrito (49.12 AC10). A 49.9 precisa do ajuste registrado em "Ajustes da rodada 8 nas stories existentes".
 
 ## Perguntas ao dono (depois da rodada 3)
 
@@ -641,6 +727,16 @@ A numeração é a dos rascunhos do @sm (41.12: P-9 e P-10; 49.11: P-11 a P-13),
   - Para a 41.10/41.11 foi preciso perguntar (P-3 → R3-2). O rascunho da 41.12 dá a autorização como concedida.
   - **Bloqueia o início da implementação** da 41.12, não a escrita nem a validação da story.
 
+### Perguntas novas (rodada 8, 2026-10-07) — **todas respondidas na rodada 9** (ver "Decisões do dono, rodada 9"): P-15 → R9-1, P-16 → R9-2, P-17 → R9-3, P-18 → R9-4, P-19 → R9-5. Texto original nas stories, mantido como histórico.
+
+A numeração é a das stories: P-15 a P-17 nasceram no rascunho da 49.12; a P-18 (@po), na validação da 49.12; a P-19 (@po), na validação da 49.14.
+
+- **P-15 (49.12):** a edição inline feita no viewer sobre uma parcial se perde na próxima geração. Mostrar um aviso no viewer quando o documento é parcial? → **R9-1: sim** (49.12 AC14).
+- **P-16 (49.12):** para combinações **não** liberadas por lista, preencher depois a data do carrinho zera a validação, como qualquer mudança de premissa hoje. Manter? → **R9-2: sim, manter** (sem código).
+- **P-17 (49.12):** mídia de ontem ainda não sincronizada na hora da geração: bloquear, gerar com alerta no topo ou gerar sem aviso? → **R9-3: "bloquear com alerta"** (49.12 AC15).
+- **P-18 (@po, 49.12):** lançamento de comparação que está ele mesmo em andamento: comparar parcial com total fechado, sair sem Δ, ou ignorar parciais? → **R9-4: "não acontece de pedir comparação de um lançamento em andamento"**. A 49.12 AC8 define só a falha segura (422 explicado; **[AUTO-DECISION @sm]**, aceita pelo @po).
+- **P-19 (@po, 49.14; bloqueava o Ready dela):** todas as fases concluídas até o corte e o usuário ainda em "em andamento": (A) gerar a parcial e avisar, ou (B) bloquear com 422? Se A, a janela termina no fim da regra 2A ou no corte? → **R9-5: "A no fim do carrinho (ou da reabertura e do downsell): os números saem iguais aos do relatório final"** (49.14 AC6).
+
 ## Escopo de autoridade
 
 - **Operações de agente:** criação de stories é do @sm; validação do @po; implementação do @dev; push/PR do @devops. Este doc não cria nem edita story. Os arquivos das stories (49.1–49.10, 41.10, 41.11) são do @sm.
@@ -660,6 +756,9 @@ A numeração é a dos rascunhos do @sm (41.12: P-9 e P-10; 49.11: P-11 a P-13),
 | 41.11 (Epic 41) | `api/src/services/perpetual-report-loader.ts`, `__tests__/` | **Não**: autorizado pela **R3-2**, `[scope-override]` |
 | 49.11 | `api/src/db/schema.ts` + migration 0162, `api/src/services/debriefing-config.ts`, `api/src/routes/debriefing-config.ts`, `api/src/services/debriefing-audience-*.ts`, `shared/src/contract.ts` | **Não**: coberta pela decisão 12 (story do Epic 49), `[scope-override]` |
 | 41.12 (Epic 41) | `api/src/utils/`, `api/src/services/launch-report-*.ts`, `api/src/routes/stage-sales-data.ts`, `api/src/services/perpetual-report-loader.ts`, `api/src/services/perpetual-sales.ts`, `api/src/services/debriefing-hygiene.ts`, `api/src/services/sales-daily-sync.ts` | **Não**: autorizado pela **R6-1** (resposta à P-14), `[scope-override]` |
+| 49.12 | `api/src/services/debriefing-*.ts` (config, hygiene, motores, guardas, render, generate), rotas da config, `shared/src/contract.ts`, migration se houver; `web/components/funnels/debriefing-generate-button.tsx`, `web/lib/utils/debriefing-config-form.ts`, viewer `web/app/(app)/debriefings/[id]/page.tsx` (AC14) | **Misto**: `web/components/funnels/` está no scope; o resto é coberto pela decisão 12 (ok do Lucas na rodada 8), `[scope-override]` |
+| 49.13 | `web/components/funnels/debriefing-generate-button.tsx` e, se a ordem/rótulo for extraída, `web/lib/utils/debriefing-config-form.ts` | **Misto**: o botão está no scope; `web/lib/utils/` é coberto pela decisão 12, `[scope-override]` |
+| 49.14 | `api/src/services/` (motor I, payload, guardas F7/F8/F11, render), `shared/src/contract.ts`; aviso do AC6 no formulário (o mesmo da 49.12) | **Misto**: o mesmo critério da 49.12 |
 
 **Autorização registrada (decisão 12):**
 - O Lucas autorizou o código fora do scope `restricted`. O Danilo informou em 2026-09-30, e esta é a fonte: o relato do Danilo, sem registro direto do Lucas neste repo.
@@ -684,5 +783,7 @@ A numeração é a dos rascunhos do @sm (41.12: P-9 e P-10; 49.11: P-11 a P-13),
 | 2026-09-30 | @po (Pax) | **PO validation final 2026-09-30** (`*validate-story-draft`) de **41.10, 41.11, 49.10 e 49.5**, com consistência cruzada contra os epics 41/49 e a 49.3. **Draft → Ready:** 41.10 (9/10), 41.11 (9/10), 49.10 (9/10). **49.5** segue Ready (9/10). **[AUTO-DECISION] do @pm (41.11: funil sem `productName` → dedup não age e vira alerta) incorporada** na 41.11 (alerta `W-P8`, testes) e estendida, por ser a mesma função, a `transactionId` não mapeado e aos outros chamadores: W10 na 41.10, lacuna `DEDUP_POR_ID_NAO_APLICADA` na 49.3 (cobrada pelo F11 da 49.5), lacuna `PERPETUO_DEDUP_NAO_APLICADA` na 49.10; a 41.10 registra isso como "política de quem chama" no contrato exportado. **[AUTO-DECISION] do @sm na 41.11 conferidas:** dedup antes do corte de janela (coerente; teste reescrito com janelas adjacentes, o único que falha com o bug de volta); alertas não bloqueantes (`W-P7`/`W-P8`, códigos conferidos livres); T0 ler o mapeamento (ampliado a `productName`). **Alerta = efeito na janela** nas duas stories do Epic 41 (o W9 da 41.10 só fecha 25 / 13 assim). **49.10:** o `PerpetualReport` consumido é o de `loadPerpetualReport` (os alertas da 41.11 entram depois do motor); suíte do perpétuo "intacta em relação à `main` com a 41.11". **P-7/P-8:** condicionais e bloqueiam só o merge (41.11/41.10), não início nem Ready. |
 | 2026-10-02 | @pm (Morgan) | **Rodadas 4 e 5 do dono incorporadas.** Este registro toca **só os docs de epic** (49 e 41). Os arquivos de story (49.11 e 41.12 novas; ajustes em 49.3–49.6 e 49.10) são do @sm, que os escreveu em paralelo; este registro foi **alinhado aos rascunhos dele**.<br>**Rodada 4** (já aplicada nas stories, agora registrada no epic): **R4-4 fecha a P-8** (o Resumão do PG04 `6b4c3492` é gerado de novo depois da 41.10); R4-5 (0161) vira pré-requisito da 49.11; R4-14 vale por item da lista na 49.11.<br>**R5-1:** a **41.12** foi definida no Epic 41: camada 2 em todas as pontas, mais a réplica `sales-daily-sync`, depois da 41.11. Conferido na `main`: a camada 2 só existe inline em `debriefing-hygiene.ts:548-562`. A 49.10 passa a depender da 41.12.<br>**R5-2:** comportamento da 49.4 mantido e DEC-OWNER-1 fechada; `pesquisasExcluidas` fica sem chamador e nenhum campo entra na config (**[AUTO-DECISION]**); desempate = P-13, **[AUTO-DECISION]** sem bloquear o merge da 49.4.<br>**R5-3: story 49.11** definida. Conferido: o campo único `lancamentoComparacaoFunnelId` (0161, sem FK); o Motor II só marca `serieHistorica` e não tabula o anterior; o Motor I não lê a comparação; a 0162 está livre. Do rascunho: `lista[0]` é a principal; dupla leitura e escrita sem backfill (na divergência vale a coluna antiga); R4-14 por item, com a promoção da principal pendente da P-11; só o flag "existe em todos" (valores = P-12); AC sobre o render e o formulário da 49.6. ⚠️ "O primeiro é a principal" não está no texto da R5-3: tratado como AUTO-DECISION até o dono confirmar (P-11).<br>**Ordem de merge:** 49.4 → [49.11 ‖ 49.5] → 49.6 → 49.7 → 49.10 → 49.9, avaliada pelo contrato: a 49.11 vem antes da 49.6, e a 49.5 carrega `publico` inteiro. Trilha 41.11 → 41.12, de preferência antes da 49.5, e as duas antes da 49.10.<br>**Riscos:** R-49-14 (a 41.12 muda números em cinco pontas, mais a réplica) e R-49-15 (duas fontes para "a comparação" na transição).<br>**Perguntas:** P-9 (relatórios já gerados), P-10 (recompra no perpétuo), P-11 (principal removida; confirmar `lista[0]`), P-12 (valores e KPIs na série), P-13 (desempate, já enviada) e P-14 (autorização do Lucas para a 41.12; bloqueia o início da implementação). |
 | 2026-10-02 | @po (Pax) | **PO validation 2026-10-02** (`*validate-story-draft`, 10 pontos) da **49.11** e da **41.12**: as duas **Draft → Ready** (9/10), sem pendência do dono. **Rodada 6 registrada** (R6-1 a R6-8). **49.11:** "o primeiro é a principal" estava atribuído à R5-3 — virou decisão pela R6-5; R6-6 fecha a série em "existe em todos"; R6-7 entra como AC10(d) com o campo `pesquisaDeCaptacaoPorEtapa` (**[AUTO-DECISION @po]**, mesma 0162, 21 colunas; nada em `funnel_surveys` distingue as duas pesquisas); `Depends On` da 49.6 virou `Bloqueia`; **AC7/AC9 transferidos à 49.6** (**[AUTO-DECISION @po]**). **41.12:** R6-1 (autorização), R6-2 (perpétuo por janela), R6-3 (regerar uma vez só depois da 41.12; a R4-4 e o AC7b da 41.10 ajustados), R6-4 (5%), R6-8 (marca `recurring_products`, **[AUTO-DECISION @po]**, fatia B); fatias A/B; `sales-data-daily`; comunicação com o CAC da cadeia do Inácio. **49.5:** nota de dependência da 41.12 (fim da classificação `definicao` dos −R$ 596,30) e lacuna nova da 49.11 no F11. **Follow-up de doc:** a 49.6 registra a absorção do AC7/AC9 da 49.11 antes de começar. |
+| 2026-10-07 | @pm (Morgan) | **Rodadas 8 e 9 do dono incorporadas** (fonte: conversa com o dono em 2026-10-07). Este registro toca **só o epic**; as stories 49.12, 49.13 e 49.14 são do @sm e já estão Ready (validação do @po). O epic foi **alinhado às stories**: a numeração R9-N e P-15 a P-19 é a delas.<br>**Rodada 8:** R8-1 (opção A, modo "em andamento" com data de corte, em duas stories: 49.12 captação e 49.14 carrinho); R8-2 (corte = "ontem (dia fechado)", fuso de Brasília); R8-3 (comparação cortada no mesmo D+N; só payload salvo → sem Δ com aviso); R8-4 (a nova parcial atualiza o mesmo debriefing, comentários ficam, e o final substitui a última parcial); R8-5 (arquivados na comparação, story **49.13** antes da 49.12, rótulo "(arquivado)"). Ok do Lucas (decisão 12 cobre) e pedido de atualizar o local antes de qualquer implementação nova.<br>**Rodada 9:** P-15 → R9-1 (aviso de parcial no viewer, 49.12 AC14); P-16 → R9-2 (manter o reset de `validado`); P-17 → R9-3 ("bloquear com alerta", 49.12 AC15); P-18 → R9-4 ("não acontece"; 422 explicado, [AUTO-DECISION @sm] aceita pelo @po, 49.12 AC8); P-19 → R9-5 (janela no fim da regra 2A, 49.14 AC6).<br>**Stories:** linhas 49.12, 49.13 e 49.14 na tabela, prioridade alta na ordem 49.13 → 49.12 → 49.14 ("prioridades ok"). As estimativas propostas pelo @po **não foram confirmadas pelo dono**: `[FALTA — dono]`.<br>**Ordem de merge:** depois do que está na `main` (`33e34273`), 49.13 ‖ (49.12 → 49.14), em paralelo à trilha 49.7 → 49.10 → 49.9. Contrato: 34 na `main`, a 49.12 e a 49.14 sobem para os próximos livres (a 49.13 não sobe). Migration livre a partir de 0168, só se a 49.12 precisar. Conferido em 2026-10-07 na `main` e nas branches remotas.<br>**Riscos novos:** R-49-16 (número parcial lido como final) e R-49-17 (a substituição da parcial apaga edição inline, desloca marcadores e faria a 49.9 marcar toda parcial como editada).<br>**Pendências para o @sm:** ajuste da 49.9 (ler situação e corte do payload; `htmlEditadoDepoisDeGerado` por `updatedAt > createdAt` daria falso positivo em toda parcial substituída) e nota da 49.7 (textos respeitam as lacunas da parcial). **Pendência do @pm:** a rodada 7 está nas stories 49.6 e 41.12 (que citam R7-4 a R7-9), mas não neste epic. Escopo de autoridade com as três stories novas. |
+| 2026-10-07 | @pm (Morgan) | **Rodada 7 do dono registrada** (2026-10-02), o que fecha a pendência do @pm da linha anterior. Fonte: a memória do projeto (`project_debriefing_skill_no_loyola.md`, "Rodada 7 (dono)") e as stories 49.6/41.12. O `decisoes-dono-epic-49.md` não existe mais. Cada item foi conferido contra as stories, e vale a story onde houver divergência.<br>**Conferem com as stories:** R7-4 e R7-5 (41.12), R7-6 a R7-9 (49.6). As três [AUTO-DECISION] da 49.6 sobre a R7-7 ficaram anotadas.<br>**Divergências anotadas:** (1) "visual 49.6 ok" na memória × validação visual **pendente** na story e no gate da 49.6, e vale a story; (2) R7-1 (remap do BBE para `Transaction`): "feito" só na memória; os números 100 → 94 / R$ 27.745 → R$ 26.283,50 são o efeito **calculado** na 41.11 (`:283`), não a medição depois do remap.<br>**Lacunas:** R7-3 `[FALTA — dono]`; R7-2 manda abrir a 41.13, que não tem arquivo em `docs/stories/` (`[FALTA — @sm]`). |
 
 <!-- clickup:17tqameqcth -->
