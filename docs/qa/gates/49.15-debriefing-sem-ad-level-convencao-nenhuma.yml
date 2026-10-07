@@ -1,0 +1,77 @@
+schema: 1
+storyId: '49.15'
+story: '49.15'
+story_title: 'Debriefing com convenção de criativo "nenhuma" e sem ad-level no período não pode falhar na guarda F11'
+verdict: PASS
+gate: PASS
+status_reason: 'ACs 1–5 atendidos e conferidos no código. O predicado `tipoDeCriativo.aplicavel` equivale exatamente a `dimensao !== "nenhuma"` (um único produtor, dois ramos literais). O 422 virou 200 e os SHAs do AC4 foram reproduzidos pelo QA nas três rodadas, com o comparador provado sensível. 10/10 mutações do @dev e 7 das 11 do QA morreram; as 4 sobreviventes são equivalentes ou pré-existentes. Ficam 4 issues low, sem bloqueio, e uma delas (REQ-001) vira story nova.'
+reviewer: 'Quinn'
+updated: '2026-10-07T14:34:00-03:00'
+branch: 'fix/49.15-sem-ad-level'
+commit_reviewed: 'df59c364 (fix + testes) e a3227473 (story)'
+base: 'origin/main @ 25413b39. `git fetch origin` no início e no fim do gate (14:33), em 2026-10-07: a main não andou.'
+
+issues:
+  - id: REQ-001
+    severity: low
+    category: requirements
+    description: 'Achado do @dev, confirmado. O link do nome em "Criativo × Faixa" vem de `postDoGrupo(porVolume, spendPorAdId, postPorAdId)` (`debriefing-audience-engine.ts:1253`). `spendPorAdId` sai só do ad-level (`:1219-1220`). Sem ad-level, todo spend é 0; `postDoGrupo` começa com `melhorSpend = -1` e troca só com `sp > melhorSpend` (`utils/post-do-criativo.ts:61,66`), então fica o primeiro ad_id com post na ordem `porVolume`, que é a de respondentes (`:1224`). A nota do render continua dizendo "do anúncio de maior investimento do Ad Name" (`debriefing-render.ts:1544`), e isso é inexato. Vale com qualquer dimensão, e também com ad-level quando os ad_ids com post não gastaram no período. Com a dimensão exibida, a lacuna "Mídia por criativo indisponível" ao menos sinaliza que faltou ad-level. Com "nenhuma", o caso que a 49.15 destravou, o documento não diz em lugar nenhum que faltou ad-level, então a nota fica inexata em silêncio. O link continua apontando para um post real do mesmo Ad Name; não é dado errado, é critério descrito errado. Não viola o AC2 na letra ("depender de ad-level e ficar sem dado": a célula tem dado), e o @dev registrou o achado como o AC2 pedia.'
+    recommendation: 'Story nova (@sm/@po): a nota segue o critério efetivo. Por exemplo, sem spend no grupo, "do anúncio com mais respondentes (sem investimento por anúncio no período)". Ela muda o HTML do caso "com dimensão, sem ad-level", que o AC4 da 49.15 congela, e por isso precisa de AC próprio de SHA. A fixture deve ter criativo na pesquisa e 2+ ad_ids com post no mesmo Ad Name, porque a sintética de hoje não exercita o desempate (ver TEST-001).'
+    owner: '@sm/@po'
+    status: open
+
+  - id: TEST-001
+    severity: low
+    category: tests
+    description: 'A pesquisa da fixture sintética não traz criativo. Com isso, a tabela "Criativo × Faixa" sai vazia nos 6 casos do AC4, e o único leitor do ad-level que o documento ainda exibe com "nenhuma" (o `linkDoPost`) não entra nos SHAs nem nos testes. O @dev declarou isso na ressalva do item 6 do AC2. Não esconde defeito desta story, porque a 49.15 não mexe no motor; mas o "nenhuma com ad-level = nenhuma sem ad-level no HTML" vale só para esta fixture.'
+    recommendation: 'Junto da story do REQ-001.'
+    status: open
+
+  - id: TEST-002
+    severity: low
+    category: tests
+    description: 'Pré-existente, fora do escopo. A mutação Q11 do QA (o loader passa `dimensaoDeCriativo: "nenhuma"` fixo, em vez de `config.dimensaoDeCriativo`, em `debriefing-audience-loader.ts:810`) sobrevive à suíte de debriefing inteira (677/677). Os testes da 49.15 entram pelo `calcularPayload` falso e não passam pelo loader. Nenhum teste prende o fio config → loader → Motor II da dimensão.'
+    recommendation: 'Um teste de loader que afirme `entrada.config.dimensaoDeCriativo === config.dimensaoDeCriativo`. Pode ir numa story de testes do Epic 49 ou na do REQ-001.'
+    status: open
+
+  - id: REL-001
+    severity: low
+    category: reliability
+    description: 'Conflito textual em `debriefing-guards.ts` com a 49.12 (`origin/feat/49.12-debriefing-em-andamento` @ 117b90c5, PR #992) e com a 49.14 (f0543b52, empilhada na 49.12), conferido por `git merge-tree`. A 49.15 insere `semAdLevelNaDimensaoExibida` logo depois de `checarF10`, no mesmo ponto em que a 49.12 insere `checarF10EmAndamento`. Os dois call sites (F11 e WF9) e o motor fazem auto-merge. Na 49.12 e na 49.14 não há leitor novo de `adLevel.motivo` além desses dois (grep).'
+    recommendation: 'Quem mergear depois (provavelmente a 49.12) mantém os dois blocos no rebase e roda `debriefing-sem-ad-level-49-15.test.ts` no modo parcial também. O AC1 diz "e parcial também, se a 49.12 já estiver na main".'
+    owner: '@dev/@devops'
+    status: open
+
+top_issues:
+  - id: REQ-001
+    severity: low
+    finding: 'Sem ad-level, o link de "Criativo × Faixa" desempata por respondentes, mas a nota diz "anúncio de maior investimento" (render.ts:1544 × engine.ts:1219-1253 × post-do-criativo.ts:61-66). Com "nenhuma", isso fica em silêncio.'
+    suggested_action: 'Story nova, com AC de SHA próprio e fixture com criativo na pesquisa.'
+  - id: REL-001
+    severity: low
+    finding: 'Conflito textual com a 49.12/49.14 em debriefing-guards.ts (inserção adjacente).'
+    suggested_action: 'No rebase, manter os dois blocos e rodar o teste da 49.15.'
+  - id: TEST-002
+    severity: low
+    finding: 'O fio da dimensão no loader (Q11) não tem teste. Pré-existente.'
+    suggested_action: 'Teste de loader numa story futura.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'O diff tem 2 serviços. Em `debriefing-guards.ts`, o predicado `semAdLevelNaDimensaoExibida(p) = tc.aplicavel && tc.adLevel.motivo === "SEM_AD_LEVEL"` passou a decidir `lacunasExigidas` (F11, `:575`) e o WF9 (`:852`); o `porque` e a mensagem do WF9 continuam iguais. Em `debriefing-audience-engine.ts`, só entrou um comentário. A correção na guarda deixa o payload igual em todos os casos, então o AC4 vale por construção, e o SHA confirma.'
+  predicado: 'Certo e sem buraco do R1. `tipoDeCriativo` tem um único produtor, `computeDebriefingAudience`, com dois ramos: `"nenhuma"` → `aplicavel: false` literal (`:1281`); qualquer outra dimensão → `aplicavel: true` literal (`:1387`). Logo, `aplicavel ≡ dimensao !== "nenhuma"` para todo payload que o motor gera, e a Q1 (trocar um pelo outro) é equivalente. O render decide pelo mesmo campo: `if (!tc.aplicavel)` → lacuna "Dimensão de criativo (…) não exibida"; senão monta "Criativo por tipo" e, com `!tc.adLevel.aplicavel`, "Mídia por criativo indisponível" (`debriefing-render.ts:1547-1562`). Não existe caso com dimensão ≠ "nenhuma" e `aplicavel = false`, então a falta de ad-level com dimensão exibida continua exigida e avisada; Q2–Q5 e M2/M4/M6 provam isso. A `motivo` existe exatamente quando `!adLevel.aplicavel` nos dois ramos, e por isso a Q2 também é equivalente. Os conflitos de tipo com "nenhuma" são sempre `[]` (`tipoDoAdId` devolve `null` em `:1177`, e o ramo grava `conflitosDeTipo: []`), então o WF9 de conflito não muda (Q10 equivalente).'
+  acceptance_criteria: 'AC1 ✓: com o código da main, `validateDebriefing` do caso "nenhuma" sem ad-level dá bloqueado = true e F11 failed "lacuna SEM_AD_LEVEL ausente em lacunas[] (sem ad-level no período)". Com a correção: bloqueado = false, sem violações, e o orquestrador devolve 200. A parcial depende da 49.12 (REL-001). AC2 ✓: sem lacuna nem WF9 de ad-level, e o HTML sem "por tipo de criativo não medidos", "Mídia por criativo indisponível" e "Criativo por tipo". O @dev listou os leitores do ad-level (render, lista de lacunas, banner, `campanhasDoAdId`, `spendPorAdId`, money-time loader), e a leitura do QA bate com a dele; o caso do `linkDoPost` é o REQ-001. AC3 ✓: com ia-humano e com video-estatico sem ad-level, a lacuna é registrada e exigida e o WF9 avisa; tirando a lacuna, F11 failed e 422 sem gravar. AC4 ✓: ver `ac4_sha`. AC5 ✓: (a) 4 testes falham na main, conferido pelo QA ao trocar os 2 serviços pelos da main; (b) e (c) cobertos; (d) M1/M2 e Q3/Q4/Q5 morrem.'
+  ac4_sha: 'O QA rodou o próprio script do @dev (`scratchpad/sha-49-15.mts`, cópia em `qa-sha-49-15.mts`) com `tsx`, em 3 estados: depois (HEAD), antes (os 2 serviços de `origin/main`) e de volta à HEAD. Os resultados batem byte a byte com `sha-antes.txt`/`sha-depois.txt` do @dev. Os 5 casos congelados saem idênticos antes e depois: ia-humano com 4486fcdc…/13a61e0b…; ia-humano sem 0fa878ff…/b14e5196…; video-estatico com f9fe478e…/d5b14a8e…; video-estatico sem e6f90adb…/9b202af3…; nenhuma com 75eff4e2…/135d3acc… (HTML/payload). No caso corrigido, "nenhuma" sem ad-level, a main dá 422 INVARIANTE_VIOLADO e a HEAD dá 200 com HTML 75eff4e2… (igual a "nenhuma com") e payload 2d7d933f…. O script compara o que diz comparar: chama `gerarDebriefing` com os motores reais da worktree, o `agora` fixado em `GERADO_EM` e SHA-256 de `body.html` e de `JSON.stringify(body.payload)`. Os alertas não estão no payload, mas entram no HTML pelo banner. Sonda de sensibilidade: trocar uma palavra da mensagem do WF9 mudou o SHA do HTML exatamente nas 2 linhas com WF9 e em nenhuma outra. O comparador não é cego ao que a guarda emite.'
+  unit_tests: 'Arquivo da story: 14/14. Suíte de debriefing: 20 arquivos, 677/677. O `mutar-49-15.py` do @dev, reexecutado, dá 10/10 mortas (M1 4, M2 9, M3 4, M4 6, M5 2, M6 5, M7 2, M8 20, M9 4, M10 2 falhas). Mutações do QA (`scratchpad/qa-mutar-49-15.py`, suíte de debriefing inteira, cada uma restaurada e `git status` limpo ao fim): Q1 aplicavel → `dimensao !== "nenhuma"`: sobrevive, EQUIVALENTE (ver predicado). Q2 motivo → `!adLevel.aplicavel`: sobrevive, EQUIVALENTE. Q3 `&&` → `||`: morre (14). Q4 `!aplicavel`: morre (13). Q5 só `aplicavel`, exige mesmo com ad-level: morre (10). Q6 ramo "nenhuma" com `aplicavel: true`: morre (5). Q7 ramo "nenhuma" sem o `motivo` (só o fato no payload): sobrevive. Não há leitor documental (o render não lê `motivo` e a guarda só lê com `aplicavel`), e o AC4 não congela o payload do caso "nenhuma" sem ad-level, então não há defeito. Q8 render nunca mostra "Mídia por criativo indisponível": morre (3). Q9 chamador, F11 fora de `validateDebriefing`: morre (10). Q10 a mensagem do WF9 volta a ler `motivo` direto: sobrevive, EQUIVALENTE (com "nenhuma", conflitos = [] e o bloco nem entra). Q11 fio do loader com a dimensão fixa em "nenhuma": sobrevive, pré-existente (TEST-002). Nos dois sentidos pedidos: "exigir sempre" (M1/M3/M5) e "nunca exigir" (M2/M4/M6/Q4) morrem.'
+  no_regressions: 'Rodado pelo QA: `node_modules/.bin/tsc --noEmit -p packages/api` exit 0, sem saída. `eslint src/` da API: 0 erros e 1 warning pré-existente (`routes/lp-campaigns.ts:57`). API inteira: 238 arquivos, 10 falhas e 4.438 passando (4.448 testes); as falhas são as 10 pré-existentes conhecidas (funnel-stages-lead-inputs 3, instagram-routes 1, instagram 1, projects 3, schema 2), nenhuma nova.'
+  security: 'N/A: nenhuma rota, acesso ou dado novo. A correção só afrouxa uma exigência num caso em que o documento não exibe a dimensão; com a dimensão exibida, a exigência segue presa por M2/M4/M6/Q4.'
+  api_contract: 'N/A: sem migration, sem mudança de forma do payload nem da config, sem bump. O payload sai idêntico por SHA.'
+  documentation: 'Dev Agent Record completo: `[AUTO-DECISION]` (guarda × motor; não proibir a lacuna na F11), AC2 item a item, tabela de SHA e mutações. O achado do link (REQ-001) foi registrado pelo @dev em vez de corrigido, o que está certo, porque mexeria no HTML congelado pelo AC4.'
+
+notes:
+  - '[AUTO-DECISION] PASS ou CONCERNS? → PASS (razão: todos os ACs atendidos e reproduzidos; não há issue high nem medium; as 4 lows são o achado do link que vira story nova, um furo de fixture ligado a ele, um furo de teste pré-existente e o conflito textual previsível com a 49.12, já antecipado na Dev Note da story).'
+  - '[AUTO-DECISION] O REQ-001 é violação do AC2? → Não na letra: o AC2 fala de algo que "fica sem dado", e a célula tem dado (um post real do Ad Name). O critério descrito na nota fica inexato, o que é débito de texto com causa pré-existente; o caso "com dimensão" já existia na main.'
+  - '[AUTO-DECISION] Trocar `aplicavel` por `dimensao !== "nenhuma"`? → Indiferente hoje (Q1 equivalente). `aplicavel` é a escolha melhor porque é o mesmo campo que o render lê, e assim guarda e documento não divergem se um 3º ramo surgir.'
+  - 'CodeRabbit não executado (CLI ausente no macOS). Revisão manual, SHAs e mutações.'
+  - 'Próximo: @devops *push / PR. A ordem de merge com a 49.12 está no REL-001.'
