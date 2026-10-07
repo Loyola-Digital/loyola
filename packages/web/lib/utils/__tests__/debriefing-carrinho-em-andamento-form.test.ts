@@ -12,6 +12,7 @@ import {
   faltantesDoForm,
   formDoGet,
   formVazio,
+  motivoSemFimAindaNao,
   rotuloDoEmAndamento,
   todasAsFasesTerminaram,
   type DebriefingConfigGet,
@@ -182,5 +183,17 @@ describe("REQ-002 — reabertura/downsell abertos com o fim 'ainda não acontece
   it("a fase aberta com o fim 'ainda não aconteceu' nunca terminou (aviso do AC6)", () => {
     expect(datasDasFasesDoForm(base).downsell).toEqual({ houve: true, abertura: "2026-10-01", fim: null });
     expect(todasAsFasesTerminaram(datasDasFasesDoForm(base), "2026-10-06")).toBe(false);
+  });
+});
+
+describe("FE-002 — 'fim ainda não aconteceu' só com a API ≥ 36", () => {
+  it("v36+: sem motivo; v35, v34 ou desconhecido: a frase de API atrás", () => {
+    expect(motivoSemFimAindaNao(36)).toBeNull();
+    expect(motivoSemFimAindaNao(37)).toBeNull();
+    expect(motivoSemFimAindaNao(35)).toBe(
+      "A API em uso (contrato 35) ainda não aceita “fim ainda não aconteceu” (contrato 36) — provavelmente está atrás do painel. Veja o aviso de versão no topo.",
+    );
+    expect(motivoSemFimAindaNao(34)).toMatch(/contrato 34/);
+    expect(motivoSemFimAindaNao(undefined)).toMatch(/^A API em uso ainda não aceita/);
   });
 });

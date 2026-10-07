@@ -43,8 +43,16 @@ describe("o rótulo do 'em andamento' segue o contrato da API", () => {
 describe("REQ-002 — a caixa 'fim ainda não aconteceu' de reabertura/downsell", () => {
   it("só no modo em andamento, desliga o campo do fim e limpa a data ao marcar", () => {
     expect(botao).toMatch(/disabled=\{emAndamento && !!f\[k\]\.fimAindaNao\}/);
-    expect(botao).toMatch(/\{emAndamento && \(\s*<label className="flex items-center gap-1 text-\[11px\]">\s*<input\s*type="checkbox"\s*checked=\{!!f\[k\]\.fimAindaNao\}/);
+    expect(botao).toMatch(/\{emAndamento && \(\s*<label className=\{`flex items-center gap-1 text-\[11px\][^`]*`\}>\s*<input\s*type="checkbox"\s*disabled=\{!!motivoFimAindaNao\}\s*checked=\{!!f\[k\]\.fimAindaNao\}/);
     expect(botao).toMatch(/set\(\{ \[k\]: \{ \.\.\.f\[k\], fimAindaNao: e\.target\.checked, \.\.\.\(e\.target\.checked \? \{ fim: "" \} : \{\}\) \} \}/);
     expect(botao).toContain("Fim ainda não aconteceu");
+  });
+});
+
+describe("FE-002 — a caixa 'fim ainda não aconteceu' contra a API anterior", () => {
+  it("o motivo vem de `motivoSemFimAindaNao(apiContrato)`, desabilita a caixa e aparece por escrito", () => {
+    expect(botao).toMatch(/const motivoFimAindaNao = motivoSemFimAindaNao\(apiContrato\);/);
+    expect(botao).toMatch(/disabled=\{!!motivoFimAindaNao\}/);
+    expect(botao).toMatch(/\{emAndamento && motivoFimAindaNao && <span className="text-\[11px\] text-red-500">\{motivoFimAindaNao\}<\/span>\}/);
   });
 });

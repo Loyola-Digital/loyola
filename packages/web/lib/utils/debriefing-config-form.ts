@@ -427,6 +427,17 @@ export function avisoDoBotaoDeGerar(
 }
 
 /**
+ * QA 49.14 FE-002 — a caixa "Fim ainda não aconteceu" (REQ-002) só com a API
+ * ≥ 36: a v35 recusa `fimReabertura`/`fimDownsell` e o `fim: null` no PUT (400).
+ * Contra a API anterior (ou de contrato desconhecido), a caixa fica desabilitada
+ * com a frase de API atrás (padrão da 47.15/FE-001).
+ */
+export function motivoSemFimAindaNao(apiContrato: number | null | undefined): string | null {
+  if (typeof apiContrato === "number" && apiContrato >= CONTRATO_DO_CARRINHO_EM_ANDAMENTO) return null;
+  return `A API em uso${typeof apiContrato === "number" ? ` (contrato ${apiContrato})` : ""} ainda não aceita “fim ainda não aconteceu” (contrato ${CONTRATO_DO_CARRINHO_EM_ANDAMENTO}) — provavelmente está atrás do painel. Veja o aviso de versão no topo.`;
+}
+
+/**
  * Story 49.14 — o rótulo do "em andamento": com a API ≥ 36, o carrinho aberto é
  * calculado; com a v35, a geração com o carrinho aberto ainda dá 422.
  */

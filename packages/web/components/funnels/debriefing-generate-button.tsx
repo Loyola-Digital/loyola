@@ -51,6 +51,7 @@ import {
   formDoGet,
   formVazio,
   motivoSemEmAndamento,
+  motivoSemFimAindaNao,
   motivoSemSegundoItem,
   nomeDoFunilDaComparacao,
   ontemEmBrasilia,
@@ -281,6 +282,8 @@ function FormularioDaConfig({
   const emAndamento = f.situacao === "em-andamento";
   // Story 49.14: o rótulo do "em andamento" segue o contrato; com todas as fases terminadas até ontem, o aviso do AC6.
   const rotuloEmAndamento = rotuloDoEmAndamento(apiContrato);
+  // QA FE-002: a caixa "Fim ainda não aconteceu" só com a API que a aceita (≥ 36).
+  const motivoFimAindaNao = motivoSemFimAindaNao(apiContrato);
   const ontem = ontemEmBrasilia(new Date());
   const fasesConcluidas = emAndamento && todasAsFasesTerminaram(datasDasFasesDoForm(f), ontem) ? avisoDeFasesConcluidas(ontem, apiContrato) : null;
   const vivos = f.comparacoes.filter((id) => !removidos.includes(id));
@@ -468,15 +471,17 @@ function FormularioDaConfig({
                   />
                   {/* Story 49.14 (REQ-002): aberta com o fim "ainda não aconteceu" — só em andamento; limpa a data. */}
                   {emAndamento && (
-                    <label className="flex items-center gap-1 text-[11px]">
+                    <label className={`flex items-center gap-1 text-[11px] ${motivoFimAindaNao ? "opacity-50" : ""}`}>
                       <input
                         type="checkbox"
+                        disabled={!!motivoFimAindaNao}
                         checked={!!f[k].fimAindaNao}
                         onChange={(e) => set({ [k]: { ...f[k], fimAindaNao: e.target.checked, ...(e.target.checked ? { fim: "" } : {}) } } as Partial<FormDaConfig>)}
                       />
                       Fim ainda não aconteceu
                     </label>
                   )}
+                  {emAndamento && motivoFimAindaNao && <span className="text-[11px] text-red-500">{motivoFimAindaNao}</span>}
                 </>
               )}
             </div>
