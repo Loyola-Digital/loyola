@@ -1245,8 +1245,26 @@ export const stageLeadCapi = pgTable("stage_lead_capi", {
   metaAccountId: uuid("meta_account_id").references(() => metaAdsAccounts.id, {
     onDelete: "set null",
   }),
-  /** Nome do evento no Meta. Um por faixa seria pior: a faixa já vai no corpo. */
+  /**
+   * O nome BASE do evento. Cada faixa ganha o seu a partir dele.
+   *
+   * Era um evento só, com a faixa dentro do corpo — e isso não serve para o que
+   * a feature existe: o Meta otimiza para UM evento, então uma campanha mirando
+   * lead A e outra mirando lead B precisam de eventos DIFERENTES para escolher
+   * no Gerenciador. Com um nome só, as duas aprenderiam a mesma coisa.
+   */
   eventName: varchar("event_name", { length: 60 }).notNull().default("LeadQualificado"),
+  /**
+   * O nome do evento de cada faixa: `{ "A": "LeadFaixaA", "B": "LeadFaixaB" }`.
+   *
+   * Faixa ausente aqui cai no padrão `${eventName}${faixa}` — quem não quer
+   * escolher nome nenhum não precisa, e quem já criou o evento no Gerenciador
+   * com outro nome escreve o dele.
+   */
+  eventosPorFaixa: jsonb("eventos_por_faixa")
+    .$type<Record<string, string>>()
+    .notNull()
+    .default({}),
   /** As faixas que viram evento: `["A"]`, `["A","B"]`… */
   bands: jsonb("bands").$type<string[]>().notNull().default([]),
   /**
@@ -1284,10 +1302,20 @@ export const stageLeadCapiEnviados = pgTable(
     /** SHA-256 do identificador do lead. */
     leadHash: varchar("lead_hash", { length: 64 }).notNull(),
     faixa: varchar("faixa", { length: 10 }).notNull(),
+    /**
+     * O evento sob o qual este lead foi enviado.
+     *
+     * Entra na chave única junto do lead: trocar o nome do evento passa a
+     * permitir reenviar o mesmo lead sob o nome novo. Sem isto, mudar a
+     * configuração deixaria os leads antigos presos ao evento velho — e o
+     * evento novo nasceria sem histórico nenhum, o pior momento para o
+     * algoritmo aprender.
+     */
+    eventName: varchar("event_name", { length: 60 }).notNull().default(""),
     enviadoEm: timestamp("enviado_em", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("uq_lead_capi_enviado").on(table.stageId, table.leadHash),
+    uniqueIndex("uq_lead_capi_enviado").on(table.stageId, table.leadHash, table.eventName),
     index("idx_lead_capi_enviado_stage").on(table.stageId),
   ],
 );

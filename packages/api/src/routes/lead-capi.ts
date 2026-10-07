@@ -34,6 +34,8 @@ const configSchema = z.object({
   datasetId: z.string().trim().min(5).max(50),
   metaAccountId: z.string().uuid().nullable().optional(),
   eventName: z.string().trim().min(1).max(60).default("LeadQualificado"),
+  /** Nome do evento de cada faixa: `{ "A": "LeadFaixaA" }`. Faltando, cai no padrão. */
+  eventosPorFaixa: z.record(z.string().max(10), z.string().trim().max(60)).default({}),
   bands: z.array(z.string().trim().min(1).max(10)).max(10).default([]),
   testEventCode: z.string().trim().max(40).nullable().optional(),
   ativo: z.boolean().default(false),
@@ -118,6 +120,13 @@ export default fp(async function leadCapiRoutes(fastify) {
       datasetId: corpo.data.datasetId,
       metaAccountId: corpo.data.metaAccountId ?? null,
       eventName: corpo.data.eventName,
+      // Faixa em MAIÚSCULA na chave: é como `nomeDoEventoDaFaixa` procura, e
+      // "a" digitado na tela não pode virar uma faixa diferente de "A".
+      eventosPorFaixa: Object.fromEntries(
+        Object.entries(corpo.data.eventosPorFaixa)
+          .map(([faixa, nome]) => [faixa.trim().toUpperCase(), nome.trim()])
+          .filter(([, nome]) => nome.length > 0),
+      ),
       bands: corpo.data.bands.map((b) => b.toUpperCase()),
       testEventCode: corpo.data.testEventCode || null,
       ativo: corpo.data.ativo,

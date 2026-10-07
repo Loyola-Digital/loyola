@@ -43,6 +43,7 @@ function Resumo({ r }: { r: ResumoDoEnvio }) {
       <ul className="space-y-0.5 text-muted-foreground">
         <li>
           {r.candidatos} lead(s) nas faixas {r.faixas.join(", ") || "—"}
+        {r.eventos && r.eventos.length > 0 ? ` · eventos: ${r.eventos.join(", ")}` : ""}
         </li>
         <li>{r.aEnviar} a enviar · {r.jaEnviados} já tinham ido</li>
         {/* Contado e dito: lead sem e-mail nem telefone não tem como ser casado
@@ -78,6 +79,7 @@ export function EnvioAoMeta({
   const [datasetId, setDatasetId] = useState("");
   const [contaId, setContaId] = useState("");
   const [eventName, setEventName] = useState("LeadQualificado");
+  const [eventosPorFaixa, setEventosPorFaixa] = useState<Record<string, string>>({});
   const [faixas, setFaixas] = useState<string[]>([]);
   const [testCode, setTestCode] = useState("");
   const [ativo, setAtivo] = useState(false);
@@ -89,6 +91,7 @@ export function EnvioAoMeta({
     setDatasetId(c.datasetId);
     setContaId(c.metaAccountId ?? "");
     setEventName(c.eventName);
+    setEventosPorFaixa(c.eventosPorFaixa ?? {});
     setFaixas(c.bands);
     setTestCode(c.testEventCode ?? "");
     setAtivo(c.ativo);
@@ -104,6 +107,7 @@ export function EnvioAoMeta({
         datasetId: datasetId.trim(),
         metaAccountId: contaId || null,
         eventName: eventName.trim() || "LeadQualificado",
+        eventosPorFaixa,
         bands: faixas,
         testEventCode: testCode.trim() || null,
         ativo,
@@ -202,6 +206,11 @@ export function EnvioAoMeta({
 
       <div className="space-y-1.5">
         <Label>Faixas que viram evento</Label>
+        <p className="text-[11px] text-muted-foreground">
+          Cada faixa vira um evento <strong>separado</strong> no Meta — é o que permite uma
+          campanha otimizar para lead A e outra para lead B. Com um evento só, as duas
+          aprenderiam a mesma coisa.
+        </p>
         <div className="flex flex-wrap gap-1.5">
           {faixasDisponiveis.map((f) => (
             <button
@@ -222,6 +231,33 @@ export function EnvioAoMeta({
           <p className="text-[11px] text-muted-foreground">
             Nenhuma faixa escolhida — nada será enviado.
           </p>
+        )}
+
+        {faixas.length > 0 && (
+          <div className="mt-2 space-y-1.5 rounded-md border p-2">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+              Nome do evento de cada faixa
+            </p>
+            {[...faixas].sort().map((f) => (
+              <div key={f} className="flex items-center gap-2">
+                <span className="w-16 shrink-0 text-xs">Faixa {f}</span>
+                <Input
+                  value={eventosPorFaixa[f] ?? ""}
+                  onChange={(e) =>
+                    setEventosPorFaixa((atuais) => ({ ...atuais, [f]: e.target.value }))
+                  }
+                  // O padrão aparece como placeholder: quem não quiser escolher
+                  // nome nenhum não precisa, e vê exatamente o que vai sair.
+                  placeholder={`${eventName.trim() || "LeadQualificado"}${f}`}
+                  className="h-8 text-xs"
+                />
+              </div>
+            ))}
+            <p className="text-[11px] text-muted-foreground">
+              Deixe em branco para usar o nome sugerido. É este nome que você escolhe como
+              evento de otimização no Gerenciador do Meta.
+            </p>
+          </div>
         )}
       </div>
 
