@@ -1,0 +1,140 @@
+schema: 1
+storyId: '49.12'
+story: '49.12'
+story_title: 'Debriefing em andamento — gerar com a captação ainda aberta (corte em ontem, comparação no mesmo D+N, parcial substituída)'
+verdict: CONCERNS
+gate: CONCERNS
+status_reason: 'Os 15 ACs estão implementados e não achei defeito funcional. Reproduzi o SHA do encerrado, as suítes ficaram verdes nos dois pacotes e 16 das 18 mutações do QA morreram. A CONCERN média é a ordem de deploy: o código novo sem a 0168 derruba também o viewer de TODO debriefing, inclusive os enviados por upload, e a story manda aplicar a migration "junto com o merge". A 0168 tem de entrar em produção ANTES do merge.'
+reviewer: 'Quinn'
+updated: '2026-10-07T13:30:00-03:00'
+branch: 'feat/49.12-debriefing-em-andamento'
+commit_reviewed: 'c831ca46'
+base: 'origin/main 4920adfb. Conferido com git fetch na abertura e no fim do gate: a main não andou, então nenhum arquivo da story foi tocado por outra PR.'
+coderabbit_status: 'SKIPPED (a CLI só roda no WSL e o ambiente é macOS; é a prática do repo)'
+
+coverage:
+  AC1: 'PASS. `situacao_do_lancamento` tem DEFAULT encerrado com CHECK. O PUT trata situação omitida como encerrado. No formulário, config nova vem com a resposta null (falta responder) e config salva vem como encerrado. No encerrado, `problemasDasDatasChave` é a regra de sempre e recusa "ainda não aconteceu". Mutações A8, A9 e W3 morreram.'
+  AC2: 'PASS. "Ainda não aconteceu" é a data null mais a fase em `aindaNaoAconteceu`, sem valor sentinela. No payload e no documento ele é diferente de "não houve" (A12 morreu). A ordem é conferida entre as datas que existem. O formulário só lista o que falta no modo escolhido (W5 morreu).'
+  AC3: 'PASS. O corte vem de `businessYesterday` (Intl com America/Sao_Paulo). O QA conferiu em TZ=UTC, America/Sao_Paulo e Asia/Tokyo: 2026-10-07T01:30Z dá 2026-10-05 e 03:00Z dá 2026-10-06. O corte entra na config como entrada, então os motores continuam sem relógio. O 422 SEM_DIA_FECHADO tem erro, detalhe e ação.'
+  AC4: 'PASS. Abertura informada e menor ou igual ao corte dá 422 CARRINHO_JA_ABERTO. A fronteira (abertura NO dia de corte) é coberta: a mutação A5, que troca <= por <, morreu.'
+  AC5: 'PASS. `janelaDaGeracao` é a porta única. Mídia, vendas, leads e pesquisa param no corte, e o payload grava `situacao.janela.motivoDoFim`.'
+  AC6: 'PASS. A lacuna CARRINHO_AINDA_NAO_ABRIU tem 13 itens nomeados e é cobrada pela F11. O render escreve a lacuna no lugar do zero e tira os marcos de carrinho. A lista por seção está no Dev Agent Record.'
+  AC7: 'PASS. O título e o campaignName dizem "PARCIAL — dados até dd/mm · D+N", e o aviso `data-parcial` fica no topo do documento.'
+  AC8: 'PASS. Pela config, a comparação é cortada em início + N (o off-by-one A4 morreu) e o diferencial do AC13(c) bate. Métrica que só existe de um lado mostra Δ "—" com nota. Só com payload salvo, o documento sai sem Δ e com aviso. Comparação em andamento, pela config ou pelo ÚLTIMO payload salvo, dá 422 COMPARACAO_EM_ANDAMENTO, nunca 500.'
+  AC9: 'PASS. Todas as guardas rodam. A F10 tem um ramo próprio para o modo em andamento, e no encerrado ela é a mesma de antes. A troca de `?? 0` por `?? faturamentoPorEtapa.principal` na F1 é equivalente no encerrado, porque lá `faturamentoPrincipal.valor` nunca é null (conferido em origin/main, engine:1809).'
+  AC10: 'PASS. A transação faz SELECT … FOR UPDATE só na linha com parcial = true da etapa, e o UPDATE mantém o mesmo id e os comentários. O final consome a parcial e grava parcial = false. Um final nunca é procurado, então nunca é sobrescrito. Uma falha não altera a parcial: os 422 e o 413 voltam antes do gravar, e a transação reverte o resto. O índice único parcial garante no máximo uma parcial por etapa. A1, A2, A3 e A11 morreram.'
+  AC11: 'PASS. O botão diz "Gerar parcial (dados até {ontem})" e avisa que vai SUBSTITUIR a parcial. Os 422 novos têm título no bloco persistente. Contra a API v34, o corpo do PUT não leva as chaves novas e o "em andamento" fica desabilitado com a frase de API atrás. W1, W2, W4 e W5 morreram.'
+  AC12: 'PASS COM RESSALVA. O contrato sobe de 34 para 35 com linha de histórico. A migration é a 0168, conferida livre. `DEBRIEFING_PAYLOAD_VERSAO` não subiu (decisão 1, ver REQ-001), e o caminho 2 continua achando os payloads salvos.'
+  AC13: 'PASS. (a) SHA reproduzido pelo QA: o HTML é idêntico entre origin/main e a branch nos 3 casos (7a7bcbfe…, 318a26ea…, 7bc6e88b…). No diff do payload, chave a chave, só `config.situacaoDoLancamento` e `situacao` diferem. (b) e (e): 27 mutações do @dev mais 16 de 18 do QA morreram. (c) O diferencial em D+28 está na suíte. (d) A sessão foi `default_transaction_read_only = on`, o `gravar` virou no-op e a saída tem só agregados, rotulada como SIMULAÇÃO.'
+  AC14: 'PASS. O aviso fica fora do iframe. O srcDoc é montado só com o `debriefing.html`, então a edição inline não grava o aviso. O GET devolve `parcial` null no final e no upload. TEST-002: o caso "upload na MESMA etapa com uma parcial viva" não é testado.'
+  AC15: 'PASS. Ver a decisão 3 abaixo. A fronteira 00:00 BRT foi provada pelo QA, e A6 e A7 morreram. A leitura SQL das contas não tem teste (TEST-003).'
+
+decisoes_do_dev:
+  d1_payload_versao_nao_subiu:
+    veredito: 'ACEITA (leitura válida do AC12; o @po deve ratificar, ver REQ-001)'
+    motivo: 'Os campos são aditivos e opcionais. O epic, na linha 498, trata a subida como condicional ("se a 49.12 ou a 49.14 o subirem"). Subir a constante mudaria o HTML do encerrado, porque o render imprime a versão, e isso fere o AC13(a). Os consumidores conseguem distinguir parcial de final de dois jeitos: `payload.situacao.modo` (ausente quer dizer final) e a coluna `debriefing_payloads.parcial`. `lerUltimoPayloadSalvoDoFunil` + `parcialDo` já recusa parcial na comparação. A 49.9 precisa ler `situacao` (nota já registrada no epic).'
+  d2_corte_business_yesterday:
+    veredito: 'ACEITA'
+    motivo: '`toBusinessDayKey` usa Intl com `timeZone: America/Sao_Paulo` e não depende do TZ do processo. Medido pelo QA em 3 fusos, e a virada UTC×BRT está correta. O teste do @dev fixa o relógio e o TZ (M1 e M2).'
+  d3_ac15_ad_daily:
+    veredito: 'ACEITA'
+    motivo: 'Conferido em `meta-perf-sync.ts:157-186`. O `ad-daily` grava estado em toda rodada; o `campaign-daily` só roda com `campaignIds.length > 0`. Em `recordSyncRun`, uma falha preserva `last_success_at` (COALESCE) e atualiza `last_run_at`. Os três casos fecham. (1) Conta que ainda não sincronizou o dia de corte: `ad-daily.last_success_at` fica antes das 00:00 BRT de corte+1, e a geração bloqueia. (2) Conta parada: o `ad-daily` segue com sucesso a cada 15 min e o `campaign-daily` fica velho sem ter rodado depois do corte, então não bloqueia. (3) Conta cujo `campaign-daily` rodou depois do corte e falhou: bloqueia. A mídia do debriefing sai de `meta_campaign_insights_daily` (loader:768-774), o que confirma o `campaign-daily` como fonte. Ressalva em REL-002.'
+  d4_corrida_indice_mais_retry:
+    veredito: 'ACEITA, com TEST-001'
+    motivo: 'O índice único parcial garante o invariante no banco. Na corrida em READ COMMITTED, a 2ª transação bate em 23505, refaz e encontra a parcial vencedora. Um final concorrente com a parcial travada reavalia o WHERE depois do commit e insere um registro novo, que é a semântica certa. A suíte do @dev não exercita o retry: a mutação A3, que tira o retry, sobrevive a ela. A sonda do QA reproduziu a corrida com um erro de unicidade REAL do PG (PGlite) e um Proxy em `db.transaction`. O retry atualiza a vencedora, e o final não faz retry.'
+
+migration_0168:
+  aditiva: 'SIM. São 2 colunas NOT NULL com DEFAULT constante (no PG 11+ isso só mexe em metadado, sem reescrever a tabela), 1 coluna boolean DEFAULT false, 1 CHECK e 1 índice único parcial. Nenhuma coluna existente muda. O CHECK e o índice, sem NOT VALID/CONCURRENTLY, fazem um scan curto em tabelas pequenas, o que é aceitável.'
+  defaults_seguros: 'SIM. Config existente vira encerrado com [], e payload existente vira parcial = false (sonda 3 do QA e teste do @dev).'
+  codigo_antigo_com_migration: 'FUNCIONA. A sonda 3 do QA mostra que um INSERT sem as colunas novas, como faz o código da main, pega os defaults. O Drizzle da main seleciona colunas nomeadas, então as colunas extras são ignoradas. Ordem de deploy segura: migration primeiro.'
+  codigo_novo_sem_migration: 'QUEBRA, mais do que o declarado. A sonda 2 do QA confirma "column does not exist" no `select()` de `debriefing_configs` (GET e PUT da config, gate, geração) e em `debriefing_payloads.parcial`. Esta última está no GET /api/debriefings/:id, que tem leftJoin incondicional (routes/debriefings.ts:204 e :210). Ou seja: o viewer de QUALQUER debriefing, inclusive upload do Epic 37, daria 500, além de toda geração (o INSERT leva `parcial`).'
+  ordem_de_deploy_exigida: '1) Aplicar a 0168 em produção. 2) Provar pelo information_schema, com o roteiro do topo do .sql. 3) Só então mergear (o deploy é automático a partir da main). Não "junto com o merge".'
+  rollback: 'CORRETO. As 5 linhas na ordem certa (índice, coluna, constraint, colunas), executadas pelo @dev em PGlite e reaplicadas depois. Só vale DEPOIS de reverter a API. Nota: se a API voltar sem desfazer a migration, o caminho 2 do código antigo não distingue uma parcial salva de um final.'
+  tres_camadas: 'COERENTES. O Drizzle (schema.ts:3368, :3856-3868 e :3889) bate com o SQL em tipo, NOT NULL, default, CHECK e índice WHERE parcial. O zod aceita `situacaoDoLancamento` como enum opcional, `aindaNaoAconteceu` como enum[] com no máximo 4 e as datas como nullable. A normalização é feita por `valoresDaLinha` (filtra fases desconhecidas e cai em encerrado) e por `aindaNaoAconteceuDe` (deduplica e ordena).'
+
+quality_checks:
+  1_code_review: 'PASS. União discriminada por `situacaoDoLancamento`, deixando o tsc apontar cada leitura de data. Motores puros. Pós-processamento `comLacunaDoCarrinho` sem mexer no cálculo do encerrado. Erros no padrão {erro, detalhe, acao}.'
+  2_unit_tests: 'PASS. Debriefing da API: 718/718, mais 4 sondas do QA, 722/722. API inteira: 4.479 passaram e 10 falharam. Em origin/main 4920adfb (worktree temporário do QA, já removido): 4.424 passaram e as MESMAS 10 falharam (diff das listas vazio): funnel-stages-lead-inputs 3, instagram-routes 1, instagram 1, projects 3, schema 2. Web: 1.833/1.833.'
+  3_acceptance_criteria: 'PASS. Os 15 ACs. Ficam fora do código e são condição de Done: migration em produção, AC13(d) com a config real do PG05 e validação visual do dono.'
+  4_regression: 'PASS. HTML do encerrado com o mesmo SHA em 3 casos. As falhas da API são idênticas às da main. Front e API em versões trocadas não quebram em nenhuma das quatro combinações (API v34 com web novo e o inverso, conferidos no código).'
+  5_performance: 'PASS. Uma query de contas e uma de `meta_sync_state` só no modo em andamento, antes da carga pesada. Nenhuma chamada nova à Meta (`adds_meta_calls: NO`).'
+  6_security_pii: 'PASS. Nenhum log novo no diff. Os 422 novos citam id e nome de conta de anúncio, não de pessoa. O AC13(d) rodou com sessão read-only conferida, `gravar` no-op e saída só com agregados.'
+  7_documentation: 'CONCERNS (REL-001). O Dev Agent Record está completo e honesto (simulação rotulada, pendências listadas). O topo do .sql e a pendência 1 subestimam o que quebra sem a migration e indicam a ordem "junto com o merge".'
+  8_api_contract: 'PASS. 34 → 35, com linha de histórico. O PUT da v34 é `.strict()`, e o web só manda as chaves novas com a API ≥ 35.'
+  lint_typecheck: 'PASS (rodados pelo QA). `pnpm lint` na API: 0 erros e 1 warning pré-existente (lp-campaigns.ts:57). `next lint`: limpo. `node_modules/.bin/tsc --noEmit`: api 0. `next build --turbopack`: exit 0, e depois `tsc --noEmit` no web: 0. O shared foi compilado antes.'
+
+meta_api_impact:
+  adds_meta_calls: 'NO'
+  evidence: 'AC15 lê `meta_sync_state` e `meta_ads_accounts` do banco; os loaders continuam DB-first.'
+
+mutacoes_qa:
+  total: 18
+  mortas: 16
+  arvore: 'Cada mutação foi restaurada por `git checkout` logo depois. No fim, `git status` limpo e a sonda removida.'
+  lista:
+    - 'A1 final consome a parcial e ela continua parcial = true (gravar): MORTA (3)'
+    - 'A2 substituição sem updatedBy (gravar): MORTA'
+    - 'A3 sem o retry da corrida (gravar): MORTA SÓ pela sonda do QA. A suíte do @dev sobrevive (TEST-001)'
+    - 'A4 comparação cortada em D+N+1 (orquestrador): MORTA (2)'
+    - 'A5 abertura no dia de corte não conta como aberto (orquestrador): MORTA'
+    - 'A6 fim do dia de corte em UTC: MORTA (2)'
+    - 'A7 AC15 confere o sync do dia anterior ao corte (chamador): MORTA'
+    - 'A8 PUT sem situação vira em-andamento (rota): MORTA (6)'
+    - 'A9 GET da config sempre encerrado (rota): MORTA'
+    - 'A10 detalhe do viewer junta o payload pela ETAPA, não pelo debriefing (rota): SOBREVIVEU (TEST-002)'
+    - 'A11 parcialDaEtapa sem o filtro parcial = true (store): MORTA'
+    - 'A12 render escreve "ainda não aconteceu" como "não houve": MORTA'
+    - 'A13 loader da mídia ignora o corte da comparação: SOBREVIVEU, mas é EQUIVALENTE nos números. O motor corta a mídia pela mesma janela de novo (engine:1208-1209). Defesa em profundidade, não é defeito.'
+    - 'W1 hook não relê a config depois de gerar: MORTA'
+    - 'W2 botão mostra o detalhe da parcial só quando há bloqueio: MORTA'
+    - 'W3 "O lançamento terminou?" deixa de ser obrigatória: MORTA'
+    - 'W4 viewer nunca renderiza o aviso: MORTA'
+    - 'W5 caixa "ainda não aconteceu" aparece em qualquer modo: MORTA'
+
+sondas_qa:
+  - '(1) Corrida com 23505 REAL do PG: o retry atualiza a vencedora (mesmo id, 1 parcial), e o final sem retry propaga o erro. PASS.'
+  - '(2) Código novo sem a 0168: `select()` de debriefing_configs e `debriefing_payloads.parcial` dão "does not exist". Confirma REL-001.'
+  - '(3) Código antigo com a 0168: INSERT sem as colunas novas resulta em encerrado, [] e parcial = false. PASS.'
+  - '(4) Fronteira do AC15: 03:00:00Z de corte+1 libera e 02:59:59Z bloqueia. campaign-daily que falhou depois do corte bloqueia; o que não rodou depois do corte libera. PASS.'
+
+top_issues:
+  - id: 'REL-001'
+    severity: medium
+    finding: 'A ordem de deploy está escrita como "junto com o merge" (topo do 0168_debriefing_em_andamento.sql:26-28 e Dev Agent Record, pendência 1), e o efeito está subestimado ("GET/PUT da config e Gerar dão 500"). Sem a 0168, o GET /api/debriefings/:id também dá 500, para QUALQUER debriefing, inclusive upload: routes/debriefings.ts:204 e :210 seleciona `debriefing_payloads.parcial` num leftJoin incondicional. Como o deploy é automático a partir da main, qualquer atraso entre o merge e a aplicação deixa o viewer inteiro fora do ar.'
+    suggested_action: 'Condição de merge: o @devops aplica a 0168 em produção ANTES do merge e cola a prova do information_schema (2 colunas em debriefing_configs NOT NULL, `parcial` NOT NULL default false, o CHECK e o índice UNIQUE … WHERE parcial). A migration é retrocompatível com o código da main (sonda 3). Corrigir a frase no topo do .sql e no Dev Agent Record para "antes do merge" e incluir o viewer de debriefings na lista do que quebra.'
+    owner: devops
+  - id: 'TEST-001'
+    severity: low
+    finding: 'O retry da corrida da 1ª parcial (debriefing-generate.ts, `gravarDebriefingGerado`) não é exercitado pela suíte: a mutação A3, que tira o retry, sobrevive. O @dev declarou a ausência do teste. A sonda do QA provou que o caminho funciona com o erro real do PG.'
+    suggested_action: 'Incorporar a sonda: Proxy em `db.transaction` que lança, na 1ª chamada, o 23505 capturado de uma inserção real; o teste afirma 2 chamadas, o mesmo id da vencedora e 1 parcial no banco, e que um final não faz retry.'
+    owner: dev
+  - id: 'TEST-002'
+    severity: low
+    finding: 'A mutação A10 sobrevive: o detalhe do viewer juntando o payload por `stage_id_origem = debriefings.stage_id` não é pego. O teste do upload manual só roda depois que o final consumiu a parcial, quando já não existe parcial viva na etapa.'
+    suggested_action: 'No teste de AC14 do debriefing-parcial-store, fazer o upload manual na MESMA etapa ENQUANTO a parcial existe e afirmar `parcial: null` no upload.'
+    owner: dev
+  - id: 'TEST-003'
+    severity: low
+    finding: '`lerEstadoDoSyncDaMidia` (SQL: contas das etapas e do funil, fallback para as contas ativas do projeto, filtro por projectId) não tem teste. Só a função pura `contasAtrasadasNoCorte` é testada; a leitura foi vista uma vez em produção, com 1 conta, no AC13(d).'
+    suggested_action: 'Um caso em PGlite com duas contas (uma por etapa, outra pelo funil), uma sem estado, e o fallback do projeto.'
+    owner: dev
+  - id: 'REQ-001'
+    severity: low
+    finding: 'O AC12 diz "`DEBRIEFING_PAYLOAD_VERSAO` sobe se o formato do payload mudar", e o @dev não subiu (AUTO-DECISION). O QA aceita a leitura: os campos são aditivos e opcionais, o epic:498 é condicional, o AC13(a) proíbe mudar o HTML e parcial e final se distinguem por `situacao` e pela coluna `parcial`. Mas é desvio da letra do AC.'
+    suggested_action: 'O @po ratifica no AC12 ("formato" = forma incompatível; campo aditivo opcional não sobe a versão) e registra na 49.9 que ela lê `payload.situacao` (ausente = final).'
+    owner: po
+  - id: 'REL-002'
+    severity: low
+    finding: 'AC15: o `meta_sync_state` é por (projeto, conta). Uma conta apontada pela etapa ou pelo funil mas não vinculada ao projeto em `meta_ads_account_projects` nunca é sincronizada para esse projeto, e então bloqueia para sempre, com a ação "esperar o próximo sync", que não resolve. Além disso, a fronteira usa 00:00 BRT, e o `until` do sync é BRT fixo (meta-ads.ts:31), mas o dia dos insights da Meta é o do fuso da conta. Uma conta fora de BRT pode passar com o dia de corte ainda aberto no fuso dela. É hipotético para as contas atuais.'
+    suggested_action: 'Na 49.14, ou quando surgir o caso: quando a conta não tiver estado nenhum para o projeto, dizer no `detalhe` que ela não está vinculada ao projeto. Avaliar o fuso da conta na fronteira.'
+    owner: dev
+
+condicoes_de_merge:
+  - 'A 0168 aplicada em produção ANTES do merge, com a prova do information_schema colada (REL-001).'
+  - 'Contrato 35: se outra PR subir o contrato antes, quem mergear depois renumera.'
+
+condicoes_de_done:
+  - 'AC13(d) com a config REAL do PG05, salva pelo Danilo depois do deploy (a de hoje é simulação).'
+  - 'Validação visual do dono com a parcial do DG PG05: botão, formulário, aviso do viewer e documento.'
+
+waiver: { active: false }
