@@ -299,7 +299,7 @@ export interface FasesNoCorte {
 }
 
 /** A resposta de reabertura/downsell que a janela lê (`null` = "ainda não aconteceu", 49.12). */
-export type RespostaDaFase = { houve: false } | { houve: true; abertura: string; fim: string } | null;
+export type RespostaDaFase = { houve: false } | { houve: true; abertura: string; fim: string | null } | null;
 
 /** AC2 — o estado de UMA fase no corte (fronteiras: abertura = corte → em curso; fim = corte → concluída). */
 export function estadoDaFase(abertura: string | null, fim: string | null, corte: string): EstadoDaFase {
@@ -483,7 +483,13 @@ export function janelaDaGeracao(c: ConfigDaJanela): JanelaDoDebriefing {
     };
     if (todas) {
       // AC6 (R9-5): todas concluídas → a janela da regra 2A (a do final); o corte fica como rótulo.
-      const j = janelaDoDebriefing({ inicioCaptacao: inicio, fimCarrinho: d.fimCarrinho as string, reabertura: d.reabertura!, downsell: d.downsell! });
+      // todas concluídas ⇒ todo fim que existe é data (fim "ainda não aconteceu" é em curso ou não começou).
+      const j = janelaDoDebriefing({
+        inicioCaptacao: inicio,
+        fimCarrinho: d.fimCarrinho as string,
+        reabertura: d.reabertura as DatasDaJanela["reabertura"],
+        downsell: d.downsell as DatasDaJanela["downsell"],
+      });
       return { ...j, regra: REGRA_DA_JANELA_EM_ANDAMENTO_FASES_CONCLUIDAS, corte: { ...dadosDoCorte, texto: TEXTO_FIM_PELA_REGRA_2A } };
     }
     return {

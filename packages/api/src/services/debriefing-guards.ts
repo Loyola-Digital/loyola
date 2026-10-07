@@ -19,7 +19,7 @@
  */
 
 import { CANAIS, FECHAMENTOS, cpcDeLink, ctrDeLink, type Canal } from "@loyola-x/shared";
-import { dataExiste } from "./debriefing-config.js";
+import { dataExiste, FIM_AINDA_NAO_DA_FASE } from "./debriefing-config.js";
 import {
   aplicarImposto,
   corteSemCarrinho,
@@ -606,18 +606,26 @@ function checarF10EmAndamento(cfg: Extract<DebriefingPayload["config"], { situac
     if (presentes[i - 1]! > presentes[i]!) problemas.push(`fora de ordem: ${presentes[i - 1]} > ${presentes[i]} (início ≤ abertura ≤ fim, entre as que existem)`);
   }
   for (const nome of ["reabertura", "downsell"] as const) {
-    const r = d[nome] as { houve?: unknown; abertura?: string; fim?: string } | null | undefined;
+    const r = d[nome] as { houve?: unknown; abertura?: string; fim?: string | null } | null | undefined;
+    // 49.14 (REQ-002): aberta com o fim "ainda não aconteceu" (fim nulo + a resposta explícita).
+    const fimAindaNao = aindaNao.has(FIM_AINDA_NAO_DA_FASE[nome]);
     if (aindaNao.has(nome)) {
       if (r) problemas.push(`${nome} respondida e também "ainda não aconteceu"`);
+      if (fimAindaNao) problemas.push(`${nome} "ainda não aconteceu" e também "fim ainda não aconteceu"`);
       continue;
     }
     if (!r || typeof r.houve !== "boolean") {
       problemas.push(`${nome} sem resposta explícita (houve indefinido, sem "ainda não aconteceu")`);
       continue;
     }
-    if (r.houve === true) {
+    if (r.houve === true && fimAindaNao) {
+      if (!r.abertura || !dataExiste(r.abertura)) problemas.push(`${nome} com houve = true sem abertura válida`);
+      if (r.fim !== null && r.fim !== undefined) problemas.push(`${nome}.fim = ${String(r.fim)} e também "fim ainda não aconteceu"`);
+    } else if (r.houve === true) {
       if (!r.abertura || !r.fim || !dataExiste(r.abertura) || !dataExiste(r.fim)) problemas.push(`${nome} com houve = true sem abertura/fim válidas`);
       else if (r.abertura > r.fim) problemas.push(`${nome}: abertura ${r.abertura} > fim ${r.fim}`);
+    } else if (fimAindaNao) {
+      problemas.push(`${nome} "fim ainda não aconteceu" sem houve = true`);
     }
   }
   const papeis = new Set(cfg.etapas.map((e) => e.papel));

@@ -29,7 +29,7 @@ import {
 import { computeDebriefingAudience, type RespostaInput } from "../services/debriefing-audience-engine.js";
 import { higienizarVendasDoDebriefing } from "../services/debriefing-audience-loader.js";
 import { montarPayloadDebriefing, type DebriefingPayload } from "../services/debriefing-payload.js";
-import { checarF7, checarF8, checarF11, validateDebriefing } from "../services/debriefing-guards.js";
+import { checarF7, checarF8, checarF10, checarF11, validateDebriefing } from "../services/debriefing-guards.js";
 import { INDICADORES } from "../services/debriefing-render.js";
 import { gerarDebriefing, type DependenciasDaGeracao, type RegistroDoDebriefing } from "../services/debriefing-generate.js";
 import { estadoDaFase, fasesNoCorte, textoDaFaseNoCorte } from "../services/debriefing-hygiene.js";
@@ -151,7 +151,11 @@ type Datas = DebriefingConfigLancamentoEmAndamento["datasChave"];
 function emAndamento(datas: Partial<Datas>, over: Partial<DebriefingConfigLancamentoEmAndamento> = {}): DebriefingConfigLancamentoEmAndamento {
   const d: Datas = { inicioCaptacao: "2026-04-17", aberturaCarrinho: "2026-05-11", fimCarrinho: null, reabertura: { houve: false }, downsell: { houve: false }, ...datas };
   const aindaNao = (["aberturaCarrinho", "fimCarrinho", "reabertura", "downsell"] as const).filter((k) => d[k] === null);
-  return { ...configSintetica(), stageId: S, etapas: etapasPara(d), situacaoDoLancamento: "em-andamento", datasChave: d, aindaNaoAconteceu: [...aindaNao], ...over };
+  // REQ-002: reabertura/downsell abertos com o fim "ainda não aconteceu" (fim nulo + a resposta explícita)
+  const fimAindaNao = (["reabertura", "downsell"] as const)
+    .filter((k) => { const r = d[k]; return r !== null && r.houve === true && r.fim === null; })
+    .map((k) => (k === "reabertura" ? ("fimReabertura" as const) : ("fimDownsell" as const)));
+  return { ...configSintetica(), stageId: S, etapas: etapasPara(d), situacaoDoLancamento: "em-andamento", datasChave: d, aindaNaoAconteceu: [...aindaNao, ...fimAindaNao], ...over };
 }
 
 /** O encerrado (o relatório final) com as mesmas etapas. */
@@ -616,5 +620,65 @@ describe("AC5 / AC9 (d) — comparação no mesmo D+N com o carrinho em curso do
     const k = kpiDe(g.html, "Vendas do Produto Principal");
     expect(k).toContain("Δ — : sem o número de PG04 (carrinho ainda não abriu — dados até 15/05, D+28)");
     expect(secaoDe(g.html, "Resumo Executivo")).toContain("PG04 em D+28: captação — carrinho ainda não abriu.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// REQ-002 (@po, AC2) — reabertura/downsell ABERTOS com o fim "ainda não aconteceu"
+// ---------------------------------------------------------------------------
+
+describe("REQ-002 — reabertura/downsell abertos com o fim 'ainda não aconteceu'", () => {
+  const strip = (html: string) => html.split('<div class="datestrip">')[1]!.split("</header>")[0]!;
+
+  it("(1) downsell aberto (abertura ≤ corte), fim 'ainda não aconteceu': em curso, entra no ROAS total marcado parcial — nunca 'FORA'", async () => {
+    const g = await gerar(deps({ config: () => emAndamento({ downsell: { houve: true, abertura: "2026-05-14", fim: null } }) }));
+    const m = g.payload.dinheiroTempo;
+    expect(g.payload.config).toMatchObject({ aindaNaoAconteceu: ["fimCarrinho", "fimDownsell"], datasChave: { downsell: { houve: true, abertura: "2026-05-14", fim: null } } });
+    expect(g.payload.situacao).toMatchObject({ fases: { downsell: { estado: "em-curso", abertura: "2026-05-14", fim: null } }, aindaNaoAconteceu: ["fimCarrinho", "fimDownsell"] });
+    // a venda da etapa de downsell de 14/05 ENTRA no numerador
+    expect(m.faturamentoPorEtapa.downsell).toBe(500);
+    expect(m.roasTotalSemTmb.numerador).toBeCloseTo(m.faturamentoPorEtapa.captacao + m.faturamentoPorEtapa.principal + 500, 6);
+    expect(m.roasTotalSemTmb.downsellNoCorte).toEqual({ estado: "em-curso", texto: "downsell parcial — downsell em curso, dados até 15/05 (D+28)" });
+    expect(kpiDe(g.html, "Vendas Downsell")).toContain("data-parcial-da-fase>parcial — downsell em curso, dados até 15/05 (D+28)</div>");
+    expect(g.html).not.toContain("data-downsell-fora");
+    // datas-chave: "fim: ainda não aconteceu", nunca uma data
+    expect(strip(g.html)).toContain("<span>Downsell <b>14/05 · D+27</b> · fim: <b>ainda não aconteceu</b></span>");
+    expect(checarF10(g.payload).status).toBe("passed");
+    expect(validateDebriefing(g.payload, {}).violacoes).toEqual([]);
+  });
+
+  it("(3) abertura DEPOIS do corte, fim 'ainda não aconteceu': não começou (fora do ROAS total, lacuna escrita)", async () => {
+    const g = await gerar(deps({ config: () => emAndamento({ downsell: { houve: true, abertura: "2026-05-20", fim: null } }) }));
+    expect(g.payload.situacao).toMatchObject({ fases: { downsell: { estado: "nao-comecou", abertura: "2026-05-20", fim: null } } });
+    expect(g.payload.dinheiroTempo.roasTotalSemTmb.downsellNoCorte?.estado).toBe("nao-comecou");
+    // a abertura futura não vira linha vertical
+    expect(marcos(g.html)).toEqual(["abre carrinho"]);
+  });
+
+  it("(4) a reabertura no mesmo caso fica em curso (calculada até o corte, parcial), e com abertura depois do corte não começou", async () => {
+    const curso = await gerar(deps({ config: () => emAndamento({ reabertura: { houve: true, abertura: "2026-05-14", fim: null } }) }));
+    expect(curso.payload.situacao).toMatchObject({ fases: { reabertura: { estado: "em-curso", fim: null } }, aindaNaoAconteceu: ["fimCarrinho", "fimReabertura"] });
+    expect(curso.payload.dinheiroTempo.apendiceReabertura).toMatchObject({ vendas: 1, faturamento: 800 });
+    expect(secaoDe(curso.html, "Evolução Diária")).toContain('<p class="tnote" data-parcial-da-fase>parcial — reabertura em curso, dados até 15/05 (D+28)</p>');
+    expect(strip(curso.html)).toContain("<span>Reabertura <b>14/05 · D+27</b> · fim: <b>ainda não aconteceu</b></span>");
+    const nao = await gerar(deps({ config: () => emAndamento({ reabertura: { houve: true, abertura: "2026-05-20", fim: null } }) }));
+    expect(nao.payload.situacao).toMatchObject({ fases: { reabertura: { estado: "nao-comecou" } } });
+    expect(nao.payload.lacunas.map((l) => l.codigo)).toContain("REABERTURA_AINDA_NAO_COMECOU");
+  });
+
+  it("aberta com o fim 'ainda não aconteceu' nunca conta como terminada (R9-5): a janela fica no corte", async () => {
+    const g = await gerar(deps({ agora: new Date("2026-07-11T15:00:00.000Z"), config: () => emAndamento({ fimCarrinho: "2026-06-30", downsell: { houve: true, abertura: "2026-07-01", fim: null } }) }));
+    expect(g.payload.dinheiroTempo.janela).toMatchObject({ fim: "2026-07-10", fimPor: "corte" });
+    expect(g.payload.situacao).toMatchObject({ todasAsFasesConcluidas: false, fases: { downsell: { estado: "em-curso" } } });
+  });
+
+  it("F10: fim nulo SEM a resposta explícita, ou data E 'fim ainda não aconteceu', reprova", async () => {
+    const g = await gerar(deps({ config: () => emAndamento({ downsell: { houve: true, abertura: "2026-05-14", fim: null } }) }));
+    const semResposta = structuredClone(g.payload) as DebriefingPayload & { config: DebriefingConfigLancamentoEmAndamento };
+    semResposta.config.aindaNaoAconteceu = [];
+    expect(checarF10(semResposta)).toMatchObject({ status: "failed", detalhe: expect.stringMatching(/downsell com houve = true sem abertura\/fim válidas/) });
+    const osDois = structuredClone(g.payload) as DebriefingPayload & { config: DebriefingConfigLancamentoEmAndamento };
+    osDois.config.datasChave.downsell = { houve: true, abertura: "2026-05-14", fim: "2026-05-20" };
+    expect(checarF10(osDois)).toMatchObject({ status: "failed", detalhe: expect.stringMatching(/downsell\.fim = 2026-05-20 e também "fim ainda não aconteceu"/) });
   });
 });

@@ -833,7 +833,10 @@ function datasChaveHtml(p: DebriefingPayload, nome: string): string {
     r === null
       ? `<span>${rot}: <b>${AINDA_NAO_ACONTECEU}</b></span>`
       : r.houve
-        ? `<span>${rot} <b>${esc(diaMesBr(r.abertura))} · ${rotuloD(dMais(p, r.abertura))}</b> · fim <b>${esc(diaMesBr(r.fim))}${comFimD ? ` · ${rotuloD(dMais(p, r.fim))}` : ""}</b></span>`
+        ? r.fim === null
+          ? // 49.14 (REQ-002): aberta com o fim "ainda não aconteceu" — nunca uma data.
+            `<span>${rot} <b>${esc(diaMesBr(r.abertura))} · ${rotuloD(dMais(p, r.abertura))}</b> · fim: <b>${AINDA_NAO_ACONTECEU}</b></span>`
+          : `<span>${rot} <b>${esc(diaMesBr(r.abertura))} · ${rotuloD(dMais(p, r.abertura))}</b> · fim <b>${esc(diaMesBr(r.fim))}${comFimD ? ` · ${rotuloD(dMais(p, r.fim))}` : ""}</b></span>`
         : `<span>${rot}: <b>não houve</b></span>`;
   const partes = [
     linha("Início da captação", dc.inicioCaptacao),

@@ -336,6 +336,11 @@
 // termina no fim da regra 2A), `dinheiroTempo.janela.corte.fases`,
 // `coorte.incompleta`, `roasTotalSemTmb.downsellNoCorte` e as lacunas
 // COORTE_INCOMPLETA, REABERTURA_AINDA_NAO_COMECOU e DOWNSELL_AINDA_NAO_COMECOU.
+// QA 49.14 (REQ-002 do @po): no modo em andamento, a config aceita reabertura/
+// downsell ABERTOS com o fim "ainda não aconteceu" — `{ houve: true, abertura,
+// fim: null }` + `fimReabertura`/`fimDownsell` em `datasChave.aindaNaoAconteceu`
+// (o PUT da v35 recusa as duas chaves no zod; no encerrado, 400 como sempre).
+// O GET devolve a mesma forma (`fim` pode ser `null`).
 // `DEBRIEFING_PAYLOAD_VERSAO` continua 1 (o render imprime a versão; ver a
 // story). Nenhuma rota muda de forma; o web com a v35 mostra o "em andamento"
 // como "(captação aberta)" e o 422 da v35 no bloco de erro de sempre.
