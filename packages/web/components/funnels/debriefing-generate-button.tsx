@@ -41,8 +41,10 @@ import {
   PAPEIS_DO_DEBRIEFING,
   PASSOS_DA_GERACAO,
   ROTULO_DO_PAPEL,
+  avisoDeFasesConcluidas,
   avisoDoBotaoDeGerar,
   corpoDoPut,
+  datasDasFasesDoForm,
   erroDaGeracao,
   erroDaValidacao,
   faltantesDoForm,
@@ -51,8 +53,11 @@ import {
   motivoSemEmAndamento,
   motivoSemSegundoItem,
   nomeDoFunilDaComparacao,
+  ontemEmBrasilia,
   opcoesDaComparacao,
   removidosDoGet,
+  rotuloDoEmAndamento,
+  todasAsFasesTerminaram,
   type ErroDaGeracao,
   type FormDaConfig,
   type PapelDoDebriefing,
@@ -149,6 +154,10 @@ export function DebriefingGenerateButton({ projectId, funnelId, stageId, from }:
         </div>
         {avisoParcial && !motivoBloqueio && (
           <p className="max-w-md text-right text-[11px] text-amber-600">{avisoParcial.detalhe}</p>
+        )}
+        {/* Story 49.14 (AC6): todas as fases terminaram — dá para marcar "encerrado" (a geração não é bloqueada). */}
+        {avisoParcial?.fasesConcluidas && !motivoBloqueio && (
+          <p className="max-w-md text-right text-[11px] text-amber-700">{avisoParcial.fasesConcluidas}</p>
         )}
         {motivoBloqueio && (
           <p className="flex max-w-md items-start gap-1 text-right text-[11px] text-red-500">
@@ -270,6 +279,10 @@ function FormularioDaConfig({
   const motivo2 = motivoSemSegundoItem(apiContrato);
   const motivoEmAndamento = motivoSemEmAndamento(apiContrato);
   const emAndamento = f.situacao === "em-andamento";
+  // Story 49.14: o rótulo do "em andamento" segue o contrato; com todas as fases terminadas até ontem, o aviso do AC6.
+  const rotuloEmAndamento = rotuloDoEmAndamento(apiContrato);
+  const ontem = ontemEmBrasilia(new Date());
+  const fasesConcluidas = emAndamento && todasAsFasesTerminaram(datasDasFasesDoForm(f), ontem) ? avisoDeFasesConcluidas(ontem) : null;
   const vivos = f.comparacoes.filter((id) => !removidos.includes(id));
 
   if (isLoading) return <p className="p-4 text-sm text-muted-foreground">Carregando…</p>;
@@ -387,17 +400,15 @@ function FormularioDaConfig({
               checked={f.situacao === "em-andamento"}
               onChange={() => set({ situacao: "em-andamento" })}
             />
-            Em andamento (captação aberta)
+            {rotuloEmAndamento.rotulo}
           </label>
         </div>
         {motivoEmAndamento ? (
           <p className="text-[11px] text-red-500">{motivoEmAndamento}</p>
         ) : (
-          <p className="text-[11px] text-muted-foreground">
-            Em andamento: o debriefing sai PARCIAL, com os dados até ontem (fuso de Brasília), e a próxima geração substitui a parcial.
-            Carrinho, reabertura e downsell aceitam “ainda não aconteceu”.
-          </p>
+          <p className="text-[11px] text-muted-foreground">{rotuloEmAndamento.dica}</p>
         )}
+        {fasesConcluidas && <p className="text-[11px] text-amber-700">{fasesConcluidas}</p>}
       </section>
 
       {/* Datas-chave */}

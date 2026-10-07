@@ -1,0 +1,108 @@
+// Story 49.14 — o formulário e o botão com o CARRINHO aberto: o aviso, antes do
+// clique, de que todas as fases terminaram e dá para marcar "encerrado" (AC6,
+// R9-5 — sem bloquear a geração), e o rótulo do "em andamento" pelo contrato
+// (a API v35 ainda responde 422 com o carrinho aberto).
+
+import { describe, expect, it } from "vitest";
+import {
+  AINDA_NAO,
+  avisoDoBotaoDeGerar,
+  datasDasFasesDoForm,
+  formVazio,
+  rotuloDoEmAndamento,
+  todasAsFasesTerminaram,
+  type DebriefingConfigGet,
+  type FormDaConfig,
+} from "../debriefing-config-form";
+
+/** 12:00 de 07/10/2026 em Brasília → ontem = 06/10. */
+const AGORA = new Date("2026-10-07T15:00:00.000Z");
+/** 22:30 de 06/10 em Brasília (01:30 UTC de 07/10): ontem = 05/10 em Brasília, 06/10 em UTC. */
+const AGORA_NA_VIRADA = new Date("2026-10-07T01:30:00.000Z");
+
+const datas = (over: Partial<NonNullable<DebriefingConfigGet["config"]>["datasChave"]> = {}) => ({
+  inicioCaptacao: "2026-09-01",
+  aberturaCarrinho: "2026-09-20",
+  fimCarrinho: "2026-10-06",
+  reabertura: { houve: false as const },
+  downsell: { houve: false as const },
+  ...over,
+});
+
+function getCom(d: ReturnType<typeof datas>): Pick<DebriefingConfigGet, "config" | "parcialAtual"> {
+  return {
+    parcialAtual: null,
+    config: {
+      situacaoDoLancamento: "em-andamento",
+      datasChave: d,
+      lancamentoComparacaoFunnelId: null,
+      etapas: [],
+      perguntasConfirmadas: {},
+      closerMediums: [],
+      closerPorSellerName: false,
+      ferramentasDeAtendimento: [],
+      dimensaoDeCriativo: "nenhuma",
+      comparacaoRemovida: false,
+      validado: false,
+      validadoEm: null,
+      validadoPorNome: null,
+    } as unknown as NonNullable<DebriefingConfigGet["config"]>,
+  };
+}
+
+describe("AC6 — todas as fases terminaram até ontem", () => {
+  it("fronteiras: fim = ontem terminou; fim = hoje não; 'ainda não aconteceu' (null) nunca terminou", () => {
+    expect(todasAsFasesTerminaram(datas(), "2026-10-06")).toBe(true);
+    expect(todasAsFasesTerminaram(datas({ fimCarrinho: "2026-10-07" }), "2026-10-06")).toBe(false);
+    expect(todasAsFasesTerminaram(datas({ fimCarrinho: null }), "2026-10-06")).toBe(false);
+    expect(todasAsFasesTerminaram(datas({ downsell: null }), "2026-10-06")).toBe(false);
+    expect(todasAsFasesTerminaram(datas({ downsell: { houve: true, abertura: "2026-10-05", fim: "2026-10-06" } }), "2026-10-06")).toBe(true);
+    expect(todasAsFasesTerminaram(datas({ reabertura: { houve: true, abertura: "2026-10-05", fim: "2026-10-08" } }), "2026-10-06")).toBe(false);
+  });
+
+  it("o botão avisa antes do clique, sem deixar de oferecer a geração (rótulo de sempre)", () => {
+    const a = avisoDoBotaoDeGerar(getCom(datas()), AGORA)!;
+    expect(a.rotulo).toBe("Gerar parcial (dados até 06/10)");
+    expect(a.fasesConcluidas).toBe(
+      "Todas as fases (carrinho, reabertura e downsell) terminaram até 06/10: a parcial sai com os números do relatório final. Para gerar o relatório final, marque “encerrado” na configuração do debriefing.",
+    );
+    expect(avisoDoBotaoDeGerar(getCom(datas({ fimCarrinho: "2026-10-10" })), AGORA)!.fasesConcluidas).toBeUndefined();
+  });
+
+  it("'ontem' é o de Brasília: às 22:30 de 06/10 o fim em 06/10 ainda não terminou", () => {
+    expect(avisoDoBotaoDeGerar(getCom(datas()), AGORA_NA_VIRADA)!.fasesConcluidas).toBeUndefined();
+    expect(avisoDoBotaoDeGerar(getCom(datas({ fimCarrinho: "2026-10-05" })), AGORA_NA_VIRADA)!.fasesConcluidas).toMatch(/até 05\/10/);
+  });
+
+  it("no formulário: as datas vêm dos campos; a caixa 'ainda não aconteceu' e a 3ª resposta contam como não terminou", () => {
+    const f: FormDaConfig = {
+      ...formVazio(),
+      situacao: "em-andamento",
+      inicioCaptacao: "2026-09-01",
+      aberturaCarrinho: "2026-09-20",
+      fimCarrinho: "2026-10-06",
+      reabertura: { houve: false, abertura: "", fim: "" },
+      downsell: { houve: true, abertura: "2026-10-01", fim: "2026-10-03" },
+    };
+    expect(datasDasFasesDoForm(f)).toEqual({
+      aberturaCarrinho: "2026-09-20",
+      fimCarrinho: "2026-10-06",
+      reabertura: { houve: false },
+      downsell: { houve: true, abertura: "2026-10-01", fim: "2026-10-03" },
+    });
+    expect(todasAsFasesTerminaram(datasDasFasesDoForm(f), "2026-10-06")).toBe(true);
+    expect(todasAsFasesTerminaram(datasDasFasesDoForm({ ...f, carrinhoAindaNao: { aberturaCarrinho: false, fimCarrinho: true } }), "2026-10-06")).toBe(false);
+    expect(todasAsFasesTerminaram(datasDasFasesDoForm({ ...f, downsell: { houve: AINDA_NAO, abertura: "", fim: "" } }), "2026-10-06")).toBe(false);
+    expect(todasAsFasesTerminaram(datasDasFasesDoForm({ ...f, reabertura: { houve: null, abertura: "", fim: "" } }), "2026-10-06")).toBe(false);
+  });
+});
+
+describe("o rótulo do 'em andamento' pelo contrato da API", () => {
+  it("v36: 'Em andamento' (o carrinho aberto é calculado); v35 ou anterior: '(captação aberta)'", () => {
+    expect(rotuloDoEmAndamento(36).rotulo).toBe("Em andamento");
+    expect(rotuloDoEmAndamento(36).dica).toMatch(/com o carrinho aberto, o que já aconteceu entra até ontem, marcado como parcial/);
+    expect(rotuloDoEmAndamento(35).rotulo).toBe("Em andamento (captação aberta)");
+    expect(rotuloDoEmAndamento(35).dica).not.toMatch(/carrinho aberto/);
+    expect(rotuloDoEmAndamento(null).rotulo).toBe("Em andamento (captação aberta)");
+  });
+});

@@ -21,6 +21,8 @@ export const CONTRATO_DA_LISTA = 31;
 export const CONTRATO_DA_GERACAO = 32;
 /** Versão do contrato que aceita o lançamento "em andamento" (49.12). */
 export const CONTRATO_DO_EM_ANDAMENTO = 35;
+/** Versão do contrato que gera a parcial com o carrinho aberto (49.14; a v35 responde 422 CARRINHO_JA_ABERTO). */
+export const CONTRATO_DO_CARRINHO_EM_ANDAMENTO = 36;
 
 /** Story 49.12 (AC1) — "O lançamento terminou?". */
 export type SituacaoDoLancamento = "encerrado" | "em-andamento";
@@ -330,24 +332,85 @@ export function ontemEmBrasilia(agora: Date): string {
 
 const ddmm = (dia: string) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
 
+/** As datas de fase que o aviso do AC6 (49.14) lê — `null` = "ainda não aconteceu" (ou sem resposta). */
+export interface DatasDasFases {
+  aberturaCarrinho: string | null;
+  fimCarrinho: string | null;
+  reabertura: RespostaEtapaExtra | null;
+  downsell: RespostaEtapaExtra | null;
+}
+
+/** As datas de fase do formulário, na forma do GET (a caixa "ainda não aconteceu" vira `null`). */
+export function datasDasFasesDoForm(f: FormDaConfig): DatasDasFases {
+  const data = (k: "aberturaCarrinho" | "fimCarrinho") => (f.carrinhoAindaNao[k] || !f[k] ? null : f[k]);
+  const extra = (e: FormDaConfig["reabertura"]): RespostaEtapaExtra | null =>
+    e.houve === true ? (e.abertura && e.fim ? { houve: true, abertura: e.abertura, fim: e.fim } : null) : e.houve === false ? { houve: false } : null;
+  return { aberturaCarrinho: data("aberturaCarrinho"), fimCarrinho: data("fimCarrinho"), reabertura: extra(f.reabertura), downsell: extra(f.downsell) };
+}
+
+/**
+ * Story 49.14 (AC6, R9-5) — todas as fases (carrinho, reabertura e downsell)
+ * terminaram até `ontem` (`YYYY-MM-DD`): o carrinho com abertura e fim ≤ ontem,
+ * e reabertura/downsell "não houve" ou com o fim ≤ ontem. "Ainda não aconteceu"
+ * (ou sem resposta) nunca terminou.
+ */
+export function todasAsFasesTerminaram(d: DatasDasFases, ontem: string): boolean {
+  const terminou = (abertura: string | null, fim: string | null) => abertura !== null && fim !== null && abertura <= ontem && fim <= ontem;
+  const extra = (r: RespostaEtapaExtra | null) => r !== null && (r.houve === false || terminou(r.abertura, r.fim));
+  return terminou(d.aberturaCarrinho, d.fimCarrinho) && extra(d.reabertura) && extra(d.downsell);
+}
+
+/** AC6 (49.14) — o aviso, antes do clique, de que todas as fases terminaram e dá para marcar "encerrado". */
+export function avisoDeFasesConcluidas(ontem: string): string {
+  return (
+    `Todas as fases (carrinho, reabertura e downsell) terminaram até ${ddmm(ontem)}: a parcial sai com os números do relatório final. ` +
+    `Para gerar o relatório final, marque “encerrado” na configuração do debriefing.`
+  );
+}
+
 /**
  * Story 49.12 (AC11) — o que o botão "Gerar debriefing" deixa claro no modo em
  * andamento: gera uma PARCIAL com dados até ontem e, havendo parcial, que vai
- * substituí-la. `null` = encerrado (o botão de sempre).
+ * substituí-la. `null` = encerrado (o botão de sempre). Story 49.14 (AC6): com
+ * todas as fases terminadas até ontem, `fasesConcluidas` avisa que dá para
+ * marcar "encerrado" (a geração não é bloqueada).
  */
 export function avisoDoBotaoDeGerar(
   cfg: Pick<DebriefingConfigGet, "config" | "parcialAtual"> | null | undefined,
   agora: Date,
-): { rotulo: string; detalhe: string } | null {
+): { rotulo: string; detalhe: string; fasesConcluidas?: string } | null {
   if (cfg?.config?.situacaoDoLancamento !== "em-andamento") return null;
-  const ontem = ddmm(ontemEmBrasilia(agora));
+  const ontemDia = ontemEmBrasilia(agora);
+  const ontem = ddmm(ontemDia);
   const p = cfg.parcialAtual;
   return {
     rotulo: `Gerar parcial (dados até ${ontem})`,
     detalhe: p
       ? `Lançamento em andamento: gera uma parcial com os dados até ${ontem} e SUBSTITUI a parcial atual${p.corte ? ` (dados até ${ddmm(p.corte)})` : ""} — os comentários ficam; as edições feitas no viewer se perdem.`
       : `Lançamento em andamento: gera uma parcial com os dados até ${ontem} (ontem, no fuso de Brasília).`,
+    ...(todasAsFasesTerminaram(cfg.config.datasChave, ontemDia) ? { fasesConcluidas: avisoDeFasesConcluidas(ontemDia) } : {}),
   };
+}
+
+/**
+ * Story 49.14 — o rótulo do "em andamento": com a API ≥ 36, o carrinho aberto é
+ * calculado; com a v35, a geração com o carrinho aberto ainda dá 422.
+ */
+export function rotuloDoEmAndamento(apiContrato: number | null | undefined): { rotulo: string; dica: string } {
+  const comCarrinho = typeof apiContrato === "number" && apiContrato >= CONTRATO_DO_CARRINHO_EM_ANDAMENTO;
+  return comCarrinho
+    ? {
+        rotulo: "Em andamento",
+        dica:
+          "Em andamento: o debriefing sai PARCIAL, com os dados até ontem (fuso de Brasília), e a próxima geração substitui a parcial. " +
+          "Carrinho, reabertura e downsell aceitam “ainda não aconteceu”; com o carrinho aberto, o que já aconteceu entra até ontem, marcado como parcial.",
+      }
+    : {
+        rotulo: "Em andamento (captação aberta)",
+        dica:
+          "Em andamento: o debriefing sai PARCIAL, com os dados até ontem (fuso de Brasília), e a próxima geração substitui a parcial. " +
+          "Carrinho, reabertura e downsell aceitam “ainda não aconteceu”.",
+      };
 }
 
 /** O 2º item da lista só com a API que a aceita (49.11 AC7) — com o motivo visível. */
@@ -433,6 +496,7 @@ const TITULOS: Record<string, string> = {
   TEXTO_IA_INDISPONIVEL: "Textos da IA indisponíveis",
   // Story 49.12 — lançamento em andamento
   SEM_DIA_FECHADO: "Ainda não há dia fechado para analisar",
+  // A API v35 (49.12) ainda responde este 422; a v36 (49.14) calcula o carrinho aberto.
   CARRINHO_JA_ABERTO: "O carrinho já abriu",
   MIDIA_DO_CORTE_NAO_SINCRONIZADA: "Mídia do dia de corte não sincronizada",
   COMPARACAO_EM_ANDAMENTO: "Lançamento de comparação em andamento",
