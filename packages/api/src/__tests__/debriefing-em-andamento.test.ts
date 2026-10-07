@@ -424,6 +424,9 @@ describe("AC4 — carrinho já aberto até o corte → 422 CARRINHO_JA_ABERTO", 
     const d = deps({ config: () => comAbertura("2026-05-11") });
     expect((await gerarDebriefing(d, PARAMS)).status).toBe(200);
     expect(d.gravados[0]!.payload.situacao).toMatchObject({ carrinhoAberto: false });
+    // AC6: a data planejada (depois do corte) não vira linha "abre carrinho" nos gráficos
+    expect(Object.values(constD(htmlDe(d)).graficos).flatMap((g) => g.marcos ?? [])).toEqual([]);
+    expect(htmlDe(d)).toContain("<span>Abertura carrinho principal <b>11/05 · D+24</b></span>");
   });
 });
 
