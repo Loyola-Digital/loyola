@@ -235,16 +235,39 @@ export function somarDias(dia: string, n: number): string {
 // Janela do debriefing (decisão 2A do dono, 2026-10-02)
 // ---------------------------------------------------------------------------
 
-/** Qual data fechou a janela. */
-export type FimDaJanelaPor = "fimCarrinho" | "reabertura.fim" | "downsell.fim";
+/** Qual data fechou a janela. `corte` = Story 49.12 (o dia de corte veio antes do fim da regra 2A). */
+export type FimDaJanelaPor = "fimCarrinho" | "reabertura.fim" | "downsell.fim" | "corte";
+
+/**
+ * Story 49.12 — por que a janela tem um corte:
+ * - `lancamento-em-andamento`: a geração parcial (R8-2: ontem em Brasília);
+ * - `comparacao-no-mesmo-d-mais-n`: o lançamento de comparação cortado no
+ *   mesmo D+N do atual (R8-3).
+ */
+export type MotivoDoCorte = "lancamento-em-andamento" | "comparacao-no-mesmo-d-mais-n";
+
+/** Story 49.12 — o corte de uma janela: NADA depois de `dia` entra em número nenhum. */
+export interface CorteDaJanela {
+  /** Último dia (BRT, inclusive) que entra na conta. Entrada do motor, nunca relógio. */
+  dia: string;
+  motivo: MotivoDoCorte;
+  /** O motivo do fim por extenso (AC5): "corte do lançamento em andamento" / "comparação cortada no mesmo D+N". */
+  texto: string;
+  /** D+N = `dia − inicioCaptacao`, em dias (AC3). */
+  dMaisN: number;
+  /** O carrinho do principal já tinha aberto até o corte (abertura informada e ≤ `dia`). */
+  carrinhoAberto: boolean;
+}
 
 export interface JanelaDoDebriefing {
   /** `datasChave.inicioCaptacao` (BRT, inclusive). */
   inicio: string;
-  /** O maior entre `fimCarrinho`, `reabertura.fim` e `downsell.fim` (BRT, inclusive). */
+  /** O maior entre `fimCarrinho`, `reabertura.fim` e `downsell.fim` (BRT, inclusive) — ou o corte (49.12). */
   fim: string;
   fimPor: FimDaJanelaPor;
   regra: string;
+  /** Story 49.12 — só existe quando a geração tem data de corte (parcial ou comparação em D+N). */
+  corte?: CorteDaJanela;
 }
 
 export const REGRA_DA_JANELA =
@@ -289,6 +312,108 @@ export function janelaDoDebriefing(d: DatasDaJanela): JanelaDoDebriefing {
     throw new RangeError(`janelaDoDebriefing: fim (${fim}, ${fimPor}) antes de inicioCaptacao (${d.inicioCaptacao})`);
   }
   return { inicio: d.inicioCaptacao, fim, fimPor, regra: REGRA_DA_JANELA };
+}
+
+// ---------------------------------------------------------------------------
+// Story 49.12 — janela com data de corte (lançamento em andamento / comparação em D+N)
+// ---------------------------------------------------------------------------
+
+export const REGRA_DA_JANELA_EM_ANDAMENTO =
+  "de inicioCaptacao até a data de corte (ontem em Brasília, R8-2) — corte do lançamento em andamento; corta vendas, leads, pesquisa e mídia (a mesma regra única da decisão 2A, com o fim trocado pelo corte)";
+export const REGRA_DA_JANELA_COMPARACAO_EM_D_MAIS_N =
+  "de inicioCaptacao até o menor entre o fim da regra 2A e inicioCaptacao + N (o mesmo D+N do lançamento atual, R8-3) — comparação cortada no mesmo D+N; corta vendas, leads, pesquisa e mídia";
+
+const TEXTO_DO_CORTE: Readonly<Record<MotivoDoCorte, string>> = {
+  "lancamento-em-andamento": "corte do lançamento em andamento",
+  "comparacao-no-mesmo-d-mais-n": "comparação cortada no mesmo D+N",
+};
+
+/**
+ * O que a janela precisa da config (a união da 49.1/49.12): encerrado (as
+ * datas da regra 2A, todas presentes) ou em andamento (só o início é certo).
+ * `corte` é ENTRADA — quem orquestra o calcula; o motor nunca lê relógio.
+ */
+export type ConfigDaJanela =
+  | { situacaoDoLancamento?: "encerrado"; datasChave: DatasDaJanela & { aberturaCarrinho: string }; corte?: string }
+  | { situacaoDoLancamento: "em-andamento"; datasChave: { inicioCaptacao: string; aberturaCarrinho: string | null }; corte?: string };
+
+function exigirDia(campo: string, v: string | undefined): string {
+  if (!RE_YMD.test(v ?? "")) throw new RangeError(`janelaDaGeracao: ${campo} não é YYYY-MM-DD: ${String(v)}`);
+  return v as string;
+}
+
+/**
+ * A janela de UMA geração — a única porta de loaders e motores (49.12):
+ * - encerrado sem corte → `janelaDoDebriefing` (a regra 2A), o MESMO objeto
+ *   de antes (o encerrado não muda — AC1, AC13 a);
+ * - em andamento → `inicioCaptacao` até o corte (AC5); sem corte, lança
+ *   (janela inventada seria número errado sem aviso);
+ * - encerrado COM corte (a comparação em D+N, AC8) → o fim é o menor entre o
+ *   da regra 2A e o corte; dentro dela, as regras de sempre (decisão 7 inclusa).
+ */
+export function janelaDaGeracao(c: ConfigDaJanela): JanelaDoDebriefing {
+  if (c.situacaoDoLancamento === "em-andamento") {
+    const inicio = exigirDia("inicioCaptacao", c.datasChave.inicioCaptacao);
+    if (c.corte === undefined) {
+      throw new RangeError("janelaDaGeracao: o modo em andamento exige a data de corte como entrada (ontem em Brasília) — o motor não lê relógio");
+    }
+    const corte = exigirDia("corte", c.corte);
+    if (corte < inicio) throw new RangeError(`janelaDaGeracao: corte (${corte}) antes de inicioCaptacao (${inicio})`);
+    const abertura = c.datasChave.aberturaCarrinho;
+    return {
+      inicio,
+      fim: corte,
+      fimPor: "corte",
+      regra: REGRA_DA_JANELA_EM_ANDAMENTO,
+      corte: {
+        dia: corte,
+        motivo: "lancamento-em-andamento",
+        texto: TEXTO_DO_CORTE["lancamento-em-andamento"],
+        dMaisN: diasEntre(inicio, corte),
+        carrinhoAberto: abertura !== null && abertura <= corte,
+      },
+    };
+  }
+  const j = janelaDoDebriefing(c.datasChave);
+  if (c.corte === undefined) return j;
+  const corte = exigirDia("corte", c.corte);
+  if (corte < j.inicio) throw new RangeError(`janelaDaGeracao: corte (${corte}) antes de inicioCaptacao (${j.inicio})`);
+  const cortou = corte < j.fim;
+  return {
+    inicio: j.inicio,
+    fim: cortou ? corte : j.fim,
+    fimPor: cortou ? "corte" : j.fimPor,
+    regra: REGRA_DA_JANELA_COMPARACAO_EM_D_MAIS_N,
+    corte: {
+      dia: corte,
+      motivo: "comparacao-no-mesmo-d-mais-n",
+      texto: TEXTO_DO_CORTE["comparacao-no-mesmo-d-mais-n"],
+      dMaisN: diasEntre(j.inicio, corte),
+      carrinhoAberto: c.datasChave.aberturaCarrinho <= corte,
+    },
+  };
+}
+
+/**
+ * Decisão 7 com o carrinho que ainda não abriu (49.12): abertura `null`
+ * ("ainda não aconteceu") = toda venda datada é anterior à abertura.
+ */
+export function anteriorAAbertura(dia: string, abertura: string | null): boolean {
+  return abertura === null || dia < abertura;
+}
+
+/** Código da lacuna do que depende do carrinho, quando ele não abriu até o corte (49.12 AC6). */
+export const LACUNA_CARRINHO_AINDA_NAO_ABRIU = "CARRINHO_AINDA_NAO_ABRIU" as const;
+
+/** O corte que deixa o carrinho de fora (AC6), ou `null` quando tudo é calculado. */
+export function corteSemCarrinho(janela: Pick<JanelaDoDebriefing, "corte">): CorteDaJanela | null {
+  return janela.corte && !janela.corte.carrinhoAberto ? janela.corte : null;
+}
+
+/** "carrinho ainda não abriu — dados até 06/10, D+6" (AC6) — a lacuna escrita, nunca zero. */
+export function textoDaLacunaDoCarrinho(corte: Pick<CorteDaJanela, "dia" | "dMaisN">): string {
+  const [, m, d] = corte.dia.split("-");
+  return `carrinho ainda não abriu — dados até ${d}/${m}, D+${corte.dMaisN}`;
 }
 
 // ---------------------------------------------------------------------------

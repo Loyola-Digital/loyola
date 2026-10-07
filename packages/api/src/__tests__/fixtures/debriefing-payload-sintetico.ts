@@ -13,7 +13,7 @@
  */
 
 import { CLASSIFICADOR_VERSAO, classificarOrigem, type ConfigClassificador, type Utm } from "@loyola-x/shared";
-import type { DebriefingConfigLancamento } from "../../services/debriefing-config.js";
+import type { DebriefingConfigLancamentoEncerrado } from "../../services/debriefing-config.js";
 import {
   CRITERIO_DE_UNICO_HEADLINE,
   computeDebriefingMoneyTime,
@@ -46,7 +46,7 @@ export const classificador: ClassificadorInjetado = {
   classificar: (e) => classificarOrigem(e, CFG_CLASSIF),
 };
 
-export function configSintetica(): DebriefingConfigLancamento {
+export function configSintetica(): DebriefingConfigLancamentoEncerrado {
   return {
     tipoDeFunil: "launch",
     stageId: CAP,

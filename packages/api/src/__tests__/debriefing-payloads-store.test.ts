@@ -22,6 +22,7 @@ import type { Database } from "../db/client.js";
 import debriefingsRoutes from "../routes/debriefings.js";
 import { gravarDebriefingGerado, lerUltimoPayloadSalvoDoFunil, type RegistroDoDebriefing } from "../services/debriefing-generate.js";
 import { payloadSintetico } from "./fixtures/debriefing-payload-sintetico.js";
+import { MIGRACAO_0168 } from "./fixtures/debriefing-migracoes.js";
 
 const MIGRATION = join(dirname(fileURLToPath(import.meta.url)), "..", "db", "migrations", "0165_debriefing_payloads.sql");
 const U = "40000000-0000-4000-8000-000000000001";
@@ -70,6 +71,11 @@ beforeAll(async () => {
   pg = new PGlite({ parsers: { 1082: comoString, 1114: comoString, 1184: comoString, 1700: comoString } });
   await pg.exec(DDL);
   await pg.exec(readFileSync(MIGRATION, "utf8"));
+  // Story 49.12: a 0168 (aditiva) — a parcial por etapa e o aviso do viewer. Ela
+  // também altera `debriefing_configs`, então a 0161/0162 entram antes (reais).
+  await pg.exec(readFileSync(join(dirname(MIGRATION), "0161_debriefing_configs.sql"), "utf8"));
+  await pg.exec(readFileSync(join(dirname(MIGRATION), "0162_debriefing_lancamentos_comparacao.sql"), "utf8"));
+  await pg.exec(readFileSync(MIGRACAO_0168, "utf8"));
   // Driver PGlite do drizzle (não o pg-proxy): a gravação usa `db.transaction`.
   db = drizzle(pg, { schema }) as unknown as Database;
   app = Fastify();
@@ -101,9 +107,10 @@ describe("migration 0165", () => {
   it("9 colunas, idempotente (reaplicada continua 9) e o rollback do topo remove a tabela", async () => {
     const colunas = async () =>
       (await pg.query<{ n: number }>("SELECT count(*)::int AS n FROM information_schema.columns WHERE table_name = 'debriefing_payloads'")).rows[0]!.n;
-    expect(await colunas()).toBe(9);
+    // 49.12: a 0168 (aplicada no beforeAll) acrescenta `parcial` — 9 + 1.
+    expect(await colunas()).toBe(10);
     await pg.exec(readFileSync(MIGRATION, "utf8"));
-    expect(await colunas()).toBe(9);
+    expect(await colunas()).toBe(10);
     const constraints = (
       await pg.query<{ contype: string }>(
         "SELECT contype FROM pg_constraint WHERE conrelid = 'debriefing_payloads'::regclass AND contype IN ('p','f','c') ORDER BY contype",
@@ -116,6 +123,8 @@ describe("migration 0165", () => {
     expect(await colunas()).toBe(0);
     await pg.exec(readFileSync(MIGRATION, "utf8"));
     expect(await colunas()).toBe(9);
+    await pg.exec(readFileSync(MIGRACAO_0168, "utf8")); // os testes seguintes usam a 0168
+    expect(await colunas()).toBe(10);
   });
 });
 

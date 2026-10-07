@@ -33,9 +33,10 @@
  * as rotas são distintas e o `detalhe` diz "gerador de debriefing".
  */
 
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   debriefingConfigs,
+  debriefingPayloads,
   expertReportConfigs,
   funnelStages,
   funnelSurveys,
@@ -71,6 +72,23 @@ export type DimensaoDeCriativo = (typeof DIMENSOES_DE_CRIATIVO)[number];
 export type RespostaEtapaExtra =
   | { houve: false }
   | { houve: true; abertura: string; fim: string };
+
+/**
+ * Story 49.12 (R8-1, AC1) — "O lançamento terminou?": resposta EXPLÍCITA na
+ * config. Config salva antes da 49.12 = `encerrado` (decisão de escopo: o PUT
+ * só aceitava as três datas, então toda config gravada descreve um lançamento
+ * encerrado; a 0168 grava o DEFAULT `encerrado`).
+ */
+export const SITUACOES_DO_LANCAMENTO = ["encerrado", "em-andamento"] as const;
+export type SituacaoDoLancamento = (typeof SITUACOES_DO_LANCAMENTO)[number];
+
+/**
+ * Story 49.12 (AC2) — as fases que aceitam "ainda não aconteceu" no modo em
+ * andamento. "Ainda não aconteceu" ≠ "não houve": "não houve" afirma que a
+ * etapa não existiu; "ainda não aconteceu" diz que ela não começou até o corte.
+ */
+export const FASES_QUE_PODEM_NAO_TER_ACONTECIDO = ["aberturaCarrinho", "fimCarrinho", "reabertura", "downsell"] as const;
+export type FaseQuePodeNaoTerAcontecido = (typeof FASES_QUE_PODEM_NAO_TER_ACONTECIDO)[number];
 
 export interface EtapaDoLancamento {
   stageId: string;
@@ -164,12 +182,25 @@ export interface DatasChave {
   downsell: RespostaEtapaExtra;
 }
 
-export interface DebriefingConfigLancamento {
+/**
+ * Story 49.12 — datas-chave do lançamento EM ANDAMENTO. O início da captação é
+ * sempre informado; as demais podem ser "ainda não aconteceu" (`null` aqui, e a
+ * fase listada em `aindaNaoAconteceu`) — depois do gate, `null` nunca é "sem
+ * resposta".
+ */
+export interface DatasChaveEmAndamento {
+  inicioCaptacao: string;
+  aberturaCarrinho: string | null;
+  fimCarrinho: string | null;
+  reabertura: RespostaEtapaExtra | null;
+  downsell: RespostaEtapaExtra | null;
+}
+
+interface DebriefingConfigLancamentoBase {
   tipoDeFunil: "launch";
   stageId: string;
   funnelId: string;
   projectId: string;
-  datasChave: DatasChave;
   /**
    * A comparação PRINCIPAL = `lancamentosComparacao[0] ?? null` (49.11, R6-5) —
    * mantido para os consumidores da versão anterior do contrato (49.4 cross-
@@ -209,7 +240,32 @@ export interface DebriefingConfigLancamento {
   validadoPor: string | null;
   /** Avisos que NÃO bloqueiam e que o documento precisa declarar (49.6). */
   avisos: DebriefingAviso[];
+  /**
+   * Story 49.12 — data de corte da GERAÇÃO (`YYYY-MM-DD`, BRT, inclusive). O
+   * gate nunca a preenche (não lê relógio): quem orquestra a acrescenta — no
+   * modo em andamento, ontem em Brasília (R8-2); no lançamento de comparação,
+   * início + N (o mesmo D+N, R8-3). Ausente = sem corte (o encerrado de sempre).
+   */
+  corte?: string;
 }
+
+/** O lançamento encerrado — as regras de datas da 49.1, sem mudança (49.12 AC1). */
+export interface DebriefingConfigLancamentoEncerrado extends DebriefingConfigLancamentoBase {
+  /** Ausente = forma anterior à 49.12 (que só conhecia o encerrado). O gate sempre preenche. */
+  situacaoDoLancamento?: "encerrado";
+  datasChave: DatasChave;
+}
+
+/** Story 49.12 — o lançamento em andamento (captação aberta; carrinho aberto é a 49.14). */
+export interface DebriefingConfigLancamentoEmAndamento extends DebriefingConfigLancamentoBase {
+  situacaoDoLancamento: "em-andamento";
+  datasChave: DatasChaveEmAndamento;
+  /** As fases respondidas "ainda não aconteceu", na ordem de `FASES_QUE_PODEM_NAO_TER_ACONTECIDO`. */
+  aindaNaoAconteceu: FaseQuePodeNaoTerAcontecido[];
+}
+
+/** União discriminada por `situacaoDoLancamento` (49.12). */
+export type DebriefingConfigLancamento = DebriefingConfigLancamentoEncerrado | DebriefingConfigLancamentoEmAndamento;
 
 export interface DebriefingConfigPerpetuo {
   tipoDeFunil: "perpetual";
@@ -264,6 +320,24 @@ export interface ValoresDaConfig {
   /** R4-12 (pedido da 49.2): mesmo comportamento de `closerMediums` — nulo = sem resposta. */
   ferramentasDeAtendimento: string[] | null;
   dimensaoDeCriativo: DimensaoDeCriativo | null;
+  /**
+   * Story 49.12 (AC1) — ausente = forma anterior à 49.12 = `encerrado`
+   * (`situacaoDe`). `valoresDaLinha` e o PUT sempre preenchem.
+   */
+  situacaoDoLancamento?: SituacaoDoLancamento;
+  /** Story 49.12 (AC2) — fases respondidas "ainda não aconteceu". Ausente = `[]`. */
+  aindaNaoAconteceu?: FaseQuePodeNaoTerAcontecido[];
+}
+
+/** A situação de uns valores: ausente = `encerrado` (decisão de escopo da 49.12). */
+export function situacaoDe(v: Pick<ValoresDaConfig, "situacaoDoLancamento">): SituacaoDoLancamento {
+  return v.situacaoDoLancamento ?? "encerrado";
+}
+
+/** As fases "ainda não aconteceu", sem repetição e na ordem canônica. */
+export function aindaNaoAconteceuDe(v: Pick<ValoresDaConfig, "aindaNaoAconteceu">): FaseQuePodeNaoTerAcontecido[] {
+  const marcadas = new Set(v.aindaNaoAconteceu ?? []);
+  return FASES_QUE_PODEM_NAO_TER_ACONTECIDO.filter((f) => marcadas.has(f));
 }
 
 export const VALORES_VAZIOS: Readonly<ValoresDaConfig> = Object.freeze({
@@ -550,25 +624,56 @@ export function dataExiste(valor: string): boolean {
 
 type DatasParciais = Pick<
   ValoresDaConfig,
-  "inicioCaptacao" | "aberturaCarrinho" | "fimCarrinho" | "reabertura" | "downsell"
+  "inicioCaptacao" | "aberturaCarrinho" | "fimCarrinho" | "reabertura" | "downsell" | "situacaoDoLancamento" | "aindaNaoAconteceu"
 >;
 
 /**
  * AC2 — presença, resposta explícita, data existente e ordem coerente.
  * Usada pelo PUT (400) e pelo gate (CONFIG_INCOMPLETA): uma regra só.
+ *
+ * Story 49.12: no modo `encerrado` (o de sempre), a regra é a da 49.1 sem
+ * nenhuma mudança — e "ainda não aconteceu" é recusado. No modo
+ * `em-andamento`, o início continua obrigatório; abertura, fim do carrinho,
+ * reabertura e downsell aceitam também "ainda não aconteceu" (a fase em
+ * `aindaNaoAconteceu`, sem valor). A ordem vale entre as datas que existirem.
  */
 export function problemasDasDatasChave(d: DatasParciais): string[] {
   const p: string[] = [];
+  const emAndamento = situacaoDe(d) === "em-andamento";
+  const aindaNao = new Set(aindaNaoAconteceuDe(d));
+  if (!emAndamento && aindaNao.size > 0) {
+    p.push(
+      `datasChave.aindaNaoAconteceu (${[...aindaNao].join(", ")}) só vale com o lançamento em andamento — ` +
+        `no lançamento encerrado, informe as datas (ou "não houve" na reabertura/downsell)`,
+    );
+  }
   const obrig = ["inicioCaptacao", "aberturaCarrinho", "fimCarrinho"] as const;
   for (const campo of obrig) {
     const v = d[campo];
-    if (!v) p.push(`datasChave.${campo} é obrigatória`);
-    else if (!dataExiste(v)) p.push(`datasChave.${campo} (${v}) não é uma data válida`);
+    if (emAndamento && campo !== "inicioCaptacao" && aindaNao.has(campo)) {
+      if (v) p.push(`datasChave.${campo}: responda a data OU "ainda não aconteceu", não os dois`);
+      continue;
+    }
+    if (!v) {
+      p.push(
+        emAndamento && campo !== "inicioCaptacao"
+          ? `datasChave.${campo} é obrigatória (ou "ainda não aconteceu", com o lançamento em andamento)`
+          : `datasChave.${campo} é obrigatória`,
+      );
+    } else if (!dataExiste(v)) p.push(`datasChave.${campo} (${v}) não é uma data válida`);
   }
   for (const campo of ["reabertura", "downsell"] as const) {
     const r = d[campo];
+    if (emAndamento && aindaNao.has(campo)) {
+      if (r) p.push(`datasChave.${campo}: responda "houve"/"não houve" OU "ainda não aconteceu", não os dois`);
+      continue;
+    }
     if (!r) {
-      p.push(`datasChave.${campo} exige resposta explícita: { houve: false } ou { houve: true, abertura, fim }`);
+      p.push(
+        emAndamento
+          ? `datasChave.${campo} exige resposta explícita: { houve: false }, { houve: true, abertura, fim } ou "ainda não aconteceu"`
+          : `datasChave.${campo} exige resposta explícita: { houve: false } ou { houve: true, abertura, fim }`,
+      );
       continue;
     }
     if (r.houve === true) {
@@ -595,18 +700,26 @@ export function problemasDasDatasChave(d: DatasParciais): string[] {
   return p;
 }
 
-/** AC4 (segunda metade) — papel de etapa extraordinária exige a data correspondente. */
+/**
+ * AC4 (segunda metade) — papel de etapa extraordinária exige a data
+ * correspondente. Story 49.12 (AC2/AC9): no modo em andamento, "ainda não
+ * aconteceu" também satisfaz o papel (a etapa existe e ainda não começou); no
+ * encerrado, a regra é a de sempre.
+ */
 export function problemasPapelXDatas(
   etapas: readonly EtapaDoLancamento[],
-  d: Pick<ValoresDaConfig, "reabertura" | "downsell">,
+  d: Pick<ValoresDaConfig, "reabertura" | "downsell" | "situacaoDoLancamento" | "aindaNaoAconteceu">,
 ): string[] {
   const p: string[] = [];
+  const aindaNao = situacaoDe(d) === "em-andamento" ? new Set(aindaNaoAconteceuDe(d)) : new Set<string>();
+  const ok = (campo: "reabertura" | "downsell") => d[campo]?.houve === true || aindaNao.has(campo);
+  const sufixo = aindaNao.size > 0 || situacaoDe(d) === "em-andamento" ? ' (ou "ainda não aconteceu")' : "";
   for (const e of etapas) {
-    if (e.papel === "reabertura" && d.reabertura?.houve !== true) {
-      p.push(`etapas[${e.stageId}].papel=reabertura exige datasChave.reabertura.houve = true`);
+    if (e.papel === "reabertura" && !ok("reabertura")) {
+      p.push(`etapas[${e.stageId}].papel=reabertura exige datasChave.reabertura.houve = true${sufixo}`);
     }
-    if ((e.papel === "leads-downsell" || e.papel === "vendas-downsell") && d.downsell?.houve !== true) {
-      p.push(`etapas[${e.stageId}].papel=${e.papel} exige datasChave.downsell.houve = true`);
+    if ((e.papel === "leads-downsell" || e.papel === "vendas-downsell") && !ok("downsell")) {
+      p.push(`etapas[${e.stageId}].papel=${e.papel} exige datasChave.downsell.houve = true${sufixo}`);
     }
   }
   return p;
@@ -723,17 +836,36 @@ function montarDebriefingConfig(cfg: DebriefingConfigRaw): DebriefingConfig {
   // válida vira a principal (R6-5); lista vazia → edição única. Aviso em `avisos`.
   const removidas = new Set(comparacoesRemovidasDe(cfg));
   const efetiva = comparacoesDe(cfg).filter((id) => !removidas.has(id));
+  // Story 49.12 — a situação discrimina as datas: no em andamento, `null` é
+  // "ainda não aconteceu" (o gate já exigiu a resposta explícita de cada fase).
+  const situacao =
+    situacaoDe(cfg) === "em-andamento"
+      ? {
+          situacaoDoLancamento: "em-andamento" as const,
+          datasChave: {
+            inicioCaptacao: cfg.inicioCaptacao as string,
+            aberturaCarrinho: cfg.aberturaCarrinho,
+            fimCarrinho: cfg.fimCarrinho,
+            reabertura: cfg.reabertura,
+            downsell: cfg.downsell,
+          },
+          aindaNaoAconteceu: aindaNaoAconteceuDe(cfg),
+        }
+      : {
+          situacaoDoLancamento: "encerrado" as const,
+          datasChave: {
+            inicioCaptacao: cfg.inicioCaptacao as string,
+            aberturaCarrinho: cfg.aberturaCarrinho as string,
+            fimCarrinho: cfg.fimCarrinho as string,
+            reabertura: cfg.reabertura as RespostaEtapaExtra,
+            downsell: cfg.downsell as RespostaEtapaExtra,
+          },
+        };
   // Depois de `assertDebriefingScope`, todo campo abaixo está preenchido.
   return {
     tipoDeFunil: "launch",
     ...base,
-    datasChave: {
-      inicioCaptacao: cfg.inicioCaptacao as string,
-      aberturaCarrinho: cfg.aberturaCarrinho as string,
-      fimCarrinho: cfg.fimCarrinho as string,
-      reabertura: cfg.reabertura as RespostaEtapaExtra,
-      downsell: cfg.downsell as RespostaEtapaExtra,
-    },
+    ...situacao,
     lancamentoComparacaoFunnelId: efetiva[0] ?? null,
     lancamentosComparacao: efetiva,
     pesquisaDeCaptacaoPorEtapa: { ...(cfg.pesquisaDeCaptacaoPorEtapa ?? {}) },
@@ -793,6 +925,10 @@ function chaveDasPremissas(v: ValoresDaConfig): string {
     closerPorSellerName: v.closerPorSellerName,
     ferramentasDeAtendimento: v.ferramentasDeAtendimento === null ? null : [...v.ferramentasDeAtendimento].sort(),
     dimensaoDeCriativo: v.dimensaoDeCriativo,
+    // 49.12: a situação e as fases "ainda não aconteceu" são premissa (R9-2:
+    // mudar zera `validado`, como qualquer premissa). Forma anterior = encerrado, [].
+    situacaoDoLancamento: situacaoDe(v),
+    aindaNaoAconteceu: aindaNaoAconteceuDe(v),
   });
 }
 
@@ -859,6 +995,15 @@ export function valoresDaLinha(row: DebriefingConfigRow): ValoresDaConfig {
     closerPorSellerName: row.closerPorSellerName ?? null,
     ferramentasDeAtendimento: Array.isArray(row.ferramentasDeAtendimento) ? row.ferramentasDeAtendimento : null,
     dimensaoDeCriativo: row.dimensaoDeCriativo ?? null,
+    // 49.12 (0168): linha anterior à migration = DEFAULT 'encerrado' / '[]'.
+    situacaoDoLancamento: row.situacaoDoLancamento === "em-andamento" ? "em-andamento" : "encerrado",
+    aindaNaoAconteceu: Array.isArray(row.aindaNaoAconteceu)
+      ? aindaNaoAconteceuDe({
+          aindaNaoAconteceu: row.aindaNaoAconteceu.filter((f): f is FaseQuePodeNaoTerAcontecido =>
+            (FASES_QUE_PODEM_NAO_TER_ACONTECIDO as readonly string[]).includes(f as string),
+          ),
+        })
+      : [],
   };
 }
 
@@ -894,6 +1039,12 @@ export interface DebriefingConfigStore {
    */
   pesquisasComRotulo?(stageIds: string[]): Promise<{ id: string; stageId: string; rotulo: string }[]>;
   /**
+   * Story 49.12 (AC11) — a parcial gerada desta etapa (no máximo uma, AC10),
+   * para o botão avisar que a próxima geração a substitui. Opcional: store sem
+   * ele (fixtures) faz o GET omitir `parcialAtual`.
+   */
+  parcialDaEtapa?(stageId: string): Promise<ParcialDaEtapa | null>;
+  /**
    * Upsert por etapa (`ON CONFLICT (stage_id)`): dois "salvar" simultâneos na
    * primeira gravação não dão 500 (49.1 QA REL-001). `resetarValidado` só pesa
    * quando a linha já existe; a rota manda `true` quando não viu linha nenhuma,
@@ -905,8 +1056,37 @@ export interface DebriefingConfigStore {
   nomeDoUsuario(userId: string): Promise<string | null>;
 }
 
+/** Story 49.12 — a parcial salva de uma etapa (`debriefing_payloads.parcial`). */
+export interface ParcialDaEtapa {
+  debriefingId: string;
+  /** ISO 8601 — quando a parcial foi gerada (a última substituição). */
+  geradaEm: string;
+  corte: string | null;
+  dMaisN: number | null;
+}
+
 export function criarDebriefingConfigStore(db: Database): DebriefingConfigStore {
   return {
+    async parcialDaEtapa(stageId) {
+      const [row] = await db
+        .select({
+          debriefingId: debriefingPayloads.debriefingId,
+          createdAt: debriefingPayloads.createdAt,
+          corte: sql<string | null>`${debriefingPayloads.payload} -> 'situacao' ->> 'corte'`,
+          dMaisN: sql<string | null>`${debriefingPayloads.payload} -> 'situacao' ->> 'dMaisN'`,
+        })
+        .from(debriefingPayloads)
+        .where(and(eq(debriefingPayloads.stageIdOrigem, stageId), eq(debriefingPayloads.parcial, true)))
+        .limit(1);
+      if (!row) return null;
+      const n = row.dMaisN === null ? null : Number(row.dMaisN);
+      return {
+        debriefingId: row.debriefingId,
+        geradaEm: row.createdAt instanceof Date ? row.createdAt.toISOString() : new Date(String(row.createdAt)).toISOString(),
+        corte: row.corte,
+        dMaisN: n !== null && Number.isFinite(n) ? n : null,
+      };
+    },
     async contextoDaEtapa(stageId) {
       const [row] = await db
         .select({
@@ -996,6 +1176,9 @@ export function criarDebriefingConfigStore(db: Database): DebriefingConfigStore 
         lancamentoComparacaoFunnelId: lista[0] ?? null,
         lancamentosComparacao: lista,
         pesquisaDeCaptacaoPorEtapa: valores.pesquisaDeCaptacaoPorEtapa ?? {},
+        // 49.12: valores na forma anterior (sem os campos) = encerrado, [].
+        situacaoDoLancamento: situacaoDe(valores),
+        aindaNaoAconteceu: aindaNaoAconteceuDe(valores),
       };
       await db
         .insert(debriefingConfigs)

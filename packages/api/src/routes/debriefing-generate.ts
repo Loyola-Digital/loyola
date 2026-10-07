@@ -1,11 +1,13 @@
 /**
  * Story 49.6 — `POST …/stages/:stageId/debriefing/generate` (AC1).
  *
- *   200 { id, html, payload, alertas }
+ *   200 { id, html, payload, alertas, substituiuParcial }
  *   403 guest · 404 etapa fora do funil/projeto da URL
  *   422 ETAPA_NAO_E_DEBRIEFING · TIPO_DE_FUNIL_NAO_SUPORTADO · COMBINACAO_NAO_VALIDADA ·
  *       CONFIG_INCOMPLETA · COMPARACAO_SEM_CONFIG · DADO_INDISPONIVEL ·
  *       INVARIANTE_VIOLADO · CONFERENCIA_EXTERNA   (corpo `{ erro, detalhe, acao, … }`)
+ *       Story 49.12 (lançamento em andamento): SEM_DIA_FECHADO · CARRINHO_JA_ABERTO ·
+ *       MIDIA_DO_CORTE_NAO_SINCRONIZADA · COMPARACAO_EM_ANDAMENTO
  *   413 PAYLOAD_TOO_LARGE
  *
  * Sem corpo de gates: a config vem da 49.1. O corpo aceita só o investimento

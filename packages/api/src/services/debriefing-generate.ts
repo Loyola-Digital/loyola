@@ -19,10 +19,30 @@
  *
  * As dependências são injetáveis (`DependenciasDaGeracao`): a rota usa as
  * reais; o teste prova a ordem e o "nada persistido" sem banco nem planilha.
+ *
+ * Story 49.12 — lançamento EM ANDAMENTO (captação aberta, R8-1): depois do
+ * gate, o corte = ontem em Brasília no instante da geração (R8-2, AC3) entra na
+ * config como ENTRADA dos motores; corte antes do início da captação → 422
+ * `SEM_DIA_FECHADO`; carrinho já aberto até o corte → 422 `CARRINHO_JA_ABERTO`
+ * (AC4, até a 49.14); mídia da Meta do dia de corte não sincronizada em alguma
+ * conta → 422 `MIDIA_DO_CORTE_NAO_SINCRONIZADA` (AC15). A comparação pela
+ * config é cortada no mesmo D+N (AC8); só com payload salvo, a parcial sai SEM
+ * Δ e com aviso. Comparação que está ela mesma em andamento → 422
+ * `COMPARACAO_EM_ANDAMENTO` (AC8, R9-4), em qualquer modo. A persistência
+ * substitui a parcial da etapa (AC10) — o final também.
  */
 
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { debriefingPayloads, debriefings, funnelStages, funnels, projects } from "../db/schema.js";
+import {
+  debriefingPayloads,
+  debriefings,
+  funnelStages,
+  funnels,
+  metaAdsAccountProjects,
+  metaAdsAccounts,
+  metaSyncState,
+  projects,
+} from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import {
   DebriefingConfigError,
@@ -34,10 +54,13 @@ import { DebriefingDadoIndisponivelError, loadDebriefingMoneyTimeInput } from ".
 import { loadDebriefingAudienceInput } from "./debriefing-audience-loader.js";
 import { CRITERIO_DE_UNICO_HEADLINE, MAXD_PADRAO, computeDebriefingMoneyTime } from "./debriefing-money-time-engine.js";
 import { computeDebriefingAudience } from "./debriefing-audience-engine.js";
-import { DEBRIEFING_PAYLOAD_VERSAO, montarPayloadDebriefing, type DebriefingPayload } from "./debriefing-payload.js";
+import { DEBRIEFING_PAYLOAD_VERSAO, montarPayloadDebriefing, parcialDo, type DebriefingPayload } from "./debriefing-payload.js";
 import { validateDebriefing, type AlertaFase12 } from "./debriefing-guards.js";
 import { renderDebriefing, type ComparacaoDoDebriefing, type OrigemDaComparacao } from "./debriefing-render.js";
-import { diaMesBr } from "./launch-report-narrative.js";
+import { dataBr, diaMesBr } from "./launch-report-narrative.js";
+import { diasEntre, somarDias } from "./debriefing-hygiene.js";
+import { businessYesterday } from "../utils/sale-date.js";
+import { violaUnicidade } from "../utils/db-errors.js";
 
 /** Mesmo teto de `routes/debriefings.ts:17` e de `launch-reports.ts:47`. */
 export const MAX_HTML_BYTES_DEBRIEFING = 5 * 1024 * 1024;
@@ -46,7 +69,14 @@ export const MAX_HTML_BYTES_DEBRIEFING = 5 * 1024 * 1024;
 // Erros próprios da geração (o resto vem tipado dos loaders/gate/guardas)
 // ---------------------------------------------------------------------------
 
-export type CodigoErroDaGeracao = "ETAPA_NAO_E_DEBRIEFING" | "COMPARACAO_SEM_CONFIG";
+export type CodigoErroDaGeracao =
+  | "ETAPA_NAO_E_DEBRIEFING"
+  | "COMPARACAO_SEM_CONFIG"
+  // Story 49.12
+  | "SEM_DIA_FECHADO"
+  | "CARRINHO_JA_ABERTO"
+  | "MIDIA_DO_CORTE_NAO_SINCRONIZADA"
+  | "COMPARACAO_EM_ANDAMENTO";
 
 export class DebriefingGeracaoError extends Error {
   constructor(
@@ -80,10 +110,28 @@ export interface RegistroDoDebriefing {
   campaignName: string;
   stageId: string;
   html: string;
+  /** Quem gerou: `createdBy` no registro novo; `updatedBy` quando substitui a parcial (49.12 AC10). */
   createdBy: string;
   payload: DebriefingPayload;
   comparacao: { funnelId: string; nome: string; payload: DebriefingPayload; origem: OrigemDaComparacao } | null;
   alertas: AlertaFase12[];
+  /** Story 49.12 — o documento é uma parcial (no máximo uma por etapa). Ausente = final. */
+  parcial?: boolean;
+}
+
+/**
+ * Story 49.12 (AC15) — o estado do sync da mídia Meta de UMA conta do
+ * lançamento (`meta_sync_state`). `ad-daily` é o passo que roda em toda rodada
+ * (sucesso ou erro); `campaign-daily` só roda quando a conta teve anúncio no
+ * período — por isso "sincronizado" é lido do `ad-daily`, e o `campaign-daily`
+ * só pesa quando RODOU depois do corte e falhou (a mídia do debriefing sai dele).
+ */
+export interface EstadoDoSyncDaConta {
+  /** `act_…` (a chave `accountId` do `meta_sync_state`). */
+  accountId: string;
+  nome: string | null;
+  adDaily: { lastSuccessAt: string | null } | null;
+  campaignDaily: { lastRunAt: string | null; lastSuccessAt: string | null } | null;
 }
 
 export interface DependenciasDaGeracao {
@@ -99,8 +147,13 @@ export interface DependenciasDaGeracao {
   calcularPayload(config: DebriefingConfigLancamento, geradoEm: Date): Promise<DebriefingPayload>;
   /** Nomes para o documento: funis do projeto e etapas dos funis dados. */
   nomes(projectId: string, funnelIds: string[]): Promise<{ funis: Record<string, string>; etapas: Record<string, string> }>;
-  /** Persistência (HTML + payload) numa transação. */
-  gravar(registro: RegistroDoDebriefing): Promise<{ id: string }>;
+  /**
+   * Persistência (HTML + payload) numa transação. 49.12 (AC10): havendo
+   * parcial da etapa, ATUALIZA esse mesmo debriefing (`substituiuParcial`).
+   */
+  gravar(registro: RegistroDoDebriefing): Promise<{ id: string; substituiuParcial?: boolean }>;
+  /** Story 49.12 (AC15) — o sync da mídia Meta das contas do lançamento. Só o modo em andamento chama. */
+  estadoDoSyncDaMidia(config: DebriefingConfigLancamento): Promise<EstadoDoSyncDaConta[]>;
   /** Relógio injetado — o render nunca lê o relógio (AC10). */
   agora(): Date;
 }
@@ -125,7 +178,17 @@ export interface ParametrosDaGeracao {
 
 /** Resultado da geração: status HTTP e corpo — a rota só repassa. */
 export type ResultadoDaGeracao =
-  | { status: 200; body: { id: string; html: string; payload: DebriefingPayload; alertas: AlertaFase12[] } }
+  | {
+      status: 200;
+      body: {
+        id: string;
+        html: string;
+        payload: DebriefingPayload;
+        alertas: AlertaFase12[];
+        /** Story 49.12 (AC10/AC11) — a geração atualizou a parcial que existia (o mesmo id). */
+        substituiuParcial: boolean;
+      };
+    }
   | { status: 403 | 404 | 413 | 422; body: Record<string, unknown> };
 
 // ---------------------------------------------------------------------------
@@ -166,31 +229,47 @@ export async function gerarDebriefing(deps: DependenciasDaGeracao, params: Param
       };
     }
 
+    // 3b — Story 49.12: lançamento em andamento → corte (AC3), carrinho (AC4) e
+    // sync da mídia do dia de corte (AC15), ANTES de qualquer carga pesada.
+    const geradoEm = deps.agora();
+    const corte = config.situacaoDoLancamento === "em-andamento" ? await corteDaParcial(deps, config, geradoEm) : null;
+    const configDaGeracao: DebriefingConfigLancamento = corte ? { ...config, corte: corte.dia } : config;
+
     // 4 — carga + motores + composição (atual e, havendo, a comparação principal)
     // A config da comparação é conferida ANTES da carga pesada: sem ela, falha cedo.
     const comparacaoId = config.lancamentoComparacaoFunnelId;
     const fonteComparacao = comparacaoId ? await fonteDaComparacao(deps, etapa.projectId, comparacaoId) : null;
-    const geradoEm = deps.agora();
-    const payload = await deps.calcularPayload(config, geradoEm);
+    const payload = await deps.calcularPayload(configDaGeracao, geradoEm);
 
     const nomes = await deps.nomes(etapa.projectId, [etapa.funnelId, ...(comparacaoId ? [comparacaoId] : [])]);
     let comparacao: ComparacaoDoDebriefing | null = null;
+    let comparacaoSemDelta: { funnelId: string; nome: string; salvoEm: string } | null = null;
     if (comparacaoId && fonteComparacao) {
       const nome = nomes.funis[comparacaoId] ?? comparacaoId;
-      comparacao =
-        fonteComparacao.tipo === "config"
-          ? { funnelId: comparacaoId, nome, payload: await deps.calcularPayload(fonteComparacao.config, geradoEm), origem: { tipo: "recalculada" } }
-          : {
-              funnelId: comparacaoId,
-              nome,
-              payload: fonteComparacao.salvo.payload,
-              origem: {
-                tipo: "payload-salvo",
-                debriefingId: fonteComparacao.salvo.debriefingId,
-                salvoEm: fonteComparacao.salvo.salvoEm,
-                motivo: fonteComparacao.motivo,
-              },
-            };
+      if (fonteComparacao.tipo === "config") {
+        // 49.12 (AC8, R8-3): na parcial, a comparação é cortada no MESMO D+N —
+        // do início da captação dela até início + N (ou o fim da janela dela).
+        const cfgComp = corte
+          ? { ...fonteComparacao.config, corte: somarDias(fonteComparacao.config.datasChave.inicioCaptacao, corte.dMaisN) }
+          : fonteComparacao.config;
+        comparacao = { funnelId: comparacaoId, nome, payload: await deps.calcularPayload(cfgComp, geradoEm), origem: { tipo: "recalculada" } };
+      } else if (corte) {
+        // 49.12 (AC8, R8-3): relatório salvo tem os totais fechados — não dá para
+        // cortar em D+N. Sai SEM Δ, com aviso; a geração não é bloqueada.
+        comparacaoSemDelta = { funnelId: comparacaoId, nome, salvoEm: fonteComparacao.salvo.salvoEm };
+      } else {
+        comparacao = {
+          funnelId: comparacaoId,
+          nome,
+          payload: fonteComparacao.salvo.payload,
+          origem: {
+            tipo: "payload-salvo",
+            debriefingId: fonteComparacao.salvo.debriefingId,
+            salvoEm: fonteComparacao.salvo.salvoEm,
+            motivo: fonteComparacao.motivo,
+          },
+        };
+      }
     }
 
     // 5 — guardas ANTES do render (49.5): invariante e conferência externa bloqueiam;
@@ -213,17 +292,19 @@ export async function gerarDebriefing(deps: DependenciasDaGeracao, params: Param
       comparacao,
       rotulos: { projeto: etapa.projectName, lancamento: etapa.funnelName, etapas: nomes.etapas, funis: nomes.funis },
       alertas: guardas.alertas,
+      ...(comparacaoSemDelta ? { comparacaoSemDelta } : {}),
     });
     if (Buffer.byteLength(html, "utf8") > MAX_HTML_BYTES_DEBRIEFING) {
       return { status: 413, body: { error: "HTML acima de 5MB", code: "PAYLOAD_TOO_LARGE" } };
     }
 
-    // 7 — persiste (só aqui)
+    // 7 — persiste (só aqui). 49.12 (AC7): a parcial diz no título que é parcial e até quando.
     const j = payload.dinheiroTempo.janela;
+    const parcial = parcialDo(payload);
     const campaignName =
       `Debriefing ${etapa.projectName} ${etapa.funnelName}${comparacao ? ` × ${comparacao.nome}` : ""} — ` +
-      `${diaMesBr(j.inicio)} a ${diaMesBr(j.fim)}`;
-    const { id } = await deps.gravar({
+      (parcial ? `PARCIAL — dados até ${diaMesBr(parcial.corte)} · D+${parcial.dMaisN}` : `${diaMesBr(j.inicio)} a ${diaMesBr(j.fim)}`);
+    const { id, substituiuParcial } = await deps.gravar({
       campaignName: campaignName.slice(0, 300),
       stageId: params.stageId,
       html,
@@ -233,8 +314,9 @@ export async function gerarDebriefing(deps: DependenciasDaGeracao, params: Param
         ? { funnelId: comparacao.funnelId, nome: comparacao.nome, payload: comparacao.payload, origem: comparacao.origem }
         : null,
       alertas: guardas.alertas,
+      ...(parcial ? { parcial: true } : {}),
     });
-    return { status: 200, body: { id, html, payload, alertas: guardas.alertas } };
+    return { status: 200, body: { id, html, payload, alertas: guardas.alertas, substituiuParcial: substituiuParcial ?? false } };
   } catch (err) {
     if (err instanceof DebriefingConfigError) return { status: 422, body: err.toResponse() };
     if (err instanceof DebriefingDadoIndisponivelError) return { status: 422, body: err.toResponse() };
@@ -295,7 +377,14 @@ async function fonteDaComparacao(deps: DependenciasDaGeracao, projectId: string,
       else throw err;
     }
   }
-  if (liberadas.length === 1) return { tipo: "config", config: liberadas[0]! };
+  if (liberadas.length === 1) {
+    const c = liberadas[0]!;
+    // 49.12 (AC8, R9-4): comparação que está ela mesma em andamento → 422, nunca Δ sobre parcial.
+    if (c.situacaoDoLancamento === "em-andamento") {
+      throw erroComparacaoEmAndamento(funnelId, 'a config de debriefing dele está marcada "em andamento"');
+    }
+    return { tipo: "config", config: c };
+  }
   if (liberadas.length > 1) {
     throw new DebriefingGeracaoError(
       "COMPARACAO_SEM_CONFIG",
@@ -308,12 +397,131 @@ async function fonteDaComparacao(deps: DependenciasDaGeracao, projectId: string,
       ? "ele não tem etapa Debriefing"
       : `ele não tem config de debriefing liberada (${motivos.join(" | ")})`;
   const salvo = await deps.ultimoPayloadSalvoDoFunil(projectId, funnelId);
-  if (salvo) return { tipo: "payload-salvo", salvo, motivo: semConfig };
+  if (salvo) {
+    // 49.12 (AC8, R9-4): o ÚLTIMO salvo é uma parcial (mesmo que exista um final
+    // mais antigo — o AC10 deixa gerar parcial nova depois de um final) → 422.
+    const parcialSalva = parcialDo(salvo.payload);
+    if (parcialSalva) {
+      throw erroComparacaoEmAndamento(
+        funnelId,
+        `o último debriefing salvo dele é uma PARCIAL (dados até ${dataBr(parcialSalva.corte)}, D+${parcialSalva.dMaisN}) — relatório parcial não tem os totais fechados`,
+      );
+    }
+    return { tipo: "payload-salvo", salvo, motivo: semConfig };
+  }
   throw new DebriefingGeracaoError(
     "COMPARACAO_SEM_CONFIG",
     `o lançamento de comparação (${funnelId}) não tem como entrar no Δ: ${semConfig}, e nenhum debriefing dele foi gerado e salvo pelo Loyola — sem config não há datas-chave nem etapas para recalcular, e sem payload salvo não há números para comparar`,
     "Configurar (e validar) o debriefing na etapa Debriefing do lançamento de comparação — ou tirar a comparação do formulário para gerar como edição única",
   );
+}
+
+function erroComparacaoEmAndamento(funnelId: string, porque: string): DebriefingGeracaoError {
+  return new DebriefingGeracaoError(
+    "COMPARACAO_EM_ANDAMENTO",
+    `o lançamento de comparação (${funnelId}) ainda está em andamento: ${porque} — um Δ contra números parciais seria inventado`,
+    "Tirar este lançamento da lista de comparação na configuração do debriefing, ou esperar o fim dele (e gerá-lo como encerrado) e gerar de novo",
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Story 49.12 — corte da parcial (AC3), carrinho (AC4) e sync da mídia (AC15)
+// ---------------------------------------------------------------------------
+
+/** O corte de uma geração parcial: o dia (ontem em Brasília) e o D+N. */
+export interface CorteDaParcial {
+  dia: string;
+  dMaisN: number;
+}
+
+/**
+ * AC3 — a data de corte é ONTEM em `America/Sao_Paulo` no instante da geração
+ * (R8-2), calculada aqui (o orquestrador lê o relógio injetado; os motores não).
+ * AC4 — carrinho já aberto até o corte → 422 até a 49.14. AC15 — mídia do dia
+ * de corte não sincronizada em alguma conta → 422, antes de calcular.
+ */
+async function corteDaParcial(
+  deps: DependenciasDaGeracao,
+  config: Extract<DebriefingConfigLancamento, { situacaoDoLancamento: "em-andamento" }>,
+  agora: Date,
+): Promise<CorteDaParcial> {
+  const dia = businessYesterday(agora);
+  const inicio = config.datasChave.inicioCaptacao;
+  if (dia < inicio) {
+    throw new DebriefingGeracaoError(
+      "SEM_DIA_FECHADO",
+      `a captação começa em ${dataBr(inicio)} e o último dia fechado (ontem, no fuso de Brasília) é ${dataBr(dia)} — ainda não há dia fechado de captação para analisar`,
+      `Gerar a partir de ${dataBr(somarDias(inicio, 1))}, quando o primeiro dia de captação (${dataBr(inicio)}) já estiver fechado`,
+    );
+  }
+  const abertura = config.datasChave.aberturaCarrinho;
+  if (abertura !== null && abertura <= dia) {
+    throw new DebriefingGeracaoError(
+      "CARRINHO_JA_ABERTO",
+      `o carrinho abriu em ${dataBr(abertura)}, antes do corte (dados até ${dataBr(dia)}) — o modo em andamento com o carrinho aberto ainda não existe (Story 49.14)`,
+      'Esperar o fim do lançamento e gerar como encerrado (marcar "encerrado" e informar as datas na configuração do debriefing)',
+    );
+  }
+  const atrasadas = contasAtrasadasNoCorte(await deps.estadoDoSyncDaMidia(config), dia);
+  if (atrasadas.length > 0) {
+    throw new DebriefingGeracaoError(
+      "MIDIA_DO_CORTE_NAO_SINCRONIZADA",
+      `a mídia da Meta do dia de corte (${dataBr(dia)}) ainda não foi sincronizada em ${atrasadas.length} conta(s) do lançamento: ` +
+        atrasadas.map((a) => `${a.accountId}${a.nome ? ` (${a.nome})` : ""} — ${a.situacao}`).join("; "),
+      "Esperar o próximo sync da mídia da Meta (roda a cada 15 minutos) ou rodar a sincronização (admin: Sincronizar mídia Meta) e gerar de novo",
+    );
+  }
+  return { dia, dMaisN: diasEntre(inicio, dia) };
+}
+
+/** Instante em que o dia de corte termina em Brasília (BRT = UTC−3 fixo desde 2019). */
+export function fimDoDiaEmBrasilia(dia: string): number {
+  return Date.parse(`${somarDias(dia, 1)}T00:00:00-03:00`);
+}
+
+/** "06/10/2026 às 03:15 (Brasília)" de um instante ISO. */
+function instanteBr(iso: string): string {
+  const t = Date.parse(iso);
+  const x = new Date(t - 3 * 3600_000).toISOString();
+  return `${dataBr(x.slice(0, 10))} às ${x.slice(11, 16)} (Brasília)`;
+}
+
+/**
+ * AC15 (puro) — contas cuja mídia do dia de corte ainda não está no banco:
+ * o `ad-daily` (passo que roda sempre) sem sucesso depois do fim do dia de
+ * corte; ou o `campaign-daily` (de onde sai a mídia do debriefing) que RODOU
+ * depois do corte e falhou. Conta parada (sem `campaign-daily` recente) não
+ * bloqueia — o `campaign-daily` só é gravado quando houve anúncio.
+ */
+export function contasAtrasadasNoCorte(
+  contas: readonly EstadoDoSyncDaConta[],
+  corte: string,
+): { accountId: string; nome: string | null; situacao: string }[] {
+  const limite = fimDoDiaEmBrasilia(corte);
+  const depois = (iso: string | null | undefined) => !!iso && Date.parse(iso) >= limite;
+  const atrasadas: { accountId: string; nome: string | null; situacao: string }[] = [];
+  for (const c of contas) {
+    const ok = c.adDaily?.lastSuccessAt ?? null;
+    if (!depois(ok)) {
+      atrasadas.push({
+        accountId: c.accountId,
+        nome: c.nome,
+        situacao: ok ? `sincronizada pela última vez em ${instanteBr(ok)}` : "nunca sincronizada",
+      });
+      continue;
+    }
+    const camp = c.campaignDaily;
+    if (camp && depois(camp.lastRunAt) && !depois(camp.lastSuccessAt)) {
+      atrasadas.push({
+        accountId: c.accountId,
+        nome: c.nome,
+        situacao:
+          `o passo de mídia por campanha falhou na última rodada (${instanteBr(camp.lastRunAt!)})` +
+          (camp.lastSuccessAt ? `; último sucesso em ${instanteBr(camp.lastSuccessAt)}` : "; nunca teve sucesso"),
+      });
+    }
+  }
+  return atrasadas;
 }
 
 // ---------------------------------------------------------------------------
@@ -363,6 +571,7 @@ export function dependenciasReais(db: Database): DependenciasDaGeracao {
       };
     },
     gravar: (registro) => gravarDebriefingGerado(db, registro),
+    estadoDoSyncDaMidia: (config) => lerEstadoDoSyncDaMidia(db, config),
     agora: () => new Date(),
   };
 }
@@ -408,23 +617,113 @@ export async function calcularPayloadDebriefing(
 /**
  * HTML em `debriefings` + payload em `debriefing_payloads`, na MESMA transação
  * (AC2): ou os dois, ou nenhum.
+ *
+ * Story 49.12 (AC10, R8-4): se a etapa (`payload.config.stageId`) tem uma
+ * PARCIAL, a geração — outra parcial ou o final — ATUALIZA esse mesmo
+ * debriefing (HTML, título, `updatedAt`/`updatedBy`, payload); os comentários
+ * ficam. Sem parcial, insere (o final nunca é sobrescrito: só a linha com
+ * `parcial = true` é procurada). A parcial é travada (`FOR UPDATE`) dentro da
+ * transação; duas primeiras parciais simultâneas esbarram no índice único
+ * parcial e a perdedora refaz a transação — e encontra a parcial para atualizar.
  */
-export async function gravarDebriefingGerado(db: Database, r: RegistroDoDebriefing): Promise<{ id: string }> {
+export async function gravarDebriefingGerado(db: Database, r: RegistroDoDebriefing): Promise<{ id: string; substituiuParcial: boolean }> {
+  try {
+    return await gravarNumaTransacao(db, r);
+  } catch (err) {
+    if (r.parcial && violaUnicidade(err, "uq_debriefing_payloads_parcial_por_etapa")) return gravarNumaTransacao(db, r);
+    throw err;
+  }
+}
+
+async function gravarNumaTransacao(db: Database, r: RegistroDoDebriefing): Promise<{ id: string; substituiuParcial: boolean }> {
   return db.transaction(async (tx) => {
-    const [salvo] = await tx
-      .insert(debriefings)
-      .values({ campaignName: r.campaignName, stageId: r.stageId, html: r.html, fileName: null, createdBy: r.createdBy })
-      .returning({ id: debriefings.id });
-    await tx.insert(debriefingPayloads).values({
-      debriefingId: salvo!.id,
+    const dados = {
       tipo: r.payload.tipo,
       versao: r.payload.versao,
-      stageIdOrigem: r.payload.config.stageId,
       payload: r.payload as unknown as Record<string, unknown>,
       comparacao: r.comparacao as unknown as Record<string, unknown> | null,
       alertas: r.alertas,
       impostoOrigem: r.payload.dinheiroTempo.imposto.impostoOrigem,
-    });
-    return { id: salvo!.id };
+      parcial: r.parcial === true,
+    };
+    const [parcial] = await tx
+      .select({ id: debriefingPayloads.debriefingId })
+      .from(debriefingPayloads)
+      .where(and(eq(debriefingPayloads.stageIdOrigem, r.payload.config.stageId), eq(debriefingPayloads.parcial, true)))
+      .limit(1)
+      .for("update");
+    if (parcial) {
+      const agora = new Date();
+      await tx
+        .update(debriefings)
+        .set({ campaignName: r.campaignName, html: r.html, updatedBy: r.createdBy, updatedAt: agora })
+        .where(eq(debriefings.id, parcial.id));
+      // `created_at` do payload = quando ESTE payload foi gerado (o "último salvo" da comparação ordena por ele).
+      await tx.update(debriefingPayloads).set({ ...dados, createdAt: agora }).where(eq(debriefingPayloads.debriefingId, parcial.id));
+      return { id: parcial.id, substituiuParcial: true };
+    }
+    const [salvo] = await tx
+      .insert(debriefings)
+      .values({ campaignName: r.campaignName, stageId: r.stageId, html: r.html, fileName: null, createdBy: r.createdBy })
+      .returning({ id: debriefings.id });
+    await tx.insert(debriefingPayloads).values({ debriefingId: salvo!.id, stageIdOrigem: r.payload.config.stageId, ...dados });
+    return { id: salvo!.id, substituiuParcial: false };
   });
+}
+
+/**
+ * Story 49.12 (AC15) — as contas de anúncio do lançamento e o estado do sync
+ * delas. Conta = a das etapas do lançamento (`funnel_stages.meta_account_id`)
+ * e a do funil (`funnels.meta_account_id`); sem nenhuma, as contas ativas do
+ * projeto (as que o sync percorre).
+ */
+export async function lerEstadoDoSyncDaMidia(db: Database, config: DebriefingConfigLancamento): Promise<EstadoDoSyncDaConta[]> {
+  const ids = config.etapas.map((e) => e.stageId);
+  const [dasEtapas, doFunil] = await Promise.all([
+    ids.length
+      ? db
+          .select({ accountId: metaAdsAccounts.metaAccountId, nome: metaAdsAccounts.accountName })
+          .from(funnelStages)
+          .innerJoin(metaAdsAccounts, eq(metaAdsAccounts.id, funnelStages.metaAccountId))
+          .where(inArray(funnelStages.id, ids))
+      : Promise.resolve([] as { accountId: string; nome: string }[]),
+    db
+      .select({ accountId: metaAdsAccounts.metaAccountId, nome: metaAdsAccounts.accountName })
+      .from(funnels)
+      .innerJoin(metaAdsAccounts, eq(metaAdsAccounts.id, funnels.metaAccountId))
+      .where(eq(funnels.id, config.funnelId)),
+  ]);
+  let contas = [...dasEtapas, ...doFunil];
+  if (contas.length === 0) {
+    contas = await db
+      .select({ accountId: metaAdsAccounts.metaAccountId, nome: metaAdsAccounts.accountName })
+      .from(metaAdsAccountProjects)
+      .innerJoin(metaAdsAccounts, eq(metaAdsAccounts.id, metaAdsAccountProjects.accountId))
+      .where(and(eq(metaAdsAccountProjects.projectId, config.projectId), eq(metaAdsAccounts.isActive, true)));
+  }
+  const unicas = [...new Map(contas.map((c) => [c.accountId, c])).values()];
+  if (unicas.length === 0) return [];
+  const estados = await db
+    .select({ accountId: metaSyncState.accountId, kind: metaSyncState.kind, lastRunAt: metaSyncState.lastRunAt, lastSuccessAt: metaSyncState.lastSuccessAt })
+    .from(metaSyncState)
+    .where(
+      and(
+        eq(metaSyncState.projectId, config.projectId),
+        inArray(metaSyncState.accountId, unicas.map((c) => c.accountId)),
+        inArray(metaSyncState.kind, ["ad-daily", "campaign-daily"]),
+      ),
+    );
+  const iso = (d: Date | null) => (d ? d.toISOString() : null);
+  return unicas
+    .map((c) => {
+      const ad = estados.find((e) => e.accountId === c.accountId && e.kind === "ad-daily");
+      const camp = estados.find((e) => e.accountId === c.accountId && e.kind === "campaign-daily");
+      return {
+        accountId: c.accountId,
+        nome: c.nome,
+        adDaily: ad ? { lastSuccessAt: iso(ad.lastSuccessAt) } : null,
+        campaignDaily: camp ? { lastRunAt: iso(camp.lastRunAt), lastSuccessAt: iso(camp.lastSuccessAt) } : null,
+      };
+    })
+    .sort((a, b) => a.accountId.localeCompare(b.accountId));
 }

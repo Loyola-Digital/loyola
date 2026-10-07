@@ -20,7 +20,7 @@
 
 import { CANAIS, FECHAMENTOS, cpcDeLink, ctrDeLink, type Canal } from "@loyola-x/shared";
 import { dataExiste } from "./debriefing-config.js";
-import { aplicarImposto } from "./debriefing-hygiene.js";
+import { aplicarImposto, corteSemCarrinho, LACUNA_CARRINHO_AINDA_NAO_ABRIU } from "./debriefing-hygiene.js";
 import {
   CRITERIO_DE_UNICO_HEADLINE,
   MAXD_PADRAO,
@@ -31,7 +31,12 @@ import {
   type MidiaAgregada,
   type TuplaClassificada,
 } from "./debriefing-money-time-engine.js";
-import { LACUNA_DIMENSAO_NAO_CONFIRMADA, type CodigoDeLacunaDoDebriefing, type DebriefingPayload } from "./debriefing-payload.js";
+import {
+  ITENS_DA_LACUNA_DO_CARRINHO,
+  LACUNA_DIMENSAO_NAO_CONFIRMADA,
+  type CodigoDeLacunaDoDebriefing,
+  type DebriefingPayload,
+} from "./debriefing-payload.js";
 import {
   ConferenciaExternaError,
   LIMIARES_ALERTA,
@@ -185,7 +190,9 @@ export function checarF1(p: DebriefingPayload): ResultadoInvarianteFase12 {
       problemas.push(`faturamentoTotal ${fmtReais(total)} ≠ ${rotulo} ${fmtReais(v)}`);
     }
   }
-  const fatPrin = m.faturamentoPrincipal.valor ?? 0;
+  // 49.12: com o carrinho fechado no corte, o faturamento do principal é lacuna
+  // (`null`) — a soma da auditoria confere contra o faturamento por etapa.
+  const fatPrin = m.faturamentoPrincipal.valor ?? m.faturamentoPorEtapa.principal;
   const somaAuditoria = soma(m.auditoriaDeVendas.map((a) => a.valorConsiderado));
   if (!dentro(fatPrin, somaAuditoria, TOLERANCIAS_FASE12.dinheiro)) {
     problemas.push(`faturamentoPrincipal ${fmtReais(fatPrin)} ≠ Σ valor considerado da auditoria do principal ${fmtReais(somaAuditoria)}`);
@@ -520,9 +527,15 @@ export function checarF9(p: DebriefingPayload): ResultadoInvarianteFase12 {
   );
 }
 
-/** F10 — datas-chave completas e ordenadas, coerentes com os papéis das etapas (check 10). */
+/**
+ * F10 — datas-chave completas e ordenadas, coerentes com os papéis das etapas (check 10).
+ * Story 49.12 (AC9): "ainda não aconteceu" vale SÓ no modo em andamento; no
+ * encerrado, a regra é a de sempre (datas incompletas bloqueiam).
+ */
 export function checarF10(p: DebriefingPayload): ResultadoInvarianteFase12 {
-  const d = p.config.datasChave;
+  const cfg = p.config;
+  if (cfg.situacaoDoLancamento === "em-andamento") return checarF10EmAndamento(cfg);
+  const d = cfg.datasChave;
   const problemas: string[] = [];
   for (const [nome, v] of [["inicioCaptacao", d.inicioCaptacao], ["aberturaCarrinho", d.aberturaCarrinho], ["fimCarrinho", d.fimCarrinho]] as const) {
     if (typeof v !== "string" || !dataExiste(v)) problemas.push(`${nome} ausente ou inválida (${String(v)})`);
@@ -549,6 +562,52 @@ export function checarF10(p: DebriefingPayload): ResultadoInvarianteFase12 {
   return resultado("F10", problemas, `início ${d.inicioCaptacao} ≤ abertura ${d.aberturaCarrinho} ≤ fim ${d.fimCarrinho}; reabertura e downsell respondidos`);
 }
 
+/** F10 no modo em andamento (49.12 AC2/AC9): cada fase com data válida OU "ainda não aconteceu" — nunca as duas, nunca nenhuma. */
+function checarF10EmAndamento(cfg: Extract<DebriefingPayload["config"], { situacaoDoLancamento: "em-andamento" }>): ResultadoInvarianteFase12 {
+  const d = cfg.datasChave;
+  const aindaNao = new Set<string>(Array.isArray(cfg.aindaNaoAconteceu) ? cfg.aindaNaoAconteceu : []);
+  const problemas: string[] = [];
+  if (typeof d.inicioCaptacao !== "string" || !dataExiste(d.inicioCaptacao)) problemas.push(`inicioCaptacao ausente ou inválida (${String(d.inicioCaptacao)})`);
+  for (const [nome, v] of [["aberturaCarrinho", d.aberturaCarrinho], ["fimCarrinho", d.fimCarrinho]] as const) {
+    if (aindaNao.has(nome)) {
+      if (v !== null) problemas.push(`${nome} = ${String(v)} e também "ainda não aconteceu"`);
+    } else if (typeof v !== "string" || !dataExiste(v)) {
+      problemas.push(`${nome} ausente ou inválida (${String(v)}) sem "ainda não aconteceu"`);
+    }
+  }
+  const presentes = [d.inicioCaptacao, d.aberturaCarrinho, d.fimCarrinho].filter((v): v is string => typeof v === "string" && dataExiste(v));
+  for (let i = 1; i < presentes.length; i++) {
+    if (presentes[i - 1]! > presentes[i]!) problemas.push(`fora de ordem: ${presentes[i - 1]} > ${presentes[i]} (início ≤ abertura ≤ fim, entre as que existem)`);
+  }
+  for (const nome of ["reabertura", "downsell"] as const) {
+    const r = d[nome] as { houve?: unknown; abertura?: string; fim?: string } | null | undefined;
+    if (aindaNao.has(nome)) {
+      if (r) problemas.push(`${nome} respondida e também "ainda não aconteceu"`);
+      continue;
+    }
+    if (!r || typeof r.houve !== "boolean") {
+      problemas.push(`${nome} sem resposta explícita (houve indefinido, sem "ainda não aconteceu")`);
+      continue;
+    }
+    if (r.houve === true) {
+      if (!r.abertura || !r.fim || !dataExiste(r.abertura) || !dataExiste(r.fim)) problemas.push(`${nome} com houve = true sem abertura/fim válidas`);
+      else if (r.abertura > r.fim) problemas.push(`${nome}: abertura ${r.abertura} > fim ${r.fim}`);
+    }
+  }
+  const papeis = new Set(cfg.etapas.map((e) => e.papel));
+  const ok = (nome: "reabertura" | "downsell") => d[nome]?.houve === true || aindaNao.has(nome);
+  if (papeis.has("reabertura") && !ok("reabertura")) problemas.push("há etapa com papel reabertura e datasChave.reabertura nem houve nem \"ainda não aconteceu\"");
+  if ((papeis.has("leads-downsell") || papeis.has("vendas-downsell")) && !ok("downsell")) {
+    problemas.push("há etapa com papel de downsell e datasChave.downsell nem houve nem \"ainda não aconteceu\"");
+  }
+  const rot = (v: string | null, campo: string) => (v ?? (aindaNao.has(campo) ? "ainda não aconteceu" : "—"));
+  return resultado(
+    "F10",
+    problemas,
+    `lançamento em andamento: início ${d.inicioCaptacao} · abertura ${rot(d.aberturaCarrinho, "aberturaCarrinho")} · fim ${rot(d.fimCarrinho, "fimCarrinho")}; reabertura e downsell respondidos (ou "ainda não aconteceu")`,
+  );
+}
+
 /** As lacunas que o payload EXIGE, cada uma com o porquê. */
 export function lacunasExigidas(p: DebriefingPayload): { codigo: CodigoDeLacunaDoDebriefing; porque: string; itens?: string[] }[] {
   const m = p.dinheiroTempo;
@@ -565,6 +624,15 @@ export function lacunasExigidas(p: DebriefingPayload): { codigo: CodigoDeLacunaD
   if (a.crossLaunch.tipoDaBase === "compradores") exigidas.push({ codigo: "BASE_ANTERIOR_SEM_LEADS", porque: "base anterior só com compradores" });
   if (m.vendasExcluidas.length > 0) {
     exigidas.push({ codigo: "VENDAS_EXCLUIDAS_AUTOMATICAMENTE", porque: `${int(m.vendasExcluidas.length)} venda(s) do principal antes da abertura` });
+  }
+  // 49.12 (AC6): carrinho fechado no corte — o que depende dele é lacuna nomeada, item a item.
+  const semCarrinho = corteSemCarrinho(m.janela);
+  if (semCarrinho) {
+    exigidas.push({
+      codigo: LACUNA_CARRINHO_AINDA_NAO_ABRIU,
+      porque: `carrinho ainda não abriu até o corte ${semCarrinho.dia} (D+${int(semCarrinho.dMaisN)})`,
+      itens: [...ITENS_DA_LACUNA_DO_CARRINHO],
+    });
   }
   if (m.higiene.dedupNaoAplicada.length > 0) {
     exigidas.push({ codigo: "DEDUP_POR_ID_NAO_APLICADA", porque: `${int(m.higiene.dedupNaoAplicada.length)} planilha(s) sem ID/produto mapeado` });

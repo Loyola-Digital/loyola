@@ -117,7 +117,8 @@ describe("PUT — corpo gravado", () => {
     expect(store.gravar).toHaveBeenCalledTimes(1);
     expect(store.gravar).toHaveBeenCalledWith(
       IDS.debriefing,
-      { ...valoresCompletos(), closerMediums: ["x1", "comercial"] },
+      // 49.12: corpo sem a situação (painel anterior) = encerrado, sem fase "ainda não aconteceu".
+      { ...valoresCompletos(), closerMediums: ["x1", "comercial"], situacaoDoLancamento: "encerrado", aindaNaoAconteceu: [] },
       // Sem linha lida: o upsert reseta por precaução (corrida do 1º salvar).
       { resetarValidado: true },
     );

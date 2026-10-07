@@ -27,7 +27,10 @@ import { resolveImpostoPct } from "../services/launch-report-config.js";
 import {
   DEBRIEFING_PAPEIS,
   DIMENSOES_DE_CRIATIVO,
+  FASES_QUE_PODEM_NAO_TER_ACONTECIDO,
   MAX_LANCAMENTOS_COMPARACAO,
+  SITUACOES_DO_LANCAMENTO,
+  aindaNaoAconteceuDe,
   VALORES_VAZIOS,
   avaliarBloqueioDebriefing,
   avisosDebriefing,
@@ -47,6 +50,7 @@ import {
   problemasDaPesquisaDeCaptacao,
   problemasDasPerguntas,
   problemasDoCorpoLancamento,
+  situacaoDe,
   tipoAceitaConfig,
   valoresDaLinha,
   type ContextoDaEtapa,
@@ -90,16 +94,26 @@ const perguntasDaEtapaSchema = z
  * (400 se faltam); perguntas e config do classificador podem ficar sem resposta
  * (o gate devolve CONFIG_INCOMPLETA listando o que falta). PUT = substituição
  * inteira: campo omitido grava "sem resposta".
+ *
+ * Story 49.12 (AC1/AC2): `situacaoDoLancamento` ("O lançamento terminou?")
+ * omitida = `encerrado` — o corpo do painel anterior à 49.12 (só existia o
+ * encerrado, com as três datas). No modo `em-andamento`, abertura, fim do
+ * carrinho, reabertura e downsell aceitam `null` + a fase em
+ * `datasChave.aindaNaoAconteceu` ("ainda não aconteceu" ≠ "não houve"). O
+ * `null` passa no zod e `problemasDasDatasChave` decide (no encerrado, a regra
+ * de sempre: obrigatória).
  */
 const corpoLancamentoSchema = z
   .object({
+    situacaoDoLancamento: z.enum(SITUACOES_DO_LANCAMENTO).optional(),
     datasChave: z
       .object({
         inicioCaptacao: dataIso,
-        aberturaCarrinho: dataIso,
-        fimCarrinho: dataIso,
-        reabertura: respostaEtapaExtra,
-        downsell: respostaEtapaExtra,
+        aberturaCarrinho: dataIso.nullable(),
+        fimCarrinho: dataIso.nullable(),
+        reabertura: respostaEtapaExtra.nullable(),
+        downsell: respostaEtapaExtra.nullable(),
+        aindaNaoAconteceu: z.array(z.enum(FASES_QUE_PODEM_NAO_TER_ACONTECIDO)).max(FASES_QUE_PODEM_NAO_TER_ACONTECIDO.length).optional(),
       })
       .strict(),
     /** Forma da 49.1 (API antiga): continua aceito — sozinho vale `[id]` (49.11 AC3 c). */
@@ -268,12 +282,16 @@ export default fp<DebriefingConfigRoutesOptions>(async function debriefingConfig
       tipoDeFunil: ctx.funnelType,
       config: raw
         ? {
+            /** 49.12 (AC1) — "O lançamento terminou?"; config de antes da 49.12 = encerrado. */
+            situacaoDoLancamento: situacaoDe(raw),
             datasChave: {
               inicioCaptacao: raw.inicioCaptacao,
               aberturaCarrinho: raw.aberturaCarrinho,
               fimCarrinho: raw.fimCarrinho,
               reabertura: raw.reabertura,
               downsell: raw.downsell,
+              /** 49.12 (AC2) — fases "ainda não aconteceu" (só no modo em andamento). */
+              aindaNaoAconteceu: aindaNaoAconteceuDe(raw),
             },
             /** A principal GRAVADA (= `lancamentosComparacao[0]`), mesmo se removida — rastro. */
             lancamentoComparacaoFunnelId: raw.lancamentoComparacaoFunnelId,
@@ -318,6 +336,12 @@ export default fp<DebriefingConfigRoutesOptions>(async function debriefingConfig
        * o store não sabe listar (fixtures da 49.1).
        */
       ...(ctx.funnelType === "launch" && s.pesquisasComRotulo ? await pesquisasDoGet(s, ctx) : {}),
+      /**
+       * Story 49.12 (AC11) — a parcial gerada desta etapa (`null` = nenhuma): o
+       * botão avisa que a próxima geração a substitui. Omitido quando o store
+       * não sabe ler (fixtures).
+       */
+      ...(ctx.funnelType === "launch" && s.parcialDaEtapa ? { parcialAtual: await s.parcialDaEtapa(ctx.stageId) } : {}),
     };
   });
 
@@ -360,6 +384,9 @@ export default fp<DebriefingConfigRoutesOptions>(async function debriefingConfig
         return reply.code(400).send({ error: "Dados inválidos", erros: [comparacao.erro] });
       }
       valores = {
+        // 49.12: omitida = encerrado (corpo do painel anterior à 49.12).
+        situacaoDoLancamento: b.situacaoDoLancamento ?? "encerrado",
+        aindaNaoAconteceu: aindaNaoAconteceuDe({ aindaNaoAconteceu: b.datasChave.aindaNaoAconteceu ?? [] }),
         inicioCaptacao: b.datasChave.inicioCaptacao,
         aberturaCarrinho: b.datasChave.aberturaCarrinho,
         fimCarrinho: b.datasChave.fimCarrinho,

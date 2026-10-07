@@ -3,7 +3,7 @@ import { desc, eq, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import fp from "fastify-plugin";
 import type { MultipartFile } from "@fastify/multipart";
-import { debriefingComments, debriefings, users } from "../db/schema.js";
+import { debriefingComments, debriefingPayloads, debriefings, users } from "../db/schema.js";
 
 // ============================================================
 // EPIC 37 — Debriefings (Story 37.1)
@@ -32,6 +32,17 @@ const MSG_LIMITE_HTML = "Arquivo muito grande. Máximo: 5MB";
 const PUT_JSON_BODY_LIMIT = 2 * MAX_HTML_BYTES + 1024 * 1024;
 
 const idParamSchema = z.object({ id: z.string().uuid() });
+
+/**
+ * Story 49.12 (AC14) — `{ corte, dMaisN }` da parcial, ou `null` (final,
+ * upload manual ou payload anterior à 49.12). Campo ADITIVO do GET (contrato 35).
+ */
+export function parcialDoDetalhe(ehParcial: boolean | null, situacao: unknown): { corte: string; dMaisN: number } | null {
+  if (ehParcial !== true || !situacao || typeof situacao !== "object") return null;
+  const s = situacao as { modo?: unknown; corte?: unknown; dMaisN?: unknown };
+  if (s.modo !== "parcial" || typeof s.corte !== "string" || typeof s.dMaisN !== "number") return null;
+  return { corte: s.corte, dMaisN: s.dMaisN };
+}
 const commentParamSchema = z.object({
   id: z.string().uuid(),
   commentId: z.string().uuid(),
@@ -188,15 +199,21 @@ export default fp(async function debriefingsRoutes(fastify) {
         authorName: users.name,
         authorAvatarUrl: users.avatarUrl,
         editorName: editors.name,
+        // Story 49.12 (AC14) — o viewer avisa que o documento é parcial. Lido do
+        // payload GERADO (tabela irmã); upload manual não tem linha → null.
+        ehParcial: debriefingPayloads.parcial,
+        situacao: sql<unknown>`${debriefingPayloads.payload} -> 'situacao'`,
       })
       .from(debriefings)
       .innerJoin(users, eq(debriefings.createdBy, users.id))
       .leftJoin(editors, eq(debriefings.updatedBy, editors.id))
+      .leftJoin(debriefingPayloads, eq(debriefingPayloads.debriefingId, debriefings.id))
       .where(eq(debriefings.id, params.data.id))
       .limit(1);
 
     if (!row) return reply.code(404).send({ error: "debriefing não encontrado" });
-    return row;
+    const { ehParcial, situacao, ...detalhe } = row;
+    return { ...detalhe, parcial: parcialDoDetalhe(ehParcial, situacao) };
   });
 
   // ----------------------------------------------------------

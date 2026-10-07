@@ -20,6 +20,7 @@
  */
 
 import { readFileSync } from "node:fs";
+import { aplicarMigracoesDaGeracao } from "./fixtures/debriefing-migracoes.js";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
@@ -205,6 +206,8 @@ beforeAll(async () => {
   await pg.exec(readFileSync(MIGRATION, "utf8"));
   // Story 49.11: a 0162 (aditiva) acrescenta as colunas da lista de comparação.
   await pg.exec(readFileSync(join(dirname(MIGRATION), "0162_debriefing_lancamentos_comparacao.sql"), "utf8"));
+  // Story 49.12: a 0168 (aditiva) — situação do lançamento e a parcial por etapa.
+  await aplicarMigracoesDaGeracao(pg);
   db = drizzle(
     async (sql, params) => {
       const r = await pg.query(sql, params as unknown[], { rowMode: "array" });

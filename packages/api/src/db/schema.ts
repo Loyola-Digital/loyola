@@ -27,6 +27,8 @@ import type {
   EtapaDoLancamento,
   PerguntasConfirmadasGravadas,
   RespostaEtapaExtra,
+  FaseQuePodeNaoTerAcontecido,
+  SituacaoDoLancamento,
 } from "../services/debriefing-config.js";
 
 /**
@@ -3357,6 +3359,18 @@ export const debriefingPayloads = pgTable(
     comparacao: jsonb("comparacao").$type<Record<string, unknown> | null>(),
     alertas: jsonb("alertas").notNull().default([]).$type<unknown[]>(),
     impostoOrigem: text("imposto_origem").notNull().$type<"stage" | "project" | "default">(),
+    /**
+     * Story 49.12 (migration 0168, AC10) — o documento é uma PARCIAL (lançamento
+     * em andamento). No máximo UMA por etapa (`uq_debriefing_payloads_parcial_por_etapa`,
+     * parcial sobre `stage_id_origem`): a próxima parcial e o final ATUALIZAM
+     * esta linha. Linha de antes da 0168 = false (só existia o final).
+     */
+    parcial: boolean("parcial").notNull().default(false),
+    /**
+     * Quando ESTE payload foi gerado. Na substituição da parcial (49.12 AC10)
+     * a geração nova regrava o instante — o "último payload salvo" da
+     * comparação (R7-7) ordena por aqui e continua achando o mais recente.
+     */
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -3365,6 +3379,9 @@ export const debriefingPayloads = pgTable(
       "debriefing_payloads_imposto_origem_check",
       sql`${table.impostoOrigem} IN ('stage', 'project', 'default')`,
     ),
+    uniqueIndex("uq_debriefing_payloads_parcial_por_etapa")
+      .on(table.stageIdOrigem)
+      .where(sql`${table.parcial}`),
   ],
 );
 
@@ -3831,6 +3848,24 @@ export const debriefingConfigs = pgTable(
     dimensaoDeCriativo: varchar("dimensao_de_criativo", {
       length: 20,
     }).$type<DimensaoDeCriativo>(),
+    /**
+     * Story 49.12 (migration 0168, AC1) — "O lançamento terminou?". Linha de
+     * antes da 0168 = DEFAULT `encerrado` (o PUT antigo só aceitava as três
+     * datas, então toda config gravada descreve um lançamento encerrado).
+     */
+    situacaoDoLancamento: text("situacao_do_lancamento")
+      .notNull()
+      .default("encerrado")
+      .$type<SituacaoDoLancamento>(),
+    /**
+     * Story 49.12 (AC2) — fases respondidas "ainda não aconteceu" (só no modo
+     * em andamento): a coluna da data (ou o jsonb da reabertura/downsell) fica
+     * nula e a fase entra aqui — "ainda não aconteceu" ≠ "não houve".
+     */
+    aindaNaoAconteceu: jsonb("ainda_nao_aconteceu")
+      .notNull()
+      .default([])
+      .$type<FaseQuePodeNaoTerAcontecido[]>(),
     /** Default false — só o time marca true; o PUT reseta quando muda premissa. */
     validado: boolean("validado").notNull().default(false),
     validadoEm: timestamp("validado_em", { withTimezone: true }),
@@ -3849,6 +3884,10 @@ export const debriefingConfigs = pgTable(
     check(
       "ck_debriefing_configs_dimensao_de_criativo",
       sql`${table.dimensaoDeCriativo} IS NULL OR ${table.dimensaoDeCriativo} IN ('ia-humano', 'video-estatico', 'nenhuma')`,
+    ),
+    check(
+      "ck_debriefing_configs_situacao_do_lancamento",
+      sql`${table.situacaoDoLancamento} IN ('encerrado', 'em-andamento')`,
     ),
   ],
 );
