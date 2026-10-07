@@ -564,8 +564,8 @@ A skill exige `link_click` em toda métrica de clique (`data/parametros-constant
 - **49.9 (Ready, sem código), nota do @po na 49.12 ("Fora"):**
   - (i) a mente lê o payload persistido, então precisa ler a **situação (parcial/final) e o corte** que a 49.12 AC3 grava no payload, e dizer que o documento é parcial;
   - (ii) a 49.9 AC5 marca `htmlEditadoDepoisDeGerado` quando `debriefings.updatedAt > createdAt`. A substituição da parcial (49.12 AC10) atualiza o `updatedAt` e daria **falso positivo em toda parcial substituída**.
-  - Nenhum dos dois muda a 49.12; os dois mudam a 49.9. ✅ Aplicado pelo @sm em 2026-10-07 (49.9 AC5 e Dev Notes); re-validação do @po pendente.
-- **49.7 (Ready, sem código):** os textos da IA precisam respeitar as lacunas da parcial (49.12, "Fora"). ✅ Aplicado pelo @sm em 2026-10-07 (49.7: Decisões de escopo e AC9b); re-validação do @po pendente.
+  - Nenhum dos dois muda a 49.12; os dois mudam a 49.9. ✅ Aplicado pelo @sm em 2026-10-07 (49.9 AC5 e Dev Notes); re-validado pelo @po em 2026-10-07 (GO 9/10, `b45da2d3`, PR #993).
+- **49.7 (Ready, sem código):** os textos da IA precisam respeitar as lacunas da parcial (49.12, "Fora"). ✅ Aplicado pelo @sm em 2026-10-07 (49.7: Decisões de escopo e AC9b); re-validado pelo @po em 2026-10-07 (GO 9/10, `b45da2d3`, PR #993).
 
 ### Divergências em relação à proposta do @sm (River) e por quê
 
