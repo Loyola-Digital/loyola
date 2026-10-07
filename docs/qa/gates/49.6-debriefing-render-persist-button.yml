@@ -23,7 +23,7 @@ coverage:
   AC8: 'PASS. Lacunas escritas no lugar do bloco; vendas excluídas com txId/valor/data/motivo.'
   AC9: 'PASS para DG/PG02 e sintéticos (medido pelo QA: maior aba 7.024 px, 17/17 gráficos, 0 erros na página e no iframe). PENDENTE: FZ e Netão, porque não há config de debriefing em produção.'
   AC10: 'PASS. Render puro (relógio injetado), imposto não reaplicado, null → —.'
-  AC11: 'PASS na lógica testável (`debriefing-config-form.ts`): faltantes nomeados, corpo do PUT, erro persistente. Bloqueio com motivo antes do clique, passos e link ao viewer estão lidos no tsx. Validação visual do dono PENDENTE.'
+  AC11: 'PASS na lógica testável (`debriefing-config-form.ts`): faltantes nomeados, corpo do PUT, erro persistente. Bloqueio com motivo antes do clique, passos e link ao viewer estão lidos no tsx. Validação visual do dono APROVADA em 2026-10-07 ("visual da 49.6 aprovei sim"; registrado pelo @po).'
   AC12: 'PASS. Contrato 31 → 32 com histórico; botão desabilitado com motivo se API < 32; 404 "Not Found" vira "API atrás" (Q8 e M17 do @dev morrem).'
   AC13: 'PARCIAL. tsc api/web, next build e lint verdes (QA). A geração real no viewer de produção e a conferência com a 49.5 AC10 são condição de Done, PENDENTE.'
   '49.11 AC7': 'PASS. Lista ordenada, ≤1 item envia só o campo antigo, 2º item desabilitado com motivo se API < 31, pesquisa de captação só com API ≥ 31 (Q6 morre).'
@@ -106,7 +106,7 @@ pendencias_do_dono:
   - 'P-49.6-1: origem do Δ. A implementação recalcula pelos motores com a config do lançamento de comparação e dá 422 COMPARACAO_SEM_CONFIG sem ela. A alternativa é o último payload salvo.'
   - 'P-49.6-2: título sem comparação, "edição única" ou "1ª edição".'
   - 'Alerta de produto novo fora do mapa na captação (hoje só o gancho).'
-  - 'Validação visual do formulário e do documento (`scratchpad/debriefing-pg02-49.6.html`).'
+  - 'Validação visual do formulário e do documento (`scratchpad/debriefing-pg02-49.6.html`). APROVADA pelo dono em 2026-10-07: "visual da 49.6 aprovei sim".'
 
 condicoes_de_merge:
   - '@devops aplica `0165_debriefing_payloads.sql` à mão em produção, pelo nome completo, e cola as provas do topo (9 colunas; pkey, 1 FK cascade, 2 CHECK). Sem ela, "Gerar debriefing" dá 500.'
@@ -116,7 +116,7 @@ condicoes_de_merge:
 condicoes_de_done:
   - 'AC13: geração real do PG02 no viewer de produção, conferida com o script da 49.5 AC10 contra a fixture governante.'
   - 'AC9: FZ e Netão medidos (< 20.000 px, 0 erros), depois que houver config deles.'
-  - 'Respostas P-49.6-1 e P-49.6-2 e validação visual do dono.'
+  - 'Respostas P-49.6-1 e P-49.6-2 e validação visual do dono. ATENDIDA: P-49.6-1 e P-49.6-2 respondidas na rodada 7 (R7-7, R7-8; story, "Perguntas ao dono"); visual aprovado pelo dono em 2026-10-07.'
 
 re_gate_iteracao_2:
   data: '2026-10-05'
@@ -132,3 +132,11 @@ re_gate_iteracao_2:
     - 'TEST-496-1 e FMT-496-1 seguem como CONCERNS não bloqueantes (recomendados, baratos)'
     - 'AC13 e a 0165 em produção continuam condição de Done, não de merge'
 recommended_action: 'Status segue Ready for Review, sem ir a Done: a condição de Done (AC13) é posterior ao merge. Caminho: @dev fecha TEST-496-1 e FMT-496-1 (barato), @devops faz merge com a 0165 aplicada, e o dono valida e responde às pendências.'
+atualizacao_po_2026_10_07:
+  autor: '@po (Pax)'
+  decisao_do_gate: 'inalterada (CONCERNS); esta nota só registra fatos posteriores'
+  visual: 'aprovado pelo dono em 2026-10-07, resposta literal "visual da 49.6 aprovei sim"'
+  contrato_em_producao: 'GET https://api.loyoladigital.com/api/health em 2026-10-07 16:00 UTC → contract 34, builtAt 2026-10-07T13:20:32Z'
+  done_ainda_bloqueado_por:
+    - 'AC13: geração real no viewer de produção e conferência com o script da 49.5 AC10; nenhum doc do repo registra a execução'
+    - 'AC9: FZ e Netão ainda não medidos'
