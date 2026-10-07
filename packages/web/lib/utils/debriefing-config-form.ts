@@ -360,10 +360,21 @@ export function todasAsFasesTerminaram(d: DatasDasFases, ontem: string): boolean
   return terminou(d.aberturaCarrinho, d.fimCarrinho) && extra(d.reabertura) && extra(d.downsell);
 }
 
-/** AC6 (49.14) — o aviso, antes do clique, de que todas as fases terminaram e dá para marcar "encerrado". */
-export function avisoDeFasesConcluidas(ontem: string): string {
+/**
+ * AC6 (49.14) — o aviso, antes do clique, de que todas as fases terminaram e dá
+ * para marcar "encerrado". QA 49.14 FE-001: "a parcial sai com os números do
+ * final" só com a API ≥ 36 — a v35 responde 422 CARRINHO_JA_ABERTO a essa
+ * geração, então o aviso diz que a API está atrás (contrato desconhecido = atrás,
+ * como `motivoSemEmAndamento`).
+ */
+export function avisoDeFasesConcluidas(ontem: string, apiContrato?: number | null): string {
+  const terminaram = `Todas as fases (carrinho, reabertura e downsell) terminaram até ${ddmm(ontem)}`;
+  if (typeof apiContrato === "number" && apiContrato >= CONTRATO_DO_CARRINHO_EM_ANDAMENTO) {
+    return `${terminaram}: a parcial sai com os números do relatório final. Para gerar o relatório final, marque “encerrado” na configuração do debriefing.`;
+  }
   return (
-    `Todas as fases (carrinho, reabertura e downsell) terminaram até ${ddmm(ontem)}: a parcial sai com os números do relatório final. ` +
+    `${terminaram}, mas a API em uso${typeof apiContrato === "number" ? ` (contrato ${apiContrato})` : ""} ainda não gera a parcial com o carrinho aberto ` +
+    `(contrato ${CONTRATO_DO_CARRINHO_EM_ANDAMENTO}) — provavelmente está atrás do painel; veja o aviso de versão no topo. ` +
     `Para gerar o relatório final, marque “encerrado” na configuração do debriefing.`
   );
 }
@@ -378,6 +389,7 @@ export function avisoDeFasesConcluidas(ontem: string): string {
 export function avisoDoBotaoDeGerar(
   cfg: Pick<DebriefingConfigGet, "config" | "parcialAtual"> | null | undefined,
   agora: Date,
+  apiContrato?: number | null,
 ): { rotulo: string; detalhe: string; fasesConcluidas?: string } | null {
   if (cfg?.config?.situacaoDoLancamento !== "em-andamento") return null;
   const ontemDia = ontemEmBrasilia(agora);
@@ -388,7 +400,7 @@ export function avisoDoBotaoDeGerar(
     detalhe: p
       ? `Lançamento em andamento: gera uma parcial com os dados até ${ontem} e SUBSTITUI a parcial atual${p.corte ? ` (dados até ${ddmm(p.corte)})` : ""} — os comentários ficam; as edições feitas no viewer se perdem.`
       : `Lançamento em andamento: gera uma parcial com os dados até ${ontem} (ontem, no fuso de Brasília).`,
-    ...(todasAsFasesTerminaram(cfg.config.datasChave, ontemDia) ? { fasesConcluidas: avisoDeFasesConcluidas(ontemDia) } : {}),
+    ...(todasAsFasesTerminaram(cfg.config.datasChave, ontemDia) ? { fasesConcluidas: avisoDeFasesConcluidas(ontemDia, apiContrato) } : {}),
   };
 }
 

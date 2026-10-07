@@ -61,17 +61,29 @@ describe("AC6 — todas as fases terminaram até ontem", () => {
   });
 
   it("o botão avisa antes do clique, sem deixar de oferecer a geração (rótulo de sempre)", () => {
-    const a = avisoDoBotaoDeGerar(getCom(datas()), AGORA)!;
+    const a = avisoDoBotaoDeGerar(getCom(datas()), AGORA, 36)!;
     expect(a.rotulo).toBe("Gerar parcial (dados até 06/10)");
     expect(a.fasesConcluidas).toBe(
       "Todas as fases (carrinho, reabertura e downsell) terminaram até 06/10: a parcial sai com os números do relatório final. Para gerar o relatório final, marque “encerrado” na configuração do debriefing.",
     );
-    expect(avisoDoBotaoDeGerar(getCom(datas({ fimCarrinho: "2026-10-10" })), AGORA)!.fasesConcluidas).toBeUndefined();
+    expect(avisoDoBotaoDeGerar(getCom(datas({ fimCarrinho: "2026-10-10" })), AGORA, 36)!.fasesConcluidas).toBeUndefined();
+  });
+
+  it("FE-001: contra a API v35 (422 CARRINHO_JA_ABERTO) ou de contrato desconhecido, o aviso diz que a API está atrás — nunca 'sai com os números do final'", () => {
+    for (const contrato of [35, 34, null, undefined]) {
+      const a = avisoDoBotaoDeGerar(getCom(datas()), AGORA, contrato)!;
+      expect(a.fasesConcluidas).toMatch(/^Todas as fases \(carrinho, reabertura e downsell\) terminaram até 06\/10, mas a API em uso/);
+      expect(a.fasesConcluidas).toMatch(/ainda não gera a parcial com o carrinho aberto \(contrato 36\) — provavelmente está atrás do painel/);
+      expect(a.fasesConcluidas).not.toMatch(/números do relatório final/);
+      expect(a.fasesConcluidas).toMatch(/marque “encerrado”/);
+    }
+    expect(avisoDoBotaoDeGerar(getCom(datas()), AGORA, 35)!.fasesConcluidas).toContain("(contrato 35)");
+    expect(avisoDoBotaoDeGerar(getCom(datas()), AGORA, 37)!.fasesConcluidas).toMatch(/a parcial sai com os números do relatório final/);
   });
 
   it("'ontem' é o de Brasília: às 22:30 de 06/10 o fim em 06/10 ainda não terminou", () => {
-    expect(avisoDoBotaoDeGerar(getCom(datas()), AGORA_NA_VIRADA)!.fasesConcluidas).toBeUndefined();
-    expect(avisoDoBotaoDeGerar(getCom(datas({ fimCarrinho: "2026-10-05" })), AGORA_NA_VIRADA)!.fasesConcluidas).toMatch(/até 05\/10/);
+    expect(avisoDoBotaoDeGerar(getCom(datas()), AGORA_NA_VIRADA, 36)!.fasesConcluidas).toBeUndefined();
+    expect(avisoDoBotaoDeGerar(getCom(datas({ fimCarrinho: "2026-10-05" })), AGORA_NA_VIRADA, 36)!.fasesConcluidas).toMatch(/até 05\/10/);
   });
 
   it("no formulário: as datas vêm dos campos; a caixa 'ainda não aconteceu' e a 3ª resposta contam como não terminou", () => {

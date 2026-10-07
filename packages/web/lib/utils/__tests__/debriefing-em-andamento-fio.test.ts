@@ -21,7 +21,7 @@ const hook = ler("lib/hooks/use-debriefing-generate.ts");
 
 describe("AC11 — o botão 'Gerar' no modo em andamento", () => {
   it("o rótulo e o aviso vêm de `avisoDoBotaoDeGerar` com a config lida e o relógio de agora", () => {
-    expect(botao).toMatch(/const avisoParcial = avisoDoBotaoDeGerar\(cfg, new Date\(\)\);/);
+    expect(botao).toMatch(/const avisoParcial = avisoDoBotaoDeGerar\(cfg, new Date\(\), apiContrato\);/);
     expect(botao).toMatch(/\{avisoParcial \? avisoParcial\.rotulo : "Gerar debriefing"\}/);
     expect(botao).toMatch(/\{avisoParcial && !motivoBloqueio && \(\s*<p[^>]*>\{avisoParcial\.detalhe\}<\/p>/);
   });

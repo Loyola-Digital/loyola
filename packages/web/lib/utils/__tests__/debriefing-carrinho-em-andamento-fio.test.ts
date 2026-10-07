@@ -18,10 +18,14 @@ describe("AC6 — o aviso de 'todas as fases terminaram' antes do clique", () =>
     expect(botao).toMatch(/disabled=\{!cfg \|\| !!motivoBloqueio \|\| gerar\.isPending\}/);
   });
 
+  it("FE-001: o botão passa o contrato da API ao aviso (contra a v35 ele diz que a API está atrás)", () => {
+    expect(botao).toMatch(/const avisoParcial = avisoDoBotaoDeGerar\(cfg, new Date\(\), apiContrato\);/);
+  });
+
   it("no formulário: só no modo em andamento, com as datas do formulário e o ontem de Brasília", () => {
     expect(botao).toMatch(/const ontem = ontemEmBrasilia\(new Date\(\)\);/);
     expect(botao).toMatch(
-      /const fasesConcluidas = emAndamento && todasAsFasesTerminaram\(datasDasFasesDoForm\(f\), ontem\) \? avisoDeFasesConcluidas\(ontem\) : null;/,
+      /const fasesConcluidas = emAndamento && todasAsFasesTerminaram\(datasDasFasesDoForm\(f\), ontem\) \? avisoDeFasesConcluidas\(ontem, apiContrato\) : null;/,
     );
     expect(botao).toMatch(/\{fasesConcluidas && <p className="text-\[11px\] text-amber-700">\{fasesConcluidas\}<\/p>\}/);
   });

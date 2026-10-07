@@ -124,7 +124,7 @@ export function DebriefingGenerateButton({ projectId, funnelId, stageId, from }:
         : null;
   // Story 49.12 (AC11): no modo em andamento, o botão diz que gera uma PARCIAL
   // com dados até ontem e, havendo parcial, que vai substituí-la.
-  const avisoParcial = avisoDoBotaoDeGerar(cfg, new Date());
+  const avisoParcial = avisoDoBotaoDeGerar(cfg, new Date(), apiContrato);
 
   function handleGerar() {
     setErro(null);
@@ -282,7 +282,7 @@ function FormularioDaConfig({
   // Story 49.14: o rótulo do "em andamento" segue o contrato; com todas as fases terminadas até ontem, o aviso do AC6.
   const rotuloEmAndamento = rotuloDoEmAndamento(apiContrato);
   const ontem = ontemEmBrasilia(new Date());
-  const fasesConcluidas = emAndamento && todasAsFasesTerminaram(datasDasFasesDoForm(f), ontem) ? avisoDeFasesConcluidas(ontem) : null;
+  const fasesConcluidas = emAndamento && todasAsFasesTerminaram(datasDasFasesDoForm(f), ontem) ? avisoDeFasesConcluidas(ontem, apiContrato) : null;
   const vivos = f.comparacoes.filter((id) => !removidos.includes(id));
 
   if (isLoading) return <p className="p-4 text-sm text-muted-foreground">Carregando…</p>;
