@@ -266,6 +266,52 @@ export function motivoSemSegundoItem(apiContrato: number | null | undefined): st
 }
 
 // ---------------------------------------------------------------------------
+// Funis da comparação (49.13) — ativos E arquivados
+// ---------------------------------------------------------------------------
+
+/**
+ * Escopo da busca de funis do formulário (2º argumento de `useFunnels`). O
+ * padrão do hook é `"false"` (só ativos); a lista de comparação pede `"all"`
+ * porque o servidor aceita funil arquivado como comparação (49.13 AC1/AC4).
+ * Vale SÓ para este formulário (AC5): o hook continua com o padrão de hoje.
+ */
+export const ESCOPO_DOS_FUNIS_DA_COMPARACAO = "all" as const;
+
+/** O pedaço do `Funnel` que a lista de comparação usa. */
+export interface FunilDaComparacao {
+  id: string;
+  name: string;
+  archivedAt?: string | null;
+}
+
+/** Nome com o sufixo " (arquivado)" — mesmo rótulo de `funnels/[funnelId]/page.tsx`. */
+export function rotuloDoFunilDaComparacao(f: FunilDaComparacao): string {
+  return f.archivedAt ? `${f.name} (arquivado)` : f.name;
+}
+
+/**
+ * Opções do seletor "+ adicionar lançamento de comparação…": todos os funis
+ * do projeto menos o próprio e os que já estão na lista; ativos primeiro,
+ * arquivados depois (ordem estável dentro de cada grupo).
+ */
+export function opcoesDaComparacao(
+  funis: readonly FunilDaComparacao[],
+  funnelId: string,
+  jaNaLista: readonly string[],
+): { id: string; rotulo: string }[] {
+  return funis
+    .filter((x) => x.id !== funnelId && !jaNaLista.includes(x.id))
+    .sort((a, b) => (a.archivedAt ? 1 : 0) - (b.archivedAt ? 1 : 0))
+    .map((x) => ({ id: x.id, rotulo: rotuloDoFunilDaComparacao(x) }));
+}
+
+/** Nome exibido de um item da lista salva; o id só quando o funil não existe mais. */
+export function nomeDoFunilDaComparacao(funis: readonly FunilDaComparacao[] | undefined, id: string): string {
+  const f = funis?.find((x) => x.id === id);
+  return f ? rotuloDoFunilDaComparacao(f) : id;
+}
+
+// ---------------------------------------------------------------------------
 // Geração
 // ---------------------------------------------------------------------------
 

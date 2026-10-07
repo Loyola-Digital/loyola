@@ -1,0 +1,71 @@
+schema: 1
+storyId: '49.13'
+story: '49.13'
+story_title: 'Lançamentos arquivados entram na lista de comparação do gerador de Debriefing'
+verdict: PASS
+gate: PASS
+status_reason: 'Re-gate (iteração 2): o TEST-001 está fechado. O teste de fio `debriefing-comparacao-fio.test.ts` derruba W1–W4 e mais 9 variações não literais. A única variação que passa nos testes, um escopo local `"false"` que sombreia o import, é barrada pelo lint. ACs 1–6 atendidos, sem issue high nem medium; fica o visual do dono (DOC-001), que não bloqueia.'
+reviewer: 'Quinn'
+updated: '2026-10-07T12:35:00-03:00'
+branch: 'feat/49.13-comparacao-arquivados'
+commit_reviewed: '570b8106 (código de produção = 28c5b795, sem diff desde então; 570b8106 só acrescenta o teste de fio e a story)'
+previous_gates:
+  - { commit_gate: 'a7a16803', commit_reviewed: '4345ba44', verdict: CONCERNS, date: '2026-10-07', motivo: 'TEST-001: fio do componente sem teste (W1–W4 sobreviviam)' }
+qa_loop: { iteration: 2, verdict: 'APPROVE — TEST-001 fechado no QA fix 1 (570b8106)' }
+base: 'origin/main @ 4920adfb. `git fetch origin` no gate (12:04) e no re-gate (12:30), em 2026-10-07: a main não andou nas duas vezes.'
+
+issues:
+  - id: TEST-001
+    severity: medium
+    category: tests
+    description: 'Os testes provam a biblioteca e não o fio do componente. As funções do módulo folha estão travadas: M1–M6 morrem (ver checks.unit_tests). Mas as 4 mutações em `debriefing-generate-button.tsx` sobrevivem com 1.566/1.566 em `lib/utils/__tests__/`: W1 `useFunnels(projectId, ESCOPO_DOS_FUNIS_DA_COMPARACAO)` → `useFunnels(projectId)` (linha 235); W2 `{x.rotulo}` → `{x.id}` (linha 447); W3 `nomeDoFunil` volta ao `find(...)?.name ?? id` inline de hoje (linha 252); W4 `f.comparacoes` → `[]` (linha 445: a comparação já salva volta às opções, duplicata). W1 restaura exatamente o código de hoje, o filtro de ativos do AC1, e ainda assim nada falha. A prova de reversão do @dev reverteu a constante e as funções, não o chamador. O AC6 é atendido na letra, porque a biblioteca falha com a lógica de hoje, mas a regressão mais provável (alguém tirar o 2º argumento) passa com a suíte verde.'
+    recommendation: 'Teste de fio no padrão de `lib/utils/__tests__/vturb-bloco-fio.test.ts` (o pacote web roda em `node` e não coleta `components/funnels/**`): ler o fonte com `readFileSync` e afirmar (1) `useFunnels(projectId, ESCOPO_DOS_FUNIS_DA_COMPARACAO)` e uma única chamada a `useFunnels(`; (2) `const nomeDoFunil = (id: string) => nomeDoFunilDaComparacao(funis, id);`; (3) `opcoesDaComparacao(funis ?? [], funnelId, f.comparacoes)` seguido de `{x.rotulo}` no `<option>`. O QA rodou um rascunho desse teste no worktree e depois o removeu: ele derruba W1, W2, W3 e W4 (4/4) e passa sem mutação. É 1 arquivo, cerca de 15 linhas.'
+    owner: '@dev'
+    resolution: 'FECHADO em 570b8106 e conferido no re-gate. Teste novo `lib/utils/__tests__/debriefing-comparacao-fio.test.ts`, com 3 testes que leem o fonte. Cada mutação foi reaplicada pelo QA e restaurada com SHA conferido, e todas morrem com 1 falha em 1.569 testes de `lib/utils/__tests__/`. Literais: W1 `useFunnels(projectId)`, W2 `{x.id}`, W3 `nomeDoFunil` inline, W4 `[]`. Variações não literais: V1 `useFunnels(projectId, "false")`; V2 `{x.nome}`; V2b `{x.rotulo.replace(" (arquivado)", "")}`; V3 item salvo exibindo `{id}`; V3b `nomeDoFunilDaComparacao(funis?.filter(x => !x.archivedAt), id)`; V4 `""` no lugar de `funnelId` (o próprio funil volta à lista); V4b `.filter(x => !x.rotulo.endsWith("(arquivado)"))` antes do `.map`; V4c `(funis ?? []).filter(x => !x.archivedAt)` na entrada. Única sobrevivente nos testes: V5, um `const ESCOPO_DOS_FUNIS_DA_COMPARACAO = "false"` local que sombreia o import, com o texto da chamada intacto. O `next lint` a barra com erro (`no-unused-vars` no import, linha 39), e lint bloqueia o CI.'
+    status: resolved
+
+  - id: TEST-002
+    severity: low
+    category: tests
+    description: 'Sobre o `[AUTO-DECISION]` do @dev: o `doServidor` do teste (a) é um espelho escrito à mão de `routes/funnels.ts:209-214` e não confere nada contra a rota. O que de fato trava o escopo é `expect(ESCOPO_DOS_FUNIS_DA_COMPARACAO).toBe("all")`, que fixa um literal. Não é tautológico: M1 (`"false"`) derruba (a) e (c), e o espelho faz o (c) também morrer. Mas a extração para constante só tem valor se o componente usar a constante, e isso o TEST-001 não prova. Se a rota mudar a semântica de `all`, o espelho continua verde.'
+    recommendation: 'Aceitável como está. O TEST-001 resolve o que importa. Opcional: um comentário no `doServidor` apontando que ele espelha `routes/funnels.ts` (já existe) é suficiente.'
+    status: open
+
+  - id: DOC-001
+    severity: low
+    category: documentation
+    description: 'Validação visual do dono no formulário do DG PG05 (último item da DoD) não feita. Só o dono faz. Não bloqueia o gate.'
+    recommendation: 'Dono abre "Config. do gerador" na etapa Debriefing do DG PG05 (preview da PR, não o local, que grava no banco de produção). Conferir: arquivados com "(arquivado)" no fim do seletor, e uma comparação salva já arquivada exibida pelo nome.'
+    owner: 'Danilo'
+    status: pending
+
+top_issues:
+  - id: DOC-001
+    severity: low
+    finding: 'Validação visual do dono pendente.'
+    suggested_action: 'Dono, no preview da PR. Não bloqueia.'
+  - id: TEST-002
+    severity: low
+    finding: 'O espelho da rota no teste (a) trava só o literal "all".'
+    suggested_action: 'Aceito. O fio agora está preso pelo TEST-001.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Diff de 3 arquivos de código. `opcoesDaComparacao` aplica `filter` antes de `sort`; o `filter` cria um array novo, então a ordenação não muta o cache do React Query. Comparador idêntico ao de `funnels/[funnelId]/page.tsx:135` e rótulo idêntico ao de `:299`. A rota já ordena os arquivados por último (`routes/funnels.ts` `orderBy archivedAt IS NOT NULL`), então o `sort` do cliente é redundante em produção. Isso é defesa e paridade, não defeito. `nomeDoFunil` é usado em `:419`, o item da lista salva do AC3. Tipo `FunilDaComparacao` compatível com o `Funnel` do web (tsc limpo).'
+  acceptance_criteria: 'AC1 ✓: `useFunnels(projectId, "all")` → `?archived=all` → rota sem filtro de arquivamento. As opções excluem o próprio funil e os já listados. AC2 ✓: sufixo " (arquivado)", ativos antes dos arquivados, e `sort` estável preserva a ordem da API em cada grupo. AC3 ✓: `nomeDoFunilDaComparacao` com a lista `"all"`; o id só aparece para funil apagado. AC4 ✓ sem código: nenhum `services/debriefing-*.ts` nem rota de debriefing lê `archivedAt`, e `funisDoProjeto` (`debriefing-config.ts:944-946`) lista todos os funis do projeto. AC5 ✓: o diff troca uma única chamada de `useFunnels` (`grep` dos 10 chamadores: os demais estão iguais, incluindo `launch-comparativo-button.tsx:68`, o Comparativo do Epic 41, fora de escopo). O hook não mudou e o padrão segue `"false"`. Cache: `useArchiveFunnel`/`useUnarchiveFunnel` chamam `invalidateFunnelLists`, que invalida `["funnels", projectId]`. O React Query casa por prefixo (`exact` falso por padrão), então alcança `["funnels", projectId, "all"]`. Create, update, delete e reorder também invalidam o mesmo prefixo. AC6 ✓ na letra (ver TEST-001).'
+  unit_tests: 'Arquivo da story: 24/24. Suíte inteira do web com o timeout PADRÃO de 5 s: 130 arquivos, 1.812/1.812 (load average ~8 no momento). Mutações do QA (cada uma aplicada e restaurada com SHA conferido, `git status` limpo ao fim). Biblioteca: M1 escopo `"false"` → (a)+(c) falham; M2 sem sufixo → (b)+(c); M3 sem `sort` → (b); M3b ordem invertida → (b); M4 nome sem rótulo → (c); M5 não exclui o próprio → (a)+(b); M6 não exclui os já listados (duplicata) → (a). Todas morrem. Componente: W1/W2/W3/W4 → 0 falhas, todas sobrevivem (TEST-001).'
+  security: 'Funil arquivado de OUTRO projeto não aparece: a rota filtra `eq(funnels.projectId, :projectId)` depois de `getProjectAccess`, e `archived=all` só remove o filtro de arquivamento. O convidado preso a um funil continua restrito por `funilDoConvidado`, que vale também com `all`. O servidor rejeita id de outro projeto ao salvar (`debriefing-config.ts:1154,1166`: "não é um funil do mesmo projeto") e ignora ao gerar (`premissaEfetiva`, `:825-827`). O próprio lançamento fica fora (`x.id !== funnelId`, M5 morre). Uma comparação já na lista não duplica (`!jaNaLista.includes`, M6 morre; o fio de `f.comparacoes` é o TEST-001).'
+  no_regressions: 'Lint (`next lint`): 0 avisos. `node_modules/.bin/tsc --noEmit -p packages/web` com `.next/types` presente: exit 0. O tsc é incremental, por isso levou 3,6 s; para provar que ele checa de fato, o QA injetou `{x.name}` e ele acusou TS2339 na linha 447, depois restaurou. Os timeouts de `.test.tsx` de instagram/planner que o @dev viu NÃO se reproduziram: 1.812/1.812 com o timeout padrão. Nenhum desses arquivos importa `debriefing*` ou `use-funnels` (grep vazio), e a story não toca nada fora dos 3 arquivos. Não há falha a atribuir, por isso o worktree em `origin/main` não foi necessário.'
+  api_contract: 'N/A: sem rota, campo, migration ou bump de `API_CONTRACT_VERSION`. Front e API podem subir em qualquer ordem, porque `archived=all` já existe na rota desde a Story 10.9.'
+  performance: 'Uma query a mais por projeto (`["funnels", id, "all"]`, staleTime 5 min) só quando o formulário abre. O `sort` é O(n log n) sobre a lista de funis. Irrelevante. O R1 (lista longa) é mitigado pela ordem ativos → arquivados.'
+  regate_iteracao_2: 'Testes da story: 27/27 (`debriefing-config-form` 24 + `debriefing-comparacao-fio` 3). Suíte inteira do web com o timeout padrão: 131 arquivos, 1.815/1.815. `next lint`: sem avisos nem erros. `node_modules/.bin/tsc --noEmit -p .`: exit 0. Mutações: ver TEST-001.resolution. Observação sem severidade: o teste de fio prende a GRAFIA. A variação equivalente `useFunnels(projectId, "all")` também derruba o teste, então quem refatorar o componente precisa atualizar o teste junto. É o custo conhecido do padrão `*-fio.test.ts`, aceitável enquanto `components/funnels/**` não roda em jsdom.'
+  documentation: 'Dev Agent Record completo, com o `[AUTO-DECISION]`, a prova de reversão e os comandos. A prova cobre a biblioteca e não o chamador (TEST-001).'
+
+notes:
+  - '[AUTO-DECISION] Re-gate → PASS (razão: TEST-001 fechado e provado com variações não literais; sobram só TEST-002 low, aceito, e DOC-001, o visual do dono, que o coordenador definiu como não bloqueante e que fica registrado como pendente).'
+  - 'Gate anterior: [AUTO-DECISION] Decisão → CONCERNS, não FAIL (razão: os ACs 1–5 estão implementados corretamente e conferidos no código; o AC6 é atendido na letra; o furo é de teste de fio, medium, com conserto pronto e provado; não há issue high).'
+  - '[AUTO-DECISION] O teste com `doServidor` é tautológico? → Não é tautológico, mas é fraco: trava o valor da constante e não a ligação (TEST-002 low; o que importa vai no TEST-001).'
+  - '[AUTO-DECISION] Worktree em `origin/main` para os timeouts → dispensado (razão: os timeouts não se reproduzem na HEAD com o timeout padrão; não há falha a comparar).'
+  - 'CodeRabbit não executado (CLI ausente no macOS). Revisão manual mais mutações.'
+  - 'Próximo: @devops *push / PR; depois, o visual do dono no preview (DOC-001).'
