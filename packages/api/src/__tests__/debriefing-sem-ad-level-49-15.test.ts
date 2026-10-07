@@ -9,11 +9,16 @@
  * Os payloads saem dos motores REAIS sobre a entrada sintética da 49.5, com a
  * dimensão e o ad-level trocados; o caminho de ponta a ponta passa pelo
  * orquestrador (`gerarDebriefing`): config → motores → guardas → render → gravar.
+ * Vale também no modo em andamento da 49.12 (parcial), no fim do arquivo.
  */
 
 import { describe, expect, it } from "vitest";
 import { computeDebriefingAudience, type AnuncioDiaInput } from "../services/debriefing-audience-engine.js";
-import type { DebriefingConfigLancamento } from "../services/debriefing-config.js";
+import type {
+  DebriefingConfig,
+  DebriefingConfigLancamento,
+  DebriefingConfigLancamentoEmAndamento,
+} from "../services/debriefing-config.js";
 import {
   gerarDebriefing,
   type DependenciasDaGeracao,
@@ -21,7 +26,7 @@ import {
   type RegistroDoDebriefing,
 } from "../services/debriefing-generate.js";
 import { lacunasExigidas, validateDebriefing } from "../services/debriefing-guards.js";
-import { computeDebriefingMoneyTime } from "../services/debriefing-money-time-engine.js";
+import { computeDebriefingMoneyTime, configDoMotor } from "../services/debriefing-money-time-engine.js";
 import { montarPayloadDebriefing, type DebriefingPayload } from "../services/debriefing-payload.js";
 import {
   GERADO_EM,
@@ -77,19 +82,26 @@ const S = "30000000-0000-4000-8000-000000000001";
 const U = "40000000-0000-4000-8000-000000000001";
 const PARAMS: ParametrosDaGeracao = { projectId: P, funnelId: F, stageId: S, userId: U, userRole: "user", investimentoOficial: null };
 
+interface OpcoesDasDeps {
+  config: (stageId: string) => DebriefingConfig;
+  calcular: (c: DebriefingConfigLancamento, geradoEm: Date) => DebriefingPayload;
+  agora: Date;
+}
+
 /**
- * Dependências falsas do orquestrador: a config sai da "49.1" com a dimensão
- * dada e o `calcularPayload` roda os motores sobre ela (a dimensão atravessa
- * config → motores → guardas → render). `ajustar` muta o payload calculado.
+ * Dependências falsas do orquestrador: a config sai da "49.1" e o
+ * `calcularPayload` roda os motores sobre ela (a dimensão atravessa config →
+ * motores → guardas → render). O sync da mídia (49.12, só o modo em andamento
+ * chama) responde "sincronizada no instante da geração".
  */
-function deps(dimensao: Dimensao, comAdLevel: boolean, ajustar?: (p: DebriefingPayload) => void) {
+function depsDe(o: OpcoesDasDeps) {
   const gravados: RegistroDoDebriefing[] = [];
   const d: DependenciasDaGeracao = {
     async resolverEtapa() {
       return { stageId: S, stageName: "Debriefing", stageType: "debriefing", funnelId: F, funnelName: "PG02", projectId: P, projectName: "Expert" };
     },
     async carregarConfig(stageId) {
-      return { ...configCom(dimensao), stageId };
+      return o.config(stageId);
     },
     async etapasDeDebriefingDoFunil() {
       return [];
@@ -98,9 +110,7 @@ function deps(dimensao: Dimensao, comAdLevel: boolean, ajustar?: (p: DebriefingP
       return null;
     },
     async calcularPayload(c, geradoEm) {
-      const p = payloadDe(c.dimensaoDeCriativo, comAdLevel, geradoEm);
-      ajustar?.(p);
-      return p;
+      return o.calcular(c, geradoEm);
     },
     async nomes() {
       return { funis: { [F]: "PG02" }, etapas: {} };
@@ -109,9 +119,25 @@ function deps(dimensao: Dimensao, comAdLevel: boolean, ajustar?: (p: DebriefingP
       gravados.push(r);
       return { id: "50000000-0000-4000-8000-000000000001" };
     },
-    agora: () => new Date(GERADO_EM),
+    async estadoDoSyncDaMidia() {
+      return [{ accountId: "act_1", nome: "Conta", adDaily: { lastSuccessAt: o.agora.toISOString() }, campaignDaily: null }];
+    },
+    agora: () => o.agora,
   };
   return { d, gravados };
+}
+
+/** Encerrado: a config sintética com a dimensão dada. `ajustar` muta o payload calculado. */
+function deps(dimensao: Dimensao, comAdLevel: boolean, ajustar?: (p: DebriefingPayload) => void) {
+  return depsDe({
+    config: (stageId) => ({ ...configCom(dimensao), stageId }),
+    calcular: (c, geradoEm) => {
+      const p = payloadDe(c.dimensaoDeCriativo, comAdLevel, geradoEm);
+      ajustar?.(p);
+      return p;
+    },
+    agora: new Date(GERADO_EM),
+  });
 }
 
 async function gerar(dimensao: Dimensao, comAdLevel: boolean, ajustar?: (p: DebriefingPayload) => void) {
@@ -221,5 +247,83 @@ describe("\"nenhuma\" COM ad-level: segue sem exigência e sem aviso (já era as
     expect(validateDebriefing(p).alertas.map((a) => a.codigo)).not.toContain("WF9");
     const { r } = await gerar("nenhuma", true);
     expect(r.status).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Modo em andamento (49.12): a mesma regra na parcial
+// ---------------------------------------------------------------------------
+
+/** 12:00 de 22/04/2026 em Brasília: captação aberta desde 17/04, corte em 21/04. */
+const AGORA_PARCIAL = new Date("2026-04-22T15:00:00.000Z");
+
+function configEmAndamento(dimensao: Dimensao): DebriefingConfigLancamentoEmAndamento {
+  return {
+    ...configSintetica(),
+    stageId: S,
+    dimensaoDeCriativo: dimensao,
+    situacaoDoLancamento: "em-andamento",
+    datasChave: { inicioCaptacao: "2026-04-17", aberturaCarrinho: null, fimCarrinho: null, reabertura: null, downsell: null },
+    aindaNaoAconteceu: ["aberturaCarrinho", "fimCarrinho", "reabertura", "downsell"],
+  };
+}
+
+/** Os motores reais sobre a config em andamento (janela até o corte), sem ad-level. */
+function payloadParcial(c: DebriefingConfigLancamento, geradoEm: Date): DebriefingPayload {
+  const mtIn = { ...entradaMoneyTimeSintetica(), config: configDoMotor(c) };
+  const mt = computeDebriefingMoneyTime(mtIn);
+  const auBase = entradaAudienceSintetica(mtIn);
+  const auIn = {
+    ...auBase,
+    janela: mt.janela,
+    config: { ...auBase.config, dimensaoDeCriativo: c.dimensaoDeCriativo },
+    criativos: { ...auBase.criativos, anuncios: [] },
+  };
+  return montarPayloadDebriefing(mt, computeDebriefingAudience(auIn), c, geradoEm);
+}
+
+async function gerarParcial(dimensao: Dimensao, ajustar?: (p: DebriefingPayload) => void) {
+  const { d, gravados } = depsDe({
+    config: () => configEmAndamento(dimensao),
+    calcular: (c, geradoEm) => {
+      const p = payloadParcial(c, geradoEm);
+      ajustar?.(p);
+      return p;
+    },
+    agora: AGORA_PARCIAL,
+  });
+  const r = await gerarDebriefing(d, PARAMS);
+  return { r, gravados };
+}
+
+describe("Modo em andamento (49.12) — \"nenhuma\" sem ad-level não falha na F11", () => {
+  it("a parcial é gerada (200), com a F11 passando e sem WF9", async () => {
+    const { r, gravados } = await gerarParcial("nenhuma");
+    expect(r.body).not.toHaveProperty("erro");
+    expect(r.status).toBe(200);
+    expect(gravados).toHaveLength(1);
+    const p = gravados[0]!.payload;
+    expect(p.situacao).toMatchObject({ modo: "parcial" });
+    expect(p.dinheiroTempo.janela).toMatchObject({ fimPor: "corte" });
+    expect(p.publico.tipoDeCriativo).toMatchObject({ aplicavel: false, adLevel: { aplicavel: false, linhas: 0 } });
+    const g = validateDebriefing(p);
+    expect(g.invariantes.find((i) => i.codigo === "F11")).toMatchObject({ status: "passed" });
+    expect(g.alertas.map((a) => a.codigo)).not.toContain("WF9");
+    for (const re of FALA_DE_TIPO_SEM_AD_LEVEL) expect(htmlDe(r)).not.toMatch(re);
+  });
+
+  it("com dimensão, a parcial sem ad-level continua exigindo a lacuna: sem ela, 422 e nada gravado", async () => {
+    const ok = await gerarParcial("ia-humano");
+    expect(ok.r.status).toBe(200);
+    expect(ok.gravados[0]!.payload.lacunas.map((l) => l.codigo)).toContain("SEM_AD_LEVEL");
+    expect(htmlDe(ok.r)).toMatch(/Mídia por criativo indisponível/);
+
+    const sem = await gerarParcial("ia-humano", (p) => {
+      p.lacunas = p.lacunas.filter((l) => l.codigo !== "SEM_AD_LEVEL");
+    });
+    expect(sem.r.status).toBe(422);
+    expect(sem.r.body).toMatchObject({ erro: "INVARIANTE_VIOLADO" });
+    expect(JSON.stringify(sem.r.body)).toContain("SEM_AD_LEVEL");
+    expect(sem.gravados).toHaveLength(0);
   });
 });
