@@ -238,6 +238,41 @@ describe("AC10 — a nova parcial substitui a anterior (mesmo debriefing; coment
     expect(violaUnicidade(erro, "uq_debriefing_payloads_parcial_por_etapa")).toBe(true);
   });
 
+  it("QA TEST-001 — corrida da 1ª parcial: a perdedora bate no índice (erro REAL do PG), refaz e ATUALIZA a vencedora; o final não refaz", async () => {
+    const vencedora = await gravarDebriefingGerado(db, parcial("2026-10-05", 5));
+    // o erro de unicidade REAL, no formato em que o drizzle + PGlite o entregam
+    const [d] = (await pg.query<{ id: string }>(`INSERT INTO debriefings (campaign_name, html, created_by) VALUES ('x', 'x', '${U}') RETURNING id`)).rows;
+    let erroReal: unknown = null;
+    try {
+      await db.insert(schema.debriefingPayloads).values({ debriefingId: d!.id, tipo: "lancamento", versao: 1, stageIdOrigem: S1, payload: {}, impostoOrigem: "default", parcial: true });
+    } catch (e) {
+      erroReal = e;
+    }
+    expect(violaUnicidade(erroReal, "uq_debriefing_payloads_parcial_por_etapa")).toBe(true);
+    await pg.exec(`DELETE FROM debriefings WHERE id = '${d!.id}'`);
+    // a perdedora: a 1ª transação dela termina no índice (a vencedora já commitou); a 2ª é a real
+    let transacoes = 0;
+    const perdedora = new Proxy(db, {
+      get(alvo, prop, rec) {
+        if (prop !== "transaction") return Reflect.get(alvo, prop, rec);
+        return async (fn: unknown) => {
+          transacoes += 1;
+          if (transacoes === 1) throw erroReal;
+          return (alvo as unknown as { transaction: (f: unknown) => unknown }).transaction(fn);
+        };
+      },
+    }) as Database;
+    const r = await gravarDebriefingGerado(perdedora, parcial("2026-10-06", 6));
+    expect(transacoes).toBe(2);
+    expect(r).toEqual({ id: vencedora.id, substituiuParcial: true });
+    expect(await contar("SELECT count(*)::int AS n FROM debriefing_payloads WHERE parcial")).toBe(1);
+    expect(await um<{ html: string }>("SELECT html FROM debriefings WHERE id = $1", [vencedora.id])).toEqual({ html: "<html>parcial 2026-10-06</html>" });
+    // o final não tem índice próprio: não refaz, o erro sobe (nada a reconciliar)
+    transacoes = 0;
+    await expect(gravarDebriefingGerado(perdedora, final())).rejects.toBe(erroReal);
+    expect(transacoes).toBe(1);
+  });
+
   it("a geração que falha ao gravar não altera a parcial existente (transação)", async () => {
     const a = await gravarDebriefingGerado(db, parcial("2026-10-05", 5));
     const ruim = parcial("2026-10-06", 6);
@@ -281,6 +316,15 @@ describe("AC14/AC11 — o viewer e o formulário sabem que o documento é parcia
     expect((await app.inject({ method: "GET", url: `/api/debriefings/${p.id}` })).json().parcial).toBeNull();
     const [m] = (await pg.query<{ id: string }>(`INSERT INTO debriefings (campaign_name, stage_id, html, created_by) VALUES ('Manual', '${S1}', '<html>m</html>', '${U}') RETURNING id`)).rows;
     expect((await app.inject({ method: "GET", url: `/api/debriefings/${m!.id}` })).json().parcial).toBeNull();
+  });
+
+  it("QA TEST-002 — upload manual na MESMA etapa com uma parcial viva: o upload sai sem `parcial`; a parcial continua parcial", async () => {
+    const p = await gravarDebriefingGerado(db, parcial("2026-10-06", 6));
+    const [m] = (await pg.query<{ id: string }>(`INSERT INTO debriefings (campaign_name, stage_id, html, created_by) VALUES ('Manual', '${S1}', '<html>m</html>', '${U}') RETURNING id`)).rows;
+    expect(await contar("SELECT count(*)::int AS n FROM debriefing_payloads WHERE parcial AND stage_id_origem = $1", [S1])).toBe(1);
+    const upload = (await app.inject({ method: "GET", url: `/api/debriefings/${m!.id}` })).json();
+    expect(upload).toMatchObject({ id: m!.id, html: "<html>m</html>", parcial: null });
+    expect((await app.inject({ method: "GET", url: `/api/debriefings/${p.id}` })).json().parcial).toEqual({ corte: "2026-10-06", dMaisN: 6 });
   });
 
   it("a edição inline (PUT html) de uma parcial NÃO a tira de parcial (o payload não muda)", async () => {
