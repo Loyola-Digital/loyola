@@ -2,13 +2,13 @@ schema: 1
 storyId: '49.14'
 story: '49.14'
 story_title: 'Debriefing em andamento — gerar com o carrinho aberto (e com reabertura/downsell ainda por vir)'
-verdict: CONCERNS
-gate: CONCERNS
-status_reason: 'Re-gate (iteração 2) sobre 146ea828. FE-001, REQ-002 e TEST-001 estão fechados, REQ-001 foi ratificado e REQ-003 virou a P-20, pendente do dono. 11 das 12 mutações do QA morreram e as suítes, o lint, o tsc e o next build passam. A CONCERN média é o MNT-001: quando a reabertura teve faturamento, a conta que o documento escreve não fecha (o QA reproduziu 33,04 escrito contra 30,24 de ROAS total).'
+verdict: PASS
+gate: PASS
+status_reason: 'Re-gate (iteração 3) sobre 6ddbdc24. MNT-002, TEST-002 e FE-002 estão fechados. A conta escrita do ROAS total bate com o valor mostrado no caso do MNT-002 e em duas combinações que o @dev não listou. As 8 mutações do QA morreram e as suítes, o lint, o tsc e o next build passam. Fica a P-20, pendência do dono (não é defeito), que segura o Done do AC6 na parte do Δ.'
 reviewer: 'Quinn'
-updated: '2026-10-07T20:30:00-03:00'
+updated: '2026-10-07T22:30:00-03:00'
 branch: 'feat/49.14-debriefing-carrinho-em-andamento'
-commit_reviewed: '146ea828 (iteração 2; a iteração 1 revisou 9efa5666 e gravou o gate em 9ff13aa0)'
+commit_reviewed: '6ddbdc24 (iteração 3; iteração 2 sobre 146ea828, gate f0543b52; iteração 1 sobre 9efa5666, gate 9ff13aa0)'
 base: 'Empilhada na 49.12 @ dcbcd962. A PR #992 da 49.12 está em 117b90c5, que difere só em docs. O diff revisado é `git diff dcbcd962...HEAD` (17 arquivos). A origin/main andou para 30978960, um commit só de docs (49.7, 49.9 e epic-49) sem arquivo em comum com a branch; `git merge-tree` com a origin/main não acusa conflito.'
 coderabbit_status: 'SKIPPED (a CLI só roda no WSL e o ambiente é macOS; é a prática do repo)'
 
@@ -176,13 +176,46 @@ iteracao_2:
       owner: dev
   pendencia_do_dono: 'P-20 (o Δ da comparação no R9-5): opção A, B ou C. Sem resposta, o comportamento fica na B. Segura o fechamento do AC6 no que toca à comparação.'
 
+iteracao_3:
+  data: '2026-10-07'
+  commits_revisados: ['190cb21b API: MNT-002 + TEST-002', '61b5f77f web: FE-002', '6ddbdc24 docs']
+  base: 'Continua na 49.12 @ dcbcd962. A origin/main está em 25413b39 (docs da 49.15 e do epic), sem arquivo em comum; `git merge-tree` não acusa conflito.'
+  fechamento:
+    MNT-002: 'FECHADO. `contaDoRoasTotal` (debriefing-render.ts) escreve o numerador de verdade, sem a reabertura (decisão 5): captação + principal, mais o downsell quando ele entra. Escreve também o denominador e o resultado, e só aparece com corte, então o encerrado não muda (a mutação D7, que escreve a conta também no encerrado, morre no SHA do AC9 a). A nota do Fat. Total cita a reabertura que fica fora.'
+    TEST-002: 'FECHADO. C12 morreu.'
+    FE-002: 'FECHADO. `motivoSemFimAindaNao` (≥ 36). Contra a API v35, a v34 ou de contrato desconhecido, a caixa fica desabilitada e o motivo de "API atrás" aparece por escrito. D1 a D4 morreram, inclusive no chamador .tsx.'
+    P-20: 'PENDENTE DO DONO, não é defeito. O comportamento fica na opção (B), cortar a comparação em D+N.'
+  conferencia_mnt002:
+    metodo: 'Sonda do QA pelo orquestrador real com render. A conta "ROAS total = (…) ÷ investimento total R$ X = Y" é extraída do HTML; a soma das parcelas ÷ o denominador e o Y escrito são comparados com `roasTotalSemTmb.valor`, com tolerância de arredondamento de 0,006.'
+    casos:
+      - '(a) O caso do MNT-002: reabertura R$ 800 concluída e downsell FORA com R$ 500. Escrito "(captação R$ 641,00 + principal R$ 8.000,00) ÷ R$ 285,71 = 30,24"; a soma dá 30,244 e o ROAS é 30,2435. BATE (duas ocorrências: Fat. Total e ROAS total).'
+      - '(b) Não listada: reabertura faturada e downsell EM CURSO (a venda dele antes do início entra). Escrito "(R$ 641,00 + R$ 8.000,00 + downsell R$ 500,00) ÷ R$ 285,71 = 31,99"; ROAS 31,9935. BATE.'
+      - '(c) Não listada: carrinho em curso, reabertura "ainda não aconteceu" e downsell com "fim ainda não aconteceu" começando no corte. Escrito com o downsell, = 31,99; ROAS 31,9935. BATE.'
+    observacao: 'Em (c), o Fat. Total ainda inclui R$ 800 da etapa de reabertura, que "ainda não começou". O ROAS total e a conta estão certos, porque a decisão 5 já exclui a reabertura do headline, e é o mesmo tratamento do relatório final. Não abro achado.'
+  verificacoes:
+    api_debriefing: '772/772 (25 arquivos)'
+    web: '1.856/1.856'
+    lint: 'API: 0 erros e 1 warning pré-existente. next lint: limpo.'
+    typecheck: 'tsc da API 0. next build exit 0, e depois o tsc do web 0. O shared foi compilado antes.'
+  mutacoes_qa:
+    total: 8
+    mortas: 8
+    lista:
+      - 'C12 F10 aceita "fim ainda não aconteceu" sem houve: MORTA'
+      - 'D1 FE-002 limiar da caixa na v35: MORTA (2)'
+      - 'D2 FE-002 .tsx: caixa sem o disabled: MORTA (2)'
+      - 'D3 FE-002 .tsx: o motivo não aparece por escrito: MORTA'
+      - 'D4 FE-002 .tsx (chamador): contrato fixo 36: MORTA'
+      - 'D5 MNT-002 a conta inclui o downsell mesmo FORA: MORTA (3)'
+      - 'D6 MNT-002 a conta nunca é escrita: MORTA (6)'
+      - 'D7 MNT-002 a conta também no encerrado: MORTA (2, o SHA do AC9 a)'
+
 condicoes_de_merge:
   - 'Mergear DEPOIS da 49.12 (PR #992), rebaseando sobre ela. Contrato 36: quem mergear depois renumera, se outra PR subir o contrato antes.'
   - 'Nenhuma migration nesta story. A 0168 da 49.12 é pré-requisito em produção.'
 
 condicoes_de_done:
   - 'Resposta do dono à P-20 (o Δ da comparação no R9-5).'
-  - 'MNT-002 corrigido (a conta escrita no documento).'
   - 'Validação visual do dono com uma parcial com o carrinho aberto.'
 
 waiver: { active: false }
