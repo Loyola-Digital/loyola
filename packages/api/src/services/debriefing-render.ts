@@ -28,7 +28,17 @@ import type { DebriefingPayload } from "./debriefing-payload.js";
 import type { AlertaFase12 } from "./debriefing-guards.js";
 import type { DebriefingAviso } from "./debriefing-config.js";
 import type { Metrica } from "./debriefing-money-time-engine.js";
-import { corteSemCarrinho, diasEntre, somarDias, textoDaLacunaDoCarrinho, type CorteDaJanela } from "./debriefing-hygiene.js";
+import {
+  corteSemCarrinho,
+  diasEntre,
+  fasesComCarrinhoAberto,
+  somarDias,
+  textoDaFaseEmCurso,
+  textoDaFaseNoCorte,
+  textoDaFaseQueNaoComecou,
+  textoDaLacunaDoCarrinho,
+  type CorteDaJanela,
+} from "./debriefing-hygiene.js";
 import { parcialDo } from "./debriefing-payload.js";
 import {
   avaliacao,
@@ -472,6 +482,8 @@ interface Indicador {
    * downsell: com o carrinho fechado no corte, é lacuna escrita (nunca zero).
    */
   dependeDoCarrinho?: boolean;
+  /** Story 49.14 (AC4) — o indicador é do downsell: lacuna quando ele não começou até o corte. */
+  doDownsell?: boolean;
   rotulo: string;
   ler: (p: DebriefingPayload) => { valor: number | null; motivo?: string };
   unidade: Unidade;
@@ -516,6 +528,7 @@ export const INDICADORES: readonly Indicador[] = [
     grupo: "Volume",
     rotulo: "Vendas Downsell",
     dependeDoCarrinho: true,
+    doDownsell: true,
     ler: (p) => (p.dinheiroTempo.downsell.aplicavel ? numero(p.dinheiroTempo.downsell.vendas) : { valor: null, motivo: "sem downsell na config" }),
     unidade: "inteiro",
   },
@@ -560,7 +573,7 @@ export const INDICADORES: readonly Indicador[] = [
     dependeDoCarrinho: true,
     ler: (p) => metrica(p.dinheiroTempo.roasTotalSemTmb),
     unidade: "roas",
-    tnote: () => "inclui o downsell no numerador (decisão 5 do dono)",
+    tnote: (p) => notaDoRoasTotal(p),
   },
   { grupo: "Taxas", rotulo: "Conversão Ingresso → Principal", ler: (p) => metrica(p.dinheiroTempo.conversaoIngressoPrincipal), unidade: "fracao", casas: 2, dependeDoCarrinho: true },
   { grupo: "Taxas", rotulo: "% Compradores / Cliques", ler: (p) => metrica(p.dinheiroTempo.captacao.pctCompradoresPorCliques), unidade: "pct", casas: 2 },
@@ -594,7 +607,95 @@ function temCorte(p: DebriefingPayload, comp: ComparacaoDoDebriefing | null): bo
 /** O valor do indicador, com a lacuna do carrinho no lugar do número quando ele depende do carrinho (AC6). */
 function lerIndicador(ind: Indicador, pp: DebriefingPayload): { valor: number | null; motivo?: string } {
   const lac = ind.dependeDoCarrinho ? lacunaDoCarrinho(pp) : null;
-  return lac ? { valor: null, motivo: lac } : ind.ler(pp);
+  if (lac) return { valor: null, motivo: lac };
+  // 49.14 (AC2/AC4): o downsell que não começou até o corte é lacuna escrita, nunca zero.
+  const dsl = ind.doDownsell ? lacunaDoDownsell(pp) : null;
+  return dsl ? { valor: null, motivo: dsl } : ind.ler(pp);
+}
+
+// ---------------------------------------------------------------------------
+// Story 49.14 — carrinho aberto: fases em curso (parciais) e não começadas
+// ---------------------------------------------------------------------------
+
+/** As fases no corte deste payload, quando o carrinho já abriu (49.14), ou `null`. */
+function fasesAbertas(pp: DebriefingPayload): { corte: CorteDaJanela; fases: NonNullable<CorteDaJanela["fases"]> } | null {
+  return fasesComCarrinhoAberto(pp.dinheiroTempo.janela);
+}
+
+/** "downsell ainda não começou — dados até 06/10, D+6" (AC4), ou `null`. */
+function lacunaDoDownsell(pp: DebriefingPayload): string | null {
+  const f = fasesAbertas(pp);
+  return f && f.fases.downsell.estado === "nao-comecou" ? textoDaFaseQueNaoComecou("downsell", f.corte) : null;
+}
+
+/** "reabertura ainda não começou — dados até 06/10, D+6" (AC4), ou `null`. */
+function lacunaDaReabertura(pp: DebriefingPayload): string | null {
+  const f = fasesAbertas(pp);
+  return f && f.fases.reabertura.estado === "nao-comecou" ? textoDaFaseQueNaoComecou("reabertura", f.corte) : null;
+}
+
+/** O rótulo "parcial — …" de uma fase em curso no corte (AC3/AC4), ou `null`. */
+function parcialDaFase(pp: DebriefingPayload, fase: "carrinho" | "reabertura" | "downsell"): string | null {
+  const f = fasesAbertas(pp);
+  return f && f.fases[fase].estado === "em-curso" ? textoDaFaseEmCurso(fase, f.corte) : null;
+}
+
+/** AC3/AC4 — o rótulo de parcial de um indicador do carrinho (o do downsell, se ele estiver em curso). */
+function rotuloParcialDoIndicador(ind: Indicador, pp: DebriefingPayload): string | null {
+  if (!ind.dependeDoCarrinho) return null;
+  if (ind.doDownsell) return parcialDaFase(pp, "downsell");
+  return parcialDaFase(pp, "carrinho");
+}
+
+/** A nota do ROAS total: a decisão 5 de sempre; com corte, o que aconteceu com o downsell (AC4). */
+function notaDoRoasTotal(pp: DebriefingPayload): string {
+  const d = pp.dinheiroTempo.roasTotalSemTmb.downsellNoCorte;
+  if (d?.estado === "nao-comecou") return `${d.texto} — o numerador é captação + principal (o downsell entra quando começar; decisão 5 do dono)`;
+  if (d?.estado === "em-curso") return `inclui o downsell no numerador (decisão 5 do dono) — ${d.texto}`;
+  return "inclui o downsell no numerador (decisão 5 do dono)";
+}
+
+/** AC4 — a parcela do downsell no numerador do ROAS total, por extenso (fora / parcial / o valor). */
+function parcelaDoDownsell(rt: DebriefingPayload["dinheiroTempo"]["roasTotalSemTmb"]): string {
+  const d = rt.downsellNoCorte;
+  if (d?.estado === "nao-comecou") return `<span data-downsell-fora>downsell FORA (${esc(d.texto)})</span>`;
+  const valor = `downsell ${esc(fmt(rt.decomposicao.downsell, "moeda"))}`;
+  return d?.estado === "em-curso" ? `${valor} <span data-parcial-da-fase>(${esc(d.texto)})</span>` : valor;
+}
+
+/** AC3/AC4 — o que o aviso do topo diz das fases com o carrinho aberto (vazio sem corte ou com o carrinho fechado). */
+function avisoDasFases(pp: DebriefingPayload): string {
+  const f = fasesAbertas(pp);
+  if (!f) return "";
+  const { corte, fases } = f;
+  const frases: string[] = [];
+  if (fases.carrinho.estado === "em-curso") {
+    frases.push(
+      `<b>O carrinho está aberto (${esc(textoDaFaseNoCorte(fases, corte.dia))}):</b> vendas do principal, faturamento, conversão, coorte e ROAS do principal e total saem como ` +
+        `“${esc(textoDaFaseEmCurso("carrinho", corte))}”, e a coorte está incompleta (leads recentes ainda não tiveram tempo de comprar).`,
+    );
+  } else {
+    frases.push(`<b>Fase no corte:</b> ${esc(textoDaFaseNoCorte(fases, corte.dia))}.`);
+  }
+  for (const nome of ["reabertura", "downsell"] as const) {
+    const e = fases[nome].estado;
+    if (e === "nao-comecou") {
+      frases.push(
+        nome === "downsell"
+          ? `O downsell ainda não começou: fica fora do ROAS total (dito na métrica) e aparece como lacuna escrita, nunca como zero.`
+          : `A reabertura ainda não começou: o apêndice dela é lacuna escrita, nunca zero.`,
+      );
+    } else if (e === "em-curso") {
+      frases.push(`${nome === "downsell" ? "O downsell" : "A reabertura"} está em curso: entra com os dados até o corte (“${esc(textoDaFaseEmCurso(nome, corte))}”).`);
+    }
+  }
+  return `${frases.join(" ")} `;
+}
+
+/** AC5 — "PG04 em D+28: 5º dia de carrinho" (a fase da comparação no corte dela), ou `null`. */
+function faseDaComparacao(comp: ComparacaoDoDebriefing | null): string | null {
+  const c = comp?.payload.dinheiroTempo.janela.corte;
+  return comp && c?.fases ? `${comp.nome} em D+${c.dMaisN}: ${textoDaFaseNoCorte(c.fases, c.dia)}` : null;
 }
 
 /** "dd/mm/aaaa (D+N dele)" do corte da comparação (AC8), ou `null` se ela não foi cortada. */
@@ -619,7 +720,11 @@ function kpi(ind: Indicador, atual: DebriefingPayload, nomeAtual: string, comp: 
   // 49.12: a nota de rodapé de um indicador em lacuna mostraria um zero (ex.: "TMB no principal: 0").
   const nota = ind.dependeDoCarrinho && lacunaDoCarrinho(atual) ? null : (ind.tnote?.(atual) ?? null);
   const motivoNulo = va.valor === null && va.motivo ? `— = ${va.motivo}` : null;
-  const notas = [nota, motivoNulo].filter(Boolean).map((n) => `<div class="tnote">${esc(n)}</div>`).join("");
+  // 49.14 (AC3/AC4): número de fase em curso sai rotulado como parcial.
+  const parcialDoInd = va.valor !== null ? rotuloParcialDoIndicador(ind, atual) : null;
+  const notas =
+    [nota, motivoNulo].filter(Boolean).map((n) => `<div class="tnote">${esc(n)}</div>`).join("") +
+    (parcialDoInd ? `<div class="tnote" data-parcial-da-fase>${esc(parcialDoInd)}</div>` : "");
   if (!comp) {
     return (
       `<div class="kpi"><div class="lbl">${esc(ind.rotulo)}</div>` +
@@ -704,6 +809,13 @@ function datasChaveHtml(p: DebriefingPayload, nome: string): string {
     partes.push(
       `<span data-corte="${esc(corte.motivo)}">${corte.motivo === "lancamento-em-andamento" ? "Dados até (corte)" : "Comparação cortada em"} <b>${esc(diaMesBr(corte.dia))} · ${rotuloD(corte.dMaisN)}</b></span>`,
     );
+    // 49.14 (AC2/AC5): a fase em que o lançamento estava no corte.
+    if (corte.fases) partes.push(`<span data-fase-no-corte>Fase em ${rotuloD(corte.dMaisN)}: <b>${esc(textoDaFaseNoCorte(corte.fases, corte.dia))}</b></span>`);
+    // 49.14 (AC6, R9-5): todas as fases concluídas — a janela terminou no fim da regra 2A.
+    if (corte.motivo === "lancamento-em-andamento" && corte.todasAsFasesConcluidas) {
+      const fim = p.dinheiroTempo.janela.fim;
+      partes.push(`<span data-janela-terminou>Janela terminou em <b>${esc(diaMesBr(fim))} · ${rotuloD(dMais(p, fim))}</b> (fim da regra 2A)</span>`);
+    }
   }
   return `<div class="dcol"><div class="dh">${esc(nome)} — datas-chave</div>${partes.join("")}</div>`;
 }
@@ -783,13 +895,21 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
 
   // ---- 49.12 (AC7) — aviso de lançamento em andamento, no topo ----
   const avisoParcial = parcial
-    ? `<div class="warn" data-parcial><b>Lançamento em andamento — documento PARCIAL.</b> Dados até <b>${esc(dataBr(parcial.corte))}</b> ` +
-      `(ontem, no fuso de Brasília) · <b>D+${esc(String(parcial.dMaisN))}</b> da captação (D0 = ${esc(dataBr(parcial.janela.inicio))}). ` +
-      `Nada depois do corte entra em número nenhum. ` +
-      (lacCarrinho
-        ? `O carrinho ainda não abriu: o que depende de venda do principal, reabertura ou downsell aparece como lacuna escrita, nunca como zero. `
-        : "") +
-      `A próxima geração substitui este documento; quando o lançamento terminar, gere como encerrado.</div>`
+    ? parcial.todasAsFasesConcluidas
+      ? // 49.14 (AC6, R9-5): todas as fases concluídas — a janela é a do final, e o documento continua parcial.
+        `<div class="warn" data-parcial data-fases-concluidas><b>Lançamento em andamento — documento PARCIAL.</b> Corte em <b>${esc(dataBr(parcial.corte))}</b> ` +
+        `(ontem, no fuso de Brasília) · <b>D+${esc(String(parcial.dMaisN))}</b> da captação (D0 = ${esc(dataBr(parcial.janela.inicio))}). ` +
+        `<b>Todas as fases (carrinho, reabertura e downsell) terminaram até o corte:</b> a janela terminou em <b>${esc(dataBr(parcial.janela.fim))}</b> (fim da regra 2A) ` +
+        `e os números são os do relatório final — mídia e vendas depois desse dia não entram. ` +
+        `Marque “encerrado” na configuração do debriefing para gerar o relatório final, que substitui esta parcial.</div>`
+      : `<div class="warn" data-parcial><b>Lançamento em andamento — documento PARCIAL.</b> Dados até <b>${esc(dataBr(parcial.corte))}</b> ` +
+        `(ontem, no fuso de Brasília) · <b>D+${esc(String(parcial.dMaisN))}</b> da captação (D0 = ${esc(dataBr(parcial.janela.inicio))}). ` +
+        `Nada depois do corte entra em número nenhum. ` +
+        (lacCarrinho
+          ? `O carrinho ainda não abriu: o que depende de venda do principal, reabertura ou downsell aparece como lacuna escrita, nunca como zero. `
+          : "") +
+        avisoDasFases(p) +
+        `A próxima geração substitui este documento; quando o lançamento terminar, gere como encerrado.</div>`
     : "";
 
   // ---- Banner de alertas e avisos (AC7) ----
@@ -879,7 +999,8 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
     const corteComp = corteDaComparacao(comp);
     const desc = comp
       ? `Cada card mostra <b>${esc(comp.nome)}</b> (cinza) e <b>${esc(A)}</b> (dourado); Δ% em volume e dinheiro, Δpp em taxa.` +
-        (corteComp ? ` <b>Comparação cortada no mesmo D+N:</b> ${esc(comp.nome)} até ${esc(corteComp)}; métrica que só existe de um lado fica com Δ “—”.` : "")
+        (corteComp ? ` <b>Comparação cortada no mesmo D+N:</b> ${esc(comp.nome)} até ${esc(corteComp)}; métrica que só existe de um lado fica com Δ “—”.` : "") +
+        (faseDaComparacao(comp) ? ` <span data-fase-da-comparacao>${esc(faseDaComparacao(comp)!)}.</span>` : "")
       : semDelta
         ? `Parcial sem Δ: o lançamento de comparação ${esc(semDelta.nome)} só tem relatório salvo (totais fechados), que não pode ser cortado em D+N — cada card mostra só o valor deste lançamento.`
         : "Edição única: cada card mostra o valor do lançamento, sem comparação (não há lançamento de comparação na config).";
@@ -913,7 +1034,8 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
       doc.secao(
         "Diferenças de Valores e Taxas",
         `Tabela completa ${esc(comp.nome)} → ${esc(A)}: diferença absoluta (Δpp nas taxas) e variação percentual. Verde = melhorou, vermelho = piorou, dourado = sem avaliação (investimento).` +
-          (corteDaComparacao(comp) ? ` <b>Comparação cortada no mesmo D+N:</b> ${esc(comp.nome)} até ${esc(corteDaComparacao(comp)!)}.` : ""),
+          (corteDaComparacao(comp) ? ` <b>Comparação cortada no mesmo D+N:</b> ${esc(comp.nome)} até ${esc(corteDaComparacao(comp)!)}.` : "") +
+          (faseDaComparacao(comp) ? ` <span data-fase-da-comparacao>${esc(faseDaComparacao(comp)!)}.</span>` : ""),
         tabela(["Métrica", comp.nome, A, "Diferença", "Variação"], linhas) +
           (soDeUmLado.length
             ? `<div class="note" data-delta-lacuna><b>Δ “—”: a métrica existe de um lado e é lacuna do outro</b> — o Δ não é inventado.<ul>${soDeUmLado.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`
@@ -1052,7 +1174,10 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
           {
             alto: true,
             full: true,
-            nota: `Coorte por data do lead (D0 = ${esc(dataBr(mt.coorte.d0))}, até D+${esc(inteiroBr(mt.coorte.maxD))}): ${esc(inteiroBr(mt.coorte.naCoorte))} na coorte, ${esc(inteiroBr(mt.coorte.basePreLancamento))} da base pré-lançamento, ${esc(inteiroBr(mt.coorte.foraDaCoorte.length))} fora da coorte (sem data do lead), ${esc(inteiroBr(mt.coorte.alemDaJanela.length))} além da janela.`,
+            nota:
+              `Coorte por data do lead (D0 = ${esc(dataBr(mt.coorte.d0))}, até D+${esc(inteiroBr(mt.coorte.maxD))}): ${esc(inteiroBr(mt.coorte.naCoorte))} na coorte, ${esc(inteiroBr(mt.coorte.basePreLancamento))} da base pré-lançamento, ${esc(inteiroBr(mt.coorte.foraDaCoorte.length))} fora da coorte (sem data do lead), ${esc(inteiroBr(mt.coorte.alemDaJanela.length))} além da janela.` +
+              // 49.14 (AC3): carrinho em curso — a coorte é incompleta.
+              (mt.coorte.incompleta ? ` <b data-coorte-incompleta>${esc(mt.coorte.incompleta.texto)}.</b>` : ""),
           },
         ),
       );
@@ -1061,9 +1186,13 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
     }
     // Apêndice — reabertura (AC6.4)
     const ap = mt.apendiceReabertura;
+    const lacReab = lacunaDaReabertura(p);
+    const parcialReab = parcialDaFase(p, "reabertura");
     partes.push(
       lacCarrinho
         ? lacuna("Apêndice — Reabertura", lacCarrinho)
+        : lacReab
+          ? lacuna("Apêndice — Reabertura", lacReab)
         : ap.aplicavel
         ? `<h3 class="gr">Apêndice — Reabertura (fora das taxas headline)</h3>` +
             tabela(
@@ -1072,7 +1201,8 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
             ) +
             nota(
               `A reabertura ${esc(ap.nota)} — por isso as taxas do Resumo não a incluem. Total combinado (só referência): faturamento ${esc(fmt(mt.referenciaCombinada.faturamento, "moeda"))}, investimento ${esc(fmt(mt.referenciaCombinada.investimento, "moeda"))}, ROAS ${celulaMetrica(mt.referenciaCombinada.roas, "roas")}.`,
-            )
+            ) +
+            (parcialReab ? `<p class="tnote" data-parcial-da-fase>${esc(parcialReab)}</p>` : "")
         : nota("<b>Apêndice de reabertura:</b> não houve reabertura neste lançamento (resposta explícita no formulário)."),
     );
     secoes.geral!.push(
@@ -1184,7 +1314,9 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
       tabela(cols, linhas) +
       (lacCarrinho
         ? lacuna("ROAS total (captação + principal + downsell)", lacCarrinho)
-        : `<p class="tnote">Decomposição do numerador do ROAS total: captação ${esc(fmt(d.captacao, "moeda"))} + principal ${esc(fmt(d.principal, "moeda"))} + downsell ${esc(fmt(d.downsell, "moeda"))} (s/ TMB). ROAS sem o downsell: ${celulaMetrica(mt.roasTotalSemTmb.semDownsell, "roas")}.</p>`) +
+        : `<p class="tnote">Decomposição do numerador do ROAS total: captação ${esc(fmt(d.captacao, "moeda"))} + principal ${esc(fmt(d.principal, "moeda"))} + ${parcelaDoDownsell(mt.roasTotalSemTmb)} (s/ TMB). ROAS sem o downsell: ${celulaMetrica(mt.roasTotalSemTmb.semDownsell, "roas")}.</p>` +
+          // 49.14 (AC3): o ROAS total com o carrinho em curso é parcial.
+          (parcialDaFase(p, "carrinho") ? `<p class="tnote" data-parcial-da-fase>ROAS total ${esc(parcialDaFase(p, "carrinho")!)}.</p>` : "")) +
       insight("Tese do order bump", veredito, corpoTese);
     secoes.geral!.push(doc.secao("ROAS", "ROAS = faturamento ÷ investimento de mídia c/ imposto. Três níveis: só ingresso, captação (com o bump) e total.", corpo));
   }
@@ -1459,7 +1591,7 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
     if (!cap.aplicavel) {
       corpo = nota(`<b>Esteira não se aplica:</b> ${esc(cap.motivo ?? "captação sem venda")}.`);
     } else if (!temEsteira) {
-      corpo = nota("<b>Sem order bump nem combo neste lançamento</b> — a seção de esteira vira nota (padrão da skill, §5). " + (lacCarrinho ? `Downsell: ${esc(lacCarrinho)}.` : mt.downsell.aplicavel ? `Downsell: ${esc(inteiroBr(mt.downsell.vendas))} vendas, ${esc(fmt(mt.downsell.faturamento, "moeda"))}.` : "Sem downsell."));
+      corpo = nota("<b>Sem order bump nem combo neste lançamento</b> — a seção de esteira vira nota (padrão da skill, §5). " + (lacCarrinho ? `Downsell: ${esc(lacCarrinho)}.` : lacunaDoDownsell(p) ? `Downsell: ${esc(lacunaDoDownsell(p)!)}.` : mt.downsell.aplicavel ? `Downsell: ${esc(inteiroBr(mt.downsell.vendas))} vendas, ${esc(fmt(mt.downsell.faturamento, "moeda"))}${parcialDaFase(p, "downsell") ? ` (${esc(parcialDaFase(p, "downsell")!)})` : ""}.` : "Sem downsell."));
     } else {
       const g1 = doc.grafico("cBumpFat", {
         tipo: "bar",
@@ -1499,7 +1631,11 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
         `</div><p class="tnote">Avulso = quem comprou só o order bump: entra no faturamento, não no comprador de captação. ${esc(notaTmb(p))}.</p>` +
         (lacCarrinho
           ? lacuna("Downsell (etapa à parte)", lacCarrinho)
-          : mt.downsell.aplicavel ? nota(`<b>Downsell (etapa à parte):</b> ${esc(inteiroBr(mt.downsell.vendas))} vendas, ${esc(fmt(mt.downsell.faturamento, "moeda"))} s/ TMB.`) : "");
+          : lacunaDoDownsell(p)
+            ? lacuna("Downsell (etapa à parte)", lacunaDoDownsell(p)!)
+            : mt.downsell.aplicavel
+              ? nota(`<b>Downsell (etapa à parte):</b> ${esc(inteiroBr(mt.downsell.vendas))} vendas, ${esc(fmt(mt.downsell.faturamento, "moeda"))} s/ TMB${parcialDaFase(p, "downsell") ? ` (${esc(parcialDaFase(p, "downsell")!)})` : ""}.`)
+              : "");
     }
     secoes.midia!.push(doc.secao("Order Bump", "A esteira da captação: ingresso, combo e order bump — e o downsell, à parte.", corpo));
   }
@@ -1766,7 +1902,12 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
               `vendas do principal, faturamento total e ROAS total: ${esc(lacCarrinho)}.`,
           ]
         : [
-            "Números fechados",
+            // 49.14: parcial com o carrinho aberto — números até o corte; todas as fases concluídas — os do final (AC6).
+            parcial
+              ? parcial.todasAsFasesConcluidas
+                ? `Números do relatório final (janela até ${dataBr(parcial.janela.fim)}; corte ${dataBr(parcial.corte)} · D+${parcial.dMaisN}) — parcial`
+                : `Números até o corte (${dataBr(parcial.corte)} · D+${parcial.dMaisN}) — parcial${mt.janela.corte?.fases ? `, ${textoDaFaseNoCorte(mt.janela.corte.fases, parcial.corte)}` : ""}`
+              : "Números fechados",
             `Ingressos ${esc(inteiroBr(mt.ingressosUnicos))} · vendas do principal ${esc(inteiroBr(mt.vendasPrincipal))} · faturamento total s/ TMB ${esc(fmt(mt.faturamentoTotal, "moeda"))} · investimento total c/ imposto ${celulaMetrica(mt.midia.investimentoTotal, "moeda")} · ROAS total ${celulaMetrica(mt.roasTotalSemTmb, "roas")} · ROAS captação ${celulaMetrica(mt.roasCaptacao, "roas")} · %A+B ${celulaMetrica(fx.pctAB, "pct")}.`,
           ],
       [

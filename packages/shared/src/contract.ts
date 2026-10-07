@@ -327,4 +327,17 @@
 // `parcial: { corte, dMaisN } | null` (aviso do viewer). ADITIVA: a API v34
 // recusa as chaves novas no PUT (corpo `.strict()`), então o web só oferece o
 // "em andamento" com a API ≥ 35 (49.12 AC11). `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 35;
+// v36 (Story 49.14 — Debriefing em andamento com o CARRINHO aberto; sem
+// migration): `POST …/debriefing/generate` no modo em andamento deixa de
+// responder 422 CARRINHO_JA_ABERTO e calcula o carrinho aberto até o corte. O
+// payload (200 e `debriefing_payloads`) ganha, aditivos e opcionais:
+// `situacao.fases` (carrinho/reabertura/downsell: concluida | em-curso |
+// nao-comecou | nao-houve), `situacao.todasAsFasesConcluidas` (R9-5: a janela
+// termina no fim da regra 2A), `dinheiroTempo.janela.corte.fases`,
+// `coorte.incompleta`, `roasTotalSemTmb.downsellNoCorte` e as lacunas
+// COORTE_INCOMPLETA, REABERTURA_AINDA_NAO_COMECOU e DOWNSELL_AINDA_NAO_COMECOU.
+// `DEBRIEFING_PAYLOAD_VERSAO` continua 1 (o render imprime a versão; ver a
+// story). Nenhuma rota muda de forma; o web com a v35 mostra o "em andamento"
+// como "(captação aberta)" e o 422 da v35 no bloco de erro de sempre.
+// `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 36;

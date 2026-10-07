@@ -23,13 +23,16 @@
  * Story 49.12 — lançamento EM ANDAMENTO (captação aberta, R8-1): depois do
  * gate, o corte = ontem em Brasília no instante da geração (R8-2, AC3) entra na
  * config como ENTRADA dos motores; corte antes do início da captação → 422
- * `SEM_DIA_FECHADO`; carrinho já aberto até o corte → 422 `CARRINHO_JA_ABERTO`
- * (AC4, até a 49.14); mídia da Meta do dia de corte não sincronizada em alguma
+ * `SEM_DIA_FECHADO`; mídia da Meta do dia de corte não sincronizada em alguma
  * conta → 422 `MIDIA_DO_CORTE_NAO_SINCRONIZADA` (AC15). A comparação pela
  * config é cortada no mesmo D+N (AC8); só com payload salvo, a parcial sai SEM
  * Δ e com aviso. Comparação que está ela mesma em andamento → 422
  * `COMPARACAO_EM_ANDAMENTO` (AC8, R9-4), em qualquer modo. A persistência
  * substitui a parcial da etapa (AC10) — o final também.
+ *
+ * Story 49.14 — o carrinho aberto (R8-1, AC1): o 422 `CARRINHO_JA_ABERTO` da
+ * 49.12 AC4 deixa de existir; o estado de cada fase no corte (concluída / em
+ * curso / não começou) sai da janela (`janelaDaGeracao`) e vai ao payload.
  */
 
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
@@ -74,7 +77,6 @@ export type CodigoErroDaGeracao =
   | "COMPARACAO_SEM_CONFIG"
   // Story 49.12
   | "SEM_DIA_FECHADO"
-  | "CARRINHO_JA_ABERTO"
   | "MIDIA_DO_CORTE_NAO_SINCRONIZADA"
   | "COMPARACAO_EM_ANDAMENTO";
 
@@ -444,8 +446,9 @@ export interface CorteDaParcial {
 /**
  * AC3 — a data de corte é ONTEM em `America/Sao_Paulo` no instante da geração
  * (R8-2), calculada aqui (o orquestrador lê o relógio injetado; os motores não).
- * AC4 — carrinho já aberto até o corte → 422 até a 49.14. AC15 — mídia do dia
- * de corte não sincronizada em alguma conta → 422, antes de calcular.
+ * AC15 — mídia do dia de corte não sincronizada em alguma conta → 422, antes
+ * de calcular. Story 49.14 (AC1): o carrinho aberto até o corte NÃO para mais a
+ * geração — a janela trata cada fase pelo que aconteceu até o corte.
  */
 async function corteDaParcial(
   deps: DependenciasDaGeracao,
@@ -459,14 +462,6 @@ async function corteDaParcial(
       "SEM_DIA_FECHADO",
       `a captação começa em ${dataBr(inicio)} e o último dia fechado (ontem, no fuso de Brasília) é ${dataBr(dia)} — ainda não há dia fechado de captação para analisar`,
       `Gerar a partir de ${dataBr(somarDias(inicio, 1))}, quando o primeiro dia de captação (${dataBr(inicio)}) já estiver fechado`,
-    );
-  }
-  const abertura = config.datasChave.aberturaCarrinho;
-  if (abertura !== null && abertura <= dia) {
-    throw new DebriefingGeracaoError(
-      "CARRINHO_JA_ABERTO",
-      `o carrinho abriu em ${dataBr(abertura)}, antes do corte (dados até ${dataBr(dia)}) — o modo em andamento com o carrinho aberto ainda não existe (Story 49.14)`,
-      'Esperar o fim do lançamento e gerar como encerrado (marcar "encerrado" e informar as datas na configuração do debriefing)',
     );
   }
   const atrasadas = contasAtrasadasNoCorte(await deps.estadoDoSyncDaMidia(config), dia);

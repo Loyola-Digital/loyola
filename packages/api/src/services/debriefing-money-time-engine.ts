@@ -73,6 +73,15 @@ import {
   LACUNA_CARRINHO_AINDA_NAO_ABRIU,
   anteriorAAbertura,
   corteSemCarrinho,
+  diaDoCorteDeLeadsEPesquisa,
+  fasesComCarrinhoAberto,
+  LACUNA_COORTE_INCOMPLETA,
+  LACUNA_DOWNSELL_AINDA_NAO_COMECOU,
+  LACUNA_REABERTURA_AINDA_NAO_COMECOU,
+  textoDaCoorteIncompleta,
+  textoDaFaseEmCurso,
+  textoDaFaseQueNaoComecou,
+  type FasesNoCorte,
   janelaDaGeracao,
   lerValorMonetario,
   textoDaLacunaDoCarrinho,
@@ -291,6 +300,9 @@ export interface MetricaRazao extends Metrica<number> {
 export interface Lacuna {
   codigo:
     | typeof LACUNA_CARRINHO_AINDA_NAO_ABRIU
+    | typeof LACUNA_COORTE_INCOMPLETA
+    | typeof LACUNA_REABERTURA_AINDA_NAO_COMECOU
+    | typeof LACUNA_DOWNSELL_AINDA_NAO_COMECOU
     | "LISTAS_FRONT_COMUNIDADE"
     | "LEADS_DO_PAINEL"
     | "VENDAS_SEM_DATA"
@@ -424,6 +436,11 @@ export interface Coorte {
   soma: number;
   serie: PontoDaCoorte[];
   porOrigemDaData: Record<OrigemDaData, number>;
+  /**
+   * Story 49.14 (AC3) — o carrinho está em curso no corte: as vendas do
+   * principal vão só até o corte e a coorte é INCOMPLETA. Ausente = completa.
+   */
+  incompleta?: { ateDia: string; dMaisN: number; texto: string };
 }
 
 export interface DiaDoRoasCaptacao {
@@ -625,6 +642,13 @@ export interface DebriefingMoneyTime {
     denominador: number;
     decomposicao: { captacao: number; principal: number; downsell: number };
     semDownsell: Metrica;
+    /**
+     * Story 49.14 (AC4) — o downsell no corte: `nao-comecou` = FORA do
+     * numerador (o ROAS total é o de captação + principal, dito por extenso,
+     * nunca com o downsell como zero); `em-curso` = parcial. Ausente = sem corte
+     * ou downsell concluído / que não houve.
+     */
+    downsellNoCorte?: { estado: "nao-comecou" | "em-curso"; texto: string };
   };
   teseOrderBump: {
     roasSoIngresso: number | null;
@@ -957,7 +981,9 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
   const abertura = config.datasChave.aberturaCarrinho;
   // 49.12 (AC5): com corte, NADA depois dele entra — nem lead (a data do lead
   // da coorte e a contagem de UTM em array). Sem corte, a lista de sempre.
-  const leadsDaConta = janela.corte ? leadsAteOCorte(input.leads, janela.corte.dia) : input.leads;
+  // 49.14 (AC6, R9-5): com todas as fases concluídas, nada além do que o final corta.
+  const corteDosLeads = diaDoCorteDeLeadsEPesquisa(janela);
+  const leadsDaConta = corteDosLeads !== null ? leadsAteOCorte(input.leads, corteDosLeads) : input.leads;
   const pct = config.imposto.valor;
 
   const papelDaEtapa = new Map<string, DebriefingPapel>(config.etapas.map((e) => [e.stageId, e.papel]));
@@ -1885,7 +1911,10 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
   };
   // 49.12 (AC6): carrinho que não abriu até o corte → o que depende dele vira lacuna.
   const semCarrinho = corteSemCarrinho(janela);
-  return semCarrinho ? comLacunaDoCarrinho(resultado, semCarrinho) : resultado;
+  if (semCarrinho) return comLacunaDoCarrinho(resultado, semCarrinho);
+  // 49.14 (AC2–AC4): carrinho aberto — fases em curso (parciais) e não começadas (lacuna).
+  const comCarrinho = fasesComCarrinhoAberto(janela);
+  return comCarrinho ? comFasesDoCorte(resultado, comCarrinho.corte, comCarrinho.fases) : resultado;
 }
 
 // ---------------------------------------------------------------------------
@@ -1949,4 +1978,69 @@ function comLacunaDoCarrinho(r: DebriefingMoneyTime, corte: CorteDaJanela): Debr
       },
     ],
   };
+}
+
+// ---------------------------------------------------------------------------
+// Story 49.14 — carrinho aberto: fases em curso e não começadas (AC2–AC4)
+// ---------------------------------------------------------------------------
+
+/** Itens da lacuna da reabertura que não começou (49.14 AC4) — cobrados pela F11. */
+export const METRICAS_SEM_REABERTURA = ["apendiceReabertura.roasMarginal", "referenciaCombinada.roas"] as const;
+/** Itens da lacuna do downsell que não começou (49.14 AC4) — cobrados pela F11. */
+export const METRICAS_SEM_DOWNSELL = ["downsell.vendas", "downsell.faturamento", "roasTotalSemTmb (downsell fora do numerador)"] as const;
+/** Itens da coorte incompleta (49.14 AC3) — cobrados pela F11. */
+export const METRICAS_DA_COORTE_INCOMPLETA = ["coorte", "coortePaga"] as const;
+
+/**
+ * Story 49.14 — com o carrinho aberto no corte:
+ * - carrinho em curso (AC3): os números do principal são os que existem até o
+ *   corte (nada muda na conta — a F7 fecha com eles); a coorte é marcada
+ *   INCOMPLETA e a lacuna `COORTE_INCOMPLETA` declara isso;
+ * - reabertura que não começou (AC2/AC4): ROAS marginal e referência
+ *   combinada viram lacuna escrita (nunca a reabertura como zero);
+ * - downsell que não começou (AC4): o ROAS total sai SEM o downsell
+ *   (captação + principal ÷ investimento total), dito por extenso em
+ *   `downsellNoCorte` — nunca tratado como zero; em curso, marcado parcial.
+ */
+function comFasesDoCorte(r: DebriefingMoneyTime, corte: CorteDaJanela, fases: FasesNoCorte): DebriefingMoneyTime {
+  let out = r;
+  const lacunas = [...r.lacunas];
+  if (fases.carrinho.estado === "em-curso") {
+    const incompleta = { ateDia: corte.dia, dMaisN: corte.dMaisN, texto: textoDaCoorteIncompleta(corte) };
+    out = { ...out, coorte: { ...out.coorte, incompleta }, coortePaga: { ...out.coortePaga, incompleta } };
+    lacunas.push({ codigo: LACUNA_COORTE_INCOMPLETA, motivo: `${textoDaFaseEmCurso("carrinho", corte)} — ${incompleta.texto}`, detalhe: METRICAS_DA_COORTE_INCOMPLETA.join(", ") });
+  }
+  if (fases.reabertura.estado === "nao-comecou") {
+    const texto = textoDaFaseQueNaoComecou("reabertura", corte);
+    const sem = <M extends { valor: unknown; memoria: string; motivo?: string }>(m: M): M =>
+      ({ ...m, valor: null, motivo: `${LACUNA_REABERTURA_AINDA_NAO_COMECOU}: ${texto}`, memoria: `não calculado — ${texto} (conta de rastro: ${m.memoria})` }) as M;
+    out = {
+      ...out,
+      apendiceReabertura: { ...out.apendiceReabertura, roasMarginal: sem(out.apendiceReabertura.roasMarginal) },
+      referenciaCombinada: { ...out.referenciaCombinada, roas: sem(out.referenciaCombinada.roas) },
+    };
+    lacunas.push({ codigo: LACUNA_REABERTURA_AINDA_NAO_COMECOU, motivo: `${texto} — a reabertura não é calculada (lacuna escrita, nunca zero)`, detalhe: METRICAS_SEM_REABERTURA.join(", ") });
+  }
+  const rt = out.roasTotalSemTmb;
+  if (fases.downsell.estado === "nao-comecou") {
+    const texto = textoDaFaseQueNaoComecou("downsell", corte);
+    const sd = rt.semDownsell as Metrica & Partial<Pick<MetricaRazao, "numerador" | "denominador">>;
+    out = {
+      ...out,
+      roasTotalSemTmb: {
+        ...rt,
+        valor: sd.valor,
+        ...(sd.motivo ? { motivo: sd.motivo } : {}),
+        numerador: sd.numerador ?? rt.decomposicao.captacao + rt.decomposicao.principal,
+        denominador: sd.denominador ?? rt.denominador,
+        memoria: `downsell FORA do numerador — ${texto}: ${sd.memoria}`,
+        downsellNoCorte: { estado: "nao-comecou", texto: `fora do ROAS total: ${texto}` },
+      },
+    };
+    lacunas.push({ codigo: LACUNA_DOWNSELL_AINDA_NAO_COMECOU, motivo: `${texto} — o downsell fica fora (lacuna escrita, nunca zero) e o ROAS total é o de captação + principal`, detalhe: METRICAS_SEM_DOWNSELL.join(", ") });
+  } else if (fases.downsell.estado === "em-curso") {
+    const texto = textoDaFaseEmCurso("downsell", corte);
+    out = { ...out, roasTotalSemTmb: { ...rt, memoria: `${rt.memoria} — downsell ${texto}`, downsellNoCorte: { estado: "em-curso", texto: `downsell ${texto}` } } };
+  }
+  return out === r ? r : { ...out, lacunas };
 }

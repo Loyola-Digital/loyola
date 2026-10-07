@@ -60,6 +60,7 @@ import {
   chavesDeComprador,
   corteSemCarrinho,
   dataBrt,
+  diaDoCorteDeLeadsEPesquisa,
   desembrulharUtm,
   normalizarEmail,
   normalizarTelefone,
@@ -707,7 +708,9 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
   const lacunas: LacunaDePublico[] = [];
   // 49.12 (AC5): com corte, NADA depois dele entra — nem a resposta da
   // pesquisa (data ilegível fica, como a venda sem dia). Sem corte, as de sempre.
-  const respostas = janela.corte ? respostasAteOCorte(input.respondentes, janela.corte.dia) : input.respondentes;
+  // 49.14 (AC6, R9-5): com todas as fases concluídas, nada além do que o final corta.
+  const corteDasRespostas = diaDoCorteDeLeadsEPesquisa(janela);
+  const respostas = corteDasRespostas !== null ? respostasAteOCorte(input.respondentes, corteDasRespostas) : input.respondentes;
 
   // ===================================================================
   // 1. Higiene da pesquisa (AC2) — antes de QUALQUER n

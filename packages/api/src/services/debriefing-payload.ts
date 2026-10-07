@@ -9,9 +9,22 @@
  */
 
 import type { DebriefingConfigLancamento, FaseQuePodeNaoTerAcontecido } from "./debriefing-config.js";
-import { METRICAS_SEM_CARRINHO_DINHEIRO_TEMPO, type DebriefingMoneyTime, type Lacuna } from "./debriefing-money-time-engine.js";
+import {
+  METRICAS_DA_COORTE_INCOMPLETA,
+  METRICAS_SEM_CARRINHO_DINHEIRO_TEMPO,
+  METRICAS_SEM_DOWNSELL,
+  METRICAS_SEM_REABERTURA,
+  type DebriefingMoneyTime,
+  type Lacuna,
+} from "./debriefing-money-time-engine.js";
 import { METRICAS_SEM_CARRINHO_PUBLICO, type DebriefingAudience, type LacunaDePublico } from "./debriefing-audience-engine.js";
-import { LACUNA_CARRINHO_AINDA_NAO_ABRIU } from "./debriefing-hygiene.js";
+import {
+  LACUNA_CARRINHO_AINDA_NAO_ABRIU,
+  LACUNA_COORTE_INCOMPLETA,
+  LACUNA_DOWNSELL_AINDA_NAO_COMECOU,
+  LACUNA_REABERTURA_AINDA_NAO_COMECOU,
+  type FasesNoCorte,
+} from "./debriefing-hygiene.js";
 
 /**
  * Versão do schema do payload — lida pela 49.6 (persistência) e pela 49.9.
@@ -21,6 +34,13 @@ import { LACUNA_CARRINHO_AINDA_NAO_ABRIU } from "./debriefing-hygiene.js";
  * ADITIVOS — payload salvo antes deles é um final (o único modo que existia) —
  * e o render imprime a versão (`const D`, "payload v1"), então subir a
  * constante mudaria o HTML do encerrado (contra o AC13 a).
+ *
+ * Story 49.14 mantém a mesma leitura ([AUTO-DECISION], Dev Agent Record): o
+ * AC8 dela manda subir, e o AC9(a) exige o MESMO SHA do HTML do encerrado —
+ * subir a constante imprime "payload v2" no encerrado. Os campos novos
+ * (`situacao.fases`, `situacao.todasAsFasesConcluidas`, `janela.corte.fases`,
+ * `coorte.incompleta`, `roasTotalSemTmb.downsellNoCorte`) são aditivos e
+ * opcionais: ausentes = payload anterior.
  */
 export const DEBRIEFING_PAYLOAD_VERSAO = 1 as const;
 
@@ -37,11 +57,26 @@ export type SituacaoDoDebriefing =
       /** D+N = corte − início da captação, em dias (AC3). */
       dMaisN: number;
       janela: { inicio: string; fim: string; motivoDoFim: string };
-      /** O carrinho já tinha aberto até o corte (na 49.12, sempre `false` — o aberto é 422, AC4). */
+      /** O carrinho já tinha aberto até o corte (49.12: sempre `false`; 49.14: o carrinho aberto é calculado). */
       carrinhoAberto: boolean;
       /** As fases respondidas "ainda não aconteceu" na config (≠ "não houve", AC2). */
       aindaNaoAconteceu: FaseQuePodeNaoTerAcontecido[];
+      /** Story 49.14 (AC2) — concluída / em curso / não começou (ou "não houve") por fase. Ausente = parcial da 49.12. */
+      fases?: FasesNoCorte;
+      /**
+       * Story 49.14 (AC6, R9-5) — todas as fases concluídas até o corte: a janela
+       * terminou no fim da regra 2A (`janela.fim`), não no corte, e os números são
+       * os do relatório final. Ausente = parcial da 49.12.
+       */
+      todasAsFasesConcluidas?: boolean;
     };
+
+/** Story 49.14 — itens nomeados das lacunas das fases (AC3/AC4). Cobrados pela F11. */
+export const ITENS_DAS_LACUNAS_DAS_FASES: Readonly<Record<string, readonly string[]>> = {
+  [LACUNA_COORTE_INCOMPLETA]: METRICAS_DA_COORTE_INCOMPLETA,
+  [LACUNA_REABERTURA_AINDA_NAO_COMECOU]: METRICAS_SEM_REABERTURA,
+  [LACUNA_DOWNSELL_AINDA_NAO_COMECOU]: METRICAS_SEM_DOWNSELL,
+};
 
 /** Itens nomeados da lacuna do carrinho (49.12 AC6) — os dois motores. Cobrados pela F11. */
 export const ITENS_DA_LACUNA_DO_CARRINHO: readonly string[] = [
@@ -113,6 +148,11 @@ export function montarPayloadDebriefing(
   const lacunas = unirLacunas(moneyTime.lacunas, audience.lacunas, audience.dimensoesNaoConfirmadas);
   const doCarrinho = lacunas.find((l) => l.codigo === LACUNA_CARRINHO_AINDA_NAO_ABRIU);
   if (doCarrinho) doCarrinho.itens = [...ITENS_DA_LACUNA_DO_CARRINHO];
+  // 49.14: as lacunas das fases levam os itens nomeados (a F11 cobra item a item).
+  for (const l of lacunas) {
+    const itens = ITENS_DAS_LACUNAS_DAS_FASES[l.codigo];
+    if (itens) l.itens = [...itens];
+  }
   return {
     tipo: "lancamento",
     versao: DEBRIEFING_PAYLOAD_VERSAO,
@@ -137,6 +177,7 @@ function situacaoDoPayload(mt: DebriefingMoneyTime, config: DebriefingConfigLanc
     janela: { inicio: mt.janela.inicio, fim: mt.janela.fim, motivoDoFim: corte.texto },
     carrinhoAberto: corte.carrinhoAberto,
     aindaNaoAconteceu: [...config.aindaNaoAconteceu],
+    ...(corte.fases ? { fases: corte.fases, todasAsFasesConcluidas: corte.todasAsFasesConcluidas === true } : {}),
   };
 }
 

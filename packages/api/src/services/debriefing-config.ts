@@ -256,7 +256,7 @@ export interface DebriefingConfigLancamentoEncerrado extends DebriefingConfigLan
   datasChave: DatasChave;
 }
 
-/** Story 49.12 — o lançamento em andamento (captação aberta; carrinho aberto é a 49.14). */
+/** Story 49.12/49.14 — o lançamento em andamento (captação aberta ou carrinho aberto). */
 export interface DebriefingConfigLancamentoEmAndamento extends DebriefingConfigLancamentoBase {
   situacaoDoLancamento: "em-andamento";
   datasChave: DatasChaveEmAndamento;

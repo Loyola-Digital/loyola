@@ -6,8 +6,9 @@
  *   422 ETAPA_NAO_E_DEBRIEFING · TIPO_DE_FUNIL_NAO_SUPORTADO · COMBINACAO_NAO_VALIDADA ·
  *       CONFIG_INCOMPLETA · COMPARACAO_SEM_CONFIG · DADO_INDISPONIVEL ·
  *       INVARIANTE_VIOLADO · CONFERENCIA_EXTERNA   (corpo `{ erro, detalhe, acao, … }`)
- *       Story 49.12 (lançamento em andamento): SEM_DIA_FECHADO · CARRINHO_JA_ABERTO ·
+ *       Story 49.12 (lançamento em andamento): SEM_DIA_FECHADO ·
  *       MIDIA_DO_CORTE_NAO_SINCRONIZADA · COMPARACAO_EM_ANDAMENTO
+ *       (o CARRINHO_JA_ABERTO da 49.12 saiu com a 49.14: o carrinho aberto é calculado)
  *   413 PAYLOAD_TOO_LARGE
  *
  * Sem corpo de gates: a config vem da 49.1. O corpo aceita só o investimento
