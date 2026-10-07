@@ -1,0 +1,58 @@
+schema: 1
+storyId: '49.16'
+story: '49.16'
+story_title: 'A nota do link do criativo diz o critério usado de verdade quando não há investimento por anúncio'
+verdict: PASS
+gate: PASS
+status_reason: 'ACs 1–4 atendidos. Sem ad-level, o texto novo bate com o que `postDoGrupo` faz e com o que a 49.6 descreve na linha 346. O AC3 foi reproduzido pelo QA nos 12 casos: payload idêntico em todos e HTML diferente só na nota, nos 3 casos sem ad-level com criativo. Mutações: as 8 do @dev morreram; das 8 do QA, 6 morreram e 2 sobreviveram por serem equivalentes. Ficam 2 issues low; uma delas é o limite já registrado pelo @po, agora demonstrado.'
+reviewer: 'Quinn'
+updated: '2026-10-07T19:15:00-03:00'
+branch: 'fix/49.16-nota-link-do-post'
+commit_reviewed: 'd9287812 (código + teste) e 76266a8b (story)'
+base: 'origin/main @ c73a002c no início do gate. No `git fetch` do fim (19:14), a main ANDOU para ad73b4a7 (#997, 49.14), que mexe em debriefing-render.ts. Ver REL-001.'
+
+issues:
+  - id: REQ-001
+    severity: low
+    category: requirements
+    description: 'O limite das Dev Notes (@po) se confirma na prática, e o texto com ad-level segue com duas imprecisões que já existiam, sem regressão. (1) O QA reproduziu o limite com a fixture da 49.16: ad-level no período só de OUTRO anúncio (`120000000000000002`) e nenhum investimento para os 3 ad_ids do Ad Name. O link sai o IG do 2º em respondentes, pela ordem de volume, e a nota diz "do anúncio de maior investimento do Ad Name", com ia-humano e com nenhuma. A causa é que a nota segue `tipoDeCriativo.adLevel` (o período), enquanto `postDoGrupo` decide grupo a grupo (`utils/post-do-criativo.ts:61,66`). (2) O texto com ad-level não diz "entre os que têm post". Quem lê "…do anúncio de maior investimento; sem post público, o Ads Manager" pode entender que, se o de maior investimento não tem post, o link vai para o Ads Manager. Na verdade vai para o próximo com post. (3) Nos dois textos, "do Ad Name" quer dizer os ad_ids do Ad Name que trouxeram respondente: o grupo só contém ad_ids de `respsPorAdId` (`debriefing-audience-engine.ts:1207-1215`). Um anúncio do Ad Name com o maior investimento e nenhum respondente não concorre. Nenhum desses pontos contradiz o AC1, que congela o texto com ad-level.'
+    recommendation: 'Fica como está nesta story. Se alguém pedir, uma story futura pode trocar a nota por uma frase única, verdadeira nos dois casos e sem marcação por linha. Por exemplo: "do anúncio de maior investimento no período entre os que têm post publicado e trouxeram respondentes; no empate, inclusive sem investimento, o com mais respondentes". Essa troca muda o HTML com ad-level, então precisa de AC de SHA próprio.'
+    owner: '@po'
+    status: open
+
+  - id: REL-001
+    severity: low
+    category: reliability
+    description: 'A main andou durante o gate: c73a002c → ad73b4a7 (#997, 49.14: render +246 linhas, generate, guards, payload, contract). O `git merge-tree` não acusa conflito. O QA montou o merge simulado (commit-tree de HEAD + origin/main, numa worktree temporária já removida): suítes de debriefing + post-do-criativo com 28 arquivos, 815/815, e `tsc --noEmit -p packages/api` com exit 0. Os SHAs do AC3 foram medidos sobre c73a002c. A comparação é relativa (antes × depois na mesma base), então continua válida, mas os hashes absolutos mudam na main nova.'
+    recommendation: '@devops faz rebase sobre origin/main antes da PR e roda a suíte de debriefing de novo. Não é preciso refazer o AC3.'
+    owner: '@devops'
+    status: open
+
+top_issues:
+  - id: REQ-001
+    severity: low
+    finding: 'Um grupo com ad-level no período mas sem investimento na janela cai na ordem de volume, e a nota diz "maior investimento" (limite das Dev Notes, reproduzido). O texto com ad-level omite "entre os que têm post".'
+    suggested_action: 'Futuro, se pedido: uma frase única verdadeira nos dois casos, com AC de SHA próprio.'
+  - id: REL-001
+    severity: low
+    finding: 'A main andou para ad73b4a7 (#997) durante o gate. Merge simulado sem conflito e verde.'
+    suggested_action: 'Rebase antes da PR.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Diff de 8 linhas em `debriefing-render.ts`: o `const doAnuncio` lê `tc.adLevel.aplicavel` e só a nota usa. O texto com ad-level saiu byte a byte igual ao anterior. `postDoGrupo`, o motor e o payload não foram tocados. O único chamador do render é `debriefing-generate.ts:297`. Nenhuma outra superfície (web, viewer) repete a nota (grep "maior investimento").'
+  fidelidade: 'Sem ad-level, `spendPorAdId` fica vazio (`audience-engine.ts:1219-1220`). Em `postDoGrupo`, `melhorSpend` começa em −1, o primeiro ad_id COM post leva (0 > −1) e os seguintes, com 0, não trocam (`post-do-criativo.ts:55-72`). A entrada vem em `porVolume`, por respondentes decrescente com desempate por ad_id (`:1224`). Portanto "o anúncio com mais respondentes do Ad Name, entre os que têm post publicado" é exato. Isso bate com a 49.6:346 ("sem ad-level no período, desempata pela ordem de volume de respondentes") e mantém a cascata IG → FB → Ads Manager da R7-9 (`linkDoPost ?? linkAdsManager`, `render.ts:1681`). A fixture discrimina os critérios: o de mais respondentes não tem post e tem o maior investimento; o 2º tem IG; o 3º tem FB e o maior investimento entre os com post. O resultado é IG sem ad-level e FB com ad-level. Limite com ad-level: REQ-001.'
+  acceptance_criteria: 'AC1 ✓: nota nova nas 3 dimensões sem ad-level, inclusive "nenhuma", que gera desde a 49.15; com ad-level, o texto de antes. AC2 ✓: o href e o `linkDoPost` não mudam, e o payload saiu idêntico nos 12 casos. AC3 ✓ reproduzido (ver ac3_sha). AC4 ✓: (a) a fixture tem criativo na pesquisa; (b) com o render de c73a002c, 6 dos 15 testes falham, conferido pelo QA; (c) coberto; (d) M1/M2 morrem, e o chamador (generate → render) também é coberto pela Q8.'
+  ac3_sha: 'O QA rodou o próprio `sha-49-16.mts` do @dev, numa cópia que grava o HTML em `qa-html-49-16/`, em 3 estados: depois (HEAD), antes (o render de c73a002c) e revertido (de volta à HEAD). As 3 saídas batem byte a byte com as do @dev, e depois = revertido. Payload idêntico nos 12 casos. O HTML muda só em fx49.16 ia-humano sem (c61961c9 → 57f393ee), video-estatico sem (65807cf3 → a973eb23) e nenhuma sem (0d7fbbb3 → 15c30b9d). Comparação independente do QA (`qa-cmp-49-16.py`, difflib): nos 3 casos que mudam, só 1 linha difere, o texto novo aparece 1 vez e trocá-lo pelo antigo devolve exatamente o HTML "antes". Nos 3 casos fx49.16 "com", o HTML contém o texto antigo 1 vez e é idêntico, o que prova que a igualdade não vem de nota ausente. Na fixture da 49.15 a nota não aparece (sem criativo), então os 6 casos dela são idênticos trivialmente; o @dev declarou isso. O `cmp-49-16.py` do @dev compara o que diz comparar (`a == b.replace(NEW, OLD)` e `count(NEW) == 1`). Os hrefs no HTML conferem: FB com ad-level e IG sem.'
+  unit_tests: 'Arquivo da story: 15/15. Debriefing + post-do-criativo: 26 arquivos, 769/769. As mutações do @dev, reexecutadas, morreram todas (M1–M8: 6, 6, 9, 6, 6, 6, 6, 7 falhas). Mutações do QA (`scratchpad/qa-mutar-49-16.py`, cada uma restaurada, `git status` limpo ao fim): Q1 condição `adLevel.linhas > 0` sobrevive, EQUIVALENTE (`aplicavel = temAdLevel = anuncios.length > 0` e `linhas = anuncios.length` nos dois ramos). Q2 condição `!adLevel.motivo` sobrevive, EQUIVALENTE (o `motivo` existe se e só se `!temAdLevel`). Q3, o render prefere o Ads Manager ao post: morre (5). Q4, o motor chama `postDoGrupo` sem o investimento: morre (4). Q5, o motor passa a ordem de volume invertida: morre (4). Q6, `adLevel.aplicavel` sempre true no motor: morre (21). Q7, a nota sem a cascata IG/FB: morre (9). Q8, o gerador entrega ao render o `adLevel.aplicavel` virado: morre (11).'
+  no_regressions: '`node_modules/.bin/tsc --noEmit -p packages/api` com exit 0. `eslint src/` da API: 0 erros e 1 warning que já existia (`lp-campaigns.ts:57`). API inteira: 243 arquivos, 10 falhas e 4.518 passando. São as 10 falhas já conhecidas (funnel-stages-lead-inputs 3, instagram-routes 1, instagram 1, projects 3, schema 2); nenhuma nova. Merge simulado com a main nova: ver REL-001.'
+  security: 'N/A: muda só um texto estático, sem interpolação nova de dado do usuário. O href continua passando por `esc()`.'
+  api_contract: 'N/A: não há contrato, migration nem mudança de payload (SHA idêntico).'
+  documentation: 'O Dev Agent Record está completo: os `[AUTO-DECISION]` (de onde ler o ad-level; fixture no próprio arquivo de teste), a tabela de SHA, o diff da nota e as mutações. O limite da nota única está registrado pelo @po nas Dev Notes.'
+
+notes:
+  - '[AUTO-DECISION] PASS ou CONCERNS? → PASS (razão: ACs atendidos e reproduzidos; nenhuma issue high ou medium. O REQ-001 é o limite que o @po já declarou fora do escopo, agora com prova, e o REL-001 é rotina de rebase com o merge simulado verde).'
+  - '[AUTO-DECISION] Q1 e Q2 sobreviventes são defeito de teste? → Não. São equivalentes por construção, porque o motor deriva `aplicavel`, `linhas` e `motivo` da mesma `anuncios.length` nos dois ramos.'
+  - 'CodeRabbit não executado (CLI ausente no macOS). Em vez dele: revisão manual, SHAs e mutações.'
+  - 'Próximo: @devops faz rebase sobre ad73b4a7, depois *push / PR.'
