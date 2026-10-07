@@ -1,0 +1,130 @@
+schema: 1
+storyId: '49.14'
+story: '49.14'
+story_title: 'Debriefing em andamento — gerar com o carrinho aberto (e com reabertura/downsell ainda por vir)'
+verdict: CONCERNS
+gate: CONCERNS
+status_reason: 'Os 9 ACs estão implementados e não achei defeito funcional. O ponto de virada (AC9 b) foi reproduzido pelo QA por um caminho independente, e 13 das 14 mutações do QA morreram, inclusive nos chamadores. As CONCERNS são todas low: dois desvios da letra dos ACs que o @po precisa ratificar (versão do payload no AC8; "fim ainda não aconteceu" de reabertura/downsell no AC2), o Δ da comparação no caso R9-5, um teste faltando no R9-5 e dois detalhes de exibição.'
+reviewer: 'Quinn'
+updated: '2026-10-07T18:30:00-03:00'
+branch: 'feat/49.14-debriefing-carrinho-em-andamento'
+commit_reviewed: '9efa5666'
+base: 'Empilhada na 49.12 @ dcbcd962. A PR #992 da 49.12 está em 117b90c5, que difere só em docs. O diff revisado é `git diff dcbcd962...HEAD` (17 arquivos). A origin/main andou para 30978960, um commit só de docs (49.7, 49.9 e epic-49) sem arquivo em comum com a branch; `git merge-tree` com a origin/main não acusa conflito.'
+coderabbit_status: 'SKIPPED (a CLI só roda no WSL e o ambiente é macOS; é a prática do repo)'
+
+coverage:
+  AC1: 'PASS. O 422 CARRINHO_JA_ABERTO saiu do orquestrador e do tipo. O web mantém o título dele porque a API v35 ainda o responde.'
+  AC2: 'PASS COM RESSALVA (REQ-002). `estadoDaFase` implementa os três estados e "não houve" vira um quarto estado. O QA conferiu as fronteiras também pela janela, não só pela função pura: abertura = corte dá em curso, fim = corte dá concluída (e, sem outra fase, janela 2A), abertura no dia seguinte dá não começou. As mutações B1 e B2 morreram. Reabertura e downsell em curso dependem de um fim informado: o "fim ainda não aconteceu" que o AC2 prevê só existe para o carrinho.'
+  AC3: 'PASS. Com o carrinho em curso, os números vão até o corte e cada KPI do carrinho leva o rótulo parcial. A decisão 7 continua. "Abre carrinho" sempre aparece e "fecha carrinho" só com fim ≤ corte. `coorte.incompleta` e `coortePaga.incompleta` vêm marcadas, com a lacuna COORTE_INCOMPLETA. A F7 cobra a marcação (B8 morreu) e continua fechando os buckets.'
+  AC4: 'PASS. Downsell que não começou fica fora do numerador do ROAS total, dito por extenso ("downsell FORA"), nunca como R$ 0 (B6 e B11 morreram). Em curso, entra marcado parcial. Reabertura que não começou tem o ROAS marginal e a referência combinada em lacuna. A F8 fecha com o downsell fora (B7 morreu). Ressalva de exibição em MNT-001.'
+  AC5: 'PASS. A comparação cortada em D+N também ganha as fases, e o documento diz em que fase ela estava, por exemplo "PG04 em D+28: 5º dia de carrinho". O Δ do carrinho é diferencial (AC9 d). Métrica que só existe de um lado continua com "—" e nota.'
+  AC6: 'PASS. Com todas as fases concluídas (incluindo "não houve"), a janela é a da regra 2A, e leads e pesquisa não são cortados (B3 e B4 morreram). Os avisos no botão, na pergunta e no documento não bloqueiam a geração (WB1, WB2 e WB3 morreram). Ressalvas: REQ-003 (Δ da comparação), TEST-001 (pesquisa) e FE-001 (aviso contra a API v35).'
+  AC7: 'PASS. As 15 guardas rodam em 5 combinações de estado. A F7, a F8 e a F11 cobrem as lacunas novas item a item (B9 morreu).'
+  AC8: 'PASS COM DESVIO (REQ-001). Contrato 35 → 36 com linha de histórico. `DEBRIEFING_PAYLOAD_VERSAO` não subiu, contra a letra do AC8. A não-regressão do caminho 2 vale por construção, porque o filtro `versao = 1` não mudou.'
+  AC9: 'PASS. (a) O teste de SHA da 49.12 continua verde na branch; sem corte não há campo novo no payload do encerrado. (b) Reproduzido pelo QA: payload sem a janela idêntico ao final com corte = 30/06 e com corte = 15/07, o mesmo valor em todos os INDICADORES e nenhuma guarda falhando. O controle com corte = 29/06 (carrinho em curso) diverge. A rodada de produção foi só leitura e está rotulada como simulação (ver abaixo). (c) 32 mutações do @dev mais 13 de 14 do QA morreram. (d) O diferencial em D+28 está na suíte.'
+
+desvios_do_dev:
+  d1_payload_versao_nao_subiu:
+    veredito: 'ACEITO, com ratificação do @po (REQ-001)'
+    motivo: 'É a mesma incompatibilidade da 49.12: o AC8 manda subir, mas o AC9(a) exige o mesmo SHA do HTML do encerrado, e o render imprime a versão. O @po já ratificou essa leitura na 49.12 (REQ-001). Aqui o AC8 é explícito ("sobem"), então o @po precisa ajustar o AC8 ou ratificar de novo. Os campos são aditivos e opcionais: `situacao.fases`, `todasAsFasesConcluidas`, `janela.corte.fases`, `coorte.incompleta` e `downsellNoCorte`.'
+  d2_quarto_estado_nao_houve:
+    veredito: 'ACEITO'
+    motivo: 'Nenhum dos três estados do AC2 descreve uma fase que não existiu, e "não houve" ≠ "ainda não aconteceu" desde a 49.12 AC2. Contar "não houve" como terminada no AC6 é o que o final faz (a regra 2A ignora a fase sem `houve`). Teste com a fase "não houve" no AC9(b) real; a mutação B4 morreu.'
+  d3_reabertura_downsell_em_curso_exigem_datas:
+    veredito: 'LEITURA VÁLIDA dentro do escopo, mas é LACUNA DE REQUISITO (REQ-002)'
+    motivo: 'O AC2 define em curso como "fim depois do corte ou ainda não aconteceu" para as três fases. A config da 49.12 só representa "ainda não aconteceu" da fase inteira para reabertura e downsell, então "abriu e o fim ainda não tem data" não tem forma. Mudar a forma da config está fora do "Dentro" da story. O contorno é informar o fim previsto (data futura), que cai em curso. O problema: quem marcar "ainda não aconteceu" num downsell que já está rodando o vê FORA do ROAS total. O @po decide se uma dica no formulário basta ou se é uma story nova.'
+  d4_r9_5_leads_e_pesquisa_nao_cortados:
+    veredito: 'ACEITO'
+    motivo: 'É o que o R9-5 pede ("iguais aos do relatório final"): o final não corta lead nem pesquisa pela janela. O controle do @dev e o do QA provam que cortar o lead muda a coorte. Faltava o mesmo para a PESQUISA: a mutação B5, que corta só as respostas no corte no R9-5, sobrevive, porque a fixture não tem resposta depois do fim (TEST-001).'
+  d5_venda_de_downsell_antes_do_inicio:
+    veredito: 'ACEITO, com MNT-001'
+    motivo: 'A decisão 7 é só do principal (R2-4), e no final essa venda entra inteira no ROAS total. Sair só do ROAS total enquanto o downsell não começou segue o AC4 ("fora por não ter começado"). Efeito colateral: `faturamentoTotal`, mostrado no KPI "Fat. Total s/ TMB" e na tabela por etapa, continua incluindo essa venda, ao lado de "Vendas Downsell: — (downsell ainda não começou)" e de um ROAS total sem ela.'
+
+prova_producao_ac9b:
+  conferido: '`scratchpad/ac9b-prod.mts` e `.out`: pool com `default_transaction_read_only=on`, que a saída confirma ("sessao_read_only": "on"); `gravar` substituído por no-op; o campo "simulacao" diz "config SIMULADA (PG02 sem config em produção; datas do perfil §1b)"; saída só com agregados ("@ no payload B": false). A tabela do Dev Agent Record é coerente: A = B = C, e D e E divergem como esperado.'
+
+achado_fora_do_escopo_sem_ad_level:
+  confirmado: 'SIM. É um defeito na origin/main e também quebra a geração encerrada.'
+  evidencia: 'packages/api/src/services/debriefing-audience-engine.ts (origin/main). No ramo `dimensaoCriativo === "nenhuma"` (:1276-1286), `adLevel.motivo = "SEM_AD_LEVEL"` é gravado sem `lacunas.push`. Só o ramo com dimensão empurra a lacuna (:1392-1397, `if (!temAdLevel) lacunas.push({ codigo: "SEM_AD_LEVEL", … })`). Em debriefing-guards.ts (origin/main), `lacunasExigidas` exige a lacuna sempre que o motivo existe (:561), e `checarF11` reprova se ela falta (:596-609). Resultado: F11 failed e 422 INVARIANTE_VIOLADO também no encerrado. Sonda do QA na branch (código idêntico ao da main nesse trecho): config ENCERRADA, convenção "nenhuma" e `criativos.anuncios = []` dão `adLevel.motivo = SEM_AD_LEVEL`, nenhuma lacuna SEM_AD_LEVEL e `checarF11.status = failed` citando SEM_AD_LEVEL.'
+  encaminhamento: 'Story de fix pelo @po/@sm, fora da 49.14. A correção muda o payload do encerrado, então não cabe aqui (o AC9 a desta story proíbe).'
+
+quality_checks:
+  1_code_review: 'PASS. O estado por fase mora na janela (uma porta só), o pós-processamento `comFasesDoCorte` é puro e o encerrado sem corte sai pelo mesmo objeto de antes. Os textos de fase são centralizados em `debriefing-hygiene.ts`.'
+  2_unit_tests: 'PASS. Debriefing da API: 755/755, mais 3 sondas do QA, 758/758. Web: 1.847/1.847. As 10 falhas da API inteira são as pré-existentes (confirmadas na 49.12; o @dev mediu 4.516 passando e as mesmas 10).'
+  3_acceptance_criteria: 'CONCERNS. Os 9 ACs estão implementados. O AC8 tem desvio da letra (REQ-001) e o AC2 tem lacuna de forma para reabertura/downsell (REQ-002).'
+  4_regression: 'PASS. O SHA do encerrado (AC9 a) está verde, e sem corte nenhum campo novo aparece. O 422 de carrinho aberto continua com título no web para a API v35.'
+  5_performance: 'PASS. Só pós-processamento puro, sem query nova e sem chamada à Meta.'
+  6_security_pii: 'PASS. Nenhum log novo. A saída de produção não tem "@".'
+  7_documentation: 'PASS. Dev Agent Record com decisões, provas, achados fora do escopo e pendências. A tabela de produção está rotulada como simulação.'
+  8_api_contract: 'PASS. 35 → 36 com histórico. Contra a v34, o "em andamento" fica desabilitado (49.12). Contra a v35, o rótulo é "(captação aberta)" e o 422 cai no bloco de erro. FE-001: o aviso de fases concluídas não olha o contrato.'
+  lint_typecheck: 'PASS, rodados pelo QA. API: `pnpm lint` com 0 erros e 1 warning pré-existente; `tsc` 0. Web: `next lint` limpo; `next build --turbopack` exit 0 e depois `tsc` 0. O shared foi compilado antes.'
+
+meta_api_impact:
+  adds_meta_calls: 'NO'
+
+mutacoes_qa:
+  total: 14
+  mortas: 13
+  arvore: 'restaurada por git checkout depois de cada mutação; git status limpo e a sonda removida no fim'
+  lista:
+    - 'B1 fronteira fim = corte vira em curso: MORTA (6)'
+    - 'B2 fronteira abertura = corte vira não começou: MORTA (4)'
+    - 'B3 janela sempre no corte, ignorando o R9-5: MORTA (7)'
+    - 'B4 "não houve" não conta como terminada: MORTA (7)'
+    - 'B5 Motor II (chamador) corta a pesquisa no corte mesmo no R9-5: SOBREVIVEU (TEST-001)'
+    - 'B6 downsell que não começou continua no ROAS total: MORTA (7)'
+    - 'B7 F8 sem o caso do downsell fora: MORTA (7)'
+    - 'B8 F7 não cobra a coorte incompleta: MORTA'
+    - 'B9 F11 não exige COORTE_INCOMPLETA: MORTA'
+    - 'B10 payload sem as fases: MORTA (16)'
+    - 'B11 render escreve o downsell fora como R$ (chamador): MORTA'
+    - 'WB1 formulário: fim = ontem não conta como terminado: MORTA (4)'
+    - 'WB2 formulário: "não houve" não conta como terminada: MORTA (4)'
+    - 'WB3 botão nunca mostra o aviso de fases concluídas (chamador): MORTA'
+
+sondas_qa:
+  - '(1) AC9(b) pelos motores diretos, sem o orquestrador, com lead, venda e mídia DEPOIS do fim: com corte 30/06 e 15/07, o payload sem a janela fica idêntico ao final, todos os INDICADORES iguais e 0 guardas falhando. Controle com corte 29/06 (carrinho em curso, coorte incompleta) diverge. PASS.'
+  - '(2) Fronteiras do AC2 pela `janelaDaGeracao`: corte 11/05 (= abertura) dá em curso; 30/06 (= fim) dá concluída, todas concluídas e janela 2A; 10/05 dá não começou; carrinho concluído com o downsell "ainda não aconteceu" faz a janela voltar ao corte. PASS.'
+  - '(3) SEM_AD_LEVEL no encerrado com convenção "nenhuma": F11 failed. Confirma o achado fora do escopo.'
+
+top_issues:
+  - id: 'REQ-001'
+    severity: low
+    finding: 'O AC8 diz que `DEBRIEFING_PAYLOAD_VERSAO` "sobe", e não subiu. É a mesma incompatibilidade com o AC9(a) já ratificada na 49.12, mas aqui a letra é explícita.'
+    suggested_action: 'O @po ajusta o AC8 para a regra ratificada na 49.12 (campo aditivo e opcional não sobe a versão) ou registra a ratificação.'
+    owner: po
+  - id: 'REQ-002'
+    severity: low
+    finding: 'O AC2 prevê em curso com o fim "ainda não aconteceu" para as três fases, mas a config só tem isso para o carrinho. Reabertura ou downsell que já abriram e não têm data de fim precisam de um fim previsto. Quem marcar "ainda não aconteceu" num downsell rodando o vê fora do ROAS total, como se não tivesse começado.'
+    suggested_action: 'O @po decide entre (a) aceitar e pôr no formulário a dica "fase aberta sem data de fim: informe o fim previsto" e (b) uma story nova com "fim ainda não aconteceu" para reabertura e downsell.'
+    owner: po
+  - id: 'REQ-003'
+    severity: low
+    finding: 'No R9-5 (todas as fases concluídas), os números do lançamento atual são os do final, mas a comparação continua cortada em D+N, inclusive os leads (49.12 AC8). Por isso o Δ da parcial R9-5 pode diferir do Δ do relatório final. O controle do próprio @dev prova que o corte de lead muda a coorte. O AC9(b) foi provado só sem comparação.'
+    suggested_action: 'O @po decide se, no R9-5, a comparação também usa a janela do final (sem corte), para a promessa "números iguais ao final" valer no documento inteiro, ou se o Δ em D+N fica e o aviso do topo diz isso.'
+    owner: po
+  - id: 'TEST-001'
+    severity: low
+    finding: 'A mutação B5 sobrevive: cortar as respostas da pesquisa no corte durante o R9-5, no chamador do Motor II (`debriefing-audience-engine.ts:712`), passa na suíte. A fixture do AC9(b) não tem resposta de pesquisa depois do fim da janela.'
+    suggested_action: 'No AC9(b), acrescentar um respondente com data entre o fim da regra 2A e o corte, e afirmar a igualdade com o final.'
+    owner: dev
+  - id: 'MNT-001'
+    severity: low
+    finding: 'Com o downsell que não começou, a venda da etapa de downsell datada antes do início fica em `faturamentoTotal` (KPI "Fat. Total s/ TMB") e na tabela por etapa. Ao mesmo tempo, "Vendas Downsell" mostra a lacuna "ainda não começou" e o ROAS total a exclui. No documento, Fat. Total ÷ investimento ≠ ROAS total.'
+    suggested_action: 'Nota no KPI Fat. Total ("inclui R$ X de venda da etapa de downsell anterior ao início dele, fora do ROAS total") ou tirar a parcela do total, de forma coerente com o ROAS.'
+    owner: dev
+  - id: 'FE-001'
+    severity: low
+    finding: '`avisoDoBotaoDeGerar` e o formulário mostram "todas as fases terminaram: a parcial sai com os números do relatório final" sem olhar o contrato. Contra a API v35, essa geração responde 422 CARRINHO_JA_ABERTO.'
+    suggested_action: 'Mostrar `fasesConcluidas` só com a API ≥ 36, como já faz `rotuloDoEmAndamento`.'
+    owner: dev
+
+condicoes_de_merge:
+  - 'Mergear DEPOIS da 49.12 (PR #992), rebaseando sobre ela. Contrato 36: quem mergear depois renumera, se outra PR subir o contrato antes.'
+  - 'Nenhuma migration nesta story. A 0168 da 49.12 é pré-requisito em produção.'
+
+condicoes_de_done:
+  - 'Ratificação do @po: REQ-001, REQ-002 e REQ-003.'
+  - 'Validação visual do dono com uma parcial com o carrinho aberto.'
+
+waiver: { active: false }
