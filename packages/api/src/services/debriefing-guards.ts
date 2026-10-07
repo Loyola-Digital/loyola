@@ -608,6 +608,20 @@ function checarF10EmAndamento(cfg: Extract<DebriefingPayload["config"], { situac
   );
 }
 
+/**
+ * 49.15: a falta de ad-level só pesa quando a dimensão de tipo de criativo é
+ * EXIBIDA — o mesmo `tipoDeCriativo.aplicavel` com que o render decide montar a
+ * tabela "Criativo por tipo" e a lacuna "Mídia por criativo indisponível". Com
+ * `dimensaoDeCriativo = "nenhuma"` o Motor II marca o fato (`adLevel.motivo =
+ * SEM_AD_LEVEL`) mas não registra a lacuna, porque nada do documento lê o
+ * ad-level; exigi-la na F11 dava 422 em toda geração. Vale para a F11
+ * (`lacunasExigidas`) e para o WF9.
+ */
+export function semAdLevelNaDimensaoExibida(p: DebriefingPayload): boolean {
+  const tc = p.publico.tipoDeCriativo;
+  return tc.aplicavel && tc.adLevel.motivo === "SEM_AD_LEVEL";
+}
+
 /** As lacunas que o payload EXIGE, cada uma com o porquê. */
 export function lacunasExigidas(p: DebriefingPayload): { codigo: CodigoDeLacunaDoDebriefing; porque: string; itens?: string[] }[] {
   const m = p.dinheiroTempo;
@@ -617,7 +631,7 @@ export function lacunasExigidas(p: DebriefingPayload): { codigo: CodigoDeLacunaD
     { codigo: "LEADS_DO_PAINEL", porque: "sempre (o resumo não tem o # Leads oficial do debriefing diário)" },
   ];
   if (m.coorte.foraDaCoorte.length > 0) exigidas.push({ codigo: "VENDAS_SEM_DATA", porque: `${int(m.coorte.foraDaCoorte.length)} venda(s) fora da coorte` });
-  if (a.tipoDeCriativo.adLevel.motivo === "SEM_AD_LEVEL") exigidas.push({ codigo: "SEM_AD_LEVEL", porque: "sem ad-level no período" });
+  if (semAdLevelNaDimensaoExibida(p)) exigidas.push({ codigo: "SEM_AD_LEVEL", porque: "sem ad-level no período" });
   if (m.higiene.linhasConvertidas > 0) {
     exigidas.push({ codigo: "PRECO_ORIGINAL_NAO_MAPEADO", porque: `${int(m.higiene.linhasConvertidas)} linha(s) em moeda estrangeira convertida(s)` });
   }
@@ -903,7 +917,7 @@ export function coletarAlertasDebriefing(p: DebriefingPayload): AlertaFase12[] {
     alertas.push({ codigo: "WF8", quantidade: amostra.length + (semFaixa > 0 ? 1 : 0) + dnc.length, mensagem: partes.join(" · ") });
   }
 
-  const semAdLevel = a.tipoDeCriativo.adLevel.motivo === "SEM_AD_LEVEL";
+  const semAdLevel = semAdLevelNaDimensaoExibida(p);
   const conflitos = a.tipoDeCriativo.conflitosDeTipo;
   if (semAdLevel || conflitos.length > 0) {
     const partes: string[] = [];
