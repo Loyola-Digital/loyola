@@ -132,6 +132,13 @@ export interface EstadoDoSyncDaConta {
   nome: string | null;
   adDaily: { lastSuccessAt: string | null } | null;
   campaignDaily: { lastRunAt: string | null; lastSuccessAt: string | null } | null;
+  /**
+   * QA 49.12 REL-002 — a conta está vinculada ao projeto (`meta_ads_account_projects`)?
+   * O sync só percorre as contas do projeto: conta da etapa/funil fora dele NUNCA é
+   * sincronizada para este projeto, e "esperar o próximo sync" não resolve.
+   * Ausente = vinculada (forma anterior).
+   */
+  vinculadaAoProjeto?: boolean;
 }
 
 export interface DependenciasDaGeracao {
@@ -464,11 +471,26 @@ async function corteDaParcial(
   }
   const atrasadas = contasAtrasadasNoCorte(await deps.estadoDoSyncDaMidia(config), dia);
   if (atrasadas.length > 0) {
+    const fora = atrasadas.filter((a) => a.foraDoProjeto);
+    const esperar = atrasadas.filter((a) => !a.foraDoProjeto);
+    const rot = (a: (typeof atrasadas)[number]) => `${a.accountId}${a.nome ? ` (${a.nome})` : ""}`;
+    // QA REL-002: conta fora do projeto não se resolve esperando — a ação diz o que fazer.
+    const acoes = [
+      ...(fora.length
+        ? [
+            `Vincular a conta ${fora.map(rot).join(", ")} ao projeto (contas de anúncio do projeto) ou tirá-la da etapa/funil do lançamento — ` +
+              "sem o vínculo o sync da Meta nunca a sincroniza para este projeto, e esperar não resolve",
+          ]
+        : []),
+      ...(esperar.length
+        ? ["Esperar o próximo sync da mídia da Meta (roda a cada 15 minutos) ou rodar a sincronização (admin: Sincronizar mídia Meta)"]
+        : []),
+    ];
     throw new DebriefingGeracaoError(
       "MIDIA_DO_CORTE_NAO_SINCRONIZADA",
       `a mídia da Meta do dia de corte (${dataBr(dia)}) ainda não foi sincronizada em ${atrasadas.length} conta(s) do lançamento: ` +
-        atrasadas.map((a) => `${a.accountId}${a.nome ? ` (${a.nome})` : ""} — ${a.situacao}`).join("; "),
-      "Esperar o próximo sync da mídia da Meta (roda a cada 15 minutos) ou rodar a sincronização (admin: Sincronizar mídia Meta) e gerar de novo",
+        atrasadas.map((a) => `${rot(a)} — ${a.situacao}`).join("; "),
+      `${acoes.map((a, i) => (i ? a[0]!.toLowerCase() + a.slice(1) : a)).join("; e ")}; depois, gerar de novo`,
     );
   }
   return { dia, dMaisN: diasEntre(inicio, dia) };
@@ -496,11 +518,15 @@ function instanteBr(iso: string): string {
 export function contasAtrasadasNoCorte(
   contas: readonly EstadoDoSyncDaConta[],
   corte: string,
-): { accountId: string; nome: string | null; situacao: string }[] {
+): { accountId: string; nome: string | null; situacao: string; foraDoProjeto?: true }[] {
   const limite = fimDoDiaEmBrasilia(corte);
   const depois = (iso: string | null | undefined) => !!iso && Date.parse(iso) >= limite;
-  const atrasadas: { accountId: string; nome: string | null; situacao: string }[] = [];
+  const atrasadas: { accountId: string; nome: string | null; situacao: string; foraDoProjeto?: true }[] = [];
   for (const c of contas) {
+    if (c.vinculadaAoProjeto === false) {
+      atrasadas.push({ accountId: c.accountId, nome: c.nome, situacao: "não está vinculada ao projeto — o sync da Meta não a percorre", foraDoProjeto: true });
+      continue;
+    }
     const ok = c.adDaily?.lastSuccessAt ?? null;
     if (!depois(ok)) {
       atrasadas.push({
@@ -693,6 +719,16 @@ export async function lerEstadoDoSyncDaMidia(db: Database, config: DebriefingCon
       .innerJoin(metaAdsAccounts, eq(metaAdsAccounts.id, funnels.metaAccountId))
       .where(eq(funnels.id, config.funnelId)),
   ]);
+  // REL-002: as contas vinculadas ao projeto (as únicas que o sync percorre).
+  const vinculadas = new Set(
+    (
+      await db
+        .select({ accountId: metaAdsAccounts.metaAccountId })
+        .from(metaAdsAccountProjects)
+        .innerJoin(metaAdsAccounts, eq(metaAdsAccounts.id, metaAdsAccountProjects.accountId))
+        .where(eq(metaAdsAccountProjects.projectId, config.projectId))
+    ).map((c) => c.accountId),
+  );
   let contas = [...dasEtapas, ...doFunil];
   if (contas.length === 0) {
     contas = await db
@@ -723,6 +759,7 @@ export async function lerEstadoDoSyncDaMidia(db: Database, config: DebriefingCon
         nome: c.nome,
         adDaily: ad ? { lastSuccessAt: iso(ad.lastSuccessAt) } : null,
         campaignDaily: camp ? { lastRunAt: iso(camp.lastRunAt), lastSuccessAt: iso(camp.lastSuccessAt) } : null,
+        vinculadaAoProjeto: vinculadas.has(c.accountId),
       };
     })
     .sort((a, b) => a.accountId.localeCompare(b.accountId));

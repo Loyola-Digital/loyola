@@ -23,9 +23,18 @@
 -- 2026-10-07 na `main` (4920adfb), nas 139 branches remotas e nas PRs abertas:
 -- nenhuma usa 0168+.
 --
--- ⚠️ APLICAÇÃO: o deploy (merge na main) NÃO aplica migration. Aplicar à mão em
--- produção junto com o merge — sem as colunas, o GET/PUT da config do debriefing
--- e o "Gerar debriefing" dão 500 — e provar pelo information_schema:
+-- ⚠️ APLICAÇÃO: o deploy (merge na main) NÃO aplica migration, e o deploy é
+-- automático a partir da main. Por isso a 0168 é aplicada à mão em produção e
+-- provada pelo information_schema ANTES do merge — nunca "junto com o merge".
+-- Sem as colunas, o código novo dá 500 em:
+--   • o VIEWER de QUALQUER debriefing, inclusive os enviados por upload (Epic 37):
+--     `GET /api/debriefings/:id` seleciona `debriefing_payloads.parcial` num
+--     leftJoin que roda sempre (`routes/debriefings.ts`);
+--   • o GET/PUT da config do debriefing e o gate (`select()` de `debriefing_configs`);
+--   • o "Gerar debriefing" (o INSERT/UPDATE leva `parcial`).
+-- A 0168 é retrocompatível com o código da main (INSERT sem as colunas novas pega
+-- os defaults; as leituras da main nomeiam as colunas), então aplicá-la antes é seguro.
+-- Prova pelo information_schema:
 --
 --   SELECT column_name, data_type, is_nullable, column_default
 --   FROM information_schema.columns
