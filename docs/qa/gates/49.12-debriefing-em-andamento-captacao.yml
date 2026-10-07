@@ -2,14 +2,14 @@ schema: 1
 storyId: '49.12'
 story: '49.12'
 story_title: 'Debriefing em andamento — gerar com a captação ainda aberta (corte em ontem, comparação no mesmo D+N, parcial substituída)'
-verdict: CONCERNS
-gate: CONCERNS
-status_reason: 'Os 15 ACs estão implementados e não achei defeito funcional. Reproduzi o SHA do encerrado, as suítes ficaram verdes nos dois pacotes e 16 das 18 mutações do QA morreram. A CONCERN média é a ordem de deploy: o código novo sem a 0168 derruba também o viewer de TODO debriefing, inclusive os enviados por upload, e a story manda aplicar a migration "junto com o merge". A 0168 tem de entrar em produção ANTES do merge.'
+verdict: PASS
+gate: PASS
+status_reason: 'Re-gate (iteração 2) sobre dcbcd962, rebaseada em a242d088 (49.13). Os achados da iteração 1 estão fechados: REL-001 no texto da 0168 e no Dev Agent Record, REL-002 com ação própria para conta fora do projeto, TEST-001/002/003 com testes. As 10 mutações do QA (A3, A10, S1–S8) morreram e as suítes, o lint, o tsc e o next build passam. Fica a condição de merge, que é do @devops: aplicar e provar a 0168 em produção ANTES do merge.'
 reviewer: 'Quinn'
-updated: '2026-10-07T13:30:00-03:00'
+updated: '2026-10-07T16:30:00-03:00'
 branch: 'feat/49.12-debriefing-em-andamento'
-commit_reviewed: 'c831ca46'
-base: 'origin/main 4920adfb. Conferido com git fetch na abertura e no fim do gate: a main não andou, então nenhum arquivo da story foi tocado por outra PR.'
+commit_reviewed: 'dcbcd962 (iteração 2; a iteração 1 revisou c831ca46, e o commit do gate 1 virou c8d08c06 no rebase)'
+base: 'Rebaseada em a242d088 (49.13). A origin/main está em 9a2693a3, um commit à frente, só de docs (gate, story da 49.6 e epic-49), sem arquivo em comum com a branch; `git merge-tree` não acusa conflito.'
 coderabbit_status: 'SKIPPED (a CLI só roda no WSL e o ambiente é macOS; é a prática do repo)'
 
 coverage:
@@ -97,6 +97,9 @@ sondas_qa:
   - '(3) Código antigo com a 0168: INSERT sem as colunas novas resulta em encerrado, [] e parcial = false. PASS.'
   - '(4) Fronteira do AC15: 03:00:00Z de corte+1 libera e 02:59:59Z bloqueia. campaign-daily que falhou depois do corte bloqueia; o que não rodou depois do corte libera. PASS.'
 
+top_issues_iteracao_1_estado:
+  nota: 'Os achados abaixo são os da iteração 1. O estado de cada um está em iteracao_2.fechamento.'
+
 top_issues:
   - id: 'REL-001'
     severity: medium
@@ -128,6 +131,38 @@ top_issues:
     finding: 'AC15: o `meta_sync_state` é por (projeto, conta). Uma conta apontada pela etapa ou pelo funil mas não vinculada ao projeto em `meta_ads_account_projects` nunca é sincronizada para esse projeto, e então bloqueia para sempre, com a ação "esperar o próximo sync", que não resolve. Além disso, a fronteira usa 00:00 BRT, e o `until` do sync é BRT fixo (meta-ads.ts:31), mas o dia dos insights da Meta é o do fuso da conta. Uma conta fora de BRT pode passar com o dia de corte ainda aberto no fuso dela. É hipotético para as contas atuais.'
     suggested_action: 'Na 49.14, ou quando surgir o caso: quando a conta não tiver estado nenhum para o projeto, dizer no `detalhe` que ela não está vinculada ao projeto. Avaliar o fuso da conta na fronteira.'
     owner: dev
+
+iteracao_2:
+  data: '2026-10-07'
+  commits_revisados: ['49ad2299 fix REL-002 + texto da 0168 (REL-001)', '6d531026 testes TEST-001/002/003', 'dcbcd962 docs']
+  fechamento:
+    REL-001: 'FECHADO. O topo da 0168 (linhas 26-37) diz para aplicar e provar pelo information_schema ANTES do merge, nunca junto, e dá o motivo: o deploy é automático e, sem a migration, caem o viewer de qualquer debriefing (o leftJoin em routes/debriefings.ts), o GET/PUT da config, o gate e a geração. Diz também que a migration é retrocompatível. O Dev Agent Record (pendência 1) e a DoD trazem o mesmo texto. Resta a ação do @devops (condicoes_de_merge).'
+    REL-002: 'FECHADO na parte da conta fora do projeto. `lerEstadoDoSyncDaMidia` marca `vinculadaAoProjeto` e `contasAtrasadasNoCorte` separa essa conta. A ação do 422 manda vincular a conta ou tirá-la da etapa, e só manda esperar o sync para as contas que estão de fato atrasadas. A diferença entre a fronteira BRT e o fuso da conta ficou só registrada: é hipotética para as contas atuais e foi aceita.'
+    TEST-001: 'FECHADO. Teste de corrida com o 23505 REAL e Proxy em `db.transaction`. A3 morre.'
+    TEST-002: 'FECHADO. Upload na mesma etapa com a parcial viva sai com `parcial: null`. A10 morre.'
+    TEST-003: 'FECHADO. `debriefing-sync-da-midia.test.ts` roda em PGlite com contas de etapa e de funil (em dia, atrasada, parada), estado de outro projeto, fallback para as ativas, dedup e conta fora do projeto. S1 a S8 morrem.'
+    REQ-001: 'ABERTO (low, @po). A ratificação da leitura do AC12 não é código e não bloqueia.'
+  rebase_49_13: 'PRESERVADO. Contra a242d088, o diff do botão e do formulário só remove as linhas que a própria 49.12 substitui; nenhuma linha da 49.13 sai. Os testes de fio das duas stories (debriefing-em-andamento-fio e debriefing-comparacao-fio) deram 13/13, e a suíte do web inteira 1.839/1.839 (as 1.833 de antes mais os 6 testes da 49.13).'
+  verificacoes:
+    api_debriefing: '726/726 (718 de antes mais 8 novos)'
+    web: '1.839/1.839; fios 13/13'
+    lint: 'API: 0 erros e 1 warning pré-existente (lp-campaigns.ts:57). next lint: limpo.'
+    typecheck: '`node_modules/.bin/tsc --noEmit` na API: 0. `next build --turbopack`: exit 0, e depois o tsc do web: 0. O shared foi compilado antes.'
+  mutacoes_qa:
+    total: 10
+    mortas: 10
+    arvore: 'restaurada por git checkout depois de cada mutação; git status limpo no fim'
+    lista:
+      - 'A3 sem o retry da corrida: MORTA (TEST-001)'
+      - 'A10 viewer junta o payload pela etapa: MORTA (TEST-002)'
+      - 'S1 estado do sync sem o filtro de projeto: MORTA'
+      - 'S2 fallback sem o filtro de conta ativa: MORTA'
+      - 'S3 sem dedup das contas: MORTA'
+      - 'S4 vinculadaAoProjeto sempre true: MORTA (3)'
+      - 'S5 ignora a conta do funil: MORTA'
+      - 'S6 ação sempre manda esperar o sync: MORTA'
+      - 'S7 contasAtrasadasNoCorte ignora o vínculo: MORTA (3)'
+      - 'S8 contas vinculadas lidas sem o filtro de projeto: MORTA (3)'
 
 condicoes_de_merge:
   - 'A 0168 aplicada em produção ANTES do merge, com a prova do information_schema colada (REL-001).'
