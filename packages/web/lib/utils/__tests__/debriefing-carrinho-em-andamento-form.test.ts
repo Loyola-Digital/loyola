@@ -7,7 +7,10 @@ import { describe, expect, it } from "vitest";
 import {
   AINDA_NAO,
   avisoDoBotaoDeGerar,
+  corpoDoPut,
   datasDasFasesDoForm,
+  faltantesDoForm,
+  formDoGet,
   formVazio,
   rotuloDoEmAndamento,
   todasAsFasesTerminaram,
@@ -116,5 +119,68 @@ describe("o rótulo do 'em andamento' pelo contrato da API", () => {
     expect(rotuloDoEmAndamento(35).rotulo).toBe("Em andamento (captação aberta)");
     expect(rotuloDoEmAndamento(35).dica).not.toMatch(/carrinho aberto/);
     expect(rotuloDoEmAndamento(null).rotulo).toBe("Em andamento (captação aberta)");
+  });
+});
+
+describe("REQ-002 — reabertura/downsell abertos com o fim 'ainda não aconteceu' no formulário", () => {
+  const base: FormDaConfig = {
+    ...formVazio(),
+    situacao: "em-andamento",
+    inicioCaptacao: "2026-09-01",
+    aberturaCarrinho: "2026-09-20",
+    fimCarrinho: "2026-09-25",
+    reabertura: { houve: false, abertura: "", fim: "" },
+    downsell: { houve: true, abertura: "2026-10-01", fim: "", fimAindaNao: true },
+    papeis: { s: "vendas-captacao" },
+    perguntas: { s: { faixa: "faixa" } },
+    closerMediums: { resposta: "nenhum", texto: "" },
+    closerPorSellerName: false,
+    ferramentas: { resposta: "nenhuma", texto: "" },
+    dimensaoDeCriativo: "nenhuma",
+  };
+
+  it("o corpo do PUT (API 36) leva fim nulo e a resposta explícita `fimDownsell`; no encerrado, nada disso", () => {
+    const c = corpoDoPut(base, { apiContrato: 36, removidos: [] }) as { datasChave: Record<string, unknown> };
+    expect(c.datasChave.downsell).toEqual({ houve: true, abertura: "2026-10-01", fim: null });
+    expect(c.datasChave.aindaNaoAconteceu).toEqual(["fimDownsell"]);
+    const enc = corpoDoPut({ ...base, situacao: "encerrado" }, { apiContrato: 36, removidos: [] }) as { datasChave: Record<string, unknown> };
+    expect(enc.datasChave.downsell).toEqual({ houve: true, abertura: "2026-10-01", fim: "" });
+    expect(enc.datasChave.aindaNaoAconteceu).toEqual([]);
+  });
+
+  it("faltantes: em andamento a caixa basta; no encerrado o fim continua faltando; sem caixa e sem data, falta com a 2ª resposta possível", () => {
+    expect(faltantesDoForm(base)).toEqual([]);
+    expect(faltantesDoForm({ ...base, situacao: "encerrado" })).toContain("Downsell: datas de abertura e fim");
+    expect(faltantesDoForm({ ...base, downsell: { houve: true, abertura: "2026-10-01", fim: "" } })).toContain(
+      'Downsell: data de abertura e o fim (a data ou "fim ainda não aconteceu")',
+    );
+  });
+
+  it("o GET volta para o formulário com a caixa marcada (não como data, nem como a fase inteira 'ainda não aconteceu')", () => {
+    const f = formDoGet({
+      tipoDeFunil: "launch",
+      etapasDoFunil: [],
+      config: {
+        situacaoDoLancamento: "em-andamento",
+        datasChave: { inicioCaptacao: "2026-09-01", aberturaCarrinho: "2026-09-20", fimCarrinho: "2026-09-25", reabertura: { houve: false }, downsell: { houve: true, abertura: "2026-10-01", fim: null }, aindaNaoAconteceu: ["fimDownsell"] },
+        lancamentoComparacaoFunnelId: null,
+        etapas: [],
+        perguntasConfirmadas: {},
+        closerMediums: [],
+        closerPorSellerName: false,
+        ferramentasDeAtendimento: [],
+        dimensaoDeCriativo: "nenhuma",
+        comparacaoRemovida: false,
+        validado: false,
+        validadoEm: null,
+        validadoPorNome: null,
+      },
+    } as unknown as DebriefingConfigGet);
+    expect(f.downsell).toEqual({ houve: true, abertura: "2026-10-01", fim: "", fimAindaNao: true });
+  });
+
+  it("a fase aberta com o fim 'ainda não aconteceu' nunca terminou (aviso do AC6)", () => {
+    expect(datasDasFasesDoForm(base).downsell).toEqual({ houve: true, abertura: "2026-10-01", fim: null });
+    expect(todasAsFasesTerminaram(datasDasFasesDoForm(base), "2026-10-06")).toBe(false);
   });
 });

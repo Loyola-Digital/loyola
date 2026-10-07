@@ -459,7 +459,24 @@ function FormularioDaConfig({
                 <>
                   <Input className="h-8 w-40" type="date" value={f[k].abertura} onChange={(e) => set({ [k]: { ...f[k], abertura: e.target.value } } as Partial<FormDaConfig>)} />
                   <span>a</span>
-                  <Input className="h-8 w-40" type="date" value={f[k].fim} onChange={(e) => set({ [k]: { ...f[k], fim: e.target.value } } as Partial<FormDaConfig>)} />
+                  <Input
+                    className="h-8 w-40"
+                    type="date"
+                    value={f[k].fim}
+                    disabled={emAndamento && !!f[k].fimAindaNao}
+                    onChange={(e) => set({ [k]: { ...f[k], fim: e.target.value } } as Partial<FormDaConfig>)}
+                  />
+                  {/* Story 49.14 (REQ-002): aberta com o fim "ainda não aconteceu" — só em andamento; limpa a data. */}
+                  {emAndamento && (
+                    <label className="flex items-center gap-1 text-[11px]">
+                      <input
+                        type="checkbox"
+                        checked={!!f[k].fimAindaNao}
+                        onChange={(e) => set({ [k]: { ...f[k], fimAindaNao: e.target.checked, ...(e.target.checked ? { fim: "" } : {}) } } as Partial<FormDaConfig>)}
+                      />
+                      Fim ainda não aconteceu
+                    </label>
+                  )}
                 </>
               )}
             </div>

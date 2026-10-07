@@ -27,7 +27,9 @@ export const CONTRATO_DO_CARRINHO_EM_ANDAMENTO = 36;
 /** Story 49.12 (AC1) — "O lançamento terminou?". */
 export type SituacaoDoLancamento = "encerrado" | "em-andamento";
 /** Story 49.12 (AC2) — fases que aceitam "ainda não aconteceu" (só em andamento). */
-export type FaseQuePodeNaoTerAcontecido = "aberturaCarrinho" | "fimCarrinho" | "reabertura" | "downsell";
+export type FaseQuePodeNaoTerAcontecido = "aberturaCarrinho" | "fimCarrinho" | "reabertura" | "downsell" | "fimReabertura" | "fimDownsell";
+/** Story 49.14 (REQ-002) — o "fim ainda não aconteceu" de reabertura/downsell abertos (≠ a fase inteira). */
+const FIM_AINDA_NAO = { reabertura: "fimReabertura", downsell: "fimDownsell" } as const;
 /** Resposta "ainda não aconteceu" de reabertura/downsell no formulário (≠ "não houve"). */
 export const AINDA_NAO = "ainda-nao" as const;
 
@@ -68,7 +70,8 @@ export const DIMENSOES_DA_PESQUISA = [
 ] as const;
 export type DimensaoDaPesquisa = (typeof DIMENSOES_DA_PESQUISA)[number];
 
-export type RespostaEtapaExtra = { houve: false } | { houve: true; abertura: string; fim: string };
+/** 49.14 (REQ-002): `fim: null` = "fim ainda não aconteceu" (só em andamento, com a resposta em `aindaNaoAconteceu`). */
+export type RespostaEtapaExtra = { houve: false } | { houve: true; abertura: string; fim: string | null };
 
 /** Forma do GET `…/debriefing/config` (49.1 + 49.11 + 49.6). Campos novos opcionais (API antiga). */
 export interface DebriefingConfigGet {
@@ -128,8 +131,8 @@ export interface FormDaConfig {
   /** 49.12 (AC2) — abertura/fim do carrinho "ainda não aconteceu" (vale só em andamento). */
   carrinhoAindaNao: { aberturaCarrinho: boolean; fimCarrinho: boolean };
   /** `houve: "ainda-nao"` = "ainda não aconteceu" (49.12, só em andamento) — ≠ `false` ("não houve"). */
-  reabertura: { houve: boolean | typeof AINDA_NAO | null; abertura: string; fim: string };
-  downsell: { houve: boolean | typeof AINDA_NAO | null; abertura: string; fim: string };
+  reabertura: { houve: boolean | typeof AINDA_NAO | null; abertura: string; fim: string; fimAindaNao?: boolean };
+  downsell: { houve: boolean | typeof AINDA_NAO | null; abertura: string; fim: string; fimAindaNao?: boolean };
   /** Lista ordenada; a 1ª é a comparação principal. */
   comparacoes: string[];
   /** Papel por etapa do funil; ausente = a etapa não compõe o lançamento. */
@@ -146,12 +149,15 @@ export interface FormDaConfig {
   dimensaoDeCriativo: DimensaoDoCriativo | null;
 }
 
-const extra = (r: RespostaEtapaExtra | null | undefined, aindaNao = false): FormDaConfig["reabertura"] =>
+const extra = (r: RespostaEtapaExtra | null | undefined, aindaNao = false, fimAindaNao = false): FormDaConfig["reabertura"] =>
   aindaNao
     ? { houve: AINDA_NAO, abertura: "", fim: "" }
     : r
       ? r.houve
-        ? { houve: true, abertura: r.abertura, fim: r.fim }
+        ? // 49.14 (REQ-002): aberta com o fim "ainda não aconteceu" — a caixa marcada, sem data.
+          fimAindaNao && r.fim === null
+          ? { houve: true, abertura: r.abertura, fim: "", fimAindaNao: true }
+          : { houve: true, abertura: r.abertura, fim: r.fim ?? "" }
         : { houve: false, abertura: "", fim: "" }
       : { houve: null, abertura: "", fim: "" };
 
@@ -209,8 +215,8 @@ export function formDoGet(r: DebriefingConfigGet): FormDaConfig {
     aberturaCarrinho: c.datasChave.aberturaCarrinho ?? "",
     fimCarrinho: c.datasChave.fimCarrinho ?? "",
     carrinhoAindaNao: { aberturaCarrinho: ainda.has("aberturaCarrinho"), fimCarrinho: ainda.has("fimCarrinho") },
-    reabertura: extra(c.datasChave.reabertura, ainda.has("reabertura")),
-    downsell: extra(c.datasChave.downsell, ainda.has("downsell")),
+    reabertura: extra(c.datasChave.reabertura, ainda.has("reabertura"), ainda.has("fimReabertura")),
+    downsell: extra(c.datasChave.downsell, ainda.has("downsell"), ainda.has("fimDownsell")),
     comparacoes: listaGravadaDoGet(c),
     papeis: Object.fromEntries(c.etapas.map((e) => [e.stageId, e.papel])),
     perguntas: c.perguntasConfirmadas ?? {},
@@ -245,7 +251,10 @@ export function faltantesDoForm(f: FormDaConfig, etapasComPesquisa: readonly { s
   for (const [rot, e] of [["Reabertura", f.reabertura], ["Downsell", f.downsell]] as const) {
     if (e.houve === null || (e.houve === AINDA_NAO && !emAndamento)) {
       falta.push(emAndamento ? `${rot}: responda "houve", "não houve" ou "ainda não aconteceu"` : `${rot}: responda "houve" ou "não houve"`);
-    } else if (e.houve === true && (!e.abertura || !e.fim)) falta.push(`${rot}: datas de abertura e fim`);
+    } else if (e.houve === true && (!e.abertura || (!e.fim && !(emAndamento && e.fimAindaNao)))) {
+      // 49.14 (REQ-002): em andamento, o fim pode ser "ainda não aconteceu".
+      falta.push(emAndamento ? `${rot}: data de abertura e o fim (a data ou "fim ainda não aconteceu")` : `${rot}: datas de abertura e fim`);
+    }
   }
   if (Object.keys(f.papeis).length === 0) falta.push("Etapas do lançamento (ao menos uma com papel)");
   for (const { stageId, nome } of etapasComPesquisa) {
@@ -279,7 +288,11 @@ export function corpoDoPut(
   const apiTemEmAndamento = typeof opts.apiContrato === "number" && opts.apiContrato >= CONTRATO_DO_EM_ANDAMENTO;
   const emAndamento = apiTemEmAndamento && f.situacao === "em-andamento";
   const resp = (e: FormDaConfig["reabertura"]) =>
-    emAndamento && e.houve === AINDA_NAO ? null : e.houve === true ? { houve: true, abertura: e.abertura, fim: e.fim } : { houve: false };
+    emAndamento && e.houve === AINDA_NAO
+      ? null
+      : e.houve === true
+        ? { houve: true, abertura: e.abertura, fim: emAndamento && e.fimAindaNao ? null : e.fim }
+        : { houve: false };
   const data = (k: "aberturaCarrinho" | "fimCarrinho") => (emAndamento && f.carrinhoAindaNao[k] ? null : f[k]);
   const aindaNao: FaseQuePodeNaoTerAcontecido[] = emAndamento
     ? [
@@ -287,6 +300,9 @@ export function corpoDoPut(
         ...(f.carrinhoAindaNao.fimCarrinho ? (["fimCarrinho"] as const) : []),
         ...(f.reabertura.houve === AINDA_NAO ? (["reabertura"] as const) : []),
         ...(f.downsell.houve === AINDA_NAO ? (["downsell"] as const) : []),
+        // 49.14 (REQ-002): reabertura/downsell abertos com o fim "ainda não aconteceu".
+        ...(f.reabertura.houve === true && f.reabertura.fimAindaNao ? ([FIM_AINDA_NAO.reabertura] as const) : []),
+        ...(f.downsell.houve === true && f.downsell.fimAindaNao ? ([FIM_AINDA_NAO.downsell] as const) : []),
       ]
     : [];
   const corpo: Record<string, unknown> = {
@@ -344,7 +360,13 @@ export interface DatasDasFases {
 export function datasDasFasesDoForm(f: FormDaConfig): DatasDasFases {
   const data = (k: "aberturaCarrinho" | "fimCarrinho") => (f.carrinhoAindaNao[k] || !f[k] ? null : f[k]);
   const extra = (e: FormDaConfig["reabertura"]): RespostaEtapaExtra | null =>
-    e.houve === true ? (e.abertura && e.fim ? { houve: true, abertura: e.abertura, fim: e.fim } : null) : e.houve === false ? { houve: false } : null;
+    e.houve === true
+      ? e.abertura && (e.fim || e.fimAindaNao)
+        ? { houve: true, abertura: e.abertura, fim: e.fimAindaNao ? null : e.fim }
+        : null
+      : e.houve === false
+        ? { houve: false }
+        : null;
   return { aberturaCarrinho: data("aberturaCarrinho"), fimCarrinho: data("fimCarrinho"), reabertura: extra(f.reabertura), downsell: extra(f.downsell) };
 }
 

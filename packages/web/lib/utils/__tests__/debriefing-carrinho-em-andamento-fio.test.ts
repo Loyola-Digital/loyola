@@ -39,3 +39,12 @@ describe("o rótulo do 'em andamento' segue o contrato da API", () => {
     expect(botao).not.toContain("Em andamento (captação aberta)");
   });
 });
+
+describe("REQ-002 — a caixa 'fim ainda não aconteceu' de reabertura/downsell", () => {
+  it("só no modo em andamento, desliga o campo do fim e limpa a data ao marcar", () => {
+    expect(botao).toMatch(/disabled=\{emAndamento && !!f\[k\]\.fimAindaNao\}/);
+    expect(botao).toMatch(/\{emAndamento && \(\s*<label className="flex items-center gap-1 text-\[11px\]">\s*<input\s*type="checkbox"\s*checked=\{!!f\[k\]\.fimAindaNao\}/);
+    expect(botao).toMatch(/set\(\{ \[k\]: \{ \.\.\.f\[k\], fimAindaNao: e\.target\.checked, \.\.\.\(e\.target\.checked \? \{ fim: "" \} : \{\}\) \} \}/);
+    expect(botao).toContain("Fim ainda não aconteceu");
+  });
+});
