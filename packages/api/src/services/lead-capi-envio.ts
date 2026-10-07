@@ -38,12 +38,20 @@ import {
   acharColunaDeNome,
   acharColunaDeTelefone,
 } from "./colunas-da-pesquisa.js";
-import { MAX_POR_LOTE, enviarEventos, montarLote, type LeadParaOMeta } from "./meta-capi.js";
+import {
+  MAX_POR_LOTE,
+  enviarEventos,
+  montarLote,
+  nomeDoEventoDaFaixa,
+  type LeadParaOMeta,
+} from "./meta-capi.js";
 import { classificarLeads, resolvePrecomputedBandColumn, type LeadScoringSchema } from "../routes/lead-scoring.js";
 
 const hash = (v: string) => createHash("sha256").update(v).digest("hex");
 
 export interface ResumoDoEnvio {
+  /** Os eventos que esta etapa manda ao Meta — um por faixa escolhida. */
+  eventos?: string[];
   candidatos: number;
   aEnviar: number;
   jaEnviados: number;
@@ -160,17 +168,25 @@ export async function enviarLeadsDaEtapa(
     });
   }
 
+  // O controle é por lead E evento: o mesmo lead pode ir sob um evento novo
+  // quando a configuração muda de nome, sem reenviar o que já foi sob o antigo.
   const jaForam = await db
-    .select({ h: stageLeadCapiEnviados.leadHash })
+    .select({ h: stageLeadCapiEnviados.leadHash, evento: stageLeadCapiEnviados.eventName })
     .from(stageLeadCapiEnviados)
     .where(eq(stageLeadCapiEnviados.stageId, stageId));
-  const hashesEnviados = new Set(jaForam.map((x) => x.h));
+  const idsEnviados = new Set(jaForam.map((x) => `${x.h}|${x.evento}`));
 
-  const { eventos, chaves, semIdentificador, jaEstavam } = montarLote(leads, {
+  const { eventos, enviados: paraRegistrar, semIdentificador, jaEstavam } = montarLote(leads, {
     stageId,
     eventName: config.eventName,
+    eventosPorFaixa: config.eventosPorFaixa ?? {},
     faixas: config.bands,
-    jaEnviados: new Set(leads.filter((l) => hashesEnviados.has(hash(l.chave))).map((l) => l.chave)),
+    jaEnviados: new Set(
+      leads.flatMap((l) => {
+        const nome = nomeDoEventoDaFaixa(config.eventName, l.faixa, config.eventosPorFaixa ?? {});
+        return idsEnviados.has(`${hash(l.chave)}|${nome}`) ? [`${l.chave}|${nome}`] : [];
+      }),
+    ),
   });
 
   const faixasQueridas = new Set(config.bands.map((b) => b.toUpperCase()));
@@ -181,6 +197,8 @@ export async function enviarLeadsDaEtapa(
     semIdentificador,
     faixas: config.bands,
     evento: config.eventName,
+    // Um por faixa — é o que a pessoa escolhe no Gerenciador do Meta.
+    eventos: [...new Set(paraRegistrar.map((e) => e.evento))].sort(),
     teste: Boolean(config.testEventCode),
   };
 
@@ -214,15 +232,15 @@ export async function enviarLeadsDaEtapa(
 
   // Só registra depois que o Meta aceitou — marcar antes faria um lote recusado
   // sumir para sempre, sem ninguém notar que aqueles leads nunca chegaram.
-  const faixaPorChave = new Map(leads.map((l) => [l.chave, l.faixa.toUpperCase()]));
-  if (chaves.length > 0) {
+  if (paraRegistrar.length > 0) {
     await db
       .insert(stageLeadCapiEnviados)
       .values(
-        chaves.map((chave) => ({
+        paraRegistrar.map((e) => ({
           stageId,
-          leadHash: hash(chave),
-          faixa: faixaPorChave.get(chave) ?? "",
+          leadHash: hash(e.chave),
+          faixa: e.faixa,
+          eventName: e.evento,
         })),
       )
       .onConflictDoNothing();

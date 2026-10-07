@@ -219,32 +219,75 @@ export async function enviarEventos(
  * Separado do envio para poder ser conferido sem rede — é aqui que mora a
  * decisão de quem vai e quem não vai, e essa decisão precisa ser testável.
  */
+/**
+ * O nome do evento de uma faixa.
+ *
+ * O Meta otimiza para UM evento: uma campanha mirando lead A e outra mirando
+ * lead B precisam de eventos DIFERENTES para escolher no Gerenciador. Com um
+ * nome só, as duas aprenderiam a mesma coisa — que é o que a feature existe
+ * para evitar.
+ *
+ * O escolhido manda; sem escolha, `${base}${faixa}` (`LeadQualificadoA`), sem
+ * espaço, que é o formato que o Gerenciador lista sem surpresa.
+ */
+export function nomeDoEventoDaFaixa(
+  base: string,
+  faixa: string,
+  escolhidos: Record<string, string> = {},
+): string {
+  const f = (faixa ?? "").trim().toUpperCase();
+  const escolhido = (escolhidos[f] ?? escolhidos[faixa] ?? "").trim();
+  return escolhido || `${base}${f}`;
+}
+
 export function montarLote(
   leads: LeadParaOMeta[],
-  opcoes: { stageId: string; eventName: string; faixas: string[]; jaEnviados?: Set<string> },
-): { eventos: EventoDoMeta[]; chaves: string[]; semIdentificador: number; jaEstavam: number } {
+  opcoes: {
+    stageId: string;
+    eventName: string;
+    faixas: string[];
+    /** Nome por faixa; o que faltar cai no padrão. Ver `nomeDoEventoDaFaixa`. */
+    eventosPorFaixa?: Record<string, string>;
+    /** Quem já foi, por `chave|evento` — o mesmo lead pode ir de novo sob outro evento. */
+    jaEnviados?: Set<string>;
+  },
+): {
+  eventos: EventoDoMeta[];
+  /** Na ordem dos eventos: `{ chave, evento, faixa }` de cada um. */
+  enviados: { chave: string; evento: string; faixa: string }[];
+  chaves: string[];
+  semIdentificador: number;
+  jaEstavam: number;
+} {
   const querem = new Set(opcoes.faixas.map((f) => f.trim().toUpperCase()).filter(Boolean));
   const eventos: EventoDoMeta[] = [];
-  // As chaves saem na MESMA ordem dos eventos: é o que permite registrar como
-  // enviado exatamente quem foi, sem tentar adivinhar depois pelo `event_id`.
+  // Saem na MESMA ordem dos eventos: é o que permite registrar como enviado
+  // exatamente quem foi, sem tentar adivinhar depois pelo `event_id`.
+  const enviados: { chave: string; evento: string; faixa: string }[] = [];
   const chaves: string[] = [];
   let semIdentificador = 0;
   let jaEstavam = 0;
 
   for (const lead of leads) {
-    if (!querem.has((lead.faixa ?? "").toUpperCase())) continue;
-    if (opcoes.jaEnviados?.has(lead.chave)) {
+    const faixa = (lead.faixa ?? "").toUpperCase();
+    if (!querem.has(faixa)) continue;
+
+    // Cada faixa tem o SEU evento — é o que permite a campanha de lead A
+    // otimizar para lead A no Gerenciador.
+    const nome = nomeDoEventoDaFaixa(opcoes.eventName, faixa, opcoes.eventosPorFaixa ?? {});
+    if (opcoes.jaEnviados?.has(`${lead.chave}|${nome}`)) {
       jaEstavam += 1;
       continue;
     }
-    const evento = eventoDoLead(lead, { stageId: opcoes.stageId, eventName: opcoes.eventName });
+    const evento = eventoDoLead(lead, { stageId: opcoes.stageId, eventName: nome });
     if (!evento) {
       semIdentificador += 1;
       continue;
     }
     eventos.push(evento);
+    enviados.push({ chave: lead.chave, evento: nome, faixa });
     chaves.push(lead.chave);
   }
 
-  return { eventos, chaves, semIdentificador, jaEstavam };
+  return { eventos, enviados, chaves, semIdentificador, jaEstavam };
 }

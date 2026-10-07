@@ -13,7 +13,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 export interface ConfigDoEnvioAoMeta {
   datasetId: string;
   metaAccountId: string | null;
+  /** O nome BASE; cada faixa tem o seu, em `eventosPorFaixa`. */
   eventName: string;
+  /** Nome do evento de cada faixa: `{ A: "LeadFaixaA" }`. Faltando, cai no padrão. */
+  eventosPorFaixa: Record<string, string>;
   bands: string[];
   testEventCode: string | null;
   ativo: boolean;
@@ -28,6 +31,8 @@ export interface ResumoDoEnvio {
   semIdentificador: number;
   faixas: string[];
   evento: string;
+  /** Um por faixa — é o que se escolhe no Gerenciador do Meta. */
+  eventos?: string[];
   teste: boolean;
   enviados?: number;
   recebidos?: number;

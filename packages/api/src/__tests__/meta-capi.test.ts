@@ -17,6 +17,7 @@ import {
   hashDeEmail,
   hashDeTelefone,
   montarLote,
+  nomeDoEventoDaFaixa,
 } from "../services/meta-capi.js";
 
 const sha = (v: string) => createHash("sha256").update(v).digest("hex");
@@ -141,7 +142,13 @@ describe("montarLote", () => {
   });
 
   it("quem já foi não vai de novo, e isso aparece no relatório", () => {
-    const r = montarLote(leads, { ...OPCOES, faixas: ["A"], jaEnviados: new Set(["a"]) });
+    // A chave do controle é `lead|evento`: o mesmo lead pode ir sob outro
+    // evento quando a configuração muda de nome (ver "um evento por faixa").
+    const r = montarLote(leads, {
+      ...OPCOES,
+      faixas: ["A"],
+      jaEnviados: new Set(["a|LeadQualificadoA"]),
+    });
     expect(r.eventos).toHaveLength(1);
     expect(r.jaEstavam).toBe(1);
   });
@@ -159,5 +166,71 @@ describe("montarLote", () => {
   it("lead sem identificador não entra nas chaves — não foi enviado, não pode constar como enviado", () => {
     const r = montarLote(leads, { ...OPCOES, faixas: ["A"] });
     expect(r.chaves).not.toContain("d");
+  });
+});
+
+describe("um evento por faixa", () => {
+  /**
+   * O Meta otimiza para UM evento. Com um nome só para todas as faixas, a
+   * campanha que mira lead A e a que mira lead B aprenderiam a mesma coisa —
+   * e não haveria o que escolher no Gerenciador. É o motivo da feature.
+   */
+  it("cada faixa ganha o SEU evento, pelo padrão", () => {
+    expect(nomeDoEventoDaFaixa("LeadQualificado", "A")).toBe("LeadQualificadoA");
+    expect(nomeDoEventoDaFaixa("LeadQualificado", "B")).toBe("LeadQualificadoB");
+  });
+
+  it("o nome escolhido manda sobre o padrão", () => {
+    expect(nomeDoEventoDaFaixa("LeadQualificado", "A", { A: "LeadTopDeLinha" })).toBe("LeadTopDeLinha");
+  });
+
+  it("faixa em minúscula acha o nome escolhido — digitar 'a' não cria outra faixa", () => {
+    expect(nomeDoEventoDaFaixa("Lead", "a", { A: "LeadBom" })).toBe("LeadBom");
+  });
+
+  it("nome em branco cai no padrão, não vira evento sem nome", () => {
+    expect(nomeDoEventoDaFaixa("Lead", "A", { A: "   " })).toBe("LeadA");
+  });
+
+  it("o lote sai com um evento DIFERENTE por faixa", () => {
+    const r = montarLote(
+      [
+        { chave: "a", email: "a@x.com", faixa: "A" },
+        { chave: "b", email: "b@x.com", faixa: "B" },
+      ],
+      { stageId: "e1", eventName: "Lead", faixas: ["A", "B"] },
+    );
+    expect(r.eventos.map((e) => e.event_name)).toEqual(["LeadA", "LeadB"]);
+  });
+
+  it("faixas diferentes geram event_id diferentes para o MESMO lead", () => {
+    const umLead = { chave: "a", email: "a@x.com" };
+    const a = montarLote([{ ...umLead, faixa: "A" }], { stageId: "e1", eventName: "Lead", faixas: ["A"] });
+    const b = montarLote([{ ...umLead, faixa: "B" }], { stageId: "e1", eventName: "Lead", faixas: ["B"] });
+    expect(a.eventos[0]!.event_id).not.toBe(b.eventos[0]!.event_id);
+  });
+
+  it("o já-enviado é por lead E evento: trocar o nome permite reenviar", () => {
+    const leads = [{ chave: "a", email: "a@x.com", faixa: "A" }];
+    const base = { stageId: "e1", eventName: "Lead", faixas: ["A"] };
+    // Já foi sob "LeadA" — não vai de novo.
+    expect(montarLote(leads, { ...base, jaEnviados: new Set(["a|LeadA"]) }).eventos).toHaveLength(0);
+    // Mesmo lead, evento renomeado: vai, porque o evento novo não tem histórico.
+    const renomeado = montarLote(leads, {
+      ...base, eventosPorFaixa: { A: "LeadPremium" }, jaEnviados: new Set(["a|LeadA"]),
+    });
+    expect(renomeado.eventos).toHaveLength(1);
+    expect(renomeado.eventos[0]!.event_name).toBe("LeadPremium");
+  });
+
+  it("o relatório diz qual lead foi sob qual evento", () => {
+    const r = montarLote(
+      [{ chave: "a", email: "a@x.com", faixa: "A" }, { chave: "b", email: "b@x.com", faixa: "B" }],
+      { stageId: "e1", eventName: "Lead", faixas: ["A", "B"], eventosPorFaixa: { B: "LeadMedio" } },
+    );
+    expect(r.enviados).toEqual([
+      { chave: "a", evento: "LeadA", faixa: "A" },
+      { chave: "b", evento: "LeadMedio", faixa: "B" },
+    ]);
   });
 });
