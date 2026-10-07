@@ -659,31 +659,52 @@ function rotuloParcialDoIndicador(ind: Indicador, pp: DebriefingPayload): string
 }
 
 /**
- * QA 49.14 MNT-001 — com o downsell que não começou e venda da etapa de
+ * QA 49.14 MNT-002 — a conta do ROAS total com o NUMERADOR de verdade:
+ * captação + principal [+ downsell, quando entra] ÷ investimento total
+ * (decisão 5: a reabertura nunca entra; o downsell que não começou fica fora).
+ * Só com corte (parcial ou comparação em D+N) — o encerrado não muda (AC9 a).
+ * `null` sem corte ou sem ROAS.
+ */
+function contaDoRoasTotal(pp: DebriefingPayload): string | null {
+  const mt = pp.dinheiroTempo;
+  const rt = mt.roasTotalSemTmb;
+  if (!mt.janela.corte || rt.valor === null) return null;
+  const d = rt.decomposicao;
+  const downsellFora = rt.downsellNoCorte?.estado === "nao-comecou";
+  const partes = [`captação ${fmt(d.captacao, "moeda")}`, `principal ${fmt(d.principal, "moeda")}`, ...(downsellFora ? [] : [`downsell ${fmt(d.downsell, "moeda")}`])];
+  return `ROAS total = (${partes.join(" + ")}) ÷ investimento total ${fmt(rt.denominador, "moeda")} = ${fmt(rt.valor, "roas")}`;
+}
+
+/**
+ * QA 49.14 MNT-001/MNT-002 — com o downsell que não começou e venda da etapa de
  * downsell datada antes do início dele: a parcela que está no Fat. Total e fora
- * do ROAS total, com a conta que fecha ("Fat. Total − parcela ÷ investimento").
- * `null` quando não há parcela (Fat. Total ÷ investimento já é o ROAS total).
+ * do ROAS total, e a conta do ROAS total com o numerador de verdade (a
+ * reabertura, que também está no Fat. Total, fica fora pela decisão 5 — dita).
+ * `null` quando não há parcela.
  */
 function parcelaForaDoRoasTotal(pp: DebriefingPayload): string | null {
   const mt = pp.dinheiroTempo;
   const d = mt.roasTotalSemTmb.downsellNoCorte;
   const fora = d?.estado === "nao-comecou" ? (d.faturamentoFora ?? mt.roasTotalSemTmb.decomposicao.downsell) : 0;
   if (!(fora > 0)) return null;
+  const reab = mt.faturamentoPorEtapa.reabertura;
   return (
-    `inclui ${fmt(fora, "moeda")} de venda(s) da etapa de downsell datada(s) antes do início dele, que ficam FORA do ROAS total (o downsell ainda não começou): ` +
-    `ROAS total = (Fat. Total ${fmt(mt.faturamentoTotal, "moeda")} − ${fmt(fora, "moeda")}) ÷ investimento total ${fmt(mt.roasTotalSemTmb.denominador, "moeda")}`
+    `inclui ${fmt(fora, "moeda")} de venda(s) da etapa de downsell datada(s) antes do início dele, que ficam FORA do ROAS total (o downsell ainda não começou)` +
+    (reab > 0 ? `, e ${fmt(reab, "moeda")} da reabertura, que fica fora das taxas headline (decisão 5)` : "") +
+    (contaDoRoasTotal(pp) ? `: ${contaDoRoasTotal(pp)}` : "")
   );
 }
 
-/** A nota do ROAS total: a decisão 5 de sempre; com corte, o que aconteceu com o downsell (AC4). */
+/** A nota do ROAS total: a decisão 5 de sempre; com corte, o que aconteceu com o downsell (AC4) e a conta (MNT-002). */
 function notaDoRoasTotal(pp: DebriefingPayload): string {
   const d = pp.dinheiroTempo.roasTotalSemTmb.downsellNoCorte;
+  const conta = contaDoRoasTotal(pp);
+  const comConta = (t: string) => (conta ? `${t}; ${conta}` : t);
   if (d?.estado === "nao-comecou") {
-    const fora = parcelaForaDoRoasTotal(pp);
-    return `${d.texto} — o numerador é captação + principal (o downsell entra quando começar; decisão 5 do dono)${fora ? `; o Fat. Total ${fora}` : ""}`;
+    return comConta(`${d.texto} — o numerador é captação + principal (o downsell entra quando começar; decisão 5 do dono)`);
   }
-  if (d?.estado === "em-curso") return `inclui o downsell no numerador (decisão 5 do dono) — ${d.texto}`;
-  return "inclui o downsell no numerador (decisão 5 do dono)";
+  if (d?.estado === "em-curso") return comConta(`inclui o downsell no numerador (decisão 5 do dono) — ${d.texto}`);
+  return comConta("inclui o downsell no numerador (decisão 5 do dono)");
 }
 
 /** AC4 — a parcela do downsell no numerador do ROAS total, por extenso (fora / parcial / o valor). */

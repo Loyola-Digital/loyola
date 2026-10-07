@@ -200,6 +200,26 @@ const secaoDe = (html: string, titulo: string) => html.split(`data-secao="${titu
 const constD = (html: string) => JSON.parse(html.split("const D=")[1]!.split(";\n")[0]!) as { graficos: Record<string, { marcos?: { rotulo: string }[] }> };
 const marcos = (html: string) => [...new Set(Object.values(constD(html).graficos).flatMap((g) => (g.marcos ?? []).map((m) => m.rotulo)))].sort();
 
+/**
+ * QA 49.14 MNT-002 — lê a conta "ROAS total = (parcela + parcela …) ÷ investimento total R$ I = V" escrita
+ * no trecho e confere: Σ parcelas ÷ I = o ROAS do payload (e = V), e V = o ROAS mostrado no KPI.
+ */
+function conferirConta(trecho: string, p: DebriefingPayload, onde: string) {
+  const brl = (t: string) => Number(t.replace(/\./g, "").replace(",", "."));
+  const m = trecho.match(/ROAS total = \(([^)]*)\) ÷ investimento total R\$ ([\d.,]+) = ([\d.,]+)/);
+  expect(m, `${onde}: conta do ROAS total ausente`).not.toBeNull();
+  const parcelas = [...m![1]!.matchAll(/R\$ ([\d.,]+)/g)].map((x) => brl(x[1]!));
+  const rt = p.dinheiroTempo.roasTotalSemTmb;
+  const soma = parcelas.reduce((a, b) => a + b, 0);
+  expect(soma, `${onde}: Σ parcelas = numerador`).toBeCloseTo(rt.numerador, 2);
+  expect(soma / brl(m![2]!), `${onde}: a conta dá o ROAS do payload`).toBeCloseTo(rt.valor!, 3);
+  expect(brl(m![3]!)).toBeCloseTo(rt.valor!, 2);
+  expect(m![1]).not.toContain("Fat. Total");
+  // no KPI do ROAS total, o número mostrado é o mesmo da conta
+  const mostrado = trecho.match(/<div class="single"><b>([^<]*)<\/b>/);
+  if (onde === "ROAS total") expect(mostrado?.[1]).toBe(m![3]);
+}
+
 async function gerar(d: Falsas) {
   const r = await gerarDebriefing(d, PARAMS);
   if (r.status !== 200) expect(r.body).toEqual({ status: 200 }); // mostra o corpo do erro
@@ -371,23 +391,39 @@ describe("AC4 — reabertura e downsell", () => {
     expect(validateDebriefing(g.payload, {}).violacoes).toEqual([]);
   });
 
-  it("MNT-001: a parcela do downsell que ficou fora do ROAS total é declarada no Fat. Total e no ROAS total — a conta fecha para quem lê", async () => {
+  it("MNT-001: a parcela do downsell que ficou fora do ROAS total é declarada no Fat. Total e no ROAS total", async () => {
     const g = await gerar(deps({ config: () => emAndamento({ downsell: { houve: true, abertura: "2026-05-20", fim: "2026-05-25" } }) }));
-    const m = g.payload.dinheiroTempo;
-    expect(m.roasTotalSemTmb.downsellNoCorte?.faturamentoFora).toBe(500);
-    // a conta que o documento escreve fecha: (Fat. Total − parcela) ÷ investimento total = ROAS total
-    expect((m.faturamentoTotal - 500) / m.roasTotalSemTmb.denominador).toBeCloseTo(m.roasTotalSemTmb.valor!, 10);
-    const brl = (v: number) => `R$ ${v.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
-    const conta = `ROAS total = (Fat. Total ${brl(m.faturamentoTotal)} − R$ 500,00) ÷ investimento total ${brl(m.roasTotalSemTmb.denominador)}`;
+    expect(g.payload.dinheiroTempo.roasTotalSemTmb.downsellNoCorte?.faturamentoFora).toBe(500);
     const fat = kpiDe(g.html, "Fat. Total s/ TMB");
     expect(fat).toContain("inclui R$ 500,00 de venda(s) da etapa de downsell datada(s) antes do início dele, que ficam FORA do ROAS total (o downsell ainda não começou)");
-    expect(fat).toContain(conta);
-    expect(kpiDe(g.html, "ROAS Total s/ TMB (fat ÷ invest total)")).toContain(conta);
-    // sem venda da etapa de downsell na janela (corte 13/05, antes da venda de 14/05): nada a declarar — Fat. Total ÷ investimento já é o ROAS total
+    conferirConta(fat, g.payload, "Fat. Total");
+    // sem venda da etapa de downsell na janela (corte 13/05, antes da venda de 14/05): nenhuma parcela a declarar
     const sem = await gerar(deps({ agora: new Date("2026-05-14T15:00:00.000Z"), config: () => emAndamento({ downsell: null }) }));
     expect(sem.payload.dinheiroTempo.roasTotalSemTmb.downsellNoCorte).toMatchObject({ estado: "nao-comecou", faturamentoFora: 0 });
     expect(kpiDe(sem.html, "Fat. Total s/ TMB")).not.toContain("FORA do ROAS total");
     expect(secaoDe(sem.html, "ROAS")).not.toContain("estão no Fat. Total");
+  });
+
+  // QA 49.14 MNT-002: a conta escrita é o NUMERADOR de verdade (captação + principal [+ downsell]) — nunca o Fat. Total,
+  // que inclui a reabertura (decisão 5). Ela tem de dar o ROAS que o documento mostra, em toda combinação.
+  const extra = (abertura: string, fim: string | null) => ({ houve: true as const, abertura, fim });
+  it.each<[string, Partial<Datas>]>([
+    ["carrinho em curso, downsell fora, sem reabertura", { downsell: extra("2026-05-20", "2026-05-25") }],
+    ["carrinho concluído, reabertura concluída (R$ 800), downsell fora com R$ 500 antes do início — o caso do QA", { fimCarrinho: "2026-05-13", reabertura: extra("2026-05-14", "2026-05-15"), downsell: extra("2026-05-20", "2026-05-25") }],
+    ["carrinho concluído, reabertura em curso, downsell em curso (parcial)", { fimCarrinho: "2026-05-13", reabertura: extra("2026-05-14", null), downsell: extra("2026-05-14", "2026-05-20") }],
+    ["carrinho concluído, reabertura concluída, downsell concluído (entra inteiro)", { fimCarrinho: "2026-05-13", reabertura: extra("2026-05-14", "2026-05-15"), downsell: extra("2026-05-14", "2026-05-15"), }],
+    ["carrinho em curso, reabertura e downsell não houve", {}],
+  ])("MNT-002 — a conta escrita do ROAS total bate com o ROAS mostrado: %s", async (_n, datas) => {
+    const g = await gerar(deps({ agora: datas.fimCarrinho && datas.downsell && (datas.downsell as { fim: string | null }).fim === "2026-05-15" ? new Date("2026-05-17T15:00:00.000Z") : AGORA_D28, config: () => emAndamento(datas) }));
+    conferirConta(kpiDe(g.html, "ROAS Total s/ TMB (fat ÷ invest total)"), g.payload, "ROAS total");
+    const reab = g.payload.dinheiroTempo.faturamentoPorEtapa.reabertura;
+    if (_n.includes("o caso do QA")) {
+      expect(reab).toBe(800);
+      expect(g.payload.dinheiroTempo.roasTotalSemTmb.downsellNoCorte?.estado).toBe("nao-comecou");
+      const fat = kpiDe(g.html, "Fat. Total s/ TMB");
+      expect(fat).toContain("e R$ 800,00 da reabertura, que fica fora das taxas headline (decisão 5)");
+      conferirConta(fat, g.payload, "Fat. Total");
+    }
   });
 
   it("downsell 'ainda não aconteceu' é o mesmo 'não começou'", async () => {
@@ -680,5 +716,9 @@ describe("REQ-002 — reabertura/downsell abertos com o fim 'ainda não acontece
     const osDois = structuredClone(g.payload) as DebriefingPayload & { config: DebriefingConfigLancamentoEmAndamento };
     osDois.config.datasChave.downsell = { houve: true, abertura: "2026-05-14", fim: "2026-05-20" };
     expect(checarF10(osDois)).toMatchObject({ status: "failed", detalhe: expect.stringMatching(/downsell\.fim = 2026-05-20 e também "fim ainda não aconteceu"/) });
+    // TEST-002: "fim ainda não aconteceu" com houve = false (a fase não existiu) reprova
+    const semHouve = structuredClone(g.payload) as DebriefingPayload & { config: DebriefingConfigLancamentoEmAndamento };
+    semHouve.config.datasChave.downsell = { houve: false };
+    expect(checarF10(semHouve)).toMatchObject({ status: "failed", detalhe: expect.stringMatching(/downsell "fim ainda não aconteceu" sem houve = true/) });
   });
 });
