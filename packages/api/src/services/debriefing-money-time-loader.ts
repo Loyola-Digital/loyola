@@ -63,7 +63,7 @@ import { tipoPadraoDaEtapa } from "../utils/order-bump.js";
 import {
   PLATAFORMA_MANUAL,
   desembrulharUtm,
-  janelaDoDebriefing,
+  janelaDaGeracao,
   resolverColunaPrecoDebriefing,
   type JanelaDoDebriefing,
 } from "./debriefing-hygiene.js";
@@ -76,6 +76,7 @@ import type {
   PlanilhaDeVendaInput,
   VendaCruaInput,
 } from "./debriefing-money-time-engine.js";
+import { configDoMotor } from "./debriefing-money-time-engine.js";
 
 // ---------------------------------------------------------------------------
 // Erro de dado
@@ -539,7 +540,8 @@ export async function loadDebriefingMoneyTimeInput(
   deps: { lerPlanilha?: LerPlanilha } = {},
 ): Promise<DebriefingMoneyTimeInputCarregado> {
   const { config } = params;
-  const janela = janelaDoDebriefing(config.datasChave);
+  // 49.12: com corte (parcial ou comparação em D+N), a mídia é lida só até ele.
+  const janela = janelaDaGeracao(config);
   const lerPlanilha: LerPlanilha = deps.lerPlanilha ?? readSheetData;
 
   // ---- Etapas do funil (campanhas vinculadas + tipo) ----
@@ -821,7 +823,7 @@ export async function loadDebriefingMoneyTimeInput(
   };
 
   return {
-    config: { datasChave: config.datasChave, etapas: config.etapas, imposto: config.imposto },
+    config: configDoMotor(config),
     planilhas,
     vendas: vendasComNome,
     leads: leadsComNome,

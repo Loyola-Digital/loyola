@@ -80,7 +80,8 @@ import {
   deduplicarVendas,
   ehTmb,
   filtrarPorStatus,
-  janelaDoDebriefing,
+  anteriorAAbertura,
+  janelaDaGeracao,
   lerValorMonetario,
   type PlanilhaParaDedup,
 } from "./debriefing-hygiene.js";
@@ -142,7 +143,7 @@ export function higienizarVendasDoDebriefing(
   conteudoPorLinha: ReadonlyMap<string, string | null> = new Map(),
 ): VendaHigienizadaInput[] {
   const { config } = entrada;
-  const janela = janelaDoDebriefing(config.datasChave);
+  const janela = janelaDaGeracao(config);
   const grupoDaEtapa = new Map<string, GrupoDaEtapa>(config.etapas.map((e) => [e.stageId, GRUPO_DO_PAPEL[e.papel]]));
   const planilhaPorId = new Map(entrada.planilhas.map((p) => [p.planilhaId, p]));
 
@@ -196,7 +197,8 @@ export function higienizarVendasDoDebriefing(
   );
   const contaveis = dedup.mantidas.filter((l) => {
     if (l.dia !== null && (l.dia < janela.inicio || l.dia > janela.fim)) return false;
-    return !(l.grupo === "principal" && l.dia !== null && l.dia < config.datasChave.aberturaCarrinho);
+    // 49.12: carrinho "ainda não aconteceu" (abertura nula) = toda venda datada é anterior a ele.
+    return !(l.grupo === "principal" && l.dia !== null && anteriorAAbertura(l.dia, config.datasChave.aberturaCarrinho));
   });
 
   return contaveis.map((l) => ({
@@ -463,7 +465,7 @@ export async function loadDebriefingAudienceInput(
   deps: { lerPlanilha?: LerPlanilha; entradaMoneyTime?: DebriefingMoneyTimeInputCarregado } = {},
 ): Promise<DebriefingAudienceInputCarregado> {
   const { config } = params;
-  const janela = janelaDoDebriefing(config.datasChave);
+  const janela = janelaDaGeracao(config);
   const ler = memoizarLeitura(deps.lerPlanilha ?? readSheetData);
 
   // ---- Vendas: as do Motor I, higienizadas pela mesma sequência ----

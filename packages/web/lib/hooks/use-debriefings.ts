@@ -41,6 +41,8 @@ export interface DebriefingDetail {
   authorName: string;
   authorAvatarUrl: string | null;
   editorName: string | null;
+  /** Story 49.12 (AC14) — debriefing parcial (`null` = final/upload; ausente = API anterior à v35). */
+  parcial?: { corte: string; dMaisN: number } | null;
 }
 
 export interface DebriefingComment {

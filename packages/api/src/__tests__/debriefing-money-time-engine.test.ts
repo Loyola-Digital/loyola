@@ -51,7 +51,7 @@ const classificadorReal: ClassificadorInjetado = {
   classificar: (e) => classificarOrigem(e, CFG_CLASSIF),
 };
 
-type Config = DebriefingMoneyTimeInput["config"];
+type Config = Exclude<DebriefingMoneyTimeInput["config"], { situacaoDoLancamento: "em-andamento" }>;
 const configBase = (over: Partial<Config> = {}): Config => ({
   datasChave: {
     inicioCaptacao: "2026-04-17",

@@ -28,7 +28,8 @@ import type { DebriefingPayload } from "./debriefing-payload.js";
 import type { AlertaFase12 } from "./debriefing-guards.js";
 import type { DebriefingAviso } from "./debriefing-config.js";
 import type { Metrica } from "./debriefing-money-time-engine.js";
-import { diasEntre, somarDias } from "./debriefing-hygiene.js";
+import { corteSemCarrinho, diasEntre, somarDias, textoDaLacunaDoCarrinho, type CorteDaJanela } from "./debriefing-hygiene.js";
+import { parcialDo } from "./debriefing-payload.js";
 import {
   avaliacao,
   dataBr,
@@ -71,6 +72,12 @@ export interface ComparacaoDoDebriefing {
 export const ALERTA_PRODUTO_FORA_DO_MAPA = "PRODUTO_FORA_DO_MAPA_NA_CAPTACAO";
 /** Código do aviso de Δ contra payload salvo (R7-7). */
 export const AVISO_COMPARACAO_DE_PAYLOAD_SALVO = "COMPARACAO_DE_PAYLOAD_SALVO";
+/**
+ * Story 49.12 (AC8, R8-3) — parcial cuja comparação só tem payload salvo: um
+ * relatório salvo tem os totais fechados e não pode ser cortado em D+N — o
+ * documento sai SEM Δ, com este aviso (a geração não é bloqueada).
+ */
+export const AVISO_COMPARACAO_SEM_CORTE_EM_D_MAIS_N = "COMPARACAO_SEM_CORTE_EM_D_MAIS_N";
 
 /** Dia (YYYY-MM-DD) em Brasília de um instante ISO — BRT é UTC−3 fixo desde 2019. */
 function diaBrtDe(iso: string): string {
@@ -100,6 +107,12 @@ export interface DebriefingRenderInput {
   };
   /** Alertas das guardas (49.5) — banner no topo, não bloqueiam (AC7). */
   alertas: readonly AlertaFase12[];
+  /**
+   * Story 49.12 (AC8) — a parcial cujo lançamento de comparação só tem payload
+   * salvo: sem Δ (`comparacao = null`), com o aviso
+   * `COMPARACAO_SEM_CORTE_EM_D_MAIS_N`. Ausente/`null` = nada a declarar.
+   */
+  comparacaoSemDelta?: { funnelId: string; nome: string; salvoEm: string } | null;
 }
 
 /** Versões FIXAS (AC5) — as da referência-mestre. */
@@ -454,6 +467,11 @@ function blocoIa(chave: string, conteudo: string): string {
 
 interface Indicador {
   grupo: "Volume" | "Faturamento" | "Mídia" | "Taxas";
+  /**
+   * Story 49.12 (AC6) — o cálculo depende de venda do principal, reabertura ou
+   * downsell: com o carrinho fechado no corte, é lacuna escrita (nunca zero).
+   */
+  dependeDoCarrinho?: boolean;
   rotulo: string;
   ler: (p: DebriefingPayload) => { valor: number | null; motivo?: string };
   unidade: Unidade;
@@ -487,6 +505,7 @@ export const INDICADORES: readonly Indicador[] = [
   {
     grupo: "Volume",
     rotulo: "Vendas do Produto Principal",
+    dependeDoCarrinho: true,
     ler: (p) => numero(p.dinheiroTempo.vendasPrincipal),
     unidade: "inteiro",
     tnote: (p) => `TMB no principal: ${inteiroBr(p.dinheiroTempo.tmb.vendasNoPrincipal)} (contadas, valor não considerado)`,
@@ -496,6 +515,7 @@ export const INDICADORES: readonly Indicador[] = [
   {
     grupo: "Volume",
     rotulo: "Vendas Downsell",
+    dependeDoCarrinho: true,
     ler: (p) => (p.dinheiroTempo.downsell.aplicavel ? numero(p.dinheiroTempo.downsell.vendas) : { valor: null, motivo: "sem downsell na config" }),
     unidade: "inteiro",
   },
@@ -508,8 +528,8 @@ export const INDICADORES: readonly Indicador[] = [
   },
   { grupo: "Faturamento", rotulo: "Fat. Ingresso s/ TMB", ler: (p) => metrica(p.dinheiroTempo.captacao.faturamentoIngresso), unidade: "moeda" },
   { grupo: "Faturamento", rotulo: "Fat. Order Bump s/ TMB", ler: (p) => metrica(p.dinheiroTempo.captacao.faturamentoOrderBump), unidade: "moeda" },
-  { grupo: "Faturamento", rotulo: "Fat. Produto Principal s/ TMB", ler: (p) => metrica(p.dinheiroTempo.faturamentoPrincipal), unidade: "moeda", tnote: notaTmb },
-  { grupo: "Faturamento", rotulo: "Fat. Total s/ TMB", ler: (p) => numero(p.dinheiroTempo.faturamentoTotal), unidade: "moeda", tnote: notaTmb },
+  { grupo: "Faturamento", rotulo: "Fat. Produto Principal s/ TMB", ler: (p) => metrica(p.dinheiroTempo.faturamentoPrincipal), unidade: "moeda", tnote: notaTmb, dependeDoCarrinho: true },
+  { grupo: "Faturamento", rotulo: "Fat. Total s/ TMB", ler: (p) => numero(p.dinheiroTempo.faturamentoTotal), unidade: "moeda", tnote: notaTmb, dependeDoCarrinho: true },
   { grupo: "Faturamento", rotulo: "Ticket médio da captação", ler: (p) => metrica(p.dinheiroTempo.captacao.ticketCaptacao), unidade: "moeda" },
   {
     grupo: "Mídia",
@@ -537,11 +557,12 @@ export const INDICADORES: readonly Indicador[] = [
   {
     grupo: "Mídia",
     rotulo: "ROAS Total s/ TMB (fat ÷ invest total)",
+    dependeDoCarrinho: true,
     ler: (p) => metrica(p.dinheiroTempo.roasTotalSemTmb),
     unidade: "roas",
     tnote: () => "inclui o downsell no numerador (decisão 5 do dono)",
   },
-  { grupo: "Taxas", rotulo: "Conversão Ingresso → Principal", ler: (p) => metrica(p.dinheiroTempo.conversaoIngressoPrincipal), unidade: "fracao", casas: 2 },
+  { grupo: "Taxas", rotulo: "Conversão Ingresso → Principal", ler: (p) => metrica(p.dinheiroTempo.conversaoIngressoPrincipal), unidade: "fracao", casas: 2, dependeDoCarrinho: true },
   { grupo: "Taxas", rotulo: "% Compradores / Cliques", ler: (p) => metrica(p.dinheiroTempo.captacao.pctCompradoresPorCliques), unidade: "pct", casas: 2 },
   { grupo: "Taxas", rotulo: "% compradores c/ combo ou order bump", ler: (p) => metrica(p.dinheiroTempo.captacao.comTierSuperior), unidade: "fracao" },
   { grupo: "Taxas", rotulo: "% A+B (respondentes)", ler: (p) => metrica(p.publico.faixa.pctAB), unidade: "pct" },
@@ -549,6 +570,38 @@ export const INDICADORES: readonly Indicador[] = [
 ];
 
 const ehTaxa = (u: Unidade) => u === "pct" || u === "fracao";
+
+// ---------------------------------------------------------------------------
+// Story 49.12 — corte (parcial / comparação em D+N) e lacuna do carrinho
+// ---------------------------------------------------------------------------
+
+/** O corte que deixa o carrinho de fora deste payload (AC6), ou `null`. */
+function semCarrinho(pp: DebriefingPayload): CorteDaJanela | null {
+  return corteSemCarrinho(pp.dinheiroTempo.janela);
+}
+
+/** A lacuna escrita do carrinho deste payload ("carrinho ainda não abriu — dados até 06/10, D+6"), ou `null`. */
+function lacunaDoCarrinho(pp: DebriefingPayload): string | null {
+  const c = semCarrinho(pp);
+  return c ? textoDaLacunaDoCarrinho(c) : null;
+}
+
+/** Algum dos dois lados tem corte — só aí as notas de Δ "—" da 49.12 aparecem (o encerrado fica igual). */
+function temCorte(p: DebriefingPayload, comp: ComparacaoDoDebriefing | null): boolean {
+  return !!p.dinheiroTempo.janela.corte || !!comp?.payload.dinheiroTempo.janela.corte;
+}
+
+/** O valor do indicador, com a lacuna do carrinho no lugar do número quando ele depende do carrinho (AC6). */
+function lerIndicador(ind: Indicador, pp: DebriefingPayload): { valor: number | null; motivo?: string } {
+  const lac = ind.dependeDoCarrinho ? lacunaDoCarrinho(pp) : null;
+  return lac ? { valor: null, motivo: lac } : ind.ler(pp);
+}
+
+/** "dd/mm/aaaa (D+N dele)" do corte da comparação (AC8), ou `null` se ela não foi cortada. */
+function corteDaComparacao(comp: ComparacaoDoDebriefing | null): string | null {
+  const c = comp?.payload.dinheiroTempo.janela.corte;
+  return c ? `${dataBr(c.dia)} (D+${c.dMaisN} dele)` : null;
+}
 
 /** Classe/tag do Δ — derivada do sinal e da direção boa da métrica (AC7). */
 function avaliar(ind: Indicador, a: number, b: number): { classe: "up" | "down" | "neu"; boa: boolean | null } {
@@ -562,8 +615,9 @@ function textoDoDelta(ind: Indicador, a: number, b: number): string {
 }
 
 function kpi(ind: Indicador, atual: DebriefingPayload, nomeAtual: string, comp: ComparacaoDoDebriefing | null): string {
-  const va = ind.ler(atual);
-  const nota = ind.tnote?.(atual) ?? null;
+  const va = lerIndicador(ind, atual);
+  // 49.12: a nota de rodapé de um indicador em lacuna mostraria um zero (ex.: "TMB no principal: 0").
+  const nota = ind.dependeDoCarrinho && lacunaDoCarrinho(atual) ? null : (ind.tnote?.(atual) ?? null);
   const motivoNulo = va.valor === null && va.motivo ? `— = ${va.motivo}` : null;
   const notas = [nota, motivoNulo].filter(Boolean).map((n) => `<div class="tnote">${esc(n)}</div>`).join("");
   if (!comp) {
@@ -572,11 +626,15 @@ function kpi(ind: Indicador, atual: DebriefingPayload, nomeAtual: string, comp: 
       `<div class="single"><b>${esc(fmt(va.valor, ind.unidade, ind.casas))}</b></div>${notas}</div>`
     );
   }
-  const vb = ind.ler(comp.payload);
+  const vb = lerIndicador(ind, comp.payload);
   let delta = `<div class="delta neu">${TRACO}</div>`;
   if (va.valor !== null && vb.valor !== null) {
     const { classe } = avaliar(ind, vb.valor, va.valor);
     delta = `<div class="delta ${classe}">${seta(vb.valor, va.valor)} ${esc(textoDoDelta(ind, vb.valor, va.valor))}</div>`;
+  } else if (temCorte(atual, comp) && (va.valor === null) !== (vb.valor === null)) {
+    // 49.12 (AC8): a métrica existe de um lado e é lacuna do outro — Δ "—" com nota, nunca inventado.
+    const lado = va.valor === null ? { nome: nomeAtual, m: va } : { nome: comp.nome, m: vb };
+    delta += `<div class="tnote" data-delta-lacuna>Δ — : sem o número de ${esc(lado.nome)}${lado.m.motivo ? ` (${esc(lado.m.motivo)})` : ""}</div>`;
   }
   return (
     `<div class="kpi"><div class="lbl">${esc(ind.rotulo)}</div><div class="twin">` +
@@ -604,29 +662,49 @@ function rotuloD(n: number): string {
 
 function marcosDoLancamento(p: DebriefingPayload): { indice: number; rotulo: string }[] {
   const dc = p.config.datasChave;
-  const m = [
+  const m: { dia: string | null; rotulo: string }[] = [
     { dia: dc.aberturaCarrinho, rotulo: "abre carrinho" },
     { dia: dc.fimCarrinho, rotulo: "fecha carrinho" },
   ];
-  if (dc.reabertura.houve) m.push({ dia: dc.reabertura.abertura, rotulo: "reabertura" });
-  if (dc.downsell.houve) m.push({ dia: dc.downsell.abertura, rotulo: "downsell" });
-  return m.map((x) => ({ indice: dMais(p, x.dia), rotulo: x.rotulo }));
+  if (dc.reabertura?.houve) m.push({ dia: dc.reabertura.abertura, rotulo: "reabertura" });
+  if (dc.downsell?.houve) m.push({ dia: dc.downsell.abertura, rotulo: "downsell" });
+  // 49.12 (AC6): com corte, só os marcos que aconteceram até ele — na parcial com
+  // o carrinho fechado, nenhum ("ainda não aconteceu" e data futura não viram linha).
+  const corte = p.dinheiroTempo.janela.corte?.dia;
+  return m
+    .filter((x): x is { dia: string; rotulo: string } => x.dia !== null && (corte === undefined || x.dia <= corte))
+    .map((x) => ({ indice: dMais(p, x.dia), rotulo: x.rotulo }));
 }
+
+/** "ainda não aconteceu" (49.12 AC2) — diferente de "não houve" no documento. */
+const AINDA_NAO_ACONTECEU = "ainda não aconteceu";
 
 function datasChaveHtml(p: DebriefingPayload, nome: string): string {
   const dc = p.config.datasChave;
-  const linha = (rot: string, dia: string) => `<span>${esc(rot)} <b>${esc(diaMesBr(dia))} · ${rotuloD(dMais(p, dia))}</b></span>`;
+  const linha = (rot: string, dia: string | null) =>
+    dia === null
+      ? `<span>${esc(rot)}: <b>${AINDA_NAO_ACONTECEU}</b></span>`
+      : `<span>${esc(rot)} <b>${esc(diaMesBr(dia))} · ${rotuloD(dMais(p, dia))}</b></span>`;
+  const extra = (rot: string, r: typeof dc.reabertura, comFimD: boolean) =>
+    r === null
+      ? `<span>${rot}: <b>${AINDA_NAO_ACONTECEU}</b></span>`
+      : r.houve
+        ? `<span>${rot} <b>${esc(diaMesBr(r.abertura))} · ${rotuloD(dMais(p, r.abertura))}</b> · fim <b>${esc(diaMesBr(r.fim))}${comFimD ? ` · ${rotuloD(dMais(p, r.fim))}` : ""}</b></span>`
+        : `<span>${rot}: <b>não houve</b></span>`;
   const partes = [
     linha("Início da captação", dc.inicioCaptacao),
     linha("Abertura carrinho principal", dc.aberturaCarrinho),
     linha("Fim carrinho principal", dc.fimCarrinho),
-    dc.reabertura.houve
-      ? `<span>Reabertura <b>${esc(diaMesBr(dc.reabertura.abertura))} · ${rotuloD(dMais(p, dc.reabertura.abertura))}</b> · fim <b>${esc(diaMesBr(dc.reabertura.fim))}</b></span>`
-      : "<span>Reabertura: <b>não houve</b></span>",
-    dc.downsell.houve
-      ? `<span>Downsell <b>${esc(diaMesBr(dc.downsell.abertura))} · ${rotuloD(dMais(p, dc.downsell.abertura))}</b> · fim <b>${esc(diaMesBr(dc.downsell.fim))} · ${rotuloD(dMais(p, dc.downsell.fim))}</b></span>`
-      : "<span>Downsell: <b>não houve</b></span>",
+    extra("Reabertura", dc.reabertura, false),
+    extra("Downsell", dc.downsell, true),
   ];
+  // 49.12: o corte da janela (a parcial, ou a comparação cortada no mesmo D+N — AC8).
+  const corte = p.dinheiroTempo.janela.corte;
+  if (corte) {
+    partes.push(
+      `<span data-corte="${esc(corte.motivo)}">${corte.motivo === "lancamento-em-andamento" ? "Dados até (corte)" : "Comparação cortada em"} <b>${esc(diaMesBr(corte.dia))} · ${rotuloD(corte.dMaisN)}</b></span>`,
+    );
+  }
   return `<div class="dcol"><div class="dh">${esc(nome)} — datas-chave</div>${partes.join("")}</div>`;
 }
 
@@ -675,11 +753,20 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
   const etapa = (id: string) => rotulos.etapas[id] ?? id;
   const lacunaDe = (codigo: string) => p.lacunas.find((l) => l.codigo === codigo) ?? null;
   const composicao = composicaoDaComparacao(input);
+  // 49.12 — a parcial (lançamento em andamento) e a lacuna do carrinho deste payload.
+  const parcial = parcialDo(p);
+  const lacCarrinho = lacunaDoCarrinho(p);
+  const semDelta = input.comparacaoSemDelta ?? null;
+  const rotuloParcial = parcial ? `dados até ${diaMesBr(parcial.corte)} · D+${parcial.dMaisN}` : "";
 
   // ---- Header ----
-  const titulo = comp
-    ? `Debriefing Comparativo <b>${esc(A)}</b> × <b>${esc(comp.nome)}</b>`
-    : `Debriefing — <b>${esc(A)}</b> (${esc(rotulos.projeto)}) · edição única`;
+  const titulo = parcial
+    ? comp
+      ? `Debriefing Comparativo PARCIAL <b>${esc(A)}</b> × <b>${esc(comp.nome)}</b> · ${esc(rotuloParcial)}`
+      : `Debriefing PARCIAL — <b>${esc(A)}</b> (${esc(rotulos.projeto)}) · ${esc(rotuloParcial)}`
+    : comp
+      ? `Debriefing Comparativo <b>${esc(A)}</b> × <b>${esc(comp.nome)}</b>`
+      : `Debriefing — <b>${esc(A)}</b> (${esc(rotulos.projeto)}) · edição única`;
   const legenda = comp
     ? `<div class="legendpg"><span><span class="dot" style="background:#928e87"></span> <b>${esc(comp.nome)}</b> · comparação principal · início ${esc(diaMesBr(d0(comp.payload)))}</span>` +
       `<span><span class="dot" style="background:var(--gold)"></span> <b>${esc(A)}</b> · início ${esc(diaMesBr(d0(p)))}</span></div>`
@@ -694,10 +781,29 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
     `Fontes: planilhas de vendas e pesquisa do Loyola, mídia Meta do banco (custo c/ imposto, cliques = link clicks).</p>` +
     `${legenda}${datestrip}</header>`;
 
+  // ---- 49.12 (AC7) — aviso de lançamento em andamento, no topo ----
+  const avisoParcial = parcial
+    ? `<div class="warn" data-parcial><b>Lançamento em andamento — documento PARCIAL.</b> Dados até <b>${esc(dataBr(parcial.corte))}</b> ` +
+      `(ontem, no fuso de Brasília) · <b>D+${esc(String(parcial.dMaisN))}</b> da captação (D0 = ${esc(dataBr(parcial.janela.inicio))}). ` +
+      `Nada depois do corte entra em número nenhum. ` +
+      (lacCarrinho
+        ? `O carrinho ainda não abriu: o que depende de venda do principal, reabertura ou downsell aparece como lacuna escrita, nunca como zero. `
+        : "") +
+      `A próxima geração substitui este documento; quando o lançamento terminar, gere como encerrado.</div>`
+    : "";
+
   // ---- Banner de alertas e avisos (AC7) ----
   const avisos: DebriefingAviso[] = p.config.avisos ?? [];
   const extras: string[] = [];
   // R7-7: Δ contra o último payload SALVO da comparação (sem config dela) — sempre à vista.
+  // 49.12 (AC8, R8-3): parcial × comparação só com payload salvo → sem Δ, com aviso.
+  if (semDelta) {
+    extras.push(
+      `<li data-aviso="${AVISO_COMPARACAO_SEM_CORTE_EM_D_MAIS_N}"><b>${AVISO_COMPARACAO_SEM_CORTE_EM_D_MAIS_N}</b> — o documento sai <b>sem Δ</b> contra <b>${esc(semDelta.nome)}</b>: ` +
+        `ele não tem config de debriefing liberada e o único dado dele é o relatório salvo em ${esc(dataBr(diaBrtDe(semDelta.salvoEm)))}, que tem os totais fechados ` +
+        `e não pode ser cortado no mesmo D+N desta parcial. Para comparar, configure (e valide) o debriefing na etapa Debriefing dele e gere de novo.</li>`,
+    );
+  }
   if (comp && comp.origem.tipo === "payload-salvo") {
     extras.push(
       `<li data-aviso="${AVISO_COMPARACAO_DE_PAYLOAD_SALVO}"><b>${AVISO_COMPARACAO_DE_PAYLOAD_SALVO}</b> — o Δ contra <b>${esc(comp.nome)}</b> usa o último debriefing salvo dele ` +
@@ -770,20 +876,28 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
           `</div>`,
       )
       .join("");
+    const corteComp = corteDaComparacao(comp);
     const desc = comp
-      ? `Cada card mostra <b>${esc(comp.nome)}</b> (cinza) e <b>${esc(A)}</b> (dourado); Δ% em volume e dinheiro, Δpp em taxa.`
-      : "Edição única: cada card mostra o valor do lançamento, sem comparação (não há lançamento de comparação na config).";
+      ? `Cada card mostra <b>${esc(comp.nome)}</b> (cinza) e <b>${esc(A)}</b> (dourado); Δ% em volume e dinheiro, Δpp em taxa.` +
+        (corteComp ? ` <b>Comparação cortada no mesmo D+N:</b> ${esc(comp.nome)} até ${esc(corteComp)}; métrica que só existe de um lado fica com Δ “—”.` : "")
+      : semDelta
+        ? `Parcial sem Δ: o lançamento de comparação ${esc(semDelta.nome)} só tem relatório salvo (totais fechados), que não pode ser cortado em D+N — cada card mostra só o valor deste lançamento.`
+        : "Edição única: cada card mostra o valor do lançamento, sem comparação (não há lançamento de comparação na config).";
     secoes.geral!.push(doc.secao("Resumo Executivo", desc, corpo));
   }
 
   // ---- 02 Diferenças de Valores e Taxas ----
   if (comp) {
     const linhas: string[] = [];
+    const soDeUmLado: string[] = [];
     for (const g of ["Volume", "Faturamento", "Mídia", "Taxas"] as const) {
       linhas.push(`<tr class="grp"><td colspan="5">${esc(g)}</td></tr>`);
       for (const ind of INDICADORES.filter((i) => i.grupo === g)) {
-        const a = ind.ler(comp.payload).valor;
-        const b = ind.ler(p).valor;
+        const la = lerIndicador(ind, comp.payload);
+        const lb = lerIndicador(ind, p);
+        const a = la.valor;
+        const b = lb.valor;
+        if (temCorte(p, comp) && (a === null) !== (b === null)) soDeUmLado.push(`${ind.rotulo} (${(a === null ? la : lb).motivo ?? "sem número"})`);
         let dif = TRACO;
         let var_ = TRACO;
         if (a !== null && b !== null) {
@@ -798,8 +912,23 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
     secoes.geral!.push(
       doc.secao(
         "Diferenças de Valores e Taxas",
-        `Tabela completa ${esc(comp.nome)} → ${esc(A)}: diferença absoluta (Δpp nas taxas) e variação percentual. Verde = melhorou, vermelho = piorou, dourado = sem avaliação (investimento).`,
-        tabela(["Métrica", comp.nome, A, "Diferença", "Variação"], linhas),
+        `Tabela completa ${esc(comp.nome)} → ${esc(A)}: diferença absoluta (Δpp nas taxas) e variação percentual. Verde = melhorou, vermelho = piorou, dourado = sem avaliação (investimento).` +
+          (corteDaComparacao(comp) ? ` <b>Comparação cortada no mesmo D+N:</b> ${esc(comp.nome)} até ${esc(corteDaComparacao(comp)!)}.` : ""),
+        tabela(["Métrica", comp.nome, A, "Diferença", "Variação"], linhas) +
+          (soDeUmLado.length
+            ? `<div class="note" data-delta-lacuna><b>Δ “—”: a métrica existe de um lado e é lacuna do outro</b> — o Δ não é inventado.<ul>${soDeUmLado.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`
+            : ""),
+      ),
+    );
+  } else if (semDelta) {
+    secoes.geral!.push(
+      doc.secao(
+        "Diferenças de Valores e Taxas",
+        "",
+        nota(
+          `<b>Seção omitida — parcial sem Δ.</b> O lançamento de comparação ${esc(semDelta.nome)} não tem config de debriefing liberada; o único dado dele é o relatório salvo, ` +
+            "que tem os totais fechados e não pode ser cortado no mesmo D+N desta parcial (R8-3). Para comparar, configure (e valide) o debriefing dele e gere de novo.",
+        ),
       ),
     );
   } else {
@@ -906,7 +1035,9 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
     );
     // Vendas do principal por dia (coorte de entrada do lead)
     const eixoCoorte = eixoDeDias([p, ...(comp ? [comp.payload] : [])], (pp) => pp.dinheiroTempo.coorte.serie.map((s) => s.dMais));
-    if (eixoCoorte.length > 0) {
+    if (lacCarrinho) {
+      partes.push(lacuna("Vendas do principal por dia (coorte)", lacCarrinho));
+    } else if (eixoCoorte.length > 0) {
       const series: SerieDoGrafico[] = [];
       if (comp) {
         const m = new Map(comp.payload.dinheiroTempo.coorte.serie.map((s) => [s.dMais, s.vendas]));
@@ -931,7 +1062,9 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
     // Apêndice — reabertura (AC6.4)
     const ap = mt.apendiceReabertura;
     partes.push(
-      ap.aplicavel
+      lacCarrinho
+        ? lacuna("Apêndice — Reabertura", lacCarrinho)
+        : ap.aplicavel
         ? `<h3 class="gr">Apêndice — Reabertura (fora das taxas headline)</h3>` +
             tabela(
               ["Reabertura", "Vendas", "Faturamento", "Investimento (mídia própria)", "ROAS marginal"],
@@ -971,33 +1104,38 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
     const cab = comp
       ? ["Canal (aquisição)", `Ingr. ${comp.nome}`, `Ingr. ${A}`, `Vd. ${comp.nome}`, `Vd. ${A}`, `Conv. ${comp.nome}`, `Conv. ${A}`]
       : ["Canal (aquisição)", "Ingressos", "Vendas principal", "Conversão"];
+    // 49.12 (AC6): vendas do principal em lacuna escrevem a lacuna, nunca 0.
+    const vendasDe = (pp: DebriefingPayload, v: number | undefined) => {
+      const lac = lacunaDoCarrinho(pp);
+      return lac ? `<span title="${esc(lac)}" data-lacuna="CARRINHO_AINDA_NAO_ABRIU">${TRACO}</span>` : esc(fmt(v, "inteiro"));
+    };
     const linhas = canais.map((c) => {
       const a = linhaA.get(c);
       const b = linhaB?.get(c);
       const cls = c === "Sem track real" ? "r" : c === "Aquisição não rastreada (só closer)" ? "y" : "";
       const nome = cls ? `<span class="${cls}">${esc(c)}</span>` : esc(c);
       return comp
-        ? tr([nome, esc(fmt(b?.ingressos, "inteiro")), esc(fmt(a?.ingressos, "inteiro")), esc(fmt(b?.vendas, "inteiro")), esc(fmt(a?.vendas, "inteiro")), celulaMetrica(b?.conversao, "fracao"), celulaMetrica(a?.conversao, "fracao")])
-        : tr([nome, esc(fmt(a?.ingressos, "inteiro")), esc(fmt(a?.vendas, "inteiro")), celulaMetrica(a?.conversao, "fracao")]);
+        ? tr([nome, esc(fmt(b?.ingressos, "inteiro")), esc(fmt(a?.ingressos, "inteiro")), vendasDe(comp.payload, b?.vendas), vendasDe(p, a?.vendas), celulaMetrica(b?.conversao, "fracao"), celulaMetrica(a?.conversao, "fracao")])
+        : tr([nome, esc(fmt(a?.ingressos, "inteiro")), vendasDe(p, a?.vendas), celulaMetrica(a?.conversao, "fracao")]);
     });
     const s = mt.tabela1.somas;
     const total = comp
-      ? tr(["TOTAL (Σ canais)", esc(fmt(comp.payload.dinheiroTempo.tabela1.somas.ingressosPorCanal, "inteiro")), esc(fmt(s.ingressosPorCanal, "inteiro")), esc(fmt(comp.payload.dinheiroTempo.tabela1.somas.vendasPorCanal, "inteiro")), esc(fmt(s.vendasPorCanal, "inteiro")), TRACO, TRACO], "tot")
-      : tr(["TOTAL (Σ canais)", esc(fmt(s.ingressosPorCanal, "inteiro")), esc(fmt(s.vendasPorCanal, "inteiro")), TRACO], "tot");
+      ? tr(["TOTAL (Σ canais)", esc(fmt(comp.payload.dinheiroTempo.tabela1.somas.ingressosPorCanal, "inteiro")), esc(fmt(s.ingressosPorCanal, "inteiro")), vendasDe(comp.payload, comp.payload.dinheiroTempo.tabela1.somas.vendasPorCanal), vendasDe(p, s.vendasPorCanal), TRACO, TRACO], "tot")
+      : tr(["TOTAL (Σ canais)", esc(fmt(s.ingressosPorCanal, "inteiro")), vendasDe(p, s.vendasPorCanal), TRACO], "tot");
     const fech = (pp: DebriefingPayload) => pp.dinheiroTempo.tabela1.fechamento;
     const linhasFech = (["closer", "semCloser"] as const).map((k) => {
       const rot = k === "closer" ? "Closer (fechamento 1×1)" : "Sem closer";
       const a = fech(p)[k];
-      if (!comp) return tr([esc(rot), esc(fmt(a.ingressos, "inteiro")), esc(fmt(a.vendas, "inteiro")), celulaMetrica(a.conversao, "fracao")]);
+      if (!comp) return tr([esc(rot), esc(fmt(a.ingressos, "inteiro")), vendasDe(p, a.vendas), celulaMetrica(a.conversao, "fracao")]);
       const b = fech(comp.payload)[k];
-      return tr([esc(rot), esc(fmt(b.vendas, "inteiro")), esc(fmt(a.vendas, "inteiro")), celulaMetrica(b.conversao, "fracao"), celulaMetrica(a.conversao, "fracao")]);
+      return tr([esc(rot), vendasDe(comp.payload, b.vendas), vendasDe(p, a.vendas), celulaMetrica(b.conversao, "fracao"), celulaMetrica(a.conversao, "fracao")]);
     });
     const cabFech = comp ? ["Fechamento", `Vd. ${comp.nome}`, `Vd. ${A}`, `Conv. ${comp.nome}`, `Conv. ${A}`] : ["Fechamento", "Ingressos", "Vendas principal", "Conversão"];
     const tab2 = lacunaDe("LISTAS_FRONT_COMUNIDADE");
     const corpo =
-      `<div class="warn">⚠ <b>Por que os totais podem diferir do Resumo:</b> ${esc(mt.diferencaDeFonte.texto)}. Referência do Resumo: ingressos ${esc(inteiroBr(s.referencia.ingressosUnicos))}, vendas do principal ${esc(inteiroBr(s.referencia.vendasPrincipal))}.</div>` +
+      `<div class="warn">⚠ <b>Por que os totais podem diferir do Resumo:</b> ${esc(mt.diferencaDeFonte.texto)}. Referência do Resumo: ingressos ${esc(inteiroBr(s.referencia.ingressosUnicos))}, vendas do principal ${lacCarrinho ? esc(lacCarrinho) : esc(inteiroBr(s.referencia.vendasPrincipal))}.</div>` +
       `<h3 class="gr">Tabela 1 — Canais de aquisição (mutuamente exclusivos · reconciliam com o total)</h3>` +
-      `<div class="chart-grid">${graf("cCanalIng", "ingressos", "Ingressos por canal", COR.teal)}${graf("cCanalVd", "vendas", "Vendas do principal por canal", COR.orange)}</div>` +
+      `<div class="chart-grid">${graf("cCanalIng", "ingressos", "Ingressos por canal", COR.teal)}${lacCarrinho ? lacuna("Vendas do principal por canal", lacCarrinho) : graf("cCanalVd", "vendas", "Vendas do principal por canal", COR.orange)}</div>` +
       `<div class="chart-grid" style="margin-top:14px"><div>${tabela(cab, linhas, { total })}</div><div>` +
       `<h3 class="cap">Fechamento — Closer (eixo separado, nunca somado aos canais)</h3>${tabela(cabFech, linhasFech)}</div></div>` +
       `<p class="tnote">"Aquisição não rastreada (só closer)" é linha própria, distinta de "Sem track real" (R2-5). Conversão = vendas do principal ÷ ingressos do canal.</p>` +
@@ -1044,7 +1182,9 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
     const d = mt.roasTotalSemTmb.decomposicao;
     const corpo =
       tabela(cols, linhas) +
-      `<p class="tnote">Decomposição do numerador do ROAS total: captação ${esc(fmt(d.captacao, "moeda"))} + principal ${esc(fmt(d.principal, "moeda"))} + downsell ${esc(fmt(d.downsell, "moeda"))} (s/ TMB). ROAS sem o downsell: ${celulaMetrica(mt.roasTotalSemTmb.semDownsell, "roas")}.</p>` +
+      (lacCarrinho
+        ? lacuna("ROAS total (captação + principal + downsell)", lacCarrinho)
+        : `<p class="tnote">Decomposição do numerador do ROAS total: captação ${esc(fmt(d.captacao, "moeda"))} + principal ${esc(fmt(d.principal, "moeda"))} + downsell ${esc(fmt(d.downsell, "moeda"))} (s/ TMB). ROAS sem o downsell: ${celulaMetrica(mt.roasTotalSemTmb.semDownsell, "roas")}.</p>`) +
       insight("Tese do order bump", veredito, corpoTese);
     secoes.geral!.push(doc.secao("ROAS", "ROAS = faturamento ÷ investimento de mídia c/ imposto. Três níveis: só ingresso, captação (com o bump) e total.", corpo));
   }
@@ -1062,8 +1202,8 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
       ];
       for (const rot of chaves) {
         const ind = INDICADORES.find((i) => i.rotulo === rot)!;
-        const a = ind.ler(comp.payload).valor;
-        const b = ind.ler(p).valor;
+        const a = lerIndicador(ind, comp.payload).valor;
+        const b = lerIndicador(ind, p).valor;
         if (a === null || b === null) continue;
         const av = avaliar(ind, a, b);
         const verbo = verboDirecao(a, b);
@@ -1101,7 +1241,7 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
       }
     }
     const semTrack = mt.tabela1.canais.find((c) => c.canal === "Sem track real");
-    if (semTrack) {
+    if (semTrack && !lacCarrinho) {
       leituras.push(
         insight(
           "Rastreamento das vendas do principal",
@@ -1210,82 +1350,96 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
   // ---- 09 Vendas do Principal (+ auditoria) ----
   {
     const partes: string[] = [];
-    const eixo = eixoDeDias([p, ...(comp ? [comp.payload] : [])], (pp) => pp.dinheiroTempo.coortePaga.serie.map((s) => s.dMais));
-    if (eixo.length > 0) {
-      const series: SerieDoGrafico[] = [];
-      if (comp) {
-        const m = new Map(comp.payload.dinheiroTempo.coortePaga.serie.map((s) => [s.dMais, s.vendas]));
-        series.push({ nome: `${comp.nome} (paga)`, dados: eixo.map((n) => m.get(n) ?? null), cor: COR.cinza });
+    if (lacCarrinho) {
+      // 49.12 (AC6): a seção inteira depende de venda do principal — lacuna escrita.
+      // As vendas do principal anteriores à abertura (decisão 7) continuam listadas.
+      const exc = mt.vendasExcluidas;
+      partes.push(lacuna("Vendas do principal (coorte paga, conversão por público e auditoria)", lacCarrinho));
+      if (exc.length) {
+        partes.push(
+          `<h3 class="gr">Vendas excluídas automaticamente (${esc(inteiroBr(exc.length))})</h3>` +
+            `<div class="warn" data-lacuna="VENDAS_EXCLUIDAS_AUTOMATICAMENTE"><b>Fora da conta:</b> vendas do principal anteriores à abertura do carrinho (que ainda não abriu até o corte) — decisão 7 do dono.</div>` +
+            tabela(["ID venda", "Produto", "Valor", "Data", "Fonte", "Motivo"], exc.map((v) => tr([esc(v.txId ?? TRACO), esc(v.produto ?? TRACO), esc(fmt(v.valor, "moeda")), esc(v.dataBrt ? dataBr(v.dataBrt) : TRACO), esc(v.fonte), esc(v.motivo)])), { rolagem: exc.length > 12 }),
+        );
       }
-      const m = new Map(mt.coortePaga.serie.map((s) => [s.dMais, s.vendas]));
-      series.push({ nome: `${A} (paga)`, dados: eixo.map((n) => m.get(n) ?? null), cor: COR.orange });
-      partes.push(doc.grafico("cCoortePaga", { tipo: "bar", titulo: "Vendas do principal com lead pago, por dia de entrada do lead", rotulos: eixo.map(rotuloD), series, formato: "inteiro" }, { alto: true, full: true }));
     } else {
-      partes.push(lacuna("Coorte paga", "nenhuma venda do principal com lead pago e data de lead no período"));
-    }
-    const seg = (pp: DebriefingPayload) => new Map(pp.publico.conversaoPorSegmento.map((s) => [s.segmento, s]));
-    const sa = seg(p);
-    const sb = comp ? seg(comp.payload) : null;
-    const linhasSeg = SEGMENTOS_DE_QUALIFICACAO.map((s) => {
-      const a = sa.get(s);
-      const b = sb?.get(s);
-      return comp
-        ? tr([esc(s), esc(fmt(b?.n, "inteiro")), esc(fmt(a?.n, "inteiro")), esc(fmt(b?.comprouPrincipal, "inteiro")), esc(fmt(a?.comprouPrincipal, "inteiro")), celulaMetrica(b?.ingressoPrincipal, "fracao", 2), celulaMetrica(a?.ingressoPrincipal, "fracao", 2)])
-        : tr([esc(s), esc(fmt(a?.n, "inteiro")), esc(fmt(a?.comprouPrincipal, "inteiro")), celulaMetrica(a?.ingressoPrincipal, "fracao", 2), a?.amostraBaixa ? "amostra baixa" : ""]);
-    });
-    partes.push(
-      `<h3 class="gr">Conversão ao principal por público (respondentes da pesquisa)</h3>` +
-        tabela(
-          comp
-            ? ["Público", `n ${comp.nome}`, `n ${A}`, `→ Princ. ${comp.nome}`, `→ Princ. ${A}`, `Conv. ${comp.nome}`, `Conv. ${A}`]
-            : ["Público", "n", "→ Principal", "Conversão", "Amostra"],
-          linhasSeg,
-        ),
-    );
-    // Auditoria — TODAS as vendas do principal, com UTMs (padrão §7)
-    const aud = mt.auditoriaDeVendas;
-    const linhasAud = aud.map((v) =>
-      tr([
-        esc(v.dataBrt ? dataBr(v.dataBrt) : TRACO),
-        esc(v.txId ?? TRACO),
-        esc(v.produto ?? TRACO),
-        esc(fmt(v.valor, "moeda")),
-        v.tmb ? `<span class="y">TMB — ${esc(fmt(v.valorConsiderado, "moeda"))}</span>` : esc(fmt(v.valorConsiderado, "moeda")),
-        esc(v.fonte),
-        esc(utmCurta(v.utmVenda)),
-        esc(utmCurta(v.utmLead)),
-        esc(v.canal),
-        esc(v.fechamento === "closer" ? "Closer" : "Sem closer"),
-        esc(v.dMais === null ? TRACO : rotuloD(v.dMais)),
-      ]),
-    );
-    partes.push(
-      `<h3 class="gr" style="margin-top:24px">Auditoria — todas as vendas do principal, com UTMs (${esc(inteiroBr(aud.length))})</h3>` +
-        `<p class="sec-desc">Cada venda do principal que entrou na conta: data, ID da venda, produto, valor bruto, valor considerado (TMB = 0), fonte (planilha ou venda manual), UTM da venda e do lead (source / medium / campaign / term), canal de aquisição, fechamento e D+ do lead. Sem nome, e-mail ou telefone (decisão 11).</p>` +
-        (aud.length
-          ? tabela(["Data", "ID venda", "Produto", "Valor", "Considerado", "Fonte", "UTM venda", "UTM lead", "Canal", "Fechamento", "D+ lead"], linhasAud, { rolagem: true })
-          : lacuna("Auditoria vazia", "nenhuma venda do principal no período")),
-    );
-    // Vendas excluídas automaticamente (decisão 7)
-    const exc = mt.vendasExcluidas;
-    partes.push(
-      `<h3 class="gr">Vendas excluídas automaticamente (${esc(inteiroBr(exc.length))})</h3>` +
-        (exc.length
-          ? `<div class="warn" data-lacuna="VENDAS_EXCLUIDAS_AUTOMATICAMENTE"><b>Fora da conta:</b> vendas do principal com data anterior à abertura do carrinho (${esc(dataBr(p.config.datasChave.aberturaCarrinho))}) — decisão 7 do dono (R2-4: venda-teste não é excluída).</div>` +
-            tabela(["ID venda", "Produto", "Valor", "Data", "Fonte", "Motivo"], exc.map((v) => tr([esc(v.txId ?? TRACO), esc(v.produto ?? TRACO), esc(fmt(v.valor, "moeda")), esc(v.dataBrt ? dataBr(v.dataBrt) : TRACO), esc(v.fonte), esc(v.motivo)])), { rolagem: exc.length > 12 })
-          : nota("Nenhuma venda do principal anterior à abertura do carrinho.")),
-    );
-    if (mt.coorte.foraDaCoorte.length + mt.coorte.alemDaJanela.length > 0) {
+      const eixo = eixoDeDias([p, ...(comp ? [comp.payload] : [])], (pp) => pp.dinheiroTempo.coortePaga.serie.map((s) => s.dMais));
+      if (eixo.length > 0) {
+        const series: SerieDoGrafico[] = [];
+        if (comp) {
+          const m = new Map(comp.payload.dinheiroTempo.coortePaga.serie.map((s) => [s.dMais, s.vendas]));
+          series.push({ nome: `${comp.nome} (paga)`, dados: eixo.map((n) => m.get(n) ?? null), cor: COR.cinza });
+        }
+        const m = new Map(mt.coortePaga.serie.map((s) => [s.dMais, s.vendas]));
+        series.push({ nome: `${A} (paga)`, dados: eixo.map((n) => m.get(n) ?? null), cor: COR.orange });
+        partes.push(doc.grafico("cCoortePaga", { tipo: "bar", titulo: "Vendas do principal com lead pago, por dia de entrada do lead", rotulos: eixo.map(rotuloD), series, formato: "inteiro" }, { alto: true, full: true }));
+      } else {
+        partes.push(lacuna("Coorte paga", "nenhuma venda do principal com lead pago e data de lead no período"));
+      }
+      const seg = (pp: DebriefingPayload) => new Map(pp.publico.conversaoPorSegmento.map((s) => [s.segmento, s]));
+      const sa = seg(p);
+      const sb = comp ? seg(comp.payload) : null;
+      const linhasSeg = SEGMENTOS_DE_QUALIFICACAO.map((s) => {
+        const a = sa.get(s);
+        const b = sb?.get(s);
+        return comp
+          ? tr([esc(s), esc(fmt(b?.n, "inteiro")), esc(fmt(a?.n, "inteiro")), esc(fmt(b?.comprouPrincipal, "inteiro")), esc(fmt(a?.comprouPrincipal, "inteiro")), celulaMetrica(b?.ingressoPrincipal, "fracao", 2), celulaMetrica(a?.ingressoPrincipal, "fracao", 2)])
+          : tr([esc(s), esc(fmt(a?.n, "inteiro")), esc(fmt(a?.comprouPrincipal, "inteiro")), celulaMetrica(a?.ingressoPrincipal, "fracao", 2), a?.amostraBaixa ? "amostra baixa" : ""]);
+      });
       partes.push(
-        `<h3 class="gr">Fora da coorte / além da janela</h3>` +
+        `<h3 class="gr">Conversão ao principal por público (respondentes da pesquisa)</h3>` +
           tabela(
-            ["ID venda", "Produto", "Valor", "Data", "Situação"],
-            [
-              ...mt.coorte.foraDaCoorte.map((v) => tr([esc(v.txId ?? TRACO), esc(v.produto ?? TRACO), esc(fmt(v.valor, "moeda")), esc(v.dataBrt ? dataBr(v.dataBrt) : TRACO), situacaoForaDaCoorte(v.motivo)])),
-              ...mt.coorte.alemDaJanela.map((v) => tr([esc(v.txId ?? TRACO), esc(v.produto ?? TRACO), esc(fmt(v.valor, "moeda")), esc(v.dataBrt ? dataBr(v.dataBrt) : TRACO), esc(`além de D+${mt.coorte.maxD} (${rotuloD(v.dMais)})`)])),
-            ],
+            comp
+              ? ["Público", `n ${comp.nome}`, `n ${A}`, `→ Princ. ${comp.nome}`, `→ Princ. ${A}`, `Conv. ${comp.nome}`, `Conv. ${A}`]
+              : ["Público", "n", "→ Principal", "Conversão", "Amostra"],
+            linhasSeg,
           ),
       );
+      // Auditoria — TODAS as vendas do principal, com UTMs (padrão §7)
+      const aud = mt.auditoriaDeVendas;
+      const linhasAud = aud.map((v) =>
+        tr([
+          esc(v.dataBrt ? dataBr(v.dataBrt) : TRACO),
+          esc(v.txId ?? TRACO),
+          esc(v.produto ?? TRACO),
+          esc(fmt(v.valor, "moeda")),
+          v.tmb ? `<span class="y">TMB — ${esc(fmt(v.valorConsiderado, "moeda"))}</span>` : esc(fmt(v.valorConsiderado, "moeda")),
+          esc(v.fonte),
+          esc(utmCurta(v.utmVenda)),
+          esc(utmCurta(v.utmLead)),
+          esc(v.canal),
+          esc(v.fechamento === "closer" ? "Closer" : "Sem closer"),
+          esc(v.dMais === null ? TRACO : rotuloD(v.dMais)),
+        ]),
+      );
+      partes.push(
+        `<h3 class="gr" style="margin-top:24px">Auditoria — todas as vendas do principal, com UTMs (${esc(inteiroBr(aud.length))})</h3>` +
+          `<p class="sec-desc">Cada venda do principal que entrou na conta: data, ID da venda, produto, valor bruto, valor considerado (TMB = 0), fonte (planilha ou venda manual), UTM da venda e do lead (source / medium / campaign / term), canal de aquisição, fechamento e D+ do lead. Sem nome, e-mail ou telefone (decisão 11).</p>` +
+          (aud.length
+            ? tabela(["Data", "ID venda", "Produto", "Valor", "Considerado", "Fonte", "UTM venda", "UTM lead", "Canal", "Fechamento", "D+ lead"], linhasAud, { rolagem: true })
+            : lacuna("Auditoria vazia", "nenhuma venda do principal no período")),
+      );
+      // Vendas excluídas automaticamente (decisão 7)
+      const exc = mt.vendasExcluidas;
+      partes.push(
+        `<h3 class="gr">Vendas excluídas automaticamente (${esc(inteiroBr(exc.length))})</h3>` +
+          (exc.length
+            ? `<div class="warn" data-lacuna="VENDAS_EXCLUIDAS_AUTOMATICAMENTE"><b>Fora da conta:</b> vendas do principal com data anterior à abertura do carrinho (${esc(dataBr(p.config.datasChave.aberturaCarrinho ?? ""))}) — decisão 7 do dono (R2-4: venda-teste não é excluída).</div>` +
+              tabela(["ID venda", "Produto", "Valor", "Data", "Fonte", "Motivo"], exc.map((v) => tr([esc(v.txId ?? TRACO), esc(v.produto ?? TRACO), esc(fmt(v.valor, "moeda")), esc(v.dataBrt ? dataBr(v.dataBrt) : TRACO), esc(v.fonte), esc(v.motivo)])), { rolagem: exc.length > 12 })
+            : nota("Nenhuma venda do principal anterior à abertura do carrinho.")),
+      );
+      if (mt.coorte.foraDaCoorte.length + mt.coorte.alemDaJanela.length > 0) {
+        partes.push(
+          `<h3 class="gr">Fora da coorte / além da janela</h3>` +
+            tabela(
+              ["ID venda", "Produto", "Valor", "Data", "Situação"],
+              [
+                ...mt.coorte.foraDaCoorte.map((v) => tr([esc(v.txId ?? TRACO), esc(v.produto ?? TRACO), esc(fmt(v.valor, "moeda")), esc(v.dataBrt ? dataBr(v.dataBrt) : TRACO), situacaoForaDaCoorte(v.motivo)])),
+                ...mt.coorte.alemDaJanela.map((v) => tr([esc(v.txId ?? TRACO), esc(v.produto ?? TRACO), esc(fmt(v.valor, "moeda")), esc(v.dataBrt ? dataBr(v.dataBrt) : TRACO), esc(`além de D+${mt.coorte.maxD} (${rotuloD(v.dMais)})`)])),
+              ],
+            ),
+        );
+      }
     }
     secoes.midia!.push(
       doc.secao(
@@ -1305,7 +1459,7 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
     if (!cap.aplicavel) {
       corpo = nota(`<b>Esteira não se aplica:</b> ${esc(cap.motivo ?? "captação sem venda")}.`);
     } else if (!temEsteira) {
-      corpo = nota("<b>Sem order bump nem combo neste lançamento</b> — a seção de esteira vira nota (padrão da skill, §5). " + (mt.downsell.aplicavel ? `Downsell: ${esc(inteiroBr(mt.downsell.vendas))} vendas, ${esc(fmt(mt.downsell.faturamento, "moeda"))}.` : "Sem downsell."));
+      corpo = nota("<b>Sem order bump nem combo neste lançamento</b> — a seção de esteira vira nota (padrão da skill, §5). " + (lacCarrinho ? `Downsell: ${esc(lacCarrinho)}.` : mt.downsell.aplicavel ? `Downsell: ${esc(inteiroBr(mt.downsell.vendas))} vendas, ${esc(fmt(mt.downsell.faturamento, "moeda"))}.` : "Sem downsell."));
     } else {
       const g1 = doc.grafico("cBumpFat", {
         tipo: "bar",
@@ -1343,7 +1497,9 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
         `<div class="chart-grid">${g1}${g2}</div><div style="margin-top:14px">` +
         tabela(["Lançamento", "Vendas ingresso", "Vendas combo", "Vendas bump", "Compradores c/ combo", "Compradores c/ bump", "% tier superior", "Avulsos (só bump)"], linhas) +
         `</div><p class="tnote">Avulso = quem comprou só o order bump: entra no faturamento, não no comprador de captação. ${esc(notaTmb(p))}.</p>` +
-        (mt.downsell.aplicavel ? nota(`<b>Downsell (etapa à parte):</b> ${esc(inteiroBr(mt.downsell.vendas))} vendas, ${esc(fmt(mt.downsell.faturamento, "moeda"))} s/ TMB.`) : "");
+        (lacCarrinho
+          ? lacuna("Downsell (etapa à parte)", lacCarrinho)
+          : mt.downsell.aplicavel ? nota(`<b>Downsell (etapa à parte):</b> ${esc(inteiroBr(mt.downsell.vendas))} vendas, ${esc(fmt(mt.downsell.faturamento, "moeda"))} s/ TMB.`) : "");
     }
     secoes.midia!.push(doc.secao("Order Bump", "A esteira da captação: ingresso, combo e order bump — e o downsell, à parte.", corpo));
   }
@@ -1375,6 +1531,7 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
         `<div style="margin-top:14px">${tabela(["Medida", "%", "Base"], linhas)}</div>` +
         `<p class="tnote">Base anterior = ${esc(base)} (${esc(cl.tipoDaBase ?? TRACO)}), casamento por e-mail ou telefone. Leads anteriores: ${esc(fmt(cl.leadsAnteriores, "inteiro"))}; compradores anteriores: ${esc(fmt(cl.compradoresAnteriores, "inteiro"))}. Só a comparação principal (49.11 AC8 e).</p>`;
     }
+    if (lacCarrinho && cl.aplicavel) corpo += lacuna("Retorno e presença na base — principal", lacCarrinho);
     corpo += lacuna("Listas-mestre Front / Comunidade", listas ? `${listas.motivo}${listas.detalhe ? ` (${listas.detalhe})` : ""}` : "sem fonte no Loyola");
     secoes.midia!.push(doc.secao("Cross-launch & Listas", "Reaproveitamento da base entre lançamentos e presença nas listas-mestre.", corpo, true));
   }
@@ -1436,6 +1593,7 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
       `<div><h3 class="cap">Fechamento — Closer (nunca somado aos segmentos)</h3>${tabela(["Fechamento", "n", "% A", "% B", "% C", "% D"], linhasFech)}</div></div>` +
       `<p class="tnote">"Aquisição não rastreada (só closer)" é segmento próprio, distinto de "Sem track" (R2-5). %A+B por segmento: o payload não traz o agregado, e o documento não o calcula — some as colunas A e B. Respondentes: ${esc(inteiroBr(pub.pesquisa.respondentes))} (${esc(pub.pesquisa.memoria)}).</p>` +
       lacuna("Front (lista)", "Front não é segmento neste produto — é lista sem fonte no Loyola (LISTAS_FRONT_COMUNIDADE); nenhuma linha zerada no lugar") +
+      (lacCarrinho ? lacuna("Conversão → Principal por segmento", lacCarrinho) : "") +
       (naoConf.length
         ? lacuna("Dimensões não confirmadas", naoConf.map((d) => `${ROTULO_DIMENSAO[d.campo] ?? d.campo} (${d.motivo})`).join("; ") + " — não aparecem e não são inferidas")
         : "");
@@ -1487,15 +1645,19 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
           const v = pp.publico.faixa.conversaoPorFaixa.find((l) => l.faixa === r)?.[k].valor;
           return v === null || v === undefined ? null : v * 100;
         });
+      // 49.12 (AC6): "→ Principal" em lacuna escreve a lacuna, nunca 0.
+      const comprou = (n: number) => (lacCarrinho ? `<span title="${esc(lacCarrinho)}" data-lacuna="CARRINHO_AINDA_NAO_ABRIU">${TRACO}</span>` : esc(inteiroBr(n)));
       const linhas = fx.conversaoPorFaixa.map((l) =>
-        tr([esc(l.faixa), esc(inteiroBr(l.n)), esc(inteiroBr(l.comprouPrincipal)), celulaMetrica(l.ingressoPrincipal, "fracao", 2), esc(inteiroBr(l.comTierSuperior)), celulaMetrica(l.ingressoBump, "fracao", 2), l.amostraBaixa ? "amostra baixa" : ""]),
+        tr([esc(l.faixa), esc(inteiroBr(l.n)), comprou(l.comprouPrincipal), celulaMetrica(l.ingressoPrincipal, "fracao", 2), esc(inteiroBr(l.comTierSuperior)), celulaMetrica(l.ingressoBump, "fracao", 2), l.amostraBaixa ? "amostra baixa" : ""]),
       );
       const linhasSeg = pub.conversaoPorSegmento.map((l) =>
-        tr([esc(l.segmento), esc(inteiroBr(l.n)), esc(inteiroBr(l.comprouPrincipal)), celulaMetrica(l.ingressoPrincipal, "fracao", 2), celulaMetrica(l.ingressoBump, "fracao", 2), l.amostraBaixa ? "amostra baixa" : ""]),
+        tr([esc(l.segmento), esc(inteiroBr(l.n)), comprou(l.comprouPrincipal), celulaMetrica(l.ingressoPrincipal, "fracao", 2), celulaMetrica(l.ingressoBump, "fracao", 2), l.amostraBaixa ? "amostra baixa" : ""]),
       );
       corpo =
         `<div class="chart-grid">` +
-        doc.grafico("cFaixaPrinc", { tipo: "bar", titulo: "Ingresso → Principal por faixa (%)", rotulos: rot, series: lancs.map((l) => ({ nome: l.nome, dados: serie(l.pp, "ingressoPrincipal"), cor: l.cor })), formato: "pct" }) +
+        (lacCarrinho
+          ? lacuna("Ingresso → Principal por faixa", lacCarrinho)
+          : doc.grafico("cFaixaPrinc", { tipo: "bar", titulo: "Ingresso → Principal por faixa (%)", rotulos: rot, series: lancs.map((l) => ({ nome: l.nome, dados: serie(l.pp, "ingressoPrincipal"), cor: l.cor })), formato: "pct" })) +
         doc.grafico("cFaixaBump", { tipo: "bar", titulo: "Ingresso → Combo/Order Bump por faixa (%)", rotulos: rot, series: lancs.map((l) => ({ nome: l.nome, dados: serie(l.pp, "ingressoBump"), cor: l.cor })), formato: "pct" }) +
         `</div><h3 class="gr">${esc(A)} — detalhe por faixa</h3>` +
         tabela(["Faixa", "Compradores de captação", "→ Principal", "Conv. → Principal", "→ Combo/Bump", "Conv. → Combo/Bump", "Amostra"], linhas) +
@@ -1596,10 +1758,17 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
   {
     const fx = pub.faixa;
     const blocos = [
-      [
-        "Números fechados",
-        `Ingressos ${esc(inteiroBr(mt.ingressosUnicos))} · vendas do principal ${esc(inteiroBr(mt.vendasPrincipal))} · faturamento total s/ TMB ${esc(fmt(mt.faturamentoTotal, "moeda"))} · investimento total c/ imposto ${celulaMetrica(mt.midia.investimentoTotal, "moeda")} · ROAS total ${celulaMetrica(mt.roasTotalSemTmb, "roas")} · ROAS captação ${celulaMetrica(mt.roasCaptacao, "roas")} · %A+B ${celulaMetrica(fx.pctAB, "pct")}.`,
-      ],
+      lacCarrinho && parcial
+        ? [
+            // 49.12: a parcial não tem números fechados — os do carrinho são lacuna escrita.
+            `Números até o corte (${dataBr(parcial.corte)} · D+${parcial.dMaisN}) — parcial`,
+            `Ingressos ${esc(inteiroBr(mt.ingressosUnicos))} · investimento total c/ imposto ${celulaMetrica(mt.midia.investimentoTotal, "moeda")} · ROAS captação ${celulaMetrica(mt.roasCaptacao, "roas")} · %A+B ${celulaMetrica(fx.pctAB, "pct")} · ` +
+              `vendas do principal, faturamento total e ROAS total: ${esc(lacCarrinho)}.`,
+          ]
+        : [
+            "Números fechados",
+            `Ingressos ${esc(inteiroBr(mt.ingressosUnicos))} · vendas do principal ${esc(inteiroBr(mt.vendasPrincipal))} · faturamento total s/ TMB ${esc(fmt(mt.faturamentoTotal, "moeda"))} · investimento total c/ imposto ${celulaMetrica(mt.midia.investimentoTotal, "moeda")} · ROAS total ${celulaMetrica(mt.roasTotalSemTmb, "roas")} · ROAS captação ${celulaMetrica(mt.roasCaptacao, "roas")} · %A+B ${celulaMetrica(fx.pctAB, "pct")}.`,
+          ],
       [
         "Definições",
         `Comprador único = <code>${esc(mt.criterioDeUnico)}</code> · imposto ${esc(numeroBr(mt.imposto.impostoPct * 100, 2))}% (<code>${esc(mt.imposto.impostoOrigem)}</code>) aplicado pelo motor · janela ${esc(dataBr(mt.janela.inicio))}–${esc(dataBr(mt.janela.fim))} · classificador <code>${esc(mt.classificadorVersao)}</code> · payload v${esc(String(p.versao))} (${esc(p.tipo)}).`,
@@ -1647,7 +1816,13 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
     geradoEm: p.geradoEm,
     graficos: doc.graficos,
   };
-  const tituloPagina = comp ? `Debriefing Comparativo ${A} × ${comp.nome}` : `Debriefing — ${A} (${rotulos.projeto}) · edição única`;
+  const tituloPagina = parcial
+    ? comp
+      ? `Debriefing Comparativo PARCIAL ${A} × ${comp.nome} · ${rotuloParcial}`
+      : `Debriefing PARCIAL — ${A} (${rotulos.projeto}) · ${rotuloParcial}`
+    : comp
+      ? `Debriefing Comparativo ${A} × ${comp.nome}`
+      : `Debriefing — ${A} (${rotulos.projeto}) · edição única`;
 
   return (
     `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
@@ -1655,6 +1830,7 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
     `<script src="${CHART_JS_URL}"></script><script src="${DATALABELS_URL}"></script>` +
     `<style>${CSS_DO_DEBRIEFING}</style></head><body><div class="wrap">` +
     header +
+    avisoParcial +
     banner +
     nav +
     corpo +

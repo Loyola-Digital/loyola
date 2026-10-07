@@ -32,6 +32,7 @@ import {
   useValidarDebriefingConfig,
 } from "@/lib/hooks/use-debriefing-generate";
 import {
+  AINDA_NAO,
   CONTRATO_DA_GERACAO,
   CONTRATO_DA_LISTA,
   DIMENSOES_DA_PESQUISA,
@@ -40,12 +41,14 @@ import {
   PAPEIS_DO_DEBRIEFING,
   PASSOS_DA_GERACAO,
   ROTULO_DO_PAPEL,
+  avisoDoBotaoDeGerar,
   corpoDoPut,
   erroDaGeracao,
   erroDaValidacao,
   faltantesDoForm,
   formDoGet,
   formVazio,
+  motivoSemEmAndamento,
   motivoSemSegundoItem,
   nomeDoFunilDaComparacao,
   opcoesDaComparacao,
@@ -87,7 +90,7 @@ export function DebriefingGenerateButton({ projectId, funnelId, stageId, from }:
   const [formAberto, setFormAberto] = useState(false);
   const [dialogo, setDialogo] = useState(false);
   const [erro, setErro] = useState<ErroDaGeracao | null>(null);
-  const [gerado, setGerado] = useState<{ id: string; alertas: number } | null>(null);
+  const [gerado, setGerado] = useState<{ id: string; alertas: number; substituiuParcial: boolean } | null>(null);
   const [passo, setPasso] = useState(0);
 
   // Passos enquanto a geração roda — indicação honesta do que o servidor faz.
@@ -114,6 +117,9 @@ export function DebriefingGenerateButton({ projectId, funnelId, stageId, from }:
       : apiSemGeracao
         ? `A API em uso (contrato ${apiContrato}) ainda não tem a geração do debriefing (contrato ${CONTRATO_DA_GERACAO}) — provavelmente está atrás do painel. Veja o aviso de versão no topo.`
         : null;
+  // Story 49.12 (AC11): no modo em andamento, o botão diz que gera uma PARCIAL
+  // com dados até ontem e, havendo parcial, que vai substituí-la.
+  const avisoParcial = avisoDoBotaoDeGerar(cfg, new Date());
 
   function handleGerar() {
     setErro(null);
@@ -122,7 +128,7 @@ export function DebriefingGenerateButton({ projectId, funnelId, stageId, from }:
     gerar.mutate(
       { investimentoOficial: null },
       {
-        onSuccess: (r) => setGerado({ id: r.id, alertas: r.alertas.length }),
+        onSuccess: (r) => setGerado({ id: r.id, alertas: r.alertas.length, substituiuParcial: r.substituiuParcial === true }),
         onError: (e) => setErro(erroDaGeracao(e)),
       },
     );
@@ -138,9 +144,12 @@ export function DebriefingGenerateButton({ projectId, funnelId, stageId, from }:
           </Button>
           <Button size="sm" className="gap-1.5" onClick={handleGerar} disabled={!cfg || !!motivoBloqueio || gerar.isPending}>
             {gerar.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileBarChart className="h-3.5 w-3.5" />}
-            Gerar debriefing
+            {avisoParcial ? avisoParcial.rotulo : "Gerar debriefing"}
           </Button>
         </div>
+        {avisoParcial && !motivoBloqueio && (
+          <p className="max-w-md text-right text-[11px] text-amber-600">{avisoParcial.detalhe}</p>
+        )}
         {motivoBloqueio && (
           <p className="flex max-w-md items-start gap-1 text-right text-[11px] text-red-500">
             <ShieldAlert className="mt-0.5 h-3 w-3 shrink-0" />
@@ -186,7 +195,9 @@ export function DebriefingGenerateButton({ projectId, funnelId, stageId, from }:
             <div className="space-y-2 rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-4">
               <p className="flex items-center gap-2 text-sm font-medium text-emerald-600">
                 <CheckCircle2 className="h-4 w-4" />
-                Debriefing gerado — já está na lista da etapa
+                {gerado.substituiuParcial
+                  ? "Debriefing gerado — substituiu a parcial anterior (mesmo documento, comentários mantidos)"
+                  : "Debriefing gerado — já está na lista da etapa"}
               </p>
               {gerado.alertas > 0 && (
                 <p className="text-xs text-muted-foreground">
@@ -257,6 +268,8 @@ function FormularioDaConfig({
     comPesquisa.map((e) => ({ stageId: e.stageId, nome: e.stageName })),
   );
   const motivo2 = motivoSemSegundoItem(apiContrato);
+  const motivoEmAndamento = motivoSemEmAndamento(apiContrato);
+  const emAndamento = f.situacao === "em-andamento";
   const vivos = f.comparacoes.filter((id) => !removidos.includes(id));
 
   if (isLoading) return <p className="p-4 text-sm text-muted-foreground">Carregando…</p>;
@@ -358,6 +371,35 @@ function FormularioDaConfig({
         </p>
       </section>
 
+      {/* Story 49.12 (AC1) — "O lançamento terminou?" */}
+      <section className="space-y-2">
+        <p className="font-medium">O lançamento terminou? *</p>
+        <div className="flex flex-wrap items-center gap-4 text-xs">
+          <label className="flex items-center gap-1">
+            <input type="radio" name="situacao" checked={f.situacao === "encerrado"} onChange={() => set({ situacao: "encerrado" })} />
+            Encerrado
+          </label>
+          <label className={`flex items-center gap-1 ${motivoEmAndamento ? "opacity-50" : ""}`}>
+            <input
+              type="radio"
+              name="situacao"
+              disabled={!!motivoEmAndamento}
+              checked={f.situacao === "em-andamento"}
+              onChange={() => set({ situacao: "em-andamento" })}
+            />
+            Em andamento (captação aberta)
+          </label>
+        </div>
+        {motivoEmAndamento ? (
+          <p className="text-[11px] text-red-500">{motivoEmAndamento}</p>
+        ) : (
+          <p className="text-[11px] text-muted-foreground">
+            Em andamento: o debriefing sai PARCIAL, com os dados até ontem (fuso de Brasília), e a próxima geração substitui a parcial.
+            Carrinho, reabertura e downsell aceitam “ainda não aconteceu”.
+          </p>
+        )}
+      </section>
+
       {/* Datas-chave */}
       <section className="space-y-3">
         <p className="font-medium">Datas-chave</p>
@@ -371,7 +413,24 @@ function FormularioDaConfig({
           ).map(([k, rot]) => (
             <div key={k} className="space-y-1">
               <Label className="text-xs">{rot}</Label>
-              <Input type="date" value={f[k]} onChange={(e) => set({ [k]: e.target.value } as Partial<FormDaConfig>)} />
+              <Input
+                type="date"
+                value={f[k]}
+                disabled={k !== "inicioCaptacao" && emAndamento && f.carrinhoAindaNao[k]}
+                onChange={(e) => set({ [k]: e.target.value } as Partial<FormDaConfig>)}
+              />
+              {k !== "inicioCaptacao" && emAndamento && (
+                <label className="flex items-center gap-1 text-[11px]">
+                  <input
+                    type="checkbox"
+                    checked={f.carrinhoAindaNao[k]}
+                    onChange={(e) =>
+                      set({ carrinhoAindaNao: { ...f.carrinhoAindaNao, [k]: e.target.checked }, ...(e.target.checked ? { [k]: "" } : {}) } as Partial<FormDaConfig>)
+                    }
+                  />
+                  Ainda não aconteceu
+                </label>
+              )}
             </div>
           ))}
         </div>
@@ -379,13 +438,13 @@ function FormularioDaConfig({
           <div key={k} className="space-y-1">
             <Label className="text-xs">{k === "reabertura" ? "Reabertura" : "Downsell"}</Label>
             <div className="flex flex-wrap items-center gap-3 text-xs">
-              {[true, false].map((v) => (
+              {([true, false, ...(emAndamento ? [AINDA_NAO] : [])] as const).map((v) => (
                 <label key={String(v)} className="flex items-center gap-1">
                   <input type="radio" name={k} checked={f[k].houve === v} onChange={() => set({ [k]: { ...f[k], houve: v } } as Partial<FormDaConfig>)} />
-                  {v ? "Houve" : "Não houve"}
+                  {v === AINDA_NAO ? "Ainda não aconteceu" : v ? "Houve" : "Não houve"}
                 </label>
               ))}
-              {f[k].houve && (
+              {f[k].houve === true && (
                 <>
                   <Input className="h-8 w-40" type="date" value={f[k].abertura} onChange={(e) => set({ [k]: { ...f[k], abertura: e.target.value } } as Partial<FormDaConfig>)} />
                   <span>a</span>

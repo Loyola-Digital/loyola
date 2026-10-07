@@ -127,6 +127,7 @@ describe("loadDebriefingConfig — gate dentro do carregador (AC7)", () => {
       stageId: IDS.debriefing,
       funnelId: DG_PG02.funnelId,
       projectId: DG_PG02.projectId,
+      situacaoDoLancamento: "encerrado", // 49.12 AC1 (acréscimo): config de antes = encerrado
       datasChave: {
         inicioCaptacao: "2026-04-17",
         aberturaCarrinho: "2026-05-12",
@@ -326,6 +327,11 @@ const SUPERFICIE = {
   listaDeComparacaoDaLinha: "puro", // a coluna antiga manda na divergência
   problemasDaPesquisaDeCaptacao: "puro", // R6-7 — a pesquisa marcada é da etapa
   MAX_LANCAMENTOS_COMPARACAO: "constante",
+  // Story 49.12 (acréscimo) — lançamento em andamento
+  situacaoDe: "puro", // ausente = encerrado (forma anterior)
+  aindaNaoAconteceuDe: "puro", // fases "ainda não aconteceu", na ordem canônica
+  SITUACOES_DO_LANCAMENTO: "constante",
+  FASES_QUE_PODEM_NAO_TER_ACONTECIDO: "constante",
   // Constantes
   DEBRIEFING_COMBINACOES_LIBERADAS: "constante",
   DEBRIEFING_PAPEIS: "constante",

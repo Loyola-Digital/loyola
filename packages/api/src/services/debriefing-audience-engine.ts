@@ -55,12 +55,16 @@ import { PISO_DE_AMOSTRA } from "../utils/order-bump.js";
 import { adNameDoTerm } from "./launch-report-normalize.js";
 import { postDoGrupo } from "../utils/post-do-criativo.js";
 import {
+  LACUNA_CARRINHO_AINDA_NAO_ABRIU,
   aplicarImposto,
   chavesDeComprador,
+  corteSemCarrinho,
   dataBrt,
   desembrulharUtm,
   normalizarEmail,
   normalizarTelefone,
+  textoDaLacunaDoCarrinho,
+  type CorteDaJanela,
   type CriterioDeUnico,
   type JanelaDoDebriefing,
 } from "./debriefing-hygiene.js";
@@ -72,6 +76,7 @@ import {
   type Metrica,
   type MetricaRazao,
   type TuplaClassificada,
+  semValorPeloCarrinho,
 } from "./debriefing-money-time-engine.js";
 
 // ---------------------------------------------------------------------------
@@ -251,6 +256,7 @@ export interface DebriefingAudienceInput {
 
 export interface LacunaDePublico {
   codigo:
+    | typeof LACUNA_CARRINHO_AINDA_NAO_ABRIU
     | "LISTAS_FRONT_COMUNIDADE"
     | "SEM_AD_LEVEL"
     | "BASE_ANTERIOR_SEM_LEADS"
@@ -699,6 +705,9 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
   const { config, janela, classificador } = input;
   const pctImposto = config.imposto.valor;
   const lacunas: LacunaDePublico[] = [];
+  // 49.12 (AC5): com corte, NADA depois dele entra — nem a resposta da
+  // pesquisa (data ilegível fica, como a venda sem dia). Sem corte, as de sempre.
+  const respostas = janela.corte ? respostasAteOCorte(input.respondentes, janela.corte.dia) : input.respondentes;
 
   // ===================================================================
   // 1. Higiene da pesquisa (AC2) — antes de QUALQUER n
@@ -714,7 +723,7 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
   const contagemPorPesquisa = new Map(porPesquisa.map((p) => [p.pesquisaId, p]));
   let vazias = 0;
   const validas: Omit<Respondente, "segmento" | "fechamento" | "faixa" | "adId" | "motivoSemCriativo">[] = [];
-  input.respondentes.forEach((r, ordem) => {
+  respostas.forEach((r, ordem) => {
     const pesquisa = pesquisaPorId.get(r.pesquisaId);
     if (!pesquisa) {
       throw new Error(`computeDebriefingAudience: resposta de pesquisa desconhecida (${r.pesquisaId}) — o loader entrega as pesquisas junto`);
@@ -1518,20 +1527,20 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
   });
 
   const tuplasClassificadas = [...tuplas.values()];
-  return {
+  const resultado: DebriefingAudience = {
     versao: 1,
     janela: { ...janela },
     classificadorVersao: classificador.versao,
     origemDoValor: { investimentoPorTipoDeCriativo: "meta_ad_insights_daily.spend" },
     pesquisa: {
-      linhasLidas: input.respondentes.length,
+      linhasLidas: respostas.length,
       vazias,
       duplicadasRemovidas,
       respondentes: nRespondentes,
       duplicadasSemData,
       duplicadasDecididasPelaPesquisaDeCaptacao: decididasPor.pesquisaDeCaptacao,
       memoria:
-        `linhas lidas ${fmtInt(input.respondentes.length)} − sem respondente ${fmtInt(vazias)} − e-mail repetido ${fmtInt(duplicadasRemovidas)}` +
+        `linhas lidas ${fmtInt(respostas.length)} − sem respondente ${fmtInt(vazias)} − e-mail repetido ${fmtInt(duplicadasRemovidas)}` +
         ` = ${fmtInt(nRespondentes)} respondente(s) (vale a resposta mais recente: maior dia; empate ou sem data → ` +
         (temPesquisaMarcada
           ? `a da pesquisa de captação marcada na config (${fmtInt(decididasPor.pesquisaDeCaptacao)}), senão a linha posterior)`
@@ -1562,5 +1571,55 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
           },
         }
       : {}),
+  };
+  // 49.12 (AC6): carrinho que não abriu até o corte → o que depende dele vira lacuna.
+  const semCarrinho = corteSemCarrinho(janela);
+  return semCarrinho ? comLacunaDoCarrinhoNoPublico(resultado, semCarrinho) : resultado;
+}
+
+// ---------------------------------------------------------------------------
+// Story 49.12 — corte e lacuna do carrinho
+// ---------------------------------------------------------------------------
+
+/** Respostas até o corte (resposta sem data legível fica). */
+function respostasAteOCorte(respostas: readonly RespostaInput[], corte: string): RespostaInput[] {
+  return respostas.filter((r) => {
+    const dia = dataBrt(r.dataRespostaCru);
+    return dia === null || dia <= corte;
+  });
+}
+
+/**
+ * As métricas do Motor II que dependem de venda do principal (49.12 AC6): com o
+ * carrinho fechado no corte, `valor = null` com o motivo `CARRINHO_AINDA_NAO_ABRIU`.
+ */
+export const METRICAS_SEM_CARRINHO_PUBLICO = [
+  "faixa.conversaoPorFaixa[].ingressoPrincipal",
+  "conversaoPorSegmento[].ingressoPrincipal",
+  "crossLaunch.retornoDaBasePrincipal",
+  "crossLaunch.jaEmBaseAnterior.principal",
+] as const;
+
+function comLacunaDoCarrinhoNoPublico(r: DebriefingAudience, corte: CorteDaJanela): DebriefingAudience {
+  const sem = <M extends { valor: unknown; memoria: string; motivo?: string }>(m: M) => semValorPeloCarrinho(m, corte);
+  return {
+    ...r,
+    faixa: { ...r.faixa, conversaoPorFaixa: r.faixa.conversaoPorFaixa.map((l) => ({ ...l, ingressoPrincipal: sem(l.ingressoPrincipal) })) },
+    conversaoPorSegmento: r.conversaoPorSegmento.map((l) => ({ ...l, ingressoPrincipal: sem(l.ingressoPrincipal) })),
+    crossLaunch: r.crossLaunch.aplicavel
+      ? {
+          ...r.crossLaunch,
+          retornoDaBasePrincipal: sem(r.crossLaunch.retornoDaBasePrincipal),
+          jaEmBaseAnterior: { ...r.crossLaunch.jaEmBaseAnterior, principal: sem(r.crossLaunch.jaEmBaseAnterior.principal) },
+        }
+      : r.crossLaunch,
+    lacunas: [
+      ...r.lacunas,
+      {
+        codigo: LACUNA_CARRINHO_AINDA_NAO_ABRIU,
+        motivo: `${textoDaLacunaDoCarrinho(corte)} — o que depende de venda do principal não é calculado (lacuna escrita, nunca zero)`,
+        detalhe: METRICAS_SEM_CARRINHO_PUBLICO.join(", "),
+      },
+    ],
   };
 }

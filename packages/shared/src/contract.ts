@@ -312,4 +312,19 @@
 // `…/debriefing/config` ganha `pesquisasPorEtapa` (aditivo). ADITIVA: nenhuma
 // rota existente muda de forma; o web trata 404 da rota nova como "API atrás".
 // `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 34;
+// v35 (Story 49.12 — Debriefing em andamento, captação aberta; migration 0168,
+// aplicada à mão — o deploy não a aplica): a config do debriefing ganha
+// `situacaoDoLancamento` ("encerrado" | "em-andamento"; omitida no PUT =
+// "encerrado", a forma do painel anterior) e `datasChave.aindaNaoAconteceu`
+// (fases "ainda não aconteceu" — abertura/fim do carrinho, reabertura e downsell
+// passam a aceitar `null` NO MODO EM ANDAMENTO; no encerrado, a regra de sempre).
+// O GET da config devolve os dois e `parcialAtual` (a parcial da etapa, ou null).
+// `POST …/debriefing/generate` no modo em andamento gera a PARCIAL (corte = ontem
+// em Brasília, gravado no payload em `situacao`) e ganha os 422
+// SEM_DIA_FECHADO, CARRINHO_JA_ABERTO, MIDIA_DO_CORTE_NAO_SINCRONIZADA e
+// COMPARACAO_EM_ANDAMENTO; o 200 ganha `substituiuParcial` (a parcial e o final
+// ATUALIZAM a parcial da etapa — mesmo id). `GET /api/debriefings/:id` ganha
+// `parcial: { corte, dMaisN } | null` (aviso do viewer). ADITIVA: a API v34
+// recusa as chaves novas no PUT (corpo `.strict()`), então o web só oferece o
+// "em andamento" com a API ≥ 35 (49.12 AC11). `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 35;

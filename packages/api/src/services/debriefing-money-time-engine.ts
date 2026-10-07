@@ -70,13 +70,18 @@ import {
   emCentavos,
   fatorDoImposto,
   filtrarPorStatus,
-  janelaDoDebriefing,
+  LACUNA_CARRINHO_AINDA_NAO_ABRIU,
+  anteriorAAbertura,
+  corteSemCarrinho,
+  janelaDaGeracao,
   lerValorMonetario,
+  textoDaLacunaDoCarrinho,
   normalizarEmail,
   normalizarTelefone,
   somarDias,
   textoTmb,
   type ContagemDedup,
+  type CorteDaJanela,
   type CriterioDeUnico,
   type DedupPorIdNaoAplicada,
   type ExcluidasPorStatus,
@@ -228,13 +233,31 @@ export interface ClassificadorInjetado {
   classificar: (entrada: EntradaClassificador) => ResultadoClassificacao;
 }
 
+/** `Pick` que preserva a união (a 49.12 discrimina a config por `situacaoDoLancamento`). */
+export type PickDaUniao<T, K extends PropertyKey> = T extends unknown ? Pick<T, Extract<K, keyof T>> : never;
+
+/** O que os motores leem da config (49.12: a situação e o corte decidem a janela). */
+export type ConfigDoMotor = PickDaUniao<
+  DebriefingConfigLancamento,
+  "situacaoDoLancamento" | "datasChave" | "corte" | "etapas" | "imposto"
+>;
+
+/** A parte da config que vai aos motores, preservando a situação e o corte (49.12). */
+export function configDoMotor(c: DebriefingConfigLancamento): ConfigDoMotor {
+  const corte = c.corte !== undefined ? { corte: c.corte } : {};
+  if (c.situacaoDoLancamento === "em-andamento") {
+    return { situacaoDoLancamento: "em-andamento", datasChave: c.datasChave, etapas: c.etapas, imposto: c.imposto, ...corte };
+  }
+  return { datasChave: c.datasChave, etapas: c.etapas, imposto: c.imposto, ...corte };
+}
+
 export interface DebriefingMoneyTimeInput {
   /**
-   * A janela do debriefing NÃO é parâmetro: sai de `config.datasChave` por
-   * `janelaDoDebriefing` (decisão 2A). Vendas e mídia fora dela saem e são
-   * contadas.
+   * A janela do debriefing NÃO é parâmetro: sai da config por
+   * `janelaDaGeracao` (decisão 2A; 49.12: o corte, quando há, é ENTRADA da
+   * config). Vendas, leads e mídia fora dela saem e são contadas.
    */
-  config: Pick<DebriefingConfigLancamento, "datasChave" | "etapas" | "imposto">;
+  config: ConfigDoMotor;
   /** Obrigatório e sem default — o orquestrador passa `CRITERIO_DE_UNICO_HEADLINE`. */
   criterioDeUnico: CriterioDeUnico;
   /** Janela da coorte; default `MAXD_PADRAO` (45). */
@@ -267,6 +290,7 @@ export interface MetricaRazao extends Metrica<number> {
 
 export interface Lacuna {
   codigo:
+    | typeof LACUNA_CARRINHO_AINDA_NAO_ABRIU
     | "LISTAS_FRONT_COMUNIDADE"
     | "LEADS_DO_PAINEL"
     | "VENDAS_SEM_DATA"
@@ -927,8 +951,13 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
   if (!Number.isInteger(maxD) || maxD < 0) throw new Error(`computeDebriefingMoneyTime: maxD inválido: ${String(maxD)}`);
   const d0 = config.datasChave.inicioCaptacao;
   // Decisão 2A: uma regra só para a janela (o loader lê a mídia nela também).
-  const janela = janelaDoDebriefing(config.datasChave);
+  // 49.12: com corte (parcial ou comparação em D+N), o fim é o corte.
+  const janela = janelaDaGeracao(config);
+  // 49.12: `null` = o carrinho "ainda não aconteceu" — toda venda datada é anterior a ele.
   const abertura = config.datasChave.aberturaCarrinho;
+  // 49.12 (AC5): com corte, NADA depois dele entra — nem lead (a data do lead
+  // da coorte e a contagem de UTM em array). Sem corte, a lista de sempre.
+  const leadsDaConta = janela.corte ? leadsAteOCorte(input.leads, janela.corte.dia) : input.leads;
   const pct = config.imposto.valor;
 
   const papelDaEtapa = new Map<string, DebriefingPapel>(config.etapas.map((e) => [e.stageId, e.papel]));
@@ -1063,7 +1092,7 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
     if (f.ambiguo) utmsEmArray.ambiguas += 1;
   };
   for (const l of lidas) contarArray(l.v.utm, "vendas");
-  for (const l of input.leads) contarArray(l.utm, "leads");
+  for (const l of leadsDaConta) contarArray(l.utm, "leads");
 
   // Valor em BRL (moeda estrangeira por mediana × 0,5 → preço modal BRL).
   const naoTmb = dedup.mantidas.filter((l) => !l.tmb);
@@ -1117,7 +1146,7 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
   for (const l of noPeriodo) {
     if (l.grupo === "principal") {
       vendasPrincipalBrutas += 1;
-      if (l.dia !== null && l.dia < abertura) {
+      if (l.dia !== null && anteriorAAbertura(l.dia, abertura)) {
         vendasExcluidas.push({ ...itemSemPii(l), motivo: "ANTERIOR_A_ABERTURA" });
         continue;
       }
@@ -1128,7 +1157,7 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
     const total = vendasExcluidas.reduce((s, x) => s + emCentavos(x.valor), 0);
     lacunas.push({
       codigo: "VENDAS_EXCLUIDAS_AUTOMATICAMENTE",
-      motivo: `venda do principal com data anterior à abertura do carrinho (${abertura}) — excluída e listada (decisão 7 do dono)`,
+      motivo: `venda do principal com data anterior à abertura do carrinho (${abertura ?? "que ainda não aconteceu"}) — excluída e listada (decisão 7 do dono)`,
       detalhe: `${vendasExcluidas.length} venda(s), ${fmtReais(reais(total))}`,
     });
   }
@@ -1260,7 +1289,7 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
   // ===================================================================
   // 4. Leads (índices por e-mail e telefone — a mais antiga)
   // ===================================================================
-  const leadsLidos = input.leads.map((l) => ({
+  const leadsLidos = leadsDaConta.map((l) => ({
     email: normalizarEmail(l.emailCru),
     telefone: normalizarTelefone(l.telefoneCru),
     dia: dataBrt(l.dataCriacaoCru),
@@ -1619,7 +1648,7 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
         : "nao-confirmada";
 
   const reabAplicavel =
-    config.datasChave.reabertura.houve || config.etapas.some((e) => e.papel === "reabertura");
+    config.datasChave.reabertura?.houve === true || config.etapas.some((e) => e.papel === "reabertura");
   const apendiceReabertura: DebriefingMoneyTime["apendiceReabertura"] = {
     aplicavel: reabAplicavel,
     vendas: vendasGrupo.reabertura,
@@ -1703,7 +1732,7 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
   >;
   const dedupResumo = { camada1: dedup.camada1, camada2: dedup.camada2 };
 
-  return {
+  const resultado: DebriefingMoneyTime = {
     versao: 1,
     janela,
     criterioDeUnico,
@@ -1811,7 +1840,7 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
       memoria: `Σ vendas do principal (status pago, deduplicado, sem as anteriores à abertura, s/ TMB) = ${fmtReais(reais(fatGrupoCent.principal))}${notaTmb("principal")}`,
     },
     downsell: {
-      aplicavel: config.datasChave.downsell.houve || config.etapas.some((e) => GRUPO_DO_PAPEL[e.papel] === "downsell"),
+      aplicavel: config.datasChave.downsell?.houve === true || config.etapas.some((e) => GRUPO_DO_PAPEL[e.papel] === "downsell"),
       vendas: vendasGrupo.downsell,
       faturamento: reais(fatGrupoCent.downsell),
     },
@@ -1853,5 +1882,71 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
     },
     pendencias,
     lacunas,
+  };
+  // 49.12 (AC6): carrinho que não abriu até o corte → o que depende dele vira lacuna.
+  const semCarrinho = corteSemCarrinho(janela);
+  return semCarrinho ? comLacunaDoCarrinho(resultado, semCarrinho) : resultado;
+}
+
+// ---------------------------------------------------------------------------
+// Story 49.12 — corte e lacuna do carrinho
+// ---------------------------------------------------------------------------
+
+/** Leads criados até o corte (lead sem data legível fica — como a venda sem dia). */
+function leadsAteOCorte(leads: readonly LeadInput[], corte: string): LeadInput[] {
+  return leads.filter((l) => {
+    const dia = dataBrt(l.dataCriacaoCru);
+    return dia === null || dia <= corte;
+  });
+}
+
+/**
+ * As métricas do Motor I que dependem de venda do principal, reabertura ou
+ * downsell (49.12 AC6). Com o carrinho fechado no corte, elas NÃO são
+ * calculadas: `valor = null` com o motivo `CARRINHO_AINDA_NAO_ABRIU`, nunca 0.
+ */
+export const METRICAS_SEM_CARRINHO_DINHEIRO_TEMPO = [
+  "faturamentoPrincipal",
+  "conversaoIngressoPrincipal",
+  "roasTotalSemTmb",
+  "roasTotalSemTmb.semDownsell",
+  "tabela1.canais[].conversao",
+  "tabela1.fechamento.closer.conversao",
+  "tabela1.fechamento.semCloser.conversao",
+  "apendiceReabertura.roasMarginal",
+  "referenciaCombinada.roas",
+] as const;
+
+/** `valor: null` com o motivo da lacuna do carrinho — o resto da métrica (numerador, denominador) fica como rastro. */
+export function semValorPeloCarrinho<M extends { valor: unknown; memoria: string; motivo?: string }>(m: M, corte: CorteDaJanela): M {
+  const texto = textoDaLacunaDoCarrinho(corte);
+  return { ...m, valor: null, motivo: `${LACUNA_CARRINHO_AINDA_NAO_ABRIU}: ${texto}`, memoria: `não calculado — ${texto} (conta de rastro: ${m.memoria})` } as M;
+}
+
+function comLacunaDoCarrinho(r: DebriefingMoneyTime, corte: CorteDaJanela): DebriefingMoneyTime {
+  const sem = <M extends { valor: unknown; memoria: string; motivo?: string }>(m: M) => semValorPeloCarrinho(m, corte);
+  return {
+    ...r,
+    faturamentoPrincipal: sem(r.faturamentoPrincipal),
+    conversaoIngressoPrincipal: sem(r.conversaoIngressoPrincipal),
+    roasTotalSemTmb: { ...sem(r.roasTotalSemTmb), semDownsell: sem(r.roasTotalSemTmb.semDownsell) },
+    tabela1: {
+      ...r.tabela1,
+      canais: r.tabela1.canais.map((c) => ({ ...c, conversao: sem(c.conversao) })),
+      fechamento: {
+        closer: { ...r.tabela1.fechamento.closer, conversao: sem(r.tabela1.fechamento.closer.conversao) },
+        semCloser: { ...r.tabela1.fechamento.semCloser, conversao: sem(r.tabela1.fechamento.semCloser.conversao) },
+      },
+    },
+    apendiceReabertura: { ...r.apendiceReabertura, roasMarginal: sem(r.apendiceReabertura.roasMarginal) },
+    referenciaCombinada: { ...r.referenciaCombinada, roas: sem(r.referenciaCombinada.roas) },
+    lacunas: [
+      ...r.lacunas,
+      {
+        codigo: LACUNA_CARRINHO_AINDA_NAO_ABRIU,
+        motivo: `${textoDaLacunaDoCarrinho(corte)} — o que depende de venda do principal, reabertura ou downsell não é calculado (lacuna escrita, nunca zero)`,
+        detalhe: METRICAS_SEM_CARRINHO_DINHEIRO_TEMPO.join(", "),
+      },
+    ],
   };
 }

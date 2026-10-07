@@ -13,12 +13,18 @@ import debriefingGenerateRoutes from "../routes/debriefing-generate.js";
 import {
   gerarDebriefing,
   type DependenciasDaGeracao,
+  type EstadoDoSyncDaConta,
   type EtapaResolvida,
   type ParametrosDaGeracao,
   type PayloadSalvo,
   type RegistroDoDebriefing,
 } from "../services/debriefing-generate.js";
-import { DebriefingConfigError, type DebriefingConfig, type DebriefingConfigLancamento } from "../services/debriefing-config.js";
+import {
+  DebriefingConfigError,
+  type DebriefingConfig,
+  type DebriefingConfigLancamento,
+  type DebriefingConfigLancamentoEncerrado,
+} from "../services/debriefing-config.js";
 import { DebriefingDadoIndisponivelError } from "../services/debriefing-money-time-loader.js";
 import { validateDebriefing } from "../services/debriefing-guards.js";
 import type { DebriefingPayload } from "../services/debriefing-payload.js";
@@ -44,6 +50,8 @@ function deps(over: {
   payload?: (c: DebriefingConfigLancamento) => DebriefingPayload;
   etapasDaComparacao?: string[];
   salvoDaComparacao?: PayloadSalvo | null;
+  sync?: EstadoDoSyncDaConta[];
+  agora?: Date;
 } = {}): Falsas {
   const chamadas: string[] = [];
   const gravados: RegistroDoDebriefing[] = [];
@@ -80,11 +88,15 @@ function deps(over: {
       gravados.push(r);
       return { id: "50000000-0000-4000-8000-000000000001" };
     },
-    agora: () => new Date("2026-10-02T12:00:00.000Z"),
+    async estadoDoSyncDaMidia() {
+      chamadas.push("sync");
+      return over.sync ?? [];
+    },
+    agora: () => over.agora ?? new Date("2026-10-02T12:00:00.000Z"),
   };
 }
 
-const configDe = (stageId: string, extra: Partial<DebriefingConfigLancamento> = {}): DebriefingConfigLancamento => ({
+const configDe = (stageId: string, extra: Partial<DebriefingConfigLancamentoEncerrado> = {}): DebriefingConfigLancamentoEncerrado => ({
   ...configSintetica(),
   stageId,
   ...extra,
@@ -184,7 +196,7 @@ describe("AC1 — ordem fixa dos portões e nada persistido em falha", () => {
     const r = await gerarDebriefing(d, PARAMS);
     expect(r.status).toBe(200);
     const body = r.body as { id: string; html: string; payload: DebriefingPayload; alertas: unknown[] };
-    expect(Object.keys(body).sort()).toEqual(["alertas", "html", "id", "payload"]);
+    expect(Object.keys(body).sort()).toEqual(["alertas", "html", "id", "payload", "substituiuParcial"]);
     expect(d.chamadas.filter((c) => c === "gravar")).toHaveLength(1);
     expect(d.chamadas.indexOf("gravar")).toBe(d.chamadas.length - 1);
     const g = d.gravados[0]!;

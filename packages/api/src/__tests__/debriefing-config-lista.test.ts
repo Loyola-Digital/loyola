@@ -9,6 +9,7 @@
  */
 
 import { readFileSync } from "node:fs";
+import { aplicarMigracoesDaGeracao } from "./fixtures/debriefing-migracoes.js";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
@@ -430,6 +431,8 @@ describe("store real (PGlite, 0161 + 0162) — leitura compatível e escrita coe
     await pg.exec(DDL);
     await pg.exec(readFileSync(join(MIGRACOES, "0161_debriefing_configs.sql"), "utf8"));
     await pg.exec(readFileSync(join(MIGRACOES, "0162_debriefing_lancamentos_comparacao.sql"), "utf8"));
+    // Story 49.12: a 0168 (aditiva) — situação do lançamento e a parcial por etapa.
+    await aplicarMigracoesDaGeracao(pg);
     pdb = drizzle(
       async (sql, params) => {
         const r = await pg.query(sql, params as unknown[], { rowMode: "array" });
@@ -500,7 +503,7 @@ describe("store real (PGlite, 0161 + 0162) — leitura compatível e escrita coe
           WHERE table_name = 'debriefing_configs' ORDER BY ordinal_position`,
       )
     ).rows;
-    expect(cols).toHaveLength(21);
+    expect(cols).toHaveLength(23); // 21 da 0161+0162 + as 2 da 0168 (49.12)
     expect(cols.find((c) => c.column_name === "lancamentos_comparacao")).toMatchObject({ is_nullable: "NO", column_default: "'[]'::jsonb" });
     expect(cols.find((c) => c.column_name === "pesquisa_de_captacao_por_etapa")).toMatchObject({ is_nullable: "NO", column_default: "'{}'::jsonb" });
     expect(cols.some((c) => c.column_name === "lancamento_comparacao_funnel_id")).toBe(true);

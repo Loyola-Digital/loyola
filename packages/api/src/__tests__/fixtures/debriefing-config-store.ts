@@ -89,6 +89,9 @@ export function linha(
     // Colunas da 0162 (49.11) com o default do banco; valores na forma nova as sobrescrevem.
     lancamentosComparacao: [],
     pesquisaDeCaptacaoPorEtapa: {},
+    // Colunas da 0168 (49.12) com o default do banco.
+    situacaoDoLancamento: "encerrado",
+    aindaNaoAconteceu: [],
     ...valores,
     validado: false,
     validadoEm: null,

@@ -16,6 +16,8 @@ export interface DebriefingGerado {
   id: string;
   html: string;
   alertas: { codigo: string; mensagem: string; quantidade: number }[];
+  /** Story 49.12 — a geração atualizou a parcial que existia (mesmo id). Ausente = API anterior. */
+  substituiuParcial?: boolean;
 }
 
 export function useDebriefingConfig(projectId: string, funnelId: string, stageId: string, enabled = true) {
@@ -61,7 +63,11 @@ export function useGerarDebriefing(projectId: string, funnelId: string, stageId:
         method: "POST",
         body: JSON.stringify(input.investimentoOficial === null ? {} : input),
       }),
-    // O card novo aparece na lista da etapa (`use-debriefings.ts`).
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["debriefings", stageId] }),
+    // O card novo aparece na lista da etapa (`use-debriefings.ts`); 49.12: a
+    // config relê a parcial atual (o botão avisa que a próxima a substitui).
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["debriefings", stageId] });
+      qc.invalidateQueries({ queryKey: chave(stageId) });
+    },
   });
 }

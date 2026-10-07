@@ -25,6 +25,7 @@ const PRIN = "s-prin";
 function formCompleto(over: Partial<FormDaConfig> = {}): FormDaConfig {
   return {
     ...formVazio(),
+    situacao: "encerrado", // 49.12 AC1: a pergunta é obrigatória (config nova não vem pré-marcada)
     inicioCaptacao: "2026-04-16",
     aberturaCarrinho: "2026-05-09",
     fimCarrinho: "2026-05-27",
