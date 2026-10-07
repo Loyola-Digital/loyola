@@ -1283,6 +1283,8 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
   const temAdLevel = anuncios.length > 0;
   let tipoDeCriativo: DebriefingAudience["tipoDeCriativo"];
   if (dimensaoCriativo === "nenhuma") {
+    // `adLevel` registra o fato; a lacuna SEM_AD_LEVEL NÃO entra: sem dimensão
+    // exibida, nada do documento lê o ad-level (49.15 — a guarda segue a mesma regra).
     tipoDeCriativo = {
       aplicavel: false,
       motivo: "SEM_CONVENCAO_DE_CRIATIVO: o expert não tem convenção de tipo no Ad Name (config 49.1) — a dimensão não é exibida",
