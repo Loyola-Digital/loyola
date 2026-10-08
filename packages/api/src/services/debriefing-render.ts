@@ -28,7 +28,17 @@ import type { DebriefingPayload } from "./debriefing-payload.js";
 import type { AlertaFase12 } from "./debriefing-guards.js";
 import type { DebriefingAviso } from "./debriefing-config.js";
 import type { CurvaAcumulada, Metrica, PontoDaCurvaAcumulada } from "./debriefing-money-time-engine.js";
-import { SEM_LEITURA_DE_IA, montarResumoMacro, type ResumoMacro, type ValorDaParidade } from "./debriefing-resumo-macro.js";
+import {
+  SEM_LEITURA_DE_IA,
+  montarPesquisaPorPergunta,
+  montarResumoMacro,
+  type CoberturaDaPesquisa,
+  type LadoDaResposta,
+  type PesquisaPorPergunta,
+  type ResumoMacro,
+  type ValorDaParidade,
+} from "./debriefing-resumo-macro.js";
+import type { RecompraPorOrigem } from "./debriefing-audience-engine.js";
 import {
   corteSemCarrinho,
   diasEntre,
@@ -1287,6 +1297,17 @@ function blocoDoResumoMacro(doc: Documento, input: DebriefingRenderInput, rm: Re
     );
   }
 
+  // ---- 49.20 (AC2, R11-2) — pesquisa por pergunta, atual × comparação ----
+  partes.push(
+    blocoDaPesquisaPorPergunta(
+      rm.pesquisaPorPergunta ??
+        montarPesquisaPorPergunta({ payload: p, nomeAtual: A, comparacao: comp, comparacaoSemDelta: input.comparacaoSemDelta ?? null }),
+      A,
+      comp?.nome ?? null,
+      "resumo",
+    ),
+  );
+
   // ---- Maiores diferenças (AC7) — a ação é da IA (49.7 AC9c) ----
   const itens = rm.maioresDiferencas.map((d) => {
     const u = d.unidade as Unidade;
@@ -1321,6 +1342,142 @@ function blocoDoResumoMacro(doc: Documento, input: DebriefingRenderInput, rm: Re
   return (
     `<div class="resumo-macro" data-resumo-macro><div class="sec-head"><h2>Resumo macro</h2></div>` +
     `<p class="sec-desc">O lançamento em um minuto: a paridade com a comparação principal, a curva acumulada e o que falta confirmar. Os números saem dos mesmos motores das seções abaixo.</p>` +
+    partes.join("") +
+    `</div>`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Story 49.20 — recompra por origem (seção 11) e pesquisa por pergunta (R11-2)
+// ---------------------------------------------------------------------------
+
+/** Marca do bloco da recompra por origem (seção 11, parcial e final). */
+export const MARCA_DA_RECOMPRA_POR_ORIGEM = "data-recompra-por-origem";
+/** Marca do bloco da pesquisa por pergunta (`="resumo"` no Resumo macro; `="qualificacao"` na seção 12, só na parcial). */
+export const MARCA_DA_PESQUISA_POR_PERGUNTA = "data-pesquisa-por-pergunta";
+
+/** O motivo de um lado da recompra não ter número (payload anterior à 49.20, sem base, chaves diferentes). */
+function motivoSemRecompra(r: RecompraPorOrigem | undefined): string | null {
+  if (!r) return "não calculada — o payload é anterior à Story 49.20";
+  return r.aplicavel ? null : (r.motivo ?? "não se aplica");
+}
+
+/**
+ * AC1 — a recompra (compradores de captação que já estavam na base do
+ * lançamento de comparação) aberta pela origem do comprador, com "quanto do pago
+ * é gente da casa". Com comparação, o lado dela vem do payload dela ("—" com
+ * nota quando ele não a traz — relatório salvo antes da 49.20, ou sem base).
+ * Só formata: os números são os do payload.
+ */
+export function blocoDaRecompraPorOrigem(p: DebriefingPayload, comp: ComparacaoDoDebriefing | null, A: string): string {
+  const ra = p.publico.recompraPorOrigem;
+  const motivoA = motivoSemRecompra(ra);
+  const abre = `<div ${MARCA_DA_RECOMPRA_POR_ORIGEM}><h3 class="gr" style="margin-top:22px">Recompra por origem</h3>`;
+  const fecha = "</div>";
+  if (motivoA || !ra) {
+    return abre + nota(`<b>Recompra por origem de ${esc(A)}:</b> ${esc(motivoA ?? "não se aplica")}.`) + fecha;
+  }
+  const rc = comp ? comp.payload.publico.recompraPorOrigem : undefined;
+  const motivoC = comp ? motivoSemRecompra(rc) : null;
+  const ladoC = comp && !motivoC ? rc! : null;
+  const porOrigemC = new Map((ladoC?.linhas ?? []).map((l) => [l.origem, l]));
+  const semC = (m: string | null) => `<span${m ? ` title="${esc(m)}"` : ""}>${TRACO}</span>`;
+  type Pct = Pick<Metrica, "valor" | "motivo">;
+  const celulas = (l: { compradores: number; naBase: number; pctDaOrigem: Pct; pctDaRecompra: Pct } | null, motivo: string | null) =>
+    l
+      ? [esc(inteiroBr(l.compradores)), esc(inteiroBr(l.naBase)), celulaMetrica(l.pctDaOrigem, "pct"), celulaMetrica(l.pctDaRecompra, "pct")]
+      : [semC(motivo), semC(motivo), semC(motivo), semC(motivo)];
+  const linhas = ra.linhas.map((l) => tr([esc(l.origem), ...(comp ? celulas(porOrigemC.get(l.origem) ?? null, motivoC) : []), ...celulas(l, null)]));
+  // Total: o "% da origem" é o próprio `jaEmBaseAnterior.captacao` do lado (o mesmo numerador e denominador).
+  const totalDe = (r: RecompraPorOrigem, pp: DebriefingPayload) => ({
+    compradores: r.total!.compradores,
+    naBase: r.total!.naBase,
+    pctDaOrigem: pp.publico.crossLaunch.jaEmBaseAnterior.captacao,
+    pctDaRecompra: r.total!.pctDaRecompra,
+  });
+  const totalA = totalDe(ra, p);
+  const totalC = ladoC ? totalDe(ladoC, comp!.payload) : null;
+  const total = tr([`<b>Total</b>`, ...(comp ? celulas(totalC, motivoC) : []), ...celulas(totalA, null)], "total");
+  const lado = (nome: string) => [`${nome}: compradores`, `${nome}: já na base`, `${nome}: % da origem`, `${nome}: % da recompra`];
+  const cab = ["Origem do comprador", ...(comp ? lado(comp.nome) : []), ...lado(A)];
+  const daCasa = (nome: string, r: RecompraPorOrigem) =>
+    `${esc(nome)}: <b>${celulaMetrica(r.pago!.daCasa, "pct")}</b> (${esc(inteiroBr(r.pago!.naBase))} de ${esc(inteiroBr(r.pago!.compradores))} compradores pagos já estavam na base)`;
+  const pago =
+    `<p class="tnote" data-recompra-pago><b>Quanto do pago é gente da casa</b> (compradores pagos — quente, frio, frio ADV+ e N/D — já na base anterior ÷ compradores pagos): ` +
+    (comp ? (ladoC ? `${daCasa(comp.nome, ladoC)} · ` : `${esc(comp.nome)}: ${TRACO} (${esc(motivoC ?? "")}) · `) : "") +
+    `${daCasa(A, ra)}.</p>`;
+  return (
+    abre +
+    `<p class="sec-desc">Compradores de captação que já estavam na base do lançamento de comparação (a mesma regra do cross-launch: e-mail ou telefone), abertos pela origem do comprador. ` +
+    `“% da origem” = já na base ÷ compradores da origem; “% da recompra” = a parte da origem entre os que já estavam na base (soma 100%).</p>` +
+    tabela(cab, linhas, { rolagem: true, total }) +
+    pago +
+    `<p class="tnote">Origem = o canal do comprador na Tabela 1 (classificador único da 49.2), com o <b>Pago Frio ADV+</b> (cold-adv no texto que decidiu a temperatura) separado do frio, como na mídia por anúncio. ` +
+    "As listas Comunidade/Front não entram: são lacuna (LISTAS_FRONT_COMUNIDADE, sem fonte no Loyola), nunca aproximadas." +
+    (comp && motivoC ? ` ${esc(comp.nome)}: recompra ${esc(motivoC)} — “—”, nunca zero.` : "") +
+    `</p>` +
+    fecha
+  );
+}
+
+/** "45,2% (97 de 215)" da cobertura da pesquisa, ou "—" com o motivo. */
+function textoDaCobertura(c: CoberturaDaPesquisa): string {
+  if (c.valor === null) return `${TRACO}${c.motivo ? ` (${c.motivo})` : ""}`;
+  return `${fmt(c.valor, "pct")} (${inteiroBr(c.numerador ?? 0)} de ${inteiroBr(c.denominador ?? 0)} compradores)`;
+}
+
+function celulaDaResposta(l: LadoDaResposta | null): string {
+  if (!l) return `<span title="nenhum respondente com esta resposta neste lançamento (ou a grafia é outra)">${TRACO}</span>`;
+  return `${esc(fmt(l.pct, "pct"))} <span class="tnote">(${esc(inteiroBr(l.n))})</span>`;
+}
+
+/**
+ * AC2 (R11-2) — a pesquisa por pergunta, atual × comparação principal (% dos
+ * respondentes de cada lado), com a cobertura de cada um. Vai no Resumo macro
+ * (parcial e final) e na seção Qualificação SÓ da parcial. Só formata o que o
+ * payload traz (`resumoMacro.pesquisaPorPergunta`).
+ */
+export function blocoDaPesquisaPorPergunta(pp: PesquisaPorPergunta, A: string, compNome: string | null, onde: "resumo" | "qualificacao"): string {
+  const partes: string[] = [];
+  partes.push(
+    `<p class="sec-desc">Distribuição das respostas de cada pergunta confirmada, ${compNome ? `${esc(compNome)} × ${esc(A)}` : esc(A)}, em % dos respondentes (pesquisa inteira deduplicada) — ` +
+      `liberada só no resumo e na leitura parcial (R11-2); no relatório final, a seção Qualificação continua sem % por lançamento (R6-6).</p>` +
+      `<p class="tnote" data-cobertura-da-pesquisa>Cobertura = compradores de captação casados com um respondente ÷ compradores de captação. ` +
+      (compNome && pp.cobertura.comparacao ? `${esc(compNome)}: ${esc(textoDaCobertura(pp.cobertura.comparacao))} · ` : "") +
+      `${esc(A)}: ${esc(textoDaCobertura(pp.cobertura.atual))}.</p>`,
+  );
+  if (pp.semComparacao) {
+    partes.push(nota(`<b>Sem comparação por pergunta:</b> ${esc(pp.semComparacao)}. A distribuição de ${esc(A)} está na seção Qualificação.`));
+  } else if (pp.perguntas.length === 0) {
+    partes.push(nota("Nenhuma pergunta confirmada em nenhum dos dois lançamentos."));
+  }
+  for (const q of pp.perguntas) {
+    const comA = q.nAtual !== null;
+    const comC = q.nComparacao !== null && compNome !== null;
+    const cab = [
+      "Resposta",
+      ...(comC ? [`${compNome} (n = ${inteiroBr(q.nComparacao!)})`] : []),
+      ...(comA ? [`${A} (n = ${inteiroBr(q.nAtual!)})`] : []),
+    ];
+    const linha = (rotulo: string, a: LadoDaResposta | null, c: LadoDaResposta | null, classe = "") =>
+      tr([esc(rotulo), ...(comC ? [celulaDaResposta(c)] : []), ...(comA ? [celulaDaResposta(a)] : [])], classe);
+    const linhas = [
+      ...q.linhas.map((l) => linha(l.rotulo, l.atual, l.comparacao)),
+      linha("Sem resposta", q.semResposta.atual, q.semResposta.comparacao),
+    ];
+    partes.push(
+      `<div data-pergunta="${esc(q.campo)}" data-presenca="${esc(q.presenca)}"><h3 class="cap">${esc(ROTULO_DIMENSAO[q.campo] ?? q.rotulo)}</h3>` +
+        tabela(cab, linhas) +
+        (q.respostasForaDaTabela > 0
+          ? `<p class="tnote">Mostrando as ${esc(String(q.linhas.length))} respostas de maior % entre os dois lados; ${esc(inteiroBr(q.respostasForaDaTabela))} outra(s) ficam fora da tabela.</p>`
+          : "") +
+        (q.nota ? `<p class="tnote" data-nota-da-pergunta>${esc(q.nota)}</p>` : "") +
+        `</div>`,
+    );
+  }
+  for (const l of pp.lacunasDeFaixa) partes.push(lacuna("Faixa (lead score)", l));
+  return (
+    `<div ${MARCA_DA_PESQUISA_POR_PERGUNTA}="${onde}"><h3 class="gr"${onde === "qualificacao" ? ' style="margin-top:22px"' : ""}>Pesquisa por pergunta${compNome ? " — atual × comparação" : ""}</h3>` +
     partes.join("") +
     `</div>`
   );
@@ -2147,6 +2304,8 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
         `<div style="margin-top:14px">${tabela(["Medida", "%", "Base"], linhas)}</div>` +
         `<p class="tnote">Base anterior = ${esc(base)} (${esc(cl.tipoDaBase ?? TRACO)}), casamento por e-mail ou telefone. Leads anteriores: ${esc(fmt(cl.leadsAnteriores, "inteiro"))}; compradores anteriores: ${esc(fmt(cl.compradoresAnteriores, "inteiro"))}. Só a comparação principal (49.11 AC8 e).</p>`;
     }
+    // 49.20 (AC1): a recompra aberta pela origem do comprador (parcial e final).
+    corpo += blocoDaRecompraPorOrigem(p, comp, A);
     if (lacCarrinho && cl.aplicavel) corpo += lacuna("Retorno e presença na base — principal", lacCarrinho);
     corpo += lacuna("Listas-mestre Front / Comunidade", listas ? `${listas.motivo}${listas.detalhe ? ` (${listas.detalhe})` : ""}` : "sem fonte no Loyola");
     secoes.midia!.push(doc.secao("Cross-launch & Listas", "Reaproveitamento da base entre lançamentos e presença nas listas-mestre.", corpo, true));
@@ -2212,6 +2371,16 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
       (lacCarrinho ? lacuna("Conversão → Principal por segmento", lacCarrinho) : "") +
       (naoConf.length
         ? lacuna("Dimensões não confirmadas", naoConf.map((d) => `${ROTULO_DIMENSAO[d.campo] ?? d.campo} (${d.motivo})`).join("; ") + " — não aparecem e não são inferidas")
+        : "") +
+      // 49.20 (AC2, R11-2): a comparação por pergunta entra na seção SÓ na parcial; o final segue a R6-6.
+      (parcial
+        ? blocoDaPesquisaPorPergunta(
+            p.resumoMacro?.pesquisaPorPergunta ??
+              montarPesquisaPorPergunta({ payload: p, nomeAtual: A, comparacao: comp, comparacaoSemDelta: semDelta }),
+            A,
+            comp?.nome ?? null,
+            "qualificacao",
+          )
         : "");
     secoes.qual!.push(
       doc.secao(

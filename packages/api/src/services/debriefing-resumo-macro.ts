@@ -19,7 +19,9 @@ import type { DebriefingPayload } from "./debriefing-payload.js";
 import type { FaseQuePodeNaoTerAcontecido } from "./debriefing-config.js";
 import type { AlertaFase12 } from "./debriefing-guards.js";
 import { LACUNA_LEADS_UNICOS_SEM_FONTE } from "./debriefing-money-time-engine.js";
+import type { DimensaoDePublico, TabelaDaDimensao } from "./debriefing-audience-engine.js";
 import { variacaoPct } from "./launch-report-narrative.js";
+import { SURVEY_CANONICAL_FIELDS } from "../db/schema.js";
 
 export type ChaveDaParidade =
   | "compradores"
@@ -96,6 +98,173 @@ export interface ResumoMacro {
   limitacoes: string[];
   /** AC8 — "ainda não aconteceu" da config e perguntas de pesquisa sem confirmação. */
   pendencias: string[];
+  /**
+   * Story 49.20 (AC2, R11-2) — a pesquisa por pergunta, atual × comparação
+   * principal, com a cobertura de cada lado. Vai no bloco do resumo (parcial e
+   * final) e na seção Qualificação SÓ da parcial. Ausente = payload anterior à
+   * 49.20 (aditivo; a versão não sobe).
+   */
+  pesquisaPorPergunta?: PesquisaPorPergunta;
+}
+
+// ---------------------------------------------------------------------------
+// Story 49.20 — pesquisa por pergunta, atual × comparação (AC2, R11-2)
+// ---------------------------------------------------------------------------
+
+/** [AUTO-DECISION] Respostas por pergunta na tabela — o mesmo teto da Qualificação (resposta livre tem centenas de valores). */
+export const MAX_RESPOSTAS_POR_PERGUNTA = 12;
+
+/** Uma resposta num lado: n e % dos respondentes daquele lançamento (percentual, 0–100). */
+export interface LadoDaResposta {
+  n: number;
+  pct: number | null;
+}
+
+export interface LinhaDaPergunta {
+  /** A grafia do lançamento atual (a da comparação quando a resposta só existe lá). */
+  rotulo: string;
+  /** `null` = ninguém deu esta resposta neste lado (ou a grafia é outra) — "—", nunca 0 inventado. */
+  atual: LadoDaResposta | null;
+  comparacao: LadoDaResposta | null;
+}
+
+export type PresencaDaPergunta = "nos-dois" | "so-atual" | "so-comparacao";
+
+export interface PerguntaComparada {
+  campo: string;
+  rotulo: string;
+  presenca: PresencaDaPergunta;
+  /** Respondentes do lado (pesquisa inteira deduplicada); `null` = a pergunta não existe deste lado. */
+  nAtual: number | null;
+  nComparacao: number | null;
+  /** Até `MAX_RESPOSTAS_POR_PERGUNTA` respostas (faixa A→D; as demais pela maior % entre os dois lados). */
+  linhas: LinhaDaPergunta[];
+  semResposta: { atual: LadoDaResposta | null; comparacao: LadoDaResposta | null };
+  /** Respostas distintas que ficaram fora da tabela (além do teto). */
+  respostasForaDaTabela: number;
+  /** Pergunta de um lado só: de que lado falta e por quê. */
+  nota?: string;
+}
+
+/** Cobertura = compradores de captação casados com um respondente ÷ compradores (`publico.taxaDeResposta`). */
+export interface CoberturaDaPesquisa {
+  valor: number | null;
+  numerador: number | null;
+  denominador: number | null;
+  motivo?: string;
+}
+
+export interface PesquisaPorPergunta {
+  cobertura: { atual: CoberturaDaPesquisa; comparacao: CoberturaDaPesquisa | null };
+  /** Perguntas confirmadas de pelo menos um lado; vazio sem comparação. */
+  perguntas: PerguntaComparada[];
+  /** Faixa/score que a planilha não calculou: lacuna escrita, nunca reconstruída. */
+  lacunasDeFaixa: string[];
+  /** Sem comparação principal (edição única, ou parcial cuja comparação só tem relatório salvo): o motivo. */
+  semComparacao?: string;
+}
+
+const ORDEM_DOS_CAMPOS: readonly string[] = ["faixa", ...SURVEY_CANONICAL_FIELDS.filter((c) => c !== "faixa")];
+
+/** A mesma normalização das respostas do Motor II (`normalizarResposta`): minúsculas, sem acento, espaços colapsados. */
+function chaveDaResposta(raw: string): string {
+  return raw.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
+}
+
+function coberturaDe(pp: DebriefingPayload): CoberturaDaPesquisa {
+  const t = pp.publico.taxaDeResposta;
+  return { valor: t.valor, numerador: t.numerador ?? null, denominador: t.denominador ?? null, ...(t.motivo ? { motivo: t.motivo } : {}) };
+}
+
+/** Por que a pergunta não está num lado: o motivo da dimensão (ou da faixa) daquele payload. */
+function motivoDaAusencia(pp: DebriefingPayload, campo: string): string {
+  const nc = pp.publico.dimensoesNaoConfirmadas.find((d) => d.campo === campo);
+  if (campo === "faixa" && !pp.publico.faixa.aplicavel && pp.publico.faixa.motivo) return `faixa não calculada (${pp.publico.faixa.motivo})`;
+  if (nc) return MOTIVO_DA_DIMENSAO[nc.motivo] ?? nc.motivo;
+  if (pp.publico.pesquisa.linhasLidas === 0 && pp.publico.dimensoes.length === 0) return "sem pesquisa conectada";
+  return "pergunta não confirmada na configuração";
+}
+
+function ladoDe(t: TabelaDaDimensao | null, chave: string): LadoDaResposta | null {
+  const v = t?.valores.find((x) => chaveDaResposta(x.rotulo) === chave);
+  return v ? { n: v.n, pct: v.pct.valor } : null;
+}
+
+/**
+ * AC2 — puro. Uma pergunta confirmada que existe nos dois lançamentos sai lado a
+ * lado (% dos respondentes de cada um, a tabela `total` do Motor II); a que só
+ * existe de um lado sai só desse lado, com a nota. Faixa que a planilha não
+ * calculou vira lacuna — o motor não tem score para reconstruir e aqui não se
+ * inventa. Nenhum número novo: os n e % são os de `publico.dimensoes`.
+ */
+export function montarPesquisaPorPergunta(e: Pick<EntradaDoResumoMacro, "payload" | "nomeAtual" | "comparacao" | "comparacaoSemDelta">): PesquisaPorPergunta {
+  const p = e.payload;
+  const comp = e.comparacao;
+  const lacunaDaFaixa = (pp: DebriefingPayload, nome: string): string[] =>
+    pp.publico.faixa.aplicavel
+      ? []
+      : [`${nome}: faixa (lead score) não calculada pela planilha — ${pp.publico.faixa.motivo ?? "sem pergunta de faixa"}; lacuna, não reconstruída.`];
+  if (!comp) {
+    return {
+      cobertura: { atual: coberturaDe(p), comparacao: null },
+      perguntas: [],
+      lacunasDeFaixa: lacunaDaFaixa(p, e.nomeAtual),
+      semComparacao: e.comparacaoSemDelta
+        ? `a comparação ${e.comparacaoSemDelta.nome} só tem relatório salvo (totais fechados), que não pode ser cortado no mesmo D+N desta parcial`
+        : "edição única — sem lançamento de comparação na configuração",
+    };
+  }
+  const cp = comp.payload;
+  const dimA = new Map(p.publico.dimensoes.map((d) => [d.campo as string, d]));
+  const dimC = new Map(cp.publico.dimensoes.map((d) => [d.campo as string, d]));
+  const campos = [...new Set([...dimA.keys(), ...dimC.keys()])].sort((a, b) => {
+    const ia = ORDEM_DOS_CAMPOS.indexOf(a);
+    const ib = ORDEM_DOS_CAMPOS.indexOf(b);
+    return (ia < 0 ? ORDEM_DOS_CAMPOS.length : ia) - (ib < 0 ? ORDEM_DOS_CAMPOS.length : ib) || (a < b ? -1 : a > b ? 1 : 0);
+  });
+  const perguntas: PerguntaComparada[] = campos.map((campo) => {
+    const a: DimensaoDePublico | undefined = dimA.get(campo);
+    const c: DimensaoDePublico | undefined = dimC.get(campo);
+    const presenca: PresencaDaPergunta = a && c ? "nos-dois" : a ? "so-atual" : "so-comparacao";
+    const ta = a?.total ?? null;
+    const tc = c?.total ?? null;
+    // A união das respostas, alinhadas pela grafia normalizada.
+    const rotuloPorChave = new Map<string, string>();
+    for (const v of [...(ta?.valores ?? []), ...(tc?.valores ?? [])]) {
+      const k = chaveDaResposta(v.rotulo);
+      if (!rotuloPorChave.has(k)) rotuloPorChave.set(k, v.rotulo);
+    }
+    const todas: LinhaDaPergunta[] = [...rotuloPorChave.entries()].map(([k, rotulo]) => ({ rotulo, atual: ladoDe(ta, k), comparacao: ladoDe(tc, k) }));
+    const maior = (l: LinhaDaPergunta) => Math.max(l.atual?.pct ?? -1, l.comparacao?.pct ?? -1);
+    const ordenadas =
+      campo === "faixa"
+        ? todas.sort((x, y) => (x.rotulo < y.rotulo ? -1 : x.rotulo > y.rotulo ? 1 : 0))
+        : todas.sort((x, y) => maior(y) - maior(x) || (x.rotulo < y.rotulo ? -1 : x.rotulo > y.rotulo ? 1 : 0));
+    const linhas = ordenadas.slice(0, MAX_RESPOSTAS_POR_PERGUNTA);
+    const semResp = (t: TabelaDaDimensao | null): LadoDaResposta | null => (t ? { n: t.semResposta.n, pct: t.semResposta.pct.valor } : null);
+    const nota =
+      presenca === "so-atual"
+        ? `Só em ${e.nomeAtual}: em ${comp.nome}, ${motivoDaAusencia(cp, campo)}.`
+        : presenca === "so-comparacao"
+          ? `Só em ${comp.nome}: em ${e.nomeAtual}, ${motivoDaAusencia(p, campo)}.`
+          : undefined;
+    return {
+      campo,
+      rotulo: ROTULO_DO_CAMPO[campo] ?? campo,
+      presenca,
+      nAtual: ta ? ta.n : null,
+      nComparacao: tc ? tc.n : null,
+      linhas,
+      semResposta: { atual: semResp(ta), comparacao: semResp(tc) },
+      respostasForaDaTabela: ordenadas.length - linhas.length,
+      ...(nota ? { nota } : {}),
+    };
+  });
+  return {
+    cobertura: { atual: coberturaDe(p), comparacao: coberturaDe(cp) },
+    perguntas,
+    lacunasDeFaixa: [...lacunaDaFaixa(cp, comp.nome), ...lacunaDaFaixa(p, e.nomeAtual)],
+  };
 }
 
 /** AC7 — rótulo do item sem a ação da IA (até a 49.7). */
@@ -318,6 +487,7 @@ export function montarResumoMacro(e: EntradaDoResumoMacro): ResumoMacro {
     maioresDiferencas,
     limitacoes: limitacoesDoResumo(e, paridade),
     pendencias: pendenciasDoResumo(p),
+    pesquisaPorPergunta: montarPesquisaPorPergunta(e),
   };
 }
 

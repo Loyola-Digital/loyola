@@ -12,6 +12,8 @@
  * 9 (faixa, criativo × faixa, tipo de criativo) e 10 (cross-launch).
  * Story 49.18: a mídia por anúncio (`midiaPorAnuncio`, motor puro em
  * `debriefing-midia-anuncios.ts`) sai daqui, com o ad-level e os compradores de captação.
+ * Story 49.20: o cross-launch expõe as chaves (hash) de quem já estava na base, e
+ * `computeRecompraPorOrigem` (puro, chamado pela composição) abre a recompra pela origem.
  * Armadilhas 6 (n inflado por e-mail repetido), 8 (listas somadas a canais),
  * 9 (classificadores diferentes), dimensão inventada e contribuição absoluta.
  *
@@ -40,6 +42,7 @@
  */
 
 import {
+  CANAIS,
   SEGMENTOS_DE_QUALIFICACAO,
   SEGMENTO_DE_QUALIFICACAO,
   cpcDeLink,
@@ -47,6 +50,7 @@ import {
   normalizarNomeCampanha,
   somarLinkClicks,
   utmContentEfetivo,
+  type Canal,
   type Fechamento,
   type SegmentoDeQualificacao,
   type Utm,
@@ -82,6 +86,7 @@ import {
   fmtNumero,
   fmtReais,
   type ClassificadorInjetado,
+  type CompradorDeCaptacao as CompradorDoMotorI,
   type GrupoDaEtapa,
   type Metrica,
   type MetricaRazao,
@@ -494,7 +499,23 @@ export interface DebriefingAudience {
     retornoDaBasePrincipal: MetricaRazao | Metrica;
     /** Compradores do destino presentes na base anterior (percentual). */
     jaEmBaseAnterior: { captacao: MetricaRazao | Metrica; principal: MetricaRazao | Metrica };
+    /**
+     * Story 49.20 (AC1) — as chaves anônimas (hash, critério headline — as mesmas
+     * de `compradoresCaptacao.porEmail`) dos compradores de captação presentes na
+     * base anterior: o numerador de `jaEmBaseAnterior.captacao`. A composição
+     * (`montarPayloadDebriefing`) as cruza com a origem do Motor I. Ausente = sem
+     * base de comparação, ou payload anterior à 49.20.
+     */
+    compradoresNaBaseAnterior?: string[];
   };
+
+  /**
+   * Story 49.20 (AC1) — a recompra (compradores de captação que já estavam na
+   * base anterior) aberta pela origem do comprador. Montada na composição
+   * (`montarPayloadDebriefing`), que tem a origem do Motor I e as chaves do
+   * cross-launch. Ausente = payload anterior à 49.20 (aditivo; a versão não sobe).
+   */
+  recompraPorOrigem?: RecompraPorOrigem;
 
   lacunas: LacunaDePublico[];
   /**
@@ -1528,6 +1549,7 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
       });
     }
     const rotuloBase = base.tipo === "leads+compradores" ? "base anterior (leads ∪ compradores)" : "base anterior (só compradores)";
+    const naBase = compradores.filter((c) => casa(c, baseEmails, baseTelefones));
     crossLaunch = {
       aplicavel: true,
       funnelIdAnterior: base.funnelId,
@@ -1539,7 +1561,7 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
       retornoDaBasePrincipal,
       jaEmBaseAnterior: {
         captacao: razao(
-          compradores.filter((c) => casa(c, baseEmails, baseTelefones)).length,
+          naBase.length,
           nCompradores,
           `compradores de captação presentes na ${rotuloBase}`,
           "compradores de captação",
@@ -1553,6 +1575,8 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
           { percentual: true },
         ),
       },
+      // 49.20 (AC1): quem é a recompra — a composição abre por origem do comprador (Motor I).
+      compradoresNaBaseAnterior: naBase.map((c) => c.chave).sort(),
     };
   }
 
@@ -1668,6 +1692,142 @@ function compradoresDaMidia(
       dia: c.ancora.dia ?? null,
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Story 49.20 — recompra por origem do comprador (AC1)
+// ---------------------------------------------------------------------------
+
+/** A origem do comprador na recompra: os canais do classificador da 49.2, com o ADV+ separado do frio (49.18 AC4). */
+export type OrigemDaRecompra = Canal | "Pago Frio ADV+";
+
+/** A ordem fixa das linhas: a dos canais (`CANAIS`), com o "Pago Frio ADV+" logo depois do "Pago Frio". */
+export const ORIGENS_DA_RECOMPRA: readonly OrigemDaRecompra[] = CANAIS.flatMap((c): OrigemDaRecompra[] =>
+  c === "Pago Frio" ? [c, "Pago Frio ADV+"] : [c],
+);
+
+/** As origens pagas — o denominador de "quanto do pago é gente da casa". */
+export const ORIGENS_PAGAS_DA_RECOMPRA: readonly OrigemDaRecompra[] = ["Pago Quente", "Pago Frio", "Pago Frio ADV+", "Pago N/D"];
+
+export interface LinhaDaRecompra {
+  origem: OrigemDaRecompra;
+  /** Compradores de captação desta origem (critério headline). */
+  compradores: number;
+  /** Desses, os que já estavam na base do lançamento de comparação (e-mail ou telefone). */
+  naBase: number;
+  /** `naBase ÷ compradores` da origem (percentual): quanto da origem é gente da casa. */
+  pctDaOrigem: MetricaRazao;
+  /** `naBase ÷ total na base` (percentual): a composição da recompra. Σ = 100%. */
+  pctDaRecompra: MetricaRazao;
+}
+
+export interface RecompraPorOrigem {
+  aplicavel: boolean;
+  motivo?: string;
+  /** A mesma regra de casamento do cross-launch. */
+  criterio: "email-ou-telefone";
+  linhas: LinhaDaRecompra[];
+  /**
+   * `total.naBase` = o numerador de `crossLaunch.jaEmBaseAnterior.captacao`; `pctDaRecompra` = a soma
+   * da coluna (100% quando alguém da base comprou). `null` quando não se aplica (nunca zero).
+   */
+  total: { compradores: number; naBase: number; pctDaRecompra: MetricaRazao } | null;
+  /** AC1 — quanto do pago é gente da casa: compradores pagos já na base ÷ compradores pagos. `null` quando não se aplica. */
+  pago: { compradores: number; naBase: number; daCasa: MetricaRazao } | null;
+  memoria: string;
+}
+
+/** A origem de um comprador do Motor I na recompra (o ADV+ só existe dentro do frio). */
+export function origemDaRecompra(c: Pick<CompradorDoMotorI, "canal" | "frioAdv">): OrigemDaRecompra {
+  return c.canal === "Pago Frio" && c.frioAdv === true ? "Pago Frio ADV+" : c.canal;
+}
+
+/**
+ * Story 49.20 (AC1) — puro. Cruza os compradores de captação do Motor I (a
+ * origem de cada um: o canal da Tabela 1, com o ADV+) com as chaves que o
+ * cross-launch do Motor II achou na base anterior. As duas listas usam as
+ * MESMAS chaves (critério headline; a guarda F3 confere). As listas Comunidade
+ * e Front continuam lacuna (`LISTAS_FRONT_COMUNIDADE`): não entram aqui.
+ *
+ * Nunca número errado em silêncio: sem base de comparação, payload anterior à
+ * 49.20 ou chave da base que o Motor I não conhece → `aplicavel = false` com o motivo.
+ */
+export function computeRecompraPorOrigem(
+  compradores: readonly Pick<CompradorDoMotorI, "chave" | "canal" | "frioAdv">[],
+  crossLaunch: Pick<DebriefingAudience["crossLaunch"], "aplicavel" | "motivo" | "compradoresNaBaseAnterior">,
+): RecompraPorOrigem {
+  const vazio = (motivo: string, memoria: string): RecompraPorOrigem => ({
+    aplicavel: false,
+    motivo,
+    criterio: "email-ou-telefone",
+    linhas: [],
+    total: null,
+    pago: null,
+    memoria,
+  });
+  if (!crossLaunch.aplicavel) {
+    const motivo = crossLaunch.motivo ?? "SEM_LANCAMENTO_DE_COMPARACAO";
+    return vazio(motivo, "sem base do lançamento de comparação — a recompra não se calcula");
+  }
+  const chavesNaBase = crossLaunch.compradoresNaBaseAnterior;
+  if (!chavesNaBase) {
+    return vazio("RECOMPRA_NAO_CALCULADA", "o cross-launch não traz quem estava na base (payload anterior à Story 49.20)");
+  }
+  const origemPorChave = new Map(compradores.map((c) => [c.chave, origemDaRecompra(c)]));
+  const desconhecidas = chavesNaBase.filter((k) => !origemPorChave.has(k));
+  if (desconhecidas.length > 0) {
+    return vazio(
+      "CHAVES_DIFERENTES_ENTRE_OS_MOTORES",
+      `${fmtInt(desconhecidas.length)} comprador(es) da base anterior sem origem no Motor I — as chaves dos dois motores não batem (guarda F3)`,
+    );
+  }
+  const naBase = new Set(chavesNaBase);
+  const porOrigem = new Map<OrigemDaRecompra, { compradores: number; naBase: number }>(ORIGENS_DA_RECOMPRA.map((o) => [o, { compradores: 0, naBase: 0 }]));
+  for (const c of compradores) {
+    const g = porOrigem.get(origemDaRecompra(c));
+    if (!g) throw new Error(`computeRecompraPorOrigem: canal fora da união: ${String(c.canal)}`);
+    g.compradores += 1;
+    if (naBase.has(c.chave)) g.naBase += 1;
+  }
+  const totalNaBase = naBase.size;
+  const linhas: LinhaDaRecompra[] = ORIGENS_DA_RECOMPRA.map((origem) => {
+    const g = porOrigem.get(origem)!;
+    return {
+      origem,
+      compradores: g.compradores,
+      naBase: g.naBase,
+      pctDaOrigem: razao(g.naBase, g.compradores, `compradores de captação (${origem}) já na base anterior`, `compradores de captação (${origem})`, {
+        percentual: true,
+      }),
+      pctDaRecompra: razao(g.naBase, totalNaBase, `compradores de captação (${origem}) já na base anterior`, "compradores de captação já na base anterior", {
+        percentual: true,
+      }),
+    };
+  });
+  const pagas = linhas.filter((l) => ORIGENS_PAGAS_DA_RECOMPRA.includes(l.origem));
+  const pagos = pagas.reduce((s, l) => s + l.compradores, 0);
+  const pagosNaBase = pagas.reduce((s, l) => s + l.naBase, 0);
+  return {
+    aplicavel: true,
+    criterio: "email-ou-telefone",
+    linhas,
+    total: {
+      compradores: compradores.length,
+      naBase: totalNaBase,
+      pctDaRecompra: razao(totalNaBase, totalNaBase, "compradores de captação já na base anterior", "compradores de captação já na base anterior", {
+        percentual: true,
+      }),
+    },
+    pago: {
+      compradores: pagos,
+      naBase: pagosNaBase,
+      daCasa: razao(pagosNaBase, pagos, "compradores pagos (quente, frio, frio ADV+, N/D) já na base anterior", "compradores pagos", { percentual: true }),
+    },
+    memoria:
+      `${fmtInt(totalNaBase)} de ${fmtInt(compradores.length)} compradores de captação já estavam na base anterior (e-mail ou telefone — a regra do cross-launch); ` +
+      "origem = o canal do comprador na Tabela 1 (classificador da 49.2), com o ADV+ (cold-adv no texto que decidiu a temperatura) separado do frio; " +
+      "listas Comunidade/Front fora (lacuna LISTAS_FRONT_COMUNIDADE)",
+  };
 }
 
 // ---------------------------------------------------------------------------

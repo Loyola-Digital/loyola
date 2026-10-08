@@ -60,6 +60,7 @@ import {
   entradaAudienceSintetica,
   entradaMoneyTimeSintetica,
 } from "./fixtures/debriefing-payload-sintetico.js";
+import { semAcrescimosDa4920, semCamposDa4920 } from "./fixtures/debriefing-acrescimos-49-20.js";
 
 const P = "10000000-0000-4000-8000-000000000001";
 const F = "20000000-0000-4000-8000-000000000001";
@@ -894,8 +895,9 @@ describe("AC13 (a) — encerrado intocado (SHA medido em origin/main 4920adfb, a
     expect(r.status).toBe(200);
     const g = gravados[0]!;
     expect(sha(g.html)).not.toBe(SHA[caso].html);
-    expect(sha(semO4917(semO4918(g.html)))).toBe(SHA[caso].html);
-    const p = structuredClone(g.payload) as DebriefingPayload & { config: { situacaoDoLancamento?: string } };
+    // 49.20 (AC3): tirados também os acréscimos dela (recompra por origem e pesquisa por pergunta).
+    expect(sha(semO4917(semO4918(semAcrescimosDa4920(g.html))))).toBe(SHA[caso].html);
+    const p = semCamposDa4920(g.payload) as DebriefingPayload & { config: { situacaoDoLancamento?: string } };
     expect(p.situacao).toEqual({ modo: "final" });
     expect(p.config.situacaoDoLancamento).toBe("encerrado");
     delete p.situacao;
