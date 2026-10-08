@@ -17,6 +17,7 @@ import {
   type DebriefingMoneyTime,
   type Lacuna,
 } from "./debriefing-money-time-engine.js";
+import type { ResumoMacro } from "./debriefing-resumo-macro.js";
 import { METRICAS_SEM_CARRINHO_PUBLICO, type DebriefingAudience, type LacunaDePublico } from "./debriefing-audience-engine.js";
 import {
   LACUNA_CARRINHO_AINDA_NAO_ABRIU,
@@ -124,6 +125,13 @@ export interface DebriefingPayload {
   textos?: Record<string, unknown>;
   /** Story 49.12 — final ou parcial. Ausente (payload anterior à 49.12) = final. */
   situacao?: SituacaoDoDebriefing;
+  /**
+   * Story 49.17 — o "Resumo macro" do topo (paridade atual × comparação
+   * principal, maiores diferenças, limitações, pendências). A orquestração o
+   * monta depois das guardas, com a comparação em mãos. Ausente = payload
+   * anterior à 49.17 (aditivo e opcional; a versão não sobe — ver a story).
+   */
+  resumoMacro?: ResumoMacro;
 }
 
 /** A parcial do payload, ou `null` (final, ou payload anterior à 49.12). */

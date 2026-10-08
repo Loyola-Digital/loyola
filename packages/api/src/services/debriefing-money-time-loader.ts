@@ -57,6 +57,7 @@ import type { Database } from "../db/client.js";
 import { readSheetData } from "./google-sheets.js";
 import { resolveSalesSheetsForStage, type ResolvedSalesSheet } from "./sales-daily-sync.js";
 import { camada2ValeNaEtapa } from "./vendas-camada2-planilha.js";
+import { temCampoDeValor } from "./lead-origin-sync.js";
 import type { DebriefingConfigLancamento, DebriefingPapel } from "./debriefing-config.js";
 import { TIPOS_DE_PRODUTO, productKey, tipoDoProduto, type TipoDeProduto } from "../utils/produto.js";
 import { tipoPadraoDaEtapa } from "../utils/order-bump.js";
@@ -72,6 +73,7 @@ import type {
   DebriefingMoneyTimeInput,
   FonteDuplicada,
   LeadInput,
+  LeadsDeCadastroInput,
   MidiaCampanhaDiaInput,
   PlanilhaDeVendaInput,
   VendaCruaInput,
@@ -308,6 +310,31 @@ export function lerFonteDeLead(f: FonteDeLeadLida): { leads: LeadInput[]; semIde
     });
   }
   return { leads, semIdentificador: false };
+}
+
+/** As etapas de captação do lançamento (papel `leads-captacao` ou `vendas-captacao`). Pura. */
+export function etapasDeCaptacao(etapas: readonly { stageId: string; papel: DebriefingPapel }[]): Set<string> {
+  return new Set(etapas.filter((e) => e.papel === "leads-captacao" || e.papel === "vendas-captacao").map((e) => e.stageId));
+}
+
+/**
+ * Story 49.17 (AC4) — as planilhas de leads de CADASTRO da captação: `type =
+ * "leads"`, ligadas a uma etapa de captação do lançamento, sem campo de valor
+ * mapeado (`temCampoDeValor`, a regra da 36.9: a `n8n-kiwify-captação`
+ * cadastrada como leads é a planilha de vendas). Uma aba vale uma vez. Pura.
+ */
+export function escolherPlanilhasDeLeadsDeCadastro<
+  T extends { stageId: string | null; type: string; spreadsheetId: string; sheetName: string; columnMapping: unknown },
+>(planilhas: readonly T[], captacao: ReadonlySet<string>): T[] {
+  const vistas = new Set<string>();
+  return planilhas.filter((p) => {
+    if (p.type !== "leads" || p.stageId === null || !captacao.has(p.stageId)) return false;
+    if (temCampoDeValor((p.columnMapping ?? null) as Record<string, string | undefined> | null)) return false;
+    const chave = `${p.spreadsheetId}|${p.sheetName}`;
+    if (vistas.has(chave)) return false;
+    vistas.add(chave);
+    return true;
+  });
 }
 
 /** Uma linha de `manual_sales` como o loader a lê (sem nome, CPF nem endereço do cliente). */
@@ -720,6 +747,7 @@ export async function loadDebriefingMoneyTimeInput(
   ];
   const fontesVistas = new Set<string>();
   const leads: LeadInput[] = [];
+  const lidasPorAba = new Map<string, ReturnType<typeof lerFonteDeLead>>();
   for (const f of fontes) {
     const chave = `${f.spreadsheetId}|${f.sheetName}`;
     if (fontesVistas.has(chave)) continue;
@@ -731,9 +759,24 @@ export async function loadDebriefingMoneyTimeInput(
       rows: dados.rows,
       mapping: (f.columnMapping ?? {}) as Record<string, unknown>,
     });
+    lidasPorAba.set(chave, lida);
     leads.push(...lida.leads);
     diagnostico.fontesDeLead.push({ label: f.label, linhas: lida.leads.length, semIdentificador: lida.semIdentificador });
   }
+
+  // ---- Story 49.17 (AC4): leads de CADASTRO da captação ----
+  // As planilhas de leads (`type = "leads"`, sem campo de valor — a regra de
+  // `lead-origin-sync`, que tira a planilha de vendas cadastrada como leads)
+  // ligadas às etapas de captação do lançamento. Já lidas acima (são fontes da
+  // jornada): reaproveita a leitura, nunca relê.
+  const leadsDeCadastro = escolherPlanilhasDeLeadsDeCadastro(planilhasDoFunil, etapasDeCaptacao(config.etapas)).map((f) => {
+    const chave = `${f.spreadsheetId}|${f.sheetName}`;
+    return { rotulo: f.label ? `${f.label} · ${f.sheetName}` : `${f.spreadsheetName} / ${f.sheetName}`, lida: lidasPorAba.get(chave) };
+  });
+  const entradaLeadsDeCadastro: LeadsDeCadastroInput = {
+    fontes: leadsDeCadastro.map((f) => ({ rotulo: f.rotulo, linhas: f.lida?.leads.length ?? 0, semIdentificador: f.lida?.semIdentificador ?? true })),
+    leads: leadsDeCadastro.flatMap((f) => f.lida?.leads ?? []),
+  };
 
   // ---- Mídia (spend cru, só campanhas vinculadas; cada campanha numa etapa) ----
   const etapaDaCampanha = new Map<string, string>();
@@ -830,6 +873,7 @@ export async function loadDebriefingMoneyTimeInput(
     midia,
     classificador,
     fontesDuplicadas: diagnostico.fontesDuplicadas,
+    leadsDeCadastro: entradaLeadsDeCadastro,
     configClassificador,
     diagnostico,
   };

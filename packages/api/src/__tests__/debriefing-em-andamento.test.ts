@@ -33,7 +33,14 @@ import { computeDebriefingAudience, type RespostaInput } from "../services/debri
 import { higienizarVendasDoDebriefing } from "../services/debriefing-audience-loader.js";
 import { montarPayloadDebriefing, type DebriefingPayload } from "../services/debriefing-payload.js";
 import { checarF10, checarF11, validateDebriefing } from "../services/debriefing-guards.js";
-import { INDICADORES, AVISO_COMPARACAO_SEM_CORTE_EM_D_MAIS_N } from "../services/debriefing-render.js";
+import {
+  INDICADORES,
+  AVISO_COMPARACAO_SEM_CORTE_EM_D_MAIS_N,
+  CSS_DO_RESUMO_MACRO,
+  TEXTO_INGRESSOS_POR_DIA_COM_CURVA,
+  TEXTO_INGRESSOS_POR_DIA_SEM_CURVA,
+} from "../services/debriefing-render.js";
+import { escaparHtml, escaparJson } from "../services/launch-report-narrative.js";
 import {
   contasAtrasadasNoCorte,
   gerarDebriefing,
@@ -784,6 +791,12 @@ describe("AC13 (a) — encerrado intocado (SHA medido em origin/main 4920adfb, a
   // pelo gate (o que a linha gravada antes da 0168 vira: DEFAULT 'encerrado').
   // O payload difere SÓ nos dois campos que a story acrescenta — removidos
   // antes do hash: `config.situacaoDoLancamento` e `situacao`.
+  // Story 49.17 (AC10): o HTML ganha o bloco "Resumo macro" no topo (com a
+  // regra de CSS e os dois gráficos da curva em `D`) e a única troca de texto
+  // nas seções (a lacuna "Ingressos por dia" da seção 03); o payload ganha
+  // `resumoMacro`, `dinheiroTempo.cac` e `dinheiroTempo.curvaAcumulada`. Tirados
+  // os acréscimos (e a troca de texto desfeita), o SHA medido antes da 49.12
+  // continua valendo — a prova de que o resto do documento não mudou.
   const SHA = {
     "edicao-unica": { html: "7a7bcbfe254c10b97b8936cc345e3c12d6b57ee86cf10c96ce9776b31901b2c2", payload: "e031c6a295f27f7586bc1b10d17939f09d3e5c3059251fcf27c75d5551aa8b03" },
     "comparacao-recalculada": { html: "318a26ea3167e7571a0a536fadaa60d623de5dfd6ee4f10ff0aa72b60858f068", payload: "9de3477076fae4b178da5c212b852c1cfea8fbaef916e2cef9e18ff5291b9da0" },
@@ -822,6 +835,21 @@ describe("AC13 (a) — encerrado intocado (SHA medido em origin/main 4920adfb, a
     }) as DebriefingConfigLancamentoEncerrado;
   }
 
+  /** 49.17 — o HTML sem os acréscimos da story (o bloco do topo, o CSS, os gráficos da curva e a troca de texto da seção 03). */
+  function semO4917(html: string): string {
+    const ini = html.indexOf('<div class="resumo-macro" data-resumo-macro>');
+    const fim = html.indexOf('<div class="nav">');
+    expect(ini).toBeGreaterThan(-1);
+    let out = html.slice(0, ini) + html.slice(fim);
+    out = out.replace(`\n${CSS_DO_RESUMO_MACRO}`, "");
+    out = out.split(escaparHtml(TEXTO_INGRESSOS_POR_DIA_COM_CURVA)).join(escaparHtml(TEXTO_INGRESSOS_POR_DIA_SEM_CURVA));
+    const m = /<script>const D=(.*?);\n/s.exec(out)!;
+    const D = JSON.parse(m[1]!) as { graficos: Record<string, unknown> };
+    delete D.graficos.cCurvaCompradores;
+    delete D.graficos.cCurvaFaturamento;
+    return out.replace(m[1]!, escaparJson(D));
+  }
+
   /** A entrada sintética SEM os extras desta suíte (a mesma do script medido em origin/main). */
   function calcularOriginal(config: DebriefingConfigLancamento, geradoEm: Date) {
     const mtIn = { ...entradaMoneyTimeSintetica(), config: configDoMotor(config) };
@@ -854,12 +882,17 @@ describe("AC13 (a) — encerrado intocado (SHA medido em origin/main 4920adfb, a
     const r = await gerarDebriefing(d, { ...PARAMS });
     expect(r.status).toBe(200);
     const g = gravados[0]!;
-    expect(sha(g.html)).toBe(SHA[caso].html);
+    expect(sha(g.html)).not.toBe(SHA[caso].html);
+    expect(sha(semO4917(g.html))).toBe(SHA[caso].html);
     const p = structuredClone(g.payload) as DebriefingPayload & { config: { situacaoDoLancamento?: string } };
     expect(p.situacao).toEqual({ modo: "final" });
     expect(p.config.situacaoDoLancamento).toBe("encerrado");
     delete p.situacao;
     delete p.config.situacaoDoLancamento;
+    expect(p.resumoMacro).toBeDefined();
+    delete p.resumoMacro;
+    delete p.dinheiroTempo.cac;
+    delete p.dinheiroTempo.curvaAcumulada;
     expect(sha(JSON.stringify(p))).toBe(SHA[caso].payload);
     expect(g.parcial).toBeUndefined();
     expect(g.campaignName).toBe(comparacao ? "Debriefing Expert PG02 × PG01 — 17/04 a 30/06" : "Debriefing Expert PG02 — 17/04 a 30/06");
