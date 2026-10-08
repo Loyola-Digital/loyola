@@ -3,16 +3,17 @@ storyId: '49.18'
 story: '49.18'
 story_title: 'Mídia por anúncio no Debriefing — ranking com CPA/ROAS/compra por visita, estático × vídeo, peças de escassez e copy igual'
 scope_do_gate: 'Iteração 2: AC1–AC9, com o AC2 pela R12-3 (resposta à P-22) e o AC5 com o "falta" da R12-5.'
-verdict: CONCERNS
-gate: CONCERNS
-status_reason: 'Re-gate (iteração 2), depois do rebase sobre a main. A R12-3 e a R12-5 foram implementadas com fidelidade. O AC8 se mantém: os mesmos SHA nos 7 cenários, medidos contra a base independente 0f237e62. O TEST-001 do 1º gate está fechado e as 14 mutações do @dev morrem. Mas 5 das 10 mutações do QA no AC2 sobrevivem: 3 AUTO-DECISIONs de desempate sem teste e 2 textos do documento sem teste. Por isso abre o TEST-003 (medium), com conserto pronto e provado. Os textos do AC2 e do AC5 seguem para ratificação do @po.'
+verdict: PASS
+gate: PASS
+status_reason: 'Re-gate (iteração 3). O TEST-003 está fechado: G2, G3, G7, G8 e G9, reaplicadas, morrem. O REQ-002 foi ratificado pelo @po, que reescreveu o AC2 e o AC5 sem mudar o escopo e aceitou as 4 AUTO-DECISIONs. Desde 5be82d5b não há mudança de código de produção, só story e teste. Ficam só lows: REL-001 (flake anterior à story) e o visual do dono.'
 reviewer: 'Quinn'
-updated: '2026-10-08T11:53:00-03:00'
+updated: '2026-10-08T12:30:00-03:00'
 branch: 'feat/49.18-midia-anuncios'
 commit_reviewed: '1ca799e8 (código: R12-3 e R12-5) e f2cf6f1e (story), HEAD f2cf6f1e; os commits anteriores (8586e800, 6ced62c0, 941d3f4b) foram rebaseados por --onto'
 previous_gates:
+  - { commit_gate: '5be82d5b', commit_reviewed: 'f2cf6f1e', verdict: CONCERNS, date: '2026-10-08', motivo: 'TEST-003: AUTO-DECISIONs e textos do AC2 sem teste; REQ-002 com o @po' }
   - { commit_gate: '092473e9 (reescrito para 471a5c82 no rebase)', commit_reviewed: 'd0c9f031', verdict: PASS, date: '2026-10-08', motivo: 'AC2 pendente da P-22; TEST-001 low (E8/E10/E14)' }
-qa_loop: { iteration: 2, verdict: 'REJECT leve — TEST-003 (AUTO-DECISIONs e textos do AC2 sem teste); o resto aprovado' }
+qa_loop: { iteration: 3, verdict: 'APPROVE — TEST-003 fechado (edaf7acb), REQ-002 ratificado (a1c6be7e)' }
 base: 'origin/main @ 0f237e62 (49.17 A+B, #1001). O rebase foi feito com `--onto c0a63eb4`, sem conflito: as árvores de c0a63eb4 e 0f237e62 são idênticas em packages/. No `git fetch` do re-gate (11:52), a main estava em 106a4470, que só acrescenta docs (story 49.21 e o epic). O `git merge-tree` não acusa conflito.'
 
 issues:
@@ -56,14 +57,16 @@ issues:
     description: 'Das 10 mutações do QA no AC2 e na R12-5, 5 sobrevivem às suítes de debriefing (838/838). Para isolar a flutuação, rodei sem a debriefing-config.test.ts e com testTimeout de 60 s; ver REL-001. (G2) O empate de CPA passa a ser comparado no float, não em centavos: o AUTO-DECISION "CPA em centavos" fica sem teste, porque os testes de empate usam CPAs iguais no float. (G3) O ROAS "—" passa a vencer o desempate: o AUTO-DECISION "ROAS — perde" fica sem teste. (G8) O conjunto da versão passa a vir da PRIMEIRA linha do Ad ID, não da mais recente: o AUTO-DECISION "Ad ID em dois conjuntos = o conjunto da linha mais recente" fica sem teste. (G7) O documento passa a mostrar, para SEM_COMPRADOR_NAS_ELEGIVEIS, o texto do SEM_VERSAO_ELEGIVEL. O motivo é testado no payload, não no documento. (G9) A nota do ranking com a base e o mínimo da R12-3 ("investimento de captação do lançamento c/ imposto R$ X × 5% = R$ Y") some do documento sem nenhum teste falhar. São justamente as regras que o @po vai ratificar e que hoje nada prende.'
     recommendation: 'Acrescentar os 4 testes do rascunho do QA (`scratchpad/qa-rascunho-teste-4918-it2-final.ts`) ao fim de `debriefing-midia-anuncios-49-18.test.ts`. Eles importam também `escolherMelhorVersao` e reaproveitam `final`, `linha`, `midia`, `bloco`, `ROT` e `NOME_A`. O QA os rodou na worktree e depois os removeu: passam sem mutação e derrubam G2, G3, G7, G8 e G9 (cada uma com 1 falha).'
     owner: '@dev'
-    status: open
+    resolution: 'FECHADO em edaf7acb. Os 4 testes do rascunho entraram. G2, G3, G7, G8 e G9, reaplicadas pelo QA com `--testTimeout=60000` contra o arquivo da story, morrem cada uma com 1 falha (63/64); sem mutação, 64/64.'
+    status: resolved
 
   - id: REQ-002
     severity: low
     category: requirements
     description: 'Para o @po ratificar. (1) No AC2, a R12-3 entrou como nota registrada pelo @dev para ratificação, mas o corpo continua dizendo que o critério de "melhor" virou a P-22. Ratificar o texto final: elegível = investimento ≥ 5% do investimento de captação do lançamento, c/ imposto, o mesmo do CAC e do ROAS (Motor I), com o ≥ inclusivo; melhor = menor CPA; CPA empatado → maior ROAS; versão sem comprador (CPA "—") nunca é a melhor; sem versão elegível, a frase explícita, com dois textos: "nenhuma versão com ≥ 5%…" e "…tem comprador". (2) Os AUTO-DECISIONs: empate final pelo menor Ad ID; empate de CPA medido em centavos; ROAS "—" perde o desempate; Ad ID em dois conjuntos = o conjunto da linha mais recente. (3) O corpo do AC5 ainda lista só "faltam", "último dia" e "últimas horas". A R12-5 está registrada à parte e o corpo precisa ganhar o "falta", por palavra inteira. (4) Efeito da regra no PG05, para o dono saber: com 11 a 19 Ad IDs por nome, só 2 dos 8 nomes têm versão com ≥ 5% (R$ 553,78). Os outros 6 mostram "nenhuma versão com ≥ 5%…". É fiel à R12-3 ("captação do lançamento", não o investimento do nome).'
     owner: '@po'
-    status: open
+    resolution: 'RATIFICADO em a1c6be7e. O AC2 foi reescrito com a R12-3 (≥ 5% inclusivo da captação do lançamento do Motor I; menor CPA; ROAS desempata; sem comprador nunca vence; as duas frases). O AC5 ganhou o "falta" por palavra inteira. As 4 AUTO-DECISIONs foram aceitas, com motivo. O efeito no PG05 ficou registrado. Escopo inalterado: os textos descrevem o que o código já fazia no 5be82d5b.'
+    status: resolved
 
   - id: REL-001
     severity: low
@@ -80,14 +83,14 @@ issues:
     status: pending
 
 top_issues:
-  - id: TEST-003
-    severity: medium
-    finding: 'Sem teste: os AUTO-DECISIONs do AC2 (centavos, ROAS "—" perde, conjunto mais recente) e dois textos do documento (sem comprador nas elegíveis; base e mínimo). G2, G3, G7, G8 e G9 sobrevivem.'
-    suggested_action: 'Os 4 testes do rascunho do QA, provados contra as 5 mutações.'
-  - id: REQ-002
+  - id: REL-001
     severity: low
-    finding: 'O corpo do AC2 (ainda com a P-22) e o do AC5 (sem o "falta") e os AUTO-DECISIONs aguardam a ratificação do @po.'
-    suggested_action: '@po ratifica e atualiza os ACs.'
+    finding: 'O teste R1 de debriefing-config.test.ts estoura o timeout com I/O lento (anterior à story).'
+    suggested_action: 'Story de manutenção.'
+  - id: DOC-001
+    severity: low
+    finding: 'Visual do dono pendente.'
+    suggested_action: 'Dono, no preview.'
 
 waiver: { active: false }
 
@@ -110,7 +113,10 @@ checks:
   r12_5: '"falta" entra em `TERMOS_DE_ESCASSEZ` como palavra inteira: "faltam" e "falta" são termos separados; "faltas-de-tempo" e "faltamento" ficam fora. A F1 do @dev morre, e a G10 do QA (casar "falta" por prefixo) também. No PG05, a peça `--falta-1-dia` saiu do ranking (8 nomes) e foi para a escassez (6 peças).'
   regate_iteracao_2: 'AC8: o QA conferiu, blob a blob (821 blobs), que `qa-base2-4918` é idêntica a 0f237e62, acrescida só da fixture atual. Na base (`git archive`) e na story, o `ac8-4918.mts` dá os mesmos SHA de HTML inteiro e de payload nos 7 cenários, iguais aos do 1º gate e aos 7 pares do `SHA_DO_BASE`. As 14 mutações do @dev (`mut-4918-ac2.py`), reexecutadas com testTimeout de 60 s, morrem todas. Mutações do QA (`qa-mutar3-4918.py`; suítes de debriefing sem a debriefing-config, testTimeout de 60 s; cada uma restaurada, `git status` limpo): das 10, morrem 5 (G1, limiar de 4%; G4, chamador `montarPayloadDebriefing` com o investimento total; G5 e G6 no render; G10 no "falta" por prefixo) e sobrevivem 5 (G2, G3, G7, G8 e G9, o TEST-003). O E8, o E10 e o E14 do 1º gate morrem. API: debriefing e post-do-criativo 908/908 (30 arquivos); `tsc --noEmit -p packages/api` com exit 0; `eslint` com 0 erros; API inteira com 4.657 passando e as 10 falhas já conhecidas. Web, no mesmo HEAD f2cf6f1e: `next build` 0, depois `tsc` 0, `next lint` limpo e debriefing 95/95. PG05: o registro (`prod-4918b.mts`/`.out`) mostra `"sessao_read_only": "on"`, `gravar` no-op, só agregados e nenhum "@". A base do AC2 é R$ 11.075,67, com mínimo de R$ 553,78; só 2 dos 8 nomes têm versão elegível.'
 
+  regate_iteracao_3: '`git diff 5be82d5b..HEAD --stat`: só a story (+29/−4) e `debriefing-midia-anuncios-49-18.test.ts` (+42), sem código de produção; por isso o SHA e a suíte inteira não foram refeitos. O arquivo da story passa com 64/64. `tsc --noEmit -p packages/api` com exit 0. Mutações G2, G3, G7, G8 e G9 (`qa-mutar4-4918.py`): todas morrem.'
+
 notes:
+  - '[AUTO-DECISION] Re-gate iteração 3 → PASS (razão: o único medium está fechado e provado, o REQ-002 foi ratificado sem mudança de escopo, e ficam só lows).'
   - '[AUTO-DECISION] Re-gate → CONCERNS (razão: a implementação está fiel e sem defeito, mas 3 AUTO-DECISIONs do AC2 que o @po vai ratificar e 2 textos do documento estão sem teste; é o mesmo critério do 1º gate da 49.17, e o conserto, 4 testes, já está provado).'
   - '[AUTO-DECISION] PASS ou CONCERNS? → PASS (razão: os ACs do escopo foram atendidos e reproduzidos, com o SHA do HTML inteiro provado contra uma base independente; as 3 mutações sobreviventes são lacunas de fixture de severidade baixa, com rascunho pronto; o chamador do Motor II está preso por M15–M23 e E9, e a E10 depende de dado de identidade unida que a fixture não tem).'
   - '[AUTO-DECISION] Os 111 sem Ad ID somem em silêncio? → Não: estão na nota do ranking (a E6 morre). Falta destaque e a ressalva sobre o CPA (REQ-001, low).'
