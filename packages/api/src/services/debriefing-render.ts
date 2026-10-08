@@ -36,6 +36,7 @@ import {
   type LadoDaResposta,
   type PesquisaPorPergunta,
   type ResumoMacro,
+  type TestesNoResumo,
   type ValorDaParidade,
 } from "./debriefing-resumo-macro.js";
 import type { RecompraPorOrigem } from "./debriefing-audience-engine.js";
@@ -1225,6 +1226,21 @@ function blocoDoResumoMacro(doc: Documento, input: DebriefingRenderInput, rm: Re
       `<div class="note" data-delta-lacuna-resumo><b>Δ “—”:</b><ul>${semDelta.map((l) => `<li>${esc(l.rotulo)} — ${esc(l.notaSemDelta!)}</li>`).join("")}</ul></div>`,
     );
   }
+  // Fatia C (AC5) — testes pré-lançamento à parte (já dentro do investimento, do CAC e do ROAS acima).
+  if (rm.testesPreLancamento) {
+    const t = rm.testesPreLancamento;
+    const lado = (nome: string, x: TestesNoResumo | null) =>
+      x
+        ? `${esc(nome)}: <b>${esc(fmt(x.investimentoComImposto, "moeda"))}</b> c/ imposto, de ${esc(dataBr(x.periodo.inicio))} a ${esc(dataBr(x.periodo.fim))}, ` +
+          `${esc(inteiroBr(x.campanhas))} campanha(s) com “${esc(x.codigo)}” no nome; ${esc(inteiroBr(x.vendasAtribuidas.vendas))} venda(s) atribuída(s) (${esc(fmt(x.vendasAtribuidas.faturamento, "moeda"))})`
+        : `${esc(nome)}: nenhum`;
+    partes.push(
+      `<div class="note" data-testes-pre-lancamento-resumo><b>Testes pré-lançamento</b> (campanhas vendas-captacao com o código do lançamento no nome, antes do início da captação) — ` +
+        `já somados ao investimento, ao CAC e ao ROAS da tabela (R11-1). ${lado(A, t.atual)}` +
+        (comp ? ` · ${lado(comp.nome, t.comparacao)}` : "") +
+        `.</div>`,
+    );
+  }
   // AC4 — quantos leads foram descartados como teste (R11-4), dos dois lados.
   partes.push(
     `<p class="tnote" data-leads-de-teste>Leads únicos: planilhas de leads da captação, deduplicados por e-mail OU telefone, na janela (até o corte, na parcial); ` +
@@ -2061,12 +2077,35 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
       );
     const linhas = [...(comp ? linhasEtapa(comp.payload, comp.nome) : []), ...linhasEtapa(p, A)];
     const semLink = mt.midia.porGrupo.captacao.linhasSemLinkClick;
+    // 49.17 fatia C (AC5): testes pré-lançamento à parte — só quando algum lado os tem.
+    const testes = [...(comp ? [{ nome: comp.nome, t: comp.payload.dinheiroTempo.testesPreLancamento }] : []), { nome: A, t: mt.testesPreLancamento }];
+    const blocoDeTestes = testes.some((x) => x.t)
+      ? `<h3 class="gr">Testes pré-lançamento</h3>` +
+        `<div data-testes-pre-lancamento>${tabela(
+          ["Lançamento", "Invest. (c/ imposto)", "Período", "Campanhas", "Vendas atribuídas", "Faturamento atribuído"],
+          testes.map(({ nome, t }) =>
+            t
+              ? tr([
+                  esc(nome),
+                  esc(fmt(t.investimentoComImposto, "moeda")),
+                  esc(`${dataBr(t.periodo.inicio)} a ${dataBr(t.periodo.fim)}`),
+                  esc(inteiroBr(t.campanhas.length)),
+                  esc(inteiroBr(t.vendasAtribuidas.vendas)),
+                  esc(fmt(t.vendasAtribuidas.faturamento, "moeda")),
+                ])
+              : tr([esc(nome), TRACO, TRACO, "0", TRACO, TRACO]),
+          ),
+        )}</div>` +
+        `<p class="tnote">Campanhas vendas-captacao com o código do lançamento no nome e investimento antes do início da captação: o investimento entra no de captação e no total (logo no CAC e no ROAS) e aparece aqui à parte (R11-1, R12-2). ` +
+        `Vendas atribuídas pela utm_campaign; as datadas antes do início ficam fora do faturamento, como toda venda fora da janela.</p>`
+      : "";
     const corpo =
       `<div class="kpis">${kpisMidia}</div>` +
       `<div style="margin-top:16px">${tabela(["Etapa", "Invest. (c/ imposto)", "Impressões", "Link clicks", "CTR", "CPM", "CPC"], linhas)}</div>` +
       `<p class="tnote">Custo c/ imposto (${esc(numeroBr(mt.imposto.impostoPct * 100, 2))}%, procedência ${esc(mt.imposto.impostoOrigem)}) · cliques = link clicks · ${esc(inteiroBr(mt.midia.linhasForaDoPeriodo))} linha(s) de mídia fora da janela não entraram.` +
       (semLink > 0 ? ` ${esc(inteiroBr(semLink))} campanha×dia da captação sem link_click (fora da soma de cliques).` : "") +
-      `</p>`;
+      `</p>` +
+      blocoDeTestes;
     secoes.midia!.push(doc.secao("Mídia Paga — Visão Geral", "Mídia por etapa do lançamento: investimento, impressões, cliques no link, CTR, CPM e CPC.", corpo));
   }
 

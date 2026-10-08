@@ -40,10 +40,11 @@
  * `DADO_INDISPONIVEL` — nunca vira lista vazia ("erro virando ausência na tela").
  */
 
-import { and, asc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lt, lte } from "drizzle-orm";
 import { CLASSIFICADOR_VERSAO, classificarOrigem, type ConfigClassificador, type Utm } from "@loyola-x/shared";
 import {
   funnelSpreadsheets,
+  funnels,
   funnelStages,
   funnelSurveys,
   manualSales,
@@ -78,7 +79,8 @@ import type {
   PlanilhaDeVendaInput,
   VendaCruaInput,
 } from "./debriefing-money-time-engine.js";
-import { configDoMotor } from "./debriefing-money-time-engine.js";
+import { configDoMotor, ehCampanhaDeTestePreLancamento, GRUPO_DO_PAPEL } from "./debriefing-money-time-engine.js";
+import type { CodigoDoLancamento, MidiaPreLancamentoInput } from "./debriefing-money-time-engine.js";
 
 // ---------------------------------------------------------------------------
 // Erro de dado
@@ -310,6 +312,20 @@ export function lerFonteDeLead(f: FonteDeLeadLida): { leads: LeadInput[]; semIde
     });
   }
   return { leads, semIdentificador: false };
+}
+
+/**
+ * Story 49.17 fatia C (R12-2) — o código do lançamento que as campanhas têm no
+ * nome: o `match_code` do funil (aparado, minúsculo) e, sem ele, o nome do
+ * funil em minúsculas. É a regra de `effectiveMatchCode` (rotas de campanhas
+ * órfãs e de auto-preenchimento das campanhas da etapa, Epic 25 / Story 28.1),
+ * a mesma que já casa campanha Meta com o funil. `null` = sem nenhum dos dois. Pura.
+ */
+export function codigoDoLancamentoDoFunil(funil: { name: string | null; matchCode: string | null }): CodigoDoLancamento | null {
+  const doCadastro = (funil.matchCode ?? "").trim().toLowerCase();
+  if (doCadastro) return { codigo: doCadastro, origem: "match_code" };
+  const doNome = (funil.name ?? "").trim().toLowerCase();
+  return doNome ? { codigo: doNome, origem: "nome-do-funil" } : null;
 }
 
 /** As etapas de captação do lançamento (papel `leads-captacao` ou `vendas-captacao`). Pura. */
@@ -833,6 +849,53 @@ export async function loadDebriefingMoneyTimeInput(
     );
   }
 
+  // ---- Story 49.17 fatia C (AC5, R12-2): testes pré-lançamento ----
+  // Só campanhas vinculadas a etapa de CAPTAÇÃO, com a fase vendas-captacao e o
+  // código do lançamento no nome; só os dias ANTES do início da captação (o
+  // resto fora da janela continua fora, decisão 2A). Sem limite inferior de
+  // data: o nome com o código do lançamento é o filtro (R12-2).
+  let midiaPreLancamento: MidiaPreLancamentoInput | undefined;
+  const [funil] = await db.select({ name: funnels.name, matchCode: funnels.matchCode }).from(funnels).where(eq(funnels.id, config.funnelId)).limit(1);
+  const codigo = funil ? codigoDoLancamentoDoFunil(funil) : null;
+  const papelDaEtapa = new Map(config.etapas.map((e) => [e.stageId, e.papel]));
+  const idsDeTeste = codigo
+    ? idsCampanha.filter((id) => {
+        const papel = papelDaEtapa.get(etapaDaCampanha.get(id)!);
+        return !!papel && GRUPO_DO_PAPEL[papel] === "captacao" && ehCampanhaDeTestePreLancamento(campanhaInfo.get(id), codigo);
+      })
+    : [];
+  if (codigo && idsDeTeste.length > 0) {
+    const antes = await db
+      .select({
+        campaignId: metaCampaignInsightsDaily.campaignId,
+        dateStart: metaCampaignInsightsDaily.dateStart,
+        spend: metaCampaignInsightsDaily.spend,
+        impressions: metaCampaignInsightsDaily.impressions,
+        actions: metaCampaignInsightsDaily.actions,
+      })
+      .from(metaCampaignInsightsDaily)
+      .where(
+        and(
+          eq(metaCampaignInsightsDaily.projectId, config.projectId),
+          inArray(metaCampaignInsightsDaily.campaignId, idsDeTeste),
+          lt(metaCampaignInsightsDaily.dateStart, janela.inicio),
+        ),
+      );
+    const linhas: MidiaCampanhaDiaInput[] = antes.map((l) => ({
+      stageId: etapaDaCampanha.get(l.campaignId)!,
+      campaignId: l.campaignId,
+      campaignName: campanhaInfo.get(l.campaignId) ?? l.campaignId,
+      dia: l.dateStart,
+      spendBruto: numeroDoBanco(l.spend),
+      impressoes: numeroDoBanco(l.impressions),
+      linkClicks: linkClicksDeActions(l.actions),
+    }));
+    linhas.sort((a, b) =>
+      a.campaignId === b.campaignId ? (a.dia < b.dia ? -1 : a.dia > b.dia ? 1 : 0) : a.campaignId < b.campaignId ? -1 : 1,
+    );
+    if (linhas.some((l) => l.spendBruto > 0 || l.impressoes > 0)) midiaPreLancamento = { codigo, linhas };
+  }
+
   // ---- Nome da campanha das UTMs: funnel_stages.campaigns → meta_ad_insights_daily ----
   const idsDeUtm = new Set<string>();
   for (const u of [...vendas.map((v) => v.utm), ...leads.map((l) => l.utm)]) {
@@ -874,6 +937,7 @@ export async function loadDebriefingMoneyTimeInput(
     classificador,
     fontesDuplicadas: diagnostico.fontesDuplicadas,
     leadsDeCadastro: entradaLeadsDeCadastro,
+    ...(midiaPreLancamento ? { midiaPreLancamento } : {}),
     configClassificador,
     diagnostico,
   };

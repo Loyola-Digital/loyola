@@ -105,6 +105,34 @@ export interface ResumoMacro {
    * 49.20 (aditivo; a versão não sobe).
    */
   pesquisaPorPergunta?: PesquisaPorPergunta;
+  /**
+   * Fatia C (AC5, R11-1 opção B) — os testes pré-lançamento à parte, de cada
+   * lado (já dentro do investimento, do CAC e do ROAS da tabela). Ausente =
+   * nenhum lado tem testes.
+   */
+  testesPreLancamento?: { atual: TestesNoResumo | null; comparacao: TestesNoResumo | null };
+}
+
+/** Fatia C — o que o resumo mostra dos testes pré-lançamento de um lado. */
+export interface TestesNoResumo {
+  codigo: string;
+  investimentoComImposto: number;
+  periodo: { inicio: string; fim: string };
+  campanhas: number;
+  vendasAtribuidas: { vendas: number; faturamento: number; naJanela: number };
+}
+
+function testesNoResumo(p: DebriefingPayload): TestesNoResumo | null {
+  const t = p.dinheiroTempo.testesPreLancamento;
+  return t
+    ? {
+        codigo: t.codigoDoLancamento.codigo,
+        investimentoComImposto: t.investimentoComImposto,
+        periodo: { ...t.periodo },
+        campanhas: t.campanhas.length,
+        vendasAtribuidas: { ...t.vendasAtribuidas },
+      }
+    : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -488,7 +516,15 @@ export function montarResumoMacro(e: EntradaDoResumoMacro): ResumoMacro {
     limitacoes: limitacoesDoResumo(e, paridade),
     pendencias: pendenciasDoResumo(p),
     pesquisaPorPergunta: montarPesquisaPorPergunta(e),
+    ...testesDosLados(p, comp?.payload ?? null),
   };
+}
+
+/** Fatia C — os testes à parte, só quando algum lado os tem (sem testes, o resumo de antes). */
+function testesDosLados(p: DebriefingPayload, comp: DebriefingPayload | null): Pick<ResumoMacro, "testesPreLancamento"> {
+  const atual = testesNoResumo(p);
+  const comparacao = comp ? testesNoResumo(comp) : null;
+  return atual || comparacao ? { testesPreLancamento: { atual, comparacao } } : {};
 }
 
 /** AC8 — as limitações da tabela, uma linha cada. */
