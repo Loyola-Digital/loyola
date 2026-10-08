@@ -235,6 +235,26 @@ Fonte: conversa com o dono em 2026-10-07. Registradas pelo @po (contexto de epic
 | R10-2 | **"Pode aplicar a 0168 e mergear a 49.12":** a 0168 foi aplicada em produção às 18:01Z, o dono provou pelo `information_schema` às 18:46Z, o merge foi a #992 e a API subiu no contrato 35 às 20:38Z | 49.12 |
 | R10-3 | **"2merge 3merge":** autoriza o merge da 49.15 (#995) e da 49.14 (#997) | 49.15 · 49.14 |
 
+## Decisões do dono, rodada 11 (2026-10-07/08): ✅ são lei, não reabrir
+
+Fonte: conversa com o dono (respostas literais entre aspas), registrada nas stories 49.17–49.20 (tabela do topo da 49.17). Origem: o pedido de complementar a geração com o método da skill `squads/loyola-debriefing/data/leitura-parcial-lancamento.md` (repositório `aiox-bonsai`). **Onde o método e a rodada 11 divergem, vale a rodada 11.** Registrada pelo @po (contexto de epic).
+
+| # | Decisão | Onde se aplica |
+|---|---|---|
+| R11-0a | D0 = **"inicio informado"** (início da captação da config), não a primeira venda do método | 49.17–49.20 |
+| R11-0b | Corte: **"mantem ontem"** (R8-2), não "hoje com dia incompleto" | 49.17–49.20 |
+| R11-0c | Imposto: **"mantem loyola"** (gross-up 12,15%, nunca ×1,13) | 49.17–49.20 |
+| R11-0d | Fontes: **"mantem fontes loyola"** (não o export cru da Kiwify) | 49.17–49.20 |
+| R11-0e | "Tela só com o resumo macro" = **(a) seção nova no topo do relatório** | 49.17 |
+| R11-0f | **"entram todas"** as análises do método | 49.17–49.20 |
+| R11-0g | **"valem para o final"**: parcial e final | 49.17–49.20 |
+| R11-0h | Projeção do fechamento: **"não"** | 49.17 |
+| R11-1 | Testes pré-lançamento: **(B)**, entram no investimento **e** aparecem à parte | 49.17, 49.18 |
+| R11-2 | Pesquisa por pergunta atual × anterior: **"Libera a comparação por pergunta só no resumo e na leitura parcial"** (exceção à R6-6) | 49.20 |
+| R11-3 | Curva acumulada: **(A)** só o atual e a comparação principal | 49.17 |
+| R11-4 | Leads de teste: **"são email que contem test"** | 49.17, 49.20 |
+| R11-5 | Peças de escassez: **"só no nome do anuncio"** | 49.18 |
+
 ### R5-1 no Epic 49 (a 41.12 mora no Epic 41)
 
 - **O que a 41.12 faz:**
@@ -501,11 +521,15 @@ A skill exige `link_click` em toda métrica de clique (`data/parametros-constant
 | **49.13** | **Lançamentos arquivados na lista de comparação** (R8-5). O seletor do formulário lista ativos e arquivados, com o rótulo "(arquivado)" e os ativos primeiro; comparação salva arquivada aparece pelo nome, não pelo id. Só front: o servidor já aceita arquivados; sem contrato e sem migration. Prioridade alta, 1ª **Estado (2026-10-07):** Merged #990, no ar. Done depende do visual do dono. ClickUp parado em `ready to ship`. | 49.6, 49.11 (na `main`) | `[FALTA — dono]` |
 | **49.14** | **Debriefing em andamento: carrinho aberto** (R8-1, R9-5). Tira o 422 da 49.12 AC4; cada fase (carrinho, reabertura, downsell) fica concluída, em curso ou não começou, gravada no payload; carrinho em curso calculado até o corte e rotulado parcial, com a coorte marcada incompleta; Δ do carrinho só quando existe dos dois lados em D+N; todas as fases concluídas e ainda "em andamento" → janela no fim da regra 2A (números iguais aos do final). Prioridade alta, 3ª **Estado (2026-10-07):** Merged #997; P-20 → R10-1 (B). Done depende da API v36 no ar e do visual do dono. | **49.12** | `[FALTA — dono]` |
 | **49.15** | **Fix: convenção de criativo "nenhuma" sem ad-level não pode falhar na F11** (defeito na `main`, achado no gate da 49.14). Com `dimensaoDeCriativo = "nenhuma"` e sem `meta_ad_insights_daily` no período, o Motor II marca `adLevel.motivo = SEM_AD_LEVEL` sem registrar a lacuna, a guarda a exige sem olhar a dimensão e toda geração dá 422. Com dimensão, nada muda; os casos que já geravam ficam com o mesmo SHA. Sem contrato e sem migration. Prioridade: `[FALTA — dono]` (proposta do @po: alta) **Estado (2026-10-07):** Merged #995. Done depende da API com o build da #995. | — (independe das 49.12/49.14; rebase de quem mergear depois) | `[FALTA — dono]` (proposta do @po: S) |
-| **49.16** | **Fix de texto: a nota do link do criativo diz o critério usado** (REQ-001 do gate da 49.15). Sem ad-level no período, a nota de "Criativo × Faixa" diz "anúncio de maior investimento", mas o link é o do anúncio com mais respondentes entre os que têm post (49.6, R7-9). O critério de escolha não muda; o payload fica idêntico e o HTML difere só na nota. Sem contrato e sem migration. Prioridade: `[FALTA — dono]` (proposta do @po: baixa) **Estado (2026-10-07):** implementação no gate do @qa. | — (o caso `"nenhuma"` sem ad-level só gera com a 49.15) | `[FALTA — dono]` (proposta do @po: XS) |
+| **49.16** | **Fix de texto: a nota do link do criativo diz o critério usado** (REQ-001 do gate da 49.15). Sem ad-level no período, a nota de "Criativo × Faixa" diz "anúncio de maior investimento", mas o link é o do anúncio com mais respondentes entre os que têm post (49.6, R7-9). O critério de escolha não muda; o payload fica idêntico e o HTML difere só na nota. Sem contrato e sem migration. Prioridade: `[FALTA — dono]` (proposta do @po: baixa) **Estado (2026-10-08):** Merged (#999, `f09408f6`; atualizado pelo @po). | — (o caso `"nenhuma"` sem ad-level só gera com a 49.15) | `[FALTA — dono]` (proposta do @po: XS) |
+| **49.17** | **Resumo macro no topo** (R11-0e). Bloco antes das abas, em parcial e final: tabela de paridade (compradores, faturamento, ticket, tier, investimento, CAC, ROAS, leads únicos, CPM) com Δ; curva acumulada D+0…D+x do atual e da comparação principal; maiores diferenças (a ação fica com a IA, 49.7); limitações e pendências de confirmação; sem projeção. CAC novo; leads únicos sem "test" no e-mail (R11-4); testes pré-lançamento no investimento e à parte (R11-1). **Estado (2026-10-08):** Ready (GO 8/10). Fatias A/B/C recomendadas; a fatia C depende da **P-21**. Prioridade `[FALTA — dono]` (proposta do @po: alta) | 49.12, 49.14, 49.16 (na `main`) | `[FALTA — dono]` (proposta do @po: L, em fatias A=M, B=S, C=M) |
+| **49.18** | **Mídia por anúncio:** ranking por nome de anúncio (CPA, ROAS, tier, compra por visita, % da verba, link), melhor versão isolada, estático × vídeo com conversão do clique, ADV+ separado só nestas análises, peças de escassez pelo nome (R11-5) por dia de veiculação, copy igual. **Estado (2026-10-08):** Ready (GO 8/10); o AC2 depende da **P-22**. Prioridade `[FALTA — dono]` (proposta do @po: alta) | **49.17** | `[FALTA — dono]` (proposta do @po: L) |
+| **49.19** | **Teste de LP:** LP pelo código da campanha, pares justos (formato, nomes de anúncio e de conjunto), janela comum de dias inteiros, compras ÷ `landing_page_view`, Fisher exato bilateral (função pura nova), mesmo criativo nas duas LPs, para onde vai a verba. **Estado (2026-10-08):** Ready (GO 9/10). Prioridade `[FALTA — dono]` (proposta do @po: média) | **49.18** | `[FALTA — dono]` (proposta do @po: M) |
+| **49.20** | **Público:** recompra por origem (quanto do pago é gente da casa), pesquisa atual × anterior por pergunta só no resumo e no parcial (R11-2), listas Comunidade/Front seguem como lacuna. **Estado (2026-10-08):** Ready (GO 9/10). Prioridade `[FALTA — dono]` (proposta do @po: média) | **49.17**, **49.18** (regra ADV+) | `[FALTA — dono]` (proposta do @po: M) |
 
 **Ordem de merge (rodada 3, histórico):** 49.8 (independente, pode ir primeiro) · (**41.10** ‖ 49.1 ‖ 49.2) → [ **41.11** ‖ (49.3 → 49.4 → 49.5 → 49.6 → 49.7) ] → **49.10** → 49.9.
 
-**Ordem de merge (atual, depois da rodada 10):** ✅ 49.8 · ✅ 49.2 · ✅ 49.1 · ✅ 41.10 · ✅ 49.3 · ✅ 49.4 · ✅ 49.11 · ✅ 41.11 · ✅ 49.5 · ✅ 41.12 fatia A · ✅ 49.6 · ✅ 49.13 (#990) · ✅ 49.12 (#992) · ✅ 49.15 (#995) · ✅ 49.14 (#997) (na `main` @ `ad73b4a7`) → { 49.7 → 49.10 → 49.9, a trilha da rodada 5 } ‖ **49.16** (no gate do @qa). "Merged" não quer dizer Done: ver o estado de cada story na tabela.
+**Ordem de merge (atual, depois da rodada 11):** ✅ 49.8 · ✅ 49.2 · ✅ 49.1 · ✅ 41.10 · ✅ 49.3 · ✅ 49.4 · ✅ 49.11 · ✅ 41.11 · ✅ 49.5 · ✅ 41.12 fatia A · ✅ 49.6 · ✅ 49.13 (#990) · ✅ 49.12 (#992) · ✅ 49.15 (#995) · ✅ 49.14 (#997) · ✅ 49.16 (#999, `f09408f6`) → { 49.7 → 49.10 → 49.9, a trilha da rodada 5 } ‖ { **49.17** (fatias A → B → C) → **49.18** → (**49.19** ‖ **49.20**) }, a trilha da rodada 11. O **AC9c da 49.7** (ação por diferença do resumo macro) depende da fatia A da 49.17: se a 49.7 for antes, esse AC só fecha quando a fatia A entrar. As quatro mexem no mesmo render e nos mesmos motores: quem mergear depois faz rebase. "Merged" não quer dizer Done: ver o estado de cada story na tabela.
 
 **Ordem de merge (depois das rodadas 8 e 9, histórico):** ✅ 49.8 · ✅ 49.2 · ✅ 49.1 · ✅ 41.10 · ✅ 49.3 · ✅ 49.4 · ✅ 49.11 · ✅ 41.11 · ✅ 49.5 · ✅ 41.12 fatia A · ✅ 49.6 (na `main` @ `33e34273`) → { 49.7 → 49.10 → 49.9, a trilha da rodada 5 } ‖ { **49.13** ‖ (**49.12** → **49.14**) } ‖ (**49.15** → **49.16**). A 49.15 é fix independente; ela, a 49.12 e a 49.14 mexem em `debriefing-audience-engine.ts` e `debriefing-guards.ts`. A 49.16 é fix de texto da nota do link e mexe no render, como a 49.12 e a 49.14. Quem mergear depois faz rebase (@po, 2026-10-07).
 - ***49.13 primeiro, pela prioridade:*** R8-5 ("antes da 49.12"). Não há código em comum com a 49.12, e as duas dependem só do que já está na `main` (49.6, 49.11). A 49.13 é só front: não sobe contrato nem cria migration.
@@ -745,6 +769,18 @@ A numeração é a dos rascunhos do @sm (41.12: P-9 e P-10; 49.11: P-11 a P-13),
   - Para a 41.10/41.11 foi preciso perguntar (P-3 → R3-2). O rascunho da 41.12 dá a autorização como concedida.
   - **Bloqueia o início da implementação** da 41.12, não a escrita nem a validação da story.
 
+### Perguntas novas (rodada 11, 2026-10-08, @po) — abertas
+
+- **P-21 (49.17 AC5, fatia C) — Limite inferior dos testes pré-lançamento.** Hoje a regra conta **todo** o investimento, antes do início da captação, das campanhas de captação associadas às etapas do lançamento. Uma campanha **reaproveitada** de um lançamento anterior (mesmo ID) traria investimento antigo para o CAC e o ROAS. Opções:
+  - (a) sem limite, a proposta do @sm;
+  - (b) a partir do fim da janela do lançamento de comparação;
+  - (c) N dias antes do início da captação;
+  - (d) só campanhas com o código do lançamento no nome (o filtro do método, `campaign.name CONTAIN <pgxx>`).
+
+  Segura só o gate da fatia C.
+- **P-22 (49.18 AC2) — Critério da "melhor versão isolada".** O método não define "melhor". Opções: menor CPA, maior ROAS, maior compra por visita, ou uma combinação, e qual amostra mínima. Segura só o gate do AC2.
+- **P-23 (49.18 AC4 e 49.20 AC1) — Taxonomia de origem do método no Debriefing.** O método abre a origem com "Pago frio ADV+" e "E-mail", e o classificador do Loyola não tem nenhum dos dois. O classificador compartilhado **não** muda (aceito). A pergunta: a Tabela 1 **do Debriefing** (seção 04) ganha a linha "dos quais ADV+" dentro do Pago Frio, e "E-mail" vira canal só no Debriefing? Ou as duas ficam só nas análises novas? Não bloqueia: o padrão é a opção mais estreita.
+
 ### Perguntas novas (rodada 8, 2026-10-07) — **todas respondidas na rodada 9** (ver "Decisões do dono, rodada 9"): P-15 → R9-1, P-16 → R9-2, P-17 → R9-3, P-18 → R9-4, P-19 → R9-5. Texto original nas stories, mantido como histórico.
 
 A numeração é a das stories: P-15 a P-17 nasceram no rascunho da 49.12; a P-18 (@po), na validação da 49.12; a P-19 (@po), na validação da 49.14.
@@ -809,3 +845,5 @@ A numeração é a das stories: P-15 a P-17 nasceram no rascunho da 49.12; a P-1
 | 2026-10-07 | @po (Pax) | **Story 49.15 registrada** (contexto de epic do @po), depois do `*validate-story-draft`, que deu GO 9/10 e a passou a Ready. Linha nova na tabela "Stories": fix do `SEM_AD_LEVEL` com a convenção `"nenhuma"`, defeito na `main` achado no gate da 49.14. Ordem de merge: a 49.15 é independente, em paralelo às trilhas abertas, com rebase de quem mergear depois. Prioridade e estimativa ficam `[FALTA — dono]`; a proposta do @po (alta, S) está entregue ao dono. |
 | 2026-10-07 | @po (Pax) | **Story 49.16 registrada** (contexto de epic do @po) depois do `*validate-story-draft`, que deu GO 9/10 e a passou a Ready. É um fix de texto: a nota do link do criativo sem ad-level, REQ-001 do gate da 49.15. Na ordem de merge ela entra depois da 49.15, porque a prova do caso `"nenhuma"` precisa do fix dela; o rebase fica com quem mergear depois. Prioridade e estimativa ficam `[FALTA — dono]`; a proposta do @po (baixa, XS) foi entregue ao dono. |
 | 2026-10-07 | @po (Pax) | **Rodada 10 registrada** (contexto de epic do @po): R10-1 (P-20 → B, sem código), R10-2 (0168 e merge da 49.12) e R10-3 (merges da 49.15 e da 49.14). **Estado pós-merge:** a 49.13 (#990), a 49.12 (#992), a 49.15 (#995) e a 49.14 (#997) estão Merged, e nenhuma está Done. O que falta em cada uma está no status da story e na tabela "Stories". A ordem de merge foi atualizada e a anterior ficou como histórico. A 49.16 está no gate do @qa. |
+| 2026-10-08 | @po (Pax) | **Rodada 11 registrada** (contexto de epic do @po) e **PO validation das 49.17–49.20**: 49.17 GO 8/10, 49.18 GO 8/10, 49.19 GO 9/10, 49.20 GO 9/10; as quatro em Ready. Seção "Decisões do dono, rodada 11" (R11-0a…R11-5). Linhas novas na tabela "Stories", com prioridade e estimativa propostas e `[FALTA — dono]`. Ordem de merge: 49.16 marcada como mergeada (#999), e a trilha 49.17 (fatias A→B→C) → 49.18 → (49.19 ‖ 49.20). A 49.20 passou a depender da 49.18 (regra ADV+). Perguntas novas **P-21** (limite dos testes pré-lançamento), **P-22** (critério da melhor versão isolada) e **P-23** (taxonomia ADV+/E-mail no Debriefing); nenhuma bloqueia o Ready. Pendência do @sm: ajustar a 49.7 para a "ação por diferença" do AC7 da 49.17. |
+| 2026-10-08 | @po (Pax) | **49.7 revalidada (rodada 11)**: 9/10, GO, segue Ready. O AC9c (ação por diferença do resumo macro, feito pelo @sm, `6dac942a`) fecha a pendência deixada na validação da 49.17. Na ordem de merge, o AC9c ficou amarrado à fatia A da 49.17. |
