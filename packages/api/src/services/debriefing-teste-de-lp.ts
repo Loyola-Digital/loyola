@@ -174,6 +174,8 @@ export type MotivoSemLeitura =
 
 export interface ParDeLp {
   lps: [string, string];
+  /** Quantas LPs têm a mesma assinatura (formato + anúncios + conjuntos): com 3+, há várias comparações (REQ-002). */
+  lpsNaAssinatura: number;
   formato: FormatoDoTesteDeLp;
   anuncios: string[];
   conjuntos: string[];
@@ -389,7 +391,7 @@ export function computeTesteDeLp(input: EntradaDoTesteDeLp): TesteDeLp {
     for (let i = 0; i < ordenada.length; i++) {
       for (let j = i + 1; j < ordenada.length; j++) {
         pares.push(
-          parDe(ordenada[i]!, ordenada[j]!, (g) => chavesDasCampanhas.get(chaveDoGrupo.get(g)!)!, linhasPorCampanha, campanhaPorAdId, input.compradores, vendasComConteudo),
+          parDe(ordenada[i]!, ordenada[j]!, ordenada.length, (g) => chavesDasCampanhas.get(chaveDoGrupo.get(g)!)!, linhasPorCampanha, campanhaPorAdId, input.compradores, vendasComConteudo),
         );
       }
     }
@@ -456,6 +458,7 @@ export function computeTesteDeLp(input: EntradaDoTesteDeLp): TesteDeLp {
 function parDe(
   g1: Grupo,
   g2: Grupo,
+  lpsNaAssinatura: number,
   chavesDe: (g: Grupo) => string[],
   linhasPorCampanha: ReadonlyMap<string, AnuncioDiaDoTesteDeLp[]>,
   campanhaPorAdId: ReadonlyMap<string, string>,
@@ -556,7 +559,12 @@ function parDe(
       const parcela = pior.pctDaVerba.valor ?? 0;
       textoDaVerba =
         `A LP com menor compras ÷ visitas (${pior.lp}, ${fmtNumero(pior.compraPorVisita.valor!, 2)}%) recebe a maior parcela da verba do par (${fmtNumero(parcela, 2)}%)` +
-        (resultado === "veredito" ? "." : " — a diferença de taxa não é significativa, mas a CBO está pondo mais verba nela.");
+        // REQ-001 (gate da 49.19, opção b do @po): o texto segue o resultado do par.
+        (resultado === "veredito"
+          ? "."
+          : resultado === "empate"
+            ? " — a diferença de taxa não é significativa, mas a CBO está pondo mais verba nela."
+            : ` — sem leitura: ${textoSemLeitura}; o teste não rodou e a taxa ainda não indica perdedora.`);
     }
   }
 
@@ -575,6 +583,7 @@ function parDe(
 
   return {
     lps: [g1.lp, g2.lp],
+    lpsNaAssinatura,
     formato: g1.formato!,
     anuncios: [...(g1.anuncios ?? [])],
     conjuntos: [...(g1.conjuntos ?? [])],

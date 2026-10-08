@@ -1219,6 +1219,13 @@ function blocoDoParDeLp(par: ParDeLp, comConteudo: boolean): string {
     tabela(["LP", "Invest. (c/ imposto)", "% da verba do par", "Visitas (landing_page_view)", "Compras", "Compras ÷ visitas", "CPA", "ROAS", "Tier superior"], linhas) +
     `<p data-veredito-do-par${par.fisher ? ` data-p-valor="${esc(String(par.fisher.pValor))}"` : ""}>${veredito}</p>` +
     (par.verbaInvertida && par.textoDaVerba ? `<div class="warn" data-verba-invertida><b>Verba</b> — ${esc(par.textoDaVerba)}</div>` : "") +
+    // REQ-002 (gate da 49.19): as ressalvas do par, sem mudar o método.
+    (par.conjuntos.length >= 2
+      ? `<p class="tnote" data-nota-conjuntos-somados>O par soma os conjuntos. Com a verba distribuída pela CBO, o total pode inverter o resultado de cada conjunto.</p>`
+      : "") +
+    (par.lpsNaAssinatura >= 3
+      ? `<p class="tnote" data-nota-varias-comparacoes>Cada par é testado com p &lt; 0,05, sem correção para várias comparações; com 3 ou mais LPs, a chance de algum veredito falso é maior que 5%.</p>`
+      : "") +
     `<h4 style="margin:14px 0 6px">Mesmo criativo nas duas LPs — compras ÷ visitas (compras / visitas)</h4>` +
     tabela(["Anúncio", ...par.lados.map((l) => l.lp)], criativos) +
     `</div>`
@@ -1254,13 +1261,19 @@ export function blocoDoTesteDeLp(p: DebriefingPayload): string {
 
   // ---- AC2–AC6: pares ----
   const comConteudo = t.vendasComConteudo;
+  const atribuicao = p.publico.midiaPorAnuncio?.atribuicao;
   partes.push(
     t.pares.length
       ? t.pares.map((par) => blocoDoParDeLp(par, comConteudo)).join("")
       : `<h3 class="gr" style="margin-top:22px">Pares</h3>` + nota("Nenhum par de LPs com o mesmo formato, os mesmos anúncios e os mesmos conjuntos no período — nenhum teste a ler."),
   );
   partes.push(
-    `<p class="tnote">Compras = compradores de captação (pessoa que levou ingresso ou combo) atribuídos pelo Ad ID do utm_content às campanhas da LP, com a compra num dia da janela; compras ÷ visitas conta só os compradores de anúncios com landing_page_view, como na Mídia por Anúncio. ` +
+    // REQ-002 (sempre) e REQ-003 (cobertura por Ad ID, a mesma conta da nota da Mídia por Anúncio).
+    `<p class="tnote" data-nota-visitas>Visitas = eventos <code>landing_page_view</code> da Meta, não pessoas; compras são pessoas. O teste trata cada visita como uma tentativa.</p>` +
+      (atribuicao
+        ? `<p class="tnote" data-cobertura-por-ad-id>Compras = compradores de captação atribuídos pelo Ad ID do <code>utm_content</code>; ${esc(inteiroBr(atribuicao.semAdId))} de ${esc(inteiroBr(atribuicao.compradores))} compradores de captação ficam fora por não terem Ad ID.</p>`
+        : "") +
+      `<p class="tnote">Compras = compradores de captação (pessoa que levou ingresso ou combo) atribuídos pelo Ad ID do utm_content às campanhas da LP, com a compra num dia da janela; compras ÷ visitas conta só os compradores de anúncios com landing_page_view, como na Mídia por Anúncio. ` +
       `% da verba do par = investimento da LP na janela ÷ investimento das duas na janela. CPA, ROAS e tier superior com as regras da Mídia por Anúncio. Conjuntos e anúncios comparados pelo nome (sem acento, minúsculo, sem o sufixo de cópia), como aparecem no ad-level do período.</p>`,
   );
 

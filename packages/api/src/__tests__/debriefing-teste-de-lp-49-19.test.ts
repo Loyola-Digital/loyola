@@ -552,6 +552,108 @@ describe("QA fix 1 — fronteiras da janela, da verba e do texto do p", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// REQ-001..003 do gate (decisões do @po, commit 73b57fa0)
+// ---------------------------------------------------------------------------
+
+/** O payload completo da fixture com o teste de LP trocado por um montado aqui — o render lê do payload. */
+function htmlComTeste(t: TesteDeLp): string {
+  const p = payloadDoTesteDeLp(configSintetica());
+  p.publico.testeDeLp = t;
+  return renderDebriefing({ payload: p, comparacao: null, rotulos: ROT, alertas: [] });
+}
+const blocoDoTeste = (html: string) => {
+  const i = html.indexOf(`<section ${MARCA_DO_TESTE_DE_LP}>`);
+  expect(i).toBeGreaterThan(-1);
+  return html.slice(i, html.indexOf("</section>", i) + "</section>".length);
+};
+
+describe("REQ-001 — o aviso de verba segue o resultado do par", () => {
+  /** LPA pior (1 compra) com a maior verba; `k` dias em comum. */
+  const invertido = (k: number) =>
+    computeTesteDeLp(
+      entrada(
+        [
+          { id: "a", nome: VID("lpa"), dias: dias(1, k), lpv: 100, inv: 30 },
+          { id: "g", nome: VID("lpg"), dias: dias(1, k), lpv: 100, inv: 10 },
+        ],
+        [comprador("a-0-0", D(1)), ...n(5, "g-0-0", D(1))],
+      ),
+    );
+
+  it("sem leitura (2 dias) com verba invertida: o aviso diz o motivo e não afirma significância", () => {
+    const p = par(invertido(2), "LPA×LPG");
+    expect([p.resultado, p.verbaInvertida]).toEqual(["sem-leitura", true]);
+    expect(p.textoDaVerba).toBe(
+      "A LP com menor compras ÷ visitas (LPA, 0,50%) recebe a maior parcela da verba do par (75,00%) — sem leitura: a janela comum tem 2 dia(s), menos que os 3 do método; o teste não rodou e a taxa ainda não indica perdedora.",
+    );
+    expect(p.textoDaVerba).not.toContain("não é significativa");
+  });
+
+  it("empate (3 dias) continua com a frase de hoje; o render mostra o aviso de cada caso a partir do payload", () => {
+    const empate = par(invertido(3), "LPA×LPG");
+    expect(empate.resultado).toBe("empate");
+    expect(empate.textoDaVerba).toContain(" — a diferença de taxa não é significativa, mas a CBO está pondo mais verba nela.");
+    const html = blocoDoTeste(htmlComTeste(invertido(2)));
+    expect(html).toContain("data-verba-invertida><b>Verba</b> — A LP com menor compras ÷ visitas (LPA, 0,50%) recebe a maior parcela da verba do par (75,00%) — sem leitura: a janela comum tem 2 dia(s)");
+    expect(html).not.toContain("não é significativa");
+  });
+});
+
+describe("REQ-002 — ressalvas fixas no bloco", () => {
+  const NOTA_VISITAS = "Visitas = eventos <code>landing_page_view</code> da Meta, não pessoas; compras são pessoas. O teste trata cada visita como uma tentativa.";
+  const NOTA_CONJUNTOS = "O par soma os conjuntos. Com a verba distribuída pela CBO, o total pode inverter o resultado de cada conjunto.";
+  const NOTA_COMPARACOES = "Cada par é testado com p &lt; 0,05, sem correção para várias comparações; com 3 ou mais LPs, a chance de algum veredito falso é maior que 5%.";
+
+  it("visitas × pessoas: sempre (com par e sem nenhum par); fora só quando não há teste", async () => {
+    const { html } = await gerar(CENARIOS_DO_AC7["final-edicao-unica"]!);
+    expect(bloco(html)).toContain(NOTA_VISITAS);
+    expect(blocoDoTeste(htmlComTeste(computeTesteDeLp(entrada([{ id: "a", nome: VID("lpa"), dias: dias(1, 3) }]))))).toContain(NOTA_VISITAS);
+    const sem = await gerar(CENARIOS_DO_AC7["final-sem-ad-level"]!);
+    expect(bloco(sem.html)).not.toContain(NOTA_VISITAS);
+  });
+
+  it("conjuntos somados: no par com 2+ conjuntos; ausente no par com 1 conjunto", async () => {
+    const { html } = await gerar(CENARIOS_DO_AC7["final-edicao-unica"]!);
+    expect(parDoBloco(html, "LPA×LPG")).toContain(NOTA_CONJUNTOS);
+    expect(parDoBloco(html, "LPF×LPH")).toContain(NOTA_CONJUNTOS);
+    const um = htmlComTeste(computeTesteDeLp(entrada([{ id: "a", nome: VID("lpa"), dias: dias(1, 3) }, { id: "g", nome: VID("lpg"), dias: dias(1, 3) }])));
+    expect(blocoDoTeste(um)).toContain('data-par-de-lp="LPA×LPG"');
+    expect(blocoDoTeste(um)).not.toContain(NOTA_CONJUNTOS);
+  });
+
+  it("várias comparações: em cada par de uma assinatura com 3+ LPs; ausente com 2", async () => {
+    const tres = computeTesteDeLp(
+      entrada([
+        { id: "a", nome: VID("lpa"), dias: dias(1, 3) },
+        { id: "f", nome: VID("lpf"), dias: dias(1, 3) },
+        { id: "g", nome: VID("lpg"), dias: dias(1, 3) },
+      ]),
+    );
+    expect(tres.pares.map((x) => x.lpsNaAssinatura)).toEqual([3, 3, 3]);
+    const b = blocoDoTeste(htmlComTeste(tres));
+    expect(b.split(NOTA_COMPARACOES)).toHaveLength(4);
+    const { html, payload } = await gerar(CENARIOS_DO_AC7["final-edicao-unica"]!);
+    expect(teste(payload).pares.map((x) => x.lpsNaAssinatura)).toEqual([2, 2]);
+    expect(bloco(html)).not.toContain(NOTA_COMPARACOES);
+  });
+});
+
+describe("REQ-003 — cobertura por Ad ID no bloco", () => {
+  it("a frase usa N e M do payload (a mesma conta da Mídia por Anúncio)", async () => {
+    const { html, payload } = await gerar(CENARIOS_DO_AC7["final-edicao-unica"]!);
+    const at = payload.publico.midiaPorAnuncio!.atribuicao;
+    expect(at.semAdId).toBeGreaterThan(0);
+    expect(at.compradores).toBeGreaterThan(at.semAdId);
+    expect(bloco(html)).toContain(
+      `Compras = compradores de captação atribuídos pelo Ad ID do <code>utm_content</code>; ${at.semAdId} de ${at.compradores} compradores de captação ficam fora por não terem Ad ID.`,
+    );
+    const p = payloadDoTesteDeLp(configSintetica());
+    p.publico.midiaPorAnuncio!.atribuicao = { ...p.publico.midiaPorAnuncio!.atribuicao, semAdId: 7, compradores: 30 };
+    expect(blocoDoTeste(renderDebriefing({ payload: p, comparacao: null, rotulos: ROT, alertas: [] }))).toContain("; 7 de 30 compradores de captação ficam fora por não terem Ad ID.");
+  });
+});
+
 describe("sem ad-level", () => {
   it("não aplicável, sem par nem número", () => {
     expect(computeTesteDeLp({ anuncios: [], compradores: [comprador("x", D(1))], vendasComConteudo: true })).toMatchObject({
