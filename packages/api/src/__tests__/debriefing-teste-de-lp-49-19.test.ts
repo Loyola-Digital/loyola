@@ -15,6 +15,7 @@ import {
   DIAS_MINIMOS_DO_TESTE_DE_LP,
   computeTesteDeLp,
   lpDaCampanha,
+  textoDoPValor,
   type AnuncioDiaDoTesteDeLp,
   type EntradaDoTesteDeLp,
   type ParDeLp,
@@ -511,6 +512,43 @@ describe("AC6 — para onde vai a verba", () => {
     const p = caso(30, 10, 1, 2);
     expect([p.resultado, p.verbaInvertida]).toEqual(["empate", true]);
     expect(p.textoDaVerba).toContain("não é significativa");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// QA fix 1 (TEST-001) — fronteiras que o gate achou sem teste (rascunho do @qa)
+// ---------------------------------------------------------------------------
+
+describe("QA fix 1 — fronteiras da janela, da verba e do texto do p", () => {
+  const doisLados = (a: Omit<CampanhaDeTeste, "nome">, g: Omit<CampanhaDeTeste, "nome">, cs: CompradorDaMidia[]) =>
+    par(computeTesteDeLp(entrada([{ ...a, nome: VID("lpa") }, { ...g, nome: VID("lpg") }], cs)), "LPA×LPG");
+
+  it("Q5: compra num dia do BURACO da janela (entre o início e o fim, sem investimento de uma LP) fica fora", () => {
+    const p = doisLados({ id: "a", dias: dias(1, 5), lpv: 100 }, { id: "g", dias: [D(1), D(2), D(4), D(5)], lpv: 100 }, [...n(7, "a-0-0", D(3)), comprador("a-0-0", D(4))]);
+    expect(p.janela.dias).toEqual([D(1), D(2), D(4), D(5)]);
+    expect([p.lados[0].compradores, p.lados[0].comprasNaTaxa]).toEqual([1, 1]);
+  });
+
+  it("Q7: investimento igual nas duas LPs → não há 'maior parcela', sem sinal", () => {
+    const p = doisLados({ id: "a", dias: dias(1, 3), lpv: 100, inv: 10 }, { id: "g", dias: dias(1, 3), lpv: 100, inv: 10 }, [comprador("a-0-0", D(1)), ...n(9, "g-0-0", D(1))]);
+    expect(p.lados.map((l) => l.pctDaVerba.valor)).toEqual([50, 50]);
+    expect([p.verbaInvertida, p.textoDaVerba]).toEqual([false, null]);
+  });
+
+  it("Q8: taxas iguais nas DUAS orientações da verba → sem sinal", () => {
+    for (const [ia, ig] of [
+      [30, 10],
+      [10, 30],
+    ] as const) {
+      const p = doisLados({ id: "a", dias: dias(1, 3), lpv: 100, inv: ia }, { id: "g", dias: dias(1, 3), lpv: 100, inv: ig }, [...n(2, "a-0-0", D(1)), ...n(2, "g-0-0", D(1))]);
+      expect(p.verbaInvertida, `${ia}×${ig}`).toBe(false);
+    }
+  });
+
+  it("Q19: o limite do \"p < 0,0001\" — 0,0005 aparece com o valor; 0,00009 não", () => {
+    expect(textoDoPValor(0.0005)).toBe("p = 0,0005");
+    expect(textoDoPValor(0.0001)).toBe("p = 0,0001");
+    expect(textoDoPValor(0.00009)).toBe("p < 0,0001");
   });
 });
 
