@@ -682,3 +682,20 @@ describe("QA REQ-002 — limitações com as pendências que tiram venda/mídia 
     expect(bloco(body.html)).toContain("<li>PG01: WF2 — ");
   });
 });
+
+describe("QA TEST-002 — as 3 pendências do Motor I na COMPARAÇÃO", () => {
+  it("MIDIA/VENDA_DE_ETAPA_FORA_DA_CONFIG e TIPO_INESPERADO_NA_CAPTACAO saem com o nome da comparação", () => {
+    const atual = payloadDe(configFinal(), "atual");
+    const comp = payloadDe(configComparacao(), "comparacao");
+    comp.dinheiroTempo.pendencias = [
+      { codigo: "MIDIA_DE_ETAPA_FORA_DA_CONFIG", stageId: "s-x", detalhe: "2 linha(s) de mídia de uma etapa que não está em config.etapas — fora de toda conta" },
+      { codigo: "VENDA_DE_ETAPA_FORA_DA_CONFIG", stageId: "s-y", detalhe: "3 linha(s) de venda de uma etapa que não está em config.etapas — fora de toda conta" },
+      { codigo: "TIPO_INESPERADO_NA_CAPTACAO", detalhe: "1 venda(s) de tipo \"principal\" em etapa de captação" },
+    ];
+    const rm = montarResumoMacro({ payload: atual, nomeAtual: "PG02", comparacao: { funnelId: FB, nome: "PG01", payload: comp, origem: { tipo: "recalculada" } }, alertas: [] });
+    for (const codigo of ["MIDIA_DE_ETAPA_FORA_DA_CONFIG", "VENDA_DE_ETAPA_FORA_DA_CONFIG", "TIPO_INESPERADO_NA_CAPTACAO"]) {
+      expect(rm.limitacoes.filter((x) => x.startsWith(`PG01: ${codigo} — `)), codigo).toHaveLength(1);
+    }
+    expect(rm.limitacoes.some((x) => /^(MIDIA|VENDA)_DE_ETAPA|^TIPO_INESPERADO/.test(x))).toBe(false); // o atual não tem nenhuma
+  });
+});
