@@ -315,12 +315,23 @@ function somarPresentes(valores: readonly (number | null)[]): number | null {
   return com.length === 0 ? null : com.reduce((s, v) => s + v, 0);
 }
 
-interface Acumulado {
+export interface Acumulado {
   linhas: AnuncioDiaDaMidia[];
   compradores: CompradorDaMidia[];
 }
 
-function metricasDe(a: Acumulado, rotulo: string, investimentoTotal: number, vendasComConteudo: boolean): MetricasDaMidia {
+/**
+ * As métricas de um conjunto de linhas anúncio × dia e dos compradores dos Ad IDs delas.
+ * Story 49.19: exportada para o teste de LP, que passa o investimento do PAR como
+ * denominador do `pctDaVerba` e o rótulo dele em `rotuloDoTotal` (o padrão é o da 49.18).
+ */
+export function metricasDe(
+  a: Acumulado,
+  rotulo: string,
+  investimentoTotal: number,
+  vendasComConteudo: boolean,
+  rotuloDoTotal = "investimento de captação do ad-level",
+): MetricasDaMidia {
   const inv = a.linhas.reduce((s, l) => s + l.investimentoComImposto, 0);
   const n = a.compradores.length;
   const semValor = a.compradores.some((c) => c.faturamento === null);
@@ -345,7 +356,7 @@ function metricasDe(a: Acumulado, rotulo: string, investimentoTotal: number, ven
     investimentoTotal > 0
       ? {
           valor: (inv / investimentoTotal) * 100,
-          memoria: `investimento c/ imposto (${rotulo}) ${fmtReais(inv)} ÷ investimento de captação do ad-level ${fmtReais(investimentoTotal)} × 100 = ${fmtNumero((inv / investimentoTotal) * 100, 2)}%`,
+          memoria: `investimento c/ imposto (${rotulo}) ${fmtReais(inv)} ÷ ${rotuloDoTotal} ${fmtReais(investimentoTotal)} × 100 = ${fmtNumero((inv / investimentoTotal) * 100, 2)}%`,
         }
       : nula("SEM_INVESTIMENTO", "sem investimento de captação no ad-level — sem denominador");
 

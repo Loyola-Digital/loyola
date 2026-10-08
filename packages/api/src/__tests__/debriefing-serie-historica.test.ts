@@ -57,6 +57,8 @@ function semAcrescimos49_11(r: DebriefingAudience): unknown {
     delete cl.compradoresNaBaseAnterior;
     resto.crossLaunch = cl as DebriefingAudience["crossLaunch"];
   }
+  // 49.19 acrescenta o teste de LP (aditivo).
+  delete resto.testeDeLp;
   const pesquisa: Partial<DebriefingAudience["pesquisa"]> = { ...r.pesquisa };
   delete pesquisa.duplicadasSemData;
   delete pesquisa.duplicadasDecididasPelaPesquisaDeCaptacao;

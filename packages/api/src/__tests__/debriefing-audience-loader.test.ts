@@ -550,6 +550,37 @@ describe("AC11 — loadDebriefingAudienceInput sobre Postgres real", () => {
     }
   });
 
+  it("49.19: adset_name de cada linha (ausente = null) — e o Motor II forma o par de LPs pelo NOME do conjunto", async () => {
+    const [AD4, AD5] = ["120000000000000004", "120000000000000005"];
+    const camp = (lp: string) => `dg--vendas-captacao--2026-04-17--hot--cbo--videos--${lp}`;
+    await pg.exec(`UPDATE meta_ad_insights_daily SET adset_name = '01_QUENTE' WHERE ad_id = '${AD1}'`);
+    // Cada LP é uma campanha (id próprio) da etapa de captação.
+    await pg.exec(`UPDATE funnel_stages SET campaigns = campaigns || '[{"id":"112"},{"id":"113"}]'::jsonb WHERE id = '${CAP}'`);
+    await pg.exec(`INSERT INTO meta_ad_insights_daily (project_id, ad_id, date_start, campaign_id, campaign_name, ad_name, spend, impressions, actions, adset_name) VALUES
+      ('${P}', '${AD4}', '2026-04-20', '112', '${camp("lpa")}', 'adv01--claude', 10, 100, '[{"action_type":"landing_page_view","value":"30"}]', '01_QUENTE'),
+      ('${P}', '${AD5}', '2026-04-20', '113', '${camp("lpg")}', 'adv01--claude', 10, 100, '[{"action_type":"landing_page_view","value":"30"}]', '01_quente')`);
+    try {
+      const r = await loadDebriefingAudienceInput(db, { config }, { lerPlanilha: lerFalso });
+      expect(r.criativos.anuncios.map((a) => [a.adId, a.adsetName])).toEqual([
+        [AD1, "01_QUENTE"],
+        [AD4, "01_QUENTE"],
+        [AD5, "01_quente"],
+      ]);
+      // Os ids de conjunto mudam por campanha; o NOME normalizado é o mesmo → par LPA × LPG.
+      const t = computeDebriefingAudience(r).testeDeLp!;
+      expect(t.pares.map((p) => p.lps)).toEqual([["LPA", "LPG"]]);
+      expect(t.semLp).toMatchObject({ campanhas: 1, nomes: ["dg--vendas-captacao--hot"] });
+      await pg.exec(`UPDATE meta_ad_insights_daily SET adset_name = NULL WHERE ad_id = '${AD5}'`);
+      const sem = await loadDebriefingAudienceInput(db, { config }, { lerPlanilha: lerFalso });
+      expect(sem.criativos.anuncios.find((a) => a.adId === AD5)!.adsetName).toBeNull();
+      expect(computeDebriefingAudience(sem).testeDeLp!.pares).toEqual([]);
+    } finally {
+      await pg.exec(`DELETE FROM meta_ad_insights_daily WHERE ad_id IN ('${AD4}', '${AD5}')`);
+      await pg.exec(`UPDATE funnel_stages SET campaigns = '[{"id":"111","name":"dg--vendas-captacao--hot"}]'::jsonb WHERE id = '${CAP}'`);
+      await pg.exec(`UPDATE meta_ad_insights_daily SET adset_name = NULL WHERE ad_id = '${AD1}'`);
+    }
+  });
+
   it("funil sem conta (o caso de produção): a única conta ATIVA do projeto; projeto com duas contas → sem link", async () => {
     const semConta = { ...config, funnelId: F_ANT, etapas: [], perguntasConfirmadas: {}, lancamentoComparacaoFunnelId: null };
     const r = await loadDebriefingAudienceInput(db, { config: semConta }, { lerPlanilha: lerFalso });

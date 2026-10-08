@@ -29,7 +29,7 @@ import {
 import { computeDebriefingAudience, tipoPelaCampanha } from "../services/debriefing-audience-engine.js";
 import { higienizarVendasDoDebriefing } from "../services/debriefing-audience-loader.js";
 import { computeDebriefingMoneyTime } from "../services/debriefing-money-time-engine.js";
-import { MARCA_DA_MIDIA_POR_ANUNCIO, SECOES_DO_DEBRIEFING, renderDebriefing } from "../services/debriefing-render.js";
+import { MARCA_DA_MIDIA_POR_ANUNCIO, MARCA_DO_TESTE_DE_LP, SECOES_DO_DEBRIEFING, renderDebriefing } from "../services/debriefing-render.js";
 import { gerarDebriefing } from "../services/debriefing-generate.js";
 import type { DebriefingPayload } from "../services/debriefing-payload.js";
 import { configSintetica, entradaAudienceSintetica } from "./fixtures/debriefing-payload-sintetico.js";
@@ -90,7 +90,13 @@ function bloco(html: string): string {
 }
 function semO4918(html: string): string {
   const b = bloco(html);
-  return html.replace(b, "");
+  return semO4919(html.replace(b, ""));
+}
+/** Story 49.19 — o HTML sem o bloco "Teste de LP" (o acréscimo da 49.19, logo depois deste). */
+function semO4919(html: string): string {
+  const i = html.indexOf(`<section ${MARCA_DO_TESTE_DE_LP}>`);
+  expect(i).toBeGreaterThan(-1);
+  return html.slice(0, i) + html.slice(html.indexOf("</section>", i) + "</section>".length);
 }
 /** O texto de uma tabela do bloco, linha a linha (`célula | célula`). */
 function linhasDaTabela(html: string, titulo: string): string[] {
@@ -551,6 +557,9 @@ describe("AC8 — vale no parcial e no final; o resto do documento não muda", (
     const p = semCamposDa4920(payload);
     expect(p.publico.midiaPorAnuncio).toBeDefined();
     delete p.publico.midiaPorAnuncio;
+    // 49.19: o teste de LP é aditivo (`publico.testeDeLp`); tirado, o mesmo SHA.
+    expect(p.publico.testeDeLp).toBeDefined();
+    delete p.publico.testeDeLp;
     expect(sha(JSON.stringify(p))).toBe(SHA_DO_BASE[nome]!.payload);
   });
 

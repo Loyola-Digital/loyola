@@ -26,6 +26,7 @@
  *   de nível superior do criativo (o único texto que o cache guarda); a venda
  *   higienizada leva o valor (a conversão `valorBrl` do Motor I; TMB = 0) e o dia;
  *   e a linha leva o conjunto (`adset_id`/`adset_name`, a "versão isolada" do AC2);
+ *   Story 49.19: o teste de LP usa o mesmo `adset_name` (conjuntos do par pelo NOME);
  * - **conta do Ads Manager**: `funnels.metaAccountId` → `meta_ads_accounts`; sem
  *   conta no funil, a ÚNICA conta ativa vinculada ao projeto
  *   (`meta_ads_account_projects`, a mesma fonte do backfill de nomes). Em
@@ -642,6 +643,7 @@ export async function loadDebriefingAudienceInput(
         linkClicks: linkClicksDeActions(l.actions),
         landingPageViews: landingPageViewsDeActions(l.actions),
         adsetId: l.adsetId,
+        // 49.19 (AC2): o par de LPs compara conjuntos pelo NOME (os ids mudam por campanha).
         adsetName: l.adsetName,
       });
     }
