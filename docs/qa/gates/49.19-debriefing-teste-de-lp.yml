@@ -2,14 +2,26 @@ schema: 1
 storyId: '49.19'
 story: '49.19'
 story_title: 'Teste de LP no Debriefing — compras por visita, Fisher exato e para onde vai a verba'
-verdict: CONCERNS
-gate: CONCERNS
-status_reason: 'Os AC1–AC8 estão atendidos. O Fisher bate, bit a bit, com a fração exata em 28.967 tabelas, e o SHA do AC7 foi reproduzido contra uma base independente. Fica um defeito médio: num par "sem leitura" (janela < 3 dias) o aviso de verba invertida afirma que "a diferença de taxa não é significativa", mas o teste não rodou. Há também 4 lacunas de teste de severidade baixa.'
+iteracao: 2
+verdict: PASS
+gate: PASS
+status_reason: 'Re-gate (iteração 2). REQ-001, REQ-002, REQ-003 e TEST-001 fechados, com os textos do @po usados ao pé da letra. As 71 mutações do @dev e 16 das 17 do QA morrem. O AC7 dá os mesmos SHA contra a base independente do QA. Fica só 1 lacuna de teste low (N13), mais as perguntas P-25/P-26 do dono e a validação visual, que não bloqueiam.'
 reviewer: 'Quinn'
-updated: '2026-10-08T01:45:00-03:00'
+updated: '2026-10-08T02:20:00-03:00'
 branch: 'feat/49.19-teste-de-lp'
-commit_reviewed: '9de4c779 (código) e 5216a4f9 (story)'
-base: 'Empilhada na 49.18 @ a1d8d121, que está sobre a 49.17 @ c0a63eb4 (PR #1001, aberta). A revisão usou `git diff a1d8d121...HEAD`. Fiz `git fetch` no início e no fim: origin/main continua em 4e9e9843 e origin/feat/49.17-resumo-macro em c0a63eb4. Nada andou, e a 49.18 não tem branch remota. Depois do merge da 49.17 e da 49.18, esta branch precisa de rebase.'
+commit_reviewed: 'iteração 2: 73b57fa0 (@po), f1b92bfe (TEST-001), 571b8d90 (REQ-001..003); iteração 1: 9de4c779 + 5216a4f9 (gate CONCERNS em 55d36f9b)'
+base: 'Empilhada na 49.18 @ a1d8d121, que está sobre a 49.17 @ c0a63eb4 (PR #1001). O `git fetch` da iteração 2 mostra origin/main em 4e9e9843 e origin/feat/49.17-resumo-macro em c0a63eb4: nada andou. Depois do merge da 49.17 e da 49.18, esta branch precisa de rebase.'
+
+iteracao_2:
+  fidelidade_aos_textos_do_po:
+    REQ-001: 'Opção (b), fiel. `debriefing-teste-de-lp.ts` ramifica o texto por resultado: veredito sai com "."; empate, com "— a diferença de taxa não é significativa, mas a CBO está pondo mais verba nela."; sem leitura, com "— sem leitura: {textoSemLeitura}; o teste não rodou e a taxa ainda não indica perdedora.". O motivo vem do mesmo campo que já explica o sem leitura do par, sem número novo, como o @po pediu. O probe P1 da iteração 1 agora sai "… (90,91%) — sem leitura: a janela comum tem 2 dia(s), menos que os 3 do método; o teste não rodou e a taxa ainda não indica perdedora." O aviso continua no sem leitura, como manda o AC6.'
+    REQ-002: 'As três notas estão iguais, palavra por palavra, ao texto do @po, cada uma com a sua condição: "Visitas = eventos landing_page_view…" sai sempre que o teste é aplicável; "O par soma os conjuntos…" sai com `par.conjuntos.length >= 2`; "Cada par é testado com p < 0,05…" sai com `par.lpsNaAssinatura >= 3`. O campo novo `lpsNaAssinatura` recebe o número de LPs da assinatura. Sem Bonferroni: o método não muda.'
+    REQ-003: 'A frase é a do @po: "Compras = compradores de captação atribuídos pelo Ad ID do utm_content; N de M compradores de captação ficam fora por não terem Ad ID." N é `atribuicao.semAdId` e M é `atribuicao.compradores`, de `publico.midiaPorAnuncio.atribuicao`, a mesma fonte da nota da 49.18. Sem `midiaPorAnuncio` no payload (payload antigo), a frase não sai, sem número inventado. Observação: quem tem ad_id fora do ad-level também fica fora e não entra no N. A frase do @po fala só de "não terem Ad ID", e no PG05 esse grupo é 0.'
+  mutacoes_do_qa: 'Usei `scratchpad/qa-mut-4919-it2.py` contra as 31 suítes de debriefing + Fisher, restaurando cada mutação. O `git status` ficou limpo no fim. As 4 sobreviventes da iteração 1 (Q5, Q7, Q8, Q19) agora MORREM. Das 13 novas nos 3 REQs, 12 morrem: N1 (o sem leitura volta a dizer "não é significativa"), N2 (sem leitura sem o motivo), N3 (veredito com a frase do empate), N4 (render, opção a: o aviso some no sem leitura), N5 e N6 (limite da nota de conjuntos), N7 (várias comparações já com 2 LPs), N8 (`lpsNaAssinatura` fixo no motor), N9 (nota de visitas some), N10 e N11 (N e M trocados) e N12 (chamador do render: a atribuição não é lida do payload completo). Sobrevive 1, a N13: a condição da nota de conjuntos lendo `par.anuncios.length` no lugar de `par.conjuntos.length` (TEST-002).'
+  mutacoes_do_dev: 'Rodei uma cópia do `mut-4919-qa1.py` com saída própria: 71 de 71 morrem.'
+  ac7_sha: 'O `ac7-4919.mts` contra a base independente do QA (`qa-base-4919`, de `git archive a1d8d121`) deu os 7 cenários com SHA IDÊNTICO ao da iteração 1, no HTML inteiro sem o bloco e no payload sem `publico.testeDeLp`. Pelo probe, o bloco cresceu (7.032 bytes no final e 7.109 no parcial, por causa das notas), mas continua aparecendo uma vez só, sem `<section>` aninhada, e o campo continua aparecendo uma vez só no payload.'
+  execucao: 'Debriefing + Fisher: 31 arquivos, 962/962. `tsc --noEmit` da API: exit 0. `eslint src/`: 0 erros e 1 warning que já existia. API inteira: 4.723 passando e as 10 falhas já conhecidas (funnel-stages-lead-inputs 3, instagram-routes 1, instagram 1, projects 3, schema 2). Web e shared: o diff não toca (N/A).'
+  api_contract: 'Sem rota nova e sem mudança de resposta de rota. `lpsNaAssinatura` é aditivo dentro de `publico.testeDeLp` (payload gravado, lido só pelo render do servidor). `API_CONTRACT_VERSION` fica em 36.'
 
 issues:
   - id: REQ-001
@@ -18,7 +30,7 @@ issues:
     description: 'Num par "sem leitura", o texto da verba afirma um resultado estatístico que não foi calculado. Em `debriefing-teste-de-lp.ts:552-560`, a verba invertida é avaliada em qualquer resultado diferente de "veredito", e o texto acrescenta "a diferença de taxa não é significativa, mas a CBO está pondo mais verba nela". Isso inclui o "sem-leitura". Com MENOS_DE_3_DIAS (ou COMPRAS_ACIMA_DAS_VISITAS), as taxas existem, o Fisher não roda, e mesmo assim o documento mostra o aviso amarelo `data-verba-invertida` com a frase "não é significativa" (`debriefing-render.ts`, `blocoDoParDeLp`). Reproduzido em `scratchpad/qa-probe-4919.mts` (P1): uma janela de 2 dias, LPA com 1/200 e 90,91% da verba, LPB com 10/200, dá "Sem leitura: a janela comum tem 2 dia(s)…" e, logo abaixo, "A LP com menor compras ÷ visitas (LPA, 0,50%) recebe a maior parcela da verba do par (90,91%) — a diferença de taxa não é significativa…". É o caso típico da estreia de uma LP (no PG05, LPH, LPI e LPJ estrearam em 07/10). O "sem leitura" do método existe para não mover verba com 1–2 dias de dado, e o aviso empurra justamente essa decisão. Nenhum teste cobre verba invertida com "sem leitura": o rascunho do QA tem um caso que falha com o código de hoje.'
     recommendation: '@po decide: (a) no "sem-leitura", não sinalizar a verba; ou (b) sinalizar com outra ressalva, por exemplo "sem leitura — as taxas ainda não se comparam (janela de N dias)". Em qualquer caso, a frase "não é significativa" só deve sair com `resultado === "empate"`. É 1 condição no motor mais 1 teste. O AC6 não condiciona ao veredito, então isto é precisão do texto, não mudança de escopo.'
     owner: '@po → @dev'
-    status: open
+    status: closed (iteração 2)
 
   - id: TEST-001
     severity: low
@@ -26,7 +38,7 @@ issues:
     description: 'Das 19 mutações do QA (`scratchpad/qa-mut-4919.py`, contra as 31 suítes de debriefing + Fisher, cada uma restaurada, `git status` limpo no fim), 14 morrem e 5 sobrevivem. Quatro não são equivalentes. (Q5) A compra num dia do BURACO da janela (entre o início e o fim, num dia sem investimento de uma das LPs) passaria a contar: o código está certo, porque usa o conjunto de dias, mas o teste "janela com intervalo" não põe comprador no buraco. (Q7) Investimento igual nas duas LPs passaria a ser sinalizado como verba invertida. (Q8) Sem a guarda de taxas iguais, nada muda, porque o teste de "taxas iguais" só usa a orientação em que a LP de investimento maior é a primeira. (Q19) O limite de "p < 0,0001" no texto não tem teste entre 0,0001 e 0,001. A quinta, (Q10) campanha identificada só pelo nome e não pelo id, é quase equivalente: duas campanhas com o mesmo nome e a mesma LP caem no mesmo grupo de qualquer jeito, e muda só a contagem de campanhas.'
     recommendation: 'O rascunho `scratchpad/qa-rascunho-teste-4919.ts` derruba Q5, Q7, Q8 e Q19 (4/4) e passa sem mutação. Foi provado na worktree e removido. Pode ir para `debriefing-teste-de-lp-49-19.test.ts` junto com o fix do REQ-001.'
     owner: '@dev'
-    status: open
+    status: closed (iteração 2)
 
   - id: REQ-002
     severity: low
@@ -34,7 +46,7 @@ issues:
     description: 'Três ressalvas estatísticas, para o dono saber o que o número diz e o que não diz. Nenhuma é defeito: todas seguem o método. (1) Com 3 ou mais LPs na mesma assinatura, cada par usa alfa 0,05 sem correção para comparações múltiplas (AUTO-DECISION do @dev; com 3 LPs, a chance de pelo menos um falso veredito sobe para cerca de 14%). (2) O Fisher trata cada `landing_page_view` como uma tentativa independente, mas o LPV é evento e não pessoa, enquanto as compras são pessoas. (3) O par agrega os conjuntos. Sob CBO, a distribuição da verba entre conjuntos pode diferir de uma LP para a outra, e o agregado pode inverter o resultado por conjunto (paradoxo de Simpson). O AC5, mesmo criativo nas duas LPs, ajuda a enxergar isso.'
     recommendation: 'Nada no código agora. Se o dono quiser, uma linha de rodapé no bloco. Fica com o @po.'
     owner: '@po'
-    status: open
+    status: closed (iteração 2)
 
   - id: REQ-003
     severity: low
@@ -42,19 +54,27 @@ issues:
     description: 'O bloco do teste de LP não diz que as compras cobrem só os compradores com Ad ID no utm_content. No PG05, isso é 104 de 215 (111 sem Ad ID, 52%). A conta aparece na nota da Mídia por Anúncio, na mesma aba (o REQ-001 da 49.18), e não aqui. Isso não enviesa o Fisher por si: os 111 incluem orgânico, `co=org` e sem rastreio, e o numerador e o denominador são os da mídia paga. Mas viraria viés se uma LP perdesse a UTM no checkout e a outra não.'
     recommendation: 'Junto com o REQ-001 da 49.18: uma frase no rodapé do bloco ("compras = compradores atribuídos pelo Ad ID; N de M compradores de captação sem Ad ID ficam fora").'
     owner: '@po'
+    status: closed (iteração 2)
+
+  - id: TEST-002
+    severity: low
+    category: tests
+    description: 'Iteração 2. A mutação N13 sobrevive: trocar a condição da nota "O par soma os conjuntos" de `par.conjuntos.length >= 2` para `par.anuncios.length >= 2` não derruba nenhum teste. Nas fixtures, o número de conjuntos e o de anúncios ficam do mesmo lado do limite 2.'
+    recommendation: 'Um caso de render com 1 conjunto e 2+ anúncios: a nota não sai. E o contrário: 2+ conjuntos e 1 anúncio, a nota sai. Não bloqueia.'
+    owner: '@dev'
     status: open
 
   - id: PERG-1
     severity: low
     category: requirements
-    description: 'Pergunta do @dev ao dono, registrada sem decisão: conjuntos "iguais" querem dizer igualdade exata dos nomes ou interseção? No PG05, a LPA estático quente tem 4 conjuntos e a LPF tem 3 (falta `01_FD-ST_ALLINONE90D_INTERESSES`), e por isso as duas não pareiam. Acréscimo do QA para a mesma pergunta: a assinatura (formato, anúncios, conjuntos) é medida no período INTEIRO do relatório, não na janela comum do par. Um conjunto ou anúncio que rodou só antes de a outra LP estrear já impede o par, mesmo que, nos dias em comum, as duas tenham rodado exatamente nos mesmos conjuntos. Não reconsultei produção para ver se é o caso do ALLINONE90D.'
+    description: 'Virou a P-25 do @po. Pergunta do @dev ao dono, registrada sem decisão: conjuntos "iguais" querem dizer igualdade exata dos nomes ou interseção? No PG05, a LPA estático quente tem 4 conjuntos e a LPF tem 3 (falta `01_FD-ST_ALLINONE90D_INTERESSES`), e por isso as duas não pareiam. Acréscimo do QA para a mesma pergunta: a assinatura (formato, anúncios, conjuntos) é medida no período INTEIRO do relatório, não na janela comum do par. Um conjunto ou anúncio que rodou só antes de a outra LP estrear já impede o par, mesmo que, nos dias em comum, as duas tenham rodado exatamente nos mesmos conjuntos. Não reconsultei produção para ver se é o caso do ALLINONE90D.'
     owner: 'dono via @po'
     status: pending
 
   - id: PERG-2
     severity: low
     category: requirements
-    description: 'Pergunta do @dev ao dono, registrada sem decisão: `lpaa` e `lpa` são a mesma LP? Hoje a `chaveLp` (regra da tabela de LPs, reaproveitada como o AC1 manda) soma as duas como LPA, e o rótulo fino aparece entre parênteses. Observação do QA: o parser reaproveitado também lê o bloco `--lp--` como LP "LP" e `--lpa1` como LPA (`scratchpad/qa-probe-4919.mts`, P8). É comportamento herdado, não desta story.'
+    description: 'Virou a P-26 do @po. Pergunta do @dev ao dono, registrada sem decisão: `lpaa` e `lpa` são a mesma LP? Hoje a `chaveLp` (regra da tabela de LPs, reaproveitada como o AC1 manda) soma as duas como LPA, e o rótulo fino aparece entre parênteses. Observação do QA: o parser reaproveitado também lê o bloco `--lp--` como LP "LP" e `--lpa1` como LPA (`scratchpad/qa-probe-4919.mts`, P8). É comportamento herdado, não desta story.'
     owner: 'dono via @po'
     status: pending
 
@@ -66,18 +86,18 @@ issues:
     status: pending
 
 top_issues:
-  - id: REQ-001
-    severity: medium
-    finding: 'Par "sem leitura" com verba invertida diz que "a diferença de taxa não é significativa", mas o Fisher não rodou. É o caso da estreia de LP, quando o método manda não mover verba.'
-    suggested_action: 'A frase só no empate; no "sem leitura", não sinalizar ou sinalizar com "sem leitura" (decisão do @po). Mais 1 teste.'
-  - id: TEST-001
+  - id: TEST-002
     severity: low
-    finding: 'Q5 (compra no buraco da janela), Q7 (investimento igual), Q8 (taxas iguais na outra orientação) e Q19 (texto do p) sobrevivem.'
-    suggested_action: 'O rascunho do QA mata as 4.'
+    finding: 'A N13 (condição da nota de conjuntos lendo anúncios) sobrevive.'
+    suggested_action: 'Um caso de render com 1 conjunto e 2+ anúncios.'
   - id: PERG-1
     severity: low
-    finding: 'A igualdade exata de conjuntos, medida no período inteiro e não na janela comum, impede pares no PG05.'
-    suggested_action: 'O dono responde (via @po).'
+    finding: 'P-25: conjuntos exatos × interseção, e em qual janela, com o dono.'
+    suggested_action: 'O dono responde. Não bloqueia.'
+  - id: DOC-001
+    severity: low
+    finding: 'Validação visual do dono pendente.'
+    suggested_action: 'Danilo valida.'
 
 waiver: { active: false }
 
@@ -100,7 +120,11 @@ checks:
   api_contract: 'Sem rota nova e sem mudança de resposta de rota. O campo `publico.testeDeLp` é aditivo e opcional no payload gravado, lido só pelo render do servidor, e o web não o consome. `API_CONTRACT_VERSION` fica em 36 e `DEBRIEFING_PAYLOAD_VERSAO` não sobe, a mesma regra ratificada na 49.12, na 49.17 e na 49.18. Payload antigo mostra "não calculado" (a R10 do @dev morre).'
   performance: 'O Fisher é O(min(compras)) em BigInt. A tabela de ~1.500 dígitos roda em milissegundos, e no teste de LP `a + c` é o total de compras, pequeno. O motor faz uma passada por campanha e outra por par. Sem I/O novo além de uma coluna no select do loader.'
 
+fisher_conferido_iteracao_1_vale: 'O Fisher não mudou na iteração 2 (`fisher-exato.ts` fora do diff 55d36f9b..HEAD).'
+
 notes:
+  - '[AUTO-DECISION] Iteração 2: PASS ou CONCERNS? → PASS. Razão: o medium (REQ-001) foi corrigido com o texto do @po e preso por N1–N4, que morrem no motor e no render; o que resta é 1 lacuna de teste low (N13) e perguntas do dono que não mudam a conta de nenhum par.'
+  - 'Abaixo, as notas da iteração 1 (gate CONCERNS em 55d36f9b).'
   - '[AUTO-DECISION] PASS ou CONCERNS? → CONCERNS (razão: os ACs estão atendidos e o Fisher está provado contra 3 referências independentes; mas o REQ-001 põe no documento uma afirmação estatística falsa justo no caso em que o método manda não ler, e a story guia verba. Não é FAIL porque o núcleo — veredito, empate, sem leitura, p — está certo e o aviso aparece junto do "Sem leitura").'
   - '[AUTO-DECISION] Comprador sem utm_content deveria derrubar o par? → Não (razão: o método atribui pelo `co=`; o comprador sem Ad ID não pertence a LP nenhuma; o par só fica "sem leitura" quando a planilha não tem utm_content). O ponto de leitura vai para o REQ-003, low.'
   - '[AUTO-DECISION] Os AUTO-DECISIONs do @dev: Fisher em BigInt (aceito, e melhor que o R/scipy na fronteira); assinatura no ad-level do período (aceito, com o acréscimo à PERG-1); lpaa = lpa (aceito como regra herdada, PERG-2); pares por combinação sem correção (aceito, ressalva no REQ-002); verba também no empate (aceito, mas não no "sem leitura": REQ-001); comparação principal sem teste de LP no documento (aceito); nenhuma lacuna nova em `lacunas[]` (aceito, a seção 17 fica congelada).'
