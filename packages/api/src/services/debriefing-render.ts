@@ -1215,7 +1215,11 @@ function blocoDoParDeLp(par: ParDeLp, comConteudo: boolean): string {
   return (
     `<div data-par-de-lp="${esc(par.lps.join("×"))}" data-resultado="${par.resultado}">` +
     `<h3 class="gr" style="margin-top:22px">${titulo}</h3>` +
-    `<p class="tnote">Janela comum: ${janela}. Conjuntos: ${esc(par.conjuntos.join("; "))}. Campanhas: ${esc(par.lados.map((l) => `${l.lp}: ${l.campanhas.join("; ")}`).join(" · "))}.</p>` +
+    `<p class="tnote">Janela comum: ${janela}. Conjuntos em comum: ${esc(par.conjuntos.join("; "))}.${
+      par.conjuntosForaDoPar.length
+        ? ` <span data-conjuntos-fora-do-par>Fora do par (sem o mesmo conjunto na outra LP): ${esc(par.conjuntosForaDoPar.map((x) => `${x.lp}: ${x.conjuntos.join("; ")}`).join(" · "))}.</span>`
+        : ""
+    } Campanhas: ${esc(par.lados.map((l) => `${l.lp}: ${l.campanhas.join("; ")}`).join(" · "))}.</p>` +
     tabela(["LP", "Invest. (c/ imposto)", "% da verba do par", "Visitas (landing_page_view)", "Compras", "Compras ÷ visitas", "CPA", "ROAS", "Tier superior"], linhas) +
     `<p data-veredito-do-par${par.fisher ? ` data-p-valor="${esc(String(par.fisher.pValor))}"` : ""}>${veredito}</p>` +
     (par.verbaInvertida && par.textoDaVerba ? `<div class="warn" data-verba-invertida><b>Verba</b> — ${esc(par.textoDaVerba)}</div>` : "") +
@@ -1236,7 +1240,7 @@ export function blocoDoTesteDeLp(p: DebriefingPayload): string {
   const t = p.publico.testeDeLp;
   const abre =
     `<section ${MARCA_DO_TESTE_DE_LP}><div class="sec-head"><h2>Teste de LP</h2></div>` +
-    `<p class="sec-desc">A LP de cada campanha de captação pelo código no nome (<code>--lpa</code>, <code>--lpf</code>…). Só se comparam LPs com o mesmo formato, os mesmos nomes de anúncio e os mesmos nomes de conjunto, nos dias em que todas tiveram investimento (nunca o acumulado). Decide compras ÷ visitas (landing_page_view), com o teste exato de Fisher bilateral: p &lt; 0,05 → veredito; p ≥ 0,05 → empate, segue rodando; janela com menos de ${esc(String(DIAS_MINIMOS_DO_TESTE_DE_LP))} dias → sem leitura.</p>`;
+    `<p class="sec-desc">A LP de cada campanha de captação pelo código no nome (<code>--lpa</code>, <code>--lpf</code>…). Só se comparam LPs com o mesmo formato, nos conjuntos em comum (a interseção dos nomes de conjunto) e com os mesmos nomes de anúncio dentro deles, nos dias em que todas tiveram investimento nesses conjuntos (nunca o acumulado); o conjunto sem correspondente na outra LP fica fora do par. Decide compras ÷ visitas (landing_page_view), com o teste exato de Fisher bilateral: p &lt; 0,05 → veredito; p ≥ 0,05 → empate, segue rodando; janela com menos de ${esc(String(DIAS_MINIMOS_DO_TESTE_DE_LP))} dias → sem leitura.</p>`;
   const fecha = `</section>`;
   if (!t) return abre + nota("<b>Teste de LP não calculado:</b> este relatório foi gerado antes dele existir.") + fecha;
   if (!t.aplicavel) {

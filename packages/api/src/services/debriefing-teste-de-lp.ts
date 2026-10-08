@@ -174,11 +174,15 @@ export type MotivoSemLeitura =
 
 export interface ParDeLp {
   lps: [string, string];
-  /** Quantas LPs têm a mesma assinatura (formato + anúncios + conjuntos): com 3+, há várias comparações (REQ-002). */
+  /** Quantas LPs estão no grupo de comparação deste par (ligadas por pares): com 3+, há várias comparações (REQ-002). */
   lpsNaAssinatura: number;
   formato: FormatoDoTesteDeLp;
+  /** Nomes de anúncio dentro dos conjuntos do par (iguais nas duas LPs). */
   anuncios: string[];
+  /** R12-6: a INTERSEÇÃO dos nomes de conjunto das duas LPs — só eles entram no par. */
   conjuntos: string[];
+  /** R12-6: os conjuntos de cada LP que ficaram fora do par (sem correspondente na outra). */
+  conjuntosForaDoPar: { lp: string; conjuntos: string[] }[];
   janela: { dias: string[]; inicio: string | null; fim: string | null; memoria: string };
   investimentoDoPar: number;
   lados: [LadoDoPar, LadoDoPar];
@@ -248,7 +252,7 @@ function chaveDosNomes(nomes: readonly string[]): string {
 const ROTULO_DO_CRITERIO: Readonly<Record<CriterioDoPar, string>> = {
   formato: "formato",
   anuncios: "nomes de anúncio",
-  conjuntos: "nomes de conjunto",
+  conjuntos: "conjuntos (nenhum nome de conjunto em comum)",
 };
 
 const ROTULO_DO_FORMATO: Readonly<Record<FormatoDoTesteDeLp, string>> = { video: "vídeo", estatico: "estático" };
@@ -302,8 +306,6 @@ export function computeTesteDeLp(input: EntradaDoTesteDeLp): TesteDeLp {
     l.push(a);
     linhasPorCampanha.set(k, l);
   }
-  const campanhaPorAdId = new Map<string, string>();
-  for (const a of [...anuncios].sort((x, y) => porOrdem(x.dia, y.dia))) campanhaPorAdId.set(a.adId, chaveDaCampanha(a));
 
   const campanhas: (CampanhaDoTesteDeLp & { chave: string })[] = [...linhasPorCampanha.entries()].map(([chave, linhas]) => {
     const nome = [...linhas].sort((x, y) => porOrdem(y.dia, x.dia)).find((l) => (l.campaignName ?? "").trim())?.campaignName?.trim() ?? chave;
@@ -373,40 +375,71 @@ export function computeTesteDeLp(input: EntradaDoTesteDeLp): TesteDeLp {
   }
   const chaveDoGrupo = new Map<Grupo, string>([...grupos.entries()].map(([k, g]) => [g, k]));
 
-  // Por assinatura: as LPs (cada uma, um grupo).
-  const porAssinatura = new Map<string, Grupo[]>();
-  for (const g of grupos.values()) {
-    if (!g.assinatura) continue;
-    const l = porAssinatura.get(g.assinatura) ?? [];
-    l.push(g);
-    porAssinatura.set(g.assinatura, l);
-  }
+  const linhasDoGrupo = (g: Grupo) => (chavesDasCampanhas.get(chaveDoGrupo.get(g)!) ?? []).flatMap((k) => linhasPorCampanha.get(k) ?? []);
+  const chaveDoConjunto = (l: AnuncioDiaDoTesteDeLp) => normalizarNomeCampanha((l.adsetName ?? "").trim());
 
-  const pares: ParDeLp[] = [];
-  const emPar = new Set<Grupo>();
-  for (const lista of porAssinatura.values()) {
-    if (lista.length < 2) continue;
-    const ordenada = [...lista].sort((a, b) => porOrdem(a.lp, b.lp));
-    for (const g of ordenada) emPar.add(g);
-    for (let i = 0; i < ordenada.length; i++) {
-      for (let j = i + 1; j < ordenada.length; j++) {
-        pares.push(
-          parDe(ordenada[i]!, ordenada[j]!, ordenada.length, (g) => chavesDasCampanhas.get(chaveDoGrupo.get(g)!)!, linhasPorCampanha, campanhaPorAdId, input.compradores, vendasComConteudo),
-        );
-      }
+  /**
+   * R12-6 (P-25, "basta a interseção"): duas LPs comparam-se nos conjuntos (pelo
+   * NOME) que as DUAS têm. A interseção vazia não forma par. Os nomes de anúncio
+   * são comparados DENTRO desses conjuntos. Formato e anúncios continuam iguais.
+   */
+  const comparar = (a: Grupo, b: Grupo): { intersecao: string[]; diferencas: CriterioDoPar[] } => {
+    const diferencas: CriterioDoPar[] = [];
+    if (!a.formato || !b.formato || a.formato !== b.formato) diferencas.push("formato");
+    const ca = a.conjuntos ? new Set(a.conjuntos.map((n) => normalizarNomeCampanha(n))) : null;
+    const cb = b.conjuntos ? new Set(b.conjuntos.map((n) => normalizarNomeCampanha(n))) : null;
+    const intersecao = ca && cb ? [...ca].filter((k) => cb.has(k)).sort(porOrdem) : [];
+    if (intersecao.length > 0) {
+      const I = new Set(intersecao);
+      const anunciosEm = (g: Grupo) => (g.anuncios ? nomesDistintos(linhasDoGrupo(g).filter((l) => I.has(chaveDoConjunto(l))).map((l) => l.nome)) : null);
+      const aa = anunciosEm(a);
+      const ab = anunciosEm(b);
+      if (!aa || !ab || chaveDosNomes(aa) !== chaveDosNomes(ab)) diferencas.push("anuncios");
+    } else {
+      if (!a.anuncios || !b.anuncios || chaveDosNomes(a.anuncios) !== chaveDosNomes(b.anuncios)) diferencas.push("anuncios");
+      diferencas.push("conjuntos");
+    }
+    return { intersecao, diferencas };
+  };
+
+  const todos = [...grupos.values()].sort((a, b) => porOrdem(a.lp, b.lp) || porOrdem(a.campanhas.join("|"), b.campanhas.join("|")));
+  const formados: { a: Grupo; b: Grupo; intersecao: string[] }[] = [];
+  for (let i = 0; i < todos.length; i++) {
+    for (let j = i + 1; j < todos.length; j++) {
+      const [a, b] = [todos[i]!, todos[j]!];
+      if (a.lp === b.lp) continue;
+      const c = comparar(a, b);
+      if (c.diferencas.length === 0) formados.push({ a, b, intersecao: c.intersecao });
     }
   }
+  // REQ-002: as LPs ligadas por pares formam um grupo de comparação (3+ LPs = várias comparações).
+  const raiz = new Map<Grupo, Grupo>();
+  const achar = (g: Grupo): Grupo => {
+    const r = raiz.get(g) ?? g;
+    if (r === g) return g;
+    const rr = achar(r);
+    raiz.set(g, rr);
+    return rr;
+  };
+  for (const f of formados) raiz.set(achar(f.a), achar(f.b));
+  const lpsDoGrupo = new Map<Grupo, Set<string>>();
+  for (const f of formados) {
+    for (const g of [f.a, f.b]) {
+      const r = achar(g);
+      const set = lpsDoGrupo.get(r) ?? new Set<string>();
+      set.add(g.lp);
+      lpsDoGrupo.set(r, set);
+    }
+  }
+
+  const pares: ParDeLp[] = formados.map((f) =>
+    parDe(f.a, f.b, f.intersecao, lpsDoGrupo.get(achar(f.a))!.size, linhasDoGrupo, input.compradores, vendasComConteudo),
+  );
+  const emPar = new Set<Grupo>(formados.flatMap((f) => [f.a, f.b]));
   pares.sort((a, b) => porOrdem(a.formato, b.formato) || porOrdem(a.lps.join("|"), b.lps.join("|")) || porOrdem(a.conjuntos.join("|"), b.conjuntos.join("|")));
 
   // ---- Grupos sem par, com o motivo ----
-  const todos = [...grupos.values()].sort((a, b) => porOrdem(a.lp, b.lp) || porOrdem(a.campanhas.join("|"), b.campanhas.join("|")));
-  const difere = (a: Grupo, b: Grupo): CriterioDoPar[] => {
-    const out: CriterioDoPar[] = [];
-    if (!a.formato || !b.formato || a.formato !== b.formato) out.push("formato");
-    if (!a.anuncios || !b.anuncios || chaveDosNomes(a.anuncios) !== chaveDosNomes(b.anuncios)) out.push("anuncios");
-    if (!a.conjuntos || !b.conjuntos || chaveDosNomes(a.conjuntos) !== chaveDosNomes(b.conjuntos)) out.push("conjuntos");
-    return out;
-  };
+  const difere = (a: Grupo, b: Grupo): CriterioDoPar[] => comparar(a, b).diferencas;
   const semPar: GrupoSemPar[] = todos
     .filter((g) => !emPar.has(g))
     .map((g) => {
@@ -458,15 +491,16 @@ export function computeTesteDeLp(input: EntradaDoTesteDeLp): TesteDeLp {
 function parDe(
   g1: Grupo,
   g2: Grupo,
+  intersecao: readonly string[],
   lpsNaAssinatura: number,
-  chavesDe: (g: Grupo) => string[],
-  linhasPorCampanha: ReadonlyMap<string, AnuncioDiaDoTesteDeLp[]>,
-  campanhaPorAdId: ReadonlyMap<string, string>,
+  linhasDoGrupo: (g: Grupo) => AnuncioDiaDoTesteDeLp[],
   compradores: readonly CompradorDaMidia[],
   vendasComConteudo: boolean,
 ): ParDeLp {
   const ladosG = [g1, g2] as const;
-  const linhasDe = (g: Grupo) => chavesDe(g).flatMap((k) => linhasPorCampanha.get(k) ?? []);
+  // R12-6: só as linhas dos conjuntos da interseção entram no par (janela, visitas, compras e verba).
+  const I = new Set(intersecao);
+  const linhasDe = (g: Grupo) => linhasDoGrupo(g).filter((l) => I.has(normalizarNomeCampanha((l.adsetName ?? "").trim())));
 
   // ---- AC3: os dias em que TODAS as LPs do par tiveram investimento ----
   const diasComInvestimento = ladosG.map((g) => {
@@ -487,9 +521,11 @@ function parDe(
 
   // ---- Linhas e compradores de cada LP na janela ----
   const doLado = ladosG.map((g) => {
-    const chaves = new Set(chavesDe(g));
-    const linhas: AnuncioDiaDaMidia[] = linhasDe(g).filter((l) => naJanela.has(l.dia));
-    const doLp = compradores.filter((c) => c.adId !== null && chaves.has(campanhaPorAdId.get(c.adId) ?? "") && c.dia !== null && naJanela.has(c.dia));
+    const doPar = linhasDe(g);
+    // O Ad ID pertence a um só conjunto: comprador de anúncio de conjunto fora da interseção fica fora.
+    const adIds = new Set(doPar.map((l) => l.adId));
+    const linhas: AnuncioDiaDaMidia[] = doPar.filter((l) => naJanela.has(l.dia));
+    const doLp = compradores.filter((c) => c.adId !== null && adIds.has(c.adId) && c.dia !== null && naJanela.has(c.dia));
     return { g, linhas, compradores: doLp };
   });
   const investimentoDoPar = doLado.reduce((s, x) => s + x.linhas.reduce((t, l) => t + l.investimentoComImposto, 0), 0);
@@ -569,7 +605,9 @@ function parDe(
   }
 
   // ---- AC5: o mesmo criativo nas duas LPs ----
-  const nomesDoPar = (g1.anuncios ?? []).map((n) => ({ nome: n, chave: normalizarNomeCampanha(n) }));
+  const anunciosDoPar = nomesDistintos(linhasDe(g1).map((l) => l.nome)) ?? [];
+  const nomesDoPar = anunciosDoPar.map((n) => ({ nome: n, chave: normalizarNomeCampanha(n) }));
+  const foraDe = (g: Grupo) => (g.conjuntos ?? []).filter((n) => !I.has(normalizarNomeCampanha(n)));
   const mesmoCriativo: CriativoNoPar[] = nomesDoPar.map(({ nome, chave }) => ({
     nome,
     porLp: doLado.map(({ g, linhas, compradores: cs }) => {
@@ -585,8 +623,9 @@ function parDe(
     lps: [g1.lp, g2.lp],
     lpsNaAssinatura,
     formato: g1.formato!,
-    anuncios: [...(g1.anuncios ?? [])],
-    conjuntos: [...(g1.conjuntos ?? [])],
+    anuncios: anunciosDoPar,
+    conjuntos: (g1.conjuntos ?? []).filter((n) => I.has(normalizarNomeCampanha(n))),
+    conjuntosForaDoPar: ladosG.map((g) => ({ lp: g.lp, conjuntos: foraDe(g) })).filter((x) => x.conjuntos.length > 0),
     janela: { dias, inicio, fim, memoria: memoriaDaJanela },
     investimentoDoPar,
     lados,

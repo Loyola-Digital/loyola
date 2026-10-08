@@ -212,11 +212,65 @@ describe("AC2 — só pares com o mesmo formato, os mesmos anúncios e os mesmos
     expect(t.semPar[0]!.texto).toContain("nomes de anúncio");
   });
 
-  it("conjuntos diferentes (um a menos) → sem par", () => {
+  it("R12-6: conjuntos diferentes com nomes em comum → par pela INTERSEÇÃO (o conjunto a mais fica fora)", () => {
     const t = computeTesteDeLp(entrada([{ id: "a", nome: VID("lpa"), ...base }, { id: "g", nome: VID("lpg"), ...base, conjuntos: ["01_QUENTE"] }]));
+    const p = par(t, "LPA×LPG");
+    expect(p.conjuntos).toEqual(["01_QUENTE"]);
+    expect(p.conjuntosForaDoPar).toEqual([{ lp: "LPA", conjuntos: ["02_LISTAS"] }]);
+    expect(t.semPar).toEqual([]);
+  });
+
+  it("R12-6: interseção vazia → sem par, com o motivo", () => {
+    const t = computeTesteDeLp(entrada([{ id: "a", nome: VID("lpa"), ...base }, { id: "g", nome: VID("lpg"), ...base, conjuntos: ["09_OUTRO"] }]));
     expect(t.pares).toEqual([]);
     expect(t.semPar.map((g) => g.diferencas)).toEqual([["conjuntos"], ["conjuntos"]]);
-    expect(t.semPar[0]!.texto).toContain("nomes de conjunto");
+    expect(t.semPar[0]!.texto).toContain("nenhum nome de conjunto em comum");
+  });
+
+  it("R12-6: os anúncios são comparados DENTRO dos conjuntos em comum", () => {
+    // A LPA tem um anúncio a mais, mas só no conjunto que a LPG não tem.
+    const anuncios = [
+      ...linhas({ id: "a", nome: VID("lpa"), conjuntos: ["01_QUENTE"], anuncios: ["adv01"], dias: dias(1, 3) }),
+      ...linhas({ id: "a", nome: VID("lpa"), conjuntos: ["02_LISTAS"], anuncios: ["adv01", "adv09"], dias: dias(1, 3) }).map((l) => ({ ...l, adId: `x${l.adId}` })),
+      ...linhas({ id: "g", nome: VID("lpg"), conjuntos: ["01_QUENTE"], anuncios: ["adv01"], dias: dias(1, 3) }),
+    ];
+    const t = computeTesteDeLp({ anuncios, compradores: [], vendasComConteudo: true });
+    const p = par(t, "LPA×LPG");
+    expect([p.conjuntos, p.anuncios]).toEqual([["01_QUENTE"], ["adv01"]]);
+    // dentro da interseção os anúncios diferem → sem par
+    const outra = computeTesteDeLp({
+      anuncios: [...anuncios, ...linhas({ id: "g2", nome: VID("lpf"), conjuntos: ["02_LISTAS"], anuncios: ["adv01"], dias: dias(1, 3) })],
+      compradores: [],
+      vendasComConteudo: true,
+    });
+    expect(outra.pares.map((x) => x.lps.join("×"))).toEqual(["LPA×LPG"]);
+    expect(outra.semPar.find((g) => g.lp === "LPF")!.diferencas).toEqual(["anuncios"]);
+  });
+
+  it("R12-6 (o caso do PG05): LPA com 4 conjuntos × LPF com 3 — par nos 3; o 4º fica fora das visitas, das compras, da verba e da janela", () => {
+    const tres = ["00_LISTAS", "01_ALLINONE30D", "01_SEGUIDORES"];
+    const anuncios = [
+      ...linhas({ id: "a", nome: EST("lpa"), conjuntos: tres, dias: dias(1, 4), inv: 10, lpv: 10 }),
+      // o 4º conjunto da LPA: mais caro, mais visitas, um dia só dele (05/10) e compradores
+      ...linhas({ id: "a", nome: EST("lpa"), conjuntos: ["01_ALLINONE90D_INTERESSES"], dias: dias(1, 5), inv: 100, lpv: 50 }).map((l) => ({ ...l, adId: "a-90d" })),
+      ...linhas({ id: "f", nome: EST("lpf"), conjuntos: tres, dias: dias(1, 5), inv: 10, lpv: 10 }),
+    ];
+    const t = computeTesteDeLp({
+      anuncios,
+      compradores: [...n(5, "a-90d", D(2)), comprador("a-0-0", D(2)), comprador("f-1-0", D(3))],
+      vendasComConteudo: true,
+    });
+    const p = par(t, "LPA×LPF");
+    expect(t.semPar).toEqual([]);
+    expect(p.conjuntos).toEqual(tres);
+    expect(p.conjuntosForaDoPar).toEqual([{ lp: "LPA", conjuntos: ["01_ALLINONE90D_INTERESSES"] }]);
+    expect(p.janela.dias).toEqual(dias(1, 4));
+    expect(p.lados.map((l) => [l.investimentoComImposto, l.landingPageViews, l.compradores, l.comprasNaTaxa])).toEqual([
+      [120, 120, 1, 1],
+      [120, 120, 1, 1],
+    ]);
+    expect(p.lados.map((l) => l.pctDaVerba.valor)).toEqual([50, 50]);
+    expect(p.investimentoDoPar).toBe(240);
   });
 
   it("o motivo aponta a LP mais próxima (a de menos diferenças)", () => {
@@ -282,6 +336,22 @@ describe("AC2 — só pares com o mesmo formato, os mesmos anúncios e os mesmos
     const p = par(t, "LPA×LPG");
     expect(p.lados[0].campanhas).toHaveLength(2);
     expect(p.lados[0].investimentoComImposto).toBe(2 * 2 * 2 * 3 * 10);
+  });
+
+  it("campanhas da MESMA LP com outros conjuntos ou outros anúncios NÃO se somam: cada uma é comparada por si", () => {
+    const t = computeTesteDeLp(
+      entrada([
+        { id: "a1", nome: VID("lpa"), ...base },
+        { id: "a2", nome: `${VID("lpa")} — Cópia`, ...base, conjuntos: ["09_OUTRO"] },
+        { id: "a3", nome: `${VID("lpa")} — Cópia 2`, ...base, anuncios: ["adv09--outro"] },
+        { id: "g", nome: VID("lpg"), ...base },
+      ]),
+    );
+    expect(t.pares.map((x) => [x.lps.join("×"), x.lados[0].campanhas])).toEqual([["LPA×LPG", [VID("lpa")]]]);
+    expect(t.semPar.map((g) => [g.campanhas, g.diferencas])).toEqual([
+      [[`${VID("lpa")} — Cópia`], ["conjuntos"]],
+      [[`${VID("lpa")} — Cópia 2`], ["anuncios"]],
+    ]);
   });
 });
 
@@ -654,8 +724,15 @@ describe("REQ-002 — ressalvas fixas no bloco", () => {
     const b = blocoDoTeste(htmlComTeste(tres));
     expect(b.split(NOTA_COMPARACOES)).toHaveLength(4);
     const { html, payload } = await gerar(CENARIOS_DO_AC7["final-edicao-unica"]!);
-    expect(teste(payload).pares.map((x) => x.lpsNaAssinatura)).toEqual([2, 2]);
-    expect(bloco(html)).not.toContain(NOTA_COMPARACOES);
+    // R12-6: na fixture, LPA, LPF e LPH estáticas se ligam pela interseção (3 LPs); o vídeo tem 2.
+    expect(teste(payload).pares.map((x) => [x.lps.join("×"), x.lpsNaAssinatura])).toEqual([
+      ["LPA×LPF", 3],
+      ["LPA×LPH", 3],
+      ["LPF×LPH", 3],
+      ["LPA×LPG", 2],
+    ]);
+    expect(parDoBloco(html, "LPF×LPH")).toContain(NOTA_COMPARACOES);
+    expect(parDoBloco(html, "LPA×LPG")).not.toContain(NOTA_COMPARACOES);
   });
 });
 
@@ -751,10 +828,16 @@ describe("Motor II e gerarDebriefing — ponta a ponta (final e parcial)", () =>
     const fh = par(t, "LPF×LPH");
     expect(fh.janela.dias).toEqual(["2026-04-20", "2026-04-21", "2026-04-23"]);
     expect([fh.resultado, fh.formato]).toEqual(["empate", "estatico"]);
+    // R12-6: a LPA estática (3 conjuntos) pareia com LPF e LPH nos 2 em comum; o 3º fica fora.
+    const af = par(t, "LPA×LPF");
+    expect(af.conjuntos).toEqual(["01_QUENTE-30D", "02_LISTAS"]);
+    expect(af.conjuntosForaDoPar).toEqual([{ lp: "LPA", conjuntos: ["03_INTERESSES"] }]);
+    // o comprador do 03_INTERESSES (19/04) não entra; o investimento é o dos 2 conjuntos
+    expect(af.lados[0].compradores).toBe(0);
+    expect(af.lados[0].investimentoComImposto).toBeCloseTo(2 * 2 * 7 * 10 * FATOR, 9);
     expect(t.semPar.map((g) => [g.lp, g.maisProxima, g.diferencas])).toEqual([
-      ["LPA", "LPF", ["conjuntos"]],
       ["LPB", "LPA", ["anuncios"]],
-      ["LPD", "LPA", ["formato"]],
+      ["LPD", "LPA", ["anuncios"]],
     ]);
     expect(t.semLp.campanhas).toBe(1);
     expect(t.semLp.nomes).toEqual([CAMP_LP.semLp]);
@@ -780,7 +863,8 @@ describe("Motor II e gerarDebriefing — ponta a ponta (final e parcial)", () =>
     const p = payloadDoTesteDeLp(configSintetica(), { semConteudo: true });
     const t = teste(p);
     expect(t.vendasComConteudo).toBe(false);
-    expect(t.pares.map((x) => x.motivoSemLeitura)).toEqual(["SEM_UTM_CONTENT_NA_VENDA", "SEM_UTM_CONTENT_NA_VENDA"]);
+    expect(t.pares).toHaveLength(4);
+    expect(t.pares.every((x) => x.motivoSemLeitura === "SEM_UTM_CONTENT_NA_VENDA")).toBe(true);
   });
 
   it("linhas sem adset_name (loader anterior) → nenhum par: os conjuntos não são identificados", () => {
@@ -824,9 +908,9 @@ describe("render — o bloco Teste de LP a partir do payload", () => {
     const b = bloco(html);
     expect(b).toMatch(/data-sem-lp>Sem código de LP no nome: <b>1<\/b> campanha\(s\), <b>R\$\s45,53<\/b>/);
     expect(b).toContain("Campanhas com LP fora de par");
-    expect(b).toContain("que difere em nomes de conjunto");
     expect(b).toContain("que difere em nomes de anúncio");
-    expect(b).toContain("que difere em formato");
+    expect(parDoBloco(html, "LPA×LPF")).toContain("<span data-conjuntos-fora-do-par>Fora do par (sem o mesmo conjunto na outra LP): LPA: 03_INTERESSES.</span>");
+    expect(parDoBloco(html, "LPA×LPG")).not.toContain("data-conjuntos-fora-do-par");
   });
 
   it("parcial: sem leitura com o motivo e a nota do corte", async () => {
@@ -884,20 +968,20 @@ describe("render — o bloco Teste de LP a partir do payload", () => {
 // ---------------------------------------------------------------------------
 
 /**
- * SHA-256 medidos no commit-base `a1d8d121` (a 49.18), com esta mesma fixture e
+ * SHA-256 medidos no commit-base `f2cf6f1e` (a 49.18 rebaseada sobre a main; antes, `a1d8d121`), com esta mesma fixture e
  * o mesmo relógio, pelo script `ac7-4919.mts` (scratchpad): o HTML INTEIRO e o
  * payload. Na story, o HTML sem o bloco da 49.19 e o payload sem
  * `publico.testeDeLp` dão os MESMOS SHA — cabeçalho, avisos, resumo macro, as 18
  * seções, a Mídia por Anúncio, o rodapé e o `const D` incluídos.
  */
 const SHA_DO_BASE: Record<string, { html: string; payload: string }> = {
-  "final-edicao-unica": { html: "12268e10baf2edd25d001b0e310aeefea47833bbdf08cdb081916bed51d790f0", payload: "7b1f46048e9c03fa31f902b9eb70ed35180a3ef7d6fb055c214c8de7ecb6d230" },
-  "final-comparacao-recalculada": { html: "6cdc6ca02e9a94af3bbfc8fc2af05414ce56e99af2239c166caf773d5a8b0354", payload: "f2ad5259ba8007019e6ef5c03119494a147841fdbb8b673304ec6e895162d3c8" },
-  "final-comparacao-salva-antiga": { html: "8901136820dea800fcc60fac47f1b9e693aa2d9e18fee6344639171ca3af139d", payload: "f8def5d1709bbccdf9a6dc58e01956de3aaed38ac63fc1d663327424f404fdd3" },
-  "parcial-edicao-unica": { html: "41244a6ce6fcb2e49f79a53b7dba9e0e16ecf0a0190619b20451a8b0429ef823", payload: "5ea771f17779dbd404fb18bf8af78c54c4de1f87e882e1e84369edf89c21a708" },
-  "parcial-comparacao-recalculada": { html: "02c42a9d83622f7f02557e938abc0b5b6de6292e22f4c52c1aafbf2d8a76dfca", payload: "7442f6bb767838119d0edc8ef1445d664e644efef496fa9648ff99851529de8e" },
-  "parcial-comparacao-salva": { html: "f2013b990312b68836e0e826277ebd72ddc694170dd50f6d2867d37465497c0c", payload: "c20a465495886b49f8003e22e511171152cb083793dcad29504453aa19b93604" },
-  "final-sem-ad-level": { html: "e34894d9e273929235ce153d20c46d677587b61daee33495db4437fc2f5b966b", payload: "a1b79e3e9aadeb1a485414ea73e39c3aeb3c4df33764b0a3c63a28ecb64bf950" },
+  "final-edicao-unica": { html: "2650df65e0b0232dbfd26678bce0cee0900696c8543a65a7151064deffdc3cfa", payload: "357f9e66a28b653bf022a416c33c1756b852fa25f0b4317de41d9d35fbd86650" },
+  "final-comparacao-recalculada": { html: "ece0f339b6a75e4ade18c177dfc75bd748e19f24f636d501c88a4bcafc0a13b6", payload: "e83d8932e301d8a98251f5477969ca7c3bf7b4c50c797dc1964a24334bbbbf7c" },
+  "final-comparacao-salva-antiga": { html: "391d6bb75bbf162dde4c46ff0d9329591931494955c7dc40c376a56641a48267", payload: "485777df4d1c9bd9a1f200596a0f1687285dffb44eb6c347b078e3b379e04967" },
+  "parcial-edicao-unica": { html: "ee7299adf51411ed9f3f0c11f21a23262dcc01fe5b1836085138e0a3f98400b6", payload: "4905aac0527362b3bda43c8ea8d24441a4bb1c23b79b8c5b0543ce96c8d3ecad" },
+  "parcial-comparacao-recalculada": { html: "f2f77ddeaa8437400269d17029c8d2c67051ea144e544174577e1a470ce3782a", payload: "0e8451c89e658b31834aadff08eaf8e90f218bb1e97a61d6a452329ba57493a3" },
+  "parcial-comparacao-salva": { html: "496150db41db3eb518029263c1e3a3a63a98b04f4caeac4190ac86c33b3b6fdf", payload: "ac930a42ab64280c8a68a919c4dc59de20fd45286e884f8288b3bccbd5bb1e3c" },
+  "final-sem-ad-level": { html: "e34894d9e273929235ce153d20c46d677587b61daee33495db4437fc2f5b966b", payload: "0ada6a08f597da06ae355236c658b9b4d43d233e6094502ca823109965f1e02a" },
 };
 
 describe("AC7 — vale no parcial e no final; o resto do documento não muda", () => {
