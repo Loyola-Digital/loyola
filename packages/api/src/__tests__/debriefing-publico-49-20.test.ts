@@ -26,11 +26,12 @@ import {
 import { computeDebriefingMoneyTime, ehFrioAdv, textoDaTemperatura } from "../services/debriefing-money-time-engine.js";
 import { publicoDaCampanha } from "../services/debriefing-midia-anuncios.js";
 import { montarPayloadDebriefing, type DebriefingPayload } from "../services/debriefing-payload.js";
-import { MAX_RESPOSTAS_POR_PERGUNTA, montarPesquisaPorPergunta, montarResumoMacro } from "../services/debriefing-resumo-macro.js";
+import { MAX_RESPOSTAS_POR_PERGUNTA, montarPesquisaPorPergunta, montarResumoMacro, type PesquisaPorPergunta } from "../services/debriefing-resumo-macro.js";
 import {
   MARCA_DA_PESQUISA_POR_PERGUNTA,
   MARCA_DA_RECOMPRA_POR_ORIGEM,
   SECOES_DO_DEBRIEFING,
+  blocoDaPesquisaPorPergunta,
   renderDebriefing,
   type ComparacaoDoDebriefing,
 } from "../services/debriefing-render.js";
@@ -577,6 +578,23 @@ describe("AC2 — no documento: resumo (parcial e final), seção 12 só na parc
       const { html } = await gerar({ modo, comparacao: null });
       expect(pesquisa(html, "resumo")[0]).toContain("Sem comparação por pergunta:</b> edição única");
       expect(pesquisa(html, "qualificacao")).toHaveLength(modo === "parcial" ? 1 : 0);
+    }
+  });
+
+  it("QA TEST-001 (P5): com respostas além do teto, o documento diz quantas ficaram fora; sem elas, nada", () => {
+    const linhas = Array.from({ length: MAX_RESPOSTAS_POR_PERGUNTA }, (_, i) => ({ rotulo: `r${i}`, atual: { n: 1, pct: 1 }, comparacao: { n: 1, pct: 1 } }));
+    const pp = (fora: number): PesquisaPorPergunta => ({
+      cobertura: { atual: { valor: 50, numerador: 1, denominador: 2 }, comparacao: { valor: 50, numerador: 1, denominador: 2 } },
+      perguntas: [
+        { campo: "profissao", rotulo: "profissão", presenca: "nos-dois", nAtual: 15, nComparacao: 15, linhas, semResposta: { atual: { n: 0, pct: 0 }, comparacao: { n: 0, pct: 0 } }, respostasForaDaTabela: fora },
+      ],
+      lacunasDeFaixa: [],
+    });
+    for (const onde of ["resumo", "qualificacao"] as const) {
+      expect(blocoDaPesquisaPorPergunta(pp(3), "PG05", "PG04", onde)).toContain(
+        `Mostrando as ${MAX_RESPOSTAS_POR_PERGUNTA} respostas de maior % entre os dois lados; 3 outra(s) ficam fora da tabela.`,
+      );
+      expect(blocoDaPesquisaPorPergunta(pp(0), "PG05", "PG04", onde)).not.toContain("ficam fora da tabela");
     }
   });
 
