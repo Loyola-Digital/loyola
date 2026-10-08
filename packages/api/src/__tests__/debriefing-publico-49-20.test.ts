@@ -6,7 +6,7 @@
  * Motores REAIS sobre a entrada sintética da 49.5/49.18 com a fixture da 49.20,
  * o orquestrador `gerarDebriefing` de ponta a ponta com o relógio fixado e o
  * render a partir do payload. Os SHA do AC3 foram medidos no commit-base da
- * story (`a1d8d121`) pelo script `ac3-4920.mts` (Dev Agent Record), sobre ESTA
+ * story (`f2cf6f1e`, depois do rebase; antes, `a1d8d121`) pelo script `ac3-4920.mts` (Dev Agent Record), sobre ESTA
  * fixture.
  */
 
@@ -55,14 +55,14 @@ import { blocosDa4920, semAcrescimosDa4920, semCamposDa4920, tirarDivs } from ".
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 const ROT = { projeto: "Expert", lancamento: "PG05", etapas: {}, funis: { [IDS.FB]: "PG04" } };
 
-/** AC3 — medidos no commit-base `a1d8d121` (HTML inteiro e payload, relógio fixado), sobre esta fixture. */
+/** AC3 — medidos no commit-base `f2cf6f1e` (a 49.18 rebaseada sobre a main; HTML inteiro e payload, relógio fixado), sobre esta fixture. */
 const SHA_DA_BASE: Record<string, { html: string; payload: string }> = {
-  "final-edicao-unica": { html: "405f3e6485808ed95933f277311393823664c012e627f79a3e64b3562d93feb9", payload: "f4d568149c02ca0ed33905185a513f911a0ef6d88874ceb51605bee0044a4495" },
-  "final-comparacao-recalculada": { html: "0a1519e33b79e0981c19a27ac5520bf145ee682d1fc672c968d0a9385dd89329", payload: "bdf66822fb3a09382c9d72c658925ac06b5f84a5ff3514d2d9f33142778450fb" },
-  "final-comparacao-salva-antiga": { html: "9acd378a2db151af84b3f4dc3929fdbfe53c4f2762c0acbbfaccfab51248aa32", payload: "281bff08cb9a72022fa2a5c3483ed767f5143ccc5e9c324fe381bd7378113aea" },
-  "parcial-edicao-unica": { html: "33cc20647856d2951788c9c71a9463c16189b0fd5c9ed432433cf52e27b3d0f6", payload: "b58903349bbd22447d23755689d6c87254876e9132e87401c27636b6fe686435" },
-  "parcial-comparacao-recalculada": { html: "50487e18db7eafd2e4ae18fc645f947fc0bce04b52eab9134765c01981f5ef05", payload: "56bd734f9c54f6feba121c59a3442caeaa137c8352d197b77522206d45954279" },
-  "parcial-comparacao-salva": { html: "01f9a3f773e8e6b8beaf0030221d49829039a25261d4745199587716fa0047dc", payload: "b453ee63871d0a028226080769773720edf27e259c4f9a0a25271dd7e3965fb5" },
+  "final-edicao-unica": { html: "725c71291a60104e8a0cd732140ced1deb2ae616703b7624b58026a82d6c798e", payload: "66039cb92774ff212856918f27dfea811c979026adb758335e3115c6b859ba8f" },
+  "final-comparacao-recalculada": { html: "ece32c2ecb1ee1e939e0b942a9cad774e95cfbec2f110cc2a877a85d6859ea54", payload: "089aa747ea2bed8579a91af5a8379bc5e3eb58f00def0f31ef17574d51adc63e" },
+  "final-comparacao-salva-antiga": { html: "72f1b5962ffa615ac8cada202cbb727ce121e94130ca3ae0a0b4c4b01960b03c", payload: "dd6b86ba6f6e09d0ef801269f934ca4a513c78190c904f5eebe7fa869cafac77" },
+  "parcial-edicao-unica": { html: "41d5ded383dbc517e14f6623d3c1f3455af48e9a5c8a7d11ec0ad1cb76d4d40d", payload: "1b4fa3990c0a16e28ac9c879e11a2393245f718e12a5e3d1fdfc905c0d32fe46" },
+  "parcial-comparacao-recalculada": { html: "cfbc1f067ddca99c6949437c211793d052dad208210e2b60201fc1e0e5e50e35", payload: "edb3f623604354fbc239303d29ff018ea3227445863e5191587df8a053f569d2" },
+  "parcial-comparacao-salva": { html: "5b082cc18e3b7fc81283bc804c36c3106c54dbf1ff8648b322f346305a36c264", payload: "b8a7db5e6102ccfa9c551a639ae36be97ae1a96bbb768cc19992224c53cc047d" },
 };
 
 async function gerar(c: CenarioDoPublico) {
@@ -631,7 +631,7 @@ describe("AC2 — no documento: resumo (parcial e final), seção 12 só na parc
 // ---------------------------------------------------------------------------
 
 describe("AC3 — parcial e final; HTML inteiro e payload iguais aos do commit-base, descontados os acréscimos", () => {
-  it.each(Object.keys(CENARIOS_DO_PUBLICO))("%s: HTML inteiro sem os blocos e payload sem os campos novos = os de a1d8d121", async (nome) => {
+  it.each(Object.keys(CENARIOS_DO_PUBLICO))("%s: HTML inteiro sem os blocos e payload sem os campos novos = os do commit-base", async (nome) => {
     const { html, payload } = await gerar(CENARIOS_DO_PUBLICO[nome]!);
     expect(sha(html)).not.toBe(SHA_DA_BASE[nome]!.html);
     expect(sha(semAcrescimosDa4920(html))).toBe(SHA_DA_BASE[nome]!.html);

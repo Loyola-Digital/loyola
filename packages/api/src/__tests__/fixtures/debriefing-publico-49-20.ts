@@ -3,7 +3,7 @@
  * pergunta (AC2), sobre a da 49.18 (`debriefing-midia-anuncios-49-18.ts`) e a da
  * 49.5 (`debriefing-payload-sintetico.ts`), que não são alteradas.
  *
- * Usa SÓ o que já existia no commit-base da story (`a1d8d121`): o mesmo arquivo
+ * Usa SÓ o que já existia no commit-base da story (`a1d8d121`, e `f2cf6f1e` depois do rebase): o mesmo arquivo
  * roda lá, num script, para medir o SHA do HTML inteiro e do payload de antes
  * (AC3). Nada desta fixture depende de código da 49.20.
  *

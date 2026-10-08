@@ -9,7 +9,7 @@
  *   `dinheiroTempo.compradores[].frioAdv` e `resumoMacro.pesquisaPorPergunta`.
  *
  * Arquivo à parte de propósito: a fixture da 49.20 roda no commit-base
- * (`a1d8d121`) para medir o SHA de antes, e lá estas marcas não existem.
+ * (`f2cf6f1e`) para medir o SHA de antes, e lá estas marcas não existem.
  */
 
 import { MARCA_DA_PESQUISA_POR_PERGUNTA, MARCA_DA_RECOMPRA_POR_ORIGEM } from "../../services/debriefing-render.js";
