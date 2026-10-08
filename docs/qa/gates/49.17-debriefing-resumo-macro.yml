@@ -1,0 +1,88 @@
+schema: 1
+storyId: '49.17'
+story: '49.17'
+story_title: 'Resumo macro no topo do Debriefing — tabela de paridade, curva acumulada, CAC, leads e testes pré-lançamento'
+scope_do_gate: 'Fatias A e B. AC1–AC4, AC6–AC11 e as provas delas no AC12. A fatia C (AC5 e o caso real dos testes pré-lançamento) está PENDENTE da P-21 do dono e fica fora deste gate: não é defeito.'
+verdict: CONCERNS
+gate: CONCERNS
+status_reason: 'As fatias A e B estão corretas e fiéis à rodada 11. O HTML inteiro, sem os acréscimos, sai idêntico ao da main em 6 dos 7 casos; no 7º, a única diferença é a linha da lacuna nova na seção 17. A suíte deixa passar duas mutações que não são equivalentes, e uma delas é de chamador: o orquestrador monta o resumo sem os alertas e as colunas da curva saem trocadas. Isso abre um TEST-001 medium, com conserto pronto e provado. A seção 17 vai ao @po.'
+reviewer: 'Quinn'
+updated: '2026-10-07T23:35:00-03:00'
+branch: 'feat/49.17-resumo-macro'
+commit_reviewed: '7c00d836 (código) e 9640c0dc (story)'
+base: 'origin/main @ 4e9e9843. `git fetch origin` no início e no fim (23:34): a main não andou.'
+
+issues:
+  - id: TEST-001
+    severity: medium
+    category: tests
+    description: 'Duas mutações não equivalentes sobrevivem às 29 suítes de debriefing (831/831). (Q7) O orquestrador monta o resumo com `alertas: []` em vez de `guardas.alertas` (`debriefing-generate.ts`, bloco 5a). O WF2 (preço contaminado) some das limitações do payload e do documento, e nada falha: o teste do WF2 chama `montarResumoMacro` direto, não pelo `gerarDebriefing`. É exatamente o chamador que o AC12 manda cobrir. (Q11) As colunas "Compradores <comparação>" e "Compradores <atual>" da tabela da curva trocadas (`debriefing-render.ts`, `linhasCurva`). O documento passa a mostrar o número de um lançamento sob o nome do outro, e nada falha: o teste da curva confere só os rótulos D+x das linhas. As 49.18–49.20 vão mexer no mesmo render, então essa troca é uma regressão plausível.'
+    recommendation: 'Acrescentar os 2 testes do rascunho do QA (`scratchpad/qa-rascunho-teste-4917.ts`, cerca de 30 linhas) ao fim de `debriefing-resumo-macro-49-17.test.ts`. Eles reaproveitam `deps`/`gerar`/`bloco`. O QA rodou o rascunho na worktree e depois o removeu: os 2 testes passam sem mutação, Q7 morre e Q11 morre. Opcional: estender o Q11 às colunas de faturamento e investimento e às séries dos 2 gráficos.'
+    owner: '@dev'
+    status: open
+
+  - id: REQ-001
+    severity: low
+    category: requirements
+    description: 'Pergunta do @dev sobre a seção 17. Sem planilha de leads, a lacuna nova `LEADS_UNICOS_SEM_FONTE` aparece na lista "Lacunas declaradas" da Base de Conhecimento. O QA mediu que é a ÚNICA diferença: tirando a linha `<br><code>LEADS_UNICOS_SEM_FONTE</code> …`, o HTML inteiro, sem os acréscimos, bate com o da main. A letra do AC10 só prevê a exceção da seção 03, então tecnicamente o AC10 não cobre esse caso. Mas a diferença é a consequência correta do AC4: a lacuna é obrigatória (F11) e a seção 17 é o catálogo de TODAS as lacunas do payload (49.5 AC8). O AC10 existe para proteger o conteúdo que já existia, e esse conteúdo está intacto.'
+    recommendation: 'Recomendação do QA ao @po: ratificar como 2ª exceção do AC10 ("a lacuna nova declarada pelo AC4 entra na lista de lacunas da seção 17 quando não há planilha de leads") e NÃO filtrar a lista. Filtrar deixaria a lacuna no payload, nas limitações do resumo e na F11, mas fora do catálogo do documento. Seria uma lacuna declarada pela metade, contra a regra "lacuna escrita, nunca em silêncio". A decisão é do @po.'
+    owner: '@po'
+    status: open
+
+  - id: REQ-002
+    severity: low
+    category: requirements
+    description: 'As limitações do resumo (AC8) cobrem as lacunas do catálogo `LACUNAS_QUE_AFETAM_A_PARIDADE` dos dois lados e o WF2 só do lado atual. O que fica de fora, que pode mexer em compradores/investimento da captação: as pendências `MIDIA_DE_ETAPA_FORA_DA_CONFIG`, `VENDA_DE_ETAPA_FORA_DA_CONFIG` e `TIPO_INESPERADO_NA_CAPTACAO`, e os alertas das guardas da comparação. Não viola o AC8, que fala de "lacunas e alertas", e essas pendências aparecem em outras partes do documento. O exemplo do AC8 "plataforma de venda ausente" não tem fonte no payload, e o @dev não inventou uma, o que está correto.'
+    recommendation: 'Se o @po quiser, uma story futura acrescenta as pendências que tiram dinheiro ou venda da conta. Não bloqueia.'
+    status: open
+
+  - id: DOC-001
+    severity: low
+    category: documentation
+    description: 'Falta a validação visual do dono (DoD): a parcial do DG PG05 e um relatório final. Só o dono pode fazer.'
+    owner: 'Danilo'
+    status: pending
+
+  - id: PEND-FATIA-C
+    severity: low
+    category: requirements
+    description: 'PENDENTE, não é defeito: a fatia C (AC5, testes pré-lançamento R11-1, e o caso real dos R$ 1,4k do PG05 no AC12) espera a P-21 (limite inferior de data). Não foi implementada nem avaliada. Ganha gate próprio.'
+    owner: 'dono → @dev'
+    status: pending
+
+top_issues:
+  - id: TEST-001
+    severity: medium
+    finding: 'Q7 (orquestrador monta o resumo sem os alertas das guardas) e Q11 (colunas da curva trocadas) sobrevivem.'
+    suggested_action: '2 testes do rascunho do QA, já provados contra as duas mutações.'
+  - id: REQ-001
+    severity: low
+    finding: 'Seção 17: a lacuna nova entra em "Lacunas declaradas", e só isso difere.'
+    suggested_action: '@po ratifica como 2ª exceção do AC10, sem filtrar a lista.'
+  - id: PEND-FATIA-C
+    severity: low
+    finding: 'A fatia C (AC5) espera a P-21.'
+    suggested_action: 'Gate próprio depois da resposta do dono.'
+
+waiver: { active: false }
+
+checks:
+  fidelidade_ao_metodo: 'R11-0a: D0 = `config.datasChave.inicioCaptacao`, e `janela.inicio` é o mesmo valor; a Q5 (D0 = 1ª venda, como no método) morre. R11-0b: o corte vem da 49.12 (o `agora` vira ontem em Brasília), e o caso real deu corte 06/10 com geração em 07/10. R11-0c: CAC, investimento e curva usam `aplicarImposto` com o imposto da config (12,15%), nunca ×1,13. R11-0d: os leads vêm das planilhas `type = "leads"` das etapas de captação, não do export da Kiwify. R11-0h: o AC9 é testado no documento e no payload. R11-3: a curva tem só o atual e a comparação principal (`comparacao` é a principal). AC7: `acao: null` e "sem leitura de IA", com o espaço `data-bloco-ia` para a 49.7. As perguntas do gate do método foram mapeadas como o @po aceitou ("D0 confirmado?" cai, porque D0 vem da config).'
+  acceptance_criteria: 'AC1 ✓: o bloco fica entre o banner e a navegação, sem `sec-num`, e as 18 seções seguem 00…17. AC2 ✓: 10 linhas (as 9 do método mais a taxa), Δ, "—" com nota, edição única e parcial sem Δ. AC3 ✓: o CAC usa a mesma base do ROAS de captação; com 0 compradores sai nulo com `SEM_COMPRADORES_DE_CAPTACAO` (M2 e Q13, CAC = 0, morrem). AC4 ✓: dedup por e-mail OU telefone; descarta "test" em qualquer caixa e "teste" (Q1 com `startsWith` morre); conta os descartados; sem fonte, lacuna nova exigida pela F11; `LEADS_DO_PAINEL` continua; taxa = compradores headline ÷ leads únicos. AC6 ✓: a curva fecha com os totais (compradores, faturamento com order bump, investimento só de captação: Q2, Q3 e Q4 morrem) e para no corte dos dois lados. AC7 ✓. AC8 ✓, com ressalva (REQ-002). AC9 ✓. AC10 ✓, com a seção 17 (REQ-001). AC11 ✓ (ver contrato). AC12 ✓ na letra para A+B, com o furo de chamador do TEST-001; o caso real dos testes pré-lançamento fica com a fatia C.'
+  ac10_sha: 'Reproduzido com o `sha-4917.mts` do @dev: a saída `-v` bate byte a byte com `sha-4917.txt` (7 casos: 17 iguais, mais a exceção da 03; no sem-planilha, 16 + 1 + Base de Conhecimento). A cópia `velho-4917/` foi conferida idêntica a `origin/main:packages/api/src` (`diff -rq`). O script compara por título as `<section>`, e por isso não vê o que fica FORA delas (cabeçalho, banner, rodapé e o JSON `const D` dos gráficos). O QA estendeu a prova (`qa-full-4917.mts`): o HTML INTEIRO novo, sem os acréscimos (bloco, regra de CSS, os 2 gráficos da curva em `D` e o texto da 03), comparado por SHA com o HTML da main, dá IGUAL em 6 dos 7 casos. No 7º (sem planilha), a diferença é só a linha da lacuna nova na seção 17. Alertas iguais nos 7. Payload: só os caminhos aditivos (`dinheiroTempo.cac`, `.leads`, `.curvaAcumulada`, `resumoMacro`) e, no sem-planilha, a lacuna nova em `lacunas`.'
+  ac13a_da_4912: 'O ajuste não esconde regressão. `semO4917` corta exatamente o trecho entre `data-resumo-macro` e `<div class="nav">`, que é só o bloco, porque a montagem é header + aviso + banner + resumo + nav. A regra de CSS sai por string exata. O texto da 03 é trocado do novo para o antigo, e só ele. Do `D` saem apenas as duas chaves da curva, que entram por último, e o JSON é reserializado. O SHA medido em `4920adfb` continua batendo, o que prova a reserialização fiel e o resto do documento intacto. A asserção `not.toBe(SHA)` garante que o bloco está lá. No payload saem só os 3 campos aditivos (`leads` não existe nessa fixture).'
+  unit_tests: 'Rodado pelo QA: suítes de debriefing + post-do-criativo da API, 29 arquivos, 843/843; o arquivo novo tem 27 testes. As 35 mutações do @dev, reexecutadas: 34 mortas, M18 viva. A M18 é equivalente: o render recalcula o resumo com a mesma função e as mesmas entradas, e o fio do payload está preso pela M35. Mutações do QA (`scratchpad/qa-mutar-4917.py`, contra as 29 suítes de debriefing, cada uma restaurada, `git status` limpo): 13 de 15 morrem. Morrem: Q1 teste por `startsWith`; Q2 curva pela última compra; Q3 curva sem order bump; Q4 investimento de todos os grupos; Q5 D0 = 1ª venda; Q6 Δ invertido; Q8 só `leads-captacao` é captação (o PG05 é `vendas-captacao`); Q9 qualquer etapa serve; Q10 F11 exige a lacuna em payload antigo (92 falhas: compatibilidade com payload salvo protegida); Q12 limitação da comparação salva omitida; Q13 CAC 0; Q14 taxa antes do dedup; Q15 texto da 03 com payload antigo. Sobrevivem Q7 e Q11 (TEST-001).'
+  web: '`next build` exit 0. Depois do build, `tsc --noEmit -p .` exit 0. `next lint` sem avisos. Suítes de debriefing do web: 7 arquivos, 95/95. O web não muda e não lê o payload do debriefing (grep).'
+  no_regressions: 'API: `node_modules/.bin/tsc --noEmit -p packages/api` exit 0. `eslint src/`: 0 erros e 1 warning pré-existente. API inteira: 246 arquivos, 10 falhas e 4.592 passando. As 10 são as pré-existentes conhecidas (funnel-stages-lead-inputs 3, instagram-routes 1, instagram 1, projects 3, schema 2).'
+  contrato_e_versao: 'Concordo com as duas decisões do @dev. `API_CONTRACT_VERSION` fica em 36: a forma das rotas não muda (o 200 continua `{ id, html, payload, alertas, substituiuParcial }`), o payload só ganha campos opcionais e o web não os lê; subir acenderia o banner "API atrás" sem ganho. `DEBRIEFING_PAYLOAD_VERSAO` fica em 1: `lerUltimoPayloadSalvoDoFunil` filtra `versao = atual`, então subir faria TODO relatório salvo deixar de servir de comparação (R7-7), e o fallback viraria 422 `COMPARACAO_SEM_CONFIG`. A regra dos campos aditivos e opcionais, ratificada na 49.12, segue valendo. Payload antigo como comparação: "—" com nota (testado), e a F11 não exige a lacuna nova quando `leads` está ausente (a Q10 morre com 92 falhas).'
+  caso_real_pg05: 'Conferido no Dev Agent Record e no script (`ac12-4917.mts` e `.out`), sem rodar de novo. A sessão tem `default_transaction_read_only=on`, e o `.out` registra `"sessao_read_only": "on"`. O `gravar` é no-op, retornando `"nao-gravado"`. A saída só traz agregados: contagens, valores, rótulos de planilha e códigos de lacuna; nenhum e-mail, telefone ou nome (o .out não tem nenhum "@"). As premissas de etapa e pergunta são simuladas e estão rotuladas. Resultado: 279 leads únicos (330 lidos, 1 de teste, 49 fora da janela), taxa de 67,0%, CAC de R$ 46,09 e a curva D+0…D+6 fechando com 187 compradores, R$ 13.094,30 e R$ 8.618,27.'
+  security: 'Nada de PII novo no payload: os leads entram só como contagens, e a dedup usa as chaves anônimas de `chavesDeComprador`. O HTML novo passa por `esc()` (rótulos, notas, limitações e pendências). Nenhuma rota nova.'
+  performance: 'A leitura de leads reaproveita a aba já lida como fonte da jornada, sem chamada nova ao Sheets (o teste de PGlite confere "lida uma vez"). A curva tem O(dias × séries), e o caso real levou 4,9 s.'
+
+notes:
+  - '[AUTO-DECISION] PASS ou CONCERNS? → CONCERNS (razão: os ACs de A+B estão atendidos e reproduzidos, mas o AC12 pede mutações de chamador e a Q7, uma mutação de orquestrador, sobrevive; com a Q11, isso dá um furo medium de teste. É o mesmo critério da 49.13, e o conserto está pronto e provado. Não é FAIL: não há defeito de código).'
+  - '[AUTO-DECISION] Seção 17 → recomendar ao @po a 2ª exceção do AC10, sem filtrar (razão: a lacuna é obrigatória pela F11, e a seção 17 é o catálogo de lacunas declaradas; filtrar seria declarar pela metade). A decisão é do @po.'
+  - '[AUTO-DECISION] A M18 do @dev é equivalente? → Sim. A Q7, que é o fio dos alertas, não é: ela sobrevive (TEST-001).'
+  - 'A fatia C fica fora do gate por instrução do coordenador: está pendente da P-21, não é defeito.'
+  - 'CodeRabbit não executado (CLI ausente no macOS). Revisão manual, SHAs estendidos e mutações.'
+  - 'Próximo: @dev aplica o TEST-001 (2 testes); @po decide a seção 17 (REQ-001); depois o re-gate e o @devops *push.'
