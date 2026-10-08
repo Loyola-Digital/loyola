@@ -605,3 +605,80 @@ describe("AC10 — as 18 seções do encerrado não mudam (só o texto \"Ingress
     expect(TEXTO_INGRESSOS_POR_DIA_COM_CURVA).toContain("curva acumulada do Resumo macro");
   });
 });
+
+// ---------------------------------------------------------------------------
+// QA 49.17 (TEST-001, rascunho do @qa) — o fio dos alertas pelo orquestrador
+// e as colunas da curva; REQ-002 — pendências e alertas da comparação
+// ---------------------------------------------------------------------------
+
+describe("QA TEST-001 — alertas pelo orquestrador e colunas da curva", () => {
+  it("Q7: o WF2 das guardas chega às limitações do payload e do bloco, pelo gerarDebriefing", async () => {
+    const d = deps({ config: configFinal() });
+    const calcular = d.calcularPayload;
+    d.calcularPayload = async (cfg, g) => {
+      const p = await calcular(cfg, g);
+      p.dinheiroTempo.higiene.precoDistintoPorProduto = { "Ingresso X": 99 };
+      return p;
+    };
+    const r = await gerarDebriefing(d, PARAMS);
+    expect(r.status).toBe(200);
+    const body = r.body as { html: string; payload: DebriefingPayload; alertas: { codigo: string }[] };
+    expect(body.alertas.map((a) => a.codigo)).toContain("WF2");
+    expect(body.payload.resumoMacro!.limitacoes.some((x) => x.startsWith("WF2 — "))).toBe(true);
+    expect(bloco(body.html)).toMatch(/<li>WF2 — /);
+  });
+
+  it("Q11: cada coluna e cada série da curva é do lançamento do rótulo", async () => {
+    const r = await gerar({ config: configFinal(), comparacao: "recalculada" });
+    const a = r.payload.dinheiroTempo.curvaAcumulada!.pontos.at(-1)!;
+    const b = r.gravado.comparacao!.payload.dinheiroTempo.curvaAcumulada!.pontos.at(-1)!;
+    expect(a.compradores).not.toBe(b.compradores);
+    expect(a.faturamento).not.toBe(b.faturamento);
+    expect(a.investimento).not.toBe(b.investimento);
+    const tab = /<div data-curva-acumulada>([\s\S]*?)<\/table>/.exec(bloco(r.html))![1]!;
+    expect(tab).toContain("<th>D+x</th><th>Compradores PG01</th><th>Compradores PG02</th><th>Faturamento PG01</th><th>Faturamento PG02</th><th>Investimento PG01</th><th>Investimento PG02</th>");
+    const ultima = [...tab.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].at(-1)![1]!;
+    const cel = [...ultima.matchAll(/<td>([^<]*)<\/td>/g)].map((m) => m[1]);
+    const brl = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    expect(cel.slice(1)).toEqual([String(b.compradores), String(a.compradores), brl(b.faturamento), brl(a.faturamento), brl(b.investimento), brl(a.investimento)]);
+    // As séries dos 2 gráficos: o nome diz de quem é o dado.
+    const D = JSON.parse(/<script>const D=(.*?);\n/s.exec(r.html)![1]!) as { graficos: Record<string, { series: { nome: string; dados: (number | null)[] }[] }> };
+    const fim = (id: string, nome: string) => D.graficos[id]!.series.find((s) => s.nome === nome)!.dados.at(-1);
+    expect(fim("cCurvaCompradores", "PG01")).toBe(b.compradores);
+    expect(fim("cCurvaCompradores", "PG02")).toBe(a.compradores);
+    expect(fim("cCurvaFaturamento", "Faturamento — PG01")).toBe(b.faturamento);
+    expect(fim("cCurvaFaturamento", "Faturamento — PG02")).toBe(a.faturamento);
+    expect(fim("cCurvaFaturamento", "Investimento — PG01 (referência)")).toBe(b.investimento);
+    expect(fim("cCurvaFaturamento", "Investimento — PG02 (referência)")).toBe(a.investimento);
+  });
+});
+
+describe("QA REQ-002 — limitações com as pendências que tiram venda/mídia da conta e os alertas da comparação", () => {
+  it("venda de etapa fora da config (atual) e WF2 da comparação, pelo gerarDebriefing", async () => {
+    const d = deps({ config: configFinal(), comparacao: "recalculada" });
+    d.calcularPayload = async (cfg, g) => {
+      const lado: Lado = cfg.funnelId === FB ? "comparacao" : "atual";
+      const mtIn = entradaMt(cfg, lado);
+      const entrada =
+        lado === "atual"
+          ? {
+              ...mtIn,
+              planilhas: [...mtIn.planilhas, { planilhaId: "p-fora", stageId: "stage-fora", nome: "fora", plataforma: "main_product", temColunaStatus: true, temColunaId: true, temColunaProduto: true, camada2Vale: true }],
+              vendas: [...mtIn.vendas, { ...mtIn.vendas[0]!, planilhaId: "p-fora", linha: 990, idDaVendaCru: "F1", emailCru: "fora@x.com" }],
+            }
+          : mtIn;
+      const mt = computeDebriefingMoneyTime(entrada);
+      if (lado === "comparacao") mt.higiene.precoDistintoPorProduto = { "Ingresso Y": 99 };
+      const au = computeDebriefingAudience({ ...entradaAudienceSintetica(entrada), janela: mt.janela });
+      return montarPayloadDebriefing(mt, au, cfg, g);
+    };
+    const r = await gerarDebriefing(d, PARAMS);
+    expect(r.status).toBe(200);
+    const body = r.body as { html: string; payload: DebriefingPayload; alertas: { codigo: string }[] };
+    const lim = body.payload.resumoMacro!.limitacoes;
+    expect(lim.some((x) => x.startsWith("VENDA_DE_ETAPA_FORA_DA_CONFIG — 1 linha(s) de venda"))).toBe(true);
+    expect(lim.some((x) => x.startsWith("PG01: WF2 — "))).toBe(true);
+    expect(body.alertas.map((a) => a.codigo)).not.toContain("WF2"); // o WF2 é só da comparação
+    expect(bloco(body.html)).toContain("<li>PG01: WF2 — ");
+  });
+});

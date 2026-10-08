@@ -288,10 +288,13 @@ export async function gerarDebriefing(deps: DependenciasDaGeracao, params: Param
     const guardas = validateDebriefing(payload, { investimentoOficial: params.investimentoOficial });
     const bloqueio = corpoDoBloqueio(guardas, null);
     if (bloqueio) return { status: 422, body: bloqueio };
+    // 49.17 (QA REQ-002): os alertas da comparação também vão às limitações do resumo.
+    let alertasDaComparacao: AlertaFase12[] = [];
     if (comparacao) {
       const gc = validateDebriefing(comparacao.payload, {});
       const bc = corpoDoBloqueio(gc, comparacao.nome);
       if (bc) return { status: 422, body: bc };
+      alertasDaComparacao = gc.alertas;
     }
 
     // 5a — Story 49.17: o resumo macro do topo (paridade atual × comparação, maiores
@@ -305,6 +308,7 @@ export async function gerarDebriefing(deps: DependenciasDaGeracao, params: Param
         comparacao,
         comparacaoSemDelta,
         alertas: guardas.alertas,
+        alertasDaComparacao,
       }),
     };
 

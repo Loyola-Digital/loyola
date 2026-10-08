@@ -144,6 +144,16 @@ export const LACUNAS_QUE_AFETAM_A_PARIDADE: Readonly<Record<string, string>> = {
   [LACUNA_LEADS_UNICOS_SEM_FONTE]: "leads únicos e taxa lead → comprador",
 };
 
+/**
+ * QA 49.17 REQ-002 — as pendências do Motor I que tiram venda ou mídia da conta
+ * da captação (ou deixam venda fora de ingresso/combo/order bump).
+ */
+export const PENDENCIAS_QUE_AFETAM_A_PARIDADE: Readonly<Record<string, string>> = {
+  MIDIA_DE_ETAPA_FORA_DA_CONFIG: "investimento, CAC, ROAS e CPM",
+  VENDA_DE_ETAPA_FORA_DA_CONFIG: "compradores, faturamento, ticket, CAC e ROAS",
+  TIPO_INESPERADO_NA_CAPTACAO: "faturamento da captação e ticket",
+};
+
 /** Os alertas das guardas que afetam a tabela (o WF3 é a mesma coisa que a lacuna de preço). */
 const ALERTAS_QUE_AFETAM_A_PARIDADE: Readonly<Record<string, string>> = {
   WF2: "faturamento e ticket",
@@ -228,6 +238,8 @@ export interface EntradaDoResumoMacro {
   } | null;
   comparacaoSemDelta?: { funnelId: string; nome: string; salvoEm: string } | null;
   alertas: readonly AlertaFase12[];
+  /** QA 49.17 REQ-002 — os alertas das guardas sobre o payload da comparação. */
+  alertasDaComparacao?: readonly AlertaFase12[];
 }
 
 /** Δ de dois números (atual − comparação). */
@@ -318,10 +330,20 @@ function limitacoesDoResumo(e: EntradaDoResumoMacro, paridade: readonly LinhaDaP
       const afeta = LACUNAS_QUE_AFETAM_A_PARIDADE[l.codigo];
       if (afeta) out.push(`${nome ? `${nome}: ` : ""}${l.codigo} — ${l.motivo}${l.detalhe ? ` (${l.detalhe})` : ""}; afeta ${afeta}`);
     }
+    for (const pe of pp.dinheiroTempo.pendencias) {
+      const afeta = PENDENCIAS_QUE_AFETAM_A_PARIDADE[pe.codigo];
+      if (afeta) out.push(`${nome ? `${nome}: ` : ""}${pe.codigo} — ${pe.detalhe}; afeta ${afeta}`);
+    }
   }
-  for (const a of e.alertas) {
-    const afeta = ALERTAS_QUE_AFETAM_A_PARIDADE[a.codigo];
-    if (afeta) out.push(`${a.codigo} — ${a.mensagem}; afeta ${afeta}`);
+  const alertasDosLados: [string | null, readonly AlertaFase12[]][] = [
+    [null, e.alertas],
+    ...(e.comparacao ? [[e.comparacao.nome, e.alertasDaComparacao ?? []] as [string, readonly AlertaFase12[]]] : []),
+  ];
+  for (const [nome, alertas] of alertasDosLados) {
+    for (const a of alertas) {
+      const afeta = ALERTAS_QUE_AFETAM_A_PARIDADE[a.codigo];
+      if (afeta) out.push(`${nome ? `${nome}: ` : ""}${a.codigo} — ${a.mensagem}; afeta ${afeta}`);
+    }
   }
   for (const l of paridade) if (l.notaSemDelta) out.push(`${l.rotulo}: ${l.notaSemDelta}`);
   if (e.comparacao?.origem.tipo === "payload-salvo") {
