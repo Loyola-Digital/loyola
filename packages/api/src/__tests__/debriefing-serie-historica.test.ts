@@ -49,6 +49,8 @@ const rodar = (mut?: (e: EntradaDeSerie) => void): DebriefingAudience => {
 function semAcrescimos49_11(r: DebriefingAudience): unknown {
   const resto: Partial<DebriefingAudience> = { ...r };
   delete resto.serieHistorica;
+  // 49.18 acrescenta a mídia por anúncio (aditiva); o resto segue byte a byte.
+  delete resto.midiaPorAnuncio;
   const pesquisa: Partial<DebriefingAudience["pesquisa"]> = { ...r.pesquisa };
   delete pesquisa.duplicadasSemData;
   delete pesquisa.duplicadasDecididasPelaPesquisaDeCaptacao;

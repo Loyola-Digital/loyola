@@ -513,6 +513,42 @@ describe("AC11 — loadDebriefingAudienceInput sobre Postgres real", () => {
     expect(r.diagnostico.postsDosAnuncios).toEqual({ instagram: 1, facebook: 1, semPost: 0 });
   });
 
+  it("49.18: landing_page_view de actions, title/body do cache e valor/dia da venda — e o Motor II atribui pelo Ad ID", async () => {
+    const AD3 = "120000000000000003";
+    await pg.exec(`INSERT INTO meta_ad_insights_daily VALUES
+      ('${P}', '${AD3}', '2026-04-22', '111', 'dg--vendas-captacao--hot--cbo--estaticos', 'dg-pg02-ultimo-dia', 40, 400,
+       '[{"action_type":"link_click","value":"9"},{"action_type":"landing_page_view","value":"7"}]')`);
+    await pg.exec(`UPDATE meta_ad_creatives_cache SET creative = creative || '{"title":" Imersão ","body":"Vem"}'::jsonb WHERE project_id = '${P}' AND ad_id = '${AD1}'`);
+    try {
+      const r = await loadDebriefingAudienceInput(db, { config }, { lerPlanilha: lerFalso });
+      // Sem landing_page_view na linha = null (nunca 0), como o link_click.
+      expect(r.criativos.anuncios.map((a) => [a.adId, a.linkClicks, a.landingPageViews])).toEqual([
+        [AD1, 50, null],
+        [AD3, 9, 7],
+      ]);
+      // Só o que o cache guarda; sem texto = null nos dois campos.
+      expect(r.criativos.textosDosAnuncios).toEqual({
+        [AD1]: { title: "Imersão", body: "Vem" },
+        "120000000000000009": { title: null, body: null },
+      });
+      expect(r.compradores.map((c) => [c.emailCru, c.centavos, c.dia])).toEqual([
+        ["a@x.com", 9900, "2026-04-20"],
+        ["b@x.com", 29600, "2026-04-20"],
+        ["a@x.com", 400000, "2026-05-15"],
+      ]);
+      const m = computeDebriefingAudience(r).midiaPorAnuncio!;
+      expect(m.ranking.map((l) => [l.nome, l.compradores, l.faturamento])).toEqual([["dg-pg02-ia-01", 1, 99]]);
+      expect(m.escassez.anuncios).toEqual([{ nome: "dg-pg02-ultimo-dia", adIds: [AD3] }]);
+      expect(m.escassez.porDia.map((d) => [d.dia, d.investimentoComImposto > 0, d.compradores])).toEqual([["2026-04-22", true, 0]]);
+      // b@ comprou pelo Ad ID 9, que não está no ad-level de captação.
+      expect(m.atribuicao).toMatchObject({ compradores: 2, noRanking: 1, naEscassez: 0, adIdForaDoAdLevel: 1, semAdId: 0 });
+      expect(m.copy).toMatchObject({ anuncios: 2, comTexto: 1, textoIndisponivel: 1, veredito: "um-anuncio-com-texto" });
+    } finally {
+      await pg.exec(`DELETE FROM meta_ad_insights_daily WHERE ad_id = '${AD3}'`);
+      await pg.exec(`UPDATE meta_ad_creatives_cache SET creative = creative - 'title' - 'body' WHERE project_id = '${P}' AND ad_id = '${AD1}'`);
+    }
+  });
+
   it("funil sem conta (o caso de produção): a única conta ATIVA do projeto; projeto com duas contas → sem link", async () => {
     const semConta = { ...config, funnelId: F_ANT, etapas: [], perguntasConfirmadas: {}, lancamentoComparacaoFunnelId: null };
     const r = await loadDebriefingAudienceInput(db, { config: semConta }, { lerPlanilha: lerFalso });
