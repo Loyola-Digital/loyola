@@ -18,6 +18,7 @@ import {
   TERMOS_DE_ESCASSEZ,
   comMelhorVersao,
   computeMidiaPorAnuncio,
+  escolherMelhorVersao,
   copyDosAnuncios,
   ehPecaDeEscassez,
   formatoPeloNomeDaCampanha,
@@ -810,5 +811,46 @@ describe("AC2 (R12-3) — melhor versão isolada: menor CPA entre as com ≥ 5% 
     delete a.melhorVersao;
     const sem = linhasDaTabela(bloco(renderDebriefing({ payload: p, comparacao: null, rotulos: ROT, alertas: [] })), "Ranking por nome de anúncio");
     expect(sem[2]!.startsWith(NOME_B)).toBe(true);
+  });
+});
+
+// Prende os AUTO-DECISIONs do AC2 e os dois textos do documento. Derruba G2, G3, G7, G8 e G9.
+// QA 49.18 re-gate it. 2 (TEST-003) — prende os AUTO-DECISIONs do AC2 e os dois textos do documento (G2, G3, G7, G8, G9).
+describe("QA AC2 — AUTO-DECISIONs e textos do documento", () => {
+  const versaoCom = (adId: string, linhas: { inv: number; dia: string; conjunto: string }[], compradores: { n: number; fat: number | null }) =>
+    computeMidiaPorAnuncio({
+      anuncios: linhas.map((l) => ({ adId, nome: "ad01 nome", campaignName: "x--vendas-captacao--hot--cbo", dia: l.dia, investimentoComImposto: l.inv, linkClicks: 10, landingPageViews: 10, conjuntoId: l.conjunto, conjuntoNome: l.conjunto })),
+      compradores: Array.from({ length: compradores.n }, () => ({ adId, faturamento: compradores.fat, tierSuperior: false, dia: "2026-04-20" })),
+      vendasComConteudo: true,
+      postsDosAnuncios: {},
+      linkAdsManagerDe: () => null,
+    }).ranking[0]!.versoes[0]!;
+
+  it("G2: CPA empatado nos centavos (diferença abaixo de 1 centavo) é empate — decide o ROAS", () => {
+    const a = versaoCom("120300000000000001", [{ inv: 150.003, dia: "2026-04-20", conjunto: "x" }], { n: 3, fat: 50 }); // CPA 50,001 · ROAS ~1,0
+    const b = versaoCom("120300000000000002", [{ inv: 100.008, dia: "2026-04-20", conjunto: "y" }], { n: 2, fat: 150 }); // CPA 50,004 · ROAS ~3,0
+    expect(escolherMelhorVersao([a, b], 1000).versao!.adId).toBe("120300000000000002");
+  });
+
+  it("G3: no empate de CPA, ROAS '—' (venda sem valor) perde para ROAS com número", () => {
+    const a = versaoCom("120300000000000001", [{ inv: 100, dia: "2026-04-20", conjunto: "x" }], { n: 2, fat: null });
+    const b = versaoCom("120300000000000002", [{ inv: 100, dia: "2026-04-20", conjunto: "y" }], { n: 2, fat: 10 });
+    expect(a.roas.valor).toBeNull();
+    expect(escolherMelhorVersao([a, b], 1000).versao!.adId).toBe("120300000000000002");
+  });
+
+  it("G8: Ad ID em dois conjuntos no período — a versão leva o conjunto da linha MAIS RECENTE", () => {
+    const v = versaoCom("120300000000000001", [{ inv: 50, dia: "2026-04-20", conjunto: "antigo" }, { inv: 50, dia: "2026-04-21", conjunto: "novo" }], { n: 1, fat: 99 });
+    expect([v.conjuntoId, v.investimentoComImposto]).toEqual(["novo", 100]);
+  });
+
+  it("G7 + G9: no documento, o texto próprio do 'sem comprador nas elegíveis' e a nota com a base e o mínimo", () => {
+    const p = final();
+    const a = linha(midia(p), NOME_A);
+    a.melhorVersao = { versao: null, motivo: "SEM_COMPRADOR_NAS_ELEGIVEIS", elegiveis: 1, memoria: "x" };
+    const b = bloco(renderDebriefing({ payload: p, comparacao: null, rotulos: ROT, alertas: [] }));
+    expect(b).toContain("nenhuma versão com ≥ 5% do investimento de captação tem comprador");
+    expect(b).toContain("Melhor versão isolada (Ad ID + conjunto): a de menor CPA entre as com investimento ≥ 5% do investimento de captação do lançamento");
+    expect(b).toContain(midia(p).criterioDaMelhorVersao!.memoria);
   });
 });
