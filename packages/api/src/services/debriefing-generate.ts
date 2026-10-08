@@ -60,6 +60,7 @@ import { computeDebriefingAudience } from "./debriefing-audience-engine.js";
 import { DEBRIEFING_PAYLOAD_VERSAO, montarPayloadDebriefing, parcialDo, type DebriefingPayload } from "./debriefing-payload.js";
 import { validateDebriefing, type AlertaFase12 } from "./debriefing-guards.js";
 import { renderDebriefing, type ComparacaoDoDebriefing, type OrigemDaComparacao } from "./debriefing-render.js";
+import { montarResumoMacro } from "./debriefing-resumo-macro.js";
 import { dataBr, diaMesBr } from "./launch-report-narrative.js";
 import { diasEntre, somarDias } from "./debriefing-hygiene.js";
 import { businessYesterday } from "../utils/sale-date.js";
@@ -293,11 +294,25 @@ export async function gerarDebriefing(deps: DependenciasDaGeracao, params: Param
       if (bc) return { status: 422, body: bc };
     }
 
+    // 5a — Story 49.17: o resumo macro do topo (paridade atual × comparação, maiores
+    // diferenças, limitações e pendências), montado com a comparação e os alertas em mãos.
+    // Vai no payload (aditivo): a 49.7 (AC9c) escreve a ação de cada diferença a partir dele.
+    const payloadFinal: DebriefingPayload = {
+      ...payload,
+      resumoMacro: montarResumoMacro({
+        payload,
+        nomeAtual: etapa.funnelName,
+        comparacao,
+        comparacaoSemDelta,
+        alertas: guardas.alertas,
+      }),
+    };
+
     // 5b — (49.7) textos da IA entram aqui, depois das guardas e antes do render.
 
     // 6 — render
     const html = renderDebriefing({
-      payload,
+      payload: payloadFinal,
       comparacao,
       rotulos: { projeto: etapa.projectName, lancamento: etapa.funnelName, etapas: nomes.etapas, funis: nomes.funis },
       alertas: guardas.alertas,
@@ -308,8 +323,8 @@ export async function gerarDebriefing(deps: DependenciasDaGeracao, params: Param
     }
 
     // 7 — persiste (só aqui). 49.12 (AC7): a parcial diz no título que é parcial e até quando.
-    const j = payload.dinheiroTempo.janela;
-    const parcial = parcialDo(payload);
+    const j = payloadFinal.dinheiroTempo.janela;
+    const parcial = parcialDo(payloadFinal);
     const campaignName =
       `Debriefing ${etapa.projectName} ${etapa.funnelName}${comparacao ? ` × ${comparacao.nome}` : ""} — ` +
       (parcial ? `PARCIAL — dados até ${diaMesBr(parcial.corte)} · D+${parcial.dMaisN}` : `${diaMesBr(j.inicio)} a ${diaMesBr(j.fim)}`);
@@ -318,14 +333,14 @@ export async function gerarDebriefing(deps: DependenciasDaGeracao, params: Param
       stageId: params.stageId,
       html,
       createdBy: params.userId,
-      payload,
+      payload: payloadFinal,
       comparacao: comparacao
         ? { funnelId: comparacao.funnelId, nome: comparacao.nome, payload: comparacao.payload, origem: comparacao.origem }
         : null,
       alertas: guardas.alertas,
       ...(parcial ? { parcial: true } : {}),
     });
-    return { status: 200, body: { id, html, payload, alertas: guardas.alertas, substituiuParcial: substituiuParcial ?? false } };
+    return { status: 200, body: { id, html, payload: payloadFinal, alertas: guardas.alertas, substituiuParcial: substituiuParcial ?? false } };
   } catch (err) {
     if (err instanceof DebriefingConfigError) return { status: 422, body: err.toResponse() };
     if (err instanceof DebriefingDadoIndisponivelError) return { status: 422, body: err.toResponse() };

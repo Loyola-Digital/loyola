@@ -560,6 +560,29 @@ describe("AC12 — loadDebriefingMoneyTimeInput sobre Postgres real", () => {
     expect(r.leads[0]).toMatchObject({ emailCru: "a@x.com", telefoneCru: "553175058180", dataCriacaoCru: "17/04/2026" });
   });
 
+  it("49.17 (AC4): leads de cadastro = só as planilhas de LEADS das etapas de captação (sem a do funil, sem a de outra etapa), sem reler a aba", async () => {
+    const lidas: string[] = [];
+    const ler = async (id: string, aba: string) => {
+      lidas.push(`${id}|${aba}`);
+      if (id === "g-nao-ler-2") return { headers: ["Email", "Telefone", "Data"], rows: [["x@x.com", "", "18/04/2026"], ["TESTE@x.com", "", "18/04/2026"]] };
+      return lerFalso(id, aba);
+    };
+    // A etapa de captação do seed só tem a "Lista sem contato" (sem e-mail nem telefone): sem fonte → lacuna no motor.
+    const r = await loadDebriefingMoneyTimeInput(db, { config }, { lerPlanilha: ler });
+    expect(r.leadsDeCadastro).toEqual({ fontes: [{ rotulo: "Lista sem contato · nomes", linhas: 0, semIdentificador: true }], leads: [] });
+    // Com a OUTRA etapa como leads-captacao, a planilha de leads dela entra (e é lida uma vez só).
+    lidas.length = 0;
+    const comOutra = { ...config, etapas: [...config.etapas, { stageId: OUTRA, papel: "leads-captacao" as const }] };
+    const r2 = await loadDebriefingMoneyTimeInput(db, { config: comOutra }, { lerPlanilha: ler });
+    expect(r2.leadsDeCadastro!.fontes.map((f) => [f.rotulo, f.linhas, f.semIdentificador])).toEqual([
+      ["Leads da outra etapa · x", 2, false],
+      ["Lista sem contato · nomes", 0, true],
+    ]);
+    expect(r2.leadsDeCadastro!.leads.map((l) => l.emailCru)).toEqual(["x@x.com", "TESTE@x.com"]);
+    expect(lidas.filter((x) => x === "g-nao-ler-2|x")).toHaveLength(1);
+    expect(r2.leadsDeCadastro!.leads.some((l) => l.emailCru === "z@x.com")).toBe(false); // "Leads gerais" é do funil, sem etapa
+  });
+
   it("config do classificador montada uma vez: aliases do projeto + closers do funil, versão da 49.2", async () => {
     const r = await loadDebriefingMoneyTimeInput(db, { config }, { lerPlanilha: lerFalso });
     expect(r.configClassificador).toEqual({

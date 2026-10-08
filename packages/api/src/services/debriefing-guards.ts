@@ -31,6 +31,7 @@ import {
 } from "./debriefing-hygiene.js";
 import {
   CRITERIO_DE_UNICO_HEADLINE,
+  LACUNA_LEADS_UNICOS_SEM_FONTE,
   MAXD_PADRAO,
   fmtNumero,
   fmtReais,
@@ -664,6 +665,8 @@ export function lacunasExigidas(p: DebriefingPayload): { codigo: CodigoDeLacunaD
     { codigo: "LISTAS_FRONT_COMUNIDADE", porque: "sempre (sem fonte de listas no Loyola)" },
     { codigo: "LEADS_DO_PAINEL", porque: "sempre (o resumo não tem o # Leads oficial do debriefing diário)" },
   ];
+  // 49.17 (AC4): a etapa de captação sem planilha de leads — leads únicos viram lacuna (nunca zero).
+  if (m.leads && !m.leads.aplicavel) exigidas.push({ codigo: LACUNA_LEADS_UNICOS_SEM_FONTE, porque: "sem planilha de leads com e-mail ou telefone na captação" });
   if (m.coorte.foraDaCoorte.length > 0) exigidas.push({ codigo: "VENDAS_SEM_DATA", porque: `${int(m.coorte.foraDaCoorte.length)} venda(s) fora da coorte` });
   if (semAdLevelNaDimensaoExibida(p)) exigidas.push({ codigo: "SEM_AD_LEVEL", porque: "sem ad-level no período" });
   if (m.higiene.linhasConvertidas > 0) {

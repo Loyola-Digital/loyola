@@ -27,7 +27,8 @@ import { CANAIS, SEGMENTOS_DE_QUALIFICACAO } from "@loyola-x/shared";
 import type { DebriefingPayload } from "./debriefing-payload.js";
 import type { AlertaFase12 } from "./debriefing-guards.js";
 import type { DebriefingAviso } from "./debriefing-config.js";
-import type { Metrica } from "./debriefing-money-time-engine.js";
+import type { CurvaAcumulada, Metrica, PontoDaCurvaAcumulada } from "./debriefing-money-time-engine.js";
+import { SEM_LEITURA_DE_IA, montarResumoMacro, type ResumoMacro, type ValorDaParidade } from "./debriefing-resumo-macro.js";
 import {
   corteSemCarrinho,
   diasEntre,
@@ -130,6 +131,18 @@ export const CHART_JS_URL = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4
 export const DATALABELS_URL =
   "https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js";
 
+/**
+ * Story 49.17 (AC10) — a ÚNICA mudança de texto nas 18 seções: a lacuna
+ * "Ingressos por dia" da seção 03 deixa de ser verdadeira quando o payload traz
+ * a curva acumulada (a série diária de compradores de captação está no topo).
+ */
+export const TEXTO_INGRESSOS_POR_DIA_COM_CURVA =
+  "a série diária de compradores de captação (acumulada, dia a dia) está na curva acumulada do Resumo macro, no topo do documento — o gráfico não é desenhado nesta seção; o total está no Resumo";
+
+/** O texto da mesma lacuna num payload sem a curva (anterior à 49.17) — o de sempre. */
+export const TEXTO_INGRESSOS_POR_DIA_SEM_CURVA =
+  "o payload não traz a série diária de ingressos (a 49.3 entrega a coorte das vendas do principal por dia do lead, não os ingressos por dia) — o gráfico não é desenhado; o total está no Resumo";
+
 /** Rótulo do espaço reservado aos textos da IA (49.7). */
 export const AVISO_RESERVA_IA =
   "Texto analítico escrito pela IA (Story 49.7) — reservado. Até lá, este bloco mostra só leituras determinísticas derivadas do payload, sem adjetivo de magnitude.";
@@ -159,6 +172,9 @@ export const SECOES_DO_DEBRIEFING = [
 // ---------------------------------------------------------------------------
 // CSS da referência (§1/§2 do padrão) — paleta, fontes e classes canônicas
 // ---------------------------------------------------------------------------
+
+/** Story 49.17 — a regra de CSS do bloco "Resumo macro" (a última de `CSS_DO_DEBRIEFING`). */
+export const CSS_DO_RESUMO_MACRO = ".resumo-macro{padding:26px 0 18px;border-bottom:1px solid var(--line)}.resumo-macro ul{margin:6px 0 0 18px}.resumo-macro .notes-list{margin:0}";
 
 export const CSS_DO_DEBRIEFING = `:root{--bg:#121212;--card:#1a1a1a;--card2:#1f1f1f;--line:#2e2e2e;--cream:#f0eeea;--muted:#928e87;
 --gold:#fdcf2b;--green:#00bc7d;--teal:#00bba7;--orange:#fe9a00;--purple:#8e51ff;--red:#fb5d5d;--blue:#4d9fff}
@@ -235,6 +251,7 @@ td .g{color:var(--green);font-weight:700}td .r{color:var(--red);font-weight:700}
 .k-block h4{color:var(--cream);font-size:14px;margin-bottom:7px}.k-block code{background:#242424;padding:1px 6px;border-radius:4px;color:var(--teal);font-size:12px}
 a{color:var(--teal)}
 footer{padding:28px 0 0;color:var(--muted);font-size:12px;text-align:center}
+${CSS_DO_RESUMO_MACRO}
 @media(max-width:860px){.kpis{grid-template-columns:1fr 1fr}.chart-grid,.recs,.defbox{grid-template-columns:1fr}h1{font-size:26px}}`;
 
 // ---------------------------------------------------------------------------
@@ -916,6 +933,185 @@ function composicaoDaComparacao(input: DebriefingRenderInput): ItemDaSerie[] {
 }
 
 // ---------------------------------------------------------------------------
+// Story 49.17 — Resumo macro (fora das abas e da numeração, antes da navegação)
+// ---------------------------------------------------------------------------
+
+/** A curva acumulada de um payload (AC6), ou `null` (payload anterior à 49.17 ou captação sem venda). */
+function curvaDe(pp: DebriefingPayload): CurvaAcumulada | null {
+  const c = pp.dinheiroTempo.curvaAcumulada;
+  return c && c.aplicavel ? c : null;
+}
+
+/** "N registro(s) de teste descartado(s)" de um payload (AC4), ou o motivo de não haver contagem. */
+function leadsDeTesteDe(pp: DebriefingPayload): string {
+  const l = pp.dinheiroTempo.leads;
+  if (!l) return "sem contagem de leads (payload anterior à Story 49.17)";
+  if (!l.aplicavel) return "sem planilha de leads (lacuna)";
+  const d = l.descartadosComoTeste;
+  return `${inteiroBr(d.registros)} registro(s) descartado(s) como teste (${inteiroBr(d.emailsDistintos)} e-mail(s) distinto(s))`;
+}
+
+/**
+ * AC1–AC9 — o bloco "Resumo macro": tabela de paridade, curva acumulada,
+ * maiores diferenças (sem ação: a ação é da IA, 49.7 AC9c), limitações e
+ * pendências. Fica fora das abas e NÃO é seção numerada (as 18 seções não
+ * mudam por causa dele). Sem projeção do fechamento (R11-0h).
+ */
+function blocoDoResumoMacro(doc: Documento, input: DebriefingRenderInput, rm: ResumoMacro): string {
+  const p = input.payload;
+  const comp = input.comparacao;
+  const A = input.rotulos.lancamento;
+  const parcial = parcialDo(p);
+  const partes: string[] = [];
+
+  // ---- Tabela de paridade (AC2) ----
+  const corteComp = corteDaComparacao(comp);
+  const desc = comp
+    ? `${esc(A)} × <b>${esc(comp.nome)}</b> (comparação principal)` +
+      (parcial ? ` no mesmo D+N: os dois lados até <b>D+${esc(String(parcial.dMaisN))}</b>` + (corteComp ? ` (${esc(comp.nome)} até ${esc(corteComp)})` : "") : " — totais da janela de cada lançamento") +
+      ". Δ% em volume e dinheiro, Δpp em taxa; “—” quando falta o número de um lado, nunca Δ inventado. Investimento, CAC, ROAS e CPM são da captação (a mesma base)."
+    : rm.semDelta
+      ? `Sem Δ: ${esc(rm.semDelta.motivo)} — a tabela mostra só ${esc(A)}.`
+      : `Edição única: sem lançamento de comparação na configuração — a tabela mostra só ${esc(A)}.`;
+  const linhas = rm.paridade.map((l) => {
+    const u = l.unidade as Unidade;
+    const celula = (v: ValorDaParidade) =>
+      v.valor === null ? `<span${v.motivo ? ` title="${esc(v.motivo)}"` : ""}>${TRACO}</span>` : esc(fmt(v.valor, u));
+    if (!comp) return tr([esc(l.rotulo), celula(l.atual)]);
+    let dif = TRACO;
+    let var_ = TRACO;
+    if (l.delta && l.comparacao && l.comparacao.valor !== null && l.atual.valor !== null) {
+      const a = l.comparacao.valor;
+      const b = l.atual.valor;
+      const av = avaliacao(a, b, l.menorEhMelhor ?? false);
+      const cor = l.neutro || av === "estável" ? "y" : av === "melhorou" ? "g" : "r";
+      dif = esc(diferencaComSinal(a, b, u));
+      var_ = `<span class="${cor}">${esc(ehTaxa(u) ? pctComSinal(variacaoPct(emPct(a, u), emPct(b, u))) : pctComSinal(l.delta.relativoPct))}</span>`;
+    }
+    return tr([esc(l.rotulo), celula(l.comparacao ?? { valor: null }), celula(l.atual), dif, var_]);
+  });
+  partes.push(
+    `<h3 class="gr">Paridade</h3><p class="sec-desc" data-paridade-desc>${desc}</p>` +
+      `<div data-paridade>${tabela(comp ? ["Indicador", comp.nome, A, "Diferença", "Variação"] : ["Indicador", A], linhas)}</div>`,
+  );
+  const semDelta = rm.paridade.filter((l) => l.notaSemDelta);
+  if (comp && semDelta.length > 0) {
+    partes.push(
+      `<div class="note" data-delta-lacuna-resumo><b>Δ “—”:</b><ul>${semDelta.map((l) => `<li>${esc(l.rotulo)} — ${esc(l.notaSemDelta!)}</li>`).join("")}</ul></div>`,
+    );
+  }
+  // AC4 — quantos leads foram descartados como teste (R11-4), dos dois lados.
+  partes.push(
+    `<p class="tnote" data-leads-de-teste>Leads únicos: planilhas de leads da captação, deduplicados por e-mail OU telefone, na janela (até o corte, na parcial); ` +
+      `descartado todo lead cujo e-mail contém “test” (sem diferenciar maiúsculas). ${esc(A)}: ${esc(leadsDeTesteDe(p))}` +
+      (comp ? ` · ${esc(comp.nome)}: ${esc(leadsDeTesteDe(comp.payload))}` : "") +
+      `. Taxa lead → comprador = compradores de captação únicos ÷ leads únicos.</p>`,
+  );
+
+  // ---- Curva acumulada (AC6) ----
+  const ca = curvaDe(p);
+  const cb = comp ? curvaDe(comp.payload) : null;
+  if (!ca && !cb) {
+    partes.push(
+      `<h3 class="gr">Curva acumulada</h3>` +
+        lacuna("Curva acumulada", p.dinheiroTempo.curvaAcumulada?.motivo ?? "o payload não traz a curva acumulada (anterior à Story 49.17)"),
+    );
+  } else {
+    const fim = Math.max(ca?.ateDMais ?? 0, cb?.ateDMais ?? 0);
+    const eixo = Array.from({ length: fim + 1 }, (_, i) => i);
+    const porD = (c: CurvaAcumulada | null) => new Map((c?.pontos ?? []).map((x) => [x.dMais, x]));
+    const ma = porD(ca);
+    const mb = porD(cb);
+    const serie = (mm: Map<number, PontoDaCurvaAcumulada>, k: "compradores" | "faturamento" | "investimento") => eixo.map((n) => mm.get(n)?.[k] ?? null);
+    const seriesCompradores: SerieDoGrafico[] = [
+      ...(cb ? [{ nome: comp!.nome, dados: serie(mb, "compradores"), cor: COR.cinza }] : []),
+      ...(ca ? [{ nome: A, dados: serie(ma, "compradores"), cor: COR.gold }] : []),
+    ];
+    const seriesDinheiro: SerieDoGrafico[] = [
+      ...(cb ? [{ nome: `Faturamento — ${comp!.nome}`, dados: serie(mb, "faturamento"), cor: COR.cinza }] : []),
+      ...(ca ? [{ nome: `Faturamento — ${A}`, dados: serie(ma, "faturamento"), cor: COR.gold }] : []),
+      ...(cb ? [{ nome: `Investimento — ${comp!.nome} (referência)`, dados: serie(mb, "investimento"), cor: COR.purple }] : []),
+      ...(ca ? [{ nome: `Investimento — ${A} (referência)`, dados: serie(ma, "investimento"), cor: COR.orange }] : []),
+    ];
+    const rotulos = eixo.map(rotuloD);
+    const datas = eixo.map((n) => dataBr(somarDias(d0(p), n)));
+    const graficos =
+      `<div class="chart-grid">` +
+      doc.grafico("cCurvaCompradores", { tipo: "line", titulo: "Compradores de captação acumulados", rotulos, datas, series: seriesCompradores, formato: "inteiro" }) +
+      doc.grafico("cCurvaFaturamento", { tipo: "line", titulo: "Faturamento da captação acumulado (investimento como referência)", rotulos, datas, series: seriesDinheiro, formato: "moeda" }) +
+      `</div>`;
+    const v = (x: PontoDaCurvaAcumulada | undefined, k: "compradores" | "faturamento" | "investimento") =>
+      esc(x ? fmt(x[k], k === "compradores" ? "inteiro" : "moeda") : TRACO);
+    const linhasCurva = eixo.map((n) => {
+      const a = ma.get(n);
+      const b = mb.get(n);
+      return comp
+        ? tr([esc(rotuloD(n)), v(b, "compradores"), v(a, "compradores"), v(b, "faturamento"), v(a, "faturamento"), v(b, "investimento"), v(a, "investimento")])
+        : tr([esc(rotuloD(n)), esc(a ? dataBr(a.dia) : TRACO), v(a, "compradores"), v(a, "faturamento"), v(a, "investimento")]);
+    });
+    const cab = comp
+      ? ["D+x", `Compradores ${comp.nome}`, `Compradores ${A}`, `Faturamento ${comp.nome}`, `Faturamento ${A}`, `Investimento ${comp.nome}`, `Investimento ${A}`]
+      : ["D+x", "Data", "Compradores", "Faturamento", "Investimento (referência)"];
+    const semDataDe = (c: CurvaAcumulada | null, nome: string) =>
+      c && (c.semData.compradores > 0 || c.semData.faturamento > 0)
+        ? ` ${esc(nome)}: ${esc(inteiroBr(c.semData.compradores))} comprador(es) e ${esc(fmt(c.semData.faturamento, "moeda"))} sem data da venda — fora da curva, dentro dos totais da tabela.`
+        : "";
+    const ausente = (pp: DebriefingPayload, nome: string) =>
+      curvaDe(pp) ? "" : ` ${esc(nome)}: sem curva (${esc(pp.dinheiroTempo.curvaAcumulada?.motivo ?? "payload anterior à Story 49.17")}).`;
+    partes.push(
+      `<h3 class="gr">Curva acumulada D+0…D+${esc(String(fim))}</h3>` +
+        `<p class="sec-desc" data-curva-desc>Compradores e faturamento da captação acumulados dia a dia (D0 = início da captação informado), com o investimento de captação acumulado como referência — ` +
+        `mostra se a diferença é de largada ou de ritmo.` +
+        (parcial ? ` <b>Parcial:</b> a curva para no corte (D+${esc(String(parcial.dMaisN))}) dos dois lados.` : "") +
+        semDataDe(ca, A) +
+        (comp ? semDataDe(cb, comp.nome) + ausente(comp.payload, comp.nome) : "") +
+        ausente(p, A) +
+        `</p>` +
+        graficos +
+        `<div data-curva-acumulada>${tabela(cab, linhasCurva, { rolagem: true })}</div>`,
+    );
+  }
+
+  // ---- Maiores diferenças (AC7) — a ação é da IA (49.7 AC9c) ----
+  const itens = rm.maioresDiferencas.map((d) => {
+    const u = d.unidade as Unidade;
+    const variacao = pctComSinal(d.delta.relativoPct);
+    return (
+      `<li data-diferenca="${esc(d.chave)}"><b>${esc(String(d.posicao))}. ${esc(d.rotulo)}</b>: ${esc(A)} ${esc(fmt(d.atual, u))} × ${esc(comp?.nome ?? "")} ${esc(fmt(d.comparacao, u))} — ` +
+      `Δ ${esc(diferencaComSinal(d.comparacao, d.atual, u))} (${esc(variacao)}). <span class="tag t-watch" data-acao-ia>Ação: ${esc(d.rotuloDaAcao)}</span></li>`
+    );
+  });
+  partes.push(
+    `<h3 class="gr">Maiores diferenças</h3>` +
+      `<div data-bloco-ia="acoes-do-resumo">` +
+      (itens.length
+        ? `<ul class="notes-list" data-maiores-diferencas>${itens.join("")}</ul>` +
+          `<p class="tnote">As linhas da paridade com a maior diferença relativa. A ação recomendada de cada item é escrita pela IA (Story 49.7); até lá, sai “${esc(SEM_LEITURA_DE_IA)}”.</p>`
+        : nota(comp ? "Nenhuma linha da paridade tem número dos dois lados com diferença." : "Sem comparação — não há diferenças a listar.")) +
+      `</div>`,
+  );
+
+  // ---- Limitações e pendências (AC8) ----
+  const lista = (xs: readonly string[], vazio: string, attr: string) =>
+    xs.length ? `<ul ${attr}>${xs.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : `<p class="tnote" ${attr}>${esc(vazio)}</p>`;
+  partes.push(
+    `<div class="warn" data-limitacoes-resumo><b>Limitações</b>${lista(rm.limitacoes, "nenhuma lacuna ou alerta afeta a tabela.", "data-limitacoes")}</div>` +
+      `<div class="note" data-pendencias-resumo><b>Pendências de confirmação</b>${lista(
+        rm.pendencias,
+        "nenhuma — as datas-chave estão informadas e as perguntas da pesquisa, confirmadas.",
+        "data-pendencias",
+      )}</div>`,
+  );
+
+  return (
+    `<div class="resumo-macro" data-resumo-macro><div class="sec-head"><h2>Resumo macro</h2></div>` +
+    `<p class="sec-desc">O lançamento em um minuto: a paridade com a comparação principal, a curva acumulada e o que falta confirmar. Os números saem dos mesmos motores das seções abaixo.</p>` +
+    partes.join("") +
+    `</div>`
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Render
 // ---------------------------------------------------------------------------
 
@@ -1215,7 +1411,10 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
     partes.push(
       lacuna(
         "Ingressos por dia",
-        "o payload não traz a série diária de ingressos (a 49.3 entrega a coorte das vendas do principal por dia do lead, não os ingressos por dia) — o gráfico não é desenhado; o total está no Resumo",
+        // 49.17 (AC10, a única exceção): com a curva acumulada no payload, a série existe — no Resumo macro do topo.
+        mt.curvaAcumulada
+          ? TEXTO_INGRESSOS_POR_DIA_COM_CURVA
+          : TEXTO_INGRESSOS_POR_DIA_SEM_CURVA,
       ),
     );
     // Vendas do principal por dia (coorte de entrada do lead)
@@ -2015,6 +2214,14 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
     ["faixa", "Faixa · Criativos"],
     ["notas", "Aprendizados"],
   ];
+  // 49.17 — o Resumo macro: montado por último (os gráficos dele entram depois dos das seções em `D`),
+  // exibido antes das abas. O da orquestração vem no payload; sem ele, o mesmo cálculo puro.
+  const resumoMacro = blocoDoResumoMacro(
+    doc,
+    input,
+    p.resumoMacro ??
+      montarResumoMacro({ payload: p, nomeAtual: A, comparacao: comp, comparacaoSemDelta: semDelta, alertas: input.alertas }),
+  );
   const nav = `<div class="nav">${abas.map(([k, r], i) => `<button${i === 0 ? ' class="on"' : ""} data-tab="${k}">${esc(r)}</button>`).join("")}</div>`;
   const corpo = abas.map(([k], i) => `<div class="tab${i === 0 ? " on" : ""}" id="tab-${k}">${secoes[k]!.join("")}</div>`).join("");
 
@@ -2042,6 +2249,7 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
     header +
     avisoParcial +
     banner +
+    resumoMacro +
     nav +
     corpo +
     `<footer>Loyola X — ${esc(tituloPagina)} · custo c/ imposto (${esc(mt.imposto.impostoOrigem)}) · cliques = link clicks · gerado em ${esc(dataBr(p.geradoEm.slice(0, 10)))}</footer>` +

@@ -278,6 +278,29 @@ export interface DebriefingMoneyTimeInput {
   classificador: ClassificadorInjetado;
   /** REL-001: abas em mais de uma etapa, já lidas uma vez pelo loader. Default `[]`. */
   fontesDuplicadas?: readonly FonteDuplicada[];
+  /**
+   * Story 49.17 (AC4) — os leads de CADASTRO da captação: as planilhas de leads
+   * (`funnel_spreadsheets.type = "leads"`, sem campo de valor) das etapas de
+   * captação do lançamento. Diferente de `leads` (todas as fontes da jornada,
+   * pesquisa inclusa, que só datam a coorte). `fontes = []` = a etapa não tem
+   * planilha de leads → lacuna `LEADS_UNICOS_SEM_FONTE` (nunca zero).
+   * Ausente = chamador anterior à 49.17: a contagem não é feita (payload sem `leads`).
+   */
+  leadsDeCadastro?: LeadsDeCadastroInput;
+}
+
+/** Story 49.17 — uma planilha de leads de cadastro lida pelo loader. */
+export interface FonteDeLeadsDeCadastro {
+  rotulo: string;
+  /** Registros com e-mail ou telefone. */
+  linhas: number;
+  /** A aba não tem coluna de e-mail nem de telefone — não serve para contar leads únicos. */
+  semIdentificador: boolean;
+}
+
+export interface LeadsDeCadastroInput {
+  fontes: readonly FonteDeLeadsDeCadastro[];
+  leads: readonly LeadInput[];
 }
 
 // ---------------------------------------------------------------------------
@@ -309,9 +332,66 @@ export interface Lacuna {
     | "PRECO_ORIGINAL_NAO_MAPEADO"
     | "VENDAS_EXCLUIDAS_AUTOMATICAMENTE"
     | "DEDUP_POR_ID_NAO_APLICADA"
-    | "FONTE_EM_MAIS_DE_UMA_ETAPA";
+    | "FONTE_EM_MAIS_DE_UMA_ETAPA"
+    | typeof LACUNA_LEADS_UNICOS_SEM_FONTE;
   motivo: string;
   detalhe?: string;
+}
+
+/**
+ * Story 49.17 (AC4) — a etapa de captação não tem planilha de leads (ou
+ * nenhuma com e-mail/telefone): leads únicos e taxa lead → comprador não se
+ * contam. É outra lacuna que a `LEADS_DO_PAINEL` (o "# Leads" oficial do
+ * Debriefing diário da skill, que continua): esta é a dos leads de CADASTRO.
+ */
+export const LACUNA_LEADS_UNICOS_SEM_FONTE = "LEADS_UNICOS_SEM_FONTE" as const;
+
+/** R11-4 — lead de teste = e-mail que contém "test", sem diferenciar maiúsculas. */
+export const TRECHO_DE_EMAIL_DE_TESTE = "test";
+
+/** Story 49.17 (AC4) — leads únicos da captação na janela e a taxa lead → comprador. */
+export interface LeadsDaCaptacao {
+  /** Há ao menos uma planilha de leads com e-mail ou telefone. `false` = lacuna `LEADS_UNICOS_SEM_FONTE`. */
+  aplicavel: boolean;
+  motivo?: string;
+  fontes: FonteDeLeadsDeCadastro[];
+  /** Registros com e-mail ou telefone, antes de qualquer filtro. */
+  registrosLidos: number;
+  /** R11-4: registros descartados porque o e-mail contém "test" (sem diferenciar maiúsculas). */
+  descartadosComoTeste: { registros: number; emailsDistintos: number; regra: string };
+  /** Registros datados fora da janela (antes do início ou depois do fim/corte) — fora da conta. */
+  foraDaJanela: number;
+  /** Registros sem data legível — ficam na conta (a mesma regra da venda sem dia). */
+  semData: number;
+  /** Leads únicos: e-mail OU telefone (últimos 8 dígitos), a união da 41.10/49.3. `null` = sem fonte. */
+  unicos: Metrica;
+  /** Compradores de captação únicos (critério headline) ÷ leads únicos — fração (0–1). */
+  taxaLeadComprador: Metrica & { numerador: number | null; denominador: number | null };
+}
+
+/** Story 49.17 (AC6) — um dia da curva acumulada (D0 = início da captação informado, R11-0a). */
+export interface PontoDaCurvaAcumulada {
+  dMais: number;
+  dia: string;
+  /** Compradores de captação (critério headline) acumulados pelo dia da 1ª compra de ingresso/combo. */
+  compradores: number;
+  /** Faturamento da captação (ingresso + combo + order bump, s/ TMB) acumulado. */
+  faturamento: number;
+  /** Investimento de captação c/ imposto acumulado — só referência. */
+  investimento: number;
+}
+
+export interface CurvaAcumulada {
+  aplicavel: boolean;
+  motivo?: string;
+  d0: string;
+  /** Último dia da curva: o fim da janela (o corte, na parcial e na comparação em D+N). */
+  ateDia: string;
+  ateDMais: number;
+  pontos: PontoDaCurvaAcumulada[];
+  /** O que não entra na curva por falta de data da venda (fecha com os totais). */
+  semData: { compradores: number; faturamento: number };
+  memoria: string;
 }
 
 export interface Pendencia {
@@ -675,6 +755,14 @@ export interface DebriefingMoneyTime {
     nota: "reaproveita audiência já paga";
   };
   referenciaCombinada: { faturamento: number; investimento: number; roas: Metrica };
+
+  // ---- Story 49.17 — resumo macro (opcionais: payload anterior não os tem) ----
+  /** AC3 — investimento de captação c/ imposto ÷ compradores de captação únicos (a base do ROAS de captação). */
+  cac?: MetricaRazao | (Metrica & { numerador: number | null; denominador: number | null });
+  /** AC4 — leads únicos e taxa lead → comprador. Ausente = chamador sem `leadsDeCadastro`. */
+  leads?: LeadsDaCaptacao;
+  /** AC6 — curva acumulada D+0…D+x de compradores e faturamento da captação. */
+  curvaAcumulada?: CurvaAcumulada;
 
   // ---- ROAS diário ----
   roasDiarioCaptacao: DiaDoRoasCaptacao[];
@@ -1625,6 +1713,19 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
   lacunas.push({ codigo: "LISTAS_FRONT_COMUNIDADE", motivo: "sem fonte no Loyola" });
   lacunas.push({ codigo: "LEADS_DO_PAINEL", motivo: diferencaDeFonte.texto });
 
+  // 49.17 (AC4): leads únicos de cadastro e taxa lead → comprador. Sem planilha de leads → lacuna nova.
+  const leads = input.leadsDeCadastro
+    ? contarLeadsUnicos(input.leadsDeCadastro, janela, ingressosUnicos, capAplicavel ? null : motivoGratuita)
+    : undefined;
+  if (leads && !leads.aplicavel) {
+    lacunas.push({
+      codigo: LACUNA_LEADS_UNICOS_SEM_FONTE,
+      motivo:
+        "a etapa de captação não tem planilha de leads com e-mail ou telefone — leads únicos e taxa lead → comprador não são contados (lacuna escrita, nunca zero)",
+      ...(leads.fontes.length > 0 ? { detalhe: `planilha(s) sem e-mail nem telefone: ${leads.fontes.map((f) => f.rotulo).join("; ")}` } : {}),
+    });
+  }
+
   // ===================================================================
   // 8. Taxas e ROAS
   // ===================================================================
@@ -1708,6 +1809,18 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
     ) as Metrica,
   };
 
+  // 49.17 (AC3): CAC = investimento de captação c/ imposto ÷ compradores de captação únicos
+  // (a mesma base do ROAS de captação). Compradores = 0 → nulo com motivo, nunca infinito nem 0.
+  const cac: DebriefingMoneyTime["cac"] = !capAplicavel
+    ? nula(motivoGratuita, "captação sem venda — não se aplica")
+    : razao(invCaptacao, ingressosUnicos, "investimento de captação c/ imposto", "compradores de captação", fmtReais, {
+        formatarResultado: fmtReais,
+        formatarDenominador: fmtInt,
+      });
+  if (cac.valor === null && capAplicavel && ingressosUnicos === 0) {
+    cac.motivo = "SEM_COMPRADORES_DE_CAPTACAO: compradores de captação = 0 — o CAC não se calcula (nunca infinito nem zero)";
+  }
+
   // ===================================================================
   // 9. ROAS diário da captação e pico-artefato
   // ===================================================================
@@ -1759,6 +1872,22 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
       });
     }
   }
+
+  // ===================================================================
+  // 10. Story 49.17 (AC6) — curva acumulada D+0…D+x (até o fim da janela; na parcial, o corte)
+  // ===================================================================
+  const curvaAcumulada = montarCurvaAcumulada({
+    aplicavel: capAplicavel,
+    motivoGratuita,
+    d0,
+    ateDia: janela.fim,
+    criterio: criterioDeUnico,
+    compradores: linhasCap.flatMap((l, i) => (ancora(l.v.tipo) ? [{ chave: chaves[criterioDeUnico][i]!, dia: l.dia }] : [])),
+    vendas: linhasCap
+      .filter((l) => l.v.tipo === "ingresso" || l.v.tipo === "combo" || l.v.tipo === "order_bump")
+      .map((l) => ({ dia: l.dia, centavos: l.centavos })),
+    midia: midiaComImposto.filter((m) => grupoDaEtapa(m.stageId) === "captacao").map((m) => ({ dia: m.dia, comImposto: m.comImposto })),
+  });
 
   // ===================================================================
   // Montagem
@@ -1904,6 +2033,9 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
     teseOrderBump: { roasSoIngresso: roasSoIngresso.valor, roasCaptacao: roasCaptacao.valor, veredito },
     apendiceReabertura,
     referenciaCombinada,
+    cac,
+    ...(leads ? { leads } : {}),
+    curvaAcumulada,
     roasDiarioCaptacao,
     limiarPicoArtefato: {
       limiarPicoArtefato: limiar,
@@ -1938,6 +2070,171 @@ function leadsAteOCorte(leads: readonly LeadInput[], corte: string): LeadInput[]
     const dia = dataBrt(l.dataCriacaoCru);
     return dia === null || dia <= corte;
   });
+}
+
+// ---------------------------------------------------------------------------
+// Story 49.17 — leads únicos (AC4) e curva acumulada (AC6)
+// ---------------------------------------------------------------------------
+
+/** R11-4: o e-mail (normalizado) contém "test" — sem diferenciar maiúsculas. */
+export function ehEmailDeTeste(emailCru: string | null | undefined): boolean {
+  return normalizarEmail(emailCru).includes(TRECHO_DE_EMAIL_DE_TESTE);
+}
+
+/**
+ * AC4 — leads únicos da captação na janela (até o corte, na parcial) e a taxa
+ * lead → comprador. Pura.
+ *
+ * 1. sem planilha de leads com e-mail ou telefone → `aplicavel = false` (lacuna, nunca zero);
+ * 2. descarta todo registro cujo e-mail contém "test" (R11-4), contando quantos;
+ * 3. fora da janela: o registro datado antes do início ou depois do fim; sem data legível fica
+ *    (a mesma regra da venda sem dia), contado à parte;
+ * 4. dedup por e-mail OU telefone (últimos 8 dígitos) — a união de `chavesDeComprador`
+ *    (`porEmailOuTelefone`), a mesma dos motores;
+ * 5. taxa = compradores de captação únicos (critério headline, o número da tabela) ÷ leads únicos.
+ */
+export function contarLeadsUnicos(
+  entrada: LeadsDeCadastroInput,
+  janela: Pick<JanelaDoDebriefing, "inicio" | "fim">,
+  compradoresDeCaptacao: number,
+  motivoSemCompradores: string | null,
+): LeadsDaCaptacao {
+  const fontes = entrada.fontes.map((f) => ({ ...f }));
+  const regra = `e-mail que contém "${TRECHO_DE_EMAIL_DE_TESTE}", sem diferenciar maiúsculas (R11-4)`;
+  const aplicavel = fontes.some((f) => !f.semIdentificador);
+  if (!aplicavel) {
+    const motivo = `${LACUNA_LEADS_UNICOS_SEM_FONTE}: a etapa de captação não tem planilha de leads com e-mail ou telefone`;
+    return {
+      aplicavel: false,
+      motivo,
+      fontes,
+      registrosLidos: 0,
+      descartadosComoTeste: { registros: 0, emailsDistintos: 0, regra },
+      foraDaJanela: 0,
+      semData: 0,
+      unicos: { valor: null, motivo, memoria: "sem planilha de leads — leads únicos não contados (lacuna escrita, nunca zero)" },
+      taxaLeadComprador: nula(motivo, "sem leads únicos — taxa lead → comprador não calculada"),
+    };
+  }
+  const emailsDeTeste = new Set<string>();
+  let descartados = 0;
+  let foraDaJanela = 0;
+  let semData = 0;
+  const contados: IdentidadeParaChave[] = [];
+  entrada.leads.forEach((l, i) => {
+    if (ehEmailDeTeste(l.emailCru)) {
+      descartados += 1;
+      emailsDeTeste.add(normalizarEmail(l.emailCru));
+      return;
+    }
+    const dia = dataBrt(l.dataCriacaoCru);
+    if (dia === null) semData += 1;
+    else if (dia < janela.inicio || dia > janela.fim) {
+      foraDaJanela += 1;
+      return;
+    }
+    contados.push({ emailCru: l.emailCru, telefoneCru: l.telefoneCru, planilhaId: "lead-de-cadastro", linha: i + 1 });
+  });
+  const unicosN = new Set(chavesDeComprador(contados).porEmailOuTelefone).size;
+  const memoriaUnicos =
+    `${fmtInt(entrada.leads.length)} registro(s) de ${fontes.filter((f) => !f.semIdentificador).length} planilha(s) de leads` +
+    ` − ${fmtInt(descartados)} de teste (${regra}) − ${fmtInt(foraDaJanela)} fora da janela ${janela.inicio}…${janela.fim}` +
+    ` = ${fmtInt(contados.length)} (dos quais ${fmtInt(semData)} sem data legível, mantidos); deduplicados por e-mail OU telefone = ${fmtInt(unicosN)}`;
+  const taxa = motivoSemCompradores
+    ? nula(motivoSemCompradores, "captação sem venda — taxa lead → comprador não se aplica")
+    : razao(compradoresDeCaptacao, unicosN, "compradores de captação", "leads únicos", fmtInt, { formatarResultado: (v) => fmtNumero(v, 4) });
+  return {
+    aplicavel: true,
+    fontes,
+    registrosLidos: entrada.leads.length,
+    descartadosComoTeste: { registros: descartados, emailsDistintos: emailsDeTeste.size, regra },
+    foraDaJanela,
+    semData,
+    unicos: { valor: unicosN, memoria: memoriaUnicos },
+    taxaLeadComprador: taxa,
+  };
+}
+
+type IdentidadeParaChave = Parameters<typeof chavesDeComprador>[0][number];
+
+/**
+ * AC6 — a curva acumulada D+0…D+x (D0 = início da captação informado, R11-0a),
+ * do D0 até `ateDia` (o fim da janela: na parcial e na comparação em D+N, o
+ * corte). Pura. Compradores pelo dia da 1ª compra de ingresso/combo (critério
+ * headline); faturamento e investimento pelo dia. O que não tem data da venda
+ * fica fora da curva e é contado em `semData` (a última linha + `semData` fecha
+ * com os totais do resumo).
+ */
+export function montarCurvaAcumulada(e: {
+  aplicavel: boolean;
+  motivoGratuita: string;
+  d0: string;
+  ateDia: string;
+  criterio: CriterioDeUnico;
+  compradores: readonly { chave: string; dia: string | null }[];
+  vendas: readonly { dia: string | null; centavos: number }[];
+  midia: readonly { dia: string; comImposto: number }[];
+}): CurvaAcumulada {
+  const ateDMais = diasEntre(e.d0, e.ateDia);
+  if (!e.aplicavel) {
+    return {
+      aplicavel: false,
+      motivo: e.motivoGratuita,
+      d0: e.d0,
+      ateDia: e.ateDia,
+      ateDMais,
+      pontos: [],
+      semData: { compradores: 0, faturamento: 0 },
+      memoria: "captação sem venda — não se aplica",
+    };
+  }
+  const primeiroDia = new Map<string, string | null>();
+  for (const c of e.compradores) {
+    const atual = primeiroDia.get(c.chave);
+    if (c.dia === null) {
+      if (atual === undefined) primeiroDia.set(c.chave, null);
+      continue;
+    }
+    if (atual === undefined || atual === null || c.dia < atual) primeiroDia.set(c.chave, c.dia);
+  }
+  const compradoresNoDia = new Map<string, number>();
+  let compradoresSemData = 0;
+  for (const dia of primeiroDia.values()) {
+    if (dia === null) compradoresSemData += 1;
+    else compradoresNoDia.set(dia, (compradoresNoDia.get(dia) ?? 0) + 1);
+  }
+  const centavosNoDia = new Map<string, number>();
+  let centavosSemData = 0;
+  for (const v of e.vendas) {
+    if (v.dia === null) centavosSemData += v.centavos;
+    else centavosNoDia.set(v.dia, (centavosNoDia.get(v.dia) ?? 0) + v.centavos);
+  }
+  const investimentoNoDia = new Map<string, number>();
+  for (const m of e.midia) investimentoNoDia.set(m.dia, (investimentoNoDia.get(m.dia) ?? 0) + m.comImposto);
+
+  const pontos: PontoDaCurvaAcumulada[] = [];
+  let compradores = 0;
+  let centavos = 0;
+  let investimento = 0;
+  for (let n = 0; n <= ateDMais; n++) {
+    const dia = somarDias(e.d0, n);
+    compradores += compradoresNoDia.get(dia) ?? 0;
+    centavos += centavosNoDia.get(dia) ?? 0;
+    investimento += investimentoNoDia.get(dia) ?? 0;
+    pontos.push({ dMais: n, dia, compradores, faturamento: reais(centavos), investimento });
+  }
+  return {
+    aplicavel: true,
+    d0: e.d0,
+    ateDia: e.ateDia,
+    ateDMais,
+    pontos,
+    semData: { compradores: compradoresSemData, faturamento: reais(centavosSemData) },
+    memoria:
+      `D0 = ${e.d0} (início da captação informado) até ${e.ateDia} (D+${ateDMais}); compradores de captação (${e.criterio}) pelo dia da 1ª compra de ingresso ou combo; ` +
+      `faturamento da captação (ingresso + combo + order bump, s/ TMB) e investimento de captação c/ imposto pelo dia; ` +
+      `sem data da venda: ${fmtInt(compradoresSemData)} comprador(es) e ${fmtReais(reais(centavosSemData))} — fora da curva, dentro dos totais`,
+  };
 }
 
 /**
