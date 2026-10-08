@@ -300,7 +300,8 @@ CREATE TABLE meta_campaign_insights_daily (
 CREATE TABLE meta_ad_insights_daily (
   project_id uuid NOT NULL, ad_id varchar(64) NOT NULL, date_start varchar(10) NOT NULL,
   campaign_id varchar(64), campaign_name varchar(500), ad_name varchar(500),
-  spend numeric NOT NULL DEFAULT 0, impressions numeric NOT NULL DEFAULT 0, actions jsonb
+  spend numeric NOT NULL DEFAULT 0, impressions numeric NOT NULL DEFAULT 0, actions jsonb,
+  adset_id varchar(64), adset_name varchar(500)
 );
 CREATE TABLE meta_entity_names_cache (
   project_id uuid NOT NULL, entity_type varchar(20) NOT NULL, entity_id varchar(64) NOT NULL, entity_name varchar(500) NOT NULL
@@ -517,14 +518,14 @@ describe("AC11 — loadDebriefingAudienceInput sobre Postgres real", () => {
     const AD3 = "120000000000000003";
     await pg.exec(`INSERT INTO meta_ad_insights_daily VALUES
       ('${P}', '${AD3}', '2026-04-22', '111', 'dg--vendas-captacao--hot--cbo--estaticos', 'dg-pg02-ultimo-dia', 40, 400,
-       '[{"action_type":"link_click","value":"9"},{"action_type":"landing_page_view","value":"7"}]')`);
+       '[{"action_type":"link_click","value":"9"},{"action_type":"landing_page_view","value":"7"}]', 'as-77', 'cj-quente-lal')`);
     await pg.exec(`UPDATE meta_ad_creatives_cache SET creative = creative || '{"title":" Imersão ","body":"Vem"}'::jsonb WHERE project_id = '${P}' AND ad_id = '${AD1}'`);
     try {
       const r = await loadDebriefingAudienceInput(db, { config }, { lerPlanilha: lerFalso });
       // Sem landing_page_view na linha = null (nunca 0), como o link_click.
-      expect(r.criativos.anuncios.map((a) => [a.adId, a.linkClicks, a.landingPageViews])).toEqual([
-        [AD1, 50, null],
-        [AD3, 9, 7],
+      expect(r.criativos.anuncios.map((a) => [a.adId, a.linkClicks, a.landingPageViews, a.adsetId, a.adsetName])).toEqual([
+        [AD1, 50, null, null, null],
+        [AD3, 9, 7, "as-77", "cj-quente-lal"], // AC2: o conjunto da versão isolada
       ]);
       // Só o que o cache guarda; sem texto = null nos dois campos.
       expect(r.criativos.textosDosAnuncios).toEqual({

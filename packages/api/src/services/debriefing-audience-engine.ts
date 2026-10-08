@@ -205,6 +205,9 @@ export interface AnuncioDiaInput {
   linkClicks: number | null;
   /** Story 49.18 — `landing_page_view` de `actions`; `null`/ausente = a Meta não devolveu (≠ 0). */
   landingPageViews?: number | null;
+  /** Story 49.18 (AC2) — conjunto (adset) da linha. Ausente = entrada anterior. */
+  adsetId?: string | null;
+  adsetName?: string | null;
 }
 
 export interface CriativosInput {
@@ -1565,6 +1568,8 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
       investimentoComImposto: aplicarImposto(a.spendBruto, a.dia, pctImposto),
       linkClicks: a.linkClicks,
       landingPageViews: a.landingPageViews ?? null,
+      conjuntoId: a.adsetId ?? null,
+      conjuntoNome: a.adsetName ?? null,
     })),
     compradores: compradoresDaMidia(compradores, linhasCap, chaves.porEmail),
     vendasComConteudo: input.compradores.some((v) => (v.utmContentCru ?? "").trim() !== ""),

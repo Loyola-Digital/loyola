@@ -25,6 +25,7 @@
  *   `actions` (ausente = `null`), e cada Ad ID do cache leva o `title`/`body`
  *   de nível superior do criativo (o único texto que o cache guarda); a venda
  *   higienizada leva o valor (a conversão `valorBrl` do Motor I; TMB = 0) e o dia;
+ *   e a linha leva o conjunto (`adset_id`/`adset_name`, a "versão isolada" do AC2);
  * - **conta do Ads Manager**: `funnels.metaAccountId` → `meta_ads_accounts`; sem
  *   conta no funil, a ÚNICA conta ativa vinculada ao projeto
  *   (`meta_ads_account_projects`, a mesma fonte do backfill de nomes). Em
@@ -611,6 +612,8 @@ export async function loadDebriefingAudienceInput(
       .select({
         adId: metaAdInsightsDaily.adId,
         adName: metaAdInsightsDaily.adName,
+        adsetId: metaAdInsightsDaily.adsetId,
+        adsetName: metaAdInsightsDaily.adsetName,
         campaignId: metaAdInsightsDaily.campaignId,
         campaignName: metaAdInsightsDaily.campaignName,
         dateStart: metaAdInsightsDaily.dateStart,
@@ -638,6 +641,8 @@ export async function loadDebriefingAudienceInput(
         impressoes: numeroDoBanco(l.impressions),
         linkClicks: linkClicksDeActions(l.actions),
         landingPageViews: landingPageViewsDeActions(l.actions),
+        adsetId: l.adsetId,
+        adsetName: l.adsetName,
       });
     }
     anuncios.sort((a, b) => (a.adId === b.adId ? a.dia.localeCompare(b.dia) : a.adId.localeCompare(b.adId)));

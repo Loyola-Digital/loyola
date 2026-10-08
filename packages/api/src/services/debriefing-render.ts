@@ -955,6 +955,39 @@ function linkDaLinha(l: LinhaDoRanking): string {
   return `<a href="${esc(href)}" data-link="${rede}" target="_blank" rel="noopener noreferrer">${rot}</a>`;
 }
 
+/**
+ * AC2 (R12-3) — a linha da melhor versão isolada, logo abaixo da média do nome,
+ * com os mesmos números; sem versão elegível, o motivo por extenso (nunca uma
+ * versão abaixo do mínimo). Sem `melhorVersao` (não escolhida), nada.
+ */
+function linhaDaMelhorVersao(l: LinhaDoRanking, comConteudo: boolean): string {
+  const mv = l.melhorVersao;
+  if (!mv) return "";
+  const rotulo = `<span style="color:var(--muted);font-size:11px">↳ melhor versão isolada</span>`;
+  if (!mv.versao) {
+    const texto =
+      mv.motivo === "SEM_COMPRADOR_NAS_ELEGIVEIS"
+        ? "nenhuma versão com ≥ 5% do investimento de captação tem comprador"
+        : mv.motivo === "SEM_INVESTIMENTO_DE_CAPTACAO"
+          ? "sem investimento de captação no lançamento para o mínimo de 5%"
+          : "nenhuma versão com ≥ 5% do investimento de captação";
+    return tr([`${rotulo} <span data-melhor-versao="${esc(mv.motivo ?? "")}">${esc(texto)}</span>`, "", "", "", "", "", "", "", "", "", ""]);
+  }
+  const v = mv.versao;
+  const conjunto = v.conjuntoNome ?? v.conjuntoId;
+  const href = v.linkDoPost ?? v.linkAdsManager;
+  const rede = redeDoLinkDoCriativo(v);
+  return tr([
+    `${rotulo} <span data-melhor-versao="${esc(v.adId)}">Ad ID ${esc(v.adId)}${conjunto ? ` · conjunto ${esc(conjunto)}` : ""}</span>`,
+    "",
+    "",
+    ...celulasDaMidia(v, comConteudo),
+    celulaMetrica(v.tierSuperior, "fracao"),
+    celulaMetrica(v.compraPorVisita, "pct", 2),
+    href ? `<a href="${esc(href)}" data-link="${rede}" target="_blank" rel="noopener noreferrer">${rede === "instagram" ? "Instagram" : rede === "facebook" ? "Facebook" : "Ads Manager"}</a>` : TRACO,
+  ]);
+}
+
 /** As células de métrica comuns (investimento, % da verba, compradores, CPA, ROAS). */
 function celulasDaMidia(m: MetricasDaMidia, comConteudo: boolean): string[] {
   return [
@@ -1012,7 +1045,7 @@ export function blocoDaMidiaPorAnuncio(
       celulaMetrica(l.tierSuperior, "fracao"),
       celulaMetrica(l.compraPorVisita, "pct", 2),
       linkDaLinha(l),
-    ]),
+    ]) + linhaDaMelhorVersao(l, comConteudo),
   );
   const totalRanking = (rot: string, t: MetricasDaMidia, cc: boolean) =>
     tr([`<b>${esc(rot)}</b>`, "", "", ...celulasDaMidia(t, cc), celulaMetrica(t.tierSuperior, "fracao"), celulaMetrica(t.compraPorVisita, "pct", 2), ""], "tot");
@@ -1032,6 +1065,9 @@ export function blocoDaMidiaPorAnuncio(
       `Comprador = pessoa que comprou ingresso ou combo na captação, atribuída ao Ad ID do utm_content da linha de ingresso/combo; ROAS = faturamento da captação dessas pessoas (ingresso + combo + order bump, s/ TMB) ÷ investimento. ` +
       `Compra a cada visita = compradores dos anúncios com landing_page_view ÷ landing_page_view (“—” quando a Meta não devolveu landing_page_view no período); conversão do clique, idem com link clicks. ` +
       (comConteudo ? `${esc(m.atribuicao.memoria)}.` : `As planilhas de venda não trazem utm_content: nenhum comprador foi atribuído a anúncio.`) +
+      (m.criterioDaMelhorVersao
+        ? ` Melhor versão isolada (Ad ID + conjunto): a de menor CPA entre as com investimento ≥ 5% do investimento de captação do lançamento (${esc(m.criterioDaMelhorVersao.memoria)}); CPA empatado → maior ROAS → menor Ad ID; versão sem comprador nunca é a melhor.`
+        : "") +
       `</p>` +
       (comp && semComp ? nota(`<b>Comparação sem número:</b> ${esc(semComp)}.`) : "") +
       (!comp && semDelta ? nota(`<b>Sem comparação no mesmo D+N:</b> ${esc(semDelta.nome)} só tem relatório salvo, com os totais fechados.`) : ""),

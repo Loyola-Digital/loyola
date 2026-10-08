@@ -56,7 +56,7 @@ const CAMP = {
   semFormato: "lanc--vendas-captacao--hot--cbo--lpa",
 } as const;
 
-type Anuncio = AnuncioDiaInput & { landingPageViews?: number | null };
+type Anuncio = AnuncioDiaInput & { landingPageViews?: number | null; adsetId?: string | null; adsetName?: string | null };
 
 const ad = (adId: string, adName: string, campaignName: string, dia: string, spendBruto: number, linkClicks: number | null, lpv: number | null): Anuncio => ({
   adId,
@@ -68,6 +68,9 @@ const ad = (adId: string, adName: string, campaignName: string, dia: string, spe
   impressoes: spendBruto * 10,
   linkClicks,
   landingPageViews: lpv,
+  // AC2: o conjunto da versão isolada (ignorado pelo código de antes da story).
+  adsetId: `as-${campaignName.split("--")[2]}`,
+  adsetName: `cj-${campaignName.split("--")[2]}`,
 });
 
 /** Ad-level de captação (antes do corte da janela, que é do loader). */

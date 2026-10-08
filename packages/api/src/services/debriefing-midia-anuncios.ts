@@ -27,7 +27,11 @@
  * - copy igual pelo `title` + `body` do cache (AC6); sem texto = "texto indisponível";
  * - CTR/CPC não aparecem; a conversão do clique usa `link_click` (nunca cliques totais).
  *
- * O AC2 (melhor versão isolada) NÃO está aqui: o critério de "melhor" é a P-22,
+ * AC2 (R12-3, dono: "menor cpa com maior roas, mínimo de 5% do valor total
+ * investido" + "ROAS desempata e captação do lançamento"): cada nome lista as
+ * versões isoladas (Ad ID + conjunto) e a composição do payload escolhe a melhor
+ * (`comMelhorVersao`), porque a base dos 5% é o investimento de captação do
+ * Motor I. Antes da R12-3 o AC2 esperava a P-22,
  * sem resposta do dono.
  *
  * Unidades: `pctDaVerba`, `compraPorVisita` e `conversaoDoClique` em
@@ -46,11 +50,13 @@ import { fmtNumero, fmtReais, type Metrica } from "./debriefing-money-time-engin
 
 /**
  * R11-5 ("só no nome do anuncio") — os termos do método (passo 5) que marcam
- * uma peça de escassez. A comparação ignora maiúsculas, acentos e o separador
+ * uma peça de escassez, mais "falta" no singular (R12-5, P-24: a peça
+ * `--falta-1-dia` do PG05). Cada termo casa como palavra inteira: "faltam" e
+ * "falta" são dois termos. A comparação ignora maiúsculas, acentos e o separador
  * entre as palavras (`ultimo-dia`, `ultimo_dia`, `último dia`): os nomes reais
  * usam hífen (PG05: `--lote-promo--ultimo-dia`).
  */
-export const TERMOS_DE_ESCASSEZ = ["faltam", "último dia", "últimas horas"] as const;
+export const TERMOS_DE_ESCASSEZ = ["faltam", "falta", "último dia", "últimas horas"] as const;
 
 /** O texto comparável: sem acento, minúsculo, hífen/underline/ponto/barra viram espaço. */
 export function normalizarParaEscassez(s: string | null | undefined): string {
@@ -115,6 +121,9 @@ export interface AnuncioDiaDaMidia {
   linkClicks: number | null;
   /** `null` = a Meta não devolveu `landing_page_view` (≠ 0). Ausente no tipo = loader anterior. */
   landingPageViews: number | null;
+  /** AC2 — conjunto (adset) da linha; `null`/ausente = não lido. */
+  conjuntoId?: string | null;
+  conjuntoNome?: string | null;
 }
 
 /** Um comprador de captação (pessoa), com o ad_id da linha de ingresso/combo. */
@@ -182,7 +191,34 @@ export interface LinhaDoRanking extends MetricasDaMidia {
   /** Post do ad_id de maior investimento entre os que têm post (`postDoGrupo`, 18.88). */
   linkDoPost: string | null;
   linkAdsManager: string | null;
+  /** AC2 — as versões isoladas (Ad ID + conjunto) do nome, com os mesmos números, na ordem do Ad ID. */
+  versoes: VersaoIsolada[];
+  /** AC2 (R12-3) — preenchida na composição do payload (`comMelhorVersao`). Ausente = ainda não escolhida. */
+  melhorVersao?: MelhorVersao;
 }
+
+/** AC2 — uma versão isolada: um Ad ID (no conjunto da linha mais recente dele). */
+export interface VersaoIsolada extends MetricasDaMidia {
+  adId: string;
+  conjuntoId: string | null;
+  conjuntoNome: string | null;
+  linkDoPost: string | null;
+  linkAdsManager: string | null;
+}
+
+export type MotivoSemMelhorVersao = "SEM_VERSAO_ELEGIVEL" | "SEM_COMPRADOR_NAS_ELEGIVEIS" | "SEM_INVESTIMENTO_DE_CAPTACAO";
+
+export interface MelhorVersao {
+  /** `null` = nenhuma versão elegível com comprador (o documento diz por quê). */
+  versao: VersaoIsolada | null;
+  motivo?: MotivoSemMelhorVersao;
+  /** Versões com investimento ≥ o mínimo. */
+  elegiveis: number;
+  memoria: string;
+}
+
+/** R12-3 — o mínimo de investimento de uma versão, em fração do investimento de captação do lançamento. */
+export const LIMIAR_DA_MELHOR_VERSAO = 0.05;
 
 export interface LinhaDoFormato extends MetricasDaMidia {
   formato: FormatoDoAnuncio;
@@ -251,6 +287,11 @@ export interface MidiaPorAnuncio {
     total: MetricasDaMidia & { soIngresso: number; parcelaSoIngresso: Metrica };
   };
   copy: CopyDosAnuncios;
+  /**
+   * AC2 (R12-3) — a base e o mínimo usados na escolha da melhor versão
+   * (preenchido com `melhorVersao` de cada linha, na composição do payload).
+   */
+  criterioDaMelhorVersao?: { limiar: number; investimentoDeCaptacao: number; minimo: number; memoria: string };
 }
 
 // ---------------------------------------------------------------------------
@@ -454,6 +495,17 @@ export function computeMidiaPorAnuncio(input: EntradaDaMidiaPorAnuncio): MidiaPo
       ...metricasDe(acc, `"${g.nome}"`, investimentoTotal, vendasComConteudo),
       linkDoPost: postDoGrupo(porSpend, spendPorAdId, postPorAdId),
       linkAdsManager: input.linkAdsManagerDe(porSpend[0]!),
+      versoes: adIds.map((adId) => {
+        const ultima = ultimaPorAdId.get(adId)!;
+        return {
+          adId,
+          conjuntoId: ultima.conjuntoId ?? null,
+          conjuntoNome: (ultima.conjuntoNome ?? "").trim() || null,
+          ...metricasDe(acumular([adId]), `Ad ID ${adId}`, investimentoTotal, vendasComConteudo),
+          linkDoPost: postPorAdId.get(adId) ?? null,
+          linkAdsManager: input.linkAdsManagerDe(adId),
+        };
+      }),
     };
   });
   ranking.sort((a, b) => b.investimentoComImposto - a.investimentoComImposto || porOrdem(a.nome, b.nome) || porOrdem(a.adIdPrincipal, b.adIdPrincipal));
@@ -604,5 +656,84 @@ export function copyDosAnuncios(
     copiesDistintas: pares.size,
     veredito: "copies-diferentes",
     texto: `Os ${fmtInt(comTexto)} anúncios com texto no cache têm ${fmtInt(pares.size)} copies diferentes (title + body).${sufixo}`,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// AC2 (R12-3) — melhor versão isolada
+// ---------------------------------------------------------------------------
+
+/** CPA comparado em centavos (o que o documento mostra); `null` nunca chega aqui. */
+const centavosDoCpa = (v: VersaoIsolada) => Math.round(v.cpa.valor! * 100);
+
+/**
+ * A ordem da melhor versão: menor CPA (em centavos); empate → maior ROAS
+ * (ROAS "—" perde para qualquer número); empate → menor Ad ID (AUTO-DECISION
+ * da story: determinístico e sem outro critério do dono).
+ */
+export function ordemDaMelhorVersao(a: VersaoIsolada, b: VersaoIsolada): number {
+  const cpa = centavosDoCpa(a) - centavosDoCpa(b);
+  if (cpa !== 0) return cpa;
+  const ra = a.roas.valor;
+  const rb = b.roas.valor;
+  if (ra !== rb) {
+    if (ra === null) return 1;
+    if (rb === null) return -1;
+    return rb - ra;
+  }
+  return porOrdem(a.adId, b.adId);
+}
+
+/**
+ * R12-3 — "menor cpa com maior roas, mínimo de 5% do valor total investido" +
+ * "ROAS desempata e captação do lançamento": entre as versões com investimento
+ * ≥ 5% do investimento de captação do lançamento, a de menor CPA; o ROAS
+ * desempata. Versão sem comprador (CPA "—") nunca é a melhor; abaixo do mínimo
+ * nunca é escolhida, mesmo com CPA menor.
+ */
+export function escolherMelhorVersao(versoes: readonly VersaoIsolada[], investimentoDeCaptacao: number): MelhorVersao {
+  if (!(investimentoDeCaptacao > 0)) {
+    return {
+      versao: null,
+      motivo: "SEM_INVESTIMENTO_DE_CAPTACAO",
+      elegiveis: 0,
+      memoria: "sem investimento de captação no lançamento — não há mínimo de 5% para comparar versões",
+    };
+  }
+  const minimo = investimentoDeCaptacao * LIMIAR_DA_MELHOR_VERSAO;
+  const elegiveis = versoes.filter((v) => v.investimentoComImposto >= minimo);
+  const comCpa = elegiveis.filter((v) => v.cpa.valor !== null);
+  const base = `mínimo ${fmtReais(minimo)} (5% do investimento de captação ${fmtReais(investimentoDeCaptacao)})`;
+  if (elegiveis.length === 0) {
+    return { versao: null, motivo: "SEM_VERSAO_ELEGIVEL", elegiveis: 0, memoria: `nenhuma versão com ≥ 5% do investimento de captação — ${base}` };
+  }
+  if (comCpa.length === 0) {
+    return {
+      versao: null,
+      motivo: "SEM_COMPRADOR_NAS_ELEGIVEIS",
+      elegiveis: elegiveis.length,
+      memoria: `nenhuma das ${fmtInt(elegiveis.length)} versão(ões) com ≥ 5% do investimento de captação tem comprador (CPA "—") — ${base}`,
+    };
+  }
+  const melhor = [...comCpa].sort(ordemDaMelhorVersao)[0]!;
+  return {
+    versao: melhor,
+    elegiveis: elegiveis.length,
+    memoria: `menor CPA entre ${fmtInt(comCpa.length)} versão(ões) com comprador e ≥ 5% do investimento de captação (${base}); empate → maior ROAS → menor Ad ID`,
+  };
+}
+
+/** A mídia por anúncio com a melhor versão de cada linha do ranking (composição do payload; não muta a entrada). */
+export function comMelhorVersao(m: MidiaPorAnuncio, investimentoDeCaptacao: number): MidiaPorAnuncio {
+  const minimo = investimentoDeCaptacao * LIMIAR_DA_MELHOR_VERSAO;
+  return {
+    ...m,
+    ranking: m.ranking.map((l) => ({ ...l, melhorVersao: escolherMelhorVersao(l.versoes, investimentoDeCaptacao) })),
+    criterioDaMelhorVersao: {
+      limiar: LIMIAR_DA_MELHOR_VERSAO,
+      investimentoDeCaptacao,
+      minimo,
+      memoria: `investimento de captação do lançamento c/ imposto ${fmtReais(investimentoDeCaptacao)} × 5% = ${fmtReais(minimo)}`,
+    },
   };
 }

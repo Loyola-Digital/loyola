@@ -16,6 +16,7 @@ import { classificarOrigem } from "@loyola-x/shared";
 import {
   PUBLICOS_DA_MIDIA,
   TERMOS_DE_ESCASSEZ,
+  comMelhorVersao,
   computeMidiaPorAnuncio,
   copyDosAnuncios,
   ehPecaDeEscassez,
@@ -332,7 +333,8 @@ describe("AC4 — cold-adv separado dentro do frio, só nesta análise", () => {
 
 describe("AC5 — peças de escassez pelo nome do anúncio, por dia de veiculação", () => {
   it("a constante única dos termos (a do método)", () => {
-    expect([...TERMOS_DE_ESCASSEZ]).toEqual(["faltam", "último dia", "últimas horas"]);
+    // R11-5 + R12-5 (P-24): "falta" no singular entra como termo próprio.
+    expect([...TERMOS_DE_ESCASSEZ]).toEqual(["faltam", "falta", "último dia", "últimas horas"]);
   });
 
   it("sem diferenciar maiúsculas, acentos nem o separador; palavra inteira", () => {
@@ -346,11 +348,12 @@ describe("AC5 — peças de escassez pelo nome do anúncio, por dia de veiculaç
     ]) {
       expect(ehPecaDeEscassez(n), n).toBe(true);
     }
-    for (const n of ["ad10-dg-pg05-out26--delegue-60-da-sua-producao", "faltamento", "ultimos dias", "ultimo-diario", null, ""]) {
+    for (const n of ["ad10-dg-pg05-out26--delegue-60-da-sua-producao", "faltamento", "faltas-de-tempo", "ultimos dias", "ultimo-diario", null, ""]) {
       expect(ehPecaDeEscassez(n), String(n)).toBe(false);
     }
-    // Pergunta aberta (Dev Agent Record): o singular não é um dos termos do dono.
-    expect(ehPecaDeEscassez("ad02-dg-pg05-out26--lote-promo--falta-1-dia")).toBe(false);
+    // R12-5 (P-24): a peça do PG05 no singular é escassez; "faltam" e "falta" casam cada um como palavra inteira.
+    expect(ehPecaDeEscassez("ad02-dg-pg05-out26--lote-promo--falta-1-dia")).toBe(true);
+    expect(ehPecaDeEscassez("FALTA 1 DIA")).toBe(true);
   });
 
   it("saem do ranking e vão para a tabela própria: investimento, compradores e só ingresso por dia", () => {
@@ -381,6 +384,23 @@ describe("AC5 — peças de escassez pelo nome do anúncio, por dia de veiculaç
       `21/04 D+4 | ${NOME_ESC2}, ${NOME_ESC1} | R$ 39,84 | 1 | 0 | 0,0%`,
       "Total |  | R$ 73,99 | 2 | 1 | 50,0%",
     ]);
+  });
+
+  it("R12-5: a peça `falta-1-dia` (PG05) sai do ranking e entra na escassez", () => {
+    const FALTA = "ad02-dg-pg05-out26--lote-promo--falta-1-dia";
+    const m = computeMidiaPorAnuncio({
+      anuncios: [
+        { adId: AD_A1, nome: FALTA, campaignName: "x--hot--cbo--estaticos", dia: "2026-10-06", investimentoComImposto: 99, linkClicks: 3, landingPageViews: 6 },
+        { adId: AD_C, nome: NOME_C, campaignName: "x--hot--cbo--estaticos", dia: "2026-10-06", investimentoComImposto: 10, linkClicks: 1, landingPageViews: 1 },
+      ],
+      compradores: [],
+      vendasComConteudo: true,
+      postsDosAnuncios: {},
+      linkAdsManagerDe: () => null,
+    });
+    expect(m.ranking.map((r) => r.nome)).toEqual([NOME_C]);
+    expect(m.escassez.anuncios).toEqual([{ nome: FALTA, adIds: [AD_A1] }]);
+    expect(m.escassez.porDia.map((d) => [d.dia, d.investimentoComImposto])).toEqual([["2026-10-06", 99]]);
   });
 
   it("sem peça de escassez: a nota com os termos, sem tabela", async () => {
@@ -503,7 +523,8 @@ describe("AC7 — ranking e estático × vídeo com a comparação principal", (
 // ---------------------------------------------------------------------------
 
 /**
- * SHA do HTML INTEIRO e do payload no commit-base `c0a63eb4` (antes da story),
+ * SHA do HTML INTEIRO e do payload no commit-base `c0a63eb4` (antes da story)
+ * e de novo na `origin/main` @ `0f237e62` (a 49.17 mergeada, base depois do rebase: os mesmos SHA),
  * pelo `gerarDebriefing` sobre esta fixture e com o relógio fixado (script
  * `ac8-4918.mts`). Depois da story: o HTML sem o bloco da 49.18 e o payload
  * sem `publico.midiaPorAnuncio` dão os MESMOS SHA — cabeçalho, avisos, resumo
@@ -592,9 +613,17 @@ describe("AC9 — chamadores", () => {
     ]);
     const linhas = linhasDaTabela(bloco(html), "Ranking por nome de anúncio");
     expect(linhas[0]).toBe("Anúncio | Público | Formato | Invest. (c/ imposto) | % da verba | Compradores | CPA | ROAS | Tier superior | Compra a cada visita | Post");
-    expect(linhas[1]).toBe(`${NOME_A} (2 Ad IDs) | Quente + Frio ADV+ | Estático | R$ 170,75 | 43,5% | 2 | R$ 85,37 | 2,59 | 100,0% | 4,00% | Instagram`);
-    expect(linhas[2]).toBe(`${NOME_B} | Frio | Vídeo | R$ 136,60 | 34,8% | 2 | R$ 68,30 | 1,45 | 0,0% | — | Facebook`);
-    expect(linhas[3]).toBe(`${NOME_C} | Quente | Vídeo | R$ 11,38 | 2,9% | 0 | — | 0,00 | — | 0,00% | Ads Manager`);
+    expect(linhas.slice(1)).toEqual([
+      `${NOME_A} (2 Ad IDs) | Quente + Frio ADV+ | Estático | R$ 170,75 | 43,5% | 2 | R$ 85,37 | 2,59 | 100,0% | 4,00% | Instagram`,
+      // AC2: das duas versões (A1: CPA R$ 113,83; A2: CPA R$ 56,92), a A2.
+      `↳ melhor versão isolada Ad ID ${AD_A2} · conjunto cj-cold-adv |  |  | R$ 56,92 | 14,5% | 1 | R$ 56,92 | 5,22 | 100,0% | 10,00% | Instagram`,
+      `${NOME_B} | Frio | Vídeo | R$ 136,60 | 34,8% | 2 | R$ 68,30 | 1,45 | 0,0% | — | Facebook`,
+      `↳ melhor versão isolada Ad ID ${AD_B} · conjunto cj-cold |  |  | R$ 136,60 | 34,8% | 2 | R$ 68,30 | 1,45 | 0,0% | — | Facebook`,
+      `${NOME_C} | Quente | Vídeo | R$ 11,38 | 2,9% | 0 | — | 0,00 | — | 0,00% | Ads Manager`,
+      // R$ 11,38 < 5% de R$ 228,80 (captação do Motor I) = R$ 11,44.
+      "↳ melhor versão isolada nenhuma versão com ≥ 5% do investimento de captação |  |  |  |  |  |  |  |  |  |",
+      "Total PG05 |  |  | R$ 318,73 | 81,2% | 4 | R$ 79,68 | 2,01 | 50,0% | 3,85% |",
+    ]);
     expect(bloco(html)).toContain("compradores de captação 8 = no ranking 4 + peças de escassez 2 + ad_id fora do ad-level de captação 1 + sem ad_id no utm_content 1");
     const pub = linhasDaTabela(bloco(html), "Por público");
     expect(pub[3]).toBe("Frio ADV+ | 1 | R$ 56,92 | 14,5% | 1 | R$ 56,92 | 5,22 | 5,00%");
@@ -684,5 +713,102 @@ describe("QA TEST-001 — itens das listas de público e a chave do comprador no
     expect(b.roas.valor).toBeCloseTo(297 / (120 * FATOR), 9);
     expect(b.tierSuperior.valor).toBe(0);
     expect(m.atribuicao.compradores).toBe(p.dinheiroTempo.ingressosUnicos);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC2 (R12-3) — melhor versão isolada
+// ---------------------------------------------------------------------------
+
+describe("AC2 (R12-3) — melhor versão isolada: menor CPA entre as com ≥ 5% da captação do lançamento; ROAS desempata", () => {
+  /** Um nome com as versões dadas: [adId, investimento, compradores, faturamento por comprador]. */
+  const nome = (versoes: [string, number, number, number][]) =>
+    computeMidiaPorAnuncio({
+      anuncios: versoes.map(([adId, inv]) => ({
+        adId,
+        nome: "ad01 nome",
+        campaignName: "x--vendas-captacao--hot--cbo--estaticos",
+        dia: "2026-04-20",
+        investimentoComImposto: inv,
+        linkClicks: 10,
+        landingPageViews: 10,
+        conjuntoId: `cj-${adId}`,
+        conjuntoNome: `conjunto ${adId.slice(-2)}`,
+      })),
+      compradores: versoes.flatMap(([adId, , n, fat]) => Array.from({ length: n }, () => ({ adId, faturamento: fat, tierSuperior: false, dia: "2026-04-20" }))),
+      vendasComConteudo: true,
+      postsDosAnuncios: {},
+      linkAdsManagerDe: (id) => `ads:${id}`,
+    });
+  const melhor = (versoes: [string, number, number, number][], captacao: number) => comMelhorVersao(nome(versoes), captacao).ranking[0]!.melhorVersao!;
+  const V1 = "120300000000000001";
+  const V2 = "120300000000000002";
+  const V3 = "120300000000000003";
+
+  it("menor CPA vence (mesmo com ROAS menor)", () => {
+    // V1: CPA 50, ROAS 2 · V2: CPA 60, ROAS 5. Mínimo: 5% de 1.000 = 50.
+    const mv = melhor([[V1, 100, 2, 100], [V2, 60, 1, 300]], 1000);
+    expect(mv.versao!.adId).toBe(V1);
+    expect(mv.versao).toMatchObject({ conjuntoId: `cj-${V1}`, conjuntoNome: "conjunto 01", compradores: 2, linkAdsManager: `ads:${V1}` });
+    expect(mv.versao!.cpa.valor).toBe(50);
+    expect(mv.elegiveis).toBe(2);
+  });
+
+  it("CPA empatado: vence o maior ROAS; ROAS empatado também: o menor Ad ID", () => {
+    // V1 e V2: CPA 50; V2 com ROAS maior (100 ÷ 50 = 2 contra 50 ÷ 100 × 2 = 1).
+    expect(melhor([[V1, 100, 2, 50], [V2, 50, 1, 100]], 1000).versao!.adId).toBe(V2);
+    // V3 e V2 idênticos em CPA e ROAS: o menor Ad ID (V2), seja qual for a ordem de entrada.
+    expect(melhor([[V3, 100, 2, 100], [V2, 100, 2, 100]], 1000).versao!.adId).toBe(V2);
+  });
+
+  it("abaixo de 5% da captação do lançamento não é escolhida, mesmo com CPA menor; exatamente 5% é elegível", () => {
+    // V1: CPA 10 com 40 (< 50 = 5% de 1.000) · V2: CPA 50 com 100.
+    expect(melhor([[V1, 40, 4, 99], [V2, 100, 2, 99]], 1000).versao!.adId).toBe(V2);
+    // Exatamente 50 = 5% de 1.000: entra (≥).
+    expect(melhor([[V1, 50, 5, 99], [V2, 100, 2, 99]], 1000).versao!.adId).toBe(V1);
+  });
+
+  it("a base é o investimento de captação do LANÇAMENTO, não o do nome", () => {
+    // O nome soma 640: 5% dele (32) deixaria o V1 (40, CPA 10) entrar; 5% da captação (1.000) = 50, não.
+    expect(melhor([[V1, 40, 4, 99], [V2, 600, 10, 99]], 1000).versao!.adId).toBe(V2);
+  });
+
+  it("nome sem versão elegível: nenhuma escolhida, com o motivo — e o documento diz", () => {
+    const mv = melhor([[V1, 40, 4, 99], [V2, 30, 3, 99]], 1000);
+    expect(mv).toMatchObject({ versao: null, motivo: "SEM_VERSAO_ELEGIVEL", elegiveis: 0 });
+    expect(mv.memoria).toContain("nenhuma versão com ≥ 5% do investimento de captação");
+  });
+
+  it("CPA nulo (sem comprador) nunca é a melhor; só versões sem comprador → motivo próprio", () => {
+    expect(melhor([[V1, 500, 0, 0], [V2, 100, 1, 99]], 1000).versao!.adId).toBe(V2);
+    expect(melhor([[V1, 500, 0, 0]], 1000)).toMatchObject({ versao: null, motivo: "SEM_COMPRADOR_NAS_ELEGIVEIS", elegiveis: 1 });
+  });
+
+  it("composição: a base é a captação do Motor I e cada linha do ranking traz a escolha", () => {
+    const p = final();
+    const m = midia(p);
+    expect(m.criterioDaMelhorVersao).toMatchObject({ limiar: 0.05, investimentoDeCaptacao: p.dinheiroTempo.midia.porGrupo.captacao.investimentoComImposto });
+    expect(m.ranking.map((l) => [l.nome, l.melhorVersao!.versao?.adId ?? l.melhorVersao!.motivo])).toEqual([
+      [NOME_A, AD_A2],
+      [NOME_B, AD_B],
+      [NOME_C, "SEM_VERSAO_ELEGIVEL"],
+    ]);
+    expect(linha(m, NOME_A).versoes.map((v) => [v.adId, v.conjuntoNome, v.compradores])).toEqual([
+      [AD_A1, "cj-hot", 1],
+      [AD_A2, "cj-cold-adv", 1],
+    ]);
+  });
+
+  it("render a partir do payload completo: a versão que vier no payload é a mostrada", () => {
+    const p = final();
+    const a = linha(midia(p), NOME_A);
+    a.melhorVersao = { ...a.melhorVersao!, versao: a.versoes[0]! }; // troca a escolha no payload
+    const html = renderDebriefing({ payload: p, comparacao: null, rotulos: ROT, alertas: [] });
+    const l = linhasDaTabela(bloco(html), "Ranking por nome de anúncio");
+    expect(l[2]).toBe(`↳ melhor versão isolada Ad ID ${AD_A1} · conjunto cj-hot |  |  | R$ 113,83 | 29,0% | 1 | R$ 113,83 | 1,28 | 100,0% | 2,50% | Ads Manager`);
+    // Sem a escolha no payload (gerado antes do AC2), nenhuma linha de versão.
+    delete a.melhorVersao;
+    const sem = linhasDaTabela(bloco(renderDebriefing({ payload: p, comparacao: null, rotulos: ROT, alertas: [] })), "Ranking por nome de anúncio");
+    expect(sem[2]!.startsWith(NOME_B)).toBe(true);
   });
 });
