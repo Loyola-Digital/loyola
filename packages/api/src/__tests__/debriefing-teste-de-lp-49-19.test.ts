@@ -622,6 +622,26 @@ describe("REQ-002 — ressalvas fixas no bloco", () => {
     expect(blocoDoTeste(um)).not.toContain(NOTA_CONJUNTOS);
   });
 
+  it("TEST-002: a nota conta CONJUNTOS, não anúncios — 1 conjunto e 2 anúncios: ausente; 2 conjuntos e 1 anúncio: presente", () => {
+    const html = (conjuntos: string[], anuncios: string[]) =>
+      blocoDoTeste(
+        htmlComTeste(
+          computeTesteDeLp(
+            entrada([
+              { id: "a", nome: VID("lpa"), conjuntos, anuncios, dias: dias(1, 3) },
+              { id: "g", nome: VID("lpg"), conjuntos, anuncios, dias: dias(1, 3) },
+            ]),
+          ),
+        ),
+      );
+    const umConjunto = html(["01_QUENTE"], ["adv01", "adv02"]);
+    expect(umConjunto).toContain('data-par-de-lp="LPA×LPG"');
+    expect(umConjunto).not.toContain(NOTA_CONJUNTOS);
+    const umAnuncio = html(["01_QUENTE", "02_LISTAS"], ["adv01"]);
+    expect(umAnuncio).toContain('data-par-de-lp="LPA×LPG"');
+    expect(umAnuncio).toContain(NOTA_CONJUNTOS);
+  });
+
   it("várias comparações: em cada par de uma assinatura com 3+ LPs; ausente com 2", async () => {
     const tres = computeTesteDeLp(
       entrada([
