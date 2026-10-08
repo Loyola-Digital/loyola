@@ -1,0 +1,78 @@
+schema: 1
+storyId: '49.20'
+story: '49.20'
+story_title: 'Público no Debriefing — recompra por origem e pesquisa atual × anterior por pergunta'
+verdict: PASS
+gate: PASS
+status_reason: 'Os ACs 1–4 estão atendidos e fiéis à R11-2. A comparação por pergunta aparece no resumo (final e parcial) e na seção 12 da parcial, e não aparece na seção 12 do final. Isso está provado por SHA (a seção 12 do final é idêntica à da base) e por mutação nos dois sentidos. A recompra fecha com o cross-launch, não conta ninguém duas vezes, não perde comprador e não traz PII. O SHA do HTML inteiro foi reproduzido nos 6 cenários contra uma base independente. Mutações: 54/54 do @dev e 10/11 do QA morreram. Fica 1 issue low.'
+reviewer: 'Quinn'
+updated: '2026-10-08T01:44:00-03:00'
+branch: 'feat/49.20-publico'
+commit_reviewed: '05f324b2 (código) e 4d248aa2 (story)'
+base: 'Empilhada na 49.18 @ a1d8d121 (que está sobre a 49.17 @ c0a63eb4, PR #1001). Revisão por `git diff a1d8d121...HEAD`. `git fetch` no início e no fim (01:43): origin/main continua em 4e9e9843 e a 49.17 em c0a63eb4. Não toquei no wt-49.19.'
+
+issues:
+  - id: TEST-001
+    severity: low
+    category: tests
+    description: 'A mutação P5 do QA sobrevive (954/954): ela apaga do documento a frase "Mostrando as 12 respostas de maior % entre os dois lados; N outra(s) ficam fora da tabela" (`debriefing-render.ts`, `q.respostasForaDaTabela > 0`). O código declara o corte do teto, e por isso a decisão 2 do @dev NÃO esconde dado em silêncio. Mas a declaração não está presa: o teste do teto (N27) confere o payload, não o documento. Se a frase sumir num refactor, o corte passa a ser silencioso.'
+    recommendation: 'O rascunho do QA em `scratchpad/qa-rascunho-teste-4920.ts` (um teste de `blocoDaPesquisaPorPergunta` com `respostasForaDaTabela = 3`) passa sem mutação e derruba a P5. Foi provado na worktree e removido. Não bloqueia.'
+    owner: '@dev'
+    status: open
+
+  - id: PERG-PG05-SEM-PERGUNTAS
+    severity: low
+    category: requirements
+    description: 'Pergunta do @dev ao @po, só registrada: a pesquisa da "Captação Paga" do PG05 está mapeada sem nenhuma pergunta (`funnel_surveys.column_mapping.questions = []`). Por isso, no PG05 a comparação por pergunta mostra só o lado do PG04, com a nota "pergunta não confirmada". O código está correto: mostra só o lado que existe e diz o motivo. Para comparar de verdade, alguém precisa mapear e confirmar as perguntas.'
+    owner: '@po'
+    status: pending
+
+  - id: P-23
+    severity: low
+    category: requirements
+    description: 'Continua aberta: o ADV+ aparece na recompra e na mídia por anúncio, mas não na Tabela 1. A origem "E-mail" do método não existe no classificador e não foi inventada (R1 da story).'
+    owner: 'dono'
+    status: pending
+
+  - id: DOC-001
+    severity: low
+    category: documentation
+    description: 'Validação visual do dono pendente (DoD).'
+    owner: 'Danilo'
+    status: pending
+
+top_issues:
+  - id: TEST-001
+    severity: low
+    finding: 'A frase que declara as respostas além do teto (12) não está presa por teste (P5 sobrevive).'
+    suggested_action: 'O teste do rascunho do QA, já provado.'
+  - id: PERG-PG05-SEM-PERGUNTAS
+    severity: low
+    finding: 'A pesquisa do PG05 está mapeada sem perguntas: a comparação só mostra o PG04.'
+    suggested_action: '@po / quem configura mapeia e confirma as perguntas.'
+
+waiver: { active: false }
+
+decisoes_do_dev:
+  duas_colunas: 'ACEITO. "% de cada origem" vira "% da origem" (já na base ÷ compradores da origem, a mesma leitura do "pago da casa" do AC) e "% da recompra" (a parte da origem entre os que já estavam na base, somando 100%). O AC não fixa o denominador, e mostrar os dois não inventa número. O total do "% da origem" é o próprio `jaEmBaseAnterior.captacao`.'
+  pesquisa_sem_delta_e_teto_12: 'ACEITO. Sem Δ: o AC2 pede as respostas lado a lado, e os dois % estão na tabela. Um Δ seria número novo sem pedido. O teto de 12 é o mesmo da Qualificação e NÃO esconde dado em silêncio: as respostas de fora são contadas e a contagem aparece no documento. Resposta ausente num lado sai "—", nunca 0% (a P4, que vira 0%, morre). Ressalva: a frase do teto não tem teste (TEST-001).'
+  sem_origem_email: 'ACEITO. O classificador único (49.2) não tem o canal E-mail. Inventá-lo contrariaria a decisão de um classificador só e a R1. Isso continua na P-23.'
+
+checks:
+  r11_2: 'Provado nos dois sentidos. (1) SHA por título, base independente (`git archive a1d8d121` mais a fixture) × story: no final, só "Cross-launch & Listas" difere e a "Qualificação" é IDÊNTICA nos 3 cenários finais; na parcial, difere também a "Qualificação" (o bloco). (2) Mutações: P1 (a seção 12 do final com comparação passa a mostrar a pesquisa) morre com 4 falhas; P2 (a seção 12 da parcial só com comparação) morre com 5; P3 (o resumo do final sem a pesquisa) morre com 8. As N36 e N37 do @dev também morrem. O bloco do resumo vale no final e no parcial; a seção 12 só traz o bloco quando `parcial`. A descrição da seção 12 (R6-6) não mudou.'
+  recompra: 'Regra de casamento: `naBase = compradores.filter(casa(c, baseEmails, baseTelefones))` é a MESMA variável que alimenta o numerador de `jaEmBaseAnterior.captacao` e `compradoresNaBaseAnterior`. A N21 do @dev (casamento só por e-mail) e a C2 do QA (uma chave a menos) morrem. Sem dupla contagem: cada comprador do Motor I entra em UMA origem, e a soma de `naBase` é igual a `total.naBase`, que é igual ao tamanho do conjunto (sonda do QA nos 6 cenários: soma de naBase 5 = total 5; soma de compradores = ingressosUnicos). Comprador sem origem não some: todo comprador tem um canal e o canal fora da união lança erro. A C1 (tirar o "Sem track real" na composição) morre com 9 falhas. Chave da base que o Motor I não conhece dá `aplicavel = false` com `CHAVES_DIFERENTES_ENTRE_OS_MOTORES`, nunca número errado. A guarda F3 já exige o critério headline porEmail e as mesmas chaves nos dois motores.'
+  pii: 'As chaves de `crossLaunch.compradoresNaBaseAnterior` saem de `chavesDeComprador` (`e:`/`t:`/`a:` + sha256). Na sonda do QA, nos 6 cenários: 0 chave fora do formato `^[eta]:[0-9a-f]{64}$` e 0 "@" nos campos novos (recompra, chaves, pesquisa, frioAdv). As respostas da pesquisa são agregadas (n e %).'
+  listas: 'A `LISTAS_FRONT_COMUNIDADE` continua no payload e na seção 11. O bloco da recompra diz que as listas não entram. A L1 do QA (a lacuna some da seção 11) morre com 17 falhas.'
+  payload_antigo: 'Comparação com relatório salvo antes da 49.20: a recompra da comparação sai "—" com nota ("não calculada — o payload é anterior à Story 49.20"), e a N16 do @dev (vira zerada) morre. A pesquisa usa `dimensoes`, `taxaDeResposta` e `dimensoesNaoConfirmadas`, que o payload antigo já tem. A parcial com comparação só salva fica sem comparação por pergunta e diz o motivo.'
+  ac3_sha: 'O QA montou uma base independente (`git archive a1d8d121` mais a fixture `debriefing-publico-49-20.ts`). A cópia `base-4920/` do @dev é idêntica a ela (`diff -rq`). O QA rodou o `ac3-4920.mts` do @dev nas duas árvores: nos 6 cenários, o HTML inteiro sem os acréscimos e o payload sem os 4 campos novos têm o MESMO SHA, e os 6 pares batem com `SHA_DA_BASE` do teste. O `tirarDivs` corta pelo aninhamento de `<div>`, e a igualdade de SHA prova que o corte é exato.'
+  unit_tests: 'Suítes de debriefing e post-do-criativo da API: 31 arquivos, 966/966. As 54 mutações do @dev, reexecutadas (`qa-rerun-mut-4920.py`), morrem todas. Mutações do QA (`scratchpad/qa-mutar-4920.py`, contra as suítes de debriefing inteiras, cada uma restaurada, `git status` limpo): 10 de 11 morrem. As que morrem: P1, P2, P3 (R11-2); P4 (ausência vira 0%); P6 (a lacuna da faixa da comparação some); C1 (composição: Sem track some); C2 (Motor II: chave a menos); C3 (render: recompra só na parcial, contra a R11-0g); L1 (lacuna das listas); D1 (ADV+ volta ao frio). Sobrevive a P5 (TEST-001). As listas: as 10 origens e as 4 pagas são fixadas por `toEqual`, e cada origem tem o seu caso (`it.each` das 10 com a lista das pagas). Um filtro que tirasse uma origem lançaria o erro "canal fora da união".'
+  no_regressions: 'API: `node_modules/.bin/tsc --noEmit -p packages/api` com exit 0; `eslint src/` com 0 erros e 1 warning já existente. A suíte inteira da API deu 4.715 passando e 10 falhas, as 10 pré-existentes conhecidas. Web: `next build` exit 0, depois `tsc --noEmit -p .` exit 0, `next lint` limpo, debriefing 95/95. O web e o shared não mudam.'
+  caso_real_pg05: 'Conferido no registro (`ac1-4920-prod.mts`/`.out`; sondas `sql-4920.mts` e `sql2-4920.mts`), sem rodar de novo. As 3 conexões de produção abrem com `default_transaction_read_only=on`, e o `.out` traz `"sessao_read_only": "on"`. O `calcularPayloadDebriefing` não grava. A saída só tem agregados, sem nenhum "@" no `.out`. As premissas estão rotuladas como simulação. Números: 54 de 215 (25,1%) já na base do PG04; pago da casa 26/108 (24,1%); Frio ADV+ 21 compradores.'
+  contrato: 'Campos aditivos e opcionais. `DEBRIEFING_PAYLOAD_VERSAO` fica 1 e `API_CONTRACT_VERSION` fica 36: a rota não muda, a mesma regra ratificada na 49.12, 49.17 e 49.18. Nenhuma lacuna nova em `lacunas[]` (a seção 17 continua congelada).'
+
+notes:
+  - '[AUTO-DECISION] PASS ou CONCERNS? → PASS (razão: os ACs estão atendidos e a R11-2 está provada por SHA e por mutação nos dois sentidos; a recompra está correta e sem PII; a única sobrevivente é a frase do teto, low, e o código a declara).'
+  - '[AUTO-DECISION] O teto de 12 respostas esconde dado em silêncio? → Não: o documento declara quantas respostas ficaram fora. Falta só prender isso por teste (TEST-001).'
+  - 'A pergunta do PG05 (`questions: []`) fica registrada para o @po, sem decisão do QA.'
+  - 'CodeRabbit não executado (CLI ausente no macOS). Revisão manual, SHAs e mutações.'
+  - 'Próximo: @devops *push (PR empilhada na 49.18/49.17, ou rebase depois dos merges).'
