@@ -95,6 +95,7 @@ const CONTEUDO: Readonly<Record<string, string>> = {
   "c7@x.com": AD_B,
   "c8@x.com": AD_FORA,
   "c9@x.com": AD_B,
+  "c10@x.com": AD_B,
 };
 
 const venda = (linha: number, emailCru: string, over: Partial<VendaCruaInput> = {}): VendaCruaInput => ({
@@ -115,8 +116,24 @@ const venda = (linha: number, emailCru: string, over: Partial<VendaCruaInput> = 
   ...over,
 });
 
+/**
+ * QA 49.18 (TEST-001, E10) — identidade UNIDA: o c10 compra o ingresso (pelo
+ * anúncio B) com e-mail e telefone; o order bump vem noutro registro, com OUTRO
+ * e-mail e o MESMO telefone. Pelo critério headline (e-mail) são duas pessoas e
+ * o bump é avulso; pela união e-mail ∪ telefone seriam uma. Fora do cenário
+ * padrão (não muda os SHA do AC8): só com `identidadeUnida`.
+ */
+export const VENDAS_DE_IDENTIDADE_UNIDA: readonly VendaCruaInput[] = [
+  venda(106, "c10@x.com", { telefoneCru: "11955554444" }),
+  venda(107, "c10.outro@x.com", { telefoneCru: "5511955554444", produto: "Bump Extra", tipo: "order_bump", valorBrutoCru: "47,00" }),
+];
+
 /** Entrada do Motor I com as vendas extras (c6…c9); `lado = "comparacao"` tira c7 e c9 e dobra a mídia. */
-export function entradaMtMidia(config: DebriefingConfigLancamento, lado: "atual" | "comparacao" = "atual"): DebriefingMoneyTimeInput {
+export function entradaMtMidia(
+  config: DebriefingConfigLancamento,
+  lado: "atual" | "comparacao" = "atual",
+  opts: { identidadeUnida?: boolean } = {},
+): DebriefingMoneyTimeInput {
   const base = entradaMoneyTimeSintetica();
   const extras = [
     venda(101, "c6@x.com", { produto: "Combo", tipo: "combo", valorBrutoCru: "297,00", dataVendaCru: "21/04/2026" }),
@@ -127,6 +144,7 @@ export function entradaMtMidia(config: DebriefingConfigLancamento, lado: "atual"
     // O c1 também leva o order bump, numa linha com o utm_content de OUTRO anúncio (o B): o
     // comprador é do anúncio da linha de ingresso (A1) e o faturamento dele soma as duas linhas.
     venda(105, "c1@x.com", { idDaVendaCru: "M105", produto: "Bump Extra", tipo: "order_bump", valorBrutoCru: "47,00" }),
+    ...(opts.identidadeUnida ? VENDAS_DE_IDENTIDADE_UNIDA : []),
   ].filter((v) => lado === "atual" || (v.emailCru !== "c7@x.com" && v.emailCru !== "c9@x.com"));
   return { ...base, config: configDoMotor(config), vendas: [...base.vendas, ...extras] };
 }
@@ -146,10 +164,10 @@ export type TextosDaFixture = Record<string, { title: string | null; body: strin
 /** Payload pelos motores reais, com o ad-level cortado na janela (o que o loader faz por SQL). */
 export function payloadMidia(
   config: DebriefingConfigLancamento,
-  opts: { lado?: "atual" | "comparacao"; geradoEm?: Date | string; semAdLevel?: boolean; textos?: TextosDaFixture } = {},
+  opts: { lado?: "atual" | "comparacao"; geradoEm?: Date | string; semAdLevel?: boolean; textos?: TextosDaFixture; identidadeUnida?: boolean } = {},
 ): DebriefingPayload {
   const lado = opts.lado ?? "atual";
-  const mtIn = entradaMtMidia(config, lado);
+  const mtIn = entradaMtMidia(config, lado, { identidadeUnida: opts.identidadeUnida === true });
   const mt = computeDebriefingMoneyTime(mtIn);
   const au0 = entradaAudienceSintetica(mtIn);
   const j = mt.janela;

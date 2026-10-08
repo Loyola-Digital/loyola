@@ -14,6 +14,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { classificarOrigem } from "@loyola-x/shared";
 import {
+  PUBLICOS_DA_MIDIA,
   TERMOS_DE_ESCASSEZ,
   computeMidiaPorAnuncio,
   copyDosAnuncios,
@@ -635,5 +636,53 @@ describe("AC9 — chamadores", () => {
     expect(au.midiaPorAnuncio!.ranking.map((r) => r.nome)).toEqual(["nome do cache"]);
     expect(au.midiaPorAnuncio!.investimentoTotal).toBeCloseTo(100 * FATOR, 9);
     expect(au.midiaPorAnuncio!.ranking[0]!.compradores).toBe(1); // c1 → AD_A1
+  });
+});
+
+// ---------------------------------------------------------------------------
+// QA 49.18 TEST-001 — um teste por item das listas e o chamador do Motor II
+// ---------------------------------------------------------------------------
+
+describe("QA TEST-001 — itens das listas de público e a chave do comprador no chamador", () => {
+  it("E14: só cold-adv dentro do frio é ADV+; \"adv\" fora do frio não", () => {
+    expect(publicoDaCampanha("x--vendas-captacao--hot-adv--cbo")).toBe("Quente");
+    expect(publicoDaCampanha("x--vendas-captacao--adv--cbo")).toBe("Indefinido");
+    expect(publicoDaCampanha("adv02--ia--x--vendas-captacao--cold--cbo")).toBe("Frio");
+  });
+
+  it("E8: a tabela por público tem as 4 linhas, e a do Indefinido leva o investimento dela", () => {
+    const l = (adId: string, campaignName: string, inv: number): AnuncioDiaDaMidia => ({
+      adId,
+      nome: `n-${adId}`,
+      campaignName,
+      dia: "2026-04-20",
+      investimentoComImposto: inv,
+      linkClicks: 10,
+      landingPageViews: 5,
+    });
+    const m = computeMidiaPorAnuncio({
+      anuncios: [l("1200000000001", "x--vendas-captacao--hot--cbo", 30), l("1200000000002", "x--vendas-captacao--cbo", 70)],
+      compradores: [],
+      vendasComConteudo: true,
+      postsDosAnuncios: {},
+      linkAdsManagerDe: () => null,
+    });
+    expect([...PUBLICOS_DA_MIDIA]).toEqual(["Quente", "Frio", "Frio ADV+", "Indefinido"]);
+    expect(m.publicos.map((x) => x.publico)).toEqual(["Quente", "Frio", "Frio ADV+", "Indefinido"]);
+    expect(m.publicos.find((x) => x.publico === "Indefinido")!.investimentoComImposto).toBe(70);
+    expect(m.publicos.reduce((s, x) => s + x.investimentoComImposto, 0)).toBe(100);
+  });
+
+  it("E10: identidade unida (bump com outro e-mail e o mesmo telefone) — o comprador é o do critério headline (e-mail), e o ROAS sai", () => {
+    const p = final({ identidadeUnida: true });
+    const m = midia(p);
+    const b = linha(m, NOME_B);
+    // c7 + c9 + c10 pelo anúncio B; o bump do outro e-mail é avulso (como no Motor I) e não soma.
+    expect(b.compradores).toBe(3);
+    expect(b.faturamento).toBe(99 * 3);
+    expect(b.roas.motivo).toBeUndefined();
+    expect(b.roas.valor).toBeCloseTo(297 / (120 * FATOR), 9);
+    expect(b.tierSuperior.valor).toBe(0);
+    expect(m.atribuicao.compradores).toBe(p.dinheiroTempo.ingressosUnicos);
   });
 });
