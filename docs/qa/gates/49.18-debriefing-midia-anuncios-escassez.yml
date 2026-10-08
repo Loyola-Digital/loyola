@@ -1,0 +1,89 @@
+schema: 1
+storyId: '49.18'
+story: '49.18'
+story_title: 'Mídia por anúncio no Debriefing — ranking com CPA/ROAS/compra por visita, estático × vídeo, peças de escassez e copy igual'
+scope_do_gate: 'AC1 e AC3–AC9. O AC2 (melhor versão isolada) está PENDENTE da P-22 do dono e não é defeito.'
+verdict: PASS
+gate: PASS
+status_reason: 'Os ACs 1 e 3–9 estão atendidos e seguem o método (passos 3–5) e a rodada 11 (R11-0g e R11-5). O SHA do HTML inteiro, sem o bloco, e o do payload, sem o campo novo, foram reproduzidos nos 7 cenários contra uma base independente em c0a63eb4. Das 36 mutações do @dev morrem 36; das 16 do QA, 13. As 3 que sobrevivem são lacunas de fixture de severidade baixa. A atribuição sem Ad ID está declarada no documento.'
+reviewer: 'Quinn'
+updated: '2026-10-08T00:31:00-03:00'
+branch: 'feat/49.18-midia-anuncios'
+commit_reviewed: 'd0c9f031 (código) e 58888660 (story)'
+base: 'Empilhada na 49.17 @ c0a63eb4 (PR #1001, aberta). A revisão foi feita com `git diff c0a63eb4...HEAD`. `git fetch` no início e no fim (00:30): origin/main continua em 4e9e9843 e a branch da 49.17 continua em c0a63eb4, então nada andou. Depois do merge da 49.17, esta branch precisa de rebase.'
+
+issues:
+  - id: TEST-001
+    severity: low
+    category: tests
+    description: 'Três mutações não equivalentes sobrevivem às 30 suítes de debriefing (884/884). (E8) Tirar "Indefinido" de `PUBLICOS_DA_MIDIA`: a linha some da tabela por público e o investimento das campanhas sem temperatura deixa de aparecer. Nenhum teste fixa a lista e a fixture não tem campanha sem temperatura (é a lição do TEST-002 da 49.17: um teste por item). (E14) Trocar a regra do ADV+ para qualquer "adv" no nome da campanha, mesmo fora do frio: nenhum teste prende a fronteira (`hot-adv`, `--adv--`). (E10) No chamador do Motor II, `compradoresDaMidia(…, chaves.porEmailOuTelefone)` no lugar de `chaves.porEmail`: a fixture não tem comprador com identidade unida (dois e-mails com o mesmo telefone, ou linha sem e-mail). Por isso as chaves dos dois critérios coincidem e a troca não aparece. Em dado real com uniões, o faturamento desse comprador viraria `null`, e o ROAS do grupo e do total sairia "—" com o motivo errado (SEM_VALOR_DA_VENDA). O Motor I da 49.17 tem o critério configurável, então a troca é uma refatoração plausível.'
+    recommendation: 'Rascunho do QA em `scratchpad/qa-rascunho-teste-4918.ts`. Ele derruba E8 e E14 e passa sem mutação; foi provado na worktree e removido. Para a E10: na fixture, um comprador de captação com dois e-mails que dividem o telefone, conferindo o faturamento e o ROAS da linha dele. Nada disso bloqueia.'
+    owner: '@dev'
+    status: open
+
+  - id: REQ-001
+    severity: low
+    category: requirements
+    description: 'Atribuição sem Ad ID. No PG05, 111 dos 215 compradores (52%) não têm Ad ID no utm_content. O caso NÃO some em silêncio: `atribuicao.memoria` ("compradores de captação 215 = no ranking 90 + peças de escassez 14 + ad_id fora do ad-level 0 + sem ad_id no utm_content 111") sai na nota do ranking. A mutação E6, que apaga essa conta do documento, morre. O `utmContentEfetivo` já lê o `co=` em JSON (`{"co":…}`), então os 111 não vêm de formato mal lido: são compradores sem Ad ID (orgânico, `co=org`, ou sem rastreio). Duas ressalvas de leitura. (1) A informação está numa nota de rodapé, não em destaque. (2) O documento não diz que o CPA e o ROAS por anúncio cobrem só os compradores atribuídos. No PG05, o CPA do 1º nome (R$ 108) fica muito acima do CAC do resumo da 49.17 (R$ 46), e quem lê os dois blocos pode estranhar a diferença.'
+    recommendation: 'Story futura ou ajuste do @po: quando a parcela sem Ad ID for relevante, um aviso visível no bloco (por exemplo "52% dos compradores não têm Ad ID na UTM — o CPA por anúncio cobre só os atribuídos e não se compara com o CAC do resumo"), separando, se possível, orgânico × sem rastreio. Fica fora desta story e não bloqueia.'
+    owner: '@po'
+    status: open
+
+  - id: PEND-AC2
+    severity: low
+    category: requirements
+    description: 'PENDENTE, não é defeito: o AC2 (melhor versão isolada, ad_id + conjunto) espera a P-22, que define o critério de "melhor" e a amostra mínima. O @dev não escolheu critério e deixou registrado o caminho (carregar `adset_id/adset_name` no loader).'
+    owner: 'dono → @dev'
+    status: pending
+
+  - id: PERG-FALTA-1-DIA
+    severity: low
+    category: requirements
+    description: 'Registrado sem decisão do QA. A peça do PG05 `ad02-dg-pg05-out26--lote-promo--falta-1-dia` usa "falta" no singular, que não está entre os termos do dono ("faltam", "último dia", "últimas horas"). Por isso ela FICA no ranking (R$ 99 e 0 compradores até 07/10). O teste fixa o comportamento atual. A pergunta é do dono, via @po.'
+    owner: 'dono via @po'
+    status: pending
+
+  - id: DOC-001
+    severity: low
+    category: documentation
+    description: 'Validação visual do dono pendente (DoD).'
+    owner: 'Danilo'
+    status: pending
+
+top_issues:
+  - id: TEST-001
+    severity: low
+    finding: 'E8 (sem "Indefinido"), E14 (ADV+ fora do frio) e E10 (chave do faturamento no chamador do Motor II) sobrevivem por falta de fixture.'
+    suggested_action: 'Rascunho do QA, que derruba E8 e E14, e um comprador com identidade unida na fixture para a E10.'
+  - id: REQ-001
+    severity: low
+    finding: 'Os 52% de compradores sem Ad ID estão declarados só na nota de rodapé do ranking, e o CPA por anúncio não se compara com o CAC.'
+    suggested_action: 'Aviso visível numa story futura, se o @po quiser.'
+  - id: PEND-AC2
+    severity: low
+    finding: 'O AC2 espera a P-22.'
+    suggested_action: 'Gate próprio depois da resposta.'
+
+waiver: { active: false }
+
+decisoes_do_dev:
+  separador_como_espaco: 'ACEITO. O hífen, o underline, o ponto, o pipe e a barra viram espaço, e o termo casa como palavra inteira. Nenhum termo novo entra: são os 3 do dono. A regra R11-5 ("só no nome do anuncio") continua inteira, e a mudança é só de comparação, como já era com maiúsculas e acentos. A palavra inteira evita falso positivo (`faltamento` e `ultimo-diario` ficam fora; a E3, casamento por substring, morre). Sem a normalização, 2 das 5 peças reais do PG05 sumiriam.'
+  tabela_por_publico: 'ACEITO. O AC4 manda separar o ADV+ "nas análises desta story", e a tabela "Por público" e a coluna "Público" do ranking são exatamente isso. O classificador compartilhado e a Tabela 1 não mudam: um teste verifica que `classificarOrigem` não conhece ADV+. A P-23 (ADV+ na Tabela 1 do Debriefing) segue aberta.'
+  demais: 'Concordo com os outros AUTO-DECISIONs: ranking ordenado por investimento (não escolhe "melhor" antes da P-22); % da verba sobre o ad-level (difere R$ 0,06 do Motor I no PG05, e a diferença está declarada); comprador ancorado no ingresso/combo; numerador da compra por visita só com Ad IDs que têm a medida; escassez fora só do ranking (com nota nas outras tabelas); nenhuma lacuna nova em `lacunas[]` (o bloco escreve a dele, e isso mantém a seção 17 congelada); `API_CONTRACT_VERSION` em 36 e `DEBRIEFING_PAYLOAD_VERSAO` em 1 (campo aditivo e opcional, a mesma regra ratificada na 49.12 e na 49.17).'
+
+checks:
+  fidelidade_ao_metodo: 'Passo 3: o investimento usa o imposto do Loyola por dia (R11-0c), e testes pré-lançamento ficam com a 49.17. Passo 4: o comprador é atribuído pelo `co=` (Ad ID) do utm_content, somado por nome de anúncio, com o público vindo do nome da campanha e `cold-adv` separado. Passo 5: o formato sai do nome da campanha, independente da dimensão da config; a conversão do clique é compradores ÷ link_click; o ranking traz investimento, compradores, CPA, ROAS, tier e compra por visita; as peças de escassez saem pelo nome, por dia de veiculação, só de ingresso; a copy compara title e body. R11-0g: vale no parcial e no final. R11-5: a escassez sai só pelo nome do anúncio, com os termos do método.'
+  acceptance_criteria: 'AC1 ✓: soma por nome (M2 morre), "—" com motivo sem landing_page_view (M3 no motor e E13 no loader morrem). CTR e CPC não aparecem; a conversão do clique usa link_click. AC3 ✓: "não identificado" não é descartado (E7 morre). AC4 ✓, com a tabela por público. AC5 ✓: a constante é única, cada termo é testado (E1 e E2 morrem) e a parcela só de ingresso é testada (E15 morre). AC6 ✓: copy igual, diferente, indisponível, um só texto e não lido (E4 e E16 morrem). AC7 ✓: total da comparação no ranking e formatos da comparação, no mesmo D+N na parcial; "—" com nota para payload antigo ou comparação sem ad-level; nota de sem-D+N (E11 e E12 morrem). AC8 ✓ (ver ac8_sha). AC9 ✓: testes que falham com o código de hoje, o orquestrador de ponta a ponta e o render a partir do payload. AC2: pendente.'
+  ac8_sha: 'O QA montou uma base independente (`git archive c0a63eb4`, mais só a fixture nova) e rodou o `ac8-4918.mts` do @dev nas duas árvores. Os 7 cenários dão o MESMO SHA: HTML inteiro sem o bloco (cabeçalho, avisos, banner, resumo macro, as 18 seções, rodapé e `const D`) e payload sem `publico.midiaPorAnuncio`. Os 7 pares de SHA também batem com `SHA_DO_BASE`, gravados no teste. A cópia `base-4918/` do @dev é idêntica a `c0a63eb4` mais a fixture (`diff -rq`). O `semO4918` corta de `<section data-midia-por-anuncio>` até o primeiro `</section>`, e o bloco não tem `<section>` aninhada. A igualdade de SHA prova que o corte é exato.'
+  unit_tests: 'Suítes de debriefing + post-do-criativo da API: 30 arquivos, 896/896. As 36 mutações do @dev, reexecutadas: 36 morrem. Das 16 mutações do QA (`scratchpad/qa-mutar-4918.py`, contra as suítes de debriefing inteiras, cada uma restaurada, com `git status` limpo ao fim), 13 morrem: E1 e E2 (cada termo), E3 (substring), E4 (um só texto), E5 (balde da atribuição), E6 (conta da atribuição some do documento), E7 ("não identificado"), E9 (chamador: `vendasComConteudo` sempre true), E11 (render sem a comparação), E12 (render sem a nota de sem-D+N), E13 (loader: `landing_page_view` ausente vira 0), E15 (só ingresso) e E16 (copy só pelo title). Sobrevivem E8, E10 e E14 (TEST-001).'
+  no_regressions: 'API: `node_modules/.bin/tsc --noEmit -p packages/api` com exit 0; `eslint src/` com 0 erros e 1 warning que já existia. A suíte inteira da API dá 4.645 passando e 10 falhas, as 10 pré-existentes conhecidas (funnel-stages-lead-inputs 3, instagram-routes 1, instagram 1, projects 3, schema 2). Web: `next build` exit 0, depois `tsc --noEmit -p .` exit 0, `next lint` limpo e debriefing 95/95. O web e o shared não mudam.'
+  caso_real_pg05: 'Conferido no registro (`prod-4918.mts`/`.out`), sem rodar de novo. A sessão saiu com `default_transaction_read_only=on`, e o `.out` traz `"sessao_read_only": "on"`. O `gravar` é no-op e devolve `"nao-gravado"`. A saída só tem agregados: nomes de anúncio, contagens e valores, e nenhum "@" no `.out`. A config foi simulada e rotulada como simulada. Os números estão no Dev Agent Record, inclusive a medição do R1: 146 de 146 Ad IDs com texto, uma só copy.'
+  security: 'Os nomes e os links passam por `esc()`, e os links abrem com `noopener noreferrer`. O payload ganhou só Ad IDs, nomes de anúncio e números, sem PII. Nenhuma rota nova.'
+  contrato: 'Sem rota nova, sem mudança de forma e sem migration. O campo é aditivo e opcional, o payload antigo mostra "não calculada" e a comparação antiga sai com "—" e nota.'
+
+notes:
+  - '[AUTO-DECISION] PASS ou CONCERNS? → PASS (razão: os ACs do escopo foram atendidos e reproduzidos, com o SHA do HTML inteiro provado contra uma base independente; as 3 mutações sobreviventes são lacunas de fixture de severidade baixa, com rascunho pronto; o chamador do Motor II está preso por M15–M23 e E9, e a E10 depende de dado de identidade unida que a fixture não tem).'
+  - '[AUTO-DECISION] Os 111 sem Ad ID somem em silêncio? → Não: estão na nota do ranking (a E6 morre). Falta destaque e a ressalva sobre o CPA (REQ-001, low).'
+  - 'A pergunta da `falta-1-dia` fica registrada para o dono, sem decisão do QA.'
+  - 'CodeRabbit não executado (CLI ausente no macOS). No lugar: revisão manual, SHAs e mutações.'
+  - 'Próximo: @devops *push / PR empilhada (ou depois do merge da 49.17, com rebase).'
