@@ -287,6 +287,36 @@ export interface DebriefingMoneyTimeInput {
    * Ausente = chamador anterior à 49.17: a contagem não é feita (payload sem `leads`).
    */
   leadsDeCadastro?: LeadsDeCadastroInput;
+  /**
+   * Story 49.17 fatia C (AC5, R11-1 opção B + R12-2) — mídia das campanhas
+   * vinculadas às etapas de CAPTAÇÃO do lançamento, de dias ANTES do início da
+   * captação, que o loader leu porque o nome tem a fase `vendas-captacao` e o
+   * código do lançamento. O motor confere a mesma regra
+   * (`ehCampanhaDeTestePreLancamento`). Ausente (ou sem linhas) = sem testes
+   * pré-lançamento: nada muda.
+   */
+  midiaPreLancamento?: MidiaPreLancamentoInput;
+  /**
+   * QA 49.17 fatia C (REL-001) — o código do lançamento veio do NOME do funil
+   * (sem `match_code`) e nenhuma campanha das etapas de captação o tem no nome:
+   * o loader o passa aqui e o motor grava a pendência
+   * `CODIGO_DO_LANCAMENTO_SEM_CAMPANHA` (os testes pré-lançamento não casam;
+   * nunca em silêncio). Ausente = o código casa ou foi cadastrado.
+   */
+  codigoDoLancamentoSemCampanha?: CodigoDoLancamento;
+}
+
+/** Story 49.17 fatia C — o código do lançamento que a campanha de teste precisa ter no nome (R12-2). */
+export interface CodigoDoLancamento {
+  /** Minúsculo, aparado (ex.: `dg-pg05`). */
+  codigo: string;
+  /** `match_code` = o código cadastrado no funil; `nome-do-funil` = o nome do funil (sem código cadastrado). */
+  origem: "match_code" | "nome-do-funil";
+}
+
+export interface MidiaPreLancamentoInput {
+  codigo: CodigoDoLancamento;
+  linhas: readonly MidiaCampanhaDiaInput[];
 }
 
 /** Story 49.17 — uma planilha de leads de cadastro lida pelo loader. */
@@ -381,6 +411,36 @@ export interface PontoDaCurvaAcumulada {
   investimento: number;
 }
 
+/** Story 49.17 fatia C (AC5) — uma campanha de teste pré-lançamento. */
+export interface CampanhaDeTestePreLancamento {
+  campaignId: string;
+  campaignName: string;
+  stageId: string;
+  /** Primeiro e último dia com linha de mídia antes do início da captação. */
+  inicio: string;
+  fim: string;
+  investimentoBruto: number;
+  investimentoComImposto: number;
+}
+
+/**
+ * Story 49.17 fatia C (AC5, R11-1 opção B + R12-2) — testes pré-lançamento:
+ * campanhas `vendas-captacao` de uma etapa de captação, com o código do
+ * lançamento no nome, com investimento antes do início da captação. O
+ * investimento ENTRA no de captação e no total (logo no CAC e no ROAS) e é
+ * mostrado à parte. Ausente = sem testes (o payload de antes).
+ */
+export interface TestesPreLancamento {
+  codigoDoLancamento: CodigoDoLancamento;
+  campanhas: CampanhaDeTestePreLancamento[];
+  investimentoBruto: number;
+  investimentoComImposto: number;
+  periodo: { inicio: string; fim: string };
+  /** Vendas de captação (status pago, deduplicadas) com `utm_campaign` = uma das campanhas; `naJanela` = as que entram na conta. */
+  vendasAtribuidas: { vendas: number; faturamento: number; naJanela: number };
+  memoria: string;
+}
+
 export interface CurvaAcumulada {
   aplicavel: boolean;
   motivo?: string;
@@ -400,7 +460,8 @@ export interface Pendencia {
     | "CAMPANHA_SEM_PUBLICO"
     | "MIDIA_DE_ETAPA_FORA_DA_CONFIG"
     | "VENDA_DE_ETAPA_FORA_DA_CONFIG"
-    | "TIPO_INESPERADO_NA_CAPTACAO";
+    | "TIPO_INESPERADO_NA_CAPTACAO"
+    | "CODIGO_DO_LANCAMENTO_SEM_CAMPANHA";
   detalhe: string;
   stageId?: string;
   campaignId?: string;
@@ -798,6 +859,8 @@ export interface DebriefingMoneyTime {
   leads?: LeadsDaCaptacao;
   /** AC6 — curva acumulada D+0…D+x de compradores e faturamento da captação. */
   curvaAcumulada?: CurvaAcumulada;
+  /** Fatia C (AC5) — testes pré-lançamento, quando há. Ausente = nenhum. */
+  testesPreLancamento?: TestesPreLancamento;
 
   // ---- ROAS diário ----
   roasDiarioCaptacao: DiaDoRoasCaptacao[];
@@ -1376,6 +1439,19 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
     }
     midiaComImposto.push({ ...m, comImposto: aplicarImposto(m.spendBruto, m.dia, pct) });
   }
+  // 49.17 fatia C (AC5): testes pré-lançamento entram na mídia da captação (R11-1 opção B).
+  const linhasDeTeste = linhasDeTestePreLancamento(input.midiaPreLancamento, janela.inicio, grupoDaEtapa);
+  const midiaDaJanelaComImposto = midiaComImposto.slice(); // sem os testes: base do limiar de pico-artefato (@po, REQ-001)
+  for (const m of linhasDeTeste) midiaComImposto.push({ ...m, comImposto: aplicarImposto(m.spendBruto, m.dia, pct) });
+  if (input.codigoDoLancamentoSemCampanha) {
+    const c = input.codigoDoLancamentoSemCampanha;
+    pendencias.push({
+      codigo: "CODIGO_DO_LANCAMENTO_SEM_CAMPANHA",
+      detalhe:
+        `o código do lançamento é o nome do funil ("${c.codigo}"), porque o funil não tem match_code cadastrado, e nenhuma campanha das etapas de captação tem esse código no nome — ` +
+        `testes pré-lançamento, se houver, não foram procurados pelo código certo: conferir o match_code do funil`,
+    });
+  }
   for (const [stageId, n] of midiaForaDaConfig) {
     pendencias.push({
       codigo: "MIDIA_DE_ETAPA_FORA_DA_CONFIG",
@@ -1890,10 +1966,17 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
     d.fatCent += l.centavos;
     d.fatPorEtapaCent[l.stageId] = (d.fatPorEtapaCent[l.stageId] ?? 0) + l.centavos;
   }
-  const diasComGasto = [...diasCap.entries()].filter(([, d]) => d.inv > 0).map(([dia]) => dia).sort();
+  // @po 2026-10-09 (REQ-001 da fatia C): o limiar é só da janela — os dias
+  // D−n dos testes pré-lançamento ficam fora do numerador e do denominador e
+  // nunca são pico-artefato (a série diária, essa sim, começa no D−n pela F12).
+  const invCaptacaoDaJanela =
+    linhasDeTeste.length > 0
+      ? agregarMidia(midiaDaJanelaComImposto.filter((m) => grupoDaEtapa(m.stageId) === "captacao")).investimentoComImposto
+      : invCaptacao;
+  const diasComGasto = [...diasCap.entries()].filter(([dia, d]) => dia >= janela.inicio && d.inv > 0).map(([dia]) => dia).sort();
   const diasDoDenominador =
     diasComGasto.length > 0 ? diasEntre(diasComGasto[0]!, diasComGasto[diasComGasto.length - 1]!) + 1 : 0;
-  const investimentoMedioDiarioCaptacao = diasDoDenominador > 0 ? invCaptacao / diasDoDenominador : null;
+  const investimentoMedioDiarioCaptacao = diasDoDenominador > 0 ? invCaptacaoDaJanela / diasDoDenominador : null;
   const limiar = investimentoMedioDiarioCaptacao !== null ? investimentoMedioDiarioCaptacao * FRACAO_LIMIAR_PICO_ARTEFATO : null;
 
   const roasDiarioCaptacao: DiaDoRoasCaptacao[] = [];
@@ -1913,7 +1996,7 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
         faturamentoPorEtapa: Object.fromEntries(Object.entries(d.fatPorEtapaCent).map(([k, c]) => [k, reais(c)])),
         roas: semGasto ? null : reais(d.fatCent) / d.inv,
         diaSemGasto: semGasto,
-        picoArtefato: !semGasto && limiar !== null && d.inv < limiar,
+        picoArtefato: !semGasto && dia >= janela.inicio && limiar !== null && d.inv < limiar,
       });
     }
   }
@@ -1933,6 +2016,20 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
       .map((l) => ({ dia: l.dia, centavos: l.centavos })),
     midia: midiaComImposto.filter((m) => grupoDaEtapa(m.stageId) === "captacao").map((m) => ({ dia: m.dia, comImposto: m.comImposto })),
   });
+
+  // ===================================================================
+  // 11. Story 49.17 fatia C (AC5) — testes pré-lançamento, à parte
+  // ===================================================================
+  const testesPreLancamento =
+    linhasDeTeste.length > 0 && input.midiaPreLancamento
+      ? resumirTestesPreLancamento(
+          input.midiaPreLancamento.codigo,
+          linhasDeTeste.map((m) => ({ ...m, comImposto: aplicarImposto(m.spendBruto, m.dia, pct) })),
+          mantidas
+            .filter((l) => l.grupo === "captacao")
+            .map((l) => ({ campanha: utmLimpa(l.v.utm)?.campaign ?? null, centavos: l.centavos, naJanela: l.dia !== null && l.dia >= janela.inicio && l.dia <= janela.fim })),
+        )
+      : undefined;
 
   // ===================================================================
   // Montagem
@@ -2013,7 +2110,10 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
         valor: invTotal,
         memoria:
           `captação ${fmtReais(invCaptacao)} + principal ${fmtReais(invPrincipal)} + downsell ${fmtReais(invDownsell)}` +
-          ` = ${fmtReais(invTotal)} (spend cru ÷ (1 − ${fmtPct(pct * 100)}) por dia a partir de 2026-01-01; reabertura fora do headline)`,
+          ` = ${fmtReais(invTotal)} (spend cru ÷ (1 − ${fmtPct(pct * 100)}) por dia a partir de 2026-01-01; reabertura fora do headline)` +
+          (testesPreLancamento
+            ? `; a captação inclui ${fmtReais(testesPreLancamento.investimentoComImposto)} de testes pré-lançamento antes do início (${testesPreLancamento.periodo.inicio} a ${testesPreLancamento.periodo.fim}, R11-1)`
+            : ""),
       },
       linhasForaDoPeriodo: linhasMidiaFora,
     },
@@ -2081,6 +2181,7 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
     cac,
     ...(leads ? { leads } : {}),
     curvaAcumulada,
+    ...(testesPreLancamento ? { testesPreLancamento } : {}),
     roasDiarioCaptacao,
     limiarPicoArtefato: {
       limiarPicoArtefato: limiar,
@@ -2090,7 +2191,7 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
       memoria:
         investimentoMedioDiarioCaptacao === null
           ? "sem dia com investimento de captação — sem limiar"
-          : `investimento de captação c/ imposto ${fmtReais(invCaptacao)} ÷ ${diasDoDenominador} dia(s) de calendário` +
+          : `investimento de captação c/ imposto ${fmtReais(invCaptacaoDaJanela)} ÷ ${diasDoDenominador} dia(s) de calendário` +
             ` (do primeiro ao último com gasto, inclusive) = ${fmtReais(investimentoMedioDiarioCaptacao)}; ` +
             `limiar = ${fmtNumero(FRACAO_LIMIAR_PICO_ARTEFATO * 100, 0)}% = ${fmtReais(limiar!)}`,
     },
@@ -2120,6 +2221,90 @@ function leadsAteOCorte(leads: readonly LeadInput[], corte: string): LeadInput[]
 // ---------------------------------------------------------------------------
 // Story 49.17 — leads únicos (AC4) e curva acumulada (AC6)
 // ---------------------------------------------------------------------------
+
+/**
+ * Story 49.17 fatia C (AC5, R12-2) — a campanha conta como teste pré-lançamento
+ * quando o nome tem a fase `vendas-captacao` (`classificarFase`, a regra do
+ * Resumão) E o código do lançamento (substring, sem diferenciar maiúsculas —
+ * a mesma regra do `matchCode` das campanhas órfãs e do auto-preenchimento de
+ * campanhas da etapa). Sem o código no nome, nunca conta.
+ */
+export function ehCampanhaDeTestePreLancamento(nomeCampanha: string | null | undefined, codigo: CodigoDoLancamento | null | undefined): boolean {
+  const c = (codigo?.codigo ?? "").trim().toLowerCase();
+  if (!c) return false;
+  return classificarFase(nomeCampanha) === "vendas-captacao" && normalizarNome(nomeCampanha).includes(c);
+}
+
+/** As linhas de teste pré-lançamento que valem: a regra do nome, antes do início, de etapa de captação. Pura. */
+function linhasDeTestePreLancamento(
+  e: MidiaPreLancamentoInput | undefined,
+  inicio: string,
+  grupoDaEtapa: (stageId: string) => GrupoDaEtapa | null,
+): MidiaCampanhaDiaInput[] {
+  if (!e) return [];
+  return e.linhas.filter(
+    (m) =>
+      m.dia < inicio &&
+      (m.spendBruto > 0 || m.impressoes > 0) &&
+      grupoDaEtapa(m.stageId) === "captacao" &&
+      ehCampanhaDeTestePreLancamento(m.campaignName, e.codigo),
+  );
+}
+
+/** AC5 — o resumo à parte dos testes pré-lançamento: valor, período, campanhas e vendas atribuídas. Pura. */
+function resumirTestesPreLancamento(
+  codigo: CodigoDoLancamento,
+  linhas: readonly (MidiaCampanhaDiaInput & { comImposto: number })[],
+  vendasDaCaptacao: readonly { campanha: string | null; centavos: number; naJanela: boolean }[],
+): TestesPreLancamento {
+  const porCampanha = new Map<string, CampanhaDeTestePreLancamento>();
+  for (const m of linhas) {
+    const c = porCampanha.get(m.campaignId);
+    if (c) {
+      c.investimentoBruto += m.spendBruto;
+      c.investimentoComImposto += m.comImposto;
+      if (m.dia < c.inicio) c.inicio = m.dia;
+      if (m.dia > c.fim) c.fim = m.dia;
+    } else {
+      porCampanha.set(m.campaignId, {
+        campaignId: m.campaignId,
+        campaignName: m.campaignName,
+        stageId: m.stageId,
+        inicio: m.dia,
+        fim: m.dia,
+        investimentoBruto: m.spendBruto,
+        investimentoComImposto: m.comImposto,
+      });
+    }
+  }
+  const campanhas = [...porCampanha.values()].sort((a, b) => (a.campaignId < b.campaignId ? -1 : a.campaignId > b.campaignId ? 1 : 0));
+  const ids = new Set(campanhas.map((c) => c.campaignId));
+  let vendas = 0;
+  let centavos = 0;
+  let naJanela = 0;
+  for (const v of vendasDaCaptacao) {
+    if (!v.campanha || !ids.has(v.campanha)) continue;
+    vendas += 1;
+    centavos += v.centavos;
+    if (v.naJanela) naJanela += 1;
+  }
+  const investimentoBruto = linhas.reduce((s, m) => s + m.spendBruto, 0);
+  const investimentoComImposto = linhas.reduce((s, m) => s + m.comImposto, 0);
+  const dias = linhas.map((m) => m.dia).sort();
+  const periodo = { inicio: dias[0]!, fim: dias[dias.length - 1]! };
+  return {
+    codigoDoLancamento: { ...codigo },
+    campanhas,
+    investimentoBruto,
+    investimentoComImposto,
+    periodo,
+    vendasAtribuidas: { vendas, faturamento: reais(centavos), naJanela },
+    memoria:
+      `${campanhas.length} campanha(s) vendas-captacao com "${codigo.codigo}" no nome (${codigo.origem === "match_code" ? "código cadastrado no funil" : "nome do funil"}), ` +
+      `de ${periodo.inicio} a ${periodo.fim}, antes do início da captação: ${fmtReais(investimentoComImposto)} c/ imposto (bruto ${fmtReais(investimentoBruto)}) — ` +
+      `entram no investimento de captação e no total (R11-1 opção B); ${fmtInt(vendas)} venda(s) de captação atribuída(s) a elas pela utm_campaign (${fmtReais(reais(centavos))}; ${fmtInt(naJanela)} na janela)`,
+  };
+}
 
 /** R11-4: o e-mail (normalizado) contém "test" — sem diferenciar maiúsculas. */
 export function ehEmailDeTeste(emailCru: string | null | undefined): boolean {
@@ -2255,12 +2440,17 @@ export function montarCurvaAcumulada(e: {
     else centavosNoDia.set(v.dia, (centavosNoDia.get(v.dia) ?? 0) + v.centavos);
   }
   const investimentoNoDia = new Map<string, number>();
-  for (const m of e.midia) investimentoNoDia.set(m.dia, (investimentoNoDia.get(m.dia) ?? 0) + m.comImposto);
+  // 49.17 fatia C: investimento ANTES do D0 (testes pré-lançamento) já está acumulado no D0.
+  let investimentoAntesDoD0 = 0;
+  for (const m of e.midia) {
+    if (m.dia < e.d0) investimentoAntesDoD0 += m.comImposto;
+    else investimentoNoDia.set(m.dia, (investimentoNoDia.get(m.dia) ?? 0) + m.comImposto);
+  }
 
   const pontos: PontoDaCurvaAcumulada[] = [];
   let compradores = 0;
   let centavos = 0;
-  let investimento = 0;
+  let investimento = investimentoAntesDoD0;
   for (let n = 0; n <= ateDMais; n++) {
     const dia = somarDias(e.d0, n);
     compradores += compradoresNoDia.get(dia) ?? 0;
@@ -2278,7 +2468,8 @@ export function montarCurvaAcumulada(e: {
     memoria:
       `D0 = ${e.d0} (início da captação informado) até ${e.ateDia} (D+${ateDMais}); compradores de captação (${e.criterio}) pelo dia da 1ª compra de ingresso ou combo; ` +
       `faturamento da captação (ingresso + combo + order bump, s/ TMB) e investimento de captação c/ imposto pelo dia; ` +
-      `sem data da venda: ${fmtInt(compradoresSemData)} comprador(es) e ${fmtReais(reais(centavosSemData))} — fora da curva, dentro dos totais`,
+      `sem data da venda: ${fmtInt(compradoresSemData)} comprador(es) e ${fmtReais(reais(centavosSemData))} — fora da curva, dentro dos totais` +
+      (investimentoAntesDoD0 > 0 ? `; o investimento do D0 inclui ${fmtReais(investimentoAntesDoD0)} de testes pré-lançamento, antes do início` : ""),
   };
 }
 

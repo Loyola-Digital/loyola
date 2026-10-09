@@ -1,0 +1,132 @@
+schema: 1
+storyId: '49.17'
+story: '49.17'
+story_title: 'Resumo macro no topo do Debriefing — fatia C: testes pré-lançamento (AC5, R11-1 opção B + R12-2)'
+scope_do_gate: 'Fatia C: o AC5 e as provas dele no AC10 e no AC12 (inclui o caso real do PG05). As fatias A e B já passaram pelo gate `49.17-debriefing-resumo-macro.yml` (PASS, iteração 2) e estão na main (#1001, 0f237e62).'
+arquivo_do_gate: 'Arquivo separado: `49.17c-…`. Motivo: o gate das fatias A e B registra um PASS de código que já está na main, e reescrevê-lo misturaria dois escopos e dois commits revisados. O precedente no repo é `48.15-pr1-extracao.yml`, gate de uma fatia em arquivo próprio.'
+verdict: PASS
+gate: PASS
+status_reason: 'Re-gate (iteração 2): os 5 lows do gate CONCERNS (c5d62b54) estão fechados — TEST-001, MNT-001, REL-001 e REQ-002 pelo QA fix (fbe4e62f), REQ-001 e REL-001 com as ratificações do @po (27fd0b6f, 94c2ed02). No PG05 real (config salva em 08/10, sessão read_only, gravar no-op), o funil com match_code NÃO ganha a pendência nova e os testes seguem R$ 1.437,01 c/ imposto e 0 venda; o diferencial base c5d62b54 × HEAD no mesmo dado mostra como ÚNICA diferença o limiar de pico-artefato (o 29/09, dia de teste com ROAS 0, deixava de ser marcado como pico). As 2 rotas mantêm o comportamento. Reverter 6 fixes derruba os testes. Fica só o DOC-001 (visual do dono).'
+reviewer: 'Quinn'
+updated: '2026-10-09T16:30:00-03:00'
+branch: 'feat/49.17c-testes-pre-lancamento'
+commit_reviewed: '94c2ed02 (HEAD): QA fix fbe4e62f (código) + 26cd9df3 (story) + @po 27fd0b6f e 94c2ed02. Gate anterior: 6db048a2/3446033c → CONCERNS (c5d62b54).'
+base: 'Branch sobre 0f237e62. No re-gate, origin/main está em b3cbbdc7 (49.18 mergeada, #1003/#1005), que toca debriefing-render.ts e debriefing-audience-loader.test.ts. `git merge-tree` com HEAD: sem conflito (árvore fcdede5a). As 30 suítes de debriefing na árvore mesclada: 923/923 verdes. Rebase recomendado antes da PR, mas não bloqueia.'
+
+issues:
+  - id: TEST-001
+    severity: low
+    category: tests
+    description: 'De 15 mutações do QA, 12 morrem e 3 sobrevivem (`scratchpad/qa-mut-4917c.py`, contra as suítes de debriefing com timeout de 60–120 s; cada uma restaurada, `git status` limpo no fim). (K1) Trocar o fallback do código, de "nome do funil inteiro" para "2 primeiros segmentos" (a regra `tokenDoFunil` do SendFlow/Mautic/campaign-log), não derruba nenhum teste. O único caso de fallback usa o nome "DG-PG02", que tem 2 segmentos. É justamente a fidelidade ao `effectiveMatchCode` que não está presa. (K4) Exigir o código só como PREFIXO do nome passa: nenhum teste tem o código no meio, embora a regra original seja substring. (K11) Linha com impressão e gasto zero deixar de qualificar passa: ela não muda o investimento, mas muda o período e a contagem de campanhas.'
+    recommendation: 'No teste `o código: o match_code do funil…`: `codigoDoLancamentoDoFunil({ name: "dg-pg05-out-26", matchCode: null })` deve dar `"dg-pg05-out-26"` (mata a K1). Na regra do nome: um caso com o código no meio (`"teste--dg-pg05--vendas-captacao"`), que mata a K4. No motor: uma linha com gasto 0 e impressões > 0 antes do início, conferindo o período e as campanhas (mata a K11).'
+    owner: '@dev'
+    status: resolved
+
+  - id: MNT-001
+    severity: low
+    category: code
+    description: 'A regra do código do lançamento passa a ter 3 cópias idênticas: `effectiveMatchCode` em closure dentro do plugin de `routes/funnel-stages.ts:226`, inline em `routes/funnels.ts:783-785` e agora `codigoDoLancamentoDoFunil` no loader. A reprodução é FIEL: trim, minúsculas, `match_code` antes do nome e `null` sem nenhum dos dois; o casamento é por substring, como `findMatchingCampaignsForStage` (`services/stage-phase.ts:65`). A única diferença é o `normalizarNome`, que troca travessão por `--` antes do `includes`, e isso só amplia o casamento. Reaproveitar direto não dava: a original é closure não exportada. Há também uma família DIVERGENTE no repo: `tokenDoFunil` (2 segmentos, em `services/sendflow-casamento.ts:34`) e `funnelMatchToken` (`routes/campaign-log.ts:75`, `routes/mautic.ts:51`). Uma 4ª cópia que alguém "alinhe" com essa família muda quais campanhas são teste. A K1 (TEST-001) é a prova de que nada impede isso hoje.'
+    recommendation: 'Story futura (ou nesta PR, se o @po quiser): extrair `effectiveMatchCode` para `services/` (por exemplo, junto de `stage-phase.ts`) e reaproveitar nas 2 rotas e no loader, mais o teste da K1. Não bloqueia.'
+    owner: '@po → @dev'
+    status: resolved
+
+  - id: REQ-001
+    severity: low
+    category: requirements
+    description: 'Decisão 2 do @dev: os testes entram na série diária para a F12 fechar. Com isso, quando HÁ testes, mudam também `midiaDiariaPorEtapa`, `roasDiarioCaptacao` (os gráficos começam no D−n, com ROAS 0 nos dias de teste) e o `limiarPicoArtefato`: o `investimentoMedioDiarioCaptacao` e os `diasDoDenominador` passam a contar os dias de teste, e a lista de picos da seção "Evolução Diária" pode mudar. O AC10 exige identidade só SEM testes, e isso está provado. COM testes, ele diz que "os números de investimento, CAC e ROAS mudam pela R11-1 e o @dev lista as diferenças". O @dev listou tudo, inclusive a Evolução Diária, mas a mudança de forma (eixo começando no D−n) e o limiar dos picos vão além dos três números citados. Não é defeito: é consequência direta da R11-1 com a invariante F12, e a alternativa (testes fora da série) quebraria a F12.'
+    recommendation: '@po ratificar no AC10 como 3ª exceção ("com testes, a série diária e o limiar de pico-artefato incluem os dias D−n"), ou pedir ao @dev o limiar só sobre os dias da janela.'
+    owner: '@po'
+    status: resolved
+
+  - id: REL-001
+    severity: low
+    category: reliability
+    description: 'Sem `match_code`, o código é o nome INTEIRO do funil (regra herdada do `effectiveMatchCode`). Funil com nome longo ou com espaços, como "Lançamento DG-PG02 Abril" (o exemplo do próprio comentário em `routes/funnels.ts:781-782`), não casa nenhuma campanha. Os testes somem EM SILÊNCIO: o campo `testesPreLancamento` só existe quando há testes, a `origem` do código só é gravada nesse caso, e o documento não diz que procurou e não achou. Não é regressão (antes da fatia C nenhum teste entrava), e o PG05 tem `match_code` e funil `dg-pg05-out-26`, que casaria até pelo nome.'
+    recommendation: 'Quando o código vier do nome do funil e nenhuma campanha de captação o contiver, gravar uma nota ou alerta ("código do lançamento = nome do funil; nenhuma campanha de captação tem esse código: confira o match_code"). Decisão do @po; não bloqueia.'
+    owner: '@po'
+    status: resolved
+
+  - id: REQ-002
+    severity: low
+    category: requirements
+    description: 'Paridade com uma comparação vinda do PAYLOAD SALVO, gerado antes da fatia C. Esse payload não tem `testesPreLancamento`, e o resumo mostra "nenhum" e a tabela da seção 07 mostra "0" campanhas desse lado. Mas o valor real é "não calculado": isso é indistinguível de "sem testes". Na comparação recalculada pelo loader, a paridade vale e está provada (C12, C16, K12 e K14 morrem).'
+    recommendation: 'Mostrar "—" com "não calculado (relatório anterior)" quando a comparação vier de payload salvo sem o campo. Não bloqueia.'
+    owner: '@po'
+    status: resolved
+
+  - id: DOC-001
+    severity: low
+    category: documentation
+    description: 'Validação visual do dono pendente (DoD).'
+    owner: 'Danilo'
+    status: pending
+
+top_issues_do_gate_anterior:
+  - id: TEST-001
+    severity: low
+    finding: 'K1 (fallback do código por 2 segmentos), K4 (código só como prefixo) e K11 (linha só com impressão) sobrevivem; a K1 é a fidelidade ao `effectiveMatchCode`.'
+    suggested_action: 'Três casos de teste, descritos na issue.'
+  - id: REQ-001
+    severity: low
+    finding: 'Com testes, a série diária começa no D−n e o limiar de pico-artefato muda; o AC10 cita só investimento, CAC e ROAS.'
+    suggested_action: '@po ratifica como exceção do AC10 ou pede o limiar só sobre a janela.'
+  - id: MNT-001
+    severity: low
+    finding: '3ª cópia da regra do código, e há uma família divergente (2 segmentos) no repo.'
+    suggested_action: 'Extrair `effectiveMatchCode` para `services/` e reaproveitar.'
+
+top_issues:
+  - id: DOC-001
+    severity: low
+    finding: 'Validação visual do dono pendente (DoD). Único item aberto.'
+    suggested_action: 'Danilo gera a parcial do DG PG05 e confere o bloco de testes no resumo e na seção 07.'
+
+waiver: { active: false }
+
+regate_iteracao_2:
+  data: '2026-10-09'
+  head: '94c2ed02'
+  fechamento:
+    TEST-001: 'K1 (nome inteiro, `dg-pg05-out-26` e `Lançamento DG-PG02 Abril`), K4 (código no meio do nome) e K11 (linha só com impressão: período e campanhas) têm teste próprio. Reverter o fallback para 2 segmentos agora derruba 3 testes.'
+    MNT-001: 'Regra única em `services/funnel-match-code.ts` (`matchCodeDoFunil`/`effectiveMatchCode`, módulo folha). As 2 rotas e o loader a usam. Comportamento das rotas sem teste próprio, conferido pelo diff (ver `rotas_mnt001`).'
+    REQ-001: '@po escolheu a 2ª via: limiar só da janela. Numerador = captação c/ imposto SEM as linhas de teste; denominador = dias com gasto a partir do início; dia D−n nunca é pico nem entra no WF6. A série diária segue começando no D−n (3ª exceção do AC10).'
+    REL-001: 'Pendência `CODIGO_DO_LANCAMENTO_SEM_CAMPANHA` só quando o código vem do NOME do funil e nenhuma campanha de captação vinculada o contém. Vai ao payload, à lista de pendências e às limitações do resumo. @po ratificou como 4ª exceção do AC10, também em relatório sem testes.'
+    REQ-002: 'Comparação vinda de payload salvo sem o campo, com testes no atual: "— (não informado no relatório salvo)" no resumo e na seção 07, mais a linha nas limitações. Recalculada segue "nenhum"/"0"; salvo COM testes mostra os números.'
+  pg05_producao:
+    modo: 'Leitura de produção: `default_transaction_read_only=on` conferido (`on`), `gravar` no-op, saída só com agregados (sem "@"). `gerarDebriefing` com `dependenciasReais`, `agora` = 2026-10-08T15:00Z. Scripts: `scratchpad/qa-4917c-r2/probe2.mts` e `probe3.mts`.'
+    config: 'A config REAL do PG05 já existe (debriefing_configs, salva 2026-10-08T01:18Z): em andamento, início 30/09, corte 07/10 (D+7), 1 etapa `leads-captacao`, 1 comparação. O gate anterior usou a config simulada da 49.12.'
+    funil: 'dg-pg05-out-26, match_code `dg-pg05` → origem `match_code`.'
+    resultado: 'Status 200. Pendências: [] — sem `CODIGO_DO_LANCAMENTO_SEM_CAMPANHA`, e o HTML não a menciona. Testes: 15 campanhas, todas com `dg-pg05` no nome, 27/09 a 29/09, R$ 1.262,41 brutos = R$ 1.437,01 c/ imposto, 0 venda (0 na janela). Bloco no resumo e na seção 07; sem "não informado".'
+    cac: 'Com a config REAL: 12.513,42 ÷ 214 = R$ 58,47; sem os testes, R$ 51,76. O 51,51 → 58,20 do gate anterior era com a config SIMULADA (215 compradores, 12.512,68). A diferença vem da config e do dado, não do código: a base c5d62b54 dá o MESMO CAC (58,47) sobre o mesmo dado.'
+    diferencial_base_x_head: 'Payload inteiro, chave a chave, e HTML linha a linha, base `git archive c5d62b54` × HEAD, mesmo dado e mesmo relógio. Diferenças SÓ no limiar: `limiarPicoArtefato` 113,76 → 138,46 (R$ 12.513,42 ÷ 11 dias → R$ 11.076,41 ÷ 8 dias), `roasDiarioCaptacao[29/09].picoArtefato` true → false, o WF6 de 2 dias para 1 e a nota de picos-artefato sem o "D-1 (29/09/26): ROAS 0,00". No dado real, o REQ-001 não era só forma: a base marcava um dia de teste com ROAS 0 como pico-artefato. Investimento, CAC, ROAS, curva (D0 R$ 1.449,88) e demais seções idênticos.'
+  rotas_mnt001: 'funnel-stages.ts: a closure removida e a função extraída são idênticas linha a linha (trim+lower do match_code; senão do nome; senão null); o único chamador (`:354`) não muda. funnels.ts (`/orphan-campaigns`): antes, sem nenhum dos dois, `matchCode` era "" (string vazia); agora é `null`. O ramo seguinte é `if (!matchCode)`, que trata os dois igual e devolve `matchCode: null` no corpo, como antes. Depois do guard, o valor é o mesmo string. O tipo do funil da rota é compatível com `FunilComCodigo`. Sem mudança observável.'
+  reversoes: 'Script `scratchpad/qa-4917c-r2/reverter.py`: cada uma desfaz o fix inteiro, roda os 2 arquivos (testes-pré-lançamento + loader, base 60/60 verde), restaura. 6 de 6 morrem: V1 fallback por 2 segmentos (3 falhas: K1, MNT-001, AC5); V2 loader nunca passa a pendência (teste do loader); V3 motor só grava com testes presentes (3 falhas, inclusive o documento); V4 REQ-001 inteiro revertido nos 5 pontos (engine + guards: 2 falhas); V5 REQ-002 desligado (1 falha); V6 só a linha das limitações (1 falha). Uma 1ª versão da V6 deu erro de sintaxe (morte falsa); refeita e morta por asserção. `git status` limpo ao fim.'
+  execucao: 'Sem diff de código depois de 26cd9df3 (94c2ed02 é só a story): tsc e lint não refeitos, valem os do @dev (exit 0; 0 erros). Rodei os 2 arquivos da fatia C (60/60) e as 30 suítes de debriefing na árvore mesclada com a main atual (923/923), com timeouts de 180/300 s sob load 30–80.'
+  observacoes:
+    - 'Fora do escopo (o @po já registrou): `services/meta-activity-log-sync.ts:217` é uma 4ª variante da regra do código (`matchCode ?? name`, sem cair no nome quando o match_code é só espaço). Backlog de prioridade baixa.'
+    - 'O REL-001 checa TODAS as campanhas vinculadas às etapas de captação (qualquer fase), não só as vendas-captacao. É o sinal certo: o que se quer saber é se o código aparece em alguma campanha do lançamento.'
+
+decisoes_do_dev:
+  vinculo_a_etapa_de_captacao: 'ACEITO, e é ele que neutraliza o caso de borda do código contido em outro. Pela regra do nome (substring, a do `effectiveMatchCode`), `dg-pg05` está contido em `dg-pg050-…`, e `ehCampanhaDeTestePreLancamento("dg-pg050-x--vendas-captacao…", dg-pg05)` dá true. Mas uma campanha do PG050 só entraria se estivesse vinculada a uma etapa de captação do PG05, e aí o erro seria do vínculo, não da regra. O vínculo também cumpre o AC5 aceito pelo @po ("as campanhas que o loader já associa às etapas"). A R12-2 trocou só o limite de data pelo filtro do nome. No PG05 não muda o número.'
+  serie_diaria_em_d_menos_n: 'Respeita o AC10 no que o AC10 protege. SEM testes, o HTML e o payload são idênticos à main nos 4 casos medidos, inclusive "linhas que não se qualificam". COM testes, a mudança é consequência da R11-1 com a F12, e o @dev a listou. A forma (eixo D−n) e o limiar de pico-artefato vão além dos "números de investimento, CAC e ROAS" do texto do AC10. Por isso: ratificável, não defeito (REQ-001).'
+  atribuicao_pela_utm_campaign: 'É a convenção do Motor I: `utm.campaign` é o campaign_id (o loader resolve ids de `utm_campaign` para nomes em `meta_ad_insights_daily`, `debriefing-money-time-loader.ts:900-920`; o `c=` do n8n no passo 4 do método). A 49.18 usa o `co=` (ad_id) porque atribui por anúncio; aqui a atribuição é por campanha, granularidade diferente e compatível. A conta é de VENDAS (linhas pagas e deduplicadas), não de compradores, e a story diz "vendas atribuídas". Aceito. A K9, que troca o id pelo nome da campanha, morre.'
+
+checks:
+  fidelidade_match_code: 'Comparei linha a linha com `routes/funnel-stages.ts:226-231` e `routes/funnels.ts:783-785`: mesma ordem (match_code aparado e minúsculo; senão nome aparado e minúsculo; senão null). A origem vai para o payload. Casos de borda: maiúsculas e travessão normalizados (K3 morre); `match_code` com espaços (K2 morre); funil sem `match_code` usa o nome (testado só com nome de 2 segmentos, K1 viva); nome com espaços não casa, em silêncio (REL-001); código contido em outro é neutralizado pelo vínculo à etapa.'
+  imposto_uma_vez: 'A consulta normal de mídia do loader lê só os dias da janela (`gte inicio`, `lte fim`), e a de testes só os dias antes do início (`lt inicio`). A linha não aparece duas vezes, e o motor ainda confere `m.dia < inicio` (a K5, linha do D0 contada como teste, morre). As linhas de teste entram em `midiaComImposto` uma vez, com `aplicarImposto` por dia; a K6 (imposto 2×) morre com 6 falhas. O resumo à parte recalcula com a MESMA função sobre o bruto, então o valor bate e não há segundo gross-up. A K7 (resumo com o bruto) morre. No PG05: 1.262,41 ÷ (1 − 0,1215) = 1.437,01, e a soma confere.'
+  paridade: 'A comparação recalculada passa pelo mesmo loader, com o código e o início DELA. As mutações C16 (config do atual na comparação), C12, K12 (seção 07 sem a comparação) e K14 (resumo sem os testes da comparação) morrem. Ressalva: comparação a partir de payload salvo antigo (REQ-002).'
+  ac10_sha: 'Montei uma base independente (`git archive 0f237e62 packages/api/src`, com o shared ligado; o shared e o web não mudaram) e rodei o `sha-4917c.mts` do @dev, trocando só o caminho da base (`scratchpad/qa-sha-4917c.mts`). Os 7 casos batem com os do @dev. Sem testes, iguais à main: final edição única html 3777ae436071ea5b / payload 3a0082822cdd5364; final × comp ed385b6658da5ee3 / e816db5ec4472869; parcial × comp ccf16d03bb15fec3 / 4bd875c3ae038e35; linhas que não se qualificam ed385b6658da5ee3 / e816db5ec4472869. Com testes, diferentes e listados: atual 68b62d351c2cdfd6 / e7bfd2d78ee0c5e1; comparação 3bee58245d681fbe / ca709d52f5c1297f; os dois, parcial dbee7f88ea833720 / 7acab7045a2b2e6a. Confere com a lista do Dev Agent Record, inclusive o limiar de pico-artefato (REQ-001).'
+  mutacoes: 'Do QA: 15 mutações, 12 mortas (K2, K3, K5–K10, K12–K15) e 3 vivas (K1, K4, K11 — TEST-001), cobrindo o código, a regra, o motor (janela, imposto, resumo, atribuição, curva) e os chamadores (loader, render da seção 07 e do resumo, resumo-macro). Do @dev: as 16 do `mutar-4917c.py`, reexecutadas, morrem todas. Rodei as 15 do QA duas vezes (antes e depois da pausa), com o mesmo resultado.'
+  suites: 'Com a máquina sob carga (load average 100–250, outras worktrees rodando vitest em paralelo), a rodada com timeout padrão de 5 s deu falsos timeouts. Com `--testTimeout=120000 --hookTimeout=240000`, a API inteira dá 4.608 passando e 10 falhas, as 10 pré-existentes conhecidas (funnel-stages-lead-inputs 3, instagram-routes 1, instagram 1, projects 3, schema 2). Todas as suítes de debriefing passam. `tsc --noEmit` da API: exit 0. `eslint src/`: 0 erros e 1 warning que já existia. Web e shared: sem diff (N/A).'
+  caso_real_pg05: 'Conferido só pelo registro (`ac12-4917c.mts`/`.out`), sem rodar de novo. O pool usa `-c default_transaction_read_only=on`, e o `.out` traz `"sessao_read_only": "on"`. O `gravar` é no-op e não há nenhum "@" no `.out`. A config foi simulada e rotulada. Resultado: 15 campanhas `dg-pg05-out-26--vendas-captacao--…` de 27/09 a 29/09, R$ 1.262,41 brutos = R$ 1.437,01 com imposto, 0 venda; o método dá R$ 1,4k e 0 venda. Código `dg-pg05` (origem `match_code`). CAC de 51,51 para 58,20 (12.512,68 ÷ 215). O D0 da curva sai com R$ 1.449,88. As 2 lead-form ficam fora pela fase, como no método.'
+  security: 'Sem rota nova. Nomes de campanha e o código passam por `esc()` no render. O payload ganhou ids, nomes e números, sem PII.'
+  api_contract: 'Sem rota nova e sem mudança de resposta de rota. `testesPreLancamento` é aditivo e opcional no payload gravado, lido só pelo render do servidor. `API_CONTRACT_VERSION` e `DEBRIEFING_PAYLOAD_VERSAO` não sobem, a mesma regra das fatias A e B. Sem migration (o loader só passa a ler `funnels.name` e `funnels.match_code`, que já existem).'
+  performance: 'Uma consulta a mais em `funnels`, por id, e uma em `meta_campaign_insights_daily`, só para as campanhas de teste e só antes do início. Desprezível.'
+
+notes:
+  - '[AUTO-DECISION] Re-gate: PASS ou CONCERNS? → PASS (razão: os 5 lows estão fechados e provados por reversão; o PG05 real não ganha a pendência e só o limiar muda, como o @po decidiu; resta o DOC-001, que é DoD do dono e não defeito de código).'
+  - '[AUTO-DECISION] CAC 51,51→58,20 pedido no briefing × 51,76→58,47 medido → aceito como equivalente (razão: a config real substituiu a simulada; base e HEAD dão o mesmo CAC no mesmo dado, então o código da fatia C não mexeu no número).'
+  - '[AUTO-DECISION] Arquivo de gate próprio ou o da 49.17? → Próprio (motivo em `arquivo_do_gate`).'
+  - '[AUTO-DECISION] PASS ou CONCERNS? → CONCERNS (razão: AC5 atendido e o número real bate com o método; mas a fidelidade da cópia do `effectiveMatchCode` não está presa por teste (K1), e a interpretação do AC10 para a série D−n precisa do @po. Tudo low, nada bloqueia o merge).'
+  - 'Observação fora do escopo (para o coordenador): a rodada 12 (R12-6, "basta a interseção") muda o AC2 da 49.19, cujo re-gate PASS (888142cb) foi feito com a igualdade exata. A 49.19 precisa de ajuste antes do merge.'
+  - 'CodeRabbit não executado (CLI ausente no macOS). No lugar: revisão manual, SHA em base independente e mutações.'

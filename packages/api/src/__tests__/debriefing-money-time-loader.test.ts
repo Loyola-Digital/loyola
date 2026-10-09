@@ -296,6 +296,7 @@ const DS_VENDAS = "30000000-0000-4000-8000-000000000005";
 const DS_LEADS = "30000000-0000-4000-8000-000000000006";
 
 const DDL = `
+CREATE TABLE funnels (id uuid PRIMARY KEY, name varchar(255) NOT NULL, match_code varchar(50));
 CREATE TABLE funnel_stages (
   id uuid PRIMARY KEY, funnel_id uuid NOT NULL, stage_type varchar(20), campaigns jsonb NOT NULL DEFAULT '[]'
 );
@@ -340,6 +341,7 @@ CREATE TABLE manual_sales (
 
 const lk = (n: string) => `[{"action_type":"link_click","value":"${n}"}]`;
 const SEED = `
+INSERT INTO funnels VALUES ('${F}', 'dg-pg02-abr-26', NULL), ('${F2}', 'outro', NULL);
 INSERT INTO funnel_stages VALUES
   ('${CAP}', '${F}', 'paid', '[{"id":"111","name":"dg--vendas-captacao--hot"},{"id":"333","name":"dg--vendas-captacao--cold"}]'),
   ('${PRIN}', '${F}', 'sales', '[{"id":"222","name":"dg--vendas-principal--hot"},{"id":"333","name":"dg--vendas-captacao--cold"}]'),
@@ -581,6 +583,33 @@ describe("AC12 — loadDebriefingMoneyTimeInput sobre Postgres real", () => {
     expect(r2.leadsDeCadastro!.leads.map((l) => l.emailCru)).toEqual(["x@x.com", "TESTE@x.com"]);
     expect(lidas.filter((x) => x === "g-nao-ler-2|x")).toHaveLength(1);
     expect(r2.leadsDeCadastro!.leads.some((l) => l.emailCru === "z@x.com")).toBe(false); // "Leads gerais" é do funil, sem etapa
+  });
+
+  it("49.17 fatia C (AC5, R12-2): testes pré-lançamento = campanhas de captação vendas-captacao com o código do lançamento no nome, antes do início", async () => {
+    // Sem código no nome (o nome do funil, "dg-pg02-abr-26", não está em "dg--vendas-captacao--hot"): nada.
+    const sem = await loadDebriefingMoneyTimeInput(db, { config }, { lerPlanilha: lerFalso });
+    expect(sem.midiaPreLancamento).toBeUndefined();
+    // QA REL-001: o código veio do nome do funil e nenhuma campanha de captação o tem → o motor recebe e grava a pendência.
+    expect(sem.codigoDoLancamentoSemCampanha).toEqual({ codigo: "dg-pg02-abr-26", origem: "nome-do-funil" });
+    expect(computeDebriefingMoneyTime({ ...sem, criterioDeUnico: "porEmail" }).pendencias.map((p) => p.codigo)).toContain("CODIGO_DO_LANCAMENTO_SEM_CAMPANHA");
+    await pg.exec(`UPDATE funnels SET match_code = 'dg' WHERE id = '${F}'`);
+    try {
+      const r = await loadDebriefingMoneyTimeInput(db, { config }, { lerPlanilha: lerFalso });
+      expect(r.codigoDoLancamentoSemCampanha).toBeUndefined();
+      expect(r.midiaPreLancamento!.codigo).toEqual({ codigo: "dg", origem: "match_code" });
+      // 111 (captação, vendas-captacao, "dg") em 01/03: entra; 222 é do principal; 999 é de etapa fora; P2 é outro projeto.
+      expect(r.midiaPreLancamento!.linhas).toEqual([
+        { stageId: CAP, campaignId: "111", campaignName: "dg--vendas-captacao--hot", dia: "2026-03-01", spendBruto: 999, impressoes: 1, linkClicks: null },
+      ]);
+      // a janela de sempre não muda: a linha de 01/03 não entra em `midia`.
+      expect(r.midia.some((m) => m.dia < "2026-04-17")).toBe(false);
+      // ponta a ponta: o motor soma o teste ao investimento de captação e o mostra à parte.
+      const mt = computeDebriefingMoneyTime({ ...r, criterioDeUnico: "porEmail" });
+      expect(mt.testesPreLancamento!.investimentoBruto).toBe(999);
+      expect(mt.midia.porGrupo.captacao.investimentoBruto).toBeCloseTo(1000.5 + 10 + 50 + 999, 6);
+    } finally {
+      await pg.exec(`UPDATE funnels SET match_code = NULL WHERE id = '${F}'`);
+    }
   });
 
   it("config do classificador montada uma vez: aliases do projeto + closers do funil, versão da 49.2", async () => {

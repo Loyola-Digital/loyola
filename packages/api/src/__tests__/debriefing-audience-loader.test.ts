@@ -270,7 +270,7 @@ const AD1 = "120000000000000001";
 const AD2 = "120000000000000002";
 
 const DDL = `
-CREATE TABLE funnels (id uuid PRIMARY KEY, meta_account_id uuid);
+CREATE TABLE funnels (id uuid PRIMARY KEY, meta_account_id uuid, name varchar(255), match_code varchar(50));
 CREATE TABLE meta_ads_accounts (id uuid PRIMARY KEY, meta_account_id varchar(50) NOT NULL, is_active boolean NOT NULL DEFAULT true);
 CREATE TABLE meta_ads_account_projects (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), account_id uuid NOT NULL, project_id uuid NOT NULL);
 CREATE TABLE funnel_stages (

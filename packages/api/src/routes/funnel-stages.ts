@@ -17,6 +17,7 @@ import {
   findMatchingCampaignsForStage,
 } from "../services/stage-phase.js";
 import { etapaDoConvidado } from "../services/escopo-do-convidado.js";
+import { effectiveMatchCode } from "../services/funnel-match-code.js";
 import {
   correcoesPorCampanhaSchema,
   normalizarCorrecoesPorCampanha,
@@ -216,18 +217,6 @@ export default fp(async function funnelStageRoutes(fastify) {
       .where(and(eq(funnels.id, funnelId), eq(funnels.projectId, projectId)))
       .limit(1);
     return funnel ?? null;
-  }
-
-  /**
-   * Resolve o matchCode efetivo do funil: override do user em `matchCode`,
-   * fallback pro prÃ³prio nome do funil (lowercased), null se ambos vazios.
-   * Mesmo critÃ©rio usado em `/orphan-campaigns`.
-   */
-  function effectiveMatchCode(funnel: { name: string | null; matchCode: string | null }): string | null {
-    const override = (funnel.matchCode ?? "").trim().toLowerCase();
-    if (override.length > 0) return override;
-    const fallback = (funnel.name ?? "").trim().toLowerCase();
-    return fallback.length > 0 ? fallback : null;
   }
 
   /**
