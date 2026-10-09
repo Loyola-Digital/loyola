@@ -2,15 +2,15 @@ schema: 1
 storyId: '49.19'
 story: '49.19'
 story_title: 'Teste de LP no Debriefing — compras por visita, Fisher exato e para onde vai a verba'
-iteracao: 3
+iteracao: 4
 verdict: PASS
 gate: PASS
-status_reason: 'Re-gate (iteração 3, 2026-10-09): a R12-6 (interseção de conjuntos, ratificada pelo @po) está fiel aos 7 pontos; 980/980 nas suítes de debriefing + Fisher, tsc e lint limpos; 13 de 18 mutações do QA morrem na suíte e as 5 sobreviventes morrem com o rascunho do QA (TEST-003, low); PG05 real em sessão read_only reproduz LPA × LPF 8,96% × 4,46%, p = 0,1542 (oráculo em fração exata), verba invertida com a LPF em 52,5%. TEST-002 fechado (N13 morre). Ficam 3 lows de documentação/teste, o --lp-- da P-26 e o visual. Histórico, iteração 2: REQ-001, REQ-002, REQ-003 e TEST-001 fechados, com os textos do @po usados ao pé da letra. As 71 mutações do @dev e 16 das 17 do QA morrem. O AC7 dá os mesmos SHA contra a base independente do QA. Fica só 1 lacuna de teste low (N13), mais as perguntas P-25/P-26 do dono e a validação visual, que não bloqueiam.'
+status_reason: 'Re-gate (iteração 4, pós-rebase, 2026-10-09): HEAD 4e6a8a2e sobre origin/main cf3d479b. Range-diff contra o gateado: 15 de 16 commits `=`, o 1º muda só no comentário do cabeçalho e em 3 testes (resolução do conflito com a 49.20); o código fora de __tests__ tem as mesmas linhas +/- sobre as duas bases. AC7 medido pelo QA numa cópia independente de cf3d479b: 7/7 SHA iguais aos do HEAD. AC3 da 49.20 com os SHA dela intocados; só sai a section data-teste-de-lp e publico.testeDeLp, e duas mutações fora dos blocos matam 6/6 do AC3 e 7/7 do AC7. TEST-003 e DOC-002 fechados (Q21 e Q28 reaplicadas pelo QA morrem); REL-001 resolvido pelo rebase. 8 arquivos afetados, 323/323, em série. Ficam DOC-003, o --lp-- da P-26 e o visual. Iteração 3: a R12-6 (interseção de conjuntos, ratificada pelo @po) está fiel aos 7 pontos; 980/980 nas suítes de debriefing + Fisher, tsc e lint limpos; 13 de 18 mutações do QA morrem na suíte e as 5 sobreviventes morrem com o rascunho do QA (TEST-003, low); PG05 real em sessão read_only reproduz LPA × LPF 8,96% × 4,46%, p = 0,1542 (oráculo em fração exata), verba invertida com a LPF em 52,5%. TEST-002 fechado (N13 morre). Ficam 3 lows de documentação/teste, o --lp-- da P-26 e o visual. Histórico, iteração 2: REQ-001, REQ-002, REQ-003 e TEST-001 fechados, com os textos do @po usados ao pé da letra. As 71 mutações do @dev e 16 das 17 do QA morrem. O AC7 dá os mesmos SHA contra a base independente do QA. Fica só 1 lacuna de teste low (N13), mais as perguntas P-25/P-26 do dono e a validação visual, que não bloqueiam.'
 reviewer: 'Quinn'
-updated: '2026-10-09T16:10:00-03:00'
+updated: '2026-10-09T17:30:00-03:00'
 branch: 'feat/49.19-teste-de-lp'
-commit_reviewed: 'iteração 3: 339e53bd (R12-6 em 71710aca, ratificação 86a9dc5a, rebases 4707ca77/339e53bd; código idêntico desde ff7975e2); iteração 2: 73b57fa0 (@po), f1b92bfe (TEST-001), 571b8d90 (REQ-001..003); iteração 1: 9de4c779 + 5216a4f9 (gate CONCERNS em 55d36f9b)'
-base: 'Iteração 3: sobre origin/main b3cbbdc7 (com a 49.18 mergeada, #1003/#1005). Histórico:  Empilhada na 49.18 @ a1d8d121, que está sobre a 49.17 @ c0a63eb4 (PR #1001). O `git fetch` da iteração 2 mostra origin/main em 4e9e9843 e origin/feat/49.17-resumo-macro em c0a63eb4: nada andou. Depois do merge da 49.17 e da 49.18, esta branch precisa de rebase.'
+commit_reviewed: 'iteração 4: 4e6a8a2e (43285744 TEST-003/DOC-002, b5a753a5 rebase 49.20, 4e6a8a2e rebase fatia C); iteração 3: 339e53bd (R12-6 em 71710aca, ratificação 86a9dc5a, rebases 4707ca77/339e53bd; código idêntico desde ff7975e2); iteração 2: 73b57fa0 (@po), f1b92bfe (TEST-001), 571b8d90 (REQ-001..003); iteração 1: 9de4c779 + 5216a4f9 (gate CONCERNS em 55d36f9b)'
+base: 'Iteração 4: sobre origin/main cf3d479b (49.18 + 49.20 #1006 + 49.17 fatia C #1007). Iteração 3: sobre origin/main b3cbbdc7 (com a 49.18 mergeada, #1003/#1005). Histórico:  Empilhada na 49.18 @ a1d8d121, que está sobre a 49.17 @ c0a63eb4 (PR #1001). O `git fetch` da iteração 2 mostra origin/main em 4e9e9843 e origin/feat/49.17-resumo-macro em c0a63eb4: nada andou. Depois do merge da 49.17 e da 49.18, esta branch precisa de rebase.'
 
 iteracao_2:
   fidelidade_aos_textos_do_po:
@@ -33,6 +33,14 @@ iteracao_3:
   prova_com_dado_real: 'PG05 com `scratchpad/qa-4919-r3/probe.mts` (pool com `default_transaction_read_only=on`, sessão "on"; `gravar` é stub no-op; agora 2026-10-08T15:00Z, corte 07/10; sem "@" na saída). LPA × LPF estático: 3 conjuntos em comum, `01_FD-ST_ALLINONE90D_INTERESSES` da LPA fora do par, janela 03 a 07/10 (5 dias), LPA 12/134 = 8,96% × LPF 7/157 = 4,46%, p = 0,15424468044553336 (o oráculo em fração exata dá o mesmo valor), empate, verba invertida com a LPF em 52,52%, `lpsNaAssinatura` 3. O HTML mostra "Conjuntos em comum" e "Fora do par". LPA × LPG vídeo: 11/299 × 15/333, p = 0,6902, empate. 5 outros pares sem leitura (1 dia) e 5 campanhas da LPA sem par: igual ao registro do @dev.'
   execucao: 'Debriefing + Fisher: 31 arquivos, 980/980 (timeout alto, load 53). `tsc --noEmit` da API pelo binário: 0 erros. ESLint nos 13 arquivos .ts da branch: exit 0. O Planner (+8 do @dev) é da main e fica fora do diff.'
   merge_com_4920: '`git merge-tree` de 339e53bd com a 49.20 (7b119775) dá conflito em 3 arquivos: comentário de cabeçalho do `debriefing-audience-engine.ts` e os testes `debriefing-em-andamento` e `debriefing-serie-historica`. Nenhum em `publicoDaCampanha` (REL-001).'
+
+iteracao_4:
+  escopo: 'Re-gate curto depois de dois rebases. Gateado: fc669ab9 (código de 339e53bd) + 50cd82df (TEST-003/DOC-002, ainda não visto pelo QA).'
+  range_diff: '`git range-diff b3cbbdc7..50cd82df cf3d479b..HEAD`: 15 de 16 `=`; o 1º (b64721ff → 8f455ff6) muda o comentário de cabeçalho do engine e 3 testes (em-andamento, midia-anuncios-49-18, serie-historica), em que a remoção da 49.19 se compõe com a da 49.20. Os +/- do diff da 49.19 em packages fora de __tests__ são idênticos sobre b3cbbdc7 e sobre cf3d479b (957 × 957). Os 2 commits novos (b5a753a5, 4e6a8a2e) só mexem em testes e na story.'
+  ac7_medido_pelo_qa: '`git archive cf3d479b` em scratchpad/qa-4919-r4/base, com a fixture da 49.19 do HEAD e um teste do QA (zz-qa-ac7.test.ts) que exige a base sem `teste-de-lp` e sem `testeDeLp`. Os 7 cenários dão SHA de HTML e de payload iguais ao SHA_DO_BASE do HEAD (7/7; sha-qa-cf3d479b.json).'
+  ac3_da_4920: 'O SHA_DA_BASE da 49.20 está intocado. O diff só acrescenta semO4919 (exige a section data-teste-de-lp e corta só ela) e o delete de publico.testeDeLp (o teste exige o campo antes de tirá-lo). Mutação numa cópia do HEAD: rodapé com um caractere trocado (fora dos blocos) e `qaExtra` no DebriefingAudience. As duas matam 6/6 do AC3 da 49.20 e 7/7 do AC7 da 49.19. Controle sem mutação: 25/25.'
+  test_003_doc_002: 'Q21 e Q28 reaplicadas pelo QA na cópia do HEAD morrem, uma falha cada. Log do @dev: 5/5. A frase sobre ehFrioAdv está corrigida; ehFrioAdv agora existe na main pela 49.20, e o motor da 49.19 não classifica público.'
+  execucao: 'Na worktree, em série: teste-de-lp-49-19, fisher-exato, publico-49-20, em-andamento, serie-historica, midia-anuncios-49-18, audience-loader e testes-pre-lancamento-49-17: 8 arquivos, 323/323. money-time-loader + 49.17: 60/60. tsc não refeito (instrução); @dev reporta tsc limpo, eslint 0 e 1.076/1.076.'
 
 issues:
   - id: REQ-001
@@ -81,7 +89,7 @@ issues:
     description: 'Iteração 3. Cinco mutações de R12-6 sobrevivem à suíte: L7 (junção de cópias da mesma LP sem normalizar os nomes), Q21 (sem a guarda `a.lp === b.lp`, duas campanhas da MESMA LP com conjunto em comum viram o par "LPA × LPA"), Q24 (`conjuntosForaDoPar` só da 1ª LP; os testes só têm o conjunto a mais do lado da 1ª), Q27 (compradores pelos Ad IDs só da janela: o ponto 4 da R12-6 conta o comprador de anúncio da interseção que comprou na janela, mesmo que o anúncio não tenha rodado nela) e Q28 (nota de conjuntos somados contando também os de fora do par). O código está certo nos cinco.'
     recommendation: 'O rascunho `scratchpad/qa-4919-r3/qa-rascunho-4919-r3.test.ts` (5 casos) passa sem mutação e mata as 5 (5/5). Foi provado na worktree e removido. Pode ir para `debriefing-teste-de-lp-49-19.test.ts`. Não bloqueia.'
     owner: '@dev'
-    status: open
+    status: closed (iteração 4 — 43285744; 5/5 no log do @dev, Q21 e Q28 reaplicadas pelo QA morrem)
 
   - id: DOC-002
     severity: low
@@ -89,7 +97,7 @@ issues:
     description: 'O Dev Agent Record ("Rebase sobre a 49.18 do re-gate") diz que "`publicoDaCampanha` delegando em `ehFrioAdv` ficaram como na 49.18". É falso: `ehFrioAdv` não existe na main nem nesta branch; a delegação é da 49.20 (7b119775). O código está certo (a 49.19 não toca `publicoDaCampanha`); a frase é que está errada.'
     recommendation: '@dev troca a frase por "`publicoDaCampanha` segue como na main (a delegação em `ehFrioAdv` é da 49.20, ainda não mergeada)".'
     owner: '@dev'
-    status: open
+    status: closed (iteração 4 — 43285744)
 
   - id: DOC-003
     severity: low
@@ -105,7 +113,7 @@ issues:
     description: 'A 49.19 e a 49.20 (já com gate PASS) conflitam em 3 arquivos (um comentário de cabeçalho e 2 testes). Quem mergear depois precisa de rebase.'
     recommendation: '@devops mergeia uma; a outra rebaseia e roda as suítes de debriefing de novo.'
     owner: '@devops'
-    status: open
+    status: closed (iteração 4 — rebase sobre ec990ad0 resolveu o conflito; AC3 da 49.20 conferido)
 
   - id: PERG-1
     severity: low
@@ -129,14 +137,6 @@ issues:
     status: pending
 
 top_issues:
-  - id: TEST-003
-    severity: low
-    finding: '5 mutações de R12-6 sobrevivem (L7, Q21, Q24, Q27, Q28); o código está certo.'
-    suggested_action: 'Levar o rascunho do QA (5/5) para a suíte.'
-  - id: DOC-002
-    severity: low
-    finding: 'O registro atribui a delegação em ehFrioAdv à 49.18; ela é da 49.20.'
-    suggested_action: 'Corrigir a frase.'
   - id: DOC-003
     severity: low
     finding: 'AC2 sem a nota da R12-6.'
