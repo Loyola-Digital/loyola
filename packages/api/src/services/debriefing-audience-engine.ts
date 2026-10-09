@@ -10,6 +10,8 @@
  *
  * Fases da skill `loyola-debriefing` cobertas: 8 (qualificação por origem),
  * 9 (faixa, criativo × faixa, tipo de criativo) e 10 (cross-launch).
+ * Story 49.18: a mídia por anúncio (`midiaPorAnuncio`, motor puro em
+ * `debriefing-midia-anuncios.ts`) sai daqui, com o ad-level e os compradores de captação.
  * Armadilhas 6 (n inflado por e-mail repetido), 8 (listas somadas a canais),
  * 9 (classificadores diferentes), dimensão inventada e contribuição absoluta.
  *
@@ -54,6 +56,13 @@ import type { DebriefingConfigLancamento, DimensaoDeCriativo } from "./debriefin
 import { PISO_DE_AMOSTRA } from "../utils/order-bump.js";
 import { adNameDoTerm } from "./launch-report-normalize.js";
 import { postDoGrupo } from "../utils/post-do-criativo.js";
+import {
+  computeMidiaPorAnuncio,
+  formatoPeloNomeDaCampanha,
+  type CompradorDaMidia,
+  type MidiaPorAnuncio,
+  type TextoDoAnuncio,
+} from "./debriefing-midia-anuncios.js";
 import {
   LACUNA_CARRINHO_AINDA_NAO_ABRIU,
   aplicarImposto,
@@ -173,6 +182,14 @@ export interface VendaHigienizadaInput {
   comprouPrincipal: boolean;
   /** Captação: `combo` ou `order_bump` (tier superior da 49.3). */
   comprouTierSuperior: boolean;
+  /**
+   * Story 49.18 — centavos que a linha soma ao faturamento (TMB = 0), pela MESMA
+   * conversão do Motor I (`valorBrl`). Ausente = entrada anterior à 49.18 (ROAS
+   * por anúncio não medido).
+   */
+  centavos?: number;
+  /** Story 49.18 — dia da venda (BRT); `null` = sem data legível. Ausente = entrada anterior à 49.18. */
+  dia?: string | null;
 }
 
 /** Um anúncio num dia (`meta_ad_insights_daily`, spend CRU). */
@@ -186,6 +203,11 @@ export interface AnuncioDiaInput {
   impressoes: number;
   /** `null` = a Meta não devolveu `link_click` (≠ 0). */
   linkClicks: number | null;
+  /** Story 49.18 — `landing_page_view` de `actions`; `null`/ausente = a Meta não devolveu (≠ 0). */
+  landingPageViews?: number | null;
+  /** Story 49.18 (AC2) — conjunto (adset) da linha. Ausente = entrada anterior. */
+  adsetId?: string | null;
+  adsetName?: string | null;
 }
 
 export interface CriativosInput {
@@ -201,6 +223,12 @@ export interface CriativosInput {
    * Ad ID sem post (ou fora do cache) simplesmente não tem chave.
    */
   postsDosAnuncios: Readonly<Record<string, string>>;
+  /**
+   * Story 49.18 (AC6) — `title` e `body` do criativo por Ad ID, do cache
+   * (`meta_ad_creatives_cache`). Ad ID fora do cache não tem chave. Ausente =
+   * entrada anterior à 49.18 (copy não comparada).
+   */
+  textosDosAnuncios?: Readonly<Record<string, TextoDoAnuncio>>;
 }
 
 export interface IdentidadeInput {
@@ -470,6 +498,12 @@ export interface DebriefingAudience {
 
   lacunas: LacunaDePublico[];
   /**
+   * Story 49.18 — mídia por anúncio (ranking por nome, estático × vídeo, público
+   * com ADV+, peças de escassez por dia, copy igual). Ausente = payload anterior
+   * à 49.18 (aditivo e opcional; a versão não sobe).
+   */
+  midiaPorAnuncio?: MidiaPorAnuncio;
+  /**
    * Story 49.11 — a composição da série histórica, presente só com 2+
    * lançamentos na lista (com 1, o payload é o de antes: o lançamento é o
    * `crossLaunch.funnelIdAnterior`). `posicao` 1 = a principal.
@@ -595,12 +629,9 @@ export function tipoPelaCampanha(
   campaignName: string | null | undefined,
   dimensao: Exclude<DimensaoDeCriativo, "nenhuma">,
 ): TipoDeCriativo | null {
-  if (dimensao !== "video-estatico" || !campaignName) return null;
-  const n = semAcentoMinusculo(campaignName);
-  const video = /--videos?(-|$)/.test(n);
-  const estatico = /--estaticos?(-|$)/.test(n);
-  if (video === estatico) return null;
-  return video ? "video" : "estatico";
+  if (dimensao !== "video-estatico") return null;
+  // 49.18 (AC3): o padrão mora em `formatoPeloNomeDaCampanha`, que a mídia por anúncio usa sem a dimensão.
+  return formatoPeloNomeDaCampanha(campaignName);
 }
 
 export function linkDoAdsManager(conta: string | null | undefined, adId: string | null | undefined): string | null {
@@ -1525,6 +1556,28 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
     };
   }
 
+  // ===================================================================
+  // 11. Mídia por anúncio (Story 49.18) — ad-level × compradores pelo ad_id da venda
+  // ===================================================================
+  const midiaPorAnuncio = computeMidiaPorAnuncio({
+    anuncios: input.criativos.anuncios.map((a) => ({
+      adId: a.adId,
+      nome: (input.criativos.nomesDeAnuncio[a.adId] ?? "").trim() || (a.adName ?? "").trim() || null,
+      campaignName: a.campaignName,
+      dia: a.dia,
+      investimentoComImposto: aplicarImposto(a.spendBruto, a.dia, pctImposto),
+      linkClicks: a.linkClicks,
+      landingPageViews: a.landingPageViews ?? null,
+      conjuntoId: a.adsetId ?? null,
+      conjuntoNome: a.adsetName ?? null,
+    })),
+    compradores: compradoresDaMidia(compradores, linhasCap, chaves.porEmail),
+    vendasComConteudo: input.compradores.some((v) => (v.utmContentCru ?? "").trim() !== ""),
+    postsDosAnuncios: input.criativos.postsDosAnuncios,
+    ...(input.criativos.textosDosAnuncios ? { textosDosAnuncios: input.criativos.textosDosAnuncios } : {}),
+    linkAdsManagerDe: (adId) => linkDoAdsManager(input.criativos.contaDeAnuncios, adId),
+  });
+
   lacunas.push({
     codigo: "LISTAS_FRONT_COMUNIDADE",
     motivo: "sem fonte no Loyola",
@@ -1569,6 +1622,7 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
     tipoDeCriativo,
     crossLaunch,
     lacunas,
+    midiaPorAnuncio,
     ...(series.length >= 2
       ? {
           serieHistorica: {
@@ -1580,6 +1634,40 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
   // 49.12 (AC6): carrinho que não abriu até o corte → o que depende dele vira lacuna.
   const semCarrinho = corteSemCarrinho(janela);
   return semCarrinho ? comLacunaDoCarrinhoNoPublico(resultado, semCarrinho) : resultado;
+}
+
+// ---------------------------------------------------------------------------
+// Story 49.18 — compradores de captação para a mídia por anúncio
+// ---------------------------------------------------------------------------
+
+/**
+ * Cada comprador de captação (pessoa, critério headline) com o ad_id do
+ * `utm_content` da linha de ingresso/combo (a âncora — a mesma do ingresso por
+ * tipo de criativo), o faturamento da captação da pessoa (todas as linhas de
+ * captação dela, como o `porComprador` do Motor I) e o dia da compra da âncora.
+ */
+function compradoresDaMidia(
+  compradores: readonly CompradorDeCaptacao[],
+  linhasCap: readonly VendaHigienizadaInput[],
+  chavesPorEmail: readonly string[],
+): CompradorDaMidia[] {
+  const centavosPorChave = new Map<string, number | null>();
+  linhasCap.forEach((l, i) => {
+    const k = chavesPorEmail[i]!;
+    const atual = centavosPorChave.get(k);
+    if (atual === null) return;
+    centavosPorChave.set(k, l.centavos === undefined ? null : (atual ?? 0) + l.centavos);
+  });
+  return compradores.map((c) => {
+    const conteudo = utmContentEfetivo(c.ancora.utmContentCru);
+    const centavos = centavosPorChave.get(c.chave);
+    return {
+      adId: conteudo && RE_AD_ID.test(conteudo) ? conteudo : null,
+      faturamento: centavos === null || centavos === undefined ? null : centavos / 100,
+      tierSuperior: c.tier,
+      dia: c.ancora.dia ?? null,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------

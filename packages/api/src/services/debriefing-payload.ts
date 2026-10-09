@@ -19,6 +19,7 @@ import {
 } from "./debriefing-money-time-engine.js";
 import type { ResumoMacro } from "./debriefing-resumo-macro.js";
 import { METRICAS_SEM_CARRINHO_PUBLICO, type DebriefingAudience, type LacunaDePublico } from "./debriefing-audience-engine.js";
+import { comMelhorVersao } from "./debriefing-midia-anuncios.js";
 import {
   LACUNA_CARRINHO_AINDA_NAO_ABRIU,
   LACUNA_COORTE_INCOMPLETA,
@@ -166,7 +167,10 @@ export function montarPayloadDebriefing(
     versao: DEBRIEFING_PAYLOAD_VERSAO,
     config,
     dinheiroTempo: moneyTime,
-    publico: audience,
+    // 49.18 AC2 (R12-3): a melhor versão isolada usa a base do Motor I — "captação do lançamento".
+    publico: audience.midiaPorAnuncio
+      ? { ...audience, midiaPorAnuncio: comMelhorVersao(audience.midiaPorAnuncio, moneyTime.midia.porGrupo.captacao.investimentoComImposto) }
+      : audience,
     lacunas,
     geradoEm: iso,
     situacao: situacaoDoPayload(moneyTime, config),

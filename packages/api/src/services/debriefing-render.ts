@@ -41,6 +41,7 @@ import {
   type CorteDaJanela,
 } from "./debriefing-hygiene.js";
 import { parcialDo } from "./debriefing-payload.js";
+import type { FormatoDoAnuncio, LinhaDoRanking, MetricasDaMidia } from "./debriefing-midia-anuncios.js";
 import {
   avaliacao,
   dataBr,
@@ -933,6 +934,220 @@ function composicaoDaComparacao(input: DebriefingRenderInput): ItemDaSerie[] {
 }
 
 // ---------------------------------------------------------------------------
+// Story 49.18 — Mídia por anúncio (aba de mídia, fora da numeração)
+// ---------------------------------------------------------------------------
+
+/** Marcador do bloco da 49.18 — o teste de "seções antigas iguais" o tira do HTML por ele. */
+export const MARCA_DA_MIDIA_POR_ANUNCIO = "data-midia-por-anuncio";
+
+const ROTULO_DO_FORMATO: Readonly<Record<FormatoDoAnuncio, string>> = {
+  video: "Vídeo",
+  estatico: "Estático",
+  "nao-identificado": "Formato não identificado",
+};
+
+/** O link de uma linha do ranking: post (IG → FB) ou, sem post, o Ads Manager. */
+function linkDaLinha(l: LinhaDoRanking): string {
+  const href = l.linkDoPost ?? l.linkAdsManager;
+  if (!href) return TRACO;
+  const rede = redeDoLinkDoCriativo(l);
+  const rot = rede === "instagram" ? "Instagram" : rede === "facebook" ? "Facebook" : "Ads Manager";
+  return `<a href="${esc(href)}" data-link="${rede}" target="_blank" rel="noopener noreferrer">${rot}</a>`;
+}
+
+/**
+ * AC2 (R12-3) — a linha da melhor versão isolada, logo abaixo da média do nome,
+ * com os mesmos números; sem versão elegível, o motivo por extenso (nunca uma
+ * versão abaixo do mínimo). Sem `melhorVersao` (não escolhida), nada.
+ */
+function linhaDaMelhorVersao(l: LinhaDoRanking, comConteudo: boolean): string {
+  const mv = l.melhorVersao;
+  if (!mv) return "";
+  const rotulo = `<span style="color:var(--muted);font-size:11px">↳ melhor versão isolada</span>`;
+  if (!mv.versao) {
+    const texto =
+      mv.motivo === "SEM_COMPRADOR_NAS_ELEGIVEIS"
+        ? "nenhuma versão com ≥ 5% do investimento de captação tem comprador"
+        : mv.motivo === "SEM_INVESTIMENTO_DE_CAPTACAO"
+          ? "sem investimento de captação no lançamento para o mínimo de 5%"
+          : "nenhuma versão com ≥ 5% do investimento de captação";
+    return tr([`${rotulo} <span data-melhor-versao="${esc(mv.motivo ?? "")}">${esc(texto)}</span>`, "", "", "", "", "", "", "", "", "", ""]);
+  }
+  const v = mv.versao;
+  const conjunto = v.conjuntoNome ?? v.conjuntoId;
+  const href = v.linkDoPost ?? v.linkAdsManager;
+  const rede = redeDoLinkDoCriativo(v);
+  return tr([
+    `${rotulo} <span data-melhor-versao="${esc(v.adId)}">Ad ID ${esc(v.adId)}${conjunto ? ` · conjunto ${esc(conjunto)}` : ""}</span>`,
+    "",
+    "",
+    ...celulasDaMidia(v, comConteudo),
+    celulaMetrica(v.tierSuperior, "fracao"),
+    celulaMetrica(v.compraPorVisita, "pct", 2),
+    href ? `<a href="${esc(href)}" data-link="${rede}" target="_blank" rel="noopener noreferrer">${rede === "instagram" ? "Instagram" : rede === "facebook" ? "Facebook" : "Ads Manager"}</a>` : TRACO,
+  ]);
+}
+
+/** As células de métrica comuns (investimento, % da verba, compradores, CPA, ROAS). */
+function celulasDaMidia(m: MetricasDaMidia, comConteudo: boolean): string[] {
+  return [
+    esc(fmt(m.investimentoComImposto, "moeda")),
+    celulaMetrica(m.pctDaVerba, "pct"),
+    comConteudo ? esc(inteiroBr(m.compradores)) : `<span title="SEM_UTM_CONTENT_NA_VENDA">${TRACO}</span>`,
+    celulaMetrica(m.cpa, "moeda"),
+    celulaMetrica(m.roas, "roas"),
+  ];
+}
+
+/**
+ * AC7 — por que a comparação principal não tem número aqui (`null` = tem).
+ * Relatório salvo antes da 49.18 não traz o campo; lançamento sem ad-level no
+ * período (o PG02, por exemplo) também não — "—" com nota, nunca zero.
+ */
+function motivoSemMidiaDaComparacao(comp: ComparacaoDoDebriefing | null): string | null {
+  if (!comp) return null;
+  const m = comp.payload.publico.midiaPorAnuncio;
+  if (!m) return `o relatório de ${comp.nome} usado na comparação foi gerado antes da mídia por anúncio existir (não traz o dado)`;
+  if (!m.aplicavel) return `${comp.nome} não tem ad-level no banco para o período (meta_ad_insights_daily)`;
+  return null;
+}
+
+export function blocoDaMidiaPorAnuncio(
+  p: DebriefingPayload,
+  comp: ComparacaoDoDebriefing | null,
+  nomeAtual: string,
+  semDelta: { nome: string } | null,
+): string {
+  const m = p.publico.midiaPorAnuncio;
+  const abre =
+    `<section ${MARCA_DA_MIDIA_POR_ANUNCIO}><div class="sec-head"><h2>Mídia por Anúncio</h2></div>` +
+    `<p class="sec-desc">Captação por nome de anúncio (um nome reúne vários Ad IDs e os números somam): investimento c/ imposto, compradores de captação atribuídos pelo Ad ID do utm_content da venda, CPA, ROAS, tier superior e compra a cada visita na página; estático × vídeo pelo nome da campanha; o público com o ADV+ (<code>cold-adv</code>) separado do frio; as peças de escassez por dia de veiculação; e a copy dos criativos.</p>`;
+  const fecha = `</section>`;
+  if (!m) return abre + nota("<b>Mídia por anúncio não calculada:</b> este relatório foi gerado antes dela existir.") + fecha;
+  if (!m.aplicavel) {
+    return abre + lacuna("Mídia por anúncio", "sem ad-level no banco para o período (meta_ad_insights_daily) — ranking, estático × vídeo, peças de escassez e copy não medidos") + fecha;
+  }
+  const comConteudo = m.vendasComConteudo;
+  const parcial = parcialDo(p);
+  const corteComp = corteDaComparacao(comp);
+  const mc = comp?.payload.publico.midiaPorAnuncio;
+  const semComp = motivoSemMidiaDaComparacao(comp);
+  const rotuloComp = comp ? `${comp.nome}${corteComp ? ` (mesmo D+N: até ${corteComp})` : ""}` : "";
+  const partes: string[] = [];
+
+  // ---- Ranking (AC1) + total da comparação (AC7) ----
+  const linhasRanking = m.ranking.map((l) =>
+    tr([
+      `${esc(l.nome)}${l.adIds.length > 1 ? ` <span style="color:var(--muted);font-size:11px">(${esc(inteiroBr(l.adIds.length))} Ad IDs)</span>` : ""}`,
+      esc(l.publicos.join(" + ") || TRACO),
+      esc(l.formatos.map((f) => ROTULO_DO_FORMATO[f]).join(" + ") || TRACO),
+      ...celulasDaMidia(l, comConteudo),
+      celulaMetrica(l.tierSuperior, "fracao"),
+      celulaMetrica(l.compraPorVisita, "pct", 2),
+      linkDaLinha(l),
+    ]) + linhaDaMelhorVersao(l, comConteudo),
+  );
+  const totalRanking = (rot: string, t: MetricasDaMidia, cc: boolean) =>
+    tr([`<b>${esc(rot)}</b>`, "", "", ...celulasDaMidia(t, cc), celulaMetrica(t.tierSuperior, "fracao"), celulaMetrica(t.compraPorVisita, "pct", 2), ""], "tot");
+  const semNumero = (rot: string, motivo: string) =>
+    tr([`<b>${esc(rot)}</b>`, "", "", ...Array.from({ length: 7 }, () => `<span title="${esc(motivo)}">${TRACO}</span>`), ""], "tot");
+  const totais = [totalRanking(`Total ${nomeAtual}`, m.totalDoRanking, comConteudo)];
+  if (comp) totais.push(mc && !semComp ? totalRanking(`Total ${rotuloComp}`, mc.totalDoRanking, mc.vendasComConteudo) : semNumero(`Total ${rotuloComp}`, semComp!));
+  partes.push(
+    `<h3 class="gr">Ranking por nome de anúncio (sem as peças de escassez)</h3>` +
+      (m.ranking.length
+        ? tabela(["Anúncio", "Público", "Formato", "Invest. (c/ imposto)", "% da verba", "Compradores", "CPA", "ROAS", "Tier superior", "Compra a cada visita", "Post"], linhasRanking, {
+            rolagem: m.ranking.length > 12,
+            total: totais.join(""),
+          })
+        : nota("Nenhum anúncio de captação fora das peças de escassez no período.")) +
+      `<p class="tnote">Ordem por investimento. % da verba sobre o investimento de captação do ad-level (${esc(fmt(m.investimentoTotal, "moeda"))}, ${esc(inteiroBr(m.linhasDoAdLevel))} linhas anúncio × dia, c/ imposto). ` +
+      `Comprador = pessoa que comprou ingresso ou combo na captação, atribuída ao Ad ID do utm_content da linha de ingresso/combo; ROAS = faturamento da captação dessas pessoas (ingresso + combo + order bump, s/ TMB) ÷ investimento. ` +
+      `Compra a cada visita = compradores dos anúncios com landing_page_view ÷ landing_page_view (“—” quando a Meta não devolveu landing_page_view no período); conversão do clique, idem com link clicks. ` +
+      (comConteudo ? `${esc(m.atribuicao.memoria)}.` : `As planilhas de venda não trazem utm_content: nenhum comprador foi atribuído a anúncio.`) +
+      (m.criterioDaMelhorVersao
+        ? ` Melhor versão isolada (Ad ID + conjunto): a de menor CPA entre as com investimento ≥ 5% do investimento de captação do lançamento (${esc(m.criterioDaMelhorVersao.memoria)}); CPA empatado → maior ROAS → menor Ad ID; versão sem comprador nunca é a melhor.`
+        : "") +
+      `</p>` +
+      (comp && semComp ? nota(`<b>Comparação sem número:</b> ${esc(semComp)}.`) : "") +
+      (!comp && semDelta ? nota(`<b>Sem comparação no mesmo D+N:</b> ${esc(semDelta.nome)} só tem relatório salvo, com os totais fechados.`) : ""),
+  );
+
+  // ---- Estático × vídeo (AC3) + comparação (AC7) ----
+  const linhasFormato = (rot: string, mm: NonNullable<typeof m>) =>
+    mm.formatos.map((f) =>
+      tr([
+        ...(comp ? [esc(rot)] : []),
+        esc(ROTULO_DO_FORMATO[f.formato]),
+        esc(inteiroBr(f.anuncios)),
+        ...celulasDaMidia(f, mm.vendasComConteudo),
+        esc(fmt(f.linkClicks, "inteiro")),
+        celulaMetrica(f.conversaoDoClique, "pct", 2),
+      ]),
+    );
+  const linhasF = [
+    ...(comp
+      ? mc && !semComp
+        ? linhasFormato(rotuloComp, mc)
+        : [tr([esc(rotuloComp), ...Array.from({ length: 9 }, () => `<span title="${esc(semComp!)}">${TRACO}</span>`)])]
+      : []),
+    ...linhasFormato(nomeAtual, m),
+  ];
+  partes.push(
+    `<h3 class="gr" style="margin-top:22px">Estático × vídeo</h3>` +
+      tabela([...(comp ? ["Lançamento"] : []), "Formato", "Anúncios", "Invest. (c/ imposto)", "% da verba", "Compradores", "CPA", "ROAS", "Link clicks", "Conversão do clique"], linhasF) +
+      `<p class="tnote">Formato pelo nome da campanha (<code>--videos</code> / <code>--estaticos</code>), independente da dimensão de criativo da configuração; campanha sem formato no nome fica em “formato não identificado”. Conversão do clique = compradores ÷ link clicks (cliques no link, nunca cliques totais). Inclui as peças de escassez.</p>`,
+  );
+
+  // ---- Público com ADV+ (AC4) ----
+  partes.push(
+    `<h3 class="gr" style="margin-top:22px">Por público — frio ADV+ separado do frio</h3>` +
+      tabela(
+        ["Público", "Anúncios", "Invest. (c/ imposto)", "% da verba", "Compradores", "CPA", "ROAS", "Conversão do clique"],
+        m.publicos.map((x) => tr([esc(x.publico), esc(inteiroBr(x.anuncios)), ...celulasDaMidia(x, comConteudo), celulaMetrica(x.conversaoDoClique, "pct", 2)])),
+      ) +
+      `<p class="tnote">Público pelo nome da campanha, com a mesma regra do Quente × Frio; <code>cold-adv</code> no nome = frio ADV+ (só nesta leitura — a tabela de canais e o classificador de origem não mudam). Inclui as peças de escassez.</p>`,
+  );
+
+  // ---- Peças de escassez (AC5) ----
+  const esc5 = m.escassez;
+  const termos = esc5.termos.map((t) => `“${esc(t)}”`).join(", ");
+  if (esc5.anuncios.length === 0) {
+    partes.push(`<h3 class="gr" style="margin-top:22px">Peças de escassez</h3>` + nota(`Nenhum anúncio com ${termos} no nome no período.`));
+  } else {
+    const linhasEsc = esc5.porDia.map((d) =>
+      tr([
+        `${esc(diaMesBr(d.dia))} <span style="color:var(--muted);font-size:11px">${esc(rotuloD(dMais(p, d.dia)))}</span>`,
+        esc(d.anunciosNoAr.join(", ") || TRACO),
+        esc(fmt(d.investimentoComImposto, "moeda")),
+        comConteudo ? esc(inteiroBr(d.compradores)) : TRACO,
+        comConteudo ? esc(inteiroBr(d.soIngresso)) : TRACO,
+        celulaMetrica(d.parcelaSoIngresso, "fracao"),
+      ]),
+    );
+    const t = esc5.total;
+    const total = tr(
+      ["<b>Total</b>", "", esc(fmt(t.investimentoComImposto, "moeda")), comConteudo ? esc(inteiroBr(t.compradores)) : TRACO, comConteudo ? esc(inteiroBr(t.soIngresso)) : TRACO, celulaMetrica(t.parcelaSoIngresso, "fracao")],
+      "tot",
+    );
+    partes.push(
+      `<h3 class="gr" style="margin-top:22px">Peças de escassez, por dia de veiculação</h3>` +
+        tabela(["Dia", "Peças no ar", "Invest. (c/ imposto)", "Compradores", "Só ingresso", "% só ingresso"], linhasEsc, { total }) +
+        `<p class="tnote">Peça de escassez = nome do anúncio com ${termos} (sem diferenciar maiúsculas, acentos nem o separador). Fora do ranking. ` +
+        `Compradores no dia da compra; só ingresso = sem combo nem order bump. Peças: ${esc(esc5.anuncios.map((a) => a.nome).join("; "))}. ` +
+        `% da verba das peças: ${celulaMetrica(t.pctDaVerba, "pct")}; CPA ${celulaMetrica(t.cpa, "moeda")}; ROAS ${celulaMetrica(t.roas, "roas")}.` +
+        (esc5.compradoresSemData > 0 ? ` ${esc(inteiroBr(esc5.compradoresSemData))} comprador(es) das peças sem data de compra legível (no total, fora dos dias).` : "") +
+        `</p>`,
+    );
+  }
+
+  // ---- Copy igual (AC6) ----
+  partes.push(`<h3 class="gr" style="margin-top:22px">Copy dos criativos</h3>` + nota(`${esc(m.copy.texto)} <span style="color:var(--muted)">(title e body do cache de criativos do Loyola)</span>`));
+
+  return abre + (parcial ? nota(`<b>Parcial:</b> dados até ${esc(dataBr(parcial.corte))} (D+${esc(String(parcial.dMaisN))}).`) : "") + partes.join("") + fecha;
+}
+
+// ---------------------------------------------------------------------------
 // Story 49.17 — Resumo macro (fora das abas e da numeração, antes da navegação)
 // ---------------------------------------------------------------------------
 
@@ -1740,6 +1955,9 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
       ),
     );
   }
+
+  // ---- Story 49.18 — Mídia por Anúncio (fora da numeração: as seções seguintes não mudam de número) ----
+  secoes.midia!.push(blocoDaMidiaPorAnuncio(p, comp, A, semDelta));
 
   // ---- 09 Vendas do Principal (+ auditoria) ----
   {

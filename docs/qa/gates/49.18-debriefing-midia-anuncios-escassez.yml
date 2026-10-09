@@ -1,0 +1,125 @@
+schema: 1
+storyId: '49.18'
+story: '49.18'
+story_title: 'Mídia por anúncio no Debriefing — ranking com CPA/ROAS/compra por visita, estático × vídeo, peças de escassez e copy igual'
+scope_do_gate: 'Iteração 2: AC1–AC9, com o AC2 pela R12-3 (resposta à P-22) e o AC5 com o "falta" da R12-5.'
+verdict: PASS
+gate: PASS
+status_reason: 'Re-gate (iteração 3). O TEST-003 está fechado: G2, G3, G7, G8 e G9, reaplicadas, morrem. O REQ-002 foi ratificado pelo @po, que reescreveu o AC2 e o AC5 sem mudar o escopo e aceitou as 4 AUTO-DECISIONs. Desde 5be82d5b não há mudança de código de produção, só story e teste. Ficam só lows: REL-001 (flake anterior à story) e o visual do dono.'
+reviewer: 'Quinn'
+updated: '2026-10-08T12:30:00-03:00'
+branch: 'feat/49.18-midia-anuncios'
+commit_reviewed: '1ca799e8 (código: R12-3 e R12-5) e f2cf6f1e (story), HEAD f2cf6f1e; os commits anteriores (8586e800, 6ced62c0, 941d3f4b) foram rebaseados por --onto'
+previous_gates:
+  - { commit_gate: '5be82d5b', commit_reviewed: 'f2cf6f1e', verdict: CONCERNS, date: '2026-10-08', motivo: 'TEST-003: AUTO-DECISIONs e textos do AC2 sem teste; REQ-002 com o @po' }
+  - { commit_gate: '092473e9 (reescrito para 471a5c82 no rebase)', commit_reviewed: 'd0c9f031', verdict: PASS, date: '2026-10-08', motivo: 'AC2 pendente da P-22; TEST-001 low (E8/E10/E14)' }
+qa_loop: { iteration: 3, verdict: 'APPROVE — TEST-003 fechado (edaf7acb), REQ-002 ratificado (a1c6be7e)' }
+base: 'origin/main @ 0f237e62 (49.17 A+B, #1001). O rebase foi feito com `--onto c0a63eb4`, sem conflito: as árvores de c0a63eb4 e 0f237e62 são idênticas em packages/. No `git fetch` do re-gate (11:52), a main estava em 106a4470, que só acrescenta docs (story 49.21 e o epic). O `git merge-tree` não acusa conflito.'
+
+issues:
+  - id: TEST-001
+    severity: low
+    category: tests
+    description: 'Três mutações não equivalentes sobrevivem às 30 suítes de debriefing (884/884). (E8) Tirar "Indefinido" de `PUBLICOS_DA_MIDIA`: a linha some da tabela por público e o investimento das campanhas sem temperatura deixa de aparecer. Nenhum teste fixa a lista e a fixture não tem campanha sem temperatura (é a lição do TEST-002 da 49.17: um teste por item). (E14) Trocar a regra do ADV+ para qualquer "adv" no nome da campanha, mesmo fora do frio: nenhum teste prende a fronteira (`hot-adv`, `--adv--`). (E10) No chamador do Motor II, `compradoresDaMidia(…, chaves.porEmailOuTelefone)` no lugar de `chaves.porEmail`: a fixture não tem comprador com identidade unida (dois e-mails com o mesmo telefone, ou linha sem e-mail). Por isso as chaves dos dois critérios coincidem e a troca não aparece. Em dado real com uniões, o faturamento desse comprador viraria `null`, e o ROAS do grupo e do total sairia "—" com o motivo errado (SEM_VALOR_DA_VENDA). O Motor I da 49.17 tem o critério configurável, então a troca é uma refatoração plausível.'
+    recommendation: 'Rascunho do QA em `scratchpad/qa-rascunho-teste-4918.ts`. Ele derruba E8 e E14 e passa sem mutação; foi provado na worktree e removido. Para a E10: na fixture, um comprador de captação com dois e-mails que dividem o telefone, conferindo o faturamento e o ROAS da linha dele. Nada disso bloqueia.'
+    owner: '@dev'
+    resolution: 'FECHADO em 941d3f4b (antes a1d8d121) e conferido no re-gate: E8, E10 e E14 reaplicadas pelo QA, cada uma derruba 1 teste (59/60).'
+    status: resolved
+
+  - id: REQ-001
+    severity: low
+    category: requirements
+    description: 'Atribuição sem Ad ID. No PG05, 111 dos 215 compradores (52%) não têm Ad ID no utm_content. O caso NÃO some em silêncio: `atribuicao.memoria` ("compradores de captação 215 = no ranking 90 + peças de escassez 14 + ad_id fora do ad-level 0 + sem ad_id no utm_content 111") sai na nota do ranking. A mutação E6, que apaga essa conta do documento, morre. O `utmContentEfetivo` já lê o `co=` em JSON (`{"co":…}`), então os 111 não vêm de formato mal lido: são compradores sem Ad ID (orgânico, `co=org`, ou sem rastreio). Duas ressalvas de leitura. (1) A informação está numa nota de rodapé, não em destaque. (2) O documento não diz que o CPA e o ROAS por anúncio cobrem só os compradores atribuídos. No PG05, o CPA do 1º nome (R$ 108) fica muito acima do CAC do resumo da 49.17 (R$ 46), e quem lê os dois blocos pode estranhar a diferença.'
+    recommendation: 'Story futura ou ajuste do @po: quando a parcela sem Ad ID for relevante, um aviso visível no bloco (por exemplo "52% dos compradores não têm Ad ID na UTM — o CPA por anúncio cobre só os atribuídos e não se compara com o CAC do resumo"), separando, se possível, orgânico × sem rastreio. Fica fora desta story e não bloqueia.'
+    owner: '@po'
+    resolution: 'ENCAMINHADO: virou a Story 49.21 (aviso CPA × CAC, na main em 106a4470). Fora desta story.'
+    status: resolved
+
+  - id: PEND-AC2
+    severity: low
+    category: requirements
+    description: 'PENDENTE, não é defeito: o AC2 (melhor versão isolada, ad_id + conjunto) espera a P-22, que define o critério de "melhor" e a amostra mínima. O @dev não escolheu critério e deixou registrado o caminho (carregar `adset_id/adset_name` no loader).'
+    owner: 'dono → @dev'
+    resolution: 'IMPLEMENTADO pela R12-3 (1ca799e8). Ver checks.r12_3 e TEST-003.'
+    status: resolved
+
+  - id: PERG-FALTA-1-DIA
+    severity: low
+    category: requirements
+    description: 'Registrado sem decisão do QA. A peça do PG05 `ad02-dg-pg05-out26--lote-promo--falta-1-dia` usa "falta" no singular, que não está entre os termos do dono ("faltam", "último dia", "últimas horas"). Por isso ela FICA no ranking (R$ 99 e 0 compradores até 07/10). O teste fixa o comportamento atual. A pergunta é do dono, via @po.'
+    owner: 'dono via @po'
+    resolution: 'DECIDIDO pela R12-5 ("falta" entra como termo) e implementado em 1ca799e8. A peça do PG05 saiu do ranking.'
+    status: resolved
+
+  - id: TEST-003
+    severity: medium
+    category: tests
+    description: 'Das 10 mutações do QA no AC2 e na R12-5, 5 sobrevivem às suítes de debriefing (838/838). Para isolar a flutuação, rodei sem a debriefing-config.test.ts e com testTimeout de 60 s; ver REL-001. (G2) O empate de CPA passa a ser comparado no float, não em centavos: o AUTO-DECISION "CPA em centavos" fica sem teste, porque os testes de empate usam CPAs iguais no float. (G3) O ROAS "—" passa a vencer o desempate: o AUTO-DECISION "ROAS — perde" fica sem teste. (G8) O conjunto da versão passa a vir da PRIMEIRA linha do Ad ID, não da mais recente: o AUTO-DECISION "Ad ID em dois conjuntos = o conjunto da linha mais recente" fica sem teste. (G7) O documento passa a mostrar, para SEM_COMPRADOR_NAS_ELEGIVEIS, o texto do SEM_VERSAO_ELEGIVEL. O motivo é testado no payload, não no documento. (G9) A nota do ranking com a base e o mínimo da R12-3 ("investimento de captação do lançamento c/ imposto R$ X × 5% = R$ Y") some do documento sem nenhum teste falhar. São justamente as regras que o @po vai ratificar e que hoje nada prende.'
+    recommendation: 'Acrescentar os 4 testes do rascunho do QA (`scratchpad/qa-rascunho-teste-4918-it2-final.ts`) ao fim de `debriefing-midia-anuncios-49-18.test.ts`. Eles importam também `escolherMelhorVersao` e reaproveitam `final`, `linha`, `midia`, `bloco`, `ROT` e `NOME_A`. O QA os rodou na worktree e depois os removeu: passam sem mutação e derrubam G2, G3, G7, G8 e G9 (cada uma com 1 falha).'
+    owner: '@dev'
+    resolution: 'FECHADO em edaf7acb. Os 4 testes do rascunho entraram. G2, G3, G7, G8 e G9, reaplicadas pelo QA com `--testTimeout=60000` contra o arquivo da story, morrem cada uma com 1 falha (63/64); sem mutação, 64/64.'
+    status: resolved
+
+  - id: REQ-002
+    severity: low
+    category: requirements
+    description: 'Para o @po ratificar. (1) No AC2, a R12-3 entrou como nota registrada pelo @dev para ratificação, mas o corpo continua dizendo que o critério de "melhor" virou a P-22. Ratificar o texto final: elegível = investimento ≥ 5% do investimento de captação do lançamento, c/ imposto, o mesmo do CAC e do ROAS (Motor I), com o ≥ inclusivo; melhor = menor CPA; CPA empatado → maior ROAS; versão sem comprador (CPA "—") nunca é a melhor; sem versão elegível, a frase explícita, com dois textos: "nenhuma versão com ≥ 5%…" e "…tem comprador". (2) Os AUTO-DECISIONs: empate final pelo menor Ad ID; empate de CPA medido em centavos; ROAS "—" perde o desempate; Ad ID em dois conjuntos = o conjunto da linha mais recente. (3) O corpo do AC5 ainda lista só "faltam", "último dia" e "últimas horas". A R12-5 está registrada à parte e o corpo precisa ganhar o "falta", por palavra inteira. (4) Efeito da regra no PG05, para o dono saber: com 11 a 19 Ad IDs por nome, só 2 dos 8 nomes têm versão com ≥ 5% (R$ 553,78). Os outros 6 mostram "nenhuma versão com ≥ 5%…". É fiel à R12-3 ("captação do lançamento", não o investimento do nome).'
+    owner: '@po'
+    resolution: 'RATIFICADO em a1c6be7e. O AC2 foi reescrito com a R12-3 (≥ 5% inclusivo da captação do lançamento do Motor I; menor CPA; ROAS desempata; sem comprador nunca vence; as duas frases). O AC5 ganhou o "falta" por palavra inteira. As 4 AUTO-DECISIONs foram aceitas, com motivo. O efeito no PG05 ficou registrado. Escopo inalterado: os textos descrevem o que o código já fazia no 5be82d5b.'
+    status: resolved
+
+  - id: REL-001
+    severity: low
+    category: reliability
+    description: 'Fora desta story e anterior a ela. O teste "R1 — superfície exportada do service" de `debriefing-config.test.ts` varre `src/` inteiro e estoura o timeout de 5 s quando a máquina está com I/O lento (outro `tsc` rodando e o iCloud). No re-gate ele falhou sem nenhuma mutação aplicada (BASE e FINAL) e passou na rodada seguinte. Com `--testTimeout=60000`, a suíte de debriefing dá 908/908. Esta story não toca nesse arquivo.'
+    recommendation: 'Story de manutenção: um timeout próprio nesse teste ou uma varredura mais leve. Não bloqueia.'
+    status: open
+
+  - id: DOC-001
+    severity: low
+    category: documentation
+    description: 'Validação visual do dono pendente (DoD).'
+    owner: 'Danilo'
+    status: pending
+
+top_issues:
+  - id: REL-001
+    severity: low
+    finding: 'O teste R1 de debriefing-config.test.ts estoura o timeout com I/O lento (anterior à story).'
+    suggested_action: 'Story de manutenção.'
+  - id: DOC-001
+    severity: low
+    finding: 'Visual do dono pendente.'
+    suggested_action: 'Dono, no preview.'
+
+waiver: { active: false }
+
+decisoes_do_dev:
+  separador_como_espaco: 'ACEITO. O hífen, o underline, o ponto, o pipe e a barra viram espaço, e o termo casa como palavra inteira. Nenhum termo novo entra: são os 3 do dono. A regra R11-5 ("só no nome do anuncio") continua inteira, e a mudança é só de comparação, como já era com maiúsculas e acentos. A palavra inteira evita falso positivo (`faltamento` e `ultimo-diario` ficam fora; a E3, casamento por substring, morre). Sem a normalização, 2 das 5 peças reais do PG05 sumiriam.'
+  tabela_por_publico: 'ACEITO. O AC4 manda separar o ADV+ "nas análises desta story", e a tabela "Por público" e a coluna "Público" do ranking são exatamente isso. O classificador compartilhado e a Tabela 1 não mudam: um teste verifica que `classificarOrigem` não conhece ADV+. A P-23 (ADV+ na Tabela 1 do Debriefing) segue aberta.'
+  demais: 'Concordo com os outros AUTO-DECISIONs: ranking ordenado por investimento (não escolhe "melhor" antes da P-22); % da verba sobre o ad-level (difere R$ 0,06 do Motor I no PG05, e a diferença está declarada); comprador ancorado no ingresso/combo; numerador da compra por visita só com Ad IDs que têm a medida; escassez fora só do ranking (com nota nas outras tabelas); nenhuma lacuna nova em `lacunas[]` (o bloco escreve a dele, e isso mantém a seção 17 congelada); `API_CONTRACT_VERSION` em 36 e `DEBRIEFING_PAYLOAD_VERSAO` em 1 (campo aditivo e opcional, a mesma regra ratificada na 49.12 e na 49.17).'
+
+checks:
+  fidelidade_ao_metodo: 'Passo 3: o investimento usa o imposto do Loyola por dia (R11-0c), e testes pré-lançamento ficam com a 49.17. Passo 4: o comprador é atribuído pelo `co=` (Ad ID) do utm_content, somado por nome de anúncio, com o público vindo do nome da campanha e `cold-adv` separado. Passo 5: o formato sai do nome da campanha, independente da dimensão da config; a conversão do clique é compradores ÷ link_click; o ranking traz investimento, compradores, CPA, ROAS, tier e compra por visita; as peças de escassez saem pelo nome, por dia de veiculação, só de ingresso; a copy compara title e body. R11-0g: vale no parcial e no final. R11-5: a escassez sai só pelo nome do anúncio, com os termos do método.'
+  acceptance_criteria: 'AC1 ✓: soma por nome (M2 morre), "—" com motivo sem landing_page_view (M3 no motor e E13 no loader morrem). CTR e CPC não aparecem; a conversão do clique usa link_click. AC3 ✓: "não identificado" não é descartado (E7 morre). AC4 ✓, com a tabela por público. AC5 ✓: a constante é única, cada termo é testado (E1 e E2 morrem) e a parcela só de ingresso é testada (E15 morre). AC6 ✓: copy igual, diferente, indisponível, um só texto e não lido (E4 e E16 morrem). AC7 ✓: total da comparação no ranking e formatos da comparação, no mesmo D+N na parcial; "—" com nota para payload antigo ou comparação sem ad-level; nota de sem-D+N (E11 e E12 morrem). AC8 ✓ (ver ac8_sha). AC9 ✓: testes que falham com o código de hoje, o orquestrador de ponta a ponta e o render a partir do payload. AC2: pendente.'
+  ac8_sha: 'O QA montou uma base independente (`git archive c0a63eb4`, mais só a fixture nova) e rodou o `ac8-4918.mts` do @dev nas duas árvores. Os 7 cenários dão o MESMO SHA: HTML inteiro sem o bloco (cabeçalho, avisos, banner, resumo macro, as 18 seções, rodapé e `const D`) e payload sem `publico.midiaPorAnuncio`. Os 7 pares de SHA também batem com `SHA_DO_BASE`, gravados no teste. A cópia `base-4918/` do @dev é idêntica a `c0a63eb4` mais a fixture (`diff -rq`). O `semO4918` corta de `<section data-midia-por-anuncio>` até o primeiro `</section>`, e o bloco não tem `<section>` aninhada. A igualdade de SHA prova que o corte é exato.'
+  unit_tests: 'Suítes de debriefing + post-do-criativo da API: 30 arquivos, 896/896. As 36 mutações do @dev, reexecutadas: 36 morrem. Das 16 mutações do QA (`scratchpad/qa-mutar-4918.py`, contra as suítes de debriefing inteiras, cada uma restaurada, com `git status` limpo ao fim), 13 morrem: E1 e E2 (cada termo), E3 (substring), E4 (um só texto), E5 (balde da atribuição), E6 (conta da atribuição some do documento), E7 ("não identificado"), E9 (chamador: `vendasComConteudo` sempre true), E11 (render sem a comparação), E12 (render sem a nota de sem-D+N), E13 (loader: `landing_page_view` ausente vira 0), E15 (só ingresso) e E16 (copy só pelo title). Sobrevivem E8, E10 e E14 (TEST-001).'
+  no_regressions: 'API: `node_modules/.bin/tsc --noEmit -p packages/api` com exit 0; `eslint src/` com 0 erros e 1 warning que já existia. A suíte inteira da API dá 4.645 passando e 10 falhas, as 10 pré-existentes conhecidas (funnel-stages-lead-inputs 3, instagram-routes 1, instagram 1, projects 3, schema 2). Web: `next build` exit 0, depois `tsc --noEmit -p .` exit 0, `next lint` limpo e debriefing 95/95. O web e o shared não mudam.'
+  caso_real_pg05: 'Conferido no registro (`prod-4918.mts`/`.out`), sem rodar de novo. A sessão saiu com `default_transaction_read_only=on`, e o `.out` traz `"sessao_read_only": "on"`. O `gravar` é no-op e devolve `"nao-gravado"`. A saída só tem agregados: nomes de anúncio, contagens e valores, e nenhum "@" no `.out`. A config foi simulada e rotulada como simulada. Os números estão no Dev Agent Record, inclusive a medição do R1: 146 de 146 Ad IDs com texto, uma só copy.'
+  security: 'Os nomes e os links passam por `esc()`, e os links abrem com `noopener noreferrer`. O payload ganhou só Ad IDs, nomes de anúncio e números, sem PII. Nenhuma rota nova.'
+  contrato: 'Sem rota nova, sem mudança de forma e sem migration. O campo é aditivo e opcional, o payload antigo mostra "não calculada" e a comparação antiga sai com "—" e nota.'
+
+  r12_3: 'Fiel à resposta literal. "menor cpa" → `ordemDaMelhorVersao`, menor CPA primeiro. "com maior roas" + "ROAS desempata" → maior ROAS só no empate de CPA (lexicográfico, sem fórmula combinada). "mínimo de 5% do valor total investido" + "captação do lançamento" → elegível com investimento ≥ 5% de `dinheiroTempo.midia.porGrupo.captacao.investimentoComImposto` (Motor I, c/ imposto, a base do CAC e do ROAS), escolhido em `montarPayloadDebriefing`; a base NÃO é o investimento do nome (A2 morre) nem o total do lançamento (G4, do QA, morre). Versão = Ad ID (na Meta, um anúncio pertence a um só conjunto), com o conjunto lido de `adset_id/adset_name` (A11 e A12 morrem). A linha "↳ melhor versão isolada" fica logo abaixo do nome (G5 morre), com os números da versão (A10 morre) e o conjunto pelo nome (G6 morre).'
+  r12_5: '"falta" entra em `TERMOS_DE_ESCASSEZ` como palavra inteira: "faltam" e "falta" são termos separados; "faltas-de-tempo" e "faltamento" ficam fora. A F1 do @dev morre, e a G10 do QA (casar "falta" por prefixo) também. No PG05, a peça `--falta-1-dia` saiu do ranking (8 nomes) e foi para a escassez (6 peças).'
+  regate_iteracao_2: 'AC8: o QA conferiu, blob a blob (821 blobs), que `qa-base2-4918` é idêntica a 0f237e62, acrescida só da fixture atual. Na base (`git archive`) e na story, o `ac8-4918.mts` dá os mesmos SHA de HTML inteiro e de payload nos 7 cenários, iguais aos do 1º gate e aos 7 pares do `SHA_DO_BASE`. As 14 mutações do @dev (`mut-4918-ac2.py`), reexecutadas com testTimeout de 60 s, morrem todas. Mutações do QA (`qa-mutar3-4918.py`; suítes de debriefing sem a debriefing-config, testTimeout de 60 s; cada uma restaurada, `git status` limpo): das 10, morrem 5 (G1, limiar de 4%; G4, chamador `montarPayloadDebriefing` com o investimento total; G5 e G6 no render; G10 no "falta" por prefixo) e sobrevivem 5 (G2, G3, G7, G8 e G9, o TEST-003). O E8, o E10 e o E14 do 1º gate morrem. API: debriefing e post-do-criativo 908/908 (30 arquivos); `tsc --noEmit -p packages/api` com exit 0; `eslint` com 0 erros; API inteira com 4.657 passando e as 10 falhas já conhecidas. Web, no mesmo HEAD f2cf6f1e: `next build` 0, depois `tsc` 0, `next lint` limpo e debriefing 95/95. PG05: o registro (`prod-4918b.mts`/`.out`) mostra `"sessao_read_only": "on"`, `gravar` no-op, só agregados e nenhum "@". A base do AC2 é R$ 11.075,67, com mínimo de R$ 553,78; só 2 dos 8 nomes têm versão elegível.'
+
+  regate_iteracao_3: '`git diff 5be82d5b..HEAD --stat`: só a story (+29/−4) e `debriefing-midia-anuncios-49-18.test.ts` (+42), sem código de produção; por isso o SHA e a suíte inteira não foram refeitos. O arquivo da story passa com 64/64. `tsc --noEmit -p packages/api` com exit 0. Mutações G2, G3, G7, G8 e G9 (`qa-mutar4-4918.py`): todas morrem.'
+
+notes:
+  - '[AUTO-DECISION] Re-gate iteração 3 → PASS (razão: o único medium está fechado e provado, o REQ-002 foi ratificado sem mudança de escopo, e ficam só lows).'
+  - '[AUTO-DECISION] Re-gate → CONCERNS (razão: a implementação está fiel e sem defeito, mas 3 AUTO-DECISIONs do AC2 que o @po vai ratificar e 2 textos do documento estão sem teste; é o mesmo critério do 1º gate da 49.17, e o conserto, 4 testes, já está provado).'
+  - '[AUTO-DECISION] PASS ou CONCERNS? → PASS (razão: os ACs do escopo foram atendidos e reproduzidos, com o SHA do HTML inteiro provado contra uma base independente; as 3 mutações sobreviventes são lacunas de fixture de severidade baixa, com rascunho pronto; o chamador do Motor II está preso por M15–M23 e E9, e a E10 depende de dado de identidade unida que a fixture não tem).'
+  - '[AUTO-DECISION] Os 111 sem Ad ID somem em silêncio? → Não: estão na nota do ranking (a E6 morre). Falta destaque e a ressalva sobre o CPA (REQ-001, low).'
+  - 'A pergunta da `falta-1-dia` fica registrada para o dono, sem decisão do QA.'
+  - 'CodeRabbit não executado (CLI ausente no macOS). No lugar: revisão manual, SHAs e mutações.'
+  - 'Próximo: @devops *push / PR empilhada (ou depois do merge da 49.17, com rebase).'

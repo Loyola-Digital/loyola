@@ -21,6 +21,11 @@
  *   depois `meta_entity_names_cache`); o post publicado de cada Ad ID (R7-9)
  *   sai de `meta_ad_creatives_cache` pela cascata da 18.88 (`postDoAnuncio`:
  *   Instagram → Facebook), recortado por `project_id` (`condicaoDoCacheDeCriativos`);
+ *   Story 49.18: cada linha anúncio × dia leva também o `landing_page_view` de
+ *   `actions` (ausente = `null`), e cada Ad ID do cache leva o `title`/`body`
+ *   de nível superior do criativo (o único texto que o cache guarda); a venda
+ *   higienizada leva o valor (a conversão `valorBrl` do Motor I; TMB = 0) e o dia;
+ *   e a linha leva o conjunto (`adset_id`/`adset_name`, a "versão isolada" do AC2);
  * - **conta do Ads Manager**: `funnels.metaAccountId` → `meta_ads_accounts`; sem
  *   conta no funil, a ÚNICA conta ativa vinculada ao projeto
  *   (`meta_ads_account_projects`, a mesma fonte do backfill de nomes). Em
@@ -61,6 +66,7 @@ import {
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { readSheetData } from "./google-sheets.js";
+import { valorBrl } from "./launch-report-sales-value.js";
 import { condicaoDoCacheDeCriativos } from "./lp-do-anuncio.js";
 import { postDoAnuncio } from "../utils/post-do-criativo.js";
 import { resolveSalesSheetsForStage } from "./sales-daily-sync.js";
@@ -78,6 +84,7 @@ import { GRUPO_DO_PAPEL, type DebriefingMoneyTimeInput, type GrupoDaEtapa } from
 import {
   dataBrt,
   deduplicarVendas,
+  emCentavos,
   ehTmb,
   filtrarPorStatus,
   anteriorAAbertura,
@@ -95,6 +102,7 @@ import type {
   SerieDeComparacaoInput,
   VendaHigienizadaInput,
 } from "./debriefing-audience-engine.js";
+import type { TextoDoAnuncio } from "./debriefing-midia-anuncios.js";
 
 type LerPlanilha = (spreadsheetId: string, sheetName: string) => Promise<{ headers: string[]; rows: string[][] }>;
 type MappingDaPesquisa = (typeof funnelSurveys.$inferSelect)["columnMapping"];
@@ -195,6 +203,12 @@ export function higienizarVendasDoDebriefing(
       ]),
     ),
   );
+  // 49.18: o valor de cada linha pela MESMA conversão do Motor I (`valorBrl` sobre
+  // as mantidas fora do TMB, antes do corte da janela); TMB conta a venda e soma 0.
+  const naoTmb = dedup.mantidas.filter((l) => !l.tmb);
+  const convertidos = valorBrl(naoTmb.map((l) => ({ produto: l.v.produto, preco: l.lido.valor, moeda: l.v.moeda, data: l.dia ?? "" })));
+  const centavosPorLinha = new Map<Lida, number>();
+  naoTmb.forEach((l, i) => centavosPorLinha.set(l, emCentavos(convertidos.valores[i] ?? 0)));
   const contaveis = dedup.mantidas.filter((l) => {
     if (l.dia !== null && (l.dia < janela.inicio || l.dia > janela.fim)) return false;
     // 49.12: carrinho "ainda não aconteceu" (abertura nula) = toda venda datada é anterior a ele.
@@ -213,6 +227,8 @@ export function higienizarVendasDoDebriefing(
     comprouCaptacao: l.grupo === "captacao" && (l.v.tipo === "ingresso" || l.v.tipo === "combo"),
     comprouPrincipal: l.grupo === "principal",
     comprouTierSuperior: l.grupo === "captacao" && (l.v.tipo === "combo" || l.v.tipo === "order_bump"),
+    centavos: centavosPorLinha.get(l) ?? 0,
+    dia: l.dia,
   }));
 }
 
@@ -383,6 +399,27 @@ export function identidadesDeVenda(
     temColunaStatus: () => statusIdx !== -1,
   });
   return pagas.map((l) => ({ emailCru: l.email, telefoneCru: l.tel }));
+}
+
+/**
+ * Story 49.18 — `landing_page_view` de `actions` (`meta_ad_insights_daily`), na
+ * mesma leitura do `link_click` (`linkClicksDeActions`): ausente = `null`, nunca 0.
+ */
+export function landingPageViewsDeActions(actions: unknown): number | null {
+  if (!Array.isArray(actions)) return null;
+  const a = actions.find(
+    (x): x is { action_type: string; value: unknown } =>
+      typeof x === "object" && x !== null && (x as { action_type?: unknown }).action_type === "landing_page_view",
+  );
+  if (!a) return null;
+  const n = typeof a.value === "number" ? a.value : Number.parseFloat(String(a.value ?? ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Story 49.18 (AC6) — `title` e `body` do criativo do cache, aparados; vazio = `null`. */
+export function textoDoCriativo(creative: { title?: string | null; body?: string | null } | null | undefined): TextoDoAnuncio {
+  const t = (x: string | null | undefined) => (x ?? "").trim() || null;
+  return { title: t(creative?.title), body: t(creative?.body) };
 }
 
 /** Conta de anúncios do link do Ads Manager: só dígitos (sem `act_`). */
@@ -575,6 +612,8 @@ export async function loadDebriefingAudienceInput(
       .select({
         adId: metaAdInsightsDaily.adId,
         adName: metaAdInsightsDaily.adName,
+        adsetId: metaAdInsightsDaily.adsetId,
+        adsetName: metaAdInsightsDaily.adsetName,
         campaignId: metaAdInsightsDaily.campaignId,
         campaignName: metaAdInsightsDaily.campaignName,
         dateStart: metaAdInsightsDaily.dateStart,
@@ -601,6 +640,9 @@ export async function loadDebriefingAudienceInput(
         spendBruto: numeroDoBanco(l.spend),
         impressoes: numeroDoBanco(l.impressions),
         linkClicks: linkClicksDeActions(l.actions),
+        landingPageViews: landingPageViewsDeActions(l.actions),
+        adsetId: l.adsetId,
+        adsetName: l.adsetName,
       });
     }
     anuncios.sort((a, b) => (a.adId === b.adId ? a.dia.localeCompare(b.dia) : a.adId.localeCompare(b.adId)));
@@ -615,6 +657,7 @@ export async function loadDebriefingAudienceInput(
   }
   const nomesDeAnuncio: Record<string, string> = {};
   const postsDosAnuncios: Record<string, string> = {};
+  const textosDosAnuncios: Record<string, TextoDoAnuncio> = {};
   if (adIds.size > 0) {
     const ids = [...adIds];
     const doInsight = await db
@@ -651,6 +694,8 @@ export async function loadDebriefingAudienceInput(
       .from(metaAdCreativesCache)
       .where(condicaoDoCacheDeCriativos(config.projectId, ids));
     for (const r of doCacheDeCriativos) {
+      // 49.18 (AC6): o texto do criativo — só o que o cache guarda (title/body de nível superior).
+      textosDosAnuncios[r.adId] = textoDoCriativo(r.creative);
       const post = postDoAnuncio(r.creative);
       if (!post) continue;
       postsDosAnuncios[r.adId] = post;
@@ -816,7 +861,7 @@ export async function loadDebriefingAudienceInput(
     pesquisas,
     respondentes,
     compradores,
-    criativos: { anuncios, nomesDeAnuncio, contaDeAnuncios, postsDosAnuncios },
+    criativos: { anuncios, nomesDeAnuncio, contaDeAnuncios, postsDosAnuncios, textosDosAnuncios },
     baseAnterior,
     seriesDeComparacao,
     classificador: mt.classificador,
