@@ -353,6 +353,50 @@ describe("AC2 — só pares com o mesmo formato, os mesmos anúncios e os mesmos
       [[`${VID("lpa")} — Cópia 2`], ["anuncios"]],
     ]);
   });
+
+  it("TEST-003 (R12-6): campanhas da mesma LP cujos nomes só diferem na normalização se juntam — 1 par, 2 campanhas", () => {
+    const t = computeTesteDeLp(
+      entrada([
+        { id: "a1", nome: VID("lpa"), conjuntos: ["01_QUENTE"], anuncios: ["adv01"], dias: dias(1, 3) },
+        { id: "a2", nome: `${VID("lpa")}--b`, conjuntos: ["01_quente"], anuncios: ["ADV01"], dias: dias(1, 3) },
+        { id: "g", nome: VID("lpg"), conjuntos: ["01_QUENTE"], anuncios: ["adv01"], dias: dias(1, 3) },
+      ]),
+    );
+    expect(t.pares).toHaveLength(1);
+    expect(par(t, "LPA×LPG").lados[0].campanhas).toHaveLength(2);
+  });
+
+  it("TEST-003 (R12-6): duas campanhas da MESMA LP com conjunto em comum nunca formam par entre si", () => {
+    const t = computeTesteDeLp(
+      entrada([
+        { id: "a1", nome: VID("lpa"), conjuntos: ["01_QUENTE", "02_LISTAS"], anuncios: ["adv01"], dias: dias(1, 3) },
+        { id: "a2", nome: `${VID("lpa")}--b`, conjuntos: ["01_QUENTE"], anuncios: ["adv01"], dias: dias(1, 3) },
+      ]),
+    );
+    expect(t.pares).toEqual([]);
+  });
+
+  it("TEST-003 (R12-6): o conjunto a mais da SEGUNDA LP também sai em conjuntosForaDoPar", () => {
+    const t = computeTesteDeLp(
+      entrada([
+        { id: "a", nome: VID("lpa"), conjuntos: ["01_QUENTE"], dias: dias(1, 3) },
+        { id: "g", nome: VID("lpg"), conjuntos: ["01_QUENTE", "02_LISTAS"], dias: dias(1, 3) },
+      ]),
+    );
+    expect(par(t, "LPA×LPG").conjuntosForaDoPar).toEqual([{ lp: "LPG", conjuntos: ["02_LISTAS"] }]);
+  });
+
+  it("TEST-003 (R12-6, ponto 4): comprador de anúncio da interseção que só rodou fora da janela, comprando NA janela, conta", () => {
+    const anuncios = [
+      ...linhas({ id: "a", nome: VID("lpa"), dias: dias(1, 3) }),
+      ...linhas({ id: "a", nome: VID("lpa"), dias: [D(5)] }).map((l) => ({ ...l, adId: "a-copia" })),
+      ...linhas({ id: "g", nome: VID("lpg"), dias: dias(1, 3) }),
+    ];
+    const t = computeTesteDeLp({ anuncios, compradores: [comprador("a-copia", D(2))], vendasComConteudo: true });
+    const p = par(t, "LPA×LPG");
+    expect(p.janela.dias).toEqual(dias(1, 3));
+    expect(p.lados[0].compradores).toBe(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -710,6 +754,22 @@ describe("REQ-002 — ressalvas fixas no bloco", () => {
     const umAnuncio = html(["01_QUENTE", "02_LISTAS"], ["adv01"]);
     expect(umAnuncio).toContain('data-par-de-lp="LPA×LPG"');
     expect(umAnuncio).toContain(NOTA_CONJUNTOS);
+  });
+
+  it("TEST-003 (R12-6): a nota conta só os conjuntos da interseção — 1 em comum + 1 fora do par: ausente", () => {
+    const b = blocoDoTeste(
+      htmlComTeste(
+        computeTesteDeLp(
+          entrada([
+            { id: "a", nome: VID("lpa"), conjuntos: ["01_QUENTE", "02_LISTAS"], dias: dias(1, 3) },
+            { id: "g", nome: VID("lpg"), conjuntos: ["01_QUENTE"], dias: dias(1, 3) },
+          ]),
+        ),
+      ),
+    );
+    expect(b).toContain('data-par-de-lp="LPA×LPG"');
+    expect(b).toContain("data-conjuntos-fora-do-par");
+    expect(b).not.toContain(NOTA_CONJUNTOS);
   });
 
   it("várias comparações: em cada par de uma assinatura com 3+ LPs; ausente com 2", async () => {
