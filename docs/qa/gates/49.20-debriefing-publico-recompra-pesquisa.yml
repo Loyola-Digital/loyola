@@ -6,10 +6,10 @@ verdict: PASS
 gate: PASS
 status_reason: 'Os ACs 1–4 estão atendidos e fiéis à R11-2. A comparação por pergunta aparece no resumo (final e parcial) e na seção 12 da parcial, e não aparece na seção 12 do final. Isso está provado por SHA (a seção 12 do final é idêntica à da base) e por mutação nos dois sentidos. A recompra fecha com o cross-launch, não conta ninguém duas vezes, não perde comprador e não traz PII. O SHA do HTML inteiro foi reproduzido nos 6 cenários contra uma base independente. Mutações: 54/54 do @dev e 10/11 do QA morreram. Fica 1 issue low.'
 reviewer: 'Quinn'
-updated: '2026-10-08T01:44:00-03:00'
+updated: '2026-10-09T15:50:00-03:00'
 branch: 'feat/49.20-publico'
-commit_reviewed: '05f324b2 (código) e 4d248aa2 (story)'
-base: 'Empilhada na 49.18 @ a1d8d121 (que está sobre a 49.17 @ c0a63eb4, PR #1001). Revisão por `git diff a1d8d121...HEAD`. `git fetch` no início e no fim (01:43): origin/main continua em 4e9e9843 e a 49.17 em c0a63eb4. Não toquei no wt-49.19.'
+commit_reviewed: '79e035fa (re-gate pós-rebase; código em 3e1f5c0e, QA fix 82608b1e). Gate original: 05f324b2 e 4d248aa2'
+base: 'Re-gate 2026-10-09: sobre origin/main b3cbbdc7 (a 49.18 mergeada, #1003); revisão por `git diff origin/main...HEAD -- packages/`. Gate original: empilhada na 49.18 @ a1d8d121.'
 
 issues:
   - id: TEST-001
@@ -18,7 +18,8 @@ issues:
     description: 'A mutação P5 do QA sobrevive (954/954): ela apaga do documento a frase "Mostrando as 12 respostas de maior % entre os dois lados; N outra(s) ficam fora da tabela" (`debriefing-render.ts`, `q.respostasForaDaTabela > 0`). O código declara o corte do teto, e por isso a decisão 2 do @dev NÃO esconde dado em silêncio. Mas a declaração não está presa: o teste do teto (N27) confere o payload, não o documento. Se a frase sumir num refactor, o corte passa a ser silencioso.'
     recommendation: 'O rascunho do QA em `scratchpad/qa-rascunho-teste-4920.ts` (um teste de `blocoDaPesquisaPorPergunta` com `respostasForaDaTabela = 3`) passa sem mutação e derruba a P5. Foi provado na worktree e removido. Não bloqueia.'
     owner: '@dev'
-    status: open
+    status: resolved
+    resolution: 'QA fix 82608b1e (antes 3547d3ae): teste de render do teto. No re-gate de 2026-10-09 a P5 morre (1 falha).'
 
   - id: PERG-PG05-SEM-PERGUNTAS
     severity: low
@@ -42,10 +43,6 @@ issues:
     status: pending
 
 top_issues:
-  - id: TEST-001
-    severity: low
-    finding: 'A frase que declara as respostas além do teto (12) não está presa por teste (P5 sobrevive).'
-    suggested_action: 'O teste do rascunho do QA, já provado.'
   - id: PERG-PG05-SEM-PERGUNTAS
     severity: low
     finding: 'A pesquisa do PG05 está mapeada sem perguntas: a comparação só mostra o PG04.'
@@ -76,3 +73,15 @@ notes:
   - 'A pergunta do PG05 (`questions: []`) fica registrada para o @po, sem decisão do QA.'
   - 'CodeRabbit não executado (CLI ausente no macOS). Revisão manual, SHAs e mutações.'
   - 'Próximo: @devops *push (PR empilhada na 49.18/49.17, ou rebase depois dos merges).'
+
+regate_2026_10_09:
+  verdict: PASS
+  head: '79e035fa'
+  base: 'origin/main b3cbbdc7 (git fetch no fim: não andou)'
+  diff_vs_aprovado: 'NÃO é idêntico, e a diferença foi revisada. `git range-diff a1d8d121..3547d3ae b3cbbdc7..79e035fa -- packages/`: o QA fix é `=`. O commit de código difere só em `montarPayloadDebriefing`, a resolução do conflito do rebase sobre f2cf6f1e, que o gate de 08/10 não viu: `publico = { ...audience, ...(midiaPorAnuncio ? { midiaPorAnuncio: comMelhorVersao(…) } : {}), recompraPorOrigem }`. b283ba71 refez o AC3 (SHA_DA_BASE). Entre f2cf6f1e e b3cbbdc7, nenhum src/services do Debriefing mudou.'
+  mutacoes: 'Nos 2 arquivos em série, cada mutação restaurada e git status limpo. R1 sem comMelhorVersao: 9 falhas. R2 sem recompraPorOrigem: 16. R3 ehFrioAdv quebrada: 17, nos 2 arquivos. R4 publicoDaCampanha sem ehFrioAdv: 11. P5 teto: 1. Todas morrem.'
+  delegacao: 'publicoDaCampanha → `ehFrioAdv(campaignName) ? "Frio ADV+" : classificarPublico(campaignName)`, conferido na linha e pela R4.'
+  ac3_independente: 'Os src/services de b3cbbdc7 foram postos no worktree, a fixture da 49.20 rodou pelo gerarDebriefing, e o worktree foi restaurado. Nos 6 cenários, o SHA do HTML inteiro e o do payload são iguais aos SHA_DA_BASE do teste. A medida do @dev em f2cf6f1e vale para a base real.'
+  testes: 'debriefing-publico-49-20 + debriefing-midia-anuncios-49-18, em série: 132/132. tsc não refeito (escopo); o do @dev deu EXIT 0, e os 976/976 em série estão nos logs do scratchpad.'
+  notes:
+    - '[AUTO-DECISION] Diff diferente do aprovado bloqueia? → Não (razão: a única mudança é a integração esperada com o AC2 da 49.18; está provada por R1/R2 e o AC3 foi medido de forma independente na base atual).'
