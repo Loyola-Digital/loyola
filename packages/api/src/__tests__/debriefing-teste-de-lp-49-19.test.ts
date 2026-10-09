@@ -1028,20 +1028,21 @@ describe("render — o bloco Teste de LP a partir do payload", () => {
 // ---------------------------------------------------------------------------
 
 /**
- * SHA-256 medidos no commit-base `f2cf6f1e` (a 49.18 rebaseada sobre a main; antes, `a1d8d121`), com esta mesma fixture e
- * o mesmo relógio, pelo script `ac7-4919.mts` (scratchpad): o HTML INTEIRO e o
- * payload. Na story, o HTML sem o bloco da 49.19 e o payload sem
- * `publico.testeDeLp` dão os MESMOS SHA — cabeçalho, avisos, resumo macro, as 18
- * seções, a Mídia por Anúncio, o rodapé e o `const D` incluídos.
+ * SHA-256 medidos na `main` `ec990ad0` (com a 49.20 mergeada; antes, `f2cf6f1e` e `a1d8d121`),
+ * com esta mesma fixture e o mesmo relógio, por um `.test.ts` temporário sobre uma cópia
+ * (`git archive`) da main: o HTML INTEIRO e o payload. Na story, o HTML sem o bloco da
+ * 49.19 e o payload sem `publico.testeDeLp` dão os MESMOS SHA — cabeçalho, avisos, resumo
+ * macro (com a pesquisa por pergunta da 49.20), as 18 seções (com a recompra por origem),
+ * a Mídia por Anúncio, o rodapé e o `const D` incluídos.
  */
 const SHA_DO_BASE: Record<string, { html: string; payload: string }> = {
-  "final-edicao-unica": { html: "2650df65e0b0232dbfd26678bce0cee0900696c8543a65a7151064deffdc3cfa", payload: "357f9e66a28b653bf022a416c33c1756b852fa25f0b4317de41d9d35fbd86650" },
-  "final-comparacao-recalculada": { html: "ece0f339b6a75e4ade18c177dfc75bd748e19f24f636d501c88a4bcafc0a13b6", payload: "e83d8932e301d8a98251f5477969ca7c3bf7b4c50c797dc1964a24334bbbbf7c" },
-  "final-comparacao-salva-antiga": { html: "391d6bb75bbf162dde4c46ff0d9329591931494955c7dc40c376a56641a48267", payload: "485777df4d1c9bd9a1f200596a0f1687285dffb44eb6c347b078e3b379e04967" },
-  "parcial-edicao-unica": { html: "ee7299adf51411ed9f3f0c11f21a23262dcc01fe5b1836085138e0a3f98400b6", payload: "4905aac0527362b3bda43c8ea8d24441a4bb1c23b79b8c5b0543ce96c8d3ecad" },
-  "parcial-comparacao-recalculada": { html: "f2f77ddeaa8437400269d17029c8d2c67051ea144e544174577e1a470ce3782a", payload: "0e8451c89e658b31834aadff08eaf8e90f218bb1e97a61d6a452329ba57493a3" },
-  "parcial-comparacao-salva": { html: "496150db41db3eb518029263c1e3a3a63a98b04f4caeac4190ac86c33b3b6fdf", payload: "ac930a42ab64280c8a68a919c4dc59de20fd45286e884f8288b3bccbd5bb1e3c" },
-  "final-sem-ad-level": { html: "e34894d9e273929235ce153d20c46d677587b61daee33495db4437fc2f5b966b", payload: "0ada6a08f597da06ae355236c658b9b4d43d233e6094502ca823109965f1e02a" },
+  "final-edicao-unica": { html: "b9414cd434fb707e1135c097563aa1abf663f856007a970dc1be34a949cb9dd2", payload: "200c4223b98bb37224011729d4a64d1285dd154b965e3a6447d4c9ecaae24197" },
+  "final-comparacao-recalculada": { html: "9944b899277f7d840639ec0476c9e66bf1c662b0940de1b1e484e4fadb4f1f2b", payload: "ea7381ee8983383ea17747a9b5fc00f2175bbce493e016b26c6f2ac0abf431c1" },
+  "final-comparacao-salva-antiga": { html: "872f9a04b617fb2140d6405a1a63d2534763c014ef47d3710c5b1737c9c941ab", payload: "5fb55b39e18ed30783e522313b423033ae8e1e28056c91c487cdaa0516d80d6b" },
+  "parcial-edicao-unica": { html: "c2a43b091f0bf033bcc3328cda0789010a0c3f0a7666b16a116cfe83f7320c14", payload: "e2140e53788975b723f9b23d94056a751a0ab698d555cc3a5b5d93336c2c645a" },
+  "parcial-comparacao-recalculada": { html: "7c4148a4a5d0a533e77c35ea922ad3d6268842df1fe0bdb7d7ddc51b4c06f2e5", payload: "86312ffe69b23858cd2f4b9abe06b33267ed1e32e1149ab0c5794af6e7c747a5" },
+  "parcial-comparacao-salva": { html: "3d71987d40c8c781a8251190dc3cf04c602e2bcfbf7a510113a33c3db7a10c67", payload: "5493446e909479ebee346bf5e1721ea24e08709a6730167413292b5623fbb787" },
+  "final-sem-ad-level": { html: "b14a62917c7b53776d7f353db81adaf0307306772d917ae0614c348128d32fb9", payload: "39b8e3f5b3bbc5d92972e1ad4534b327645d58358f5b10b4ae3ad4a01f654ffb" },
 };
 
 describe("AC7 — vale no parcial e no final; o resto do documento não muda", () => {
