@@ -51,6 +51,12 @@ function semAcrescimos49_11(r: DebriefingAudience): unknown {
   delete resto.serieHistorica;
   // 49.18 acrescenta a mídia por anúncio (aditiva); o resto segue byte a byte.
   delete resto.midiaPorAnuncio;
+  // 49.20 acrescenta ao cross-launch as chaves (hash) da recompra; o resto do cross-launch segue byte a byte.
+  if (r.crossLaunch.compradoresNaBaseAnterior) {
+    const cl: Partial<DebriefingAudience["crossLaunch"]> = { ...r.crossLaunch };
+    delete cl.compradoresNaBaseAnterior;
+    resto.crossLaunch = cl as DebriefingAudience["crossLaunch"];
+  }
   const pesquisa: Partial<DebriefingAudience["pesquisa"]> = { ...r.pesquisa };
   delete pesquisa.duplicadasSemData;
   delete pesquisa.duplicadasDecididasPelaPesquisaDeCaptacao;

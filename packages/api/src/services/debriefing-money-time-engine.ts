@@ -542,6 +542,41 @@ export interface CompradorDeCaptacao {
   canal: Canal;
   fechamento: Fechamento;
   tipos: TipoDeProdutoNaVenda[];
+  /**
+   * Story 49.20 (AC1) — `Pago Frio` cuja temperatura foi decidida por um texto
+   * com `cold-adv` (a regra do ADV+ da 49.18 AC4, `ehFrioAdv`). Só a recompra
+   * por origem lê; o canal (e a Tabela 1) não mudam. Ausente = não é ADV+ (ou
+   * payload anterior à 49.20).
+   */
+  frioAdv?: true;
+}
+
+/**
+ * Story 49.18 (AC4) / 49.20 (AC1) — a regra ÚNICA do "Pago frio ADV+": o texto
+ * é frio pela regra do Quente × Frio do Motor I (`classificarPublico`) e traz
+ * `cold-adv`. A mídia por anúncio (`publicoDaCampanha`) e a recompra por origem
+ * usam esta função; o classificador compartilhado não conhece ADV+ (P-23).
+ */
+export function ehFrioAdv(texto: string | null | undefined): boolean {
+  return classificarPublico(texto) === "Frio" && normalizarNome(texto).includes("cold-adv");
+}
+
+/**
+ * Story 49.20 (AC1) — o texto que decidiu a temperatura do comprador no
+ * classificador: o `utm_term` ou o nome da campanha da UTM efetiva (a do lead,
+ * ou a da venda quando o lead não tem UTM de aquisição). `null` quando a
+ * temperatura não foi decidida.
+ */
+export function textoDaTemperatura(
+  r: Pick<ResultadoClassificacao, "fonteUtm" | "temperaturaDecididaPor">,
+  lead: Utm | null,
+  venda: Utm | null,
+): string | null {
+  const utm = r.fonteUtm === "lead" ? lead : r.fonteUtm === "venda" ? venda : null;
+  if (!utm) return null;
+  if (r.temperaturaDecididaPor === "utm_term") return utm.term ?? null;
+  if (r.temperaturaDecididaPor === "campaign_name") return utm.campaignName ?? null;
+  return null;
 }
 
 /**
@@ -1505,8 +1540,18 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
     if (temCombo || temBump) comTier += 1;
     const rep = c.rep!;
     const lead = leadDe(rep);
-    const r = classificar(lead?.utm ?? null, utmLimpa(rep.v.utm), rep.v.sellerName);
-    compradores.push({ chave, canal: r.canal, fechamento: r.fechamento, tipos: TIPOS.filter((t) => c.tipos.has(t)) });
+    const utmDoLead = lead?.utm ?? null;
+    const utmDaVenda = utmLimpa(rep.v.utm);
+    const r = classificar(utmDoLead, utmDaVenda, rep.v.sellerName);
+    // 49.20 (AC1): o ADV+ separado do frio, pelo texto que decidiu a temperatura (só a recompra lê).
+    const frioAdv = r.canal === "Pago Frio" && ehFrioAdv(textoDaTemperatura(r, utmDoLead, utmDaVenda));
+    compradores.push({
+      chave,
+      canal: r.canal,
+      fechamento: r.fechamento,
+      tipos: TIPOS.filter((t) => c.tipos.has(t)),
+      ...(frioAdv ? { frioAdv: true as const } : {}),
+    });
   }
   compradores.sort((a, b) => (a.chave < b.chave ? -1 : a.chave > b.chave ? 1 : 0));
   const ingressosUnicos = compradoresCaptacao[criterioDeUnico].length;

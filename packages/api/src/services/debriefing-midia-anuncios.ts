@@ -40,9 +40,9 @@
  */
 
 import { normalizarNomeCampanha } from "@loyola-x/shared";
-import { classificarPublico, normalizarNome } from "./launch-report-normalize.js";
+import { classificarPublico } from "./launch-report-normalize.js";
 import { postDoGrupo } from "../utils/post-do-criativo.js";
-import { fmtNumero, fmtReais, type Metrica } from "./debriefing-money-time-engine.js";
+import { ehFrioAdv, fmtNumero, fmtReais, type Metrica } from "./debriefing-money-time-engine.js";
 
 // ---------------------------------------------------------------------------
 // Constantes (testadas)
@@ -100,9 +100,8 @@ export const PUBLICOS_DA_MIDIA: readonly PublicoDaMidia[] = ["Quente", "Frio", "
  * (`classificarPublico`), e `cold-adv` separado dentro do frio (AC4).
  */
 export function publicoDaCampanha(campaignName: string | null | undefined): PublicoDaMidia {
-  const p = classificarPublico(campaignName);
-  if (p === "Frio" && normalizarNome(campaignName).includes("cold-adv")) return "Frio ADV+";
-  return p;
+  // 49.20: a regra do ADV+ mora em `ehFrioAdv` (Motor I), a mesma da recompra por origem.
+  return ehFrioAdv(campaignName) ? "Frio ADV+" : classificarPublico(campaignName);
 }
 
 // ---------------------------------------------------------------------------

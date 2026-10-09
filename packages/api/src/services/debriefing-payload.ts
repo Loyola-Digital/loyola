@@ -18,7 +18,12 @@ import {
   type Lacuna,
 } from "./debriefing-money-time-engine.js";
 import type { ResumoMacro } from "./debriefing-resumo-macro.js";
-import { METRICAS_SEM_CARRINHO_PUBLICO, type DebriefingAudience, type LacunaDePublico } from "./debriefing-audience-engine.js";
+import {
+  METRICAS_SEM_CARRINHO_PUBLICO,
+  computeRecompraPorOrigem,
+  type DebriefingAudience,
+  type LacunaDePublico,
+} from "./debriefing-audience-engine.js";
 import { comMelhorVersao } from "./debriefing-midia-anuncios.js";
 import {
   LACUNA_CARRINHO_AINDA_NAO_ABRIU,
@@ -167,10 +172,15 @@ export function montarPayloadDebriefing(
     versao: DEBRIEFING_PAYLOAD_VERSAO,
     config,
     dinheiroTempo: moneyTime,
-    // 49.18 AC2 (R12-3): a melhor versão isolada usa a base do Motor I — "captação do lançamento".
-    publico: audience.midiaPorAnuncio
-      ? { ...audience, midiaPorAnuncio: comMelhorVersao(audience.midiaPorAnuncio, moneyTime.midia.porGrupo.captacao.investimentoComImposto) }
-      : audience,
+    publico: {
+      ...audience,
+      // 49.18 AC2 (R12-3): a melhor versão isolada usa a base do Motor I — "captação do lançamento".
+      ...(audience.midiaPorAnuncio
+        ? { midiaPorAnuncio: comMelhorVersao(audience.midiaPorAnuncio, moneyTime.midia.porGrupo.captacao.investimentoComImposto) }
+        : {}),
+      // 49.20 (AC1): a recompra por origem cruza a origem do Motor I com quem o cross-launch achou na base.
+      recompraPorOrigem: computeRecompraPorOrigem(moneyTime.compradores, audience.crossLaunch),
+    },
     lacunas,
     geradoEm: iso,
     situacao: situacaoDoPayload(moneyTime, config),

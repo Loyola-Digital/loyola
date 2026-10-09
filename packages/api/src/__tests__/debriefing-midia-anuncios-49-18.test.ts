@@ -55,6 +55,7 @@ import {
   type CenarioDaMidia,
   type TextosDaFixture,
 } from "./fixtures/debriefing-midia-anuncios-49-18.js";
+import { semAcrescimosDa4920, semCamposDa4920 } from "./fixtures/debriefing-acrescimos-49-20.js";
 
 const FATOR = 1 / (1 - 0.1215);
 const ROT = { projeto: "Expert", lancamento: "PG05", etapas: {}, funis: {} };
@@ -545,8 +546,9 @@ describe("AC8 — vale no parcial e no final; o resto do documento não muda", (
   it.each(Object.keys(CENARIOS_DO_AC8))("%s: HTML inteiro sem o bloco e payload sem o campo novo = os do commit-base", async (nome) => {
     const { html, payload } = await gerar(CENARIOS_DO_AC8[nome]!);
     expect(sha(html)).not.toBe(SHA_DO_BASE[nome]!.html);
-    expect(sha(semO4918(html))).toBe(SHA_DO_BASE[nome]!.html);
-    const p = structuredClone(payload);
+    // 49.20: tirados também os acréscimos dela (recompra e pesquisa por pergunta), o mesmo SHA.
+    expect(sha(semO4918(semAcrescimosDa4920(html)))).toBe(SHA_DO_BASE[nome]!.html);
+    const p = semCamposDa4920(payload);
     expect(p.publico.midiaPorAnuncio).toBeDefined();
     delete p.publico.midiaPorAnuncio;
     expect(sha(JSON.stringify(p))).toBe(SHA_DO_BASE[nome]!.payload);
