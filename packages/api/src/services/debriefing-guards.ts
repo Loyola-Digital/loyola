@@ -925,8 +925,9 @@ export function coletarAlertasDebriefing(p: DebriefingPayload): AlertaFase12[] {
   // WF6: os dias sinalizados E os que o limiar diz que deveriam estar (pico não sinalizado = armadilha #10).
   const limiar = m.limiarPicoArtefato.limiarPicoArtefato;
   const sinalizados = m.roasDiarioCaptacao.filter((d) => d.picoArtefato);
+  // 49.17 fatia C (@po, REQ-001): os dias D−n dos testes pré-lançamento estão na série, mas nunca são pico-artefato.
   const naoSinalizados = m.roasDiarioCaptacao.filter(
-    (d) => !d.picoArtefato && !d.diaSemGasto && d.investimento > 0 && limiar !== null && d.investimento < limiar,
+    (d) => d.dia >= m.janela.inicio && !d.picoArtefato && !d.diaSemGasto && d.investimento > 0 && limiar !== null && d.investimento < limiar,
   );
   if (sinalizados.length + naoSinalizados.length > 0) {
     const fmt = (d: (typeof sinalizados)[number]) => `D+${int(d.dMais)} (${d.dia}, investimento ${fmtReais(d.investimento)}, ROAS ${num(d.roas)})`;

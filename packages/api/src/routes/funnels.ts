@@ -5,6 +5,7 @@ import { funnels, funnelStages, projects, projectMembers, metaAdsAccountProjects
 import { fetchCampaigns, decryptAccountToken } from "../services/meta-ads.js";
 import { triggerBackgroundSyncForNewCampaigns } from "../services/meta-insights-cache.js";
 import { resolveStagePhaseSuffix } from "../services/stage-phase.js";
+import { effectiveMatchCode } from "../services/funnel-match-code.js";
 import { fetchGoogleAdsCampaigns, decryptToken as decryptGoogleToken } from "../services/google-ads.js";
 import { funilDoConvidado } from "../services/escopo-do-convidado.js";
 
@@ -780,9 +781,8 @@ export default fp(async function funnelRoutes(fastify) {
     // matchCode default = nome do funil (lowercase). Se o usuário cadastrou um
     // override em funnel.matchCode, usa esse. Permite nomes longos tipo
     // "Lançamento DG-PG02 Abril" matchearem só `dg-pg02`.
-    const overrideCode = (funnel.matchCode ?? "").trim().toLowerCase();
-    const fallbackCode = (funnel.name ?? "").trim().toLowerCase();
-    const matchCode = overrideCode.length > 0 ? overrideCode : fallbackCode;
+    // Regra única em services/funnel-match-code.ts (QA 49.17 MNT-001).
+    const matchCode = effectiveMatchCode(funnel);
 
     if (!matchCode) {
       return {

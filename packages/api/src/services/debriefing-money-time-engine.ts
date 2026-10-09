@@ -296,6 +296,14 @@ export interface DebriefingMoneyTimeInput {
    * pré-lançamento: nada muda.
    */
   midiaPreLancamento?: MidiaPreLancamentoInput;
+  /**
+   * QA 49.17 fatia C (REL-001) — o código do lançamento veio do NOME do funil
+   * (sem `match_code`) e nenhuma campanha das etapas de captação o tem no nome:
+   * o loader o passa aqui e o motor grava a pendência
+   * `CODIGO_DO_LANCAMENTO_SEM_CAMPANHA` (os testes pré-lançamento não casam;
+   * nunca em silêncio). Ausente = o código casa ou foi cadastrado.
+   */
+  codigoDoLancamentoSemCampanha?: CodigoDoLancamento;
 }
 
 /** Story 49.17 fatia C — o código do lançamento que a campanha de teste precisa ter no nome (R12-2). */
@@ -452,7 +460,8 @@ export interface Pendencia {
     | "CAMPANHA_SEM_PUBLICO"
     | "MIDIA_DE_ETAPA_FORA_DA_CONFIG"
     | "VENDA_DE_ETAPA_FORA_DA_CONFIG"
-    | "TIPO_INESPERADO_NA_CAPTACAO";
+    | "TIPO_INESPERADO_NA_CAPTACAO"
+    | "CODIGO_DO_LANCAMENTO_SEM_CAMPANHA";
   detalhe: string;
   stageId?: string;
   campaignId?: string;
@@ -1432,7 +1441,17 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
   }
   // 49.17 fatia C (AC5): testes pré-lançamento entram na mídia da captação (R11-1 opção B).
   const linhasDeTeste = linhasDeTestePreLancamento(input.midiaPreLancamento, janela.inicio, grupoDaEtapa);
+  const midiaDaJanelaComImposto = midiaComImposto.slice(); // sem os testes: base do limiar de pico-artefato (@po, REQ-001)
   for (const m of linhasDeTeste) midiaComImposto.push({ ...m, comImposto: aplicarImposto(m.spendBruto, m.dia, pct) });
+  if (input.codigoDoLancamentoSemCampanha) {
+    const c = input.codigoDoLancamentoSemCampanha;
+    pendencias.push({
+      codigo: "CODIGO_DO_LANCAMENTO_SEM_CAMPANHA",
+      detalhe:
+        `o código do lançamento é o nome do funil ("${c.codigo}"), porque o funil não tem match_code cadastrado, e nenhuma campanha das etapas de captação tem esse código no nome — ` +
+        `testes pré-lançamento, se houver, não foram procurados pelo código certo: conferir o match_code do funil`,
+    });
+  }
   for (const [stageId, n] of midiaForaDaConfig) {
     pendencias.push({
       codigo: "MIDIA_DE_ETAPA_FORA_DA_CONFIG",
@@ -1947,10 +1966,17 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
     d.fatCent += l.centavos;
     d.fatPorEtapaCent[l.stageId] = (d.fatPorEtapaCent[l.stageId] ?? 0) + l.centavos;
   }
-  const diasComGasto = [...diasCap.entries()].filter(([, d]) => d.inv > 0).map(([dia]) => dia).sort();
+  // @po 2026-10-09 (REQ-001 da fatia C): o limiar é só da janela — os dias
+  // D−n dos testes pré-lançamento ficam fora do numerador e do denominador e
+  // nunca são pico-artefato (a série diária, essa sim, começa no D−n pela F12).
+  const invCaptacaoDaJanela =
+    linhasDeTeste.length > 0
+      ? agregarMidia(midiaDaJanelaComImposto.filter((m) => grupoDaEtapa(m.stageId) === "captacao")).investimentoComImposto
+      : invCaptacao;
+  const diasComGasto = [...diasCap.entries()].filter(([dia, d]) => dia >= janela.inicio && d.inv > 0).map(([dia]) => dia).sort();
   const diasDoDenominador =
     diasComGasto.length > 0 ? diasEntre(diasComGasto[0]!, diasComGasto[diasComGasto.length - 1]!) + 1 : 0;
-  const investimentoMedioDiarioCaptacao = diasDoDenominador > 0 ? invCaptacao / diasDoDenominador : null;
+  const investimentoMedioDiarioCaptacao = diasDoDenominador > 0 ? invCaptacaoDaJanela / diasDoDenominador : null;
   const limiar = investimentoMedioDiarioCaptacao !== null ? investimentoMedioDiarioCaptacao * FRACAO_LIMIAR_PICO_ARTEFATO : null;
 
   const roasDiarioCaptacao: DiaDoRoasCaptacao[] = [];
@@ -1970,7 +1996,7 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
         faturamentoPorEtapa: Object.fromEntries(Object.entries(d.fatPorEtapaCent).map(([k, c]) => [k, reais(c)])),
         roas: semGasto ? null : reais(d.fatCent) / d.inv,
         diaSemGasto: semGasto,
-        picoArtefato: !semGasto && limiar !== null && d.inv < limiar,
+        picoArtefato: !semGasto && dia >= janela.inicio && limiar !== null && d.inv < limiar,
       });
     }
   }
@@ -2165,7 +2191,7 @@ export function computeDebriefingMoneyTime(input: DebriefingMoneyTimeInput): Deb
       memoria:
         investimentoMedioDiarioCaptacao === null
           ? "sem dia com investimento de captação — sem limiar"
-          : `investimento de captação c/ imposto ${fmtReais(invCaptacao)} ÷ ${diasDoDenominador} dia(s) de calendário` +
+          : `investimento de captação c/ imposto ${fmtReais(invCaptacaoDaJanela)} ÷ ${diasDoDenominador} dia(s) de calendário` +
             ` (do primeiro ao último com gasto, inclusive) = ${fmtReais(investimentoMedioDiarioCaptacao)}; ` +
             `limiar = ${fmtNumero(FRACAO_LIMIAR_PICO_ARTEFATO * 100, 0)}% = ${fmtReais(limiar!)}`,
     },

@@ -589,9 +589,13 @@ describe("AC12 — loadDebriefingMoneyTimeInput sobre Postgres real", () => {
     // Sem código no nome (o nome do funil, "dg-pg02-abr-26", não está em "dg--vendas-captacao--hot"): nada.
     const sem = await loadDebriefingMoneyTimeInput(db, { config }, { lerPlanilha: lerFalso });
     expect(sem.midiaPreLancamento).toBeUndefined();
+    // QA REL-001: o código veio do nome do funil e nenhuma campanha de captação o tem → o motor recebe e grava a pendência.
+    expect(sem.codigoDoLancamentoSemCampanha).toEqual({ codigo: "dg-pg02-abr-26", origem: "nome-do-funil" });
+    expect(computeDebriefingMoneyTime({ ...sem, criterioDeUnico: "porEmail" }).pendencias.map((p) => p.codigo)).toContain("CODIGO_DO_LANCAMENTO_SEM_CAMPANHA");
     await pg.exec(`UPDATE funnels SET match_code = 'dg' WHERE id = '${F}'`);
     try {
       const r = await loadDebriefingMoneyTimeInput(db, { config }, { lerPlanilha: lerFalso });
+      expect(r.codigoDoLancamentoSemCampanha).toBeUndefined();
       expect(r.midiaPreLancamento!.codigo).toEqual({ codigo: "dg", origem: "match_code" });
       // 111 (captação, vendas-captacao, "dg") em 01/03: entra; 222 é do principal; 999 é de etapa fora; P2 é outro projeto.
       expect(r.midiaPreLancamento!.linhas).toEqual([

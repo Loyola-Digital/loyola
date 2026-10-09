@@ -81,6 +81,8 @@ import type {
 } from "./debriefing-money-time-engine.js";
 import { configDoMotor, ehCampanhaDeTestePreLancamento, GRUPO_DO_PAPEL } from "./debriefing-money-time-engine.js";
 import type { CodigoDoLancamento, MidiaPreLancamentoInput } from "./debriefing-money-time-engine.js";
+import { matchCodeDoFunil, type FunilComCodigo } from "./funnel-match-code.js";
+import { normalizarNome } from "./launch-report-normalize.js";
 
 // ---------------------------------------------------------------------------
 // Erro de dado
@@ -316,16 +318,29 @@ export function lerFonteDeLead(f: FonteDeLeadLida): { leads: LeadInput[]; semIde
 
 /**
  * Story 49.17 fatia C (R12-2) — o código do lançamento que as campanhas têm no
- * nome: o `match_code` do funil (aparado, minúsculo) e, sem ele, o nome do
- * funil em minúsculas. É a regra de `effectiveMatchCode` (rotas de campanhas
- * órfãs e de auto-preenchimento das campanhas da etapa, Epic 25 / Story 28.1),
- * a mesma que já casa campanha Meta com o funil. `null` = sem nenhum dos dois. Pura.
+ * nome: o `match_code` do funil (aparado, minúsculo) e, sem ele, o nome INTEIRO
+ * do funil em minúsculas. É o `effectiveMatchCode` (rotas de campanhas órfãs e
+ * de auto-preenchimento das campanhas da etapa, Epic 25 / Story 28.1), a mesma
+ * regra que já casa campanha Meta com o funil — reaproveitada de
+ * `funnel-match-code.ts` (QA MNT-001). `null` = sem nenhum dos dois. Pura.
  */
-export function codigoDoLancamentoDoFunil(funil: { name: string | null; matchCode: string | null }): CodigoDoLancamento | null {
-  const doCadastro = (funil.matchCode ?? "").trim().toLowerCase();
-  if (doCadastro) return { codigo: doCadastro, origem: "match_code" };
-  const doNome = (funil.name ?? "").trim().toLowerCase();
-  return doNome ? { codigo: doNome, origem: "nome-do-funil" } : null;
+export function codigoDoLancamentoDoFunil(funil: FunilComCodigo): CodigoDoLancamento | null {
+  return matchCodeDoFunil(funil);
+}
+
+/**
+ * QA 49.17 fatia C (REL-001) — o código veio do NOME do funil (sem `match_code`)
+ * e nenhuma campanha das etapas de captação o tem no nome: os testes
+ * pré-lançamento, se houver, não casam. Devolve o código para o motor gravar a
+ * pendência `CODIGO_DO_LANCAMENTO_SEM_CAMPANHA` (erro não vira ausência em
+ * silêncio). Com `match_code` cadastrado, nada (o código foi informado). Pura.
+ */
+export function codigoDoFunilSemCampanhaDeCaptacao(
+  codigo: CodigoDoLancamento | null,
+  nomesDasCampanhasDeCaptacao: readonly (string | null | undefined)[],
+): CodigoDoLancamento | null {
+  if (!codigo || codigo.origem !== "nome-do-funil") return null;
+  return nomesDasCampanhasDeCaptacao.some((n) => normalizarNome(n).includes(codigo.codigo)) ? null : codigo;
 }
 
 /** As etapas de captação do lançamento (papel `leads-captacao` ou `vendas-captacao`). Pura. */
@@ -858,12 +873,16 @@ export async function loadDebriefingMoneyTimeInput(
   const [funil] = await db.select({ name: funnels.name, matchCode: funnels.matchCode }).from(funnels).where(eq(funnels.id, config.funnelId)).limit(1);
   const codigo = funil ? codigoDoLancamentoDoFunil(funil) : null;
   const papelDaEtapa = new Map(config.etapas.map((e) => [e.stageId, e.papel]));
-  const idsDeTeste = codigo
-    ? idsCampanha.filter((id) => {
-        const papel = papelDaEtapa.get(etapaDaCampanha.get(id)!);
-        return !!papel && GRUPO_DO_PAPEL[papel] === "captacao" && ehCampanhaDeTestePreLancamento(campanhaInfo.get(id), codigo);
-      })
-    : [];
+  const idsDeCaptacao = idsCampanha.filter((id) => {
+    const papel = papelDaEtapa.get(etapaDaCampanha.get(id)!);
+    return !!papel && GRUPO_DO_PAPEL[papel] === "captacao";
+  });
+  const idsDeTeste = codigo ? idsDeCaptacao.filter((id) => ehCampanhaDeTestePreLancamento(campanhaInfo.get(id), codigo)) : [];
+  // REL-001: código pelo nome do funil que não casa nenhuma campanha de captação → pendência, nunca silêncio.
+  const codigoDoLancamentoSemCampanha = codigoDoFunilSemCampanhaDeCaptacao(
+    codigo,
+    idsDeCaptacao.map((id) => campanhaInfo.get(id)),
+  );
   if (codigo && idsDeTeste.length > 0) {
     const antes = await db
       .select({
@@ -938,6 +957,7 @@ export async function loadDebriefingMoneyTimeInput(
     fontesDuplicadas: diagnostico.fontesDuplicadas,
     leadsDeCadastro: entradaLeadsDeCadastro,
     ...(midiaPreLancamento ? { midiaPreLancamento } : {}),
+    ...(codigoDoLancamentoSemCampanha ? { codigoDoLancamentoSemCampanha } : {}),
     configClassificador,
     diagnostico,
   };

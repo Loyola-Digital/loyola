@@ -349,6 +349,8 @@ export const PENDENCIAS_QUE_AFETAM_A_PARIDADE: Readonly<Record<string, string>> 
   MIDIA_DE_ETAPA_FORA_DA_CONFIG: "investimento, CAC, ROAS e CPM",
   VENDA_DE_ETAPA_FORA_DA_CONFIG: "compradores, faturamento, ticket, CAC e ROAS",
   TIPO_INESPERADO_NA_CAPTACAO: "faturamento da captação e ticket",
+  /** QA 49.17 fatia C (REL-001): testes pré-lançamento podem ter ficado fora do investimento. */
+  CODIGO_DO_LANCAMENTO_SEM_CAMPANHA: "investimento, CAC e ROAS (testes pré-lançamento)",
 };
 
 /** Os alertas das guardas que afetam a tabela (o WF3 é a mesma coisa que a lacuna de preço). */
@@ -520,6 +522,19 @@ export function montarResumoMacro(e: EntradaDoResumoMacro): ResumoMacro {
   };
 }
 
+/**
+ * @po 2026-10-09 (REQ-002 da fatia C) — o bloco de testes aparece (o atual tem
+ * testes) e a comparação vem de PAYLOAD SALVO sem o campo: "não informado no
+ * relatório salvo" (antes da fatia C, ou sem testes — indistinguíveis), nunca
+ * "nenhum". Na comparação recalculada, a ausência é medida: "nenhum". Pura.
+ */
+export function testesNaoInformadosNaComparacao(
+  p: DebriefingPayload,
+  comp: { payload: DebriefingPayload; origem: { tipo: "recalculada" | "payload-salvo" } } | null,
+): boolean {
+  return !!comp && comp.origem.tipo === "payload-salvo" && !comp.payload.dinheiroTempo.testesPreLancamento && !!p.dinheiroTempo.testesPreLancamento;
+}
+
 /** Fatia C — os testes à parte, só quando algum lado os tem (sem testes, o resumo de antes). */
 function testesDosLados(p: DebriefingPayload, comp: DebriefingPayload | null): Pick<ResumoMacro, "testesPreLancamento"> {
   const atual = testesNoResumo(p);
@@ -554,6 +569,11 @@ function limitacoesDoResumo(e: EntradaDoResumoMacro, paridade: readonly LinhaDaP
   for (const l of paridade) if (l.notaSemDelta) out.push(`${l.rotulo}: ${l.notaSemDelta}`);
   if (e.comparacao?.origem.tipo === "payload-salvo") {
     out.push(`A comparação ${e.comparacao.nome} vem do último relatório salvo dele (${e.comparacao.origem.salvoEm.slice(0, 10)}), não de um recálculo — números de antes da Story 49.17 ficam “—”.`);
+    if (testesNaoInformadosNaComparacao(e.payload, e.comparacao)) {
+      out.push(
+        `O relatório salvo de ${e.comparacao.nome} não informa testes pré-lançamento; o Δ de investimento, CAC e ROAS supõe que ele não teve.`,
+      );
+    }
   }
   if (e.comparacaoSemDelta) {
     out.push(`Sem Δ contra ${e.comparacaoSemDelta.nome}: ele só tem relatório salvo (totais fechados), que não pode ser cortado no mesmo D+N desta parcial.`);
