@@ -1028,7 +1028,9 @@ describe("render — o bloco Teste de LP a partir do payload", () => {
 // ---------------------------------------------------------------------------
 
 /**
- * SHA-256 medidos na `main` `ec990ad0` (com a 49.20 mergeada; antes, `f2cf6f1e` e `a1d8d121`),
+ * SHA-256 medidos na `main` `ec990ad0` (com a 49.20 mergeada; antes, `f2cf6f1e` e `a1d8d121`)
+ * e medidos de novo na `main` `cf3d479b` (49.17 fatia C): os mesmos 7 pares — os testes
+ * pré-lançamento só entram no documento quando o lançamento os tem, e esta fixture não tem;
  * com esta mesma fixture e o mesmo relógio, por um `.test.ts` temporário sobre uma cópia
  * (`git archive`) da main: o HTML INTEIRO e o payload. Na story, o HTML sem o bloco da
  * 49.19 e o payload sem `publico.testeDeLp` dão os MESMOS SHA — cabeçalho, avisos, resumo
