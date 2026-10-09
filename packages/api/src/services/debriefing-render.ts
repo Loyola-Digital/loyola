@@ -53,7 +53,7 @@ import {
   type CorteDaJanela,
 } from "./debriefing-hygiene.js";
 import { parcialDo } from "./debriefing-payload.js";
-import type { FormatoDoAnuncio, LinhaDoRanking, MetricasDaMidia } from "./debriefing-midia-anuncios.js";
+import type { FormatoDoAnuncio, LinhaDoRanking, MetricasDaMidia, MidiaPorAnuncio } from "./debriefing-midia-anuncios.js";
 import { DIAS_MINIMOS_DO_TESTE_DE_LP, rotuloDoFormatoDoPar, type ParDeLp } from "./debriefing-teste-de-lp.js";
 import {
   avaliacao,
@@ -1031,6 +1031,72 @@ function motivoSemMidiaDaComparacao(comp: ComparacaoDoDebriefing | null): string
   return null;
 }
 
+/** Marcador do aviso da 49.21 — o teste do AC4 o tira do HTML por ele. */
+export const MARCA_DO_AVISO_CPA_CAC = "data-aviso-cpa-cac";
+
+/** "N de M" de um lado (atual ou comparação), só com os números do payload. */
+function nDeMDaAtribuicao(m: MidiaPorAnuncio): string {
+  return `${inteiroBr(m.atribuicao.noRanking)} de ${inteiroBr(m.atribuicao.compradores)}`;
+}
+
+/**
+ * Story 49.21 — o aviso logo acima da tabela do ranking: o CPA por anúncio
+ * divide só pelos compradores ATRIBUÍDOS pelo Ad ID; o CAC do resumo (49.17)
+ * divide por TODOS. Todo número sai do payload (`atribuicao` e
+ * `dinheiroTempo.cac`), nada é recalculado aqui; sem o dado, o aviso diz o que
+ * falta. Com a comparação principal, o N de M dela (ou "—" com o motivo).
+ */
+function avisoCpaXCac(
+  p: DebriefingPayload,
+  m: MidiaPorAnuncio,
+  comp: ComparacaoDoDebriefing | null,
+  rotuloComp: string,
+  semComp: string | null,
+  semDelta: { nome: string } | null,
+): string {
+  const a = m.atribuicao;
+  const partes: string[] = [
+    `<b>CPA por anúncio não se compara com o CAC do resumo.</b> O CPA de cada anúncio divide o investimento dele só pelos compradores de captação atribuídos a ele pelo Ad ID do utm_content da venda.`,
+  ];
+  if (!m.vendasComConteudo) {
+    partes.push(
+      `As planilhas de venda não trazem utm_content: nenhum dos <b>${esc(inteiroBr(a.compradores))}</b> compradores de captação foi atribuído a anúncio, e o CPA por anúncio não foi medido.`,
+    );
+  } else {
+    partes.push(
+      `No ranking estão <b data-n-de-m>${esc(nDeMDaAtribuicao(m))}</b> compradores de captação; os outros estão nas peças de escassez (${esc(inteiroBr(a.naEscassez))}), sem Ad ID no utm_content (${esc(inteiroBr(a.semAdId))}) ou com Ad ID fora do ad-level de captação (${esc(inteiroBr(a.adIdForaDoAdLevel))}).`,
+    );
+  }
+  const cac = p.dinheiroTempo.cac;
+  const valorDoCac = cac && cac.valor !== null ? ` (<b data-cac>${esc(fmt(cac.valor, "moeda"))}</b>)` : "";
+  partes.push(
+    `O CAC do resumo${valorDoCac} divide o investimento de captação por <b>todos</b> os compradores de captação, então os dois números não se comparam diretamente.`,
+  );
+  if (!cac) partes.push(`O CAC não está neste relatório (gerado antes do resumo macro).`);
+  else if (cac.valor === null) partes.push(`O CAC não foi calculado: ${esc(cac.motivo ?? cac.memoria)}.`);
+  if (comp) {
+    const r = nDeMDaComparacao(comp, semComp);
+    partes.push(
+      "nm" in r
+        ? `Comparação, ${esc(rotuloComp)}: <b data-n-de-m-comparacao>${esc(r.nm)}</b> compradores de captação no ranking.`
+        : `Comparação, ${esc(rotuloComp)}: <b data-n-de-m-comparacao>${TRACO}</b> (${esc(r.motivo)}).`,
+    );
+  } else if (semDelta) {
+    partes.push(
+      `Comparação, ${esc(semDelta.nome)}: <b data-n-de-m-comparacao>${TRACO}</b> (sem comparação no mesmo D+N: só tem relatório salvo, com os totais fechados).`,
+    );
+  }
+  return `<div class="warn" ${MARCA_DO_AVISO_CPA_CAC}>${partes.join(" ")}</div>`;
+}
+
+/** O N de M da comparação principal, ou o motivo de não ter (o aviso põe "—" com ele). */
+function nDeMDaComparacao(comp: ComparacaoDoDebriefing, semComp: string | null): { nm: string } | { motivo: string } {
+  const mc = comp.payload.publico.midiaPorAnuncio;
+  if (semComp || !mc) return { motivo: semComp ?? `o relatório de ${comp.nome} não traz a mídia por anúncio` };
+  if (!mc.vendasComConteudo) return { motivo: `as planilhas de venda de ${comp.nome} não trazem utm_content — nenhum comprador atribuído a anúncio` };
+  return { nm: nDeMDaAtribuicao(mc) };
+}
+
 export function blocoDaMidiaPorAnuncio(
   p: DebriefingPayload,
   comp: ComparacaoDoDebriefing | null,
@@ -1075,7 +1141,8 @@ export function blocoDaMidiaPorAnuncio(
   partes.push(
     `<h3 class="gr">Ranking por nome de anúncio (sem as peças de escassez)</h3>` +
       (m.ranking.length
-        ? tabela(["Anúncio", "Público", "Formato", "Invest. (c/ imposto)", "% da verba", "Compradores", "CPA", "ROAS", "Tier superior", "Compra a cada visita", "Post"], linhasRanking, {
+        ? avisoCpaXCac(p, m, comp, rotuloComp, semComp, semDelta) +
+          tabela(["Anúncio", "Público", "Formato", "Invest. (c/ imposto)", "% da verba", "Compradores", "CPA", "ROAS", "Tier superior", "Compra a cada visita", "Post"], linhasRanking, {
             rolagem: m.ranking.length > 12,
             total: totais.join(""),
           })
