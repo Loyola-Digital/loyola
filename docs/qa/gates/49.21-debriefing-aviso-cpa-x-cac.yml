@@ -7,10 +7,10 @@ verdict: PASS
 gate: PASS
 status_reason: 'Os 5 ACs estão implementados e provados. Os testes falham com o render da base: 21 de 22, e o único que passa é o AC4 sem ad-level, onde não há aviso. Os SHA de base do AC4 foram remedidos pelo QA na 493df285 e batem com as constantes do teste nos 7 cenários: payload idêntico e HTML sem o aviso igual ao da base. Das 8 mutações do QA, 7 morrem. A que sobrevive tem CAC = 0, caso inalcançável na prática. As 4 AUTO-DECISIONs são coerentes com os ACs e com a R12-8 e nenhuma pede o dono. Ficam só lows: a validação visual do dono e uma frase imprecisa no Dev Agent Record.'
 reviewer: 'Quinn'
-updated: '2026-10-09T16:30:00-03:00'
+updated: '2026-10-09T17:50:00-03:00'
 branch: 'feat/49.21-aviso-cpa-cac'
-commit_reviewed: '24456abd (1 commit sobre 493df285, a 49.18 mergeada pela #1003)'
-base: 'origin/main @ 493df285'
+commit_reviewed: '73c3a29a (re-gate pós-rebase; gate original sobre 24456abd, base 493df285)'
+base: 'origin/main @ 087c226d (49.18 + 49.19 + 49.20 + 49.17 fatia C)'
 
 checks:
   requirements_traceability: 'AC1: o aviso fica entre o título "Ranking por nome de anúncio" e a <table>, e o rodapé não o contém (teste de posição e mutação Q1). O texto traz o CPA só dos atribuídos, N de M, as três parcelas por extenso e o CAC por todos. AC2: os números saem de `atribuicao` e de `dinheiroTempo.cac`. O payload com os números do PG05 (215/90/14/3/108, CAC 46,09) aparece no aviso, e a soma do ranking ≠ 90. Sem CAC (ausente), o aviso diz "não está neste relatório"; com CAC nulo, traz o `motivo`; sem utm_content, não há N de M. AC3: o N de M vem do payload DA comparação, com o rótulo do mesmo D+N no parcial. Sem o dado, "—" com o motivo (salvo antigo, sem ad-level, sem utm_content, parcial só com salvo). AC4: SHA (ver abaixo). AC5: os testes falham na base, e há mutações.'
@@ -59,3 +59,13 @@ recommendations:
   future:
     - 'DOC-001 e TEST-001 (low).'
     - 'Merge: depois da 49.19 e da 49.20, quem mergear por último faz rebase. O render é o mesmo arquivo.'
+
+regate_2026_10_09_pos_rebase:
+  verdict: PASS
+  commit_reviewed: '73c3a29a'
+  base: '087c226d'
+  range_diff: 'Diff de 493df285..32f0c02e para 087c226d..0b805d29: no código do aviso, a única mudança é o import de debriefing-render.ts, onde entrou o import da 49.19. O commit do gate saiu idêntico.'
+  ac4_sha_na_base: 'O QA pôs o render da 087c226d no worktree; o resto de src/ é igual ao da base. Rodou os 7 cenários de CENARIOS_DO_AC8 e restaurou o arquivo. Os 14 SHA batem com SHA_DO_BASE do teste, e nenhum HTML da base tem o aviso.'
+  testes_das_irmas: 'Os SHA_DO_BASE da 49.19 (AC7) e da 49.20 (AC3) estão intocados. A única mudança é retirar o aviso via tirarDivs, com a contagem fixada (1 por cenário e 0 no sem ad-level). Mutações: M1, um caractere no rodapé do ranking, derruba 6/7 do AC7 e 6/6 do AC3. M2, CSS global, derruba 7/7 e 6/6. M3, texto do aviso, mantém o AC7 e o AC3 verdes, mas a 49.21 cai. M4, aviso duplicado, derruba 6 e 6 pela contagem. Arquivo restaurado depois de cada uma.'
+  suites: '49.21 22/22, 49.19 71/71 e 49.20 68/68, rodados em série. O tsc não foi re-rodado porque só o import mudou.'
+  issues_abertas: 'DOC-001, TEST-001 e VIS-001 (todas low), sem mudança.'
