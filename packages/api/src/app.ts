@@ -52,6 +52,7 @@ import publicPanoramaRoutes from "./routes/public-panorama.js";
 import publicPerpetualMetricsRoutes from "./routes/public-perpetual-metrics.js";
 import projectPanoramaRoutes from "./routes/project-panorama.js";
 import publicVslRoutes from "./routes/public-vsl.js";
+import publicSwipeFilesRoutes from "./routes/public-swipe-files.js";
 import publicLeadsRoutes from "./routes/public-leads.js";
 import metaAdsRoutes from "./routes/meta-ads.js";
 import trafficAnalyticsRoutes from "./routes/traffic-analytics.js";
@@ -241,6 +242,7 @@ export async function buildServer() {
   await app.register(publicPerpetualMetricsRoutes);
   await app.register(projectPanoramaRoutes);
   await app.register(publicVslRoutes);
+  await app.register(publicSwipeFilesRoutes);
   await app.register(publicLeadsRoutes);
   await app.register(metaAdsRoutes);
   await app.register(trafficAnalyticsRoutes);

@@ -404,6 +404,43 @@ Exclui a fase **e o evento dela no Google**. Destrutivo: confirme com o usuário
 
 ⚠️ **Não existe** pela API: excluir campanha inteira, importar do Google, conectar agenda nova, personalizar faixa (rótulo/cor). Isso é feito na tela.
 
+## Swipe Files (acervo de referências)
+
+As referências que o time guarda: páginas, criativos, anúncios, documentos. É
+**global** — não tem projeto no caminho, porque o acervo é da casa e a mesma
+referência serve a qualquer expert.
+
+### GET /api/public/v1/swipe-files
+Lista, paginada. Filtros: `q` (título, notas, marca, título da origem), `marca`,
+`nicho`, `plataforma`, `formato`, `tipo` (`image|video|pdf|link|html|doc`),
+`tag`, `colecao` (uuid), `favoritos`, `limite` (≤100), `pagina`.
+Resposta: `{ total, pagina, limite, temMais, itens[] }`.
+
+### GET /api/public/v1/swipe-files/facetas
+O que existe para filtrar, com contagem: `tipos`, `marcas`, `nichos`,
+`plataformas`, `formatos`, `tags` (as 60 mais usadas) e `colecoes`.
+**Chame isto antes de filtrar** — evita adivinhar a grafia de uma plataforma ou
+baixar o acervo inteiro para descobrir que marcas existem.
+
+### GET /api/public/v1/swipe-files/{id}
+Uma referência, mais as `colecoes` a que ela pertence.
+
+**O item traz:** `titulo`, `notas`, `tipo`, `favorito`, `marca`, `nicho`,
+`plataforma`, `formato`, `tags[]`, `criadoEm`, `atualizadoEm`, e dois blocos que
+podem ser `null`:
+- `arquivo`: `{ url, mime, bytes, largura, altura, semDimensoes }` — a peça em si.
+- `origem`: `{ url, titulo, descricao, imagem, site, lidoEm, semCapa }` — de onde veio, com o Open Graph.
+
+⚠️ **O acervo é cheio de buraco, e isso é o normal.** Medido em 09/10/2026 sobre
+423 referências: **129 dos 161 links não têm `og:image`** e **303 dos 305
+arquivos estão sem `largura`/`altura`**. Por isso a resposta afirma `semCapa` e
+`semDimensoes` em vez de deixar você interpretar um `null` — ausência de capa é
+o caso comum, não falha de leitura. Monte a galeria com um lugar para cair.
+
+⚠️ **Não existe** pela API: quem subiu a peça (dado de pessoa, omitido de
+propósito), o texto extraído do criativo, e escrita de qualquer tipo — o acervo
+é somente leitura aqui.
+
 ## Como interpretar os números (honestidade)
 
 - **Etapa primeiro:** pra analisar um lançamento/etapa, use SEMPRE a família `get_stage_*` (`stage-daily`, `leads-summary`, `survey`, `sales-daily`, **`cadeia-cac`**). Os endpoints de projeto inteiro (`/daily`, `/campaigns`, `/creatives`) misturam todos os funis + evergreen. ⚠️ **Criativos da etapa saem de `cadeia-cac` (campo `criativos`)**, não de `/creatives` — até a 44.14 a família não tinha criativos, e esta frase mandava fazer algo que a própria lista não oferecia. Para os campos de mídia que o `cadeia-cac` não traz, junte por `adId`: receita no bloco `criativos`.
