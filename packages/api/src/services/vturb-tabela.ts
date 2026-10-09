@@ -42,7 +42,11 @@ export interface VideoDoFunil {
   nome: string;
 }
 
-/** Os quatro contadores de que as duas taxas precisam (nomes do VTurb entre parênteses). */
+/**
+ * Os brutos de uma linha (nomes do VTurb entre parênteses). Os quatro
+ * primeiros alimentam as duas taxas (29.78); os outros quatro são as colunas
+ * da 29.82, ADITIVOS — o web da 29.78/29.81 ignora o que não conhece.
+ */
 export interface BrutosDaVsl {
   /** `total_viewed_device_uniq` — denominador do Play Rate. */
   viewedUniq: number;
@@ -52,6 +56,18 @@ export interface BrutosDaVsl {
   overPitch: number;
   /** `total_under_pitch` — com `overPitch`, o denominador da Retenção. */
   underPitch: number;
+  /** Story 29.82 — `total_viewed`: a coluna "Visualizações". */
+  viewed: number;
+  /** Story 29.82 — `total_started`: a coluna "Plays" e o peso do Engajamento do Total (decisão do dono, AC3 = A). */
+  started: number;
+  /** Story 29.82 — `total_clicked`: "Cliques no Botão", o NÚMERO do VTurb (nunca taxa: regra 43.5/29.41). */
+  clicked: number;
+  /**
+   * Story 29.82 — `engagement_rate` do VTurb, em % (ex.: 16,1). Sem
+   * `video_duration` o VTurb não o calcula e `normalizarStats` o deixa 0:
+   * quem lê decide pela `duracao` da linha, não por este número.
+   */
+  engagementRate: number;
 }
 
 export interface LinhaDaTabelaDeVsls {
@@ -61,6 +77,12 @@ export interface LinhaDaTabelaDeVsls {
   pitchTime: number | null;
   /** `false` → a Retenção ao pitch não é calculável ("pitch não configurado no VTurb"). */
   pitchConfigurado: boolean;
+  /**
+   * Story 29.82 (PO-01) — a duração do vídeo, em segundos, que a leitura
+   * mandou ao VTurb como `video_duration` (da `/players/list`). `null` quando
+   * a conta não a tem: aí o Engajamento não existe e a linha mostra "—".
+   */
+  duracao: number | null;
   /** `null` quando a leitura do vídeo falhou — ver `erro`. */
   brutos: BrutosDaVsl | null;
   /** Mensagem da falha deste vídeo; `null` quando leu. */
@@ -134,14 +156,32 @@ export async function mapearComConcorrencia<T, R>(
   return resultados;
 }
 
-/** Os quatro brutos, e só eles — as taxas prontas do VTurb ficam para trás (AC3). */
+/**
+ * Os brutos da linha — as taxas prontas do VTurb ficam para trás (29.78 AC3),
+ * com UMA exceção (29.82): o `engagement_rate`, que não tem bruto no
+ * `sessions/stats` (o tempo assistido não vem) e é a definição do dono por vídeo.
+ */
 export function brutosDaVsl(stats: VturbSessionStats): BrutosDaVsl {
   return {
     viewedUniq: Number(stats.total_viewed_device_uniq ?? 0),
     startedUniq: Number(stats.total_started_device_uniq ?? 0),
     overPitch: Number(stats.total_over_pitch ?? 0),
     underPitch: Number(stats.total_under_pitch ?? 0),
+    viewed: Number(stats.total_viewed ?? 0),
+    started: Number(stats.total_started ?? 0),
+    clicked: Number(stats.total_clicked ?? 0),
+    engagementRate: Number(stats.engagement_rate ?? 0),
   };
+}
+
+/**
+ * Story 29.82 (PO-01) — a duração de um player como a leitura a manda ao VTurb:
+ * número positivo em segundos, ou `null` (ausente, 0, não numérico ou o vídeo
+ * sumiu da conta). A MESMA usada no `video_duration` vai no payload.
+ */
+export function duracaoDoPlayer(atual: Pick<VturbPlayer, "duration"> | undefined): number | null {
+  const d = atual?.duration == null ? null : Number(atual.duration);
+  return d != null && Number.isFinite(d) && d > 0 ? d : null;
 }
 
 /** O pitch de um vídeo como a tela o usa: o número, ou `null` com `pitchConfigurado: false`. */
@@ -205,18 +245,16 @@ export async function lerTabelaDasVsls(input: {
   return mapearComConcorrencia(input.videos, input.concorrencia ?? CONCORRENCIA_DA_TABELA, async (video) => {
     const atual = daConta.get(video.playerId);
     const { pitchTime, pitchConfigurado } = pitchAtualDoPlayer(atual);
+    const duracao = duracaoDoPlayer(atual);
     try {
-      const stats = await input.lerStats({
-        playerId: video.playerId,
-        pitchTime,
-        videoDuration: atual?.duration == null ? null : Number(atual.duration) || null,
-      });
-      return { ...video, pitchTime, pitchConfigurado, brutos: brutosDaVsl(stats), erro: null };
+      const stats = await input.lerStats({ playerId: video.playerId, pitchTime, videoDuration: duracao });
+      return { ...video, pitchTime, pitchConfigurado, duracao, brutos: brutosDaVsl(stats), erro: null };
     } catch (err) {
       return {
         ...video,
         pitchTime,
         pitchConfigurado,
+        duracao,
         brutos: null,
         erro: err instanceof Error && err.message ? err.message : "Falha ao consultar o VTurb",
       };

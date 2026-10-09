@@ -66,6 +66,19 @@ describe("Story 29.78 — fio de GET …/funnels/:funnelId/vturb/vsls (TEST-001)
   it("os vídeos lidos são a união deduplicada dos vínculos recortados", () => {
     expect(bloco).toContain("videos: unirVideosDoFunil(vinculos)");
   });
+
+  // Story 29.82 (PO-01/PO-06) — a duração viaja no payload: a rota devolve as
+  // linhas de `lerTabelaDasVsls` (que levam `duracao`) sem remontá-las, e o
+  // sessions/stats recebe a mesma duração.
+  it("a resposta são as linhas de `lerTabelaDasVsls`, inteiras (com `duracao` e os brutos novos)", () => {
+    expect(bloco).toContain("const videos = await lerTabelaDasVsls({");
+    expect(bloco).toContain("return { funnelId: p.data.funnelId, range, videos };");
+    expect(bloco).not.toMatch(/videos\.map\(/);
+  });
+
+  it("o sessions/stats de cada vídeo leva a duração da linha", () => {
+    expect(bloco).toContain("videoDuration: v.videoDuration,");
+  });
 });
 
 describe("Story 29.78 — fio do GET …/vturb/players/:id/overview (AC12)", () => {

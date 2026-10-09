@@ -124,22 +124,68 @@ describe("lerTabelaDasVsls — AC4 / AC7 / AC8 / PO-08", () => {
     expect(r[0]).toMatchObject({ pitchConfigurado: true, pitchTime: 95 });
   });
 
-  it("devolve os QUATRO brutos da tabela, não as taxas prontas", async () => {
+  it("devolve os brutos da tabela, não as taxas prontas (29.78) — com as colunas da 29.82", async () => {
     const r = await lerTabelaDasVsls({
       videos: [videos[1]!],
       listarPlayers: async () => [{ id: "pps", pitch_time: 95, duration: 600 }],
       lerStats: async () =>
         stats({
+          total_viewed: 905,
           total_viewed_device_uniq: 521,
+          total_started: 331,
           total_started_device_uniq: 158,
           total_over_pitch: 13,
           total_under_pitch: 151,
+          total_clicked: 49,
+          total_clicked_device_uniq: 40, // não é a coluna (regra 43.5/29.41)
+          engagement_rate: 30.05,
           over_pitch_rate: 7.93, // pronta — não entra
           play_rate: 30.33,
         }),
     });
-    expect(r[0]!.brutos).toEqual({ viewedUniq: 521, startedUniq: 158, overPitch: 13, underPitch: 151 });
+    expect(r[0]!.brutos).toEqual({
+      viewedUniq: 521,
+      startedUniq: 158,
+      overPitch: 13,
+      underPitch: 151,
+      viewed: 905,
+      started: 331,
+      clicked: 49,
+      engagementRate: 30.05,
+    });
     expect(r[0]!.erro).toBeNull();
+  });
+
+  // Story 29.82 (PO-01) — a duração viaja no payload, e é a MESMA mandada ao VTurb.
+  it("cada linha leva a `duracao` que foi como video_duration ao sessions/stats", async () => {
+    const lerStats = vi.fn(async () => stats({}));
+    const r = await lerTabelaDasVsls({
+      videos: [...videos, { playerId: "sumiu", nome: "Sumiu da conta" }],
+      listarPlayers: async () => [
+        { id: "hamb", pitch_time: 212, duration: "684" as unknown as number },
+        { id: "pps", pitch_time: 95, duration: 0 },
+      ],
+      lerStats,
+    });
+    expect(r.map((l) => [l.playerId, l.duracao])).toEqual([
+      ["hamb", 684],
+      ["pps", null],
+      ["sumiu", null],
+    ]);
+    for (const [i, chamada] of lerStats.mock.calls.entries()) {
+      expect((chamada as unknown as [{ videoDuration: unknown }])[0].videoDuration).toBe(r[i]!.duracao);
+    }
+  });
+
+  it("a linha que falhou também leva a `duracao` (o vídeo existe; só a leitura caiu)", async () => {
+    const r = await lerTabelaDasVsls({
+      videos: [videos[0]!],
+      listarPlayers: async () => [{ id: "hamb", pitch_time: 212, duration: 900 }],
+      lerStats: async () => {
+        throw new VturbError("VTurb respondeu 500", 500, true);
+      },
+    });
+    expect(r[0]).toMatchObject({ brutos: null, duracao: 900 });
   });
 
   it("falha de UM vídeo fica na linha dele; os outros seguem (AC8)", async () => {
