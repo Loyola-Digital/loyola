@@ -1,0 +1,61 @@
+schema: 1
+storyId: '49.21'
+story: '49.21'
+story_title: 'Aviso visível de que o CPA por anúncio não se compara com o CAC do resumo'
+scope_do_gate: 'AC1–AC5 (R12-8, REQ-001 do gate da 49.18). Só render do bloco "Mídia por Anúncio".'
+verdict: PASS
+gate: PASS
+status_reason: 'Os 5 ACs estão implementados e provados. Os testes falham com o render da base: 21 de 22, e o único que passa é o AC4 sem ad-level, onde não há aviso. Os SHA de base do AC4 foram remedidos pelo QA na 493df285 e batem com as constantes do teste nos 7 cenários: payload idêntico e HTML sem o aviso igual ao da base. Das 8 mutações do QA, 7 morrem. A que sobrevive tem CAC = 0, caso inalcançável na prática. As 4 AUTO-DECISIONs são coerentes com os ACs e com a R12-8 e nenhuma pede o dono. Ficam só lows: a validação visual do dono e uma frase imprecisa no Dev Agent Record.'
+reviewer: 'Quinn'
+updated: '2026-10-09T16:30:00-03:00'
+branch: 'feat/49.21-aviso-cpa-cac'
+commit_reviewed: '24456abd (1 commit sobre 493df285, a 49.18 mergeada pela #1003)'
+base: 'origin/main @ 493df285'
+
+checks:
+  requirements_traceability: 'AC1: o aviso fica entre o título "Ranking por nome de anúncio" e a <table>, e o rodapé não o contém (teste de posição e mutação Q1). O texto traz o CPA só dos atribuídos, N de M, as três parcelas por extenso e o CAC por todos. AC2: os números saem de `atribuicao` e de `dinheiroTempo.cac`. O payload com os números do PG05 (215/90/14/3/108, CAC 46,09) aparece no aviso, e a soma do ranking ≠ 90. Sem CAC (ausente), o aviso diz "não está neste relatório"; com CAC nulo, traz o `motivo`; sem utm_content, não há N de M. AC3: o N de M vem do payload DA comparação, com o rótulo do mesmo D+N no parcial. Sem o dado, "—" com o motivo (salvo antigo, sem ad-level, sem utm_content, parcial só com salvo). AC4: SHA (ver abaixo). AC5: os testes falham na base, e há mutações.'
+  ac4_sha_independente: 'O QA gerou os 7 cenários de CENARIOS_DO_AC8 duas vezes: com o render da 493df285 (o `git show` do arquivo) e com o do HEAD. O SHA do HTML da base bate com SHA_DO_BASE do teste (40f729ba…, 5ee49ca7…, 7b1b9aa3…, c44aab80…, d7ec947e…, ab2cfce7…, 613ebdab…). O payload do HEAD é igual ao da base nos 7. O HTML do HEAD sem o aviso é igual ao da base nos 7. O HTML com o aviso difere da base em 6, todos menos o sem ad-level.'
+  testes_falham_na_base: 'Com o render da base: 21 de 22 falham. O único que passa é o AC4 "final-sem-ad-level", e é o correto, porque ali não há aviso. O Dev Agent Record diz que o que passa é "sem ad-level: sem aviso" do AC1, mas esse também falha na base (MARCA_DO_AVISO_CPA_CAC não existe). Ver DOC-001.'
+  mutacoes_do_qa: 'Arquivo restaurado e conferido por `cmp` depois de cada uma. Morrem: Q1 aviso depois da tabela (1 falha); Q2 sem o ramo da comparação (5); Q3 sem a frase "não se comparam" (1); Q4 rótulo sem o mesmo D+N (1); Q5 aviso só no final, nunca no parcial (6); Q6 sem Ad ID trocado pelo fora do ad-level (1); Q8 `semComp` ignorado (1). Sobrevive: Q7, `cac.valor !== null` → `cac.valor` truthy, que omite o CAC quando ele vale 0. CAC = 0 exige investimento zero com compradores, então é inalcançável na prática. Fica só como observação.'
+  testes_vizinhos: 'debriefing-midia-anuncios-49-18, debriefing-em-andamento, debriefing-render e debriefing-resumo-macro-49-17: 4 arquivos, 175/175. Arquivo da story: 22/22.'
+  lint_tsc: 'O QA rodou o eslint nos 2 arquivos: 0 problemas. O tsc não foi re-rodado porque o diff não mudou desde 24456abd. O @dev o rodou pelo binário direto e ficou limpo.'
+  autodecisions: 'As 4 são coerentes. (1) Sem linhas no ranking, sem aviso: o Given do AC1 é "o bloco com o ranking", e sem tabela não há CPA a comparar. (2) "Sem atribuição" = `vendasComConteudo=false`: `atribuicao` é obrigatória no tipo desde a 49.18 e o rodapé já a lê sem guarda. (3) Parcial só com relatório salvo: "—" com nota, como no resto do bloco (AC3). (4) Classe `warn` sem `data-lacuna`: o aviso não entra nas contagens de lacuna e as Limitações vêm do payload. Nenhuma vira pergunta ao dono.'
+  escopo: 'Só o render. Contrato e migration intocados; sem bump de API_CONTRACT_VERSION, e com razão, porque o payload é idêntico.'
+
+issues:
+  - id: DOC-001
+    severity: low
+    category: documentation
+    description: 'O Dev Agent Record diz que, na base, o único teste que passa é "sem ad-level: sem aviso" (AC1). Na medição do QA, esse teste falha na base, porque `MARCA_DO_AVISO_CPA_CAC` não existe e o `not.toContain(undefined)` quebra. Quem passa é o AC4 "final-sem-ad-level". A contagem (21 de 22) está certa.'
+    recommendation: 'Corrigir a frase no Dev Agent Record quando a story for tocada de novo. Não bloqueia.'
+    owner: '@dev'
+    status: open
+
+  - id: TEST-001
+    severity: low
+    category: tests
+    description: 'A mutação Q7 (`cac.valor !== null` → `cac.valor` truthy) sobrevive, porque nenhum teste tem CAC = 0. Na prática esse caso é inalcançável.'
+    recommendation: 'Opcional: um caso com CAC 0 que espere "R$ 0,00" no aviso.'
+    owner: '@dev'
+    status: open
+
+  - id: VIS-001
+    severity: low
+    category: validation
+    description: 'Falta a validação visual do dono (item do DoD). O aviso usa o estilo `.warn` (laranja), o mesmo das lacunas.'
+    owner: 'dono'
+    status: open
+
+perguntas_ao_dono: []
+
+nfr:
+  security: 'PASS: todo texto interpolado passa por `esc`, inclusive o motivo do CAC e o nome da comparação.'
+  performance: 'PASS: o custo é O(1) por documento.'
+  reliability: 'PASS: cada ausência de dado tem ramo próprio (sem CAC, CAC nulo, sem utm_content, comparação sem o dado).'
+  maintainability: 'PASS: a função é isolada e o marcador é exportado para o teste do AC4.'
+
+recommendations:
+  immediate: []
+  future:
+    - 'DOC-001 e TEST-001 (low).'
+    - 'Merge: depois da 49.19 e da 49.20, quem mergear por último faz rebase. O render é o mesmo arquivo.'
