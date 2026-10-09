@@ -3,8 +3,8 @@
  * pelo Ad ID) não se compara com o CAC do resumo (todos os compradores).
  *
  * Sobre a fixture da 49.18 (motores reais + `gerarDebriefing` com o relógio
- * fixado). Os SHA do AC4 foram medidos na `origin/main` @ `493df285` (a 49.18
- * mergeada, antes desta story), com o HTML INTEIRO e o payload; depois da
+ * fixado). Os SHA do AC4 foram medidos na `origin/main` @ `087c226d` (a base
+ * do rebase, antes desta story), com o HTML INTEIRO e o payload; depois da
  * story, o HTML sem o aviso e o payload dão os MESMOS SHA.
  */
 
@@ -187,17 +187,22 @@ describe("AC3 — o N de M da comparação principal, ou \"—\" com nota", () =
 // ---------------------------------------------------------------------------
 
 /**
- * SHA do HTML INTEIRO e do payload na `origin/main` @ `493df285` (antes da
+ * SHA do HTML INTEIRO e do payload na `origin/main` @ `087c226d` (antes da
  * story), pelo `gerarDebriefing` sobre a fixture da 49.18 com o relógio fixado.
+ * Remedidos no rebase: na `493df285` os 14 eram outros porque a 49.19
+ * acrescentou ao payload `publico.testeDeLp` e a 49.20
+ * `publico.recompraPorOrigem` e `resumoMacro.pesquisaPorPergunta` (só campos
+ * novos; nenhum campo antigo mudou), e ao HTML os blocos deles. A fatia C da
+ * 49.17 não muda nada nesta fixture (não há testes pré-lançamento nela).
  */
 const SHA_DO_BASE: Record<string, { html: string; payload: string }> = {
-  "final-edicao-unica": { html: "40f729badc29181914b081a16bf2594a66460e1f8258a3b57d2c48db29bef89b", payload: "a255bdd943cbad73aff692a3da411b3f69310283870c4b32a9bfaaec7270e40d" },
-  "final-comparacao-recalculada": { html: "5ee49ca791dbfaff9506ea32faa94d4d88df53daae19dda12878335e3bc5fb18", payload: "014d71165ff1db858363ca1c421f9c015ddc01b35f5094944796b201e452a19f" },
-  "final-comparacao-salva-antiga": { html: "7b1b9aa3bf879093aaa52007eeea1ea5aba51add14a8da4feb40e46f09bd9804", payload: "e53620dfd89bc7a85b5184bb1bc79a6689bc23473042b2008695a2b1221e453c" },
-  "parcial-edicao-unica": { html: "c44aab80115789d7547de881b76ae0d0c1eb20b85790765c296519419147b496", payload: "3c7b0e32013da2f92d78f92894b707564431a2c1949bd25a97fb77fa52ce9630" },
-  "parcial-comparacao-recalculada": { html: "d7ec947e5519db71ecfe8b21060489371c4af7393971f12989a4c089a87fffe0", payload: "a85cc987cb600e2945956908aaa593379d19ae17c3a5ed7321682b5d0891d474" },
-  "parcial-comparacao-salva": { html: "ab2cfce70dcd8f2e8c568998e1a6b4c4c49359dc53cc1d6987393e739e9eb803", payload: "2b8051c8bcc397eaa13d2b1af9e9bdf0b4ea5350e376d675da9aa62688e424dc" },
-  "final-sem-ad-level": { html: "613ebdab38aeea56cbfe267821fc96013cce41e5dd93229bf621a68f8638b8f9", payload: "f0dbc72fa14ade29bab4b9a90625548f3487628adb77949ff1d779faa895b78b" },
+  "final-edicao-unica": { html: "91009048a51e6ea5d849253a4bd1270297d8344c5c6c62c139614529f9175749", payload: "42e13e92af8fdf72e251e6abf57077e2dedef3c2e31caff860cb6f006da483b3" },
+  "final-comparacao-recalculada": { html: "f849833a02899893e8896ad1df596516ad7ad89436e561e308c09a63081860a7", payload: "7d643fb79bb273ffb8749ec91b1e5da9ad37be4a00cc6820f3b91042c2247835" },
+  "final-comparacao-salva-antiga": { html: "c9259f290489773bbcc6860dc0d973db7cd84cf9de0c99dc21e22c10e7268f42", payload: "4bb763d5c4261798f9ecca86ebcffeb91cf362c610b33da206aacaaf296a7f49" },
+  "parcial-edicao-unica": { html: "e9b10175bdd53a5bd992336f3ab87df4e7094b30db0792622899ed57ab915e96", payload: "d087c2a01dcca144ffa868483f4472e848724c6ee381c65ad7e9bad969467c08" },
+  "parcial-comparacao-recalculada": { html: "d4295186729fb5741139ffdb08f2475234c0c8edee0cbb412b4aa0dde22eca31", payload: "c1da247dc3797d76437f5bc349805290d167b1d8fc5f76f23b209fefe8ca1282" },
+  "parcial-comparacao-salva": { html: "33d8fddce9fb3a2dfc3656c876d8279a6fbcc2399c8492c62b1b4397202849db", payload: "137ef4e92ad57a9a1f2bedf896e270a878aed2f07e1cf8d691a192f1ef6c90f7" },
+  "final-sem-ad-level": { html: "1631e7efccc42438d6b1e0d5bc30d5b90d10f784e57dd5c71db38afe3f576b48", payload: "b2540cc7c89489557013b7effff2d570ab64f4e89999eef33882ab663a77bee0" },
 };
 
 describe("AC4 — o HTML sem o aviso e o payload saem idênticos aos da base", () => {

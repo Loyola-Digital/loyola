@@ -30,6 +30,7 @@ import { MAX_RESPOSTAS_POR_PERGUNTA, montarPesquisaPorPergunta, montarResumoMacr
 import {
   MARCA_DA_PESQUISA_POR_PERGUNTA,
   MARCA_DA_RECOMPRA_POR_ORIGEM,
+  MARCA_DO_AVISO_CPA_CAC,
   MARCA_DO_TESTE_DE_LP,
   SECOES_DO_DEBRIEFING,
   blocoDaPesquisaPorPergunta,
@@ -642,11 +643,23 @@ function semO4919(html: string): string {
   return html.slice(0, ini) + html.slice(html.indexOf("</section>", ini) + "</section>".length);
 }
 
+/**
+ * Story 49.21 (rebase sobre a 49.19/49.20): o commit-base destes SHA também não tinha o
+ * aviso CPA × CAC, que é só render — um `<div class="warn" data-aviso-cpa-cac>` acima do
+ * ranking da Mídia por Anúncio, sem campo no payload. Todos estes cenários têm ranking, então
+ * há exatamente um aviso; a prova do AC3 o tira também e os SHA ficam os medidos.
+ */
+function semOAvisoDa4921(html: string): string {
+  const r = tirarDivs(html, `<div class="warn" ${MARCA_DO_AVISO_CPA_CAC}>`);
+  expect(r.removidos).toBe(1);
+  return r.html;
+}
+
 describe("AC3 — parcial e final; HTML inteiro e payload iguais aos do commit-base, descontados os acréscimos", () => {
   it.each(Object.keys(CENARIOS_DO_PUBLICO))("%s: HTML inteiro sem os blocos e payload sem os campos novos = os do commit-base", async (nome) => {
     const { html, payload } = await gerar(CENARIOS_DO_PUBLICO[nome]!);
     expect(sha(html)).not.toBe(SHA_DA_BASE[nome]!.html);
-    expect(sha(semO4919(semAcrescimosDa4920(html)))).toBe(SHA_DA_BASE[nome]!.html);
+    expect(sha(semOAvisoDa4921(semO4919(semAcrescimosDa4920(html))))).toBe(SHA_DA_BASE[nome]!.html);
     expect(payload.publico.recompraPorOrigem).toBeDefined();
     expect(payload.resumoMacro!.pesquisaPorPergunta).toBeDefined();
     const p = semCamposDa4920(payload);

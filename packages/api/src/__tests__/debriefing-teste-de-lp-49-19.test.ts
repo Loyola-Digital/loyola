@@ -23,7 +23,7 @@ import {
 } from "../services/debriefing-teste-de-lp.js";
 import type { CompradorDaMidia } from "../services/debriefing-midia-anuncios.js";
 import { fisherExatoBilateral } from "../services/fisher-exato.js";
-import { MARCA_DA_MIDIA_POR_ANUNCIO, MARCA_DO_TESTE_DE_LP, SECOES_DO_DEBRIEFING, renderDebriefing } from "../services/debriefing-render.js";
+import { MARCA_DA_MIDIA_POR_ANUNCIO, MARCA_DO_AVISO_CPA_CAC, MARCA_DO_TESTE_DE_LP, SECOES_DO_DEBRIEFING, renderDebriefing } from "../services/debriefing-render.js";
 import { gerarDebriefing } from "../services/debriefing-generate.js";
 import type { DebriefingPayload } from "../services/debriefing-payload.js";
 import { configSintetica } from "./fixtures/debriefing-payload-sintetico.js";
@@ -36,6 +36,7 @@ import {
   payloadDoTesteDeLp,
   type CenarioDoTesteDeLp,
 } from "./fixtures/debriefing-teste-de-lp-49-19.js";
+import { tirarDivs } from "./fixtures/debriefing-acrescimos-49-20.js";
 
 const FATOR = 1 / (1 - 0.1215);
 const ROT = { projeto: "Expert", lancamento: "PG05", etapas: {}, funis: {} };
@@ -1047,11 +1048,23 @@ const SHA_DO_BASE: Record<string, { html: string; payload: string }> = {
   "final-sem-ad-level": { html: "b14a62917c7b53776d7f353db81adaf0307306772d917ae0614c348128d32fb9", payload: "39b8e3f5b3bbc5d92972e1ad4534b327645d58358f5b10b4ae3ad4a01f654ffb" },
 };
 
+/**
+ * Story 49.21 (rebase sobre a 49.19): estes SHA também não tinham o aviso CPA × CAC, que é
+ * só render — um `<div class="warn" data-aviso-cpa-cac>` acima do ranking da Mídia por
+ * Anúncio, sem campo no payload. Há um aviso quando há ranking e nenhum sem ad-level; a prova
+ * do AC7 o tira também e os SHA ficam os medidos.
+ */
+function semOAvisoDa4921(html: string, nome: string): string {
+  const r = tirarDivs(html, `<div class="warn" ${MARCA_DO_AVISO_CPA_CAC}>`);
+  expect(r.removidos).toBe(nome === "final-sem-ad-level" ? 0 : 1);
+  return r.html;
+}
+
 describe("AC7 — vale no parcial e no final; o resto do documento não muda", () => {
   it.each(Object.keys(CENARIOS_DO_AC7))("%s: HTML inteiro sem o bloco e payload sem o campo novo = os do commit-base", async (nome) => {
     const { html, payload } = await gerar(CENARIOS_DO_AC7[nome]!);
     expect(sha(html)).not.toBe(SHA_DO_BASE[nome]!.html);
-    expect(sha(semO4919(html))).toBe(SHA_DO_BASE[nome]!.html);
+    expect(sha(semOAvisoDa4921(semO4919(html), nome))).toBe(SHA_DO_BASE[nome]!.html);
     const p = structuredClone(payload);
     expect(p.publico.testeDeLp).toBeDefined();
     delete p.publico.testeDeLp;
