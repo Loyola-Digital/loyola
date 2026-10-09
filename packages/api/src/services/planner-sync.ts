@@ -84,6 +84,33 @@ export function mesmasFases(a: FaseDoPlanner[], b: FaseDoPlanner[]): boolean {
 }
 
 /**
+ * As fases na ORDEM em que já estavam; as inéditas no fim.
+ *
+ * ## Por que existe
+ *
+ * A importação reconstrói a lista como `[...preservadas, ...novas]` — as
+ * manuais primeiro, depois as que o Google devolveu, na ordem dele. Isso é uma
+ * ordem recém-inventada a cada ciclo, e ela **sobrescrevia a do usuário**:
+ * arrastar "Lote 2" para antes de "Definições" durava até o próximo ciclo, que
+ * roda de 5 em 5 minutos. A ordem importa porque é assim que o time lê a
+ * campanha — definições, lote 1, lote 2 —, não por data nem por origem.
+ *
+ * Fase que já existia mantém a posição; o que o Google trouxe agora entra no
+ * fim, estável entre si. Reordenar vira decisão de quem olha a tela, e o
+ * Google deixa de opinar sobre isso.
+ */
+export function naOrdemDeAntes<F extends { id: string }>(novas: F[], antes: { id: string }[]): F[] {
+  const posicao = new Map(antes.map((f, i) => [f.id, i]));
+  // `Array.prototype.sort` é estável: as inéditas (todas com o mesmo valor)
+  // preservam a ordem em que o Google as devolveu.
+  return [...novas].sort(
+    (a, b) =>
+      (posicao.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+      (posicao.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+  );
+}
+
+/**
  * Tira os eventos do Google que são CÓPIA de uma fase que já tem evento.
  *
  * Evento solto (nenhuma fase aponta para ele) com o mesmo nome e início de um
@@ -329,7 +356,9 @@ export async function importarDaAgenda(
         return normalizarFase(antes ? { ...f, id: antes.id } : f);
       });
 
-    const fasesNovas = [...preservadas, ...novas];
+    // Na ordem em que já estavam: sem isto, cada ciclo reimpunha
+    // "manuais primeiro, Google depois" e desfazia o arrasto do usuário.
+    const fasesNovas = naOrdemDeAntes([...preservadas, ...novas], fases);
     // Só grava o que o Google MUDOU. Regravar toda campanha a cada ciclo abria
     // uma janela em que a importação, com a leitura de segundos antes, desfazia
     // a edição que alguém acabava de salvar na tela — e com o ciclo de 5
