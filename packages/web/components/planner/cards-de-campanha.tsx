@@ -135,7 +135,9 @@ function LinhaDaFase({
           onClick={(e) => e.stopPropagation()}
           aria-label={`Reordenar ${fase.name}`}
           title="Arraste para reordenar"
-          className="grid h-5 w-3 shrink-0 cursor-grab touch-none place-items-center rounded text-muted-foreground/40 transition-colors hover:text-foreground active:cursor-grabbing"
+          // 12px a 40% é uma alça que existe e ninguém encontra. 16px a 70%
+          // continua discreta ao lado do nome da fase e dá o que pegar.
+          className="grid h-5 w-4 shrink-0 cursor-grab touch-none place-items-center rounded text-muted-foreground/70 transition-colors hover:bg-foreground/5 hover:text-foreground active:cursor-grabbing"
         >
           <GripVertical className="h-3 w-3" />
         </button>
