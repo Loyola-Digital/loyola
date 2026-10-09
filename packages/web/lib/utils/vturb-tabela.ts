@@ -138,7 +138,7 @@ export function centesimosDeDecimal(x: number): number | null {
 }
 
 /** Os campos da 29.82 chegaram? (a API v36 não os manda) */
-function temColunasNovas(v: VslDoFunil): v is VslDoFunil & { brutos: Required<BrutosDaVsl> } {
+function temColunasNovas(v: VslDoFunil): v is VslDoFunil & { brutos: Required<BrutosDaVsl>; duracao: number | null } {
   const b = v.brutos;
   return (
     !!b &&
