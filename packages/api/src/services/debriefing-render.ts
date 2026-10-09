@@ -54,6 +54,7 @@ import {
 } from "./debriefing-hygiene.js";
 import { parcialDo } from "./debriefing-payload.js";
 import type { FormatoDoAnuncio, LinhaDoRanking, MetricasDaMidia } from "./debriefing-midia-anuncios.js";
+import { DIAS_MINIMOS_DO_TESTE_DE_LP, rotuloDoFormatoDoPar, type ParDeLp } from "./debriefing-teste-de-lp.js";
 import {
   avaliacao,
   dataBr,
@@ -1166,6 +1167,137 @@ export function blocoDaMidiaPorAnuncio(
 }
 
 // ---------------------------------------------------------------------------
+// Story 49.19 — Teste de LP (aba de mídia, fora da numeração, depois da Mídia por Anúncio)
+// ---------------------------------------------------------------------------
+
+/** Marcador do bloco da 49.19 — o teste de "seções antigas iguais" o tira do HTML por ele. */
+export const MARCA_DO_TESTE_DE_LP = "data-teste-de-lp";
+
+/** A cor do resultado do par (veredito, empate, sem leitura). */
+const COR_DO_RESULTADO_DO_PAR: Readonly<Record<ParDeLp["resultado"], string>> = {
+  veredito: "var(--green)",
+  empate: "var(--gold)",
+  "sem-leitura": "var(--red)",
+};
+
+function blocoDoParDeLp(par: ParDeLp, comConteudo: boolean): string {
+  const titulo =
+    `${esc(par.lps.join(" × "))} — ${esc(rotuloDoFormatoDoPar(par.formato))} · ${esc(inteiroBr(par.anuncios.length))} anúncio(s) · ${esc(inteiroBr(par.conjuntos.length))} conjunto(s)`;
+  const janela = par.janela.inicio
+    ? `${esc(diaMesBr(par.janela.inicio))} a ${esc(diaMesBr(par.janela.fim!))} (${esc(inteiroBr(par.janela.dias.length))} dia(s) em que as duas tiveram investimento)`
+    : "nenhum dia em que as duas tiveram investimento";
+  const linhas = par.lados.map((l) =>
+    tr([
+      `<b>${esc(l.lp)}</b>${l.rotulos.length > 1 || l.rotulos[0] !== l.lp ? ` <span style="color:var(--muted);font-size:11px">(${esc(l.rotulos.join(", "))})</span>` : ""}`,
+      esc(fmt(l.investimentoComImposto, "moeda")),
+      celulaMetrica(l.pctDaVerba, "pct"),
+      esc(fmt(l.landingPageViews, "inteiro")),
+      comConteudo ? esc(inteiroBr(l.comprasNaTaxa)) : `<span title="SEM_UTM_CONTENT_NA_VENDA">${TRACO}</span>`,
+      celulaMetrica(l.compraPorVisita, "pct", 2),
+      celulaMetrica(l.cpa, "moeda"),
+      celulaMetrica(l.roas, "roas"),
+      celulaMetrica(l.tierSuperior, "fracao"),
+    ]),
+  );
+  // O texto do motor é "<Resultado>: <leitura com o p-valor>"; o resultado vai em destaque.
+  const i = par.texto.indexOf(": ");
+  const veredito = `<b style="color:${COR_DO_RESULTADO_DO_PAR[par.resultado]}">${esc(par.texto.slice(0, i + 1))}</b> ${esc(par.texto.slice(i + 2))}`;
+  const criativos = par.mesmoCriativo.map((c) =>
+    tr([
+      esc(c.nome),
+      ...c.porLp.map((x) =>
+        x.compraPorVisita.valor === null
+          ? celulaMetrica(x.compraPorVisita, "pct", 2)
+          : `${esc(fmt(x.compraPorVisita.valor, "pct", 2))} <span style="color:var(--muted);font-size:11px">(${esc(inteiroBr(x.compras))} / ${esc(fmt(x.landingPageViews, "inteiro"))})</span>`,
+      ),
+    ]),
+  );
+  return (
+    `<div data-par-de-lp="${esc(par.lps.join("×"))}" data-resultado="${par.resultado}">` +
+    `<h3 class="gr" style="margin-top:22px">${titulo}</h3>` +
+    `<p class="tnote">Janela comum: ${janela}. Conjuntos em comum: ${esc(par.conjuntos.join("; "))}.${
+      par.conjuntosForaDoPar.length
+        ? ` <span data-conjuntos-fora-do-par>Fora do par (sem o mesmo conjunto na outra LP): ${esc(par.conjuntosForaDoPar.map((x) => `${x.lp}: ${x.conjuntos.join("; ")}`).join(" · "))}.</span>`
+        : ""
+    } Campanhas: ${esc(par.lados.map((l) => `${l.lp}: ${l.campanhas.join("; ")}`).join(" · "))}.</p>` +
+    tabela(["LP", "Invest. (c/ imposto)", "% da verba do par", "Visitas (landing_page_view)", "Compras", "Compras ÷ visitas", "CPA", "ROAS", "Tier superior"], linhas) +
+    `<p data-veredito-do-par${par.fisher ? ` data-p-valor="${esc(String(par.fisher.pValor))}"` : ""}>${veredito}</p>` +
+    (par.verbaInvertida && par.textoDaVerba ? `<div class="warn" data-verba-invertida><b>Verba</b> — ${esc(par.textoDaVerba)}</div>` : "") +
+    // REQ-002 (gate da 49.19): as ressalvas do par, sem mudar o método.
+    (par.conjuntos.length >= 2
+      ? `<p class="tnote" data-nota-conjuntos-somados>O par soma os conjuntos. Com a verba distribuída pela CBO, o total pode inverter o resultado de cada conjunto.</p>`
+      : "") +
+    (par.lpsNaAssinatura >= 3
+      ? `<p class="tnote" data-nota-varias-comparacoes>Cada par é testado com p &lt; 0,05, sem correção para várias comparações; com 3 ou mais LPs, a chance de algum veredito falso é maior que 5%.</p>`
+      : "") +
+    `<h4 style="margin:14px 0 6px">Mesmo criativo nas duas LPs — compras ÷ visitas (compras / visitas)</h4>` +
+    tabela(["Anúncio", ...par.lados.map((l) => l.lp)], criativos) +
+    `</div>`
+  );
+}
+
+export function blocoDoTesteDeLp(p: DebriefingPayload): string {
+  const t = p.publico.testeDeLp;
+  const abre =
+    `<section ${MARCA_DO_TESTE_DE_LP}><div class="sec-head"><h2>Teste de LP</h2></div>` +
+    `<p class="sec-desc">A LP de cada campanha de captação pelo código no nome (<code>--lpa</code>, <code>--lpf</code>…). Só se comparam LPs com o mesmo formato, nos conjuntos em comum (a interseção dos nomes de conjunto) e com os mesmos nomes de anúncio dentro deles, nos dias em que todas tiveram investimento nesses conjuntos (nunca o acumulado); o conjunto sem correspondente na outra LP fica fora do par. Decide compras ÷ visitas (landing_page_view), com o teste exato de Fisher bilateral: p &lt; 0,05 → veredito; p ≥ 0,05 → empate, segue rodando; janela com menos de ${esc(String(DIAS_MINIMOS_DO_TESTE_DE_LP))} dias → sem leitura.</p>`;
+  const fecha = `</section>`;
+  if (!t) return abre + nota("<b>Teste de LP não calculado:</b> este relatório foi gerado antes dele existir.") + fecha;
+  if (!t.aplicavel) {
+    return abre + lacuna("Teste de LP", "sem ad-level no banco para o período (meta_ad_insights_daily) — LP por campanha, pares e Fisher não medidos") + fecha;
+  }
+  const parcial = parcialDo(p);
+  const partes: string[] = [];
+
+  // ---- AC1: LP de cada campanha + campanhas sem LP ----
+  partes.push(
+    `<h3 class="gr">LPs das campanhas de captação</h3>` +
+      (t.porLp.length
+        ? tabela(
+            ["LP", "Campanhas", "Invest. (c/ imposto)"],
+            t.porLp.map((x) => tr([`${esc(x.lp)}${x.rotulos.length > 1 || x.rotulos[0] !== x.lp ? ` <span style="color:var(--muted);font-size:11px">(${esc(x.rotulos.join(", "))})</span>` : ""}`, esc(inteiroBr(x.campanhas)), esc(fmt(x.investimentoComImposto, "moeda"))])),
+          )
+        : nota("Nenhuma campanha de captação com código de LP no nome no período.")) +
+      `<p class="tnote" data-sem-lp>Sem código de LP no nome: <b>${esc(inteiroBr(t.semLp.campanhas))}</b> campanha(s), <b>${esc(fmt(t.semLp.investimentoComImposto, "moeda"))}</b> c/ imposto — fora do teste.` +
+      (t.semLp.nomes.length ? ` ${esc(t.semLp.nomes.join("; "))}.` : "") +
+      `</p>`,
+  );
+
+  // ---- AC2–AC6: pares ----
+  const comConteudo = t.vendasComConteudo;
+  const atribuicao = p.publico.midiaPorAnuncio?.atribuicao;
+  partes.push(
+    t.pares.length
+      ? t.pares.map((par) => blocoDoParDeLp(par, comConteudo)).join("")
+      : `<h3 class="gr" style="margin-top:22px">Pares</h3>` + nota("Nenhum par de LPs com o mesmo formato, os mesmos anúncios e os mesmos conjuntos no período — nenhum teste a ler."),
+  );
+  partes.push(
+    // REQ-002 (sempre) e REQ-003 (cobertura por Ad ID, a mesma conta da nota da Mídia por Anúncio).
+    `<p class="tnote" data-nota-visitas>Visitas = eventos <code>landing_page_view</code> da Meta, não pessoas; compras são pessoas. O teste trata cada visita como uma tentativa.</p>` +
+      (atribuicao
+        ? `<p class="tnote" data-cobertura-por-ad-id>Compras = compradores de captação atribuídos pelo Ad ID do <code>utm_content</code>; ${esc(inteiroBr(atribuicao.semAdId))} de ${esc(inteiroBr(atribuicao.compradores))} compradores de captação ficam fora por não terem Ad ID.</p>`
+        : "") +
+      `<p class="tnote">Compras = compradores de captação (pessoa que levou ingresso ou combo) atribuídos pelo Ad ID do utm_content às campanhas da LP, com a compra num dia da janela; compras ÷ visitas conta só os compradores de anúncios com landing_page_view, como na Mídia por Anúncio. ` +
+      `% da verba do par = investimento da LP na janela ÷ investimento das duas na janela. CPA, ROAS e tier superior com as regras da Mídia por Anúncio. Conjuntos e anúncios comparados pelo nome (sem acento, minúsculo, sem o sufixo de cópia), como aparecem no ad-level do período.</p>`,
+  );
+
+  // ---- Grupos sem par ----
+  if (t.semPar.length) {
+    partes.push(
+      `<h3 class="gr" style="margin-top:22px">Campanhas com LP fora de par</h3>` +
+        tabela(
+          ["LP", "Campanha(s)", "Formato", "Invest. (c/ imposto)", "Motivo"],
+          t.semPar.map((g) =>
+            tr([esc(g.lp), esc(g.campanhas.join("; ")), esc(g.formato ? rotuloDoFormatoDoPar(g.formato) : "não identificado"), esc(fmt(g.investimentoComImposto, "moeda")), esc(g.texto)]),
+          ),
+        ),
+    );
+  }
+
+  return abre + (parcial ? nota(`<b>Parcial:</b> dados até ${esc(dataBr(parcial.corte))} (D+${esc(String(parcial.dMaisN))}).`) : "") + partes.join("") + fecha;
+}
+
+// ---------------------------------------------------------------------------
 // Story 49.17 — Resumo macro (fora das abas e da numeração, antes da navegação)
 // ---------------------------------------------------------------------------
 
@@ -2168,6 +2300,8 @@ export function renderDebriefing(input: DebriefingRenderInput): string {
 
   // ---- Story 49.18 — Mídia por Anúncio (fora da numeração: as seções seguintes não mudam de número) ----
   secoes.midia!.push(blocoDaMidiaPorAnuncio(p, comp, A, semDelta));
+  // ---- Story 49.19 — Teste de LP (fora da numeração, logo depois da Mídia por Anúncio) ----
+  secoes.midia!.push(blocoDoTesteDeLp(p));
 
   // ---- 09 Vendas do Principal (+ auditoria) ----
   {

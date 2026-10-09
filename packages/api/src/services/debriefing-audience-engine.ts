@@ -12,6 +12,8 @@
  * 9 (faixa, criativo × faixa, tipo de criativo) e 10 (cross-launch).
  * Story 49.18: a mídia por anúncio (`midiaPorAnuncio`, motor puro em
  * `debriefing-midia-anuncios.ts`) sai daqui, com o ad-level e os compradores de captação.
+ * Story 49.19: o teste de LP (`testeDeLp`, motor puro em `debriefing-teste-de-lp.ts`)
+ * sai das MESMAS linhas e dos MESMOS compradores, com a campanha e o conjunto.
  * Story 49.20: o cross-launch expõe as chaves (hash) de quem já estava na base, e
  * `computeRecompraPorOrigem` (puro, chamado pela composição) abre a recompra pela origem.
  * Armadilhas 6 (n inflado por e-mail repetido), 8 (listas somadas a canais),
@@ -67,6 +69,7 @@ import {
   type MidiaPorAnuncio,
   type TextoDoAnuncio,
 } from "./debriefing-midia-anuncios.js";
+import { computeTesteDeLp, type TesteDeLp } from "./debriefing-teste-de-lp.js";
 import {
   LACUNA_CARRINHO_AINDA_NAO_ABRIU,
   aplicarImposto,
@@ -212,6 +215,7 @@ export interface AnuncioDiaInput {
   landingPageViews?: number | null;
   /** Story 49.18 (AC2) — conjunto (adset) da linha. Ausente = entrada anterior. */
   adsetId?: string | null;
+  /** Story 49.18 (AC2) e 49.19 — `adset_name` da linha; `null`/ausente = sem nome (o conjunto não é identificado). */
   adsetName?: string | null;
 }
 
@@ -524,6 +528,12 @@ export interface DebriefingAudience {
    * à 49.18 (aditivo e opcional; a versão não sobe).
    */
   midiaPorAnuncio?: MidiaPorAnuncio;
+  /**
+   * Story 49.19 — teste de LP (LP pelo nome da campanha, pares justos, janela
+   * comum, Fisher exato, mesmo criativo, verba). Ausente = payload anterior à
+   * 49.19 (aditivo e opcional; a versão não sobe).
+   */
+  testeDeLp?: TesteDeLp;
   /**
    * Story 49.11 — a composição da série histórica, presente só com 2+
    * lançamentos na lista (com 1, o payload é o de antes: o lançamento é o
@@ -1583,23 +1593,38 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
   // ===================================================================
   // 11. Mídia por anúncio (Story 49.18) — ad-level × compradores pelo ad_id da venda
   // ===================================================================
+  const linhasDaMidia = input.criativos.anuncios.map((a) => ({
+    adId: a.adId,
+    nome: (input.criativos.nomesDeAnuncio[a.adId] ?? "").trim() || (a.adName ?? "").trim() || null,
+    campaignName: a.campaignName,
+    dia: a.dia,
+    investimentoComImposto: aplicarImposto(a.spendBruto, a.dia, pctImposto),
+    linkClicks: a.linkClicks,
+    landingPageViews: a.landingPageViews ?? null,
+    conjuntoId: a.adsetId ?? null,
+    conjuntoNome: a.adsetName ?? null,
+  }));
+  const compradoresMidia = compradoresDaMidia(compradores, linhasCap, chaves.porEmail);
+  const vendasComConteudo = input.compradores.some((v) => (v.utmContentCru ?? "").trim() !== "");
   const midiaPorAnuncio = computeMidiaPorAnuncio({
-    anuncios: input.criativos.anuncios.map((a) => ({
-      adId: a.adId,
-      nome: (input.criativos.nomesDeAnuncio[a.adId] ?? "").trim() || (a.adName ?? "").trim() || null,
-      campaignName: a.campaignName,
-      dia: a.dia,
-      investimentoComImposto: aplicarImposto(a.spendBruto, a.dia, pctImposto),
-      linkClicks: a.linkClicks,
-      landingPageViews: a.landingPageViews ?? null,
-      conjuntoId: a.adsetId ?? null,
-      conjuntoNome: a.adsetName ?? null,
-    })),
-    compradores: compradoresDaMidia(compradores, linhasCap, chaves.porEmail),
-    vendasComConteudo: input.compradores.some((v) => (v.utmContentCru ?? "").trim() !== ""),
+    anuncios: linhasDaMidia,
+    compradores: compradoresMidia,
+    vendasComConteudo,
     postsDosAnuncios: input.criativos.postsDosAnuncios,
     ...(input.criativos.textosDosAnuncios ? { textosDosAnuncios: input.criativos.textosDosAnuncios } : {}),
     linkAdsManagerDe: (adId) => linkDoAdsManager(input.criativos.contaDeAnuncios, adId),
+  });
+
+  // ===================================================================
+  // 12. Teste de LP (Story 49.19) — as mesmas linhas e compradores, com campanha e conjunto
+  // ===================================================================
+  const testeDeLp = computeTesteDeLp({
+    anuncios: linhasDaMidia.map((l, i) => {
+      const a = input.criativos.anuncios[i]!;
+      return { ...l, campaignId: a.campaignId, adsetName: a.adsetName ?? null };
+    }),
+    compradores: compradoresMidia,
+    vendasComConteudo,
   });
 
   lacunas.push({
@@ -1647,6 +1672,7 @@ export function computeDebriefingAudience(input: DebriefingAudienceInput): Debri
     crossLaunch,
     lacunas,
     midiaPorAnuncio,
+    testeDeLp,
     ...(series.length >= 2
       ? {
           serieHistorica: {
