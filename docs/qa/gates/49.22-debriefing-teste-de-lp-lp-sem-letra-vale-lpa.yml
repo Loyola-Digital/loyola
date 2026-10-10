@@ -1,0 +1,64 @@
+schema: 1
+storyId: '49.22'
+story: '49.22'
+story_title: 'Teste de LP — campanha com `--lp--` sem letra vale LPA'
+scope_do_gate: 'AC1–AC5 (R13-1). Só lpDaCampanha; utm-term.ts só com o export de limparSufixoCopia.'
+verdict: PASS
+gate: PASS
+status_reason: 'Os 5 ACs estão implementados e provados. Em utm-term.ts o diff é só o `export` de limparSufixoCopia. utm-term-lp.test.ts e routes/ estão intocados. Com o lpDaCampanha da base, 5 testes novos falham, os mesmos 5 que o @dev reportou. Os 14 SHA do AC5 foram remedidos pelo QA com o código da d10258cb e batem com SHA_DA_49_22, então a constante é mesmo da base. LP, LPA e LPAA somam uma LPA só (porLp com 3 campanhas e R$ 90) e não formam par. As 22 bordas sondadas pelo QA dão o resultado esperado. O AC3 está fechado por decisão do dono, registrada na story, e o raciocínio vale para o código: o ramo novo só dispara com `doBloco === "LP" && temBlocoLpPuro(nome)`, e fora disso o caminho é o da base, byte a byte. Ficam só lows.'
+reviewer: 'Quinn'
+updated: '2026-10-10T07:45:00-03:00'
+branch: 'feat/49.22-lp-sem-letra-lpa'
+commit_reviewed: '0a36e498 (código em e35d87ec; nenhum .ts mudou depois)'
+base: 'd10258cb (docs da rodada 13) sobre origin/main 88750a9d'
+
+checks:
+  requirements_traceability: 'AC1: `--lp--` no meio e `--lp` no fim, em maiúsculas, com " — Cópia" e com " - Copy 2", dão {lp: LPA, rotulo: LP, regra: bloco-lp}. Integração: com LPB forma par LPA×LPB; com LPA+LPAA soma uma LPA e não forma par; sozinha sai como sem par com o grupo LPA. Só lpDaCampanha muda: rotuloLp, chaveLp, parseUtmTerm e lpDoRegistro estão intactos e utm-term-lp.test.ts está verde e inalterado. AC2: lpa, lpaa, lpb, lp1, lp-claude, lp-seca, lp-lista-espera — Cópia, Epic 47 e sem-LP cobertos por teste. AC3: decisão do dono (2026-10-10) registrada no Dev Agent Record, com o SQL para reconferência. AC4: testes vistos falhar e mutações (abaixo). AC5: SHA (abaixo).'
+  diff_utm_term: 'Uma linha: `function limparSufixoCopia` → `export function limparSufixoCopia`, com o corpo intacto. Nenhum outro arquivo de serviço ou rota além de debriefing-teste-de-lp.ts.'
+  testes_falham_na_base: 'Com o debriefing-teste-de-lp.ts da d10258cb, 5 de 98 falham (49.19 + utm-term-lp), os mesmos 5 do relato do @dev.'
+  ac5_sha_independente: 'O QA pôs o debriefing-teste-de-lp.ts e o utm-term.ts da d10258cb no worktree e rodou o describe "49.22 AC5": 8/8 verdes. Os 14 SHA (HTML e payload inteiros, 7 cenários) são os da base. Com o HEAD também ficam verdes. Os SHA_DO_BASE da 49.19 seguem intactos.'
+  bordas_sondadas: 'O QA comparou antes (chaveLp∘rotuloLp∘parseUtmTerm) e depois (lpDaCampanha). Viram LPA: `--LP--`, `--lp` no fim, `--lp — Cópia`, `--lp - Copy 2`, `--lp—Cópia 3`, `--lp-copy` (o parser também limpa esse sufixo), `--lp|conj|ad`, `--lp | conj`, `Instagram_Reels_…--lp` (posicionamento), `-- lp --` e `lanc--lp`. Ficam como antes: `--lp-` (null nos dois), `…|conj--lp` (null nos dois: o `--lp` depois do `|` não é da campanha), `--lp-claude|conj--lp` (LP), `--lpb--lp` (LPB), `--videos-lp` (LP, bloco composto), `--lp-lp` (LP), `lp` (null), `--lpa — Cópia` (LPA). Ver REQ-001 para o nome misto.'
+  r12_7: 'LP+LPA+LPAA: porLp = [{lp: LPA, rotulos: [LP, LPA, LPAA], campanhas: 3, investimentoComImposto: 90}] e pares = []. Coberto por teste próprio e conferido rodando.'
+  mutacoes_do_qa: 'Arquivo restaurado a cada uma; git status limpo no fim. Morrem: R0 a base inteira (5 falhas); M1 sem temBlocoLpPuro, ou seja, a regra também no lp-claude (2); M4 limparSufixoCopia → trim (1); M5 `/^lp$/` → `/^lp/` (2); M6 rótulo "LPA" (4); M7 regra movida para chaveLp (3, inclusive utm-term-lp › chaveLp). Sobrevivem: M2 (sem `.slice(1)`) e M3 (sem o corte no `|`). Ver TEST-001.'
+  suites: 'O QA rodou em série as 34 suítes debriefing* e utm-term*: 1112/1112 verdes. O arquivo da story com utm-term-lp dá 98/98.'
+  lint_tsc: 'eslint nos 3 arquivos: 0 problemas. `git diff --check` limpo. O tsc não foi re-rodado porque nenhum .ts mudou desde e35d87ec (diff vazio). O @dev rodou o binário direto e ficou limpo.'
+  ac3_raciocinio: 'O QA não leu produção, como manda a instrução. Para o código entregue, a implicação "nenhum bloco lp puro ⇒ nenhuma campanha muda" vale: o ramo novo exige temBlocoLpPuro(nome), e sem ele lpDaCampanha executa exatamente as linhas da base. Ressalva em DOC-001: o predicado da medição do @sm não está escrito, e o do código é mais largo.'
+  escopo: 'Tipo LpDaCampanha, contrato, API_CONTRACT_VERSION, migration e render intocados. Única chamadora: computeTesteDeLp.'
+
+issues:
+  - id: TEST-001
+    severity: low
+    category: tests
+    description: 'Duas mutações sobrevivem. M2: tirar o `.slice(1)` faz o slug contar como bloco. Só se alcança com o slug literal "lp" junto de um `lp-<slug>`, como `lp--x--lp-claude`, que vira LPA. M3: tirar o `split("|")[0]` faz `--lp-claude|conj--lp` virar LPA. Nome de campanha não costuma ter `|`. As duas guardas espelham o parseUtmTerm e estão certas, só não têm teste.'
+    recommendation: 'Opcional: 2 casos em lpDaCampanha (`lp--x--lp-claude` → LP; `x--lp-claude|c--lp` → LP).'
+    owner: '@dev'
+    status: open
+
+  - id: REQ-001
+    severity: low
+    category: requirements
+    description: 'Num nome misto com `lp-<slug>` e `--lp--`, como `…--lp-claude--lp`, o resultado é LPA, embora o parser leia o `lp` do bloco composto que vem antes. A regra é "existe um bloco puro", e não "o bloco que o parser leu é puro". A R13-1 não cobre esse caso, e ele tem 0 ocorrência nos dados (0 bloco puro).'
+    recommendation: 'Nenhuma ação agora. Se aparecer, levar ao dono.'
+    owner: '@po'
+    status: open
+
+  - id: DOC-001
+    severity: low
+    category: documentation
+    description: 'O predicado da medição do @sm (09/10) não está registrado: a story diz só "`--lp--` no meio ou `--lp` no fim". O do código é mais largo: ignora caixa e espaços e limpa " — Cópia", " - Copy N" e "-copy". Se a medição foi literal e sensível a caixa, um `--LP — Cópia` em produção escaparia dela e mudaria de LP. Isso não invalida a decisão do dono. A decisão de 2026-10-10 também está só na story, não na tabela de rodadas do epic.'
+    recommendation: 'Na próxima reconferência, rodar o SQL do Dev Agent Record comparando o antes e o depois com o próprio código, o que fecha a dúvida por construção. Registrar a decisão de 10/10 no epic quando o @po tocar a rodada.'
+    owner: '@po'
+    status: open
+
+perguntas_ao_dono: []
+
+nfr:
+  security: 'PASS: sem entrada nova nem render novo.'
+  performance: 'PASS: um split por campanha, só quando o rótulo é "LP".'
+  reliability: 'PASS: fora do ramo novo, o caminho é idêntico ao da base (SHA provado).'
+  maintainability: 'PASS: helper privado, comentado. Reusa limparSufixoCopia em vez de copiar a regex.'
+
+recommendations:
+  immediate: []
+  future:
+    - 'TEST-001, REQ-001 e DOC-001 (low).'
