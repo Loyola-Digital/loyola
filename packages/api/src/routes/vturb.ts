@@ -508,6 +508,8 @@ export default fp(async function vturbRoutes(fastify) {
    *   - falha de um vídeo fica na linha dele; falha da lista de players é
    *     falha geral, com o status do VTurb (AC8).
    * As taxas e o Total nascem no web, dos brutos (`lib/utils/vturb-tabela.ts`).
+   * Story 29.82: cada vídeo leva também a `duracao` enviada ao VTurb e os
+   * brutos das colunas novas (contrato v37, aditivo).
    */
   fastify.get(
     "/api/projects/:projectId/funnels/:funnelId/vturb/vsls",

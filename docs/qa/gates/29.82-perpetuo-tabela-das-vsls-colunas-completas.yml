@@ -1,0 +1,68 @@
+schema: 1
+storyId: '29.82'
+story: '29.82'
+story_title: 'Perpétuo — tabela das VSLs com as colunas completas do VTurb (visualizações, plays, audiência do pitch, engajamento, cliques no botão)'
+verdict: PASS
+gate: PASS
+status_reason: 'AC1–AC8 atendidos. O AC3 está provado pela definição do dono (opção A, plays = `total_started`). O Total de 15,68 % foi conferido por uma conta independente: o peso por únicos daria 15,56 %, e a média simples 37,77 %. As 3 decisões autônomas foram revisadas e as três se sustentam; a 2ª desvia do texto literal do AC4/AC6 sem mostrar número falso (REQ-001, ratificar com o @po). `next build` deu EXIT 0, e o tsc do web depois dele também 0. Web inteiro: 1.877/1.877. 10 mutações próprias e 2 reversões derrubam testes. `somaDasVsls`, `SomaDasVsls`, `mvp-vsl-somada*` e `pitchAtualDoPlayer` estão sem hunk. Contrato 37 é exclusivo desta branch.'
+reviewer: 'Quinn'
+updated: '2026-10-09T20:52:00-03:00'
+branch: 'feat/29.82-tabela-vsls'
+commit_reviewed: '1c9c64ea'
+base: 'origin/main ab250a58'
+
+issues:
+  - id: REQ-001
+    severity: low
+    category: requirements
+    description: 'Decisão autônoma 2 do @dev. Com a API v36, as colunas Vis. Únicas, Plays Únicos e Audiência do Pitch mostram número, porque a v36 já manda `viewedUniq`, `startedUniq` e `overPitch`. Só Visualizações, Plays, Engajamento e Cliques ficam "—" com "aguardando atualização da API". O texto do AC4 (último item) e o do AC6 dizem "—" nas colunas novas. Os três números vêm exatamente da fonte que o AC1 dá para essas colunas, então não há número falso; o objetivo do AC6 ("sem erro") é atendido. O desvio é só do texto literal.'
+    recommendation: '@po ratifica a leitura (número certo > "—") ou pede o "—" literal. Pelo código, voltar ao "—" é trocar `contagem(b.viewedUniq)`/`startedUniq`/`overPitch` por uma checagem `temColunasNovas`.'
+    status: open
+  - id: DOC-001
+    severity: low
+    category: documentation
+    description: 'O Dev Agent Record cita os commits `18a36079` (parada do T1) e `627954e9` (correção do tsc), que são os SHA de antes do rebase e não existem na branch. Os commits atuais são `3d2be94d` e `aaca3e83`.'
+    recommendation: 'O @dev corrige os dois SHA no Dev Agent Record no próximo commit da story.'
+    status: open
+  - id: DOC-002
+    severity: low
+    category: documentation
+    description: 'O texto do AC3 (probe PO-02) pede uma prova inválida. `grouped_timed` é um histograma de parada, não uma curva de retenção: Σ(`total_users` × `timed`) ÷ Σ `total_users` = `average_watched_time` exato nos 6 vídeos. A AC também não registra a decisão do dono (opção A).'
+    recommendation: '@po reescreve o AC3: decisão do dono = A (`total_started`), o fato do histograma, e a prova passa a ser pela definição.'
+    status: open
+
+top_issues:
+  - id: REQ-001
+    severity: low
+    finding: 'Com a API v36, 3 das 7 colunas novas mostram número em vez de "—". O número está certo, mas desvia do texto literal do AC4/AC6.'
+    suggested_action: '@po ratifica.'
+  - id: DOC-002
+    severity: low
+    finding: 'O probe PO-02 do AC3 é inválido (`grouped_timed` = histograma de parada).'
+    suggested_action: '@po reescreve o AC3 com a decisão A.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Diff `origin/main...1c9c64ea`: 10 arquivos, +933/−42. API: `brutosDaVsl` ganha `viewed`/`started`/`clicked` (o `total_clicked`, não o `_device_uniq`) e `engagementRate`. `duracaoDoPlayer` é a MESMA duração mandada como `videoDuration` e devolvida em `duracao`, inclusive na linha que falhou. A rota devolve as linhas sem remontar. Nenhuma chamada nova ao VTurb. Web: `engajamentoDoTotal` em racionais exatos (BigInt). Conferi a escala: o numerador eng.m·plays·dur.m·10^(K−ke−kd) e o denominador plays·dur.m·10^(K−kd) estão na mesma base 10^K. O vídeo sem duração sai do numerador e do denominador e vai para `fora`. `centesimosDeDecimal` lê a representação decimal (`String(x)`, inclusive notação científica) e trunca sem float. As células de contagem usam `Intl` pt-BR. O componente tem uma lista `COLUNAS` só, percorrida 3× (cabeçalho, linhas, Total), com coluna Nome sticky e `min-w-[960px]` em `overflow-x-auto`. Achado sem impacto: um termo com `engagementRate` inválido seria pulado sem entrar em `fora`, mas `num()` de `services/vturb.ts` garante número finito, então é inalcançável.'
+  auto_decisions: '(1) Nome `duracao`: o AC2/PO-01 deixa o nome com o @dev. ✓ (2) Com a v36, as colunas cujos brutos já vêm mostram número: REQ-001, low, a ratificar. (3) 0 plays → "—" "sem dados no período": coerente com o AC4 (ausência não vira zero), já que o VTurb devolve 0 sem plays; no Total o peso é 0. ✓'
+  unit_tests: 'Re-rodado pelo @qa. **Web inteiro** (`--pool=forks --no-file-parallelism`): 132 arquivos, 1.866/1.866. Os 3 jsdom de `components/instagram` não subiram o worker por timeout de I/O (máquina) e foram re-rodados à parte: 11/11. Total 135 arquivos, **1.877/1.877**. API-alvo (`vturb-tabela`, `vturb-rotas-fio`, `vturb-chain`, `vturb-stats-reconstrucao`): **65/65**. O Engajamento do Total foi recalculado pelo @qa em float independente: A 15,6803 %, B 15,5672 %, sem o V5 14,9480 %, média simples 37,77 %. Bate com os oráculos 15,68 / 14,94 do teste. **Mutações próprias**, todas mortas e com o diff restaurado: API Q1 `started` = únicos (1 falha), Q2 `duracao: null` no sucesso (1), Q3 duração 0/negativa aceita (1), Q4 `engagementRate: 0` (1). Web W1 linha sem duração vira 0 % (1), W2 escala errada no numerador do Total (4), W3 Audiência do Total = over+under (2), W4 `novas` com `some` em vez de `every` (1), W5 componente com Plays apontando para `playsUnicos` (1), W6 peso do Total por `viewed` (3). **Reversões:** `services/vturb-tabela.ts` voltando ao da `main` derruba 3 testes; `web/lib/utils/vturb-tabela.ts` voltando ao da `main` derruba 16. `git status` vazio no fim.'
+  acceptance_criteria: '**AC1** ✓: 10 colunas na ordem, travada pelo fio do `.tsx`; Cliques como número. **AC2** ✓: Σ das 6 contagens; Play Rate e Retenção pela soma; Engajamento pela fórmula do dono; nota "aparelho conta nos dois"; `duracao` no payload (PO-01). **AC3** ✓ pela definição do dono (opção A), com a prova do @dev de que nenhuma contagem reproduz o N do VTurb. O texto da AC está desatualizado (DOC-002). **AC4** ✓: falha "—" e fora; sem pitch "—" e fora do Σ da Audiência; sem duração "—" e fora do numerador e do denominador; v36 ver REQ-001. **AC5** ✓: milhar pt-BR; 0,29 → 0,29 % e 16,1 → 16,10 % na linha e no Total. **AC6** ✓: sem chamada nova; front contra a v36 sem erro (testes); contrato 36→37 com histórico. **AC7** ✓: `vturb-stage-tab.tsx`, `mvp-vsl-somada*` e `vsl-funnel.ts` sem hunk; `somaDasVsls`/`SomaDasVsls` idênticos byte a byte; `pitchAtualDoPlayer` idêntico; os testes da MVP passam com o util novo E com o util da `main`. **AC8** ✓.'
+  no_regressions: 'Web 1.877/1.877. `BrutosDaVsl` do web estendido só com campos opcionais. A suíte completa da API não foi refeita pelo @qa; o @dev registrou 4.673/4.683, com as mesmas 10 falhas da base. Os módulos tocados não são importados por elas.'
+  performance: 'Nenhuma chamada nova ao VTurb: o mesmo `sessions/stats` por vídeo. O BigInt corre sobre N vídeos de um funil, custo desprezível.'
+  security: 'A rota, o recorte por projeto e o `denyGuest` da 29.78 não mudaram. Os campos novos são contadores do VTurb.'
+  documentation: 'Dev Agent Record completo: a parada do T1 com 4 números por vídeo, a pergunta e a resposta do dono, 3 AUTO-DECISIONs, conferência read-only, mutações e validações. Ressalvas: DOC-001 (SHA pré-rebase) e DOC-002 (texto do AC3).'
+  api_contract: 'v36 → **v37** com a linha de histórico. `origin/main` (ab250a58) está em 36. PRs abertas: #1010 e #821, só docs, sem `contract.ts`. Varredura de todas as refs locais e `origin/*`: só `feat/29.82-tabela-vsls` tem ≥ 37. A API de produção em 36 → o web mostra "—" com motivo nas colunas sem bruto (AC6). O detector da 29.45 vai acusar a defasagem até o deploy da API.'
+  lint: 'Re-rodado pelo @qa. `next lint --file` nos 4 arquivos do web: 0 avisos. `eslint` (config da raiz) nos 4 da API e em `shared/contract.ts`: EXIT 0.'
+  build_typecheck: 'Re-rodado pelo @qa, na ordem. `shared` (tsc) recompilado no worktree depois do rebase: dist com v37. `next build` do web (binário direto): **EXIT 0**, ~1h45 limitado por I/O (kavd + fileproviderd), progresso conferido por `lsof`. Depois dele, `tsc --noEmit` do web (binário direto): **EXIT 0**, sem nenhuma linha de erro. `tsc --noEmit` da API: EXIT 0 em 11 s.'
+
+notes:
+  - 'Validação visual do dono pendente (DoD): funil perpétuo com 2+ VSLs (bf9ccd5c); rolagem horizontal com Nome preso; Total 31,95 % / 214 cliques na janela 09/09 → 08/10.'
+  - 'Merge: se outra PR subir o contrato antes, renumerar é do @devops, não é FAIL desta story.'
+  - 'CodeRabbit não executado (a CLI roda em WSL e não existe no macOS). Revisão manual do diff.'
+
+history:
+  - at: '2026-10-09T20:52:00-03:00'
+    commit: '1c9c64ea'
+    verdict: PASS
+    summary: 'Primeiro gate. AC1–AC8 ✓. next build EXIT 0 → tsc web EXIT 0; web 1.877/1.877; API-alvo 65/65; tsc API 0; lint 0. 10 mutações próprias e 2 reversões mortas. PO-05 sem hunk. Contrato 37 exclusivo. 3 low: REQ-001 (v36 mostra 3 colunas novas medidas), DOC-001 (SHA pré-rebase), DOC-002 (texto do AC3).'

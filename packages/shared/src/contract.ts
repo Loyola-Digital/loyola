@@ -345,4 +345,12 @@
 // story). Nenhuma rota muda de forma; o web com a v35 mostra o "em andamento"
 // como "(captação aberta)" e o 422 da v35 no bloco de erro de sempre.
 // `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 36;
+// v37 (Story 29.82 — tabela das VSLs com as colunas completas do VTurb; sem
+// migration, sem chamada nova ao VTurb): `GET …/funnels/:funnelId/vturb/vsls`
+// ganha, ADITIVOS, `videos[].duracao` (segundos, a mesma `video_duration`
+// mandada ao `sessions/stats`; `null` sem duração) e, em `videos[].brutos`,
+// `viewed` (`total_viewed`), `started` (`total_started`), `clicked`
+// (`total_clicked`) e `engagementRate` (`engagement_rate`, %). Nenhum campo
+// existente muda; o web com a API v36 mostra "—" nas colunas novas.
+// `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 37;

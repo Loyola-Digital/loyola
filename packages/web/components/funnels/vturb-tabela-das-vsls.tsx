@@ -10,6 +10,11 @@
  *
  * Quem decide SE a tabela aparece é o bloco (`VturbStageTab`), porque o
  * seletor de período muda de lugar conforme ela aparece ou não.
+ *
+ * Story 29.82 — as 10 colunas do VTurb, nesta ordem (AC1): Vídeo ·
+ * Visualizações · Vis. Únicas · Plays · Plays Únicos · Play Rate · Retenção ao
+ * Pitch · Audiência do Pitch · Engajamento · Cliques no Botão. A tabela rola
+ * na horizontal (R2); a coluna do nome fica presa à esquerda.
  */
 
 import type { ReactNode } from "react";
@@ -20,8 +25,37 @@ import {
   periodoDoCabecalho,
   totalDaTabela,
   type CelulaDeTaxa,
+  type LinhaDaTabela,
   type TabelaDeVslsDoFunil,
 } from "@/lib/utils/vturb-tabela";
+
+/**
+ * Story 29.82 (AC1) — as colunas de números, na ORDEM da story. A linha de
+ * vídeo e a de Total desenham as mesmas chaves, então não divergem.
+ */
+const COLUNAS: { chave: Exclude<keyof LinhaDaTabela, "playerId" | "nome" | "erro">; titulo: string; dica: string }[] = [
+  { chave: "visualizacoes", titulo: "Visualizações", dica: "Carregamentos do player no período (total_viewed)" },
+  { chave: "visUnicas", titulo: "Vis. Únicas", dica: "Carregamentos únicos por dispositivo (total_viewed_device_uniq)" },
+  { chave: "plays", titulo: "Plays", dica: "Plays no período (total_started)" },
+  { chave: "playsUnicos", titulo: "Plays Únicos", dica: "Plays únicos por dispositivo (total_started_device_uniq)" },
+  { chave: "playRate", titulo: "Play Rate", dica: "Plays únicos ÷ carregamentos únicos do player (dispositivo)" },
+  {
+    chave: "retencao",
+    titulo: "Retenção ao Pitch",
+    dica: "Passaram do pitch ÷ (passaram + não passaram do pitch) — a conta do VTurb, com o pitch cadastrado lá hoje",
+  },
+  { chave: "audienciaPitch", titulo: "Audiência do Pitch", dica: "Pessoas que chegaram no pitch (total_over_pitch)" },
+  {
+    chave: "engajamento",
+    titulo: "Engajamento",
+    dica: "Do VTurb: tempo total assistido ÷ (plays × duração do vídeo). No Total: Σ assistido ÷ Σ (plays × duração)",
+  },
+  {
+    chave: "cliques",
+    titulo: "Cliques no Botão",
+    dica: "Número de cliques no botão de ação, como o VTurb conta (total_clicked) — um número, não taxa",
+  },
+];
 
 function Taxa({ celula }: { celula: CelulaDeTaxa }) {
   if (celula.texto !== null) return <span className="tabular-nums">{celula.texto}</span>;
@@ -59,7 +93,7 @@ export function TabelaDasVsls({
       <div>
         <h3 className="text-sm font-semibold">VSLs do funil</h3>
         <p className="text-[11px] text-muted-foreground">
-          {periodo.startDate} → {periodo.endDate} · Play Rate e Retenção ao pitch como o VTurb calcula, truncados a 2 casas
+          {periodo.startDate} → {periodo.endDate} · números do VTurb; taxas truncadas a 2 casas
         </p>
       </div>
       {seletor}
@@ -99,25 +133,21 @@ export function TabelaDasVsls({
     >
       {cabecalho}
       <div className="overflow-x-auto">
-        <table className="w-full text-xs">
+        <table className="w-full min-w-[960px] whitespace-nowrap text-xs">
           <thead>
             <tr className="border-b border-border/40 text-left text-muted-foreground">
-              <th className="py-1.5 pr-3 font-medium">Vídeo</th>
-              <th className="py-1.5 px-3 text-right font-medium" title="Plays únicos ÷ carregamentos únicos do player (dispositivo)">
-                Play Rate
-              </th>
-              <th
-                className="py-1.5 pl-3 text-right font-medium"
-                title="Passaram do pitch ÷ (passaram + não passaram do pitch) — a conta do VTurb, com o pitch cadastrado lá hoje"
-              >
-                Retenção ao pitch
-              </th>
+              <th className="sticky left-0 bg-card py-1.5 pr-3 font-medium">Nome</th>
+              {COLUNAS.map((c) => (
+                <th key={c.chave} className="py-1.5 pl-3 text-right font-medium" title={c.dica}>
+                  {c.titulo}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {linhas.map((l) => (
               <tr key={l.playerId} className="border-b border-border/20 align-top">
-                <td className="py-1.5 pr-3">
+                <td className="sticky left-0 bg-card py-1.5 pr-3">
                   <span className="font-medium">{l.nome}</span>
                   {l.erro && (
                     <span role="alert" className="block text-[10px] text-destructive">
@@ -125,38 +155,44 @@ export function TabelaDasVsls({
                     </span>
                   )}
                 </td>
-                <td className="py-1.5 px-3 text-right">
-                  <Taxa celula={l.playRate} />
-                </td>
-                <td className="py-1.5 pl-3 text-right">
-                  <Taxa celula={l.retencao} />
-                </td>
+                {COLUNAS.map((c) => (
+                  <td key={c.chave} className="py-1.5 pl-3 text-right">
+                    <Taxa celula={l[c.chave]} />
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>
           <tfoot>
             <tr className="align-top font-semibold">
-              <td className="py-1.5 pr-3" title="Soma dos brutos dos vídeos — um aparelho que viu dois vídeos conta nos dois">
+              <td className="sticky left-0 bg-card py-1.5 pr-3" title="Soma dos brutos dos vídeos — um aparelho que viu dois vídeos conta nos dois">
                 Total
                 <span className="block text-[10px] font-normal text-muted-foreground">soma dos vídeos</span>
               </td>
-              <td className="py-1.5 px-3 text-right">
-                <Taxa celula={total.playRate} />
-              </td>
-              <td className="py-1.5 pl-3 text-right">
-                <Taxa celula={total.retencao} />
-              </td>
+              {COLUNAS.map((c) => (
+                <td key={c.chave} className="py-1.5 pl-3 text-right">
+                  <Taxa celula={total[c.chave]} />
+                </td>
+              ))}
             </tr>
           </tfoot>
         </table>
       </div>
-      {(total.foraPorFalha.length > 0 || total.foraDaRetencao.length > 0) && (
+      <p className="text-[11px] text-muted-foreground">
+        Total = soma dos vídeos: um aparelho que viu dois vídeos conta nos dois. Engajamento do Total = Σ tempo assistido ÷ Σ (plays × duração).
+      </p>
+      {(total.foraPorFalha.length > 0 || total.foraDaRetencao.length > 0 || total.foraDoEngajamento.length > 0) && (
         <div className="space-y-0.5 text-[11px] text-muted-foreground">
           {total.foraPorFalha.length > 0 && (
             <p>Fora do Total (falha na leitura): {total.foraPorFalha.join(", ")}.</p>
           )}
           {total.foraDaRetencao.length > 0 && (
-            <p>Fora da Retenção do Total (pitch não configurado no VTurb): {total.foraDaRetencao.join(", ")}.</p>
+            <p>
+              Fora da Retenção e da Audiência do Pitch do Total (pitch não configurado no VTurb): {total.foraDaRetencao.join(", ")}.
+            </p>
+          )}
+          {total.foraDoEngajamento.length > 0 && (
+            <p>Fora do Engajamento do Total (duração do vídeo ausente no VTurb): {total.foraDoEngajamento.join(", ")}.</p>
           )}
         </div>
       )}

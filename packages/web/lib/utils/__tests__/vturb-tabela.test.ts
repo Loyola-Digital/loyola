@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  MOTIVO_API_ANTERIOR,
   MOTIVO_FALHA,
   MOTIVO_SEM_DADOS,
+  MOTIVO_SEM_DURACAO,
   MOTIVO_SEM_PITCH,
+  centesimosDeDecimal,
   centesimosTruncados,
   diaNoFuso,
   estadoDaTabela,
@@ -10,6 +13,7 @@ import {
   linhaDaTabela,
   periodoDoCabecalho,
   pitchConfiguradoNoPainel,
+  textoDeContagem,
   textoDePercentual,
   totalDaTabela,
   type VslDoFunil,
@@ -226,5 +230,196 @@ describe("AC6 — a janela no fuso da conexão, não em UTC", () => {
   it("sem fuso ou fuso inválido → São Paulo (o padrão da conexão)", () => {
     expect(diaNoFuso(noiteEmSP, null)).toBe("2026-09-23");
     expect(diaNoFuso(noiteEmSP, "Fuso/Inexistente")).toBe("2026-09-23");
+  });
+});
+
+// ============================================================
+// Story 29.82 — as colunas completas do VTurb.
+//
+// Os brutos abaixo são os MEDIDOS no VTurb em 2026-10-09 (janela 09/09 →
+// 08/10, payload da rota nova no Dev Agent Record da story): 3 players perpétuos com Plays ≠ Plays
+// Únicos e durações diferentes, para a escolha do AC3 (plays = total_started,
+// resposta do dono) e o peso pela duração serem observáveis no Total.
+// ============================================================
+
+function vslCompleta(
+  nome: string,
+  b: { viewed: number; viewedUniq: number; started: number; startedUniq: number; over: number; under: number; clicked: number; eng: number },
+  duracao: number | null,
+  over: Partial<VslDoFunil> = {},
+): VslDoFunil {
+  return vsl({
+    nome,
+    duracao,
+    brutos: {
+      viewedUniq: b.viewedUniq,
+      startedUniq: b.startedUniq,
+      overPitch: b.over,
+      underPitch: b.under,
+      viewed: b.viewed,
+      started: b.started,
+      clicked: b.clicked,
+      engagementRate: b.eng,
+    },
+    ...over,
+  });
+}
+
+const V1 = vslCompleta("V1", { viewed: 905, viewedUniq: 774, started: 331, startedUniq: 310, over: 87, under: 211, clicked: 49, eng: 30.05 }, 684);
+const V6 = vslCompleta("V6", { viewed: 15128, viewedUniq: 13792, started: 5181, startedUniq: 5130, over: 308, under: 4917, clicked: 0, eng: 12.77 }, 303);
+const V5 = vslCompleta("V5", { viewed: 109, viewedUniq: 81, started: 64, startedUniq: 62, over: 40, under: 21, clicked: 9, eng: 70.49 }, 375);
+
+describe("Story 29.82 AC1/AC5 — cada coluna nova a partir dos brutos", () => {
+  it("contagens com milhar pt-BR; Audiência do Pitch = total_over_pitch; Engajamento do VTurb truncado", () => {
+    const l = linhaDaTabela(V6);
+    expect(l.visualizacoes.texto).toBe("15.128");
+    expect(l.visUnicas.texto).toBe("13.792");
+    expect(l.plays.texto).toBe("5.181");
+    expect(l.playsUnicos.texto).toBe("5.130");
+    expect(l.audienciaPitch.texto).toBe("308");
+    expect(l.engajamento.texto).toBe("12,77%");
+    expect(l.cliques).toEqual({ texto: "0", motivo: null }); // um 0 real é 0 (R1)
+  });
+
+  it("Cliques no Botão é o NÚMERO do VTurb — sem %, nunca cliques ÷ views", () => {
+    const l = linhaDaTabela(V1);
+    expect(l.cliques.texto).toBe("49");
+    expect(l.cliques.texto).not.toContain("%");
+  });
+
+  it("Plays é total_started e Plays Únicos é o único — não se confundem", () => {
+    const l = linhaDaTabela(V1);
+    expect(l.plays.texto).toBe("331");
+    expect(l.playsUnicos.texto).toBe("310");
+    expect(l.visualizacoes.texto).toBe("905");
+    expect(l.visUnicas.texto).toBe("774");
+  });
+
+  it("textoDeContagem: separador de milhar pt-BR", () => {
+    expect(textoDeContagem(1234567)).toBe("1.234.567");
+    expect(textoDeContagem(0)).toBe("0");
+  });
+});
+
+describe("Story 29.82 AC5/PO-04 — truncagem do Engajamento imune a ponto flutuante", () => {
+  it("0,29 do VTurb aparece 0,29% (o piso em float dá 0,28%); 16,1 aparece 16,10%", () => {
+    expect(Math.floor(0.29 * 100)).toBe(28); // o defeito que a conta exata evita
+    expect(centesimosDeDecimal(0.29)).toBe(29);
+    expect(centesimosDeDecimal(16.1)).toBe(1610);
+    expect(centesimosDeDecimal(30.0585)).toBe(3005); // trunca, não arredonda
+    const l = (eng: number) => linhaDaTabela(vslCompleta("x", { viewed: 1, viewedUniq: 1, started: 1, startedUniq: 1, over: 0, under: 1, clicked: 0, eng }, 100));
+    expect(l(0.29).engajamento.texto).toBe("0,29%");
+    expect(l(16.1).engajamento.texto).toBe("16,10%");
+  });
+
+  it("no Total também: um vídeo só com 0,29 → 0,29%; 16,1 → 16,10%", () => {
+    const um = (eng: number) => totalDaTabela([vslCompleta("x", { viewed: 1, viewedUniq: 1, started: 7, startedUniq: 1, over: 0, under: 1, clicked: 0, eng }, 303)]);
+    expect(um(0.29).engajamento.texto).toBe("0,29%");
+    expect(um(16.1).engajamento.texto).toBe("16,10%");
+  });
+
+  it("decimal inválido ou negativo → null; notação científica é lida exata", () => {
+    expect(centesimosDeDecimal(-1)).toBeNull();
+    expect(centesimosDeDecimal(Number.NaN)).toBeNull();
+    expect(centesimosDeDecimal(1e-7)).toBe(0);
+    expect(centesimosDeDecimal(1e21)).toBe(1e23);
+  });
+});
+
+describe("Story 29.82 AC2 — Total: soma das contagens e Engajamento pela definição do dono", () => {
+  const t = totalDaTabela([V1, V6, V5]);
+
+  it("cada contagem é a SOMA dos vídeos", () => {
+    expect(t.visualizacoes.texto).toBe("16.142"); // 905 + 15.128 + 109
+    expect(t.visUnicas.texto).toBe("14.647");
+    expect(t.plays.texto).toBe("5.576"); // 331 + 5.181 + 64 (total_started)
+    expect(t.playsUnicos.texto).toBe("5.502"); // 310 + 5.130 + 62
+    expect(t.audienciaPitch.texto).toBe("435"); // 87 + 308 + 40
+    expect(t.cliques.texto).toBe("58");
+  });
+
+  it("Engajamento = Σ(eng × plays × duração) ÷ Σ(plays × duração), plays = total_started → 15,68%", () => {
+    expect(t.engajamento.texto).toBe("15,68%");
+    // e não: média simples (37,77%), peso por plays únicos (15,56%), peso só por plays (14,45%)
+    expect(t.engajamento.texto).not.toBe("37,77%");
+    expect(t.engajamento.texto).not.toBe("15,56%");
+    expect(t.engajamento.texto).not.toBe("14,45%");
+  });
+
+  it("Play Rate e Retenção do Total seguem pela soma dos brutos (29.78)", () => {
+    expect(t.playRate.texto).toBe(pct(5502, 14647));
+    expect(t.retencao.texto).toBe(pct(435, 435 + 5149));
+  });
+});
+
+describe("Story 29.82 AC4 — ausência não vira zero", () => {
+  it("vídeo SEM duração: Engajamento '—' pelo motivo, fora do numerador E do denominador; o resto segue", () => {
+    // Sem video_duration o VTurb não calcula e a API normaliza para 0.
+    const semDuracao = vslCompleta("V5", { viewed: 109, viewedUniq: 81, started: 64, startedUniq: 62, over: 40, under: 21, clicked: 9, eng: 0 }, null);
+    const l = linhaDaTabela(semDuracao);
+    expect(l.engajamento).toEqual({ texto: null, motivo: MOTIVO_SEM_DURACAO });
+    expect(l.plays.texto).toBe("64");
+    expect(l.cliques.texto).toBe("9");
+    const t = totalDaTabela([V1, V6, semDuracao]);
+    expect(t.engajamento.texto).toBe("14,94%"); // só V1 e V6
+    expect(t.foraDoEngajamento).toEqual(["V5"]);
+    expect(t.plays.texto).toBe("5.576"); // nas contagens ele entra
+  });
+
+  it("nenhum vídeo com duração → Engajamento do Total '—' pela duração", () => {
+    const a = vslCompleta("A", { viewed: 1, viewedUniq: 1, started: 1, startedUniq: 1, over: 0, under: 1, clicked: 0, eng: 0 }, null);
+    expect(totalDaTabela([a]).engajamento).toEqual({ texto: null, motivo: MOTIVO_SEM_DURACAO });
+  });
+
+  it("vídeo sem pitch: Audiência do Pitch '—' com o motivo e fora do Σ dela", () => {
+    const semPitch = { ...V5, pitchTime: null, pitchConfigurado: false };
+    expect(linhaDaTabela(semPitch).audienciaPitch).toEqual({ texto: null, motivo: MOTIVO_SEM_PITCH });
+    const t = totalDaTabela([V1, V6, semPitch]);
+    expect(t.audienciaPitch.texto).toBe("395"); // 87 + 308, sem os 40 do V5
+    expect(t.foraDaRetencao).toEqual(["V5"]);
+    expect(totalDaTabela([semPitch]).audienciaPitch).toEqual({ texto: null, motivo: MOTIVO_SEM_PITCH });
+  });
+
+  it("vídeo sem plays no período → Engajamento '—' sem dados, não 0%", () => {
+    const parado = vslCompleta("P", { viewed: 10, viewedUniq: 10, started: 0, startedUniq: 0, over: 0, under: 0, clicked: 0, eng: 0 }, 300);
+    expect(linhaDaTabela(parado).engajamento).toEqual({ texto: null, motivo: MOTIVO_SEM_DADOS });
+    expect(totalDaTabela([parado]).engajamento).toEqual({ texto: null, motivo: MOTIVO_SEM_DADOS });
+  });
+
+  it("vídeo com falha: '—' em todas as colunas novas e fora do Total", () => {
+    const falhou = vsl({ nome: "F", brutos: null, erro: "VTurb respondeu 500", duracao: 600 });
+    const l = linhaDaTabela(falhou);
+    for (const c of [l.visualizacoes, l.visUnicas, l.plays, l.playsUnicos, l.audienciaPitch, l.engajamento, l.cliques]) {
+      expect(c).toEqual({ texto: null, motivo: MOTIVO_FALHA });
+    }
+    const t = totalDaTabela([V1, falhou]);
+    expect(t.plays.texto).toBe("331");
+    expect(t.engajamento.texto).toBe("30,05%");
+    expect(t.foraPorFalha).toEqual(["F"]);
+  });
+});
+
+describe("Story 29.82 AC6 — front contra a API anterior (v36, sem os campos novos)", () => {
+  // Payload como a v36 devolve: quatro brutos e nenhuma `duracao`.
+  const antigo = vsl({ nome: "Antigo", brutos: { viewedUniq: 521, startedUniq: 158, overPitch: 13, underPitch: 151 } });
+
+  it("colunas de hoje medidas; as novas '—' com o motivo, sem erro", () => {
+    const l = linhaDaTabela(antigo);
+    expect(l.playRate.texto).toBe("30,32%");
+    expect(l.retencao.texto).toBe("7,92%");
+    expect(l.visUnicas.texto).toBe("521");
+    expect(l.playsUnicos.texto).toBe("158");
+    expect(l.audienciaPitch.texto).toBe("13");
+    for (const c of [l.visualizacoes, l.plays, l.engajamento, l.cliques]) {
+      expect(c).toEqual({ texto: null, motivo: MOTIVO_API_ANTERIOR });
+    }
+  });
+
+  it("Total: as somas novas e o Engajamento '—' — nunca um 0 que parece medição", () => {
+    const t = totalDaTabela([antigo, V1]);
+    for (const c of [t.visualizacoes, t.plays, t.engajamento, t.cliques]) {
+      expect(c).toEqual({ texto: null, motivo: MOTIVO_API_ANTERIOR });
+    }
+    expect(t.playRate.texto).toBe(pct(158 + 310, 521 + 774));
   });
 });
