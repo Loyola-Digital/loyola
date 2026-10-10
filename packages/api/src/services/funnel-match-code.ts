@@ -7,8 +7,10 @@
  * substring (`findMatchingCampaignsForStage`, `services/stage-phase.ts`).
  *
  * Usada nas campanhas órfãs (`routes/funnels.ts`), no auto-preenchimento das
- * campanhas da etapa (`routes/funnel-stages.ts`) e no código do lançamento do
- * Debriefing (`debriefing-money-time-loader.ts`, Story 49.17 fatia C).
+ * campanhas da etapa (`routes/funnel-stages.ts`), no código do lançamento do
+ * Debriefing (`debriefing-money-time-loader.ts`, Story 49.17 fatia C) e no
+ * casamento por nome do log automático de atividades da Meta
+ * (`codigosDosFunis`, `services/meta-activity-log-sync.ts`, Story 49.23).
  *
  * NÃO é a regra de `tokenDoFunil` (`services/sendflow-casamento.ts`, 2 primeiros
  * segmentos do nome) nem a de `funnelMatchToken` (Mautic e campaign-log): trocar

@@ -29,6 +29,7 @@ import {
   metaAdsAccounts,
 } from "../db/schema.js";
 import { decrypt } from "./encryption.js";
+import { effectiveMatchCode } from "./funnel-match-code.js";
 import { fetchAccountActivities } from "./meta-ads.js";
 import {
   APLICATIVO_META,
@@ -199,9 +200,22 @@ async function indiceFilhoParaCampanha(
 }
 
 /**
- * funil → match_code (o mesmo critério do auto-popular de campanhas: o nome da
- * campanha CONTÉM o código; sem código explícito, o próprio nome do funil).
+ * funil → código de casamento pela regra única (`effectiveMatchCode`,
+ * `services/funnel-match-code.ts`). Funil sem código efetivo fica de fora.
+ * Pura: a leitura do banco fica em `codigosDeMatch` (Story 49.23).
  */
+export function codigosDosFunis(
+  listaFunis: { id: string; name: string | null; matchCode: string | null }[],
+): { funnelId: string; code: string }[] {
+  const codigos: { funnelId: string; code: string }[] = [];
+  for (const f of listaFunis) {
+    const code = effectiveMatchCode(f);
+    if (code) codigos.push({ funnelId: f.id, code });
+  }
+  return codigos;
+}
+
+/** Os funis do projeto e os seus códigos de casamento (`codigosDosFunis`). */
 async function codigosDeMatch(
   db: Database,
   projectId: string,
@@ -211,12 +225,7 @@ async function codigosDeMatch(
     .from(funnels)
     .where(eq(funnels.projectId, projectId));
 
-  return listaFunis
-    .map((f) => ({
-      funnelId: f.id,
-      code: (f.matchCode ?? f.name ?? "").trim().toLowerCase(),
-    }))
-    .filter((f) => f.code.length > 0);
+  return codigosDosFunis(listaFunis);
 }
 
 /**
@@ -228,7 +237,7 @@ async function codigosDeMatch(
  * num nome que contenha os dois. Empate entre funis diferentes descarta, porque
  * atribuir ao funil errado é pior do que não registrar.
  */
-function funilPeloNome(
+export function funilPeloNome(
   objectName: string | null,
   codigos: { funnelId: string; code: string }[],
 ): string | null {
