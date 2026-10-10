@@ -1087,3 +1087,103 @@ describe("AC7 — vale no parcial e no final; o resto do documento não muda", (
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Story 49.22 (R13-1) — `--lp--` sem letra vale LPA, só no teste de LP
+// ---------------------------------------------------------------------------
+
+describe("Story 49.22 AC1/AC2 — o bloco `lp` puro é a LPA em lpDaCampanha (e só ali)", () => {
+  it("`--lp--` no meio e `--lp` no fim → lp LPA, rótulo LP (o que está no nome)", () => {
+    expect(lpDaCampanha("lanc--vendas-captacao--hot--cbo--videos--lp--2026-10-01")).toEqual({ lp: "LPA", rotulo: "LP", regra: "bloco-lp" });
+    expect(lpDaCampanha(VID("lp"))).toEqual({ lp: "LPA", rotulo: "LP", regra: "bloco-lp" });
+  });
+
+  it("maiúsculas e o sufixo de cópia da Meta (limpo pela mesma função do parser)", () => {
+    expect(lpDaCampanha("lanc--vendas-captacao--hot--cbo--videos--LP--2026-10-01")).toEqual({ lp: "LPA", rotulo: "LP", regra: "bloco-lp" });
+    expect(lpDaCampanha(`${VID("lp")} — Cópia`)).toEqual({ lp: "LPA", rotulo: "LP", regra: "bloco-lp" });
+    expect(lpDaCampanha(`${VID("Lp")} - Copy 2`)).toEqual({ lp: "LPA", rotulo: "LP", regra: "bloco-lp" });
+  });
+
+  it("o que NÃO vira LPA: lpa, lpaa, lpb, lp1, o bloco composto lp-<slug>, o nome do Epic 47, a campanha sem LP", () => {
+    expect(lpDaCampanha(VID("lpa"))).toEqual({ lp: "LPA", rotulo: "LPA", regra: "bloco-lp" });
+    expect(lpDaCampanha(VID("lpaa"))).toEqual({ lp: "LPA", rotulo: "LPAA", regra: "bloco-lp" });
+    expect(lpDaCampanha(VID("lpb"))).toEqual({ lp: "LPB", rotulo: "LPB", regra: "bloco-lp" });
+    expect(lpDaCampanha(VID("lp1"))).toEqual({ lp: "LP1", rotulo: "LP1", regra: "bloco-lp" });
+    // R13-1: `lp-<slug>` segue lido como hoje (a 2ª passada do parseUtmTerm guarda o `lp`)
+    expect(lpDaCampanha("dg-curso-claude--vendas-captacao--hot--cbo--videos--lp-claude")).toEqual({ lp: "LP", rotulo: "LP", regra: "bloco-lp" });
+    expect(lpDaCampanha("lanc--vendas-captacao--hot--cbo--videos--lp-seca")).toEqual({ lp: "LP", rotulo: "LP", regra: "bloco-lp" });
+    expect(lpDaCampanha("fz-l1-fev26--vendas-captacao--hot--cbo--videos--lp-lista-espera — Cópia")).toEqual({ lp: "LP", rotulo: "LP", regra: "bloco-lp" });
+    expect(lpDaCampanha("bbe_churrasco-premium_a01_of01_2026_hot_cbo_videos_lpb")).toEqual({ lp: "LPB", rotulo: "LPB", regra: "nomenclatura-epic-47" });
+    expect(lpDaCampanha("bbe_churrasco-premium_a01_of01_2026_hot_cbo_videos_lp")).toBeNull();
+    expect(lpDaCampanha("lanc--vendas-captacao--hot--cbo--videos")).toBeNull();
+    // `lp` só como 1º bloco é o slug da campanha (o parser não lê LP ali)
+    expect(lpDaCampanha("lp--vendas-captacao--hot--cbo--videos")).toBeNull();
+  });
+
+  it("integração: `--lp--` × `--lpb` com o mesmo formato, anúncios e conjuntos formam par (LPA × LPB)", () => {
+    const base = { conjuntos: ["01_QUENTE"], anuncios: ["adv01--claude"], dias: dias(1, 3) };
+    const t = computeTesteDeLp(entrada([{ id: "p", nome: VID("lp"), ...base }, { id: "b", nome: VID("lpb"), ...base }]));
+    expect(t.pares.map((p) => p.lps)).toEqual([["LPA", "LPB"]]);
+    expect(t.semPar).toEqual([]);
+    expect(t.porLp.map((x) => [x.lp, x.rotulos])).toEqual([
+      ["LPA", ["LP"]],
+      ["LPB", ["LPB"]],
+    ]);
+    expect(t.campanhas.find((c) => c.campanha === VID("lp"))?.lp).toBe("LPA");
+  });
+
+  it("integração: `--lp--` × `--lpa` (e `--lpaa`) não formam par e somam como uma LPA só", () => {
+    const base = { conjuntos: ["01_QUENTE"], anuncios: ["adv01--claude"], dias: dias(1, 3) };
+    const t = computeTesteDeLp(
+      entrada([
+        { id: "p", nome: VID("lp"), ...base },
+        { id: "a", nome: VID("lpa"), ...base },
+        { id: "aa", nome: VID("lpaa"), ...base },
+      ]),
+    );
+    expect(t.porLp).toEqual([{ lp: "LPA", rotulos: ["LP", "LPA", "LPAA"], campanhas: 3, investimentoComImposto: 90 }]);
+    expect(t.pares).toEqual([]);
+    expect(t.semLp.campanhas).toBe(0);
+  });
+
+  it("uma `--lp--` sozinha sai como sem par com a LPA como nome do grupo (não como LP)", () => {
+    const t = computeTesteDeLp(entrada([{ id: "p", nome: VID("lp"), dias: dias(1, 3) }]));
+    expect(t.semPar.map((g) => [g.lp, g.maisProxima, g.diferencas, g.campanhas])).toEqual([["LPA", null, [], [VID("lp")]]]);
+    expect(t.semPar[0]!.texto).toContain("única LP");
+    expect(t.porLp.map((x) => x.lp)).toEqual(["LPA"]);
+  });
+
+  it("`--lp-claude` × `--lpb` continua como hoje: a LP \"LP\" forma par com a LPB (não é a LPA)", () => {
+    const base = { conjuntos: ["01_QUENTE"], anuncios: ["adv01--claude"], dias: dias(1, 3) };
+    const comSlug = "lanc--vendas-captacao--hot--cbo--videos--lp-claude";
+    const t = computeTesteDeLp(entrada([{ id: "c", nome: comSlug, ...base }, { id: "b", nome: VID("lpb"), ...base }]));
+    expect(t.pares.map((p) => p.lps)).toEqual([["LP", "LPB"]]);
+  });
+});
+
+/**
+ * Story 49.22 AC5 — SHA-256 do HTML INTEIRO e do payload INTEIRO, com a fixture do teste de LP
+ * (nenhuma campanha com `--lp--`) e o relógio fixado, medidos no commit-base `d10258cb`
+ * (código = `origin/main` `88750a9d`), antes da regra nova, por um `.test.ts` temporário.
+ */
+const SHA_DA_49_22: Record<string, { html: string; payload: string }> = {
+  "final-edicao-unica": { html: "35a268907e63180a36477c5fce77410927abd7724993613efb3ea26a89265417", payload: "50457ce8c7ebe53d295ff63f0a3f00a36f0009b17e60c0776a0a7f0ebbf3af35" },
+  "final-comparacao-recalculada": { html: "ce75d2879b889a0788b7e259397e0e58ff42aa10576fff29dba85829f6b9c4b7", payload: "5d136fb904188cacd96544bb6b4758c2100f5e3d58f3af647de06ac1826512ea" },
+  "final-comparacao-salva-antiga": { html: "7e477a5bd085006aa70d31d39e95e6fbd517d596ce8099e041ba4e67367e96d7", payload: "2eaf79216e07b98ae6010ec6390bd1745c0e05094daa07ad897f41c6b27f0458" },
+  "parcial-edicao-unica": { html: "b6ef1d7d1dd15e2ca38e0f411450b57acd90fd520e19b6a215a65a70e5a11321", payload: "5eeeafd034b827c0ba2f5485f70e931de763cd46e102348ce627c63525d38015" },
+  "parcial-comparacao-recalculada": { html: "440ee2367de60684c47069b897f7e9f958af8c6f745de0a8f6b3132f35571f2c", payload: "0e2581c1c14fdd399c80308ae0847e426f53d5f33f69fc351805fe54eba499db" },
+  "parcial-comparacao-salva": { html: "9177dca716f0a916c799294aac770fedbe6072b10708b13bcb9b13d9bc624b7e", payload: "d5a9c51419da4824f5b0d4d962fbd2c400a030c5a6014d19e86fee3cf29095d9" },
+  "final-sem-ad-level": { html: "c7476c8d94bd9bcec303aa3e1e1a70e56d6e8ff1545fc2800ba9bff00ba0e473", payload: "68511a4b35626b21831fb2f6111a51f36f46a50c287ec1399ce17d61d5deb706" },
+};
+
+describe("Story 49.22 AC5 — sem `--lp--` na fixture, payload e HTML idênticos aos do commit-base", () => {
+  it("a fixture não tem bloco `lp` puro (a premissa do AC5)", () => {
+    for (const nome of Object.values(CAMP_LP)) expect(nome.split("--").slice(1).some((b) => /^lp$/i.test(b.trim())), nome).toBe(false);
+  });
+
+  it.each(Object.keys(CENARIOS_DO_AC7))("%s: SHA do HTML e do payload inteiros = os do commit-base", async (nome) => {
+    const { html, payload } = await gerar(CENARIOS_DO_AC7[nome]!);
+    expect(sha(html)).toBe(SHA_DA_49_22[nome]!.html);
+    expect(sha(JSON.stringify(payload))).toBe(SHA_DA_49_22[nome]!.payload);
+  });
+});
