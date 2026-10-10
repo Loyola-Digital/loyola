@@ -1,0 +1,46 @@
+schema: 1
+storyId: '49.23'
+story: '49.23'
+story_title: 'Log de atividades da Meta: match_code só com espaços cai no nome do funil'
+scope_do_gate: 'AC1–AC5 (R13-2, MNT-001 do gate da 49.17 fatia C). Só `codigosDeMatch`/`codigosDosFunis` e o comentário da regra única.'
+verdict: PASS
+gate: PASS
+status_reason: 'Os 5 ACs estão implementados e provados. Para todo funil cujo match_code não está em branco, o comportamento é idêntico, e isso foi provado de dois jeitos. (1) Pelo raciocínio caso a caso: com match_code não nulo e não branco, as duas regras dão matchCode.trim().toLowerCase(); com match_code nulo, as duas dão o nome aparado e minúsculo, e o nome vazio fica de fora nas duas. (2) Pela medição read-only do AC3, que o QA reproduziu em produção: 5/5 projetos e 21/21 funis iguais. Com a linha antiga de volta, 2 testes falham. As 8 mutações do QA morrem. resolverFunil e desempatarPorNome não mudaram, funilPeloNome só ganhou `export`, e campaign-log.ts e sendflow-groups-sync.ts estão intocados. tsc e eslint limpos. Fica um low, aceito por decisão do @po.'
+reviewer: 'Quinn'
+updated: '2026-10-09T22:20:00-03:00'
+branch: 'fix/49.23-sync-match-code-espacos'
+commit_reviewed: '1ed0c3e4 (fix em b5bc5e69)'
+base: 'd10258cb (docs da rodada 13) sobre origin/main 88750a9d'
+
+checks:
+  requirements_traceability: 'AC1: o Dev Agent Record registra a consulta READ ONLY (data, 21 funis, 0 só com espaços, 0 vazios, 0 só com brancos pelo regex, nenhum listado), e a story segue como preventiva. AC2: codigosDosFunis usa effectiveMatchCode, codigosDeMatch faz o select e delega, e o `??` saiu. AC3: ver ac3_reproduzido. AC4: 7 testes cobrindo os 4 casos pedidos, mais o empate e a igualdade com a regra antiga. AC5: funnel-match-code.ts lista o sync entre os chamadores, e o comentário de codigosDosFunis aponta para a regra em vez de repeti-la.'
+  equivalencia_por_inspecao: 'Antiga: (mc ?? name ?? "").trim().toLowerCase(), descartando o vazio. Nova: (mc ?? "").trim().toLowerCase(); se der vazio, (name ?? "").trim().toLowerCase(); se der vazio de novo, null, e o funil fica de fora. São três casos. (i) mc não nulo e não branco: as duas dão o mesmo valor. (ii) mc nulo: as duas dão o nome, e o vazio fica de fora nas duas. (iii) mc não nulo e branco (inclui ""): a antiga descartava o funil e a nova usa o nome, que é a correção. A ordem da lista e o tipo de saída se mantêm.'
+  ac3_reproduzido: 'O QA rodou scratchpad/medir-4923/medir.mts e conferiu antes que o script só lê: conexão com default_transaction_read_only=on, show = on, e a leitura dentro de BEGIN READ ONLY. Às 2026-10-10T01:15:54Z: 0 funis achados com match_code em branco; 5 projetos com conjuntos {funnelId, code} idênticos e 0 diferentes, 21 pares. Por funil, 21/21 iguais (9 de match_code, 12 do nome).'
+  fix_revertido: 'Com a linha antiga no lugar de effectiveMatchCode, 2 de 16 testes falham (meta-activity-match-code + meta-activity-desempate): o 1º caso do AC4 e o empate com o funil em branco.'
+  mutacoes_do_qa: 'Cada uma foi seguida de git checkout, e a árvore terminou limpa. Morrem: (d) nome antes do match_code (4 falhas); (e) sem o filtro `if (code)`, que empurra código null (2); (b1) sem o trim do match_code (5); (b2) sem o trim do nome (3); (c1) sem o lowercase do match_code (2); (c2) sem o lowercase do nome (4); (f) funilPeloNome sem descartar o empate (1). Também morre a mutação (a), que é o próprio fix revertido (2).'
+  intactos: 'Pelo diff d10258cb..HEAD, desempatarPorNome (:152) e resolverFunil (:256) não foram tocados. funilPeloNome só ganhou `export` (corpo :240-253 igual). O chamador :356 continua em codigosDeMatch.'
+  fora_de_escopo: 'git diff d10258cb..HEAD está vazio para routes/campaign-log.ts e services/sendflow-groups-sync.ts. Sem contrato, sem migration, sem tela.'
+  testes: 'meta-activity-match-code, meta-activity-desempate, meta-activity-mapper e debriefing-testes-pre-lancamento-49-17 (outro chamador da regra única): 4 arquivos, 53/53, rodados com node vitest.mjs no worktree.'
+  lint_tsc: 'tsc --noEmit -p packages/api/tsconfig.json pelo binário direto: 0 erros em 10 s. eslint nos 3 arquivos: 0 problemas.'
+
+issues:
+  - id: TEST-001
+    severity: low
+    category: tests
+    description: 'O fio codigosDeMatch → codigosDosFunis não tem teste: se alguém recolocar a regra antiga dentro de codigosDeMatch, os testes continuam verdes. Hoje o corpo é só `return codigosDosFunis(listaFunis)` depois do select, conferido por leitura. O @po decidiu nas Dev Notes não mockar o banco, porque um mock provaria a fila e não a regra.'
+    recommendation: 'Nenhuma ação agora. Se codigosDeMatch crescer, testar pelo PGlite (store real) ou por um teste de fio que leia o arquivo.'
+    owner: '@dev'
+    status: accepted
+
+perguntas_ao_dono: []
+
+nfr:
+  security: 'PASS: não há entrada nova; a leitura do banco não mudou.'
+  performance: 'PASS: O(n) por projeto, como antes.'
+  reliability: 'PASS: correção preventiva com 0 funis afetados hoje, e o resultado é idêntico no dado real.'
+  maintainability: 'PASS: sai a segunda cópia da regra, e o comentário da regra única lista o novo chamador.'
+
+recommendations:
+  immediate: []
+  future:
+    - 'TEST-001 (low, accepted).'
