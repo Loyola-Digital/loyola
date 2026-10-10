@@ -39,7 +39,7 @@
  */
 
 import { FORMATO_DO_CODIGO, normalizarNomeCampanha } from "@loyola-x/shared";
-import { chaveLp, parseUtmTerm, rotuloLp } from "./utm-term.js";
+import { chaveLp, limparSufixoCopia, parseUtmTerm, rotuloLp } from "./utm-term.js";
 import { fisherExatoBilateral, ALFA_DO_FISHER } from "./fisher-exato.js";
 import { fmtNumero, fmtReais, type Metrica } from "./debriefing-money-time-engine.js";
 import {
@@ -73,14 +73,33 @@ export interface LpDaCampanha {
 const CAMPOS_DO_NOME_DO_EPIC_47 = 9;
 
 /**
+ * Story 49.22 (R13-1): o nome traz um bloco `--lp--` puro, sem letra (no meio ou
+ * no fim, qualquer caixa, com o sufixo de cópia limpo pela mesma função do parser).
+ * O bloco 0 é o slug da campanha, como no `parseUtmTerm`. Olha os blocos, e não só
+ * o rótulo, porque `--lp-claude` também dá o rótulo "LP" (a 2ª passada do parser).
+ */
+function temBlocoLpPuro(nome: string): boolean {
+  const campanha = nome.split("|")[0] ?? "";
+  return campanha
+    .split("--")
+    .slice(1)
+    .some((b) => /^lp$/i.test(limparSufixoCopia(b)));
+}
+
+/**
  * A LP de uma campanha pelo código no nome. Primeiro o bloco `--lp…` (os nomes
  * de lançamento: `…--videos--lpa`); depois o último campo do nome do Epic 47.
  * Sem código → `null` (a campanha fica fora do teste).
+ *
+ * Story 49.22 (R13-1, só no Debriefing): o bloco `--lp--` sem letra é a LPA — a
+ * chave vira "LPA" e o rótulo fica "LP" (o que está no nome). `rotuloLp`/`chaveLp`
+ * não mudam: são as mesmas de leads, aplicações e vendas. `lp-<slug>` fica "LP".
  */
 export function lpDaCampanha(campaignName: string | null | undefined): LpDaCampanha | null {
   const nome = (campaignName ?? "").trim();
   if (!nome) return null;
   const doBloco = rotuloLp(parseUtmTerm(nome).lp);
+  if (doBloco === "LP" && temBlocoLpPuro(nome)) return { lp: "LPA", rotulo: doBloco, regra: "bloco-lp" };
   if (doBloco) return { lp: chaveLp(doBloco), rotulo: doBloco, regra: "bloco-lp" };
   const campos = nome.split("_");
   const ultimo = campos[campos.length - 1] ?? "";

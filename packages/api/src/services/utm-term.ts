@@ -80,7 +80,7 @@ const RE_FORMATO = /^(videos?|estaticos?|est[aá]ticos?|carrossel|carousel|image
  * viram DUAS linhas no ranking — a mesma LP contada em dobro, o que é pior que
  * não ter o dado.
  */
-function limparSufixoCopia(bloco: string): string {
+export function limparSufixoCopia(bloco: string): string {
   return bloco.replace(/\s*[—-]\s*(c[óo]pia|copy)\s*\d*$/i, "").trim();
 }
 
