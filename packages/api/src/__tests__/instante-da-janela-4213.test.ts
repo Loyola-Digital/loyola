@@ -54,6 +54,8 @@ describe("o fio — as três rotas do RevenueCat usam a régua (AC4a/b)", () => 
     const sales = rotas.slice(rotas.indexOf('"/api/projects/:projectId/funnels/:funnelId/stages/:stageId/revenuecat/sales"'));
     expect(sales.slice(0, sales.indexOf("gte(revenuecatSales.purchasedAt, cutoff)"))).toMatch(/const cutoff = instanteDoInicioDaJanela\(query\.data\.days\);/);
     expect(rotas.match(/instanteDoInicioDaJanela\(query\.data\.days\)/g)).toHaveLength(3);
+    // QA TEST-002/Q16: a janela é fechada no início (>=), não aberta.
+    expect(sales).toMatch(/gte\(revenuecatSales\.purchasedAt, cutoff\)/);
   });
   it("o diário de `/sales` agrupa pelo dia de SP", () => {
     expect(rotas).toMatch(/day: diaNoFusoDoNegocio\(revenuecatSales\.purchasedAt\),/);

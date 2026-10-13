@@ -26,6 +26,7 @@
 import { and, eq, inArray, isNotNull, ne, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import { revenuecatSales } from "../db/schema.js";
 import { REVENUE_EVENT_TYPES } from "../services/revenuecat.js";
+import { toBusinessDayKey } from "./sale-date.js";
 
 const c = revenuecatSales;
 const REVENUE = [...REVENUE_EVENT_TYPES];
@@ -313,12 +314,15 @@ export function lerLinhaDeVendas(r: Record<string, unknown>): CompradorDoLyrio {
   };
 }
 
-/** `Date` | string do driver → `AAAA-MM-DD`, ou `null`. */
+/** `Date` | string do driver → `AAAA-MM-DD` do dia em SP, ou `null`. */
 export function dataIso(v: unknown): string | null {
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  // Story 42.13 (QA MNT-001): o dia de SP, a mesma régua do `desde` da janela.
+  // Em UTC, um evento das 21h às 24h de SP caía no dia seguinte, e a
+  // declaração de cobertura comparava dias de dois fusos.
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : toBusinessDayKey(v);
   if (typeof v === "string" && v) {
     const d = new Date(v);
-    return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+    return Number.isNaN(d.getTime()) ? null : toBusinessDayKey(d);
   }
   return null;
 }

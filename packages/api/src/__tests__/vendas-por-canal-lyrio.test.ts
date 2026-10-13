@@ -28,6 +28,7 @@ import {
   consultaDeVendasPorCanal,
   consultaDoInicioDosAtributos,
   consultaDoQueFicaForaDaQuebra,
+  dataIso,
   diaNoFusoDoNegocio,
   lerLinhaDeVendas,
   montarVendasPorCanal,
@@ -474,5 +475,16 @@ describe("Story 42.13 (AC4b) — o diário de `/sales` pelo dia de SP", () => {
       sql`SELECT ${diaNoFusoDoNegocio(sql`'2026-10-09T02:30:00Z'::timestamptz`)} AS vespera, ${diaNoFusoDoNegocio(sql`'2026-10-09T03:30:00Z'::timestamptz`)} AS primeiro`,
     );
     expect(r).toEqual({ vespera: "2026-10-08", primeiro: "2026-10-09" });
+  });
+});
+
+describe("Story 42.13 (QA MNT-001) — dataIso devolve o dia de SP", () => {
+  it("23:30 de SP é o próprio dia, não o seguinte em UTC; string e Date dão o mesmo; lixo vira null", () => {
+    expect(dataIso(new Date("2026-10-09T02:30:00Z"))).toBe("2026-10-08");
+    expect(dataIso("2026-10-09T02:30:00Z")).toBe("2026-10-08");
+    expect(dataIso("2026-10-09T03:30:00Z")).toBe("2026-10-09");
+    expect(dataIso("não é data")).toBeNull();
+    expect(dataIso(new Date("x"))).toBeNull();
+    expect(dataIso(null)).toBeNull();
   });
 });

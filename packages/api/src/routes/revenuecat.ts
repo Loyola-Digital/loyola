@@ -523,12 +523,8 @@ export default fp(async function revenuecatRoutes(fastify) {
         desde,
       );
       const primeiraAssinatura = (inicio.rows[0] as { desde?: unknown } | undefined)?.desde;
-      const assinaturaDesde =
-        primeiraAssinatura instanceof Date
-          ? primeiraAssinatura.toISOString().slice(0, 10)
-          : typeof primeiraAssinatura === "string" && primeiraAssinatura
-            ? new Date(primeiraAssinatura).toISOString().slice(0, 10)
-            : null;
+      // Story 42.13 (QA MNT-001): dia de SP, como `desde` e `atributosDesde`.
+      const assinaturaDesde = dataIso(primeiraAssinatura);
 
       // Story 42.12 (D7): Meta E Google no mesmo usuário é "impossível" — se
       // acontecer, é sinal de falha na integração. Sem o id (PII).
@@ -538,7 +534,7 @@ export default fp(async function revenuecatRoutes(fastify) {
 
       return {
         days: query.data.days,
-        desde: desde.toISOString().slice(0, 10),
+        desde: dataIso(desde), // Story 42.13: o primeiro dia da janela, em SP
         assinaturaDesde,
         atributosDesde: dataIso((atributos.rows[0] as { desde?: unknown } | undefined)?.desde),
         ...jornada,
@@ -583,7 +579,7 @@ export default fp(async function revenuecatRoutes(fastify) {
 
       return {
         days: query.data.days,
-        desde: desde.toISOString().slice(0, 10),
+        desde: dataIso(desde), // Story 42.13: o primeiro dia da janela, em SP
         atributosDesde: dataIso((atributos.rows[0] as { desde?: unknown } | undefined)?.desde),
         ...vendas,
         // PO-03: o que o card "Vendas" de `/sales` conta e esta quebra não conta.
