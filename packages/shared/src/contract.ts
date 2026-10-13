@@ -406,7 +406,16 @@
 // `utm_source` da própria Kiwify, 18 ofertas distintas; o filtro de status
 // descarta 97 (recusada/aguardando pagamento) e tira R$ 17.818 de faturamento
 // que não existia. `packages/mcp` não é afetado.
-// v41 (a janela da etapa na fonte Kiwify — migration 0172):
+// v41 (Story 42.12 — vendas do Lyrio separadas entre Meta e Google; sem
+// migration): rota NOVA `GET …/stages/:stageId/revenuecat/vendas-por-canal?days=`
+// (`canais` Meta · Google · Orgânico ou cupom · Sem atribuição, `conflito`,
+// `totalPago`, `metaPorEntidade` por campanha/conjunto/anúncio, `foraDaQuebra`,
+// `atributosDesde`). `GET …/revenuecat/jornada` MUDA de forma: a linha
+// `campanha` vira `campanha_meta` e `campanha_google`, e a resposta ganha
+// `conflito` e `atributosDesde`. O web desenha `linhas[].rotulo` da API, então
+// com a API v40 a Jornada segue com a linha antiga e os blocos novos somem
+// (404 da rota → banner de versão). `packages/mcp` não é afetado.
+// v42 (a janela da etapa na fonte Kiwify — migration 0172):
 // `kiwify_stage_configs` ganha `end_date` (aaaa-mm-dd, nulo = janela aberta),
 // exposto como `endDate` no GET/PUT de `…/kiwify/config` (ADITIVO). O GET
 // `…/kiwify/ofertas` passa a devolver `de` e `ate` por oferta — o período em
@@ -423,4 +432,4 @@
 // `coalesce(aprovada_em, criada_em)` em vez de `criada_em`, que é a mesma regra
 // que o adaptador já usa para datar a venda. Medido: 1 das 1848 vendas pagas
 // muda de dia. Sem `endDate`, o resto não muda. `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 41;
+export const API_CONTRACT_VERSION = 42;

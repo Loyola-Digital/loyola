@@ -21,6 +21,7 @@ import {
   Wallet,
   History,
   Loader2,
+  Share2,
 } from "lucide-react";
 import {
   CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -56,6 +57,15 @@ import { SalesMetaKpis } from "./sales-meta-kpis";
 import { RevenuecatOverviewBlock } from "./revenuecat-overview-block";
 import { LyrioDetailTable } from "./lyrio-detail-table";
 import { LyrioJornadaPorCanal } from "./lyrio-jornada-por-canal";
+import { LyrioResumoPorCanal } from "./lyrio-resumo-por-canal";
+import {
+  avisoDeConflito,
+  declaracaoDeCobertura,
+  declaracaoForaDaQuebra,
+  estadoDasVendasPorCanal,
+  linhasPorCanalDoBloco,
+  type EstadoDasVendas,
+} from "@/lib/utils/vendas-por-canal-lyrio";
 import {
   useRevenuecatConnection,
   useSaveRevenuecatConnection,
@@ -69,6 +79,7 @@ import {
   type RevenuecatMetric,
   useRevenuecatBackfillStatus,
   useRunRevenuecatBackfill,
+  useRevenuecatVendasPorCanal,
 } from "@/lib/hooks/use-revenuecat";
 import type { FunnelCampaign, FunnelStage } from "@loyola-x/shared";
 
@@ -151,6 +162,14 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   const saveConfig = useSaveRevenuecatConfig(projectId, funnelId, stage.id);
   const ensureWebhook = useEnsureRevenuecatWebhook(projectId, funnelId, stage.id);
   const sales = useRevenuecatSales(projectId, funnelId, stage.id, days);
+  // Story 42.12 (AC3/AC5): a quebra por canal na MESMA janela do bloco e do
+  // Detalhamento (o Detalhamento lê a mesma chave de cache).
+  const vendasPorCanalQ = useRevenuecatVendasPorCanal(projectId, funnelId, stage.id, days, connected);
+  const vendasPorCanal = estadoDasVendasPorCanal({
+    isLoading: vendasPorCanalQ.isLoading,
+    error: vendasPorCanalQ.error,
+    data: vendasPorCanalQ.data,
+  });
   const overview = useRevenuecatOverview(projectId, funnelId, stage.id);
   // Histórico anterior ao webhook — só interessa quando a etapa já está
   // conectada, então a consulta acompanha o painel de configuração.
@@ -920,6 +939,27 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
             formula={formulas.novosClientes}
           />
         </div>
+        {/* Story 42.12 (AC2) — receita, ROAS e Margem por canal, 28 dias. O
+            investimento só conta como conhecido com campanha vinculada E a
+            consulta carregada: antes disso "R$ 0" seria um número falso. */}
+        {connected && (
+          <LyrioResumoPorCanal
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stage.id}
+            brlRate={brlRate}
+            meta={{
+              liquidoBrl: metaSpend28Detalhe.spendLiquido,
+              impostoBrl: metaSpend28Detalhe.imposto,
+              conhecido: campaignIds.length > 0 && metaDaily28 !== undefined,
+            }}
+            google={{
+              investimentoBrl: googleSpend28,
+              conhecido: googleCampaignIds.size > 0 && googleCampaigns28 !== undefined,
+            }}
+            percentuais={{ platformFeePct, taxPct, otherCostsPct }}
+          />
+        )}
         {!connected && (
           <p className="text-[11px] text-muted-foreground">
             Conecte o RevenueCat em <strong>Configurar</strong> pra preencher receita, MRR e
@@ -973,6 +1013,10 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
       {(campaignIds.length > 0 || googleCampaignIds.size > 0) && (
         <LyrioDetailTable
           projectId={projectId}
+          funnelId={funnelId}
+          stageId={stage.id}
+          brlRate={brlRate}
+          revenuecatConectado={connected}
           campaignIds={campaignIds}
           googleAccountId={googleAccountId}
           googleCampaignIds={googleCampaignIds}
@@ -1000,6 +1044,7 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
           loading={sales.isLoading}
           connected={connected}
           data={sales.data}
+          porCanal={vendasPorCanal}
           brlRate={brlRate}
           onConfigure={() => setSettingsOpen(true)}
         />
@@ -1017,12 +1062,15 @@ function RevenuecatPanel({
   loading,
   connected,
   data,
+  porCanal,
   brlRate,
   onConfigure,
 }: {
   loading: boolean;
   connected: boolean;
   data: ReturnType<typeof useRevenuecatSales>["data"];
+  /** Story 42.12 (AC3) — a quebra por canal; "oculto" com a API anterior à rota. */
+  porCanal: EstadoDasVendas;
   brlRate: number | null;
   onConfigure: () => void;
 }) {
@@ -1135,6 +1183,35 @@ function RevenuecatPanel({
               />
             </LineChart>
           </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Story 42.12 (AC3) — Por canal: só venda paga, com o próprio total. A
+          diferença para o card "Vendas" (eventos de US$ 0) sai com número. */}
+      {porCanal.tipo === "carregando" && <Skeleton className="h-24 w-full" />}
+      {porCanal.tipo === "erro" && (
+        <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          Não foi possível carregar as vendas por canal: {porCanal.mensagem}
+        </p>
+      )}
+      {porCanal.tipo === "pronto" && (
+        <div className="space-y-2">
+          {avisoDeConflito(porCanal.dados.conflito.compradores) && (
+            <p role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+              {avisoDeConflito(porCanal.dados.conflito.compradores)}
+            </p>
+          )}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <BreakdownTable
+              icon={Share2}
+              title="Por canal"
+              money={money}
+              rows={linhasPorCanalDoBloco(porCanal.dados)}
+            />
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            {[declaracaoForaDaQuebra(porCanal.dados), declaracaoDeCobertura(porCanal.dados)].filter(Boolean).join(" ")}
+          </p>
         </div>
       )}
 
