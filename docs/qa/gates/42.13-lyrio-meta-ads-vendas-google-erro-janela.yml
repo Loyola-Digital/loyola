@@ -1,15 +1,18 @@
 schema: 1
 story: '42.13'
 story_title: 'Lyrio — bloco Meta com as vendas do RevenueCat, erro do Google visível, rótulo do Detalhamento e janela de datas alinhada'
-gate: CONCERNS
-status_reason: 'O código atende AC1–AC7, a régua nova da janela está certa e os números do Dev Agent Record reproduzem exatamente em produção (5 dias: total pago 96 → 91; 28 dias: 289 → 287). O que falta é teste no fio da tela: das 18 mutações próprias, 10 sobrevivem, e 7 delas apagam a mensagem do erro do Google, o memorial do card em erro, a declaração de cobertura e o alerta de erro do bloco Meta, além do caso `googleAtivo` sem conta, sem nenhum teste cair (TEST-001, medium).'
+gate: PASS
+status_reason: 'Re-review (QA loop, iteração 1, sobre f915503a): os cinco achados do gate anterior estão fechados no código e por teste. As 10 mutações que sobreviviam, refeitas no código novo, agora caem. Das 16 novas, 12 caem; das 4 que sobrevivem, 2 são equivalentes e 2 são lacunas low (TEST-003). Gates refeitos: API = baseline, web 1.932/1.932, `next build` e tsc limpos.'
+status_reason_iteracao_0: 'O código atende AC1–AC7, a régua nova da janela está certa e os números do Dev Agent Record reproduzem exatamente em produção (5 dias: total pago 96 → 91; 28 dias: 289 → 287). O que falta é teste no fio da tela: das 18 mutações próprias, 10 sobrevivem, e 7 delas apagam a mensagem do erro do Google, o memorial do card em erro, a declaração de cobertura e o alerta de erro do bloco Meta, além do caso `googleAtivo` sem conta, sem nenhum teste cair (TEST-001, medium).'
 reviewer: 'Quinn'
-updated: '2026-10-13T18:05:00Z'
+updated: '2026-10-13T19:10:00Z'
 branch: 'feat/42.13-lyrio-meta-ads-google-janela'
-commit_reviewed: '88d0111b'
+commit_reviewed: 'f915503a'
+commit_reviewed_iteracao_0: '88d0111b'
 base: 'b9a50304 (origin/main, contrato 41; conferido com git fetch no gate)'
 history:
   - { date: '2026-10-13', gate: CONCERNS, note: 'gate sobre 88d0111b: TEST-001 medium (fio da tela do erro do Google e do bloco Meta sem teste), TEST-002, REL-001, MNT-001 e DOC-001 low; 8 de 18 mutações próprias caem' }
+  - { date: '2026-10-13', gate: PASS, note: 're-review do QA loop (iteração 1) sobre f915503a (40a0df8e API, a945f66e web): TEST-001, TEST-002, REL-001, MNT-001 e DOC-001 resolvidos; Q1–Q8, Q10 e Q16 caem; 12 de 16 mutações novas caem (2 equivalentes); TEST-003 low aberto' }
 
 top_issues:
   - id: TEST-001
@@ -18,7 +21,8 @@ top_issues:
     description: 'O conserto central do relato ("Google está com erro para puxar os dados") é MOSTRAR o erro, e a camada que mostra não tem teste. Mutações aplicadas no `.tsx`, cada uma com as duas suítes da story (33 testes) e, juntas, com a suíte inteira do web (1.918 de 1.918 verdes): Q1 `googleAtivo = googleCampaignIds.size > 0` (sem `&& !!googleAccountId`, a AUTO-DECISION do @dev: com ids e sem conta, o ROAS e a Margem do Resumo ficariam "—" para sempre) → SOBREVIVE · Q2 memorial do card "Investimento (Google)" em erro trocado por `false` (o card fica "—" sem causa, contra o AC1b "com a causa no memorial") → SOBREVIVE · Q3 a mensagem do erro no memorial vazia → SOBREVIVE · Q4 o aviso do Detalhamento sem `mensagemDoErroDoGoogle(erroGoogle)` → SOBREVIVE · Q7 `GoogleAdsKpis` sem `{estado.mensagem}` (o AC1a pede a mensagem da API) → SOBREVIVE · Q8 `GoogleAdsKpis` sem a orientação de reconectar → SOBREVIVE. O fio por `readFileSync` da story confere a presença do `role="alert"` e das condições, mas não o conteúdo de cada alerta nem o memorial. Hoje o código está certo; o risco é a próxima edição apagar a mensagem e a tela voltar a dizer só "Não foi possível buscar", sem o `invalid_grant`.'
     recommendation: 'No teste de fio de `lib/utils/__tests__/vendas-por-canal-lyrio.test.ts`, amarrar: (a) `const googleAtivo = googleCampaignIds.size > 0 && !!googleAccountId;`; (b) o ramo `googleEstado28.tipo === "erro"` do memorial com `value: googleEstado28.mensagem`; (c) `{estado.mensagem}` e `{ORIENTACAO_DO_ERRO_DO_GOOGLE}` dentro do bloco `role="alert"` de `GoogleAdsKpis`; (d) `mensagemDoErroDoGoogle(erroGoogle)` no aviso do Detalhamento. Melhor ainda: extrair o memorial de erro para uma função pura em `lib/utils/lyrio-google-ads.ts` e testá-la.'
     owner: '@dev'
-    status: open
+    status: resolved
+    resolved_in: 'a945f66e'
 
   - id: TEST-002
     severity: low
@@ -26,7 +30,8 @@ top_issues:
     description: 'Outras quatro mutações sobrevivem: Q5 o bloco Meta sem `declaracaoDeCobertura(estado.dados)` (AC2e) → SOBREVIVE · Q6 o bloco Meta sem o `role="alert"` do erro da rota (AC2f) → SOBREVIVE · Q10 o `desde` da resposta da JORNADA de volta à régua antiga (`agora − days × 24 h`, dia UTC) → SOBREVIVE na suíte inteira da API (as 10 falhas da baseline e nenhuma outra). O web usa esse campo na declaração da assinatura (`lib/utils/jornada-lyrio.ts:105`). O AC4c só cita o `desde` de vendas-por-canal, e esse está protegido (Q9 cai) · Q16 `gte` → `gt` no corte de `/sales` → SOBREVIVE. Só muda a venda às 00:00:00,000 exatas de SP, e o AC6d testa 23:30 e 00:30.'
     recommendation: 'Acrescentar ao fio do bloco Meta as duas linhas (cobertura e alerta). No teste de fio da Jornada, afirmar `corpo.desde === inicioDaJanela(30, businessToday(new Date(antes)))`, como o de vendas-por-canal já faz. A borda exata (Q16) é opcional.'
     owner: '@dev'
-    status: open
+    status: resolved
+    resolved_in: '40a0df8e + a945f66e'
 
   - id: REL-001
     severity: low
@@ -34,7 +39,8 @@ top_issues:
     description: '`LyrioMetaKpis` copiou de `SalesMetaKpis` o `daily ? sumMetaInsights([daily]) : { spend: 0, impressions: 0, linkClicks: 0 }`. Com a consulta de tráfego da Meta em erro, o bloco mostra "Investimento (Meta)" R$ 0,00 e, havendo vendas, "Custo por venda" R$ 0,00, porque `div(0, vendas)` dá 0 e não `null`. É o mesmo padrão "erro virando zero" que a story conserta no Google. O padrão é ANTERIOR à story (o bloco antigo já fazia isso) e o AC2 não trata o erro do tráfego, por isso o achado é low.'
     recommendation: 'Story pequena: ler `error` de `useCampaignDailyInsightsBulk` no bloco do Lyrio (e no `SalesMetaKpis`) e mostrar "—" com `role="alert"`, como o Google faz agora.'
     owner: '@sm / @dev'
-    status: open
+    status: resolved
+    resolved_in: 'a945f66e'
 
   - id: MNT-001
     severity: low
@@ -42,13 +48,23 @@ top_issues:
     description: 'Agora há duas réguas lado a lado na mesma resposta: `desde` é o dia de SP (AC4c), mas `atributosDesde` (vendas-por-canal e Jornada) e `assinaturaDesde` (Jornada) continuam como dia UTC (`dataIso` → `toISOString().slice(0, 10)`). `declaracaoDeCobertura` compara `desde < atributosDesde` e imprime a data. Em produção dá o mesmo dia, mas por 11 minutos: o primeiro atributo é de 2026-10-06T03:11:13Z (00:11 de SP). Um evento entre 00:00Z e 03:00Z imprimiria um dia a mais que o de SP. Fora do escopo do AC4, e equivalente hoje.'
     recommendation: 'Quando alguém mexer nessas declarações: passar `atributosDesde` e `assinaturaDesde` para o dia de SP (o `diaNoFusoDoNegocio` já existe), com uma linha no contrato.'
     owner: '@dev'
-    status: open
+    status: resolved
+    resolved_in: '40a0df8e'
 
   - id: DOC-001
     severity: low
     category: documentation
     description: '(a) A seção "Gates" do Dev Agent Record diz "API 72/72 + 7 (`instante-da-janela-4213`); web 44/44". Medi: API `vendas-por-canal-lyrio` 44 + `jornada-lyrio` 24 + `instante-da-janela-4213` 7 = 75; web `lyrio-google-ads` + `vendas-por-canal-lyrio` = 33. Os totais das suítes completas batem (API 5.008/5.018, web 1.918/1.918); só os números das suítes da story estão trocados. (b) `packages/web/lib/utils/jornada-lyrio.ts:44` ainda documenta `desde` como "(`AAAA-MM-DD`, UTC)". O tipo de vendas-por-canal foi atualizado; o da Jornada não.'
     recommendation: '(a) Nenhuma ação no código. Fica registrado aqui. (b) Corrigir o comentário junto com TEST-002.'
+    owner: '@dev'
+    status: resolved
+    resolved_in: 'a945f66e + f915503a'
+
+  - id: TEST-003
+    severity: low
+    category: tests
+    description: 'Re-review, 2 mutações novas que sobrevivem: N3 inverte a ordem em `contaDoGoogle` (erro do picker ANTES do `accountId`). Com a conta salva na etapa e o picker em erro, o bloco mostraria o erro do picker e não os números da conta. Nenhum teste tem `accountId` e erro do picker juntos. Hoje a ordem está certa. N10d põe o `atributosDesde` de vendas-por-canal de volta no dia UTC: sobrevive, porque o fio dessa rota semeia o instante fora da faixa 00:00Z–03:00Z. O da Jornada foi movido para 02:19Z e pega (N10a/N10c). É o campo que alimenta `declaracaoDeCobertura`.'
+    recommendation: 'Um caso em `contaDoGoogle({ temCampanhas: true, accountId: "x", picker: { error } })` → conta. No fio de vendas-por-canal, semear o primeiro atributo às 02:30Z, como a Jornada.'
     owner: '@dev'
     status: open
 
@@ -82,3 +98,13 @@ notes:
   - 'Espere ver: depois do deploy, as vendas do RevenueCat de 5 dias caem (96 → 91 hoje) e o Resumo por canal de 28 dias perde 2 vendas. É a régua de calendário da Meta (PO-03), e não perda de dado.'
   - 'No Lyrio, o Google continua com N+1 dias em UTC (D2, PO-04), ao lado de blocos em SP. Está registrado na story como fora do escopo.'
   - 'Fora da worktree: não toquei o repositório principal. A pasta `packages/api/src/__diag/` da conferência foi apagada, e não houve escrita no banco.'
+
+re_review_iteracao_1:
+  quando: '2026-10-13, sobre f915503a (diff c191bcdb..HEAD: 14 arquivos, 393+/108−)'
+  revisao: 'API: `dataIso` passou a `toBusinessDayKey` (dia de SP), e `desde`, `atributosDesde` e `assinaturaDesde` das duas rotas saem dele. Os únicos chamadores são esses campos `timestamptz` (grep); uma data pura `AAAA-MM-DD` daria o dia anterior, mas nenhum chamador passa isso. Web: `contaDoGoogle` decide antes da consulta (sem campanha → carregando → erro do picker → sem conta → conta), e `estadoDoGoogleNaJanela` devolve o estado da conta antes de olhar a consulta. O Resumo, o bloco e o Detalhamento recebem a MESMA `contaGoogle` do pai. Os textos saíram para `avisoDoGoogle`, `avisoDoGoogleEmLinha` e `memorialDoGoogleSemNumero`, testados. `blocoMetaDoLyrio` aceita tráfego `null`, e o bloco mostra o alerta do erro de tráfego.'
+  mutacoes_refeitas: 'Q1–Q8, Q10 e Q16, que sobreviviam, refeitas no código novo (aplicar → suítes da story → `git checkout`, `git status` limpo): R1a "sem conta" → sem_campanha (R$ 0) → 1 · R1b seção do Google de volta a `size > 0 && googleAccountId` → 1 · R2 memorial sem `memorialDoGoogleSemNumero` → 1 · R3 valor vazio no memorial → 1 · R4 aviso do Detalhamento sem o texto → 1 · R5 bloco Meta sem a cobertura → 1 · R6 bloco Meta sem o alerta de vendas → 1 · R7 `GoogleAdsKpis` sem o `detalhe` → 1 · R8 sem a `orientacao` → 1 · R10 `desde` da Jornada na régua antiga → 1 · R16 `gte` → `gt` → 1. Todas caem. R1c, a consulta de 28 dias com `googleAccountId` em vez de `contaGoogle`, sobrevive, mas é equivalente: só dispara uma requisição a mais quando não há campanha, e o estado da conta decide antes.'
+  mutacoes_novas: 'N1 picker carregando → sem conta (aviso piscando) → 1 · N2 erro do picker ignorado → 1 · N3 erro do picker antes do `accountId` → SOBREVIVE (TEST-003) · N4 `isLoading` do picker fixo em false → 1 · N5 erro do picker não repassado → 1 · N6 tráfego em erro com cache vira número → 1 · N7 sem o alerta de erro de tráfego → 1 · N8 CTR com tráfego nulo calculado sobre 0 → SOBREVIVE, equivalente (`div` devolve null com denominador 0) · N9 sem campanha → `null` (ROAS "—" num app só Meta) → 1 · N10a `dataIso(Date)` em UTC → 2 · N10b `dataIso(string)` em UTC → 1 · N10c `assinaturaDesde` em UTC → 1 · N10d `atributosDesde` de vendas-por-canal em UTC → SOBREVIVE (TEST-003) · N11 Resumo por canal "conhecido" sem a guarda de campanha → 1 · N12 aviso do Google em todas as dimensões do Detalhamento → SOBREVIVE (low, sem efeito no número; com "sem conta" o aviso apareceria também em Conjunto/Anúncio, onde o Google não tem linha) · N13 `estadoDoGoogleNaJanela` só curto-circuita "sem conta" → 1 · N14 tráfego nulo com custo por venda sobre 0 → 1. Resultado: 12 de 16 caem; das 4 que sobrevivem, N8 é equivalente, N12 é cosmética e N3/N10d viram TEST-003.'
+  testes: 'Suítes da story: API 76/76, web 47/47. Completas: API 5.009 de 5.019, com as 10 falhas da baseline nos mesmos 5 arquivos; web 1.932 de 1.932 em 138 arquivos.'
+  gates: 'eslint da API: 0 erros (o aviso antigo de `lp-campaigns.ts`). `next lint`: limpo. tsc da API: EXIT 0. `next build`: EXIT 0. tsc do web, depois do build: EXIT 0. A `origin/main` continua em b9a50304 (contrato 41): `git fetch` às 19:09Z.'
+  producao: 'Somente leitura, `default_transaction_read_only = on`. A etapa tem `google_ads_account_id = null` e as 4 campanhas vinculadas. A conta antiga `4b800bda` não existe mais. A nova, `d996373c-f8b7-409e-a0c9-36b192a9b628` (`Lyrio App`, customer 4386529178, criada às 18:09:58Z), é a única ligada ao projeto 9bd898eb (18:10:01Z). Com o código novo, a tela cai em "conta" pelo `picker.accountId`. `fetchGoogleAdsCampaigns` com o token novo, numa chamada de leitura ao Google, devolveu: 5 dias, 5 campanhas na conta, 4 vinculadas, R$ 670,05; 28 dias, R$ 2.269,03. O Dev Record traz 670,42 e 2.269,40, R$ 0,37 a mais nas duas janelas: o mesmo delta, logo um mesmo dia revisado dentro dos 5, e não erro de régua. O token não dá mais `invalid_grant`. A pasta `src/__diag` foi apagada.'
+  notas: 'Para guest, a rota do picker responde 403. Com a etapa sem `google_ads_account_id` (o estado atual), a tela de um guest cai em "erro" ("Acesso negado"), com o ROAS do Resumo "—". Antes do loop, a seção sumia e o ROAS saía só com a Meta. As rotas de analytics do Google também barram guest. O "—" é o honesto, mas a orientação fala em reconectar a conta. Vale considerar gravar o `google_ads_account_id` da conta nova na etapa (operação ou story), para não depender do picker, que consulta 90 dias no Google a cada carga.'
