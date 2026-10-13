@@ -15,6 +15,7 @@ import Fastify from "fastify";
 import { getTableName, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import revenuecatRoutes from "../routes/revenuecat.js";
+import { instanteDoInicioDaJanela } from "../utils/sale-date.js";
 import {
   CANAIS_DA_JORNADA,
   canalDoUsuario,
@@ -316,7 +317,9 @@ describe("GET …/revenuecat/jornada — o fio da rota (AC5)", () => {
     const jornada = banco.executados.find((e) => /group by/i.test(e.sql))!;
     expect(parametroDe(jornada, '"revenuecat_sales"."stage_id"')).toBe(STAGE);
     const inicioDaJanela = new Date(String(parametroDe(jornada, 'HAVING min("revenuecat_sales"."event_at")'))).getTime();
-    expect(Math.abs(inicioDaJanela - (antes - 30 * 86_400_000))).toBeLessThan(5_000);
+    // Story 42.13 (AC4): 00:00 de SP do primeiro dia da janela — não `agora − 30 × 24 h`.
+    expect(inicioDaJanela).toBe(instanteDoInicioDaJanela(30, new Date(antes)).getTime());
+    expect(new Date(inicioDaJanela).toISOString()).toMatch(/T03:00:00\.000Z$/);
     // QA TEST-001: a janela entra SÓ no HAVING — o SQL executado não filtra event_at no WHERE (coorte pela série inteira, AC2)
     expect(clausulaWhere(jornada.sql)).not.toMatch(/event_at/i);
     expect(jornada.sql.match(/event_at/g)).toHaveLength(2);

@@ -289,3 +289,37 @@ export function inicioDaJanela(dias: number, ate: string = businessToday()): str
   // pertence ao módulo compartilhado.
   return inicioDaJanelaCompartilhada(dias, ate);
 }
+
+/**
+ * Story 42.13 (AC4) — o INSTANTE em que começa a janela de `dias`: 00:00 de
+ * `inicioDaJanela(dias)` no fuso do negócio.
+ *
+ * Para quem corta uma coluna `timestamptz` (as vendas do RevenueCat). Antes
+ * essas rotas usavam `Date.now() − dias × 86.400.000`: com `dias = 5` às 14:17
+ * de 13/10, a janela abria às 14:17 de 08/10, cobrindo pedaços de SEIS dias de
+ * calendário, ao lado de uma Meta que mostra exatamente cinco (09/10 a 13/10,
+ * `dateRangeFromDays`). Com isto, as duas medem o mesmo período.
+ *
+ * O deslocamento do fuso é lido do `Intl` naquele dia, e não fixado em −03:00:
+ * o processo roda em UTC, e o fuso do negócio já teve horário de verão.
+ */
+export function instanteDoInicioDaJanela(dias: number, agora: Date = new Date()): Date {
+  const [y, m, d] = inicioDaJanela(dias, businessToday(agora)).split("-").map((p) => Number.parseInt(p, 10));
+  const meiaNoiteUtc = Date.UTC(y, m - 1, d);
+  const partes = horaDoNegocio.formatToParts(new Date(meiaNoiteUtc));
+  const parte = (tipo: Intl.DateTimeFormatPartTypes) => Number(partes.find((p) => p.type === tipo)?.value);
+  // A meia-noite UTC, lida no relógio do negócio (ex.: 21:00 do dia anterior
+  // em SP) — a diferença é o deslocamento do fuso naquele dia.
+  const lidaNoNegocio = Date.UTC(parte("year"), parte("month") - 1, parte("day"), parte("hour"), parte("minute"));
+  return new Date(meiaNoiteUtc - (lidaNoNegocio - meiaNoiteUtc));
+}
+
+const horaDoNegocio = new Intl.DateTimeFormat("en-US", {
+  timeZone: BUSINESS_TIMEZONE,
+  hourCycle: "h23",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});

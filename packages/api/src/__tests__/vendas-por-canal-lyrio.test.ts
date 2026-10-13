@@ -18,6 +18,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { getTableName, sql, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import revenuecatRoutes from "../routes/revenuecat.js";
+import { businessToday, inicioDaJanela, instanteDoInicioDaJanela } from "../utils/sale-date.js";
 import { readSubscriberAttribute } from "../services/revenuecat.js";
 import { canalDoUsuario, consultaDaJornada, lerLinhaDaJornada, montarJornada } from "../utils/jornada-lyrio.js";
 import {
@@ -27,6 +28,7 @@ import {
   consultaDeVendasPorCanal,
   consultaDoInicioDosAtributos,
   consultaDoQueFicaForaDaQuebra,
+  diaNoFusoDoNegocio,
   lerLinhaDeVendas,
   montarVendasPorCanal,
   type CompradorDoLyrio,
@@ -413,12 +415,15 @@ describe("GET …/revenuecat/vendas-por-canal — o fio da rota (AC1)", () => {
     for (const e of banco.executados) expect(JSON.stringify(e.params)).toContain(STAGE);
     const vendas = banco.executados.find((e) => /group by/i.test(e.sql))!;
     const corte = vendas.params.find((p) => typeof p === "string" && /^\d{4}-\d{2}-\d{2}T/.test(p)) as string;
-    expect(Math.abs(new Date(corte).getTime() - (antes - 28 * 86_400_000))).toBeLessThan(5_000);
+    // Story 42.13 (AC4): 00:00 de SP do primeiro dia da janela — não `agora − 28 × 24 h`.
+    expect(new Date(corte).getTime()).toBe(instanteDoInicioDaJanela(28, new Date(antes)).getTime());
+    expect(corte).toMatch(/T03:00:00\.000Z$/);
     expect(vendas.sql).toContain("ev.purchased_at >= ");
     const fora = banco.executados.find((e) => /sem_valor/.test(e.sql))!;
     expect(parametroDe(fora, '"revenuecat_sales"."stage_id"')).toBe(STAGE);
     const corpo = r.json();
     expect(Object.keys(corpo).sort()).toEqual(["atributosDesde", "canais", "conflito", "days", "desde", "foraDaQuebra", "metaPorEntidade", "totalPago"]);
+    expect(corpo.desde).toBe(inicioDaJanela(28, businessToday(new Date(antes))));
     expect(corpo).toMatchObject({ days: 28, atributosDesde: "2026-10-06", foraDaQuebra: { semValor: 432, semUsuario: 0 }, totalPago: { vendas: 2, compradores: 1, receitaUsd: 6.02 } });
     expect(corpo.canais[0]).toMatchObject({ canal: "meta", vendas: 2 });
     expect(corpo.metaPorEntidade.ad).toEqual([{ chave: "ads-07", nome: "ads-07", vendas: 2, compradores: 1, receitaUsd: 6.02 }]);
@@ -445,5 +450,29 @@ describe("GET …/revenuecat/vendas-por-canal — o fio da rota (AC1)", () => {
 
   it("falha do banco NÃO vira quebra zerada: 500 (o bloco mostra erro — AC7)", async () => {
     expect((await (await montar(bancoFalso({ falhar: true }))).inject({ method: "GET", url: URL_ })).statusCode).toBe(500);
+  });
+});
+
+describe("Story 42.13 (AC4/AC6d) — a borda da janela em SP, sobre Postgres real", () => {
+  it("23:30 de SP do dia anterior fica FORA; 00:30 de SP do primeiro dia fica DENTRO", async () => {
+    // 13/10 às 14:17 de SP, days = 5 → a janela abre em 09/10 00:00 de SP (03:00Z).
+    const desde = instanteDoInicioDaJanela(5, new Date("2026-10-13T17:17:00Z"));
+    expect(desde.toISOString()).toBe("2026-10-09T03:00:00.000Z");
+    await pg.query("DELETE FROM revenuecat_sales");
+    await inserir({ user: "vespera", tipo: "INITIAL_PURCHASE", usd: 7, em: "2026-10-09T02:30:00Z", attrs: { ad_network: "meta" } }); // 08/10 23:30 SP
+    await inserir({ user: "primeiro-dia", tipo: "INITIAL_PURCHASE", usd: 3, em: "2026-10-09T03:30:00Z", attrs: { ad_network: "meta" } }); // 09/10 00:30 SP
+    // A régua antiga (agora − 5 × 24 h = 08/10 17:17Z) contava as duas.
+    const r = montarVendasPorCanal((await executar(consultaDeVendasPorCanal(STAGE, desde))).map(lerLinhaDeVendas));
+    expect(r.canais[0]).toMatchObject({ canal: "meta", vendas: 1, receitaUsd: 3 });
+    await semear();
+  });
+});
+
+describe("Story 42.13 (AC4b) — o diário de `/sales` pelo dia de SP", () => {
+  it("23:30 de SP é o dia de SP, não o seguinte em UTC; 00:30 de SP é o próprio dia", async () => {
+    const [r] = await executar(
+      sql`SELECT ${diaNoFusoDoNegocio(sql`'2026-10-09T02:30:00Z'::timestamptz`)} AS vespera, ${diaNoFusoDoNegocio(sql`'2026-10-09T03:30:00Z'::timestamptz`)} AS primeiro`,
+    );
+    expect(r).toEqual({ vespera: "2026-10-08", primeiro: "2026-10-09" });
   });
 });

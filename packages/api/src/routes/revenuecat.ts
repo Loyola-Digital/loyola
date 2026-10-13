@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { calcularMetricasDerivadas } from "../utils/metricas-revenuecat.js";
+import { instanteDoInicioDaJanela } from "../utils/sale-date.js";
 import { consultaDaJornada, consultaDoInicioDaAssinatura, lerLinhaDaJornada, montarJornada } from "../utils/jornada-lyrio.js";
 import {
   consultaDeVendasPorCanal,
+  diaNoFusoDoNegocio,
   consultaDoInicioDosAtributos,
   consultaDoQueFicaForaDaQuebra,
   dataIso,
@@ -410,7 +412,9 @@ export default fp(async function revenuecatRoutes(fastify) {
       const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-      const cutoff = new Date(Date.now() - query.data.days * 86_400_000);
+      // Story 42.13 (AC4): N dias de calendário em SP, incluindo hoje — a régua
+      // da Meta (`dateRangeFromDays`), não as últimas N × 24 h.
+      const cutoff = instanteDoInicioDaJanela(query.data.days);
       // Só eventos que contam como venda (receita nova), na janela.
       const scope = and(
         eq(revenuecatSales.stageId, params.data.stageId),
@@ -438,7 +442,9 @@ export default fp(async function revenuecatRoutes(fastify) {
 
       const daily = await fastify.db
         .select({
-          day: sql<string>`to_char(date_trunc('day', ${revenuecatSales.purchasedAt} at time zone 'UTC'), 'YYYY-MM-DD')`,
+          // Story 42.13 (AC4b): o dia de SP, o mesmo da janela — em UTC, a venda das
+          // 21h às 24h caía no dia seguinte.
+          day: diaNoFusoDoNegocio(revenuecatSales.purchasedAt),
           sales: sql<number>`count(*)::int`,
           revenueUsd: sql<number>`coalesce(sum(${revenuecatSales.revenueUsd}), 0)::float8`,
         })
@@ -505,7 +511,7 @@ export default fp(async function revenuecatRoutes(fastify) {
       const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-      const desde = new Date(Date.now() - query.data.days * 86_400_000);
+      const desde = instanteDoInicioDaJanela(query.data.days); // Story 42.13 (AC4)
       const [usuarios, inicio, atributos] = await Promise.all([
         fastify.db.execute(consultaDaJornada(params.data.stageId, desde)),
         fastify.db.execute(consultaDoInicioDaAssinatura(params.data.stageId)),
@@ -563,7 +569,7 @@ export default fp(async function revenuecatRoutes(fastify) {
       const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-      const desde = new Date(Date.now() - query.data.days * 86_400_000);
+      const desde = instanteDoInicioDaJanela(query.data.days); // Story 42.13 (AC4)
       const [compradores, fora, atributos] = await Promise.all([
         fastify.db.execute(consultaDeVendasPorCanal(params.data.stageId, desde)),
         fastify.db.execute(consultaDoQueFicaForaDaQuebra(params.data.stageId, desde)),
