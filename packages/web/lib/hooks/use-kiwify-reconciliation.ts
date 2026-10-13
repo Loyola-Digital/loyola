@@ -21,6 +21,13 @@ export interface KiwifyStageConfig {
    */
   startDate: string | null;
   /**
+   * aaaa-mm-dd — até quando contar (0172). Nulo = janela aberta.
+   *
+   * Serve o produto que vende SEM oferta e é reaproveitado em mais de um
+   * funil: ali não há oferta para marcar, e só a janela separa os dois.
+   */
+  endDate?: string | null;
+  /**
    * De onde a etapa tira as vendas. `kiwify` SUBSTITUI a planilha: ela
    * costuma ser um espelho da própria Kiwify, e somar as duas contaria a mesma
    * venda duas vezes.
@@ -115,6 +122,7 @@ export function useSaveKiwifyStageConfig(projectId: string, funnelId: string, st
     mutationFn: (dados: {
       productIds: string[];
       startDate?: string | null;
+      endDate?: string | null;
       fonteDeVendas?: "planilha" | "kiwify";
       offerIds?: string[];
       ticketPrice?: number | null;
@@ -144,6 +152,10 @@ export interface OfertaDaKiwify {
   nome: string;
   produto: string | null;
   vendas: number;
+  /** Primeira e última venda desta oferta (aaaa-mm-dd). Distingue duas ofertas
+   *  do mesmo produto que vendem para funis diferentes. */
+  de: string | null;
+  ate: string | null;
 }
 
 /**

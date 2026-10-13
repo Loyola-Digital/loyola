@@ -506,6 +506,19 @@ export default fp(async function kiwifyRoutes(fastify) {
       .nullable()
       .optional(),
     /**
+     * aaaa-mm-dd — até quando contar. Nulo = janela aberta.
+     *
+     * Serve o produto que vende SEM oferta e é reaproveitado em mais de um
+     * funil (8 deles na conta medida): ali `offer_id` é NULL e não discrimina,
+     * e sem fim a etapa do lançamento encerrado segue recebendo venda do
+     * perpétuo.
+     */
+    endDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Data no formato aaaa-mm-dd")
+      .nullable()
+      .optional(),
+    /**
      * De onde a etapa tira as vendas: `planilha` (padrão) ou `kiwify`.
      *
      * `kiwify` SUBSTITUI a planilha — somar as duas contaria a mesma venda duas
@@ -565,6 +578,7 @@ export default fp(async function kiwifyRoutes(fastify) {
           ? {
               productIds: cfg.productIds ?? [],
               startDate: cfg.startDate,
+              endDate: cfg.endDate,
               fonteDeVendas: cfg.fonteDeVendas ?? "planilha",
               offerIds: cfg.offerIds ?? [],
               ticketPrice: cfg.ticketPrice === null ? null : Number(cfg.ticketPrice),
@@ -599,6 +613,7 @@ export default fp(async function kiwifyRoutes(fastify) {
       const comuns = {
         productIds: body.data.productIds,
         startDate: body.data.startDate ?? null,
+        endDate: body.data.endDate ?? null,
         offerIds: body.data.offerIds ?? [],
         fonteDeVendas: body.data.fonteDeVendas ?? "planilha",
         ticketPrice: body.data.ticketPrice != null ? String(body.data.ticketPrice) : null,
@@ -613,6 +628,7 @@ export default fp(async function kiwifyRoutes(fastify) {
         config: {
           productIds: comuns.productIds,
           startDate: comuns.startDate,
+          endDate: comuns.endDate,
           fonteDeVendas: comuns.fonteDeVendas,
           offerIds: comuns.offerIds,
           ticketPrice: body.data.ticketPrice ?? null,
