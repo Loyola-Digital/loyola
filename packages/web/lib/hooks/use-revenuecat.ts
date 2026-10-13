@@ -310,7 +310,7 @@ export function useRevenuecatJornada(projectId: string, funnelId: string, stageI
 // ============================================================
 
 /**
- * ⚠️ Rota NOVA (contrato 39): com a API anterior responde 404 — os blocos novos
+ * ⚠️ Rota NOVA (contrato 41): com a API anterior responde 404 — os blocos novos
  * somem (`estadoDasVendasPorCanal`) e o banner de versão explica. Mesmo `retry`
  * da Jornada: um 404 não vira outra coisa entre tentativas. O Resumo pede
  * `days=28` e o bloco RevenueCat/Detalhamento o `days` do cabeçalho — chaves

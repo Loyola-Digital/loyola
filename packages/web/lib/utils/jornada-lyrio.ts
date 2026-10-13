@@ -14,7 +14,7 @@ import { ehApiAtras } from "./mensagem-de-api-atras";
 
 /**
  * Story 42.12 (AC4, PO-07): `campanha` virou `campanha_meta` e `campanha_google`.
- * A chave antiga continua aceita — a API anterior (contrato 38) ainda a manda, e
+ * A chave antiga continua aceita — a API anterior (contrato 40) ainda a manda, e
  * a tabela desenha o `rotulo` que vier.
  */
 export type CanalDaJornada =
