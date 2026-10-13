@@ -13,7 +13,7 @@
 //     conjunto/anúncio (NOME, a mesma chave com que `/all-adsets` e `/all-ads`
 //     agregam). Linha do Google mostra "—": o Google não manda campanha. Venda
 //     da Meta que não casa com nenhuma linha aparece em "Sem linha nesta
-//     tabela", e a sem atributo em "Anúncio não identificado" — o total da
+//     tabela", e a sem atributo em "<nível> não identificado" (42.13) — o total da
 //     Meta fecha na tabela. ROAS, CAC e Margem por linha seguem fora (não
 //     pedidos na 42.12).
 //
@@ -52,9 +52,11 @@ import { useRevenuecatVendasPorCanal } from "@/lib/hooks/use-revenuecat";
 import {
   declaracaoDeCobertura,
   estadoDasVendasPorCanal,
+  rotuloDoNaoIdentificado,
   vendasDoDetalhamento,
   type ContagemDeVendas,
 } from "@/lib/utils/vendas-por-canal-lyrio";
+import { avisoDoGoogleEmLinha, estadoDoGoogleNaJanela, type ContaDoGoogle } from "@/lib/utils/lyrio-google-ads";
 import {
   buildCampaignRows, metaRow, sortRows, totalSpend,
   type LyrioDetailRow, type LyrioSortKey, type MetaEntityInput,
@@ -77,6 +79,8 @@ interface LyrioDetailTableProps {
   googleAccountId: string | null;
   /** Ids das campanhas Google vinculadas à etapa. */
   googleCampaignIds: Set<string>;
+  /** Story 42.13 (QA loop): o estado da conta Google, decidido no pai — sem conta é aviso, não linha a menos calada. */
+  contaGoogle: ContaDoGoogle;
   /** Janela do DayRangePicker do cabeçalho da etapa. */
   days: number;
 }
@@ -102,6 +106,7 @@ export function LyrioDetailTable({
   campaignIds,
   googleAccountId,
   googleCampaignIds,
+  contaGoogle,
   days,
 }: LyrioDetailTableProps) {
   const [dimensao, setDimensao] = useState<Dimensao>("campaign");
@@ -131,7 +136,7 @@ export function LyrioDetailTable({
     days,
     campaignIds,
   );
-  const { data: googleData, isLoading: loadingGoogle } = useGoogleAdsCampaigns(
+  const { data: googleData, isLoading: loadingGoogle, error: erroGoogle } = useGoogleAdsCampaigns(
     temGoogle && dimensao === "campaign" ? googleAccountId : null,
     days,
   );
@@ -172,6 +177,13 @@ export function LyrioDetailTable({
   /** "—" para Google, para carregando/erro; número para linha da Meta com dado. */
   const vendasDaLinha = (r: LyrioDetailRow): ContagemDeVendas | null =>
     r.platform === "meta" && vendas ? (vendas.porLinha.get(`${r.platform}-${r.id}`) ?? null) : null;
+  const naoIdentificado = rotuloDoNaoIdentificado(dimensao);
+  const avisoGoogle =
+    dimensao === "campaign"
+      ? avisoDoGoogleEmLinha(
+          estadoDoGoogleNaJanela(contaGoogle, { isLoading: loadingGoogle, error: erroGoogle, data: googleData }, googleCampaignIds),
+        )
+      : null;
   const receitaBrl = (c: ContagemDeVendas | null) =>
     c == null || brlRate == null ? null : c.receitaUsd * brlRate;
 
@@ -372,8 +384,9 @@ export function LyrioDetailTable({
             {sorted.length > 0 && (
               <tfoot>
                 {/* Story 42.12 (AC5): o que não cabe numa linha aparece, para o total da Meta fechar. */}
+                {/* Story 42.13 (AC3): o rótulo acompanha a dimensão. */}
                 {mostraVendas && vendas && ([
-                  ["Anúncio não identificado", vendas.naoIdentificado, "Usuários da Meta sem o atributo deste nível (ex.: ad_network = meta sem os ids)"],
+                  [naoIdentificado.rotulo, vendas.naoIdentificado, naoIdentificado.dica],
                   ["Sem linha nesta tabela", vendas.semLinha, "Vendas da Meta de campanha/conjunto/anúncio que não está nesta tabela (sem campanha vinculada, sem investimento no período ou nome trocado)"],
                 ] as const).map(([rotulo, c, dica]) =>
                   c ? (
@@ -410,6 +423,13 @@ export function LyrioDetailTable({
         </div>
       )}
 
+      {/* Story 42.13 (AC1c + QA loop): o Google em erro ou sem conta some da
+          tabela — e o motivo aparece. */}
+      {avisoGoogle && (
+        <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          As linhas do Google Ads não aparecem. {avisoGoogle}
+        </p>
+      )}
       {/* A ausência é declarada, não silenciosa: sem esta nota a primeira
           pergunta de quem abre a tela é "cadê o ROAS". */}
       {estadoVendas.tipo === "erro" && mostraVendas && (
@@ -419,7 +439,7 @@ export function LyrioDetailTable({
       )}
       <p className="text-[11px] text-muted-foreground">
         {mostraVendas && estadoVendas.tipo === "pronto"
-          ? `Vendas e Receita da Meta vêm do RevenueCat, pelo anúncio que o app registra no usuário; o total soma as linhas, “Anúncio não identificado” e “Sem linha nesta tabela”. ${declaracaoDeCobertura(estadoVendas.dados)} ROAS e CAC por linha não fazem parte desta tabela.`
+          ? `Vendas e Receita da Meta vêm do RevenueCat, pelo anúncio que o app registra no usuário; o total soma as linhas, “${naoIdentificado.rotulo}” e “Sem linha nesta tabela”. ${declaracaoDeCobertura(estadoVendas.dados)} ROAS e CAC por linha não fazem parte desta tabela.`
           : "Faturamento, ROAS e CAC por linha dependem de atribuir cada venda do RevenueCat a um anúncio — ver Story 42.6."}
       </p>
     </div>

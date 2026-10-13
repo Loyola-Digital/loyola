@@ -15,6 +15,7 @@ import Fastify from "fastify";
 import { getTableName, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import revenuecatRoutes from "../routes/revenuecat.js";
+import { businessToday, inicioDaJanela as primeiroDiaDaJanela, instanteDoInicioDaJanela } from "../utils/sale-date.js";
 import {
   CANAIS_DA_JORNADA,
   canalDoUsuario,
@@ -308,7 +309,8 @@ describe("GET …/revenuecat/jornada — o fio da rota (AC5)", () => {
   const linha = { primeiro_evento: new Date(), viu_paywall: true, interagiu: true, iniciou: true, iniciou_teste: true, pagou: true, receita_usd: 9.99, c_campanha_meta: false, c_campanha_google: false, c_gclid: true, c_fbclid: false, c_install: true, c_organico: false, c_ios: false };
 
   it("executa a consulta com o stageId DA ROTA, a janela de `days` e a coorte; devolve só contagens", async () => {
-    const banco = bancoFalso({ linhas: [linha], desde: new Date("2026-08-10T20:19:27.113Z") });
+    // 23:19 de 10/08 em SP = 02:19Z de 11/08: o dia que sai tem de ser o de SP (Story 42.13, QA MNT-001).
+    const banco = bancoFalso({ linhas: [linha], desde: new Date("2026-08-11T02:19:27.113Z") });
     const app = await montar(banco);
     const antes = Date.now();
     const r = await app.inject({ method: "GET", url: `${URL_}?days=30` });
@@ -316,12 +318,16 @@ describe("GET …/revenuecat/jornada — o fio da rota (AC5)", () => {
     const jornada = banco.executados.find((e) => /group by/i.test(e.sql))!;
     expect(parametroDe(jornada, '"revenuecat_sales"."stage_id"')).toBe(STAGE);
     const inicioDaJanela = new Date(String(parametroDe(jornada, 'HAVING min("revenuecat_sales"."event_at")'))).getTime();
-    expect(Math.abs(inicioDaJanela - (antes - 30 * 86_400_000))).toBeLessThan(5_000);
+    // Story 42.13 (AC4): 00:00 de SP do primeiro dia da janela — não `agora − 30 × 24 h`.
+    expect(inicioDaJanela).toBe(instanteDoInicioDaJanela(30, new Date(antes)).getTime());
+    expect(new Date(inicioDaJanela).toISOString()).toMatch(/T03:00:00\.000Z$/);
     // QA TEST-001: a janela entra SÓ no HAVING — o SQL executado não filtra event_at no WHERE (coorte pela série inteira, AC2)
     expect(clausulaWhere(jornada.sql)).not.toMatch(/event_at/i);
     expect(jornada.sql.match(/event_at/g)).toHaveLength(2);
     const corpo = r.json();
     expect(corpo).toMatchObject({ days: 30, assinaturaDesde: "2026-08-10", atributosDesde: "2026-08-10", conflito: { novos: 0 } });
+    // Story 42.13 (QA TEST-002/Q10): o `desde` da resposta é o primeiro dia da janela em SP.
+    expect(corpo.desde).toBe(primeiroDiaDaJanela(30, businessToday(new Date(antes))));
     expect(corpo.total).toMatchObject({ novos: 1, iniciou: 1, pagou: 1, receitaUsd: 9.99 });
     expect(corpo.linhas.find((l: { canal: string }) => l.canal === "google_gclid").novos).toBe(1);
     // AC5: nenhum PII na resposta — só as chaves conhecidas

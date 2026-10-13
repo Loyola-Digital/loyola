@@ -432,4 +432,12 @@
 // `coalesce(aprovada_em, criada_em)` em vez de `criada_em`, que é a mesma regra
 // que o adaptador já usa para datar a venda. Medido: 1 das 1848 vendas pagas
 // muda de dia. Sem `endDate`, o resto não muda. `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 42;
+// v43 (Story 42.13 — janela do RevenueCat na régua da Meta; sem migration):
+// ⚠️ MUDANÇA DE COMPORTAMENTO, sem mudança de forma. `GET …/revenuecat/sales`,
+// `…/revenuecat/jornada` e `…/revenuecat/vendas-por-canal` passam a cortar em
+// 00:00 (America/Sao_Paulo) de `inicioDaJanela(days)` — N dias de calendário
+// em SP, incluindo hoje, como `dateRangeFromDays` da Meta — em vez de
+// `agora − days × 24 h`. O diário de `/sales` agrupa pelo dia de SP, não UTC.
+// Com `days = 5` em 13/10 a janela era 08/10 14:17 → agora; passa a 09/10 00:00.
+// O Google (`services/google-ads.ts`) não muda. `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 43;

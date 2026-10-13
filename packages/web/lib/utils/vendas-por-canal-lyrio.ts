@@ -34,7 +34,7 @@ export interface EntidadeMeta extends ContagemDeVendas {
 /** Espelha `GET …/revenuecat/vendas-por-canal` (`routes/revenuecat.ts`). Só contagens — nenhum id de usuário. */
 export interface VendasPorCanalDoLyrio {
   days: number;
-  /** Início da janela (`AAAA-MM-DD`, UTC). */
+  /** Início da janela (`AAAA-MM-DD`): o primeiro dia, no fuso de SP (Story 42.13 — antes, `agora − days × 24 h` em UTC). */
   desde: string;
   /** Primeiro evento da etapa com `ad_network` ou id de campanha da Meta; `null` se nunca chegou. */
   atributosDesde: string | null;
@@ -258,5 +258,73 @@ export function vendasDoDetalhamento(
     naoIdentificado,
     semLinha,
     totalMeta: { vendas: meta?.vendas ?? 0, compradores: meta?.compradores ?? 0, receitaUsd: meta?.receitaUsd ?? 0 },
+  };
+}
+
+/**
+ * Story 42.13 (AC3) — a linha do rodapé para quem é da Meta mas não tem o
+ * atributo DESTE nível. O rótulo acompanha a dimensão: "Anúncio não
+ * identificado" na visão Por Campanha descrevia o nível errado.
+ */
+export function rotuloDoNaoIdentificado(dimensao: DimensaoDoDetalhamento): { rotulo: string; dica: string } {
+  const nivel = { campaign: ["Campanha não identificada", "da campanha"], adset: ["Conjunto não identificado", "do conjunto"], ad: ["Anúncio não identificado", "do anúncio"] }[dimensao];
+  return {
+    rotulo: nivel[0],
+    dica: `Vendas da Meta de usuários sem o id ${nivel[1]} (ex.: ad_network = meta sem os ids)`,
+  };
+}
+
+// ─────────────────────────── Bloco "Meta Ads" (Story 42.13, AC2) ───────────────────────────
+
+export interface EntradaDoBlocoMeta {
+  /**
+   * O tráfego da Meta no período; `null` = desconhecido (a consulta falhou —
+   * QA REL-001: antes virava R$ 0 de investimento e de custo por venda).
+   * `investimentoBrl` já tem o imposto (`sumMetaInsights`).
+   */
+  trafego: { investimentoBrl: number; impressoes: number; cliques: number } | null;
+  estado: EstadoDasVendas;
+  brlRate: number | null;
+}
+
+export interface BlocoMetaDoLyrio {
+  investimentoBrl: number | null;
+  impressoes: number | null;
+  cliques: number | null;
+  /** `null` = a venda não é conhecida (carregando, erro, API anterior à rota). */
+  vendas: number | null;
+  receitaBrl: number | null;
+  roas: number | null;
+  custoPorVenda: number | null;
+  ctr: number | null;
+  cpm: number | null;
+  /** Cliques → vendas, em %. */
+  conversao: number | null;
+}
+
+/**
+ * Story 42.13 (AC2) — os números do bloco "Meta Ads" do Lyrio. A venda é a do
+ * canal Meta da rota `vendas-por-canal` (a mesma do bloco RevenueCat e do
+ * Detalhamento); o resto é o tráfego da Meta. Nenhuma divisão por zero vira
+ * número, e sem câmbio a receita (e o ROAS) ficam "—" em vez de virar US$.
+ */
+export function blocoMetaDoLyrio(e: EntradaDoBlocoMeta): BlocoMetaDoLyrio {
+  const meta = e.estado.tipo === "pronto" ? e.estado.dados.canais.find((c) => c.canal === "meta") ?? null : null;
+  const vendas = meta ? meta.vendas : null;
+  const receitaBrl = meta && e.brlRate != null ? meta.receitaUsd * e.brlRate : null;
+  const div = (a: number | null, b: number | null) => (a != null && b != null && b > 0 ? a / b : null);
+  const t = e.trafego;
+  const investimentoBrl = t ? t.investimentoBrl : null;
+  return {
+    investimentoBrl,
+    impressoes: t ? t.impressoes : null,
+    cliques: t ? t.cliques : null,
+    vendas,
+    receitaBrl,
+    roas: div(receitaBrl, investimentoBrl),
+    custoPorVenda: div(vendas != null && vendas > 0 ? investimentoBrl : null, vendas),
+    ctr: t ? div(t.cliques * 100, t.impressoes) : null,
+    cpm: t ? div(t.investimentoBrl * 1000, t.impressoes) : null,
+    conversao: t ? div(vendas != null ? vendas * 100 : null, t.cliques) : null,
   };
 }

@@ -23,9 +23,10 @@
  * AGRUPA pelo id mas não o seleciona.
  */
 
-import { and, eq, inArray, isNotNull, ne, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, ne, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import { revenuecatSales } from "../db/schema.js";
 import { REVENUE_EVENT_TYPES } from "../services/revenuecat.js";
+import { toBusinessDayKey } from "./sale-date.js";
 
 const c = revenuecatSales;
 const REVENUE = [...REVENUE_EVENT_TYPES];
@@ -313,12 +314,24 @@ export function lerLinhaDeVendas(r: Record<string, unknown>): CompradorDoLyrio {
   };
 }
 
-/** `Date` | string do driver → `AAAA-MM-DD`, ou `null`. */
+/** `Date` | string do driver → `AAAA-MM-DD` do dia em SP, ou `null`. */
 export function dataIso(v: unknown): string | null {
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  // Story 42.13 (QA MNT-001): o dia de SP, a mesma régua do `desde` da janela.
+  // Em UTC, um evento das 21h às 24h de SP caía no dia seguinte, e a
+  // declaração de cobertura comparava dias de dois fusos.
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : toBusinessDayKey(v);
   if (typeof v === "string" && v) {
     const d = new Date(v);
-    return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+    return Number.isNaN(d.getTime()) ? null : toBusinessDayKey(d);
   }
   return null;
+}
+
+/**
+ * Story 42.13 (AC4b) — o dia (`YYYY-MM-DD`) de uma coluna `timestamptz` no fuso
+ * do negócio, para o diário de `/sales`. Em UTC, a venda das 21h às 24h de SP
+ * caía no dia seguinte, e o diário não fechava com a janela, que é de SP.
+ */
+export function diaNoFusoDoNegocio(coluna: SQL | AnyColumn): SQL<string> {
+  return sql<string>`to_char(date_trunc('day', ${coluna} at time zone 'America/Sao_Paulo'), 'YYYY-MM-DD')`;
 }
