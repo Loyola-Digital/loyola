@@ -144,9 +144,12 @@ export async function enviarLeadsDaEtapa(
   );
 
   const mapeamento = (survey?.mapping ?? {}) as { email?: string; telefone?: string; name?: string };
-  const iEmail = acharColunaDeEmail(sheet.headers, mapeamento.email);
-  const iTel = acharColunaDeTelefone(sheet.headers, mapeamento.telefone);
-  const iNome = acharColunaDeNome(sheet.headers, mapeamento.name);
+  // `sheet.rows` entra na busca de propósito: coluna mapeada que existe e está
+  // VAZIA perde para a que tem dado. Sem isso, formulário refeito manda 99% dos
+  // leads ao Meta sem identificador nenhum — ver `mapeadaUtil`.
+  const iEmail = acharColunaDeEmail(sheet.headers, mapeamento.email, sheet.rows);
+  const iTel = acharColunaDeTelefone(sheet.headers, mapeamento.telefone, sheet.rows);
+  const iNome = acharColunaDeNome(sheet.headers, mapeamento.name, sheet.rows);
   const iData = sheet.headers.findIndex((h) => /submitted at|carimbo|timestamp|data/i.test(h));
   const celula = (linha: string[], idx: number) => (idx >= 0 ? (linha[idx] ?? "").trim() : "");
 
@@ -162,6 +165,7 @@ export async function enviarLeadsDaEtapa(
       chave,
       email,
       telefone,
+      nome: celula(linha, iNome),
       faixa: c.faixa,
       score: c.score,
       quando: celula(linha, iData) || null,
@@ -180,6 +184,7 @@ export async function enviarLeadsDaEtapa(
     stageId,
     eventName: config.eventName,
     eventosPorFaixa: config.eventosPorFaixa ?? {},
+    eventSourceUrl: config.eventSourceUrl,
     faixas: config.bands,
     jaEnviados: new Set(
       leads.flatMap((l) => {

@@ -18,6 +18,12 @@ export interface ConfigDoEnvioAoMeta {
   /** Nome do evento de cada faixa: `{ A: "LeadFaixaA" }`. Faltando, cai no padrão. */
   eventosPorFaixa: Record<string, string>;
   bands: string[];
+  /**
+   * A página do formulário. Preenchida, o evento sai como `website` com
+   * `event_source_url` — é o que faz o Meta calcular a Qualidade da
+   * Correspondência, que só existe para evento de site.
+   */
+  eventSourceUrl: string | null;
   testEventCode: string | null;
   ativo: boolean;
   ultimoEnvioEm: string | null;

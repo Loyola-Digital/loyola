@@ -1280,6 +1280,15 @@ export const stageLeadCapi = pgTable("stage_lead_capi", {
   /** As faixas que viram evento: `["A"]`, `["A","B"]`… */
   bands: jsonb("bands").$type<string[]>().notNull().default([]),
   /**
+   * A página onde a pessoa respondeu o formulário (migration 0170).
+   *
+   * O Meta exige `event_source_url` nos eventos de site, e a Qualidade da
+   * Correspondência só é calculada para evento de SITE — sem URL, o evento vai
+   * como `system_generated` e não recebe nota. Preenchida, o evento sai como
+   * `website` apontando para cá. Ver `eventoDoLead` em `services/meta-capi.ts`.
+   */
+  eventSourceUrl: text("event_source_url"),
+  /**
    * Código de teste do Gerenciador.
    *
    * Com ele o evento aparece em "Test Events" e NÃO entra na otimização — dá
