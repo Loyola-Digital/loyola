@@ -386,4 +386,24 @@
 // que o mapeamento apontava para a coluna morta — 267 dos 269 leads iam ao Meta
 // sem e-mail nem telefone. Afeta o lead-capi e o casamento do Evento
 // Presencial; nenhuma rota muda de forma. `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 39;
+// v40 (a Kiwify como FONTE de vendas da etapa — migration 0171): tabela nova
+// `kiwify_sales` (cache das vendas por projeto, chave `(project_id, sale_id)`),
+// `kiwify_connections` ganha `vendas_sync_de/ate/em/total`, e
+// `kiwify_stage_configs` ganha `fonte_de_vendas` ('planilha' | 'kiwify') e
+// `offer_ids`, com `start_date` deixando de ser NOT NULL.
+// Rotas: `POST /api/projects/:projectId/kiwify/sales/sync` (sincroniza; aceita
+// `desde`/`ate`) e `GET …/stages/:stageId/kiwify/ofertas` (ofertas com
+// contagem + `sincronizadoEm`). O GET/PUT de `…/kiwify/config` ganha
+// `fonteDeVendas` e `offerIds` (ADITIVOS) e aceita `startDate: null`.
+// ⚠️ MUDANÇA DE COMPORTAMENTO quando `fonte_de_vendas = 'kiwify'`: as quatro
+// rotas de venda da etapa (`sales-data`, `sales-conversion`,
+// `hot-cold-buyers`, `sales-data-daily`) passam a ler o cache em vez das
+// planilhas — a Kiwify SUBSTITUI, não soma (a planilha é espelho da Kiwify e
+// somar contaria a mesma venda duas vezes). Com 'planilha', o padrão, nada
+// muda. A conferência (`…/kiwify/reconciliation`) passa a responder 409
+// `SEM_DATA_DE_INICIO` quando a etapa não tem `start_date`.
+// Medido na conta DG & CPDF em 13/10/2026: 574 vendas em 30 dias, 92,3% já com
+// `utm_source` da própria Kiwify, 18 ofertas distintas; o filtro de status
+// descarta 97 (recusada/aguardando pagamento) e tira R$ 17.818 de faturamento
+// que não existia. `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 40;

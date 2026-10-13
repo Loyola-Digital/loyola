@@ -15,6 +15,11 @@ import {
   projectMembers,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
+import {
+  KiwifyIndisponivel,
+  ofertasDosProdutos,
+  sincronizarVendas,
+} from "../services/kiwify-vendas-cache.js";
 import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
 import {
   conciliar,
@@ -487,8 +492,32 @@ export default fp(async function kiwifyRoutes(fastify) {
   const configBodySchema = z.object({
     /** Ids de produto da Kiwify que entram na conferência desta etapa. */
     productIds: z.array(z.string().min(1)).min(1, "Escolha ao menos um produto"),
-    /** aaaa-mm-dd — a partir de quando contar. */
-    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data no formato aaaa-mm-dd"),
+    /**
+     * aaaa-mm-dd — a partir de quando contar.
+     *
+     * Opcional desde a 0171: como FONTE de vendas, a etapa pode pegar tudo que
+     * a sincronização tem. A CONFERÊNCIA ainda exige (ela recusa com
+     * `SEM_DATA_DE_INICIO` sem a data), porque comparar a planilha de um
+     * lançamento com a conta inteira do expert não diria nada.
+     */
+    startDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Data no formato aaaa-mm-dd")
+      .nullable()
+      .optional(),
+    /**
+     * De onde a etapa tira as vendas: `planilha` (padrão) ou `kiwify`.
+     *
+     * `kiwify` SUBSTITUI a planilha — somar as duas contaria a mesma venda duas
+     * vezes, já que a planilha costuma ser um espelho da Kiwify.
+     */
+    fonteDeVendas: z.enum(["planilha", "kiwify"]).optional(),
+    /**
+     * Ofertas escolhidas. Vazio = TODAS as ofertas dos produtos escolhidos.
+     * `sem-oferta` inclui a venda que não tem oferta nenhuma — 91 das 574
+     * medidas em 13/10/2026 —, que sem isso não teria como entrar.
+     */
+    offerIds: z.array(z.string().min(1)).max(100).optional(),
     /**
      * Preço de UM ingresso. Opcional: sem ele cada venda conta 1, que é o
      * comportamento de sempre. Com ele, a compra de 3 ingressos deixa de
@@ -536,6 +565,8 @@ export default fp(async function kiwifyRoutes(fastify) {
           ? {
               productIds: cfg.productIds ?? [],
               startDate: cfg.startDate,
+              fonteDeVendas: cfg.fonteDeVendas ?? "planilha",
+              offerIds: cfg.offerIds ?? [],
               ticketPrice: cfg.ticketPrice === null ? null : Number(cfg.ticketPrice),
               updatedAt: cfg.updatedAt.toISOString(),
             }
@@ -565,32 +596,109 @@ export default fp(async function kiwifyRoutes(fastify) {
       }
 
       const agora = new Date();
+      const comuns = {
+        productIds: body.data.productIds,
+        startDate: body.data.startDate ?? null,
+        offerIds: body.data.offerIds ?? [],
+        fonteDeVendas: body.data.fonteDeVendas ?? "planilha",
+        ticketPrice: body.data.ticketPrice != null ? String(body.data.ticketPrice) : null,
+        updatedAt: agora,
+      };
       await fastify.db
         .insert(kiwifyStageConfigs)
-        .values({
-          stageId: params.data.stageId,
-          productIds: body.data.productIds,
-          startDate: body.data.startDate,
-          ticketPrice: body.data.ticketPrice != null ? String(body.data.ticketPrice) : null,
-          createdBy: request.userId,
-          updatedAt: agora,
-        })
-        .onConflictDoUpdate({
-          target: kiwifyStageConfigs.stageId,
-          set: {
-            productIds: body.data.productIds,
-            startDate: body.data.startDate,
-            ticketPrice: body.data.ticketPrice != null ? String(body.data.ticketPrice) : null,
-            updatedAt: agora,
-          },
-        });
+        .values({ stageId: params.data.stageId, createdBy: request.userId, ...comuns })
+        .onConflictDoUpdate({ target: kiwifyStageConfigs.stageId, set: comuns });
 
       return {
         config: {
-          productIds: body.data.productIds,
-          startDate: body.data.startDate,
+          productIds: comuns.productIds,
+          startDate: comuns.startDate,
+          fonteDeVendas: comuns.fonteDeVendas,
+          offerIds: comuns.offerIds,
           ticketPrice: body.data.ticketPrice ?? null,
         },
+      };
+    },
+  );
+
+  // ---- A Kiwify como fonte de vendas (migration 0171) ---------------------
+
+  /**
+   * Sincroniza as vendas do projeto para o banco.
+   *
+   * POST porque escreve. `desde` permite puxar histórico sob demanda; sem ele,
+   * continua de onde parou com 7 dias de recuo — a venda muda depois de criada
+   * (aprova, reembolsa), e continuar exatamente de onde parou deixaria essas
+   * mudanças para trás para sempre.
+   */
+  fastify.post("/api/projects/:projectId/kiwify/sales/sync", async (request, reply) => {
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+    const params = projectParamsSchema.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+    const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+    if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+    const corpo = z
+      .object({
+        desde: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+        ate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+      })
+      .safeParse(request.body ?? {});
+    if (!corpo.success) return reply.code(400).send({ error: "Datas inválidas" });
+
+    try {
+      const r = await sincronizarVendas(fastify.db, params.data.projectId, corpo.data);
+      return r;
+    } catch (erro) {
+      if (erro instanceof KiwifyIndisponivel) {
+        return reply.code(409).send({ error: erro.message });
+      }
+      fastify.log.error({ err: erro }, "[kiwify] sincronização de vendas falhou");
+      return reply.code(502).send({
+        error: erro instanceof Error ? erro.message : "Falha ao sincronizar com a Kiwify",
+      });
+    }
+  });
+
+  /**
+   * As ofertas que existem nas vendas já sincronizadas dos produtos escolhidos.
+   *
+   * Sai das VENDAS porque `/v1/products` não lista ofertas — confirmado ao vivo
+   * em 13/10/2026. A contagem vai junto: escolher oferta sem saber quantas
+   * vendas cada uma tem é escolher no escuro, e é assim que "(sem oferta)"
+   * passaria desapercebida levando 91 vendas embora.
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/kiwify/ofertas",
+    async (request, reply) => {
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const [cfg] = await fastify.db
+        .select({ productIds: kiwifyStageConfigs.productIds })
+        .from(kiwifyStageConfigs)
+        .where(eq(kiwifyStageConfigs.stageId, params.data.stageId))
+        .limit(1);
+
+      const [conexao] = await fastify.db
+        .select({ em: kiwifyConnections.vendasSyncEm, de: kiwifyConnections.vendasSyncDe })
+        .from(kiwifyConnections)
+        .where(eq(kiwifyConnections.projectId, params.data.projectId))
+        .limit(1);
+
+      const ofertas = await ofertasDosProdutos(
+        fastify.db,
+        params.data.projectId,
+        cfg?.productIds ?? [],
+      );
+      return {
+        ofertas,
+        // Sem isto, uma lista vazia parece "este produto não tem oferta"
+        // quando a verdade é "ninguém sincronizou ainda".
+        sincronizadoEm: conexao?.em?.toISOString() ?? null,
+        sincronizadoDe: conexao?.de ?? null,
       };
     },
   );
@@ -641,6 +749,17 @@ export default fp(async function kiwifyRoutes(fastify) {
       // Sem configuração não há conferência — e isso não é erro: a maioria das
       // etapas não usa Kiwify.
       if (!cfg) return { configurado: false as const };
+      // A data de início virou opcional na 0171 (como FONTE de vendas a etapa
+      // pode pegar tudo). A conferência, não: sem o dia em que a contagem
+      // passa a valer, ela compararia a planilha do lançamento com a conta
+      // inteira do expert. Dizer isso é melhor que escolher uma data sozinho.
+      if (!cfg.startDate) {
+        return reply.code(409).send({
+          error: "Defina a data de início do recorte da Kiwify nesta etapa para conferir.",
+          code: "SEM_DATA_DE_INICIO",
+        });
+      }
+      const inicio = cfg.startDate;
 
       const creds = await getCreds(params.data.projectId);
       if (!creds) {
@@ -657,13 +776,13 @@ export default fp(async function kiwifyRoutes(fastify) {
         // Um token para tudo: vendas e detalhe dos produtos usam o mesmo.
         const token = await getKiwifyToken(creds.clientId, creds.clientSecret);
         const [daPlanilha, daKiwify] = await Promise.all([
-          lerVendasDasPlanilhas(planilhas, cfg.startDate, hoje),
+          lerVendasDasPlanilhas(planilhas, inicio, hoje),
           (async () => {
             const listas = await Promise.all(
               (cfg.productIds ?? []).map((productId) =>
                 fetchSalesWindowed(token, creds.accountId, {
                   productId,
-                  from: cfg.startDate,
+                  from: inicio,
                   to: hoje,
                   fullDetails: true,
                 }),

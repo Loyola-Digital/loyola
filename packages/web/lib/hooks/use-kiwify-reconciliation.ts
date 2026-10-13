@@ -14,8 +14,23 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export interface KiwifyStageConfig {
   productIds: string[];
-  /** aaaa-mm-dd */
-  startDate: string;
+  /**
+   * aaaa-mm-dd. Nulo desde a 0171: como FONTE de vendas a etapa pode pegar tudo
+   * que a sincronização tem. A CONFERÊNCIA ainda exige — sem ela a rota recusa
+   * com `SEM_DATA_DE_INICIO`.
+   */
+  startDate: string | null;
+  /**
+   * De onde a etapa tira as vendas. `kiwify` SUBSTITUI a planilha: ela
+   * costuma ser um espelho da própria Kiwify, e somar as duas contaria a mesma
+   * venda duas vezes.
+   */
+  fonteDeVendas?: "planilha" | "kiwify";
+  /**
+   * Ofertas escolhidas. Vazio = TODAS as ofertas dos produtos. `sem-oferta`
+   * inclui a venda sem oferta nenhuma, que sem isso não teria como entrar.
+   */
+  offerIds?: string[];
   /**
    * Preço de UM ingresso. Sem ele cada venda conta 1 — e a compra de três
    * ingressos, que a Kiwify manda como uma venda só, fica invisível.
@@ -97,7 +112,13 @@ export function useSaveKiwifyStageConfig(projectId: string, funnelId: string, st
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (dados: { productIds: string[]; startDate: string; ticketPrice?: number | null }) =>
+    mutationFn: (dados: {
+      productIds: string[];
+      startDate?: string | null;
+      fonteDeVendas?: "planilha" | "kiwify";
+      offerIds?: string[];
+      ticketPrice?: number | null;
+    }) =>
       apiClient<{ config: KiwifyStageConfig }>(`${base(projectId, funnelId, stageId)}/config`, {
         method: "PUT",
         body: JSON.stringify(dados),
@@ -105,6 +126,69 @@ export function useSaveKiwifyStageConfig(projectId: string, funnelId: string, st
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["kiwify-stage-config", projectId, funnelId, stageId] });
       qc.invalidateQueries({ queryKey: ["kiwify-reconciliation", projectId, funnelId, stageId] });
+      qc.invalidateQueries({ queryKey: ["kiwify-ofertas", projectId, funnelId, stageId] });
+      // Trocar a fonte muda TODO número de venda da etapa — os quatro
+      // endereços que leem venda têm de ser refeitos, senão a tela mostra o
+      // faturamento novo com a conversão antiga.
+      qc.invalidateQueries({ queryKey: ["sales-data"] });
+      qc.invalidateQueries({ queryKey: ["sales-conversion"] });
+      qc.invalidateQueries({ queryKey: ["hot-cold-buyers"] });
+      qc.invalidateQueries({ queryKey: ["sales-data-daily"] });
+    },
+  });
+}
+
+export interface OfertaDaKiwify {
+  /** `sem-oferta` quando a venda não tem oferta nenhuma. */
+  id: string;
+  nome: string;
+  produto: string | null;
+  vendas: number;
+}
+
+/**
+ * As ofertas que existem nas vendas já sincronizadas.
+ *
+ * Sai das VENDAS porque `/v1/products` da Kiwify não lista ofertas. Por isso
+ * `sincronizadoEm` vem junto: sem ele, lista vazia parece "não tem oferta"
+ * quando a verdade é "ninguém sincronizou ainda".
+ */
+export function useKiwifyOfertas(
+  projectId: string,
+  funnelId: string,
+  stageId: string,
+  habilitado: boolean,
+) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["kiwify-ofertas", projectId, funnelId, stageId],
+    queryFn: () =>
+      apiClient<{
+        ofertas: OfertaDaKiwify[];
+        sincronizadoEm: string | null;
+        sincronizadoDe: string | null;
+      }>(`${base(projectId, funnelId, stageId)}/ofertas`),
+    enabled: habilitado,
+    staleTime: 60 * 1000,
+  });
+}
+
+/** Puxa as vendas da Kiwify para o banco. Escreve, então é POST. */
+export function useSincronizarVendasKiwify(projectId: string) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dados: { desde?: string | null } = {}) =>
+      apiClient<{ de: string; ate: string; lidas: number; gravadas: number; semId: number }>(
+        `/api/projects/${projectId}/kiwify/sales/sync`,
+        { method: "POST", body: JSON.stringify(dados) },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["kiwify-ofertas"] });
+      qc.invalidateQueries({ queryKey: ["sales-data"] });
+      qc.invalidateQueries({ queryKey: ["sales-conversion"] });
+      qc.invalidateQueries({ queryKey: ["hot-cold-buyers"] });
+      qc.invalidateQueries({ queryKey: ["sales-data-daily"] });
     },
   });
 }

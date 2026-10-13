@@ -78,8 +78,52 @@ export interface KiwifyProduct {
 export interface KiwifySaleProduct {
   id?: string;
   name?: string;
-  plan_id?: string;
-  plan_name?: string;
+  /**
+   * A OFERTA do produto — o "Lote 1", "Lote Promocional", "OrderBump - DGPG05".
+   *
+   * Confirmado ao vivo em 13/10/2026 na conta DG & CPDF: a venda traz
+   * `offer_id`/`offer_name`, embora `/v1/products` NÃO liste as ofertas de um
+   * produto. Por isso a lista de ofertas para escolher sai das próprias vendas.
+   *
+   * Pode vir vazio: das 574 vendas de 30 dias, 91 não tinham oferta (produto de
+   * assinatura, order bump avulso). Filtrar por oferta sem prever esse caso
+   * derruba essas vendas em silêncio.
+   */
+  offer_id?: string | null;
+  offer_name?: string | null;
+  plan_id?: string | null;
+  plan_name?: string | null;
+}
+
+/**
+ * O rastreio que a Kiwify guarda da venda.
+ *
+ * É o motivo de a API ganhar da planilha: 92,3% das 574 vendas medidas em
+ * 13/10/2026 trazem `utm_source`, sem ninguém colar nada em aba nenhuma.
+ */
+export interface KiwifySaleTracking {
+  src?: string | null;
+  sck?: string | null;
+  utm_source?: string | null;
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
+  utm_content?: string | null;
+  utm_term?: string | null;
+}
+
+/**
+ * ⚠️ PII. Nunca logar nem serializar para fora do banco.
+ *
+ * Nomes dos campos confirmados ao vivo (13/10/2026): `name`, não `full_name`;
+ * `cpf` minúsculo. Errar isso devolve `undefined` em silêncio.
+ */
+export interface KiwifySaleCustomer {
+  id?: string | null;
+  name?: string | null;
+  email?: string | null;
+  cpf?: string | null;
+  cnpj?: string | null;
+  mobile?: string | null;
 }
 
 /**
@@ -98,8 +142,30 @@ export interface KiwifySale {
   currency?: string;
   /** preenchido em renovações; vazio em vendas novas (full details). */
   parent_order_id?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  installments?: number;
   approved_date?: string;
   refunded_at?: string | null;
+  /** Só com `view_full_sale_details=true`. */
+  tracking?: KiwifySaleTracking | null;
+  /** ⚠️ PII. */
+  customer?: KiwifySaleCustomer | null;
+  /**
+   * Valores em CENTAVOS. `charge_amount` é o que o cliente pagou (BRUTO);
+   * o `net_amount` do topo é o que sobra para o produtor (LÍQUIDO).
+   *
+   * ⚠️ Líquido NÃO é bruto − `fee`: numa venda real de 13/10/2026,
+   * charge 4490, fee 473 e net 2008 — a diferença restante é a divisão com
+   * co-produtor/afiliado. Calcular o líquido à mão aqui daria R$ 40,17 onde o
+   * produtor recebeu R$ 20,08.
+   */
+  payment?: {
+    charge_amount?: number;
+    net_amount?: number;
+    fee?: number;
+    product_base_price?: number;
+  } | null;
 }
 
 /** Resposta de listagem com paginação por OFFSET. */
