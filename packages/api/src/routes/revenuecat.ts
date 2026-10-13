@@ -1,6 +1,14 @@
 import { z } from "zod";
 import { calcularMetricasDerivadas } from "../utils/metricas-revenuecat.js";
 import { consultaDaJornada, consultaDoInicioDaAssinatura, lerLinhaDaJornada, montarJornada } from "../utils/jornada-lyrio.js";
+import {
+  consultaDeVendasPorCanal,
+  consultaDoInicioDosAtributos,
+  consultaDoQueFicaForaDaQuebra,
+  dataIso,
+  lerLinhaDeVendas,
+  montarVendasPorCanal,
+} from "../utils/vendas-por-canal-lyrio.js";
 import { eq, and, gte, inArray, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import fp from "fastify-plugin";
@@ -498,9 +506,11 @@ export default fp(async function revenuecatRoutes(fastify) {
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
       const desde = new Date(Date.now() - query.data.days * 86_400_000);
-      const [usuarios, inicio] = await Promise.all([
+      const [usuarios, inicio, atributos] = await Promise.all([
         fastify.db.execute(consultaDaJornada(params.data.stageId, desde)),
         fastify.db.execute(consultaDoInicioDaAssinatura(params.data.stageId)),
+        // Story 42.12 (AC4/AC6): desde quando a Meta é identificável — vem do dado.
+        fastify.db.execute(consultaDoInicioDosAtributos(params.data.stageId)),
       ]);
       const jornada = montarJornada(
         (usuarios.rows as Record<string, unknown>[]).map(lerLinhaDaJornada),
@@ -514,11 +524,64 @@ export default fp(async function revenuecatRoutes(fastify) {
             ? new Date(primeiraAssinatura).toISOString().slice(0, 10)
             : null;
 
+      // Story 42.12 (D7): Meta E Google no mesmo usuário é "impossível" — se
+      // acontecer, é sinal de falha na integração. Sem o id (PII).
+      if (jornada.conflito.novos > 0) {
+        request.log.warn({ stageId: params.data.stageId, conflito: jornada.conflito.novos }, "lyrio: usuários com Meta e Google na jornada");
+      }
+
       return {
         days: query.data.days,
         desde: desde.toISOString().slice(0, 10),
         assinaturaDesde,
+        atributosDesde: dataIso((atributos.rows[0] as { desde?: unknown } | undefined)?.desde),
         ...jornada,
+      };
+    },
+  );
+
+  // ---- GET vendas por canal ---- (Story 42.12)
+  /**
+   * As vendas pagas da etapa separadas em Meta · Google · Orgânico ou cupom ·
+   * Sem atribuição, com a quebra da Meta por campanha/conjunto/anúncio. Canal
+   * pelo usuário (série inteira, D6); venda pela janela de `days` sobre
+   * `purchased_at` — a mesma coluna de `/sales` (PO-02).
+   *
+   * Guarda igual à de `/sales` e `/jornada`: `getProjectAccess` E `getStage`.
+   * Agrega NO BANCO (uma linha por comprador, sem o id); a classificação é a de
+   * `utils/vendas-por-canal-lyrio.ts`. Só contagens na resposta.
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/revenuecat/vendas-por-canal",
+    async (request, reply) => {
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const query = salesQuerySchema.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+      const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const desde = new Date(Date.now() - query.data.days * 86_400_000);
+      const [compradores, fora, atributos] = await Promise.all([
+        fastify.db.execute(consultaDeVendasPorCanal(params.data.stageId, desde)),
+        fastify.db.execute(consultaDoQueFicaForaDaQuebra(params.data.stageId, desde)),
+        fastify.db.execute(consultaDoInicioDosAtributos(params.data.stageId)),
+      ]);
+      const vendas = montarVendasPorCanal((compradores.rows as Record<string, unknown>[]).map(lerLinhaDeVendas));
+      if (vendas.conflito.compradores > 0) {
+        request.log.warn({ stageId: params.data.stageId, conflito: vendas.conflito.compradores }, "lyrio: compradores com Meta e Google");
+      }
+      const f = (fora.rows[0] ?? {}) as { sem_valor?: unknown; sem_usuario?: unknown };
+
+      return {
+        days: query.data.days,
+        desde: desde.toISOString().slice(0, 10),
+        atributosDesde: dataIso((atributos.rows[0] as { desde?: unknown } | undefined)?.desde),
+        ...vendas,
+        // PO-03: o que o card "Vendas" de `/sales` conta e esta quebra não conta.
+        foraDaQuebra: { semValor: Number(f.sem_valor ?? 0) || 0, semUsuario: Number(f.sem_usuario ?? 0) || 0 },
       };
     },
   );
