@@ -2176,6 +2176,16 @@ export const kiwifyStageConfigs = pgTable(
      */
     startDate: varchar("start_date", { length: 10 }),
     /**
+     * aaaa-mm-dd — até quando contar (migration 0172). Nulo = aberta.
+     *
+     * Existe porque a oferta não separa tudo: 8 produtos vendem SEM oferta
+     * nenhuma (Churrasco com Netão, 216 vendas em 92 dias; Supervisão Online,
+     * 138 em 381) e são justamente os reaproveitados em mais de um funil. Sem
+     * fim, a etapa de um lançamento encerrado segue recebendo a venda que o
+     * perpétuo fez depois.
+     */
+    endDate: varchar("end_date", { length: 10 }),
+    /**
      * Preço de UM ingresso. Com ele, `product_base_price ÷ unitário` revela
      * quantos ingressos a venda tem — a Kiwify não manda essa quantidade, e uma
      * compra de 3 chega como uma venda só. Nulo = cada venda conta 1.

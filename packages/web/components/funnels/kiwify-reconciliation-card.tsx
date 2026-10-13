@@ -16,6 +16,7 @@ import { useState } from "react";
 import { CheckCircle2, Loader2, RefreshCw, Settings2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { periodoCurto } from "@/lib/utils/periodo-da-oferta";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -294,6 +295,7 @@ function ConfigDialog({
   const desligar = useDisableKiwifyStageConfig(projectId, funnelId, stageId);
   const [selecionados, setSelecionados] = useState<string[]>(atual?.productIds ?? []);
   const [data, setData] = useState(atual?.startDate ?? "");
+  const [dataFim, setDataFim] = useState(atual?.endDate ?? "");
   const [fonte, setFonte] = useState<"planilha" | "kiwify">(atual?.fonteDeVendas ?? "planilha");
   const [ofertas, setOfertas] = useState<string[]>(atual?.offerIds ?? []);
   const sincronizar = useSincronizarVendasKiwify(projectId);
@@ -350,17 +352,46 @@ function ConfigDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="kiwify-data" className="text-xs font-medium">
-              Contar a partir de{" "}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="kiwify-data" className="text-xs font-medium">
+                  Contar a partir de{" "}
+                  {fonte === "kiwify" && (
+                    <span className="font-normal text-muted-foreground">(opcional)</span>
+                  )}
+                </Label>
+                <Input id="kiwify-data" type="date" value={data} onChange={(e) => setData(e.target.value)} />
+              </div>
+              {/* O fim só aparece na fonte Kiwify: a conferência com a planilha
+                  compara até hoje, e um fim ali faria a divergência mudar de
+                  significado sem avisar. */}
               {fonte === "kiwify" && (
-                <span className="font-normal text-muted-foreground">(opcional)</span>
+                <div className="space-y-1.5">
+                  <Label htmlFor="kiwify-data-fim" className="text-xs font-medium">
+                    até <span className="font-normal text-muted-foreground">(opcional)</span>
+                  </Label>
+                  <Input
+                    id="kiwify-data-fim"
+                    type="date"
+                    value={dataFim}
+                    min={data || undefined}
+                    onChange={(e) => setDataFim(e.target.value)}
+                  />
+                </div>
               )}
-            </Label>
-            <Input id="kiwify-data" type="date" value={data} onChange={(e) => setData(e.target.value)} />
-            {fonte === "kiwify" && !data && (
+            </div>
+            {fonte === "kiwify" && !data && !dataFim && (
               <p className="text-[11px] text-muted-foreground">
                 Em branco, a etapa pega tudo que já foi sincronizado. A{" "}
-                <strong>conferência</strong> com a planilha, essa precisa da data.
+                <strong>conferência</strong> com a planilha, essa precisa da data de início.
+              </p>
+            )}
+            {/* O fim importa quando o produto vende SEM oferta: ali não há o que
+                marcar na lista abaixo, e só a janela separa um funil do outro. */}
+            {fonte === "kiwify" && !dataFim && (
+              <p className="text-[11px] text-muted-foreground">
+                Sem fim, a janela segue aberta — se o produto for reaproveitado em outro funil
+                depois, a venda de lá entra aqui.
               </p>
             )}
           </div>
@@ -453,16 +484,31 @@ function ConfigDialog({
                         />
                         <span className="font-medium">{o.nome}</span>
                         <span className="truncate text-muted-foreground">{o.produto}</span>
-                        <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">
+                        {/* O período é o que distingue duas ofertas do MESMO
+                            produto que vendem para funis diferentes — é por ele
+                            que se reconhece qual é a desta etapa. */}
+                        {o.de && (
+                          <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">
+                            {periodoCurto(o.de, o.ate)}
+                          </span>
+                        )}
+                        <span
+                          className={cn(
+                            "shrink-0 tabular-nums text-muted-foreground",
+                            !o.de && "ml-auto",
+                          )}
+                        >
                           {o.vendas}
                         </span>
                       </label>
                     ))}
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    Nenhuma marcada = <strong>todas</strong>. O número é quantas vendas cada oferta
-                    tem hoje — inclusive <strong>(sem oferta)</strong>, que existe de verdade e
-                    sumiria do recorte se não pudesse ser marcada.
+                    Nenhuma marcada = <strong>todas</strong>. Marque só as ofertas deste funil —
+                    o mesmo produto pode vender por uma oferta aqui e por outra em outro funil. A
+                    data ao lado é o período em que cada uma vendeu, e o número, quantas vendas tem
+                    hoje — inclusive <strong>(sem oferta)</strong>, que existe de verdade e sumiria
+                    do recorte se não pudesse ser marcada.
                   </p>
                 </>
               )}
@@ -532,6 +578,7 @@ function ConfigDialog({
                   {
                     productIds: selecionados,
                     startDate: data || null,
+                    endDate: dataFim || null,
                     fonteDeVendas: fonte,
                     offerIds: ofertas,
                     // Campo vazio significa "não sei o preço", e é diferente de
