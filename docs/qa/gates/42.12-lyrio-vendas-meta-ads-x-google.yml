@@ -1,0 +1,82 @@
+schema: 1
+story: '42.12'
+story_title: 'Lyrio — vendas separadas entre Meta e Google (Resumo, RevenueCat, Jornada e Detalhamento)'
+gate: CONCERNS
+status_reason: 'O código está correto, e o SQL exato reproduz em produção a medição da story (28 dias: Meta 23 · US$ 105,24, total pago 286). Das 20 mutações próprias, 16 caem. Uma das que sobrevivem bate numa regra central: o braço "meta_*_id válido" do sinal da Meta na rota de vendas pode ser apagado inteiro sem nenhum teste falhar (TEST-001, medium). Isso deixa o AC8 ("cada regra provada revertendo-a") incompleto nesse ponto. Hoje a mutação é equivalente no dado: 0 eventos com id da Meta sem `ad_network = meta`.'
+reviewer: 'Quinn'
+updated: '2026-10-13T15:30:00Z'
+branch: 'feat/42.12-lyrio-vendas-meta-google'
+commit_reviewed: '37ab85e2'
+base: 'c321dc64 (origin/main local); main remota já em a7478df5, contrato 40'
+history:
+  - { date: '2026-10-13', gate: CONCERNS, note: 'gate sobre 37ab85e2: TEST-001 medium (ids da Meta sem teste na rota de vendas), TEST-002/003, PERF-001 e DOC-001 low; 16 de 20 mutações próprias caem' }
+
+top_issues:
+  - id: TEST-001
+    severity: medium
+    category: tests
+    description: 'Mutações Q1 e Q1c. Em `sinalMeta` (utils/vendas-por-canal-lyrio.ts), tirar `OR meta_ad_id IS NOT NULL` (Q1) e até reduzir a regra a `ad_network = ''meta''` (Q1c, sem nenhum dos três ids) não derruba nenhum dos 66 testes da API. O motivo é que toda semente Meta (`META`, `meta-sem-ids`) traz `ad_network = meta`. O caso "macro {{ad.id}} não é Meta" fica tautológico: passa igual com uma regra que nem olha os ids. Esse braço é a metade da regra 1 (D2) e o centro do PO-01 ("valor válido, não chave presente"). A Jornada está protegida: `parametrosDoTrecho` amarra os quatro atributos ao alias `c_campanha_meta`. A rota de vendas não está. Medido em produção (somente leitura): 0 eventos com id da Meta sem `ad_network = meta`, e 722 usuários com id contra 745 com a rede. Hoje é equivalente, mas basta o app mandar o id sem a rede para a venda cair em "Sem atribuição" sem nenhum teste acusar.'
+    recommendation: 'Em `vendas-por-canal-lyrio.test.ts`, semear um comprador só com `meta_ad_id` válido e sem `ad_network` (esperado: Meta), e outro só com `meta_campaign_id` válido (esperado: Meta). Assim o caso da macro passa a ser contraprova de verdade. Opcional: no PgDialect, amarrar os quatro atributos ao alias `s_meta`, como a Jornada já faz.'
+    owner: '@dev'
+    status: open
+
+  - id: TEST-002
+    severity: low
+    category: tests
+    description: 'Mutação Q7: tirar `escopoDasVendas(stageId)` do WHERE da CTE `base` (os eventos dos compradores) não derruba nada. O fio da rota só confere que o STAGE aparece nos parâmetros de cada consulta, e ele continua aparecendo na CTE `compradores`. Sem o filtro, sinais e vendas de OUTRA etapa entrariam no comprador que tem o mesmo `app_user_id`, e eventos `TEST` também entrariam nos sinais. Hoje é equivalente: 0 usuários em mais de uma etapa, e 1 etapa com atributos. O AC8 pede "filtro por stage_id no predicado".'
+    recommendation: 'Semear o mesmo `app_user_id` em `OUTRA` com `ad_network = google` e uma venda, ao lado de uma venda Meta em `STAGE`. Esperado: o comprador fica Meta, sem conflito, e as vendas de `OUTRA` não somam. Ou afirmar, no PgDialect, que o trecho `base AS MATERIALIZED (…)` contém `"stage_id" = $n` com o STAGE.'
+    owner: '@dev'
+    status: open
+
+  - id: TEST-003
+    severity: low
+    category: tests
+    description: 'Mutação Q6: trocar `min(event_at)` por `max(event_at)` em `consultaDoInicioDosAtributos` sobrevive. A semente do teste AC6 tem só UM evento válido na etapa (os outros são macro ou de outra etapa), então min = max. Com o max, `atributosDesde` viraria "o último evento", e a declaração do AC6 diria em toda janela que Meta e Google estão subcontados, com a data de hoje. Também sem teste, mas conferido à mão: o `colSpan` das linhas novas do rodapé do Detalhamento (Q18, `colunas` sem o `+2` sobrevive, porque os `.tsx` não são coletados).'
+    recommendation: 'Acrescentar um segundo evento válido, mais recente, na semente do AC6 e manter o esperado no primeiro. O alinhamento das colunas fica para a validação visual (ver notes).'
+    owner: '@dev'
+    status: open
+
+  - id: PERF-001
+    severity: low
+    category: performance
+    description: 'A Jornada de 90 dias mediu 919 ms na minha rodada em produção, contra ~800 ms no Dev Record e 530–650 ms na `main`. Fica abaixo do limite de ~1 s das Dev Notes, mas perto dele, e a tabela cresce (186 mil eventos). A rota nova mediu 141–255 ms.'
+    recommendation: 'Nenhuma ação na story. Se a Jornada passar de 1 s, levar ao @architect, como as Dev Notes mandam, antes de criar coluna ou índice.'
+    owner: '@architect'
+    status: open
+
+  - id: DOC-001
+    severity: low
+    category: documentation
+    description: '(a) O AC1 pede `metaPorEntidade` agrupado por `meta_adset_id`/`meta_ad_id`. O código agrupa conjunto e anúncio pelo NOME aparado (AUTO-DECISION). A decisão está correta: conferi em produção que os nomes de conjunto e de anúncio que o app manda batem 16/16 com os de `meta_ad_insights_daily` para os mesmos ids, e cruzar pelo id perderia vendas, porque `/all-adsets` e `/all-ads` agregam por nome. Mas o texto do AC continua dizendo id. (b) A `main` já está no contrato 40 (v39 = Lead Scoring/0170, v40 = Kiwify/0171). Comentários desta branch citam números fixos: `use-revenuecat.ts` ("contrato 39"), `lib/utils/jornada-lyrio.ts` ("contrato 38") e o histórico em `contract.ts` ("com a API v38").'
+    recommendation: '(a) @po anota no AC1 que conjunto e anúncio casam por nome, com o motivo. (b) @devops, no merge: renumerar para 41, com a linha de histórico, e corrigir os três comentários.'
+    owner: '@po / @devops'
+    status: open
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Diff de 16 arquivos lido inteiro (2.112+/52−). A regra de canal bate com a tabela da story. Conflito = Meta E Google, e vai para um balde próprio que entra no Total. Meta = `ad_network = meta` ou id válido. Google = `ad_network = google` ou `gclid` (D2a). Orgânico = `CONDICAO_ORGANICO`, a MESMA da Jornada (agora importada de um lugar só). `ig4a`/`fbclid` caem em Sem atribuição (D2). O canal sai da série inteira do usuário, porque a CTE `base` não tem filtro de data. A venda conta pela janela de `purchased_at` com `revenue_usd > 0`, tanto no FILTER quanto no HAVING. `atributo()` segue a semântica de `readSubscriberAttribute`. Conferi no PGlite a dúvida que eu tinha: `E''\v''` é tab vertical no Postgres e NÃO a letra "v" (os nomes "video_01", "vsl-lyrio" e "…_v" saem iguais ao TS). A identidade totalPago + semValor + semUsuario = card de `/sales` vale por construção (mesmo escopo, `REVENUE_EVENT_TYPES`, `purchased_at`). O Detalhamento cruza a campanha por id e o conjunto/anúncio por nome aparado, e cada entidade vai para uma linha só. O resto vai para "Anúncio não identificado" ou "Sem linha nesta tabela", e o total da Meta fecha. Contei as colunas do rodapé novo nas 3 dimensões e Vendas/Receita caem sob o cabeçalho certo. Também o bloco RevenueCat desconectado, que retorna antes da quebra e por isso não deixa skeleton eterno. Sem PII: o `app_user_id` só aparece no GROUP BY e no `IN (SELECT …)`, e o `warn` leva só stageId e a contagem.'
+  autonomous_decisions: '(1) Conjunto e anúncio por NOME, não por id: CORRETA, e provada no dado. Os nomes do app batem 16/16 com os da Meta para os mesmos ids, e o Detalhamento agrega por nome. O desvio do texto do AC1 está em DOC-001. (2) Conflito como balde próprio + aviso âmbar + `warn` sem id, entrando no Total: CORRETA (D7). As mutações Q10/Q11 caem. (3) Investimento "conhecido" só com campanha vinculada E a consulta de 28 dias carregada; antes disso, "—": CORRETA, porque um ROAS sobre R$ 0 seria número falso. Q19 cai. (4) Desvio registrado do DoD, o probe rodado depois de começar o código: aceito. O resultado foi 0 macro, 0 `(not set)`, 0 vazio e 0 conflito, e o descarte segue no código pela semântica.'
+  unit_tests: 'Suítes da story: API 66/66 (`vendas-por-canal-lyrio` 42 + `jornada-lyrio` 24, PGlite) e web 47/47 (3 arquivos). Completas: API 4959 passando e 10 falhando em 5 arquivos (funnel-stages-lead-inputs 3, projects 3, schema 2, instagram-routes 1, instagram 1), a mesma baseline da 42.11. Web 1902/1902 em 137 arquivos. MUTAÇÕES PRÓPRIAS (aplicar → suíte → `git checkout`, com `git status` limpo depois de cada uma): Q1 tirar `meta_ad_id` do `sinalMeta` → SOBREVIVE · Q1c `sinalMeta` só com `ad_network` → SOBREVIVE (TEST-001) · Q2 aliases `s_meta` × `s_google` trocados na CTE `ev` → 2 · Q3 `base` só com eventos de receita (canal sem o paywall) → 2 · Q4 `maisRecente` sem o FILTER `IS NOT NULL` → 1 · Q5 `sem_usuario` sem `app_user_id IS NULL` → 1 · Q6 `min` → `max` no início dos atributos → SOBREVIVE (TEST-003) · Q7 `base` sem o escopo da etapa → SOBREVIVE (TEST-002) · Q8 web, campanha casada por nome → 2 · Q9 web, Google contra o investimento Meta+Google → 2 · Q10 web, linha de conflito sempre → 1 · Q11 Jornada, conflito fora do Total → 2 · Q12 descarte só pelo prefixo `{{` → 2 · Q13 web, `<` → `<=` na cobertura → SOBREVIVE, equivalente na granularidade de dia (não é achado) · Q14 web, não identificado somado em "sem linha" → 2 · Q15 web, ROAS Meta sem o imposto → 1 · Q16 rota, campo extra na resposta → 1 · Q17 web, declaração (c) da Jornada invertida → 2 · Q18 tsx, `colunas` sem o `+2` das colunas de vendas → SOBREVIVE (fora do alcance do vitest; conferido à mão, ver TEST-003) · Q19 tsx, Google "conhecido" sempre → 1 · Q20 tsx, Detalhamento com 28 dias fixos → 1. Resultado: 16 caem e 4 sobrevivem. Fora a equivalente (Q13), as 3 que sobrevivem viraram TEST-001/002/003, e mais Q18 no layout.'
+  lint_typecheck: 'eslint nos 15 .ts/.tsx tocados: EXIT 0. tsc da API `--noEmit`: EXIT 0, 0 linhas. `next build` e tsc do web: não refeitos, porque não mudei código; o Dev Record traz EXIT 0, rodado depois do `next build`.'
+  acceptance_criteria: 'AC1 ✓ (rota, guarda, `days`, `purchased_at`, 4 linhas sempre, conflito, totalPago, metaPorEntidade, com o desvio de nome em DOC-001; `atributosDesde`; contrato) · AC2 ✓ no código (tabela abaixo dos cards; ROAS e Margem por canal com o imposto só na Meta; declaração de fonte; posição fica para a validação visual) · AC3 ✓ (Por canal + Total pago + declaração com número vindo da resposta; `/sales` intocada; fica numa linha ACIMA de "Por loja/Por produto", e não ao lado, ponto para a validação visual) · AC4 ✓ (duas linhas no lugar e na prioridade da antiga; Total igual: 15.790 em 90 dias, conflito 0; declaração (c) atualizada; tipo do web aceita `campanha`) · AC5 ✓ (3 dimensões; Google "—"; não identificado e sem linha; comentário atualizado) · AC6 ✓ (data vinda da resposta nos 4 blocos) · AC7 ✓ (404 da rota → oculto; 404 de domínio e 5xx → erro; Jornada antiga desenha o rótulo da API) · AC8 ⚠️ (quase todo provado; falta o braço dos ids da Meta na rota, TEST-001) · AC9 ✓ (gates acima).'
+  no_regressions: 'As suítes completas estão iguais à baseline. `/sales`, `webhooks.ts` e `services/revenuecat.ts` não mudaram. A Jornada muda de forma, mas o Total é o mesmo (provado em produção). O web antigo contra a API nova desenha 8 linhas pelo rótulo. O web novo contra a API antiga esconde os blocos novos e mostra a linha antiga.'
+  performance: 'Rota nova: 141 ms (28 dias) e 255 ms (5 dias) em produção. Início dos atributos: 226 ms. Jornada de 90 dias: 919 ms (PERF-001). Sem coluna nem índice novos.'
+  security: 'Guarda `getProjectAccess` + `getStage`, testada no fio (guest sem vínculo → 404; etapa alheia → 404 sem consultar eventos). SQL parametrizado. Resposta com 8 chaves conhecidas e nenhum id de usuário (teste de fio + Q16). O `warn` não leva id.'
+  documentation: 'Dev Agent Record completo: probe, SQL exato em produção, três iterações de desempenho com EXPLAIN, decisões e 21 mutações. Comentários no código explicam as diferenças conhecidas com o TS (`4.50`, espaço Unicode).'
+  api_contract: 'O contrato sobe de 38 para 39, com uma linha de histórico que declara a rota nova e a mudança de forma da Jornada, mais o fallback do web. A `main` remota andou para a7478df5, já no contrato 40 (#1017 v39, #1018 v40). Então `contract.ts` vai dar conflito no merge e esta story vira 41. A renumeração é do @devops, com a linha de histórico e os comentários de DOC-001(b). Não é FAIL. Nenhum outro arquivo da story foi tocado na `main` (compare c321dc64...main).'
+
+conferencia_producao:
+  quando: '2026-10-13, somente leitura (`default_transaction_read_only = on`), SQL gerado pelo PgDialect a partir da worktree'
+  vendas_28_dias: 'Meta 23 · US$ 105,24 | Google 125 · US$ 1.206,60 | Orgânico ou cupom 45 · US$ 391,49 | Sem atribuição 93 (92 compradores) · US$ 952,05 | Total pago 286 · US$ 2.655,38 | conflito 0 | US$ 0 fora 431 (o Dev Record tinha 432; a janela andou)'
+  vendas_5_dias: 'Meta 23 · US$ 105,24 | Google 43 | Orgânico 12 | Sem atribuição 16 | Total 94'
+  meta_por_campanha: 'app_google-play_lyrio_2026-07_cold 15 · não identificado 2 · app_ios_lyrio_2026-07_cold 5 · …2026-08_cold_mulheres 1'
+  atributos_desde: '2026-10-06T03:11 (primeiro id da Meta = primeiro ad_network meta; primeiro ad_network google em 08/10)'
+  nomes_app_x_meta: '16 anúncios dos compradores Meta: nome do anúncio e do conjunto batem 16/16 com meta_ad_insights_daily pelo id'
+  jornada_90_dias: 'Meta — campanha identificada 752 novos / 23 pagos; Google — identificado pelo app 463 / 33; Total 15.790 / 485; conflito 0'
+
+notes:
+  - 'Pendências do DoD (fora do código): conferência pela ROTA no ar depois do deploy (o SQL exato já foi provado duas vezes) e validação visual do Danilo nos quatro blocos.'
+  - 'Para a validação visual: (1) posição da tabela do Resumo (proposta do @dev); (2) "Por canal" fica numa linha própria ACIMA de "Por loja/Por produto", e o AC3 dizia "ao lado"; (3) as linhas "Google (gclid)" e "Meta (ig4a/fb4a)" menores na Jornada são esperadas (PO-04); (4) alinhamento das colunas Vendas/Receita no rodapé do Detalhamento, nas 3 dimensões (conferido à mão, sem teste).'
+  - 'Defeito ANTERIOR à story, fora do escopo: no rodapé do Detalhamento em "Por Criativo", o "Total" tem `colSpan={2}` sem contar a coluna Prévia. Por isso o total do investimento aparece sob "Dimensão", e não sob "Investimento". Isso vem da 42.5 (já estava na `c321dc64`). Se o Danilo notar na validação visual, não é regressão da 42.12. Vale uma story de 1 linha.'
+  - 'A declaração do AC6 diz "Meta e Google subcontados" antes de `atributosDesde`. Para o Google, isso é mais forte que o dado: o `gclid` já existia antes, e todos os usuários com `ad_network = google` têm `gclid`. É o texto literal do AC, então não virou achado.'
