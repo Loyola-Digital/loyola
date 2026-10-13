@@ -367,4 +367,23 @@
 // com código próprio pode casar campanha que o funil não casa). Vazio, tudo
 // igual a antes. O web com a API v37 não mostra nem edita o campo.
 // `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 38;
+// v39 (qualidade da correspondência do Lead Scoring no Meta — migration 0170):
+// `stage_lead_capi` ganha `event_source_url`, exposto como
+// `ConfigDoEnvioAoMeta.eventSourceUrl` no GET/PUT do lead-capi (ADITIVO,
+// `null` por padrão). Preenchida, o evento passa a sair com
+// `event_source_url` e `action_source: "website"` em vez de
+// `system_generated` — a Qualidade da Correspondência que o Gerenciador mostra
+// só é calculada para evento de SITE. Vazia, nada muda.
+// Independente da config, todo evento passa a levar mais parâmetros de
+// correspondência em `user_data`: `fn`/`ln` (primeiro e último nome, SHA-256
+// sem acento nem pontuação — o nome já era lido da planilha e descartado) e
+// `external_id` (hash da chave estável do lead). Nenhuma PII em claro, como
+// antes. Medido na Captação Paga do dg-pg05-out-26: 3,00 → 4,92 parâmetros por
+// evento.
+// Também muda a escolha de coluna em `colunas-da-pesquisa.ts`: a coluna
+// MAPEADA perde para a achada por nome quando esta tem 5× mais dado (ver
+// `escolherColuna`). Corrige planilha com duas gerações do mesmo formulário, em
+// que o mapeamento apontava para a coluna morta — 267 dos 269 leads iam ao Meta
+// sem e-mail nem telefone. Afeta o lead-capi e o casamento do Evento
+// Presencial; nenhuma rota muda de forma. `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 39;

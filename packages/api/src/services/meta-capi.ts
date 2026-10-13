@@ -74,11 +74,53 @@ export function hashDeTelefone(telefone: string | null | undefined): string {
   return sha256(d);
 }
 
+/**
+ * Nome próprio normalizado como o Meta pede: minúsculas, sem acento, sem
+ * pontuação, sem espaço.
+ *
+ * Nome é um dos parâmetros de correspondência que mais pesam na Qualidade do
+ * Evento, e estava sendo LIDO e descartado: a planilha traz nome em 99,3% das
+ * linhas (medido no dg-pg05-out-26) e o evento ia só com e-mail e telefone.
+ *
+ * Acento fora porque "José" e "Jose" têm de casar com o mesmo perfil — é o que
+ * a documentação manda, e sem isso metade dos nomes brasileiros não casa.
+ */
+export function hashDeNome(parte: string | null | undefined): string {
+  const limpo = (parte ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-zA-Z]/g, "")
+    .toLowerCase();
+  return limpo.length > 0 ? sha256(limpo) : "";
+}
+
+/**
+ * Primeiro e último nome, a partir do nome completo de uma coluna só.
+ *
+ * "Mário Gabriel Silva" → `fn: mario`, `ln: silva`. Nome do meio fica fora: o
+ * Meta tem campo para primeiro e último, e enfiar o meio no sobrenome faria o
+ * hash não casar com nada.
+ *
+ * Um nome só ("Madonna") vai como primeiro e sem sobrenome — melhor que
+ * repetir o mesmo valor nos dois campos, que seria um sobrenome falso.
+ */
+export function primeiroEUltimoNome(completo: string | null | undefined): {
+  fn: string;
+  ln: string;
+} {
+  const partes = (completo ?? "").trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) return { fn: "", ln: "" };
+  if (partes.length === 1) return { fn: hashDeNome(partes[0]), ln: "" };
+  return { fn: hashDeNome(partes[0]), ln: hashDeNome(partes[partes.length - 1]) };
+}
+
 export interface LeadParaOMeta {
   /** Identificador estável do lead — é o que faz o `event_id` não mudar. */
   chave: string;
   email?: string | null;
   telefone?: string | null;
+  /** Nome completo, de uma coluna só. Vira `fn`/`ln` com hash. */
+  nome?: string | null;
   /** A faixa calculada: "A", "B"… */
   faixa: string;
   /** A pontuação, quando houver — vai como valor do evento. */
@@ -92,6 +134,8 @@ export interface EventoDoMeta {
   event_time: number;
   event_id: string;
   action_source: string;
+  /** A página onde a pessoa respondeu. Ver `eventoDoLead` para o porquê. */
+  event_source_url?: string;
   user_data: Record<string, string>;
   custom_data: Record<string, string | number>;
 }
@@ -121,7 +165,13 @@ function quandoEmSegundos(valor: string | number | null | undefined): number {
  */
 export function eventoDoLead(
   lead: LeadParaOMeta,
-  opcoes: { stageId: string; eventName: string; actionSource?: string },
+  opcoes: {
+    stageId: string;
+    eventName: string;
+    actionSource?: string;
+    /** A página do formulário. Ver o bloco sobre `action_source` abaixo. */
+    eventSourceUrl?: string | null;
+  },
 ): EventoDoMeta | null {
   const em = hashDeEmail(lead.email);
   const ph = hashDeTelefone(lead.telefone);
@@ -130,9 +180,19 @@ export function eventoDoLead(
   const user_data: Record<string, string> = {};
   if (em) user_data.em = em;
   if (ph) user_data.ph = ph;
+  // Nome pesa na Qualidade da Correspondência e vinha sendo lido e jogado fora.
+  const { fn, ln } = primeiroEUltimoNome(lead.nome);
+  if (fn) user_data.fn = fn;
+  if (ln) user_data.ln = ln;
+  // `external_id` é parâmetro de correspondência pelo próprio Meta, e também é
+  // o que permite ao Gerenciador reconhecer a MESMA pessoa entre eventos de
+  // faixas diferentes. Hash da nossa chave estável — nunca a chave em claro.
+  user_data.external_id = sha256(lead.chave.trim().toLowerCase());
 
   const custom_data: Record<string, string | number> = { faixa: lead.faixa };
   if (typeof lead.score === "number") custom_data.score = lead.score;
+
+  const url = (opcoes.eventSourceUrl ?? "").trim();
 
   return {
     event_name: opcoes.eventName,
@@ -140,10 +200,20 @@ export function eventoDoLead(
     // Determinístico: a mesma etapa com o mesmo lead gera sempre o mesmo id, e
     // o Meta descarta a repetição sozinho.
     event_id: sha256(`${opcoes.stageId}:${lead.chave}:${opcoes.eventName}`).slice(0, 40),
-    // "system_generated": o evento não nasce de uma ação no site, nasce da
-    // nossa classificação. Mentir aqui (dizer "website") distorce os relatórios
-    // de atribuição do próprio Meta.
-    action_source: opcoes.actionSource ?? "system_generated",
+    // ## Por que a URL muda o `action_source`
+    //
+    // O Meta exige `event_source_url` nos eventos de site, e a Qualidade da
+    // Correspondência — a nota que o Gerenciador mostra — só é calculada para
+    // evento de site. Com `system_generated` e sem URL, o evento casa pior e
+    // não ganha nota nenhuma.
+    //
+    // Dizer "website" só é honesto porque é verdade: a pessoa preencheu o
+    // formulário NUMA PÁGINA, e é essa página que vai aqui. O que nasce do
+    // nosso servidor é a classificação, não a ação. Sem URL configurada,
+    // continua `system_generated` — nunca "website" sem a página, que seria
+    // justamente a mentira que o comentário anterior evitava.
+    action_source: opcoes.actionSource ?? (url ? "website" : "system_generated"),
+    ...(url ? { event_source_url: url } : {}),
     user_data,
     custom_data,
   };
@@ -248,6 +318,8 @@ export function montarLote(
     faixas: string[];
     /** Nome por faixa; o que faltar cai no padrão. Ver `nomeDoEventoDaFaixa`. */
     eventosPorFaixa?: Record<string, string>;
+    /** A página do formulário, igual para todos os leads da etapa. */
+    eventSourceUrl?: string | null;
     /** Quem já foi, por `chave|evento` — o mesmo lead pode ir de novo sob outro evento. */
     jaEnviados?: Set<string>;
   },
@@ -279,7 +351,11 @@ export function montarLote(
       jaEstavam += 1;
       continue;
     }
-    const evento = eventoDoLead(lead, { stageId: opcoes.stageId, eventName: nome });
+    const evento = eventoDoLead(lead, {
+      stageId: opcoes.stageId,
+      eventName: nome,
+      eventSourceUrl: opcoes.eventSourceUrl,
+    });
     if (!evento) {
       semIdentificador += 1;
       continue;

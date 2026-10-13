@@ -37,6 +37,18 @@ const configSchema = z.object({
   /** Nome do evento de cada faixa: `{ "A": "LeadFaixaA" }`. Faltando, cai no padrão. */
   eventosPorFaixa: z.record(z.string().max(10), z.string().trim().max(60)).default({}),
   bands: z.array(z.string().trim().min(1).max(10)).max(10).default([]),
+  /**
+   * A página do formulário (migration 0170). Vazio = sem URL, e o evento
+   * continua `system_generated`. `url()` de propósito: URL meia-boca derruba o
+   * evento no Meta, e o lugar de descobrir isso é aqui, não no Gerenciador.
+   */
+  eventSourceUrl: z
+    .union([
+      z.literal(""),
+      z.string().trim().max(2048).url().regex(/^https?:\/\//i, "A URL deve usar http:// ou https://"),
+    ])
+    .nullable()
+    .optional(),
   testEventCode: z.string().trim().max(40).nullable().optional(),
   ativo: z.boolean().default(false),
 });
@@ -128,6 +140,7 @@ export default fp(async function leadCapiRoutes(fastify) {
           .filter(([, nome]) => nome.length > 0),
       ),
       bands: corpo.data.bands.map((b) => b.toUpperCase()),
+      eventSourceUrl: corpo.data.eventSourceUrl?.trim() || null,
       testEventCode: corpo.data.testEventCode || null,
       ativo: corpo.data.ativo,
       updatedAt: new Date(),

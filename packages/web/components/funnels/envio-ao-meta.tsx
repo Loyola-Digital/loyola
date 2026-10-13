@@ -19,7 +19,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { Loader2, Send, Target, TestTube2 } from "lucide-react";
+import { Link2, Loader2, Send, Target, TestTube2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -79,6 +79,7 @@ export function EnvioAoMeta({
   const [datasetId, setDatasetId] = useState("");
   const [contaId, setContaId] = useState("");
   const [eventName, setEventName] = useState("LeadQualificado");
+  const [urlDoFormulario, setUrlDoFormulario] = useState("");
   const [eventosPorFaixa, setEventosPorFaixa] = useState<Record<string, string>>({});
   const [faixas, setFaixas] = useState<string[]>([]);
   const [testCode, setTestCode] = useState("");
@@ -91,6 +92,7 @@ export function EnvioAoMeta({
     setDatasetId(c.datasetId);
     setContaId(c.metaAccountId ?? "");
     setEventName(c.eventName);
+    setUrlDoFormulario(c.eventSourceUrl ?? "");
     setEventosPorFaixa(c.eventosPorFaixa ?? {});
     setFaixas(c.bands);
     setTestCode(c.testEventCode ?? "");
@@ -107,6 +109,7 @@ export function EnvioAoMeta({
         datasetId: datasetId.trim(),
         metaAccountId: contaId || null,
         eventName: eventName.trim() || "LeadQualificado",
+        eventSourceUrl: urlDoFormulario.trim() || null,
         eventosPorFaixa,
         bands: faixas,
         testEventCode: testCode.trim() || null,
@@ -189,6 +192,34 @@ export function EnvioAoMeta({
             onChange={(e) => setEventName(e.target.value)}
             placeholder="LeadQualificado"
           />
+        </div>
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label htmlFor="capi-url" className="flex items-center gap-1.5">
+            <Link2 className="h-3.5 w-3.5" />
+            Página do formulário
+          </Label>
+          <Input
+            id="capi-url"
+            value={urlDoFormulario}
+            onChange={(e) => setUrlDoFormulario(e.target.value)}
+            placeholder="https://..."
+          />
+          {/* O "por quê" fica na tela: sem isto o evento não recebe nota, e
+              descobrir isso no Gerenciador leva semanas. */}
+          <p className="text-[11px] text-muted-foreground">
+            {urlDoFormulario.trim() ? (
+              <>
+                O evento vai como <strong>website</strong> apontando para esta página — é
+                assim que o Meta calcula a Qualidade da Correspondência.
+              </>
+            ) : (
+              <>
+                Sem a URL o evento vai como <strong>system_generated</strong>, e o Meta{" "}
+                <strong>não calcula</strong> a nota de correspondência — ela só existe para
+                evento de site. Use o endereço da página onde a pessoa respondeu.
+              </>
+            )}
+          </p>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="capi-teste" className="flex items-center gap-1.5">

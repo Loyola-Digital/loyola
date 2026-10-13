@@ -487,7 +487,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
         continue;
       }
       const { headers, rows } = data;
-      const emailIdx = acharColunaDeEmail(headers, mapping.email);
+      const emailIdx = acharColunaDeEmail(headers, mapping.email, rows);
       const norm = (s: string) => s.trim().toLowerCase();
       const vidx = headers.findIndex((h) => norm(h).startsWith("você é") || norm(h).startsWith("voce e"));
       if (emailIdx === -1 || vidx === -1) continue;
@@ -587,17 +587,18 @@ export default fp(async function stageEventConfigRoutes(fastify) {
         continue;
       }
       const { headers, rows } = data;
-      // Mapeamento primeiro; se a coluna mapeada não existir na planilha, acha
-      // pelo cabeçalho. Sem isso, um mapeamento defasado (formulário refeito,
-      // "email" contra "Qual é o seu e-mail") zerava o casamento por e-mail em
-      // silêncio — era o caso do bbe-pr2-out-26 em 23/09/2026.
-      const emailIdx = acharColunaDeEmail(headers, mapping.email);
+      // Mapeamento primeiro; se a coluna mapeada não existir — ou existir e
+      // estiver VAZIA — acha pelo cabeçalho. Sem isso, um mapeamento defasado
+      // zerava o casamento em silêncio: por não existir, era o caso do
+      // bbe-pr2-out-26 (23/09/2026); por existir vazia, o do dg-pg05-out-26
+      // (13/10/2026), onde a planilha guardava duas gerações do formulário.
+      const emailIdx = acharColunaDeEmail(headers, mapping.email, rows);
       // Sem coluna de faturamento, a planilha não tem o que dizer aqui — é o
       // caso da lista de participantes.
-      const fatIdx = acharColunaDeFaturamento(headers, mapping.faturamento);
+      const fatIdx = acharColunaDeFaturamento(headers, mapping.faturamento, rows);
       if (fatIdx === -1) continue;
-      const nameIdx = acharColunaDeNome(headers, mapping.name);
-      const phoneIdx = acharColunaDeTelefone(headers);
+      const nameIdx = acharColunaDeNome(headers, mapping.name, rows);
+      const phoneIdx = acharColunaDeTelefone(headers, undefined, rows);
       // horário da resposta (Tally) — pra evidência temporal do match por nome.
       const subIdx = headers.findIndex((h) => h.trim().toLowerCase() === "submitted at");
       // helper de conflito → marca ambíguo (null) p/ não chutar.
@@ -1136,7 +1137,7 @@ export default fp(async function stageEventConfigRoutes(fastify) {
         continue;
       }
       const { headers, rows } = data;
-      const emailIdx = acharColunaDeEmail(headers, mapping.email);
+      const emailIdx = acharColunaDeEmail(headers, mapping.email, rows);
       let match =
         emailIdx === -1
           ? undefined
@@ -1144,13 +1145,13 @@ export default fp(async function stageEventConfigRoutes(fastify) {
       // Fallback por telefone e depois por nome: o lead pode ter comprado com um
       // email e respondido a pesquisa com outro — aí o match por email falha aqui.
       if (!match && targetPhone) {
-        const phoneIdx = acharColunaDeTelefone(headers);
+        const phoneIdx = acharColunaDeTelefone(headers, undefined, rows);
         if (phoneIdx !== -1) {
           match = rows.find((row) => normPhone(row[phoneIdx] ?? "") === targetPhone);
         }
       }
       if (!match && targetName) {
-        const nameIdx = acharColunaDeNome(headers, mapping.name);
+        const nameIdx = acharColunaDeNome(headers, mapping.name, rows);
         if (nameIdx !== -1) {
           match = rows.find((row) => normName(row[nameIdx] ?? "") === targetName);
         }
