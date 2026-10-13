@@ -56,7 +56,7 @@ import {
   vendasDoDetalhamento,
   type ContagemDeVendas,
 } from "@/lib/utils/vendas-por-canal-lyrio";
-import { ORIENTACAO_DO_ERRO_DO_GOOGLE, mensagemDoErroDoGoogle } from "@/lib/utils/lyrio-google-ads";
+import { avisoDoGoogleEmLinha, estadoDoGoogleNaJanela, type ContaDoGoogle } from "@/lib/utils/lyrio-google-ads";
 import {
   buildCampaignRows, metaRow, sortRows, totalSpend,
   type LyrioDetailRow, type LyrioSortKey, type MetaEntityInput,
@@ -79,6 +79,8 @@ interface LyrioDetailTableProps {
   googleAccountId: string | null;
   /** Ids das campanhas Google vinculadas à etapa. */
   googleCampaignIds: Set<string>;
+  /** Story 42.13 (QA loop): o estado da conta Google, decidido no pai — sem conta é aviso, não linha a menos calada. */
+  contaGoogle: ContaDoGoogle;
   /** Janela do DayRangePicker do cabeçalho da etapa. */
   days: number;
 }
@@ -104,6 +106,7 @@ export function LyrioDetailTable({
   campaignIds,
   googleAccountId,
   googleCampaignIds,
+  contaGoogle,
   days,
 }: LyrioDetailTableProps) {
   const [dimensao, setDimensao] = useState<Dimensao>("campaign");
@@ -175,6 +178,12 @@ export function LyrioDetailTable({
   const vendasDaLinha = (r: LyrioDetailRow): ContagemDeVendas | null =>
     r.platform === "meta" && vendas ? (vendas.porLinha.get(`${r.platform}-${r.id}`) ?? null) : null;
   const naoIdentificado = rotuloDoNaoIdentificado(dimensao);
+  const avisoGoogle =
+    dimensao === "campaign"
+      ? avisoDoGoogleEmLinha(
+          estadoDoGoogleNaJanela(contaGoogle, { isLoading: loadingGoogle, error: erroGoogle, data: googleData }, googleCampaignIds),
+        )
+      : null;
   const receitaBrl = (c: ContagemDeVendas | null) =>
     c == null || brlRate == null ? null : c.receitaUsd * brlRate;
 
@@ -414,10 +423,11 @@ export function LyrioDetailTable({
         </div>
       )}
 
-      {/* Story 42.13 (AC1c): o Google em erro some da tabela — e o motivo aparece. */}
-      {temGoogle && dimensao === "campaign" && erroGoogle && (
+      {/* Story 42.13 (AC1c + QA loop): o Google em erro ou sem conta some da
+          tabela — e o motivo aparece. */}
+      {avisoGoogle && (
         <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          As linhas do Google Ads não carregaram: {mensagemDoErroDoGoogle(erroGoogle)}. {ORIENTACAO_DO_ERRO_DO_GOOGLE}
+          As linhas do Google Ads não aparecem. {avisoGoogle}
         </p>
       )}
       {/* A ausência é declarada, não silenciosa: sem esta nota a primeira

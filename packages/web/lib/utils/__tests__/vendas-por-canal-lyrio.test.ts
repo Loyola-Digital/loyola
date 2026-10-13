@@ -216,7 +216,7 @@ describe("o fio até a tela", () => {
     expect(resumo).toMatch(/declaracaoDeCobertura\(estado\.dados\)/);
     expect(etapa).toMatch(/conhecido: campaignIds\.length > 0 && metaDaily28 !== undefined/);
     // Story 42.13 (AC1b): o investimento do Google é conhecido só com a consulta respondida — erro não é R$ 0.
-    expect(etapa).toMatch(/conhecido: googleAtivo && googleSpend28Conhecido !== null/);
+    expect(etapa).toMatch(/conhecido: googleCampaignIds\.size > 0 && googleSpend28Conhecido !== null/);
     expect(etapa).toMatch(/liquidoBrl: metaSpend28Detalhe\.spendLiquido,\s*impostoBrl: metaSpend28Detalhe\.imposto,/);
     const secao = etapa.slice(etapa.indexOf("Resumo mobile · últimos 28 dias"), etapa.indexOf("</section>", etapa.indexOf("Resumo mobile · últimos 28 dias")));
     expect(secao).toContain("<LyrioResumoPorCanal");
@@ -254,9 +254,10 @@ describe("Story 42.13 (AC3) — rotuloDoNaoIdentificado acompanha a dimensão", 
 describe("Story 42.13 (AC2) — blocoMetaDoLyrio: a venda da Meta vem do RevenueCat", () => {
   const pronto = { tipo: "pronto" as const, dados: dados() };
   const trafego = { investimentoBrl: 504.69, impressoes: 89482, cliques: 2589 };
+  const entrada = (estado: Parameters<typeof blocoMetaDoLyrio>[0]["estado"], brlRate: number | null) => ({ trafego, estado, brlRate });
 
   it("vendas e receita do canal Meta; ROAS e custo por venda contra o investimento da Meta", () => {
-    const b = blocoMetaDoLyrio({ ...trafego, estado: pronto, brlRate: 5.4 });
+    const b = blocoMetaDoLyrio(entrada(pronto, 5.4));
     expect(b.vendas).toBe(23);
     expect(b.receitaBrl).toBeCloseTo(105.24 * 5.4, 10);
     expect(b.roas).toBeCloseTo((105.24 * 5.4) / 504.69, 10);
@@ -267,25 +268,30 @@ describe("Story 42.13 (AC2) — blocoMetaDoLyrio: a venda da Meta vem do Revenue
   });
   it("não lê o Google nem o total: só a linha Meta", () => {
     const so = dados({ canais: dados().canais.map((c) => (c.canal === "meta" ? { ...c, vendas: 2, receitaUsd: 10 } : c)) });
-    const b = blocoMetaDoLyrio({ ...trafego, estado: { tipo: "pronto", dados: so }, brlRate: 5 });
+    const b = blocoMetaDoLyrio(entrada({ tipo: "pronto", dados: so }, 5));
     expect(b.vendas).toBe(2);
     expect(b.receitaBrl).toBe(50);
   });
   it("sem câmbio: receita e ROAS ficam null (nunca US$ disfarçado de R$); as vendas continuam", () => {
-    const b = blocoMetaDoLyrio({ ...trafego, estado: pronto, brlRate: null });
+    const b = blocoMetaDoLyrio(entrada(pronto, null));
     expect(b).toMatchObject({ vendas: 23, receitaBrl: null, roas: null });
     expect(b.custoPorVenda).toBeCloseTo(504.69 / 23, 10);
   });
   it("divisões por zero viram null: sem investimento, sem venda, sem impressão, sem clique", () => {
     const zerado = dados({ canais: dados().canais.map((c) => (c.canal === "meta" ? { ...c, vendas: 0, compradores: 0, receitaUsd: 0 } : c)) });
-    const b = blocoMetaDoLyrio({ investimentoBrl: 0, impressoes: 0, cliques: 0, estado: { tipo: "pronto", dados: zerado }, brlRate: 5 });
+    const b = blocoMetaDoLyrio({ trafego: { investimentoBrl: 0, impressoes: 0, cliques: 0 }, estado: { tipo: "pronto", dados: zerado }, brlRate: 5 });
     expect(b).toMatchObject({ vendas: 0, receitaBrl: 0, roas: null, custoPorVenda: null, ctr: null, cpm: null, conversao: null });
     // com investimento e zero vendas, o custo por venda é desconhecido, não Infinity
-    expect(blocoMetaDoLyrio({ ...trafego, estado: { tipo: "pronto", dados: zerado }, brlRate: 5 }).custoPorVenda).toBeNull();
+    expect(blocoMetaDoLyrio(entrada({ tipo: "pronto", dados: zerado }, 5)).custoPorVenda).toBeNull();
+  });
+  it("QA REL-001 — tráfego desconhecido (consulta da Meta em erro) → investimento e tudo que divide por ele null; a venda continua", () => {
+    const b = blocoMetaDoLyrio({ trafego: null, estado: pronto, brlRate: 5 });
+    expect(b).toMatchObject({ investimentoBrl: null, impressoes: null, cliques: null, roas: null, custoPorVenda: null, ctr: null, cpm: null, conversao: null, vendas: 23 });
+    expect(b.receitaBrl).toBeCloseTo(105.24 * 5, 10);
   });
   it("venda desconhecida (carregando, erro, API anterior à rota) → vendas e receita null, nunca 0", () => {
     for (const estado of [{ tipo: "carregando" as const }, { tipo: "oculto" as const }, { tipo: "erro" as const, mensagem: "x" }]) {
-      const b = blocoMetaDoLyrio({ ...trafego, estado, brlRate: 5 });
+      const b = blocoMetaDoLyrio(entrada(estado, 5));
       expect(b).toMatchObject({ vendas: null, receitaBrl: null, roas: null, custoPorVenda: null, conversao: null });
       expect(b.investimentoBrl).toBe(504.69);
     }
@@ -302,18 +308,39 @@ describe("Story 42.13 — o fio até a tela", () => {
     expect(etapa).not.toMatch(/<SalesMetaKpis/);
     expect(etapa).toMatch(/<LyrioMetaKpis\s+projectId=\{projectId\}\s+campaignIds=\{campaignIds\}\s+days=\{days\}\s+vendas=\{vendasPorCanal\}\s+revenuecatConectado=\{connected\}/);
     expect(bloco).toMatch(/useCampaignDailyInsightsBulk\(\s*projectId,\s*campaignIds\.length > 0 \? campaignIds : null,\s*days,\s*\)/);
-    expect(bloco).toMatch(/blocoMetaDoLyrio\(\{/);
     expect(bloco).toMatch(/const estado: EstadoDasVendas = revenuecatConectado \? vendas : \{ tipo: "oculto" \};/);
     expect(bloco).not.toMatch(/label="(LP Views|Checkouts|Ticket)/);
   });
-  it("AC1 — Google: o bloco e o Resumo decidem pelo estado; ROAS e Margem somem com o Google desconhecido", () => {
-    const kpis = etapa.slice(etapa.indexOf("function GoogleAdsKpis("));
-    expect(kpis).toMatch(/estadoDoGoogle\(\{ isLoading: q\.isLoading, error: q\.error, data: q\.data \}, campaignIds\)/);
-    expect(kpis).toMatch(/estado\.tipo === "erro"[\s\S]*role="alert"/);
+  it("AC1 — Google: a conta e a consulta decidem o estado; ROAS e Margem somem com o Google desconhecido", () => {
+    // QA loop TEST-001: a conta é decidida UMA vez no pai e desce para o bloco e o Detalhamento.
+    expect(etapa).toMatch(/contaDoGoogle\(\{\s*temCampanhas: googleCampaignIds\.size > 0,\s*accountId: googleAccountId,\s*picker: \{ isLoading: googlePickerQ\.isLoading, error: googlePickerQ\.error, data: googlePicker \},/);
+    expect(etapa).toMatch(/const googleSpend28Conhecido = investimentoDoGoogle\(googleEstado28\);/);
     expect(etapa).toMatch(/const googleIndisponivel = googleSpend28Conhecido === null;/);
     expect(etapa).toMatch(/investimento28 > 0 && !googleIndisponivel \? revenue28Brl \/ investimento28 : null/);
     expect(etapa).toMatch(/revenue28Brl == null \|\| googleIndisponivel\s*\?\s*null/);
     expect(etapa).toMatch(/value=\{googleIndisponivel \? "—" : fmtBRL\(googleSpend28\)\}/);
-    expect(detalhe).toMatch(/temGoogle && dimensao === "campaign" && erroGoogle && \(\s*<p role="alert"/);
+    // o memorial do "—" é o da função testada (QA Q2/Q3)
+    expect(etapa).toMatch(/memorialDoGoogleSemNumero\(googleEstado28, "últimos 28 dias"\) \?\?/);
+    // a seção aparece também sem conta (antes sumia) e recebe a conta
+    expect(etapa).toMatch(/\{contaGoogle\.tipo !== "sem_campanha" && \(\s*<section/);
+    expect(etapa).toMatch(/<GoogleAdsKpis\s+conta=\{contaGoogle\}/);
+    expect(etapa).toMatch(/contaGoogle=\{contaGoogle\}/);
+    const kpis = etapa.slice(etapa.indexOf("function GoogleAdsKpis("));
+    expect(kpis).toMatch(/estadoDoGoogleNaJanela\(conta, \{ isLoading: q\.isLoading, error: q\.error, data: q\.data \}, campaignIds\)/);
+    // o alerta desenha os três textos da função (QA Q7/Q8)
+    expect(kpis).toMatch(/if \(aviso\) \{\s*return \(\s*<div role="alert"/);
+    expect(kpis).toMatch(/\{aviso\.titulo\}/);
+    expect(kpis).toMatch(/\{aviso\.detalhe && <p[^>]*>\{aviso\.detalhe\}<\/p>\}/);
+    expect(kpis).toMatch(/\{aviso\.orientacao\}/);
+    // Detalhamento: o aviso vem da mesma decisão, com o texto inteiro (QA Q4)
+    expect(detalhe).toMatch(/avisoDoGoogleEmLinha\(\s*estadoDoGoogleNaJanela\(contaGoogle, \{ isLoading: loadingGoogle, error: erroGoogle, data: googleData \}, googleCampaignIds\),?\s*\)/);
+    expect(detalhe).toMatch(/\{avisoGoogle && \(\s*<p role="alert"[^>]*>\s*As linhas do Google Ads não aparecem\. \{avisoGoogle\}/);
+  });
+  it("AC2 — bloco Meta: declara a cobertura e mostra os erros de venda e de tráfego (QA Q5/Q6/REL-001)", () => {
+    expect(bloco).toMatch(/estado\.tipo === "pronto" && ` \$\{declaracaoDeCobertura\(estado\.dados\)\}`/);
+    expect(bloco).toMatch(/\{estado\.tipo === "erro" && \(\s*<p role="alert"[^>]*>\s*Não foi possível carregar as vendas da Meta: \{estado\.mensagem\}/);
+    expect(bloco).toMatch(/\{erroTrafego && \(\s*<p role="alert"/);
+    expect(bloco).toMatch(/const somado = daily && !erroTrafego \? sumMetaInsights\(\[daily\]\) : null;/);
+    expect(bloco).toMatch(/blocoMetaDoLyrio\(\{ trafego, estado, brlRate \}\)/);
   });
 });

@@ -104,7 +104,7 @@ export function LyrioMetaKpis({
   revenuecatConectado: boolean;
   brlRate: number | null;
 }) {
-  const { data: daily, isLoading } = useCampaignDailyInsightsBulk(
+  const { data: daily, isLoading, error: erroTrafego } = useCampaignDailyInsightsBulk(
     projectId,
     campaignIds.length > 0 ? campaignIds : null,
     days,
@@ -131,22 +131,23 @@ export function LyrioMetaKpis({
     );
   }
 
-  // Inclui o imposto de 12,15% (sumMetaInsights), como o bloco anterior.
-  const trafego = daily ? sumMetaInsights([daily]) : { spend: 0, impressions: 0, linkClicks: 0 };
+  // Inclui o imposto de 12,15% (sumMetaInsights), como o bloco anterior. Com a
+  // consulta em erro o tráfego é DESCONHECIDO (QA REL-001), não R$ 0.
+  const somado = daily && !erroTrafego ? sumMetaInsights([daily]) : null;
+  const trafego = somado ? { investimentoBrl: somado.spend, impressoes: somado.impressions, cliques: somado.linkClicks } : null;
   // Sem RevenueCat conectado a venda não é "zero", é desconhecida.
   const estado: EstadoDasVendas = revenuecatConectado ? vendas : { tipo: "oculto" };
-  const b = blocoMetaDoLyrio({
-    investimentoBrl: trafego.spend,
-    impressoes: trafego.impressions,
-    cliques: trafego.linkClicks,
-    estado,
-    brlRate,
-  });
+  const b = blocoMetaDoLyrio({ trafego, estado, brlRate });
   const vendasCarregando = estado.tipo === "carregando";
   const fonte = "Vendas pagas do canal Meta no RevenueCat (o anúncio que o app registra no usuário)";
 
   return (
     <div className="space-y-4">
+      {erroTrafego && (
+        <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          Não foi possível carregar o tráfego da Meta: {erroTrafego instanceof Error ? erroTrafego.message : String(erroTrafego)}
+        </p>
+      )}
       {estado.tipo === "erro" && (
         <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
           Não foi possível carregar as vendas da Meta: {estado.mensagem}
@@ -180,9 +181,9 @@ export function LyrioMetaKpis({
       <div className="space-y-2">
         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Funil de Conversão</p>
         <div className="flex items-stretch gap-1">
-          <Etapa icon={Eye} label="Impressões" value={fmtNum(trafego.impressions)} />
+          <Etapa icon={Eye} label="Impressões" value={fmtNum(b.impressoes)} />
           <Seta pct={b.ctr} />
-          <Etapa icon={MousePointerClick} label="Cliques" value={fmtNum(trafego.linkClicks)} />
+          <Etapa icon={MousePointerClick} label="Cliques" value={fmtNum(b.cliques)} />
           <Seta pct={b.conversao} />
           <Etapa icon={DollarSign} label="Vendas (Meta)" value={fmtNum(b.vendas)} highlight />
         </div>

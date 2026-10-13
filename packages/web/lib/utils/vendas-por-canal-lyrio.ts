@@ -277,16 +277,20 @@ export function rotuloDoNaoIdentificado(dimensao: DimensaoDoDetalhamento): { rot
 // ─────────────────────────── Bloco "Meta Ads" (Story 42.13, AC2) ───────────────────────────
 
 export interface EntradaDoBlocoMeta {
-  /** Investimento da Meta no período, em R$, COM o imposto (`sumMetaInsights`). */
-  investimentoBrl: number;
-  impressoes: number;
-  cliques: number;
+  /**
+   * O tráfego da Meta no período; `null` = desconhecido (a consulta falhou —
+   * QA REL-001: antes virava R$ 0 de investimento e de custo por venda).
+   * `investimentoBrl` já tem o imposto (`sumMetaInsights`).
+   */
+  trafego: { investimentoBrl: number; impressoes: number; cliques: number } | null;
   estado: EstadoDasVendas;
   brlRate: number | null;
 }
 
 export interface BlocoMetaDoLyrio {
-  investimentoBrl: number;
+  investimentoBrl: number | null;
+  impressoes: number | null;
+  cliques: number | null;
   /** `null` = a venda não é conhecida (carregando, erro, API anterior à rota). */
   vendas: number | null;
   receitaBrl: number | null;
@@ -309,14 +313,18 @@ export function blocoMetaDoLyrio(e: EntradaDoBlocoMeta): BlocoMetaDoLyrio {
   const vendas = meta ? meta.vendas : null;
   const receitaBrl = meta && e.brlRate != null ? meta.receitaUsd * e.brlRate : null;
   const div = (a: number | null, b: number | null) => (a != null && b != null && b > 0 ? a / b : null);
+  const t = e.trafego;
+  const investimentoBrl = t ? t.investimentoBrl : null;
   return {
-    investimentoBrl: e.investimentoBrl,
+    investimentoBrl,
+    impressoes: t ? t.impressoes : null,
+    cliques: t ? t.cliques : null,
     vendas,
     receitaBrl,
-    roas: div(receitaBrl, e.investimentoBrl),
-    custoPorVenda: div(vendas != null && vendas > 0 ? e.investimentoBrl : null, vendas),
-    ctr: div(e.cliques * 100, e.impressoes),
-    cpm: div(e.investimentoBrl * 1000, e.impressoes),
-    conversao: div(vendas != null ? vendas * 100 : null, e.cliques),
+    roas: div(receitaBrl, investimentoBrl),
+    custoPorVenda: div(vendas != null && vendas > 0 ? investimentoBrl : null, vendas),
+    ctr: t ? div(t.cliques * 100, t.impressoes) : null,
+    cpm: t ? div(t.investimentoBrl * 1000, t.impressoes) : null,
+    conversao: t ? div(vendas != null ? vendas * 100 : null, t.cliques) : null,
   };
 }

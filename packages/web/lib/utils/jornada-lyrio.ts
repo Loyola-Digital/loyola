@@ -41,7 +41,7 @@ export interface ContagemDaJornada {
 /** Espelha a resposta de `GET …/revenuecat/jornada` (`routes/revenuecat.ts`). Só contagens — nenhum id de usuário. */
 export interface JornadaDoLyrio {
   days: number;
-  /** Início da janela (`AAAA-MM-DD`, UTC). */
+  /** Início da janela (`AAAA-MM-DD`): o primeiro dia, no fuso de SP (Story 42.13). */
   desde: string;
   /** Primeiro evento de ASSINATURA da etapa (`AAAA-MM-DD`); `null` se ainda não houve. */
   assinaturaDesde: string | null;
