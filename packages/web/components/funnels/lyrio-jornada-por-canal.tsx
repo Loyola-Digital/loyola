@@ -16,6 +16,7 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRevenuecatJornada } from "@/lib/hooks/use-revenuecat";
 import {
+  avisoDeConflitoDaJornada,
   declaracoesDaJornada,
   estadoDoBlocoDaJornada,
   formatarTaxa,
@@ -74,6 +75,12 @@ export function LyrioJornadaPorCanal({ projectId, funnelId, stageId, days }: { p
         <>
           {/* AC4: o que a tabela declara — nada como medido sem fonte. */}
           <p className="text-[11px] text-muted-foreground">{declaracoesDaJornada(estado.dados).join(" ")}</p>
+          {/* Story 42.12 (D7): conflito Meta × Google é sinal de falha na integração — aparece, não some. */}
+          {avisoDeConflitoDaJornada(estado.dados) && (
+            <p role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+              {avisoDeConflitoDaJornada(estado.dados)}
+            </p>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
@@ -96,6 +103,12 @@ export function LyrioJornadaPorCanal({ projectId, funnelId, stageId, days }: { p
                     <Celulas c={l} />
                   </tr>
                 ))}
+                {estado.dados.conflito && estado.dados.conflito.novos > 0 && (
+                  <tr className="border-b border-border/10 text-amber-700 dark:text-amber-400">
+                    <td className="py-2 pr-3 whitespace-nowrap">Meta e Google (conflito)</td>
+                    <Celulas c={estado.dados.conflito} />
+                  </tr>
+                )}
                 <tr className="font-semibold">
                   <td className="py-2 pr-3">Total</td>
                   <Celulas c={estado.dados.total} />

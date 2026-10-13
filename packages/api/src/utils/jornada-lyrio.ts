@@ -19,16 +19,25 @@
  *
  * Nunca devolve nem loga `app_user_id` (nem e-mail, IP, IDFA): a consulta
  * AGRUPA pelo id mas não o seleciona — só contagens saem daqui.
+ *
+ * Story 42.12 (D5/D8): a linha "Campanha identificável (Meta + Google)" virou
+ * DUAS — "Meta — campanha identificada" e "Google — identificado pelo app" —,
+ * cada uma com a parte dela da regra antiga MAIS os atributos que o app passou
+ * a mandar em 09/10 (`ad_network`, `meta_*_id`). Elas herdam a prioridade 1 e o
+ * lugar da antiga na exibição (PO-04). Usuário que casa com as duas é
+ * `conflito` (D7): não entra em nenhuma, e a resposta o traz à parte.
  */
 
 import { and, eq, isNotNull, ne, sql, type SQL } from "drizzle-orm";
 import { revenuecatSales } from "../db/schema.js";
 import { REVENUE_EVENT_TYPES } from "../services/revenuecat.js";
+import { CONDICAO_ORGANICO, atributo } from "./vendas-por-canal-lyrio.js";
 
 // ─────────────────────────── canais ───────────────────────────
 
 export type CanalDaJornada =
-  | "campanha"
+  | "campanha_meta"
+  | "campanha_google"
   | "google_gclid"
   | "meta_fbclid"
   | "meta_install"
@@ -47,7 +56,9 @@ export const CANAIS_DA_JORNADA: readonly { canal: CanalDaJornada; rotulo: string
   { canal: "organico", rotulo: "Orgânico ou cupom" },
   { canal: "sem_ios", rotulo: "Sem atribuição — iOS" },
   { canal: "sem_android", rotulo: "Sem atribuição — Android/outro" },
-  { canal: "campanha", rotulo: "Campanha identificável (Meta + Google)" },
+  // Story 42.12 (D8): o Google não manda id de campanha — o rótulo diz o que o dado sustenta.
+  { canal: "campanha_meta", rotulo: "Meta — campanha identificada" },
+  { canal: "campanha_google", rotulo: "Google — identificado pelo app" },
 ];
 
 /** O que o banco devolve por usuário — sem o id. */
@@ -61,7 +72,8 @@ export interface SinaisDoUsuario {
   pagou: boolean;
   receitaUsd: number;
   /** Casamentos de atribuição em QUALQUER evento dele (Dev Notes → Regra de canal medida). */
-  campanha: boolean;
+  campanhaMeta: boolean;
+  campanhaGoogle: boolean;
   gclid: boolean;
   fbclid: boolean;
   installReferrer: boolean;
@@ -71,12 +83,14 @@ export interface SinaisDoUsuario {
 
 /**
  * AC3 — o canal do usuário: a PRIMEIRA regra que casa, nesta prioridade —
- * campanha identificável > `gclid` > `fbclid` > `ig4a`/`fb4a` > orgânico ou
- * cupom > sem atribuição iOS > sem atribuição Android/outro. Um usuário com
- * `gclid` e `ig4a` é Google.
+ * campanha identificável (Meta ou Google; as duas = conflito) > `gclid` >
+ * `fbclid` > `ig4a`/`fb4a` > orgânico ou cupom > sem atribuição iOS > sem
+ * atribuição Android/outro. Um usuário com `gclid` e `ig4a` é Google.
  */
-export function canalDoUsuario(s: Pick<SinaisDoUsuario, "campanha" | "gclid" | "fbclid" | "installReferrer" | "organico" | "ios">): CanalDaJornada {
-  if (s.campanha) return "campanha";
+export function canalDoUsuario(s: Pick<SinaisDoUsuario, "campanhaMeta" | "campanhaGoogle" | "gclid" | "fbclid" | "installReferrer" | "organico" | "ios">): CanalDaJornada | "conflito" {
+  if (s.campanhaMeta && s.campanhaGoogle) return "conflito";
+  if (s.campanhaMeta) return "campanha_meta";
+  if (s.campanhaGoogle) return "campanha_google";
   if (s.gclid) return "google_gclid";
   if (s.fbclid) return "meta_fbclid";
   if (s.installReferrer) return "meta_install";
@@ -115,15 +129,20 @@ function somar(c: ContagemDaJornada, u: SinaisDoUsuario): void {
 /**
  * AC2 — coorte e contagem. Entra quem teve o PRIMEIRO evento na janela
  * (`primeiroEvento >= desde`); cada usuário conta uma vez por etapa e cai em
- * um canal só. As 7 linhas saem sempre, na ordem de exibição, mesmo zeradas —
+ * um canal só. As 8 linhas saem sempre, na ordem de exibição, mesmo zeradas —
  * canal sem ninguém é "0", não "some". A receita fecha em centavos.
+ *
+ * Story 42.12 (D7): o `conflito` não é linha — sai à parte e ENTRA no Total,
+ * para a soma visível (linhas + conflito) fechar com ele.
  */
-export function montarJornada(usuarios: readonly SinaisDoUsuario[], desde: Date): { linhas: LinhaDaJornada[]; total: ContagemDaJornada } {
+export function montarJornada(usuarios: readonly SinaisDoUsuario[], desde: Date): { linhas: LinhaDaJornada[]; conflito: ContagemDaJornada; total: ContagemDaJornada } {
   const porCanal = new Map<CanalDaJornada, ContagemDaJornada>(CANAIS_DA_JORNADA.map((c) => [c.canal, zerada()]));
+  const conflito = zerada();
   const total = zerada();
   for (const u of usuarios) {
     if (!u.primeiroEvento || u.primeiroEvento.getTime() < desde.getTime()) continue;
-    somar(porCanal.get(canalDoUsuario(u))!, u);
+    const canal = canalDoUsuario(u);
+    somar(canal === "conflito" ? conflito : porCanal.get(canal)!, u);
     somar(total, u);
   }
   const centavos = (v: number) => Math.round(v * 100) / 100;
@@ -132,6 +151,7 @@ export function montarJornada(usuarios: readonly SinaisDoUsuario[], desde: Date)
       const c = porCanal.get(canal)!;
       return { canal, rotulo, ...c, receitaUsd: centavos(c.receitaUsd) };
     }),
+    conflito: { ...conflito, receitaUsd: centavos(conflito.receitaUsd) },
     total: { ...total, receitaUsd: centavos(total.receitaUsd) },
   };
 }
@@ -170,17 +190,22 @@ export const COLUNAS_DA_JORNADA = {
   // PO-01: pagou = evento de REVENUE_EVENT_TYPES com revenue_usd > 0 (o teste de US$ 0 e o promocional de US$ 0 ficam fora)
   pagou: algum(sql`${c.eventType} IN (${REVENUE}) AND ${c.revenueUsd} > 0`),
   receita_usd: sql`coalesce(sum(${c.revenueUsd}) FILTER (WHERE ${c.eventType} IN (${REVENUE}) AND ${c.revenueUsd} > 0), 0)::float8`,
-  // Regra de canal medida (Dev Notes, PO-02) — cada uma em QUALQUER evento do usuário
-  c_campanha: algum(
-    sql`${c.utmCampaign} LIKE '1202%' OR ${c.utmContent} LIKE '1202%' OR ${c.utmMedium} LIKE '1202%' OR ${c.utmSource} = 'google-ads' OR ${c.utmCampaign} ~ '^2[0-9]{10}$'`,
+  // Regra de canal medida (Dev Notes, PO-02) — cada uma em QUALQUER evento do usuário.
+  // Story 42.12 (AC4): a antiga `c_campanha` dividida na parte Meta e na parte
+  // Google, cada uma com os atributos novos lidos como `readSubscriberAttribute`
+  // (`atributo`, PO-01 — chave presente não basta, a macro `{{…}}` fica fora).
+  c_campanha_meta: algum(
+    sql`${c.utmCampaign} LIKE '1202%' OR ${c.utmContent} LIKE '1202%' OR ${c.utmMedium} LIKE '1202%' OR ${atributo("ad_network")} = 'meta' OR ${atributo("meta_campaign_id")} IS NOT NULL OR ${atributo("meta_adset_id")} IS NOT NULL OR ${atributo("meta_ad_id")} IS NOT NULL`,
+  ),
+  c_campanha_google: algum(
+    sql`${c.utmSource} = 'google-ads' OR ${c.utmCampaign} ~ '^2[0-9]{10}$' OR ${atributo("ad_network")} = 'google'`,
   ),
   c_gclid: algum(sql`${c.gclid} IS NOT NULL`),
   c_fbclid: algum(sql`${c.fbclid} IS NOT NULL`),
   c_install: algum(sql`${c.utmCampaign} IN ('ig4a', 'fb4a') OR ${c.utmSource} IN ('apps.instagram.com', 'apps.facebook.com')`),
   // A lista de valores orgânicos é a de 23/09: valor novo de utm_source cai em iOS/Android até alguém incluí-lo.
-  c_organico: algum(
-    sql`${c.utmMedium} = 'organic' OR ${c.utmSource} IN ('ig', 'website', 'google', 'chatgpt.com', 'latam_Med', 'google-play') OR ${c.utmContent} = 'link_in_bio' OR jsonb_exists(${evento}->'subscriber_attributes', 'coupom_code')`,
-  ),
+  // Story 42.12: a condição mora em `vendas-por-canal-lyrio.ts` — a quebra de vendas usa a MESMA.
+  c_organico: algum(CONDICAO_ORGANICO),
   // PO-04: `platform` vem em 100% dos eventos de paywall (probe de 23/09) — iOS e Android ficam separados
   c_ios: algum(sql`upper(${evento}->>'platform') = 'IOS' OR ${c.store} = 'APP_STORE'`),
 } as const;
@@ -225,7 +250,8 @@ export function lerLinhaDaJornada(r: Record<string, unknown>): SinaisDoUsuario {
     iniciouTeste: r.iniciou_teste === true,
     pagou: r.pagou === true,
     receitaUsd: numero(r.receita_usd),
-    campanha: r.c_campanha === true,
+    campanhaMeta: r.c_campanha_meta === true,
+    campanhaGoogle: r.c_campanha_google === true,
     gclid: r.c_gclid === true,
     fbclid: r.c_fbclid === true,
     installReferrer: r.c_install === true,

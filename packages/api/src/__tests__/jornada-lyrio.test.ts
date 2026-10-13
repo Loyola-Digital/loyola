@@ -35,10 +35,20 @@ function parametroDe(q: { sql: string; params: unknown[] }, alvo: string): unkno
 function clausulaWhere(texto: string): string {
   return texto.slice(texto.search(/ where /i), texto.search(/ group by /i));
 }
+/** Story 42.12 — a expressão de UMA coluna do SELECT: do `coalesce(bool_or(` dela até o `AS "alias"`. */
+function expressaoDoAlias(texto: string, alias: string): string {
+  const fim = texto.indexOf(` AS "${alias}"`);
+  const inicio = texto.lastIndexOf("coalesce(bool_or(", fim);
+  return fim < 0 || inicio < 0 ? "" : texto.slice(inicio, fim);
+}
+/** Os valores dos `$n` que aparecem num trecho do SQL. */
+function parametrosDoTrecho(q: { params: unknown[] }, trecho: string): unknown[] {
+  return [...new Set([...trecho.matchAll(/\$(\d+)/g)].map((m) => q.params[Number(m[1]) - 1]))];
+}
 const DESDE = new Date("2026-06-25T12:00:00.000Z");
 const STAGE = "54366a93-ff30-4e2e-9542-c44e55e9bf71";
 
-const semCanal = { campanha: false, gclid: false, fbclid: false, installReferrer: false, organico: false, ios: false };
+const semCanal = { campanhaMeta: false, campanhaGoogle: false, gclid: false, fbclid: false, installReferrer: false, organico: false, ios: false };
 const usuario = (p: Partial<SinaisDoUsuario> = {}): SinaisDoUsuario => ({
   primeiroEvento: new Date("2026-09-01T10:00:00.000Z"),
   viuPaywall: true,
@@ -56,13 +66,18 @@ describe("canalDoUsuario — prioridade declarada (AC3)", () => {
     expect(canalDoUsuario({ ...semCanal, gclid: true, installReferrer: true })).toBe("google_gclid");
   });
   it("cada degrau vence os de baixo: campanha > gclid > fbclid > ig4a/fb4a > orgânico > iOS > Android/outro", () => {
-    expect(canalDoUsuario({ campanha: true, gclid: true, fbclid: true, installReferrer: true, organico: true, ios: true })).toBe("campanha");
+    const tudo = { gclid: true, fbclid: true, installReferrer: true, organico: true, ios: true };
+    expect(canalDoUsuario({ campanhaMeta: true, campanhaGoogle: false, ...tudo })).toBe("campanha_meta");
+    expect(canalDoUsuario({ campanhaMeta: false, campanhaGoogle: true, ...tudo })).toBe("campanha_google");
     expect(canalDoUsuario({ ...semCanal, gclid: true, fbclid: true, organico: true, ios: true })).toBe("google_gclid");
     expect(canalDoUsuario({ ...semCanal, fbclid: true, installReferrer: true })).toBe("meta_fbclid");
     expect(canalDoUsuario({ ...semCanal, installReferrer: true, organico: true })).toBe("meta_install");
     expect(canalDoUsuario({ ...semCanal, organico: true, ios: true })).toBe("organico");
     expect(canalDoUsuario({ ...semCanal, ios: true })).toBe("sem_ios");
     expect(canalDoUsuario(semCanal)).toBe("sem_android");
+  });
+  it("Story 42.12 (D7) — campanha da Meta E do Google no mesmo usuário → conflito, nunca um dos dois", () => {
+    expect(canalDoUsuario({ ...semCanal, campanhaMeta: true, campanhaGoogle: true, gclid: true })).toBe("conflito");
   });
 });
 
@@ -97,7 +112,7 @@ describe("montarJornada — coorte e contagem (AC2)", () => {
     const r = montarJornada([usuario({ iniciou: true, iniciouTeste: true, pagou: false, receitaUsd: 7 }), usuario({ pagou: true, receitaUsd: 0.1 }), usuario({ pagou: true, receitaUsd: 0.2 })], DESDE);
     expect(r.total).toMatchObject({ pagou: 2, receitaUsd: 0.3, iniciouTeste: 1 });
   });
-  it("as 7 linhas saem sempre, na ordem da tabela medida, mesmo zeradas", () => {
+  it("as 8 linhas saem sempre, na ordem da tabela medida, mesmo zeradas — as duas de campanha no lugar da antiga (42.12 PO-04, D8)", () => {
     const r = montarJornada([], DESDE);
     expect(r.linhas.map((l) => l.rotulo)).toEqual([
       "Google (gclid)",
@@ -106,13 +121,32 @@ describe("montarJornada — coorte e contagem (AC2)", () => {
       "Orgânico ou cupom",
       "Sem atribuição — iOS",
       "Sem atribuição — Android/outro",
-      "Campanha identificável (Meta + Google)",
+      "Meta — campanha identificada",
+      "Google — identificado pelo app",
     ]);
     expect(r.linhas.every((l) => l.novos === 0 && l.receitaUsd === 0)).toBe(true);
-    expect(CANAIS_DA_JORNADA).toHaveLength(7);
+    expect(CANAIS_DA_JORNADA).toHaveLength(8);
+    expect(r.conflito).toMatchObject({ novos: 0, receitaUsd: 0 });
+  });
+  it("Story 42.12 (AC4) — as duas linhas novas somam o que a antiga contava; o conflito fica à parte e ENTRA no Total", () => {
+    const us = [
+      usuario({ campanhaMeta: true, installReferrer: true, pagou: true, receitaUsd: 3.01 }),
+      usuario({ campanhaGoogle: true, gclid: true, pagou: true, receitaUsd: 5 }),
+      usuario({ campanhaMeta: true, campanhaGoogle: true }),
+      usuario({ gclid: true }),
+    ];
+    const r = montarJornada(us, DESDE);
+    const de = (canal: string) => r.linhas.find((l) => l.canal === canal)!;
+    expect(de("campanha_meta")).toMatchObject({ novos: 1, receitaUsd: 3.01 });
+    expect(de("campanha_google")).toMatchObject({ novos: 1, receitaUsd: 5 });
+    // PO-04: quem tem campanha do Google sai de "Google (gclid)" — é a linha nova que o pega
+    expect(de("google_gclid").novos).toBe(1);
+    expect(r.conflito.novos).toBe(1);
+    expect(r.total.novos).toBe(4);
+    expect(r.linhas.reduce((a, l) => a + l.novos, 0) + r.conflito.novos).toBe(r.total.novos);
   });
   it("lerLinhaDaJornada: timestamp em string, numeric em string, booleanos do pg", () => {
-    const u = lerLinhaDaJornada({ primeiro_evento: "2026-09-01T10:00:00Z", viu_paywall: true, interagiu: false, iniciou: true, iniciou_teste: true, pagou: true, receita_usd: "12.3400", c_campanha: false, c_gclid: true, c_fbclid: false, c_install: true, c_organico: false, c_ios: false });
+    const u = lerLinhaDaJornada({ primeiro_evento: "2026-09-01T10:00:00Z", viu_paywall: true, interagiu: false, iniciou: true, iniciou_teste: true, pagou: true, receita_usd: "12.3400", c_campanha_meta: false, c_campanha_google: false, c_gclid: true, c_fbclid: false, c_install: true, c_organico: false, c_ios: false });
     expect(u).toMatchObject({ primeiroEvento: new Date("2026-09-01T10:00:00Z"), iniciou: true, pagou: true, receitaUsd: 12.34, gclid: true, installReferrer: true });
     expect(lerLinhaDaJornada({ primeiro_evento: null, receita_usd: null }).receitaUsd).toBe(0);
   });
@@ -157,12 +191,20 @@ describe("o SQL da jornada — lido pelo PgDialect (PO-08)", () => {
   });
   it("QA 42.11 TEST-002 — cada condição de canal amarrada ao SEU alias (trocar duas derruba)", () => {
     const col = (cond: string, alias: string) => `coalesce(bool_or(${cond}), false) AS "${alias}"`;
-    expect(q.sql).toContain(
-      col(
-        `"revenuecat_sales"."utm_campaign" LIKE '1202%' OR "revenuecat_sales"."utm_content" LIKE '1202%' OR "revenuecat_sales"."utm_medium" LIKE '1202%' OR "revenuecat_sales"."utm_source" = 'google-ads' OR "revenuecat_sales"."utm_campaign" ~ '^2[0-9]{10}$'`,
-        "c_campanha",
-      ),
-    );
+    // Story 42.12 (AC4): a antiga c_campanha dividida — cada metade com a sua parte da regra antiga e os atributos novos
+    const meta = expressaoDoAlias(q.sql, "c_campanha_meta");
+    expect(meta).toMatch(/^coalesce\(bool_or\("revenuecat_sales"\."utm_campaign" LIKE '1202%' OR "revenuecat_sales"\."utm_content" LIKE '1202%' OR "revenuecat_sales"\."utm_medium" LIKE '1202%' OR /);
+    expect(meta).toContain("= 'meta'");
+    expect(meta).not.toMatch(/google/);
+    expect(parametrosDoTrecho(q, meta).sort()).toEqual(["ad_network", "meta_ad_id", "meta_adset_id", "meta_campaign_id"]);
+    const google = expressaoDoAlias(q.sql, "c_campanha_google");
+    expect(google).toMatch(/^coalesce\(bool_or\("revenuecat_sales"\."utm_source" = 'google-ads' OR "revenuecat_sales"\."utm_campaign" ~ '\^2\[0-9\]\{10\}\$' OR /);
+    expect(google).toContain("= 'google'");
+    expect(google).not.toMatch(/1202|'meta'/);
+    expect(parametrosDoTrecho(q, google)).toEqual(["ad_network"]);
+    // PO-01: os atributos são lidos com a semântica de readSubscriberAttribute (macro e "(not set)" fora), não por chave presente
+    expect(meta).toContain(`'^[{][{].*[}][}]$'`);
+    expect(meta).not.toContain("jsonb_exists");
     expect(q.sql).toContain(col(`"revenuecat_sales"."gclid" IS NOT NULL`, "c_gclid"));
     expect(q.sql).toContain(col(`"revenuecat_sales"."fbclid" IS NOT NULL`, "c_fbclid"));
     expect(q.sql).toContain(
@@ -170,18 +212,21 @@ describe("o SQL da jornada — lido pelo PgDialect (PO-08)", () => {
     );
     expect(q.sql).toContain(
       col(
-        `"revenuecat_sales"."utm_medium" = 'organic' OR "revenuecat_sales"."utm_source" IN ('ig', 'website', 'google', 'chatgpt.com', 'latam_Med', 'google-play') OR "revenuecat_sales"."utm_content" = 'link_in_bio' OR jsonb_exists("revenuecat_sales"."payload"->'event'->'subscriber_attributes', 'coupom_code')`,
+        // Story 42.12: a condição mora em vendas-por-canal-lyrio.ts, entre parênteses (a mesma da quebra de vendas)
+        `("revenuecat_sales"."utm_medium" = 'organic' OR "revenuecat_sales"."utm_source" IN ('ig', 'website', 'google', 'chatgpt.com', 'latam_Med', 'google-play') OR "revenuecat_sales"."utm_content" = 'link_in_bio' OR jsonb_exists("revenuecat_sales"."payload"->'event'->'subscriber_attributes', 'coupom_code'))`,
         "c_organico",
       ),
     );
     expect(q.sql).toContain(col(`upper("revenuecat_sales"."payload"->'event'->>'platform') = 'IOS' OR "revenuecat_sales"."store" = 'APP_STORE'`, "c_ios"));
   });
   it("QA 42.11 TEST-002 — o fio alias → sinal → canal: cada alias sozinho cai no canal dele", () => {
-    const soEste = (alias: string) =>
+    const soEste = (...aliases: string[]) =>
       canalDoUsuario(
-        lerLinhaDaJornada({ c_campanha: false, c_gclid: false, c_fbclid: false, c_install: false, c_organico: false, c_ios: false, [alias]: true }),
+        lerLinhaDaJornada({ c_campanha_meta: false, c_campanha_google: false, c_gclid: false, c_fbclid: false, c_install: false, c_organico: false, c_ios: false, ...Object.fromEntries(aliases.map((a) => [a, true])) }),
       );
-    expect(soEste("c_campanha")).toBe("campanha");
+    expect(soEste("c_campanha_meta")).toBe("campanha_meta");
+    expect(soEste("c_campanha_google")).toBe("campanha_google");
+    expect(soEste("c_campanha_meta", "c_campanha_google")).toBe("conflito");
     expect(soEste("c_gclid")).toBe("google_gclid");
     expect(soEste("c_fbclid")).toBe("meta_fbclid");
     expect(soEste("c_install")).toBe("meta_install");
@@ -189,7 +234,7 @@ describe("o SQL da jornada — lido pelo PgDialect (PO-08)", () => {
     expect(soEste("c_ios")).toBe("sem_ios");
     expect(soEste("nenhum")).toBe("sem_android");
     // e todo alias que a leitura consome existe no SELECT
-    for (const alias of ["c_campanha", "c_gclid", "c_fbclid", "c_install", "c_organico", "c_ios"]) expect(select).toContain(`AS "${alias}"`);
+    for (const alias of ["c_campanha_meta", "c_campanha_google", "c_gclid", "c_fbclid", "c_install", "c_organico", "c_ios"]) expect(select).toContain(`AS "${alias}"`);
   });
   it("canais com os valores medidos — a lista de orgânicos é FECHADA (valor novo de utm_source cai em iOS/Android)", () => {
     expect(q.sql).toContain(`"revenuecat_sales"."utm_source" IN ('ig', 'website', 'google', 'chatgpt.com', 'latam_Med', 'google-play')`);
@@ -260,7 +305,7 @@ async function montar(banco: ReturnType<typeof bancoFalso>) {
 }
 
 describe("GET …/revenuecat/jornada — o fio da rota (AC5)", () => {
-  const linha = { primeiro_evento: new Date(), viu_paywall: true, interagiu: true, iniciou: true, iniciou_teste: true, pagou: true, receita_usd: 9.99, c_campanha: false, c_gclid: true, c_fbclid: false, c_install: true, c_organico: false, c_ios: false };
+  const linha = { primeiro_evento: new Date(), viu_paywall: true, interagiu: true, iniciou: true, iniciou_teste: true, pagou: true, receita_usd: 9.99, c_campanha_meta: false, c_campanha_google: false, c_gclid: true, c_fbclid: false, c_install: true, c_organico: false, c_ios: false };
 
   it("executa a consulta com o stageId DA ROTA, a janela de `days` e a coorte; devolve só contagens", async () => {
     const banco = bancoFalso({ linhas: [linha], desde: new Date("2026-08-10T20:19:27.113Z") });
@@ -276,11 +321,14 @@ describe("GET …/revenuecat/jornada — o fio da rota (AC5)", () => {
     expect(clausulaWhere(jornada.sql)).not.toMatch(/event_at/i);
     expect(jornada.sql.match(/event_at/g)).toHaveLength(2);
     const corpo = r.json();
-    expect(corpo).toMatchObject({ days: 30, assinaturaDesde: "2026-08-10" });
+    expect(corpo).toMatchObject({ days: 30, assinaturaDesde: "2026-08-10", atributosDesde: "2026-08-10", conflito: { novos: 0 } });
     expect(corpo.total).toMatchObject({ novos: 1, iniciou: 1, pagou: 1, receitaUsd: 9.99 });
     expect(corpo.linhas.find((l: { canal: string }) => l.canal === "google_gclid").novos).toBe(1);
     // AC5: nenhum PII na resposta — só as chaves conhecidas
-    expect(Object.keys(corpo).sort()).toEqual(["assinaturaDesde", "days", "desde", "linhas", "total"]);
+    expect(Object.keys(corpo).sort()).toEqual(["assinaturaDesde", "atributosDesde", "conflito", "days", "desde", "linhas", "total"]);
+    // Story 42.12: a terceira consulta (atributosDesde) é da MESMA etapa
+    const atributos = banco.executados.find((e) => /meta_campaign_id/.test(JSON.stringify(e.params)) && !/group by/i.test(e.sql))!;
+    expect(parametroDe(atributos, '"revenuecat_sales"."stage_id"')).toBe(STAGE);
     expect(JSON.stringify(corpo)).not.toMatch(/app_user_id|appUserId|email/i);
     // a guarda: getProjectAccess (projects) E getStage (funnel_stages)
     expect(banco.consultados).toEqual(["projects", "funnel_stages"]);
