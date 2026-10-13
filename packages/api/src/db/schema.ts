@@ -1966,6 +1966,16 @@ export const kiwifyConnections = pgTable(
     // projectId no path; a autenticação do POST é a comparação constant-time deste
     // token. Gerado sob demanda (crypto.randomBytes). NUNCA logar.
     webhookToken: text("webhook_token").unique(),
+    /**
+     * Até onde a sincronização de vendas já foi (migration 0171).
+     *
+     * Fica aqui, e não em tabela própria, porque é 1:1 com a conexão e morre
+     * junto com ela. `aaaa-mm-dd`, como a API da Kiwify pede.
+     */
+    vendasSyncDe: varchar("vendas_sync_de", { length: 10 }),
+    vendasSyncAte: varchar("vendas_sync_ate", { length: 10 }),
+    vendasSyncEm: timestamp("vendas_sync_em", { withTimezone: true }),
+    vendasSyncTotal: integer("vendas_sync_total"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -1974,6 +1984,86 @@ export const kiwifyConnections = pgTable(
       .notNull(),
   },
   (table) => [index("idx_kiwify_connections_project").on(table.projectId)],
+);
+
+/**
+ * As vendas da Kiwify, cacheadas (migration 0171).
+ *
+ * ## Por que cache e não consulta ao vivo
+ *
+ * `/v1/sales` exige janela e tem teto de **90 dias** por consulta. Dois anos de
+ * perpétuo são ~8 chamadas paginadas, e fazer isso a cada abertura de tela é
+ * lento e estoura o rate limit. Mesmo padrão do Meta: a sincronização é a única
+ * que fala com a API, a tela lê o banco.
+ *
+ * ## Por que a chave é (projeto, venda)
+ *
+ * `sale_id` é único na Kiwify, e o upsert por ele deixa a sincronização
+ * repetível: rodar a mesma janela de novo CORRIGE status e valor — a venda sai
+ * de `waiting_payment` para `paid`, e depois pode ser reembolsada — sem
+ * duplicar nada.
+ */
+export const kiwifySales = pgTable(
+  "kiwify_sales",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    saleId: varchar("sale_id", { length: 64 }).notNull(),
+
+    productId: varchar("product_id", { length: 64 }),
+    productName: text("product_name"),
+    /**
+     * A OFERTA do produto ("Lote 1", "Lote Promocional", "OrderBump - DGPG05").
+     *
+     * A venda traz, mas `/v1/products` NÃO lista as ofertas — então a lista
+     * para escolher sai daqui, das vendas que existem. Nulo é caso REAL: 91 das
+     * 574 vendas medidas em 13/10/2026 não tinham oferta.
+     */
+    offerId: varchar("offer_id", { length: 64 }),
+    offerName: text("offer_name"),
+
+    status: varchar("status", { length: 24 }),
+    paymentMethod: varchar("payment_method", { length: 24 }),
+    /**
+     * Centavos, como a API manda.
+     *
+     * ⚠️ `liquido` NÃO é `bruto − taxa`: numa venda real de 13/10/2026, bruto
+     * 4490, taxa 473 e líquido 2008 — o resto é divisão com co-produtor ou
+     * afiliado. Calcular à mão daria R$ 40,17 onde o produtor recebeu R$ 20,08.
+     */
+    brutoCentavos: integer("bruto_centavos"),
+    liquidoCentavos: integer("liquido_centavos"),
+    taxaCentavos: integer("taxa_centavos"),
+    currency: varchar("currency", { length: 8 }),
+    installments: integer("installments"),
+    /** Vazio em venda nova, preenchido em renovação. */
+    parentOrderId: varchar("parent_order_id", { length: 64 }),
+
+    criadaEm: timestamp("criada_em", { withTimezone: true }),
+    aprovadaEm: timestamp("aprovada_em", { withTimezone: true }),
+    reembolsadaEm: timestamp("reembolsada_em", { withTimezone: true }),
+
+    /** ⚠️ PII. O casamento da etapa é por e-mail, igual ao da planilha. */
+    customerEmail: text("customer_email"),
+    customerName: text("customer_name"),
+
+    utmSource: text("utm_source"),
+    utmMedium: text("utm_medium"),
+    utmCampaign: text("utm_campaign"),
+    utmContent: text("utm_content"),
+    utmTerm: text("utm_term"),
+    sck: text("sck"),
+
+    sincronizadaEm: timestamp("sincronizada_em", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.saleId] }),
+    index("idx_kiwify_sales_recorte").on(table.projectId, table.productId, table.criadaEm),
+    index("idx_kiwify_sales_email").on(table.projectId, table.customerEmail),
+  ],
 );
 
 // ============================================================
@@ -2062,8 +2152,29 @@ export const kiwifyStageConfigs = pgTable(
       .references(() => funnelStages.id, { onDelete: "cascade" }),
     /** Ids de produto da Kiwify. Vazio = nenhum produto escolhido ainda. */
     productIds: jsonb("product_ids").$type<string[]>().notNull().default([]),
-    /** aaaa-mm-dd — a partir de quando contar. */
-    startDate: varchar("start_date", { length: 10 }).notNull(),
+    /**
+     * De onde a etapa tira as vendas (migration 0171).
+     *
+     * `planilha` (padrão) = tudo como antes. `kiwify` = lê `kiwify_sales`, e a
+     * planilha da etapa é ignorada — foi a decisão: a planilha é cópia do que a
+     * Kiwify já sabe, e somar as duas contaria a mesma venda duas vezes.
+     */
+    fonteDeVendas: varchar("fonte_de_vendas", { length: 10 }).notNull().default("planilha"),
+    /**
+     * Ofertas escolhidas. **Vazio = TODAS** as ofertas dos produtos escolhidos.
+     *
+     * Vazio não é "nenhuma": ligar a fonte sem escolher oferta zeraria a etapa,
+     * e o padrão tem de ser o que não surpreende. A string `sem-oferta`
+     * representa a venda sem oferta alguma — precisa ser escolhível, senão
+     * desaparece do recorte em silêncio.
+     */
+    offerIds: jsonb("offer_ids").$type<string[]>().notNull().default([]),
+    /**
+     * aaaa-mm-dd — a partir de quando contar. Nulo = tudo que a sincronização
+     * tem (a 0171 soltou o NOT NULL: como fonte de vendas a data é opcional,
+     * e exigi-la impediria gravar o recorte antes de alguém decidi-la).
+     */
+    startDate: varchar("start_date", { length: 10 }),
     /**
      * Preço de UM ingresso. Com ele, `product_base_price ÷ unitário` revela
      * quantos ingressos a venda tem — a Kiwify não manda essa quantidade, e uma

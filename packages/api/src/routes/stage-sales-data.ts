@@ -19,6 +19,7 @@ import {
   manualSales,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
+import { fontesDeVendaDaEtapa } from "../services/kiwify-vendas-cache.js";
 import { temDashboardDeVendas } from "../utils/stage-types.js";
 import { juntarPorComprador } from "../utils/comprador.js";
 import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
@@ -404,15 +405,20 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       // agrega. Pra capture/main_product há no máximo 1 planilha. Story 18.38:
       // subtype pode ser CSV ("main_product,tmb") → agrega múltiplos subtypes.
       const requestedSubtypes = parseSubtypes(query.data.subtype);
-      const spreadsheets = await fastify.db
-        .select()
-        .from(stageSalesSpreadsheets)
-        .where(
-          and(
-            eq(stageSalesSpreadsheets.stageId, params.data.stageId),
-            inArray(stageSalesSpreadsheets.subtype, requestedSubtypes)
-          )
-        );
+      const spreadsheets = await fontesDeVendaDaEtapa(
+        fastify.db,
+        params.data.projectId,
+        params.data.stageId,
+        await fastify.db
+          .select()
+          .from(stageSalesSpreadsheets)
+          .where(
+            and(
+              eq(stageSalesSpreadsheets.stageId, params.data.stageId),
+              inArray(stageSalesSpreadsheets.subtype, requestedSubtypes)
+            )
+          ),
+      );
 
       if (spreadsheets.length === 0) {
         // Sem planilha ainda pode haver venda: na Captação de Evento o ingresso
@@ -539,7 +545,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
 
         let sheetData;
         try {
-          sheetData = await readSheetData(spreadsheet.spreadsheetId, spreadsheet.sheetName);
+          sheetData = spreadsheet.dados ?? (await readSheetData(spreadsheet.spreadsheetId, spreadsheet.sheetName));
         } catch {
           continue; // se uma planilha falha, pula e segue agregando as outras
         }
@@ -1341,10 +1347,15 @@ export default fp(async function stageSalesDataRoutes(fastify) {
 
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-      const sheets = await fastify.db
-        .select()
-        .from(stageSalesSpreadsheets)
-        .where(eq(stageSalesSpreadsheets.stageId, params.data.stageId));
+      const sheets = await fontesDeVendaDaEtapa(
+        fastify.db,
+        params.data.projectId,
+        params.data.stageId,
+        await fastify.db
+          .select()
+          .from(stageSalesSpreadsheets)
+          .where(eq(stageSalesSpreadsheets.stageId, params.data.stageId)),
+      );
 
       const captureSheets = sheets.filter((s) => s.subtype === "capture");
       const mainSheets = sheets.filter((s) => s.subtype === "main_product");
@@ -1361,7 +1372,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           const mapping = sheet.columnMapping as { email: string; valorBruto?: string };
           let sheetData;
           try {
-            sheetData = await readSheetData(sheet.spreadsheetId, sheet.sheetName);
+            sheetData = sheet.dados ?? (await readSheetData(sheet.spreadsheetId, sheet.sheetName));
           } catch {
             continue;
           }
@@ -1451,16 +1462,21 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
       if (!temDashboardDeVendas(stage.stageType)) return empty;
 
-      const [spreadsheet] = await fastify.db
-        .select()
-        .from(stageSalesSpreadsheets)
-        .where(
-          and(
-            eq(stageSalesSpreadsheets.stageId, params.data.stageId),
-            eq(stageSalesSpreadsheets.subtype, query.data.subtype)
+      const [spreadsheet] = await fontesDeVendaDaEtapa(
+        fastify.db,
+        params.data.projectId,
+        params.data.stageId,
+        await fastify.db
+          .select()
+          .from(stageSalesSpreadsheets)
+          .where(
+            and(
+              eq(stageSalesSpreadsheets.stageId, params.data.stageId),
+              eq(stageSalesSpreadsheets.subtype, query.data.subtype)
+            )
           )
-        )
-        .limit(1);
+          .limit(1),
+      );
 
       if (!spreadsheet) return empty;
 
@@ -1476,7 +1492,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
 
       let sheetData;
       try {
-        sheetData = await readSheetData(spreadsheet.spreadsheetId, spreadsheet.sheetName);
+        sheetData = spreadsheet.dados ?? (await readSheetData(spreadsheet.spreadsheetId, spreadsheet.sheetName));
       } catch {
         return { ...empty, hasMapping: true as const };
       }
@@ -1582,15 +1598,20 @@ export default fp(async function stageSalesDataRoutes(fastify) {
 
       if (!temDashboardDeVendas(stage.stageType)) return { byDay: {} as Record<string, number>, semDados: true };
 
-      const spreadsheets = await fastify.db
-        .select()
-        .from(stageSalesSpreadsheets)
-        .where(
-          and(
-            eq(stageSalesSpreadsheets.stageId, params.data.stageId),
-            eq(stageSalesSpreadsheets.subtype, query.data.subtype)
-          )
-        );
+      const spreadsheets = await fontesDeVendaDaEtapa(
+        fastify.db,
+        params.data.projectId,
+        params.data.stageId,
+        await fastify.db
+          .select()
+          .from(stageSalesSpreadsheets)
+          .where(
+            and(
+              eq(stageSalesSpreadsheets.stageId, params.data.stageId),
+              eq(stageSalesSpreadsheets.subtype, query.data.subtype)
+            )
+          ),
+      );
 
       if (spreadsheets.length === 0) return { byDay: {} as Record<string, number>, semDados: true };
 
@@ -1627,7 +1648,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
       for (const spreadsheet of spreadsheets) {
         let sheetData;
         try {
-          sheetData = await readSheetData(spreadsheet.spreadsheetId, spreadsheet.sheetName);
+          sheetData = spreadsheet.dados ?? (await readSheetData(spreadsheet.spreadsheetId, spreadsheet.sheetName));
         } catch {
           continue;
         }
