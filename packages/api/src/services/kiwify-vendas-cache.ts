@@ -25,7 +25,7 @@
  * isso que a sincronização pode ser burra e repetitiva sem causar dano.
  */
 
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import {
   kiwifyConnections,
@@ -49,6 +49,17 @@ export const SEM_OFERTA = "sem-oferta";
 const PADRAO_DIAS_PARA_TRAS = 365;
 
 export class KiwifyIndisponivel extends Error {}
+
+/**
+ * A data que vale para recortar: a de APROVAÇÃO, senão a de criação.
+ *
+ * É a mesma regra de `dataDaVenda` no adaptador, de propósito. Se o corte
+ * usasse `criada_em` e o agregador datasse pela aprovação, uma venda criada no
+ * dia 30 e paga no dia 2 ficaria fora de uma etapa que começa no dia 1 — e
+ * dentro do mês em que o dinheiro entrou. Duas regras para a mesma data é como
+ * dois totais para a mesma pergunta aparecem.
+ */
+const DATA_DA_VENDA = sql`coalesce(${kiwifySales.aprovadaEm}, ${kiwifySales.criadaEm})`;
 
 /** Só o que é venda de verdade. Reembolso e recusa não entram na conta. */
 export const STATUS_QUE_VALEM = new Set(["paid", "approved"]);
@@ -250,7 +261,16 @@ export async function ofertasDosProdutos(
   db: Database,
   projectId: string,
   productIds: string[],
-): Promise<{ id: string; nome: string; produto: string | null; vendas: number }[]> {
+): Promise<
+  {
+    id: string;
+    nome: string;
+    produto: string | null;
+    vendas: number;
+    de: string | null;
+    ate: string | null;
+  }[]
+> {
   const where = [eq(kiwifySales.projectId, projectId)];
   if (productIds.length > 0) where.push(inArray(kiwifySales.productId, productIds));
 
@@ -260,6 +280,11 @@ export async function ofertasDosProdutos(
       offerName: kiwifySales.offerName,
       produto: kiwifySales.productName,
       vendas: sql<number>`count(*)::int`,
+      // O período de cada oferta é o que permite reconhecer qual delas é de
+      // qual funil quando o mesmo produto vende em dois: "Lote 1" de setembro
+      // e "Lote 1" de um relançamento em março não se distinguem pelo nome.
+      de: sql<string | null>`min(${DATA_DA_VENDA})::date::text`,
+      ate: sql<string | null>`max(${DATA_DA_VENDA})::date::text`,
     })
     .from(kiwifySales)
     .where(and(...where))
@@ -271,6 +296,8 @@ export async function ofertasDosProdutos(
     nome: l.offerName ?? "(sem oferta)",
     produto: l.produto,
     vendas: Number(l.vendas),
+    de: l.de ?? null,
+    ate: l.ate ?? null,
   }));
 }
 
@@ -280,31 +307,79 @@ export async function ofertasDosProdutos(
  * `offerIds` vazio = TODAS as ofertas dos produtos. Não é "nenhuma": ligar a
  * fonte sem escolher oferta zeraria a etapa, e o padrão tem de ser o que não
  * surpreende.
+ *
+ * ## Por que a janela importa tanto quanto a oferta
+ *
+ * A oferta separa bem quando existe — nenhum `offer_id` medido aparece em mais
+ * de um produto. Mas 8 produtos vendem sem oferta nenhuma, e são os
+ * reaproveitados em vários funis (Churrasco com Netão: 216 vendas em 92 dias).
+ * Para esses, só a janela distingue um funil do outro.
  */
-export async function vendasDoRecorte(
-  db: Database,
-  projectId: string,
-  recorte: { productIds: string[]; offerIds: string[]; startDate?: string | null },
-): Promise<(typeof kiwifySales.$inferSelect)[]> {
-  const where = [eq(kiwifySales.projectId, projectId)];
+export interface RecorteDaEtapa {
+  productIds: string[];
+  offerIds: string[];
+  startDate?: string | null;
+  endDate?: string | null;
+}
+
+/**
+ * As condições do recorte, separadas da execução para poderem ser conferidas
+ * sem banco — é aqui que mora a decisão de qual venda é desta etapa.
+ */
+export function filtroDoRecorte(projectId: string, recorte: RecorteDaEtapa): SQL[] {
+  const where: SQL[] = [eq(kiwifySales.projectId, projectId)];
   if (recorte.productIds.length > 0) {
     where.push(inArray(kiwifySales.productId, recorte.productIds));
   }
   if (recorte.offerIds.length > 0) {
     const ids = recorte.offerIds.filter((o) => o !== SEM_OFERTA);
     const querSemOferta = recorte.offerIds.includes(SEM_OFERTA);
-    const condicoes = [];
+    const condicoes: SQL[] = [];
     if (ids.length > 0) condicoes.push(inArray(kiwifySales.offerId, ids));
     // `sem-oferta` é uma escolha explícita e vira `IS NULL` — sem isto, as 91
     // vendas sem oferta não teriam como ser incluídas de jeito nenhum.
-    if (querSemOferta) condicoes.push(isNull(kiwifySales.offerId));
+    if (querSemOferta) condicoes.push(isNull(kiwifySales.offerId) as unknown as SQL);
     if (condicoes.length === 1) where.push(condicoes[0]!);
     else if (condicoes.length > 1) where.push(or(...condicoes)!);
   }
   if (recorte.startDate) {
-    where.push(sql`${kiwifySales.criadaEm} >= ${`${recorte.startDate}T00:00:00Z`}`);
+    where.push(sql`${DATA_DA_VENDA} >= ${`${recorte.startDate}T00:00:00Z`}`);
   }
-  return db.select().from(kiwifySales).where(and(...where)).orderBy(kiwifySales.criadaEm);
+  if (recorte.endDate) {
+    // Fim INCLUSIVO: quem escreve 31/10 quer o dia 31 inteiro, então a
+    // comparação é com o começo do dia seguinte.
+    where.push(
+      sql`${DATA_DA_VENDA} < ${`${recorte.endDate}T00:00:00Z`}::timestamptz + interval '1 day'`,
+    );
+  }
+  return where;
+}
+
+/**
+ * As vendas do recorte de uma etapa.
+ *
+ * `offerIds` vazio = TODAS as ofertas dos produtos. Não é "nenhuma": ligar a
+ * fonte sem escolher oferta zeraria a etapa, e o padrão tem de ser o que não
+ * surpreende.
+ *
+ * ## Por que a janela importa tanto quanto a oferta
+ *
+ * A oferta separa bem quando existe — nenhum `offer_id` medido aparece em mais
+ * de um produto, e um produto com duas ofertas vendendo para dois funis se
+ * resolve marcando a oferta certa aqui. Mas 8 produtos vendem sem oferta
+ * nenhuma, e são os reaproveitados em vários funis (Churrasco com Netão: 216
+ * vendas em 92 dias). Para esses, só a janela distingue um funil do outro.
+ */
+export async function vendasDoRecorte(
+  db: Database,
+  projectId: string,
+  recorte: RecorteDaEtapa,
+): Promise<(typeof kiwifySales.$inferSelect)[]> {
+  return db
+    .select()
+    .from(kiwifySales)
+    .where(and(...filtroDoRecorte(projectId, recorte)))
+    .orderBy(kiwifySales.criadaEm);
 }
 
 // ============================================================
@@ -362,6 +437,7 @@ export async function fontesDeVendaDaEtapa(
     productIds: cfg.productIds ?? [],
     offerIds: cfg.offerIds ?? [],
     startDate: cfg.startDate,
+    endDate: cfg.endDate,
   });
   const { headers, rows, mapping, semEmail, naoSaoVenda } = vendasComoPlanilha(vendas);
 

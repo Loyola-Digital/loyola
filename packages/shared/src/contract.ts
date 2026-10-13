@@ -415,4 +415,21 @@
 // `conflito` e `atributosDesde`. O web desenha `linhas[].rotulo` da API, então
 // com a API v40 a Jornada segue com a linha antiga e os blocos novos somem
 // (404 da rota → banner de versão). `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 41;
+// v42 (a janela da etapa na fonte Kiwify — migration 0172):
+// `kiwify_stage_configs` ganha `end_date` (aaaa-mm-dd, nulo = janela aberta),
+// exposto como `endDate` no GET/PUT de `…/kiwify/config` (ADITIVO). O GET
+// `…/kiwify/ofertas` passa a devolver `de` e `ate` por oferta — o período em
+// que cada uma vendeu (ADITIVO).
+// Por quê: a oferta já separa bem (nenhum `offer_id` medido aparece em mais de
+// um produto), mas 8 produtos vendem SEM oferta nenhuma e são justamente os
+// reaproveitados em vários funis — Churrasco com Netão, 216 vendas em 92 dias;
+// Supervisão Online, 138 em 381. Neles `offer_id` é NULL e não discrimina, e
+// sem fim a etapa de um lançamento encerrado segue recebendo venda do
+// perpétuo. O `de`/`ate` por oferta é o que permite reconhecer qual oferta é
+// desta etapa quando o mesmo produto vende por duas (Super Funcionário com
+// Claude 2 Ed.: Lote Promocional 191, Lote 1 95, Lote 2 42).
+// ⚠️ MUDANÇA DE COMPORTAMENTO (pequena): o recorte passa a cortar por
+// `coalesce(aprovada_em, criada_em)` em vez de `criada_em`, que é a mesma regra
+// que o adaptador já usa para datar a venda. Medido: 1 das 1848 vendas pagas
+// muda de dia. Sem `endDate`, o resto não muda. `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 42;
