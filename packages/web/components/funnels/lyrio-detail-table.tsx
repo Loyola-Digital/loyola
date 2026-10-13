@@ -6,11 +6,16 @@
 // Mesma leitura do Detalhamento do Perpétuo (`perpetual-dashboard.tsx:2596`),
 // recortada para o que a etapa mobile sustenta hoje:
 //
-//   • SÓ colunas de mídia. Faturamento, ROAS, CAC e Margem exigem atribuir a
-//     venda do RevenueCat a um anúncio, e o rastreio atual não sustenta isso —
-//     medido em 2026-08-14: das 67 vendas, nenhuma carrega id de anúncio da
-//     Meta. Coluna que mostra 0 se lê como "não vende", não como "não sabemos".
-//     Ver Story 42.6 (extração da atribuição) e 42.7 (as colunas de receita).
+//   • Colunas de mídia + VENDAS e RECEITA da Meta (Story 42.12, AC5). Até
+//     09/10/2026 nenhuma venda do RevenueCat carregava id de anúncio da Meta
+//     (medido em 14/08: 0 de 67); desde então o app manda `meta_*_id`/nome, e
+//     a rota `vendas-por-canal` devolve a quebra por campanha (id) e por
+//     conjunto/anúncio (NOME, a mesma chave com que `/all-adsets` e `/all-ads`
+//     agregam). Linha do Google mostra "—": o Google não manda campanha. Venda
+//     da Meta que não casa com nenhuma linha aparece em "Sem linha nesta
+//     tabela", e a sem atributo em "Anúncio não identificado" — o total da
+//     Meta fecha na tabela. ROAS, CAC e Margem por linha seguem fora (não
+//     pedidos na 42.12).
 //
 //     Isso inclui BODY CONV. (vendas ÷ views 75%) e TX CONVERSÃO (vendas ÷
 //     cliques no link), que o Detalhamento do Perpétuo tem em Por Criativo
@@ -43,6 +48,13 @@ import {
 } from "@/lib/hooks/use-traffic-analytics";
 import { useGoogleAdsCampaigns, type GoogleAdsCampaign } from "@/lib/hooks/use-google-ads-analytics";
 import { CreativeThumb } from "@/components/traffic/creative-thumb";
+import { useRevenuecatVendasPorCanal } from "@/lib/hooks/use-revenuecat";
+import {
+  declaracaoDeCobertura,
+  estadoDasVendasPorCanal,
+  vendasDoDetalhamento,
+  type ContagemDeVendas,
+} from "@/lib/utils/vendas-por-canal-lyrio";
 import {
   buildCampaignRows, metaRow, sortRows, totalSpend,
   type LyrioDetailRow, type LyrioSortKey, type MetaEntityInput,
@@ -52,6 +64,13 @@ type Dimensao = "campaign" | "adset" | "ad";
 
 interface LyrioDetailTableProps {
   projectId: string;
+  /** Story 42.12 — para a rota `vendas-por-canal` da etapa. */
+  funnelId: string;
+  stageId: string;
+  /** Câmbio US$ → R$ (a receita do RevenueCat vem em dólar). */
+  brlRate: number | null;
+  /** Sem RevenueCat conectado não há venda a cruzar — as colunas somem. */
+  revenuecatConectado: boolean;
   /** Ids das campanhas Meta vinculadas à etapa. */
   campaignIds: string[];
   /** Conta do Google salva na etapa (`stage.googleAdsAccountId`). */
@@ -76,6 +95,10 @@ function fmtPct(v: number | null): string {
 
 export function LyrioDetailTable({
   projectId,
+  funnelId,
+  stageId,
+  brlRate,
+  revenuecatConectado,
   campaignIds,
   googleAccountId,
   googleCampaignIds,
@@ -137,6 +160,21 @@ export function LyrioDetailTable({
   const sorted = useMemo(() => sortRows(rows, sortKey, sortDir), [rows, sortKey, sortDir]);
   const total = useMemo(() => totalSpend(rows), [rows]);
 
+  // Story 42.12 (AC5) — vendas da Meta por linha, na MESMA janela (`days`).
+  // "oculto" (API anterior à rota) → as colunas não aparecem, como antes.
+  const vendasQ = useRevenuecatVendasPorCanal(projectId, funnelId, stageId, days, revenuecatConectado && temMeta);
+  const estadoVendas = estadoDasVendasPorCanal({ isLoading: vendasQ.isLoading, error: vendasQ.error, data: vendasQ.data });
+  const mostraVendas = revenuecatConectado && temMeta && estadoVendas.tipo !== "oculto";
+  const vendas = useMemo(
+    () => (estadoVendas.tipo === "pronto" ? vendasDoDetalhamento(dimensao, rows, estadoVendas.dados) : null),
+    [estadoVendas, dimensao, rows],
+  );
+  /** "—" para Google, para carregando/erro; número para linha da Meta com dado. */
+  const vendasDaLinha = (r: LyrioDetailRow): ContagemDeVendas | null =>
+    r.platform === "meta" && vendas ? (vendas.porLinha.get(`${r.platform}-${r.id}`) ?? null) : null;
+  const receitaBrl = (c: ContagemDeVendas | null) =>
+    c == null || brlRate == null ? null : c.receitaUsd * brlRate;
+
   function toggleSort(key: LyrioSortKey) {
     if (key === sortKey) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -176,7 +214,7 @@ export function LyrioDetailTable({
   const mostraVideo = dimensao === "ad";
   // A miniatura só faz sentido por criativo: campanha e público não têm imagem.
   const mostraPreview = dimensao === "ad";
-  const colunas = 7 + (mostraVideo ? 2 : 0) + (mostraPreview ? 1 : 0);
+  const colunas = 7 + (mostraVideo ? 2 : 0) + (mostraPreview ? 1 : 0) + (mostraVendas ? 2 : 0);
 
   const th = "text-right px-2 cursor-pointer select-none hover:text-foreground";
 
@@ -247,6 +285,16 @@ export function LyrioDetailTable({
                 <th className={th} onClick={() => toggleSort("cpm")} title="Investimento ÷ Impressões × 1000">
                   CPM{seta("cpm")}
                 </th>
+                {mostraVendas && (
+                  <>
+                    <th className="text-right px-2 select-none" title="Vendas pagas (RevenueCat) de usuários vindos desta linha — Meta pelos ids/nomes que o app manda; Google: “—”, o Google não manda campanha">
+                      Vendas
+                    </th>
+                    <th className="text-right px-2 select-none" title="Receita dessas vendas, convertida pelo câmbio">
+                      Receita
+                    </th>
+                  </>
+                )}
                 {mostraVideo && (
                   <>
                     <th className={th} onClick={() => toggleSort("hookRate")} title="Visualizações 3s ÷ Impressões × 100 — dos que viram o anúncio, quantos assistiram os primeiros segundos">
@@ -305,6 +353,12 @@ export function LyrioDetailTable({
                     <td className="text-right px-2">{fmtPct(r.ctr)}</td>
                     <td className="text-right px-2">{fmtBRL(r.cpc)}</td>
                     <td className="text-right px-2">{fmtBRL(r.cpm)}</td>
+                    {mostraVendas && (
+                      <>
+                        <td className="text-right px-2">{fmtNum(vendasDaLinha(r)?.vendas ?? null)}</td>
+                        <td className="text-right px-2">{fmtBRL(receitaBrl(vendasDaLinha(r)))}</td>
+                      </>
+                    )}
                     {mostraVideo && (
                       <>
                         <td className="text-right px-2">{fmtPct(r.hookRate)}</td>
@@ -317,12 +371,38 @@ export function LyrioDetailTable({
             </tbody>
             {sorted.length > 0 && (
               <tfoot>
+                {/* Story 42.12 (AC5): o que não cabe numa linha aparece, para o total da Meta fechar. */}
+                {mostraVendas && vendas && ([
+                  ["Anúncio não identificado", vendas.naoIdentificado, "Usuários da Meta sem o atributo deste nível (ex.: ad_network = meta sem os ids)"],
+                  ["Sem linha nesta tabela", vendas.semLinha, "Vendas da Meta de campanha/conjunto/anúncio que não está nesta tabela (sem campanha vinculada, sem investimento no período ou nome trocado)"],
+                ] as const).map(([rotulo, c, dica]) =>
+                  c ? (
+                    <tr key={rotulo} className="border-t border-border/20 text-muted-foreground">
+                      {/* Vendas/Receita ficam DEPOIS do CPM e ANTES de Hook/Hold (Por Criativo). */}
+                      <td className="py-2 pr-3" colSpan={colunas - 1 - (mostraVideo ? 2 : 0)} title={dica}>
+                        Meta · {rotulo}
+                      </td>
+                      <td className="text-right px-2">{fmtNum(c.vendas)}</td>
+                      <td className="text-right px-2">{fmtBRL(receitaBrl(c))}</td>
+                      {mostraVideo && <td colSpan={2} />}
+                    </tr>
+                  ) : null,
+                )}
                 <tr className="border-t border-border/30 font-medium">
                   <td className="py-2 pr-3" colSpan={2}>
                     Total ({sorted.length} {sorted.length === 1 ? "linha" : "linhas"})
                   </td>
                   <td className="text-right px-2">{fmtBRL(total)}</td>
-                  <td colSpan={colunas - 2} />
+                  {mostraVendas ? (
+                    <>
+                      <td colSpan={colunas - 4 - (mostraVideo ? 2 : 0)} />
+                      <td className="text-right px-2">{fmtNum(vendas ? vendas.totalMeta.vendas : null)}</td>
+                      <td className="text-right px-2">{fmtBRL(vendas ? receitaBrl(vendas.totalMeta) : null)}</td>
+                      {mostraVideo && <td colSpan={2} />}
+                    </>
+                  ) : (
+                    <td colSpan={colunas - 2} />
+                  )}
                 </tr>
               </tfoot>
             )}
@@ -332,9 +412,15 @@ export function LyrioDetailTable({
 
       {/* A ausência é declarada, não silenciosa: sem esta nota a primeira
           pergunta de quem abre a tela é "cadê o ROAS". */}
+      {estadoVendas.tipo === "erro" && mostraVendas && (
+        <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          Não foi possível carregar as vendas por anúncio: {estadoVendas.mensagem}
+        </p>
+      )}
       <p className="text-[11px] text-muted-foreground">
-        Faturamento, ROAS e CAC por linha dependem de atribuir cada venda do RevenueCat a um
-        anúncio. O rastreio atual não sustenta isso — ver Story 42.6.
+        {mostraVendas && estadoVendas.tipo === "pronto"
+          ? `Vendas e Receita da Meta vêm do RevenueCat, pelo anúncio que o app registra no usuário; o total soma as linhas, “Anúncio não identificado” e “Sem linha nesta tabela”. ${declaracaoDeCobertura(estadoVendas.dados)} ROAS e CAC por linha não fazem parte desta tabela.`
+          : "Faturamento, ROAS e CAC por linha dependem de atribuir cada venda do RevenueCat a um anúncio — ver Story 42.6."}
       </p>
     </div>
   );

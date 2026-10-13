@@ -7,6 +7,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { tentarDeNovoAJornada, type JornadaDoLyrio } from "@/lib/utils/jornada-lyrio";
+import type { VendasPorCanalDoLyrio } from "@/lib/utils/vendas-por-canal-lyrio";
 
 const STALE = 60 * 1000;
 
@@ -299,6 +300,31 @@ export function useRevenuecatJornada(projectId: string, funnelId: string, stageI
       apiClient<JornadaDoLyrio>(
         `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/jornada?days=${days}`,
       ),
+    staleTime: STALE,
+    retry: tentarDeNovoAJornada,
+  });
+}
+
+// ============================================================
+// Story 42.12 — vendas pagas por canal (Meta · Google · orgânico · sem atribuição)
+// ============================================================
+
+/**
+ * ⚠️ Rota NOVA (contrato 39): com a API anterior responde 404 — os blocos novos
+ * somem (`estadoDasVendasPorCanal`) e o banner de versão explica. Mesmo `retry`
+ * da Jornada: um 404 não vira outra coisa entre tentativas. O Resumo pede
+ * `days=28` e o bloco RevenueCat/Detalhamento o `days` do cabeçalho — chaves
+ * diferentes no cache, uma consulta por janela.
+ */
+export function useRevenuecatVendasPorCanal(projectId: string, funnelId: string, stageId: string, days: number, enabled = true) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["revenuecat-vendas-por-canal", stageId, days],
+    queryFn: () =>
+      apiClient<VendasPorCanalDoLyrio>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/vendas-por-canal?days=${days}`,
+      ),
+    enabled,
     staleTime: STALE,
     retry: tentarDeNovoAJornada,
   });

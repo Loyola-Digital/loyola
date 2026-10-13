@@ -12,7 +12,21 @@
 
 import { ehApiAtras } from "./mensagem-de-api-atras";
 
-export type CanalDaJornada = "campanha" | "google_gclid" | "meta_fbclid" | "meta_install" | "organico" | "sem_ios" | "sem_android";
+/**
+ * Story 42.12 (AC4, PO-07): `campanha` virou `campanha_meta` e `campanha_google`.
+ * A chave antiga continua aceita — a API anterior (contrato 38) ainda a manda, e
+ * a tabela desenha o `rotulo` que vier.
+ */
+export type CanalDaJornada =
+  | "campanha_meta"
+  | "campanha_google"
+  | "campanha"
+  | "google_gclid"
+  | "meta_fbclid"
+  | "meta_install"
+  | "organico"
+  | "sem_ios"
+  | "sem_android";
 
 export interface ContagemDaJornada {
   novos: number;
@@ -32,6 +46,10 @@ export interface JornadaDoLyrio {
   /** Primeiro evento de ASSINATURA da etapa (`AAAA-MM-DD`); `null` se ainda não houve. */
   assinaturaDesde: string | null;
   linhas: (ContagemDaJornada & { canal: CanalDaJornada; rotulo: string })[];
+  /** Story 42.12 (D7): usuários com campanha da Meta E do Google — fora das linhas, dentro do Total. Ausente na API anterior. */
+  conflito?: ContagemDaJornada;
+  /** Story 42.12 (AC4): primeiro evento da etapa com `ad_network` ou id de campanha da Meta. Ausente na API anterior. */
+  atributosDesde?: string | null;
   total: ContagemDaJornada;
 }
 
@@ -82,13 +100,23 @@ function dataBr(iso: string): string {
  * dias); (c) campanha individual não é identificável hoje. A referência interna
  * da (c) — item 3.1 das decisões de 23/09 — não aparece na tela (PO-05).
  */
-export function declaracoesDaJornada(j: Pick<JornadaDoLyrio, "assinaturaDesde" | "desde">): string[] {
+export function declaracoesDaJornada(j: Pick<JornadaDoLyrio, "assinaturaDesde" | "desde" | "atributosDesde">): string[] {
   const a = j.assinaturaDesde
     ? `Eventos de assinatura só existem desde ${dataBr(j.assinaturaDesde)}${j.desde < j.assinaturaDesde ? " — esta janela começa antes disso, então a jornada está incompleta" : " — janela que começa antes disso mostra a jornada incompleta"}.`
     : "Ainda não há eventos de assinatura nesta etapa — a jornada vai só até o paywall.";
   return [
     a,
     "Os últimos 7 dias sempre aparecem baixos em “Pagou”: o teste grátis dura 7 dias.",
-    "Campanha individual ainda não é identificável — aguarda correção de configuração no app.",
+    // Story 42.12 (AC4): a (c) passa a valer só para o Google — a Meta é identificável desde a data do dado.
+    j.atributosDesde
+      ? `A campanha da Meta é identificada desde ${dataBr(j.atributosDesde)}; a do Google ainda não — o app manda só o canal.`
+      : "Campanha individual ainda não é identificável — aguarda correção de configuração no app.",
   ];
+}
+
+/** Story 42.12 (D7) — "impossível; se acontecer, sinalize". `null` sem conflito (ou com a API anterior). */
+export function avisoDeConflitoDaJornada(j: Pick<JornadaDoLyrio, "conflito">): string | null {
+  const n = j.conflito?.novos ?? 0;
+  if (n <= 0) return null;
+  return `${n.toLocaleString("pt-BR")} ${n === 1 ? "usuário tem" : "usuários têm"} campanha da Meta e do Google ao mesmo tempo — possível falha na integração. ${n === 1 ? "Aparece" : "Aparecem"} na linha “Meta e Google (conflito)”.`;
 }

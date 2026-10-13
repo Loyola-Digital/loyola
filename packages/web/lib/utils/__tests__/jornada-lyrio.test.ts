@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  avisoDeConflitoDaJornada,
   declaracoesDaJornada,
   estadoDoBlocoDaJornada,
   formatarTaxa,
@@ -65,6 +66,16 @@ describe("taxas e declarações (AC1, AC4)", () => {
     // a data vem do dado — outra etapa, outra data (uma data fixa no código seria pega aqui)
     expect(declaracoesDaJornada({ assinaturaDesde: "2026-11-03", desde: "2026-09-01" })[0]).toMatch(/desde 03\/11\/2026 — esta janela começa antes disso/);
   });
+  it("Story 42.12 (AC4): com `atributosDesde` a (c) passa a valer só para o Google, com a data VINDA DA API; sem ele (API anterior), a frase antiga", () => {
+    expect(declaracoesDaJornada({ ...dados, atributosDesde: "2026-10-06" })[2]).toBe("A campanha da Meta é identificada desde 06/10/2026; a do Google ainda não — o app manda só o canal.");
+    expect(declaracoesDaJornada({ ...dados, atributosDesde: "2026-11-03" })[2]).toMatch(/desde 03\/11\/2026/);
+    expect(declaracoesDaJornada({ ...dados, atributosDesde: null })[2]).toMatch(/Campanha individual ainda não é identificável/);
+  });
+  it("Story 42.12 (D7): aviso de conflito só quando há — e nunca com a API anterior (campo ausente)", () => {
+    expect(avisoDeConflitoDaJornada({})).toBeNull();
+    expect(avisoDeConflitoDaJornada({ conflito: zerada })).toBeNull();
+    expect(avisoDeConflitoDaJornada({ conflito: { ...zerada, novos: 2 } })).toMatch(/^2 usuários têm campanha da Meta e do Google ao mesmo tempo — possível falha na integração/);
+  });
 });
 
 const ler = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf-8");
@@ -96,6 +107,10 @@ describe("o fio até a tela", () => {
     expect(bloco).toMatch(/estado\.tipo === "erro" \? \(\s*<p role="alert"/);
     expect(bloco).toMatch(/declaracoesDaJornada\(estado\.dados\)/);
     expect(bloco).toMatch(/useRevenuecatJornada\(projectId, funnelId, stageId, days\)/);
+    // Story 42.12 (D7): o conflito aparece — aviso e linha própria, dentro do Total
+    expect(bloco).toMatch(/\{avisoDeConflitoDaJornada\(estado\.dados\) && \(\s*<p role="alert"/);
+    expect(bloco).toMatch(/estado\.dados\.conflito && estado\.dados\.conflito\.novos > 0 && \(/);
+    expect(bloco).toMatch(/<Celulas c=\{estado\.dados\.conflito\} \/>/);
   });
   it("o hook chama a rota com days e sem retry no 404", () => {
     expect(hooks).toMatch(/\/stages\/\$\{stageId\}\/revenuecat\/jornada\?days=\$\{days\}/);
