@@ -518,6 +518,16 @@ export interface FunnelStage {
   funnelId: string;
   name: string;
   stageType: StageType;
+  /**
+   * Migration 0169: o código que as campanhas Meta desta etapa têm no nome
+   * (ex.: `fz-a1`). Preenchido, é a chave COMPLETA e dispensa o sufixo de fase
+   * adivinhado do nome — que não se aplica em funil perpétuo, em etapa
+   * `cpl`/`event` nem em nome ambíguo, e aí nada casava. `null` = casa pelo
+   * código do funil + fase, como sempre. Ver `codigoDaEtapa` na API.
+   *
+   * Opcional porque a API anterior à v38 não manda o campo.
+   */
+  matchCode?: string | null;
   metaAccountId: string | null;
   campaigns: FunnelCampaign[];
   googleAdsAccountId: string | null;

@@ -11,6 +11,11 @@ const STAGE_STALE_TIME = 2 * 60 * 1000; // 2 min
 export interface CreateStageInput {
   name: string;
   stageType?: "paid" | "free" | "application" | "sales" | "cpl" | "event" | "event_capture" | "debriefing" | "comercial" | "lyrio" | "mapa";
+  /**
+   * Migration 0169: o código que as campanhas desta etapa têm no nome
+   * (ex. `fz-a1`). Vazio/`null` = casa pelo código do funil + fase, como antes.
+   */
+  matchCode?: string | null;
   metaAccountId?: string | null;
   campaigns?: { id: string; name: string }[];
   googleAdsAccountId?: string | null;

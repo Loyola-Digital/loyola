@@ -62,7 +62,8 @@ import {
   useUnarchiveFunnel,
 } from "@/lib/hooks/use-funnels";
 import { agruparPorTipo } from "@/lib/utils/agrupar-funis";
-import { useFunnelStages, useCreateStage, useReorderStages, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
+import { useFunnelStages, useReorderStages, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
+import { StageWizard } from "@/components/funnels/stage-wizard";
 import type { Funnel, FunnelStage } from "@loyola-x/shared";
 import {
   DndContext,
@@ -113,10 +114,8 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
   const updateFunnel = useUpdateFunnel(projectId, funnel.id);
   const archiveFunnel = useArchiveFunnel(projectId);
   const unarchiveFunnel = useUnarchiveFunnel(projectId);
-  const createStage = useCreateStage(projectId, funnel.id);
   const { data: stages, isLoading: stagesLoading } = useFunnelStages(projectId, funnel.id);
   const [showDeleteAlert, setShowDeleteAlert] = useState(false);
-  const [newStageName, setNewStageName] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [matchCodeDraft, setMatchCodeDraft] = useState<string>(funnel.matchCode ?? "");
@@ -165,19 +164,6 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
       toast.success(`Funil alterado para ${oppositeLabel}.`);
     } catch {
       toast.error("Erro ao alterar tipo do funil.");
-    }
-  }
-
-  async function handleCreateStage() {
-    if (!newStageName.trim()) return;
-    try {
-      const stage = await createStage.mutateAsync({ name: newStageName.trim() });
-      toast.success("Etapa criada");
-      setNewStageName("");
-      setCreateOpen(false);
-      router.push(`${funnelHref}/stages/${stage.id}`);
-    } catch {
-      toast.error("Erro ao criar etapa.");
     }
   }
 
@@ -340,42 +326,28 @@ function FunnelItem({ funnel, projectId, isAdmin }: { funnel: Funnel; projectId:
               />
             )}
 
-            {isAdmin && !createOpen && (
+            {isAdmin && (
               <Button
                 variant="ghost"
                 className="justify-start gap-1.5 h-7 text-xs text-muted-foreground hover:text-foreground"
-                onClick={() => { setNewStageName(""); setCreateOpen(true); }}
+                onClick={() => setCreateOpen(true)}
               >
                 <Plus className="h-3 w-3 shrink-0" />
                 Nova etapa
               </Button>
             )}
 
-            {isAdmin && createOpen && (
-              <div className="flex gap-1 pt-0.5">
-                <input
-                  autoFocus
-                  className="flex-1 h-6 min-w-0 rounded border border-border bg-background px-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-                  placeholder="Nome..."
-                  value={newStageName}
-                  onChange={(e) => setNewStageName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleCreateStage();
-                    if (e.key === "Escape") { setCreateOpen(false); setNewStageName(""); }
-                  }}
-                  onBlur={() => { if (!newStageName.trim()) { setCreateOpen(false); } }}
-                />
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-6 w-6 shrink-0"
-                  disabled={createStage.isPending || !newStageName.trim()}
-                  onClick={handleCreateStage}
-                >
-                  <Plus className="h-3 w-3" />
-                </Button>
-              </div>
-            )}
+            {/* O mesmo wizard da página do funil. Antes, daqui a etapa nascia
+                só com nome — e portanto `free` por omissão, sem ninguém
+                escolher o tipo. */}
+            <StageWizard
+              projectId={projectId}
+              funnelId={funnel.id}
+              funnelType={funnel.type}
+              open={createOpen}
+              onOpenChange={setCreateOpen}
+              irParaAEtapa
+            />
           </div>
         </CollapsibleContent>
       </Collapsible>

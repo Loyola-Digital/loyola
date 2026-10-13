@@ -353,4 +353,18 @@
 // (`total_clicked`) e `engagementRate` (`engagement_rate`, %). Nenhum campo
 // existente muda; o web com a API v36 mostra "—" nas colunas novas.
 // `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 37;
+// v38 (código de match por ETAPA — migration 0169): `funnel_stages` ganha
+// `match_code`, e `FunnelStage.matchCode` sai no GET/POST/PUT das etapas
+// (ADITIVO, `null` por padrão). Preenchido, é a chave COMPLETA com que a etapa
+// casa campanha Meta: dispensa o sufixo de fase adivinhado do nome
+// (`resolveStagePhaseSuffix`), que devolve `null` — e portanto não casava nada,
+// em silêncio — em funil perpétuo, em etapa `cpl`/`event` e em nome ambíguo. No
+// perpétuo era estrutural: a regra dos dois primeiros segmentos faz `fz-a1` e
+// `fz-a2` virarem o mesmo código. Muda, com o campo preenchido, quem o POST
+// auto-popula em `campaigns` e quem o `byStage` de
+// `GET …/orphan-campaigns` lista por etapa (agora partindo de todas as
+// campanhas não-DELETED, não só das que casam com o código do FUNIL — uma etapa
+// com código próprio pode casar campanha que o funil não casa). Vazio, tudo
+// igual a antes. O web com a API v37 não mostra nem edita o campo.
+// `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 38;

@@ -115,6 +115,7 @@ export default function StagePage() {
   const { data: funnelData, isLoading: funnelLoading } = useFunnel(params.id, params.funnelId);
   const { data: stage, isLoading: stageLoading } = useFunnelStage(params.id, params.funnelId, params.stageId);
   const updateStage = useUpdateStage(params.id, params.funnelId, params.stageId);
+  const [matchCodeDraft, setMatchCodeDraft] = useState("");
 
   /**
    * A aba diz o funil E a etapa.
@@ -329,6 +330,15 @@ export default function StagePage() {
     toast.success("Nome atualizado");
   }
 
+  async function handleSaveMatchCode() {
+    const proximo = matchCodeDraft.trim().toLowerCase();
+    if (proximo === (stage!.matchCode ?? "")) return;
+    // Vazio limpa o campo — a API grava `null` e a etapa volta a casar pelo
+    // código do funil. Ver `normalizarMatchCode` na rota.
+    await updateStage.mutateAsync({ matchCode: proximo || null });
+    toast.success(proximo ? "Código de match salvo" : "Código de match removido");
+  }
+
   return (
     <div className="p-6 space-y-6">
       {/* Header — pra perpetual, esconde noção de stage (1 dashboard só) */}
@@ -349,7 +359,10 @@ export default function StagePage() {
         <CampaignLogButton projectId={params.id} funnelId={params.funnelId} />
         <Sheet open={settingsOpen} onOpenChange={(open) => {
           setSettingsOpen(open);
-          if (open) setStageName(stage.name);
+          if (open) {
+            setStageName(stage.name);
+            setMatchCodeDraft(stage.matchCode ?? "");
+          }
         }}>
           <SheetTrigger asChild>
             <Button variant="outline" size="sm" className="gap-1.5">
@@ -381,6 +394,40 @@ export default function StagePage() {
                     Salvar
                   </Button>
                 </div>
+              </div>
+
+              {/* Código de match (migration 0169) — é por ele que a campanha
+                  encontra esta etapa. Sem ele, a etapa casa pelo código do
+                  funil mais uma fase deduzida do nome, que não se aplica a
+                  funil perpétuo nem a etapa de CPL/evento — e aí nada casa,
+                  em silêncio. */}
+              <div className="space-y-2">
+                <Label htmlFor="settings-stage-match">Código de match</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="settings-stage-match"
+                    value={matchCodeDraft}
+                    onChange={(e) => setMatchCodeDraft(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSaveMatchCode()}
+                    placeholder="ex: fz-a1"
+                  />
+                  <Button
+                    size="sm"
+                    onClick={handleSaveMatchCode}
+                    disabled={
+                      updateStage.isPending ||
+                      matchCodeDraft.trim().toLowerCase() === (stage.matchCode ?? "")
+                    }
+                  >
+                    Salvar
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  <code className="rounded bg-muted px-1">fz-a1</code> pega a campanha{" "}
+                  <code className="rounded bg-muted px-1">fz-a1-2026</code> e não pega{" "}
+                  <code className="rounded bg-muted px-1">fz-a2-2026</code>. Em branco, volta a
+                  casar pelo código do funil.
+                </p>
               </div>
 
               {/* Tipo de etapa */}

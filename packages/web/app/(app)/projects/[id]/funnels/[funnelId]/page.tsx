@@ -5,20 +5,13 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Calculator, Pencil, Plus, Settings2 } from "lucide-react";
 import { useFunnel, useFunnels, useUpdateFunnel } from "@/lib/hooks/use-funnels";
-import { rotuloDoTipoDeEtapa } from "@/lib/utils/rotulos-de-etapa";
 import { useUserRole } from "@/lib/hooks/use-user-role";
 import { RenomearFunnel } from "@/components/funnels/renomear-funnel-dialog";
-import { useFunnelStages, useCreateStage } from "@/lib/hooks/use-funnel-stages";
+import { useFunnelStages } from "@/lib/hooks/use-funnel-stages";
+import { StageWizard } from "@/components/funnels/stage-wizard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTituloDaAba } from "@/components/layout/titulo-da-aba";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import {
   Popover,
   PopoverContent,
@@ -32,7 +25,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { SortableStageGrid } from "@/components/funnels/sortable-stage-grid";
 import { CampaignLogCard } from "@/components/funnels/campaign-log-link";
 import { PlanejamentoCard } from "@/components/funnels/planejamento-card"; // Story 48.1
@@ -48,13 +40,6 @@ export default function FunnelPage() {
   const redirectedRef = useRef(false);
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [stageName, setStageName] = useState("");
-  // Lista literal em vez de `StageType`: "lyrio" não é criável por aqui (nasce
-  // do funil mobile), e deixá-la no estado ofereceria uma opção que a tela não
-  // desenha.
-  const [stageType, setStageType] = useState<
-    "free" | "paid" | "application" | "sales" | "cpl" | "event" | "event_capture" | "debriefing" | "comercial" | "mapa"
-  >("free");
   const [matchCodeDraft, setMatchCodeDraft] = useState<string>("");
 
   const { data: funnelData, isLoading: funnelLoading } = useFunnel(params.id, params.funnelId);
@@ -69,7 +54,6 @@ export default function FunnelPage() {
   }, [funnelData?.funnel]);
   const { data: stages, isLoading: stagesLoading } = useFunnelStages(params.id, params.funnelId);
   const { data: allFunnels } = useFunnels(params.id, "all");
-  const createStage = useCreateStage(params.id, params.funnelId);
   const updateFunnel = useUpdateFunnel(params.id, params.funnelId);
   const role = useUserRole();
   const [renomeando, setRenomeando] = useState(false);
@@ -152,21 +136,6 @@ export default function FunnelPage() {
         onError: (err) => toast.error(err instanceof Error ? err.message : "Erro ao salvar"),
       },
     );
-  }
-
-  async function handleCreate() {
-    if (!stageName.trim()) return;
-    await createStage.mutateAsync({ name: stageName.trim(), stageType });
-    toast.success("Etapa criada");
-    setStageName("");
-    setStageType("free");
-    setCreateOpen(false);
-  }
-
-  // Story 19.15: o texto vem do módulo — num funil perpétuo, a etapa `free`
-  // sugere "ex: Aquisição" em vez de "ex: Captação Orgânica".
-  function stageTypePlaceholder(type: string): string {
-    return rotuloDoTipoDeEtapa(type, funnelData?.funnelType).placeholder;
   }
 
   return (
@@ -334,7 +303,7 @@ export default function FunnelPage() {
           </Popover>
           {/* Epic 40: perpétuo também cria etapas (Comercial/Debriefing/etc) —
               o dashboard único do perpétuo segue sendo a etapa principal. */}
-          <Button size="sm" className="gap-1.5" onClick={() => { setStageName(""); setCreateOpen(true); }}>
+          <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4" />
             Nova Etapa
           </Button>
@@ -369,168 +338,14 @@ export default function FunnelPage() {
         funnelName={funnel.name}
       />
 
-      {/* Dialog Nova Etapa — Epic 40: disponível também no perpétuo */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Nova Etapa</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="new-stage-name">Nome da etapa</Label>
-              <Input
-                id="new-stage-name"
-                value={stageName}
-                onChange={(e) => setStageName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-                placeholder={stageTypePlaceholder(stageType)}
-                autoFocus
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Tipo de etapa</Label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setStageType("free")}
-                  className={cn(
-                    "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
-                    stageType === "free"
-                      ? "border-primary bg-primary/5 text-primary"
-                      : "border-border hover:bg-muted"
-                  )}
-                >
-                  <span className="font-medium">{rotuloDoTipoDeEtapa("free", funnelData?.funnelType).titulo}</span>
-                  <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("free", funnelData?.funnelType).descricao}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStageType("paid")}
-                  className={cn(
-                    "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
-                    stageType === "paid"
-                      ? "border-primary bg-primary/5 text-primary"
-                      : "border-border hover:bg-muted"
-                  )}
-                >
-                  <span className="font-medium">{rotuloDoTipoDeEtapa("paid", funnelData?.funnelType).titulo}</span>
-                  <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("paid", funnelData?.funnelType).descricao}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStageType("application")}
-                  className={cn(
-                    "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
-                    stageType === "application"
-                      ? "border-primary bg-primary/5 text-primary"
-                      : "border-border hover:bg-muted"
-                  )}
-                >
-                  <span className="font-medium">{rotuloDoTipoDeEtapa("application", funnelData?.funnelType).titulo}</span>
-                  <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("application", funnelData?.funnelType).descricao}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStageType("sales")}
-                  className={cn(
-                    "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
-                    stageType === "sales"
-                      ? "border-primary bg-primary/5 text-primary"
-                      : "border-border hover:bg-muted"
-                  )}
-                >
-                  <span className="font-medium">{rotuloDoTipoDeEtapa("sales", funnelData?.funnelType).titulo}</span>
-                  <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("sales", funnelData?.funnelType).descricao}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStageType("cpl")}
-                  className={cn(
-                    "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
-                    stageType === "cpl"
-                      ? "border-primary bg-primary/5 text-primary"
-                      : "border-border hover:bg-muted"
-                  )}
-                >
-                  <span className="font-medium">{rotuloDoTipoDeEtapa("cpl", funnelData?.funnelType).titulo}</span>
-                  <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("cpl", funnelData?.funnelType).descricao}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStageType("event")}
-                  className={cn(
-                    "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
-                    stageType === "event"
-                      ? "border-primary bg-primary/5 text-primary"
-                      : "border-border hover:bg-muted"
-                  )}
-                >
-                  <span className="font-medium">{rotuloDoTipoDeEtapa("event", funnelData?.funnelType).titulo}</span>
-                  <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("event", funnelData?.funnelType).descricao}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStageType("event_capture")}
-                  className={cn(
-                    "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
-                    stageType === "event_capture"
-                      ? "border-primary bg-primary/5 text-primary"
-                      : "border-border hover:bg-muted"
-                  )}
-                >
-                  <span className="font-medium">{rotuloDoTipoDeEtapa("event_capture", funnelData?.funnelType).titulo}</span>
-                  <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("event_capture", funnelData?.funnelType).descricao}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStageType("debriefing")}
-                  className={cn(
-                    "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
-                    stageType === "debriefing"
-                      ? "border-primary bg-primary/5 text-primary"
-                      : "border-border hover:bg-muted"
-                  )}
-                >
-                  <span className="font-medium">{rotuloDoTipoDeEtapa("debriefing", funnelData?.funnelType).titulo}</span>
-                  <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("debriefing", funnelData?.funnelType).descricao}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStageType("mapa")}
-                  className={cn(
-                    "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
-                    stageType === "mapa"
-                      ? "border-primary bg-primary/5 text-primary"
-                      : "border-border hover:bg-muted"
-                  )}
-                >
-                  <span className="font-medium">{rotuloDoTipoDeEtapa("mapa", funnelData?.funnelType).titulo}</span>
-                  <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("mapa", funnelData?.funnelType).descricao}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStageType("comercial")}
-                  className={cn(
-                    "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
-                    stageType === "comercial"
-                      ? "border-primary bg-primary/5 text-primary"
-                      : "border-border hover:bg-muted"
-                  )}
-                >
-                  <span className="font-medium">{rotuloDoTipoDeEtapa("comercial", funnelData?.funnelType).titulo}</span>
-                  <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("comercial", funnelData?.funnelType).descricao}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancelar</Button>
-            <Button onClick={handleCreate} disabled={createStage.isPending || !stageName.trim()}>
-              {createStage.isPending ? "Criando..." : "Criar"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Nova etapa — o wizard (nome, tipo, codigo de match, campanhas, planilha) */}
+      <StageWizard
+        projectId={params.id}
+        funnelId={params.funnelId}
+        funnelType={funnelData?.funnelType}
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+      />
     </div>
   );
 }

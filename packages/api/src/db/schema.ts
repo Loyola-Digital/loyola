@@ -921,6 +921,16 @@ export const funnelStages = pgTable(
     // 20 e não 10: "debriefing" já ocupava o limite exato, e "event_capture"
     // (Captação de Evento) passou. Ampliado na migration 0102.
     stageType: varchar("stage_type", { length: 20 }).notNull().default("free"),
+    /**
+     * O código que as campanhas Meta desta ETAPA têm no nome (ex.: `fz-a1`).
+     *
+     * Preenchido, é a chave completa e dispensa o sufixo de fase adivinhado
+     * (`resolveStagePhaseSuffix`) — que devolve `null`, e portanto não casa
+     * nada, em funil perpétuo, em etapa `cpl`/`event` e em nome ambíguo. Vazio,
+     * o casamento continua sendo o do funil + sufixo. Ver `codigoDaEtapa` em
+     * `services/funnel-match-code.ts` e a migration 0169.
+     */
+    matchCode: varchar("match_code", { length: 120 }),
     sortOrder: integer("sort_order").notNull().default(0),
     lastAuditAt: timestamp("last_audit_at", { withTimezone: true }),
     lastAuditBy: uuid("last_audit_by").references(() => users.id, {

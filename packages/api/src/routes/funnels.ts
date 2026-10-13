@@ -5,7 +5,11 @@ import { funnels, funnelStages, projects, projectMembers, metaAdsAccountProjects
 import { fetchCampaigns, decryptAccountToken } from "../services/meta-ads.js";
 import { triggerBackgroundSyncForNewCampaigns } from "../services/meta-insights-cache.js";
 import { resolveStagePhaseSuffix } from "../services/stage-phase.js";
-import { effectiveMatchCode } from "../services/funnel-match-code.js";
+import {
+  campanhaCasaComAEtapa,
+  codigoDaEtapa,
+  effectiveMatchCode,
+} from "../services/funnel-match-code.js";
 import { fetchGoogleAdsCampaigns, decryptToken as decryptGoogleToken } from "../services/google-ads.js";
 import { funilDoConvidado } from "../services/escopo-do-convidado.js";
 
@@ -871,22 +875,36 @@ export default fp(async function funnelRoutes(fastify) {
       return a.name.localeCompare(b.name);
     });
 
-    // byStage: pra cada stage, lista campanhas matching que NÃO estão nessa stage
-    // (mesmo que estejam em outras — do ponto de vista DESTA stage, são órfãs).
-    // Story 28.1: além do matchCode do funil, filtra também pelo phaseSuffix
-    // resolvido a partir de funnel.type + stage.stageType + stage.name. Quando
-    // suffix é null (perpétuo, cpl, nome ambíguo) cai no comportamento legacy.
+    // byStage: pra cada stage, lista campanhas que casam com a CHAVE DELA e NÃO
+    // estão nessa stage (mesmo que estejam em outras — do ponto de vista DESTA
+    // stage, são órfãs).
+    //
+    // A chave vem de `codigoDaEtapa` (migration 0169): o código da própria
+    // etapa quando preenchido, senão o do funil + o sufixo de fase da Story
+    // 28.1 (`leads`/`vendas-captacao`/`vendas-principal`). Sem chave nenhuma
+    // (perpétuo, `cpl`/`event`, nome ambíguo) a etapa não lista órfã — e é
+    // justamente o que o código por etapa resolve.
+    //
+    // ⚠️ Parte de `naoDeletadas`, NÃO de `matching`: `matching` já foi cortada
+    // pelo código do FUNIL, e uma etapa com código próprio pode legitimamente
+    // casar campanha que o funil não casa. Para quem não tem código próprio o
+    // resultado é idêntico ao de antes, porque a chave é o mesmo `matchCode`.
+    const naoDeletadas = allCampaigns.filter((c) => c.status !== "DELETED");
     const byStage: Record<string, { stageName: string; orphans: typeof orphans }> = {};
     for (const stage of stages) {
-      const phaseSuffix = resolveStagePhaseSuffix(
-        funnel.type as "launch" | "perpetual" | "mobile",
-        (stage.stageType ?? "free") as "paid" | "free" | "sales" | "cpl" | "event",
-        stage.name,
+      const chave = codigoDaEtapa(
+        funnel,
+        { matchCode: stage.matchCode },
+        resolveStagePhaseSuffix(
+          funnel.type as "launch" | "perpetual" | "mobile",
+          (stage.stageType ?? "free") as "paid" | "free" | "sales" | "cpl" | "event",
+          stage.name,
+        ),
       );
       const selectedHere = new Set((stage.campaigns ?? []).map((c) => c.id));
-      const orphansHere = matching
+      const orphansHere = naoDeletadas
         .filter((c) => !selectedHere.has(c.id) && !dismissed.has(c.id))
-        .filter((c) => !phaseSuffix || c.name.toLowerCase().includes(phaseSuffix))
+        .filter((c) => campanhaCasaComAEtapa(c.name, chave))
         .sort((a, b) => {
           const ra = statusRank[a.status] ?? 99;
           const rb = statusRank[b.status] ?? 99;

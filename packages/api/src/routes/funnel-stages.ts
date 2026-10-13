@@ -17,7 +17,7 @@ import {
   findMatchingCampaignsForStage,
 } from "../services/stage-phase.js";
 import { etapaDoConvidado } from "../services/escopo-do-convidado.js";
-import { effectiveMatchCode } from "../services/funnel-match-code.js";
+import { codigoDaEtapa } from "../services/funnel-match-code.js";
 import {
   correcoesPorCampanhaSchema,
   normalizarCorrecoesPorCampanha,
@@ -43,9 +43,18 @@ const switchyLinkRefSchema = z.object({
   domain: z.string().min(1),
 });
 
+/**
+ * O código de match da etapa (migration 0169).
+ *
+ * String vazia = limpar o campo, e o handler grava `null` — senão `""` ficaria
+ * gravado e casaria com TODA campanha (substring de vazio é sempre verdadeira).
+ */
+const matchCodeDaEtapaSchema = z.union([z.literal(""), z.string().trim().max(120)]);
+
 const createStageSchema = z.object({
   name: z.string().min(1).max(255),
   stageType: z.enum(["paid", "free", "application", "sales", "cpl", "event", "event_capture", "debriefing", "comercial", "lyrio", "mapa"]).default("free"),
+  matchCode: matchCodeDaEtapaSchema.nullable().optional(),
   metaAccountId: z.string().uuid().nullable().optional(),
   campaigns: z.array(campaignSchema).default([]),
   googleAdsAccountId: z.string().uuid().nullable().optional(),
@@ -57,6 +66,7 @@ const createStageSchema = z.object({
 const updateStageSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   stageType: z.enum(["paid", "free", "application", "sales", "cpl", "event", "event_capture", "debriefing", "comercial", "lyrio", "mapa"]).optional(),
+  matchCode: matchCodeDaEtapaSchema.nullable().optional(),
   metaAccountId: z.string().uuid().nullable().optional(),
   campaigns: z.array(campaignSchema).optional(),
   googleAdsAccountId: z.string().uuid().nullable().optional(),
@@ -101,6 +111,17 @@ const leadInputsSchema = z.object({
 // HELPERS
 // ============================================================
 
+/**
+ * O que vai pro banco no `match_code` da etapa.
+ *
+ * Vazio ou sÃ³ espaÃ§o â†’ `null`. Gravar `""` faria a etapa casar com TODA
+ * campanha, porque substring de string vazia Ã© sempre verdadeira.
+ */
+function normalizarMatchCode(valor: string | null | undefined): string | null {
+  const limpo = (valor ?? "").trim().toLowerCase();
+  return limpo.length > 0 ? limpo : null;
+}
+
 function displayUserName(name: string | null | undefined, email: string | null | undefined): string {
   const looksLikeClerkId = typeof name === "string" && /^user_[A-Za-z0-9]+$/.test(name);
   const nameIsEmail = name && email && name === email;
@@ -127,6 +148,7 @@ function stageShape(
     funnelId: row.funnelId,
     name: row.name,
     stageType: (row.stageType ?? "free") as "paid" | "free" | "sales" | "cpl" | "event" | "debriefing" | "comercial" | "lyrio",
+    matchCode: row.matchCode ?? null,
     metaAccountId: row.metaAccountId,
     campaigns: (row.campaigns ?? []) as { id: string; name: string }[],
     googleAdsAccountId: row.googleAdsAccountId,
@@ -332,24 +354,35 @@ export default fp(async function funnelStageRoutes(fastify) {
       ? Math.max(...existing.map((r) => r.sortOrder)) + 1
       : 0;
 
-    // Auto-popular `campaigns` quando o cliente nÃ£o passou nenhuma. SÃ³ roda
-    // quando a heurÃ­stica de fase Ã© confiante (phaseSuffix != null) E temos
-    // conta Meta vinculada no projeto. Falhas silenciam pra []  â€” criaÃ§Ã£o da
-    // stage NÃƒO deve depender da Meta API.
+    // Auto-popular `campaigns` quando o cliente nÃ£o passou nenhuma.
+    //
+    // A chave vem de `codigoDaEtapa` (migration 0169): o cÃ³digo DA ETAPA quando
+    // preenchido, senÃ£o o do funil + o sufixo de fase adivinhado. Sem chave
+    // (`codigo: null`) nÃ£o popula nada â€” era o caso de todo funil perpÃ©tuo,
+    // etapa `cpl`/`event` e nome ambÃ­guo, e Ã© o que o cÃ³digo da etapa resolve.
+    //
+    // Falhas silenciam pra [] â€” criaÃ§Ã£o da etapa NÃƒO deve depender da Meta API.
+    const codigoGravado = normalizarMatchCode(body.matchCode);
     let resolvedCampaigns = body.campaigns;
     if (resolvedCampaigns.length === 0) {
-      const stageTypeFinal = body.stageType ?? "free";
-      const phaseSuffix = resolveStagePhaseSuffix(funnel.type as "launch" | "perpetual", stageTypeFinal, body.name);
-      const matchCode = effectiveMatchCode(funnel);
-      if (phaseSuffix && matchCode) {
+      const chave = codigoDaEtapa(
+        funnel,
+        { matchCode: codigoGravado },
+        resolveStagePhaseSuffix(
+          funnel.type as "launch" | "perpetual",
+          body.stageType ?? "free",
+          body.name,
+        ),
+      );
+      if (chave.codigo) {
         const meta = await getMetaAccountForProject(params.data.projectId);
         if (meta) {
           try {
             resolvedCampaigns = await findMatchingCampaignsForStage(
               meta.metaAccountId,
               meta.accessToken,
-              matchCode,
-              phaseSuffix,
+              chave.codigo,
+              chave.sufixo,
             );
           } catch (err) {
             fastify.log.warn({ err }, "[funnel-stages] auto-popular campaigns falhou â€” seguindo com []");
@@ -364,6 +397,7 @@ export default fp(async function funnelStageRoutes(fastify) {
         funnelId: params.data.funnelId,
         name: body.name,
         stageType: body.stageType ?? "free",
+        matchCode: codigoGravado,
         metaAccountId: body.metaAccountId ?? null,
         campaigns: resolvedCampaigns,
         googleAdsAccountId: body.googleAdsAccountId ?? null,
@@ -408,6 +442,8 @@ export default fp(async function funnelStageRoutes(fastify) {
 
     if (body.name !== undefined) updates.name = body.name;
     if (body.stageType !== undefined) updates.stageType = body.stageType;
+    // Vazio limpa o campo (volta a casar pelo funil + fase). Ver `normalizarMatchCode`.
+    if (body.matchCode !== undefined) updates.matchCode = normalizarMatchCode(body.matchCode);
     if (body.metaAccountId !== undefined) updates.metaAccountId = body.metaAccountId;
     if (body.campaigns !== undefined) updates.campaigns = body.campaigns;
     if (body.googleAdsAccountId !== undefined) updates.googleAdsAccountId = body.googleAdsAccountId;
