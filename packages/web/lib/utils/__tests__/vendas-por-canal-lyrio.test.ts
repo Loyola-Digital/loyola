@@ -13,12 +13,14 @@ import { calcularMargemContribuicao } from "../lyrio-margin";
 import {
   DECLARACAO_FONTE_DO_RESUMO,
   avisoDeConflito,
+  blocoMetaDoLyrio,
   chaveDaLinhaDoDetalhamento,
   declaracaoDeCobertura,
   declaracaoForaDaQuebra,
   estadoDasVendasPorCanal,
   linhasDoResumoPorCanal,
   linhasPorCanalDoBloco,
+  rotuloDoNaoIdentificado,
   vendasDoDetalhamento,
   type VendasPorCanalDoLyrio,
 } from "../vendas-por-canal-lyrio";
@@ -213,7 +215,8 @@ describe("o fio até a tela", () => {
     expect(resumo).toMatch(/linhasDoResumoPorCanal\(\{ dados: estado\.dados, brlRate, meta, google, percentuais \}\)/);
     expect(resumo).toMatch(/declaracaoDeCobertura\(estado\.dados\)/);
     expect(etapa).toMatch(/conhecido: campaignIds\.length > 0 && metaDaily28 !== undefined/);
-    expect(etapa).toMatch(/conhecido: googleCampaignIds\.size > 0 && googleCampaigns28 !== undefined/);
+    // Story 42.13 (AC1b): o investimento do Google é conhecido só com a consulta respondida — erro não é R$ 0.
+    expect(etapa).toMatch(/conhecido: googleAtivo && googleSpend28Conhecido !== null/);
     expect(etapa).toMatch(/liquidoBrl: metaSpend28Detalhe\.spendLiquido,\s*impostoBrl: metaSpend28Detalhe\.imposto,/);
     const secao = etapa.slice(etapa.indexOf("Resumo mobile · últimos 28 dias"), etapa.indexOf("</section>", etapa.indexOf("Resumo mobile · últimos 28 dias")));
     expect(secao).toContain("<LyrioResumoPorCanal");
@@ -232,7 +235,85 @@ describe("o fio até a tela", () => {
     expect(detalhe).toMatch(/const mostraVendas = revenuecatConectado && temMeta && estadoVendas\.tipo !== "oculto";/);
     expect(detalhe).toMatch(/vendasDoDetalhamento\(dimensao, rows, estadoVendas\.dados\)/);
     expect(detalhe).toMatch(/r\.platform === "meta" && vendas \? \(vendas\.porLinha\.get\(`\$\{r\.platform\}-\$\{r\.id\}`\) \?\? null\) : null/);
-    expect(detalhe).toContain("Anúncio não identificado");
+    // Story 42.13 (AC3): o rótulo vem da dimensão ativa, não fixo.
+    expect(detalhe).toMatch(/const naoIdentificado = rotuloDoNaoIdentificado\(dimensao\);/);
+    expect(detalhe).toMatch(/\[naoIdentificado\.rotulo, vendas\.naoIdentificado, naoIdentificado\.dica\]/);
+    expect(detalhe).not.toContain('"Anúncio não identificado"');
     expect(detalhe).toContain("Sem linha nesta tabela");
+  });
+});
+
+describe("Story 42.13 (AC3) — rotuloDoNaoIdentificado acompanha a dimensão", () => {
+  it("campanha, conjunto e anúncio, cada um com o seu nível na dica", () => {
+    expect(rotuloDoNaoIdentificado("campaign")).toEqual({ rotulo: "Campanha não identificada", dica: expect.stringContaining("id da campanha") });
+    expect(rotuloDoNaoIdentificado("adset")).toEqual({ rotulo: "Conjunto não identificado", dica: expect.stringContaining("id do conjunto") });
+    expect(rotuloDoNaoIdentificado("ad")).toEqual({ rotulo: "Anúncio não identificado", dica: expect.stringContaining("id do anúncio") });
+  });
+});
+
+describe("Story 42.13 (AC2) — blocoMetaDoLyrio: a venda da Meta vem do RevenueCat", () => {
+  const pronto = { tipo: "pronto" as const, dados: dados() };
+  const trafego = { investimentoBrl: 504.69, impressoes: 89482, cliques: 2589 };
+
+  it("vendas e receita do canal Meta; ROAS e custo por venda contra o investimento da Meta", () => {
+    const b = blocoMetaDoLyrio({ ...trafego, estado: pronto, brlRate: 5.4 });
+    expect(b.vendas).toBe(23);
+    expect(b.receitaBrl).toBeCloseTo(105.24 * 5.4, 10);
+    expect(b.roas).toBeCloseTo((105.24 * 5.4) / 504.69, 10);
+    expect(b.custoPorVenda).toBeCloseTo(504.69 / 23, 10);
+    expect(b.ctr).toBeCloseTo((2589 / 89482) * 100, 10);
+    expect(b.cpm).toBeCloseTo((504.69 * 1000) / 89482, 10);
+    expect(b.conversao).toBeCloseTo((23 / 2589) * 100, 10);
+  });
+  it("não lê o Google nem o total: só a linha Meta", () => {
+    const so = dados({ canais: dados().canais.map((c) => (c.canal === "meta" ? { ...c, vendas: 2, receitaUsd: 10 } : c)) });
+    const b = blocoMetaDoLyrio({ ...trafego, estado: { tipo: "pronto", dados: so }, brlRate: 5 });
+    expect(b.vendas).toBe(2);
+    expect(b.receitaBrl).toBe(50);
+  });
+  it("sem câmbio: receita e ROAS ficam null (nunca US$ disfarçado de R$); as vendas continuam", () => {
+    const b = blocoMetaDoLyrio({ ...trafego, estado: pronto, brlRate: null });
+    expect(b).toMatchObject({ vendas: 23, receitaBrl: null, roas: null });
+    expect(b.custoPorVenda).toBeCloseTo(504.69 / 23, 10);
+  });
+  it("divisões por zero viram null: sem investimento, sem venda, sem impressão, sem clique", () => {
+    const zerado = dados({ canais: dados().canais.map((c) => (c.canal === "meta" ? { ...c, vendas: 0, compradores: 0, receitaUsd: 0 } : c)) });
+    const b = blocoMetaDoLyrio({ investimentoBrl: 0, impressoes: 0, cliques: 0, estado: { tipo: "pronto", dados: zerado }, brlRate: 5 });
+    expect(b).toMatchObject({ vendas: 0, receitaBrl: 0, roas: null, custoPorVenda: null, ctr: null, cpm: null, conversao: null });
+    // com investimento e zero vendas, o custo por venda é desconhecido, não Infinity
+    expect(blocoMetaDoLyrio({ ...trafego, estado: { tipo: "pronto", dados: zerado }, brlRate: 5 }).custoPorVenda).toBeNull();
+  });
+  it("venda desconhecida (carregando, erro, API anterior à rota) → vendas e receita null, nunca 0", () => {
+    for (const estado of [{ tipo: "carregando" as const }, { tipo: "oculto" as const }, { tipo: "erro" as const, mensagem: "x" }]) {
+      const b = blocoMetaDoLyrio({ ...trafego, estado, brlRate: 5 });
+      expect(b).toMatchObject({ vendas: null, receitaBrl: null, roas: null, custoPorVenda: null, conversao: null });
+      expect(b.investimentoBrl).toBe(504.69);
+    }
+  });
+});
+
+describe("Story 42.13 — o fio até a tela", () => {
+  const ler = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
+  const etapa = ler("../../../components/funnels/lyrio-stage-view.tsx");
+  const bloco = ler("../../../components/funnels/lyrio-meta-kpis.tsx");
+  const detalhe = ler("../../../components/funnels/lyrio-detail-table.tsx");
+
+  it("AC2 — o bloco Meta do Lyrio é o novo, com o MESMO estado de vendas do bloco RevenueCat; SalesMetaKpis saiu da etapa", () => {
+    expect(etapa).not.toMatch(/<SalesMetaKpis/);
+    expect(etapa).toMatch(/<LyrioMetaKpis\s+projectId=\{projectId\}\s+campaignIds=\{campaignIds\}\s+days=\{days\}\s+vendas=\{vendasPorCanal\}\s+revenuecatConectado=\{connected\}/);
+    expect(bloco).toMatch(/useCampaignDailyInsightsBulk\(\s*projectId,\s*campaignIds\.length > 0 \? campaignIds : null,\s*days,\s*\)/);
+    expect(bloco).toMatch(/blocoMetaDoLyrio\(\{/);
+    expect(bloco).toMatch(/const estado: EstadoDasVendas = revenuecatConectado \? vendas : \{ tipo: "oculto" \};/);
+    expect(bloco).not.toMatch(/label="(LP Views|Checkouts|Ticket)/);
+  });
+  it("AC1 — Google: o bloco e o Resumo decidem pelo estado; ROAS e Margem somem com o Google desconhecido", () => {
+    const kpis = etapa.slice(etapa.indexOf("function GoogleAdsKpis("));
+    expect(kpis).toMatch(/estadoDoGoogle\(\{ isLoading: q\.isLoading, error: q\.error, data: q\.data \}, campaignIds\)/);
+    expect(kpis).toMatch(/estado\.tipo === "erro"[\s\S]*role="alert"/);
+    expect(etapa).toMatch(/const googleIndisponivel = googleSpend28Conhecido === null;/);
+    expect(etapa).toMatch(/investimento28 > 0 && !googleIndisponivel \? revenue28Brl \/ investimento28 : null/);
+    expect(etapa).toMatch(/revenue28Brl == null \|\| googleIndisponivel\s*\?\s*null/);
+    expect(etapa).toMatch(/value=\{googleIndisponivel \? "—" : fmtBRL\(googleSpend28\)\}/);
+    expect(detalhe).toMatch(/temGoogle && dimensao === "campaign" && erroGoogle && \(\s*<p role="alert"/);
   });
 });

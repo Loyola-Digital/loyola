@@ -53,7 +53,12 @@ import { GoogleAdsCampaignSelector } from "./google-ads-campaign-selector";
 import { useGoogleAdsCampaigns } from "@/lib/hooks/use-google-ads-analytics";
 import { StageDeleteSection } from "./stage-delete-section";
 import { CampaignLogButton } from "./campaign-log-link";
-import { SalesMetaKpis } from "./sales-meta-kpis";
+import { LyrioMetaKpis } from "./lyrio-meta-kpis";
+import {
+  ORIENTACAO_DO_ERRO_DO_GOOGLE,
+  estadoDoGoogle,
+  investimentoDoGoogle,
+} from "@/lib/utils/lyrio-google-ads";
 import { RevenuecatOverviewBlock } from "./revenuecat-overview-block";
 import { LyrioDetailTable } from "./lyrio-detail-table";
 import { LyrioJornadaPorCanal } from "./lyrio-jornada-por-canal";
@@ -199,15 +204,20 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
 
   // Investimento do Google na MESMA janela de 28 dias. Só as campanhas
   // vinculadas à etapa entram — a conta pode servir outros produtos.
-  const { data: googleCampaigns28 } = useGoogleAdsCampaigns(
-    googleCampaignIds.size > 0 ? googleAccountId : null,
-    28,
+  const googleAtivo = googleCampaignIds.size > 0 && !!googleAccountId;
+  const googleQ28 = useGoogleAdsCampaigns(googleAtivo ? googleAccountId : null, 28);
+  // Story 42.13 (AC1b): a consulta em erro (ex.: token recusado) NÃO é "R$ 0".
+  // `null` = investimento do Google desconhecido (carregando ou erro).
+  const googleEstado28 = useMemo(
+    () => estadoDoGoogle({ isLoading: googleQ28.isLoading, error: googleQ28.error, data: googleQ28.data }, googleCampaignIds),
+    [googleQ28.isLoading, googleQ28.error, googleQ28.data, googleCampaignIds],
   );
-  const googleSpend28 = (googleCampaigns28?.campaigns ?? [])
-    .filter((c) => googleCampaignIds.has(c.id))
-    .reduce((soma, c) => soma + c.spend, 0);
+  const googleSpend28Conhecido = googleAtivo ? investimentoDoGoogle(googleEstado28) : 0;
+  const googleSpend28 = googleSpend28Conhecido ?? 0;
+  const googleIndisponivel = googleSpend28Conhecido === null;
   // ROAS contra o investimento TOTAL: usar só a Meta inflaria o número assim que
-  // houvesse verba no Google.
+  // houvesse verba no Google — por isso, sem o Google, o ROAS é "—", não um
+  // número otimista.
   const investimento28 = metaSpend28 + googleSpend28;
 
   // Métricas do overview (28d / snapshot) pro resumo mobile.
@@ -219,7 +229,7 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   const revenue28Usd = metricValue(ov, "revenue_last_28_days", "revenue");
   const revenue28Brl = revenue28Usd != null && brlRate != null ? revenue28Usd * brlRate : null;
   const roas28 =
-    revenue28Brl != null && investimento28 > 0 ? revenue28Brl / investimento28 : null;
+    revenue28Brl != null && investimento28 > 0 && !googleIndisponivel ? revenue28Brl / investimento28 : null;
 
   // Story 42.4 — Margem de Contribuição. Percentuais vêm da config da etapa; a
   // API sempre devolve os três preenchidos, mas o fallback cobre o carregamento.
@@ -229,7 +239,7 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
 
   const margem28 = useMemo(
     () =>
-      revenue28Brl == null
+      revenue28Brl == null || googleIndisponivel
         ? null
         : calcularMargemContribuicao({
             faturamentoBrutoBrl: revenue28Brl,
@@ -242,6 +252,7 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
           }),
     [
       revenue28Brl,
+      googleIndisponivel,
       platformFeePct,
       taxPct,
       otherCostsPct,
@@ -294,7 +305,24 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
       note: "O valor do card JÁ inclui o imposto. O gross-up é por dentro: o imposto incide sobre o bruto, então não é spend × 1,1215.",
     };
 
-    const investimentoGoogle: MetricFormula = {
+    const investimentoGoogle: MetricFormula | undefined =
+      googleEstado28.tipo === "erro"
+        ? {
+            expression: "Google Ads API indisponível",
+            values: [
+              {
+                label: "Erro",
+                value: googleEstado28.mensagem,
+                source: "GET /api/google-ads/analytics/:accountId/campaigns",
+              },
+            ],
+            result: "—",
+            period: "últimos 28 dias",
+            note: `${ORIENTACAO_DO_ERRO_DO_GOOGLE} Enquanto isso, o ROAS e a Margem de Contribuição ficam "—": sem o Google, o investimento total é desconhecido.`,
+          }
+        : googleIndisponivel
+          ? undefined
+          : {
       expression: "Σ spend das campanhas vinculadas",
       values: [
         {
@@ -306,7 +334,7 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
       result: fmtBRL(googleSpend28),
       period: "últimos 28 dias",
       note: "Sem imposto de 12,15%: aquele tributo é da plataforma Meta.",
-    };
+          };
 
     const receita: MetricFormula | undefined =
       revenue28Usd != null && cambioValue
@@ -474,6 +502,8 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   }, [
     metaSpend28Detalhe,
     metaSpend28,
+    googleEstado28,
+    googleIndisponivel,
     googleSpend28,
     investimento28,
     revenue28Usd,
@@ -884,7 +914,7 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
             <KpiComMemorial
               icon={Zap}
               label="Investimento (Google)"
-              value={fmtBRL(googleSpend28)}
+              value={googleIndisponivel ? "—" : fmtBRL(googleSpend28)}
               formula={formulas.investimentoGoogle}
             />
           )}
@@ -955,7 +985,7 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
             }}
             google={{
               investimentoBrl: googleSpend28,
-              conhecido: googleCampaignIds.size > 0 && googleCampaigns28 !== undefined,
+              conhecido: googleAtivo && googleSpend28Conhecido !== null,
             }}
             percentuais={{ platformFeePct, taxPct, otherCostsPct }}
           />
@@ -984,12 +1014,15 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
       {/* Meta — conversões + spend das campanhas linkadas */}
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-muted-foreground">Meta Ads</h2>
-        <SalesMetaKpis
+        {/* Story 42.13 (AC2): a venda é a do RevenueCat (canal Meta), no MESMO
+            estado do bloco RevenueCat — antes lia planilha e dava 0. */}
+        <LyrioMetaKpis
           projectId={projectId}
-          funnelId={funnelId}
-          stageId={stage.id}
           campaignIds={campaignIds}
           days={days}
+          vendas={vendasPorCanal}
+          revenuecatConectado={connected}
+          brlRate={brlRate}
         />
       </section>
 
@@ -1618,13 +1651,24 @@ function GoogleAdsKpis({
   days: number;
   campaignIds: Set<string>;
 }) {
-  const { data, isLoading } = useGoogleAdsCampaigns(accountId, days);
+  const q = useGoogleAdsCampaigns(accountId, days);
+  // Story 42.13 (AC1a): erro da consulta tem estado próprio — antes virava
+  // "não tiveram entrega".
+  const estado = estadoDoGoogle({ isLoading: q.isLoading, error: q.error, data: q.data }, campaignIds);
 
-  if (isLoading) return <Skeleton className="h-20 rounded-xl" />;
+  if (estado.tipo === "carregando") return <Skeleton className="h-20 rounded-xl" />;
 
-  const vinculadas = (data?.campaigns ?? []).filter((c) => campaignIds.has(c.id));
+  if (estado.tipo === "erro") {
+    return (
+      <div role="alert" className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 space-y-1">
+        <p className="text-xs font-medium text-destructive">Não foi possível buscar os dados do Google Ads.</p>
+        <p className="text-xs text-destructive/90 break-words">{estado.mensagem}</p>
+        <p className="text-[11px] text-muted-foreground">{ORIENTACAO_DO_ERRO_DO_GOOGLE}</p>
+      </div>
+    );
+  }
 
-  if (vinculadas.length === 0) {
+  if (estado.tipo === "sem_entrega") {
     return (
       <div className="rounded-xl border border-dashed border-border/40 bg-card p-4">
         <p className="text-xs text-muted-foreground">
@@ -1634,6 +1678,7 @@ function GoogleAdsKpis({
     );
   }
 
+  const vinculadas = estado.vinculadas;
   const total = vinculadas.reduce(
     (acc, c) => ({
       spend: acc.spend + c.spend,
