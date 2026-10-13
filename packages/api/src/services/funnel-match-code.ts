@@ -43,3 +43,65 @@ export function matchCodeDoFunil(funnel: FunilComCodigo): MatchCodeDoFunil | nul
 export function effectiveMatchCode(funnel: FunilComCodigo): string | null {
   return matchCodeDoFunil(funnel)?.codigo ?? null;
 }
+
+// ============================================================
+// O código da ETAPA (migration 0169)
+// ============================================================
+
+export interface EtapaComCodigo {
+  matchCode: string | null;
+}
+
+export interface ChaveDaEtapa {
+  /** Minúsculo, aparado. `null` = não há como casar; o caller não auto-popula. */
+  codigo: string | null;
+  /**
+   * Segundo termo exigido no nome da campanha. `null` = só o `codigo` basta.
+   *
+   * Existe porque o código do FUNIL casa a campanha do funil inteiro: sem um
+   * segundo termo, toda etapa receberia toda campanha do lançamento.
+   */
+  sufixo: string | null;
+  /** De onde veio a chave — o aviso na tela diz isso para quem configurou. */
+  origem: "etapa" | "funil-com-fase" | "nenhuma";
+}
+
+/**
+ * A chave com que uma etapa encontra as campanhas dela.
+ *
+ * Duas regras, nesta ordem:
+ *
+ * 1. **Código da etapa preenchido** → é a chave completa, `sufixo: null`. Quem
+ *    digitou `fz-a1` disse exatamente o que quer; adivinhar um sufixo em cima
+ *    disso só tiraria campanha que o usuário pediu.
+ * 2. **Vazio** → o de sempre: código do funil + sufixo de fase. Intacto, para
+ *    as centenas de etapas que já existem não mudarem de comportamento.
+ *
+ * `codigo: null` só acontece quando o funil não tem código nem nome, ou quando
+ * a etapa não tem código e a heurística de fase não se aplica (perpétuo, `cpl`,
+ * `event`, nome ambíguo) — que é precisamente o caso que o campo novo resolve.
+ *
+ * Pura e sem I/O: é ela que decide quem casa, então precisa ser testável sem
+ * subir a Meta API.
+ */
+export function codigoDaEtapa(
+  funnel: FunilComCodigo,
+  etapa: EtapaComCodigo,
+  /** O que `resolveStagePhaseSuffix` devolveu. `null` = heurística não se aplica. */
+  sufixoDeFase: string | null,
+): ChaveDaEtapa {
+  const daEtapa = (etapa.matchCode ?? "").trim().toLowerCase();
+  if (daEtapa.length > 0) return { codigo: daEtapa, sufixo: null, origem: "etapa" };
+
+  const doFunil = effectiveMatchCode(funnel);
+  if (!doFunil || !sufixoDeFase) return { codigo: null, sufixo: null, origem: "nenhuma" };
+  return { codigo: doFunil, sufixo: sufixoDeFase.toLowerCase(), origem: "funil-com-fase" };
+}
+
+/** A campanha casa com a chave? Substring, minúsculas, os dois termos. Pura. */
+export function campanhaCasaComAEtapa(nomeDaCampanha: string, chave: ChaveDaEtapa): boolean {
+  if (!chave.codigo) return false;
+  const nome = nomeDaCampanha.toLowerCase();
+  if (!nome.includes(chave.codigo)) return false;
+  return chave.sufixo ? nome.includes(chave.sufixo) : true;
+}

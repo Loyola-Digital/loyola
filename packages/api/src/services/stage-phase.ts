@@ -1,5 +1,9 @@
 import type { FunnelType, StageType } from "@loyola-x/shared";
 import { fetchCampaigns } from "./meta-ads.js";
+import {
+  campanhaCasaComAEtapa,
+  type ChaveDaEtapa,
+} from "./funnel-match-code.js";
 
 /**
  * Resolve o "sufixo de fase" a casar no nome de campanhas Meta pra uma etapa
@@ -42,9 +46,15 @@ export function resolveStagePhaseSuffix(
 }
 
 /**
- * Busca campanhas Meta da conta vinculada que casam com `matchCode` E
- * `phaseSuffix` no nome (case-insensitive). Quando `phaseSuffix` é null,
- * retorna `[]` — auto-popular só executa quando a heurística é confiante.
+ * Busca campanhas Meta da conta vinculada que casam com a chave da etapa.
+ *
+ * A regra de casamento mora em `campanhaCasaComAEtapa` (um lugar só, porque as
+ * campanhas órfãs usam a MESMA regra — divergir faria o banner oferecer
+ * campanha que a criação não pegaria, e vice-versa).
+ *
+ * `sufixo: null` aqui significa "o código já basta", não "não casar nada": é o
+ * caso da etapa com código próprio (migration 0169). Quem não tem chave nenhuma
+ * é barrado por `codigo: null`, antes de chegar aqui.
  *
  * Filtra campanhas DELETED. Retorna `{ id, name }` no formato esperado por
  * `funnel_stages.campaigns`.
@@ -55,17 +65,16 @@ export async function findMatchingCampaignsForStage(
   matchCode: string | null,
   phaseSuffix: string | null,
 ): Promise<{ id: string; name: string }[]> {
-  if (!matchCode || !phaseSuffix) return [];
+  if (!matchCode) return [];
+  const chave: ChaveDaEtapa = {
+    codigo: matchCode.toLowerCase(),
+    sufixo: phaseSuffix ? phaseSuffix.toLowerCase() : null,
+    origem: phaseSuffix ? "funil-com-fase" : "etapa",
+  };
 
   const all = await fetchCampaigns(metaAccountId, accessToken);
-  const codeLower = matchCode.toLowerCase();
-  const suffixLower = phaseSuffix.toLowerCase();
-
   return all
     .filter((c) => c.status !== "DELETED")
-    .filter((c) => {
-      const name = c.name.toLowerCase();
-      return name.includes(codeLower) && name.includes(suffixLower);
-    })
+    .filter((c) => campanhaCasaComAEtapa(c.name, chave))
     .map((c) => ({ id: c.id, name: c.name }));
 }
