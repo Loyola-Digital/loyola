@@ -6185,3 +6185,76 @@ export const pushSubscriptions = pgTable(
     index("idx_push_subscriptions_user").on(t.userId),
   ],
 );
+
+/**
+ * Uma regra de alerta de funil: "me avise quando X passar de Y neste projeto".
+ *
+ * O escopo é o PROJETO, não o funil, e isso não é escolha de interface: o gasto
+ * de mídia não é registrado por funil nem por etapa (o catálogo do BI diz isso
+ * no próprio ROAS). Uma regra por funil mostraria um número que o dado não
+ * sustenta.
+ *
+ * A métrica não vira SQL aqui — vira uma `QuerySpec` do BI e roda no
+ * `executarQuery`. Assim connect rate e ROAS são exatamente os mesmos números
+ * do painel, e não uma segunda conta que diverge com o tempo.
+ */
+export const alertRules = pgTable(
+  "alert_rules",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /** `connect_rate` | `roas` | `investiu_sem_vender` — CHECK na migration. */
+    metrica: text("metrica").notNull(),
+    /** `menor` dispara abaixo do valor (ROAS, connect rate); `maior`, acima. */
+    comparador: text("comparador").notNull().default("menor"),
+    /** O limiar. Em `investiu_sem_vender` é o gasto mínimo que torna o silêncio grave. */
+    valor: numeric("valor", { precision: 14, scale: 4 }).notNull(),
+    /**
+     * Quanto precisa ter gasto na janela para a regra valer.
+     *
+     * Sem isto, campanha com R$ 12 de gasto e nenhuma venda dispara "ROAS
+     * zero" todo dia — e é o alarme falso que faz a pessoa desligar tudo.
+     */
+    gastoMinimo: numeric("gasto_minimo", { precision: 14, scale: 2 }),
+    /**
+     * 1 = o dia de hoje; 7 = os últimos 7 dias.
+     *
+     * ROAS de hoje às 9h é quase sempre ruim — o gasto entra antes da venda.
+     * Janela maior troca pressa por sossego, e quem decide é quem criou a regra.
+     */
+    janelaDias: integer("janela_dias").notNull().default(1),
+    ativo: boolean("ativo").notNull().default(true),
+    /** Dia (São Paulo) do último disparo: é o que segura em 1 aviso por dia. */
+    lastSentDate: text("last_sent_date"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("idx_alert_rules_project").on(t.projectId)],
+);
+
+/**
+ * Os projetos de que a pessoa quer receber notificação.
+ *
+ * Separado de `project_members`: ser membro é permissão, seguir é vontade. Quem
+ * cuida de seis projetos não quer push dos seis, e misturar as duas coisas é
+ * como notificação vira spam e acaba desligada inteira.
+ */
+export const notificationFollows = pgTable(
+  "notification_follows",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.projectId] }),
+    index("idx_notification_follows_project").on(t.projectId),
+  ],
+);
