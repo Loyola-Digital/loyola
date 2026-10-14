@@ -9,9 +9,12 @@
 
 import fp from "fastify-plugin";
 import { horaSaoPaulo, rodarAlertas } from "../services/alertas-de-funil.js";
+import { rodarResumoDiario } from "../services/resumo-diario.js";
 import { pushConfigurado } from "../services/push.js";
 
 const INTERVALO_MS = 30 * 60_000;
+// A janela acordada. É ela que limita a hora do resumo que a pessoa escolhe
+// (a rota recusa fora de 8–21): hora escolhida fora daqui nunca chegaria.
 const HORA_INICIO = 8;
 const HORA_FIM = 22;
 
@@ -37,6 +40,12 @@ export default fp(async function alertasDeFunilSchedulerPlugin(fastify) {
     if (hora < HORA_INICIO || hora >= HORA_FIM) return;
     rodando = true;
     try {
+      // O resumo vem primeiro: às 8h as duas coisas podem estar vencidas, e a
+      // ordem na bandeja deve ser "panorama, depois o que pegou fogo".
+      const digest = await rodarResumoDiario(fastify);
+      if (digest.resumosEnviados > 0 || digest.erros.length > 0) {
+        fastify.log.info(digest, "[resumo-diario] ciclo concluído");
+      }
       const resumo = await rodarAlertas(fastify);
       if (resumo.alertasEnviados > 0 || resumo.erros.length > 0) {
         fastify.log.info(resumo, "[alertas-funil] ciclo concluído");

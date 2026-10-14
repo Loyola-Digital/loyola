@@ -10,6 +10,8 @@ import { z } from "zod";
 import { and, eq, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { alertRules, notificationFollows, projectMembers, projects } from "../db/schema.js";
+import { lerPreferencias } from "../services/resumo-diario.js";
+import { notificationPrefs } from "../db/schema.js";
 import {
   METRICAS,
   ROTULO_DA_METRICA,
@@ -194,6 +196,33 @@ export default fp(async function alertasDeFunilRoutes(fastify) {
       .from(notificationFollows)
       .where(eq(notificationFollows.userId, request.userId));
     return { projectIds: seguidos.map((s) => s.projectId) };
+  });
+
+  // ---- preferências de resumo ----
+
+  fastify.get("/api/notificacoes/preferencias", async (request) =>
+    lerPreferencias(fastify, request.userId),
+  );
+
+  fastify.put("/api/notificacoes/preferencias", async (request, reply) => {
+    const corpo = z
+      .object({
+        resumoAtivo: z.boolean(),
+        // 8–21 porque o agendador só roda de 8h às 22h: hora fora da janela
+        // nunca chegaria, e a tela prometeria o que não acontece.
+        horaDoResumo: z.number().int().min(8).max(21),
+      })
+      .safeParse(request.body);
+    if (!corpo.success) return reply.code(400).send({ error: "PREFERENCIA_INVALIDA" });
+
+    await fastify.db
+      .insert(notificationPrefs)
+      .values({ userId: request.userId, ...corpo.data })
+      .onConflictDoUpdate({
+        target: notificationPrefs.userId,
+        set: { ...corpo.data, updatedAt: new Date() },
+      });
+    return lerPreferencias(fastify, request.userId);
   });
 
   fastify.put("/api/notificacoes/projetos", async (request, reply) => {

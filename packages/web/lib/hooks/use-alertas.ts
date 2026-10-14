@@ -109,3 +109,32 @@ export function useSalvarProjetosSeguidos() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["notificacoes-projetos"] }),
   });
 }
+
+export interface PreferenciasDeNotificacao {
+  resumoAtivo: boolean;
+  /** Hora local de São Paulo, entre 8 e 21 (a janela em que o agendador roda). */
+  horaDoResumo: number;
+  lastDigestDate: string | null;
+}
+
+export function usePreferenciasDeNotificacao() {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["notificacoes-preferencias"],
+    queryFn: () => apiClient<PreferenciasDeNotificacao>("/api/notificacoes/preferencias"),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useSalvarPreferencias() {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dados: { resumoAtivo: boolean; horaDoResumo: number }) =>
+      apiClient<PreferenciasDeNotificacao>("/api/notificacoes/preferencias", {
+        method: "PUT",
+        body: JSON.stringify(dados),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["notificacoes-preferencias"] }),
+  });
+}
