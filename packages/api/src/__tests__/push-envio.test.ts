@@ -167,6 +167,13 @@ describe("configurarVapid", () => {
     expect(mockVapid).toHaveBeenCalledWith("mailto:contato@loyoladigital.com", "p1", "s1");
   });
 
+  it("subject VAZIO cai no padrão — o painel de deploy cria a variável em branco", () => {
+    // `?? default` não pega string vazia, e a biblioteca lança "No subject
+    // set": variável declarada sem valor derrubava o envio inteiro.
+    configurarVapid(conf({ VAPID_SUBJECT: "", VAPID_PUBLIC_KEY: "p7", VAPID_PRIVATE_KEY: "s7" }));
+    expect(mockVapid.mock.calls[0][0]).toBe("mailto:contato@loyoladigital.com");
+  });
+
   it("não mexe em quem já tem `mailto:` nem em URL", () => {
     configurarVapid(conf({ VAPID_SUBJECT: "mailto:a@b.com", VAPID_PUBLIC_KEY: "p2", VAPID_PRIVATE_KEY: "s2" }));
     expect(mockVapid.mock.calls[0][0]).toBe("mailto:a@b.com");
