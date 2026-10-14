@@ -125,6 +125,7 @@ import npsRoutes from "./routes/nps.js";
 import debriefingsRoutes from "./routes/debriefings.js";
 import campaignLogRoutes from "./routes/campaign-log.js";
 import eventPaymentAlertsRoutes from "./routes/event-payment-alerts.js";
+import pushRoutes from "./routes/push.js";
 import stageComercialRoutes from "./routes/stage-comercial.js";
 import instagramScansRoutes from "./routes/instagram-scans.js";
 import swipeFilesRoutes from "./routes/swipe-files.js";
@@ -320,6 +321,7 @@ export async function buildServer() {
   await app.register(debriefingsRoutes);
   await app.register(campaignLogRoutes);
   await app.register(eventPaymentAlertsRoutes);
+  await app.register(pushRoutes);
   await app.register(stageComercialRoutes);
   await app.register(instagramScansRoutes);
   await app.register(swipeFilesRoutes);
