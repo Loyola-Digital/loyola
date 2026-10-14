@@ -17,7 +17,11 @@
 import { describe, expect, it } from "vitest";
 import type { Database } from "../db/client.js";
 import { kiwifyStageConfigs } from "../db/schema.js";
-import { aFonteEhKiwify, fontesDeVendaDaEtapa } from "../services/kiwify-vendas-cache.js";
+import {
+  aFonteEhKiwify,
+  fontesDeVendaDaEtapa,
+  produtosDaListaDeOfertas,
+} from "../services/kiwify-vendas-cache.js";
 import type { FonteDeVendas } from "../services/kiwify-vendas-cache.js";
 
 const PROJ = "738cda16-c5be-4268-9c98-92e46c359569";
@@ -150,5 +154,26 @@ describe("a planilha virtual", () => {
     );
     expect(fontes[0]!.orderBumpProducts).toEqual(["Combo extra"]);
     expect(fontes[0]!.productTypes).toEqual({ "Combo extra": "bump" });
+  });
+});
+
+describe("os produtos da lista de ofertas", () => {
+  it("usa os marcados na tela, que ainda não foram salvos", () => {
+    // O pedido do Lucas: marco o produto e só aparecem as ofertas DELE.
+    expect(produtosDaListaDeOfertas("prod-novo", ["prod-salvo"])).toEqual(["prod-novo"]);
+  });
+
+  it("aceita vários, e limpa espaço e vazio do CSV", () => {
+    expect(produtosDaListaDeOfertas("a, b,,c ", [])).toEqual(["a", "b", "c"]);
+  });
+
+  it("sem nada marcado, cai nos salvos — é quem abriu a tela e não mexeu", () => {
+    expect(produtosDaListaDeOfertas(undefined, ["prod-salvo"])).toEqual(["prod-salvo"]);
+    expect(produtosDaListaDeOfertas("", ["prod-salvo"])).toEqual(["prod-salvo"]);
+    expect(produtosDaListaDeOfertas(" , ", ["prod-salvo"])).toEqual(["prod-salvo"]);
+  });
+
+  it("sem marcados e sem salvos, não filtra produto nenhum", () => {
+    expect(produtosDaListaDeOfertas(undefined, null)).toEqual([]);
   });
 });

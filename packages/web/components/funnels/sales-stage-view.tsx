@@ -13,6 +13,7 @@ import { useCampaignPicker } from "@/lib/hooks/use-funnels";
 import { MultiSalesSpreadsheets } from "./multi-sales-spreadsheets";
 import { StageSalesSection } from "./stage-sales-section";
 import { StageSalesSpreadsheetSection } from "./stage-sales-spreadsheet-section";
+import { FonteDeVendasDaEtapa } from "./fonte-de-vendas-da-etapa";
 import { FunnelSpreadsheetsTab } from "./funnel-spreadsheets-tab";
 import { CampaignSelector } from "./campaign-selector";
 import { StageDeleteSection } from "./stage-delete-section";
@@ -303,6 +304,10 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
         </TabsContent>
 
         <TabsContent value="spreadsheet" className="mt-6 space-y-4">
+          {/* A fonte vem ANTES das planilhas: é ela que decide se as planilhas
+              abaixo são lidas ou ignoradas. */}
+          <FonteDeVendasDaEtapa projectId={projectId} funnelId={funnelId} stageId={stage.id} />
+          <div className="border-t border-border/30" />
           <StageSalesSpreadsheetSection
             projectId={projectId}
             funnelId={funnelId}

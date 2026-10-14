@@ -458,4 +458,17 @@
 // Captações Pagas que ainda não têm planilha ela saía como `main_product`
 // numa rota que havia pedido `capture`. Sem efeito na tela hoje (nenhuma rota
 // relê esse campo), mas era uma armadilha. `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 44;
+// v45 (a fonte de vendas vira configuração da etapa; sem migration):
+// `GET …/stages/:stageId/kiwify/ofertas` aceita `?produtos=<csv de productIds>`
+// (ADITIVO) e devolve `produtoId` por oferta (ADITIVO). Sem o parâmetro usa os
+// produtos SALVOS, como antes.
+// Por quê: a lista de ofertas saía dos produtos salvos, então marcar um produto
+// na tela e ver as ofertas dele exigia salvar e reabrir — quem trocava de
+// produto via as ofertas do anterior. `produtoId` é o que permite soltar a
+// oferta marcada quando o produto dela é desmarcado, em vez de ela seguir
+// filtrando invisível. No web, o formulário saiu do diálogo do cartão de
+// conferência e virou a seção "De onde vêm as vendas" no topo da aba Planilhas
+// da etapa (captação paga e Vendas), onde se procura de onde o número vem; o
+// diálogo do cartão passou a usar o mesmo formulário. `packages/mcp` não é
+// afetado.
+export const API_CONTRACT_VERSION = 45;

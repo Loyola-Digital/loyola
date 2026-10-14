@@ -151,6 +151,8 @@ export interface OfertaDaKiwify {
   id: string;
   nome: string;
   produto: string | null;
+  /** O id do produto — usado para soltar a oferta quando o produto é desmarcado. */
+  produtoId: string | null;
   vendas: number;
   /** Primeira e última venda desta oferta (aaaa-mm-dd). Distingue duas ofertas
    *  do mesmo produto que vendem para funis diferentes. */
@@ -170,16 +172,29 @@ export function useKiwifyOfertas(
   funnelId: string,
   stageId: string,
   habilitado: boolean,
+  /**
+   * Os produtos MARCADOS na tela. Sem eles a rota usa os salvos, e a lista só
+   * mudava depois de salvar e reabrir — quem marcava o produto via as ofertas
+   * do produto anterior.
+   */
+  produtos: string[] = [],
 ) {
   const apiClient = useApiClient();
+  // Ordenado para a ordem dos cliques não virar duas entradas de cache da
+  // mesma pergunta.
+  const chave = [...produtos].sort().join(",");
   return useQuery({
-    queryKey: ["kiwify-ofertas", projectId, funnelId, stageId],
+    queryKey: ["kiwify-ofertas", projectId, funnelId, stageId, chave],
     queryFn: () =>
       apiClient<{
         ofertas: OfertaDaKiwify[];
         sincronizadoEm: string | null;
         sincronizadoDe: string | null;
-      }>(`${base(projectId, funnelId, stageId)}/ofertas`),
+      }>(
+        `${base(projectId, funnelId, stageId)}/ofertas${
+          chave ? `?produtos=${encodeURIComponent(chave)}` : ""
+        }`,
+      ),
     enabled: habilitado,
     staleTime: 60 * 1000,
   });

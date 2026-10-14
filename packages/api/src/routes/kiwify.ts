@@ -18,6 +18,7 @@ import { readSheetData } from "../services/google-sheets.js";
 import {
   KiwifyIndisponivel,
   ofertasDosProdutos,
+  produtosDaListaDeOfertas,
   sincronizarVendas,
 } from "../services/kiwify-vendas-cache.js";
 import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
@@ -692,6 +693,11 @@ export default fp(async function kiwifyRoutes(fastify) {
       const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
       if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
 
+      // `produtos` (CSV) = os produtos MARCADOS na tela, que ainda não foram
+      // salvos. Sem isso a lista só mudava depois de salvar e reabrir: o
+      // usuário marcava o produto e via as ofertas do produto anterior.
+      const query = z.object({ produtos: z.string().optional() }).safeParse(request.query);
+
       const [cfg] = await fastify.db
         .select({ productIds: kiwifyStageConfigs.productIds })
         .from(kiwifyStageConfigs)
@@ -707,7 +713,10 @@ export default fp(async function kiwifyRoutes(fastify) {
       const ofertas = await ofertasDosProdutos(
         fastify.db,
         params.data.projectId,
-        cfg?.productIds ?? [],
+        produtosDaListaDeOfertas(
+          query.success ? query.data.produtos : undefined,
+          cfg?.productIds,
+        ),
       );
       return {
         ofertas,
