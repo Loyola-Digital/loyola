@@ -455,11 +455,13 @@ function linha(
   tipo: "ingresso" | "principal" | "order_bump" | "combo" | "upsell",
   segundos: number,
   transacaoId: string | null = null,
+  produto?: string,
 ): LinhaDeVenda {
   return {
     email, bruto, tipo,
     data: new Date(T0 + segundos * 1000),
     transacaoId,
+    produto,
     utmSource: "meta", utmTerm: "hot",
   };
 }
@@ -758,5 +760,99 @@ describe("uma linha não classificada não pode derrubar o denominador (18.70)",
     const r = resumirOrderBump(linhas, false);
     expect(r.faturamentoPrincipal).toBeCloseTo(29.9 + 29.9 + 226.9, 2);
     expect(r.compradoresComPrincipal).toBe(3);
+  });
+});
+
+// ============================================================================
+// O `transactionId` da planilha é do PEDIDO ou da LINHA?
+//
+// Medido em 13/10/2026 nas três planilhas `n8n-kiwify-captação`: a coluna "ID"
+// reúne produtos diferentes em 0 (dg-pg05), 0 (dg-pg02) e 1 (dg-pg04) casos; a
+// coluna "Transaction" em 22, 0 e 127. Quando a coluna errada passava por ID de
+// pedido, cada linha virava seu próprio checkout e a etapa reportava "0 de 400
+// compradores com bump" — com os R$ 1.099 de bump inteiros virando "venda
+// avulsa". Nenhum erro, nenhum log: só o número errado na tela.
+// ============================================================================
+
+describe("qual sinal governa o checkout", () => {
+  it("um REEMBOLSO repetindo o ID da linha não faz dela um ID de pedido", () => {
+    // O caso que zerou a Captação Paga do dg-pg05: a Kiwify reenvia a venda
+    // reembolsada com o MESMO id e o MESMO produto. A regra antiga ("algum id
+    // repete?") aceitava isso como pedido.
+    const linhas = [
+      linha("a@x.com", 39.9, "ingresso", 0, "LINHA-1", "Imersão"),
+      linha("a@x.com", 157, "order_bump", 2, "LINHA-2", "Gravação"),
+      linha("b@x.com", 39.9, "ingresso", 10, "LINHA-3", "Imersão"),
+      // o reembolso: mesma linha, mesmo produto, de novo
+      linha("b@x.com", 39.9, "ingresso", 90_000, "LINHA-3", "Imersão"),
+    ];
+    expect(transacaoAgrupa(linhas)).toBe(false);
+    const r = resumirOrderBump(linhas, true);
+    expect(r.sinalDeCheckout).toBe("janela");
+    // Pelo e-mail + janela o bump volta a ser acessório, não "avulso".
+    expect(r.bumpAcessorio).toBe(157);
+    expect(r.bumpAvulso).toBe(0);
+    expect(r.compradoresComBump).toBe(1);
+  });
+
+  it("UM acidente de id repetido com produtos diferentes também não basta", () => {
+    // O caso da etapa de Vendas do dg-pg04: 1 id em 1316 reunia dois produtos
+    // (reexecução do n8n), e só por isso a etapa inteira era agrupada pelo id
+    // da linha — "1 de 1101 compradores com bump".
+    const linhas = [
+      linha("a@x.com", 39.9, "ingresso", 0, "LINHA-1", "Imersão"),
+      linha("a@x.com", 157, "order_bump", 2, "LINHA-1", "Gravação"),
+      linha("b@x.com", 39.9, "ingresso", 10, "LINHA-2", "Imersão"),
+      linha("b@x.com", 157, "order_bump", 12, "LINHA-3", "Gravação"),
+    ];
+    expect(transacaoAgrupa(linhas)).toBe(false);
+    const r = resumirOrderBump(linhas, true);
+    expect(r.sinalDeCheckout).toBe("janela");
+    // Os DOIS compradores aparecem, não só o do id acidental.
+    expect(r.compradoresComBump).toBe(2);
+    expect(r.bumpAcessorio).toBe(314);
+  });
+
+  it("dois pedidos reunindo produtos diferentes: aí o id é do pedido", () => {
+    // A Captação Paga do dg-pg04, que já funcionava: a coluna "Transaction"
+    // junta 127 pedidos multi-produto. Este caminho não pode mudar.
+    const linhas = [
+      linha("a@x.com", 39.9, "ingresso", 0, "PEDIDO-1", "Imersão"),
+      linha("a@x.com", 157, "order_bump", 0, "PEDIDO-1", "Gravação"),
+      linha("b@x.com", 39.9, "ingresso", 10, "PEDIDO-2", "Imersão"),
+      linha("b@x.com", 157, "order_bump", 10, "PEDIDO-2", "Gravação"),
+    ];
+    expect(transacaoAgrupa(linhas)).toBe(true);
+    const r = resumirOrderBump(linhas, true);
+    expect(r.sinalDeCheckout).toBe("transacao");
+    expect(r.compradoresComBump).toBe(2);
+    expect(r.bumpAcessorio).toBe(314);
+  });
+
+  it("o id do pedido separa a recompra que a janela também separaria", () => {
+    // O id de pedido continua valendo mais que a janela quando existe: a
+    // recompra do mesmo produto 14 dias depois é outro pedido.
+    const linhas = [
+      linha("a@x.com", 39.9, "ingresso", 0, "PEDIDO-1", "Imersão"),
+      linha("a@x.com", 157, "order_bump", 0, "PEDIDO-1", "Gravação"),
+      linha("b@x.com", 39.9, "ingresso", 0, "PEDIDO-2", "Imersão"),
+      linha("b@x.com", 157, "order_bump", 0, "PEDIDO-2", "Gravação"),
+      linha("a@x.com", 157, "order_bump", 14 * 24 * 3600, "PEDIDO-3", "Gravação"),
+    ];
+    const r = resumirOrderBump(linhas, true);
+    expect(r.sinalDeCheckout).toBe("transacao");
+    // A recompra é checkout próprio, sem produto de captação: venda avulsa.
+    expect(r.bumpAvulso).toBe(157);
+    expect(r.bumpAcessorio).toBe(314);
+  });
+
+  it("sem nome de produto, mantém a regra antiga (contagem de repetição)", () => {
+    // O Perpétuo passou a mandar o produto, mas quem não mandar não deve
+    // perder o agrupamento por pedido que já tinha.
+    const linhas = [
+      linha("a@x.com", 39.9, "ingresso", 0, "PEDIDO-1"),
+      linha("a@x.com", 157, "order_bump", 0, "PEDIDO-1"),
+    ];
+    expect(transacaoAgrupa(linhas)).toBe(true);
   });
 });

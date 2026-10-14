@@ -984,6 +984,9 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         linhasDeVenda.push({
           email: entry.email.trim().toLowerCase(),
           tipo: tipoDoProdutoNaVenda(entry.product),
+          // O nome vai junto do tipo: é por ele que `transacaoAgrupa` sabe se
+          // o `transactionId` da planilha é do PEDIDO ou da LINHA.
+          produto: entry.product,
           bruto: entry.bruto,
           // Story 18.68: a data é o que forma o checkout. Sem ela, a análise
           // não sai — e não cai de volta para agrupar por comprador.
@@ -1018,6 +1021,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         linhasDeVenda.push({
           email: (mr.email ?? "").trim().toLowerCase(),
           tipo: tipoDoProdutoNaVenda(prod),
+          produto: prod,
           bruto: val,
           data: dt,
           transacaoId: null,
