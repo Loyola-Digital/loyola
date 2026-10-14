@@ -550,4 +550,21 @@
 // projeto conferiu — regra global precisa de um projeto para ter número.
 // O recorte continua sendo o PROJETO, nunca o funil: o gasto de mídia não é
 // registrado por funil nem por etapa. `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 49;
+// v50 (o alerta de faturamento para de disparar sozinho todo dia; sem migration):
+// ⚠️ CORREÇÃO de comportamento do v47. A série de vendas (`public_metrics_cache`
+// scope `sales-daily`, que é a entidade `faturamento` do BI) é de dias
+// FECHADOS: o dia corrente nunca está lá. Medido em 14/10/2026 às 20:56 — o
+// cache tinha sido recalculado às 20:45 (BBE) e 16:00 (DG) e o último dia era
+// 13/10 nos quatro projetos. Só que o INVESTIMENTO vem do tráfego, que é
+// intraday: "hoje" devolvia R$ 1.057 de gasto e R$ 0 de faturamento, e uma
+// regra de ROAS com janela de hoje disparava TODO DIA sem nada estar errado.
+// Agora a janela das métricas de faturamento é ancorada no último dia fechado
+// (janela 1 = esse dia; 7 = os sete até ele), e projeto sem série nenhuma
+// responde "sem dado" em vez de zero. Medido depois: PP ROAS 0,86 em 7 dias
+// (alerta real), os outros quatro quietos, nenhum falso.
+// Pelo mesmo motivo, o RESUMO diário deixa de fora o projeto cuja série ainda
+// não alcançou ontem — a linha diria "R$ 1,9k → R$ 0", que é ausência, não
+// zero. O rótulo da janela de 1 dia passa a ser "último dia fechado" para
+// ROAS e "investiu e não vendeu", e segue "hoje" para connect rate (tráfego é
+// intraday). `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 50;

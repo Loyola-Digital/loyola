@@ -14,7 +14,7 @@
  *    que cobre restart e deploy.
  */
 
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { alertRuleState, alertRules, notificationFollows, projects } from "../db/schema.js";
 import { executarQuery, querySpecSchema, type QuerySpec } from "./bi/query.js";
@@ -41,6 +41,13 @@ export function horaSaoPaulo(agora = new Date()): number {
 /** `dias` dias atrás, em data de São Paulo. */
 function diasAtras(dias: number, agora = new Date()): string {
   return hojeSaoPaulo(new Date(agora.getTime() - dias * 86_400_000));
+}
+
+/** `dias` dias antes de uma data aaaa-mm-dd, sem passar por fuso. */
+export function antesDe(dia: string, dias: number): string {
+  const d = new Date(`${dia}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - dias);
+  return d.toISOString().slice(0, 10);
 }
 
 export const METRICAS = ["connect_rate", "roas", "investiu_sem_vender"] as const;
@@ -87,6 +94,34 @@ export interface Leitura {
   faturamento: number | null;
 }
 
+/**
+ * O último dia que a série de vendas do projeto cobre.
+ *
+ * A série é de dias FECHADOS: o dia corrente nunca está lá (medido em
+ * 14/10/2026 — cache recalculado às 20:45 e último dia 13/10 nos quatro
+ * projetos). Só que o INVESTIMENTO vem do tráfego, que é intraday — então
+ * "hoje" devolve gasto real e faturamento zero, e um alerta de ROAS com janela
+ * de hoje dispararia todo dia sem que nada estivesse errado.
+ *
+ * Zero não é ausência. É por isso que a janela das métricas de faturamento
+ * para aqui.
+ */
+export async function ultimoDiaComVenda(
+  db: FastifyInstance["db"],
+  projectId: string,
+): Promise<string | null> {
+  const r = await db.execute(sql`
+    SELECT MAX(d->>'date') AS dia
+    FROM public_metrics_cache pmc,
+         LATERAL jsonb_array_elements(pmc.payload->'byDay') d
+    WHERE pmc.scope = 'sales-daily'
+      AND pmc.project_id = ${projectId}::uuid
+      AND jsonb_typeof(pmc.payload->'byDay') = 'array'
+  `);
+  const linhas = (r as unknown as { rows?: Array<{ dia: string | null }> }).rows ?? [];
+  return linhas[0]?.dia ?? null;
+}
+
 export async function lerMetrica(
   db: FastifyInstance["db"],
   projectId: string,
@@ -94,8 +129,21 @@ export async function lerMetrica(
   janelaDias: number,
   agora = new Date(),
 ): Promise<Leitura> {
-  const ate = hojeSaoPaulo(agora);
-  const de = janelaDias <= 1 ? ate : diasAtras(janelaDias - 1, agora);
+  const hoje = hojeSaoPaulo(agora);
+  let ate = hoje;
+  let de = janelaDias <= 1 ? hoje : diasAtras(janelaDias - 1, agora);
+
+  if (metrica !== "connect_rate") {
+    // A janela de faturamento é ancorada no último dia FECHADO, não em hoje:
+    // janela 1 = esse dia, janela 7 = os sete até ele. Ancorar em hoje faria
+    // a janela de 1 dia nunca ter dado nenhum, e a de 7 dias misturar seis
+    // dias reais com um dia de venda zero.
+    const ultimo = await ultimoDiaComVenda(db, projectId);
+    if (!ultimo) return { valor: null, gasto: 0, faturamento: null };
+    ate = ultimo;
+    de = janelaDias <= 1 ? ultimo : antesDe(ultimo, janelaDias - 1);
+  }
+
   // `as never` é o mesmo que as rotas do BI fazem: o executor declara um `Db`
   // estrutural mínimo que o tipo do Drizzle não satisfaz nominalmente.
   const r = await executarQuery(specDaMetrica(metrica, de, ate), {
@@ -186,7 +234,10 @@ export function textoDoAlerta(
   leitura: Leitura,
   nomeDoProjeto: string,
 ): { titulo: string; corpo: string } {
-  const janela = regra.janelaDias <= 1 ? "hoje" : `nos últimos ${regra.janelaDias} dias`;
+  // Faturamento só existe por dia fechado — dizer "hoje" num alerta de ROAS
+  // mandaria a pessoa procurar na tela um número que ainda não existe.
+  const umDia = regra.metrica === "connect_rate" ? "hoje" : "no último dia fechado";
+  const janela = regra.janelaDias <= 1 ? umDia : `nos últimos ${regra.janelaDias} dias`;
   if (regra.metrica === "investiu_sem_vender") {
     return {
       titulo: `${nomeDoProjeto}: ${dinheiro(leitura.gasto)} sem venda`,

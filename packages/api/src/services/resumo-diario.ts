@@ -19,7 +19,7 @@ import type { FastifyInstance } from "fastify";
 import { notificationFollows, notificationPrefs, projects } from "../db/schema.js";
 import { executarQuery, querySpecSchema } from "./bi/query.js";
 import { enviarPush } from "./push.js";
-import { hojeSaoPaulo, horaSaoPaulo } from "./alertas-de-funil.js";
+import { hojeSaoPaulo, horaSaoPaulo, ultimoDiaComVenda } from "./alertas-de-funil.js";
 
 const HORA_PADRAO = 8;
 
@@ -137,7 +137,8 @@ export async function rodarResumoDiario(fastify: FastifyInstance): Promise<Resum
 
   // Uma leitura por projeto, não por pessoa: dois gestores do mesmo projeto não
   // devem custar duas consultas de BI.
-  const lidos = new Map<string, Omit<LinhaDoResumo, "projectId" | "nome">>();
+  // `null` = a série de vendas do projeto ainda não alcançou ontem.
+  const lidos = new Map<string, Omit<LinhaDoResumo, "projectId" | "nome"> | null>();
 
   for (const [userId, projetos] of porPessoa) {
     const pref = prefs.get(userId);
@@ -149,15 +150,23 @@ export async function rodarResumoDiario(fastify: FastifyInstance): Promise<Resum
     try {
       const linhas: LinhaDoResumo[] = [];
       for (const projectId of projetos) {
-        if (!lidos.has(projectId)) lidos.set(projectId, await lerDoDia(fastify.db, projectId, ontem));
-        linhas.push({
-          projectId,
-          nome: nomes.get(projectId) ?? "Projeto",
-          ...lidos.get(projectId)!,
-        });
+        if (!lidos.has(projectId)) {
+          // Projeto cuja série de vendas ainda não alcançou ontem fica FORA do
+          // resumo. O investimento vem do tráfego e chegaria sozinho, e a
+          // linha diria "R$ 1,9k → R$ 0", que é falso: é ausência, não zero.
+          const ultimo = await ultimoDiaComVenda(fastify.db, projectId);
+          lidos.set(
+            projectId,
+            ultimo && ultimo >= ontem ? await lerDoDia(fastify.db, projectId, ontem) : null,
+          );
+        }
+        const lido = lidos.get(projectId);
+        if (!lido) continue;
+        linhas.push({ projectId, nome: nomes.get(projectId) ?? "Projeto", ...lido });
       }
 
-      const parado = linhas.every((l) => l.investimento === 0 && l.faturamento === 0);
+      const parado =
+        linhas.length === 0 || linhas.every((l) => l.investimento === 0 && l.faturamento === 0);
       if (parado) {
         // Marca assim mesmo: senão o ciclo das 8h30 tentaria de novo, e de novo,
         // o dia inteiro, gastando consulta de BI por nada.
