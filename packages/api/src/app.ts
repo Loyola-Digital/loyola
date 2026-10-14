@@ -126,11 +126,13 @@ import debriefingsRoutes from "./routes/debriefings.js";
 import campaignLogRoutes from "./routes/campaign-log.js";
 import eventPaymentAlertsRoutes from "./routes/event-payment-alerts.js";
 import pushRoutes from "./routes/push.js";
+import alertasDeFunilRoutes from "./routes/alertas-de-funil.js";
 import stageComercialRoutes from "./routes/stage-comercial.js";
 import instagramScansRoutes from "./routes/instagram-scans.js";
 import swipeFilesRoutes from "./routes/swipe-files.js";
 import planejamentoRoutes from "./routes/planejamento.js"; // Story 48.1
 import paymentAlertsSchedulerPlugin from "./plugins/payment-alerts-scheduler.js";
+import alertasDeFunilSchedulerPlugin from "./plugins/alertas-de-funil-scheduler.js";
 import sendflowGroupsSchedulerPlugin from "./plugins/sendflow-groups-scheduler.js";
 import revenuecatSnapshotSchedulerPlugin from "./plugins/revenuecat-snapshot-scheduler.js";
 import plannerSyncSchedulerPlugin from "./plugins/planner-sync-scheduler.js";
@@ -202,6 +204,7 @@ export async function buildServer() {
   // Log de Campanha automático a partir do histórico de alterações da Meta.
   await app.register(metaActivitiesSchedulerPlugin);
   await app.register(paymentAlertsSchedulerPlugin);
+  await app.register(alertasDeFunilSchedulerPlugin);
   // Grupos do SendFlow (substitui a exportação manual pra planilha).
   await app.register(sendflowGroupsSchedulerPlugin);
   // Story 42.10: um ponto por dia das métricas do RevenueCat. A API só devolve
@@ -322,6 +325,7 @@ export async function buildServer() {
   await app.register(campaignLogRoutes);
   await app.register(eventPaymentAlertsRoutes);
   await app.register(pushRoutes);
+  await app.register(alertasDeFunilRoutes);
   await app.register(stageComercialRoutes);
   await app.register(instagramScansRoutes);
   await app.register(swipeFilesRoutes);

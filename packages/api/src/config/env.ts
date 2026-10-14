@@ -71,6 +71,8 @@ const envSchema = z.object({
   VAPID_PRIVATE_KEY: z.string().optional(),
   /** `mailto:` de contato, exigido pelo protocolo para o serviço de push falar com a gente. */
   VAPID_SUBJECT: z.string().optional(),
+  /** `false` desliga o agendador dos alertas de funil (sempre desligado em teste). */
+  ALERTAS_FUNIL_ENABLED: z.enum(["true", "false"]).optional(),
   // API pública de vendas: idade máxima do cache antes de recalcular AO VIVO na
   // requisição (default 120s). O job noturno vira só aquecimento — quem consulta
   // nunca recebe número velho. Subir se a cota do Sheets apertar.
