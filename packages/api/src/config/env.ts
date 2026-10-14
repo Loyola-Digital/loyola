@@ -63,6 +63,14 @@ const envSchema = z.object({
   // PAYMENT_ALERT_ENABLED=false desliga (sempre desligado em NODE_ENV=test).
   PAYMENT_ALERT_HOUR: z.coerce.number().int().min(0).max(23).optional(),
   PAYMENT_ALERT_ENABLED: z.enum(["true", "false"]).optional(),
+  // Notificações push (Web Push / VAPID). Sem o par de chaves as rotas de push
+  // recusam e o agendador não sobe — não é erro de boot, é a feature desligada.
+  // Gerar com `npx web-push generate-vapid-keys`; o par precisa ser o MESMO
+  // entre deploys, senão toda inscrição já feita vira lixo.
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  /** `mailto:` de contato, exigido pelo protocolo para o serviço de push falar com a gente. */
+  VAPID_SUBJECT: z.string().optional(),
   // API pública de vendas: idade máxima do cache antes de recalcular AO VIVO na
   // requisição (default 120s). O job noturno vira só aquecimento — quem consulta
   // nunca recebe número velho. Subir se a cota do Sheets apertar.

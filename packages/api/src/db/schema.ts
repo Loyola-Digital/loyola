@@ -6149,3 +6149,39 @@ export const planFinalScenarios = pgTable(
   },
   (t) => [uniqueIndex("uq_plan_final_scenarios_simulator_indice").on(t.simulatorId, t.indice)],
 );
+
+/**
+ * Um aparelho inscrito para receber notificação push (Web Push / VAPID).
+ *
+ * Uma linha por (usuário, aparelho): o mesmo usuário no celular e no desktop
+ * são duas, e o navegador pode trocar o `endpoint` sozinho — por isso a chave
+ * única é o endpoint, não o usuário.
+ *
+ * Inscrição morre em silêncio (app desinstalado, permissão revogada, aparelho
+ * trocado) e o serviço de push responde 404/410 no envio seguinte. É ali que a
+ * linha é apagada: não existe evento de "desinscreveu" que chegue até aqui.
+ */
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** URL que o navegador deu; é ela que identifica o aparelho. */
+    endpoint: text("endpoint").notNull(),
+    /** Chave pública do aparelho — criptografa o conteúdo da notificação. */
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    /** Só para a pessoa reconhecer o aparelho na lista ("iPhone", "Chrome no PC"). */
+    userAgent: text("user_agent"),
+    /** Último envio que o serviço de push aceitou — mostra aparelho zumbi. */
+    lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("uq_push_subscriptions_endpoint").on(t.endpoint),
+    index("idx_push_subscriptions_user").on(t.userId),
+  ],
+);

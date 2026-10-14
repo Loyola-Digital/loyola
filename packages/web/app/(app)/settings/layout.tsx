@@ -36,6 +36,12 @@ const BASE_TABS = [
     href: "/settings/nomenclatura",
     value: "nomenclatura",
   },
+  // Por aparelho, não por projeto: quem liga é a pessoa, no celular dela.
+  {
+    label: "Notificações",
+    href: "/settings/notificacoes",
+    value: "notificacoes",
+  },
 ] as const;
 
 const META_TABS = [
