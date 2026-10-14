@@ -12,7 +12,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { pushSubscriptions } from "../db/schema.js";
-import { enviarPush, pushConfigurado, removerInscricao } from "../services/push.js";
+import { configurarVapid, enviarPush, pushConfigurado, removerInscricao } from "../services/push.js";
 
 const inscricaoSchema = z.object({
   endpoint: z.string().url().max(2000),
@@ -20,10 +20,19 @@ const inscricaoSchema = z.object({
 });
 
 export default fp(async function pushRoutes(fastify) {
-  /** A chave pública que o navegador precisa para criar a inscrição. */
-  fastify.get("/api/push/chave-publica", async () => ({
-    chave: pushConfigurado(fastify.config) ? fastify.config.VAPID_PUBLIC_KEY : null,
-  }));
+  /**
+   * A chave pública que o navegador precisa para criar a inscrição.
+   *
+   * Vem com o diagnóstico junto: chave mal colada no painel de deploy fazia a
+   * tela só dizer "erro interno" na hora de testar, longe da causa.
+   */
+  fastify.get("/api/push/chave-publica", async () => {
+    if (!pushConfigurado(fastify.config)) return { chave: null, configuracao: "ausente" };
+    const vapid = configurarVapid(fastify.config);
+    return vapid.ok
+      ? { chave: (fastify.config.VAPID_PUBLIC_KEY ?? "").trim().replace(/^["']|["']$/g, ""), configuracao: "ok" }
+      : { chave: null, configuracao: "invalida", detalhe: vapid.motivo };
+  });
 
   /** Os aparelhos já inscritos deste usuário. */
   fastify.get("/api/push/inscricoes", async (request) => {
@@ -44,7 +53,9 @@ export default fp(async function pushRoutes(fastify) {
 
   fastify.post("/api/push/inscricoes", async (request, reply) => {
     if (!pushConfigurado(fastify.config)) {
-      return reply.code(503).send({ error: "PUSH_NAO_CONFIGURADO" });
+      return reply
+        .code(503)
+        .send({ codigo: "PUSH_NAO_CONFIGURADO", error: "O servidor está sem as chaves VAPID." });
     }
     const parsed = inscricaoSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: "INSCRICAO_INVALIDA" });
@@ -83,10 +94,19 @@ export default fp(async function pushRoutes(fastify) {
     return { ok: true };
   });
 
-  /** Manda uma notificação para a própria pessoa — é como se confere o cano. */
+  /**
+   * Manda uma notificação para a própria pessoa — é como se confere o cano.
+   *
+   * Cada jeito de falhar tem resposta própria de propósito: aqui é onde se
+   * descobre que a configuração está errada, e "Erro interno do servidor" não
+   * diz se o problema é a chave, o aparelho ou a rede.
+   */
   fastify.post("/api/push/teste", async (request, reply) => {
     if (!pushConfigurado(fastify.config)) {
-      return reply.code(503).send({ error: "PUSH_NAO_CONFIGURADO" });
+      return reply.code(503).send({
+        codigo: "PUSH_NAO_CONFIGURADO",
+        error: "O servidor está sem as chaves VAPID.",
+      });
     }
     const resultado = await enviarPush(fastify, [request.userId], {
       titulo: "Loyola X",
@@ -94,8 +114,25 @@ export default fp(async function pushRoutes(fastify) {
       url: "/settings/notificacoes",
       tag: "teste",
     });
+    if (resultado.erroDeConfiguracao) {
+      return reply.code(503).send({
+        codigo: "VAPID_INVALIDO",
+        error: `As chaves VAPID do servidor não são válidas: ${resultado.erroDeConfiguracao}`,
+      });
+    }
+    if (resultado.chavesNaoBatem) {
+      return reply.code(503).send({
+        codigo: "VAPID_NAO_BATE",
+        error:
+          "O serviço de push recusou a assinatura: a pública e a privada precisam ser do MESMO par, e trocar o par invalida as inscrições já feitas.",
+      });
+    }
     if (resultado.enviados === 0) {
-      return reply.code(409).send({ error: "NENHUM_APARELHO", ...resultado });
+      return reply.code(409).send({
+        codigo: "NENHUM_APARELHO",
+        error: "Nenhum aparelho inscrito nesta conta — ative a notificação neste aparelho primeiro.",
+        ...resultado,
+      });
     }
     return resultado;
   });
