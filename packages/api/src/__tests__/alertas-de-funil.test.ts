@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  antesDe,
   hojeSaoPaulo,
   horaSaoPaulo,
   julgar,
@@ -143,6 +144,14 @@ describe("textoDoAlerta", () => {
     expect(t.corpo).toContain("nos últimos 7 dias");
   });
 
+  it("ROAS de um dia fala em dia FECHADO, não em hoje", () => {
+    // A série de vendas não tem o dia corrente: dizer "hoje" mandaria a pessoa
+    // procurar na tela um número que ainda não existe.
+    const t = textoDoAlerta(regra(), leitura({ valor: 0.5, gasto: 1000 }), "PP");
+    expect(t.corpo).toContain("no último dia fechado");
+    expect(t.corpo).not.toContain("hoje");
+  });
+
   it("investiu e não vendeu fala do gasto, não do zero", () => {
     const t = textoDoAlerta(
       regra({ metrica: "investiu_sem_vender", valor: "300" }),
@@ -165,5 +174,31 @@ describe("o dia é o de São Paulo", () => {
   it("meio-dia UTC é o mesmo dia", () => {
     expect(hojeSaoPaulo(new Date("2026-10-14T12:00:00Z"))).toBe("2026-10-14");
     expect(horaSaoPaulo(new Date("2026-10-14T12:00:00Z"))).toBe(9);
+  });
+});
+
+describe("antesDe", () => {
+  /**
+   * A janela das métricas de faturamento é ancorada no último dia FECHADO da
+   * série de vendas — o dia corrente nunca está lá — e é esta conta que acha
+   * o começo dela.
+   */
+  it("anda para trás dentro do mês", () => {
+    expect(antesDe("2026-10-13", 6)).toBe("2026-10-07");
+  });
+
+  it("atravessa a virada do mês", () => {
+    expect(antesDe("2026-10-03", 6)).toBe("2026-09-27");
+  });
+
+  it("atravessa a virada do ano", () => {
+    expect(antesDe("2026-01-02", 7)).toBe("2025-12-26");
+  });
+
+  it("não escorrega por causa do fuso", () => {
+    // Datar ao meio-dia UTC é o que impede o -3 de São Paulo de jogar o
+    // resultado para o dia anterior.
+    expect(antesDe("2026-03-01", 1)).toBe("2026-02-28");
+    expect(antesDe("2026-10-13", 0)).toBe("2026-10-13");
   });
 });

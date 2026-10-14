@@ -78,7 +78,8 @@ const dinheiro = (n: number) =>
   n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
 function descrever(regra: RegraDeAlerta): string {
-  const janela = regra.janelaDias <= 1 ? "hoje" : `nos últimos ${regra.janelaDias} dias`;
+  const umDia = regra.metrica === "connect_rate" ? "hoje" : "no último dia fechado";
+  const janela = regra.janelaDias <= 1 ? umDia : `nos últimos ${regra.janelaDias} dias`;
   if (regra.metrica === "investiu_sem_vender") {
     return `Avisa quando passar de ${dinheiro(regra.valor)} investidos ${janela} sem nenhuma venda.`;
   }
@@ -281,11 +282,22 @@ export function RegrasDeAlerta({ projetos }: { projetos: Array<{ id: string; nam
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1">Hoje</SelectItem>
+                  {/* Faturamento só existe por dia FECHADO: o dia corrente não
+                      está na série de vendas, e prometer "hoje" seria prometer
+                      um número que ainda não existe. Tráfego é intraday. */}
+                  <SelectItem value="1">
+                    {rascunho.metrica === "connect_rate" ? "Hoje" : "Último dia fechado"}
+                  </SelectItem>
                   <SelectItem value="7">Últimos 7 dias</SelectItem>
                   <SelectItem value="30">Últimos 30 dias</SelectItem>
                 </SelectContent>
               </Select>
+              {rascunho.metrica !== "connect_rate" && (
+                <p className="text-xs text-muted-foreground">
+                  A venda entra por dia fechado, então a janela termina no último dia que já
+                  fechou — em geral, ontem.
+                </p>
+              )}
             </div>
 
             {rascunho.metrica !== "investiu_sem_vender" && (
