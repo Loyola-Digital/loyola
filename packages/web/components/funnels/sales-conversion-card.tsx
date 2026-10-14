@@ -41,6 +41,22 @@ export function SalesConversionCard({ projectId, funnelId, stageId }: SalesConve
     return <Skeleton className="h-48" />;
   }
 
+  // Fonte Kiwify: não existe "planilha de captação" nem "do principal" para
+  // cruzar. Sem este aviso a tela pedia para conectar uma planilha que já está
+  // conectada — e mostrava 0% de conversão.
+  if (data?.fonteKiwify) {
+    return (
+      <div className="rounded-lg border border-dashed border-border/50 p-4">
+        <p className="text-sm text-muted-foreground">
+          Esta etapa está puxando as vendas da <strong>API da Kiwify</strong>, e lá a venda não vem
+          marcada como Captação ou Produto Principal — o cruzamento depende das duas planilhas.
+          Para ver a conversão, volte a fonte para <strong>Planilha</strong> em “Conferência com a
+          Kiwify → Ajustar”.
+        </p>
+      </div>
+    );
+  }
+
   if (!data || (!data.hasCapture && !data.hasMain)) {
     return (
       <div className="rounded-lg border border-dashed border-border/50 p-6 text-center">

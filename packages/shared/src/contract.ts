@@ -440,4 +440,22 @@
 // `agora − days × 24 h`. O diário de `/sales` agrupa pelo dia de SP, não UTC.
 // Com `days = 5` em 13/10 a janela era 08/10 14:17 → agora; passa a 09/10 00:00.
 // O Google (`services/google-ads.ts`) não muda. `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 43;
+// v44 (a conversão Captação → Principal na fonte Kiwify; sem migration):
+// `GET …/stages/:stageId/sales-conversion` ganha `fonteKiwify: true` (ADITIVO)
+// e devolve zeros quando a etapa está com `fonte_de_vendas = 'kiwify'`.
+// ⚠️ CORREÇÃO de comportamento do v40: aquela rota era a quarta a trocar de
+// fonte, mas ela cruza o comprador da planilha de captação com o do produto
+// principal da MESMA etapa, e precisa saber de qual papel é cada venda. O
+// recorte da Kiwify é um só (produtos + ofertas + janela), sem papel: a troca
+// colapsava as duas planilhas numa fonte, um dos lados ficava vazio e a tela
+// dizia "falta conectar a planilha de Produto Principal" com ela conectada,
+// mostrando 0% de conversão. Agora a rota lê as planilhas e, na fonte Kiwify,
+// diz que não dá para cruzar. Medido em 13/10/2026: 2 etapas com as duas
+// planilhas (1 Captação paga e 1 Vendas com capture+main_product+tmb) e
+// nenhuma etapa com a fonte Kiwify ligada ainda — ninguém viu o número falso.
+// Também: a planilha virtual da Kiwify passa a herdar o subtype que a ROTA
+// pediu em vez de adivinhá-lo pela primeira planilha da etapa — nas 2 (de 8)
+// Captações Pagas que ainda não têm planilha ela saía como `main_product`
+// numa rota que havia pedido `capture`. Sem efeito na tela hoje (nenhuma rota
+// relê esse campo), mas era uma armadilha. `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 44;

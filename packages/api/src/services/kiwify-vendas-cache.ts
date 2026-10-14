@@ -403,6 +403,22 @@ export type FonteDeVendas = typeof stageSalesSpreadsheets.$inferSelect & {
 };
 
 /**
+ * A etapa está puxando as vendas da API da Kiwify?
+ *
+ * Para quem precisa saber a fonte sem ler as vendas — hoje a
+ * `sales-conversion`, que não consegue cruzar captação × produto principal
+ * quando a fonte é a Kiwify e precisa dizer isso em vez de mostrar 0%.
+ */
+export async function aFonteEhKiwify(db: Database, stageId: string): Promise<boolean> {
+  const [cfg] = await db
+    .select({ fonteDeVendas: kiwifyStageConfigs.fonteDeVendas })
+    .from(kiwifyStageConfigs)
+    .where(eq(kiwifyStageConfigs.stageId, stageId))
+    .limit(1);
+  return cfg?.fonteDeVendas === "kiwify";
+}
+
+/**
  * As fontes de venda da etapa: a Kiwify, quando ela é a fonte, senão as
  * planilhas que vierem.
  *
@@ -415,16 +431,30 @@ export type FonteDeVendas = typeof stageSalesSpreadsheets.$inferSelect & {
  *
  * ## Por que vive aqui e não em cada rota
  *
- * Quatro rotas leem as vendas da etapa (`sales-data`, `sales-conversion`,
+ * Três rotas leem as vendas da etapa por este caminho (`sales-data`,
  * `hot-cold-buyers`, `sales-data-daily`). Trocando a fonte em uma só, a mesma
- * tela mostraria faturamento da Kiwify e conversão da planilha — dois números
+ * tela mostraria faturamento da Kiwify e perfil da planilha — dois números
  * para a mesma pergunta.
+ *
+ * A quarta, `sales-conversion`, NÃO passa por aqui: ela cruza o comprador da
+ * planilha de captação com o do produto principal da MESMA etapa, e para isso
+ * precisa saber qual venda é de qual papel. O recorte da Kiwify é um só
+ * (produtos + ofertas + janela da etapa), sem papel — colapsar as duas
+ * planilhas numa fonte deixava um dos lados vazio e a taxa virava 0%. Ver o
+ * comentário na própria rota.
+ *
+ * `subtypePedido` é o subtype que a rota pediu, e a planilha virtual o herda.
+ * Antes ele era adivinhado pela primeira planilha da etapa, o que mentia nas
+ * etapas que ainda não têm planilha nenhuma (2 das 8 Captações Pagas medidas
+ * em 13/10/2026) — ali a virtual saía como `main_product` numa rota que havia
+ * pedido `capture`.
  */
 export async function fontesDeVendaDaEtapa(
   db: Database,
   projectId: string,
   stageId: string,
   planilhas: FonteDeVendas[],
+  subtypePedido: string,
 ): Promise<FonteDeVendas[]> {
   const [cfg] = await db
     .select()
@@ -442,10 +472,10 @@ export async function fontesDeVendaDaEtapa(
   const { headers, rows, mapping, semEmail, naoSaoVenda } = vendasComoPlanilha(vendas);
 
   // Um "subtype" só: o recorte da etapa é um, e multiplicá-lo por subtype faria
-  // a mesma venda entrar em duas contas. Herda o subtype pedido para a rota não
-  // precisar saber que a fonte mudou.
+  // a mesma venda entrar em duas contas. Assume o subtype que a rota pediu para
+  // ela não precisar saber que a fonte mudou.
   const modelo = planilhas[0];
-  const subtype = modelo?.subtype ?? "main_product";
+  const subtype = subtypePedido;
   const agora = new Date();
   return [
     {

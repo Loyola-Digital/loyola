@@ -13,6 +13,12 @@ export interface StageSalesConversion {
   conversionRate: number;
   hasCapture: boolean;
   hasMain: boolean;
+  /**
+   * A etapa está puxando as vendas da API da Kiwify, onde a venda não vem
+   * marcada como captação ou produto principal — então não há cruzamento a
+   * fazer. Ausente na fonte planilha.
+   */
+  fonteKiwify?: boolean;
 }
 
 const STALE_TIME = 60 * 1000;
