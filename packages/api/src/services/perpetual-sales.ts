@@ -520,6 +520,9 @@ export async function calcularVendasDoPerpetuo(
       // Story 18.69: o tipo vai direto — o Perpétuo já classifica em
       // quatro papéis desde a 29.49, agora com `combo` incluído.
       tipo: tipoDaLinha,
+      // Ver `transacaoAgrupa`: o nome distingue um `transactionId` de pedido
+      // (junta produtos diferentes) de um de linha (não junta nada).
+      produto: produtoIdx === -1 ? null : row[produtoIdx],
       bruto,
       // Story 18.68: a data forma o checkout.
       data: dataIdx === -1 ? null : (parseDate(row[dataIdx])),

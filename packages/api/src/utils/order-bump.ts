@@ -168,6 +168,14 @@ export interface LinhaDeVenda {
    * `transacaoAgrupa`.
    */
   transacaoId?: string | null;
+  /**
+   * O nome do produto da linha, como a planilha o escreve.
+   *
+   * Só serve para `transacaoAgrupa` decidir se o `transactionId` é de PEDIDO
+   * ou de LINHA: pedido junta produtos diferentes, linha nunca junta nada.
+   * Opcional porque o `tipo` acima é o que o cálculo usa.
+   */
+  produto?: string | null;
   /** Valor bruto da linha. */
   bruto: number;
   utmSource?: string | null;
@@ -241,21 +249,70 @@ export const JANELA_DE_CHECKOUT_MS = 60_000;
 /**
  * Story 18.68 (AC2) — o `transactionId` desta planilha agrupa um pedido?
  *
- * ⚠️ Nem sempre. No `dg-pg04` ele é o ID do pedido e agrupa 126 pedidos
- * multi-produto; no `dg-pg02` é **igual ao ID da linha** e todos os valores
- * são únicos. Usá-lo lá reportaria zero order bump, em silêncio.
+ * ⚠️ Nem sempre. No `dg-pg04` a Captação Paga mapeia a coluna "Transaction",
+ * que é o ID do PEDIDO e agrupa 126 pedidos multi-produto; o `dg-pg02`, a
+ * etapa de Vendas do `dg-pg04` e a Captação Paga do `dg-pg05-out-26` mapeiam a
+ * coluna "ID", que é o ID da LINHA. Usá-lo lá reporta zero order bump, em
+ * silêncio.
  *
- * O teste é direto: se todo valor aparece uma vez só, não é ID de pedido.
+ * ## Por que contar repetição não bastava
+ *
+ * A regra anterior era "se algum valor aparece duas vezes, é ID de pedido".
+ * Um REEMBOLSO a quebra: a Kiwify reenvia a mesma venda com o mesmo ID e
+ * status `refunded`, então o ID da linha passa a repetir. Medido em 13/10/2026
+ * na Captação Paga do `dg-pg05-out-26`: 408 linhas, 5 reembolsos, **1** ID
+ * repetido — e a etapa inteira caiu para "0 de 400 compradores com bump",
+ * R$ 1.099 inteiros virando "venda avulsa". Pelo e-mail + janela os mesmos
+ * dados dão 7 de 384 (3,3%) e R$ 0,00 de avulso. O mesmo acontecia no
+ * `dg-pg02` (0 de 1900, R$ 34.836 de "avulso", contra 53 de 1862 e R$ 6.126).
+ *
+ * O teste passa a ser o que define um pedido: o mesmo ID reunindo produtos
+ * DIFERENTES, em DOIS pedidos ou mais. Reembolso repete o ID com o mesmo
+ * produto e não engana mais; o acidente isolado (reexecução do n8n gravando
+ * duas linhas com o mesmo ID) também não, e é por isso que o teste pede o
+ * plural. Medido em 13/10/2026 nas três planilhas `n8n-kiwify-captação`:
+ *
+ * ```
+ *                        ids com 2+ produtos
+ *   planilha    coluna "ID"      coluna "Transaction"
+ *   dg-pg05        0  (de 407)      22  (de 382)
+ *   dg-pg02        0  (de 2197)      0  (de 2185)
+ *   dg-pg04        1  (de 1316)     127 (de 1175)
+ * ```
+ *
+ * O `1` do `dg-pg04` é o acidente: com ele a etapa de Vendas reportava "1 de
+ * 1101 compradores com bump" e R$ 40.903 de "venda avulsa". Exigir o plural
+ * manda as três para o e-mail + janela quando a coluna mapeada é a errada, e
+ * mantém o ID do pedido onde ele é real — a Captação Paga do `dg-pg04` segue
+ * com os mesmos 121 de 1095.
+ *
+ * Sem nome de produto nas linhas, cai na regra antiga — é o que o Perpétuo
+ * fazia antes e não há por que piorá-lo às cegas.
  */
 export function transacaoAgrupa(linhas: LinhaDeVenda[]): boolean {
-  const vistos = new Map<string, number>();
+  const produtosPorId = new Map<string, Set<string>>();
+  let algumProduto = false;
+  let algumIdRepetido = false;
+  const contagem = new Map<string, number>();
   for (const l of linhas) {
     const t = (l.transacaoId ?? "").trim();
     if (!t) continue;
-    vistos.set(t, (vistos.get(t) ?? 0) + 1);
+    const n = (contagem.get(t) ?? 0) + 1;
+    contagem.set(t, n);
+    if (n > 1) algumIdRepetido = true;
+    const prod = (l.produto ?? "").trim().toLowerCase();
+    if (prod) algumProduto = true;
+    const set = produtosPorId.get(t) ?? new Set<string>();
+    set.add(prod);
+    produtosPorId.set(t, set);
   }
-  if (vistos.size === 0) return false;
-  for (const n of vistos.values()) if (n > 1) return true;
+  if (contagem.size === 0) return false;
+  if (!algumProduto) return algumIdRepetido;
+  let pedidosMultiProduto = 0;
+  for (const produtos of produtosPorId.values()) {
+    if (produtos.size > 1) pedidosMultiProduto += 1;
+    if (pedidosMultiProduto >= 2) return true;
+  }
   return false;
 }
 

@@ -471,4 +471,25 @@
 // da etapa (captação paga e Vendas), onde se procura de onde o número vem; o
 // diálogo do cartão passou a usar o mesmo formulário. `packages/mcp` não é
 // afetado.
-export const API_CONTRACT_VERSION = 45;
+// v46 (o order bump voltava zerado quando a planilha tinha reembolso; sem
+// migration e sem mudança de forma):
+// ⚠️ MUDANÇA DE COMPORTAMENTO nos números de order bump de `sales-data` (e do
+// Perpétuo, pelo mesmo utilitário). `transacaoAgrupa` decidia se o
+// `transactionId` da planilha é do PEDIDO ou da LINHA contando repetição — e um
+// REEMBOLSO repete o id da linha (a Kiwify reenvia a venda com o mesmo id e
+// status `refunded`). Com isso a coluna errada passava por id de pedido, cada
+// linha virava seu próprio checkout, e o bump do mesmo pedido do ingresso
+// aparecia como "venda avulsa". O teste passa a exigir o que define um pedido:
+// dois ou mais ids reunindo produtos DIFERENTES.
+// Medido em 13-14/10/2026 contra as planilhas reais:
+//   dg-pg05-out-26 Captação Paga: 0 de 400 (R$ 1.099 "avulso") → 7 de 384
+//     (3,3%), R$ 1.099 de bump acessório e R$ 0,00 de avulso
+//   dg-pg02 Captação Paga e Vendas: 0 de 1900 (R$ 34.836 "avulso") → 53 de
+//     1862 (3,0%), R$ 6.126 acessório
+//   dg-pg04 Vendas: 1 de 1101 (R$ 40.903 "avulso") → 123 de 1099 (22,7%),
+//     R$ 24.337 acessório
+//   dg-pg04 Captação Paga (a única que mapeia a coluna do pedido): 121 de 1095
+//     (21,7%) → INALTERADA
+// `LinhaDeVenda` ganha `produto` (opcional) para essa decisão; sem ele o
+// utilitário mantém a regra antiga. `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 46;
