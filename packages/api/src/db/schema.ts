@@ -6202,9 +6202,13 @@ export const alertRules = pgTable(
   "alert_rules",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    projectId: uuid("project_id")
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
+    /**
+     * Nulo = vale para TODOS os projetos (0176).
+     *
+     * Uma regra só — "ROAS abaixo de 1" — valendo em qualquer projeto que
+     * alguém siga, em vez de ser recriada projeto a projeto.
+     */
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
     /** `connect_rate` | `roas` | `investiu_sem_vender` — CHECK na migration. */
     metrica: text("metrica").notNull(),
     /** `menor` dispara abaixo do valor (ROAS, connect rate); `maior`, acima. */
@@ -6226,8 +6230,6 @@ export const alertRules = pgTable(
      */
     janelaDias: integer("janela_dias").notNull().default(1),
     ativo: boolean("ativo").notNull().default(true),
-    /** Dia (São Paulo) do último disparo: é o que segura em 1 aviso por dia. */
-    lastSentDate: text("last_sent_date"),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -6282,3 +6284,26 @@ export const notificationPrefs = pgTable("notification_prefs", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+/**
+ * O "já avisei hoje" de uma regra, POR PROJETO.
+ *
+ * A mesma regra global dispara em projetos diferentes no mesmo dia; um
+ * `last_sent_date` guardado na regra calaria todos os outros depois do
+ * primeiro aviso.
+ */
+export const alertRuleState = pgTable(
+  "alert_rule_state",
+  {
+    ruleId: uuid("rule_id")
+      .notNull()
+      .references(() => alertRules.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /** Dia de São Paulo (aaaa-mm-dd) do último disparo. */
+    lastSentDate: text("last_sent_date"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.ruleId, t.projectId] })],
+);

@@ -28,7 +28,6 @@ function regra(over: Partial<Regra> = {}): Regra {
     valor: "1",
     gastoMinimo: null,
     janelaDias: 1,
-    lastSentDate: null,
     ...over,
   };
 }
@@ -57,14 +56,20 @@ describe("julgar", () => {
     expect(julgar(r, leitura({ valor: 1 }), HOJE).estourou).toBe(false);
   });
 
-  it("cala a boca quando já avisou hoje", () => {
-    const v = julgar(regra({ lastSentDate: HOJE }), leitura(), HOJE);
+  it("cala a boca quando já avisou hoje NESTE projeto", () => {
+    const v = julgar(regra(), leitura(), HOJE, HOJE);
     expect(v.estourou).toBe(false);
     expect(v.motivo).toBe("ja_avisou_hoje");
   });
 
   it("volta a falar no dia seguinte", () => {
-    expect(julgar(regra({ lastSentDate: "2026-10-13" }), leitura(), HOJE).estourou).toBe(true);
+    expect(julgar(regra(), leitura(), HOJE, "2026-10-13").estourou).toBe(true);
+  });
+
+  it("regra global num projeto novo não herda o aviso de outro", () => {
+    // O dedupe é por (regra, projeto): a mesma regra dispara em DG e em BBE no
+    // mesmo dia. Guardar o dia na regra calaria o segundo.
+    expect(julgar(regra({ projectId: null }), leitura(), HOJE, null).estourou).toBe(true);
   });
 
   it("o piso de gasto segura o alarme do começo do dia", () => {

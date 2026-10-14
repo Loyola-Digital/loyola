@@ -1,11 +1,16 @@
 "use client";
 
 /**
- * As regras de alerta de um projeto.
+ * As regras de alerta.
  *
- * O escopo é o projeto, e não o funil, porque o gasto de mídia não é registrado
- * por funil nem por etapa — o catálogo do BI diz isso no próprio ROAS. Regra
- * por funil mostraria um número que o dado não sustenta.
+ * Por padrão a regra vale para TODOS os projetos: "ROAS abaixo de 1" é a mesma
+ * conta em qualquer funil, e recriá-la por projeto seria trabalho repetido que
+ * envelhece mal. Escolher um projeto é a exceção, para quando um expert tem
+ * número próprio.
+ *
+ * O que NÃO dá é regra por funil: o gasto de mídia não é registrado por funil
+ * nem por etapa (o catálogo do BI diz isso no próprio ROAS), então o número não
+ * existiria.
  */
 
 import { useState } from "react";
@@ -23,7 +28,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  useAlertasDoProjeto,
+  useAlertas,
   useExcluirRegra,
   useSalvarRegra,
   useTestarRegra,
@@ -48,13 +53,19 @@ const METRICAS: Array<{ valor: MetricaDeAlerta; rotulo: string; ajuda: string }>
 ];
 
 /** Cada métrica fala uma língua: porcentagem, múltiplo ou reais. */
-const UNIDADE: Record<MetricaDeAlerta, { sufixo: string; passo: string; paraTela: (v: number) => number; daTela: (v: number) => number }> = {
+const UNIDADE: Record<
+  MetricaDeAlerta,
+  { sufixo: string; passo: string; paraTela: (v: number) => number; daTela: (v: number) => number }
+> = {
   connect_rate: { sufixo: "%", passo: "1", paraTela: (v) => v * 100, daTela: (v) => v / 100 },
   roas: { sufixo: "×", passo: "0.1", paraTela: (v) => v, daTela: (v) => v },
   investiu_sem_vender: { sufixo: "R$", passo: "50", paraTela: (v) => v, daTela: (v) => v },
 };
 
+const TODOS = "__todos__";
+
 const VAZIA: EntradaDeRegra = {
+  projectId: null,
   metrica: "roas",
   comparador: "menor",
   valor: 1,
@@ -81,30 +92,30 @@ function descrever(regra: RegraDeAlerta): string {
 }
 
 function textoDoVeredito(v: Veredito): string {
-  if (v.estourou) return `Dispararia agora: "${v.previa.titulo}"`;
+  if (v.estourou) return `Em ${v.projeto}, dispararia agora: "${v.previa.titulo}"`;
   if (v.motivo === "gasto_abaixo_do_piso")
-    return `Quieto: só ${dinheiro(v.leitura.gasto)} investidos, abaixo do piso da regra.`;
-  if (v.motivo === "sem_dado") return "Quieto: sem dado nessa janela.";
-  return `Quieto: está dentro da faixa (${dinheiro(v.leitura.gasto)} investidos).`;
+    return `Em ${v.projeto}: quieto, só ${dinheiro(v.leitura.gasto)} investidos — abaixo do piso.`;
+  if (v.motivo === "sem_dado") return `Em ${v.projeto}: quieto, sem dado nessa janela.`;
+  return `Em ${v.projeto}: dentro da faixa (${dinheiro(v.leitura.gasto)} investidos).`;
 }
 
-export function RegrasDeAlerta({ projectId }: { projectId: string }) {
-  const { data, isLoading } = useAlertasDoProjeto(projectId);
-  const salvar = useSalvarRegra(projectId);
-  const excluir = useExcluirRegra(projectId);
-  const testar = useTestarRegra(projectId);
+export function RegrasDeAlerta({ projetos }: { projetos: Array<{ id: string; name: string }> }) {
+  const { data, isLoading } = useAlertas();
+  const salvar = useSalvarRegra();
+  const excluir = useExcluirRegra();
+  const testar = useTestarRegra();
   const [rascunho, setRascunho] = useState<(EntradaDeRegra & { id?: string }) | null>(null);
   const [vereditos, setVereditos] = useState<Record<string, string>>({});
 
-  async function aoTestar(id: string) {
-    setVereditos((v) => ({ ...v, [id]: "Conferindo…" }));
+  async function aoTestar(regra: RegraDeAlerta) {
+    setVereditos((v) => ({ ...v, [regra.id]: "Conferindo…" }));
     try {
-      const r = await testar.mutateAsync(id);
-      setVereditos((v) => ({ ...v, [id]: textoDoVeredito(r) }));
+      const r = await testar.mutateAsync({ id: regra.id });
+      setVereditos((v) => ({ ...v, [regra.id]: textoDoVeredito(r) }));
     } catch (err) {
       setVereditos((v) => ({
         ...v,
-        [id]: err instanceof Error ? err.message : "Não consegui ler a métrica.",
+        [regra.id]: err instanceof Error ? err.message : "Não consegui ler a métrica.",
       }));
     }
   }
@@ -115,9 +126,9 @@ export function RegrasDeAlerta({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-4">
-      {data && data.regras.length > 0 && data.seguidores === 0 && (
+      {data && data.projetosSeguidos === 0 && data.regras.length > 0 && (
         <p className="text-sm text-muted-foreground">
-          Estas regras não avisam ninguém: nenhuma pessoa segue este projeto ainda.
+          Estas regras não avisam ninguém ainda: nenhum projeto está sendo seguido.
         </p>
       )}
 
@@ -128,6 +139,9 @@ export function RegrasDeAlerta({ projectId }: { projectId: string }) {
               <div className="min-w-0">
                 <p className="font-medium">
                   {regra.rotulo}
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    {regra.projeto ?? "todos os projetos"}
+                  </span>
                   {!regra.ativo && (
                     <span className="ml-2 text-xs text-muted-foreground">(desligada)</span>
                   )}
@@ -138,7 +152,7 @@ export function RegrasDeAlerta({ projectId }: { projectId: string }) {
                 )}
               </div>
               <div className="flex shrink-0 gap-1">
-                <Button variant="ghost" size="sm" onClick={() => void aoTestar(regra.id)}>
+                <Button variant="ghost" size="sm" onClick={() => void aoTestar(regra)}>
                   Testar
                 </Button>
                 <Button
@@ -147,6 +161,7 @@ export function RegrasDeAlerta({ projectId }: { projectId: string }) {
                   onClick={() =>
                     setRascunho({
                       id: regra.id,
+                      projectId: regra.projectId,
                       metrica: regra.metrica,
                       comparador: regra.comparador,
                       valor: regra.valor,
@@ -166,7 +181,7 @@ export function RegrasDeAlerta({ projectId }: { projectId: string }) {
           </div>
         ))}
         {data?.regras.length === 0 && !rascunho && (
-          <p className="text-sm text-muted-foreground">Nenhuma regra neste projeto ainda.</p>
+          <p className="text-sm text-muted-foreground">Nenhuma regra ainda.</p>
         )}
       </div>
 
@@ -174,12 +189,35 @@ export function RegrasDeAlerta({ projectId }: { projectId: string }) {
         <div className="space-y-4 rounded-lg border p-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
+              <Label>Vale para</Label>
+              <Select
+                value={rascunho.projectId ?? TODOS}
+                onValueChange={(v) =>
+                  setRascunho({ ...rascunho, projectId: v === TODOS ? null : v })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={TODOS}>Todos os projetos</SelectItem>
+                  {projetos.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      Só {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Cada pessoa recebe só dos projetos que segue.
+              </p>
+            </div>
+
+            <div className="space-y-2">
               <Label>Métrica</Label>
               <Select
                 value={rascunho.metrica}
-                onValueChange={(v) =>
-                  setRascunho({ ...rascunho, metrica: v as MetricaDeAlerta })
-                }
+                onValueChange={(v) => setRascunho({ ...rascunho, metrica: v as MetricaDeAlerta })}
               >
                 <SelectTrigger>
                   <SelectValue />

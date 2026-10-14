@@ -16,6 +16,12 @@ export type MetricaDeAlerta = "connect_rate" | "roas" | "investiu_sem_vender";
 
 export interface RegraDeAlerta {
   id: string;
+  /** Nulo = vale para todos os projetos que alguém siga. */
+  projectId: string | null;
+  /** O nome do projeto, ou nulo quando a regra é de todos. */
+  projeto: string | null;
+  /** Quantas pessoas receberiam este alerta hoje. */
+  alcance: number;
   metrica: MetricaDeAlerta;
   rotulo: string;
   comparador: "menor" | "maior";
@@ -24,10 +30,10 @@ export interface RegraDeAlerta {
   gastoMinimo: number | null;
   janelaDias: number;
   ativo: boolean;
-  lastSentDate: string | null;
 }
 
 export interface EntradaDeRegra {
+  projectId: string | null;
   metrica: MetricaDeAlerta;
   comparador: "menor" | "maior";
   valor: number;
@@ -40,51 +46,53 @@ export interface Veredito {
   estourou: boolean;
   motivo?: "sem_dado" | "gasto_abaixo_do_piso" | "dentro_da_faixa" | "ja_avisou_hoje";
   leitura: { valor: number | null; gasto: number; faturamento: number | null };
+  /** Em qual projeto a conferência foi feita — a regra global precisa de um. */
+  projeto: string;
   previa: { titulo: string; corpo: string };
 }
 
-export function useAlertasDoProjeto(projectId: string | null) {
+export function useAlertas() {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["alertas", projectId],
+    queryKey: ["alertas"],
     queryFn: () =>
-      apiClient<{ regras: RegraDeAlerta[]; seguidores: number }>(
-        `/api/projects/${projectId}/alertas`,
-      ),
-    enabled: Boolean(projectId),
+      apiClient<{ regras: RegraDeAlerta[]; projetosSeguidos: number }>("/api/notificacoes/alertas"),
     staleTime: 60 * 1000,
   });
 }
 
-export function useSalvarRegra(projectId: string | null) {
+export function useSalvarRegra() {
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...dados }: EntradaDeRegra & { id?: string }) =>
-      apiClient<{ regra: RegraDeAlerta }>(
-        `/api/projects/${projectId}/alertas${id ? `/${id}` : ""}`,
-        { method: id ? "PUT" : "POST", body: JSON.stringify(dados) },
-      ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["alertas", projectId] }),
+      apiClient<{ regra: RegraDeAlerta }>(`/api/notificacoes/alertas${id ? `/${id}` : ""}`, {
+        method: id ? "PUT" : "POST",
+        body: JSON.stringify(dados),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["alertas"] }),
   });
 }
 
-export function useExcluirRegra(projectId: string | null) {
+export function useExcluirRegra() {
   const apiClient = useApiClient();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      apiClient(`/api/projects/${projectId}/alertas/${id}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["alertas", projectId] }),
+      apiClient(`/api/notificacoes/alertas/${id}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["alertas"] }),
   });
 }
 
 /** Avalia a regra agora e devolve o número — sem notificar ninguém. */
-export function useTestarRegra(projectId: string | null) {
+export function useTestarRegra() {
   const apiClient = useApiClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      apiClient<Veredito>(`/api/projects/${projectId}/alertas/${id}/testar`, { method: "POST" }),
+    mutationFn: ({ id, projectId }: { id: string; projectId?: string }) =>
+      apiClient<Veredito>(`/api/notificacoes/alertas/${id}/testar`, {
+        method: "POST",
+        body: JSON.stringify({ projectId }),
+      }),
   });
 }
 
