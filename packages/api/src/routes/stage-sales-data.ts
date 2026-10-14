@@ -19,7 +19,7 @@ import {
   manualSales,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
-import { fontesDeVendaDaEtapa } from "../services/kiwify-vendas-cache.js";
+import { aFonteEhKiwify, fontesDeVendaDaEtapa } from "../services/kiwify-vendas-cache.js";
 import { temDashboardDeVendas } from "../utils/stage-types.js";
 import { juntarPorComprador } from "../utils/comprador.js";
 import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
@@ -418,6 +418,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
               inArray(stageSalesSpreadsheets.subtype, requestedSubtypes)
             )
           ),
+        requestedSubtypes[0]!,
       );
 
       if (spreadsheets.length === 0) {
@@ -1347,15 +1348,24 @@ export default fp(async function stageSalesDataRoutes(fastify) {
 
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-      const sheets = await fontesDeVendaDaEtapa(
-        fastify.db,
-        params.data.projectId,
-        params.data.stageId,
-        await fastify.db
-          .select()
-          .from(stageSalesSpreadsheets)
-          .where(eq(stageSalesSpreadsheets.stageId, params.data.stageId)),
-      );
+      // A ÚNICA rota de venda que não troca de fonte com a Kiwify ligada.
+      //
+      // Ela cruza quem comprou a captação com quem comprou o produto principal
+      // DA MESMA ETAPA, e para isso precisa saber de qual papel é cada venda —
+      // o que aqui vem de em qual planilha ela está. O recorte da Kiwify é um
+      // só (produtos + ofertas + janela), sem papel: colapsá-lo em uma fonte
+      // deixava `mainSheets` (ou `captureSheets`) vazio e a tela dizia "falta
+      // conectar a planilha de Produto Principal" com ela conectada, e 0% de
+      // conversão. Enquanto a config não tiver produto por papel, a resposta
+      // diz que não dá para cruzar — um motivo é melhor que um número falso.
+      if (await aFonteEhKiwify(fastify.db, params.data.stageId)) {
+        return { ...empty, fonteKiwify: true as const };
+      }
+
+      const sheets = await fastify.db
+        .select()
+        .from(stageSalesSpreadsheets)
+        .where(eq(stageSalesSpreadsheets.stageId, params.data.stageId));
 
       const captureSheets = sheets.filter((s) => s.subtype === "capture");
       const mainSheets = sheets.filter((s) => s.subtype === "main_product");
@@ -1372,7 +1382,9 @@ export default fp(async function stageSalesDataRoutes(fastify) {
           const mapping = sheet.columnMapping as { email: string; valorBruto?: string };
           let sheetData;
           try {
-            sheetData = sheet.dados ?? (await readSheetData(sheet.spreadsheetId, sheet.sheetName));
+            // Sempre do Drive: a fonte Kiwify (que traria os dados em memória)
+            // sai antes desta rota, no `aFonteEhKiwify` acima.
+            sheetData = await readSheetData(sheet.spreadsheetId, sheet.sheetName);
           } catch {
             continue;
           }
@@ -1476,6 +1488,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
             )
           )
           .limit(1),
+        query.data.subtype,
       );
 
       if (!spreadsheet) return empty;
@@ -1611,6 +1624,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
               eq(stageSalesSpreadsheets.subtype, query.data.subtype)
             )
           ),
+        query.data.subtype,
       );
 
       if (spreadsheets.length === 0) return { byDay: {} as Record<string, number>, semDados: true };
