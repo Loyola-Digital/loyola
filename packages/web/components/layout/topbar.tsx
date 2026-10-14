@@ -4,6 +4,7 @@ import { Menu } from "lucide-react";
 import { UserButton } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { useUIStore } from "@/lib/stores/ui-store";
+import { InstalarApp } from "@/components/layout/instalar-app";
 
 export function Topbar() {
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
@@ -25,7 +26,10 @@ export function Topbar() {
 
       <span className="text-sm font-semibold">Loyola X</span>
 
-      <div className="ml-auto">
+      <div className="ml-auto flex items-center gap-3">
+        {/* Some sozinho quando já está instalado ou quando o navegador não
+            instala — ver o componente. */}
+        <InstalarApp />
         <UserButton />
       </div>
     </header>

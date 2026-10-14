@@ -16,7 +16,7 @@
 
 import { eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import { alertRules, notificationFollows, projects } from "../db/schema.js";
+import { alertRuleState, alertRules, notificationFollows, projects } from "../db/schema.js";
 import { executarQuery, querySpecSchema, type QuerySpec } from "./bi/query.js";
 import { enviarPush } from "./push.js";
 
@@ -127,13 +127,13 @@ export async function lerMetrica(
 
 export interface Regra {
   id: string;
-  projectId: string;
+  /** Nulo = vale para todos os projetos que alguém siga. */
+  projectId: string | null;
   metrica: string;
   comparador: string;
   valor: string;
   gastoMinimo: string | null;
   janelaDias: number;
-  lastSentDate: string | null;
 }
 
 export interface Veredito {
@@ -143,8 +143,18 @@ export interface Veredito {
   leitura: Leitura;
 }
 
-export function julgar(regra: Regra, leitura: Leitura, hoje: string): Veredito {
-  if (regra.lastSentDate === hoje) return { estourou: false, motivo: "ja_avisou_hoje", leitura };
+/**
+ * `ultimoAviso` é o dia do último disparo DESTA regra NESTE projeto — a mesma
+ * regra global dispara em projetos diferentes, e guardar o dia na regra
+ * calaria todos os outros depois do primeiro aviso.
+ */
+export function julgar(
+  regra: Regra,
+  leitura: Leitura,
+  hoje: string,
+  ultimoAviso: string | null = null,
+): Veredito {
+  if (ultimoAviso === hoje) return { estourou: false, motivo: "ja_avisou_hoje", leitura };
   // O piso de gasto vem primeiro: sem ele, dia que mal começou dispara tudo.
   const piso = regra.gastoMinimo == null ? null : Number(regra.gastoMinimo);
   if (piso != null && leitura.gasto < piso) {
@@ -229,48 +239,81 @@ export async function rodarAlertas(fastify: FastifyInstance): Promise<ResumoDoCi
   const regras = await fastify.db.select().from(alertRules).where(eq(alertRules.ativo, true));
   if (regras.length === 0) return resumo;
 
+  // Projeto sem ninguém seguindo não é avaliado: a consulta de BI custaria para
+  // um alerta que não teria destinatário.
+  const seguidos = await fastify.db
+    .select({ projectId: notificationFollows.projectId })
+    .from(notificationFollows);
+  const comSeguidor = [...new Set(seguidos.map((s) => s.projectId))];
+  if (comSeguidor.length === 0) return resumo;
+
   const nomes = new Map(
     (
       await fastify.db
         .select({ id: projects.id, name: projects.name })
         .from(projects)
-        .where(inArray(projects.id, [...new Set(regras.map((r) => r.projectId))]))
+        .where(inArray(projects.id, comSeguidor))
     ).map((p) => [p.id, p.name]),
   );
 
+  const estados = new Map(
+    (await fastify.db.select().from(alertRuleState)).map((e) => [
+      `${e.ruleId}|${e.projectId}`,
+      e.lastSentDate,
+    ]),
+  );
+
+  // Uma leitura por (projeto, métrica, janela): regra global e regra de projeto
+  // costumam perguntar a mesma coisa, e cada pergunta é uma consulta de BI.
+  const lidas = new Map<string, Leitura>();
+
   for (const regra of regras) {
-    resumo.regrasAvaliadas += 1;
-    try {
-      if (regra.lastSentDate === hoje) continue;
-      const leitura = await lerMetrica(
-        fastify.db,
-        regra.projectId,
-        regra.metrica as Metrica,
-        regra.janelaDias,
-      );
-      if (!julgar(regra as Regra, leitura, hoje).estourou) continue;
+    // Regra sem projeto vale em todo projeto que alguém siga.
+    const alvos = regra.projectId ? [regra.projectId] : comSeguidor;
 
-      const seguidores = await seguidoresDoProjeto(fastify.db, regra.projectId);
-      if (seguidores.length === 0) continue;
+    for (const projectId of alvos) {
+      if (!nomes.has(projectId)) continue;
+      resumo.regrasAvaliadas += 1;
+      try {
+        if (estados.get(`${regra.id}|${projectId}`) === hoje) continue;
 
-      const texto = textoDoAlerta(regra as Regra, leitura, nomes.get(regra.projectId) ?? "Projeto");
-      await enviarPush(fastify, seguidores, {
-        ...texto,
-        url: `/projects/${regra.projectId}`,
-        // Uma tag por regra: alerta novo da MESMA regra substitui o anterior na
-        // bandeja em vez de empilhar.
-        tag: `alerta-${regra.id}`,
-      });
+        const chave = `${projectId}|${regra.metrica}|${regra.janelaDias}`;
+        if (!lidas.has(chave)) {
+          lidas.set(
+            chave,
+            await lerMetrica(fastify.db, projectId, regra.metrica as Metrica, regra.janelaDias),
+          );
+        }
+        const leitura = lidas.get(chave)!;
+        if (!julgar(regra as Regra, leitura, hoje, null).estourou) continue;
 
-      // Marca mesmo que o push falhe para todo mundo: o alerta é um aviso, não
-      // uma entrega garantida, e insistir no mesmo dia é o que vira spam.
-      await fastify.db
-        .update(alertRules)
-        .set({ lastSentDate: hoje, updatedAt: new Date() })
-        .where(eq(alertRules.id, regra.id));
-      resumo.alertasEnviados += 1;
-    } catch (err) {
-      resumo.erros.push(`${regra.id}: ${err instanceof Error ? err.message : String(err)}`);
+        const seguidores = await seguidoresDoProjeto(fastify.db, projectId);
+        if (seguidores.length === 0) continue;
+
+        const texto = textoDoAlerta(regra as Regra, leitura, nomes.get(projectId) ?? "Projeto");
+        await enviarPush(fastify, seguidores, {
+          ...texto,
+          url: `/projects/${projectId}`,
+          // Tag por regra E projeto: alerta novo substitui o anterior do mesmo
+          // par na bandeja, mas não engole o de outro projeto.
+          tag: `alerta-${regra.id}-${projectId}`,
+        });
+
+        // Marca mesmo que o push falhe para todo mundo: o alerta é um aviso,
+        // não uma entrega garantida, e insistir no mesmo dia é o que vira spam.
+        await fastify.db
+          .insert(alertRuleState)
+          .values({ ruleId: regra.id, projectId, lastSentDate: hoje })
+          .onConflictDoUpdate({
+            target: [alertRuleState.ruleId, alertRuleState.projectId],
+            set: { lastSentDate: hoje, updatedAt: new Date() },
+          });
+        resumo.alertasEnviados += 1;
+      } catch (err) {
+        resumo.erros.push(
+          `${regra.id}/${projectId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
   }
 

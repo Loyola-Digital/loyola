@@ -47,7 +47,6 @@ export default function NotificacoesSettingsPage() {
   const { data: seguidos } = useProjetosSeguidos();
   const salvarSeguidos = useSalvarProjetosSeguidos();
   const [marcados, setMarcados] = useState<string[] | null>(null);
-  const [projetoDasRegras, setProjetoDasRegras] = useState<string>("");
 
   const { data: prefs } = usePreferenciasDeNotificacao();
   const salvarPrefs = useSalvarPreferencias();
@@ -211,25 +210,12 @@ export default function NotificacoesSettingsPage() {
         <CardHeader>
           <CardTitle>Regras de alerta</CardTitle>
           <CardDescription>
-            Valem para todo mundo que segue o projeto. O alerta sai no máximo uma vez por dia por
-            regra, entre 8h e 22h.
+            Por padrão valem para todos os projetos — cada pessoa recebe só dos que segue. O alerta
+            sai no máximo uma vez por dia por regra e por projeto, entre 8h e 22h.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <Select value={projetoDasRegras} onValueChange={setProjetoDasRegras}>
-            <SelectTrigger className="max-w-xs">
-              <SelectValue placeholder="Escolha o projeto" />
-            </SelectTrigger>
-            <SelectContent>
-              {projetos?.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {projetoDasRegras && <RegrasDeAlerta projectId={projetoDasRegras} />}
+        <CardContent>
+          <RegrasDeAlerta projetos={projetos ?? []} />
         </CardContent>
       </Card>
     </div>

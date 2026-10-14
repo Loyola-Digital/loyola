@@ -1,5 +1,10 @@
 /**
- * Regras de alerta por projeto e os projetos que cada pessoa segue.
+ * Regras de alerta e as preferências de notificação de cada pessoa.
+ *
+ * A regra vive numa lista só, não dentro de um projeto: `projectId` nulo vale
+ * para TODOS os projetos que alguém siga, que é como a maioria das regras
+ * nasce ("ROAS abaixo de 1" vale em qualquer funil). Projeto preenchido é a
+ * exceção, para quando um expert tem número próprio.
  *
  * O envio em si é do agendador (`plugins/alertas-de-funil-scheduler.ts`); aqui
  * fica o cadastro e o "testar agora", que existe para calibrar o limiar sem
@@ -9,22 +14,29 @@
 import { z } from "zod";
 import { and, eq, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { alertRules, notificationFollows, projectMembers, projects } from "../db/schema.js";
+import {
+  alertRuleState,
+  alertRules,
+  notificationFollows,
+  notificationPrefs,
+  projectMembers,
+  projects,
+} from "../db/schema.js";
 import { lerPreferencias } from "../services/resumo-diario.js";
-import { notificationPrefs } from "../db/schema.js";
 import {
   METRICAS,
   ROTULO_DA_METRICA,
   hojeSaoPaulo,
   julgar,
   lerMetrica,
-  seguidoresDoProjeto,
   textoDoAlerta,
   type Metrica,
   type Regra,
 } from "../services/alertas-de-funil.js";
 
 const regraSchema = z.object({
+  /** Ausente ou nulo = todos os projetos. */
+  projectId: z.string().uuid().nullable().default(null),
   metrica: z.enum(METRICAS),
   comparador: z.enum(["menor", "maior"]).default("menor"),
   /** Connect rate em razão (0,6 = 60%); ROAS em múltiplo; o resto em reais. */
@@ -37,6 +49,7 @@ const regraSchema = z.object({
 function shape(r: typeof alertRules.$inferSelect) {
   return {
     id: r.id,
+    projectId: r.projectId,
     metrica: r.metrica,
     rotulo: ROTULO_DA_METRICA[r.metrica as Metrica] ?? r.metrica,
     comparador: r.comparador,
@@ -44,7 +57,6 @@ function shape(r: typeof alertRules.$inferSelect) {
     gastoMinimo: r.gastoMinimo == null ? null : Number(r.gastoMinimo),
     janelaDias: r.janelaDias,
     ativo: r.ativo,
-    lastSentDate: r.lastSentDate,
   };
 }
 
@@ -67,37 +79,56 @@ export default fp(async function alertasDeFunilRoutes(fastify) {
     return Boolean(p);
   }
 
-  const base = "/api/projects/:projectId/alertas";
+  /** Regra global mexe no que todo mundo recebe — convidado não cria. */
+  function podeMexerEmRegraGlobal(role: string) {
+    return role !== "guest";
+  }
 
-  fastify.get(base, async (request, reply) => {
-    const { projectId } = request.params as { projectId: string };
-    if (!(await podeVerProjeto(projectId, request.userId, request.userRole))) {
-      return reply.code(404).send({ error: "Projeto não encontrado" });
-    }
-    const linhas = await fastify.db
-      .select()
-      .from(alertRules)
-      .where(eq(alertRules.projectId, projectId));
+  const base = "/api/notificacoes/alertas";
+
+  fastify.get(base, async () => {
+    const regras = await fastify.db.select().from(alertRules);
+    const nomes = new Map(
+      (await fastify.db.select({ id: projects.id, name: projects.name }).from(projects)).map((p) => [
+        p.id,
+        p.name,
+      ]),
+    );
+    // Quantas pessoas receberiam: regra sem seguidor nenhum não avisa ninguém,
+    // e isso não aparece em lugar nenhum se a tela não disser.
+    const seguidos = await fastify.db
+      .select({ userId: notificationFollows.userId, projectId: notificationFollows.projectId })
+      .from(notificationFollows);
+
     return {
-      regras: linhas.map(shape),
-      // Quantas pessoas receberiam: regra sem seguidor não avisa ninguém, e
-      // isso não aparece em lugar nenhum se a tela não disser.
-      seguidores: (await seguidoresDoProjeto(fastify.db, projectId)).length,
+      regras: regras.map((r) => ({
+        ...shape(r),
+        projeto: r.projectId ? (nomes.get(r.projectId) ?? "Projeto") : null,
+        alcance: r.projectId
+          ? seguidos.filter((s) => s.projectId === r.projectId).length
+          : new Set(seguidos.map((s) => s.userId)).size,
+      })),
+      projetosSeguidos: new Set(seguidos.map((s) => s.projectId)).size,
     };
   });
 
   fastify.post(base, async (request, reply) => {
-    const { projectId } = request.params as { projectId: string };
-    if (!(await podeVerProjeto(projectId, request.userId, request.userRole))) {
-      return reply.code(404).send({ error: "Projeto não encontrado" });
-    }
     const corpo = regraSchema.safeParse(request.body);
     if (!corpo.success) return reply.code(400).send({ error: "REGRA_INVALIDA" });
+    if (!corpo.data.projectId && !podeMexerEmRegraGlobal(request.userRole)) {
+      return reply.code(403).send({ error: "Regra para todos os projetos exige conta do time." });
+    }
+    if (
+      corpo.data.projectId &&
+      !(await podeVerProjeto(corpo.data.projectId, request.userId, request.userRole))
+    ) {
+      return reply.code(404).send({ error: "Projeto não encontrado" });
+    }
 
     const [criada] = await fastify.db
       .insert(alertRules)
       .values({
-        projectId,
+        projectId: corpo.data.projectId,
         metrica: corpo.data.metrica,
         comparador: corpo.data.comparador,
         valor: String(corpo.data.valor),
@@ -111,56 +142,85 @@ export default fp(async function alertasDeFunilRoutes(fastify) {
   });
 
   fastify.put(`${base}/:id`, async (request, reply) => {
-    const { projectId, id } = request.params as { projectId: string; id: string };
-    if (!(await podeVerProjeto(projectId, request.userId, request.userRole))) {
-      return reply.code(404).send({ error: "Projeto não encontrado" });
-    }
+    const { id } = request.params as { id: string };
     const corpo = regraSchema.safeParse(request.body);
     if (!corpo.success) return reply.code(400).send({ error: "REGRA_INVALIDA" });
+    if (!corpo.data.projectId && !podeMexerEmRegraGlobal(request.userRole)) {
+      return reply.code(403).send({ error: "Regra para todos os projetos exige conta do time." });
+    }
 
     const [atualizada] = await fastify.db
       .update(alertRules)
       .set({
+        projectId: corpo.data.projectId,
         metrica: corpo.data.metrica,
         comparador: corpo.data.comparador,
         valor: String(corpo.data.valor),
         gastoMinimo: corpo.data.gastoMinimo == null ? null : String(corpo.data.gastoMinimo),
         janelaDias: corpo.data.janelaDias,
         ativo: corpo.data.ativo,
-        // Mexer na regra limpa o "já avisou hoje": quem acabou de mudar o
-        // limiar quer ver o efeito hoje, não amanhã.
-        lastSentDate: null,
         updatedAt: new Date(),
       })
-      .where(and(eq(alertRules.id, id), eq(alertRules.projectId, projectId)))
+      .where(eq(alertRules.id, id))
       .returning();
     if (!atualizada) return reply.code(404).send({ error: "Regra não encontrada" });
+
+    // Mexer na regra limpa o "já avisou hoje" de todos os projetos: quem
+    // acabou de mudar o limiar quer ver o efeito hoje, não amanhã.
+    await fastify.db.delete(alertRuleState).where(eq(alertRuleState.ruleId, id));
     return { regra: shape(atualizada) };
   });
 
   fastify.delete(`${base}/:id`, async (request, reply) => {
-    const { projectId, id } = request.params as { projectId: string; id: string };
-    if (!(await podeVerProjeto(projectId, request.userId, request.userRole))) {
-      return reply.code(404).send({ error: "Projeto não encontrado" });
+    const { id } = request.params as { id: string };
+    const [regra] = await fastify.db
+      .select({ projectId: alertRules.projectId })
+      .from(alertRules)
+      .where(eq(alertRules.id, id))
+      .limit(1);
+    if (!regra) return reply.code(404).send({ error: "Regra não encontrada" });
+    if (!regra.projectId && !podeMexerEmRegraGlobal(request.userRole)) {
+      return reply.code(403).send({ error: "Regra para todos os projetos exige conta do time." });
     }
-    await fastify.db
-      .delete(alertRules)
-      .where(and(eq(alertRules.id, id), eq(alertRules.projectId, projectId)));
+    await fastify.db.delete(alertRules).where(eq(alertRules.id, id));
     return { ok: true };
   });
 
-  /** Avalia a regra AGORA e devolve o número — sem enviar nada. */
+  /**
+   * Avalia a regra AGORA e devolve o número — sem enviar nada.
+   *
+   * Regra global precisa de um projeto para ter número: a tela manda em qual
+   * conferir, e sem isso usa o primeiro projeto seguido.
+   */
   fastify.post(`${base}/:id/testar`, async (request, reply) => {
-    const { projectId, id } = request.params as { projectId: string; id: string };
-    if (!(await podeVerProjeto(projectId, request.userId, request.userRole))) {
-      return reply.code(404).send({ error: "Projeto não encontrado" });
-    }
+    const { id } = request.params as { id: string };
+    const corpo = z
+      .object({ projectId: z.string().uuid().optional() })
+      .safeParse(request.body ?? {});
     const [regra] = await fastify.db
       .select()
       .from(alertRules)
-      .where(and(eq(alertRules.id, id), eq(alertRules.projectId, projectId)))
+      .where(eq(alertRules.id, id))
       .limit(1);
     if (!regra) return reply.code(404).send({ error: "Regra não encontrada" });
+
+    const projectId =
+      regra.projectId ??
+      (corpo.success ? corpo.data.projectId : undefined) ??
+      (
+        await fastify.db
+          .select({ projectId: notificationFollows.projectId })
+          .from(notificationFollows)
+          .limit(1)
+      )[0]?.projectId;
+    if (!projectId) {
+      return reply
+        .code(409)
+        .send({ error: "Siga pelo menos um projeto para conferir uma regra que vale para todos." });
+    }
+    if (!(await podeVerProjeto(projectId, request.userId, request.userRole))) {
+      return reply.code(404).send({ error: "Projeto não encontrado" });
+    }
 
     try {
       const leitura = await lerMetrica(
@@ -169,9 +229,9 @@ export default fp(async function alertasDeFunilRoutes(fastify) {
         regra.metrica as Metrica,
         regra.janelaDias,
       );
-      // `lastSentDate` zerado no teste: senão a resposta seria sempre "já
-      // avisou hoje" justamente no dia em que a regra disparou.
-      const veredito = julgar({ ...(regra as Regra), lastSentDate: null }, leitura, hojeSaoPaulo());
+      // Sem o "já avisou hoje" de propósito: senão a resposta seria sempre
+      // "já avisou" justamente no dia em que a regra disparou.
+      const veredito = julgar(regra as Regra, leitura, hojeSaoPaulo(), null);
       const [p] = await fastify.db
         .select({ name: projects.name })
         .from(projects)
@@ -179,23 +239,14 @@ export default fp(async function alertasDeFunilRoutes(fastify) {
         .limit(1);
       return {
         ...veredito,
-        previa: textoDoAlerta({ ...(regra as Regra) }, leitura, p?.name ?? "Projeto"),
+        projeto: p?.name ?? "Projeto",
+        previa: textoDoAlerta(regra as Regra, leitura, p?.name ?? "Projeto"),
       };
     } catch (err) {
       return reply
         .code(400)
         .send({ error: err instanceof Error ? err.message : "Não consegui ler a métrica." });
     }
-  });
-
-  // ---- os projetos que a pessoa segue ----
-
-  fastify.get("/api/notificacoes/projetos", async (request) => {
-    const seguidos = await fastify.db
-      .select({ projectId: notificationFollows.projectId })
-      .from(notificationFollows)
-      .where(eq(notificationFollows.userId, request.userId));
-    return { projectIds: seguidos.map((s) => s.projectId) };
   });
 
   // ---- preferências de resumo ----
@@ -223,6 +274,16 @@ export default fp(async function alertasDeFunilRoutes(fastify) {
         set: { ...corpo.data, updatedAt: new Date() },
       });
     return lerPreferencias(fastify, request.userId);
+  });
+
+  // ---- os projetos que a pessoa segue ----
+
+  fastify.get("/api/notificacoes/projetos", async (request) => {
+    const seguidos = await fastify.db
+      .select({ projectId: notificationFollows.projectId })
+      .from(notificationFollows)
+      .where(eq(notificationFollows.userId, request.userId));
+    return { projectIds: seguidos.map((s) => s.projectId) };
   });
 
   fastify.put("/api/notificacoes/projetos", async (request, reply) => {

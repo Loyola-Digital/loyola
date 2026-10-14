@@ -532,4 +532,22 @@
 // O cache da configuração passou a ser pelo VALOR aplicado: com o booleano
 // anterior, uma configuração boa grudava no processo e uma troca de chave
 // nunca era reavaliada. `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 48;
+// v49 (a regra de alerta passa a valer para TODOS os projetos; migration 0176):
+// ⚠️ MUDANÇA DE ENDEREÇO — o CRUD de regras sai de
+// `/api/projects/:projectId/alertas` e vai para `/api/notificacoes/alertas`,
+// com `projectId` no CORPO (nulo = todos os projetos). Sem transição porque a
+// feature nasceu hoje (v47) e `alert_rules` está vazia em produção.
+// Por quê: "ROAS abaixo de 1" é a mesma conta em qualquer funil, e recriar a
+// regra projeto a projeto é trabalho repetido que envelhece mal — a regra
+// nasce global e escolher um projeto é a exceção.
+// `project_id` vira NULLABLE e o "já avisou hoje" sai da regra para a tabela
+// nova `alert_rule_state` (regra, projeto): a mesma regra global dispara em
+// projetos diferentes no mesmo dia, e um `last_sent_date` na regra calaria
+// todos depois do primeiro aviso. A coluna `alert_rules.last_sent_date` é
+// REMOVIDA (nasceu na 0174, tabela vazia).
+// A listagem devolve `projeto` (nome ou nulo) e `alcance` (quantas pessoas
+// receberiam); `…/:id/testar` aceita `projectId` no corpo e responde em qual
+// projeto conferiu — regra global precisa de um projeto para ter número.
+// O recorte continua sendo o PROJETO, nunca o funil: o gasto de mídia não é
+// registrado por funil nem por etapa. `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 49;
