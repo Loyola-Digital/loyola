@@ -492,4 +492,26 @@
 //     (21,7%) → INALTERADA
 // `LinhaDeVenda` ganha `produto` (opcional) para essa decisão; sem ele o
 // utilitário mantém a regra antiga. `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 46;
+// v47 (notificações push: canal, alertas de funil e resumo diário; migrations
+// 0173, 0174 e 0175):
+// ADITIVO — nenhuma rota existente muda de forma.
+//   `GET  /api/push/chave-publica` → `{ chave }` (null = push desligado)
+//   `GET/POST/DELETE /api/push/inscricoes` — um aparelho por endpoint
+//   `POST /api/push/teste` — manda para a própria pessoa
+//   `GET/POST /api/projects/:projectId/alertas`, `PUT/DELETE …/alertas/:id`
+//   `POST …/alertas/:id/testar` → avalia agora, sem notificar ninguém
+//   `GET/PUT /api/notificacoes/projetos` — os projetos que a pessoa segue
+//   `GET/PUT /api/notificacoes/preferencias` — resumo ligado/desligado e hora
+// A chave pública VAPID sai por rota, e não por `NEXT_PUBLIC_*`, porque web e
+// API são deployados em lugares diferentes: chave divergente cria inscrição que
+// o serviço de push recusa depois, longe da causa. Sem `VAPID_PUBLIC_KEY` e
+// `VAPID_PRIVATE_KEY` as rotas respondem 503 `PUSH_NAO_CONFIGURADO` e o
+// agendador não sobe — a feature desligada, não erro de boot.
+// O ESCOPO DO ALERTA É O PROJETO, não o funil: o gasto de mídia não é
+// registrado por funil nem por etapa (ver o próprio `faturamento.roas` no
+// catálogo do BI). CPL ficou de fora porque `trafego.cpl_geral` não é
+// calculável no executor — depende do cruzamento lead↔criativo.
+// Medido em 14/10/2026 (7 dias): Lyrio dispara as três regras (R$ 620, connect
+// rate 0,1%, zero faturamento); PP 1,01 · DG & CPDF 1,40 · BBE 1,37 · FZ 4,96.
+// Resumo de 13/10: R$ 3,0k → R$ 8,5k (2,82×). `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 47;
