@@ -6258,3 +6258,27 @@ export const notificationFollows = pgTable(
     index("idx_notification_follows_project").on(t.projectId),
   ],
 );
+
+/**
+ * Preferências de notificação de uma pessoa.
+ *
+ * Separado de `alert_rules` de propósito: a regra é do projeto e vale para todo
+ * mundo que o segue; isto é de cada um. Poder desligar SÓ o resumo e manter os
+ * alertas é o que impede alguém de desligar tudo quando o resumo incomoda.
+ *
+ * Linha ausente = tudo no padrão. Não criamos linha para quem nunca abriu a
+ * tela — o resumo das 8h vale para quem segue algum projeto, não para quem
+ * configurou algo.
+ */
+export const notificationPrefs = pgTable("notification_prefs", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  resumoAtivo: boolean("resumo_ativo").notNull().default(true),
+  /** Hora local de São Paulo. O resumo é sempre do dia ANTERIOR, fechado. */
+  horaDoResumo: integer("hora_do_resumo").notNull().default(8),
+  /** Dia (São Paulo) do último resumo enviado — segura em 1 por dia. */
+  lastDigestDate: text("last_digest_date"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});

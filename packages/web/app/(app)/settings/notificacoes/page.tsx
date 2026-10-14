@@ -21,7 +21,12 @@ import {
 } from "@/components/ui/select";
 import { usePush } from "@/lib/hooks/use-push";
 import { useProjects } from "@/lib/hooks/use-projects";
-import { useProjetosSeguidos, useSalvarProjetosSeguidos } from "@/lib/hooks/use-alertas";
+import {
+  usePreferenciasDeNotificacao,
+  useProjetosSeguidos,
+  useSalvarPreferencias,
+  useSalvarProjetosSeguidos,
+} from "@/lib/hooks/use-alertas";
 import { RegrasDeAlerta } from "@/components/notificacoes/regras-de-alerta";
 
 export default function NotificacoesSettingsPage() {
@@ -43,6 +48,9 @@ export default function NotificacoesSettingsPage() {
   const salvarSeguidos = useSalvarProjetosSeguidos();
   const [marcados, setMarcados] = useState<string[] | null>(null);
   const [projetoDasRegras, setProjetoDasRegras] = useState<string>("");
+
+  const { data: prefs } = usePreferenciasDeNotificacao();
+  const salvarPrefs = useSalvarPreferencias();
 
   // A lista do servidor é a verdade até a pessoa mexer; depois disso quem manda
   // é o rascunho local, senão cada salvamento piscaria o estado antigo.
@@ -144,6 +152,55 @@ export default function NotificacoesSettingsPage() {
                 />
               </div>
             ))
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Resumo diário</CardTitle>
+          <CardDescription>
+            Uma notificação por dia com o fechamento de ontem dos projetos que você segue. Dia sem
+            movimento nenhum não vira notificação.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!prefs ? (
+            <Skeleton className="h-10 w-48" />
+          ) : (
+            <>
+              <div className="flex items-center gap-3">
+                <Switch
+                  checked={prefs.resumoAtivo}
+                  onCheckedChange={(v) =>
+                    salvarPrefs.mutate({ resumoAtivo: v, horaDoResumo: prefs.horaDoResumo })
+                  }
+                />
+                <span className="text-sm">Receber o resumo</span>
+              </div>
+              {prefs.resumoAtivo && (
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-muted-foreground">Por volta das</span>
+                  <Select
+                    value={String(prefs.horaDoResumo)}
+                    onValueChange={(v) =>
+                      salvarPrefs.mutate({ resumoAtivo: true, horaDoResumo: Number(v) })
+                    }
+                  >
+                    <SelectTrigger className="w-28">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 14 }, (_, i) => i + 8).map((h) => (
+                        <SelectItem key={h} value={String(h)}>
+                          {String(h).padStart(2, "0")}:00
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
