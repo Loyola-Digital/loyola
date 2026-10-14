@@ -9,7 +9,7 @@
  */
 
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { pushSubscriptions } from "../db/schema.js";
 import { enviarPush, pushConfigurado, removerInscricao } from "../services/push.js";
