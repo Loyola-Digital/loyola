@@ -514,4 +514,22 @@
 // Medido em 14/10/2026 (7 dias): Lyrio dispara as três regras (R$ 620, connect
 // rate 0,1%, zero faturamento); PP 1,01 · DG & CPDF 1,40 · BBE 1,37 · FZ 4,96.
 // Resumo de 13/10: R$ 3,0k → R$ 8,5k (2,82×). `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 47;
+// v48 (o erro de configuração do push para de virar 500; sem migration):
+// ADITIVO — `GET /api/push/chave-publica` passa a responder
+// `configuracao: "ok" | "ausente" | "invalida"` (+ `detalhe` quando inválida),
+// e `POST /api/push/teste` responde `codigo` (`VAPID_INVALIDO`,
+// `VAPID_NAO_BATE`, `NENHUM_APARELHO`, `PUSH_NAO_CONFIGURADO`) com a frase
+// legível em `error` — que é o campo que o cliente do web mostra.
+// ⚠️ CORREÇÃO: `setVapidDetails` LANÇA quando a configuração não tem a forma
+// certa, e a chamada estava fora de qualquer try, então testar a notificação
+// devolvia "Erro interno do servidor". Medido: `VAPID_SUBJECT` vazio (o painel
+// de deploy cria a variável em branco) ou com e-mail cru, e chave com aspas ou
+// espaço do copiar-e-colar, todos LANÇAM; já chave com um caractere trocado ou
+// pública de um par com privada de outro passam e falham só no envio (403).
+// Agora o `mailto:` é posto quando o valor é claramente um e-mail, aspas e
+// espaços são aparados, e o resto vira motivo. 403 NÃO apaga a inscrição (par
+// descasado é erro do servidor, não aparelho morto); só 404/410 limpam.
+// O cache da configuração passou a ser pelo VALOR aplicado: com o booleano
+// anterior, uma configuração boa grudava no processo e uma troca de chave
+// nunca era reavaliada. `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 48;
