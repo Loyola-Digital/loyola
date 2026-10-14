@@ -85,8 +85,21 @@ export function usePush() {
   const ativar = useCallback(async () => {
     setEstado((e) => ({ ...e, carregando: true, erro: null }));
     try {
-      const { chave } = await apiClient<{ chave: string | null }>("/api/push/chave-publica");
-      if (!chave) throw new Error("O servidor está sem as chaves de notificação.");
+      const resposta = await apiClient<{
+        chave: string | null;
+        configuracao?: "ok" | "ausente" | "invalida";
+        detalhe?: string;
+      }>("/api/push/chave-publica");
+      if (!resposta.chave) {
+        // Distinguir "não configurado" de "configurado errado" poupa a busca
+        // pela causa: as duas falham no mesmo clique.
+        throw new Error(
+          resposta.configuracao === "invalida"
+            ? `As chaves de notificação do servidor estão inválidas: ${resposta.detalhe ?? "formato recusado"}`
+            : "O servidor está sem as chaves de notificação.",
+        );
+      }
+      const chave = resposta.chave;
 
       const registro = await navigator.serviceWorker.register("/sw.js");
       // Sem esperar o `ready` a inscrição falha no primeiro clique e funciona no

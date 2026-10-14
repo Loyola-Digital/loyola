@@ -63,8 +63,10 @@ export default function NotificacoesSettingsPage() {
     try {
       await testar();
       setAviso("Mandei. Se não chegar em alguns segundos, confira as notificações nos ajustes do aparelho.");
-    } catch {
-      setAviso("Não consegui enviar. Ative a notificação neste aparelho primeiro.");
+    } catch (err) {
+      // A mensagem vem da API: sem ela, "não consegui enviar" escondia chave
+      // VAPID inválida atrás de um erro que parecia do aparelho.
+      setAviso(err instanceof Error ? err.message : "Não consegui enviar.");
     }
   }
 
