@@ -14,22 +14,13 @@
 
 import { useState } from "react";
 import { CheckCircle2, Loader2, RefreshCw, Settings2, TriangleAlert } from "lucide-react";
-import { toast } from "sonner";
-import { cn } from "@/lib/utils";
-import { periodoCurto } from "@/lib/utils/periodo-da-oferta";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { FonteDeVendasForm } from "@/components/funnels/fonte-de-vendas-da-etapa";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
-  useDisableKiwifyStageConfig,
-  useKiwifyOfertas,
-  useKiwifyProducts,
   useKiwifyReconciliation,
   useKiwifyStageConfig,
-  useSaveKiwifyStageConfig,
-  useSincronizarVendasKiwify,
   type KiwifyStageConfig,
 } from "@/lib/hooks/use-kiwify-reconciliation";
 
@@ -41,12 +32,6 @@ interface Props {
   funnelId: string;
   stageId: string;
 }
-
-/** As duas fontes, com o que cada uma faz — o texto é parte da decisao. */
-const FONTES = [
-  { v: "planilha" as const, titulo: "Planilha", ajuda: "Como hoje. So confere com a Kiwify." },
-  { v: "kiwify" as const, titulo: "API da Kiwify", ajuda: "A planilha passa a ser ignorada." },
-];
 
 export function KiwifyReconciliationCard({ projectId, funnelId, stageId }: Props) {
   const cfg = useKiwifyStageConfig(projectId, funnelId, stageId);
@@ -278,6 +263,11 @@ function ListaDeVendas({
   );
 }
 
+/**
+ * O mesmo formulário da aba Planilhas, num diálogo — quem está olhando a
+ * divergência ajusta o recorte sem sair do dashboard. O form vive em
+ * `fonte-de-vendas-da-etapa.tsx` para as duas telas não divergirem.
+ */
 function ConfigDialog({
   projectId,
   funnelId,
@@ -290,320 +280,26 @@ function ConfigDialog({
   onOpenChange: (v: boolean) => void;
   atual: KiwifyStageConfig | null;
 }) {
-  const produtos = useKiwifyProducts(projectId, open);
-  const salvar = useSaveKiwifyStageConfig(projectId, funnelId, stageId);
-  const desligar = useDisableKiwifyStageConfig(projectId, funnelId, stageId);
-  const [selecionados, setSelecionados] = useState<string[]>(atual?.productIds ?? []);
-  const [data, setData] = useState(atual?.startDate ?? "");
-  const [dataFim, setDataFim] = useState(atual?.endDate ?? "");
-  const [fonte, setFonte] = useState<"planilha" | "kiwify">(atual?.fonteDeVendas ?? "planilha");
-  const [ofertas, setOfertas] = useState<string[]>(atual?.offerIds ?? []);
-  const sincronizar = useSincronizarVendasKiwify(projectId);
-  // Só busca ofertas quando a fonte é a Kiwify: elas saem das vendas já
-  // sincronizadas, e perguntar antes disso só traria lista vazia.
-  const ofertasDisponiveis = useKiwifyOfertas(projectId, funnelId, stageId, open && fonte === "kiwify");
-  const [precoIngresso, setPrecoIngresso] = useState(atual?.ticketPrice != null ? String(atual.ticketPrice) : "");
-  const [busca, setBusca] = useState("");
-
-  const lista = (produtos.data?.products ?? []).filter((p) =>
-    busca.trim() ? p.name.toLowerCase().includes(busca.trim().toLowerCase()) : true,
-  );
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-sm">Vendas da Kiwify nesta etapa</DialogTitle>
           <DialogDescription className="text-xs">
-            Escolha os produtos desta etapa. A conta da Kiwify tem todos os produtos do expert —
-            selecionar o errado traz venda que não é desta etapa.
+            O mesmo que fica em <strong>Configurar etapa → Planilhas</strong>, no topo.
           </DialogDescription>
         </DialogHeader>
-
-        <div className="space-y-3">
-          {/* De onde vêm as vendas. É a escolha que muda todo número da etapa,
-              então vem primeiro e diz o que cada opção faz. */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">De onde vêm as vendas</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {FONTES.map((o) => (
-                <button
-                  key={o.v}
-                  type="button"
-                  onClick={() => setFonte(o.v)}
-                  className={cn(
-                    "flex flex-col gap-0.5 rounded-md border p-2 text-left text-xs transition-colors",
-                    fonte === o.v
-                      ? "border-primary bg-primary/5 text-primary"
-                      : "border-border hover:bg-muted",
-                  )}
-                >
-                  <span className="font-medium">{o.titulo}</span>
-                  <span className="text-[11px] leading-tight text-muted-foreground">{o.ajuda}</span>
-                </button>
-              ))}
-            </div>
-            {fonte === "kiwify" && (
-              <p className="text-[11px] text-muted-foreground">
-                A venda já chega com UTM da própria Kiwify — na conta medida,{" "}
-                <strong>92% delas</strong>. Recusada e aguardando pagamento ficam de fora da conta.
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="kiwify-data" className="text-xs font-medium">
-                  Contar a partir de{" "}
-                  {fonte === "kiwify" && (
-                    <span className="font-normal text-muted-foreground">(opcional)</span>
-                  )}
-                </Label>
-                <Input id="kiwify-data" type="date" value={data} onChange={(e) => setData(e.target.value)} />
-              </div>
-              {/* O fim só aparece na fonte Kiwify: a conferência com a planilha
-                  compara até hoje, e um fim ali faria a divergência mudar de
-                  significado sem avisar. */}
-              {fonte === "kiwify" && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="kiwify-data-fim" className="text-xs font-medium">
-                    até <span className="font-normal text-muted-foreground">(opcional)</span>
-                  </Label>
-                  <Input
-                    id="kiwify-data-fim"
-                    type="date"
-                    value={dataFim}
-                    min={data || undefined}
-                    onChange={(e) => setDataFim(e.target.value)}
-                  />
-                </div>
-              )}
-            </div>
-            {fonte === "kiwify" && !data && !dataFim && (
-              <p className="text-[11px] text-muted-foreground">
-                Em branco, a etapa pega tudo que já foi sincronizado. A{" "}
-                <strong>conferência</strong> com a planilha, essa precisa da data de início.
-              </p>
-            )}
-            {/* O fim importa quando o produto vende SEM oferta: ali não há o que
-                marcar na lista abaixo, e só a janela separa um funil do outro. */}
-            {fonte === "kiwify" && !dataFim && (
-              <p className="text-[11px] text-muted-foreground">
-                Sem fim, a janela segue aberta — se o produto for reaproveitado em outro funil
-                depois, a venda de lá entra aqui.
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="kiwify-ingresso" className="text-xs font-medium">
-              Preço de um ingresso <span className="font-normal text-muted-foreground">(opcional)</span>
-            </Label>
-            <Input
-              id="kiwify-ingresso"
-              type="number"
-              step="0.01"
-              min="0"
-              value={precoIngresso}
-              onChange={(e) => setPrecoIngresso(e.target.value)}
-              placeholder="ex.: 1097"
-            />
-            <p className="text-[11px] text-muted-foreground">
-              A Kiwify manda <strong>uma venda só</strong> quando a pessoa compra vários ingressos.
-              Com o preço unitário, dá para descobrir quantos foram — o valor da compra é múltiplo
-              dele. Sem isso, cada venda conta como um ingresso.
-            </p>
-          </div>
-
-          {fonte === "kiwify" && (
-            <div className="space-y-1.5 rounded-md border p-2">
-              <div className="flex items-center justify-between gap-2">
-                <Label className="text-xs font-medium">
-                  Ofertas{" "}
-                  <span className="font-normal text-muted-foreground">
-                    {ofertas.length === 0 ? "(todas)" : `${ofertas.length} escolhida(s)`}
-                  </span>
-                </Label>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-6 gap-1 text-[11px]"
-                  disabled={sincronizar.isPending}
-                  onClick={() =>
-                    sincronizar.mutate(
-                      {},
-                      {
-                        onSuccess: (r) =>
-                          toast.success(
-                            `${r.gravadas} venda(s) sincronizada(s) de ${r.de} a ${r.ate}`,
-                          ),
-                        onError: (e) =>
-                          toast.error(e instanceof Error ? e.message : "Falha ao sincronizar"),
-                      },
-                    )
-                  }
-                >
-                  {sincronizar.isPending ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-3 w-3" />
-                  )}
-                  Sincronizar
-                </Button>
-              </div>
-              {/* A lista sai das VENDAS, não do catálogo: a API da Kiwify não
-                  lista as ofertas de um produto. Dizer isso evita que uma lista
-                  vazia pareça "este produto não tem oferta". */}
-              {ofertasDisponiveis.isLoading ? (
-                <Skeleton className="h-20" />
-              ) : (ofertasDisponiveis.data?.ofertas.length ?? 0) === 0 ? (
-                <p className="text-[11px] text-muted-foreground">
-                  {ofertasDisponiveis.data?.sincronizadoEm
-                    ? "Nenhuma venda sincronizada para os produtos escolhidos."
-                    : "Sincronize para ver as ofertas — elas saem das vendas, não do catálogo da Kiwify."}
-                </p>
-              ) : (
-                <>
-                  <div className="max-h-40 space-y-0.5 overflow-y-auto">
-                    {ofertasDisponiveis.data?.ofertas.map((o) => (
-                      <label
-                        key={`${o.produto}:${o.id}`}
-                        className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-[11px] hover:bg-muted"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={ofertas.includes(o.id)}
-                          onChange={(e) =>
-                            setOfertas((atuais) =>
-                              e.target.checked
-                                ? [...atuais, o.id]
-                                : atuais.filter((x) => x !== o.id),
-                            )
-                          }
-                        />
-                        <span className="font-medium">{o.nome}</span>
-                        <span className="truncate text-muted-foreground">{o.produto}</span>
-                        {/* O período é o que distingue duas ofertas do MESMO
-                            produto que vendem para funis diferentes — é por ele
-                            que se reconhece qual é a desta etapa. */}
-                        {o.de && (
-                          <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">
-                            {periodoCurto(o.de, o.ate)}
-                          </span>
-                        )}
-                        <span
-                          className={cn(
-                            "shrink-0 tabular-nums text-muted-foreground",
-                            !o.de && "ml-auto",
-                          )}
-                        >
-                          {o.vendas}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    Nenhuma marcada = <strong>todas</strong>. Marque só as ofertas deste funil —
-                    o mesmo produto pode vender por uma oferta aqui e por outra em outro funil. A
-                    data ao lado é o período em que cada uma vendeu, e o número, quantas vendas tem
-                    hoje — inclusive <strong>(sem oferta)</strong>, que existe de verdade e sumiria
-                    do recorte se não pudesse ser marcada.
-                  </p>
-                </>
-              )}
-            </div>
-          )}
-
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">
-              Produtos {selecionados.length > 0 && <span className="text-muted-foreground">({selecionados.length} selecionado(s))</span>}
-            </Label>
-            <Input placeholder="Buscar produto…" value={busca} onChange={(e) => setBusca(e.target.value)} />
-            {produtos.isLoading ? (
-              <Skeleton className="h-40" />
-            ) : lista.length === 0 ? (
-              <p className="text-[11px] text-muted-foreground">Nenhum produto encontrado.</p>
-            ) : (
-              <div className="max-h-56 space-y-0.5 overflow-y-auto rounded-md border border-border/40 p-1">
-                {lista.map((p) => {
-                  const marcado = selecionados.includes(p.id);
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() =>
-                        setSelecionados((atuais) =>
-                          marcado ? atuais.filter((x) => x !== p.id) : [...atuais, p.id],
-                        )
-                      }
-                      className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs transition-colors ${
-                        marcado ? "bg-primary/10 font-medium" : "hover:bg-muted"
-                      }`}
-                    >
-                      <span className={`h-3 w-3 shrink-0 rounded-sm border ${marcado ? "border-primary bg-primary" : "border-border"}`} />
-                      <span className="truncate" title={p.name}>{p.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between gap-2">
-            {atual && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-[11px] text-muted-foreground hover:text-red-500"
-                disabled={desligar.isPending}
-                onClick={() =>
-                  desligar.mutate(undefined, {
-                    onSuccess: () => {
-                      toast.success("Conferência desligada nesta etapa");
-                      onOpenChange(false);
-                    },
-                  })
-                }
-              >
-                Desligar conferência
-              </Button>
-            )}
-            <Button
-              size="sm"
-              className="ml-auto gap-1.5"
-              disabled={salvar.isPending || selecionados.length === 0 || (fonte === "planilha" && !data)}
-              onClick={() =>
-                salvar.mutate(
-                  {
-                    productIds: selecionados,
-                    startDate: data || null,
-                    endDate: dataFim || null,
-                    fonteDeVendas: fonte,
-                    offerIds: ofertas,
-                    // Campo vazio significa "não sei o preço", e é diferente de
-                    // zero: manda `null` para cada venda voltar a contar 1.
-                    ticketPrice: precoIngresso.trim() ? Number(precoIngresso) : null,
-                  },
-                  {
-                    onSuccess: () => {
-                      toast.success(
-                        fonte === "kiwify"
-                          ? "Vendas desta etapa agora vêm da Kiwify"
-                          : "Conferência configurada",
-                      );
-                      onOpenChange(false);
-                    },
-                    onError: (e) => toast.error(e instanceof Error ? e.message : "Não consegui salvar"),
-                  },
-                )
-              }
-            >
-              {salvar.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              Salvar
-            </Button>
-          </div>
-        </div>
+        {/* `key` pelo estado salvo: reabrir depois de salvar remonta o form com
+            o que está no banco, em vez de manter o rascunho anterior. */}
+        <FonteDeVendasForm
+          key={atual?.updatedAt ?? "novo"}
+          projectId={projectId}
+          funnelId={funnelId}
+          stageId={stageId}
+          atual={atual}
+          ativo={open}
+          onSalvo={() => onOpenChange(false)}
+        />
       </DialogContent>
     </Dialog>
   );

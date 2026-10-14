@@ -257,6 +257,25 @@ function recuoDe(ymd: string, dias: number): string {
  * cada uma tem é escolher no escuro, e foi assim que "(sem oferta)" passaria
  * desapercebida levando 91 vendas embora.
  */
+/**
+ * Quais produtos a lista de ofertas deve cobrir.
+ *
+ * `csv` são os produtos MARCADOS na tela, que ainda não foram salvos — é o que
+ * faz a lista reagir ao clique. Vazio ou ausente cai nos salvos: é o caso de
+ * quem abre a tela sem mexer em nada. Inverter essa ordem devolveria as
+ * ofertas do recorte antigo justamente enquanto a pessoa troca de produto.
+ */
+export function produtosDaListaDeOfertas(
+  csv: string | undefined,
+  salvos: string[] | null | undefined,
+): string[] {
+  const pedidos = (csv ?? "")
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  return pedidos.length > 0 ? pedidos : (salvos ?? []);
+}
+
 export async function ofertasDosProdutos(
   db: Database,
   projectId: string,
@@ -266,6 +285,8 @@ export async function ofertasDosProdutos(
     id: string;
     nome: string;
     produto: string | null;
+    /** O id do produto — a tela usa para soltar a oferta quando o produto é desmarcado. */
+    produtoId: string | null;
     vendas: number;
     de: string | null;
     ate: string | null;
@@ -279,6 +300,7 @@ export async function ofertasDosProdutos(
       offerId: kiwifySales.offerId,
       offerName: kiwifySales.offerName,
       produto: kiwifySales.productName,
+      produtoId: kiwifySales.productId,
       vendas: sql<number>`count(*)::int`,
       // O período de cada oferta é o que permite reconhecer qual delas é de
       // qual funil quando o mesmo produto vende em dois: "Lote 1" de setembro
@@ -288,13 +310,19 @@ export async function ofertasDosProdutos(
     })
     .from(kiwifySales)
     .where(and(...where))
-    .groupBy(kiwifySales.offerId, kiwifySales.offerName, kiwifySales.productName)
+    .groupBy(
+      kiwifySales.offerId,
+      kiwifySales.offerName,
+      kiwifySales.productName,
+      kiwifySales.productId,
+    )
     .orderBy(sql`count(*) desc`);
 
   return linhas.map((l) => ({
     id: l.offerId ?? SEM_OFERTA,
     nome: l.offerName ?? "(sem oferta)",
     produto: l.produto,
+    produtoId: l.produtoId,
     vendas: Number(l.vendas),
     de: l.de ?? null,
     ate: l.ate ?? null,

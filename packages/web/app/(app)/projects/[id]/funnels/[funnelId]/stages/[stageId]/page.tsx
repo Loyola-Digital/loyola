@@ -21,6 +21,7 @@ import { YouTubeFunnelSection } from "@/components/funnels/youtube-funnel-sectio
 import { SurveyFunnelTab } from "@/components/funnels/survey-funnel-tab";
 import { FunnelSpreadsheetsTab } from "@/components/funnels/funnel-spreadsheets-tab";
 import { StageSalesSpreadsheetSection } from "@/components/funnels/stage-sales-spreadsheet-section";
+import { FonteDeVendasDaEtapa } from "@/components/funnels/fonte-de-vendas-da-etapa";
 import { SalesStageView } from "@/components/funnels/sales-stage-view";
 import { EventStageView } from "@/components/funnels/event-stage-view";
 import { MapStageView } from "@/components/funnels/map-stage-view";
@@ -845,6 +846,14 @@ export default function StagePage() {
           <div className="space-y-6">
             {ehCaptacaoPagaStage && (
               <>
+                {/* A fonte vem ANTES das planilhas: é ela que decide se as
+                    planilhas abaixo são lidas ou ignoradas. */}
+                <FonteDeVendasDaEtapa
+                  projectId={params.id}
+                  funnelId={params.funnelId}
+                  stageId={params.stageId}
+                />
+                <div className="border-t border-border/30" />
                 <StageSalesSpreadsheetSection
                   projectId={params.id}
                   funnelId={params.funnelId}
