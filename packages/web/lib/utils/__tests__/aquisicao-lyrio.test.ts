@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { cacEmCentavos, cardsDeAquisicao, ltvEmCentavos, type EntradaDeAquisicao, type PagantesPorCanal } from "../aquisicao-lyrio";
+import { cacEmCentavos, cardsDeAquisicao, type EntradaDeAquisicao, type PagantesPorCanal } from "../aquisicao-lyrio";
 import { fmtBRL } from "../resumo-mobile-lyrio";
-import { fmtUsd } from "../overview-revenuecat";
 
 /**
- * Story 42.14 (AC4, AC5, AC7, AC8, AC9a) — CAC, LTV e renovações. "Hoje" fixo
+ * Story 42.14 (AC4, AC5, AC8, AC9a) — CAC e renovações; o LTV (AC7) está em
+ * espera da decisão dos product_id (sonda de 2026-10-16). "Hoje" fixo
  * em 16/10/2026; filtro de 90 dias (19/07 a 16/10), série desde 10/08.
  * Renovações e novos pagantes têm números DIFERENTES de propósito: o CAC divide
  * por novos pagantes (pessoas), nunca por renovações nem vendas (D4).
@@ -26,10 +26,6 @@ const pagantes = (days: number, p: Partial<PagantesPorCanal> = {}): PagantesPorC
   atributosDesde: "2026-10-06",
   novosPagantes: days === 28 ? contagem(2, 1, 1, 0, 0) : contagem(4, 1, 3, 1, 1),
   renovacoes: contagem(9, 8, 7, 6, 0),
-  ltvPorPlano: [
-    { plano: "anual", rotulo: "LTV Anual", productId: "premium_yearly", receitaCentavos: 10997, pessoas: 2 },
-    { plano: "trimestral", rotulo: "LTV Trimestral", productId: "premium_quartely", receitaCentavos: 0, pessoas: 0 },
-  ],
   ...p,
 });
 const entrada = (p: Partial<EntradaDeAquisicao> = {}): EntradaDeAquisicao => ({
@@ -123,29 +119,12 @@ describe("CAC por canal e consolidado, nas duas janelas (AC4, AC5, D9)", () => {
     expect(cacEmCentavos(100000, 3)).toBe(33333);
     expect(cacEmCentavos(100000, 0)).toBeNull();
     expect(cacEmCentavos(null, 3)).toBeNull();
-    expect(ltvEmCentavos(10997, 2)).toBe(5499);
-    expect(ltvEmCentavos(1, 0)).toBeNull();
   });
 });
 
-describe("LTV Anual e Trimestral, brutos (AC7)", () => {
-  it("receita do plano ÷ pessoas: US$ 109,97 ÷ 2 = US$ 54,99; o memorial diz BRUTO e o product_id", () => {
-    const anual = achar(cardsDeAquisicao(entrada()).ltv, "ltv-anual");
-    expect(anual.rotulo).toBe("LTV Anual");
-    expect(anual.valor).toBe(fmtUsd(54.99));
-    expect(anual.formula!.result).toBe(`${fmtUsd(109.97)} ÷ 2 = ${fmtUsd(54.99)}`);
-    expect(anual.formula!.note).toContain("BRUTO");
-    expect(anual.formula!.values[0].source).toContain("premium_yearly");
-    expect(anual.declaracao).toMatchObject({ etiqueta: "desde 10/08", destaque: false });
-  });
-  it("plano sem pagamento: '—' com a causa no memorial (divisão por zero)", () => {
-    const t = achar(cardsDeAquisicao(entrada()).ltv, "ltv-trimestral");
-    expect(t.rotulo).toBe("LTV Trimestral");
-    expect(t.valor).toBe("—");
-    expect(t.formula!.result).toContain("ninguém pagou o plano");
-  });
-  it("não há LTV Mensal nem terceiro LTV (D28)", () => {
-    expect(cardsDeAquisicao(entrada()).ltv.map((c) => c.rotulo)).toEqual(["LTV Anual", "LTV Trimestral"]);
+describe("LTV (AC7) — EM ESPERA", () => {
+  it("nenhum card de LTV enquanto a lista de product_id de cada plano não é decidida (os ids literais da D28 dariam um '—' falso)", () => {
+    expect(cardsDeAquisicao(entrada()).ltv).toEqual([]);
   });
 });
 
@@ -172,7 +151,7 @@ describe("rota da API anterior, eco e erro (AC10b, PO-D4)", () => {
   });
   it("resposta que ecoa OUTRA janela não vale para esta (o eco decide)", () => {
     const r = cardsDeAquisicao(entrada({ pagantesFiltro: { tipo: "pronto", dados: pagantes(28) } }));
-    expect(r.ltv).toEqual([]);
+    expect(r.renovacoes).toEqual([]);
     expect(r.cac.map((c) => c.id).every((id) => id.endsWith("-28d"))).toBe(true);
   });
   it("erro: cada card '—' com a causa, nenhum some", () => {
@@ -183,7 +162,7 @@ describe("rota da API anterior, eco e erro (AC10b, PO-D4)", () => {
       expect(c.formula!.values[0].value, c.id).toBe("Falhou");
     }
     expect(r.cac).toHaveLength(6);
-    expect(r.ltv).toHaveLength(2);
+    expect(r.ltv).toHaveLength(0);
     expect(r.renovacoes).toHaveLength(4);
   });
 });

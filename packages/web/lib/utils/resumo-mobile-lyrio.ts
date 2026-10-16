@@ -10,7 +10,7 @@
  *   Receita ................ `revenue_last_28_days` → `/metrics/revenue` do filtro
  *   ROAS, Margem ........... seguem, por consequência dos insumos
  *   MRR, assinaturas, trials  continuam `agora` (retrato)
- *   Novos clientes ......... continua nos 28 dias do overview (ver abaixo)
+ *   Novos clientes ......... 28 dias do overview → `charts/customers_new` do filtro
  *
  * ## Nenhuma razão mistura janelas (AC2d)
  *
@@ -20,12 +20,11 @@
  * rota, contrato < 51) leva o trio Receita/ROAS/Margem aos 28 dias, e aí os três
  * dizem isso com etiqueta e âmbar: o que era antes, declarado (AC10b).
  *
- * ## Novos clientes — pendente da sonda
+ * ## Novos clientes
  *
- * TODO(42.14, sonda rc-formato): o card segue o filtro pelo chart
- * `customers_new` (D22) só depois de a sonda mostrar a forma de `values`,
- * `measures` e `summary` (tarefas ii e v). Até lá fica nos 28 dias do overview,
- * com âmbar e "não segue o filtro" — sem inventar o formato do chart.
+ * Segue o filtro pelo chart `customers_new` (D22), cuja forma foi conferida na
+ * sonda de produção de 2026-10-16 (`summary.total` pelo `display_name` da
+ * medida). O card é o mesmo do Overview (`cardDeNovosClientes`).
  */
 
 import type { MetricFormula, MetricFormulaValue } from "@/lib/types/metric-formula";
@@ -34,7 +33,7 @@ import { memorialDoGoogleSemNumero } from "./lyrio-google-ads";
 import { declararJanela, intervaloDaJanela, type ContextoDaJanela, type DeclaracaoDaJanela, type JanelaDoCard } from "./janela-dos-cards-lyrio";
 import { memorialDoErroDaFonte, type EstadoDaFonte } from "./estado-da-fonte-revenuecat";
 import { comoEstadoDoGoogle, NOTA_DO_FUSO_DO_GOOGLE, valorDoGoogleNaRegua, type InvestimentoDoGoogleNaRegua } from "./google-ads-na-regua";
-import { fmtUsd, type CardComJanela, type ReceitaDoPeriodo } from "./overview-revenuecat";
+import { cardDeNovosClientes, fmtUsd, type CardComJanela, type NovosClientesDoPeriodo, type ReceitaDoPeriodo } from "./overview-revenuecat";
 
 /** Os ícones moram no componente; aqui só a chave (o vitest coleta `.ts` sem JSX). */
 export type IconeDoCard = "investimento" | "receita" | "roas" | "margem" | "mrr" | "assinaturas" | "trials" | "clientes" | "cac" | "ltv" | "renovacao";
@@ -62,7 +61,9 @@ export interface EntradaDoResumo {
   google: { mostrar: boolean; filtro: InvestimentoDoGoogleNaRegua; vinteOito: InvestimentoDoGoogleNaRegua };
   /** A receita da janela do filtro (rota nova; `oculto` = API anterior). */
   receita: EstadoDaFonte<ReceitaDoPeriodo>;
-  /** O overview: snapshots, novos clientes e, só com a API anterior, a receita de 28 dias. */
+  /** Os novos clientes da janela do filtro (rota nova; `oculto` = API anterior). */
+  novosClientes: EstadoDaFonte<NovosClientesDoPeriodo>;
+  /** O overview: snapshots e, só com a API anterior, a receita e os novos clientes de 28 dias. */
   overview: EstadoDaFonte<{ id: string; value: number }[]>;
   percentuais: { platformFeePct: number; taxPct: number; otherCostsPct: number };
 }
@@ -186,7 +187,7 @@ export function cardsDoResumo(e: EntradaDoResumo): CardDoResumo[] {
     });
     if (e.receita.tipo === "pronto") {
       receitaUsd = e.receita.dados.configured ? e.receita.dados.valorUsd : null;
-      notaDaReceita = `O RevenueCat conta os dias em UTC: a janela enviada é ${intervaloDoFiltro} (dias de SP), então as pontas podem diferir em até 3 h; o último dia pode estar parcial.`;
+      notaDaReceita = `O RevenueCat conta os dias em UTC e o intervalo é inclusivo: a janela enviada é ${intervaloDoFiltro} (dias de SP), então as pontas podem diferir em até 3 h; o dia de hoje ainda está em andamento. Menos reembolsos, como o RevenueCat define a receita.`;
     }
   }
   const receitaBrl = receitaUsd != null && cambio.taxa != null ? receitaUsd * cambio.taxa : null;
@@ -316,7 +317,6 @@ export function cardsDoResumo(e: EntradaDoResumo): CardDoResumo[] {
   const mrrBrl = mrr != null && cambio.taxa != null ? mrr * cambio.taxa : null;
   const assinaturas = metrica(overview, "active_subscriptions");
   const trials = metrica(overview, "active_trials");
-  const novos = metrica(overview, "new_customers_last_28_days", "new_customers");
 
   const cards: CardDoResumo[] = [cardMeta(metaFiltro, filtro)];
   if (e.google.mostrar) cards.push(cardGoogle(e.google.filtro, filtro));
@@ -334,8 +334,7 @@ export function cardsDoResumo(e: EntradaDoResumo): CardDoResumo[] {
       contagem("Total", "active_subscriptions", "Assinaturas ativas agora — não é acumulado do período (o RevenueCat inclui as canceladas que ainda têm acesso).", assinaturas)),
     doOverview("trials", "Trials ativos", "trials", agora, trials, fmtNum(trials),
       contagem("Total", "active_trials", "Trials em andamento agora. Ainda não viraram receita.", trials)),
-    doOverview("novos-clientes", "Novos clientes", "clientes", rc28, novos, fmtNum(novos),
-      contagem("Total", "new_customers_last_28_days", "App User IDs criados na janela (aliases contam 1), como o RevenueCat define. Fica nos 28 dias da API até a leitura do gráfico customers_new por período ser conferida.", novos)),
+    { ...cardDeNovosClientes(e.novosClientes, e.overview, ctx), icone: "clientes" },
   );
   // Como na 42.2: o card do Google só existe com campanha vinculada; o resto aparece sempre.
   return cards;

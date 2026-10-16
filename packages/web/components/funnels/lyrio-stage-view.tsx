@@ -92,6 +92,7 @@ import {
   useRevenuecatVendasPorCanal,
   useRevenuecatReceita,
   useRevenuecatPagantesPorCanal,
+  useRevenuecatNovosClientes,
 } from "@/lib/hooks/use-revenuecat";
 import type { FunnelCampaign, FunnelStage } from "@loyola-x/shared";
 
@@ -222,6 +223,9 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   // a mesma chave de cache do Overview (uma chamada, um gasto no limite de 25/min).
   const receitaQ = useRevenuecatReceita(projectId, funnelId, stage.id, days, connected);
   const receitaDoFiltro = estadoDaFonte({ isLoading: receitaQ.isLoading, error: receitaQ.error, data: receitaQ.data });
+  // D22: os novos clientes do filtro (`charts/customers_new`) — a mesma chave do Overview.
+  const novosClientesQ = useRevenuecatNovosClientes(projectId, funnelId, stage.id, days, connected);
+  const novosClientes = estadoDaFonte({ isLoading: novosClientesQ.isLoading, error: novosClientesQ.error, data: novosClientesQ.data });
   const overviewEstado = estadoDaFonte({ isLoading: overview.isLoading, error: overview.error, data: overview.data?.metrics });
 
   // Story 42.4 — Margem de Contribuição. Percentuais vêm da config da etapa; a
@@ -246,13 +250,16 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
     meta: { temCampanhas: temMeta, filtro: metaFiltro, vinteOito: meta28 },
     google: { mostrar: googleCampaignIds.size > 0, filtro: googleFiltro, vinteOito: google28 },
     receita: receitaDoFiltro,
+    novosClientes,
     overview: overviewEstado,
     percentuais: { platformFeePct, taxPct, otherCostsPct },
   });
   // PO-D4 (3) — o aviso visível do bloco, além do memorial de cada card.
-  const avisoDaReceita = avisoDoErroDaFonte(receitaDoFiltro, "a receita do período no RevenueCat");
+  const avisoDaReceita =
+    avisoDoErroDaFonte(receitaDoFiltro, "a receita do período no RevenueCat") ??
+    avisoDoErroDaFonte(novosClientes, "os novos clientes do período no RevenueCat");
 
-  // Story 42.14 (AC4–AC8) — novos pagantes POR PESSOA, renovações e LTV, no filtro
+  // Story 42.14 (AC4–AC6, AC8; AC7 em espera) — novos pagantes POR PESSOA e renovações, no filtro
   // e nos 28 dias fixos dos CACs (D5/D9). Com `days = 28`, uma consulta só.
   const pagantesFiltroQ = useRevenuecatPagantesPorCanal(projectId, funnelId, stage.id, days, connected);
   const pagantes28Q = useRevenuecatPagantesPorCanal(projectId, funnelId, stage.id, 28, connected);
@@ -663,8 +670,9 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
           </p>
         )}
         {/* Story 42.14 (AC4, AC5) — CAC por NOVO PAGANTE (pessoa), no filtro e nos
-            28 dias fixos (`28d fixo`, âmbar). (AC7) LTV bruto por plano e (AC8)
-            renovações por canal, no filtro. Somem com a API anterior à rota. */}
+            28 dias fixos (`28d fixo`, âmbar). (AC8) renovações por canal, no
+            filtro. Somem com a API anterior à rota. O LTV (AC7) está em espera
+            da decisão dos product_id — `aquisicao.ltv` vem vazio. */}
         {connected && aquisicao.cac.length > 0 && (
           <div className="space-y-1.5 border-t border-border/30 pt-3">
             <h3 className="text-xs font-semibold text-muted-foreground">CAC · investimento ÷ novos pagantes (pessoas)</h3>

@@ -10,6 +10,7 @@ import { tentarDeNovoAJornada, type JornadaDoLyrio } from "@/lib/utils/jornada-l
 import { tentarDeNovoNoRevenuecat } from "@/lib/utils/estado-da-fonte-revenuecat";
 import type { VendasPorCanalDoLyrio } from "@/lib/utils/vendas-por-canal-lyrio";
 import type { PagantesPorCanal } from "@/lib/utils/aquisicao-lyrio";
+import type { NovosClientesDoPeriodo } from "@/lib/utils/overview-revenuecat";
 
 const STALE = 60 * 1000;
 
@@ -385,13 +386,33 @@ export function useRevenuecatVendasPorCanal(projectId: string, funnelId: string,
   });
 }
 
+/**
+ * Story 42.14 (D22) — "Novos clientes" na janela do filtro, pelo chart
+ * `customers_new` (rota nova, contrato 51). 404 da rota → API atrás (o card fica
+ * nos 28 dias do overview, declarado). Sem insistir em 429 nem 404 (PO-D4 (6)).
+ * Resumo e Overview pedem a mesma chave: uma chamada por janela.
+ */
+export function useRevenuecatNovosClientes(projectId: string, funnelId: string, stageId: string, days: number, enabled = true) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["revenuecat-novos-clientes", stageId, days],
+    queryFn: () =>
+      apiClient<NovosClientesDoPeriodo>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/novos-clientes?days=${days}`,
+      ),
+    enabled,
+    staleTime: STALE,
+    retry: tentarDeNovoNoRevenuecat,
+  });
+}
+
 // ============================================================
-// Story 42.14 (AC6, AC7, AC8) — novos pagantes por pessoa, renovações e LTV.
+// Story 42.14 (AC6, AC8) — novos pagantes por pessoa e renovações (AC7 em espera).
 // ============================================================
 
 /**
- * ⚠️ Rota NOVA (contrato 51): com a API anterior responde 404 — os cards de CAC,
- * LTV e renovação não aparecem (`cardsDeAquisicao`) e o banner de versão
+ * ⚠️ Rota NOVA (contrato 51): com a API anterior responde 404 — os cards de CAC
+ * e renovação não aparecem (`cardsDeAquisicao`) e o banner de versão
  * explica. Mesmo `retry` da Jornada: um 404 não vira outra coisa entre
  * tentativas. O Resumo pede o filtro e os 28 dias; o Overview, os 28 dias (a
  * mesma chave).

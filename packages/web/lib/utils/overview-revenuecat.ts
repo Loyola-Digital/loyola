@@ -102,12 +102,82 @@ export interface ReceitaDoPeriodo {
   valorUsd: number | null;
 }
 
+/** O que `/revenuecat/novos-clientes` devolve (chart `customers_new`, Story 42.14). */
+export interface NovosClientesDoPeriodo {
+  configured: boolean;
+  days: number;
+  desde: string;
+  ate: string;
+  valor: number | null;
+  medida?: string;
+  /** O dia de hoje veio com `incomplete: true` (em andamento). */
+  diaIncompleto?: boolean;
+}
+
+/** `AAAA-MM-DD` a `AAAA-MM-DD` → `dd/mm a dd/mm`. */
+function intervaloBr(desde: string, ate: string): string {
+  return `${desde.slice(8, 10)}/${desde.slice(5, 7)} a ${ate.slice(8, 10)}/${ate.slice(5, 7)}`;
+}
+
+/**
+ * Story 42.14 (D22) — o card "Novos clientes" dos DOIS blocos, pela rota de
+ * `charts/customers_new` na janela do filtro. Com a API anterior à rota (404 da
+ * rota), fica nos 28 dias do overview, declarado e em âmbar (AC10b); com erro,
+ * "—" e a causa — sem cair para os 28 dias (AC2d).
+ */
+export function cardDeNovosClientes(
+  estado: EstadoDaFonte<NovosClientesDoPeriodo>,
+  overview: EstadoDaFonte<{ id: string; value: number }[]>,
+  ctx: ContextoDaJanela,
+): CardComJanela {
+  const base = { id: "novos-clientes", rotulo: "Novos clientes" };
+  if (estado.tipo === "oculto") {
+    const decl = declararJanela({ tipo: "fixa", dias: 28, origem: "revenuecat" }, ctx);
+    const erro = memorialDoErroDaFonte(overview, { fonte: FONTE_DO_OVERVIEW, periodo: decl.periodo });
+    if (erro) return { ...base, valor: "—", declaracao: decl, formula: erro };
+    const m = overview.tipo === "pronto" ? overview.dados : null;
+    const v = m?.find((x) => x.id === "new_customers_last_28_days")?.value ?? m?.find((x) => x.id === "new_customers")?.value ?? null;
+    return {
+      ...base,
+      valor: fmtNum(v),
+      declaracao: decl,
+      formula:
+        v == null
+          ? undefined
+          : memorial(decl, {
+              expression: "Contagem",
+              values: [{ label: "Novos clientes", value: fmtNum(v), source: `${FONTE_DO_OVERVIEW} · new_customers` }],
+              result: fmtNum(v),
+              note: "App User IDs criados na janela (aliases contam 1). A API ainda não tem a rota de novos clientes por período (versão anterior à do painel — veja o aviso de versão no topo): fica nos 28 dias do overview até o deploy.",
+            }),
+    };
+  }
+  const decl = declararJanela({ tipo: "filtro" }, { ...ctx, serieDesde: null });
+  const erro = memorialDoErroDaFonte(estado, { fonte: FONTE_DOS_NOVOS_CLIENTES, periodo: decl.periodo });
+  if (erro) return { ...base, valor: "—", declaracao: decl, formula: erro };
+  const d = estado.tipo === "pronto" && estado.dados.configured ? estado.dados : null;
+  if (!d || d.valor == null) return { ...base, valor: "—", declaracao: decl };
+  return {
+    ...base,
+    valor: fmtNum(d.valor),
+    declaracao: decl,
+    formula: memorial(decl, {
+      expression: "Contagem (total do período)",
+      values: [{ label: d.medida ?? "Novos clientes", value: fmtNum(d.valor), source: `${FONTE_DOS_NOVOS_CLIENTES} · summary.total` }],
+      result: fmtNum(d.valor),
+      note: `Clientes novos cuja data de coorte cai no período, como o RevenueCat define (aliases contam 1). O RevenueCat conta os dias em UTC e o intervalo é inclusivo: a janela enviada é ${intervaloBr(d.desde, d.ate)} (dias de SP), então as pontas podem diferir em até 3 h.${d.diaIncompleto ? " O dia de hoje ainda está em andamento (incompleto)." : ""}`,
+    }),
+  };
+}
+
 export interface EntradaDoOverview {
   ctx: ContextoDaJanela;
   /** As métricas de `/metrics/overview` (snapshot + 28 dias). */
   overview: EstadoDaFonte<{ id: string; value: number }[]>;
   /** A receita da janela do filtro (rota nova; `oculto` = API anterior). */
   receita: EstadoDaFonte<ReceitaDoPeriodo>;
+  /** Os novos clientes da janela do filtro (`charts/customers_new`; `oculto` = API anterior). */
+  novosClientes: EstadoDaFonte<NovosClientesDoPeriodo>;
   /** As métricas dos eventos, pedidas com `days` = o filtro. */
   derivadas: EstadoDaFonte<MetricasDerivadasDoOverview>;
   /** As mesmas, pedidas com `days = 28`: o numerador da Conversão para Trial (D10). */
@@ -122,6 +192,7 @@ export interface EntradaDoOverview {
 const FONTE_DO_OVERVIEW = "RevenueCat · GET /metrics/overview";
 const FONTE_DA_RECEITA = "RevenueCat · GET /metrics/revenue (revenue_type=revenue, currency=USD)";
 const FONTE_DAS_DERIVADAS = "eventos do webhook do RevenueCat (revenuecat_sales)";
+const FONTE_DOS_NOVOS_CLIENTES = "RevenueCat · GET /charts/customers_new";
 
 /** O memorial de um número: a fórmula com o `period` da declaração da janela. */
 function memorial(
@@ -149,11 +220,12 @@ export function janelaDasDerivadas(d: Pick<MetricasDerivadasDoOverview, "days">,
  * Fonte em erro: o card mostra "—" e o memorial diz a causa (PO-D4). Fonte
  * carregando: "—" sem memorial (ainda não há o que explicar).
  *
- * TODO(42.14, sonda rc-formato): "Novos clientes" e "Usuários ativos" seguem o
- * filtro pelos charts `customers_new` e `customers_active` só depois de a sonda
- * mostrar a forma do chart e a equivalência do `customers_active` com o
- * `active_users` (tarefas ii, iv e v). Até lá, ficam nos 28 dias do overview,
- * com âmbar — e as conversões no ramo D10 (28 dias alinhados).
+ * Sonda de produção (2026-10-16): "Novos clientes" segue o filtro pelo chart
+ * `customers_new` (que tem `summary.total`). "Usuários ativos" NÃO: o chart
+ * `customers_active` conta pessoas por DIA e só traz a média; não há total de
+ * pessoas distintas no período, e somar os dias contaria a mesma pessoa várias
+ * vezes (19.310 no overview contra ~1.600–1.900 por dia). Ele fica nos 28 dias
+ * do overview, com âmbar, e as conversões no ramo D10 (28 dias alinhados).
  */
 export function cardsDoOverview(e: EntradaDoOverview): { principais: CardComJanela[]; eventos: CardComJanela[] } {
   const ctx = e.ctx;
@@ -217,7 +289,7 @@ export function cardsDoOverview(e: EntradaDoOverview): { principais: CardComJane
               expression: "Receita bruta acumulada (US$)",
               values: [{ label: "Receita", value: fmtUsd(v), source: FONTE_DA_RECEITA }],
               result: fmtUsd(v),
-              note: `Receita bruta (antes da comissão de loja e de impostos). O RevenueCat conta os dias em UTC: a janela enviada é ${r.desde.slice(8, 10)}/${r.desde.slice(5, 7)} a ${r.ate.slice(8, 10)}/${r.ate.slice(5, 7)} (dias de SP), então as pontas podem diferir em até 3 h; o último dia pode estar parcial.`,
+              note: `Receita bruta (antes da comissão de loja e de impostos; menos reembolsos, como o RevenueCat define). O RevenueCat conta os dias em UTC e o intervalo é inclusivo: a janela enviada é ${intervaloBr(r.desde, r.ate)} (dias de SP), então as pontas podem diferir em até 3 h; o dia de hoje ainda está em andamento.`,
             }),
     };
   })();
@@ -241,10 +313,9 @@ export function cardsDoOverview(e: EntradaDoOverview): { principais: CardComJane
       note: "Derivado: não é medido pela API. É o MRR de agora projetado em 12 meses.",
     })),
     cardReceita,
-    doOverview("novos-clientes", "Novos clientes", vinteOito, fmtNum, valor("new_customers"),
-      contagem("Novos clientes", "new_customers", "App User IDs criados na janela (aliases contam 1). A API pode ter cache de 1 a 2 h. Fica nos 28 dias da API até a leitura do gráfico customers_new por período ser conferida.")),
+    cardDeNovosClientes(e.novosClientes, e.overview, ctx),
     doOverview("usuarios-ativos", "Usuários ativos", vinteOito, fmtNum, usuariosAtivos,
-      contagem("Usuários ativos", "active_users", "App User IDs que se comunicaram com o RevenueCat na janela. É o denominador das duas conversões ao lado. A API pode ter cache de 1 a 2 h.")),
+      contagem("Usuários ativos", "active_users", "App User IDs que se comunicaram com o RevenueCat na janela — pessoas distintas nos 28 dias do overview. Não segue o filtro: o gráfico por período do RevenueCat (customers_active) conta pessoas por dia e não dá o total de pessoas distintas, e somar os dias contaria a mesma pessoa várias vezes. É o denominador das duas conversões ao lado. A API pode ter cache de 1 a 2 h.")),
   ];
 
   // ── as conversões: numerador e denominador nos MESMOS 28 dias (D7, D10, AC2b) ──

@@ -19,6 +19,7 @@ const entrada = (p: Partial<EntradaDoResumo> = {}): EntradaDoResumo => ({
   meta: { temCampanhas: true, filtro: { spendLiquido: 1757.5, imposto: 242.5, spendComImposto: 2000 }, vinteOito: { spendLiquido: 878.75, imposto: 121.25, spendComImposto: 1000 } },
   google: { mostrar: true, filtro: { tipo: "pronto", spend: 500 }, vinteOito: { tipo: "pronto", spend: 100 } },
   receita: { tipo: "pronto", dados: { configured: true, days: 90, desde: "2026-07-19", ate: "2026-10-16", valorUsd: 1000 } },
+  novosClientes: { tipo: "pronto", dados: { configured: true, days: 90, desde: "2026-07-19", ate: "2026-10-16", valor: 15232 } },
   overview: { tipo: "pronto", dados: [{ id: "mrr", value: 596 }, { id: "active_subscriptions", value: 120 }, { id: "active_trials", value: 30 }, { id: "new_customers_last_28_days", value: 900 }] },
   percentuais: { platformFeePct: 15, taxPct: 5, otherCostsPct: 1 },
   ...p,
@@ -59,7 +60,7 @@ describe("GradeDoResumo — cada memorial abre (AC1a, AC9d)", () => {
     }
   });
 
-  it("os cards de CAC, LTV e renovação também abrem o memorial (AC4d, AC7, AC8d)", async () => {
+  it("os cards de CAC e de renovação também abrem o memorial (AC4d, AC8d; o LTV está em espera)", async () => {
     const contagem = (n: number) => ({
       canais: [
         { canal: "meta" as const, rotulo: "Meta", quantidade: n },
@@ -73,15 +74,11 @@ describe("GradeDoResumo — cada memorial abre (AC1a, AC9d)", () => {
     const dados = (days: number) => ({
       days, desde: "2026-07-19", assinaturaDesde: "2026-08-10", atributosDesde: null,
       novosPagantes: contagem(2), renovacoes: contagem(3),
-      ltvPorPlano: [
-        { plano: "anual" as const, rotulo: "LTV Anual", productId: "premium_yearly", receitaCentavos: 7998, pessoas: 2 },
-        { plano: "trimestral" as const, rotulo: "LTV Trimestral", productId: "premium_quartely", receitaCentavos: 1499, pessoas: 1 },
-      ],
     });
     const e = entrada();
     const a = cardsDeAquisicao({ ctx: e.ctx, pagantesFiltro: { tipo: "pronto", dados: dados(90) }, pagantes28: { tipo: "pronto", dados: dados(28) }, meta: e.meta, google: e.google });
     const cards = [...a.cac, ...a.ltv, ...a.renovacoes];
-    expect(cards).toHaveLength(12);
+    expect(cards).toHaveLength(10);
     render(<TooltipProvider><GradeDoResumo cards={cards} /></TooltipProvider>);
     for (const c of cards) {
       const texto = await abrirMemorial(c.rotulo);

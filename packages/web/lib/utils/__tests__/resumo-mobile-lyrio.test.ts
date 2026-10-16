@@ -21,6 +21,7 @@ const entrada = (p: Partial<EntradaDoResumo> = {}): EntradaDoResumo => ({
   meta: { temCampanhas: true, filtro: META_90, vinteOito: META_28 },
   google: { mostrar: true, filtro: { tipo: "pronto", spend: 500 }, vinteOito: { tipo: "pronto", spend: 100 } },
   receita: { tipo: "pronto", dados: { configured: true, days: 90, desde: "2026-07-19", ate: "2026-10-16", valorUsd: 1000 } },
+  novosClientes: { tipo: "pronto", dados: { configured: true, days: 90, desde: "2026-07-19", ate: "2026-10-16", valor: 15232, medida: "New Customers", diaIncompleto: true } },
   overview: { tipo: "pronto", dados: OVERVIEW },
   percentuais: { platformFeePct: 15, taxPct: 5, otherCostsPct: 1 },
   ...p,
@@ -45,14 +46,31 @@ describe("cardsDoResumo — cada card declara a sua janela (AC1a, AC3)", () => {
     }
   });
 
-  it("o fluxo segue o filtro (sem âmbar); retratos `agora` e Novos clientes 28 dias da API, com âmbar", () => {
+  it("o fluxo e os Novos clientes seguem o filtro (sem âmbar); retratos `agora`, com âmbar", () => {
     const cards = cardsDoResumo(entrada());
     const etiqueta = (id: string) => cards.find((c) => c.id === id)!.declaracao;
-    for (const id of ["investimento-meta", "investimento-google", "receita", "roas", "margem"]) {
+    for (const id of ["investimento-meta", "investimento-google", "receita", "roas", "margem", "novos-clientes"]) {
       expect(etiqueta(id), id).toMatchObject({ etiqueta: "últimos 90 dias", destaque: false, segueOFiltro: true });
     }
     for (const id of ["mrr", "assinaturas", "trials"]) expect(etiqueta(id)).toMatchObject({ etiqueta: "agora", destaque: true });
-    expect(etiqueta("novos-clientes")).toMatchObject({ etiqueta: "últimos 28 dias", destaque: true, segueOFiltro: false });
+  });
+
+  it("Novos clientes = o total do chart customers_new do filtro (15.232), não o new_customers de 28 dias (900); o memorial diz UTC e o dia incompleto", () => {
+    const c = card(entrada(), "novos-clientes");
+    expect(c.valor).toBe("15.232");
+    expect(c.formula!.values[0].source).toContain("customers_new");
+    expect(c.formula!.note).toContain("UTC");
+    expect(c.formula!.note).toContain("19/07 a 16/10");
+    expect(c.formula!.note).toContain("incompleto");
+  });
+
+  it("Novos clientes com a API anterior à rota: os 28 dias do overview, declarados e em âmbar; com erro: '—' e a causa, sem cair para os 28 dias", () => {
+    const antigo = card(entrada({ novosClientes: { tipo: "oculto" } }), "novos-clientes");
+    expect(antigo).toMatchObject({ valor: "900", declaracao: expect.objectContaining({ etiqueta: "últimos 28 dias", destaque: true }) });
+    expect(antigo.formula!.note).toContain("versão anterior");
+    const erro = card(entrada({ novosClientes: { tipo: "erro", causa: "limite", mensagem: "RevenueCat 429" } }), "novos-clientes");
+    expect(erro.valor).toBe("—");
+    expect(erro.formula!.note).toContain("25 consultas por minuto");
   });
 
   it("sem campanha do Google, o card do Google não aparece (como na 42.2)", () => {
@@ -123,12 +141,13 @@ describe("ROAS e Margem: receita e investimento da MESMA janela (AC2d)", () => {
     }
   });
 
-  it("overview em erro: MRR, assinaturas, trials e novos clientes '—' com a causa", () => {
+  it("overview em erro: MRR, assinaturas e trials '—' com a causa; Novos clientes vem do chart e não depende dele", () => {
     const e = entrada({ overview: { tipo: "erro", causa: "permissao", mensagem: "RevenueCat 403" } });
-    for (const id of ["mrr", "assinaturas", "trials", "novos-clientes"]) {
+    for (const id of ["mrr", "assinaturas", "trials"]) {
       expect(card(e, id).valor).toBe("—");
       expect(card(e, id).formula!.note).toContain("permissão");
     }
+    expect(card(e, "novos-clientes").valor).toBe("15.232");
   });
 
   it("sem campanha da Meta, o investimento da Meta é R$ 0 (não há investimento), não '—'", () => {

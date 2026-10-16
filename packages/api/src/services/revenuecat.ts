@@ -139,15 +139,18 @@ export async function getRevenuecatOverview(
 //
 // GET /v2/projects/{project_id}/metrics/revenue?start_date&end_date — o
 // endpoint de intervalo do domínio Charts & Metrics (documentação oficial
-// `api-v2/charts-and-metrics.md`, lida em 2026-10-16): intervalo inclusivo, dias
-// em UTC, último dia pode ser parcial. A sonda D29 (Danilo, 2026-10-16) mostrou
-// HTTP 200 e as chaves `currency`, `end_date`, `object`, `revenue_type`,
-// `start_date`, `value` — o CORPO não foi interpretado.
+// `api-v2/charts-and-metrics.md`, lida em 2026-10-16).
 //
-// TODO(42.14, sonda rc-formato): conferir no corpo real (i) que `value` é o
-// valor em unidades da moeda (dólares, não centavos) e (iii) o eco de
-// `start_date`/`end_date`. Até lá a leitura é estrita: `value` que não for
-// número finito é ERRO, nunca zero.
+// Conferido na sonda de produção `rc-formato.mjs` (Danilo, 2026-10-16, ~15:30Z):
+//  - `value` em dólares: 2531.46 para 19/09–16/10, o mesmo `summary.total` do
+//    chart `revenue` no intervalo — o intervalo é INCLUSIVO nas duas pontas;
+//  - `revenue_type` default = `revenue`, a receita bruta (o `proceeds` deu 1619.15);
+//    a descrição oficial da medida: "total revenue … minus refunds and downward
+//    subscription payment adjustments";
+//  - `currency` = USD (com e sem `currency=USD`); `start_date`/`end_date` ecoados
+//    como AAAA-MM-DD;
+//  - os dias são de UTC (não de SP), e o dia de hoje vem incompleto.
+// A leitura continua estrita: `value` não numérico é ERRO, nunca zero.
 
 /** O que a rota de receita precisa da resposta de `/metrics/revenue`. */
 export interface ReceitaDoRevenuecat {
@@ -194,6 +197,50 @@ export async function getRevenuecatRevenue(
     startDate: typeof data.start_date === "string" ? data.start_date : null,
     endDate: typeof data.end_date === "string" ? data.end_date : null,
   };
+}
+
+/** O total de um chart de contagem num intervalo de DIAS, e o que veio junto. */
+export interface TotalDoChart {
+  total: number;
+  /** O `display_name` da medida (a chave do `summary.total`). */
+  medida: string;
+  /** Quantos dias vieram com `incomplete: true` (hoje, em andamento). */
+  diasIncompletos: number;
+}
+
+/**
+ * Story 42.14 (D22) — o total de um chart de UMA medida num intervalo de dias
+ * (`AAAA-MM-DD`, inclusivo), pelo `summary.total` da resposta.
+ *
+ * Forma conferida na sonda de produção (2026-10-16): `measures[]` (cada uma com
+ * `display_name`), `values[]` = `{ cohort, incomplete, measure, value }` por dia
+ * em UTC, e `summary.total` indexado pelo `display_name` da medida — presente
+ * em `revenue` e `customers_new`; `customers_active` e `actives` só trazem
+ * `summary.average`, e por isso NÃO passam por aqui (somar os dias de
+ * "clientes vistos no período" contaria a mesma pessoa várias vezes).
+ *
+ * Estrita: mais de uma medida, medida sem nome ou total que não seja número
+ * finito é ERRO — nunca um zero nem um total de outra medida.
+ */
+export async function getRevenuecatChartTotal(
+  apiKey: string,
+  rcProjectId: string,
+  chart: "customers_new",
+  intervalo: { startDate: string; endDate: string },
+): Promise<TotalDoChart> {
+  const qs = new URLSearchParams({ start_date: intervalo.startDate, end_date: intervalo.endDate });
+  const data = (await rcFetch(apiKey, `/projects/${rcProjectId}/charts/${chart}?${qs.toString()}`)) as Record<string, unknown>;
+  const measures = Array.isArray(data?.measures) ? (data.measures as Record<string, unknown>[]) : null;
+  if (!measures || measures.length !== 1 || typeof measures[0]?.display_name !== "string") {
+    throw new Error(`Resposta inesperada do RevenueCat em charts/${chart}: esperava UMA medida com display_name (veio ${measures ? measures.length : "nenhuma"})`);
+  }
+  const medida = measures[0].display_name as string;
+  const total = ((data.summary as { total?: Record<string, unknown> } | undefined)?.total ?? {})[medida];
+  if (typeof total !== "number" || !Number.isFinite(total)) {
+    throw new Error(`Resposta inesperada do RevenueCat em charts/${chart}: summary.total["${medida}"] não é número`);
+  }
+  const values = Array.isArray(data.values) ? (data.values as { incomplete?: unknown }[]) : [];
+  return { total, medida, diasIncompletos: values.filter((v) => v?.incomplete === true).length };
 }
 
 export type CausaDaFalhaDoRevenuecat = "limite" | "permissao" | "outro";

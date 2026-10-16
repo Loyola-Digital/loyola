@@ -578,10 +578,12 @@
 // `serieDesde` no dia de SP. As falhas do RevenueCat (overview e receita) saem
 // com `causa` (`limite` → HTTP 429, `permissao`, `outro` → 502) — antes toda
 // falha era a mesma frase sobre permissão. Rota NOVA
-// `GET …/revenuecat/pagantes-por-canal?days=N`: novos pagantes POR PESSOA
-// (primeiro pagamento na janela) e renovações (`RENEWAL` pago que não é o
-// primeiro pagamento) por canal, com a origem mais antiga para quem tem Meta e
-// Google (empate → `conflito`), e o LTV bruto por plano (`premium_yearly`,
-// `premium_quartely`) — ecoando `days`/`desde` e a cobertura
-// (`assinaturaDesde`). `packages/mcp` não é afetado.
+// `GET …/revenuecat/novos-clientes?days=N`: o total do chart `customers_new`
+// do RevenueCat nos mesmos N dias, ecoando a janela, a medida e se o dia de
+// hoje veio incompleto. Rota NOVA `GET …/revenuecat/pagantes-por-canal?days=N`:
+// novos pagantes POR PESSOA (primeiro pagamento na janela) e renovações
+// (`RENEWAL` pago que não é o primeiro pagamento) por canal, com a origem mais
+// antiga para quem tem Meta e Google (empate → `conflito`), ecoando
+// `days`/`desde` e a cobertura (`assinaturaDesde`). O LTV por plano NÃO está na
+// resposta (em espera da lista de product_id). `packages/mcp` não é afetado.
 export const API_CONTRACT_VERSION = 51;

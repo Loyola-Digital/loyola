@@ -25,6 +25,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   useRevenuecatOverview,
   useRevenuecatMetricasDerivadas,
+  useRevenuecatNovosClientes,
   useRevenuecatPagantesPorCanal,
   useRevenuecatReceita,
 } from "@/lib/hooks/use-revenuecat";
@@ -43,6 +44,8 @@ export function RevenuecatOverviewBlock({
   const derivadas28Q = useRevenuecatMetricasDerivadas(projectId, funnelId, stageId, 28);
   // PO-11: a Receita do filtro — a mesma chave de cache do Resumo.
   const receitaQ = useRevenuecatReceita(projectId, funnelId, stageId, days);
+  // D22: os novos clientes do filtro (`charts/customers_new`) — a mesma chave do Resumo.
+  const novosClientesQ = useRevenuecatNovosClientes(projectId, funnelId, stageId, days);
   // PO-04: o numerador da Conversão para Pagante — novos pagantes POR PESSOA, 28 dias.
   const pagantes28Q = useRevenuecatPagantesPorCanal(projectId, funnelId, stageId, 28);
 
@@ -58,6 +61,7 @@ export function RevenuecatOverviewBlock({
   const derivadas = estadoDaFonte({ isLoading: derivadasQ.isLoading, error: derivadasQ.error, data: derivadasQ.data });
   const derivadas28 = estadoDaFonte({ isLoading: derivadas28Q.isLoading, error: derivadas28Q.error, data: derivadas28Q.data });
   const receita = estadoDaFonte({ isLoading: receitaQ.isLoading, error: receitaQ.error, data: receitaQ.data });
+  const novosClientes = estadoDaFonte({ isLoading: novosClientesQ.isLoading, error: novosClientesQ.error, data: novosClientesQ.data });
   const pagantes28 = estadoDaFonte({ isLoading: pagantes28Q.isLoading, error: pagantes28Q.error, data: pagantes28Q.data });
 
   // PO-D4 (5) — a falha é testada ANTES da ausência: uma requisição que falhou
@@ -72,12 +76,15 @@ export function RevenuecatOverviewBlock({
     ctx: { diasDoFiltro: days, hoje: hojeNoNegocio() },
     overview,
     receita,
+    novosClientes,
     derivadas,
     derivadas28,
     pagantes28,
   });
   const avisoDoOverview =
-    avisoDoErroDaFonte(overview, "as métricas do RevenueCat") ?? avisoDoErroDaFonte(receita, "a receita do período no RevenueCat");
+    avisoDoErroDaFonte(overview, "as métricas do RevenueCat") ??
+    avisoDoErroDaFonte(receita, "a receita do período no RevenueCat") ??
+    avisoDoErroDaFonte(novosClientes, "os novos clientes do período no RevenueCat");
   const avisoDasDerivadas =
     avisoDoErroDaFonte(derivadas, "as métricas dos eventos") ??
     avisoDoErroDaFonte(derivadas28, "os eventos dos últimos 28 dias") ??

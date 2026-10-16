@@ -11,13 +11,7 @@ import {
   lerLinhaDeVendas,
   montarVendasPorCanal,
 } from "../utils/vendas-por-canal-lyrio.js";
-import {
-  consultaDePagantesPorCanal,
-  consultaDoLtvPorPlano,
-  lerLinhaDePagante,
-  montarLtv,
-  montarPagantes,
-} from "../utils/pagantes-lyrio.js";
+import { consultaDePagantesPorCanal, lerLinhaDePagante, montarPagantes } from "../utils/pagantes-lyrio.js";
 import { eq, and, gte, inArray, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import fp from "fastify-plugin";
@@ -37,6 +31,7 @@ import {
   listRevenuecatProjects,
   getRevenuecatOverview,
   getRevenuecatRevenue,
+  getRevenuecatChartTotal,
   respostaDeFalhaDoRevenuecat,
   REVENUE_EVENT_TYPES,
 } from "../services/revenuecat.js";
@@ -606,10 +601,10 @@ export default fp(async function revenuecatRoutes(fastify) {
     },
   );
 
-  // ---- GET novos pagantes, renovações e LTV por plano ---- (Story 42.14)
+  // ---- GET novos pagantes e renovações por canal ---- (Story 42.14)
   /**
-   * AC6 (novos pagantes POR PESSOA, por canal), AC8 (renovações por canal) e AC7
-   * (LTV bruto por plano), na janela de `days` sobre `purchased_at` — a régua
+   * AC6 (novos pagantes POR PESSOA, por canal) e AC8 (renovações por canal),
+   * na janela de `days` sobre `purchased_at` — a régua
    * de `/sales` e `/vendas-por-canal` (N dias de calendário de SP). O canal é o
    * da 42.12 com a origem mais antiga para quem tem Meta E Google (D16/D25/D26);
    * empate exato → `conflito` (PO-D3). Regras em `utils/pagantes-lyrio.ts`.
@@ -631,9 +626,11 @@ export default fp(async function revenuecatRoutes(fastify) {
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
       const desde = instanteDoInicioDaJanela(query.data.days);
-      const [pessoas, ltv, inicio, atributos] = await Promise.all([
+      // AC7 (LTV por plano) ON HOLD: os `product_id` reais são famílias com
+      // sufixo (sonda de 2026-10-16) e a lista de cada plano está com o Danilo.
+      // TODO(42.14, AC7): ligar `consultaDoLtvPorPlano` quando a lista chegar.
+      const [pessoas, inicio, atributos] = await Promise.all([
         fastify.db.execute(consultaDePagantesPorCanal(params.data.stageId, desde)),
-        fastify.db.execute(consultaDoLtvPorPlano(params.data.stageId, desde)),
         fastify.db.execute(consultaDoInicioDaAssinatura(params.data.stageId)),
         fastify.db.execute(consultaDoInicioDosAtributos(params.data.stageId)),
       ]);
@@ -648,7 +645,6 @@ export default fp(async function revenuecatRoutes(fastify) {
         assinaturaDesde: dataIso((inicio.rows[0] as { desde?: unknown } | undefined)?.desde),
         atributosDesde: dataIso((atributos.rows[0] as { desde?: unknown } | undefined)?.desde),
         ...pagantes,
-        ltvPorPlano: montarLtv(ltv.rows as Record<string, unknown>[]),
       };
     },
   );
@@ -700,8 +696,9 @@ export default fp(async function revenuecatRoutes(fastify) {
    *
    * A janela é a régua da etapa — N dias de calendário de SP terminando hoje —
    * passada como `start_date`/`end_date`. O RevenueCat conta esses DIAS em UTC
-   * (documentação); a diferença de até 3 h nas pontas é declarada no memorial
-   * do card, não escondida (AC2d). A resposta ecoa a janela aplicada (AC10b).
+   * e o intervalo é inclusivo (documentação + sonda de 2026-10-16); a diferença
+   * de até 3 h nas pontas é declarada no memorial do card, não escondida
+   * (AC2d). A resposta ecoa a janela aplicada (AC10b).
    *
    * Falha nunca vira 200 com `null`: 429 (limite) ou 502, com a causa (PO-D4).
    */
@@ -751,6 +748,50 @@ export default fp(async function revenuecatRoutes(fastify) {
     },
   );
 
+
+  // ---- GET novos clientes do período ---- (Story 42.14, D22)
+  /**
+   * "Novos clientes" na janela do filtro, pelo chart `customers_new` do
+   * RevenueCat ("new customers whose customer cohort date falls within the
+   * period") — o total do intervalo (`summary.total`). Mesma régua, guarda e
+   * tratamento de falha de `/receita`; ecoa a janela (AC10b).
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/revenuecat/novos-clientes",
+    async (request, reply) => {
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const query = salesQuerySchema.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+      const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const apiKey = await getApiKey(params.data.projectId);
+      if (!apiKey) return reply.code(409).send({ error: "RevenueCat não conectado neste projeto" });
+
+      const ate = businessToday();
+      const desde = inicioDaJanela(query.data.days, ate);
+      const janela = { days: query.data.days, desde, ate };
+
+      const [cfg] = await fastify.db
+        .select({ rcProjectId: revenuecatStageConfig.rcProjectId })
+        .from(revenuecatStageConfig)
+        .where(eq(revenuecatStageConfig.stageId, params.data.stageId))
+        .limit(1);
+      if (!cfg?.rcProjectId) return { configured: false, ...janela, valor: null };
+
+      try {
+        const r = await getRevenuecatChartTotal(apiKey, cfg.rcProjectId, "customers_new", { startDate: desde, endDate: ate });
+        return { configured: true, ...janela, valor: r.total, medida: r.medida, diaIncompleto: r.diasIncompletos > 0 };
+      } catch (err) {
+        request.log.error(err, "Erro ao puxar os novos clientes do período no RevenueCat");
+        const falha = respostaDeFalhaDoRevenuecat(err, "os novos clientes do período");
+        return reply.code(falha.status).send(falha.corpo);
+      }
+    },
+  );
 
   // ---- GET /.../revenuecat/metricas-derivadas ---- (Story 42.9, AC8)
   /**

@@ -78,6 +78,7 @@ const entrada = (p: Partial<EntradaDoOverview> = {}): EntradaDoOverview => ({
   ctx: CTX,
   overview: { tipo: "pronto", dados: METRICAS },
   receita: { tipo: "pronto", dados: { configured: true, days: 90, desde: "2026-07-19", ate: "2026-10-16", valorUsd: 5000 } },
+  novosClientes: { tipo: "pronto", dados: { configured: true, days: 90, desde: "2026-07-19", ate: "2026-10-16", valor: 15232, medida: "New Customers", diaIncompleto: true } },
   derivadas: { tipo: "pronto", dados: D90 },
   derivadas28: { tipo: "pronto", dados: D28 },
   // 7 PESSOAS novas pagantes em 28 dias — diferente de 4 + 6 eventos/pessoas das derivadas.
@@ -140,11 +141,11 @@ describe("cardsDoOverview (Story 42.14, AC1/AC3c)", () => {
     expect(r.formula!.note).toContain("25 consultas por minuto");
   });
 
-  it("Novos clientes e Usuários ativos ficam nos 28 dias da API, em âmbar (pendentes da sonda dos charts)", () => {
+  it("Novos clientes segue o filtro (chart customers_new); Usuários ativos fica nos 28 dias, em âmbar — o chart por período não dá pessoas distintas (sonda)", () => {
     const { principais } = cardsDoOverview(entrada());
-    for (const r of ["Novos clientes", "Usuários ativos"]) {
-      expect(de(principais, r).declaracao).toMatchObject({ etiqueta: "últimos 28 dias", destaque: true, segueOFiltro: false });
-    }
+    expect(de(principais, "Novos clientes")).toMatchObject({ valor: "15.232", declaracao: expect.objectContaining({ etiqueta: "últimos 90 dias", destaque: false }) });
+    expect(de(principais, "Usuários ativos").declaracao).toMatchObject({ etiqueta: "últimos 28 dias", destaque: true, segueOFiltro: false });
+    expect(de(principais, "Usuários ativos").formula!.note).toContain("contaria a mesma pessoa várias vezes");
   });
 
   it("overview em erro: cada card dele mostra '—' com a causa no memorial — nunca some, nunca zero (PO-D4)", () => {

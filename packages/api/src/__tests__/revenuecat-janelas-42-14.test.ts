@@ -25,6 +25,7 @@ vi.mock("../services/revenuecat.js", async (importOriginal) => {
 import revenuecatRoutes from "../routes/revenuecat.js";
 import {
   causaDaFalhaDoRevenuecat,
+  getRevenuecatChartTotal,
   getRevenuecatRevenue,
   respostaDeFalhaDoRevenuecat,
 } from "../services/revenuecat.js";
@@ -84,6 +85,38 @@ describe("getRevenuecatRevenue — o pedido e a leitura estrita", () => {
     const err = await getRevenuecatRevenue("sk_segredo", "p", { startDate: "2026-10-01", endDate: "2026-10-16" }).catch((e: Error) => e);
     expect((err as Error).message).toMatch(/^RevenueCat 429:/);
     expect((err as Error).message).not.toContain("sk_segredo");
+  });
+});
+
+describe("getRevenuecatChartTotal — customers_new pela forma conferida na sonda (2026-10-16)", () => {
+  // Forma da sonda: datas em unix s, `values[]` por dia UTC com `incomplete`, `summary.total` pelo display_name.
+  const corpo = (p: Record<string, unknown> = {}) => ({
+    object: "chart", resolution: "day", start_date: 1789776000, end_date: 1792108800, unsupported_params: null,
+    measures: [{ display_name: "New Customers" }],
+    values: [
+      { cohort: 1792022400, incomplete: false, measure: 0, value: 540 },
+      { cohort: 1792108800, incomplete: true, measure: 0, value: 212 },
+    ],
+    summary: { total: { "New Customers": 15232 } },
+    ...p,
+  });
+
+  it("pede o intervalo de DIAS e lê o total pelo display_name da medida; conta o dia incompleto", async () => {
+    const urls = rcFalso({ status: 200, corpo: corpo() });
+    const r = await getRevenuecatChartTotal("sk", "proj_rc", "customers_new", { startDate: "2026-09-19", endDate: "2026-10-16" });
+    expect(r).toEqual({ total: 15232, medida: "New Customers", diasIncompletos: 1 });
+    const u = new URL(urls[0]);
+    expect(u.pathname).toBe("/v2/projects/proj_rc/charts/customers_new");
+    expect(Object.fromEntries(u.searchParams)).toEqual({ start_date: "2026-09-19", end_date: "2026-10-16" });
+  });
+
+  it("mais de uma medida, total ausente ou não numérico → erro (nunca zero, nunca o total de outra medida)", async () => {
+    rcFalso({ status: 200, corpo: corpo({ measures: [{ display_name: "A" }, { display_name: "B" }] }) });
+    await expect(getRevenuecatChartTotal("sk", "p", "customers_new", { startDate: "2026-10-01", endDate: "2026-10-16" })).rejects.toThrow(/UMA medida/);
+    rcFalso({ status: 200, corpo: corpo({ summary: { average: { "New Customers": 544 } } }) });
+    await expect(getRevenuecatChartTotal("sk", "p", "customers_new", { startDate: "2026-10-01", endDate: "2026-10-16" })).rejects.toThrow(/não é número/);
+    rcFalso({ status: 200, corpo: corpo({ summary: { total: { Outra: 1 } } }) });
+    await expect(getRevenuecatChartTotal("sk", "p", "customers_new", { startDate: "2026-10-01", endDate: "2026-10-16" })).rejects.toThrow(/não é número/);
   });
 });
 
@@ -213,6 +246,31 @@ describe("GET …/revenuecat/receita (D22) — a receita da janela do filtro", (
     const urls = rcFalso({ status: 200, corpo: { value: 1, currency: "USD" } });
     expect((await (await montar(bancoFalso({ etapa: false }))).inject({ method: "GET", url: `${BASE}/receita?days=90` })).statusCode).toBe(404);
     expect((await (await montar(bancoFalso())).inject({ method: "GET", url: `${BASE}/receita?days=0` })).statusCode).toBe(400);
+    expect(urls).toHaveLength(0);
+  });
+});
+
+describe("GET …/revenuecat/novos-clientes (D22) — novos clientes da janela do filtro", () => {
+  it("90 dias → 19/07 a 16/10; ecoa a janela, o total, a medida e o dia incompleto", async () => {
+    const urls = rcFalso({ status: 200, corpo: { measures: [{ display_name: "New Customers" }], values: [{ cohort: 1, incomplete: true, measure: 0, value: 1 }], summary: { total: { "New Customers": 15232 } } } });
+    const r = await (await montar(bancoFalso())).inject({ method: "GET", url: `${BASE}/novos-clientes?days=90` });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toEqual({ configured: true, days: 90, desde: "2026-07-19", ate: "2026-10-16", valor: 15232, medida: "New Customers", diaIncompleto: true });
+    expect(new URL(urls[0]).pathname).toBe("/v2/projects/proj_rc/charts/customers_new");
+  });
+  it("429 → HTTP 429 `limite`; sem app escolhido → configured false sem chamar o RevenueCat", async () => {
+    rcFalso({ status: 429, corpo: {} });
+    const r = await (await montar(bancoFalso())).inject({ method: "GET", url: `${BASE}/novos-clientes?days=90` });
+    expect(r.statusCode).toBe(429);
+    expect(r.json()).toMatchObject({ causa: "limite" });
+    const urls = rcFalso({ status: 200, corpo: {} });
+    const sem = await (await montar(bancoFalso({ rcProjectId: null }))).inject({ method: "GET", url: `${BASE}/novos-clientes?days=28` });
+    expect(sem.json()).toEqual({ configured: false, days: 28, desde: "2026-09-19", ate: "2026-10-16", valor: null });
+    expect(urls).toHaveLength(0);
+  });
+  it("etapa de outro funil → 404 sem chamar o RevenueCat", async () => {
+    const urls = rcFalso({ status: 200, corpo: {} });
+    expect((await (await montar(bancoFalso({ etapa: false }))).inject({ method: "GET", url: `${BASE}/novos-clientes?days=90` })).statusCode).toBe(404);
     expect(urls).toHaveLength(0);
   });
 });

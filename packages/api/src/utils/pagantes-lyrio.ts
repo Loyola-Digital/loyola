@@ -1,6 +1,6 @@
 /**
- * Story 42.14 (AC6, AC4/AC5, AC7, AC8) — novos pagantes POR PESSOA, renovações
- * e LTV por plano do Lyrio, a partir dos eventos do webhook do RevenueCat.
+ * Story 42.14 (AC6, AC4/AC5, AC8; AC7 em espera) — novos pagantes POR PESSOA,
+ * renovações e (em espera) LTV por plano do Lyrio, a partir dos eventos do webhook do RevenueCat.
  *
  * Mesmo desenho da 42.12 (`vendas-por-canal-lyrio.ts`), pelo mesmo motivo:
  *  1. SQL: reduz os eventos da etapa a UMA linha por pessoa que pagou na
@@ -187,30 +187,30 @@ export function lerLinhaDePagante(r: Record<string, unknown>): PessoaPagante {
   };
 }
 
-// ─────────────────────────── LTV por plano (AC7) ───────────────────────────
+// ─────────────────────────── LTV por plano (AC7) — ON HOLD ───────────────────────────
 
 /**
- * D23/D28 — os dois planos, com o `product_id` EXATAMENTE como o Danilo
- * escreveu ("premium_yearly anual premium_quartely quarter"). Não há produto
- * mensal nem terceiro LTV.
+ * ⚠️ AC7 ON HOLD (2026-10-16). A sonda de produção mostrou que os `product_id`
+ * NÃO são `premium_yearly` / `premium_quartely` literais (D23/D28), e sim
+ * famílias com sufixo de preço ou base (`premium_yearly_150:base`,
+ * `premium_quartely_25:base`, `…_partner_…`), e que há produto mensal. Quais
+ * ids entram em cada LTV, se o mensal volta e se promo/partner entram está com
+ * o Danilo. Por isso NADA aqui fixa ids: o plano e a sua lista entram como
+ * argumento, e a rota não liga o LTV.
  *
- * TODO(42.14, sonda rc-formato / AC7c): conferir a grafia real em
- * `revenuecat_sales.product_id` (`premium_quartely` × `premium_quarterly`). Se o
- * dado diferir, a constante segue o dado e o fato volta ao Danilo. Até lá, um
- * id que não exista no dado dá "—" no card (pessoas = 0), nunca um número de
- * outro produto.
+ * TODO(42.14, AC7): com a decisão, montar a lista dos planos e ligar a consulta
+ * na rota `pagantes-por-canal` e os cards no web (`aquisicao-lyrio.ts`).
  */
-export const PLANOS_DO_LTV = [
-  { plano: "anual", rotulo: "LTV Anual", productId: "premium_yearly" },
-  { plano: "trimestral", rotulo: "LTV Trimestral", productId: "premium_quartely" },
-] as const;
-
-export type PlanoDoLtv = (typeof PLANOS_DO_LTV)[number]["plano"];
+export interface PlanoDoLtv {
+  plano: string;
+  rotulo: string;
+  /** Os `product_id` do plano, exatamente como chegam no dado. */
+  productIds: readonly string[];
+}
 
 export interface LtvDoPlano {
-  plano: PlanoDoLtv;
+  plano: string;
   rotulo: string;
-  productId: string;
   /** Receita BRUTA (`revenue_usd`) dos eventos pagos do plano na janela, em centavos de US$. */
   receitaCentavos: number;
   /** Pessoas distintas que pagaram o plano na janela (D24). */
@@ -219,13 +219,17 @@ export interface LtvDoPlano {
 
 /**
  * AC7b (D13, D24) — por plano: a receita bruta e as pessoas distintas que
- * pagaram, na janela, só eventos pagos (PO-08). Pessoa com mais de um pagamento
- * conta UMA vez no denominador. O total sai em centavos já no banco, sobre a
- * soma exata do `numeric` — o memorial divide os mesmos centavos que exibe.
+ * pagaram, na janela, só eventos pagos (PO-08). O agrupamento é pelo PLANO, não
+ * pelo `product_id`: a mesma pessoa em dois ids do mesmo plano conta UMA vez.
+ * O total sai em centavos no banco, sobre a soma exata do `numeric`.
  */
-export function consultaDoLtvPorPlano(stageId: string, desde: Date): SQL {
-  const ids = PLANOS_DO_LTV.map((p) => p.productId);
-  return sql`SELECT ${c.productId} AS product_id,
+export function consultaDoLtvPorPlano(stageId: string, desde: Date, planos: readonly PlanoDoLtv[]): SQL {
+  const casos = sql.join(
+    planos.map((p) => sql`WHEN ${c.productId} IN (${sql.join(p.productIds.map((id) => sql`${id}`), sql`, `)}) THEN ${p.plano}`),
+    sql` `,
+  );
+  const ids = planos.flatMap((p) => [...p.productIds]);
+  return sql`SELECT (CASE ${casos} END) AS plano,
     round(coalesce(sum(${c.revenueUsd}), 0) * 100)::int AS receita_centavos,
     count(DISTINCT ${c.appUserId})::int AS pessoas
   FROM ${c}
@@ -236,17 +240,17 @@ export function consultaDoLtvPorPlano(stageId: string, desde: Date): SQL {
     sql`${c.purchasedAt} >= ${desde.toISOString()}::timestamptz`,
     inArray(c.productId, ids),
   )}
-  GROUP BY ${c.productId}`;
+  GROUP BY 1`;
 }
 
-/** Os dois planos sempre, na ordem de `PLANOS_DO_LTV`; plano sem linha = 0 e 0. */
-export function montarLtv(linhas: readonly Record<string, unknown>[]): LtvDoPlano[] {
+/** Todos os planos, na ordem dada; plano sem linha = 0 e 0 (a tela mostra "—"). */
+export function montarLtv(linhas: readonly Record<string, unknown>[], planos: readonly PlanoDoLtv[]): LtvDoPlano[] {
   const num = (v: unknown) => {
     const n = Number(v);
     return Number.isFinite(n) ? n : 0;
   };
-  return PLANOS_DO_LTV.map(({ plano, rotulo, productId }) => {
-    const l = linhas.find((x) => x.product_id === productId);
-    return { plano, rotulo, productId, receitaCentavos: l ? num(l.receita_centavos) : 0, pessoas: l ? num(l.pessoas) : 0 };
+  return planos.map(({ plano, rotulo }) => {
+    const l = linhas.find((x) => x.plano === plano);
+    return { plano, rotulo, receitaCentavos: l ? num(l.receita_centavos) : 0, pessoas: l ? num(l.pessoas) : 0 };
   });
 }

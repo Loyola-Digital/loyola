@@ -19,6 +19,7 @@ let derivadas: Q<Record<string, unknown>>;
 let derivadas28: Q<Record<string, unknown>>;
 let receita: Q<Record<string, unknown>>;
 let pagantes28: Q<Record<string, unknown>>;
+let novosClientes: Q<Record<string, unknown>>;
 
 vi.mock("@/lib/hooks/use-revenuecat", () => ({
   useRevenuecatOverview: () => overview,
@@ -26,6 +27,7 @@ vi.mock("@/lib/hooks/use-revenuecat", () => ({
   useRevenuecatMetricasDerivadas: (_p: string, _f: string, _s: string, days?: number) => (days === 28 ? derivadas28 : derivadas),
   useRevenuecatReceita: () => receita,
   useRevenuecatPagantesPorCanal: () => pagantes28,
+  useRevenuecatNovosClientes: () => novosClientes,
 }));
 
 const metrica = (id: string, value: number) => ({ id, name: id, value, unit: null });
@@ -56,6 +58,7 @@ beforeEach(() => {
   derivadas28 = { isLoading: false, error: null, data: DERIVADAS_28 };
   receita = { isLoading: false, error: null, data: RECEITA };
   pagantes28 = { isLoading: false, error: null, data: { days: 28, desde: "2026-09-19", novosPagantes: { total: 7 } } };
+  novosClientes = { isLoading: false, error: null, data: { configured: true, days: 90, desde: "2026-07-19", ate: "2026-10-16", valor: 15232 } };
 });
 afterEach(cleanup);
 

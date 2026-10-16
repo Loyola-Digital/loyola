@@ -1,16 +1,14 @@
 /**
- * Story 42.14 (AC4, AC5, AC7, AC8) — os cards de aquisição e valor do Resumo
- * mobile: CAC da Meta, do Google e consolidado (nas DUAS janelas: o filtro e
- * os 28 dias fixos, D5/D9), LTV Anual e Trimestral (D28) e as renovações por
- * canal (D11, D30). A contagem por pessoa vem de `GET …/revenuecat/pagantes-por-canal`.
+ * Story 42.14 (AC4, AC5, AC8; AC7 em espera) — os cards de aquisição do
+ * Resumo mobile: CAC da Meta, do Google e consolidado (nas DUAS janelas: o
+ * filtro e os 28 dias fixos, D5/D9) e as renovações por canal (D11, D30). O
+ * LTV por plano (AC7) aguarda a decisão dos `product_id` (sonda de 2026-10-16). A contagem por pessoa vem de `GET …/revenuecat/pagantes-por-canal`.
  *
  * ## As contas
  *
  *   CAC do canal ...... investimento do canal ÷ novos pagantes do canal (PESSOAS, D4)
  *   CAC consolidado ... (Meta + Google) ÷ TODOS os novos pagantes, inclusive
  *                       orgânico/cupom, sem atribuição e conflito (D5)
- *   LTV do plano ...... receita bruta do plano ÷ pessoas distintas que pagaram
- *                       o plano, na janela, em US$ (D13, D24) — BRUTO (D6)
  *
  * O investimento é o mesmo dos cards (Meta com o imposto de 12,15%, Google sem
  * imposto, na régua de SP — D17). Tudo em centavos: o memorial divide os mesmos
@@ -31,7 +29,6 @@ import { memorialDoGoogleSemNumero } from "./lyrio-google-ads";
 import { declararJanela, diaMes, type ContextoDaJanela, type DeclaracaoDaJanela } from "./janela-dos-cards-lyrio";
 import { memorialDoErroDaFonte, type EstadoDaFonte } from "./estado-da-fonte-revenuecat";
 import { comoEstadoDoGoogle, valorDoGoogleNaRegua, type InvestimentoDoGoogleNaRegua } from "./google-ads-na-regua";
-import { fmtUsd } from "./overview-revenuecat";
 import { fmtBRL, type CardDoResumo, type GastoDaMeta } from "./resumo-mobile-lyrio";
 
 export type CanalDoPagante = "meta" | "google" | "organico" | "sem_atribuicao";
@@ -54,7 +51,6 @@ export interface PagantesPorCanal {
   atributosDesde: string | null;
   novosPagantes: ContagemPorCanal;
   renovacoes: ContagemPorCanal;
-  ltvPorPlano: { plano: "anual" | "trimestral"; rotulo: string; productId: string; receitaCentavos: number; pessoas: number }[];
 }
 
 export interface EntradaDeAquisicao {
@@ -68,6 +64,7 @@ export interface EntradaDeAquisicao {
 
 export interface CardsDeAquisicao {
   cac: CardDoResumo[];
+  /** AC7 em espera: vazio até a decisão dos `product_id` de cada plano. */
   ltv: CardDoResumo[];
   renovacoes: CardDoResumo[];
 }
@@ -80,12 +77,6 @@ const NOTA_DE_COBERTURA_DO_NOVO =
 export function cacEmCentavos(investimentoCentavos: number | null, pessoas: number): number | null {
   if (investimentoCentavos == null || pessoas <= 0) return null;
   return Math.round(investimentoCentavos / pessoas);
-}
-
-/** LTV em centavos de US$: `round(receita ÷ pessoas)`; `null` sem pessoas. */
-export function ltvEmCentavos(receitaCentavos: number, pessoas: number): number | null {
-  if (pessoas <= 0) return null;
-  return Math.round(receitaCentavos / pessoas);
 }
 
 const centavos = (v: number) => Math.round(v * 100);
@@ -211,33 +202,16 @@ export function cardsDeAquisicao(e: EntradaDeAquisicao): CardsDeAquisicao {
     ...cacs(vinteOito, 28, decl28, "28d", e.meta.vinteOito, e.google.vinteOito),
   ];
 
-  // ── LTV (AC7) e renovações (AC8): só a janela do filtro ──
-  if (filtro.tipo === "oculto") return { cac, ltv: [], renovacoes: [] };
+  // ── renovações (AC8): só a janela do filtro ──
+  // AC7 (LTV por plano) ON HOLD: a sonda de produção (2026-10-16) mostrou que os
+  // `product_id` reais são famílias com sufixo (`premium_yearly_150:base`, …) e
+  // que existe produto mensal; quais ids entram em cada LTV está com o Danilo.
+  // Mostrar "—" com os ids literais da D28 afirmaria que ninguém pagou o plano.
+  // TODO(42.14, AC7): com a lista dos planos, ligar o LTV (a rota tem a consulta pronta em `utils/pagantes-lyrio.ts`).
+  const ltv: CardDoResumo[] = [];
+  if (filtro.tipo === "oculto") return { cac, ltv, renovacoes: [] };
   const erro = memorialDoErroDaFonte(filtro, { fonte: FONTE_DOS_PAGANTES, periodo: declFiltro.periodo });
   const d = filtro.tipo === "pronto" ? filtro.dados : null;
-
-  const ltv: CardDoResumo[] = (["anual", "trimestral"] as const).map((plano) => {
-    const rotulo = plano === "anual" ? "LTV Anual" : "LTV Trimestral";
-    const base: CardDoResumo = { id: `ltv-${plano}`, rotulo, valor: "—", declaracao: declFiltro, icone: "ltv" };
-    if (erro) return { ...base, formula: erro };
-    const p = d?.ltvPorPlano.find((x) => x.plano === plano);
-    if (!p) return base;
-    const v = ltvEmCentavos(p.receitaCentavos, p.pessoas);
-    return {
-      ...base,
-      valor: v == null ? "—" : fmtUsd(v / 100),
-      formula: {
-        expression: "Receita bruta do plano ÷ pessoas distintas que pagaram o plano",
-        values: [
-          { label: "Receita bruta do plano", value: fmtUsd(p.receitaCentavos / 100), source: `revenue_usd dos eventos pagos · product_id ${p.productId}` },
-          { label: "Pessoas que pagaram o plano", value: pessoas(p.pessoas), source: FONTE_DOS_PAGANTES },
-        ],
-        result: v == null ? `${fmtUsd(p.receitaCentavos / 100)} ÷ 0 = — (ninguém pagou o plano na janela)` : `${fmtUsd(p.receitaCentavos / 100)} ÷ ${p.pessoas.toLocaleString("pt-BR")} = ${fmtUsd(v / 100)}`,
-        period: declFiltro.periodo,
-        note: `LTV BRUTO, em US$: sem descontar comissão de loja, imposto ou outros custos. Pessoa com mais de um pagamento conta uma vez no denominador; só eventos pagos (valor maior que US$ 0) do produto ${p.productId}.${coberturaDe(ctx.diasDoFiltro)}`,
-      },
-    };
-  });
 
   const renovacoes: CardDoResumo[] = [];
   const linhas: { id: string; rotulo: string; n: number | null }[] = d
