@@ -9,12 +9,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import Fastify from "fastify";
 import { PGlite } from "@electric-sql/pglite";
-import { getTableName, type SQL } from "drizzle-orm";
+import { getTableName, sql, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import revenuecatRoutes from "../routes/revenuecat.js";
 import { instanteDoInicioDaJanela } from "../utils/sale-date.js";
 import {
+  REGRA_DOS_PLANOS,
   canalDaOrigem,
+  classeDoProdutoNoSql,
+  classificarProduto,
   consultaDePagantesPorCanal,
   consultaDoLtvPorPlano,
   lerLinhaDePagante,
@@ -242,36 +245,145 @@ describe("AC6 / AC9b — novos pagantes por PESSOA, pela data do primeiro pagame
   });
 });
 
-/**
- * AC7 ON HOLD (sonda de 2026-10-16: os ids reais são famílias com sufixo; a
- * lista de cada plano está com o Danilo). A mecânica fica provada com planos de
- * FIXTURE — nenhum id de produção é presumido aqui.
- */
-const PLANOS_DE_TESTE = [
-  { plano: "a", rotulo: "LTV A", productIds: ["plano_a_1", "plano_a_2:base"] },
-  { plano: "b", rotulo: "LTV B", productIds: ["plano_b"] },
-];
+// ─────────────────────────── AC7 — LTV por plano (D33, PO-D7) ───────────────────────────
 
-describe("AC7 (em espera) — a mecânica do LTV: receita bruta ÷ pessoas distintas do plano (D13, D24)", () => {
-  it("pessoa com mais de um pagamento — inclusive em DOIS ids do mesmo plano — conta UMA vez; id fora da lista e US$ 0 não entram", async () => {
-    await inserir({ user: "a", tipo: "INITIAL_PURCHASE", usd: 39.99, produto: "plano_a_1", em: DENTRO });
-    await inserir({ user: "a", tipo: "RENEWAL", usd: 39.99, produto: "plano_a_2:base", em: DEPOIS_NA_JANELA });
-    await inserir({ user: "b", tipo: "INITIAL_PURCHASE", usd: 29.99, produto: "plano_a_2:base", em: DENTRO });
-    await inserir({ user: "c", tipo: "INITIAL_PURCHASE", usd: 14.99, produto: "plano_b", em: DENTRO });
-    await inserir({ user: "d", tipo: "INITIAL_PURCHASE", usd: 4.99, produto: "fora_da_lista", em: DENTRO });
-    await inserir({ user: "e", tipo: "INITIAL_PURCHASE", usd: 0, produto: "plano_b", em: DENTRO }); // trial
-    await inserir({ user: "f", tipo: "INITIAL_PURCHASE", usd: 39.99, produto: "plano_a_1", em: ANTES }); // fora da janela
-    const ltv = montarLtv(await executar(consultaDoLtvPorPlano(STAGE, DESDE, PLANOS_DE_TESTE)), PLANOS_DE_TESTE);
-    expect(ltv).toEqual([
-      { plano: "a", rotulo: "LTV A", receitaCentavos: 10997, pessoas: 2 },
-      { plano: "b", rotulo: "LTV B", receitaCentavos: 1499, pessoas: 1 },
-    ]);
+const ltvDaJanela = async () => montarLtv(await executar(consultaDoLtvPorPlano(STAGE, DESDE)));
+const doPlano = (l: Awaited<ReturnType<typeof ltvDaJanela>>, plano: string) => l.planos.find((p) => p.plano === plano)!;
+const PROMO = (s: string) => `rc_promo_Lyrio Pro_${s}`;
+
+describe("AC7c — a classificação: função pura = SQL, caso a caso (PGlite)", () => {
+  const CASOS: [string | null, string][] = [
+    ["premium_monthly_10", "mensal"],
+    ["premium_monthly_15:base", "mensal"],
+    ["premium_monthly_15_v2", "mensal"],
+    ["premium_quartely_25:base", "trimestral"],
+    ["premium_quartely_partner_25", "trimestral"],
+    ["premium_yearly_100:base", "anual"],
+    ["premium_yearly_150", "anual"],
+    ["premium_yearly_150:base", "anual"],
+    ["premium_yearly_200", "anual"],
+    ["premium_yearly_200:base", "anual"],
+    ["premium_yearly_partner_100", "anual"],
+    [PROMO("monthly"), "mensal"],
+    [PROMO("three_month"), "trimestral"],
+    [PROMO("yearly"), "anual"],
+    [PROMO("daily"), "fora"],
+    [PROMO("weekly"), "fora"],
+    ["test_product", "fora"],
+    [null, "nao_classificado"],
+    ["premium_weekly_5", "nao_classificado"],
+    ["premiumXmonthly_1", "nao_classificado"], // o `_` é literal, não curinga
+    ["Premium_monthly_15", "nao_classificado"], // maiúscula: texto exato
+    ["rc_promo_lyrio pro_monthly", "nao_classificado"], // caixa diferente
+    ["rc_promo_LyrioPro_monthly", "nao_classificado"], // sem o espaço
+    ["premium_quarterly_25", "nao_classificado"], // a grafia do dado é "quartely"
+    [PROMO("monthly") + "_x", "nao_classificado"], // promoção é nome EXATO, não prefixo
+  ];
+  it.each(CASOS)("%s → %s", async (id, esperado) => {
+    expect(classificarProduto(id)).toBe(esperado);
+    const [linha] = await executar(sql`SELECT ${classeDoProdutoNoSql(sql`${id}::text`)} AS classe`);
+    expect(linha.classe).toBe(esperado);
+  });
+  it("a regra mora numa constante: os três planos, na ordem Mensal, Trimestral, Anual (D33)", () => {
+    expect(REGRA_DOS_PLANOS.map((r) => r.rotulo)).toEqual(["LTV Mensal", "LTV Trimestral", "LTV Anual"]);
+  });
+});
+
+describe("AC7f — os 10 testes obrigatórios (PGlite, janela e relógio fixos)", () => {
+  it("1. os três planos: um pagamento em cada família cai no plano certo, com o LTV certo", async () => {
+    await inserir({ user: "m", tipo: "INITIAL_PURCHASE", usd: 9.99, produto: "premium_monthly_15:base", em: DENTRO });
+    await inserir({ user: "t", tipo: "INITIAL_PURCHASE", usd: 24.99, produto: "premium_quartely_25:base", em: DENTRO });
+    await inserir({ user: "a", tipo: "INITIAL_PURCHASE", usd: 59.99, produto: "premium_yearly_150", em: DENTRO });
+    const l = await ltvDaJanela();
+    expect(l.planos.map((p) => [p.plano, p.receitaCentavos, p.pessoas])).toEqual([["mensal", 999, 1], ["trimestral", 2499, 1], ["anual", 5999, 1]]);
+    expect(doPlano(l, "anual").produtos).toEqual([{ productId: "premium_yearly_150", pagamentos: 1, pessoas: 1, receitaCentavos: 5999 }]);
   });
 
-  it("plano sem pagamento na janela: 0 e 0 (a tela mostraria '—', não divide por zero)", async () => {
-    expect(montarLtv(await executar(consultaDoLtvPorPlano(STAGE, DESDE, PLANOS_DE_TESTE)), PLANOS_DE_TESTE)).toEqual(
-      PLANOS_DE_TESTE.map((p) => ({ plano: p.plano, rotulo: p.rotulo, receitaCentavos: 0, pessoas: 0 })),
-    );
+  it("2. partner no plano certo: premium_yearly_partner_100 → Anual; premium_quartely_partner_25 → Trimestral", async () => {
+    await inserir({ user: "pa", tipo: "INITIAL_PURCHASE", usd: 50, produto: "premium_yearly_partner_100", em: DENTRO });
+    await inserir({ user: "pt", tipo: "INITIAL_PURCHASE", usd: 20, produto: "premium_quartely_partner_25", em: DENTRO });
+    const l = await ltvDaJanela();
+    expect(doPlano(l, "anual")).toMatchObject({ pessoas: 1, receitaCentavos: 5000 });
+    expect(doPlano(l, "trimestral")).toMatchObject({ pessoas: 1, receitaCentavos: 2000 });
+    expect(l.naoClassificado.pagamentos).toBe(0);
+  });
+
+  it("3. promoção pela duração: _monthly → Mensal, _three_month → Trimestral, _yearly → Anual", async () => {
+    await inserir({ user: "p1", tipo: "NON_RENEWING_PURCHASE", usd: 1, produto: PROMO("monthly"), em: DENTRO });
+    await inserir({ user: "p3", tipo: "NON_RENEWING_PURCHASE", usd: 3, produto: PROMO("three_month"), em: DENTRO });
+    await inserir({ user: "p12", tipo: "NON_RENEWING_PURCHASE", usd: 12, produto: PROMO("yearly"), em: DENTRO });
+    const l = await ltvDaJanela();
+    expect(l.planos.map((p) => [p.plano, p.receitaCentavos])).toEqual([["mensal", 100], ["trimestral", 300], ["anual", 1200]]);
+  });
+
+  it("4. daily e weekly pagos: fora de todo LTV e SEM aviso de não classificado (D33)", async () => {
+    await inserir({ user: "d", tipo: "NON_RENEWING_PURCHASE", usd: 0.99, produto: PROMO("daily"), em: DENTRO });
+    await inserir({ user: "w", tipo: "NON_RENEWING_PURCHASE", usd: 2.99, produto: PROMO("weekly"), em: DENTRO });
+    const l = await ltvDaJanela();
+    expect(l.planos.every((p) => p.pessoas === 0 && p.receitaCentavos === 0)).toBe(true);
+    expect(l.naoClassificado.pagamentos).toBe(0);
+    expect(l.foraPorDecisao).toMatchObject({ pagamentos: 2, receitaCentavos: 398 });
+    expect(l.foraPorDecisao.produtos.map((x) => x.productId)).toEqual([PROMO("weekly"), PROMO("daily")]);
+  });
+
+  it("5. a mesma pessoa em dois ids do mesmo plano conta UMA vez; a receita soma", async () => {
+    await inserir({ user: "u", tipo: "INITIAL_PURCHASE", usd: 10, produto: "premium_monthly_10", em: DENTRO });
+    await inserir({ user: "u", tipo: "INITIAL_PURCHASE", usd: 15, produto: "premium_monthly_15_v2", em: DEPOIS_NA_JANELA });
+    const m = doPlano(await ltvDaJanela(), "mensal");
+    expect(m).toMatchObject({ pessoas: 1, receitaCentavos: 2500 });
+    expect(m.produtos.map((x) => [x.productId, x.pessoas])).toEqual([["premium_monthly_15_v2", 1], ["premium_monthly_10", 1]]);
+  });
+
+  it("6. promoção com US$ 0 não soma receita nem conta pessoa; plano só com ela → 0 pessoas (a tela mostra '—')", async () => {
+    await inserir({ user: "z", tipo: "NON_RENEWING_PURCHASE", usd: 0, produto: PROMO("monthly"), em: DENTRO });
+    const l = await ltvDaJanela();
+    expect(doPlano(l, "mensal")).toMatchObject({ pessoas: 0, receitaCentavos: 0, produtos: [] });
+    expect(l.naoClassificado.pagamentos).toBe(0);
+  });
+
+  it("7. id não classificado (premium_weekly_5, fictício): fora de todo LTV e no aviso, com a receita e o id", async () => {
+    await inserir({ user: "x", tipo: "INITIAL_PURCHASE", usd: 5, produto: "premium_weekly_5", em: DENTRO });
+    const l = await ltvDaJanela();
+    expect(l.planos.every((p) => p.pessoas === 0)).toBe(true);
+    expect(l.naoClassificado).toMatchObject({ pagamentos: 1, pessoas: 1, receitaCentavos: 500 });
+    expect(l.naoClassificado.produtos.map((x) => x.productId)).toEqual(["premium_weekly_5"]);
+  });
+
+  it("8. o escape do prefixo: premiumXmonthly_1 (que só casaria com `_` curinga) NÃO entra no Mensal", async () => {
+    await inserir({ user: "esc", tipo: "INITIAL_PURCHASE", usd: 7, produto: "premiumXmonthly_1", em: DENTRO });
+    const l = await ltvDaJanela();
+    expect(doPlano(l, "mensal").pessoas).toBe(0);
+    expect(l.naoClassificado.produtos.map((x) => x.productId)).toEqual(["premiumXmonthly_1"]);
+  });
+
+  it("9. divisão por zero: plano sem pagante → 0 pessoas e 0 de receita (o LTV é `null` no web, nunca 0)", async () => {
+    await inserir({ user: "a", tipo: "INITIAL_PURCHASE", usd: 59.99, produto: "premium_yearly_150", em: DENTRO });
+    const l = await ltvDaJanela();
+    expect(doPlano(l, "mensal")).toEqual({ plano: "mensal", rotulo: "LTV Mensal", receitaCentavos: 0, pessoas: 0, produtos: [] });
+  });
+
+  it("10. test_product em evento PAGO de fixture: fora, sem aviso", async () => {
+    await inserir({ user: "tp", tipo: "INITIAL_PURCHASE", usd: 1, produto: "test_product", em: DENTRO });
+    const l = await ltvDaJanela();
+    expect(l.naoClassificado.pagamentos).toBe(0);
+    expect(l.foraPorDecisao.produtos.map((x) => x.productId)).toEqual(["test_product"]);
+  });
+
+  it("pagamento sem product_id e evento fora da janela: o nulo é não classificado; o de fora da janela não entra", async () => {
+    await inserir({ user: "n", tipo: "INITIAL_PURCHASE", usd: 3, em: DENTRO });
+    await inserir({ user: "f", tipo: "INITIAL_PURCHASE", usd: 59.99, produto: "premium_yearly_150", em: ANTES });
+    const l = await ltvDaJanela();
+    expect(l.naoClassificado.produtos).toEqual([{ productId: null, pagamentos: 1, pessoas: 1, receitaCentavos: 300 }]);
+    expect(doPlano(l, "anual").pessoas).toBe(0);
+  });
+
+  it("a mesma pessoa em DOIS planos conta uma vez em cada um; nenhum app_user_id sai", async () => {
+    await inserir({ user: "pessoa-secreta", tipo: "INITIAL_PURCHASE", usd: 10, produto: "premium_monthly_10", em: DENTRO });
+    await inserir({ user: "pessoa-secreta", tipo: "INITIAL_PURCHASE", usd: 60, produto: "premium_yearly_150", em: DEPOIS_NA_JANELA });
+    const linhas = await executar(consultaDoLtvPorPlano(STAGE, DESDE));
+    expect(JSON.stringify(linhas)).not.toContain("pessoa-secreta");
+    const l = montarLtv(linhas);
+    expect([doPlano(l, "mensal").pessoas, doPlano(l, "anual").pessoas]).toEqual([1, 1]);
   });
 });
 
@@ -301,6 +413,14 @@ function bancoFalso(opts: { etapa?: boolean } = {}) {
       const t = dialeto.sqlToQuery(q);
       executados.push(t);
       if (/novo_na_janela/.test(t.sql)) return { rows: [{ s_meta: true, s_google: false, s_organico: false, meta_desde: null, google_desde: null, novo_na_janela: true, renovacoes: 2 }] };
+      if (/total_da_classe/.test(t.sql)) {
+        return {
+          rows: [
+            { classe: "anual", product_id: null, total_da_classe: 1, pagamentos: 1, pessoas: 1, receita_centavos: 3999 },
+            { classe: "anual", product_id: "premium_yearly_150", total_da_classe: 0, pagamentos: 1, pessoas: 1, receita_centavos: 3999 },
+          ],
+        };
+      }
       return { rows: [{ desde: new Date("2026-08-10T15:00:00Z") }] };
     },
   };
@@ -328,17 +448,19 @@ describe("GET …/revenuecat/pagantes-por-canal — o fio", () => {
   });
   afterAll(() => vi.useRealTimers());
 
-  it("as três consultas com o stageId DA ROTA e a régua de SP; ecoa a janela e a cobertura; só contagens; sem LTV (AC7 em espera)", async () => {
+  it("as quatro consultas com o stageId DA ROTA e a régua de SP; ecoa a janela e a cobertura; LTV por plano; só contagens", async () => {
     const banco = bancoFalso();
     const r = await (await montar(banco)).inject({ method: "GET", url: `${URL_}?days=28` });
     expect(r.statusCode).toBe(200);
-    expect(banco.executados).toHaveLength(3);
-    expect(banco.executados.some((e) => /receita_centavos/.test(e.sql))).toBe(false);
+    expect(banco.executados).toHaveLength(4);
+    expect(banco.executados.find((e) => /total_da_classe/.test(e.sql))!.params).toContain(DESDE.toISOString());
     for (const e of banco.executados) expect(JSON.stringify(e.params)).toContain(STAGE);
     const pessoas = banco.executados.find((e) => /novo_na_janela/.test(e.sql))!;
     expect(pessoas.params).toContain(DESDE.toISOString());
     const corpo = r.json();
-    expect(Object.keys(corpo).sort()).toEqual(["assinaturaDesde", "atributosDesde", "days", "desde", "novosPagantes", "renovacoes"]);
+    expect(Object.keys(corpo).sort()).toEqual(["assinaturaDesde", "atributosDesde", "days", "desde", "ltv", "novosPagantes", "renovacoes"]);
+    expect(corpo.ltv.planos.map((p: { plano: string }) => p.plano)).toEqual(["mensal", "trimestral", "anual"]);
+    expect(corpo.ltv.planos[2]).toMatchObject({ rotulo: "LTV Anual", pessoas: 1, receitaCentavos: 3999, produtos: [{ productId: "premium_yearly_150", pessoas: 1 }] });
     expect(corpo).toMatchObject({ days: 28, desde: "2026-09-19", assinaturaDesde: "2026-08-10", novosPagantes: { total: 1, conflito: 0 }, renovacoes: { total: 2 } });
     expect(JSON.stringify(corpo)).not.toMatch(/app_user_id|appUserId/i);
   });

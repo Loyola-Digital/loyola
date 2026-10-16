@@ -57,7 +57,7 @@ import {
 import { RevenuecatOverviewBlock } from "./revenuecat-overview-block";
 import { GradeDoResumo } from "./lyrio-resumo-cards";
 import { cardsDoResumo } from "@/lib/utils/resumo-mobile-lyrio";
-import { cardsDeAquisicao } from "@/lib/utils/aquisicao-lyrio";
+import { avisoDeNaoClassificado, cardsDeAquisicao } from "@/lib/utils/aquisicao-lyrio";
 import { hojeNoNegocio, tituloDoResumo } from "@/lib/utils/janela-dos-cards-lyrio";
 import { avisoDoErroDaFonte, estadoDaFonte } from "@/lib/utils/estado-da-fonte-revenuecat";
 import {
@@ -259,7 +259,7 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
     avisoDoErroDaFonte(receitaDoFiltro, "a receita do período no RevenueCat") ??
     avisoDoErroDaFonte(novosClientes, "os novos clientes do período no RevenueCat");
 
-  // Story 42.14 (AC4–AC6, AC8; AC7 em espera) — novos pagantes POR PESSOA e renovações, no filtro
+  // Story 42.14 (AC4–AC8) — novos pagantes POR PESSOA, renovações e LTV, no filtro
   // e nos 28 dias fixos dos CACs (D5/D9). Com `days = 28`, uma consulta só.
   const pagantesFiltroQ = useRevenuecatPagantesPorCanal(projectId, funnelId, stage.id, days, connected);
   const pagantes28Q = useRevenuecatPagantesPorCanal(projectId, funnelId, stage.id, 28, connected);
@@ -271,7 +271,8 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
     meta: { temCampanhas: temMeta, filtro: metaFiltro, vinteOito: meta28 },
     google: { mostrar: googleCampaignIds.size > 0, filtro: googleFiltro, vinteOito: google28 },
   });
-  const avisoDosPagantes = avisoDoErroDaFonte(pagantesFiltro, "os novos pagantes e as renovações");
+  const avisoDosPagantes = avisoDoErroDaFonte(pagantesFiltro, "os novos pagantes, as renovações e o LTV");
+  const avisoDoLtv = avisoDeNaoClassificado(pagantesFiltro.tipo === "pronto" ? pagantesFiltro.dados.ltv : undefined);
 
   async function handleSaveName() {
     if (!stageName.trim() || stageName.trim() === stage.name) return;
@@ -670,9 +671,8 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
           </p>
         )}
         {/* Story 42.14 (AC4, AC5) — CAC por NOVO PAGANTE (pessoa), no filtro e nos
-            28 dias fixos (`28d fixo`, âmbar). (AC8) renovações por canal, no
-            filtro. Somem com a API anterior à rota. O LTV (AC7) está em espera
-            da decisão dos product_id — `aquisicao.ltv` vem vazio. */}
+            28 dias fixos (`28d fixo`, âmbar). (AC7) LTV bruto por plano e (AC8)
+            renovações por canal, no filtro. Somem com a API anterior à rota. */}
         {connected && aquisicao.cac.length > 0 && (
           <div className="space-y-1.5 border-t border-border/30 pt-3">
             <h3 className="text-xs font-semibold text-muted-foreground">CAC · investimento ÷ novos pagantes (pessoas)</h3>
@@ -682,6 +682,12 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
         {connected && aquisicao.ltv.length > 0 && (
           <div className="space-y-1.5 border-t border-border/30 pt-3">
             <h3 className="text-xs font-semibold text-muted-foreground">LTV bruto por plano · em US$</h3>
+            {/* AC7d — pagamento com produto não classificado: aviso visível, no padrão do conflito da 42.12. */}
+            {avisoDoLtv && (
+              <p role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                {avisoDoLtv}
+              </p>
+            )}
             <GradeDoResumo cards={aquisicao.ltv} />
           </div>
         )}

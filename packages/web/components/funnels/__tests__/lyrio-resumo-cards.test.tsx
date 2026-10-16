@@ -60,7 +60,7 @@ describe("GradeDoResumo — cada memorial abre (AC1a, AC9d)", () => {
     }
   });
 
-  it("os cards de CAC e de renovação também abrem o memorial (AC4d, AC8d; o LTV está em espera)", async () => {
+  it("os cards de CAC, LTV e renovação também abrem o memorial (AC4d, AC7, AC8d)", async () => {
     const contagem = (n: number) => ({
       canais: [
         { canal: "meta" as const, rotulo: "Meta", quantidade: n },
@@ -74,11 +74,20 @@ describe("GradeDoResumo — cada memorial abre (AC1a, AC9d)", () => {
     const dados = (days: number) => ({
       days, desde: "2026-07-19", assinaturaDesde: "2026-08-10", atributosDesde: null,
       novosPagantes: contagem(2), renovacoes: contagem(3),
+      ltv: {
+        planos: [
+          { plano: "mensal" as const, rotulo: "LTV Mensal", receitaCentavos: 999, pessoas: 1, produtos: [{ productId: "premium_monthly_15:base", pagamentos: 1, pessoas: 1, receitaCentavos: 999 }] },
+          { plano: "trimestral" as const, rotulo: "LTV Trimestral", receitaCentavos: 0, pessoas: 0, produtos: [] },
+          { plano: "anual" as const, rotulo: "LTV Anual", receitaCentavos: 5999, pessoas: 1, produtos: [{ productId: "premium_yearly_150", pagamentos: 1, pessoas: 1, receitaCentavos: 5999 }] },
+        ],
+        naoClassificado: { pagamentos: 0, pessoas: 0, receitaCentavos: 0, produtos: [] },
+        foraPorDecisao: { pagamentos: 0, pessoas: 0, receitaCentavos: 0, produtos: [] },
+      },
     });
     const e = entrada();
     const a = cardsDeAquisicao({ ctx: e.ctx, pagantesFiltro: { tipo: "pronto", dados: dados(90) }, pagantes28: { tipo: "pronto", dados: dados(28) }, meta: e.meta, google: e.google });
     const cards = [...a.cac, ...a.ltv, ...a.renovacoes];
-    expect(cards).toHaveLength(10);
+    expect(cards).toHaveLength(13);
     render(<TooltipProvider><GradeDoResumo cards={cards} /></TooltipProvider>);
     for (const c of cards) {
       const texto = await abrirMemorial(c.rotulo);

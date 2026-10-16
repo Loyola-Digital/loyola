@@ -1,6 +1,6 @@
 /**
- * Story 42.14 (AC6, AC4/AC5, AC8; AC7 em espera) — novos pagantes POR PESSOA,
- * renovações e (em espera) LTV por plano do Lyrio, a partir dos eventos do webhook do RevenueCat.
+ * Story 42.14 (AC6, AC4/AC5, AC7, AC8) — novos pagantes POR PESSOA,
+ * renovações e LTV por plano do Lyrio, a partir dos eventos do webhook do RevenueCat.
  *
  * Mesmo desenho da 42.12 (`vendas-por-canal-lyrio.ts`), pelo mesmo motivo:
  *  1. SQL: reduz os eventos da etapa a UMA linha por pessoa que pagou na
@@ -187,70 +187,153 @@ export function lerLinhaDePagante(r: Record<string, unknown>): PessoaPagante {
   };
 }
 
-// ─────────────────────────── LTV por plano (AC7) — ON HOLD ───────────────────────────
+// ─────────────────────────── LTV por plano (AC7) ───────────────────────────
+
+export type PlanoDoLtv = "mensal" | "trimestral" | "anual";
 
 /**
- * ⚠️ AC7 ON HOLD (2026-10-16). A sonda de produção mostrou que os `product_id`
- * NÃO são `premium_yearly` / `premium_quartely` literais (D23/D28), e sim
- * famílias com sufixo de preço ou base (`premium_yearly_150:base`,
- * `premium_quartely_25:base`, `…_partner_…`), e que há produto mensal. Quais
- * ids entram em cada LTV, se o mensal volta e se promo/partner entram está com
- * o Danilo. Por isso NADA aqui fixa ids: o plano e a sua lista entram como
- * argumento, e a rota não liga o LTV.
+ * AC7c (D33, PO-D7) — a classificação de `product_id` em plano, regra (ii):
+ * PREFIXO para os produtos `premium_*` e nome EXATO para as promoções. Texto
+ * exato do dado, com diferença entre maiúsculas e minúsculas.
  *
- * TODO(42.14, AC7): com a decisão, montar a lista dos planos e ligar a consulta
- * na rota `pagantes-por-canal` e os cards no web (`aquisicao-lyrio.ts`).
+ * Os ids observados na sonda de produção (2026-10-16) — impressos direto da
+ * coluna, sem transformação — são famílias com sufixo de preço/base/partner:
+ * `premium_monthly_15:base`, `premium_quartely_25:base` (a grafia "quartely" é
+ * a do dado), `premium_yearly_partner_100`… e as promoções
+ * `rc_promo_Lyrio Pro_{daily,weekly,monthly,three_month,yearly}` (com o espaço
+ * em "Lyrio Pro"). O partner entra no seu tipo pelo próprio prefixo (D33).
+ *
+ * Trade-off (PO-D7): com o prefixo, um id NOVO da mesma família entra sozinho
+ * no plano; o risco de um id de natureza diferente entrar sem ninguém ver fica
+ * VISÍVEL, porque o memorial lista os ids de cada plano (AC7d).
  */
-export interface PlanoDoLtv {
-  plano: string;
-  rotulo: string;
-  /** Os `product_id` do plano, exatamente como chegam no dado. */
-  productIds: readonly string[];
+export const REGRA_DOS_PLANOS: readonly { plano: PlanoDoLtv; rotulo: string; prefixo: string; promocao: string }[] = [
+  { plano: "mensal", rotulo: "LTV Mensal", prefixo: "premium_monthly", promocao: "rc_promo_Lyrio Pro_monthly" },
+  { plano: "trimestral", rotulo: "LTV Trimestral", prefixo: "premium_quartely", promocao: "rc_promo_Lyrio Pro_three_month" },
+  { plano: "anual", rotulo: "LTV Anual", prefixo: "premium_yearly", promocao: "rc_promo_Lyrio Pro_yearly" },
+];
+
+/**
+ * Fora de todo LTV POR DECISÃO (D33): as promoções diária e semanal e o
+ * produto de teste. Não disparam o aviso de não classificado; o memorial diz
+ * que existem.
+ */
+export const FORA_POR_DECISAO: readonly string[] = ["rc_promo_Lyrio Pro_daily", "rc_promo_Lyrio Pro_weekly", "test_product"];
+
+export type ClasseDoProduto = PlanoDoLtv | "fora" | "nao_classificado";
+
+/** A regra em TypeScript — a fonte do SQL abaixo (equivalência provada no PGlite). */
+export function classificarProduto(productId: string | null | undefined): ClasseDoProduto {
+  if (productId == null) return "nao_classificado";
+  for (const r of REGRA_DOS_PLANOS) {
+    if (productId.startsWith(r.prefixo) || productId === r.promocao) return r.plano;
+  }
+  return FORA_POR_DECISAO.includes(productId) ? "fora" : "nao_classificado";
+}
+
+/**
+ * A mesma regra no SQL. O prefixo é comparado com `left(…) = …`, sem `LIKE`:
+ * nos ids, o `_` é caractere literal, e no `LIKE` ele seria curinga
+ * (`premiumXmonthly_1` entraria no Mensal) — AC7e.
+ */
+export function classeDoProdutoNoSql(coluna: SQL = sql`${c.productId}`): SQL {
+  const casos = sql.join(
+    REGRA_DOS_PLANOS.map(
+      (r) => sql`WHEN left(${coluna}, ${r.prefixo.length}) = ${r.prefixo} OR ${coluna} = ${r.promocao} THEN ${r.plano}`,
+    ),
+    sql` `,
+  );
+  const fora = sql.join(FORA_POR_DECISAO.map((id) => sql`${id}`), sql`, `);
+  return sql`(CASE WHEN ${coluna} IS NULL THEN 'nao_classificado' ${casos} WHEN ${coluna} IN (${fora}) THEN 'fora' ELSE 'nao_classificado' END)`;
+}
+
+export interface ProdutoDoLtv {
+  /** `null` = pagamento sem `product_id` (só possível em "não classificado"). */
+  productId: string | null;
+  pagamentos: number;
+  pessoas: number;
+  receitaCentavos: number;
 }
 
 export interface LtvDoPlano {
-  plano: string;
+  plano: PlanoDoLtv;
   rotulo: string;
-  /** Receita BRUTA (`revenue_usd`) dos eventos pagos do plano na janela, em centavos de US$. */
+  /** Receita BRUTA (`revenue_usd`) dos pagamentos do plano na janela, em centavos de US$. */
   receitaCentavos: number;
-  /** Pessoas distintas que pagaram o plano na janela (D24). */
+  /** Pessoas distintas que pagaram o plano na janela (D24) — por PLANO, não por id. */
   pessoas: number;
+  /** Os ids que entraram no plano na janela (AC7d: um id inesperado fica visível). */
+  produtos: ProdutoDoLtv[];
+}
+
+export interface GrupoForaDoLtv {
+  pagamentos: number;
+  pessoas: number;
+  receitaCentavos: number;
+  produtos: ProdutoDoLtv[];
+}
+
+export interface LtvDoLyrio {
+  planos: LtvDoPlano[];
+  /** Pagamentos cujo id não casa com nenhuma regra (AC7d) — a tela avisa. */
+  naoClassificado: GrupoForaDoLtv;
+  /** Daily, weekly e `test_product` (D33) — o memorial diz que existem. */
+  foraPorDecisao: GrupoForaDoLtv;
 }
 
 /**
- * AC7b (D13, D24) — por plano: a receita bruta e as pessoas distintas que
- * pagaram, na janela, só eventos pagos (PO-08). O agrupamento é pelo PLANO, não
- * pelo `product_id`: a mesma pessoa em dois ids do mesmo plano conta UMA vez.
- * O total sai em centavos no banco, sobre a soma exata do `numeric`.
+ * AC7b — os pagamentos (PO-08: `REVENUE_EVENT_TYPES` com `revenue_usd > 0`;
+ * promoção de US$ 0 não é pagamento) da janela, classificados pela regra.
+ * `GROUPING SETS`: o total de cada classe (pessoas distintas POR CLASSE — a
+ * mesma pessoa em dois ids do mesmo plano conta uma vez) e o detalhe por id.
+ * Receita em centavos sobre a soma exata do `numeric`. Sem `app_user_id`.
  */
-export function consultaDoLtvPorPlano(stageId: string, desde: Date, planos: readonly PlanoDoLtv[]): SQL {
-  const casos = sql.join(
-    planos.map((p) => sql`WHEN ${c.productId} IN (${sql.join(p.productIds.map((id) => sql`${id}`), sql`, `)}) THEN ${p.plano}`),
-    sql` `,
-  );
-  const ids = planos.flatMap((p) => [...p.productIds]);
-  return sql`SELECT (CASE ${casos} END) AS plano,
-    round(coalesce(sum(${c.revenueUsd}), 0) * 100)::int AS receita_centavos,
-    count(DISTINCT ${c.appUserId})::int AS pessoas
-  FROM ${c}
-  WHERE ${and(
-    escopoDasVendas(stageId),
-    inArray(c.eventType, REVENUE),
-    sql`${c.revenueUsd} > 0`,
-    sql`${c.purchasedAt} >= ${desde.toISOString()}::timestamptz`,
-    inArray(c.productId, ids),
-  )}
-  GROUP BY 1`;
+export function consultaDoLtvPorPlano(stageId: string, desde: Date): SQL {
+  return sql`WITH pagos AS (
+    SELECT ${c.appUserId} AS app_user_id, ${c.revenueUsd} AS revenue_usd, ${c.productId} AS product_id, ${classeDoProdutoNoSql()} AS classe
+    FROM ${c}
+    WHERE ${and(
+      escopoDasVendas(stageId),
+      inArray(c.eventType, REVENUE),
+      sql`${c.revenueUsd} > 0`,
+      sql`${c.purchasedAt} >= ${desde.toISOString()}::timestamptz`,
+    )}
+  )
+  SELECT pagos.classe, pagos.product_id, GROUPING(pagos.product_id)::int AS total_da_classe,
+    count(*)::int AS pagamentos,
+    count(DISTINCT pagos.app_user_id)::int AS pessoas,
+    round(coalesce(sum(pagos.revenue_usd), 0) * 100)::int AS receita_centavos
+  FROM pagos
+  GROUP BY GROUPING SETS ((pagos.classe, pagos.product_id), (pagos.classe))`;
 }
 
-/** Todos os planos, na ordem dada; plano sem linha = 0 e 0 (a tela mostra "—"). */
-export function montarLtv(linhas: readonly Record<string, unknown>[], planos: readonly PlanoDoLtv[]): LtvDoPlano[] {
+/** Os três planos sempre, na ordem de `REGRA_DOS_PLANOS`; plano sem linha = 0 e 0. */
+export function montarLtv(linhas: readonly Record<string, unknown>[]): LtvDoLyrio {
   const num = (v: unknown) => {
     const n = Number(v);
     return Number.isFinite(n) ? n : 0;
   };
-  return planos.map(({ plano, rotulo }) => {
-    const l = linhas.find((x) => x.plano === plano);
-    return { plano, rotulo, receitaCentavos: l ? num(l.receita_centavos) : 0, pessoas: l ? num(l.pessoas) : 0 };
-  });
+  const totalDa = (classe: string) => linhas.find((l) => l.classe === classe && num(l.total_da_classe) === 1);
+  const produtosDa = (classe: string): ProdutoDoLtv[] =>
+    linhas
+      .filter((l) => l.classe === classe && num(l.total_da_classe) === 0)
+      .map((l) => ({
+        productId: typeof l.product_id === "string" ? l.product_id : null,
+        pagamentos: num(l.pagamentos),
+        pessoas: num(l.pessoas),
+        receitaCentavos: num(l.receita_centavos),
+      }))
+      .sort((a, b) => b.receitaCentavos - a.receitaCentavos || String(a.productId).localeCompare(String(b.productId)));
+  const grupo = (classe: string): GrupoForaDoLtv => {
+    const t = totalDa(classe);
+    return { pagamentos: num(t?.pagamentos), pessoas: num(t?.pessoas), receitaCentavos: num(t?.receita_centavos), produtos: produtosDa(classe) };
+  };
+  return {
+    planos: REGRA_DOS_PLANOS.map(({ plano, rotulo }) => {
+      const g = grupo(plano);
+      return { plano, rotulo, receitaCentavos: g.receitaCentavos, pessoas: g.pessoas, produtos: g.produtos };
+    }),
+    naoClassificado: grupo("nao_classificado"),
+    foraPorDecisao: grupo("fora"),
+  };
 }

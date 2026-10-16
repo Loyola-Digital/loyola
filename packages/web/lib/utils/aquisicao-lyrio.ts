@@ -1,8 +1,8 @@
 /**
- * Story 42.14 (AC4, AC5, AC8; AC7 em espera) — os cards de aquisição do
- * Resumo mobile: CAC da Meta, do Google e consolidado (nas DUAS janelas: o
- * filtro e os 28 dias fixos, D5/D9) e as renovações por canal (D11, D30). O
- * LTV por plano (AC7) aguarda a decisão dos `product_id` (sonda de 2026-10-16). A contagem por pessoa vem de `GET …/revenuecat/pagantes-por-canal`.
+ * Story 42.14 (AC4, AC5, AC7, AC8) — os cards de aquisição e valor do Resumo
+ * mobile: CAC da Meta, do Google e consolidado (nas DUAS janelas: o filtro e
+ * os 28 dias fixos, D5/D9), LTV Mensal, Trimestral e Anual (D33) e as
+ * renovações por canal (D11, D30). A contagem por pessoa vem de `GET …/revenuecat/pagantes-por-canal`.
  *
  * ## As contas
  *
@@ -42,6 +42,29 @@ export interface ContagemPorCanal {
 }
 
 /** Espelha `GET …/revenuecat/pagantes-por-canal` (`routes/revenuecat.ts`). Só contagens. */
+/** Um `product_id` dentro de um plano ou de um grupo fora do LTV (AC7d). */
+export interface ProdutoDoLtv {
+  /** `null` = pagamento sem `product_id`. */
+  productId: string | null;
+  pagamentos: number;
+  pessoas: number;
+  receitaCentavos: number;
+}
+
+export interface GrupoForaDoLtv {
+  pagamentos: number;
+  pessoas: number;
+  receitaCentavos: number;
+  produtos: ProdutoDoLtv[];
+}
+
+/** Espelha `ltv` de `pagantes-por-canal` (`utils/pagantes-lyrio.ts`, AC7). */
+export interface LtvDoLyrio {
+  planos: { plano: "mensal" | "trimestral" | "anual"; rotulo: string; receitaCentavos: number; pessoas: number; produtos: ProdutoDoLtv[] }[];
+  naoClassificado: GrupoForaDoLtv;
+  foraPorDecisao: GrupoForaDoLtv;
+}
+
 export interface PagantesPorCanal {
   days: number;
   /** Primeiro dia da janela (`AAAA-MM-DD`, SP). */
@@ -51,6 +74,8 @@ export interface PagantesPorCanal {
   atributosDesde: string | null;
   novosPagantes: ContagemPorCanal;
   renovacoes: ContagemPorCanal;
+  /** AC7. Opcional por defesa: sem ele (resposta de outra versão), os cards de LTV não aparecem. */
+  ltv?: LtvDoLyrio;
 }
 
 export interface EntradaDeAquisicao {
@@ -64,7 +89,7 @@ export interface EntradaDeAquisicao {
 
 export interface CardsDeAquisicao {
   cac: CardDoResumo[];
-  /** AC7 em espera: vazio até a decisão dos `product_id` de cada plano. */
+  /** LTV Mensal, Trimestral e Anual (AC7), na janela do filtro. */
   ltv: CardDoResumo[];
   renovacoes: CardDoResumo[];
 }
@@ -77,6 +102,28 @@ const NOTA_DE_COBERTURA_DO_NOVO =
 export function cacEmCentavos(investimentoCentavos: number | null, pessoas: number): number | null {
   if (investimentoCentavos == null || pessoas <= 0) return null;
   return Math.round(investimentoCentavos / pessoas);
+}
+
+/** LTV em centavos de US$: `round(receita ÷ pessoas)`; `null` sem pessoas — nunca 0 (AC7f.9). */
+export function ltvEmCentavos(receitaCentavos: number, pessoas: number): number | null {
+  if (pessoas <= 0) return null;
+  return Math.round(receitaCentavos / pessoas);
+}
+
+const fmtUsd = (centavos: number) => `US$ ${(centavos / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const rotuloDoProduto = (id: string | null) => id ?? "(sem product_id)";
+
+/**
+ * AC7d — o aviso dos pagamentos com produto NÃO classificado (id novo fora das
+ * famílias, promoção de duração nova, `product_id` nulo): `role="alert"` na
+ * tela, junto dos cards de LTV. `null` sem pagamento não classificado. Os "fora
+ * por decisão" (daily, weekly, `test_product`) NÃO disparam o aviso.
+ */
+export function avisoDeNaoClassificado(ltv: LtvDoLyrio | undefined): string | null {
+  const g = ltv?.naoClassificado;
+  if (!g || g.pagamentos <= 0) return null;
+  const ids = g.produtos.map((p) => rotuloDoProduto(p.productId)).join(", ");
+  return `${g.pagamentos.toLocaleString("pt-BR")} ${g.pagamentos === 1 ? "pagamento" : "pagamentos"} (${fmtUsd(g.receitaCentavos)}) com produto não classificado: ${ids}. Não entram em nenhum LTV.`;
 }
 
 const centavos = (v: number) => Math.round(v * 100);
@@ -202,16 +249,55 @@ export function cardsDeAquisicao(e: EntradaDeAquisicao): CardsDeAquisicao {
     ...cacs(vinteOito, 28, decl28, "28d", e.meta.vinteOito, e.google.vinteOito),
   ];
 
-  // ── renovações (AC8): só a janela do filtro ──
-  // AC7 (LTV por plano) ON HOLD: a sonda de produção (2026-10-16) mostrou que os
-  // `product_id` reais são famílias com sufixo (`premium_yearly_150:base`, …) e
-  // que existe produto mensal; quais ids entram em cada LTV está com o Danilo.
-  // Mostrar "—" com os ids literais da D28 afirmaria que ninguém pagou o plano.
-  // TODO(42.14, AC7): com a lista dos planos, ligar o LTV (a rota tem a consulta pronta em `utils/pagantes-lyrio.ts`).
-  const ltv: CardDoResumo[] = [];
-  if (filtro.tipo === "oculto") return { cac, ltv, renovacoes: [] };
+  // ── LTV (AC7) e renovações (AC8): só a janela do filtro ──
+  if (filtro.tipo === "oculto") return { cac, ltv: [], renovacoes: [] };
   const erro = memorialDoErroDaFonte(filtro, { fonte: FONTE_DOS_PAGANTES, periodo: declFiltro.periodo });
   const d = filtro.tipo === "pronto" ? filtro.dados : null;
+
+  const ltv: CardDoResumo[] = [];
+  const fora = d?.ltv?.foraPorDecisao;
+  const notaDeFora =
+    fora && fora.pagamentos > 0
+      ? ` Fora de todo LTV, por decisão (D33): ${fora.produtos.map((p) => `${rotuloDoProduto(p.productId)} (${p.pagamentos.toLocaleString("pt-BR")} ${p.pagamentos === 1 ? "pagamento" : "pagamentos"}, ${fmtUsd(p.receitaCentavos)})`).join("; ")}.`
+      : " Promoções diária e semanal e o produto de teste ficam fora de todo LTV, por decisão (D33).";
+  for (const { plano, rotulo } of [
+    { plano: "mensal", rotulo: "LTV Mensal" },
+    { plano: "trimestral", rotulo: "LTV Trimestral" },
+    { plano: "anual", rotulo: "LTV Anual" },
+  ] as const) {
+    const base: CardDoResumo = { id: `ltv-${plano}`, rotulo, valor: "—", declaracao: declFiltro, icone: "ltv" };
+    if (erro) {
+      ltv.push({ ...base, formula: erro });
+      continue;
+    }
+    if (!d) {
+      ltv.push(base);
+      continue;
+    }
+    const p = d.ltv?.planos.find((x) => x.plano === plano);
+    if (!p) continue; // resposta sem `ltv`: o card não aparece
+    const v = ltvEmCentavos(p.receitaCentavos, p.pessoas);
+    ltv.push({
+      ...base,
+      valor: v == null ? "—" : fmtUsd(v),
+      formula: {
+        expression: "Receita bruta do plano ÷ pessoas distintas que pagaram o plano",
+        values: [
+          { label: "Receita bruta do plano", value: fmtUsd(p.receitaCentavos), source: "revenue_usd dos pagamentos do plano na janela" },
+          { label: "Pessoas que pagaram o plano", value: pessoas(p.pessoas), source: FONTE_DOS_PAGANTES },
+          // AC7d — os ids que entraram no plano: um id inesperado que entrou pelo prefixo fica visível aqui.
+          ...p.produtos.map((x) => ({
+            label: rotuloDoProduto(x.productId),
+            value: `${pessoas(x.pessoas)} · ${fmtUsd(x.receitaCentavos)}`,
+            source: "product_id que entrou no plano",
+          })),
+        ],
+        result: v == null ? "— (nenhum pagamento deste plano na janela)" : `${fmtUsd(p.receitaCentavos)} ÷ ${p.pessoas.toLocaleString("pt-BR")} = ${fmtUsd(v)}`,
+        period: declFiltro.periodo,
+        note: `LTV BRUTO, em US$: sem descontar comissão de loja, imposto ou outros custos. Entra no plano o product_id que começa com o prefixo da família (premium_monthly, premium_quartely, premium_yearly — o partner entra no seu tipo) ou a promoção da mesma duração, pelo nome exato. Pessoa com mais de um pagamento do plano conta uma vez; promoção de US$ 0 não é pagamento.${notaDeFora}${coberturaDe(ctx.diasDoFiltro)}`,
+      },
+    });
+  }
 
   const renovacoes: CardDoResumo[] = [];
   const linhas: { id: string; rotulo: string; n: number | null }[] = d

@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { cacEmCentavos, cardsDeAquisicao, type EntradaDeAquisicao, type PagantesPorCanal } from "../aquisicao-lyrio";
+import { avisoDeNaoClassificado, cacEmCentavos, cardsDeAquisicao, ltvEmCentavos, type EntradaDeAquisicao, type LtvDoLyrio, type PagantesPorCanal } from "../aquisicao-lyrio";
 import { fmtBRL } from "../resumo-mobile-lyrio";
 
 /**
- * Story 42.14 (AC4, AC5, AC8, AC9a) — CAC e renovações; o LTV (AC7) está em
- * espera da decisão dos product_id (sonda de 2026-10-16). "Hoje" fixo
+ * Story 42.14 (AC4, AC5, AC7, AC8, AC9a) — CAC, LTV e renovações. "Hoje" fixo
  * em 16/10/2026; filtro de 90 dias (19/07 a 16/10), série desde 10/08.
  * Renovações e novos pagantes têm números DIFERENTES de propósito: o CAC divide
  * por novos pagantes (pessoas), nunca por renovações nem vendas (D4).
@@ -19,6 +18,22 @@ const contagem = (meta: number, google: number, organico: number, sem: number, c
   conflito,
   total: meta + google + organico + sem + conflito,
 });
+const vazio = { pagamentos: 0, pessoas: 0, receitaCentavos: 0, produtos: [] };
+const LTV: LtvDoLyrio = {
+  planos: [
+    { plano: "mensal", rotulo: "LTV Mensal", receitaCentavos: 0, pessoas: 0, produtos: [] },
+    { plano: "trimestral", rotulo: "LTV Trimestral", receitaCentavos: 2499, pessoas: 1, produtos: [{ productId: "premium_quartely_25:base", pagamentos: 1, pessoas: 1, receitaCentavos: 2499 }] },
+    {
+      plano: "anual", rotulo: "LTV Anual", receitaCentavos: 10997, pessoas: 2,
+      produtos: [
+        { productId: "premium_yearly_150:base", pagamentos: 2, pessoas: 1, receitaCentavos: 7998 },
+        { productId: "premium_yearly_partner_100", pagamentos: 1, pessoas: 1, receitaCentavos: 2999 },
+      ],
+    },
+  ],
+  naoClassificado: vazio,
+  foraPorDecisao: { pagamentos: 1, pessoas: 1, receitaCentavos: 99, produtos: [{ productId: "rc_promo_Lyrio Pro_daily", pagamentos: 1, pessoas: 1, receitaCentavos: 99 }] },
+};
 const pagantes = (days: number, p: Partial<PagantesPorCanal> = {}): PagantesPorCanal => ({
   days,
   desde: days === 28 ? "2026-09-19" : "2026-07-19",
@@ -26,6 +41,7 @@ const pagantes = (days: number, p: Partial<PagantesPorCanal> = {}): PagantesPorC
   atributosDesde: "2026-10-06",
   novosPagantes: days === 28 ? contagem(2, 1, 1, 0, 0) : contagem(4, 1, 3, 1, 1),
   renovacoes: contagem(9, 8, 7, 6, 0),
+  ltv: LTV,
   ...p,
 });
 const entrada = (p: Partial<EntradaDeAquisicao> = {}): EntradaDeAquisicao => ({
@@ -122,9 +138,51 @@ describe("CAC por canal e consolidado, nas duas janelas (AC4, AC5, D9)", () => {
   });
 });
 
-describe("LTV (AC7) — EM ESPERA", () => {
-  it("nenhum card de LTV enquanto a lista de product_id de cada plano não é decidida (os ids literais da D28 dariam um '—' falso)", () => {
-    expect(cardsDeAquisicao(entrada()).ltv).toEqual([]);
+describe("LTV Mensal, Trimestral e Anual, brutos (AC7)", () => {
+  it("três cards, nesta ordem (D33); receita do plano ÷ pessoas: US$ 109,97 ÷ 2 = US$ 54,99 (centavos)", () => {
+    const { ltv } = cardsDeAquisicao(entrada());
+    expect(ltv.map((c) => c.rotulo)).toEqual(["LTV Mensal", "LTV Trimestral", "LTV Anual"]);
+    const anual = achar(ltv, "ltv-anual");
+    expect(anual.valor).toBe("US$ 54,99");
+    expect(anual.formula!.result).toBe("US$ 109,97 ÷ 2 = US$ 54,99");
+    expect(anual.formula!.note).toContain("BRUTO");
+    expect(anual.declaracao).toMatchObject({ etiqueta: "desde 10/08", destaque: false, segueOFiltro: true });
+  });
+
+  it("o memorial lista os product_id que entraram no plano, com pessoas e receita (AC7d)", () => {
+    const valores = achar(cardsDeAquisicao(entrada()).ltv, "ltv-anual").formula!.values;
+    expect(valores).toContainEqual(expect.objectContaining({ label: "premium_yearly_150:base", value: "1 pessoa · US$ 79,98" }));
+    expect(valores).toContainEqual(expect.objectContaining({ label: "premium_yearly_partner_100", value: "1 pessoa · US$ 29,99" }));
+  });
+
+  it("os fora por decisão aparecem no memorial (D33) — sem aviso", () => {
+    expect(achar(cardsDeAquisicao(entrada()).ltv, "ltv-mensal").formula!.note).toContain("rc_promo_Lyrio Pro_daily (1 pagamento, US$ 0,99)");
+    expect(avisoDeNaoClassificado(LTV)).toBeNull();
+  });
+
+  it("9. divisão por zero: plano sem pagante → '—' e LTV `null`, nunca 0; o memorial diz a causa", () => {
+    expect(ltvEmCentavos(0, 0)).toBeNull();
+    expect(ltvEmCentavos(500, 0)).toBeNull();
+    expect(ltvEmCentavos(10997, 2)).toBe(5499);
+    const m = achar(cardsDeAquisicao(entrada()).ltv, "ltv-mensal");
+    expect(m.valor).toBe("—");
+    expect(m.formula!.result).toContain("nenhum pagamento deste plano na janela");
+  });
+
+  it("aviso de não classificado (AC7d): pagamentos, receita e ids; nulo vira '(sem product_id)'", () => {
+    const comNao: LtvDoLyrio = {
+      ...LTV,
+      naoClassificado: {
+        pagamentos: 2, pessoas: 2, receitaCentavos: 800,
+        produtos: [{ productId: "premium_weekly_5", pagamentos: 1, pessoas: 1, receitaCentavos: 500 }, { productId: null, pagamentos: 1, pessoas: 1, receitaCentavos: 300 }],
+      },
+    };
+    expect(avisoDeNaoClassificado(comNao)).toBe("2 pagamentos (US$ 8,00) com produto não classificado: premium_weekly_5, (sem product_id). Não entram em nenhum LTV.");
+    expect(avisoDeNaoClassificado(undefined)).toBeNull();
+  });
+
+  it("resposta sem `ltv` (outra versão): os cards de LTV não aparecem", () => {
+    expect(cardsDeAquisicao(entrada({ pagantesFiltro: { tipo: "pronto", dados: pagantes(90, { ltv: undefined }) } })).ltv).toEqual([]);
   });
 });
 
@@ -162,7 +220,7 @@ describe("rota da API anterior, eco e erro (AC10b, PO-D4)", () => {
       expect(c.formula!.values[0].value, c.id).toBe("Falhou");
     }
     expect(r.cac).toHaveLength(6);
-    expect(r.ltv).toHaveLength(0);
+    expect(r.ltv).toHaveLength(3);
     expect(r.renovacoes).toHaveLength(4);
   });
 });

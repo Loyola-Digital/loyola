@@ -11,7 +11,7 @@ import {
   lerLinhaDeVendas,
   montarVendasPorCanal,
 } from "../utils/vendas-por-canal-lyrio.js";
-import { consultaDePagantesPorCanal, lerLinhaDePagante, montarPagantes } from "../utils/pagantes-lyrio.js";
+import { consultaDePagantesPorCanal, consultaDoLtvPorPlano, lerLinhaDePagante, montarLtv, montarPagantes } from "../utils/pagantes-lyrio.js";
 import { eq, and, gte, inArray, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import fp from "fastify-plugin";
@@ -601,10 +601,10 @@ export default fp(async function revenuecatRoutes(fastify) {
     },
   );
 
-  // ---- GET novos pagantes e renovações por canal ---- (Story 42.14)
+  // ---- GET novos pagantes, renovações e LTV por plano ---- (Story 42.14)
   /**
-   * AC6 (novos pagantes POR PESSOA, por canal) e AC8 (renovações por canal),
-   * na janela de `days` sobre `purchased_at` — a régua
+   * AC6 (novos pagantes POR PESSOA, por canal), AC8 (renovações por canal) e
+   * AC7 (LTV bruto por plano: Mensal, Trimestral, Anual), na janela de `days` sobre `purchased_at` — a régua
    * de `/sales` e `/vendas-por-canal` (N dias de calendário de SP). O canal é o
    * da 42.12 com a origem mais antiga para quem tem Meta E Google (D16/D25/D26);
    * empate exato → `conflito` (PO-D3). Regras em `utils/pagantes-lyrio.ts`.
@@ -626,11 +626,9 @@ export default fp(async function revenuecatRoutes(fastify) {
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
       const desde = instanteDoInicioDaJanela(query.data.days);
-      // AC7 (LTV por plano) ON HOLD: os `product_id` reais são famílias com
-      // sufixo (sonda de 2026-10-16) e a lista de cada plano está com o Danilo.
-      // TODO(42.14, AC7): ligar `consultaDoLtvPorPlano` quando a lista chegar.
-      const [pessoas, inicio, atributos] = await Promise.all([
+      const [pessoas, ltv, inicio, atributos] = await Promise.all([
         fastify.db.execute(consultaDePagantesPorCanal(params.data.stageId, desde)),
+        fastify.db.execute(consultaDoLtvPorPlano(params.data.stageId, desde)),
         fastify.db.execute(consultaDoInicioDaAssinatura(params.data.stageId)),
         fastify.db.execute(consultaDoInicioDosAtributos(params.data.stageId)),
       ]);
@@ -645,6 +643,9 @@ export default fp(async function revenuecatRoutes(fastify) {
         assinaturaDesde: dataIso((inicio.rows[0] as { desde?: unknown } | undefined)?.desde),
         atributosDesde: dataIso((atributos.rows[0] as { desde?: unknown } | undefined)?.desde),
         ...pagantes,
+        // AC7 — LTV por plano (D33, PO-D7), com os ids de cada plano, os não
+        // classificados (a tela avisa) e os fora por decisão.
+        ltv: montarLtv(ltv.rows as Record<string, unknown>[]),
       };
     },
   );

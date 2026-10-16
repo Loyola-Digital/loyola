@@ -407,12 +407,12 @@ export function useRevenuecatNovosClientes(projectId: string, funnelId: string, 
 }
 
 // ============================================================
-// Story 42.14 (AC6, AC8) — novos pagantes por pessoa e renovações (AC7 em espera).
+// Story 42.14 (AC6, AC7, AC8) — novos pagantes por pessoa, renovações e LTV.
 // ============================================================
 
 /**
- * ⚠️ Rota NOVA (contrato 51): com a API anterior responde 404 — os cards de CAC
- * e renovação não aparecem (`cardsDeAquisicao`) e o banner de versão
+ * ⚠️ Rota NOVA (contrato 51): com a API anterior responde 404 — os cards de CAC,
+ * LTV e renovação não aparecem (`cardsDeAquisicao`) e o banner de versão
  * explica. Mesmo `retry` da Jornada: um 404 não vira outra coisa entre
  * tentativas. O Resumo pede o filtro e os 28 dias; o Overview, os 28 dias (a
  * mesma chave).

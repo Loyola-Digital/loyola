@@ -584,6 +584,9 @@
 // novos pagantes POR PESSOA (primeiro pagamento na janela) e renovações
 // (`RENEWAL` pago que não é o primeiro pagamento) por canal, com a origem mais
 // antiga para quem tem Meta e Google (empate → `conflito`), ecoando
-// `days`/`desde` e a cobertura (`assinaturaDesde`). O LTV por plano NÃO está na
-// resposta (em espera da lista de product_id). `packages/mcp` não é afetado.
+// `days`/`desde` e a cobertura (`assinaturaDesde`), e o `ltv` por plano
+// (Mensal, Trimestral, Anual: receita bruta e pessoas distintas, com os
+// `product_id` de cada plano, os pagamentos não classificados e os fora por
+// decisão — classificação por prefixo `premium_*` + promoção pelo nome exato).
+// `packages/mcp` não é afetado.
 export const API_CONTRACT_VERSION = 51;
