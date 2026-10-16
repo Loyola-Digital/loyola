@@ -2,15 +2,18 @@ schema: 1
 story: '42.14'
 story_title: 'Lyrio — janelas declaradas e destacadas, CAC (Meta, Google, consolidado), LTV Mensal, Trimestral e Anual e renovação'
 gate: CONCERNS
-status_reason: 'AC1–AC10 atendidos no código e as regras centrais estão provadas: 51 de 52 mutações nas funções, no SQL e nas rotas caem, incluindo as 14 do AC7 (a que sobra é um texto de memorial, TEST-002). O que falta é teste no fio da tela: trocar o `days` por 28 na chamada da receita, da Meta, dos novos clientes, do Google ou dos pagantes não derruba nenhum teste (7 mutações sobrevivem à suíte inteira do web), e a conferência em produção do DoD não foi feita.'
+status_reason: 'Re-review do QA loop, iteração 1, sobre 41a2b82e. TEST-001, TEST-002, MNT-001 e REL-001 estão fechados: as 7 mutações de fio e a M38 caem agora, cada uma no teste certo. Um diferencial antigo × novo no PGlite prova que a extração para utils/ não mudou nenhuma resposta. O veredito continua CONCERNS por dois motivos: a REQ-001 espera a evidência da sonda do Danilo, e há uma lacuna nova (TEST-003): tirar o filtro de etapa do SQL de metricas-derivadas não derruba nenhum teste do projeto.'
+status_reason_iteracao_0: 'AC1–AC10 atendidos no código, 51 de 52 mutações nas regras caem; o fio da tela (argumento days) sem teste (7 mutações sobrevivem) e a conferência em produção do DoD pendente.'
 reviewer: 'Quinn'
-updated: '2026-10-16T20:30:00Z'
+updated: '2026-10-16T23:00:00Z'
 branch: 'feat/42.14-lyrio-janelas-cac-ltv'
-commit_reviewed: '61890deb'
+commit_reviewed: '41a2b82e'
+commit_reviewed_iteracao_0: '61890deb'
 commits_reviewed: 'origin/main...ebd460aa (revisão parcial, sem o AC7) + ebd460aa..61890deb (AC7: deea1919 story, 61890deb código)'
 base: '28f84781 (origin/main, contrato 50; conferido com git ls-remote no gate)'
 history:
   - { date: '2026-10-16', gate: CONCERNS, note: 'gate único sobre 61890deb (a revisão parcial de ebd460aa foi absorvida). TEST-001 e REQ-001 medium; TEST-002, REL-001, PERF-001 e MNT-001 low.' }
+  - { date: '2026-10-16', gate: CONCERNS, note: 're-review (QA loop, iteração 1) sobre 41a2b82e: TEST-001, TEST-002, MNT-001 e REL-001 resolvidos; extração para utils/ provada por diferencial; TEST-003 medium novo (escopo de etapa da consulta de metricas-derivadas sem teste); REQ-001 e PERF-001 esperam a sonda.' }
 
 top_issues:
   - id: TEST-001
@@ -19,7 +22,8 @@ top_issues:
     description: 'O fio da tela não tem teste: o ARGUMENTO `days` de cada consulta pode virar 28, ou sumir, sem nenhum teste cair. Mutações aplicadas uma a uma no clone descartável, cada uma contra a suíte INTEIRA do web (2.036/2.036 em ebd460aa; 2.041/2.041 em 61890deb, com `--testTimeout=60000`): W1 `lyrio-stage-view.tsx:189` Meta do filtro com 28 → SOBREVIVE (o card Investimento diria "segue o filtro de 90 dias" com 28 dias, e o ROAS e a Margem misturariam janelas, que é o defeito que a story corrige) · W2 `:215` `diasDaConsultaDoGoogle(days, 28)` → `days` → SOBREVIVE (com filtro de 7 dias, o CAC Google de 28d fixo somaria só 7 dias) · W3 `:224` receita do Resumo com 28 → SOBREVIVE (mesma mistura do W1) · W4 `:227` novos clientes com 28 → SOBREVIVE · W5 `revenuecat-overview-block.tsx:46` receita do Overview com 28 → SOBREVIVE · W6 `lyrio-stage-view.tsx:264` pagantes do filtro com 28 → SOBREVIVE (o eco protege contra o número errado, mas os CACs do filtro, as renovações e o LTV somem em silêncio) · L13 `:686` aviso de não classificado tirado da tela → SOBREVIVE. Os testes jsdom mocam os hooks sem olhar o `days` (`useRevenuecatReceita: () => receita`), e o teste de fio por `readFileSync` de `vendas-por-canal-lyrio.test.ts` só amarra `googleFiltro`/`google28` e o `days` da tabela "Por canal". Na primeira rodada, W2–W5 pareceram cair; era o timeout conhecido de 5 s do `vturb-tabela`. Com `--testTimeout=60000`, os sete passam. Hoje o código está certo.'
     recommendation: 'No teste de fio de `lib/utils/__tests__/vendas-por-canal-lyrio.test.ts`, amarrar por regex as sete chamadas: `useCampaignDailyInsightsBulk(..., days)` (a do filtro) e a de `28`; `diasDaConsultaDoGoogle(days, 28)`; `useRevenuecatReceita(..., days, connected)` e `useRevenuecatNovosClientes(..., days, connected)` no Resumo e no Overview; `useRevenuecatPagantesPorCanal(..., days, connected)` e a de `28`; e `{avisoDoLtv && (` dentro do bloco do LTV com `role="alert"`. Defesa extra, barata: conferir o eco `dados.days === ctx.diasDoFiltro` na receita (`cardsDoResumo`, `cardsDoOverview`) e nos novos clientes (`cardDeNovosClientes`), como `daJanela` já faz nos pagantes. As duas rotas já ecoam `days`.'
     owner: '@dev'
-    status: open
+    status: resolved
+    resolved_in: '41a2b82e'
 
   - id: REQ-001
     severity: medium
@@ -28,6 +32,7 @@ top_issues:
     recommendation: 'O Danilo (ou alguém com leitura autorizada) roda a rota `pagantes-por-canal?days=28` e `?days=90` contra produção, ou o SQL de `consultaDePagantesPorCanal`/`consultaDoLtvPorPlano` pelo `PgDialect`. Conferir: os totais por canal contra a tabela "Por canal" (as pessoas novas ≤ compradores); `ltv.naoClassificado` (esperado: vazio ou só ids que pedem decisão); a soma da receita dos três planos mais fora e não classificados contra a venda paga da janela; o tempo da consulta. Depois, a validação visual dos dois blocos com o filtro em 7, 28 e 90 dias.'
     owner: 'Danilo / @devops'
     status: open
+    note_iteracao_1: 'Pendente de EVIDÊNCIA. A sonda read-only `scratchpad/probe/conferencia-42.14.mjs` está pronta. Conferi que ela abre a sessão com `default_transaction_read_only = on`, imprime só agregados (nada de `app_user_id`, chave, e-mail ou IP) e roda o código COMPILADO do clone. O `dist` é de 16:55, a hora do commit `41a2b82e`; rodar `tsc` na API antes da sonda garante que é o mesmo código. Ela cruza os resultados com a `vendas-por-canal` da 42.12 e mede os tempos (PERF-001). A conferência fecha quando a saída mostrar: os dois cruzamentos com "ok"; `naoClassificado` vazio, ou só com ids que pedem decisão; e os tempos.'
 
   - id: TEST-002
     severity: low
@@ -35,7 +40,8 @@ top_issues:
     description: 'M38: tirar do memorial do MRR do RESUMO a frase do PO-D6 ("A API marca este número com período de 28 dias (P28D), o que a documentação não explica; o painel segue a definição documentada.") não derruba nenhum teste (2.036/2.036). `resumo-mobile-lyrio.test.ts:57` afirma só a primeira frase ("Retrato, não acumulado…"). No Overview, a frase está amarrada (`overview-revenuecat.test.ts:114`; M37 cai).'
     recommendation: 'Trocar o `toContain` da linha 57 pela frase do P28D, ou acrescentar um segundo `toContain` com ela.'
     owner: '@dev'
-    status: open
+    status: resolved
+    resolved_in: '41a2b82e'
 
   - id: REL-001
     severity: low
@@ -43,7 +49,8 @@ top_issues:
     description: 'Com a consulta da Meta em erro (`useCampaignDailyInsightsBulk`), o `data` fica `undefined` para sempre. O card Investimento (Meta), o CAC Meta e o consolidado ficam "—" SEM memorial de causa, como se estivessem carregando. Antes da story, o mesmo erro virava "R$ 0" (`metaDaily28 ? … : 0`), então houve melhora. O PO-D4 só cobre o RevenueCat, e o REL-001 da 42.13 trata o mesmo padrão no bloco Meta.'
     recommendation: 'Story pequena, junto do REL-001 da 42.13: ler o `error` da consulta da Meta e dar ao "—" o memorial com a causa.'
     owner: '@sm / @dev'
-    status: open
+    status: resolved
+    resolved_in: '41a2b82e'
 
   - id: PERF-001
     severity: low
@@ -59,11 +66,21 @@ top_issues:
     description: '(a) `lib/utils/aquisicao-lyrio.ts:44`: o JSDoc "Espelha `GET …/revenuecat/pagantes-por-canal`" ficou acima de `ProdutoDoLtv`, depois que os tipos do AC7 foram inseridos entre ele e `PagantesPorCanal`. (b) Os CACs do Google e o consolidado com o Google em erro reutilizam `memorialDoGoogleSemNumero` (`lyrio-google-ads.ts:135`), cuja nota diz "o ROAS e a Margem de Contribuição ficam "—"". No card do CAC, a frase não fala do próprio CAC. A causa está certa; o texto é do outro card.'
     recommendation: '(a) Mover o comentário para cima de `PagantesPorCanal`. (b) Opcional: um parâmetro `dependentes` no `memorialDoGoogleSemNumero`, como o `memorialDoErroDaFonte` já tem.'
     owner: '@dev'
+    status: resolved
+    resolved_in: '41a2b82e'
+
+  - id: TEST-003
+    severity: medium
+    category: tests
+    description: 'Re-review: na extração, o filtro de etapa da consulta de `metricas-derivadas` passou a ser SQL de texto (`consultaDosEventosDasDerivadas`, `utils/metricas-revenuecat.ts`: `WHERE ${c.stageId} = ${stageId}`). Trocar esse filtro por `${stageId} = ${stageId}`, que é sempre verdadeiro, SOBREVIVE às suítes da story (`revenuecat-janelas-42-14`, `pagantes-lyrio`, `instante-da-janela-4213`: 91/91). Com a mutação, a rota somaria os eventos de TODAS as etapas de TODOS os projetos nos cards do Overview: churn, trials, conversões. O `getStage` protege o acesso, mas não o escopo da consulta. O teste da composição no PGlite (`pagantes-lyrio.test.ts:405`) não semeia evento de outra etapa, e o fio da rota (`revenuecat-janelas-42-14`) responde o mesmo para qualquer SQL. A lacuna já existia antes da extração, com o `eq()` do Drizzle e o banco falso, mas a extração é o momento de fechá-la. O meu diferencial descartável (10% dos eventos em outra etapa) derruba a mutação nas 5 sementes. Hoje o código está certo.'
+    recommendation: 'No teste de `metricasDerivadasDaEtapa` em `pagantes-lyrio.test.ts`, inserir eventos de OUTRA etapa (um trial e um EXPIRATION pago) e afirmar que os números não mudam, como o teste "fora do escopo: outra etapa" já faz nos pagantes.'
+    owner: '@dev'
     status: open
 
 waiver: { active: false }
 
 checks:
+  iteracao_1: 'Re-review sobre 41a2b82e (20 arquivos, 620+/117−), no meu clone descartável `qa4214`. FIO: W1–W6, L13 e M38 refeitas com `--testTimeout=60000`, e cada uma derruba exatamente o teste do item no `fio-da-tela-lyrio-42-14.test.ts` ou no `resumo-mobile-lyrio.test.ts` (confirmado pelo nome do teste que falha, não pela contagem). Todas as 52 mutações de regra da iteração 0 foram refeitas: as que não aplicavam mais no texto (M03, M11, M12, M21–M24, M29) foram reescritas no lugar novo, e todas caem. Novas: M24b, que ignora o `agora`, cai; M24c, que lê o `period_type` de outro campo, cai; M24d, que tira o filtro de etapa, SOBREVIVE (TEST-003); N1, o eco ignorado em `naJanelaPedida`, cai em 4 testes; N2–N4, o erro da Meta ignorado no card, no ROAS/Margem e no CAC, caem; N5, o erro da Meta que não chega aos construtores, cai no fio. EXTRAÇÃO: diferencial descartável (`scratchpad/qa-diferencial-4214.test.ts`, fora do repo): a composição de 61890deb, copiada (Drizzle `select` + `eq`), contra `metricasDerivadasDaEtapa` e `pagantesPorCanalDaEtapa` de 41a2b82e, no MESMO PGlite + `drizzle-orm/pglite`. São 5 sementes × 700 eventos (10 tipos, `period_type` TRIAL/NORMAL/INTRO/PROMOTIONAL/trial/nulo/ausente, payload `{}`, 5% sem `event_at`, 5% sem usuário, 10% em outra etapa) e janelas sem `days`, 1, 7, 28, 90 e 365. Resultado: o JSON é idêntico nas 55 comparações, e `diasDaJanelaEmSp` = `businessToday` + `inicioDaJanela` em 4 instantes × 5 janelas. Controles: `datas[1]` no `serieDesde` derruba o diferencial, e trocar `assinaturaDesde`/`atributosDesde` na cópia antiga também, então ele não é vazio. Uma diferença ENCONTRADA, só a favor: com `period_type` NÃO texto no payload (um número), a rota antiga quebrava (`toUpperCase is not a function`, HTTP 500); a nova lê pelo `->>` e trata como texto. O RevenueCat documenta o campo como texto, então isso não muda nada no dado real. FORMA: o `pagantes-por-canal` devolve as mesmas 7 chaves, conferidas pelo teste de fio e pelo diferencial, e `metricas-derivadas` devolve a mesma resposta. O contrato fica em 51, porque `contract.ts` não está no diff. SUÍTES: web 2.054/2.054 em 148 arquivos; API 5.164/5.174, com as 10 falhas da baseline nos mesmos 5 arquivos. tsc da API 0; eslint da API (0 erros, 1 aviso antigo) e do shared limpos; `next lint` limpo. `next build` (webpack): 43/43 páginas, EXIT 0. A primeira tentativa falhou no `next/font` do Google porque apaguei o `.next` (rede), e a segunda passou. tsc do web depois do build: 0. ESCOPO: os 20 arquivos estão na lista autorizada (`api/src/utils/sale-date.ts` está em `utils/**`), e o commit leva `[scope-override]`. SEGURANÇA: `memorialDoErroDaMeta` mostra só a mensagem da rota de tráfego; a sonda é read-only e só imprime agregados.'
   code_review: 'Li o diff `origin/main...61890deb` inteiro: 32 arquivos até ebd460aa (4.843+/605−) e mais 10 no AC7 (583+/147−). API: `/receita` e `/novos-clientes` usam `businessToday` + `inicioDaJanela` (dias de SP enviados como start/end_date; o RevenueCat conta em UTC, declarado no memorial), `getStage` antes de qualquer leitura, `currency=USD` conferida na volta, `value` não numérico é erro, falha → `{ error, details, causa }` com 429/502 e nunca 200 com null. `metricas-derivadas` ganha `getStage` (AC2e), a janela por `instanteDoInicioDaJanela` e o eco `days`/`desde` (null sem janela). `pagantes-por-canal`: uma linha por pessoa sem o id, `row_number` só sobre os eventos pagos, primeiro pagamento da série inteira, renovação = `RENEWAL` pago com `ordem_pago > 1`, canal pela origem mais antiga (`min(event_at)`) e empate → `conflito`. AC7: `REGRA_DOS_PLANOS` + `FORA_POR_DECISAO` numa constante; SQL por `left(col, n) = prefixo` (sem LIKE, logo sem curinga) e igualdade exata nas promoções; `GROUPING SETS` com `count(DISTINCT app_user_id)` POR CLASSE. Web: `declararJanela` é a fonte única (AC2a); `estadoDaFonte` testa a falha antes da ausência; Receita, ROAS e Margem em erro ficam "—" com a causa, sem cair para os 28 dias; só o 404 da rota (API anterior) leva o trio aos 28 dias, declarado e em âmbar; as Conversões só leem numerador com o eco de 28 dias; os CACs e o LTV só valem com o eco da janela pedida (`daJanela`). Card `forwardRef` + `{...rest}` + `tabIndex`, provider local no Overview.'
   scope: 'Todos os 33 arquivos do diff estão em `components/funnels/**`, `docs/stories/*` ou na lista de scope-override (D20, D31, D32): `lib/**`, `routes/revenuecat.ts`, `services/revenuecat.ts`, `utils/**`, `__tests__/**`, `shared/src/contract.ts`, `web/vitest.config.ts`. `routes/google-ads-analytics.ts` e `services/google-ads.ts` NÃO foram tocados (PO-07). Os 6 commits que tocam a lista de override levam `[scope-override]`; os 9 só de story, não.'
   api_contract: 'v51 sobre a main em 50 (`28f84781`, conferida com `git ls-remote`). Três rotas novas (`/receita`, `/novos-clientes`, `/pagantes-por-canal`), mais o `?days=` e o eco em `metricas-derivadas` e a `causa` nas falhas. A linha de histórico descreve tudo, inclusive o `ltv`. O AC7 não sobe de novo: a rota é nova nesta mesma PR (um bump por PR, PO-D1). Fallback com API antiga: 404 da rota → oculto/28 dias declarados; sem eco → "série inteira" e Conversões "—" (testado).'
