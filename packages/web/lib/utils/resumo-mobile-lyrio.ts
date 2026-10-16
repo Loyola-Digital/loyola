@@ -328,7 +328,8 @@ export function cardsDoResumo(e: EntradaDoResumo): CardDoResumo[] {
       expression: "MRR (US$) × câmbio",
       values: [{ label: "MRR", value: fmtUsd(mrr), source: `${FONTE_DO_OVERVIEW} · mrr` }, ...(cambioValue ? [cambioValue] : [])],
       result: `${fmtUsd(mrr)} × ${fmtBRL(cambio.taxa)} = ${fmtBRL(mrrBrl)}`,
-      note: "Receita recorrente mensal no momento da consulta — não é média de período.",
+      // PO-D6: a API marca o MRR com P28D; o painel segue a definição documentada (retrato).
+      note: "Receita recorrente mensal no momento da consulta — não é média de período. Retrato, não acumulado: pela documentação do RevenueCat, o MRR é o valor atual das assinaturas pagas ativas, normalizado para um mês. A API marca este número com período de 28 dias (P28D), o que a documentação não explica; o painel segue a definição documentada.",
     })),
     doOverview("assinaturas", "Assinaturas ativas", "assinaturas", agora, assinaturas, fmtNum(assinaturas),
       contagem("Total", "active_subscriptions", "Assinaturas ativas agora — não é acumulado do período (o RevenueCat inclui as canceladas que ainda têm acesso).", assinaturas)),

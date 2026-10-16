@@ -53,6 +53,8 @@ describe("cardsDoResumo — cada card declara a sua janela (AC1a, AC3)", () => {
       expect(etiqueta(id), id).toMatchObject({ etiqueta: "últimos 90 dias", destaque: false, segueOFiltro: true });
     }
     for (const id of ["mrr", "assinaturas", "trials"]) expect(etiqueta(id)).toMatchObject({ etiqueta: "agora", destaque: true });
+    // PO-D6: o MRR continua `agora`; o memorial declara o P28D da API.
+    expect(cards.find((c) => c.id === "mrr")!.formula!.note).toContain("Retrato, não acumulado: pela documentação do RevenueCat, o MRR é o valor atual das assinaturas pagas ativas, normalizado para um mês.");
   });
 
   it("Novos clientes = o total do chart customers_new do filtro (15.232), não o new_customers de 28 dias (900); o memorial diz UTC e o dia incompleto", () => {

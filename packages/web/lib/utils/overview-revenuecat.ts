@@ -303,7 +303,8 @@ export function cardsDoOverview(e: EntradaDoOverview): { principais: CardComJane
       expression: "MRR (US$)",
       values: [{ label: "MRR", value: fmtUsd(v), source: `${FONTE_DO_OVERVIEW} · mrr` }],
       result: fmtUsd(v),
-      note: "Receita recorrente mensal, como a API a calcula. Em dólar. Não é média de período.",
+      // PO-D6: a API marca o MRR com P28D; o painel segue a definição documentada (retrato).
+      note: "Receita recorrente mensal, como a API a calcula. Em dólar. Não é média de período. Retrato, não acumulado: pela documentação do RevenueCat, o MRR é o valor atual das assinaturas pagas ativas, normalizado para um mês. A API marca este número com período de 28 dias (P28D), o que a documentação não explica; o painel segue a definição documentada.",
     })),
     // AC3a — o ARR leva `agora`; o "derivado: MRR × 12" vai no memorial.
     doOverview("arr", "ARR", agora, fmtUsd, arrDoMrr(mrr), () => ({

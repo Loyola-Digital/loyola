@@ -110,6 +110,8 @@ describe("cardsDoOverview (Story 42.14, AC1/AC3c)", () => {
     }
     expect(de(principais, "ARR").valor).toBe(fmtUsd(7152));
     expect(de(principais, "ARR").formula!.expression).toBe("MRR × 12");
+    // PO-D6: o memorial do MRR declara o P28D da API e segue a definição documentada.
+    expect(de(principais, "MRR").formula!.note).toContain("A API marca este número com período de 28 dias (P28D), o que a documentação não explica; o painel segue a definição documentada.");
   });
 
   it("o texto antigo do `title=` continua no memorial (AC1b)", () => {
