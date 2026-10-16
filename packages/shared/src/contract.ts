@@ -577,5 +577,11 @@
 // que a etapa seja do funil e do projeto (`getStage`, 404 senão) e devolve
 // `serieDesde` no dia de SP. As falhas do RevenueCat (overview e receita) saem
 // com `causa` (`limite` → HTTP 429, `permissao`, `outro` → 502) — antes toda
-// falha era a mesma frase sobre permissão. `packages/mcp` não é afetado.
+// falha era a mesma frase sobre permissão. Rota NOVA
+// `GET …/revenuecat/pagantes-por-canal?days=N`: novos pagantes POR PESSOA
+// (primeiro pagamento na janela) e renovações (`RENEWAL` pago que não é o
+// primeiro pagamento) por canal, com a origem mais antiga para quem tem Meta e
+// Google (empate → `conflito`), e o LTV bruto por plano (`premium_yearly`,
+// `premium_quartely`) — ecoando `days`/`desde` e a cobertura
+// (`assinaturaDesde`). `packages/mcp` não é afetado.
 export const API_CONTRACT_VERSION = 51;

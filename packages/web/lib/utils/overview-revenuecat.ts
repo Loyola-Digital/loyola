@@ -110,8 +110,13 @@ export interface EntradaDoOverview {
   receita: EstadoDaFonte<ReceitaDoPeriodo>;
   /** As métricas dos eventos, pedidas com `days` = o filtro. */
   derivadas: EstadoDaFonte<MetricasDerivadasDoOverview>;
-  /** As mesmas, pedidas com `days = 28`: o numerador das conversões (D10). */
+  /** As mesmas, pedidas com `days = 28`: o numerador da Conversão para Trial (D10). */
   derivadas28: EstadoDaFonte<MetricasDerivadasDoOverview>;
+  /**
+   * Os novos pagantes POR PESSOA dos últimos 28 dias (`pagantes-por-canal?days=28`):
+   * o numerador da Conversão para Pagante (PO-04, AC6). `oculto` = API anterior.
+   */
+  pagantes28: EstadoDaFonte<{ days: number; desde: string; novosPagantes: { total: number } }>;
 }
 
 const FONTE_DO_OVERVIEW = "RevenueCat · GET /metrics/overview";
@@ -243,23 +248,29 @@ export function cardsDoOverview(e: EntradaDoOverview): { principais: CardComJane
   ];
 
   // ── as conversões: numerador e denominador nos MESMOS 28 dias (D7, D10, AC2b) ──
-  const d28 = e.derivadas28.tipo === "pronto" ? e.derivadas28.dados : null;
+  const vinteOitoDias = (desde: string | null | undefined) =>
+    desde ? `${desde.slice(8, 10)}/${desde.slice(5, 7)} a ${ctx.hoje.slice(8, 10)}/${ctx.hoje.slice(5, 7)}` : "últimos 28 dias";
+  /**
+   * Uma conversão: `fonte` é o estado do numerador; `numerador` só é lido com a
+   * fonte pronta E com o eco dos 28 dias. Sem o eco (API anterior), o número
+   * seria de outra janela — dividir pelos usuários de 28 dias repetiria o
+   * defeito que esta story corrige (AC2d), então o card fica "—" e explica.
+   */
   const conversao = (
     id: string,
     rotulo: string,
+    fonte: EstadoDaFonte<{ days?: number | null; desde?: string | null }>,
     numerador: number | null,
-    partes: { label: string; value: string }[],
+    partes: { label: string; value: string; source: string }[],
     nota: string,
+    indisponivel: string,
   ): CardComJanela => {
     const decl = vinteOito;
     const erro =
-      memorialDoErroDaFonte(e.derivadas28, { fonte: FONTE_DAS_DERIVADAS, periodo: decl.periodo }) ??
+      memorialDoErroDaFonte(fonte, { fonte: FONTE_DAS_DERIVADAS, periodo: decl.periodo }) ??
       memorialDoErroDaFonte(e.overview, { fonte: FONTE_DO_OVERVIEW, periodo: decl.periodo });
     if (erro) return { id, rotulo, valor: "—", declaracao: decl, formula: erro };
-    if (!d28) return { id, rotulo, valor: "—", declaracao: decl };
-    // AC10b — sem o eco dos 28 dias, o numerador é da série inteira: dividir pelos
-    // 28 dias do overview repetiria o defeito que esta story corrige (AC2d).
-    if (d28.days !== 28) {
+    if (fonte.tipo === "oculto" || (fonte.tipo === "pronto" && fonte.dados.days !== 28)) {
       return {
         id,
         rotulo,
@@ -267,14 +278,14 @@ export function cardsDoOverview(e: EntradaDoOverview): { principais: CardComJane
         declaracao: decl,
         formula: memorial(decl, {
           expression: `${rotulo.replace("Conversão para ", "")} (28 dias) ÷ Usuários ativos (28 dias)`,
-          values: [{ label: "Eventos por janela", value: "indisponível", source: "API anterior à Story 42.14 (sem o eco da janela)" }],
+          values: [{ label: "Numerador por janela", value: "indisponível", source: "API anterior à Story 42.14" }],
           result: "—",
-          note: "A API ainda não entrega os eventos por janela (versão anterior à do painel — veja o aviso de versão no topo). Dividir a série inteira pelos usuários de 28 dias misturaria janelas; a conversão volta depois do deploy.",
+          note: `${indisponivel} (versão anterior à do painel — veja o aviso de versão no topo). Dividir um número de outra janela pelos usuários de 28 dias misturaria janelas; a conversão volta depois do deploy.`,
         }),
       };
     }
+    if (fonte.tipo !== "pronto") return { id, rotulo, valor: "—", declaracao: decl };
     const taxa = numerador != null && usuariosAtivos ? numerador / usuariosAtivos : null;
-    const intervalo = d28.desde ? `${d28.desde.slice(8, 10)}/${d28.desde.slice(5, 7)} a ${ctx.hoje.slice(8, 10)}/${ctx.hoje.slice(5, 7)}` : "últimos 28 dias";
     return {
       id,
       rotulo,
@@ -286,7 +297,7 @@ export function cardsDoOverview(e: EntradaDoOverview): { principais: CardComJane
           : memorial(decl, {
               expression: `${rotulo.replace("Conversão para ", "")} ÷ Usuários ativos`,
               values: [
-                ...partes.map((p) => ({ ...p, source: `${FONTE_DAS_DERIVADAS} · ${intervalo} (dias de SP)` })),
+                ...partes.map((p) => ({ ...p, source: `${p.source} · ${vinteOitoDias(fonte.dados.desde)} (dias de SP)` })),
                 { label: "Usuários ativos", value: fmtNum(usuariosAtivos), source: `${FONTE_DO_OVERVIEW} · active_users (28 dias, em UTC)` },
               ],
               result: `${fmtNum(numerador)} ÷ ${fmtNum(usuariosAtivos)} = ${fmtPct(taxa)}`,
@@ -294,17 +305,20 @@ export function cardsDoOverview(e: EntradaDoOverview): { principais: CardComJane
             }),
     };
   };
+  const d28 = e.derivadas28.tipo === "pronto" ? e.derivadas28.dados : null;
+  const p28 = e.pagantes28.tipo === "pronto" ? e.pagantes28.dados : null;
   // AC7 da 42.9 — o numerador é quem inicia TRIAL; o rótulo diz TRIAL de propósito.
   principais.push(
-    conversao("conversao-trial", "Conversão para Trial", d28?.novosTrials ?? null,
-      [{ label: "Iniciaram trial", value: fmtNum(d28?.novosTrials) }],
-      "Mede entrada no funil de assinatura, NÃO receita."),
-    conversao("conversao-pagante", "Conversão para Pagante", d28 ? d28.novasAssinaturasPagas + d28.conversoesDeTrial : null,
-      [
-        { label: "Entraram pagando (eventos)", value: fmtNum(d28?.novasAssinaturasPagas) },
-        { label: "Converteram do trial", value: fmtNum(d28?.conversoesDeTrial) },
-      ],
-      "Este é o número que vira receita. ⚠️ Soma eventos de compra com pessoas que converteram."),
+    conversao("conversao-trial", "Conversão para Trial", e.derivadas28, d28?.novosTrials ?? null,
+      [{ label: "Iniciaram trial (pessoas)", value: fmtNum(d28?.novosTrials), source: FONTE_DAS_DERIVADAS }],
+      "Mede entrada no funil de assinatura, NÃO receita.",
+      "A API ainda não entrega os eventos por janela"),
+    // PO-04 — o numerador é a contagem de novos pagantes POR PESSOA (AC6), não
+    // `novasAssinaturasPagas + conversoesDeTrial` (eventos + pessoas, série inteira).
+    conversao("conversao-pagante", "Conversão para Pagante", e.pagantes28, p28?.novosPagantes.total ?? null,
+      [{ label: "Novos pagantes (pessoas)", value: fmtNum(p28?.novosPagantes.total), source: "eventos do webhook · pagantes-por-canal" }],
+      `Este é o número que vira receita. ${"Novo pagante = pessoa cujo primeiro pagamento caiu na janela (quem veio do trial conta na primeira cobrança); quem já pagava antes de a série começar pode aparecer como novo."}`,
+      "A API ainda não tem a contagem de novos pagantes por pessoa"),
   );
 
   // ── os números dos eventos do webhook, na janela do filtro (com o eco) ──

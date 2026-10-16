@@ -80,6 +80,8 @@ const entrada = (p: Partial<EntradaDoOverview> = {}): EntradaDoOverview => ({
   receita: { tipo: "pronto", dados: { configured: true, days: 90, desde: "2026-07-19", ate: "2026-10-16", valorUsd: 5000 } },
   derivadas: { tipo: "pronto", dados: D90 },
   derivadas28: { tipo: "pronto", dados: D28 },
+  // 7 PESSOAS novas pagantes em 28 dias — diferente de 4 + 6 eventos/pessoas das derivadas.
+  pagantes28: { tipo: "pronto", dados: { days: 28, desde: "2026-09-19", novosPagantes: { total: 7 } } },
   ...p,
 });
 const de = (cards: { rotulo: string }[], r: string) => cards.find((c) => c.rotulo === r)! as ReturnType<typeof cardsDoOverview>["principais"][number];
@@ -209,9 +211,18 @@ describe("Conversão para Trial / Pagante — numerador e denominador nos MESMOS
     expect(t.declaracao).toMatchObject({ etiqueta: "últimos 28 dias", destaque: true, segueOFiltro: false });
   });
 
-  it("Conversão para Pagante também lê os 28 dias (4 + 6 = 10), não os 90 (10 + 26)", () => {
+  it("Conversão para Pagante: numerador = novos pagantes POR PESSOA dos 28 dias (7) — não eventos + pessoas (4 + 6), nem os 90 (10 + 26) (PO-04)", () => {
     const p = de(cardsDoOverview(entrada()).principais, "Conversão para Pagante");
-    expect(p.valor).toBe(fmtPct(10 / 10000));
+    expect(p.valor).toBe(fmtPct(7 / 10000));
+    expect(p.valor).not.toBe(fmtPct(10 / 10000));
+    expect(p.formula!.values[0]).toMatchObject({ label: "Novos pagantes (pessoas)", value: "7" });
+    expect(p.formula!.values[0].source).toContain("19/09 a 16/10");
+  });
+
+  it("Conversão para Pagante com a API anterior à rota de pagantes: '—' com a explicação, sem voltar aos eventos", () => {
+    const p = de(cardsDoOverview(entrada({ pagantes28: { tipo: "oculto" } })).principais, "Conversão para Pagante");
+    expect(p.valor).toBe("—");
+    expect(p.formula!.note).toContain("novos pagantes por pessoa");
   });
 
   it("sem o eco dos 28 dias (API anterior): '—' com a explicação — dividir a série inteira por 28 dias repetiria o defeito", () => {
@@ -220,8 +231,11 @@ describe("Conversão para Trial / Pagante — numerador e denominador nos MESMOS
     expect(p.formula!.note).toContain("misturaria janelas");
   });
 
-  it("derivadas de 28 dias em erro: '—' com a causa", () => {
-    const p = de(cardsDoOverview(entrada({ derivadas28: { tipo: "erro", causa: "outro", mensagem: "Falhou 28" } })).principais, "Conversão para Pagante");
+  it("numerador de 28 dias em erro: '—' com a causa", () => {
+    const t = de(cardsDoOverview(entrada({ derivadas28: { tipo: "erro", causa: "outro", mensagem: "Falhou 28" } })).principais, "Conversão para Trial");
+    expect(t.valor).toBe("—");
+    expect(t.formula!.values[0].value).toBe("Falhou 28");
+    const p = de(cardsDoOverview(entrada({ pagantes28: { tipo: "erro", causa: "outro", mensagem: "Falhou 28" } })).principais, "Conversão para Pagante");
     expect(p.valor).toBe("—");
     expect(p.formula!.values[0].value).toBe("Falhou 28");
   });

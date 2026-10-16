@@ -9,6 +9,7 @@ import { useApiClient } from "@/lib/hooks/use-api-client";
 import { tentarDeNovoAJornada, type JornadaDoLyrio } from "@/lib/utils/jornada-lyrio";
 import { tentarDeNovoNoRevenuecat } from "@/lib/utils/estado-da-fonte-revenuecat";
 import type { VendasPorCanalDoLyrio } from "@/lib/utils/vendas-por-canal-lyrio";
+import type { PagantesPorCanal } from "@/lib/utils/aquisicao-lyrio";
 
 const STALE = 60 * 1000;
 
@@ -377,6 +378,31 @@ export function useRevenuecatVendasPorCanal(projectId: string, funnelId: string,
     queryFn: () =>
       apiClient<VendasPorCanalDoLyrio>(
         `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/vendas-por-canal?days=${days}`,
+      ),
+    enabled,
+    staleTime: STALE,
+    retry: tentarDeNovoAJornada,
+  });
+}
+
+// ============================================================
+// Story 42.14 (AC6, AC7, AC8) — novos pagantes por pessoa, renovações e LTV.
+// ============================================================
+
+/**
+ * ⚠️ Rota NOVA (contrato 51): com a API anterior responde 404 — os cards de CAC,
+ * LTV e renovação não aparecem (`cardsDeAquisicao`) e o banner de versão
+ * explica. Mesmo `retry` da Jornada: um 404 não vira outra coisa entre
+ * tentativas. O Resumo pede o filtro e os 28 dias; o Overview, os 28 dias (a
+ * mesma chave).
+ */
+export function useRevenuecatPagantesPorCanal(projectId: string, funnelId: string, stageId: string, days: number, enabled = true) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["revenuecat-pagantes-por-canal", stageId, days],
+    queryFn: () =>
+      apiClient<PagantesPorCanal>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/pagantes-por-canal?days=${days}`,
       ),
     enabled,
     staleTime: STALE,

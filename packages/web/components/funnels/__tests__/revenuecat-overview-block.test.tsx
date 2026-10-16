@@ -18,12 +18,14 @@ let overview: Q<{ configured: boolean; metrics: { id: string; name: string; valu
 let derivadas: Q<Record<string, unknown>>;
 let derivadas28: Q<Record<string, unknown>>;
 let receita: Q<Record<string, unknown>>;
+let pagantes28: Q<Record<string, unknown>>;
 
 vi.mock("@/lib/hooks/use-revenuecat", () => ({
   useRevenuecatOverview: () => overview,
   // Story 42.14: o bloco pede a janela do filtro e os 28 dias das conversões.
   useRevenuecatMetricasDerivadas: (_p: string, _f: string, _s: string, days?: number) => (days === 28 ? derivadas28 : derivadas),
   useRevenuecatReceita: () => receita,
+  useRevenuecatPagantesPorCanal: () => pagantes28,
 }));
 
 const metrica = (id: string, value: number) => ({ id, name: id, value, unit: null });
@@ -53,6 +55,7 @@ beforeEach(() => {
   derivadas = { isLoading: false, error: null, data: DERIVADAS };
   derivadas28 = { isLoading: false, error: null, data: DERIVADAS_28 };
   receita = { isLoading: false, error: null, data: RECEITA };
+  pagantes28 = { isLoading: false, error: null, data: { days: 28, desde: "2026-09-19", novosPagantes: { total: 7 } } };
 });
 afterEach(cleanup);
 

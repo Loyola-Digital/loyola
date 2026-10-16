@@ -11,6 +11,13 @@ import {
   lerLinhaDeVendas,
   montarVendasPorCanal,
 } from "../utils/vendas-por-canal-lyrio.js";
+import {
+  consultaDePagantesPorCanal,
+  consultaDoLtvPorPlano,
+  lerLinhaDePagante,
+  montarLtv,
+  montarPagantes,
+} from "../utils/pagantes-lyrio.js";
 import { eq, and, gte, inArray, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import fp from "fastify-plugin";
@@ -595,6 +602,53 @@ export default fp(async function revenuecatRoutes(fastify) {
         ...vendas,
         // PO-03: o que o card "Vendas" de `/sales` conta e esta quebra não conta.
         foraDaQuebra: { semValor: Number(f.sem_valor ?? 0) || 0, semUsuario: Number(f.sem_usuario ?? 0) || 0 },
+      };
+    },
+  );
+
+  // ---- GET novos pagantes, renovações e LTV por plano ---- (Story 42.14)
+  /**
+   * AC6 (novos pagantes POR PESSOA, por canal), AC8 (renovações por canal) e AC7
+   * (LTV bruto por plano), na janela de `days` sobre `purchased_at` — a régua
+   * de `/sales` e `/vendas-por-canal` (N dias de calendário de SP). O canal é o
+   * da 42.12 com a origem mais antiga para quem tem Meta E Google (D16/D25/D26);
+   * empate exato → `conflito` (PO-D3). Regras em `utils/pagantes-lyrio.ts`.
+   *
+   * Guarda igual à de `/vendas-por-canal`: `getProjectAccess` E `getStage`.
+   * Só contagens e somas na resposta — nunca `app_user_id`. A resposta ecoa a
+   * janela (AC10b) e a cobertura (`assinaturaDesde`, achado G).
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/revenuecat/pagantes-por-canal",
+    async (request, reply) => {
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const query = salesQuerySchema.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+      const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const desde = instanteDoInicioDaJanela(query.data.days);
+      const [pessoas, ltv, inicio, atributos] = await Promise.all([
+        fastify.db.execute(consultaDePagantesPorCanal(params.data.stageId, desde)),
+        fastify.db.execute(consultaDoLtvPorPlano(params.data.stageId, desde)),
+        fastify.db.execute(consultaDoInicioDaAssinatura(params.data.stageId)),
+        fastify.db.execute(consultaDoInicioDosAtributos(params.data.stageId)),
+      ]);
+      const pagantes = montarPagantes((pessoas.rows as Record<string, unknown>[]).map(lerLinhaDePagante));
+      if (pagantes.novosPagantes.conflito > 0 || pagantes.renovacoes.conflito > 0) {
+        request.log.warn({ stageId: params.data.stageId, conflito: pagantes.novosPagantes.conflito }, "lyrio: pagantes com Meta e Google no mesmo instante");
+      }
+
+      return {
+        days: query.data.days,
+        desde: dataIso(desde),
+        assinaturaDesde: dataIso((inicio.rows[0] as { desde?: unknown } | undefined)?.desde),
+        atributosDesde: dataIso((atributos.rows[0] as { desde?: unknown } | undefined)?.desde),
+        ...pagantes,
+        ltvPorPlano: montarLtv(ltv.rows as Record<string, unknown>[]),
       };
     },
   );

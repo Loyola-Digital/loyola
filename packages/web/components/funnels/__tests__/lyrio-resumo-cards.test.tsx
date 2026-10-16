@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cardsDoResumo, type EntradaDoResumo } from "@/lib/utils/resumo-mobile-lyrio";
+import { cardsDeAquisicao } from "@/lib/utils/aquisicao-lyrio";
 import { GradeDoResumo } from "../lyrio-resumo-cards";
 
 /**
@@ -52,6 +53,37 @@ describe("GradeDoResumo — cada memorial abre (AC1a, AC9d)", () => {
     expect(cards).toHaveLength(9);
     for (const c of cards) {
       expect(cardDe(c.rotulo).tabIndex, c.rotulo).toBe(0);
+      const texto = await abrirMemorial(c.rotulo);
+      expect(texto, c.rotulo).toContain(c.rotulo);
+      expect(texto, c.rotulo).toMatch(/segue o filtro de 90 dias/);
+    }
+  });
+
+  it("os cards de CAC, LTV e renovação também abrem o memorial (AC4d, AC7, AC8d)", async () => {
+    const contagem = (n: number) => ({
+      canais: [
+        { canal: "meta" as const, rotulo: "Meta", quantidade: n },
+        { canal: "google" as const, rotulo: "Google", quantidade: n },
+        { canal: "organico" as const, rotulo: "Orgânico ou cupom", quantidade: n },
+        { canal: "sem_atribuicao" as const, rotulo: "Sem atribuição", quantidade: n },
+      ],
+      conflito: 0,
+      total: 4 * n,
+    });
+    const dados = (days: number) => ({
+      days, desde: "2026-07-19", assinaturaDesde: "2026-08-10", atributosDesde: null,
+      novosPagantes: contagem(2), renovacoes: contagem(3),
+      ltvPorPlano: [
+        { plano: "anual" as const, rotulo: "LTV Anual", productId: "premium_yearly", receitaCentavos: 7998, pessoas: 2 },
+        { plano: "trimestral" as const, rotulo: "LTV Trimestral", productId: "premium_quartely", receitaCentavos: 1499, pessoas: 1 },
+      ],
+    });
+    const e = entrada();
+    const a = cardsDeAquisicao({ ctx: e.ctx, pagantesFiltro: { tipo: "pronto", dados: dados(90) }, pagantes28: { tipo: "pronto", dados: dados(28) }, meta: e.meta, google: e.google });
+    const cards = [...a.cac, ...a.ltv, ...a.renovacoes];
+    expect(cards).toHaveLength(12);
+    render(<TooltipProvider><GradeDoResumo cards={cards} /></TooltipProvider>);
+    for (const c of cards) {
       const texto = await abrirMemorial(c.rotulo);
       expect(texto, c.rotulo).toContain(c.rotulo);
       expect(texto, c.rotulo).toMatch(/segue o filtro de 90 dias/);

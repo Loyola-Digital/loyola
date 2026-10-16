@@ -57,6 +57,7 @@ import {
 import { RevenuecatOverviewBlock } from "./revenuecat-overview-block";
 import { GradeDoResumo } from "./lyrio-resumo-cards";
 import { cardsDoResumo } from "@/lib/utils/resumo-mobile-lyrio";
+import { cardsDeAquisicao } from "@/lib/utils/aquisicao-lyrio";
 import { hojeNoNegocio, tituloDoResumo } from "@/lib/utils/janela-dos-cards-lyrio";
 import { avisoDoErroDaFonte, estadoDaFonte } from "@/lib/utils/estado-da-fonte-revenuecat";
 import {
@@ -90,6 +91,7 @@ import {
   useRunRevenuecatBackfill,
   useRevenuecatVendasPorCanal,
   useRevenuecatReceita,
+  useRevenuecatPagantesPorCanal,
 } from "@/lib/hooks/use-revenuecat";
 import type { FunnelCampaign, FunnelStage } from "@loyola-x/shared";
 
@@ -249,6 +251,20 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   });
   // PO-D4 (3) — o aviso visível do bloco, além do memorial de cada card.
   const avisoDaReceita = avisoDoErroDaFonte(receitaDoFiltro, "a receita do período no RevenueCat");
+
+  // Story 42.14 (AC4–AC8) — novos pagantes POR PESSOA, renovações e LTV, no filtro
+  // e nos 28 dias fixos dos CACs (D5/D9). Com `days = 28`, uma consulta só.
+  const pagantesFiltroQ = useRevenuecatPagantesPorCanal(projectId, funnelId, stage.id, days, connected);
+  const pagantes28Q = useRevenuecatPagantesPorCanal(projectId, funnelId, stage.id, 28, connected);
+  const pagantesFiltro = estadoDaFonte({ isLoading: pagantesFiltroQ.isLoading, error: pagantesFiltroQ.error, data: pagantesFiltroQ.data });
+  const aquisicao = cardsDeAquisicao({
+    ctx: { diasDoFiltro: days, hoje },
+    pagantesFiltro,
+    pagantes28: estadoDaFonte({ isLoading: pagantes28Q.isLoading, error: pagantes28Q.error, data: pagantes28Q.data }),
+    meta: { temCampanhas: temMeta, filtro: metaFiltro, vinteOito: meta28 },
+    google: { mostrar: googleCampaignIds.size > 0, filtro: googleFiltro, vinteOito: google28 },
+  });
+  const avisoDosPagantes = avisoDoErroDaFonte(pagantesFiltro, "os novos pagantes e as renovações");
 
   async function handleSaveName() {
     if (!stageName.trim() || stageName.trim() === stage.name) return;
@@ -641,6 +657,32 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
           </p>
         )}
         <GradeDoResumo cards={cardsResumo} />
+        {connected && avisoDosPagantes && (
+          <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {avisoDosPagantes}
+          </p>
+        )}
+        {/* Story 42.14 (AC4, AC5) — CAC por NOVO PAGANTE (pessoa), no filtro e nos
+            28 dias fixos (`28d fixo`, âmbar). (AC7) LTV bruto por plano e (AC8)
+            renovações por canal, no filtro. Somem com a API anterior à rota. */}
+        {connected && aquisicao.cac.length > 0 && (
+          <div className="space-y-1.5 border-t border-border/30 pt-3">
+            <h3 className="text-xs font-semibold text-muted-foreground">CAC · investimento ÷ novos pagantes (pessoas)</h3>
+            <GradeDoResumo cards={aquisicao.cac} />
+          </div>
+        )}
+        {connected && aquisicao.ltv.length > 0 && (
+          <div className="space-y-1.5 border-t border-border/30 pt-3">
+            <h3 className="text-xs font-semibold text-muted-foreground">LTV bruto por plano · em US$</h3>
+            <GradeDoResumo cards={aquisicao.ltv} />
+          </div>
+        )}
+        {connected && aquisicao.renovacoes.length > 0 && (
+          <div className="space-y-1.5 border-t border-border/30 pt-3">
+            <h3 className="text-xs font-semibold text-muted-foreground">Renovações por canal</h3>
+            <GradeDoResumo cards={aquisicao.renovacoes} />
+          </div>
+        )}
         {/* Story 42.12 (AC2) — receita, ROAS e Margem por canal. Story 42.14
             (D22): na janela do FILTRO, com o investimento da mesma janela. O
             investimento só conta como conhecido com campanha vinculada E a
