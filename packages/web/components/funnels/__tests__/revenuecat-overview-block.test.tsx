@@ -16,10 +16,14 @@ import { RevenuecatOverviewBlock } from "../revenuecat-overview-block";
 type Q<T> = { isLoading: boolean; error: unknown; data: T | undefined };
 let overview: Q<{ configured: boolean; metrics: { id: string; name: string; value: number; unit: string | null }[] }>;
 let derivadas: Q<Record<string, unknown>>;
+let derivadas28: Q<Record<string, unknown>>;
+let receita: Q<Record<string, unknown>>;
 
 vi.mock("@/lib/hooks/use-revenuecat", () => ({
   useRevenuecatOverview: () => overview,
-  useRevenuecatMetricasDerivadas: () => derivadas,
+  // Story 42.14: o bloco pede a janela do filtro e os 28 dias das conversões.
+  useRevenuecatMetricasDerivadas: (_p: string, _f: string, _s: string, days?: number) => (days === 28 ? derivadas28 : derivadas),
+  useRevenuecatReceita: () => receita,
 }));
 
 const metrica = (id: string, value: number) => ({ id, name: id, value, unit: null });
@@ -34,8 +38,10 @@ const METRICAS = [
 const DERIVADAS = {
   novasAssinaturasPagas: 10, novosTrials: 182, conversoesDeTrial: 26, taxaDeConversaoDeTrial: 26 / 182,
   churnPagante: 5, abandonoDeTrial: 164, cancelamentosPagantes: 30, movimentoDeAssinaturas: 31,
-  serieDesde: "2026-08-10", totalDeEventos: 900,
+  serieDesde: "2026-08-10", totalDeEventos: 900, days: 90, desde: "2026-07-19",
 };
+const DERIVADAS_28 = { ...DERIVADAS, novosTrials: 50, novasAssinaturasPagas: 4, conversoesDeTrial: 6, days: 28, desde: "2026-09-19" };
+const RECEITA = { configured: true, days: 90, desde: "2026-07-19", ate: "2026-10-16", valorUsd: 5000 };
 const ROTULOS = [
   "Assinaturas ativas", "Trials ativos", "MRR", "ARR", "Receita", "Novos clientes", "Usuários ativos",
   "Conversão para Trial", "Conversão para Pagante",
@@ -45,6 +51,8 @@ const ROTULOS = [
 beforeEach(() => {
   overview = { isLoading: false, error: null, data: { configured: true, metrics: METRICAS } };
   derivadas = { isLoading: false, error: null, data: DERIVADAS };
+  derivadas28 = { isLoading: false, error: null, data: DERIVADAS_28 };
+  receita = { isLoading: false, error: null, data: RECEITA };
 });
 afterEach(cleanup);
 

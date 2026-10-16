@@ -78,7 +78,8 @@ describe("declarações (AC6, PO-03, D7)", () => {
     expect(avisoDeConflito(0)).toBeNull();
     expect(avisoDeConflito(1)).toMatch(/^1 usuário tem sinal da Meta e do Google ao mesmo tempo — possível falha na integração\. Ficou fora/);
     expect(avisoDeConflito(3)).toMatch(/^3 usuários têm .* Ficaram fora/);
-    expect(DECLARACAO_FONTE_DO_RESUMO).toMatch(/webhook.*overview.*não batem/);
+    // Story 42.14: o card passou do overview para o relatório de receita da API.
+    expect(DECLARACAO_FONTE_DO_RESUMO).toMatch(/webhook.*relatório de receita.*não batem/);
   });
 });
 
@@ -207,18 +208,24 @@ describe("o fio até a tela", () => {
     expect(corpo).toMatch(/retry: tentarDeNovoAJornada/);
     expect(corpo).toMatch(/enabled,/);
   });
-  it("Resumo: 28 dias, investimento só conhecido com campanha vinculada E dado carregado, dentro da seção do Resumo", () => {
-    expect(resumo).toMatch(/export const JANELA_DO_RESUMO = 28;/);
-    expect(resumo).toMatch(/useRevenuecatVendasPorCanal\(projectId, funnelId, stageId, JANELA_DO_RESUMO\)/);
+  it("Resumo: a janela do FILTRO (Story 42.14, D22), investimento só conhecido com campanha vinculada E dado carregado, dentro da seção do Resumo", () => {
+    // Story 42.14: a tabela deixou os 28 dias fixos e segue o seletor de dias.
+    expect(resumo).not.toMatch(/JANELA_DO_RESUMO/);
+    expect(resumo).toMatch(/useRevenuecatVendasPorCanal\(projectId, funnelId, stageId, days\)/);
+    expect(resumo).toMatch(/Por canal · venda paga · \{ultimosNDias\(days\)\}/);
     expect(resumo).toMatch(/if \(estado\.tipo === "oculto"\) return null;/);
     expect(resumo).toMatch(/estado\.tipo === "erro" \? \(\s*<p role="alert"/);
     expect(resumo).toMatch(/linhasDoResumoPorCanal\(\{ dados: estado\.dados, brlRate, meta, google, percentuais \}\)/);
     expect(resumo).toMatch(/declaracaoDeCobertura\(estado\.dados\)/);
-    expect(etapa).toMatch(/conhecido: campaignIds\.length > 0 && metaDaily28 !== undefined/);
+    // o investimento da tabela é o da MESMA janela (o filtro), e só conhecido com o dado carregado
+    expect(etapa).toMatch(/conhecido: temMeta && metaFiltro !== undefined/);
     // Story 42.13 (AC1b): o investimento do Google é conhecido só com a consulta respondida — erro não é R$ 0.
-    expect(etapa).toMatch(/conhecido: googleCampaignIds\.size > 0 && googleSpend28Conhecido !== null/);
-    expect(etapa).toMatch(/liquidoBrl: metaSpend28Detalhe\.spendLiquido,\s*impostoBrl: metaSpend28Detalhe\.imposto,/);
-    const secao = etapa.slice(etapa.indexOf("Resumo mobile · últimos 28 dias"), etapa.indexOf("</section>", etapa.indexOf("Resumo mobile · últimos 28 dias")));
+    expect(etapa).toMatch(/conhecido: googleCampaignIds\.size > 0 && googleFiltroValor !== null/);
+    expect(etapa).toMatch(/liquidoBrl: metaFiltro\?\.spendLiquido \?\? 0,\s*impostoBrl: metaFiltro\?\.imposto \?\? 0,/);
+    expect(etapa).toMatch(/<LyrioResumoPorCanal\s+projectId=\{projectId\}\s+funnelId=\{funnelId\}\s+stageId=\{stage\.id\}\s+days=\{days\}/);
+    const inicio = etapa.indexOf("{tituloDoResumo(days, hoje)}");
+    expect(inicio).toBeGreaterThan(0);
+    const secao = etapa.slice(inicio, etapa.indexOf("</section>", inicio));
     expect(secao).toContain("<LyrioResumoPorCanal");
   });
   it("bloco RevenueCat: a quebra usa a MESMA janela (`days`) e o estado (oculto some, erro aparece)", () => {
@@ -311,16 +318,15 @@ describe("Story 42.13 — o fio até a tela", () => {
     expect(bloco).toMatch(/const estado: EstadoDasVendas = revenuecatConectado \? vendas : \{ tipo: "oculto" \};/);
     expect(bloco).not.toMatch(/label="(LP Views|Checkouts|Ticket)/);
   });
-  it("AC1 — Google: a conta e a consulta decidem o estado; ROAS e Margem somem com o Google desconhecido", () => {
+  it("AC1 — Google: a conta e a consulta decidem o estado; o Resumo recebe o Google da régua de SP (Story 42.14)", () => {
     // QA loop TEST-001: a conta é decidida UMA vez no pai e desce para o bloco e o Detalhamento.
     expect(etapa).toMatch(/contaDoGoogle\(\{\s*temCampanhas: googleCampaignIds\.size > 0,\s*accountId: googleAccountId,\s*picker: \{ isLoading: googlePickerQ\.isLoading, error: googlePickerQ\.error, data: googlePicker \},/);
-    expect(etapa).toMatch(/const googleSpend28Conhecido = investimentoDoGoogle\(googleEstado28\);/);
-    expect(etapa).toMatch(/const googleIndisponivel = googleSpend28Conhecido === null;/);
-    expect(etapa).toMatch(/investimento28 > 0 && !googleIndisponivel \? revenue28Brl \/ investimento28 : null/);
-    expect(etapa).toMatch(/revenue28Brl == null \|\| googleIndisponivel\s*\?\s*null/);
-    expect(etapa).toMatch(/value=\{googleIndisponivel \? "—" : fmtBRL\(googleSpend28\)\}/);
-    // o memorial do "—" é o da função testada (QA Q2/Q3)
-    expect(etapa).toMatch(/memorialDoGoogleSemNumero\(googleEstado28, "últimos 28 dias"\) \?\?/);
+    // Story 42.14 (D17): o investimento do Resumo vem da régua de SP, a partir da MESMA conta;
+    // o "—" com a causa e o ROAS/Margem "—" com o Google desconhecido são provados em
+    // `resumo-mobile-lyrio.test.ts` (o memorial é o `memorialDoGoogleSemNumero`, reusado).
+    expect(etapa).toMatch(/const googleFiltro = investimentoDoGoogleNaRegua\(contaGoogle, googleConsultas, days, hoje\);/);
+    expect(etapa).toMatch(/const google28 = investimentoDoGoogleNaRegua\(contaGoogle, googleConsultas, 28, hoje\);/);
+    expect(etapa).toMatch(/google: \{ mostrar: googleCampaignIds\.size > 0, filtro: googleFiltro, vinteOito: google28 \}/);
     // a seção aparece também sem conta (antes sumia) e recebe a conta
     expect(etapa).toMatch(/\{contaGoogle\.tipo !== "sem_campanha" && \(\s*<section/);
     expect(etapa).toMatch(/<GoogleAdsKpis\s+conta=\{contaGoogle\}/);

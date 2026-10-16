@@ -3,7 +3,7 @@
 // ============================================================
 // Story 42.12 (AC2) — Resumo mobile por canal.
 //
-// Abaixo dos cards do Resumo (28 dias): a receita paga de cada canal — Meta,
+// Abaixo dos cards do Resumo (Story 42.14: na janela do filtro): a receita paga de cada canal — Meta,
 // Google, Orgânico ou cupom, Sem atribuição — e, para Meta e Google, o
 // investimento do próprio canal, o ROAS e a Margem de Contribuição. O card
 // "Receita (RevenueCat)" continua com o overview; esta tabela lê o webhook,
@@ -26,9 +26,8 @@ import {
   linhasDoResumoPorCanal,
   type EntradaDoResumoPorCanal,
 } from "@/lib/utils/vendas-por-canal-lyrio";
+import { ultimosNDias } from "@/lib/utils/janela-dos-cards-lyrio";
 
-/** A janela do Resumo — a do overview do RevenueCat. */
-export const JANELA_DO_RESUMO = 28;
 
 function fmtBRL(v: number | null): string {
   return v == null ? "—" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
@@ -44,6 +43,7 @@ export function LyrioResumoPorCanal({
   projectId,
   funnelId,
   stageId,
+  days,
   brlRate,
   meta,
   google,
@@ -52,8 +52,13 @@ export function LyrioResumoPorCanal({
   projectId: string;
   funnelId: string;
   stageId: string;
+  /**
+   * Story 42.14 (D22) — a tabela segue o FILTRO de dias (antes, 28 fixos). O
+   * investimento de `meta`/`google` tem de ser da mesma janela.
+   */
+  days: number;
 } & Omit<EntradaDoResumoPorCanal, "dados">) {
-  const q = useRevenuecatVendasPorCanal(projectId, funnelId, stageId, JANELA_DO_RESUMO);
+  const q = useRevenuecatVendasPorCanal(projectId, funnelId, stageId, days);
   const estado = estadoDasVendasPorCanal({ isLoading: q.isLoading, error: q.error, data: q.data });
 
   // AC7: API anterior à rota — some; o banner de versão explica.
@@ -61,7 +66,7 @@ export function LyrioResumoPorCanal({
 
   return (
     <div className="space-y-2 border-t border-border/30 pt-3">
-      <h3 className="text-xs font-semibold text-muted-foreground">Por canal · venda paga · últimos {JANELA_DO_RESUMO} dias</h3>
+      <h3 className="text-xs font-semibold text-muted-foreground">Por canal · venda paga · {ultimosNDias(days)}</h3>
       {estado.tipo === "carregando" ? (
         <Skeleton className="h-24 w-full" />
       ) : estado.tipo === "erro" ? (

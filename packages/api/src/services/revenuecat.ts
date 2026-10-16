@@ -134,6 +134,106 @@ export async function getRevenuecatOverview(
 }
 
 // ============================================================
+// Story 42.14 — receita por intervalo e a causa de uma falha
+// ============================================================
+//
+// GET /v2/projects/{project_id}/metrics/revenue?start_date&end_date — o
+// endpoint de intervalo do domínio Charts & Metrics (documentação oficial
+// `api-v2/charts-and-metrics.md`, lida em 2026-10-16): intervalo inclusivo, dias
+// em UTC, último dia pode ser parcial. A sonda D29 (Danilo, 2026-10-16) mostrou
+// HTTP 200 e as chaves `currency`, `end_date`, `object`, `revenue_type`,
+// `start_date`, `value` — o CORPO não foi interpretado.
+//
+// TODO(42.14, sonda rc-formato): conferir no corpo real (i) que `value` é o
+// valor em unidades da moeda (dólares, não centavos) e (iii) o eco de
+// `start_date`/`end_date`. Até lá a leitura é estrita: `value` que não for
+// número finito é ERRO, nunca zero.
+
+/** O que a rota de receita precisa da resposta de `/metrics/revenue`. */
+export interface ReceitaDoRevenuecat {
+  valor: number;
+  moeda: string;
+  tipoDeReceita: string | null;
+  startDate: string | null;
+  endDate: string | null;
+}
+
+/**
+ * Receita do projeto num intervalo de DIAS (`AAAA-MM-DD`, inclusivo).
+ *
+ * - `revenue_type=revenue`: a receita BRUTA (PO-D5, P18) — o default
+ *   documentado e o que o card media com `revenue_last_28_days`.
+ * - `currency=USD` (PO-12): sem ele a API devolve na moeda principal do
+ *   projeto, que ninguém conferiu ser dólar. A moeda devolvida é CONFERIDA:
+ *   qualquer outra vira erro, porque o card formata em US$.
+ */
+export async function getRevenuecatRevenue(
+  apiKey: string,
+  rcProjectId: string,
+  intervalo: { startDate: string; endDate: string },
+): Promise<ReceitaDoRevenuecat> {
+  const qs = new URLSearchParams({
+    start_date: intervalo.startDate,
+    end_date: intervalo.endDate,
+    currency: "USD",
+    revenue_type: "revenue",
+  });
+  const data = (await rcFetch(apiKey, `/projects/${rcProjectId}/metrics/revenue?${qs.toString()}`)) as Record<string, unknown>;
+  const valor = data?.value;
+  if (typeof valor !== "number" || !Number.isFinite(valor)) {
+    throw new Error(`Resposta inesperada do RevenueCat em metrics/revenue: "value" não é número (${JSON.stringify(valor)?.slice(0, 40)})`);
+  }
+  const moeda = typeof data.currency === "string" ? data.currency : null;
+  if (moeda !== "USD") {
+    throw new Error(`O RevenueCat devolveu a receita em ${moeda ?? "moeda não informada"}, não em USD — o card formata em dólar.`);
+  }
+  return {
+    valor,
+    moeda,
+    tipoDeReceita: typeof data.revenue_type === "string" ? data.revenue_type : null,
+    startDate: typeof data.start_date === "string" ? data.start_date : null,
+    endDate: typeof data.end_date === "string" ? data.end_date : null,
+  };
+}
+
+export type CausaDaFalhaDoRevenuecat = "limite" | "permissao" | "outro";
+
+/**
+ * PO-D4 (1) — a causa de uma falha numa chamada ao RevenueCat, lida da mensagem
+ * que o `rcFetch` monta (`RevenueCat {status}: …`). 429 = limite de 25
+ * requisições por minuto do domínio Charts & Metrics (compartilhado entre
+ * overview, receita e charts); 403 = a Secret Key sem a permissão de leitura.
+ */
+export function causaDaFalhaDoRevenuecat(err: unknown): CausaDaFalhaDoRevenuecat {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/^RevenueCat 429\b/.test(msg)) return "limite";
+  if (/^RevenueCat 403\b/.test(msg)) return "permissao";
+  return "outro";
+}
+
+/**
+ * A resposta de erro das rotas que chamam o RevenueCat: `{ error, details,
+ * causa }` — nunca 200 com `null` ou 0. O 429 do RevenueCat sai como 429 (o
+ * front não insiste: repetir gasta o limite e não muda a resposta dentro do
+ * minuto); o resto sai como 502. A key nunca entra no texto (o `rcFetch` já
+ * não a inclui).
+ */
+export function respostaDeFalhaDoRevenuecat(err: unknown, oQue: string): {
+  status: number;
+  corpo: { error: string; details: string; causa: CausaDaFalhaDoRevenuecat };
+} {
+  const causa = causaDaFalhaDoRevenuecat(err);
+  const details = err instanceof Error ? err.message : String(err);
+  const error =
+    causa === "limite"
+      ? `Limite de consultas do RevenueCat atingido ao puxar ${oQue} (25 por minuto, compartilhado entre overview, receita e gráficos). Tente de novo em 1 minuto.`
+      : causa === "permissao"
+        ? `A Secret API Key do RevenueCat não tem permissão para ${oQue}. Confirme a permissão de leitura de métricas (charts_metrics:overview:read).`
+        : `Não foi possível puxar ${oQue} do RevenueCat.`;
+  return { status: causa === "limite" ? 429 : 502, corpo: { error, details, causa } };
+}
+
+// ============================================================
 // Webhook — normalização de evento
 // ============================================================
 

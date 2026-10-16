@@ -269,21 +269,71 @@ export interface RevenuecatMetricasDerivadas {
   /** Data do primeiro evento de ASSINATURA. Antes disso não há série (AC5). */
   serieDesde: string | null;
   totalDeEventos: number;
+  /**
+   * Story 42.14 (AC10b) — o ECO da janela aplicada. A API anterior ignora
+   * `?days=` e não manda estes campos: sem eles, o número é da série inteira.
+   */
+  days?: number | null;
+  desde?: string | null;
 }
 
+/**
+ * Story 42.14 — com `days`, os números são da janela (N dias de SP); a resposta
+ * ecoa a janela, e é o eco (não o pedido) que decide a etiqueta (PO-10).
+ */
 export function useRevenuecatMetricasDerivadas(
   projectId: string,
   funnelId: string,
   stageId: string,
+  days?: number,
 ) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["revenuecat-metricas-derivadas", stageId],
+    queryKey: ["revenuecat-metricas-derivadas", stageId, days ?? null],
     queryFn: () =>
       apiClient<RevenuecatMetricasDerivadas>(
-        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/metricas-derivadas`,
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/metricas-derivadas${days != null ? `?days=${days}` : ""}`,
       ),
     staleTime: STALE,
+  });
+}
+
+// ============================================================
+// Story 42.14 (D22) — a receita do RevenueCat na janela do filtro.
+// ============================================================
+
+/** Espelha `GET …/revenuecat/receita` (`routes/revenuecat.ts`). */
+export interface RevenuecatReceita {
+  /** false = nenhum app do RevenueCat selecionado na etapa. */
+  configured: boolean;
+  days: number;
+  /** Primeiro e último dia da janela (`AAAA-MM-DD`, SP), enviados como start/end_date. */
+  desde: string;
+  ate: string;
+  /** Receita bruta em US$; `null` só quando `configured` é false. */
+  valorUsd: number | null;
+  moeda?: string;
+  tipoDeReceita?: string | null;
+  intervaloDaApi?: { inicio: string | null; fim: string | null };
+}
+
+/**
+ * ⚠️ Rota NOVA (contrato 51): com a API anterior responde 404 — a tela trata
+ * como API atrás (`estadoDaFonte` → oculto). Sem insistir em 429 nem 404
+ * (PO-D4 (6)). Resumo e Overview pedem a MESMA chave: uma chamada por janela,
+ * que conta uma vez no limite de 25/min do RevenueCat.
+ */
+export function useRevenuecatReceita(projectId: string, funnelId: string, stageId: string, days: number, enabled = true) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["revenuecat-receita", stageId, days],
+    queryFn: () =>
+      apiClient<RevenuecatReceita>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/receita?days=${days}`,
+      ),
+    enabled,
+    staleTime: STALE,
+    retry: tentarDeNovoNoRevenuecat,
   });
 }
 

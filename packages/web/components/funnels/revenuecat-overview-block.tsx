@@ -22,7 +22,7 @@
 // ============================================================
 
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useRevenuecatOverview, useRevenuecatMetricasDerivadas } from "@/lib/hooks/use-revenuecat";
+import { useRevenuecatOverview, useRevenuecatMetricasDerivadas, useRevenuecatReceita } from "@/lib/hooks/use-revenuecat";
 import { avisoDaSerie, cardsDoOverview } from "@/lib/utils/overview-revenuecat";
 import { hojeNoNegocio } from "@/lib/utils/janela-dos-cards-lyrio";
 import { avisoDoErroDaFonte, estadoDaFonte } from "@/lib/utils/estado-da-fonte-revenuecat";
@@ -32,7 +32,12 @@ export function RevenuecatOverviewBlock({
   projectId, funnelId, stageId, days,
 }: { projectId: string; funnelId: string; stageId: string; /** O N do seletor de dias da etapa. */ days: number }) {
   const overviewQ = useRevenuecatOverview(projectId, funnelId, stageId);
-  const derivadasQ = useRevenuecatMetricasDerivadas(projectId, funnelId, stageId);
+  // Story 42.14 (D22): os eventos na janela do FILTRO; a resposta ecoa a janela.
+  const derivadasQ = useRevenuecatMetricasDerivadas(projectId, funnelId, stageId, days);
+  // D10: o numerador das conversões nos mesmos 28 dias do `active_users`.
+  const derivadas28Q = useRevenuecatMetricasDerivadas(projectId, funnelId, stageId, 28);
+  // PO-11: a Receita do filtro — a mesma chave de cache do Resumo.
+  const receitaQ = useRevenuecatReceita(projectId, funnelId, stageId, days);
 
   if (overviewQ.isLoading) {
     return <div className="h-24 animate-pulse rounded-xl border border-border/30 bg-muted/20" />;
@@ -44,6 +49,8 @@ export function RevenuecatOverviewBlock({
     data: overviewQ.data?.metrics,
   });
   const derivadas = estadoDaFonte({ isLoading: derivadasQ.isLoading, error: derivadasQ.error, data: derivadasQ.data });
+  const derivadas28 = estadoDaFonte({ isLoading: derivadas28Q.isLoading, error: derivadas28Q.error, data: derivadas28Q.data });
+  const receita = estadoDaFonte({ isLoading: receitaQ.isLoading, error: receitaQ.error, data: receitaQ.data });
 
   // PO-D4 (5) — a falha é testada ANTES da ausência: uma requisição que falhou
   // também chega sem métricas, e o `return null` da ausência a esconderia.
@@ -53,12 +60,17 @@ export function RevenuecatOverviewBlock({
 
   const serieDesde = derivadas.tipo === "pronto" ? derivadas.dados.serieDesde : null;
   const { principais, eventos } = cardsDoOverview({
-    ctx: { diasDoFiltro: days, hoje: hojeNoNegocio(), serieDesde },
+    // A série do webhook vale só para os cards de eventos (`cardsDoOverview` a lê das derivadas).
+    ctx: { diasDoFiltro: days, hoje: hojeNoNegocio() },
     overview,
+    receita,
     derivadas,
+    derivadas28,
   });
-  const avisoDoOverview = avisoDoErroDaFonte(overview, "as métricas do RevenueCat");
-  const avisoDasDerivadas = avisoDoErroDaFonte(derivadas, "as métricas dos eventos");
+  const avisoDoOverview =
+    avisoDoErroDaFonte(overview, "as métricas do RevenueCat") ?? avisoDoErroDaFonte(receita, "a receita do período no RevenueCat");
+  const avisoDasDerivadas =
+    avisoDoErroDaFonte(derivadas, "as métricas dos eventos") ?? avisoDoErroDaFonte(derivadas28, "os eventos dos últimos 28 dias");
   const aviso = avisoDaSerie(serieDesde);
 
   return (

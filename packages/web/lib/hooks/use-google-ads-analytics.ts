@@ -1,7 +1,7 @@
 "use client";
 
 import { useApiClient } from "@/lib/hooks/use-api-client";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 
 const STALE_TIME = 15 * 60 * 1000; // 15 min
 
@@ -74,6 +74,28 @@ export function useGoogleAdsDailyInsights(
       ),
     enabled: !!accountId,
     staleTime: STALE_TIME,
+  });
+}
+
+/**
+ * Story 42.14 (AC4f) — o gasto diário de CADA campanha vinculada, pela rota
+ * `/daily?campaignId=` existente, para a etapa Lyrio recortar os dias na régua
+ * de SP (`lib/utils/google-ads-na-regua.ts`). Uma consulta por campanha: o filtro
+ * da rota é de uma campanha só, e sem ele viria a conta inteira (outros produtos).
+ * Mesma chave de cache de `useGoogleAdsDailyInsights`.
+ */
+export function useGoogleAdsDailyPorCampanha(accountId: string | null, campaignIds: readonly string[], days: number) {
+  const apiClient = useApiClient();
+  return useQueries({
+    queries: campaignIds.map((campaignId) => ({
+      queryKey: ["google-ads-daily", accountId, days, campaignId],
+      queryFn: () =>
+        apiClient<GoogleAdsDailyInsight[]>(
+          `/api/google-ads/analytics/${accountId}/daily?${new URLSearchParams({ days: String(days), campaignId }).toString()}`,
+        ),
+      enabled: !!accountId,
+      staleTime: STALE_TIME,
+    })),
   });
 }
 

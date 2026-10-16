@@ -567,4 +567,15 @@
 // zero. O rótulo da janela de 1 dia passa a ser "último dia fechado" para
 // ROAS e "investiu e não vendeu", e segue "hoje" para connect rate (tráfego é
 // intraday). `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 50;
+// v51 (Story 42.14 — Lyrio: janelas declaradas; sem migration):
+// rota NOVA `GET …/revenuecat/receita?days=N` — a receita BRUTA do RevenueCat
+// nos N dias de calendário de SP terminando hoje, pelo endpoint de intervalo
+// `/metrics/revenue` (`currency=USD`, `revenue_type=revenue`), ecoando
+// `days`/`desde`/`ate`. `…/revenuecat/metricas-derivadas` aceita `?days=N`
+// (sem ele, a série inteira, como antes), ECOA `days` e `desde` (`null` sem
+// janela: a tela trata a falta do eco como API atrás, PO-10), passa a exigir
+// que a etapa seja do funil e do projeto (`getStage`, 404 senão) e devolve
+// `serieDesde` no dia de SP. As falhas do RevenueCat (overview e receita) saem
+// com `causa` (`limite` → HTTP 429, `permissao`, `outro` → 502) — antes toda
+// falha era a mesma frase sobre permissão. `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 51;

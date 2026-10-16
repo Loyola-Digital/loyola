@@ -55,6 +55,7 @@ export default defineConfig({
       // traria falhas alheias, o mesmo motivo da Story 29.35 acima. Cada um
       // declara `@vitest-environment jsdom` no topo.
       "components/funnels/__tests__/revenuecat-overview-block.test.tsx",
+      "components/funnels/__tests__/lyrio-resumo-cards.test.tsx",
     ],
     /**
      * Story 18.80 (gate do @qa) — o fuso do runner é FIXADO no do usuário.

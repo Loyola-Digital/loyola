@@ -53,7 +53,10 @@ describe("o fio — as três rotas do RevenueCat usam a régua (AC4a/b)", () => 
     expect(rotas).not.toMatch(/days \* 86_400_000/);
     const sales = rotas.slice(rotas.indexOf('"/api/projects/:projectId/funnels/:funnelId/stages/:stageId/revenuecat/sales"'));
     expect(sales.slice(0, sales.indexOf("gte(revenuecatSales.purchasedAt, cutoff)"))).toMatch(/const cutoff = instanteDoInicioDaJanela\(query\.data\.days\);/);
-    expect(rotas.match(/instanteDoInicioDaJanela\(query\.data\.days\)/g)).toHaveLength(3);
+    // Story 42.14 (AC2b): `metricas-derivadas` ganhou janela, na MESMA régua — a 4ª.
+    expect(rotas.match(/instanteDoInicioDaJanela\(query\.data\.days\)/g)).toHaveLength(4);
+    const derivadas = rotas.slice(rotas.indexOf('"/api/projects/:projectId/funnels/:funnelId/stages/:stageId/revenuecat/metricas-derivadas"'));
+    expect(derivadas).toMatch(/const desde = query\.data\.days != null \? instanteDoInicioDaJanela\(query\.data\.days\) : null;/);
     // QA TEST-002/Q16: a janela é fechada no início (>=), não aberta.
     expect(sales).toMatch(/gte\(revenuecatSales\.purchasedAt, cutoff\)/);
   });

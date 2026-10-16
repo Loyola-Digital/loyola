@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { calcularMetricasDerivadas } from "../utils/metricas-revenuecat.js";
-import { instanteDoInicioDaJanela } from "../utils/sale-date.js";
+import { businessToday, inicioDaJanela, instanteDoInicioDaJanela } from "../utils/sale-date.js";
 import { consultaDaJornada, consultaDoInicioDaAssinatura, lerLinhaDaJornada, montarJornada } from "../utils/jornada-lyrio.js";
 import {
   consultaDeVendasPorCanal,
@@ -29,6 +29,8 @@ import {
   verifyRevenuecatKey,
   listRevenuecatProjects,
   getRevenuecatOverview,
+  getRevenuecatRevenue,
+  respostaDeFalhaDoRevenuecat,
   REVENUE_EVENT_TYPES,
 } from "../services/revenuecat.js";
 import {
@@ -78,6 +80,15 @@ function pct(value: string | null | undefined, fallback: number): number {
 
 const salesQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(365).default(90),
+});
+
+/**
+ * Story 42.14 (AC2b, AC10b) — a janela de `metricas-derivadas` é OPCIONAL: sem
+ * `days`, a rota responde como antes (a série inteira), e o eco `days: null`
+ * diz isso. Com `days`, aplica a janela e a ecoa.
+ */
+const janelaOpcionalSchema = z.object({
+  days: z.coerce.number().int().min(1).max(365).optional(),
 });
 
 const REVENUE_TYPES = [...REVENUE_EVENT_TYPES];
@@ -618,11 +629,70 @@ export default fp(async function revenuecatRoutes(fastify) {
         return { configured: true, metrics };
       } catch (err) {
         request.log.error(err, "Erro ao puxar overview do RevenueCat");
-        // 403 = a Secret Key não tem a permissão charts_metrics:overview:read.
-        return reply.code(502).send({
-          error:
-            "Não foi possível puxar as métricas do RevenueCat. Confirme que a Secret API Key tem a permissão de leitura de métricas (charts_metrics:overview:read).",
-        });
+        // Story 42.14 (PO-D4 (1)): a causa sai separada — antes toda falha virava
+        // a mesma frase sobre permissão, e um 429 (limite de 25/min) aparecia na
+        // tela como "falta permissão".
+        const falha = respostaDeFalhaDoRevenuecat(err, "as métricas do overview");
+        return reply.code(falha.status).send(falha.corpo);
+      }
+    },
+  );
+
+  // ---- GET receita do período ---- (Story 42.14, D22)
+  /**
+   * A receita BRUTA do RevenueCat na janela do filtro de dias, pelo endpoint de
+   * intervalo da API v2 (`/metrics/revenue`). Substitui o `revenue_last_28_days`
+   * do overview nos cards que seguem o filtro (Resumo e Overview).
+   *
+   * A janela é a régua da etapa — N dias de calendário de SP terminando hoje —
+   * passada como `start_date`/`end_date`. O RevenueCat conta esses DIAS em UTC
+   * (documentação); a diferença de até 3 h nas pontas é declarada no memorial
+   * do card, não escondida (AC2d). A resposta ecoa a janela aplicada (AC10b).
+   *
+   * Falha nunca vira 200 com `null`: 429 (limite) ou 502, com a causa (PO-D4).
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/revenuecat/receita",
+    async (request, reply) => {
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const query = salesQuerySchema.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+      const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const apiKey = await getApiKey(params.data.projectId);
+      if (!apiKey) return reply.code(409).send({ error: "RevenueCat não conectado neste projeto" });
+
+      const ate = businessToday();
+      const desde = inicioDaJanela(query.data.days, ate);
+      const janela = { days: query.data.days, desde, ate };
+
+      const [cfg] = await fastify.db
+        .select({ rcProjectId: revenuecatStageConfig.rcProjectId })
+        .from(revenuecatStageConfig)
+        .where(eq(revenuecatStageConfig.stageId, params.data.stageId))
+        .limit(1);
+      // Sem app selecionado: ausência legítima, como no overview.
+      if (!cfg?.rcProjectId) return { configured: false, ...janela, valorUsd: null };
+
+      try {
+        const r = await getRevenuecatRevenue(apiKey, cfg.rcProjectId, { startDate: desde, endDate: ate });
+        return {
+          configured: true,
+          ...janela,
+          valorUsd: r.valor,
+          moeda: r.moeda,
+          tipoDeReceita: r.tipoDeReceita,
+          // O que a API diz ter aplicado — para o memorial e a conferência (D19).
+          intervaloDaApi: { inicio: r.startDate, fim: r.endDate },
+        };
+      } catch (err) {
+        request.log.error(err, "Erro ao puxar a receita do período no RevenueCat");
+        const falha = respostaDeFalhaDoRevenuecat(err, "a receita do período");
+        return reply.code(falha.status).send(falha.corpo);
       }
     },
   );
@@ -643,9 +713,16 @@ export default fp(async function revenuecatRoutes(fastify) {
     async (request, reply) => {
       const params = stageParamsSchema.safeParse(request.params);
       if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const query = janelaOpcionalSchema.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
 
       const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
       if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+      // Story 42.14 (AC2e) — a pendência PO-06 da 42.11: a etapa pertence a ESTE
+      // funil e a ESTE projeto, como em `/sales`, `/jornada` e `/vendas-por-canal`.
+      // Sem isto, quem tem acesso a um projeto lia os eventos de qualquer etapa.
+      const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
       const linhas = await fastify.db
         .select({
@@ -676,10 +753,24 @@ export default fp(async function revenuecatRoutes(fastify) {
         .filter((d): d is Date => d instanceof Date)
         .sort((a, b) => a.getTime() - b.getTime());
 
+      // Story 42.14 (AC2b, D22) — a janela do filtro: os números saem dos eventos
+      // da janela (N dias de calendário de SP, a régua de `/sales`), e a série
+      // INTEIRA continua sendo a referência para saber se um trial da janela
+      // pagou depois (achado C). Sem `days`, a série inteira, como antes.
+      const desde = query.data.days != null ? instanteDoInicioDaJanela(query.data.days) : null;
+      const naJanela = desde ? eventos.filter((e) => e.eventAt instanceof Date && e.eventAt >= desde) : eventos;
+
       return {
-        ...calcularMetricasDerivadas(eventos, eventos),
-        serieDesde: datas[0]?.toISOString().slice(0, 10) ?? null,
+        ...calcularMetricasDerivadas(naJanela, eventos),
+        // Story 42.14: o dia de SP, a régua da janela (42.13, MNT-001) — a tela
+        // compara este dia com o início da janela para declarar a cobertura.
+        serieDesde: dataIso(datas[0]),
         totalDeEventos: deAssinatura.length,
+        // AC10b (PO-10) — o ECO da janela aplicada. A API anterior ignora `?days=`
+        // e devolve a série inteira com 200; sem o eco, a tela poria a etiqueta
+        // "últimos N dias" num número da série inteira.
+        days: query.data.days ?? null,
+        desde: desde ? dataIso(desde) : null,
       };
     },
   );
