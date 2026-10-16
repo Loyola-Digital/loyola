@@ -22,7 +22,7 @@ import {
   type DeclaracaoDaJanela,
   type JanelaDoCard,
 } from "./janela-dos-cards-lyrio";
-import { memorialDoErroDaFonte, type EstadoDaFonte } from "./estado-da-fonte-revenuecat";
+import { memorialDoErroDaFonte, naJanelaPedida, type EstadoDaFonte } from "./estado-da-fonte-revenuecat";
 
 /** Dólar — `mrr` e `revenue` vêm em USD; exibir como real erraria ~5x. */
 export function fmtUsd(v: number | null | undefined): string {
@@ -126,10 +126,12 @@ function intervaloBr(desde: string, ate: string): string {
  * "—" e a causa — sem cair para os 28 dias (AC2d).
  */
 export function cardDeNovosClientes(
-  estado: EstadoDaFonte<NovosClientesDoPeriodo>,
+  estadoBruto: EstadoDaFonte<NovosClientesDoPeriodo>,
   overview: EstadoDaFonte<{ id: string; value: number }[]>,
   ctx: ContextoDaJanela,
 ): CardComJanela {
+  // QA TEST-001 — a resposta só vale para a janela que ECOA (AC10b).
+  const estado = naJanelaPedida(estadoBruto, ctx.diasDoFiltro);
   const base = { id: "novos-clientes", rotulo: "Novos clientes" };
   if (estado.tipo === "oculto") {
     const decl = declararJanela({ tipo: "fixa", dias: 28, origem: "revenuecat" }, ctx);
@@ -262,8 +264,10 @@ export function cardsDoOverview(e: EntradaDoOverview): { principais: CardComJane
   const usuariosAtivos = valor("active_users");
 
   // ── Receita: a janela do filtro (D22, PO-11); a API anterior à rota fica nos 28 dias, declarada ──
+  // QA TEST-001 — a receita só vale para a janela que ECOA (AC10b).
+  const receita = naJanelaPedida(e.receita, ctx.diasDoFiltro);
   const cardReceita = ((): CardComJanela => {
-    if (e.receita.tipo === "oculto") {
+    if (receita.tipo === "oculto") {
       return doOverview("receita", "Receita", vinteOito, fmtUsd, valor("revenue"), (v) => ({
         expression: "Receita bruta acumulada (US$)",
         values: [{ label: "Receita", value: fmtUsd(v), source: `${FONTE_DO_OVERVIEW} · revenue` }],
@@ -273,9 +277,9 @@ export function cardsDoOverview(e: EntradaDoOverview): { principais: CardComJane
     }
     // A receita é do RevenueCat, não do webhook: a série de 10/08 não a limita.
     const decl = dec({ tipo: "filtro" }, null);
-    const erro = memorialDoErroDaFonte(e.receita, { fonte: FONTE_DA_RECEITA, periodo: decl.periodo });
+    const erro = memorialDoErroDaFonte(receita, { fonte: FONTE_DA_RECEITA, periodo: decl.periodo });
     if (erro) return { id: "receita", rotulo: "Receita", valor: "—", declaracao: decl, formula: erro };
-    const r = e.receita.tipo === "pronto" && e.receita.dados.configured ? e.receita.dados : null;
+    const r = receita.tipo === "pronto" && receita.dados.configured ? receita.dados : null;
     const v = r?.valorUsd ?? null;
     return {
       id: "receita",

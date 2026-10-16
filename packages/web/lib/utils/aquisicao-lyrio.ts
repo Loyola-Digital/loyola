@@ -29,6 +29,7 @@ import { memorialDoGoogleSemNumero } from "./lyrio-google-ads";
 import { declararJanela, diaMes, type ContextoDaJanela, type DeclaracaoDaJanela } from "./janela-dos-cards-lyrio";
 import { memorialDoErroDaFonte, type EstadoDaFonte } from "./estado-da-fonte-revenuecat";
 import { comoEstadoDoGoogle, valorDoGoogleNaRegua, type InvestimentoDoGoogleNaRegua } from "./google-ads-na-regua";
+import { memorialDoErroDaMeta } from "./resumo-mobile-lyrio";
 import { fmtBRL, type CardDoResumo, type GastoDaMeta } from "./resumo-mobile-lyrio";
 
 export type CanalDoPagante = "meta" | "google" | "organico" | "sem_atribuicao";
@@ -41,7 +42,6 @@ export interface ContagemPorCanal {
   total: number;
 }
 
-/** Espelha `GET …/revenuecat/pagantes-por-canal` (`routes/revenuecat.ts`). Só contagens. */
 /** Um `product_id` dentro de um plano ou de um grupo fora do LTV (AC7d). */
 export interface ProdutoDoLtv {
   /** `null` = pagamento sem `product_id`. */
@@ -65,6 +65,7 @@ export interface LtvDoLyrio {
   foraPorDecisao: GrupoForaDoLtv;
 }
 
+/** Espelha `GET …/revenuecat/pagantes-por-canal` (`routes/revenuecat.ts`). Só contagens. */
 export interface PagantesPorCanal {
   days: number;
   /** Primeiro dia da janela (`AAAA-MM-DD`, SP). */
@@ -83,7 +84,11 @@ export interface EntradaDeAquisicao {
   /** A rota com `days` = o filtro, e com `days = 28` (os CACs fixos). */
   pagantesFiltro: EstadoDaFonte<PagantesPorCanal>;
   pagantes28: EstadoDaFonte<PagantesPorCanal>;
-  meta: { temCampanhas: boolean; filtro: GastoDaMeta | undefined; vinteOito: GastoDaMeta | undefined };
+  /**
+   * `erroFiltro`/`erro28` (QA REL-001): a mensagem da consulta da Meta em erro.
+   * Sem ela, a falha ficava "—" sem causa, como se ainda carregasse.
+   */
+  meta: { temCampanhas: boolean; filtro: GastoDaMeta | undefined; vinteOito: GastoDaMeta | undefined; erroFiltro?: string | null; erro28?: string | null };
   google: { mostrar: boolean; filtro: InvestimentoDoGoogleNaRegua; vinteOito: InvestimentoDoGoogleNaRegua };
 }
 
@@ -162,6 +167,7 @@ export function cardsDeAquisicao(e: EntradaDeAquisicao): CardsDeAquisicao {
     sufixo: string,
     meta: GastoDaMeta | undefined,
     googleEstado: InvestimentoDoGoogleNaRegua,
+    erroMeta: string | null | undefined,
   ): CardDoResumo[] => {
     if (estado.tipo === "oculto") return [];
     const card = (id: string, rotulo: string): CardDoResumo => ({ id: `${id}-${sufixo}`, rotulo, valor: "—", declaracao: decl, icone: "cac" });
@@ -184,7 +190,8 @@ export function cardsDeAquisicao(e: EntradaDeAquisicao): CardsDeAquisicao {
     const metaCentavos = !e.meta.temCampanhas ? 0 : meta ? centavos(meta.spendComImposto) : null;
     const googleValor = valorDoGoogleNaRegua(googleEstado);
     const googleCentavos = googleValor == null ? null : centavos(googleValor);
-    const semGoogle = memorialDoGoogleSemNumero(comoEstadoDoGoogle(googleEstado), decl.periodo);
+    const semGoogle = memorialDoGoogleSemNumero(comoEstadoDoGoogle(googleEstado), decl.periodo, "o CAC Google e o CAC consolidado ficam");
+    const semMeta = erroMeta ? memorialDoErroDaMeta(erroMeta, decl.periodo, "o CAC Meta e o CAC consolidado ficam") : null;
 
     const cacDe = (
       id: string,
@@ -209,7 +216,9 @@ export function cardsDeAquisicao(e: EntradaDeAquisicao): CardsDeAquisicao {
     };
 
     const out: CardDoResumo[] = [];
-    if (e.meta.temCampanhas) {
+    if (e.meta.temCampanhas && semMeta) {
+      out.push({ ...card("cac-meta", rot("CAC Meta")), formula: semMeta });
+    } else if (e.meta.temCampanhas) {
       out.push(
         cacDe("cac-meta", "CAC Meta", metaCentavos,
           metaCentavos == null ? [] : [{ label: "Investimento (Meta, com 12,15%)", value: fmtBRL(metaCentavos / 100), source: "Meta Ads API — o mesmo valor do card Investimento (Meta)" }],
@@ -227,8 +236,8 @@ export function cardsDeAquisicao(e: EntradaDeAquisicao): CardsDeAquisicao {
     }
     // Consolidado: a soma dos dois; sem um deles conhecido, o total não é conhecido.
     const consolidadoCentavos = metaCentavos != null && googleCentavos != null ? metaCentavos + googleCentavos : null;
-    if (semGoogle) {
-      out.push({ ...card("cac-consolidado", rot("CAC consolidado")), formula: semGoogle });
+    if (semGoogle || semMeta) {
+      out.push({ ...card("cac-consolidado", rot("CAC consolidado")), formula: (semMeta ?? semGoogle)! });
     } else {
       const [m, g] = consolidadoCentavos == null ? [0, 0] : fecharEmCentavos(consolidadoCentavos / 100, [(metaCentavos ?? 0) / 100, (googleCentavos ?? 0) / 100]);
       out.push(
@@ -245,8 +254,8 @@ export function cardsDeAquisicao(e: EntradaDeAquisicao): CardsDeAquisicao {
   };
 
   const cac = [
-    ...cacs(filtro, ctx.diasDoFiltro, declFiltro, "filtro", e.meta.filtro, e.google.filtro),
-    ...cacs(vinteOito, 28, decl28, "28d", e.meta.vinteOito, e.google.vinteOito),
+    ...cacs(filtro, ctx.diasDoFiltro, declFiltro, "filtro", e.meta.filtro, e.google.filtro, e.meta.erroFiltro),
+    ...cacs(vinteOito, 28, decl28, "28d", e.meta.vinteOito, e.google.vinteOito, e.meta.erro28),
   ];
 
   // ── LTV (AC7) e renovações (AC8): só a janela do filtro ──

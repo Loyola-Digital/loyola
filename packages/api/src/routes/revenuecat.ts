@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { calcularMetricasDerivadas } from "../utils/metricas-revenuecat.js";
-import { businessToday, inicioDaJanela, instanteDoInicioDaJanela } from "../utils/sale-date.js";
+import { metricasDerivadasDaEtapa } from "../utils/metricas-revenuecat.js";
+import { diasDaJanelaEmSp, instanteDoInicioDaJanela } from "../utils/sale-date.js";
 import { consultaDaJornada, consultaDoInicioDaAssinatura, lerLinhaDaJornada, montarJornada } from "../utils/jornada-lyrio.js";
 import {
   consultaDeVendasPorCanal,
@@ -11,7 +11,7 @@ import {
   lerLinhaDeVendas,
   montarVendasPorCanal,
 } from "../utils/vendas-por-canal-lyrio.js";
-import { consultaDePagantesPorCanal, consultaDoLtvPorPlano, lerLinhaDePagante, montarLtv, montarPagantes } from "../utils/pagantes-lyrio.js";
+import { pagantesPorCanalDaEtapa } from "../utils/pagantes-lyrio.js";
 import { eq, and, gte, inArray, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import fp from "fastify-plugin";
@@ -625,28 +625,13 @@ export default fp(async function revenuecatRoutes(fastify) {
       const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-      const desde = instanteDoInicioDaJanela(query.data.days);
-      const [pessoas, ltv, inicio, atributos] = await Promise.all([
-        fastify.db.execute(consultaDePagantesPorCanal(params.data.stageId, desde)),
-        fastify.db.execute(consultaDoLtvPorPlano(params.data.stageId, desde)),
-        fastify.db.execute(consultaDoInicioDaAssinatura(params.data.stageId)),
-        fastify.db.execute(consultaDoInicioDosAtributos(params.data.stageId)),
-      ]);
-      const pagantes = montarPagantes((pessoas.rows as Record<string, unknown>[]).map(lerLinhaDePagante));
-      if (pagantes.novosPagantes.conflito > 0 || pagantes.renovacoes.conflito > 0) {
-        request.log.warn({ stageId: params.data.stageId, conflito: pagantes.novosPagantes.conflito }, "lyrio: pagantes com Meta e Google no mesmo instante");
+      // A composição mora em `utils/pagantes-lyrio.ts` — a mesma que a sonda de
+      // conferência em produção roda.
+      const corpo = await pagantesPorCanalDaEtapa((q) => fastify.db.execute(q), params.data.stageId, query.data.days);
+      if (corpo.novosPagantes.conflito > 0 || corpo.renovacoes.conflito > 0) {
+        request.log.warn({ stageId: params.data.stageId, conflito: corpo.novosPagantes.conflito }, "lyrio: pagantes com Meta e Google no mesmo instante");
       }
-
-      return {
-        days: query.data.days,
-        desde: dataIso(desde),
-        assinaturaDesde: dataIso((inicio.rows[0] as { desde?: unknown } | undefined)?.desde),
-        atributosDesde: dataIso((atributos.rows[0] as { desde?: unknown } | undefined)?.desde),
-        ...pagantes,
-        // AC7 — LTV por plano (D33, PO-D7), com os ids de cada plano, os não
-        // classificados (a tela avisa) e os fora por decisão.
-        ltv: montarLtv(ltv.rows as Record<string, unknown>[]),
-      };
+      return corpo;
     },
   );
 
@@ -718,8 +703,7 @@ export default fp(async function revenuecatRoutes(fastify) {
       const apiKey = await getApiKey(params.data.projectId);
       if (!apiKey) return reply.code(409).send({ error: "RevenueCat não conectado neste projeto" });
 
-      const ate = businessToday();
-      const desde = inicioDaJanela(query.data.days, ate);
+      const { desde, ate } = diasDaJanelaEmSp(query.data.days);
       const janela = { days: query.data.days, desde, ate };
 
       const [cfg] = await fastify.db
@@ -772,8 +756,7 @@ export default fp(async function revenuecatRoutes(fastify) {
       const apiKey = await getApiKey(params.data.projectId);
       if (!apiKey) return reply.code(409).send({ error: "RevenueCat não conectado neste projeto" });
 
-      const ate = businessToday();
-      const desde = inicioDaJanela(query.data.days, ate);
+      const { desde, ate } = diasDaJanelaEmSp(query.data.days);
       const janela = { days: query.data.days, desde, ate };
 
       const [cfg] = await fastify.db
@@ -820,54 +803,9 @@ export default fp(async function revenuecatRoutes(fastify) {
       const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-      const linhas = await fastify.db
-        .select({
-          eventType: revenuecatSales.eventType,
-          appUserId: revenuecatSales.appUserId,
-          eventAt: revenuecatSales.eventAt,
-          payload: revenuecatSales.payload,
-        })
-        .from(revenuecatSales)
-        .where(eq(revenuecatSales.stageId, params.data.stageId));
-
-      const eventos = linhas.map((l) => ({
-        eventType: l.eventType,
-        appUserId: l.appUserId,
-        eventAt: l.eventAt,
-        periodType:
-          ((l.payload as { event?: { period_type?: string } } | null)?.event?.period_type) ?? null,
-      }));
-
-      // Só os eventos de ASSINATURA definem a data de início da série: os de
-      // paywall existem desde 11/jun e diriam que a série começa antes do que
-      // de fato começa.
-      const deAssinatura = eventos.filter(
-        (e) => e.eventType && e.eventType !== "TEST" && !e.eventType.startsWith("PAYWALL"),
-      );
-      const datas = deAssinatura
-        .map((e) => e.eventAt)
-        .filter((d): d is Date => d instanceof Date)
-        .sort((a, b) => a.getTime() - b.getTime());
-
-      // Story 42.14 (AC2b, D22) — a janela do filtro: os números saem dos eventos
-      // da janela (N dias de calendário de SP, a régua de `/sales`), e a série
-      // INTEIRA continua sendo a referência para saber se um trial da janela
-      // pagou depois (achado C). Sem `days`, a série inteira, como antes.
-      const desde = query.data.days != null ? instanteDoInicioDaJanela(query.data.days) : null;
-      const naJanela = desde ? eventos.filter((e) => e.eventAt instanceof Date && e.eventAt >= desde) : eventos;
-
-      return {
-        ...calcularMetricasDerivadas(naJanela, eventos),
-        // Story 42.14: o dia de SP, a régua da janela (42.13, MNT-001) — a tela
-        // compara este dia com o início da janela para declarar a cobertura.
-        serieDesde: dataIso(datas[0]),
-        totalDeEventos: deAssinatura.length,
-        // AC10b (PO-10) — o ECO da janela aplicada. A API anterior ignora `?days=`
-        // e devolve a série inteira com 200; sem o eco, a tela poria a etiqueta
-        // "últimos N dias" num número da série inteira.
-        days: query.data.days ?? null,
-        desde: desde ? dataIso(desde) : null,
-      };
+      // A composição mora em `utils/metricas-revenuecat.ts` — a mesma que a sonda
+      // de conferência em produção roda.
+      return metricasDerivadasDaEtapa((q) => fastify.db.execute(q), params.data.stageId, query.data.days);
     },
   );
 

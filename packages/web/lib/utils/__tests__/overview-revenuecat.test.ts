@@ -136,6 +136,12 @@ describe("cardsDoOverview (Story 42.14, AC1/AC3c)", () => {
     expect(r.formula!.note).toContain("versão anterior");
   });
 
+  it("QA TEST-001 — Receita que ECOA outra janela: '—' com a explicação (o eco decide)", () => {
+    const r = de(cardsDoOverview(entrada({ receita: { tipo: "pronto", dados: { configured: true, days: 28, desde: "2026-09-19", ate: "2026-10-16", valorUsd: 5000 } } })).principais, "Receita");
+    expect(r.valor).toBe("—");
+    expect(r.formula!.values[0].value).toContain("28 dias, não para os 90 do filtro");
+  });
+
   it("Receita em erro (429): '—' com a causa; NÃO cai para o revenue de 28 dias do overview (AC2d)", () => {
     const r = de(cardsDoOverview(entrada({ receita: { tipo: "erro", causa: "limite", mensagem: "RevenueCat 429" } })).principais, "Receita");
     expect(r.valor).toBe("—");

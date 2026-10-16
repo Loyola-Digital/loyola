@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  naJanelaPedida,
   avisoDoErroDaFonte,
   causaDoErro,
   estadoDaFonte,
@@ -49,6 +50,16 @@ describe("causaDoErro — corpo, status e a mensagem do rcFetch", () => {
     expect(causaDoErro(erro(502, "Erro", { error: "Erro", details: "RevenueCat 429: rate limited" }))).toBe("limite");
     expect(causaDoErro(erro(502, "Erro", { error: "Erro", details: "RevenueCat 403: forbidden" }))).toBe("permissao");
     expect(causaDoErro(erro(502, "RevenueCat 4290: não é 429"))).toBe("outro");
+  });
+});
+
+describe("naJanelaPedida — o eco decide (QA TEST-001, AC10b)", () => {
+  it("pronta com o eco da janela pedida: passa; com outra janela: erro com a explicação; os outros estados passam", () => {
+    expect(naJanelaPedida({ tipo: "pronto", dados: { days: 90 } }, 90)).toEqual({ tipo: "pronto", dados: { days: 90 } });
+    expect(naJanelaPedida({ tipo: "pronto", dados: { days: 28 } }, 90)).toEqual({ tipo: "erro", causa: "outro", mensagem: "a resposta veio para 28 dias, não para os 90 do filtro" });
+    expect(naJanelaPedida({ tipo: "pronto", dados: {} }, 90).tipo).toBe("erro");
+    expect(naJanelaPedida({ tipo: "oculto" }, 90)).toEqual({ tipo: "oculto" });
+    expect(naJanelaPedida({ tipo: "carregando" }, 90)).toEqual({ tipo: "carregando" });
   });
 });
 

@@ -119,6 +119,23 @@ describe("CAC por canal e consolidado, nas duas janelas (AC4, AC5, D9)", () => {
     expect(achar(cac, "cac-meta-filtro").valor).toBe(fmtBRL(500));
   });
 
+  it("QA MNT-001 — com o Google em erro, o memorial do CAC fala do CAC (não do ROAS e da Margem)", () => {
+    const { cac } = cardsDeAquisicao(entrada({ google: { mostrar: true, filtro: { tipo: "erro", mensagem: "invalid_grant" }, vinteOito: { tipo: "erro", mensagem: "invalid_grant" } } }));
+    const nota = achar(cac, "cac-google-filtro").formula!.note!;
+    expect(nota).toContain("o CAC Google e o CAC consolidado ficam");
+    expect(nota).not.toContain("ROAS");
+  });
+
+  it("QA REL-001 — Meta em erro: CAC Meta e consolidado '—' COM a causa; o CAC Google continua", () => {
+    const { cac } = cardsDeAquisicao(entrada({ meta: { temCampanhas: true, filtro: undefined, vinteOito: undefined, erroFiltro: "Erro da Meta", erro28: "Erro da Meta" } }));
+    for (const id of ["cac-meta-filtro", "cac-consolidado-filtro", "cac-meta-28d", "cac-consolidado-28d"]) {
+      expect(achar(cac, id).valor, id).toBe("—");
+      expect(achar(cac, id).formula!.values[0].value, id).toBe("Erro da Meta");
+      expect(achar(cac, id).formula!.note, id).toContain("o CAC Meta e o CAC consolidado ficam");
+    }
+    expect(achar(cac, "cac-google-filtro").valor).toBe(fmtBRL(500));
+  });
+
   it("sem campanha da Meta: não há CAC Meta; o consolidado conta a Meta como 0 (não fica 'carregando')", () => {
     const { cac } = cardsDeAquisicao(entrada({ meta: { temCampanhas: false, filtro: undefined, vinteOito: undefined } }));
     expect(cac.map((c) => c.id)).not.toContain("cac-meta-filtro");

@@ -55,6 +55,8 @@ describe("cardsDoResumo — cada card declara a sua janela (AC1a, AC3)", () => {
     for (const id of ["mrr", "assinaturas", "trials"]) expect(etiqueta(id)).toMatchObject({ etiqueta: "agora", destaque: true });
     // PO-D6: o MRR continua `agora`; o memorial declara o P28D da API.
     expect(cards.find((c) => c.id === "mrr")!.formula!.note).toContain("Retrato, não acumulado: pela documentação do RevenueCat, o MRR é o valor atual das assinaturas pagas ativas, normalizado para um mês.");
+    // QA TEST-002 — a frase do P28D (PO-D6) também está amarrada no Resumo, não só no Overview.
+    expect(cards.find((c) => c.id === "mrr")!.formula!.note).toContain("A API marca este número com período de 28 dias (P28D), o que a documentação não explica; o painel segue a definição documentada.");
   });
 
   it("Novos clientes = o total do chart customers_new do filtro (15.232), não o new_customers de 28 dias (900); o memorial diz UTC e o dia incompleto", () => {
@@ -150,6 +152,31 @@ describe("ROAS e Margem: receita e investimento da MESMA janela (AC2d)", () => {
       expect(card(e, id).formula!.note).toContain("permissão");
     }
     expect(card(e, "novos-clientes").valor).toBe("15.232");
+  });
+
+  it("QA REL-001 — Meta em erro: Investimento (Meta), ROAS e Margem '—' COM a causa (antes: '—' calado, como se carregasse)", () => {
+    const e = entrada({ meta: { temCampanhas: true, filtro: undefined, vinteOito: undefined, erroFiltro: "Erro ao buscar insights da Meta", erro28: "Erro ao buscar insights da Meta" } });
+    const meta = card(e, "investimento-meta");
+    expect(meta.valor).toBe("—");
+    expect(meta.formula!.values[0]).toMatchObject({ label: "Erro", value: "Erro ao buscar insights da Meta" });
+    expect(meta.formula!.note).toContain("o ROAS, a Margem e os CACs ficam");
+    for (const id of ["roas", "margem"]) {
+      expect(card(e, id).valor, id).toBe("—");
+      expect(card(e, id).formula!.values, id).toContainEqual(expect.objectContaining({ label: "Investimento (Meta)", value: "Erro ao buscar insights da Meta" }));
+    }
+  });
+
+  it("QA TEST-001 — receita que ECOA outra janela não vale: '—' com a explicação, nunca o número com a etiqueta do filtro", () => {
+    const e = entrada({ receita: { tipo: "pronto", dados: { configured: true, days: 28, desde: "2026-09-19", ate: "2026-10-16", valorUsd: 1000 } } });
+    expect(card(e, "receita").valor).toBe("—");
+    expect(card(e, "receita").formula!.values[0].value).toContain("28 dias, não para os 90 do filtro");
+    expect(card(e, "roas").valor).toBe("—");
+  });
+
+  it("QA TEST-001 — novos clientes que ECOAM outra janela não valem", () => {
+    const c = card(entrada({ novosClientes: { tipo: "pronto", dados: { configured: true, days: 28, desde: "2026-09-19", ate: "2026-10-16", valor: 9 } } }), "novos-clientes");
+    expect(c.valor).toBe("—");
+    expect(c.formula!.values[0].value).toContain("28 dias, não para os 90 do filtro");
   });
 
   it("sem campanha da Meta, o investimento da Meta é R$ 0 (não há investimento), não '—'", () => {

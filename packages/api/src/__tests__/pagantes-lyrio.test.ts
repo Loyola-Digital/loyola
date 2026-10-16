@@ -13,6 +13,7 @@ import { getTableName, sql, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import revenuecatRoutes from "../routes/revenuecat.js";
 import { instanteDoInicioDaJanela } from "../utils/sale-date.js";
+import { metricasDerivadasDaEtapa } from "../utils/metricas-revenuecat.js";
 import {
   REGRA_DOS_PLANOS,
   canalDaOrigem,
@@ -23,6 +24,7 @@ import {
   lerLinhaDePagante,
   montarLtv,
   montarPagantes,
+  pagantesPorCanalDaEtapa,
   type PessoaPagante,
 } from "../utils/pagantes-lyrio.js";
 
@@ -384,6 +386,35 @@ describe("AC7f — os 10 testes obrigatórios (PGlite, janela e relógio fixos)"
     expect(JSON.stringify(linhas)).not.toContain("pessoa-secreta");
     const l = montarLtv(linhas);
     expect([doPlano(l, "mensal").pessoas, doPlano(l, "anual").pessoas]).toEqual([1, 1]);
+  });
+});
+
+describe("a composição das rotas sobre Postgres real — o mesmo código que a sonda de produção roda", () => {
+  const executor = async (q: SQL) => ({ rows: await executar(q) });
+
+  it("pagantesPorCanalDaEtapa: novos pagantes, renovações e LTV numa resposta, com o eco da janela", async () => {
+    await inserir({ user: "a", tipo: "INITIAL_PURCHASE", usd: 59.99, produto: "premium_yearly_150", em: DENTRO, attrs: { ad_network: "meta" } });
+    await inserir({ user: "b", tipo: "INITIAL_PURCHASE", usd: 9.99, produto: "premium_monthly_15:base", em: ANTES });
+    await inserir({ user: "b", tipo: "RENEWAL", usd: 9.99, produto: "premium_monthly_15:base", em: DENTRO });
+    const r = await pagantesPorCanalDaEtapa(executor, STAGE, 28, AGORA);
+    expect(r).toMatchObject({ days: 28, desde: "2026-09-19", novosPagantes: { total: 1 }, renovacoes: { total: 1 } });
+    expect(r.novosPagantes.canais[0]).toMatchObject({ canal: "meta", quantidade: 1 });
+    expect(r.ltv.planos.map((p) => [p.plano, p.pessoas])).toEqual([["mensal", 1], ["trimestral", 0], ["anual", 1]]);
+  });
+
+  it("metricasDerivadasDaEtapa: o period_type sai do payload no SQL; janela de SP e eco", async () => {
+    const ins = (user: string, tipo: string, em: string, periodo: string) =>
+      pg.query(
+        `INSERT INTO revenuecat_sales (stage_id, event_id, event_type, app_user_id, event_at, payload) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [STAGE, `d${(seq += 1)}`, tipo, user, em, JSON.stringify({ event: { period_type: periodo } })],
+      );
+    await ins("t1", "INITIAL_PURCHASE", DENTRO, "TRIAL");
+    await ins("t1", "RENEWAL", DEPOIS_NA_JANELA, "NORMAL");
+    await ins("t0", "INITIAL_PURCHASE", ANTES, "TRIAL");
+    await ins("p1", "INITIAL_PURCHASE", DENTRO, "NORMAL");
+    const r = await metricasDerivadasDaEtapa(executor, STAGE, 28, AGORA);
+    expect(r).toMatchObject({ novosTrials: 1, conversoesDeTrial: 1, novasAssinaturasPagas: 1, days: 28, desde: "2026-09-19", serieDesde: "2026-09-01" });
+    expect((await metricasDerivadasDaEtapa(executor, STAGE, undefined, AGORA))).toMatchObject({ novosTrials: 2, days: null, desde: null });
   });
 });
 

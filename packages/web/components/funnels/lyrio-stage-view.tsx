@@ -186,8 +186,11 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   // Margem quando a API ainda não tem a rota de receita. Com `days = 28`, as duas
   // consultas são a mesma chave de cache.
   const temMeta = campaignIds.length > 0;
-  const { data: metaDailyFiltro } = useCampaignDailyInsightsBulk(temMeta ? projectId : null, temMeta ? campaignIds : null, days);
-  const { data: metaDaily28 } = useCampaignDailyInsightsBulk(temMeta ? projectId : null, temMeta ? campaignIds : null, 28);
+  const { data: metaDailyFiltro, error: erroMetaFiltroQ } = useCampaignDailyInsightsBulk(temMeta ? projectId : null, temMeta ? campaignIds : null, days);
+  const { data: metaDaily28, error: erroMeta28Q } = useCampaignDailyInsightsBulk(temMeta ? projectId : null, temMeta ? campaignIds : null, 28);
+  // QA REL-001: a falha da Meta tem causa no memorial — antes era "—" calado, como se carregasse.
+  const erroMetaFiltro = erroMetaFiltroQ ? (erroMetaFiltroQ instanceof Error ? erroMetaFiltroQ.message : String(erroMetaFiltroQ)) : null;
+  const erroMeta28 = erroMeta28Q ? (erroMeta28Q instanceof Error ? erroMeta28Q.message : String(erroMeta28Q)) : null;
   // Story 42.2/42.4: a soma decomposta em líquido + imposto, para o memorial.
   const metaFiltro = useMemo(() => (metaDailyFiltro ? sumMetaSpendWithTax([metaDailyFiltro]) : undefined), [metaDailyFiltro]);
   const meta28 = useMemo(() => (metaDaily28 ? sumMetaSpendWithTax([metaDaily28]) : undefined), [metaDaily28]);
@@ -247,7 +250,7 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   const cardsResumo = cardsDoResumo({
     ctx: { diasDoFiltro: days, hoje },
     cambio: { taxa: brlRate, fonte: fxSource },
-    meta: { temCampanhas: temMeta, filtro: metaFiltro, vinteOito: meta28 },
+    meta: { temCampanhas: temMeta, filtro: metaFiltro, vinteOito: meta28, erroFiltro: erroMetaFiltro, erro28: erroMeta28 },
     google: { mostrar: googleCampaignIds.size > 0, filtro: googleFiltro, vinteOito: google28 },
     receita: receitaDoFiltro,
     novosClientes,
@@ -268,7 +271,7 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
     ctx: { diasDoFiltro: days, hoje },
     pagantesFiltro,
     pagantes28: estadoDaFonte({ isLoading: pagantes28Q.isLoading, error: pagantes28Q.error, data: pagantes28Q.data }),
-    meta: { temCampanhas: temMeta, filtro: metaFiltro, vinteOito: meta28 },
+    meta: { temCampanhas: temMeta, filtro: metaFiltro, vinteOito: meta28, erroFiltro: erroMetaFiltro, erro28: erroMeta28 },
     google: { mostrar: googleCampaignIds.size > 0, filtro: googleFiltro, vinteOito: google28 },
   });
   const avisoDosPagantes = avisoDoErroDaFonte(pagantesFiltro, "os novos pagantes, as renovações e o LTV");

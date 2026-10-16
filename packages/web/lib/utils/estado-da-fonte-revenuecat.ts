@@ -77,6 +77,21 @@ export function estadoDaFonte<T>(q: { isLoading: boolean; error: unknown; data: 
   return { tipo: "pronto", dados: q.data };
 }
 
+/**
+ * Story 42.14 (QA TEST-001, AC10b) — a resposta só vale para a janela que ela
+ * ECOA. Pronta com `days` diferente do pedido (ex.: a tela pediu a janela errada)
+ * vira ERRO com a explicação — nunca um número de outra janela com a etiqueta
+ * do filtro. O mesmo que `daJanela` faz nos pagantes.
+ */
+export function naJanelaPedida<T extends { days?: number | null }>(estado: EstadoDaFonte<T>, dias: number): EstadoDaFonte<T> {
+  if (estado.tipo !== "pronto" || estado.dados.days === dias) return estado;
+  return {
+    tipo: "erro",
+    causa: "outro",
+    mensagem: `a resposta veio para ${estado.dados.days ?? "uma janela não informada"} dias, não para os ${dias} do filtro`,
+  };
+}
+
 /** A orientação de cada causa, para o memorial do card e o aviso do bloco. */
 export const ORIENTACAO_DA_CAUSA: Record<CausaDoErro, string> = {
   limite: "Limite de 25 consultas por minuto do RevenueCat (compartilhado entre overview, receita e gráficos); tente de novo em 1 minuto.",

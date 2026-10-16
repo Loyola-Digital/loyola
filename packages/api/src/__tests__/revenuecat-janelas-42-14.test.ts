@@ -14,7 +14,8 @@
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import Fastify from "fastify";
-import { getTableName } from "drizzle-orm";
+import { getTableName, type SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 vi.mock("../services/revenuecat.js", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../services/revenuecat.js")>();
@@ -154,6 +155,7 @@ const ev = (eventType: string, appUserId: string, em: string, periodType: string
 
 function bancoFalso(opts: { etapa?: boolean; rcProjectId?: string | null; eventos?: Evento[] } = {}) {
   const consultados: string[] = [];
+  const executados: string[] = [];
   const cadeia = () => {
     let tabela = "";
     const c: Record<string, unknown> = {
@@ -174,7 +176,25 @@ function bancoFalso(opts: { etapa?: boolean; rcProjectId?: string | null; evento
     };
     return c;
   };
-  return { db: { select: () => cadeia(), execute: async () => ({ rows: [] }) }, consultados };
+  // A rota de `metricas-derivadas` executa o SQL de `consultaDosEventosDasDerivadas`:
+  // o banco falso devolve as linhas como o driver (snake_case; o instante em texto,
+  // para exercitar o leitor).
+  const execute = async (q: SQL) => {
+    const texto = new PgDialect().sqlToQuery(q).sql;
+    executados.push(texto);
+    if (/period_type/.test(texto)) {
+      return {
+        rows: (opts.eventos ?? []).map((e) => ({
+          event_type: e.eventType,
+          app_user_id: e.appUserId,
+          event_at: e.eventAt ? e.eventAt.toISOString() : null,
+          period_type: (e.payload as { event?: { period_type?: string } }).event?.period_type ?? null,
+        })),
+      };
+    }
+    return { rows: [] };
+  };
+  return { db: { select: () => cadeia(), execute }, consultados, executados };
 }
 
 async function montar(banco: ReturnType<typeof bancoFalso>) {
@@ -332,7 +352,7 @@ describe("GET …/revenuecat/metricas-derivadas — janela, eco e guarda (AC2b, 
     const banco = bancoFalso({ etapa: false, eventos: EVENTOS });
     const r = await (await montar(banco)).inject({ method: "GET", url: `${BASE}/metricas-derivadas?days=28` });
     expect(r.statusCode).toBe(404);
-    expect(banco.consultados).not.toContain("revenuecat_sales");
+    expect(banco.executados).toHaveLength(0);
   });
 
   it("days inválido → 400", async () => {

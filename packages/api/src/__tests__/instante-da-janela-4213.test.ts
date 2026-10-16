@@ -53,12 +53,14 @@ describe("o fio — as três rotas do RevenueCat usam a régua (AC4a/b)", () => 
     expect(rotas).not.toMatch(/days \* 86_400_000/);
     const sales = rotas.slice(rotas.indexOf('"/api/projects/:projectId/funnels/:funnelId/stages/:stageId/revenuecat/sales"'));
     expect(sales.slice(0, sales.indexOf("gte(revenuecatSales.purchasedAt, cutoff)"))).toMatch(/const cutoff = instanteDoInicioDaJanela\(query\.data\.days\);/);
-    // Story 42.14: `metricas-derivadas` (AC2b) e `pagantes-por-canal` (AC6) usam a MESMA régua — 4ª e 5ª.
-    expect(rotas.match(/instanteDoInicioDaJanela\(query\.data\.days\)/g)).toHaveLength(5);
-    const pagantes = rotas.slice(rotas.indexOf('"/api/projects/:projectId/funnels/:funnelId/stages/:stageId/revenuecat/pagantes-por-canal"'));
-    expect(pagantes.slice(0, pagantes.indexOf("consultaDePagantesPorCanal("))).toMatch(/const desde = instanteDoInicioDaJanela\(query\.data\.days\);/);
-    const derivadas = rotas.slice(rotas.indexOf('"/api/projects/:projectId/funnels/:funnelId/stages/:stageId/revenuecat/metricas-derivadas"'));
-    expect(derivadas).toMatch(/const desde = query\.data\.days != null \? instanteDoInicioDaJanela\(query\.data\.days\) : null;/);
+    expect(rotas.match(/instanteDoInicioDaJanela\(query\.data\.days\)/g)).toHaveLength(3);
+    // Story 42.14: `metricas-derivadas` (AC2b) e `pagantes-por-canal` (AC6) usam a MESMA régua; a
+    // composição delas mora em `utils/` (a rota e a sonda de produção rodam o mesmo código).
+    const ler = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
+    expect(ler("../utils/metricas-revenuecat.ts")).toMatch(/const desde = days != null \? instanteDoInicioDaJanela\(days, agora\) : null;/);
+    expect(ler("../utils/pagantes-lyrio.ts")).toMatch(/const desde = instanteDoInicioDaJanela\(days, agora\);/);
+    expect(rotas).toMatch(/metricasDerivadasDaEtapa\(\(q\) => fastify\.db\.execute\(q\), params\.data\.stageId, query\.data\.days\)/);
+    expect(rotas).toMatch(/pagantesPorCanalDaEtapa\(\(q\) => fastify\.db\.execute\(q\), params\.data\.stageId, query\.data\.days\)/);
     // QA TEST-002/Q16: a janela é fechada no início (>=), não aberta.
     expect(sales).toMatch(/gte\(revenuecatSales\.purchasedAt, cutoff\)/);
   });

@@ -45,11 +45,16 @@
 
 import { and, inArray, sql, type SQL } from "drizzle-orm";
 import { revenuecatSales } from "../db/schema.js";
+import { consultaDoInicioDaAssinatura } from "./jornada-lyrio.js";
+import type { ExecutorDeSql } from "./metricas-revenuecat.js";
+import { instanteDoInicioDaJanela } from "./sale-date.js";
 import { REVENUE_EVENT_TYPES } from "../services/revenuecat.js";
 import {
   CANAIS_DA_VENDA,
   CONDICAO_ORGANICO,
   canalDaVenda,
+  consultaDoInicioDosAtributos,
+  dataIso,
   escopoDasVendas,
   sinalGoogle,
   sinalMeta,
@@ -335,5 +340,34 @@ export function montarLtv(linhas: readonly Record<string, unknown>[]): LtvDoLyri
     }),
     naoClassificado: grupo("nao_classificado"),
     foraPorDecisao: grupo("fora"),
+  };
+}
+
+// ─────────────────── a rota `pagantes-por-canal` ───────────────────
+
+/**
+ * Story 42.14 — a resposta inteira de `pagantes-por-canal` (AC6, AC7, AC8).
+ * Mora aqui (e não na rota) para a rota e a sonda de conferência em produção
+ * rodarem o MESMO código. Janela = N dias de calendário de SP sobre
+ * `purchased_at`; a resposta ecoa a janela (AC10b) e a cobertura (achado G).
+ */
+export async function pagantesPorCanalDaEtapa(executar: ExecutorDeSql, stageId: string, days: number, agora: Date = new Date()) {
+  const desde = instanteDoInicioDaJanela(days, agora);
+  const [pessoas, ltv, inicio, atributos] = await Promise.all([
+    executar(consultaDePagantesPorCanal(stageId, desde)),
+    executar(consultaDoLtvPorPlano(stageId, desde)),
+    executar(consultaDoInicioDaAssinatura(stageId)),
+    executar(consultaDoInicioDosAtributos(stageId)),
+  ]);
+  const pagantes = montarPagantes((pessoas.rows as Record<string, unknown>[]).map(lerLinhaDePagante));
+  return {
+    days,
+    desde: dataIso(desde),
+    assinaturaDesde: dataIso((inicio.rows[0] as { desde?: unknown } | undefined)?.desde),
+    atributosDesde: dataIso((atributos.rows[0] as { desde?: unknown } | undefined)?.desde),
+    ...pagantes,
+    // AC7 — LTV por plano (D33, PO-D7): os ids de cada plano, os não
+    // classificados (a tela avisa) e os fora por decisão.
+    ltv: montarLtv(ltv.rows as Record<string, unknown>[]),
   };
 }

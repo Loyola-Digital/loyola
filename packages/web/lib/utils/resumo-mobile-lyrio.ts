@@ -31,7 +31,7 @@ import type { MetricFormula, MetricFormulaValue } from "@/lib/types/metric-formu
 import { calcularMargemContribuicao, fecharEmCentavos } from "./lyrio-margin";
 import { memorialDoGoogleSemNumero } from "./lyrio-google-ads";
 import { declararJanela, intervaloDaJanela, type ContextoDaJanela, type DeclaracaoDaJanela, type JanelaDoCard } from "./janela-dos-cards-lyrio";
-import { memorialDoErroDaFonte, type EstadoDaFonte } from "./estado-da-fonte-revenuecat";
+import { memorialDoErroDaFonte, naJanelaPedida, type EstadoDaFonte } from "./estado-da-fonte-revenuecat";
 import { comoEstadoDoGoogle, NOTA_DO_FUSO_DO_GOOGLE, valorDoGoogleNaRegua, type InvestimentoDoGoogleNaRegua } from "./google-ads-na-regua";
 import { cardDeNovosClientes, fmtUsd, type CardComJanela, type NovosClientesDoPeriodo, type ReceitaDoPeriodo } from "./overview-revenuecat";
 
@@ -56,8 +56,12 @@ export interface GastoDaMeta {
 export interface EntradaDoResumo {
   ctx: ContextoDaJanela;
   cambio: { taxa: number | null; fonte: string };
-  /** Investimento da Meta: `undefined` = carregando. Sem campanha vinculada = 0 (não há investimento). */
-  meta: { temCampanhas: boolean; filtro: GastoDaMeta | undefined; vinteOito: GastoDaMeta | undefined };
+  /**
+   * Investimento da Meta: `undefined` = carregando. Sem campanha vinculada = 0
+   * (não há investimento). `erroFiltro`/`erro28` (QA REL-001): a mensagem da
+   * consulta em erro — o "—" passa a dizer a causa.
+   */
+  meta: { temCampanhas: boolean; filtro: GastoDaMeta | undefined; vinteOito: GastoDaMeta | undefined; erroFiltro?: string | null; erro28?: string | null };
   google: { mostrar: boolean; filtro: InvestimentoDoGoogleNaRegua; vinteOito: InvestimentoDoGoogleNaRegua };
   /** A receita da janela do filtro (rota nova; `oculto` = API anterior). */
   receita: EstadoDaFonte<ReceitaDoPeriodo>;
@@ -89,6 +93,21 @@ function metrica(m: { id: string; value: number }[] | null, ...ids: string[]): n
   return null;
 }
 
+/**
+ * Story 42.14 (QA REL-001) — o memorial do "—" quando a consulta da Meta
+ * (`/api/traffic/analytics/:projectId/campaign-daily`) falhou. Antes do REL-001,
+ * a falha ficava "—" sem causa, como se ainda carregasse.
+ */
+export function memorialDoErroDaMeta(mensagem: string, periodo: string, dependentes: string): MetricFormula {
+  return {
+    expression: "Meta Ads API indisponível",
+    values: [{ label: "Erro", value: mensagem, source: "GET /api/traffic/analytics/:projectId/campaign-daily" }],
+    result: "—",
+    period: periodo,
+    note: `A consulta do gasto diário da Meta falhou; tente atualizar. Enquanto isso, ${dependentes} "—": sem a Meta, o investimento é desconhecido.`,
+  };
+}
+
 /** Memorial de um card dependente que ficou "—": a causa de cada insumo que faltou (PO-D4 (4)). */
 function memorialDeDependente(decl: DeclaracaoDaJanela, expressao: string, causas: MetricFormulaValue[]): MetricFormula {
   return {
@@ -116,8 +135,10 @@ export function cardsDoResumo(e: EntradaDoResumo): CardDoResumo[] {
   const cambioValue: MetricFormulaValue | null =
     cambio.taxa != null ? { label: "Câmbio US$ 1 →", value: fmtBRL(cambio.taxa), source: cambio.fonte } : null;
 
+  // QA TEST-001 — a receita só vale para a janela que ECOA (AC10b).
+  const receitaDaJanela = naJanelaPedida(e.receita, ctx.diasDoFiltro);
   // ── a janela do fluxo: o filtro; só a API anterior à rota de receita leva aos 28 dias ──
-  const apiAnterior = e.receita.tipo === "oculto";
+  const apiAnterior = receitaDaJanela.tipo === "oculto";
   const declDoFluxo = apiAnterior ? rc28 : filtro;
   const intervaloDoFiltro = `${intervaloDaJanela(ctx.diasDoFiltro, ctx.hoje)}`;
 
@@ -126,7 +147,10 @@ export function cardsDoResumo(e: EntradaDoResumo): CardDoResumo[] {
     e.meta.temCampanhas ? g : { spendLiquido: 0, imposto: 0, spendComImposto: 0 };
   const metaFiltro = gastoMeta(e.meta.filtro);
 
-  const cardMeta = (g: GastoDaMeta | undefined, decl: DeclaracaoDaJanela): CardDoResumo => {
+  const cardMeta = (g: GastoDaMeta | undefined, decl: DeclaracaoDaJanela, erro: string | null | undefined): CardDoResumo => {
+    if (erro && e.meta.temCampanhas) {
+      return { id: "investimento-meta", rotulo: "Investimento (Meta)", valor: "—", declaracao: decl, icone: "investimento", formula: memorialDoErroDaMeta(erro, decl.periodo, "o ROAS, a Margem e os CACs ficam") };
+    }
     if (!g) return { id: "investimento-meta", rotulo: "Investimento (Meta)", valor: "—", declaracao: decl, icone: "investimento" };
     // QA-04 da 42.2: as duas parcelas SOMAM o total exibido.
     const [liq, imp] = fecharEmCentavos(g.spendComImposto, [g.spendLiquido, g.imposto]);
@@ -180,13 +204,13 @@ export function cardsDoResumo(e: EntradaDoResumo): CardDoResumo[] {
     fonteDaReceita = `${FONTE_DO_OVERVIEW} · revenue_last_28_days`;
     notaDaReceita = "A API ainda não tem a rota de receita por período (versão anterior à do painel — veja o aviso de versão no topo): este card, o ROAS e a Margem ficam nos 28 dias do overview até o deploy.";
   } else {
-    causaDaReceita = memorialDoErroDaFonte(e.receita, {
+    causaDaReceita = memorialDoErroDaFonte(receitaDaJanela, {
       fonte: FONTE_DA_RECEITA,
       periodo: declDoFluxo.periodo,
       dependentes: "o ROAS e a Margem de Contribuição",
     });
-    if (e.receita.tipo === "pronto") {
-      receitaUsd = e.receita.dados.configured ? e.receita.dados.valorUsd : null;
+    if (receitaDaJanela.tipo === "pronto") {
+      receitaUsd = receitaDaJanela.dados.configured ? receitaDaJanela.dados.valorUsd : null;
       notaDaReceita = `O RevenueCat conta os dias em UTC e o intervalo é inclusivo: a janela enviada é ${intervaloDoFiltro} (dias de SP), então as pontas podem diferir em até 3 h; o dia de hoje ainda está em andamento. Menos reembolsos, como o RevenueCat define a receita.`;
     }
   }
@@ -219,6 +243,8 @@ export function cardsDoResumo(e: EntradaDoResumo): CardDoResumo[] {
   const causasDoFluxo = (): MetricFormulaValue[] => {
     const c: MetricFormulaValue[] = [];
     if (causaDaReceita) c.push({ label: "Receita", value: String(causaDaReceita.values[0]?.value ?? "indisponível"), source: fonteDaReceita });
+    const erroMeta = e.meta.temCampanhas ? (apiAnterior ? e.meta.erro28 : e.meta.erroFiltro) : null;
+    if (erroMeta) c.push({ label: "Investimento (Meta)", value: erroMeta, source: "Meta Ads API" });
     const g = comoEstadoDoGoogle(googleDoFluxoEstado);
     if (g.tipo === "erro") c.push({ label: "Investimento (Google)", value: g.mensagem, source: "Google Ads API" });
     if (g.tipo === "sem_conta") c.push({ label: "Investimento (Google)", value: "nenhuma conta Google Ads conectada ao projeto", source: "Google Ads" });
@@ -318,7 +344,7 @@ export function cardsDoResumo(e: EntradaDoResumo): CardDoResumo[] {
   const assinaturas = metrica(overview, "active_subscriptions");
   const trials = metrica(overview, "active_trials");
 
-  const cards: CardDoResumo[] = [cardMeta(metaFiltro, filtro)];
+  const cards: CardDoResumo[] = [cardMeta(metaFiltro, filtro, e.meta.erroFiltro)];
   if (e.google.mostrar) cards.push(cardGoogle(e.google.filtro, filtro));
   cards.push(
     cardReceita,
