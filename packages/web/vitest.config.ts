@@ -49,6 +49,12 @@ export default defineConfig({
       "lib/planner/**/*.test.ts",
       "components/instagram/**/*.test.tsx",
       "components/planner/**/*.test.tsx",
+      // Story 42.14 (AC9d, PO-13) — SÓ os arquivos desta story, pelo caminho.
+      // Um glob de `components/funnels` ligaria dois `.test.tsx` que nunca
+      // rodaram (`stage-creative-performance-table`, `stage-lead-inputs`) e
+      // traria falhas alheias, o mesmo motivo da Story 29.35 acima. Cada um
+      // declara `@vitest-environment jsdom` no topo.
+      "components/funnels/__tests__/revenuecat-overview-block.test.tsx",
     ],
     /**
      * Story 18.80 (gate do @qa) — o fuso do runner é FIXADO no do usuário.

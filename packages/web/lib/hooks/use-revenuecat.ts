@@ -7,6 +7,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { tentarDeNovoAJornada, type JornadaDoLyrio } from "@/lib/utils/jornada-lyrio";
+import { tentarDeNovoNoRevenuecat } from "@/lib/utils/estado-da-fonte-revenuecat";
 import type { VendasPorCanalDoLyrio } from "@/lib/utils/vendas-por-canal-lyrio";
 
 const STALE = 60 * 1000;
@@ -177,6 +178,8 @@ export function useRevenuecatSales(
 }
 
 // Overview agregado puxado da API do RevenueCat (não depende do webhook).
+// Story 42.14 (PO-D4 (6)): sem insistir em 429 — o limite de 25 consultas por
+// minuto é compartilhado com receita e gráficos, e repetir só o gasta.
 export function useRevenuecatOverview(projectId: string, funnelId: string, stageId: string) {
   const apiClient = useApiClient();
   return useQuery({
@@ -186,6 +189,7 @@ export function useRevenuecatOverview(projectId: string, funnelId: string, stage
         `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/overview`,
       ),
     staleTime: STALE,
+    retry: tentarDeNovoNoRevenuecat,
   });
 }
 

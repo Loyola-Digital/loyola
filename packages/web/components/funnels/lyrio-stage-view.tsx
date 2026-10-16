@@ -1013,6 +1013,7 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
             projectId={projectId}
             funnelId={funnelId}
             stageId={stage.id}
+            days={days}
           />
         </section>
       )}
