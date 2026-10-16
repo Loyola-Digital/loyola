@@ -396,10 +396,25 @@ describe("a composição das rotas sobre Postgres real — o mesmo código que a
     await inserir({ user: "a", tipo: "INITIAL_PURCHASE", usd: 59.99, produto: "premium_yearly_150", em: DENTRO, attrs: { ad_network: "meta" } });
     await inserir({ user: "b", tipo: "INITIAL_PURCHASE", usd: 9.99, produto: "premium_monthly_15:base", em: ANTES });
     await inserir({ user: "b", tipo: "RENEWAL", usd: 9.99, produto: "premium_monthly_15:base", em: DENTRO });
+    await inserir({ user: "c", tipo: "PAYWALL_IMPRESSION", em: "2026-10-06T03:11:13Z", attrs: { ad_network: "google" } });
     const r = await pagantesPorCanalDaEtapa(executor, STAGE, 28, AGORA);
-    expect(r).toMatchObject({ days: 28, desde: "2026-09-19", novosPagantes: { total: 1 }, renovacoes: { total: 1 } });
+    expect(r).toMatchObject({ days: 28, desde: "2026-09-19", assinaturaDesde: "2026-09-01", atributosDesde: "2026-10-06", novosPagantes: { total: 1 }, renovacoes: { total: 1 } });
     expect(r.novosPagantes.canais[0]).toMatchObject({ canal: "meta", quantidade: 1 });
     expect(r.ltv.planos.map((p) => [p.plano, p.pessoas])).toEqual([["mensal", 1], ["trimestral", 0], ["anual", 1]]);
+
+    // QA TEST-003 — as QUATRO consultas são da etapa: eventos de OUTRA etapa (de outro
+    // funil/projeto; o `stage_id` é único entre projetos) — pagantes, renovações, produtos
+    // do LTV, atributos de canal e uma série que começa ANTES — não mudam nada.
+    const outra = (e: Omit<Evento, "stage">) => inserir({ ...e, stage: OUTRA });
+    await outra({ user: "x1", tipo: "INITIAL_PURCHASE", usd: 99, produto: "premium_yearly_150", em: DENTRO, attrs: { ad_network: "meta" } }); // pagante + LTV
+    await outra({ user: "x2", tipo: "INITIAL_PURCHASE", usd: 9.99, produto: "premium_quartely_25:base", em: ANTES });
+    await outra({ user: "x2", tipo: "RENEWAL", usd: 9.99, produto: "premium_quartely_25:base", em: DENTRO, gclid: "Cj0" }); // renovação
+    await outra({ user: "x3", tipo: "INITIAL_PURCHASE", usd: 5, produto: "premium_weekly_5", em: DENTRO }); // não classificado
+    await outra({ user: "x4", tipo: "INITIAL_PURCHASE", em: "2026-08-01T12:00:00Z" }); // série da outra etapa começa antes
+    await outra({ user: "x5", tipo: "PAYWALL_IMPRESSION", em: "2026-09-02T12:00:00Z", attrs: { ad_network: "meta" } }); // atributos antes
+    // o usuário "a" desta etapa com sinal do Google noutra etapa: não vira conflito aqui
+    await outra({ user: "a", tipo: "PAYWALL_IMPRESSION", em: ANTES, gclid: "Cj9" });
+    expect(await pagantesPorCanalDaEtapa(executor, STAGE, 28, AGORA)).toEqual(r);
   });
 
   it("metricasDerivadasDaEtapa: o period_type sai do payload no SQL; janela de SP e eco", async () => {
@@ -414,7 +429,25 @@ describe("a composição das rotas sobre Postgres real — o mesmo código que a
     await ins("p1", "INITIAL_PURCHASE", DENTRO, "NORMAL");
     const r = await metricasDerivadasDaEtapa(executor, STAGE, 28, AGORA);
     expect(r).toMatchObject({ novosTrials: 1, conversoesDeTrial: 1, novasAssinaturasPagas: 1, days: 28, desde: "2026-09-19", serieDesde: "2026-09-01" });
-    expect((await metricasDerivadasDaEtapa(executor, STAGE, undefined, AGORA))).toMatchObject({ novosTrials: 2, days: null, desde: null });
+    const serie = await metricasDerivadasDaEtapa(executor, STAGE, undefined, AGORA);
+    expect(serie).toMatchObject({ novosTrials: 2, days: null, desde: null });
+
+    // QA TEST-003 — só os eventos DESTA etapa: os de OUTRA etapa (de outro funil/projeto) —
+    // trials, pagos, churn, cancelamento e uma série que começa ANTES — não mudam nada.
+    const insOutra = (user: string, tipo: string, em: string, periodo: string) =>
+      pg.query(
+        `INSERT INTO revenuecat_sales (stage_id, event_id, event_type, app_user_id, event_at, payload) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [OUTRA, `o${(seq += 1)}`, tipo, user, em, JSON.stringify({ event: { period_type: periodo } })],
+      );
+    await insOutra("y1", "INITIAL_PURCHASE", DENTRO, "TRIAL");
+    await insOutra("y2", "INITIAL_PURCHASE", DENTRO, "NORMAL");
+    await insOutra("y3", "EXPIRATION", DENTRO, "NORMAL");
+    await insOutra("y4", "CANCELLATION", DENTRO, "NORMAL");
+    await insOutra("y5", "INITIAL_PURCHASE", "2026-08-01T12:00:00Z", "TRIAL");
+    // o trial "t0" desta etapa pagando noutra etapa não vira conversão aqui
+    await insOutra("t0", "RENEWAL", DENTRO, "NORMAL");
+    expect(await metricasDerivadasDaEtapa(executor, STAGE, 28, AGORA)).toEqual(r);
+    expect(await metricasDerivadasDaEtapa(executor, STAGE, undefined, AGORA)).toEqual(serie);
   });
 });
 
