@@ -3,22 +3,31 @@
  *
  * Três decisões moram aqui, e cada uma existe para o alerta não virar spam:
  *
- * 1. **O número vem do BI, não de SQL próprio.** Cada métrica vira uma
- *    `QuerySpec` e roda no `executarQuery`. O alerta e o painel mostram o mesmo
- *    valor — a alternativa é uma segunda conta que diverge com o tempo e
- *    ninguém sabe qual está certa.
+ * 1. **A regra julga cada FUNIL sozinho.** A regra continua cadastrada por
+ *    projeto (ou para todos), mas o número que ela compara é o do funil. Um
+ *    projeto aqui pode ser "DG & CPDF" — dois negócios no nome, sete funis
+ *    dentro — e a média do projeto esconde justamente o que o alerta existe
+ *    para achar: medido em 17/10/2026, `dg-pg05` estava a 1,13× e `dg-bf26`
+ *    com R$ 269 investidos e nenhuma venda, empacotados num "ROAS em 0,67".
+ *    O gasto que nenhuma etapa reivindica também é julgado, como "(sem funil)":
+ *    campanha nova queimando verba não pode ficar fora de qualquer rede.
  * 2. **Gasto mínimo antes de julgar.** Campanha com R$ 12 no dia tem ROAS zero
  *    quase sempre; sem o piso o alerta dispara todo dia e a pessoa desliga tudo.
- * 3. **Um aviso por regra por dia** (`last_sent_date`, dia de São Paulo). Mesmo
- *    molde do alerta de pagamento: rodar o ciclo várias vezes é inofensivo, o
- *    que cobre restart e deploy.
+ *    Atenção: o piso agora é por FUNIL, então ele precisa ser menor do que era
+ *    quando valia para o projeto somado.
+ * 3. **Um aviso por regra por funil por dia** (`last_sent_date` em
+ *    `alert_rule_state`, dia de São Paulo). Rodar o ciclo várias vezes é
+ *    inofensivo, o que cobre restart e deploy.
+ *
+ * O número do faturamento é o mesmo do painel porque sai da mesma fonte — ver
+ * `por-funil.ts`, que explica por que a quebra por funil não pode vir do BI.
  */
 
 import { eq, inArray, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { alertRuleState, alertRules, notificationFollows, projects } from "../db/schema.js";
-import { executarQuery, querySpecSchema, type QuerySpec } from "./bi/query.js";
 import { enviarPush } from "./push.js";
+import { lerPorFunil, temMovimento, type ItemDeFunil } from "./por-funil.js";
 
 const SP = "America/Sao_Paulo";
 
@@ -60,33 +69,10 @@ export const ROTULO_DA_METRICA: Record<Metrica, string> = {
 };
 
 /**
- * A `QuerySpec` de cada métrica.
- *
- * `trafego` e `faturamento` são entidades diferentes de propósito: o connect
- * rate é só de mídia, enquanto ROAS cruza faturamento com investimento — e é a
- * entidade `faturamento` que sabe fazer esse cruzamento.
- *
- * CPL ficou de fora: `trafego.cpl_geral` existe no catálogo mas o executor
- * recusa ("Ainda não sei calcular"), porque depende do cruzamento lead↔criativo.
+ * CPL ficou de fora das métricas: `trafego.cpl_geral` existe no catálogo mas o
+ * executor recusa ("Ainda não sei calcular"), porque depende do cruzamento
+ * lead↔criativo.
  */
-function specDaMetrica(metrica: Metrica, de: string, ate: string): QuerySpec {
-  const janela = (campo: string) => ({
-    [campo]: { operator: "$between" as const, value: [de, ate] },
-  });
-  if (metrica === "connect_rate") {
-    return querySpecSchema.parse({
-      entity: "trafego",
-      metrics: ["trafego.connect_rate", "trafego.spend"],
-      filters: janela("trafego.date"),
-    });
-  }
-  return querySpecSchema.parse({
-    entity: "faturamento",
-    metrics: ["faturamento.roas", "faturamento.investimento", "faturamento.bruto"],
-    filters: janela("faturamento.date"),
-  });
-}
-
 export interface Leitura {
   /** O valor que a regra julga. `null` = sem dado na janela. */
   valor: number | null;
@@ -122,55 +108,76 @@ export async function ultimoDiaComVenda(
   return linhas[0]?.dia ?? null;
 }
 
-export async function lerMetrica(
+/**
+ * A janela de datas que a métrica enxerga, ou `null` quando o projeto não tem
+ * série de vendas para ancorar.
+ */
+export async function janelaDaMetrica(
   db: FastifyInstance["db"],
   projectId: string,
   metrica: Metrica,
   janelaDias: number,
   agora = new Date(),
-): Promise<Leitura> {
-  const hoje = hojeSaoPaulo(agora);
-  let ate = hoje;
-  let de = janelaDias <= 1 ? hoje : diasAtras(janelaDias - 1, agora);
-
-  if (metrica !== "connect_rate") {
-    // A janela de faturamento é ancorada no último dia FECHADO, não em hoje:
-    // janela 1 = esse dia, janela 7 = os sete até ele. Ancorar em hoje faria
-    // a janela de 1 dia nunca ter dado nenhum, e a de 7 dias misturar seis
-    // dias reais com um dia de venda zero.
-    const ultimo = await ultimoDiaComVenda(db, projectId);
-    if (!ultimo) return { valor: null, gasto: 0, faturamento: null };
-    ate = ultimo;
-    de = janelaDias <= 1 ? ultimo : antesDe(ultimo, janelaDias - 1);
+): Promise<{ de: string; ate: string } | null> {
+  if (metrica === "connect_rate") {
+    const hoje = hojeSaoPaulo(agora);
+    return { de: janelaDias <= 1 ? hoje : diasAtras(janelaDias - 1, agora), ate: hoje };
   }
+  // A janela de faturamento é ancorada no último dia FECHADO, não em hoje:
+  // janela 1 = esse dia, janela 7 = os sete até ele. Ancorar em hoje faria a
+  // janela de 1 dia nunca ter dado nenhum, e a de 7 dias misturar seis dias
+  // reais com um dia de venda zero.
+  const ultimo = await ultimoDiaComVenda(db, projectId);
+  if (!ultimo) return null;
+  return { de: janelaDias <= 1 ? ultimo : antesDe(ultimo, janelaDias - 1), ate: ultimo };
+}
 
-  // `as never` é o mesmo que as rotas do BI fazem: o executor declara um `Db`
-  // estrutural mínimo que o tipo do Drizzle não satisfaz nominalmente.
-  const r = await executarQuery(specDaMetrica(metrica, de, ate), {
-    db: db as never,
-    projectIds: [projectId],
-  });
-  const linha = r.rows[0] ?? {};
-  const num = (k: string) => {
-    const v = linha[k];
-    return typeof v === "number" ? v : v == null ? null : Number(v);
-  };
-
+/** O que a regra julga, a partir dos números crus de um funil. */
+export function leituraDoItem(metrica: Metrica, item: ItemDeFunil): Leitura {
   if (metrica === "connect_rate") {
     return {
-      valor: num("trafego.connect_rate"),
-      gasto: num("trafego.spend") ?? 0,
+      // Sem clique no link não há connect rate — e `null` é "sem dado", que o
+      // `julgar` trata diferente de um valor baixo.
+      valor: item.linkClicks > 0 ? item.lpViews / item.linkClicks : null,
+      gasto: item.gasto,
       faturamento: null,
     };
   }
-  const gasto = num("faturamento.investimento") ?? 0;
-  const bruto = num("faturamento.bruto");
   return {
     // "Investiu e não vendeu" julga o FATURAMENTO contra zero; ROAS, a razão.
-    valor: metrica === "roas" ? num("faturamento.roas") : bruto,
-    gasto,
-    faturamento: bruto,
+    valor:
+      metrica === "roas"
+        ? item.gasto > 0
+          ? item.faturamento / item.gasto
+          : null
+        : item.faturamento,
+    gasto: item.gasto,
+    faturamento: item.faturamento,
   };
+}
+
+export interface LeituraDeFunil {
+  /** `funnel_id`, ou `""` no item "(sem funil)". */
+  chave: string;
+  nome: string;
+  leitura: Leitura;
+}
+
+/** Uma leitura por funil com movimento na janela da métrica. */
+export async function lerMetricaPorFunil(
+  db: FastifyInstance["db"],
+  projectId: string,
+  nomeDoProjeto: string,
+  metrica: Metrica,
+  janelaDias: number,
+  agora = new Date(),
+): Promise<LeituraDeFunil[]> {
+  const janela = await janelaDaMetrica(db, projectId, metrica, janelaDias, agora);
+  if (!janela) return [];
+  const itens = await lerPorFunil(db, projectId, janela.de, janela.ate, nomeDoProjeto);
+  return itens
+    .filter(temMovimento)
+    .map((i) => ({ chave: i.chave, nome: i.nome, leitura: leituraDoItem(metrica, i) }));
 }
 
 export interface Regra {
@@ -228,34 +235,42 @@ export function julgar(
 const dinheiro = (n: number) =>
   n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
-/** O texto que chega na tela do celular. Curto: é notificação, não relatório. */
+/**
+ * O texto que chega na tela do celular. Curto: é notificação, não relatório.
+ *
+ * `nome` é o do FUNIL, porque é ele que está fora da faixa. O projeto vai no
+ * começo do corpo, para quem segue vários não ter de decifrar o prefixo do
+ * slug — e é omitido quando o próprio nome já o carrega ("(sem funil)").
+ */
 export function textoDoAlerta(
   regra: Regra,
   leitura: Leitura,
-  nomeDoProjeto: string,
+  nome: string,
+  projeto?: string,
 ): { titulo: string; corpo: string } {
   // Faturamento só existe por dia fechado — dizer "hoje" num alerta de ROAS
   // mandaria a pessoa procurar na tela um número que ainda não existe.
   const umDia = regra.metrica === "connect_rate" ? "hoje" : "no último dia fechado";
   const janela = regra.janelaDias <= 1 ? umDia : `nos últimos ${regra.janelaDias} dias`;
+  const onde = projeto ? `${projeto} · ` : "";
   if (regra.metrica === "investiu_sem_vender") {
     return {
-      titulo: `${nomeDoProjeto}: ${dinheiro(leitura.gasto)} sem venda`,
-      corpo: `Investimento ${janela} e nenhum faturamento registrado.`,
+      titulo: `${nome}: ${dinheiro(leitura.gasto)} sem venda`,
+      corpo: `${onde}Investimento ${janela} e nenhum faturamento registrado.`,
     };
   }
   if (regra.metrica === "connect_rate") {
     const pct = ((leitura.valor ?? 0) * 100).toFixed(1).replace(".", ",");
     const alvo = (Number(regra.valor) * 100).toFixed(0);
     return {
-      titulo: `${nomeDoProjeto}: connect rate em ${pct}%`,
-      corpo: `Abaixo de ${alvo}% ${janela}, com ${dinheiro(leitura.gasto)} investidos.`,
+      titulo: `${nome}: connect rate em ${pct}%`,
+      corpo: `${onde}Abaixo de ${alvo}% ${janela}, com ${dinheiro(leitura.gasto)} investidos.`,
     };
   }
   const roas = (leitura.valor ?? 0).toFixed(2).replace(".", ",");
   return {
-    titulo: `${nomeDoProjeto}: ROAS em ${roas}`,
-    corpo: `${dinheiro(leitura.gasto)} investidos ${janela} e ${dinheiro(leitura.faturamento ?? 0)} de faturamento.`,
+    titulo: `${nome}: ROAS em ${roas}`,
+    corpo: `${onde}${dinheiro(leitura.gasto)} investidos ${janela} e ${dinheiro(leitura.faturamento ?? 0)} de faturamento.`,
   };
 }
 
@@ -309,57 +324,84 @@ export async function rodarAlertas(fastify: FastifyInstance): Promise<ResumoDoCi
 
   const estados = new Map(
     (await fastify.db.select().from(alertRuleState)).map((e) => [
-      `${e.ruleId}|${e.projectId}`,
+      `${e.ruleId}|${e.projectId}|${e.funnelId}`,
       e.lastSentDate,
     ]),
   );
 
   // Uma leitura por (projeto, métrica, janela): regra global e regra de projeto
-  // costumam perguntar a mesma coisa, e cada pergunta é uma consulta de BI.
-  const lidas = new Map<string, Leitura>();
+  // costumam perguntar a mesma coisa, e cada pergunta é uma consulta ao banco.
+  const lidas = new Map<string, LeituraDeFunil[]>();
+  // Idem para os seguidores: agora que o alerta é por funil, um projeto com
+  // cinco funis estourando pediria a mesma lista cinco vezes.
+  const seguidoresPorProjeto = new Map<string, string[]>();
 
   for (const regra of regras) {
     // Regra sem projeto vale em todo projeto que alguém siga.
     const alvos = regra.projectId ? [regra.projectId] : comSeguidor;
 
     for (const projectId of alvos) {
-      if (!nomes.has(projectId)) continue;
+      const nomeDoProjeto = nomes.get(projectId);
+      if (!nomeDoProjeto) continue;
       resumo.regrasAvaliadas += 1;
       try {
-        if (estados.get(`${regra.id}|${projectId}`) === hoje) continue;
-
         const chave = `${projectId}|${regra.metrica}|${regra.janelaDias}`;
         if (!lidas.has(chave)) {
           lidas.set(
             chave,
-            await lerMetrica(fastify.db, projectId, regra.metrica as Metrica, regra.janelaDias),
+            await lerMetricaPorFunil(
+              fastify.db,
+              projectId,
+              nomeDoProjeto,
+              regra.metrica as Metrica,
+              regra.janelaDias,
+            ),
           );
         }
-        const leitura = lidas.get(chave)!;
-        if (!julgar(regra as Regra, leitura, hoje, null).estourou) continue;
 
-        const seguidores = await seguidoresDoProjeto(fastify.db, projectId);
-        if (seguidores.length === 0) continue;
+        // Um funil estourando não pode calar os outros: cada um tem o seu "já
+        // avisei hoje", o seu push e a sua linha de estado.
+        for (const item of lidas.get(chave)!) {
+          if (estados.get(`${regra.id}|${projectId}|${item.chave}`) === hoje) continue;
+          if (!julgar(regra as Regra, item.leitura, hoje, null).estourou) continue;
 
-        const texto = textoDoAlerta(regra as Regra, leitura, nomes.get(projectId) ?? "Projeto");
-        await enviarPush(fastify, seguidores, {
-          ...texto,
-          url: `/projects/${projectId}`,
-          // Tag por regra E projeto: alerta novo substitui o anterior do mesmo
-          // par na bandeja, mas não engole o de outro projeto.
-          tag: `alerta-${regra.id}-${projectId}`,
-        });
+          if (!seguidoresPorProjeto.has(projectId)) {
+            seguidoresPorProjeto.set(
+              projectId,
+              await seguidoresDoProjeto(fastify.db, projectId),
+            );
+          }
+          const seguidores = seguidoresPorProjeto.get(projectId)!;
+          if (seguidores.length === 0) continue;
 
-        // Marca mesmo que o push falhe para todo mundo: o alerta é um aviso,
-        // não uma entrega garantida, e insistir no mesmo dia é o que vira spam.
-        await fastify.db
-          .insert(alertRuleState)
-          .values({ ruleId: regra.id, projectId, lastSentDate: hoje })
-          .onConflictDoUpdate({
-            target: [alertRuleState.ruleId, alertRuleState.projectId],
-            set: { lastSentDate: hoje, updatedAt: new Date() },
+          const texto = textoDoAlerta(
+            regra as Regra,
+            item.leitura,
+            item.nome,
+            item.chave === "" ? undefined : nomeDoProjeto,
+          );
+          await enviarPush(fastify, seguidores, {
+            ...texto,
+            // Direto no funil quando há um; o gasto sem funil só tem o projeto.
+            url: item.chave
+              ? `/projects/${projectId}/funnels/${item.chave}`
+              : `/projects/${projectId}`,
+            // Tag por regra, projeto E funil: alerta novo substitui o anterior
+            // do mesmo trio na bandeja, sem engolir o de outro funil.
+            tag: `alerta-${regra.id}-${projectId}-${item.chave}`,
           });
-        resumo.alertasEnviados += 1;
+
+          // Marca mesmo que o push falhe para todo mundo: o alerta é um aviso,
+          // não uma entrega garantida, e insistir no mesmo dia é o que vira spam.
+          await fastify.db
+            .insert(alertRuleState)
+            .values({ ruleId: regra.id, projectId, funnelId: item.chave, lastSentDate: hoje })
+            .onConflictDoUpdate({
+              target: [alertRuleState.ruleId, alertRuleState.projectId, alertRuleState.funnelId],
+              set: { lastSentDate: hoje, updatedAt: new Date() },
+            });
+          resumo.alertasEnviados += 1;
+        }
       } catch (err) {
         resumo.erros.push(
           `${regra.id}/${projectId}: ${err instanceof Error ? err.message : String(err)}`,

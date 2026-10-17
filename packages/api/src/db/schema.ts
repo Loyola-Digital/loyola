@@ -6301,9 +6301,18 @@ export const alertRuleState = pgTable(
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
+    /**
+     * O funil julgado (0177). `text` e não `uuid` porque string vazia é o item
+     * "sem funil" — o gasto que nenhuma etapa reivindica, que também é julgado
+     * — e chave primária não aceita nulo.
+     *
+     * Sem esta coluna, o primeiro funil a estourar calaria todos os outros do
+     * projeto até o dia seguinte.
+     */
+    funnelId: text("funnel_id").notNull().default(""),
     /** Dia de São Paulo (aaaa-mm-dd) do último disparo. */
     lastSentDate: text("last_sent_date"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [primaryKey({ columns: [t.ruleId, t.projectId] })],
+  (t) => [primaryKey({ columns: [t.ruleId, t.projectId, t.funnelId] })],
 );

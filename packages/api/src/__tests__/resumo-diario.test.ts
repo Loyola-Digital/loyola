@@ -27,7 +27,7 @@ describe("textoDoResumo", () => {
     expect(t.corpo).toBe("DG: R$ 13,9k → R$ 19,6k (1,40×)");
   });
 
-  it("acima de quatro projetos corta pelos maiores e diz quantos sobraram", () => {
+  it("acima de quatro funis corta pelos maiores e diz quantos sobraram", () => {
     // O sistema operacional corta o corpo sem avisar: melhor escolher o que cai.
     const t = textoDoResumo([
       linha("A", 100, 100),
@@ -41,10 +41,10 @@ describe("textoDoResumo", () => {
     expect(linhas[0]).toContain("D:");
     expect(linhas[1]).toContain("B:");
     expect(linhas).toHaveLength(5);
-    expect(linhas[4]).toBe("e mais 2 projetos");
+    expect(linhas[4]).toBe("e mais 2 funis");
   });
 
-  it("um projeto sobrando fala no singular", () => {
+  it("um funil sobrando fala no singular", () => {
     const t = textoDoResumo([
       linha("A", 5, 5),
       linha("B", 4, 4),
@@ -52,10 +52,10 @@ describe("textoDoResumo", () => {
       linha("D", 2, 2),
       linha("E", 1, 1),
     ]);
-    expect(t.corpo.split("\n")[4]).toBe("e mais 1 projeto");
+    expect(t.corpo.split("\n")[4]).toBe("e mais 1 funil");
   });
 
-  it("projeto sem investimento mostra travessão, não divisão por zero", () => {
+  it("funil sem investimento mostra travessão, não divisão por zero", () => {
     const t = textoDoResumo([linha("Parado", 0, 0)]);
     expect(t.corpo).toBe("Parado: R$ 0 → R$ 0 (—)");
     expect(t.titulo).toBe("Ontem: R$ 0 → R$ 0");
