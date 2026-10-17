@@ -12,14 +12,26 @@
  * 3. **Dia parado não vira push.** Sem investimento e sem faturamento em
  *    nenhum projeto seguido, o resumo não sai: fim de semana de agência
  *    mandaria "R$ 0 → R$ 0" todo domingo, e é assim que a pessoa desliga.
+ *
+ * ## A linha é o FUNIL, não o projeto
+ *
+ * Um projeto aqui pode ser "DG & CPDF": dois negócios no nome e sete funis
+ * dentro. Somar isso numa linha devolvia um ROAS médio que não aponta para
+ * lugar nenhum — e, pior, um funil indo bem escondia outro queimando verba sem
+ * vender (medido em 17/10/2026: no mesmo dia, `dg-pg05` a 1,13× e `dg-bf26`
+ * com R$ 269 e nenhuma venda, que a média do projeto empacotava em 0,67×).
+ *
+ * Então a linha é o funil, e o título continua sendo a soma de TUDO — inclusive
+ * do gasto que nenhuma etapa reivindica, que entra como uma linha "(sem funil)".
+ * É o que faz o total do resumo fechar com o do painel.
  */
 
 import { eq, inArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { notificationFollows, notificationPrefs, projects } from "../db/schema.js";
-import { executarQuery, querySpecSchema } from "./bi/query.js";
 import { enviarPush } from "./push.js";
 import { hojeSaoPaulo, horaSaoPaulo, ultimoDiaComVenda } from "./alertas-de-funil.js";
+import { lerPorFunil, temMovimento } from "./por-funil.js";
 
 const HORA_PADRAO = 8;
 
@@ -30,34 +42,30 @@ export function ontemSaoPaulo(agora = new Date()): string {
 
 export interface LinhaDoResumo {
   projectId: string;
+  /** Nome do FUNIL (ou "<projeto> (sem funil)") — é o que a pessoa lê. */
   nome: string;
   investimento: number;
   faturamento: number;
   roas: number | null;
 }
 
-/** Investimento, faturamento e ROAS de um projeto num dia. */
+/** As linhas de um projeto num dia: uma por funil com algum número. */
 export async function lerDoDia(
   db: FastifyInstance["db"],
   projectId: string,
+  nomeDoProjeto: string,
   dia: string,
-): Promise<Omit<LinhaDoResumo, "projectId" | "nome">> {
-  const spec = querySpecSchema.parse({
-    entity: "faturamento",
-    metrics: ["faturamento.investimento", "faturamento.bruto", "faturamento.roas"],
-    filters: { "faturamento.date": { operator: "$between", value: [dia, dia] } },
-  });
-  const r = await executarQuery(spec, { db: db as never, projectIds: [projectId] });
-  const linha = r.rows[0] ?? {};
-  const num = (k: string) => {
-    const v = linha[k];
-    return typeof v === "number" ? v : v == null ? null : Number(v);
-  };
-  return {
-    investimento: num("faturamento.investimento") ?? 0,
-    faturamento: num("faturamento.bruto") ?? 0,
-    roas: num("faturamento.roas"),
-  };
+): Promise<LinhaDoResumo[]> {
+  const itens = await lerPorFunil(db, projectId, dia, dia, nomeDoProjeto);
+  return itens.filter(temMovimento).map((i) => ({
+    projectId,
+    nome: i.nome,
+    investimento: i.gasto,
+    faturamento: i.faturamento,
+    // Divisão por zero não é ROAS zero: funil que faturou sem mídia atribuída
+    // mostra "—", e não um número que diria que a mídia foi um desastre.
+    roas: i.gasto > 0 ? i.faturamento / i.gasto : null,
+  }));
 }
 
 const curto = (n: number) =>
@@ -65,15 +73,20 @@ const curto = (n: number) =>
 
 /**
  * O texto do resumo. Cabe numa notificação: título com o total, corpo com os
- * projetos — e, passando de quatro, só os maiores por investimento, porque o
+ * funis — e, passando de quatro, só os que moveram mais dinheiro, porque o
  * sistema operacional corta o resto sem avisar.
+ *
+ * "Mais dinheiro" é a soma dos dois lados, não só o investimento: um funil que
+ * faturou R$ 670 sem mídia atribuída interessa mais que um que gastou R$ 283 e
+ * não vendeu nada — e ordenar por gasto o deixaria de fora.
  */
 export function textoDoResumo(linhas: LinhaDoResumo[]): { titulo: string; corpo: string } {
   const investimento = linhas.reduce((s, l) => s + l.investimento, 0);
   const faturamento = linhas.reduce((s, l) => s + l.faturamento, 0);
   const geral = investimento > 0 ? faturamento / investimento : null;
 
-  const ordenadas = [...linhas].sort((a, b) => b.investimento - a.investimento);
+  const movimento = (l: LinhaDoResumo) => l.investimento + l.faturamento;
+  const ordenadas = [...linhas].sort((a, b) => movimento(b) - movimento(a));
   const mostradas = ordenadas.slice(0, 4);
   const sobra = ordenadas.length - mostradas.length;
 
@@ -82,7 +95,7 @@ export function textoDoResumo(linhas: LinhaDoResumo[]): { titulo: string; corpo:
       const roas = l.roas == null ? "—" : `${l.roas.toFixed(2).replace(".", ",")}×`;
       return `${l.nome}: ${curto(l.investimento)} → ${curto(l.faturamento)} (${roas})`;
     })
-    .concat(sobra > 0 ? [`e mais ${sobra} ${sobra === 1 ? "projeto" : "projetos"}`] : [])
+    .concat(sobra > 0 ? [`e mais ${sobra} ${sobra === 1 ? "funil" : "funis"}`] : [])
     .join("\n");
 
   return {
@@ -136,9 +149,9 @@ export async function rodarResumoDiario(fastify: FastifyInstance): Promise<Resum
   );
 
   // Uma leitura por projeto, não por pessoa: dois gestores do mesmo projeto não
-  // devem custar duas consultas de BI.
+  // devem custar duas consultas.
   // `null` = a série de vendas do projeto ainda não alcançou ontem.
-  const lidos = new Map<string, Omit<LinhaDoResumo, "projectId" | "nome"> | null>();
+  const lidos = new Map<string, LinhaDoResumo[] | null>();
 
   for (const [userId, projetos] of porPessoa) {
     const pref = prefs.get(userId);
@@ -157,12 +170,12 @@ export async function rodarResumoDiario(fastify: FastifyInstance): Promise<Resum
           const ultimo = await ultimoDiaComVenda(fastify.db, projectId);
           lidos.set(
             projectId,
-            ultimo && ultimo >= ontem ? await lerDoDia(fastify.db, projectId, ontem) : null,
+            ultimo && ultimo >= ontem
+              ? await lerDoDia(fastify.db, projectId, nomes.get(projectId) ?? "Projeto", ontem)
+              : null,
           );
         }
-        const lido = lidos.get(projectId);
-        if (!lido) continue;
-        linhas.push({ projectId, nome: nomes.get(projectId) ?? "Projeto", ...lido });
+        linhas.push(...(lidos.get(projectId) ?? []));
       }
 
       const parado =

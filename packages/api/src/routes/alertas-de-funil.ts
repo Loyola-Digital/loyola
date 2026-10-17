@@ -28,7 +28,7 @@ import {
   ROTULO_DA_METRICA,
   hojeSaoPaulo,
   julgar,
-  lerMetrica,
+  lerMetricaPorFunil,
   textoDoAlerta,
   type Metrica,
   type Regra,
@@ -223,24 +223,35 @@ export default fp(async function alertasDeFunilRoutes(fastify) {
     }
 
     try {
-      const leitura = await lerMetrica(
-        fastify.db,
-        projectId,
-        regra.metrica as Metrica,
-        regra.janelaDias,
-      );
-      // Sem o "já avisou hoje" de propósito: senão a resposta seria sempre
-      // "já avisou" justamente no dia em que a regra disparou.
-      const veredito = julgar(regra as Regra, leitura, hojeSaoPaulo(), null);
       const [p] = await fastify.db
         .select({ name: projects.name })
         .from(projects)
         .where(eq(projects.id, projectId))
         .limit(1);
+      const nomeDoProjeto = p?.name ?? "Projeto";
+      const itens = await lerMetricaPorFunil(
+        fastify.db,
+        projectId,
+        nomeDoProjeto,
+        regra.metrica as Metrica,
+        regra.janelaDias,
+      );
+      // Um veredito por funil, porque é funil a funil que a regra julga. Sem o
+      // "já avisou hoje" de propósito: senão a resposta seria sempre "já
+      // avisou" justamente no dia em que a regra disparou.
       return {
-        ...veredito,
-        projeto: p?.name ?? "Projeto",
-        previa: textoDoAlerta(regra as Regra, leitura, p?.name ?? "Projeto"),
+        projeto: nomeDoProjeto,
+        funis: itens.map((i) => ({
+          chave: i.chave,
+          nome: i.nome,
+          ...julgar(regra as Regra, i.leitura, hojeSaoPaulo(), null),
+          previa: textoDoAlerta(
+            regra as Regra,
+            i.leitura,
+            i.nome,
+            i.chave === "" ? undefined : nomeDoProjeto,
+          ),
+        })),
       };
     } catch (err) {
       return reply

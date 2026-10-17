@@ -92,12 +92,22 @@ function descrever(regra: RegraDeAlerta): string {
   return `Avisa quando ficar ${lado} ${alvo} ${janela}${piso}.`;
 }
 
+/**
+ * A conferência é por funil, então o texto diz quantos foram olhados e o que
+ * dispararia. Listar os quietos um a um encheria a tela de linhas iguais; o que
+ * interessa é quem está fora da faixa.
+ */
 function textoDoVeredito(v: Veredito): string {
-  if (v.estourou) return `Em ${v.projeto}, dispararia agora: "${v.previa.titulo}"`;
-  if (v.motivo === "gasto_abaixo_do_piso")
-    return `Em ${v.projeto}: quieto, só ${dinheiro(v.leitura.gasto)} investidos — abaixo do piso.`;
-  if (v.motivo === "sem_dado") return `Em ${v.projeto}: quieto, sem dado nessa janela.`;
-  return `Em ${v.projeto}: dentro da faixa (${dinheiro(v.leitura.gasto)} investidos).`;
+  if (v.funis.length === 0) return `Em ${v.projeto}: quieto, sem dado nessa janela.`;
+  const quantos = `${v.funis.length} ${v.funis.length === 1 ? "funil" : "funis"} em ${v.projeto}`;
+  const estouraram = v.funis.filter((f) => f.estourou);
+  if (estouraram.length > 0) {
+    return `${quantos}; dispararia agora: ${estouraram.map((f) => `"${f.previa.titulo}"`).join(", ")}`;
+  }
+  const abaixoDoPiso = v.funis.filter((f) => f.motivo === "gasto_abaixo_do_piso").length;
+  const piso = abaixoDoPiso > 0 ? `, ${abaixoDoPiso} abaixo do piso de gasto` : "";
+  const maiorGasto = Math.max(...v.funis.map((f) => f.leitura.gasto));
+  return `${quantos}: nenhum fora da faixa${piso} (maior gasto: ${dinheiro(maiorGasto)}).`;
 }
 
 export function RegrasDeAlerta({ projetos }: { projetos: Array<{ id: string; name: string }> }) {

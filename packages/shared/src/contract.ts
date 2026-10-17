@@ -567,4 +567,22 @@
 // zero. O rótulo da janela de 1 dia passa a ser "último dia fechado" para
 // ROAS e "investiu e não vendeu", e segue "hoje" para connect rate (tráfego é
 // intraday). `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 50;
+//
+// v51 (a notificação passa a falar em FUNIL, não em projeto; migration 0177):
+//   `POST /api/notificacoes/alertas/:id/testar` muda de forma. Era um veredito
+//   só — `{ estourou, motivo, leitura, projeto, previa }`. Agora é um por
+//   funil: `{ projeto, funis: [{ chave, nome, estourou, motivo, leitura,
+//   previa }] }`, onde `chave` é o `funnel_id` ou "" no item "(sem funil)" — o
+//   gasto que nenhuma etapa reivindica, que também é julgado. `funis: []`
+//   quando nada teve movimento na janela.
+//   Nada mais muda de forma: a regra continua cadastrada por projeto (ou para
+//   todos) e o resumo diário continua sendo uma notificação por pessoa — só as
+//   LINHAS dentro dele passaram a ser funis.
+//   Por quê: um projeto aqui é "DG & CPDF", com sete funis dentro, e a média do
+//   projeto escondia o que o alerta existe para achar. Medido em 17/10/2026, no
+//   mesmo dia e no mesmo projeto: `dg-pg05` a 1,13× e `dg-bf26` com R$ 269
+//   investidos e nenhuma venda, empacotados num "ROAS em 0,67".
+//   Consequência para quem cadastra regra: o piso de gasto passa a ser POR
+//   FUNIL — o que valia para o projeto somado agora segura alerta de funil
+//   pequeno. `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 51;
