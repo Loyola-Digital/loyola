@@ -1,0 +1,81 @@
+schema: 1
+story: '29.83'
+story_title: 'Meta Ads — campanhas de TODAS as contas de anúncios do expert nos 7 seletores e nos números dessas telas'
+gate: CONCERNS
+status_reason: 'O seletor, as órfãs, o auto-popular, os conjuntos e o diário leem todas as contas, com a escolha certa entre "parcial com aviso" e "falha alta" em cada ponto. Lint, tsc e as suítes da story estão verdes e 5 de 8 mutações próprias caem. Mas o conserto do item 8 (sync de campanhas novas em cada conta) não funciona com 2 contas: o `singleFlight` junta as duas chamadas e só a 1ª conta é consultada (REL-001, medium, provado com teste). Além disso, as órfãs e o auto-popular voltam a ler uma conta só sem nenhum teste cair (TEST-001, medium).'
+reviewer: 'Quinn'
+updated: '2026-10-19T17:20:00Z'
+branch: 'feat/29.83-contas-meta-multiplas'
+commit_reviewed: '1ca5746c'
+base: 'cd279ebd (origin/main, contrato 51; conferido com git ls-remote no gate)'
+history:
+  - { date: '2026-10-19', gate: CONCERNS, note: 'gate sobre 1ca5746c: REL-001 e TEST-001 medium; REL-002, REL-003, TEST-002 e DOC-001 low' }
+
+top_issues:
+  - id: REL-001
+    severity: medium
+    category: reliability
+    description: 'O item 8 da T1 (T5, AC7) não funciona com 2 contas. `sincronizarHistoricoDasCampanhasNovas` (services/meta-sync-campanhas-novas.ts:27-35) dispara `triggerBackgroundSyncForNewCampaigns` uma vez por conta, no mesmo tick. Cada disparo cai em `fetchCampaignDailyInsightsForIdsWithCache`, que usa a chave `cmp-refetch:${projectId}:${ids}:${since}:${until}` (services/meta-insights-cache.ts:304). A chave NÃO tem a conta, e as duas chamadas têm o mesmo projeto, os mesmos ids e a mesma janela de 365 dias. A segunda se junta à promise da primeira, e a segunda conta nunca é consultada. Provei com um teste temporário que usa o módulo real de cache, com a Meta simulada e 50 ms de latência: `fetchCampaignDailyInsightsForIds` foi chamado só com `["111"]`, esperado `["111","222"]`. A ordem das contas é por nome, então a 1ª é "Danilo Gato" (a antiga), e as campanhas novas moram na "DaniloGatoPerpétuo". No caso real, o sync não aquece nada. O teste da story (`meta-sync-campanhas-novas.test.ts`) simula `triggerBackgroundSyncForNewCampaigns` e por isso não vê a colisão. Impacto limitado: o caminho de leitura (`…EmContas`) busca o que falta em todas as contas sob demanda, então os números não ficam errados, só não são pré-aquecidos. O gatilho também só dispara com `metaAccountId` no funil ou na etapa. A mesma chave pode colidir entre a leitura multi-conta do painel e um chamador de conta única (`perpetual-report-loader`, `launch-report-loader`) com os mesmos ids e as mesmas datas. Nesse caso o painel recebe só uma conta, e `getCampaignDailyInsightsBulk` guarda isso no cache em memória pelo TTL. É improvável, mas possível.'
+    recommendation: 'Trocar o laço por UMA chamada que pede todas as contas: `syncCampaignHistoryInBackground` (ou o serviço novo) chama `fetchCampaignDailyInsightsForIdsWithCacheEmContas(db, projectId, contas, ids, 365)` dentro de try/catch, fire-and-forget. E pôr as contas na chave do `singleFlight` (`contas.map(c => c.metaAccountId).sort().join("+")`). O teste deve usar o `meta-insights-cache` REAL, simulando só `fetchCampaignDailyInsightsForIds` com latência, e afirmar que as duas contas foram consultadas. Hoje esse teste falha.'
+    owner: '@dev'
+    status: open
+
+  - id: TEST-001
+    severity: medium
+    category: tests
+    description: 'Dois dos cinco pontos da API voltam a ler uma conta só sem nenhum teste cair. M3: `orphan-campaigns` com `lerDeTodasAsContas(contas.slice(0, 1), …)` (routes/funnels.ts:784) → 19/19 verdes, SOBREVIVE. M4: auto-popular de etapa com `lerDeCadaConta(contas.slice(0, 1), …)` (routes/funnel-stages.ts:337) → SOBREVIVE. A Dev Notes pede "teste que falha com o `.limit(1)` de volta", e são exatamente os itens 2 e 3 da T1. M7: tirar o `ordenarContas` de `getAllMetaAccountsForProject` (services/traffic-analytics.ts:398) → SOBREVIVE. A ordem dos grupos no seletor volta a ser a do banco (AC7 fala em "nunca a ordem do banco"). `ordenarContas` é testada pura, mas o fio dela não.'
+    recommendation: 'Teste por `inject` de `GET /orphan-campaigns` com 2 contas (órfã só na 2ª) e de `POST /stages` com auto-popular (código casando só na 2ª), no molde de `meta-campaigns-seletor.test.ts`. Para a ordem, um caso em `all-adsets-multi-conta` ou no seletor com o banco devolvendo as contas fora da ordem do nome.'
+    owner: '@dev'
+    status: open
+
+  - id: REL-002
+    severity: low
+    category: reliability
+    description: 'O "falha em qualquer conta lança" do diário existe só no teste. O comentário de `fetchCampaignDailyInsightsForIdsWithCacheEmContas` (services/meta-insights-cache.ts:274) e o Dev Agent Record dizem que uma falha em qualquer conta lança, "como lançava a de conta única". Mas `fetchCampaignDailyInsightsForIds` (services/meta-ads.ts:620-660) usa `Promise.allSettled` por trecho de datas, registra o erro no log e devolve `[]`, então nunca lança por erro HTTP. Com o token de uma conta vencido, a rebusca devolve a parte da outra conta, calada. O teste `campaign-daily-multi-conta` "falha numa conta lança" simula um `fetchCampaignDailyInsightsForIds` que lança, o que a função real não faz. O comportamento é ANTERIOR à story (com uma conta já era assim) e o cache do dia passado continua servindo, por isso low.'
+    recommendation: 'Corrigir o comentário e o Dev Agent Record ("a falha de um trecho vira log, como antes"), ou levar à story de erro-visível do diário. Não é preciso mudar código nesta story.'
+    owner: '@dev'
+    status: open
+
+  - id: REL-003
+    severity: low
+    category: reliability
+    description: '`getAllMetaAccountsForProject` (services/traffic-analytics.ts:398-405) decifra o token de todas as contas fora de try/catch. Se uma conta tiver o token ilegível (troca de chave, IV corrompido), o seletor inteiro responde 502 (routes/funnels.ts:705-712), contra o espírito do AC3 ("falha numa conta não esconde a outra"). O mesmo vale para os conjuntos e o diário. O AC3 cita token expirado, sem acesso e rate limit, que são falhas da Meta e estão cobertas. Decifrar e falhar é raro. Também não filtra `meta_ads_accounts.is_active`, como o `.limit(1)` antigo também não filtrava: uma conta desativada mas vinculada entra nos números e, se falhar, derruba conjuntos e diário.'
+    recommendation: 'Story pequena ou o QA loop: decifrar por conta e devolver a falha como `accountErrors` no seletor. Decidir com o @po se conta `is_active = false` deve entrar nos leitores.'
+    owner: '@dev / @po'
+    status: open
+
+  - id: TEST-002
+    severity: low
+    category: tests
+    description: 'O lado web tem teste só na função pura `agruparCampanhasPorConta`. O fio de `CampaignSelector` (passar `accountErrors`, o chip com a conta) e os 7 pontos de chamada não têm teste. Conferi os 7 lendo o diff. O vitest do web só coleta `.test.ts`, então um teste de componente `.test.tsx` não rodaria de qualquer forma.'
+    recommendation: 'Teste de fio por `readFileSync` dos 7 arquivos (`accounts={…accounts}` e `accountErrors={…accountErrors}` junto de cada `<CampaignSelector`), como as stories anteriores fizeram.'
+    owner: '@dev'
+    status: open
+
+  - id: DOC-001
+    severity: low
+    category: documentation
+    description: 'O Dev Agent Record diz "Voltei o `getAllAdSetsForProject` … e a rota do seletor …: 7 de 7 falham". Isso vale para esses dois pontos, mas as órfãs e o auto-popular não foram mutados e não têm teste (TEST-001). A frase "Falha em qualquer conta lança … como lançava a de conta única" do diário não vale para a função real (REL-002). A decisão do item 8 ("pede a cada conta") não vale na prática (REL-001).'
+    recommendation: 'Atualizar o Dev Agent Record junto com o conserto de REL-001 e TEST-001.'
+    owner: '@dev'
+    status: open
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Li o diff `cd279ebd...1ca5746c` inteiro (25 arquivos, 1.406+/231−). Uso de `lerDeCadaConta` × `lerDeTodasAsContas` por ponto: seletor → cada conta, 502 só quando NENHUMA responde (AC3), CORRETO; órfãs → todas (falha vira 502, como antes), aceitável, porque "nenhuma órfã" por conta não lida seria falso negativo; auto-popular → cada conta, com a falha no log e o resto aproveitado, CORRETO (é sugestão conferida no seletor); conjuntos e diário → todas, CORRETO para números. `fireBackgroundMetaSync` passava o UUID de `funnels.meta_account_id` (schema: `uuid(...).references(metaAdsAccounts.id)`) como `act_`, então falhava sempre. Achado real do @dev, e o conserto troca pelo `act_` de cada conta, mas a coalescência anula isso (REL-001). A premissa "conta que não é dona da campanha devolve vazio" está no `filtering campaign.id IN` do `/act_X/insights` (meta-ads.ts:577). Insights tratam filtro como filtro, e `routes/meta-ads-comparison.ts` já se apoia nisso em produção ("uma conta que não as possui devolve [] sem erro"). Risco baixo, a conferir na T8. `fetchAllAdSetInsights` tem `singleFlight` com a conta na chave (meta-ads.ts:749), sem colisão. Leitores das 7 telas que continuam com uma conta: os de banco (overview, campanhas, top, all-ads, entity-daily), com fallback ao vivo só com o banco vazio no período; `/adsets?campaignId`, `/ads?adsetId` e `/placements`, ao vivo e de conta única, que só a tela de Tráfego do projeto usa (`funnel-campaign-table` em `projects/[id]/traffic`, `usePlacementBreakdown` em `traffic/page.tsx`), fora das 7; `/lp-campaigns`, ao vivo e de conta única, que nenhum chamador no web usa. O inventário da T1 se confirma.'
+  autonomous_decisions: '(1) Caminho (B), consultar todas as contas sem migrar `funnels.campaigns`: CORRETA, porque as seleções antigas continuam valendo. (2) Duas leituras por intenção (parcial com aviso × falha alta): CORRETA e bem documentada. (3) Manter a condição do gatilho do sync (`metaAccountId` preenchido) para não aumentar chamadas à Meta (R2): ACEITA. O AC4 é sobre números, e o caminho de leitura busca o que falta em todas as contas. O sync é pré-aquecimento. (4) Fora das duas stories os 9 pontos que só usam o token, porque as duas contas compartilham o token (decisão do Danilo): ACEITA, registrada. (5) `getAllMetaAccountsForProject` com `id`/`accountName` e ordem: o `meta-perf-sync` só lê `metaAccountId`/`accessToken` (meta-perf-sync.ts:112-125) e não quebra. A ordem não tem teste de fio (TEST-001/M7). [AUTO-DECISION] Gate CONCERNS e não FAIL → o REL-001 atinge só o pré-aquecimento e só funis com `metaAccountId`, não os números. O conserto é pequeno e cabe numa iteração do QA loop antes do merge.'
+  unit_tests: 'Suítes da story, rodadas por mim: API 19/19 (5 arquivos) e web 7/7 (`campanhas-por-conta`). MUTAÇÕES PRÓPRIAS (aplicar → suítes da story → `git checkout`, `git status` limpo depois): M1 seletor lendo 1 conta → 3 falham · M2 seletor com 502 se QUALQUER conta falhar → 1 · M3 órfãs com 1 conta → SOBREVIVE · M4 auto-popular com 1 conta → SOBREVIVE · M5 diário com 1 conta → 2 · M6 conjuntos com 1 conta → 2 · M7 sem `ordenarContas` no fio → SOBREVIVE · M8 `accountErrors` vazio → 2. Resultado: 5 de 8 caem (M1, M2, M5, M6, M8); M3, M4 e M7 sobrevivem → TEST-001. PROVA DE REL-001: teste temporário (removido do worktree, cópia em scratchpad) com o `meta-insights-cache` real → `expected ["111"] to deeply equal ["111","222"]`. Suíte completa da API, rodada por mim com `--testTimeout=60000`: 5.107 de 5.117, com 10 falhas em 5 arquivos, igual ao Dev Agent Record. Uma 1ª rodada com o timeout padrão deu 59 falhas em 40 arquivos, todas por tempo, sob carga. Ver `no_regressions`.'
+  lint_typecheck: 'Refeitos por mim no worktree. API: `tsc --noEmit` EXIT 0 (18 s); `eslint src/` 0 erros, 1 aviso antigo (`lp-campaigns.ts:57`, arquivo fora do diff). Web: só o vitest do arquivo novo; `next build`, `tsc` e `next lint` do web NÃO foram refeitos (o Dev Agent Record diz verde). As mudanças de tipo do web são aditivas e opcionais.'
+  no_regressions: 'Falhas pré-existentes conferidas. `funnel-stages-lead-inputs`: 3 falhas ("Data final não pode ser menor que hoje"). O teste NÃO importa `routes/funnel-stages.ts`: monta a própria rota com `projectionEndDate: "2026-06-30"`, data que já passou. Não tem relação com a story. `instagram-routes` 1, `instagram` 1, `projects` 3 e `schema` 2 também falham, e nenhum importa arquivo do diff. São as mesmas 10 falhas em 5 arquivos da baseline de gates anteriores. AC6 (uma conta só): seletor só ACRESCENTA campos (teste "uma conta só"), conjuntos e diário chamam a Meta com a mesma conta e a mesma consulta, e as órfãs e o auto-popular dão o mesmo resultado. A falha ao decifrar já caía em `[]` pelo try externo. Única mudança de comportamento com uma conta: o sync de campanhas novas passa a funcionar de fato (antes falhava sempre pelo UUID), o que gera mais chamadas à Meta quando `metaAccountId` está preenchido. É o comportamento original pretendido pela 30.2.'
+  performance: 'R2: os conjuntos (`level=adset`, conta inteira, ao vivo) passam a fazer N chamadas por request frio, uma por conta, com `singleFlight` por conta e cache em memória. O diário só vai à Meta para o que falta no banco e agora pergunta a N contas. O seletor faz N `fetchCampaigns`. Para N = 2 é aceitável.'
+  security: 'A resposta do seletor monta cada campo explicitamente (`montarRespostaDoSeletor`) e não leva o token. O teste afirma `not.toContain("tok-")`. As mensagens de erro por conta repetem o texto da Meta (ex.: "Error validating access token"), sem segredo. A guarda da rota não mudou.'
+  documentation: 'Dev Agent Record completo, com o inventário da T1 e as decisões. Três afirmações não se sustentam (DOC-001). A 29.84 está reservada e o AC4 tem a exceção registrada.'
+  api_contract: '51 → 52 com a linha de histórico (packages/shared/src/contract.ts:589-601): campos novos em `campaigns[]` (`accountId`, `accountName`, `metaAccountId`) e na resposta (`accounts`, `accountErrors`). A `origin/main` ainda está em cd279ebd (contrato 51, `git ls-remote`). O fallback do AC8 está no web: tipos opcionais, `?? []` em `useCampaignPicker` e `agruparCampanhasPorConta` sem `accountId` = um grupo sem título (teste "API antiga"). Item 8 do gate: OK. Se outra PR subir o contrato antes, o @devops renumera.'
+  acceptance_criteria: 'AC1 ✓ no código (rota lê todas as contas, 7 telas passam `accounts`/`accountErrors`; a prova real é a T8) · AC2 ✓ (grupo por conta com `accountName`, mesmo nome em grupos diferentes, sem título com 1 conta, chip com a conta) · AC3 ✓ (200 com a conta que respondeu + aviso com nome e motivo; 502 só se todas falham; ressalva REL-003 para token ilegível) · AC4 ✓ no código para os itens 4 e 7 (conjuntos e diário); a prova contra o Gerenciador é a T8; criativos e Lead Scoring → 29.84 · AC5 ✓ por construção (soma das linhas das duas contas no diário e nos conjuntos; teste 100 + 40 = 140) · AC6 ✓ (ver `no_regressions`) · AC7 PARCIAL: nenhum `.limit(1)` nos pontos tocados, mas o `fireBackgroundMetaSync` só consulta a 1ª conta com 2 contas (REL-001) · AC8 ✓ (52 + fallback).'
+
+notes:
+  - 'Pendente fora do código: T8, a validação real no Danilo Gato depois do deploy (grupos por conta nas 7 telas, números × Gerenciador por conta no mesmo período). Na T8, conferir também que `/act_X/insights` com `campaign.id IN` de campanhas de outra conta devolve vazio e não erro.'
+  - 'Antes do merge (QA loop, iteração 1): REL-001 e TEST-001. O resto pode ir junto ou virar story.'
+  - 'Fora das 7 telas e ainda de conta única: drill-down de conjuntos e anúncios e posicionamentos da tela de Tráfego do projeto (`/adsets`, `/ads`, `/placements`, ao vivo). A rota `/lp-campaigns` está sem uso no web. Candidatos à story separada que o "Fora do escopo" prevê.'
+  - 'Worktree: nenhuma alteração de código. As mutações foram desfeitas com `git checkout` e o teste temporário foi removido. Só o gate e a story foram escritos.'
