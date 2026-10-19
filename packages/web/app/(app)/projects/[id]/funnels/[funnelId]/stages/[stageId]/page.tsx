@@ -643,6 +643,8 @@ export default function StagePage() {
                   <CampaignSelector
                     campaigns={metaPicker.campaigns ?? []}
                     accountLinked={metaPicker.accountLinked}
+                    accounts={metaPicker.accounts}
+                    accountErrors={metaPicker.accountErrors}
                     value={stage.campaigns}
                     onChange={(campaigns: FunnelCampaign[]) => {
                       updateStage.mutate(

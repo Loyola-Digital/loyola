@@ -585,4 +585,17 @@
 //   Consequência para quem cadastra regra: o piso de gasto passa a ser POR
 //   FUNIL — o que valia para o projeto somado agora segura alerta de funil
 //   pequeno. `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 51;
+//
+// v52 (Story 29.83 — campanhas de TODAS as contas de anúncios do expert):
+//   `GET /api/projects/:projectId/meta-campaigns` (o seletor de campanhas das
+//   7 telas) lia UMA conta com `.limit(1)` sem ordem. Agora lê todas e cada
+//   item de `campaigns` ganha `accountId`, `accountName` e `metaAccountId`; a
+//   resposta ganha `accounts` (todas as contas, na ordem de agrupamento) e
+//   `accountErrors` (a conta que falhou some da lista com aviso, em vez de
+//   derrubar o seletor inteiro). Só ACRESCENTA campos: com a API antiga o
+//   seletor mostra a lista como antes, sem grupos.
+//   Também passam a ler todas as contas, sem mudar de forma: `all-adsets`, o
+//   diário por campanha (rebusca do que falta no cache), `orphan-campaigns`,
+//   o auto-popular de etapa e o sync histórico de campanhas novas.
+//   `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 52;

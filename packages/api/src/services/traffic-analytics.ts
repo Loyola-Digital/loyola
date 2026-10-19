@@ -25,7 +25,12 @@ import {
   type VideoMetrics,
   type MetaCampaignInsight,
 } from "./meta-ads.js";
-import { fetchCampaignDailyInsightsForIdsWithCache } from "./meta-insights-cache.js";
+import { fetchCampaignDailyInsightsForIdsWithCacheEmContas } from "./meta-insights-cache.js";
+import {
+  lerDeTodasAsContas,
+  ordenarContas,
+  type ContaMetaDoProjeto,
+} from "./meta-contas-do-projeto.js";
 import {
   getCampaignInsightsFromDb,
   getPlacementBreakdownFromDb,
@@ -369,11 +374,14 @@ export async function getMetaAccountForProject(
  * O sync usa isto para persistir a performance de cada conta — antes o
  * `.limit(1)` do getMetaAccountForProject deixava contas extras sem cobertura no
  * banco, forçando chamadas ao vivo.
+ *
+ * Story 29.83: devolve também `id` e `accountName` (o seletor agrupa por conta)
+ * e em ordem estável — nome da conta, depois id —, nunca na ordem do banco.
  */
 export async function getAllMetaAccountsForProject(
   db: Database,
   projectId: string
-): Promise<Array<{ metaAccountId: string; accessToken: string }>> {
+): Promise<ContaMetaDoProjeto[]> {
   const links = await db
     .select({ accountId: metaAdsAccountProjects.accountId })
     .from(metaAdsAccountProjects)
@@ -387,10 +395,14 @@ export async function getAllMetaAccountsForProject(
     .from(metaAdsAccounts)
     .where(inArray(metaAdsAccounts.id, accountIds));
 
-  return accounts.map((account) => ({
-    metaAccountId: account.metaAccountId,
-    accessToken: decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv),
-  }));
+  return ordenarContas(
+    accounts.map((account) => ({
+      id: account.id,
+      accountName: account.accountName,
+      metaAccountId: account.metaAccountId,
+      accessToken: decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv),
+    })),
+  );
 }
 
 // ============================================================
@@ -868,18 +880,17 @@ export async function getAllAdSetsForProject(
   const cached = getCached<AllAdSetsResult>(cacheKey);
   if (cached) return cached;
 
-  const metaAccount = await getMetaAccountForProject(db, projectId);
-  if (!metaAccount) {
+  // Story 29.83: TODAS as contas do expert — com `.limit(1)` os conjuntos das
+  // campanhas da outra conta saíam zerados. Falha em qualquer conta lança
+  // (total pela metade não é número).
+  const contas = await getAllMetaAccountsForProject(db, projectId);
+  if (contas.length === 0) {
     return { adsets: [], hasCrm: false, hasQualification: false, hasSales: false };
   }
 
   // Fetch at adset level (not ad level) — gets actions/leads correctly
-  const adsetInsights = await fetchAllAdSetInsights(
-    metaAccount.metaAccountId,
-    metaAccount.accessToken,
-    days,
-    startDate,
-    endDate,
+  const adsetInsights = await lerDeTodasAsContas(contas, (conta) =>
+    fetchAllAdSetInsights(conta.metaAccountId, conta.accessToken, days, startDate, endDate),
   );
 
   const idSet = campaignIds ? new Set(campaignIds) : null;
@@ -1178,16 +1189,16 @@ export async function getCampaignDailyInsights(
   const cached = getCached<MetaDailyInsight[]>(cacheKey, ttl);
   if (cached) return cached;
 
-  const metaAccount = await getMetaAccountForProject(db, projectId);
-  if (!metaAccount) return [];
+  // Story 29.83: todas as contas — a campanha pode ser de qualquer uma.
+  const contas = await getAllMetaAccountsForProject(db, projectId);
+  if (contas.length === 0) return [];
 
   // DB-first: reutiliza o wrapper bulk com 1 campanha. Persiste em
   // meta_campaign_insights_daily com TTL date-aware (dias > 7 = infinito).
-  const result = await fetchCampaignDailyInsightsForIdsWithCache(
+  const result = await fetchCampaignDailyInsightsForIdsWithCacheEmContas(
     db,
     projectId,
-    metaAccount.metaAccountId,
-    metaAccount.accessToken,
+    contas,
     [campaignId],
     days,
     startDate,
@@ -1217,17 +1228,18 @@ export async function getCampaignDailyInsightsBulk(
   const cached = getCached<MetaDailyInsight[]>(cacheKey, ttl);
   if (cached) return cached;
 
-  const metaAccount = await getMetaAccountForProject(db, projectId);
-  if (!metaAccount) return [];
+  // Story 29.83: todas as contas — a rebusca do que falta no cache pergunta a
+  // cada conta; com uma só, "hoje" das campanhas da outra conta sumia.
+  const contas = await getAllMetaAccountsForProject(db, projectId);
+  if (contas.length === 0) return [];
 
   // Story 18.26 Fase 3: DB-first cache. Dias > 7 dias atras vem do Postgres
   // (TTL infinito), dias 1-7 (TTL 24h), dia atual (TTL 30min). Reduz
   // chamadas Meta a 0 quando todo o range esta cacheado.
-  const raw = await fetchCampaignDailyInsightsForIdsWithCache(
+  const raw = await fetchCampaignDailyInsightsForIdsWithCacheEmContas(
     db,
     projectId,
-    metaAccount.metaAccountId,
-    metaAccount.accessToken,
+    contas,
     campaignIds,
     days,
     startDate,

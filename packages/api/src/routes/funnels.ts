@@ -1,9 +1,17 @@
 import { z } from "zod";
 import { eq, and, desc, asc, isNull, isNotNull, sql } from "drizzle-orm";
 import fp from "fastify-plugin";
-import { funnels, funnelStages, projects, projectMembers, metaAdsAccountProjects, metaAdsAccounts, googleAdsAccountProjects, googleAdsAccounts, users } from "../db/schema.js";
-import { fetchCampaigns, decryptAccountToken } from "../services/meta-ads.js";
-import { triggerBackgroundSyncForNewCampaigns } from "../services/meta-insights-cache.js";
+import { funnels, funnelStages, projects, projectMembers, googleAdsAccountProjects, googleAdsAccounts, users } from "../db/schema.js";
+import { fetchCampaigns } from "../services/meta-ads.js";
+import { getAllMetaAccountsForProject } from "../services/traffic-analytics.js";
+import {
+  lerDeCadaConta,
+  lerDeTodasAsContas,
+  montarRespostaDoSeletor,
+  rotuloDaConta,
+  type ContaMetaDoProjeto,
+} from "../services/meta-contas-do-projeto.js";
+import { sincronizarHistoricoDasCampanhasNovas } from "../services/meta-sync-campanhas-novas.js";
 import { resolveStagePhaseSuffix } from "../services/stage-phase.js";
 import {
   campanhaCasaComAEtapa,
@@ -153,38 +161,15 @@ export default fp(async function funnelRoutes(fastify) {
   }
 
   // Epic 30 Story 30.2: helper pra disparar background sync histórico Meta.
-  // Resolve token a partir do metaAccountId (link projeto → account) e dispara
-  // fire-and-forget. Erro de resolução é logado e não bloqueia.
+  // Fire-and-forget. Erro de resolução é logado e não bloqueia.
+  // Story 29.83: pede a CADA conta do expert, com o `act_` dela (antes ia o
+  // UUID de meta_ads_accounts no lugar do número da conta — falhava sempre).
   async function fireBackgroundMetaSync(
     projectId: string,
-    metaAccountIdSelected: string,
     newCampaignIds: string[],
   ): Promise<void> {
-    if (newCampaignIds.length === 0) return;
     try {
-      // Resolver account vinculada ao project (mesma pattern de outras routes)
-      const [link] = await fastify.db
-        .select({ accountId: metaAdsAccountProjects.accountId })
-        .from(metaAdsAccountProjects)
-        .where(eq(metaAdsAccountProjects.projectId, projectId))
-        .limit(1);
-      if (!link) return;
-
-      const [account] = await fastify.db
-        .select()
-        .from(metaAdsAccounts)
-        .where(eq(metaAdsAccounts.id, link.accountId))
-        .limit(1);
-      if (!account) return;
-
-      const token = decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv);
-      triggerBackgroundSyncForNewCampaigns(
-        fastify.db,
-        projectId,
-        metaAccountIdSelected,
-        token,
-        newCampaignIds,
-      );
+      await sincronizarHistoricoDasCampanhasNovas(fastify.db, projectId, newCampaignIds);
     } catch (err) {
       fastify.log.error({ err, projectId }, "Failed to trigger Meta background sync");
     }
@@ -559,7 +544,7 @@ export default fp(async function funnelRoutes(fastify) {
     // recém-vinculadas. Fire-and-forget — não bloqueia a resposta.
     if (funnel.metaAccountId && funnel.campaigns.length > 0) {
       const campaignIds = funnel.campaigns.map((c) => c.id);
-      void fireBackgroundMetaSync(funnel.projectId, funnel.metaAccountId, campaignIds);
+      void fireBackgroundMetaSync(funnel.projectId, campaignIds);
     }
 
     return reply.code(201).send(funnelShape(funnel));
@@ -656,7 +641,7 @@ export default fp(async function funnelRoutes(fastify) {
           .map((c) => c.id)
           .filter((id) => !oldIds.has(id));
         if (newCampaignIds.length > 0) {
-          void fireBackgroundMetaSync(updated.projectId, effectiveMetaAccountId, newCampaignIds);
+          void fireBackgroundMetaSync(updated.projectId, newCampaignIds);
         }
       }
     }
@@ -713,48 +698,37 @@ export default fp(async function funnelRoutes(fastify) {
       return reply.code(400).send({ error: "ID inválido" });
     }
 
-    // Find Meta Ads account linked to this project
-    const [link] = await fastify.db
-      .select({ accountId: metaAdsAccountProjects.accountId })
-      .from(metaAdsAccountProjects)
-      .where(eq(metaAdsAccountProjects.projectId, paramResult.data.projectId))
-      .limit(1);
-
-    if (!link) {
-      return { campaigns: [], accountLinked: false };
-    }
-
-    const [account] = await fastify.db
-      .select()
-      .from(metaAdsAccounts)
-      .where(eq(metaAdsAccounts.id, link.accountId))
-      .limit(1);
-
-    if (!account) {
-      return { campaigns: [], accountLinked: false };
-    }
-
+    // Story 29.83: campanhas de TODAS as contas vinculadas ao expert, cada uma
+    // com a conta de origem (o seletor agrupa por conta). Antes: `.limit(1)`
+    // sem ordem — as campanhas das outras contas nem apareciam.
+    let contas: ContaMetaDoProjeto[];
     try {
-      const token = decryptAccountToken(
-        account.accessTokenEncrypted,
-        account.accessTokenIv,
-      );
-      const campaigns = await fetchCampaigns(account.metaAccountId, token);
-      return {
-        campaigns: campaigns.map((c) => ({
-          id: c.id,
-          name: c.name,
-          status: c.status,
-          objective: c.objective,
-        })),
-        accountLinked: true,
-      };
+      contas = await getAllMetaAccountsForProject(fastify.db, paramResult.data.projectId);
     } catch (err) {
       return reply.code(502).send({
         error: "Erro ao buscar campanhas da Meta",
         details: err instanceof Error ? err.message : String(err),
       });
     }
+
+    if (contas.length === 0) {
+      return { campaigns: [], accountLinked: false, accounts: [], accountErrors: [] };
+    }
+
+    // A falha de uma conta não esconde as outras (AC3): o seletor lista o que
+    // leu e avisa, com o nome da conta, o que não leu. Só quando NENHUMA conta
+    // respondeu é que não há o que listar — aí o 502 de sempre.
+    const leitura = await lerDeCadaConta(contas, (conta) =>
+      fetchCampaigns(conta.metaAccountId, conta.accessToken),
+    );
+    if (leitura.porConta.length === 0) {
+      return reply.code(502).send({
+        error: "Erro ao buscar campanhas da Meta",
+        details: leitura.falhas.map((f) => `${rotuloDaConta(f.conta)}: ${f.erro}`).join("; "),
+      });
+    }
+
+    return montarRespostaDoSeletor(contas, leitura);
   });
 
   // ---- GET /api/projects/:projectId/funnels/:funnelId/orphan-campaigns (Epic 25) ----
@@ -798,31 +772,18 @@ export default fp(async function funnelRoutes(fastify) {
       };
     }
 
-    // Lista campanhas Meta da conta vinculada ao projeto
-    const [link] = await fastify.db
-      .select({ accountId: metaAdsAccountProjects.accountId })
-      .from(metaAdsAccountProjects)
-      .where(eq(metaAdsAccountProjects.projectId, paramResult.data.projectId))
-      .limit(1);
-
-    if (!link) {
-      return { hasMatchCode: true, matchCode, totalMatching: 0, orphans: [], byStage: {} };
-    }
-
-    const [account] = await fastify.db
-      .select()
-      .from(metaAdsAccounts)
-      .where(eq(metaAdsAccounts.id, link.accountId))
-      .limit(1);
-
-    if (!account) {
-      return { hasMatchCode: true, matchCode, totalMatching: 0, orphans: [], byStage: {} };
-    }
-
+    // Story 29.83: campanhas de TODAS as contas vinculadas ao projeto. Falha em
+    // qualquer conta vira 502, como a de conta única virava — "nenhuma órfã"
+    // por não ter lido uma das contas seria um falso negativo calado.
     let allCampaigns: Array<{ id: string; name: string; status: string; objective?: string }> = [];
     try {
-      const token = decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv);
-      const fetched = await fetchCampaigns(account.metaAccountId, token);
+      const contas = await getAllMetaAccountsForProject(fastify.db, paramResult.data.projectId);
+      if (contas.length === 0) {
+        return { hasMatchCode: true, matchCode, totalMatching: 0, orphans: [], byStage: {} };
+      }
+      const fetched = await lerDeTodasAsContas(contas, (conta) =>
+        fetchCampaigns(conta.metaAccountId, conta.accessToken),
+      );
       allCampaigns = fetched.map((c) => ({
         id: c.id,
         name: c.name,

@@ -277,6 +277,8 @@ export function StageWizard({
                     <CampaignSelector
                       campaigns={todasAsCampanhas}
                       accountLinked={campaignData?.accountLinked ?? false}
+                      accounts={campaignData?.accounts}
+                      accountErrors={campaignData?.accountErrors}
                       value={campanhas}
                       onChange={(v) => {
                         setTocouCampanhas(true);
