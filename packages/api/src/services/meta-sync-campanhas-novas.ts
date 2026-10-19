@@ -1,5 +1,5 @@
 import type { Database } from "../db/client.js";
-import { triggerBackgroundSyncForNewCampaigns } from "./meta-insights-cache.js";
+import { triggerBackgroundSyncForNewCampaignsEmContas } from "./meta-insights-cache.js";
 import { getAllMetaAccountsForProject } from "./traffic-analytics.js";
 
 /**
@@ -12,10 +12,11 @@ import { getAllMetaAccountsForProject } from "./traffic-analytics.js";
  * não o número `act_`. A chamada falhava sempre, calada (o erro só ia para o
  * log). O token era o da "primeira" conta do `.limit(1)`.
  *
- * Agora pede a cada conta do expert, com o número e o token DELA. Uma campanha
- * pertence a uma conta só; nas outras o filtro `campaign.id IN` não casa nada.
+ * Agora é UMA chamada com todas as contas do expert: a rebusca pede a cada
+ * conta com o número e o token DELA. Uma chamada por conta, em paralelo,
+ * colidia no `singleFlight` e só a 1ª conta era consultada (QA 29.83 REL-001).
  *
- * Devolve quantas contas receberam o pedido (0 = expert sem conta Meta).
+ * Devolve quantas contas entram no pedido (0 = expert sem conta Meta).
  */
 export async function sincronizarHistoricoDasCampanhasNovas(
   db: Database,
@@ -24,14 +25,7 @@ export async function sincronizarHistoricoDasCampanhasNovas(
 ): Promise<number> {
   if (newCampaignIds.length === 0) return 0;
   const contas = await getAllMetaAccountsForProject(db, projectId);
-  for (const conta of contas) {
-    triggerBackgroundSyncForNewCampaigns(
-      db,
-      projectId,
-      conta.metaAccountId,
-      conta.accessToken,
-      newCampaignIds,
-    );
-  }
+  if (contas.length === 0) return 0;
+  triggerBackgroundSyncForNewCampaignsEmContas(db, projectId, contas, newCampaignIds);
   return contas.length;
 }

@@ -271,8 +271,12 @@ export async function fetchCampaignDailyInsightsForIdsWithCache(
  * TODAS as contas do expert. Com uma conta só, a rebusca de "hoje" (TTL 1h)
  * perguntava à conta errada pelas campanhas da outra e voltava vazia: o dia
  * corrente sumia entre um sync e outro. Uma campanha pertence a uma conta só;
- * nas outras o filtro `campaign.id IN` não casa nada. Falha em qualquer conta
- * lança (`lerDeTodasAsContas`), como lançava a de conta única.
+ * nas outras o filtro `campaign.id IN` não casa nada.
+ *
+ * Erro: `lerDeTodasAsContas` lança se a leitura de uma conta LANÇAR — mas o
+ * `fetchCampaignDailyInsightsForIds` real não lança por falha da Meta: ele faz
+ * `allSettled` por trecho de datas e devolve o que conseguiu (comportamento
+ * anterior a esta story, igual com uma conta só). QA 29.83 REL-002.
  */
 export async function fetchCampaignDailyInsightsForIdsWithCacheEmContas(
   db: Database,
@@ -301,7 +305,11 @@ export async function fetchCampaignDailyInsightsForIdsWithCacheEmContas(
   // Com o sync intraday mantendo "hoje" fresco, este caminho raramente dispara.
   let fresh: MetaDailyInsight[] = [];
   if (toRefetch.length > 0) {
-    const key = `cmp-refetch:${projectId}:${toRefetch.slice().sort().join(",")}:${since}:${until}`;
+    // QA 29.83 REL-001: as contas entram na chave. Sem elas, duas buscas do
+    // mesmo gap em contas diferentes colapsavam numa só e a 2ª conta nunca era
+    // consultada (o sync de campanhas novas disparava uma por conta).
+    const chaveDasContas = contas.map((c) => c.metaAccountId).sort().join("+");
+    const key = `cmp-refetch:${projectId}:${chaveDasContas}:${toRefetch.slice().sort().join(",")}:${since}:${until}`;
     fresh = await singleFlight(key, async () => {
       const rawFresh = await lerDeTodasAsContas(contas, (conta) =>
         fetchCampaignDailyInsightsForIds(
@@ -397,6 +405,41 @@ export function triggerBackgroundSyncForNewCampaigns(
     newCampaignIds,
     days,
   );
+}
+
+/**
+ * Story 29.83 — o mesmo sync histórico, numa chamada só para TODAS as contas
+ * do expert: a rebusca pede a cada conta (`…WithCacheEmContas`). Uma chamada
+ * por conta, em paralelo, colidia no `singleFlight` (QA 29.83 REL-001).
+ * Fire-and-forget; erro vai para o log e não propaga.
+ */
+export function triggerBackgroundSyncForNewCampaignsEmContas(
+  db: Database,
+  projectId: string,
+  contas: ContaMeta[],
+  newCampaignIds: string[],
+  days: number = 365,
+): void {
+  if (newCampaignIds.length === 0 || contas.length === 0) return;
+  void (async () => {
+    try {
+      await fetchCampaignDailyInsightsForIdsWithCacheEmContas(
+        db,
+        projectId,
+        contas,
+        newCampaignIds,
+        days,
+      );
+      console.log(
+        `[meta-sync] backfilled ${newCampaignIds.length} campaign(s) × ${days}d em ${contas.length} conta(s) for project ${projectId}`,
+      );
+    } catch (err) {
+      console.error(
+        `[meta-sync] failed for project ${projectId} campaigns ${newCampaignIds.join(",")}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  })();
 }
 
 /**

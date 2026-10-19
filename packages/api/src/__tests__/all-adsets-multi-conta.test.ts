@@ -22,17 +22,17 @@ vi.mock("../services/meta-ads.js", async (importOriginal) => {
   };
 });
 
-const { getAllAdSetsForProject } = await import("../services/traffic-analytics.js");
+const { getAllAdSetsForProject, getAllMetaAccountsForProject } = await import("../services/traffic-analytics.js");
 
 const PROJ = "30000000-0000-4000-8000-000000000003";
 const ANTIGA = { id: "a0000000-0000-4000-8000-00000000000a", accountName: "Danilo Gato", metaAccountId: "111", accessTokenEncrypted: "A", accessTokenIv: "iv" };
 const NOVA = { id: "b0000000-0000-4000-8000-00000000000b", accountName: "DaniloGatoPerpétuo", metaAccountId: "1728118665260386", accessTokenEncrypted: "B", accessTokenIv: "iv" };
 
 /** Primeira consulta: vínculos do projeto. Segunda: as contas. */
-function dbComDuasContas(): Database {
+function dbComDuasContas(ordemDoBanco: Array<typeof ANTIGA> = [ANTIGA, NOVA]): Database {
   const respostas = [
-    [{ accountId: ANTIGA.id }, { accountId: NOVA.id }],
-    [ANTIGA, NOVA],
+    ordemDoBanco.map((c) => ({ accountId: c.id })),
+    ordemDoBanco,
   ];
   let i = 0;
   return {
@@ -90,5 +90,14 @@ describe("getAllAdSetsForProject com 2 contas (Story 29.83)", () => {
     await expect(
       getAllAdSetsForProject(dbComDuasContas(), "outro-projeto", 30, ["c-antiga", "52577008819383"]),
     ).rejects.toThrow("DaniloGatoPerpétuo (act_1728118665260386): rate limit");
+  });
+});
+
+describe("getAllMetaAccountsForProject (Story 29.83, QA TEST-001)", () => {
+  it("ordem estável por nome da conta, qualquer que seja a ordem do banco", async () => {
+    const contas = await getAllMetaAccountsForProject(dbComDuasContas([NOVA, ANTIGA]), PROJ);
+
+    expect(contas.map((c) => c.accountName)).toEqual(["Danilo Gato", "DaniloGatoPerpétuo"]);
+    expect(contas[0]).toEqual({ id: ANTIGA.id, accountName: "Danilo Gato", metaAccountId: "111", accessToken: "tok:A" });
   });
 });
