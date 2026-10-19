@@ -16,6 +16,7 @@
 
 import { eq, and, inArray, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
+import { lerDeTodasAsContas, type ContaMeta } from "./meta-contas-do-projeto.js";
 import {
   LINK_URL_RESOLVER_VERSION,
   AD_PERMALINK_RESOLVER_VERSION,
@@ -254,6 +255,34 @@ export async function fetchCampaignDailyInsightsForIdsWithCache(
   startDate?: string,
   endDate?: string,
 ): Promise<MetaDailyInsight[]> {
+  return fetchCampaignDailyInsightsForIdsWithCacheEmContas(
+    db,
+    projectId,
+    [{ metaAccountId, accessToken }],
+    campaignIds,
+    days,
+    startDate,
+    endDate,
+  );
+}
+
+/**
+ * Story 29.83 — a mesma leitura DB-first, com a rebusca do que falta feita em
+ * TODAS as contas do expert. Com uma conta só, a rebusca de "hoje" (TTL 1h)
+ * perguntava à conta errada pelas campanhas da outra e voltava vazia: o dia
+ * corrente sumia entre um sync e outro. Uma campanha pertence a uma conta só;
+ * nas outras o filtro `campaign.id IN` não casa nada. Falha em qualquer conta
+ * lança (`lerDeTodasAsContas`), como lançava a de conta única.
+ */
+export async function fetchCampaignDailyInsightsForIdsWithCacheEmContas(
+  db: Database,
+  projectId: string,
+  contas: ContaMeta[],
+  campaignIds: string[],
+  days: number,
+  startDate?: string,
+  endDate?: string,
+): Promise<MetaDailyInsight[]> {
   if (campaignIds.length === 0) return [];
 
   const since = startDate && endDate ? startDate : dateRangeFromDays(days).since;
@@ -274,13 +303,15 @@ export async function fetchCampaignDailyInsightsForIdsWithCache(
   if (toRefetch.length > 0) {
     const key = `cmp-refetch:${projectId}:${toRefetch.slice().sort().join(",")}:${since}:${until}`;
     fresh = await singleFlight(key, async () => {
-      const rawFresh = await fetchCampaignDailyInsightsForIds(
-        metaAccountId,
-        accessToken,
-        toRefetch,
-        days,
-        startDate,
-        endDate,
+      const rawFresh = await lerDeTodasAsContas(contas, (conta) =>
+        fetchCampaignDailyInsightsForIds(
+          conta.metaAccountId,
+          conta.accessToken,
+          toRefetch,
+          days,
+          startDate,
+          endDate,
+        ),
       );
       // Meta retorna campaign_id em cada row quando level=campaign — preservado
       // pela paginação. Upsert no DB para os próximos acessos lerem do cache.

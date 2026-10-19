@@ -7,11 +7,10 @@ import {
   projects,
   projectMembers,
   users,
-  metaAdsAccountProjects,
-  metaAdsAccounts,
 } from "../db/schema.js";
-import { decryptAccountToken } from "../services/meta-ads.js";
-import { triggerBackgroundSyncForNewCampaigns } from "../services/meta-insights-cache.js";
+import { getAllMetaAccountsForProject } from "../services/traffic-analytics.js";
+import { lerDeCadaConta, rotuloDaConta } from "../services/meta-contas-do-projeto.js";
+import { sincronizarHistoricoDasCampanhasNovas } from "../services/meta-sync-campanhas-novas.js";
 import {
   resolveStagePhaseSuffix,
   findMatchingCampaignsForStage,
@@ -193,35 +192,16 @@ export default fp(async function funnelStageRoutes(fastify) {
     return project ?? null;
   }
 
-  // Epic 30 Story 30.2: fire-and-forget background sync histÃ³rico Meta (365d)
-  // pra campanhas recÃ©m-vinculadas a uma stage.
+  // Epic 30 Story 30.2: fire-and-forget background sync histórico Meta (365d)
+  // pra campanhas recém-vinculadas a uma stage.
+  // Story 29.83: pede a CADA conta do expert, com o `act_` dela (antes ia o
+  // UUID de meta_ads_accounts no lugar do número da conta — falhava sempre).
   async function fireBackgroundMetaSync(
     projectId: string,
-    metaAccountIdSelected: string,
     newCampaignIds: string[],
   ): Promise<void> {
-    if (newCampaignIds.length === 0) return;
     try {
-      const [link] = await fastify.db
-        .select({ accountId: metaAdsAccountProjects.accountId })
-        .from(metaAdsAccountProjects)
-        .where(eq(metaAdsAccountProjects.projectId, projectId))
-        .limit(1);
-      if (!link) return;
-      const [account] = await fastify.db
-        .select()
-        .from(metaAdsAccounts)
-        .where(eq(metaAdsAccounts.id, link.accountId))
-        .limit(1);
-      if (!account) return;
-      const token = decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv);
-      triggerBackgroundSyncForNewCampaigns(
-        fastify.db,
-        projectId,
-        metaAccountIdSelected,
-        token,
-        newCampaignIds,
-      );
+      await sincronizarHistoricoDasCampanhasNovas(fastify.db, projectId, newCampaignIds);
     } catch (err) {
       fastify.log.error({ err, projectId }, "Failed to trigger Meta background sync (stage)");
     }
@@ -239,32 +219,6 @@ export default fp(async function funnelStageRoutes(fastify) {
       .where(and(eq(funnels.id, funnelId), eq(funnels.projectId, projectId)))
       .limit(1);
     return funnel ?? null;
-  }
-
-  /**
-   * Pega o metaAccountId + token decifrado da conta Meta vinculada ao projeto.
-   * Retorna null se nÃ£o tem conta vinculada (sem erro â€” auto-popular cai pra
-   * lista vazia).
-   */
-  async function getMetaAccountForProject(projectId: string) {
-    const [link] = await fastify.db
-      .select({ accountId: metaAdsAccountProjects.accountId })
-      .from(metaAdsAccountProjects)
-      .where(eq(metaAdsAccountProjects.projectId, projectId))
-      .limit(1);
-    if (!link) return null;
-    const [account] = await fastify.db
-      .select()
-      .from(metaAdsAccounts)
-      .where(eq(metaAdsAccounts.id, link.accountId))
-      .limit(1);
-    if (!account) return null;
-    try {
-      const token = decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv);
-      return { metaAccountId: account.metaAccountId, accessToken: token };
-    } catch {
-      return null;
-    }
   }
 
   // GET /api/projects/:projectId/funnels/:funnelId/stages
@@ -375,18 +329,28 @@ export default fp(async function funnelStageRoutes(fastify) {
         ),
       );
       if (chave.codigo) {
-        const meta = await getMetaAccountForProject(params.data.projectId);
-        if (meta) {
-          try {
-            resolvedCampaigns = await findMatchingCampaignsForStage(
-              meta.metaAccountId,
-              meta.accessToken,
+        // Story 29.83: casa o código da etapa nas campanhas de TODAS as contas
+        // do expert. A conta que falhar fica de fora, com aviso no log — o
+        // auto-popular é conveniência e o usuário confere a lista no seletor.
+        try {
+          const contas = await getAllMetaAccountsForProject(fastify.db, params.data.projectId);
+          const leitura = await lerDeCadaConta(contas, (conta) =>
+            findMatchingCampaignsForStage(
+              conta.metaAccountId,
+              conta.accessToken,
               chave.codigo,
               chave.sufixo,
+            ),
+          );
+          for (const falha of leitura.falhas) {
+            fastify.log.warn(
+              { erro: falha.erro, conta: rotuloDaConta(falha.conta) },
+              "[funnel-stages] auto-popular campaigns falhou nesta conta — seguindo sem ela",
             );
-          } catch (err) {
-            fastify.log.warn({ err }, "[funnel-stages] auto-popular campaigns falhou â€” seguindo com []");
           }
+          resolvedCampaigns = leitura.porConta.flatMap((p) => p.itens);
+        } catch (err) {
+          fastify.log.warn({ err }, "[funnel-stages] auto-popular campaigns falhou — seguindo com []");
         }
       }
     }
@@ -493,7 +457,7 @@ export default fp(async function funnelStageRoutes(fastify) {
         .map((c) => c.id)
         .filter((id) => !oldIds.has(id));
       if (newCampaignIds.length > 0) {
-        void fireBackgroundMetaSync(params.data.projectId, row.metaAccountId, newCampaignIds);
+        void fireBackgroundMetaSync(params.data.projectId, newCampaignIds);
       }
     }
 
