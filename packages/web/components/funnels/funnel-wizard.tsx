@@ -255,6 +255,8 @@ export function FunnelWizard({
                   <CampaignSelector
                     campaigns={allCampaigns}
                     accountLinked={campaignData?.accountLinked ?? false}
+                    accounts={campaignData?.accounts}
+                    accountErrors={campaignData?.accountErrors}
                     value={campaigns}
                     onChange={setCampaigns}
                   />

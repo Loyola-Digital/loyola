@@ -342,6 +342,8 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           <CampaignSelector
             campaigns={pickerData.campaigns ?? []}
             accountLinked={pickerData.accountLinked}
+            accounts={pickerData.accounts}
+            accountErrors={pickerData.accountErrors}
             value={funnel.campaigns}
             onChange={(campaigns: FunnelCampaign[]) => {
               if (onCampaignsChange) {

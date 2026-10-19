@@ -143,6 +143,8 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
                     <CampaignSelector
                       campaigns={metaPicker.campaigns ?? []}
                       accountLinked={metaPicker.accountLinked}
+                      accounts={metaPicker.accounts}
+                      accountErrors={metaPicker.accountErrors}
                       value={stage.campaigns}
                       onChange={(campaigns: FunnelCampaign[]) => {
                         updateStage.mutate(

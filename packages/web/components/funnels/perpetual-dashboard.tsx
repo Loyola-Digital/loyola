@@ -2542,6 +2542,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           <CampaignSelector
             campaigns={pickerData.campaigns ?? []}
             accountLinked={pickerData.accountLinked}
+            accounts={pickerData.accounts}
+            accountErrors={pickerData.accountErrors}
             value={funnel.campaigns}
             onChange={(campaigns: FunnelCampaign[]) => {
               if (onCampaignsChange) {

@@ -659,6 +659,8 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
                     <CampaignSelector
                       campaigns={metaPicker.campaigns ?? []}
                       accountLinked={metaPicker.accountLinked}
+                      accounts={metaPicker.accounts}
+                      accountErrors={metaPicker.accountErrors}
                       value={stage.campaigns}
                       onChange={(campaigns: FunnelCampaign[]) => {
                         updateStage.mutate(
