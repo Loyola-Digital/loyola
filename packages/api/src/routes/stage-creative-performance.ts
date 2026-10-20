@@ -39,6 +39,10 @@ import { montarLpPorAnuncio } from "../utils/lp-por-anuncio.js";
 import { recortarLinhasPelaJanela } from "../utils/janela-das-linhas.js";
 import { businessToday } from "../utils/sale-date.js";
 import { postDoAnuncio, postDoGrupo } from "../utils/post-do-criativo.js";
+import {
+  chavesDeLeadsPagosPorAnuncio,
+  leadsPagosDoCriativo,
+} from "../utils/leads-pagos-por-criativo.js";
 
 /**
  * Story 18.83 (AC10) — versão da chave do cache de 2 h desta rota.
@@ -51,10 +55,14 @@ import { postDoAnuncio, postDoGrupo } from "../utils/post-do-criativo.js";
  * `:v4` (Story 18.85) = vendas, ingressos e leads recortados pela janela do
  * seletor. Sem subir, o cache serviria números sem janela por até 2 h.
  *
+ * `:v5` (Story 18.89) = leads pagos, cada e-mail uma vez no criativo, também
+ * nas etapas SEM planilha de vendas, e a lista `adIds` por criativo. Sem subir,
+ * o cache serviria `leads: 0` (e sem `adIds`) por até 2 h depois do deploy.
+ *
  * A troca esfria também a tabela de Criativos (mesma entrada): a primeira
  * abertura depois do deploy paga a Meta ao vivo.
  */
-export const VERSAO_DO_CACHE_CREATIVE_PERFORMANCE = "v4";
+export const VERSAO_DO_CACHE_CREATIVE_PERFORMANCE = "v5";
 
 export function chaveDoCacheCreativePerformance(stageId: string, days: number): string {
   return `${stageId}:${days}:${VERSAO_DO_CACHE_CREATIVE_PERFORMANCE}`;
@@ -104,7 +112,10 @@ function withBudget<T>(p: Promise<T>, ms: number): Promise<T> {
 }
 
 interface CreativePerformanceResponse {
+  /** Representante do grupo (`group.adIds[0]`) — link da Ads Library. */
   adId: string;
+  /** Story 18.89: todos os ad_ids do criativo (mesmo Ad Name). */
+  adIds: string[];
   adName: string;
   spend: number;
   impressions: number;
@@ -427,6 +438,9 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           { count: number; emails: Set<string>; utmTermCounts: Map<string, number> }
         >();
         const revenueByAdId = new Map<string, number>();
+        // Story 18.89: ad_id → chaves (e-mail) dos leads PAGOS — a coluna Leads.
+        // O `count` acima segue contando todas as linhas (só diagnóstico).
+        let chavesPagasPorAnuncio = new Map<string, Set<string>>();
         // Story 18.49: rastreia de onde veio o revenue (co= da venda vs email do lead)
         let revenueSource: "sale_content" | "lead_email" | "none" = "none";
         // Story 18.55: Único/Total por criativo — preenchido só no modo sale_content
@@ -457,12 +471,20 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           }
         }
 
-        if (leadsSheet && salesSheet) {
+        // Story 18.89 (AC3): os leads saem da aba de leads e NÃO dependem da
+        // planilha de vendas. Antes este bloco exigia as duas (`leadsSheet &&
+        // salesSheet`) e a etapa sem `stage_sales_spreadsheets` capture — 11
+        // de 20 medidas em 19/10/2026 — devolvia `leads: 0` em todo criativo.
+        // O que depende de venda (faturamento, ingressos, LP) segue guardado
+        // pelos próprios `if (salesData && …)` abaixo.
+        if (leadsSheet) {
           let leadsData, salesData;
           try {
             [leadsData, salesData] = await Promise.all([
               readSheetData(leadsSheet.spreadsheetId, leadsSheet.sheetName),
-              readSheetData(salesSheet.spreadsheetId, salesSheet.sheetName),
+              salesSheet
+                ? readSheetData(salesSheet.spreadsheetId, salesSheet.sheetName)
+                : Promise.resolve(null),
             ]);
           } catch (err) {
             fastify.log.warn(
@@ -496,6 +518,8 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             const leadsMapping = (leadsSheet.columnMapping ?? {}) as {
               email?: string;
               utm_content?: string;
+              // Story 18.89: só lead pago conta (regra do Top Criativos).
+              utm_source?: string;
               utm_term?: string;
               // Story 18.85: a data do lead (o `$type` da coluna já tem o campo).
               date?: string;
@@ -525,6 +549,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               leadsMapping.utm_content,
             );
             const leadUtmTermIdx = findCol(leadsData.headers, leadsMapping.utm_term);
+            const leadUtmSourceIdx = findCol(leadsData.headers, leadsMapping.utm_source);
             const saleEmailIdx = salesMapping ? findCol(salesData!.headers, salesMapping.email) : -1;
             const saleBrutoIdx = salesMapping ? findCol(salesData!.headers, salesMapping.valorBruto) : -1;
             const saleLiquidoIdx = salesMapping ? findCol(salesData!.headers, salesMapping.valorLiquido) : -1;
@@ -547,6 +572,15 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
             const vendasNaJanela = salesData
               ? recortarLinhasPelaJanela(salesData.rows, saleDataIdx, days, hoje)
               : null;
+
+            // Story 18.89 (AC1): leads pagos por anúncio, com a chave de dedup
+            // (e-mail) — o grupo soma os seus anúncios sem contar a mesma
+            // pessoa duas vezes (`leadsPagosDoCriativo`, passo 7).
+            chavesPagasPorAnuncio = chavesDeLeadsPagosPorAnuncio(leadsNaJanela.linhas, {
+              utmContent: leadUtmContentIdx,
+              utmSource: leadUtmSourceIdx,
+              email: leadEmailIdx,
+            });
 
             // 5a-bis. Story 18.49: atribuição DIRETA de revenue pelo `co=`
             // (utm_content) da própria VENDA → ad_id → ad_name. Resolve
@@ -622,7 +656,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
                   product: saleProductIdx,
                   date: saleDataIdx,
                 },
-                (salesSheet.orderBumpProducts as string[] | null) ?? [],
+                (salesSheet?.orderBumpProducts as string[] | null | undefined) ?? [],
               );
               // AC1: revenue legado = Fat. Total. Vs 18.49: recompra deixa de
               // acumular no último ad (last-write) — cada compra fica no
@@ -894,7 +928,9 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
         // o mesmo nome (mesma logica da Top Creatives Gallery).
         const creatives: CreativePerformanceResponse[] = [];
         for (const group of groupedByName.values()) {
-          let totalLeads = 0;
+          // Story 18.89 (AC1): pagos, cada e-mail uma vez no criativo, somando
+          // TODOS os seus anúncios — a conta do Top Criativos.
+          const totalLeads = leadsPagosDoCriativo(chavesPagasPorAnuncio, group.adIds);
           let totalRevenue = 0;
           // Story 18.55: Único/Total consolidados de todos os ad_ids do grupo
           let groupIngressosUnicos = 0;
@@ -906,7 +942,6 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           for (const adId of group.adIds) {
             const leadsAgg = leadsByAdId.get(adId);
             if (leadsAgg) {
-              totalLeads += leadsAgg.count;
               for (const [term, count] of leadsAgg.utmTermCounts.entries()) {
                 aggregatedTermCounts.set(
                   term,
@@ -980,6 +1015,9 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           // adId representativo = primeiro adId do grupo (uso pra link Ads Library)
           creatives.push({
             adId: group.adIds[0],
+            // Story 18.89: o grupo inteiro — o web soma os leads da planilha
+            // por todos os anúncios do criativo, não pelo representante acima.
+            adIds: [...new Set(group.adIds)],
             adName: group.adName,
             spend: group.spend,
             impressions: group.impressions,

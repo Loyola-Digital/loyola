@@ -47,6 +47,7 @@ import {
 } from "@/lib/formulas/funnels";
 import type { MetricFormula } from "@/lib/types/metric-formula";
 import { filterSheetRowsByDays } from "@/lib/utils/spreadsheet-filters";
+import { escolherPlanilhaDeLeads } from "@/lib/utils/leads-dos-criativos";
 import { PISO_DE_REPRODUCOES } from "@loyola-x/shared/src/video-camadas";
 import {
   aggregateCreativesByName,
@@ -892,14 +893,12 @@ export function TopCreativesGallery({
   );
 
   const { data: spreadsheetsData } = useFunnelSpreadsheets(projectId, funnelId ?? "", stageId ?? null);
-  const linkedSheet = useMemo(() => {
-    if (!spreadsheetsData?.spreadsheets) return null;
-    return (
-      spreadsheetsData.spreadsheets.find((s) => s.type === "leads") ??
-      spreadsheetsData.spreadsheets[0] ??
-      null
-    );
-  }, [spreadsheetsData]);
+  // Story 18.89: a MESMA escolha da tabela de Desempenho de Criativos — os
+  // leads das duas telas saem da mesma planilha.
+  const linkedSheet = useMemo(
+    () => escolherPlanilhaDeLeads(spreadsheetsData?.spreadsheets),
+    [spreadsheetsData],
+  );
   const { data: sheetData } = useFunnelSpreadsheetData(
     projectId,
     funnelId ?? "",
