@@ -92,6 +92,7 @@ import {
   type FiltroDePublico,
 } from "@/lib/utils/filtro-de-publico";
 import { CampaignSelector } from "./campaign-selector";
+import { SecaoDeSaturacao } from "./launch-dashboard";
 import { TopCreativesGallery } from "./top-creatives-gallery";
 import { CamadasDeVideoSection } from "./camadas-de-video-section";
 import { PerpetualAnaliseHoraria } from "./perpetual-analise-horaria";
@@ -1543,7 +1544,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   const { data: campaignData } = useTrafficCampaigns(
     metaProjectId, days, customRange?.startDate, customRange?.endDate,
   );
-  const { data: dailyData, isLoading: dailyLoading } =
+  const { data: dailyData, isLoading: dailyLoading, isError: dailyError } =
     useCampaignDailyInsightsBulk(
       projectId,
       temMidia ? campaignIds : null,
@@ -2783,6 +2784,12 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       {/* o gestor saiba contra o que está comparando.                     */}
       {/* ================================================================ */}
       {tendencia && <TendenciaBlock t={tendencia} />}
+
+      {/* Story 29.85 — CTR × CPM: o mesmo componente do lançamento, com as  */}
+      {/* campanhas e o período desta tela (a mesma leitura diária abaixo).  */}
+      {/* Sem campanhas, a consulta não roda e a seção mostra o estado vazio */}
+      {/* — como no lançamento (AC4).                                        */}
+      <SecaoDeSaturacao dailyData={dailyData} carregando={dailyLoading} falhou={dailyError} />
 
       {/* ================================================================ */}
       {/* Story 29.32 — TRÊS GRÁFICOS DE LINHA×ÁREA (últimos 7 dias)       */}
