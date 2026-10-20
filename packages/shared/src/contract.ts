@@ -608,4 +608,13 @@
 //   no criativo, com ou sem planilha de vendas. Com a API antiga o web
 //   reconstrói o grupo pelo nome do anúncio e nunca cai na contagem de um
 //   ad_id só. Cache da rota `:v4` → `:v5`. `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 53;
+//
+// v54 (Story 18.90 — a aba Analytics diz por que o GA4 falhou):
+//   `GET .../stages/:stageId/ga4-analytics`, no 502 do GA4: `error` deixa de
+//   ser sempre "Erro ao consultar GA4" e passa a ser a mensagem da causa, e a
+//   resposta ganha `code` (`token_revogado | sem_permissao | cota |
+//   oauth_nao_configurado | rede | chave_criptografia | outro`,
+//   `shared/src/ga4-erros.ts`). `details` continua com o texto técnico. Com a
+//   API antiga o web mostra a mensagem genérica e não oferece "Reconectar".
+//   Respostas de sucesso não mudam. `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 54;

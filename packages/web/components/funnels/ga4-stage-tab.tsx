@@ -18,6 +18,7 @@ import {
   type Ga4Property,
 } from "@/lib/hooks/use-ga4";
 import { PlausibleDashboard } from "@/components/analytics/plausible-dashboard";
+import { pedeReconexaoGa4 } from "@loyola-x/shared/src/ga4-erros";
 import {
   useDeletePlausibleSite,
   usePlausibleSite,
@@ -408,6 +409,7 @@ function StageAnalyticsBody({
   const savedFilter = stageQ.data?.ga4PageFilter ?? "";
   const [filter, setFilter] = useState(savedFilter);
   const [days, setDays] = useState(30);
+  const [reconectando, setReconectando] = useState(false);
 
   // Sincroniza o input quando o stage carrega/atualiza.
   useEffect(() => { setFilter(savedFilter); }, [savedFilter]);
@@ -418,6 +420,9 @@ function StageAnalyticsBody({
   });
 
   const ehPlausible = analytics.data?.fonte === "plausible";
+
+  // Reconectou e a consulta voltou: o painel de conexão some.
+  useEffect(() => { if (analytics.isSuccess) setReconectando(false); }, [analytics.isSuccess]);
 
   function saveFilter() {
     const value = filter.trim() || null;
@@ -470,11 +475,24 @@ function StageAnalyticsBody({
           {analytics.isLoading ? (
             <Skeleton className="h-40" />
           ) : analytics.isError ? (
-            <div className="flex flex-wrap items-center gap-2 text-xs text-red-500">
-              <span>{errMsg(analytics.error)}</span>
-              <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] gap-1" onClick={() => analytics.refetch()}>
-                <RefreshCw className="h-3 w-3" /> Tentar de novo
-              </Button>
+            <div className="space-y-3">
+              {/* Story 18.90: a mensagem já vem com a causa (API ≥ v54); o
+                  `code` diz se reconectar resolve. API antiga: sem código, só
+                  a mensagem genérica e o "Tentar de novo". */}
+              <div className="flex flex-wrap items-center gap-2 text-xs text-red-500">
+                <span>{errMsg(analytics.error)}</span>
+                {pedeReconexaoGa4((analytics.error as { code?: unknown } | null)?.code) && !reconectando && (
+                  <Button variant="outline" size="sm" className="h-6 px-2 text-[10px] gap-1" onClick={() => setReconectando(true)}>
+                    <Plug className="h-3 w-3" /> Reconectar
+                  </Button>
+                )}
+                <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] gap-1" onClick={() => analytics.refetch()}>
+                  <RefreshCw className="h-3 w-3" /> Tentar de novo
+                </Button>
+              </div>
+              {/* O PUT da conexão regrava o token do projeto (upsert) e invalida
+                  esta consulta — não precisa desconectar antes. */}
+              {reconectando && <Ga4ConnectPanel projectId={projectId} />}
             </div>
           ) : analytics.data ? (
             <>

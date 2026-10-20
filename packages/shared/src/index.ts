@@ -202,6 +202,14 @@ export { utmContentEfetivo, normalizeNumericId } from "./utm-value.js";
 // a mesma regra no Top Criativos, no Desempenho de Criativos e na API. Módulo
 // folha: o web importa por subpath (`@loyola-x/shared/src/leads-pagos`).
 export { ORIGENS_PAGAS_DE_LEAD, ehOrigemPagaDeLead, chaveDoLead } from "./leads-pagos.js";
+// Story 18.90: a causa de uma falha do GA4 (código + mensagem que diz o que
+// fazer). Módulo folha: o web importa por subpath (`@loyola-x/shared/src/ga4-erros`).
+export {
+  CODIGOS_ERRO_GA4,
+  MENSAGENS_ERRO_GA4,
+  pedeReconexaoGa4,
+  type CodigoErroGa4,
+} from "./ga4-erros.js";
 // Story 18.71 (achado): número de célula de planilha em pt-BR/en-US. Três rotas
 // liam "1.097,00" como 1,097 porque o replace trocava só a primeira vírgula.
 export { parseNumeroPtBr, parseValorPlanilha } from "./numero-ptbr.js";
