@@ -198,6 +198,10 @@ export {
 // em três formatos e só um deles é o ad_id puro. Módulo folha: o web importa por
 // subpath (`@loyola-x/shared/src/utm-value`), a API por aqui.
 export { utmContentEfetivo, normalizeNumericId } from "./utm-value.js";
+// Story 18.89: o lead PAGO de um criativo (origens pagas + chave de dedup) —
+// a mesma regra no Top Criativos, no Desempenho de Criativos e na API. Módulo
+// folha: o web importa por subpath (`@loyola-x/shared/src/leads-pagos`).
+export { ORIGENS_PAGAS_DE_LEAD, ehOrigemPagaDeLead, chaveDoLead } from "./leads-pagos.js";
 // Story 18.71 (achado): número de célula de planilha em pt-BR/en-US. Três rotas
 // liam "1.097,00" como 1,097 porque o replace trocava só a primeira vírgula.
 export { parseNumeroPtBr, parseValorPlanilha } from "./numero-ptbr.js";

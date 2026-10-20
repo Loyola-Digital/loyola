@@ -598,4 +598,14 @@
 //   diário por campanha (rebusca do que falta no cache), `orphan-campaigns`,
 //   o auto-popular de etapa e o sync histórico de campanhas novas.
 //   `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 52;
+//
+// v53 (Story 18.89 — Leads do Desempenho de Criativos = Leads do Top Criativos):
+//   `GET .../stages/:stageId/creative-performance`: cada item de `creatives`
+//   ganha `adIds` (todos os ad_ids do criativo; `adId` segue sendo o
+//   representante). `leads` muda de SEMÂNTICA: era toda linha da aba de leads
+//   do ad_id, e só quando a etapa tinha planilha de vendas `capture` (sem ela,
+//   0); agora é lead PAGO (`meta | meta-ads | google-ads`), cada e-mail uma vez
+//   no criativo, com ou sem planilha de vendas. Com a API antiga o web
+//   reconstrói o grupo pelo nome do anúncio e nunca cai na contagem de um
+//   ad_id só. Cache da rota `:v4` → `:v5`. `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 53;

@@ -1,0 +1,50 @@
+schema: 1
+story: '18.89'
+story_title: 'Desempenho de Criativos — Leads somam todos os anúncios do criativo (mesma regra do Top Criativos)'
+gate: CONCERNS
+status_reason: 'AC1–AC8 conferidos no código do commit 6eb0b66e; 9 mutações independentes do @qa derrubam a suíte e a restauração volta ao verde. Contrato 52 → 53 com histórico e cache v4 → v5 (check 8 OK); main remota segue na base a6d64fc5. Em aberto: next build do web não concluído localmente (medium), AC9/AC10 dependem do deploy (medium) e o 38 literal do AC10 hoje é 39 (low, @po).'
+reviewer: 'Quinn'
+updated: '2026-10-20T13:05:00Z'
+pr: null
+branch: 'feat/18.89-criativos-leads-todos-os-anuncios (local, não pushada)'
+commits: ['6eb0b66e']
+base: 'a6d64fc5 (origin/main, conferida com ls-remote em 20/10)'
+
+top_issues:
+  - id: 'BUILD-001'
+    severity: medium
+    finding: 'O `next build` do web não terminou localmente: ETIMEDOUT lendo @react-three/drei/helpers/*.js (landing page), arquivos marcados `compressed,dataless` pelo iCloud. Não é código da story, mas o build do web não foi provado verde. O `tsc` do web passou sem erros, mas sobre os .next/types de um build anterior.'
+    suggested_action: '@devops: não mergear sem o preview da Vercel verde na PR. Localmente, `brctl download` do node_modules (ou desligar a otimização de armazenamento do iCloud para a pasta) antes de rodar o build de novo.'
+  - id: 'REQ-001'
+    severity: medium
+    finding: 'AC9 (script de conferência com 0 divergências) e AC10 (validação visual em fzl4-bf26, bbe-web-mai-26 e dg-bf26) só podem rodar depois do deploy da API com contrato 53 / cache v5. Antes do deploy o script não confere nenhuma etapa (todas "sem resposta no cache v5").'
+    suggested_action: 'Depois do deploy: abrir as telas (ou Atualizar) e rodar `cd packages/api && ./node_modules/.bin/tsx scripts/confere-leads-dos-criativos.ts 90`; registrar a saída no Dev Agent Record. Na visual, comparar 3 criativos multi-anúncio por etapa entre a tabela e o Top Criativos («Mais Leads»), seletor em 90 dias.'
+  - id: 'REQ-002'
+    severity: low
+    finding: 'O AC10 cita 38 leads para o ad04; a regra do AC1 dá 39 hoje (39 e-mails distintos, nenhum repetido, medido pelo @dev em 19/10). Provável lead novo depois do print. O teste unitário usa uma fixture com 1 e-mail repetido para chegar a 38, então não contradiz.'
+    suggested_action: '@po: ler o AC10 como "o mesmo número nas duas telas", não o literal 38.'
+  - id: 'RISK-001'
+    severity: low
+    finding: 'A regra agora é a mesma, mas as duas telas não partem do mesmo conjunto de anúncios: o Top Criativos agrupa os ad_ids que vêm de useTopPerformers (campaignIds da página, limite 500, ordem por spend), e a tabela agrupa os da rota creative-performance (campanhas da etapa, com queda para as do funil). Se os dois escopos diferirem, o mesmo Ad Name terá grupos diferentes e números diferentes. Pré-existente, não introduzido pela story.'
+    suggested_action: 'Coberto pela AC10. Se aparecer divergência na visual, comparar a lista `adIds` da resposta da rota com os `ids` do card antes de suspeitar da contagem.'
+  - id: 'PERF-001'
+    severity: low
+    finding: 'O hook da tabela passa a ler a planilha de leads por useFunnelSpreadsheetData, além da leitura crua do useCrossReferenceLeads (queryKey google-sheets-data). Com a galeria na mesma página, a query é compartilhada; sem ela, é uma leitura a mais da mesma aba.'
+    suggested_action: 'Aceitável. Se o tempo de carga incomodar, o crossref pode passar a usar a mesma query.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'OK — regra num módulo folha do shared (ORIGENS_PAGAS_DE_LEAD, ehOrigemPagaDeLead, chaveDoLead); PAID_SOURCES do web é a MESMA referência; cópia {meta, google} removida. API: `if (leadsSheet)` com a de vendas opcional (salesSheet?.orderBumpProducts; o resto já guardado por `if (salesData && …)`); chaves pagas por anúncio sobre leadsNaJanela.linhas; união por grupo; utm_term e count de linhas mantidos. Web: aplicarLeadsDaPlanilha usa escolherPlanilhaDeLeads + filterSheetRowsByDays + countLeadsByOriginForAds(...).leadsPagos, os mesmos passos do enrichWithPaidLeads da galeria; agrupamento por nome nas duas pontas é trim + case-sensitive. Fallback para API antiga reconstrói o grupo pelos nomes ou mantém o número da API — nunca um anúncio só.'
+  unit_tests: 'OK — API leads-pagos-por-criativo-1889 12/12; web leads-dos-criativos-1889 + contagem-de-leads 21/21. Mutações do @qa (script em scratchpad, restauração conferida com cmp, working tree limpo ao fim): M1 `google` pago → 4 falhas; M2 sem dedup por e-mail → 4; M3 criativo = só o representante → 6; M4 sem recorte de janela → 1; M5 planilha = primeira (ignora type leads) → 1; M6 API antiga sem nome → representante → 1; M7 API conta fora da janela → 1; M8 API ignora utm_source → 1; M9 adIds = só o representante → 1. Nenhuma sobreviveu. Somam-se às 3 do @dev.'
+  acceptance_criteria: 'AC1 ✓ pagos, e-mail único no criativo, todos os ad_ids · AC2 ✓ tabela = função da galeria (teste de igualdade com enrichWithPaidLeads) · AC3 ✓ leads sem planilha de vendas · AC4 ✓ nunca a contagem de um anúncio só (adIds na resposta; fallback por nome; senão número da API) · AC5 ✓ janela do seletor nas duas pontas · AC6 ✓ origens meta/meta-ads/google-ads em lista única · AC7 ✓ cache v5 + contrato 53 · AC8 ✓ testes em pastas coletadas (lib/utils/__tests__, src/__tests__) · AC9 ⏳ script pronto, roda depois do deploy · AC10 ⏳ visual (REQ-001/REQ-002).'
+  no_regressions: 'OK com ressalva — web vitest 1950/1950; tsc API 0 e web 0; eslint 0 nos 15 arquivos; API 9 falhas em 8 arquivos, nenhum importa arquivo da story (lead-inputs por data vencida na fixture; instagram/projects/schema pré-existentes; debriefing/nomenclatura passam isolados). next build não concluído (BUILD-001).'
+  performance: 'OK — Map/Set por requisição sobre linhas já lidas; uma leitura de planilha a mais no web (PERF-001, low).'
+  security: 'OK — sem rota nova; `adIds` expõe ids de anúncio que a resposta já expunha (`adId`); script AC9 só leitura.'
+  documentation: 'OK — T0 medida em produção, decisões YOLO numeradas, diferencial 0/162, prova pela reversão, File List completa.'
+  api_contract: 'OK — campo novo `adIds` e mudança de semântica de `leads` ⇒ API_CONTRACT_VERSION 52 → 53 com a linha de histórico v53; packages/mcp não afetado; web com fallback para API antiga.'
+  scope_condition: 'OK — [scope-override] no commit; autorização do Lucas relatada pelo gestor ("tudo autorizado", P6, 19/10).'
+
+notes:
+  - 'CodeRabbit não rodado: o CLI deste ambiente está configurado para WSL e a máquina é macOS.'
+  - 'A main remota está em a6d64fc5 (base da branch): sem rebase pendente e sem colisão de número de contrato até 20/10. A branch da 48.16 tem contrato antigo; quem mergear depois rebaseia.'

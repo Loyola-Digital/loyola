@@ -2,13 +2,18 @@ import type { CampaignDailyInsight } from "@/lib/hooks/use-traffic-analytics";
 import type { FunnelSpreadsheetRow } from "@/lib/types/funnel-spreadsheet";
 import { normaliseDate } from "@/lib/utils/spreadsheet-filters";
 import { normalizeEmail } from "@/lib/utils/normalize-answer";
+import { ORIGENS_PAGAS_DE_LEAD } from "@loyola-x/shared/src/leads-pagos";
 
 /**
  * utm_source values que classificam um lead como "pago" (vindo de mídia paga).
  * Comparação é case-insensitive — valores da planilha devem ser normalizados
  * com `toLowerCase` antes de consultar este Set.
+ *
+ * Story 18.89: a lista mora no shared (`leads-pagos.ts`) — a contagem da tabela
+ * de Criativos tinha uma cópia própria com outro conteúdo. Este nome segue
+ * exportado para os consumidores que já o importam.
  */
-export const PAID_SOURCES = new Set(["meta", "meta-ads", "google-ads"]);
+export const PAID_SOURCES = ORIGENS_PAGAS_DE_LEAD;
 
 /**
  * Alíquota do imposto sobre Meta Ads a partir de 2026 (12,15%).
