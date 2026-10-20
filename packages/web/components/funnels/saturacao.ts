@@ -28,6 +28,17 @@ export function linkCtr(d: CampaignDailyInsight): number {
 
 export type EstadoDeSaturacao = "saturating" | "ctr-drop" | "cpm-rise" | "healthy";
 
+/** O estado e os números que o tooltip do selo mostra (CTR de link e CPM). */
+export interface LeituraDeSaturacao {
+  status: EstadoDeSaturacao;
+  ctrFirst: number;
+  ctrSecond: number;
+  ctrChange: number;
+  cpmFirst: number;
+  cpmSecond: number;
+  cpmChange: number;
+}
+
 /**
  * Compara a primeira metade do período com a segunda. Variação acima de 10%
  * conta: CTR caindo E CPM subindo é saturação; só um dos dois é atenção.
@@ -35,7 +46,7 @@ export type EstadoDeSaturacao = "saturating" | "ctr-drop" | "cpm-rise" | "health
  */
 export function estadoDeSaturacao(
   dailyData: CampaignDailyInsight[] | null,
-): EstadoDeSaturacao | null {
+): LeituraDeSaturacao | null {
   if (!dailyData || dailyData.length < 4) return null;
 
   const mid = Math.floor(dailyData.length / 2);
@@ -57,8 +68,10 @@ export function estadoDeSaturacao(
   const ctrDrop = ctrChange < -10;
   const cpmRise = cpmChange > 10;
 
-  if (ctrDrop && cpmRise) return "saturating";
-  if (ctrDrop) return "ctr-drop";
-  if (cpmRise) return "cpm-rise";
-  return "healthy";
+  let status: EstadoDeSaturacao = "healthy";
+  if (ctrDrop && cpmRise) status = "saturating";
+  else if (ctrDrop) status = "ctr-drop";
+  else if (cpmRise) status = "cpm-rise";
+
+  return { status, ctrFirst, ctrSecond, ctrChange, cpmFirst, cpmSecond, cpmChange };
 }

@@ -1699,8 +1699,9 @@ export function FunnelComparisonChart({
 export function SaturationBadge({ dailyData }: { dailyData: CampaignDailyInsight[] | null }) {
   // Story 29.85: a regra mora em `saturacao.ts` e lê o CTR do link — a mesma
   // série que o `CtrCpmChart` desenha ao lado.
-  const status = estadoDeSaturacao(dailyData);
-  if (!status) return null;
+  const leitura = estadoDeSaturacao(dailyData);
+  if (!leitura) return null;
+  const { status, ctrFirst, ctrSecond, ctrChange, cpmFirst, cpmSecond, cpmChange } = leitura;
 
   const config = {
     saturating: {

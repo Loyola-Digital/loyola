@@ -29,7 +29,9 @@ describe("Story 29.85 — selo de saturação pelo clique no link (AC3, AC5)", (
       dia("2026-10-03", { imp: 10000, cliques: 200, link: 100, cpm: 25 }),
       dia("2026-10-04", { imp: 10000, cliques: 200, link: 100, cpm: 25 }),
     ];
-    expect(estadoDeSaturacao(dados)).toBe("cpm-rise");
+    expect(estadoDeSaturacao(dados)?.status).toBe("cpm-rise");
+    // O tooltip mostra a variação do CTR de link (0%), não a do CTR total (−33%).
+    expect(estadoDeSaturacao(dados)?.ctrChange).toBeCloseTo(0);
   });
 
   it("CTR de link cai >10% com CPM subindo: 'Saturando'", () => {
@@ -39,7 +41,7 @@ describe("Story 29.85 — selo de saturação pelo clique no link (AC3, AC5)", (
       dia("2026-10-03", { imp: 10000, cliques: 300, link: 70, cpm: 25 }),
       dia("2026-10-04", { imp: 10000, cliques: 300, link: 70, cpm: 25 }),
     ];
-    expect(estadoDeSaturacao(dados)).toBe("saturating");
+    expect(estadoDeSaturacao(dados)?.status).toBe("saturating");
   });
 
   it("CTR de link cai, CPM estável: 'CTR em queda'; nada muda: 'Saudável'", () => {
@@ -49,9 +51,9 @@ describe("Story 29.85 — selo de saturação pelo clique no link (AC3, AC5)", (
       dia("2026-10-03", { imp: 10000, cliques: 300, link: 80, cpm: 20 }),
       dia("2026-10-04", { imp: 10000, cliques: 300, link: 80, cpm: 20 }),
     ];
-    expect(estadoDeSaturacao(cai)).toBe("ctr-drop");
+    expect(estadoDeSaturacao(cai)?.status).toBe("ctr-drop");
     const estavel = cai.map((d) => ({ ...d, actions: [{ action_type: "link_click", value: "100" }] }));
-    expect(estadoDeSaturacao(estavel)).toBe("healthy");
+    expect(estadoDeSaturacao(estavel)?.status).toBe("healthy");
   });
 
   it("menos de 4 dias ou sem dados: sem selo (AC4)", () => {
@@ -65,7 +67,7 @@ describe("Story 29.85 — selo de saturação pelo clique no link (AC3, AC5)", (
       new URL("../../../components/funnels/launch-dashboard.tsx", import.meta.url),
       "utf8",
     );
-    expect(lancamento).toContain("const status = estadoDeSaturacao(dailyData);");
+    expect(lancamento).toContain("const leitura = estadoDeSaturacao(dailyData);");
     expect(lancamento).toContain("const ctr = linkCtr(d);");
   });
 });
