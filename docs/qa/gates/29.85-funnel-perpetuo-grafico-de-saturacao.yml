@@ -1,0 +1,46 @@
+schema: 1
+story: '29.85'
+story_title: 'Perpétuo — Gráfico de saturação (CTR × CPM) e selo pelo clique no link'
+gate: CONCERNS
+status_reason: 'AC1–AC5 conferidos no código (ccb2e63b + 786daf41); o selo e o tooltip leem a mesma série da linha (CTR de link) nas 3 telas; mesmo componente no lançamento e no Perpétuo. Sem mudança na API (check 8 N/A). Em aberto: os limites que o AC3 diz que "não mudam" (4 dias, 10% de CPM) não estão travados por teste (medium); o estado de erro do lançamento sem teste (low); visual depende do merge.'
+reviewer: 'Quinn'
+updated: '2026-10-21T01:35:00Z'
+pr: null
+branch: 'feat/29.85-perpetuo-saturacao (local, não pushada)'
+commits: ['ccb2e63b', '786daf41']
+base: 'f77e5fe7 (origin/main, conferida com ls-remote em 21/10)'
+
+top_issues:
+  - id: 'TEST-001'
+    severity: medium
+    finding: 'Mutações do @qa Q2 (mínimo de 4 → 3 dias) e Q3 (limite do CPM 10% → 20%) sobreviveram. O AC3 diz que metades, limite de 10% e mínimo de 4 dias continuam iguais; a regra saiu do componente nesta story, e é justo aí que um ajuste passaria calado.'
+    suggested_action: '@dev: casos de borda em `estadoDeSaturacao`: 3 dias → null e 4 dias → estado; CPM +9% → healthy e +11% → cpm-rise; CTR de link −9% → healthy e −11% → ctr-drop.'
+  - id: 'TEST-002'
+    severity: low
+    finding: 'Q4 (selo aparece mesmo com a consulta em erro) e Q5 (lançamento passa `falhou={false}`) sobreviveram. O teste confere o erro só no Perpétuo.'
+    suggested_action: 'Opcional: estender o teste por texto ao lançamento (`falhou={dailyError}`) e ao `{!falhou && <SaturationBadge`.'
+  - id: 'REQ-001'
+    severity: low
+    finding: 'AC6 (visual) depois do merge. Só web: não depende do Railway. O selo pode mudar de estado em etapas de lançamento (Riscos: é correção, P3).'
+    suggested_action: 'Visual em bbe_churrasco_aquisição e dg-bf26 / Captação Gratuita; anotar se algum selo mudou de estado.'
+  - id: 'MAINT-001'
+    severity: low
+    finding: 'perpetual-dashboard.tsx passa a importar de launch-dashboard.tsx (arquivo grande). O meta-ads-teste-section já fazia isso, então o padrão existe; o custo de bundle não foi medido.'
+    suggested_action: 'Se o chunk do Perpétuo crescer, mover SecaoDeSaturacao/CtrCpmChart/SaturationBadge para um arquivo próprio.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'OK — `estadoDeSaturacao` pura em saturacao.ts; `linkCtr` é a mesma função da linha e do selo; o tooltip mostra a variação do CTR de link (achado do tsc do @dev); `SecaoDeSaturacao` única com estado de erro; o Perpétuo usa a leitura diária que já fazia (mesmas campanhas e período, sem chamada nova à Meta).'
+  unit_tests: 'CONCERNS — 8/8. @dev M1–M4 vermelhas. @qa: Q1 (limite do CTR) vermelha; Q2, Q3, Q4 e Q5 sobreviveram (TEST-001, TEST-002).'
+  acceptance_criteria: 'AC1 ✓ depois da Tendência e antes dos 3 gráficos de 7 dias, mesmo componente · AC2 ✓ mesma série diária (campanhas da mídia, período e intervalo) · AC3 ✓ CTR de link nas 3 telas (limites sem trava de teste: TEST-001) · AC4 ✓ <4 dias sem selo; sem campanhas estado vazio; erro visível · AC5 ✓ teste "CTR total cai, link estável → não Saturando" + reversão · AC6 ⏳ visual.'
+  no_regressions: 'OK — web 1973/1973; tsc web 0; eslint 0. API não tocada.'
+  performance: 'OK — nenhuma requisição nova.'
+  security: 'N/A — só front.'
+  documentation: 'OK — T0, decisões, mutações e File List.'
+  api_contract: 'N/A — sem mudança na API.'
+  scope_condition: 'OK — [scope-override] (teste em lib/utils, autorizado em P4).'
+
+notes:
+  - 'CodeRabbit não rodado (CLI para WSL; máquina macOS).'
+  - 'Conflito textual esperado com a 18.91 em launch-dashboard.tsx (regiões diferentes). Quem mergear depois rebaseia.'
