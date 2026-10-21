@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FileSpreadsheet, Plus, Table as TableIcon } from "lucide-react";
+import { FileSpreadsheet, Plus, Table as TableIcon, Webhook } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useFunnelSpreadsheets } from "@/lib/hooks/use-funnel-spreadsheets";
 import { FunnelSpreadsheetWizardDialog } from "@/components/funnels/funnel-spreadsheet-wizard-dialog";
 import { FunnelSpreadsheetListItem } from "@/components/funnels/funnel-spreadsheet-list-item";
+import { WebhookLeadsDialog } from "@/components/funnels/webhook-leads-dialog";
 
 interface FunnelSpreadsheetsTabProps {
   projectId: string;
@@ -17,6 +18,7 @@ interface FunnelSpreadsheetsTabProps {
 
 export function FunnelSpreadsheetsTab({ projectId, funnelId, stageId }: FunnelSpreadsheetsTabProps) {
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [webhookOpen, setWebhookOpen] = useState(false);
   const { data, isLoading, error } = useFunnelSpreadsheets(projectId, funnelId, stageId);
 
   useEffect(() => {
@@ -40,15 +42,26 @@ export function FunnelSpreadsheetsTab({ projectId, funnelId, stageId }: FunnelSp
             </span>
           )}
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setWizardOpen(true)}
-          className="gap-1.5"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Vincular planilha
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setWebhookOpen(true)}
+            className="gap-1.5"
+          >
+            <Webhook className="h-3.5 w-3.5" />
+            Receber por webhook
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setWizardOpen(true)}
+            className="gap-1.5"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Vincular planilha
+          </Button>
+        </div>
       </div>
 
       {/* Content */}
@@ -64,7 +77,8 @@ export function FunnelSpreadsheetsTab({ projectId, funnelId, stageId }: FunnelSp
             <p className="font-medium">Nenhuma planilha vinculada</p>
             <p className="text-sm text-muted-foreground mt-1">
               Vincule planilhas de leads, vendas ou dados customizados para acompanhar o
-              funil com dados estruturados.
+              funil com dados estruturados — ou receba os leads direto por webhook, sem
+              planilha no meio.
             </p>
           </div>
           <Button
@@ -75,6 +89,15 @@ export function FunnelSpreadsheetsTab({ projectId, funnelId, stageId }: FunnelSp
           >
             <Plus className="h-3.5 w-3.5" />
             Vincular primeira planilha
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setWebhookOpen(true)}
+            className="gap-1.5"
+          >
+            <Webhook className="h-3.5 w-3.5" />
+            Receber leads por webhook
           </Button>
         </div>
       ) : (
@@ -89,6 +112,15 @@ export function FunnelSpreadsheetsTab({ projectId, funnelId, stageId }: FunnelSp
           ))}
         </div>
       )}
+
+      <WebhookLeadsDialog
+        projectId={projectId}
+        funnelId={funnelId}
+        stageId={stageId}
+        spreadsheetId={null}
+        open={webhookOpen}
+        onOpenChange={setWebhookOpen}
+      />
 
       <FunnelSpreadsheetWizardDialog
         projectId={projectId}

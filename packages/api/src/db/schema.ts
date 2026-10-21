@@ -6316,3 +6316,68 @@ export const alertRuleState = pgTable(
   },
   (t) => [primaryKey({ columns: [t.ruleId, t.projectId, t.funnelId] })],
 );
+
+// ============================================================
+// LEADS POR WEBHOOK (Mautic, n8n, LP)
+// ============================================================
+
+/**
+ * A fonte de leads por webhook de uma etapa: uma URL com token.
+ *
+ * Mora numa tabela à parte, e não em `funnel_spreadsheets`, por causa do token:
+ * a listagem de planilhas é lida também por convidado, e o token é o que
+ * autoriza escrever lead na etapa. A ligação é pelo `spreadsheetId` — a linha
+ * de `funnel_spreadsheets` guarda `webhook:<id desta fonte>` e o
+ * `readSheetData` desvia para o Postgres (ver `services/webhook-leads.ts`).
+ */
+export const webhookLeadSources = pgTable(
+  "webhook_lead_sources",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    /** A planilha virtual que representa esta fonte no funil. */
+    spreadsheetId: uuid("spreadsheet_id")
+      .notNull()
+      .references(() => funnelSpreadsheets.id, { onDelete: "cascade" }),
+    stageId: uuid("stage_id").references(() => funnelStages.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /** Segredo da URL. Rotacionável: trocar aqui invalida o que já foi colado. */
+    token: varchar("token", { length: 64 }).notNull(),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("uq_webhook_lead_source_spreadsheet").on(t.spreadsheetId),
+    uniqueIndex("uq_webhook_lead_source_token").on(t.token),
+  ],
+);
+
+/**
+ * Um lead recebido. Append-only, como a planilha seria.
+ *
+ * Deduplicar por e-mail na entrada faria o total da etapa ficar menor que o da
+ * planilha e esconderia a segunda inscrição do mesmo e-mail; o dedup de
+ * "únicos" continua acontecendo na leitura, onde sempre aconteceu.
+ */
+export const webhookLeads = pgTable(
+  "webhook_leads",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    sourceId: uuid("source_id")
+      .notNull()
+      .references(() => webhookLeadSources.id, { onDelete: "cascade" }),
+    nome: text("nome"),
+    email: text("email"),
+    telefone: text("telefone"),
+    utmSource: text("utm_source"),
+    utmMedium: text("utm_medium"),
+    utmCampaign: text("utm_campaign"),
+    utmContent: text("utm_content"),
+    utmTerm: text("utm_term"),
+    /** O corpo cru, para o campo que ninguém previu e para depurar o envio. */
+    payload: jsonb("payload"),
+    recebidoEm: timestamp("recebido_em", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("idx_webhook_leads_source").on(t.sourceId, t.recebidoEm)],
+);
