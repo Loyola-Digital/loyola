@@ -158,6 +158,38 @@ function identifyCampaignsToRefetch(
   return Array.from(toRefetch);
 }
 
+/** As tabelas de cache, por nome, para o SQL do `ON CONFLICT DO UPDATE`. */
+const TB_CAMPANHA = "meta_campaign_insights_daily";
+const TB_ANUNCIO = "meta_ad_insights_daily";
+
+/**
+ * Zero NÃO sobrescreve número: mantém o valor gravado quando o que chega é 0.
+ *
+ * A trava nasceu do bug de 2026-10-21 (ver `meta-insights-split.ts`): a Meta
+ * respondia 200 com `spend: "0"` e as ações cheias, e o upsert ia gravando
+ * isso em cima do histórico bom — a série do DG & CPDF perdeu R$ 2.492 de
+ * 16/10 e chegou a R$ 62 em 20/10, um dia por rodada de sync.
+ *
+ * O conserto da causa é a chamada partida em duas. Isto é a rede embaixo: a
+ * próxima mudança de comportamento da Meta não apaga dado em silêncio, ela
+ * apenas deixa de atualizá-lo.
+ *
+ * Custo aceito: uma campanha que REALMENTE voltou a zero (gasto estornado pela
+ * Meta, que é raro) fica com o número antigo até alguém reparar. Perder o
+ * histórico inteiro é pior que atrasar uma correção para baixo.
+ */
+function zeroNaoSobrescreve(tabela: string, coluna: string) {
+  return sql.raw(
+    `CASE WHEN EXCLUDED.${coluna}::numeric = 0 AND ${tabela}.${coluna}::numeric > 0 ` +
+      `THEN ${tabela}.${coluna} ELSE EXCLUDED.${coluna} END`,
+  );
+}
+
+/** Idem para os jsonb: `null` que chega não apaga o que já está lá. */
+function nuloNaoApaga(tabela: string, coluna: string) {
+  return sql.raw(`COALESCE(EXCLUDED.${coluna}, ${tabela}.${coluna})`);
+}
+
 /**
  * Upsert das insights recém-buscados no DB.
  * Meta retorna 1 linha por (campaign, dia) — chave composta da tabela.
@@ -195,16 +227,17 @@ export async function upsertCampaignInsights(
         metaCampaignInsightsDaily.dateStart,
       ],
       set: {
-        spend: sql`EXCLUDED.spend`,
-        impressions: sql`EXCLUDED.impressions`,
-        reach: sql`EXCLUDED.reach`,
-        clicks: sql`EXCLUDED.clicks`,
-        actions: sql`EXCLUDED.actions`,
-        actionValues: sql`EXCLUDED.action_values`,
+        spend: zeroNaoSobrescreve(TB_CAMPANHA, "spend"),
+        impressions: zeroNaoSobrescreve(TB_CAMPANHA, "impressions"),
+        reach: zeroNaoSobrescreve(TB_CAMPANHA, "reach"),
+        clicks: zeroNaoSobrescreve(TB_CAMPANHA, "clicks"),
+        actions: nuloNaoApaga(TB_CAMPANHA, "actions"),
+        actionValues: nuloNaoApaga(TB_CAMPANHA, "action_values"),
         lastSyncedAt: sql`EXCLUDED.last_synced_at`,
       },
     });
 }
+
 
 /**
  * Une insights do cache DB (com campaign_id) com os recém-buscados da Meta
@@ -490,13 +523,13 @@ export async function upsertAdDailyInsights(
         campaignId: sql`EXCLUDED.campaign_id`,
         campaignName: sql`EXCLUDED.campaign_name`,
         adName: sql`EXCLUDED.ad_name`,
-        spend: sql`EXCLUDED.spend`,
-        impressions: sql`EXCLUDED.impressions`,
-        reach: sql`EXCLUDED.reach`,
-        clicks: sql`EXCLUDED.clicks`,
-        actions: sql`EXCLUDED.actions`,
-        actionValues: sql`EXCLUDED.action_values`,
-        videoMetrics: sql`EXCLUDED.video_metrics`,
+        spend: zeroNaoSobrescreve(TB_ANUNCIO, "spend"),
+        impressions: zeroNaoSobrescreve(TB_ANUNCIO, "impressions"),
+        reach: zeroNaoSobrescreve(TB_ANUNCIO, "reach"),
+        clicks: zeroNaoSobrescreve(TB_ANUNCIO, "clicks"),
+        actions: nuloNaoApaga(TB_ANUNCIO, "actions"),
+        actionValues: nuloNaoApaga(TB_ANUNCIO, "action_values"),
+        videoMetrics: nuloNaoApaga(TB_ANUNCIO, "video_metrics"),
         lastSyncedAt: sql`EXCLUDED.last_synced_at`,
       },
     });
