@@ -27,6 +27,7 @@ import {
   runGa4Report,
   runGa4PagesReport,
   aggregateGa4StageReport,
+  explicarErroGa4,
   ymdDaysAgo,
 } from "../services/ga4.js";
 
@@ -308,8 +309,10 @@ export default fp(async function ga4Routes(fastify) {
         return result;
       } catch (err) {
         request.log.error({ err }, "Erro no GA4 stage analytics");
+        // Story 18.90: a causa vai em `error` (o web mostra) e `code` (o web
+        // decide se oferece "Reconectar"). Erro nunca entra no cache.
         return reply.code(502).send({
-          error: "Erro ao consultar GA4",
+          ...explicarErroGa4(err),
           details: err instanceof Error ? err.message : String(err),
         });
       }

@@ -10,6 +10,7 @@
 // status + detalhe da API.
 
 import { createHash } from "node:crypto";
+import { MENSAGENS_ERRO_GA4, type CodigoErroGa4 } from "@loyola-x/shared";
 import { encrypt, decrypt } from "./encryption.js";
 
 const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -30,7 +31,54 @@ export function encryptGa4Secret(plaintext: string): { encrypted: string; iv: st
   return encrypt(plaintext);
 }
 export function decryptGa4Secret(encrypted: string, iv: string): string {
-  return decrypt(encrypted, iv);
+  try {
+    return decrypt(encrypted, iv);
+  } catch (err) {
+    // Chave do servidor trocada ou registro corrompido: reconectar regrava o
+    // segredo com a chave atual.
+    throw new Ga4Erro("chave_criptografia", `Falha ao descriptografar: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+// ============================================================
+// Story 18.90 — falhas classificadas (a tela diz a causa, não "erro")
+// ============================================================
+
+/**
+ * Falha do GA4 com a causa já classificada. `message` segue sendo o texto
+ * técnico (vai para o log e para `details`); a mensagem da tela sai de
+ * `explicarErroGa4`.
+ */
+export class Ga4Erro extends Error {
+  constructor(public readonly code: CodigoErroGa4, message: string) {
+    super(message);
+    this.name = "Ga4Erro";
+  }
+}
+
+/** Código + mensagem para a tela. Erro não classificado vira `outro` com o detalhe. */
+export function explicarErroGa4(err: unknown): { code: CodigoErroGa4; error: string } {
+  const code: CodigoErroGa4 = err instanceof Ga4Erro ? err.code : "outro";
+  if (code !== "outro") return { code, error: MENSAGENS_ERRO_GA4[code] };
+  const detalhe = err instanceof Error ? err.message : String(err);
+  return { code, error: detalhe ? `${MENSAGENS_ERRO_GA4.outro}: ${detalhe}` : MENSAGENS_ERRO_GA4.outro };
+}
+
+/** Lê `{ error: { message } }` (Data/Admin API) sem quebrar em corpo não-JSON. */
+async function detalheDoGoogle(res: Response): Promise<string> {
+  try {
+    return ((await res.json()) as { error?: { message?: string } })?.error?.message ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/** Status da Data API → causa. 401 aqui é o access_token recusado. */
+function codigoDaDataApi(status: number): CodigoErroGa4 {
+  if (status === 401) return "token_revogado";
+  if (status === 403) return "sem_permissao";
+  if (status === 429) return "cota";
+  return "outro";
 }
 
 // ============================================================
@@ -68,7 +116,7 @@ export async function getGa4AccessToken(refreshToken: string): Promise<string> {
 
   const clientId = process.env.GOOGLE_ADS_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET;
-  if (!clientId || !clientSecret) throw new Error("Google OAuth não configurado");
+  if (!clientId || !clientSecret) throw new Ga4Erro("oauth_nao_configurado", "Google OAuth não configurado");
 
   let res: Response;
   try {
@@ -83,12 +131,28 @@ export async function getGa4AccessToken(refreshToken: string): Promise<string> {
       }),
     });
   } catch {
-    throw new Error("Falha de rede ao renovar token Google");
+    throw new Ga4Erro("rede", "Falha de rede ao renovar token Google");
   }
-  if (!res.ok) throw new Error(`Google OAuth ${res.status}: refresh token inválido ou revogado`);
+  if (!res.ok) {
+    // O corpo do endpoint de token é `{ error, error_description }` (RFC 6749).
+    // `invalid_grant` = refresh token revogado/vencido; `invalid_client` e
+    // `unauthorized_client` = o client OAuth do servidor está errado — reconectar
+    // não resolveria, então não pode virar "conexão expirou".
+    let oauthErro = "";
+    try {
+      oauthErro = ((await res.json()) as { error?: string })?.error ?? "";
+    } catch { /* corpo não-JSON */ }
+    if (oauthErro === "invalid_client" || oauthErro === "unauthorized_client") {
+      throw new Ga4Erro("oauth_nao_configurado", `Google OAuth ${res.status}: ${oauthErro}`);
+    }
+    if (oauthErro === "invalid_grant" || res.status === 400 || res.status === 401) {
+      throw new Ga4Erro("token_revogado", `Google OAuth ${res.status}: refresh token inválido ou revogado`);
+    }
+    throw new Ga4Erro("outro", `Google OAuth ${res.status}${oauthErro ? `: ${oauthErro}` : ""}`);
+  }
 
   const data = (await res.json()) as { access_token?: string; expires_in?: number };
-  if (!data.access_token) throw new Error("Google não retornou access_token");
+  if (!data.access_token) throw new Ga4Erro("outro", "Google não retornou access_token");
   const ttlMs = (typeof data.expires_in === "number" ? data.expires_in : 3600) * 1000;
   tokenCache.set(key, { token: data.access_token, expiresAtMs: Date.now() + ttlMs - TOKEN_SKEW_MS });
   return data.access_token;
@@ -213,17 +277,19 @@ export async function runGa4Report(
     };
   }
 
-  const res = await fetch(`${GA4_DATA_BASE}/properties/${propertyId}:runReport`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${GA4_DATA_BASE}/properties/${propertyId}:runReport`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Ga4Erro("rede", "Falha de rede ao consultar a GA4 Data API");
+  }
   if (!res.ok) {
-    let detail = "";
-    try {
-      detail = ((await res.json()) as { error?: { message?: string } })?.error?.message ?? "";
-    } catch { /* corpo não-JSON */ }
-    throw new Error(`GA4 Data ${res.status}${detail ? `: ${detail}` : ""}`);
+    const detail = await detalheDoGoogle(res);
+    throw new Ga4Erro(codigoDaDataApi(res.status), `GA4 Data ${res.status}${detail ? `: ${detail}` : ""}`);
   }
 
   const data = (await res.json()) as RunReportResponse;
@@ -287,17 +353,19 @@ export async function runGa4PagesReport(
     };
   }
 
-  const res = await fetch(`${GA4_DATA_BASE}/properties/${propertyId}:runReport`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${GA4_DATA_BASE}/properties/${propertyId}:runReport`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Ga4Erro("rede", "Falha de rede ao consultar a GA4 Data API");
+  }
   if (!res.ok) {
-    let detail = "";
-    try {
-      detail = ((await res.json()) as { error?: { message?: string } })?.error?.message ?? "";
-    } catch { /* corpo não-JSON */ }
-    throw new Error(`GA4 Data ${res.status}${detail ? `: ${detail}` : ""}`);
+    const detail = await detalheDoGoogle(res);
+    throw new Ga4Erro(codigoDaDataApi(res.status), `GA4 Data ${res.status}${detail ? `: ${detail}` : ""}`);
   }
 
   const data = (await res.json()) as RunReportResponse;

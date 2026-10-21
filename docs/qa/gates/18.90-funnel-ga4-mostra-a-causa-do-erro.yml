@@ -1,0 +1,54 @@
+schema: 1
+story: '18.90'
+story_title: 'Aba Analytics (GA4) — mostrar a causa real do erro e investigar por que a conexão venceu'
+gate: CONCERNS
+status_reason: 'Iteração 2 (21/10): TEST-001 era falso — a mutação Q1 foi no src do shared, mas a API testa o dist; recompilado, Q1 cai (o teste de tabela dos 7 códigos já existia, linha 137). TEST-002 resolvido com teste de texto. Restam REQ-001 (deploy + reconexão) e itens low. Iteração 1: AC1–AC4 e AC6–AC7 conferidos no código (5f1a5661) e por mutação; contrato 53 → 54 com histórico (check 8 OK). Em aberto: a função que decide o "Reconectar" não tem teste para as causas que NÃO devem pedir reconexão (Q1 sobreviveu, medium); dois detalhes do painel sem teste (low); AC5 depende do deploy e da reconexão; next build do web não rodado localmente.'
+reviewer: 'Quinn'
+updated: '2026-10-21T01:10:00Z'
+pr: null
+branch: 'feat/18.90-ga4-causa-do-erro (local, não pushada)'
+commits: ['5f1a5661', '9aff7b2d', 'f10eb6b4']
+base: 'f77e5fe7 (origin/main, conferida com ls-remote em 21/10 01h UTC)'
+
+top_issues:
+  - id: 'TEST-001'
+    severity: resolved
+    resolved_in: 'falso positivo do @qa: o API importa @loyola-x/shared (dist); com o dist recompilado a mutação Q1 derruba o teste de tabela `CODIGOS_ERRO_GA4.filter(pedeReconexaoGa4)`'
+    original_severity: medium
+    finding: 'Mutação do @qa Q1 sobreviveu: `pedeReconexaoGa4` passando a devolver true para `cota` não derruba nenhum teste. Os testes cobrem só `token_revogado` (true) e código ausente (false). Se a regra regredir, a tela ofereceria "Reconectar" para cota, rede ou OAuth do servidor, onde reconectar não resolve.'
+    suggested_action: '@dev: um teste de tabela com os 7 códigos (true só para token_revogado, chave_criptografia e sem_permissao). Uma linha por código, sem mexer no código de produção.'
+  - id: 'TEST-002'
+    severity: resolved
+    resolved_in: 'teste de texto do `&& !reconectando` e do useEffect de reset; Q6/Q7 vermelhas'
+    original_severity: low
+    finding: 'Q6 (o botão "Reconectar" não some com o painel aberto) e Q7 (o painel não fecha quando a consulta volta) sobreviveram. São detalhes de interface; o teste do componente é por texto, porque o vitest do web só coleta .test.ts.'
+    suggested_action: 'Opcional: incluir no teste de texto os trechos `&& !reconectando` e o useEffect de reset. Conferir na validação visual (AC5).'
+  - id: 'REQ-001'
+    severity: medium
+    finding: 'AC5 (reconexão do DG & CPDF e carga em 7/30/90 dias) só roda depois do deploy da API com contrato 54. A API no ar está no contrato 52 (build de 19/10): o Railway não deployou a 18.89.'
+    suggested_action: 'Redeploy no Railway (gestor ou Lucas). Depois, reconectar pelo botão novo e registrar o resultado na story.'
+  - id: 'BUILD-001'
+    severity: low
+    finding: 'O `next build` do web não foi rodado localmente. Na 18.89 ele travou em arquivos do iCloud. O `tsc --noEmit` do web passou com exit 0.'
+    suggested_action: '@devops: mergear só com o preview da Vercel verde na PR.'
+  - id: 'OPS-001'
+    severity: low
+    finding: 'AC6: os tokens do YouTube (Netão Bom Beef, Fernanda Zapparoli) também dão invalid_grant. Fica fora do escopo, registrado pelo @dev para o @po.'
+    suggested_action: '@po: decidir se vira story (reconexão do YouTube).'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'OK — `Ga4Erro` com código em toda saída de erro do caminho GA4: OAuth (invalid_client/unauthorized_client → oauth_nao_configurado; invalid_grant/400/401 → token_revogado), Data API 401/403/429, rede e decrypt. Mensagens num módulo folha do shared; a rota faz spread de `explicarErroGa4` e mantém `details`. O erro não entra no cache (o `gravarCacheAnalytics` fica só no caminho de sucesso). Plausible intacto (o decrypt dele cai no catch próprio). Web: o "Reconectar" reaproveita `Ga4ConnectPanel`; o PUT faz upsert e `useSetGa4Connection` invalida `ga4-stage-analytics`.'
+  unit_tests: 'CONCERNS — API 13/13 e web 4/4. Mutações do @dev M1–M6 vermelhas. Do @qa: Q2 (outro sem detalhe), Q3 (429 → outro), Q4 (decrypt → outro) e Q5 (env OAuth → outro) vermelhas; Q1 (cota pede reconexão), Q6 e Q7 sobreviveram (TEST-001, TEST-002).'
+  acceptance_criteria: 'AC1 ✓ causa em `error` (o api-client já lê `error`) · AC2 ✓ texto fixado pelo @po + Reconectar pelo mesmo fluxo · AC3 ✓ 7 causas com mensagem própria; "Tentar de novo" mantido; nenhuma mensagem com token ou chave · AC4 ✓ sem `code` não mostra Reconectar; contrato 54 · AC5 ⏳ deploy + reconexão · AC6 ✓ (b) e (c) medidos; (a) console do Google Cloud segue [FALTA], descartado por evidência · AC7 ✓ testes em pastas coletadas.'
+  no_regressions: 'OK — web 1954/1954; tsc api 0 e web 0; eslint 0; API com as 10 falhas da baseline de 02/09 (5 arquivos), nenhum tocado pelo diff.'
+  performance: 'OK — sem chamada nova; o corpo do erro é lido uma vez.'
+  security: 'OK — nenhum segredo na mensagem; `details` com o texto técnico já existia; o código não revela o token.'
+  documentation: 'OK — T0 e T4 medidos em produção; File List; tabela de mutações.'
+  api_contract: 'OK — `code` novo e semântica de `error` no 502 ⇒ 53 → 54 com a linha de histórico v54. A 18.91 (empilhada) sobe para 55.'
+  scope_condition: 'OK — [scope-override] no commit de código; autorização do Lucas relatada pelo gestor (P3 do lote).'
+
+notes:
+  - 'CodeRabbit não rodado: o CLI deste ambiente está configurado para WSL e a máquina é macOS.'
+  - 'A 18.91 está empilhada sobre esta branch. Mergear esta primeiro; antes de apagar a branch, fazer o retarget da PR da 18.91 (ver feedback_delete_branch_fecha_pr_empilhada).'
