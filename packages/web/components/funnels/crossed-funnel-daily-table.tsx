@@ -50,6 +50,10 @@ interface CrossedFunnelDailyTableProps {
   surveyTotal?: number | null;
   surveyMatched?: number | null;
   surveyUnmatched?: number | null;
+  /**
+   * Não é mais lida (Story 18.93: a coluna Faturamento da Gratuita saiu). Fica
+   * na interface porque o `LaunchDashboard` ainda passa.
+   */
   salesByDay?: Record<string, number>;
   /**
    * Story 18.48: vendas (ingressos) dedup por dia × origem. Na etapa Paga, as
@@ -267,16 +271,21 @@ interface ContextMenuState {
 /**
  * Tabela diária cruzada (Meta Ads + planilha de leads/vendas).
  *
- * Ordem das colunas (Story 18.51b):
- * - Gratuita (free): Dia, Investimento, Faturamento, Total Leads, CPL Pg, CPL
- *   Geral, Cliques, Impressões, CPM, CPC, CTR, LP View, Connect Rate, Tx Conv.
- *   Mídia Paga, Tx Conv. Consolidada, Leads Pg, Leads Org, Leads s/ track (18 colunas).
- * - Paga (paid): Dia, Investimento, Faturamento único, Faturamento Total,
- *   Ingressos únicos, Ingressos totais, CPL Pg, CPL Geral, Ticket médio (únicos),
- *   Ticket médio (total), Cliques, Impressões, CPM, CPC, CTR, LP View, Connect
- *   Rate, Tx Conv. Mídia Paga, Tx Conv. Consolidada, Ingressos Pg, Ingressos Org,
- *   Ingressos s/ track (22 colunas).
- * Última linha é o total via footer (soma dos recortes por dia).
+ * Ordem das colunas (Story 18.51b; Tx Conv. reposicionadas na 18.52/18.91;
+ * Faturamento fora da Gratuita na 18.93):
+ * - Gratuita (toda etapa fora de `ehCaptacaoPaga`): Dia, Investimento, Total
+ *   Leads, CPL Pg, CPL Geral, Tx Conv. Mídia Paga, Tx Conv. Consolidada,
+ *   Cliques, Impressões, CPM, CPC, CTR, LP View, Connect Rate, Leads Pg,
+ *   Leads Org, Leads s/ track (17 colunas). Sem faturamento: a planilha de
+ *   leads não traz valor e a coluna era sempre R$ 0 (Story 18.93).
+ * - Paga (paid / event_capture): Dia, Investimento, Faturamento único,
+ *   Faturamento Total, Ingressos únicos, Ingresso+OrderBump, CPL Pago Único,
+ *   CPL Geral Único, Ticket médio (únicos), Ticket médio (total), Tx Conv.
+ *   Mídia Paga, Tx Conv. Consolidada, Cliques, Impressões, CPM, CPC, CTR,
+ *   LP View, Connect Rate, Ingressos Pg, Ingressos Org, Ingressos s/ track
+ *   (22 colunas).
+ * Última linha é o total via footer (soma dos recortes por dia), célula a
+ * célula com o cabeçalho.
  *
  * A coluna de leads/ingressos + CPL Pg/Geral ficam cedo na leitura para destacar
  * a métrica de custo de aquisição.
@@ -309,7 +318,6 @@ export function CrossedFunnelDailyTable({
   surveyTotal,
   surveyMatched,
   surveyUnmatched,
-  salesByDay,
   ingressosUnicosByDay,
   ingressosTotaisByDay,
   faturamentoUnicoByDay,
@@ -400,10 +408,6 @@ export function CrossedFunnelDailyTable({
     }),
     [isPaidCapture],
   );
-  const salesTotal = salesByDay
-    ? Object.values(salesByDay).reduce((a, b) => a + b, 0)
-    : null;
-
   // Story 18.51b AC1e: tooltips de cálculo por cabeçalho (reusados no header).
   const TT = {
     investimento: "Investimento = gasto de mídia (Meta Ads) no dia.",
@@ -411,7 +415,6 @@ export function CrossedFunnelDailyTable({
       "Faturamento único = soma do valorBruto de 1 compra por e-mail (a mais recente) do produto da captação.",
     fatTotal:
       "Faturamento Total = soma do valorBruto de TODAS as vendas (produto da captação + order bumps), sem dedup.",
-    faturamento: "Faturamento bruto das vendas no dia.",
     ingUnicos:
       "Ingressos únicos = e-mails distintos que compraram o produto da captação (dedup por e-mail).",
     tmUnico: "Ticket médio (únicos) = Faturamento único ÷ Ingressos únicos.",
@@ -649,7 +652,8 @@ export function CrossedFunnelDailyTable({
                 >
                   Investimento
                 </TableHead>
-                {isPaidCapture ? (
+                {/* Story 18.93: faturamento só na Paga — na Gratuita era sempre R$ 0. */}
+                {isPaidCapture && (
                   <>
                     <TableHead
                       className="text-right min-w-[120px] cursor-help"
@@ -664,13 +668,6 @@ export function CrossedFunnelDailyTable({
                       Faturamento Total
                     </TableHead>
                   </>
-                ) : (
-                  <TableHead
-                    className="text-right min-w-[110px] cursor-help"
-                    title={TT.faturamento}
-                  >
-                    Faturamento
-                  </TableHead>
                 )}
                 <TableHead
                   className="text-right min-w-[110px] font-semibold cursor-help"
@@ -848,7 +845,7 @@ export function CrossedFunnelDailyTable({
                     <TableCell className="text-right">
                       {fmtCurrency(r.spend)}
                     </TableCell>
-                    {isPaidCapture ? (
+                    {isPaidCapture && (
                       <>
                         <TableCell className="text-right">
                           {hasSalesData
@@ -861,14 +858,6 @@ export function CrossedFunnelDailyTable({
                             : "—"}
                         </TableCell>
                       </>
-                    ) : (
-                      <TableCell className="text-right">
-                        {fmtCurrency(
-                          salesByDay
-                            ? (salesByDay[r.date] ?? 0)
-                            : r.faturamento,
-                        )}
-                      </TableCell>
                     )}
                     <TableCell className="text-right">
                       {isPaidCapture
@@ -950,7 +939,7 @@ export function CrossedFunnelDailyTable({
                 <TableCell className="text-right">
                   {fmtCurrency(totals.spend)}
                 </TableCell>
-                {isPaidCapture ? (
+                {isPaidCapture && (
                   <>
                     <TableCell className="text-right">
                       {hasSalesData ? fmtCurrency(totFatUnico) : "—"}
@@ -959,12 +948,6 @@ export function CrossedFunnelDailyTable({
                       {hasSalesData ? fmtCurrency(totFatTotal) : "—"}
                     </TableCell>
                   </>
-                ) : (
-                  <TableCell className="text-right">
-                    {fmtCurrency(
-                      salesTotal !== null ? salesTotal : totals.faturamento,
-                    )}
-                  </TableCell>
                 )}
                 <TableCell className="text-right">
                   {isPaidCapture
