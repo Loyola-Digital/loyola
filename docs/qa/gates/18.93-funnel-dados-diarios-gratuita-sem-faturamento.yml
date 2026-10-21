@@ -1,0 +1,48 @@
+schema: 1
+story: '18.93'
+story_title: 'Dados diários da Captação Gratuita sem a coluna Faturamento (sempre R$ 0)'
+gate: PASS
+status_reason: 'A coluna sai do cabeçalho, das linhas e do total da variante não-Paga (17 células nas três). A Paga renderiza igual, porque o fragmento dela não mudou. O teste de fio cai 4/4 com o componente de d4ace050 e mata as 5 mutações dirigidas do @qa. Só ficam itens low e a validação visual depois do deploy (AC6).'
+reviewer: 'Quinn'
+updated: '2026-10-21T12:11:24Z'
+pr: null
+branch: 'fix/18.93-gratuita-sem-faturamento (local, não pushada; 2 commits sobre a main em d4ace050)'
+commits: ['4de918fa', 'e7b0ef36']
+base: 'main em d4ace050'
+
+top_issues:
+  - id: 'TEST-001'
+    severity: low
+    finding: 'A contagem da Gratuita no 4º `it` é um proxy estático: todas as células menos as que estão dentro de `{isPaidCapture && …}`. Uma célula num ternário `isPaidCapture ? A : B` conta nas duas variantes. No fonte antigo ela deu `{ paga: 23, gratuita: 20 }`, não os 18 reais. O erro é para o lado seguro: o teste fica vermelho, nunca passa um bug. O 3º `it` também depende da forma `isPaidCapture && (`, então reescrever o código com um ternário que devolve `null` derruba o teste sem que haja bug.'
+    suggested_action: 'Aceitar. Se alguém reintroduzir um ternário por variante nesse componente, o número fixado precisa ser revisto junto com o teste.'
+  - id: 'DOC-001'
+    severity: low
+    finding: 'O comentário no topo do teste diz que a reversão "derruba o 1º, o 2º e o 4º `it`". Pela reexecução do @qa, caem os 4: o 3º também cai, porque o fonte antigo usa `isPaidCapture ? (` e não `&&`. O Dev Agent Record está certo (4/4). A story fala em "11 etapas não-Paga". Uma delas, `bbe_churrasco_aquisição`, é de funil `perpetual` e não passa pelo `LaunchDashboard`. Na tela de lançamento são 10.'
+    suggested_action: 'Na próxima vez que o arquivo for tocado, corrigir o comentário para "derruba os 4 `it`". O número da story não muda o escopo.'
+  - id: 'REQ-001'
+    severity: low
+    finding: 'Caso latente. `useCrossedFunnelMetrics` cai em `spreadsheets[0]` quando a etapa não tem planilha `leads`. Se a única planilha for `sales`/`custom` com `value` mapeado, `hasLinkedSheet` fica true e a tabela aparece. Antes, nesse caso, a coluna Faturamento mostrava valor real. Agora ela não existe. Em produção não há nenhum caso (consulta só de leitura do @qa, 21/10): as 10 etapas não-Paga de lançamento com planilha têm exatamente 1 `leads`, todas com `value` nulo.'
+    suggested_action: 'Nenhuma agora: está no "Fora do escopo" (trazer faturamento para a Gratuita é outra story). Fica registrado para quando aparecer uma etapa não-Paga só com planilha de vendas.'
+  - id: 'BUILD-001'
+    severity: low
+    finding: 'O `next build` não rodou localmente. tsc do web deu 0 e eslint deu 0.'
+    suggested_action: '@devops: mergear só com o preview da Vercel verde.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'OK. Os três `isPaidCapture ? (<único + Total>) : (<Faturamento>)` (cabeçalho, dia e total) viraram `isPaidCapture && (<único + Total>)`. O fragmento da Paga aparece no diff só como contexto, sem nenhuma linha alterada. A única linha nova no JSX é um comentário `{/* */}`, que não renderiza. `TT.faturamento` e `salesTotal` saíram, e `salesByDay` saiu da desestruturação. A prop fica na interface com JSDoc, porque o `LaunchDashboard` ainda passa `salesByDay`. Zero ocorrências de `salesByDay`/`salesTotal`/`TT.faturamento`/`r.faturamento`/`totals.faturamento` no corpo. O comentário do topo bate com a ordem real das colunas: Gratuita com 17, Tx Conv. depois de CPL Geral; Paga com 22, com "Ingresso+OrderBump" e "CPL Pago/Geral Único".'
+  unit_tests: 'OK. Teste de fio com 4 `it`. Reversão refeita pelo @qa: com o componente de d4ace050, 4/4 vermelhos; de volta ao HEAD, 4/4 verdes, e `git status` limpo no componente. Mutações dirigidas do @qa, todas vermelhas: M2 (só o total da Gratuita volta, pega o 4º), M6 (coluna "Faturamento bruto" coerente nas 3 seções, pega o 4º pela contagem 18), M4 (único↔Total trocados na linha da Paga, pega o 3º), M7 (Paga perde o Faturamento Total no rodapé, pega o 3º e o 4º), M8 (Paga mostra "—" no único do dia, pega o 3º). Nenhuma asserção é decorativa: todas caem na reversão.'
+  acceptance_criteria: 'AC1 ✓ 17/17/17 contados no fonte · AC2 ✓ fragmento da Paga inalterado + 3º `it` · AC3 ✓ nenhuma outra coluna, rótulo ou ordem mudou; Paga com 22; nenhum colSpan; ordenação, virada de lote e menu de contexto não tocados · AC4 ✓ diff só no componente; funnel-metrics e o hook sem mudança · AC5 ✓ · AC6 ⏳ visual depois do deploy (T5).'
+  no_regressions: 'OK. Web 147/147 arquivos e 2013/2013 com --testTimeout=60000. Com o timeout padrão de 5 s, posts-table.test.tsx e vturb-tabela.test.ts caem por tempo (sem relação com o diff; é o flake conhecido). tsc --noEmit -p packages/web: exit 0, 41 s. eslint da raiz nos 2 arquivos: 0. O teste de fio da 18.91 (taxa-conversao-lp-1891) segue verde.'
+  stage_variants: 'OK. Em `sales` (dg-pg04 Vendas), `application` e qualquer etapa fora de `ehCaptacaoPaga`, os hooks de vendas ficam desligados (`ehPaga ? … : null`, launch-dashboard.tsx:150-170), então `salesByDay` é null. A célula removida mostrava `r.faturamento` (planilha de leads, `value` nulo nas 10 etapas). Nenhuma outra célula, total ou o quadro de resumo lia esse valor. O `salesByDay` de launch-dashboard.tsx:1395-1544 é outra variável, de outro componente.'
+  performance: 'OK. Só remove um cálculo (salesTotal).'
+  security: 'OK. Só apresentação, sem rota nem dado novo.'
+  documentation: 'OK, com DOC-001.'
+  api_contract: 'OK. Sem mudança de API: nenhuma rota e nenhum campo novo; o contrato não precisa subir.'
+  scope_condition: 'OK. O componente está no scope do Danilo. O teste em lib/utils/__tests__ entrou com [scope-override], com a autorização do Lucas repassada pelo gestor em 21/10.'
+
+notes:
+  - 'CodeRabbit não rodado: o CLI roda no WSL e a máquina é macOS.'
+  - 'Consulta de produção só de leitura (SET SESSION ... READ ONLY), para medir REQ-001 e o número de etapas.'
+  - 'ClickUp não atualizado pelo @qa: a escrita externa está pendente de permissão; o coordenador cuida.'
