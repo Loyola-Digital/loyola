@@ -41,6 +41,7 @@ import {
   type CampaignDailyInsight,
 } from "@/lib/hooks/use-traffic-analytics";
 import { ConversionFunnel } from "./conversion-funnel";
+import { estadoDeSaturacao, linkClicksFromInsight, linkCtr } from "./saturacao";
 import { CrossedFunnelDailyTable } from "./crossed-funnel-daily-table";
 import { LotesDeIngresso } from "@/components/funnels/lotes-de-ingresso";
 import { LeadsByUtmTable } from "./leads-by-utm-table";
@@ -221,7 +222,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
 
   const survey = useSurveyAggregation(projectId, funnel.id, stageId ?? null);
   const { data: campaignData } = useTrafficCampaigns(projectId, days);
-  const { data: dailyData, isLoading: dailyLoading } =
+  const { data: dailyData, isLoading: dailyLoading, isError: dailyError } =
     useCampaignDailyInsightsBulk(projectId, campaignIds.length > 0 ? campaignIds : null, days);
   const { data: compData } = useMetaAdsComparison(
     projectId, funnel.id, stageId ?? null, funnel.compareFunnelId, days,
@@ -818,24 +819,13 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
       ) : null}
 
       {/* CTR × CPM — Saturation Chart */}
-      <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-sm font-semibold">CTR × CPM — Indicador de Saturação</h3>
-            <p className="text-[11px] text-muted-foreground mt-0.5">Quando CTR cai e CPM sobe, seus anúncios estão saturando</p>
-          </div>
-          <SaturationBadge dailyData={dailyData ?? null} />
-        </div>
-        {dailyLoading ? (
-          <Skeleton className="h-56" />
-        ) : dailyData && dailyData.length > 0 ? (
-          <CtrCpmChart
-            data={dailyData}
-            comparisonDays={compDays ?? undefined}
-            compFunnelName={compData?.compareFunnelName}
-          />
-        ) : <EmptyState />}
-      </div>
+      <SecaoDeSaturacao
+        dailyData={dailyData}
+        carregando={dailyLoading}
+        falhou={dailyError}
+        comparisonDays={compDays ?? undefined}
+        compFunnelName={compData?.compareFunnelName}
+      />
 
       {/* Comparação de Lançamentos (atual × comparado) — só quando há funil de comparação */}
       {hasComparison && compDays && dailyData && dailyData.length > 0 && (
@@ -1110,6 +1100,52 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
   );
 });
 
+/**
+ * A seção "CTR × CPM — Indicador de Saturação" inteira: título, selo e gráfico.
+ *
+ * Story 29.85: o lançamento e o Perpétuo usam ESTE componente, não cópias. A
+ * falha na consulta aparece como erro: mostrar "Sem dados" num erro faria o
+ * gestor concluir que não houve veiculação.
+ */
+export function SecaoDeSaturacao({
+  dailyData,
+  carregando,
+  falhou,
+  comparisonDays,
+  compFunnelName,
+}: {
+  dailyData: CampaignDailyInsight[] | undefined;
+  carregando: boolean;
+  falhou: boolean;
+  comparisonDays?: ComparisonDayMetrics[];
+  compFunnelName?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-sm font-semibold">CTR × CPM — Indicador de Saturação</h3>
+          <p className="text-[11px] text-muted-foreground mt-0.5">Quando CTR cai e CPM sobe, seus anúncios estão saturando</p>
+        </div>
+        {!falhou && <SaturationBadge dailyData={dailyData ?? null} />}
+      </div>
+      {carregando ? (
+        <Skeleton className="h-56" />
+      ) : falhou ? (
+        <p className="py-8 text-center text-sm text-destructive">
+          Não consegui carregar os dados diários da Meta. Tente atualizar.
+        </p>
+      ) : dailyData && dailyData.length > 0 ? (
+        <CtrCpmChart
+          data={dailyData}
+          comparisonDays={comparisonDays}
+          compFunnelName={compFunnelName}
+        />
+      ) : <EmptyState />}
+    </div>
+  );
+}
+
 function EmptyState() {
   return (
     <div className="py-8 text-center">
@@ -1351,18 +1387,6 @@ const COMPARISON_METRICS: {
 function leadsFromActions(d: CampaignDailyInsight): number {
   const lead = d.actions?.find((a) => a.action_type === "lead");
   return lead ? Number(lead.value) || 0 : 0;
-}
-
-/** Cliques no LINK (link_click) de uma linha diária. */
-function linkClicksFromInsight(d: CampaignDailyInsight): number {
-  const lc = d.actions?.find((a) => a.action_type === "link_click");
-  return lc ? Number(lc.value) || 0 : 0;
-}
-
-/** CTR do LINK (clique no link ÷ impressões × 100) — tráfego real, não total. */
-function linkCtr(d: CampaignDailyInsight): number {
-  const imp = safeNum(d.impressions);
-  return imp > 0 ? (linkClicksFromInsight(d) / imp) * 100 : 0;
 }
 
 function atualMetricValue(
@@ -1673,30 +1697,11 @@ export function FunnelComparisonChart({
 }
 
 export function SaturationBadge({ dailyData }: { dailyData: CampaignDailyInsight[] | null }) {
-  if (!dailyData || dailyData.length < 4) return null;
-
-  const mid = Math.floor(dailyData.length / 2);
-  const firstHalf = dailyData.slice(0, mid);
-  const secondHalf = dailyData.slice(mid);
-
-  const avg = (arr: CampaignDailyInsight[], key: "ctr" | "cpm") =>
-    arr.reduce((s, d) => s + safeNum(d[key]), 0) / arr.length;
-
-  const ctrFirst = avg(firstHalf, "ctr");
-  const ctrSecond = avg(secondHalf, "ctr");
-  const cpmFirst = avg(firstHalf, "cpm");
-  const cpmSecond = avg(secondHalf, "cpm");
-
-  const ctrChange = ctrFirst > 0 ? ((ctrSecond - ctrFirst) / ctrFirst) * 100 : 0;
-  const cpmChange = cpmFirst > 0 ? ((cpmSecond - cpmFirst) / cpmFirst) * 100 : 0;
-
-  const ctrDrop = ctrChange < -10;
-  const cpmRise = cpmChange > 10;
-
-  let status: "saturating" | "ctr-drop" | "cpm-rise" | "healthy" = "healthy";
-  if (ctrDrop && cpmRise) status = "saturating";
-  else if (ctrDrop) status = "ctr-drop";
-  else if (cpmRise) status = "cpm-rise";
+  // Story 29.85: a regra mora em `saturacao.ts` e lê o CTR do link — a mesma
+  // série que o `CtrCpmChart` desenha ao lado.
+  const leitura = estadoDeSaturacao(dailyData);
+  if (!leitura) return null;
+  const { status, ctrFirst, ctrSecond, ctrChange, cpmFirst, cpmSecond, cpmChange } = leitura;
 
   const config = {
     saturating: {
