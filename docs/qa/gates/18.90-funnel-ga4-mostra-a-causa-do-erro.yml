@@ -2,7 +2,7 @@ schema: 1
 story: '18.90'
 story_title: 'Aba Analytics (GA4) — mostrar a causa real do erro e investigar por que a conexão venceu'
 gate: CONCERNS
-status_reason: 'AC1–AC4 e AC6–AC7 conferidos no código (5f1a5661) e por mutação; contrato 53 → 54 com histórico (check 8 OK). Em aberto: a função que decide o "Reconectar" não tem teste para as causas que NÃO devem pedir reconexão (Q1 sobreviveu, medium); dois detalhes do painel sem teste (low); AC5 depende do deploy e da reconexão; next build do web não rodado localmente.'
+status_reason: 'Iteração 2 (21/10): TEST-001 era falso — a mutação Q1 foi no src do shared, mas a API testa o dist; recompilado, Q1 cai (o teste de tabela dos 7 códigos já existia, linha 137). TEST-002 resolvido com teste de texto. Restam REQ-001 (deploy + reconexão) e itens low. Iteração 1: AC1–AC4 e AC6–AC7 conferidos no código (5f1a5661) e por mutação; contrato 53 → 54 com histórico (check 8 OK). Em aberto: a função que decide o "Reconectar" não tem teste para as causas que NÃO devem pedir reconexão (Q1 sobreviveu, medium); dois detalhes do painel sem teste (low); AC5 depende do deploy e da reconexão; next build do web não rodado localmente.'
 reviewer: 'Quinn'
 updated: '2026-10-21T01:10:00Z'
 pr: null
@@ -12,11 +12,15 @@ base: 'f77e5fe7 (origin/main, conferida com ls-remote em 21/10 01h UTC)'
 
 top_issues:
   - id: 'TEST-001'
-    severity: medium
+    severity: resolved
+    resolved_in: 'falso positivo do @qa: o API importa @loyola-x/shared (dist); com o dist recompilado a mutação Q1 derruba o teste de tabela `CODIGOS_ERRO_GA4.filter(pedeReconexaoGa4)`'
+    original_severity: medium
     finding: 'Mutação do @qa Q1 sobreviveu: `pedeReconexaoGa4` passando a devolver true para `cota` não derruba nenhum teste. Os testes cobrem só `token_revogado` (true) e código ausente (false). Se a regra regredir, a tela ofereceria "Reconectar" para cota, rede ou OAuth do servidor, onde reconectar não resolve.'
     suggested_action: '@dev: um teste de tabela com os 7 códigos (true só para token_revogado, chave_criptografia e sem_permissao). Uma linha por código, sem mexer no código de produção.'
   - id: 'TEST-002'
-    severity: low
+    severity: resolved
+    resolved_in: 'teste de texto do `&& !reconectando` e do useEffect de reset; Q6/Q7 vermelhas'
+    original_severity: low
     finding: 'Q6 (o botão "Reconectar" não some com o painel aberto) e Q7 (o painel não fecha quando a consulta volta) sobreviveram. São detalhes de interface; o teste do componente é por texto, porque o vitest do web só coleta .test.ts.'
     suggested_action: 'Opcional: incluir no teste de texto os trechos `&& !reconectando` e o useEffect de reset. Conferir na validação visual (AC5).'
   - id: 'REQ-001'
