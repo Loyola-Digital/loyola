@@ -122,6 +122,9 @@ export function useFunnelSurveys(
 function invalidateFunnelSurveys(qc: ReturnType<typeof useQueryClient>, projectId: string, funnelId: string) {
   qc.invalidateQueries({ queryKey: ["funnel-surveys", projectId, funnelId] });
   qc.invalidateQueries({ queryKey: ["funnel-surveys-summary", projectId, funnelId] });
+  // Story 18.92: a etapa de Aplicação conta as abas de pesquisa do funil.
+  // Sem isto, vincular a aba não mudava o número até recarregar a página.
+  qc.invalidateQueries({ queryKey: ["application-dashboard", projectId, funnelId] });
 }
 
 export function useAddFunnelSurvey(projectId: string, funnelId: string) {

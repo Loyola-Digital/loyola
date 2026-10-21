@@ -1,0 +1,59 @@
+schema: 1
+story: '18.92'
+story_title: 'Etapa de Aplicação — vincular a planilha de aplicação em "Configurar fontes"'
+gate: CONCERNS
+status_reason: 'Iteração 2 (21/10): UX-001 corrigido (erro da lista com mensagem e Tentar de novo), TEST-001 e TEST-002 resolvidos; Q1–Q6 do @qa e M1–M6 do @dev todas vermelhas. Restam REQ-001 (AC7 depende do deploy) e itens low (DATA-001, RISK-001). Iteração 1: AC1–AC6, AC8 e AC9 conferidos no código (3ce2946e) e por mutação; o BBE dá idêntico antes e depois nas 4 janelas. Sem rota nem campo novo (check 8: sem bump, correto). Em aberto: falha ao carregar as abas aparece como "Nenhuma aba vinculada" (medium); o teste que impede remover a aba do funil todo é por trecho e não pega a regressão (medium); o AC7 depende do deploy da API.'
+reviewer: 'Quinn'
+updated: '2026-10-21T01:25:00Z'
+pr: null
+branch: 'feat/18.92-aplicacao-vincular-planilha (local, não pushada)'
+commits: ['3ce2946e', 'a5bca08b']
+base: 'f77e5fe7 (origin/main, conferida com ls-remote em 21/10)'
+
+top_issues:
+  - id: 'UX-001'
+    severity: resolved
+    resolved_in: 'isError antes do vazio, com "Não consegui carregar as abas vinculadas." e Tentar de novo; teste de ordem; Q6 vermelha'
+    original_severity: medium
+    finding: '`PlanilhaDeAplicacao` não trata erro de `useFunnelSurveys`: com a consulta falhando, `isLoading` é false e `data` é undefined, e a seção diz "Nenhuma aba de aplicação vinculada ainda.". É o padrão "erro virando ausência" que a casa já registrou. O gestor pode vincular a mesma aba de novo e criar duplicata, que a rota somaria em dobro.'
+    suggested_action: '@dev: tratar `isError` com uma mensagem de erro e "Tentar de novo", sem mostrar o vazio. Uma linha de teste por texto, como os outros.'
+  - id: 'TEST-001'
+    severity: resolved
+    resolved_in: 'teste confere a linha inteira das duas separações; Q2 vermelha'
+    original_severity: medium
+    finding: 'Mutação do @qa Q2 sobreviveu: trocar o filtro das abas removíveis para `s.stageId === stageId || s.stageId === null` não derruba o teste, que confere com `toContain` um trecho que continua presente. O AC2 diz que a aba do funil todo não é removível por aqui, e removê-la tira a aba de TODAS as etapas do funil.'
+    suggested_action: '@dev: extrair a separação (daEtapa, doFunil) para uma função pura e testar com uma pesquisa de stageId null; ou conferir a linha inteira com regex ancorada.'
+  - id: 'REQ-001'
+    severity: medium
+    finding: 'AC7: o vínculo usa a rota que já existe (funciona com a API no ar), mas a data `Submitted at` e os avisos de coluna dependem da API nova. A API no ar está no contrato 52 (build de 19/10).'
+    suggested_action: 'Redeploy no Railway; depois, a visual no dg-pg05-out-26 / Comercial.'
+  - id: 'TEST-002'
+    severity: resolved
+    resolved_in: 'caso com "   " no 1º bloco; Q1 vermelha'
+    original_severity: low
+    finding: 'Q1 sobreviveu: uma célula com só espaços passaria a contar como preenchida e esconderia o valor do bloco seguinte. Nenhum teste tem célula de espaço.'
+    suggested_action: 'Opcional: um caso com " " no 1º bloco e e-mail no 2º.'
+  - id: 'DATA-001'
+    severity: low
+    finding: 'Lida pelo @qa em 21/10: a aba `Pesquisa-Aplicacao-Comercial` tem hoje UM bloco só (email na col. 17, utm_source na 20). Os blocos repetidos que o @sm leu em 20/10 sumiram (o formulário foi editado). O caminho das colunas repetidas do AC8 está coberto por teste, mas não aparece no dado real de hoje. A aba `-PaginaB` não existe nessa planilha.'
+    suggested_action: 'Nenhuma; registrar na visual.'
+  - id: 'RISK-001'
+    severity: low
+    finding: 'Sem mapeamento, a origem agora junta todas as colunas que casam com /utm_source|origem/. Uma pergunta do formulário com "origem" no título passaria a preencher a origem quando o utm_source da linha estiver vazio. Antes só valia a primeira coluna. Não ocorre nas abas de hoje (BBE é mapeada; dg-pg05 não tem essa pergunta).'
+    suggested_action: '@po: aceitar, ou restringir as colunas repetidas a cabeçalhos idênticos ao primeiro que casou.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'OK com ressalvas — `lerAbaDeAplicacao` extraída e pura; a coluna mapeada manda sozinha; data com `Submitted at`; avisos dizem a coluna e o efeito no número. A seção reaproveita o `SheetsPickerDialog` (exportado, com título) e as rotas POST/DELETE de pesquisa; a invalidação do dashboard tem prefixo do funil. Sem tratamento de erro da lista (UX-001).'
+  unit_tests: 'CONCERNS — API 9/9 e web 4/4. @dev M1–M6 vermelhas. @qa: Q3 (funil todo deixa de contar), Q4 (sem aviso de e-mail) e Q5 (invalida o dashboard de outro funil) vermelhas; Q1 e Q2 sobreviveram.'
+  acceptance_criteria: 'AC1 ✓ vincula com o stageId da etapa e invalida o dashboard · AC2 ✓ lista e remove; a do funil todo aparece sem remoção (teste fraco, TEST-001) · AC3 ✓ várias abas · AC4 ✓ o vínculo leva o stageId; as telas de Pesquisas/Lead Scoring/Faixas filtram por etapa (T0) · AC5 ✓ aba ilegível e coluna faltando avisam; a lista com erro não avisa (UX-001) · AC6 ✓ · AC7 ⏳ deploy · AC8 ✓ Submitted at e primeiro valor preenchido · AC9 ✓ BBE idêntico em 7/30/90/Tudo.'
+  no_regressions: 'OK — web 1969/1969; tsc api/web 0; eslint 0; API com as 10 da baseline.'
+  performance: 'OK — uma consulta de pesquisas do funil a mais, no painel de configuração.'
+  security: 'OK — sem rota nova; a DELETE de pesquisa é a existente.'
+  documentation: 'OK — T0 com a lista de leitores, diferencial do BBE e File List.'
+  api_contract: 'OK — nenhum campo ou rota nova (avisos são strings no array que já existia); sem bump, como deve ser.'
+  scope_condition: 'OK — [scope-override] no commit; autorização do Lucas (P3).'
+
+notes:
+  - 'CodeRabbit não rodado (CLI para WSL; máquina macOS).'

@@ -98,6 +98,65 @@ function coluna(headers: string[], mapeado: string | undefined, apelidos: RegExp
   return headers.findIndex((h) => apelidos.test(h.trim()));
 }
 
+/**
+ * Todas as colunas que casam, na ordem da planilha — ou só a mapeada.
+ *
+ * Story 18.92: o formulário do Tally exporta um bloco de campos por página, e
+ * a mesma pergunta (`email`, `utm_source`) aparece duas ou três vezes no
+ * cabeçalho. Ler só a primeira deixava sem e-mail quem respondeu no 2º bloco.
+ */
+function colunas(headers: string[], mapeado: string | undefined, apelidos: RegExp): number[] {
+  if (mapeado) {
+    const i = headers.indexOf(mapeado);
+    if (i !== -1) return [i];
+  }
+  return headers.flatMap((h, i) => (apelidos.test(h.trim()) ? [i] : []));
+}
+
+/** O primeiro valor preenchido entre as colunas, na ordem em que aparecem. */
+function primeiroPreenchido(linha: string[], indices: number[]): string | undefined {
+  for (const i of indices) {
+    const v = linha[i];
+    if (v != null && String(v).trim() !== "") return v;
+  }
+  return undefined;
+}
+
+/**
+ * A data da aplicação. `Submitted at` é como o Tally chama a coluna; sem
+ * reconhecê-la, toda resposta entrava em todos os períodos.
+ */
+const COLUNA_DE_DATA_DA_APLICACAO = /data|timestamp|carimbo|submitted/i;
+
+/** As aplicações de uma aba, e as colunas que ela não tem. */
+export function lerAbaDeAplicacao(
+  dados: { headers: string[]; rows: string[][] },
+  mapeamento: { email?: string; timestamp?: string; utm_source?: string; utm_medium?: string },
+  de: Date | null,
+): { aplicacoes: AplicacaoDaEtapa[]; semColuna: Array<"e-mail" | "data"> } {
+  const iEmail = colunas(dados.headers, mapeamento.email, /e-?mail/i);
+  const iData = coluna(dados.headers, mapeamento.timestamp, COLUNA_DE_DATA_DA_APLICACAO);
+  const iSource = colunas(dados.headers, mapeamento.utm_source, /utm[_ ]?source|origem/i);
+  const iMedium = colunas(dados.headers, mapeamento.utm_medium, /utm[_ ]?medium|m[ií]dia/i);
+
+  const semColuna: Array<"e-mail" | "data"> = [];
+  if (iEmail.length === 0) semColuna.push("e-mail");
+  if (iData < 0) semColuna.push("data");
+
+  const aplicacoes: AplicacaoDaEtapa[] = [];
+  for (const linha of dados.rows) {
+    const data = iData >= 0 ? dataDaCelula(linha[iData]) : null;
+    if (!dentroDoPeriodo(data, de, null)) continue;
+    aplicacoes.push({
+      email: emailComparavel(primeiroPreenchido(linha, iEmail)),
+      data,
+      utmSource: sanitizarUtm(primeiroPreenchido(linha, iSource)) ?? "",
+      utmMedium: sanitizarUtm(primeiroPreenchido(linha, iMedium)) ?? "",
+    });
+  }
+  return { aplicacoes, semColuna };
+}
+
 /** O valor em reais que a planilha escreveu como texto brasileiro. */
 export function valorEmReais(bruto: string | undefined): number {
   if (!bruto) return 0;
@@ -283,21 +342,19 @@ export default fp(async function stageApplicationRoutes(fastify) {
     for (const s of minhas) {
       try {
         const dados = await readSheetData(s.spreadsheetId, s.sheetName);
-        const m = s.columnMapping ?? {};
-        const iEmail = coluna(dados.headers, m.email, /e-?mail/i);
-        const iData = coluna(dados.headers, m.timestamp, /data|timestamp|carimbo/i);
-        const iSource = coluna(dados.headers, m.utm_source, /utm[_ ]?source|origem/i);
-        const iMedium = coluna(dados.headers, m.utm_medium, /utm[_ ]?medium|m[ií]dia/i);
-
-        for (const linha of dados.rows) {
-          const data = iData >= 0 ? dataDaCelula(linha[iData]) : null;
-          if (!dentroDoPeriodo(data, de, null)) continue;
-          aplicacoes.push({
-            email: iEmail >= 0 ? emailComparavel(linha[iEmail]) : "",
-            data,
-            utmSource: (iSource >= 0 ? sanitizarUtm(linha[iSource]) : null) ?? "",
-            utmMedium: (iMedium >= 0 ? sanitizarUtm(linha[iMedium]) : null) ?? "",
-          });
+        const lida = lerAbaDeAplicacao(dados, s.columnMapping ?? {}, de);
+        aplicacoes.push(...lida.aplicacoes);
+        // Coluna que falta muda o número sem aparecer nele: sem data, a aba
+        // entra em todos os períodos; sem e-mail, ninguém dela cruza com venda.
+        if (lida.semColuna.includes("data")) {
+          avisos.push(
+            `Não achei a coluna de data na aba "${s.sheetName}": as aplicações dela entram em todos os períodos.`,
+          );
+        }
+        if (lida.semColuna.includes("e-mail")) {
+          avisos.push(
+            `Não achei a coluna de e-mail na aba "${s.sheetName}": as aplicações dela não se cruzam com as vendas.`,
+          );
         }
       } catch (erro) {
         // Uma aba ilegível não pode derrubar o dashboard inteiro: o time

@@ -21,7 +21,7 @@
  */
 
 import { useState } from "react";
-import { ClipboardList, Info, Plus, Settings2, TrendingUp, X } from "lucide-react";
+import { ClipboardList, FileSpreadsheet, Info, Plus, Settings2, Trash2, TrendingUp, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,6 +43,8 @@ import {
   type QuebraPorOrigem,
   type RegraDeUtm,
 } from "@/lib/hooks/use-stage-application";
+import { useFunnelSurveys, useRemoveFunnelSurvey } from "@/lib/hooks/use-google-sheets";
+import { SheetsPickerDialog } from "./survey-funnel-tab";
 import { StageDeleteSection } from "./stage-delete-section";
 import { CampaignLogButton } from "./campaign-log-link";
 import type { FunnelStage } from "@loyola-x/shared";
@@ -253,6 +255,119 @@ function FiltroDeUtm({
   );
 }
 
+/**
+ * A aba do formulário de aplicação (Story 18.92).
+ *
+ * A etapa de Aplicação não tem a aba Dados → Pesquisas, que é onde as outras
+ * etapas vinculam pesquisa — então não havia onde conectar. O vínculo vai com o
+ * id DESTA etapa: a aba não aparece nas Pesquisas, no Lead Scoring nem nas
+ * Faixas das outras etapas. Pesquisa sem etapa também conta aqui (a rota soma),
+ * mas é do funil todo e não se remove por esta tela.
+ */
+function PlanilhaDeAplicacao({
+  projectId,
+  funnelId,
+  stageId,
+}: {
+  projectId: string;
+  funnelId: string;
+  stageId: string;
+}) {
+  const { data, isLoading, isError, refetch } = useFunnelSurveys(projectId, funnelId);
+  const remover = useRemoveFunnelSurvey(projectId, funnelId);
+  const [seletorAberto, setSeletorAberto] = useState(false);
+
+  const daEtapa = (data?.surveys ?? []).filter((s) => s.stageId === stageId);
+  const doFunil = (data?.surveys ?? []).filter((s) => s.stageId === null);
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <Label>Planilha de aplicação</Label>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">
+          A aba do formulário de aplicação. Cada linha conta como uma aplicação; o e-mail cruza com
+          as vendas. Dá para vincular mais de uma aba (página A, página B).
+        </p>
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="h-12" />
+      ) : isError ? (
+        // Erro não pode virar "nenhuma aba": o gestor vincularia de novo e a
+        // rota somaria a mesma aba duas vezes.
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-red-500/30 bg-red-500/5 px-2.5 py-1.5 text-[11px] text-red-600 dark:text-red-400">
+          <span>Não consegui carregar as abas vinculadas.</span>
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => refetch()}>
+            Tentar de novo
+          </Button>
+        </div>
+      ) : daEtapa.length === 0 && doFunil.length === 0 ? (
+        <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+          Nenhuma aba de aplicação vinculada ainda.
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {daEtapa.map((s) => (
+            <div
+              key={s.id}
+              className="flex items-center gap-2 rounded-md border border-border/40 p-2"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5 shrink-0 text-green-600" />
+              <p className="min-w-0 flex-1 truncate text-xs font-medium">
+                {s.spreadsheetName} · {s.sheetName}
+              </p>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 text-destructive/70 hover:text-destructive"
+                aria-label={`Remover a aba ${s.sheetName}`}
+                disabled={remover.isPending}
+                onClick={() =>
+                  remover.mutate(s.id, {
+                    onSuccess: () => toast.success(`Aba "${s.sheetName}" removida.`),
+                    onError: (e) => toast.error(e instanceof Error ? e.message : "Não consegui remover"),
+                  })
+                }
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+          {doFunil.map((s) => (
+            <div
+              key={s.id}
+              className="flex items-center gap-2 rounded-md border border-dashed border-border/40 p-2"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <p className="min-w-0 flex-1 truncate text-xs">
+                {s.spreadsheetName} · {s.sheetName}
+              </p>
+              <Badge variant="secondary" className="px-1 py-0 text-[9px]">
+                do funil todo
+              </Badge>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setSeletorAberto(true)}>
+        <Plus className="h-3.5 w-3.5" />
+        Vincular aba
+      </Button>
+
+      <SheetsPickerDialog
+        projectId={projectId}
+        funnelId={funnelId}
+        stageId={stageId}
+        surveyType="paid"
+        titulo="Vincular planilha de aplicação"
+        open={seletorAberto}
+        onOpenChange={setSeletorAberto}
+      />
+    </div>
+  );
+}
+
 function EscolhaDeFontes({
   projectId,
   funnelId,
@@ -443,6 +558,8 @@ export function ApplicationStageView({
                     </Button>
                   </div>
                 </div>
+
+                <PlanilhaDeAplicacao projectId={projectId} funnelId={funnelId} stageId={stage.id} />
 
                 <EscolhaDeFontes projectId={projectId} funnelId={funnelId} stageId={stage.id} />
 
