@@ -72,6 +72,41 @@ describe("Story 29.85 — selo de saturação pelo clique no link (AC3, AC5)", (
   });
 });
 
+// Gate @qa TEST-001: o AC3 diz que o resto da regra não muda — os limites
+// ficam travados aqui, cada um dos dois lados da borda.
+describe("Story 29.85 — limites que não mudam (AC3)", () => {
+  const serie = (n: number, link1: number, link2: number, cpm1: number, cpm2: number) =>
+    Array.from({ length: n }, (_, i) =>
+      i < Math.floor(n / 2)
+        ? dia(`2026-10-0${i + 1}`, { imp: 10000, cliques: 300, link: link1, cpm: cpm1 })
+        : dia(`2026-10-0${i + 1}`, { imp: 10000, cliques: 300, link: link2, cpm: cpm2 }),
+    );
+
+  it("mínimo de 4 dias: 3 não têm selo, 4 têm", () => {
+    expect(estadoDeSaturacao(serie(3, 100, 100, 20, 20))).toBeNull();
+    expect(estadoDeSaturacao(serie(4, 100, 100, 20, 20))?.status).toBe("healthy");
+  });
+
+  it("CPM: +9% é estável, +11% é 'CPM subindo'", () => {
+    expect(estadoDeSaturacao(serie(4, 100, 100, 100, 109))?.status).toBe("healthy");
+    expect(estadoDeSaturacao(serie(4, 100, 100, 100, 111))?.status).toBe("cpm-rise");
+  });
+
+  it("CTR de link: −9% é estável, −11% é 'CTR em queda'", () => {
+    expect(estadoDeSaturacao(serie(4, 100, 91, 20, 20))?.status).toBe("healthy");
+    expect(estadoDeSaturacao(serie(4, 100, 89, 20, 20))?.status).toBe("ctr-drop");
+  });
+
+  it("o lançamento também mostra o erro da consulta, e o selo some com erro (AC4)", () => {
+    const lancamento = readFileSync(
+      new URL("../../../components/funnels/launch-dashboard.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(lancamento).toMatch(/<SecaoDeSaturacao[\s\S]*?falhou=\{dailyError\}/);
+    expect(lancamento).toContain("{!falhou && <SaturationBadge dailyData={dailyData ?? null} />}");
+  });
+});
+
 describe("Story 29.85 — gráfico no Perpétuo (AC1, AC2)", () => {
   const perpetuo = readFileSync(
     new URL("../../../components/funnels/perpetual-dashboard.tsx", import.meta.url),

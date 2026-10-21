@@ -2,7 +2,7 @@ schema: 1
 story: '29.85'
 story_title: 'Perpétuo — Gráfico de saturação (CTR × CPM) e selo pelo clique no link'
 gate: CONCERNS
-status_reason: 'AC1–AC5 conferidos no código (ccb2e63b + 786daf41); o selo e o tooltip leem a mesma série da linha (CTR de link) nas 3 telas; mesmo componente no lançamento e no Perpétuo. Sem mudança na API (check 8 N/A). Em aberto: os limites que o AC3 diz que "não mudam" (4 dias, 10% de CPM) não estão travados por teste (medium); o estado de erro do lançamento sem teste (low); visual depende do merge.'
+status_reason: 'Iteração 2 (21/10): TEST-001 e TEST-002 resolvidos com casos de borda (3/4 dias, CPM ±10%, CTR ±10%) e o teste do erro no lançamento; Q1–Q5 do @qa e M1–M4 do @dev todas vermelhas. Restam REQ-001 (visual) e MAINT-001 (low). Iteração 1: AC1–AC5 conferidos no código (ccb2e63b + 786daf41); o selo e o tooltip leem a mesma série da linha (CTR de link) nas 3 telas; mesmo componente no lançamento e no Perpétuo. Sem mudança na API (check 8 N/A). Em aberto: os limites que o AC3 diz que "não mudam" (4 dias, 10% de CPM) não estão travados por teste (medium); o estado de erro do lançamento sem teste (low); visual depende do merge.'
 reviewer: 'Quinn'
 updated: '2026-10-21T01:35:00Z'
 pr: null
@@ -12,11 +12,15 @@ base: 'f77e5fe7 (origin/main, conferida com ls-remote em 21/10)'
 
 top_issues:
   - id: 'TEST-001'
-    severity: medium
+    severity: resolved
+    resolved_in: 'bordas dos dois lados de cada limite; Q2/Q3 vermelhas'
+    original_severity: medium
     finding: 'Mutações do @qa Q2 (mínimo de 4 → 3 dias) e Q3 (limite do CPM 10% → 20%) sobreviveram. O AC3 diz que metades, limite de 10% e mínimo de 4 dias continuam iguais; a regra saiu do componente nesta story, e é justo aí que um ajuste passaria calado.'
     suggested_action: '@dev: casos de borda em `estadoDeSaturacao`: 3 dias → null e 4 dias → estado; CPM +9% → healthy e +11% → cpm-rise; CTR de link −9% → healthy e −11% → ctr-drop.'
   - id: 'TEST-002'
-    severity: low
+    severity: resolved
+    resolved_in: 'teste de texto do falhou={dailyError} no lançamento e do {!falhou && <SaturationBadge'
+    original_severity: low
     finding: 'Q4 (selo aparece mesmo com a consulta em erro) e Q5 (lançamento passa `falhou={false}`) sobreviveram. O teste confere o erro só no Perpétuo.'
     suggested_action: 'Opcional: estender o teste por texto ao lançamento (`falhou={dailyError}`) e ao `{!falhou && <SaturationBadge`.'
   - id: 'REQ-001'
