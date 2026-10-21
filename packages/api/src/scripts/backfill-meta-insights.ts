@@ -36,26 +36,12 @@ import {
   upsertCampaignInsights,
 } from "../services/meta-insights-cache.js";
 import { getAllMetaAccountsForProject } from "../services/traffic-analytics.js";
+import { janelasDeDias } from "../utils/janelas-de-dias.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
 const DIAS_POR_JANELA = 7;
-const DIA_MS = 24 * 60 * 60 * 1000;
-
-/** As janelas [since, until] de `dias` para trás, da mais antiga para a mais nova. */
-function janelas(dias: number): Array<{ since: string; until: string }> {
-  const hoje = Date.now();
-  const saida: Array<{ since: string; until: string }> = [];
-  for (let fim = dias - 1; fim >= 0; fim -= DIAS_POR_JANELA) {
-    const inicio = Math.min(fim + DIAS_POR_JANELA - 1, dias - 1);
-    saida.push({
-      since: new Date(hoje - inicio * DIA_MS).toISOString().slice(0, 10),
-      until: new Date(hoje - fim * DIA_MS).toISOString().slice(0, 10),
-    });
-  }
-  return saida;
-}
 
 async function main(): Promise<void> {
   const dias = Number(process.argv[2] ?? 90);
@@ -83,7 +69,7 @@ async function main(): Promise<void> {
         let linhasAnuncio = 0;
         let linhasCampanha = 0;
 
-        for (const janela of janelas(dias)) {
+        for (const janela of janelasDeDias(dias, DIAS_POR_JANELA)) {
           try {
             const anuncios = await fetchAdDailyInsights(
               conta.metaAccountId,
