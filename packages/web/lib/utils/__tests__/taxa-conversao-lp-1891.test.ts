@@ -184,3 +184,62 @@ describe("Story 18.91 — Desempenho por LP do Perpétuo (AC11, AC12)", () => {
     expect(lp.txConvMidiaPaga).toBeNull();
   });
 });
+
+// Gate @qa (TEST-001): reverter a biblioteca não prova que a tela está ligada a
+// ela. Cada `it` abaixo cai se a coluna sumir, trocar de métrica ou de lugar.
+describe("Story 18.91 — o fio das telas (gate @qa TEST-001)", () => {
+  const ler = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
+  const diario = ler("../../../components/funnels/crossed-funnel-daily-table.tsx");
+  const perpetuo = ler("../../../components/funnels/perpetual-dashboard.tsx");
+  const tabelaLps = ler("../../components/funnels/lp-performance-table.tsx");
+
+  it("Dados diários do lançamento: as duas colunas no cabeçalho, antes de Cliques", () => {
+    expect(diario).toMatch(
+      /Tx Conv\. Mídia Paga\s*<\/TableHead>\s*<TableHead[^>]*title=\{TT\.txconvConsolidada\}[^>]*>\s*Tx Conv\. Consolidada\s*<\/TableHead>\s*<TableHead[^>]*>\s*Cliques/,
+    );
+  });
+
+  it("Dados diários do lançamento: cada linha e o total trazem as duas células, na mesma ordem", () => {
+    const linha =
+      /\{fmtPercent\(r\.txConvMidiaPaga\)\}\s*<\/TableCell>\s*<CelulaConsolidada taxa=\{r\.txConvConsolidada\} \/>\s*<TableCell[^>]*>\s*\{fmtInt\(r\.linkClicks\)\}/;
+    const total =
+      /\{fmtPercent\(totals\.txConvMidiaPaga\)\}\s*<\/TableCell>\s*<CelulaConsolidada taxa=\{totals\.txConvConsolidada\} \/>\s*<TableCell[^>]*>\s*\{fmtInt\(totals\.linkClicks\)\}/;
+    expect(diario).toMatch(linha);
+    expect(diario).toMatch(total);
+    // A Consolidada sem número mostra o motivo, não 0% (AC4).
+    expect(diario).toContain("title={taxa.motivo ? MENSAGEM_SEM_CONSOLIDADA[taxa.motivo] : undefined}");
+  });
+
+  function colunaDoPerpetuo(chave: string): string {
+    const inicio = perpetuo.indexOf(`key: "${chave}",`);
+    expect(inicio).toBeGreaterThan(-1);
+    const fim = perpetuo.indexOf("key: \"", inicio + 10);
+    return perpetuo.slice(inicio, fim);
+  }
+
+  it("Dados Diários do Perpétuo: as duas colunas, nos dois modos, com a métrica certa", () => {
+    const paga = colunaDoPerpetuo("txConvMidiaPaga");
+    const consolidada = colunaDoPerpetuo("txConvConsolidada");
+    expect(paga).toContain("render: (_v, m) => fmtPercent(m.txConvMidiaPaga)");
+    expect(consolidada).toContain("render: (_v, m) => fmtPercent(m.txConvConsolidada.valor)");
+    expect(consolidada).toContain("MENSAGEM_SEM_CONSOLIDADA.pendente");
+    expect(paga + consolidada).not.toContain("detailedOnly");
+  });
+
+  it("Dados Diários do Perpétuo: o quadro recebe as linhas com as vendas atribuídas", () => {
+    expect(perpetuo).toContain("<PerpetualDailyTable rows={dailyRowsDoQuadro}");
+    expect(perpetuo).toContain("lpEntityDaily.rows.map((r) => r.entityId)");
+    expect(perpetuo).toContain("vendasAtribuidas: porDia.get(r.dateIso) ?? 0");
+  });
+
+  it("Desempenho por LP do Perpétuo: as duas células depois do ROAS, com o motivo", () => {
+    expect(perpetuo).toMatch(
+      /\{fmtRoas\(row\.roas\)\}<\/td>\s*<td className="text-right px-2 tabular-nums">\{fmtPercent\(row\.txConvMidiaPaga\)\}<\/td>\s*<td[\s\S]{0,300}?title=\{row\.txConvConsolidada\.motivo \? MENSAGEM_SEM_CONSOLIDADA\[row\.txConvConsolidada\.motivo\] : undefined\}[\s\S]{0,80}?\{fmtPercent\(row\.txConvConsolidada\.valor\)\}/,
+    );
+  });
+
+  it("Testes de LPs: a Consolidada sem número mostra o motivo no tooltip", () => {
+    expect(tabelaLps).toContain('if (chave === "txConvConsolidada" && valor === null) {');
+    expect(tabelaLps).toContain("title={MENSAGEM_SEM_CONSOLIDADA.pendente}");
+  });
+});
