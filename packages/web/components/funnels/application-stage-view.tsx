@@ -273,7 +273,7 @@ function PlanilhaDeAplicacao({
   funnelId: string;
   stageId: string;
 }) {
-  const { data, isLoading } = useFunnelSurveys(projectId, funnelId);
+  const { data, isLoading, isError, refetch } = useFunnelSurveys(projectId, funnelId);
   const remover = useRemoveFunnelSurvey(projectId, funnelId);
   const [seletorAberto, setSeletorAberto] = useState(false);
 
@@ -292,6 +292,15 @@ function PlanilhaDeAplicacao({
 
       {isLoading ? (
         <Skeleton className="h-12" />
+      ) : isError ? (
+        // Erro não pode virar "nenhuma aba": o gestor vincularia de novo e a
+        // rota somaria a mesma aba duas vezes.
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-red-500/30 bg-red-500/5 px-2.5 py-1.5 text-[11px] text-red-600 dark:text-red-400">
+          <span>Não consegui carregar as abas vinculadas.</span>
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => refetch()}>
+            Tentar de novo
+          </Button>
+        </div>
       ) : daEtapa.length === 0 && doFunil.length === 0 ? (
         <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-[11px] text-amber-600 dark:text-amber-400">
           Nenhuma aba de aplicação vinculada ainda.

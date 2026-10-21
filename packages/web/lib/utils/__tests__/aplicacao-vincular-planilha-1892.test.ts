@@ -23,9 +23,19 @@ describe("Story 18.92 — Planilha de aplicação em Configurar fontes", () => {
   });
 
   it("lista as abas da etapa (removíveis) e as do funil todo (não removíveis) (AC2)", () => {
-    expect(tela).toContain("(s) => s.stageId === stageId");
-    expect(tela).toContain("(s) => s.stageId === null");
+    // A linha inteira: a aba do funil todo não pode entrar entre as removíveis
+    // (removê-la tira a aba de todas as etapas). Gate @qa TEST-001.
+    expect(tela).toContain("const daEtapa = (data?.surveys ?? []).filter((s) => s.stageId === stageId);");
+    expect(tela).toContain("const doFunil = (data?.surveys ?? []).filter((s) => s.stageId === null);");
     expect(tela).toContain("do funil todo");
+  });
+
+  it("erro ao carregar as abas aparece como erro, não como 'nenhuma aba' (gate @qa UX-001)", () => {
+    const erro = tela.indexOf(") : isError ? (");
+    const vazio = tela.indexOf("Nenhuma aba de aplicação vinculada ainda.");
+    expect(erro).toBeGreaterThan(-1);
+    expect(erro).toBeLessThan(vazio);
+    expect(tela).toContain("Não consegui carregar as abas vinculadas.");
   });
 
   it("vincular ou remover atualiza o dashboard da etapa sem recarregar (AC1)", () => {

@@ -2,7 +2,7 @@ schema: 1
 story: '18.92'
 story_title: 'Etapa de Aplicação — vincular a planilha de aplicação em "Configurar fontes"'
 gate: CONCERNS
-status_reason: 'AC1–AC6, AC8 e AC9 conferidos no código (3ce2946e) e por mutação; o BBE dá idêntico antes e depois nas 4 janelas. Sem rota nem campo novo (check 8: sem bump, correto). Em aberto: falha ao carregar as abas aparece como "Nenhuma aba vinculada" (medium); o teste que impede remover a aba do funil todo é por trecho e não pega a regressão (medium); o AC7 depende do deploy da API.'
+status_reason: 'Iteração 2 (21/10): UX-001 corrigido (erro da lista com mensagem e Tentar de novo), TEST-001 e TEST-002 resolvidos; Q1–Q6 do @qa e M1–M6 do @dev todas vermelhas. Restam REQ-001 (AC7 depende do deploy) e itens low (DATA-001, RISK-001). Iteração 1: AC1–AC6, AC8 e AC9 conferidos no código (3ce2946e) e por mutação; o BBE dá idêntico antes e depois nas 4 janelas. Sem rota nem campo novo (check 8: sem bump, correto). Em aberto: falha ao carregar as abas aparece como "Nenhuma aba vinculada" (medium); o teste que impede remover a aba do funil todo é por trecho e não pega a regressão (medium); o AC7 depende do deploy da API.'
 reviewer: 'Quinn'
 updated: '2026-10-21T01:25:00Z'
 pr: null
@@ -12,11 +12,15 @@ base: 'f77e5fe7 (origin/main, conferida com ls-remote em 21/10)'
 
 top_issues:
   - id: 'UX-001'
-    severity: medium
+    severity: resolved
+    resolved_in: 'isError antes do vazio, com "Não consegui carregar as abas vinculadas." e Tentar de novo; teste de ordem; Q6 vermelha'
+    original_severity: medium
     finding: '`PlanilhaDeAplicacao` não trata erro de `useFunnelSurveys`: com a consulta falhando, `isLoading` é false e `data` é undefined, e a seção diz "Nenhuma aba de aplicação vinculada ainda.". É o padrão "erro virando ausência" que a casa já registrou. O gestor pode vincular a mesma aba de novo e criar duplicata, que a rota somaria em dobro.'
     suggested_action: '@dev: tratar `isError` com uma mensagem de erro e "Tentar de novo", sem mostrar o vazio. Uma linha de teste por texto, como os outros.'
   - id: 'TEST-001'
-    severity: medium
+    severity: resolved
+    resolved_in: 'teste confere a linha inteira das duas separações; Q2 vermelha'
+    original_severity: medium
     finding: 'Mutação do @qa Q2 sobreviveu: trocar o filtro das abas removíveis para `s.stageId === stageId || s.stageId === null` não derruba o teste, que confere com `toContain` um trecho que continua presente. O AC2 diz que a aba do funil todo não é removível por aqui, e removê-la tira a aba de TODAS as etapas do funil.'
     suggested_action: '@dev: extrair a separação (daEtapa, doFunil) para uma função pura e testar com uma pesquisa de stageId null; ou conferir a linha inteira com regex ancorada.'
   - id: 'REQ-001'
@@ -24,7 +28,9 @@ top_issues:
     finding: 'AC7: o vínculo usa a rota que já existe (funciona com a API no ar), mas a data `Submitted at` e os avisos de coluna dependem da API nova. A API no ar está no contrato 52 (build de 19/10).'
     suggested_action: 'Redeploy no Railway; depois, a visual no dg-pg05-out-26 / Comercial.'
   - id: 'TEST-002'
-    severity: low
+    severity: resolved
+    resolved_in: 'caso com "   " no 1º bloco; Q1 vermelha'
+    original_severity: low
     finding: 'Q1 sobreviveu: uma célula com só espaços passaria a contar como preenchida e esconderia o valor do bloco seguinte. Nenhum teste tem célula de espaço.'
     suggested_action: 'Opcional: um caso com " " no 1º bloco e e-mail no 2º.'
   - id: 'DATA-001'

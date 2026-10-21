@@ -70,6 +70,11 @@ describe("Story 18.92 — leitura da aba de aplicação (AC8)", () => {
     expect(a.utmSource).toBe("ig");
   });
 
+  it("célula só com espaço conta como vazia: vale o bloco seguinte (gate @qa TEST-002)", () => {
+    const dados = { headers: HEADERS, rows: [linha({ 0: "2026-10-20 15:49:52", 2: "   ", 6: "segundo@x.com" })] };
+    expect(lerAbaDeAplicacao(dados, {}, null).aplicacoes[0].email).toBe("segundo@x.com");
+  });
+
   it("coluna mapeada manda sozinha (é o caso do BBE): não procura as outras", () => {
     const dados = {
       headers: HEADERS,
