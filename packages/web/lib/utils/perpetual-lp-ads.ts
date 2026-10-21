@@ -40,6 +40,12 @@ export interface EntityDailyAdRow {
   impressions: number;
   clicks: number;
   linkClicks: number;
+  /**
+   * Story 18.91 (API v55): `landing_page_view` do dia. Ausente = API anterior
+   * à v55 → o LP View do anúncio fica "não medido" e a Tx Conv. Mídia Paga
+   * da LP sai "—" (AC12), em vez de 0.
+   */
+  landingPageViews?: number;
 }
 
 /** Vendas da planilha por `ad_id` (`utm_content`), sem passar por Ad Name. */
@@ -78,6 +84,7 @@ export function buildLpAdInputs(
       impressions: 0,
       clicks: 0,
       linkClicks: 0,
+      lpViews: 0,
       revenue: 0,
       sales: 0,
     };
@@ -85,6 +92,12 @@ export function buildLpAdInputs(
     acc.impressions += r.impressions;
     acc.clicks += r.clicks;
     acc.linkClicks = (acc.linkClicks ?? 0) + r.linkClicks;
+    // Um dia sem o campo torna o anúncio inteiro "não medido": somar só os
+    // dias que vieram daria uma taxa com denominador menor que o real.
+    acc.lpViews =
+      r.landingPageViews === undefined || acc.lpViews == null
+        ? null
+        : acc.lpViews + r.landingPageViews;
     porAd.set(r.entityId, acc);
   }
 

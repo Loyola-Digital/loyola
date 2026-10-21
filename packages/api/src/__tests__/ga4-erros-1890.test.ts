@@ -152,8 +152,10 @@ describe("Story 18.90 — fio da rota ga4-analytics (AC1, AC4)", () => {
     expect(rota).not.toContain('error: "Erro ao consultar GA4"');
   });
 
-  it("contrato 54 com a linha de histórico", () => {
-    expect(contrato).toMatch(/export const API_CONTRACT_VERSION = 54;/);
+  it("contrato 54 (ou posterior) com a linha de histórico", () => {
+    // Story 18.91 sobe para 55: o que esta story exige é ter passado do 53.
+    const versao = Number(contrato.match(/export const API_CONTRACT_VERSION = (\d+);/)?.[1]);
+    expect(versao).toBeGreaterThanOrEqual(54);
     expect(contrato).toContain("v54 (Story 18.90");
   });
 });

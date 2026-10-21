@@ -1,6 +1,10 @@
 "use client";
 
 import { fmtInt } from "@/lib/utils/format-number";
+import {
+  MENSAGEM_SEM_CONSOLIDADA,
+  type TxConvConsolidada,
+} from "@loyola-x/shared/src/taxa-conversao-lp";
 
 interface ConversionFunnelProps {
   impressions: number;
@@ -10,13 +14,23 @@ interface ConversionFunnelProps {
   checkoutVisits?: number | null;
   sales?: number | null;
   leadsLabel?: string;
+  /**
+   * Story 18.91 (AC7): as duas taxas da LP no passo LP View → Leads (ou
+   * Ingressos únicos), no lugar do "% de conversão" genérico desse passo.
+   * Calculadas fora, pela fórmula única do shared.
+   */
+  taxasDaLp?: { midiaPaga: number | null; consolidada: TxConvConsolidada };
 }
 
 interface FunnelStage {
   label: string;
   value: number;
   color: string;
+  /** Qual etapa é — o passo da LP precisa ser achado sem depender do rótulo. */
+  chave: "impressoes" | "cliques" | "lpView" | "resultado" | "checkout" | "vendas";
 }
+
+const pct = (v: number | null) => (v === null ? "—" : `${v.toFixed(1)}%`);
 
 // Story 18.73: número completo, sem K/M. Ver `lib/utils/format-number`.
 const fmtNumber = (val: number): string => fmtInt(val);
@@ -54,9 +68,10 @@ export function ConversionFunnel({
   checkoutVisits,
   sales,
   leadsLabel,
+  taxasDaLp,
 }: ConversionFunnelProps) {
   const stages: FunnelStage[] = [
-    { label: "Impressões", value: impressions, color: "hsl(220 80% 55%)" },
+    { label: "Impressões", value: impressions, color: "hsl(220 80% 55%)", chave: "impressoes" },
   ];
 
   if (linkClicks !== null && linkClicks > 0) {
@@ -64,6 +79,7 @@ export function ConversionFunnel({
       label: "Cliques no Link",
       value: linkClicks,
       color: "hsl(200 70% 50%)",
+      chave: "cliques",
     });
   }
   if (landingPageViews !== null && landingPageViews > 0) {
@@ -71,6 +87,7 @@ export function ConversionFunnel({
       label: "Visualização da LP",
       value: landingPageViews,
       color: "hsl(35 85% 55%)",
+      chave: "lpView",
     });
   }
   if (leads !== null && leads > 0) {
@@ -78,6 +95,7 @@ export function ConversionFunnel({
       label: leadsLabel || "Leads",
       value: leads,
       color: "hsl(150 60% 45%)",
+      chave: "resultado",
     });
   }
   if (checkoutVisits != null && checkoutVisits > 0) {
@@ -85,6 +103,7 @@ export function ConversionFunnel({
       label: "Visitas Checkout",
       value: checkoutVisits,
       color: "hsl(270 70% 50%)",
+      chave: "checkout",
     });
   }
   if (sales != null && sales > 0) {
@@ -92,6 +111,7 @@ export function ConversionFunnel({
       label: "Vendas",
       value: sales,
       color: "hsl(0 85% 50%)",
+      chave: "vendas",
     });
   }
 
@@ -136,6 +156,9 @@ export function ConversionFunnel({
 
         const prev = i > 0 ? stages[i - 1] : null;
         const conversionY = y - CONVERSION_GAP / 2;
+        // Story 18.91: o passo da LP mostra as duas taxas, com o nome de cada.
+        const passoDaLp =
+          taxasDaLp && prev?.chave === "lpView" && stage.chave === "resultado" ? taxasDaLp : null;
 
         return (
           <g key={stage.label}>
@@ -151,7 +174,17 @@ export function ConversionFunnel({
                   fill="currentColor"
                   className="text-muted-foreground"
                 >
-                  ↓ {conversionRate(prev.value, stage.value)} de conversão
+                  {passoDaLp ? (
+                    <>
+                      ↓ Mídia Paga {pct(passoDaLp.midiaPaga)} · Consolidada{" "}
+                      {pct(passoDaLp.consolidada.valor)}
+                      {passoDaLp.consolidada.motivo && (
+                        <title>{MENSAGEM_SEM_CONSOLIDADA[passoDaLp.consolidada.motivo]}</title>
+                      )}
+                    </>
+                  ) : (
+                    <>↓ {conversionRate(prev.value, stage.value)} de conversão</>
+                  )}
                 </text>
               </g>
             )}

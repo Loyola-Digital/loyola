@@ -1204,10 +1204,16 @@ function TesteLpSection({
           ))}
         </div>
       </div>
+      {/* Story 18.91 (AC9): esta aba fica com a taxa antiga — e diz isso. */}
+      <p className="px-4 pb-2 text-[11px] text-muted-foreground">
+        A Tx Conv. desta aba segue a definição anterior (resultado ÷ cliques no link). Nas outras
+        telas ela foi padronizada em Mídia Paga (÷ LP View do Meta) e Consolidada (÷ visitas na LP).
+      </p>
       {isLoading ? (
         <div className="p-4 text-center text-sm text-muted-foreground">Carregando dados de LPs...</div>
       ) : (
         <LpPerformanceTable
+          taxaAntiga
           rows={lps}
           stageType={isPaid ? "paid" : "free"}
           isLoading={false}

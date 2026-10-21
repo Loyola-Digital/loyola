@@ -29,6 +29,11 @@
 // ============================================================
 
 import { cpcDeLink, ctrDeLink } from "@loyola-x/shared/src/clique-no-link";
+import {
+  txConvConsolidada,
+  txConvMidiaPaga,
+  type TxConvConsolidada,
+} from "@loyola-x/shared/src/taxa-conversao-lp";
 
 /**
  * Métricas cruas de um dia — ou a soma delas ao longo do período.
@@ -59,6 +64,12 @@ export interface DailyMetricsInput {
   linkClicks: number;
   /** Landing page views (`landing_page_view`). */
   lpViews: number;
+  /**
+   * Story 18.91: vendas do dia atribuídas a anúncio (`utm_content` = ad_id de
+   * um anúncio do funil) — o numerador da Tx Conv. Mídia Paga. Ausente =
+   * "não medido" (sem planilha ou sem a série por anúncio) → a taxa sai "—".
+   */
+  vendasAtribuidas?: number;
 }
 
 export interface DailyMetricsOutput {
@@ -81,6 +92,10 @@ export interface DailyMetricsOutput {
    * aparente — que o dashboard está errado.
    */
   costClicks: number | null;
+  /** Story 18.91: vendas atribuídas a anúncio ÷ LP View × 100. */
+  txConvMidiaPaga: number | null;
+  /** Story 18.91: compradores únicos ÷ usuários únicos na LP — ou o motivo. */
+  txConvConsolidada: TxConvConsolidada;
 }
 
 /** Denominador zerado → `null` → a UI mostra "—", nunca 0, NaN ou Infinity. */
@@ -114,6 +129,11 @@ export function deriveDailyMetrics(v: DailyMetricsInput): DailyMetricsOutput {
     ctr: ctrDeLink(costClicks, v.impressions),
     cpm: v.impressions > 0 ? (v.spend / v.impressions) * 1000 : null,
     costClicks,
+    // Story 18.91: a fórmula única do shared; sem a série por anúncio, "—".
+    txConvMidiaPaga:
+      v.vendasAtribuidas === undefined ? null : txConvMidiaPaga(v.vendasAtribuidas, v.lpViews),
+    // Fatia A: as visitas da LP ainda não chegam (GA4/Plausible fora em 20/10).
+    txConvConsolidada: txConvConsolidada(v.salesCount, { motivo: "pendente" }),
   };
 }
 
@@ -133,10 +153,36 @@ export function sumDailyMetrics(rows: DailyMetricsInput[]): DailyMetricsInput {
       impressions: a.impressions + r.impressions,
       linkClicks: a.linkClicks + r.linkClicks,
       lpViews: a.lpViews + r.lpViews,
+      // Medido em algum dia → soma; em nenhum → continua "não medido".
+      ...(a.vendasAtribuidas !== undefined || r.vendasAtribuidas !== undefined
+        ? { vendasAtribuidas: (a.vendasAtribuidas ?? 0) + (r.vendasAtribuidas ?? 0) }
+        : {}),
     }),
     {
       spend: 0, revenue: 0, margin: 0, salesCount: 0,
       impressions: 0, linkClicks: 0, lpViews: 0,
     },
   );
+}
+
+/**
+ * Story 18.91 (AC10) — vendas atribuídas a anúncio, por dia.
+ *
+ * Soma a série diária de vendas por `ad_id` (a de `groupBy=ad`) só dos anúncios
+ * do funil — os mesmos que o Desempenho por LP usa (P13). Venda de um
+ * `utm_content` que não é anúncio do funil não entra.
+ */
+export function vendasAtribuidasPorDia(
+  porAnuncio: Record<string, { salesByDay: Record<string, number> }>,
+  anunciosDoFunil: Iterable<string>,
+): Map<string, number> {
+  const doFunil = new Set(anunciosDoFunil);
+  const porDia = new Map<string, number>();
+  for (const [adId, serie] of Object.entries(porAnuncio)) {
+    if (!doFunil.has(adId)) continue;
+    for (const [dia, n] of Object.entries(serie.salesByDay)) {
+      porDia.set(dia, (porDia.get(dia) ?? 0) + n);
+    }
+  }
+  return porDia;
 }

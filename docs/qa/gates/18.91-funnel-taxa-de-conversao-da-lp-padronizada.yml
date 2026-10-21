@@ -1,0 +1,52 @@
+schema: 1
+story: '18.91'
+story_title: 'Taxa de conversão da LP padronizada — Mídia Paga e Consolidada (fatia A)'
+gate: CONCERNS
+status_reason: 'Re-review (iteração 2, e68e2ebe): TEST-001 resolvido — 6 testes de fio por texto; Q1–Q6 do @qa e M1–M10 do @dev agora todas vermelhas. Restam REQ-001 (fatia B pendente, medium) e itens low. Histórico da iteração 1: fatia A revisada (ae59d631 + 32dc9e73). Fórmula única correta e testada; API (landingPageViews) e contrato 55 OK. FAIL por teste do fio: 6 de 6 mutações do @qa no ponto de ligação das telas sobreviveram. Os Dados diários do lançamento, os Dados Diários do Perpétuo e o Desempenho por LP do Perpétuo podem mostrar a coluna errada, perder a célula ou deixar de receber as vendas atribuídas sem nenhum teste cair. Correção barata: testes de fio por texto (padrão vturb-bloco-fio).'
+reviewer: 'Quinn'
+updated: '2026-10-21T02:10:00Z'
+pr: null
+branch: 'feat/18.91-taxa-conversao-lp (local, não pushada; empilhada sobre feat/18.90-ga4-causa-do-erro)'
+commits: ['76c6cb6f', 'ae59d631', '32dc9e73', 'e68e2ebe']
+base: 'feat/18.90 em f10eb6b4. A 18.90 ganhou o commit do gate (ca52ba46) depois: rebase antes da PR.'
+
+top_issues:
+  - id: 'TEST-001'
+    severity: resolved
+    resolved_in: 'e68e2ebe — 6 testes de fio; Q1–Q6 reexecutadas: 6/6 vermelhas'
+    original_severity: high
+    finding: 'Mutações de fio do @qa, todas sobreviveram com 16/16 verdes: Q1 tirar `<CelulaConsolidada taxa={r.txConvConsolidada} />` da linha do quadro diário do lançamento (cabeçalho com 2 colunas, corpo com 1: tudo à direita desalinha); Q2 a célula da Mídia Paga mostrar o Connect Rate; Q3 a coluna "Tx Conv. Mídia Paga" do diário do Perpétuo renderizar outra métrica; Q4 o quadro do Perpétuo receber `dailyChartData` em vez de `dailyRowsDoQuadro` (Mídia Paga vira "—" em todo dia); Q5 a coluna da tabela de LPs do Perpétuo mostrar outra métrica; Q6 a Consolidada da tabela de LPs perder o motivo no tooltip (AC4). O teste cobre as funções e só duas telas (Funil e Testes de LPs/TESTE). É o padrão já registrado em feedback_reversao_no_fio_nao_na_biblioteca: reverter a biblioteca pega, cortar o fio não.'
+    suggested_action: '@dev: testes de fio por `readFileSync` (o vitest do web não coleta .tsx) no taxa-conversao-lp-1891.test.ts: (a) crossed-funnel-daily-table: cabeçalhos "Tx Conv. Mídia Paga"/"Tx Conv. Consolidada" e as células `fmtPercent(r.txConvMidiaPaga)` + `<CelulaConsolidada taxa={r.txConvConsolidada} />` na linha e no total, nas mesmas posições (contagem de TableHead = contagem de TableCell); (b) PERPETUAL_DAILY_COLUMNS com as duas chaves e os renders `m.txConvMidiaPaga` / `m.txConvConsolidada.valor`; (c) `<PerpetualDailyTable rows={dailyRowsDoQuadro}`; (d) as duas <td> da tabela de LPs do Perpétuo; (e) o `title={MENSAGEM_SEM_CONSOLIDADA.pendente}` da CelulaDeTaxa. Depois, rodar Q1–Q6 de novo (script em scratchpad/qa_1891.py).'
+  - id: 'REQ-001'
+    severity: medium
+    finding: 'A story está entregue pela metade, por decisão do gestor (fatiar). AC2 (número da Consolidada), AC4 (motivos sem_fonte/erro/sem_filtro), AC5 (usuários únicos do período), AC13 (total ≠ soma; -lpa × -lpab) e AC14 dependem da fatia B. Nas telas, a Consolidada mostra "—" com o motivo "pendente".'
+    suggested_action: '@po: decidir se a fatia B vira story própria (recomendado: a 18.91 fecha com a fatia A) e conferir o texto da observação do TESTE (AC9).'
+  - id: 'RISK-001'
+    severity: low
+    finding: 'O Funil divide pelo LP View do `overview` (a barra) e o total dos Dados diários pela soma do LP View diário. Os dois vêm das mesmas campanhas e devem bater; se não baterem, as duas telas mostram Mídia Paga diferente com a mesma fórmula.'
+    suggested_action: 'Na visual, comparar a Mídia Paga do Funil com a linha Total dos Dados diários na mesma janela.'
+  - id: 'PERF-001'
+    severity: low
+    finding: 'O Perpétuo faz uma leitura a mais de vendas diárias por anúncio (groupBy=ad) quando o Detalhamento não está em "ad" (com "ad" a queryKey é a mesma e não duplica).'
+    suggested_action: 'Aceitável.'
+  - id: 'BUILD-001'
+    severity: low
+    finding: 'O `next build` não foi rodado localmente; o tsc do web, da API e do shared deram 0.'
+    suggested_action: '@devops: mergear só com o preview da Vercel verde.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'OK — fórmula num módulo folha do shared, usada pelas 5 telas; Mídia Paga calculada dos brutos (totais = soma ÷ soma); Consolidada carrega o motivo e nunca vira 0%; o TESTE fica com a taxa antiga por prop explícita; landingPageViews ausente → "não medido" (null) até a LP, não 0; a série de vendas por anúncio usa a mesma chave de dia (dia civil de SP) do byDay. Card de ingressos e barra do Funil contam igual (soma por dia de e-mails únicos pela compra mais recente).'
+  unit_tests: 'OK (iteração 2) — web 22/22 com 6 testes de fio; @qa Q1–Q6 e @dev M1–M10 todas vermelhas. Iteração 1: FAIL — web 16/16 e API 3/3; @dev M1–M10 vermelhas (todas na biblioteca e em 2 telas); @qa Q1–Q6, no fio de 3 telas, todas sobreviveram (TEST-001).'
+  acceptance_criteria: 'AC1 ✓ (Gratuita, Paga, Perpétuo) · AC2 ⏳ fatia B · AC3 ✓ · AC4 parcial (só o motivo pendente) · AC5 ⏳ · AC6 ✓ sem teste de fio · AC7 ✓ · AC8 ✓ Mídia Paga; Consolidada ⏳ · AC9 ✓ texto a confirmar (@po) · AC10 ✓ sem teste de fio · AC11 ✓ sem teste de fio · AC12 ✓ contrato 55, campo aditivo, API antiga → "—" · AC13 parcial · AC14 ⏳.'
+  no_regressions: 'OK — web 1985/1985; tsc web, api e shared 0; eslint 0; API com a baseline (10). A 11ª falha, nova (o teste da 18.90 travava o contrato em 54), foi corrigida para ">= 54" e ainda cai com 53.'
+  performance: 'OK com PERF-001.'
+  security: 'OK — sem rota nova; o campo novo é contagem do cache.'
+  documentation: 'OK — T0 com o achado das duas fontes fora, a decisão de fatiar e o File List.'
+  api_contract: 'OK — landingPageViews novo em entity-daily ⇒ 54 → 55 com a linha v55.'
+  scope_condition: 'OK — [scope-override] (P15).'
+
+notes:
+  - 'CodeRabbit não rodado (CLI para WSL; máquina macOS).'
+  - 'Ordem de merge: 18.90 → (retarget/rebase) 18.91. 29.85 e 18.91 se tocam em launch-dashboard.tsx em regiões diferentes.'
