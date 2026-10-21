@@ -1,4 +1,5 @@
 import { createSign } from "node:crypto";
+import { idDaFonte } from "./webhook-leads.js";
 
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
@@ -158,7 +159,34 @@ const dataCache = new Map<string, { data: SheetData; timestamp: number }>();
 // imediatamente.
 const DATA_CACHE_TTL = 30 * 1000;
 
+/**
+ * O leitor das fontes que NÃO são planilha do Google (leads por webhook).
+ *
+ * Mora num registro, e não num import direto, porque este módulo é usado por
+ * scripts e por testes sem banco — e porque ler a fonte exige o `db`, que só
+ * existe depois do boot. Quem registra é `plugins/fonte-de-webhook.ts`.
+ */
+type LeitorDeFonteVirtual = (fonteId: string) => Promise<SheetData>;
+let leitorDeFonteVirtual: LeitorDeFonteVirtual | null = null;
+
+export function registrarLeitorDeFonteVirtual(leitor: LeitorDeFonteVirtual): void {
+  leitorDeFonteVirtual = leitor;
+}
+
 export async function readSheetData(spreadsheetId: string, sheetName: string): Promise<SheetData> {
+  // Fonte de webhook: as linhas moram no Postgres, não no Google. O desvio fica
+  // aqui — e não em cada um dos 117 pontos de leitura — para que scoring,
+  // origem por UTM, debriefing e CAPI vejam a mesma forma que sempre viram.
+  const fonteVirtual = idDaFonte(spreadsheetId);
+  if (fonteVirtual) {
+    if (!leitorDeFonteVirtual) {
+      throw new Error(
+        "Fonte de leads por webhook lida sem leitor registrado (plugins/fonte-de-webhook.ts)",
+      );
+    }
+    return leitorDeFonteVirtual(fonteVirtual);
+  }
+
   const cacheKey = `${spreadsheetId}:${sheetName}`;
   const cached = dataCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < DATA_CACHE_TTL) return cached.data;

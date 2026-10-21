@@ -63,6 +63,7 @@ import youtubeChannelRoutes from "./routes/youtube-channels.js";
 import googleSheetsRoutes from "./routes/google-sheets.js";
 import salesRoutes from "./routes/sales.js";
 import funnelSpreadsheetsRoutes from "./routes/funnel-spreadsheets.js";
+import webhookLeadsRoutes from "./routes/webhook-leads.js";
 import stageApplicationsRoutes from "./routes/stage-applications.js";
 import stageSalesJourneyRoutes from "./routes/stage-sales-journey.js";
 import switchyRoutes from "./routes/switchy.js";
@@ -137,6 +138,7 @@ import sendflowGroupsSchedulerPlugin from "./plugins/sendflow-groups-scheduler.j
 import revenuecatSnapshotSchedulerPlugin from "./plugins/revenuecat-snapshot-scheduler.js";
 import plannerSyncSchedulerPlugin from "./plugins/planner-sync-scheduler.js";
 import usoDoProdutoPlugin from "./plugins/uso-do-produto.js";
+import fonteDeWebhookPlugin from "./plugins/fonte-de-webhook.js";
 import plannerAnualRoutes from "./routes/planner-anual.js";
 import publicPlannerAnualRoutes from "./routes/public-planner-anual.js";
 import instaScanWorkerPlugin from "./plugins/insta-scan-worker.js";
@@ -181,6 +183,9 @@ export async function buildServer() {
 
   // 4. Database
   await app.register(dbPlugin);
+
+  // 4a. Leads por webhook lidos como planilha (precisa de db; ver o plugin)
+  await app.register(fonteDeWebhookPlugin);
 
   // 4b. Guest access guard (needs DB + userRole from auth)
   await app.register(guestGuardPlugin);
@@ -258,6 +263,7 @@ export async function buildServer() {
   await app.register(googleSheetsRoutes);
   await app.register(salesRoutes);
   await app.register(funnelSpreadsheetsRoutes);
+  await app.register(webhookLeadsRoutes);
   await app.register(stageApplicationsRoutes);
   await app.register(stageSalesJourneyRoutes);
   await app.register(switchyRoutes);
