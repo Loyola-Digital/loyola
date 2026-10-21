@@ -616,6 +616,8 @@ export interface EntityDailyRow {
   impressions: number;
   clicks: number;
   linkClicks: number;
+  /** Story 18.91 (API v55): `landing_page_view` do dia. Ausente com a API anterior. */
+  landingPageViews?: number;
 }
 
 export interface EntityDailyResponse {

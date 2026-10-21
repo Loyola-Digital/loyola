@@ -75,6 +75,7 @@ import { useFunnelStage, useSalvarCorrecaoDeLp, useUpdateStage } from "@/lib/hoo
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useCrossedFunnelMetrics } from "@/lib/hooks/use-crossed-funnel-metrics";
 import { overrideCplWithUniqueIngressos } from "@/lib/utils/funnel-metrics";
+import { txConvConsolidada, txConvMidiaPaga } from "@loyola-x/shared/src/taxa-conversao-lp";
 import { deveMostrarDadosDiarios } from "@/lib/utils/dados-diarios-visivel";
 import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
@@ -202,6 +203,14 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
       };
     });
   }, [metrics.rows, ingUnicosByDay]);
+  // Story 18.91 (AC7): no Funil da Paga a barra é Ingressos únicos — os pagos
+  // são o numerador da Mídia Paga; todas as origens, da Consolidada.
+  const ingressosNoPeriodo = useMemo(() => {
+    if (!ingUnicosByDay) return null;
+    const all = Object.values(ingUnicosByDay);
+    const pagos = all.reduce((s, v) => s + v.pago, 0);
+    return { pagos, totais: all.reduce((s, v) => s + v.pago + v.org + v.semTrack, 0) };
+  }, [ingUnicosByDay]);
   const paidTotals = useMemo(() => {
     if (!ingUnicosByDay) return metrics.totals;
     const all = Object.values(ingUnicosByDay);
@@ -871,10 +880,20 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
             impressions={overview?.totalImpressions ?? 0}
             linkClicks={overview?.totalLinkClicks ?? null}
             landingPageViews={overview?.totalLandingPageViews ?? null}
-            leads={metrics.totalLeads}
+            leads={ehPaga ? (ingressosNoPeriodo?.totais ?? null) : metrics.totalLeads}
             checkoutVisits={ehPaga ? metrics.checkoutVisits : null}
             sales={ehPaga ? metrics.totalVendas : null}
-            leadsLabel={ehPaga ? "Leads Popup" : undefined}
+            leadsLabel={ehPaga ? "Ingressos únicos" : undefined}
+            taxasDaLp={{
+              midiaPaga: txConvMidiaPaga(
+                ehPaga ? (ingressosNoPeriodo?.pagos ?? 0) : metrics.leadsPagos,
+                overview?.totalLandingPageViews ?? 0,
+              ),
+              consolidada: txConvConsolidada(
+                ehPaga ? (ingressosNoPeriodo?.totais ?? 0) : metrics.totalLeads,
+                { motivo: "pendente" },
+              ),
+            }}
           />
         </div>
       </div>

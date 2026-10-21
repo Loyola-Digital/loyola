@@ -6,7 +6,9 @@
  * - CPC: Investimento ÷ Cliques
  * - CTR: (Cliques ÷ Impressões) × 100
  * - Connect Rate: (LP Views ÷ Cliques no link) × 100
- * - Tx Conv.: (Resultado ÷ Cliques no link) × 100 — Resultado = Leads (free) ou Vendas (paid)
+ * - Tx Conv.: (Resultado ÷ Cliques no link) × 100 — Resultado = Leads (free) ou Vendas (paid).
+ *   Story 18.91: só a aba Meta Ads TESTE ainda mostra esta (definição antiga).
+ * - Tx Conv. Mídia Paga (18.91): Resultado ÷ LP View × 100, pela fórmula única do shared.
  * - CPL: Investimento ÷ Leads
  * - CPV: Investimento ÷ Vendas
  * - ROAS: Faturamento ÷ Investimento
@@ -16,12 +18,15 @@
  * lib/components/funnels/lp-performance-table.tsx.
  */
 
+import { txConvMidiaPaga } from "@loyola-x/shared/src/taxa-conversao-lp";
+
 export interface MetricsCalculated {
   cpm: number | null; // R$
   cpc: number | null; // R$
   ctr: number | null; // %
   connectRate: number | null; // %
-  txConv: number | null; // %
+  txConv: number | null; // % — definição antiga (cliques); só a aba TESTE mostra
+  txConvMidiaPaga: number | null; // % — Story 18.91: resultado ÷ LP View
   cpv?: number | null; // R$ (legado — substituído por cplPagoUnico na 18.60)
   cplPagoUnico?: number | null; // R$ (Captação Paga — Story 18.60: Invest ÷ Ing. Únicos)
   roas?: number | null; // ratio (Captação Paga)
@@ -143,6 +148,8 @@ export function calculatePaidMetrics(params: {
     connectRate: calculateConnectRate(params.lpViews, params.cliques),
     // Story 18.60: Tx Conv. (paga) = Ing. Únicos ÷ Link Clicks (alinha 18.52)
     txConv: calculateTxConv(params.ingressosUnicos, params.cliques),
+    // Story 18.91: Mídia Paga = Ing. Únicos (atribuídos ao anúncio da LP) ÷ LP View
+    txConvMidiaPaga: txConvMidiaPaga(params.ingressosUnicos, params.lpViews),
     // Story 18.60: CPL Pago Único = Investimento ÷ Ing. Únicos
     cplPagoUnico: calculateCplPagoUnico(params.investimento, params.ingressosUnicos),
     // Story 18.60: ROAS = Fat. Total ÷ Investimento
@@ -169,6 +176,8 @@ export function calculateFreeMetrics(params: {
     connectRate: calculateConnectRate(params.lpViews, params.cliques),
     // Story 18.46: Tx Conv. = Leads ÷ Link Clicks (free)
     txConv: calculateTxConv(params.leads, params.cliques),
+    // Story 18.91: Mídia Paga = Leads da LP ÷ LP View
+    txConvMidiaPaga: txConvMidiaPaga(params.leads, params.lpViews),
     cpl: calculateCPL(params.investimento, params.leads),
   };
 }

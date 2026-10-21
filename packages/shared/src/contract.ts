@@ -617,4 +617,10 @@
 //   `shared/src/ga4-erros.ts`). `details` continua com o texto técnico. Com a
 //   API antiga o web mostra a mensagem genérica e não oferece "Reconectar".
 //   Respostas de sucesso não mudam. `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 54;
+//
+// v55 (Story 18.91, fatia A — Tx Conv. Mídia Paga por LP no Perpétuo):
+//   `GET /api/traffic/analytics/:projectId/entity-daily`: cada linha ganha
+//   `landingPageViews` (`landing_page_view` das `actions` já gravadas no
+//   cache; nenhuma chamada nova à Meta). Campo aditivo: com a API antiga o web
+//   mostra a Tx Conv. Mídia Paga por LP como "—". `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 55;

@@ -20,6 +20,11 @@ import { deriveDetailMetrics, type DetailMetricsOutput } from "./perpetual-detai
 // Story 29.59: a regra mudou para o shared, para que o relatório da API use a
 // MESMA identidade de LP. Subpath porque este é o lado web — ver `index.ts`.
 import { normalizeLpUrl } from "@loyola-x/shared/src/lp-url";
+import {
+  txConvConsolidada,
+  txConvMidiaPaga,
+  type TxConvConsolidada,
+} from "@loyola-x/shared/src/taxa-conversao-lp";
 
 /** Chave da linha que recolhe o investimento sem LP identificada. */
 export const UNRESOLVED_LP_KEY = "—";
@@ -32,6 +37,8 @@ export interface LpAdInput {
   impressions: number;
   clicks: number;
   linkClicks?: number | null;
+  /** Story 18.91: LP View do anúncio; `null`/ausente = não medido (API < v55). */
+  lpViews?: number | null;
   revenue?: number | null;
   sales?: number | null;
 }
@@ -63,6 +70,12 @@ export type LpRow = DetailMetricsOutput & {
   causaIndeterminada: number;
   revenue: number;
   sales: number;
+  /** Story 18.91: LP View da LP, ou `null` se algum anúncio dela não o informou. */
+  lpViews: number | null;
+  /** Story 18.91 (AC11): vendas atribuídas à LP ÷ LP View da LP × 100. */
+  txConvMidiaPaga: number | null;
+  /** Story 18.91 (AC11/P18): as mesmas vendas ÷ usuários únicos da LP — ou o motivo. */
+  txConvConsolidada: TxConvConsolidada;
 };
 
 /**
@@ -104,6 +117,7 @@ export function buildLpRows(
   type Acc = {
     key: string; url: string | null;
     spend: number; impressions: number; clicks: number; linkClicks: number;
+    lpViews: number | null;
     revenue: number; sales: number;
     semLinkNaMeta: number; foraDoCache: number;
     cacheDesatualizado: number; causaIndeterminada: number;
@@ -119,13 +133,14 @@ export function buildLpRows(
     const bucket = key ?? UNRESOLVED_LP_KEY;
     const acc = groups.get(bucket) ?? {
       key: bucket, url: key ? raw : null,
-      spend: 0, impressions: 0, clicks: 0, linkClicks: 0, revenue: 0, sales: 0,
+      spend: 0, impressions: 0, clicks: 0, linkClicks: 0, lpViews: 0, revenue: 0, sales: 0,
       semLinkNaMeta: 0, foraDoCache: 0, cacheDesatualizado: 0, causaIndeterminada: 0,
     };
     acc.spend += ad.spend;
     acc.impressions += ad.impressions;
     acc.clicks += ad.clicks;
     acc.linkClicks += ad.linkClicks ?? 0;
+    acc.lpViews = ad.lpViews == null || acc.lpViews === null ? null : acc.lpViews + ad.lpViews;
     acc.revenue += ad.revenue ?? 0;
     acc.sales += ad.sales ?? 0;
     if (!key) {
@@ -150,6 +165,11 @@ export function buildLpRows(
     causaIndeterminada: g.causaIndeterminada,
     revenue: g.revenue,
     sales: g.sales,
+    lpViews: g.lpViews,
+    // Story 18.91: a fórmula única do shared. Numerador = as vendas da linha
+    // (atribuídas ao anúncio, P13); na Consolidada só o denominador muda (P18).
+    txConvMidiaPaga: g.lpViews === null ? null : txConvMidiaPaga(g.sales, g.lpViews),
+    txConvConsolidada: txConvConsolidada(g.sales, { motivo: "pendente" }),
     // AC4: mesma aritmética do Detalhamento, via a MESMA função. Taxas são
     // re-derivadas dos somatórios da linha, jamais média das taxas dos
     // anúncios — média de médias foi bug antes e daria número errado calado.

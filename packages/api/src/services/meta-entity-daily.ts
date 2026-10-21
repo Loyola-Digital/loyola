@@ -64,6 +64,11 @@ export interface EntityDailyRow {
   impressions: number;
   clicks: number;
   linkClicks: number;
+  /**
+   * Story 18.91: `landing_page_view` das `actions` gravadas — o denominador da
+   * Tx Conv. Mídia Paga por LP no Perpétuo. Vem do mesmo cache, sem chamar a Meta.
+   */
+  landingPageViews: number;
 }
 
 export interface EntityDailySeries {
@@ -83,10 +88,14 @@ function toNum(v: unknown): number {
   return parseFloat(String(v ?? "0")) || 0;
 }
 
-function linkClicksFrom(actions: ActionArr): number {
+function actionFrom(actions: ActionArr, tipo: string): number {
   if (!actions) return 0;
-  const a = actions.find((x) => x.action_type === "link_click");
+  const a = actions.find((x) => x.action_type === tipo);
   return a ? parseFloat(a.value) || 0 : 0;
+}
+
+function linkClicksFrom(actions: ActionArr): number {
+  return actionFrom(actions, "link_click");
 }
 
 /** Nomes de entidade pelo cache, num SELECT só. */
@@ -144,6 +153,7 @@ export async function getEntityDailySeries(
       impressions: toNum(r.impressions),
       clicks: toNum(r.clicks),
       linkClicks: linkClicksFrom(r.actions),
+      landingPageViews: actionFrom(r.actions, "landing_page_view"),
     }));
     return { rows, unattributedByDate: {}, daysWithoutCoverage: [] };
   }
@@ -179,6 +189,7 @@ export async function getEntityDailySeries(
         impressions: 0,
         clicks: 0,
         linkClicks: 0,
+        landingPageViews: 0,
       };
       byKey.set(k, acc);
     }
@@ -186,6 +197,7 @@ export async function getEntityDailySeries(
     acc.impressions += toNum(r.impressions);
     acc.clicks += toNum(r.clicks);
     acc.linkClicks += linkClicksFrom(r.actions);
+    acc.landingPageViews += actionFrom(r.actions, "landing_page_view");
     spendByDate.set(r.dateStart, (spendByDate.get(r.dateStart) ?? 0) + toNum(r.spend));
   }
 
