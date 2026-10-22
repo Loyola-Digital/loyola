@@ -28,6 +28,7 @@ import { MapStageView } from "@/components/funnels/map-stage-view";
 import { DebriefingStageView } from "@/components/funnels/debriefing-stage-view";
 import { ComercialStageView } from "@/components/funnels/comercial-stage-view";
 import { LyrioStageView } from "@/components/funnels/lyrio-stage-view";
+import { RedirectStageView } from "@/components/funnels/redirect-stage-view";
 import { ManualPixSalesSection } from "@/components/funnels/manual-pix-sales-section";
 import { ManualSaleDialog } from "@/components/funnels/manual-sale-dialog";
 import { ReceiptUploadDialog } from "@/components/funnels/receipt-upload-dialog";
@@ -224,6 +225,20 @@ export default function StagePage() {
   if ((stage.stageType as string) === "mapa") {
     return (
       <MapStageView
+        projectId={params.id}
+        funnelId={params.funnelId}
+        funnelName={funnel.name}
+        stage={stage}
+      />
+    );
+  }
+
+  // Etapa "redirect" — o anúncio vai direto para o grupo de WhatsApp e não há
+  // lead para captar: nada de planilha, KPI de lead ou venda manual. A tela é a
+  // comparação Meta × pixel × grupo, então render dedicado.
+  if ((stage.stageType as string) === "redirect") {
+    return (
+      <RedirectStageView
         projectId={params.id}
         funnelId={params.funnelId}
         funnelName={funnel.name}
@@ -614,6 +629,24 @@ export default function StagePage() {
                   >
                     <span className="font-medium">{rotuloDoTipoDeEtapa("comercial", funnelType).titulo}</span>
                     <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("comercial", funnelType).descricao}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateStage.mutate(
+                        { stageType: "redirect" },
+                        { onSuccess: () => toast.success(`Tipo alterado para ${rotuloDoTipoDeEtapa("redirect", funnelType).titulo}`) }
+                      );
+                    }}
+                    className={cn(
+                      "flex flex-col items-center justify-center rounded-md border p-3 text-sm gap-1 transition-colors",
+                      (stage.stageType as string) === "redirect"
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border hover:bg-muted"
+                    )}
+                  >
+                    <span className="font-medium">{rotuloDoTipoDeEtapa("redirect", funnelType).titulo}</span>
+                    <span className="text-xs text-muted-foreground">{rotuloDoTipoDeEtapa("redirect", funnelType).descricao}</span>
                   </button>
                   <button
                     type="button"

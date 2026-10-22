@@ -1,5 +1,6 @@
 ﻿import { z } from "zod";
 import { eq, and } from "drizzle-orm";
+import type { StageType } from "@loyola-x/shared";
 import fp from "fastify-plugin";
 import {
   funnelStages,
@@ -52,7 +53,7 @@ const matchCodeDaEtapaSchema = z.union([z.literal(""), z.string().trim().max(120
 
 const createStageSchema = z.object({
   name: z.string().min(1).max(255),
-  stageType: z.enum(["paid", "free", "application", "sales", "cpl", "event", "event_capture", "debriefing", "comercial", "lyrio", "mapa"]).default("free"),
+  stageType: z.enum(["paid", "free", "application", "sales", "cpl", "event", "event_capture", "debriefing", "comercial", "lyrio", "mapa", "redirect"]).default("free"),
   matchCode: matchCodeDaEtapaSchema.nullable().optional(),
   metaAccountId: z.string().uuid().nullable().optional(),
   campaigns: z.array(campaignSchema).default([]),
@@ -60,11 +61,13 @@ const createStageSchema = z.object({
   googleAdsCampaigns: z.array(campaignSchema).default([]),
   switchyFolderIds: z.array(switchyFolderSchema).default([]),
   switchyLinkedLinks: z.array(switchyLinkRefSchema).default([]),
+  // Campanhas do SendFlow da etapa `redirect` (os grupos de WhatsApp).
+  sendflowReleases: z.array(campaignSchema).default([]),
 });
 
 const updateStageSchema = z.object({
   name: z.string().min(1).max(255).optional(),
-  stageType: z.enum(["paid", "free", "application", "sales", "cpl", "event", "event_capture", "debriefing", "comercial", "lyrio", "mapa"]).optional(),
+  stageType: z.enum(["paid", "free", "application", "sales", "cpl", "event", "event_capture", "debriefing", "comercial", "lyrio", "mapa", "redirect"]).optional(),
   matchCode: matchCodeDaEtapaSchema.nullable().optional(),
   metaAccountId: z.string().uuid().nullable().optional(),
   campaigns: z.array(campaignSchema).optional(),
@@ -72,6 +75,7 @@ const updateStageSchema = z.object({
   googleAdsCampaigns: z.array(campaignSchema).optional(),
   switchyFolderIds: z.array(switchyFolderSchema).optional(),
   switchyLinkedLinks: z.array(switchyLinkRefSchema).optional(),
+  sendflowReleases: z.array(campaignSchema).optional(),
   ga4PageFilter: z.string().max(2048).nullable().optional(),
   // Story 18.56: URL manual por LP (chave = lpName trim+lowercase). Valor
   // vazio = remover o link (o handler descarta chaves vazias antes de gravar).
@@ -146,7 +150,7 @@ function stageShape(
     id: row.id,
     funnelId: row.funnelId,
     name: row.name,
-    stageType: (row.stageType ?? "free") as "paid" | "free" | "sales" | "cpl" | "event" | "debriefing" | "comercial" | "lyrio",
+    stageType: (row.stageType ?? "free") as StageType,
     matchCode: row.matchCode ?? null,
     metaAccountId: row.metaAccountId,
     campaigns: (row.campaigns ?? []) as { id: string; name: string }[],
@@ -154,6 +158,7 @@ function stageShape(
     googleAdsCampaigns: (row.googleAdsCampaigns ?? []) as { id: string; name: string }[],
     switchyFolderIds: (row.switchyFolderIds ?? []) as { id: number; name: string }[],
     switchyLinkedLinks: (row.switchyLinkedLinks ?? []) as { uniq: number; id: string; domain: string }[],
+    sendflowReleases: (row.sendflowReleases ?? []) as { id: string; name: string }[],
     ga4PageFilter: row.ga4PageFilter ?? null,
     lpLinks: (row.lpLinks ?? {}) as Record<string, string>,
     // Story 18.83 (AC5): correção manual por campanha da tabela de LPs.
@@ -368,6 +373,7 @@ export default fp(async function funnelStageRoutes(fastify) {
         googleAdsCampaigns: body.googleAdsCampaigns,
         switchyFolderIds: body.switchyFolderIds,
         switchyLinkedLinks: body.switchyLinkedLinks,
+        sendflowReleases: body.sendflowReleases,
         sortOrder: nextOrder,
       })
       .returning();
@@ -414,6 +420,7 @@ export default fp(async function funnelStageRoutes(fastify) {
     if (body.googleAdsCampaigns !== undefined) updates.googleAdsCampaigns = body.googleAdsCampaigns;
     if (body.switchyFolderIds !== undefined) updates.switchyFolderIds = body.switchyFolderIds;
     if (body.switchyLinkedLinks !== undefined) updates.switchyLinkedLinks = body.switchyLinkedLinks;
+    if (body.sendflowReleases !== undefined) updates.sendflowReleases = body.sendflowReleases;
     if (body.ga4PageFilter !== undefined) updates.ga4PageFilter = body.ga4PageFilter;
     // Story 18.56: normaliza chaves (trim+lowercase) e descarta valores vazios
     // (vazio = remoção do link). O objeto substitui o anterior por inteiro —

@@ -477,6 +477,11 @@ export default fp(async function sendflowRoutes(fastify) {
 
   // ---- Campanhas ---------------------------------------------------------
 
+  /** Id de campanha do SendFlow — mesma forma do `comparar` da rota de origem. */
+  const releaseParam = z.object({
+    releaseId: z.string().regex(/^[A-Za-z0-9]{8,64}$/),
+  });
+
   fastify.get(
     "/api/projects/:projectId/sendflow/releases",
     async (request, reply) => {
@@ -525,6 +530,110 @@ export default fp(async function sendflowRoutes(fastify) {
     };
   }
 
+  /**
+   * O resumo de UMA campanha do SendFlow: grupos, participantes, as três séries
+   * diárias e os disparos.
+   *
+   * Extraído do handler por funil porque a etapa `redirect` pede o mesmo
+   * resumo de uma campanha ESCOLHIDA à mão, sem casamento por nome — lá o
+   * anúncio vai direto para o grupo e quem diz qual é a campanha é a etapa.
+   * Duas cópias desta montagem derivariam, e aí o mesmo grupo responderia dois
+   * números dependendo da tela por onde se entra.
+   */
+  async function resumoDaCampanha(
+    s: SendflowSession,
+    campanha: { id: string; name: string },
+  ) {
+    const [grupos, analytics, historico] = await Promise.all([
+      gruposDaCampanha(s, campanha.id),
+      analyticsDaCampanha(s, campanha.id),
+      disparosDaCampanha(s, campanha.id),
+    ]);
+    const disparos = historico.acoes;
+
+    const serie = (d?: Record<string, number>) =>
+      Object.entries(d ?? {})
+        .map(([k, v]) => ({ date: dataDaChave(k), valor: v }))
+        .filter((x): x is { date: string; valor: number } => x.date !== null)
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+    return {
+      semCampanha: false as const,
+      campanha: { id: campanha.id, name: campanha.name },
+      grupos: grupos.map((g) => ({
+        id: g.id,
+        name: g.name,
+        gid: g.gid,
+        // `participantsAmount` é a contagem de gente. `count` é a posição do
+        // grupo na campanha (#1, #2) — confundir os dois dá número errado.
+        participantes: g.participantsAmount ?? 0,
+        cheio: g.full ?? false,
+        inviteCode: g.inviteCode ?? null,
+      })),
+      totalParticipantes: totalDeParticipantes(grupos),
+      entradas: {
+        total: analytics.add?.total ?? 0,
+        porDia: serie(analytics.add?.dates),
+      },
+      saidas: {
+        total: analytics.remove?.total ?? 0,
+        porDia: serie(analytics.remove?.dates),
+      },
+      cliques: {
+        total: analytics.clicks?.total ?? 0,
+        porDia: serie(analytics.clicks?.dates),
+      },
+      disparos: disparos.map((a) => ({
+        id: a.id,
+        tipo: a.type,
+        quando: a.scheduledTo ?? a.startedAt ?? a.createdAt ?? null,
+        sucesso: a.success ?? null,
+        erro: a.error ?? null,
+      })),
+    };
+  }
+
+  /**
+   * Resumo de uma campanha ESCOLHIDA, sem casamento por nome — a etapa
+   * `redirect`.
+   *
+   * 404 quando o id não está entre as campanhas da conta: pedir uma campanha de
+   * outro expert, ou uma que foi apagada, não pode devolver dado nem erro 500.
+   */
+  fastify.get(
+    "/api/projects/:projectId/sendflow/releases/:releaseId/summary",
+    async (request, reply) => {
+      if (negarGuest(request))
+        return reply.code(403).send({ error: "Acesso negado" });
+      const p = projetoParam.safeParse(request.params);
+      const r = releaseParam.safeParse(request.params);
+      if (!p.success || !r.success)
+        return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      try {
+        const s = await sessao(p.data.projectId);
+        if (!s)
+          return reply
+            .code(409)
+            .send({ error: "SendFlow não conectado", code: "NOT_CONNECTED" });
+
+        // `todas`: a campanha da etapa pode ter sido arquivada no SendFlow
+        // depois do lançamento, e os grupos continuam lá com gente dentro.
+        const campanha = (await listarCampanhas(s)).find(
+          (c) => c.id === r.data.releaseId,
+        );
+        if (!campanha)
+          return reply
+            .code(404)
+            .send({ error: "Campanha do SendFlow não encontrada" });
+
+        return await resumoDaCampanha(s, campanha);
+      } catch (err) {
+        return erro(reply, err);
+      }
+    },
+  );
+
   // ---- Resumo por funil --------------------------------------------------
 
   fastify.get(
@@ -567,55 +676,7 @@ export default fp(async function sendflowRoutes(fastify) {
           };
         }
 
-        const [grupos, analytics, historico] = await Promise.all([
-          gruposDaCampanha(s, campanha.id),
-          analyticsDaCampanha(s, campanha.id),
-          disparosDaCampanha(s, campanha.id),
-        ]);
-        const disparos = historico.acoes;
-
-        const serie = (d?: Record<string, number>) =>
-          Object.entries(d ?? {})
-            .map(([k, v]) => ({ date: dataDaChave(k), valor: v }))
-            .filter(
-              (x): x is { date: string; valor: number } => x.date !== null,
-            )
-            .sort((a, b) => a.date.localeCompare(b.date));
-
-        return {
-          semCampanha: false,
-          campanha: { id: campanha.id, name: campanha.name },
-          grupos: grupos.map((g) => ({
-            id: g.id,
-            name: g.name,
-            gid: g.gid,
-            // `participantsAmount` é a contagem de gente. `count` é a posição do
-            // grupo na campanha (#1, #2) — confundir os dois dá número errado.
-            participantes: g.participantsAmount ?? 0,
-            cheio: g.full ?? false,
-            inviteCode: g.inviteCode ?? null,
-          })),
-          totalParticipantes: totalDeParticipantes(grupos),
-          entradas: {
-            total: analytics.add?.total ?? 0,
-            porDia: serie(analytics.add?.dates),
-          },
-          saidas: {
-            total: analytics.remove?.total ?? 0,
-            porDia: serie(analytics.remove?.dates),
-          },
-          cliques: {
-            total: analytics.clicks?.total ?? 0,
-            porDia: serie(analytics.clicks?.dates),
-          },
-          disparos: disparos.map((a) => ({
-            id: a.id,
-            tipo: a.type,
-            quando: a.scheduledTo ?? a.startedAt ?? a.createdAt ?? null,
-            sucesso: a.success ?? null,
-            erro: a.error ?? null,
-          })),
-        };
+        return resumoDaCampanha(s, campanha);
       } catch (err) {
         return erro(reply, err);
       }

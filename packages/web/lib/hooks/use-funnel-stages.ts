@@ -10,7 +10,7 @@ const STAGE_STALE_TIME = 2 * 60 * 1000; // 2 min
 
 export interface CreateStageInput {
   name: string;
-  stageType?: "paid" | "free" | "application" | "sales" | "cpl" | "event" | "event_capture" | "debriefing" | "comercial" | "lyrio" | "mapa";
+  stageType?: "paid" | "free" | "application" | "sales" | "cpl" | "event" | "event_capture" | "debriefing" | "comercial" | "lyrio" | "mapa" | "redirect";
   /**
    * Migration 0169: o código que as campanhas desta etapa têm no nome
    * (ex. `fz-a1`). Vazio/`null` = casa pelo código do funil + fase, como antes.
@@ -22,6 +22,8 @@ export interface CreateStageInput {
   googleAdsCampaigns?: { id: string; name: string }[];
   switchyFolderIds?: { id: number; name: string }[];
   switchyLinkedLinks?: { uniq: number; id: string; domain: string }[];
+  /** Etapa `redirect`: as campanhas do SendFlow (os grupos de WhatsApp). */
+  sendflowReleases?: { id: string; name: string }[];
   ga4PageFilter?: string | null;
   /** Story 18.56: URL manual por LP (chave = lpName trim+lowercase; valor vazio remove). */
   lpLinks?: Record<string, string>;

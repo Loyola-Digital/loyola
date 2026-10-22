@@ -918,6 +918,23 @@ export const funnelStages = pgTable(
       .notNull()
       .default([])
       .$type<{ uniq: number; id: string; domain: string }[]>(),
+    /**
+     * As campanhas do SendFlow que a etapa `redirect` observa.
+     *
+     * A etapa `redirect` é a campanha que NÃO capta lead: o anuncio manda
+     * direto para o grupo de WhatsApp, então não há planilha, não há e-mail e
+     * o número de gente no grupo é o único resultado que existe.
+     *
+     * ⚠️ É a CAMPANHA (release), não o grupo, e não é preferência de tela: o
+     * SendFlow só devolve série DIÁRIA de entradas e saídas por campanha
+     * (`analyticsDaCampanha`). Por grupo existe apenas o total de participantes
+     * de agora — escolher grupo a grupo mataria o gráfico por dia, que é o que
+     * responde "o anúncio de ontem encheu o grupo?".
+     */
+    sendflowReleases: jsonb("sendflow_releases")
+      .notNull()
+      .default([])
+      .$type<{ id: string; name: string }[]>(),
     // 20 e não 10: "debriefing" já ocupava o limite exato, e "event_capture"
     // (Captação de Evento) passou. Ampliado na migration 0102.
     stageType: varchar("stage_type", { length: 20 }).notNull().default("free"),
