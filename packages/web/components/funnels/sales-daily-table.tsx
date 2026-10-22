@@ -8,7 +8,7 @@
 // ingressos, CPL, Tx Conv. e rótulos por tipo de etapa). Aqui o visual é o
 // mesmo (cabeçalho fixo, Dia ordenável, Total no rodapé); o conteúdo é de venda.
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import {
   Table,
@@ -32,6 +32,7 @@ import {
   type OrdemDoDia,
 } from "@/lib/utils/ordem-do-dia";
 import { fmtCurrency, fmtInt, fmtPercent } from "@/lib/utils/format-number";
+import { renderConnectRate } from "./crossed-funnel-daily-table";
 
 interface SalesDailyTableProps {
   projectId: string;
@@ -53,7 +54,7 @@ function fmtDia(d: string): string {
 const COLUNAS: {
   rotulo: string;
   dica: string;
-  valor: (r: LinhaDiariaDeVendas) => string;
+  valor: (r: LinhaDiariaDeVendas) => ReactNode;
 }[] = [
   { rotulo: "Investimento", dica: "Gasto Meta das campanhas da etapa no dia, com o imposto (12,15%)", valor: (r) => fmtCurrency(r.investimento) },
   { rotulo: "Vendas", dica: "Vendas do Produto Principal (Pg + Org + s/ track + Manual) — a mesma conta do card Vendas", valor: (r) => fmtInt(r.vendas) },
@@ -71,6 +72,7 @@ const COLUNAS: {
   { rotulo: "CPM", dica: "Investimento × 1000 ÷ Impressões", valor: (r) => fmtCurrency(r.cpm) },
   { rotulo: "CPC", dica: "Investimento ÷ Cliques no link", valor: (r) => fmtCurrency(r.cpc) },
   { rotulo: "LP Views", dica: "landing_page_view da Meta", valor: (r) => fmtInt(r.lpViews) },
+  { rotulo: "Connect Rate", dica: "LP Views ÷ Cliques no link × 100 (quantos cliques chegaram na LP). Verde acima de 70%", valor: (r) => renderConnectRate(r.connectRate) },
   { rotulo: "Checkouts", dica: "Checkouts iniciados (pixel)", valor: (r) => fmtInt(r.checkouts) },
 ];
 

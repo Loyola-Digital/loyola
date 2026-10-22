@@ -150,7 +150,8 @@ function formatDateLabel(d: string) {
   return `${day}/${m}/${y}`;
 }
 
-function renderConnectRate(v: number | null) {
+/** Também na Dados diários da etapa de Vendas (`sales-daily-table.tsx`). */
+export function renderConnectRate(v: number | null) {
   if (v == null) return "—";
   // Story 18.52 AC8: >70% verde, <=70% amarelo.
   const good = v > 70;
