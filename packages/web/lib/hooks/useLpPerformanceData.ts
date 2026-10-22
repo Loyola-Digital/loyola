@@ -15,6 +15,10 @@
  *   sem erro.
  * - Filtro de público (hot/cold/todos): gasto e vendas pela temperatura da
  *   CAMPANHA; o lead pelo texto do próprio lead (PO-07).
+ * - Story 18.94 — filtro de mídia (Vídeo/Estático/Todos) pelo nome do anúncio,
+ *   que vem dos `creatives` da mesma resposta. Só existe no caminho por URL: o
+ *   `lpBreakdown` da API anterior é LP × temperatura, sem anúncio — lá, Vídeo e
+ *   Estático mostram o vazio em vez de números que não são do recorte.
  */
 
 import { useMemo } from "react";
@@ -24,7 +28,8 @@ import { useCrossReferenceLeads } from "@/lib/hooks/useCrossReferenceLeads";
 import { useFunnelStage } from "@/lib/hooks/use-funnel-stages";
 import { applyMetaAdsTax } from "@/lib/utils/funnel-metrics";
 import { leadsDaLp } from "@/lib/utils/leads-da-lp";
-import { montarLinhasDeLpPorUrl, type LpRow } from "@/lib/utils/lps-do-lancamento";
+import { montarLinhasDeLpPorUrl, nomesPorAnuncio, type LpRow } from "@/lib/utils/lps-do-lancamento";
+import type { TipoDeMidia } from "@/lib/utils/filtro-de-midia-do-criativo";
 import {
   opcoesDaQueryCreativePerformance,
   type StageCreativePerformanceResponse,
@@ -55,6 +60,8 @@ interface UseLpPerformanceDataOptions {
   stageId: string;
   days?: number;
   publicoFilter?: "hot" | "cold" | "todos";
+  /** Story 18.94: Vídeo / Estático / Todos pelo nome do anúncio. */
+  midiaFilter?: TipoDeMidia;
 }
 
 export function useLpPerformanceData({
@@ -63,6 +70,7 @@ export function useLpPerformanceData({
   stageId,
   days = 30,
   publicoFilter = "todos",
+  midiaFilter = "todos",
 }: UseLpPerformanceDataOptions): LpPerformanceResult {
   const apiClient = useApiClient();
 
@@ -88,6 +96,8 @@ export function useLpPerformanceData({
   const correcoes = useMemo(() => stage?.lpCampaignUrls ?? {}, [stage?.lpCampaignUrls]);
 
   const lpPorAnuncio = creativesQuery.data?.lpPorAnuncio;
+  const creatives = creativesQuery.data?.creatives;
+  const nomeDoAnuncio = useMemo(() => nomesPorAnuncio(creatives), [creatives]);
 
   const result = useMemo(() => {
     // Imposto Meta aplica a partir de 2026; o breakdown é agregado no período,
@@ -102,13 +112,16 @@ export function useLpPerformanceData({
           leadsPorAnuncio: leadsQuery.leadsPagosPorAnuncio,
           publico: publicoFilter,
           dataDoImposto: taxDate,
+          midia: midiaFilter,
+          nomeDoAnuncio,
         }),
         modo: "url" as const,
       };
     }
 
     const breakdown = creativesQuery.data?.lpBreakdown;
-    if (!breakdown || breakdown.length === 0) {
+    // Story 18.94 (AC10): sem anúncio no breakdown não há como recortar.
+    if (!breakdown || breakdown.length === 0 || midiaFilter !== "todos") {
       return { lps: [] as LpRow[], modo: "rotulo" as const };
     }
 
@@ -184,6 +197,8 @@ export function useLpPerformanceData({
     leadsQuery.leadsByLp,
     leadsQuery.leadsPagosPorAnuncio,
     publicoFilter,
+    midiaFilter,
+    nomeDoAnuncio,
   ]);
 
   return {
