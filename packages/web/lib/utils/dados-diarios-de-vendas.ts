@@ -7,6 +7,8 @@
 //   ROAS         = faturamento PAGO ÷ investimento
 //   Ticket médio = faturamento ÷ vendas
 //   CTR/CPM/CPC  = pelo clique no LINK
+//   Connect Rate = LP Views ÷ cliques no link, em % (o mesmo da Dados diários
+//                  da Captação)
 // O Total soma as aditivas e recalcula as derivadas a partir das somas (regra da
 // 18.62, nunca média) — por isso o Total bate com os cards.
 //
@@ -40,6 +42,8 @@ export interface LinhaDiariaDeVendas {
   cpm: number | null;
   cpc: number | null;
   lpViews: number | null;
+  /** LP Views ÷ cliques no link, em %. */
+  connectRate: number | null;
   checkouts: number | null;
 }
 
@@ -77,6 +81,7 @@ function linha(date: string, v: Vendas, meta: Meta | null): LinhaDiariaDeVendas 
     cpm: meta ? safeDivide(meta.spend * 1000, meta.impressions) : null,
     cpc: meta ? safeDivide(meta.spend, meta.linkClicks) : null,
     lpViews: meta ? meta.lpViews : null,
+    connectRate: meta ? safeDivide(meta.lpViews * 100, meta.linkClicks) : null,
     checkouts: meta ? meta.checkouts : null,
   };
 }

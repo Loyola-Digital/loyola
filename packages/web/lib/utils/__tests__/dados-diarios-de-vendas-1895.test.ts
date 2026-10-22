@@ -101,6 +101,47 @@ describe("fórmulas do card, por dia", () => {
     expect(so.ticketMedio).toBeNull();
     expect(so.roas).toBe(0);
     expect(porDia("2026-10-03").roas).toBeNull();
+    expect(porDia("2026-10-03").connectRate).toBeNull();
+  });
+});
+
+describe("Connect Rate = LP Views ÷ cliques no link, em % (pedido do gestor, 22/10)", () => {
+  // Dia A: 9 de 10 cliques chegaram (90%); dia B: 10 de 100 (10%). A média
+  // dos dias daria 50%; o Total certo é 19 ÷ 110.
+  const comLp = (date: string, linkClicks: number, lpViews: number): CampaignDailyInsight => ({
+    ...insight(date, 10, 1000, linkClicks),
+    actions: [
+      { action_type: "link_click", value: String(linkClicks) },
+      { action_type: "landing_page_view", value: String(lpViews) },
+    ],
+  });
+  const cr = montarDadosDiariosDeVendas({
+    meta: [comLp("2026-10-01", 10, 9), comLp("2026-10-02", 100, 10)],
+    temCampanha: true,
+    vendas: null,
+    ordem: "asc",
+  });
+
+  // Mutação: trocar o numerador por cliques ÷ LP Views, ou esquecer o × 100.
+  it("por dia", () => {
+    expect(cr.dias.map((r) => r.connectRate)).toEqual([90, 10]);
+  });
+
+  // Mutação: Total como média dos dias (50).
+  it("o Total recalcula pelas somas, não pela média", () => {
+    expect(cr.total!.connectRate).toBeCloseTo((19 / 110) * 100, 6);
+  });
+
+  it("sem campanha, fica null", () => {
+    const sem = montarDadosDiariosDeVendas({ meta: null, temCampanha: false, vendas: vendasNovas });
+    expect(sem.total!.connectRate).toBeNull();
+  });
+
+  it("a coluna fica logo depois de LP Views, com a cor da Captação", () => {
+    const src = readFileSync(new URL("../../../components/funnels/sales-daily-table.tsx", import.meta.url), "utf-8");
+    expect(src.indexOf('rotulo: "Connect Rate"')).toBeGreaterThan(src.indexOf('rotulo: "LP Views"'));
+    expect(src.indexOf('rotulo: "Connect Rate"')).toBeLessThan(src.indexOf('rotulo: "Checkouts"'));
+    expect(src).toContain("renderConnectRate(r.connectRate)");
   });
 });
 
