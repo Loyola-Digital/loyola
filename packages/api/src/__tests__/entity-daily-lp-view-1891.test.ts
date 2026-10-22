@@ -54,6 +54,8 @@ describe("Story 18.91 — landingPageViews na série por entidade", () => {
   });
 
   it("o contrato sobe para 55 (campo novo na resposta)", () => {
-    expect(API_CONTRACT_VERSION).toBe(55);
+    // ≥, não ===: a 18.95 subiu para 56 e este teste só garante que o campo da
+    // 18.91 não ficou sem bump.
+    expect(API_CONTRACT_VERSION).toBeGreaterThanOrEqual(55);
   });
 });

@@ -401,6 +401,8 @@ export type {
   PerpetualUpsellData,
   FunnelStage,
   StageSalesData,
+  DiaDeVendas,
+  DiarioDeVendas,
   Funnel,
   ComparisonDayMetrics,
   MetaAdsComparisonData,
