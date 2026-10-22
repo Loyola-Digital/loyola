@@ -22,6 +22,7 @@ import { readSheetData } from "../services/google-sheets.js";
 import { aFonteEhKiwify, fontesDeVendaDaEtapa } from "../services/kiwify-vendas-cache.js";
 import { temDashboardDeVendas } from "../utils/stage-types.js";
 import { juntarPorComprador } from "../utils/comprador.js";
+import { criarDiarioDeVendas, diarioDeVendasVazio } from "../utils/diario-de-vendas.js";
 import { classifyRefundStatus, isRefundBucket } from "../services/sales-status.js";
 import { ingressosDoEvento } from "../services/kiwify-event-tickets.js";
 // Story 41.12 — camada 2 (mesma pessoa + mesmo produto conta uma vez), decidida
@@ -237,6 +238,8 @@ const EMPTY_RESPONSE = {
   porUtmMedium: [] as { medium: string; vendas: number; bruto: number; liquido: number }[],
   porUtmTerm: [] as { term: string; vendas: number; bruto: number; liquido: number }[],
   porUtmContent: [] as { content: string; vendas: number; bruto: number; liquido: number }[],
+  // Story 18.95: sem venda, o diário vem vazio (e não ausente — ausente é API anterior).
+  diarioDeVendas: diarioDeVendasVazio(),
   // Story 18.51a: métricas únicas vs totais (etapa Paga). Vazias no empty.
   ingressosUnicos: 0,
   ingressosTotais: 0,
@@ -779,11 +782,16 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         ? juntarPorComprador(linhasQueContam)
         : linhasQueContam;
 
+      // Story 18.95: o diário soma nos MESMOS pontos que o card (este laço e o
+      // das manuais, abaixo) — Σ dias + sem data = card por construção.
+      const diarioDeVendas = criarDiarioDeVendas();
+
       for (const { bruto, liquido, forma, canal, utmSource, utmMedium, utmTerm, utmContent, lastDate } of vendasContadas) {
         vendasValidasPlanilha += 1;
         totalBruto += bruto;
         totalLiquido += liquido;
         addIngresso(lastDate, classifyFonte(utmSource)); // Story 18.48
+        diarioDeVendas.somar(lastDate, classifyFonte(utmSource), bruto);
 
         const canalEntry = canalMap.get(canal) ?? { vendas: 0, bruto: 0, liquido: 0 };
         canalEntry.vendas += 1;
@@ -891,6 +899,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
 
         const vendedor = (mr.sellerName ?? "").trim() || LABEL_MANUAL_SEM_VENDEDOR;
         const bruto = Number(mr.value) || 0;
+        diarioDeVendas.somar(mr.saleDate ? new Date(mr.saleDate) : null, "Manual", bruto, manualConta[i]);
         const entry = utmSourceMap.get(vendedor) ?? { vendas: 0, bruto: 0, liquido: 0 };
         if (manualConta[i]) entry.vendas += 1;
         entry.bruto += bruto;
@@ -1250,6 +1259,7 @@ export default fp(async function stageSalesDataRoutes(fastify) {
         faturamentoPago,
         vendasPago,
         ingressosByDay, // Story 18.48: contagem de vendas (dedup) por dia × origem
+        diarioDeVendas: diarioDeVendas.resultado(), // Story 18.95
         // Story 18.51a: métricas únicas (captação dedup e-mail) vs totais.
         ingressosUnicos,
         ingressosTotais,

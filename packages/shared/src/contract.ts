@@ -623,4 +623,12 @@
 //   `landingPageViews` (`landing_page_view` das `actions` já gravadas no
 //   cache; nenhuma chamada nova à Meta). Campo aditivo: com a API antiga o web
 //   mostra a Tx Conv. Mídia Paga por LP como "—". `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 55;
+//
+// v56 (Story 18.95 — "Dados diários" na etapa de Vendas):
+//   `GET .../stages/:stageId/sales-data` ganha `diarioDeVendas` (`dias` por
+//   `aaaa-mm-dd` + `semData`, cada um com pago/org/semTrack/manual, faturamento
+//   e faturamentoPago), somado no mesmo laço do card — Σ = `totalVendas`,
+//   `faturamentoBruto`, `faturamentoPago`. Campo aditivo: com a API antiga o web
+//   monta a tabela pelo `ingressosByDay`/`faturamentoTotalByDay`, sem a linha
+//   "Sem data" e com ROAS "—". `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 56;

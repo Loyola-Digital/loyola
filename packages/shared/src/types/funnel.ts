@@ -569,6 +569,31 @@ export interface FunnelStage {
   leadGoal?: number | null; // Story 18.27: meta de leads
 }
 
+/**
+ * Story 18.95 — um dia da tabela "Dados diários" da etapa de Vendas (ou o
+ * balde das vendas sem data). Contagens na regra do `totalVendas` (um comprador
+ * por e-mail na etapa de Vendas; manual à parte); faturamento na do
+ * `faturamentoBruto`; `faturamentoPago` na do `faturamentoPago` (só Pago).
+ */
+export interface DiaDeVendas {
+  pago: number;
+  org: number;
+  semTrack: number;
+  manual: number;
+  faturamento: number;
+  faturamentoPago: number;
+}
+
+/**
+ * Story 18.95 — Σ `dias` + `semData` = os totais do card (`totalVendas`,
+ * `faturamentoBruto`, `faturamentoPago`, `vendasPago`) por construção: sai do
+ * MESMO laço que monta o card. Chave do dia = a mesma do `ingressosByDay`.
+ */
+export interface DiarioDeVendas {
+  dias: Record<string, DiaDeVendas>;
+  semData: DiaDeVendas;
+}
+
 export interface StageSalesData {
   totalVendas: number;
   faturamentoBruto: number;
@@ -598,6 +623,11 @@ export interface StageSalesData {
    * Usado pela Dados Diários da etapa Paga (Total Ingressos = vendas, não leads).
    */
   ingressosByDay?: Record<string, { pago: number; org: number; semTrack: number; manual?: number }>;
+  /**
+   * Story 18.95: vendas, faturamento e faturamento pago por dia, com o balde das
+   * vendas sem data. Ausente = API anterior ao contrato 56.
+   */
+  diarioDeVendas?: DiarioDeVendas;
   /**
    * Story 18.51a: métricas ÚNICAS vs TOTAIS da etapa Captação Paga.
    * - Único = e-mails distintos que compraram o(s) produto(s) da captação (não

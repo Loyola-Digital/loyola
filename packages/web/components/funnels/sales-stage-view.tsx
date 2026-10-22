@@ -22,6 +22,7 @@ import { SalesMetaKpis } from "./sales-meta-kpis";
 import { MauticStageTab } from "./mautic-stage-tab";
 import { SalesConversionCard } from "./sales-conversion-card";
 import { SalesDailyComparisonChart } from "./sales-daily-comparison-chart";
+import { SalesDailyTable } from "./sales-daily-table";
 import { ApplicationsDailyChart } from "./applications-daily-chart";
 import { ApplicationsListTable } from "@/components/funnels/applications-list-table";
 import { ApplicationBandsCard } from "./application-bands-card";
@@ -199,6 +200,15 @@ export function SalesStageView({ projectId, funnelId, funnelName, stage }: Sales
             projectId={projectId}
             funnelId={funnelId}
             stageId={stage.id}
+          />
+          {/* Story 18.95 — o dia a dia da etapa (Meta × vendas do Produto
+              Principal) logo antes do ritmo contra o lançamento anterior. */}
+          <SalesDailyTable
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stage.id}
+            campaignIds={campaignIds}
+            days={days}
           />
           {/* Ritmo de venda contra o lançamento anterior, alinhado em D-day. */}
           <SalesDailyComparisonChart

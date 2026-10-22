@@ -69,6 +69,11 @@ import { StageCreativePerformanceTable } from "./stage-creative-performance-tabl
 import { CamadasDeVideoSection } from "./camadas-de-video-section";
 import { LpPerformanceTable } from "@/lib/components/funnels/lp-performance-table";
 import { useLpPerformanceData } from "@/lib/hooks/useLpPerformanceData";
+import {
+  FILTRO_DE_MIDIA_PADRAO,
+  type TipoDeMidia,
+} from "@/lib/utils/filtro-de-midia-do-criativo";
+import { FiltroDeMidiaBotoes } from "./filtro-de-midia-botoes";
 import { useUserRole } from "@/lib/hooks/use-user-role";
 import { useLpFunnel, useLpFunnelView } from "@/lib/hooks/use-sales-journey";
 // Story 18.56: links manuais por LP (lê o stage e salva via PUT existente)
@@ -1805,6 +1810,8 @@ function LpPerformanceSection({
 }: LpPerformanceSectionProps) {
   // Story 18.46 (AC7): filtro de público efetivo, controlado nesta seção
   const [publicoFilter, setPublicoFilter] = useState<"todos" | "hot" | "cold">("todos");
+  // Story 18.94: Vídeo / Estático / Todos pelo nome do anúncio — vale junto com o Hot/Cold.
+  const [midiaFilter, setMidiaFilter] = useState<TipoDeMidia>(FILTRO_DE_MIDIA_PADRAO);
 
   const { lps, isLoading, correcoes } = useLpPerformanceData({
     projectId,
@@ -1812,6 +1819,7 @@ function LpPerformanceSection({
     stageId,
     days,
     publicoFilter,
+    midiaFilter,
   });
 
   // Mini-funil por LP: lê todas as planilhas do funil, então só busca depois que
@@ -1851,22 +1859,25 @@ function LpPerformanceSection({
     <div className="space-y-4 pt-2 border-t border-border/30">
       <div className="flex items-center justify-between gap-4">
         <h3 className="text-base font-semibold">Desempenho de Testes de LPs</h3>
-        {/* Story 18.46 (AC7): botões temáticos iguais aos de Criativos */}
-        <div className="flex items-center gap-1 rounded-md border border-border/40 p-0.5">
-          {(["todos", "hot", "cold"] as const).map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              onClick={() => setPublicoFilter(opt)}
-              className={`px-2.5 h-6 rounded text-[11px] font-medium transition-colors ${
-                publicoFilter === opt
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted/50"
-              }`}
-            >
-              {opt === "todos" ? "Todos" : opt === "hot" ? "🔥 Hot" : "❄️ Cold"}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <FiltroDeMidiaBotoes valor={midiaFilter} onChange={setMidiaFilter} />
+          {/* Story 18.46 (AC7): botões temáticos iguais aos de Criativos */}
+          <div className="flex items-center gap-1 rounded-md border border-border/40 p-0.5">
+            {(["todos", "hot", "cold"] as const).map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => setPublicoFilter(opt)}
+                className={`px-2.5 h-6 rounded text-[11px] font-medium transition-colors ${
+                  publicoFilter === opt
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted/50"
+                }`}
+              >
+                {opt === "todos" ? "Todos" : opt === "hot" ? "🔥 Hot" : "❄️ Cold"}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
