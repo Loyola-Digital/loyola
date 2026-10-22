@@ -156,6 +156,34 @@ export function useSendflowSummary(projectId: string | null, funnelId: string | 
   });
 }
 
+/**
+ * O resumo de UMA campanha escolhida à mão — a etapa `redirect`.
+ *
+ * Separado de `useSendflowSummary` porque lá a campanha vem do casamento pelo
+ * nome do funil, e aqui vem da configuração da etapa: o anúncio aponta para o
+ * grupo que o time escolheu, e nenhum nome de funil precisa casar com nada.
+ *
+ * Mesmo shape do resumo por funil (a API reusa a montagem), menos o
+ * `semCampanha` — campanha inexistente é 404, não um resumo vazio.
+ */
+export function useSendflowReleaseSummary(
+  projectId: string | null,
+  releaseId: string | null,
+) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["sendflow-release-summary", projectId, releaseId],
+    queryFn: () =>
+      apiClient<Extract<SendflowSummary, { semCampanha: false }>>(
+        `/api/projects/${projectId}/sendflow/releases/${releaseId}/summary`,
+      ),
+    enabled: !!projectId && !!releaseId,
+    staleTime: 5 * 60 * 1000,
+    // 409 = sem conexão, 404 = campanha apagada. Repetir não muda nada.
+    retry: false,
+  });
+}
+
 // ---- Origem dos participantes -------------------------------------------
 
 export interface SendflowOrigem {

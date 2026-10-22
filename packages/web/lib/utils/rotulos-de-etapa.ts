@@ -92,6 +92,11 @@ const ROTULOS: Record<string, RotuloDeEtapa> = {
     descricao: "CRM kanban de compradores",
     placeholder: "ex: Comercial Upsell",
   },
+  redirect: {
+    titulo: "Redirect",
+    descricao: "Anúncio → grupo, sem captação",
+    placeholder: "ex: Redirect Grupo VIP",
+  },
   lyrio: {
     // Não é criável pelas telas — nasce do funil mobile. Está aqui porque o
     // card da etapa precisa saber desenhá-lo.

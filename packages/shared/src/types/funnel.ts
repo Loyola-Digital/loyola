@@ -51,7 +51,14 @@ export type StageType =
   // "mapa" = o desenho do funil: blocos e setas das peças do lançamento
   // (anúncio, LP, VSL, checkout, upsell, e-mail). Não tem métrica própria — é
   // onde o time enxerga o plano inteiro ao lado das etapas que têm dado.
-  | "mapa";
+  | "mapa"
+  // "redirect" = a campanha que não capta lead: o anúncio leva a uma página de
+  // redirect e de lá a pessoa cai no grupo de WhatsApp. Não tem planilha nem
+  // e-mail — a etapa compara o que a Meta entregou (cliques no link) com o que
+  // o pixel viu na página de redirect (landing page views) e com quem de fato
+  // entrou no grupo (SendFlow). Fora de `ehEtapaDeCaptacao` de propósito: sem
+  // lead, o CRM e o sync diário não têm o que ler aqui.
+  | "redirect";
 // Story 19.10: "event_sales" = planilha de vendas de evento presencial (formato
 // Nome/Produto/Valor/Caixa/Closer/Telefone, SEM email).
 export type StageSalesSubtype = "capture" | "main_product" | "sales" | "tmb" | "event_sales";
@@ -534,6 +541,12 @@ export interface FunnelStage {
   googleAdsCampaigns: FunnelCampaign[];
   switchyFolderIds: SwitchyFolderRef[];
   switchyLinkedLinks: SwitchyLinkRef[];
+  /**
+   * As campanhas do SendFlow da etapa `redirect` (os grupos de WhatsApp).
+   * Opcional porque a API anterior a esta feature não manda o campo — o web
+   * trata ausência como "nenhuma campanha escolhida".
+   */
+  sendflowReleases?: FunnelCampaign[];
   /** GA4 (Epic 37): página (substring de landingPagePlusQueryString) que esta
    * etapa analisa no GA4. Null = etapa sem análise GA4. */
   ga4PageFilter: string | null;
