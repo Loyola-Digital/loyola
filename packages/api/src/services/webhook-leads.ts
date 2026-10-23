@@ -88,6 +88,27 @@ const APELIDOS: Record<keyof LeadRecebido, string[]> = {
   utmTerm: ["utmterm", "term", "termo"],
 };
 
+/**
+ * Qual campo do funil uma chave recebida representa, ou `null` quando não é
+ * nenhum deles.
+ *
+ * Existe para a PRÉVIA da pesquisa por webhook: a tela mostra, antes de ligar
+ * qualquer coisa, que `whats` vai cair em telefone e que `origem` vai cair em
+ * utm_source. Usa a mesma tabela de apelidos que a recepção de leads usa de
+ * verdade — uma prévia que adivinhasse por conta própria poderia prometer um
+ * casamento que a recepção não faz.
+ */
+export function campoDoApelido(chave: string): keyof LeadRecebido | null {
+  const n = norm(chave);
+  for (const [campo, apelidos] of Object.entries(APELIDOS) as [
+    keyof LeadRecebido,
+    string[],
+  ][]) {
+    if (apelidos.includes(n)) return campo;
+  }
+  return null;
+}
+
 function norm(s: string): string {
   return s
     .normalize("NFD")

@@ -1,5 +1,6 @@
 import { createSign } from "node:crypto";
 import { idDaFonte } from "./webhook-leads.js";
+import { idDaPesquisa } from "./webhook-pesquisa.js";
 
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
@@ -160,17 +161,28 @@ const dataCache = new Map<string, { data: SheetData; timestamp: number }>();
 const DATA_CACHE_TTL = 30 * 1000;
 
 /**
- * O leitor das fontes que NÃO são planilha do Google (leads por webhook).
+ * Os leitores das fontes que NÃO são planilha do Google: leads por webhook e
+ * respostas de pesquisa por webhook.
  *
- * Mora num registro, e não num import direto, porque este módulo é usado por
+ * Moram num registro, e não num import direto, porque este módulo é usado por
  * scripts e por testes sem banco — e porque ler a fonte exige o `db`, que só
  * existe depois do boot. Quem registra é `plugins/fonte-de-webhook.ts`.
+ *
+ * São DOIS registros, um por tipo, porque as formas de saída não são
+ * intercambiáveis: lead tem nove colunas fixas, pesquisa tem as perguntas de
+ * quem envia. Um leitor só, escolhido por engano, devolveria colunas de lead
+ * onde o scoring espera perguntas — e a faixa sairia errada sem erro na tela.
  */
 type LeitorDeFonteVirtual = (fonteId: string) => Promise<SheetData>;
 let leitorDeFonteVirtual: LeitorDeFonteVirtual | null = null;
+let leitorDePesquisaPorWebhook: LeitorDeFonteVirtual | null = null;
 
 export function registrarLeitorDeFonteVirtual(leitor: LeitorDeFonteVirtual): void {
   leitorDeFonteVirtual = leitor;
+}
+
+export function registrarLeitorDePesquisaPorWebhook(leitor: LeitorDeFonteVirtual): void {
+  leitorDePesquisaPorWebhook = leitor;
 }
 
 export async function readSheetData(spreadsheetId: string, sheetName: string): Promise<SheetData> {
@@ -185,6 +197,16 @@ export async function readSheetData(spreadsheetId: string, sheetName: string): P
       );
     }
     return leitorDeFonteVirtual(fonteVirtual);
+  }
+
+  const pesquisaVirtual = idDaPesquisa(spreadsheetId);
+  if (pesquisaVirtual) {
+    if (!leitorDePesquisaPorWebhook) {
+      throw new Error(
+        "Pesquisa por webhook lida sem leitor registrado (plugins/fonte-de-webhook.ts)",
+      );
+    }
+    return leitorDePesquisaPorWebhook(pesquisaVirtual);
   }
 
   const cacheKey = `${spreadsheetId}:${sheetName}`;

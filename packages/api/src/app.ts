@@ -64,6 +64,7 @@ import googleSheetsRoutes from "./routes/google-sheets.js";
 import salesRoutes from "./routes/sales.js";
 import funnelSpreadsheetsRoutes from "./routes/funnel-spreadsheets.js";
 import webhookLeadsRoutes from "./routes/webhook-leads.js";
+import webhookPesquisaRoutes from "./routes/webhook-pesquisa.js";
 import stageApplicationsRoutes from "./routes/stage-applications.js";
 import stageSalesJourneyRoutes from "./routes/stage-sales-journey.js";
 import switchyRoutes from "./routes/switchy.js";
@@ -264,6 +265,7 @@ export async function buildServer() {
   await app.register(salesRoutes);
   await app.register(funnelSpreadsheetsRoutes);
   await app.register(webhookLeadsRoutes);
+  await app.register(webhookPesquisaRoutes);
   await app.register(stageApplicationsRoutes);
   await app.register(stageSalesJourneyRoutes);
   await app.register(switchyRoutes);
