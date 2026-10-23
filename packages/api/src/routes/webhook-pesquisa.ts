@@ -22,7 +22,9 @@ import {
 import {
   COLUNA_DATA,
   achatarCorpo,
+  inferirContentType,
   montarPrevia,
+  motivoDeNaoLer,
   pesquisaComoPlanilhaId,
 } from "../services/webhook-pesquisa.js";
 import { campoDoApelido, parseCorpoDeWebhook } from "../services/webhook-leads.js";
@@ -137,10 +139,12 @@ export default fp(async function webhookPesquisaRoutes(fastify) {
         return reply.code(404).send({ error: "Funil não encontrado" });
       }
 
-      const corpo = parseCorpoDeWebhook(body.data.exemplo, body.data.contentType ?? "");
+      const tipo = body.data.contentType ?? inferirContentType(body.data.exemplo);
+      const corpo = parseCorpoDeWebhook(body.data.exemplo, tipo);
       if (!corpo || Object.keys(corpo).length === 0) {
+        // O motivo vai na própria mensagem porque é só ela que a tela mostra.
         return reply.code(422).send({
-          error: "Não consegui ler esse exemplo",
+          error: `Não consegui ler esse exemplo: ${motivoDeNaoLer(body.data.exemplo)}`,
           dica: "Cole o corpo como ele sai da sua ferramenta: um JSON, ou os pares a=b&c=d do formulário.",
         });
       }

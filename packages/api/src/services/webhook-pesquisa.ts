@@ -204,3 +204,50 @@ export function montarPrevia(
 
   return linhas;
 }
+
+/**
+ * O content-type do exemplo colado na tela, deduzido do próprio texto.
+ *
+ * A tela não tem como saber o tipo — a pessoa cola um texto numa textarea — e
+ * o parser só tenta `a=b&c=d` quando o content-type diz. Sem este palpite a
+ * tela prometia aceitar os pares do formulário e recusava todos.
+ */
+export function inferirContentType(exemplo: string): string {
+  const texto = exemplo.trim();
+  if (texto.startsWith("{") || texto.startsWith("[")) return "application/json";
+  if (texto.includes("=")) return "application/x-www-form-urlencoded";
+  return "";
+}
+
+/**
+ * Por que o exemplo não pôde ser lido, em uma frase para a tela.
+ *
+ * "Não consegui ler" sozinho não dá para agir: o caso mais comum é colar um
+ * JSON copiado de um lugar que cortou as linhas, e o que a pessoa precisa
+ * saber é ONDE ele quebra. O V8 informa linha e coluna; aproveitamos isso e
+ * descartamos o resto da mensagem, que é em inglês.
+ */
+export function motivoDeNaoLer(exemplo: string): string {
+  const texto = exemplo.trim();
+  if (!texto) return "o campo está vazio";
+  if (!texto.startsWith("{") && !texto.startsWith("[")) {
+    return texto.includes("=")
+      ? "os pares não têm nenhum campo com valor"
+      : "não parece JSON nem os pares a=b&c=d";
+  }
+  try {
+    const json: unknown = JSON.parse(texto);
+    const corpo = Array.isArray(json) ? json[0] : json;
+    if (!corpo || typeof corpo !== "object") return "o JSON é válido mas não é um objeto";
+    return "o JSON é válido mas veio sem nenhum campo";
+  } catch (erro) {
+    const msg = erro instanceof Error ? erro.message : "";
+    const linhaColuna = /line (\d+) column (\d+)/.exec(msg);
+    if (linhaColuna) {
+      return `o JSON quebra na linha ${linhaColuna[1]}, coluna ${linhaColuna[2]} — confira se alguma linha foi cortada ao copiar`;
+    }
+    const posicao = /position (\d+)/.exec(msg);
+    if (posicao) return `o JSON quebra no caractere ${posicao[1]}`;
+    return "o JSON está inválido";
+  }
+}

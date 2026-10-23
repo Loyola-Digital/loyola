@@ -13,8 +13,10 @@ import {
   COLUNA_DATA,
   achatarCorpo,
   idDaPesquisa,
-  pesquisaComoPlanilhaId,
+  inferirContentType,
   montarPrevia,
+  motivoDeNaoLer,
+  pesquisaComoPlanilhaId,
   respostasComoPlanilha,
 } from "../services/webhook-pesquisa.js";
 import { campoDoApelido, fonteComoPlanilhaId, idDaFonte } from "../services/webhook-leads.js";
@@ -205,5 +207,35 @@ describe("montarPrevia", () => {
       exemplo: "veio do grupo 3",
       destino: { tipo: "nao_usado" },
     });
+  });
+});
+
+describe("inferirContentType", () => {
+  it("reconhece os pares do formulário, que a tela promete aceitar", () => {
+    // Sem isto o parser caía no JSON.parse e recusava TODO envio por
+    // formulário colado na prévia.
+    expect(inferirContentType("email=ana%40x.com&faixa=A")).toContain("urlencoded");
+  });
+
+  it("JSON, mesmo quando é o array que o n8n manda", () => {
+    expect(inferirContentType('  {"email":"a@x.com"} ')).toBe("application/json");
+    expect(inferirContentType('[{"body":{"email":"a@x.com"}}]')).toBe("application/json");
+  });
+});
+
+describe("motivoDeNaoLer", () => {
+  it("diz a linha e a coluna onde o JSON quebra", () => {
+    // O caso real: o exemplo foi copiado de um lugar que cortou as linhas e
+    // uma string ficou sem fechar. "Não consegui ler" não dava para agir.
+    const cortado = ['{', '  "a": "um",', '  "b": "dois', '  "c": "tres"', "}"].join("\n");
+    const motivo = motivoDeNaoLer(cortado);
+    expect(motivo).toMatch(/linha \d+, coluna \d+/);
+    expect(motivo).toMatch(/cortada ao copiar/);
+  });
+
+  it("separa o JSON válido e vazio do JSON inválido", () => {
+    expect(motivoDeNaoLer("{}")).toMatch(/sem nenhum campo/);
+    expect(motivoDeNaoLer("   ")).toMatch(/vazio/);
+    expect(motivoDeNaoLer("resposta recebida")).toMatch(/não parece JSON/);
   });
 });
