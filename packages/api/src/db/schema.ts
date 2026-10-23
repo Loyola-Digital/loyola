@@ -1137,6 +1137,15 @@ export const funnelSurveys = pgTable(
         }>;
       }>()
       .default({}),
+    /**
+     * O segredo que autoriza POSTar resposta nesta pesquisa, quando ela chega
+     * por webhook em vez de planilha (`spreadsheet_id` = `webhook-pesquisa:<id>`).
+     *
+     * Mora aqui, e não numa tabela de fonte como a dos leads, porque a fonte da
+     * pesquisa JÁ é esta linha — não há planilha virtual a representar. Nulo em
+     * toda pesquisa que é planilha de verdade do Google.
+     */
+    webhookToken: varchar("webhook_token", { length: 64 }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -6397,4 +6406,25 @@ export const webhookLeads = pgTable(
     recebidoEm: timestamp("recebido_em", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [index("idx_webhook_leads_source").on(t.sourceId, t.recebidoEm)],
+);
+
+/**
+ * Uma resposta de pesquisa recebida. Append-only, como a planilha seria.
+ *
+ * Guarda só o corpo cru: as colunas são as perguntas de quem envia, e elas
+ * mudam a cada lançamento — uma coluna por pergunta viraria uma migration por
+ * formulário. Quem transforma isto em `{headers, rows}` é
+ * `services/webhook-pesquisa.ts`.
+ */
+export const webhookSurveyResponses = pgTable(
+  "webhook_survey_responses",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    surveyId: uuid("survey_id")
+      .notNull()
+      .references(() => funnelSurveys.id, { onDelete: "cascade" }),
+    payload: jsonb("payload").notNull().$type<Record<string, unknown>>(),
+    recebidoEm: timestamp("recebido_em", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("idx_webhook_survey_responses_survey").on(t.surveyId, t.recebidoEm)],
 );

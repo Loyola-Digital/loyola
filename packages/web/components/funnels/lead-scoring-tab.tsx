@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ImportarDoTally } from "./importar-do-tally";
+import { WebhookPesquisaDialog } from "./webhook-pesquisa-dialog";
 import { EnvioAoMeta } from "./envio-ao-meta";
 import { EditorDeScoring, type ModeloDeScoring } from "./editor-de-scoring";
 import { Label } from "@/components/ui/label";
@@ -123,6 +124,11 @@ const SCHEMA_PLACEHOLDER = `{
   }
 }`;
 
+/** A pesquisa cujas respostas chegam por webhook (ver `services/webhook-pesquisa.ts`). */
+function ehPorWebhook(s: { spreadsheetId: string }): boolean {
+  return s.spreadsheetId.startsWith("webhook-pesquisa:");
+}
+
 export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabProps) {
   const { data: surveysData } = useFunnelSurveys(projectId, funnelId, stageId, "paid");
   const { data: saved, isLoading } = useLeadScoring(projectId, funnelId, stageId);
@@ -132,7 +138,15 @@ export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabP
 
   const surveys = surveysData?.surveys ?? [];
 
+  // A pesquisa selecionada quando ela é por webhook — é o que decide se o
+  // botão abre a configuração existente ou começa uma nova.
+  const pesquisaPorWebhook =
+    surveys.find((s) => s.id === selectedSurveyId && ehPorWebhook(s)) ??
+    surveys.find(ehPorWebhook) ??
+    null;
+
   const [selectedSurveyId, setSelectedSurveyId] = useState<string>("");
+  const [webhookAberto, setWebhookAberto] = useState(false);
   const [jsonText, setJsonText] = useState("");
   /**
    * Visual é o padrão; o JSON fica a um clique.
@@ -236,26 +250,50 @@ export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabP
         </h3>
 
         <div className="space-y-2">
-          <Label>Planilha de pesquisa</Label>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Label>Fonte das respostas</Label>
+            {/*
+              A terceira fonte, ao lado da planilha e do Tally: o formulário
+              manda a resposta direto para cá. Quem não usa Tally precisava de
+              um fluxo no n8n escrevendo numa planilha só para o X poder ler.
+            */}
+            <button
+              type="button"
+              onClick={() => setWebhookAberto(true)}
+              className="rounded-md border px-2 py-1 text-[11px] text-muted-foreground transition hover:bg-accent"
+            >
+              {pesquisaPorWebhook ? "Ver o webhook" : "Receber por webhook"}
+            </button>
+          </div>
           {surveys.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Nenhuma planilha de pesquisa vinculada a esta etapa. Adicione uma na aba{" "}
-              <strong>Pesquisas</strong>.
+              Nenhuma pesquisa vinculada a esta etapa. Adicione uma planilha na aba{" "}
+              <strong>Pesquisas</strong>, ou receba as respostas por webhook no botão acima.
             </p>
           ) : (
             <Select value={selectedSurveyId} onValueChange={setSelectedSurveyId}>
               <SelectTrigger className="w-full max-w-md">
-                <SelectValue placeholder="Selecionar planilha..." />
+                <SelectValue placeholder="Selecionar a fonte..." />
               </SelectTrigger>
               <SelectContent>
                 {surveys.map((s) => (
                   <SelectItem key={s.id} value={s.id}>
+                    {ehPorWebhook(s) ? "🔗 " : ""}
                     {s.spreadsheetName} — {s.sheetName}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           )}
+          <WebhookPesquisaDialog
+            projectId={projectId}
+            funnelId={funnelId}
+            stageId={stageId}
+            surveyId={pesquisaPorWebhook?.id ?? null}
+            open={webhookAberto}
+            onOpenChange={setWebhookAberto}
+            onCriada={setSelectedSurveyId}
+          />
         </div>
 
         <div className="space-y-2">

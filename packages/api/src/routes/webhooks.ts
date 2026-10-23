@@ -11,6 +11,8 @@ import {
   revenuecatSales,
   webhookLeadSources,
   webhookLeads,
+  funnelSurveys,
+  webhookSurveyResponses,
 } from "../db/schema.js";
 import {
   computeDedupKey,
@@ -525,6 +527,67 @@ export default async function webhookRoutes(fastify: FastifyInstance) {
       });
     } catch (err) {
       fastify.log.error({ err, sourceId }, "Webhook de leads: falha ao gravar");
+    }
+
+    return reply.code(200).send({ ok: true });
+  });
+
+  // ============================================================
+  // RESPOSTAS DE PESQUISA POR WEBHOOK (sem Tally, sem planilha)
+  // ============================================================
+  // URL única por PESQUISA: POST /api/webhooks/pesquisa/:surveyId?token=<token>.
+  //
+  // Guarda o corpo CRU e só ele. Quem envia é que nomeia as perguntas, e o
+  // nome da pergunta é a coluna — normalizar aqui seria apagar o que o motor
+  // de scoring precisa casar (ver `services/webhook-pesquisa.ts`).
+  //
+  // Responde 200 em QUALQUER corpo, como a recepção de leads: não-2xx faz o
+  // remetente reenviar em laço. SEGURANÇA: nunca logar corpo (PII) nem token.
+  // ============================================================
+  fastify.post("/api/webhooks/pesquisa/:surveyId", async (request, reply) => {
+    const { surveyId } = request.params as { surveyId: string };
+    const queryToken = (request.query as { token?: string }).token ?? "";
+
+    if (!UUID_RE.test(surveyId)) {
+      return reply.code(404).send({ error: "Not found" });
+    }
+
+    const [pesquisa] = await fastify.db
+      .select({ token: funnelSurveys.webhookToken })
+      .from(funnelSurveys)
+      .where(eq(funnelSurveys.id, surveyId))
+      .limit(1);
+
+    // Pesquisa removida, ou que é planilha do Google e não tem token — não
+    // revela qual dos dois.
+    if (!pesquisa?.token) return reply.code(404).send({ error: "Not found" });
+
+    const authHeader = (request.headers["authorization"] as string | undefined) ?? "";
+    const headerToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+    const provided = queryToken || headerToken;
+    if (!provided || !tokensMatch(provided, pesquisa.token)) {
+      return reply.code(401).send({ error: "Invalid token" });
+    }
+
+    const corpo = parseCorpoDeWebhook(
+      request.body,
+      (request.headers["content-type"] as string | undefined) ?? "",
+    );
+    if (!corpo) {
+      fastify.log.warn({ surveyId }, "Webhook de pesquisa: corpo ilegível, ignorando");
+      return reply.code(200).send({ ok: true, ignorado: "corpo_ilegivel" });
+    }
+
+    // Corpo vazio é o teste de conexão do n8n: nada a gravar, e gravar daria
+    // uma linha de respondente que não existe.
+    if (Object.keys(corpo).length === 0) {
+      return reply.code(200).send({ ok: true, ignorado: "corpo_vazio" });
+    }
+
+    try {
+      await fastify.db.insert(webhookSurveyResponses).values({ surveyId, payload: corpo });
+    } catch (err) {
+      fastify.log.error({ err, surveyId }, "Webhook de pesquisa: falha ao gravar");
     }
 
     return reply.code(200).send({ ok: true });
