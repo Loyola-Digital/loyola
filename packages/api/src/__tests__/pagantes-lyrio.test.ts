@@ -86,7 +86,8 @@ CREATE TABLE revenuecat_sales (
   event_at timestamptz,
   utm_source varchar(255), utm_medium varchar(255), utm_campaign varchar(255), utm_term varchar(255), utm_content varchar(255),
   gclid text,
-  payload jsonb NOT NULL
+  payload jsonb NOT NULL,
+  created_at timestamptz
 );`;
 
 let pg: PGlite;
@@ -101,8 +102,8 @@ async function inserir(e: Evento) {
   seq += 1;
   const payload = e.attrs === undefined ? { event: {} } : { event: { subscriber_attributes: e.attrs } };
   await pg.query(
-    `INSERT INTO revenuecat_sales (stage_id, event_id, event_type, app_user_id, product_id, revenue_usd, purchased_at, event_at, gclid, utm_medium, payload)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    `INSERT INTO revenuecat_sales (stage_id, event_id, event_type, app_user_id, product_id, revenue_usd, purchased_at, event_at, gclid, utm_medium, payload, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $8)`,
     [e.stage ?? STAGE, `ev${seq}`, e.tipo, e.user, e.produto ?? null, e.usd ?? null, e.usd != null ? e.em : null, e.em, e.gclid ?? null, e.utmMedium ?? null, JSON.stringify(payload)],
   );
 }
@@ -260,6 +261,8 @@ describe("AC7c — a classificação: função pura = SQL, caso a caso (PGlite)"
     ["premium_monthly_15_v2", "mensal"],
     ["premium_quartely_25:base", "trimestral"],
     ["premium_quartely_partner_25", "trimestral"],
+    ["premium_halfyearly_50:base", "semestral"], // o id da sonda de 27/10
+    ["premium_halfyearly_partner_50", "semestral"],
     ["premium_yearly_100:base", "anual"],
     ["premium_yearly_150", "anual"],
     ["premium_yearly_150:base", "anual"],
@@ -280,14 +283,16 @@ describe("AC7c — a classificação: função pura = SQL, caso a caso (PGlite)"
     ["rc_promo_LyrioPro_monthly", "nao_classificado"], // sem o espaço
     ["premium_quarterly_25", "nao_classificado"], // a grafia do dado é "quartely"
     [PROMO("monthly") + "_x", "nao_classificado"], // promoção é nome EXATO, não prefixo
+    [PROMO("six_month"), "nao_classificado"], // nenhuma promoção semestral foi vista: não se inventa
+    ["premium_half_yearly_50", "nao_classificado"], // grafia diferente da do dado
   ];
   it.each(CASOS)("%s → %s", async (id, esperado) => {
     expect(classificarProduto(id)).toBe(esperado);
     const [linha] = await executar(sql`SELECT ${classeDoProdutoNoSql(sql`${id}::text`)} AS classe`);
     expect(linha.classe).toBe(esperado);
   });
-  it("a regra mora numa constante: os três planos, na ordem Mensal, Trimestral, Anual (D33)", () => {
-    expect(REGRA_DOS_PLANOS.map((r) => r.rotulo)).toEqual(["LTV Mensal", "LTV Trimestral", "LTV Anual"]);
+  it("a regra mora numa constante: os quatro planos, na ordem Mensal, Trimestral, Semestral, Anual (D33 + QA loop 3)", () => {
+    expect(REGRA_DOS_PLANOS.map((r) => r.rotulo)).toEqual(["LTV Mensal", "LTV Trimestral", "LTV Semestral", "LTV Anual"]);
   });
 });
 
@@ -295,9 +300,11 @@ describe("AC7f — os 10 testes obrigatórios (PGlite, janela e relógio fixos)"
   it("1. os três planos: um pagamento em cada família cai no plano certo, com o LTV certo", async () => {
     await inserir({ user: "m", tipo: "INITIAL_PURCHASE", usd: 9.99, produto: "premium_monthly_15:base", em: DENTRO });
     await inserir({ user: "t", tipo: "INITIAL_PURCHASE", usd: 24.99, produto: "premium_quartely_25:base", em: DENTRO });
+    await inserir({ user: "s", tipo: "INITIAL_PURCHASE", usd: 39.99, produto: "premium_halfyearly_50:base", em: DENTRO });
     await inserir({ user: "a", tipo: "INITIAL_PURCHASE", usd: 59.99, produto: "premium_yearly_150", em: DENTRO });
     const l = await ltvDaJanela();
-    expect(l.planos.map((p) => [p.plano, p.receitaCentavos, p.pessoas])).toEqual([["mensal", 999, 1], ["trimestral", 2499, 1], ["anual", 5999, 1]]);
+    expect(l.planos.map((p) => [p.plano, p.receitaCentavos, p.pessoas])).toEqual([["mensal", 999, 1], ["trimestral", 2499, 1], ["semestral", 3999, 1], ["anual", 5999, 1]]);
+    expect(l.naoClassificado.pagamentos).toBe(0);
     expect(doPlano(l, "anual").produtos).toEqual([{ productId: "premium_yearly_150", pagamentos: 1, pessoas: 1, receitaCentavos: 5999 }]);
   });
 
@@ -315,7 +322,7 @@ describe("AC7f — os 10 testes obrigatórios (PGlite, janela e relógio fixos)"
     await inserir({ user: "p3", tipo: "NON_RENEWING_PURCHASE", usd: 3, produto: PROMO("three_month"), em: DENTRO });
     await inserir({ user: "p12", tipo: "NON_RENEWING_PURCHASE", usd: 12, produto: PROMO("yearly"), em: DENTRO });
     const l = await ltvDaJanela();
-    expect(l.planos.map((p) => [p.plano, p.receitaCentavos])).toEqual([["mensal", 100], ["trimestral", 300], ["anual", 1200]]);
+    expect(l.planos.map((p) => [p.plano, p.receitaCentavos])).toEqual([["mensal", 100], ["trimestral", 300], ["semestral", 0], ["anual", 1200]]);
   });
 
   it("4. daily e weekly pagos: fora de todo LTV e SEM aviso de não classificado (D33)", async () => {
@@ -400,7 +407,7 @@ describe("a composição das rotas sobre Postgres real — o mesmo código que a
     const r = await pagantesPorCanalDaEtapa(executor, STAGE, 28, AGORA);
     expect(r).toMatchObject({ days: 28, desde: "2026-09-19", assinaturaDesde: "2026-09-01", atributosDesde: "2026-10-06", novosPagantes: { total: 1 }, renovacoes: { total: 1 } });
     expect(r.novosPagantes.canais[0]).toMatchObject({ canal: "meta", quantidade: 1 });
-    expect(r.ltv.planos.map((p) => [p.plano, p.pessoas])).toEqual([["mensal", 1], ["trimestral", 0], ["anual", 1]]);
+    expect(r.ltv.planos.map((p) => [p.plano, p.pessoas])).toEqual([["mensal", 1], ["trimestral", 0], ["semestral", 0], ["anual", 1]]);
 
     // QA TEST-003 — as QUATRO consultas são da etapa: eventos de OUTRA etapa (de outro
     // funil/projeto; o `stage_id` é único entre projetos) — pagantes, renovações, produtos
@@ -448,6 +455,37 @@ describe("a composição das rotas sobre Postgres real — o mesmo código que a
     await insOutra("t0", "RENEWAL", DENTRO, "NORMAL");
     expect(await metricasDerivadasDaEtapa(executor, STAGE, 28, AGORA)).toEqual(r);
     expect(await metricasDerivadasDaEtapa(executor, STAGE, undefined, AGORA)).toEqual(serie);
+  });
+
+  it("QA PERF-001 — o SQL das derivadas não traz PAYWALL nem TEST (98% da etapa), e a resposta não muda", async () => {
+    const linhasLidas: number[] = [];
+    const contando = async (q: SQL) => {
+      const rows = await executar(q);
+      linhasLidas.push(rows.length);
+      return { rows };
+    };
+    const ins = (user: string, tipo: string, em: string, periodo: string | null) =>
+      pg.query(
+        `INSERT INTO revenuecat_sales (stage_id, event_id, event_type, app_user_id, event_at, payload) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [STAGE, `p${(seq += 1)}`, tipo, user, em, JSON.stringify({ event: periodo == null ? {} : { period_type: periodo } })],
+      );
+    await ins("q1", "INITIAL_PURCHASE", DENTRO, "TRIAL");
+    await ins("q1", "RENEWAL", DEPOIS_NA_JANELA, "NORMAL");
+    await ins("q2", "EXPIRATION", DENTRO, "NORMAL");
+    await ins("q3", "CANCELLATION", DENTRO, "NORMAL");
+    await ins("q4", "BILLING_ISSUE", "2026-08-20T12:00:00Z", null); // não-paywall: conta para a série
+    const antes = await metricasDerivadasDaEtapa(contando, STAGE, 28, AGORA);
+    const lidasAntes = linhasLidas.at(-1)!;
+
+    // paywall (mesmo com period_type e ANTES de toda a série) e TEST: o SQL não os traz
+    await ins("q1", "PAYWALL_IMPRESSION", "2026-06-11T12:00:00Z", "NORMAL");
+    await ins("q5", "PAYWALL_CLOSE", DENTRO, "TRIAL");
+    await ins("q6", "PAYWALL_COMPONENT_INTERACTED", DENTRO, null);
+    await ins("q7", "TEST", DENTRO, "NORMAL");
+    const depois = await metricasDerivadasDaEtapa(contando, STAGE, 28, AGORA);
+    expect(linhasLidas.at(-1)).toBe(lidasAntes);
+    expect(depois).toEqual(antes);
+    expect(antes).toMatchObject({ churnPagante: 1, cancelamentosPagantes: 1, serieDesde: "2026-08-20" });
   });
 });
 
@@ -523,8 +561,8 @@ describe("GET …/revenuecat/pagantes-por-canal — o fio", () => {
     expect(pessoas.params).toContain(DESDE.toISOString());
     const corpo = r.json();
     expect(Object.keys(corpo).sort()).toEqual(["assinaturaDesde", "atributosDesde", "days", "desde", "ltv", "novosPagantes", "renovacoes"]);
-    expect(corpo.ltv.planos.map((p: { plano: string }) => p.plano)).toEqual(["mensal", "trimestral", "anual"]);
-    expect(corpo.ltv.planos[2]).toMatchObject({ rotulo: "LTV Anual", pessoas: 1, receitaCentavos: 3999, produtos: [{ productId: "premium_yearly_150", pessoas: 1 }] });
+    expect(corpo.ltv.planos.map((p: { plano: string }) => p.plano)).toEqual(["mensal", "trimestral", "semestral", "anual"]);
+    expect(corpo.ltv.planos[3]).toMatchObject({ rotulo: "LTV Anual", pessoas: 1, receitaCentavos: 3999, produtos: [{ productId: "premium_yearly_150", pessoas: 1 }] });
     expect(corpo).toMatchObject({ days: 28, desde: "2026-09-19", assinaturaDesde: "2026-08-10", novosPagantes: { total: 1, conflito: 0 }, renovacoes: { total: 2 } });
     expect(JSON.stringify(corpo)).not.toMatch(/app_user_id|appUserId/i);
   });

@@ -23,6 +23,7 @@ const LTV: LtvDoLyrio = {
   planos: [
     { plano: "mensal", rotulo: "LTV Mensal", receitaCentavos: 0, pessoas: 0, produtos: [] },
     { plano: "trimestral", rotulo: "LTV Trimestral", receitaCentavos: 2499, pessoas: 1, produtos: [{ productId: "premium_quartely_25:base", pagamentos: 1, pessoas: 1, receitaCentavos: 2499 }] },
+    { plano: "semestral", rotulo: "LTV Semestral", receitaCentavos: 5969, pessoas: 6, produtos: [{ productId: "premium_halfyearly_50:base", pagamentos: 6, pessoas: 6, receitaCentavos: 5969 }] },
     {
       plano: "anual", rotulo: "LTV Anual", receitaCentavos: 10997, pessoas: 2,
       produtos: [
@@ -155,10 +156,19 @@ describe("CAC por canal e consolidado, nas duas janelas (AC4, AC5, D9)", () => {
   });
 });
 
-describe("LTV Mensal, Trimestral e Anual, brutos (AC7)", () => {
-  it("três cards, nesta ordem (D33); receita do plano ÷ pessoas: US$ 109,97 ÷ 2 = US$ 54,99 (centavos)", () => {
-    const { ltv } = cardsDeAquisicao(entrada());
+describe("LTV Mensal, Trimestral, Semestral e Anual, brutos (AC7)", () => {
+  it("API anterior ao Semestral (sem o plano na resposta): o card não aparece, e os outros três continuam", () => {
+    const semSemestral = { ...LTV, planos: LTV.planos.filter((p) => p.plano !== "semestral") };
+    const { ltv } = cardsDeAquisicao(entrada({ pagantesFiltro: { tipo: "pronto", dados: pagantes(90, { ltv: semSemestral }) } }));
     expect(ltv.map((c) => c.rotulo)).toEqual(["LTV Mensal", "LTV Trimestral", "LTV Anual"]);
+  });
+  it("quatro cards, nesta ordem (D33 + QA loop 3); receita do plano ÷ pessoas: US$ 109,97 ÷ 2 = US$ 54,99 (centavos)", () => {
+    const { ltv } = cardsDeAquisicao(entrada());
+    expect(ltv.map((c) => c.rotulo)).toEqual(["LTV Mensal", "LTV Trimestral", "LTV Semestral", "LTV Anual"]);
+    // o id da sonda de 27/10: US$ 59,69 ÷ 6 pessoas = US$ 9,95 (centavos)
+    const semestral = achar(ltv, "ltv-semestral");
+    expect(semestral.valor).toBe("US$ 9,95");
+    expect(semestral.formula!.values.map((v) => v.label)).toContain("premium_halfyearly_50:base");
     const anual = achar(ltv, "ltv-anual");
     expect(anual.valor).toBe("US$ 54,99");
     expect(anual.formula!.result).toBe("US$ 109,97 ÷ 2 = US$ 54,99");
@@ -237,7 +247,7 @@ describe("rota da API anterior, eco e erro (AC10b, PO-D4)", () => {
       expect(c.formula!.values[0].value, c.id).toBe("Falhou");
     }
     expect(r.cac).toHaveLength(6);
-    expect(r.ltv).toHaveLength(3);
+    expect(r.ltv).toHaveLength(4);
     expect(r.renovacoes).toHaveLength(4);
   });
 });

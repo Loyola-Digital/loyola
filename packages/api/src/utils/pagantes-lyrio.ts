@@ -194,7 +194,7 @@ export function lerLinhaDePagante(r: Record<string, unknown>): PessoaPagante {
 
 // ─────────────────────────── LTV por plano (AC7) ───────────────────────────
 
-export type PlanoDoLtv = "mensal" | "trimestral" | "anual";
+export type PlanoDoLtv = "mensal" | "trimestral" | "semestral" | "anual";
 
 /**
  * AC7c (D33, PO-D7) — a classificação de `product_id` em plano, regra (ii):
@@ -211,10 +211,18 @@ export type PlanoDoLtv = "mensal" | "trimestral" | "anual";
  * Trade-off (PO-D7): com o prefixo, um id NOVO da mesma família entra sozinho
  * no plano; o risco de um id de natureza diferente entrar sem ninguém ver fica
  * VISÍVEL, porque o memorial lista os ids de cada plano (AC7d).
+ *
+ * Semestral (QA loop 3, decisão do Danilo em 2026-10-27): a sonda de produção
+ * achou `premium_halfyearly_50:base` em "não classificado" (6 pagamentos,
+ * US$ 59,69 em 28 dias). Nenhuma promoção semestral foi observada, então o
+ * plano não tem `promocao` — inventar o nome de uma seria classificar um id que
+ * ninguém viu. `premium_halfyearly` não colide com `premium_yearly` (prefixos
+ * distintos desde o 9º caractere).
  */
-export const REGRA_DOS_PLANOS: readonly { plano: PlanoDoLtv; rotulo: string; prefixo: string; promocao: string }[] = [
+export const REGRA_DOS_PLANOS: readonly { plano: PlanoDoLtv; rotulo: string; prefixo: string; promocao: string | null }[] = [
   { plano: "mensal", rotulo: "LTV Mensal", prefixo: "premium_monthly", promocao: "rc_promo_Lyrio Pro_monthly" },
   { plano: "trimestral", rotulo: "LTV Trimestral", prefixo: "premium_quartely", promocao: "rc_promo_Lyrio Pro_three_month" },
+  { plano: "semestral", rotulo: "LTV Semestral", prefixo: "premium_halfyearly", promocao: null },
   { plano: "anual", rotulo: "LTV Anual", prefixo: "premium_yearly", promocao: "rc_promo_Lyrio Pro_yearly" },
 ];
 
@@ -231,7 +239,7 @@ export type ClasseDoProduto = PlanoDoLtv | "fora" | "nao_classificado";
 export function classificarProduto(productId: string | null | undefined): ClasseDoProduto {
   if (productId == null) return "nao_classificado";
   for (const r of REGRA_DOS_PLANOS) {
-    if (productId.startsWith(r.prefixo) || productId === r.promocao) return r.plano;
+    if (productId.startsWith(r.prefixo) || (r.promocao != null && productId === r.promocao)) return r.plano;
   }
   return FORA_POR_DECISAO.includes(productId) ? "fora" : "nao_classificado";
 }
@@ -244,7 +252,10 @@ export function classificarProduto(productId: string | null | undefined): Classe
 export function classeDoProdutoNoSql(coluna: SQL = sql`${c.productId}`): SQL {
   const casos = sql.join(
     REGRA_DOS_PLANOS.map(
-      (r) => sql`WHEN left(${coluna}, ${r.prefixo.length}) = ${r.prefixo} OR ${coluna} = ${r.promocao} THEN ${r.plano}`,
+      (r) =>
+        r.promocao == null
+          ? sql`WHEN left(${coluna}, ${r.prefixo.length}) = ${r.prefixo} THEN ${r.plano}`
+          : sql`WHEN left(${coluna}, ${r.prefixo.length}) = ${r.prefixo} OR ${coluna} = ${r.promocao} THEN ${r.plano}`,
     ),
     sql` `,
   );

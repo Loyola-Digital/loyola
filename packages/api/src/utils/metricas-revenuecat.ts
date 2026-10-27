@@ -168,12 +168,21 @@ export type ExecutorDeSql = (q: SQL) => Promise<{ rows: unknown[] }>;
 /**
  * Os eventos da etapa que as métricas derivadas leem. Só o `period_type` do
  * payload, não o payload inteiro (que é o que pesa nos 186 mil eventos).
+ *
+ * QA PERF-001 (sonda de produção, 2026-10-27): só os eventos de ASSINATURA —
+ * sem `TEST` e sem `PAYWALL_*`. Paywall é 98% da etapa (~236 mil de ~241 mil
+ * eventos) e nenhuma conta daqui o lê: `calcularMetricasDerivadas` só olha
+ * INITIAL_PURCHASE, RENEWAL, EXPIRATION e CANCELLATION, e `serieDesde` /
+ * `totalDeEventos` já descartavam esses mesmos tipos em memória. Trazê-los
+ * custava 1,3 s a 2,3 s por chamada (duas por carga da tela). O corte da
+ * janela continua em memória de propósito: a série INTEIRA é a referência do
+ * `jaPagou` (achado C), e são poucos milhares de linhas.
  */
 export function consultaDosEventosDasDerivadas(stageId: string): SQL {
   const c = revenuecatSales;
   return sql`SELECT ${c.eventType} AS event_type, ${c.appUserId} AS app_user_id, ${c.eventAt} AS event_at,
     (${c.payload}->'event'->>'period_type') AS period_type
-  FROM ${c} WHERE ${c.stageId} = ${stageId}`;
+  FROM ${c} WHERE ${c.stageId} = ${stageId} AND ${c.eventType} <> 'TEST' AND ${c.eventType} NOT LIKE 'PAYWALL%'`;
 }
 
 /** Linha crua do `execute` → evento tipado. O timestamp chega como `Date` ou texto. */

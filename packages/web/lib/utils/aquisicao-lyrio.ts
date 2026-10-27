@@ -1,7 +1,8 @@
 /**
  * Story 42.14 (AC4, AC5, AC7, AC8) — os cards de aquisição e valor do Resumo
  * mobile: CAC da Meta, do Google e consolidado (nas DUAS janelas: o filtro e
- * os 28 dias fixos, D5/D9), LTV Mensal, Trimestral e Anual (D33) e as
+ * os 28 dias fixos, D5/D9), LTV Mensal, Trimestral, Semestral e Anual (D33;
+ * o Semestral entrou no QA loop 3, pela sonda de 27/10) e as
  * renovações por canal (D11, D30). A contagem por pessoa vem de `GET …/revenuecat/pagantes-por-canal`.
  *
  * ## As contas
@@ -60,7 +61,7 @@ export interface GrupoForaDoLtv {
 
 /** Espelha `ltv` de `pagantes-por-canal` (`utils/pagantes-lyrio.ts`, AC7). */
 export interface LtvDoLyrio {
-  planos: { plano: "mensal" | "trimestral" | "anual"; rotulo: string; receitaCentavos: number; pessoas: number; produtos: ProdutoDoLtv[] }[];
+  planos: { plano: "mensal" | "trimestral" | "semestral" | "anual"; rotulo: string; receitaCentavos: number; pessoas: number; produtos: ProdutoDoLtv[] }[];
   naoClassificado: GrupoForaDoLtv;
   foraPorDecisao: GrupoForaDoLtv;
 }
@@ -272,6 +273,9 @@ export function cardsDeAquisicao(e: EntradaDeAquisicao): CardsDeAquisicao {
   for (const { plano, rotulo } of [
     { plano: "mensal", rotulo: "LTV Mensal" },
     { plano: "trimestral", rotulo: "LTV Trimestral" },
+    // QA loop 3: `premium_halfyearly_*`. A API anterior não manda o plano, e o
+    // card não aparece (o `continue` abaixo), em vez de mostrar "—" sem motivo.
+    { plano: "semestral", rotulo: "LTV Semestral" },
     { plano: "anual", rotulo: "LTV Anual" },
   ] as const) {
     const base: CardDoResumo = { id: `ltv-${plano}`, rotulo, valor: "—", declaracao: declFiltro, icone: "ltv" };

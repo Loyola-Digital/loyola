@@ -286,12 +286,31 @@ export function consultaDoQueFicaForaDaQuebra(stageId: string, desde: Date): SQL
 }
 
 /**
+ * Quanto um evento pode chegar depois de acontecer e ainda contar para a
+ * cobertura dos atributos (`consultaDoInicioDosAtributos`).
+ *
+ * Medido em produção (Story 42.14, sonda de 2026-10-27): a etapa Lyrio recebeu,
+ * de 14 a 25/10, 26 eventos de PAYWALL com `event_at` de agosto e setembro (54 a
+ * 64 dias de atraso) já com os atributos de hoje. Com eles, o início da
+ * cobertura recuava de 06/10 para 06/08, e a tela deixava de avisar que a Meta
+ * só tem atribuição desde outubro (os novos pagantes da Meta eram 70 em 28 E em
+ * 90 dias). O fluxo normal chega em até ~3 dias (o lote de 06/10 foi gravado em
+ * 09/10); 7 dias dá folga sem readmitir o atraso de meses.
+ */
+export const ATRASO_MAXIMO_DA_COBERTURA = "7 days";
+
+/**
  * AC6 — desde quando a etapa recebe os atributos de canal (`ad_network` ou id
  * de campanha da Meta). Janela que começa antes disso subconta Meta e Google.
- * Vem do dado, não fixa no código (hoje 06/10/2026).
+ * Vem do dado, não fixa no código (06/10/2026).
+ *
+ * Só conta o evento ENTREGUE no prazo (`created_at` até `event_at` +
+ * `ATRASO_MAXIMO_DA_COBERTURA`): um evento antigo que chega meses depois traz os
+ * atributos do dia em que chegou, não os do dia em que aconteceu, e não prova
+ * que havia atribuição naquela data.
  */
 export function consultaDoInicioDosAtributos(stageId: string): SQL {
-  return sql`SELECT min(${c.eventAt}) AS desde FROM ${c} WHERE ${c.stageId} = ${stageId} AND (${atributo("ad_network")} IS NOT NULL OR ${atributo("meta_campaign_id")} IS NOT NULL)`;
+  return sql`SELECT min(${c.eventAt}) AS desde FROM ${c} WHERE ${c.stageId} = ${stageId} AND (${atributo("ad_network")} IS NOT NULL OR ${atributo("meta_campaign_id")} IS NOT NULL) AND ${c.createdAt} <= ${c.eventAt} + ${ATRASO_MAXIMO_DA_COBERTURA}::interval`;
 }
 
 /** Linha crua do `execute` → comprador tipado. `float8`/`numeric` chegam em formatos variados. */
