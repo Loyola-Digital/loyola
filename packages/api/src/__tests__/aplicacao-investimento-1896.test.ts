@@ -1,9 +1,28 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+/**
+ * Roda o bloco com `process.env.TZ = tz` e devolve o fuso de antes.
+ * `process.env.TZ = undefined` grava a STRING "undefined" (que o Node lê como
+ * UTC) e vazaria para os blocos seguintes — por isso o `delete`.
+ */
+function noFuso(tz: string) {
+  let anterior: string | undefined;
+  beforeAll(() => {
+    anterior = process.env.TZ;
+    process.env.TZ = tz;
+  });
+  afterAll(() => {
+    if (anterior === undefined) delete process.env.TZ;
+    else process.env.TZ = anterior;
+  });
+}
 import { API_CONTRACT_VERSION } from "@loyola-x/shared";
-import { diaDaCelula, lerAbaDeAplicacao } from "../routes/stage-application.js";
+import { readFileSync } from "node:fs";
+import { diaDaCelula, janelaDoDashboard, lerAbaDeAplicacao } from "../routes/stage-application.js";
 import {
   diarioDeAplicacoes,
   ehAplicacaoDaMeta,
+  entraNaJanela,
   resumir,
   type AplicacaoDaEtapa,
 } from "../services/etapa-de-aplicacao.js";
@@ -18,14 +37,7 @@ import {
 const HEADERS = ["Submitted at", "email", "utm_source"];
 
 describe.each(["UTC", "America/Sao_Paulo"])("Story 18.96 — o dia da célula (TZ=%s)", (tz) => {
-  let anterior: string | undefined;
-  beforeAll(() => {
-    anterior = process.env.TZ;
-    process.env.TZ = tz;
-  });
-  afterAll(() => {
-    process.env.TZ = anterior;
-  });
+  noFuso(tz);
 
   it("controle: o fuso do processo mudou mesmo", () => {
     expect(new Date(2026, 0, 1).getTimezoneOffset()).toBe(tz === "UTC" ? 0 : 180);
@@ -45,6 +57,11 @@ describe.each(["UTC", "America/Sao_Paulo"])("Story 18.96 — o dia da célula (T
     // 01:30Z do dia 21 = 22:30 do dia 20 em Brasília.
     expect(diaDaCelula("2026-10-21T01:30:00Z")).toBe("2026-10-20");
     expect(diaDaCelula("2026-10-20T22:30:00-03:00")).toBe("2026-10-20");
+  });
+
+  it("data que não existe vira o dia do rollover — o mesmo do `Date` (QA DATA-001)", () => {
+    expect(diaDaCelula("31/02/2026")).toBe("2026-03-03");
+    expect(diaDaCelula("29/02/2028")).toBe("2028-02-29");
   });
 
   it("célula vazia ou ilegível não tem dia", () => {
@@ -123,13 +140,61 @@ describe("Story 18.96 — diário de aplicações (AC8)", () => {
   });
 
   it("o período que corta pela data também corta o dia (mesma linha, mesma decisão)", () => {
-    const de21 = new Date(2026, 9, 21, 0, 0, 0, 0);
-    const lida = lerAbaDeAplicacao(dados, {}, de21);
+    const lida = lerAbaDeAplicacao(dados, {}, "2026-10-21");
     const d = diarioDeAplicacoes(lida.aplicacoes);
     expect(Object.keys(d.dias)).toEqual(["2026-10-21"]);
     // As sem data continuam: `dentroDoPeriodo` deixa entrar.
     expect(d.semData.total).toBe(2);
     expect(resumir(lida.aplicacoes, []).aplicacoes).toBe(4);
+  });
+});
+
+describe("Story 18.96 — a janela é a da Meta (QA REQ-001, DATA-002, TEST-001)", () => {
+  it("7d terminando em 27/10 começa em 21/10: sete dias, hoje incluído (= /campaign-daily)", () => {
+    expect(janelaDoDashboard(7, "2026-10-27")).toBe("2026-10-21");
+    expect(janelaDoDashboard(1, "2026-10-27")).toBe("2026-10-27");
+    expect(janelaDoDashboard(undefined, "2026-10-27")).toBeNull();
+  });
+
+  it("a aplicação de hoje − 7 fica FORA do 7d; a de hoje − 6 entra", () => {
+    const dados = {
+      headers: HEADERS,
+      rows: [
+        ["2026-10-20 23:59:59", "fora@x.com", "meta"],
+        ["2026-10-21 00:00:01", "dentro@x.com", "meta"],
+      ],
+    };
+    const lida = lerAbaDeAplicacao(dados, {}, janelaDoDashboard(7, "2026-10-27"));
+    expect(lida.aplicacoes.map((a) => a.email)).toEqual(["dentro@x.com"]);
+  });
+
+  describe.each(["UTC", "America/Sao_Paulo"])("célula em UTC (TZ=%s)", (tz) => {
+    noFuso(tz);
+
+    it("corta pelo dia de Brasília — o mesmo dia da tabela, em qualquer fuso do processo", () => {
+      // 01:30Z do dia 21 = 22:30 do dia 20 em Brasília → fora de uma janela que começa no 21.
+      const dados = { headers: HEADERS, rows: [["2026-10-21T01:30:00Z", "z@x.com", "meta"]] };
+      expect(lerAbaDeAplicacao(dados, {}, "2026-10-21").aplicacoes).toEqual([]);
+      expect(lerAbaDeAplicacao(dados, {}, "2026-10-20").aplicacoes).toHaveLength(1);
+      // Cortar pela meia-noite do PROCESSO só diverge da regra quando o processo
+      // não está em Brasília — é a rodada TZ=UTC (o fuso de produção) que pega.
+    });
+  });
+
+  it("sem dia, a linha entra (a regra de dentroDoPeriodo)", () => {
+    expect(entraNaJanela(null, "2026-10-21")).toBe(true);
+    expect(entraNaJanela("2026-10-20", null)).toBe(true);
+    expect(entraNaJanela("2026-10-20", "2026-10-21")).toBe(false);
+    expect(entraNaJanela("2026-10-21", "2026-10-21")).toBe(true);
+  });
+
+  it("o fio: o dashboard corta aplicações E vendas pela janela da régua do shared", () => {
+    const rota = readFileSync(new URL("../routes/stage-application.ts", import.meta.url), "utf8");
+    expect(rota).toContain("const inicio = janelaDoDashboard(q.data.days, businessToday());");
+    expect(rota).toContain("if (!entraNaJanela(data ? diaDaCelula(bruto) : null, inicio)) return;");
+    expect(rota).toContain("desde: inicio");
+    // A régua antiga (hoje − days) não pode voltar.
+    expect(rota).not.toMatch(/setDate\(de\.getDate\(\) - q\.data\.days\)/);
   });
 });
 

@@ -18,6 +18,7 @@
 //     origens Meta de `porUtmSource`) e os dias ficam só com a Meta (AC9).
 
 import { ehOrigemMetaDeLead } from "@loyola-x/shared/src/leads-pagos";
+import { inicioDaJanela } from "@loyola-x/shared/src/janela-de-dias";
 import type { CampaignDailyInsight } from "@/lib/hooks/use-traffic-analytics";
 import type {
   ContagemDeAplicacoes,
@@ -36,6 +37,16 @@ export const DIAS_MAX_DA_META = 365;
  */
 export function diasDaMeta(dias: number | null): number {
   return dias == null ? DIAS_MAX_DA_META : Math.min(dias, DIAS_MAX_DA_META);
+}
+
+/**
+ * O primeiro dia que a Meta cobre (QA REQ-001): `diasDaMeta(dias)` terminando
+ * em `hoje`, INCLUSIVE — a régua do shared, a mesma do `/campaign-daily` e do
+ * corte das aplicações na API. `hoje` vai explícito (o do navegador), como em
+ * `filterSheetRowsByDays`.
+ */
+export function inicioDaMeta(dias: number | null, hoje: string): string {
+  return inicioDaJanela(diasDaMeta(dias), hoje);
 }
 
 export interface LinhaDiariaDaAplicacao {
@@ -119,17 +130,24 @@ export function montarDadosDiariosDaAplicacao(args: {
   meta: readonly CampaignDailyInsight[] | null | undefined;
   /** Etapa sem campanha vinculada → sem cards e sem colunas da Meta (AC3). */
   temCampanha: boolean;
+  /**
+   * A leitura da Meta falhou (QA REL-001). Cards e colunas da Meta ficam em
+   * "—": sem leitura não é o mesmo que sem gasto, e um custo "R$ 0,00" parece
+   * barato em vez de quebrado.
+   */
+  metaComErro?: boolean;
   /** `useDashboardDaAplicacao` da mesma janela. */
   dashboard: Pick<DashboardDaAplicacao, "resumo" | "diarioDeAplicacoes"> | null | undefined;
   /**
-   * Primeiro dia que a Meta cobre (`aaaa-mm-dd`). Dia de aplicação anterior a
-   * ele (janela "Tudo") fica com a Meta em "—": "R$ 0" diria que não houve
-   * gasto, e só não houve leitura.
+   * Primeiro dia que a Meta cobre (`inicioDaMeta`), em QUALQUER janela. Dia de
+   * aplicação anterior a ele fica com a Meta em "—": "R$ 0" diria que não houve
+   * gasto, e só não houve leitura (o dia a mais da QA REQ-001, a borda do "Tudo").
    */
   metaDesde?: string;
   ordem?: OrdemDoDia;
 }): DadosDiariosDaAplicacao {
-  const meta = args.temCampanha ? metaPorDia(args.meta) : new Map<string, Meta>();
+  const leuMeta = args.temCampanha && !args.metaComErro;
+  const meta = leuMeta ? metaPorDia(args.meta) : new Map<string, Meta>();
   const diario = args.dashboard?.diarioDeAplicacoes;
   const resumo = args.dashboard?.resumo;
   const temAplicacoesPorDia = !!diario;
@@ -139,7 +157,7 @@ export function montarDadosDiariosDaAplicacao(args: {
   for (const [d, c] of Object.entries(diario?.dias ?? {})) if (c.total > 0) datas.add(d);
 
   const metaDoDia = (d: string): Meta | null => {
-    if (!args.temCampanha) return null;
+    if (!leuMeta) return null;
     if (args.metaDesde && d < args.metaDesde) return null;
     return meta.get(d) ?? ZERO_META;
   };
@@ -164,7 +182,7 @@ export function montarDadosDiariosDaAplicacao(args: {
   }
 
   let somaMeta: Meta | null = null;
-  if (args.temCampanha) {
+  if (leuMeta) {
     somaMeta = { ...ZERO_META };
     for (const [d, m] of meta) {
       if (args.metaDesde && d < args.metaDesde) continue;

@@ -5,6 +5,7 @@ import type { DashboardDaAplicacao, QuebraPorOrigem } from "@/lib/hooks/use-stag
 import {
   aplicacoesPagasDoResumo,
   diasDaMeta,
+  inicioDaMeta,
   montarDadosDiariosDaAplicacao,
 } from "@/lib/utils/dados-diarios-da-aplicacao";
 
@@ -165,6 +166,58 @@ describe("Story 18.96 — janela Tudo (AC4)", () => {
   });
 });
 
+describe("Story 18.96 — a janela da Meta (QA REQ-001, TEST-001)", () => {
+  it("é a régua do shared: N dias terminando hoje, inclusive (= /campaign-daily)", () => {
+    expect(inicioDaMeta(7, "2026-10-27")).toBe("2026-10-21");
+    expect(inicioDaMeta(30, "2026-10-27")).toBe("2026-09-28");
+    // "Tudo" = 365 dias: hoje − 364, não hoje − 365.
+    expect(inicioDaMeta(null, "2026-10-27")).toBe("2025-10-28");
+  });
+
+  it("nenhum dia de aplicação fora da cobertura da Meta aparece com R$ 0", () => {
+    const d = montarDadosDiariosDaAplicacao({
+      meta: META,
+      temCampanha: true,
+      dashboard: dashboard(),
+      metaDesde: inicioDaMeta(7, "2026-10-27"),
+    });
+    for (const r of d.dias) {
+      if (r.date < "2026-10-21") expect(r.investimento).toBeNull();
+    }
+    expect(d.dias.find((r) => r.date === "2026-10-20")?.custoPorAplicacaoPaga).toBeNull();
+  });
+});
+
+describe("Story 18.96 — erro na leitura da Meta (QA REL-001)", () => {
+  const d = montarDadosDiariosDaAplicacao({
+    meta: undefined,
+    temCampanha: true,
+    metaComErro: true,
+    dashboard: dashboard(),
+  });
+
+  it("cards em —, nunca R$ 0", () => {
+    expect(d.cards).not.toBeNull();
+    expect(d.cards?.investimento).toBeNull();
+    expect(d.cards?.custoPorAplicacaoPaga).toBeNull();
+    expect(d.cards?.custoPorAplicacaoGeral).toBeNull();
+    expect(d.cards?.cpm).toBeNull();
+    // As aplicações continuam: o erro é só da Meta.
+    expect(d.cards?.aplicacoes).toBe(7);
+  });
+
+  it("linhas com a Meta em —, aplicações preenchidas", () => {
+    expect(d.dias.length).toBeGreaterThan(0);
+    expect(d.dias.every((r) => r.investimento === null && r.custoPorAplicacaoGeral === null)).toBe(true);
+    expect(d.dias.find((r) => r.date === "2026-10-21")?.aplicacoes).toBe(3);
+  });
+
+  it("mesmo com dado em cache na mão, o erro manda", () => {
+    const comCache = montarDadosDiariosDaAplicacao({ meta: META, temCampanha: true, metaComErro: true, dashboard: dashboard() });
+    expect(comCache.cards?.investimento).toBeNull();
+  });
+});
+
 describe("Story 18.96 — API anterior ao contrato 57 (AC9)", () => {
   const d = montarDadosDiariosDaAplicacao({
     meta: META,
@@ -212,6 +265,17 @@ describe("Story 18.96 — o fio da tela (AC1, AC2)", () => {
     expect(tela).toContain("useCampaignPicker(configOpen ? projectId : null)");
     expect(tela).toMatch(/<CampaignSelector[\s\S]*?value=\{stage\.campaigns\}/);
     expect(tela).toContain("atualizarEtapa.mutate(\n                          { campaigns },");
+  });
+
+  it("a seção manda a cobertura da Meta em toda janela e trata o erro (QA REQ-001, REL-001)", () => {
+    const secao = readFileSync(
+      new URL("../../../components/funnels/application-investment-section.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(secao).toContain("const metaDesde = inicioDaMeta(dias, hojeDoNavegador());");
+    expect(secao).toContain("const metaComErro = temCampanha && meta.isError;");
+    expect(secao).toMatch(/montarDadosDiariosDaAplicacao\(\{[^}]*metaComErro[^}]*metaDesde/);
+    expect(secao).toContain("Não consegui ler o investimento da Meta agora.");
   });
 
   it("a seção recebe as campanhas da etapa, a janela e o dashboard", () => {

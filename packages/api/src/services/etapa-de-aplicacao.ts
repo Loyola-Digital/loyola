@@ -135,6 +135,22 @@ export function diaEmBrasilia(instante: Date): string {
 }
 
 /**
+ * Story 18.96 (QA REQ-001) — a linha entra na janela do seletor?
+ *
+ * `inicio` é `inicioDaJanela(days)` — a régua do shared (18.80), a mesma da
+ * Meta: `hoje − (days−1)` até hoje. A primeira versão cortava em `hoje − days`
+ * e contava N+1 dias de aplicação contra N dias de gasto: o custo por aplicação
+ * saía otimista, o mesmo erro que a 18.80 tirou das outras telas.
+ *
+ * Compara o DIA (`aaaa-mm-dd`), não o instante: assim o corte e a tabela
+ * diária leem a mesma coisa, inclusive com célula em UTC (`…Z`). Sem dia, a
+ * linha entra — a regra de `dentroDoPeriodo`.
+ */
+export function entraNaJanela(dia: string | null, inicio: string | null): boolean {
+  return !dia || !inicio || dia >= inicio;
+}
+
+/**
  * Conta as aplicações por dia e as sem data.
  *
  * Recebe o MESMO array que `resumir` recebe: por construção,

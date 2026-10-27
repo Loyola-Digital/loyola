@@ -24,6 +24,7 @@ import type { DashboardDaAplicacao } from "@/lib/hooks/use-stage-application";
 import {
   DIAS_MAX_DA_META,
   diasDaMeta,
+  inicioDaMeta,
   montarDadosDiariosDaAplicacao,
   type LinhaDiariaDaAplicacao,
 } from "@/lib/utils/dados-diarios-da-aplicacao";
@@ -47,10 +48,9 @@ function fmtDia(d: string): string {
   return `${day}/${m}/${y}`;
 }
 
-/** O primeiro dia que a Meta cobre na janela "Tudo" — `aaaa-mm-dd`, local. */
-function inicioDaMetaNoTudo(): string {
+/** Hoje no navegador, `aaaa-mm-dd` — o mesmo "hoje" de `filterSheetRowsByDays`. */
+function hojeDoNavegador(): string {
   const d = new Date();
-  d.setDate(d.getDate() - DIAS_MAX_DA_META);
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${d.getFullYear()}-${mm}-${dd}`;
@@ -96,11 +96,14 @@ export function ApplicationInvestmentSection({
   const [ordem, setOrdem] = useState<OrdemDoDia>(ORDEM_DO_DIA_PADRAO);
   const temCampanha = campaignIds.length > 0;
   const meta = useCampaignDailyInsightsBulk(projectId, temCampanha ? campaignIds : null, diasDaMeta(dias));
-  const metaDesde = dias == null ? inicioDaMetaNoTudo() : undefined;
+  // QA REQ-001: em TODA janela, o dia que a Meta não cobre fica em "—".
+  const metaDesde = inicioDaMeta(dias, hojeDoNavegador());
+  // QA REL-001: erro na leitura da Meta é "—" com aviso, nunca R$ 0.
+  const metaComErro = temCampanha && meta.isError;
 
   const dados = useMemo(
-    () => montarDadosDiariosDaAplicacao({ meta: meta.data, temCampanha, dashboard, metaDesde, ordem }),
-    [meta.data, temCampanha, dashboard, metaDesde, ordem],
+    () => montarDadosDiariosDaAplicacao({ meta: meta.data, temCampanha, metaComErro, dashboard, metaDesde, ordem }),
+    [meta.data, temCampanha, metaComErro, dashboard, metaDesde, ordem],
   );
 
   // AC5: sem campanha, só Data · Aplicações · Aplicações pagas.
@@ -150,6 +153,13 @@ export function ApplicationInvestmentSection({
             <Card label="CPC" valor={fmtCurrency(c.cpc)} sub="clique no link" />
             <Card label="CTR" valor={fmtPercent(c.ctr)} sub="clique no link" />
           </div>
+          {metaComErro && (
+            <p className="flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+              <Info className="mt-0.5 h-3 w-3 shrink-0" />
+              Não consegui ler o investimento da Meta agora. Investimento e custos ficam em &quot;—&quot; até a
+              próxima leitura.
+            </p>
+          )}
           {dias == null && (
             // AC4: o custo do "Tudo" mistura janelas — quem lê precisa saber.
             <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">

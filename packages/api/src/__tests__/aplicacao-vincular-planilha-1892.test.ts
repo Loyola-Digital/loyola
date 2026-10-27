@@ -27,7 +27,9 @@ function linha(campos: Partial<Record<number, string>>): string[] {
   return HEADERS.map((_, i) => campos[i] ?? "");
 }
 
-const de20 = new Date(2026, 9, 20, 0, 0, 0, 0);
+// Story 18.96 (QA REQ-001): a janela passou a ser o DIA de início (régua do
+// shared), não um `Date` à meia-noite do servidor.
+const de20 = "2026-10-20";
 
 describe("Story 18.92 — leitura da aba de aplicação (AC8)", () => {
   it("`Submitted at` é a data: o período passa a valer nessa aba", () => {
@@ -98,7 +100,7 @@ describe("Story 18.92 — o fio da rota (AC5, AC6)", () => {
   const pesquisas = readFileSync(new URL("../routes/google-sheets.ts", import.meta.url), "utf8");
 
   it("o dashboard lê cada aba pelo leitor novo", () => {
-    expect(rota).toContain("lerAbaDeAplicacao(dados, s.columnMapping ?? {}, de)");
+    expect(rota).toContain("lerAbaDeAplicacao(dados, s.columnMapping ?? {}, inicio)");
   });
 
   it("a pesquisa vinculada com o id da etapa conta no dashboard dela", () => {
