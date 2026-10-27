@@ -7,12 +7,13 @@ reviewer: 'Quinn'
 updated: '2026-10-27T20:30:00Z'
 pr: null
 branch: 'feat/18.97-lps-coluna-status (local, não pushada; 1 commit sobre a main em 920723c)'
-commits: ['9f3fc47']
+commits: ['9f3fc47', 'QA fix 1 (texto)']
 base: 'main em 920723c'
 
 top_issues:
   - id: 'REQ-001'
     severity: medium
+    status: 'RESOLVIDO no QA fix 1 pela opção 1 do gestor ("bora"): tooltip e título dizem a base ("entre os anúncios que rodaram no período"; anúncio sem entrega não entra). O @qa conferiu: a reversão para o texto antigo deixa 1 teste vermelho. A versão completa (anúncios sem entrega) fica como possível story futura.'
     finding: >-
       O status considera só os anúncios presentes em `lpPorAnuncio.anuncios`, que vêm de
       `filteredAds` (insights do período), como o AC2 manda ("os mesmos cujo gasto entra nela").
@@ -39,6 +40,7 @@ top_issues:
     suggested_action: 'Perguntar ao gestor. Se ele quiser, vira story à parte, porque o perpétuo tem outro modelo de linha.'
   - id: 'MNT-001'
     severity: low
+    status: 'JSDoc RESOLVIDO no QA fix 1; badge compartilhado segue para depois'
     finding: >-
       `lps-do-lancamento.ts:39-41`: o `type StatusDoAnuncio` entrou entre o JSDoc "Uma entrada por
       anúncio…" e a `interface AnuncioDaLp`, então o comentário passou a documentar o tipo.
@@ -47,6 +49,7 @@ top_issues:
     suggested_action: 'Mover o `type` para cima do JSDoc. O badge compartilhado fica para quando houver um terceiro uso.'
   - id: 'REL-001'
     severity: low
+    status: 'Tooltip com nome vazio RESOLVIDO no QA fix 1; o id duplicado segue hipotético e aceito'
     finding: >-
       Hipotético: em `lp-por-anuncio.ts:221` o status é fixado pela 1ª linha de insight do anúncio.
       Um mesmo anúncio vindo como `_222` e `222`, com a 1ª linha sem status no cache, fica

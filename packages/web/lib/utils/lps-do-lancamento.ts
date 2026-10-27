@@ -36,10 +36,10 @@ export type Temperatura = "hot" | "cold" | "unknown";
 export type Publico = "todos" | "hot" | "cold";
 export type CausaSemLink = "fora_do_cache" | "cache_desatualizado" | "sem_link_na_meta";
 
-/** Uma entrada por anúncio — espelho de `utils/lp-por-anuncio.ts` da API. */
 /** Story 18.97: estado ATUAL do anúncio na Meta; ausente = API < contrato 58. */
 export type StatusDoAnuncio = "active" | "paused" | "unknown";
 
+/** Uma entrada por anúncio — espelho de `utils/lp-por-anuncio.ts` da API. */
 export interface AnuncioDaLp {
   adId: string;
   campaignId: string;

@@ -271,8 +271,12 @@ const RANK_DO_STATUS = { active: 2, paused: 1 } as const;
 
 /**
  * Story 18.97 — Ativo/Pausado da LP, com o badge da coluna Status dos Criativos.
- * O texto é honesto sobre o dado: `effective_status` vem do backfill diário de
- * madrugada (`meta-names-scheduler.ts`), não do período nem do minuto.
+ * O texto é honesto sobre o dado (QA REQ-001):
+ * - a base são os anúncios que RODARAM no período (os da linha) — anúncio ligado
+ *   que ainda não entregou não entra, então "Pausado" não afirma "todas as
+ *   campanhas";
+ * - `effective_status` vem do backfill diário de madrugada
+ *   (`meta-names-scheduler.ts`), não do minuto.
  */
 function StatusDaLp({ status, campanhasAtivas }: { status?: "active" | "paused" | "unknown"; campanhasAtivas?: string[] }) {
   if (status !== "active" && status !== "paused") {
@@ -280,14 +284,16 @@ function StatusDaLp({ status, campanhasAtivas }: { status?: "active" | "paused" 
   }
   const meta = CREATIVE_STATUS_BADGE[status];
   const n = campanhasAtivas?.length ?? 0;
+  // Campanha sem nome no cache não vira ": , entre…" (QA REL-001).
+  const nomes = (campanhasAtivas ?? []).filter(Boolean);
   const tooltip =
     status === "active"
-      ? `Ativo em ${n} campanha${n === 1 ? "" : "s"}${n > 0 ? `: ${campanhasAtivas!.join(", ")}` : ""}`
-      : "Pausado em todas as campanhas";
+      ? `Ativo em ${n} campanha${n === 1 ? "" : "s"}${nomes.length > 0 ? `: ${nomes.join(", ")}` : ""}, entre os anúncios que rodaram no período`
+      : "Pausado em todos os anúncios que rodaram no período";
   return (
     <span
       className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${meta.cls}`}
-      title={`${tooltip}\nEstado na Meta, atualizado uma vez por dia (de madrugada) — não é o do período.`}
+      title={`${tooltip}.\nAnúncio ligado que ainda não entregou não entra na conta. Estado na Meta, atualizado uma vez por dia (de madrugada).`}
     >
       {meta.label}
     </span>
@@ -900,7 +906,7 @@ export function LpPerformanceTable({
             {/* Story 18.97: Status logo depois do nome da LP, ordenável. */}
             <TableHead
               onClick={() => handleSort("status")}
-              title="Ativo se ao menos 1 anúncio que leva à LP está rodando na Meta; Pausado se todos estão pausados (campanha, conjunto ou anúncio). Estado atual, atualizado uma vez por dia."
+              title="Entre os anúncios que levaram tráfego à LP no período: Ativo se ao menos 1 está rodando na Meta; Pausado se todos estão pausados (campanha, conjunto ou anúncio). Anúncio ligado que ainda não entregou não entra. Estado atual, atualizado uma vez por dia."
               className="cursor-pointer select-none hover:text-foreground"
             >
               <span className="inline-flex items-center gap-1">

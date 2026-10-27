@@ -195,10 +195,14 @@ describe("Story 18.97 — o fio da tabela (AC1, AC3, AC4)", () => {
     expect(tabela).toMatch(/Total<\/TableCell>\s*<TableCell \/>/);
   });
 
-  it("o tooltip diz em quantas campanhas e que o dado é diário", () => {
+  it("o tooltip diz em quantas campanhas, a base do dado e que ele é diário (QA REQ-001)", () => {
     expect(tabela).toContain("Ativo em ${n} campanha");
-    expect(tabela).toContain("Pausado em todas as campanhas");
+    expect(tabela).toContain("entre os anúncios que rodaram no período");
+    expect(tabela).toContain('"Pausado em todos os anúncios que rodaram no período"');
+    expect(tabela).toContain("Anúncio ligado que ainda não entregou não entra");
     expect(tabela).toContain("atualizado uma vez por dia (de madrugada)");
+    // O texto que prometia mais do que o dado sustenta não pode voltar.
+    expect(tabela).not.toContain("Pausado em todas as campanhas");
   });
 
   it("a linha expandida cobre a coluna nova", () => {
