@@ -297,7 +297,7 @@ describe("AC7c — a classificação: função pura = SQL, caso a caso (PGlite)"
 });
 
 describe("AC7f — os 10 testes obrigatórios (PGlite, janela e relógio fixos)", () => {
-  it("1. os três planos: um pagamento em cada família cai no plano certo, com o LTV certo", async () => {
+  it("1. os quatro planos: um pagamento em cada família cai no plano certo, com o LTV certo", async () => {
     await inserir({ user: "m", tipo: "INITIAL_PURCHASE", usd: 9.99, produto: "premium_monthly_15:base", em: DENTRO });
     await inserir({ user: "t", tipo: "INITIAL_PURCHASE", usd: 24.99, produto: "premium_quartely_25:base", em: DENTRO });
     await inserir({ user: "s", tipo: "INITIAL_PURCHASE", usd: 39.99, produto: "premium_halfyearly_50:base", em: DENTRO });

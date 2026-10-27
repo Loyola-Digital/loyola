@@ -307,7 +307,7 @@ export function cardsDeAquisicao(e: EntradaDeAquisicao): CardsDeAquisicao {
         ],
         result: v == null ? "— (nenhum pagamento deste plano na janela)" : `${fmtUsd(p.receitaCentavos)} ÷ ${p.pessoas.toLocaleString("pt-BR")} = ${fmtUsd(v)}`,
         period: declFiltro.periodo,
-        note: `LTV BRUTO, em US$: sem descontar comissão de loja, imposto ou outros custos. Entra no plano o product_id que começa com o prefixo da família (premium_monthly, premium_quartely, premium_yearly — o partner entra no seu tipo) ou a promoção da mesma duração, pelo nome exato. Pessoa com mais de um pagamento do plano conta uma vez; promoção de US$ 0 não é pagamento.${notaDeFora}${coberturaDe(ctx.diasDoFiltro)}`,
+        note: `LTV BRUTO, em US$: sem descontar comissão de loja, imposto ou outros custos. Entra no plano o product_id que começa com o prefixo da família (premium_monthly, premium_quartely, premium_halfyearly, premium_yearly — o partner entra no seu tipo) ou a promoção da mesma duração, pelo nome exato, quando ela existe (o Semestral não tem promoção). Pessoa com mais de um pagamento do plano conta uma vez; promoção de US$ 0 não é pagamento.${notaDeFora}${coberturaDe(ctx.diasDoFiltro)}`,
       },
     });
   }
