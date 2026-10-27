@@ -96,7 +96,8 @@ const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 // de perpetual-dashboard.tsx (STATUS_BADGE). Reconciliação de cor: Ativo=verde,
 // Pausado=neutro/muted (AC1 "cinza/neutro"), desconhecido → "—" (nunca "Pausado"
 // por ausência de dado — AC3). Tooltip nativo (mesmo padrão `title` da tabela).
-const CREATIVE_STATUS_BADGE: Record<"active" | "paused", { label: string; cls: string }> = {
+// Story 18.97: exportado para a coluna Status da tabela de LPs usar o MESMO visual.
+export const CREATIVE_STATUS_BADGE: Record<"active" | "paused", { label: string; cls: string }> = {
   active: { label: "Ativo", cls: "bg-green-500/15 text-green-700 dark:text-green-400" },
   paused: { label: "Pausado", cls: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-400" },
 };

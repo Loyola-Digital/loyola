@@ -59,10 +59,14 @@ import {
  * nas etapas SEM planilha de vendas, e a lista `adIds` por criativo. Sem subir,
  * o cache serviria `leads: 0` (e sem `adIds`) por até 2 h depois do deploy.
  *
+ * `:v6` (Story 18.97) = cada anúncio de `lpPorAnuncio` com `status` (Ativo/
+ * Pausado da Meta). Sem subir, o cache serviria a coluna Status da tabela de
+ * LPs em "—" por até 2 h depois do deploy.
+ *
  * A troca esfria também a tabela de Criativos (mesma entrada): a primeira
  * abertura depois do deploy paga a Meta ao vivo.
  */
-export const VERSAO_DO_CACHE_CREATIVE_PERFORMANCE = "v5";
+export const VERSAO_DO_CACHE_CREATIVE_PERFORMANCE = "v6";
 
 export function chaveDoCacheCreativePerformance(stageId: string, days: number): string {
   return `${stageId}:${days}:${VERSAO_DO_CACHE_CREATIVE_PERFORMANCE}`;
@@ -1176,6 +1180,8 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           campanhas: campaignInsights,
           campanhasPermitidas: campaignIdsForFetch,
           links: linkPorAnuncio,
+          // Story 18.97: o status de cada anúncio, do mapa já lido acima (18.61).
+          status: statusByAdId,
           vendas: {
             vendas: vendasPorAnuncio,
             ingressos: creativeSaleMetrics,

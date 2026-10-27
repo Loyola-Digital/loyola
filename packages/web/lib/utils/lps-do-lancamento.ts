@@ -37,10 +37,14 @@ export type Publico = "todos" | "hot" | "cold";
 export type CausaSemLink = "fora_do_cache" | "cache_desatualizado" | "sem_link_na_meta";
 
 /** Uma entrada por anúncio — espelho de `utils/lp-por-anuncio.ts` da API. */
+/** Story 18.97: estado ATUAL do anúncio na Meta; ausente = API < contrato 58. */
+export type StatusDoAnuncio = "active" | "paused" | "unknown";
+
 export interface AnuncioDaLp {
   adId: string;
   campaignId: string;
   campaignName: string;
+  status?: StatusDoAnuncio;
   temperature: Temperatura;
   url: string | null;
   lpKey: string | null;
@@ -117,6 +121,14 @@ export interface LpRow {
   url?: string | null;
   /** Só na linha "Sem link resolvido". */
   semLink?: SemLinkDaLinha;
+  /**
+   * Story 18.97 — Ativo se ≥ 1 anúncio da linha está ACTIVE na Meta; Pausado se
+   * todos os conhecidos não estão; `unknown` sem status conhecido. Ausente =
+   * API anterior ao contrato 58 (ou modo por rótulo): a coluna mostra "—".
+   */
+  status?: StatusDoAnuncio;
+  /** Nomes das campanhas com anúncio ATIVO nesta linha (tooltip). */
+  campanhasAtivas?: string[];
   /** Campanhas cuja correção manual trouxe gasto para esta linha (AC5 — remover). */
   correcoes?: { campaignId: string; campaignName: string }[];
 }
@@ -193,6 +205,12 @@ type Acc = {
   semLink: SemLinkDaLinha | null;
   campanhas: Map<string, { nome: string; spend: number }>;
   correcoes: Map<string, string>;
+  /** Story 18.97: algum anúncio da linha trouxe `status` (API ≥ 58)? */
+  statusInformado: boolean;
+  /** Anúncios com status conhecido (active ou paused). */
+  statusConhecidos: number;
+  /** campaign_id → nome, das campanhas com anúncio ACTIVE nesta linha. */
+  ativas: Map<string, string>;
 };
 
 export function montarLinhasDeLpPorUrl(args: {
@@ -237,6 +255,9 @@ export function montarLinhasDeLpPorUrl(args: {
             },
         campanhas: new Map(),
         correcoes: new Map(),
+        statusInformado: false,
+        statusConhecidos: 0,
+        ativas: new Map(),
       };
       linhas.set(k, a);
     }
@@ -268,6 +289,14 @@ export function montarLinhasDeLpPorUrl(args: {
     a.revenueUnico += ad.revenueUnico ?? 0;
     a.revenueTotal += ad.revenueTotal ?? 0;
     if (destino.corrigido) a.correcoes.set(ad.campaignId, ad.campaignName);
+
+    // Story 18.97 (AC2): o status vem dos MESMOS anúncios cujo gasto entrou na
+    // linha — já com a correção manual e os filtros de mídia e de público.
+    if (ad.status !== undefined) {
+      a.statusInformado = true;
+      if (ad.status === "active") a.ativas.set(ad.campaignId, ad.campaignName);
+      if (ad.status !== "unknown") a.statusConhecidos += 1;
+    }
 
     if (a.semLink) {
       // Ordem de precedência da 29.43 — a API já classificou; ausência de
@@ -365,6 +394,14 @@ export function montarLinhasDeLpPorUrl(args: {
         : {}),
       ...(a.correcoes.size > 0
         ? { correcoes: [...a.correcoes].map(([campaignId, campaignName]) => ({ campaignId, campaignName })) }
+        : {}),
+      // Story 18.97: gasto de campanha sem anúncio (5ª causa) não decide status —
+      // linha só com ele fica sem `status` ("—").
+      ...(a.statusInformado
+        ? {
+            status: a.ativas.size > 0 ? "active" as const : a.statusConhecidos > 0 ? "paused" as const : "unknown" as const,
+            campanhasAtivas: [...a.ativas.values()].sort((x, y) => x.localeCompare(y)),
+          }
         : {}),
     });
   }

@@ -53,6 +53,7 @@ import {
 } from "@/lib/utils/lp-metrics-calculator";
 import type { LpRow } from "@/lib/hooks/useLpPerformanceData";
 import { LpFunnelCard } from "@/components/funnels/lp-funnel-card";
+import { CREATIVE_STATUS_BADGE } from "@/components/funnels/stage-creative-performance-table";
 import type { LpFunnelRow } from "@/lib/hooks/use-sales-journey";
 import {
   CHAVE_SEM_LINK,
@@ -182,7 +183,9 @@ type LpSortKey =
   | "lpViews"
   | "connectRate"
   | "leads"
-  | "cpl";
+  | "cpl"
+  // Story 18.97: rank Ativo (2) → Pausado (1) → "—" (null), fora do `columns`.
+  | "status";
 
 type LpColKind = "currency" | "int" | "percent" | "ratio";
 
@@ -258,7 +261,38 @@ type LpComputedRow = {
   url?: string | null;
   semLink?: SemLinkDaLinha;
   correcoes?: { campaignId: string; campaignName: string }[];
+  /** Story 18.97. */
+  status?: "active" | "paused" | "unknown";
+  campanhasAtivas?: string[];
 };
+
+/** Story 18.97 (AC4): Ativo primeiro, depois Pausado; "—" fica no fim. */
+const RANK_DO_STATUS = { active: 2, paused: 1 } as const;
+
+/**
+ * Story 18.97 — Ativo/Pausado da LP, com o badge da coluna Status dos Criativos.
+ * O texto é honesto sobre o dado: `effective_status` vem do backfill diário de
+ * madrugada (`meta-names-scheduler.ts`), não do período nem do minuto.
+ */
+function StatusDaLp({ status, campanhasAtivas }: { status?: "active" | "paused" | "unknown"; campanhasAtivas?: string[] }) {
+  if (status !== "active" && status !== "paused") {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  const meta = CREATIVE_STATUS_BADGE[status];
+  const n = campanhasAtivas?.length ?? 0;
+  const tooltip =
+    status === "active"
+      ? `Ativo em ${n} campanha${n === 1 ? "" : "s"}${n > 0 ? `: ${campanhasAtivas!.join(", ")}` : ""}`
+      : "Pausado em todas as campanhas";
+  return (
+    <span
+      className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${meta.cls}`}
+      title={`${tooltip}\nEstado na Meta, atualizado uma vez por dia (de madrugada) — não é o do período.`}
+    >
+      {meta.label}
+    </span>
+  );
+}
 
 /**
  * Story 18.91: a Consolidada sem número mostra "—" com o motivo no tooltip —
@@ -722,6 +756,8 @@ export function LpPerformanceTable({
         url: row.url,
         semLink: row.semLink,
         correcoes: row.correcoes,
+        status: row.status,
+        campanhasAtivas: row.campanhasAtivas,
         values: {
           investimento: row.investimento,
           ingressosUnicos: row.ingressosUnicos ?? 0,
@@ -741,6 +777,7 @@ export function LpPerformanceTable({
           connectRate: m.connectRate,
           leads: row.leads ?? 0,
           cpl: m.cpl ?? null,
+          status: row.status === "active" || row.status === "paused" ? RANK_DO_STATUS[row.status] : null,
         },
       };
     });
@@ -826,6 +863,8 @@ export function LpPerformanceTable({
       connectRate: m.connectRate,
       leads: sum.leads,
       cpl: m.cpl ?? null,
+      // Story 18.97: status não soma — o Total fica vazio nessa coluna.
+      status: null,
     };
   }, [rows, isPaid]);
 
@@ -856,6 +895,23 @@ export function LpPerformanceTable({
                 className="cursor-help underline decoration-dotted decoration-muted-foreground/40 underline-offset-4"
               >
                 LP
+              </span>
+            </TableHead>
+            {/* Story 18.97: Status logo depois do nome da LP, ordenável. */}
+            <TableHead
+              onClick={() => handleSort("status")}
+              title="Ativo se ao menos 1 anúncio que leva à LP está rodando na Meta; Pausado se todos estão pausados (campanha, conjunto ou anúncio). Estado atual, atualizado uma vez por dia."
+              className="cursor-pointer select-none hover:text-foreground"
+            >
+              <span className="inline-flex items-center gap-1">
+                Status
+                {sortCol !== "status" ? (
+                  <ArrowUpDown className="h-3 w-3 opacity-40" />
+                ) : sortDir === "asc" ? (
+                  <ArrowUp className="h-3 w-3" />
+                ) : (
+                  <ArrowDown className="h-3 w-3" />
+                )}
               </span>
             </TableHead>
             {columns.map((col) => (
@@ -920,6 +976,9 @@ export function LpPerformanceTable({
                       />
                     )}
                   </TableCell>
+                  <TableCell>
+                    <StatusDaLp status={row.status} campanhasAtivas={row.campanhasAtivas} />
+                  </TableCell>
                   {columns.map((col) => (
                     <TableCell key={col.key} className="text-right tabular-nums">
                       {col.key === "leads" && row.leadsFonte === "pixel" && (
@@ -937,7 +996,7 @@ export function LpPerformanceTable({
 
                 {aberta && (
                   <TableRow className="bg-muted/30 hover:bg-muted/30">
-                    <TableCell colSpan={columns.length + (expansivel ? 2 : 1)} className="p-0">
+                    <TableCell colSpan={columns.length + (expansivel ? 3 : 2)} className="p-0">
                       {/*
                         `sticky left-0` porque a tabela tem 13 colunas e rola na
                         horizontal: sem isso, o card fica ancorado na borda
@@ -978,6 +1037,7 @@ export function LpPerformanceTable({
             <TableRow className="border-t-2 bg-muted/50 font-semibold hover:bg-muted/50">
               {expansivel && <TableCell className="px-1" />}
               <TableCell className="font-semibold">Total</TableCell>
+              <TableCell />
               {columns.map((col) => (
                 <TableCell key={col.key} className="text-right tabular-nums font-semibold">
                   <CelulaDeTaxa chave={col.key} valor={totalsRow[col.key]} kind={col.kind} />
