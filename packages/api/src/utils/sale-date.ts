@@ -323,3 +323,13 @@ const horaDoNegocio = new Intl.DateTimeFormat("en-US", {
   hour: "2-digit",
   minute: "2-digit",
 });
+
+/**
+ * Story 42.14 — os DIAS da janela de N dias terminando hoje, no fuso do
+ * negócio (`AAAA-MM-DD`, inclusivo), como as rotas `/receita` e
+ * `/novos-clientes` os mandam ao RevenueCat em `start_date`/`end_date`.
+ */
+export function diasDaJanelaEmSp(dias: number, agora: Date = new Date()): { desde: string; ate: string } {
+  const ate = businessToday(agora);
+  return { desde: inicioDaJanela(dias, ate), ate };
+}

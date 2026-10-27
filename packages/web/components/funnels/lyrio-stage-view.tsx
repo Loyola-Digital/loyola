@@ -15,9 +15,7 @@ import {
   Store,
   Package,
   Zap,
-  TrendingUp,
   Users,
-  Repeat,
   Wallet,
   History,
   Loader2,
@@ -36,21 +34,17 @@ import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { useCampaignPicker, useGoogleAdsCampaignPicker } from "@/lib/hooks/use-funnels";
 import { useCampaignDailyInsightsBulk } from "@/lib/hooks/use-traffic-analytics";
-import { sumMetaInsights, sumMetaSpendWithTax } from "@/lib/utils/funnel-metrics";
+import { sumMetaSpendWithTax } from "@/lib/utils/funnel-metrics";
 import {
-  calcularMargemContribuicao,
   validarPercentuaisMargem,
   parsePercentual,
-  fecharEmCentavos,
   MARGEM_DEFAULTS,
 } from "@/lib/utils/lyrio-margin";
-import { MetricTooltip } from "@/components/metrics/metric-tooltip";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import type { MetricFormula, MetricFormulaValue } from "@/lib/types/metric-formula";
 import { useUsdBrl } from "@/lib/hooks/use-fx";
 import { CampaignSelector } from "./campaign-selector";
 import { GoogleAdsCampaignSelector } from "./google-ads-campaign-selector";
-import { useGoogleAdsCampaigns } from "@/lib/hooks/use-google-ads-analytics";
+import { useGoogleAdsCampaigns, useGoogleAdsDailyPorCampanha } from "@/lib/hooks/use-google-ads-analytics";
 import { StageDeleteSection } from "./stage-delete-section";
 import { CampaignLogButton } from "./campaign-log-link";
 import { LyrioMetaKpis } from "./lyrio-meta-kpis";
@@ -58,11 +52,19 @@ import {
   avisoDoGoogle,
   contaDoGoogle,
   estadoDoGoogleNaJanela,
-  investimentoDoGoogle,
-  memorialDoGoogleSemNumero,
   type ContaDoGoogle,
 } from "@/lib/utils/lyrio-google-ads";
 import { RevenuecatOverviewBlock } from "./revenuecat-overview-block";
+import { GradeDoResumo } from "./lyrio-resumo-cards";
+import { cardsDoResumo } from "@/lib/utils/resumo-mobile-lyrio";
+import { avisoDeNaoClassificado, cardsDeAquisicao } from "@/lib/utils/aquisicao-lyrio";
+import { hojeNoNegocio, tituloDoResumo } from "@/lib/utils/janela-dos-cards-lyrio";
+import { avisoDoErroDaFonte, estadoDaFonte } from "@/lib/utils/estado-da-fonte-revenuecat";
+import {
+  diasDaConsultaDoGoogle,
+  investimentoDoGoogleNaRegua,
+  valorDoGoogleNaRegua,
+} from "@/lib/utils/google-ads-na-regua";
 import { LyrioDetailTable } from "./lyrio-detail-table";
 import { LyrioJornadaPorCanal } from "./lyrio-jornada-por-canal";
 import { LyrioResumoPorCanal } from "./lyrio-resumo-por-canal";
@@ -88,6 +90,9 @@ import {
   useRevenuecatBackfillStatus,
   useRunRevenuecatBackfill,
   useRevenuecatVendasPorCanal,
+  useRevenuecatReceita,
+  useRevenuecatPagantesPorCanal,
+  useRevenuecatNovosClientes,
 } from "@/lib/hooks/use-revenuecat";
 import type { FunnelCampaign, FunnelStage } from "@loyola-x/shared";
 
@@ -100,10 +105,6 @@ interface LyrioStageViewProps {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
-function fmtUsd(v: number | null | undefined): string {
-  if (v == null) return "—";
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v);
-}
 function fmtMoney(v: number, currency: string): string {
   try {
     return new Intl.NumberFormat("pt-BR", { style: "currency", currency }).format(v);
@@ -126,18 +127,6 @@ function fmtBRL(v: number | null | undefined): string {
 function brl(usd: number | null | undefined, rate: number | null): string {
   if (usd == null || rate == null) return "—";
   return fmtBRL(usd * rate);
-}
-function fmtRoas(v: number | null): string {
-  return v == null ? "—" : `${v.toFixed(2)}x`;
-}
-/** Pega o valor de uma métrica do overview por id (aceita fallbacks de id). */
-function metricValue(metrics: RevenuecatMetric[] | undefined, ...ids: string[]): number | null {
-  if (!metrics) return null;
-  for (const id of ids) {
-    const m = metrics.find((x) => x.id === id);
-    if (m) return m.value;
-  }
-  return null;
 }
 
 export function LyrioStageView({ projectId, funnelId, funnelName, stage }: LyrioStageViewProps) {
@@ -189,25 +178,23 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   const { data: fx } = useUsdBrl();
   const brlRate = fx?.rate ?? null;
 
-  // Spend da Meta em 28 dias (mesma janela do overview do RevenueCat) pra ROAS.
-  const { data: metaDaily28 } = useCampaignDailyInsightsBulk(
-    campaignIds.length ? projectId : null,
-    campaignIds.length ? campaignIds : null,
-    28,
-  );
-  const metaSpend28 = metaDaily28 ? sumMetaInsights([metaDaily28]).spend : 0;
-  // Story 42.2/42.4: mesma soma, decomposta em líquido + imposto para o memorial
-  // de cálculo. `spendComImposto` é numericamente igual a `metaSpend28`.
-  const metaSpend28Detalhe = useMemo(
-    () =>
-      metaDaily28
-        ? sumMetaSpendWithTax([metaDaily28])
-        : { spendLiquido: 0, imposto: 0, spendComImposto: 0 },
-    [metaDaily28],
-  );
+  // Story 42.14 — o dia de SP: a régua de todas as janelas desta tela.
+  const hoje = hojeNoNegocio();
 
-  // Investimento do Google na MESMA janela de 28 dias. Só as campanhas
-  // vinculadas à etapa entram — a conta pode servir outros produtos.
+  // Story 42.14 (D22): o investimento da Meta segue o FILTRO de dias. Os 28 dias
+  // fixos ficam para os CACs de 28 dias (D5/D9) e para o trio Receita/ROAS/
+  // Margem quando a API ainda não tem a rota de receita. Com `days = 28`, as duas
+  // consultas são a mesma chave de cache.
+  const temMeta = campaignIds.length > 0;
+  const { data: metaDailyFiltro, error: erroMetaFiltroQ } = useCampaignDailyInsightsBulk(temMeta ? projectId : null, temMeta ? campaignIds : null, days);
+  const { data: metaDaily28, error: erroMeta28Q } = useCampaignDailyInsightsBulk(temMeta ? projectId : null, temMeta ? campaignIds : null, 28);
+  // QA REL-001: a falha da Meta tem causa no memorial — antes era "—" calado, como se carregasse.
+  const erroMetaFiltro = erroMetaFiltroQ ? (erroMetaFiltroQ instanceof Error ? erroMetaFiltroQ.message : String(erroMetaFiltroQ)) : null;
+  const erroMeta28 = erroMeta28Q ? (erroMeta28Q instanceof Error ? erroMeta28Q.message : String(erroMeta28Q)) : null;
+  // Story 42.2/42.4: a soma decomposta em líquido + imposto, para o memorial.
+  const metaFiltro = useMemo(() => (metaDailyFiltro ? sumMetaSpendWithTax([metaDailyFiltro]) : undefined), [metaDailyFiltro]);
+  const meta28 = useMemo(() => (metaDaily28 ? sumMetaSpendWithTax([metaDaily28]) : undefined), [metaDaily28]);
+
   // Story 42.13 (AC1b + QA loop TEST-001): a conta decide antes da consulta.
   // Sem conta conectada (vínculo removido) ou consulta em erro, o investimento
   // do Google é DESCONHECIDO (`null`), não "R$ 0".
@@ -220,34 +207,29 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
       }),
     [googleCampaignIds, googleAccountId, googlePickerQ.isLoading, googlePickerQ.error, googlePicker],
   );
-  const googleQ28 = useGoogleAdsCampaigns(contaGoogle.tipo === "conta" ? contaGoogle.accountId : null, 28);
-  const googleEstado28 = useMemo(
-    () =>
-      estadoDoGoogleNaJanela(
-        contaGoogle,
-        { isLoading: googleQ28.isLoading, error: googleQ28.error, data: googleQ28.data },
-        googleCampaignIds,
-      ),
-    [contaGoogle, googleQ28.isLoading, googleQ28.error, googleQ28.data, googleCampaignIds],
+  // Story 42.14 (D17, AC4f): o Google na MESMA régua da Meta — N dias de
+  // calendário de SP —, pela rota `/daily` existente, uma consulta por campanha
+  // vinculada (a conta pode servir outros produtos). Uma consulta de max(N, 28)
+  // dias atende o filtro e os 28 dias fixos.
+  const googleIdsVinculados = useMemo(() => [...googleCampaignIds].sort(), [googleCampaignIds]);
+  const googleDaily = useGoogleAdsDailyPorCampanha(
+    contaGoogle.tipo === "conta" ? contaGoogle.accountId : null,
+    googleIdsVinculados,
+    diasDaConsultaDoGoogle(days, 28),
   );
-  const googleSpend28Conhecido = investimentoDoGoogle(googleEstado28);
-  const googleSpend28 = googleSpend28Conhecido ?? 0;
-  const googleIndisponivel = googleSpend28Conhecido === null;
-  // ROAS contra o investimento TOTAL: usar só a Meta inflaria o número assim que
-  // houvesse verba no Google — por isso, sem o Google, o ROAS é "—", não um
-  // número otimista.
-  const investimento28 = metaSpend28 + googleSpend28;
+  const googleConsultas = googleDaily.map((q) => ({ isLoading: q.isLoading, error: q.error, data: q.data }));
+  const googleFiltro = investimentoDoGoogleNaRegua(contaGoogle, googleConsultas, days, hoje);
+  const google28 = investimentoDoGoogleNaRegua(contaGoogle, googleConsultas, 28, hoje);
+  const googleFiltroValor = valorDoGoogleNaRegua(googleFiltro);
 
-  // Métricas do overview (28d / snapshot) pro resumo mobile.
-  const ov = overview.data?.metrics;
-  const mrrUsd = metricValue(ov, "mrr");
-  const activeSubs = metricValue(ov, "active_subscriptions");
-  const activeTrials = metricValue(ov, "active_trials");
-  const newCustomers = metricValue(ov, "new_customers_last_28_days", "new_customers");
-  const revenue28Usd = metricValue(ov, "revenue_last_28_days", "revenue");
-  const revenue28Brl = revenue28Usd != null && brlRate != null ? revenue28Usd * brlRate : null;
-  const roas28 =
-    revenue28Brl != null && investimento28 > 0 && !googleIndisponivel ? revenue28Brl / investimento28 : null;
+  // Story 42.14 (D22, PO-11): a receita da janela do filtro, pela rota nova —
+  // a mesma chave de cache do Overview (uma chamada, um gasto no limite de 25/min).
+  const receitaQ = useRevenuecatReceita(projectId, funnelId, stage.id, days, connected);
+  const receitaDoFiltro = estadoDaFonte({ isLoading: receitaQ.isLoading, error: receitaQ.error, data: receitaQ.data });
+  // D22: os novos clientes do filtro (`charts/customers_new`) — a mesma chave do Overview.
+  const novosClientesQ = useRevenuecatNovosClientes(projectId, funnelId, stage.id, days, connected);
+  const novosClientes = estadoDaFonte({ isLoading: novosClientesQ.isLoading, error: novosClientesQ.error, data: novosClientesQ.data });
+  const overviewEstado = estadoDaFonte({ isLoading: overview.isLoading, error: overview.error, data: overview.data?.metrics });
 
   // Story 42.4 — Margem de Contribuição. Percentuais vêm da config da etapa; a
   // API sempre devolve os três preenchidos, mas o fallback cobre o carregamento.
@@ -255,277 +237,45 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   const taxPct = config.data?.taxPct ?? MARGEM_DEFAULTS.taxPct;
   const otherCostsPct = config.data?.otherCostsPct ?? MARGEM_DEFAULTS.otherCostsPct;
 
-  const margem28 = useMemo(
-    () =>
-      revenue28Brl == null || googleIndisponivel
-        ? null
-        : calcularMargemContribuicao({
-            faturamentoBrutoBrl: revenue28Brl,
-            platformFeePct,
-            taxPct,
-            otherCostsPct,
-            investimentoMetaLiquidoBrl: metaSpend28Detalhe.spendLiquido,
-            impostoMetaBrl: metaSpend28Detalhe.imposto,
-            investimentoGoogleBrl: googleSpend28,
-          }),
-    [
-      revenue28Brl,
-      googleIndisponivel,
-      platformFeePct,
-      taxPct,
-      otherCostsPct,
-      metaSpend28Detalhe,
-      googleSpend28,
-    ],
-  );
-
   // Origem da cotação — entra no memorial de todo card que converte US$ -> R$.
   const fxSourceLabel =
     fx?.source === "live" ? "ao vivo" : fx?.source === "manual" ? "manual" : "fallback";
   const fxSource = `/api/fx/usd-brl · ${fxSourceLabel}`;
 
   /**
-   * Story 42.2 — memorial de cálculo de cada card do Resumo.
-   *
-   * Card sem dado recebe `undefined`: `<MetricTooltip>` então repassa o filho
-   * sem tooltip. Memorial com "—" disfarçado de número seria pior que memorial
-   * nenhum.
+   * Story 42.14 — os cards do Resumo, com valor, janela e memorial, saem de
+   * `cardsDoResumo` (lib/utils, com teste). Card sem dado legítimo fica sem
+   * memorial; card em erro mostra "—" e o memorial diz a causa (AC1c, PO-D4).
    */
-  const formulas = useMemo(() => {
-    const cambioValue: MetricFormulaValue | null =
-      brlRate != null
-        ? { label: "Câmbio US$ 1 →", value: fmtBRL(brlRate), source: fxSource }
-        : null;
+  const cardsResumo = cardsDoResumo({
+    ctx: { diasDoFiltro: days, hoje },
+    cambio: { taxa: brlRate, fonte: fxSource },
+    meta: { temCampanhas: temMeta, filtro: metaFiltro, vinteOito: meta28, erroFiltro: erroMetaFiltro, erro28: erroMeta28 },
+    google: { mostrar: googleCampaignIds.size > 0, filtro: googleFiltro, vinteOito: google28 },
+    receita: receitaDoFiltro,
+    novosClientes,
+    overview: overviewEstado,
+    percentuais: { platformFeePct, taxPct, otherCostsPct },
+  });
+  // PO-D4 (3) — o aviso visível do bloco, além do memorial de cada card.
+  const avisoDaReceita =
+    avisoDoErroDaFonte(receitaDoFiltro, "a receita do período no RevenueCat") ??
+    avisoDoErroDaFonte(novosClientes, "os novos clientes do período no RevenueCat");
 
-    // QA-04: as duas parcelas precisam SOMAR o total exibido. Arredondadas de
-    // forma independente, divergiam do card em ~25% dos casos.
-    const [metaLiqExib, metaImpExib] = fecharEmCentavos(metaSpend28, [
-      metaSpend28Detalhe.spendLiquido,
-      metaSpend28Detalhe.imposto,
-    ]);
-
-    const investimentoMeta: MetricFormula = {
-      expression: "Σ spend diário ÷ (1 − 12,15%)",
-      values: [
-        {
-          label: "Investimento líquido",
-          value: fmtBRL(metaLiqExib),
-          source: "Meta Ads API · soma do spend diário das campanhas vinculadas",
-        },
-        {
-          label: "Imposto (12,15%)",
-          value: fmtBRL(metaImpExib),
-          source: "alíquota vigente desde 01/01/2026, aplicada por dia",
-        },
-      ],
-      result: `${fmtBRL(metaLiqExib)} + ${fmtBRL(metaImpExib)} = ${fmtBRL(metaSpend28)}`,
-      period: "últimos 28 dias",
-      note: "O valor do card JÁ inclui o imposto. O gross-up é por dentro: o imposto incide sobre o bruto, então não é spend × 1,1215.",
-    };
-
-    // QA loop (TEST-001): o memorial do "—" sai de função testada.
-    const investimentoGoogle: MetricFormula | undefined =
-      memorialDoGoogleSemNumero(googleEstado28, "últimos 28 dias") ??
-      (googleIndisponivel
-        ? undefined
-        : {
-            expression: "Σ spend das campanhas vinculadas",
-            values: [
-              {
-                label: "Investimento",
-                value: fmtBRL(googleSpend28),
-                source: "Google Ads API · só as campanhas vinculadas a esta etapa",
-              },
-            ],
-            result: fmtBRL(googleSpend28),
-            period: "últimos 28 dias",
-            note: "Sem imposto de 12,15%: aquele tributo é da plataforma Meta.",
-          });
-
-    const receita: MetricFormula | undefined =
-      revenue28Usd != null && cambioValue
-        ? {
-            expression: "Receita 28d (US$) × câmbio",
-            values: [
-              {
-                label: "Receita 28d",
-                value: fmtUsd(revenue28Usd),
-                source: "RevenueCat · métrica revenue_last_28_days",
-              },
-              cambioValue,
-            ],
-            result: `${fmtUsd(revenue28Usd)} × ${fmtBRL(brlRate!)} = ${brl(revenue28Usd, brlRate)}`,
-            period: "últimos 28 dias",
-            note: "Receita reportada pelo RevenueCat, antes de descontos de plataforma, imposto e custos.",
-          }
-        : undefined;
-
-    const roas: MetricFormula | undefined =
-      roas28 != null
-        ? {
-            expression: "Receita (R$) ÷ Investimento total (R$)",
-            values: [
-              {
-                label: "Receita",
-                value: fmtBRL(revenue28Brl!),
-                source: "RevenueCat, convertida pelo câmbio",
-              },
-              {
-                label: "Investimento total",
-                value: fmtBRL(investimento28),
-                source:
-                  googleSpend28 > 0
-                    ? "Meta (com imposto) + Google Ads"
-                    : "Meta Ads, com imposto de 12,15%",
-              },
-            ],
-            result: `${fmtBRL(revenue28Brl!)} ÷ ${fmtBRL(investimento28)} = ${fmtRoas(roas28)}`,
-            period: "últimos 28 dias",
-            note: "Receita bruta contra investimento. Não desconta comissão de loja, imposto nem custos — para isso, veja a Margem de Contribuição.",
-          }
-        : undefined;
-
-    const mrr: MetricFormula | undefined =
-      mrrUsd != null && cambioValue
-        ? {
-            expression: "MRR (US$) × câmbio",
-            values: [
-              { label: "MRR", value: fmtUsd(mrrUsd), source: "RevenueCat · métrica mrr" },
-              cambioValue,
-            ],
-            result: `${fmtUsd(mrrUsd)} × ${fmtBRL(brlRate!)} = ${brl(mrrUsd, brlRate)}`,
-            period: "snapshot atual",
-            note: "Receita recorrente mensal no momento da consulta — não é média dos 28 dias.",
-          }
-        : undefined;
-
-    const contagem = (
-      valor: number | null,
-      metrica: string,
-      periodo: string,
-      nota: string,
-    ): MetricFormula | undefined =>
-      valor == null
-        ? undefined
-        : {
-            expression: "Contagem",
-            values: [{ label: "Total", value: fmtNum(valor), source: `RevenueCat · ${metrica}` }],
-            result: fmtNum(valor),
-            period: periodo,
-            note: nota,
-          };
-
-    // Story 42.4: o memorial mostra a cadeia INTEIRA. Um memorial que só diz
-    // "líquido − investimento" esconde exatamente o que este card acrescenta.
-    const margem: MetricFormula | undefined =
-      margem28 != null && revenue28Brl != null
-        ? {
-            expression:
-              "(Bruto − plataforma − imposto − outros custos) − investimento − imposto Meta",
-            values: [
-              {
-                // Do resultado, não de revenue28Brl: o cálculo já trabalha ao
-                // centavo, e a primeira linha do memorial tem de ser a mesma
-                // base que as subtrações usam.
-                label: "Faturamento bruto",
-                value: fmtBRL(margem28.faturamentoBruto),
-                source: "RevenueCat, convertido pelo câmbio",
-              },
-              {
-                label: `− Descontos da plataforma (${platformFeePct}%)`,
-                value: fmtBRL(margem28.descontosPlataforma),
-                source: "comissão Apple/Google — configurável na etapa",
-              },
-              {
-                label: `− Imposto (${taxPct}%)`,
-                value: fmtBRL(margem28.imposto),
-                source: "imposto sobre a receita — configurável na etapa",
-              },
-              {
-                label: `− Outros custos (${otherCostsPct}%)`,
-                value: fmtBRL(margem28.outrosCustos),
-                source: "custos operacionais — configurável na etapa",
-              },
-              {
-                label: "= Faturamento líquido",
-                value: fmtBRL(margem28.faturamentoLiquido),
-                source: "bruto menos os três descontos acima",
-              },
-              {
-                label: "− Investimento (Meta líquido)",
-                value: fmtBRL(metaLiqExib),
-                source: "Meta Ads API, sem imposto",
-              },
-              {
-                label: "− Imposto Meta (12,15%)",
-                value: fmtBRL(metaImpExib),
-                source: "gross-up por dentro, desde 01/01/2026",
-              },
-              ...(googleSpend28 > 0
-                ? [
-                    {
-                      label: "− Investimento (Google)",
-                      value: fmtBRL(googleSpend28),
-                      source: "Google Ads API — sem imposto da Meta",
-                    },
-                  ]
-                : []),
-            ],
-            result: `${fmtBRL(margem28.faturamentoLiquido)} − ${fmtBRL(
-              margem28.investimentoTotal,
-            )} = ${fmtBRL(margem28.margem)}`,
-            period: "últimos 28 dias",
-            note: "Os três percentuais incidem sobre o faturamento bruto (não em cascata) e são editáveis em Configurar.",
-          }
-        : undefined;
-
-    return {
-      investimentoMeta,
-      investimentoGoogle,
-      receita,
-      roas,
-      margem,
-      mrr,
-      assinaturas: contagem(
-        activeSubs,
-        "active_subscriptions",
-        "snapshot atual",
-        "Assinaturas ativas agora — não é acumulado do período.",
-      ),
-      trials: contagem(
-        activeTrials,
-        "active_trials",
-        "snapshot atual",
-        "Trials em andamento agora. Ainda não viraram receita.",
-      ),
-      novosClientes: contagem(
-        newCustomers,
-        "new_customers_last_28_days",
-        "últimos 28 dias",
-        "Clientes que fizeram a primeira compra na janela.",
-      ),
-    };
-  }, [
-    metaSpend28Detalhe,
-    metaSpend28,
-    googleEstado28,
-    googleIndisponivel,
-    googleSpend28,
-    investimento28,
-    revenue28Usd,
-    revenue28Brl,
-    roas28,
-    margem28,
-    platformFeePct,
-    taxPct,
-    otherCostsPct,
-    mrrUsd,
-    activeSubs,
-    activeTrials,
-    newCustomers,
-    brlRate,
-    fxSource,
-  ]);
+  // Story 42.14 (AC4–AC8) — novos pagantes POR PESSOA, renovações e LTV, no filtro
+  // e nos 28 dias fixos dos CACs (D5/D9). Com `days = 28`, uma consulta só.
+  const pagantesFiltroQ = useRevenuecatPagantesPorCanal(projectId, funnelId, stage.id, days, connected);
+  const pagantes28Q = useRevenuecatPagantesPorCanal(projectId, funnelId, stage.id, 28, connected);
+  const pagantesFiltro = estadoDaFonte({ isLoading: pagantesFiltroQ.isLoading, error: pagantesFiltroQ.error, data: pagantesFiltroQ.data });
+  const aquisicao = cardsDeAquisicao({
+    ctx: { diasDoFiltro: days, hoje },
+    pagantesFiltro,
+    pagantes28: estadoDaFonte({ isLoading: pagantes28Q.isLoading, error: pagantes28Q.error, data: pagantes28Q.data }),
+    meta: { temCampanhas: temMeta, filtro: metaFiltro, vinteOito: meta28, erroFiltro: erroMetaFiltro, erro28: erroMeta28 },
+    google: { mostrar: googleCampaignIds.size > 0, filtro: googleFiltro, vinteOito: google28 },
+  });
+  const avisoDosPagantes = avisoDoErroDaFonte(pagantesFiltro, "os novos pagantes, as renovações e o LTV");
+  const avisoDoLtv = avisoDeNaoClassificado(pagantesFiltro.tipo === "pronto" ? pagantesFiltro.dados.ltv : undefined);
 
   async function handleSaveName() {
     if (!stageName.trim() || stageName.trim() === stage.name) return;
@@ -897,10 +647,12 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
       </div>
 
       {/* Resumo Mobile — visão unificada em R$ (aquisição Meta + monetização
-          RevenueCat). Janela de 28 dias (a que o RevenueCat expõe no overview). */}
+          RevenueCat). Story 42.14: o título declara a janela do FILTRO, com as
+          datas; cada card diz a sua na etiqueta, e o que não segue o filtro
+          (retratos, 28 dias da API) tem fundo âmbar (AC3). */}
       <section className="spy-viz space-y-2 rounded-xl border border-border/40 bg-card p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold">Resumo mobile · últimos 28 dias</h2>
+          <h2 className="text-sm font-semibold">{tituloDoResumo(days, hoje)}</h2>
           <p className="text-[10px] text-muted-foreground">
             Tudo em R$
             {brlRate != null && (
@@ -909,75 +661,49 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
                 {fx?.source === "live" ? " (ao vivo)" : fx?.source === "manual" ? " (manual)" : " (fallback)"}
               </>
             )}
+            {" "}· fundo âmbar = não segue o filtro
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          <KpiComMemorial
-            icon={Zap}
-            label="Investimento (Meta)"
-            value={fmtBRL(metaSpend28)}
-            formula={formulas.investimentoMeta}
-          />
-          {googleCampaignIds.size > 0 && (
-            <KpiComMemorial
-              icon={Zap}
-              label="Investimento (Google)"
-              value={googleIndisponivel ? "—" : fmtBRL(googleSpend28)}
-              formula={formulas.investimentoGoogle}
-            />
-          )}
-          <KpiComMemorial
-            icon={DollarSign}
-            label="Receita (RevenueCat)"
-            value={brl(revenue28Usd, brlRate)}
-            formula={formulas.receita}
-          />
-          <KpiComMemorial
-            icon={TrendingUp}
-            label="ROAS"
-            value={fmtRoas(roas28)}
-            formula={formulas.roas}
-            highlight
-          />
-          <KpiComMemorial
-            icon={Wallet}
-            label="Margem de Contribuição"
-            value={margem28 != null ? fmtBRL(margem28.margem) : "—"}
-            formula={formulas.margem}
-            highlight
-            // Margem negativa em preto passa despercebida — e esta não pode.
-            valueClassName={
-              margem28 != null && margem28.margem < 0
-                ? "text-red-600 dark:text-red-400"
-                : undefined
-            }
-          />
-          <KpiComMemorial
-            icon={Repeat}
-            label="MRR"
-            value={brl(mrrUsd, brlRate)}
-            formula={formulas.mrr}
-          />
-          <KpiComMemorial
-            icon={Package}
-            label="Assinaturas ativas"
-            value={fmtNum(activeSubs)}
-            formula={formulas.assinaturas}
-          />
-          <KpiComMemorial
-            icon={ShoppingCart}
-            label="Trials ativos"
-            value={fmtNum(activeTrials)}
-            formula={formulas.trials}
-          />
-          <KpiComMemorial
-            icon={Users}
-            label="Novos clientes"
-            value={fmtNum(newCustomers)}
-            formula={formulas.novosClientes}
-          />
-        </div>
-        {/* Story 42.12 (AC2) — receita, ROAS e Margem por canal, 28 dias. O
+        {connected && avisoDaReceita && (
+          <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {avisoDaReceita}
+          </p>
+        )}
+        <GradeDoResumo cards={cardsResumo} />
+        {connected && avisoDosPagantes && (
+          <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {avisoDosPagantes}
+          </p>
+        )}
+        {/* Story 42.14 (AC4, AC5) — CAC por NOVO PAGANTE (pessoa), no filtro e nos
+            28 dias fixos (`28d fixo`, âmbar). (AC7) LTV bruto por plano e (AC8)
+            renovações por canal, no filtro. Somem com a API anterior à rota. */}
+        {connected && aquisicao.cac.length > 0 && (
+          <div className="space-y-1.5 border-t border-border/30 pt-3">
+            <h3 className="text-xs font-semibold text-muted-foreground">CAC · investimento ÷ novos pagantes (pessoas)</h3>
+            <GradeDoResumo cards={aquisicao.cac} />
+          </div>
+        )}
+        {connected && aquisicao.ltv.length > 0 && (
+          <div className="space-y-1.5 border-t border-border/30 pt-3">
+            <h3 className="text-xs font-semibold text-muted-foreground">LTV bruto por plano · em US$</h3>
+            {/* AC7d — pagamento com produto não classificado: aviso visível, no padrão do conflito da 42.12. */}
+            {avisoDoLtv && (
+              <p role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                {avisoDoLtv}
+              </p>
+            )}
+            <GradeDoResumo cards={aquisicao.ltv} />
+          </div>
+        )}
+        {connected && aquisicao.renovacoes.length > 0 && (
+          <div className="space-y-1.5 border-t border-border/30 pt-3">
+            <h3 className="text-xs font-semibold text-muted-foreground">Renovações por canal</h3>
+            <GradeDoResumo cards={aquisicao.renovacoes} />
+          </div>
+        )}
+        {/* Story 42.12 (AC2) — receita, ROAS e Margem por canal. Story 42.14
+            (D22): na janela do FILTRO, com o investimento da mesma janela. O
             investimento só conta como conhecido com campanha vinculada E a
             consulta carregada: antes disso "R$ 0" seria um número falso. */}
         {connected && (
@@ -985,15 +711,16 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
             projectId={projectId}
             funnelId={funnelId}
             stageId={stage.id}
+            days={days}
             brlRate={brlRate}
             meta={{
-              liquidoBrl: metaSpend28Detalhe.spendLiquido,
-              impostoBrl: metaSpend28Detalhe.imposto,
-              conhecido: campaignIds.length > 0 && metaDaily28 !== undefined,
+              liquidoBrl: metaFiltro?.spendLiquido ?? 0,
+              impostoBrl: metaFiltro?.imposto ?? 0,
+              conhecido: temMeta && metaFiltro !== undefined,
             }}
             google={{
-              investimentoBrl: googleSpend28,
-              conhecido: googleCampaignIds.size > 0 && googleSpend28Conhecido !== null,
+              investimentoBrl: googleFiltroValor ?? 0,
+              conhecido: googleCampaignIds.size > 0 && googleFiltroValor !== null,
             }}
             percentuais={{ platformFeePct, taxPct, otherCostsPct }}
           />
@@ -1015,6 +742,7 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
             projectId={projectId}
             funnelId={funnelId}
             stageId={stage.id}
+            days={days}
           />
         </section>
       )}
@@ -1568,45 +1296,6 @@ function MargemConfigForm({
         Salvar percentuais
       </Button>
     </div>
-  );
-}
-
-/**
- * Story 42.2 — `<Kpi>` com memorial de cálculo.
- *
- * Sem `formula`, `<MetricTooltip>` repassa o filho sem tooltip, e o card fica
- * idêntico ao que era (sem cursor de ajuda, sem sublinhado, sem foco). É o
- * comportamento desejado para "—": não existe memorial de um dado ausente.
- */
-function KpiComMemorial({
-  icon,
-  label,
-  value,
-  formula,
-  highlight,
-  valueClassName,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string;
-  formula?: MetricFormula;
-  highlight?: boolean;
-  valueClassName?: string;
-}) {
-  return (
-    <MetricTooltip label={label} value={value} formula={formula}>
-      <Kpi
-        icon={icon}
-        label={label}
-        value={value}
-        highlight={highlight}
-        valueClassName={valueClassName}
-        hintTooltip={!!formula}
-        // Uma <div> não é focável por padrão: sem isto o memorial existiria só
-        // para quem usa mouse.
-        tabIndex={formula ? 0 : undefined}
-      />
-    </MetricTooltip>
   );
 }
 

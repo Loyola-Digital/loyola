@@ -118,7 +118,12 @@ export function avisoDoGoogleEmLinha(estado: EstadoDoGoogle): string | null {
  * O memorial do card "Investimento (Google)" do Resumo quando não há número:
  * diz POR QUE é "—" e que o ROAS e a Margem também ficam "—".
  */
-export function memorialDoGoogleSemNumero(estado: EstadoDoGoogle, periodo: string) {
+export function memorialDoGoogleSemNumero(
+  estado: EstadoDoGoogle,
+  periodo: string,
+  /** Quem mais fica "—" sem o Google (Story 42.14, QA MNT-001): o texto fala do card que o mostra. */
+  dependentes = "o ROAS e a Margem de Contribuição ficam",
+) {
   const a = avisoDoGoogle(estado);
   if (!a) return undefined;
   return {
@@ -132,6 +137,6 @@ export function memorialDoGoogleSemNumero(estado: EstadoDoGoogle, periodo: strin
     ],
     result: "—",
     period: periodo,
-    note: `${a.orientacao} Enquanto isso, o ROAS e a Margem de Contribuição ficam "—": sem o Google, o investimento total é desconhecido.`,
+    note: `${a.orientacao} Enquanto isso, ${dependentes} "—": sem o Google, o investimento total é desconhecido.`,
   };
 }

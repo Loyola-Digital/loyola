@@ -646,4 +646,32 @@
 //   do `effective_status` já lido para os Criativos (18.61) — nenhuma consulta
 //   nova. Cache da rota sobe para `:v6`. Campo aditivo: com a API antiga a
 //   coluna mostra "—" em todas as linhas. `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 58;
+//
+// v59 (Story 42.14 — Lyrio: janelas declaradas; sem migration. Era v51 na
+// branch; renumerada no merge da `main`, que já tinha usado v51 a v58):
+// rota NOVA `GET …/revenuecat/receita?days=N` — a receita BRUTA do RevenueCat
+// nos N dias de calendário de SP terminando hoje, pelo endpoint de intervalo
+// `/metrics/revenue` (`currency=USD`, `revenue_type=revenue`), ecoando
+// `days`/`desde`/`ate`. `…/revenuecat/metricas-derivadas` aceita `?days=N`
+// (sem ele, a série inteira, como antes), ECOA `days` e `desde` (`null` sem
+// janela: a tela trata a falta do eco como API atrás, PO-10), passa a exigir
+// que a etapa seja do funil e do projeto (`getStage`, 404 senão) e devolve
+// `serieDesde` no dia de SP. As falhas do RevenueCat (overview e receita) saem
+// com `causa` (`limite` → HTTP 429, `permissao`, `outro` → 502) — antes toda
+// falha era a mesma frase sobre permissão. Rota NOVA
+// `GET …/revenuecat/novos-clientes?days=N`: o total do chart `customers_new`
+// do RevenueCat nos mesmos N dias, ecoando a janela, a medida e se o dia de
+// hoje veio incompleto. Rota NOVA `GET …/revenuecat/pagantes-por-canal?days=N`:
+// novos pagantes POR PESSOA (primeiro pagamento na janela) e renovações
+// (`RENEWAL` pago que não é o primeiro pagamento) por canal, com a origem mais
+// antiga para quem tem Meta e Google (empate → `conflito`), ecoando
+// `days`/`desde` e a cobertura (`assinaturaDesde`), e o `ltv` por plano
+// (Mensal, Trimestral, Semestral, Anual: receita bruta e pessoas distintas, com os
+// `product_id` de cada plano, os pagamentos não classificados e os fora por
+// decisão — classificação por prefixo `premium_*` + promoção pelo nome exato).
+// Mudança de comportamento, sem mudança de forma: `atributosDesde` (de
+// `vendas-por-canal`, `pagantes-por-canal` e da Jornada) só conta evento
+// entregue em até 7 dias depois de acontecer — eventos de paywall de agosto
+// gravados em outubro recuavam a cobertura de 06/10 para 06/08.
+// `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 59;

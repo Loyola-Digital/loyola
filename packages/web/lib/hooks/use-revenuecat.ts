@@ -7,7 +7,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { tentarDeNovoAJornada, type JornadaDoLyrio } from "@/lib/utils/jornada-lyrio";
+import { tentarDeNovoNoRevenuecat } from "@/lib/utils/estado-da-fonte-revenuecat";
 import type { VendasPorCanalDoLyrio } from "@/lib/utils/vendas-por-canal-lyrio";
+import type { PagantesPorCanal } from "@/lib/utils/aquisicao-lyrio";
+import type { NovosClientesDoPeriodo } from "@/lib/utils/overview-revenuecat";
 
 const STALE = 60 * 1000;
 
@@ -177,6 +180,8 @@ export function useRevenuecatSales(
 }
 
 // Overview agregado puxado da API do RevenueCat (não depende do webhook).
+// Story 42.14 (PO-D4 (6)): sem insistir em 429 — o limite de 25 consultas por
+// minuto é compartilhado com receita e gráficos, e repetir só o gasta.
 export function useRevenuecatOverview(projectId: string, funnelId: string, stageId: string) {
   const apiClient = useApiClient();
   return useQuery({
@@ -186,6 +191,7 @@ export function useRevenuecatOverview(projectId: string, funnelId: string, stage
         `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/overview`,
       ),
     staleTime: STALE,
+    retry: tentarDeNovoNoRevenuecat,
   });
 }
 
@@ -265,21 +271,71 @@ export interface RevenuecatMetricasDerivadas {
   /** Data do primeiro evento de ASSINATURA. Antes disso não há série (AC5). */
   serieDesde: string | null;
   totalDeEventos: number;
+  /**
+   * Story 42.14 (AC10b) — o ECO da janela aplicada. A API anterior ignora
+   * `?days=` e não manda estes campos: sem eles, o número é da série inteira.
+   */
+  days?: number | null;
+  desde?: string | null;
 }
 
+/**
+ * Story 42.14 — com `days`, os números são da janela (N dias de SP); a resposta
+ * ecoa a janela, e é o eco (não o pedido) que decide a etiqueta (PO-10).
+ */
 export function useRevenuecatMetricasDerivadas(
   projectId: string,
   funnelId: string,
   stageId: string,
+  days?: number,
 ) {
   const apiClient = useApiClient();
   return useQuery({
-    queryKey: ["revenuecat-metricas-derivadas", stageId],
+    queryKey: ["revenuecat-metricas-derivadas", stageId, days ?? null],
     queryFn: () =>
       apiClient<RevenuecatMetricasDerivadas>(
-        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/metricas-derivadas`,
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/metricas-derivadas${days != null ? `?days=${days}` : ""}`,
       ),
     staleTime: STALE,
+  });
+}
+
+// ============================================================
+// Story 42.14 (D22) — a receita do RevenueCat na janela do filtro.
+// ============================================================
+
+/** Espelha `GET …/revenuecat/receita` (`routes/revenuecat.ts`). */
+export interface RevenuecatReceita {
+  /** false = nenhum app do RevenueCat selecionado na etapa. */
+  configured: boolean;
+  days: number;
+  /** Primeiro e último dia da janela (`AAAA-MM-DD`, SP), enviados como start/end_date. */
+  desde: string;
+  ate: string;
+  /** Receita bruta em US$; `null` só quando `configured` é false. */
+  valorUsd: number | null;
+  moeda?: string;
+  tipoDeReceita?: string | null;
+  intervaloDaApi?: { inicio: string | null; fim: string | null };
+}
+
+/**
+ * ⚠️ Rota NOVA (contrato 59): com a API anterior responde 404 — a tela trata
+ * como API atrás (`estadoDaFonte` → oculto). Sem insistir em 429 nem 404
+ * (PO-D4 (6)). Resumo e Overview pedem a MESMA chave: uma chamada por janela,
+ * que conta uma vez no limite de 25/min do RevenueCat.
+ */
+export function useRevenuecatReceita(projectId: string, funnelId: string, stageId: string, days: number, enabled = true) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["revenuecat-receita", stageId, days],
+    queryFn: () =>
+      apiClient<RevenuecatReceita>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/receita?days=${days}`,
+      ),
+    enabled,
+    staleTime: STALE,
+    retry: tentarDeNovoNoRevenuecat,
   });
 }
 
@@ -323,6 +379,51 @@ export function useRevenuecatVendasPorCanal(projectId: string, funnelId: string,
     queryFn: () =>
       apiClient<VendasPorCanalDoLyrio>(
         `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/vendas-por-canal?days=${days}`,
+      ),
+    enabled,
+    staleTime: STALE,
+    retry: tentarDeNovoAJornada,
+  });
+}
+
+/**
+ * Story 42.14 (D22) — "Novos clientes" na janela do filtro, pelo chart
+ * `customers_new` (rota nova, contrato 59). 404 da rota → API atrás (o card fica
+ * nos 28 dias do overview, declarado). Sem insistir em 429 nem 404 (PO-D4 (6)).
+ * Resumo e Overview pedem a mesma chave: uma chamada por janela.
+ */
+export function useRevenuecatNovosClientes(projectId: string, funnelId: string, stageId: string, days: number, enabled = true) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["revenuecat-novos-clientes", stageId, days],
+    queryFn: () =>
+      apiClient<NovosClientesDoPeriodo>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/novos-clientes?days=${days}`,
+      ),
+    enabled,
+    staleTime: STALE,
+    retry: tentarDeNovoNoRevenuecat,
+  });
+}
+
+// ============================================================
+// Story 42.14 (AC6, AC7, AC8) — novos pagantes por pessoa, renovações e LTV.
+// ============================================================
+
+/**
+ * ⚠️ Rota NOVA (contrato 59): com a API anterior responde 404 — os cards de CAC,
+ * LTV e renovação não aparecem (`cardsDeAquisicao`) e o banner de versão
+ * explica. Mesmo `retry` da Jornada: um 404 não vira outra coisa entre
+ * tentativas. O Resumo pede o filtro e os 28 dias; o Overview, os 28 dias (a
+ * mesma chave).
+ */
+export function useRevenuecatPagantesPorCanal(projectId: string, funnelId: string, stageId: string, days: number, enabled = true) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["revenuecat-pagantes-por-canal", stageId, days],
+    queryFn: () =>
+      apiClient<PagantesPorCanal>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/pagantes-por-canal?days=${days}`,
       ),
     enabled,
     staleTime: STALE,

@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { calcularMetricasDerivadas } from "../utils/metricas-revenuecat.js";
-import { instanteDoInicioDaJanela } from "../utils/sale-date.js";
+import { metricasDerivadasDaEtapa } from "../utils/metricas-revenuecat.js";
+import { diasDaJanelaEmSp, instanteDoInicioDaJanela } from "../utils/sale-date.js";
 import { consultaDaJornada, consultaDoInicioDaAssinatura, lerLinhaDaJornada, montarJornada } from "../utils/jornada-lyrio.js";
 import {
   consultaDeVendasPorCanal,
@@ -11,6 +11,7 @@ import {
   lerLinhaDeVendas,
   montarVendasPorCanal,
 } from "../utils/vendas-por-canal-lyrio.js";
+import { pagantesPorCanalDaEtapa } from "../utils/pagantes-lyrio.js";
 import { eq, and, gte, inArray, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import fp from "fastify-plugin";
@@ -29,6 +30,9 @@ import {
   verifyRevenuecatKey,
   listRevenuecatProjects,
   getRevenuecatOverview,
+  getRevenuecatRevenue,
+  getRevenuecatChartTotal,
+  respostaDeFalhaDoRevenuecat,
   REVENUE_EVENT_TYPES,
 } from "../services/revenuecat.js";
 import {
@@ -78,6 +82,15 @@ function pct(value: string | null | undefined, fallback: number): number {
 
 const salesQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(365).default(90),
+});
+
+/**
+ * Story 42.14 (AC2b, AC10b) — a janela de `metricas-derivadas` é OPCIONAL: sem
+ * `days`, a rota responde como antes (a série inteira), e o eco `days: null`
+ * diz isso. Com `days`, aplica a janela e a ecoa.
+ */
+const janelaOpcionalSchema = z.object({
+  days: z.coerce.number().int().min(1).max(365).optional(),
 });
 
 const REVENUE_TYPES = [...REVENUE_EVENT_TYPES];
@@ -588,6 +601,40 @@ export default fp(async function revenuecatRoutes(fastify) {
     },
   );
 
+  // ---- GET novos pagantes, renovações e LTV por plano ---- (Story 42.14)
+  /**
+   * AC6 (novos pagantes POR PESSOA, por canal), AC8 (renovações por canal) e
+   * AC7 (LTV bruto por plano: Mensal, Trimestral, Anual), na janela de `days` sobre `purchased_at` — a régua
+   * de `/sales` e `/vendas-por-canal` (N dias de calendário de SP). O canal é o
+   * da 42.12 com a origem mais antiga para quem tem Meta E Google (D16/D25/D26);
+   * empate exato → `conflito` (PO-D3). Regras em `utils/pagantes-lyrio.ts`.
+   *
+   * Guarda igual à de `/vendas-por-canal`: `getProjectAccess` E `getStage`.
+   * Só contagens e somas na resposta — nunca `app_user_id`. A resposta ecoa a
+   * janela (AC10b) e a cobertura (`assinaturaDesde`, achado G).
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/revenuecat/pagantes-por-canal",
+    async (request, reply) => {
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const query = salesQuerySchema.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+      const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      // A composição mora em `utils/pagantes-lyrio.ts` — a mesma que a sonda de
+      // conferência em produção roda.
+      const corpo = await pagantesPorCanalDaEtapa((q) => fastify.db.execute(q), params.data.stageId, query.data.days);
+      if (corpo.novosPagantes.conflito > 0 || corpo.renovacoes.conflito > 0) {
+        request.log.warn({ stageId: params.data.stageId, conflito: corpo.novosPagantes.conflito }, "lyrio: pagantes com Meta e Google no mesmo instante");
+      }
+      return corpo;
+    },
+  );
+
   // ---- GET overview (métricas agregadas puxadas da API do RevenueCat) ----
   // Pull ao vivo via API key (não depende do webhook): MRR, assinaturas ativas,
   // receita 28d, etc. Requer key conectada + rcProjectId escolhido na etapa.
@@ -618,15 +665,117 @@ export default fp(async function revenuecatRoutes(fastify) {
         return { configured: true, metrics };
       } catch (err) {
         request.log.error(err, "Erro ao puxar overview do RevenueCat");
-        // 403 = a Secret Key não tem a permissão charts_metrics:overview:read.
-        return reply.code(502).send({
-          error:
-            "Não foi possível puxar as métricas do RevenueCat. Confirme que a Secret API Key tem a permissão de leitura de métricas (charts_metrics:overview:read).",
-        });
+        // Story 42.14 (PO-D4 (1)): a causa sai separada — antes toda falha virava
+        // a mesma frase sobre permissão, e um 429 (limite de 25/min) aparecia na
+        // tela como "falta permissão".
+        const falha = respostaDeFalhaDoRevenuecat(err, "as métricas do overview");
+        return reply.code(falha.status).send(falha.corpo);
       }
     },
   );
 
+  // ---- GET receita do período ---- (Story 42.14, D22)
+  /**
+   * A receita BRUTA do RevenueCat na janela do filtro de dias, pelo endpoint de
+   * intervalo da API v2 (`/metrics/revenue`). Substitui o `revenue_last_28_days`
+   * do overview nos cards que seguem o filtro (Resumo e Overview).
+   *
+   * A janela é a régua da etapa — N dias de calendário de SP terminando hoje —
+   * passada como `start_date`/`end_date`. O RevenueCat conta esses DIAS em UTC
+   * e o intervalo é inclusivo (documentação + sonda de 2026-10-16); a diferença
+   * de até 3 h nas pontas é declarada no memorial do card, não escondida
+   * (AC2d). A resposta ecoa a janela aplicada (AC10b).
+   *
+   * Falha nunca vira 200 com `null`: 429 (limite) ou 502, com a causa (PO-D4).
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/revenuecat/receita",
+    async (request, reply) => {
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const query = salesQuerySchema.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+      const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const apiKey = await getApiKey(params.data.projectId);
+      if (!apiKey) return reply.code(409).send({ error: "RevenueCat não conectado neste projeto" });
+
+      const { desde, ate } = diasDaJanelaEmSp(query.data.days);
+      const janela = { days: query.data.days, desde, ate };
+
+      const [cfg] = await fastify.db
+        .select({ rcProjectId: revenuecatStageConfig.rcProjectId })
+        .from(revenuecatStageConfig)
+        .where(eq(revenuecatStageConfig.stageId, params.data.stageId))
+        .limit(1);
+      // Sem app selecionado: ausência legítima, como no overview.
+      if (!cfg?.rcProjectId) return { configured: false, ...janela, valorUsd: null };
+
+      try {
+        const r = await getRevenuecatRevenue(apiKey, cfg.rcProjectId, { startDate: desde, endDate: ate });
+        return {
+          configured: true,
+          ...janela,
+          valorUsd: r.valor,
+          moeda: r.moeda,
+          tipoDeReceita: r.tipoDeReceita,
+          // O que a API diz ter aplicado — para o memorial e a conferência (D19).
+          intervaloDaApi: { inicio: r.startDate, fim: r.endDate },
+        };
+      } catch (err) {
+        request.log.error(err, "Erro ao puxar a receita do período no RevenueCat");
+        const falha = respostaDeFalhaDoRevenuecat(err, "a receita do período");
+        return reply.code(falha.status).send(falha.corpo);
+      }
+    },
+  );
+
+
+  // ---- GET novos clientes do período ---- (Story 42.14, D22)
+  /**
+   * "Novos clientes" na janela do filtro, pelo chart `customers_new` do
+   * RevenueCat ("new customers whose customer cohort date falls within the
+   * period") — o total do intervalo (`summary.total`). Mesma régua, guarda e
+   * tratamento de falha de `/receita`; ecoa a janela (AC10b).
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/revenuecat/novos-clientes",
+    async (request, reply) => {
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const query = salesQuerySchema.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+      const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const apiKey = await getApiKey(params.data.projectId);
+      if (!apiKey) return reply.code(409).send({ error: "RevenueCat não conectado neste projeto" });
+
+      const { desde, ate } = diasDaJanelaEmSp(query.data.days);
+      const janela = { days: query.data.days, desde, ate };
+
+      const [cfg] = await fastify.db
+        .select({ rcProjectId: revenuecatStageConfig.rcProjectId })
+        .from(revenuecatStageConfig)
+        .where(eq(revenuecatStageConfig.stageId, params.data.stageId))
+        .limit(1);
+      if (!cfg?.rcProjectId) return { configured: false, ...janela, valor: null };
+
+      try {
+        const r = await getRevenuecatChartTotal(apiKey, cfg.rcProjectId, "customers_new", { startDate: desde, endDate: ate });
+        return { configured: true, ...janela, valor: r.total, medida: r.medida, diaIncompleto: r.diasIncompletos > 0 };
+      } catch (err) {
+        request.log.error(err, "Erro ao puxar os novos clientes do período no RevenueCat");
+        const falha = respostaDeFalhaDoRevenuecat(err, "os novos clientes do período");
+        return reply.code(falha.status).send(falha.corpo);
+      }
+    },
+  );
 
   // ---- GET /.../revenuecat/metricas-derivadas ---- (Story 42.9, AC8)
   /**
@@ -643,44 +792,20 @@ export default fp(async function revenuecatRoutes(fastify) {
     async (request, reply) => {
       const params = stageParamsSchema.safeParse(request.params);
       if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const query = janelaOpcionalSchema.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
 
       const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
       if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+      // Story 42.14 (AC2e) — a pendência PO-06 da 42.11: a etapa pertence a ESTE
+      // funil e a ESTE projeto, como em `/sales`, `/jornada` e `/vendas-por-canal`.
+      // Sem isto, quem tem acesso a um projeto lia os eventos de qualquer etapa.
+      const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-      const linhas = await fastify.db
-        .select({
-          eventType: revenuecatSales.eventType,
-          appUserId: revenuecatSales.appUserId,
-          eventAt: revenuecatSales.eventAt,
-          payload: revenuecatSales.payload,
-        })
-        .from(revenuecatSales)
-        .where(eq(revenuecatSales.stageId, params.data.stageId));
-
-      const eventos = linhas.map((l) => ({
-        eventType: l.eventType,
-        appUserId: l.appUserId,
-        eventAt: l.eventAt,
-        periodType:
-          ((l.payload as { event?: { period_type?: string } } | null)?.event?.period_type) ?? null,
-      }));
-
-      // Só os eventos de ASSINATURA definem a data de início da série: os de
-      // paywall existem desde 11/jun e diriam que a série começa antes do que
-      // de fato começa.
-      const deAssinatura = eventos.filter(
-        (e) => e.eventType && e.eventType !== "TEST" && !e.eventType.startsWith("PAYWALL"),
-      );
-      const datas = deAssinatura
-        .map((e) => e.eventAt)
-        .filter((d): d is Date => d instanceof Date)
-        .sort((a, b) => a.getTime() - b.getTime());
-
-      return {
-        ...calcularMetricasDerivadas(eventos, eventos),
-        serieDesde: datas[0]?.toISOString().slice(0, 10) ?? null,
-        totalDeEventos: deAssinatura.length,
-      };
+      // A composição mora em `utils/metricas-revenuecat.ts` — a mesma que a sonda
+      // de conferência em produção roda.
+      return metricasDerivadasDaEtapa((q) => fastify.db.execute(q), params.data.stageId, query.data.days);
     },
   );
 

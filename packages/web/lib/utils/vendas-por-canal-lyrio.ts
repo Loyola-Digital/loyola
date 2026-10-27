@@ -103,9 +103,13 @@ export function declaracaoForaDaQuebra(d: Pick<VendasPorCanalDoLyrio, "foraDaQue
   return `“Por canal” conta só venda paga: ${partes.join(" e ")} ${semValor + semUsuario === 1 ? "entra" : "entram"} no card “Vendas” e ${semValor + semUsuario === 1 ? "fica" : "ficam"} fora daqui.`;
 }
 
-/** AC2 — a receita por canal e o card "Receita" têm fontes diferentes. */
+/**
+ * AC2 — a receita por canal e o card "Receita" têm fontes diferentes. Story
+ * 42.14: o card passou do overview para o relatório de receita por período da
+ * API do RevenueCat (`/metrics/revenue`), na mesma janela desta tabela.
+ */
 export const DECLARACAO_FONTE_DO_RESUMO =
-  "Receita por canal vem dos eventos do webhook (venda paga); o card “Receita (RevenueCat)” vem do overview do RevenueCat — as duas somas não batem exatamente.";
+  "Receita por canal vem dos eventos do webhook (venda paga); o card “Receita (RevenueCat)” vem do relatório de receita da API do RevenueCat — as duas somas não batem exatamente.";
 
 /** D7 — "impossível; se acontecer, sinalize". `null` sem conflito. */
 export function avisoDeConflito(compradores: number): string | null {

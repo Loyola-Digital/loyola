@@ -137,7 +137,8 @@ CREATE TABLE revenuecat_sales (
   event_at timestamptz,
   utm_source varchar(255), utm_medium varchar(255), utm_campaign varchar(255), utm_term varchar(255), utm_content varchar(255),
   gclid text, fbclid text, acquisition_source varchar(64),
-  payload jsonb NOT NULL
+  payload jsonb NOT NULL,
+  created_at timestamptz
 );`;
 
 let pg: PGlite;
@@ -159,15 +160,17 @@ type Evento = {
   utmMedium?: string;
   utmCampaign?: string;
   utmContent?: string;
+  /** Quando o evento foi GRAVADO (`created_at`); padrão: o próprio `em` (entrega na hora). */
+  gravado?: string;
 };
 let seq = 0;
 async function inserir(e: Evento) {
   seq += 1;
   const payload = e.attrs === undefined ? { event: {} } : { event: { subscriber_attributes: e.attrs } };
   await pg.query(
-    `INSERT INTO revenuecat_sales (stage_id, event_id, event_type, app_user_id, revenue_usd, purchased_at, event_at, gclid, utm_source, utm_medium, utm_campaign, utm_content, payload)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-    [e.stage ?? STAGE, `ev${seq}`, e.tipo, e.user, e.usd ?? null, e.compra === undefined ? (e.usd != null ? e.em : null) : e.compra, e.em, e.gclid ?? null, e.utmSource ?? null, e.utmMedium ?? null, e.utmCampaign ?? null, e.utmContent ?? null, JSON.stringify(payload)],
+    `INSERT INTO revenuecat_sales (stage_id, event_id, event_type, app_user_id, revenue_usd, purchased_at, event_at, gclid, utm_source, utm_medium, utm_campaign, utm_content, payload, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+    [e.stage ?? STAGE, `ev${seq}`, e.tipo, e.user, e.usd ?? null, e.compra === undefined ? (e.usd != null ? e.em : null) : e.compra, e.em, e.gclid ?? null, e.utmSource ?? null, e.utmMedium ?? null, e.utmCampaign ?? null, e.utmContent ?? null, JSON.stringify(payload), e.gravado ?? e.em],
   );
 }
 
@@ -318,6 +321,26 @@ describe("consultaDeVendasPorCanal sobre Postgres real (PGlite)", () => {
     await inserir({ user: "c", tipo: "PAYWALL_IMPRESSION", em: "2026-10-06T03:11:13Z", attrs: { ad_network: "google" } });
     const [r] = await executar(consultaDoInicioDosAtributos(STAGE));
     expect(new Date(String(r.desde instanceof Date ? r.desde.toISOString() : r.desde)).toISOString()).toBe("2026-10-06T03:11:13.000Z");
+    await semear();
+  });
+
+  it("42.14 (sonda de 27/10) — atributosDesde ignora o evento antigo entregue com MESES de atraso; a borda é 7 dias", async () => {
+    await pg.query("DELETE FROM revenuecat_sales");
+    const desde = async () => {
+      const [r] = await executar(consultaDoInicioDosAtributos(STAGE));
+      return r.desde == null ? null : new Date(String(r.desde instanceof Date ? r.desde.toISOString() : r.desde)).toISOString();
+    };
+    // o caso medido em produção: paywall de agosto gravado em outubro, com os atributos de outubro
+    await inserir({ user: "atrasado", tipo: "PAYWALL_CLOSE", em: "2026-08-06T12:39:02Z", gravado: "2026-10-18T14:00:00Z", attrs: { ad_network: "meta", meta_campaign_id: "120246538826290452" } });
+    expect(await desde()).toBeNull();
+    // o fluxo normal: o lote de 06/10 gravado em 09/10 (3 dias) conta
+    await inserir({ user: "lote", tipo: "PAYWALL_IMPRESSION", em: "2026-10-06T03:11:13Z", gravado: "2026-10-09T18:46:39Z", attrs: { ad_network: "google" } });
+    expect(await desde()).toBe("2026-10-06T03:11:13.000Z");
+    // borda: exatamente 7 dias conta; 7 dias e 1 s, não
+    await inserir({ user: "borda-dentro", tipo: "PAYWALL_IMPRESSION", em: "2026-10-01T00:00:00Z", gravado: "2026-10-08T00:00:00Z", attrs: { ad_network: "meta" } });
+    expect(await desde()).toBe("2026-10-01T00:00:00.000Z");
+    await inserir({ user: "borda-fora", tipo: "PAYWALL_IMPRESSION", em: "2026-09-30T00:00:00Z", gravado: "2026-10-07T00:00:01Z", attrs: { ad_network: "meta" } });
+    expect(await desde()).toBe("2026-10-01T00:00:00.000Z");
     await semear();
   });
 });

@@ -29,6 +29,11 @@
 // cancelamento aparece separado, como intenção.
 // ============================================================
 
+import { sql, type SQL } from "drizzle-orm";
+import { revenuecatSales } from "../db/schema.js";
+import { instanteDoInicioDaJanela } from "./sale-date.js";
+import { dataIso } from "./vendas-por-canal-lyrio.js";
+
 /** O que uma linha de `revenuecat_sales` precisa expor. */
 export interface EventoRevenuecat {
   eventType: string | null;
@@ -153,4 +158,83 @@ export function conversaoParaTrial(
 ): number | null {
   if (!activeUsers || activeUsers <= 0) return null;
   return novosTrials / activeUsers;
+}
+
+// ─────────────────── Story 42.14 — a rota `metricas-derivadas` ───────────────────
+
+/** Executa um SQL e devolve as linhas — `fastify.db.execute` na rota, `pg` read-only na sonda. */
+export type ExecutorDeSql = (q: SQL) => Promise<{ rows: unknown[] }>;
+
+/**
+ * Os eventos da etapa que as métricas derivadas leem. Só o `period_type` do
+ * payload, não o payload inteiro (que é o que pesa nos 186 mil eventos).
+ *
+ * QA PERF-001 (sonda de produção, 2026-10-27): só os eventos de ASSINATURA —
+ * sem `TEST` e sem `PAYWALL_*`. Paywall é 98% da etapa (~236 mil de ~241 mil
+ * eventos) e nenhuma conta daqui o lê: `calcularMetricasDerivadas` só olha
+ * INITIAL_PURCHASE, RENEWAL, EXPIRATION e CANCELLATION, e `serieDesde` /
+ * `totalDeEventos` já descartavam esses mesmos tipos em memória. Trazê-los
+ * custava 1,3 s a 2,3 s por chamada (duas por carga da tela). O corte da
+ * janela continua em memória de propósito: a série INTEIRA é a referência do
+ * `jaPagou` (achado C), e são poucos milhares de linhas.
+ */
+export function consultaDosEventosDasDerivadas(stageId: string): SQL {
+  const c = revenuecatSales;
+  return sql`SELECT ${c.eventType} AS event_type, ${c.appUserId} AS app_user_id, ${c.eventAt} AS event_at,
+    (${c.payload}->'event'->>'period_type') AS period_type
+  FROM ${c} WHERE ${c.stageId} = ${stageId} AND ${c.eventType} <> 'TEST' AND ${c.eventType} NOT LIKE 'PAYWALL%'`;
+}
+
+/** Linha crua do `execute` → evento tipado. O timestamp chega como `Date` ou texto. */
+export function lerEventoDasDerivadas(r: Record<string, unknown>): EventoRevenuecat {
+  const texto = (v: unknown) => (typeof v === "string" ? v : null);
+  let eventAt: Date | null = null;
+  if (r.event_at instanceof Date) eventAt = r.event_at;
+  else if (typeof r.event_at === "string" && r.event_at) {
+    const d = new Date(r.event_at);
+    eventAt = Number.isNaN(d.getTime()) ? null : d;
+  }
+  return { eventType: texto(r.event_type), appUserId: texto(r.app_user_id), eventAt, periodType: texto(r.period_type) };
+}
+
+/**
+ * Story 42.14 (AC2b, AC10b) — a resposta inteira de `metricas-derivadas`. Mora
+ * aqui (e não na rota) para a rota e a sonda de conferência em produção
+ * rodarem o MESMO código.
+ *
+ * Com `days`: os números saem dos eventos da janela (N dias de calendário de
+ * SP, a régua de `/sales`), e a série INTEIRA continua sendo a referência para
+ * saber se um trial da janela pagou depois (achado C). Sem `days`, a série
+ * inteira, como antes. A resposta ECOA a janela (`days`/`desde`, `null` sem
+ * janela): a API anterior ignora `?days=` e devolve 200 com a série inteira.
+ */
+export async function metricasDerivadasDaEtapa(
+  executar: ExecutorDeSql,
+  stageId: string,
+  days: number | undefined,
+  agora: Date = new Date(),
+) {
+  const { rows } = await executar(consultaDosEventosDasDerivadas(stageId));
+  const eventos = (rows as Record<string, unknown>[]).map(lerEventoDasDerivadas);
+
+  // Só os eventos de ASSINATURA definem a data de início da série: os de
+  // paywall existem desde 11/jun e diriam que a série começa antes do que de
+  // fato começa.
+  const deAssinatura = eventos.filter((e) => e.eventType && e.eventType !== "TEST" && !e.eventType.startsWith("PAYWALL"));
+  const datas = deAssinatura
+    .map((e) => e.eventAt)
+    .filter((d): d is Date => d instanceof Date)
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  const desde = days != null ? instanteDoInicioDaJanela(days, agora) : null;
+  const naJanela = desde ? eventos.filter((e) => e.eventAt instanceof Date && e.eventAt >= desde) : eventos;
+
+  return {
+    ...calcularMetricasDerivadas(naJanela, eventos),
+    // O dia de SP, a régua da janela (42.13, MNT-001).
+    serieDesde: dataIso(datas[0]),
+    totalDeEventos: deAssinatura.length,
+    days: days ?? null,
+    desde: desde ? dataIso(desde) : null,
+  };
 }
