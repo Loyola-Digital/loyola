@@ -53,9 +53,23 @@ export interface ResumoDaAplicacao {
   porUtmMedium: QuebraPorOrigem[];
 }
 
+/** Story 18.96: aplicações de um dia — `pagas` = `utm_source` meta/meta-ads. */
+export interface ContagemDeAplicacoes {
+  total: number;
+  pagas: number;
+}
+
+/** Story 18.96 (AC8): as aplicações por `aaaa-mm-dd` e as sem data. */
+export interface DiarioDeAplicacoes {
+  dias: Record<string, ContagemDeAplicacoes>;
+  semData: ContagemDeAplicacoes;
+}
+
 export interface DashboardDaAplicacao {
   periodo: { days: number | null; desde: string | null };
   resumo: ResumoDaAplicacao;
+  /** Ausente = API anterior ao contrato 57 (AC9). */
+  diarioDeAplicacoes?: DiarioDeAplicacoes;
   fontes: { aplicacoes: number; vendas: number; filtrosDeUtm: number };
   /** Vendas que a planilha tinha e o filtro de UTM deixou de fora. */
   descartadasPeloFiltro: number;

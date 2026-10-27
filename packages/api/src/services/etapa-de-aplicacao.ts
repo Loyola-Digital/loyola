@@ -30,6 +30,8 @@
  * tela inteira.
  */
 
+import { ehOrigemMetaDeLead } from "@loyola-x/shared";
+
 /** Rótulo de quem chegou sem origem. Igual ao resto do app, de propósito. */
 export const SEM_ORIGEM = "Sem Track";
 
@@ -74,8 +76,96 @@ export interface RegraDeUtm {
 export interface AplicacaoDaEtapa {
   email: string;
   data: Date | null;
+  /**
+   * Story 18.96: o dia do calendário (`aaaa-mm-dd`) em que a aplicação cai na
+   * tabela "Dados diários". Sai da célula, não do `data` — ver `diaDaCelula`
+   * na rota. Ausente (quem monta a aplicação à mão, como os testes antigos) =
+   * o dia de `data` em Brasília.
+   */
+  dia?: string | null;
   utmSource: string;
   utmMedium: string;
+}
+
+/**
+ * Story 18.96 (P6): a aplicação veio da Meta? (`meta` / `meta-ads`).
+ *
+ * Não é o `ehOrigemPagaDeLead` de propósito: lá `google-ads` também é pago,
+ * mas o investimento desta etapa é só o da Meta. Dividir o gasto da Meta por
+ * aplicações do Google faria o custo por aplicação paga parecer menor do que é.
+ * A lista mora no shared porque o web refaz a conta com a API antiga (AC9).
+ */
+export const ehAplicacaoDaMeta = ehOrigemMetaDeLead;
+
+export interface ContagemDeAplicacoes {
+  total: number;
+  /** Só as da Meta (`ehAplicacaoDaMeta`). */
+  pagas: number;
+}
+
+/**
+ * Story 18.96 (AC8): as aplicações dia a dia, para a tabela "Dados diários".
+ *
+ * `semData` existe porque a linha sem data reconhecível ENTRA no período
+ * (`dentroDoPeriodo`) e, portanto, no card "Aplicações" — mas não cai em dia
+ * nenhum. Sem esse balde, a soma dos dias nunca fecharia com o card.
+ */
+export interface DiarioDeAplicacoes {
+  dias: Record<string, ContagemDeAplicacoes>;
+  semData: ContagemDeAplicacoes;
+}
+
+const FUSO_DO_DIA = "America/Sao_Paulo";
+
+/**
+ * O dia de um instante em Brasília, `aaaa-mm-dd`.
+ *
+ * É o fuso em que a Meta entrega o dia das contas do time. O fuso do servidor
+ * não serve: em UTC, uma aplicação das 22h de Brasília cairia no dia seguinte e
+ * o custo daquele dia sairia errado.
+ */
+export function diaEmBrasilia(instante: Date): string {
+  // en-CA formata como aaaa-mm-dd.
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: FUSO_DO_DIA,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(instante);
+}
+
+/**
+ * Story 18.96 (QA REQ-001) — a linha entra na janela do seletor?
+ *
+ * `inicio` é `inicioDaJanela(days)` — a régua do shared (18.80), a mesma da
+ * Meta: `hoje − (days−1)` até hoje. A primeira versão cortava em `hoje − days`
+ * e contava N+1 dias de aplicação contra N dias de gasto: o custo por aplicação
+ * saía otimista, o mesmo erro que a 18.80 tirou das outras telas.
+ *
+ * Compara o DIA (`aaaa-mm-dd`), não o instante: assim o corte e a tabela
+ * diária leem a mesma coisa, inclusive com célula em UTC (`…Z`). Sem dia, a
+ * linha entra — a regra de `dentroDoPeriodo`.
+ */
+export function entraNaJanela(dia: string | null, inicio: string | null): boolean {
+  return !dia || !inicio || dia >= inicio;
+}
+
+/**
+ * Conta as aplicações por dia e as sem data.
+ *
+ * Recebe o MESMO array que `resumir` recebe: por construção,
+ * Σ `dias[*].total` + `semData.total` = `resumo.aplicacoes`.
+ */
+export function diarioDeAplicacoes(aplicacoes: AplicacaoDaEtapa[]): DiarioDeAplicacoes {
+  const dias: Record<string, ContagemDeAplicacoes> = {};
+  const semData: ContagemDeAplicacoes = { total: 0, pagas: 0 };
+  for (const a of aplicacoes) {
+    const dia = a.dia !== undefined ? a.dia : a.data ? diaEmBrasilia(a.data) : null;
+    const balde = dia ? (dias[dia] ??= { total: 0, pagas: 0 }) : semData;
+    balde.total += 1;
+    if (ehAplicacaoDaMeta(a.utmSource)) balde.pagas += 1;
+  }
+  return { dias, semData };
 }
 
 export interface QuebraPorOrigem {

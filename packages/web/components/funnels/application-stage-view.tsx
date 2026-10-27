@@ -36,6 +36,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
+import { useCampaignPicker } from "@/lib/hooks/use-funnels";
 import {
   useDashboardDaAplicacao,
   useFontesDaAplicacao,
@@ -47,7 +48,9 @@ import { useFunnelSurveys, useRemoveFunnelSurvey } from "@/lib/hooks/use-google-
 import { SheetsPickerDialog } from "./survey-funnel-tab";
 import { StageDeleteSection } from "./stage-delete-section";
 import { CampaignLogButton } from "./campaign-log-link";
-import type { FunnelStage } from "@loyola-x/shared";
+import { CampaignSelector } from "./campaign-selector";
+import { ApplicationInvestmentSection } from "./application-investment-section";
+import type { FunnelCampaign, FunnelStage } from "@loyola-x/shared";
 
 const JANELAS = [
   { dias: 7, label: "7d" },
@@ -496,6 +499,9 @@ export function ApplicationStageView({
   const atualizarEtapa = useUpdateStage(projectId, funnelId, stage.id);
 
   const { data, isLoading } = useDashboardDaAplicacao(projectId, funnelId, stage.id, dias);
+  // Story 18.96 (AC1): a lista de campanhas da conta só carrega com o sheet aberto.
+  const { data: metaPicker } = useCampaignPicker(configOpen ? projectId : null);
+  const campaignIds = (stage.campaigns ?? []).map((c) => c.id);
 
   async function salvarNome() {
     if (!nome.trim() || nome.trim() === stage.name) return;
@@ -557,6 +563,32 @@ export function ApplicationStageView({
                       Salvar
                     </Button>
                   </div>
+                </div>
+
+                {/* Story 18.96 (AC1): o investimento da etapa. A API sempre
+                    aceitou `campaigns` aqui — faltava onde escolher. */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Campanhas Meta Ads</Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    Vincule as campanhas que representam o investimento dessa etapa pra calcular o custo por aplicação.
+                  </p>
+                  {metaPicker ? (
+                    <CampaignSelector
+                      campaigns={metaPicker.campaigns ?? []}
+                      accountLinked={metaPicker.accountLinked}
+                      accounts={metaPicker.accounts}
+                      accountErrors={metaPicker.accountErrors}
+                      value={stage.campaigns}
+                      onChange={(campaigns: FunnelCampaign[]) => {
+                        atualizarEtapa.mutate(
+                          { campaigns },
+                          { onSuccess: () => toast.success("Campanhas atualizadas") },
+                        );
+                      }}
+                    />
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Carregando campanhas...</p>
+                  )}
                 </div>
 
                 <PlanilhaDeAplicacao projectId={projectId} funnelId={funnelId} stageId={stage.id} />
@@ -649,6 +681,14 @@ export function ApplicationStageView({
               não passou pelo formulário, ou e-mail diferente do cadastrado.
             </p>
           )}
+
+          {/* Story 18.96: investimento, custo por aplicação e "Dados diários". */}
+          <ApplicationInvestmentSection
+            projectId={projectId}
+            campaignIds={campaignIds}
+            dias={dias}
+            dashboard={data}
+          />
 
           <div className="grid gap-4 lg:grid-cols-2">
             <TabelaDeOrigem

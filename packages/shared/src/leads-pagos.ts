@@ -40,6 +40,20 @@ export function ehOrigemPagaDeLead(utmSource: string | null | undefined): boolea
 }
 
 /**
+ * Story 18.96 (P6): o subconjunto Meta das origens pagas.
+ *
+ * Existe para quem divide o investimento DA META por uma contagem: lá
+ * `google-ads` não pode entrar, senão o custo sai menor do que é. É o caso do
+ * custo por aplicação paga da etapa de Aplicação (API e web leem daqui).
+ */
+export const ORIGENS_META_DE_LEAD: ReadonlySet<string> = new Set(["meta", "meta-ads"]);
+
+/** `utm_source` da linha é da Meta? Compara com trim + minúsculas. */
+export function ehOrigemMetaDeLead(utmSource: string | null | undefined): boolean {
+  return ORIGENS_META_DE_LEAD.has((utmSource ?? "").trim().toLowerCase());
+}
+
+/**
  * A chave de deduplicação de um lead: o e-mail em minúsculas, sem espaços nas
  * pontas. Sem e-mail, uma chave própria da linha — conta 1 e nunca colide com
  * outra linha nem com um e-mail (e-mail não começa com `__`).
