@@ -41,6 +41,8 @@ import {
   dedupKey,
   pertenceAEtapa,
   dentroDoPeriodo,
+  diaEmBrasilia,
+  diarioDeAplicacoes,
   emailComparavel,
   idsDaMeta,
   resumir,
@@ -145,11 +147,15 @@ export function lerAbaDeAplicacao(
 
   const aplicacoes: AplicacaoDaEtapa[] = [];
   for (const linha of dados.rows) {
-    const data = iData >= 0 ? dataDaCelula(linha[iData]) : null;
+    const bruto = iData >= 0 ? linha[iData] : undefined;
+    const data = dataDaCelula(bruto);
     if (!dentroDoPeriodo(data, de, null)) continue;
     aplicacoes.push({
       email: emailComparavel(primeiroPreenchido(linha, iEmail)),
       data,
+      // Story 18.96: só tem dia quem tem data — as duas leituras andam juntas,
+      // senão a mesma aplicação contaria no período e cairia fora da tabela.
+      dia: data ? diaDaCelula(bruto) : null,
       utmSource: sanitizarUtm(primeiroPreenchido(linha, iSource)) ?? "",
       utmMedium: sanitizarUtm(primeiroPreenchido(linha, iMedium)) ?? "",
     });
@@ -182,6 +188,37 @@ export function dataDaCelula(bruto: string | undefined): Date | null {
   }
   const iso = new Date(texto);
   return Number.isNaN(iso.getTime()) ? null : iso;
+}
+
+/**
+ * Story 18.96 — o dia do calendário de uma célula de data, `aaaa-mm-dd`.
+ *
+ * O `dataDaCelula` devolve um instante, e o dia de um instante depende do fuso
+ * de quem lê: `20/10/2026` vira meia-noite no fuso do SERVIDOR, que em UTC já
+ * é dia 19 em Brasília. Para a tabela diária, o dia vem do que a planilha
+ * escreveu:
+ *
+ * - `dd/mm/aaaa` ou `aaaa-mm-dd`, com ou sem hora e SEM fuso: o dia escrito.
+ *   É a hora de parede de quem preencheu (o time trabalha em Brasília).
+ * - Com fuso explícito (`…Z`, `-03:00`): um instante de verdade → o dia dele
+ *   em Brasília, o fuso em que a Meta entrega o dia.
+ * - Qualquer outro texto que `dataDaCelula` entenda: o dia em Brasília.
+ */
+export function diaDaCelula(bruto: string | undefined): string | null {
+  const data = dataDaCelula(bruto);
+  if (!data || !bruto) return null;
+  const texto = bruto.trim();
+
+  const br = texto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (br) {
+    const [, d, m, a] = br;
+    return `${a}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+
+  const iso = texto.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ][\d:.]+)?(Z|[+-]\d{2}:?\d{2})?$/i);
+  if (iso && !iso[4]) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+
+  return diaEmBrasilia(data);
 }
 
 export default fp(async function stageApplicationRoutes(fastify) {
@@ -424,6 +461,8 @@ export default fp(async function stageApplicationRoutes(fastify) {
     }
 
     const resumo = resumir(aplicacoes, vendas);
+    // Story 18.96 (AC8): o mesmo array do resumo — Σ dias + semData = card.
+    const diario = diarioDeAplicacoes(aplicacoes);
 
     /**
      * O id do conjunto vira o nome dele.
@@ -451,6 +490,7 @@ export default fp(async function stageApplicationRoutes(fastify) {
     return {
       periodo: { days: q.data.days ?? null, desde: de?.toISOString().slice(0, 10) ?? null },
       resumo,
+      diarioDeAplicacoes: diario,
       fontes: { aplicacoes: minhas.length, vendas: ids.length, filtrosDeUtm: filtros.length },
       // O que o filtro tirou vai na resposta, não só na cabeça de quem
       // configurou: sem isso, "18 vendas viraram 3" parece dado sumindo.

@@ -631,4 +631,12 @@
 //   `faturamentoBruto`, `faturamentoPago`. Campo aditivo: com a API antiga o web
 //   monta a tabela pelo `ingressosByDay`/`faturamentoTotalByDay`, sem a linha
 //   "Sem data" e com ROAS "—". `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 56;
+//
+// v57 (Story 18.96 — investimento e "Dados diários" na etapa de Aplicação):
+//   `GET .../stages/:stageId/application/dashboard` ganha `diarioDeAplicacoes`
+//   (`dias` por `aaaa-mm-dd` + `semData`, cada um com `total` e `pagas` —
+//   `utm_source` `meta`/`meta-ads`), contado no MESMO array do resumo: Σ =
+//   `resumo.aplicacoes`. Campo aditivo: com a API antiga o web mostra os cards
+//   de investimento (custo pago pelas origens Meta de `porUtmSource`) e a
+//   tabela só com as colunas da Meta. `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 57;
