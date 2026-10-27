@@ -1,0 +1,109 @@
+schema: 1
+story: '18.96'
+story_title: 'Etapa de Aplicação — campanhas Meta, cards de investimento e custo, e "Dados diários"'
+gate: FAIL
+status_reason: 'Nas janelas 7d/30d/90d as aplicações cobrem um dia a mais que a Meta. A API corta em hoje − days à meia-noite (days+1 dias de calendário); a Meta usa since = hoje − (days−1). Resultado: o custo por aplicação divide o gasto de N dias pelas aplicações de N+1 dias, e sai até ~12% menor em 7d. O dia mais antigo aparece com Investimento R$ 0,00 e Custo R$ 0,00. Há também um medium: erro da Meta vira investimento e custo R$ 0,00, sem aviso. O resto está correto: Σ dias + Sem data = card, cards = Total, degradação com a API antiga, regra P6, fórmulas e fuso da célula sem fuso.'
+reviewer: 'Quinn'
+updated: '2026-10-27T17:40:00Z'
+pr: null
+branch: 'feat/18.96-aplicacao-investimento (local, não pushada; 1 commit sobre a main em b4bad0f)'
+commits: ['0de07b8']
+base: 'main em b4bad0f'
+
+top_issues:
+  - id: 'REQ-001'
+    severity: high
+    finding: >-
+      Régua de janela diferente nos dois lados. A Meta usa `dateRangeFromDays`
+      (`meta-insights-cache.ts:79-84`): `since = hoje − (days−1)`, `until = hoje`, com a data em UTC.
+      A Aplicação corta em `de = hoje − days`, meia-noite no fuso do servidor
+      (`stage-application.ts:357-359`), o que dá days+1 dias de calendário.
+      Fora do "Tudo" o `metaDesde` fica `undefined`, então o dia extra recebe `ZERO_META`
+      (`dados-diarios-da-aplicacao.ts:144`). Reproduzido pelo revisor independente:
+      hoje 27/10, janela 7d → Meta de 21 a 27/10, aplicações desde 20/10.
+      Linha 20/10 com 2 aplicações → Investimento R$ 0,00 e Custo/aplic. paga R$ 0,00.
+      Os cards dividem 7 dias de gasto por 8 dias de aplicações, o que fere o AC2
+      ("os cards seguem a janela") e o propósito do `metaDesde`.
+      No "Tudo" acontece o mesmo, por 1 dia: `inicioDaMetaNoTudo` = hoje − 365,
+      e a Meta começa em hoje − 364.
+    suggested_action: >-
+      Uma régua só. A proposta do @qa é cortar as aplicações pela MESMA conta da Meta:
+      `de` = hoje − (days−1) na API, e `metaDesde` = hoje − (DIAS_MAX_DA_META−1) no "Tudo".
+      Isso muda o card "Aplicações" que já existia (18.92): "7d" passa de 8 para 7 dias de
+      calendário. É uma correção, mas visível para quem acompanha o número, e o @po precisa
+      registrar na story. Alternativa sem mexer no card antigo: a seção de investimento recorta
+      as aplicações em `metaDesde` também nas janelas 7/30/90. O custo então não usa o card
+      "Aplicações", e a tela mostra dois totais de aplicações diferentes. O @qa não recomenda.
+      Teste obrigatório: janela 7d com uma aplicação no dia hoje − 7 → ela não entra, e o
+      custo usa os mesmos dias da Meta. Ver também DATA-002, que é a mesma régua com fuso.
+  - id: 'REL-001'
+    severity: medium
+    finding: >-
+      `ApplicationInvestmentSection` só olha `meta.isLoading`
+      (`application-investment-section.tsx:109`). Com 502 ou falha de rede no `/campaign-daily`,
+      `meta.data` fica `undefined` e `somaMeta` vira zero. Cards: Investimento R$ 0,00,
+      Custo por aplicação paga R$ 0,00 e geral R$ 0,00, porque `safeDivide(0, n>0) = 0`.
+      Todas as linhas ficam com R$ 0,00. É um número falso com cara de dado real.
+      O padrão foi herdado do `SalesDailyTable`/`SalesMetaKpis` (18.95), que também não tratam
+      o erro. Aqui é pior, porque o custo zerado parece barato.
+    suggested_action: >-
+      Com `meta.isError`, mostrar o aviso "Não consegui ler o investimento da Meta" e tratar
+      como sem leitura: cards e colunas da Meta em "—", nunca R$ 0. Teste no fio
+      (readFileSync) ou na função, passando `meta: null` com um flag de erro.
+      A mesma lacuna na etapa de Vendas fica como follow-up fora desta story.
+  - id: 'DATA-001'
+    severity: low
+    finding: >-
+      `diaDaCelula` monta o dia direto do texto, sem validar
+      (`stage-application.ts:212-216`), enquanto `dataDaCelula` aceita rollover.
+      `31/02/2026` vira dia "2026-02-31", mas o filtro de período usa 03/03.
+      Uma planilha em locale americano `10/20/2026` vira a chave inválida "2026-20-10",
+      que aparece na tabela. A leitura dd/mm de uma data mm/dd já existia antes; o que é
+      novo é o dia divergir do filtro.
+    suggested_action: >-
+      No ramo `dd/mm/aaaa`, tirar o dia dos getters LOCAIS do próprio `data`
+      (`getFullYear/getMonth/getDate`). Ele foi construído no fuso local a partir dos mesmos
+      números, então o dia fica igual ao filtro, inclusive no rollover, e não depende do
+      fuso. Teste com `31/02/2026`.
+  - id: 'DATA-002'
+    severity: low
+    finding: >-
+      Com fuso explícito na célula (`…Z`), o filtro compara o instante com `de`, que é a
+      meia-noite do servidor, e o dia é calculado em Brasília. `2026-10-21T01:30:00Z` com
+      `de` = 21/10 00:00 UTC entra no período, mas cai no dia 20, antes da janela. É o mesmo
+      sintoma do REQ-001. Só foi lido, não rodado. A aba real do Tally grava hora de parede,
+      sem fuso, então hoje o caso não ocorre.
+    suggested_action: 'Resolver junto com o REQ-001: o corte da janela compara pelo `dia` (string aaaa-mm-dd), não pelo instante.'
+  - id: 'TEST-001'
+    severity: medium
+    finding: >-
+      Nenhum teste amarra a janela das aplicações à da Meta. As 8 mutações do @dev provam a
+      matemática dentro da janela, mas nenhuma pega o REQ-001: todas as fixtures passam
+      `metaDesde` só no caso "Tudo", ou não o passam.
+    suggested_action: 'Junto com o REQ-001: um teste da API, com `days` fixo e o relógio fixado, conferindo o primeiro dia contado; e um teste do web, conferindo que nenhum dia de aplicação fica fora da cobertura da Meta.'
+  - id: 'DOC-001'
+    severity: low
+    finding: 'O AC3 pede o texto "…em Configurar…". A tela diz "Configurar fontes", que é o rótulo real do botão. A divergência é intencional e o @dev a registrou.'
+    suggested_action: 'Aceitar. O @po ajusta o texto do AC ao rótulo real se quiser.'
+  - id: 'REL-002'
+    severity: low
+    finding: 'Por leitura, sem rodar: se o `useCampaignPicker` falhar, o seletor fica em "Carregando campanhas..." para sempre, e a mutação não mostra toast de erro. Comportamento idêntico ao da etapa de Vendas.'
+    suggested_action: 'Follow-up comum às duas telas, fora desta story.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Bloqueado por REQ-001 e REL-001. O resto está limpo: `diarioDeAplicacoes` usa o mesmo array do `resumir`; os cards são o próprio Total (mesma chamada de `linha()`); a escala está certa (CTR em pontos percentuais, como `fmtPercent` espera); o `useUpdateStage` invalida `funnel-stage`, então as campanhas reaparecem marcadas.'
+  unit_tests: 'Parcial. API 19/19 e web 17/17 verdes. As 8 mutações do @dev foram conferidas como vermelhas. Lacuna em TEST-001: o defeito alto passa por toda a suíte.'
+  acceptance_criteria: 'AC1 ✓ · AC2 ✗ (REQ-001: janela diferente da Meta) · AC3 ✓ (DOC-001) · AC4 ✓ no texto, mas a borda do "Tudo" erra 1 dia · AC5 ✓ · AC6 ✓ · AC7 ✓ (Total = cards, Σ = card) · AC8 ✓ · AC9 ✓ · AC10 ✓ (a prova pedida ficou vermelha) · AC11 ⏳ visual pendente de deploy.'
+  no_regressions: 'OK. Web 2080/2080 com --testTimeout=60000, typecheck 5/5, lint 5/5, next build verde. API 5228 passam e 10 falham, as mesmas 10 na main b4bad0f pura, conferido com stash (instagram, projects, schema, funnel-stages-lead-inputs).'
+  performance: 'OK. Nenhuma consulta nova à Meta: reaproveita `/campaign-daily`. A API só conta o array que já leu.'
+  security: 'OK. Nenhuma rota nova; a mesma guarda de guest e de pertencimento da etapa.'
+  documentation: 'OK. Story com o Dev Agent Record e a File List completos.'
+  api_contract: 'OK. v57 com a linha de histórico; o campo é opcional no web, que degrada com a API antiga (testado).'
+  scope_condition: 'Commit com [scope-override]. A autorização foi dada pelo gestor no pedido do *develop ("autorizado"). O @dev registrou e pediu confirmação de que veio do Lucas.'
+
+notes:
+  - 'Revisão em duas leituras: a do @qa e a de um revisor independente sem acesso ao raciocínio do @dev. Como o @dev desta story rodou na mesma sessão do @qa, a segunda leitura existe para não ancorar no raciocínio de quem escreveu. O REQ-001 e o DATA-001 vieram dela e foram conferidos no código pelo @qa (`meta-insights-cache.ts:82` × `stage-application.ts:357-359`).'
+  - 'CodeRabbit não rodado: o CLI roda no WSL e a máquina é macOS.'
+  - 'O REQ-001 muda o card "Aplicações" da 18.92 (7d passa de 8 para 7 dias). Levar ao @po antes do fix.'
