@@ -1,0 +1,75 @@
+schema: 1
+story: '18.97'
+story_title: 'Desempenho de Testes de LPs — coluna Status (Ativo / Pausado)'
+gate: CONCERNS
+status_reason: 'A coluna Status sai certa nos três pontos de montagem. A regra OR por anúncio é calculada nos MESMOS anúncios do gasto: correção manual, filtros de mídia e de público valem, e gasto de campanha sem anúncio não decide status. A API não faz consulta nova; contrato 58 e cache :v6. Os 8 mutantes do @dev ficam vermelhos e a revisão independente não achou defeito de correção. Fica um medium de comunicação (REQ-001): como manda o AC2, o status só enxerga anúncios COM entrega no período. Uma LP cujo único anúncio ativo ainda não entregou aparece "Pausado em todas as campanhas", o que o dado não sustenta.'
+reviewer: 'Quinn'
+updated: '2026-10-27T20:30:00Z'
+pr: null
+branch: 'feat/18.97-lps-coluna-status (local, não pushada; 1 commit sobre a main em 920723c)'
+commits: ['9f3fc47', 'QA fix 1 (texto)']
+base: 'main em 920723c'
+
+top_issues:
+  - id: 'REQ-001'
+    severity: medium
+    status: 'RESOLVIDO no QA fix 1 pela opção 1 do gestor ("bora"): tooltip e título dizem a base ("entre os anúncios que rodaram no período"; anúncio sem entrega não entra). O @qa conferiu: a reversão para o texto antigo deixa 1 teste vermelho. A versão completa (anúncios sem entrega) fica como possível story futura.'
+    finding: >-
+      O status considera só os anúncios presentes em `lpPorAnuncio.anuncios`, que vêm de
+      `filteredAds` (insights do período), como o AC2 manda ("os mesmos cujo gasto entra nela").
+      Um anúncio ACTIVE sem nenhuma entrega no período não entra na conta. Cenário: na LP A, o
+      ad1 rodou e foi pausado; o ad2 foi ligado hoje e ainda não entregou. A linha aparece
+      **Pausado**, com o tooltip "Pausado em todas as campanhas". A LP está no ar. Pelo pedido do
+      gestor ("se pausada em todas as campanhas"), o texto promete mais do que o dado sustenta.
+      Apontado pelo revisor independente (item 5) e classificado pelo @qa como medium,
+      porque o rótulo engana justamente quem usa a coluna para saber se a LP está no ar.
+    suggested_action: >-
+      Barato e recomendado antes do merge: o tooltip passa a dizer a base, por exemplo
+      "Pausado em todos os anúncios que rodaram no período" e "Ativo em N campanha(s) — entre os
+      anúncios que rodaram no período", e o título da coluna explica o mesmo.
+      Completo (outra story, se o gestor quiser): olhar também os anúncios sem entrega das
+      campanhas da etapa. Isso pede uma leitura nova (anúncio → campanha → link no cache), fora
+      do AC5 ("nenhuma consulta nova"). Decisão do gestor.
+  - id: 'REQ-002'
+    severity: low
+    finding: >-
+      O perpétuo tem uma tabela diferente, "Desempenho por LP" (`perpetual-dashboard.tsx:3369`), que
+      não usa a `LpPerformanceTable` e ficou sem a coluna. O pedido diz "Desempenho de Testes de
+      LPs", e a story mapeou só os três pontos da `LpPerformanceTable`, então está fora pelo texto.
+      Pode não estar fora pela intenção do gestor.
+    suggested_action: 'Perguntar ao gestor. Se ele quiser, vira story à parte, porque o perpétuo tem outro modelo de linha.'
+  - id: 'MNT-001'
+    severity: low
+    status: 'JSDoc RESOLVIDO no QA fix 1; badge compartilhado segue para depois'
+    finding: >-
+      `lps-do-lancamento.ts:39-41`: o `type StatusDoAnuncio` entrou entre o JSDoc "Uma entrada por
+      anúncio…" e a `interface AnuncioDaLp`, então o comentário passou a documentar o tipo.
+      `lp-performance-table.tsx:56` importa de `components/funnels/` o badge. Há precedente
+      (`LpFunnelCard`) e não há ciclo, mas um módulo de badge compartilhado seria mais limpo.
+    suggested_action: 'Mover o `type` para cima do JSDoc. O badge compartilhado fica para quando houver um terceiro uso.'
+  - id: 'REL-001'
+    severity: low
+    status: 'Tooltip com nome vazio RESOLVIDO no QA fix 1; o id duplicado segue hipotético e aceito'
+    finding: >-
+      Hipotético: em `lp-por-anuncio.ts:221` o status é fixado pela 1ª linha de insight do anúncio.
+      Um mesmo anúncio vindo como `_222` e `222`, com a 1ª linha sem status no cache, fica
+      `unknown`. Os insights da Meta trazem ids numéricos, então isso não ocorre hoje.
+      O tooltip com `campaignName` vazio sai "Ativo em 1 campanha: ".
+    suggested_action: 'Aceitar.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'OK, com o REQ-001. A agregação fica em `lps-do-lancamento.ts:293-299`, depois dos filtros e da correção. O `campanhasSemDadoPorAnuncio` não toca o status. O rank 2/1/null bate com o sort existente. O Total fica vazio e o `colSpan` foi ajustado. A célula fica fora do ternário `modoUrl`, então o modo por rótulo mostra "—" (AC7). O export do badge não cria ciclo nem aumenta o bundle (os chamadores já importavam o módulo).'
+  unit_tests: 'OK. Web 15/15 e API 6/6 na story. N1–N8 vermelhos e controles verdes. Os testes de versão do cache (1883/1885/1889) usam `>=`.'
+  acceptance_criteria: 'AC1–AC8 ✓ (o AC3 com o REQ-001 no texto) · AC9 ⏳ visual pendente do deploy da API.'
+  no_regressions: 'OK. Web 2101/2101, typecheck 5/5, lint 5/5, next build verde. API: só as 10 falhas locais conhecidas (Node 25), que não aparecem no CI da main (#1050 verde).'
+  performance: 'OK. Nenhuma consulta nova: reaproveita o `statusByAdId` já lido (a rota tem uma chamada só a `getAdEffectiveStatusFromDb`).'
+  security: 'OK. Só exibe um campo derivado de dado já servido.'
+  documentation: 'OK, com o MNT-001.'
+  api_contract: 'OK. v58 com o histórico; o campo é opcional no web, que degrada para "—" com a API antiga (testado).'
+  scope_condition: 'Commit com [scope-override]. O gestor confirmou a autorização (com o Lucas) para a 18.97 antes do *develop.'
+
+notes:
+  - 'Revisão em duas leituras (Quinn + revisor independente), porque o @dev é a mesma sessão. O REQ-001 nasceu do item 5 do revisor, que o tratou como "comportamento, não defeito". O @qa subiu para medium pelo efeito no usuário.'
+  - 'O REQ-002 da 18.96 (a cópia UTC do `dateRangeFromDays`) não afeta esta coluna: o status é o estado atual, não o do período.'
