@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Check, ChevronsUpDown, Search, LinkIcon, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronsUpDown, Search, LinkIcon, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,12 +11,23 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import type { MetaCampaignOption } from "@/lib/hooks/use-funnels";
+import type {
+  MetaAdAccountError,
+  MetaAdAccountOption,
+  MetaCampaignOption,
+} from "@/lib/hooks/use-funnels";
 import type { FunnelCampaign } from "@loyola-x/shared";
+import { agruparCampanhasPorConta, campanhaCasaComBusca } from "@/lib/utils/campanhas-por-conta";
 
 interface CampaignSelectorProps {
   campaigns: MetaCampaignOption[];
   accountLinked: boolean;
+  /**
+   * Story 29.83 — contas do expert e as que falharam. Com 2+ contas, a lista
+   * agrupa por conta; a conta que falhou mostra o aviso no lugar do grupo.
+   */
+  accounts?: MetaAdAccountOption[];
+  accountErrors?: MetaAdAccountError[];
   value: FunnelCampaign[];
   onChange: (campaigns: FunnelCampaign[]) => void;
   disabled?: boolean;
@@ -31,6 +42,8 @@ const statusColors: Record<string, string> = {
 export function CampaignSelector({
   campaigns,
   accountLinked,
+  accounts = [],
+  accountErrors = [],
   value,
   onChange,
   disabled,
@@ -40,15 +53,23 @@ export function CampaignSelector({
 
   const selectedIds = new Set(value.map((c) => c.id));
 
-  const filtered = useMemo(() => {
-    if (!search) return campaigns;
-    const q = search.toLowerCase();
-    return campaigns.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.objective.toLowerCase().includes(q),
-    );
-  }, [campaigns, search]);
+  const grupos = useMemo(
+    () =>
+      agruparCampanhasPorConta(
+        campaigns.filter((c) => campanhaCasaComBusca(c, search)),
+        accounts,
+        accountErrors,
+      ),
+    [campaigns, accounts, accountErrors, search],
+  );
+
+  // Story 29.83 — o chip da campanha selecionada mostra a conta quando há 2+
+  // (o mesmo nome existe nas duas contas).
+  const contaPorCampanha = useMemo(
+    () => new Map(campaigns.map((c) => [c.id, c.accountName])),
+    [campaigns],
+  );
+  const multiConta = accounts.length >= 2;
 
   function toggleCampaign(campaign: MetaCampaignOption) {
     if (selectedIds.has(campaign.id)) {
@@ -108,47 +129,65 @@ export function CampaignSelector({
             />
           </div>
           <div className="max-h-[300px] overflow-y-auto p-1">
-            {filtered.length === 0 ? (
+            {grupos.length === 0 ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
                 Nenhuma campanha encontrada
               </div>
             ) : (
-              filtered.map((campaign) => {
-                const isSelected = selectedIds.has(campaign.id);
-                return (
-                  <button
-                    key={campaign.id}
-                    type="button"
-                    className={cn(
-                      "flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent",
-                      isSelected && "bg-accent",
-                    )}
-                    onClick={() => toggleCampaign(campaign)}
-                  >
-                    <Check
-                      className={cn(
-                        "mt-0.5 size-4 shrink-0",
-                        isSelected ? "opacity-100" : "opacity-0",
-                      )}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-medium">{campaign.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {campaign.objective.replace(/_/g, " ")}
-                      </div>
+              grupos.map((grupo) => (
+                <div key={grupo.chave}>
+                  {grupo.titulo && (
+                    <div className="sticky top-0 z-10 bg-popover px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      {grupo.titulo}
                     </div>
-                    <Badge
-                      variant="secondary"
-                      className={cn(
-                        "ml-auto shrink-0 text-[10px]",
-                        statusColors[campaign.status] ?? statusColors.ARCHIVED,
-                      )}
+                  )}
+                  {grupo.erro && (
+                    <div
+                      role="alert"
+                      className="mx-2 mb-1 flex items-start gap-1.5 rounded-sm bg-amber-500/10 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-400"
                     >
-                      {campaign.status}
-                    </Badge>
-                  </button>
-                );
-              })
+                      <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                      <span>Não foi possível ler as campanhas desta conta: {grupo.erro}</span>
+                    </div>
+                  )}
+                  {grupo.campanhas.map((campaign) => {
+                    const isSelected = selectedIds.has(campaign.id);
+                    return (
+                      <button
+                        key={campaign.id}
+                        type="button"
+                        className={cn(
+                          "flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent",
+                          isSelected && "bg-accent",
+                        )}
+                        onClick={() => toggleCampaign(campaign)}
+                      >
+                        <Check
+                          className={cn(
+                            "mt-0.5 size-4 shrink-0",
+                            isSelected ? "opacity-100" : "opacity-0",
+                          )}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-medium">{campaign.name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {campaign.objective.replace(/_/g, " ")}
+                          </div>
+                        </div>
+                        <Badge
+                          variant="secondary"
+                          className={cn(
+                            "ml-auto shrink-0 text-[10px]",
+                            statusColors[campaign.status] ?? statusColors.ARCHIVED,
+                          )}
+                        >
+                          {campaign.status}
+                        </Badge>
+                      </button>
+                    );
+                  })}
+                </div>
+              ))
             )}
           </div>
         </PopoverContent>
@@ -158,8 +197,18 @@ export function CampaignSelector({
       {value.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {value.map((c) => (
-            <Badge key={c.id} variant="secondary" className="gap-1 pr-1">
+            <Badge
+              key={c.id}
+              variant="secondary"
+              className="gap-1 pr-1"
+              title={multiConta && contaPorCampanha.get(c.id) ? `${c.name} — ${contaPorCampanha.get(c.id)}` : c.name}
+            >
               <span className="truncate max-w-[150px]">{c.name}</span>
+              {multiConta && contaPorCampanha.get(c.id) && (
+                <span className="truncate max-w-[90px] text-muted-foreground">
+                  · {contaPorCampanha.get(c.id)}
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => removeCampaign(c.id)}

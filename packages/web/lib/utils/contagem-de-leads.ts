@@ -18,6 +18,7 @@
  */
 
 import { inicioDaJanela } from "@loyola-x/shared/src/janela-de-dias";
+import { ehOrigemPagaDeLead } from "@loyola-x/shared/src/leads-pagos";
 import { utmContentEfetivo } from "@/lib/utils/normalize-answer";
 import { normaliseDate } from "@/lib/utils/spreadsheet-filters";
 
@@ -118,8 +119,6 @@ export function recortarPelaJanela(
   return { linhas, janela: { aplicada: true, foraDaJanela, semData, colunaAusente: false } };
 }
 
-const PAID_SOURCES = new Set(["meta", "google"]);
-
 export function contarLeadsDaPlanilha(planilha: Planilha, janelaPedida?: JanelaDaContagem): ContagemDeLeads {
   const leads: Record<string, number> = {};
   const leadsByAdName: Record<string, number> = {};
@@ -151,7 +150,8 @@ export function contarLeadsDaPlanilha(planilha: Planilha, janelaPedida?: JanelaD
   const TERM_INDEX = findCol(["utm_term", "term", "t="], 7); // utm_term (lpX/hot/cold)
 
   // Story 18.46: localiza a coluna `source` (utm_source) pelo cabeçalho.
-  // Lead pago = source ∈ {meta, google}; o resto (ig, etc.) é orgânico.
+  // Lead pago = source ∈ ORIGENS_PAGAS_DE_LEAD (Story 18.89: era uma cópia
+  // local `{meta, google}`); o resto (ig, etc.) é orgânico.
   const SOURCE_INDEX = headers.findIndex((h) => {
     const n = (h ?? "").trim().toLowerCase();
     return n === "source" || n === "utm_source";
@@ -164,8 +164,7 @@ export function contarLeadsDaPlanilha(planilha: Planilha, janelaPedida?: JanelaD
   });
   const isPaidRow = (row: string[]): boolean => {
     if (SOURCE_INDEX < 0) return true; // sem coluna source → não filtra (fallback)
-    const src = (row[SOURCE_INDEX] ?? "").trim().toLowerCase();
-    return PAID_SOURCES.has(src);
+    return ehOrigemPagaDeLead(row[SOURCE_INDEX]);
   };
   const somar = (alvo: Record<string, LeadsPorTemperatura>, chave: string, haystack: string) => {
     if (!alvo[chave]) alvo[chave] = { hot: 0, cold: 0, total: 0 };
@@ -188,7 +187,7 @@ export function contarLeadsDaPlanilha(planilha: Planilha, janelaPedida?: JanelaD
     // Story 18.46 (AC6): identificar a LP e a temperatura do lead.
     // Os dados reais mostram que lpX/hot/cold vivem no utm_term (col 7), mas
     // procuramos em ambas as colunas (5 e 7) para robustez.
-    // Conta APENAS leads pagos (source = meta/google) — Tx Conv usa esse número.
+    // Conta APENAS leads pagos (`ehOrigemPagaDeLead`) — Tx Conv usa esse número.
     const haystack = `${utmContentRaw} ${termString}`;
     const pago = isPaidRow(row);
     const lpMatch = haystack.match(/lp([a-z])/);

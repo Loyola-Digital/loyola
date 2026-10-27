@@ -63,3 +63,15 @@ export interface FunnelSpreadsheetData {
   mapping: ColumnMapping;
   totalRows: number;
 }
+
+/**
+ * Fonte de leads por webhook: uma planilha virtual cujas linhas moram no X, não
+ * no Google. O backend marca com este prefixo no `spreadsheetId`
+ * (`services/webhook-leads.ts`), e a tela usa isso para não oferecer "abrir a
+ * planilha" nem "mapear colunas" onde não há planilha.
+ */
+export const PREFIXO_FONTE_WEBHOOK = "webhook:";
+
+export function ehFonteDeWebhook(s: Pick<FunnelSpreadsheet, "spreadsheetId">): boolean {
+  return s.spreadsheetId.startsWith(PREFIXO_FONTE_WEBHOOK);
+}

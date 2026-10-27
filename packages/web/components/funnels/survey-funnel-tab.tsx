@@ -29,8 +29,10 @@ const fmtNumber = (val: number): string => fmtInt(val);
 // SHEETS PICKER DIALOG
 // ============================================================
 
-function SheetsPickerDialog({ projectId, funnelId, stageId, surveyType, open, onOpenChange }: {
-  projectId: string; funnelId: string; stageId?: string; surveyType: SurveyType; open: boolean; onOpenChange: (open: boolean) => void;
+// Story 18.92: exportado para a etapa de Aplicação vincular a aba do formulário
+// pelo mesmo seletor; `titulo` troca só o cabeçalho.
+export function SheetsPickerDialog({ projectId, funnelId, stageId, surveyType, open, onOpenChange, titulo }: {
+  projectId: string; funnelId: string; stageId?: string; surveyType: SurveyType; open: boolean; onOpenChange: (open: boolean) => void; titulo?: string;
 }) {
   const { data: spreadsheetsData, isLoading: spreadsheetsLoading } = useSpreadsheets();
   const [selectedSpreadsheet, setSelectedSpreadsheet] = useState<{ id: string; name: string } | null>(null);
@@ -64,7 +66,7 @@ function SheetsPickerDialog({ projectId, funnelId, stageId, surveyType, open, on
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileSpreadsheet className={`h-5 w-5 ${surveyType === "organic" ? "text-amber-600" : "text-green-600"}`} />
-            {surveyType === "organic" ? "Vincular planilha de pesquisa orgânica" : "Vincular planilha de pesquisa"}
+            {titulo ?? (surveyType === "organic" ? "Vincular planilha de pesquisa orgânica" : "Vincular planilha de pesquisa")}
           </DialogTitle>
         </DialogHeader>
 

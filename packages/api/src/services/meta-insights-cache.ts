@@ -16,6 +16,7 @@
 
 import { eq, and, inArray, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
+import { lerDeTodasAsContas, type ContaMeta } from "./meta-contas-do-projeto.js";
 import {
   LINK_URL_RESOLVER_VERSION,
   AD_PERMALINK_RESOLVER_VERSION,
@@ -157,6 +158,38 @@ function identifyCampaignsToRefetch(
   return Array.from(toRefetch);
 }
 
+/** As tabelas de cache, por nome, para o SQL do `ON CONFLICT DO UPDATE`. */
+const TB_CAMPANHA = "meta_campaign_insights_daily";
+const TB_ANUNCIO = "meta_ad_insights_daily";
+
+/**
+ * Zero NÃO sobrescreve número: mantém o valor gravado quando o que chega é 0.
+ *
+ * A trava nasceu do bug de 2026-10-21 (ver `meta-insights-split.ts`): a Meta
+ * respondia 200 com `spend: "0"` e as ações cheias, e o upsert ia gravando
+ * isso em cima do histórico bom — a série do DG & CPDF perdeu R$ 2.492 de
+ * 16/10 e chegou a R$ 62 em 20/10, um dia por rodada de sync.
+ *
+ * O conserto da causa é a chamada partida em duas. Isto é a rede embaixo: a
+ * próxima mudança de comportamento da Meta não apaga dado em silêncio, ela
+ * apenas deixa de atualizá-lo.
+ *
+ * Custo aceito: uma campanha que REALMENTE voltou a zero (gasto estornado pela
+ * Meta, que é raro) fica com o número antigo até alguém reparar. Perder o
+ * histórico inteiro é pior que atrasar uma correção para baixo.
+ */
+function zeroNaoSobrescreve(tabela: string, coluna: string) {
+  return sql.raw(
+    `CASE WHEN EXCLUDED.${coluna}::numeric = 0 AND ${tabela}.${coluna}::numeric > 0 ` +
+      `THEN ${tabela}.${coluna} ELSE EXCLUDED.${coluna} END`,
+  );
+}
+
+/** Idem para os jsonb: `null` que chega não apaga o que já está lá. */
+function nuloNaoApaga(tabela: string, coluna: string) {
+  return sql.raw(`COALESCE(EXCLUDED.${coluna}, ${tabela}.${coluna})`);
+}
+
 /**
  * Upsert das insights recém-buscados no DB.
  * Meta retorna 1 linha por (campaign, dia) — chave composta da tabela.
@@ -194,16 +227,17 @@ export async function upsertCampaignInsights(
         metaCampaignInsightsDaily.dateStart,
       ],
       set: {
-        spend: sql`EXCLUDED.spend`,
-        impressions: sql`EXCLUDED.impressions`,
-        reach: sql`EXCLUDED.reach`,
-        clicks: sql`EXCLUDED.clicks`,
-        actions: sql`EXCLUDED.actions`,
-        actionValues: sql`EXCLUDED.action_values`,
+        spend: zeroNaoSobrescreve(TB_CAMPANHA, "spend"),
+        impressions: zeroNaoSobrescreve(TB_CAMPANHA, "impressions"),
+        reach: zeroNaoSobrescreve(TB_CAMPANHA, "reach"),
+        clicks: zeroNaoSobrescreve(TB_CAMPANHA, "clicks"),
+        actions: nuloNaoApaga(TB_CAMPANHA, "actions"),
+        actionValues: nuloNaoApaga(TB_CAMPANHA, "action_values"),
         lastSyncedAt: sql`EXCLUDED.last_synced_at`,
       },
     });
 }
+
 
 /**
  * Une insights do cache DB (com campaign_id) com os recém-buscados da Meta
@@ -254,6 +288,38 @@ export async function fetchCampaignDailyInsightsForIdsWithCache(
   startDate?: string,
   endDate?: string,
 ): Promise<MetaDailyInsight[]> {
+  return fetchCampaignDailyInsightsForIdsWithCacheEmContas(
+    db,
+    projectId,
+    [{ metaAccountId, accessToken }],
+    campaignIds,
+    days,
+    startDate,
+    endDate,
+  );
+}
+
+/**
+ * Story 29.83 — a mesma leitura DB-first, com a rebusca do que falta feita em
+ * TODAS as contas do expert. Com uma conta só, a rebusca de "hoje" (TTL 1h)
+ * perguntava à conta errada pelas campanhas da outra e voltava vazia: o dia
+ * corrente sumia entre um sync e outro. Uma campanha pertence a uma conta só;
+ * nas outras o filtro `campaign.id IN` não casa nada.
+ *
+ * Erro: `lerDeTodasAsContas` lança se a leitura de uma conta LANÇAR — mas o
+ * `fetchCampaignDailyInsightsForIds` real não lança por falha da Meta: ele faz
+ * `allSettled` por trecho de datas e devolve o que conseguiu (comportamento
+ * anterior a esta story, igual com uma conta só). QA 29.83 REL-002.
+ */
+export async function fetchCampaignDailyInsightsForIdsWithCacheEmContas(
+  db: Database,
+  projectId: string,
+  contas: ContaMeta[],
+  campaignIds: string[],
+  days: number,
+  startDate?: string,
+  endDate?: string,
+): Promise<MetaDailyInsight[]> {
   if (campaignIds.length === 0) return [];
 
   const since = startDate && endDate ? startDate : dateRangeFromDays(days).since;
@@ -272,15 +338,21 @@ export async function fetchCampaignDailyInsightsForIdsWithCache(
   // Com o sync intraday mantendo "hoje" fresco, este caminho raramente dispara.
   let fresh: MetaDailyInsight[] = [];
   if (toRefetch.length > 0) {
-    const key = `cmp-refetch:${projectId}:${toRefetch.slice().sort().join(",")}:${since}:${until}`;
+    // QA 29.83 REL-001: as contas entram na chave. Sem elas, duas buscas do
+    // mesmo gap em contas diferentes colapsavam numa só e a 2ª conta nunca era
+    // consultada (o sync de campanhas novas disparava uma por conta).
+    const chaveDasContas = contas.map((c) => c.metaAccountId).sort().join("+");
+    const key = `cmp-refetch:${projectId}:${chaveDasContas}:${toRefetch.slice().sort().join(",")}:${since}:${until}`;
     fresh = await singleFlight(key, async () => {
-      const rawFresh = await fetchCampaignDailyInsightsForIds(
-        metaAccountId,
-        accessToken,
-        toRefetch,
-        days,
-        startDate,
-        endDate,
+      const rawFresh = await lerDeTodasAsContas(contas, (conta) =>
+        fetchCampaignDailyInsightsForIds(
+          conta.metaAccountId,
+          conta.accessToken,
+          toRefetch,
+          days,
+          startDate,
+          endDate,
+        ),
       );
       // Meta retorna campaign_id em cada row quando level=campaign — preservado
       // pela paginação. Upsert no DB para os próximos acessos lerem do cache.
@@ -369,6 +441,41 @@ export function triggerBackgroundSyncForNewCampaigns(
 }
 
 /**
+ * Story 29.83 — o mesmo sync histórico, numa chamada só para TODAS as contas
+ * do expert: a rebusca pede a cada conta (`…WithCacheEmContas`). Uma chamada
+ * por conta, em paralelo, colidia no `singleFlight` (QA 29.83 REL-001).
+ * Fire-and-forget; erro vai para o log e não propaga.
+ */
+export function triggerBackgroundSyncForNewCampaignsEmContas(
+  db: Database,
+  projectId: string,
+  contas: ContaMeta[],
+  newCampaignIds: string[],
+  days: number = 365,
+): void {
+  if (newCampaignIds.length === 0 || contas.length === 0) return;
+  void (async () => {
+    try {
+      await fetchCampaignDailyInsightsForIdsWithCacheEmContas(
+        db,
+        projectId,
+        contas,
+        newCampaignIds,
+        days,
+      );
+      console.log(
+        `[meta-sync] backfilled ${newCampaignIds.length} campaign(s) × ${days}d em ${contas.length} conta(s) for project ${projectId}`,
+      );
+    } catch (err) {
+      console.error(
+        `[meta-sync] failed for project ${projectId} campaigns ${newCampaignIds.join(",")}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  })();
+}
+
+/**
  * Story 36.4: upsert dos insights por (ad, dia) em meta_ad_insights_daily.
  * Espelha upsertCampaignInsights. Idempotente via chave (projectId, adId, dateStart).
  * Retorna o nº de linhas gravadas.
@@ -416,13 +523,13 @@ export async function upsertAdDailyInsights(
         campaignId: sql`EXCLUDED.campaign_id`,
         campaignName: sql`EXCLUDED.campaign_name`,
         adName: sql`EXCLUDED.ad_name`,
-        spend: sql`EXCLUDED.spend`,
-        impressions: sql`EXCLUDED.impressions`,
-        reach: sql`EXCLUDED.reach`,
-        clicks: sql`EXCLUDED.clicks`,
-        actions: sql`EXCLUDED.actions`,
-        actionValues: sql`EXCLUDED.action_values`,
-        videoMetrics: sql`EXCLUDED.video_metrics`,
+        spend: zeroNaoSobrescreve(TB_ANUNCIO, "spend"),
+        impressions: zeroNaoSobrescreve(TB_ANUNCIO, "impressions"),
+        reach: zeroNaoSobrescreve(TB_ANUNCIO, "reach"),
+        clicks: zeroNaoSobrescreve(TB_ANUNCIO, "clicks"),
+        actions: nuloNaoApaga(TB_ANUNCIO, "actions"),
+        actionValues: nuloNaoApaga(TB_ANUNCIO, "action_values"),
+        videoMetrics: nuloNaoApaga(TB_ANUNCIO, "video_metrics"),
         lastSyncedAt: sql`EXCLUDED.last_synced_at`,
       },
     });

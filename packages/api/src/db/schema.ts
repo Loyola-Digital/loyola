@@ -918,6 +918,23 @@ export const funnelStages = pgTable(
       .notNull()
       .default([])
       .$type<{ uniq: number; id: string; domain: string }[]>(),
+    /**
+     * As campanhas do SendFlow que a etapa `redirect` observa.
+     *
+     * A etapa `redirect` é a campanha que NÃO capta lead: o anuncio manda
+     * direto para o grupo de WhatsApp, então não há planilha, não há e-mail e
+     * o número de gente no grupo é o único resultado que existe.
+     *
+     * ⚠️ É a CAMPANHA (release), não o grupo, e não é preferência de tela: o
+     * SendFlow só devolve série DIÁRIA de entradas e saídas por campanha
+     * (`analyticsDaCampanha`). Por grupo existe apenas o total de participantes
+     * de agora — escolher grupo a grupo mataria o gráfico por dia, que é o que
+     * responde "o anúncio de ontem encheu o grupo?".
+     */
+    sendflowReleases: jsonb("sendflow_releases")
+      .notNull()
+      .default([])
+      .$type<{ id: string; name: string }[]>(),
     // 20 e não 10: "debriefing" já ocupava o limite exato, e "event_capture"
     // (Captação de Evento) passou. Ampliado na migration 0102.
     stageType: varchar("stage_type", { length: 20 }).notNull().default("free"),
@@ -1120,6 +1137,15 @@ export const funnelSurveys = pgTable(
         }>;
       }>()
       .default({}),
+    /**
+     * O segredo que autoriza POSTar resposta nesta pesquisa, quando ela chega
+     * por webhook em vez de planilha (`spreadsheet_id` = `webhook-pesquisa:<id>`).
+     *
+     * Mora aqui, e não numa tabela de fonte como a dos leads, porque a fonte da
+     * pesquisa JÁ é esta linha — não há planilha virtual a representar. Nulo em
+     * toda pesquisa que é planilha de verdade do Google.
+     */
+    webhookToken: varchar("webhook_token", { length: 64 }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -6301,9 +6327,104 @@ export const alertRuleState = pgTable(
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
+    /**
+     * O funil julgado (0177). `text` e não `uuid` porque string vazia é o item
+     * "sem funil" — o gasto que nenhuma etapa reivindica, que também é julgado
+     * — e chave primária não aceita nulo.
+     *
+     * Sem esta coluna, o primeiro funil a estourar calaria todos os outros do
+     * projeto até o dia seguinte.
+     */
+    funnelId: text("funnel_id").notNull().default(""),
     /** Dia de São Paulo (aaaa-mm-dd) do último disparo. */
     lastSentDate: text("last_sent_date"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [primaryKey({ columns: [t.ruleId, t.projectId] })],
+  (t) => [primaryKey({ columns: [t.ruleId, t.projectId, t.funnelId] })],
+);
+
+// ============================================================
+// LEADS POR WEBHOOK (Mautic, n8n, LP)
+// ============================================================
+
+/**
+ * A fonte de leads por webhook de uma etapa: uma URL com token.
+ *
+ * Mora numa tabela à parte, e não em `funnel_spreadsheets`, por causa do token:
+ * a listagem de planilhas é lida também por convidado, e o token é o que
+ * autoriza escrever lead na etapa. A ligação é pelo `spreadsheetId` — a linha
+ * de `funnel_spreadsheets` guarda `webhook:<id desta fonte>` e o
+ * `readSheetData` desvia para o Postgres (ver `services/webhook-leads.ts`).
+ */
+export const webhookLeadSources = pgTable(
+  "webhook_lead_sources",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    /** A planilha virtual que representa esta fonte no funil. */
+    spreadsheetId: uuid("spreadsheet_id")
+      .notNull()
+      .references(() => funnelSpreadsheets.id, { onDelete: "cascade" }),
+    stageId: uuid("stage_id").references(() => funnelStages.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /** Segredo da URL. Rotacionável: trocar aqui invalida o que já foi colado. */
+    token: varchar("token", { length: 64 }).notNull(),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("uq_webhook_lead_source_spreadsheet").on(t.spreadsheetId),
+    uniqueIndex("uq_webhook_lead_source_token").on(t.token),
+  ],
+);
+
+/**
+ * Um lead recebido. Append-only, como a planilha seria.
+ *
+ * Deduplicar por e-mail na entrada faria o total da etapa ficar menor que o da
+ * planilha e esconderia a segunda inscrição do mesmo e-mail; o dedup de
+ * "únicos" continua acontecendo na leitura, onde sempre aconteceu.
+ */
+export const webhookLeads = pgTable(
+  "webhook_leads",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    sourceId: uuid("source_id")
+      .notNull()
+      .references(() => webhookLeadSources.id, { onDelete: "cascade" }),
+    nome: text("nome"),
+    email: text("email"),
+    telefone: text("telefone"),
+    utmSource: text("utm_source"),
+    utmMedium: text("utm_medium"),
+    utmCampaign: text("utm_campaign"),
+    utmContent: text("utm_content"),
+    utmTerm: text("utm_term"),
+    /** O corpo cru, para o campo que ninguém previu e para depurar o envio. */
+    payload: jsonb("payload"),
+    recebidoEm: timestamp("recebido_em", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("idx_webhook_leads_source").on(t.sourceId, t.recebidoEm)],
+);
+
+/**
+ * Uma resposta de pesquisa recebida. Append-only, como a planilha seria.
+ *
+ * Guarda só o corpo cru: as colunas são as perguntas de quem envia, e elas
+ * mudam a cada lançamento — uma coluna por pergunta viraria uma migration por
+ * formulário. Quem transforma isto em `{headers, rows}` é
+ * `services/webhook-pesquisa.ts`.
+ */
+export const webhookSurveyResponses = pgTable(
+  "webhook_survey_responses",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    surveyId: uuid("survey_id")
+      .notNull()
+      .references(() => funnelSurveys.id, { onDelete: "cascade" }),
+    payload: jsonb("payload").notNull().$type<Record<string, unknown>>(),
+    recebidoEm: timestamp("recebido_em", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("idx_webhook_survey_responses_survey").on(t.surveyId, t.recebidoEm)],
 );

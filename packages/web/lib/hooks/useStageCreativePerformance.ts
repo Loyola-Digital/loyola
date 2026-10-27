@@ -13,7 +13,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useCrossReferenceLeads } from "@/lib/hooks/useCrossReferenceLeads";
+import { useFunnelSpreadsheetData, useFunnelSpreadsheets } from "@/lib/hooks/use-funnel-spreadsheets";
 import { applyMetaAdsTax } from "@/lib/utils/funnel-metrics";
+import { aplicarLeadsDaPlanilha, escolherPlanilhaDeLeads } from "@/lib/utils/leads-dos-criativos";
 import {
   CHAVE_CREATIVE_PERFORMANCE,
   chaveDeRecomputo,
@@ -24,8 +26,14 @@ import {
 import type { LpPorAnuncio } from "@/lib/utils/lps-do-lancamento";
 
 export interface CreativePerformanceData {
+  /** O representante do grupo (`group.adIds[0]` na rota) — NÃO é a lista. */
   adId: string;
   adName: string;
+  /**
+   * Story 18.89 — todos os ad_ids do criativo (mesmo Ad Name). Ausente quando
+   * a API é anterior ao contrato 53; aí o web reconstrói pelo nome.
+   */
+  adIds?: string[];
   spend: number;
   impressions: number;
   clicks: number;
@@ -186,6 +194,19 @@ export function useStageCreativePerformance({
     days,
   });
 
+  // Story 18.89: a planilha de leads da etapa, lida como o Top Criativos lê
+  // (`row.named` pelo mapeamento de colunas — inclui `utm_source` em `s=`).
+  // Mesma queryKey da galeria: na página que tem as duas, é um request só.
+  // Hook desligado (`enabled: false`) → projectId vazio desliga as duas queries.
+  const projectIdDaPlanilha = enabled && stageId ? (projectId ?? "") : "";
+  const planilhasDaEtapa = useFunnelSpreadsheets(projectIdDaPlanilha, funnelId, stageId);
+  const planilhaVinculada = escolherPlanilhaDeLeads(planilhasDaEtapa.data?.spreadsheets);
+  const planilhaDeLeads = useFunnelSpreadsheetData(
+    projectIdDaPlanilha,
+    funnelId,
+    planilhaVinculada?.id,
+  );
+
   // Combine base data with crossref leads
   const enrichedData = useMemo(() => {
     if (!baseQuery.data) return baseQuery.data;
@@ -207,34 +228,28 @@ export function useStageCreativePerformance({
       },
     };
 
-    // If no projectId or no crossref data, return taxed base data as-is
-    if (!projectId || !crossrefQuery.leads || Object.keys(crossrefQuery.leads).length === 0) {
+    // If no projectId, return taxed base data as-is
+    if (!projectId) {
       return taxed;
     }
 
-    // Story 18.47: prioriza leads por Ad Name (soma TODOS os ad_ids daquele
-    // criativo) — corrige o bug que contava só 1 ad_id. Normaliza nos 2 lados
-    // (trim+lowercase) pra casar o ad_name do Meta com "Ad Name" da planilha.
-    // Fallback: leads por ad_id (legado) e por fim o valor do backend.
-    const norm = (s: string) => s.trim().toLowerCase();
-    const leadsByAdNameNorm: Record<string, number> = {};
-    for (const [k, v] of Object.entries(crossrefQuery.leadsByAdName ?? {})) {
-      leadsByAdNameNorm[norm(k)] = v;
-    }
+    // Story 18.89: Leads pela MESMA conta do Top Criativos — mesma planilha,
+    // mesma janela, pagos, cada e-mail uma vez, somando todos os ad_ids do
+    // criativo. Antes caía nos leads do crossref indexados por `creative.adId`,
+    // a contagem de UM anúncio (o representante da linha), sempre que a aba
+    // não tinha a coluna "Ad Name" — e cobria até o número certo da API.
+    const comLeads = aplicarLeadsDaPlanilha(
+      taxed.creatives,
+      planilhaDeLeads.data,
+      days,
+      crossrefQuery.adNameByContent,
+    );
 
-    // Enrich creatives with crossref leads and term (spend já com imposto via `taxed`)
-    const enrichedCreatives = taxed.creatives.map((creative) => {
-      const crossrefLeads =
-        leadsByAdNameNorm[norm(creative.adName)] ??
-        crossrefQuery.leads[creative.adId] ??
-        creative.leads;
-      const crossrefTerm = crossrefQuery.terms[creative.adId] ?? creative.utmTerm;
-      return {
-        ...creative,
-        leads: crossrefLeads, // Update leads from crossref
-        utmTerm: crossrefTerm, // Update term from crossref (hot/cold)
-      };
-    });
+    // Term (hot/cold) segue vindo do crossref (spend já com imposto via `taxed`)
+    const enrichedCreatives = comLeads.map((creative) => ({
+      ...creative,
+      utmTerm: crossrefQuery.terms[creative.adId] ?? creative.utmTerm,
+    }));
 
     // Recalculate summary totals
     const totalLeads = enrichedCreatives.reduce((sum, c) => sum + c.leads, 0);
@@ -247,7 +262,14 @@ export function useStageCreativePerformance({
         totalLeads,
       },
     };
-  }, [baseQuery.data, projectId, crossrefQuery.leads, crossrefQuery.leadsByAdName]);
+  }, [
+    baseQuery.data,
+    projectId,
+    days,
+    planilhaDeLeads.data,
+    crossrefQuery.adNameByContent,
+    crossrefQuery.terms,
+  ]);
 
   return {
     ...baseQuery,
@@ -257,7 +279,14 @@ export function useStageCreativePerformance({
     bandLabels: crossrefQuery.bandLabels,
     // Story 18.63: diagnóstico p/ o estado informativo quando não há faixas.
     bandsDiagnostic: crossrefQuery.bandsDiagnostic,
-    isLoading: projectId ? (baseQuery.isLoading || crossrefQuery.isLoading) : baseQuery.isLoading,
+    // Story 18.89: espera a planilha de leads — senão a tabela mostra o número
+    // da API e troca pelo da planilha um instante depois.
+    isLoading: projectId
+      ? (baseQuery.isLoading ||
+        crossrefQuery.isLoading ||
+        planilhasDaEtapa.isLoading ||
+        (!!planilhaVinculada && planilhaDeLeads.isLoading))
+      : baseQuery.isLoading,
     error: baseQuery.error || (projectId && crossrefQuery.error ? new Error(crossrefQuery.error) : undefined),
   };
 }

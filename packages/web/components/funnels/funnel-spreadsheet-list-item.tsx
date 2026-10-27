@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { FileSpreadsheet, Pencil, Trash2 } from "lucide-react";
+import { FileSpreadsheet, Pencil, Trash2, Webhook } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useDeleteFunnelSpreadsheet } from "@/lib/hooks/use-funnel-spreadsheets";
-import type { FunnelSpreadsheet, FunnelSpreadsheetType } from "@/lib/types/funnel-spreadsheet";
+import { ehFonteDeWebhook, type FunnelSpreadsheet, type FunnelSpreadsheetType } from "@/lib/types/funnel-spreadsheet";
+import { WebhookLeadsDialog } from "@/components/funnels/webhook-leads-dialog";
 import { EditFunnelSpreadsheetDialog } from "@/components/funnels/edit-funnel-spreadsheet-dialog";
 import { countMappedFields } from "@/components/funnels/funnel-spreadsheet-wizard-dialog";
 import { ehGerenciadaPorOutraTela, ondeSeEdita } from "@/lib/utils/funnel-spreadsheet-ownership";
@@ -46,11 +47,15 @@ export function FunnelSpreadsheetListItem({
 }: FunnelSpreadsheetListItemProps) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [webhookOpen, setWebhookOpen] = useState(false);
   const deleteSpreadsheet = useDeleteFunnelSpreadsheet(projectId, funnelId);
 
   const mappedCount = countMappedFields(spreadsheet.columnMapping);
   // Story 29.55: o backend recusa a escrita (409); aqui a tela para de oferecer.
   const gerenciadaPorOutraTela = ehGerenciadaPorOutraTela(spreadsheet.type);
+  // Fonte de webhook: não há planilha para abrir nem coluna para mapear — o que
+  // existe é uma URL, e é ela que o botão mostra.
+  const porWebhook = ehFonteDeWebhook(spreadsheet);
 
   function handleDelete() {
     deleteSpreadsheet.mutate(spreadsheet.id, {
@@ -68,7 +73,11 @@ export function FunnelSpreadsheetListItem({
     <>
       <div className="rounded-lg border border-border/30 bg-card/60 p-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0 flex-1">
-          <FileSpreadsheet className="h-5 w-5 text-green-600 shrink-0" />
+          {porWebhook ? (
+            <Webhook className="h-5 w-5 text-sky-600 shrink-0" />
+          ) : (
+            <FileSpreadsheet className="h-5 w-5 text-green-600 shrink-0" />
+          )}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <p className="text-sm font-medium truncate">{spreadsheet.label}</p>
@@ -80,10 +89,12 @@ export function FunnelSpreadsheetListItem({
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground truncate">
-              {spreadsheet.spreadsheetName} / {spreadsheet.sheetName}
+              {porWebhook ? "Recebido por webhook" : `${spreadsheet.spreadsheetName} / ${spreadsheet.sheetName}`}
             </p>
             <p className="text-[10px] text-muted-foreground mt-0.5">
-              {mappedCount} {mappedCount === 1 ? "campo mapeado" : "campos mapeados"}
+              {porWebhook
+                ? "nome, email, telefone e UTMs"
+                : `${mappedCount} ${mappedCount === 1 ? "campo mapeado" : "campos mapeados"}`}
             </p>
           </div>
         </div>
@@ -96,15 +107,27 @@ export function FunnelSpreadsheetListItem({
           </p>
         ) : (
           <div className="flex items-center gap-0.5 shrink-0">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setEditOpen(true)}
-              aria-label="Editar mapeamento"
-            >
-              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-            </Button>
+            {porWebhook ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => setWebhookOpen(true)}
+                aria-label="Ver a URL do webhook"
+              >
+                <Webhook className="h-3.5 w-3.5 text-muted-foreground" />
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => setEditOpen(true)}
+                aria-label="Editar mapeamento"
+              >
+                <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -117,6 +140,17 @@ export function FunnelSpreadsheetListItem({
           </div>
         )}
       </div>
+
+      {webhookOpen && (
+        <WebhookLeadsDialog
+          projectId={projectId}
+          funnelId={funnelId}
+          stageId={spreadsheet.stageId ?? undefined}
+          spreadsheetId={spreadsheet.id}
+          open={webhookOpen}
+          onOpenChange={setWebhookOpen}
+        />
+      )}
 
       {editOpen && (
         <EditFunnelSpreadsheetDialog
@@ -131,10 +165,23 @@ export function FunnelSpreadsheetListItem({
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remover planilha vinculada?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {porWebhook ? "Remover a fonte de webhook?" : "Remover planilha vinculada?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              O vínculo &quot;{spreadsheet.label}&quot; será removido do funil. A planilha no
-              Google Drive <strong>não</strong> será afetada. Esta ação não pode ser desfeita.
+              {porWebhook ? (
+                <>
+                  A URL de &quot;{spreadsheet.label}&quot; para de funcionar e os leads já
+                  recebidos por ela <strong>serão apagados</strong> — eles só existem aqui.
+                  Esta ação não pode ser desfeita.
+                </>
+              ) : (
+                <>
+                  O vínculo &quot;{spreadsheet.label}&quot; será removido do funil. A planilha
+                  no Google Drive <strong>não</strong> será afetada. Esta ação não pode ser
+                  desfeita.
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

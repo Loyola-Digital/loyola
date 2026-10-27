@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  FORMULA_TX_CONV,
+  MENSAGEM_SEM_CONSOLIDADA,
+  type TxConvConsolidada,
+} from "@loyola-x/shared/src/taxa-conversao-lp";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Table,
@@ -45,6 +50,10 @@ interface CrossedFunnelDailyTableProps {
   surveyTotal?: number | null;
   surveyMatched?: number | null;
   surveyUnmatched?: number | null;
+  /**
+   * Não é mais lida (Story 18.93: a coluna Faturamento da Gratuita saiu). Fica
+   * na interface porque o `LaunchDashboard` ainda passa.
+   */
   salesByDay?: Record<string, number>;
   /**
    * Story 18.48: vendas (ingressos) dedup por dia × origem. Na etapa Paga, as
@@ -141,7 +150,8 @@ function formatDateLabel(d: string) {
   return `${day}/${m}/${y}`;
 }
 
-function renderConnectRate(v: number | null) {
+/** Também na Dados diários da etapa de Vendas (`sales-daily-table.tsx`). */
+export function renderConnectRate(v: number | null) {
   if (v == null) return "—";
   // Story 18.52 AC8: >70% verde, <=70% amarelo.
   const good = v > 70;
@@ -237,6 +247,21 @@ function MovimentoDeGrupo({
   );
 }
 
+/**
+ * Story 18.91: a Consolidada com "—" e o motivo no tooltip quando não há
+ * visitas da LP. Erro nunca vira 0% nem some da tela (AC4).
+ */
+function CelulaConsolidada({ taxa }: { taxa: TxConvConsolidada }) {
+  return (
+    <TableCell
+      className={`text-right ${taxa.motivo ? "cursor-help text-muted-foreground" : ""}`}
+      title={taxa.motivo ? MENSAGEM_SEM_CONSOLIDADA[taxa.motivo] : undefined}
+    >
+      {fmtPercent(taxa.valor)}
+    </TableCell>
+  );
+}
+
 interface ContextMenuState {
   date: string;
   turn: FunnelBatchTurn | null;
@@ -247,15 +272,21 @@ interface ContextMenuState {
 /**
  * Tabela diária cruzada (Meta Ads + planilha de leads/vendas).
  *
- * Ordem das colunas (Story 18.51b):
- * - Gratuita (free): Dia, Investimento, Faturamento, Total Leads, CPL Pg, CPL
- *   Geral, Cliques, Impressões, CPM, CPC, CTR, LP View, Connect Rate, Tx Conv.,
- *   Leads Pg, Leads Org, Leads s/ track (17 colunas).
- * - Paga (paid): Dia, Investimento, Faturamento único, Faturamento Total,
- *   Ingressos únicos, Ingressos totais, CPL Pg, CPL Geral, Ticket médio (únicos),
- *   Ticket médio (total), Cliques, Impressões, CPM, CPC, CTR, LP View, Connect
- *   Rate, Tx Conv., Ingressos Pg, Ingressos Org, Ingressos s/ track (21 colunas).
- * Última linha é o total via footer (soma dos recortes por dia).
+ * Ordem das colunas (Story 18.51b; Tx Conv. reposicionadas na 18.52/18.91;
+ * Faturamento fora da Gratuita na 18.93):
+ * - Gratuita (toda etapa fora de `ehCaptacaoPaga`): Dia, Investimento, Total
+ *   Leads, CPL Pg, CPL Geral, Tx Conv. Mídia Paga, Tx Conv. Consolidada,
+ *   Cliques, Impressões, CPM, CPC, CTR, LP View, Connect Rate, Leads Pg,
+ *   Leads Org, Leads s/ track (17 colunas). Sem faturamento: a planilha de
+ *   leads não traz valor e a coluna era sempre R$ 0 (Story 18.93).
+ * - Paga (paid / event_capture): Dia, Investimento, Faturamento único,
+ *   Faturamento Total, Ingressos únicos, Ingresso+OrderBump, CPL Pago Único,
+ *   CPL Geral Único, Ticket médio (únicos), Ticket médio (total), Tx Conv.
+ *   Mídia Paga, Tx Conv. Consolidada, Cliques, Impressões, CPM, CPC, CTR,
+ *   LP View, Connect Rate, Ingressos Pg, Ingressos Org, Ingressos s/ track
+ *   (22 colunas).
+ * Última linha é o total via footer (soma dos recortes por dia), célula a
+ * célula com o cabeçalho.
  *
  * A coluna de leads/ingressos + CPL Pg/Geral ficam cedo na leitura para destacar
  * a métrica de custo de aquisição.
@@ -288,7 +319,6 @@ export function CrossedFunnelDailyTable({
   surveyTotal,
   surveyMatched,
   surveyUnmatched,
-  salesByDay,
   ingressosUnicosByDay,
   ingressosTotaisByDay,
   faturamentoUnicoByDay,
@@ -379,10 +409,6 @@ export function CrossedFunnelDailyTable({
     }),
     [isPaidCapture],
   );
-  const salesTotal = salesByDay
-    ? Object.values(salesByDay).reduce((a, b) => a + b, 0)
-    : null;
-
   // Story 18.51b AC1e: tooltips de cálculo por cabeçalho (reusados no header).
   const TT = {
     investimento: "Investimento = gasto de mídia (Meta Ads) no dia.",
@@ -390,7 +416,6 @@ export function CrossedFunnelDailyTable({
       "Faturamento único = soma do valorBruto de 1 compra por e-mail (a mais recente) do produto da captação.",
     fatTotal:
       "Faturamento Total = soma do valorBruto de TODAS as vendas (produto da captação + order bumps), sem dedup.",
-    faturamento: "Faturamento bruto das vendas no dia.",
     ingUnicos:
       "Ingressos únicos = e-mails distintos que compraram o produto da captação (dedup por e-mail).",
     tmUnico: "Ticket médio (únicos) = Faturamento único ÷ Ingressos únicos.",
@@ -409,9 +434,11 @@ export function CrossedFunnelDailyTable({
     lpview: "LP View = visualizações da landing page.",
     connect:
       "Connect Rate = LP Views ÷ cliques × 100 (quantos cliques chegaram na LP).",
-    txconv: isPaidCapture
-      ? "Taxa de conversão = Ingressos únicos pagos ÷ cliques × 100."
-      : "Taxa de conversão = Leads pagos ÷ cliques × 100.",
+    // Story 18.91: as duas taxas da LP, com a definição única do shared.
+    txconv: isPaidCapture ? FORMULA_TX_CONV.midiaPagaIngressos : FORMULA_TX_CONV.midiaPagaLeads,
+    txconvConsolidada: isPaidCapture
+      ? FORMULA_TX_CONV.consolidadaIngressos
+      : FORMULA_TX_CONV.consolidadaLeads,
   };
 
   // Story 18.26 Fase 1.5: resolve adset names dos ids que aparecem em
@@ -626,7 +653,8 @@ export function CrossedFunnelDailyTable({
                 >
                   Investimento
                 </TableHead>
-                {isPaidCapture ? (
+                {/* Story 18.93: faturamento só na Paga — na Gratuita era sempre R$ 0. */}
+                {isPaidCapture && (
                   <>
                     <TableHead
                       className="text-right min-w-[120px] cursor-help"
@@ -641,13 +669,6 @@ export function CrossedFunnelDailyTable({
                       Faturamento Total
                     </TableHead>
                   </>
-                ) : (
-                  <TableHead
-                    className="text-right min-w-[110px] cursor-help"
-                    title={TT.faturamento}
-                  >
-                    Faturamento
-                  </TableHead>
                 )}
                 <TableHead
                   className="text-right min-w-[110px] font-semibold cursor-help"
@@ -692,11 +713,18 @@ export function CrossedFunnelDailyTable({
                   </>
                 )}
                 {/* Story 18.52 AC5: Tx Conv. movida para a esquerda de Cliques. */}
+                {/* Story 18.91: duas taxas no lugar da "Tx Conv." (cliques). */}
                 <TableHead
-                  className="text-right min-w-[90px] cursor-help"
+                  className="text-right min-w-[110px] cursor-help"
                   title={TT.txconv}
                 >
-                  Tx Conv.
+                  Tx Conv. Mídia Paga
+                </TableHead>
+                <TableHead
+                  className="text-right min-w-[110px] cursor-help"
+                  title={TT.txconvConsolidada}
+                >
+                  Tx Conv. Consolidada
                 </TableHead>
                 <TableHead
                   className="text-right min-w-[80px] cursor-help"
@@ -818,7 +846,7 @@ export function CrossedFunnelDailyTable({
                     <TableCell className="text-right">
                       {fmtCurrency(r.spend)}
                     </TableCell>
-                    {isPaidCapture ? (
+                    {isPaidCapture && (
                       <>
                         <TableCell className="text-right">
                           {hasSalesData
@@ -831,14 +859,6 @@ export function CrossedFunnelDailyTable({
                             : "—"}
                         </TableCell>
                       </>
-                    ) : (
-                      <TableCell className="text-right">
-                        {fmtCurrency(
-                          salesByDay
-                            ? (salesByDay[r.date] ?? 0)
-                            : r.faturamento,
-                        )}
-                      </TableCell>
                     )}
                     <TableCell className="text-right">
                       {isPaidCapture
@@ -874,8 +894,9 @@ export function CrossedFunnelDailyTable({
                     )}
                     {/* Story 18.52 AC5: Tx Conv. à esquerda de Cliques. */}
                     <TableCell className="text-right">
-                      {fmtPercent(r.txConv)}
+                      {fmtPercent(r.txConvMidiaPaga)}
                     </TableCell>
+                    <CelulaConsolidada taxa={r.txConvConsolidada} />
                     <TableCell className="text-right">
                       {fmtInt(r.linkClicks)}
                     </TableCell>
@@ -919,7 +940,7 @@ export function CrossedFunnelDailyTable({
                 <TableCell className="text-right">
                   {fmtCurrency(totals.spend)}
                 </TableCell>
-                {isPaidCapture ? (
+                {isPaidCapture && (
                   <>
                     <TableCell className="text-right">
                       {hasSalesData ? fmtCurrency(totFatUnico) : "—"}
@@ -928,12 +949,6 @@ export function CrossedFunnelDailyTable({
                       {hasSalesData ? fmtCurrency(totFatTotal) : "—"}
                     </TableCell>
                   </>
-                ) : (
-                  <TableCell className="text-right">
-                    {fmtCurrency(
-                      salesTotal !== null ? salesTotal : totals.faturamento,
-                    )}
-                  </TableCell>
                 )}
                 <TableCell className="text-right">
                   {isPaidCapture
@@ -976,8 +991,9 @@ export function CrossedFunnelDailyTable({
                   })()}
                 {/* Story 18.52 AC5: Tx Conv. à esquerda de Cliques. */}
                 <TableCell className="text-right">
-                  {fmtPercent(totals.txConv)}
+                  {fmtPercent(totals.txConvMidiaPaga)}
                 </TableCell>
+                <CelulaConsolidada taxa={totals.txConvConsolidada} />
                 <TableCell className="text-right">
                   {fmtInt(totals.linkClicks)}
                 </TableCell>

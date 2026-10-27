@@ -17,6 +17,7 @@ import {
   cpcDeLink,
   somarLinkClicks,
 } from "@loyola-x/shared/src/clique-no-link";
+import { chaveDoLead, ehOrigemPagaDeLead } from "@loyola-x/shared/src/leads-pagos";
 
 /**
  * Representa um criativo agregado — vários `TopPerformerAd` com o mesmo
@@ -324,13 +325,13 @@ export function countLeadsByOriginForAds(
   for (const row of rows) {
     const utmContent = utmContentEfetivo(row.named.utm_content ?? "");
     if (!idSet.has(utmContent)) { rowIdx++; continue; }
-    const email = (row.named.email ?? "").trim().toLowerCase();
-    const key = email || `__no-email_${rowIdx}`;
+    // Story 18.89: chave e origem paga vêm do shared — a API conta com as mesmas.
+    const key = chaveDoLead(row.named.email, rowIdx);
     const utmSource = (row.named.utm_source ?? "").trim().toLowerCase();
     let category: "leadsPagos" | "leadsOrg" | "leadsSemTrack";
     if (!utmSource || !utmSourceMapped) {
       category = "leadsSemTrack";
-    } else if (PAID_SOURCES.has(utmSource)) {
+    } else if (ehOrigemPagaDeLead(utmSource)) {
       category = "leadsPagos";
     } else {
       category = "leadsOrg";

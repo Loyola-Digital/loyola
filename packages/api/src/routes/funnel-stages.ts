@@ -1,5 +1,6 @@
 ﻿import { z } from "zod";
 import { eq, and } from "drizzle-orm";
+import type { StageType } from "@loyola-x/shared";
 import fp from "fastify-plugin";
 import {
   funnelStages,
@@ -7,11 +8,10 @@ import {
   projects,
   projectMembers,
   users,
-  metaAdsAccountProjects,
-  metaAdsAccounts,
 } from "../db/schema.js";
-import { decryptAccountToken } from "../services/meta-ads.js";
-import { triggerBackgroundSyncForNewCampaigns } from "../services/meta-insights-cache.js";
+import { getAllMetaAccountsForProject } from "../services/traffic-analytics.js";
+import { lerDeCadaConta, rotuloDaConta } from "../services/meta-contas-do-projeto.js";
+import { sincronizarHistoricoDasCampanhasNovas } from "../services/meta-sync-campanhas-novas.js";
 import {
   resolveStagePhaseSuffix,
   findMatchingCampaignsForStage,
@@ -53,7 +53,7 @@ const matchCodeDaEtapaSchema = z.union([z.literal(""), z.string().trim().max(120
 
 const createStageSchema = z.object({
   name: z.string().min(1).max(255),
-  stageType: z.enum(["paid", "free", "application", "sales", "cpl", "event", "event_capture", "debriefing", "comercial", "lyrio", "mapa"]).default("free"),
+  stageType: z.enum(["paid", "free", "application", "sales", "cpl", "event", "event_capture", "debriefing", "comercial", "lyrio", "mapa", "redirect"]).default("free"),
   matchCode: matchCodeDaEtapaSchema.nullable().optional(),
   metaAccountId: z.string().uuid().nullable().optional(),
   campaigns: z.array(campaignSchema).default([]),
@@ -61,11 +61,13 @@ const createStageSchema = z.object({
   googleAdsCampaigns: z.array(campaignSchema).default([]),
   switchyFolderIds: z.array(switchyFolderSchema).default([]),
   switchyLinkedLinks: z.array(switchyLinkRefSchema).default([]),
+  // Campanhas do SendFlow da etapa `redirect` (os grupos de WhatsApp).
+  sendflowReleases: z.array(campaignSchema).default([]),
 });
 
 const updateStageSchema = z.object({
   name: z.string().min(1).max(255).optional(),
-  stageType: z.enum(["paid", "free", "application", "sales", "cpl", "event", "event_capture", "debriefing", "comercial", "lyrio", "mapa"]).optional(),
+  stageType: z.enum(["paid", "free", "application", "sales", "cpl", "event", "event_capture", "debriefing", "comercial", "lyrio", "mapa", "redirect"]).optional(),
   matchCode: matchCodeDaEtapaSchema.nullable().optional(),
   metaAccountId: z.string().uuid().nullable().optional(),
   campaigns: z.array(campaignSchema).optional(),
@@ -73,6 +75,7 @@ const updateStageSchema = z.object({
   googleAdsCampaigns: z.array(campaignSchema).optional(),
   switchyFolderIds: z.array(switchyFolderSchema).optional(),
   switchyLinkedLinks: z.array(switchyLinkRefSchema).optional(),
+  sendflowReleases: z.array(campaignSchema).optional(),
   ga4PageFilter: z.string().max(2048).nullable().optional(),
   // Story 18.56: URL manual por LP (chave = lpName trim+lowercase). Valor
   // vazio = remover o link (o handler descarta chaves vazias antes de gravar).
@@ -147,7 +150,7 @@ function stageShape(
     id: row.id,
     funnelId: row.funnelId,
     name: row.name,
-    stageType: (row.stageType ?? "free") as "paid" | "free" | "sales" | "cpl" | "event" | "debriefing" | "comercial" | "lyrio",
+    stageType: (row.stageType ?? "free") as StageType,
     matchCode: row.matchCode ?? null,
     metaAccountId: row.metaAccountId,
     campaigns: (row.campaigns ?? []) as { id: string; name: string }[],
@@ -155,6 +158,7 @@ function stageShape(
     googleAdsCampaigns: (row.googleAdsCampaigns ?? []) as { id: string; name: string }[],
     switchyFolderIds: (row.switchyFolderIds ?? []) as { id: number; name: string }[],
     switchyLinkedLinks: (row.switchyLinkedLinks ?? []) as { uniq: number; id: string; domain: string }[],
+    sendflowReleases: (row.sendflowReleases ?? []) as { id: string; name: string }[],
     ga4PageFilter: row.ga4PageFilter ?? null,
     lpLinks: (row.lpLinks ?? {}) as Record<string, string>,
     // Story 18.83 (AC5): correção manual por campanha da tabela de LPs.
@@ -193,35 +197,16 @@ export default fp(async function funnelStageRoutes(fastify) {
     return project ?? null;
   }
 
-  // Epic 30 Story 30.2: fire-and-forget background sync histÃ³rico Meta (365d)
-  // pra campanhas recÃ©m-vinculadas a uma stage.
+  // Epic 30 Story 30.2: fire-and-forget background sync histórico Meta (365d)
+  // pra campanhas recém-vinculadas a uma stage.
+  // Story 29.83: pede a CADA conta do expert, com o `act_` dela (antes ia o
+  // UUID de meta_ads_accounts no lugar do número da conta — falhava sempre).
   async function fireBackgroundMetaSync(
     projectId: string,
-    metaAccountIdSelected: string,
     newCampaignIds: string[],
   ): Promise<void> {
-    if (newCampaignIds.length === 0) return;
     try {
-      const [link] = await fastify.db
-        .select({ accountId: metaAdsAccountProjects.accountId })
-        .from(metaAdsAccountProjects)
-        .where(eq(metaAdsAccountProjects.projectId, projectId))
-        .limit(1);
-      if (!link) return;
-      const [account] = await fastify.db
-        .select()
-        .from(metaAdsAccounts)
-        .where(eq(metaAdsAccounts.id, link.accountId))
-        .limit(1);
-      if (!account) return;
-      const token = decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv);
-      triggerBackgroundSyncForNewCampaigns(
-        fastify.db,
-        projectId,
-        metaAccountIdSelected,
-        token,
-        newCampaignIds,
-      );
+      await sincronizarHistoricoDasCampanhasNovas(fastify.db, projectId, newCampaignIds);
     } catch (err) {
       fastify.log.error({ err, projectId }, "Failed to trigger Meta background sync (stage)");
     }
@@ -239,32 +224,6 @@ export default fp(async function funnelStageRoutes(fastify) {
       .where(and(eq(funnels.id, funnelId), eq(funnels.projectId, projectId)))
       .limit(1);
     return funnel ?? null;
-  }
-
-  /**
-   * Pega o metaAccountId + token decifrado da conta Meta vinculada ao projeto.
-   * Retorna null se nÃ£o tem conta vinculada (sem erro â€” auto-popular cai pra
-   * lista vazia).
-   */
-  async function getMetaAccountForProject(projectId: string) {
-    const [link] = await fastify.db
-      .select({ accountId: metaAdsAccountProjects.accountId })
-      .from(metaAdsAccountProjects)
-      .where(eq(metaAdsAccountProjects.projectId, projectId))
-      .limit(1);
-    if (!link) return null;
-    const [account] = await fastify.db
-      .select()
-      .from(metaAdsAccounts)
-      .where(eq(metaAdsAccounts.id, link.accountId))
-      .limit(1);
-    if (!account) return null;
-    try {
-      const token = decryptAccountToken(account.accessTokenEncrypted, account.accessTokenIv);
-      return { metaAccountId: account.metaAccountId, accessToken: token };
-    } catch {
-      return null;
-    }
   }
 
   // GET /api/projects/:projectId/funnels/:funnelId/stages
@@ -375,18 +334,28 @@ export default fp(async function funnelStageRoutes(fastify) {
         ),
       );
       if (chave.codigo) {
-        const meta = await getMetaAccountForProject(params.data.projectId);
-        if (meta) {
-          try {
-            resolvedCampaigns = await findMatchingCampaignsForStage(
-              meta.metaAccountId,
-              meta.accessToken,
+        // Story 29.83: casa o código da etapa nas campanhas de TODAS as contas
+        // do expert. A conta que falhar fica de fora, com aviso no log — o
+        // auto-popular é conveniência e o usuário confere a lista no seletor.
+        try {
+          const contas = await getAllMetaAccountsForProject(fastify.db, params.data.projectId);
+          const leitura = await lerDeCadaConta(contas, (conta) =>
+            findMatchingCampaignsForStage(
+              conta.metaAccountId,
+              conta.accessToken,
               chave.codigo,
               chave.sufixo,
+            ),
+          );
+          for (const falha of leitura.falhas) {
+            fastify.log.warn(
+              { erro: falha.erro, conta: rotuloDaConta(falha.conta) },
+              "[funnel-stages] auto-popular campaigns falhou nesta conta — seguindo sem ela",
             );
-          } catch (err) {
-            fastify.log.warn({ err }, "[funnel-stages] auto-popular campaigns falhou â€” seguindo com []");
           }
+          resolvedCampaigns = leitura.porConta.flatMap((p) => p.itens);
+        } catch (err) {
+          fastify.log.warn({ err }, "[funnel-stages] auto-popular campaigns falhou — seguindo com []");
         }
       }
     }
@@ -404,6 +373,7 @@ export default fp(async function funnelStageRoutes(fastify) {
         googleAdsCampaigns: body.googleAdsCampaigns,
         switchyFolderIds: body.switchyFolderIds,
         switchyLinkedLinks: body.switchyLinkedLinks,
+        sendflowReleases: body.sendflowReleases,
         sortOrder: nextOrder,
       })
       .returning();
@@ -450,6 +420,7 @@ export default fp(async function funnelStageRoutes(fastify) {
     if (body.googleAdsCampaigns !== undefined) updates.googleAdsCampaigns = body.googleAdsCampaigns;
     if (body.switchyFolderIds !== undefined) updates.switchyFolderIds = body.switchyFolderIds;
     if (body.switchyLinkedLinks !== undefined) updates.switchyLinkedLinks = body.switchyLinkedLinks;
+    if (body.sendflowReleases !== undefined) updates.sendflowReleases = body.sendflowReleases;
     if (body.ga4PageFilter !== undefined) updates.ga4PageFilter = body.ga4PageFilter;
     // Story 18.56: normaliza chaves (trim+lowercase) e descarta valores vazios
     // (vazio = remoção do link). O objeto substitui o anterior por inteiro —
@@ -493,7 +464,7 @@ export default fp(async function funnelStageRoutes(fastify) {
         .map((c) => c.id)
         .filter((id) => !oldIds.has(id));
       if (newCampaignIds.length > 0) {
-        void fireBackgroundMetaSync(params.data.projectId, row.metaAccountId, newCampaignIds);
+        void fireBackgroundMetaSync(params.data.projectId, newCampaignIds);
       }
     }
 

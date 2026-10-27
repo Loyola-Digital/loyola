@@ -4,16 +4,18 @@ import {
   hojeSaoPaulo,
   horaSaoPaulo,
   julgar,
+  leituraDoItem,
   textoDoAlerta,
   type Leitura,
   type Regra,
 } from "../services/alertas-de-funil.js";
+import type { ItemDeFunil } from "../services/por-funil.js";
 
 /**
  * O que decide se a pessoa é interrompida.
  *
- * A pergunta aqui não é "a conta está certa" — o número vem do BI, que tem os
- * próprios testes. É "quando a gente cala a boca": piso de gasto, um aviso por
+ * A pergunta aqui não é "a soma está certa" — isso é SQL, conferido contra o
+ * painel. É "quando a gente cala a boca": piso de gasto, um aviso por
  * dia, e o silêncio quando não há dado. Errar para o lado de falar demais é o
  * jeito conhecido de a pessoa desligar a notificação inteira.
  */
@@ -160,6 +162,70 @@ describe("textoDoAlerta", () => {
     );
     expect(t.titulo).toContain("sem venda");
     expect(t.titulo).toContain("PP");
+  });
+});
+
+const item = (over: Partial<ItemDeFunil> = {}): ItemDeFunil => ({
+  chave: "f1",
+  nome: "dg-pg05-out-26",
+  gasto: 1000,
+  lpViews: 400,
+  linkClicks: 1000,
+  faturamento: 500,
+  ...over,
+});
+
+describe("leituraDoItem", () => {
+  it("ROAS é faturamento sobre gasto do PRÓPRIO funil", () => {
+    const l = leituraDoItem("roas", item({ gasto: 1776, faturamento: 5818 }));
+    expect(l.valor).toBeCloseTo(3.276, 3);
+  });
+
+  it("funil que faturou sem mídia atribuída não tem ROAS — e não tem ROAS zero", () => {
+    // Zero diria "a mídia foi um desastre"; o certo é "não há o que dividir".
+    expect(leituraDoItem("roas", item({ gasto: 0, faturamento: 670 })).valor).toBeNull();
+  });
+
+  it("connect rate sem clique no link é ausência, não 0%", () => {
+    expect(leituraDoItem("connect_rate", item({ linkClicks: 0, lpViews: 0 })).valor).toBeNull();
+  });
+
+  it("connect rate é lp_views sobre link_clicks", () => {
+    const l = leituraDoItem("connect_rate", item({ lpViews: 412, linkClicks: 1000 }));
+    expect(l.valor).toBeCloseTo(0.412, 3);
+    expect(l.faturamento).toBeNull();
+  });
+
+  it("investiu e não vendeu julga o faturamento do funil", () => {
+    const l = leituraDoItem("investiu_sem_vender", item({ gasto: 516, faturamento: 0 }));
+    expect(l.valor).toBe(0);
+    expect(l.gasto).toBe(516);
+  });
+
+  it("o gasto sem funil atravessa como qualquer outro item", () => {
+    // Campanha que nenhuma etapa reivindica não pode ficar fora da rede.
+    const l = leituraDoItem("roas", item({ chave: "", gasto: 200, faturamento: 0 }));
+    expect(l.valor).toBe(0);
+  });
+});
+
+describe("textoDoAlerta fala do funil, com o projeto ao lado", () => {
+  it("o título é o funil e o corpo começa pelo projeto", () => {
+    const t = textoDoAlerta(
+      regra({ metrica: "investiu_sem_vender", valor: "300" }),
+      leitura({ valor: 0, gasto: 516, faturamento: 0 }),
+      "dg-bf26",
+      "DG & CPDF",
+    );
+    // `\s` e não um espaço: o `toLocaleString` de pt-BR separa a moeda com
+    // espaço não separável, e a comparação literal falharia sem aparecer por quê.
+    expect(t.titulo).toMatch(/^dg-bf26: R\$\s516 sem venda$/);
+    expect(t.corpo.startsWith("DG & CPDF · ")).toBe(true);
+  });
+
+  it("sem projeto não sobra separador solto no corpo", () => {
+    const t = textoDoAlerta(regra(), leitura(), "DG & CPDF (sem funil)");
+    expect(t.corpo).not.toContain("·");
   });
 });
 

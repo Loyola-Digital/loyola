@@ -42,13 +42,22 @@ export interface EntradaDeRegra {
   ativo: boolean;
 }
 
-export interface Veredito {
+/** O veredito de UM funil: é funil a funil que a regra julga. */
+export interface VereditoDeFunil {
+  /** `funnel_id`, ou "" no item "(sem funil)". */
+  chave: string;
+  nome: string;
   estourou: boolean;
   motivo?: "sem_dado" | "gasto_abaixo_do_piso" | "dentro_da_faixa" | "ja_avisou_hoje";
   leitura: { valor: number | null; gasto: number; faturamento: number | null };
+  previa: { titulo: string; corpo: string };
+}
+
+export interface Veredito {
   /** Em qual projeto a conferência foi feita — a regra global precisa de um. */
   projeto: string;
-  previa: { titulo: string; corpo: string };
+  /** Vazio quando nenhum funil teve movimento na janela. */
+  funis: VereditoDeFunil[];
 }
 
 export function useAlertas() {

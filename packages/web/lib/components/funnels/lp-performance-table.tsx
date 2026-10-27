@@ -16,6 +16,7 @@
  * API anterior (rótulos "LPA"), a tabela é a de antes, com o lápis.
  */
 
+import { MENSAGEM_SEM_CONSOLIDADA } from "@loyola-x/shared/src/taxa-conversao-lp";
 import React, { useMemo, useState } from "react";
 import {
   ArrowDown,
@@ -103,6 +104,11 @@ interface LpPerformanceTableProps {
    * servidor, então a leitura só acontece se alguém pedir para ver.
    */
   onFirstExpand?: () => void;
+  /**
+   * Story 18.91 (AC9): a aba Meta Ads TESTE mantém a "Tx Conv." antiga
+   * (resultado ÷ cliques no link). As outras telas mostram as duas taxas novas.
+   */
+  taxaAntiga?: boolean;
 }
 
 /**
@@ -121,8 +127,15 @@ const COLUMN_TOOLTIPS = {
   ctr: "(Cliques ÷ Impressões) × 100",
   lpView: "Landing Page Views reais da Meta API, somados por LP",
   connectRate: "(LP Views ÷ Cliques no link) × 100 — % dos cliques que carregaram a LP; pode passar de 100% por particularidades de rastreamento",
-  txConvPaid: "(Ingressos Únicos ÷ Cliques no link) × 100",
-  txConvFree: "(Leads ÷ Cliques no link) × 100",
+  txConvPaid: "(Ingressos Únicos ÷ Cliques no link) × 100 — definição anterior à Story 18.91",
+  txConvFree: "(Leads ÷ Cliques no link) × 100 — definição anterior à Story 18.91",
+  // Story 18.91: as duas taxas da LP (fórmula única em shared/taxa-conversao-lp).
+  txConvMidiaPagaPaid: "(Ingressos Únicos da LP ÷ LP View da LP) × 100",
+  txConvMidiaPagaFree: "(Leads da LP ÷ LP View da LP) × 100",
+  txConvConsolidadaPaid:
+    "(Ingressos únicos da LP, todas as origens ÷ usuários únicos nas páginas da LP no GA4/Plausible) × 100",
+  txConvConsolidadaFree:
+    "(Leads da LP, todas as origens ÷ usuários únicos nas páginas da LP no GA4/Plausible) × 100",
   roas: "Fat. Total ÷ Investimento",
   // Story 18.60 (Captação Paga)
   ingressosUnicos: "Compradores únicos de ingresso da LP (dedup por email, sem order bump), atribuídos via co= da venda → campanha da LP",
@@ -161,6 +174,8 @@ type LpSortKey =
   | "roas"
   | "cplPagoUnico"
   | "txConv"
+  | "txConvMidiaPaga"
+  | "txConvConsolidada"
   | "cpm"
   | "cpc"
   | "ctr"
@@ -182,7 +197,29 @@ type Tooltips = Record<keyof typeof COLUMN_TOOLTIPS, string>;
 
 // Ordem da Captação Paga (elicitação 18.60): Investimento → Ing. Únicos/Totais →
 // Fat. Único/Total → ROAS → CPL Pago Único → Tx Conv. → CPM/CPC/CTR → LP View → Connect Rate.
-const paidColumns = (t: Tooltips): LpColumn[] => [
+/**
+ * Story 18.91: as duas taxas da LP no lugar da "Tx Conv." (cliques). A aba Meta
+ * Ads TESTE pede a definição antiga (`taxaAntiga`) e avisa disso na tela (AC9).
+ */
+const colunasDeTaxa = (t: Tooltips, isPaid: boolean, taxaAntiga: boolean): LpColumn[] =>
+  taxaAntiga
+    ? [{ key: "txConv", label: "Tx Conv. (%)", tooltip: isPaid ? t.txConvPaid : t.txConvFree, kind: "percent" }]
+    : [
+        {
+          key: "txConvMidiaPaga",
+          label: "Tx Conv. Mídia Paga (%)",
+          tooltip: isPaid ? t.txConvMidiaPagaPaid : t.txConvMidiaPagaFree,
+          kind: "percent",
+        },
+        {
+          key: "txConvConsolidada",
+          label: "Tx Conv. Consolidada (%)",
+          tooltip: isPaid ? t.txConvConsolidadaPaid : t.txConvConsolidadaFree,
+          kind: "percent",
+        },
+      ];
+
+const paidColumns = (t: Tooltips, taxaAntiga: boolean): LpColumn[] => [
   { key: "investimento", label: "Investimento (R$)", tooltip: t.investimento, kind: "currency" },
   { key: "ingressosUnicos", label: "Ing. Únicos", tooltip: t.ingressosUnicos, kind: "int" },
   { key: "ingressosTotais", label: "Ing. Totais", tooltip: t.ingressosTotais, kind: "int" },
@@ -190,7 +227,7 @@ const paidColumns = (t: Tooltips): LpColumn[] => [
   { key: "revenueTotal", label: "Fat. Total (R$)", tooltip: t.faturamentoTotal, kind: "currency" },
   { key: "roas", label: "ROAS", tooltip: t.roas, kind: "ratio" },
   { key: "cplPagoUnico", label: "CPL Pago Único", tooltip: t.cplPagoUnico, kind: "currency" },
-  { key: "txConv", label: "Tx Conv. (%)", tooltip: t.txConvPaid, kind: "percent" },
+  ...colunasDeTaxa(t, true, taxaAntiga),
   { key: "cpm", label: "CPM", tooltip: t.cpm, kind: "currency" },
   { key: "cpc", label: "CPC", tooltip: t.cpc, kind: "currency" },
   { key: "ctr", label: "CTR (%)", tooltip: t.ctr, kind: "percent" },
@@ -199,7 +236,7 @@ const paidColumns = (t: Tooltips): LpColumn[] => [
 ];
 
 // Captação Gratuita: ordem/colunas idênticas a hoje (só ganha sort + tooltips).
-const freeColumns = (t: Tooltips): LpColumn[] => [
+const freeColumns = (t: Tooltips, taxaAntiga: boolean): LpColumn[] => [
   { key: "investimento", label: "Investimento (R$)", tooltip: t.investimento, kind: "currency" },
   { key: "leads", label: "Leads", tooltip: t.leads, kind: "int" },
   { key: "cpl", label: "CPL", tooltip: t.cpl, kind: "currency" },
@@ -208,7 +245,7 @@ const freeColumns = (t: Tooltips): LpColumn[] => [
   { key: "ctr", label: "CTR (%)", tooltip: t.ctr, kind: "percent" },
   { key: "lpViews", label: "LP View", tooltip: t.lpView, kind: "int" },
   { key: "connectRate", label: "Connect Rate (%)", tooltip: t.connectRate, kind: "percent" },
-  { key: "txConv", label: "Tx Conv. (%)", tooltip: t.txConvFree, kind: "percent" },
+  ...colunasDeTaxa(t, false, taxaAntiga),
 ];
 
 /** Story 18.60: valor numérico por coluna (null = "—"; sort trata null como 0). */
@@ -222,6 +259,21 @@ type LpComputedRow = {
   semLink?: SemLinkDaLinha;
   correcoes?: { campaignId: string; campaignName: string }[];
 };
+
+/**
+ * Story 18.91: a Consolidada sem número mostra "—" com o motivo no tooltip —
+ * nunca 0% (AC4). As demais colunas saem como antes.
+ */
+function CelulaDeTaxa({ chave, valor, kind }: { chave: LpSortKey; valor: number | null; kind: LpColKind }) {
+  if (chave === "txConvConsolidada" && valor === null) {
+    return (
+      <span className="cursor-help text-muted-foreground" title={MENSAGEM_SEM_CONSOLIDADA.pendente}>
+        —
+      </span>
+    );
+  }
+  return <>{formatCell(valor, kind)}</>;
+}
 
 function formatCell(value: number | null, kind: LpColKind): React.ReactNode {
   switch (kind) {
@@ -597,6 +649,7 @@ export function LpPerformanceTable({
   temFonte = { aplicacao: true, pesquisa: true },
   fontesPorEtapa,
   onFirstExpand,
+  taxaAntiga = false,
 }: LpPerformanceTableProps) {
   const isPaid = stageType === "paid";
   // Story 18.83: modo URL = a API mandou a URL do anúncio (linhas com `lpKey`).
@@ -605,7 +658,7 @@ export function LpPerformanceTable({
   const tooltips: Tooltips = modoUrl
     ? { ...COLUMN_TOOLTIPS, ...COLUMN_TOOLTIPS_POR_URL }
     : COLUMN_TOOLTIPS;
-  const columns = isPaid ? paidColumns(tooltips) : freeColumns(tooltips);
+  const columns = isPaid ? paidColumns(tooltips, taxaAntiga) : freeColumns(tooltips, taxaAntiga);
 
   // Várias LPs podem ficar abertas ao mesmo tempo: comparar página A com página
   // B é o motivo de existir do mini-funil, e um acordeão de uma linha só
@@ -678,6 +731,9 @@ export function LpPerformanceTable({
           roas: m.roas ?? null,
           cplPagoUnico: m.cplPagoUnico ?? null,
           txConv: m.txConv,
+          txConvMidiaPaga: m.txConvMidiaPaga,
+          // Fatia A da 18.91: as visitas por LP ainda não chegam (GA4/Plausible fora).
+          txConvConsolidada: null,
           cpm: m.cpm,
           cpc: m.cpc,
           ctr: m.ctr,
@@ -760,6 +816,9 @@ export function LpPerformanceTable({
       roas: m.roas ?? null,
       cplPagoUnico: m.cplPagoUnico ?? null,
       txConv: m.txConv,
+      txConvMidiaPaga: m.txConvMidiaPaga,
+      // AC5: o total usará os usuários únicos do período, nunca a soma das LPs.
+      txConvConsolidada: null,
       cpm: m.cpm,
       cpc: m.cpc,
       ctr: m.ctr,
@@ -871,7 +930,7 @@ export function LpPerformanceTable({
                           pixel
                         </span>
                       )}
-                      {formatCell(row.values[col.key], col.kind)}
+                      <CelulaDeTaxa chave={col.key} valor={row.values[col.key]} kind={col.kind} />
                     </TableCell>
                   ))}
                 </TableRow>
@@ -921,7 +980,7 @@ export function LpPerformanceTable({
               <TableCell className="font-semibold">Total</TableCell>
               {columns.map((col) => (
                 <TableCell key={col.key} className="text-right tabular-nums font-semibold">
-                  {formatCell(totalsRow[col.key], col.kind)}
+                  <CelulaDeTaxa chave={col.key} valor={totalsRow[col.key]} kind={col.kind} />
                 </TableCell>
               ))}
             </TableRow>

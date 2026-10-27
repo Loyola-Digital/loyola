@@ -24,6 +24,7 @@ export const TIPOS_CRIAVEIS = [
   "debriefing",
   "mapa",
   "comercial",
+  "redirect",
 ] as const;
 
 export type TipoCriavel = (typeof TIPOS_CRIAVEIS)[number];

@@ -1,14 +1,24 @@
+import {
+  txConvConsolidada,
+  txConvMidiaPaga,
+  type TxConvConsolidada,
+} from "@loyola-x/shared/src/taxa-conversao-lp";
 import type { CampaignDailyInsight } from "@/lib/hooks/use-traffic-analytics";
 import type { FunnelSpreadsheetRow } from "@/lib/types/funnel-spreadsheet";
 import { normaliseDate } from "@/lib/utils/spreadsheet-filters";
 import { normalizeEmail } from "@/lib/utils/normalize-answer";
+import { ORIGENS_PAGAS_DE_LEAD } from "@loyola-x/shared/src/leads-pagos";
 
 /**
  * utm_source values que classificam um lead como "pago" (vindo de mídia paga).
  * Comparação é case-insensitive — valores da planilha devem ser normalizados
  * com `toLowerCase` antes de consultar este Set.
+ *
+ * Story 18.89: a lista mora no shared (`leads-pagos.ts`) — a contagem da tabela
+ * de Criativos tinha uma cópia própria com outro conteúdo. Este nome segue
+ * exportado para os consumidores que já o importam.
  */
-export const PAID_SOURCES = new Set(["meta", "meta-ads", "google-ads"]);
+export const PAID_SOURCES = ORIGENS_PAGAS_DE_LEAD;
 
 /**
  * Alíquota do imposto sobre Meta Ads a partir de 2026 (12,15%).
@@ -200,7 +210,14 @@ export interface DailyRow {
   lpView: number;
   checkoutInitiations: number;
   connectRate: number | null;
-  txConv: number | null;
+  /**
+   * Story 18.91: Tx Conv. Mídia Paga = leads pagos ÷ LP View × 100 (na
+   * Captação Paga, ingressos únicos pagos — ver `overrideCplWithUniqueIngressos`).
+   * Era leads ÷ cliques no link até a 18.91.
+   */
+  txConvMidiaPaga: number | null;
+  /** Story 18.91: leads totais ÷ usuários únicos na LP — ou o motivo de não haver. */
+  txConvConsolidada: TxConvConsolidada;
   leadsPagos: number;
   leadsOrg: number;
   leadsSemTrack: number;
@@ -351,7 +368,9 @@ export function buildDailyRows(
       lpView: meta.lpView,
       checkoutInitiations: meta.checkoutInitiations,
       connectRate: meta.linkClicks > 0 ? (meta.lpView / meta.linkClicks) * 100 : null,
-      txConv: meta.linkClicks > 0 ? (sheet.leadsPagos / meta.linkClicks) * 100 : null,
+      txConvMidiaPaga: txConvMidiaPaga(sheet.leadsPagos, meta.lpView),
+      // Fatia A da 18.91: as visitas da LP ainda não chegam (GA4/Plausible fora).
+      txConvConsolidada: txConvConsolidada(totalLeads, { motivo: "pendente" }),
       leadsPagos: sheet.leadsPagos,
       leadsOrg: sheet.leadsOrg,
       leadsSemTrack: sheet.leadsSemTrack,
@@ -402,7 +421,9 @@ export function computeTotals(rows: DailyRow[]): DailyRow {
     lpView: t.lpView,
     checkoutInitiations: t.checkoutInitiations,
     connectRate: t.linkClicks > 0 ? (t.lpView / t.linkClicks) * 100 : null,
-    txConv: t.linkClicks > 0 ? (t.leadsPagos / t.linkClicks) * 100 : null,
+    txConvMidiaPaga: txConvMidiaPaga(t.leadsPagos, t.lpView),
+    // AC5: o total usará os usuários únicos DO PERÍODO, nunca a soma dos dias.
+    txConvConsolidada: txConvConsolidada(totalLeads, { motivo: "pendente" }),
     leadsPagos: t.leadsPagos,
     leadsOrg: t.leadsOrg,
     leadsSemTrack: t.leadsSemTrack,
@@ -423,7 +444,8 @@ export function computeTotals(rows: DailyRow[]): DailyRow {
  *
  * - CPL Pago Único = spend ÷ ingressos únicos PAGOS
  * - CPL Geral Único = spend ÷ ingressos únicos TOTAIS (pago+org+semTrack únicos)
- * - Tx Conv. = ingressos únicos pagos ÷ cliques × 100
+ * - Tx Conv. Mídia Paga = ingressos únicos pagos ÷ LP View × 100 (Story 18.91)
+ * - Tx Conv. Consolidada = ingressos únicos totais ÷ usuários únicos na LP
  *
  * O numerador do CPL é o `spend` total do dia (igual à semântica original —
  * a distinção pago/geral é sobre a origem dos ingressos, não do investimento).
@@ -437,7 +459,11 @@ export function overrideCplWithUniqueIngressos(
     ...row,
     cplPg: safeDivide(row.spend, ingUnicosPagos),
     cplG: safeDivide(row.spend, ingUnicosTotais),
-    txConv: row.linkClicks > 0 ? (ingUnicosPagos / row.linkClicks) * 100 : null,
+    txConvMidiaPaga: txConvMidiaPaga(ingUnicosPagos, row.lpView),
+    txConvConsolidada: txConvConsolidada(
+      ingUnicosTotais,
+      row.txConvConsolidada.motivo ? { motivo: row.txConvConsolidada.motivo } : { motivo: "pendente" },
+    ),
   };
 }
 

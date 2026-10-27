@@ -19,7 +19,11 @@ describe("contarLeadsDaPlanilha — leads pagos por anúncio (Story 18.83, AC4)"
       linha("meta", "120247625370380489", "bbe--cold--lpa"),
       linha("ig", "120247625370380489", "bbe--cold--lpa"), // orgânico: não conta
       linha("meta", "", "bbe--hot--lpa"), // sem utm_content: sem anúncio
-      linha("google", "_987", "sem-temperatura"), // `_` de texto forçado
+      linha("google-ads", "_987", "sem-temperatura"), // `_` de texto forçado
+      // Story 18.89 (P3): `google` puro saiu da lista de pagos (era a cópia
+      // local `{meta, google}`); `meta-ads` entrou. Lista única no shared.
+      linha("google", "555", "sem-temperatura"),
+      linha("meta-ads", "556", "sem-temperatura"),
     ],
   });
 
@@ -28,6 +32,7 @@ describe("contarLeadsDaPlanilha — leads pagos por anúncio (Story 18.83, AC4)"
       "120247625370600489": { hot: 2, cold: 0, total: 2 },
       "120247625370380489": { hot: 0, cold: 1, total: 1 },
       "987": { hot: 0, cold: 0, total: 1 },
+      "556": { hot: 0, cold: 0, total: 1 },
     });
   });
 
@@ -37,7 +42,7 @@ describe("contarLeadsDaPlanilha — leads pagos por anúncio (Story 18.83, AC4)"
 
   it("`leads` por ad_id segue contando pagos e orgânicos (tabela de Criativos)", () => {
     expect(r.leads["120247625370380489"]).toBe(2);
-    expect(r.totalLeads).toBe(5);
+    expect(r.totalLeads).toBe(7);
   });
 
   it("planilha vazia não quebra", () => {

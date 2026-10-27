@@ -36,12 +36,15 @@ import {
   stageSalesSpreadsheets,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
+import { businessToday, inicioDaJanela } from "../utils/sale-date.js";
 import {
   comNomeLegivel,
   dedupKey,
   pertenceAEtapa,
-  dentroDoPeriodo,
+  diaEmBrasilia,
+  diarioDeAplicacoes,
   emailComparavel,
+  entraNaJanela,
   idsDaMeta,
   resumir,
   sanitizarUtm,
@@ -98,6 +101,71 @@ function coluna(headers: string[], mapeado: string | undefined, apelidos: RegExp
   return headers.findIndex((h) => apelidos.test(h.trim()));
 }
 
+/**
+ * Todas as colunas que casam, na ordem da planilha — ou só a mapeada.
+ *
+ * Story 18.92: o formulário do Tally exporta um bloco de campos por página, e
+ * a mesma pergunta (`email`, `utm_source`) aparece duas ou três vezes no
+ * cabeçalho. Ler só a primeira deixava sem e-mail quem respondeu no 2º bloco.
+ */
+function colunas(headers: string[], mapeado: string | undefined, apelidos: RegExp): number[] {
+  if (mapeado) {
+    const i = headers.indexOf(mapeado);
+    if (i !== -1) return [i];
+  }
+  return headers.flatMap((h, i) => (apelidos.test(h.trim()) ? [i] : []));
+}
+
+/** O primeiro valor preenchido entre as colunas, na ordem em que aparecem. */
+function primeiroPreenchido(linha: string[], indices: number[]): string | undefined {
+  for (const i of indices) {
+    const v = linha[i];
+    if (v != null && String(v).trim() !== "") return v;
+  }
+  return undefined;
+}
+
+/**
+ * A data da aplicação. `Submitted at` é como o Tally chama a coluna; sem
+ * reconhecê-la, toda resposta entrava em todos os períodos.
+ */
+const COLUNA_DE_DATA_DA_APLICACAO = /data|timestamp|carimbo|submitted/i;
+
+/** As aplicações de uma aba, e as colunas que ela não tem. */
+export function lerAbaDeAplicacao(
+  dados: { headers: string[]; rows: string[][] },
+  mapeamento: { email?: string; timestamp?: string; utm_source?: string; utm_medium?: string },
+  /** Primeiro dia da janela (`janelaDoDashboard`); `null` = tudo. */
+  inicio: string | null,
+): { aplicacoes: AplicacaoDaEtapa[]; semColuna: Array<"e-mail" | "data"> } {
+  const iEmail = colunas(dados.headers, mapeamento.email, /e-?mail/i);
+  const iData = coluna(dados.headers, mapeamento.timestamp, COLUNA_DE_DATA_DA_APLICACAO);
+  const iSource = colunas(dados.headers, mapeamento.utm_source, /utm[_ ]?source|origem/i);
+  const iMedium = colunas(dados.headers, mapeamento.utm_medium, /utm[_ ]?medium|m[ií]dia/i);
+
+  const semColuna: Array<"e-mail" | "data"> = [];
+  if (iEmail.length === 0) semColuna.push("e-mail");
+  if (iData < 0) semColuna.push("data");
+
+  const aplicacoes: AplicacaoDaEtapa[] = [];
+  for (const linha of dados.rows) {
+    const bruto = iData >= 0 ? linha[iData] : undefined;
+    const data = dataDaCelula(bruto);
+    // Story 18.96: só tem dia quem tem data — as duas leituras andam juntas, e
+    // o corte da janela usa o MESMO dia que a tabela mostra (QA REQ-001).
+    const dia = data ? diaDaCelula(bruto) : null;
+    if (!entraNaJanela(dia, inicio)) continue;
+    aplicacoes.push({
+      email: emailComparavel(primeiroPreenchido(linha, iEmail)),
+      data,
+      dia,
+      utmSource: sanitizarUtm(primeiroPreenchido(linha, iSource)) ?? "",
+      utmMedium: sanitizarUtm(primeiroPreenchido(linha, iMedium)) ?? "",
+    });
+  }
+  return { aplicacoes, semColuna };
+}
+
 /** O valor em reais que a planilha escreveu como texto brasileiro. */
 export function valorEmReais(bruto: string | undefined): number {
   if (!bruto) return 0;
@@ -123,6 +191,56 @@ export function dataDaCelula(bruto: string | undefined): Date | null {
   }
   const iso = new Date(texto);
   return Number.isNaN(iso.getTime()) ? null : iso;
+}
+
+/**
+ * Story 18.96 — o dia do calendário de uma célula de data, `aaaa-mm-dd`.
+ *
+ * O `dataDaCelula` devolve um instante, e o dia de um instante depende do fuso
+ * de quem lê: `20/10/2026` vira meia-noite no fuso do SERVIDOR, que em UTC já
+ * é dia 19 em Brasília. Para a tabela diária, o dia vem do que a planilha
+ * escreveu:
+ *
+ * - `dd/mm/aaaa` ou `aaaa-mm-dd`, com ou sem hora e SEM fuso: o dia escrito.
+ *   É a hora de parede de quem preencheu (o time trabalha em Brasília).
+ * - Com fuso explícito (`…Z`, `-03:00`): um instante de verdade → o dia dele
+ *   em Brasília, o fuso em que a Meta entrega o dia.
+ * - Qualquer outro texto que `dataDaCelula` entenda: o dia em Brasília.
+ *
+ * Por que não o `saleDayKey` (`utils/sale-date.ts`): ele lê `2026-10-20 01:00:00`
+ * — o formato do Tally, sem fuso — como instante no fuso do PROCESSO. Em
+ * produção (UTC) isso é 22h do dia 19 em Brasília. A planilha de venda grava
+ * `…Z`, por isso lá funciona; a de aplicação grava hora de parede.
+ */
+export function diaDaCelula(bruto: string | undefined): string | null {
+  const data = dataDaCelula(bruto);
+  if (!data || !bruto) return null;
+  const texto = bruto.trim();
+
+  // `dataDaCelula` montou este `Date` no fuso LOCAL com os mesmos números, então
+  // os getters locais devolvem o dia escrito — e o rollover dele (`31/02` →
+  // 03/03), em vez de uma chave que não existe no calendário (QA DATA-001).
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(texto)) {
+    const mm = String(data.getMonth() + 1).padStart(2, "0");
+    const dd = String(data.getDate()).padStart(2, "0");
+    return `${data.getFullYear()}-${mm}-${dd}`;
+  }
+
+  const iso = texto.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ][\d:.]+)?(Z|[+-]\d{2}:?\d{2})?$/i);
+  if (iso && !iso[4]) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+
+  return diaEmBrasilia(data);
+}
+
+/**
+ * Story 18.96 (QA REQ-001) — o primeiro dia da janela do dashboard.
+ *
+ * A régua do shared (`inicioDaJanela`, 18.80), com o "hoje" do fuso do negócio:
+ * `days` dias terminando hoje, INCLUSIVE — a mesma janela do `/campaign-daily`.
+ * Antes, `hoje − days` (N+1 dias), e o card "Aplicações" do "7d" contava 8.
+ */
+export function janelaDoDashboard(days: number | undefined, hoje: string): string | null {
+  return days ? inicioDaJanela(days, hoje) : null;
 }
 
 export default fp(async function stageApplicationRoutes(fastify) {
@@ -256,12 +374,8 @@ export default fp(async function stageApplicationRoutes(fastify) {
     if (!p.success || !q.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
     if (!(await etapaValida(p.data))) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-    let de: Date | null = null;
-    if (q.data.days) {
-      de = new Date();
-      de.setDate(de.getDate() - q.data.days);
-      de.setHours(0, 0, 0, 0);
-    }
+    // Uma régua só para aplicações e vendas, e a mesma da Meta (QA REQ-001).
+    const inicio = janelaDoDashboard(q.data.days, businessToday());
 
     const avisos: string[] = [];
 
@@ -283,21 +397,19 @@ export default fp(async function stageApplicationRoutes(fastify) {
     for (const s of minhas) {
       try {
         const dados = await readSheetData(s.spreadsheetId, s.sheetName);
-        const m = s.columnMapping ?? {};
-        const iEmail = coluna(dados.headers, m.email, /e-?mail/i);
-        const iData = coluna(dados.headers, m.timestamp, /data|timestamp|carimbo/i);
-        const iSource = coluna(dados.headers, m.utm_source, /utm[_ ]?source|origem/i);
-        const iMedium = coluna(dados.headers, m.utm_medium, /utm[_ ]?medium|m[ií]dia/i);
-
-        for (const linha of dados.rows) {
-          const data = iData >= 0 ? dataDaCelula(linha[iData]) : null;
-          if (!dentroDoPeriodo(data, de, null)) continue;
-          aplicacoes.push({
-            email: iEmail >= 0 ? emailComparavel(linha[iEmail]) : "",
-            data,
-            utmSource: (iSource >= 0 ? sanitizarUtm(linha[iSource]) : null) ?? "",
-            utmMedium: (iMedium >= 0 ? sanitizarUtm(linha[iMedium]) : null) ?? "",
-          });
+        const lida = lerAbaDeAplicacao(dados, s.columnMapping ?? {}, inicio);
+        aplicacoes.push(...lida.aplicacoes);
+        // Coluna que falta muda o número sem aparecer nele: sem data, a aba
+        // entra em todos os períodos; sem e-mail, ninguém dela cruza com venda.
+        if (lida.semColuna.includes("data")) {
+          avisos.push(
+            `Não achei a coluna de data na aba "${s.sheetName}": as aplicações dela entram em todos os períodos.`,
+          );
+        }
+        if (lida.semColuna.includes("e-mail")) {
+          avisos.push(
+            `Não achei a coluna de e-mail na aba "${s.sheetName}": as aplicações dela não se cruzam com as vendas.`,
+          );
         }
       } catch (erro) {
         // Uma aba ilegível não pode derrubar o dashboard inteiro: o time
@@ -337,8 +449,9 @@ export default fp(async function stageApplicationRoutes(fastify) {
           const iContent = coluna(dados.headers, m.utm_content, /utm[_ ]?content|(^|\W)co=/i);
           const iTerm = coluna(dados.headers, m.utm_term, /utm[_ ]?term|(^|\W)t=/i);
           dados.rows.forEach((linha, indice) => {
-            const data = iData >= 0 ? dataDaCelula(linha[iData]) : null;
-            if (!dentroDoPeriodo(data, de, null)) return;
+            const bruto = iData >= 0 ? linha[iData] : undefined;
+            const data = dataDaCelula(bruto);
+            if (!entraNaJanela(data ? diaDaCelula(bruto) : null, inicio)) return;
             const daLinha = (i: number) => (i >= 0 ? (sanitizarUtm(linha[i]) ?? "") : "");
             const venda: VendaDaAplicacao = {
               email: iEmail >= 0 ? emailComparavel(linha[iEmail]) : "",
@@ -367,6 +480,8 @@ export default fp(async function stageApplicationRoutes(fastify) {
     }
 
     const resumo = resumir(aplicacoes, vendas);
+    // Story 18.96 (AC8): o mesmo array do resumo — Σ dias + semData = card.
+    const diario = diarioDeAplicacoes(aplicacoes);
 
     /**
      * O id do conjunto vira o nome dele.
@@ -392,8 +507,9 @@ export default fp(async function stageApplicationRoutes(fastify) {
     }
 
     return {
-      periodo: { days: q.data.days ?? null, desde: de?.toISOString().slice(0, 10) ?? null },
+      periodo: { days: q.data.days ?? null, desde: inicio },
       resumo,
+      diarioDeAplicacoes: diario,
       fontes: { aplicacoes: minhas.length, vendas: ids.length, filtrosDeUtm: filtros.length },
       // O que o filtro tirou vai na resposta, não só na cabeça de quem
       // configurou: sem isso, "18 vendas viraram 3" parece dado sumindo.

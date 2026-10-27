@@ -112,7 +112,11 @@ describe("o fio na rota (AC3/AC5)", () => {
   });
 
   it("a chave do cache sobe acima da `:v3` da 18.83 (AC5)", async () => {
-    const { chaveDoCacheCreativePerformance } = await import("../routes/stage-creative-performance.js");
-    expect(chaveDoCacheCreativePerformance("s1", 7)).toBe("s1:7:v4");
+    const { chaveDoCacheCreativePerformance, VERSAO_DO_CACHE_CREATIVE_PERFORMANCE } = await import(
+      "../routes/stage-creative-performance.js"
+    );
+    // Story 18.89 subiu para `:v5`; esta story só exige ter passado da `:v3`.
+    expect(Number(VERSAO_DO_CACHE_CREATIVE_PERFORMANCE.slice(1))).toBeGreaterThanOrEqual(4);
+    expect(chaveDoCacheCreativePerformance("s1", 7)).toBe(`s1:7:${VERSAO_DO_CACHE_CREATIVE_PERFORMANCE}`);
   });
 });

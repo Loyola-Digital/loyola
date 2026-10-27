@@ -92,6 +92,7 @@ import {
   type FiltroDePublico,
 } from "@/lib/utils/filtro-de-publico";
 import { CampaignSelector } from "./campaign-selector";
+import { SecaoDeSaturacao } from "./launch-dashboard";
 import { TopCreativesGallery } from "./top-creatives-gallery";
 import { CamadasDeVideoSection } from "./camadas-de-video-section";
 import { PerpetualAnaliseHoraria } from "./perpetual-analise-horaria";
@@ -180,9 +181,11 @@ import { deriveDetailMetrics } from "@/lib/utils/perpetual-detail-metrics";
 import {
   deriveDailyMetrics,
   sumDailyMetrics,
+  vendasAtribuidasPorDia,
   type DailyMetricsInput,
   type DailyMetricsOutput,
 } from "@/lib/utils/perpetual-daily-metrics";
+import { FORMULA_TX_CONV, MENSAGEM_SEM_CONSOLIDADA } from "@loyola-x/shared/src/taxa-conversao-lp";
 import {
   buildLpRows, sortLpRows, classifyLpCoverage, UNRESOLVED_LP_KEY, type LpRow,
 } from "@/lib/utils/perpetual-lp-rows";
@@ -411,6 +414,19 @@ const PERPETUAL_DAILY_COLUMNS: DailyColumn[] = [
     label: "Connect Rate",
     title: "Landing Page Views ÷ Cliques no Link × 100 · sem cliques no link o dia mostra “—”, nunca 100%",
     render: (_v, m) => fmtPercent(m.connectRate),
+  },
+  // Story 18.91 (AC10): as duas taxas da LP, com a fórmula única do shared.
+  {
+    key: "txConvMidiaPaga",
+    label: "Tx Conv. Mídia Paga",
+    title: `${FORMULA_TX_CONV.midiaPagaVendas} · venda atribuída = utm_content é um anúncio do funil · sem LP View o dia mostra “—”`,
+    render: (_v, m) => fmtPercent(m.txConvMidiaPaga),
+  },
+  {
+    key: "txConvConsolidada",
+    label: "Tx Conv. Consolidada",
+    title: `${FORMULA_TX_CONV.consolidadaVendas} · ${MENSAGEM_SEM_CONSOLIDADA.pendente}`,
+    render: (_v, m) => fmtPercent(m.txConvConsolidada.valor),
   },
   {
     key: "cpc",
@@ -1528,7 +1544,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
   const { data: campaignData } = useTrafficCampaigns(
     metaProjectId, days, customRange?.startDate, customRange?.endDate,
   );
-  const { data: dailyData, isLoading: dailyLoading } =
+  const { data: dailyData, isLoading: dailyLoading, isError: dailyError } =
     useCampaignDailyInsightsBulk(
       projectId,
       temMidia ? campaignIds : null,
@@ -2275,6 +2291,29 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
     [lpRowsFiltradas, salesByAdId],
   );
 
+  // Story 18.91 (AC10) — vendas atribuídas a anúncio por dia: a série de vendas
+  // por `ad_id` (a mesma rota do Detalhamento, com groupBy=ad) somada só nos
+  // anúncios do funil, que são os da tabela de LPs (P13). Sem planilha ou sem a
+  // série, o campo fica ausente e a Tx Conv. Mídia Paga mostra "—".
+  const { data: vendasPorAnuncioDia } = usePerpetualSalesDataDailyByEntity(
+    projectId,
+    funnel?.id ?? null,
+    usingSpreadsheet && temMidia ? "ad" : null,
+    days,
+    customRange?.startDate,
+    customRange?.endDate,
+    recorteDeVendas,
+  );
+  const dailyRowsDoQuadro = useMemo(() => {
+    const porAnuncio = vendasPorAnuncioDia?.byEntity;
+    if (!porAnuncio || !lpEntityDaily) return dailyChartData;
+    const porDia = vendasAtribuidasPorDia(
+      porAnuncio,
+      lpEntityDaily.rows.map((r) => r.entityId),
+    );
+    return dailyChartData.map((r) => ({ ...r, vendasAtribuidas: porDia.get(r.dateIso) ?? 0 }));
+  }, [dailyChartData, vendasPorAnuncioDia, lpEntityDaily]);
+
   // Sem teto aqui: `useAdLinkUrls` lê do cache do Postgres e agora vai em
   // lotes (29.47 AC6). O teto de 50 do `useAdCreatives` protege o rate limit
   // da Meta e está certo lá — aqui apagaria o investimento do 51º anúncio em
@@ -2542,6 +2581,8 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
           <CampaignSelector
             campaigns={pickerData.campaigns ?? []}
             accountLinked={pickerData.accountLinked}
+            accounts={pickerData.accounts}
+            accountErrors={pickerData.accountErrors}
             value={funnel.campaigns}
             onChange={(campaigns: FunnelCampaign[]) => {
               if (onCampaignsChange) {
@@ -2743,6 +2784,12 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
       {/* o gestor saiba contra o que está comparando.                     */}
       {/* ================================================================ */}
       {tendencia && <TendenciaBlock t={tendencia} />}
+
+      {/* Story 29.85 — CTR × CPM: o mesmo componente do lançamento, com as  */}
+      {/* campanhas e o período desta tela (a mesma leitura diária abaixo).  */}
+      {/* Sem campanhas, a consulta não roda e a seção mostra o estado vazio */}
+      {/* — como no lançamento (AC4).                                        */}
+      <SecaoDeSaturacao dailyData={dailyData} carregando={dailyLoading} falhou={dailyError} />
 
       {/* ================================================================ */}
       {/* Story 29.32 — TRÊS GRÁFICOS DE LINHA×ÁREA (últimos 7 dias)       */}
@@ -3043,7 +3090,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         investimento={spendAggregates.totalSpendComTax}
       />
 
-      <PerpetualDailyTable rows={dailyChartData} projectId={projectId} funnelId={funnel.id} />
+      <PerpetualDailyTable rows={dailyRowsDoQuadro} projectId={projectId} funnelId={funnel.id} />
 
       {/* ================================================================ */}
       {/* TABELA DETALHADA COM FILTRO — Story 29.18: movida pra baixo do gráfico */}
@@ -3425,6 +3472,13 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                   <th className="text-right py-2 px-2 select-none">
                     <span className="cursor-pointer hover:text-foreground" onClick={() => toggleLpSort("roas")}>ROAS{lpSortArrow("roas")}</span>
                   </th>
+                  {/* Story 18.91 (AC11): as duas taxas da LP. */}
+                  <th className="text-right py-2 px-2 select-none cursor-help" title={`${FORMULA_TX_CONV.midiaPagaVendas} · LP View somado nos anúncios que levam a esta LP`}>
+                    Tx Conv. Mídia Paga
+                  </th>
+                  <th className="text-right py-2 px-2 select-none cursor-help" title={`${FORMULA_TX_CONV.consolidadaVendas} · ${MENSAGEM_SEM_CONSOLIDADA.pendente}`}>
+                    Tx Conv. Consolidada
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -3470,6 +3524,13 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                     <td className="text-right px-2 tabular-nums">{fmtNumber(row.sales)}</td>
                     <td className="text-right px-2 tabular-nums">{fmtCurrency(row.costPerSale)}</td>
                     <td className={`text-right px-2 tabular-nums font-medium ${roasColorClass(row.roas)}`}>{fmtRoas(row.roas)}</td>
+                    <td className="text-right px-2 tabular-nums">{fmtPercent(row.txConvMidiaPaga)}</td>
+                    <td
+                      className={`text-right px-2 tabular-nums ${row.txConvConsolidada.motivo ? "text-muted-foreground cursor-help" : ""}`}
+                      title={row.txConvConsolidada.motivo ? MENSAGEM_SEM_CONSOLIDADA[row.txConvConsolidada.motivo] : undefined}
+                    >
+                      {fmtPercent(row.txConvConsolidada.valor)}
+                    </td>
                   </tr>
                 ))}
               </tbody>

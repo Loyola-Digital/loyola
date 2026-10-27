@@ -40,6 +40,11 @@ import { useStageSalesByDay } from "@/lib/hooks/use-stage-sales-by-day";
 import { useStageHotColdBuyers } from "@/lib/hooks/use-stage-hot-cold-buyers";
 import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
 import { useLpPerformanceData } from "@/lib/hooks/useLpPerformanceData";
+import {
+  FILTRO_DE_MIDIA_PADRAO,
+  type TipoDeMidia,
+} from "@/lib/utils/filtro-de-midia-do-criativo";
+import { FiltroDeMidiaBotoes } from "./filtro-de-midia-botoes";
 import { useUserRole } from "@/lib/hooks/use-user-role";
 import { useLpFunnel, useLpFunnelView } from "@/lib/hooks/use-sales-journey";
 import { useFunnelStage, useSalvarCorrecaoDeLp, useUpdateStage } from "@/lib/hooks/use-funnel-stages";
@@ -1166,7 +1171,9 @@ function TesteLpSection({
   stageType: StageType;
 }) {
   const [publicoFilter, setPublicoFilter] = useState<"todos" | "hot" | "cold">("todos");
-  const { lps, isLoading, cache, correcoes } = useLpPerformanceData({ projectId, funnelId, stageId, days, publicoFilter });
+  // Story 18.94: Vídeo / Estático / Todos pelo nome do anúncio — vale junto com o Hot/Cold.
+  const [midiaFilter, setMidiaFilter] = useState<TipoDeMidia>(FILTRO_DE_MIDIA_PADRAO);
+  const { lps, isLoading, cache, correcoes } = useLpPerformanceData({ projectId, funnelId, stageId, days, publicoFilter, midiaFilter });
   // Mini-funil por LP: só busca depois que alguém expande a primeira linha.
   const [funilPedido, setFunilPedido] = useState(false);
   const lpFunnel = useLpFunnel(projectId, funnelId, stageId, days, funilPedido);
@@ -1194,7 +1201,8 @@ function TesteLpSection({
     <SectionShell icon={LayoutTemplate} title="TESTES DE LPs" subtitle="Desempenho das landing pages">
       {/* Story 18.81 (AC4): cache vencido servido por falha da Meta nunca é silêncio. */}
       <AvisoDeCacheVencido cache={cache} />
-      <div className="-mt-1 flex justify-end">
+      <div className="-mt-1 flex justify-end gap-2">
+        <FiltroDeMidiaBotoes valor={midiaFilter} onChange={setMidiaFilter} />
         <div className="flex items-center gap-1 rounded-md border border-border/40 p-0.5">
           {(["todos", "hot", "cold"] as const).map((opt) => (
             <button key={opt} type="button" onClick={() => setPublicoFilter(opt)}
@@ -1204,10 +1212,16 @@ function TesteLpSection({
           ))}
         </div>
       </div>
+      {/* Story 18.91 (AC9): esta aba fica com a taxa antiga — e diz isso. */}
+      <p className="px-4 pb-2 text-[11px] text-muted-foreground">
+        A Tx Conv. desta aba segue a definição anterior (resultado ÷ cliques no link). Nas outras
+        telas ela foi padronizada em Mídia Paga (÷ LP View do Meta) e Consolidada (÷ visitas na LP).
+      </p>
       {isLoading ? (
         <div className="p-4 text-center text-sm text-muted-foreground">Carregando dados de LPs...</div>
       ) : (
         <LpPerformanceTable
+          taxaAntiga
           rows={lps}
           stageType={isPaid ? "paid" : "free"}
           isLoading={false}

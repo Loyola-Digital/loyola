@@ -41,6 +41,7 @@ import {
   type CampaignDailyInsight,
 } from "@/lib/hooks/use-traffic-analytics";
 import { ConversionFunnel } from "./conversion-funnel";
+import { estadoDeSaturacao, linkClicksFromInsight, linkCtr } from "./saturacao";
 import { CrossedFunnelDailyTable } from "./crossed-funnel-daily-table";
 import { LotesDeIngresso } from "@/components/funnels/lotes-de-ingresso";
 import { LeadsByUtmTable } from "./leads-by-utm-table";
@@ -68,6 +69,11 @@ import { StageCreativePerformanceTable } from "./stage-creative-performance-tabl
 import { CamadasDeVideoSection } from "./camadas-de-video-section";
 import { LpPerformanceTable } from "@/lib/components/funnels/lp-performance-table";
 import { useLpPerformanceData } from "@/lib/hooks/useLpPerformanceData";
+import {
+  FILTRO_DE_MIDIA_PADRAO,
+  type TipoDeMidia,
+} from "@/lib/utils/filtro-de-midia-do-criativo";
+import { FiltroDeMidiaBotoes } from "./filtro-de-midia-botoes";
 import { useUserRole } from "@/lib/hooks/use-user-role";
 import { useLpFunnel, useLpFunnelView } from "@/lib/hooks/use-sales-journey";
 // Story 18.56: links manuais por LP (lê o stage e salva via PUT existente)
@@ -75,6 +81,7 @@ import { useFunnelStage, useSalvarCorrecaoDeLp, useUpdateStage } from "@/lib/hoo
 import { useCampaignPicker, useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import { useCrossedFunnelMetrics } from "@/lib/hooks/use-crossed-funnel-metrics";
 import { overrideCplWithUniqueIngressos } from "@/lib/utils/funnel-metrics";
+import { txConvConsolidada, txConvMidiaPaga } from "@loyola-x/shared/src/taxa-conversao-lp";
 import { deveMostrarDadosDiarios } from "@/lib/utils/dados-diarios-visivel";
 import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
 import { useStageSalesData } from "@/lib/hooks/use-stage-sales-data";
@@ -202,6 +209,14 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
       };
     });
   }, [metrics.rows, ingUnicosByDay]);
+  // Story 18.91 (AC7): no Funil da Paga a barra é Ingressos únicos — os pagos
+  // são o numerador da Mídia Paga; todas as origens, da Consolidada.
+  const ingressosNoPeriodo = useMemo(() => {
+    if (!ingUnicosByDay) return null;
+    const all = Object.values(ingUnicosByDay);
+    const pagos = all.reduce((s, v) => s + v.pago, 0);
+    return { pagos, totais: all.reduce((s, v) => s + v.pago + v.org + v.semTrack, 0) };
+  }, [ingUnicosByDay]);
   const paidTotals = useMemo(() => {
     if (!ingUnicosByDay) return metrics.totals;
     const all = Object.values(ingUnicosByDay);
@@ -212,7 +227,7 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
 
   const survey = useSurveyAggregation(projectId, funnel.id, stageId ?? null);
   const { data: campaignData } = useTrafficCampaigns(projectId, days);
-  const { data: dailyData, isLoading: dailyLoading } =
+  const { data: dailyData, isLoading: dailyLoading, isError: dailyError } =
     useCampaignDailyInsightsBulk(projectId, campaignIds.length > 0 ? campaignIds : null, days);
   const { data: compData } = useMetaAdsComparison(
     projectId, funnel.id, stageId ?? null, funnel.compareFunnelId, days,
@@ -342,6 +357,8 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
           <CampaignSelector
             campaigns={pickerData.campaigns ?? []}
             accountLinked={pickerData.accountLinked}
+            accounts={pickerData.accounts}
+            accountErrors={pickerData.accountErrors}
             value={funnel.campaigns}
             onChange={(campaigns: FunnelCampaign[]) => {
               if (onCampaignsChange) {
@@ -807,24 +824,13 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
       ) : null}
 
       {/* CTR × CPM — Saturation Chart */}
-      <div className="rounded-xl border border-border/30 bg-card/60 p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-sm font-semibold">CTR × CPM — Indicador de Saturação</h3>
-            <p className="text-[11px] text-muted-foreground mt-0.5">Quando CTR cai e CPM sobe, seus anúncios estão saturando</p>
-          </div>
-          <SaturationBadge dailyData={dailyData ?? null} />
-        </div>
-        {dailyLoading ? (
-          <Skeleton className="h-56" />
-        ) : dailyData && dailyData.length > 0 ? (
-          <CtrCpmChart
-            data={dailyData}
-            comparisonDays={compDays ?? undefined}
-            compFunnelName={compData?.compareFunnelName}
-          />
-        ) : <EmptyState />}
-      </div>
+      <SecaoDeSaturacao
+        dailyData={dailyData}
+        carregando={dailyLoading}
+        falhou={dailyError}
+        comparisonDays={compDays ?? undefined}
+        compFunnelName={compData?.compareFunnelName}
+      />
 
       {/* Comparação de Lançamentos (atual × comparado) — só quando há funil de comparação */}
       {hasComparison && compDays && dailyData && dailyData.length > 0 && (
@@ -869,10 +875,20 @@ export function LaunchDashboard({ funnel, projectId, stageId, stageType, onCampa
             impressions={overview?.totalImpressions ?? 0}
             linkClicks={overview?.totalLinkClicks ?? null}
             landingPageViews={overview?.totalLandingPageViews ?? null}
-            leads={metrics.totalLeads}
+            leads={ehPaga ? (ingressosNoPeriodo?.totais ?? null) : metrics.totalLeads}
             checkoutVisits={ehPaga ? metrics.checkoutVisits : null}
             sales={ehPaga ? metrics.totalVendas : null}
-            leadsLabel={ehPaga ? "Leads Popup" : undefined}
+            leadsLabel={ehPaga ? "Ingressos únicos" : undefined}
+            taxasDaLp={{
+              midiaPaga: txConvMidiaPaga(
+                ehPaga ? (ingressosNoPeriodo?.pagos ?? 0) : metrics.leadsPagos,
+                overview?.totalLandingPageViews ?? 0,
+              ),
+              consolidada: txConvConsolidada(
+                ehPaga ? (ingressosNoPeriodo?.totais ?? 0) : metrics.totalLeads,
+                { motivo: "pendente" },
+              ),
+            }}
           />
         </div>
       </div>
@@ -1088,6 +1104,52 @@ const KpiCard = React.forwardRef<HTMLDivElement, {
     </div>
   );
 });
+
+/**
+ * A seção "CTR × CPM — Indicador de Saturação" inteira: título, selo e gráfico.
+ *
+ * Story 29.85: o lançamento e o Perpétuo usam ESTE componente, não cópias. A
+ * falha na consulta aparece como erro: mostrar "Sem dados" num erro faria o
+ * gestor concluir que não houve veiculação.
+ */
+export function SecaoDeSaturacao({
+  dailyData,
+  carregando,
+  falhou,
+  comparisonDays,
+  compFunnelName,
+}: {
+  dailyData: CampaignDailyInsight[] | undefined;
+  carregando: boolean;
+  falhou: boolean;
+  comparisonDays?: ComparisonDayMetrics[];
+  compFunnelName?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-border/30 bg-card/60 p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-sm font-semibold">CTR × CPM — Indicador de Saturação</h3>
+          <p className="text-[11px] text-muted-foreground mt-0.5">Quando CTR cai e CPM sobe, seus anúncios estão saturando</p>
+        </div>
+        {!falhou && <SaturationBadge dailyData={dailyData ?? null} />}
+      </div>
+      {carregando ? (
+        <Skeleton className="h-56" />
+      ) : falhou ? (
+        <p className="py-8 text-center text-sm text-destructive">
+          Não consegui carregar os dados diários da Meta. Tente atualizar.
+        </p>
+      ) : dailyData && dailyData.length > 0 ? (
+        <CtrCpmChart
+          data={dailyData}
+          comparisonDays={comparisonDays}
+          compFunnelName={compFunnelName}
+        />
+      ) : <EmptyState />}
+    </div>
+  );
+}
 
 function EmptyState() {
   return (
@@ -1330,18 +1392,6 @@ const COMPARISON_METRICS: {
 function leadsFromActions(d: CampaignDailyInsight): number {
   const lead = d.actions?.find((a) => a.action_type === "lead");
   return lead ? Number(lead.value) || 0 : 0;
-}
-
-/** Cliques no LINK (link_click) de uma linha diária. */
-function linkClicksFromInsight(d: CampaignDailyInsight): number {
-  const lc = d.actions?.find((a) => a.action_type === "link_click");
-  return lc ? Number(lc.value) || 0 : 0;
-}
-
-/** CTR do LINK (clique no link ÷ impressões × 100) — tráfego real, não total. */
-function linkCtr(d: CampaignDailyInsight): number {
-  const imp = safeNum(d.impressions);
-  return imp > 0 ? (linkClicksFromInsight(d) / imp) * 100 : 0;
 }
 
 function atualMetricValue(
@@ -1652,30 +1702,11 @@ export function FunnelComparisonChart({
 }
 
 export function SaturationBadge({ dailyData }: { dailyData: CampaignDailyInsight[] | null }) {
-  if (!dailyData || dailyData.length < 4) return null;
-
-  const mid = Math.floor(dailyData.length / 2);
-  const firstHalf = dailyData.slice(0, mid);
-  const secondHalf = dailyData.slice(mid);
-
-  const avg = (arr: CampaignDailyInsight[], key: "ctr" | "cpm") =>
-    arr.reduce((s, d) => s + safeNum(d[key]), 0) / arr.length;
-
-  const ctrFirst = avg(firstHalf, "ctr");
-  const ctrSecond = avg(secondHalf, "ctr");
-  const cpmFirst = avg(firstHalf, "cpm");
-  const cpmSecond = avg(secondHalf, "cpm");
-
-  const ctrChange = ctrFirst > 0 ? ((ctrSecond - ctrFirst) / ctrFirst) * 100 : 0;
-  const cpmChange = cpmFirst > 0 ? ((cpmSecond - cpmFirst) / cpmFirst) * 100 : 0;
-
-  const ctrDrop = ctrChange < -10;
-  const cpmRise = cpmChange > 10;
-
-  let status: "saturating" | "ctr-drop" | "cpm-rise" | "healthy" = "healthy";
-  if (ctrDrop && cpmRise) status = "saturating";
-  else if (ctrDrop) status = "ctr-drop";
-  else if (cpmRise) status = "cpm-rise";
+  // Story 29.85: a regra mora em `saturacao.ts` e lê o CTR do link — a mesma
+  // série que o `CtrCpmChart` desenha ao lado.
+  const leitura = estadoDeSaturacao(dailyData);
+  if (!leitura) return null;
+  const { status, ctrFirst, ctrSecond, ctrChange, cpmFirst, cpmSecond, cpmChange } = leitura;
 
   const config = {
     saturating: {
@@ -1779,6 +1810,8 @@ function LpPerformanceSection({
 }: LpPerformanceSectionProps) {
   // Story 18.46 (AC7): filtro de público efetivo, controlado nesta seção
   const [publicoFilter, setPublicoFilter] = useState<"todos" | "hot" | "cold">("todos");
+  // Story 18.94: Vídeo / Estático / Todos pelo nome do anúncio — vale junto com o Hot/Cold.
+  const [midiaFilter, setMidiaFilter] = useState<TipoDeMidia>(FILTRO_DE_MIDIA_PADRAO);
 
   const { lps, isLoading, correcoes } = useLpPerformanceData({
     projectId,
@@ -1786,6 +1819,7 @@ function LpPerformanceSection({
     stageId,
     days,
     publicoFilter,
+    midiaFilter,
   });
 
   // Mini-funil por LP: lê todas as planilhas do funil, então só busca depois que
@@ -1825,22 +1859,25 @@ function LpPerformanceSection({
     <div className="space-y-4 pt-2 border-t border-border/30">
       <div className="flex items-center justify-between gap-4">
         <h3 className="text-base font-semibold">Desempenho de Testes de LPs</h3>
-        {/* Story 18.46 (AC7): botões temáticos iguais aos de Criativos */}
-        <div className="flex items-center gap-1 rounded-md border border-border/40 p-0.5">
-          {(["todos", "hot", "cold"] as const).map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              onClick={() => setPublicoFilter(opt)}
-              className={`px-2.5 h-6 rounded text-[11px] font-medium transition-colors ${
-                publicoFilter === opt
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted/50"
-              }`}
-            >
-              {opt === "todos" ? "Todos" : opt === "hot" ? "🔥 Hot" : "❄️ Cold"}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <FiltroDeMidiaBotoes valor={midiaFilter} onChange={setMidiaFilter} />
+          {/* Story 18.46 (AC7): botões temáticos iguais aos de Criativos */}
+          <div className="flex items-center gap-1 rounded-md border border-border/40 p-0.5">
+            {(["todos", "hot", "cold"] as const).map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => setPublicoFilter(opt)}
+                className={`px-2.5 h-6 rounded text-[11px] font-medium transition-colors ${
+                  publicoFilter === opt
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted/50"
+                }`}
+              >
+                {opt === "todos" ? "Todos" : opt === "hot" ? "🔥 Hot" : "❄️ Cold"}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

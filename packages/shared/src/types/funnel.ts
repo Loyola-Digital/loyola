@@ -51,7 +51,14 @@ export type StageType =
   // "mapa" = o desenho do funil: blocos e setas das peças do lançamento
   // (anúncio, LP, VSL, checkout, upsell, e-mail). Não tem métrica própria — é
   // onde o time enxerga o plano inteiro ao lado das etapas que têm dado.
-  | "mapa";
+  | "mapa"
+  // "redirect" = a campanha que não capta lead: o anúncio leva a uma página de
+  // redirect e de lá a pessoa cai no grupo de WhatsApp. Não tem planilha nem
+  // e-mail — a etapa compara o que a Meta entregou (cliques no link) com o que
+  // o pixel viu na página de redirect (landing page views) e com quem de fato
+  // entrou no grupo (SendFlow). Fora de `ehEtapaDeCaptacao` de propósito: sem
+  // lead, o CRM e o sync diário não têm o que ler aqui.
+  | "redirect";
 // Story 19.10: "event_sales" = planilha de vendas de evento presencial (formato
 // Nome/Produto/Valor/Caixa/Closer/Telefone, SEM email).
 export type StageSalesSubtype = "capture" | "main_product" | "sales" | "tmb" | "event_sales";
@@ -534,6 +541,12 @@ export interface FunnelStage {
   googleAdsCampaigns: FunnelCampaign[];
   switchyFolderIds: SwitchyFolderRef[];
   switchyLinkedLinks: SwitchyLinkRef[];
+  /**
+   * As campanhas do SendFlow da etapa `redirect` (os grupos de WhatsApp).
+   * Opcional porque a API anterior a esta feature não manda o campo — o web
+   * trata ausência como "nenhuma campanha escolhida".
+   */
+  sendflowReleases?: FunnelCampaign[];
   /** GA4 (Epic 37): página (substring de landingPagePlusQueryString) que esta
    * etapa analisa no GA4. Null = etapa sem análise GA4. */
   ga4PageFilter: string | null;
@@ -554,6 +567,31 @@ export interface FunnelStage {
   updatedAt: string;
   projectionEndDate?: string | null; // Story 18.27: data final da projeção
   leadGoal?: number | null; // Story 18.27: meta de leads
+}
+
+/**
+ * Story 18.95 — um dia da tabela "Dados diários" da etapa de Vendas (ou o
+ * balde das vendas sem data). Contagens na regra do `totalVendas` (um comprador
+ * por e-mail na etapa de Vendas; manual à parte); faturamento na do
+ * `faturamentoBruto`; `faturamentoPago` na do `faturamentoPago` (só Pago).
+ */
+export interface DiaDeVendas {
+  pago: number;
+  org: number;
+  semTrack: number;
+  manual: number;
+  faturamento: number;
+  faturamentoPago: number;
+}
+
+/**
+ * Story 18.95 — Σ `dias` + `semData` = os totais do card (`totalVendas`,
+ * `faturamentoBruto`, `faturamentoPago`, `vendasPago`) por construção: sai do
+ * MESMO laço que monta o card. Chave do dia = a mesma do `ingressosByDay`.
+ */
+export interface DiarioDeVendas {
+  dias: Record<string, DiaDeVendas>;
+  semData: DiaDeVendas;
 }
 
 export interface StageSalesData {
@@ -585,6 +623,11 @@ export interface StageSalesData {
    * Usado pela Dados Diários da etapa Paga (Total Ingressos = vendas, não leads).
    */
   ingressosByDay?: Record<string, { pago: number; org: number; semTrack: number; manual?: number }>;
+  /**
+   * Story 18.95: vendas, faturamento e faturamento pago por dia, com o balde das
+   * vendas sem data. Ausente = API anterior ao contrato 56.
+   */
+  diarioDeVendas?: DiarioDeVendas;
   /**
    * Story 18.51a: métricas ÚNICAS vs TOTAIS da etapa Captação Paga.
    * - Único = e-mails distintos que compraram o(s) produto(s) da captação (não

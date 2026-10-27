@@ -567,7 +567,81 @@
 // zero. O rótulo da janela de 1 dia passa a ser "último dia fechado" para
 // ROAS e "investiu e não vendeu", e segue "hoje" para connect rate (tráfego é
 // intraday). `packages/mcp` não é afetado.
-// v51 (Story 42.14 — Lyrio: janelas declaradas; sem migration):
+//
+// v51 (a notificação passa a falar em FUNIL, não em projeto; migration 0177):
+//   `POST /api/notificacoes/alertas/:id/testar` muda de forma. Era um veredito
+//   só — `{ estourou, motivo, leitura, projeto, previa }`. Agora é um por
+//   funil: `{ projeto, funis: [{ chave, nome, estourou, motivo, leitura,
+//   previa }] }`, onde `chave` é o `funnel_id` ou "" no item "(sem funil)" — o
+//   gasto que nenhuma etapa reivindica, que também é julgado. `funis: []`
+//   quando nada teve movimento na janela.
+//   Nada mais muda de forma: a regra continua cadastrada por projeto (ou para
+//   todos) e o resumo diário continua sendo uma notificação por pessoa — só as
+//   LINHAS dentro dele passaram a ser funis.
+//   Por quê: um projeto aqui é "DG & CPDF", com sete funis dentro, e a média do
+//   projeto escondia o que o alerta existe para achar. Medido em 17/10/2026, no
+//   mesmo dia e no mesmo projeto: `dg-pg05` a 1,13× e `dg-bf26` com R$ 269
+//   investidos e nenhuma venda, empacotados num "ROAS em 0,67".
+//   Consequência para quem cadastra regra: o piso de gasto passa a ser POR
+//   FUNIL — o que valia para o projeto somado agora segura alerta de funil
+//   pequeno. `packages/mcp` não é afetado.
+//
+// v52 (Story 29.83 — campanhas de TODAS as contas de anúncios do expert):
+//   `GET /api/projects/:projectId/meta-campaigns` (o seletor de campanhas das
+//   7 telas) lia UMA conta com `.limit(1)` sem ordem. Agora lê todas e cada
+//   item de `campaigns` ganha `accountId`, `accountName` e `metaAccountId`; a
+//   resposta ganha `accounts` (todas as contas, na ordem de agrupamento) e
+//   `accountErrors` (a conta que falhou some da lista com aviso, em vez de
+//   derrubar o seletor inteiro). Só ACRESCENTA campos: com a API antiga o
+//   seletor mostra a lista como antes, sem grupos.
+//   Também passam a ler todas as contas, sem mudar de forma: `all-adsets`, o
+//   diário por campanha (rebusca do que falta no cache), `orphan-campaigns`,
+//   o auto-popular de etapa e o sync histórico de campanhas novas.
+//   `packages/mcp` não é afetado.
+//
+// v53 (Story 18.89 — Leads do Desempenho de Criativos = Leads do Top Criativos):
+//   `GET .../stages/:stageId/creative-performance`: cada item de `creatives`
+//   ganha `adIds` (todos os ad_ids do criativo; `adId` segue sendo o
+//   representante). `leads` muda de SEMÂNTICA: era toda linha da aba de leads
+//   do ad_id, e só quando a etapa tinha planilha de vendas `capture` (sem ela,
+//   0); agora é lead PAGO (`meta | meta-ads | google-ads`), cada e-mail uma vez
+//   no criativo, com ou sem planilha de vendas. Com a API antiga o web
+//   reconstrói o grupo pelo nome do anúncio e nunca cai na contagem de um
+//   ad_id só. Cache da rota `:v4` → `:v5`. `packages/mcp` não é afetado.
+//
+// v54 (Story 18.90 — a aba Analytics diz por que o GA4 falhou):
+//   `GET .../stages/:stageId/ga4-analytics`, no 502 do GA4: `error` deixa de
+//   ser sempre "Erro ao consultar GA4" e passa a ser a mensagem da causa, e a
+//   resposta ganha `code` (`token_revogado | sem_permissao | cota |
+//   oauth_nao_configurado | rede | chave_criptografia | outro`,
+//   `shared/src/ga4-erros.ts`). `details` continua com o texto técnico. Com a
+//   API antiga o web mostra a mensagem genérica e não oferece "Reconectar".
+//   Respostas de sucesso não mudam. `packages/mcp` não é afetado.
+//
+// v55 (Story 18.91, fatia A — Tx Conv. Mídia Paga por LP no Perpétuo):
+//   `GET /api/traffic/analytics/:projectId/entity-daily`: cada linha ganha
+//   `landingPageViews` (`landing_page_view` das `actions` já gravadas no
+//   cache; nenhuma chamada nova à Meta). Campo aditivo: com a API antiga o web
+//   mostra a Tx Conv. Mídia Paga por LP como "—". `packages/mcp` não é afetado.
+//
+// v56 (Story 18.95 — "Dados diários" na etapa de Vendas):
+//   `GET .../stages/:stageId/sales-data` ganha `diarioDeVendas` (`dias` por
+//   `aaaa-mm-dd` + `semData`, cada um com pago/org/semTrack/manual, faturamento
+//   e faturamentoPago), somado no mesmo laço do card — Σ = `totalVendas`,
+//   `faturamentoBruto`, `faturamentoPago`. Campo aditivo: com a API antiga o web
+//   monta a tabela pelo `ingressosByDay`/`faturamentoTotalByDay`, sem a linha
+//   "Sem data" e com ROAS "—". `packages/mcp` não é afetado.
+//
+// v57 (Story 18.96 — investimento e "Dados diários" na etapa de Aplicação):
+//   `GET .../stages/:stageId/application/dashboard` ganha `diarioDeAplicacoes`
+//   (`dias` por `aaaa-mm-dd` + `semData`, cada um com `total` e `pagas` —
+//   `utm_source` `meta`/`meta-ads`), contado no MESMO array do resumo: Σ =
+//   `resumo.aplicacoes`. Campo aditivo: com a API antiga o web mostra os cards
+//   de investimento (custo pago pelas origens Meta de `porUtmSource`) e a
+//   tabela só com as colunas da Meta. `packages/mcp` não é afetado.
+//
+// v58 (Story 42.14 — Lyrio: janelas declaradas; sem migration. Era v51 na
+// branch; renumerada no merge da `main`, que já tinha usado v51 a v57):
 // rota NOVA `GET …/revenuecat/receita?days=N` — a receita BRUTA do RevenueCat
 // nos N dias de calendário de SP terminando hoje, pelo endpoint de intervalo
 // `/metrics/revenue` (`currency=USD`, `revenue_type=revenue`), ecoando
@@ -585,8 +659,12 @@
 // (`RENEWAL` pago que não é o primeiro pagamento) por canal, com a origem mais
 // antiga para quem tem Meta e Google (empate → `conflito`), ecoando
 // `days`/`desde` e a cobertura (`assinaturaDesde`), e o `ltv` por plano
-// (Mensal, Trimestral, Anual: receita bruta e pessoas distintas, com os
+// (Mensal, Trimestral, Semestral, Anual: receita bruta e pessoas distintas, com os
 // `product_id` de cada plano, os pagamentos não classificados e os fora por
 // decisão — classificação por prefixo `premium_*` + promoção pelo nome exato).
+// Mudança de comportamento, sem mudança de forma: `atributosDesde` (de
+// `vendas-por-canal`, `pagantes-por-canal` e da Jornada) só conta evento
+// entregue em até 7 dias depois de acontecer — eventos de paywall de agosto
+// gravados em outubro recuavam a cobertura de 06/10 para 06/08.
 // `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 51;
+export const API_CONTRACT_VERSION = 58;

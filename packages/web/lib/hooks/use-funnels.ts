@@ -75,11 +75,34 @@ export interface MetaCampaignOption {
   name: string;
   status: string;
   objective: string;
+  /**
+   * Story 29.83 — conta de origem. Opcionais: a API anterior ao contrato v52
+   * não os manda, e o seletor então mostra a lista sem grupos, como antes.
+   */
+  accountId?: string;
+  accountName?: string;
+  metaAccountId?: string;
+}
+
+export interface MetaAdAccountOption {
+  id: string;
+  accountName: string;
+  metaAccountId: string;
+}
+
+export interface MetaAdAccountError {
+  accountId: string;
+  accountName: string;
+  metaAccountId: string;
+  error: string;
 }
 
 export interface CampaignPickerResponse {
   campaigns: MetaCampaignOption[];
   accountLinked: boolean;
+  /** Story 29.83 (contrato v52) — ausentes na API antiga. */
+  accounts?: MetaAdAccountOption[];
+  accountErrors?: MetaAdAccountError[];
 }
 
 // ============================================================
@@ -253,6 +276,9 @@ export function useCampaignPicker(projectId: string | null) {
       campaigns: data.campaigns.filter((c) => c.status !== "DELETED"),
       isLoading: false,
       accountLinked: data.accountLinked,
+      // Story 29.83 — `?? []`: com a API antiga (contrato < 52) não vêm.
+      accounts: data.accounts ?? [],
+      accountErrors: data.accountErrors ?? [],
     }),
   });
 }

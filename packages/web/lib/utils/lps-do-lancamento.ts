@@ -22,7 +22,9 @@
 // ============================================================
 
 import { normalizeLpUrl } from "@loyola-x/shared/src/lp-url";
+import { normalizeNumericId } from "@loyola-x/shared/src/utm-value";
 import { applyMetaAdsTax } from "@/lib/utils/funnel-metrics";
+import { passaNoFiltroDeMidia, type TipoDeMidia } from "@/lib/utils/filtro-de-midia-do-criativo";
 import { leadsDaLp, type FonteDeLeads } from "@/lib/utils/leads-da-lp";
 import type { LeadsPorTemperatura } from "@/lib/utils/contagem-de-leads";
 
@@ -153,6 +155,27 @@ function passaNoPublico(t: Temperatura, publico: Publico): boolean {
   return publico === "todos" || t === publico;
 }
 
+/**
+ * Story 18.94 — `ad_id → Ad Name`, para o filtro Vídeo / Estático pelo nome.
+ *
+ * `lpPorAnuncio` não traz o nome; a MESMA resposta traz `creatives[]`, agrupado
+ * pelos mesmos anúncios (`adIds`, contrato 53). Os ids dos criativos vêm crus da
+ * Meta e os de `lpPorAnuncio` normalizados — normaliza aqui para os dois baterem.
+ * Sem `adIds` (API anterior), só o representante `adId` ganha nome.
+ */
+export function nomesPorAnuncio(
+  creatives: readonly { adId: string; adIds?: string[]; adName: string }[] | null | undefined,
+): Map<string, string> {
+  const nomes = new Map<string, string>();
+  for (const c of creatives ?? []) {
+    for (const id of c.adIds ?? [c.adId]) {
+      const k = normalizeNumericId(id ?? "");
+      if (k) nomes.set(k, c.adName);
+    }
+  }
+  return nomes;
+}
+
 type Acc = {
   lpKey: string;
   url: string | null;
@@ -181,8 +204,19 @@ export function montarLinhasDeLpPorUrl(args: {
   publico: Publico;
   /** Data para a regra do imposto (2026+). */
   dataDoImposto: string;
+  /**
+   * Story 18.94 — Vídeo / Estático pelo nome do anúncio (regra da 18.87).
+   * Ausente ou "todos" = exatamente o resultado de antes.
+   */
+  midia?: TipoDeMidia;
+  /** `nomesPorAnuncio(creatives)` — obrigatório na prática fora de "todos". */
+  nomeDoAnuncio?: ReadonlyMap<string, string>;
 }): LpRow[] {
   const { lpPorAnuncio, correcoes, publico } = args;
+  const midia = args.midia ?? "todos";
+  // Anúncio sem nome conhecido não é vídeo nem estático: fica só em Todos (P2).
+  const passaNaMidia = (adId: string) =>
+    midia === "todos" || passaNoFiltroDeMidia(args.nomeDoAnuncio?.get(adId), midia);
   const linhas = new Map<string, Acc>();
 
   const pegar = (chave: string | null, url: string | null): Acc => {
@@ -211,9 +245,12 @@ export function montarLinhasDeLpPorUrl(args: {
 
   // O mapa `ad_id → linha` de TODOS os anúncios da etapa (qualquer temperatura):
   // o lead entra pela temperatura do TEXTO dele (PO-07), não da campanha.
+  // Story 18.94 (AC5): mas só dos anúncios do recorte de mídia — o lead de um
+  // anúncio fora dele fica sem destino e não entra em linha nenhuma.
   const destinoDoAnuncio = new Map<string, LinkDoAnuncio>();
 
   for (const ad of lpPorAnuncio.anuncios) {
+    if (!passaNaMidia(ad.adId)) continue;
     const destino = linkDoAnuncio(ad, correcoes);
     destinoDoAnuncio.set(ad.adId, destino);
     if (!passaNoPublico(ad.temperature, publico)) continue;
@@ -249,7 +286,8 @@ export function montarLinhasDeLpPorUrl(args: {
   // 5ª causa: sem dado por anúncio. Nunca some do Total (AC3); com correção
   // da campanha, vai inteira para a URL informada (PO-15a: só o que é de nível
   // campanha — lead e venda dependem do vínculo anúncio → campanha).
-  for (const camp of lpPorAnuncio.campanhasSemDadoPorAnuncio) {
+  // Story 18.94 (AC4/P2): sem anúncio não há nome — só entra em Todos.
+  for (const camp of midia === "todos" ? lpPorAnuncio.campanhasSemDadoPorAnuncio : []) {
     if (!passaNoPublico(camp.temperature, publico)) continue;
     const destino = linkDoAnuncio({ lpKey: null, url: null, campaignId: camp.campaignId }, correcoes);
     const a = pegar(destino.chave, destino.url);

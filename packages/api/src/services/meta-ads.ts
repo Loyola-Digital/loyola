@@ -2,6 +2,7 @@ import { decrypt } from "./encryption.js";
 import { singleFlight } from "../utils/single-flight.js";
 import { parseActionCount } from "../utils/meta-metrics.js";
 import { avaliarCap, mensagemTruncamento } from "./pagination-cap.js";
+import { CAMPOS_DE_ACAO, mesclarEntregaComAcoes } from "./meta-insights-split.js";
 
 // ============================================================
 // CONSTANTS
@@ -528,9 +529,25 @@ async function fetchCampaignDailyInsightsSingleRange(
     JSON.stringify([{ field: "campaign.id", operator: "EQUAL", value: campaignId }])
   );
 
-  const queryPath = `/act_${metaAccountId}/insights?fields=impressions,reach,clicks,spend,ctr,cpc,cpm,actions,action_values&time_increment=1&level=campaign&filtering=${filtering}&time_range=${buildTimeRangeParam(since, until)}`;
-  const res = await fetchMeta<{ data: MetaDailyInsight[] }>(queryPath, accessToken);
-  return res.data ?? [];
+  // Duas chamadas pelo mesmo motivo de `fetchCampaignDailyInsightsForIdsSingleRange`:
+  // campo de ação junto com `time_increment=1` zera a entrega (ver
+  // `meta-insights-split.ts`). Aqui não há paginação porque é UMA campanha num
+  // range de até 90 dias — 90 linhas cabem na primeira página.
+  const comum = `&time_increment=1&level=campaign&filtering=${filtering}&time_range=${buildTimeRangeParam(since, until)}`;
+  const base = `/act_${metaAccountId}/insights?fields=`;
+  const [entrega, acoes] = await Promise.all([
+    fetchMeta<{ data: MetaDailyInsight[] }>(
+      `${base}impressions,reach,clicks,spend,ctr,cpc,cpm${comum}`,
+      accessToken,
+    ),
+    fetchMeta<{ data: MetaDailyInsight[] }>(`${base}${CAMPOS_DE_ACAO.join(",")}${comum}`, accessToken),
+  ]);
+
+  return mesclarEntregaComAcoes(
+    (entrega.data ?? []) as unknown as Record<string, unknown>[],
+    (acoes.data ?? []) as unknown as Record<string, unknown>[],
+    (linha) => String(linha.date_start ?? "").slice(0, 10),
+  ) as unknown as MetaDailyInsight[];
 }
 
 export async function fetchCampaignDailyInsights(
@@ -565,6 +582,45 @@ export async function fetchCampaignDailyInsights(
 // (campanha, dia) — agregação por dia é responsabilidade do caller. PAGINAÇÃO
 // obrigatória: N campanhas × até 90 dias = pode passar de 25 (limite default
 // da Meta) e perder dias mais recentes na primeira página.
+/**
+ * Segue todas as páginas de um `/insights` e devolve as linhas.
+ *
+ * Existe porque o insight diário virou DUAS chamadas (entrega e ação, ver
+ * `meta-insights-split.ts`) e o laço de paginação era copiado em cada fetcher.
+ *
+ * O cap é anti-loop (resposta malformada apontando para si mesma), não limite
+ * de negócio — e truncamento real vira aviso, em vez de sumir.
+ */
+async function paginarInsights<T>(
+  caminhoInicial: string,
+  accessToken: string,
+  cap: number,
+  origem: string,
+  contexto: string,
+): Promise<T[]> {
+  type PageResponse = { data: T[]; paging?: { next?: string } };
+  const linhas: T[] = [];
+  let caminho: string | null = caminhoInicial;
+  let urlCompleta = false;
+
+  while (caminho) {
+    const res: PageResponse = urlCompleta
+      ? await fetchMetaNext<PageResponse>(caminho)
+      : await fetchMeta<PageResponse>(caminho, accessToken);
+    linhas.push(...(res.data ?? []));
+    const nextUrl = res.paging?.next;
+    const avaliado = avaliarCap(nextUrl, linhas.length, cap);
+    if (avaliado.truncado) console.warn(mensagemTruncamento(origem, cap, contexto));
+    if (avaliado.continuar) {
+      caminho = nextUrl!;
+      urlCompleta = true;
+    } else {
+      caminho = null;
+    }
+  }
+  return linhas;
+}
+
 // Internal: single-range (≤90d) fetch — chamada por `fetchCampaignDailyInsightsForIds`
 // pra cada chunk quando range > 90 dias.
 async function fetchCampaignDailyInsightsForIdsSingleRange(
@@ -581,40 +637,39 @@ async function fetchCampaignDailyInsightsForIdsSingleRange(
   // campaign_id é obrigatório no fields: sem ele a Graph API não devolve o id em
   // cada row (mesmo com level=campaign), e upsertCampaignInsights descarta tudo
   // (campaignId vazio) → o cache meta_campaign_insights_daily nunca persistia.
-  let queryPath = `/act_${metaAccountId}/insights?fields=campaign_id,impressions,reach,clicks,spend,ctr,cpc,cpm,actions,action_values&time_increment=1&level=campaign&limit=500&filtering=${filtering}`;
-  queryPath += `&time_range=${buildTimeRangeParam(since, until)}`;
+  //
+  // `actions`/`action_values` NÃO entram aqui: com `time_increment=1` eles zeram
+  // spend/impressions/reach/clicks na resposta (medição em
+  // `meta-insights-split.ts`). Vêm na segunda chamada e são mesclados.
+  const comum =
+    `&time_increment=1&level=campaign&limit=500&filtering=${filtering}` +
+    `&time_range=${buildTimeRangeParam(since, until)}`;
+  const base = `/act_${metaAccountId}/insights?fields=`;
+  const contexto = `campanhas=${campaignIds.length}, range ${since}..${until}`;
 
-  type PageResponse = { data: MetaDailyInsight[]; paging?: { next?: string } };
-  const allResults: MetaDailyInsight[] = [];
-  let nextPath: string | null = queryPath;
-  let useFullUrl = false;
+  // Cap 5000 ≈ 55 campanhas × 90 dias — folgado para o grão (campanha × dia).
+  const [entrega, acoes] = await Promise.all([
+    paginarInsights<MetaDailyInsight>(
+      `${base}campaign_id,impressions,reach,clicks,spend,ctr,cpc,cpm${comum}`,
+      accessToken,
+      5000,
+      "fetchCampaignDailyInsightsForIdsSingleRange/entrega",
+      contexto,
+    ),
+    paginarInsights<MetaDailyInsight>(
+      `${base}campaign_id,${CAMPOS_DE_ACAO.join(",")}${comum}`,
+      accessToken,
+      5000,
+      "fetchCampaignDailyInsightsForIdsSingleRange/acoes",
+      contexto,
+    ),
+  ]);
 
-  while (nextPath) {
-    const res: PageResponse = useFullUrl
-      ? await fetchMetaNext<PageResponse>(nextPath)
-      : await fetchMeta<PageResponse>(nextPath, accessToken);
-    allResults.push(...(res.data ?? []));
-    const nextUrl = res.paging?.next;
-    // Hard cap defensivo (anti-loop). level=campaign + time_increment=1 gera ~1 linha
-    // por campanha×dia: um stage com muitas campanhas × 90 dias estoura 2000 e
-    // truncaria SILENCIOSAMENTE — e o truncado gruda no cache (TTL infinito p/ dias
-    // passados). 5000 cobre folgado (≈55 campanhas × 90d); warn pra truncamento real
-    // não passar despercebido.
-    if (nextUrl && allResults.length < 5000) {
-      nextPath = nextUrl;
-      useFullUrl = true;
-    } else {
-      if (nextUrl) {
-        console.warn(
-          `[meta-ads] cap de 5000 linhas atingido em fetchCampaignDailyInsightsForIdsSingleRange ` +
-            `(campanhas=${campaignIds.length}, range ${since}..${until}) — dados podem estar truncados`,
-        );
-      }
-      nextPath = null;
-    }
-  }
-
-  return allResults;
+  return mesclarEntregaComAcoes(
+    entrega as unknown as Record<string, unknown>[],
+    acoes as unknown as Record<string, unknown>[],
+    (linha) => `${linha.campaign_id ?? ""}|${String(linha.date_start ?? "").slice(0, 10)}`,
+  ) as unknown as MetaDailyInsight[];
 }
 
 export async function fetchCampaignDailyInsightsForIds(
@@ -1025,32 +1080,51 @@ export async function fetchAdDailyInsights(
 ): Promise<AdDailyInsight[]> {
   const since = startDate && endDate ? startDate : dateRangeFromDays(days).since;
   const until = startDate && endDate ? endDate : dateRangeFromDays(days).until;
-  const fields =
-    "impressions,reach,clicks,spend,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,actions,action_values,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,video_thruplay_watched_actions,video_play_actions";
+
+  // Duas chamadas de propósito: `actions`, `action_values` e os `video_*` zeram
+  // spend/impressions/reach/clicks quando pedidos com `time_increment=1`
+  // (medição em `meta-insights-split.ts`). A entrega vem sozinha; as ações vêm
+  // com os identificadores e são mescladas por (anúncio, dia).
+  const camposDeEntrega =
+    "impressions,reach,clicks,spend,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name";
+  const camposDeAcao = `ad_id,${CAMPOS_DE_ACAO.join(",")}`;
 
   type RawDaily = RawAllAdInsight & { date_start: string };
-  type PageResponse = { data: RawDaily[]; paging?: { next?: string } };
 
   const out: AdDailyInsight[] = [];
   // Chunk 90d (limite da Meta com time_increment=1). Janelas curtas (7d) = 1 chunk.
   for (const chunk of chunkDateRange(since, until)) {
-    const timeRange = buildTimeRangeParam(chunk.since, chunk.until);
-    let nextPath: string | null = `/act_${metaAccountId}/insights?fields=${fields}&time_range=${timeRange}&time_increment=1&level=ad&limit=500`;
-    let useFullUrl = false;
-    while (nextPath) {
-      const res: PageResponse = useFullUrl
-        ? await fetchMetaNext<PageResponse>(nextPath)
-        : await fetchMeta<PageResponse>(nextPath, accessToken);
-      for (const raw of res.data ?? []) {
-        out.push({ ...raw, videoMetrics: extractVideoMetrics(raw) });
-      }
-      const nextUrl: string | undefined = res.paging?.next;
-      if (nextUrl) {
-        nextPath = nextUrl;
-        useFullUrl = true;
-      } else {
-        nextPath = null;
-      }
+    const comum = `&time_range=${buildTimeRangeParam(chunk.since, chunk.until)}&time_increment=1&level=ad&limit=500`;
+    const base = `/act_${metaAccountId}/insights?fields=`;
+    const contexto = `conta=${metaAccountId}, range ${chunk.since}..${chunk.until}`;
+    // Cap 10.000 era o teto deste fetch antes do split; mantido por chamada.
+    const [entrega, acoes] = await Promise.all([
+      paginarInsights<RawDaily>(
+        `${base}${camposDeEntrega}${comum}`,
+        accessToken,
+        10_000,
+        "fetchAdDailyInsights/entrega",
+        contexto,
+      ),
+      paginarInsights<RawDaily>(
+        `${base}${camposDeAcao}${comum}`,
+        accessToken,
+        10_000,
+        "fetchAdDailyInsights/acoes",
+        contexto,
+      ),
+    ]);
+
+    const mescladas = mesclarEntregaComAcoes(
+      entrega as unknown as Record<string, unknown>[],
+      acoes as unknown as Record<string, unknown>[],
+      (linha) => `${linha.ad_id ?? ""}|${String(linha.date_start ?? "").slice(0, 10)}`,
+    ) as unknown as RawDaily[];
+
+    // `extractVideoMetrics` lê `actions` (o 3s) e os `video_*` — só faz sentido
+    // depois da mescla, senão a linha de entrega não teria nenhum dos dois.
+    for (const raw of mescladas) {
+      out.push({ ...raw, videoMetrics: extractVideoMetrics(raw) });
     }
   }
   return out;

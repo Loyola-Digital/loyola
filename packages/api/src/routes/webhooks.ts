@@ -9,6 +9,10 @@ import {
   kiwifySubscriptions,
   revenuecatStageConfig,
   revenuecatSales,
+  webhookLeadSources,
+  webhookLeads,
+  funnelSurveys,
+  webhookSurveyResponses,
 } from "../db/schema.js";
 import {
   computeDedupKey,
@@ -20,6 +24,7 @@ import {
   computeRevenuecatDedupKey,
   normalizeRevenuecatEvent,
 } from "../services/revenuecat.js";
+import { normalizarLead, parseCorpoDeWebhook } from "../services/webhook-leads.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -47,6 +52,17 @@ export default async function webhookRoutes(fastify: FastifyInstance) {
   // Capture raw body before Fastify parses JSON
   fastify.addContentTypeParser(
     "application/json",
+    { parseAs: "string" },
+    (_req, body, done) => {
+      done(null, body);
+    }
+  );
+
+  // O Mautic manda form-urlencoded (`GuzzleHttp/7`), não JSON — e o Fastify não
+  // traz parser para esse tipo. Mesmo tratamento do JSON acima: chega como
+  // string e cada rota decide o que fazer.
+  fastify.addContentTypeParser(
+    "application/x-www-form-urlencoded",
     { parseAs: "string" },
     (_req, body, done) => {
       done(null, body);
@@ -417,6 +433,161 @@ export default async function webhookRoutes(fastify: FastifyInstance) {
     } catch (err) {
       // Nunca propagar erro (não-2xx faz o RevenueCat reenviar em loop).
       fastify.log.error({ err, stageId }, "RevenueCat webhook handler error");
+    }
+
+    return reply.code(200).send({ ok: true });
+  });
+
+  // ============================================================
+  // Leads por webhook — Mautic, n8n, formulário da LP.
+  // URL única por FONTE: POST /api/webhooks/leads/:sourceId?token=<token>.
+  //
+  // Aceita form-urlencoded (o que o Mautic manda) e JSON. A fonte é uma
+  // planilha virtual da etapa: as linhas gravadas aqui são lidas de volta por
+  // `readSheetData`, então scoring, origem por UTM, debriefing e CAPI veem o
+  // mesmo formato de sempre (ver `services/webhook-leads.ts`).
+  //
+  // Responde 200 em QUALQUER corpo — inclusive o que não dá para aproveitar.
+  // Não-2xx faz o Mautic reenviar em laço, e um laço de reenvio é pior que um
+  // lead perdido. SEGURANÇA: nunca logar corpo (PII) nem token.
+  // ============================================================
+  fastify.post("/api/webhooks/leads/:sourceId", async (request, reply) => {
+    const { sourceId } = request.params as { sourceId: string };
+    const queryToken = (request.query as { token?: string }).token ?? "";
+
+    if (!UUID_RE.test(sourceId)) {
+      return reply.code(404).send({ error: "Not found" });
+    }
+
+    const [fonte] = await fastify.db
+      .select({ token: webhookLeadSources.token })
+      .from(webhookLeadSources)
+      .where(eq(webhookLeadSources.id, sourceId))
+      .limit(1);
+
+    // Fonte removida (ou nunca existiu) — não revela qual dos dois.
+    if (!fonte) return reply.code(404).send({ error: "Not found" });
+
+    const authHeader = (request.headers["authorization"] as string | undefined) ?? "";
+    const headerToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+    const provided = queryToken || headerToken;
+    if (!provided || !tokensMatch(provided, fonte.token)) {
+      return reply.code(401).send({ error: "Invalid token" });
+    }
+
+    const corpo = parseCorpoDeWebhook(
+      request.body,
+      (request.headers["content-type"] as string | undefined) ?? "",
+    );
+    if (!corpo) {
+      fastify.log.warn({ sourceId }, "Webhook de leads: corpo ilegível, ignorando");
+      return reply.code(200).send({ ok: true, ignorado: "corpo_ilegivel" });
+    }
+
+    const lead = normalizarLead(corpo);
+    if (!lead) {
+      // Teste de conexão do Mautic/n8n cai aqui, e também o envio em que o
+      // campo de e-mail não foi mapeado na origem.
+      fastify.log.warn({ sourceId }, "Webhook de leads: sem e-mail nem telefone, ignorando");
+      return reply.code(200).send({ ok: true, ignorado: "sem_identificador" });
+    }
+
+    try {
+      // Reenvio do mesmo lead em menos de um minuto é retry, não inscrição
+      // nova. Depois disso entra como linha nova — é o que a planilha faria, e
+      // o dedup de "únicos" acontece na leitura.
+      const identificador = lead.email
+        ? eq(webhookLeads.email, lead.email)
+        : eq(webhookLeads.telefone, lead.telefone!);
+      const [repetido] = await fastify.db
+        .select({ id: webhookLeads.id })
+        .from(webhookLeads)
+        .where(
+          and(
+            eq(webhookLeads.sourceId, sourceId),
+            identificador,
+            sql`${webhookLeads.recebidoEm} > now() - interval '1 minute'`,
+          ),
+        )
+        .limit(1);
+
+      if (repetido) return reply.code(200).send({ ok: true, duplicate: true });
+
+      await fastify.db.insert(webhookLeads).values({
+        sourceId,
+        nome: lead.nome,
+        email: lead.email,
+        telefone: lead.telefone,
+        utmSource: lead.utmSource,
+        utmMedium: lead.utmMedium,
+        utmCampaign: lead.utmCampaign,
+        utmContent: lead.utmContent,
+        utmTerm: lead.utmTerm,
+        payload: corpo,
+      });
+    } catch (err) {
+      fastify.log.error({ err, sourceId }, "Webhook de leads: falha ao gravar");
+    }
+
+    return reply.code(200).send({ ok: true });
+  });
+
+  // ============================================================
+  // RESPOSTAS DE PESQUISA POR WEBHOOK (sem Tally, sem planilha)
+  // ============================================================
+  // URL única por PESQUISA: POST /api/webhooks/pesquisa/:surveyId?token=<token>.
+  //
+  // Guarda o corpo CRU e só ele. Quem envia é que nomeia as perguntas, e o
+  // nome da pergunta é a coluna — normalizar aqui seria apagar o que o motor
+  // de scoring precisa casar (ver `services/webhook-pesquisa.ts`).
+  //
+  // Responde 200 em QUALQUER corpo, como a recepção de leads: não-2xx faz o
+  // remetente reenviar em laço. SEGURANÇA: nunca logar corpo (PII) nem token.
+  // ============================================================
+  fastify.post("/api/webhooks/pesquisa/:surveyId", async (request, reply) => {
+    const { surveyId } = request.params as { surveyId: string };
+    const queryToken = (request.query as { token?: string }).token ?? "";
+
+    if (!UUID_RE.test(surveyId)) {
+      return reply.code(404).send({ error: "Not found" });
+    }
+
+    const [pesquisa] = await fastify.db
+      .select({ token: funnelSurveys.webhookToken })
+      .from(funnelSurveys)
+      .where(eq(funnelSurveys.id, surveyId))
+      .limit(1);
+
+    // Pesquisa removida, ou que é planilha do Google e não tem token — não
+    // revela qual dos dois.
+    if (!pesquisa?.token) return reply.code(404).send({ error: "Not found" });
+
+    const authHeader = (request.headers["authorization"] as string | undefined) ?? "";
+    const headerToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+    const provided = queryToken || headerToken;
+    if (!provided || !tokensMatch(provided, pesquisa.token)) {
+      return reply.code(401).send({ error: "Invalid token" });
+    }
+
+    const corpo = parseCorpoDeWebhook(
+      request.body,
+      (request.headers["content-type"] as string | undefined) ?? "",
+    );
+    if (!corpo) {
+      fastify.log.warn({ surveyId }, "Webhook de pesquisa: corpo ilegível, ignorando");
+      return reply.code(200).send({ ok: true, ignorado: "corpo_ilegivel" });
+    }
+
+    // Corpo vazio é o teste de conexão do n8n: nada a gravar, e gravar daria
+    // uma linha de respondente que não existe.
+    if (Object.keys(corpo).length === 0) {
+      return reply.code(200).send({ ok: true, ignorado: "corpo_vazio" });
+    }
+
+    try {
+      await fastify.db.insert(webhookSurveyResponses).values({ surveyId, payload: corpo });
+    } catch (err) {
+      fastify.log.error({ err, surveyId }, "Webhook de pesquisa: falha ao gravar");
     }
 
     return reply.code(200).send({ ok: true });
