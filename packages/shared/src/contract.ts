@@ -640,8 +640,15 @@
 //   de investimento (custo pago pelas origens Meta de `porUtmSource`) e a
 //   tabela só com as colunas da Meta. `packages/mcp` não é afetado.
 //
-// v58 (Story 42.14 — Lyrio: janelas declaradas; sem migration. Era v51 na
-// branch; renumerada no merge da `main`, que já tinha usado v51 a v57):
+// v58 (Story 18.97 — coluna Status na tabela "Desempenho de Testes de LPs"):
+//   `GET .../stages/:stageId/creative-performance`: cada item de
+//   `lpPorAnuncio.anuncios` ganha `status` ("active" | "paused" | "unknown"),
+//   do `effective_status` já lido para os Criativos (18.61) — nenhuma consulta
+//   nova. Cache da rota sobe para `:v6`. Campo aditivo: com a API antiga a
+//   coluna mostra "—" em todas as linhas. `packages/mcp` não é afetado.
+//
+// v59 (Story 42.14 — Lyrio: janelas declaradas; sem migration. Era v51 na
+// branch; renumerada no merge da `main`, que já tinha usado v51 a v58):
 // rota NOVA `GET …/revenuecat/receita?days=N` — a receita BRUTA do RevenueCat
 // nos N dias de calendário de SP terminando hoje, pelo endpoint de intervalo
 // `/metrics/revenue` (`currency=USD`, `revenue_type=revenue`), ecoando
@@ -667,4 +674,4 @@
 // entregue em até 7 dias depois de acontecer — eventos de paywall de agosto
 // gravados em outubro recuavam a cobertura de 06/10 para 06/08.
 // `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 58;
+export const API_CONTRACT_VERSION = 59;

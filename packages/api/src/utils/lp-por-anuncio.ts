@@ -98,10 +98,26 @@ function metricasDe(l: LinhaDeAnuncio | LinhaDeCampanha): Metricas {
   };
 }
 
+/**
+ * Story 18.97 — o estado ATUAL do anúncio na Meta (`effective_status` do cache,
+ * 18.61). `ACTIVE` já sai falso com a campanha ou o conjunto pausados
+ * (`CAMPAIGN_PAUSED`, `ADSET_PAUSED`). `unknown` = sem status no cache → "—",
+ * nunca "Pausado" por falta de dado.
+ */
+export type StatusDoAnuncio = "active" | "paused" | "unknown";
+
+/** `effective_status` cru → o status da tabela (a regra da 18.61, por anúncio). */
+export function statusDoAnuncio(effectiveStatus: string | undefined): StatusDoAnuncio {
+  if (effectiveStatus === undefined) return "unknown";
+  return effectiveStatus === "ACTIVE" ? "active" : "paused";
+}
+
 export interface AnuncioDaLp extends Metricas {
   adId: string;
   campaignId: string;
   campaignName: string;
+  /** Story 18.97: ver `StatusDoAnuncio`. */
+  status: StatusDoAnuncio;
   temperature: Temperatura;
   /** URL crua do criativo — o `href` da linha. */
   url: string | null;
@@ -165,6 +181,11 @@ export function montarLpPorAnuncio(args: {
   campanhasPermitidas: string[];
   links: Map<string, LinkDoAnuncio>;
   vendas: VendasPorAnuncio;
+  /**
+   * Story 18.97 — `ad_id → effective_status`, o MESMO mapa que a rota já lê
+   * para a coluna Status dos Criativos (sem consulta nova). Ausente = "unknown".
+   */
+  status?: ReadonlyMap<string, string>;
 }): LpPorAnuncio {
   const permitidas = new Set(args.campanhasPermitidas);
   const porAnuncio = new Map<string, AnuncioDaLp>();
@@ -195,6 +216,9 @@ export function montarLpPorAnuncio(args: {
       adId,
       campaignId,
       campaignName: linha.campaign_name ?? "",
+      // A chave do cache é o ad_id cru; o `adId` aqui já passou pelo
+      // `normalizeNumericId` — tenta os dois.
+      status: statusDoAnuncio(args.status?.get(adId) ?? args.status?.get(linha.ad_id ?? "")),
       temperature: temperaturaDaCampanha(linha.campaign_name),
       url: link.chave ? link.url : null,
       lpKey: link.chave,

@@ -17,7 +17,7 @@
  * ROAS e Margem dividem uma receita e um investimento da MESMA janela. Se a
  * receita do filtro falha, os dois ficam "—" com a causa — nunca caem para o
  * `revenue_last_28_days` (PO-D4 (4)). Só a API ANTERIOR à rota de receita (404 da
- * rota, contrato < 58) leva o trio Receita/ROAS/Margem aos 28 dias, e aí os três
+ * rota, contrato < 59) leva o trio Receita/ROAS/Margem aos 28 dias, e aí os três
  * dizem isso com etiqueta e âmbar: o que era antes, declarado (AC10b).
  *
  * ## Novos clientes

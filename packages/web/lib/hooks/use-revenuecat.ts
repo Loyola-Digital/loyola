@@ -320,7 +320,7 @@ export interface RevenuecatReceita {
 }
 
 /**
- * ⚠️ Rota NOVA (contrato 58): com a API anterior responde 404 — a tela trata
+ * ⚠️ Rota NOVA (contrato 59): com a API anterior responde 404 — a tela trata
  * como API atrás (`estadoDaFonte` → oculto). Sem insistir em 429 nem 404
  * (PO-D4 (6)). Resumo e Overview pedem a MESMA chave: uma chamada por janela,
  * que conta uma vez no limite de 25/min do RevenueCat.
@@ -388,7 +388,7 @@ export function useRevenuecatVendasPorCanal(projectId: string, funnelId: string,
 
 /**
  * Story 42.14 (D22) — "Novos clientes" na janela do filtro, pelo chart
- * `customers_new` (rota nova, contrato 58). 404 da rota → API atrás (o card fica
+ * `customers_new` (rota nova, contrato 59). 404 da rota → API atrás (o card fica
  * nos 28 dias do overview, declarado). Sem insistir em 429 nem 404 (PO-D4 (6)).
  * Resumo e Overview pedem a mesma chave: uma chamada por janela.
  */
@@ -411,7 +411,7 @@ export function useRevenuecatNovosClientes(projectId: string, funnelId: string, 
 // ============================================================
 
 /**
- * ⚠️ Rota NOVA (contrato 58): com a API anterior responde 404 — os cards de CAC,
+ * ⚠️ Rota NOVA (contrato 59): com a API anterior responde 404 — os cards de CAC,
  * LTV e renovação não aparecem (`cardsDeAquisicao`) e o banner de versão
  * explica. Mesmo `retry` da Jornada: um 404 não vira outra coisa entre
  * tentativas. O Resumo pede o filtro e os 28 dias; o Overview, os 28 dias (a
