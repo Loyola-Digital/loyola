@@ -1,18 +1,53 @@
 schema: 1
 story: '18.96'
 story_title: 'Etapa de Aplicação — campanhas Meta, cards de investimento e custo, e "Dados diários"'
-gate: FAIL
-status_reason: 'Nas janelas 7d/30d/90d as aplicações cobrem um dia a mais que a Meta. A API corta em hoje − days à meia-noite (days+1 dias de calendário); a Meta usa since = hoje − (days−1). Resultado: o custo por aplicação divide o gasto de N dias pelas aplicações de N+1 dias, e sai até ~12% menor em 7d. O dia mais antigo aparece com Investimento R$ 0,00 e Custo R$ 0,00. Há também um medium: erro da Meta vira investimento e custo R$ 0,00, sem aviso. O resto está correto: Σ dias + Sem data = card, cards = Total, degradação com a API antiga, regra P6, fórmulas e fuso da célula sem fuso.'
+gate: CONCERNS
+status_reason: 'Re-gate (iteração 2) sobre 61607ab. O QA fix 1 fechou REL-001, DATA-001, DATA-002 e TEST-001, e fechou o REQ-001 fora da faixa das 21h às 24h de Brasília. Aplicações e vendas usam a régua do shared (inicioDaJanela + businessToday), e o web marca "—" em todo dia sem cobertura da Meta. Resta o REQ-002 (medium): a cópia privada de dateRangeFromDays em meta-insights-cache.ts:79 ainda calcula o "hoje" em UTC. Das 21h às 24h de Brasília, o /campaign-daily em lote começa um dia depois, e o dia mais antigo da Aplicação volta a mostrar R$ 0. É um defeito da plataforma, anterior a esta story, que atinge todas as telas que usam o caminho em lote: Captação, Vendas, comparação e relatórios. Vai para story própria.'
+iteration_1_status_reason: 'Nas janelas 7d/30d/90d as aplicações cobrem um dia a mais que a Meta. A API corta em hoje − days à meia-noite (days+1 dias de calendário); a Meta usa since = hoje − (days−1). Resultado: o custo por aplicação divide o gasto de N dias pelas aplicações de N+1 dias, e sai até ~12% menor em 7d. O dia mais antigo aparece com Investimento R$ 0,00 e Custo R$ 0,00. Há também um medium: erro da Meta vira investimento e custo R$ 0,00, sem aviso. O resto está correto: Σ dias + Sem data = card, cards = Total, degradação com a API antiga, regra P6, fórmulas e fuso da célula sem fuso.'
 reviewer: 'Quinn'
-updated: '2026-10-27T17:40:00Z'
+updated: '2026-10-27T19:10:00Z'
 pr: null
-branch: 'feat/18.96-aplicacao-investimento (local, não pushada; 1 commit sobre a main em b4bad0f)'
-commits: ['0de07b8']
+branch: 'feat/18.96-aplicacao-investimento (local, não pushada; 3 commits sobre a main em b4bad0f: feat, gate FAIL, QA fix 1)'
+commits: ['0de07b8', '61607ab']
 base: 'main em b4bad0f'
 
+history:
+  - iteration: 1
+    gate: FAIL
+    commit: '0de07b8'
+    issues: [REQ-001 high, REL-001 medium, TEST-001 medium, DATA-001 low, DATA-002 low, DOC-001 low, REL-002 low]
+  - iteration: 2
+    gate: CONCERNS
+    commit: '61607ab'
+    resolved: [REQ-001 (fora das 21h–24h), REL-001, TEST-001, DATA-001, DATA-002]
+    open: [REQ-002 medium (follow-up de plataforma), DOC-001 low (aceito), REL-002 low (follow-up), MNT-001 low]
+
 top_issues:
+  - id: 'REQ-002'
+    severity: medium
+    finding: >-
+      Sobra do REQ-001 na faixa das 21h às 24h de Brasília. O `dateRangeFromDays` EXPORTADO de `meta-ads.ts:72`
+      já usa o fuso da conta (o comentário dele descreve este bug). Mas o `meta-insights-cache.ts:79-84` tem
+      uma cópia PRIVADA da mesma função, ainda em UTC (`toISOString`). É ela que serve o caminho em lote
+      (`fetchCampaignDailyInsightsForIdsWithCache[EmContas]`): o `/campaign-daily` de Captação, Vendas e
+      Aplicação, `meta-ads-comparison.ts:319`, `launch-report-loader.ts:729` e `perpetual-report-loader.ts:592`.
+      Cenário reproduzido pelo revisor independente: às 22h de 26/10 em Brasília (01h UTC de 27/10), a Meta
+      cobre de 21 a 27/10, enquanto a API da Aplicação e o `metaDesde` começam em 20/10. O dia 20 sai com
+      Investimento R$ 0 e o custo fica otimista por 1 dia (6 dias de gasto contra 7 de aplicações).
+      Não é regressão: antes do QA fix 1, o dia sobrando aparecia o dia inteiro.
+    suggested_action: >-
+      Story de plataforma, a cargo do @sm: a cópia do cache passa a reusar o `dateRangeFromDays` de
+      `meta-ads.ts` (fuso da conta), com teste de relógio fixado às 01h UTC. Mexe em todas as telas do
+      caminho em lote, então precisa de medição antes e depois. O workaround local (o web mandar
+      `startDate`/`endDate` explícitos ao `useCampaignDailyInsightsBulk`) NÃO é recomendado: ele criaria
+      uma terceira régua só nesta tela.
+  - id: 'MNT-001'
+    severity: low
+    finding: 'O `dentroDoPeriodo` (`etapa-de-aplicacao.ts:292`) ficou sem uso na rota depois do QA fix 1. Continua exportado e coberto pelos testes antigos.'
+    suggested_action: 'Aceitar. Ou remover junto com os testes dele, numa limpeza futura do módulo.'
   - id: 'REQ-001'
     severity: high
+    status: 'RESOLVIDO no 61607ab, salvo a faixa das 21h às 24h (ver REQ-002)'
     finding: >-
       Régua de janela diferente nos dois lados. A Meta usa `dateRangeFromDays`
       (`meta-insights-cache.ts:79-84`): `since = hoje − (days−1)`, `until = hoje`, com a data em UTC.
@@ -38,6 +73,7 @@ top_issues:
       custo usa os mesmos dias da Meta. Ver também DATA-002, que é a mesma régua com fuso.
   - id: 'REL-001'
     severity: medium
+    status: 'RESOLVIDO no 61607ab (metaComErro, aviso, "—"; teste e fio)'
     finding: >-
       `ApplicationInvestmentSection` só olha `meta.isLoading`
       (`application-investment-section.tsx:109`). Com 502 ou falha de rede no `/campaign-daily`,
@@ -53,6 +89,7 @@ top_issues:
       A mesma lacuna na etapa de Vendas fica como follow-up fora desta story.
   - id: 'DATA-001'
     severity: low
+    status: 'RESOLVIDO no 61607ab (getters locais; 31/02 → 03/03 nos dois fusos)'
     finding: >-
       `diaDaCelula` monta o dia direto do texto, sem validar
       (`stage-application.ts:212-216`), enquanto `dataDaCelula` aceita rollover.
@@ -67,6 +104,7 @@ top_issues:
       fuso. Teste com `31/02/2026`.
   - id: 'DATA-002'
     severity: low
+    status: 'RESOLVIDO no 61607ab (entraNaJanela pelo dia; célula Z testada em UTC e em SP)'
     finding: >-
       Com fuso explícito na célula (`…Z`), o filtro compara o instante com `de`, que é a
       meia-noite do servidor, e o dia é calculado em Brasília. `2026-10-21T01:30:00Z` com
@@ -76,6 +114,7 @@ top_issues:
     suggested_action: 'Resolver junto com o REQ-001: o corte da janela compara pelo `dia` (string aaaa-mm-dd), não pelo instante.'
   - id: 'TEST-001'
     severity: medium
+    status: 'RESOLVIDO no 61607ab, com ressalva: o teste do web usa o mesmo "hoje" nos dois lados, então não pega o REQ-002'
     finding: >-
       Nenhum teste amarra a janela das aplicações à da Meta. As 8 mutações do @dev provam a
       matemática dentro da janela, mas nenhuma pega o REQ-001: todas as fixtures passam
@@ -92,7 +131,14 @@ top_issues:
 
 waiver: { active: false }
 
-checks:
+checks_iteration_2:
+  code_review: 'OK. Aplicações e vendas cortam por `entraNaJanela(dia, inicio)`, com `inicio = janelaDoDashboard(days, businessToday())`. O web usa `inicioDaMeta(dias, hojeDoNavegador())` em toda janela e `metaComErro` → "—". As strings de dia são seguras de comparar (aaaa-mm-dd com zero à esquerda). Nenhum consumidor lê `periodo.desde`. No "Tudo", `inicio` é null, como antes. Planilha sem coluna de data: a linha entra, como antes.'
+  unit_tests: 'OK. API 37/37 e web 23/23 nos arquivos da story. 8 mutações do fix (F1–F8) e as 8 originais (M7 refeita sobre o código novo), todas vermelhas. O @dev achou e corrigiu um vazamento de TZ="undefined" no próprio teste; a F2 agora morre de propósito na rodada TZ=UTC.'
+  acceptance_criteria: 'AC1–AC10 ✓ (o AC2 com o REQ-002 na faixa das 21h às 24h) · AC11 ⏳ visual pendente de deploy. P7 (régua única, N dias em Aplicações e Vendas) aprovada pelo gestor.'
+  no_regressions: 'OK. Web 2086/2086 (--testTimeout=60000), typecheck 5/5, lint 5/5, next build verde. API: as mesmas 10 falhas da main b4bad0f, nos mesmos 5 arquivos. Mudança de comportamento aceita (P7): os cards Aplicações, Vendas, Receita e "Aplicaram e compraram" passam a contar N dias.'
+  api_contract: 'OK. v57 inalterado; o QA fix 1 não muda a forma da resposta (só o valor de `periodo.desde`, sem consumidor).'
+
+checks_iteration_1:
   code_review: 'Bloqueado por REQ-001 e REL-001. O resto está limpo: `diarioDeAplicacoes` usa o mesmo array do `resumir`; os cards são o próprio Total (mesma chamada de `linha()`); a escala está certa (CTR em pontos percentuais, como `fmtPercent` espera); o `useUpdateStage` invalida `funnel-stage`, então as campanhas reaparecem marcadas.'
   unit_tests: 'Parcial. API 19/19 e web 17/17 verdes. As 8 mutações do @dev foram conferidas como vermelhas. Lacuna em TEST-001: o defeito alto passa por toda a suíte.'
   acceptance_criteria: 'AC1 ✓ · AC2 ✗ (REQ-001: janela diferente da Meta) · AC3 ✓ (DOC-001) · AC4 ✓ no texto, mas a borda do "Tudo" erra 1 dia · AC5 ✓ · AC6 ✓ · AC7 ✓ (Total = cards, Σ = card) · AC8 ✓ · AC9 ✓ · AC10 ✓ (a prova pedida ficou vermelha) · AC11 ⏳ visual pendente de deploy.'
