@@ -1,9 +1,10 @@
-import { eq, and, inArray, gte, sql } from "drizzle-orm";
+import { eq, and, inArray, gte, sql, desc } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import {
   metaAdsAccounts,
   metaAdsAccountProjects,
   metaAdCreativesCache,
+  metaAdInsightsDaily,
 } from "../db/schema.js";
 import {
   fetchCampaignInsights,
@@ -36,6 +37,7 @@ import {
   getPlacementBreakdownFromDb,
   // Story 43.9 — insights por anúncio também saem do banco.
   getAdInsightsFromDb,
+  getAdEffectiveStatusFromDb,
 } from "./meta-db-source.js";
 import { singleFlight } from "../utils/single-flight.js";
 import { classificarPelaCascata, type TemperaturaDePublico } from "../utils/temperatura-de-publico.js";
@@ -1419,4 +1421,72 @@ export async function getPlacementBreakdown(
 
   setCache(cacheKey, result);
   return result;
+}
+
+// ============================================================
+// Story 18.99 — status e campanha de cada anúncio, para a coluna Status do
+// "Desempenho por LP" do perpétuo (a mesma regra da 18.97 nos lançamentos).
+// ============================================================
+
+/** Status do anúncio já traduzido pela regra da 18.61: só `ACTIVE` é ativo. */
+export type StatusDoAnuncioNaLp = "active" | "paused";
+
+/** A campanha do anúncio: o id conta, o nome vai para o tooltip. */
+export interface CampanhaDoAnuncio {
+  campaignId: string;
+  nome: string;
+}
+
+export interface StatusECampanhaDosAnuncios {
+  /** Só os anúncios com status no cache. Ausente = desconhecido ("—"), nunca "Pausado". */
+  statusByAdId: Record<string, StatusDoAnuncioNaLp>;
+  /**
+   * Campanha de cada anúncio, para o tooltip "Ativo em N campanha(s)". O web
+   * conta pelo `campaignId`, como a 18.97: duas campanhas com o mesmo nome são
+   * duas, e uma campanha renomeada continua sendo uma (QA 18.99 REQ-001).
+   */
+  campanhaByAdId: Record<string, CampanhaDoAnuncio>;
+}
+
+/**
+ * Lê só do Postgres, nunca da Meta (regra batch+cache): o status vem do
+ * `meta_entity_names_cache` (backfill de nomes, de madrugada) e a campanha, de
+ * `meta_ad_insights_daily`, a mesma tabela de onde saem as linhas da tabela de
+ * LP (`/entity-daily`). Por isso todo anúncio da tabela tem campanha.
+ *
+ * A campanha é a da linha MAIS RECENTE de cada anúncio (`DISTINCT ON (ad_id)`
+ * por `date_start DESC`): determinística, e com o nome atual de uma campanha
+ * renomeada. O `DISTINCT` sem ordem deixava a escolha com o plano do Postgres
+ * (QA 18.99 REQ-001).
+ */
+export async function statusECampanhaDosAnuncios(
+  db: Database,
+  projectId: string,
+  adIds: string[],
+): Promise<StatusECampanhaDosAnuncios> {
+  const ids = [...new Set(adIds.filter(Boolean))];
+  if (ids.length === 0) return { statusByAdId: {}, campanhaByAdId: {} };
+
+  const [status, campanhas] = await Promise.all([
+    getAdEffectiveStatusFromDb(db, projectId, ids),
+    db
+      .selectDistinctOn([metaAdInsightsDaily.adId], {
+        adId: metaAdInsightsDaily.adId,
+        campaignId: metaAdInsightsDaily.campaignId,
+        campaignName: metaAdInsightsDaily.campaignName,
+      })
+      .from(metaAdInsightsDaily)
+      .where(and(eq(metaAdInsightsDaily.projectId, projectId), inArray(metaAdInsightsDaily.adId, ids)))
+      .orderBy(metaAdInsightsDaily.adId, desc(metaAdInsightsDaily.dateStart)),
+  ]);
+
+  const statusByAdId: Record<string, StatusDoAnuncioNaLp> = {};
+  for (const [adId, efetivo] of status) {
+    statusByAdId[adId] = efetivo === "ACTIVE" ? "active" : "paused";
+  }
+  const campanhaByAdId: Record<string, CampanhaDoAnuncio> = {};
+  for (const r of campanhas) {
+    if (r.campaignId) campanhaByAdId[r.adId] = { campaignId: r.campaignId, nome: r.campaignName ?? "" };
+  }
+  return { statusByAdId, campanhaByAdId };
 }

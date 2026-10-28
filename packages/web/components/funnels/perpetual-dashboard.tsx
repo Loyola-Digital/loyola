@@ -202,6 +202,8 @@ import {
   httpStatusOf,
 } from "@/lib/utils/perpetual-entity-charts-state";
 import { buildLpAdInputs } from "@/lib/utils/perpetual-lp-ads";
+// Story 18.99: o mesmo badge e o mesmo texto da coluna Status dos lançamentos (18.97).
+import { StatusDaLp } from "@/lib/components/funnels/lp-performance-table";
 
 interface PerpetualDashboardProps {
   funnel: Funnel;
@@ -486,7 +488,7 @@ const CREATIVE_BATCH_LIMIT = 50;
 const PERPETUAL_DAILY_PAGE_SIZE = 16;
 
 /** Story 29.40: colunas ordenáveis da tabela de LPs (AC3). */
-type LpSortCol = "lp" | "spend" | "revenue" | "margin" | "marginPct" | "sales" | "cac" | "roas";
+type LpSortCol = "lp" | "status" | "spend" | "revenue" | "margin" | "marginPct" | "sales" | "cac" | "roas";
 
 /**
  * Story 29.42 — os três gráficos por dimensão.
@@ -2338,6 +2340,11 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         // e precisa chegar assim ao util — colapsar em array vazio fazia a tela
         // afirmar "sem URL na Meta" para o que era só cache velho.
         linkUrlsData?.staleInCache,
+        // Story 18.99 (AC6): sem `statusByAdId` (API anterior ao contrato 61)
+        // nenhuma linha ganha status, e a coluna mostra "—".
+        linkUrlsData?.statusByAdId
+          ? { statusByAdId: linkUrlsData.statusByAdId, campanhaByAdId: linkUrlsData.campanhaByAdId }
+          : undefined,
       ),
     [lpAds, linkUrlsData, detailFeeRate],
   );
@@ -3451,6 +3458,10 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                   <th className="text-left py-2 pr-3 select-none">
                     <span className="cursor-pointer hover:text-foreground" onClick={() => toggleLpSort("lp")}>LP{lpSortArrow("lp")}</span>
                   </th>
+                  {/* Story 18.99 (AC1, AC4): Status logo depois da LP, ordenável. */}
+                  <th className="text-left py-2 px-2 select-none">
+                    <span className="cursor-pointer hover:text-foreground" onClick={() => toggleLpSort("status")}>Status{lpSortArrow("status")}</span>
+                  </th>
                   <th className="text-right py-2 px-2 select-none">
                     <span className="cursor-pointer hover:text-foreground" onClick={() => toggleLpSort("spend")}>Investimento{lpSortArrow("spend")}</span>
                   </th>
@@ -3516,6 +3527,9 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
                       ) : (
                         row.key
                       )}
+                    </td>
+                    <td className="py-2 px-2">
+                      <StatusDaLp status={row.status} campanhasAtivas={row.campanhasAtivas} />
                     </td>
                     <td className="text-right px-2 tabular-nums">{fmtCurrency(row.spend)}</td>
                     <td className="text-right px-2 tabular-nums">{fmtCurrency(row.revenue)}</td>

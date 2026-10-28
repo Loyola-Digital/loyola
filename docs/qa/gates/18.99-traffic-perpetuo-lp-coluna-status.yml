@@ -1,0 +1,58 @@
+schema: 1
+story: '18.99'
+story_title: 'Perpétuo — coluna Status (Ativo / Pausado) no "Desempenho por LP"'
+gate: PASS
+status_reason: 'A coluna sai com a regra, o texto e o badge da 18.97, contada nos mesmos anúncios cujo gasto entra na linha, já com o filtro de público. A API só lê o Postgres, e com a API antiga a coluna mostra "—". A revisão em duas leituras não achou defeito na regra. Achou um medium: a campanha do tooltip era contada pelo nome, e o nome escolhido dependia do plano do Postgres. Os lows foram o lote com erro, testes fracos e leitura em série. Tudo foi corrigido no QA fix 1, com prova por reversão (M1–M12 vermelhas).'
+reviewer: 'Quinn'
+updated: '2026-10-28T12:40:00Z'
+pr: null
+branch: 'feat/18.99-perpetuo-lp-coluna-status (sobre a main em ac8d721)'
+commits: ['f29018d', 'QA fix 1']
+
+top_issues:
+  - id: 'REQ-001'
+    severity: medium
+    status: 'RESOLVIDO no QA fix 1'
+    finding: >-
+      A campanha era identificada pelo NOME (`selectDistinct(ad_id, campaign_name)` sem ORDER BY). Campanha
+      renomeada podia aparecer como duas ("Ativo em 2 campanhas: X, X2"), e duas campanhas com o mesmo nome
+      contavam como uma. Qual nome ficava dependia do plano do Postgres. A 18.97 conta pelo `campaignId` e
+      ordena os nomes. Achado pelo revisor independente.
+    fix: '`DISTINCT ON (ad_id)` por `date_start DESC` (a linha mais recente: o nome atual), devolvendo `{campaignId, nome}`. O web conta num `Map<campaignId, nome>` e ordena os nomes. Reversões M7 (por nome), M8 (sem sort) e M11 (sem ordem por data) vermelhas.'
+  - id: 'REL-001'
+    severity: low
+    status: 'RESOLVIDO no QA fix 1'
+    finding: >-
+      O hook juntava só os lotes que já tinham resposta. Com o lote 2 em erro, onde estava o único anúncio ativo
+      sem URL, a linha "Sem link resolvido" saía "Pausado" sem dado.
+    fix: 'Junção pura `juntarStatusDosLotes` (`perpetual-lp-rows.ts`). Se algum lote está carregando, deu erro ou não tem o campo, o resultado é "—". O hook a chama com `results.map((r) => r.data)`. Reversões M9 e M10 vermelhas.'
+  - id: 'TST-001'
+    severity: low
+    status: 'RESOLVIDO no QA fix 1'
+    finding: 'O banco falso da API ignorava o `where`: tirar o filtro de projeto ou o `inArray` não derrubava nenhum teste. A junção dos lotes era conferida só por regex.'
+    fix: '`eq`, `inArray` e `desc` viraram marcadores no teste da API, que confere projeto, ad_ids e ordem nas duas leituras (M12 vermelha). A junção é testada como função, com 2 lotes, lote faltando e lote sem o campo.'
+  - id: 'PERF-001'
+    severity: low
+    status: 'RESOLVIDO no QA fix 1'
+    finding: 'O status e a campanha eram lidos em série depois do cache de criativos e do agendamento da cura.'
+    fix: 'As leituras rodam em `Promise.all` com a do cache de criativos. O `DISTINCT ON` também lê menos que o `DISTINCT` sobre todo o histórico. O padrão (`DISTINCT` por ad_id em `meta_ad_insights_daily`) já roda em `campaign-attribution.ts:86`, em lotes de até 120 anúncios, pelo prefixo da chave primária.'
+  - id: 'OBS-001'
+    severity: low
+    status: 'aceito'
+    finding: 'Anúncio ativo sem campanha conhecida cai num grupo único "", que conta 1 sem nome. Na prática não acontece: as linhas saem da mesma tabela que dá a campanha.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'OK. Regra igual à da 18.61/18.97. O status sai de `lpAds`, que já passou pelo `filtrarPorPublico`. A rota `/ad-link-urls`, o `buildLpRows` e o `sortLpRows` só têm este consumidor (`perpetual-dashboard.tsx`); os outros arquivos que citam a rota o fazem em comentário. O `StatusDaLp` foi só exportado. O perpétuo já importava o `launch-dashboard`, que importa a tabela da 18.97, então o bundle não cresce.'
+  unit_tests: 'OK. Web 22/22 e API 7/7 na story. Reversões M1–M12 vermelhas (M4, a do `every` do hook, saiu com a junção pura e foi trocada pela M10). Vizinhos (`perpetual-lp-rows`, `lps-status-1897`) passam.'
+  acceptance_criteria: 'AC1–AC7 ✓ · AC8 ⏳ visual depois do deploy da API (contrato 61).'
+  no_regressions: 'OK. typecheck 5/5, lint 5/5 (o único aviso é anterior, em `lp-campaigns.ts:57`) e `next build` verde. Web 2309/2309. API 5356/5367: 10 são as falhas locais conhecidas do Node 25. A 11ª foi timeout de 5 s (`lp-correcao-e-fio-1883`) com o `next build` rodando junto. Isolados, ela e os testes de PGlite que oscilaram passam (125/125 e 83/83).'
+  performance: 'OK depois do PERF-001.'
+  security: 'OK. As duas leituras filtram por projeto (testado). A rota mantém o `guestCanAccessTraffic`.'
+  documentation: 'OK. Comentários nas funções, linha de histórico do contrato e Dev Agent Record.'
+  api_contract: 'OK. v61 com a linha de histórico; campos aditivos, e o web mostra "—" com a API antiga (testado).'
+  scope_condition: 'Commits com [scope-override]. O gestor confirmou a autorização do Lucas antes do *develop.'
+
+notes:
+  - 'Revisão em duas leituras (Quinn + revisor independente que recebeu o código sem a hipótese), porque o @dev é a mesma sessão. Os quatro achados vieram do revisor. O @qa conferiu cada um no código antes de corrigir (o REQ-001 contra `lps-do-lancamento.ts:297,403`).'

@@ -14,6 +14,7 @@ import {
   getPlacementBreakdown,
   invalidateProjectCache,
   makeAdCreativeCacheAdapter,
+  statusECampanhaDosAnuncios,
   type TopPerformerMetric,
 } from "../services/traffic-analytics.js";
 import { upsertAdCreatives } from "../services/meta-insights-cache.js";
@@ -862,18 +863,24 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
         return reply.code(400).send({ error: "adIds vazio" });
       }
 
-      const rows = await fastify.db
-        .select({
-          adId: metaAdCreativesCache.adId,
-          creative: metaAdCreativesCache.creative,
-        })
-        .from(metaAdCreativesCache)
-        .where(
-          and(
-            eq(metaAdCreativesCache.projectId, paramResult.data.projectId),
-            inArray(metaAdCreativesCache.adId, adIds),
+      // Story 18.99 (AC5): status e campanha de cada anúncio, para a coluna
+      // Status do "Desempenho por LP" do perpétuo. Só Postgres, nunca a Meta.
+      // Em paralelo com a leitura do cache de criativos (QA 18.99 PERF-001).
+      const [rows, { statusByAdId, campanhaByAdId }] = await Promise.all([
+        fastify.db
+          .select({
+            adId: metaAdCreativesCache.adId,
+            creative: metaAdCreativesCache.creative,
+          })
+          .from(metaAdCreativesCache)
+          .where(
+            and(
+              eq(metaAdCreativesCache.projectId, paramResult.data.projectId),
+              inArray(metaAdCreativesCache.adId, adIds),
+            ),
           ),
-        );
+        statusECampanhaDosAnuncios(fastify.db, paramResult.data.projectId, adIds),
+      ]);
 
       const linkUrls: Record<string, string | null> = {};
       // Story 29.43 (AC2): ad_ids cuja linha foi escrita por código anterior à
@@ -939,6 +946,9 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
         // precisa olhar isso".
         refreshAgendado: refresh.agendados,
         refreshMotivo: refresh.motivo,
+        // Story 18.99 (AC5, contrato 61). Aditivos: consumidor antigo ignora.
+        statusByAdId,
+        campanhaByAdId,
       };
     },
   );
