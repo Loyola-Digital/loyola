@@ -123,6 +123,19 @@ describe("AC4c / AC5b — a paridade com a tabela por canal", () => {
     linhaDe(k, "anual").conflito.iniciouTeste = 0;
     expect(colunasSemParidade(k)).toEqual(["conflito"]);
   });
+  it("QA TEST-002 — novos diferentes num canal, sem mexer nas contagens, também quebram a paridade", () => {
+    const j = fixture();
+    j.porProduto!.canais.find((x) => x.canal === "organico")!.novos += 1;
+    expect(colunasSemParidade(j)).toEqual(["organico"]);
+  });
+  it("QA TEST-002 — o Total é conferido: uma linha com o total desalinhado dos canais aparece como \"total\"", () => {
+    const j = fixture();
+    linhaDe(j, "anual").total.iniciou += 1;
+    expect(colunasSemParidade(j)).toEqual(["total"]);
+    const k = fixture();
+    k.porProduto!.total.novos += 1;
+    expect(colunasSemParidade(k)).toEqual(["total"]);
+  });
   it("a soma das taxas EXIBIDAS fica dentro do arredondamento declarado da taxa do canal", () => {
     const j = fixture();
     const pp = (s: string) => Number(s.replace("%", "").replace(",", "."));
@@ -182,6 +195,8 @@ describe("o fio até a tela (AC4a/b/f/g, PO-02)", () => {
     expect(bloco).toMatch(/title=\{DICA_DO_POR_PRODUTO\}>→ Trial<\/th>/);
     expect(bloco).toMatch(/\{ARREDONDAMENTO_DO_POR_PRODUTO\}/);
     expect(bloco).toMatch(/const semParidade = colunasSemParidade\(jornada\);/);
+    // QA TEST-002: o aviso é DESENHADO quando há coluna sem paridade, com as colunas nele
+    expect(bloco).toMatch(/\{semParidade\.length > 0 && \(\s*<p role="alert"[^>]*>\s*A soma por plano não fecha com a tabela por canal em: \{semParidade\.join\(", "\)\}\./);
   });
   it("PO-02: cabeçalho em duas linhas (canal em cima com colSpan 2); AC4g: rolagem na tabela e a coluna Plano fixa", () => {
     expect(bloco).toMatch(/<th key=\{c\.chave\} colSpan=\{2\}/);

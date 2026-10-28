@@ -16,11 +16,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import Fastify from "fastify";
 import { PGlite } from "@electric-sql/pglite";
-import { getTableName, type SQL } from "drizzle-orm";
+import { getTableName, sql, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import revenuecatRoutes from "../routes/revenuecat.js";
 import { instanteDoInicioDaJanela } from "../utils/sale-date.js";
-import { CANAIS_DA_JORNADA, lerLinhaDaJornada, montarJornada, type SinaisDoUsuario } from "../utils/jornada-lyrio.js";
+import { CANAIS_DA_JORNADA, consultaDaJornada, lerLinhaDaJornada, montarJornada, type SinaisDoUsuario } from "../utils/jornada-lyrio.js";
 import { classificarProduto } from "../utils/pagantes-lyrio.js";
 import {
   LINHAS_DO_POR_PRODUTO,
@@ -191,6 +191,23 @@ describe("AC3a / AC4c / AC5b — montarPorProduto: a paridade com a Jornada", ()
       { productId: "premium_yearly_100:base", iniciou: 1, iniciouTeste: 1 },
     ]);
   });
+  it("QA TEST-001 — cada medida conta na linha do SEU produto: promoção mensal no Iniciou, trial anual no Trial", () => {
+    const u = usuario({
+      organico: true,
+      iniciou: true,
+      produtoIniciou: "rc_promo_Lyrio Pro_monthly",
+      classeIniciou: classificarProduto("rc_promo_Lyrio Pro_monthly"),
+      iniciouTeste: true,
+      produtoTeste: "premium_yearly_100:base",
+      classeTeste: classificarProduto("premium_yearly_100:base"),
+    });
+    const r = montarPorProduto([u], DESDE);
+    const cel = (l: string) => r.linhas.find((x) => x.linha === l)!.canais.find((x) => x.canal === "organico")!;
+    expect(cel("mensal")).toEqual({ canal: "organico", iniciou: 1, iniciouTeste: 0 });
+    expect(cel("anual")).toEqual({ canal: "organico", iniciou: 0, iniciouTeste: 1 });
+    expect(r.linhas.find((x) => x.linha === "mensal")!.produtos).toEqual([{ productId: "rc_promo_Lyrio Pro_monthly", iniciou: 1, iniciouTeste: 0 }]);
+    expect(r.linhas.find((x) => x.linha === "anual")!.produtos).toEqual([{ productId: "premium_yearly_100:base", iniciou: 0, iniciouTeste: 1 }]);
+  });
   it("as 6 linhas e os 8 canais saem sempre, na ordem, mesmo sem ninguém", () => {
     const vazio = montarPorProduto([], DESDE);
     expect(vazio.linhas.map((l) => l.linha)).toEqual(LINHAS_DO_POR_PRODUTO.map((l) => l.linha));
@@ -271,13 +288,18 @@ describe("AC2a/AC2c — a regra TS = a regra SQL, caso a caso (PGlite)", () => {
     // o PGlite usa C por padrão e não distinguiria — por isso o SQL tem de trazer o COLLATE.
     expect((await pg.query<{ bytes: boolean }>("SELECT ('Zeta' < 'alpha') AS bytes")).rows[0]!.bytes).toBe(true);
     const texto = dialeto.sqlToQuery(consultaDaJornadaPorProduto(STAGE, DESDE)).sql;
-    const ordem = /min\(lpad\(coalesce\(\(extract\(epoch from "revenuecat_sales"\."event_at"\) \* 1000000\)::bigint::text, '99999999999999999999'\), 20, '0'\) \|\| CASE WHEN "revenuecat_sales"\."product_id" IS NULL THEN '1' ELSE '0' \|\| "revenuecat_sales"\."product_id" END COLLATE "C"\) FILTER \(WHERE /g;
+    const ordem = /min\(\(lpad\(coalesce\(\(extract\(epoch from "revenuecat_sales"\."event_at"\) \* 1000000\)::bigint::text, '99999999999999999999'\), 20, '0'\) \|\| CASE WHEN "revenuecat_sales"\."product_id" IS NULL THEN '1' ELSE '0' \|\| "revenuecat_sales"\."product_id" END\) COLLATE "C"\) FILTER \(WHERE /g;
     expect(texto.match(ordem)).toHaveLength(2);
     // AC3d: sem agregado ordenado (ele impede a agregação parcial nos workers)
     expect(texto).not.toMatch(/array_agg|ORDER BY/i);
     // AC3c: o id do usuário só agrupa — nunca é selecionado
     expect(texto.slice(0, texto.search(/ FROM "revenuecat_sales"/))).not.toMatch(/app_user_id/);
     expect(texto.match(/GROUP BY "revenuecat_sales"\."app_user_id"/g)).toHaveLength(1);
+  });
+  it("QA TEST-002 — coluna extra com o nome de uma da Jornada é recusada (não sobrescreve a regra)", () => {
+    expect(() => consultaDaJornada(STAGE, DESDE, { iniciou: sql`true` })).toThrow(/repete um nome: iniciou/);
+    expect(() => consultaDaJornada(STAGE, DESDE, { c_gclid: sql`true` })).toThrow(/c_gclid/);
+    expect(() => consultaDaJornada(STAGE, DESDE, { chave_nova: sql`true` })).not.toThrow();
   });
   it.each(casos)("$nome", async ({ eventos }) => {
     for (const e of eventos) {
@@ -359,6 +381,10 @@ describe("AC3 / AC5c — GET …/revenuecat/jornada traz porProduto (PGlite, jan
     await inserir({ user: "user-o1", tipo: "INITIAL_PURCHASE", em: "2026-10-10T12:05:00Z", produto: "premium_quartely_25:base", periodo: "NORMAL", usd: 24.99 });
     await inserir({ user: "user-o2", tipo: "PAYWALL_IMPRESSION", em, utmSource: "ig" });
     await inserir({ user: "user-o2", tipo: "INITIAL_PURCHASE", em: "2026-10-10T12:05:00Z", produto: "premium_yearly_100:base", periodo: "TRIAL" });
+    // QA TEST-001: promoção mensal em 01/10 (é o Iniciou dele) e trial anual em 03/10 (é o Trial dele)
+    await inserir({ user: "user-o3", tipo: "PAYWALL_IMPRESSION", em: "2026-10-01T11:00:00Z", utmSource: "ig" });
+    await inserir({ user: "user-o3", tipo: "NON_RENEWING_PURCHASE", em: "2026-10-01T12:00:00Z", produto: "rc_promo_Lyrio Pro_monthly", usd: 4.99 });
+    await inserir({ user: "user-o3", tipo: "INITIAL_PURCHASE", em: "2026-10-03T12:00:00Z", produto: "premium_yearly_100:base", periodo: "TRIAL" });
     // fora: usuário antigo (primeiro evento antes da janela), outra etapa, TEST
     await inserir({ user: "user-velho", tipo: "PAYWALL_IMPRESSION", em: "2026-09-01T12:00:00Z", gclid: "g" });
     await inserir({ user: "user-velho", tipo: "INITIAL_PURCHASE", em, produto: "premium_yearly_150", periodo: "TRIAL" });
@@ -372,13 +398,15 @@ describe("AC3 / AC5c — GET …/revenuecat/jornada traz porProduto (PGlite, jan
     const novos = (canal: string) => p.canais.find((x: { canal: string }) => x.canal === canal).novos;
     const cel = (linha: string, canal: string) => p.linhas.find((l: { linha: string }) => l.linha === linha).canais.find((x: { canal: string }) => x.canal === canal);
     expect(novos("google_gclid")).toBe(4);
-    expect(novos("organico")).toBe(2);
-    expect(p.total.novos).toBe(6);
+    expect(novos("organico")).toBe(3);
+    expect(p.total.novos).toBe(7);
     expect(cel("anual", "google_gclid")).toEqual({ canal: "google_gclid", iniciou: 1, iniciouTeste: 1 });
     expect(cel("mensal", "google_gclid")).toEqual({ canal: "google_gclid", iniciou: 1, iniciouTeste: 0 });
     expect(cel("sem_produto", "google_gclid")).toEqual({ canal: "google_gclid", iniciou: 1, iniciouTeste: 1 });
     expect(cel("trimestral", "organico")).toEqual({ canal: "organico", iniciou: 1, iniciouTeste: 0 });
-    expect(cel("anual", "organico")).toEqual({ canal: "organico", iniciou: 1, iniciouTeste: 1 });
+    // o user-o3 conta no Anual SÓ pelo Trial, e no Mensal SÓ pelo Iniciou
+    expect(cel("anual", "organico")).toEqual({ canal: "organico", iniciou: 1, iniciouTeste: 2 });
+    expect(cel("mensal", "organico")).toEqual({ canal: "organico", iniciou: 1, iniciouTeste: 0 });
     expect(cel("outros", "google_gclid")).toEqual({ canal: "google_gclid", iniciou: 0, iniciouTeste: 0 });
     // AC4c sobre a resposta: por canal, Σ linhas = a linha da Jornada
     for (const l of corpo.linhas as { canal: string; iniciou: number; iniciouTeste: number }[]) {

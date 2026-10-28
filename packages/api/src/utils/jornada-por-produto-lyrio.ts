@@ -115,14 +115,20 @@ const INICIOU_TESTE = sql`${c.eventType} = 'INITIAL_PURCHASE' AND ${c.payload}->
  * 1,5–1,7 s medidos do cliente contra 1,5–1,8 s da consulta da `main`
  * (Dev Agent Record da 42.18, AC3d).
  *
- * Limites declarados: o TS compara milissegundos (`Date`) e o banco
- * microssegundos — dois inícios no mesmo milissegundo podem se ordenar
- * diferente; instante antes de 1970 (epoch negativo) não ordenaria.
+ * Limites declarados (QA REL-001), os dois fora do dado gravado — o ingestor
+ * (`event_timestamp_ms`) e o backfill gravam `event_at` em milissegundos, com
+ * os microssegundos sempre 000:
+ *  - dois inícios no MESMO milissegundo com microssegundos diferentes: o banco
+ *    ordena pelo µs e o TS (`Date`, em ms) os empata e decide pelo id;
+ *  - dois instantes ANTES de 1970 com o mesmo número de dígitos no epoch
+ *    negativo: em texto, `-1000000` < `-2000000`, e o mais tarde vence.
+ * Um instante antes de 1970 contra um depois de 1970 ordena certo (o `-` vem
+ * antes dos dígitos), e dois antes de 1970 com tamanhos diferentes também.
  */
 const chaveDoInicio = sql`lpad(coalesce((extract(epoch from ${c.eventAt}) * 1000000)::bigint::text, '99999999999999999999'), 20, '0') || CASE WHEN ${c.productId} IS NULL THEN '1' ELSE '0' || ${c.productId} END`;
 
-/** A menor chave entre os eventos que casam — o primeiro início do usuário. */
-const primeiraChave = (cond: SQL) => sql`min(${chaveDoInicio} COLLATE "C") FILTER (WHERE ${cond})`;
+/** A menor chave entre os eventos que casam — o primeiro início do usuário. Os parênteses deixam o `COLLATE` sobre a chave inteira (QA MNT-001). */
+const primeiraChave = (cond: SQL) => sql`min((${chaveDoInicio}) COLLATE "C") FILTER (WHERE ${cond})`;
 
 /** AC3d — as colunas a mais na redução por usuário da Jornada. */
 export const COLUNAS_DO_PRODUTO = {
