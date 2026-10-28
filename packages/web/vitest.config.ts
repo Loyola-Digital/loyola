@@ -58,6 +58,8 @@ export default defineConfig({
       "components/funnels/__tests__/lyrio-resumo-cards.test.tsx",
       // Story 42.19 (AC6d/AC6e) — o fio e a acessibilidade da linha expansível do Detalhamento.
       "components/funnels/__tests__/lyrio-detail-table-42-19.test.tsx",
+      // Story 42.17 (AC5, AC6, AC7d) — o desenho da tabela "Dados diários".
+      "components/funnels/__tests__/lyrio-dados-diarios-42-17.test.tsx",
     ],
     /**
      * Story 18.80 (gate do @qa) — o fuso do runner é FIXADO no do usuário.

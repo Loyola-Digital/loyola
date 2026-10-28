@@ -54,6 +54,7 @@ import { avisoDeNaoClassificado, cardsDeAquisicao } from "@/lib/utils/aquisicao-
 import { arpuDoOverview, cardsDoLtvPorChurn, churnDasConsultas, DIAS_DO_CHURN, margemDosPercentuais } from "@/lib/utils/ltv-por-churn-lyrio";
 import { hojeNoNegocio, tituloDoResumo } from "@/lib/utils/janela-dos-cards-lyrio";
 import { avisoDoErroDaFonte, estadoDaFonte } from "@/lib/utils/estado-da-fonte-revenuecat";
+import { causaDaSerieDesconhecida } from "@/lib/utils/dados-diarios-lyrio";
 import {
   diasDaConsultaDoGoogle,
   investimentoDoGoogleNaRegua,
@@ -61,6 +62,7 @@ import {
 } from "@/lib/utils/google-ads-na-regua";
 import { LyrioDetailTable } from "./lyrio-detail-table";
 import { LyrioJornadaPorCanal } from "./lyrio-jornada-por-canal";
+import { LyrioDadosDiarios } from "./lyrio-dados-diarios";
 import {
   avisoDeConflito,
   declaracaoDeCobertura,
@@ -766,6 +768,24 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
           </p>
         )}
       </section>
+
+      {/* Story 42.17 — "Dados diários": logo abaixo do Resumo e antes do bloco
+          Meta Ads (AC1a), no filtro de dias do cabeçalho (AC1b). Lê as MESMAS
+          consultas do Resumo — a Meta do filtro, o tráfego do Google na régua e
+          o estado de vendas dos blocos (AC3d) —, sem chamada nova; o Total é o
+          dos cards (AC4). */}
+      <LyrioDadosDiarios
+        entrada={{
+          ctx: { diasDoFiltro: days, hoje, serieDesde },
+          cambio: { taxa: brlRate, fonte: fxSource },
+          meta: { temCampanhas: temMeta, linhas: metaDailyFiltro, erro: erroMetaFiltro },
+          google: { mostrar: googleCampaignIds.size > 0, trafego: googleTrafegoFiltro },
+          vendas: connection.isLoading ? { tipo: "carregando" } : vendasDosBlocos,
+          revenuecatConectado: connected,
+          serieCarregando: pagantesFiltro.tipo === "carregando",
+          serieDesconhecida: causaDaSerieDesconhecida(pagantesFiltro),
+        }}
+      />
 
       {/* Story 42.16 (AC3) — Meta Ads e Google Ads: o MESMO componente, pelo
           canal, com o período no subtítulo e em cada card. A venda é a do

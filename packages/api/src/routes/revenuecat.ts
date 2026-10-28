@@ -11,6 +11,7 @@ import {
   dataIso,
   lerDiaDeVendas,
   lerLinhaDeVendas,
+  montarDiarioDoTotalPago,
   montarVendasPorCanal,
   montarVendasPorDiaDaMeta,
   type DiaDoComprador,
@@ -597,9 +598,10 @@ export default fp(async function revenuecatRoutes(fastify) {
       ]);
       const linhas = compradores.rows as Record<string, unknown>[];
       const vendas = montarVendasPorCanal(linhas.filter((r) => r.grao !== "dia").map(lerLinhaDeVendas));
-      const metaPorEntidadeDiario = montarVendasPorDiaDaMeta(
-        linhas.filter((r) => r.grao === "dia").map(lerDiaDeVendas).filter((d): d is DiaDoComprador => d !== null),
-      );
+      const diasDosCompradores = linhas.filter((r) => r.grao === "dia").map(lerDiaDeVendas).filter((d): d is DiaDoComprador => d !== null);
+      const metaPorEntidadeDiario = montarVendasPorDiaDaMeta(diasDosCompradores);
+      // Story 42.17 (AC3a/AC3b): o `totalPago` por dia de SP, das MESMAS linhas — sem consulta a mais.
+      const diario = montarDiarioDoTotalPago(diasDosCompradores);
       if (vendas.conflito.compradores > 0) {
         request.log.warn({ stageId: params.data.stageId, conflito: vendas.conflito.compradores }, "lyrio: compradores com Meta e Google");
       }
@@ -612,6 +614,8 @@ export default fp(async function revenuecatRoutes(fastify) {
         ...vendas,
         // Story 42.19 (AC3): a mesma quebra da Meta, por dia de SP — por entidade, a soma dos dias é a linha.
         metaPorEntidadeDiario,
+        // Story 42.17 (AC3a): a tabela "Dados diários" — a soma dos dias é o `totalPago`.
+        diario,
         // PO-03: o que o card "Vendas" de `/sales` conta e esta quebra não conta.
         foraDaQuebra: { semValor: Number(f.sem_valor ?? 0) || 0, semUsuario: Number(f.sem_usuario ?? 0) || 0 },
       };
