@@ -1,15 +1,16 @@
 schema: 1
 story: '42.15'
 story_title: 'Lyrio — Resumo consolidado com Meta e Google em segundo plano em cada card, e o Overview do RevenueCat fora da tela'
-gate: CONCERNS
-status_reason: 'Gate sobre 0886e855. AC1 a AC10 estão implementados, e o código de cada AC confere com a leitura independente. Os gates passam sobre a baseline. Fiz 62 mutações próprias: 52 caem e 10 sobrevivem. Dois achados são medium. REL-001: em produção a configuração da etapa não carrega, porque as colunas da migration 0103 não existem (conferi read-only). Com isso, o LTV (margem), o LTV/CAC e o CAC máximo, que são novos, calculam com os percentuais padrão 15/5/1. O memorial diz que esses números são "percentuais da etapa (Configurar)". Isso contraria o AC10a. TEST-001: o ARPU que entra no LTV (`arpuDoOverview` lendo `mrr` e `active_subscriptions`) não tem teste no caminho pronto, e trocar o id sobrevive. O resto é low.'
+gate: PASS
+status_reason: 'QA loop 1 sobre 8a643ba9. Todos os achados do gate estão fechados: REL-001 no web (os percentuais da etapa viraram estado, e com a config em erro, oculta ou carregando, a Margem, o LTV (margem), o LTV/CAC e o CAC máximo mostram "—" com a causa ou skeleton, sem padrão calado), TEST-001 a TEST-006 e DOC-001. As 62 mutações do gate e 12 novas sobre o estado da config (S01–S12) caem: 74/74. Fica só a REL-002 (low): até a 0103 ser aplicada em produção, o card Margem, que já existia, passa a mostrar "—". A decisão é do dono (AUTO-DECISION do @dev, aceita). Gate inicial: Gate sobre 0886e855. AC1 a AC10 estão implementados, e o código de cada AC confere com a leitura independente. Os gates passam sobre a baseline. Fiz 62 mutações próprias: 52 caem e 10 sobrevivem. Dois achados são medium. REL-001: em produção a configuração da etapa não carrega, porque as colunas da migration 0103 não existem (conferi read-only). Com isso, o LTV (margem), o LTV/CAC e o CAC máximo, que são novos, calculam com os percentuais padrão 15/5/1. O memorial diz que esses números são "percentuais da etapa (Configurar)". Isso contraria o AC10a. TEST-001: o ARPU que entra no LTV (`arpuDoOverview` lendo `mrr` e `active_subscriptions`) não tem teste no caminho pronto, e trocar o id sobrevive. O resto é low.'
 reviewer: 'Quinn'
-updated: '2026-10-28T18:00:00Z'
+updated: '2026-10-28T21:00:00Z'
 branch: 'feat/42.15-lyrio-resumo-consolidado'
-commit_reviewed: '0886e855'
+commit_reviewed: '8a643ba9 (loop 1; o gate inicial foi sobre 0886e855)'
 base: '7c126477 (origin/main, contrato 62). No gate conferi com `git ls-remote` e `git fetch` que a main não andou. A v63 está livre: a única PR aberta, a #821, é só docs.'
 history:
-  - { date: '2026-10-28', gate: CONCERNS, note: 'gate sobre 0886e855: AC1–AC10 atendidos no código; 62 mutações próprias, 52 caem, 10 sobrevivem; REL-001 medium (margem padrão em produção rotulada como configuração, AC10a); TEST-001 medium (ARPU sem teste); TEST-002..007 low; visual pendente do dono.' }
+  - { date: '2026-10-28', gate: CONCERNS, note: 'gate sobre 0886e855: AC1–AC10 atendidos no código; 62 mutações próprias, 52 caem, 10 sobrevivem; REL-001 medium (margem padrão em produção rotulada como configuração, AC10a); TEST-001 medium (ARPU sem teste); TEST-002..006 e DOC-001 low; visual pendente do dono.' }
+  - { date: '2026-10-28', gate: PASS, note: 'QA loop 1 sobre 8a643ba9: REL-001, TEST-001..006 e DOC-001 fechados; 74/74 mutações caem (as 62 do gate e S01–S12); REL-002 low (Margem "—" em produção até a 0103), decisão do dono.' }
 
 top_issues:
   - id: REL-001
@@ -41,7 +42,7 @@ top_issues:
       indisponíveis"; carregando, skeleton. No card Margem, no mínimo declarar o padrão.
       O ideal é fazer os dois: (a) corrige o dado, e (b) impede que a próxima falha volte a ficar calada.
     owner: '@devops / @data-engineer (0103) + @dev (web)'
-    status: open
+    status: resolved
 
   - id: TEST-001
     severity: medium
@@ -56,7 +57,7 @@ top_issues:
       do chamador.
     recommendation: 'Um caso de `arpuDoOverview` com `{mrr: 1887, active_subscriptions: 865, active_trials: 30}`, esperando `{mrrUsd: 1887, assinaturasAtivas: 865}`, mais os dois ramos "não trouxe o MRR" e "não trouxe as assinaturas".'
     owner: '@dev'
-    status: open
+    status: resolved
 
   - id: TEST-002
     severity: low
@@ -68,7 +69,7 @@ top_issues:
       `/novos-clientes` (conferido), e o `getStage` tem teste (Q78 cai).
     recommendation: 'No `revenuecat-ativas-no-inicio-4215.test.ts`, um caso com `userRole = "guest"` e `project_members` vazio, esperando 404 e nenhuma chamada ao RevenueCat.'
     owner: '@dev'
-    status: open
+    status: resolved
 
   - id: TEST-003
     severity: low
@@ -81,7 +82,7 @@ top_issues:
       com o filtro em 90; o eco de 90 com o filtro em 28 nunca é testado.
     recommendation: 'Um caso com Meta 100,004 e Google 200,004 (medido): as linhas mostram R$ 100,00 e R$ 200,00, o total em centavos dá R$ 300,00 e o float daria R$ 300,01. E o eco de 90 dias com o filtro em 28 → "—".'
     owner: '@dev'
-    status: open
+    status: resolved
 
   - id: TEST-004
     severity: low
@@ -93,7 +94,7 @@ top_issues:
       da 42.16 e da 42.13.
     recommendation: 'Janela com início = `atributosDesde` e início = `serieDesde`: sem nota e sem a frase da série.'
     owner: '@dev'
-    status: open
+    status: resolved
 
   - id: TEST-005
     severity: low
@@ -105,7 +106,7 @@ top_issues:
       está no memorial (AC7c). Só falta provar o desenho do AC10h ("ícone de alerta no card") e do AC2e na linha.
     recommendation: 'No jsdom: `getByLabelText("Há alertas no memorial")` no card LTV/CAC e o texto "· atribuição desde 06/10" na linha.'
     owner: '@dev'
-    status: open
+    status: resolved
 
   - id: TEST-006
     severity: low
@@ -118,7 +119,7 @@ top_issues:
       efeito é pequeno.
     recommendation: 'ROAS e Margem com `cambio.taxa = null`: "—" com o memorial citando o câmbio.'
     owner: '@dev'
-    status: open
+    status: resolved
 
   - id: DOC-001
     severity: low
@@ -129,6 +130,24 @@ top_issues:
       É curto e se corrige sozinho, mas por um instante o card declara uma cobertura maior que a real.
     recommendation: 'Opcional: com a venda pronta e os pagantes carregando, marcar a etiqueta como pendente. Ou só registrar o comportamento.'
     owner: '@dev'
+    status: resolved
+
+  - id: REL-002
+    severity: low
+    category: reliability
+    description: >-
+      Loop 1, efeito da AUTO-DECISION do @dev (aceita). O card Margem de Contribuição, que existe desde a 42.4, passa a
+      seguir o estado da config. Hoje em produção ele mostra um número com os padrões 15/5/1; depois do deploy, enquanto
+      a 0103 não for aplicada, ele mostra "—" com a causa "os percentuais da margem não carregaram". As linhas Margem
+      Meta e Margem Google também. Pelos ACs, isso está certo: o AC3d manda "—" quando um insumo é desconhecido, e o
+      AC10b diz que o LTV usa "os mesmos [percentuais] do card Margem". Uma Margem calculada ao lado de um LTV "—", pelo
+      mesmo motivo, faria a tela se contradizer. O AC3a ("como hoje") fala da fórmula, que não mudou. Mesmo assim, é uma
+      mudança visível num card que não é desta story, e depende da ordem do deploy.
+    recommendation: >-
+      Decisão do Danilo: (a) recomendado: @devops/@data-engineer aplicam a 0103 em produção ANTES ou junto do deploy do
+      web. A Margem, o LTV e o LTV/CAC aparecem com número, a fonte declarada passa a ser verdade, e o PUT de Configurar
+      volta a funcionar. Ou (b) aceitar a Margem "—" até a 0103. O @qa não escreveu no banco.
+    owner: 'Danilo (decisão) / @devops / @data-engineer (0103)'
     status: open
 
 deviations_reviewed:
@@ -200,6 +219,29 @@ checks:
   acceptance_criteria: 'AC1 ✓ (a–e) · AC2 ✓ (a–g; o eco é recusado só num sentido testado, TEST-003) · AC3 ✓ (a–e) · AC4 ✓ (a–b) · AC5 ✓ (a–d; as contas da 42.14 sem mudança) · AC6 ✓ (a–d) · AC7 ✓ (a–b; c no código, o render da nota sem fio, TEST-005) · AC8 ✓ (a–d; e parcial: 10 das minhas 62 sobrevivem) · AC9 ✓ (v63 livre; gates verdes sobre a baseline) · AC10 ✓ no código (a–k), com o AC10a NÃO atendido no estado de produção de hoje (REL-001) e o ARPU sem teste (TEST-001). DoD: a conferência em produção foi feita pelo @dev (7, 28 e 90 dias; churn 68 ÷ 520), e o LTV/CAC fica para o visual.'
   clickup: 'Não registrado: o pedido do lead proibiu escrita no ClickUp. Task `17tqamf06y1`.'
 
+loop_1_review:
+  commit: '8a643ba9'
+  production_files_changed: 'web: `lib/utils/resumo-mobile-lyrio.ts`, `lib/utils/ltv-por-churn-lyrio.ts`, `lib/utils/vendas-por-canal-lyrio.ts` e `components/funnels/lyrio-stage-view.tsx`. Na API, só o teste. Nenhuma rota, migration ou contrato mudou (continua v63).'
+  code_review: >-
+    REL-001: `percentuaisDaConfig` lê a consulta pelo `estadoDaFonte`, e cada estado tem a sua saída: carregando →
+    carregando; oculto (API antiga) → indisponível; erro (o 500 de hoje) → indisponível com a mensagem; pronto sem
+    os três números finitos → indisponível; pronto → os percentuais DA config. `margemDosPercentuais` repassa o
+    estado ao LTV. `cardsDoLtvPorChurn` trata a margem como o ARPU e o churn: causa → "—" no LTV, no LTV/CAC e no CAC
+    máximo; carregando → skeleton. Na Margem, a causa dos percentuais entra junto das outras, e `linhasDoResumoPorCanal`
+    aceita `percentuais: null` (margem do canal desconhecida; ROAS igual). Procurei caminhos que ainda usam os padrões:
+    `MARGEM_DEFAULTS` só sobra em `lyrio-stage-view.tsx:237-239`, e esses valores só chegam ao formulário de
+    Configurar (`:430`). `calcularMargemContribuicao` só é chamada em `resumo-mobile-lyrio.ts` e
+    `vendas-por-canal-lyrio.ts`, as duas pelo estado. O `LyrioResumoPorCanal`, que não aparece na tela, também
+    compila com o tipo novo. DOC-001: `serieCarregando` segura a Receita, as Vendas, o ROAS e a Margem em skeleton
+    enquanto os pagantes carregam. Sem RevenueCat conectado, a venda é `oculto` e o skeleton não fica preso. Com os
+    pagantes em ERRO, a cobertura fica desconhecida, a etiqueta continua a do filtro, e o `role="alert"` dos pagantes
+    aparece. É o que o @dev registrou; aceito como nota.
+  tests_reviewed: 'Nenhum dos testes novos é tautológico: os valores esperados são literais, e cada um cai com a mutação dele. REL-001: o 500 real passa pelo `estadoDaFonte` e o memorial nunca cita "15,00%" nem "percentuais da etapa"; pronto 20/5/5 dá LTV R$ 700,00 e Margem −312,50 (não os padrões); oculto, número ausente e NaN dão indisponível; zeros valem como número; o jsdom desenha o "—" e abre o memorial com a causa; o skeleton fica sem foco; o fio afirma que nenhum construtor lê `platformFeePct` ou `MARGEM_DEFAULTS`. TEST-001: `{mrr: 1887, active_trials: 30, active_subscriptions: 865}` → 865. TEST-002: guest sem vínculo → 404, sem chamar o RevenueCat; com vínculo → 200; projeto inexistente → 404. TEST-003 a TEST-006: os casos que eu recomendei, com as bordas nos dois lados.'
+  mutations: 'Rodei de novo o meu `scratchpad/qa-gate-4215/mut.py` inteiro sobre 8a643ba9: as 62 do gate CAEM, inclusive as 10 que sobreviviam (Q04, Q07, Q10, Q13, Q16, Q48, Q50, Q65, Q66, Q77). Acrescentei 12 sobre o estado novo, todas CAEM: S01 (erro vira 15/5/1), S02 (oculto vira os padrões), S03 (carregando vira os padrões), S04 (sem conferir os números finitos), S05 (`margemDosPercentuais` com padrão), S06 (LTV ignora a causa da margem), S07 (Margem sem a causa), S08 (linhas da Margem com os padrões), S09 (a tela passa a config como pronta, no fio), S10 (`serieCarregando` ignorado), S11 (margem do canal sem a guarda do null) e S12 (Margem carregando sem skeleton). Total: 74/74. `git status` ficou limpo depois. O log está em `mut-loop1.out`.'
+  gates: 'Rodados por mim sobre 8a643ba9. shared build EXIT 0. API tsc EXIT 0; API vitest 5.416/5.426, e as 10 falhas são exatamente a baseline, sem timeout. Web tsc EXIT 0 (depois do build); eslint `components lib app` EXIT 0; web vitest `--testTimeout=60000` 2.467/2.467, em 169 arquivos; `pnpm build` (next build) EXIT 0, compilado em 17,6 s.'
+  auto_decision: 'ACEITA. Os motivos e o que o dono decide estão na REL-002.'
+  process_note: 'O registro do loop 1 do @dev está no Dev Agent Record, como combinado, e não na seção QA Results.'
+
 margin_config_assessment: >-
   A resposta ao lead: a 42.15 não mostra um número ERRADO, mas mostra um número com a fonte errada, e passa a fazer
   isso em três KPIs de decisão. O estado de produção hoje: as colunas da 0103 faltam, o GET e o PUT da config dão 500,
@@ -213,7 +255,7 @@ margin_config_assessment: >-
 pendente_do_dono:
   - 'Validação visual do Danilo e do Alberto (DoD), no desktop e no celular (AC7c, ≤ 390 px). O layout dos sub-blocos (P-9) é proposta.'
   - 'O LTV/CAC em produção: R$ 70,23 ÷ o CAC do card. O @dev não leu a mídia ao vivo.'
-  - 'Decidir a REL-001: aplicar a 0103 e/ou o "—" no web.'
+  - 'Decidir a REL-002: aplicar a 0103 antes ou junto do deploy (recomendado), ou aceitar a Margem "—" até lá.'
   - 'CodeRabbit não rodou: o CLI é do WSL, e esta máquina é macOS.'
   - 'Status da story: deixei em InReview, como na 42.16 e na 42.19. O lead move o status e o ClickUp.'
 
