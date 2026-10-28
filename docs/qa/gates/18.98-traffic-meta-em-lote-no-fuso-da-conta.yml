@@ -1,0 +1,58 @@
+schema: 1
+story: '18.98'
+story_title: 'Meta em lote no fuso da conta — fim da cópia UTC do dateRangeFromDays'
+gate: PASS
+status_reason: 'A cópia UTC da janela saiu e o TTL passou a usar o dia de Brasília do `now` recebido. O teste de relógio prova, às 22h30 de Brasília, que o cache pede 20 a 26/10, acerta sem ir à Meta e mantém o dia mais antigo quando a Meta falha. Às 12h, nada muda. A revisão em duas leituras achou um medium de desempenho (PERF-001), com um Intl.DateTimeFormat criado por linha do cache, e um low de janela calculada duas vezes. Os dois foram corrigidos no QA fix 1, cada um com prova por reversão. O que sobra é low, já existia ou está fora do escopo.'
+reviewer: 'Quinn'
+updated: '2026-10-28T01:15:00Z'
+pr: null
+branch: 'feat/18.98-meta-em-lote-no-fuso (sobre a main em 5fc8388)'
+commits: ['682ad29', 'QA fix 1 (PERF-001 + janela única)']
+
+top_issues:
+  - id: 'PERF-001'
+    severity: medium
+    status: 'RESOLVIDO no QA fix 1'
+    finding: >-
+      `ttlCutoffForDate` roda uma vez por linha do banco (`meta-insights-cache.ts:115`). No 682ad29, cada
+      chamada a `todayInTimezone` criava um `Intl.DateTimeFormat` novo, a uns 30 µs cada. Medido: 20 000 linhas
+      levavam 600 ms contra 10 ms com o `toISOString`, e isso bloqueia o event loop. A comparação de lançamentos
+      (730 dias × N campanhas) e os perpétuos de 1 ano passam por aqui. Achado pelo @qa e confirmado pelo
+      revisor independente.
+    fix: 'Formatador criado uma vez por fuso e reaproveitado (`meta-ads.ts`, `formatadorDeDia`). Teste: 5 000 chamadas, no máximo 1 construção. A reversão N5 deixa o teste vermelho.'
+  - id: 'REL-001'
+    severity: low
+    status: 'RESOLVIDO no QA fix 1'
+    finding: >-
+      `meta-insights-cache.ts:324-325` chamava `dateRangeFromDays(days)` duas vezes. Duas chamadas que cruzassem
+      03:00:00Z davam o `since` do dia D e o `until` do D+1, com um dia a mais. Já acontecia na cópia UTC.
+    fix: 'A janela é calculada uma vez.'
+  - id: 'OBS-001'
+    severity: low
+    status: 'aceito, fora do escopo'
+    finding: 'O fuso é fixo em `ACCOUNT_TIMEZONE` (São Paulo), embora `fetchAccountTimezone` exista. Já era assim em `meta-ads.ts`, e a story deixa isso fora.'
+  - id: 'OBS-002'
+    severity: low
+    status: 'aceito'
+    finding: 'Com `days=0` e sem datas, a cópia antiga não pedia nada; a de `meta-ads` dá "só hoje". Nenhum caminho real chega aqui: as rotas validam `days >= 1`, e os loaders mandam `startDate/endDate`. Agora o cache bate com o que a busca ao vivo já fazia.'
+  - id: 'TST-001'
+    severity: low
+    status: 'aceito'
+    finding: 'O `describe.each` de TZ pouco exercita, porque nenhum código do caminho usa o fuso local. Faltam as bordas exatas 02:59:59.999Z e 03:00:00Z, cuja lógica está no `Intl`. O AC1 é conferido por regex no código-fonte.'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'OK. São 4 chamadores (`services/traffic-analytics.ts`, `meta-ads-comparison.ts`, `launch-report-loader.ts`, `perpetual-report-loader.ts`) e nenhum compara com datas em UTC. Os loaders usam `startDate/endDate`, caminho que não mudou. A chave do single-flight (`since:until`) agora bate com a janela que a busca ao vivo pede. O `rangeIncludesToday` já usava o dia de Brasília, então agora o cache em memória e o banco concordam.'
+  unit_tests: 'OK. 18 testes novos (8 casos × 2 fusos, mais o de custo e o de fonte). Reversões N1–N5 todas vermelhas. Os testes vizinhos do cache passam: 55/55.'
+  acceptance_criteria: 'AC1–AC5 ✓ · AC6 ⏳ conferência noturna depois do deploy da API.'
+  no_regressions: 'OK. typecheck 5/5 e lint 5/5. API 5350/5360; as 10 falhas são as locais conhecidas do Node 25 (`funnel-stages-lead-inputs`, `instagram*`, `projects`, `schema`), que não aparecem no CI da main. Os 6 testes que mockam `meta-ads.js` usam `importOriginal`, então nenhum quebra com os imports novos.'
+  performance: 'OK depois do PERF-001. Ganho esperado: das 21h às 24h, o caminho em lote deixa de ir à Meta ao vivo em toda leitura.'
+  security: 'OK. Sem superfície nova.'
+  documentation: 'OK. Comentários nas funções e Dev Agent Record com a varredura do AC3.'
+  api_contract: 'OK sem bump: nenhuma rota nem campo novo.'
+  scope_condition: 'Commits com [scope-override]. O gestor confirmou a autorização do Lucas antes do *develop.'
+
+notes:
+  - 'Revisão em duas leituras (Quinn + revisor independente), porque o @dev é a mesma sessão. O PERF-001 foi achado pelo @qa e confirmado pelo revisor sem ter recebido a hipótese.'
+  - 'O sync intradiário regrava hoje e os 2 dias anteriores a cada 15 min, no fuso da conta. Depois da meia-noite de Brasília, o "ontem" vale com o último `lastSyncedAt` e é regravado pelo intradiário e pelo diário de 14 dias.'

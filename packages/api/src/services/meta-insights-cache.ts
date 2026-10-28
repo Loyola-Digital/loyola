@@ -321,8 +321,10 @@ export async function fetchCampaignDailyInsightsForIdsWithCacheEmContas(
 ): Promise<MetaDailyInsight[]> {
   if (campaignIds.length === 0) return [];
 
-  const since = startDate && endDate ? startDate : dateRangeFromDays(days).since;
-  const until = startDate && endDate ? endDate : dateRangeFromDays(days).until;
+  // QA 18.98 (low): a janela é calculada UMA vez — duas chamadas que cruzassem a
+  // meia-noite de Brasília dariam since do dia D e until do D+1 (um dia a mais).
+  const { since, until } =
+    startDate && endDate ? { since: startDate, until: endDate } : dateRangeFromDays(days);
   const dates = enumerateDates(since, until);
 
   // 1. Carrega do cache (TTL date-aware aplicado em JS)

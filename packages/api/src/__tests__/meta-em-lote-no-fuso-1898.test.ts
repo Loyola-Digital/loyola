@@ -188,6 +188,26 @@ describe.each(["UTC", "America/Sao_Paulo"])("Story 18.98 — processo em TZ=%s",
   });
 });
 
+describe("Story 18.98 — QA PERF-001: o TTL não cria um formatador por linha", () => {
+  it("5 000 linhas custam no máximo um Intl.DateTimeFormat novo", () => {
+    // Mutação "new Intl.DateTimeFormat a cada chamada" → 5 000 construções.
+    const Real = Intl.DateTimeFormat;
+    let construidos = 0;
+    const Contado = function (this: unknown, ...args: ConstructorParameters<typeof Intl.DateTimeFormat>) {
+      construidos++;
+      return new Real(...args);
+    } as unknown as typeof Intl.DateTimeFormat;
+    Intl.DateTimeFormat = Contado;
+    try {
+      const agora = new Date("2026-10-27T01:30:00Z");
+      for (let i = 0; i < 5000; i++) ttlCutoffForDate("2026-10-26", agora);
+    } finally {
+      Intl.DateTimeFormat = Real;
+    }
+    expect(construidos).toBeLessThanOrEqual(1);
+  });
+});
+
 describe("Story 18.98 — uma régua só (AC1)", () => {
   it("o cache não tem mais cópia própria de `dateRangeFromDays`", async () => {
     const { readFileSync } = await import("node:fs");
