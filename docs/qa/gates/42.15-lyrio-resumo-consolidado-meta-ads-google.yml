@@ -1,0 +1,220 @@
+schema: 1
+story: '42.15'
+story_title: 'Lyrio — Resumo consolidado com Meta e Google em segundo plano em cada card, e o Overview do RevenueCat fora da tela'
+gate: CONCERNS
+status_reason: 'Gate sobre 0886e855. AC1 a AC10 estão implementados, e o código de cada AC confere com a leitura independente. Os gates passam sobre a baseline. Fiz 62 mutações próprias: 52 caem e 10 sobrevivem. Dois achados são medium. REL-001: em produção a configuração da etapa não carrega, porque as colunas da migration 0103 não existem (conferi read-only). Com isso, o LTV (margem), o LTV/CAC e o CAC máximo, que são novos, calculam com os percentuais padrão 15/5/1. O memorial diz que esses números são "percentuais da etapa (Configurar)". Isso contraria o AC10a. TEST-001: o ARPU que entra no LTV (`arpuDoOverview` lendo `mrr` e `active_subscriptions`) não tem teste no caminho pronto, e trocar o id sobrevive. O resto é low.'
+reviewer: 'Quinn'
+updated: '2026-10-28T18:00:00Z'
+branch: 'feat/42.15-lyrio-resumo-consolidado'
+commit_reviewed: '0886e855'
+base: '7c126477 (origin/main, contrato 62). No gate conferi com `git ls-remote` e `git fetch` que a main não andou. A v63 está livre: a única PR aberta, a #821, é só docs.'
+history:
+  - { date: '2026-10-28', gate: CONCERNS, note: 'gate sobre 0886e855: AC1–AC10 atendidos no código; 62 mutações próprias, 52 caem, 10 sobrevivem; REL-001 medium (margem padrão em produção rotulada como configuração, AC10a); TEST-001 medium (ARPU sem teste); TEST-002..007 low; visual pendente do dono.' }
+
+top_issues:
+  - id: REL-001
+    severity: medium
+    category: reliability
+    description: >-
+      Em produção, a configuração da etapa não carrega. Por isso, o LTV (margem) e o LTV/CAC usam a margem padrão e
+      dizem que ela veio da etapa. Evidência:
+      (1) Sonda read-only (`default_transaction_read_only=on`, só agregados, em `scratchpad/probe/qa-gate-4215-colunas.mjs`).
+      O banco do `.env` é o de produção: ele tem vendas de hoje, 112 nos últimos 2 dias. Nele, `revenuecat_stage_config`
+      só tem `id, stage_id, project_id, rc_project_id, label, webhook_token, created_at, updated_at`. Um SELECT com
+      `platform_fee_pct` dá erro 42703.
+      (2) O GET `/revenuecat/config` (`routes/revenuecat.ts:250`) faz `.select()`, e o drizzle lista todas as colunas
+      do schema, então a rota responde 500. O PUT (`:291`) falha igual, e o gestor não consegue salvar outros percentuais.
+      (3) No web, `lyrio-stage-view.tsx:234-236` faz `config.data?.platformFeePct ?? MARGEM_DEFAULTS…`. Com a consulta
+      em erro (ou carregando), a tela usa 15/5/1 sem avisar, e `:309` passa isso como `margem` para o LTV.
+      (4) `ltv-por-churn-lyrio.ts:247/304` cita a fonte "percentuais da etapa (Configurar)". O card Margem faz o mesmo
+      (`resumo-mobile-lyrio.ts:466-468`, "configurável na etapa"), mas isso já existia antes desta story.
+      Esta story piora a situação: ela acrescenta três números de decisão em cima do fallback (LTV, LTV/CAC e "pode pagar
+      até R$ X"), e o AC10a manda "nada é estimado. Insumo ausente → \"—\" e o memorial diz qual faltou".
+      O número exibido NÃO está errado em relação ao desenho: os defaults da 0103 são os mesmos 15/5/1 (79%), e a rota
+      devolve esses valores para uma etapa sem configuração. O erro é a fonte declarada, o caminho de erro e o
+      carregamento, porque nesse estado o AC10a manda "—".
+    recommendation: >-
+      Antes do deploy, um dos dois caminhos:
+      (a) @devops/@data-engineer aplicam a 0103 em produção. Ela é idempotente (`ADD COLUMN IF NOT EXISTS … DEFAULT`)
+      e torna a fonte verdadeira. Isso corrige também o card Margem e o PUT. O @qa não escreveu no banco.
+      (b) @dev passa o estado da config ao `cardsDoLtvPorChurn`: em erro, "—" com a causa "percentuais da etapa
+      indisponíveis"; carregando, skeleton. No card Margem, no mínimo declarar o padrão.
+      O ideal é fazer os dois: (a) corrige o dado, e (b) impede que a próxima falha volte a ficar calada.
+    owner: '@devops / @data-engineer (0103) + @dev (web)'
+    status: open
+
+  - id: TEST-001
+    severity: medium
+    category: tests
+    description: >-
+      O ARPU, primeiro fator do LTV, não tem teste no caminho pronto. Q48 (`ltv-por-churn-lyrio.ts:185`):
+      `v("active_subscriptions")` → `v("active_trials")` SOBREVIVE às 10 suítes que alcançam o código. O único teste
+      de `arpuDoOverview` é o do overview em erro (`ltv-por-churn-lyrio.test.ts:180`). Os testes do LTV montam o ARPU
+      à mão, e o fio da tela só confere que a chamada existe (`arpuDoOverview(overviewEstado)`). Trocar o MRR ou o
+      denominador do ARPU daria um LTV errado com todos os testes verdes. Hoje o código está certo: são os ids usados
+      por `cardsDoResumo` (`metrica(overview, "active_subscriptions")`) e citados no P-7. É o padrão de testar a biblioteca e não o fio
+      do chamador.
+    recommendation: 'Um caso de `arpuDoOverview` com `{mrr: 1887, active_subscriptions: 865, active_trials: 30}`, esperando `{mrrUsd: 1887, assinaturasAtivas: 865}`, mais os dois ramos "não trouxe o MRR" e "não trouxe as assinaturas".'
+    owner: '@dev'
+    status: open
+
+  - id: TEST-002
+    severity: low
+    category: tests
+    description: >-
+      A guarda de acesso da rota nova não tem teste. Q77 (`routes/revenuecat.ts`, dentro de `ativas-no-inicio`): tirar
+      o `if (!project) return 404` SOBREVIVE. O `bancoFalso` sempre devolve o projeto, e o usuário é `strategist`.
+      Nenhum teste de `revenuecat-*` cobre guest sem vínculo, nem nas rotas irmãs. A guarda é a mesma de
+      `/novos-clientes` (conferido), e o `getStage` tem teste (Q78 cai).
+    recommendation: 'No `revenuecat-ativas-no-inicio-4215.test.ts`, um caso com `userRole = "guest"` e `project_members` vazio, esperando 404 e nenhuma chamada ao RevenueCat.'
+    owner: '@dev'
+    status: open
+
+  - id: TEST-003
+    severity: low
+    category: tests
+    description: >-
+      Duas regras de "soma ao centavo" e de janela só estão provadas num sentido.
+      Q04 (`resumo-mobile-lyrio.ts:257`): somar o total em float em vez de centavos SOBREVIVE. Os fixtures nunca têm
+      meio centavo nas duas parcelas ao mesmo tempo, então o total arredondado sempre coincide com a soma das linhas.
+      Q07 (`:290`): recusar só a resposta de janela MENOR que o filtro SOBREVIVE. O teste do AC3d usa eco de 28 dias
+      com o filtro em 90; o eco de 90 com o filtro em 28 nunca é testado.
+    recommendation: 'Um caso com Meta 100,004 e Google 200,004 (medido): as linhas mostram R$ 100,00 e R$ 200,00, o total em centavos dá R$ 300,00 e o float daria R$ 300,01. E o eco de 90 dias com o filtro em 28 → "—".'
+    owner: '@dev'
+    status: open
+
+  - id: TEST-004
+    severity: low
+    category: tests
+    description: >-
+      As bordas da cobertura não têm teste. Q10 (`resumo-mobile-lyrio.ts:317`, `inicio < atributosDesde` → `<=`) e
+      Q13 (`:320`, `inicio < serieDesde` → `<=`) SOBREVIVEM. Com a janela começando EXATAMENTE na data, a cobertura é
+      completa, mas a mutação declararia "atribuição desde" e "a série só existe desde". É a mesma lacuna da TEST-003
+      da 42.16 e da 42.13.
+    recommendation: 'Janela com início = `atributosDesde` e início = `serieDesde`: sem nota e sem a frase da série.'
+    owner: '@dev'
+    status: open
+
+  - id: TEST-005
+    severity: low
+    category: tests
+    description: >-
+      Dois ramos do render não têm fio. Q65 (`lyrio-card-com-janela.tsx:70`, o ícone de alerta nunca aparece) e
+      Q66 (`:91`, a nota "atribuição desde" da linha nunca aparece) SOBREVIVEM. O jsdom de `lyrio-resumo-cards.test.tsx`
+      não afirma nenhum dos dois. Os dados estão provados na função pura (`alerta: true`, `nota`), e o texto inteiro
+      está no memorial (AC7c). Só falta provar o desenho do AC10h ("ícone de alerta no card") e do AC2e na linha.
+    recommendation: 'No jsdom: `getByLabelText("Há alertas no memorial")` no card LTV/CAC e o texto "· atribuição desde 06/10" na linha.'
+    owner: '@dev'
+    status: open
+
+  - id: TEST-006
+    severity: low
+    category: tests
+    description: >-
+      Duas causas no memorial não têm teste. Q16 (`resumo-mobile-lyrio.ts:409`): tirar a causa do câmbio do ROAS e
+      da Margem SOBREVIVE. Os cards continuam "—", mas sem memorial. O teste do câmbio ausente só olha a Receita.
+      Q50 (`ltv-por-churn-lyrio.ts:268`): inverter a precedência do `serieDesde` (churn × pagantes) no "Base
+      incompleta" SOBREVIVE. As duas datas são iguais em todos os fixtures, e são duas fontes da mesma data, então o
+      efeito é pequeno.
+    recommendation: 'ROAS e Margem com `cambio.taxa = null`: "—" com o memorial citando o câmbio.'
+    owner: '@dev'
+    status: open
+
+  - id: DOC-001
+    severity: low
+    category: documentation
+    description: >-
+      O desvio P-3 deixa uma etiqueta passageira. Enquanto os pagantes carregam, `serieDesde` é `null`, e a Receita,
+      as Vendas, o ROAS e a Margem mostram a etiqueta do filtro, sem `desde dd/mm`, até a segunda resposta chegar.
+      É curto e se corrige sozinho, mas por um instante o card declara uma cobertura maior que a real.
+    recommendation: 'Opcional: com a venda pronta e os pagantes carregando, marcar a etiqueta como pendente. Ou só registrar o comportamento.'
+    owner: '@dev'
+    status: open
+
+deviations_reviewed:
+  - 'P-1 (as linhas são as dos blocos da 42.16): ACEITO. `blocoDoCanalDoLyrio` usa o mesmo estado `vendasDosBlocos`, com uma só `useRevenuecatVendasPorCanal`. Na Meta, `sumMetaSpendWithTax().spendComImposto` contra `sumMetaInsights().spend` é provado por um teste de paridade que monta o Resumo e os dois blocos com as mesmas linhas diárias: Investimento, Vendas, Receita e ROAS. Q02 (gross-up em dobro), Q03 (nenhum), Q05 (Google de 28 dias) e Q08 (linha do Google lendo a Meta) caem.'
+  - 'P-2 (linha do Google com `atribuição desde`): ACEITO. O AC2e manda que "as linhas Meta e Google declaram", e o memorial diz que a data é a do canal da venda em geral. A 42.16 não fez isso nos cards do Google, mas lá a regra era outra.'
+  - 'P-3 (`serieDesde` = `assinaturaDesde` de `pagantes-por-canal`): ACEITO. A `vendas-por-canal` não informa a cobertura, e a data vem da API, sem número fixo no código (o fio afirma isso). A etiqueta passageira durante o carregamento está na DOC-001.'
+  - 'P-4 (investimento carregando = "—" sem skeleton): ACEITO. É o texto do AC1d. O total nunca é parcial (Q01 cai).'
+  - 'P-5 (ROAS e Margem com `desde 10/08`): ACEITO. É o R1, confirmado na D12, e o memorial declara.'
+  - 'P-6 (o dia do chart `actives` em UTC): ACEITO. A rota lê o `cohort` 00:00Z do primeiro dia da janela de SP (Q72, Q75, Q76 e Q81 caem). O memorial diz "dia de UTC" e "as pontas podem diferir em até 3 h", sem afirmar se o valor é o estoque do começo ou do fim do dia. A documentação não diz, e não há como afirmar mais do que isso.'
+  - 'P-7 (ARPU com `active_subscriptions` do overview; denominador do churn pelo chart `actives`): ACEITO. É exatamente a tabela do AC10b, e o AC10c, caminho 1, pede o chart no início. Misturar as duas fontes é o que a story manda: o ARPU é "agora", e o denominador é "início do período". O que falta é teste (TEST-001).'
+  - 'P-8 e P-9: registrados, nada a julgar no código. O layout em sub-blocos fica para a validação visual.'
+  - 'Definição do churn (D9, AC10c caminho 1): CONFERE. O numerador é o `churnPagante` de `metricas-derivadas?days=30`, sem mudança (REUSE, PO-03): só EXPIRATION paga, e a de trial fica fora (o teste da borda de SP passa). O denominador é o chart `actives` (assinaturas pagas) no PRIMEIRO dia da janela, lido estritamente: resolução diária, uma medida, exatamente um valor do dia, número finito. Q70 a Q74 caem. O web exige o mesmo `days` e o mesmo `desde` nas duas respostas (Q42 cai) e recusa a janela diferente de 30 (Q41 cai). O caminho 2 não foi preciso.'
+
+checks:
+  code_review: >-
+    Li o diff inteiro (21 arquivos).
+    AC1: um card "Investimento (Total)". Meta = `spendComImposto` (12,15% uma vez, Q02 e Q03 caem). Google =
+    `valorDoGoogleNaRegua` do filtro. A soma é em centavos (`resumo-mobile-lyrio.ts:257`), e com qualquer parte
+    desconhecida o total é null. Erro da Meta ou do Google → "—" com o memorial certo, e a outra linha continua (Q06
+    cai). Carregando → "—" sem memorial (Q01 cai). Sem campanha Google, a linha não existe.
+    AC2: Receita = `totalPago.receitaUsd` × câmbio; Vendas = `totalPago.vendas`. Os baldes (4 canais + conflito > 0)
+    fecham com `fecharEmCentavos`, e o último absorve o resto. Meta e Google nunca são os últimos, então as linhas em
+    segundo plano batem com os baldes do memorial ao centavo. Eco de outra janela → "—" com a explicação (só testado
+    num sentido, TEST-003). Carregando → skeleton; erro → "—" e `role="alert"` no bloco; oculto → "—" (Q11 e Q12 caem).
+    AC3: ROAS e Margem sobre o total. As linhas vêm de `linhasDoResumoPorCanal`, cada canal contra o próprio
+    investimento (Q15 e Q17 caem). O memorial diz que o total inclui orgânico e sem atribuição.
+    AC5: `cardsDeAquisicao` só dobra `cardsDeAquisicaoPorCanal`. O corpo da 42.14 ganhou apenas as atribuições a
+    `consolidado[chave]`, sem mudar conta nenhuma (os testes antigos da 42.14 passam apontando para o `PorCanal`). O
+    CAC do LTV/CAC é o mesmo do card (Q21 e Q22 caem).
+    AC6: os dois componentes saíram do JSX e os arquivos ficaram. O rodapé continua (Q60, Q61 e Q62 caem).
+    `useRevenuecatReceita` ficou sem consumidor na tela, como registrado.
+    AC7: `SuperficieDoCard` ganhou `secundarias`, `carregando` e `alerta`, mantendo `forwardRef` e `{...rest}`. A
+    linha usa `truncate` e o card `min-w-0`. `comAsLinhasNoMemorial` acrescenta ao memorial a linha que faltar.
+    AC10: as fórmulas conferem com o AC10b–g. `decimosDaRelacao` arredonda uma vez, com `toPrecision(12)` (Q30 e Q31
+    caem). As faixas usam décimos: <10, ≤29, ≤50 e acima, ou seja, 3,0x–5,0x é saudável (D14; Q32 a Q35 caem). CAC
+    máximo = LTV ÷ 3 (Q36 cai). Os 4 alertas: só mídia sempre, período curto < 30, base incompleta e base pequena < 10
+    (Q37 a Q40 caem). Os "—" do AC10i caem todos (Q45 a Q47 e Q49).
+  unit_tests: >-
+    Rodados por mim na worktree. API `vitest run`: 5.412 passaram e 12 falharam, de 5.424. As 10 da baseline
+    (funnel-stages-lead-inputs 3, instagram-routes 1, instagram 1, projects 3, schema 2) e mais 2 timeouts de 5 s sob
+    carga (`debriefing-config` R1, a flake já conhecida, e `mapa-compartilhado`). Rodei os dois de novo com
+    `--no-file-parallelism --testTimeout=60000`: 69/69. Sobra exatamente a baseline. Web
+    `vitest run --testTimeout=60000`: 2.440/2.440, em 169 arquivos.
+    MUTAÇÕES PRÓPRIAS (`scratchpad/qa-gate-4215/mut.py`): uma por vez, restauradas em try/finally, com `git status`
+    limpo no fim. Suítes: as 10 do web que importam ou leem o código mutado, e as 2 da API de revenuecat.
+    AC1: Q01 total parcial cai · Q02 gross-up 2× cai · Q03 gross-up 0× cai · Q04 total em float SOBREVIVE (TEST-003) ·
+    Q05 Google de 28 dias cai · Q06 total parcial com a Meta em erro cai.
+    AC2: Q07 eco de janela maior aceito SOBREVIVE (TEST-003) · Q08 linha Google = Meta cai · Q09 baldes sem fechar cai ·
+    Q10 borda de atributosDesde SOBREVIVE (TEST-004) · Q11 oculto → R$ 0 cai · Q12 sem skeleton cai · Q13 borda de
+    serieDesde SOBREVIVE (TEST-004).
+    AC3: Q14 margem sem o Google cai · Q15 margem Google = Meta cai · Q16 sem a causa do câmbio SOBREVIVE (TEST-006) ·
+    Q17 ROAS Google contra a Meta cai.
+    AC5: Q20 a Q24 caem (CAC do filtro com a linha de 28 dias, LTV/CAC com o CAC de 28 dias, CAC numérico ≠ card,
+    rótulo "bruto", alerta no memorial do CAC).
+    AC10: Q30 a Q47 e Q49 caem · Q48 ARPU pelos trials SOBREVIVE (TEST-001) · Q50 precedência do serieDesde SOBREVIVE
+    (TEST-006).
+    AC6/AC7: Q60 a Q64 caem · Q65 ícone de alerta SOBREVIVE (TEST-005) · Q66 nota da linha SOBREVIVE (TEST-005).
+    API: Q70 a Q76 caem (dia qualquer, primeiro de dois, cohort −1, semana, não número, último dia, UTC) · Q77 sem
+    getProjectAccess SOBREVIVE (TEST-002) · Q78 a Q81 caem (getStage, days sem validar, 200 com zero, eco do dia).
+    Total: 62; 52 caem e 10 sobrevivem. Li o `mutar-42-15.py` do @dev, mas não o usei como evidência. As minhas
+    variantes são outras: o total em float, o eco maior, as bordas `<=`, a precedência, o ARPU, a guarda, o UTC na
+    rota e o render do ícone e da nota.
+  lint_typecheck: 'Rodados por mim. `pnpm --filter @loyola-x/shared build` EXIT 0. tsc da API EXIT 0. eslint `src` da API: 0 erros e 1 warning em `routes/lp-campaigns.ts`, que não foi tocado. tsc do web EXIT 0. eslint `components lib app` do web EXIT 0, sem saída.'
+  build: 'Rodados por mim, depois das mutações e com o código restaurado (`git status` limpo): `pnpm build` do web (shared + `next build --turbopack`) EXIT 0, compilado em 34,8 s. Depois dele, `tsc --noEmit` do web EXIT 0, sem saída.'
+  scope: 'O commit leva `[scope-override]` e o autor `danilo@bonsaitrafegopago.com.br`. Os paths são os da lista da story, dentro da D20 ("tudo autorizado").'
+  api_contract: 'Gate 8 OK. A rota nova é `GET …/revenuecat/ativas-no-inicio?days=N`, e `API_CONTRACT_VERSION` = 63, com a linha de histórico (resposta, `configured: false`, falha e o comportamento com a API antiga). Na `origin/main` (`7c126477`, conferido com `git ls-remote`), a versão é 62. A única PR aberta (#821, docs) não toca o contrato, então a 63 está livre. Observação: a branch local `feat/18.94-18.95-lps-midia-e-vendas-diarios`, no repo principal, tem um `contract.ts` não commitado em v56, muito atrás. Quem a levar para PR renumera; não é achado desta story.'
+  security: 'A rota nova repete a guarda das irmãs: `stageParamsSchema` e `salesQuerySchema` (days de 1 a 365), `getProjectAccess` (guest sem vínculo → 404) e `getStage` (etapa do funil e do projeto → 404). Sem conexão → 409. A chave do RevenueCat sai de `getApiKey` e não aparece na resposta. A resposta é só uma contagem agregada e a janela. A falha usa `respostaDeFalhaDoRevenuecat` (429 `limite`, 502 `permissao`/`outro`) e nunca devolve 200 com zero (Q80 cai). A guarda de projeto não tem teste (TEST-002).'
+  performance: 'A rota faz 1 consulta de chave, 1 de config (só `rc_project_id`, que existe em produção) e 1 chamada ao RevenueCat (`charts/actives` de um dia). Sem N + 1. No web, sai a `/receita` (RevenueCat), e o Overview fora da tela deixa de disparar as dele. Entram `metricas-derivadas?days=30` (banco) e `ativas-no-inicio?days=30` (1 chamada ao RevenueCat, com `retry: tentarDeNovoNoRevenuecat` e `staleTime` de 60 s). O saldo no limite de 25/min do RevenueCat é igual ou menor.'
+  acceptance_criteria: 'AC1 ✓ (a–e) · AC2 ✓ (a–g; o eco é recusado só num sentido testado, TEST-003) · AC3 ✓ (a–e) · AC4 ✓ (a–b) · AC5 ✓ (a–d; as contas da 42.14 sem mudança) · AC6 ✓ (a–d) · AC7 ✓ (a–b; c no código, o render da nota sem fio, TEST-005) · AC8 ✓ (a–d; e parcial: 10 das minhas 62 sobrevivem) · AC9 ✓ (v63 livre; gates verdes sobre a baseline) · AC10 ✓ no código (a–k), com o AC10a NÃO atendido no estado de produção de hoje (REL-001) e o ARPU sem teste (TEST-001). DoD: a conferência em produção foi feita pelo @dev (7, 28 e 90 dias; churn 68 ÷ 520), e o LTV/CAC fica para o visual.'
+  clickup: 'Não registrado: o pedido do lead proibiu escrita no ClickUp. Task `17tqamf06y1`.'
+
+margin_config_assessment: >-
+  A resposta ao lead: a 42.15 não mostra um número ERRADO, mas mostra um número com a fonte errada, e passa a fazer
+  isso em três KPIs de decisão. O estado de produção hoje: as colunas da 0103 faltam, o GET e o PUT da config dão 500,
+  e a tela cai nos `MARGEM_DEFAULTS` = 15/5/1 (79%). Para uma etapa sem configuração, a rota devolveria esses mesmos
+  valores, que também são os defaults da própria 0103. Por isso a Margem e o LTV (margem) têm hoje o mesmo valor que
+  teriam com a migration aplicada. O problema é outro: o memorial diz "percentuais da etapa (Configurar)", o gestor não
+  consegue mudar os percentuais (o PUT falha), e o AC10a manda "—" quando o insumo falta. Classifiquei como REL-001
+  medium: não bloqueia por número errado, mas o AC10a não é atendido no estado real. Recomendo aplicar a 0103 antes do
+  deploy, com @devops/@data-engineer, e o @dev parar de calar o erro da config no LTV.
+
+pendente_do_dono:
+  - 'Validação visual do Danilo e do Alberto (DoD), no desktop e no celular (AC7c, ≤ 390 px). O layout dos sub-blocos (P-9) é proposta.'
+  - 'O LTV/CAC em produção: R$ 70,23 ÷ o CAC do card. O @dev não leu a mídia ao vivo.'
+  - 'Decidir a REL-001: aplicar a 0103 e/ou o "—" no web.'
+  - 'CodeRabbit não rodou: o CLI é do WSL, e esta máquina é macOS.'
+  - 'Status da story: deixei em InReview, como na 42.16 e na 42.19. O lead move o status e o ClickUp.'
+
+waiver: { active: false }
