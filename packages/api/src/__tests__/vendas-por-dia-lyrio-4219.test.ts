@@ -57,7 +57,8 @@ const executar = async (q: SQL) => {
   return (await pg.query(texto, params as unknown[])).rows as Record<string, unknown>[];
 };
 
-type Evento = { user: string | null; tipo: string; usd?: number | null; em: string; attrs?: unknown; gclid?: string };
+/** `entregueEm`: o `event_at`, quando o evento chega depois da compra (padrão: `em`, o `purchased_at`). */
+type Evento = { user: string | null; tipo: string; usd?: number | null; em: string; entregueEm?: string; attrs?: unknown; gclid?: string };
 let seq = 0;
 async function inserir(e: Evento) {
   seq += 1;
@@ -65,7 +66,7 @@ async function inserir(e: Evento) {
   await pg.query(
     `INSERT INTO revenuecat_sales (stage_id, event_id, event_type, app_user_id, revenue_usd, purchased_at, event_at, gclid, payload, created_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-    [STAGE, `ev${seq}`, e.tipo, e.user, e.usd ?? null, e.usd != null ? e.em : null, e.em, e.gclid ?? null, JSON.stringify(payload), e.em],
+    [STAGE, `ev${seq}`, e.tipo, e.user, e.usd ?? null, e.usd != null ? e.em : null, e.entregueEm ?? e.em, e.gclid ?? null, JSON.stringify(payload), e.em],
   );
 }
 
@@ -90,6 +91,10 @@ async function semear() {
   await inserir({ user: "mesmo-dia", tipo: "NON_RENEWING_PURCHASE", usd: 3.3333, em: "2026-10-10T18:00:00Z" });
   // noite-sp: 23:30 de SP de 11/10 = 02:30Z de 12/10 → o dia é 11/10 (o dia de SP)
   await inserir({ user: "noite-sp", tipo: "INITIAL_PURCHASE", usd: 7, em: "2026-10-12T02:30:00Z", attrs: anuncio("1202B", "Conjunto Quente", "ad-roteiro-02") });
+  // entregue-tarde (QA 42.19, TEST-004): comprou às 23:50 de SP de 12/10 (02:50Z de 13/10) e o
+  // evento chegou 20 min depois, 00:10 de SP de 13/10 — o dia é o de `purchased_at` (12/10),
+  // a coluna que corta a janela e o card de /sales (PO-02 da 42.12), não o de `event_at`
+  await inserir({ user: "entregue-tarde", tipo: "INITIAL_PURCHASE", usd: 4, em: "2026-10-13T02:50:00Z", entregueEm: "2026-10-13T03:10:00Z", attrs: anuncio("1202C", "Conjunto Tarde", "ad-tarde") });
   // depois: R2/PO-03 — vende em 05/10 pelo anúncio velho e toca outro anúncio em 20/10;
   // a venda de 05/10 vai para o anúncio MAIS RECENTE (a regra da linha)
   await inserir({ user: "depois", tipo: "INITIAL_PURCHASE", usd: 5.5, em: "2026-10-05T12:00:00Z", attrs: anuncio("1202A", "Conjunto Frio", "ad-velho") });
@@ -177,6 +182,11 @@ describe("AC3a — o dia é o de SP da venda; a atribuição é a do comprador (
   it("23:30 de SP fica no dia de SP (11/10), não no dia seguinte em UTC", () => {
     expect(dias.ad.filter((d) => d.chave === "ad-roteiro-02").map((d) => d.dia)).toEqual(["2026-10-11"]);
   });
+  it("o dia é o de `purchased_at`, não o de `event_at`: comprou 23:50 de SP de 12/10, evento entregue 00:10 de 13/10", () => {
+    for (const [nivel, chave] of [["campaign", "1202C"], ["adset", "Conjunto Tarde"], ["ad", "ad-tarde"]] as const) {
+      expect(dias[nivel].filter((d) => d.chave === chave).map((d) => [d.dia, d.vendas, d.receitaUsd])).toEqual([["2026-10-12", 1, 4]]);
+    }
+  });
   it("a venda de 05/10 vai para o anúncio mais recente do comprador (tocado em 20/10), não para o do dia", () => {
     expect(dias.ad.filter((d) => d.chave === "ad-novo").map((d) => [d.dia, d.vendas])).toEqual([["2026-10-05", 1]]);
     expect(dias.ad.some((d) => d.chave === "ad-velho")).toBe(false);
@@ -201,8 +211,8 @@ describe("AC3c — a mesma janela e nenhum id de usuário", () => {
       "dia", "grao", "meta_ad_name", "meta_adset_name", "meta_campaign_id", "meta_campaign_name",
       "receita_ate_a_vespera", "receita_ate_o_dia", "receita_usd", "s_google", "s_meta", "s_organico", "vendas",
     ]);
-    expect(JSON.stringify(linhas)).not.toMatch(/dois-dias|mesmo-dia|noite-sp|sem-ids|fora-da-janela/);
-    expect(JSON.stringify(dias)).not.toMatch(/dois-dias|mesmo-dia|noite-sp|sem-ids|fora-da-janela|app_user_id/);
+    expect(JSON.stringify(linhas)).not.toMatch(/dois-dias|mesmo-dia|noite-sp|entregue-tarde|sem-ids|fora-da-janela/);
+    expect(JSON.stringify(dias)).not.toMatch(/dois-dias|mesmo-dia|noite-sp|entregue-tarde|sem-ids|fora-da-janela|app_user_id/);
   });
 });
 

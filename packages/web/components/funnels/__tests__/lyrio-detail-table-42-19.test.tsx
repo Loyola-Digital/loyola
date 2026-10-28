@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { TrafegoDoGoogleNaRegua } from "@/lib/utils/google-ads-na-regua";
+import { DICA_GOOGLE_SEM_VENDA } from "@/lib/utils/lyrio-detalhamento-diario";
 import type { VendasPorCanalDoLyrio } from "@/lib/utils/vendas-por-canal-lyrio";
 
 /**
@@ -14,6 +15,10 @@ import type { VendasPorCanalDoLyrio } from "@/lib/utils/vendas-por-canal-lyrio";
  *  - UMA ao expandir duas linhas da mesma dimensão;
  *  - uma nova ao trocar de dimensão (e expandir lá);
  *  - o controle é um `<button>` com `aria-expanded`/`aria-controls`.
+ *
+ * QA loop 1 (TEST-001..003, TEST-005): a linha do Google aberta (o ramo do
+ * Google no componente), a janela e a plataforma fechando as linhas, o dia de
+ * SP às 23:30 e o "Δ vs. linha" na Σ.
  */
 
 const pedidos: string[] = [];
@@ -64,29 +69,58 @@ const serie = (groupBy: string) => ({
 
 const googleTrafego: TrafegoDoGoogleNaRegua = { tipo: "sem_campanha" };
 
-function montar() {
+type Props = Parameters<typeof LyrioDetailTable>[0];
+const PROPS: Props = {
+  projectId: "p1",
+  funnelId: "f1",
+  stageId: "s1",
+  brlRate: 5,
+  revenuecatConectado: true,
+  campaignIds: ["c1", "c2"],
+  googleAccountId: null,
+  googleCampaignIds: new Set(),
+  googleCampanhas: [],
+  googleTrafego,
+  days: 3,
+};
+
+/** Monta a tabela; `rerender(p)` troca as props no MESMO QueryClient (a janela do cabeçalho). */
+function montar(p: Partial<Props> = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const arvore = (q: Partial<Props>) => (
     <QueryClientProvider client={qc}>
-      <LyrioDetailTable
-        projectId="p1"
-        funnelId="f1"
-        stageId="s1"
-        brlRate={5}
-        revenuecatConectado
-        campaignIds={["c1", "c2"]}
-        googleAccountId={null}
-        googleCampaignIds={new Set()}
-        googleCampanhas={[]}
-        googleTrafego={googleTrafego}
-        days={3}
-      />
-    </QueryClientProvider>,
+      <LyrioDetailTable {...PROPS} {...q} />
+    </QueryClientProvider>
   );
+  const r = render(arvore(p));
+  return { ...r, rerender: (q: Partial<Props>) => r.rerender(arvore({ ...p, ...q })) };
 }
+
+/** As campanhas Google da etapa, com o `/daily` da régua já somado (a consulta da 42.16). */
+const GOOGLE: Partial<Props> = {
+  googleAccountId: "acc-1",
+  googleCampaignIds: new Set(["g1"]),
+  googleCampanhas: [{ id: "g1", name: "Search Lyrio" }],
+  googleTrafego: {
+    tipo: "pronto",
+    spend: 30,
+    impressions: 300,
+    clicks: 3,
+    porCampanha: new Map([["g1", { spend: 30, impressions: 300, clicks: 3 }]]),
+    diasPorCampanha: new Map([
+      ["g1", [
+        { date: "2026-10-28", spend: 10, impressions: 100, clicks: 1 },
+        { date: "2026-10-26", spend: 20, impressions: 200, clicks: 2 },
+      ]],
+    ]),
+  },
+};
 
 const controle = (nome: string) => screen.getByRole("button", { name: new RegExp(`os dias de ${nome}$`) });
 const daSerie = () => pedidos.filter((p) => p.includes("/entity-daily"));
+/** O texto da linha, com o espaço não separável de `toLocaleString` trocado por espaço. */
+const textoDa = (l: HTMLElement) => (l.textContent ?? "").replace(/\u00a0/g, " ");
+const linhasDosDias = (nome: string) => within(screen.getByRole("rowgroup", { name: `Dias de ${nome}` })).getAllByRole("row");
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -205,5 +239,99 @@ describe("AC6e — acessibilidade do controle", () => {
     fireEvent.click(b);
     expect(b.getAttribute("aria-expanded")).toBe("false");
     expect(alvo!.hidden).toBe(true);
+  });
+});
+
+describe("AC2e / AC3f (D22) — a linha do GOOGLE aberta: o ramo do Google no componente (QA TEST-001)", () => {
+  it("abre sozinha: sem pedir a série da Meta, sem skeleton, a mídia do /daily na régua e a venda “—” com a dica", async () => {
+    montar(GOOGLE);
+    fireEvent.click(controle("Search Lyrio"));
+    await act(async () => {});
+    // a linha do Google não pede o `entity-daily` (os dias já estão na consulta do /daily)
+    expect(daSerie()).toHaveLength(0);
+    const dias = screen.getByRole("rowgroup", { name: "Dias de Search Lyrio" });
+    // nada de skeleton esperando a série da Meta, que nunca é pedida
+    expect(within(dias).queryByLabelText("Carregando os dias")).toBeNull();
+    const linhas = linhasDosDias("Search Lyrio");
+    expect(linhas.map((l) => l.textContent?.slice(0, 10))).toEqual(["28/10/2026", "27/10/2026", "26/10/2026", "Σ dos dias"]);
+    // o gasto do /daily, sem imposto (o imposto é da Meta); o dia sem linha é zerado
+    expect(textoDa(linhas[0]!)).toContain("R$ 10,00");
+    expect(textoDa(linhas[1]!)).toContain("R$ 0,00");
+    expect(textoDa(linhas[2]!)).toContain("R$ 20,00");
+    expect(textoDa(linhas[3]!)).toContain("R$ 30,00");
+    expect(textoDa(linhas[3]!)).not.toMatch(/Δ/);
+    // Vendas e Receita: "—" (o Google não informa a campanha), nunca "0", nos dias e na Σ
+    for (const l of linhas) {
+      const celulas = within(l).getAllByRole("cell");
+      const [vendas, receita] = celulas.slice(-2);
+      expect(vendas!.textContent).toBe("—");
+      expect(receita!.textContent).toBe("—");
+      expect(vendas!.getAttribute("title")).toBe(DICA_GOOGLE_SEM_VENDA);
+      expect(receita!.getAttribute("title")).toBe(DICA_GOOGLE_SEM_VENDA);
+    }
+  });
+
+  it("com uma linha da Meta aberta junto, a do Google não muda: segue do /daily, e a série da Meta é pedida uma vez", async () => {
+    montar(GOOGLE);
+    fireEvent.click(controle("Search Lyrio"));
+    fireEvent.click(controle("Campanha Um"));
+    await waitFor(() => expect(screen.getAllByText("Σ dos dias")).toHaveLength(2));
+    expect(daSerie()).toHaveLength(1);
+    expect(textoDa(linhasDosDias("Search Lyrio")[0]!)).toContain("R$ 10,00");
+    expect(textoDa(linhasDosDias("Campanha Um")[0]!)).toContain("R$ 100,00");
+  });
+});
+
+describe("AC1c — trocar de janela ou de plataforma fecha todas (QA TEST-002)", () => {
+  it("a janela (days) do cabeçalho muda → nenhuma linha aberta", async () => {
+    const t = montar();
+    fireEvent.click(controle("Campanha Um"));
+    await waitFor(() => expect(screen.getByText("Σ dos dias")).toBeTruthy());
+    t.rerender({ days: 7 });
+    await act(async () => {});
+    expect(screen.queryByText("Σ dos dias")).toBeNull();
+    expect(controle("Campanha Um").getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("a plataforma muda (Todas → Meta) → nenhuma linha aberta, mesmo com a dimensão igual", async () => {
+    montar();
+    fireEvent.click(controle("Campanha Um"));
+    await waitFor(() => expect(screen.getByText("Σ dos dias")).toBeTruthy());
+    fireEvent.keyDown(screen.getByRole("combobox", { name: /Plataforma/ }), { key: "ArrowDown" });
+    fireEvent.click(screen.getByRole("option", { name: "Meta" }));
+    await act(async () => {});
+    expect(screen.queryByText("Σ dos dias")).toBeNull();
+    expect(controle("Campanha Um").getAttribute("aria-expanded")).toBe("false");
+  });
+});
+
+describe("AC1b / AC2a — o dia de HOJE é o de SP no componente (QA TEST-003)", () => {
+  it("às 23:30 de SP (02:30Z do dia seguinte) a expansão começa no dia de SP, e a série vai até ele", async () => {
+    vi.setSystemTime(new Date("2026-10-29T02:30:00Z"));
+    montar();
+    fireEvent.click(controle("Campanha Um"));
+    await waitFor(() => expect(screen.getByText("Σ dos dias")).toBeTruthy());
+    const linhas = linhasDosDias("Campanha Um");
+    expect(linhas[0]!.textContent?.slice(0, 10)).toBe("28/10/2026");
+    expect(within(linhas[0]!).getByText("dia em andamento")).toBeTruthy();
+    expect(daSerie()[0]).toMatch(/startDate=2026-10-26&endDate=2026-10-28&/);
+  });
+});
+
+describe("AC4c — a Σ dos dias mostra a diferença contra a linha (QA TEST-005)", () => {
+  it("série (cache) menor que a linha (ao vivo) → “Δ −R$ 20,00 vs. linha” no investimento da Σ", async () => {
+    respostaDaSerie.mockImplementation(() => ({
+      ...serie("campaign"),
+      // 70,28 bruto → R$ 80,00 com o imposto; a linha é R$ 100,00
+      rows: [{ entityId: "c1", entityName: "Campanha Um", dateStart: "2026-10-28", spend: 70.28, impressions: 1000, clicks: 12, linkClicks: 10 }],
+    }));
+    montar();
+    fireEvent.click(controle("Campanha Um"));
+    await waitFor(() => expect(screen.getByText("Σ dos dias")).toBeTruthy());
+    const soma = linhasDosDias("Campanha Um").at(-1)!;
+    expect(textoDa(soma)).toContain("R$ 80,00");
+    expect(textoDa(soma)).toContain("Δ −R$ 20,00 vs. linha");
+    // impressões e cliques batem: só o investimento declara a diferença
+    expect(textoDa(soma).match(/Δ/g)).toHaveLength(1);
   });
 });

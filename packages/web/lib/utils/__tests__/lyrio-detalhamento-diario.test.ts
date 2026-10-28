@@ -176,6 +176,22 @@ describe("AC2b (PO-02) — o gross-up dos dias: uma vez, por dia, na mesma base 
     expect(e.dias[1]!.midia!.cpm).toBeCloseTo((87.85 / (1 - 0.1215) / 1000) * 1000, 10);
     expect(e.dias[1]!.midia!.cpc).toBeCloseTo(87.85 / (1 - 0.1215) / 10, 10);
   });
+  it("o imposto é o da DATA DO DIA, não o de hoje: a janela que cruza 2026-01-01 (vigência) não tributa 2025", () => {
+    // O DayRangePicker vai a 365 dias; com hoje em 2026, a janela pega dias de 2025.
+    const hoje = "2026-01-01";
+    const idx = indiceDaMidiaDaMeta("campaign", [
+      serie({ entityId: "c1", dateStart: "2025-12-31", spend: 50, impressions: 500, linkClicks: 5, clicks: 5 }),
+      serie({ entityId: "c1", dateStart: hoje, spend: 87.85, impressions: 1000, linkClicks: 10, clicks: 10 }),
+    ]);
+    // a linha como o backend a tributa: cada dia pela sua data (2025 sem imposto)
+    const linha = metaRow({ campaignId: "c1", campaignName: "Campanha", spend: 50 + 87.85 / (1 - 0.1215), impressions: 1500, clicks: 15, linkClicks: 15 });
+    const e = expansaoDaMeta({ linha, dias: diasDaJanela(2, hoje), hoje, dimensao: "campaign", serie: idx, semCobertura: new Set(), vendas: { tipo: "indisponivel", dica: null }, chaveDaVenda: undefined, brlRate: 5 });
+    expect(e.dias.map((d) => d.dia)).toEqual([hoje, "2025-12-31"]);
+    expect(e.dias[0]!.midia!.spend).toBeCloseTo(100, 10);
+    expect(e.dias[1]!.midia!.spend).toBe(50);
+    expect(e.soma.midia.spend).toBeCloseTo(150, 10);
+    expect(e.soma.diferenca).toBeNull();
+  });
   it("o Google não leva imposto", () => {
     const linha = googleRow({ id: "g1", name: "Search", status: null, spend: 30, impressions: 300, clicks: 3 });
     const e = expansaoDoGoogle({ linha, dias: diasDaJanela(2, HOJE), hoje: HOJE, linhasDoDaily: [{ date: HOJE, spend: 10, impressions: 100, clicks: 1 }, { date: "2026-10-27", spend: 20, impressions: 200, clicks: 2 }] });
