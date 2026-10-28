@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { metricasDerivadasDaEtapa } from "../utils/metricas-revenuecat.js";
 import { diasDaJanelaEmSp, instanteDoInicioDaJanela } from "../utils/sale-date.js";
-import { consultaDaJornada, consultaDoInicioDaAssinatura, lerLinhaDaJornada, montarJornada } from "../utils/jornada-lyrio.js";
+import { consultaDoInicioDaAssinatura, lerLinhaDaJornada, montarJornada } from "../utils/jornada-lyrio.js";
+import { consultaDaJornadaPorProduto, lerProdutoDaJornada, montarPorProduto } from "../utils/jornada-por-produto-lyrio.js";
 import {
   consultaDeVendasPorCanal,
   diaNoFusoDoNegocio,
@@ -511,6 +512,10 @@ export default fp(async function revenuecatRoutes(fastify) {
    *
    * Agrega NO BANCO (uma linha por usuário, sem o id) e classifica o canal em
    * `utils/jornada-lyrio.ts`. Só contagens na resposta — nunca `app_user_id`.
+   *
+   * Story 42.18 (AC3): a mesma redução por usuário traz o produto do primeiro
+   * "iniciou" e do primeiro "iniciou teste" — `porProduto` reparte, por plano,
+   * o iniciou de cada canal, com os mesmos novos como denominador.
    */
   fastify.get(
     "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/revenuecat/jornada",
@@ -526,15 +531,14 @@ export default fp(async function revenuecatRoutes(fastify) {
 
       const desde = instanteDoInicioDaJanela(query.data.days); // Story 42.13 (AC4)
       const [usuarios, inicio, atributos] = await Promise.all([
-        fastify.db.execute(consultaDaJornada(params.data.stageId, desde)),
+        fastify.db.execute(consultaDaJornadaPorProduto(params.data.stageId, desde)),
         fastify.db.execute(consultaDoInicioDaAssinatura(params.data.stageId)),
         // Story 42.12 (AC4/AC6): desde quando a Meta é identificável — vem do dado.
         fastify.db.execute(consultaDoInicioDosAtributos(params.data.stageId)),
       ]);
-      const jornada = montarJornada(
-        (usuarios.rows as Record<string, unknown>[]).map(lerLinhaDaJornada),
-        desde,
-      );
+      const linhas = (usuarios.rows as Record<string, unknown>[]).map((r) => ({ ...lerLinhaDaJornada(r), ...lerProdutoDaJornada(r) }));
+      const jornada = montarJornada(linhas, desde);
+      const porProduto = montarPorProduto(linhas, desde); // Story 42.18 (AC3)
       const primeiraAssinatura = (inicio.rows[0] as { desde?: unknown } | undefined)?.desde;
       // Story 42.13 (QA MNT-001): dia de SP, como `desde` e `atributosDesde`.
       const assinaturaDesde = dataIso(primeiraAssinatura);
@@ -551,6 +555,7 @@ export default fp(async function revenuecatRoutes(fastify) {
         assinaturaDesde,
         atributosDesde: dataIso((atributos.rows[0] as { desde?: unknown } | undefined)?.desde),
         ...jornada,
+        porProduto,
       };
     },
   );

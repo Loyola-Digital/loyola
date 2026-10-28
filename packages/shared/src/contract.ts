@@ -674,4 +674,17 @@
 // entregue em até 7 dias depois de acontecer — eventos de paywall de agosto
 // gravados em outubro recuavam a cobertura de 06/10 para 06/08.
 // `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 59;
+//
+// v60 (Story 42.18 — Lyrio: Novos → Trial e Novos → Iniciou por plano, nos 8
+// canais da Jornada; sem migration): `GET …/revenuecat/jornada` ganha
+// `porProduto` — na MESMA coorte e janela da Jornada, `canais` (os 8, na ordem
+// da Jornada, com os `novos` de cada um: o denominador), `conflito.novos`,
+// `total.novos` e `linhas` (Mensal, Trimestral, Semestral, Anual, Outros, Sem
+// produto), cada uma com `iniciou`/`iniciouTeste` por canal, no conflito e no
+// total, e os `product_id` que caíram nela (`produtos`). O produto do usuário é
+// o do PRIMEIRO evento que conta como "iniciou" (ou "iniciou teste"); o plano
+// vem da classificação da 42.14. Por canal, a soma das linhas é o
+// `iniciou`/`iniciouTeste` da linha da Jornada. Só contagens e ids de produto —
+// nenhum `app_user_id`. Campo aditivo: com a API antiga a tabela por produto
+// não aparece e a de canal continua. `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 60;

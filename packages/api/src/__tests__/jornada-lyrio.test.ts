@@ -323,7 +323,10 @@ describe("GET …/revenuecat/jornada — o fio da rota (AC5)", () => {
     expect(new Date(inicioDaJanela).toISOString()).toMatch(/T03:00:00\.000Z$/);
     // QA TEST-001: a janela entra SÓ no HAVING — o SQL executado não filtra event_at no WHERE (coorte pela série inteira, AC2)
     expect(clausulaWhere(jornada.sql)).not.toMatch(/event_at/i);
-    expect(jornada.sql.match(/event_at/g)).toHaveLength(2);
+    // Story 42.18 (AC3d): o event_at a mais é só a CHAVE de ordem do primeiro produto (dois `min`), não um filtro
+    const chaveDoProduto = /extract\(epoch from "revenuecat_sales"\."event_at"\)/g;
+    expect(jornada.sql.match(chaveDoProduto)).toHaveLength(2);
+    expect(jornada.sql.replace(chaveDoProduto, "").match(/event_at/g)).toHaveLength(2);
     const corpo = r.json();
     expect(corpo).toMatchObject({ days: 30, assinaturaDesde: "2026-08-10", atributosDesde: "2026-08-10", conflito: { novos: 0 } });
     // Story 42.13 (QA TEST-002/Q10): o `desde` da resposta é o primeiro dia da janela em SP.
@@ -331,7 +334,9 @@ describe("GET …/revenuecat/jornada — o fio da rota (AC5)", () => {
     expect(corpo.total).toMatchObject({ novos: 1, iniciou: 1, pagou: 1, receitaUsd: 9.99 });
     expect(corpo.linhas.find((l: { canal: string }) => l.canal === "google_gclid").novos).toBe(1);
     // AC5: nenhum PII na resposta — só as chaves conhecidas
-    expect(Object.keys(corpo).sort()).toEqual(["assinaturaDesde", "atributosDesde", "conflito", "days", "desde", "linhas", "total"]);
+    expect(Object.keys(corpo).sort()).toEqual(["assinaturaDesde", "atributosDesde", "conflito", "days", "desde", "linhas", "porProduto", "total"]);
+    // Story 42.18: a linha sem as colunas de produto (banco falso) inicia SEM produto — nunca some
+    expect(corpo.porProduto.linhas.find((l: { linha: string }) => l.linha === "sem_produto").canais.find((x: { canal: string }) => x.canal === "google_gclid")).toEqual({ canal: "google_gclid", iniciou: 1, iniciouTeste: 1 });
     // Story 42.12: a terceira consulta (atributosDesde) é da MESMA etapa
     const atributos = banco.executados.find((e) => /meta_campaign_id/.test(JSON.stringify(e.params)) && !/group by/i.test(e.sql))!;
     expect(parametroDe(atributos, '"revenuecat_sales"."stage_id"')).toBe(STAGE);

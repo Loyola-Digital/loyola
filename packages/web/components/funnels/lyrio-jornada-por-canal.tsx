@@ -11,17 +11,30 @@
 //
 // As decisões (estado do bloco, taxas, declarações) estão em
 // `lib/utils/jornada-lyrio.ts`, com teste; aqui só se desenha.
+//
+// Story 42.18 — abaixo, a tabela "Por produto × canal": as linhas são os
+// planos, e cada canal tem Novos → Trial e Novos → Iniciou contra os novos DO
+// CANAL. Com a API anterior (sem `porProduto`), ela não aparece.
 // ============================================================
 
+import { Fragment } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRevenuecatJornada } from "@/lib/hooks/use-revenuecat";
 import {
+  ARREDONDAMENTO_DO_POR_PRODUTO,
+  DICA_DO_POR_PRODUTO,
   avisoDeConflitoDaJornada,
+  colunasDoPorProduto,
+  colunasSemParidade,
   declaracoesDaJornada,
+  dicaDaLinhaDoPorProduto,
   estadoDoBlocoDaJornada,
   formatarTaxa,
   taxaDaJornada,
+  taxasDoPorProduto,
   type ContagemDaJornada,
+  type JornadaDoLyrio,
+  type PorProdutoDaJornada,
 } from "@/lib/utils/jornada-lyrio";
 
 function fmtNum(v: number): string {
@@ -48,6 +61,71 @@ function Celulas({ c }: { c: ContagemDaJornada }) {
       <td className={td}>{formatarTaxa(taxaDaJornada(c.iniciou, c.novos))}</td>
       <td className={td}>{formatarTaxa(taxaDaJornada(c.pagou, c.novos))}</td>
     </>
+  );
+}
+
+// Story 42.18 (AC4g): a coluna Plano fica fixa quando a tabela rola na horizontal.
+const plano = "sticky left-0 z-10 bg-background text-left py-2 pr-3 whitespace-nowrap";
+
+/** Story 42.18 (AC4) — Por produto × canal: as duas taxas de cada canal, contra os novos do canal. */
+function TabelaPorProduto({ jornada, p }: { jornada: JornadaDoLyrio; p: PorProdutoDaJornada }) {
+  const colunas = colunasDoPorProduto(p);
+  const semParidade = colunasSemParidade(jornada);
+  return (
+    <div className="space-y-2">
+      <h3 className="text-xs font-semibold text-muted-foreground" title={DICA_DO_POR_PRODUTO}>
+        Por produto × canal
+      </h3>
+      {semParidade.length > 0 && (
+        <p role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+          A soma por plano não fecha com a tabela por canal em: {semParidade.join(", ")}.
+        </p>
+      )}
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            {/* PO-02: duas linhas — o canal em cima; "→ Trial" e "→ Iniciou" embaixo */}
+            <tr className="text-muted-foreground">
+              <th rowSpan={2} className={`${plano} font-medium align-bottom border-b border-border/20`}>
+                Plano
+              </th>
+              {colunas.map((c) => (
+                <th key={c.chave} colSpan={2} className="text-center py-1 pl-3 font-medium whitespace-nowrap" title={DICA_DO_POR_PRODUTO}>
+                  {c.rotulo}
+                </th>
+              ))}
+            </tr>
+            <tr className="text-muted-foreground border-b border-border/20">
+              {colunas.map((c) => (
+                <Fragment key={c.chave}>
+                  <th className={th} title={DICA_DO_POR_PRODUTO}>→ Trial</th>
+                  <th className={th} title={DICA_DO_POR_PRODUTO}>→ Iniciou</th>
+                </Fragment>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {p.linhas.map((l) => (
+              <tr key={l.linha} className="border-b border-border/10 hover:bg-muted/30">
+                <td className={plano} title={dicaDaLinhaDoPorProduto(l)}>
+                  {l.rotulo}
+                </td>
+                {colunas.map((c) => {
+                  const t = taxasDoPorProduto(l, c);
+                  return (
+                    <Fragment key={c.chave}>
+                      <td className={td}>{formatarTaxa(t.trial)}</td>
+                      <td className={td}>{formatarTaxa(t.iniciou)}</td>
+                    </Fragment>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[11px] text-muted-foreground">{ARREDONDAMENTO_DO_POR_PRODUTO}</p>
+    </div>
   );
 }
 
@@ -116,6 +194,8 @@ export function LyrioJornadaPorCanal({ projectId, funnelId, stageId, days }: { p
               </tbody>
             </table>
           </div>
+          {/* Story 42.18 (AC4f): sem `porProduto` (API anterior), só a tabela por canal */}
+          {estado.dados.porProduto && <TabelaPorProduto jornada={estado.dados} p={estado.dados.porProduto} />}
         </>
       )}
     </section>
