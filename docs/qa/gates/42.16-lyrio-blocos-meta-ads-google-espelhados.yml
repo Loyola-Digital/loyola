@@ -1,0 +1,79 @@
+schema: 1
+story: '42.16'
+story_title: 'Lyrio — blocos Meta Ads e Google Ads com os mesmos cards e o período em cada card, e filtro Meta/Google no Detalhamento'
+gate: PASS
+status_reason: 'Gate único sobre 0fab2ff4, revisão independente do diff 1158c44f..0fab2ff4 inteiro (15 arquivos, 1.567+/455−). AC1 a AC6 estão atendidos no código. Os pontos de regra conferem. (1) A régua de SP do Google soma gasto, impressões e cliques no mesmo recorte [hoje − (N − 1), hoje]. Um dia de fora em cada borda é testado às 23:30 de SP, com TZ = UTC, SP e Tóquio. CTR, CPC e CPM saem das SOMAS: a linha do Google não carrega mais nenhuma taxa da API, então uma média de médias não tem nem como ser escrita. (2) O Google não declara "desde": a rota não tem uma data de cobertura do canal Google, e o memorial diz isso. (3) O filtro Plataforma liga e desliga as consultas por uma função pura. (4) Com o filtro "Todas", nenhum número da Meta muda em relação à main (a mesma consulta, a mesma função). O que muda nas linhas do Google é intencional (D16): investimento, impressões e cliques passam da janela N + 1 em UTC do `/campaigns` para a régua de SP do `/daily`. Com isso, o Total da tabela muda pelo mesmo motivo, e o bloco Google passa a bater com o Investimento (Google) do Resumo. Das minhas 20 mutações, 13 caem e 1 é equivalente. As 6 que sobrevivem são lacunas de teste em textos e ramos de render, todas low (TEST-001 a TEST-003). Ficam pendentes do dono, sem bloquear: a validação visual e a conferência em produção do DoD.'
+reviewer: 'Quinn'
+updated: '2026-10-28T01:45:00Z'
+branch: 'feat/42.16-lyrio-blocos-espelhados'
+commit_reviewed: '0fab2ff4'
+base: '1158c44f (origin/main, contrato 59; conferido com git ls-remote no gate: a main não andou)'
+history:
+  - { date: '2026-10-27', gate: PASS, note: 'gate único sobre 0fab2ff4: AC1–AC6 atendidos; 20 mutações próprias, 13 caem, 1 equivalente, 6 sobrevivem (TEST-001..003 low); DOC-001 e MNT-001 low; visual e conferência em produção pendentes do dono.' }
+
+top_issues:
+  - id: TEST-001
+    severity: low
+    category: tests
+    description: 'Q5: em `packages/web/lib/utils/cards-do-bloco-lyrio.ts:167`, troquei `if (canal === "meta") return memorialDoErroDaMeta(...)` por `if (true)` e a mutação SOBREVIVE às 7 suítes da etapa. Com ela, o memorial dos cards do bloco Google em erro diria "Meta Ads API indisponível" e "A consulta do gasto diário da Meta falhou", apontando para a rota da Meta. O teste de erro (`cards-do-bloco-lyrio.test.ts`, "investimento desconhecido") só afirma `result: "—"` e que a mensagem aparece no ROAS, e as duas coisas valem para os dois memoriais. O aviso do bloco está protegido: a Q6, que dá o texto da Meta ao aviso do Google, cai.'
+    recommendation: 'No caso `google` do teste de tráfego em erro, afirmar `formula.expression` do Investimento (Google) = "Google Ads API indisponível" (e, no caso `meta`, "Meta Ads API indisponível").'
+    owner: '@dev'
+    status: open
+
+  - id: TEST-002
+    severity: low
+    category: tests
+    description: 'Ramos de render do filtro e do bloco sem teste de fio. Cada mutação abaixo SOBREVIVE às 7 suítes. Q8 (`lyrio-detail-table.tsx:316`): tirar o `plataforma === "todas"` do aviso âmbar. Com o filtro Meta em Público ou Criativo, a tela voltaria a dizer que "as N campanhas do Google aparecem só em Por Campanha", quando o usuário escolheu esconder o Google. Q9 (`:502`): tirar a nota do rodapé do filtro Google. As colunas Vendas e Receita ficariam "—" sem explicação, ou com o texto da Meta, que fala de "Sem linha nesta tabela", uma linha que o filtro esconde. Q10 (`lyrio-bloco-do-canal.tsx:123`): o esqueleto dos cards de venda nunca aparece. Enquanto a venda carrega, os cards mostrariam "—" sem memorial, como se a venda fosse desconhecida. Q12 (`lyrio-detail-table.tsx:169`): tirar o `googleNoFiltro` do `loadingGoogle`. Com o filtro Meta, a tabela esperaria o `/daily` do Google para aparecer. Hoje o código está certo nos quatro.'
+    recommendation: 'Acrescentar ao `fio-da-tela-lyrio-42-16.test.ts`, por regex, as quatro condições: `temGoogle && plataforma === "todas" && dimensao !== "campaign"`, o ramo `plataforma === "google"` da nota, `{cards.carregandoVendas` e `const loadingGoogle = googleNoFiltro && googleTrafego.tipo === "carregando";`.'
+    owner: '@dev'
+    status: open
+
+  - id: TEST-003
+    severity: low
+    category: tests
+    description: 'Q13: em `packages/web/lib/utils/janela-dos-cards-lyrio.ts:165`, `inicioDaJanela(...) < desde` → `<=` SOBREVIVE. No dia em que a janela começa EXATAMENTE em `atributosDesde`, os cards de venda da Meta diriam "desde 06/10" em vez de "06/10 a 16/10", e o memorial diria que a cobertura começa depois da janela. A data é a mesma, então o número não engana; o que muda é a frase. É a mesma lacuna de borda da 42.13 (TEST-002 de lá, a borda `>=`). A M1 do @dev (`>`) cai porque troca o lado, não a igualdade.'
+    recommendation: 'Um caso com `atributosDesde` = o início da janela (ex.: days = 11 com hoje 16/10 → início 06/10), esperando o intervalo.'
+    owner: '@dev'
+    status: open
+
+  - id: DOC-001
+    severity: low
+    category: documentation
+    description: 'O memorial do Google em erro (`memorialDoGoogleSemNumero`, `packages/web/lib/utils/lyrio-google-ads.ts:135`) cita como fonte `GET /api/google-ads/analytics/:accountId/campaigns`. No bloco Google e no aviso do Detalhamento, o erro agora vem do `/daily` por campanha (`trafegoDoGoogleNaRegua`). O Resumo já tinha esse descompasso desde a 42.14, e a 42.16 o leva para mais 9 cards. A causa e a mensagem estão certas; só a rota citada está errada.'
+    recommendation: 'Trocar a fonte do ramo de erro para `GET /api/google-ads/analytics/:accountId/daily (por campanha vinculada)`, ou receber a fonte por parâmetro.'
+    owner: '@dev'
+    status: open
+
+  - id: MNT-001
+    severity: low
+    category: maintainability
+    description: '`googleTrafegoFiltro` (`lyrio-stage-view.tsx:225`) é recalculado a cada render, sem `useMemo`, e devolve um objeto e um `Map` novos. Ele é dependência do `useMemo` das linhas em `lyrio-detail-table.tsx`, então as linhas e a ordenação se refazem a cada render do pai, e o memo não serve para nada. O custo é desprezível com 1 a 3 campanhas. Não há efeito que dependa dele, então não existe risco de laço.'
+    recommendation: 'Opcional: memorizar `googleConsultas`/`googleTrafegoFiltro` sobre `googleDaily`, `contaGoogle`, `days` e `hoje`.'
+    owner: '@dev'
+    status: open
+
+auto_decisions_reviewed:
+  - '"—" em Vendas e Receita com o filtro Google: ACEITA. É o mesmo "—" que a linha do Google já tinha em "Todas". O AC4d pede o Total "só das linhas exibidas", e nenhuma linha do Google tem venda por campanha. Mostrar `canais.google.vendas` no Total seria um número sem linha que o explique. A nota do rodapé explica por que fica "—" (mas não tem teste: TEST-002/Q9).'
+  - 'Campanha do Google sem entrega não vira linha: ACEITA. O `/campaigns` de antes filtrava `segments.date` no WHERE, e a API do Google não devolve linha com todas as métricas zeradas, então a lista de antes também não tinha essas campanhas. A regra nova entra com gasto OU impressão OU clique, e a M26 do dev (só clique) cai. Efeito colateral, a favor: uma campanha REMOVED com gasto na janela agora aparece (o `/campaigns` a excluía), sem status.'
+  - 'Falha do status sem aviso: ACEITA (PO-03). O status só vira o `title` da linha (`lyrio-detail-table.tsx:401`). Nenhuma métrica depende dele, e o erro que importa (`/daily`) tem aviso.'
+  - 'Testes de fio da 42.13 reescritos: as invariantes CONTINUAM provadas. Conferi item a item: (a) a venda "oculta" sem RevenueCat agora é decidida no pai, e as duas entradas usam `vendasDosBlocos`; (b) a conta decide antes da consulta (`trafegoDoGoogleNaRegua(contaGoogle, …)` no fio, e "sem_conta antes" no teste unitário); (c) o alerta desenha título, detalhe e orientação; (d) o aviso do Detalhamento vem do mesmo estado; (e) REL-001: o erro da Meta decide antes do dado (unitário de `trafegoDoBlocoDaMeta`, e a M18 cai); (f) o `days` da consulta da Meta segue amarrado em `fio-da-tela-lyrio-42-14.test.ts:21`, e a minha Q16, que troca o erro do filtro pelo dos 28 dias, cai; (g) a cobertura na nota do funil. Nenhuma asserção antiga foi só apagada: as que liam o `LyrioMetaKpis` e o `GoogleAdsKpis` foram religadas ao pai, ao `cards-do-bloco-lyrio.ts` ou ao `lyrio-bloco-do-canal.tsx`.'
+  - 'A etapa "Vendas" do funil também leva "desde": ACEITA. É o mesmo número do card Vendas, e o teste cobre `funil-vendas-meta`.'
+
+pendente_do_dono:
+  - 'Validação visual do Danilo (DoD): os dois blocos lado a lado, com o filtro em 1, 7 e 90 dias, e o filtro Plataforma nas três posições. Ninguém abriu o app.'
+  - 'Conferência em produção (DoD, somente leitura): investimento, impressões e cliques do Google na régua de SP em 7 e 28 dias; o Total do Detalhamento por filtro. Não bloqueia: a soma é a mesma função do Investimento (Google) do Resumo, que a 42.14 conferiu (R$ 2.269,03 em 28 dias).'
+  - 'Fuso da conta do Google Ads: `[FALTA]` da 42.14, declarado no memorial (R3).'
+  - 'CodeRabbit não rodou (CLI ausente nesta máquina, nem pelo @dev nem por mim).'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Li o diff inteiro. RÉGUA DO GOOGLE (`google-ads-na-regua.ts`): `trafegoNaRegua` soma gasto (em centavos), impressões e cliques só nas linhas com `inicio <= date <= hoje`. `trafegoDoGoogleNaRegua` decide nesta ordem: a conta, depois QUALQUER erro (nunca soma parcial), depois o carregando. Devolve o total e `porCampanha`. O `investimentoDoGoogleNaRegua` do Resumo virou uma derivação dela, com o mesmo arredondamento; o atalho `consultas.length === 0` saiu, e o caminho geral dá o mesmo `{pronto, 0}`. A consulta `/daily` pede `max(N, 28)` dias a partir de hoje em UTC. Hoje em UTC é sempre maior ou igual a hoje em SP, então a régua de SP fica sempre coberta. O `campaignId` vem do índice de `useQueries`, que preserva a ordem de `googleIdsVinculados`. BLOCO: `blocoDoCanalDoLyrio` é o `blocoMetaDoLyrio` com o canal na entrada, e o resto do corpo é idêntico. CTR e CPM do bloco saem dos totais. `trafegoDoBlocoDaMeta` testa o erro antes do dado. O bloco Meta lê a consulta do filtro do pai, a mesma chave que o `LyrioMetaKpis` repetia. "desde" só na Meta, e `atributosDesde` já é dia de SP na API (`routes/revenuecat.ts:539`), então a comparação fica numa régua só. DETALHAMENTO: `googleRow` recalcula CTR, CPC e CPM das somas da campanha, com `null` em divisão por zero. `cpm` virou `number | null`, e `sortRows` já põe `null` no fim. O tipo `GoogleCampaignInput` não tem mais taxa. `consultasDoDetalhamento` usa a dimensão EFETIVA. `linhasDoFiltro` vale nas três dimensões. O Total é `totalSpend(rows)` das linhas filtradas. `rodapeDoFiltro` esconde as linhas de venda da Meta com Google. Os itens desabilitados têm `title` e uma dica visível, porque item desabilitado do Radix não recebe hover. O estado é local.'
+  regression_todas: 'Com o filtro "Todas", comparei com a main ramo a ramo. Meta: as linhas, o bloco (a mesma consulta `useCampaignDailyInsightsBulk(..., days)`, o mesmo `sumMetaInsights` e o mesmo corpo de função) e o Resumo (o `investimentoDoGoogleNaRegua` dá o mesmo valor, e a minha leitura do arredondamento confere) não mudam. Mudanças intencionais (D16/D2): as linhas do Google no Detalhamento e o Total da tabela (N + 1 em UTC pelo `/campaigns` → régua de SP pelo `/daily`; CTR/CPC/CPM recalculados e "—" sem impressão, onde a API dava 0); o nome da linha do Google (o nome do vínculo, PO-03); e o bloco Google (Conversões e CPA saem, D17; os cards novos batem com o Resumo). `SalesMetaKpis`, `services/google-ads.ts` e a API não foram tocados.'
+  unit_tests: 'Rodados por mim na worktree. web `vitest run --testTimeout=60000`: 2.287/2.287 em 162 arquivos (o mesmo número do Dev Record). MUTAÇÕES PRÓPRIAS (aplicar uma por vez → as 7 suítes da etapa → restaurar; `git status` limpo depois; harness em `scratchpad/qa4216/mut.mjs`): Q1 CPM do Google por clique cai · Q2 cliques sem o 1º dia da régua cai (9) · Q3 impressões fora da soma cai (9) · Q4 `porCampanha` com o acumulado cai (3) · Q5 memorial da Meta no Google em erro SOBREVIVE (TEST-001) · Q6 aviso da Meta no Google em erro cai · Q7 rodapé escondido também com Meta cai · Q8 aviso âmbar com o filtro Meta SOBREVIVE (TEST-002) · Q9 nota do filtro Google removida SOBREVIVE (TEST-002) · Q10 esqueleto de vendas nunca SOBREVIVE (TEST-002) · Q11 linhas da campanha sem `linhasDoFiltro` cai · Q12 `loadingGoogle` sem o filtro SOBREVIVE (TEST-002) · Q13 `<` → `<=` no "desde" SOBREVIVE (TEST-003) · Q14 nota da cobertura do Google removida cai (3) · Q15 `sem_campanha` → `sem_conta` no bloco SOBREVIVE, equivalente (o pai não renderiza o bloco sem campanha) · Q16 bloco Meta com o erro dos 28 dias cai · Q17 dimensão efetiva sem o filtro cai · Q18 CPC por impressão cai · Q19 carregando antes do erro (soma parcial) cai (4) · Q20 bloco Meta com 28 dias no contexto cai. Total: 20; 13 caem, 1 é equivalente, 6 sobrevivem.'
+  lint_typecheck: 'Rodados por mim. `pnpm --filter @loyola-x/shared build` OK. tsc do web EXIT 0, sem saída. tsc da API EXIT 0, sem saída. eslint nos 13 arquivos do diff (web) EXIT 0. Não refiz o `next build`, nem o vitest e o eslint da API: a API não está no diff (`git diff --stat` só tem `packages/web` e a story), e o @dev registra o `next build` verde e a API em 5.350/5.360 (só as 10 falhas da baseline).'
+  scope: 'Fora de `components/funnels/**` estão só `lib/utils/**` e `lib/utils/__tests__/**`, dentro da autorização da D20, e o commit leva `[scope-override]`.'
+  api_contract: 'Sem mudança: `packages/shared` e `packages/api` fora do diff, então o `API_CONTRACT_VERSION` continua 59 (AC6a).'
+  security: 'Nada novo. O filtro é estado local, sem leitura de URL nem de storage (o fio afirma isso). Nenhum dado novo vai para a tela.'
+  acceptance_criteria: 'AC1 ✓ (a: período nos 5 cards, nas 3 etapas, no CTR e no CPM pelo `CardComJanela` → `SuperficieDoCard`; b: "desde" nos 4 cards de venda da Meta e na etapa Vendas, com a data da API; c: "segue o filtro de N dias" no memorial de todo card com número) · AC2 ✓ (a: os mesmos cards e o mesmo funil, com "(Google)"; b: régua de SP sem chamada nova, uma `useGoogleAdsDailyPorCampanha` na etapa; c: o mesmo `vendasPorCanal`; d: sem "desde", registrado; e: Conversões e CPA saíram; f: estados e "—" com causa; g: `NOTA_DO_FUSO_DO_GOOGLE`) · AC3 ✓ (um componente, `GoogleAdsKpis` e `LyrioMetaKpis` saíram, subtítulo com as datas) · AC4 ✓ (a–g) · AC5 ✓ (a–f; com as lacunas low acima) · AC6 ✓ (contrato 59; gates verdes). DoD: visual e produção pendentes do dono.'
+  clickup: 'Não registrado: o pedido do lead limitou a saída à worktree. A task da story é `17tqamf06y2`, para o lead mover para ready to ship.'
