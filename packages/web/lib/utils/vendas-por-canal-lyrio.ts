@@ -278,20 +278,25 @@ export function rotuloDoNaoIdentificado(dimensao: DimensaoDoDetalhamento): { rot
   };
 }
 
-// ─────────────────────────── Bloco "Meta Ads" (Story 42.13, AC2) ───────────────────────────
+// ──────────────── Blocos "Meta Ads" e "Google Ads" (Story 42.13 AC2 → 42.16 AC3) ────────────────
 
-export interface EntradaDoBlocoMeta {
+/** Story 42.16 (AC3a) — o canal do bloco: o mesmo componente desenha os dois. */
+export type CanalDoBloco = Extract<CanalDaVenda, "meta" | "google">;
+
+export interface EntradaDoBlocoDoCanal {
+  canal: CanalDoBloco;
   /**
-   * O tráfego da Meta no período; `null` = desconhecido (a consulta falhou —
-   * QA REL-001: antes virava R$ 0 de investimento e de custo por venda).
-   * `investimentoBrl` já tem o imposto (`sumMetaInsights`).
+   * O tráfego do canal no período; `null` = desconhecido (a consulta falhou,
+   * sem conta — QA REL-001: antes virava R$ 0 de investimento e de custo por
+   * venda). Meta: `investimentoBrl` já tem o imposto (`sumMetaInsights`).
+   * Google: sem imposto (o imposto é da Meta).
    */
   trafego: { investimentoBrl: number; impressoes: number; cliques: number } | null;
   estado: EstadoDasVendas;
   brlRate: number | null;
 }
 
-export interface BlocoMetaDoLyrio {
+export interface BlocoDoCanalDoLyrio {
   investimentoBrl: number | null;
   impressoes: number | null;
   cliques: number | null;
@@ -307,15 +312,16 @@ export interface BlocoMetaDoLyrio {
 }
 
 /**
- * Story 42.13 (AC2) — os números do bloco "Meta Ads" do Lyrio. A venda é a do
- * canal Meta da rota `vendas-por-canal` (a mesma do bloco RevenueCat e do
- * Detalhamento); o resto é o tráfego da Meta. Nenhuma divisão por zero vira
- * número, e sem câmbio a receita (e o ROAS) ficam "—" em vez de virar US$.
+ * Story 42.13 (AC2), generalizada na 42.16 (AC3a) — os números do bloco de UM
+ * canal da etapa Lyrio. A venda é a linha DESTE canal da rota `vendas-por-canal`
+ * (a mesma consulta do bloco RevenueCat e do Detalhamento); o resto é o tráfego
+ * do canal. As regras valem para os dois: nenhuma divisão por zero vira número,
+ * e sem câmbio a receita (e o ROAS) ficam "—" em vez de virar US$.
  */
-export function blocoMetaDoLyrio(e: EntradaDoBlocoMeta): BlocoMetaDoLyrio {
-  const meta = e.estado.tipo === "pronto" ? e.estado.dados.canais.find((c) => c.canal === "meta") ?? null : null;
-  const vendas = meta ? meta.vendas : null;
-  const receitaBrl = meta && e.brlRate != null ? meta.receitaUsd * e.brlRate : null;
+export function blocoDoCanalDoLyrio(e: EntradaDoBlocoDoCanal): BlocoDoCanalDoLyrio {
+  const linha = e.estado.tipo === "pronto" ? e.estado.dados.canais.find((c) => c.canal === e.canal) ?? null : null;
+  const vendas = linha ? linha.vendas : null;
+  const receitaBrl = linha && e.brlRate != null ? linha.receitaUsd * e.brlRate : null;
   const div = (a: number | null, b: number | null) => (a != null && b != null && b > 0 ? a / b : null);
   const t = e.trafego;
   const investimentoBrl = t ? t.investimentoBrl : null;

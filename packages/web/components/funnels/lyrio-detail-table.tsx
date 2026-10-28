@@ -28,9 +28,15 @@
 //     fallback para cliques totais desde a Story 29.77: linha da Meta sem
 //     `link_click` mostra "—" nas três. O rótulo diz "(link)" para não mandar
 //     ninguém procurar uma coluna que já está na tela. Ressalva que o
-//     Perpétuo não tem: as linhas do Google trazem CTR/CPC prontos da API do
-//     Google, que não são cliques em link — daí o tooltip separar as duas
-//     origens em vez de prometer "link" para a tabela inteira.
+//     Perpétuo não tem: as linhas do Google são cliques da campanha, que não
+//     são cliques em link — daí o tooltip separar as duas origens em vez de
+//     prometer "link" para a tabela inteira.
+//
+//   • Story 42.16 — as linhas do Google somam o `/daily` por campanha na
+//     régua de SP (a MESMA consulta do Resumo e do bloco Google, que o pai
+//     repassa), com CTR/CPC/CPM recalculados da soma (D16). E o filtro
+//     "Plataforma: Todas · Meta · Google" (AC4): a plataforma fora do filtro
+//     não consulta, e com Google só "Por Campanha" fica habilitada.
 //
 //   • Google Ads só no nível de CAMPANHA. Os hooks de público e criativo do
 //     Google aceitam um pai por chamada — cobrir os 3 níveis seria N+1 sem
@@ -46,7 +52,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   useTrafficCampaigns, useAllAdSets, useAllAds, useAdCreatives,
 } from "@/lib/hooks/use-traffic-analytics";
-import { useGoogleAdsCampaigns, type GoogleAdsCampaign } from "@/lib/hooks/use-google-ads-analytics";
+import { useGoogleAdsCampaigns } from "@/lib/hooks/use-google-ads-analytics";
 import { CreativeThumb } from "@/components/traffic/creative-thumb";
 import { useRevenuecatVendasPorCanal } from "@/lib/hooks/use-revenuecat";
 import {
@@ -56,11 +62,14 @@ import {
   vendasDoDetalhamento,
   type ContagemDeVendas,
 } from "@/lib/utils/vendas-por-canal-lyrio";
-import { avisoDoGoogleEmLinha, estadoDoGoogleNaJanela, type ContaDoGoogle } from "@/lib/utils/lyrio-google-ads";
+import { avisoDoGoogleEmLinha } from "@/lib/utils/lyrio-google-ads";
+import { comoEstadoDoGoogle, type TrafegoDoGoogleNaRegua } from "@/lib/utils/google-ads-na-regua";
 import {
-  buildCampaignRows, metaRow, sortRows, totalSpend,
-  type LyrioDetailRow, type LyrioSortKey, type MetaEntityInput,
+  buildCampaignRows, campanhasDoGoogleNaRegua, consultasDoDetalhamento, dimensaoDoFiltro, dimensoesHabilitadas,
+  linhasDoFiltro, metaRow, mostraAvisoDoGoogle, rodapeDoFiltro, sortRows, totalSpend, DICA_DO_GOOGLE_SO_CAMPANHA,
+  type LyrioDetailRow, type LyrioSortKey, type MetaEntityInput, type PlataformaDoDetalhamento,
 } from "@/lib/utils/lyrio-detail-rows";
+import type { FunnelCampaign } from "@loyola-x/shared";
 
 type Dimensao = "campaign" | "adset" | "ad";
 
@@ -79,8 +88,14 @@ interface LyrioDetailTableProps {
   googleAccountId: string | null;
   /** Ids das campanhas Google vinculadas à etapa. */
   googleCampaignIds: Set<string>;
-  /** Story 42.13 (QA loop): o estado da conta Google, decidido no pai — sem conta é aviso, não linha a menos calada. */
-  contaGoogle: ContaDoGoogle;
+  /** Story 42.16 (PO-03): as campanhas Google da etapa — o NOME da linha (`stage.googleAdsCampaigns`). */
+  googleCampanhas: FunnelCampaign[];
+  /**
+   * Story 42.16 (AC4f): o tráfego do Google na régua de SP, por campanha — a
+   * MESMA consulta do Resumo e do bloco Google. Já traz a decisão da conta
+   * (42.13, QA loop): sem conta é aviso, não linha a menos calada.
+   */
+  googleTrafego: TrafegoDoGoogleNaRegua;
   /** Janela do DayRangePicker do cabeçalho da etapa. */
   days: number;
 }
@@ -106,10 +121,14 @@ export function LyrioDetailTable({
   campaignIds,
   googleAccountId,
   googleCampaignIds,
-  contaGoogle,
+  googleCampanhas,
+  googleTrafego,
   days,
 }: LyrioDetailTableProps) {
-  const [dimensao, setDimensao] = useState<Dimensao>("campaign");
+  // AC4g: nem a plataforma nem a dimensão persistem entre visitas.
+  const [plataforma, setPlataforma] = useState<PlataformaDoDetalhamento>("todas");
+  const [dimensaoEscolhida, setDimensao] = useState<Dimensao>("campaign");
+  const dimensao = dimensaoDoFiltro(plataforma, dimensaoEscolhida);
   const [sortKey, setSortKey] = useState<LyrioSortKey>("spend");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
@@ -117,29 +136,37 @@ export function LyrioDetailTable({
   const temGoogle = googleCampaignIds.size > 0 && !!googleAccountId;
   const campaignIdSet = useMemo(() => new Set(campaignIds), [campaignIds]);
 
-  // Só a dimensão ativa consulta — trocar de aba troca o hook habilitado.
+  // Só a dimensão ativa consulta — trocar de aba troca o hook habilitado. E
+  // só a plataforma do filtro consulta (Story 42.16, AC4b/AC4c).
+  const liga = consultasDoDetalhamento(plataforma, dimensao, { meta: temMeta, google: temGoogle });
   //
   // Assimetria herdada dos hooks, e é fácil errar: `useTrafficCampaigns` NÃO
   // aceita `campaignIds` (traz todas as campanhas do projeto, filtro é aqui);
   // `useAllAdSets` e `useAllAds` filtram no servidor.
   const { data: campanhas, isLoading: loadingCampanhas } = useTrafficCampaigns(
-    temMeta && dimensao === "campaign" ? projectId : null,
+    liga.metaCampanhas ? projectId : null,
     days,
   );
   const { data: publicos, isLoading: loadingPublicos } = useAllAdSets(
-    temMeta && dimensao === "adset" ? projectId : null,
+    liga.metaPublicos ? projectId : null,
     days,
     campaignIds,
   );
   const { data: criativos, isLoading: loadingCriativos } = useAllAds(
-    temMeta && dimensao === "ad" ? projectId : null,
+    liga.metaCriativos ? projectId : null,
     days,
     campaignIds,
   );
-  const { data: googleData, isLoading: loadingGoogle, error: erroGoogle } = useGoogleAdsCampaigns(
-    temGoogle && dimensao === "campaign" ? googleAccountId : null,
-    days,
+  // PO-03: esta consulta fica SÓ pelo status da campanha (não é métrica de
+  // janela); nenhuma métrica dela entra na tabela. As métricas do Google são
+  // as de `googleTrafego` (a régua de SP). Em erro, a linha só perde o status.
+  const { data: googleStatusData } = useGoogleAdsCampaigns(liga.googleStatus ? googleAccountId : null, days);
+  const statusPorId = useMemo(
+    () => new Map((googleStatusData?.campaigns ?? []).map((c) => [c.id, c.status] as [string, string])),
+    [googleStatusData],
   );
+  const googleNoFiltro = temGoogle && plataforma !== "meta";
+  const loadingGoogle = googleNoFiltro && googleTrafego.tipo === "carregando";
 
   const loading =
     (dimensao === "campaign" && (loadingCampanhas || loadingGoogle)) ||
@@ -151,16 +178,17 @@ export function LyrioDetailTable({
       const metaEntities: MetaEntityInput[] = (campanhas?.campaigns ?? []).filter((c) =>
         campaignIdSet.has(c.campaignId),
       );
-      const googleCampanhas: GoogleAdsCampaign[] = (googleData?.campaigns ?? []).filter((c) =>
-        googleCampaignIds.has(c.id),
-      );
-      return buildCampaignRows(metaEntities, googleCampanhas);
+      const google =
+        googleNoFiltro && googleTrafego.tipo === "pronto"
+          ? campanhasDoGoogleNaRegua(googleCampanhas.filter((c) => googleCampaignIds.has(c.id)), googleTrafego.porCampanha, statusPorId)
+          : [];
+      return linhasDoFiltro(buildCampaignRows(metaEntities, google), plataforma);
     }
     // Público e criativo já vêm filtrados pelo servidor. `/all-ads` agrega por
     // Ad Name no backend — não reagrupar aqui.
     const fonte = dimensao === "adset" ? (publicos?.adsets ?? []) : (criativos?.ads ?? []);
-    return fonte.map(metaRow);
-  }, [dimensao, campanhas, googleData, publicos, criativos, campaignIdSet, googleCampaignIds]);
+    return linhasDoFiltro(fonte.map(metaRow), plataforma);
+  }, [dimensao, plataforma, campanhas, publicos, criativos, campaignIdSet, googleCampaignIds, googleCampanhas, googleTrafego, googleNoFiltro, statusPorId]);
 
   const sorted = useMemo(() => sortRows(rows, sortKey, sortDir), [rows, sortKey, sortDir]);
   const total = useMemo(() => totalSpend(rows), [rows]);
@@ -178,12 +206,12 @@ export function LyrioDetailTable({
   const vendasDaLinha = (r: LyrioDetailRow): ContagemDeVendas | null =>
     r.platform === "meta" && vendas ? (vendas.porLinha.get(`${r.platform}-${r.id}`) ?? null) : null;
   const naoIdentificado = rotuloDoNaoIdentificado(dimensao);
+  // AC4d — o rodapé segue o filtro: com Google, as linhas de venda da Meta somem.
+  const rodape = rodapeDoFiltro(plataforma, vendas);
+  // Story 42.13 (QA loop) + 42.16 (AC4e): a conta decide primeiro, depois a
+  // consulta do `/daily`; o aviso só aparece com o Google no filtro.
   const avisoGoogle =
-    dimensao === "campaign"
-      ? avisoDoGoogleEmLinha(
-          estadoDoGoogleNaJanela(contaGoogle, { isLoading: loadingGoogle, error: erroGoogle, data: googleData }, googleCampaignIds),
-        )
-      : null;
+    dimensao === "campaign" && mostraAvisoDoGoogle(plataforma) ? avisoDoGoogleEmLinha(comoEstadoDoGoogle(googleTrafego)) : null;
   const receitaBrl = (c: ContagemDeVendas | null) =>
     c == null || brlRate == null ? null : c.receitaUsd * brlRate;
 
@@ -238,21 +266,54 @@ export function LyrioDetailTable({
           Detalhamento
           <span className="font-normal text-muted-foreground">· últimos {days} dias</span>
         </h3>
-        <Select value={dimensao} onValueChange={(v) => setDimensao(v as Dimensao)}>
-          <SelectTrigger className="w-[160px] h-8 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="campaign">Por Campanha</SelectItem>
-            <SelectItem value="adset">Por Público</SelectItem>
-            <SelectItem value="ad">Por Criativo</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Story 42.16 (AC4a) — o filtro de plataforma, ao lado das abas de dimensão. */}
+          <Select
+            value={plataforma}
+            onValueChange={(v) => {
+              const p = v as PlataformaDoDetalhamento;
+              setPlataforma(p);
+              // AC4c: quem estava em Público ou Criativo volta para Campanha.
+              setDimensao((d) => dimensaoDoFiltro(p, d));
+            }}
+          >
+            <SelectTrigger className="w-[170px] h-8 text-xs" aria-label="Plataforma">
+              <span className="text-muted-foreground">Plataforma:</span>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todas">Todas</SelectItem>
+              <SelectItem value="meta">Meta</SelectItem>
+              <SelectItem value="google">Google</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={dimensao} onValueChange={(v) => setDimensao(v as Dimensao)}>
+            <SelectTrigger className="w-[160px] h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="campaign">Por Campanha</SelectItem>
+              {(["adset", "ad"] as const).map((d) => {
+                const habilitada = dimensoesHabilitadas(plataforma).includes(d);
+                return (
+                  <SelectItem key={d} value={d} disabled={!habilitada} title={habilitada ? undefined : DICA_DO_GOOGLE_SO_CAMPANHA}>
+                    {d === "adset" ? "Por Público" : "Por Criativo"}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
+
+      {/* AC4c — a dica das abas desabilitadas, visível (item desabilitado não recebe hover). */}
+      {plataforma === "google" && (
+        <p className="text-[11px] text-muted-foreground">{DICA_DO_GOOGLE_SO_CAMPANHA}: Por Público e Por Criativo ficam desabilitadas.</p>
+      )}
 
       {/* Sem este aviso o total encolhe ao trocar de aba, e isso se lê como
           queda de investimento em vez de recorte da tela. */}
-      {temGoogle && dimensao !== "campaign" && (
+      {temGoogle && plataforma === "todas" && dimensao !== "campaign" && (
         <p className="text-[11px] text-amber-600 dark:text-amber-400">
           Público e criativo cobrem apenas o Meta. As {googleCampaignIds.size}{" "}
           {googleCampaignIds.size === 1 ? "campanha do Google aparece" : "campanhas do Google aparecem"}{" "}
@@ -279,22 +340,22 @@ export function LyrioDetailTable({
                 >
                   Dimensão{seta("name")}
                 </th>
-                <th className={th} onClick={() => toggleSort("spend")} title="Meta já com o imposto de 12,15%; Google sem imposto (o imposto é da Meta)">
+                <th className={th} onClick={() => toggleSort("spend")} title="Meta já com o imposto de 12,15%; Google sem imposto (o imposto é da Meta), somado do gasto diário na régua de SP">
                   Investimento{seta("spend")}
                 </th>
-                <th className={th} onClick={() => toggleSort("impressions")}>
+                <th className={th} onClick={() => toggleSort("impressions")} title="Google: somadas do diário na régua de SP">
                   Impressões{seta("impressions")}
                 </th>
-                <th className={th} onClick={() => toggleSort("clicks")} title="Meta: cliques no link — “—” quando a Meta não devolveu link_click. Google: cliques da campanha">
+                <th className={th} onClick={() => toggleSort("clicks")} title="Meta: cliques no link — “—” quando a Meta não devolveu link_click. Google: cliques da campanha, somados do diário na régua de SP">
                   Cliques{seta("clicks")}
                 </th>
-                <th className={th} onClick={() => toggleSort("ctr")} title="Meta: cliques no link ÷ impressões × 100 — “—” sem link_click. Google: CTR como a API do Google entrega">
+                <th className={th} onClick={() => toggleSort("ctr")} title="Meta: cliques no link ÷ impressões × 100 — “—” sem link_click. Google: cliques ÷ impressões × 100, recalculado da soma diária na régua de SP (pode não bater ao centavo com o painel do Google)">
                   CTR (link){seta("ctr")}
                 </th>
-                <th className={th} onClick={() => toggleSort("cpc")} title="Meta: investimento ÷ cliques no link — “—” sem link_click. Google: CPC como a API do Google entrega">
+                <th className={th} onClick={() => toggleSort("cpc")} title="Meta: investimento ÷ cliques no link — “—” sem link_click. Google: investimento ÷ cliques, recalculado da soma diária na régua de SP (pode não bater ao centavo com o painel do Google)">
                   CPC (link){seta("cpc")}
                 </th>
-                <th className={th} onClick={() => toggleSort("cpm")} title="Investimento ÷ Impressões × 1000">
+                <th className={th} onClick={() => toggleSort("cpm")} title="Investimento ÷ Impressões × 1000. Google: recalculado da soma diária na régua de SP (pode não bater ao centavo com o painel do Google)">
                   CPM{seta("cpm")}
                 </th>
                 {mostraVendas && (
@@ -386,8 +447,8 @@ export function LyrioDetailTable({
                 {/* Story 42.12 (AC5): o que não cabe numa linha aparece, para o total da Meta fechar. */}
                 {/* Story 42.13 (AC3): o rótulo acompanha a dimensão. */}
                 {mostraVendas && vendas && ([
-                  [naoIdentificado.rotulo, vendas.naoIdentificado, naoIdentificado.dica],
-                  ["Sem linha nesta tabela", vendas.semLinha, "Vendas da Meta de campanha/conjunto/anúncio que não está nesta tabela (sem campanha vinculada, sem investimento no período ou nome trocado)"],
+                  [naoIdentificado.rotulo, rodape.naoIdentificado, naoIdentificado.dica],
+                  ["Sem linha nesta tabela", rodape.semLinha, "Vendas da Meta de campanha/conjunto/anúncio que não está nesta tabela (sem campanha vinculada, sem investimento no período ou nome trocado)"],
                 ] as const).map(([rotulo, c, dica]) =>
                   c ? (
                     <tr key={rotulo} className="border-t border-border/20 text-muted-foreground">
@@ -409,8 +470,8 @@ export function LyrioDetailTable({
                   {mostraVendas ? (
                     <>
                       <td colSpan={colunas - 4 - (mostraVideo ? 2 : 0)} />
-                      <td className="text-right px-2">{fmtNum(vendas ? vendas.totalMeta.vendas : null)}</td>
-                      <td className="text-right px-2">{fmtBRL(vendas ? receitaBrl(vendas.totalMeta) : null)}</td>
+                      <td className="text-right px-2">{fmtNum(rodape.totalDeVendas ? rodape.totalDeVendas.vendas : null)}</td>
+                      <td className="text-right px-2">{fmtBRL(rodape.totalDeVendas ? receitaBrl(rodape.totalDeVendas) : null)}</td>
                       {mostraVideo && <td colSpan={2} />}
                     </>
                   ) : (
@@ -438,7 +499,9 @@ export function LyrioDetailTable({
         </p>
       )}
       <p className="text-[11px] text-muted-foreground">
-        {mostraVendas && estadoVendas.tipo === "pronto"
+        {mostraVendas && estadoVendas.tipo === "pronto" && plataforma === "google"
+          ? "Com o filtro Google, as vendas da Meta não aparecem; o Google não manda campanha, então Vendas e Receita das linhas ficam “—”."
+          : mostraVendas && estadoVendas.tipo === "pronto"
           ? `Vendas e Receita da Meta vêm do RevenueCat, pelo anúncio que o app registra no usuário; o total soma as linhas, “${naoIdentificado.rotulo}” e “Sem linha nesta tabela”. ${declaracaoDeCobertura(estadoVendas.dados)} ROAS e CAC por linha não fazem parte desta tabela.`
           : "Faturamento, ROAS e CAC por linha dependem de atribuir cada venda do RevenueCat a um anúncio — ver Story 42.6."}
       </p>
