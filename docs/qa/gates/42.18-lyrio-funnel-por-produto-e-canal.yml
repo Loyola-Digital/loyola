@@ -1,15 +1,18 @@
 schema: 1
 story: '42.18'
 story_title: 'Lyrio — taxa de conversão Novos → Trial e Novos → Iniciou por produto, dividida por canal'
-gate: CONCERNS
-status_reason: 'AC1–AC6 atendidos no código, e a troca de `array_agg … ORDER BY` por `min` sobre a chave de texto é equivalente nos dados que o app grava: conferi 16 casos TS × SQL no PGlite, e só divergem os dois domínios declarados, que o ingestor não produz. Os números da Jornada não mudam. O veredito é CONCERNS por uma lacuna de teste medium (TEST-001): trocar o produto do Trial pelo do Iniciou na montagem não derruba nenhum teste. Há ainda três achados low e a validação visual do Danilo pendente.'
+gate: PASS
+status_reason: 'Re-review do QA loop, iteração 1, sobre 1b4ca343. Os quatro achados fecham. TEST-001: o usuário com a promoção mensal e o trial anual entrou na montagem e na rota (PGlite), e a Q1 agora cai em 2 testes. TEST-002: os 4 testes novos provam a paridade dos novos e do Total, a renderização do aviso e a guarda de colisão. MNT-001: os parênteses estão no COLLATE. REL-001: o comentário agora traz os limites exatos. Das 18 mutações próprias, 16 caem e as 2 que sobrevivem são equivalentes. API = baseline, web 2.230/2.230, tsc 0. Falta só a validação visual do Danilo, que não bloqueia.'
+status_reason_iteracao_0: 'AC1–AC6 atendidos no código, e a troca de `array_agg … ORDER BY` por `min` sobre a chave de texto é equivalente nos dados que o app grava: conferi 16 casos TS × SQL no PGlite, e só divergem os dois domínios declarados, que o ingestor não produz. Os números da Jornada não mudam. O veredito é CONCERNS por uma lacuna de teste medium (TEST-001): trocar o produto do Trial pelo do Iniciou na montagem não derruba nenhum teste. Há ainda três achados low e a validação visual do Danilo pendente.'
 reviewer: 'Quinn'
-updated: '2026-10-28T01:45:00Z'
+updated: '2026-10-28T02:30:00Z'
 branch: 'feat/42.18-lyrio-funil-por-produto'
-commit_reviewed: 'a6fdfdb9'
+commit_reviewed: '1b4ca343'
+commits_reviewed: 'a6fdfdb9 (iteração 0) + c5be2039..1b4ca343 (iteração 1: 4 arquivos, 83+/13−)'
 base: '1158c44f (origin/main, contrato 59)'
 history:
   - { date: '2026-10-27', gate: CONCERNS, note: 'gate único sobre a6fdfdb9. TEST-001 medium; TEST-002, REL-001 e MNT-001 low. 15 mutações próprias: 7 caem, 3 são equivalentes ou inalcançáveis e 5 sobrevivem (TEST-001/TEST-002).' }
+  - { date: '2026-10-27', gate: PASS, note: 're-review (QA loop, iteração 1) sobre 1b4ca343: TEST-001, TEST-002, MNT-001 e REL-001 resolvidos; 18 mutações próprias, 16 caem e 2 equivalentes (Q6, Q10); API = baseline, web 2.230/2.230.' }
 
 top_issues:
   - id: TEST-001
@@ -18,7 +21,9 @@ top_issues:
     description: 'O fio entre as duas medidas não tem teste na montagem nem na rota. Em `packages/api/src/utils/jornada-por-produto-lyrio.ts:236`, `if (u.iniciouTeste) contar(canal, u.produtoTeste, u.classeTeste, "iniciouTeste")`, a mutação Q1 troca para `u.produtoIniciou, u.classeIniciou` e SOBREVIVE: 117/117 em jornada-por-produto-lyrio, jornada-lyrio e pagantes-lyrio. O motivo é que, nos testes, nenhum usuário tem produtos diferentes no primeiro "iniciou" e no primeiro "iniciou teste". Na montagem, o helper `iniciou(id, teste)` (test.ts:133-138) usa o MESMO id nas duas medidas. Na rota (test.ts:347-366), cada usuário tem um evento de início só. A regra "cada medida tem o seu primeiro evento" só está provada em `produtoDoUsuario` e no SQL (caso 2 do it.each), e não no ponto que monta a resposta. Cenário concreto: um usuário orgânico faz `NON_RENEWING_PURCHASE rc_promo_Lyrio Pro_monthly` em 01/10 e `INITIAL_PURCHASE premium_yearly_100:base TRIAL` em 03/10. Hoje ele conta Mensal em "→ Iniciou" e Anual em "→ Trial", o que está certo. Com a mutação, conta Mensal em "→ Trial", e a linha Anual perde o trial sem nenhum teste avisar.'
     recommendation: 'No teste da montagem, um usuário com `produtoIniciou` ≠ `produtoTeste` (a promoção mensal + o trial anual), conferindo Mensal 1/0 e Anual 0/1 no canal. Na rota sobre o PGlite, o mesmo usuário em dois eventos (NON_RENEWING mensal e, dias depois, INITIAL_PURCHASE TRIAL anual), conferindo as duas células. Depois, reaplicar a Q1 e ver o teste cair.'
     owner: '@dev'
-    status: open
+    status: resolved
+    resolved_in: '1b4ca343'
+    note_iteracao_1: 'Conferido. Montagem: um usuário orgânico com `produtoIniciou` = `rc_promo_Lyrio Pro_monthly` e `produtoTeste` = `premium_yearly_100:base`; o teste confere Mensal {1,0}, Anual {0,1} e os `produtos` de cada linha com a medida certa. Rota sobre o PGlite (`user-o3`): NON_RENEWING mensal em 01/10 e INITIAL_PURCHASE TRIAL anual em 03/10; o Orgânico vai a 3 novos, com Anual {1,2} e Mensal {1,0}, e o laço de paridade sobre a resposta continua. A Q1 cai nos DOIS testes (2 failed). A Q16 (`chave_teste` com a condição do Iniciou) cai em 7.'
 
   - id: TEST-002
     severity: low
@@ -26,7 +31,9 @@ top_issues:
     description: 'Partes da paridade e do aviso âmbar ficam sem teste. (a) Q12: em `packages/web/lib/utils/jornada-lyrio.ts:143`, tirar `&& alvo.novos === novos` sobrevive (24/24): a quebra de paridade nos NOVOS não é testada. (b) Q13: apagar `...confere("total", …)` (linha 147) sobrevive: a coluna Total não é conferida por nenhum teste. (c) Q14: `{false && semParidade.length > 0 && (` em `packages/web/components/funnels/lyrio-jornada-por-canal.tsx:79` sobrevive: o teste de fio só amarra a chamada `colunasSemParidade(jornada)`, e não a renderização do aviso. (d) Q7/Q8: tirar a guarda de colisão de `consultaDaJornada` (`packages/api/src/utils/jornada-lyrio.ts:223`) sobrevive: não há teste com uma coluna extra repetindo um nome da Jornada (conferido à mão: ela lança). O aviso não faz parte do AC, e por construção não dispara, porque as duas tabelas saem das mesmas `linhas`. Por isso o achado é low.'
     recommendation: 'Três asserções curtas no teste web: (1) novos diferentes no porProduto → a coluna aparece; (2) a Total desalinhada → "total"; (3) regex do `{semParidade.length > 0 && (` + `role="alert"` no `.tsx`. Na API, `expect(() => consultaDaJornada(S, D, { iniciou: sql`1` })).toThrow()`.'
     owner: '@dev'
-    status: open
+    status: resolved
+    resolved_in: '1b4ca343'
+    note_iteracao_1: 'Conferido. Web: (a) `novos` + 1 só no porProduto do Orgânico → `["organico"]`, com as contagens intactas, então isola a comparação dos novos (Q12 cai em 2); (b) `total.iniciou` + 1 numa linha → `["total"]`, e `porProduto.total.novos` + 1 → `["total"]` (Q13 cai); (c) o regex do `.tsx` amarra o `{semParidade.length > 0 && (`, o `<p role="alert"` e o texto com `{semParidade.join(", ")}`: a Q14 cai, e a Q18 nova (o aviso com a contagem no lugar das colunas) também. Continua sendo prova pelo fonte, porque o `.tsx` não é coletado, que é o padrão do projeto. API: a colisão com `iniciou` e com `c_gclid` lança, e um nome novo não lança (Q7 e Q8 caem).'
 
   - id: REL-001
     severity: low
@@ -34,7 +41,9 @@ top_issues:
     description: 'O oráculo TS (`produtoDoUsuario`, `jornada-por-produto-lyrio.ts:79-87`) e o SQL da chave (`:122`) divergem em dois domínios, ambos inalcançáveis hoje. Confirmei os dois no PGlite (`scratchpad/qa-42.18/probe-chave.mts`). (1) Dois inícios no mesmo milissegundo, com µs diferentes: `z_cedo` às 10:00:00.000100 e `a_tarde` às 10:00:00.000900. O TS escolhe `a_tarde` (empate em ms, menor id em bytes) e o SQL escolhe `z_cedo`. O ingestor grava `event_at` a partir de `event_timestamp_ms` (`services/revenuecat.ts:431`), e o backfill 0102 também parte de ms, então o µs é sempre 000. (2) Dois instantes ANTES de 1970 com o mesmo número de dígitos, como 23:59:58 e 23:59:59 de 31/12/1969: o SQL escolhe o mais tarde, porque `-1000000` < `-2000000` em texto. Ao contrário do que diz o comentário (`:120`, "instante antes de 1970 não ordenaria"), pré-1970 contra pós-1970 ordena certo, e dois pré-1970 com tamanhos diferentes também. Só erra o par pré-1970 de mesmo comprimento. Instantes de comprimentos diferentes depois de 1970 ordenam certo: 15 × 16 dígitos (2001) e 1 dígito (epoch + 1 µs), ambos IGUAL. O `produtoDoUsuario` não roda em produção: só os testes o chamam.'
     recommendation: 'Nenhuma ação de código. Opcional: corrigir o comentário `:118-120` ("só dois instantes pré-1970 de mesmo comprimento se invertem; pré × pós-1970 ordena certo") e citar que o `event_at` vem em ms.'
     owner: '@dev'
-    status: open
+    status: resolved
+    resolved_in: '1b4ca343'
+    note_iteracao_1: 'Só o comentário (`jornada-por-produto-lyrio.ts:118-127`), agora com os limites exatos, conferidos contra a minha sonda: o mesmo ms com µs diferentes, e dois instantes pré-1970 de mesmo comprimento. Também diz que pré × pós-1970 e dois pré-1970 de tamanhos diferentes ordenam certo, e que o dado é gravado em ms. A sonda, rodada de novo sobre o SQL com os parênteses, dá 14/16 iguais, com os mesmos 2 divergentes. Aceito sem mudança de lógica.'
 
   - id: MNT-001
     severity: low
@@ -42,7 +51,9 @@ top_issues:
     description: 'Em `packages/api/src/utils/jornada-por-produto-lyrio.ts:125`, `min(${chaveDoInicio} COLLATE "C")` interpola a chave SEM parênteses. O `COLLATE` liga-se só ao `CASE … END` final, e não ao `lpad(…) || CASE … END` inteiro. O resultado está correto: pela regra de derivação de collation do Postgres, a collation explícita de um operando sobe para o `||`. Conferi no PGlite com `pg_collation_for(lpad(…) || CASE … END COLLATE "C")` = `"C"`. O PGlite usa C por padrão, então ele não distinguiria uma regressão. Quem ler a linha supõe que o COLLATE cobre a chave toda, e qualquer refatoração que mude a forma (por exemplo, `concat()` no lugar de `||`) continua dependendo dessa regra. O único guarda é o regex do texto do SQL (test.ts:274).'
     recommendation: 'Envolver em parênteses: `min((${chaveDoInicio}) COLLATE "C")`, ajustando o regex do teste. O comportamento não muda, e a intenção fica explícita.'
     owner: '@dev'
-    status: open
+    status: resolved
+    resolved_in: '1b4ca343'
+    note_iteracao_1: 'O SQL agora é `min((lpad(…) || CASE … END) COLLATE "C")`, e o regex do teste exige os parênteses: a Q17, que volta à forma antiga, cai. A sonda confirma `pg_collation_for` = `"C"`, e os 11 casos TS = SQL passam.'
 
 pendente_do_dono:
   - 'Validação visual do Danilo (DoD; R2): a legibilidade das 16+ colunas no desktop, com o cabeçalho em duas linhas, e a rolagem no celular com a coluna Plano fixa. Nem o @dev nem o @qa viram a tela. Não bloqueia o gate.'
@@ -52,6 +63,7 @@ pendente_do_dono:
 waiver: { active: false }
 
 checks:
+  iteracao_1: 'Re-review sobre 1b4ca343 (`git diff c5be2039..1b4ca343`: story, `api/src/utils/jornada-por-produto-lyrio.ts` com o comentário e os parênteses, e os dois arquivos de teste). Nenhuma mudança de lógica de produto além dos parênteses. Escopo: os 4 arquivos estão na lista da D20, e o commit é do Danilo com `[scope-override]`. O @dev não tocou o QA Results. MUTAÇÕES: `scratchpad/qa-42.18/mut.py` rodado de novo, com 3 novas: Q16 (`chave_teste` com a condição do Iniciou), Q17 (o COLLATE sem os parênteses) e Q18 (o aviso sem as colunas). Saída em `it1-mut.out`, `git status` limpo no fim. 16/18 caem; Q6 e Q10 sobrevivem e são equivalentes (as mesmas da iteração 0). SONDA `probe-chave.mts` de novo: 14/16 iguais, collation `"C"`, `extras={}` idêntico, colisão lança. GATES, rodados por mim: shared build ok; API tsc 0, eslint dos 2 arquivos tocados 0, vitest 5.379 passam e 10 falham em 286 arquivos (as 10 de base, nos mesmos 5 arquivos, conferidas por nome); web tsc 0, vitest `--testTimeout=60000` 2.230/2.230 em 161 arquivos. Os números do @dev batem com os meus.'
   code_review: 'Li o diff `1158c44f..a6fdfdb9` inteiro: 10 arquivos, 1.171+/13−. API: `consultaDaJornada` ganha `extras`, com a guarda de nome (lança na colisão, conferido à mão). `consultaDaJornadaPorProduto` embrulha a MESMA redução por usuário em dois SELECTs externos, que extraem o id da chave (`substr(…, 21, 1) = ''0''` → `substr(…, 22)`) e classificam com `classeDoProdutoNoSql` (AC2c, sem segunda regra), com a guarda do nulo antes. `montarPorProduto` repete o recorte e o canal de `montarJornada` (o mesmo `canalDoUsuario`, o conflito fora dos 8 e dentro do Total) e ordena os `produtos` de forma determinística. Na rota, o MESMO array `linhas` alimenta `montarJornada` e `montarPorProduto`, então a paridade das contagens vale por construção. Web: as funções puras ficam em `lib/utils/jornada-lyrio.ts` (colunas, taxas contra os novos DO CANAL, dica, paridade, frase de arredondamento); o `.tsx` só desenha. O header tem duas linhas (`rowSpan`/`colSpan`), a coluna Plano é `sticky left-0 bg-background`, e há `overflow-x-auto`. A frase de arredondamento está correta: cada célula erra no máximo 0,05 p.p. CHAVE (pedido especial): instante em µs, `lpad` 20, sentinela de 20 noves para o nulo, `0`+id ou `1`. Com `COLLATE "C"`, isso equivale a (instante, com produto antes de sem, bytes do id), que é a ordem de `antes()`. O `0`/`1` antes do id impede que um id comece a competir com o marcador, e o id inteiro no fim preserva o prefixo (`premium_yearly_15` < `premium_yearly_150`, IGUAL). O bigint tem no máximo 19 dígitos mais o sinal, então o `lpad` nunca trunca. O `extract(epoch)` devolve numeric (PG ≥ 14; produção 17.11, PGlite 18.3), sem perda de precisão. EMPATE (AUTO-DECISION): implementado igual no TS e no SQL e testado nos dois sentidos da lista e com caixa (`Zeta` < `alpha`).'
   equivalencia_ts_sql: 'Sonda própria em `scratchpad/qa-42.18/probe-chave.mts` (PGlite, código da worktree, saída em `saida-probe-chave.txt`), com 16 casos. IGUAL em 14: pré × pós-1970; dois pré-1970 de tamanhos diferentes; pré-1970 × 1980; 15 × 16 dígitos (2001 × 2026); 1 dígito (epoch + 1 µs) × 2026; `event_at` nulo × com instante; dois nulos de instante; nulo sem produto × nulo com; id vazio × nulo (o vazio vence: tem produto); id prefixo de outro; multibyte (`é`) × ASCII; U+FFFD × emoji (surrogate: UTF-8 do Buffer = bytes do PG); ids `0` × `1`; Trial só com `TRIAL`. DIVERGE em 2, ambos fora do dado real: o mesmo ms com µs diferentes e dois pré-1970 de mesmo comprimento (REL-001).'
   jornada_sem_regressao: '`consultaDaJornada(S, D)` e `consultaDaJornada(S, D, {})` geram SQL e parâmetros idênticos (sonda). Os nomes extras não colidem (`chave_iniciou`, `chave_teste`; os externos são `produto_*` e `classe_*`), e o `SELECT j.*`/`k.*` preserva todas as colunas da Jornada. O GROUP BY, o WHERE e o HAVING não mudam. `lerLinhaDaJornada` lê as mesmas chaves, e o espalhamento extra de `lerProdutoDaJornada` é ignorado por `montarJornada`. O teste antigo de `event_at` foi AJUSTADO sem afrouxar: removidas as 2 ocorrências da chave, continuam 2, e o WHERE continua sem `event_at`. A suíte da Jornada passa inteira. A conferência do @dev em produção, lida em `probe/saida-42.18-conferencia-final.txt`, dá `jornadaIgualAMain: ok` e o mesmo número de linhas por usuário (7.875 = 7.875) em 28 dias, e também em 90.'
