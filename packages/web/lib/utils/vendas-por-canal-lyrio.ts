@@ -152,7 +152,8 @@ export interface EntradaDoResumoPorCanal {
   /** Investimento da Meta (28 dias) decomposto; `conhecido` = há campanha Meta vinculada à etapa. */
   meta: { liquidoBrl: number; impostoBrl: number; conhecido: boolean };
   google: { investimentoBrl: number; conhecido: boolean };
-  percentuais: { platformFeePct: number; taxPct: number; otherCostsPct: number };
+  /** `null` (QA loop 1 da 42.15, REL-001): os percentuais da etapa não carregaram, e a margem do canal fica desconhecida. */
+  percentuais: { platformFeePct: number; taxPct: number; otherCostsPct: number } | null;
 }
 
 /**
@@ -169,7 +170,7 @@ export function linhasDoResumoPorCanal(e: EntradaDoResumoPorCanal): LinhaDoResum
     const investimentoBrl = invest.liquido + invest.imposto + invest.google;
     const roas = receitaBrl != null && investimentoBrl > 0 ? receitaBrl / investimentoBrl : null;
     const margemBrl =
-      receitaBrl == null
+      receitaBrl == null || e.percentuais == null
         ? null
         : calcularMargemContribuicao({
             faturamentoBrutoBrl: receitaBrl,

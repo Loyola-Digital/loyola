@@ -7,13 +7,14 @@
 // (`lyrio-stage-view.tsx`), que envolve a página inteira.
 // ============================================================
 
-import { DollarSign, Package, Repeat, RefreshCcw, ShoppingCart, Target, TrendingUp, UserCheck, Users, Wallet, Zap } from "lucide-react";
+import { DollarSign, Package, Receipt, Repeat, RefreshCcw, Scale, ShoppingCart, Target, TrendingUp, UserCheck, Users, Wallet, Zap } from "lucide-react";
 import type { CardDoResumo, IconeDoCard } from "@/lib/utils/resumo-mobile-lyrio";
 import { CardComJanela } from "./lyrio-card-com-janela";
 
 const ICONES: Record<IconeDoCard, React.ComponentType<{ className?: string }>> = {
   investimento: Zap,
   receita: DollarSign,
+  vendas: Receipt,
   roas: TrendingUp,
   margem: Wallet,
   mrr: Repeat,
@@ -23,6 +24,7 @@ const ICONES: Record<IconeDoCard, React.ComponentType<{ className?: string }>> =
   cac: Target,
   ltv: UserCheck,
   renovacao: RefreshCcw,
+  relacao: Scale,
 };
 
 export function GradeDoResumo({ cards }: { cards: readonly CardDoResumo[] }) {
@@ -37,6 +39,9 @@ export function GradeDoResumo({ cards }: { cards: readonly CardDoResumo[] }) {
           formula={c.formula}
           icone={ICONES[c.icone]}
           realce={c.realce}
+          secundarias={c.secundarias}
+          carregando={c.carregando}
+          alerta={c.alerta}
           // Margem negativa em preto passa despercebida — e esta não pode.
           classeDoValor={c.negativo ? "text-red-600 dark:text-red-400" : undefined}
         />

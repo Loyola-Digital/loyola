@@ -48,21 +48,19 @@ import { CampaignLogButton } from "./campaign-log-link";
 import { LyrioBlocoDoCanal } from "./lyrio-bloco-do-canal";
 import { contaDoGoogle } from "@/lib/utils/lyrio-google-ads";
 import { cardsDoBlocoDoCanal, trafegoDoBlocoDaMeta, trafegoDoBlocoDoGoogle } from "@/lib/utils/cards-do-bloco-lyrio";
-import { RevenuecatOverviewBlock } from "./revenuecat-overview-block";
 import { GradeDoResumo } from "./lyrio-resumo-cards";
-import { cardsDoResumo } from "@/lib/utils/resumo-mobile-lyrio";
+import { cardsDoResumo, percentuaisDaConfig } from "@/lib/utils/resumo-mobile-lyrio";
 import { avisoDeNaoClassificado, cardsDeAquisicao } from "@/lib/utils/aquisicao-lyrio";
+import { arpuDoOverview, cardsDoLtvPorChurn, churnDasConsultas, DIAS_DO_CHURN, margemDosPercentuais } from "@/lib/utils/ltv-por-churn-lyrio";
 import { hojeNoNegocio, tituloDoResumo } from "@/lib/utils/janela-dos-cards-lyrio";
 import { avisoDoErroDaFonte, estadoDaFonte } from "@/lib/utils/estado-da-fonte-revenuecat";
 import {
   diasDaConsultaDoGoogle,
   investimentoDoGoogleNaRegua,
   trafegoDoGoogleNaRegua,
-  valorDoGoogleNaRegua,
 } from "@/lib/utils/google-ads-na-regua";
 import { LyrioDetailTable } from "./lyrio-detail-table";
 import { LyrioJornadaPorCanal } from "./lyrio-jornada-por-canal";
-import { LyrioResumoPorCanal } from "./lyrio-resumo-por-canal";
 import {
   avisoDeConflito,
   declaracaoDeCobertura,
@@ -85,9 +83,10 @@ import {
   useRevenuecatBackfillStatus,
   useRunRevenuecatBackfill,
   useRevenuecatVendasPorCanal,
-  useRevenuecatReceita,
   useRevenuecatPagantesPorCanal,
   useRevenuecatNovosClientes,
+  useRevenuecatMetricasDerivadas,
+  useRevenuecatAtivasNoInicio,
 } from "@/lib/hooks/use-revenuecat";
 import type { FunnelCampaign, FunnelStage } from "@loyola-x/shared";
 
@@ -219,22 +218,22 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   const googleConsultas = googleDaily.map((q, i) => ({ campaignId: googleIdsVinculados[i], isLoading: q.isLoading, error: q.error, data: q.data }));
   const googleFiltro = investimentoDoGoogleNaRegua(contaGoogle, googleConsultas, days, hoje);
   const google28 = investimentoDoGoogleNaRegua(contaGoogle, googleConsultas, 28, hoje);
-  const googleFiltroValor = valorDoGoogleNaRegua(googleFiltro);
   // Story 42.16 (AC2b, AC4f): impressões e cliques no MESMO recorte, no total
   // (bloco Google) e por campanha (Detalhamento) — o mesmo resultado, sem chamada nova.
   const googleTrafegoFiltro = trafegoDoGoogleNaRegua(contaGoogle, googleConsultas, days, hoje);
 
-  // Story 42.14 (D22, PO-11): a receita da janela do filtro, pela rota nova —
-  // a mesma chave de cache do Overview (uma chamada, um gasto no limite de 25/min).
-  const receitaQ = useRevenuecatReceita(projectId, funnelId, stage.id, days, connected);
-  const receitaDoFiltro = estadoDaFonte({ isLoading: receitaQ.isLoading, error: receitaQ.error, data: receitaQ.data });
-  // D22: os novos clientes do filtro (`charts/customers_new`) — a mesma chave do Overview.
+  // Story 42.15 (D1, AC2f): a Receita do Resumo vem do WEBHOOK (`vendas-por-canal`),
+  // não mais de `…/revenuecat/receita` — que ficou sem consumidor nesta tela.
+  // D22: os novos clientes do filtro (`charts/customers_new`).
   const novosClientesQ = useRevenuecatNovosClientes(projectId, funnelId, stage.id, days, connected);
   const novosClientes = estadoDaFonte({ isLoading: novosClientesQ.isLoading, error: novosClientesQ.error, data: novosClientesQ.data });
   const overviewEstado = estadoDaFonte({ isLoading: overview.isLoading, error: overview.error, data: overview.data?.metrics });
 
-  // Story 42.4 — Margem de Contribuição. Percentuais vêm da config da etapa; a
-  // API sempre devolve os três preenchidos, mas o fallback cobre o carregamento.
+  // Story 42.4 — Margem de Contribuição. Percentuais vêm da config da etapa.
+  // QA loop 1 da 42.15 (REL-001): os cards (Margem, LTV, LTV/CAC e CAC máximo)
+  // leem o ESTADO da config — em erro, "—" com a causa; carregando, skeleton.
+  // Os padrões abaixo só preenchem o formulário de Configurar.
+  const percentuais = percentuaisDaConfig(estadoDaFonte({ isLoading: config.isLoading, error: config.error, data: config.data }));
   const platformFeePct = config.data?.platformFeePct ?? MARGEM_DEFAULTS.platformFeePct;
   const taxPct = config.data?.taxPct ?? MARGEM_DEFAULTS.taxPct;
   const otherCostsPct = config.data?.otherCostsPct ?? MARGEM_DEFAULTS.otherCostsPct;
@@ -263,31 +262,35 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
     cambio: { taxa: brlRate, fonte: fxSource },
   });
 
-  /**
-   * Story 42.14 — os cards do Resumo, com valor, janela e memorial, saem de
-   * `cardsDoResumo` (lib/utils, com teste). Card sem dado legítimo fica sem
-   * memorial; card em erro mostra "—" e o memorial diz a causa (AC1c, PO-D4).
-   */
-  const cardsResumo = cardsDoResumo({
-    ctx: { diasDoFiltro: days, hoje },
-    cambio: { taxa: brlRate, fonte: fxSource },
-    meta: { temCampanhas: temMeta, filtro: metaFiltro, vinteOito: meta28, erroFiltro: erroMetaFiltro, erro28: erroMeta28 },
-    google: { mostrar: googleCampaignIds.size > 0, filtro: googleFiltro, vinteOito: google28 },
-    receita: receitaDoFiltro,
-    novosClientes,
-    overview: overviewEstado,
-    percentuais: { platformFeePct, taxPct, otherCostsPct },
-  });
-  // PO-D4 (3) — o aviso visível do bloco, além do memorial de cada card.
-  const avisoDaReceita =
-    avisoDoErroDaFonte(receitaDoFiltro, "a receita do período no RevenueCat") ??
-    avisoDoErroDaFonte(novosClientes, "os novos clientes do período no RevenueCat");
-
   // Story 42.14 (AC4–AC8) — novos pagantes POR PESSOA, renovações e LTV, no filtro
   // e nos 28 dias fixos dos CACs (D5/D9). Com `days = 28`, uma consulta só.
   const pagantesFiltroQ = useRevenuecatPagantesPorCanal(projectId, funnelId, stage.id, days, connected);
   const pagantes28Q = useRevenuecatPagantesPorCanal(projectId, funnelId, stage.id, 28, connected);
   const pagantesFiltro = estadoDaFonte({ isLoading: pagantesFiltroQ.isLoading, error: pagantesFiltroQ.error, data: pagantesFiltroQ.data });
+  // Story 42.15 (AC2e) — o início da série de assinaturas, da API (sem data fixa no código).
+  const serieDesde = pagantesFiltro.tipo === "pronto" ? pagantesFiltro.dados.assinaturaDesde : null;
+
+  /**
+   * Story 42.14 → 42.15 — os cards do Resumo consolidado, com valor, janela,
+   * memorial e Meta/Google em segundo plano, saem de `cardsDoResumo` (lib/utils,
+   * com teste). A venda é a do MESMO estado dos blocos Meta/Google (D1, AC2b).
+   */
+  const cardsResumo = cardsDoResumo({
+    ctx: { diasDoFiltro: days, hoje, serieDesde },
+    cambio: { taxa: brlRate, fonte: fxSource },
+    meta: { temCampanhas: temMeta, filtro: metaFiltro, vinteOito: meta28, erroFiltro: erroMetaFiltro, erro28: erroMeta28 },
+    google: { mostrar: googleCampaignIds.size > 0, filtro: googleFiltro, vinteOito: google28 },
+    vendas: vendasDosBlocos,
+    novosClientes,
+    overview: overviewEstado,
+    percentuais,
+    serieCarregando: pagantesFiltro.tipo === "carregando",
+  });
+  // PO-D4 (3) — o aviso visível do bloco, além do memorial de cada card.
+  const avisoDaReceita = avisoDoErroDaFonte(novosClientes, "os novos clientes do período no RevenueCat");
+  // AC2g — a venda por canal em erro: o aviso do bloco (a Receita, as Vendas, o ROAS e a Margem ficam "—").
+  const avisoDasVendas = vendasDosBlocos.tipo === "erro" ? `Não foi possível carregar as vendas por canal: ${vendasDosBlocos.mensagem}` : null;
+
   const aquisicao = cardsDeAquisicao({
     ctx: { diasDoFiltro: days, hoje },
     pagantesFiltro,
@@ -297,6 +300,23 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   });
   const avisoDosPagantes = avisoDoErroDaFonte(pagantesFiltro, "os novos pagantes, as renovações e o LTV");
   const avisoDoLtv = avisoDeNaoClassificado(pagantesFiltro.tipo === "pronto" ? pagantesFiltro.dados.ltv : undefined);
+
+  // Story 42.15 (AC10c, D15) — o churn dos últimos 30 dias FIXOS: o numerador é o
+  // `churnPagante` de `metricas-derivadas` (REUSE, PO-03); o denominador, as
+  // assinaturas pagas ativas no primeiro dia, pelo chart `actives`.
+  const derivadasDoChurnQ = useRevenuecatMetricasDerivadas(projectId, funnelId, stage.id, DIAS_DO_CHURN, connected);
+  const ativasNoInicioQ = useRevenuecatAtivasNoInicio(projectId, funnelId, stage.id, DIAS_DO_CHURN, connected);
+  const ltvPorChurn = cardsDoLtvPorChurn({
+    ctx: { diasDoFiltro: days, hoje, serieDesde },
+    cambio: { taxa: brlRate, fonte: fxSource },
+    arpu: arpuDoOverview(overviewEstado),
+    margem: margemDosPercentuais(percentuais),
+    churn: churnDasConsultas(
+      estadoDaFonte({ isLoading: derivadasDoChurnQ.isLoading, error: derivadasDoChurnQ.error, data: derivadasDoChurnQ.data }),
+      estadoDaFonte({ isLoading: ativasNoInicioQ.isLoading, error: ativasNoInicioQ.error, data: ativasNoInicioQ.data }),
+    ),
+    cac: aquisicao.cacConsolidadoDoFiltro,
+  });
 
   async function handleSaveName() {
     if (!stageName.trim() || stageName.trim() === stage.name) return;
@@ -667,10 +687,12 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
         </div>
       </div>
 
-      {/* Resumo Mobile — visão unificada em R$ (aquisição Meta + monetização
-          RevenueCat). Story 42.14: o título declara a janela do FILTRO, com as
-          datas; cada card diz a sua na etiqueta, e o que não segue o filtro
-          (retratos, 28 dias da API) tem fundo âmbar (AC3). */}
+      {/* Resumo Mobile — a visão CONSOLIDADA em R$ (Story 42.15): cada card com o
+          total e, em segundo plano, Meta e Google. Story 42.14: o título declara
+          a janela do FILTRO, com as datas; cada card diz a sua na etiqueta, e o
+          que não segue o filtro (retratos, 28 e 30 dias fixos) tem fundo âmbar.
+          A tabela "Por canal" (42.12) e o Overview do RevenueCat (42.9) saíram
+          da tela (D1, D4): os números deles estão nos cards. */}
       <section className="spy-viz space-y-2 rounded-xl border border-border/40 bg-card p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold">{tituloDoResumo(days, hoje)}</h2>
@@ -685,6 +707,11 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
             {" "}· fundo âmbar = não segue o filtro
           </p>
         </div>
+        {connected && avisoDasVendas && (
+          <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {avisoDasVendas}
+          </p>
+        )}
         {connected && avisoDaReceita && (
           <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
             {avisoDaReceita}
@@ -696,9 +723,10 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
             {avisoDosPagantes}
           </p>
         )}
-        {/* Story 42.14 (AC4, AC5) — CAC por NOVO PAGANTE (pessoa), no filtro e nos
-            28 dias fixos (`28d fixo`, âmbar). (AC7) LTV bruto por plano e (AC8)
-            renovações por canal, no filtro. Somem com a API anterior à rota. */}
+        {/* Story 42.14 (AC4, AC5) → 42.15 (AC5a) — CAC por NOVO PAGANTE (pessoa):
+            o consolidado no valor, CAC Meta e CAC Google em segundo plano, no
+            filtro e nos 28 dias fixos (`28d fixo`, âmbar). (AC7) LTV bruto por
+            plano e (AC8 → AC5b) renovações, no filtro. Somem com a API anterior à rota. */}
         {connected && aquisicao.cac.length > 0 && (
           <div className="space-y-1.5 border-t border-border/30 pt-3">
             <h3 className="text-xs font-semibold text-muted-foreground">CAC · investimento ÷ novos pagantes (pessoas)</h3>
@@ -719,32 +747,17 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
         )}
         {connected && aquisicao.renovacoes.length > 0 && (
           <div className="space-y-1.5 border-t border-border/30 pt-3">
-            <h3 className="text-xs font-semibold text-muted-foreground">Renovações por canal</h3>
+            <h3 className="text-xs font-semibold text-muted-foreground">Renovações</h3>
             <GradeDoResumo cards={aquisicao.renovacoes} />
           </div>
         )}
-        {/* Story 42.12 (AC2) — receita, ROAS e Margem por canal. Story 42.14
-            (D22): na janela do FILTRO, com o investimento da mesma janela. O
-            investimento só conta como conhecido com campanha vinculada E a
-            consulta carregada: antes disso "R$ 0" seria um número falso. */}
+        {/* Story 42.15 (AC10) — o LTV sobre margem por churn e a relação LTV/CAC,
+            com o CAC máximo (3:1), a faixa e os alertas no memorial. */}
         {connected && (
-          <LyrioResumoPorCanal
-            projectId={projectId}
-            funnelId={funnelId}
-            stageId={stage.id}
-            days={days}
-            brlRate={brlRate}
-            meta={{
-              liquidoBrl: metaFiltro?.spendLiquido ?? 0,
-              impostoBrl: metaFiltro?.imposto ?? 0,
-              conhecido: temMeta && metaFiltro !== undefined,
-            }}
-            google={{
-              investimentoBrl: googleFiltroValor ?? 0,
-              conhecido: googleCampaignIds.size > 0 && googleFiltroValor !== null,
-            }}
-            percentuais={{ platformFeePct, taxPct, otherCostsPct }}
-          />
+          <div className="space-y-1.5 border-t border-border/30 pt-3">
+            <h3 className="text-xs font-semibold text-muted-foreground">LTV sobre margem · LTV/CAC</h3>
+            <GradeDoResumo cards={[ltvPorChurn.ltv, ltvPorChurn.relacao]} />
+          </div>
         )}
         {!connected && (
           <p className="text-[11px] text-muted-foreground">
@@ -753,20 +766,6 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
           </p>
         )}
       </section>
-
-      {/* Story 42.9 — o Overview completo do RevenueCat. Depois do resumo do
-          topo (que já usa 5 destas métricas) e antes do tráfego: primeiro o que
-          o app é, depois o que o custa. */}
-      {connected && (
-        <section className="space-y-3">
-          <RevenuecatOverviewBlock
-            projectId={projectId}
-            funnelId={funnelId}
-            stageId={stage.id}
-            days={days}
-          />
-        </section>
-      )}
 
       {/* Story 42.16 (AC3) — Meta Ads e Google Ads: o MESMO componente, pelo
           canal, com o período no subtítulo e em cada card. A venda é a do

@@ -288,6 +288,8 @@ export function useRevenuecatMetricasDerivadas(
   funnelId: string,
   stageId: string,
   days?: number,
+  /** Story 42.15 — o churn do LTV (AC10c) só consulta com o RevenueCat conectado. */
+  enabled = true,
 ) {
   const apiClient = useApiClient();
   return useQuery({
@@ -296,6 +298,7 @@ export function useRevenuecatMetricasDerivadas(
       apiClient<RevenuecatMetricasDerivadas>(
         `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/metricas-derivadas${days != null ? `?days=${days}` : ""}`,
       ),
+    enabled,
     staleTime: STALE,
   });
 }
@@ -399,6 +402,40 @@ export function useRevenuecatNovosClientes(projectId: string, funnelId: string, 
     queryFn: () =>
       apiClient<NovosClientesDoPeriodo>(
         `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/novos-clientes?days=${days}`,
+      ),
+    enabled,
+    staleTime: STALE,
+    retry: tentarDeNovoNoRevenuecat,
+  });
+}
+
+/** Espelha `GET …/revenuecat/ativas-no-inicio` (Story 42.15, contrato 63). */
+export interface AtivasNoInicio {
+  /** false = nenhum app do RevenueCat selecionado na etapa. */
+  configured: boolean;
+  days: number;
+  desde: string;
+  ate: string;
+  /** O dia lido no chart `actives` (o primeiro da janela; o chart conta em UTC). */
+  diaDoChart: string;
+  /** Assinaturas PAGAS ativas no dia; `null` só quando `configured` é false. */
+  valor: number | null;
+  medida?: string;
+  diaIncompleto?: boolean;
+}
+
+/**
+ * Story 42.15 (AC10c) — o denominador do churn mensal: as assinaturas pagas
+ * ativas no primeiro dia da janela (chart `actives`). Rota nova (contrato 63):
+ * 404 da rota → API atrás. Sem insistir em 429 nem 404 (PO-D4 (6)).
+ */
+export function useRevenuecatAtivasNoInicio(projectId: string, funnelId: string, stageId: string, days: number, enabled = true) {
+  const apiClient = useApiClient();
+  return useQuery({
+    queryKey: ["revenuecat-ativas-no-inicio", stageId, days],
+    queryFn: () =>
+      apiClient<AtivasNoInicio>(
+        `/api/projects/${projectId}/funnels/${funnelId}/stages/${stageId}/revenuecat/ativas-no-inicio?days=${days}`,
       ),
     enabled,
     staleTime: STALE,

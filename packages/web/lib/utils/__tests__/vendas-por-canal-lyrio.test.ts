@@ -217,16 +217,15 @@ describe("o fio até a tela", () => {
     expect(resumo).toMatch(/estado\.tipo === "erro" \? \(\s*<p role="alert"/);
     expect(resumo).toMatch(/linhasDoResumoPorCanal\(\{ dados: estado\.dados, brlRate, meta, google, percentuais \}\)/);
     expect(resumo).toMatch(/declaracaoDeCobertura\(estado\.dados\)/);
-    // o investimento da tabela é o da MESMA janela (o filtro), e só conhecido com o dado carregado
-    expect(etapa).toMatch(/conhecido: temMeta && metaFiltro !== undefined/);
-    // Story 42.13 (AC1b): o investimento do Google é conhecido só com a consulta respondida — erro não é R$ 0.
-    expect(etapa).toMatch(/conhecido: googleCampaignIds\.size > 0 && googleFiltroValor !== null/);
-    expect(etapa).toMatch(/liquidoBrl: metaFiltro\?\.spendLiquido \?\? 0,\s*impostoBrl: metaFiltro\?\.imposto \?\? 0,/);
-    expect(etapa).toMatch(/<LyrioResumoPorCanal\s+projectId=\{projectId\}\s+funnelId=\{funnelId\}\s+stageId=\{stage\.id\}\s+days=\{days\}/);
+    // Story 42.15 (AC6a, D1): a tabela saiu do Resumo — o componente fica, e as
+    // linhas de ROAS e Margem por canal (`linhasDoResumoPorCanal`) vão para os
+    // cards, com o investimento só conhecido com campanha vinculada E dado
+    // carregado (agora em `cardsDoResumo`, com teste).
+    expect(etapa).not.toMatch(/<LyrioResumoPorCanal/);
     const inicio = etapa.indexOf("{tituloDoResumo(days, hoje)}");
     expect(inicio).toBeGreaterThan(0);
     const secao = etapa.slice(inicio, etapa.indexOf("</section>", inicio));
-    expect(secao).toContain("<LyrioResumoPorCanal");
+    expect(secao).toContain("<GradeDoResumo cards={cardsResumo} />");
   });
   it("bloco RevenueCat: a quebra usa a MESMA janela (`days`) e o estado (oculto some, erro aparece)", () => {
     expect(etapa).toMatch(/useRevenuecatVendasPorCanal\(projectId, funnelId, stage\.id, days, connected\)/);
@@ -342,7 +341,8 @@ describe("Story 42.13 — o fio até a tela (religado na 42.16: um bloco por can
     expect(etapa).not.toMatch(/<SalesMetaKpis/);
     // sem RevenueCat conectado a venda é desconhecida ("oculto"), não zero — agora decidido no pai
     expect(etapa).toMatch(/const vendasDosBlocos: EstadoDasVendas = connected \? vendasPorCanal : \{ tipo: "oculto" \};/);
-    expect(etapa.match(/vendas: vendasDosBlocos,/g)).toHaveLength(2);
+    // os dois blocos e (Story 42.15, AC2b) o Resumo consolidado
+    expect(etapa.match(/vendas: vendasDosBlocos,/g)).toHaveLength(3);
     expect(etapa).toMatch(/<LyrioBlocoDoCanal canal="meta" temCampanhas=\{temMeta\} cards=\{cardsMeta\} revenuecatConectado=\{connected\} \/>/);
     expect(cards).not.toMatch(/rotulo\("(LP Views|Checkouts|Ticket)/);
   });

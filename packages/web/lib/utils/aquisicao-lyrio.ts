@@ -93,11 +93,38 @@ export interface EntradaDeAquisicao {
   google: { mostrar: boolean; filtro: InvestimentoDoGoogleNaRegua; vinteOito: InvestimentoDoGoogleNaRegua };
 }
 
-export interface CardsDeAquisicao {
+/**
+ * Story 42.15 (AC10e) — o CAC consolidado de uma janela, em NÚMERO, para o
+ * LTV/CAC: o mesmo que o card exibe. `semPagante` = divisão por zero.
+ */
+export type CacConsolidado =
+  | { tipo: "oculto" }
+  | { tipo: "carregando" }
+  | { tipo: "indisponivel"; causa: string }
+  | { tipo: "pronto"; centavos: number | null; investimentoCentavos: number; pessoas: number };
+
+/** Os cards da 42.14, um por canal — a base da visão consolidada (`cardsDeAquisicao`). */
+export interface CardsDeAquisicaoPorCanal {
   cac: CardDoResumo[];
-  /** LTV Mensal, Trimestral e Anual (AC7), na janela do filtro. */
+  /** LTV Mensal, Trimestral, Semestral e Anual (AC7), na janela do filtro. */
   ltv: CardDoResumo[];
   renovacoes: CardDoResumo[];
+  /** Story 42.15 (AC5b) — as renovações num card só: o total e os canais. `null` com a API anterior. */
+  renovacaoTotal: CardDoResumo | null;
+  /** Story 42.15 (AC10e) — o CAC consolidado em número, por janela. */
+  consolidado: { filtro: CacConsolidado; vinteOito: CacConsolidado };
+}
+
+/** Story 42.15 — a visão consolidada: um card de CAC por janela, um de renovações, os LTVs brutos. */
+export interface CardsDeAquisicao {
+  /** `CAC` (filtro) e `CAC · 28d fixo`, cada um com CAC Meta e CAC Google em segundo plano (AC5a). */
+  cac: CardDoResumo[];
+  /** `LTV bruto · Mensal/Trimestral/Semestral/Anual` (AC5c), na janela do filtro. */
+  ltv: CardDoResumo[];
+  /** Um card: o total, com Meta e Google em segundo plano (AC5b). */
+  renovacoes: CardDoResumo[];
+  /** O CAC consolidado do FILTRO, em número: o que entra no LTV/CAC (D11). */
+  cacConsolidadoDoFiltro: CacConsolidado;
 }
 
 const FONTE_DOS_PAGANTES = "eventos do webhook do RevenueCat · GET …/revenuecat/pagantes-por-canal";
@@ -145,11 +172,12 @@ function daJanela(estado: EstadoDaFonte<PagantesPorCanal>, dias: number): Estado
  * Os cards de CAC, LTV e renovação. Rota da API anterior (404 da rota) → nenhum
  * card; erro → cada card "—" com a causa (PO-D4).
  */
-export function cardsDeAquisicao(e: EntradaDeAquisicao): CardsDeAquisicao {
+export function cardsDeAquisicaoPorCanal(e: EntradaDeAquisicao): CardsDeAquisicaoPorCanal {
   const { ctx } = e;
   const filtro = daJanela(e.pagantesFiltro, ctx.diasDoFiltro);
   const vinteOito = daJanela(e.pagantes28, 28);
-  if (filtro.tipo === "oculto" && vinteOito.tipo === "oculto") return { cac: [], ltv: [], renovacoes: [] };
+  const consolidado: CardsDeAquisicaoPorCanal["consolidado"] = { filtro: { tipo: "oculto" }, vinteOito: { tipo: "oculto" } };
+  if (filtro.tipo === "oculto" && vinteOito.tipo === "oculto") return { cac: [], ltv: [], renovacoes: [], renovacaoTotal: null, consolidado };
 
   const serieDesde =
     (filtro.tipo === "pronto" ? filtro.dados.assinaturaDesde : null) ?? (vinteOito.tipo === "pronto" ? vinteOito.dados.assinaturaDesde : null);
@@ -170,6 +198,7 @@ export function cardsDeAquisicao(e: EntradaDeAquisicao): CardsDeAquisicao {
     googleEstado: InvestimentoDoGoogleNaRegua,
     erroMeta: string | null | undefined,
   ): CardDoResumo[] => {
+    const chave = sufixo === "28d" ? "vinteOito" : "filtro";
     if (estado.tipo === "oculto") return [];
     const card = (id: string, rotulo: string): CardDoResumo => ({ id: `${id}-${sufixo}`, rotulo, valor: "—", declaracao: decl, icone: "cac" });
     const ids: [string, string][] = [];
@@ -179,8 +208,14 @@ export function cardsDeAquisicao(e: EntradaDeAquisicao): CardsDeAquisicao {
     const rot = (r: string) => (sufixo === "28d" ? `${r} · 28d fixo` : r);
 
     const erro = memorialDoErroDaFonte(estado, { fonte: FONTE_DOS_PAGANTES, periodo: decl.periodo });
-    if (erro) return ids.map(([id, r]) => ({ ...card(id, rot(r)), formula: erro }));
-    if (estado.tipo !== "pronto") return ids.map(([id, r]) => card(id, rot(r)));
+    if (erro) {
+      consolidado[chave] = { tipo: "indisponivel", causa: `novos pagantes indisponíveis: ${String(erro.values[0]?.value ?? "erro")}` };
+      return ids.map(([id, r]) => ({ ...card(id, rot(r)), formula: erro }));
+    }
+    if (estado.tipo !== "pronto") {
+      consolidado[chave] = { tipo: "carregando" };
+      return ids.map(([id, r]) => card(id, rot(r)));
+    }
     const d = estado.dados;
     const deCanal = (c: CanalDoPagante) => d.novosPagantes.canais.find((x) => x.canal === c)?.quantidade ?? 0;
     const conflito = d.novosPagantes.conflito;
@@ -238,8 +273,14 @@ export function cardsDeAquisicao(e: EntradaDeAquisicao): CardsDeAquisicao {
     // Consolidado: a soma dos dois; sem um deles conhecido, o total não é conhecido.
     const consolidadoCentavos = metaCentavos != null && googleCentavos != null ? metaCentavos + googleCentavos : null;
     if (semGoogle || semMeta) {
-      out.push({ ...card("cac-consolidado", rot("CAC consolidado")), formula: (semMeta ?? semGoogle)! });
+      const causa = (semMeta ?? semGoogle)!;
+      consolidado[chave] = { tipo: "indisponivel", causa: `${causa.expression}: ${String(causa.values[0]?.value ?? "")}` };
+      out.push({ ...card("cac-consolidado", rot("CAC consolidado")), formula: causa });
     } else {
+      consolidado[chave] =
+        consolidadoCentavos == null
+          ? { tipo: "carregando" }
+          : { tipo: "pronto", centavos: cacEmCentavos(consolidadoCentavos, d.novosPagantes.total), investimentoCentavos: consolidadoCentavos, pessoas: d.novosPagantes.total };
       const [m, g] = consolidadoCentavos == null ? [0, 0] : fecharEmCentavos(consolidadoCentavos / 100, [(metaCentavos ?? 0) / 100, (googleCentavos ?? 0) / 100]);
       out.push(
         cacDe("cac-consolidado", "CAC consolidado", consolidadoCentavos,
@@ -260,7 +301,7 @@ export function cardsDeAquisicao(e: EntradaDeAquisicao): CardsDeAquisicao {
   ];
 
   // ── LTV (AC7) e renovações (AC8): só a janela do filtro ──
-  if (filtro.tipo === "oculto") return { cac, ltv: [], renovacoes: [] };
+  if (filtro.tipo === "oculto") return { cac, ltv: [], renovacoes: [], renovacaoTotal: null, consolidado };
   const erro = memorialDoErroDaFonte(filtro, { fonte: FONTE_DOS_PAGANTES, periodo: declFiltro.periodo });
   const d = filtro.tipo === "pronto" ? filtro.dados : null;
 
@@ -350,5 +391,88 @@ export function cardsDeAquisicao(e: EntradaDeAquisicao): CardsDeAquisicao {
     });
   }
 
-  return { cac, ltv, renovacoes };
+  // ── Story 42.15 (AC5b) — as renovações num card: o total, e o memorial fecha a conta ──
+  const renovacaoTotal: CardDoResumo = (() => {
+    const base: CardDoResumo = {
+      id: "renovacoes",
+      rotulo: "Renovações",
+      valor: "—",
+      declaracao: declFiltro,
+      icone: "renovacao",
+      secundarias: renovacoes
+        .filter((c) => c.id === "renovacoes-meta" || (c.id === "renovacoes-google" && e.google.mostrar))
+        .map((c) => ({ id: c.id.replace("renovacoes-", ""), rotulo: c.id === "renovacoes-meta" ? "Meta" : "Google", valor: c.valor })),
+    };
+    if (erro) return { ...base, formula: erro };
+    if (!d) return { ...base, carregando: true };
+    const partes = linhas.map((l) => ({ rotulo: l.rotulo, n: l.n ?? 0 }));
+    return {
+      ...base,
+      valor: d.renovacoes.total.toLocaleString("pt-BR"),
+      formula: {
+        expression: "Σ RENEWAL pagos que não são o primeiro pagamento da pessoa, de todos os canais",
+        values: partes.map((p) => ({ label: `Renovações · ${p.rotulo}`, value: p.n.toLocaleString("pt-BR"), source: FONTE_DOS_PAGANTES })),
+        result: `${partes.map((p) => p.n.toLocaleString("pt-BR")).join(" + ")} = ${d.renovacoes.total.toLocaleString("pt-BR")}`,
+        period: declFiltro.periodo,
+        note: `Conta EVENTOS: quem renovou duas vezes conta 2. A primeira cobrança depois do trial não entra (já é novo pagante); a reassinatura de quem já tinha pagado entra. Canal da regra da 42.12 pela pessoa; quem tem Meta e Google vai para o que apareceu primeiro, e o empate no mesmo instante fica em "Conflito". Meta e Google em segundo plano; os outros canais estão aqui, e todos somam o total.${coberturaDe(ctx.diasDoFiltro)}`,
+      },
+    };
+  })();
+
+  return { cac, ltv, renovacoes, renovacaoTotal, consolidado };
+}
+
+/** D10, AC10h — o alerta permanente do CAC: só a mídia entra. */
+export const ALERTA_DO_CAC_SO_MIDIA = "CAC subestimado: só mídia (Meta e Google), sem custos indiretos (ferramentas, equipe, agência).";
+
+/** AC5c — a frase que separa o LTV bruto do LTV sobre margem (AC10). */
+export const FRASE_DO_LTV_BRUTO = "Receita bruta, sem descontar comissão de loja, imposto e custos. Para o LTV sobre margem, veja o card LTV (margem).";
+
+/**
+ * Story 42.15 (AC5) — a visão consolidada dos cards de aquisição:
+ *  - um card de CAC por janela (o filtro e os 28 dias fixos, D5/D9): o
+ *    consolidado é o valor principal; CAC Meta e CAC Google, em segundo plano;
+ *  - os LTVs brutos com o rótulo "LTV bruto · …" e a frase do AC5c;
+ *  - as renovações num card só (AC5b).
+ * As contas são as da 42.14 (`cardsDeAquisicaoPorCanal`, AC5d): aqui só se dobra.
+ */
+export function cardsDeAquisicao(e: EntradaDeAquisicao): CardsDeAquisicao {
+  const base = cardsDeAquisicaoPorCanal(e);
+  const doCac = (sufixo: "filtro" | "28d"): CardDoResumo | null => {
+    const principal = base.cac.find((c) => c.id === `cac-consolidado-${sufixo}`);
+    if (!principal) return null;
+    const linha = (canal: "meta" | "google", rotulo: string) => {
+      const c = base.cac.find((x) => x.id === `cac-${canal}-${sufixo}`);
+      return c ? [{ id: canal, rotulo, valor: c.valor }] : [];
+    };
+    const secundarias = [...linha("meta", "CAC Meta"), ...linha("google", "CAC Google")];
+    const formula: MetricFormula | undefined = principal.formula
+      ? {
+          ...principal.formula,
+          values: [
+            ...principal.formula.values,
+            ...secundarias.map((l) => {
+              const f = base.cac.find((x) => x.id === `cac-${l.id}-${sufixo}`)?.formula;
+              return { label: `${l.rotulo} (em segundo plano)`, value: f && f.result !== "—" ? f.result : l.valor, source: l.id === "meta" ? "investimento da Meta ÷ novos pagantes da Meta" : "investimento do Google ÷ novos pagantes do Google" };
+            }),
+          ],
+          note: `${principal.formula.note ?? ""} ${ALERTA_DO_CAC_SO_MIDIA}`.trim(),
+        }
+      : undefined;
+    return {
+      ...principal,
+      id: `cac-${sufixo}`,
+      rotulo: sufixo === "28d" ? "CAC · 28d fixo" : "CAC",
+      secundarias,
+      formula,
+      carregando: !formula && principal.valor === "—",
+    };
+  };
+  const cac = [doCac("filtro"), doCac("28d")].filter((c): c is CardDoResumo => c !== null);
+  const ltv = base.ltv.map((c) => ({
+    ...c,
+    rotulo: c.rotulo.replace(/^LTV /, "LTV bruto · "),
+    formula: c.formula ? { ...c.formula, note: `${c.formula.note ?? ""} ${FRASE_DO_LTV_BRUTO}`.trim() } : undefined,
+  }));
+  return { cac, ltv, renovacoes: base.renovacaoTotal ? [base.renovacaoTotal] : [], cacConsolidadoDoFiltro: base.consolidado.filtro };
 }
