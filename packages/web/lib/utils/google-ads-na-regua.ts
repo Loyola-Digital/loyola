@@ -59,7 +59,16 @@ export type InvestimentoDoGoogleNaRegua =
  */
 export type TrafegoDoGoogleNaRegua =
   | Exclude<InvestimentoDoGoogleNaRegua, { tipo: "pronto" }>
-  | ({ tipo: "pronto"; porCampanha: Map<string, TrafegoNaRegua> } & TrafegoNaRegua);
+  | ({
+      tipo: "pronto";
+      porCampanha: Map<string, TrafegoNaRegua>;
+      /**
+       * Story 42.19 (AC2e) — as linhas do `/daily` de cada campanha, só os dias
+       * da régua: os dias da linha expansível do Detalhamento, da MESMA consulta
+       * (sem chamada nova). A soma delas é `porCampanha`.
+       */
+      diasPorCampanha: Map<string, DiaDoGoogle[]>;
+    } & TrafegoNaRegua);
 
 /** Uma consulta `/daily` de UMA campanha vinculada (`useGoogleAdsDailyPorCampanha`). */
 export interface ConsultaDiariaDoGoogle {
@@ -73,6 +82,12 @@ export interface ConsultaDiariaDoGoogle {
 /** Quantos dias pedir à rota `/daily` para cobrir as janelas desta tela. */
 export function diasDaConsultaDoGoogle(...janelas: number[]): number {
   return Math.min(365, Math.max(1, ...janelas));
+}
+
+/** Story 42.19 — as linhas cujo dia está na régua [hoje − (N − 1), hoje]: o recorte de `trafegoNaRegua`. */
+export function linhasNaRegua(linhas: readonly DiaDoGoogle[], dias: number, hoje: string): DiaDoGoogle[] {
+  const inicio = inicioDaJanela(dias, hoje);
+  return linhas.filter((l) => l.date >= inicio && l.date <= hoje);
 }
 
 /** Soma gasto, impressões e cliques das linhas cujo dia está na régua [hoje − (N − 1), hoje]. */
@@ -117,14 +132,18 @@ export function trafegoDoGoogleNaRegua(
   let impressions = 0;
   let clicks = 0;
   const porCampanha = new Map<string, TrafegoNaRegua>();
+  const diasPorCampanha = new Map<string, DiaDoGoogle[]>();
   for (const q of consultas) {
     const t = trafegoNaRegua(q.data!, dias, hoje);
     centavos += Math.round(t.spend * 100);
     impressions += t.impressions;
     clicks += t.clicks;
-    if (q.campaignId) porCampanha.set(q.campaignId, t);
+    if (q.campaignId) {
+      porCampanha.set(q.campaignId, t);
+      diasPorCampanha.set(q.campaignId, linhasNaRegua(q.data!, dias, hoje));
+    }
   }
-  return { tipo: "pronto", spend: centavos / 100, impressions, clicks, porCampanha };
+  return { tipo: "pronto", spend: centavos / 100, impressions, clicks, porCampanha, diasPorCampanha };
 }
 
 /** O investimento das campanhas vinculadas na régua (o Resumo, Story 42.14): o gasto do tráfego. */

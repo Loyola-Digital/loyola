@@ -158,7 +158,7 @@ describe("AC2f — estados do Google: sem conta, erro e carregando", () => {
     expect(c.avisoDoTrafego).toBeNull();
   });
   it("o tráfego do Google vem da régua de SP (impressões e cliques também); o da Meta respeita o erro antes do dado", () => {
-    expect(trafegoDoBlocoDoGoogle({ tipo: "pronto", spend: 12.5, impressions: 1500, clicks: 15, porCampanha: new Map() })).toEqual({ tipo: "pronto", investimentoBrl: 12.5, impressoes: 1500, cliques: 15 });
+    expect(trafegoDoBlocoDoGoogle({ tipo: "pronto", spend: 12.5, impressions: 1500, clicks: 15, porCampanha: new Map(), diasPorCampanha: new Map() })).toEqual({ tipo: "pronto", investimentoBrl: 12.5, impressoes: 1500, cliques: 15 });
     expect(trafegoDoBlocoDaMeta({ spend: 10, impressions: 100, linkClicks: 3 }, "falhou")).toEqual({ tipo: "erro", mensagem: "falhou" });
     expect(trafegoDoBlocoDaMeta(undefined, null)).toEqual({ tipo: "carregando" });
     expect(trafegoDoBlocoDaMeta({ spend: 10, impressions: 100, linkClicks: 3 }, null)).toEqual({ tipo: "pronto", investimentoBrl: 10, impressoes: 100, cliques: 3 });

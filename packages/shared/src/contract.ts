@@ -696,4 +696,19 @@
 // recente de `meta_ad_insights_daily`). Só Postgres, sem chamada à Meta.
 // Aditivos: com a API antiga a coluna mostra "—" em todas as linhas.
 // `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 61;
+//
+// v62 (Story 42.19 — Lyrio: o Detalhamento com os dias de cada campanha,
+// conjunto e criativo; sem migration. Era v61 na branch; renumerada no rebase,
+// porque a 18.99 levou a v61 no merge): `GET …/revenuecat/vendas-por-canal`
+// ganha `metaPorEntidadeDiario: { campaign, adset, ad }` — cada nível uma lista
+// de `{ chave, dia, vendas, compradores, receitaUsd }`, com a MESMA chave de
+// `metaPorEntidade` (id da campanha; nome aparado do conjunto e do anúncio;
+// `null` = não identificado) e a mesma regra de venda e de atribuição (a do
+// evento mais recente do comprador). `dia` é o dia de SP de `purchased_at`. Por
+// entidade, a soma de `vendas` e de `receitaUsd` dos dias é a linha de
+// `metaPorEntidade` (o centavo do dia sai do acumulado do comprador);
+// `compradores` é quem pagou naquele dia e NÃO soma a linha (quem paga em dois
+// dias conta nos dois). A rota lê a quebra por comprador e por dia numa
+// consulta só. Só contagens — nenhum `app_user_id`. Campo aditivo: com a API
+// antiga as colunas de venda dos dias mostram "—". `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 62;

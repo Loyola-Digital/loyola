@@ -119,6 +119,12 @@ describe.each(["UTC", "America/Sao_Paulo", "Asia/Tokyo"])("Story 42.16 — trafe
     if (r.tipo !== "pronto") throw new Error("esperava pronto");
     expect(r.porCampanha.get("g-1")).toEqual({ spend: 12.5, impressions: 1_500, clicks: 15 });
     expect(r.porCampanha.get("g-2")).toEqual({ spend: 0.1, impressions: 3, clicks: 1 });
+    // Story 42.19 (AC2e): os dias da linha expansível são as linhas DA MESMA consulta, só as da régua
+    const diasG1 = r.diasPorCampanha.get("g-1")!;
+    expect(diasG1.every((d) => d.date >= "2026-10-10" && d.date <= hoje)).toBe(true);
+    expect(diasG1.length).toBe(linhas(0).length - 2); // um dia de fora em cada borda
+    expect(trafegoNaRegua(diasG1, 7, hoje)).toEqual(r.porCampanha.get("g-1"));
+    expect(r.diasPorCampanha.get("g-2")).toEqual([{ date: "2026-10-15", spend: 0.1, impressions: 3, clicks: 1 }]);
     // o investimento do Resumo (42.14) é o gasto deste mesmo tráfego
     expect(investimentoDoGoogleNaRegua(conta, [{ isLoading: false, error: null, data: linhas(0) }], 7, hoje)).toEqual({ tipo: "pronto", spend: 12.5 });
   });

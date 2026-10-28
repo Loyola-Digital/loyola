@@ -1,0 +1,110 @@
+schema: 1
+story: '42.19'
+story_title: 'Lyrio — Detalhamento com os dias de cada campanha, conjunto e criativo (linha expansível), Meta Ads e Google'
+gate: PASS
+status_reason: 'QA loop 1 sobre 823a37f9. O commit só traz testes, nenhum arquivo de produção mudou desde 7812bf77. TEST-001 a TEST-005 estão fechados: as 28 mutações do gate caem, inclusive as 8 que sobreviviam. Das 3 mutações novas, a de non-tautologia, 2 caem; a que sobrevive é o Δ de impressões no render (TEST-006, low). Ficam só achados low: TEST-006 e REQ-001, para o @po.'
+reviewer: 'Quinn'
+updated: '2026-10-28T16:30:00Z'
+branch: 'feat/42.19-lyrio-detalhamento-diario'
+commit_reviewed: '823a37f9 (loop 1; código de produção = 7812bf77)'
+base: '5fb293bc (origin/main, contrato 61; conferido com git ls-remote no gate: a main não andou, e a v62 está livre na main e nas PRs abertas)'
+history:
+  - { date: '2026-10-28', gate: CONCERNS, note: 'gate sobre 7812bf77 (commit 925b4971): AC1–AC7 atendidos; 28 mutações próprias, 20 caem, 8 sobrevivem (TEST-001 medium; TEST-002..005 low); REQ-001 low para o @po; visual e Público em produção pendentes do dono.' }
+  - { date: '2026-10-28', gate: PASS, note: 'QA loop 1 sobre 823a37f9 (só testes): TEST-001..005 fechados; 28/28 mutações do gate caem; Q31–Q33 novas: 2 caem, Q33 sobrevive (TEST-006 low); REQ-001 segue com o @po.' }
+
+top_issues:
+  - id: TEST-001
+    severity: medium
+    category: tests
+    description: 'O ramo do Google na expansão (D22, AC2e/AC3f) só está provado na função pura. No componente, nenhum teste renderiza uma linha do Google: o teste jsdom monta com `googleTrafego = { tipo: "sem_campanha" }`. Duas mutações minhas SOBREVIVEM às 8 suítes que alcançam o código (todas as que importam o componente, o módulo da expansão ou leem o arquivo). Q23 (`lyrio-detail-table.tsx:279`): `r.platform === "google"` → nunca verdadeiro. A linha do Google passa a usar `expansaoDaMeta`, e os dias mostram mídia zerada pela regra da Meta e venda "0", em vez de "—" com a dica de que o Google não informa a campanha. Q24 (`:562`): o estado da linha do Google passa a depender da série da Meta. Aberta sozinha, ela mostra o skeleton para sempre, porque `precisaDaSerieDaMeta` não pede a série para linha do Google. Hoje o código está certo nos dois pontos. A regra está nos testes da biblioteca, mas falta o fio do chamador.'
+    recommendation: 'No `lyrio-detail-table-42-19.test.tsx`, um caso com `googleTrafego` pronto e uma campanha Google vinculada. Abrir só a linha do Google e afirmar: (a) nenhuma requisição ao `entity-daily`; (b) as sub-linhas sem skeleton, com o gasto do `/daily` sem imposto; (c) "—" nas colunas de venda, com o `title` = `DICA_GOOGLE_SEM_VENDA`.'
+    owner: '@dev'
+    status: resolved
+
+  - id: TEST-002
+    severity: low
+    category: tests
+    description: 'O AC1c (trocar de plataforma ou de janela fecha todas) só tem fio para a DIMENSÃO. Q21 (`lyrio-detail-table.tsx:233`): `contextoDaAbertura(plataforma, dimensao, days)` → `(..., 0)`. Q22: → `("todas", dimensao, days)`. As duas SOBREVIVEM. O teste unitário prova que `contextoDaAbertura` muda com os três argumentos, mas não que o componente passa `days` e `plataforma`. A Q30 (o reset só esconde, sem zerar) CAI, então o mecanismo está protegido. A lacuna é só a entrada.'
+    recommendation: 'No teste jsdom, depois de abrir uma linha: `rerender` com `days={7}` → nenhuma "Σ dos dias"; e trocar o select Plataforma para "Meta" → nenhuma "Σ dos dias".'
+    owner: '@dev'
+    status: resolved
+
+  - id: TEST-003
+    severity: low
+    category: tests
+    description: 'O dia de SP no componente. Q20 (`lyrio-detail-table.tsx:240`): `hojeNoNegocio()` → `new Date().toISOString().slice(0, 10)` SOBREVIVE, porque o teste jsdom fixa o relógio em 15:00Z (12:00 de SP), quando os dois dias coincidem. Das 21h às 24h de SP, a expansão começaria em amanhã: a marca "dia em andamento" iria para um dia vazio, e o `startDate`/`endDate` da série andaria um dia. É exatamente o problema que o desvio 4 do @dev existe para evitar. A função pura e a API estão protegidas (Q1 e Q19 caem).'
+    recommendation: 'Um caso no teste jsdom com `vi.setSystemTime(new Date("2026-10-29T02:30:00Z"))`, afirmando a primeira sub-linha "28/10/2026" e `endDate=2026-10-28` no pedido.'
+    owner: '@dev'
+    status: resolved
+
+  - id: TEST-004
+    severity: low
+    category: tests
+    description: 'Q2 (`packages/api/src/utils/vendas-por-canal-lyrio.ts:378`): o dia da venda pelo `event_at` em vez de `purchased_at` SOBREVIVE. O seed do PGlite grava o mesmo instante nas duas colunas (`inserir`, `e.em`). A janela e o card de `/sales` cortam por `purchased_at` (PO-02 da 42.12). Um evento entregue depois da meia-noite de SP cairia em outro dia, e a paridade por entidade não pegaria isso, porque continua valendo.'
+    recommendation: 'Um evento com `purchased_at` às 23:50 de SP e `event_at` 20 minutos depois (já no dia seguinte), esperando o dia de `purchased_at`.'
+    owner: '@dev'
+    status: resolved
+
+  - id: TEST-005
+    severity: low
+    category: tests
+    description: 'Duas bordas sem teste. Q27 (`lyrio-detail-table.tsx:751`): o "Δ … vs. linha" do investimento nunca aparece, e SOBREVIVE. A função pura devolve a diferença, mas nenhum render tem diferença, então o AC4c só está provado até o dado. Q12 (`lyrio-detalhamento-diario.ts:340`): o imposto pela data de hoje em vez da data do dia SOBREVIVE. Na prática é equivalente até 90 dias. Com o DayRangePicker em 365 dias (`maxDays = 365`), a janela cruza 2026-01-01 (`VIGENCIA` de `meta-tax.ts`), e os dias de 2025 seriam tributados sem imposto vigente.'
+    recommendation: 'Um render com a série menor que a linha, afirmando "Δ −R$ …" na Σ, e um caso unitário com um dia em 2025-12-31 esperando o spend sem gross-up.'
+    owner: '@dev'
+    status: resolved
+
+  - id: TEST-006
+    severity: low
+    category: tests
+    description: 'Loop 1, Q33 (`lyrio-detail-table.tsx`, o span do Δ das IMPRESSÕES na Σ): `{false && d && d.impressions !== 0 && …}` SOBREVIVE. O teste novo do Δ só tem diferença no investimento e afirma exatamente um "Δ". A regra de impressões e cliques está provada na função pura (`diferencaDaMidia`: 1 impressão aparece), mas não no render. Os dois spans são iguais ao do investimento, que agora tem fio (Q27 cai).'
+    recommendation: 'Opcional: no teste do Δ, uma série com 5 impressões a menos, afirmando "Δ −5 vs. linha".'
+    owner: '@dev'
+    status: open
+
+  - id: REQ-001
+    severity: low
+    category: requirements
+    description: 'O AC3e cita "Vendas, Receita, ROAS, Custo por venda" nas sub-linhas. Só que o Detalhamento não tem ROAS nem Custo por venda, nem na `main`: o rodapé da tabela diz "ROAS e CAC por linha não fazem parte desta tabela". O AC1a pede "as mesmas colunas da linha". O @dev seguiu o AC1a (desvio 5), e eu ACEITO. O texto do AC3e é que está errado.'
+    recommendation: '@po: corrigir o AC3e para "Vendas e Receita", ou abrir uma story se o Alberto quiser ROAS por linha/dia.'
+    owner: '@po'
+    status: open
+
+deviations_reviewed:
+  - '1 (UNION ALL numa leitura): ACEITO. As linhas `grao = comprador` são as da consulta antiga, coluna a coluna (teste no PGlite). A rota continua com 3 `execute`. Q5 (a rota sem separar o grão) cai. A `ev` agora tem dois leitores, e o Postgres a materializa. Isso confere com a medição do @dev, que é uma só e sem plano.'
+  - '2 (centavo do acumulado): ACEITO. A soma telescopa no `round(total)` do comprador, que é o centavo da linha. Q3 (arredondar o dia sozinho) e Q4 (acumulado sem ORDER BY) caem.'
+  - '3 (`compradores` por dia não soma a linha): ACEITO. Está declarado no contrato v62 e testado. A tela não mostra compradores.'
+  - '4 (startDate/endDate da régua de SP): ACEITO e necessário. A rota `entity-daily` calcula o `since` com `toISOString`. Q19 e Q29 caem. O fio no componente é a TEST-003.'
+  - '5 (só Vendas e Receita): ACEITO. Ver REQ-001.'
+  - '6 (mídia sem linha numa nota abaixo da tabela): ACEITO. O AC2f diz "dentro da Σ, declarada", mas não existe Σ de "sem linha". A nota declara o valor com o imposto (Q17 cai), cita "Sem linha nesta tabela" e só aparece com a série carregada.'
+  - '7 (tolerância de 1 centavo): ACEITO. "Passa de R$ 0,01" lido como estritamente maior, em centavos inteiros. Testado nas duas bordas.'
+  - '8 (a Σ da venda inclui os dias "—"): ACEITO. A paridade com a linha (AC4b) vale mais que fechar a coluna (AC4e) quando há venda antes de `atributosDesde`. A dica diz quantas vendas são. Em produção, o @dev não achou nenhum caso.'
+  - '9 (`diasPorCampanha` do Google): ACEITO. É a mesma consulta, recortada por `linhasNaRegua`, e `trafegoNaRegua(diasG1) == porCampanha` está testado.'
+  - '10 (ClickUp e CodeRabbit não feitos): registrado como pendência, não é achado.'
+
+loop_1_review:
+  commit: '823a37f9'
+  production_files_changed: 'nenhum: `git diff --name-only 7812bf77..823a37f9` só traz `__tests__/**` e a story.'
+  tests_reviewed: 'TEST-001: jsdom com `googleTrafego` pronto (g1, /daily em 28 e 26/10). Só a linha do Google é aberta, e o teste afirma: 0 pedidos ao `entity-daily`; nenhum "Carregando os dias"; os dias R$ 10,00 / R$ 0,00 / R$ 20,00 (sem imposto) e a Σ R$ 30,00 sem Δ; nas 4 linhas, as duas últimas células (Vendas e Receita, a dimensão Campanha não tem as colunas de vídeo) = "—", com o `title` = `DICA_GOOGLE_SEM_VENDA`. Um segundo caso abre a do Google junto com uma da Meta e afirma 1 pedido. TEST-002: `rerender` com `days = 7`, e o select Plataforma (Todas → Meta, `aria-label="Plataforma"`) fecha as linhas. TEST-003: relógio em 02:30Z de 29/10; o primeiro dia é 28/10 com "dia em andamento", e o pedido vai com `endDate=2026-10-28`. TEST-004: o seed `entregueEm` grava `event_at` 20 min depois de `purchased_at`, atravessando a meia-noite de SP, e o dia é o de `purchased_at` nos 3 níveis. TEST-005: o Δ −R$ 20,00 na Σ, e o imposto por data numa janela que cruza 2026-01-01. Nenhum é tautológico: cada um cai com a mutação correspondente (abaixo), e os valores esperados são literais, não recalculados pela função testada.'
+  mutations: 'Rodei de novo o meu `scratchpad/qa-gate-4219/mut.py` sobre 823a37f9: 28/28 CAEM. As 8 que sobreviviam: Q2 cai (1, o teste de event_at), Q12 cai (1), Q20 cai (1), Q21 cai (1), Q22 cai (1), Q23 cai (2), Q24 cai (1), Q27 cai (1). Das 20 que já caíam, nenhuma voltou. Três novas, para checar que os testes novos não são tautológicos: Q31 (o `title` da célula de venda some) CAI pelo teste do Google; Q32 (o Google lê os dias de outra campanha) CAI (2); Q33 (o Δ das impressões nunca aparece) SOBREVIVE, TEST-006 low. Total do loop: 31 mutações, 30 caem. `git status` limpo depois.'
+  gates: 'Rodados por mim sobre 823a37f9. API vitest: 5.402 passaram e 10 falharam, de 5.412 (+1 é o teste novo); as 10 são exatamente a baseline (funnel-stages-lead-inputs 3, instagram-routes 1, instagram 1, projects 3, schema 2). Web vitest `--testTimeout=60000`: 2.358/2.358, em 166 arquivos. tsc do web EXIT 0; tsc da API EXIT 0; eslint nos 3 arquivos de teste alterados EXIT 0. `next build` não foi refeito: só arquivos de teste e a story mudaram, e o build não os compila. O build do gate (7812bf77) foi verde, e é o mesmo código de produção.'
+  process_note: 'O registro do loop 1 do @dev (`### QA loop 1 …`) foi escrito DENTRO da seção QA Results da story, que é do @qa. O conteúdo confere com o que eu medi. Deixei o texto como estava e marquei de quem ele é. Próximo loop: esse registro vai no Dev Agent Record.'
+
+pendente_do_dono:
+  - 'Validação visual do Danilo e do Alberto (DoD), com o AC1f no celular (coluna do nome `sticky left-0` na 3ª coluna; ninguém abriu o app). Observação para essa validação: o filtro padrão da etapa é 90 dias (`lyrio-stage-view.tsx:130`), então cada expansão abre 90 sub-linhas mais a Σ, e até 365 com o DayRangePicker. Atende o AC1b ("todo dia aparece"). Se ficar pesado para o Alberto, é decisão de produto (@po).'
+  - 'Público em produção: a sonda do @dev mediu a paridade da venda nas 3 dimensões, mas a mídia linha × Σ só em Campanha e Criativo. O `/all-adsets` lê a Meta ao vivo, e a sonda não chama a Meta.'
+  - 'CodeRabbit não rodou (o CLI do WSL não existe nesta máquina, nem para o @dev nem para mim).'
+  - 'Status da story: deixei em InReview, como na 42.16. O lead move o status e o ClickUp (`17tqamf07p4`).'
+
+waiver: { active: false }
+
+checks:
+  code_review: 'Li o diff inteiro (15 arquivos). API: `ctesDosCompradores` e `colunasDoComprador` são o texto SQL de antes, só extraído, e `consultaDeVendasPorCanal` continua igual. `consultaDeVendasPorCanalComDias` agrupa `u` (o comprador, com a atribuição `maisRecente` e os sinais da série inteira) e `dias` (comprador × `diaNoFusoDoNegocio(purchased_at)`, só eventos pagos na janela), acumula por comprador em ordem de dia e junta pelo id, que nunca vira coluna. `montarVendasPorDiaDaMeta` usa `canalDaVenda` e as mesmas chaves de `montarVendasPorCanal`: id da campanha e nome aparado pelo `atributo()` do SQL. WEB: `indiceDaMidiaDaMeta` soma todos os ids do mesmo `entityName.trim()` em Público e Criativo, e pelo id em Campanha. O imposto entra uma vez, por dia, com a data do dia (`comImpostoMeta(m.spendBruto, dia)`), antes do `metaRow`. `lyrio-detail-rows.ts` não foi tocado. O Google não leva imposto. Na Σ, `metaRow` roda sobre as somas: cliques no link para o CTR e o CPC, e cliques totais à parte. A diferença é calculada em centavos inteiros. `fecharEmCentavos` vale para o investimento e para a receita. Estados: o erro é testado antes do carregando (Q28 cai). A venda carregando, em erro ou com API antiga vira "—". O dono da chave segue a regra de `vendasDoDetalhamento` (a primeira linha). A abertura é zerada na própria renderização em que o contexto muda (Q30 cai). O `<button type="button">` tem `aria-expanded` e `aria-controls` para o `<tbody>` dos dias, que existe também fechado (`hidden`).'
+  unit_tests: '(Gate inicial sobre 7812bf77; o loop 1 está em `loop_1_review`.) Rodados por mim na worktree. API `vitest run`: 5.401 passaram e 10 falharam, de 5.411. As 10 são EXATAMENTE a baseline: funnel-stages-lead-inputs 3, instagram-routes 1, instagram 1, projects 3, schema 2. Web `vitest run --testTimeout=60000`: 2.351/2.351 em 166 arquivos. MUTAÇÕES PRÓPRIAS (harness em `scratchpad/qa-gate-4219/mut.py`; uma por vez, restaurada depois; `git status` limpo no fim). Suítes: as 2 da API da quebra de vendas e as 8 do web que importam ou leem o código mutado. API: Q1 dia em UTC cai (2) · Q2 dia pelo event_at SOBREVIVE (TEST-004) · Q3 centavo do dia arredondado sozinho cai (5) · Q4 acumulado sem ORDER BY cai (4) · Q5 a rota sem separar o grão cai (1) · Q6 dias sem o filtro de venda paga cai (5) · Q7 chave do conjunto = nome do anúncio cai (2). WEB: Q10 gross-up em dobro (no índice) cai (7) · Q11 gross-up de novo na Σ cai (4) · Q12 imposto pela data de hoje SOBREVIVE (TEST-005) · Q13 `trimStart` no lugar de `trim` cai (2) · Q14 a linha procura a série pelo id cai (2) · Q15 Google com venda 0 (pura) cai (1) · Q16 dias do Google com imposto cai (1) · Q17 mídia sem linha sem imposto cai (1) · Q18 `precisaDaSerie` ignora a plataforma cai (1) · Q19 período da série 1 dia antes cai (2) · Q20 hoje em UTC no componente SOBREVIVE (TEST-003) · Q21 contexto sem `days` SOBREVIVE (TEST-002) · Q22 contexto sem plataforma SOBREVIVE (TEST-002) · Q23 Google pela expansão da Meta SOBREVIVE (TEST-001) · Q24 Google espera a série da Meta SOBREVIVE (TEST-001) · Q25 `aria-controls` errado cai (1) · Q26 sem `type=button` cai (1) · Q27 Δ do investimento nunca aparece SOBREVIVE (TEST-005) · Q28 erro da série vira skeleton cai (1) · Q29 série sem as datas cai (1) · Q30 o reset só esconde cai (1). Total: 28; 20 caem, 8 sobrevivem. Li o `mut.py` do @dev, mas não o usei como evidência. As minhas variantes são outras: o imposto no índice e na Σ em vez do dia, `trimStart`, o acumulado sem ORDER BY, o filtro de pago e os fios de plataforma, janela, hoje e Google.'
+  lint_typecheck: 'Rodados por mim. `pnpm --filter @loyola-x/shared build` EXIT 0. tsc da API EXIT 0. eslint `src/` da API: 0 erros, 1 warning em `routes/lp-campaigns.ts`, que não foi tocado. eslint `components lib app` do web EXIT 0, sem saída. `next build` e tsc do web: ver `build`.'
+  build: 'Rodados por mim, depois das mutações e com o código restaurado: `pnpm build` (next build) do web EXIT 0, em 60 s. Depois dele, `tsc --noEmit` do web EXIT 0, sem saída.'
+  scope: 'Commit com `[scope-override]` e o autor `danilo@bonsaitrafegopago.com.br`. Os paths estão na lista da story, com uma exceção: `packages/web/vitest.config.ts`, que só ganha uma linha de `include` para o jsdom. Ele fica fora da lista enumerada, mas dentro da D20 ("tudo autorizado"). Não é achado.'
+  api_contract: 'Gate 8 OK. O campo novo `metaPorEntidadeDiario` está na resposta da `vendas-por-canal`, e `API_CONTRACT_VERSION` = 62, com a linha de histórico (o motivo da renumeração 61 → 62 está escrito). Na `origin/main` (`5fb293bc`, `git ls-remote`), a versão é 61 (Story 18.99). A única PR aberta (#821, docs) não toca o contrato, então a 62 está livre. O campo é aditivo, e a API antiga dá "—" nos dias (AC5d, testado).'
+  security: 'Nenhum `app_user_id` sai da consulta: ele agrupa, particiona e junta, mas não é coluna. O teste afirma a lista exata de colunas e a ausência dos ids semeados no resultado e no corpo da rota. A rota mantém a autorização de antes. As chaves de conjunto e anúncio são nomes, como já eram em `metaPorEntidade`. Nenhum dado novo vai para storage ou URL.'
+  performance: 'Uma requisição ao `entity-daily` por dimensão e janela, e só com uma linha da Meta aberta (Q18 e AC6d). A venda por dia vem na mesma consulta e na mesma chave de cache da `vendas-por-canal`, sem N + 1. A rota continua com 3 consultas. A `ev` passa a ser materializada (dois leitores). O @dev mediu 257/285 ms contra 370/313 ms, uma medição só. Não refiz porque a sonda não era obrigatória.'
+  acceptance_criteria: 'AC1 ✓ (a–e; f, sticky, pende do visual) · AC2 ✓ (a: 1 requisição, só com expansão da Meta, com as datas de SP; b: gross-up uma vez, por dia, fora de `lyrio-detail-rows.ts`; c: cliques no link; d: Hook e Hold "—" com a dica; e: Google do `/daily`, sem chamada nova; f: id × nome aparado, somando ids) · AC3 ✓ (a–d, f; e com REQ-001) · AC4 ✓ (a–e; c sem fio de render, TEST-005) · AC5 ✓ (a–d) · AC6 ✓ (a–e, com o limite declarado do Enter/Espaço no jsdom; f parcial: 8 mutações minhas sobrevivem, TEST-001..005) · AC7 ✓ (v62; gates verdes sobre a baseline). DoD: a paridade em produção foi medida pelo @dev (venda 0 divergências em 7 e 28 dias, nas 3 dimensões; mídia em Campanha e Criativo). Faltam o visual e o Público.'
+  clickup: 'Não registrado: o pedido do lead proibiu escrita no ClickUp. Task `17tqamf07p4`.'

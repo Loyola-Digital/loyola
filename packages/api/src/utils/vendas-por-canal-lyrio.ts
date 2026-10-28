@@ -209,6 +209,77 @@ export function montarVendasPorCanal(compradores: readonly CompradorDoLyrio[]): 
   };
 }
 
+// ─────────────── Story 42.19 (AC3) — a venda por entidade e por dia ───────────────
+
+/**
+ * Um comprador num dia de SP em que ele pagou, sem o id. Sinais e atribuição
+ * são os DO COMPRADOR (os da linha dele em `CompradorDoLyrio`), não os do dia.
+ */
+export interface DiaDoComprador extends Omit<CompradorDoLyrio, "receitaUsd"> {
+  /** `AAAA-MM-DD`, o dia de SP de `purchased_at`. */
+  dia: string;
+  /** O centavo do dia: `round(acumulado até o dia) − round(acumulado até a véspera)`, em centavos de dólar. */
+  centavos: number;
+}
+
+/**
+ * Um dia de uma entidade da Meta. `chave` é a MESMA de `EntidadeMeta` (id da
+ * campanha; nome aparado do conjunto e do anúncio; `null` = não identificado).
+ * `vendas` e `receitaUsd` somam, por entidade, a linha de `metaPorEntidade`
+ * (AC3b). `compradores` é quem pagou NAQUELE dia: quem paga em dois dias
+ * conta nos dois, então a soma dos dias pode passar do `compradores` da linha.
+ */
+export interface DiaDaEntidadeMeta {
+  chave: string | null;
+  dia: string;
+  vendas: number;
+  compradores: number;
+  receitaUsd: number;
+}
+
+export interface VendasPorDiaDaMeta {
+  campaign: DiaDaEntidadeMeta[];
+  adset: DiaDaEntidadeMeta[];
+  ad: DiaDaEntidadeMeta[];
+}
+
+/**
+ * AC3a/AC3b — `metaPorEntidadeDiario`: a mesma regra de canal (`canalDaVenda`)
+ * e a mesma chave de `montarVendasPorCanal`, com o dia. Ordem: chave (a
+ * `null` primeiro), depois o dia.
+ */
+export function montarVendasPorDiaDaMeta(dias: readonly DiaDoComprador[]): VendasPorDiaDaMeta {
+  const niveis = {
+    campaign: new Map<string, DiaDaEntidadeMeta & { centavosAcumulados: number }>(),
+    adset: new Map<string, DiaDaEntidadeMeta & { centavosAcumulados: number }>(),
+    ad: new Map<string, DiaDaEntidadeMeta & { centavosAcumulados: number }>(),
+  };
+  const somar = (nivel: keyof typeof niveis, chave: string | null, d: DiaDoComprador) => {
+    const m = niveis[nivel];
+    const k = `${chave === null ? "\u0000" : `\u0001${chave}`}\u0002${d.dia}`;
+    let a = m.get(k);
+    if (!a) {
+      a = { chave, dia: d.dia, vendas: 0, compradores: 0, receitaUsd: 0, centavosAcumulados: 0 };
+      m.set(k, a);
+    }
+    a.vendas += d.vendas;
+    a.compradores += 1;
+    a.centavosAcumulados += d.centavos;
+  };
+  for (const d of dias) {
+    if (d.vendas <= 0) continue;
+    if (canalDaVenda(d) !== "meta") continue;
+    somar("campaign", d.metaCampaignId, d);
+    somar("adset", d.metaAdsetName, d);
+    somar("ad", d.metaAdName, d);
+  }
+  const lista = (m: (typeof niveis)["campaign"]): DiaDaEntidadeMeta[] =>
+    [...m.entries()]
+      .sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0))
+      .map(([, a]) => ({ chave: a.chave, dia: a.dia, vendas: a.vendas, compradores: a.compradores, receitaUsd: a.centavosAcumulados / 100 }));
+  return { campaign: lista(niveis.campaign), adset: lista(niveis.adset), ad: lista(niveis.ad) };
+}
+
 // ─────────────────────────── SQL ───────────────────────────
 
 /** Escopo dos eventos: a etapa, com usuário, sem `TEST` (o mesmo da Jornada). */
@@ -229,12 +300,11 @@ const maisRecente = (coluna: string) =>
   sql`(array_agg(${sql.identifier(coluna)} ORDER BY ev.event_at DESC NULLS LAST) FILTER (WHERE ${sql.identifier(coluna)} IS NOT NULL))[1]`;
 
 /**
- * Uma linha por usuário que pagou na janela, sem o id. Os atributos são lidos
- * UMA vez por evento (CTE), e os sinais olham a série inteira do usuário — a
- * janela só entra no FILTER das vendas e no HAVING (D6).
+ * As CTEs comuns da quebra por comprador e da quebra por dia (Story 42.19):
+ * `compradores` → `base` → `ev`. A mesma regra de venda e de atribuição nas
+ * duas, por construção — é o texto SQL que se repete, não uma segunda cópia.
  */
-export function consultaDeVendasPorCanal(stageId: string, desde: Date): SQL {
-  const pago = vendaPagaNaJanela(desde);
+function ctesDosCompradores(stageId: string, desde: Date): SQL {
   // `base` MATERIALIZED: o `payload` é descompactado UMA vez por evento e os
   // atributos são lidos do `sa`, já pequeno. Sem o MATERIALIZED o Postgres
   // embute a CTE e volta a ler o `payload` em cada atributo.
@@ -244,7 +314,7 @@ export function consultaDeVendasPorCanal(stageId: string, desde: Date): SQL {
   // de cada um (D6) — o corte é de usuário, não de evento.
   const sa = sql`base.sa`;
   const pagoNoEvento = sql`${c.eventType} IN (${sql.join(REVENUE.map((t) => sql`${t}`), sql`, `)}) AND ${c.revenueUsd} > 0 AND ${c.purchasedAt} >= ${desde.toISOString()}::timestamptz`;
-  return sql`WITH compradores AS MATERIALIZED (
+  return sql`compradores AS MATERIALIZED (
     SELECT DISTINCT ${c.appUserId} AS app_user_id FROM ${c} WHERE ${escopoDasVendas(stageId)} AND ${pagoNoEvento}
   ), base AS MATERIALIZED (
     SELECT ${c.appUserId} AS app_user_id, ${c.eventType} AS event_type, ${c.revenueUsd} AS revenue_usd,
@@ -257,9 +327,13 @@ export function consultaDeVendasPorCanal(stageId: string, desde: Date): SQL {
       ${atributo("meta_campaign_id", sa)} AS a_campaign_id, ${atributo("meta_campaign_name", sa)} AS a_campaign_name,
       ${atributo("meta_adset_name", sa)} AS a_adset_name, ${atributo("meta_ad_name", sa)} AS a_ad_name
     FROM base
-  )
-  SELECT
-    coalesce(bool_or(ev.s_meta), false) AS s_meta,
+  )`;
+}
+
+/** As colunas de UM comprador (agrupado por `ev.app_user_id`), sem o id. */
+function colunasDoComprador(desde: Date): SQL {
+  const pago = vendaPagaNaJanela(desde);
+  return sql`coalesce(bool_or(ev.s_meta), false) AS s_meta,
     coalesce(bool_or(ev.s_google), false) AS s_google,
     coalesce(bool_or(ev.s_organico), false) AS s_organico,
     (count(*) FILTER (WHERE ${pago}))::int AS vendas,
@@ -267,8 +341,61 @@ export function consultaDeVendasPorCanal(stageId: string, desde: Date): SQL {
     ${maisRecente("a_campaign_id")} AS meta_campaign_id,
     ${maisRecente("a_campaign_name")} AS meta_campaign_name,
     ${maisRecente("a_adset_name")} AS meta_adset_name,
-    ${maisRecente("a_ad_name")} AS meta_ad_name
+    ${maisRecente("a_ad_name")} AS meta_ad_name`;
+}
+
+/**
+ * Uma linha por usuário que pagou na janela, sem o id. Os atributos são lidos
+ * UMA vez por evento (CTE), e os sinais olham a série inteira do usuário — a
+ * janela só entra no FILTER das vendas e no HAVING (D6).
+ */
+export function consultaDeVendasPorCanal(stageId: string, desde: Date): SQL {
+  const pago = vendaPagaNaJanela(desde);
+  return sql`WITH ${ctesDosCompradores(stageId, desde)}
+  SELECT ${colunasDoComprador(desde)}
   FROM ev GROUP BY ev.app_user_id HAVING count(*) FILTER (WHERE ${pago}) > 0`;
+}
+
+/**
+ * Story 42.19 (AC3) — a MESMA consulta, com o grão comprador × dia junto, numa
+ * leitura só (as CTEs rodam uma vez). `grao = 'comprador'`: as linhas de
+ * `consultaDeVendasPorCanal`, coluna a coluna. `grao = 'dia'`: uma por
+ * comprador e dia de SP da venda (`diaNoFusoDoNegocio(purchased_at)`), com a
+ * atribuição e os sinais DO COMPRADOR (os mesmos da linha dele) — é o que faz os
+ * dias somarem a linha (AC3b, R2/PO-03: a venda do dia vai para o anúncio mais
+ * recente do comprador, que pode ser de outro dia).
+ *
+ * A receita do dia sai como ACUMULADO do comprador até o dia e até a véspera
+ * (`numeric`, exato): o centavo do dia é `round(até o dia) − round(até a
+ * véspera)`, e a soma dos dias telescopa no `round(total)` — o mesmo centavo da
+ * linha do comprador. `revenue_usd` tem 4 casas (`numeric(14,4)`); arredondar
+ * cada dia por conta própria deixaria a soma dos dias a 1 centavo da linha.
+ *
+ * Nenhum id de usuário sai: ele agrupa, particiona e junta, mas não é coluna.
+ */
+export function consultaDeVendasPorCanalComDias(stageId: string, desde: Date): SQL {
+  const pago = vendaPagaNaJanela(desde);
+  const dia = diaNoFusoDoNegocio(sql`ev.purchased_at`);
+  return sql`WITH ${ctesDosCompradores(stageId, desde)}, u AS (
+    SELECT ev.app_user_id, ${colunasDoComprador(desde)}
+    FROM ev GROUP BY ev.app_user_id HAVING count(*) FILTER (WHERE ${pago}) > 0
+  ), dias AS (
+    SELECT ev.app_user_id, ${dia} AS dia, count(*)::int AS vendas, sum(ev.revenue_usd) AS receita
+    FROM ev WHERE ${pago} GROUP BY ev.app_user_id, ${dia}
+  ), d AS (
+    SELECT dias.app_user_id, dias.dia, dias.vendas, dias.receita,
+      sum(dias.receita) OVER (PARTITION BY dias.app_user_id ORDER BY dias.dia COLLATE "C") AS acumulado
+    FROM dias
+  )
+  SELECT 'comprador'::text AS grao, NULL::text AS dia, u.s_meta, u.s_google, u.s_organico, u.vendas, u.receita_usd,
+    NULL::float8 AS receita_ate_o_dia, NULL::float8 AS receita_ate_a_vespera,
+    u.meta_campaign_id, u.meta_campaign_name, u.meta_adset_name, u.meta_ad_name
+  FROM u
+  UNION ALL
+  SELECT 'dia'::text, d.dia, u.s_meta, u.s_google, u.s_organico, d.vendas, NULL::float8,
+    d.acumulado::float8, (d.acumulado - d.receita)::float8,
+    u.meta_campaign_id, u.meta_campaign_name, u.meta_adset_name, u.meta_ad_name
+  FROM d JOIN u ON u.app_user_id = d.app_user_id`;
 }
 
 /**
@@ -330,6 +457,33 @@ export function lerLinhaDeVendas(r: Record<string, unknown>): CompradorDoLyrio {
     metaCampaignName: texto(r.meta_campaign_name),
     metaAdsetName: texto(r.meta_adset_name),
     metaAdName: texto(r.meta_ad_name),
+  };
+}
+
+/**
+ * Story 42.19 — linha `grao = 'dia'` de `consultaDeVendasPorCanalComDias` →
+ * `DiaDoComprador`. `null` se a linha não tiver o dia (não deveria acontecer:
+ * `purchased_at` é a coluna do corte, nunca nula numa venda da janela).
+ */
+export function lerDiaDeVendas(r: Record<string, unknown>): DiaDoComprador | null {
+  const dia = typeof r.dia === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.dia) ? r.dia : null;
+  if (!dia) return null;
+  const u = lerLinhaDeVendas(r);
+  const centavosAte = (v: unknown) => {
+    const n = typeof v === "number" ? v : Number(v);
+    return Number.isFinite(n) ? emCentavos(n) : 0;
+  };
+  return {
+    meta: u.meta,
+    google: u.google,
+    organico: u.organico,
+    vendas: u.vendas,
+    metaCampaignId: u.metaCampaignId,
+    metaCampaignName: u.metaCampaignName,
+    metaAdsetName: u.metaAdsetName,
+    metaAdName: u.metaAdName,
+    dia,
+    centavos: centavosAte(r.receita_ate_o_dia) - centavosAte(r.receita_ate_a_vespera),
   };
 }
 
