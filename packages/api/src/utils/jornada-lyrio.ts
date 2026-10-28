@@ -210,10 +210,20 @@ export const COLUNAS_DA_JORNADA = {
   c_ios: algum(sql`upper(${evento}->>'platform') = 'IOS' OR ${c.store} = 'APP_STORE'`),
 } as const;
 
-/** A consulta inteira: uma linha por usuário da coorte, sem o id. */
-export function consultaDaJornada(stageId: string, desde: Date): SQL {
+/**
+ * A consulta inteira: uma linha por usuário da coorte, sem o id.
+ *
+ * Story 42.18 (AC3d): `extras` acrescenta colunas agregadas à MESMA redução
+ * por usuário — é como o produto do primeiro "iniciou" entra
+ * (`jornada-por-produto-lyrio.ts`), sem uma segunda varredura da etapa. As
+ * colunas extras não podem ter o nome de uma da Jornada.
+ */
+export function consultaDaJornada(stageId: string, desde: Date, extras: Readonly<Record<string, SQL>> = {}): SQL {
+  for (const nome of Object.keys(extras)) {
+    if (nome in COLUNAS_DA_JORNADA) throw new Error(`coluna extra da jornada repete um nome: ${nome}`);
+  }
   const colunas = sql.join(
-    Object.entries(COLUNAS_DA_JORNADA).map(([nome, expr]) => sql`${expr} AS ${sql.identifier(nome)}`),
+    Object.entries({ ...COLUNAS_DA_JORNADA, ...extras }).map(([nome, expr]) => sql`${expr} AS ${sql.identifier(nome)}`),
     sql`, `,
   );
   return sql`SELECT ${colunas} FROM ${c} WHERE ${escopoDaJornada(stageId)} GROUP BY ${c.appUserId} HAVING ${coorteDaJornada(desde)}`;

@@ -51,7 +51,106 @@ export interface JornadaDoLyrio {
   /** Story 42.12 (AC4): primeiro evento da etapa com `ad_network` ou id de campanha da Meta. Ausente na API anterior. */
   atributosDesde?: string | null;
   total: ContagemDaJornada;
+  /** Story 42.18 (AC3): o iniciou de cada canal repartido por plano. Ausente na API anterior (contrato < 60). */
+  porProduto?: PorProdutoDaJornada;
 }
+
+// ─────────────── Story 42.18 — Por produto × canal ───────────────
+
+export type LinhaDoPorProduto = "mensal" | "trimestral" | "semestral" | "anual" | "outros" | "sem_produto";
+
+export interface CelulaDoPorProduto {
+  iniciou: number;
+  iniciouTeste: number;
+}
+
+/** Espelha `porProduto` de `GET …/revenuecat/jornada` (`utils/jornada-por-produto-lyrio.ts` da API). Só contagens e ids de produto. */
+export interface PorProdutoDaJornada {
+  /** O denominador: os novos de cada canal, na ordem da Jornada. */
+  canais: { canal: CanalDaJornada; rotulo: string; novos: number }[];
+  conflito: { novos: number };
+  total: { novos: number };
+  linhas: {
+    linha: LinhaDoPorProduto;
+    rotulo: string;
+    canais: (CelulaDoPorProduto & { canal: CanalDaJornada })[];
+    conflito: CelulaDoPorProduto;
+    total: CelulaDoPorProduto;
+    /** Os `product_id` que caíram na linha (PO-01). */
+    produtos: (CelulaDoPorProduto & { productId: string })[];
+  }[];
+}
+
+/** AC4d — a dica do cabeçalho, literal da story. */
+export const DICA_DO_POR_PRODUTO =
+  "Novos do canal na janela que iniciaram este plano ÷ todos os novos do canal. O usuário novo não tem produto antes de iniciar, por isso o denominador é o canal.";
+
+export interface ColunaDoPorProduto {
+  /** O `canal` da Jornada, `"conflito"` ou `"total"`. */
+  chave: string;
+  rotulo: string;
+  novos: number;
+}
+
+/**
+ * AC4a — as colunas, cada uma com as duas taxas: os 8 canais na ordem da
+ * Jornada, o conflito (só quando houver, como a linha da tabela de cima) e o
+ * Total.
+ */
+export function colunasDoPorProduto(p: PorProdutoDaJornada): ColunaDoPorProduto[] {
+  return [
+    ...p.canais.map((c) => ({ chave: c.canal as string, rotulo: c.rotulo, novos: c.novos })),
+    ...(p.conflito.novos > 0 ? [{ chave: "conflito", rotulo: "Meta e Google (conflito)", novos: p.conflito.novos }] : []),
+    { chave: "total", rotulo: "Total", novos: p.total.novos },
+  ];
+}
+
+/**
+ * AC4a/AC4e — as duas taxas de uma célula, contra os NOVOS DO CANAL (não do
+ * plano): 0 novos no canal → `null` ("—"); novos e ninguém no plano → 0.
+ */
+export function taxasDoPorProduto(linha: PorProdutoDaJornada["linhas"][number], coluna: ColunaDoPorProduto): { trial: number | null; iniciou: number | null } {
+  const c = coluna.chave === "total" ? linha.total : coluna.chave === "conflito" ? linha.conflito : linha.canais.find((x) => x.canal === coluna.chave);
+  return { trial: taxaDaJornada(c?.iniciouTeste ?? 0, coluna.novos), iniciou: taxaDaJornada(c?.iniciou ?? 0, coluna.novos) };
+}
+
+/** AC2b (PO-01) — a dica da linha: os `product_id` que caíram nela, para "Outros" não esconder um plano novo. */
+export function dicaDaLinhaDoPorProduto(linha: PorProdutoDaJornada["linhas"][number]): string {
+  if (linha.linha === "sem_produto") return "Iniciaram, mas o primeiro evento de início veio sem product_id.";
+  if (linha.produtos.length === 0) return "Nenhum produto nesta linha na janela.";
+  const itens = linha.produtos.map((p) => `${p.productId} (${p.iniciou.toLocaleString("pt-BR")} iniciaram; ${p.iniciouTeste.toLocaleString("pt-BR")} por trial)`);
+  return `Produtos nesta linha: ${itens.join(" · ")}`;
+}
+
+const SEM_CONFLITO: ContagemDaJornada = { novos: 0, viuPaywall: 0, interagiu: 0, iniciou: 0, iniciouTeste: 0, pagou: 0, receitaUsd: 0 };
+
+/**
+ * AC4c — a paridade, conferida nas CONTAGENS (exatas): para cada canal (e o
+ * conflito e o Total), a soma das linhas é o iniciou / iniciou teste da tabela
+ * por canal. Devolve as colunas que não fecham (vazio = fecha). As taxas na
+ * tela são arredondadas célula a célula (0,1 p.p.): a soma das taxas exibidas
+ * de uma coluna pode diferir da taxa do canal exibida em até 0,05 p.p. por
+ * linha com valor mais 0,05 p.p. da própria taxa do canal.
+ */
+export function colunasSemParidade(j: Pick<JornadaDoLyrio, "linhas" | "conflito" | "total" | "porProduto">): string[] {
+  const p = j.porProduto;
+  if (!p) return [];
+  const soma = (pegar: (l: PorProdutoDaJornada["linhas"][number]) => CelulaDoPorProduto | undefined) => ({
+    iniciou: p.linhas.reduce((a, l) => a + (pegar(l)?.iniciou ?? 0), 0),
+    iniciouTeste: p.linhas.reduce((a, l) => a + (pegar(l)?.iniciouTeste ?? 0), 0),
+  });
+  const confere = (chave: string, alvo: ContagemDaJornada | undefined, s: CelulaDoPorProduto, novos: number) =>
+    alvo && alvo.iniciou === s.iniciou && alvo.iniciouTeste === s.iniciouTeste && alvo.novos === novos ? [] : [chave];
+  return [
+    ...p.canais.flatMap((c) => confere(c.canal, j.linhas.find((l) => l.canal === c.canal), soma((l) => l.canais.find((x) => x.canal === c.canal)), c.novos)),
+    ...confere("conflito", j.conflito ?? SEM_CONFLITO, soma((l) => l.conflito), p.conflito.novos),
+    ...confere("total", j.total, soma((l) => l.total), p.total.novos),
+  ];
+}
+
+/** AC4c — a frase do arredondamento, declarada abaixo da tabela. */
+export const ARREDONDAMENTO_DO_POR_PRODUTO =
+  "Cada taxa é arredondada a 0,1 ponto percentual. Somando as linhas de uma coluna, chega-se à taxa do canal na tabela de cima; a soma do que aparece pode diferir dela em até 0,05 ponto por linha com valor, mais 0,05 do arredondamento da própria taxa do canal.";
 
 export type EstadoDoBloco = { tipo: "carregando" } | { tipo: "oculto" } | { tipo: "erro"; mensagem: string } | { tipo: "pronto"; dados: JornadaDoLyrio };
 
