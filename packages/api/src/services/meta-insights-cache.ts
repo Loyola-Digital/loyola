@@ -35,6 +35,10 @@ import {
   fetchCampaignDailyInsightsForIds,
   fetchHourlyDailyInsights,
   fetchAccountTimezone,
+  // Story 18.98: a régua de janela e o "hoje" vêm do fuso da conta, sem cópia UTC.
+  dateRangeFromDays,
+  todayInTimezone,
+  ACCOUNT_TIMEZONE,
   type MetaDailyInsight,
   type AdDailyInsight,
   type MetaPlacementDailyInsight,
@@ -56,9 +60,12 @@ const TTL_INSIGHTS_TODAY_MS = 60 * 60 * 1000; // 1h
  *
  * - dateStart = hoje: cutoff = now - 1h (reconsulta a Meta só se passou de 1h)
  * - dateStart < hoje: cutoff = 1970 (qualquer linha cacheada vale — não reconsulta)
+ *
+ * Story 18.98: "hoje" é o dia de `now` no fuso da conta. Em UTC, das 21h às 24h
+ * de Brasília o hoje de Brasília virava "passado".
  */
 export function ttlCutoffForDate(dateStart: string, now: Date = new Date()): Date {
-  const today = now.toISOString().slice(0, 10);
+  const today = todayInTimezone(ACCOUNT_TIMEZONE, now);
   if (dateStart === today) return new Date(now.getTime() - TTL_INSIGHTS_TODAY_MS);
   return new Date(0); // dia passado já no banco — sempre válido
 }
@@ -74,14 +81,6 @@ function enumerateDates(since: string, until: string): string[] {
     dates.push(new Date(d).toISOString().slice(0, 10));
   }
   return dates;
-}
-
-function dateRangeFromDays(days: number): { since: string; until: string } {
-  const today = new Date();
-  const until = today.toISOString().slice(0, 10);
-  const sinceDate = new Date(today.getTime() - (days - 1) * 24 * 60 * 60 * 1000);
-  const since = sinceDate.toISOString().slice(0, 10);
-  return { since, until };
 }
 
 /**
