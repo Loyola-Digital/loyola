@@ -170,7 +170,7 @@ describe("Story 18.99 — ordenação (AC4)", () => {
   });
 });
 
-describe("Story 18.99 — API anterior ao contrato 60 (AC6)", () => {
+describe("Story 18.99 — API anterior ao contrato 61 (AC6)", () => {
   it("sem `statusDosAnuncios`, nenhuma linha tem status (\"—\")", () => {
     const rows = buildLpRows([ad("a1"), ad("x1")], { a1: LP_A, x1: null }, [], 0, []);
     expect(rows.every((r) => r.status === undefined && r.campanhasAtivas === undefined)).toBe(true);

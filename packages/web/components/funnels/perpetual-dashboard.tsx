@@ -2340,7 +2340,7 @@ export function PerpetualDashboard({ funnel, projectId, stageId, stageType, onCa
         // e precisa chegar assim ao util — colapsar em array vazio fazia a tela
         // afirmar "sem URL na Meta" para o que era só cache velho.
         linkUrlsData?.staleInCache,
-        // Story 18.99 (AC6): sem `statusByAdId` (API anterior ao contrato 60)
+        // Story 18.99 (AC6): sem `statusByAdId` (API anterior ao contrato 61)
         // nenhuma linha ganha status, e a coluna mostra "—".
         linkUrlsData?.statusByAdId
           ? { statusByAdId: linkUrlsData.statusByAdId, campanhaByAdId: linkUrlsData.campanhaByAdId }

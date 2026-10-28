@@ -44,7 +44,7 @@ export interface LpAdInput {
 }
 
 /**
- * Story 18.99 — o que a API (`/ad-link-urls`, contrato 60) diz de cada
+ * Story 18.99 — o que a API (`/ad-link-urls`, contrato 61) diz de cada
  * anúncio para a coluna Status. Só os anúncios com status no cache estão em
  * `statusByAdId`: ausência é "desconhecido", nunca "pausado".
  */
@@ -58,7 +58,7 @@ export interface StatusDosAnuncios {
  * Story 18.99 (AC6) — junta a resposta dos lotes de `/ad-link-urls`.
  *
  * Só há status se **todos** os lotes responderam com o campo. Lote ainda
- * carregando, com erro ou de API anterior ao contrato 60 deixa o conjunto
+ * carregando, com erro ou de API anterior ao contrato 61 deixa o conjunto
  * desconhecido ("—"). Juntar só os que chegaram podia pôr "Pausado" na linha
  * "Sem link resolvido" quando o único anúncio ativo estava no lote que falhou
  * (QA 18.99 REL-001).
@@ -110,7 +110,7 @@ export type LpRow = DetailMetricsOutput & {
    * Story 18.99 (AC2) — a regra da 18.97: "active" se ≥ 1 anúncio da linha está
    * ACTIVE; "paused" se há status conhecido e nenhum ativo; "unknown" se nenhum
    * anúncio tem status. `undefined` = a API não informou (anterior ao
-   * contrato 60). Os dois últimos viram "—" na tela.
+   * contrato 61). Os dois últimos viram "—" na tela.
    */
   status?: "active" | "paused" | "unknown";
   /**

@@ -46,12 +46,12 @@ waiver: { active: false }
 checks:
   code_review: 'OK. Regra igual à da 18.61/18.97. O status sai de `lpAds`, que já passou pelo `filtrarPorPublico`. A rota `/ad-link-urls`, o `buildLpRows` e o `sortLpRows` só têm este consumidor (`perpetual-dashboard.tsx`); os outros arquivos que citam a rota o fazem em comentário. O `StatusDaLp` foi só exportado. O perpétuo já importava o `launch-dashboard`, que importa a tabela da 18.97, então o bundle não cresce.'
   unit_tests: 'OK. Web 22/22 e API 7/7 na story. Reversões M1–M12 vermelhas (M4, a do `every` do hook, saiu com a junção pura e foi trocada pela M10). Vizinhos (`perpetual-lp-rows`, `lps-status-1897`) passam.'
-  acceptance_criteria: 'AC1–AC7 ✓ · AC8 ⏳ visual depois do deploy da API (contrato 60).'
+  acceptance_criteria: 'AC1–AC7 ✓ · AC8 ⏳ visual depois do deploy da API (contrato 61).'
   no_regressions: 'OK. typecheck 5/5, lint 5/5 (o único aviso é anterior, em `lp-campaigns.ts:57`) e `next build` verde. Web 2309/2309. API 5356/5367: 10 são as falhas locais conhecidas do Node 25. A 11ª foi timeout de 5 s (`lp-correcao-e-fio-1883`) com o `next build` rodando junto. Isolados, ela e os testes de PGlite que oscilaram passam (125/125 e 83/83).'
   performance: 'OK depois do PERF-001.'
   security: 'OK. As duas leituras filtram por projeto (testado). A rota mantém o `guestCanAccessTraffic`.'
   documentation: 'OK. Comentários nas funções, linha de histórico do contrato e Dev Agent Record.'
-  api_contract: 'OK. v60 com a linha de histórico; campos aditivos, e o web mostra "—" com a API antiga (testado).'
+  api_contract: 'OK. v61 com a linha de histórico; campos aditivos, e o web mostra "—" com a API antiga (testado).'
   scope_condition: 'Commits com [scope-override]. O gestor confirmou a autorização do Lucas antes do *develop.'
 
 notes:

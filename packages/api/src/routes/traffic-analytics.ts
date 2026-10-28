@@ -946,7 +946,7 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
         // precisa olhar isso".
         refreshAgendado: refresh.agendados,
         refreshMotivo: refresh.motivo,
-        // Story 18.99 (AC5, contrato 60). Aditivos: consumidor antigo ignora.
+        // Story 18.99 (AC5, contrato 61). Aditivos: consumidor antigo ignora.
         statusByAdId,
         campanhaByAdId,
       };

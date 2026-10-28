@@ -542,7 +542,7 @@ export interface AdLinkUrlsResponse {
     | "sem_conta_meta"
     | "token_invalido";
   /**
-   * Story 18.99 (contrato 60) — status atual de cada anúncio na Meta, só dos
+   * Story 18.99 (contrato 61) — status atual de cada anúncio na Meta, só dos
    * que têm status no cache (`ACTIVE` → active, o resto → paused). Ausente =
    * API anterior → a coluna Status do perpétuo mostra "—".
    */
