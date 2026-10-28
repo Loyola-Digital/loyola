@@ -15,7 +15,7 @@
  */
 
 import { ehApiAtras } from "./mensagem-de-api-atras";
-import { calcularMargemContribuicao } from "./lyrio-margin";
+import { calcularMargemContribuicao, centavos } from "./lyrio-margin";
 
 export type CanalDaVenda = "meta" | "google" | "organico" | "sem_atribuicao";
 
@@ -95,6 +95,23 @@ export function estadoDasVendasPorCanal(q: { isLoading: boolean; error: unknown;
   }
   if (q.isLoading || !q.data) return { tipo: "carregando" };
   return { tipo: "pronto", dados: q.data };
+}
+
+/**
+ * Story 42.17 (QA loop 1, REL-001) — a Receita total em R$: o `totalPago` (US$)
+ * × câmbio, arredondado ao centavo UMA vez, aqui. É o valor do card Receita do
+ * Resumo (42.15), do ROAS e da Margem, do Total da tabela "Dados diários" e o
+ * alvo da repartição dos dias — os três leem esta função com os mesmos insumos.
+ *
+ * Antes, o card formatava o produto cru (o `Intl` arredonda o valor exato do
+ * double) e a repartição fechava em `Math.round(total × 100)`. Os dois só
+ * divergem quando o produto cai EXATAMENTE no meio centavo (US$ 3.250,00 ×
+ * 5,4123 = R$ 17.589,975): o card mostrava R$ 17.589,98 e os dias somavam
+ * R$ 17.589,97. O arredondamento é o `centavos` da Margem (42.4), o mesmo que
+ * o memorial da Margem já usava no "Faturamento bruto".
+ */
+export function receitaTotalEmReais(receitaUsd: number, taxa: number): number {
+  return centavos(receitaUsd * taxa);
 }
 
 /** `AAAA-MM-DD` → `dd/mm/aaaa`. */

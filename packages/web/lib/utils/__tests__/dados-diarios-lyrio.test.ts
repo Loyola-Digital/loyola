@@ -5,9 +5,10 @@ import { cardsDoResumo, type EntradaDoResumo } from "../resumo-mobile-lyrio";
 import { hojeNoNegocio } from "../janela-dos-cards-lyrio";
 import { investimentoDoGoogleNaRegua, trafegoDoGoogleNaRegua, type ConsultaDiariaDoGoogle } from "../google-ads-na-regua";
 import type { ContaDoGoogle } from "../lyrio-google-ads";
-import type { EstadoDasVendas, VendasPorCanalDoLyrio } from "../vendas-por-canal-lyrio";
+import { receitaTotalEmReais, type EstadoDasVendas, type VendasPorCanalDoLyrio } from "../vendas-por-canal-lyrio";
 import {
   CAUSA_API_SEM_DIARIO,
+  causaDaSerieDesconhecida,
   DICA_ANTES_DA_SERIE,
   fecharNoMaiorDia,
   formatarCelula,
@@ -210,7 +211,9 @@ describe("AC4 — o Total fecha com o Resumo, ao centavo, e a coluna soma o Tota
     expect(t.cpm).toBeCloseTo((t.investimento! * 1000) / t.impressoes!, 10);
     expect(t.cpc).toBeCloseTo(t.investimento! / t.cliques!, 10);
     expect(t.custoPorVenda).toBeCloseTo(t.investimento! / 4, 10);
-    expect(t.roas).toBeCloseTo((3 * TAXA) / t.investimento!, 10);
+    // QA REL-001 — o ROAS lê a Receita total JÁ ao centavo (R$ 15,01), a mesma do card
+    expect(t.roas).toBeCloseTo(receitaTotalEmReais(3, TAXA) / t.investimento!, 10);
+    expect(receitaTotalEmReais(3, TAXA)).toBe(15.01);
     const ctrs = d.dias.map((x) => x.valores.ctr).filter((x): x is number => x != null);
     expect(t.ctr).not.toBeCloseTo(ctrs.reduce((s, x) => s + x, 0) / ctrs.length, 2);
   });
@@ -372,5 +375,171 @@ describe("fecharNoMaiorDia / formatarCelula", () => {
     expect(formatarCelula("inteiro", 3050)).toBe("3.050");
     expect(formatarCelula("percentual", 1.05)).toBe("1,05%");
     expect(formatarCelula("roas", 2)).toBe("2.00x");
+  });
+});
+
+// ─────────────── QA loop 1 da 42.17 (gate CONCERNS b56b2acf) ───────────────
+
+/** As vendas de `receitaUsdTotal` repartidas em dias (centavos inteiros de US$), na forma da API. */
+function vendasDe(centavosPorDia: readonly (readonly [string, number])[]): VendasPorCanalDoLyrio {
+  const total = centavosPorDia.reduce((s, [, c]) => s + c, 0) / 100;
+  const n = centavosPorDia.length;
+  return {
+    ...VENDAS,
+    canais: [
+      { canal: "meta", rotulo: "Meta", vendas: n, compradores: n, receitaUsd: total },
+      { canal: "google", rotulo: "Google", vendas: 0, compradores: 0, receitaUsd: 0 },
+      { canal: "organico", rotulo: "Orgânico ou cupom", vendas: 0, compradores: 0, receitaUsd: 0 },
+      { canal: "sem_atribuicao", rotulo: "Sem atribuição", vendas: 0, compradores: 0, receitaUsd: 0 },
+    ],
+    totalPago: { vendas: n, compradores: n, receitaUsd: total },
+    diario: centavosPorDia.map(([dia, c]) => ({ dia, vendas: 1, receitaUsd: c / 100 })),
+  };
+}
+const semMidia: Partial<EntradaDosDadosDiarios> = { meta: { temCampanhas: false, linhas: undefined }, google: { mostrar: false, trafego: { tipo: "sem_campanha" } } };
+/** Card Receita, Total da tabela e a soma da coluna (em texto). */
+function tresReceitas(vendas: VendasPorCanalDoLyrio, taxa: number) {
+  const e = entrada({ ...semMidia, cambio: { taxa, fonte: "x" }, vendas: { tipo: "pronto", dados: vendas } });
+  const d = montarDadosDiariosDoLyrio(e);
+  const card = cardsDoResumo(entradaDoResumo(e)).find((c) => c.id === "receita")!.valor;
+  return { d, card, total: texto(d, "receita", d.total.valores.receita), coluna: texto(d, "receita", somaEmCentavos(d, "receita") / 100) };
+}
+
+describe("QA REL-001 — a Receita total ao centavo UMA vez: card = Total = Σ da coluna, também no meio centavo", () => {
+  it("o repro do QA: US$ 3.250,00 × 5,4123 = R$ 17.589,975, em dois dias de US$ 1.625,00", () => {
+    expect(3250 * 5.4123).toBe(17589.975); // o produto cai exatamente no meio centavo
+    const { d, card, total, coluna } = tresReceitas(vendasDe([["2026-10-23", 162500], ["2026-10-24", 162500]]), 5.4123);
+    expect(card).toBe(formatarCelula("moeda", 17589.97)); // “R$ 17.589,97” (o Intl usa espaço não separável)
+    expect(card).toMatch(/17\.589,97$/);
+    expect(total).toBe(card);
+    expect(coluna).toBe(card);
+    expect(dia(d, "2026-10-23").valores.receita).toBe(8794.98); // o resto no maior dia (o 1º dos empatados)
+    expect(dia(d, "2026-10-24").valores.receita).toBe(8794.99);
+    // o ROAS e a Margem leem o mesmo valor: o memorial do ROAS e o “Faturamento bruto” da Margem dizem R$ 17.589,97
+    expect(receitaTotalEmReais(3250, 5.4123)).toBe(17589.97);
+  });
+  it("receitaTotalEmReais arredonda ao centavo mais próximo (o `centavos` da Margem), não trunca", () => {
+    expect(receitaTotalEmReais(1, 5.0059)).toBe(5.01);
+    expect(receitaTotalEmReais(1, 5.0041)).toBe(5);
+    expect(receitaTotalEmReais(0, 5.4123)).toBe(0);
+  });
+  it("o card Receita, o memorial do ROAS e o “Faturamento bruto” da Margem do Resumo dizem o MESMO valor no meio centavo", () => {
+    const e = entrada({ cambio: { taxa: 5.4123, fonte: "x" }, vendas: { tipo: "pronto", dados: vendasDe([["2026-10-23", 162500], ["2026-10-24", 162500]]) } });
+    const cards = cardsDoResumo({ ...entradaDoResumo(e), percentuais: { tipo: "pronto", dados: { platformFeePct: 15, taxPct: 5, otherCostsPct: 1 } } });
+    const card = (id: string) => cards.find((c) => c.id === id)!;
+    const valorNoMemorial = (id: string, rotulo: string) => card(id).formula!.values.find((v) => v.label === rotulo)!.value;
+    expect(card("receita").valor).toBe(formatarCelula("moeda", 17589.97));
+    expect(valorNoMemorial("roas", "Receita total")).toBe(card("receita").valor);
+    expect(valorNoMemorial("margem", "Faturamento bruto")).toBe(card("receita").valor);
+    expect(texto(montarDadosDiariosDoLyrio(e), "receita", montarDadosDiariosDoLyrio(e).total.valores.receita)).toBe(card("receita").valor);
+  });
+  it("propriedade: 3.000 receitas × câmbios de 4 casas, metade delas no meio centavo exato, de 1 a 7 dias", () => {
+    let semente = 4217;
+    const aleatorio = (n: number) => {
+      semente = (semente * 48271) % 2147483647;
+      return semente % n;
+    }; // Park–Miller: o produto cabe no double
+    const diasDaTabela = ["2026-10-22", "2026-10-23", "2026-10-24", "2026-10-25", "2026-10-26", "2026-10-27", "2026-10-28"];
+    let empates = 0;
+    let oIntlDivergiria = 0;
+    for (let k = 0; k < 3000; k++) {
+      const taxa4 = 30000 + aleatorio(30000); // R$ 3,0000 a R$ 5,9999
+      let centavosUsd = 1 + aleatorio(2_000_000); // até US$ 20.000,00
+      if (k % 2 === 0) {
+        // procura o próximo valor cujo produto cai no meio centavo: centavos × taxa4 ≡ 5000 (mod 10⁴)
+        let passos = 0;
+        while ((centavosUsd * taxa4) % 10000 !== 5000 && passos < 10000) {
+          centavosUsd += 1;
+          passos += 1;
+        }
+        if ((centavosUsd * taxa4) % 10000 === 5000) empates += 1;
+      }
+      const taxa = taxa4 / 10000;
+      const n = 1 + aleatorio(7);
+      const cortes = Array.from({ length: n - 1 }, () => aleatorio(centavosUsd + 1)).sort((a, b) => a - b);
+      const partes = [...cortes, centavosUsd].map((c, i, arr) => c - (i === 0 ? 0 : arr[i - 1]));
+      const { d, card, total, coluna } = tresReceitas(vendasDe(partes.map((c, i) => [diasDaTabela[i], c] as const)), taxa);
+      expect(total, `${centavosUsd} × ${taxa}`).toBe(card);
+      expect(coluna, `${centavosUsd} × ${taxa}`).toBe(card);
+      expect(d.dias.every((x) => (x.valores.receita ?? 0) >= 0), `${centavosUsd} × ${taxa}`).toBe(true);
+      if (formatarCelula("moeda", (centavosUsd / 100) * taxa) !== card) oIntlDivergiria += 1;
+    }
+    expect(empates).toBeGreaterThan(1000);
+    // o caso existe de verdade: formatar o produto cru (o card antes do fix) erraria em parte deles
+    expect(oIntlDivergiria).toBeGreaterThan(0);
+  });
+});
+
+describe("QA TEST-001 — a Receita de cada dia com venda (câmbio UMA vez nas parcelas)", () => {
+  it("1 US$ × 5,0042 por dia: R$ 5,01 no maior dia (23/10, o 1º dos empatados), R$ 5,00 nos outros, nenhum dia negativo", () => {
+    const d = montarDadosDiariosDoLyrio(entrada());
+    expect(dia(d, "2026-10-23").valores.receita).toBe(5.01);
+    expect(dia(d, "2026-10-25").valores.receita).toBe(5);
+    expect(dia(d, "2026-10-27").valores.receita).toBe(5);
+    for (const x of d.dias) expect(x.valores.receita, x.date).toBeGreaterThanOrEqual(0);
+    for (const x of ["2026-10-22", "2026-10-24", "2026-10-26", "2026-10-28"]) expect(dia(d, x).valores.receita, x).toBe(0);
+  });
+});
+
+describe("QA TEST-002 — as bordas do `serieDesde` e do `desde`", () => {
+  it("o próprio dia de início da série, sem venda, mostra 0 (não “—”); o dia sem venda antes dele, “—”", () => {
+    const d = montarDadosDiariosDoLyrio(entrada({ ctx: { diasDoFiltro: DIAS, hoje: HOJE, serieDesde: "2026-10-24" } }));
+    expect(dia(d, "2026-10-24")).toMatchObject({ antesDaSerie: false, valores: { vendas: 0, receita: 0 }, causas: {} });
+    expect(dia(d, "2026-10-23").valores.vendas).toBe(1); // a véspera tem venda: mostra (D3)
+    expect(dia(d, "2026-10-22")).toMatchObject({ antesDaSerie: true, valores: { vendas: null, receita: null } });
+    expect(dia(d, "2026-10-22").causas.vendas).toBe(DICA_ANTES_DA_SERIE);
+  });
+  it("resposta cujo `desde` é POSTERIOR ao início da janela (23/10 para a janela de 22/10) → “—” com “outra janela”", () => {
+    const d = montarDadosDiariosDoLyrio(entrada({ vendas: { tipo: "pronto", dados: { ...VENDAS, desde: "2026-10-23" } } }));
+    expect(d.total.valores.vendas).toBeNull();
+    expect(d.total.causas.vendas).toMatch(/outra janela \(começa em 23\/10, não em 22\/10\)/);
+    expect(d.dias.every((x) => x.valores.vendas == null && x.valores.receita == null)).toBe(true);
+  });
+});
+
+describe("QA REL-002 — o início da série desconhecido, e as vendas em erro antes da série", () => {
+  const ERRO = "Erro interno do servidor";
+  it("(a) causaDaSerieDesconhecida: pagantes em erro ou API sem a rota → a causa; pronto ou carregando → null", () => {
+    expect(causaDaSerieDesconhecida({ tipo: "erro", causa: "outro", mensagem: ERRO })).toBe(`os pagantes não carregaram: ${ERRO}`);
+    expect(causaDaSerieDesconhecida({ tipo: "oculto" })).toMatch(/API ainda não tem a rota dos pagantes/);
+    expect(causaDaSerieDesconhecida({ tipo: "pronto", dados: { assinaturaDesde: "2026-08-10" } })).toBeNull();
+    expect(causaDaSerieDesconhecida({ tipo: "carregando" })).toBeNull();
+  });
+  it("(a) série desconhecida: o dia SEM venda fica “—” (não 0) nas colunas de venda, com a causa; o dia com venda mostra; o Total continua", () => {
+    const causa = causaDaSerieDesconhecida({ tipo: "erro", causa: "outro", mensagem: ERRO });
+    const d = montarDadosDiariosDoLyrio(entrada({ ctx: { diasDoFiltro: DIAS, hoje: HOJE, serieDesde: null }, serieDesconhecida: causa }));
+    for (const x of ["2026-10-22", "2026-10-24", "2026-10-26", "2026-10-28"]) {
+      const l = dia(d, x);
+      expect(l.valores, x).toMatchObject({ vendas: null, receita: null, roas: null, custoPorVenda: null });
+      for (const k of ["vendas", "receita", "roas", "custoPorVenda"] as const) expect(l.causas[k], `${x} ${k}`).toMatch(/início da série do webhook desconhecido \(os pagantes não carregaram: Erro interno do servidor\)/);
+      expect(l.valores.investimento, x).not.toBeNull();
+    }
+    expect(dia(d, "2026-10-25").valores).toMatchObject({ vendas: 2, receita: 5 });
+    expect(d.total.valores).toMatchObject({ vendas: 4, receita: 15.01 });
+    expect(d.total.causas.vendas).toBeUndefined();
+    expect(somaEmCentavos(d, "receita")).toBe(1501);
+    expect(d.avisos.join(" ")).toMatch(/O início da série do webhook é desconhecido \(os pagantes não carregaram: Erro interno do servidor\)/);
+  });
+  it("(a) com 90 dias e a série desconhecida, nenhum dia sem venda aparece como 0 venda", () => {
+    const d = montarDadosDiariosDoLyrio(entrada({ ctx: { diasDoFiltro: 90, hoje: HOJE, serieDesde: null }, ...semMidia, vendas: { tipo: "pronto", dados: { ...VENDAS, days: 90, desde: "2026-07-31" } }, serieDesconhecida: "x" }));
+    expect(d.dias).toHaveLength(90);
+    expect(d.dias.filter((x) => x.valores.vendas === 0)).toEqual([]);
+    expect(d.dias.filter((x) => x.valores.vendas != null).map((x) => x.date).sort()).toEqual(["2026-10-23", "2026-10-25", "2026-10-27"]);
+  });
+  it("(b) vendas em erro com o `serieDesde` conhecido: a causa da célula antes da série é o ERRO, não “antes do início da série”", () => {
+    const d = montarDadosDiariosDoLyrio(entrada({ ctx: { diasDoFiltro: DIAS, hoje: HOJE, serieDesde: "2026-10-26" }, vendas: { tipo: "erro", mensagem: ERRO } }));
+    for (const x of ["2026-10-22", "2026-10-23", "2026-10-24", "2026-10-25"]) {
+      const l = dia(d, x);
+      expect(l.antesDaSerie, x).toBe(false);
+      for (const k of ["vendas", "receita", "roas", "custoPorVenda"] as const) {
+        expect(l.causas[k], `${x} ${k}`).toMatch(/vendas por canal indisponíveis: Erro interno do servidor/);
+        expect(l.causas[k], `${x} ${k}`).not.toMatch(/antes do início da série/);
+      }
+    }
+  });
+  it("(b) vendas desconectadas e a série desconhecida: a causa continua a das vendas, sem o aviso da série", () => {
+    const d = montarDadosDiariosDoLyrio(entrada({ ctx: { diasDoFiltro: DIAS, hoje: HOJE, serieDesde: null }, vendas: { tipo: "oculto" }, revenuecatConectado: false, serieDesconhecida: "x" }));
+    expect(dia(d, "2026-10-22").causas.vendas).toBe("RevenueCat não conectado");
+    expect(d.avisos.join(" ")).not.toMatch(/início da série/);
   });
 });

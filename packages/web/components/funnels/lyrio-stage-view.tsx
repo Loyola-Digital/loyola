@@ -54,6 +54,7 @@ import { avisoDeNaoClassificado, cardsDeAquisicao } from "@/lib/utils/aquisicao-
 import { arpuDoOverview, cardsDoLtvPorChurn, churnDasConsultas, DIAS_DO_CHURN, margemDosPercentuais } from "@/lib/utils/ltv-por-churn-lyrio";
 import { hojeNoNegocio, tituloDoResumo } from "@/lib/utils/janela-dos-cards-lyrio";
 import { avisoDoErroDaFonte, estadoDaFonte } from "@/lib/utils/estado-da-fonte-revenuecat";
+import { causaDaSerieDesconhecida } from "@/lib/utils/dados-diarios-lyrio";
 import {
   diasDaConsultaDoGoogle,
   investimentoDoGoogleNaRegua,
@@ -782,6 +783,7 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
           vendas: connection.isLoading ? { tipo: "carregando" } : vendasDosBlocos,
           revenuecatConectado: connected,
           serieCarregando: pagantesFiltro.tipo === "carregando",
+          serieDesconhecida: causaDaSerieDesconhecida(pagantesFiltro),
         }}
       />
 

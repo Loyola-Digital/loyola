@@ -74,6 +74,8 @@ async function semear() {
   // meta-dois-dias: 4,995 + 4,995 = 9,99 (999 ¢). Arredondar cada dia sozinho daria 1000 ¢.
   await inserir({ user: "meta-dois-dias", tipo: "INITIAL_PURCHASE", usd: 4.995, em: "2026-10-10T15:00:00Z", attrs: { ad_network: "meta", meta_campaign_id: "1202A" } });
   await inserir({ user: "meta-dois-dias", tipo: "RENEWAL", usd: 4.995, em: "2026-10-12T15:00:00Z" });
+  // QA TEST-003 — o MESMO comprador pago tem um evento de US$ 0 (teste grátis) no mesmo dia: o dia não o conta
+  await inserir({ user: "meta-dois-dias", tipo: "INITIAL_PURCHASE", usd: 0, em: "2026-10-10T18:00:00Z", attrs: { ad_network: "meta" } });
   // noite-sp: 23:30 de SP de 11/10 = 02:30Z de 12/10 → o dia é 11/10 (o de SP), não 12/10 (o de UTC)
   await inserir({ user: "noite-sp", tipo: "INITIAL_PURCHASE", usd: 7, em: "2026-10-12T02:30:00Z", attrs: { ad_network: "meta" } });
   // Google, orgânico, sem atribuição e conflito: TODOS entram no total (o total é dos 4 canais + conflito)
@@ -135,6 +137,14 @@ describe("AC3a — o diário com a regra do totalPago (PGlite)", () => {
     // 50 (sem usuário), 9 (paywall), 30 (fora), 40 (borda) e 0 (grátis) apareceriam no total
     expect(diario.some((d) => d.dia < "2026-10-01")).toBe(false);
     expect(diario.reduce((s, d) => s + d.receitaUsd, 0)).toBeLessThan(31);
+  });
+
+  it("QA TEST-003 — o evento de US$ 0 de quem também pagou não vira venda no dia (a regra do totalPago)", () => {
+    const deles = dias().filter((d) => d.dia === "2026-10-10" && d.meta && !d.google);
+    // meta-dois-dias em 10/10: 1 venda (a de US$ 4,995), não 2 — o evento de US$ 0 do mesmo dia fica fora
+    expect(deles.map((d) => d.vendas)).toEqual([1]);
+    expect(diario.find((d) => d.dia === "2026-10-10")).toEqual({ dia: "2026-10-10", vendas: 3, receitaUsd: 12.8 });
+    expect(diario.reduce((s, d) => s + d.vendas, 0)).toBe(total.totalPago.vendas);
   });
 
   it("23:30 de SP fica no dia de SP: não há venda em 12/10 que seja de 11/10 (o dia de UTC)", () => {

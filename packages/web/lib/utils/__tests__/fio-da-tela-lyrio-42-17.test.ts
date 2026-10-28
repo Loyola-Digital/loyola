@@ -31,6 +31,8 @@ describe("AC1b/AC3d/AC4b — os MESMOS insumos do Resumo, sem consulta nova", ()
   it("o filtro de dias, o hoje de SP e o serieDesde do Resumo", () => {
     expect(chamada).toMatch(/ctx: \{ diasDoFiltro: days, hoje, serieDesde \}/);
     expect(chamada).toMatch(/serieCarregando: pagantesFiltro\.tipo === "carregando"/);
+    // QA REL-002a — a causa da série desconhecida sai dos MESMOS pagantes do filtro
+    expect(chamada).toMatch(/serieDesconhecida: causaDaSerieDesconhecida\(pagantesFiltro\)/);
   });
   it("a Meta é a consulta do filtro do card; o Google, o tráfego na régua; as vendas, o estado dos blocos; o câmbio, o do Resumo", () => {
     expect(chamada).toMatch(/meta: \{ temCampanhas: temMeta, linhas: metaDailyFiltro, erro: erroMetaFiltro \}/);

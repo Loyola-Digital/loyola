@@ -20,7 +20,8 @@
  * O rodapé sai da MESMA soma do card: o Investimento em centavos
  * (`centavos(Meta) + centavos(Google)`), a Meta como `spendComImposto`, o Google
  * como o `spend` da régua, as Vendas como `totalPago.vendas` e a Receita como
- * `totalPago.receitaUsd × câmbio` — o câmbio aplicado uma vez, sobre a soma. As
+ * `receitaTotalEmReais(totalPago.receitaUsd, câmbio)` — o câmbio aplicado uma vez,
+ * sobre a soma, e o centavo arredondado uma vez, o mesmo do card (QA REL-001). As
  * linhas em R$ são repartidas com `fecharEmCentavos`, para a coluna somar
  * exatamente o Total exibido (o Investimento do dia é a Meta do dia mais o
  * Google do dia, já fechados). As razões do rodapé saem das somas, nunca da
@@ -43,7 +44,8 @@ import { DICA_DIA_EM_ANDAMENTO, diasDaJanela } from "./lyrio-detalhamento-diario
 import { diaMes, intervaloDaJanela, ultimosNDias } from "./janela-dos-cards-lyrio";
 import { ORDEM_DO_DIA_PADRAO, ordenarLinhasPorDia, type OrdemDoDia } from "./ordem-do-dia";
 import { fmtCurrency, fmtInt, fmtPercent } from "./format-number";
-import type { EstadoDasVendas } from "./vendas-por-canal-lyrio";
+import { receitaTotalEmReais, type EstadoDasVendas } from "./vendas-por-canal-lyrio";
+import type { EstadoDaFonte } from "./estado-da-fonte-revenuecat";
 
 export { DICA_DIA_EM_ANDAMENTO };
 
@@ -51,6 +53,20 @@ export { DICA_DIA_EM_ANDAMENTO };
 export const DICA_ANTES_DA_SERIE = "antes do início da série do webhook";
 /** AC5c — a API anterior à v64 não traz `diario`. */
 export const CAUSA_API_SEM_DIARIO = "a API ainda não traz a venda por dia (contrato 64) — ver o aviso de versão";
+
+/**
+ * QA loop 1 (REL-002a) — por que o início da série do webhook (`serieDesde`, dos
+ * pagantes) é desconhecido: os pagantes em erro, ou a API sem a rota. `null` =
+ * conhecido (pronto) ou ainda carregando (a tabela espera, como o Resumo).
+ */
+export function causaDaSerieDesconhecida(pagantes: EstadoDaFonte<unknown>): string | null {
+  if (pagantes.tipo === "erro") return `os pagantes não carregaram: ${pagantes.mensagem}`;
+  if (pagantes.tipo === "oculto") return "a API ainda não tem a rota dos pagantes — ver o aviso de versão";
+  return null;
+}
+
+/** REL-002a — a dica da célula de venda de um dia sem venda quando o início da série é desconhecido. */
+export const dicaDaSerieDesconhecida = (causa: string) => `início da série do webhook desconhecido (${causa}): o dia sem venda pode ser anterior à série`;
 
 export type ChaveDaColuna =
   | "investimento"
@@ -124,6 +140,12 @@ export interface EntradaDosDadosDiarios {
   revenuecatConectado: boolean;
   /** Os pagantes (de onde vem `serieDesde`) ainda não responderam: espera, como o Resumo. */
   serieCarregando?: boolean;
+  /**
+   * QA loop 1 (REL-002a) — o início da série é DESCONHECIDO (`causaDaSerieDesconhecida`):
+   * dia sem venda pode ser anterior à série, então as colunas de venda dele ficam
+   * "—" com a causa (nunca 0). Dia com venda mostra a venda (a D3).
+   */
+  serieDesconhecida?: string | null;
   ordem?: OrdemDoDia;
 }
 
@@ -325,6 +347,13 @@ export function montarDadosDiariosDoLyrio(e: EntradaDosDadosDiarios): DadosDiari
 
   const carregando = meta.tipo === "carregando" || google.tipo === "carregando" || vendas.tipo === "carregando";
   const avisos = [...new Set([meta, google, vendas].flatMap((f) => (f.tipo === "indisponivel" ? [f.aviso] : [])))];
+  // REL-002a — só faz diferença com as vendas prontas (senão a causa é a das vendas).
+  const serieDesconhecida = vendas.tipo === "pronto" && e.serieDesconhecida ? e.serieDesconhecida : null;
+  if (serieDesconhecida) {
+    avisos.push(
+      `O início da série do webhook é desconhecido (${serieDesconhecida}): os dias sem venda ficam “—” nas vendas, na receita, no ROAS e no custo por venda, porque podem ser anteriores à série. O Total continua.`,
+    );
+  }
 
   // As causas das células "—" por insumo desconhecido (AC5).
   const causaMeta = meta.tipo === "indisponivel" ? meta.causa : undefined;
@@ -359,7 +388,8 @@ export function montarDadosDiariosDoLyrio(e: EntradaDosDadosDiarios): DadosDiari
   };
 
   // A Receita do dia: repartida com `fecharEmCentavos` sobre o total do card (câmbio uma vez, na soma).
-  const receitaTotal = vendas.tipo === "pronto" && taxa != null ? vendas.dados.receitaUsdTotal * taxa : null;
+  // QA REL-001 — o Total é o MESMO valor do card (ao centavo uma vez, `receitaTotalEmReais`); a coluna fecha nele.
+  const receitaTotal = vendas.tipo === "pronto" && taxa != null ? receitaTotalEmReais(vendas.dados.receitaUsdTotal, taxa) : null;
   const receitaDosDias =
     vendas.tipo === "pronto" && receitaTotal != null ? fecharNoMaiorDia(receitaTotal, diasAsc.map((d) => (vendas.dados.receitaUsd.get(d) ?? 0) * taxa!)) : null;
 
@@ -378,9 +408,13 @@ export function montarDadosDiariosDoLyrio(e: EntradaDosDadosDiarios): DadosDiari
 
   const linhasAsc: LinhaDosDadosDiarios[] = diasAsc.map((dia, i) => {
     const vendasDoDia = vendas.tipo === "pronto" ? vendas.dados.vendas.get(dia) ?? 0 : null;
-    // AC1e — antes da série do webhook, "—" (e não 0) nas colunas de venda. Dia que TEM venda
+    // AC1e (D3) — dia antes de `serieDesde` SEM venda → "—" (e não 0) nas colunas de venda; COM venda,
     // mostra a venda: esconder um número que entra no Total deixaria a coluna sem fechar (AC4c).
-    const antesDaSerie = serieDesde != null && dia < serieDesde && !(vendasDoDia != null && vendasDoDia > 0);
+    // `vendasDoDia === 0` exige as vendas prontas: com elas em erro, a causa da célula é o erro (REL-002b).
+    const antesDaSerie = serieDesde != null && dia < serieDesde && vendasDoDia === 0;
+    // REL-002a — sem saber onde a série começa, nenhum dia sem venda pode ser 0.
+    const semSerie = !antesDaSerie && serieDesconhecida != null && vendasDoDia === 0;
+    const ocultarVenda = antesDaSerie || semSerie;
     const investMeta = metaPronta ? metaPronta.gasto[i] : null;
     const investGoogle = mostrarGoogle ? (googlePronto ? googlePronto.gasto[i] : null) : null;
     const googleConhecido = !mostrarGoogle || googlePronto != null;
@@ -390,14 +424,13 @@ export function montarDadosDiariosDoLyrio(e: EntradaDosDadosDiarios): DadosDiari
       investimento,
       investMeta,
       investGoogle,
-      vendas: antesDaSerie ? null : vendasDoDia,
-      receita: antesDaSerie || !receitaDosDias ? null : receitaDosDias[i],
+      vendas: ocultarVenda ? null : vendasDoDia,
+      receita: ocultarVenda || !receitaDosDias ? null : receitaDosDias[i],
       impressoes: midia("impressoes"),
       cliques: midia("cliques"),
     });
-    const extra: Partial<Record<ChaveDaColuna, string>> = antesDaSerie
-      ? { vendas: DICA_ANTES_DA_SERIE, receita: DICA_ANTES_DA_SERIE, roas: DICA_ANTES_DA_SERIE, custoPorVenda: DICA_ANTES_DA_SERIE }
-      : {};
+    const dica = antesDaSerie ? DICA_ANTES_DA_SERIE : semSerie ? dicaDaSerieDesconhecida(serieDesconhecida!) : null;
+    const extra: Partial<Record<ChaveDaColuna, string>> = dica ? { vendas: dica, receita: dica, roas: dica, custoPorVenda: dica } : {};
     return { date: dia, emAndamento: dia === hoje, antesDaSerie, valores, causas: soCausas(valores, extra) };
   });
 

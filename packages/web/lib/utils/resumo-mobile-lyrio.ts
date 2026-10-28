@@ -44,7 +44,7 @@ import { inicioDaJanela } from "@loyola-x/shared/src/janela-de-dias";
 import { memorialDoErroDaFonte, type EstadoDaFonte } from "./estado-da-fonte-revenuecat";
 import { comoEstadoDoGoogle, NOTA_DO_FUSO_DO_GOOGLE, valorDoGoogleNaRegua, type InvestimentoDoGoogleNaRegua } from "./google-ads-na-regua";
 import { cardDeNovosClientes, fmtUsd, type CardComJanela, type NovosClientesDoPeriodo } from "./overview-revenuecat";
-import { avisoDeConflito, blocoDoCanalDoLyrio, declaracaoDeCobertura, linhasDoResumoPorCanal, type EstadoDasVendas, type VendasPorCanalDoLyrio } from "./vendas-por-canal-lyrio";
+import { avisoDeConflito, blocoDoCanalDoLyrio, declaracaoDeCobertura, linhasDoResumoPorCanal, receitaTotalEmReais, type EstadoDasVendas, type VendasPorCanalDoLyrio } from "./vendas-por-canal-lyrio";
 
 /** Os ícones moram no componente; aqui só a chave (o vitest coleta `.ts` sem JSX). */
 export type IconeDoCard =
@@ -347,7 +347,8 @@ export function cardsDoResumo(e: EntradaDoResumo): CardDoResumo[] {
         }
       : undefined;
   const receitaTotalUsd = dados ? dados.totalPago.receitaUsd : null;
-  const receitaTotalBrl = receitaTotalUsd != null && taxa != null ? receitaTotalUsd * taxa : null;
+  // QA REL-001 da 42.17 — ao centavo UMA vez, na função que a tabela "Dados diários" também usa.
+  const receitaTotalBrl = receitaTotalUsd != null && taxa != null ? receitaTotalEmReais(receitaTotalUsd, taxa) : null;
 
   // Os baldes que somam o total: os 4 canais e o conflito (só se houver, AC2c).
   const baldes = dados
