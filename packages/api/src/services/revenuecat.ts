@@ -243,6 +243,63 @@ export async function getRevenuecatChartTotal(
   return { total, medida, diasIncompletos: values.filter((v) => v?.incomplete === true).length };
 }
 
+/** O valor de um chart de ESTOQUE num dia: o que veio e o que a resposta diz dele. */
+export interface ValorDoChartNoDia {
+  valor: number;
+  /** O `display_name` da medida (ex.: "Actives"). */
+  medida: string;
+  /** O dia veio com `incomplete: true` (hoje, em andamento). */
+  incompleto: boolean;
+}
+
+/** `AAAA-MM-DD` → o instante 00:00 de UTC desse dia, em segundos (o `cohort` do chart). */
+function cohortDoDia(dia: string): number {
+  return Date.UTC(Number(dia.slice(0, 4)), Number(dia.slice(5, 7)) - 1, Number(dia.slice(8, 10))) / 1000;
+}
+
+/**
+ * Story 42.15 (AC10c) — o valor de um chart de ESTOQUE (`actives`: assinaturas
+ * PAGAS ativas, "Active (paying) subscriptions" na documentação) num dia só,
+ * pedido com `start_date = end_date = dia`.
+ *
+ * Forma conferida na sonda de produção (2026-10-28, `actives`): `resolution`
+ * "day"; UMA medida, `display_name` "Actives", unidade "#"; `values[]` =
+ * `{ cohort, incomplete, measure, value }`, um por dia de UTC (`cohort` = 00:00Z
+ * do dia, em segundos); `summary` só com `average` (estoque não tem total). O
+ * dia é o de UTC, não o de SP: quem chama declara isso.
+ *
+ * Estrita: resolução diferente de dia, mais de uma medida, nenhum valor (ou
+ * mais de um) para o dia pedido, ou valor que não é número finito → ERRO, nunca
+ * zero nem o número de outro dia.
+ */
+export async function getRevenuecatChartNoDia(
+  apiKey: string,
+  rcProjectId: string,
+  chart: "actives",
+  dia: string,
+): Promise<ValorDoChartNoDia> {
+  const qs = new URLSearchParams({ start_date: dia, end_date: dia });
+  const data = (await rcFetch(apiKey, `/projects/${rcProjectId}/charts/${chart}?${qs.toString()}`)) as Record<string, unknown>;
+  if (data?.resolution !== "day") {
+    throw new Error(`Resposta inesperada do RevenueCat em charts/${chart}: resolução "${String(data?.resolution)}", esperava "day"`);
+  }
+  const measures = Array.isArray(data.measures) ? (data.measures as Record<string, unknown>[]) : null;
+  if (!measures || measures.length !== 1 || typeof measures[0]?.display_name !== "string") {
+    throw new Error(`Resposta inesperada do RevenueCat em charts/${chart}: esperava UMA medida com display_name (veio ${measures ? measures.length : "nenhuma"})`);
+  }
+  const alvo = cohortDoDia(dia);
+  const values = Array.isArray(data.values) ? (data.values as { cohort?: unknown; measure?: unknown; value?: unknown; incomplete?: unknown }[]) : [];
+  const doDia = values.filter((v) => v?.cohort === alvo && (v.measure === 0 || v.measure === undefined));
+  if (doDia.length !== 1) {
+    throw new Error(`Resposta inesperada do RevenueCat em charts/${chart}: esperava UM valor para ${dia} (veio ${doDia.length})`);
+  }
+  const valor = doDia[0].value;
+  if (typeof valor !== "number" || !Number.isFinite(valor)) {
+    throw new Error(`Resposta inesperada do RevenueCat em charts/${chart}: o valor de ${dia} não é número`);
+  }
+  return { valor, medida: measures[0].display_name as string, incompleto: doDia[0].incomplete === true };
+}
+
 export type CausaDaFalhaDoRevenuecat = "limite" | "permissao" | "outro";
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { avisoDeNaoClassificado, cacEmCentavos, cardsDeAquisicao, ltvEmCentavos, type EntradaDeAquisicao, type LtvDoLyrio, type PagantesPorCanal } from "../aquisicao-lyrio";
+import { avisoDeNaoClassificado, cacEmCentavos, cardsDeAquisicaoPorCanal, ltvEmCentavos, type EntradaDeAquisicao, type LtvDoLyrio, type PagantesPorCanal } from "../aquisicao-lyrio";
 import { fmtBRL } from "../resumo-mobile-lyrio";
 
 /**
@@ -56,12 +56,12 @@ const entrada = (p: Partial<EntradaDeAquisicao> = {}): EntradaDeAquisicao => ({
 const achar = (cards: { id: string }[], id: string) => {
   const c = cards.find((x) => x.id === id);
   if (!c) throw new Error(`sem ${id}`);
-  return c as ReturnType<typeof cardsDeAquisicao>["cac"][number];
+  return c as ReturnType<typeof cardsDeAquisicaoPorCanal>["cac"][number];
 };
 
 describe("CAC por canal e consolidado, nas duas janelas (AC4, AC5, D9)", () => {
   it("filtro: Meta 2.000 ÷ 4 pessoas; Google 500 ÷ 1; consolidado (2.000 + 500) ÷ 10 (todos, inclusive orgânico, sem atribuição e conflito)", () => {
-    const { cac } = cardsDeAquisicao(entrada());
+    const { cac } = cardsDeAquisicaoPorCanal(entrada());
     expect(achar(cac, "cac-meta-filtro").valor).toBe(fmtBRL(500));
     expect(achar(cac, "cac-google-filtro").valor).toBe(fmtBRL(500));
     expect(achar(cac, "cac-consolidado-filtro").valor).toBe(fmtBRL(250));
@@ -69,7 +69,7 @@ describe("CAC por canal e consolidado, nas duas janelas (AC4, AC5, D9)", () => {
   });
 
   it("28 dias fixos: os insumos de 28 dias (Meta 1.000 ÷ 2; Google 100 ÷ 1; consolidado 1.100 ÷ 4) — não os do filtro", () => {
-    const { cac } = cardsDeAquisicao(entrada());
+    const { cac } = cardsDeAquisicaoPorCanal(entrada());
     expect(achar(cac, "cac-meta-28d").valor).toBe(fmtBRL(500));
     expect(achar(cac, "cac-google-28d").valor).toBe(fmtBRL(100));
     expect(achar(cac, "cac-consolidado-28d").valor).toBe(fmtBRL(275));
@@ -77,13 +77,13 @@ describe("CAC por canal e consolidado, nas duas janelas (AC4, AC5, D9)", () => {
   });
 
   it("etiquetas: o do filtro segue (`desde 10/08`, a série começa depois de 19/07); o de 28 dias é `28d fixo` com âmbar (PO-D2)", () => {
-    const { cac } = cardsDeAquisicao(entrada());
+    const { cac } = cardsDeAquisicaoPorCanal(entrada());
     expect(achar(cac, "cac-meta-filtro").declaracao).toMatchObject({ etiqueta: "desde 10/08", destaque: false, segueOFiltro: true });
     expect(achar(cac, "cac-meta-28d").declaracao).toMatchObject({ etiqueta: "28d fixo", destaque: true, segueOFiltro: false });
   });
 
   it("o memorial do CAC por canal diz a fórmula, o investimento, as pessoas, a janela e quantas empataram (AC4d, PO-D3)", () => {
-    const f = achar(cardsDeAquisicao(entrada()).cac, "cac-meta-filtro").formula!;
+    const f = achar(cardsDeAquisicaoPorCanal(entrada()).cac, "cac-meta-filtro").formula!;
     expect(f.expression).toBe("Investimento ÷ novos pagantes (Meta)");
     expect(f.values).toEqual([
       expect.objectContaining({ label: "Investimento (Meta, com 12,15%)", value: fmtBRL(2000) }),
@@ -95,24 +95,24 @@ describe("CAC por canal e consolidado, nas duas janelas (AC4, AC5, D9)", () => {
   });
 
   it("divide por PESSOAS novas, nunca pelas renovações (9 na Meta): o CAC da Meta não é 2.000 ÷ 9", () => {
-    expect(achar(cardsDeAquisicao(entrada()).cac, "cac-meta-filtro").valor).not.toBe(fmtBRL(2000 / 9));
+    expect(achar(cardsDeAquisicaoPorCanal(entrada()).cac, "cac-meta-filtro").valor).not.toBe(fmtBRL(2000 / 9));
   });
 
   it("consolidado: as parcelas do memorial somam o total exibido, ao centavo", () => {
-    const f = achar(cardsDeAquisicao(entrada({ meta: { temCampanhas: true, filtro: { spendLiquido: 0.1, imposto: 0.004, spendComImposto: 0.104 }, vinteOito: undefined }, google: { mostrar: true, filtro: { tipo: "pronto", spend: 0.205 }, vinteOito: { tipo: "carregando" } } })).cac, "cac-consolidado-filtro").formula!;
+    const f = achar(cardsDeAquisicaoPorCanal(entrada({ meta: { temCampanhas: true, filtro: { spendLiquido: 0.1, imposto: 0.004, spendComImposto: 0.104 }, vinteOito: undefined }, google: { mostrar: true, filtro: { tipo: "pronto", spend: 0.205 }, vinteOito: { tipo: "carregando" } } })).cac, "cac-consolidado-filtro").formula!;
     const reais = (s: string) => Number(s.replace(/[^\d,]/g, "").replace(",", "."));
     const [m, g] = f.values.slice(0, 2).map((v) => reais(String(v.value)));
     expect(Math.round((m + g) * 100)).toBe(Math.round(reais(f.result.split(" ÷ ")[0]) * 100));
   });
 
   it("divisão por zero (nenhum novo pagante do Google): '—', nunca zero, e o memorial diz por quê (AC4c)", () => {
-    const c = achar(cardsDeAquisicao(entrada({ pagantesFiltro: { tipo: "pronto", dados: pagantes(90, { novosPagantes: contagem(4, 0, 3, 1, 1) }) } })).cac, "cac-google-filtro");
+    const c = achar(cardsDeAquisicaoPorCanal(entrada({ pagantesFiltro: { tipo: "pronto", dados: pagantes(90, { novosPagantes: contagem(4, 0, 3, 1, 1) }) } })).cac, "cac-google-filtro");
     expect(c.valor).toBe("—");
     expect(c.formula!.result).toContain("sem novo pagante na janela");
   });
 
   it("Google em erro: CAC Google e consolidado '—' com a causa; o CAC Meta continua", () => {
-    const { cac } = cardsDeAquisicao(entrada({ google: { mostrar: true, filtro: { tipo: "erro", mensagem: "invalid_grant" }, vinteOito: { tipo: "erro", mensagem: "invalid_grant" } } }));
+    const { cac } = cardsDeAquisicaoPorCanal(entrada({ google: { mostrar: true, filtro: { tipo: "erro", mensagem: "invalid_grant" }, vinteOito: { tipo: "erro", mensagem: "invalid_grant" } } }));
     for (const id of ["cac-google-filtro", "cac-consolidado-filtro", "cac-google-28d", "cac-consolidado-28d"]) {
       expect(achar(cac, id).valor, id).toBe("—");
       expect(achar(cac, id).formula!.values[0].value, id).toBe("invalid_grant");
@@ -121,14 +121,14 @@ describe("CAC por canal e consolidado, nas duas janelas (AC4, AC5, D9)", () => {
   });
 
   it("QA MNT-001 — com o Google em erro, o memorial do CAC fala do CAC (não do ROAS e da Margem)", () => {
-    const { cac } = cardsDeAquisicao(entrada({ google: { mostrar: true, filtro: { tipo: "erro", mensagem: "invalid_grant" }, vinteOito: { tipo: "erro", mensagem: "invalid_grant" } } }));
+    const { cac } = cardsDeAquisicaoPorCanal(entrada({ google: { mostrar: true, filtro: { tipo: "erro", mensagem: "invalid_grant" }, vinteOito: { tipo: "erro", mensagem: "invalid_grant" } } }));
     const nota = achar(cac, "cac-google-filtro").formula!.note!;
     expect(nota).toContain("o CAC Google e o CAC consolidado ficam");
     expect(nota).not.toContain("ROAS");
   });
 
   it("QA REL-001 — Meta em erro: CAC Meta e consolidado '—' COM a causa; o CAC Google continua", () => {
-    const { cac } = cardsDeAquisicao(entrada({ meta: { temCampanhas: true, filtro: undefined, vinteOito: undefined, erroFiltro: "Erro da Meta", erro28: "Erro da Meta" } }));
+    const { cac } = cardsDeAquisicaoPorCanal(entrada({ meta: { temCampanhas: true, filtro: undefined, vinteOito: undefined, erroFiltro: "Erro da Meta", erro28: "Erro da Meta" } }));
     for (const id of ["cac-meta-filtro", "cac-consolidado-filtro", "cac-meta-28d", "cac-consolidado-28d"]) {
       expect(achar(cac, id).valor, id).toBe("—");
       expect(achar(cac, id).formula!.values[0].value, id).toBe("Erro da Meta");
@@ -138,13 +138,13 @@ describe("CAC por canal e consolidado, nas duas janelas (AC4, AC5, D9)", () => {
   });
 
   it("sem campanha da Meta: não há CAC Meta; o consolidado conta a Meta como 0 (não fica 'carregando')", () => {
-    const { cac } = cardsDeAquisicao(entrada({ meta: { temCampanhas: false, filtro: undefined, vinteOito: undefined } }));
+    const { cac } = cardsDeAquisicaoPorCanal(entrada({ meta: { temCampanhas: false, filtro: undefined, vinteOito: undefined } }));
     expect(cac.map((c) => c.id)).not.toContain("cac-meta-filtro");
     expect(achar(cac, "cac-consolidado-filtro").valor).toBe(fmtBRL(50)); // 500 ÷ 10
   });
 
   it("investimento ainda carregando: '—' sem memorial", () => {
-    const c = achar(cardsDeAquisicao(entrada({ meta: { temCampanhas: true, filtro: undefined, vinteOito: undefined } })).cac, "cac-meta-filtro");
+    const c = achar(cardsDeAquisicaoPorCanal(entrada({ meta: { temCampanhas: true, filtro: undefined, vinteOito: undefined } })).cac, "cac-meta-filtro");
     expect(c.valor).toBe("—");
     expect(c.formula).toBeUndefined();
   });
@@ -159,11 +159,11 @@ describe("CAC por canal e consolidado, nas duas janelas (AC4, AC5, D9)", () => {
 describe("LTV Mensal, Trimestral, Semestral e Anual, brutos (AC7)", () => {
   it("API anterior ao Semestral (sem o plano na resposta): o card não aparece, e os outros três continuam", () => {
     const semSemestral = { ...LTV, planos: LTV.planos.filter((p) => p.plano !== "semestral") };
-    const { ltv } = cardsDeAquisicao(entrada({ pagantesFiltro: { tipo: "pronto", dados: pagantes(90, { ltv: semSemestral }) } }));
+    const { ltv } = cardsDeAquisicaoPorCanal(entrada({ pagantesFiltro: { tipo: "pronto", dados: pagantes(90, { ltv: semSemestral }) } }));
     expect(ltv.map((c) => c.rotulo)).toEqual(["LTV Mensal", "LTV Trimestral", "LTV Anual"]);
   });
   it("quatro cards, nesta ordem (D33 + QA loop 3); receita do plano ÷ pessoas: US$ 109,97 ÷ 2 = US$ 54,99 (centavos)", () => {
-    const { ltv } = cardsDeAquisicao(entrada());
+    const { ltv } = cardsDeAquisicaoPorCanal(entrada());
     expect(ltv.map((c) => c.rotulo)).toEqual(["LTV Mensal", "LTV Trimestral", "LTV Semestral", "LTV Anual"]);
     // o id da sonda de 27/10: US$ 59,69 ÷ 6 pessoas = US$ 9,95 (centavos)
     const semestral = achar(ltv, "ltv-semestral");
@@ -177,13 +177,13 @@ describe("LTV Mensal, Trimestral, Semestral e Anual, brutos (AC7)", () => {
   });
 
   it("o memorial lista os product_id que entraram no plano, com pessoas e receita (AC7d)", () => {
-    const valores = achar(cardsDeAquisicao(entrada()).ltv, "ltv-anual").formula!.values;
+    const valores = achar(cardsDeAquisicaoPorCanal(entrada()).ltv, "ltv-anual").formula!.values;
     expect(valores).toContainEqual(expect.objectContaining({ label: "premium_yearly_150:base", value: "1 pessoa · US$ 79,98" }));
     expect(valores).toContainEqual(expect.objectContaining({ label: "premium_yearly_partner_100", value: "1 pessoa · US$ 29,99" }));
   });
 
   it("os fora por decisão aparecem no memorial (D33) — sem aviso", () => {
-    expect(achar(cardsDeAquisicao(entrada()).ltv, "ltv-mensal").formula!.note).toContain("rc_promo_Lyrio Pro_daily (1 pagamento, US$ 0,99)");
+    expect(achar(cardsDeAquisicaoPorCanal(entrada()).ltv, "ltv-mensal").formula!.note).toContain("rc_promo_Lyrio Pro_daily (1 pagamento, US$ 0,99)");
     expect(avisoDeNaoClassificado(LTV)).toBeNull();
   });
 
@@ -191,7 +191,7 @@ describe("LTV Mensal, Trimestral, Semestral e Anual, brutos (AC7)", () => {
     expect(ltvEmCentavos(0, 0)).toBeNull();
     expect(ltvEmCentavos(500, 0)).toBeNull();
     expect(ltvEmCentavos(10997, 2)).toBe(5499);
-    const m = achar(cardsDeAquisicao(entrada()).ltv, "ltv-mensal");
+    const m = achar(cardsDeAquisicaoPorCanal(entrada()).ltv, "ltv-mensal");
     expect(m.valor).toBe("—");
     expect(m.formula!.result).toContain("nenhum pagamento deste plano na janela");
   });
@@ -209,21 +209,21 @@ describe("LTV Mensal, Trimestral, Semestral e Anual, brutos (AC7)", () => {
   });
 
   it("resposta sem `ltv` (outra versão): os cards de LTV não aparecem", () => {
-    expect(cardsDeAquisicao(entrada({ pagantesFiltro: { tipo: "pronto", dados: pagantes(90, { ltv: undefined }) } })).ltv).toEqual([]);
+    expect(cardsDeAquisicaoPorCanal(entrada({ pagantesFiltro: { tipo: "pronto", dados: pagantes(90, { ltv: undefined }) } })).ltv).toEqual([]);
   });
 });
 
 describe("renovações por canal (AC8)", () => {
   it("uma por canal da 42.12, na ordem; o conflito só aparece quando existe", () => {
-    const { renovacoes } = cardsDeAquisicao(entrada());
+    const { renovacoes } = cardsDeAquisicaoPorCanal(entrada());
     expect(renovacoes.map((c) => [c.rotulo, c.valor])).toEqual([
       ["Renovações · Meta", "9"], ["Renovações · Google", "8"], ["Renovações · Orgânico ou cupom", "7"], ["Renovações · Sem atribuição", "6"],
     ]);
-    const comConflito = cardsDeAquisicao(entrada({ pagantesFiltro: { tipo: "pronto", dados: pagantes(90, { renovacoes: contagem(1, 0, 0, 0, 2) }) } })).renovacoes;
+    const comConflito = cardsDeAquisicaoPorCanal(entrada({ pagantesFiltro: { tipo: "pronto", dados: pagantes(90, { renovacoes: contagem(1, 0, 0, 0, 2) }) } })).renovacoes;
     expect(comConflito.at(-1)).toMatchObject({ rotulo: "Renovações · Conflito Meta × Google", valor: "2" });
   });
   it("o memorial diz a regra (D30): conta eventos; a primeira cobrança depois do trial não entra", () => {
-    const f = cardsDeAquisicao(entrada()).renovacoes[0].formula!;
+    const f = cardsDeAquisicaoPorCanal(entrada()).renovacoes[0].formula!;
     expect(f.note).toContain("Conta EVENTOS");
     expect(f.note).toContain("primeira cobrança depois do trial não entra");
     expect(f.period).toMatch(/segue o filtro de 90 dias$/);
@@ -232,16 +232,16 @@ describe("renovações por canal (AC8)", () => {
 
 describe("rota da API anterior, eco e erro (AC10b, PO-D4)", () => {
   it("404 da rota (oculto) nas duas janelas: nenhum card — o banner de versão explica", () => {
-    expect(cardsDeAquisicao(entrada({ pagantesFiltro: { tipo: "oculto" }, pagantes28: { tipo: "oculto" } }))).toEqual({ cac: [], ltv: [], renovacoes: [] });
+    expect(cardsDeAquisicaoPorCanal(entrada({ pagantesFiltro: { tipo: "oculto" }, pagantes28: { tipo: "oculto" } }))).toMatchObject({ cac: [], ltv: [], renovacoes: [], renovacaoTotal: null });
   });
   it("resposta que ecoa OUTRA janela não vale para esta (o eco decide)", () => {
-    const r = cardsDeAquisicao(entrada({ pagantesFiltro: { tipo: "pronto", dados: pagantes(28) } }));
+    const r = cardsDeAquisicaoPorCanal(entrada({ pagantesFiltro: { tipo: "pronto", dados: pagantes(28) } }));
     expect(r.renovacoes).toEqual([]);
     expect(r.cac.map((c) => c.id).every((id) => id.endsWith("-28d"))).toBe(true);
   });
   it("erro: cada card '—' com a causa, nenhum some", () => {
     const erro = { tipo: "erro" as const, causa: "outro" as const, mensagem: "Falhou" };
-    const r = cardsDeAquisicao(entrada({ pagantesFiltro: erro, pagantes28: erro }));
+    const r = cardsDeAquisicaoPorCanal(entrada({ pagantesFiltro: erro, pagantes28: erro }));
     for (const c of [...r.cac, ...r.ltv, ...r.renovacoes]) {
       expect(c.valor, c.id).toBe("—");
       expect(c.formula!.values[0].value, c.id).toBe("Falhou");

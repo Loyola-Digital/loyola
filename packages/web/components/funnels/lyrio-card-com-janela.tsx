@@ -15,9 +15,12 @@
 // ============================================================
 
 import * as React from "react";
+import { AlertTriangle } from "lucide-react";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { MetricFormula } from "@/lib/types/metric-formula";
 import type { DeclaracaoDaJanela } from "@/lib/utils/janela-dos-cards-lyrio";
+import type { LinhaEmSegundoPlano } from "@/lib/utils/resumo-mobile-lyrio";
 
 /** A superfície do card. `forwardRef` + `{...rest}`: é o que o `asChild` do trigger exige. */
 export const SuperficieDoCard = React.forwardRef<
@@ -33,9 +36,19 @@ export const SuperficieDoCard = React.forwardRef<
     classeDoValor?: string;
     /** Destaque de "resultado" (ROAS, Margem) — independe do âmbar da janela. */
     realce?: boolean;
+    /**
+     * Story 42.15 (AC7) — as linhas em segundo plano (Meta / Google, ou o CAC
+     * máximo e a faixa): menores, abaixo do valor. No celular cortam com
+     * reticências (`truncate`); o texto inteiro está no memorial (AC7c).
+     */
+    secundarias?: readonly LinhaEmSegundoPlano[];
+    /** Story 42.15 (AC2g) — a fonte ainda não respondeu: skeleton no lugar do valor. */
+    carregando?: boolean;
+    /** Story 42.15 (AC10h) — há alerta de distorção no memorial. */
+    alerta?: boolean;
   } & React.HTMLAttributes<HTMLDivElement>
 >(function SuperficieDoCard(
-  { rotulo, valor, declaracao, comMemorial, icone: Icone, classeDoValor, realce, className, ...rest },
+  { rotulo, valor, declaracao, comMemorial, icone: Icone, classeDoValor, realce, secundarias, carregando, alerta, className, ...rest },
   ref,
 ) {
   // AC3a — o âmbar é de quem NÃO segue o filtro, e só dele.
@@ -49,19 +62,37 @@ export const SuperficieDoCard = React.forwardRef<
       ref={ref}
       {...rest}
       data-janela={declaracao.segueOFiltro ? "segue" : "nao-segue"}
-      className={`space-y-0.5 rounded-lg border p-3 ${fundo} ${comMemorial ? "cursor-help" : ""} ${className ?? ""}`}
+      className={`min-w-0 space-y-0.5 rounded-lg border p-3 ${fundo} ${comMemorial ? "cursor-help" : ""} ${className ?? ""}`}
     >
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        {Icone && <Icone className="h-3.5 w-3.5" />}
-        {rotulo}
+        {Icone && <Icone className="h-3.5 w-3.5 shrink-0" />}
+        <span className="min-w-0 truncate">{rotulo}</span>
+        {alerta && <AlertTriangle aria-label="Há alertas no memorial" className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />}
       </div>
-      <p
-        className={`text-base font-bold tabular-nums ${realce && !declaracao.destaque ? "text-primary" : ""} ${classeDoValor ?? ""} ${
-          comMemorial ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""
-        }`}
-      >
-        {valor}
-      </p>
+      {carregando ? (
+        <Skeleton data-carregando="" className="h-6 w-24" />
+      ) : (
+        <p
+          className={`text-base font-bold tabular-nums ${realce && !declaracao.destaque ? "text-primary" : ""} ${classeDoValor ?? ""} ${
+            comMemorial ? "underline decoration-dotted decoration-muted-foreground/40 underline-offset-4" : ""
+          }`}
+        >
+          {valor}
+        </p>
+      )}
+      {secundarias && secundarias.length > 0 && (
+        <ul className="min-w-0 space-y-px" data-secundarias="">
+          {secundarias.map((l) => (
+            <li
+              key={l.id}
+              className={`truncate text-[11px] tabular-nums ${l.negativo ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}`}
+            >
+              {l.rotulo} {l.valor}
+              {l.nota && <span className="text-muted-foreground/70"> · {l.nota}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
       {/* AC3 — a janela de cada número, sempre, pela fonte única (AC2a). */}
       <p className={`text-[10px] ${declaracao.destaque ? "font-medium text-amber-700 dark:text-amber-400" : "text-muted-foreground/70"}`}>
         {declaracao.etiqueta}
@@ -85,6 +116,9 @@ export function CardComJanela({
   icone?: React.ComponentType<{ className?: string }>;
   classeDoValor?: string;
   realce?: boolean;
+  secundarias?: readonly LinhaEmSegundoPlano[];
+  carregando?: boolean;
+  alerta?: boolean;
 }) {
   return (
     <MetricTooltip label={props.rotulo} value={props.valor} formula={formula}>

@@ -48,7 +48,8 @@ describe("AC2b/AC2c — nenhuma chamada nova: o bloco Google lê o MESMO resulta
   it("a Meta também: o bloco lê a consulta do FILTRO do Resumo (antes repetia a chamada); a venda é a mesma dos dois blocos", () => {
     expect(etapa.match(/useCampaignDailyInsightsBulk\(/g)).toHaveLength(2); // o filtro e os 28 fixos (42.14)
     expect(bloco).not.toMatch(/use[A-Z]\w*\(/); // o bloco não consulta nada
-    expect(etapa.match(/vendas: vendasDosBlocos,/g)).toHaveLength(2);
+    // os dois blocos e (Story 42.15, AC2b) o Resumo consolidado: o MESMO estado de vendas
+    expect(etapa.match(/vendas: vendasDosBlocos,/g)).toHaveLength(3);
     expect(etapa.match(/ctx: \{ diasDoFiltro: days, hoje \},\s*trafego:/g)).toHaveLength(2);
   });
 });

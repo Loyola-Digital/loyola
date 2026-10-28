@@ -711,4 +711,16 @@
 // dias conta nos dois). A rota lê a quebra por comprador e por dia numa
 // consulta só. Só contagens — nenhum `app_user_id`. Campo aditivo: com a API
 // antiga as colunas de venda dos dias mostram "—". `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 62;
+//
+// v63 (Story 42.15 — Lyrio: o LTV sobre margem por churn, AC10c; sem
+// migration): rota NOVA `GET …/revenuecat/ativas-no-inicio?days=N` — as
+// assinaturas PAGAS ativas no primeiro dia da janela de N dias de SP, pelo chart
+// `actives` do RevenueCat lido nesse dia (`start_date = end_date`). Resposta:
+// `{ configured, days, desde, ate, diaDoChart, valor, medida?, diaIncompleto? }`
+// (`configured: false` e `valor: null` sem app escolhido na etapa). O chart
+// conta o dia em UTC. Falha do RevenueCat com a `causa` de `/receita` (429
+// `limite`, 502 `permissao`/`outro`), nunca 200 com zero. É o denominador do
+// churn; o numerador é o `churnPagante` de `/metricas-derivadas?days=30`, que
+// não muda. Com a API antiga a rota responde 404 e o card "LTV (margem)" fica
+// "—" com a causa. `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 63;

@@ -36,6 +36,7 @@ import {
   getRevenuecatOverview,
   getRevenuecatRevenue,
   getRevenuecatChartTotal,
+  getRevenuecatChartNoDia,
   respostaDeFalhaDoRevenuecat,
   REVENUE_EVENT_TYPES,
 } from "../services/revenuecat.js";
@@ -788,6 +789,53 @@ export default fp(async function revenuecatRoutes(fastify) {
       } catch (err) {
         request.log.error(err, "Erro ao puxar os novos clientes do período no RevenueCat");
         const falha = respostaDeFalhaDoRevenuecat(err, "os novos clientes do período");
+        return reply.code(falha.status).send(falha.corpo);
+      }
+    },
+  );
+
+  // ---- GET assinaturas pagas ativas no início da janela ---- (Story 42.15, AC10c)
+  /**
+   * O denominador do churn mensal do LTV por churn (D9): as assinaturas PAGAS
+   * ativas no PRIMEIRO dia da janela de `days` dias de SP, pelo chart `actives`
+   * do RevenueCat ("Active (paying) subscriptions") lido nesse dia. O numerador
+   * (as expirações pagas) já existe em `/metricas-derivadas?days=` (PO-03).
+   *
+   * O chart conta o dia em UTC (sonda de 2026-10-28); a tela declara a
+   * diferença de fuso. Mesma régua, guarda e tratamento de falha de
+   * `/novos-clientes`; ecoa a janela e o dia lido.
+   */
+  fastify.get(
+    "/api/projects/:projectId/funnels/:funnelId/stages/:stageId/revenuecat/ativas-no-inicio",
+    async (request, reply) => {
+      const params = stageParamsSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const query = salesQuerySchema.safeParse(request.query);
+      if (!query.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+      const stage = await getStage(params.data.projectId, params.data.funnelId, params.data.stageId);
+      if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
+
+      const apiKey = await getApiKey(params.data.projectId);
+      if (!apiKey) return reply.code(409).send({ error: "RevenueCat não conectado neste projeto" });
+
+      const { desde, ate } = diasDaJanelaEmSp(query.data.days);
+      const janela = { days: query.data.days, desde, ate, diaDoChart: desde };
+
+      const [cfg] = await fastify.db
+        .select({ rcProjectId: revenuecatStageConfig.rcProjectId })
+        .from(revenuecatStageConfig)
+        .where(eq(revenuecatStageConfig.stageId, params.data.stageId))
+        .limit(1);
+      if (!cfg?.rcProjectId) return { configured: false, ...janela, valor: null };
+
+      try {
+        const r = await getRevenuecatChartNoDia(apiKey, cfg.rcProjectId, "actives", desde);
+        return { configured: true, ...janela, valor: r.valor, medida: r.medida, diaIncompleto: r.incompleto };
+      } catch (err) {
+        request.log.error(err, "Erro ao puxar as assinaturas ativas no início da janela no RevenueCat");
+        const falha = respostaDeFalhaDoRevenuecat(err, "as assinaturas ativas no início do período");
         return reply.code(falha.status).send(falha.corpo);
       }
     },

@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { cardsDoResumo, type EntradaDoResumo } from "@/lib/utils/resumo-mobile-lyrio";
+import { cardsDoResumo, fmtBRL, type EntradaDoResumo } from "@/lib/utils/resumo-mobile-lyrio";
 import { cardsDeAquisicao } from "@/lib/utils/aquisicao-lyrio";
 import { GradeDoResumo } from "../lyrio-resumo-cards";
 
@@ -18,7 +18,22 @@ const entrada = (p: Partial<EntradaDoResumo> = {}): EntradaDoResumo => ({
   cambio: { taxa: 5, fonte: "/api/fx/usd-brl · manual" },
   meta: { temCampanhas: true, filtro: { spendLiquido: 1757.5, imposto: 242.5, spendComImposto: 2000 }, vinteOito: { spendLiquido: 878.75, imposto: 121.25, spendComImposto: 1000 } },
   google: { mostrar: true, filtro: { tipo: "pronto", spend: 500 }, vinteOito: { tipo: "pronto", spend: 100 } },
-  receita: { tipo: "pronto", dados: { configured: true, days: 90, desde: "2026-07-19", ate: "2026-10-16", valorUsd: 1000 } },
+  vendas: {
+    tipo: "pronto",
+    dados: {
+      days: 90, desde: "2026-07-19", atributosDesde: "2026-07-01",
+      canais: [
+        { canal: "meta", rotulo: "Meta", vendas: 10, compradores: 8, receitaUsd: 600 },
+        { canal: "google", rotulo: "Google", vendas: 4, compradores: 3, receitaUsd: 200 },
+        { canal: "organico", rotulo: "Orgânico ou cupom", vendas: 6, compradores: 5, receitaUsd: 150 },
+        { canal: "sem_atribuicao", rotulo: "Sem atribuição", vendas: 3, compradores: 3, receitaUsd: 50 },
+      ],
+      conflito: { vendas: 0, compradores: 0, receitaUsd: 0 },
+      totalPago: { vendas: 23, compradores: 19, receitaUsd: 1000 },
+      metaPorEntidade: { campaign: [], adset: [], ad: [] },
+      foraDaQuebra: { semValor: 0, semUsuario: 0 },
+    },
+  },
   novosClientes: { tipo: "pronto", dados: { configured: true, days: 90, desde: "2026-07-19", ate: "2026-10-16", valor: 15232 } },
   overview: { tipo: "pronto", dados: [{ id: "mrr", value: 596 }, { id: "active_subscriptions", value: 120 }, { id: "active_trials", value: 30 }, { id: "new_customers_last_28_days", value: 900 }] },
   percentuais: { platformFeePct: 15, taxPct: 5, otherCostsPct: 1 },
@@ -48,10 +63,10 @@ async function abrirMemorial(rotulo: string): Promise<string> {
 }
 
 describe("GradeDoResumo — cada memorial abre (AC1a, AC9d)", () => {
-  it("os 9 cards abrem o memorial ao receber foco, com a janela e a frase do filtro", async () => {
+  it("os 8 cards abrem o memorial ao receber foco, com a janela e a frase do filtro", async () => {
     const cards = cardsDoResumo(entrada());
     render(<TooltipProvider><GradeDoResumo cards={cards} /></TooltipProvider>);
-    expect(cards).toHaveLength(9);
+    expect(cards).toHaveLength(8);
     for (const c of cards) {
       expect(cardDe(c.rotulo).tabIndex, c.rotulo).toBe(0);
       const texto = await abrirMemorial(c.rotulo);
@@ -87,7 +102,7 @@ describe("GradeDoResumo — cada memorial abre (AC1a, AC9d)", () => {
     const e = entrada();
     const a = cardsDeAquisicao({ ctx: e.ctx, pagantesFiltro: { tipo: "pronto", dados: dados(90) }, pagantes28: { tipo: "pronto", dados: dados(28) }, meta: e.meta, google: e.google });
     const cards = [...a.cac, ...a.ltv, ...a.renovacoes];
-    expect(cards).toHaveLength(13);
+    expect(cards).toHaveLength(6); // Story 42.15: CAC (filtro), CAC · 28d fixo, 3 LTV bruto (sem Semestral na resposta), Renovações
     render(<TooltipProvider><GradeDoResumo cards={cards} /></TooltipProvider>);
     for (const c of cards) {
       const texto = await abrirMemorial(c.rotulo);
@@ -97,17 +112,47 @@ describe("GradeDoResumo — cada memorial abre (AC1a, AC9d)", () => {
   });
 
   it("card em erro: mostra '—' e o memorial abre com a causa (PO-D4)", async () => {
-    const cards = cardsDoResumo(entrada({ receita: { tipo: "erro", causa: "limite", mensagem: "RevenueCat 429: Too Many Requests" } }));
+    const cards = cardsDoResumo(entrada({ vendas: { tipo: "erro", mensagem: "HTTP 500: falhou" } }));
     render(<TooltipProvider><GradeDoResumo cards={cards} /></TooltipProvider>);
     expect(cardDe("ROAS").textContent).toContain("—");
     const texto = await abrirMemorial("Receita (RevenueCat)");
-    expect(texto).toContain("RevenueCat 429");
-    expect(texto).toContain("tente de novo em 1 minuto");
+    expect(texto).toContain("HTTP 500: falhou");
+    expect(texto).toContain("tente atualizar");
+  });
+
+  it("Story 42.15 (AC7) — as linhas Meta e Google aparecem abaixo do valor, cortando com reticências (truncate)", () => {
+    render(<TooltipProvider><GradeDoResumo cards={cardsDoResumo(entrada())} /></TooltipProvider>);
+    const card = cardDe("Investimento (Total)");
+    const linhas = [...card.querySelectorAll("[data-secundarias] li")];
+    expect(linhas.map((l) => l.textContent)).toEqual([`Meta ${fmtBRL(2000)}`, `Google ${fmtBRL(500)}`]);
+    for (const l of linhas) expect(l.className).toContain("truncate");
+    expect(card.className).toContain("min-w-0");
+    // margem positiva: a linha não fica vermelha
+    const margem = [...cardDe("Margem de Contribuição").querySelectorAll("[data-secundarias] li")];
+    expect(margem.find((l) => l.textContent?.startsWith("Margem Meta"))!.className).not.toContain("text-red-600");
+  });
+
+  it("Story 42.15 (AC3e) — margem negativa do canal: vermelho também na linha em segundo plano", () => {
+    const base = entrada();
+    const dados = (base.vendas as { tipo: "pronto"; dados: import("@/lib/utils/vendas-por-canal-lyrio").VendasPorCanalDoLyrio }).dados;
+    const vendas = { tipo: "pronto" as const, dados: { ...dados, canais: dados.canais.map((c) => (c.canal === "meta" ? { ...c, receitaUsd: 100 } : c)), totalPago: { ...dados.totalPago, receitaUsd: 500 } } };
+    render(<TooltipProvider><GradeDoResumo cards={cardsDoResumo(entrada({ vendas }))} /></TooltipProvider>);
+    const margem = [...cardDe("Margem de Contribuição").querySelectorAll("[data-secundarias] li")];
+    expect(margem.find((l) => l.textContent?.startsWith("Margem Meta"))!.className).toContain("text-red-600");
+    expect(margem.find((l) => l.textContent?.startsWith("Margem Google"))!.className).not.toContain("text-red-600");
+  });
+
+  it("Story 42.15 (AC2g) — carregando: skeleton no valor, sem memorial nem foco", () => {
+    render(<TooltipProvider><GradeDoResumo cards={cardsDoResumo(entrada({ vendas: { tipo: "carregando" } }))} /></TooltipProvider>);
+    const receita = cardDe("Receita (RevenueCat)");
+    expect(receita.querySelector("[data-carregando]")).not.toBeNull();
+    expect(receita.tabIndex).toBe(-1);
+    expect(cardDe("Investimento (Total)").querySelector("[data-carregando]")).toBeNull();
   });
 
   it("âmbar só em quem não segue o filtro", () => {
     render(<TooltipProvider><GradeDoResumo cards={cardsDoResumo(entrada())} /></TooltipProvider>);
     expect(cardDe("MRR").className).toContain("bg-amber-500/10");
-    expect(cardDe("Investimento (Meta)").className).not.toContain("bg-amber-500/10");
+    expect(cardDe("Investimento (Total)").className).not.toContain("bg-amber-500/10");
   });
 });

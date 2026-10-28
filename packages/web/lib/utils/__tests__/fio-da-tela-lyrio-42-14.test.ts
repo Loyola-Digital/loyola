@@ -32,10 +32,11 @@ describe("o fio do Resumo mobile (lyrio-stage-view.tsx)", () => {
     expect(etapa).toMatch(/const google28 = investimentoDoGoogleNaRegua\(contaGoogle, googleConsultas, 28, hoje\);/);
   });
 
-  it("W3/W4 — receita e novos clientes do Resumo pedem a janela do FILTRO", () => {
-    expect(etapa).toMatch(/const receitaQ = useRevenuecatReceita\(projectId, funnelId, stage\.id, days, connected\);/);
+  it("W3/W4 — novos clientes do Resumo pedem a janela do FILTRO; a receita (Story 42.15, D1) é a do webhook, no estado dos blocos", () => {
+    // Story 42.15 (AC2f): o Resumo deixou `…/revenuecat/receita`; a receita vem de `vendas-por-canal` com `days`.
+    expect(etapa).not.toMatch(/useRevenuecatReceita/);
     expect(etapa).toMatch(/const novosClientesQ = useRevenuecatNovosClientes\(projectId, funnelId, stage\.id, days, connected\);/);
-    expect(etapa).toMatch(/receita: receitaDoFiltro,\s*novosClientes,/);
+    expect(etapa).toMatch(/vendas: vendasDosBlocos,\s*novosClientes,/);
   });
 
   it("W6 — pagantes: o FILTRO pede `days` e os CACs de 28 dias fixos pedem 28", () => {
