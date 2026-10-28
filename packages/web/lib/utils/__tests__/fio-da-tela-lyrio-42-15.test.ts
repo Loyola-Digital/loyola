@@ -88,12 +88,27 @@ describe("AC10 — o fio do LTV por churn", () => {
     expect(etapa).toMatch(/useRevenuecatMetricasDerivadas\(projectId, funnelId, stage\.id, DIAS_DO_CHURN, connected\)/);
     expect(etapa).toMatch(/useRevenuecatAtivasNoInicio\(projectId, funnelId, stage\.id, DIAS_DO_CHURN, connected\)/);
     expect(etapa).toMatch(/cac: aquisicao\.cacConsolidadoDoFiltro,/);
-    expect(etapa).toMatch(/margem: \{ periodo: "mensal", platformFeePct, taxPct, otherCostsPct \},/);
+    expect(etapa).toMatch(/margem: margemDosPercentuais\(percentuais\),/);
     expect(etapa).toMatch(/arpu: arpuDoOverview\(overviewEstado\),/);
   });
   it("o hook da rota nova pede `ativas-no-inicio?days=`", () => {
     const hooks = ler("../../hooks/use-revenuecat.ts");
     expect(hooks).toMatch(/\/stages\/\$\{stageId\}\/revenuecat\/ativas-no-inicio\?days=\$\{days\}/);
     expect(hooks).toMatch(/queryKey: \["revenuecat-ativas-no-inicio", stageId, days\]/);
+  });
+});
+
+describe("QA loop 1 (REL-001, DOC-001) — o fio do estado da config e da cobertura", () => {
+  const trecho = (inicio: string) => etapa.slice(etapa.indexOf(inicio), etapa.indexOf("});", etapa.indexOf(inicio)));
+  it("os percentuais saem do ESTADO da consulta da config (carregando / erro / pronto), não do fallback", () => {
+    expect(etapa).toMatch(/const percentuais = percentuaisDaConfig\(estadoDaFonte\(\{ isLoading: config\.isLoading, error: config\.error, data: config\.data \}\)\);/);
+    const resumoCall = trecho("const cardsResumo = cardsDoResumo({");
+    const ltvCall = trecho("const ltvPorChurn = cardsDoLtvPorChurn({");
+    expect(resumoCall).toMatch(/\n\s+percentuais,\n/);
+    expect(ltvCall).toMatch(/margem: margemDosPercentuais\(percentuais\),/);
+    for (const call of [resumoCall, ltvCall]) expect(call).not.toMatch(/platformFeePct|MARGEM_DEFAULTS/);
+  });
+  it("DOC-001: o Resumo sabe que a cobertura (pagantes) ainda carrega", () => {
+    expect(trecho("const cardsResumo = cardsDoResumo({")).toMatch(/serieCarregando: pagantesFiltro\.tipo === "carregando",/);
   });
 });

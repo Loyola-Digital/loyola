@@ -14,6 +14,7 @@ import {
   decimosDaRelacao,
   faixaDaRelacao,
   fmtRelacao,
+  margemDosPercentuais,
   relacaoLtvCac,
   type ArpuMensal,
   type ChurnMensal,
@@ -21,7 +22,8 @@ import {
   type MargemMensal,
 } from "../ltv-por-churn-lyrio";
 import { ALERTA_DO_CAC_SO_MIDIA } from "../aquisicao-lyrio";
-import { fmtBRL, type CardDoResumo } from "../resumo-mobile-lyrio";
+import { fmtBRL, percentuaisDaConfig, type CardDoResumo } from "../resumo-mobile-lyrio";
+import { estadoDaFonte } from "../estado-da-fonte-revenuecat";
 
 /**
  * Story 42.15 (AC10) — LTV sobre margem por churn, LTV/CAC, CAC máximo, faixas
@@ -47,7 +49,7 @@ const entrada = (p: Partial<EntradaDoLtvPorChurn> = {}): EntradaDoLtvPorChurn =>
   ctx: { diasDoFiltro: 90, hoje: "2026-10-28", serieDesde: "2026-08-10" },
   cambio: { taxa: 5, fonte: "/api/fx/usd-brl · manual" },
   arpu: { tipo: "pronto", dados: ARPU },
-  margem: MARGEM,
+  margem: { tipo: "pronto", dados: MARGEM },
   churn: { tipo: "pronto", dados: CHURN },
   cac: { tipo: "pronto", centavos: 25000, investimentoCentavos: 250000, pessoas: 10 },
   ...p,
@@ -145,8 +147,8 @@ describe("AC10i — os casos de '—', com a causa; o LTV/CAC e o CAC máximo he
     ["churn igual a 0", { churn: { tipo: "pronto", dados: { ...CHURN, expiracoesPagas: 0 } } }, "nenhuma expiração paga no período, churn zero não permite calcular o LTV"],
     ["assinaturas ativas iguais a 0", { arpu: { tipo: "pronto", dados: { ...ARPU, assinaturasAtivas: 0 } } }, "assinaturas ativas iguais a 0"],
     ["câmbio ausente", { cambio: { taxa: null, fonte: "x" } }, "câmbio US$ → R$ indisponível"],
-    ["margem igual a 0%", { margem: { ...MARGEM, platformFeePct: 60, taxPct: 30, otherCostsPct: 10 } }, "igual ou menor que 0%"],
-    ["margem negativa", { margem: { ...MARGEM, platformFeePct: 90, taxPct: 30, otherCostsPct: 10 } }, "igual ou menor que 0%"],
+    ["margem igual a 0%", { margem: { tipo: "pronto", dados: { ...MARGEM, platformFeePct: 60, taxPct: 30, otherCostsPct: 10 } } }, "igual ou menor que 0%"],
+    ["margem negativa", { margem: { tipo: "pronto", dados: { ...MARGEM, platformFeePct: 90, taxPct: 30, otherCostsPct: 10 } } }, "igual ou menor que 0%"],
     ["denominador do churn igual a 0", { churn: { tipo: "pronto", dados: { ...CHURN, assinaturasNoInicio: 0 } } }, "nenhuma assinatura paga ativa em 29/09"],
   ];
   for (const [nome, p, texto] of casos) {
@@ -279,5 +281,97 @@ describe("AC10j — os textos do AC10 não usam travessão entre palavras", () =
     ];
     for (const c of todos) expect(textos(c), c.rotulo).not.toMatch(entre);
     for (const f of Object.values(FAIXAS)) expect(f.texto).not.toContain("—");
+  });
+});
+
+describe("QA loop 1 (REL-001) — a margem do LTV segue o ESTADO da configuração da etapa", () => {
+  /** O 500 do GET …/revenuecat/config em produção (colunas da 0103 ausentes), como o `apiClient` entrega. */
+  const config500 = estadoDaFonte<{ platformFeePct: number; taxPct: number; otherCostsPct: number }>({
+    isLoading: false,
+    error: { status: 500, message: "HTTP 500", body: { error: "Erro ao buscar a configuração" } },
+    data: undefined,
+  });
+  const comConfig = (c: Parameters<typeof percentuaisDaConfig>[0]) => cardsDoLtvPorChurn(entrada({ margem: margemDosPercentuais(percentuaisDaConfig(c)) }));
+
+  it("config em erro: LTV, LTV/CAC e CAC máximo '—', e o memorial diz que os percentuais da margem não carregaram", () => {
+    const { ltv, relacao } = comConfig(config500);
+    expect(ltv.valor).toBe("—");
+    expect(ltv.carregando).toBeUndefined();
+    expect(ltv.formula!.values).toContainEqual(
+      expect.objectContaining({ label: "Insumo que faltou", value: "os percentuais da margem não carregaram (configuração da etapa indisponível: Erro ao buscar a configuração)" }),
+    );
+    expect(relacao.valor).toBe("—");
+    expect(relacao.secundarias![0]).toMatchObject({ id: "cac-maximo", valor: "—" });
+    expect(JSON.stringify(relacao.formula)).toContain("LTV sem número: os percentuais da margem não carregaram");
+    // nunca a conta com os padrões 15/5/1 rotulada como "percentuais da etapa"
+    for (const c of [ltv, relacao]) {
+      expect(JSON.stringify(c.formula)).not.toContain("percentuais da etapa (Configurar)");
+      expect(JSON.stringify(c.formula)).not.toContain("15,00%");
+    }
+  });
+  it("config carregando: LTV e LTV/CAC em skeleton, sem memorial, e o CAC máximo '—'", () => {
+    const { ltv, relacao } = comConfig({ tipo: "carregando" });
+    expect(ltv).toMatchObject({ valor: "—", carregando: true });
+    expect(ltv.formula).toBeUndefined();
+    expect(relacao).toMatchObject({ valor: "—", carregando: true });
+    expect(relacao.formula).toBeUndefined();
+    expect(relacao.secundarias![0].valor).toBe("—");
+  });
+  it("config pronta: a conta usa os percentuais DELA (20/5/5 → 70%), não os padrões; LTV 25 × 70% ÷ 2,5% = R$ 700,00", () => {
+    const { ltv, relacao } = comConfig({ tipo: "pronto", dados: { platformFeePct: 20, taxPct: 5, otherCostsPct: 5 } });
+    expect(ltv.valor).toBe(fmtBRL(700));
+    const v = Object.fromEntries(ltv.formula!.values.map((x) => [x.label, x]));
+    expect(v["Margem de contribuição"]).toMatchObject({ value: "100% − 20,00% − 5,00% − 5,00% = 70,00%", source: expect.stringContaining("percentuais da etapa (Configurar)") });
+    expect(relacao.valor).toBe("2,8x"); // 700 ÷ 250
+  });
+  it("config antiga (oculto) ou sem os três percentuais: '—' com a causa, nunca um padrão", () => {
+    expect(percentuaisDaConfig({ tipo: "oculto" })).toMatchObject({ tipo: "indisponivel", causa: expect.stringContaining("os percentuais da margem não carregaram") });
+    for (const dados of [{ platformFeePct: 15, taxPct: 5 }, { platformFeePct: 15, taxPct: null, otherCostsPct: 1 }, { platformFeePct: Number.NaN, taxPct: 5, otherCostsPct: 1 }]) {
+      expect(percentuaisDaConfig({ tipo: "pronto", dados }), JSON.stringify(dados)).toEqual({ tipo: "indisponivel", causa: "a configuração da etapa não trouxe os percentuais da margem" });
+    }
+    const { ltv } = comConfig({ tipo: "pronto", dados: { platformFeePct: 15, taxPct: 5 } });
+    expect(ltv.valor).toBe("—");
+    expect(JSON.stringify(ltv.formula)).toContain("a configuração da etapa não trouxe os percentuais da margem");
+  });
+  it("percentuais em 0 são número (margem 100%), não ausência", () => {
+    expect(percentuaisDaConfig({ tipo: "pronto", dados: { platformFeePct: 0, taxPct: 0, otherCostsPct: 0 } })).toEqual({ tipo: "pronto", dados: { platformFeePct: 0, taxPct: 0, otherCostsPct: 0 } });
+    expect(margemDosPercentuais({ tipo: "pronto", dados: { platformFeePct: 0, taxPct: 0, otherCostsPct: 0 } })).toEqual({ tipo: "pronto", dados: { periodo: "mensal", platformFeePct: 0, taxPct: 0, otherCostsPct: 0 } });
+  });
+});
+
+describe("QA loop 1 (TEST-001) — o ARPU do overview no caminho pronto", () => {
+  it("lê `mrr` e `active_subscriptions` (não `active_trials`): MRR 1.887, 865 assinaturas", () => {
+    const overview = { tipo: "pronto" as const, dados: [{ id: "mrr", value: 1887 }, { id: "active_trials", value: 30 }, { id: "active_subscriptions", value: 865 }] };
+    expect(arpuDoOverview(overview)).toEqual({ tipo: "pronto", dados: { periodo: "mensal", mrrUsd: 1887, assinaturasAtivas: 865 } });
+    // e o card usa esse ARPU: 1.887 ÷ 865 × 5
+    const c = cardsDoLtvPorChurn(entrada({ arpu: arpuDoOverview(overview) })).ltv;
+    expect(c.formula!.values.find((x) => x.label === "ARPU mensal")!.value).toBe(`US$ 1.887,00 ÷ 865 × ${fmtBRL(5)} = ${fmtBRL((1887 / 865) * 5)}`);
+  });
+  it("sem o MRR, ou sem as assinaturas ativas: '—' com a causa de cada um", () => {
+    expect(arpuDoOverview({ tipo: "pronto", dados: [{ id: "active_subscriptions", value: 865 }, { id: "active_trials", value: 30 }] })).toEqual({
+      tipo: "indisponivel",
+      causa: "o overview do RevenueCat não trouxe o MRR",
+    });
+    expect(arpuDoOverview({ tipo: "pronto", dados: [{ id: "mrr", value: 1887 }, { id: "active_trials", value: 30 }] })).toEqual({
+      tipo: "indisponivel",
+      causa: "o overview do RevenueCat não trouxe as assinaturas ativas",
+    });
+    expect(arpuDoOverview({ tipo: "carregando" })).toEqual({ tipo: "carregando" });
+    expect(arpuDoOverview({ tipo: "oculto" })).toMatchObject({ tipo: "indisponivel" });
+  });
+});
+
+describe("QA loop 1 (TEST-006, Q50) — a precedência do `serieDesde` no 'Base incompleta'", () => {
+  const baseIncompleta = (c: CardDoResumo) => c.formula!.values.filter((v) => v.label === "Alerta").map((v) => String(v.value)).find((v) => v.startsWith("Base incompleta")) ?? null;
+  it("com o churn pronto, vale a data do CHURN (a mesma resposta do numerador), não a do contexto", () => {
+    // churn: série desde 10/08 (só a janela do CAC, de 31/07, começa antes); contexto: 01/10 (o churn também começaria antes)
+    const c = cardsDoLtvPorChurn(entrada({ ctx: { diasDoFiltro: 90, hoje: "2026-10-28", serieDesde: "2026-10-01" } })).relacao;
+    expect(baseIncompleta(c)).toBe("Base incompleta: a janela do CAC começa antes de 10/08, o início da série de assinaturas.");
+  });
+  it("sem o churn, vale a data do contexto (os pagantes)", () => {
+    const c = cardsDoLtvPorChurn(
+      entrada({ ctx: { diasDoFiltro: 90, hoje: "2026-10-28", serieDesde: "2026-10-01" }, churn: { tipo: "indisponivel", causa: "x" } }),
+    ).relacao;
+    expect(baseIncompleta(c)).toBe("Base incompleta: a janela do CAC começa antes de 01/10, o início da série de assinaturas.");
   });
 });

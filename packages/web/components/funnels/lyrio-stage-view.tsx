@@ -49,9 +49,9 @@ import { LyrioBlocoDoCanal } from "./lyrio-bloco-do-canal";
 import { contaDoGoogle } from "@/lib/utils/lyrio-google-ads";
 import { cardsDoBlocoDoCanal, trafegoDoBlocoDaMeta, trafegoDoBlocoDoGoogle } from "@/lib/utils/cards-do-bloco-lyrio";
 import { GradeDoResumo } from "./lyrio-resumo-cards";
-import { cardsDoResumo } from "@/lib/utils/resumo-mobile-lyrio";
+import { cardsDoResumo, percentuaisDaConfig } from "@/lib/utils/resumo-mobile-lyrio";
 import { avisoDeNaoClassificado, cardsDeAquisicao } from "@/lib/utils/aquisicao-lyrio";
-import { arpuDoOverview, cardsDoLtvPorChurn, churnDasConsultas, DIAS_DO_CHURN } from "@/lib/utils/ltv-por-churn-lyrio";
+import { arpuDoOverview, cardsDoLtvPorChurn, churnDasConsultas, DIAS_DO_CHURN, margemDosPercentuais } from "@/lib/utils/ltv-por-churn-lyrio";
 import { hojeNoNegocio, tituloDoResumo } from "@/lib/utils/janela-dos-cards-lyrio";
 import { avisoDoErroDaFonte, estadoDaFonte } from "@/lib/utils/estado-da-fonte-revenuecat";
 import {
@@ -229,8 +229,11 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   const novosClientes = estadoDaFonte({ isLoading: novosClientesQ.isLoading, error: novosClientesQ.error, data: novosClientesQ.data });
   const overviewEstado = estadoDaFonte({ isLoading: overview.isLoading, error: overview.error, data: overview.data?.metrics });
 
-  // Story 42.4 — Margem de Contribuição. Percentuais vêm da config da etapa; a
-  // API sempre devolve os três preenchidos, mas o fallback cobre o carregamento.
+  // Story 42.4 — Margem de Contribuição. Percentuais vêm da config da etapa.
+  // QA loop 1 da 42.15 (REL-001): os cards (Margem, LTV, LTV/CAC e CAC máximo)
+  // leem o ESTADO da config — em erro, "—" com a causa; carregando, skeleton.
+  // Os padrões abaixo só preenchem o formulário de Configurar.
+  const percentuais = percentuaisDaConfig(estadoDaFonte({ isLoading: config.isLoading, error: config.error, data: config.data }));
   const platformFeePct = config.data?.platformFeePct ?? MARGEM_DEFAULTS.platformFeePct;
   const taxPct = config.data?.taxPct ?? MARGEM_DEFAULTS.taxPct;
   const otherCostsPct = config.data?.otherCostsPct ?? MARGEM_DEFAULTS.otherCostsPct;
@@ -280,7 +283,8 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
     vendas: vendasDosBlocos,
     novosClientes,
     overview: overviewEstado,
-    percentuais: { platformFeePct, taxPct, otherCostsPct },
+    percentuais,
+    serieCarregando: pagantesFiltro.tipo === "carregando",
   });
   // PO-D4 (3) — o aviso visível do bloco, além do memorial de cada card.
   const avisoDaReceita = avisoDoErroDaFonte(novosClientes, "os novos clientes do período no RevenueCat");
@@ -306,7 +310,7 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
     ctx: { diasDoFiltro: days, hoje, serieDesde },
     cambio: { taxa: brlRate, fonte: fxSource },
     arpu: arpuDoOverview(overviewEstado),
-    margem: { periodo: "mensal", platformFeePct, taxPct, otherCostsPct },
+    margem: margemDosPercentuais(percentuais),
     churn: churnDasConsultas(
       estadoDaFonte({ isLoading: derivadasDoChurnQ.isLoading, error: derivadasDoChurnQ.error, data: derivadasDoChurnQ.data }),
       estadoDaFonte({ isLoading: ativasNoInicioQ.isLoading, error: ativasNoInicioQ.error, data: ativasNoInicioQ.data }),

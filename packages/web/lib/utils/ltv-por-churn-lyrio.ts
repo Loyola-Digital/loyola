@@ -33,7 +33,7 @@ import { inicioDaJanela } from "@loyola-x/shared/src/janela-de-dias";
 import { declararJanela, diaMes, type ContextoDaJanela } from "./janela-dos-cards-lyrio";
 import type { EstadoDaFonte } from "./estado-da-fonte-revenuecat";
 import { fmtUsd } from "./overview-revenuecat";
-import { fmtBRL, type CardDoResumo, type LinhaEmSegundoPlano } from "./resumo-mobile-lyrio";
+import { fmtBRL, type CardDoResumo, type EstadoDosPercentuais, type LinhaEmSegundoPlano } from "./resumo-mobile-lyrio";
 import { ALERTA_DO_CAC_SO_MIDIA, type CacConsolidado } from "./aquisicao-lyrio";
 
 /** D15 — o churn é mensal: os últimos 30 dias, fixos, na régua única do projeto. */
@@ -188,6 +188,17 @@ export function arpuDoOverview(overview: EstadoDaFonte<{ id: string; value: numb
   return { tipo: "pronto", dados: { periodo: "mensal", mrrUsd, assinaturasAtivas } };
 }
 
+/**
+ * QA loop 1 (REL-001) — a margem só entra no LTV quando os percentuais da etapa
+ * CARREGARAM (`percentuaisDaConfig`). Antes, a tela caía calada nos padrões
+ * 15/5/1 com a configuração em erro (ou carregando) e o memorial dizia
+ * "percentuais da etapa": o AC10a manda "—" com a causa.
+ */
+export function margemDosPercentuais(p: EstadoDosPercentuais): EstadoDoInsumo<MargemMensal> {
+  if (p.tipo !== "pronto") return p;
+  return { tipo: "pronto", dados: { periodo: "mensal", ...p.dados } };
+}
+
 /** O eco de `metricas-derivadas?days=30` que o churn usa. */
 export interface DerivadasDoChurn {
   churnPagante: number;
@@ -235,7 +246,8 @@ export interface EntradaDoLtvPorChurn {
   ctx: ContextoDaJanela;
   cambio: { taxa: number | null; fonte: string };
   arpu: EstadoDoInsumo<ArpuMensal>;
-  margem: MargemMensal;
+  /** QA loop 1 (REL-001): o estado da configuração da etapa, não um número pronto (`margemDosPercentuais`). */
+  margem: EstadoDoInsumo<MargemMensal>;
   churn: EstadoDoInsumo<ChurnMensal>;
   /** O CAC consolidado do FILTRO (D11), o do card CAC. */
   cac: CacConsolidado;
@@ -278,10 +290,12 @@ export function cardsDoLtvPorChurn(e: EntradaDoLtvPorChurn): { ltv: CardDoResumo
   });
 
   // ── LTV ──
-  const causasDoLtv = [e.arpu, e.churn].flatMap((x) => (x.tipo === "indisponivel" ? [x.causa] : []));
-  const carregandoLtv = !causasDoLtv.length && (e.arpu.tipo === "carregando" || e.churn.tipo === "carregando");
+  const causasDoLtv = [e.arpu, e.margem, e.churn].flatMap((x) => (x.tipo === "indisponivel" ? [x.causa] : []));
+  const carregandoLtv = !causasDoLtv.length && (e.arpu.tipo === "carregando" || e.margem.tipo === "carregando" || e.churn.tipo === "carregando");
   const resultado: ResultadoDoLtv | null =
-    !causasDoLtv.length && e.arpu.tipo === "pronto" && e.churn.tipo === "pronto" ? calcularLtvPorChurn(e.arpu.dados, e.margem, e.churn.dados, e.cambio.taxa) : null;
+    !causasDoLtv.length && e.arpu.tipo === "pronto" && e.margem.tipo === "pronto" && e.churn.tipo === "pronto"
+      ? calcularLtvPorChurn(e.arpu.dados, e.margem.dados, e.churn.dados, e.cambio.taxa)
+      : null;
 
   let cardLtv: CardDoResumo;
   if (causasDoLtv.length) cardLtv = { ...baseLtv, valor: "—", formula: semNumero(periodoDoCardLtv, "(ARPU mensal × margem %) ÷ churn mensal", causasDoLtv) };
@@ -290,7 +304,7 @@ export function cardsDoLtvPorChurn(e: EntradaDoLtvPorChurn): { ltv: CardDoResumo
   else {
     const a = (e.arpu as { dados: ArpuMensal }).dados;
     const c = churn!;
-    const m = e.margem;
+    const m = (e.margem as { dados: MargemMensal }).dados;
     cardLtv = {
       ...baseLtv,
       valor: fmtBRL(resultado.ltvBrl),

@@ -49,7 +49,7 @@ const entrada = (p: Partial<EntradaDoResumo> = {}): EntradaDoResumo => ({
   vendas: { tipo: "pronto", dados: VENDAS },
   novosClientes: { tipo: "pronto", dados: { configured: true, days: 90, desde: "2026-07-19", ate: "2026-10-16", valor: 15232, medida: "New Customers", diaIncompleto: true } },
   overview: { tipo: "pronto", dados: OVERVIEW },
-  percentuais: { platformFeePct: 15, taxPct: 5, otherCostsPct: 1 },
+  percentuais: { tipo: "pronto", dados: { platformFeePct: 15, taxPct: 5, otherCostsPct: 1 } },
   ...p,
 });
 const card = (e: EntradaDoResumo, id: string): CardDoResumo => {
@@ -362,5 +362,110 @@ describe("as linhas Meta e Google são os números dos blocos da 42.16 (os mesmo
   it("e o total do Investimento é a soma das duas linhas, ao centavo", () => {
     const inv = resumo.find((c) => c.id === "investimento")!;
     expect(Math.round(reais(inv.valor) * 100)).toBe(Math.round(reais(doResumo("investimento", "meta")) * 100) + Math.round(reais(doResumo("investimento", "google")) * 100));
+  });
+});
+
+describe("QA loop 1 (REL-001) — a Margem segue o ESTADO dos percentuais da etapa (AC3d)", () => {
+  const ERRO_DA_CONFIG: EntradaDoResumo["percentuais"] = {
+    tipo: "indisponivel",
+    causa: "os percentuais da margem não carregaram (configuração da etapa indisponível: HTTP 500)",
+  };
+  it("config em erro: Margem e as linhas dela '—', com a causa no memorial; o ROAS (que não usa os percentuais) continua", () => {
+    const m = card(entrada({ percentuais: ERRO_DA_CONFIG }), "margem");
+    expect(m.valor).toBe("—");
+    expect(m.carregando).toBeUndefined();
+    expect(m.formula!.values).toContainEqual({ label: "Percentuais da margem", value: ERRO_DA_CONFIG.causa, source: "GET …/revenuecat/config (Configurar)" });
+    expect(JSON.stringify(m.formula)).not.toContain("configurável na etapa");
+    expect(linha(m, "meta")!.valor).toBe("—");
+    expect(linha(m, "google")!.valor).toBe("—");
+    expect(card(entrada({ percentuais: ERRO_DA_CONFIG }), "roas").valor).toBe("1.25x");
+  });
+  it("config em erro E outra causa (Google em erro): o memorial lista as duas", () => {
+    const m = card(entrada({ percentuais: ERRO_DA_CONFIG, google: GOOGLE_ERRO }), "margem");
+    // (as linhas com a nota "atribuição desde" entram depois, pelo AC7c)
+    expect(m.formula!.values.map((v) => v.label).filter((l) => !l.endsWith("(em segundo plano)"))).toEqual(["Investimento (Google)", "Percentuais da margem"]);
+  });
+  it("config carregando: Margem em skeleton, sem memorial; o ROAS continua com número", () => {
+    const m = card(entrada({ percentuais: { tipo: "carregando" } }), "margem");
+    expect(m).toMatchObject({ valor: "—", carregando: true });
+    expect(m.formula).toBeUndefined();
+    expect(card(entrada({ percentuais: { tipo: "carregando" } }), "roas").valor).toBe("1.25x");
+  });
+  it("config pronta: a conta usa os percentuais DELA (20/5/5 = 30%): 3.125 − 937,50 − 2.500 = −312,50; Meta 1.500 − 450 − 2.000 = −950", () => {
+    const m = card(entrada({ percentuais: { tipo: "pronto", dados: { platformFeePct: 20, taxPct: 5, otherCostsPct: 5 } } }), "margem");
+    expect(m.valor).toBe(fmtBRL(-312.5));
+    expect(linha(m, "meta")!.valor).toBe(fmtBRL(-950));
+    expect(linha(m, "google")!.valor).toBe(fmtBRL(-150));
+    expect(m.formula!.values.map((v) => v.label)).toEqual(expect.arrayContaining(["− Descontos da plataforma (20%)", "− Imposto (5%)", "− Outros custos (5%)"]));
+  });
+});
+
+describe("QA loop 1 (TEST-003) — a soma ao centavo e o eco nos dois sentidos", () => {
+  it("Q04: Meta 100,004 + Google 200,004 → as linhas R$ 100,00 e R$ 200,00, e o total R$ 300,00 (a soma em float daria R$ 300,01)", () => {
+    const c = card(
+      entrada({
+        meta: { temCampanhas: true, filtro: { spendLiquido: 87.853514, imposto: 12.150486, spendComImposto: 100.004 } },
+        google: { mostrar: true, filtro: { tipo: "pronto", spend: 200.004 } },
+      }),
+      "investimento",
+    );
+    expect(linha(c, "meta")!.valor).toBe(fmtBRL(100));
+    expect(linha(c, "google")!.valor).toBe(fmtBRL(200));
+    expect(fmtBRL(100.004 + 200.004)).toBe(fmtBRL(300.01)); // a armadilha existe
+    expect(c.valor).toBe(fmtBRL(300));
+  });
+  it("Q07: vendas que ecoam uma janela MAIOR que o filtro (90 com o filtro em 28) também não valem", () => {
+    const e = entrada({ ctx: { diasDoFiltro: 28, hoje: "2026-10-16", serieDesde: "2026-08-10" } });
+    for (const id of ["receita", "vendas", "roas", "margem"]) {
+      const c = card(e, id);
+      expect(c.valor, id).toBe("—");
+      expect(JSON.stringify(c.formula), id).toContain("a resposta veio para 90 dias, não para os 28 do filtro");
+    }
+  });
+});
+
+describe("QA loop 1 (TEST-004) — as bordas da cobertura: começar EXATAMENTE na data é cobertura completa", () => {
+  // 90 dias em 16/10 começam em 19/07
+  it("Q10: início = atributosDesde → sem a nota 'atribuição desde' nas linhas; um dia depois, com", () => {
+    const na = card(entrada({ vendas: { tipo: "pronto", dados: { ...VENDAS, atributosDesde: "2026-07-19" } } }), "receita");
+    expect(linha(na, "meta")!.nota).toBeUndefined();
+    expect(linha(na, "google")!.nota).toBeUndefined();
+    const depois = card(entrada({ vendas: { tipo: "pronto", dados: { ...VENDAS, atributosDesde: "2026-07-20" } } }), "receita");
+    expect(linha(depois, "meta")!.nota).toBe("atribuição desde 20/07");
+  });
+  it("Q13: início = serieDesde → sem a frase da série no memorial; um dia depois, com", () => {
+    const na = entrada({ ctx: { diasDoFiltro: 90, hoje: "2026-10-16", serieDesde: "2026-07-19" } });
+    for (const id of ["receita", "vendas", "roas", "margem"]) expect(card(na, id).formula!.note, id).not.toContain("A série de assinaturas do webhook só existe desde");
+    const depois = entrada({ ctx: { diasDoFiltro: 90, hoje: "2026-10-16", serieDesde: "2026-07-20" } });
+    expect(card(depois, "receita").formula!.note).toContain("A série de assinaturas do webhook só existe desde 20/07");
+  });
+});
+
+describe("QA loop 1 (TEST-006, Q16) — sem câmbio, o ROAS e a Margem dizem a causa", () => {
+  it("ROAS e Margem '—' com o câmbio no memorial", () => {
+    for (const id of ["roas", "margem"]) {
+      const c = card(entrada({ cambio: { taxa: null, fonte: "/api/fx/usd-brl · fallback" } }), id);
+      expect(c.valor, id).toBe("—");
+      expect(c.formula, id).toBeDefined();
+      expect(c.formula!.values, id).toContainEqual({ label: "Câmbio US$ → R$", value: "indisponível", source: "/api/fx/usd-brl · fallback" });
+    }
+  });
+});
+
+describe("QA loop 1 (DOC-001) — a cobertura ainda carregando não deixa o número sob a etiqueta do filtro", () => {
+  it("vendas prontas e pagantes carregando: Receita, Vendas, ROAS e Margem em skeleton; o Investimento não espera", () => {
+    const e = entrada({ ctx: { diasDoFiltro: 90, hoje: "2026-10-16", serieDesde: null }, serieCarregando: true });
+    for (const id of ["receita", "vendas", "roas", "margem"]) expect(card(e, id), id).toMatchObject({ valor: "—", carregando: true });
+    expect(card(e, "investimento").valor).toBe(fmtBRL(2500));
+  });
+  it("com os pagantes prontos (serieCarregando falso), os números voltam", () => {
+    const e = entrada({ serieCarregando: false });
+    expect(card(e, "receita").valor).toBe(fmtBRL(3125));
+    expect(card(e, "receita").declaracao.etiqueta).toBe("desde 10/08");
+  });
+  it("a causa vence o skeleton: vendas em erro com os pagantes carregando continuam '—' com o memorial", () => {
+    const c = card(entrada({ vendas: { tipo: "erro", mensagem: "HTTP 500" }, serieCarregando: true }), "receita");
+    expect(c.carregando).toBeUndefined();
+    expect(JSON.stringify(c.formula)).toContain("HTTP 500");
   });
 });

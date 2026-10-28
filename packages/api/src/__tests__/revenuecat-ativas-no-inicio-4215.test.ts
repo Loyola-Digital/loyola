@@ -103,7 +103,7 @@ const FUN = "22222222-2222-4222-8222-222222222222";
 const STAGE = "54366a93-ff30-4e2e-9542-c44e55e9bf71";
 const BASE = `/api/projects/${PROJ}/funnels/${FUN}/stages/${STAGE}/revenuecat`;
 
-function bancoFalso(opts: { etapa?: boolean; rcProjectId?: string | null; conexao?: boolean } = {}) {
+function bancoFalso(opts: { etapa?: boolean; rcProjectId?: string | null; conexao?: boolean; projeto?: boolean; membro?: boolean } = {}) {
   const cadeia = () => {
     let tabela = "";
     const c: Record<string, unknown> = {
@@ -113,7 +113,8 @@ function bancoFalso(opts: { etapa?: boolean; rcProjectId?: string | null; conexa
       limit: () => c,
       then: (ok: (v: unknown) => unknown, erro: (e: unknown) => unknown) => {
         const linhas =
-          tabela === "projects" ? [{ id: PROJ }]
+          tabela === "projects" ? (opts.projeto === false ? [] : [{ id: PROJ }])
+          : tabela === "project_members" ? (opts.membro ? [{ projectId: PROJ }] : [])
           : tabela === "funnel_stages" ? (opts.etapa === false ? [] : [{ id: STAGE }])
           : tabela === "revenuecat_connections" ? (opts.conexao === false ? [] : [{ apiKeyEncrypted: "x", apiKeyIv: "y" }])
           : tabela === "revenuecat_stage_config" ? (opts.rcProjectId === null ? [] : [{ rcProjectId: opts.rcProjectId ?? "proj_rc" }])
@@ -126,13 +127,13 @@ function bancoFalso(opts: { etapa?: boolean; rcProjectId?: string | null; conexa
   return { select: () => cadeia(), execute: async () => ({ rows: [] }) };
 }
 
-async function montar(db: ReturnType<typeof bancoFalso>) {
+async function montar(db: ReturnType<typeof bancoFalso>, papel = "strategist") {
   const app = Fastify();
   app.decorateRequest("userId", "");
   app.decorateRequest("userRole", "");
   app.addHook("onRequest", async (req) => {
     req.userId = "10000000-0000-4000-8000-000000000001";
-    req.userRole = "strategist";
+    req.userRole = papel;
   });
   app.decorate("db", db as never);
   await app.register(revenuecatRoutes);
@@ -180,6 +181,26 @@ describe("GET …/revenuecat/ativas-no-inicio (AC10c) — o denominador do churn
     const sem = await (await montar(bancoFalso({ rcProjectId: null }))).inject({ method: "GET", url: `${BASE}/ativas-no-inicio?days=30` });
     expect(sem.json()).toEqual({ configured: false, days: 30, desde: "2026-09-29", ate: "2026-10-28", diaDoChart: "2026-09-29", valor: null });
     expect((await (await montar(bancoFalso({ conexao: false }))).inject({ method: "GET", url: `${BASE}/ativas-no-inicio?days=30` })).statusCode).toBe(409);
+    expect(urls).toHaveLength(0);
+  });
+
+  it("QA loop 1 (TEST-002) — guest sem vínculo com o projeto → 404 sem chamar o RevenueCat; com vínculo, passa", async () => {
+    const urls = rcFalso({ status: 200, corpo: corpo() });
+    const sem = await (await montar(bancoFalso(), "guest")).inject({ method: "GET", url: `${BASE}/ativas-no-inicio?days=30` });
+    expect(sem.statusCode).toBe(404);
+    expect(sem.json()).toEqual({ error: "Projeto não encontrado" });
+    expect(urls).toHaveLength(0);
+    const com = await (await montar(bancoFalso({ membro: true }), "guest")).inject({ method: "GET", url: `${BASE}/ativas-no-inicio?days=30` });
+    expect(com.statusCode).toBe(200);
+    expect(com.json()).toMatchObject({ configured: true, valor: 520 });
+    expect(urls).toHaveLength(1);
+  });
+
+  it("QA loop 1 (TEST-002) — projeto inexistente → 404 também para quem não é guest, sem chamar o RevenueCat", async () => {
+    const urls = rcFalso({ status: 200, corpo: corpo() });
+    const r = await (await montar(bancoFalso({ projeto: false }))).inject({ method: "GET", url: `${BASE}/ativas-no-inicio?days=30` });
+    expect(r.statusCode).toBe(404);
+    expect(r.json()).toEqual({ error: "Projeto não encontrado" });
     expect(urls).toHaveLength(0);
   });
 

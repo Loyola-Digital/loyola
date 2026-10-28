@@ -92,6 +92,39 @@ export interface CardDoResumo extends CardComJanela {
   alerta?: boolean;
 }
 
+/** Story 42.4 — os três percentuais da Margem de Contribuição, sobre o faturamento bruto. */
+export interface PercentuaisDaMargem {
+  platformFeePct: number;
+  taxPct: number;
+  otherCostsPct: number;
+}
+
+/**
+ * QA loop 1 da 42.15 (REL-001) — os percentuais da etapa como ESTADO, não como
+ * número pronto. Com a configuração em erro (em produção, a 0103 ausente dá 500
+ * no GET), a tela caía calada nos padrões 15/5/1 e o memorial dizia
+ * "configurável na etapa". Agora: carregando → skeleton; indisponível → "—" com
+ * a causa; só o pronto entra na conta (AC3d, AC10a).
+ */
+export type EstadoDosPercentuais =
+  | { tipo: "carregando" }
+  | { tipo: "indisponivel"; causa: string }
+  | { tipo: "pronto"; dados: PercentuaisDaMargem };
+
+const ROTA_DA_CONFIG = "GET …/revenuecat/config (Configurar)";
+
+/** O estado dos percentuais a partir da consulta da configuração da etapa. */
+export function percentuaisDaConfig(config: EstadoDaFonte<Partial<Record<keyof PercentuaisDaMargem, number | null>>>): EstadoDosPercentuais {
+  if (config.tipo === "carregando") return { tipo: "carregando" };
+  if (config.tipo === "oculto") return { tipo: "indisponivel", causa: "os percentuais da margem não carregaram: a API não tem a rota da configuração da etapa" };
+  if (config.tipo === "erro") return { tipo: "indisponivel", causa: `os percentuais da margem não carregaram (configuração da etapa indisponível: ${config.mensagem})` };
+  const { platformFeePct, taxPct, otherCostsPct } = config.dados;
+  if (!Number.isFinite(platformFeePct) || !Number.isFinite(taxPct) || !Number.isFinite(otherCostsPct)) {
+    return { tipo: "indisponivel", causa: "a configuração da etapa não trouxe os percentuais da margem" };
+  }
+  return { tipo: "pronto", dados: { platformFeePct: platformFeePct as number, taxPct: taxPct as number, otherCostsPct: otherCostsPct as number } };
+}
+
 /** O gasto da Meta numa janela (`sumMetaSpendWithTax`). */
 export interface GastoDaMeta {
   spendLiquido: number;
@@ -121,7 +154,15 @@ export interface EntradaDoResumo {
   novosClientes: EstadoDaFonte<NovosClientesDoPeriodo>;
   /** O overview: os retratos (MRR, assinaturas, trials). */
   overview: EstadoDaFonte<{ id: string; value: number }[]>;
-  percentuais: { platformFeePct: number; taxPct: number; otherCostsPct: number };
+  /** QA loop 1 (REL-001): o estado da configuração da etapa (`percentuaisDaConfig`). */
+  percentuais: EstadoDosPercentuais;
+  /**
+   * QA loop 1 (DOC-001): os pagantes (de onde vem `ctx.serieDesde`) ainda não
+   * responderam. Com a venda pronta, a Receita, as Vendas, o ROAS e a Margem
+   * ficam em skeleton até a cobertura chegar, em vez de mostrar o número sob a
+   * etiqueta do filtro sem `desde dd/mm`.
+   */
+  serieCarregando?: boolean;
 }
 
 export function fmtBRL(v: number | null | undefined): string {
@@ -291,7 +332,8 @@ export function cardsDoResumo(e: EntradaDoResumo): CardDoResumo[] {
       ? { tipo: "erro", mensagem: `a resposta veio para ${e.vendas.dados.days} dias, não para os ${ctx.diasDoFiltro} do filtro` }
       : e.vendas;
   const dados: VendasPorCanalDoLyrio | null = vendas.tipo === "pronto" ? vendas.dados : null;
-  const vendasCarregando = vendas.tipo === "carregando";
+  // DOC-001 — sem a cobertura (`serieDesde`) ainda, o número esperaria a etiqueta certa.
+  const vendasCarregando = vendas.tipo === "carregando" || (vendas.tipo === "pronto" && e.serieCarregando === true);
   const causaDasVendas: MetricFormulaValue | null =
     vendas.tipo === "erro" ? { label: "Vendas por canal", value: vendas.mensagem, source: ROTA_DAS_VENDAS } : null;
   const memorialDasVendasEmErro = (decl: DeclaracaoDaJanela, oQue: string): MetricFormula | undefined =>
@@ -382,6 +424,8 @@ export function cardsDoResumo(e: EntradaDoResumo): CardDoResumo[] {
   })();
 
   // ───────────────────────── ROAS e Margem (AC3) ─────────────────────────
+  // REL-001 — os percentuais só valem prontos: sem eles, a Margem (e as linhas dela) fica "—".
+  const pct = e.percentuais.tipo === "pronto" ? e.percentuais.dados : null;
   // As linhas: cada canal contra o PRÓPRIO investimento (`linhasDoResumoPorCanal`, AC3b).
   const porCanal = dados
     ? linhasDoResumoPorCanal({
@@ -389,7 +433,7 @@ export function cardsDoResumo(e: EntradaDoResumo): CardDoResumo[] {
         brlRate: taxa,
         meta: { liquidoBrl: metaLiquido, impostoBrl: metaImposto, conhecido: e.meta.temCampanhas && metaValor != null },
         google: { investimentoBrl: googleValor ?? 0, conhecido: e.google.mostrar && googleValor != null },
-        percentuais: e.percentuais,
+        percentuais: pct,
       })
     : [];
   const doCanal = (canal: "meta" | "google") => porCanal.find((l) => l.chave === canal) ?? null;
@@ -437,14 +481,15 @@ export function cardsDoResumo(e: EntradaDoResumo): CardDoResumo[] {
     };
   })();
 
-  const { platformFeePct, taxPct, otherCostsPct } = e.percentuais;
+  const causaDosPercentuais: MetricFormulaValue | null =
+    e.percentuais.tipo === "indisponivel" ? { label: "Percentuais da margem", value: e.percentuais.causa, source: ROTA_DA_CONFIG } : null;
+  const causasDaMargem: MetricFormulaValue[] = [...causasDoFluxo, ...(causaDosPercentuais ? [causaDosPercentuais] : [])];
+  const margemCarregando = !causasDaMargem.length && (vendasCarregando || (dados != null && e.percentuais.tipo === "carregando"));
   const margem =
-    receitaTotalBrl != null && metaValor != null && googleValor != null
+    receitaTotalBrl != null && metaValor != null && googleValor != null && pct
       ? calcularMargemContribuicao({
           faturamentoBrutoBrl: receitaTotalBrl,
-          platformFeePct,
-          taxPct,
-          otherCostsPct,
+          ...pct,
           investimentoMetaLiquidoBrl: metaLiquido,
           impostoMetaBrl: metaImposto,
           investimentoGoogleBrl: googleValor,
@@ -452,9 +497,9 @@ export function cardsDoResumo(e: EntradaDoResumo): CardDoResumo[] {
       : null;
   const cardMargem: CardDoResumo = (() => {
     const base = { id: "margem", rotulo: "Margem de Contribuição", declaracao: declVenda, icone: "margem" as const, realce: true, secundarias: linhasDeMargem };
-    if (causasDoFluxo.length) return { ...base, valor: "—", formula: memorialDeDependente(declVenda, "Faturamento líquido − investimento", causasDoFluxo) };
-    if (fluxoCarregando) return { ...base, valor: "—", carregando: true };
-    if (!margem) return { ...base, valor: "—" };
+    if (causasDaMargem.length) return { ...base, valor: "—", formula: memorialDeDependente(declVenda, "Faturamento líquido − investimento", causasDaMargem) };
+    if (margemCarregando) return { ...base, valor: "—", carregando: true };
+    if (!margem || !pct) return { ...base, valor: "—" };
     return {
       ...base,
       valor: fmtBRL(margem.margem),
@@ -463,9 +508,9 @@ export function cardsDoResumo(e: EntradaDoResumo): CardDoResumo[] {
         expression: "(Bruto − plataforma − imposto − outros custos) − investimento − imposto Meta",
         values: [
           { label: "Faturamento bruto", value: fmtBRL(margem.faturamentoBruto), source: "o card Receita (RevenueCat): todos os canais, convertido pelo câmbio" },
-          { label: `− Descontos da plataforma (${platformFeePct}%)`, value: fmtBRL(margem.descontosPlataforma), source: "comissão Apple/Google — configurável na etapa" },
-          { label: `− Imposto (${taxPct}%)`, value: fmtBRL(margem.imposto), source: "imposto sobre a receita — configurável na etapa" },
-          { label: `− Outros custos (${otherCostsPct}%)`, value: fmtBRL(margem.outrosCustos), source: "custos operacionais — configurável na etapa" },
+          { label: `− Descontos da plataforma (${pct.platformFeePct}%)`, value: fmtBRL(margem.descontosPlataforma), source: "comissão Apple/Google — configurável na etapa" },
+          { label: `− Imposto (${pct.taxPct}%)`, value: fmtBRL(margem.imposto), source: "imposto sobre a receita — configurável na etapa" },
+          { label: `− Outros custos (${pct.otherCostsPct}%)`, value: fmtBRL(margem.outrosCustos), source: "custos operacionais — configurável na etapa" },
           { label: "= Faturamento líquido", value: fmtBRL(margem.faturamentoLiquido), source: "bruto menos os três descontos acima" },
           { label: "− Investimento (Meta líquido)", value: fmtBRL(metaLiquido), source: "Meta Ads API, sem imposto" },
           { label: "− Imposto Meta (12,15%)", value: fmtBRL(metaImposto), source: "gross-up por dentro, desde 01/01/2026" },

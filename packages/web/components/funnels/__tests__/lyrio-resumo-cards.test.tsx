@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cardsDoResumo, fmtBRL, type EntradaDoResumo } from "@/lib/utils/resumo-mobile-lyrio";
 import { cardsDeAquisicao } from "@/lib/utils/aquisicao-lyrio";
+import { cardsDoLtvPorChurn, margemDosPercentuais, type EntradaDoLtvPorChurn } from "@/lib/utils/ltv-por-churn-lyrio";
 import { GradeDoResumo } from "../lyrio-resumo-cards";
 
 /**
@@ -36,7 +37,7 @@ const entrada = (p: Partial<EntradaDoResumo> = {}): EntradaDoResumo => ({
   },
   novosClientes: { tipo: "pronto", dados: { configured: true, days: 90, desde: "2026-07-19", ate: "2026-10-16", valor: 15232 } },
   overview: { tipo: "pronto", dados: [{ id: "mrr", value: 596 }, { id: "active_subscriptions", value: 120 }, { id: "active_trials", value: 30 }, { id: "new_customers_last_28_days", value: 900 }] },
-  percentuais: { platformFeePct: 15, taxPct: 5, otherCostsPct: 1 },
+  percentuais: { tipo: "pronto", dados: { platformFeePct: 15, taxPct: 5, otherCostsPct: 1 } },
   ...p,
 });
 
@@ -148,6 +149,60 @@ describe("GradeDoResumo — cada memorial abre (AC1a, AC9d)", () => {
     expect(receita.querySelector("[data-carregando]")).not.toBeNull();
     expect(receita.tabIndex).toBe(-1);
     expect(cardDe("Investimento (Total)").querySelector("[data-carregando]")).toBeNull();
+  });
+
+  // ── QA loop 1 da 42.15 ──
+  const entradaDoLtv = (p: Partial<EntradaDoLtvPorChurn> = {}): EntradaDoLtvPorChurn => ({
+    ctx: { diasDoFiltro: 90, hoje: "2026-10-28", serieDesde: "2026-08-10" },
+    cambio: { taxa: 5, fonte: "/api/fx/usd-brl · manual" },
+    arpu: { tipo: "pronto", dados: { periodo: "mensal", mrrUsd: 600, assinaturasAtivas: 120 } },
+    margem: { tipo: "pronto", dados: { periodo: "mensal", platformFeePct: 15, taxPct: 4, otherCostsPct: 1 } },
+    churn: { tipo: "pronto", dados: { periodo: "mensal", dias: 30, desde: "2026-09-29", ate: "2026-10-28", expiracoesPagas: 13, assinaturasNoInicio: 520, diaDoChart: "2026-09-29", serieDesde: "2026-08-10" } },
+    cac: { tipo: "pronto", centavos: 25000, investimentoCentavos: 250000, pessoas: 10 },
+    ...p,
+  });
+
+  it("QA loop 1 (TEST-005, Q65) — o card com alerta no memorial desenha o ícone de alerta; o card sem alerta, não", () => {
+    const { ltv, relacao } = cardsDoLtvPorChurn(entradaDoLtv());
+    expect(relacao.alerta).toBe(true);
+    render(<TooltipProvider><GradeDoResumo cards={[ltv, relacao]} /></TooltipProvider>);
+    expect(within(cardDe("LTV/CAC")).getByLabelText("Há alertas no memorial")).toBeTruthy();
+    expect(within(cardDe("LTV (margem)")).queryByLabelText("Há alertas no memorial")).toBeNull();
+  });
+
+  it("QA loop 1 (TEST-005, Q66) — a nota da linha ('atribuição desde') aparece no card, depois do valor", () => {
+    const base = entrada();
+    const dados = (base.vendas as { tipo: "pronto"; dados: import("@/lib/utils/vendas-por-canal-lyrio").VendasPorCanalDoLyrio }).dados;
+    render(<TooltipProvider><GradeDoResumo cards={cardsDoResumo(entrada({ vendas: { tipo: "pronto", dados: { ...dados, atributosDesde: "2026-10-06" } } }))} /></TooltipProvider>);
+    const linhas = [...cardDe("Receita (RevenueCat)").querySelectorAll("[data-secundarias] li")].map((l) => l.textContent);
+    expect(linhas).toEqual([`Meta ${fmtBRL(3000)} · atribuição desde 06/10`, `Google ${fmtBRL(1000)} · atribuição desde 06/10`]);
+    // e sem a data tardia, a linha não leva nota
+    cleanup();
+    render(<TooltipProvider><GradeDoResumo cards={cardsDoResumo(entrada())} /></TooltipProvider>);
+    expect([...cardDe("Receita (RevenueCat)").querySelectorAll("[data-secundarias] li")].map((l) => l.textContent)).toEqual([`Meta ${fmtBRL(3000)}`, `Google ${fmtBRL(1000)}`]);
+  });
+
+  it("QA loop 1 (REL-001) — config da etapa em erro: LTV, LTV/CAC e Margem mostram '—', e o memorial diz que os percentuais não carregaram", async () => {
+    const erro = { tipo: "indisponivel" as const, causa: "os percentuais da margem não carregaram (configuração da etapa indisponível: HTTP 500)" };
+    const { ltv, relacao } = cardsDoLtvPorChurn(entradaDoLtv({ margem: margemDosPercentuais(erro) }));
+    render(<TooltipProvider><GradeDoResumo cards={[...cardsDoResumo(entrada({ percentuais: erro })), ltv, relacao]} /></TooltipProvider>);
+    for (const rotulo of ["LTV (margem)", "LTV/CAC", "Margem de Contribuição"]) {
+      const c = cardDe(rotulo);
+      expect(c.querySelector("[data-carregando]"), rotulo).toBeNull();
+      expect(c.querySelector("p.font-bold")!.textContent, rotulo).toBe("—");
+      expect(await abrirMemorial(rotulo), rotulo).toContain("os percentuais da margem não carregaram");
+    }
+    expect([...cardDe("LTV/CAC").querySelectorAll("[data-secundarias] li")].map((l) => l.textContent)).toEqual(["CAC máximo (3:1) —"]);
+  });
+
+  it("QA loop 1 (REL-001) — config da etapa carregando: LTV, LTV/CAC e Margem em skeleton, sem foco", () => {
+    const { ltv, relacao } = cardsDoLtvPorChurn(entradaDoLtv({ margem: margemDosPercentuais({ tipo: "carregando" }) }));
+    render(<TooltipProvider><GradeDoResumo cards={[...cardsDoResumo(entrada({ percentuais: { tipo: "carregando" } })), ltv, relacao]} /></TooltipProvider>);
+    for (const rotulo of ["LTV (margem)", "LTV/CAC", "Margem de Contribuição"]) {
+      expect(cardDe(rotulo).querySelector("[data-carregando]"), rotulo).not.toBeNull();
+      expect(cardDe(rotulo).tabIndex, rotulo).toBe(-1);
+    }
+    expect(cardDe("ROAS").querySelector("[data-carregando]")).toBeNull();
   });
 
   it("âmbar só em quem não segue o filtro", () => {
