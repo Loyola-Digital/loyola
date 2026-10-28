@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildLpRows,
   sortLpRows,
+  juntarStatusDosLotes,
   UNRESOLVED_LP_KEY,
   type LpAdInput,
   type LpRow,
@@ -32,11 +33,14 @@ function porChave(rows: LpRow[]): Map<string, LpRow> {
 
 const chave = (url: string) => url.replace(/^https:\/\//, "");
 
+/** Campanha com id próprio: o id conta, o nome vai para o tooltip. */
+const camp = (nome: string, campaignId = `id-${nome}`) => ({ campaignId, nome });
+
 describe("Story 18.99 — a regra (AC2)", () => {
   const links = { a1: LP_A, a2: LP_A, b1: LP_B, b2: LP_B, c1: LP_C, d1: LP_A, d2: LP_A };
   const status: StatusDosAnuncios = {
     statusByAdId: { a1: "active", a2: "paused", b1: "paused", b2: "paused" },
-    campanhaByAdId: { a1: "camp-A", a2: "camp-B", b1: "camp-A", b2: "camp-A" },
+    campanhaByAdId: { a1: camp("camp-A"), a2: camp("camp-B"), b1: camp("camp-A"), b2: camp("camp-A") },
   };
   const r = porChave(buildLpRows([ad("a1"), ad("a2"), ad("b1"), ad("b2"), ad("c1")], links, [], 0, [], status));
 
@@ -58,7 +62,7 @@ describe("Story 18.99 — a regra (AC2)", () => {
 
   it("um ativo + um sem status continua Ativo", () => {
     const m = porChave(
-      buildLpRows([ad("d1"), ad("d2")], links, [], 0, [], { statusByAdId: { d2: "active" }, campanhaByAdId: { d2: "camp-D" } }),
+      buildLpRows([ad("d1"), ad("d2")], links, [], 0, [], { statusByAdId: { d2: "active" }, campanhaByAdId: { d2: camp("camp-D") } }),
     );
     expect(m.get(chave(LP_A))?.status).toBe("active");
   });
@@ -71,12 +75,34 @@ describe("Story 18.99 — a regra (AC2)", () => {
   });
 });
 
-describe("Story 18.99 — as campanhas do tooltip (AC3)", () => {
+describe("Story 18.99 — as campanhas do tooltip (AC3, QA REQ-001)", () => {
+  it("conta pelo id: duas campanhas com o mesmo nome são duas", () => {
+    // Mutação "agrupar pelo nome" → vira 1 campanha.
+    const m = porChave(
+      buildLpRows([ad("a1"), ad("a2")], { a1: LP_A, a2: LP_A }, [], 0, [], {
+        statusByAdId: { a1: "active", a2: "active" },
+        campanhaByAdId: { a1: camp("Frio", "111"), a2: camp("Frio", "222") },
+      }),
+    );
+    expect(m.get(chave(LP_A))?.campanhasAtivas).toEqual(["Frio", "Frio"]);
+  });
+
+  it("os nomes saem em ordem alfabética, como na 18.97", () => {
+    // Mutação "sem o sort" → sai na ordem dos anúncios (Zeta, Alfa).
+    const m = porChave(
+      buildLpRows([ad("a1"), ad("a2")], { a1: LP_A, a2: LP_A }, [], 0, [], {
+        statusByAdId: { a1: "active", a2: "active" },
+        campanhaByAdId: { a1: camp("Zeta"), a2: camp("Alfa") },
+      }),
+    );
+    expect(m.get(chave(LP_A))?.campanhasAtivas).toEqual(["Alfa", "Zeta"]);
+  });
+
   it("campanhas distintas dos anúncios ativos, sem repetir", () => {
     const m = porChave(
       buildLpRows([ad("a1"), ad("a2"), ad("a3")], { a1: LP_A, a2: LP_A, a3: LP_A }, [], 0, [], {
         statusByAdId: { a1: "active", a2: "active", a3: "active" },
-        campanhaByAdId: { a1: "camp-A", a2: "camp-A", a3: "camp-B" },
+        campanhaByAdId: { a1: camp("camp-A"), a2: camp("camp-A"), a3: camp("camp-B") },
       }),
     );
     expect(m.get(chave(LP_A))?.campanhasAtivas).toEqual(["camp-A", "camp-B"]);
@@ -103,7 +129,7 @@ describe("Story 18.99 — o status segue o filtro de público (AC2)", () => {
   };
   const status: StatusDosAnuncios = {
     statusByAdId: { quente1: "active", frio1: "paused" },
-    campanhaByAdId: { quente1: "camp-quente", frio1: "camp-frio" },
+    campanhaByAdId: { quente1: camp("camp-quente"), frio1: camp("camp-frio") },
   };
   const linhas = (filtro: "todos" | "frio") => {
     const filtradas = filtrarPorPublico([dia("quente1"), dia("frio1")], filtro, (r) => r.entityId, temperatura);
@@ -167,7 +193,40 @@ describe("Story 18.99 — o fio na tela e no hook (AC1, AC6)", () => {
     expect(painel).toMatch(/linkUrlsData\?\.statusByAdId\s*\?\s*\{ statusByAdId: linkUrlsData\.statusByAdId/);
   });
 
-  it("o hook junta os lotes como o `staleInCache`: um lote sem o campo zera o conjunto", () => {
-    expect(hook).toContain("statusByAdId: respostas.every((r) => r.statusByAdId !== undefined)");
+  it("o hook junta TODOS os lotes, não só os que responderam (QA REL-001)", () => {
+    expect(hook).toContain("const status = juntarStatusDosLotes(results.map((r) => r.data));");
+    expect(hook).toContain("statusByAdId: status?.statusByAdId,");
+  });
+});
+
+describe("Story 18.99 — junção dos lotes (AC6, QA REL-001)", () => {
+  const lote1 = { statusByAdId: { a1: "paused" as const }, campanhaByAdId: { a1: camp("A") } };
+  const lote2 = { statusByAdId: { b1: "active" as const }, campanhaByAdId: { b1: camp("B") } };
+
+  it("dois lotes completos viram um mapa só", () => {
+    // Mutação "só o primeiro lote" → o b1 some.
+    expect(juntarStatusDosLotes([lote1, lote2])).toEqual({
+      statusByAdId: { a1: "paused", b1: "active" },
+      campanhaByAdId: { a1: camp("A"), b1: camp("B") },
+    });
+  });
+
+  it("um lote carregando ou com erro deixa tudo desconhecido", () => {
+    // Mutação "juntar só os que chegaram" → a1 sai paused sem o lote do ativo.
+    expect(juntarStatusDosLotes([lote1, undefined])).toBeUndefined();
+  });
+
+  it("um lote de API anterior (sem o campo) deixa tudo desconhecido", () => {
+    expect(juntarStatusDosLotes([lote1, {}])).toBeUndefined();
+  });
+
+  it("nenhum lote → desconhecido", () => {
+    expect(juntarStatusDosLotes([])).toBeUndefined();
+  });
+
+  it("com o lote do ativo faltando, a linha Sem link não vira Pausado", () => {
+    const status = juntarStatusDosLotes([lote1, undefined]);
+    const m = porChave(buildLpRows([ad("a1"), ad("b1")], { a1: null, b1: null }, [], 0, [], status));
+    expect(m.get(UNRESOLVED_LP_KEY)?.status).toBeUndefined();
   });
 });

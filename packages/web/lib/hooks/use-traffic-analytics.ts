@@ -4,6 +4,7 @@ import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useQuery, useQueries } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { chunkAdIds } from "@/lib/utils/perpetual-lp-ads";
+import { juntarStatusDosLotes } from "@/lib/utils/perpetual-lp-rows";
 
 // ============================================================
 // TYPES
@@ -546,8 +547,8 @@ export interface AdLinkUrlsResponse {
    * API anterior → a coluna Status do perpétuo mostra "—".
    */
   statusByAdId?: Record<string, "active" | "paused">;
-  /** Story 18.99 — nome da campanha de cada anúncio, para o tooltip. */
-  campanhaByAdId?: Record<string, string>;
+  /** Story 18.99 — campanha (id e nome) de cada anúncio, para o tooltip. */
+  campanhaByAdId?: Record<string, { campaignId: string; nome: string }>;
 }
 
 /**
@@ -593,6 +594,8 @@ export function useAdLinkUrls(projectId: string | null, adIds: string[]) {
       const isLoading = results.some((r) => r.isLoading);
       if (respostas.length === 0) return { data: undefined, isLoading };
       const todasInformaramStale = respostas.every((r) => r.staleInCache !== undefined);
+      // Story 18.99 (AC6): TODOS os lotes, não só os que chegaram (QA REL-001).
+      const status = juntarStatusDosLotes(results.map((r) => r.data));
       return {
         data: {
           linkUrls: Object.assign({}, ...respostas.map((r) => r.linkUrls)) as Record<string, string | null>,
@@ -602,15 +605,8 @@ export function useAdLinkUrls(projectId: string | null, adIds: string[]) {
           staleInCache: todasInformaramStale
             ? respostas.flatMap((r) => r.staleInCache ?? [])
             : undefined,
-          // Story 18.99 (AC6): a mesma regra do `staleInCache`. Um lote sem o
-          // campo (API anterior) torna o conjunto desconhecido, e a coluna
-          // mostra "—" em vez de "Pausado" para os anúncios desse lote.
-          statusByAdId: respostas.every((r) => r.statusByAdId !== undefined)
-            ? (Object.assign({}, ...respostas.map((r) => r.statusByAdId)) as Record<string, "active" | "paused">)
-            : undefined,
-          campanhaByAdId: respostas.every((r) => r.campanhaByAdId !== undefined)
-            ? (Object.assign({}, ...respostas.map((r) => r.campanhaByAdId)) as Record<string, string>)
-            : undefined,
+          statusByAdId: status?.statusByAdId,
+          campanhaByAdId: status?.campanhaByAdId,
         } satisfies AdLinkUrlsResponse,
         isLoading,
       };

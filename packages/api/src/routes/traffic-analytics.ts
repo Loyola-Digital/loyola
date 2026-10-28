@@ -863,18 +863,24 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
         return reply.code(400).send({ error: "adIds vazio" });
       }
 
-      const rows = await fastify.db
-        .select({
-          adId: metaAdCreativesCache.adId,
-          creative: metaAdCreativesCache.creative,
-        })
-        .from(metaAdCreativesCache)
-        .where(
-          and(
-            eq(metaAdCreativesCache.projectId, paramResult.data.projectId),
-            inArray(metaAdCreativesCache.adId, adIds),
+      // Story 18.99 (AC5): status e campanha de cada anúncio, para a coluna
+      // Status do "Desempenho por LP" do perpétuo. Só Postgres, nunca a Meta.
+      // Em paralelo com a leitura do cache de criativos (QA 18.99 PERF-001).
+      const [rows, { statusByAdId, campanhaByAdId }] = await Promise.all([
+        fastify.db
+          .select({
+            adId: metaAdCreativesCache.adId,
+            creative: metaAdCreativesCache.creative,
+          })
+          .from(metaAdCreativesCache)
+          .where(
+            and(
+              eq(metaAdCreativesCache.projectId, paramResult.data.projectId),
+              inArray(metaAdCreativesCache.adId, adIds),
+            ),
           ),
-        );
+        statusECampanhaDosAnuncios(fastify.db, paramResult.data.projectId, adIds),
+      ]);
 
       const linkUrls: Record<string, string | null> = {};
       // Story 29.43 (AC2): ad_ids cuja linha foi escrita por código anterior à
@@ -921,14 +927,6 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
         paramResult.data.projectId,
         staleInCache,
         missingFromCache,
-      );
-
-      // Story 18.99 (AC5): status e campanha de cada anúncio, para a coluna
-      // Status do "Desempenho por LP" do perpétuo. Só Postgres, nunca a Meta.
-      const { statusByAdId, campanhaByAdId } = await statusECampanhaDosAnuncios(
-        fastify.db,
-        paramResult.data.projectId,
-        adIds,
       );
 
       return {

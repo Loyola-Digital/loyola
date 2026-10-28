@@ -1,4 +1,4 @@
-import { eq, and, inArray, gte, sql } from "drizzle-orm";
+import { eq, and, inArray, gte, sql, desc } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import {
   metaAdsAccounts,
@@ -1431,11 +1431,21 @@ export async function getPlacementBreakdown(
 /** Status do anúncio já traduzido pela regra da 18.61: só `ACTIVE` é ativo. */
 export type StatusDoAnuncioNaLp = "active" | "paused";
 
+/** A campanha do anúncio: o id conta, o nome vai para o tooltip. */
+export interface CampanhaDoAnuncio {
+  campaignId: string;
+  nome: string;
+}
+
 export interface StatusECampanhaDosAnuncios {
   /** Só os anúncios com status no cache. Ausente = desconhecido ("—"), nunca "Pausado". */
   statusByAdId: Record<string, StatusDoAnuncioNaLp>;
-  /** Nome da campanha de cada anúncio, para o tooltip "Ativo em N campanha(s)". */
-  campanhaByAdId: Record<string, string>;
+  /**
+   * Campanha de cada anúncio, para o tooltip "Ativo em N campanha(s)". O web
+   * conta pelo `campaignId`, como a 18.97: duas campanhas com o mesmo nome são
+   * duas, e uma campanha renomeada continua sendo uma (QA 18.99 REQ-001).
+   */
+  campanhaByAdId: Record<string, CampanhaDoAnuncio>;
 }
 
 /**
@@ -1444,8 +1454,10 @@ export interface StatusECampanhaDosAnuncios {
  * `meta_ad_insights_daily`, a mesma tabela de onde saem as linhas da tabela de
  * LP (`/entity-daily`). Por isso todo anúncio da tabela tem campanha.
  *
- * Campanha renomeada pode trazer dois nomes para o mesmo anúncio: fica o
- * primeiro. Só muda o texto do tooltip, nunca o status.
+ * A campanha é a da linha MAIS RECENTE de cada anúncio (`DISTINCT ON (ad_id)`
+ * por `date_start DESC`): determinística, e com o nome atual de uma campanha
+ * renomeada. O `DISTINCT` sem ordem deixava a escolha com o plano do Postgres
+ * (QA 18.99 REQ-001).
  */
 export async function statusECampanhaDosAnuncios(
   db: Database,
@@ -1458,21 +1470,23 @@ export async function statusECampanhaDosAnuncios(
   const [status, campanhas] = await Promise.all([
     getAdEffectiveStatusFromDb(db, projectId, ids),
     db
-      .selectDistinct({
+      .selectDistinctOn([metaAdInsightsDaily.adId], {
         adId: metaAdInsightsDaily.adId,
+        campaignId: metaAdInsightsDaily.campaignId,
         campaignName: metaAdInsightsDaily.campaignName,
       })
       .from(metaAdInsightsDaily)
-      .where(and(eq(metaAdInsightsDaily.projectId, projectId), inArray(metaAdInsightsDaily.adId, ids))),
+      .where(and(eq(metaAdInsightsDaily.projectId, projectId), inArray(metaAdInsightsDaily.adId, ids)))
+      .orderBy(metaAdInsightsDaily.adId, desc(metaAdInsightsDaily.dateStart)),
   ]);
 
   const statusByAdId: Record<string, StatusDoAnuncioNaLp> = {};
   for (const [adId, efetivo] of status) {
     statusByAdId[adId] = efetivo === "ACTIVE" ? "active" : "paused";
   }
-  const campanhaByAdId: Record<string, string> = {};
+  const campanhaByAdId: Record<string, CampanhaDoAnuncio> = {};
   for (const r of campanhas) {
-    if (r.campaignName && !(r.adId in campanhaByAdId)) campanhaByAdId[r.adId] = r.campaignName;
+    if (r.campaignId) campanhaByAdId[r.adId] = { campaignId: r.campaignId, nome: r.campaignName ?? "" };
   }
   return { statusByAdId, campanhaByAdId };
 }

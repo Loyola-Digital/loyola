@@ -50,7 +50,27 @@ export interface LpAdInput {
  */
 export interface StatusDosAnuncios {
   statusByAdId: Record<string, "active" | "paused">;
-  campanhaByAdId?: Record<string, string>;
+  /** A campanha conta pelo id (como na 18.97); o nome vai para o tooltip. */
+  campanhaByAdId?: Record<string, { campaignId: string; nome: string }>;
+}
+
+/**
+ * Story 18.99 (AC6) — junta a resposta dos lotes de `/ad-link-urls`.
+ *
+ * Só há status se **todos** os lotes responderam com o campo. Lote ainda
+ * carregando, com erro ou de API anterior ao contrato 60 deixa o conjunto
+ * desconhecido ("—"). Juntar só os que chegaram podia pôr "Pausado" na linha
+ * "Sem link resolvido" quando o único anúncio ativo estava no lote que falhou
+ * (QA 18.99 REL-001).
+ */
+export function juntarStatusDosLotes(
+  lotes: Array<Partial<StatusDosAnuncios> | undefined>,
+): StatusDosAnuncios | undefined {
+  if (lotes.length === 0 || lotes.some((l) => l?.statusByAdId === undefined)) return undefined;
+  return {
+    statusByAdId: Object.assign({}, ...lotes.map((l) => l?.statusByAdId)),
+    campanhaByAdId: Object.assign({}, ...lotes.map((l) => l?.campanhaByAdId ?? {})),
+  };
 }
 
 export type LpRow = DetailMetricsOutput & {
@@ -94,8 +114,9 @@ export type LpRow = DetailMetricsOutput & {
    */
   status?: "active" | "paused" | "unknown";
   /**
-   * Story 18.99 (AC3) — campanhas distintas dos anúncios ativos, para o tooltip.
-   * Anúncio ativo sem campanha conhecida entra como "" (conta, sem nome).
+   * Story 18.99 (AC3) — nomes das campanhas distintas (por `campaignId`) dos
+   * anúncios ativos, em ordem alfabética, para o tooltip. Anúncio ativo sem
+   * campanha conhecida cai num grupo único "", que conta 1 e não tem nome.
    */
   campanhasAtivas?: string[];
 };
@@ -148,7 +169,7 @@ export function buildLpRows(
     revenue: number; sales: number;
     semLinkNaMeta: number; foraDoCache: number;
     cacheDesatualizado: number; causaIndeterminada: number;
-    ativos: number; comStatus: number; campanhasAtivas: Set<string>;
+    ativos: number; comStatus: number; campanhasAtivas: Map<string, string>;
   };
   const groups = new Map<string, Acc>();
 
@@ -163,7 +184,7 @@ export function buildLpRows(
       key: bucket, url: key ? raw : null,
       spend: 0, impressions: 0, clicks: 0, linkClicks: 0, lpViews: 0, revenue: 0, sales: 0,
       semLinkNaMeta: 0, foraDoCache: 0, cacheDesatualizado: 0, causaIndeterminada: 0,
-      ativos: 0, comStatus: 0, campanhasAtivas: new Set<string>(),
+      ativos: 0, comStatus: 0, campanhasAtivas: new Map<string, string>(),
     };
     acc.spend += ad.spend;
     acc.impressions += ad.impressions;
@@ -179,7 +200,8 @@ export function buildLpRows(
       acc.comStatus += 1;
       if (status === "active") {
         acc.ativos += 1;
-        acc.campanhasAtivas.add(statusDosAnuncios?.campanhaByAdId?.[ad.campaignId] ?? "");
+        const campanha = statusDosAnuncios?.campanhaByAdId?.[ad.campaignId];
+        acc.campanhasAtivas.set(campanha?.campaignId ?? "", campanha?.nome ?? "");
       }
     }
     if (!key) {
@@ -212,7 +234,7 @@ export function buildLpRows(
     ...(statusDosAnuncios
       ? {
           status: g.ativos > 0 ? "active" as const : g.comStatus > 0 ? "paused" as const : "unknown" as const,
-          campanhasAtivas: [...g.campanhasAtivas],
+          campanhasAtivas: [...g.campanhasAtivas.values()].sort((x, y) => x.localeCompare(y, "pt-BR")),
         }
       : {}),
     // AC4: mesma aritmética do Detalhamento, via a MESMA função. Taxas são
