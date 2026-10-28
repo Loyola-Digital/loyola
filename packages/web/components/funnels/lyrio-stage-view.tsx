@@ -14,8 +14,6 @@ import {
   ShoppingCart,
   Store,
   Package,
-  Zap,
-  Users,
   Wallet,
   History,
   Loader2,
@@ -34,7 +32,7 @@ import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { useCampaignPicker, useGoogleAdsCampaignPicker } from "@/lib/hooks/use-funnels";
 import { useCampaignDailyInsightsBulk } from "@/lib/hooks/use-traffic-analytics";
-import { sumMetaSpendWithTax } from "@/lib/utils/funnel-metrics";
+import { sumMetaInsights, sumMetaSpendWithTax } from "@/lib/utils/funnel-metrics";
 import {
   validarPercentuaisMargem,
   parsePercentual,
@@ -44,16 +42,12 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useUsdBrl } from "@/lib/hooks/use-fx";
 import { CampaignSelector } from "./campaign-selector";
 import { GoogleAdsCampaignSelector } from "./google-ads-campaign-selector";
-import { useGoogleAdsCampaigns, useGoogleAdsDailyPorCampanha } from "@/lib/hooks/use-google-ads-analytics";
+import { useGoogleAdsDailyPorCampanha } from "@/lib/hooks/use-google-ads-analytics";
 import { StageDeleteSection } from "./stage-delete-section";
 import { CampaignLogButton } from "./campaign-log-link";
-import { LyrioMetaKpis } from "./lyrio-meta-kpis";
-import {
-  avisoDoGoogle,
-  contaDoGoogle,
-  estadoDoGoogleNaJanela,
-  type ContaDoGoogle,
-} from "@/lib/utils/lyrio-google-ads";
+import { LyrioBlocoDoCanal } from "./lyrio-bloco-do-canal";
+import { contaDoGoogle } from "@/lib/utils/lyrio-google-ads";
+import { cardsDoBlocoDoCanal, trafegoDoBlocoDaMeta, trafegoDoBlocoDoGoogle } from "@/lib/utils/cards-do-bloco-lyrio";
 import { RevenuecatOverviewBlock } from "./revenuecat-overview-block";
 import { GradeDoResumo } from "./lyrio-resumo-cards";
 import { cardsDoResumo } from "@/lib/utils/resumo-mobile-lyrio";
@@ -63,6 +57,7 @@ import { avisoDoErroDaFonte, estadoDaFonte } from "@/lib/utils/estado-da-fonte-r
 import {
   diasDaConsultaDoGoogle,
   investimentoDoGoogleNaRegua,
+  trafegoDoGoogleNaRegua,
   valorDoGoogleNaRegua,
 } from "@/lib/utils/google-ads-na-regua";
 import { LyrioDetailTable } from "./lyrio-detail-table";
@@ -194,6 +189,10 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   // Story 42.2/42.4: a soma decomposta em líquido + imposto, para o memorial.
   const metaFiltro = useMemo(() => (metaDailyFiltro ? sumMetaSpendWithTax([metaDailyFiltro]) : undefined), [metaDailyFiltro]);
   const meta28 = useMemo(() => (metaDaily28 ? sumMetaSpendWithTax([metaDaily28]) : undefined), [metaDaily28]);
+  // Story 42.16 (AC3a): o bloco Meta lê a MESMA consulta do filtro (antes o
+  // bloco da 42.13 repetia a chamada com a mesma chave): spend com imposto,
+  // impressões e cliques no link.
+  const metaTrafegoFiltro = useMemo(() => (metaDailyFiltro ? sumMetaInsights([metaDailyFiltro]) : undefined), [metaDailyFiltro]);
 
   // Story 42.13 (AC1b + QA loop TEST-001): a conta decide antes da consulta.
   // Sem conta conectada (vínculo removido) ou consulta em erro, o investimento
@@ -217,10 +216,13 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
     googleIdsVinculados,
     diasDaConsultaDoGoogle(days, 28),
   );
-  const googleConsultas = googleDaily.map((q) => ({ isLoading: q.isLoading, error: q.error, data: q.data }));
+  const googleConsultas = googleDaily.map((q, i) => ({ campaignId: googleIdsVinculados[i], isLoading: q.isLoading, error: q.error, data: q.data }));
   const googleFiltro = investimentoDoGoogleNaRegua(contaGoogle, googleConsultas, days, hoje);
   const google28 = investimentoDoGoogleNaRegua(contaGoogle, googleConsultas, 28, hoje);
   const googleFiltroValor = valorDoGoogleNaRegua(googleFiltro);
+  // Story 42.16 (AC2b, AC4f): impressões e cliques no MESMO recorte, no total
+  // (bloco Google) e por campanha (Detalhamento) — o mesmo resultado, sem chamada nova.
+  const googleTrafegoFiltro = trafegoDoGoogleNaRegua(contaGoogle, googleConsultas, days, hoje);
 
   // Story 42.14 (D22, PO-11): a receita da janela do filtro, pela rota nova —
   // a mesma chave de cache do Overview (uma chamada, um gasto no limite de 25/min).
@@ -241,6 +243,25 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   const fxSourceLabel =
     fx?.source === "live" ? "ao vivo" : fx?.source === "manual" ? "manual" : "fallback";
   const fxSource = `/api/fx/usd-brl · ${fxSourceLabel}`;
+
+  // Story 42.16 (AC1–AC3) — os blocos Meta Ads e Google Ads: os mesmos cards,
+  // o período em cada um. A venda é a do MESMO estado do bloco RevenueCat e do
+  // Detalhamento; sem RevenueCat conectado ela é desconhecida, não "zero".
+  const vendasDosBlocos: EstadoDasVendas = connected ? vendasPorCanal : { tipo: "oculto" };
+  const cardsMeta = cardsDoBlocoDoCanal({
+    canal: "meta",
+    ctx: { diasDoFiltro: days, hoje },
+    trafego: trafegoDoBlocoDaMeta(metaTrafegoFiltro, erroMetaFiltro),
+    vendas: vendasDosBlocos,
+    cambio: { taxa: brlRate, fonte: fxSource },
+  });
+  const cardsGoogle = cardsDoBlocoDoCanal({
+    canal: "google",
+    ctx: { diasDoFiltro: days, hoje },
+    trafego: trafegoDoBlocoDoGoogle(googleTrafegoFiltro),
+    vendas: vendasDosBlocos,
+    cambio: { taxa: brlRate, fonte: fxSource },
+  });
 
   /**
    * Story 42.14 — os cards do Resumo, com valor, janela e memorial, saem de
@@ -747,31 +768,18 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
         </section>
       )}
 
-      {/* Meta — conversões + spend das campanhas linkadas */}
+      {/* Story 42.16 (AC3) — Meta Ads e Google Ads: o MESMO componente, pelo
+          canal, com o período no subtítulo e em cada card. A venda é a do
+          RevenueCat (42.13), no mesmo estado do bloco RevenueCat. */}
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-muted-foreground">Meta Ads</h2>
-        {/* Story 42.13 (AC2): a venda é a do RevenueCat (canal Meta), no MESMO
-            estado do bloco RevenueCat — antes lia planilha e dava 0. */}
-        <LyrioMetaKpis
-          projectId={projectId}
-          campaignIds={campaignIds}
-          days={days}
-          vendas={vendasPorCanal}
-          revenuecatConectado={connected}
-          brlRate={brlRate}
-        />
+        <LyrioBlocoDoCanal canal="meta" temCampanhas={temMeta} cards={cardsMeta} revenuecatConectado={connected} />
       </section>
 
-      {/* Google Ads — campanhas de app vinculadas à etapa. Só aparece quando há
-          campanha vinculada: seção vazia num app que só roda Meta seria ruído. */}
+      {/* Google Ads — só aparece quando há campanha vinculada: seção vazia num
+          app que só roda Meta seria ruído. Sem conta ou em erro, aparece com o aviso. */}
       {contaGoogle.tipo !== "sem_campanha" && (
         <section className="space-y-3">
-          <h2 className="text-sm font-semibold text-muted-foreground">Google Ads</h2>
-          <GoogleAdsKpis
-            conta={contaGoogle}
-            days={days}
-            campaignIds={googleCampaignIds}
-          />
+          <LyrioBlocoDoCanal canal="google" temCampanhas cards={cardsGoogle} revenuecatConectado={connected} />
         </section>
       )}
 
@@ -789,7 +797,8 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
           campaignIds={campaignIds}
           googleAccountId={googleAccountId}
           googleCampaignIds={googleCampaignIds}
-          contaGoogle={contaGoogle}
+          googleCampanhas={googleCampaigns}
+          googleTrafego={googleTrafegoFiltro}
           days={days}
         />
       )}
@@ -1327,85 +1336,6 @@ function BreakdownTable({
           ))}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-// ============================================================
-// Google Ads — KPIs das campanhas de app vinculadas à etapa
-// ============================================================
-
-/**
- * Agrega as campanhas do Google vinculadas à etapa. A rota devolve a conta
- * inteira, então filtrar por `campaignIds` é o que impede o investimento de
- * outro produto da mesma conta vazar pro painel do app.
- */
-function GoogleAdsKpis({
-  conta,
-  days,
-  campaignIds,
-}: {
-  conta: ContaDoGoogle;
-  days: number;
-  campaignIds: Set<string>;
-}) {
-  const q = useGoogleAdsCampaigns(conta.tipo === "conta" ? conta.accountId : null, days);
-  // Story 42.13 (AC1a + QA loop): erro e falta de conta têm estado e texto
-  // próprios — antes viravam "não tiveram entrega" ou a seção sumia.
-  const estado = estadoDoGoogleNaJanela(conta, { isLoading: q.isLoading, error: q.error, data: q.data }, campaignIds);
-  const aviso = avisoDoGoogle(estado);
-
-  if (estado.tipo === "carregando") return <Skeleton className="h-20 rounded-xl" />;
-
-  if (aviso) {
-    return (
-      <div role="alert" className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 space-y-1">
-        <p className="text-xs font-medium text-destructive">{aviso.titulo}</p>
-        {aviso.detalhe && <p className="text-xs text-destructive/90 break-words">{aviso.detalhe}</p>}
-        <p className="text-[11px] text-muted-foreground">{aviso.orientacao}</p>
-      </div>
-    );
-  }
-
-  if (estado.tipo !== "pronto") {
-    return (
-      <div className="rounded-xl border border-dashed border-border/40 bg-card p-4">
-        <p className="text-xs text-muted-foreground">
-          As campanhas vinculadas não tiveram entrega nos últimos {days} dias.
-        </p>
-      </div>
-    );
-  }
-
-  const vinculadas = estado.vinculadas;
-  const total = vinculadas.reduce(
-    (acc, c) => ({
-      spend: acc.spend + c.spend,
-      impressions: acc.impressions + c.impressions,
-      clicks: acc.clicks + c.clicks,
-      conversions: acc.conversions + c.conversions,
-    }),
-    { spend: 0, impressions: 0, clicks: 0, conversions: 0 },
-  );
-
-  // CPA em cima de conversão do próprio Google (instalação/evento do app), que é
-  // o que a plataforma otimiza — a receita real vem do RevenueCat, no resumo.
-  const cpa = total.conversions > 0 ? total.spend / total.conversions : null;
-  const ctr = total.impressions > 0 ? (total.clicks / total.impressions) * 100 : null;
-
-  return (
-    <div className="spy-viz grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-      <Kpi icon={Zap} label="Investimento" value={fmtBRL(total.spend)} />
-      <Kpi icon={Users} label="Impressões" value={fmtNum(total.impressions)} />
-      <Kpi icon={ShoppingCart} label="Cliques" value={fmtNum(total.clicks)} />
-      <Kpi icon={Package} label="Conversões" value={fmtNum(total.conversions)} />
-      <Kpi icon={DollarSign} label="CPA" value={cpa != null ? fmtBRL(cpa) : "—"} />
-      {ctr != null && (
-        <p className="col-span-full text-[10px] text-muted-foreground">
-          CTR {ctr.toFixed(2)}% · {vinculadas.length} campanha
-          {vinculadas.length > 1 ? "s" : ""} vinculada{vinculadas.length > 1 ? "s" : ""}
-        </p>
-      )}
     </div>
   );
 }

@@ -5,6 +5,14 @@ import {
   buildCampaignRows,
   sortRows,
   totalSpend,
+  campanhasDoGoogleNaRegua,
+  consultasDoDetalhamento,
+  dimensaoDoFiltro,
+  dimensoesHabilitadas,
+  linhasDoFiltro,
+  mostraAvisoDoGoogle,
+  rodapeDoFiltro,
+  DICA_DO_GOOGLE_SO_CAMPANHA,
   type MetaEntityInput,
   type GoogleCampaignInput,
 } from "../lyrio-detail-rows";
@@ -26,9 +34,6 @@ const google = (over: Partial<GoogleCampaignInput> = {}): GoogleCampaignInput =>
   spend: 500,
   impressions: 50_000,
   clicks: 800,
-  ctr: 1.6,
-  cpc: 0.625,
-  cpm: 10,
   ...over,
 });
 
@@ -96,11 +101,16 @@ describe("googleRow", () => {
     expect(googleRow(google({ spend: 500 })).spend).toBe(500);
   });
 
-  it("usa CTR, CPC e CPM prontos da API em vez de re-derivar", () => {
-    const r = googleRow(google({ ctr: 1.6, cpc: 0.625, cpm: 10 }));
-    expect(r.ctr).toBe(1.6);
-    expect(r.cpc).toBe(0.625);
-    expect(r.cpm).toBe(10);
+  it("Story 42.16 (D16) — CTR, CPC e CPM RECALCULADOS da soma na régua de SP (não mais copiados da API)", () => {
+    const r = googleRow(google({ spend: 500, impressions: 50_000, clicks: 800 }));
+    expect(r.ctr).toBeCloseTo(1.6, 10);
+    expect(r.cpc).toBeCloseTo(0.625, 10);
+    expect(r.cpm).toBeCloseTo(10, 10);
+  });
+
+  it("Story 42.16 — divisão por zero vira null (\"—\"), nunca Infinity nem 0", () => {
+    const r = googleRow(google({ spend: 12, impressions: 0, clicks: 0 }));
+    expect(r).toMatchObject({ ctr: null, cpc: null, cpm: null });
   });
 
   it("Hook e Hold ficam null — o Google reporta retenção em quartis", () => {
@@ -173,5 +183,91 @@ describe("sortRows", () => {
     const antes = rows.map((r) => r.id);
     sortRows(rows, "spend", "asc");
     expect(rows.map((r) => r.id)).toEqual(antes);
+  });
+});
+
+describe("Story 42.16 (AC4f, PO-03) — campanhasDoGoogleNaRegua", () => {
+  const vinculadas = [
+    { id: "g-1", name: "app_lyrio_search" },
+    { id: "g-2", name: "app_lyrio_uac" },
+    { id: "g-3", name: "app_lyrio_parada" },
+  ];
+  const porCampanha = new Map([
+    ["g-1", { spend: 100, impressions: 10_000, clicks: 200 }],
+    ["g-2", { spend: 0, impressions: 0, clicks: 0 }],
+  ]);
+  it("o nome vem do vínculo da etapa; as métricas da régua; o status da consulta de hoje (só o status)", () => {
+    const r = campanhasDoGoogleNaRegua(vinculadas, porCampanha, new Map([["g-1", "ENABLED"]]));
+    expect(r).toEqual([{ id: "g-1", name: "app_lyrio_search", status: "ENABLED", spend: 100, impressions: 10_000, clicks: 200 }]);
+  });
+  it("sem entrega na janela (tudo zero) ou sem consulta, a campanha não vira linha", () => {
+    expect(campanhasDoGoogleNaRegua(vinculadas, porCampanha, new Map()).map((c) => c.id)).toEqual(["g-1"]);
+  });
+  it("sem status conhecido (a consulta de status falhou), a linha segue com status null", () => {
+    expect(campanhasDoGoogleNaRegua(vinculadas, porCampanha, new Map())[0].status).toBeNull();
+  });
+  it("uma campanha só com clique (sem gasto) tem entrega e entra", () => {
+    const r = campanhasDoGoogleNaRegua(vinculadas, new Map([["g-3", { spend: 0, impressions: 0, clicks: 1 }]]), new Map());
+    expect(r.map((c) => c.id)).toEqual(["g-3"]);
+  });
+});
+
+describe("Story 42.16 (AC4, AC5d) — o filtro Plataforma do Detalhamento", () => {
+  const rows = buildCampaignRows([meta({ campaignId: "m-1", spend: 1000 }), meta({ campaignId: "m-2", spend: 200 })], [google({ id: "g-1", spend: 50 })]);
+
+  it("AC4a/b/c — quais linhas: Todas = as duas; Meta = só Meta; Google = só Google", () => {
+    expect(linhasDoFiltro(rows, "todas").map((r) => r.id)).toEqual(["m-1", "m-2", "g-1"]);
+    expect(linhasDoFiltro(rows, "meta").map((r) => r.id)).toEqual(["m-1", "m-2"]);
+    expect(linhasDoFiltro(rows, "google").map((r) => r.id)).toEqual(["g-1"]);
+  });
+
+  it("AC4d — o Total de investimento é o das linhas exibidas, por filtro", () => {
+    expect(totalSpend(linhasDoFiltro(rows, "todas"))).toBeCloseTo(1250, 10);
+    expect(totalSpend(linhasDoFiltro(rows, "meta"))).toBeCloseTo(1200, 10);
+    expect(totalSpend(linhasDoFiltro(rows, "google"))).toBeCloseTo(50, 10);
+  });
+
+  it("AC4c — dimensões habilitadas: Google só Campanha; Todas e Meta, as três; a dica é a da story", () => {
+    expect(dimensoesHabilitadas("todas")).toEqual(["campaign", "adset", "ad"]);
+    expect(dimensoesHabilitadas("meta")).toEqual(["campaign", "adset", "ad"]);
+    expect(dimensoesHabilitadas("google")).toEqual(["campaign"]);
+    expect(DICA_DO_GOOGLE_SO_CAMPANHA).toBe("O Google só tem nível de campanha neste painel");
+  });
+
+  it("AC4c — quem estava em Público ou Criativo volta para Campanha com Google; com Todas/Meta a escolha fica", () => {
+    expect(dimensaoDoFiltro("google", "adset")).toBe("campaign");
+    expect(dimensaoDoFiltro("google", "ad")).toBe("campaign");
+    expect(dimensaoDoFiltro("google", "campaign")).toBe("campaign");
+    expect(dimensaoDoFiltro("meta", "ad")).toBe("ad");
+    expect(dimensaoDoFiltro("todas", "adset")).toBe("adset");
+  });
+
+  it("AC4b/c — qual consulta fica ligada: a plataforma fora do filtro não consulta; só a dimensão ativa", () => {
+    const tem = { meta: true, google: true };
+    expect(consultasDoDetalhamento("todas", "campaign", tem)).toEqual({ metaCampanhas: true, metaPublicos: false, metaCriativos: false, googleStatus: true });
+    expect(consultasDoDetalhamento("meta", "campaign", tem)).toEqual({ metaCampanhas: true, metaPublicos: false, metaCriativos: false, googleStatus: false });
+    expect(consultasDoDetalhamento("google", "campaign", tem)).toEqual({ metaCampanhas: false, metaPublicos: false, metaCriativos: false, googleStatus: true });
+    // Google com uma aba da Meta escolhida antes: a dimensão efetiva é Campanha, e a Meta segue desligada
+    expect(consultasDoDetalhamento("google", "ad", tem)).toEqual({ metaCampanhas: false, metaPublicos: false, metaCriativos: false, googleStatus: true });
+    expect(consultasDoDetalhamento("meta", "adset", tem)).toEqual({ metaCampanhas: false, metaPublicos: true, metaCriativos: false, googleStatus: false });
+    expect(consultasDoDetalhamento("todas", "ad", tem)).toEqual({ metaCampanhas: false, metaPublicos: false, metaCriativos: true, googleStatus: false });
+    // sem a plataforma vinculada, nada dela consulta
+    expect(consultasDoDetalhamento("todas", "campaign", { meta: false, google: true }).metaCampanhas).toBe(false);
+    expect(consultasDoDetalhamento("todas", "campaign", { meta: true, google: false }).googleStatus).toBe(false);
+  });
+
+  it("AC4e — o aviso do Google só com Todas ou Google", () => {
+    expect(mostraAvisoDoGoogle("todas")).toBe(true);
+    expect(mostraAvisoDoGoogle("google")).toBe(true);
+    expect(mostraAvisoDoGoogle("meta")).toBe(false);
+  });
+
+  it("AC4d — o rodapé de vendas segue o filtro: com Google somem o não identificado, o sem linha e o total da Meta", () => {
+    const c = (vendas: number) => ({ vendas, compradores: vendas, receitaUsd: vendas * 10 });
+    const vendas = { naoIdentificado: c(2), semLinha: c(3), totalMeta: c(10) };
+    expect(rodapeDoFiltro("todas", vendas)).toEqual({ naoIdentificado: c(2), semLinha: c(3), totalDeVendas: c(10) });
+    expect(rodapeDoFiltro("meta", vendas)).toEqual({ naoIdentificado: c(2), semLinha: c(3), totalDeVendas: c(10) });
+    expect(rodapeDoFiltro("google", vendas)).toEqual({ naoIdentificado: null, semLinha: null, totalDeVendas: null });
+    expect(rodapeDoFiltro("todas", null)).toEqual({ naoIdentificado: null, semLinha: null, totalDeVendas: null });
   });
 });

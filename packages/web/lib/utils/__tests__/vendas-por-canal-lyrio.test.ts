@@ -13,7 +13,7 @@ import { calcularMargemContribuicao } from "../lyrio-margin";
 import {
   DECLARACAO_FONTE_DO_RESUMO,
   avisoDeConflito,
-  blocoMetaDoLyrio,
+  blocoDoCanalDoLyrio,
   chaveDaLinhaDoDetalhamento,
   declaracaoDeCobertura,
   declaracaoForaDaQuebra,
@@ -244,7 +244,8 @@ describe("o fio até a tela", () => {
     expect(detalhe).toMatch(/r\.platform === "meta" && vendas \? \(vendas\.porLinha\.get\(`\$\{r\.platform\}-\$\{r\.id\}`\) \?\? null\) : null/);
     // Story 42.13 (AC3): o rótulo vem da dimensão ativa, não fixo.
     expect(detalhe).toMatch(/const naoIdentificado = rotuloDoNaoIdentificado\(dimensao\);/);
-    expect(detalhe).toMatch(/\[naoIdentificado\.rotulo, vendas\.naoIdentificado, naoIdentificado\.dica\]/);
+    // Story 42.16 (AC4d): a linha passa pelo rodapé do filtro (`rodapeDoFiltro`), que com Google a esconde.
+    expect(detalhe).toMatch(/\[naoIdentificado\.rotulo, rodape\.naoIdentificado, naoIdentificado\.dica\]/);
     expect(detalhe).not.toContain('"Anúncio não identificado"');
     expect(detalhe).toContain("Sem linha nesta tabela");
   });
@@ -258,13 +259,13 @@ describe("Story 42.13 (AC3) — rotuloDoNaoIdentificado acompanha a dimensão", 
   });
 });
 
-describe("Story 42.13 (AC2) — blocoMetaDoLyrio: a venda da Meta vem do RevenueCat", () => {
+describe("Story 42.13 (AC2) / 42.16 (AC3a) — blocoDoCanalDoLyrio, canal Meta: a venda da Meta vem do RevenueCat", () => {
   const pronto = { tipo: "pronto" as const, dados: dados() };
   const trafego = { investimentoBrl: 504.69, impressoes: 89482, cliques: 2589 };
-  const entrada = (estado: Parameters<typeof blocoMetaDoLyrio>[0]["estado"], brlRate: number | null) => ({ trafego, estado, brlRate });
+  const entrada = (estado: Parameters<typeof blocoDoCanalDoLyrio>[0]["estado"], brlRate: number | null) => ({ canal: "meta" as const, trafego, estado, brlRate });
 
   it("vendas e receita do canal Meta; ROAS e custo por venda contra o investimento da Meta", () => {
-    const b = blocoMetaDoLyrio(entrada(pronto, 5.4));
+    const b = blocoDoCanalDoLyrio(entrada(pronto, 5.4));
     expect(b.vendas).toBe(23);
     expect(b.receitaBrl).toBeCloseTo(105.24 * 5.4, 10);
     expect(b.roas).toBeCloseTo((105.24 * 5.4) / 504.69, 10);
@@ -275,78 +276,103 @@ describe("Story 42.13 (AC2) — blocoMetaDoLyrio: a venda da Meta vem do Revenue
   });
   it("não lê o Google nem o total: só a linha Meta", () => {
     const so = dados({ canais: dados().canais.map((c) => (c.canal === "meta" ? { ...c, vendas: 2, receitaUsd: 10 } : c)) });
-    const b = blocoMetaDoLyrio(entrada({ tipo: "pronto", dados: so }, 5));
+    const b = blocoDoCanalDoLyrio(entrada({ tipo: "pronto", dados: so }, 5));
     expect(b.vendas).toBe(2);
     expect(b.receitaBrl).toBe(50);
   });
   it("sem câmbio: receita e ROAS ficam null (nunca US$ disfarçado de R$); as vendas continuam", () => {
-    const b = blocoMetaDoLyrio(entrada(pronto, null));
+    const b = blocoDoCanalDoLyrio(entrada(pronto, null));
     expect(b).toMatchObject({ vendas: 23, receitaBrl: null, roas: null });
     expect(b.custoPorVenda).toBeCloseTo(504.69 / 23, 10);
   });
   it("divisões por zero viram null: sem investimento, sem venda, sem impressão, sem clique", () => {
     const zerado = dados({ canais: dados().canais.map((c) => (c.canal === "meta" ? { ...c, vendas: 0, compradores: 0, receitaUsd: 0 } : c)) });
-    const b = blocoMetaDoLyrio({ trafego: { investimentoBrl: 0, impressoes: 0, cliques: 0 }, estado: { tipo: "pronto", dados: zerado }, brlRate: 5 });
+    const b = blocoDoCanalDoLyrio({ canal: "meta", trafego: { investimentoBrl: 0, impressoes: 0, cliques: 0 }, estado: { tipo: "pronto", dados: zerado }, brlRate: 5 });
     expect(b).toMatchObject({ vendas: 0, receitaBrl: 0, roas: null, custoPorVenda: null, ctr: null, cpm: null, conversao: null });
     // com investimento e zero vendas, o custo por venda é desconhecido, não Infinity
-    expect(blocoMetaDoLyrio(entrada({ tipo: "pronto", dados: zerado }, 5)).custoPorVenda).toBeNull();
+    expect(blocoDoCanalDoLyrio(entrada({ tipo: "pronto", dados: zerado }, 5)).custoPorVenda).toBeNull();
   });
   it("QA REL-001 — tráfego desconhecido (consulta da Meta em erro) → investimento e tudo que divide por ele null; a venda continua", () => {
-    const b = blocoMetaDoLyrio({ trafego: null, estado: pronto, brlRate: 5 });
+    const b = blocoDoCanalDoLyrio({ canal: "meta", trafego: null, estado: pronto, brlRate: 5 });
     expect(b).toMatchObject({ investimentoBrl: null, impressoes: null, cliques: null, roas: null, custoPorVenda: null, ctr: null, cpm: null, conversao: null, vendas: 23 });
     expect(b.receitaBrl).toBeCloseTo(105.24 * 5, 10);
   });
   it("venda desconhecida (carregando, erro, API anterior à rota) → vendas e receita null, nunca 0", () => {
     for (const estado of [{ tipo: "carregando" as const }, { tipo: "oculto" as const }, { tipo: "erro" as const, mensagem: "x" }]) {
-      const b = blocoMetaDoLyrio(entrada(estado, 5));
+      const b = blocoDoCanalDoLyrio(entrada(estado, 5));
       expect(b).toMatchObject({ vendas: null, receitaBrl: null, roas: null, custoPorVenda: null, conversao: null });
       expect(b.investimentoBrl).toBe(504.69);
     }
   });
 });
 
-describe("Story 42.13 — o fio até a tela", () => {
+describe("Story 42.16 (AC3a) — blocoDoCanalDoLyrio, canal Google: as MESMAS regras, a linha do Google", () => {
+  const trafego = { investimentoBrl: 300, impressoes: 20_000, cliques: 400 };
+  it("vendas e receita do canal Google; ROAS e custo por venda contra o investimento do Google", () => {
+    const b = blocoDoCanalDoLyrio({ canal: "google", trafego, estado: { tipo: "pronto", dados: dados() }, brlRate: 5 });
+    expect(b.vendas).toBe(125);
+    expect(b.receitaBrl).toBeCloseTo(1206.6 * 5, 10);
+    expect(b.roas).toBeCloseTo((1206.6 * 5) / 300, 10);
+    expect(b.custoPorVenda).toBeCloseTo(300 / 125, 10);
+    expect(b.ctr).toBeCloseTo(2, 10);
+    expect(b.cpm).toBeCloseTo(15, 10);
+    expect(b.conversao).toBeCloseTo((125 * 100) / 400, 10);
+  });
+  it("não lê a Meta: mudar a linha da Meta não muda o bloco Google", () => {
+    const so = dados({ canais: dados().canais.map((c) => (c.canal === "meta" ? { ...c, vendas: 999, receitaUsd: 9999 } : c)) });
+    expect(blocoDoCanalDoLyrio({ canal: "google", trafego, estado: { tipo: "pronto", dados: so }, brlRate: 5 }).vendas).toBe(125);
+  });
+  it("sem câmbio, divisão por zero, tráfego desconhecido e venda em erro: null, nunca 0", () => {
+    expect(blocoDoCanalDoLyrio({ canal: "google", trafego, estado: { tipo: "pronto", dados: dados() }, brlRate: null })).toMatchObject({ receitaBrl: null, roas: null, vendas: 125 });
+    const semVenda = dados({ canais: dados().canais.map((c) => (c.canal === "google" ? { ...c, vendas: 0, compradores: 0, receitaUsd: 0 } : c)) });
+    expect(blocoDoCanalDoLyrio({ canal: "google", trafego: { investimentoBrl: 0, impressoes: 0, cliques: 0 }, estado: { tipo: "pronto", dados: semVenda }, brlRate: 5 })).toMatchObject({ roas: null, custoPorVenda: null, ctr: null, cpm: null, conversao: null });
+    expect(blocoDoCanalDoLyrio({ canal: "google", trafego: null, estado: { tipo: "pronto", dados: dados() }, brlRate: 5 })).toMatchObject({ investimentoBrl: null, impressoes: null, cliques: null, roas: null, custoPorVenda: null, ctr: null, cpm: null, vendas: 125 });
+    expect(blocoDoCanalDoLyrio({ canal: "google", trafego, estado: { tipo: "erro", mensagem: "x" }, brlRate: 5 })).toMatchObject({ vendas: null, receitaBrl: null, roas: null, custoPorVenda: null, conversao: null, investimentoBrl: 300 });
+  });
+});
+
+describe("Story 42.13 — o fio até a tela (religado na 42.16: um bloco por canal)", () => {
   const ler = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
   const etapa = ler("../../../components/funnels/lyrio-stage-view.tsx");
-  const bloco = ler("../../../components/funnels/lyrio-meta-kpis.tsx");
+  const bloco = ler("../../../components/funnels/lyrio-bloco-do-canal.tsx");
+  const cards = ler("../cards-do-bloco-lyrio.ts");
   const detalhe = ler("../../../components/funnels/lyrio-detail-table.tsx");
 
-  it("AC2 — o bloco Meta do Lyrio é o novo, com o MESMO estado de vendas do bloco RevenueCat; SalesMetaKpis saiu da etapa", () => {
+  it("AC2 — o bloco Meta do Lyrio recebe o MESMO estado de vendas do bloco RevenueCat; SalesMetaKpis saiu da etapa", () => {
     expect(etapa).not.toMatch(/<SalesMetaKpis/);
-    expect(etapa).toMatch(/<LyrioMetaKpis\s+projectId=\{projectId\}\s+campaignIds=\{campaignIds\}\s+days=\{days\}\s+vendas=\{vendasPorCanal\}\s+revenuecatConectado=\{connected\}/);
-    expect(bloco).toMatch(/useCampaignDailyInsightsBulk\(\s*projectId,\s*campaignIds\.length > 0 \? campaignIds : null,\s*days,\s*\)/);
-    expect(bloco).toMatch(/const estado: EstadoDasVendas = revenuecatConectado \? vendas : \{ tipo: "oculto" \};/);
-    expect(bloco).not.toMatch(/label="(LP Views|Checkouts|Ticket)/);
+    // sem RevenueCat conectado a venda é desconhecida ("oculto"), não zero — agora decidido no pai
+    expect(etapa).toMatch(/const vendasDosBlocos: EstadoDasVendas = connected \? vendasPorCanal : \{ tipo: "oculto" \};/);
+    expect(etapa.match(/vendas: vendasDosBlocos,/g)).toHaveLength(2);
+    expect(etapa).toMatch(/<LyrioBlocoDoCanal canal="meta" temCampanhas=\{temMeta\} cards=\{cardsMeta\} revenuecatConectado=\{connected\} \/>/);
+    expect(cards).not.toMatch(/rotulo\("(LP Views|Checkouts|Ticket)/);
   });
   it("AC1 — Google: a conta e a consulta decidem o estado; o Resumo recebe o Google da régua de SP (Story 42.14)", () => {
     // QA loop TEST-001: a conta é decidida UMA vez no pai e desce para o bloco e o Detalhamento.
     expect(etapa).toMatch(/contaDoGoogle\(\{\s*temCampanhas: googleCampaignIds\.size > 0,\s*accountId: googleAccountId,\s*picker: \{ isLoading: googlePickerQ\.isLoading, error: googlePickerQ\.error, data: googlePicker \},/);
-    // Story 42.14 (D17): o investimento do Resumo vem da régua de SP, a partir da MESMA conta;
-    // o "—" com a causa e o ROAS/Margem "—" com o Google desconhecido são provados em
-    // `resumo-mobile-lyrio.test.ts` (o memorial é o `memorialDoGoogleSemNumero`, reusado).
     expect(etapa).toMatch(/const googleFiltro = investimentoDoGoogleNaRegua\(contaGoogle, googleConsultas, days, hoje\);/);
     expect(etapa).toMatch(/const google28 = investimentoDoGoogleNaRegua\(contaGoogle, googleConsultas, 28, hoje\);/);
     expect(etapa).toMatch(/google: \{ mostrar: googleCampaignIds\.size > 0, filtro: googleFiltro, vinteOito: google28 \}/);
-    // a seção aparece também sem conta (antes sumia) e recebe a conta
+    // a seção aparece também sem conta (antes sumia); o bloco e o Detalhamento leem o tráfego da MESMA conta
     expect(etapa).toMatch(/\{contaGoogle\.tipo !== "sem_campanha" && \(\s*<section/);
-    expect(etapa).toMatch(/<GoogleAdsKpis\s+conta=\{contaGoogle\}/);
-    expect(etapa).toMatch(/contaGoogle=\{contaGoogle\}/);
-    const kpis = etapa.slice(etapa.indexOf("function GoogleAdsKpis("));
-    expect(kpis).toMatch(/estadoDoGoogleNaJanela\(conta, \{ isLoading: q\.isLoading, error: q\.error, data: q\.data \}, campaignIds\)/);
-    // o alerta desenha os três textos da função (QA Q7/Q8)
-    expect(kpis).toMatch(/if \(aviso\) \{\s*return \(\s*<div role="alert"/);
-    expect(kpis).toMatch(/\{aviso\.titulo\}/);
-    expect(kpis).toMatch(/\{aviso\.detalhe && <p[^>]*>\{aviso\.detalhe\}<\/p>\}/);
-    expect(kpis).toMatch(/\{aviso\.orientacao\}/);
-    // Detalhamento: o aviso vem da mesma decisão, com o texto inteiro (QA Q4)
-    expect(detalhe).toMatch(/avisoDoGoogleEmLinha\(\s*estadoDoGoogleNaJanela\(contaGoogle, \{ isLoading: loadingGoogle, error: erroGoogle, data: googleData \}, googleCampaignIds\),?\s*\)/);
+    expect(etapa).toMatch(/const googleTrafegoFiltro = trafegoDoGoogleNaRegua\(contaGoogle, googleConsultas, days, hoje\);/);
+    expect(etapa).toMatch(/googleTrafego=\{googleTrafegoFiltro\}/);
+    // o alerta desenha os três textos (QA Q7/Q8), vindos de `avisoDoGoogle` em `cardsDoBlocoDoCanal`
+    expect(bloco).toMatch(/\{aviso && \(\s*<div role="alert"/);
+    expect(bloco).toMatch(/\{aviso\.titulo\}/);
+    expect(bloco).toMatch(/\{aviso\.detalhe && <p[^>]*>\{aviso\.detalhe\}<\/p>\}/);
+    expect(bloco).toMatch(/\{aviso\.orientacao && <p[^>]*>\{aviso\.orientacao\}<\/p>\}/);
+    expect(cards).toMatch(/avisoDoTrafego = avisoDoGoogle\(e\.trafego\);/);
+    // Detalhamento: o aviso vem do mesmo estado, com o texto inteiro (QA Q4)
+    expect(detalhe).toMatch(/avisoDoGoogleEmLinha\(comoEstadoDoGoogle\(googleTrafego\)\)/);
     expect(detalhe).toMatch(/\{avisoGoogle && \(\s*<p role="alert"[^>]*>\s*As linhas do Google Ads não aparecem\. \{avisoGoogle\}/);
   });
   it("AC2 — bloco Meta: declara a cobertura e mostra os erros de venda e de tráfego (QA Q5/Q6/REL-001)", () => {
-    expect(bloco).toMatch(/estado\.tipo === "pronto" && ` \$\{declaracaoDeCobertura\(estado\.dados\)\}`/);
-    expect(bloco).toMatch(/\{estado\.tipo === "erro" && \(\s*<p role="alert"[^>]*>\s*Não foi possível carregar as vendas da Meta: \{estado\.mensagem\}/);
-    expect(bloco).toMatch(/\{erroTrafego && \(\s*<p role="alert"/);
-    expect(bloco).toMatch(/const somado = daily && !erroTrafego \? sumMetaInsights\(\[daily\]\) : null;/);
-    expect(bloco).toMatch(/blocoMetaDoLyrio\(\{ trafego, estado, brlRate \}\)/);
+    expect(cards).toMatch(/notaDoFunil: `[^`]*\$\{dadosDasVendas \? ` \$\{declaracaoDeCobertura\(dadosDasVendas\)\}` : ""\}`/);
+    expect(bloco).toMatch(/\{cards\.avisoDasVendas && \(\s*<p role="alert"[^>]*>\s*\{cards\.avisoDasVendas\}/);
+    expect(bloco).toMatch(/\{cards\.notaDoFunil\}/);
+    // o tráfego em erro é desconhecido, não zero: o erro decide antes do dado (REL-001)
+    expect(etapa).toMatch(/trafego: trafegoDoBlocoDaMeta\(metaTrafegoFiltro, erroMetaFiltro\),/);
+    expect(etapa).toMatch(/const metaTrafegoFiltro = useMemo\(\(\) => \(metaDailyFiltro \? sumMetaInsights\(\[metaDailyFiltro\]\) : undefined\), \[metaDailyFiltro\]\);/);
+    expect(cards).toMatch(/const b = blocoDoCanalDoLyrio\(\{\s*canal,/);
   });
 });

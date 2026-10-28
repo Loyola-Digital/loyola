@@ -146,6 +146,38 @@ export function declararJanela(janela: JanelaDoCard, ctx: ContextoDaJanela): Dec
 }
 
 /**
+ * Story 42.16 (AC1) — a declaração dos cards dos blocos Meta Ads e Google Ads:
+ * a janela do FILTRO com as DATAS na etiqueta (`dd/mm a dd/mm`). A frase do
+ * memorial é a de `declararJanela` ("segue o filtro de N dias"), sem texto novo.
+ *
+ * `cobertura` (AC1b): o número só existe a partir de uma data (ex.: o canal da
+ * venda, `atributosDesde`, que vem da API). Se a janela começa ANTES dela, a
+ * etiqueta vira `desde dd/mm` — a data efetiva do número. Sem data (`null`), a
+ * etiqueta fica o intervalo: nunca uma data que a fonte não deu.
+ */
+export function declararJanelaDoBloco(
+  ctx: Pick<ContextoDaJanela, "diasDoFiltro" | "hoje">,
+  cobertura?: { desde: string | null; oQue: string },
+): DeclaracaoDaJanela {
+  const base = declararJanela({ tipo: "filtro" }, { diasDoFiltro: ctx.diasDoFiltro, hoje: ctx.hoje });
+  const intervalo = intervaloDaJanela(ctx.diasDoFiltro, ctx.hoje);
+  const desde = cobertura?.desde ?? null;
+  if (desde && inicioDaJanela(ctx.diasDoFiltro, ctx.hoje) < desde) {
+    return {
+      ...base,
+      etiqueta: `desde ${diaMes(desde)}`,
+      periodo: `${ultimosNDias(ctx.diasDoFiltro)} (${intervalo}); ${cobertura!.oQue} só chega desde ${diaMes(desde)}, então o período efetivo é ${diaMes(desde)} a ${diaMes(ctx.hoje)} · ${base.frase}`,
+    };
+  }
+  return { ...base, etiqueta: intervalo };
+}
+
+/** Story 42.16 (AC3c) — o subtítulo de cada bloco: `Meta Ads · dd/mm a dd/mm`. */
+export function subtituloDoBloco(plataforma: "Meta Ads" | "Google Ads", diasDoFiltro: number, hoje: string): string {
+  return `${plataforma} · ${intervaloDaJanela(diasDoFiltro, hoje)}`;
+}
+
+/**
  * AC3b — o título do Resumo mobile declara a janela do FILTRO, com N e datas
  * dinâmicos na régua de SP: `Resumo mobile · últimos 90 dias (19/07 a 16/10)`.
  * Os cards que não seguem o filtro levam etiqueta própria, para o título não
