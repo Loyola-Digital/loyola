@@ -45,6 +45,13 @@ export interface DiaDaEntidadeMeta {
   receitaUsd: number;
 }
 
+/** Story 42.17 (AC3a) — um dia de SP do `totalPago`: vendas pagas e receita (US$) de todos os canais. */
+export interface DiaDoTotalPago {
+  dia: string;
+  vendas: number;
+  receitaUsd: number;
+}
+
 /** Espelha `GET …/revenuecat/vendas-por-canal` (`routes/revenuecat.ts`). Só contagens — nenhum id de usuário. */
 export interface VendasPorCanalDoLyrio {
   days: number;
@@ -58,6 +65,12 @@ export interface VendasPorCanalDoLyrio {
   metaPorEntidade: { campaign: EntidadeMeta[]; adset: EntidadeMeta[]; ad: EntidadeMeta[] };
   /** Story 42.19 (API v62): a mesma quebra por dia de SP. Ausente com a API anterior → "—" nas vendas dos dias. */
   metaPorEntidadeDiario?: { campaign: DiaDaEntidadeMeta[]; adset: DiaDaEntidadeMeta[]; ad: DiaDaEntidadeMeta[] };
+  /**
+   * Story 42.17 (API v64): o `totalPago` por dia de SP — só os dias com venda,
+   * em ordem crescente; a soma dos dias é o `totalPago`. Ausente com a API
+   * anterior → "—" nas colunas de venda da tabela "Dados diários".
+   */
+  diario?: DiaDoTotalPago[];
   /** O que o card "Vendas" de `/sales` conta e a quebra não conta. */
   foraDaQuebra: { semValor: number; semUsuario: number };
 }

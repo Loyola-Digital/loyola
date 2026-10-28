@@ -723,4 +723,15 @@
 // churn; o numerador é o `churnPagante` de `/metricas-derivadas?days=30`, que
 // não muda. Com a API antiga a rota responde 404 e o card "LTV (margem)" fica
 // "—" com a causa. `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 63;
+//
+// v64 (Story 42.17 — Lyrio: a tabela "Dados diários" abaixo do Resumo; sem
+// migration): `GET …/revenuecat/vendas-por-canal` ganha `diario: { dia,
+// vendas, receitaUsd }[]` — o `totalPago` aberto por dia de SP de
+// `purchased_at`, com a MESMA regra (venda paga, com usuário e com valor; os 4
+// canais e o conflito), das MESMAS linhas `grao = 'dia'` da consulta da 42.19
+// (nenhuma consulta a mais). Só dias com venda, em ordem crescente. A soma de
+// `vendas` e de `receitaUsd` dos dias é o `totalPago` (o centavo do dia sai do
+// acumulado do comprador). Só contagens — nenhum `app_user_id`. Campo aditivo:
+// com a API antiga as colunas de venda da tabela mostram "—" com o aviso de
+// versão. `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 64;

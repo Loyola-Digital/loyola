@@ -280,6 +280,39 @@ export function montarVendasPorDiaDaMeta(dias: readonly DiaDoComprador[]): Venda
   return { campaign: lista(niveis.campaign), adset: lista(niveis.adset), ad: lista(niveis.ad) };
 }
 
+// ─────────────── Story 42.17 (AC3) — o total pago por dia ───────────────
+
+/** Um dia de SP do `totalPago`: as vendas pagas e a receita (US$) daquele dia, de todos os canais. */
+export interface DiaDoTotalPago {
+  /** `AAAA-MM-DD`, o dia de SP de `purchased_at`. */
+  dia: string;
+  vendas: number;
+  receitaUsd: number;
+}
+
+/**
+ * AC3a — `diario`: o `totalPago` de `montarVendasPorCanal` aberto por dia de
+ * SP, com a MESMA regra (venda paga, com usuário e com valor) e sem filtro de
+ * canal: os 4 canais e o conflito, como o total. Lê as linhas `grao = 'dia'`
+ * de `consultaDeVendasPorCanalComDias` — a mesma consulta da quebra (AC3b),
+ * sem leitura a mais. O centavo de cada dia é o do acumulado do comprador
+ * (`lerDiaDeVendas`), então a soma dos dias é o `totalPago` ao centavo.
+ * Ordem: o dia, crescente. Só dias com venda.
+ */
+export function montarDiarioDoTotalPago(dias: readonly DiaDoComprador[]): DiaDoTotalPago[] {
+  const porDia = new Map<string, { vendas: number; centavos: number }>();
+  for (const d of dias) {
+    if (d.vendas <= 0) continue;
+    const a = porDia.get(d.dia) ?? { vendas: 0, centavos: 0 };
+    a.vendas += d.vendas;
+    a.centavos += d.centavos;
+    porDia.set(d.dia, a);
+  }
+  return [...porDia.entries()]
+    .sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0))
+    .map(([dia, a]) => ({ dia, vendas: a.vendas, receitaUsd: a.centavos / 100 }));
+}
+
 // ─────────────────────────── SQL ───────────────────────────
 
 /** Escopo dos eventos: a etapa, com usuário, sem `TEST` (o mesmo da Jornada). */
