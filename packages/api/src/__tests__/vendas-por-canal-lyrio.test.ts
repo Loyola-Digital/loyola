@@ -446,7 +446,8 @@ describe("GET …/revenuecat/vendas-por-canal — o fio da rota (AC1)", () => {
     const fora = banco.executados.find((e) => /sem_valor/.test(e.sql))!;
     expect(parametroDe(fora, '"revenuecat_sales"."stage_id"')).toBe(STAGE);
     const corpo = r.json();
-    expect(Object.keys(corpo).sort()).toEqual(["atributosDesde", "canais", "conflito", "days", "desde", "foraDaQuebra", "metaPorEntidade", "totalPago"]);
+    // Story 42.19 (AC3a): `metaPorEntidadeDiario` é o campo novo (contrato v62).
+    expect(Object.keys(corpo).sort()).toEqual(["atributosDesde", "canais", "conflito", "days", "desde", "foraDaQuebra", "metaPorEntidade", "metaPorEntidadeDiario", "totalPago"]);
     expect(corpo.desde).toBe(inicioDaJanela(28, businessToday(new Date(antes))));
     expect(corpo).toMatchObject({ days: 28, atributosDesde: "2026-10-06", foraDaQuebra: { semValor: 432, semUsuario: 0 }, totalPago: { vendas: 2, compradores: 1, receitaUsd: 6.02 } });
     expect(corpo.canais[0]).toMatchObject({ canal: "meta", vendas: 2 });

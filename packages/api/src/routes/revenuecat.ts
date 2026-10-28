@@ -4,13 +4,16 @@ import { diasDaJanelaEmSp, instanteDoInicioDaJanela } from "../utils/sale-date.j
 import { consultaDoInicioDaAssinatura, lerLinhaDaJornada, montarJornada } from "../utils/jornada-lyrio.js";
 import { consultaDaJornadaPorProduto, lerProdutoDaJornada, montarPorProduto } from "../utils/jornada-por-produto-lyrio.js";
 import {
-  consultaDeVendasPorCanal,
+  consultaDeVendasPorCanalComDias,
   diaNoFusoDoNegocio,
   consultaDoInicioDosAtributos,
   consultaDoQueFicaForaDaQuebra,
   dataIso,
+  lerDiaDeVendas,
   lerLinhaDeVendas,
   montarVendasPorCanal,
+  montarVendasPorDiaDaMeta,
+  type DiaDoComprador,
 } from "../utils/vendas-por-canal-lyrio.js";
 import { pagantesPorCanalDaEtapa } from "../utils/pagantes-lyrio.js";
 import { eq, and, gte, inArray, sql } from "drizzle-orm";
@@ -585,11 +588,17 @@ export default fp(async function revenuecatRoutes(fastify) {
 
       const desde = instanteDoInicioDaJanela(query.data.days); // Story 42.13 (AC4)
       const [compradores, fora, atributos] = await Promise.all([
-        fastify.db.execute(consultaDeVendasPorCanal(params.data.stageId, desde)),
+        // Story 42.19 (AC3): a quebra por comprador E por comprador × dia numa
+        // leitura só — as CTEs dos compradores rodam uma vez.
+        fastify.db.execute(consultaDeVendasPorCanalComDias(params.data.stageId, desde)),
         fastify.db.execute(consultaDoQueFicaForaDaQuebra(params.data.stageId, desde)),
         fastify.db.execute(consultaDoInicioDosAtributos(params.data.stageId)),
       ]);
-      const vendas = montarVendasPorCanal((compradores.rows as Record<string, unknown>[]).map(lerLinhaDeVendas));
+      const linhas = compradores.rows as Record<string, unknown>[];
+      const vendas = montarVendasPorCanal(linhas.filter((r) => r.grao !== "dia").map(lerLinhaDeVendas));
+      const metaPorEntidadeDiario = montarVendasPorDiaDaMeta(
+        linhas.filter((r) => r.grao === "dia").map(lerDiaDeVendas).filter((d): d is DiaDoComprador => d !== null),
+      );
       if (vendas.conflito.compradores > 0) {
         request.log.warn({ stageId: params.data.stageId, conflito: vendas.conflito.compradores }, "lyrio: compradores com Meta e Google");
       }
@@ -600,6 +609,8 @@ export default fp(async function revenuecatRoutes(fastify) {
         desde: dataIso(desde), // Story 42.13: o primeiro dia da janela, em SP
         atributosDesde: dataIso((atributos.rows[0] as { desde?: unknown } | undefined)?.desde),
         ...vendas,
+        // Story 42.19 (AC3): a mesma quebra da Meta, por dia de SP — por entidade, a soma dos dias é a linha.
+        metaPorEntidadeDiario,
         // PO-03: o que o card "Vendas" de `/sales` conta e esta quebra não conta.
         foraDaQuebra: { semValor: Number(f.sem_valor ?? 0) || 0, semUsuario: Number(f.sem_usuario ?? 0) || 0 },
       };

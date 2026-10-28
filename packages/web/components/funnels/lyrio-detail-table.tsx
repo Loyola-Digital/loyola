@@ -38,19 +38,27 @@
 //     "Plataforma: Todas · Meta · Google" (AC4): a plataforma fora do filtro
 //     não consulta, e com Google só "Por Campanha" fica habilitada.
 //
+//   • Story 42.19 — a linha expansível (D21): ▸ abre os dias da linha logo
+//     abaixo, com as mesmas colunas, e uma "Σ dos dias" que fecha a expansão
+//     (ou mostra a diferença contra a linha, PO-D1). Meta: a mídia do
+//     `entity-daily` (UMA requisição por dimensão e janela, só depois da
+//     primeira expansão) e a venda de `metaPorEntidadeDiario` (a MESMA consulta
+//     das vendas da linha). Google: os dias do `/daily` que a 42.16 já consulta,
+//     só mídia (D22). As regras estão em `lib/utils/lyrio-detalhamento-diario.ts`.
+//
 //   • Google Ads só no nível de CAMPANHA. Os hooks de público e criativo do
 //     Google aceitam um pai por chamada — cobrir os 3 níveis seria N+1 sem
 //     lote nem cache, contra a regra que ficou após o rate limit de julho/2026.
 // ============================================================
 
-import { useMemo, useState } from "react";
+import { Fragment, useId, useMemo, useState } from "react";
 import { Filter } from "lucide-react";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  useTrafficCampaigns, useAllAdSets, useAllAds, useAdCreatives,
+  useTrafficCampaigns, useAllAdSets, useAllAds, useAdCreatives, useEntityDaily,
 } from "@/lib/hooks/use-traffic-analytics";
 import { useGoogleAdsCampaigns } from "@/lib/hooks/use-google-ads-analytics";
 import { CreativeThumb } from "@/components/traffic/creative-thumb";
@@ -69,6 +77,12 @@ import {
   linhasDoFiltro, metaRow, mostraAvisoDoGoogle, rodapeDoFiltro, sortRows, totalSpend, DICA_DO_GOOGLE_SO_CAMPANHA,
   type LyrioDetailRow, type LyrioSortKey, type MetaEntityInput, type PlataformaDoDetalhamento,
 } from "@/lib/utils/lyrio-detail-rows";
+import {
+  alternarAbertura, chaveDaLinha, contextoDaAbertura, diasDaJanela, donosDasChaves, expansaoDaMeta, expansaoDoGoogle,
+  indiceDaMidiaDaMeta, midiaSemLinha, periodoDaSerie, precisaDaSerieDaMeta, vendasDosDias,
+  DICA_DIA_EM_ANDAMENTO, DICA_HOOK_HOLD_DO_DIA, type ExpansaoDaLinha,
+} from "@/lib/utils/lyrio-detalhamento-diario";
+import { hojeNoNegocio } from "@/lib/utils/janela-dos-cards-lyrio";
 import type { FunnelCampaign } from "@loyola-x/shared";
 
 type Dimensao = "campaign" | "adset" | "ad";
@@ -111,6 +125,24 @@ function fmtNum(v: number | null): string {
 function fmtPct(v: number | null): string {
   return v === null ? "—" : `${v.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
 }
+
+/** `AAAA-MM-DD` → `dd/mm/aaaa`. */
+function fmtDia(iso: string): string {
+  const [a, m, d] = iso.split("-");
+  return `${d}/${m}/${a}`;
+}
+
+/** A diferença da Σ dos dias contra a linha (AC4c): com sinal, sempre visível. */
+function fmtDelta(v: number, brl: boolean): string {
+  const s = brl ? Math.abs(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : Math.abs(v).toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+  return `Δ ${v < 0 ? "−" : "+"}${s}`;
+}
+
+/** Story 42.19 (AC1d) — o fundo e o recuo que subordinam o dia à linha. */
+const SUB_LINHA = "border-b border-border/10 bg-muted text-[11px] text-muted-foreground";
+/** AC1f — a coluna do nome fica fixa na rolagem horizontal (celular). */
+const NOME_FIXO = "sticky left-0 z-[1]";
+const VAZIO: ReadonlySet<string> = new Set();
 
 export function LyrioDetailTable({
   projectId,
@@ -193,6 +225,41 @@ export function LyrioDetailTable({
   const sorted = useMemo(() => sortRows(rows, sortKey, sortDir), [rows, sortKey, sortDir]);
   const total = useMemo(() => totalSpend(rows), [rows]);
 
+  // Story 42.19 (AC1c) — as linhas abertas valem para UM contexto (plataforma,
+  // dimensão, janela): trocar qualquer um deles fecha todas. O estado é zerado
+  // na própria renderização em que o contexto muda (o padrão do React para
+  // estado derivado da renderização anterior) — só esconder as abertas do
+  // contexto antigo as reabriria na volta (Campanha → Público → Campanha).
+  const contexto = contextoDaAbertura(plataforma, dimensao, days);
+  const [abertura, setAbertura] = useState<{ contexto: string; abertas: ReadonlySet<string> }>({ contexto, abertas: VAZIO });
+  if (abertura.contexto !== contexto) setAbertura({ contexto, abertas: VAZIO });
+  const abertas = abertura.contexto === contexto ? abertura.abertas : VAZIO;
+  const alternar = (k: string) =>
+    setAbertura((a) => ({ contexto, abertas: alternarAbertura(a.contexto === contexto ? a.abertas : VAZIO, k) }));
+  const idDaTabela = useId();
+  const hoje = hojeNoNegocio();
+  const diasDaExpansao = useMemo(() => diasDaJanela(days, hoje), [days, hoje]);
+  // AC2a — UMA requisição por dimensão e janela, só depois da primeira linha da
+  // Meta aberta; as outras linhas leem o mesmo resultado (mesma chave). As datas
+  // explícitas põem a série na régua de SP (o `days` da rota conta em UTC).
+  const periodo = periodoDaSerie(days, hoje);
+  const precisaDaSerie = temMeta && precisaDaSerieDaMeta(abertas, rows);
+  const serieQ = useEntityDaily(
+    precisaDaSerie ? projectId : null,
+    precisaDaSerie ? dimensao : null,
+    precisaDaSerie ? campaignIds : null,
+    days,
+    periodo.startDate,
+    periodo.endDate,
+  );
+  const serie = serieQ.data && serieQ.data.groupBy === dimensao ? serieQ.data : null;
+  const indiceDaSerie = useMemo(() => indiceDaMidiaDaMeta(dimensao, serie?.rows ?? []), [dimensao, serie]);
+  const semCobertura = useMemo(() => new Set(serie?.daysWithoutCoverage ?? []), [serie]);
+  const semLinhaNaSerie = useMemo(
+    () => (precisaDaSerie && serie ? midiaSemLinha(dimensao, indiceDaSerie, rows) : null),
+    [precisaDaSerie, serie, dimensao, indiceDaSerie, rows],
+  );
+
   // Story 42.12 (AC5) — vendas da Meta por linha, na MESMA janela (`days`).
   // "oculto" (API anterior à rota) → as colunas não aparecem, como antes.
   const vendasQ = useRevenuecatVendasPorCanal(projectId, funnelId, stageId, days, revenuecatConectado && temMeta);
@@ -205,6 +272,28 @@ export function LyrioDetailTable({
   /** "—" para Google, para carregando/erro; número para linha da Meta com dado. */
   const vendasDaLinha = (r: LyrioDetailRow): ContagemDeVendas | null =>
     r.platform === "meta" && vendas ? (vendas.porLinha.get(`${r.platform}-${r.id}`) ?? null) : null;
+  // Story 42.19 (AC3d) — a venda dos dias lê o MESMO resultado da `vendas-por-canal`.
+  const vendasDias = useMemo(() => vendasDosDias(estadoVendas, dimensao), [estadoVendas, dimensao]);
+  const donos = useMemo(() => donosDasChaves(dimensao, rows), [dimensao, rows]);
+  const expansaoDe = (r: LyrioDetailRow): ExpansaoDaLinha =>
+    r.platform === "google"
+      ? expansaoDoGoogle({
+          linha: r,
+          dias: diasDaExpansao,
+          hoje,
+          linhasDoDaily: googleTrafego.tipo === "pronto" ? (googleTrafego.diasPorCampanha.get(r.id) ?? []) : [],
+        })
+      : expansaoDaMeta({
+          linha: r,
+          dias: diasDaExpansao,
+          hoje,
+          dimensao,
+          serie: indiceDaSerie,
+          semCobertura,
+          vendas: vendasDias,
+          chaveDaVenda: donos.get(chaveDaLinha(r)),
+          brlRate,
+        });
   const naoIdentificado = rotuloDoNaoIdentificado(dimensao);
   // AC4d — o rodapé segue o filtro: com Google, as linhas de venda da Meta somem.
   const rodape = rodapeDoFiltro(plataforma, vendas);
@@ -335,7 +424,7 @@ export function LyrioDetailTable({
                 <th className="text-left py-2 pr-3 select-none">Plataforma</th>
                 {mostraPreview && <th className="text-left py-2 pr-2 select-none w-12">Prévia</th>}
                 <th
-                  className="text-left py-2 pr-3 cursor-pointer select-none hover:text-foreground"
+                  className={`text-left py-2 pr-3 cursor-pointer select-none hover:text-foreground bg-card ${NOME_FIXO}`}
                   onClick={() => toggleSort("name")}
                 >
                   Dimensão{seta("name")}
@@ -380,68 +469,112 @@ export function LyrioDetailTable({
                 )}
               </tr>
             </thead>
-            <tbody>
-              {sorted.length === 0 ? (
+            {sorted.length === 0 ? (
+              <tbody>
                 <tr>
                   <td colSpan={colunas + 1} className="py-6 text-center text-muted-foreground">
                     Nenhuma campanha com veiculação no período.
                   </td>
                 </tr>
-              ) : (
-                sorted.map((r) => (
-                  <tr key={`${r.platform}-${r.id}`} className="border-b border-border/10 hover:bg-muted/30">
-                    <td className="py-2 pr-3">
-                      <span
-                        className={
-                          "text-[10px] px-1.5 py-0.5 rounded-full font-medium " +
-                          (r.platform === "meta"
-                            ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                            : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400")
-                        }
-                        title={r.status ? `Status: ${r.status}` : undefined}
-                      >
-                        {r.platform === "meta" ? "Meta" : "Google"}
-                      </span>
-                    </td>
-                    {mostraPreview && (
-                      <td className="py-2 pr-2">
-                        {r.platform === "meta" ? (
-                          <CreativeThumb
-                            projectId={projectId}
-                            adId={r.id}
-                            nome={r.name}
-                            videoId={videoPorAd.get(r.id) ?? null}
-                          />
-                        ) : (
-                          <div className="h-10 w-10" />
+              </tbody>
+            ) : (
+              // AC1e — a ordenação ordena as ENTIDADES; os dias vêm junto, em ordem de data.
+              sorted.map((r, i) => {
+                const k = chaveDaLinha(r);
+                const aberta = abertas.has(k);
+                const idDosDias = `${idDaTabela}-dias-${i}`;
+                return (
+                  <Fragment key={k}>
+                    <tbody>
+                      <tr className="border-b border-border/10 hover:bg-muted/30">
+                        <td className="py-2 pr-3">
+                          <div className="flex items-center gap-1">
+                            {/* Story 42.19 (AC1a/AC1d) — o controle da linha expansível. */}
+                            <button
+                              type="button"
+                              aria-expanded={aberta}
+                              aria-controls={idDosDias}
+                              aria-label={`${aberta ? "Fechar" : "Abrir"} os dias de ${r.name}`}
+                              onClick={() => alternar(k)}
+                              className="h-5 w-5 shrink-0 rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              {aberta ? "▾" : "▸"}
+                            </button>
+                            <span
+                              className={
+                                "text-[10px] px-1.5 py-0.5 rounded-full font-medium " +
+                                (r.platform === "meta"
+                                  ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400")
+                              }
+                              title={r.status ? `Status: ${r.status}` : undefined}
+                            >
+                              {r.platform === "meta" ? "Meta" : "Google"}
+                            </span>
+                          </div>
+                        </td>
+                        {mostraPreview && (
+                          <td className="py-2 pr-2">
+                            {r.platform === "meta" ? (
+                              <CreativeThumb
+                                projectId={projectId}
+                                adId={r.id}
+                                nome={r.name}
+                                videoId={videoPorAd.get(r.id) ?? null}
+                              />
+                            ) : (
+                              <div className="h-10 w-10" />
+                            )}
+                          </td>
                         )}
-                      </td>
-                    )}
-                    <td className="py-2 pr-3 max-w-[280px] truncate" title={r.name}>
-                      {r.name}
-                    </td>
-                    <td className="text-right px-2 font-medium">{fmtBRL(r.spend)}</td>
-                    <td className="text-right px-2">{fmtNum(r.impressions)}</td>
-                    <td className="text-right px-2">{fmtNum(r.clicks)}</td>
-                    <td className="text-right px-2">{fmtPct(r.ctr)}</td>
-                    <td className="text-right px-2">{fmtBRL(r.cpc)}</td>
-                    <td className="text-right px-2">{fmtBRL(r.cpm)}</td>
-                    {mostraVendas && (
-                      <>
-                        <td className="text-right px-2">{fmtNum(vendasDaLinha(r)?.vendas ?? null)}</td>
-                        <td className="text-right px-2">{fmtBRL(receitaBrl(vendasDaLinha(r)))}</td>
-                      </>
-                    )}
-                    {mostraVideo && (
-                      <>
-                        <td className="text-right px-2">{fmtPct(r.hookRate)}</td>
-                        <td className="text-right px-2">{fmtPct(r.holdRate)}</td>
-                      </>
-                    )}
-                  </tr>
-                ))
-              )}
-            </tbody>
+                        <td className={`py-2 pr-3 max-w-[280px] truncate bg-card ${NOME_FIXO}`} title={r.name}>
+                          {r.name}
+                        </td>
+                        <td className="text-right px-2 font-medium">{fmtBRL(r.spend)}</td>
+                        <td className="text-right px-2">{fmtNum(r.impressions)}</td>
+                        <td className="text-right px-2">{fmtNum(r.clicks)}</td>
+                        <td className="text-right px-2">{fmtPct(r.ctr)}</td>
+                        <td className="text-right px-2">{fmtBRL(r.cpc)}</td>
+                        <td className="text-right px-2">{fmtBRL(r.cpm)}</td>
+                        {mostraVendas && (
+                          <>
+                            <td className="text-right px-2">{fmtNum(vendasDaLinha(r)?.vendas ?? null)}</td>
+                            <td className="text-right px-2">{fmtBRL(receitaBrl(vendasDaLinha(r)))}</td>
+                          </>
+                        )}
+                        {mostraVideo && (
+                          <>
+                            <td className="text-right px-2">{fmtPct(r.hookRate)}</td>
+                            <td className="text-right px-2">{fmtPct(r.holdRate)}</td>
+                          </>
+                        )}
+                      </tr>
+                    </tbody>
+                    <tbody id={idDosDias} hidden={!aberta} aria-label={`Dias de ${r.name}`}>
+                      {aberta && (
+                        <DiasDaLinha
+                          colunas={colunas + 1}
+                          mostraPreview={mostraPreview}
+                          mostraVendas={mostraVendas}
+                          mostraVideo={mostraVideo}
+                          // AC5a/AC5b — só a Meta depende da série do `entity-daily`.
+                          estado={
+                            r.platform === "google"
+                              ? { tipo: "pronto" }
+                              : serieQ.isError
+                                ? { tipo: "erro", mensagem: serieQ.error instanceof Error ? serieQ.error.message : String(serieQ.error ?? "Erro desconhecido") }
+                                : !serie
+                                  ? { tipo: "carregando" }
+                                  : { tipo: "pronto" }
+                          }
+                          expansao={r.platform === "google" || serie ? expansaoDe(r) : null}
+                        />
+                      )}
+                    </tbody>
+                  </Fragment>
+                );
+              })
+            )}
             {sorted.length > 0 && (
               <tfoot>
                 {/* Story 42.12 (AC5): o que não cabe numa linha aparece, para o total da Meta fechar. */}
@@ -491,6 +624,13 @@ export function LyrioDetailTable({
           As linhas do Google Ads não aparecem. {avisoGoogle}
         </p>
       )}
+      {/* Story 42.19 (AC2f) — a mídia da série que não casa com nenhuma linha é declarada, não some. */}
+      {semLinhaNaSerie && semLinhaNaSerie.spend > 0.005 && (
+        <p className="text-[11px] text-muted-foreground">
+          Nos dias, {fmtBRL(semLinhaNaSerie.spend)} de investimento da Meta ({semLinhaNaSerie.entidades}{" "}
+          {semLinhaNaSerie.entidades === 1 ? "entidade" : "entidades"} do cache por dia) não casa com nenhuma linha desta tabela — fica em “Sem linha nesta tabela”, fora das expansões.
+        </p>
+      )}
       {/* A ausência é declarada, não silenciosa: sem esta nota a primeira
           pergunta de quem abre a tela é "cadê o ROAS". */}
       {estadoVendas.tipo === "erro" && mostraVendas && (
@@ -506,5 +646,124 @@ export function LyrioDetailTable({
           : "Faturamento, ROAS e CAC por linha dependem de atribuir cada venda do RevenueCat a um anúncio — ver Story 42.6."}
       </p>
     </div>
+  );
+}
+
+type EstadoDosDias = { tipo: "carregando" } | { tipo: "erro"; mensagem: string } | { tipo: "pronto" };
+
+/**
+ * Story 42.19 — as sub-linhas de UMA linha aberta: um dia por linha (AC1a/b),
+ * com as mesmas colunas, e a "Σ dos dias" no fim (AC4a). Subordinadas pelo
+ * fundo e pelo recuo (AC1d); a coluna do nome segue fixa (AC1f).
+ */
+function DiasDaLinha({
+  colunas,
+  mostraPreview,
+  mostraVendas,
+  mostraVideo,
+  estado,
+  expansao,
+}: {
+  colunas: number;
+  mostraPreview: boolean;
+  mostraVendas: boolean;
+  mostraVideo: boolean;
+  estado: EstadoDosDias;
+  expansao: ExpansaoDaLinha | null;
+}) {
+  if (estado.tipo === "erro") {
+    // AC5b — a causa, dentro da expansão; a linha continua.
+    return (
+      <tr className={SUB_LINHA}>
+        <td colSpan={colunas} className="py-2 pl-8 pr-3">
+          <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            Não foi possível carregar os dias desta linha: {estado.mensagem}
+          </p>
+        </td>
+      </tr>
+    );
+  }
+  if (estado.tipo === "carregando" || !expansao) {
+    // AC5a — skeleton DENTRO da expansão; a linha não pisca.
+    return (
+      <tr className={SUB_LINHA}>
+        <td colSpan={colunas} className="py-2 pl-8 pr-3">
+          <div className="space-y-1" aria-label="Carregando os dias">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-5 w-full" />
+            ))}
+          </div>
+        </td>
+      </tr>
+    );
+  }
+  const celulasDeVenda = (venda: { vendas: number } | null, receita: number | null, dica: string | null) =>
+    mostraVendas ? (
+      <>
+        <td className="text-right px-2" title={dica ?? undefined}>{fmtNum(venda ? venda.vendas : null)}</td>
+        <td className="text-right px-2" title={dica ?? undefined}>{fmtBRL(venda ? receita : null)}</td>
+      </>
+    ) : null;
+  const celulasDeVideo = mostraVideo ? (
+    <>
+      <td className="text-right px-2" title={DICA_HOOK_HOLD_DO_DIA}>—</td>
+      <td className="text-right px-2" title={DICA_HOOK_HOLD_DO_DIA}>—</td>
+    </>
+  ) : null;
+  const s = expansao.soma;
+  const d = s.diferenca;
+  return (
+    <>
+      {expansao.dias.map((dia) => {
+        const m = dia.midia;
+        const dica = dia.dicaDaMidia ?? undefined;
+        return (
+          <tr key={dia.dia} className={SUB_LINHA}>
+            <td className="py-1 pr-3" />
+            {mostraPreview && <td className="py-1 pr-2" />}
+            <td className={`py-1 pl-6 pr-3 whitespace-nowrap bg-muted ${NOME_FIXO}`}>
+              {fmtDia(dia.dia)}
+              {dia.emAndamento && (
+                <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300" title={DICA_DIA_EM_ANDAMENTO}>
+                  {DICA_DIA_EM_ANDAMENTO}
+                </span>
+              )}
+            </td>
+            <td className="text-right px-2" title={dica}>{m ? fmtBRL(dia.investimentoExibido) : "—"}</td>
+            <td className="text-right px-2" title={dica}>{m ? fmtNum(m.impressions) : "—"}</td>
+            <td className="text-right px-2" title={dica}>{m ? fmtNum(m.clicks) : "—"}</td>
+            <td className="text-right px-2" title={dica}>{m ? fmtPct(m.ctr) : "—"}</td>
+            <td className="text-right px-2" title={dica}>{m ? fmtBRL(m.cpc) : "—"}</td>
+            <td className="text-right px-2" title={dica}>{m ? fmtBRL(m.cpm) : "—"}</td>
+            {celulasDeVenda(dia.venda, dia.receitaBrlExibida, dia.dicaDaVenda)}
+            {celulasDeVideo}
+          </tr>
+        );
+      })}
+      <tr className={`${SUB_LINHA} border-b-border/30 font-medium text-foreground`}>
+        <td className="py-1.5 pr-3" />
+        {mostraPreview && <td className="py-1.5 pr-2" />}
+        <td className={`py-1.5 pl-6 pr-3 whitespace-nowrap bg-muted ${NOME_FIXO}`} title={s.dicaDaDiferenca ?? undefined}>
+          Σ dos dias
+        </td>
+        <td className="text-right px-2" title={s.dicaDaDiferenca ?? undefined}>
+          {fmtBRL(s.investimentoExibido)}
+          {d && Math.abs(d.spend) > 0.01 && <span className="block text-[10px] text-amber-700 dark:text-amber-400">{fmtDelta(d.spend, true)} vs. linha</span>}
+        </td>
+        <td className="text-right px-2" title={s.dicaDaDiferenca ?? undefined}>
+          {fmtNum(s.midia.impressions)}
+          {d && d.impressions !== 0 && <span className="block text-[10px] text-amber-700 dark:text-amber-400">{fmtDelta(d.impressions, false)} vs. linha</span>}
+        </td>
+        <td className="text-right px-2" title={s.dicaDaDiferenca ?? undefined}>
+          {fmtNum(s.midia.clicks)}
+          {d && d.clicks !== 0 && <span className="block text-[10px] text-amber-700 dark:text-amber-400">{fmtDelta(d.clicks, false)} vs. linha</span>}
+        </td>
+        <td className="text-right px-2">{fmtPct(s.midia.ctr)}</td>
+        <td className="text-right px-2">{fmtBRL(s.midia.cpc)}</td>
+        <td className="text-right px-2">{fmtBRL(s.midia.cpm)}</td>
+        {celulasDeVenda(s.venda, s.receitaBrlExibida, s.dicaDaVenda)}
+        {celulasDeVideo}
+      </tr>
+    </>
   );
 }

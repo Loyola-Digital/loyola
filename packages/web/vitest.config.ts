@@ -56,6 +56,8 @@ export default defineConfig({
       // declara `@vitest-environment jsdom` no topo.
       "components/funnels/__tests__/revenuecat-overview-block.test.tsx",
       "components/funnels/__tests__/lyrio-resumo-cards.test.tsx",
+      // Story 42.19 (AC6d/AC6e) — o fio e a acessibilidade da linha expansível do Detalhamento.
+      "components/funnels/__tests__/lyrio-detail-table-42-19.test.tsx",
     ],
     /**
      * Story 18.80 (gate do @qa) — o fuso do runner é FIXADO no do usuário.

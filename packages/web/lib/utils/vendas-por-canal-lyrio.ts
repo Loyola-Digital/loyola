@@ -31,6 +31,20 @@ export interface EntidadeMeta extends ContagemDeVendas {
   nome: string | null;
 }
 
+/**
+ * Story 42.19 (AC3a) — um dia de uma entidade da Meta: a MESMA chave de
+ * `EntidadeMeta`, o dia de SP da venda. Por entidade, `vendas` e `receitaUsd`
+ * dos dias somam a linha de `metaPorEntidade`; `compradores` é quem pagou
+ * naquele dia (não soma a linha).
+ */
+export interface DiaDaEntidadeMeta {
+  chave: string | null;
+  dia: string;
+  vendas: number;
+  compradores: number;
+  receitaUsd: number;
+}
+
 /** Espelha `GET …/revenuecat/vendas-por-canal` (`routes/revenuecat.ts`). Só contagens — nenhum id de usuário. */
 export interface VendasPorCanalDoLyrio {
   days: number;
@@ -42,6 +56,8 @@ export interface VendasPorCanalDoLyrio {
   conflito: ContagemDeVendas;
   totalPago: ContagemDeVendas;
   metaPorEntidade: { campaign: EntidadeMeta[]; adset: EntidadeMeta[]; ad: EntidadeMeta[] };
+  /** Story 42.19 (API v62): a mesma quebra por dia de SP. Ausente com a API anterior → "—" nas vendas dos dias. */
+  metaPorEntidadeDiario?: { campaign: DiaDaEntidadeMeta[]; adset: DiaDaEntidadeMeta[]; ad: DiaDaEntidadeMeta[] };
   /** O que o card "Vendas" de `/sales` conta e a quebra não conta. */
   foraDaQuebra: { semValor: number; semUsuario: number };
 }
