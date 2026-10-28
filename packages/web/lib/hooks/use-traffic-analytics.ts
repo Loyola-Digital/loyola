@@ -540,6 +540,14 @@ export interface AdLinkUrlsResponse {
     | "cooldown"
     | "sem_conta_meta"
     | "token_invalido";
+  /**
+   * Story 18.99 (contrato 60) — status atual de cada anúncio na Meta, só dos
+   * que têm status no cache (`ACTIVE` → active, o resto → paused). Ausente =
+   * API anterior → a coluna Status do perpétuo mostra "—".
+   */
+  statusByAdId?: Record<string, "active" | "paused">;
+  /** Story 18.99 — nome da campanha de cada anúncio, para o tooltip. */
+  campanhaByAdId?: Record<string, string>;
 }
 
 /**
@@ -593,6 +601,15 @@ export function useAdLinkUrls(projectId: string | null, adIds: string[]) {
           missingFromCache: respostas.flatMap((r) => r.missingFromCache),
           staleInCache: todasInformaramStale
             ? respostas.flatMap((r) => r.staleInCache ?? [])
+            : undefined,
+          // Story 18.99 (AC6): a mesma regra do `staleInCache`. Um lote sem o
+          // campo (API anterior) torna o conjunto desconhecido, e a coluna
+          // mostra "—" em vez de "Pausado" para os anúncios desse lote.
+          statusByAdId: respostas.every((r) => r.statusByAdId !== undefined)
+            ? (Object.assign({}, ...respostas.map((r) => r.statusByAdId)) as Record<string, "active" | "paused">)
+            : undefined,
+          campanhaByAdId: respostas.every((r) => r.campanhaByAdId !== undefined)
+            ? (Object.assign({}, ...respostas.map((r) => r.campanhaByAdId)) as Record<string, string>)
             : undefined,
         } satisfies AdLinkUrlsResponse,
         isLoading,

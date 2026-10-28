@@ -43,6 +43,16 @@ export interface LpAdInput {
   sales?: number | null;
 }
 
+/**
+ * Story 18.99 — o que a API (`/ad-link-urls`, contrato 60) diz de cada
+ * anúncio para a coluna Status. Só os anúncios com status no cache estão em
+ * `statusByAdId`: ausência é "desconhecido", nunca "pausado".
+ */
+export interface StatusDosAnuncios {
+  statusByAdId: Record<string, "active" | "paused">;
+  campanhaByAdId?: Record<string, string>;
+}
+
 export type LpRow = DetailMetricsOutput & {
   key: string;
   url: string | null;
@@ -76,6 +86,18 @@ export type LpRow = DetailMetricsOutput & {
   txConvMidiaPaga: number | null;
   /** Story 18.91 (AC11/P18): as mesmas vendas ÷ usuários únicos da LP — ou o motivo. */
   txConvConsolidada: TxConvConsolidada;
+  /**
+   * Story 18.99 (AC2) — a regra da 18.97: "active" se ≥ 1 anúncio da linha está
+   * ACTIVE; "paused" se há status conhecido e nenhum ativo; "unknown" se nenhum
+   * anúncio tem status. `undefined` = a API não informou (anterior ao
+   * contrato 60). Os dois últimos viram "—" na tela.
+   */
+  status?: "active" | "paused" | "unknown";
+  /**
+   * Story 18.99 (AC3) — campanhas distintas dos anúncios ativos, para o tooltip.
+   * Anúncio ativo sem campanha conhecida entra como "" (conta, sem nome).
+   */
+  campanhasAtivas?: string[];
 };
 
 /**
@@ -108,6 +130,11 @@ export function buildLpRows(
    * tem ação, ou seja, a que encerra a investigação.
    */
   staleInCache?: string[],
+  /**
+   * Story 18.99: status e campanha por ad_id. `undefined` = a API não
+   * informou → nenhuma linha ganha status (a coluna mostra "—").
+   */
+  statusDosAnuncios?: StatusDosAnuncios,
 ): LpRow[] {
   if (!ads.length) return [];
   const missing = new Set(missingFromCache);
@@ -121,6 +148,7 @@ export function buildLpRows(
     revenue: number; sales: number;
     semLinkNaMeta: number; foraDoCache: number;
     cacheDesatualizado: number; causaIndeterminada: number;
+    ativos: number; comStatus: number; campanhasAtivas: Set<string>;
   };
   const groups = new Map<string, Acc>();
 
@@ -135,6 +163,7 @@ export function buildLpRows(
       key: bucket, url: key ? raw : null,
       spend: 0, impressions: 0, clicks: 0, linkClicks: 0, lpViews: 0, revenue: 0, sales: 0,
       semLinkNaMeta: 0, foraDoCache: 0, cacheDesatualizado: 0, causaIndeterminada: 0,
+      ativos: 0, comStatus: 0, campanhasAtivas: new Set<string>(),
     };
     acc.spend += ad.spend;
     acc.impressions += ad.impressions;
@@ -143,6 +172,16 @@ export function buildLpRows(
     acc.lpViews = ad.lpViews == null || acc.lpViews === null ? null : acc.lpViews + ad.lpViews;
     acc.revenue += ad.revenue ?? 0;
     acc.sales += ad.sales ?? 0;
+    // Story 18.99 (AC2): o status sai dos MESMOS anúncios cujo gasto entra na
+    // linha, já cortados pelo filtro de público. `campaignId` carrega o ad_id.
+    const status = statusDosAnuncios?.statusByAdId[ad.campaignId];
+    if (status) {
+      acc.comStatus += 1;
+      if (status === "active") {
+        acc.ativos += 1;
+        acc.campanhasAtivas.add(statusDosAnuncios?.campanhaByAdId?.[ad.campaignId] ?? "");
+      }
+    }
     if (!key) {
       // Ordem importa: fora do cache é a causa mais forte (não há linha), e
       // cache velho tem precedência sobre "a Meta não tem" — afirmar ausência
@@ -170,6 +209,12 @@ export function buildLpRows(
     // (atribuídas ao anúncio, P13); na Consolidada só o denominador muda (P18).
     txConvMidiaPaga: g.lpViews === null ? null : txConvMidiaPaga(g.sales, g.lpViews),
     txConvConsolidada: txConvConsolidada(g.sales, { motivo: "pendente" }),
+    ...(statusDosAnuncios
+      ? {
+          status: g.ativos > 0 ? "active" as const : g.comStatus > 0 ? "paused" as const : "unknown" as const,
+          campanhasAtivas: [...g.campanhasAtivas],
+        }
+      : {}),
     // AC4: mesma aritmética do Detalhamento, via a MESMA função. Taxas são
     // re-derivadas dos somatórios da linha, jamais média das taxas dos
     // anúncios — média de médias foi bug antes e daria número errado calado.
@@ -193,13 +238,17 @@ export function buildLpRows(
  */
 export function sortLpRows(
   rows: LpRow[],
-  col: "lp" | "spend" | "revenue" | "margin" | "marginPct" | "sales" | "cac" | "roas",
+  col: "lp" | "status" | "spend" | "revenue" | "margin" | "marginPct" | "sales" | "cac" | "roas",
   dir: "asc" | "desc",
 ): LpRow[] {
   const num = (v: number | null | undefined) => (v == null ? Number.NEGATIVE_INFINITY : v);
   const key = (r: LpRow): number | string => {
     switch (col) {
       case "lp": return r.key;
+      // Story 18.99 (AC4): Ativo → Pausado → "—", o rank da 18.61/18.97. O "—"
+      // é 0, não -Infinity: muitas linhas sem status dariam -Inf - -Inf = NaN
+      // no comparador, e o sort com NaN não tem ordem definida.
+      case "status": return r.status === "active" ? 2 : r.status === "paused" ? 1 : 0;
       case "spend": return r.spend;
       case "revenue": return r.revenue;
       case "margin": return r.margin;

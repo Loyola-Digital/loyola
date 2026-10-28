@@ -278,7 +278,7 @@ const RANK_DO_STATUS = { active: 2, paused: 1 } as const;
  * - `effective_status` vem do backfill diário de madrugada
  *   (`meta-names-scheduler.ts`), não do minuto.
  */
-function StatusDaLp({ status, campanhasAtivas }: { status?: "active" | "paused" | "unknown"; campanhasAtivas?: string[] }) {
+export function StatusDaLp({ status, campanhasAtivas }: { status?: "active" | "paused" | "unknown"; campanhasAtivas?: string[] }) {
   if (status !== "active" && status !== "paused") {
     return <span className="text-muted-foreground">—</span>;
   }

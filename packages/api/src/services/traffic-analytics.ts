@@ -4,6 +4,7 @@ import {
   metaAdsAccounts,
   metaAdsAccountProjects,
   metaAdCreativesCache,
+  metaAdInsightsDaily,
 } from "../db/schema.js";
 import {
   fetchCampaignInsights,
@@ -36,6 +37,7 @@ import {
   getPlacementBreakdownFromDb,
   // Story 43.9 — insights por anúncio também saem do banco.
   getAdInsightsFromDb,
+  getAdEffectiveStatusFromDb,
 } from "./meta-db-source.js";
 import { singleFlight } from "../utils/single-flight.js";
 import { classificarPelaCascata, type TemperaturaDePublico } from "../utils/temperatura-de-publico.js";
@@ -1419,4 +1421,58 @@ export async function getPlacementBreakdown(
 
   setCache(cacheKey, result);
   return result;
+}
+
+// ============================================================
+// Story 18.99 — status e campanha de cada anúncio, para a coluna Status do
+// "Desempenho por LP" do perpétuo (a mesma regra da 18.97 nos lançamentos).
+// ============================================================
+
+/** Status do anúncio já traduzido pela regra da 18.61: só `ACTIVE` é ativo. */
+export type StatusDoAnuncioNaLp = "active" | "paused";
+
+export interface StatusECampanhaDosAnuncios {
+  /** Só os anúncios com status no cache. Ausente = desconhecido ("—"), nunca "Pausado". */
+  statusByAdId: Record<string, StatusDoAnuncioNaLp>;
+  /** Nome da campanha de cada anúncio, para o tooltip "Ativo em N campanha(s)". */
+  campanhaByAdId: Record<string, string>;
+}
+
+/**
+ * Lê só do Postgres, nunca da Meta (regra batch+cache): o status vem do
+ * `meta_entity_names_cache` (backfill de nomes, de madrugada) e a campanha, de
+ * `meta_ad_insights_daily`, a mesma tabela de onde saem as linhas da tabela de
+ * LP (`/entity-daily`). Por isso todo anúncio da tabela tem campanha.
+ *
+ * Campanha renomeada pode trazer dois nomes para o mesmo anúncio: fica o
+ * primeiro. Só muda o texto do tooltip, nunca o status.
+ */
+export async function statusECampanhaDosAnuncios(
+  db: Database,
+  projectId: string,
+  adIds: string[],
+): Promise<StatusECampanhaDosAnuncios> {
+  const ids = [...new Set(adIds.filter(Boolean))];
+  if (ids.length === 0) return { statusByAdId: {}, campanhaByAdId: {} };
+
+  const [status, campanhas] = await Promise.all([
+    getAdEffectiveStatusFromDb(db, projectId, ids),
+    db
+      .selectDistinct({
+        adId: metaAdInsightsDaily.adId,
+        campaignName: metaAdInsightsDaily.campaignName,
+      })
+      .from(metaAdInsightsDaily)
+      .where(and(eq(metaAdInsightsDaily.projectId, projectId), inArray(metaAdInsightsDaily.adId, ids))),
+  ]);
+
+  const statusByAdId: Record<string, StatusDoAnuncioNaLp> = {};
+  for (const [adId, efetivo] of status) {
+    statusByAdId[adId] = efetivo === "ACTIVE" ? "active" : "paused";
+  }
+  const campanhaByAdId: Record<string, string> = {};
+  for (const r of campanhas) {
+    if (r.campaignName && !(r.adId in campanhaByAdId)) campanhaByAdId[r.adId] = r.campaignName;
+  }
+  return { statusByAdId, campanhaByAdId };
 }

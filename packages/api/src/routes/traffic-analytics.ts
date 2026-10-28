@@ -14,6 +14,7 @@ import {
   getPlacementBreakdown,
   invalidateProjectCache,
   makeAdCreativeCacheAdapter,
+  statusECampanhaDosAnuncios,
   type TopPerformerMetric,
 } from "../services/traffic-analytics.js";
 import { upsertAdCreatives } from "../services/meta-insights-cache.js";
@@ -922,6 +923,14 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
         missingFromCache,
       );
 
+      // Story 18.99 (AC5): status e campanha de cada anúncio, para a coluna
+      // Status do "Desempenho por LP" do perpétuo. Só Postgres, nunca a Meta.
+      const { statusByAdId, campanhaByAdId } = await statusECampanhaDosAnuncios(
+        fastify.db,
+        paramResult.data.projectId,
+        adIds,
+      );
+
       return {
         linkUrls,
         requested: adIds.length,
@@ -939,6 +948,9 @@ export default fp(async function trafficAnalyticsRoutes(fastify) {
         // precisa olhar isso".
         refreshAgendado: refresh.agendados,
         refreshMotivo: refresh.motivo,
+        // Story 18.99 (AC5, contrato 60). Aditivos: consumidor antigo ignora.
+        statusByAdId,
+        campanhaByAdId,
       };
     },
   );

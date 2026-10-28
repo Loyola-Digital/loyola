@@ -687,4 +687,13 @@
 // `iniciou`/`iniciouTeste` da linha da Jornada. Só contagens e ids de produto —
 // nenhum `app_user_id`. Campo aditivo: com a API antiga a tabela por produto
 // não aparece e a de canal continua. `packages/mcp` não é afetado.
-export const API_CONTRACT_VERSION = 60;
+//
+// v61 (Story 18.99 — coluna Status no "Desempenho por LP" do perpétuo. Era v60
+// na branch; renumerada no rebase, porque a 42.18 levou a v60 no merge):
+// `GET …/ad-link-urls` ganha `statusByAdId` (ad_id → "active" | "paused", só
+// os anúncios com status no cache; `ACTIVE` → active, o resto → paused, regra
+// da 18.61) e `campanhaByAdId` (ad_id → { campaignId, nome }, da linha mais
+// recente de `meta_ad_insights_daily`). Só Postgres, sem chamada à Meta.
+// Aditivos: com a API antiga a coluna mostra "—" em todas as linhas.
+// `packages/mcp` não é afetado.
+export const API_CONTRACT_VERSION = 61;
