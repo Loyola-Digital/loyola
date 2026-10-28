@@ -29,24 +29,44 @@ const META_MAX_BACKOFF_MS = 60_000;
  * Hardcoded em SP porque Loyola atende só clientes brasileiros. Se um dia
  * precisar generalizar, vira coluna em meta_ads_accounts.
  */
-const ACCOUNT_TIMEZONE = "America/Sao_Paulo";
+export const ACCOUNT_TIMEZONE = "America/Sao_Paulo";
 
 // ============================================================
 // DATE HELPERS
 // ============================================================
 
+// Story 18.98 (QA PERF-001): criar um Intl.DateTimeFormat custa ~30µs. O TTL
+// do cache chama `todayInTimezone` uma vez por linha (milhares num perpétuo),
+// então o formatador é criado uma vez por fuso e reaproveitado.
+const formatadoresDeDia = new Map<string, Intl.DateTimeFormat>();
+
+function formatadorDeDia(timezone: string): Intl.DateTimeFormat {
+  let f = formatadoresDeDia.get(timezone);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    formatadoresDeDia.set(timezone, f);
+  }
+  return f;
+}
+
 /**
  * Retorna a data atual no formato YYYY-MM-DD no timezone passado.
  * Usa Intl.DateTimeFormat com `en-CA` (que já produz YYYY-MM-DD) pra evitar
  * parsing manual.
+ *
+ * Story 18.98: `now` opcional para quem já recebe o instante (o TTL do cache
+ * de insights) — o dia sai DESSE instante, não do relógio do sistema.
  */
-export function todayInTimezone(timezone: string = ACCOUNT_TIMEZONE): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+export function todayInTimezone(
+  timezone: string = ACCOUNT_TIMEZONE,
+  now: Date = new Date(),
+): string {
+  return formatadorDeDia(timezone).format(now);
 }
 
 /**
