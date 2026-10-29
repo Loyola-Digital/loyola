@@ -13,6 +13,7 @@ import {
   useCampaignDailyInsightsBulk,
 } from "@/lib/hooks/use-traffic-analytics";
 import type { Funnel } from "@loyola-x/shared";
+import { passaNoRecorteDasCampanhas } from "@loyola-x/shared/src/utm-value";
 import { filterSheetRowsByDays } from "@/lib/utils/spreadsheet-filters";
 import {
   aggregateMetaDailyByDate,
@@ -188,31 +189,49 @@ export function useCrossedFunnelMetrics(
     return spreadsheetsData.spreadsheets.find((s) => s.type === "sales" || s.type === "custom") ?? null;
   }, [spreadsheetsData]);
 
-  const campaignNames = useMemo(
-    () => funnel.campaigns.map((c) => c.name),
-    [funnel.campaigns],
-  );
-
   // Story 18.100 (AC4b, P-6 (y) do gestor): as planilhas `leads` são lidas SEM
-  // `campaignName` — a vinculação da planilha à etapa já é o recorte. O filtro
-  // de campanha fica só no fallback (etapa sem `leads`) e na de vendas, abaixo,
-  // como hoje.
+  // recorte de campanha — a vinculação da planilha à etapa já é o recorte.
   const leadsDaEtapa = useDadosDasPlanilhasDeLeads(
     projectId,
     funnel.id,
     semPlanilhaDeLeads ? [] : planilhasDosLeads,
   );
-  const { data: fallbackData, isLoading: fallbackLoading } = useFunnelSpreadsheetData(
+
+  // Story 18.101 (AC2): o fallback (etapa sem `leads`) e a de vendas são lidos
+  // SEM `campaignName` — a mesma chamada, com a mesma chave, de qualquer outro
+  // leitor da planilha. O recorte pelas campanhas da etapa é feito aqui, em
+  // memória, antes de `filterSheetRowsByDays` e dos agregadores (AC1, AC5c): só
+  // sai a linha cujo `utm_campaign` é id de OUTRA campanha.
+  const { data: fallbackBruto, isLoading: fallbackLoading } = useFunnelSpreadsheetData(
     projectId,
     funnel.id,
     semPlanilhaDeLeads ? planilhasDosLeads[0].id : undefined,
-    campaignNames,
+  );
+  const fallbackData = useMemo(
+    () =>
+      fallbackBruto && {
+        ...fallbackBruto,
+        rows: fallbackBruto.rows.filter((r) =>
+          passaNoRecorteDasCampanhas(r.named.utm_campaign, funnel.campaigns),
+        ),
+      },
+    [fallbackBruto, funnel.campaigns],
   );
   const sheetData = semPlanilhaDeLeads ? fallbackData : leadsDaEtapa.data;
   const sheetDataLoading = semPlanilhaDeLeads ? fallbackLoading : leadsDaEtapa.isLoading;
 
-  const { data: salesSheetData, isLoading: salesSheetDataLoading } =
-    useFunnelSpreadsheetData(projectId, funnel.id, salesSheet?.id, campaignNames);
+  const { data: salesBruto, isLoading: salesSheetDataLoading } =
+    useFunnelSpreadsheetData(projectId, funnel.id, salesSheet?.id);
+  const salesSheetData = useMemo(
+    () =>
+      salesBruto && {
+        ...salesBruto,
+        rows: salesBruto.rows.filter((r) =>
+          passaNoRecorteDasCampanhas(r.named.utm_campaign, funnel.campaigns),
+        ),
+      },
+    [salesBruto, funnel.campaigns],
+  );
 
   // LP sem formulário (a LPB do FZM3): a planilha não tem os leads dela, então
   // o Lead do pixel das campanhas dessa LP entra como lead pago do dia. Ver as

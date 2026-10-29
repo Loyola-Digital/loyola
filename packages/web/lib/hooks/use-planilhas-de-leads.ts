@@ -4,11 +4,12 @@
  *
  * `useFunnelSpreadsheetData` lê UMA planilha, e hook não entra em laço. Aqui a
  * leitura é por `useQueries`, com a MESMA chave e a MESMA URL que
- * `useFunnelSpreadsheetData` usa sem filtro de campanha
- * (`["funnel-spreadsheets", projectId, funnelId, id, "data"]`), para dividir o
- * cache com os leitores de hoje. `use-funnel-spreadsheets.ts` não muda nesta
- * story: o filtro e a chave dele são da Story 18.101. O teste de fio
- * `planilhas-de-leads-fio.test.ts` confere que as duas chaves seguem iguais.
+ * `useFunnelSpreadsheetData` (`["funnel-spreadsheets", projectId, funnelId, id,
+ * "data"]`), para dividir o cache com os outros leitores. Desde a Story 18.101
+ * (AC2), `useFunnelSpreadsheetData` nunca manda `campaignName`: toda leitura da
+ * planilha é a planilha inteira, e o recorte de campanha (só na de vendas e no
+ * fallback do hook de métricas cruzadas) é feito em memória. O teste de fio
+ * `planilhas-de-leads-fio-18100.test.ts` confere que as duas chaves seguem iguais.
  *
  * Para as abas CRUAS (ponto 4), a chave é a de `useSheetData`
  * (`["google-sheets-data", spreadsheetId, sheetName]`), no mesmo padrão que

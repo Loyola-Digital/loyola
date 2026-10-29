@@ -50,11 +50,16 @@ describe("Story 18.100 — ponto 1: a planilha de leads sem filtro de campanha (
     expect(leads).toMatch(/semPlanilhaDeLeads \? \[\] : planilhasDosLeads/);
   });
 
-  it("o fallback (etapa sem `leads`) e a de vendas continuam com `campaignNames`", () => {
+  // Story 18.101 (AC2): este era o fio que a 18.100 deixou para a 18.101 — as
+  // duas chamadas tinham `campaignNames`. Invertido: nenhuma das duas manda
+  // filtro ao servidor; o recorte é em memória (ver `recorte-de-campanha-18101`).
+  it("o fallback (etapa sem `leads`) e a de vendas são lidos SEM `campaignNames` (Story 18.101, AC2)", () => {
     const primeira = chamada(ponto1, "useFunnelSpreadsheetData");
-    expect(primeira).toMatch(/semPlanilhaDeLeads \? planilhasDosLeads\[0\]\.id : undefined,\s*campaignNames,/);
+    expect(primeira).toMatch(/semPlanilhaDeLeads \? planilhasDosLeads\[0\]\.id : undefined,\s*\);/);
+    expect(primeira).not.toMatch(/campaignNames|campaignName/);
     const segunda = chamada(ponto1, "useFunnelSpreadsheetData", ponto1.indexOf(primeira) + primeira.length);
-    expect(segunda).toMatch(/salesSheet\?\.id, campaignNames/);
+    expect(segunda).toMatch(/useFunnelSpreadsheetData\(projectId, funnel\.id, salesSheet\?\.id\);/);
+    expect(segunda).not.toMatch(/campaignNames|campaignName/);
   });
 
   it("o card lê a união; o fallback só quando não há `leads`", () => {
