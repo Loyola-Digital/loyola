@@ -33,6 +33,7 @@ import {
 } from "@/lib/utils/ordem-do-dia";
 import { fmtCurrency, fmtInt, fmtPercent } from "@/lib/utils/format-number";
 import { renderConnectRate } from "./crossed-funnel-daily-table";
+import { EventosDoDia, useEventosDoDia } from "./eventos-do-dia";
 
 interface SalesDailyTableProps {
   projectId: string;
@@ -97,6 +98,11 @@ export function SalesDailyTable({ projectId, funnelId, stageId, campaignIds, day
     [meta.data, temCampanha, vendas, ordem],
   );
 
+  // Os ícones do Log de Campanha ao lado da data — a mesma leitura do perpétuo
+  // e do lançamento: "por que este dia foi diferente?". `days` já é a janela
+  // das linhas, então não há o que derivar.
+  const eventosPorDia = useEventosDoDia(projectId, funnelId, days);
+
   const carregando = (temCampanha && meta.isLoading) || mainSales.isLoading || salesSales.isLoading;
 
   if (carregando) return <Skeleton className="h-40" />;
@@ -142,7 +148,10 @@ export function SalesDailyTable({ projectId, funnelId, stageId, campaignIds, day
           <TableBody>
             {dados.dias.map((r) => (
               <TableRow key={r.date}>
-                <TableCell className="sticky left-0 bg-background z-10 whitespace-nowrap">{fmtDia(r.date)}</TableCell>
+                <TableCell className="sticky left-0 bg-background z-10 whitespace-nowrap">
+                  {fmtDia(r.date)}
+                  <EventosDoDia entradas={eventosPorDia.get(r.date)} dia={r.date} />
+                </TableCell>
                 {celulas(r)}
               </TableRow>
             ))}

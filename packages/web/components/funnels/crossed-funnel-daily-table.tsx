@@ -30,11 +30,10 @@ import {
   useSalvarMarcaDoDia,
   useUpdateFunnelBatchTurn,
 } from "@/lib/hooks/use-funnel-batch-turns";
-import { useCampaignLog } from "@/lib/hooks/use-campaign-log";
 import { useSendflowSummary } from "@/lib/hooks/use-sendflow";
 import { montarDiario } from "@/lib/utils/sendflow-diario";
 import { ArrowDown, ArrowUp, Send, StickyNote, Users } from "lucide-react";
-import { EventosDoDia, agruparPorDia } from "./eventos-do-dia";
+import { EventosDoDia, diasParaCobrir, useEventosDoDia } from "./eventos-do-dia";
 import { fmtInt as fmtIntCompartilhado } from "@/lib/utils/format-number";
 import {
   ORDEM_DO_DIA_PADRAO,
@@ -297,21 +296,6 @@ interface ContextMenuState {
  * Usado no LaunchDashboard (Story 18.3). Dados vêm do hook
  * `useCrossedFunnelMetrics` (Story 18.2/18.3).
  */
-/**
- * Quantos dias o log precisa cobrir para alcançar a linha mais antiga da tabela.
- *
- * Pedir sempre 90 traria dados demais num período curto e de menos num longo —
- * e o filtro da API é em dias, não em intervalo.
- */
-function diasParaCobrir(datas: string[]): number {
-  const isos = datas.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
-  if (isos.length === 0) return 30;
-  const maisAntiga = Date.parse(`${isos[0]}T00:00:00`);
-  if (!Number.isFinite(maisAntiga)) return 30;
-  const dias = Math.ceil((Date.now() - maisAntiga) / 86_400_000) + 1;
-  return Math.min(365, Math.max(7, dias));
-}
-
 export function CrossedFunnelDailyTable({
   rows,
   totals,
@@ -478,15 +462,7 @@ export function CrossedFunnelDailyTable({
   const updateTurn = useUpdateFunnelBatchTurn(projectId ?? "", funnelId ?? "");
 
   // Os ícones ao lado da data: o que o Log de Campanha registrou naquele dia.
-  // Agrupado uma vez para a tabela toda — filtrar a lista dentro de cada linha
-  // seria trabalho quadrático à toa.
-  const diasDoLog = useMemo(
-    () => diasParaCobrir(rows.map((r) => r.date)),
-    [rows],
-  );
-  const logQuery = useCampaignLog(projectId ?? null, funnelId ?? null, {
-    days: diasDoLog,
-  });
+  const eventosPorDia = useEventosDoDia(projectId, funnelId, diasParaCobrir(rows.map((r) => r.date)));
 
   /*
    * Movimento de grupo por dia, do SendFlow.
@@ -513,10 +489,6 @@ export function CrossedFunnelDailyTable({
       ]),
     );
   }, [grupoQuery.data]);
-  const eventosPorDia = useMemo(
-    () => agruparPorDia(logQuery.data?.entries),
-    [logQuery.data],
-  );
   const deleteTurn = useDeleteFunnelBatchTurn(projectId ?? "", funnelId ?? "");
 
   // Story 18.82: ordenação pela coluna Dia. Padrão "desc" = dia mais recente

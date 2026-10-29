@@ -34,9 +34,12 @@ import {
   type OrdemDoDia,
 } from "@/lib/utils/ordem-do-dia";
 import { fmtCurrency, fmtInt, fmtPercent } from "@/lib/utils/format-number";
+import { EventosDoDia, diasParaCobrir, useEventosDoDia } from "./eventos-do-dia";
 
 interface ApplicationInvestmentSectionProps {
   projectId: string;
+  /** Só para o Log de Campanha: o registro é por funil, não por etapa. */
+  funnelId: string;
   campaignIds: string[];
   /** A janela da etapa; `null` = "Tudo". */
   dias: number | null;
@@ -89,6 +92,7 @@ function Card({ label, valor, sub }: { label: string; valor: string; sub?: strin
 
 export function ApplicationInvestmentSection({
   projectId,
+  funnelId,
   campaignIds,
   dias,
   dashboard,
@@ -108,6 +112,10 @@ export function ApplicationInvestmentSection({
 
   // AC5: sem campanha, só Data · Aplicações · Aplicações pagas.
   const colunas = useMemo(() => COLUNAS.filter((c) => temCampanha || !c.meta), [temCampanha]);
+
+  // Os ícones do Log de Campanha ao lado da data. Fica ANTES do `return` do
+  // carregando: hook depois de saída condicional muda de ordem entre renders.
+  const eventosPorDia = useEventosDoDia(projectId, funnelId, diasParaCobrir(dados.dias.map((d) => d.date)));
 
   if (temCampanha && meta.isLoading) {
     return (
@@ -209,7 +217,10 @@ export function ApplicationInvestmentSection({
               <TableBody>
                 {dados.dias.map((r) => (
                   <TableRow key={r.date}>
-                    <TableCell className="sticky left-0 bg-background z-10 whitespace-nowrap">{fmtDia(r.date)}</TableCell>
+                    <TableCell className="sticky left-0 bg-background z-10 whitespace-nowrap">
+                      {fmtDia(r.date)}
+                      <EventosDoDia entradas={eventosPorDia.get(r.date)} dia={r.date} />
+                    </TableCell>
                     {celulas(r)}
                   </TableRow>
                 ))}

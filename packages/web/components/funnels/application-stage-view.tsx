@@ -685,6 +685,7 @@ export function ApplicationStageView({
           {/* Story 18.96: investimento, custo por aplicação e "Dados diários". */}
           <ApplicationInvestmentSection
             projectId={projectId}
+            funnelId={funnelId}
             campaignIds={campaignIds}
             dias={dias}
             dashboard={data}

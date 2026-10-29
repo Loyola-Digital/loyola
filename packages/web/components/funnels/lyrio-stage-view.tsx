@@ -45,6 +45,7 @@ import { GoogleAdsCampaignSelector } from "./google-ads-campaign-selector";
 import { useGoogleAdsDailyPorCampanha } from "@/lib/hooks/use-google-ads-analytics";
 import { StageDeleteSection } from "./stage-delete-section";
 import { CampaignLogButton } from "./campaign-log-link";
+import { useEventosDoDia } from "./eventos-do-dia";
 import { LyrioBlocoDoCanal } from "./lyrio-bloco-do-canal";
 import { contaDoGoogle } from "@/lib/utils/lyrio-google-ads";
 import { cardsDoBlocoDoCanal, trafegoDoBlocoDaMeta, trafegoDoBlocoDoGoogle } from "@/lib/utils/cards-do-bloco-lyrio";
@@ -129,6 +130,11 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [stageName, setStageName] = useState("");
   const [days, setDays] = useState(90);
+
+  // Os ícones do Log de Campanha na coluna Dia dos "Dados diários". Vive aqui e
+  // não na tabela para que ela siga sem consulta própria; a janela é a MESMA do
+  // filtro, então não há o que derivar das linhas.
+  const eventosPorDia = useEventosDoDia(projectId, funnelId, days);
   const [apiKey, setApiKey] = useState("");
   const [copied, setCopied] = useState(false);
 
@@ -785,6 +791,7 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
           serieCarregando: pagantesFiltro.tipo === "carregando",
           serieDesconhecida: causaDaSerieDesconhecida(pagantesFiltro),
         }}
+        eventosPorDia={eventosPorDia}
       />
 
       {/* Story 42.16 (AC3) — Meta Ads e Google Ads: o MESMO componente, pelo

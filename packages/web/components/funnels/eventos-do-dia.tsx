@@ -37,7 +37,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { CampaignLogEntry } from "@/lib/hooks/use-campaign-log";
+import { useCampaignLog, type CampaignLogEntry } from "@/lib/hooks/use-campaign-log";
 import { CATEGORIA_EM_DESTAQUE } from "@/lib/campaign-log-options";
 
 type Icone = typeof Megaphone;
@@ -169,6 +169,48 @@ export function agruparPorDia(entries: CampaignLogEntry[] | undefined): Map<stri
     else mapa.set(dia, [e]);
   }
   return mapa;
+}
+
+/** O que aconteceu em cada dia, pronto para a coluna da data. */
+export type EventosPorDia = Map<string, CampaignLogEntry[]>;
+
+/**
+ * Quantos dias o log precisa cobrir para alcançar a linha mais antiga da tabela.
+ *
+ * Pedir sempre 90 traria dados demais num período curto e de menos num longo —
+ * e o filtro da API é em dias, não em intervalo. Para a tela que já conhece a
+ * própria janela (o filtro do cabeçalho), passe o número direto ao hook.
+ */
+export function diasParaCobrir(datas: string[]): number {
+  const isos = datas.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  if (isos.length === 0) return 30;
+  const maisAntiga = Date.parse(`${isos[0]}T00:00:00`);
+  if (!Number.isFinite(maisAntiga)) return 30;
+  const dias = Math.ceil((Date.now() - maisAntiga) / 86_400_000) + 1;
+  return Math.min(365, Math.max(7, dias));
+}
+
+/**
+ * O log do funil agrupado por dia — o insumo de `EventosDoDia`.
+ *
+ * Um hook e não a consulta solta em cada tabela: são cinco tabelas diárias, e
+ * o agrupamento tem de acontecer UMA vez para a tabela toda. Filtrar a lista
+ * inteira dentro de cada linha seria trabalho quadrático à toa.
+ *
+ * Sem projeto ou funil a consulta nem sai (`enabled` do hook) e o mapa vem
+ * vazio — a coluna da data simplesmente não mostra ícone.
+ *
+ * `dias` entra como número justamente para dispensar `useMemo` em quem chama:
+ * a chave da consulta compara o VALOR, então recalcular a janela a cada render
+ * não dispara busca nova.
+ */
+export function useEventosDoDia(
+  projectId: string | null | undefined,
+  funnelId: string | null | undefined,
+  dias: number,
+): EventosPorDia {
+  const log = useCampaignLog(projectId ?? null, funnelId ?? null, { days: dias });
+  return useMemo(() => agruparPorDia(log.data?.entries), [log.data]);
 }
 
 /** Dia ISO (`2026-08-28`) escrito por extenso, para o título do modal. */
