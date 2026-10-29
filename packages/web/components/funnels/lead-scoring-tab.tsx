@@ -138,15 +138,24 @@ export function LeadScoringTab({ projectId, funnelId, stageId }: LeadScoringTabP
 
   const surveys = surveysData?.surveys ?? [];
 
-  // A pesquisa selecionada quando ela é por webhook — é o que decide se o
-  // botão abre a configuração existente ou começa uma nova.
+  const [selectedSurveyId, setSelectedSurveyId] = useState<string>("");
+  const [webhookAberto, setWebhookAberto] = useState(false);
+
+  /**
+   * A pesquisa selecionada quando ela é por webhook — é o que decide se o
+   * botão abre a configuração existente ou começa uma nova.
+   *
+   * Precisa vir DEPOIS do `useState` acima, e não antes: `selectedSurveyId` é
+   * `const`, então lê-lo antes da declaração é TDZ. O `tsc` não pega porque o
+   * acesso está dentro do callback do `find` — que ele assume poder rodar
+   * depois —, e `Array.prototype.find` não chama o callback em array vazio.
+   * Resultado: a aba abria em toda etapa SEM pesquisa cadastrada e quebrava
+   * com "Cannot access 'k' before initialization" exatamente nas que têm.
+   */
   const pesquisaPorWebhook =
     surveys.find((s) => s.id === selectedSurveyId && ehPorWebhook(s)) ??
     surveys.find(ehPorWebhook) ??
     null;
-
-  const [selectedSurveyId, setSelectedSurveyId] = useState<string>("");
-  const [webhookAberto, setWebhookAberto] = useState(false);
   const [jsonText, setJsonText] = useState("");
   /**
    * Visual é o padrão; o JSON fica a um clique.
