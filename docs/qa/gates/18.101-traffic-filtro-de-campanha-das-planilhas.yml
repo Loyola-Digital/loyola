@@ -1,0 +1,104 @@
+schema: 1
+story: '18.101'
+story_title: 'Filtro de campanha da planilha de vendas no hook de métricas cruzadas — o filtro por nome descarta tudo, e o cache compartilhado esconde isso'
+gate: PASS
+status_reason: 'O recorte de campanha saiu do servidor e foi para o web, por uma função pura num módulo folha do shared (`passaNoRecorteDasCampanhas`), que tira só a linha com id de outra campanha. `useFunnelSpreadsheetData` perdeu o parâmetro `campaignNames`, então toda leitura da planilha usa a mesma URL e a mesma chave. Suítes, tsc, lint, `next build`, cinco provas por reversão e o check 8 foram conferidos pelo QA. A queda 43 → 37 e 68 → 64 do AC3 foi aprovada pelo gestor; o AC7 fica para depois do deploy, como a story prevê.'
+reviewer: 'Quinn'
+updated: '2026-10-29T17:50:00Z'
+pr: null
+branch: 'feat/18.101-filtro-de-campanha-das-planilhas (5 commits sobre a origin/main em 5a1a07d1)'
+commits: ['ef508d3c', '2737b882', '84ce5d1c', 'b8012a35', '4308f3a1']
+coderabbit_status: 'SKIPPED (a CLI só roda em WSL/Windows; ambiente macOS, prática desde a 18.54)'
+
+manager_approval:
+  ac: 'AC3'
+  approved_by: 'Danilo (gestor)'
+  date: '2026-10-29'
+  channel: 'sessão do QA gate (repassada pelo agente líder)'
+  approved_changes:
+    - 'dg-pg02 › Downsell Captação (free): hotColdBuyers do hook 43 → 37 (saem 6 vendas com ids de campanhas do funil dg_claude-negocio_perpétuo).'
+    - 'fz-m3-set-26 › Captação Gratuita (free): hotColdBuyers do hook 68 → 64 (saem 4 vendas da campanha 120256355754330273, que não está vinculada a nenhuma etapa).'
+  note: 'As duas etapas são `free`. O donut de compradores só aparece em etapa paga (`ehCaptacaoPaga`), então a tela não mostra esse número.'
+
+top_issues:
+  - id: 'REQ-001'
+    severity: low
+    status: 'aceito como risco documentado'
+    finding: >-
+      Um valor só de dígitos, mesmo curto (por exemplo `2026`), conta como id pelo AC1. Se não for o id de uma
+      campanha da etapa, a linha sai do recorte, e uma tag só numérica seria descartada como se fosse "outra
+      campanha". O caso tem teste próprio (`recorte-de-campanha-18101.test.ts`, "valor só de dígitos é id pelo AC1,
+      mesmo curto") e está registrado no Dev Agent Record. A T0 (i) não achou nenhuma linha assim nas planilhas de vendas.
+    recommendation: >-
+      Aceito sem mudança. A implementação segue o texto do AC1 (id = "só dígitos"). Criar um corte por tamanho
+      seria uma regra que nenhum AC pede (Artigo IV). Os ids da Meta têm 15 a 18 dígitos, mas há ids numéricos de
+      outro tamanho cadastrados no projeto (`52577008819383`, com 14), então qualquer limite seria chute. Se uma
+      tag só numérica aparecer numa planilha de vendas, abrir story com o @po.
+  - id: 'REQ-002'
+    severity: low
+    status: 'aberto (sem bloqueio)'
+    finding: >-
+      O conjunto de ids da etapa vem só de `funnel.campaigns` (Meta), como o AC1 manda. Os
+      `googleAdsCampaigns` da etapa ficam de fora. Se uma planilha de vendas trouxer em `utm_campaign` o id
+      numérico de uma campanha Google Ads da própria etapa, essa linha sai do recorte. Hoje não há caso: a T0 (i)
+      identificou a origem de cada id descartado (campanhas de outro funil, ou id sem cadastro), e o repositório
+      não tem template `{campaignid}` para o Google Ads.
+    recommendation: 'Se vendas vindas do Google Ads com id em `utm_campaign` aparecerem, levar ao @po a inclusão de `googleAdsCampaigns[].id` no conjunto. Pode ser feito como ADAPT da mesma função.'
+  - id: 'MNT-001'
+    severity: low
+    status: 'aberto (cosmético)'
+    finding: >-
+      As cópias recortadas (`salesSheetData` e `fallbackData` em `use-crossed-funnel-metrics.ts`) trocam `rows`,
+      mas mantêm o `totalRows` da planilha inteira. Nenhum leitor do hook usa `totalRows` (conferido por grep), então
+      hoje não há efeito.
+    recommendation: 'Se algum leitor passar a usar `totalRows`, recalcular o valor na cópia.'
+  - id: 'TEST-WEB-INHERITED'
+    severity: low
+    status: 'herdado'
+    finding: 'O vitest do web roda em `node` e não monta hook. A ligação no hook é provada por testes que leem o fonte (padrão do repo, igual ao da 18.100), e a composição recorte → janela → agregador é testada com as funções reais.'
+
+waiver: { active: false }
+
+pending_post_deploy:
+  - 'AC7/T0 (v)/T5: ler no navegador o "Distribuição de Compradores (Hot/Cold)" e o card de vendas da `fz-l2-jun-26 › Captação Paga` antes e depois do deploy, com print na PR (etapa, período e filtro anotados). Esperado: nenhum número muda, porque as 169 linhas da planilha passam na regra (T0 (v)) e a etapa usa `stageBuyers`/`stageSalesData`. É pendência conhecida, não defeito.'
+
+coverage:
+  AC1: 'PASS. `passaNoRecorteDasCampanhas(utmCampaign, campanhas)` em `packages/shared/src/utm-value.ts`, módulo folha sem import. Aplica as regras 1 a 5 na ordem: etapa sem campanhas passa; vazio passa; id por `normalizeNumericId(semPrefixoDeId("utm_campaign", v))` (REUSE) passa só se for da etapa; nome da etapa com `trim` passa; tag e texto passam. Campanha com `id` vazio não entra no conjunto. Reexport no `index.ts`; o web importa por subpath.'
+  AC2: 'PASS. `campaignNames` saiu de `useFunnelSpreadsheetData` (3 parâmetros, URL sem query, chave `dataKey(id)` igual a `chaveDosDadosDaPlanilha`, invalidações `:84`/`:100` sem mudança). As duas chamadas do hook não mandam filtro. O fio da 18.100 (`:53-58`) foi invertido e `:31-37` está intacto. O comentário de `use-planilhas-de-leads.ts` foi atualizado. Único outro chamador, `leads-by-utm-table.tsx:141`, já usava 3 argumentos; nenhum mock em teste usa o 4º.'
+  AC3: 'PASS. A planilha de vendas é recortada em memória antes de `filterSheetRowsByDays` e de `aggregateHotColdByUtmTerm`. Teste com resultado exato (hot 3, cold 2, outros 3; saem exatamente as 2 linhas de id de outra campanha). A T0 traz 43 → 37 e 68 → 64, só por id de outra campanha, e o gestor aprovou as duas quedas em 2026-10-29. As demais etapas ficam 0 → 0; `totalVendas` fica 0 → 0 (defeito à parte, fora do escopo).'
+  AC4: 'PASS. Arquivo novo com 37 testes, mais o fio invertido. O @dev fez as três reversões obrigatórias (13, 7 e 2 vermelhos). O QA refez as três e mais duas (14, 8, 2, 2 e 1 vermelhos) e restaurou os arquivos. O teste da função do shared fica no vitest do web, por subpath, porque o shared não tem runner (opção prevista no AC4).'
+  AC5: 'PASS. (a) As planilhas de leads não são recortadas (teste: exatamente 2 aplicações da regra; nenhum `leadsDaEtapa.data.rows.filter`). (b) Os leitores sem filtro não mudaram de código. (c) O fallback aplica a mesma regra (teste de fio).'
+  AC6: 'PASS. `git diff origin/main..HEAD -- packages/api` está vazio; `contract.ts` sem diff; `API_CONTRACT_VERSION` = 64. A rota `/data` segue aceitando `campaignName`.'
+  AC7: 'PENDENTE. Validação visual depois do deploy (pendência documentada, não defeito).'
+
+quality_checks:
+  code_review: 'OK. A função é pequena, documentada com a tabela de casos e reaproveita `semPrefixoDeId`/`normalizeNumericId`. No hook, o recorte fica em dois `useMemo` que dependem de `funnel.campaigns`. Na página da etapa esse valor é `stage.campaigns`, que vem do React Query e tem referência estável. A regra 3 (nome) ficou explícita mesmo devolvendo o mesmo que a regra 4, decisão registrada para a regra não depender de uma mudança futura na tag. Observações REQ-001, REQ-002 e MNT-001, todas low.'
+  unit_tests: 'OK. Testes da story: 47/47 (37 novos e 10 do fio da 18.100). Web 178 arquivos, 2647/2647 com `--testTimeout=60000`. API 5451/5461 (as 10 falhas são as da linha de base, ver no_regressions).'
+  acceptance_criteria: 'AC1 a AC6 OK. AC7 fica para depois do deploy.'
+  no_regressions: 'OK. As falhas da API são exatamente as 10 conhecidas: funnel-stages-lead-inputs 3, instagram-routes 1, instagram 1, projects 3, schema 2. São os mesmos números da linha de base registrada no gate da 18.100 (5451/5461), e nesta rodada não houve nenhum timeout na API. Nenhum arquivo de `packages/api` está no diff. No web, com o timeout padrão de 5 s, houve 1 falha: `dados-diarios-lyrio.test.ts`, um teste de propriedade com 3.000 receitas que levou 5,17 s. O arquivo não foi tocado e não importa nada do diff, e o mesmo timeout já aparecia nos gates anteriores. Com timeout longo, 2647/2647. Nenhum arquivo tocado pela story estourou o tempo.'
+  performance: 'OK. Continua sendo uma busca por planilha: o hook e o `LeadsByUtmTable` passam a dividir de propósito a mesma entrada de cache. O recorte é O(linhas × campanhas da etapa), com poucas campanhas por etapa e centenas de linhas.'
+  security: 'OK. Nenhuma rota, parâmetro ou consulta nova. A regex `^\d+$` é ancorada e não tem quantificador aninhado (sem risco de ReDoS). Nenhum dado pessoal em log ou teste. A T0 registra só ids de campanha.'
+  documentation: 'OK. Os módulos e o hook têm comentários com referência à story. O Dev Agent Record traz a T0, as reversões, os resultados, as decisões e a limitação. A File List confere com o diff (8 arquivos).'
+  api_contract: 'OK (check 8). Nenhuma rota, parâmetro, campo de resposta ou snapshot novo: `git diff origin/main..HEAD -- packages/api` está vazio e `packages/shared/src/contract.ts` também. `API_CONTRACT_VERSION` = 64 na branch e na `origin/main` `5a1a07d1`. O `dist` do shared, carregado pelo índice no Node puro, exporta `passaNoRecorteDasCampanhas` e a versão 64. Sem bump, como a story declara.'
+
+technical_gates:
+  typecheck: 'OK. `npm run typecheck`: 5/5 tarefas (shared, API, web, mcp).'
+  lint: 'OK. `npm run lint`: 5/5. O web não tem aviso nem erro. A API tem 1 aviso antigo (`lp-campaigns.ts:57`, `no-explicit-any`), fora desta story.'
+  next_build: 'OK. `npm run build` no web (shared build + `next build --turbopack`): compilado em 18,6 s, 43/43 páginas.'
+  rule_19_14: 'OK. `utm-value.ts` não tem nenhum `import` (também coberto por teste). O web importa `@loyola-x/shared/src/utm-value`. A API não tem nenhum import `@loyola-x/shared/src/...` e não usa a função nova; o índice a reexporta.'
+  working_tree: 'Limpo depois das provas por reversão e do build (`git status --short` vazio).'
+
+reversion_proofs_qa:
+  - 'R1: regra de volta para "igual ao nome" (o caminho do id desligado e a tag saindo): 14 vermelhos (5 casos de id da etapa, tag, tag com hífen, `c:abc`, par entre chaves, `2026`, `normalizeNumericId` no id da campanha e os 3 de Hot/Cold).'
+  - 'R2: a tag passa a sair (opção (a)): 8 vermelhos (tag, tag com hífen, `c:abc`, par entre chaves, `2026`/`dg2026` e os 3 de Hot/Cold).'
+  - 'R3: `campaignNames` devolvido à chamada de vendas: 2 vermelhos (o fio invertido da 18.100 e o fio do AC2).'
+  - 'R4 (extra): a planilha de vendas lida sem recorte (`rows: salesBruto.rows`): 2 vermelhos (recorte antes da janela; contagem de 2 aplicações).'
+  - 'R5 (extra): campanha com `id` vazio entrando no conjunto: 1 vermelho (o teste do `id` vazio).'
+  - 'Depois de cada prova, `git checkout --` do arquivo e 47/47 verde; working tree limpo no fim.'
+
+ids_check:
+  g5: 'OK. CREATE só da função do AC1, justificada nas Dev Notes. REUSE de `semPrefixoDeId`, `normalizeNumericId`, `filterSheetRowsByDays` e `aggregateHotColdByUtmTerm`. ADAPT de `useFunnelSpreadsheetData` (perde um parâmetro sem chamador).'
+
+scope:
+  author: 'danilo@bonsaitrafegopago.com.br (restricted)'
+  override: 'Autorização do Lucas registrada na story. Os commits de código (84ce5d1c, b8012a35) levam `[scope-override]`. Os commits de story e de gate estão no escopo (`docs/stories/*traffic*.md`, `docs/qa/`).'
