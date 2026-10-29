@@ -15,7 +15,9 @@ import {
 } from "@/lib/constants/survey-questions";
 import { normalizeAnswer, mostCommonRaw, normalizeEmail, getLast8DigitsPhone, utmContentEfetivo } from "@/lib/utils/normalize-answer";
 import { PAID_SOURCES } from "@/lib/utils/funnel-metrics";
-import { useFunnelSpreadsheets, useFunnelSpreadsheetData } from "@/lib/hooks/use-funnel-spreadsheets";
+import { useFunnelSpreadsheets } from "@/lib/hooks/use-funnel-spreadsheets";
+import { useDadosDasPlanilhasDeLeads } from "@/lib/hooks/use-planilhas-de-leads";
+import { planilhasDeLeadsDaEtapa } from "@/lib/utils/planilhas-de-leads";
 
 // ============================================================
 // Tipos exportados
@@ -247,11 +249,12 @@ export function useSurveyAggregation(
   // Carrega planilha de Leads pra match de respostas → leads
   const { data: spreadsheetsData } = useFunnelSpreadsheets(projectId, funnelId, stageId);
   const spreadsheets = spreadsheetsData?.spreadsheets ?? [];
-  const leadsSpreadsheet = spreadsheets.find((s) => s.type === "leads");
-  const { data: leadsData } = useFunnelSpreadsheetData(
+  // Story 18.100 (AC1/AC2): todas as planilhas `leads` da etapa, unidas. Sem
+  // fallback, como hoje: sem planilha `leads`, nenhuma resposta casa.
+  const { data: leadsData } = useDadosDasPlanilhasDeLeads(
     projectId,
     funnelId,
-    leadsSpreadsheet?.id,
+    planilhasDeLeadsDaEtapa(spreadsheets),
   );
 
   const sheetQueries = useQueries({

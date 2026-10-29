@@ -30,6 +30,8 @@ import {
   useFunnelSpreadsheetData,
 } from "@/lib/hooks/use-funnel-spreadsheets";
 import { useResolveMetaNames } from "@/lib/hooks/use-funnel-adsets-map";
+import { useDadosDasPlanilhasDeLeads } from "@/lib/hooks/use-planilhas-de-leads";
+import { escolherPlanilhasDeLeads } from "@/lib/utils/planilhas-de-leads";
 import { useSurveyBandByContact } from "@/lib/hooks/use-survey-band-by-contact";
 import { filterSheetRowsByDays } from "@/lib/utils/spreadsheet-filters";
 import { normalizeEmail, getLast8DigitsPhone, utmContentEfetivo } from "@/lib/utils/normalize-answer";
@@ -124,10 +126,18 @@ export function LeadsByUtmTable({
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const { data: sheets } = useFunnelSpreadsheets(projectId, funnelId, stageId ?? null);
-  const leadsSheet =
-    sheets?.spreadsheets.find((s) => s.type === "leads") ?? sheets?.spreadsheets[0];
+  // Story 18.100 (AC1/AC2): todas as planilhas `leads` da etapa, unidas (sem
+  // nenhuma, a primeira vinculada, como hoje).
+  const planilhasDosLeads = useMemo(
+    () => escolherPlanilhasDeLeads(sheets?.spreadsheets),
+    [sheets],
+  );
   const salesSheet = sheets?.spreadsheets.find((s) => s.type === "sales" || s.type === "custom");
-  const { data: leadsData, isLoading: leadsLoading } = useFunnelSpreadsheetData(projectId, funnelId, leadsSheet?.id);
+  const { data: leadsData, isLoading: leadsLoading } = useDadosDasPlanilhasDeLeads(
+    projectId,
+    funnelId,
+    planilhasDosLeads,
+  );
   const { data: salesData, isLoading: salesLoading } = useFunnelSpreadsheetData(projectId, funnelId, salesSheet?.id);
   // Story 18.72: a planilha de vendas da etapa vive em `stage_sales_spreadsheets`
   // em 6 das 15 etapas de produção. Sem esta fonte, elas mostravam `0 vendas`

@@ -34,10 +34,7 @@ import {
 // enxerga). O hook reexporta a cascata, mas importar da fonte deixa claro de
 // onde ela vem.
 import { creativePermalink, rotuloDoPermalink } from "@/lib/utils/creative-permalink";
-import {
-  useFunnelSpreadsheets,
-  useFunnelSpreadsheetData,
-} from "@/lib/hooks/use-funnel-spreadsheets";
+import { useFunnelSpreadsheets } from "@/lib/hooks/use-funnel-spreadsheets";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
 import {
   buildFunnelSpendFormula,
@@ -47,7 +44,8 @@ import {
 } from "@/lib/formulas/funnels";
 import type { MetricFormula } from "@/lib/types/metric-formula";
 import { filterSheetRowsByDays } from "@/lib/utils/spreadsheet-filters";
-import { escolherPlanilhaDeLeads } from "@/lib/utils/leads-dos-criativos";
+import { escolherPlanilhasDeLeads } from "@/lib/utils/planilhas-de-leads";
+import { useDadosDasPlanilhasDeLeads } from "@/lib/hooks/use-planilhas-de-leads";
 import { PISO_DE_REPRODUCOES } from "@loyola-x/shared/src/video-camadas";
 import {
   aggregateCreativesByName,
@@ -894,15 +892,16 @@ export function TopCreativesGallery({
 
   const { data: spreadsheetsData } = useFunnelSpreadsheets(projectId, funnelId ?? "", stageId ?? null);
   // Story 18.89: a MESMA escolha da tabela de Desempenho de Criativos — os
-  // leads das duas telas saem da mesma planilha.
-  const linkedSheet = useMemo(
-    () => escolherPlanilhaDeLeads(spreadsheetsData?.spreadsheets),
+  // leads das duas telas saem da mesma planilha. Story 18.100: todas as
+  // planilhas `leads` da etapa, unidas (AC1/AC2).
+  const planilhasDosLeads = useMemo(
+    () => escolherPlanilhasDeLeads(spreadsheetsData?.spreadsheets),
     [spreadsheetsData],
   );
-  const { data: sheetData } = useFunnelSpreadsheetData(
+  const { data: sheetData } = useDadosDasPlanilhasDeLeads(
     projectId,
     funnelId ?? "",
-    linkedSheet?.id,
+    planilhasDosLeads,
   );
 
   /**

@@ -105,12 +105,15 @@ describe("o fio: o hook passa a janela e reconta quando ela muda (PO-05/PO-07)",
 
   it("usa o `days` que recebe (não mais `_days`)", () => {
     expect(hook).not.toMatch(/days: _days/);
-    expect(hook).toMatch(/const colunaDeData = leadsSheet\?\.columnMapping\?\.date;/);
+    // Story 18.100: sem `leads`, a coluna mapeada da de vendas (como antes); com
+    // `leads`, a canônica do layout comum (`date`, só se alguma planilha a mapeia).
+    expect(hook).toMatch(/const colunaDeData = semPlanilhaDeLeads\s*\?\s*salesSheet\?\.columnMapping\?\.date\s*:\s*leadsUnidos\?\.contagem\.colunaDeData;/);
     expect(hook).toMatch(/contarLeadsDaPlanilha\([^)]*\{\s*days,\s*colunaDeData,\s*hoje: hojeNoNavegador\(\),\s*\}\)/);
   });
 
   it("o memo depende de `days` e da coluna de data", () => {
-    // Mutação: deps só `[sheetQuery.data]` → trocar o seletor não reconta.
-    expect(hook).toMatch(/\[sheetQuery\.data, days, colunaDeData\]/);
+    // Mutação: deps só `[planilhaParaContar]` → trocar o seletor não reconta.
+    // (Story 18.100: `sheetQuery.data` virou `planilhaParaContar`, a união.)
+    expect(hook).toMatch(/\[planilhaParaContar, days, colunaDeData\]/);
   });
 });

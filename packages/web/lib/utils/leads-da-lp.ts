@@ -55,6 +55,41 @@ export function lpsDaPlanilha(
 }
 
 /**
+ * Story 18.100 (AC4e, A-6) — a marca, POR LINHA, do lead que veio do Lead Form
+ * da Meta: o texto de LP (`utm_content` + `utm_term`) traz `lpredirect`, que é
+ * o sufixo das campanhas de Lead Form (`…_vencedores-v2_lpredirect`). Nenhum
+ * campo do banco diz que a planilha é de Lead Form, então a marca é o texto.
+ *
+ * O formulário é instantâneo: o lead não passou por página nenhuma. Ele conta
+ * no card, no Top Criativos e na linha `LPR` do modo rótulo, mas não sobe a
+ * linha de URL de uma página (modo URL) nem diz, sozinho, que um funil marca LP.
+ */
+export const MARCA_DO_LEAD_FORM = "lpredirect";
+
+/** O texto de LP (já em minúsculas ou não) é de uma linha do Lead Form? */
+export function ehTextoDoLeadForm(textoDeLp: string): boolean {
+  return textoDeLp.toLowerCase().includes(MARCA_DO_LEAD_FORM);
+}
+
+/**
+ * As LPs da planilha para decidir quem NÃO tem formulário (o pixel).
+ *
+ * É `lpsDaPlanilha`, com uma guarda (AC4e): se as únicas LPs marcadas vêm de
+ * linhas do Lead Form (`lpredirect` → `lpr`), o conjunto conta como vazio. Sem
+ * a guarda, o `lpr` faria um funil que não marca LP nos UTMs parecer que marca,
+ * e toda campanha `lpX` passaria a somar o pixel em cima de leads que já estão
+ * na planilha. Com alguma LP de verdade marcada, o conjunto inteiro vale.
+ */
+export function lpsParaOPixel(
+  rows: { named: { utm_content?: string; utm_term?: string } }[],
+): Set<string> {
+  const deLinhasComPagina = lpsDaPlanilha(
+    rows.filter((r) => !ehTextoDoLeadForm(`${r.named.utm_content ?? ""} ${r.named.utm_term ?? ""}`)),
+  );
+  return deLinhasComPagina.size === 0 ? new Set() : lpsDaPlanilha(rows);
+}
+
+/**
  * Campanhas cuja LP não tem formulário: `lpX` no nome e LP ausente da planilha.
  *
  * Regex ESTRITA no nome da campanha (`-lpb`, `lpb_hot`), pelo mesmo motivo ao

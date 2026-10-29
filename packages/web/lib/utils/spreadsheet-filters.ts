@@ -1,4 +1,5 @@
 import { inicioDaJanela } from "@loyola-x/shared/src/janela-de-dias";
+import { diaDoInstante } from "@loyola-x/shared/src/dia-do-negocio";
 import type { FunnelSpreadsheetData, FunnelSpreadsheetRow } from "@/lib/types/funnel-spreadsheet";
 
 /**
@@ -10,6 +11,11 @@ import type { FunnelSpreadsheetData, FunnelSpreadsheetRow } from "@/lib/types/fu
 export function normaliseDate(raw: string | undefined | null): string | null {
   if (!raw) return null;
   const trimmed = raw.trim();
+  // Story 18.100 (AC5): instante com fuso (`2026-10-28T22:54:52-05:00`, a aba do
+  // Lead Form) vai para o dia de São Paulo, como a API já fazia. O `slice`
+  // abaixo usaria o dia do PRÓPRIO offset. Dia escrito e ISO sem fuso seguem.
+  const diaDeSaoPaulo = diaDoInstante(trimmed);
+  if (diaDeSaoPaulo) return diaDeSaoPaulo;
   if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return trimmed.slice(0, 10);
   const brMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\D|$)/);
   if (brMatch) {

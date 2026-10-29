@@ -4,6 +4,11 @@ import {
   useFunnelSpreadsheetData,
 } from "@/lib/hooks/use-funnel-spreadsheets";
 import { useSurveyAggregation } from "@/lib/hooks/use-survey-aggregation";
+import { useDadosDasPlanilhasDeLeads } from "@/lib/hooks/use-planilhas-de-leads";
+import {
+  ehFallbackSemLeads,
+  escolherPlanilhasDeLeads,
+} from "@/lib/utils/planilhas-de-leads";
 import {
   useCampaignDailyInsightsBulk,
 } from "@/lib/hooks/use-traffic-analytics";
@@ -21,7 +26,7 @@ import {
 } from "@/lib/utils/funnel-metrics";
 import {
   campanhasSemFormulario,
-  lpsDaPlanilha,
+  lpsParaOPixel,
   somarPixelNaPlanilha,
 } from "@/lib/utils/leads-da-lp";
 
@@ -170,14 +175,13 @@ export function useCrossedFunnelMetrics(
   const { data: spreadsheetsData, isLoading: sheetsListLoading } =
     useFunnelSpreadsheets(projectId, funnel.id, stageId ?? null);
 
-  const linkedSheet = useMemo(() => {
-    if (!spreadsheetsData?.spreadsheets) return null;
-    return (
-      spreadsheetsData.spreadsheets.find((s) => s.type === "leads") ??
-      spreadsheetsData.spreadsheets[0] ??
-      null
-    );
-  }, [spreadsheetsData]);
+  // Story 18.100 (AC1/AC2): TODAS as planilhas `leads` da etapa, unidas; sem
+  // nenhuma, a primeira vinculada (fallback de hoje, AC6).
+  const planilhasDosLeads = useMemo(
+    () => escolherPlanilhasDeLeads(spreadsheetsData?.spreadsheets),
+    [spreadsheetsData],
+  );
+  const semPlanilhaDeLeads = ehFallbackSemLeads(planilhasDosLeads);
 
   const salesSheet = useMemo(() => {
     if (!spreadsheetsData?.spreadsheets) return null;
@@ -189,8 +193,23 @@ export function useCrossedFunnelMetrics(
     [funnel.campaigns],
   );
 
-  const { data: sheetData, isLoading: sheetDataLoading } =
-    useFunnelSpreadsheetData(projectId, funnel.id, linkedSheet?.id, campaignNames);
+  // Story 18.100 (AC4b, P-6 (y) do gestor): as planilhas `leads` são lidas SEM
+  // `campaignName` — a vinculação da planilha à etapa já é o recorte. O filtro
+  // de campanha fica só no fallback (etapa sem `leads`) e na de vendas, abaixo,
+  // como hoje.
+  const leadsDaEtapa = useDadosDasPlanilhasDeLeads(
+    projectId,
+    funnel.id,
+    semPlanilhaDeLeads ? [] : planilhasDosLeads,
+  );
+  const { data: fallbackData, isLoading: fallbackLoading } = useFunnelSpreadsheetData(
+    projectId,
+    funnel.id,
+    semPlanilhaDeLeads ? planilhasDosLeads[0].id : undefined,
+    campaignNames,
+  );
+  const sheetData = semPlanilhaDeLeads ? fallbackData : leadsDaEtapa.data;
+  const sheetDataLoading = semPlanilhaDeLeads ? fallbackLoading : leadsDaEtapa.isLoading;
 
   const { data: salesSheetData, isLoading: salesSheetDataLoading } =
     useFunnelSpreadsheetData(projectId, funnel.id, salesSheet?.id, campaignNames);
@@ -201,7 +220,9 @@ export function useCrossedFunnelMetrics(
   const idsSemFormulario = useMemo(
     () =>
       sheetData
-        ? campanhasSemFormulario(funnel.campaigns, lpsDaPlanilha(sheetData.rows))
+        ? // Story 18.100 (AC4e): `lpsParaOPixel` — o `lpr` do Lead Form sozinho não
+          // diz que o funil marca LP; sem LP de verdade, nenhuma campanha soma pixel.
+          campanhasSemFormulario(funnel.campaigns, lpsParaOPixel(sheetData.rows))
         : [],
     [sheetData, funnel.campaigns],
   );
@@ -214,7 +235,7 @@ export function useCrossedFunnelMetrics(
   const { totalResponses, matchedResponses, unmatchedResponses, isLoading: surveyLoading } =
     useSurveyAggregation(projectId, funnel.id, stageId ?? null);
 
-  const hasLinkedSheet = !!linkedSheet;
+  const hasLinkedSheet = planilhasDosLeads.length > 0;
   const isLoading =
     metaLoading || sheetsListLoading || sheetDataLoading || surveyLoading || salesSheetDataLoading || pixelLoading;
 
