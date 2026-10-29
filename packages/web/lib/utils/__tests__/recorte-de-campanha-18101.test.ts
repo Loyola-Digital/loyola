@@ -55,8 +55,13 @@ describe("Story 18.101 — AC1: o recorte tira só a linha de outra campanha", (
     ["par entre chaves da n8n", '{"fzm3-set26","fzm3-set26"}', true],
   ];
 
-  it.each(CASOS)("%s → %s", (_nome, valor, esperado) => {
+  it.each(CASOS)("%s (`%s`) → passa? %s", (_nome, valor, esperado) => {
     expect(passaNoRecorteDasCampanhas(valor, ETAPA)).toBe(esperado);
+  });
+
+  it("valor só de dígitos é id pelo AC1, mesmo curto: sai se não for da etapa (T0: nenhum caso)", () => {
+    expect(passaNoRecorteDasCampanhas("2026", ETAPA)).toBe(false);
+    expect(passaNoRecorteDasCampanhas("dg2026", ETAPA)).toBe(true);
   });
 
   it("`null` vale como ausente: passa", () => {
