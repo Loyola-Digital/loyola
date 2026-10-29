@@ -17,6 +17,13 @@ import { useSheetData } from "@/lib/hooks/use-google-sheets";
 import type { SheetData } from "@/lib/hooks/use-google-sheets";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useFunnelSpreadsheets } from "@/lib/hooks/use-funnel-spreadsheets";
+import { useAbasCruasDasPlanilhas } from "@/lib/hooks/use-planilhas-de-leads";
+import {
+  CAMPOS_DO_PONTO_4,
+  CAMPOS_DOS_NOMES,
+  planilhasDeLeadsDaEtapa,
+  unirAbasCruasDeLeads,
+} from "@/lib/utils/planilhas-de-leads";
 import { utmContentEfetivo } from "@/lib/utils/normalize-answer";
 import { useResolveMetaNames } from "@/lib/hooks/use-funnel-adsets-map";
 import {
@@ -81,6 +88,8 @@ interface CrossReferencedLeads {
   /**
    * Story 18.83 (AC4): leads PAGOS por `ad_id` (`utm_content`), com a
    * temperatura do texto. A tabela de LPs do lançamento soma por URL do anúncio.
+   * Story 18.100 (AC4e, A-6): só os que passaram pela página — sem as linhas do
+   * Lead Form (`lpredirect`); ver `contagem-de-leads.ts`.
    */
   leadsPagosPorAnuncio: Record<string, LeadsPorTemperatura>;
   totalLeads: number;
@@ -113,22 +122,49 @@ export function useCrossReferenceLeads({
   // Gratuita vincula a contagem como `leads` (n8n-leads-lp-cap-grat); a etapa
   // Paga vincula como `sales` (n8n-kiwify-captação — mesma estrutura content +
   // Ad Name, com faturamento extra). Pega o que existir.
-  const leadsSheet =
-    spreadsheetsQuery.data?.spreadsheets?.find((s) => s.type === "leads") ??
-    spreadsheetsQuery.data?.spreadsheets?.find((s) => s.type === "sales");
+  //
+  // Story 18.100 (AC1/AC4d): TODAS as planilhas `leads` da etapa, cada uma pelo
+  // seu `column_mapping`, unidas no layout comum. Sem nenhuma `leads`, a de
+  // `sales`, exatamente como hoje (regra (4) do AC4d).
+  const planilhasDeLeads = useMemo(
+    () => planilhasDeLeadsDaEtapa(spreadsheetsQuery.data?.spreadsheets),
+    [spreadsheetsQuery.data],
+  );
+  const semPlanilhaDeLeads = planilhasDeLeads.length === 0;
   // Story 18.47: a aba que tem content + Ad Name varia por etapa — na Gratuita é
   // a de `leads`; na Paga é a de `sales` (n8n-kiwify-captação, a de leads é popup).
   // Lemos as duas e combinamos o mapa ad_id → Ad Name.
   const salesSheet = spreadsheetsQuery.data?.spreadsheets?.find((s) => s.type === "sales");
 
-  const sheetQuery = useSheetData(
-    leadsSheet?.spreadsheetId ?? null,
-    leadsSheet?.sheetName ?? null,
-  );
+  const leadsSheet = semPlanilhaDeLeads ? salesSheet : planilhasDeLeads[0];
+  const abasDeLeads = useAbasCruasDasPlanilhas(planilhasDeLeads);
   const salesSheetQuery = useSheetData(
     salesSheet?.spreadsheetId ?? null,
     salesSheet?.sheetName ?? null,
   );
+
+  // As abas `leads` unidas: uma vez no layout da CONTAGEM (com a reserva 5/7 de
+  // hoje) e uma no dos NOMES (sem reserva, como a leitura de nomes sempre foi).
+  const idsDasPlanilhas = planilhasDeLeads.map((p) => p.id).join(",");
+  const leadsUnidos = useMemo(() => {
+    if (semPlanilhaDeLeads) return null;
+    if (abasDeLeads.abas.some((a) => !a)) return null;
+    const fontes = planilhasDeLeads.map((p, i) => ({
+      headers: abasDeLeads.abas[i]?.headers ?? [],
+      rows: abasDeLeads.abas[i]?.rows ?? [],
+      columnMapping: p.columnMapping,
+    }));
+    return {
+      contagem: unirAbasCruasDeLeads(fontes, CAMPOS_DO_PONTO_4),
+      nomes: unirAbasCruasDeLeads(fontes, CAMPOS_DOS_NOMES),
+    };
+    // `versao` e os ids resumem as abas e as planilhas.
+  }, [abasDeLeads.versao, idsDasPlanilhas, semPlanilhaDeLeads]);
+
+  // O que o ponto 4 lê: as `leads` unidas, ou — sem `leads` — a aba de vendas
+  // (no fallback de hoje, `leadsSheet` e `salesSheet` eram a MESMA planilha).
+  const planilhaParaContar = semPlanilhaDeLeads ? salesSheetQuery.data : leadsUnidos?.contagem;
+  const planilhaParaNomes = semPlanilhaDeLeads ? salesSheetQuery.data : leadsUnidos?.nomes;
 
   // Story 18.50: processa TODAS as pesquisas vinculadas (não só surveys[0]).
   // Um stage pode vincular mais de uma aba de pesquisa (ex.: "Pesquisa-Captação"
@@ -169,10 +205,10 @@ export function useCrossReferenceLeads({
       }
     };
     for (const d of surveyDatasForIds) collect(d);
-    collect(sheetQuery.data);
+    collect(planilhaParaNomes);
     collect(salesSheetQuery.data);
     return [...ids];
-  }, [surveyIdsKey, sheetQuery.data, salesSheetQuery.data]);
+  }, [surveyIdsKey, planilhaParaNomes, salesSheetQuery.data]);
 
   const { namesMap: metaAdNames } = useResolveMetaNames(projectId, contentAdIds, "ad");
 
@@ -189,9 +225,9 @@ export function useCrossReferenceLeads({
     return {
       ...fromMeta,
       ...extractAdNamesFromSheet(salesSheetQuery.data),
-      ...extractAdNamesFromSheet(sheetQuery.data),
+      ...extractAdNamesFromSheet(planilhaParaNomes),
     };
-  }, [sheetQuery.data, salesSheetQuery.data, metaAdNames]);
+  }, [planilhaParaNomes, salesSheetQuery.data, metaAdNames]);
 
   // Computar cruzamento: coluna 5 = utm_content (adId), coluna 7 = utm_term (lpa/hot/cold/etc).
   // A contagem mora em `lib/utils/contagem-de-leads.ts` — com teste; aqui só
@@ -200,15 +236,19 @@ export function useCrossReferenceLeads({
   // Story 18.85 (AC2/PO-07): a contagem respeita o `days` do seletor, pela
   // coluna de data MAPEADA da planilha (`columnMapping.date`). O memo depende
   // de `days` e da coluna — senão trocar o seletor não reconta.
-  const colunaDeData = leadsSheet?.columnMapping?.date;
+  // Story 18.100: nas `leads` unidas, a coluna de data é a canônica do layout
+  // comum (`date`), presente só se alguma planilha mapeia `date`.
+  const colunaDeData = semPlanilhaDeLeads
+    ? salesSheet?.columnMapping?.date
+    : leadsUnidos?.contagem.colunaDeData;
   const result = useMemo(
     () =>
-      contarLeadsDaPlanilha(sheetQuery.data as unknown as { headers?: string[]; rows?: string[][] }, {
+      contarLeadsDaPlanilha(planilhaParaContar as unknown as { headers?: string[]; rows?: string[][] }, {
         days,
         colunaDeData,
         hoje: hojeNoNavegador(),
       }),
-    [sheetQuery.data, days, colunaDeData],
+    [planilhaParaContar, days, colunaDeData],
   );
 
   // Story 18.47: faixas por Ad Name a partir da aba de PESQUISA.
@@ -268,10 +308,12 @@ export function useCrossReferenceLeads({
   const isLoading =
     surveysQuery.isLoading ||
     spreadsheetsQuery.isLoading ||
-    (leadsSheet ? sheetQuery.isLoading : false) ||
+    (semPlanilhaDeLeads ? false : abasDeLeads.isLoading) ||
     (salesSheet ? salesSheetQuery.isLoading : false) ||
     surveyResults.some((r) => r.isLoading);
-  const error = surveysQuery.error?.message || sheetQuery.error?.message;
+  const error =
+    surveysQuery.error?.message ||
+    (semPlanilhaDeLeads ? salesSheetQuery.error?.message : abasDeLeads.error?.message);
 
   // Story 18.63: diagnóstico do estado das faixas (só client-side data).
   const bandsDiagnostic = useMemo(

@@ -31,6 +31,52 @@
  * caminhos **não** são intercambiáveis: ver a tabela em `index.ts`.
  */
 
+/**
+ * Story 18.100 (AC4a) — o prefixo que a integração do Lead Form da Meta põe na
+ * frente do id, por coluna. A aba `facebook-lead-form` grava `c:120249…` em
+ * `utm_campaign`, `as:120249…` em `utm_medium` e `ag:120249…` em `utm_content`;
+ * a aba do formulário da LP grava o id puro. Sem tirar o prefixo, o lead do
+ * Lead Form não casa com o anúncio, o conjunto nem a campanha.
+ *
+ * A regra é POR COLUNA: um `as:` em `utm_content` não é prefixo de anúncio.
+ */
+const PREFIXO_DE_ID_POR_COLUNA: Readonly<Record<string, string>> = {
+  utm_campaign: "c:",
+  utm_medium: "as:",
+  utm_content: "ag:",
+};
+
+/** O resto que conta como id: dígitos, com o `_` opcional do Sheets na frente. */
+const ID_NUMERICO = /^_?\d+$/;
+
+/**
+ * Story 18.100 (AC4a) — o valor da célula sem o prefixo de id da sua coluna.
+ *
+ * | coluna | entrada | saída |
+ * |---|---|---|
+ * | `utm_campaign` | `c:120249689901480208` | `120249689901480208` |
+ * | `utm_medium` | `as:120249…` | `120249…` |
+ * | `utm_content` | `ag:120249…` | `120249…` |
+ * | `utm_content` | `ag:_120249…` | `_120249…` (o `_` sai em `normalizeNumericId`) |
+ * | `utm_content` | `as:120249…` | intacto (prefixo de outra coluna) |
+ * | `utm_content` | `ag:abc` | intacto (resto não é id) |
+ * | qualquer outra | qualquer valor | intacto |
+ *
+ * Idempotente: aplicar duas vezes dá o mesmo que uma. Fica FORA de
+ * `utmContentEfetivo` de propósito: aquela função também serve o `co=` das
+ * vendas, e a tabela de formatos da 18.71 não muda. É aplicada uma vez por
+ * linha, na camada que une as planilhas de leads (web e API).
+ */
+export function semPrefixoDeId(coluna: string, valor: string): string {
+  if (typeof valor !== "string") return valor;
+  const prefixo = PREFIXO_DE_ID_POR_COLUNA[coluna];
+  if (!prefixo) return valor;
+  const limpo = valor.trim();
+  if (!limpo.startsWith(prefixo)) return valor;
+  const resto = limpo.slice(prefixo.length);
+  return ID_NUMERICO.test(resto) ? resto : valor;
+}
+
 /** `{{ad.id}}`, `{{campaign.name}}` — macro do Meta que o anúncio não substituiu. */
 const MACRO_NAO_RESOLVIDA = /^\{\{.*\}\}$/;
 

@@ -20,6 +20,7 @@
 import { inicioDaJanela } from "@loyola-x/shared/src/janela-de-dias";
 import { ehOrigemPagaDeLead } from "@loyola-x/shared/src/leads-pagos";
 import { utmContentEfetivo } from "@/lib/utils/normalize-answer";
+import { ehTextoDoLeadForm } from "@/lib/utils/leads-da-lp";
 import { normaliseDate } from "@/lib/utils/spreadsheet-filters";
 
 /** Leads pagos com a temperatura que o TEXTO do lead declara (AC7/PO-07). */
@@ -46,6 +47,12 @@ export interface ContagemDeLeads {
   /**
    * Story 18.83 (AC4): leads PAGOS por `ad_id` (`utm_content`), com a mesma
    * temperatura do texto que o `leadsByLp` usa. A tabela de LPs soma por URL.
+   *
+   * Story 18.100 (AC4e, A-6): são os leads pagos por anúncio que PASSARAM PELA
+   * PÁGINA — a linha do Lead Form (`lpredirect` no texto de LP) fica fora, porque
+   * o único leitor deste campo é o modo URL do Desempenho por LP, e somar ali
+   * leads que nunca viram a página inflaria a conversão dela. A regra é por
+   * linha: uma linha da n8n sem `lpredirect` no mesmo anúncio continua entrando.
    */
   leadsPagosPorAnuncio: Record<string, LeadsPorTemperatura>;
   totalLeads: number;
@@ -200,7 +207,9 @@ export function contarLeadsDaPlanilha(planilha: Planilha, janelaPedida?: JanelaD
 
     // Story 18.83 (AC4): o lead pago vai para o anúncio dele — a URL sai do
     // anúncio, não da letra do texto. Mesma temperatura do texto (PO-07).
-    if (pago && adId) somar(leadsPagosPorAnuncio, adId, haystack);
+    // Story 18.100 (AC4e, A-6): a linha do Lead Form não sobe a linha de URL de
+    // página nenhuma — só aqui; `leads`, `terms`, `leadsByLp` e o total seguem.
+    if (pago && adId && !ehTextoDoLeadForm(haystack)) somar(leadsPagosPorAnuncio, adId, haystack);
 
     leads[adId] = (leads[adId] ?? 0) + 1;
 

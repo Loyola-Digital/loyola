@@ -41,7 +41,8 @@ describe("useLpPerformanceData — a tabela usa a URL do anúncio quando a API m
 describe("useCrossReferenceLeads chama a contagem testada", () => {
   it("o memo da contagem é `contarLeadsDaPlanilha`, e o resultado expõe os leads por anúncio", () => {
     const hook = fonte("lib/hooks/useCrossReferenceLeads.ts");
-    expect(hook).toMatch(/contarLeadsDaPlanilha\(sheetQuery\.data/);
+    // Story 18.100: a contagem recebe as planilhas `leads` unidas (ou a de vendas).
+    expect(hook).toMatch(/contarLeadsDaPlanilha\(planilhaParaContar/);
     expect(hook).toMatch(/leadsPagosPorAnuncio: result\.leadsPagosPorAnuncio/);
   });
 });

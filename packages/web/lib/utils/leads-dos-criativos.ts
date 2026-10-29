@@ -8,32 +8,18 @@
  * a lista — sempre que a aba de leads não tinha a coluna "Ad Name" (15 de 20
  * etapas medidas em 19/10/2026). O hook preferia esse número ao da API.
  *
- * Esta função não tem regra própria: escolhe a planilha como o Top Criativos
- * (`escolherPlanilhaDeLeads`), recorta pela mesma janela
+ * Esta função não tem regra própria: escolhe as planilhas como o Top Criativos
+ * (`escolherPlanilhasDeLeads`, em `planilhas-de-leads.ts`, Story 18.100 — todas
+ * as `leads` da etapa, unidas), recorta pela mesma janela
  * (`filterSheetRowsByDays`) e conta com a mesma função
  * (`countLeadsByOriginForAds(...).leadsPagos`) — pagos, cada e-mail uma vez,
  * somando TODOS os anúncios do criativo. Se as duas telas divergirem de novo,
  * é porque uma delas deixou de passar por aqui.
  */
 
-import type {
-  FunnelSpreadsheet,
-  FunnelSpreadsheetData,
-} from "@/lib/types/funnel-spreadsheet";
+import type { FunnelSpreadsheetData } from "@/lib/types/funnel-spreadsheet";
 import { filterSheetRowsByDays } from "@/lib/utils/spreadsheet-filters";
 import { countLeadsByOriginForAds } from "@/lib/utils/top-creatives";
-
-/**
- * A planilha de onde saem os leads de uma etapa: a vinculada como `leads`; sem
- * ela, a primeira vinculada (as etapas de perpétuo só têm a de vendas).
- * Mesma escolha nas duas telas — é o que faz os números baterem.
- */
-export function escolherPlanilhaDeLeads(
-  planilhas: FunnelSpreadsheet[] | null | undefined,
-): FunnelSpreadsheet | null {
-  if (!planilhas || planilhas.length === 0) return null;
-  return planilhas.find((p) => p.type === "leads") ?? planilhas[0] ?? null;
-}
 
 /** O que esta função precisa de cada linha da tabela. */
 export interface CriativoComLeads {

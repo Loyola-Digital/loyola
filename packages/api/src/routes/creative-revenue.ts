@@ -3,13 +3,13 @@ import { eq, and } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   stageSalesSpreadsheets,
-  funnelSpreadsheets,
   funnelStages,
   funnels,
   projects,
   projectMembers,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
+import { buscarPlanilhasDeLeads, lerPlanilhasDeLeads } from "../utils/planilhas-de-leads.js";
 import { utmContentEfetivo } from "../utils/utm-value.js";
 import { parseValorPlanilha } from "@loyola-x/shared";
 
@@ -135,17 +135,10 @@ export default fp(async function creativeRevenueRoutes(fastify) {
 
       if (!stage) return reply.code(404).send({ error: "Etapa não encontrada" });
 
-      // 2. Planilha de leads do stage (funnel_spreadsheets type=leads, stage_id=X)
-      const [leadsSheet] = await fastify.db
-        .select()
-        .from(funnelSpreadsheets)
-        .where(
-          and(
-            eq(funnelSpreadsheets.stageId, params.data.stageId),
-            eq(funnelSpreadsheets.type, "leads"),
-          ),
-        )
-        .limit(1);
+      // 2. Planilhas de leads do stage (funnel_spreadsheets type=leads, stage_id=X).
+      // Story 18.100 (AC7): TODAS, em `created_at, id` — antes era `.limit(1)`
+      // sem ordem. Só o caminho legado (venda sem `co=`) usa os leads.
+      const planilhasDeLeads = await buscarPlanilhasDeLeads(fastify.db, params.data.stageId);
 
       // 3. Planilha de vendas do stage (stage_sales_spreadsheets subtype=capture)
       const [salesSheet] = await fastify.db
@@ -159,7 +152,7 @@ export default fp(async function creativeRevenueRoutes(fastify) {
         )
         .limit(1);
 
-      if (!leadsSheet || !salesSheet) {
+      if (planilhasDeLeads.length === 0 || !salesSheet) {
         return EMPTY_RESPONSE;
       }
 
@@ -167,7 +160,7 @@ export default fp(async function creativeRevenueRoutes(fastify) {
       let leadsData, salesData;
       try {
         [leadsData, salesData] = await Promise.all([
-          readSheetData(leadsSheet.spreadsheetId, leadsSheet.sheetName),
+          lerPlanilhasDeLeads(planilhasDeLeads),
           readSheetData(salesSheet.spreadsheetId, salesSheet.sheetName),
         ]);
       } catch {
@@ -175,7 +168,9 @@ export default fp(async function creativeRevenueRoutes(fastify) {
       }
 
       // Mapeamento de colunas
-      const leadsMapping = (leadsSheet.columnMapping ?? {}) as {
+      // Story 18.100: o mapeamento canônico da união (cada campo → o seu
+      // cabeçalho no layout comum); o `findCol` abaixo segue igual.
+      const leadsMapping = leadsData.columnMapping as {
         email?: string;
         utm_content?: string;
         date?: string;

@@ -8,9 +8,9 @@ import type {
 import {
   adIdsDoCriativo,
   aplicarLeadsDaPlanilha,
-  escolherPlanilhaDeLeads,
 } from "@/lib/utils/leads-dos-criativos";
 import { enrichWithPaidLeads, type AggregatedCreative } from "@/lib/utils/top-creatives";
+import { escolherPlanilhasDeLeads } from "@/lib/utils/planilhas-de-leads";
 import { PAID_SOURCES } from "@/lib/utils/funnel-metrics";
 import {
   ORIGENS_PAGAS_DE_LEAD,
@@ -187,14 +187,15 @@ describe("Story 18.89 — API antiga (sem `adIds`) nunca cai em um anúncio só 
   });
 });
 
-describe("Story 18.89 — a mesma planilha nas duas telas", () => {
-  const p = (id: string, type: FunnelSpreadsheet["type"]) => ({ id, type }) as FunnelSpreadsheet;
+describe("Story 18.89 — a mesma planilha nas duas telas (Story 18.100: a mesma LISTA)", () => {
+  const p = (id: string, type: FunnelSpreadsheet["type"]) =>
+    ({ id, type, createdAt: "2026-01-01T00:00:00Z" }) as FunnelSpreadsheet;
 
-  it("a de `leads`; sem ela, a primeira vinculada; sem nenhuma, null", () => {
-    expect(escolherPlanilhaDeLeads([p("v", "sales"), p("l", "leads")])?.id).toBe("l");
-    expect(escolherPlanilhaDeLeads([p("v", "sales")])?.id).toBe("v");
-    expect(escolherPlanilhaDeLeads([])).toBeNull();
-    expect(escolherPlanilhaDeLeads(undefined)).toBeNull();
+  it("as de `leads`; sem elas, a primeira vinculada; sem nenhuma, vazio", () => {
+    expect(escolherPlanilhasDeLeads([p("v", "sales"), p("l", "leads")]).map((x) => x.id)).toEqual(["l"]);
+    expect(escolherPlanilhasDeLeads([p("v", "sales")]).map((x) => x.id)).toEqual(["v"]);
+    expect(escolherPlanilhasDeLeads([])).toEqual([]);
+    expect(escolherPlanilhasDeLeads(undefined)).toEqual([]);
   });
 });
 
@@ -226,7 +227,7 @@ describe("Story 18.89 — o fio do hook (prova pela reversão, AC8)", () => {
 
   it("o hook conta pela função desta story", () => {
     expect(hook).toMatch(/aplicarLeadsDaPlanilha\(\s*taxed\.creatives,\s*planilhaDeLeads\.data,\s*days,\s*crossrefQuery\.adNameByContent,?\s*\)/);
-    expect(hook).toMatch(/escolherPlanilhaDeLeads\(planilhasDaEtapa\.data\?\.spreadsheets\)/);
+    expect(hook).toMatch(/escolherPlanilhasDeLeads\(planilhasDaEtapa\.data\?\.spreadsheets\)/);
   });
 
   it("o fallback de um anúncio só não existe mais", () => {
@@ -240,6 +241,6 @@ describe("Story 18.89 — o fio do hook (prova pela reversão, AC8)", () => {
       new URL("../../../components/funnels/top-creatives-gallery.tsx", import.meta.url),
       "utf-8",
     );
-    expect(galeria).toMatch(/escolherPlanilhaDeLeads\(spreadsheetsData\?\.spreadsheets\)/);
+    expect(galeria).toMatch(/escolherPlanilhasDeLeads\(spreadsheetsData\?\.spreadsheets\)/);
   });
 });

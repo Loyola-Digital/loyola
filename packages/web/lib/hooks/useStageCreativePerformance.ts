@@ -13,9 +13,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import { useCrossReferenceLeads } from "@/lib/hooks/useCrossReferenceLeads";
-import { useFunnelSpreadsheetData, useFunnelSpreadsheets } from "@/lib/hooks/use-funnel-spreadsheets";
+import { useFunnelSpreadsheets } from "@/lib/hooks/use-funnel-spreadsheets";
+import { useDadosDasPlanilhasDeLeads } from "@/lib/hooks/use-planilhas-de-leads";
+import { escolherPlanilhasDeLeads } from "@/lib/utils/planilhas-de-leads";
 import { applyMetaAdsTax } from "@/lib/utils/funnel-metrics";
-import { aplicarLeadsDaPlanilha, escolherPlanilhaDeLeads } from "@/lib/utils/leads-dos-criativos";
+import { aplicarLeadsDaPlanilha } from "@/lib/utils/leads-dos-criativos";
 import {
   CHAVE_CREATIVE_PERFORMANCE,
   chaveDeRecomputo,
@@ -200,11 +202,16 @@ export function useStageCreativePerformance({
   // Hook desligado (`enabled: false`) → projectId vazio desliga as duas queries.
   const projectIdDaPlanilha = enabled && stageId ? (projectId ?? "") : "";
   const planilhasDaEtapa = useFunnelSpreadsheets(projectIdDaPlanilha, funnelId, stageId);
-  const planilhaVinculada = escolherPlanilhaDeLeads(planilhasDaEtapa.data?.spreadsheets);
-  const planilhaDeLeads = useFunnelSpreadsheetData(
+  // Story 18.100 (AC1/AC2): todas as planilhas `leads` da etapa, unidas — a
+  // MESMA escolha e a mesma união do Top Criativos.
+  const planilhasVinculadas = useMemo(
+    () => escolherPlanilhasDeLeads(planilhasDaEtapa.data?.spreadsheets),
+    [planilhasDaEtapa.data],
+  );
+  const planilhaDeLeads = useDadosDasPlanilhasDeLeads(
     projectIdDaPlanilha,
     funnelId,
-    planilhaVinculada?.id,
+    planilhasVinculadas,
   );
 
   // Combine base data with crossref leads
@@ -285,7 +292,7 @@ export function useStageCreativePerformance({
       ? (baseQuery.isLoading ||
         crossrefQuery.isLoading ||
         planilhasDaEtapa.isLoading ||
-        (!!planilhaVinculada && planilhaDeLeads.isLoading))
+        (planilhasVinculadas.length > 0 && planilhaDeLeads.isLoading))
       : baseQuery.isLoading,
     error: baseQuery.error || (projectId && crossrefQuery.error ? new Error(crossrefQuery.error) : undefined),
   };
