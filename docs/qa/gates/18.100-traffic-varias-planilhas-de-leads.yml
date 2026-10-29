@@ -1,0 +1,117 @@
+schema: 1
+story: '18.100'
+story_title: 'Etapa com várias planilhas de leads — o dashboard lê só uma'
+gate: PASS
+status_reason: 'Os sete pontos de leitura passam a unir todas as planilhas `leads` da etapa, numa escolha única e ordenada (`createdAt`, `id`), sem prefixo `c:`/`as:`/`ag:`, com o dia de São Paulo para instante com fuso e o ponto 4 e a API pelo `column_mapping` de cada planilha. A regra A-6 está no lugar certo (só `leadsPagosPorAnuncio`, por linha). Suítes, tsc, lint, `next build` e o boot pelo `dist` conferidos pelo QA, sem confiar no relatório; as 10 falhas da API se repetem iguais na `origin/main`. Três observações low, sem bloqueio. AC9/T7 fica pendente para depois do deploy, como a story prevê.'
+reviewer: 'Quinn'
+updated: '2026-10-29T15:24:39Z'
+pr: null
+branch: 'feat/18.100-varias-planilhas-de-leads (6 commits sobre a origin/main em 8a154a08)'
+commits: ['03cd22af', '06968dbb', '6443c3f6', '1ecffe36', '96dd1eea', 'bfcf1a3b']
+coderabbit_status: 'SKIPPED (CLI só em WSL/Windows; ambiente macOS, prática desde a 18.54)'
+
+top_issues:
+  - id: 'REL-001'
+    severity: low
+    status: 'aceito (decisão registrada do @dev)'
+    finding: >-
+      A união é tudo ou nada: `unirPlanilhasDeLeads` (`packages/web/lib/utils/planilhas-de-leads.ts`) devolve
+      `undefined` se alguma planilha não carregou, e `useCrossReferenceLeads` faz o mesmo com as abas cruas. Se a
+      leitura da segunda planilha (o Lead Form) der erro, o card, o Top Criativos e o Desempenho por LP da etapa
+      ficam sem número, e o `error` de `useDadosDasPlanilhasDeLeads` não é lido por `use-crossed-funnel-metrics.ts`.
+      Antes, uma planilha só com erro também ficava sem número; a diferença é que agora há mais um ponto de falha.
+    recommendation: 'Se aparecer em produção, mostrar o erro da planilha que falhou (story própria). Não bloqueia: é o `[AUTO-DECISION]` "número parcial sem aviso é pior" do Dev Agent Record.'
+  - id: 'MNT-001'
+    severity: low
+    status: 'aberto (sem bloqueio)'
+    finding: >-
+      O `useMemo` de `leadsUnidos` em `packages/web/lib/hooks/useCrossReferenceLeads.ts` depende de
+      `[abasDeLeads.versao, idsDasPlanilhas, semPlanilhaDeLeads]`, mas usa o `columnMapping` de cada planilha. Se o
+      gestor editar o mapeamento de uma planilha, a lista de planilhas recarrega e a aba crua não (a chave
+      `google-sheets-data` não é invalidada), então o ponto 4 segue com o remapeamento antigo até a aba recarregar
+      (staleTime de 30 s, foco na janela ou recarga da página). Antes, a coluna de data vinha direto de
+      `leadsSheet.columnMapping.date` e reagia na hora.
+    recommendation: 'Incluir uma assinatura do `columnMapping` (por exemplo `JSON.stringify` dos mapeamentos) em `idsDasPlanilhas`. Cosmético e autocorrigível; fica para uma próxima mexida no arquivo.'
+  - id: 'TST-001'
+    severity: low
+    status: 'aceito'
+    finding: >-
+      Os pontos 6 e 7 da API são cobertos pelo util (`unirPlanilhasDeLeadsLidas`, `lerPlanilhasDeLeads`, SQL com
+      `ORDER BY` pelo `drizzle.mock()`) e por testes de fio sobre o texto das rotas; não há teste que chame as rotas
+      (`inject`) com duas planilhas. O risco é baixo porque o `findCol` das rotas não mudou e o util devolve o
+      mapeamento canônico, conferido pelo teste "uma planilha só: as mesmas colunas que o findCol de hoje achava".
+    recommendation: 'Teste de rota com duas planilhas quando a rota for mexida de novo.'
+  - id: 'TEST-WEB-INHERITED'
+    severity: low
+    status: 'herdado'
+    finding: 'Hooks e componentes de `components/funnels/` não são coletados pelo vitest do web; a fiação é provada por testes de fio sobre o texto (padrão do repo).'
+
+waiver: { active: false }
+
+pending_post_deploy:
+  - 'AC9/T7: validação visual na Captação Gratuita `16be180c…` (card 503 → base + Lead Form; CPL; Top Criativos das campanhas `120249689901480208` e `120249688590340208`; Desempenho por LP no modo URL igual ao da n8n sozinha e `LPR` no modo rótulo) e nas etapas de controle, com o 4 → 0 da `dg-pg03 › Captação Paga` explicado na PR.'
+  - 'Base de antes do deploy (T0 segue [ ]): ler no navegador o card, o CPL e o Top Criativos da Captação Gratuita, 90 dias, público e mídia Todos.'
+
+coverage:
+  AC1: 'PASS — os sete pontos unem todas as `leads`: pontos 1, 2, 3 (galeria e Desempenho de Criativos) por `escolherPlanilhasDeLeads`; 4 e 5 por `planilhasDeLeadsDaEtapa`; 6 e 7 por `buscarPlanilhasDeLeads` + `lerPlanilhasDeLeads`.'
+  AC2: 'PASS — uma regra só (`packages/web/lib/utils/planilhas-de-leads.ts`), `ordemDaUniao` por `createdAt` e `id`; na API, `ORDER BY created_at ASC, id ASC` (teste do SQL). `escolherPlanilhaDeLeads` singular removida; as duas telas da 18.89 chamam a mesma função (teste de fio).'
+  AC3: 'PASS — concatenação sem dedup, índice único pela posição; exemplos do AC3 (inclusive o do @architect, 2 no card e 1 no Top Criativos) e paridade web × API com a mesma fixture.'
+  AC4a: 'PASS — `semPrefixoDeId` em `packages/shared/src/utm-value.ts`, por coluna, só com resto `^_?\d+$`, idempotente, fora de `utmContentEfetivo`; aplicado uma vez por linha na união do web e da API.'
+  AC4b: 'PASS — o ponto 1 lê as `leads` sem `campaignName`; o fallback e a de vendas seguem com ele (teste de fio).'
+  AC4c: 'N/A — retirado (C-T0-1). `use-funnel-spreadsheets.ts` sem diff.'
+  AC4d: 'PASS — `remapearParaLayoutComum` (folha) com as regras (1) a (3), data só pelo mapeamento (C-T0-3), fallback `sales` intacto; `contarLeadsDaPlanilha` só ganhou a exclusão do AC4e.'
+  AC4e: 'PASS — `lpredirect` conta em `leadsByLp` (`lpr`) e fica fora só de `leadsPagosPorAnuncio` (`contagem-de-leads.ts:212`), por linha; guarda do pixel em `lpsParaOPixel`; único consumidor de produção de `leadsPagosPorAnuncio` é o modo URL (`useLpPerformanceData.ts:112`), conferido por grep.'
+  AC5: 'PASS — `packages/shared/src/dia-do-negocio.ts`; `normaliseDate` e `saleDayKey` chamam `diaDoInstante` antes do que já faziam; testes com `TZ=UTC` e `TZ=America/Sao_Paulo`; `saleDayKey` com a mesma saída de antes caso a caso.'
+  AC6: 'PASS — fallbacks preservados; uma planilha só dá as mesmas linhas e colunas (testes "uma planilha só" no web e na API); exceções 1–7 medidas na T0 e registradas.'
+  AC7: 'PASS — util novo na API, `.limit(1)` removido dos pontos 6 e 7, `VERSAO_DO_CACHE_CREATIVE_PERFORMANCE` v6 → v7, import só por `@loyola-x/shared`.'
+  AC8: 'PASS — 78 testes novos no web (33 + 35 + 10) e 25 na API; provas por reversão do @dev (9) e 4 refeitas pelo QA.'
+  AC9: 'PENDENTE — validação visual depois do deploy (pendência documentada, não defeito).'
+
+quality_checks:
+  code_review: 'OK. Módulos pequenos, comentados, com a regra num lugar só. O `columnMapping` canônico da API mantém o `findCol` das rotas sem mudança. `leadsSheet` virou booleano no ponto 6 e o `_debug.leadsSheetExists` continua booleano. Observações REL-001 e MNT-001 (low).'
+  unit_tests: 'OK. Web 176 arquivos, 2602/2602. API 5451/5461 (as 10 falhas são as da linha de base, ver no_regressions). Testes da story: web 78, API 25, todos verdes.'
+  acceptance_criteria: 'AC1–AC8 ✓ (AC4c retirado) · AC9 ⏳ depois do deploy.'
+  no_regressions: 'OK. As 10 falhas da API (funnel-stages-lead-inputs 3, instagram-routes 1, instagram 1, projects 3, schema 2) se repetem IGUAIS rodando os mesmos 5 arquivos num worktree descartável da `origin/main` 8a154a08 (62 testes, 10 falhas, mesmos nomes). Nenhum desses arquivos nem o código que testam está no diff. Nesta rodada não houve timeout na suíte da API. No web, um timeout em `dados-diarios-lyrio.test.ts` (não tocado) apareceu só quando a suíte do web rodou junto com a da API; na suíte cheia isolada, 2602/2602.'
+  performance: 'OK. Uma leitura a mais por planilha `leads` extra (etapas têm 1 ou 2); na API as leituras rodam em `Promise.all`; o cache do ponto 6 segue (chave v7).'
+  security: 'OK. Nenhuma rota nova; a consulta nova é Drizzle parametrizado (`eq` em `stage_id` e `type`), dentro das rotas que já validam params e acesso. A regex de instante é ancorada, sem quantificador aninhado (sem ReDoS). O log novo (`leadsSheets`) traz id, label e contagem, sem dado pessoal. URLs do web reutilizam as rotas existentes, com `encodeURIComponent` no nome da aba como em `useSheetData`.'
+  documentation: 'OK. Comentários nos módulos novos e nos campos com sentido estreitado (`leadsPagosPorAnuncio`); Dev Agent Record com a T0, as reversões, os resultados e as decisões; File List confere com o diff (28 arquivos).'
+  api_contract: 'OK (check 8). Nenhuma rota, parâmetro, campo de resposta ou snapshot novo: o diff da API não adiciona handler nem campo no payload (o `_debug.leadsSheetExists` segue booleano; `leadsSheets` vai só para o log). `packages/shared/src/contract.ts` sem diff, `API_CONTRACT_VERSION` = 64 na branch e na `origin/main` atual (`ade52a3a`). Sem bump, como a story declara.'
+
+technical_gates:
+  typecheck: 'OK — `npx tsc --noEmit` direto (sem cache do turbo) em shared, API e web: 0 erros. `npm run typecheck` 5/5.'
+  lint: 'OK — `npm run lint` 5/5; web sem avisos; API só o aviso antigo de `src/routes/lp-campaigns.ts:57` (não tocado). `eslint` nos 5 arquivos tocados da API: 0.'
+  next_build: 'OK — `pnpm run build` do web rodado pelo QA: compilou e gerou 43 páginas.'
+  api_boot_dist: 'OK — shared e API compilados; carregam pelo `node` puro `dist/utils/planilhas-de-leads.js`, `dist/utils/sale-date.js`, `dist/routes/stage-creative-performance.js`, `dist/routes/creative-revenue.js` e `dist/app.js`; `@loyola-x/shared` entrega `semPrefixoDeId`, `diaDoInstante` e `remapearParaLayoutComum`; `saleDayKey("2026-10-28T22:54:52-05:00")` = `2026-10-29`; cache `v7`.'
+  rule_19_14: 'OK — `dia-do-negocio.ts`, `layout-comum.ts` e `utm-value.ts` não têm `import` (folha); o web importa por subpath (`@loyola-x/shared/src/...`); a API importa só pelo índice (`@loyola-x/shared`), travado por teste.'
+  cache_version: 'OK — v6 → v7. A `origin/main` atual (`ade52a3a`, um commit a mais que a base) segue em v6, então v7 continua livre; os testes que importam a versão comparam `>=` e passam. `git merge-tree` com a `origin/main` atual: sem conflito, e o commit novo não toca nenhum arquivo da story.'
+
+reversal_proofs_by_qa:
+  - 'R1 — tirar `!ehTextoDoLeadForm(haystack)` de `contagem-de-leads.ts`: 4 vermelhos (AC4e, regra por linha, exceção 7 e o modo URL); o teste da linha `LPR` do modo rótulo seguiu verde.'
+  - 'R2 — `planilhasDeLeadsDaEtapa` devolvendo só a primeira `leads` (web): 2 vermelhos na escolha (AC2).'
+  - 'R3 — `unirPlanilhasDeLeadsLidas` da API lendo só a primeira planilha: 6 vermelhos (união, leitura, leads por criativo, união = aba única, janela, ponto 7 legado).'
+  - 'R4 — `normaliseDate` sem `diaDoInstante`: 4 vermelhos (o caso de 30/10 em `TZ=UTC` e em São Paulo, união = aba única, lead das 22:54).'
+  - 'Cada arquivo restaurado por `git checkout`; working tree limpo conferido depois de cada uma.'
+
+anti_hallucination:
+  - 'Exclusão do A-6: `packages/web/lib/utils/contagem-de-leads.ts:212` (`if (pago && adId && !ehTextoDoLeadForm(haystack))`).'
+  - 'Consumidores de `leadsPagosPorAnuncio` em produção: `useCrossReferenceLeads.ts:94,339`, `useLpPerformanceData.ts:112,198`, `lps-do-lancamento.ts:220` (grep).'
+  - 'Ordem da API: `consultaDasPlanilhasDeLeads` com `.orderBy(asc(createdAt), asc(id))`, SQL conferido no teste.'
+  - '`API_CONTRACT_VERSION = 64` em `packages/shared/src/contract.ts:737`.'
+  - '`VERSAO_DO_CACHE_CREATIVE_PERFORMANCE = "v7"` em `packages/api/src/routes/stage-creative-performance.ts` (lido também pelo `dist`).'
+
+meta_api_impact:
+  adds_meta_calls: 'NO — o diff da API só troca a leitura da planilha de leads (Google Sheets / webhook); nenhuma chamada nova à Meta. O bump do cache faz a primeira abertura de cada etapa depois do deploy buscar a Meta ao vivo, como em todo bump anterior.'
+
+blast_radius:
+  - 'Web: card / tabela diária / gráficos (ponto 1), Leads por UTM, Top Criativos, Desempenho de Criativos, Desempenho por LP, match de pesquisa.'
+  - 'API: `/stage-creative-performance` (ponto 6) e `/creative-revenue` (ponto 7, caminho legado).'
+  - 'Mudança de número só nas exceções medidas na T0 (Captação Gratuita +10 do Lead Form; `dg-pg03` 4 → 0 pagos por anúncio no Desempenho por LP).'
+
+scope_condition: 'Commits de código com `[scope-override]`; autorização do Lucas registrada no Change Log antes do `*develop`. Gate e story dentro dos `allowed_paths` do autor.'
+
+recommended_action: 'Seguir para o @devops (push e PR). A PR leva os prints e a explicação por origem do AC9 e avisa o gestor de que os leads sobem e o CPL cai. MNT-001 pode entrar numa próxima mexida em `useCrossReferenceLeads.ts`.'
+
+clickup:
+  task: '17tqamf0x4k'
+  status: 'in review → ready to ship'
+  comment_id: '1400480000528165'
