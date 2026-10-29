@@ -10,8 +10,7 @@ import {
   cpcDeLink,
   somarLinkClicks,
 } from "@loyola-x/shared/src/clique-no-link";
-import { useCampaignLog } from "@/lib/hooks/use-campaign-log";
-import { EventosDoDia, agruparPorDia } from "./eventos-do-dia";
+import { EventosDoDia, diasParaCobrir, useEventosDoDia } from "./eventos-do-dia";
 
 import * as React from "react";
 import { useState, useMemo, useEffect } from "react";
@@ -864,17 +863,8 @@ function PerpetualDailyTable({
   // quem opera abre o painel para ver ontem, não o primeiro dia do período.
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
-  // Ícones do que aconteceu no dia, do Log de Campanha. Agrupado uma vez para a
-  // tabela toda — filtrar a lista dentro de cada linha seria quadrático à toa.
-  const diasDoLog = useMemo(() => {
-    const isos = rows.map((r) => r.dateIso).filter(Boolean).sort();
-    if (isos.length === 0) return 30;
-    const t = Date.parse(`${isos[0]}T00:00:00`);
-    if (!Number.isFinite(t)) return 30;
-    return Math.min(365, Math.max(7, Math.ceil((Date.now() - t) / 86_400_000) + 1));
-  }, [rows]);
-  const logQuery = useCampaignLog(projectId ?? null, funnelId ?? null, { days: diasDoLog });
-  const eventosPorDia = useMemo(() => agruparPorDia(logQuery.data?.entries), [logQuery.data]);
+  // Ícones do que aconteceu no dia, do Log de Campanha.
+  const eventosPorDia = useEventosDoDia(projectId, funnelId, diasParaCobrir(rows.map((r) => r.dateIso)));
 
   // Story 29.32 (AC2b): a ordenação vale para o CONJUNTO INTEIRO; a paginação
   // só fatia a visualização depois. Ordenar após o slice deixaria cada página

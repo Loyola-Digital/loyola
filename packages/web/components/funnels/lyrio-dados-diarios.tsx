@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ORDEM_DO_DIA_PADRAO, inverterOrdemDoDia, type OrdemDoDia } from "@/lib/utils/ordem-do-dia";
+import { EventosDoDia, type EventosPorDia } from "./eventos-do-dia";
 import {
   DICA_DIA_EM_ANDAMENTO,
   formatarCelula,
@@ -65,7 +66,19 @@ function Celulas({
   );
 }
 
-export function LyrioDadosDiarios({ entrada }: { entrada: Omit<EntradaDosDadosDiarios, "ordem"> }) {
+export function LyrioDadosDiarios({
+  entrada,
+  eventosPorDia,
+}: {
+  entrada: Omit<EntradaDosDadosDiarios, "ordem">;
+  /**
+   * O que o Log de Campanha registrou em cada dia, para os ícones ao lado da
+   * data. Vem da etapa e não de um hook aqui: a tabela continua sem consulta
+   * própria (AC3d/AC4b da 42.17), e com ela o dia em que o ROAS virou mostra,
+   * ali mesmo, que houve ajuste de budget ou criativo novo.
+   */
+  eventosPorDia?: EventosPorDia;
+}) {
   const [ordem, setOrdem] = useState<OrdemDoDia>(ORDEM_DO_DIA_PADRAO);
   const dados = montarDadosDiariosDoLyrio({ ...entrada, ordem });
 
@@ -108,6 +121,7 @@ export function LyrioDadosDiarios({ entrada }: { entrada: Omit<EntradaDosDadosDi
                 <TableRow key={r.date} data-dia={r.date}>
                   <TableCell className={`${DIA_FIXO} bg-background whitespace-nowrap`}>
                     {fmtDia(r.date)}
+                    <EventosDoDia entradas={eventosPorDia?.get(r.date)} dia={r.date} />
                     {r.emAndamento && (
                       <span
                         className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"

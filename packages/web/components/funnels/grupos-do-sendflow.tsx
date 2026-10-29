@@ -59,6 +59,7 @@ import {
 } from "@/components/ui/table";
 import { useSendflowSummary } from "@/lib/hooks/use-sendflow";
 import { CanalDeQuemEntrou } from "./canal-de-quem-entrou";
+import { EventosDoDia, useEventosDoDia } from "./eventos-do-dia";
 import { OrigemDosParticipantes } from "./origem-dos-participantes";
 import {
   montarDiario,
@@ -237,6 +238,11 @@ export function GruposDoSendflow({
   const [dias, setDias] = useState<7 | 14 | 30>(30);
   const { data, isLoading } = useSendflowSummary(projectId, funnelId);
 
+  // Os ícones do Log de Campanha ao lado da data — aqui valem mais que em
+  // qualquer outra tabela diária: o dia em que 300 pessoas entraram no grupo é
+  // o dia em que alguém disparou algo, e é justamente isso que o log registra.
+  const eventosPorDia = useEventosDoDia(projectId, funnelId, dias);
+
   const linhas = useMemo(() => {
     if (!data || data.semCampanha) return [];
     const todas = montarDiario(
@@ -390,6 +396,7 @@ export function GruposDoSendflow({
                   <TableRow key={l.date}>
                     <TableCell className="whitespace-nowrap">
                       {dataBR(l.date)}
+                      <EventosDoDia entradas={eventosPorDia.get(l.date)} dia={l.date} />
                     </TableCell>
                     <TableCell className="text-right tabular-nums text-green-600">
                       {l.entrou > 0 ? comSinal(l.entrou) : "—"}
