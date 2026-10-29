@@ -60,6 +60,14 @@ export default defineConfig({
       "components/funnels/__tests__/lyrio-detail-table-42-19.test.tsx",
       // Story 42.17 (AC5, AC6, AC7d) — o desenho da tabela "Dados diários".
       "components/funnels/__tests__/lyrio-dados-diarios-42-17.test.tsx",
+      /**
+       * Story 42.14 abriu a porta por CAMINHO, e esta linha segue a mesma
+       * régua: a aba de Lead Scoring quebrou em produção (29/10/2026) com
+       * "Cannot access 'k' before initialization" — TDZ que nem `tsc` nem o
+       * lint deste repo pegam, e que só aparece quando o componente RENDERIZA
+       * com a lista de pesquisas cheia.
+       */
+      "components/funnels/__tests__/lead-scoring-tab.test.tsx",
     ],
     /**
      * Story 18.80 (gate do @qa) — o fuso do runner é FIXADO no do usuário.
