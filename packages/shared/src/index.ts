@@ -196,8 +196,15 @@ export {
 } from "./funil-e-oferta.js";
 // Story 18.71: o `utm_content` efetivo de uma célula de planilha — o `co=` chega
 // em três formatos e só um deles é o ad_id puro. Módulo folha: o web importa por
-// subpath (`@loyola-x/shared/src/utm-value`), a API por aqui.
-export { utmContentEfetivo, normalizeNumericId, semPrefixoDeId } from "./utm-value.js";
+// subpath (`@loyola-x/shared/src/utm-value`), a API por aqui. Story 18.101 (AC1):
+// `passaNoRecorteDasCampanhas`, o recorte da planilha de vendas pelas campanhas da etapa.
+export {
+  utmContentEfetivo,
+  normalizeNumericId,
+  semPrefixoDeId,
+  passaNoRecorteDasCampanhas,
+  type CampanhaDoRecorte,
+} from "./utm-value.js";
 // Story 18.100 (AC5): o dia de São Paulo de um instante com fuso. Módulo folha:
 // o web importa por subpath (`@loyola-x/shared/src/dia-do-negocio`), a API por aqui.
 export { BUSINESS_TIMEZONE, toBusinessDayKey, diaDoInstante } from "./dia-do-negocio.js";

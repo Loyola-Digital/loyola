@@ -102,23 +102,25 @@ export function useDeleteFunnelSpreadsheet(projectId: string, funnelId: string) 
   });
 }
 
+/**
+ * A planilha inteira, sem filtro. Story 18.101 (AC2): o web não manda mais
+ * `campaignName` à rota `/data` (o recorte por campanha é feito em memória,
+ * por `passaNoRecorteDasCampanhas`). Assim toda leitura da mesma planilha pede
+ * a mesma URL com a mesma chave — a de `chaveDosDadosDaPlanilha` — e recebe os
+ * mesmos dados, seja qual for o componente que monta primeiro.
+ */
 export function useFunnelSpreadsheetData(
   projectId: string,
   funnelId: string,
   id: string | null | undefined,
-  campaignNames?: string[] | null,
 ) {
   const apiClient = useApiClient();
   return useQuery({
     queryKey: dataKey(projectId, funnelId, id ?? ""),
-    queryFn: () => {
-      let url = `/api/projects/${projectId}/funnels/${funnelId}/spreadsheets/${id}/data`;
-      if (campaignNames && campaignNames.length > 0) {
-        const qs = new URLSearchParams(campaignNames.map(n => ["campaignName", n])).toString();
-        url += `?${qs}`;
-      }
-      return apiClient<FunnelSpreadsheetData>(url);
-    },
+    queryFn: () =>
+      apiClient<FunnelSpreadsheetData>(
+        `/api/projects/${projectId}/funnels/${funnelId}/spreadsheets/${id}/data`,
+      ),
     enabled: Boolean(projectId && funnelId && id),
     staleTime: 30 * 1000,
   });

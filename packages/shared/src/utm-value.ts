@@ -77,6 +77,59 @@ export function semPrefixoDeId(coluna: string, valor: string): string {
   return ID_NUMERICO.test(resto) ? resto : valor;
 }
 
+/** Uma campanha da etapa (`funnel.campaigns`): `id` é o id da Meta. */
+export interface CampanhaDoRecorte {
+  id?: string | null;
+  name?: string | null;
+}
+
+/**
+ * Story 18.101 (AC1) — a linha da planilha passa pelo recorte das campanhas da
+ * etapa? O recorte tira **só** a linha de OUTRA campanha, reconhecida pelo id.
+ *
+ * `v` = `utm_campaign` com `trim` (ausente vale `""`). É **id** quando
+ * `normalizeNumericId(semPrefixoDeId("utm_campaign", v))` tem só dígitos.
+ *
+ * | caso | resultado |
+ * |---|---|
+ * | etapa sem campanhas | passa (não há recorte) |
+ * | `v` vazio | passa |
+ * | id de campanha da etapa (`123`, `c:123`, `_123`, `c:_123`) | passa |
+ * | id de outra campanha | **sai** |
+ * | `name` de campanha da etapa (com `trim` nos dois) | passa |
+ * | qualquer outro texto (tag `dgbf26`, `c:abc`) | passa |
+ *
+ * Campanha com `id` vazio não entra no conjunto de ids (não cria o id `""`).
+ *
+ * Limitação: só se conhecem as campanhas da etapa, então o NOME de outra
+ * campanha não se distingue de uma tag e passa (medido na T0 da 18.101: 0
+ * linha nesse caso). Aplicada no web, em memória; o web não manda mais
+ * `campaignName` à rota `/data` (que segue aceitando o parâmetro, contrato 64).
+ */
+export function passaNoRecorteDasCampanhas(
+  utmCampaign: string | null | undefined,
+  campanhas: readonly CampanhaDoRecorte[],
+): boolean {
+  if (campanhas.length === 0) return true;
+  const v = typeof utmCampaign === "string" ? utmCampaign.trim() : "";
+  if (!v) return true;
+
+  const candidato = normalizeNumericId(semPrefixoDeId("utm_campaign", v));
+  if (/^\d+$/.test(candidato)) {
+    return campanhas.some((c) => {
+      const id = typeof c.id === "string" ? normalizeNumericId(c.id) : "";
+      return id !== "" && id === candidato;
+    });
+  }
+
+  // Regra 3, explícita: o nome da etapa passa mesmo que a regra da tag mude.
+  if (campanhas.some((c) => typeof c.name === "string" && c.name.trim() !== "" && c.name.trim() === v)) {
+    return true;
+  }
+  // Tag do lançamento ou outro texto: passa (P-1, opção (b) do gestor).
+  return true;
+}
+
 /** `{{ad.id}}`, `{{campaign.name}}` — macro do Meta que o anúncio não substituiu. */
 const MACRO_NAO_RESOLVIDA = /^\{\{.*\}\}$/;
 
