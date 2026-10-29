@@ -197,7 +197,20 @@ export {
 // Story 18.71: o `utm_content` efetivo de uma célula de planilha — o `co=` chega
 // em três formatos e só um deles é o ad_id puro. Módulo folha: o web importa por
 // subpath (`@loyola-x/shared/src/utm-value`), a API por aqui.
-export { utmContentEfetivo, normalizeNumericId } from "./utm-value.js";
+export { utmContentEfetivo, normalizeNumericId, semPrefixoDeId } from "./utm-value.js";
+// Story 18.100 (AC5): o dia de São Paulo de um instante com fuso. Módulo folha:
+// o web importa por subpath (`@loyola-x/shared/src/dia-do-negocio`), a API por aqui.
+export { BUSINESS_TIMEZONE, toBusinessDayKey, diaDoInstante } from "./dia-do-negocio.js";
+// Story 18.100 (AC4d, AC7): várias planilhas de leads num layout comum, cada uma
+// pelo seu `column_mapping`. Módulo folha: o web importa por subpath
+// (`@loyola-x/shared/src/layout-comum`), a API por aqui.
+export {
+  remapearParaLayoutComum,
+  colunaDoCampo,
+  type CampoDoLayoutComum,
+  type FonteDoLayoutComum,
+  type PlanilhaNoLayoutComum,
+} from "./layout-comum.js";
 // Story 18.89: o lead PAGO de um criativo (origens pagas + chave de dedup) —
 // a mesma regra no Top Criativos, no Desempenho de Criativos e na API. Módulo
 // folha: o web importa por subpath (`@loyola-x/shared/src/leads-pagos`).

@@ -13,7 +13,6 @@ import fp from "fastify-plugin";
 import {
   funnels,
   funnelStages,
-  funnelSpreadsheets,
   stageSalesSpreadsheets,
   publicMetricsCache,
   metaAdCreativesCache,
@@ -38,6 +37,7 @@ import { avaliarCura, curarCacheDeLpEmSegundoPlano } from "../services/lp-cache-
 import { montarLpPorAnuncio } from "../utils/lp-por-anuncio.js";
 import { recortarLinhasPelaJanela } from "../utils/janela-das-linhas.js";
 import { businessToday } from "../utils/sale-date.js";
+import { buscarPlanilhasDeLeads, lerPlanilhasDeLeads } from "../utils/planilhas-de-leads.js";
 import { postDoAnuncio, postDoGrupo } from "../utils/post-do-criativo.js";
 import {
   chavesDeLeadsPagosPorAnuncio,
@@ -63,10 +63,15 @@ import {
  * Pausado da Meta). Sem subir, o cache serviria a coluna Status da tabela de
  * LPs em "—" por até 2 h depois do deploy.
  *
+ * `:v7` (Story 18.100) = os leads por criativo saem de TODAS as planilhas
+ * `leads` da etapa (layout comum, sem o prefixo `ag:` do Lead Form), não de
+ * uma só. Sem subir, o cache serviria os leads de uma planilha só por até 2 h
+ * depois do deploy.
+ *
  * A troca esfria também a tabela de Criativos (mesma entrada): a primeira
  * abertura depois do deploy paga a Meta ao vivo.
  */
-export const VERSAO_DO_CACHE_CREATIVE_PERFORMANCE = "v6";
+export const VERSAO_DO_CACHE_CREATIVE_PERFORMANCE = "v7";
 
 export function chaveDoCacheCreativePerformance(stageId: string, days: number): string {
   return `${stageId}:${days}:${VERSAO_DO_CACHE_CREATIVE_PERFORMANCE}`;
@@ -412,17 +417,12 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           META_FETCH_BUDGET_MS,
         );
 
-        // 4. Planilhas de leads e vendas do stage (mesmo padrao do creative-revenue)
-        const [leadsSheet] = await fastify.db
-          .select()
-          .from(funnelSpreadsheets)
-          .where(
-            and(
-              eq(funnelSpreadsheets.stageId, stageId),
-              eq(funnelSpreadsheets.type, "leads"),
-            ),
-          )
-          .limit(1);
+        // 4. Planilhas de leads e vendas do stage (mesmo padrao do creative-revenue).
+        // Story 18.100 (AC7): TODAS as planilhas `leads` da etapa, em
+        // `created_at, id` — antes era `.limit(1)` sem ordem, e a segunda
+        // planilha (o Lead Form da Meta) ficava de fora.
+        const planilhasDeLeads = await buscarPlanilhasDeLeads(fastify.db, stageId);
+        const leadsSheet = planilhasDeLeads.length > 0;
 
         const [salesSheet] = await fastify.db
           .select()
@@ -485,7 +485,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           let leadsData, salesData;
           try {
             [leadsData, salesData] = await Promise.all([
-              readSheetData(leadsSheet.spreadsheetId, leadsSheet.sheetName),
+              lerPlanilhasDeLeads(planilhasDeLeads),
               salesSheet
                 ? readSheetData(salesSheet.spreadsheetId, salesSheet.sheetName)
                 : Promise.resolve(null),
@@ -507,7 +507,8 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
               stageType: stage.stageType,
               leadsSheetRows: leadsData.rows.length,
               leadsSheetHeaders: leadsData.headers,
-              leadsColumnMapping: leadsSheet.columnMapping,
+              leadsColumnMapping: leadsData.columnMapping,
+              leadsSheets: leadsData.fontes,
             });
           } else {
             fastify.log.info({
@@ -519,7 +520,9 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           }
 
           if (leadsData) {
-            const leadsMapping = (leadsSheet.columnMapping ?? {}) as {
+            // Story 18.100: o mapeamento canônico da união (cada campo → o seu
+            // cabeçalho no layout comum); o `findCol` abaixo segue igual.
+            const leadsMapping = leadsData.columnMapping as {
               email?: string;
               utm_content?: string;
               // Story 18.89: só lead pago conta (regra do Top Criativos).
@@ -1233,7 +1236,7 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
           },
           // DEBUG: Include debug info in response for troubleshooting zero leads
           _debug: {
-            leadsSheetExists: !!leadsSheet,
+            leadsSheetExists: leadsSheet,
             salesSheetExists: !!salesSheet,
             // Story 18.49: fonte do revenue (co= da venda vs email do lead)
             revenueSource,

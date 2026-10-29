@@ -18,23 +18,20 @@
  * Por isso a distinção é feita pela presença de componente de hora + fuso, não
  * por heurística de valor.
  */
-import { inicioDaJanela as inicioDaJanelaCompartilhada } from "@loyola-x/shared";
+import {
+  inicioDaJanela as inicioDaJanelaCompartilhada,
+  BUSINESS_TIMEZONE,
+  toBusinessDayKey,
+  diaDoInstante,
+} from "@loyola-x/shared";
 
-
-export const BUSINESS_TIMEZONE = "America/Sao_Paulo";
-
-/** `en-CA` formata como `YYYY-MM-DD`, que é exatamente a chave que usamos. */
-const dayFormatter = new Intl.DateTimeFormat("en-CA", {
-  timeZone: BUSINESS_TIMEZONE,
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
-
-/** Dia civil de um instante, no fuso do negócio. Independe do TZ do processo. */
-export function toBusinessDayKey(instant: Date): string {
-  return dayFormatter.format(instant);
-}
+/**
+ * Story 18.100 (AC5): o fuso do negócio e o dia de um instante passaram a morar
+ * em `@loyola-x/shared` (`dia-do-negocio.ts`), para o web usar a MESMA regra.
+ * Continuam exportados daqui para os consumidores de sempre
+ * (`debriefing-hygiene.ts`, `vendas-por-canal-lyrio.ts`, …).
+ */
+export { BUSINESS_TIMEZONE, toBusinessDayKey };
 
 /**
  * Dia civil (`YYYY-MM-DD`) da data crua da planilha.
@@ -63,6 +60,12 @@ export function saleDayKey(raw: string | null | undefined): string | null {
   // ISO date puro (sem hora): também é dia escrito.
   const isoDate = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (isoDate) return isoDate[0];
+
+  // Story 18.100 (AC5): instante com fuso — a regra do shared, a mesma do web.
+  // Saída idêntica à do `new Date` abaixo para essas células; ele segue para o
+  // resto (ISO sem fuso, que fica fora do escopo da 18.100).
+  const diaDeSaoPaulo = diaDoInstante(trimmed);
+  if (diaDeSaoPaulo) return diaDeSaoPaulo;
 
   // Sobrou instante — aí sim converte.
   const dt = new Date(trimmed);
