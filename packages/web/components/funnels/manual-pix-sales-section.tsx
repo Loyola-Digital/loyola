@@ -1,10 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Wallet, ReceiptText, ScanLine , FileText, Download, Loader2} from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Wallet, ReceiptText, ScanLine , FileText, Download, FileSpreadsheet, Loader2} from "lucide-react";
 import type { ManualSale } from "@loyola-x/shared";
 import { toast } from "sonner";
 import { KiwifyReconciliationCard } from "@/components/funnels/kiwify-reconciliation-card";
+import { baixarCsv } from "@/lib/utils/baixar-csv";
+import { csvDasVendas, estaReembolsada, situacaoDaVenda } from "@/lib/utils/vendas-para-csv";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -124,6 +126,33 @@ function SourceBadge({ sale }: { sale: UnifiedSale }) {
   );
 }
 
+/**
+ * Selo de reembolso. A venda reembolsada FICA na tabela — ela aconteceu, e
+ * esconder faz o time procurar uma venda que o checkout registrou. O que ela
+ * perde é o faturamento (valor riscado e fora dos cards).
+ *
+ * Dois caminhos, mesmo selo: reembolso lançado à mão no Evento Presencial
+ * (tem data e motivo) e status de reembolso/chargeback vindo da planilha do
+ * checkout (só o status).
+ */
+function RefundBadge({ sale }: { sale: UnifiedSale }) {
+  if (!estaReembolsada(sale)) return null;
+  const detalhe = [
+    sale.refundedAt ? `em ${formatDate(sale.refundedAt)}` : null,
+    sale.refundReason ? `Motivo: ${sale.refundReason}` : null,
+  ]
+    .filter(Boolean)
+    .join(" — ");
+  return (
+    <span
+      className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+      title={detalhe ? `${situacaoDaVenda(sale)} ${detalhe}` : situacaoDaVenda(sale)}
+    >
+      {sale.refundStatus === "chargeback" ? "Chargeback" : "Reembolsada"}
+    </span>
+  );
+}
+
 /** Comprovante aberto no visualizador. */
 interface ComprovanteAberto {
   url: string;
@@ -227,14 +256,21 @@ export function ManualPixSalesSection({
     [sales, platform, productFilter],
   );
 
-  // Cards refletem o filtro ativo: total, faturamento e ticket médio são
-  // recalculados sobre o conjunto filtrado.
+  /**
+   * Cards refletem o filtro ativo. Venda reembolsada CONTA como venda (ela
+   * aconteceu, e é por isso que continua na tabela) mas fica fora de
+   * faturamento e de ticket médio — somá-la inflava o faturamento aqui
+   * enquanto os KPIs do topo da etapa já a descontavam, e os dois números
+   * nunca fechavam.
+   */
   const filteredSummary = useMemo(() => {
-    const totalRevenue = filteredSales.reduce((acc, s) => acc + s.value, 0);
+    const pagas = filteredSales.filter((s) => !estaReembolsada(s));
+    const totalRevenue = pagas.reduce((acc, s) => acc + s.value, 0);
     return {
       totalSales: filteredSales.length,
+      reembolsadas: filteredSales.length - pagas.length,
       totalRevenue,
-      ticket: filteredSales.length > 0 ? totalRevenue / filteredSales.length : 0,
+      ticket: pagas.length > 0 ? totalRevenue / pagas.length : 0,
     };
   }, [filteredSales]);
 
@@ -267,6 +303,9 @@ export function ManualPixSalesSection({
             {platform !== "all" && (
               <span className="opacity-70"> · {PLATFORM_LABELS[platform]}</span>
             )}
+            {filteredSummary.reembolsadas > 0 && (
+              <span className="opacity-70"> · {filteredSummary.reembolsadas} reembolsada(s)</span>
+            )}
           </span>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -281,6 +320,24 @@ export function ManualPixSalesSection({
           <Button size="sm" variant="outline" className="gap-1.5" onClick={onLaunchClick}>
             <Plus className="h-3.5 w-3.5" />
             {isTicket ? "Lançar ingresso" : "Lançar venda manual"}
+          </Button>
+          {/* Exporta a TABELA — o que o filtro mostra, todas as páginas, com a
+              coluna Situação (Paga / Reembolsada). É o arquivo que o
+              financeiro pede: a venda reembolsada tem de aparecer lá, marcada,
+              e não sumir da conferência. */}
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            disabled={filteredSales.length === 0}
+            onClick={() => {
+              baixarCsv(`vendas-${new Date().toISOString().slice(0, 10)}`, csvDasVendas(filteredSales));
+              toast.success(`${filteredSales.length} venda(s) exportada(s)`);
+            }}
+            title="Baixar as vendas da tabela em planilha (abre no Excel)"
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5" />
+            Excel
           </Button>
           {/* Exporta TODAS as vendas manuais da etapa, não só as da página nem
               as do filtro de dias: o uso real é fechar mês com o financeiro, e
@@ -311,6 +368,7 @@ export function ManualPixSalesSection({
       <p className="text-xs text-muted-foreground">
         Vendas das planilhas de Produto Principal e TMB, mais vendas PIX direto lançadas manualmente.
         Não inclui Captação. Filtro: últimos {days} dias. Só vendas manuais podem ser editadas/removidas.
+        Venda reembolsada continua na lista, marcada, e fora do faturamento.
       </p>
 
       {isLoading ? (
@@ -423,10 +481,13 @@ export function ManualPixSalesSection({
                 {visibleSales.map((sale) => (
                   <tr key={sale.id} className="border-t border-border/30">
                     <td className="px-3 py-2 tabular-nums">{formatDate(sale.saleDate)}</td>
-                    <td className="px-3 py-2 max-w-[160px] truncate" title={sale.customerName ?? ""}>
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className="truncate">{sale.customerName ?? "—"}</span>
+                    <td className="px-3 py-2 max-w-[160px]" title={sale.customerName ?? ""}>
+                      {/* Badges `shrink-0`: o nome trunca, os selos (origem e
+                          reembolso) nunca são cortados pela largura. */}
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <span className="truncate min-w-0">{sale.customerName ?? "—"}</span>
                         <SourceBadge sale={sale} />
+                        <RefundBadge sale={sale} />
                       </span>
                     </td>
                     <td className="px-3 py-2 text-muted-foreground max-w-[140px] truncate">
@@ -436,7 +497,12 @@ export function ManualPixSalesSection({
                     <td className="px-3 py-2">
                       <InvoiceBadge status={sale.invoiceStatus} />
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums font-medium">
+                    <td
+                      className={`px-3 py-2 text-right tabular-nums font-medium ${
+                        estaReembolsada(sale) ? "text-muted-foreground line-through" : ""
+                      }`}
+                      title={estaReembolsada(sale) ? "Fora do faturamento: venda reembolsada" : undefined}
+                    >
                       {formatCurrency(sale.value)}
                     </td>
                     <td className="px-3 py-2 text-right">

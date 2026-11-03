@@ -207,6 +207,13 @@ export interface UnifiedSale {
   /** Reembolso (Evento Presencial) — só vendas manuais podem ter. */
   refundedAt: string | null;
   refundReason: string | null;
+  /**
+   * Reembolso vindo da PLANILHA (coluna de status do checkout).
+   * Separado de `refundedAt` porque ali não há data: a Kiwify só troca o
+   * status da linha. Use `estaReembolsada` (lib/utils/vendas-para-csv) para
+   * não ter de lembrar dos dois.
+   */
+  refundStatus: "refunded" | "chargeback" | null;
 }
 
 export interface AllSalesResponse {
