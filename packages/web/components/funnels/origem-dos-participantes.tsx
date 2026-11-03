@@ -29,6 +29,7 @@
 
 import { useEffect, useState } from "react";
 import { Download, History, Loader2 } from "lucide-react";
+import { baixarCsv, montarCsv } from "@/lib/utils/baixar-csv";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Button } from "@/components/ui/button";
 import {
@@ -55,29 +56,18 @@ function chaveDoFunil(funnelId: string) {
   return `sendflow-origem:${funnelId}`;
 }
 
-/** CSV com `;` e BOM: é o que o Excel em português abre sem assistente. */
-function baixarCsv(dados: SendflowOrigem, nomeDaAntiga: string) {
-  const linhas = [
-    "Número;Origem;No grupo hoje",
-    ...dados.participantes.map((p) =>
-      [
+function baixarLista(dados: SendflowOrigem, nomeDaAntiga: string) {
+  baixarCsv(
+    `origem-${dados.campanha.name}`,
+    montarCsv(
+      ["Número", "Origem", "No grupo hoje"],
+      dados.participantes.map((p) => [
         p.numero,
         p.veioDaAntiga ? `Veio de ${nomeDaAntiga}` : "Novo",
         p.saiu ? "Saiu" : "Está",
-      ]
-        .map((c) => `"${c.replace(/"/g, '""')}"`)
-        .join(";"),
+      ]),
     ),
-  ];
-  const blob = new Blob(["\uFEFF" + linhas.join("\n")], {
-    type: "text/csv;charset=utf-8",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `origem-${dados.campanha.name.replace(/[^\w-]+/g, "-")}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  );
 }
 
 function Linha({
@@ -279,7 +269,7 @@ export function OrigemDosParticipantes({
               variant="outline"
               size="sm"
               className="h-8 gap-1.5"
-              onClick={() => baixarCsv(d, nomeDaAntiga)}
+              onClick={() => baixarLista(d, nomeDaAntiga)}
             >
               <Download className="h-3.5 w-3.5" />
               Baixar números (CSV)

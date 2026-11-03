@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyRefundStatus, isRefundBucket, isRevenueBucket } from "../services/sales-status.js";
+import { classifyRefundStatus, isRefundBucket, isRevenueBucket, reembolsosPorChave } from "../services/sales-status.js";
 
 describe("classifyRefundStatus", () => {
   it("sem coluna de status → tudo é 'paid' (legado, nenhum reembolso)", () => {
@@ -134,5 +134,31 @@ describe("agregação de vendas por status (Story 29.26)", () => {
     const r = agregar(planilha, false);
     expect(r.vendas).toBe(planilha.length);
     expect(r.reembolsos).toBe(0);
+  });
+});
+
+describe("reembolsosPorChave", () => {
+  it("acha o reembolso que veio como linha separada com o mesmo id", () => {
+    const mapa = reembolsosPorChave([
+      { chave: "tx1|curso", status: "paid" },
+      { chave: "tx1|curso", status: "refunded" },
+      { chave: "tx2|curso", status: "aprovado" },
+    ]);
+    expect(mapa.get("tx1|curso")).toBe("refunded");
+    expect(mapa.has("tx2|curso")).toBe(false);
+  });
+
+  it("chargeback entra, recusada e pendente não", () => {
+    const mapa = reembolsosPorChave([
+      { chave: "a", status: "chargeback" },
+      { chave: "b", status: "recusado" },
+      { chave: "c", status: "waiting_payment" },
+      { chave: "d", status: undefined },
+    ]);
+    expect([...mapa]).toEqual([["a", "chargeback"]]);
+  });
+
+  it("linha sem chave (venda sem id de transação) é ignorada", () => {
+    expect(reembolsosPorChave([{ chave: "", status: "refunded" }]).size).toBe(0);
   });
 });

@@ -28,29 +28,19 @@ import { Download, Radio } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSendflowCanais, type SendflowCanais } from "@/lib/hooks/use-sendflow";
 import { fmtInt } from "@/lib/utils/format-number";
+import { baixarCsv, montarCsv } from "@/lib/utils/baixar-csv";
 
 const pct = (parte: number, total: number) =>
   total > 0 ? `${((parte / total) * 100).toFixed(1)}%` : "—";
 
-/** CSV com `;` e BOM: é o que o Excel em português abre sem assistente. */
-function baixarCsv(d: SendflowCanais) {
-  const linhas = [
-    "Nome;Número;Canal;No grupo hoje",
-    ...d.pessoas.map((p) =>
-      [p.nome, p.numero, p.canal, p.saiu ? "Saiu" : "Está"]
-        .map((c) => `"${c.replace(/"/g, '""')}"`)
-        .join(";"),
+function baixarLista(d: SendflowCanais) {
+  baixarCsv(
+    `canais-${d.campanha.name}`,
+    montarCsv(
+      ["Nome", "Número", "Canal", "No grupo hoje"],
+      d.pessoas.map((p) => [p.nome, p.numero, p.canal, p.saiu ? "Saiu" : "Está"]),
     ),
-  ];
-  const blob = new Blob(["\uFEFF" + linhas.join("\n")], {
-    type: "text/csv;charset=utf-8",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `canais-${d.campanha.name.replace(/[^\w-]+/g, "-")}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  );
 }
 
 export function CanalDeQuemEntrou({
@@ -157,7 +147,7 @@ export function CanalDeQuemEntrou({
             variant="outline"
             size="sm"
             className="mt-3 h-8 gap-1.5"
-            onClick={() => baixarCsv(d)}
+            onClick={() => baixarLista(d)}
           >
             <Download className="h-3.5 w-3.5" />
             Baixar lista (CSV)

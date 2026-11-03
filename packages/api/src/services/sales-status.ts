@@ -116,3 +116,28 @@ export function classifyRefundStatus(
   // mas também não é reembolso.
   return "other";
 }
+
+/**
+ * Quais vendas a planilha já reembolsou, por chave de dedup.
+ *
+ * Kiwify e Hotmart não editam a linha da compra: o reembolso volta como uma
+ * linha NOVA, com o MESMO id de transação e o status trocado. Quem deduplica
+ * por (id + produto) — a tabela de vendas da etapa, por exemplo — engole essa
+ * segunda linha, e a venda reembolsada segue na tela como se nada tivesse
+ * acontecido. Esta varredura prévia diz, antes do dedup, quais chaves estão
+ * reembolsadas, para a venda aparecer com o selo em vez de desaparecer.
+ *
+ * A chave é montada por quem chama (normalmente `id|produto`); linha sem chave
+ * é ignorada, porque sem id não há o que casar com a compra.
+ */
+export function reembolsosPorChave(
+  linhas: Iterable<{ chave: string; status: string | undefined | null }>,
+): Map<string, "refunded" | "chargeback"> {
+  const out = new Map<string, "refunded" | "chargeback">();
+  for (const { chave, status } of linhas) {
+    if (!chave) continue;
+    const bucket = classifyRefundStatus(status, true);
+    if (bucket === "refunded" || bucket === "chargeback") out.set(chave, bucket);
+  }
+  return out;
+}

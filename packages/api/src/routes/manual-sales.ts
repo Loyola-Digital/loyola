@@ -22,6 +22,7 @@ import {
   stageEventProducts,
 } from "../db/schema.js";
 import { readSheetData } from "../services/google-sheets.js";
+import { classifyRefundStatus, isRefundBucket, reembolsosPorChave } from "../services/sales-status.js";
 import { manualSaleReceipts } from "../db/schema.js";
 import { enrollMember, decryptMemberkitKey } from "../services/memberkit.js";
 import { extrairComprovante, MIMES_IMAGEM, MIME_PDF } from "../services/comprovante-extract.js";
@@ -915,6 +916,11 @@ export default fp(async function manualSalesRoutes(fastify) {
         /** Reembolso (Evento Presencial) — só vendas manuais podem ter. */
         refundedAt: string | null;
         refundReason: string | null;
+        /**
+         * Reembolso vindo da PLANILHA (coluna de status do checkout). Separado
+         * de `refundedAt` porque ali não há data: a Kiwify só troca o status.
+         */
+        refundStatus: "refunded" | "chargeback" | null;
       };
 
       // 1. Vendas manuais
@@ -946,6 +952,7 @@ export default fp(async function manualSalesRoutes(fastify) {
         negociacao: r.negociacao,
         refundedAt: r.refundedAt ? r.refundedAt.toISOString() : null,
         refundReason: r.refundReason,
+        refundStatus: null,
       }));
 
       // 2. Vendas da planilha — 'all' pega todos os subtypes; CSV
@@ -998,6 +1005,7 @@ export default fp(async function manualSalesRoutes(fastify) {
           valorBruto?: string;
           canalOrigem?: string;
           dataVenda?: string;
+          status?: string;
           utm_source?: string;
           closer?: string;
           telefone?: string;
@@ -1024,6 +1032,30 @@ export default fp(async function manualSalesRoutes(fastify) {
         const canalIdx = idxOf(mapping.canalOrigem);
         const dataIdx = idxOf(mapping.dataVenda);
         const utmSourceIdx = idxOf(mapping.utm_source);
+        const statusIdx = idxOf(mapping.status);
+
+        /**
+         * O que a planilha já reembolsou, ANTES do dedup.
+         *
+         * A Kiwify devolve o reembolso como linha nova com o MESMO id da
+         * compra; o dedup por (id + produto) logo abaixo engole essa linha. Sem
+         * esta varredura a venda reembolsada aparecia na tabela como venda
+         * normal — e somava faturamento. Agora ela fica na tabela (a venda
+         * ACONTECEU) com o selo de reembolso, e fora da receita.
+         */
+        const reembolsoPorChave =
+          statusIdx === -1 || txIdx === -1
+            ? new Map<string, "refunded" | "chargeback">()
+            : reembolsosPorChave(
+                rows.map((row) => {
+                  const tx = (row[txIdx] ?? "").trim();
+                  const produto = (productIdx !== -1 ? (row[productIdx] ?? "") : "").trim();
+                  return {
+                    chave: tx ? `${tx}|${produto.toLowerCase()}` : "",
+                    status: row[statusIdx],
+                  };
+                }),
+              );
 
         // Story 19.10 — planilha de Evento Presencial: SEM email. Cada linha com
         // nome OU valor = 1 venda; chave por índice de linha. Closer = vendedor;
@@ -1068,6 +1100,7 @@ export default fp(async function manualSalesRoutes(fastify) {
               negociacao: negociacao || null,
               refundedAt: null,
               refundReason: null,
+              refundStatus: null,
             });
           }
           continue;
@@ -1101,6 +1134,14 @@ export default fp(async function manualSalesRoutes(fastify) {
           const canal = canalIdx !== -1 ? (row[canalIdx] ?? "").trim() : "";
           const utm = utmSourceIdx !== -1 ? (row[utmSourceIdx] ?? "").trim() : "";
           const explicitName = nameIdx !== -1 ? (row[nameIdx] ?? "").trim() : "";
+          // Reembolso desta linha: o status dela própria, ou — quando a linha
+          // de reembolso é outra com o mesmo id — o que a varredura achou.
+          const bucket = classifyRefundStatus(statusIdx !== -1 ? row[statusIdx] : undefined, statusIdx !== -1);
+          const refundStatus = isRefundBucket(bucket)
+            ? (bucket as "refunded" | "chargeback")
+            : txId
+              ? reembolsoPorChave.get(`${txId}|${explicitProduct.toLowerCase()}`) ?? null
+              : null;
 
           out.push({
             id: `sheet:${sheet.id}:${rowId}`,
@@ -1121,6 +1162,7 @@ export default fp(async function manualSalesRoutes(fastify) {
             negociacao: null,
             refundedAt: null,
             refundReason: null,
+            refundStatus,
           });
         }
       }
@@ -1131,11 +1173,14 @@ export default fp(async function manualSalesRoutes(fastify) {
         return b.saleDate.localeCompare(a.saleDate);
       });
 
-      // Vendas reembolsadas ficam na lista (histórico) mas não somam receita.
-      const totalRevenue = out.reduce((s, x) => s + (x.refundedAt ? 0 : x.value), 0);
+      // Vendas reembolsadas ficam na lista (histórico) mas não somam receita —
+      // tanto o reembolso lançado aqui (`refundedAt`) quanto o que veio da
+      // coluna de status da planilha (`refundStatus`).
+      const reembolsada = (x: UnifiedSale) => !!x.refundedAt || !!x.refundStatus;
+      const totalRevenue = out.reduce((s, x) => s + (reembolsada(x) ? 0 : x.value), 0);
       const manualRevenue = out
         .filter((x) => x.source === "manual")
-        .reduce((s, x) => s + (x.refundedAt ? 0 : x.value), 0);
+        .reduce((s, x) => s + (reembolsada(x) ? 0 : x.value), 0);
       const spreadsheetRevenue = totalRevenue - manualRevenue;
 
       return {
