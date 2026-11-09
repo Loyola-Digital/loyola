@@ -1,0 +1,74 @@
+schema: 1
+story: '18.102'
+story_title: 'Leads do criativo também quando o `utm_content` traz o NOME do anúncio — o Desempenho de Criativos mostrava 1 lead com ~100 na planilha'
+gate: CONCERNS
+status_reason: 'A regra (ad_id ou nome único) mora no shared e está ligada nos três pontos: Desempenho, Top Criativos e rota `creative-performance` (cache v8). A medição em produção, rodada pelo gestor, dá 1 → 106 na etapa do chamado e nenhuma diferença nas outras 19 etapas (AC5). Suíte web 2667/2667. Na API, as mesmas 10 falhas antigas do main e nenhuma nova. tsc limpo; lint sem erro. O QA fez 7 mutações nos pontos de chamada e 6 caíram. A que sobreviveu (TEST-001) é a unicidade no caminho do Desempenho, que nenhum teste cobre. O código está correto (lido pelo QA), mas a proteção contra a armadilha prevista no AC1 não tem teste nesse ponto.'
+reviewer: 'Quinn'
+updated: '2026-11-09T14:30:00Z'
+pr: null
+branch: 'feat/18.102-criativos-leads-pelo-nome (1 commit sobre a origin/main em 7fa2c473)'
+commits: ['36e945a9']
+coderabbit_status: 'SKIPPED (a CLI só roda em WSL/Windows; ambiente macOS, prática desde a 18.54)'
+
+checks:
+  code_review: 'PASS — mudança pequena e localizada; a regra está num módulo folha do shared; o 5º parâmetro de `countLeadsByOriginForAds` tem padrão `null` (comportamento antigo); o resumo da rota soma os criativos (linha 1079), então o total acompanha.'
+  unit_tests: 'PASS — 14 testes novos na web e 8 na API; testes da 18.89 verdes com a expressão de fio ajustada para o 3º argumento.'
+  acceptance_criteria: 'CONCERNS — AC1–AC5 e AC7 atendidos. AC6 (j) está testado no Top Criativos e no helper da API, mas não no Desempenho (TEST-001). AC8 fica para depois do deploy.'
+  no_regressions: 'PASS — em produção, 19 de 20 etapas sem diferença criativo a criativo; suítes sem falha nova.'
+  performance: 'PASS — `chavesDeLeadsPagosPorNome` é O(n) sobre o mapa que já existia; nenhuma chamada nova à Meta nem às planilhas.'
+  security: 'PASS — nenhuma entrada nova de usuário. O script de diagnóstico só faz SELECT (ver REL-001).'
+  documentation: 'PASS — story com T0, File List, reversões e limites conhecidos.'
+  api_contract: 'PASS (sem bump) — o formato da resposta não mudou: `leads` já existia e `adIds` veio na 18.89. Mudou o valor, e quem cuida disso é o cache v8. `API_CONTRACT_VERSION` segue em 64, como o PO previu.'
+
+mutations_by_qa:
+  note: 'Cada mutação foi aplicada num ponto de chamada (não na biblioteca) e restaurada com `git checkout --`. Worktree limpo no fim.'
+  results:
+    - 'M1 Desempenho sem o 5º argumento → web 2 falhas (AC7, AC3)'
+    - 'M2 Desempenho sem unicidade (armadilha do AC1) → SOBREVIVE (TEST-001)'
+    - 'M3 Top Criativos sem o 5º argumento → web 3 falhas (AC3, (h), (i))'
+    - 'M4 Top Criativos sem unicidade (armadilha) → web 2 falhas ((i), (j))'
+    - 'M5 rota sem `pelonome` → api 1 falha (fio da rota)'
+    - 'M6 rota sem unicidade (armadilha) → api 1 falha (fio da rota)'
+    - 'M7 rota com unicidade sobre lista vazia → api 1 falha (fio da rota)'
+
+top_issues:
+  - id: 'TEST-001'
+    severity: medium
+    status: 'aberto — recomendado antes do merge'
+    finding: >-
+      A unicidade do nome em `aplicarLeadsDaPlanilha` (o caminho do Desempenho de Criativos, que é a tela do
+      chamado) não tem teste. Trocar `chaveDoNomeSeUnico(criativo.adName, nomesUnicos)` por
+      `criativo.adName.trim().toLowerCase()` deixa todas as suítes verdes. O AC6 pede os casos-limite "web e API",
+      mas o (j) da web só passa por `enrichWithPaidLeads`. No Desempenho, os grupos vêm da rota agrupados com
+      `trim()` sem baixar a caixa. Dois criativos `AD01` e `ad01` fariam a linha `ad01` só com o nome contar nos
+      dois, e o total da tabela ficaria inflado. O caso é raro (P-2: só 1 de 20 etapas tem nome no `content`),
+      mas é exatamente a armadilha que o PO incluiu no AC1.
+    recommendation: >-
+      Teste de uma asserção em `leads-pelo-nome-do-anuncio-18102.test.ts`: `aplicarLeadsDaPlanilha` com
+      `[daApi("AD01", ["1"]), daApi("ad01", ["2"])]` e uma linha `ad01` só com o nome deve dar `[0, 0]`. Se
+      quiser, outro com a linha pelo ID `2` dando `[0, 1]`. Depois, repetir a M2: precisa cair.
+  - id: 'REL-001'
+    severity: low
+    status: 'aberto (sem efeito hoje)'
+    finding: >-
+      `diag-leads-por-nome-18102.ts` faz `pool.query("SET default_transaction_read_only = on")`, mas o SET vale
+      só para a conexão do pool que executou a consulta. As consultas seguintes (inclusive as do drizzle em
+      `buscarPlanilhasDeLeads`) podem cair em outra conexão. O script só faz SELECT, então nada foi escrito.
+      Mas a garantia de "somente leitura" anunciada no cabeçalho vem do código, não da sessão.
+    recommendation: 'Passar a opção na criação do pool: `new Pool({ connectionString, options: "-c default_transaction_read_only=on" })`, e tirar o `SET`.'
+  - id: 'OPS-001'
+    severity: low
+    status: 'pendente (operação, previsto na story)'
+    finding: 'AC8: conferir na tela depois do deploy (Desempenho e Top Criativos do `bbe-m1-out26` batendo com a T0). A primeira abertura depois do deploy é mais lenta, porque o cache v8 começa vazio.'
+    recommendation: '@dev ou o gestor registra os números da tela no Dev Agent Record depois do deploy.'
+  - id: 'OPS-002'
+    severity: low
+    status: 'recomendação ao gestor'
+    finding: 'Os anúncios do `bbe-m1-out26` continuam com `utm_content={{ad.name}}`. A 18.102 corrige a coluna Leads, mas temperatura, faturamento por e-mail do lead e a tabela de LPs continuam dependendo do ID (fora do escopo, item 4).'
+    recommendation: 'Trocar para `utm_content={{ad.id}}` no Gerenciador. A P-1 (tabela de LPs) segue como story separada.'
+  - id: 'TEST-API-INHERITED'
+    severity: low
+    status: 'herdado'
+    finding: 'A rota é testada por leitura do fonte (padrão do repo, 18.89/18.100). A unicidade na rota está protegida por uma expressão específica do argumento (M6/M7 caem), não por execução da rota.'
+
+waiver: { active: false }
