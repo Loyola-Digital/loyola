@@ -26,7 +26,11 @@ import {
   type CreativeSalesMetrics,
 } from "../utils/creative-sales-metrics.js";
 import { utmContentEfetivo, normalizeNumericId } from "../utils/utm-value.js";
-import { parseValorPlanilha } from "@loyola-x/shared";
+import {
+  chaveDoNomeSeUnico,
+  nomesQueIdentificamUmCriativo,
+  parseValorPlanilha,
+} from "@loyola-x/shared";
 import {
   classificarLinkDoCache,
   condicaoDoCacheDeCriativos,
@@ -41,6 +45,7 @@ import { buscarPlanilhasDeLeads, lerPlanilhasDeLeads } from "../utils/planilhas-
 import { postDoAnuncio, postDoGrupo } from "../utils/post-do-criativo.js";
 import {
   chavesDeLeadsPagosPorAnuncio,
+  chavesDeLeadsPagosPorNome,
   leadsPagosDoCriativo,
 } from "../utils/leads-pagos-por-criativo.js";
 
@@ -68,10 +73,15 @@ import {
  * uma só. Sem subir, o cache serviria os leads de uma planilha só por até 2 h
  * depois do deploy.
  *
+ * `:v8` (Story 18.102) = os leads por criativo contam também a linha cujo
+ * `utm_content` é o NOME do anúncio (quando o nome identifica um grupo só).
+ * Sem subir, o cache serviria o número só por ad_id (1 lead no `bbe-m1-out26`)
+ * por até 2 h depois do deploy.
+ *
  * A troca esfria também a tabela de Criativos (mesma entrada): a primeira
  * abertura depois do deploy paga a Meta ao vivo.
  */
-export const VERSAO_DO_CACHE_CREATIVE_PERFORMANCE = "v7";
+export const VERSAO_DO_CACHE_CREATIVE_PERFORMANCE = "v8";
 
 export function chaveDoCacheCreativePerformance(stageId: string, days: number): string {
   return `${stageId}:${days}:${VERSAO_DO_CACHE_CREATIVE_PERFORMANCE}`;
@@ -934,10 +944,18 @@ export default fp(async function stageCreativePerformanceRoutes(fastify) {
         // Leads/revenue/utmTerm consolidam de TODOS os ad_ids que compartilham
         // o mesmo nome (mesma logica da Top Creatives Gallery).
         const creatives: CreativePerformanceResponse[] = [];
+        // Story 18.102: linhas com o NOME do anúncio no `utm_content` contam no
+        // grupo de mesmo nome — só quando o nome identifica um grupo só (os
+        // grupos usam `trim()` sem baixar a caixa; `AD01` e `ad01` são dois).
+        const chavesPagasPorNome = chavesDeLeadsPagosPorNome(chavesPagasPorAnuncio);
+        const nomesUnicos = nomesQueIdentificamUmCriativo(groupedByName.keys());
         for (const group of groupedByName.values()) {
           // Story 18.89 (AC1): pagos, cada e-mail uma vez no criativo, somando
           // TODOS os seus anúncios — a conta do Top Criativos.
-          const totalLeads = leadsPagosDoCriativo(chavesPagasPorAnuncio, group.adIds);
+          const totalLeads = leadsPagosDoCriativo(chavesPagasPorAnuncio, group.adIds, {
+            chavesPorNome: chavesPagasPorNome,
+            chaveDoNome: chaveDoNomeSeUnico(group.adName, nomesUnicos),
+          });
           let totalRevenue = 0;
           // Story 18.55: Único/Total consolidados de todos os ad_ids do grupo
           let groupIngressosUnicos = 0;

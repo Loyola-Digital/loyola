@@ -17,7 +17,13 @@ import {
   cpcDeLink,
   somarLinkClicks,
 } from "@loyola-x/shared/src/clique-no-link";
-import { chaveDoLead, ehOrigemPagaDeLead } from "@loyola-x/shared/src/leads-pagos";
+import {
+  chaveDoLead,
+  chaveDoNomeSeUnico,
+  ehOrigemPagaDeLead,
+  nomesQueIdentificamUmCriativo,
+  utmContentEhONomeDoCriativo,
+} from "@loyola-x/shared/src/leads-pagos";
 
 /**
  * Representa um criativo agregado — vários `TopPerformerAd` com o mesmo
@@ -307,12 +313,17 @@ export function countPaidLeadsForAds(
  * Conta leads por origem (Pagos/Org/SemTrack) para um grupo de ad_ids.
  * Deduplicação por e-mail normalizado (lowercase + trim) dentro de cada categoria.
  * Leads sem e-mail recebem key única por índice.
+ *
+ * Story 18.102: `chaveDoNome` (de `chaveDoNomeSeUnico`) faz a linha cujo
+ * `utm_content` é o NOME do criativo contar também. `null` (o padrão) = só por
+ * ad_id, como antes — é o que vale quando o nome não identifica uma unidade só.
  */
 export function countLeadsByOriginForAds(
   rows: FunnelSpreadsheetRow[],
   adIds: string[],
   utmContentMapped: boolean,
   utmSourceMapped: boolean,
+  chaveDoNome: string | null = null,
 ): { leadsPagos: number; leadsOrg: number; leadsSemTrack: number } {
   if (!utmContentMapped) return { leadsPagos: 0, leadsOrg: 0, leadsSemTrack: 0 };
   const idSet = new Set(adIds.map(normalizeNumericId));
@@ -324,7 +335,10 @@ export function countLeadsByOriginForAds(
   let rowIdx = 0;
   for (const row of rows) {
     const utmContent = utmContentEfetivo(row.named.utm_content ?? "");
-    if (!idSet.has(utmContent)) { rowIdx++; continue; }
+    if (!idSet.has(utmContent) && !utmContentEhONomeDoCriativo(utmContent, chaveDoNome)) {
+      rowIdx++;
+      continue;
+    }
     // Story 18.89: chave e origem paga vêm do shared — a API conta com as mesmas.
     const key = chaveDoLead(row.named.email, rowIdx);
     const utmSource = (row.named.utm_source ?? "").trim().toLowerCase();
@@ -352,6 +366,10 @@ export function countLeadsByOriginForAds(
  *
  * Retorna uma lista nova (imutável). As rows devem vir já filtradas por janela
  * de datas (use `filterSheetRowsByDays` antes).
+ *
+ * Story 18.102: a unicidade do nome é medida na lista INTEIRA recebida. Na
+ * visão "Todos" (`aggregateCreativesByAd`) o mesmo nome aparece em vários
+ * cards, e a linha só com o nome não conta em nenhum deles.
  */
 export function enrichWithPaidLeads(
   creatives: AggregatedCreative[],
@@ -359,12 +377,14 @@ export function enrichWithPaidLeads(
   utmContentMapped: boolean,
   utmSourceMapped: boolean,
 ): AggregatedCreative[] {
+  const nomesUnicos = nomesQueIdentificamUmCriativo(creatives.map((c) => c.name));
   return creatives.map((c) => {
     const { leadsPagos, leadsOrg, leadsSemTrack } = countLeadsByOriginForAds(
       filteredRows,
       c.ids,
       utmContentMapped,
       utmSourceMapped,
+      chaveDoNomeSeUnico(c.name, nomesUnicos),
     );
     return {
       ...c,

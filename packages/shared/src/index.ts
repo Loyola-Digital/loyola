@@ -227,6 +227,11 @@ export {
   ehOrigemPagaDeLead,
   ehOrigemMetaDeLead,
   chaveDoLead,
+  // Story 18.102: o `utm_content` com o NOME do anúncio, com unicidade.
+  chaveDoNomeDoCriativo,
+  nomesQueIdentificamUmCriativo,
+  chaveDoNomeSeUnico,
+  utmContentEhONomeDoCriativo,
 } from "./leads-pagos.js";
 // Story 18.90: a causa de uma falha do GA4 (código + mensagem que diz o que
 // fazer). Módulo folha: o web importa por subpath (`@loyola-x/shared/src/ga4-erros`).

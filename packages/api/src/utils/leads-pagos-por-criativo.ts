@@ -10,7 +10,7 @@
  * A regra (origem paga e chave de dedup) vem do shared (`leads-pagos.ts`),
  * a mesma que `countLeadsByOriginForAds` usa no web.
  */
-import { chaveDoLead, ehOrigemPagaDeLead } from "@loyola-x/shared";
+import { chaveDoLead, chaveDoNomeDoCriativo, ehOrigemPagaDeLead } from "@loyola-x/shared";
 import { utmContentEfetivo } from "./utm-value.js";
 
 /** Índices das colunas na aba de leads. `-1` = coluna não mapeada. */
@@ -53,14 +53,52 @@ export function chavesDeLeadsPagosPorAnuncio(
   return porAnuncio;
 }
 
-/** Leads do criativo: chaves distintas entre TODOS os seus anúncios. */
+/**
+ * Story 18.102 — o mesmo mapa, re-chaveado pelo `utm_content` normalizado
+ * como NOME (`chaveDoNomeDoCriativo`). A linha com o nome do anúncio no
+ * `utm_content` já está em `chavesPorAnuncio`, sob o próprio nome; aqui ela
+ * fica achável pelo nome do criativo. Sai do mesmo mapa, então as chaves de
+ * dedup (e-mail, ou a da linha) são as mesmas: quem entrou por linha com ID e
+ * por linha com nome é UM lead do criativo.
+ */
+export function chavesDeLeadsPagosPorNome(
+  chavesPorAnuncio: ReadonlyMap<string, ReadonlySet<string>>,
+): Map<string, Set<string>> {
+  const porNome = new Map<string, Set<string>>();
+  for (const [conteudo, chaves] of chavesPorAnuncio) {
+    const nome = chaveDoNomeDoCriativo(conteudo);
+    if (!nome) continue;
+    let destino = porNome.get(nome);
+    if (!destino) {
+      destino = new Set();
+      porNome.set(nome, destino);
+    }
+    for (const chave of chaves) destino.add(chave);
+  }
+  return porNome;
+}
+
+/**
+ * Leads do criativo: chaves distintas entre TODOS os seus anúncios.
+ *
+ * Story 18.102: com `pelonome`, soma também as linhas cujo `utm_content` é o
+ * nome do criativo. `chaveDoNome` vem de `chaveDoNomeSeUnico` — `null` quando o
+ * nome não identifica um grupo só, e aí conta só por ad_id.
+ */
 export function leadsPagosDoCriativo(
   chavesPorAnuncio: ReadonlyMap<string, ReadonlySet<string>>,
   adIds: readonly string[],
+  pelonome?: {
+    chavesPorNome: ReadonlyMap<string, ReadonlySet<string>>;
+    chaveDoNome: string | null;
+  },
 ): number {
   const chaves = new Set<string>();
   for (const adId of adIds) {
     for (const chave of chavesPorAnuncio.get(adId) ?? []) chaves.add(chave);
+  }
+  if (pelonome?.chaveDoNome) {
+    for (const chave of pelonome.chavesPorNome.get(pelonome.chaveDoNome) ?? []) chaves.add(chave);
   }
   return chaves.size;
 }
