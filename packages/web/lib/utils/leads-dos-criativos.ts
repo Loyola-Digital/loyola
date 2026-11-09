@@ -20,6 +20,10 @@
 import type { FunnelSpreadsheetData } from "@/lib/types/funnel-spreadsheet";
 import { filterSheetRowsByDays } from "@/lib/utils/spreadsheet-filters";
 import { countLeadsByOriginForAds } from "@/lib/utils/top-creatives";
+import {
+  chaveDoNomeSeUnico,
+  nomesQueIdentificamUmCriativo,
+} from "@loyola-x/shared/src/leads-pagos";
 
 /** O que esta função precisa de cada linha da tabela. */
 export interface CriativoComLeads {
@@ -63,6 +67,9 @@ export function adIdsDoCriativo(
  * Sem planilha carregada, ou sem como saber os ad_ids do criativo, o `leads`
  * que veio da API fica — desde o contrato 53 ele já segue a mesma regra.
  * Devolve uma lista nova; não muta a de entrada.
+ *
+ * Story 18.102: conta também a linha cujo `utm_content` é o NOME do criativo,
+ * quando esse nome identifica uma linha só da tabela (`chaveDoNomeSeUnico`).
  */
 export function aplicarLeadsDaPlanilha<T extends CriativoComLeads>(
   criativos: T[],
@@ -74,6 +81,7 @@ export function aplicarLeadsDaPlanilha<T extends CriativoComLeads>(
   const linhas = filterSheetRowsByDays(planilha, days);
   const utmContentMapped = !!planilha.mapping.utm_content;
   const utmSourceMapped = !!planilha.mapping.utm_source;
+  const nomesUnicos = nomesQueIdentificamUmCriativo(criativos.map((c) => c.adName));
   return criativos.map((criativo) => {
     const adIds = adIdsDoCriativo(criativo, adNameByContent);
     if (!adIds) return criativo;
@@ -82,6 +90,7 @@ export function aplicarLeadsDaPlanilha<T extends CriativoComLeads>(
       adIds,
       utmContentMapped,
       utmSourceMapped,
+      chaveDoNomeSeUnico(criativo.adName, nomesUnicos),
     );
     return { ...criativo, leads: leadsPagos };
   });

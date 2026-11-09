@@ -110,7 +110,8 @@ describe("Story 18.89 — fio da rota creative-performance", () => {
 
   it("o criativo soma TODOS os anúncios do grupo, sem a contagem de linhas", () => {
     // Mutação: voltar `totalLeads += leadsAgg.count` → todas as linhas, sem dedup.
-    expect(rota).toMatch(/const totalLeads = leadsPagosDoCriativo\(chavesPagasPorAnuncio, group\.adIds\)/);
+    // Story 18.102: a chamada ganhou o 3º argumento (`pelonome`); o grupo inteiro segue indo.
+    expect(rota).toMatch(/const totalLeads = leadsPagosDoCriativo\(chavesPagasPorAnuncio, group\.adIds[,)]/);
     expect(rota).not.toMatch(/totalLeads \+= leadsAgg\.count/);
   });
 
