@@ -6,8 +6,8 @@ status_reason: 'Re-gate depois do QA fix 1. O TEST-001 foi fechado com um teste 
 reviewer: 'Quinn'
 updated: '2026-11-09T14:30:00Z'
 pr: null
-branch: 'feat/18.102-criativos-leads-pelo-nome (1 commit sobre a origin/main em 7fa2c473)'
-commits: ['36e945a9', '4c9cf4ab', 'QA fix 1 (ver git log)']
+branch: 'feat/18.102-criativos-leads-pelo-nome (sobre a origin/main em 7fa2c473)'
+commits: ['36e945a9', '4c9cf4ab', '083a8b96']
 previous_gate: 'CONCERNS (2026-11-09, TEST-001 medium, REL-001 low)'
 coderabbit_status: 'SKIPPED (a CLI só roda em WSL/Windows; ambiente macOS, prática desde a 18.54)'
 
