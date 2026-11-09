@@ -196,6 +196,21 @@ describe("Story 18.102 — casos-limite (AC6)", () => {
     const comId = enrichWithPaidLeads(grupos, [linha("2", "meta", "a@x.com")], true, true);
     expect(comId.map((c) => c.leadsPagos)).toEqual([0, 1]);
   });
+
+  it("(j) no Desempenho de Criativos também (QA TEST-001): AD01 × ad01 → nome não atribui; ID atribui", () => {
+    // Os grupos da rota usam `trim()` sem baixar a caixa: `AD01` e `ad01` são duas linhas da tabela.
+    const grupos = [daApi("AD01", ["1"]), daApi("ad01", ["2"])];
+    // Sem a coluna de data mapeada, `filterSheetRowsByDays` devolve todas as linhas.
+    const semData = (rows: FunnelSpreadsheetRow[]): FunnelSpreadsheetData => {
+      const p = planilha(rows);
+      return { ...p, mapping: { ...p.mapping, date: undefined } };
+    };
+    const soNome = aplicarLeadsDaPlanilha(grupos, semData([linha("ad01", "meta", "a@x.com")]), 30, {});
+    // Mutação (sem unicidade): [1, 1] — a mesma pessoa nas duas linhas da tabela.
+    expect(soNome.map((c) => c.leads)).toEqual([0, 0]);
+    const comId = aplicarLeadsDaPlanilha(grupos, semData([linha("2", "meta", "a@x.com")]), 30, {});
+    expect(comId.map((c) => c.leads)).toEqual([0, 1]);
+  });
 });
 
 describe("Story 18.102 — a unicidade no shared (AC1)", () => {

@@ -27,8 +27,12 @@ async function main(): Promise<void> {
   const todas = args.includes("--todas");
   let stageIds = args.filter((a) => !a.startsWith("--"));
 
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  await pool.query("SET default_transaction_read_only = on");
+  // QA REL-001: somente leitura em TODA conexão do pool (um `SET` valeria só
+  // para a conexão que o executasse).
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    options: "-c default_transaction_read_only=on",
+  });
   const db = drizzle(pool, { schema });
 
   function findCol(headers: string[], name: string | undefined): number {
