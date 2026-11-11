@@ -40,11 +40,18 @@ const FONTES: { nome: string; situacao: Situacao; rotulo: string; detalhe: strin
       "A Meta não entrega seguidores por Reels — só por foto e carrossel. Na tabela, a célula é editável: o número vem do painel do Instagram.",
   },
   {
-    nome: "Etiquetas do post (tema, CTA)",
+    nome: "Tema do conteúdo",
+    situacao: "parcial",
+    rotulo: "Sugerido e revisado",
+    detalhe:
+      "A IA lê a legenda e sugere uma etiqueta; o social media confirma ou corrige na coluna Tema da tabela de posts. Em itálico é o que ainda não passou por revisão.",
+  },
+  {
+    nome: "Tipo de chamada (CTA)",
     situacao: "faltando",
     rotulo: "Não existe ainda",
     detalhe:
-      "Tema do conteúdo e tipo de chamada sairiam da legenda, sugeridos e revisados pelo social media. Sem isso não dá para dizer qual assunto rende.",
+      "Grupo, isca, publi ou sem chamada — sairia da legenda como o tema. Sem isso não dá para dizer qual chamada converte.",
   },
   {
     nome: "Leads por origem",

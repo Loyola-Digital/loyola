@@ -503,6 +503,19 @@ export const instagramPostMetrics = pgTable(
     followsManual: integer("follows_manual"),
     followsManualBy: uuid("follows_manual_by").references(() => users.id, { onDelete: "set null" }),
     followsManualAt: timestamp("follows_manual_at", { withTimezone: true }),
+    /**
+     * Tema do conteúdo — a etiqueta que agrupa posts por assunto.
+     *
+     * Não há tabela de temas: a lista de uma conta é o `distinct` desta coluna.
+     * Uma tabela exigiria cadastrar antes de etiquetar, e o vocabulário de cada
+     * perfil só aparece depois de ver os posts. A IA recebe os temas que já
+     * existem e é instruída a reaproveitá-los, para a lista não virar sinônimo.
+     */
+    tema: varchar("tema", { length: 60 }),
+    /** `ia` = sugerido e ainda não revisado; `manual` = alguém do time decidiu. */
+    temaFonte: varchar("tema_fonte", { length: 10 }),
+    temaPor: uuid("tema_por").references(() => users.id, { onDelete: "set null" }),
+    temaEm: timestamp("tema_em", { withTimezone: true }),
     /** Leitura da IA sobre este post (ver `instagram-analise-de-post.ts`). */
     analise: jsonb("analise"),
     analiseEm: timestamp("analise_em", { withTimezone: true }),

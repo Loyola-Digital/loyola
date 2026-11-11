@@ -48,6 +48,10 @@ export interface InstagramMedia {
   follows_fonte?: "meta" | "manual" | null;
   /** % das views do Reels que pularam nos 3 primeiros segundos (`reels_skip_rate`). Só Reels. */
   skip_rate?: number | null;
+  /** Tema do conteúdo — o assunto de que o post trata. */
+  tema?: string | null;
+  /** `ia` = sugerido e ainda não revisado; `manual` = alguém do time decidiu. */
+  tema_fonte?: "ia" | "manual" | null;
 }
 
 export interface InsightValue {
@@ -264,6 +268,43 @@ export function useSalvarSeguidoresDoPost(accountId: string | null) {
       apiClient<{ seguidores: number | null }>(
         `/api/instagram/accounts/${accountId}/posts/${mediaId}/seguidores`,
         { method: "PUT", body: JSON.stringify({ seguidores }) },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["instagram-media", accountId] });
+    },
+  });
+}
+
+/** Grava o tema que uma pessoa decidiu. Vazio apaga a etiqueta. */
+export function useSalvarTemaDoPost(accountId: string | null) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ mediaId, tema }: { mediaId: string; tema: string | null }) =>
+      apiClient<{ tema: string | null; fonte: "manual" | null }>(
+        `/api/instagram/accounts/${accountId}/posts/${mediaId}/tema`,
+        { method: "PUT", body: JSON.stringify({ tema }) },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["instagram-media", accountId] });
+    },
+  });
+}
+
+/**
+ * Pede à IA o tema dos posts que ainda não têm nenhum.
+ *
+ * Só preenche buraco: post já etiquetado não é tocado, e o que passou por
+ * revisão humana nunca volta a ser sugestão.
+ */
+export function useSugerirTemas(accountId: string | null) {
+  const apiClient = useApiClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiClient<{ sugeridos: number; restantes: number; temas?: string[]; mensagem?: string }>(
+        `/api/instagram/accounts/${accountId}/temas/sugerir`,
+        { method: "POST" },
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["instagram-media", accountId] });

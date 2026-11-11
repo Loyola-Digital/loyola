@@ -21,7 +21,7 @@
  * retenção —, e só deles se paga chamada.
  */
 
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { instagramPostMetrics } from "../db/schema.js";
 
@@ -37,6 +37,9 @@ export interface MetricasDoPost {
   skipRate: number | null;
   avgWatchTimeMs: number | null;
   insightsAt: Date | null;
+  /** Tema do conteúdo e de onde ele veio (ver `instagram-temas.ts`). */
+  tema: string | null;
+  temaFonte: string | null;
 }
 
 const DIA = 86_400_000;
@@ -113,6 +116,8 @@ export async function lerMetricas(
         skipRate: num(l.skipRate),
         avgWatchTimeMs: l.avgWatchTimeMs,
         insightsAt: l.insightsAt,
+        tema: l.tema,
+        temaFonte: l.temaFonte,
       },
     ]),
   );
@@ -261,6 +266,8 @@ export async function postsDoBanco(
     avg_watch_time_ms: number | null;
     engagement_rate: number | null;
     follows_fonte: "meta" | "manual" | null;
+    tema: string | null;
+    tema_fonte: "ia" | "manual" | null;
   }[]
 > {
   const linhas = await db
@@ -294,6 +301,81 @@ export async function postsDoBanco(
       avg_watch_time_ms: l.avgWatchTimeMs,
       engagement_rate: l.reach && l.reach > 0 ? (inter / l.reach) * 100 : null,
       follows_fonte: l.follows != null ? "meta" : l.followsManual != null ? "manual" : null,
+      tema: l.tema,
+      tema_fonte: (l.temaFonte as "ia" | "manual" | null) ?? null,
     };
   });
+}
+
+/**
+ * Grava o tema decidido por uma pessoa.
+ *
+ * Sempre `manual`: o que passou pela revisão não volta a ser sugestão, e a
+ * próxima rodada da IA não mexe nele.
+ */
+export async function salvarTemaDoPost(
+  db: Database,
+  accountId: string,
+  mediaId: string,
+  tema: string | null,
+  usuarioId: string | null,
+): Promise<boolean> {
+  const limpo = tema?.trim().slice(0, 60) || null;
+  const r = await db
+    .update(instagramPostMetrics)
+    .set({
+      tema: limpo,
+      temaFonte: limpo === null ? null : "manual",
+      temaPor: limpo === null ? null : usuarioId,
+      temaEm: limpo === null ? null : new Date(),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(instagramPostMetrics.accountId, accountId),
+        eq(instagramPostMetrics.mediaId, mediaId),
+      ),
+    )
+    .returning({ mediaId: instagramPostMetrics.mediaId });
+  return r.length > 0;
+}
+
+/**
+ * Grava o que a IA sugeriu — uma linha por vez, e só onde ainda não há tema.
+ *
+ * A guarda do `tema is null` no WHERE é o que impede uma rodada da IA de
+ * atropelar a revisão de alguém numa corrida entre as duas gravações.
+ */
+export async function salvarTemasSugeridos(
+  db: Database,
+  accountId: string,
+  sugestoes: { id: string; tema: string | null }[],
+): Promise<number> {
+  const agora = new Date();
+  let gravados = 0;
+  for (const s of sugestoes) {
+    if (!s.tema) continue;
+    const r = await db
+      .update(instagramPostMetrics)
+      .set({ tema: s.tema, temaFonte: "ia", temaPor: null, temaEm: agora, updatedAt: agora })
+      .where(
+        and(
+          eq(instagramPostMetrics.accountId, accountId),
+          eq(instagramPostMetrics.mediaId, s.id),
+          isNull(instagramPostMetrics.tema),
+        ),
+      )
+      .returning({ mediaId: instagramPostMetrics.mediaId });
+    gravados += r.length;
+  }
+  return gravados;
+}
+
+/** Os temas que esta conta já usa — o vocabulário que a IA deve reaproveitar. */
+export async function temasDaConta(db: Database, accountId: string): Promise<string[]> {
+  const linhas = await db
+    .selectDistinct({ tema: instagramPostMetrics.tema })
+    .from(instagramPostMetrics)
+    .where(and(eq(instagramPostMetrics.accountId, accountId), isNotNull(instagramPostMetrics.tema)));
+  return linhas.map((l) => l.tema!).sort((a, b) => a.localeCompare(b, "pt-BR"));
 }

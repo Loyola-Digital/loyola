@@ -106,6 +106,9 @@ interface InstagramMedia {
    * primeiros segundos. 100 − isto é a retenção do gancho. Só Reels.
    */
   skip_rate?: number | null;
+  /** Tema do conteúdo, e se veio da IA (a revisar) ou de uma pessoa. */
+  tema?: string | null;
+  tema_fonte?: "ia" | "manual" | null;
 }
 
 interface MediaListResponse {
@@ -634,6 +637,8 @@ export default fp(async function instagramServicePlugin(fastify) {
         follows_fonte:
           g.follows != null ? "meta" : manuais.get(post.id) != null ? "manual" : null,
         skip_rate: g.skipRate ?? null,
+        tema: guardadas.get(post.id)?.tema ?? null,
+        tema_fonte: (guardadas.get(post.id)?.temaFonte as "ia" | "manual" | null) ?? null,
       } satisfies InstagramMedia;
     });
 
