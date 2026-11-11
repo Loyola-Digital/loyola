@@ -12,12 +12,14 @@ import { PostsTable } from "../posts-table";
 
 const gerar = vi.fn();
 const salvarSeguidores = vi.fn();
+const salvarTema = vi.fn();
 
 vi.mock("@/lib/hooks/use-organic-posts", () => ({
   useOrganicPostLinks: () => ({ data: [] }),
 }));
 vi.mock("@/lib/hooks/use-instagram", () => ({
   useSalvarSeguidoresDoPost: () => ({ mutate: salvarSeguidores, isPending: false }),
+  useSalvarTemaDoPost: () => ({ mutate: salvarTema, isPending: false }),
   useAnaliseDoPost: () => ({ data: { analise: null, geradoEm: null }, isLoading: false }),
   useGerarAnaliseDoPost: () => ({ mutate: gerar, isPending: false }),
 }));
@@ -41,7 +43,13 @@ const post = (x: Partial<InstagramMedia>): InstagramMedia => ({
 
 const posts = [
   post({}),
-  post({ id: "17900000000000002", timestamp: "2026-09-05T12:00:00+0000", caption: "Post de setembro" }),
+  post({
+    id: "17900000000000002",
+    timestamp: "2026-09-05T12:00:00+0000",
+    caption: "Post de setembro",
+    tema: "Bastidores",
+    tema_fonte: "ia",
+  }),
 ];
 
 const montar = () =>
@@ -84,5 +92,26 @@ describe("PostsTable", () => {
     const celula = screen.getAllByTitle(/painel do Instagram/)[0]!;
     fireEvent.click(celula);
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("escrever o tema grava com Enter, e sem abrir o post", () => {
+    montar();
+    fireEvent.click(screen.getAllByTitle(/editar o tema/i)[0]!);
+    const campo = screen.getByLabelText("Tema do conteúdo");
+    fireEvent.change(campo, { target: { value: "Rotina da família" } });
+    fireEvent.keyDown(campo, { key: "Enter" });
+
+    expect(salvarTema).toHaveBeenCalledWith(
+      expect.objectContaining({ tema: "Rotina da família" }),
+      expect.anything(),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("o tema sugerido pela IA se anuncia como sugestão", () => {
+    // Em itálico e com o aviso no título: tema errado que passa por revisado
+    // envenena a tabela que diz que assunto rende.
+    montar();
+    expect(screen.getAllByTitle(/Sugerido pela IA/)[0]).toBeTruthy();
   });
 });

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, gt, inArray } from "drizzle-orm";
+import { eq, and, gt, inArray, isNull } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { instagramAccounts, instagramMetricsCache, instagramAccountProjects } from "../db/schema.js";
 import { encrypt, decrypt } from "../services/encryption.js";
@@ -11,7 +11,14 @@ import {
   type AnaliseDoPeriodo,
 } from "../services/instagram-analise-ia.js";
 import { tituloDoPost } from "../services/instagram-mensal.js";
-import { postsDoBanco, salvarSeguidoresManuais } from "../services/instagram-post-metrics.js";
+import {
+  postsDoBanco,
+  salvarSeguidoresManuais,
+  salvarTemaDoPost,
+  salvarTemasSugeridos,
+  temasDaConta,
+} from "../services/instagram-post-metrics.js";
+import { sugerirTemas } from "../services/instagram-temas.js";
 import {
   analisarPostComIa,
   montarDadosDoPost,
@@ -1194,6 +1201,84 @@ export default fp(async function instagramRoutes(fastify) {
       fastify.log.error({ err: error }, "[IG] análise do post falhou");
       return reply.code(502).send({
         error: error instanceof Error ? error.message : "A análise falhou.",
+      });
+    }
+  });
+  // ---- Tema do conteúdo ----
+  //
+  // Etiqueta por post, para a tela responder "que assunto rende?" — a pergunta
+  // que formato e alcance não respondem. A IA sugere em lote, uma pessoa
+  // revisa, e o que foi revisado nunca mais é tocado pela IA.
+
+  const temaBody = z.object({ tema: z.string().trim().max(60).nullable() });
+
+  fastify.put("/api/instagram/accounts/:id/posts/:mediaId/tema", async (request, reply) => {
+    const p = paramsDoPost.safeParse(request.params);
+    const body = temaBody.safeParse(request.body);
+    if (!p.success || !body.success) return reply.code(400).send({ error: "Dados inválidos" });
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+
+    const ok = await salvarTemaDoPost(
+      fastify.db,
+      p.data.id,
+      p.data.mediaId,
+      body.data.tema,
+      request.userId ?? null,
+    );
+    // A linha nasce na primeira leitura da lista de posts; sem ela, o post não
+    // é desta conta ou a lista nunca foi aberta.
+    if (!ok) return reply.code(404).send({ error: "Post não encontrado nesta conta" });
+    return { tema: body.data.tema?.trim() || null, fonte: body.data.tema?.trim() ? "manual" : null };
+  });
+
+  /** Quantos posts a IA etiqueta de uma vez. Lote maior custa e demora sem ganhar. */
+  const LOTE_DE_TEMAS = 60;
+
+  fastify.post("/api/instagram/accounts/:id/temas/sugerir", async (request, reply) => {
+    const p = idParamSchema.safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "ID inválido" });
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+
+    const chave = process.env.ANTHROPIC_API_KEY;
+    if (!chave) return reply.code(503).send({ error: "IA não configurada no servidor (ANTHROPIC_API_KEY)." });
+
+    const candidatos = await fastify.db
+      .select({
+        mediaId: instagramPostMetrics.mediaId,
+        caption: instagramPostMetrics.caption,
+        postedAt: instagramPostMetrics.postedAt,
+      })
+      .from(instagramPostMetrics)
+      .where(
+        and(
+          eq(instagramPostMetrics.accountId, p.data.id),
+          isNull(instagramPostMetrics.tema),
+        ),
+      )
+      .orderBy(desc(instagramPostMetrics.postedAt))
+      .limit(LOTE_DE_TEMAS);
+
+    const comLegenda = candidatos.filter((c) => (c.caption ?? "").trim().length > 0);
+    if (comLegenda.length === 0) {
+      return { sugeridos: 0, restantes: 0, mensagem: "Todos os posts com legenda já têm tema." };
+    }
+
+    try {
+      const sugestoes = await sugerirTemas(chave, {
+        posts: comLegenda.map((c) => ({ id: c.mediaId, caption: c.caption, postedAt: c.postedAt })),
+        temasQueJaExistem: await temasDaConta(fastify.db, p.data.id),
+      });
+      const gravados = await salvarTemasSugeridos(fastify.db, p.data.id, sugestoes);
+      return {
+        sugeridos: gravados,
+        // O que sobrou do lote: a tela diz se vale clicar de novo.
+        restantes: Math.max(0, candidatos.length - comLegenda.length),
+        temas: await temasDaConta(fastify.db, p.data.id),
+      };
+    } catch (error) {
+      fastify.log.error({ err: error }, "[IG] sugestão de temas falhou");
+      return reply.code(502).send({
+        error: error instanceof Error ? error.message : "A sugestão falhou.",
       });
     }
   });

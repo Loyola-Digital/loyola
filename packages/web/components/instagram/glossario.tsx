@@ -22,6 +22,7 @@ const TERMOS: [string, string][] = [
   ["Tempo médio", "Quanto tempo, em média, as pessoas assistiram ao Reels."],
   ["Interesse por mil", "Compartilhamentos mais salvamentos para cada mil contas alcançadas. Serve para comparar posts de tamanhos diferentes."],
   ["Status do post", "Forte: entre os 25% melhores do mesmo formato em interesse por mil. Fraco: entre os 25% piores. Na linha: o meio."],
+  ["Tema do conteúdo", "O assunto de que o post trata — não o formato nem o objetivo. A IA sugere a partir da legenda e o social media revisa."],
   ["Mediana", "O valor do meio. Usamos no lugar da média porque um post viral puxa a média para cima."],
   ["Saídas sobre entradas", "De cada 100 seguidores que entraram, quantos saíram no mesmo período."],
 ];

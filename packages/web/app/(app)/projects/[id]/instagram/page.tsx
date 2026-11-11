@@ -42,6 +42,7 @@ import { DeOndeVemODado } from "@/components/instagram/de-onde-vem-o-dado";
 import { GraficoDoPerfil } from "@/components/instagram/grafico-do-perfil";
 import { PostsTable } from "@/components/instagram/posts-table";
 import { PerformancePorFormato } from "@/components/instagram/performance-por-formato";
+import { PorTema } from "@/components/instagram/por-tema";
 import { AnaliseComIaDoPeriodo } from "@/components/instagram/analise-com-ia";
 import { StoriesSection } from "@/components/instagram/stories-section";
 import { ReelsSection } from "@/components/instagram/reels-section";
@@ -260,6 +261,14 @@ export default function ProjectInstagramPage({ params }: Props) {
             onRefresh={handleRefreshAll}
             isRefreshing={refresh.isPending}
             projectId={projectId}
+            since={period.since}
+            until={period.until}
+            accountId={selectedAccountId}
+          />
+
+          <PorTema
+            data={media?.data}
+            isLoading={mediaLoading}
             since={period.since}
             until={period.until}
             accountId={selectedAccountId}

@@ -31,6 +31,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Check, ExternalLink, Link2, Pencil, Re
 import { toast } from "sonner";
 import {
   useSalvarSeguidoresDoPost,
+  useSalvarTemaDoPost,
   type InstagramMedia,
 } from "@/lib/hooks/use-instagram";
 import { format, parseISO } from "date-fns";
@@ -205,6 +206,91 @@ function CelulaDeSeguidores({
   );
 }
 
+/**
+ * A etiqueta de tema, editável na própria célula.
+ *
+ * A lista de temas da conta vai num `datalist`: quem digita vê o que já existe
+ * e reaproveita, em vez de criar "Black MFB" ao lado de "Promoção da Black".
+ * Sugestão da IA aparece em itálico até alguém confirmar — gravar é confirmar.
+ */
+function CelulaDeTema({
+  post,
+  accountId,
+  temas,
+}: {
+  post: InstagramMedia;
+  accountId: string;
+  temas: string[];
+}) {
+  const [editando, setEditando] = useState(false);
+  const [texto, setTexto] = useState("");
+  const salvar = useSalvarTemaDoPost(accountId);
+  const sugerido = post.tema_fonte === "ia";
+
+  function gravar(valor: string) {
+    salvar.mutate(
+      { mediaId: post.id, tema: valor.trim() || null },
+      {
+        onSuccess: () => setEditando(false),
+        onError: (e) => toast.error(e instanceof Error ? e.message : "Não consegui salvar"),
+      },
+    );
+  }
+
+  if (editando) {
+    return (
+      <div className="flex items-center gap-1">
+        <input
+          autoFocus
+          list="instagram-temas"
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") gravar(texto);
+            if (e.key === "Escape") setEditando(false);
+          }}
+          placeholder="Tema"
+          maxLength={60}
+          aria-label="Tema do conteúdo"
+          className="h-7 w-36 rounded border border-border bg-background px-1.5 text-sm outline-none focus:border-primary"
+        />
+        <button type="button" onClick={() => gravar(texto)} aria-label="Salvar" disabled={salvar.isPending}>
+          <Check className="h-3.5 w-3.5 text-emerald-600" />
+        </button>
+        <button type="button" onClick={() => setEditando(false)} aria-label="Cancelar">
+          <X className="h-3.5 w-3.5 text-muted-foreground" />
+        </button>
+        <datalist id="instagram-temas">
+          {temas.map((t) => (
+            <option key={t} value={t} />
+          ))}
+        </datalist>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setTexto(post.tema ?? "");
+        setEditando(true);
+      }}
+      title={
+        sugerido
+          ? "Sugerido pela IA a partir da legenda — clique para confirmar ou corrigir"
+          : "Clique para editar o tema"
+      }
+      className="group inline-flex max-w-[11rem] items-center gap-1 text-left text-sm hover:text-primary"
+    >
+      <span className={`truncate ${sugerido ? "italic text-muted-foreground" : ""}`}>
+        {post.tema ?? "—"}
+      </span>
+      <Pencil className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-60" />
+    </button>
+  );
+}
+
 export function PostsTable({
   data,
   isLoading,
@@ -241,6 +327,12 @@ export function PostsTable({
   const medias = useMemo(() => mediasDoPerfil(posts), [posts]);
   // A régua do status: mediana e quartis de interesse/mil por formato.
   const referencias = useMemo(() => referenciasPorFormato(posts), [posts]);
+  // O vocabulário da conta sai dos próprios posts: não há tabela de temas.
+  const temas = useMemo(
+    () => [...new Set((data ?? []).map((p) => p.tema).filter((t): t is string => !!t))]
+      .sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [data],
+  );
 
   function ordenarPor(chave: Ordem) {
     if (ordem === chave) setCrescente((v) => !v);
@@ -358,6 +450,16 @@ Embaixo de cada número: quanto o post ficou acima (↑) ou abaixo (↓) da méd
                       </Dica>
                     </span>
                   </TableHead>
+                  <TableHead className="whitespace-nowrap">
+                    <span className="inline-flex items-center gap-1">
+                      Tema
+                      <Dica>
+                        {`O assunto de que o post trata — "Rotina da família", "Inglês em casa".
+
+Clique na célula para escrever ou corrigir; o campo sugere os temas que a conta já usa. Em itálico é sugestão da IA a partir da legenda, ainda não revisada: gravar confirma.`}
+                      </Dica>
+                    </span>
+                  </TableHead>
                   {cabecalho("timestamp", "Data", "Data de publicação.")}
                   {METRICAS_DO_POST.map((m) => cabecalho(m.chave, m.rotulo, m.dica))}
                   <TableHead className="whitespace-nowrap">
@@ -377,7 +479,7 @@ Fica em branco quando o formato tem menos de 5 posts no período — com três p
                 {/* A média que a comparação usa, à vista: sem ela o "+72%" não
                     tem contra o quê. */}
                 <TableRow className="bg-muted/30 hover:bg-muted/30">
-                  <TableCell colSpan={4} className="py-1.5 text-[11px] text-muted-foreground">
+                  <TableCell colSpan={5} className="py-1.5 text-[11px] text-muted-foreground">
                     Média do perfil no período
                   </TableCell>
                   {METRICAS_DO_POST.map((m) => (
@@ -432,6 +534,13 @@ Fica em branco quando o formato tem menos de 5 posts no período — com três p
                         <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${COR_DO_FORMATO[formato]}`}>
                           {NOME_DO_FORMATO[formato]}
                         </span>
+                      </TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()} role="presentation">
+                        {accountId ? (
+                          <CelulaDeTema post={post} accountId={accountId} temas={temas} />
+                        ) : (
+                          <span className="text-sm text-muted-foreground">{post.tema ?? "—"}</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-sm whitespace-nowrap">
                         {format(parseISO(post.timestamp), "dd/MM/yy")}
