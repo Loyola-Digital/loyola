@@ -56,6 +56,7 @@ import {
   type ChaveDaMetrica,
   type MetricaDoPost,
 } from "@/lib/utils/instagram-posts";
+import { referenciasPorFormato, statusDoPost, type StatusDoPost } from "@/lib/utils/instagram-sinal";
 
 type Ordem = ChaveDaMetrica | "timestamp";
 
@@ -82,7 +83,25 @@ function fmtValor(m: MetricaDoPost, v: number | null): string {
   if (v == null) return "—";
   if (m.segundos) return `${v.toFixed(1).replace(".", ",")}s`;
   if (m.taxa) return `${v.toFixed(2).replace(".", ",")}%`;
+  if (m.decimal) return v.toFixed(1).replace(".", ",");
   return Math.round(v).toLocaleString("pt-BR");
+}
+
+/**
+ * Forte, na linha ou fraco — contra os posts do MESMO formato, nunca contra a
+ * média do perfil: na régua geral todo Reels seria fraco, e isso só diria que
+ * ele é um Reels.
+ */
+function Status({ status }: { status: StatusDoPost | null }) {
+  if (!status) return <span className="text-[11px] text-muted-foreground">—</span>;
+  const cor =
+    status === "forte"
+      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+      : status === "fraco"
+        ? "bg-red-500/10 text-red-600 dark:text-red-400"
+        : "bg-muted text-muted-foreground";
+  const rotulo = status === "forte" ? "Forte" : status === "fraco" ? "Fraco" : "Na linha";
+  return <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${cor}`}>{rotulo}</span>;
 }
 
 /**
@@ -220,6 +239,8 @@ export function PostsTable({
     return since != null && until != null ? postsNoPeriodo(data, since, until) : data;
   }, [data, mes, since, until]);
   const medias = useMemo(() => mediasDoPerfil(posts), [posts]);
+  // A régua do status: mediana e quartis de interesse/mil por formato.
+  const referencias = useMemo(() => referenciasPorFormato(posts), [posts]);
 
   function ordenarPor(chave: Ordem) {
     if (ordem === chave) setCrescente((v) => !v);
@@ -339,6 +360,18 @@ Embaixo de cada número: quanto o post ficou acima (↑) ou abaixo (↓) da méd
                   </TableHead>
                   {cabecalho("timestamp", "Data", "Data de publicação.")}
                   {METRICAS_DO_POST.map((m) => cabecalho(m.chave, m.rotulo, m.dica))}
+                  <TableHead className="whitespace-nowrap">
+                    <span className="inline-flex items-center gap-1">
+                      Status
+                      <Dica>
+                        {`Como o post se saiu contra os outros do MESMO formato, em interesse por mil.
+
+Forte: entre os 25% melhores do formato. Fraco: entre os 25% piores. Na linha: o meio.
+
+Fica em branco quando o formato tem menos de 5 posts no período — com três posts, todo post seria o melhor ou o pior.`}
+                      </Dica>
+                    </span>
+                  </TableHead>
                   {showLinkColumn && <TableHead className="w-24 text-right">Etapa</TableHead>}
                 </TableRow>
                 {/* A média que a comparação usa, à vista: sem ela o "+72%" não
@@ -352,6 +385,7 @@ Embaixo de cada número: quanto o post ficou acima (↑) ou abaixo (↓) da méd
                       {fmtValor(m, medias[m.chave])}
                     </TableCell>
                   ))}
+                  <TableCell />
                   {showLinkColumn && <TableCell />}
                 </TableRow>
               </TableHeader>
@@ -428,6 +462,9 @@ Embaixo de cada número: quanto o post ficou acima (↑) ou abaixo (↓) da méd
                           </TableCell>
                         );
                       })}
+                      <TableCell>
+                        <Status status={statusDoPost(post, referencias)} />
+                      </TableCell>
                       {showLinkColumn && (
                         <TableCell className="text-right">
                           <Button

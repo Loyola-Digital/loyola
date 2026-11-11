@@ -44,6 +44,7 @@ export type ChaveDaMetrica =
   | "saved"
   | "follows"
   | "conversao"
+  | "interesse"
   | "engagement_rate";
 
 export interface MetricaDoPost {
@@ -56,6 +57,8 @@ export interface MetricaDoPost {
   taxa?: boolean;
   /** Segundos: mostra "39,9s". */
   segundos?: boolean;
+  /** Número pequeno que arredondado para inteiro perderia o sentido: "8,4". */
+  decimal?: boolean;
 }
 
 /**
@@ -70,6 +73,23 @@ export function ganchoDoReels(p: InstagramMedia): number | null {
 export function conversaoEmSeguidor(p: InstagramMedia): number | null {
   if (p.follows == null || !p.views) return null;
   return (p.follows / p.views) * 100;
+}
+
+/**
+ * Compartilhamentos mais salvamentos a cada mil contas alcançadas.
+ *
+ * Alcance sozinho premia o post que a Meta resolveu distribuir; compartilhar e
+ * salvar são decisões de quem viu. Por mil alcançados o número para de depender
+ * do tamanho da entrega, e um Reels de 90 mil cabe na mesma coluna que um
+ * carrossel de 9 mil.
+ *
+ * `null` quando falta alcance ou quando nenhum dos dois números veio: zero
+ * seria afirmar "ninguém compartilhou", que o dado não sustenta.
+ */
+export function interessePorMil(p: InstagramMedia): number | null {
+  if (!p.reach || p.reach <= 0) return null;
+  if (p.shares == null && p.saved == null) return null;
+  return (((p.shares ?? 0) + (p.saved ?? 0)) / p.reach) * 1000;
 }
 
 export const METRICAS_DO_POST: MetricaDoPost[] = [
@@ -114,6 +134,13 @@ export const METRICAS_DO_POST: MetricaDoPost[] = [
     rotulo: "Seguidores",
     dica: "Seguidores que começaram a seguir o perfil a partir deste post.\n\nA Meta só entrega esse número para foto e carrossel. Em Reels a célula é editável: copie o valor do painel do Instagram e ele passa a valer aqui, na conversão em seguidor e na análise com IA.",
     valor: (p) => p.follows ?? null,
+  },
+  {
+    chave: "interesse",
+    rotulo: "Interesse/mil",
+    dica: "Compartilhamentos + salvamentos a cada mil contas alcançadas.\n\nServe para comparar posts de tamanhos diferentes: alcance grande é decisão da Meta, compartilhar e salvar é decisão de quem viu. É por esta coluna que sai o status do post.",
+    valor: interessePorMil,
+    decimal: true,
   },
   {
     chave: "conversao",
@@ -301,7 +328,7 @@ interface EntradaDeInsight {
   values?: { value: unknown }[];
 }
 
-function somaDaMetrica(entries: EntradaDeInsight[] | undefined, nome: string): number {
+export function somaDaMetrica(entries: EntradaDeInsight[] | undefined, nome: string): number {
   const e = entries?.find((x) => x.name === nome);
   if (typeof e?.total_value?.value === "number") return e.total_value.value;
   return (e?.values ?? []).reduce((s, v) => s + (typeof v.value === "number" ? v.value : 0), 0);
@@ -395,4 +422,48 @@ export function postsNoPeriodo(posts: InstagramMedia[], since: number, until: nu
     const ts = Math.floor(new Date(p.timestamp).getTime() / 1000);
     return ts >= since && ts <= until;
   });
+}
+
+/**
+ * Seguidores que entraram e que saíram no período.
+ *
+ * A Meta v25 só responde `follows_and_unfollows` com `breakdown=follow_type`, e
+ * o resultado vem em `total_value.breakdowns[0].results[]`, com FOLLOWER para
+ * quem entrou e NON_FOLLOWER para quem saiu. Os dois formatos antigos ficam de
+ * reserva porque contas diferentes ainda respondem neles.
+ */
+export function seguidoresGanhosEPerdidos(
+  entries: EntradaDeInsight[] | undefined,
+): { gained: number; lost: number } | null {
+  const entry = entries?.find((e) => e.name === "follows_and_unfollows");
+  if (!entry) return null;
+
+  const breakdowns = entry.total_value?.breakdowns as
+    | Array<{ results?: Array<{ dimension_values?: string[]; value?: number }> }>
+    | undefined;
+  if (breakdowns && breakdowns.length > 0) {
+    let gained = 0;
+    let lost = 0;
+    for (const r of breakdowns[0]?.results ?? []) {
+      const dim = r.dimension_values?.[0];
+      const val = typeof r.value === "number" ? r.value : 0;
+      if (dim === "FOLLOWER") gained = val;
+      else if (dim === "NON_FOLLOWER") lost = val;
+    }
+    if (gained > 0 || lost > 0) return { gained, lost };
+  }
+
+  const tv = entry.total_value?.value;
+  if (tv && typeof tv === "object") {
+    const fv = tv as Record<string, number>;
+    return { gained: fv.follow ?? 0, lost: fv.unfollow ?? 0 };
+  }
+
+  const primeiro = entry.values?.[0]?.value;
+  if (primeiro && typeof primeiro === "object") {
+    const fv = primeiro as Record<string, number>;
+    return { gained: fv.follow ?? 0, lost: fv.unfollow ?? 0 };
+  }
+
+  return null;
 }

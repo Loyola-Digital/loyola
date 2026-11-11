@@ -4,7 +4,7 @@ import * as React from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Users, UserPlus, UserMinus, Eye,
-  TrendingUp, TrendingDown, Minus, Heart, Bookmark, Share2, Link2, ImageIcon,
+  TrendingUp, Heart, Bookmark, Share2, Link2, ImageIcon,
 } from "lucide-react";
 import type { InstagramProfile, InsightEntry } from "@/lib/hooks/use-instagram";
 import { MetricTooltip } from "@/components/metrics/metric-tooltip";
@@ -14,12 +14,12 @@ import {
   alcanceDoPeriodo,
   cliquesNaBio,
   interacoesDoPeriodo,
+  seguidoresGanhosEPerdidos as getFollowsBreakdown,
   variacao,
 } from "@/lib/utils/instagram-posts";
 import {
   buildFollowersFormula,
   buildFollowersDeltaFormula,
-  buildFollowerGrowthVariationFormula,
   buildReachFormula,
   buildViewsFormula,
   buildInteractionsFormula,
@@ -71,56 +71,6 @@ function getInsightValue(entries: InsightEntry[] | undefined, name: string): num
   return 0;
 }
 
-/** Get follows/unfollows breakdown from total_value.
- *
- * Meta v25+ requer `breakdown=follow_type` para o metric `follows_and_unfollows`.
- * A estrutura do response vem como:
- *   total_value.breakdowns[0].results[] = [
- *     { dimension_values: ["FOLLOWER"], value: N },      // novos seguidores
- *     { dimension_values: ["NON_FOLLOWER"], value: N },  // unfollows
- *   ]
- *
- * Mantemos fallback para os formatos legados (objeto simples ou time_series)
- * caso a Meta volte a aceitar a requisição sem breakdown no futuro.
- */
-function getFollowsBreakdown(entries: InsightEntry[] | undefined): { gained: number; lost: number } | null {
-  if (!entries) return null;
-  const entry = entries.find((e) => e.name === "follows_and_unfollows");
-  if (!entry) return null;
-
-  // v25+ format: total_value.breakdowns[0].results[] com dimension_values
-  const breakdowns = entry.total_value?.breakdowns as
-    | Array<{ results?: Array<{ dimension_values?: string[]; value?: number }> }>
-    | undefined;
-  if (breakdowns && breakdowns.length > 0) {
-    const results = breakdowns[0]?.results ?? [];
-    let gained = 0;
-    let lost = 0;
-    for (const r of results) {
-      const dim = r.dimension_values?.[0];
-      const val = typeof r.value === "number" ? r.value : 0;
-      if (dim === "FOLLOWER") gained = val;
-      else if (dim === "NON_FOLLOWER") lost = val;
-    }
-    if (gained > 0 || lost > 0) return { gained, lost };
-  }
-
-  // Legacy total_value format: { value: { follow: N, unfollow: N } }
-  const tv = entry.total_value?.value;
-  if (tv && typeof tv === "object") {
-    const fv = tv as Record<string, number>;
-    return { gained: fv.follow ?? 0, lost: fv.unfollow ?? 0 };
-  }
-
-  // time_series fallback
-  if (entry.values?.[0]?.value && typeof entry.values[0].value === "object") {
-    const fv = entry.values[0].value as Record<string, number>;
-    return { gained: fv.follow ?? 0, lost: fv.unfollow ?? 0 };
-  }
-
-  return null;
-}
-
 function fmtNumber(val: number): string {
   if (val >= 1_000_000) return `${(val / 1_000_000).toFixed(2)}M`;
   if (val >= 1_000) return `${(val / 1_000).toFixed(1)}K`;
@@ -130,6 +80,22 @@ function fmtNumber(val: number): string {
 function fmtPercent(val: number): string {
   return `${val.toFixed(2)}%`;
 }
+
+/**
+ * Os números em quatro etapas, na ordem em que uma pessoa percorre o perfil.
+ *
+ * Treze cartões lado a lado não dizem por onde começar a ler. Separados por
+ * etapa, dizem: se o problema está em 1, não adianta mexer em 3 — o conteúdo
+ * ainda nem está chegando às pessoas.
+ */
+type Etapa = "alcance" | "interesse" | "acao" | "audiencia";
+
+const ETAPAS: { chave: Etapa; n: number; nome: string; sub: string; cor: string }[] = [
+  { chave: "alcance", n: 1, nome: "Alcance", sub: "quantas pessoas viram", cor: "bg-cyan-500" },
+  { chave: "interesse", n: 2, nome: "Interesse", sub: "o que fizeram com o conteúdo", cor: "bg-purple-500" },
+  { chave: "acao", n: 3, nome: "Ação", sub: "o que decidiram fazer", cor: "bg-amber-500" },
+  { chave: "audiencia", n: 4, nome: "Audiência", sub: "quem acompanha a conta", cor: "bg-emerald-500" },
+];
 
 interface KpiProps {
   icon: React.ComponentType<{ className?: string }>;
@@ -208,25 +174,6 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
   const variation = hasVariationData && previousDelta !== 0
     ? ((followersDelta - previousDelta) / Math.abs(previousDelta)) * 100
     : 0;
-  const variationColor =
-    !hasVariationData ? "neutral" :
-    variation > 5 ? "positive" :
-    variation < -5 ? "negative" :
-    "stable";
-  const variationGradient =
-    variationColor === "positive" ? "from-emerald-500/10 to-emerald-600/5" :
-    variationColor === "negative" ? "from-red-500/10 to-red-600/5" :
-    variationColor === "stable" ? "from-amber-500/10 to-amber-600/5" :
-    "from-muted/10 to-muted/5";
-  const variationBorder =
-    variationColor === "positive" ? "border-emerald-500/20" :
-    variationColor === "negative" ? "border-red-500/20" :
-    variationColor === "stable" ? "border-amber-500/20" :
-    "border-border/30";
-  const variationIcon =
-    variationColor === "positive" ? TrendingUp :
-    variationColor === "negative" ? TrendingDown :
-    Minus;
 
   // Core metrics
   //
@@ -275,58 +222,89 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
     show: boolean;
     formula?: MetricFormula;
     delta?: { valor: number | null; pontos?: boolean };
+    /** Em que etapa do caminho este número entra (ver ETAPAS). */
+    etapa: Etapa;
   }
+
+  /** Saídas sobre entradas: de cada 100 que entraram, quantos saíram. */
+  const saidasSobreEntradas =
+    followsData && followsData.gained > 0 ? (followsData.lost / followsData.gained) * 100 : null;
+  const saidasAnterior =
+    previousFollowsData && previousFollowsData.gained > 0
+      ? (previousFollowsData.lost / previousFollowsData.gained) * 100
+      : null;
 
   const cards: CardDef[] = [
     {
       icon: Users,
       label: "Seguidores",
       value: fmtNumber(followers),
+      sub: "total de hoje — a Meta só informa o atual",
       gradient: "from-blue-500/10 to-blue-600/5",
       border: "border-blue-500/20",
       show: true,
+      etapa: "audiencia" as Etapa,
       formula: buildFollowersFormula(profile?.followers_count),
     },
     {
+      // O cartão de variação virou a seta deste: eram dois cartões para o
+      // mesmo número, e o saldo sem "era quanto antes" não diz se melhorou.
       icon: followersDelta >= 0 ? UserPlus : UserMinus,
-      label: "Saldo Seguidores",
+      label: "Saldo de seguidores",
       value: `${followersDelta >= 0 ? "+" : ""}${fmtNumber(followersDelta)}`,
-      sub: followsData ? `+${fmtNumber(followsData.gained)} / -${fmtNumber(followsData.lost)}` : undefined,
+      sub: followsData
+        ? `+${fmtNumber(followsData.gained)} entraram · −${fmtNumber(followsData.lost)} saíram`
+        : undefined,
       gradient: followersDelta >= 0 ? "from-emerald-500/10 to-emerald-600/5" : "from-red-500/10 to-red-600/5",
       border: followersDelta >= 0 ? "border-emerald-500/20" : "border-red-500/20",
       show: hasFollowData,
+      etapa: "audiencia" as Etapa,
+      delta: hasVariationData ? { valor: variation } : undefined,
       formula: followsData && period
         ? buildFollowersDeltaFormula(followsData.gained, followsData.lost, period)
         : undefined,
     },
     {
-      icon: variationIcon,
-      label: "Variação de Ganhos",
-      value: hasVariationData
-        ? `${variation > 0 ? "+" : ""}${variation.toFixed(1)}%`
-        : "—",
-      sub: hasVariationData && previousDelta !== null
-        ? `${followersDelta >= 0 ? "+" : ""}${fmtNumber(followersDelta)} vs ${previousDelta >= 0 ? "+" : ""}${fmtNumber(previousDelta)}`
-        : undefined,
-      gradient: variationGradient,
-      border: variationBorder,
-      show: hasVariationData,
-      formula: hasVariationData && previousDelta !== null && period && previousPeriod
-        ? buildFollowerGrowthVariationFormula(followersDelta, previousDelta, period, previousPeriod)
-        : undefined,
+      icon: UserMinus,
+      label: "Saídas sobre entradas",
+      value: saidasSobreEntradas == null ? "—" : `${Math.round(saidasSobreEntradas)}%`,
+      sub: "de cada 100 que entraram, quantos saíram — menor é melhor",
+      gradient: "from-rose-500/10 to-rose-600/5",
+      border: "border-rose-500/20",
+      show: saidasSobreEntradas != null,
+      etapa: "audiencia" as Etapa,
+      // Cair é melhorar, então a seta tem de apontar ao contrário do número.
+      delta:
+        saidasSobreEntradas != null && saidasAnterior != null
+          ? { valor: saidasAnterior - saidasSobreEntradas, pontos: true }
+          : undefined,
+      formula:
+        followsData && saidasSobreEntradas != null
+          ? {
+              expression: "saíram ÷ entraram × 100",
+              values: [
+                { label: "Saíram no período", value: followsData.lost, source: "Instagram Graph API · follows_and_unfollows" },
+                { label: "Entraram no período", value: followsData.gained, source: "Instagram Graph API · follows_and_unfollows" },
+              ],
+              result: `${Math.round(saidasSobreEntradas)}%`,
+              note: "O saldo esconde um movimento grande nos dois sentidos: dá para ganhar 500 seguidores tendo perdido 2 mil. Esta é a conta que mostra quanto do que entrou foi embora.",
+            }
+          : undefined,
     },
     {
       icon: ImageIcon,
-      label: "Posts",
+      label: "Posts publicados",
       value: postsInPeriod != null ? `${fmtNumber(postsInPeriod)}${postsCountTruncated ? "+" : ""}` : "—",
       sub: postsCountTruncated ? "limite de 100 posts atingido" : "publicados no período",
-      gradient: "from-rose-500/10 to-rose-600/5",
-      border: "border-rose-500/20",
+      gradient: "from-slate-500/10 to-slate-600/5",
+      border: "border-slate-500/20",
       show: postsInPeriod != null,
+      etapa: "audiencia" as Etapa,
     },
     {
       icon: Eye,
       label: "Alcance",
+      etapa: "alcance" as Etapa,
       value: fmtNumber(totalReach),
       gradient: "from-cyan-500/10 to-cyan-600/5",
       border: "border-cyan-500/20",
@@ -336,7 +314,8 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
     },
     {
       icon: Eye,
-      label: "Visualizacoes",
+      label: "Visualizações",
+      etapa: "alcance" as Etapa,
       value: fmtNumber(totalViews),
       gradient: "from-purple-500/10 to-purple-600/5",
       border: "border-purple-500/20",
@@ -347,6 +326,7 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
     {
       icon: Users,
       label: "Não seguidores",
+      etapa: "alcance" as Etapa,
       value: porSeguidor ? fmtPercent(porSeguidor.pctNaoSeguidores) : "—",
       sub: porSeguidor
         ? `do alcance · ${fmtNumber(porSeguidor.naoSeguidores)} não seguem · ${fmtNumber(porSeguidor.seguidores)} seguem`
@@ -376,7 +356,8 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
     },
     {
       icon: Heart,
-      label: "Interacoes",
+      label: "Interações",
+      etapa: "interesse" as Etapa,
       value: fmtNumber(totalInteractions),
       sub: totalLikes > 0 ? `${fmtNumber(totalLikes)} likes · ${fmtNumber(totalComments)} comments` : undefined,
       gradient: "from-pink-500/10 to-pink-600/5",
@@ -390,6 +371,7 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
     {
       icon: TrendingUp,
       label: "Engajamento",
+      etapa: "interesse" as Etapa,
       value: fmtPercent(engagementRate),
       sub: "interacoes / alcance",
       gradient: "from-amber-500/10 to-amber-600/5",
@@ -405,6 +387,7 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
     {
       icon: Bookmark,
       label: "Salvamentos",
+      etapa: "interesse" as Etapa,
       value: fmtNumber(totalSaves),
       gradient: "from-indigo-500/10 to-indigo-600/5",
       border: "border-indigo-500/20",
@@ -415,6 +398,7 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
     {
       icon: Share2,
       label: "Compartilhamentos",
+      etapa: "interesse" as Etapa,
       value: fmtNumber(totalShares),
       gradient: "from-teal-500/10 to-teal-600/5",
       border: "border-teal-500/20",
@@ -425,6 +409,7 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
     {
       icon: Users,
       label: "Visitas ao perfil",
+      etapa: "acao" as Etapa,
       value: fmtNumber(visitasAoPerfil),
       sub: "abriram o perfil no período",
       gradient: "from-violet-500/10 to-violet-600/5",
@@ -435,7 +420,8 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
     },
     {
       icon: Link2,
-      label: "Cliques na Bio",
+      label: "Cliques na bio",
+      etapa: "acao" as Etapa,
       value: fmtNumber(bioClicks),
       gradient: "from-orange-500/10 to-orange-600/5",
       border: "border-orange-500/20",
@@ -456,12 +442,32 @@ export function OverviewCards({ profile, insights, isLoading, period, previousIn
   ].filter((c) => c.show);
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" style={{ gridTemplateColumns: `repeat(${Math.min(cards.length, 4)}, minmax(0, 1fr))` }}>
-      {cards.map((c) => (
-        <MetricTooltip key={c.label} label={c.label} value={c.value} formula={c.formula}>
-          <KpiCard icon={c.icon} label={c.label} value={c.value} sub={c.sub} gradient={c.gradient} border={c.border} delta={c.delta} />
-        </MetricTooltip>
-      ))}
+    <div className="space-y-5">
+      {ETAPAS.map((etapa) => {
+        const doGrupo = cards.filter((c) => c.etapa === etapa.chave);
+        if (doGrupo.length === 0) return null;
+        return (
+          <div key={etapa.chave} className="space-y-2">
+            <h3 className="flex items-center gap-2 text-sm font-medium">
+              <span
+                className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold text-white ${etapa.cor}`}
+                aria-hidden="true"
+              >
+                {etapa.n}
+              </span>
+              {etapa.nome}
+              <span className="text-xs font-normal text-muted-foreground">{etapa.sub}</span>
+            </h3>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {doGrupo.map((c) => (
+                <MetricTooltip key={c.label} label={c.label} value={c.value} formula={c.formula}>
+                  <KpiCard icon={c.icon} label={c.label} value={c.value} sub={c.sub} gradient={c.gradient} border={c.border} delta={c.delta} />
+                </MetricTooltip>
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -1,9 +1,20 @@
 "use client";
 
+/**
+ * A tela de Instagram da empresa, em abas.
+ *
+ * Era uma coluna só com doze blocos: quem abria para saber se o mês foi bom
+ * rolava por tabelas de post, e quem abria para escolher o próximo conteúdo
+ * passava pelos gráficos de audiência. Cada aba agora responde uma pergunta —
+ * como vamos, o que publicamos, quem nos segue, o que mandar para o cliente e
+ * o que decidir.
+ */
+
 import { use, useState, useEffect } from "react";
 import Link from "next/link";
 import { Instagram, RefreshCw, Settings, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { useInstagramAccounts } from "@/lib/hooks/use-instagram-accounts";
 import { useProjects } from "@/lib/hooks/use-projects";
@@ -23,6 +34,11 @@ import {
   type PeriodConfig,
 } from "@/components/instagram/period-selector";
 import { OverviewCards } from "@/components/instagram/overview-cards";
+import { EmUmaFrase } from "@/components/instagram/em-uma-frase";
+import { PostsQueExplicam } from "@/components/instagram/posts-que-explicam";
+import { Glossario } from "@/components/instagram/glossario";
+import { QuemEntraEQuemSai } from "@/components/instagram/quem-entra-e-quem-sai";
+import { DeOndeVemODado } from "@/components/instagram/de-onde-vem-o-dado";
 import { GraficoDoPerfil } from "@/components/instagram/grafico-do-perfil";
 import { PostsTable } from "@/components/instagram/posts-table";
 import { PerformancePorFormato } from "@/components/instagram/performance-por-formato";
@@ -87,7 +103,7 @@ export default function ProjectInstagramPage({ params }: Props) {
     period.since,
     period.until,
   );
-  // Período anterior (mesma duração, shift pra trás) — para card "Variação de Ganhos"
+  // Período anterior (mesma duração, shift pra trás) — para as setas de variação
   const previousPeriodWindow = {
     since: period.since - (period.until - period.since),
     until: period.since,
@@ -100,12 +116,11 @@ export default function ProjectInstagramPage({ params }: Props) {
   );
   const { data: media, isLoading: mediaLoading } = useInstagramMedia(selectedAccountId, 100);
   // Posts publicados dentro do período do PeriodSelector
-  const postsInPeriod = media?.data
-    ? media.data.filter((p) => {
-        const ts = Math.floor(new Date(p.timestamp).getTime() / 1000);
-        return ts >= period.since && ts <= period.until;
-      }).length
-    : null;
+  const postsDoPeriodo = media?.data?.filter((p) => {
+    const ts = Math.floor(new Date(p.timestamp).getTime() / 1000);
+    return ts >= period.since && ts <= period.until;
+  });
+  const postsInPeriod = postsDoPeriodo?.length ?? null;
   // Truncado se atingiu o limite (100) E o post mais antigo ainda está dentro do período
   const postsCountTruncated = !!(
     media?.data &&
@@ -160,16 +175,6 @@ export default function ProjectInstagramPage({ params }: Props) {
           <PeriodSelector value={period} onChange={setPeriod} />
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setReportDialogOpen(true)} className="gap-1.5">
-            <FileText className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Gerar relatório</span>
-          </Button>
-          <Button variant="outline" size="sm" asChild>
-            <Link href={`/projects/${projectId}/reports/instagram`}>
-              <FileText className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Histórico</span>
-            </Link>
-          </Button>
           <Button variant="outline" size="sm" asChild>
             <Link href="/settings/instagram">
               <Settings className="h-3.5 w-3.5" />
@@ -189,93 +194,140 @@ export default function ProjectInstagramPage({ params }: Props) {
         </div>
       </div>
 
-      {/* Overview KPI cards */}
-      <OverviewCards
-        profile={profile}
-        insights={insights?.data}
-        isLoading={profileLoading || insightsLoading}
-        period={{ since: period.since, until: period.until }}
-        previousInsights={previousInsights?.data}
-        previousPeriod={previousPeriodWindow}
-        postsInPeriod={postsInPeriod}
-        postsCountTruncated={postsCountTruncated}
-      />
+      <Tabs defaultValue="visao-geral">
+        <TabsList className="max-w-full justify-start overflow-x-auto h-auto">
+          <TabsTrigger value="visao-geral" className="shrink-0">Visão geral</TabsTrigger>
+          <TabsTrigger value="posts" className="shrink-0">Posts</TabsTrigger>
+          <TabsTrigger value="seguidores" className="shrink-0">Seguidores e audiência</TabsTrigger>
+          <TabsTrigger value="relatorios" className="shrink-0">Relatório do mês</TabsTrigger>
+          <TabsTrigger value="decisoes" className="shrink-0">Decisões</TabsTrigger>
+        </TabsList>
 
-      {/* O comparativo mensal, igual à página global: "cresceu ou caiu?" vem
-          antes de qualquer detalhe do período. */}
-      <TabelaMensal accountId={selectedAccountId} />
+        {/* ---------- Como vamos ---------- */}
+        <TabsContent value="visao-geral" className="mt-6 space-y-6">
+          <EmUmaFrase
+            insights={insights?.data}
+            previousInsights={previousInsights?.data}
+            isLoading={insightsLoading}
+          />
 
-      {/* Um mês contra outro, à escolha — a comparação de reunião. */}
-      <ComparativoDeMeses accountId={selectedAccountId} />
+          <OverviewCards
+            profile={profile}
+            insights={insights?.data}
+            isLoading={profileLoading || insightsLoading}
+            period={{ since: period.since, until: period.until }}
+            previousInsights={previousInsights?.data}
+            previousPeriod={previousPeriodWindow}
+            postsInPeriod={postsInPeriod}
+            postsCountTruncated={postsCountTruncated}
+          />
 
-      {/* Reach & Impressions chart */}
-      <GraficoDoPerfil
-        data={insights?.data}
-        isLoading={insightsLoading}
-        error={insightsError as Error | null}
-        onRefresh={handleRefreshAll}
-        isRefreshing={refresh.isPending}
-        posts={media?.data}
-        accountId={selectedAccountId}
-      />
+          <GraficoDoPerfil
+            data={insights?.data}
+            isLoading={insightsLoading}
+            error={insightsError as Error | null}
+            onRefresh={handleRefreshAll}
+            isRefreshing={refresh.isPending}
+            posts={media?.data}
+            accountId={selectedAccountId}
+          />
 
-      {/* Top Posts por Seguidores — apenas FEED (Meta não expõe pra Reels) */}
-      <TopPostsByFollowersCard
-        accountId={selectedAccountId}
-        days={Math.max(1, Math.round((period.until - period.since) / 86400))}
-      />
+          <PostsQueExplicam posts={postsDoPeriodo} isLoading={mediaLoading} />
 
-      {/* Posts table */}
-      <PostsTable
-        data={media?.data}
-        isLoading={mediaLoading}
-        onRefresh={handleRefreshAll}
-        isRefreshing={refresh.isPending}
-        projectId={projectId}
-        since={period.since}
-        until={period.until}
-        accountId={selectedAccountId}
-      />
+          {/* A leitura interpretativa vem depois dos números que ela lê. */}
+          <AnaliseComIaDoPeriodo
+            accountId={selectedAccountId}
+            since={period.since}
+            until={period.until}
+            media={media?.data}
+          />
 
-      <PerformancePorFormato
-        data={media?.data}
-        isLoading={mediaLoading}
-        since={period.since}
-        until={period.until}
-      />
+          <Glossario />
+        </TabsContent>
 
-      {/* Stories + Reels */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <StoriesSection
-          data={stories}
-          isLoading={storiesLoading}
-          onRefresh={handleRefreshAll}
-          isRefreshing={refresh.isPending}
-        />
-        <ReelsSection
-          data={reels}
-          isLoading={reelsLoading}
-          onRefresh={handleRefreshAll}
-          isRefreshing={refresh.isPending}
-        />
-      </div>
+        {/* ---------- O que publicamos ---------- */}
+        <TabsContent value="posts" className="mt-6 space-y-6">
+          <PerformancePorFormato
+            data={media?.data}
+            isLoading={mediaLoading}
+            since={period.since}
+            until={period.until}
+          />
 
-      {/* Audience demographics */}
-      <AudienceCharts
-        data={demographics}
-        isLoading={demographicsLoading}
-        error={demographicsError as Error | null}
-        onRefresh={handleRefreshAll}
-        isRefreshing={refresh.isPending}
-      />
+          <PostsTable
+            data={media?.data}
+            isLoading={mediaLoading}
+            onRefresh={handleRefreshAll}
+            isRefreshing={refresh.isPending}
+            projectId={projectId}
+            since={period.since}
+            until={period.until}
+            accountId={selectedAccountId}
+          />
 
-      {/* Insights do período (IA) — no fim: é a leitura de tudo que está acima. */}
-      <AnaliseComIaDoPeriodo
-        accountId={selectedAccountId}
-        since={period.since}
-        until={period.until}
-        media={media?.data}
-      />
+          <TopPostsByFollowersCard
+            accountId={selectedAccountId}
+            days={Math.max(1, Math.round((period.until - period.since) / 86400))}
+          />
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <StoriesSection
+              data={stories}
+              isLoading={storiesLoading}
+              onRefresh={handleRefreshAll}
+              isRefreshing={refresh.isPending}
+            />
+            <ReelsSection
+              data={reels}
+              isLoading={reelsLoading}
+              onRefresh={handleRefreshAll}
+              isRefreshing={refresh.isPending}
+            />
+          </div>
+        </TabsContent>
+
+        {/* ---------- Quem nos segue ---------- */}
+        <TabsContent value="seguidores" className="mt-6 space-y-6">
+          <TabelaMensal accountId={selectedAccountId} />
+          <ComparativoDeMeses accountId={selectedAccountId} />
+          <QuemEntraEQuemSai accountId={selectedAccountId} />
+          <AudienceCharts
+            data={demographics}
+            isLoading={demographicsLoading}
+            error={demographicsError as Error | null}
+            onRefresh={handleRefreshAll}
+            isRefreshing={refresh.isPending}
+          />
+        </TabsContent>
+
+        {/* ---------- O que mandar para o cliente ---------- */}
+        <TabsContent value="relatorios" className="mt-6 space-y-4">
+          <div className="rounded-xl border border-border/40 bg-card/60 p-4">
+            <h3 className="text-base font-semibold">Relatório do mês</h3>
+            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+              Um retrato do mês fechado, salvo com data e autor — o que o cliente recebe. O
+              histórico guarda todos os que já foram gerados.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button size="sm" onClick={() => setReportDialogOpen(true)} className="gap-1.5">
+                <FileText className="h-3.5 w-3.5" />
+                Gerar relatório
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link href={`/projects/${projectId}/reports/instagram`}>
+                  <FileText className="h-3.5 w-3.5" />
+                  Ver histórico
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* ---------- O que decidir ---------- */}
+        <TabsContent value="decisoes" className="mt-6 space-y-6">
+          <DeOndeVemODado />
+        </TabsContent>
+      </Tabs>
 
       <GenerateReportDialog projectId={projectId} open={reportDialogOpen} onOpenChange={setReportDialogOpen} />
     </div>
