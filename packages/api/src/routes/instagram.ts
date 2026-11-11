@@ -24,7 +24,7 @@ import {
   montarDadosDoPost,
   type AnaliseDoPost,
 } from "../services/instagram-analise-de-post.js";
-import { instagramPostMetrics } from "../db/schema.js";
+import { instagramMonthlyGoals, instagramPostMetrics } from "../db/schema.js";
 import { desc } from "drizzle-orm";
 
 // ============================================================
@@ -1281,5 +1281,76 @@ export default fp(async function instagramRoutes(fastify) {
         error: error instanceof Error ? error.message : "A sugestão falhou.",
       });
     }
+  });
+  // ---- Metas do mês ----
+  //
+  // Sem meta não existe semáforo: "683 mil de alcance" não é bom nem ruim até
+  // alguém dizer o que se esperava. Uma linha por conta e mês; mês sem linha
+  // simplesmente não tem meta, e a tela diz isso em vez de inventar uma.
+
+  const metasDeFormato = z.object({
+    freq: z.number().min(0).max(100).nullable().optional(),
+    alcance: z.number().min(0).max(100_000_000).nullable().optional(),
+    interesse: z.number().min(0).max(1000).nullable().optional(),
+  });
+
+  const metasBody = z.object({
+    saldoSeguidores: z.number().int().min(-1_000_000).max(10_000_000).nullable().optional(),
+    alcance: z.number().int().min(0).max(1_000_000_000).nullable().optional(),
+    posts: z.number().int().min(0).max(1000).nullable().optional(),
+    metasPorFormato: z
+      .object({
+        reels: metasDeFormato.optional(),
+        carrossel: metasDeFormato.optional(),
+        estatico: metasDeFormato.optional(),
+      })
+      .nullable()
+      .optional(),
+  });
+
+  const mesParam = z.object({ id: z.string().uuid(), mes: z.string().regex(/^\d{4}-\d{2}$/) });
+
+  fastify.get("/api/instagram/accounts/:id/metas", async (request, reply) => {
+    const p = idParamSchema.safeParse(request.params);
+    if (!p.success) return reply.code(400).send({ error: "ID inválido" });
+
+    const linhas = await fastify.db
+      .select()
+      .from(instagramMonthlyGoals)
+      .where(eq(instagramMonthlyGoals.accountId, p.data.id));
+    return {
+      metas: linhas.map((l) => ({
+        mes: l.mes,
+        saldoSeguidores: l.saldoSeguidores,
+        alcance: l.alcance,
+        posts: l.posts,
+        metasPorFormato: l.metasPorFormato ?? null,
+        atualizadoEm: l.atualizadoEm,
+      })),
+    };
+  });
+
+  fastify.put("/api/instagram/accounts/:id/metas/:mes", async (request, reply) => {
+    const p = mesParam.safeParse(request.params);
+    const body = metasBody.safeParse(request.body);
+    if (!p.success || !body.success) return reply.code(400).send({ error: "Dados inválidos" });
+    if (request.userRole === "guest") return reply.code(403).send({ error: "Acesso negado" });
+
+    const valores = {
+      saldoSeguidores: body.data.saldoSeguidores ?? null,
+      alcance: body.data.alcance ?? null,
+      posts: body.data.posts ?? null,
+      metasPorFormato: body.data.metasPorFormato ?? null,
+      atualizadoEm: new Date(),
+      atualizadoPor: request.userId ?? null,
+    };
+    await fastify.db
+      .insert(instagramMonthlyGoals)
+      .values({ accountId: p.data.id, mes: p.data.mes, ...valores })
+      .onConflictDoUpdate({
+        target: [instagramMonthlyGoals.accountId, instagramMonthlyGoals.mes],
+        set: valores,
+      });
+    return { mes: p.data.mes, ...valores };
   });
 });
