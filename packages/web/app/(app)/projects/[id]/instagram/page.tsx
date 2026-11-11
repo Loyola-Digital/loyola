@@ -41,6 +41,8 @@ import { QuemEntraEQuemSai } from "@/components/instagram/quem-entra-e-quem-sai"
 import { DeOndeVemODado } from "@/components/instagram/de-onde-vem-o-dado";
 import { PainelDeDecisoes } from "@/components/instagram/painel-de-decisoes";
 import { RelatorioDoMes } from "@/components/instagram/relatorio-do-mes";
+import { DoAlcanceAoLead } from "@/components/instagram/do-alcance-ao-lead";
+import { LeiturasQuePedemDecisao } from "@/components/instagram/leituras-que-pedem-decisao";
 import { GraficoDoPerfil } from "@/components/instagram/grafico-do-perfil";
 import { PostsTable } from "@/components/instagram/posts-table";
 import { PerformancePorFormato } from "@/components/instagram/performance-por-formato";
@@ -237,6 +239,8 @@ export default function ProjectInstagramPage({ params }: Props) {
 
           <PostsQueExplicam posts={postsDoPeriodo} isLoading={mediaLoading} />
 
+          <DoAlcanceAoLead insights={insights?.data} isLoading={insightsLoading} />
+
           {/* A leitura interpretativa vem depois dos números que ela lê. */}
           <AnaliseComIaDoPeriodo
             accountId={selectedAccountId}
@@ -346,6 +350,13 @@ export default function ProjectInstagramPage({ params }: Props) {
 
         {/* ---------- O que decidir ---------- */}
         <TabsContent value="decisoes" className="mt-6 space-y-6">
+          <LeiturasQuePedemDecisao
+            insights={insights?.data}
+            previousInsights={previousInsights?.data}
+            posts={postsDoPeriodo}
+            isLoading={insightsLoading || mediaLoading}
+          />
+
           <PainelDeDecisoes
             accountId={selectedAccountId}
             media={media?.data}

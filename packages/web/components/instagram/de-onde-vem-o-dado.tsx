@@ -58,7 +58,7 @@ const FONTES: { nome: string; situacao: Situacao; rotulo: string; detalhe: strin
     situacao: "faltando",
     rotulo: "Falta ligar",
     detalhe:
-      "Clique na bio e palavra do CTA precisam de link rastreado para chegar às etapas de lead. É a ponte que fecha o funil do orgânico.",
+      "O funil da Visão geral vai até o clique na bio e para ali. Fechar até o lead exige link rastreado na bio, para casar o clique com as etapas de lead do funil.",
   },
   {
     nome: "Stories",
