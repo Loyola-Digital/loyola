@@ -1294,7 +1294,18 @@ export default fp(async function instagramRoutes(fastify) {
     interesse: z.number().min(0).max(1000).nullable().optional(),
   });
 
+  const itemDoPlano = z.object({
+    oQue: z.string().trim().max(300),
+    responsavel: z.string().trim().max(120).optional(),
+    prazo: z.string().trim().max(20).optional(),
+    status: z.enum(["a-fazer", "em-andamento", "concluido"]).optional(),
+  });
+
   const metasBody = z.object({
+    resumoOndeEstamos: z.string().trim().max(2000).nullable().optional(),
+    resumoAprendizado: z.string().trim().max(2000).nullable().optional(),
+    resumoPrioridade: z.string().trim().max(2000).nullable().optional(),
+    plano: z.array(itemDoPlano).max(3).nullable().optional(),
     saldoSeguidores: z.number().int().min(-1_000_000).max(10_000_000).nullable().optional(),
     alcance: z.number().int().min(0).max(1_000_000_000).nullable().optional(),
     posts: z.number().int().min(0).max(1000).nullable().optional(),
@@ -1325,6 +1336,10 @@ export default fp(async function instagramRoutes(fastify) {
         alcance: l.alcance,
         posts: l.posts,
         metasPorFormato: l.metasPorFormato ?? null,
+        resumoOndeEstamos: l.resumoOndeEstamos,
+        resumoAprendizado: l.resumoAprendizado,
+        resumoPrioridade: l.resumoPrioridade,
+        plano: l.plano ?? null,
         atualizadoEm: l.atualizadoEm,
       })),
     };
@@ -1341,6 +1356,10 @@ export default fp(async function instagramRoutes(fastify) {
       alcance: body.data.alcance ?? null,
       posts: body.data.posts ?? null,
       metasPorFormato: body.data.metasPorFormato ?? null,
+      resumoOndeEstamos: body.data.resumoOndeEstamos ?? null,
+      resumoAprendizado: body.data.resumoAprendizado ?? null,
+      resumoPrioridade: body.data.resumoPrioridade ?? null,
+      plano: body.data.plano ?? null,
       atualizadoEm: new Date(),
       atualizadoPor: request.userId ?? null,
     };

@@ -40,6 +40,7 @@ import { Glossario } from "@/components/instagram/glossario";
 import { QuemEntraEQuemSai } from "@/components/instagram/quem-entra-e-quem-sai";
 import { DeOndeVemODado } from "@/components/instagram/de-onde-vem-o-dado";
 import { PainelDeDecisoes } from "@/components/instagram/painel-de-decisoes";
+import { RelatorioDoMes } from "@/components/instagram/relatorio-do-mes";
 import { GraficoDoPerfil } from "@/components/instagram/grafico-do-perfil";
 import { PostsTable } from "@/components/instagram/posts-table";
 import { PerformancePorFormato } from "@/components/instagram/performance-por-formato";
@@ -311,14 +312,24 @@ export default function ProjectInstagramPage({ params }: Props) {
         </TabsContent>
 
         {/* ---------- O que mandar para o cliente ---------- */}
-        <TabsContent value="relatorios" className="mt-6 space-y-4">
-          <div className="rounded-xl border border-border/40 bg-card/60 p-4">
-            <h3 className="text-base font-semibold">Relatório do mês</h3>
-            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              Um retrato do mês fechado, salvo com data e autor — o que o cliente recebe. O
-              histórico guarda todos os que já foram gerados.
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+        <TabsContent value="relatorios" className="mt-6 space-y-5">
+          <RelatorioDoMes
+            accountId={selectedAccountId}
+            profile={profile}
+            media={media?.data}
+            isLoading={mediaLoading}
+          />
+
+          {/* O relatório SALVO, que já existia: congela o mês com data e autor.
+              A tela acima é o mês ao vivo, e muda quando o dado muda. */}
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border/40 bg-card/60 p-4">
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold">Relatório salvo</h3>
+              <p className="text-xs text-muted-foreground">
+                Congela o mês com data e autor — é o que fica no histórico da empresa.
+              </p>
+            </div>
+            <div className="ml-auto flex flex-wrap gap-2">
               <Button size="sm" onClick={() => setReportDialogOpen(true)} className="gap-1.5">
                 <FileText className="h-3.5 w-3.5" />
                 Gerar relatório

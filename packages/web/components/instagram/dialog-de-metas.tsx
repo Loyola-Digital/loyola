@@ -20,8 +20,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { useSalvarMetas, type MetaDoMes } from "@/lib/hooks/use-instagram-metas";
+import { useSalvarMetas, type ItemDoPlano, type MetaDoMes } from "@/lib/hooks/use-instagram-metas";
 import type { Formato } from "@/lib/utils/instagram-posts";
 import { NOME_DO_FORMATO } from "@/lib/utils/instagram-posts";
 import { rotuloDoMes } from "@/lib/utils/meses-do-instagram";
@@ -51,6 +52,8 @@ export function DialogDeMetas({ accountId, mes, atual, open, onOpenChange }: Pro
   const salvar = useSalvarMetas(accountId);
   const [mesCampos, setMesCampos] = useState({ saldo: "", alcance: "", posts: "" });
   const [porFormato, setPorFormato] = useState<Record<string, { freq: string; alcance: string; interesse: string }>>({});
+  const [frases, setFrases] = useState({ onde: "", aprendizado: "", prioridade: "" });
+  const [plano, setPlano] = useState<ItemDoPlano[]>([]);
 
   // Reabrir o diálogo tem de mostrar o que está gravado, não o que foi digitado
   // e descartado da última vez.
@@ -67,6 +70,16 @@ export function DialogDeMetas({ accountId, mes, atual, open, onOpenChange }: Pro
       f[formato] = { freq: texto(m?.freq), alcance: texto(m?.alcance), interesse: texto(m?.interesse) };
     }
     setPorFormato(f);
+    setFrases({
+      onde: atual?.resumoOndeEstamos ?? "",
+      aprendizado: atual?.resumoAprendizado ?? "",
+      prioridade: atual?.resumoPrioridade ?? "",
+    });
+    // Três linhas sempre visíveis: um botão "adicionar" para três itens fixos
+    // seria um clique a mais para nada.
+    const p = [...(atual?.plano ?? [])];
+    while (p.length < 3) p.push({ oQue: "", responsavel: "", prazo: "" });
+    setPlano(p.slice(0, 3));
   }, [open, atual]);
 
   function gravar() {
@@ -88,6 +101,20 @@ export function DialogDeMetas({ accountId, mes, atual, open, onOpenChange }: Pro
         alcance: numero(mesCampos.alcance),
         posts: numero(mesCampos.posts),
         metasPorFormato: algumFormato ? metasPorFormato : null,
+        resumoOndeEstamos: frases.onde.trim() || null,
+        resumoAprendizado: frases.aprendizado.trim() || null,
+        resumoPrioridade: frases.prioridade.trim() || null,
+        plano: (() => {
+          const itens = plano
+            .filter((p) => p.oQue.trim())
+            .map((p) => ({
+              oQue: p.oQue.trim(),
+              responsavel: p.responsavel?.trim() || undefined,
+              prazo: p.prazo?.trim() || undefined,
+              status: p.status,
+            }));
+          return itens.length > 0 ? itens : null;
+        })(),
       },
       {
         onSuccess: () => {
@@ -171,6 +198,70 @@ export function DialogDeMetas({ accountId, mes, atual, open, onOpenChange }: Pro
                       }
                     />
                   ))}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <h4 className="text-sm font-medium">As três frases do relatório</h4>
+            <p className="mb-2 text-xs text-muted-foreground">
+              É a leitura que nenhum número produz sozinho, e a primeira coisa que o cliente lê.
+            </p>
+            <div className="space-y-2.5">
+              {(
+                [
+                  ["onde", "Onde estamos", "Outubro foi o mês de maior alcance do ano…"],
+                  ["aprendizado", "O que aprendemos", "O que mais se espalha são os assuntos de…"],
+                  ["prioridade", "A prioridade seguinte", "Transformar quem vê em quem fica…"],
+                ] as const
+              ).map(([chave, rotulo, exemplo]) => (
+                <div key={chave} className="space-y-1.5">
+                  <Label htmlFor={`frase-${chave}`}>{rotulo}</Label>
+                  <Textarea
+                    id={`frase-${chave}`}
+                    rows={2}
+                    placeholder={exemplo}
+                    value={frases[chave]}
+                    onChange={(e) => setFrases((v) => ({ ...v, [chave]: e.target.value }))}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <h4 className="text-sm font-medium">Próximos passos</h4>
+            <p className="mb-2 text-xs text-muted-foreground">
+              No máximo três, cada um com responsável e prazo — sem isso o relatório termina sem
+              ninguém dono de nada.
+            </p>
+            <div className="space-y-2">
+              {plano.map((item, i) => (
+                <div key={i} className="grid gap-2 sm:grid-cols-[1fr_8rem_6rem]">
+                  <Input
+                    aria-label={`Prioridade ${i + 1}`}
+                    placeholder="O que fazer"
+                    value={item.oQue}
+                    onChange={(e) =>
+                      setPlano((v) => v.map((x, j) => (j === i ? { ...x, oQue: e.target.value } : x)))
+                    }
+                  />
+                  <Input
+                    aria-label={`Responsável pela prioridade ${i + 1}`}
+                    placeholder="Quem"
+                    value={item.responsavel ?? ""}
+                    onChange={(e) =>
+                      setPlano((v) => v.map((x, j) => (j === i ? { ...x, responsavel: e.target.value } : x)))
+                    }
+                  />
+                  <Input
+                    aria-label={`Prazo da prioridade ${i + 1}`}
+                    placeholder="Até quando"
+                    value={item.prazo ?? ""}
+                    onChange={(e) =>
+                      setPlano((v) => v.map((x, j) => (j === i ? { ...x, prazo: e.target.value } : x)))
+                    }
+                  />
                 </div>
               ))}
             </div>

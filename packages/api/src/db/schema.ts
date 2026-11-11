@@ -556,6 +556,18 @@ export const instagramMonthlyGoals = pgTable(
      * — posts por semana, alcance mediano por post e interesse por mil.
      */
     metasPorFormato: jsonb("metas_por_formato"),
+    /**
+     * As três frases do relatório do mês: onde estamos, o que aprendemos e
+     * qual é a prioridade seguinte.
+     *
+     * Texto de gente, não número: é a leitura que nenhum dado produz sozinho,
+     * e é a primeira coisa que o cliente lê no relatório.
+     */
+    resumoOndeEstamos: text("resumo_onde_estamos"),
+    resumoAprendizado: text("resumo_aprendizado"),
+    resumoPrioridade: text("resumo_prioridade"),
+    /** `[{ oQue, responsavel, prazo, status }]` — no máximo três por mês. */
+    plano: jsonb("plano"),
     atualizadoEm: timestamp("atualizado_em", { withTimezone: true }).defaultNow().notNull(),
     atualizadoPor: uuid("atualizado_por").references(() => users.id, { onDelete: "set null" }),
   },
