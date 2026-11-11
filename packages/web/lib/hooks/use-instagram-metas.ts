@@ -12,12 +12,24 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api-client";
 import type { MetasPorFormato } from "@/lib/utils/instagram-metas";
 
+export interface ItemDoPlano {
+  oQue: string;
+  responsavel?: string;
+  prazo?: string;
+  status?: "a-fazer" | "em-andamento" | "concluido";
+}
+
 export interface MetaDoMes {
   mes: string;
   saldoSeguidores: number | null;
   alcance: number | null;
   posts: number | null;
   metasPorFormato: MetasPorFormato | null;
+  /** As três frases do relatório: onde estamos, o que aprendemos, a prioridade. */
+  resumoOndeEstamos?: string | null;
+  resumoAprendizado?: string | null;
+  resumoPrioridade?: string | null;
+  plano?: ItemDoPlano[] | null;
   atualizadoEm?: string;
 }
 
