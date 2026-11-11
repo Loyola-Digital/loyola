@@ -69,9 +69,10 @@ const FONTES: { nome: string; situacao: Situacao; rotulo: string; detalhe: strin
   },
   {
     nome: "Metas do mês",
-    situacao: "faltando",
-    rotulo: "Não existe ainda",
-    detalhe: "Sem meta cadastrada não há semáforo nem simulador: o sistema não tem contra o que comparar o resultado.",
+    situacao: "manual",
+    rotulo: "Digitado",
+    detalhe:
+      "Definidas no botão Editar metas, aqui mesmo nesta aba, por mês e por formato. Mês sem meta aparece sem cor: o sistema não inventa o que se esperava.",
   },
   {
     nome: "Impulsionamentos",

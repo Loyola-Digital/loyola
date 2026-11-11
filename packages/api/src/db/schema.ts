@@ -528,6 +528,40 @@ export const instagramPostMetrics = pgTable(
   ],
 );
 
+/**
+ * As metas do mês de uma conta do Instagram.
+ *
+ * Sem meta não existe semáforo: "683 mil de alcance" não é bom nem ruim até
+ * alguém dizer o que se esperava. É a linha que transforma a tela de relatório
+ * em tela de decisão.
+ *
+ * Uma linha por conta e mês (`YYYY-MM`). Metas por formato ficam em JSONB
+ * porque são três números para cada um dos três formatos e mudam juntas —
+ * nove colunas diriam a mesma coisa e exigiriam migration a cada formato novo.
+ */
+export const instagramMonthlyGoals = pgTable(
+  "instagram_monthly_goals",
+  {
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => instagramAccounts.id, { onDelete: "cascade" }),
+    /** `YYYY-MM`. */
+    mes: varchar("mes", { length: 7 }).notNull(),
+    /** Seguidores novos menos os que saíram. */
+    saldoSeguidores: integer("saldo_seguidores"),
+    alcance: integer("alcance"),
+    posts: integer("posts"),
+    /**
+     * `{ reels: { freq, alcance, interesse }, carrossel: {...}, estatico: {...} }`
+     * — posts por semana, alcance mediano por post e interesse por mil.
+     */
+    metasPorFormato: jsonb("metas_por_formato"),
+    atualizadoEm: timestamp("atualizado_em", { withTimezone: true }).defaultNow().notNull(),
+    atualizadoPor: uuid("atualizado_por").references(() => users.id, { onDelete: "set null" }),
+  },
+  (table) => [primaryKey({ columns: [table.accountId, table.mes] })],
+);
+
 // ============================================================
 // META ADS TABLES (EPIC-6)
 // ============================================================

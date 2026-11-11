@@ -39,6 +39,7 @@ import { PostsQueExplicam } from "@/components/instagram/posts-que-explicam";
 import { Glossario } from "@/components/instagram/glossario";
 import { QuemEntraEQuemSai } from "@/components/instagram/quem-entra-e-quem-sai";
 import { DeOndeVemODado } from "@/components/instagram/de-onde-vem-o-dado";
+import { PainelDeDecisoes } from "@/components/instagram/painel-de-decisoes";
 import { GraficoDoPerfil } from "@/components/instagram/grafico-do-perfil";
 import { PostsTable } from "@/components/instagram/posts-table";
 import { PerformancePorFormato } from "@/components/instagram/performance-por-formato";
@@ -334,6 +335,11 @@ export default function ProjectInstagramPage({ params }: Props) {
 
         {/* ---------- O que decidir ---------- */}
         <TabsContent value="decisoes" className="mt-6 space-y-6">
+          <PainelDeDecisoes
+            accountId={selectedAccountId}
+            media={media?.data}
+            isLoading={mediaLoading}
+          />
           <DeOndeVemODado />
         </TabsContent>
       </Tabs>
