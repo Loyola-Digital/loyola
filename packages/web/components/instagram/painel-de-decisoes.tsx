@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Pencil, Target } from "lucide-react";
 import { Dica } from "@/components/instagram/dica";
 import { DialogDeMetas } from "@/components/instagram/dialog-de-metas";
+import { metasSugeridas } from "@/lib/utils/instagram-rascunho";
 import { useMetasDoInstagram } from "@/lib/hooks/use-instagram-metas";
 import { useInstagramMensal } from "@/lib/hooks/use-instagram-mensal";
 import type { InstagramMedia } from "@/lib/hooks/use-instagram";
@@ -108,6 +109,9 @@ export function PainelDeDecisoes({ accountId, media, isLoading }: Props) {
   );
   const mes = mesEscolhido ?? meses[0] ?? null;
   const doMes = mensal?.meses.find((m) => m.mes === mes) ?? null;
+  // A sugestão de meta aparece no texto do estado vazio: a aba abria sem
+  // semáforo e sem dizer que havia um caminho de um clique para ligá-lo.
+  const sugeridas = metasSugeridas(mensal?.meses ?? []);
   const meta = metasData?.metas.find((m) => m.mes === mes) ?? null;
 
   const postsDoMes = useMemo(() => {
@@ -203,6 +207,14 @@ Em mês que ainda está correndo, a comparação é com o ritmo esperado até ho
                 alcance e <b>{doMes.posts}</b> posts. Nenhum desses números é bom ou ruim até alguém
                 dizer o que se esperava — é a meta que liga o semáforo e o simulador.
               </p>
+              {sugeridas.mesesUsados.length > 0 && (
+                <p className="max-w-2xl text-sm text-muted-foreground">
+                  <b>Editar o mês</b> já abre com uma sugestão: {nf(sugeridas.saldoSeguidores ?? 0)}{" "}
+                  de saldo, {K(sugeridas.alcance ?? 0)} de alcance e {sugeridas.posts} posts — a
+                  média dos últimos {sugeridas.mesesUsados.length} mês(es) fechado(s). Aceitar ou
+                  ajustar é um clique; manter a conta sem meta é deixar esta tela como está.
+                </p>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
@@ -420,6 +432,7 @@ A conta é simples de propósito: supõe que cada post traga os mesmos seguidore
           accountId={accountId}
           mes={mes}
           atual={meta}
+          historico={mensal?.meses}
           open={editando}
           onOpenChange={setEditando}
         />

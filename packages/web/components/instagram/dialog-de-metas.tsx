@@ -26,11 +26,22 @@ import { useSalvarMetas, type ItemDoPlano, type MetaDoMes } from "@/lib/hooks/us
 import type { Formato } from "@/lib/utils/instagram-posts";
 import { NOME_DO_FORMATO } from "@/lib/utils/instagram-posts";
 import { rotuloDoMes } from "@/lib/utils/meses-do-instagram";
+import type { MesDoOrganico } from "@/lib/hooks/use-instagram-mensal";
+import { metasSugeridas, rascunhoDoResumo } from "@/lib/utils/instagram-rascunho";
 
 interface Props {
   accountId: string | null;
   mes: string;
   atual: MetaDoMes | null;
+  /**
+   * O histórico mensal, para sugerir meta e rascunhar as frases.
+   *
+   * Campo em branco nunca foi preenchido por ninguém: em produção as metas e
+   * as três frases estão vazias desde que a tela existe, e por isso a aba
+   * Decisões abre sem semáforo. Com um valor sugerido na caixa, salvar é
+   * aceitar — e editar continua sendo editar.
+   */
+  historico?: MesDoOrganico[];
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }
@@ -48,8 +59,14 @@ function numero(texto: string): number | null {
 const texto = (v: number | null | undefined) =>
   v == null ? "" : String(v).replace(".", ",");
 
-export function DialogDeMetas({ accountId, mes, atual, open, onOpenChange }: Props) {
+export function DialogDeMetas({ accountId, mes, atual, historico, open, onOpenChange }: Props) {
   const salvar = useSalvarMetas(accountId);
+  const sugeridas = metasSugeridas(historico ?? []);
+  const doMes = (historico ?? []).find((m) => m.mes === mes) ?? null;
+  const indice = (historico ?? []).findIndex((m) => m.mes === mes);
+  const rascunho = doMes
+    ? rascunhoDoResumo(doMes, indice > 0 ? (historico ?? [])[indice - 1] : null)
+    : null;
   const [mesCampos, setMesCampos] = useState({ saldo: "", alcance: "", posts: "" });
   const [porFormato, setPorFormato] = useState<Record<string, { freq: string; alcance: string; interesse: string }>>({});
   const [frases, setFrases] = useState({ onde: "", aprendizado: "", prioridade: "" });
@@ -59,10 +76,13 @@ export function DialogDeMetas({ accountId, mes, atual, open, onOpenChange }: Pro
   // e descartado da última vez.
   useEffect(() => {
     if (!open) return;
+    // O que está gravado manda; onde não há nada, entra a sugestão, para que
+    // salvar signifique aceitar. Um campo em branco continua possível: basta
+    // apagar.
     setMesCampos({
-      saldo: texto(atual?.saldoSeguidores),
-      alcance: texto(atual?.alcance),
-      posts: texto(atual?.posts),
+      saldo: texto(atual?.saldoSeguidores ?? sugeridas.saldoSeguidores),
+      alcance: texto(atual?.alcance ?? sugeridas.alcance),
+      posts: texto(atual?.posts ?? sugeridas.posts),
     });
     const f: Record<string, { freq: string; alcance: string; interesse: string }> = {};
     for (const formato of FORMATOS) {
@@ -71,9 +91,9 @@ export function DialogDeMetas({ accountId, mes, atual, open, onOpenChange }: Pro
     }
     setPorFormato(f);
     setFrases({
-      onde: atual?.resumoOndeEstamos ?? "",
-      aprendizado: atual?.resumoAprendizado ?? "",
-      prioridade: atual?.resumoPrioridade ?? "",
+      onde: atual?.resumoOndeEstamos ?? rascunho?.onde ?? "",
+      aprendizado: atual?.resumoAprendizado ?? rascunho?.aprendizado ?? "",
+      prioridade: atual?.resumoPrioridade ?? rascunho?.prioridade ?? "",
     });
     // Três linhas sempre visíveis: um botão "adicionar" para três itens fixos
     // seria um clique a mais para nada.
@@ -170,6 +190,14 @@ export function DialogDeMetas({ accountId, mes, atual, open, onOpenChange }: Pro
               />
             </div>
           </div>
+
+          {sugeridas.mesesUsados.length > 0 && !atual?.alcance && (
+            <p className="text-xs text-muted-foreground">
+              Números sugeridos pela média dos últimos {sugeridas.mesesUsados.length} mês(es)
+              fechado(s) ({sugeridas.mesesUsados.map(rotuloDoMes).join(", ")}). Salvar é aceitar;
+              ajuste o que quiser ou apague para deixar sem meta.
+            </p>
+          )}
 
           <div>
             <h4 className="text-sm font-medium">Por formato</h4>
