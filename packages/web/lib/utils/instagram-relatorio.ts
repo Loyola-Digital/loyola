@@ -7,6 +7,13 @@
  * informação, no formato que sobrevive a um colar.
  *
  * Nada aqui é inventado: o que não tem dado não vira linha.
+ *
+ * ## Mês em curso não compara
+ *
+ * O relatório abre no último mês fechado, mas o mês em curso continua
+ * escolhível. Quando é ele, toda comparação com o mês anterior sai: onze dias
+ * contra trinta rendem "−73% de alcance", que é o tamanho do mês e não o
+ * resultado dele. Em vez da variação, o cabeçalho diz em que dia o mês está.
  */
 
 import type { ItemDoPlano, MetaDoMes } from "@/lib/hooks/use-instagram-metas";
@@ -48,10 +55,19 @@ function variacao(atual: number, anterior: number | null | undefined): string {
 }
 
 export function textoDoRelatorio(d: DadosDoRelatorio): string {
-  const { doMes, anterior, meta } = d;
+  const { doMes, meta } = d;
+  // Mês pela metade não tem base de comparação: sem `anterior`, nenhuma linha
+  // ganha variação.
+  const anterior = doMes.emCurso ? null : d.anterior;
   const linhas: string[] = [];
 
   linhas.push(`Instagram — ${rotuloDoMes(d.mes)}${d.perfil ? ` · @${d.perfil}` : ""}`);
+  if (doMes.emCurso) {
+    linhas.push(
+      `Mês em curso: ${doMes.emCurso.dias} de ${doMes.emCurso.de} dias. ` +
+        `Sem comparação com o mês anterior, que está fechado.`,
+    );
+  }
 
   const resumo = [meta?.resumoOndeEstamos, meta?.resumoAprendizado, meta?.resumoPrioridade].filter(
     (t): t is string => !!t?.trim(),
@@ -109,7 +125,12 @@ export interface CartaoDeResultado {
 }
 
 /** Os quatro números que o cliente lê primeiro, com a frase que cada um pede. */
-export function cartoesDoRelatorio(doMes: MesDoOrganico, anterior?: MesDoOrganico | null): CartaoDeResultado[] {
+export function cartoesDoRelatorio(
+  doMes: MesDoOrganico,
+  mesAnterior?: MesDoOrganico | null,
+): CartaoDeResultado[] {
+  // Mês em curso não compara com mês fechado: a variação sai vazia nos quatro.
+  const anterior = doMes.emCurso ? null : mesAnterior;
   const saidas =
     doMes.novosSeguidores > 0 ? Math.round((doMes.unfollows / doMes.novosSeguidores) * 100) : null;
   return [

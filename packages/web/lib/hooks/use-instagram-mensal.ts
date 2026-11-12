@@ -39,6 +39,11 @@ export interface MesDoOrganico {
     alcance: number;
     engajamento: number | null;
   } | null;
+  /**
+   * Preenchido só no mês que ainda não fechou. Mês em curso não tem variação:
+   * onze dias corridos contra trinta fechados só produzem queda.
+   */
+  emCurso: { dias: number; de: number } | null;
   variacao: {
     alcance: number | null;
     views: number | null;

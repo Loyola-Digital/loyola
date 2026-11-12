@@ -528,7 +528,7 @@ export default fp(async function instagramRoutes(fastify) {
       return {
         conta: { id: account.id, username: account.instagramUsername },
         seguidoresHoje: perfil.followers_count ?? null,
-        meses: comVariacao(reconstruirSeguidores(linhas, perfil.followers_count ?? 0)),
+        meses: comVariacao(reconstruirSeguidores(linhas, perfil.followers_count ?? 0), new Date()),
       };
     } catch (error) {
       if (error instanceof InstagramApiError) {

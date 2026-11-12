@@ -305,6 +305,43 @@ describe("comVariacao", () => {
     const r = comVariacao([linha({ alcanceDiario: [0] }), linha({ alcanceDiario: [500] })]);
     expect(r[1]!.variacao.alcance).toBeNull();
   });
+
+  // Onze dias contra trinta sempre "caem": era isso que pintava o alcance da
+  // Fernanda de −73% em vermelho no dia 11.
+  it("o mês em curso não tem variação", () => {
+    const hoje = new Date("2026-11-11T12:00:00Z");
+    const r = comVariacao(
+      [
+        montarLinha("2026-10", insightsDe({ alcanceDiario: [10_000] }), []),
+        montarLinha("2026-11", insightsDe({ alcanceDiario: [2_700] }), []),
+      ],
+      hoje,
+    );
+    expect(r[1]!.variacao.alcance).toBeNull();
+    expect(r[1]!.emCurso).toEqual({ dias: 11, de: 30 });
+  });
+
+  it("mês fechado continua comparando, e não se diz em curso", () => {
+    const r = comVariacao(
+      [
+        montarLinha("2026-09", insightsDe({ alcanceDiario: [1_000] }), []),
+        montarLinha("2026-10", insightsDe({ alcanceDiario: [1_200] }), []),
+      ],
+      new Date("2026-11-11T12:00:00Z"),
+    );
+    expect(r[1]!.variacao.alcance).toBe(20);
+    expect(r[1]!.emCurso).toBeNull();
+  });
+
+  // Fevereiro tem 28 ou 29: o total de dias sai do calendário, não de uma
+  // constante.
+  it("o total de dias segue o mês", () => {
+    const r = comVariacao(
+      [montarLinha("2028-02", insightsDe({ alcanceDiario: [1] }), [])],
+      new Date("2028-02-03T12:00:00Z"),
+    );
+    expect(r[0]!.emCurso).toEqual({ dias: 3, de: 29 });
+  });
 });
 
 describe("janelasMensais", () => {
