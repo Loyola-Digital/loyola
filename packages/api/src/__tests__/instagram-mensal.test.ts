@@ -152,8 +152,49 @@ describe("melhorPostDoMes", () => {
 
   it("post COM alcance ganha de post sem — a taxa é a medida melhor", () => {
     const semAlcance = post("a", { reach: 0, likes: 9999 });
-    const comAlcance = post("b", { reach: 100, likes: 1 });
+    const comAlcance = post("b", { reach: 100, likes: 20 });
     expect(melhorPostDoMes([semAlcance, comAlcance])?.id).toBe("b");
+  });
+
+  it("...mas uma reação só não é uma taxa, e perde para reação de verdade", () => {
+    const semAlcance = post("a", { reach: 0, likes: 9999 });
+    const umaReacao = post("b", { reach: 100, likes: 1 }); // "1%" é acaso
+    expect(melhorPostDoMes([semAlcance, umaReacao])?.id).toBe("a");
+  });
+
+  it("post de alcance minúsculo não vence o mês por ruído de taxa", () => {
+    // Caso real de @fernandazapparoli em novembro/26: o post recém-publicado
+    // tinha 32 de alcance e 3 interações (9,4%) e era anunciado como POST DO
+    // MÊS no texto que vai para o cliente.
+    const recemPublicado = post("ruido", { reach: 32, likes: 3 });
+    const mes = [
+      recemPublicado,
+      post("a", { reach: 10_000, likes: 700 }), // 7,0%
+      post("b", { reach: 9_000, likes: 450 }),
+      post("c", { reach: 12_000, likes: 300 }),
+    ];
+    expect(melhorPostDoMes(mes)?.id).toBe("a");
+  });
+
+  it("mas o corte cede antes de deixar o mês sem melhor post", () => {
+    // Mês de post único: o piso descartaria o único candidato.
+    expect(melhorPostDoMes([post("unico", { reach: 32, likes: 3 })])?.id).toBe("unico");
+  });
+
+  it("alcance pequeno com reação de verdade continua podendo vencer", () => {
+    // O corte é em interações, não em alcance: 300 pessoas e 60 reações é um
+    // post genuinamente bom de conta pequena, não ruído.
+    const conta = [
+      post("peq", { reach: 300, likes: 60 }), // 20%
+      post("a", { reach: 1_000, likes: 50 }),
+      post("b", { reach: 1_200, likes: 60 }),
+    ];
+    expect(melhorPostDoMes(conta)?.id).toBe("peq");
+  });
+
+  it("nenhum post com reação suficiente: o mês ainda tem melhor post", () => {
+    const todosFracos = [post("a", { reach: 50, likes: 1 }), post("b", { reach: 40, likes: 4 })];
+    expect(melhorPostDoMes(todosFracos)?.id).toBe("b");
   });
 });
 
