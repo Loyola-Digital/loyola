@@ -3,6 +3,7 @@ import {
   METRICAS_DIARIAS,
   METRICAS_MENSAIS,
   serieDiaria,
+  serieDiariaComparada,
   serieMensal,
 } from "../serie-do-perfil";
 
@@ -36,6 +37,55 @@ describe("serieDiaria", () => {
     expect(serieDiaria(entries, "views")).toEqual([]);
     expect(serieDiaria(entries, "profile_views")).toEqual([]);
     expect(serieDiaria(undefined, "reach")).toEqual([]);
+  });
+});
+
+describe("serieDiariaComparada", () => {
+  /** N dias de alcance, terminando em 30/09. */
+  const serie = (valores: number[], ate = 30) => [
+    {
+      name: "reach",
+      values: valores.map((value, i) => ({
+        value,
+        end_time: `2026-09-${String(ate - valores.length + 1 + i).padStart(2, "0")}T07:00:00+0000`,
+      })),
+    },
+  ];
+
+  it("os dois últimos dias saem da linha cheia e entram na tracejada", () => {
+    const s = serieDiariaComparada(serie([10, 20, 30, 40, 50]), undefined, "reach");
+    expect(s.map((p) => p.valorFechado)).toEqual([10, 20, 30, null, null]);
+    expect(s.map((p) => p.fechando)).toEqual([null, null, 30, 40, 50]);
+    expect(s.map((p) => p.parcial)).toEqual([false, false, false, true, true]);
+  });
+
+  it("o valor cheio continua disponível em todos os dias", () => {
+    const s = serieDiariaComparada(serie([10, 20, 30, 40, 50]), undefined, "reach");
+    expect(s.map((p) => p.valor)).toEqual([10, 20, 30, 40, 50]);
+  });
+
+  it("o período anterior entra alinhado pelo FIM", () => {
+    // 31 pontos antes contra 30 agora: o último de lá fica sob o último de cá.
+    const antes = serie(Array.from({ length: 6 }, (_, i) => (i + 1) * 100));
+    const s = serieDiariaComparada(serie([1, 2, 3, 4, 5]), antes, "reach");
+    expect(s.map((p) => p.anterior)).toEqual([200, 300, 400, 500, 600]);
+  });
+
+  it("sem período anterior a linha de comparação não existe", () => {
+    const s = serieDiariaComparada(serie([1, 2, 3]), undefined, "reach");
+    expect(s.every((p) => p.anterior === null)).toBe(true);
+  });
+
+  // Num período de 2 dias, cortar 2 deixaria o gráfico sem nenhuma linha.
+  it("série curta não perde a linha cheia", () => {
+    const s = serieDiariaComparada(serie([10, 20]), undefined, "reach");
+    expect(s.map((p) => p.valorFechado)).toEqual([10, 20]);
+    expect(s.every((p) => p.fechando === null)).toBe(true);
+    expect(s.every((p) => !p.parcial)).toBe(true);
+  });
+
+  it("sem dado nenhum devolve vazio", () => {
+    expect(serieDiariaComparada(undefined, undefined, "reach")).toEqual([]);
   });
 });
 

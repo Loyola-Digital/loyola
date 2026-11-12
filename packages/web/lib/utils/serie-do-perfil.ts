@@ -22,6 +22,25 @@ export interface PontoDaSerie {
   fim?: string;
 }
 
+/**
+ * Quantos dias do fim da série o Instagram ainda não fechou.
+ *
+ * A própria tabela mensal já diz que a Meta leva cerca de dois dias para
+ * fechar os números. Marcar só o último deixava o penúltimo passar por dia
+ * cheio — e a linha terminava em duas quedas, não uma.
+ */
+export const DIAS_AINDA_FECHANDO = 2;
+
+export interface PontoDiario extends PontoDaSerie {
+  /** O dia equivalente do período anterior, para a linha de comparação. */
+  anterior: number | null;
+  /** O valor onde a linha é CHEIA — nulo nos dias que ainda fecham. */
+  valorFechado: number | null;
+  /** O valor onde a linha é TRACEJADA — nulo no resto. */
+  fechando: number | null;
+  parcial: boolean;
+}
+
 export interface MetricaDoGrafico {
   chave: string;
   rotulo: string;
@@ -75,6 +94,47 @@ export function serieDiaria(
     // navegador empurrar o ponto para o dia anterior.
     const rotulo = fim ? `${fim.slice(8, 10)}/${fim.slice(5, 7)}` : "";
     return { rotulo, fim, valor: typeof v.value === "number" ? v.value : 0 };
+  });
+}
+
+/**
+ * A série diária com o período anterior ao lado e o fim marcado como parcial.
+ *
+ * ## O alinhamento é pelo FIM
+ *
+ * O dia de hoje tem de ficar sobre o dia equivalente do período anterior, e é
+ * o fim das duas janelas que define isso. Alinhar pelo começo faria a
+ * comparação escorregar um dia inteiro quando as janelas voltassem com
+ * tamanhos diferentes — e a Meta devolve 29 ou 31 pontos para "30 dias" sem
+ * avisar.
+ *
+ * ## O ponto do corte entra nas duas linhas
+ *
+ * Sem repeti-lo, o tracejado começa solto no ar, sem ligação com a linha
+ * cheia, e parece outra série.
+ */
+export function serieDiariaComparada(
+  atual: EntradaDeInsight[] | undefined,
+  anterior: EntradaDeInsight[] | undefined,
+  chave: string,
+): PontoDiario[] {
+  const pontos = serieDiaria(atual, chave);
+  const antes = serieDiaria(anterior, chave);
+  const desloca = antes.length - pontos.length;
+  // Série curta não tem o que marcar: num período de 2 dias, cortar 2 deixaria
+  // o gráfico sem nenhuma linha cheia.
+  const corte =
+    pontos.length > DIAS_AINDA_FECHANDO ? pontos.length - DIAS_AINDA_FECHANDO : pontos.length;
+
+  return pontos.map((p, i) => {
+    const a = antes[i + desloca];
+    return {
+      ...p,
+      anterior: a ? a.valor : null,
+      valorFechado: i < corte ? p.valor : null,
+      fechando: i >= corte - 1 && corte < pontos.length ? p.valor : null,
+      parcial: i >= corte,
+    };
   });
 }
 

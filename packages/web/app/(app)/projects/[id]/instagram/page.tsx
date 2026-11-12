@@ -229,6 +229,7 @@ export default function ProjectInstagramPage({ params }: Props) {
 
           <GraficoDoPerfil
             data={insights?.data}
+            dataAnterior={previousInsights?.data}
             isLoading={insightsLoading}
             error={insightsError as Error | null}
             onRefresh={handleRefreshAll}
