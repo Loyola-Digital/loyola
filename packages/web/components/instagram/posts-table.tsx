@@ -57,6 +57,7 @@ import {
   type ChaveDaMetrica,
   type MetricaDoPost,
 } from "@/lib/utils/instagram-posts";
+import { chamadaDaLegenda } from "@/lib/utils/instagram-chamadas";
 import { referenciasPorFormato, statusDoPost, type StatusDoPost } from "@/lib/utils/instagram-sinal";
 
 type Ordem = ChaveDaMetrica | "timestamp";
@@ -460,6 +461,18 @@ Clique na célula para escrever ou corrigir; o campo sugere os temas que a conta
                       </Dica>
                     </span>
                   </TableHead>
+                  <TableHead className="whitespace-nowrap">
+                    <span className="inline-flex items-center gap-1">
+                      Chamada
+                      <Dica>
+                        {`O que a legenda pede: "Comente GUIA", "Link na bio", ou nada.
+
+Lido por REGRA, direto da legenda — não é sugestão de IA e não precisa de revisão. A palavra tem de estar em caixa alta, que é como ela aparece nas legendas. O que a regra não reconhece fica "Sem chamada" em vez de virar palpite.
+
+Em Decisões, a tabela "Que chamada faz comentar" mostra quantos comentários por mil cada uma rende.`}
+                      </Dica>
+                    </span>
+                  </TableHead>
                   {cabecalho("timestamp", "Data", "Data de publicação.")}
                   {METRICAS_DO_POST.map((m) => cabecalho(m.chave, m.rotulo, m.dica))}
                   <TableHead className="whitespace-nowrap">
@@ -541,6 +554,16 @@ Fica em branco quando o formato tem menos de 5 posts no período — com três p
                         ) : (
                           <span className="text-sm text-muted-foreground">{post.tema ?? "—"}</span>
                         )}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {(() => {
+                          const c = chamadaDaLegenda(post.caption);
+                          return c.tipo === "nenhuma" ? (
+                            <span className="text-sm text-muted-foreground">—</span>
+                          ) : (
+                            <span className="text-[12px]">{c.rotulo}</span>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell className="text-sm whitespace-nowrap">
                         {format(parseISO(post.timestamp), "dd/MM/yy")}

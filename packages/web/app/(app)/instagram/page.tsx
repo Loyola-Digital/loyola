@@ -27,6 +27,7 @@ import { OverviewCards } from "@/components/instagram/overview-cards";
 import { GraficoDoPerfil } from "@/components/instagram/grafico-do-perfil";
 import { PostsTable } from "@/components/instagram/posts-table";
 import { PerformancePorFormato } from "@/components/instagram/performance-por-formato";
+import { PorChamada } from "@/components/instagram/por-chamada";
 import { AnaliseComIaDoPeriodo } from "@/components/instagram/analise-com-ia";
 import { StoriesSection } from "@/components/instagram/stories-section";
 import { ReelsSection } from "@/components/instagram/reels-section";
@@ -202,6 +203,13 @@ export default function InstagramDashboardPage() {
       />
 
       <PerformancePorFormato
+        data={media?.data}
+        isLoading={mediaLoading}
+        since={period.since}
+        until={period.until}
+      />
+
+      <PorChamada
         data={media?.data}
         isLoading={mediaLoading}
         since={period.since}

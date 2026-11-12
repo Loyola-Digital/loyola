@@ -47,6 +47,7 @@ import { GraficoDoPerfil } from "@/components/instagram/grafico-do-perfil";
 import { PostsTable } from "@/components/instagram/posts-table";
 import { PerformancePorFormato } from "@/components/instagram/performance-por-formato";
 import { PorTema } from "@/components/instagram/por-tema";
+import { PorChamada } from "@/components/instagram/por-chamada";
 import { AnaliseComIaDoPeriodo } from "@/components/instagram/analise-com-ia";
 import { StoriesSection } from "@/components/instagram/stories-section";
 import { ReelsSection } from "@/components/instagram/reels-section";
@@ -356,6 +357,15 @@ export default function ProjectInstagramPage({ params }: Props) {
             previousInsights={previousInsights?.data}
             posts={postsDoPeriodo}
             isLoading={insightsLoading || mediaLoading}
+          />
+
+          {/* A chamada é uma linha de legenda, lida por regra: nasce
+              preenchida e é a parte mais barata de trocar. */}
+          <PorChamada
+            data={media?.data}
+            isLoading={mediaLoading}
+            since={period.since}
+            until={period.until}
           />
 
           <PainelDeDecisoes
