@@ -77,5 +77,10 @@ export function leituraDosTemas(linhas: readonly LinhaDoTema[]): string | null {
     return "Nenhum tema se destaca: todos se espalham de forma parecida. O que decide o resultado aqui não é o assunto.";
   }
   const n = vezes.toFixed(1).replace(".", ",");
-  return `${melhor.tema} se espalha ${n}× mais que ${pior.tema}, por pessoa alcançada. Vale testar mais do primeiro antes de concluir — são ${melhor.posts} post(s).`;
+  // O n dos DOIS: "10× mais" a partir de 2 posts contra 14 não é a mesma
+  // afirmação que 14 contra 14, e quem lê a frase decide com base nisso.
+  return (
+    `${melhor.tema} se espalha ${n}× mais que ${pior.tema}, por pessoa alcançada ` +
+    `(${melhor.posts} post(s) contra ${pior.posts}). Vale testar mais do primeiro antes de concluir.`
+  );
 }

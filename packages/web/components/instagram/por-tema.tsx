@@ -7,6 +7,10 @@
  * pergunta sem resposta na tela. As etiquetas saem da legenda: a IA sugere em
  * lote e o social media revisa na tabela de posts, porque tema é julgamento
  * editorial e um tema errado silencioso envenena a conclusão.
+ *
+ * A sugestão passou a rodar sozinha a cada sincronização: esta tabela ficava
+ * vazia até alguém se lembrar de clicar no botão, e um bloco que depende de
+ * lembrança fica vazio para sempre. O botão continua, para forçar a rodada.
  */
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -73,8 +77,10 @@ export function PorTema({ data, isLoading, since, until, accountId }: Props) {
         </CardHeader>
         <CardContent className="flex flex-col items-start gap-3">
           <p className="text-sm text-muted-foreground">
-            Nenhum post tem tema ainda. A IA lê a legenda e sugere uma etiqueta para cada um; depois é
-            só corrigir o que estiver errado na coluna <b>Tema</b> da tabela de posts.
+            Nenhum post tem tema ainda. A etiquetagem roda sozinha a cada sincronização — se acabou
+            de ligar a conta, atualize e aguarde alguns segundos. O botão abaixo força a rodada
+            agora; depois é só corrigir o que estiver errado na coluna <b>Tema</b> da tabela de
+            posts, onde a sugestão da IA aparece em itálico até alguém confirmar.
           </p>
           {botao}
         </CardContent>
