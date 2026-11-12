@@ -28,6 +28,7 @@ import { limitesDoMes, rotuloDoMes } from "@/lib/utils/meses-do-instagram";
 import { destaquesDoPeriodo, referenciasPorFormato, statusDoPost } from "@/lib/utils/instagram-sinal";
 import { interessePorMil } from "@/lib/utils/instagram-posts";
 import { cartoesDoRelatorio, textoDoRelatorio } from "@/lib/utils/instagram-relatorio";
+import { rascunhoDoResumo } from "@/lib/utils/instagram-rascunho";
 import { agruparPorTema } from "@/lib/utils/instagram-temas";
 
 interface Props {
@@ -86,9 +87,18 @@ export function RelatorioDoMes({ accountId, profile, media, isLoading }: Props) 
   }
 
   const cartoes = cartoesDoRelatorio(doMes, anterior);
-  const frases = [meta?.resumoOndeEstamos, meta?.resumoAprendizado, meta?.resumoPrioridade];
+  // Enquanto ninguém escreve, o rascunho dos números ocupa o lugar — marcado
+  // como rascunho. "Nenhuma frase escrita para este mês" era uma folha em
+  // branco, e folha em branco não é preenchida: em produção as três frases
+  // estão vazias desde que a tela existe. O rascunho nunca é gravado sozinho;
+  // "Editar o mês" abre com ele dentro, e salvar é que confirma.
+  const rascunho = rascunhoDoResumo(doMes, anterior);
+  const escritas = [meta?.resumoOndeEstamos, meta?.resumoAprendizado, meta?.resumoPrioridade];
+  const temFrase = escritas.some((f) => f?.trim());
+  const frases = temFrase
+    ? escritas
+    : [rascunho.onde, rascunho.aprendizado, rascunho.prioridade];
   const rotulosDasFrases = ["Onde estamos", "O que aprendemos", "A prioridade seguinte"];
-  const temFrase = frases.some((f) => f?.trim());
   const plano = (meta?.plano ?? []).filter((p) => p.oQue?.trim());
   const texto = textoDoRelatorio({ perfil: profile?.username ?? null, mes, doMes, anterior, meta });
 
@@ -148,20 +158,34 @@ export function RelatorioDoMes({ accountId, profile, media, isLoading }: Props) 
       {visao !== "texto" && (
         <Card>
           <CardHeader className="pb-2">
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               <CardTitle className="text-base">Resumo de {rotuloDoMes(mes)}</CardTitle>
+              {!temFrase && (
+                <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                  rascunho — editar
+                </span>
+              )}
               <Dica>
-                Três frases escritas por gente: onde estamos, o que aprendemos e qual é a prioridade
-                seguinte. É a leitura que nenhum número produz sozinho — e a primeira coisa que o
-                cliente lê.
+                Três frases: onde estamos, o que aprendemos e qual é a prioridade seguinte. É a
+                leitura que nenhum número produz sozinho — e a primeira coisa que o cliente lê.
+                {"\n\n"}
+                Enquanto ninguém escreve, elas vêm rascunhadas dos números do mês e aparecem
+                marcadas como rascunho. O rascunho não é gravado: &ldquo;Editar o mês&rdquo; abre
+                com ele dentro, e salvar é que confirma.
               </Dica>
             </div>
           </CardHeader>
           <CardContent>
-            {!temFrase ? (
+            {!temFrase && (
+              <p className="mb-2 text-[12px] text-muted-foreground">
+                Rascunho montado dos números deste mês. Em <b>Editar o mês</b> ele abre pronto para
+                corrigir — nada vai para o cliente antes de alguém salvar.
+              </p>
+            )}
+            {frases.every((f) => !f?.trim()) ? (
               <p className="text-sm text-muted-foreground">
-                Nenhuma frase escrita para este mês. Em <b>Editar o mês</b> ficam as três que abrem o
-                relatório.
+                Ainda não há número suficiente neste mês para rascunhar o resumo. Em{" "}
+                <b>Editar o mês</b> ficam as três frases que abrem o relatório.
               </p>
             ) : (
               <dl className="divide-y divide-border/40">
@@ -171,7 +195,9 @@ export function RelatorioDoMes({ accountId, profile, media, isLoading }: Props) 
                       <dt className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                         {rotulosDasFrases[i]}
                       </dt>
-                      <dd className="text-sm">{f}</dd>
+                      <dd className={`text-sm ${temFrase ? "" : "italic text-muted-foreground"}`}>
+                        {f}
+                      </dd>
                     </div>
                   ) : null,
                 )}
@@ -300,7 +326,14 @@ export function RelatorioDoMes({ accountId, profile, media, isLoading }: Props) 
       )}
 
       {accountId && (
-        <DialogDeMetas accountId={accountId} mes={mes} atual={meta} open={editando} onOpenChange={setEditando} />
+        <DialogDeMetas
+          accountId={accountId}
+          mes={mes}
+          atual={meta}
+          historico={mensal?.meses}
+          open={editando}
+          onOpenChange={setEditando}
+        />
       )}
     </div>
   );
