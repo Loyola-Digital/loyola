@@ -175,6 +175,7 @@ export default function InstagramDashboardPage() {
       {/* Reach & Impressions chart */}
       <GraficoDoPerfil
         data={insights?.data}
+        dataAnterior={previousInsights?.data}
         isLoading={insightsLoading}
         error={insightsError as Error | null}
         onRefresh={handleRefreshAll}

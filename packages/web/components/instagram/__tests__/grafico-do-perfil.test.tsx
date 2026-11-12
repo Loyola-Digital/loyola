@@ -52,14 +52,42 @@ const insights = [
   },
 ];
 
+/** O período anterior, para a linha cinza de comparação. */
+const anteriores = [
+  {
+    name: "reach",
+    period: "day",
+    title: "",
+    description: "",
+    id: "x0",
+    values: [
+      { value: 40_000, end_time: "2026-08-05T07:00:00+0000" },
+      { value: 38_000, end_time: "2026-08-06T07:00:00+0000" },
+    ],
+  },
+];
+
 describe("GraficoDoPerfil", () => {
-  it("abre no diário e oferece só as métricas com série", () => {
+  it("abre no diário com os dois painéis, sem alternador de métrica", () => {
     montar({ data: insights, isLoading: false, accountId: "conta" });
     expect(screen.getByText("Dia a dia")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Alcance" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Novos seguidores" })).toBeTruthy();
+    // As duas métricas aparecem como TÍTULO de painel, não como botão: sendo
+    // duas, não há o que escolher.
+    expect(screen.getByText("Alcance")).toBeTruthy();
+    expect(screen.getByText("Novos seguidores")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Alcance" })).toBeNull();
     // "Unfollows" só existe no mensal: a Meta não dá unfollow por dia.
     expect(screen.queryByRole("button", { name: "Unfollows" })).toBeNull();
+  });
+
+  it("com período anterior, a legenda nomeia a linha cinza", () => {
+    montar({ data: insights, dataAnterior: anteriores, isLoading: false, accountId: "conta" });
+    expect(screen.getByText("período anterior")).toBeTruthy();
+  });
+
+  it("sem período anterior não promete comparação", () => {
+    montar({ data: insights, isLoading: false, accountId: "conta" });
+    expect(screen.queryByText("período anterior")).toBeNull();
   });
 
   it("trocar para mensal muda o título e abre as métricas do mês", () => {
@@ -79,7 +107,7 @@ describe("GraficoDoPerfil", () => {
     expect(screen.getByText("Mês a mês")).toBeTruthy();
   });
 
-  it("voltar para o diário reaproveita uma métrica que existe lá", () => {
+  it("voltar para o diário não herda a métrica do mês", () => {
     // "Unfollows" não existe no diário: sem o ajuste, o gráfico ficaria vazio.
     montar({ data: insights, isLoading: false, accountId: "conta" });
     fireEvent.click(screen.getByRole("button", { name: "Mensal" }));
@@ -87,6 +115,25 @@ describe("GraficoDoPerfil", () => {
     fireEvent.click(screen.getByRole("button", { name: "Diário" }));
     expect(screen.getByText("Dia a dia")).toBeTruthy();
     expect(screen.queryByText("Sem dados no período.")).toBeNull();
+  });
+
+  // Sem esta marca a linha sempre termina numa queda que não aconteceu.
+  it("com dias suficientes, avisa que os últimos ainda estão fechando", () => {
+    const umMes = [
+      {
+        name: "reach",
+        period: "day",
+        title: "",
+        description: "",
+        id: "z",
+        values: Array.from({ length: 10 }, (_, i) => ({
+          value: 50_000 + i * 100,
+          end_time: `2026-09-${String(i + 1).padStart(2, "0")}T07:00:00+0000`,
+        })),
+      },
+    ];
+    montar({ data: umMes, isLoading: false, accountId: "conta" });
+    expect(screen.getByText("últimos 2 dias ainda fechando")).toBeTruthy();
   });
 
   it("sem série nenhuma, avisa em vez de desenhar vazio", () => {

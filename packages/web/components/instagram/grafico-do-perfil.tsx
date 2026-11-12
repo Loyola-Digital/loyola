@@ -9,14 +9,29 @@
  * crescendo?" se responde no mensal, olhando a sequência de meses — e essa a
  * linha diária não responde: 30 pontos serrilhados escondem a tendência.
  *
- * ## Por que o diário só tem duas métricas
+ * ## Por que o diário só tem duas métricas — e mostra as duas de uma vez
  *
  * Medido na Graph API: das nove métricas testadas, só `reach` e
  * `follower_count` devolvem série diária; as outras vêm vazias e virariam uma
  * linha reta em zero. No mensal, onde cada ponto é um total, todas cabem.
  *
- * O clique no ponto (posts que puxaram o dia) continua, e vale para as duas
- * métricas diárias — um dia de muitos seguidores também tem post por trás.
+ * Sendo duas, não há o que escolher: o alternador virou painel de cima
+ * (alcance) e painel de baixo (seguidores novos), porque a pergunta real é
+ * "que dia de alcance virou seguidor?" — e ela exige as duas linhas no mesmo
+ * eixo de tempo. Escalas separadas, que é o que permite ver 70 mil de alcance
+ * e 500 seguidores lado a lado.
+ *
+ * ## A linha cinza e o fim tracejado
+ *
+ * A cinza é o mesmo número no período anterior, já buscado pela página para os
+ * cartões — sobrepô-la não custa chamada nova. Sem ela, um mês inteiro de
+ * alcance não diz se está acima ou abaixo do ritmo.
+ *
+ * O tracejado são os dois últimos dias, que o Instagram ainda não fechou. Sem
+ * essa marca a linha sempre termina em queda, e a queda não existe.
+ *
+ * O clique no ponto (posts que puxaram o dia) continua, nos dois painéis — um
+ * dia de muitos seguidores também tem post por trás.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -40,11 +55,13 @@ import type { InsightEntry, InstagramMedia } from "@/lib/hooks/use-instagram";
 import { useInstagramMensal } from "@/lib/hooks/use-instagram-mensal";
 import { Dica } from "@/components/instagram/dica";
 import {
+  DIAS_AINDA_FECHANDO,
   METRICAS_DIARIAS,
   METRICAS_MENSAIS,
-  serieDiaria,
+  serieDiariaComparada,
   serieMensal,
   type MetricaDoGrafico,
+  type PontoDiario,
 } from "@/lib/utils/serie-do-perfil";
 import { NOME_DO_FORMATO, diasDePico, formatoDoPost, postsDoPico } from "@/lib/utils/instagram-posts";
 
@@ -88,8 +105,141 @@ function Botoes<T extends string>({
   );
 }
 
+const CINZA_DA_COMPARACAO = "#94a3b8";
+
+/**
+ * O balão do dia, escrito à mão.
+ *
+ * As três linhas do painel (cheia, tracejada, comparação) são três séries do
+ * Recharts, e o balão de fábrica listaria as três — duas delas sempre vazias,
+ * porque cada dia só pertence a uma. Aqui o dia é lido uma vez, do próprio
+ * ponto.
+ */
+function BalaoDoDia({
+  active,
+  payload,
+  rotulo,
+}: {
+  active?: boolean;
+  payload?: { payload: PontoDiario }[];
+  rotulo: string;
+}) {
+  const p = payload?.[0]?.payload;
+  if (!active || !p) return null;
+  return (
+    <div className="rounded-lg border border-border bg-popover px-2.5 py-1.5 text-[12px] shadow-md">
+      <p className="font-medium">
+        {p.rotulo}
+        {p.parcial && <span className="font-normal text-muted-foreground"> · ainda fechando</span>}
+      </p>
+      <p className="tabular-nums">
+        {rotulo}: {p.valor.toLocaleString("pt-BR")}
+      </p>
+      {p.anterior !== null && (
+        <p className="tabular-nums text-muted-foreground">
+          período anterior: {p.anterior.toLocaleString("pt-BR")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Um dos dois painéis do diário: alcance em cima, seguidores novos embaixo. */
+function PainelDiario({
+  metrica,
+  pontos,
+  picos,
+  selecionado,
+  onSelecionar,
+}: {
+  metrica: MetricaDoGrafico;
+  pontos: PontoDiario[];
+  picos: Set<number>;
+  selecionado: number | null;
+  onSelecionar: (i: number) => void;
+}) {
+  if (pontos.length === 0) {
+    return (
+      <div className="flex h-[120px] items-center justify-center text-[12px] text-muted-foreground">
+        A Meta não devolveu {metrica.rotulo.toLowerCase()} dia a dia neste período.
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="mb-0.5 flex items-center gap-1 px-1">
+        <span className="text-[11px] font-medium" style={{ color: metrica.cor }}>
+          {metrica.rotulo}
+        </span>
+        <Dica>{metrica.dica}</Dica>
+      </div>
+      <ResponsiveContainer width="100%" height={150}>
+        <LineChart
+          data={pontos}
+          margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
+          className="cursor-pointer"
+          onClick={(e) => {
+            const i = e?.activeTooltipIndex;
+            if (typeof i === "number") onSelecionar(i);
+          }}
+        >
+          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+          <XAxis dataKey="rotulo" tick={{ fontSize: 10 }} stroke="currentColor" className="text-muted-foreground" />
+          <YAxis tick={{ fontSize: 10 }} width={46} tickFormatter={fmtCurto} stroke="currentColor" className="text-muted-foreground" />
+          <Tooltip content={<BalaoDoDia rotulo={metrica.rotulo} />} />
+          {/* A comparação vem PRIMEIRO para ficar atrás da linha do período. */}
+          <Line
+            type="monotone"
+            dataKey="anterior"
+            stroke={CINZA_DA_COMPARACAO}
+            strokeWidth={1.5}
+            strokeOpacity={0.5}
+            dot={false}
+            activeDot={false}
+            isAnimationActive={false}
+          />
+          <Line
+            type="monotone"
+            dataKey="valorFechado"
+            stroke={metrica.cor}
+            strokeWidth={2}
+            isAnimationActive={false}
+            dot={(props: { cx?: number; cy?: number; index?: number }) => {
+              const { cx, cy, index } = props;
+              const marcar = index != null && (picos.has(index) || index === selecionado);
+              if (!marcar || cx == null || cy == null) return <g key={`d-${index}`} />;
+              return (
+                <circle
+                  key={`d-${index}`}
+                  cx={cx}
+                  cy={cy}
+                  r={index === selecionado ? 5 : 3.5}
+                  fill={index === selecionado ? "#fff" : metrica.cor}
+                  stroke={metrica.cor}
+                  strokeWidth={2}
+                />
+              );
+            }}
+          />
+          <Line
+            type="monotone"
+            dataKey="fechando"
+            stroke={metrica.cor}
+            strokeWidth={2}
+            strokeDasharray="4 3"
+            dot={false}
+            activeDot={false}
+            isAnimationActive={false}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 export function GraficoDoPerfil({
   data,
+  dataAnterior,
   isLoading,
   error,
   onRefresh,
@@ -98,6 +248,11 @@ export function GraficoDoPerfil({
   accountId,
 }: {
   data?: InsightEntry[];
+  /**
+   * O mesmo período, deslocado para trás — a linha cinza de comparação. A
+   * página já busca isto para os cartões, então não custa chamada nova.
+   */
+  dataAnterior?: InsightEntry[];
   isLoading: boolean;
   error?: Error | null;
   onRefresh?: () => void;
@@ -114,34 +269,46 @@ export function GraficoDoPerfil({
   // "Mensal" não custa chamada nova à Meta.
   const mensal = useInstagramMensal(escala === "mensal" ? accountId ?? null : null);
 
-  const catalogo = escala === "diario" ? METRICAS_DIARIAS : METRICAS_MENSAIS;
+  // Só o mensal tem o que escolher: no diário as duas métricas aparecem
+  // juntas, uma em cada painel.
   const atual: MetricaDoGrafico =
-    catalogo.find((m) => m.chave === metrica) ?? catalogo[0]!;
+    METRICAS_MENSAIS.find((m) => m.chave === metrica) ?? METRICAS_MENSAIS[0]!;
 
-  // Trocar de escala pode deixar uma métrica que não existe do outro lado.
   useEffect(() => {
-    if (!catalogo.some((m) => m.chave === metrica)) setMetrica(catalogo[0]!.chave);
     setSelecionado(null);
-  }, [escala, catalogo, metrica]);
+  }, [escala]);
+
+  // Os dois painéis do diário, cada um com a sua escala.
+  const diarias = useMemo(
+    () =>
+      METRICAS_DIARIAS.map((m) => ({
+        metrica: m,
+        pontos: serieDiariaComparada(data, dataAnterior, m.chave),
+      })),
+    [data, dataAnterior],
+  );
+  const picosPorPainel = useMemo(
+    () => diarias.map((d) => diasDePico(d.pontos.map((p) => ({ reach: p.valor })))),
+    [diarias],
+  );
+  // O dia escolhido é o mesmo nos dois painéis: as duas séries vêm da mesma
+  // janela, com os mesmos dias na mesma ordem.
+  const diasDoPeriodo = diarias.find((d) => d.pontos.length > 0)?.pontos ?? [];
+  const temComparacao = diasDoPeriodo.some((p) => p.anterior !== null);
 
   const pontos = useMemo(
-    () =>
-      escala === "diario"
-        ? serieDiaria(data, atual.chave)
-        : serieMensal(mensal.data?.meses as unknown as Record<string, unknown>[], atual.chave),
-    [escala, data, atual.chave, mensal.data],
+    () => serieMensal(mensal.data?.meses as unknown as Record<string, unknown>[], atual.chave),
+    [atual.chave, mensal.data],
   );
-  const picos = useMemo(
-    () => (escala === "diario" ? diasDePico(pontos.map((p) => ({ reach: p.valor }))) : new Set<number>()),
-    [escala, pontos],
-  );
-  const ponto = selecionado != null ? pontos[selecionado] ?? null : null;
+  const picos = new Set<number>();
+  const ponto = selecionado != null ? diasDoPeriodo[selecionado] ?? null : null;
   const doPico = useMemo(
     () => (ponto?.fim && posts ? postsDoPico(posts, ponto.fim) : []),
     [ponto, posts],
   );
 
   const carregando = isLoading || (escala === "mensal" && mensal.isLoading);
+  const vazio = escala === "diario" ? diasDoPeriodo.length === 0 : pontos.length === 0;
 
   return (
     <Card>
@@ -152,9 +319,9 @@ export function GraficoDoPerfil({
               {escala === "diario" ? "Dia a dia" : "Mês a mês"}
             </CardTitle>
             <Dica>
-              {`Escolha a escala e a métrica nos botões.
+              {`Escolha a escala nos botões; no mensal, também a métrica.
 
-DIÁRIO: só alcance e novos seguidores — medido na API, as outras métricas a Meta não entrega dia a dia, e virariam uma linha em zero. Os 3 maiores dias ficam marcados, e clicar num ponto mostra os posts publicados nas 72h até ali.
+DIÁRIO: dois painéis — alcance em cima, novos seguidores embaixo, no mesmo eixo de tempo. A linha cinza é o mesmo número no período anterior. Os dois últimos dias saem tracejados: o Instagram leva cerca de dois dias para fechá-los, e sem a marca a linha sempre termina numa queda que não existe. Só estas duas métricas têm série diária — medido na API, as outras a Meta não entrega dia a dia. Os 3 maiores dias ficam marcados, e clicar num ponto mostra os posts publicados nas 72h até ali.
 
 MENSAL: os últimos 24 meses (tudo o que a Meta guarda), com tudo — inclusive a curva de seguidores e o saldo, que fica abaixo do zero quando o perfil encolheu. Vem da mesma busca da tabela mensal, então trocar não custa consulta.`}
             </Dica>
@@ -174,11 +341,13 @@ MENSAL: os últimos 24 meses (tudo o que a Meta guarda), com tudo — inclusive 
               { valor: "mensal" as Escala, rotulo: "Mensal" },
             ]}
           />
-          <Botoes
-            valor={atual.chave}
-            onChange={setMetrica}
-            opcoes={catalogo.map((m) => ({ valor: m.chave, rotulo: m.rotulo, dica: m.dica }))}
-          />
+          {escala === "mensal" && (
+            <Botoes
+              valor={atual.chave}
+              onChange={setMetrica}
+              opcoes={METRICAS_MENSAIS.map((m) => ({ valor: m.chave, rotulo: m.rotulo, dica: m.dica }))}
+            />
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -188,100 +357,64 @@ MENSAL: os últimos 24 meses (tudo o que a Meta guarda), com tudo — inclusive 
           <div className="flex h-[240px] items-center justify-center px-4 text-center text-sm text-destructive">
             {error.message}
           </div>
-        ) : pontos.length === 0 ? (
+        ) : vazio ? (
           <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">
             Sem dados no período.
           </div>
-        ) : (
+        ) : escala === "diario" ? (
           <div className="overflow-x-auto">
-            <div className="min-w-[400px]">
-              <ResponsiveContainer width="100%" height={240}>
-                {atual.barra ? (
-                  <BarChart
-                    data={pontos}
-                    margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
-                    onClick={(e) => {
-                      const i = e?.activeTooltipIndex;
-                      if (typeof i === "number") setSelecionado(i === selecionado ? null : i);
-                    }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis dataKey="rotulo" tick={{ fontSize: 11 }} stroke="currentColor" className="text-muted-foreground" />
-                    <YAxis tick={{ fontSize: 11 }} width={50} tickFormatter={fmtCurto} stroke="currentColor" className="text-muted-foreground" />
-                    <Tooltip
-                      cursor={{ fill: "hsl(var(--muted) / 0.3)" }}
-                      contentStyle={{
-                        background: "hsl(var(--popover))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: 8,
-                        fontSize: 12,
-                      }}
-                      formatter={(v) => [Number(v).toLocaleString("pt-BR"), atual.rotulo]}
-                    />
-                    <Bar dataKey="valor" name={atual.rotulo} radius={[2, 2, 0, 0]}>
-                      {pontos.map((p, i) => (
-                        // Saldo negativo em vermelho: a cor conta a história
-                        // que a altura da barra sozinha não conta.
-                        <Cell key={i} fill={p.valor < 0 ? "#ef4444" : atual.cor} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                ) : (
-                  <LineChart
-                    data={pontos}
-                    margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
-                    className={escala === "diario" ? "cursor-pointer" : undefined}
-                    onClick={(e) => {
-                      const i = e?.activeTooltipIndex;
-                      if (typeof i === "number") setSelecionado(i === selecionado ? null : i);
-                    }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis dataKey="rotulo" tick={{ fontSize: 11 }} stroke="currentColor" className="text-muted-foreground" />
-                    <YAxis tick={{ fontSize: 11 }} width={50} tickFormatter={fmtCurto} stroke="currentColor" className="text-muted-foreground" />
-                    <Tooltip
-                      contentStyle={{
-                        background: "hsl(var(--popover))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: 8,
-                        fontSize: 12,
-                      }}
-                      formatter={(v) => [Number(v).toLocaleString("pt-BR"), atual.rotulo]}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="valor"
-                      name={atual.rotulo}
-                      stroke={atual.cor}
-                      strokeWidth={2}
-                      dot={(props: { cx?: number; cy?: number; index?: number }) => {
-                        const { cx, cy, index } = props;
-                        const marcar = index != null && (picos.has(index) || index === selecionado);
-                        if (!marcar || cx == null || cy == null) return <g key={`d-${index}`} />;
-                        return (
-                          <circle
-                            key={`d-${index}`}
-                            cx={cx}
-                            cy={cy}
-                            r={index === selecionado ? 5 : 3.5}
-                            fill={index === selecionado ? "#fff" : atual.cor}
-                            stroke={atual.cor}
-                            strokeWidth={2}
-                          />
-                        );
-                      }}
-                    />
-                  </LineChart>
-                )}
-              </ResponsiveContainer>
+            <div className="min-w-[400px] space-y-2">
+              {diarias.map((d, i) => (
+                <PainelDiario
+                  key={d.metrica.chave}
+                  metrica={d.metrica}
+                  pontos={d.pontos}
+                  picos={picosPorPainel[i] ?? new Set()}
+                  selecionado={selecionado}
+                  onSelecionar={(idx) => setSelecionado(idx === selecionado ? null : idx)}
+                />
+              ))}
             </div>
 
-            {escala === "diario" && ponto ? (
+            {/* Legenda escrita, não só cor: a cinza e o tracejado não se
+                explicam sozinhos. */}
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+              {temComparacao && (
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    aria-hidden
+                    className="inline-block h-0 w-5 border-t-2"
+                    style={{ borderColor: CINZA_DA_COMPARACAO, opacity: 0.5 }}
+                  />
+                  período anterior
+                </span>
+              )}
+              {diasDoPeriodo.some((p) => p.parcial) && (
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    aria-hidden
+                    className="inline-block h-0 w-5 border-t-2 border-dashed border-current"
+                  />
+                  últimos {DIAS_AINDA_FECHANDO} dias ainda fechando
+                </span>
+              )}
+            </div>
+
+            {ponto ? (
               <div className="mt-3 rounded-md border border-border/60 bg-muted/30 p-3">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <p className="text-[13px]">
-                    <span className="font-semibold">{ponto.rotulo}</span> · {atual.rotulo.toLowerCase()}{" "}
-                    <span className="tabular-nums">{ponto.valor.toLocaleString("pt-BR")}</span>
+                    <span className="font-semibold">{ponto.rotulo}</span>
+                    {diarias.map((d) => {
+                      const v = d.pontos[selecionado!];
+                      return v == null ? null : (
+                        <span key={d.metrica.chave}>
+                          {" · "}
+                          {d.metrica.rotulo.toLowerCase()}{" "}
+                          <span className="tabular-nums">{v.valor.toLocaleString("pt-BR")}</span>
+                        </span>
+                      );
+                    })}
                     <span className="text-muted-foreground"> — posts publicados nas 72h até este dia</span>
                   </p>
                   <button
@@ -332,11 +465,90 @@ MENSAL: os últimos 24 meses (tudo o que a Meta guarda), com tudo — inclusive 
                   </ul>
                 )}
               </div>
-            ) : escala === "diario" ? (
+            ) : (
               <p className="mt-2 text-[11px] text-muted-foreground">
                 Clique num ponto para ver os posts que puxaram aquele dia.
               </p>
-            ) : null}
+            )}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <div className="min-w-[400px]">
+              <ResponsiveContainer width="100%" height={240}>
+                {atual.barra ? (
+                  <BarChart
+                    data={pontos}
+                    margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
+                    onClick={(e) => {
+                      const i = e?.activeTooltipIndex;
+                      if (typeof i === "number") setSelecionado(i === selecionado ? null : i);
+                    }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="rotulo" tick={{ fontSize: 11 }} stroke="currentColor" className="text-muted-foreground" />
+                    <YAxis tick={{ fontSize: 11 }} width={50} tickFormatter={fmtCurto} stroke="currentColor" className="text-muted-foreground" />
+                    <Tooltip
+                      cursor={{ fill: "hsl(var(--muted) / 0.3)" }}
+                      contentStyle={{
+                        background: "hsl(var(--popover))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: 8,
+                        fontSize: 12,
+                      }}
+                      formatter={(v) => [Number(v).toLocaleString("pt-BR"), atual.rotulo]}
+                    />
+                    <Bar dataKey="valor" name={atual.rotulo} radius={[2, 2, 0, 0]}>
+                      {pontos.map((p, i) => (
+                        // Saldo negativo em vermelho: a cor conta a história
+                        // que a altura da barra sozinha não conta.
+                        <Cell key={i} fill={p.valor < 0 ? "#ef4444" : atual.cor} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                ) : (
+                  <LineChart
+                    data={pontos}
+                    margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="rotulo" tick={{ fontSize: 11 }} stroke="currentColor" className="text-muted-foreground" />
+                    <YAxis tick={{ fontSize: 11 }} width={50} tickFormatter={fmtCurto} stroke="currentColor" className="text-muted-foreground" />
+                    <Tooltip
+                      contentStyle={{
+                        background: "hsl(var(--popover))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: 8,
+                        fontSize: 12,
+                      }}
+                      formatter={(v) => [Number(v).toLocaleString("pt-BR"), atual.rotulo]}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="valor"
+                      name={atual.rotulo}
+                      stroke={atual.cor}
+                      strokeWidth={2}
+                      dot={(props: { cx?: number; cy?: number; index?: number }) => {
+                        const { cx, cy, index } = props;
+                        const marcar = index != null && (picos.has(index) || index === selecionado);
+                        if (!marcar || cx == null || cy == null) return <g key={`d-${index}`} />;
+                        return (
+                          <circle
+                            key={`d-${index}`}
+                            cx={cx}
+                            cy={cy}
+                            r={index === selecionado ? 5 : 3.5}
+                            fill={index === selecionado ? "#fff" : atual.cor}
+                            stroke={atual.cor}
+                            strokeWidth={2}
+                          />
+                        );
+                      }}
+                    />
+                  </LineChart>
+                )}
+              </ResponsiveContainer>
+            </div>
           </div>
         )}
       </CardContent>
