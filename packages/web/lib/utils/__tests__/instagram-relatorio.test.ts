@@ -15,6 +15,7 @@ const mes = (over: Partial<MesDoOrganico> = {}): MesDoOrganico => ({
   engajamento: 10.4,
   posts: 34,
   melhorPost: null,
+  emCurso: null,
   variacao: { alcance: null, views: null, interacoes: null, crescimento: null, engajamento: null },
   ...over,
 });
@@ -40,6 +41,19 @@ describe("textoDoRelatorio", () => {
 
   it("sem mês anterior não inventa comparação", () => {
     expect(textoDoRelatorio({ perfil: null, mes: "2026-10", doMes: mes() })).not.toContain("mês anterior");
+  });
+
+  // Onze dias contra trinta rendiam "−73% de alcance" no relatório que vai
+  // para o cliente — o tamanho do mês, não o resultado dele.
+  it("mês em curso não compara, e diz em que dia está", () => {
+    const t = textoDoRelatorio({
+      perfil: null,
+      mes: "2026-11",
+      doMes: mes({ mes: "2026-11", alcance: 186_000, emCurso: { dias: 11, de: 30 } }),
+      anterior: mes({ alcance: 683_000 }),
+    });
+    expect(t).toContain("Mês em curso: 11 de 30 dias");
+    expect(t).not.toContain("sobre o mês anterior");
   });
 
   it("a meta só aparece quando existe", () => {
@@ -136,5 +150,13 @@ describe("cartoesDoRelatorio", () => {
 
   it("sem mês anterior, os cartões ficam sem comparação em vez de inventar", () => {
     expect(cartoesDoRelatorio(mes()).every((c) => c.variacao === "")).toBe(true);
+  });
+
+  it("no mês em curso os cartões não comparam, mesmo havendo mês anterior", () => {
+    const c = cartoesDoRelatorio(
+      mes({ emCurso: { dias: 11, de: 30 } }),
+      mes({ crescimento: 236, engajamento: 13.9 }),
+    );
+    expect(c.every((x) => x.variacao === "")).toBe(true);
   });
 });

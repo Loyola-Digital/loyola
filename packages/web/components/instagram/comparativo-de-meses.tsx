@@ -10,6 +10,14 @@
  *
  * Os dois meses saem da MESMA resposta da tabela mensal (`/mensal?meses=24`),
  * então trocar a escolha não custa chamada à Meta.
+ *
+ * ## O mês em curso não entra na diferença
+ *
+ * Ele abria escolhido por ser o mais recente, e a coluna "Diferença" lia onze
+ * dias contra trinta: tudo vermelho, sem nada ter acontecido. A escolha
+ * padrão passa a ser o último mês FECHADO contra o anterior. Quem escolher o
+ * mês em curso de propósito continua vendo os números dele — mas a diferença
+ * fica em branco, com o motivo escrito embaixo, em vez de uma queda inventada.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -105,12 +113,15 @@ export function ComparativoDeMeses({ accountId }: { accountId: string | null }) 
   const [a, setA] = useState<string | null>(null);
   const [b, setB] = useState<string | null>(null);
 
-  // Padrão: o mês mais recente contra o anterior — a comparação que se faz
-  // sem pensar. Só roda quando a lista chega, e não sobrescreve escolha feita.
+  // Padrão: o último mês FECHADO contra o anterior. O mais recente de todos é
+  // o mês em curso, e abrir com ele pintava a tela inteira de vermelho. Só
+  // roda quando a lista chega, e não sobrescreve escolha feita.
   useEffect(() => {
-    if (meses.length >= 2) {
-      setA((x) => x ?? meses[0]!.mes);
-      setB((x) => x ?? meses[1]!.mes);
+    const fechados = meses.filter((m) => m.emCurso == null);
+    const padrao = fechados.length >= 2 ? fechados : meses;
+    if (padrao.length >= 2) {
+      setA((x) => x ?? padrao[0]!.mes);
+      setB((x) => x ?? padrao[1]!.mes);
     }
   }, [meses]);
 
@@ -118,6 +129,11 @@ export function ComparativoDeMeses({ accountId }: { accountId: string | null }) 
 
   const mesA = meses.find((m) => m.mes === a);
   const mesB = meses.find((m) => m.mes === b);
+  // Um mês em curso contra um fechado não é comparação: são onze dias contra
+  // trinta. Dois meses em curso não existem, então basta checar a diferença.
+  const parcial = mesA && mesB && (mesA.emCurso == null) !== (mesB.emCurso == null)
+    ? (mesA.emCurso ? mesA : mesB)
+    : null;
 
   return (
     <Card>
@@ -149,6 +165,9 @@ Os meses vêm da mesma busca da tabela mensal, então trocar a escolha não cust
                   {meses.map((m) => (
                     <SelectItem key={m.mes} value={m.mes} className="text-[12px]">
                       {rotuloDoMes(m.mes)}
+                      {m.emCurso && (
+                        <span className="text-muted-foreground"> · em curso</span>
+                      )}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -198,14 +217,18 @@ Os meses vêm da mesma busca da tabela mensal, então trocar a escolha não cust
                       {valorDaLinha(mesB, l)}
                     </td>
                     <td className="px-2 py-2 text-right">
-                      <Delta
-                        d={diferencaEntreMeses(
-                          numeroDoMes(mesA, l),
-                          numeroDoMes(mesB, l),
-                          l.tipo,
-                        )}
-                        invertido={l.chave === "unfollows"}
-                      />
+                      {parcial ? (
+                        <span className="text-[11px] text-muted-foreground/60">—</span>
+                      ) : (
+                        <Delta
+                          d={diferencaEntreMeses(
+                            numeroDoMes(mesA, l),
+                            numeroDoMes(mesB, l),
+                            l.tipo,
+                          )}
+                          invertido={l.chave === "unfollows"}
+                        />
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -228,6 +251,13 @@ Os meses vêm da mesma busca da tabela mensal, então trocar a escolha não cust
                 </tr>
               </tbody>
             </table>
+            {parcial && (
+              <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+                {rotuloDoMes(parcial.mes)} ainda está em curso — {parcial.emCurso!.dias} de{" "}
+                {parcial.emCurso!.de} dias. Os números dele continuam na tabela, mas a diferença
+                fica em branco: comparar um mês pela metade com um mês fechado só daria queda.
+              </p>
+            )}
           </div>
         )}
       </CardContent>

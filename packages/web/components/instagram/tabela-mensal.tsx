@@ -10,11 +10,15 @@
  * agosto +4.134. Os três números soltos numa tela não contam essa virada; lado
  * a lado, contam.
  *
- * ## O mês corrente fica marcado como parcial
+ * ## O mês corrente fica marcado como parcial, e SEM variação
  *
  * Ele tem menos dias que os outros e vai parecer uma queda de 70%. Escondê-lo
  * tiraria justamente o mês que está acontecendo; mostrá-lo sem aviso mentiria.
- * Fica, com o rótulo.
+ * Fica, com o rótulo — e com o dia em que está, porque "11 de 30" explica a
+ * diferença de tamanho que a coluna sozinha não explica.
+ *
+ * A variação dele vem vazia da API de propósito (`emCurso`): a seta vermelha
+ * de −73% comparava onze dias com um mês inteiro.
  */
 
 import { useState } from "react";
@@ -115,7 +119,6 @@ export function TabelaMensal({ accountId }: { accountId: string | null }) {
 
   const historico = data?.meses ?? [];
   const meses = todos ? historico : historico.slice(-MESES_VISIVEIS);
-  const mesCorrente = new Date().toISOString().slice(0, 7);
 
   return (
     <div className="rounded-xl border border-border/60 bg-card">
@@ -180,7 +183,7 @@ export function TabelaMensal({ accountId }: { accountId: string | null }) {
               {/* Do mais recente para o mais antigo: o mês que interessa é o
                   de cima, e rolar para achá-lo derrotaria o "bater o olho". */}
               {[...meses].reverse().map((m: MesDoOrganico) => {
-                const parcial = m.mes === mesCorrente;
+                const parcial = m.emCurso != null;
                 if (m.semDados) {
                   return (
                     <tr key={m.mes} className="border-b border-border/40 last:border-b-0">
@@ -206,9 +209,9 @@ export function TabelaMensal({ accountId }: { accountId: string | null }) {
                   >
                     <td className="whitespace-nowrap px-3 py-2.5">
                       <div className="font-medium">{nomeDoMes(m.mes)}</div>
-                      {parcial && (
+                      {m.emCurso && (
                         <span className="text-[10px] text-muted-foreground">
-                          mês em curso
+                          mês em curso · {m.emCurso.dias} de {m.emCurso.de} dias
                         </span>
                       )}
                     </td>
@@ -289,7 +292,8 @@ export function TabelaMensal({ accountId }: { accountId: string | null }) {
       <p className="border-t border-border/40 px-4 py-2 text-[10px] leading-relaxed text-muted-foreground">
         Engajamento = interações ÷ alcance. A variação dele vai em pontos percentuais; a dos demais,
         em porcentagem. O Instagram leva cerca de dois dias para fechar os números de seguidores, então
-        o mês em curso sempre aparece menor do que vai terminar.
+        o mês em curso sempre aparece menor do que vai terminar — e por isso ele não tem variação:
+        comparar os dias já corridos com um mês fechado só daria queda.
       </p>
     </div>
   );

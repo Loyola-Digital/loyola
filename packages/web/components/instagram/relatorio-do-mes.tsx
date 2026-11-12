@@ -55,11 +55,16 @@ export function RelatorioDoMes({ accountId, profile, media, isLoading }: Props) 
   const [mesEscolhido, setMesEscolhido] = useState<string | null>(null);
   const [editando, setEditando] = useState(false);
 
-  const meses = useMemo(
-    () => (mensal?.meses ?? []).filter((m) => !m.semDados).map((m) => m.mes).slice(-6).reverse(),
+  const comDado = useMemo(
+    () => (mensal?.meses ?? []).filter((m) => !m.semDados).slice(-6).reverse(),
     [mensal],
   );
-  const mes = mesEscolhido ?? meses[0] ?? null;
+  const meses = useMemo(() => comDado.map((m) => m.mes), [comDado]);
+  // Abre no último mês FECHADO, não no mês em curso: o relatório é o que vai
+  // para o cliente, e o mês pela metade chegava lá com queda em tudo. O mês em
+  // curso continua escolhível na lista.
+  const mes =
+    mesEscolhido ?? comDado.find((m) => m.emCurso == null)?.mes ?? meses[0] ?? null;
   const indice = mensal?.meses.findIndex((m) => m.mes === mes) ?? -1;
   const doMes = indice >= 0 ? mensal!.meses[indice] : null;
   const anterior = indice > 0 ? mensal!.meses[indice - 1] : null;
@@ -127,6 +132,17 @@ export function RelatorioDoMes({ accountId, profile, media, isLoading }: Props) 
           )}
         </div>
       </div>
+
+      {/* O mês escolhido ainda não acabou: sem isto, os números parecem o
+          resultado do mês quando são só os dias que já passaram. */}
+      {doMes.emCurso && (
+        <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[12px] leading-relaxed text-muted-foreground">
+          <b className="text-foreground">{rotuloDoMes(mes)} ainda está em curso</b> —{" "}
+          {doMes.emCurso.dias} de {doMes.emCurso.de} dias. Os números são do que já passou, e por
+          isso o relatório não compara com o mês anterior. Para mandar ao cliente, escolha o último
+          mês fechado.
+        </p>
+      )}
 
       {/* ---- resumo em três frases ---- */}
       {visao !== "texto" && (

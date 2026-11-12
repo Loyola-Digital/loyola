@@ -119,6 +119,12 @@ export interface LinhaMensal {
 
 /** A variação de cada número em relação ao mês anterior. */
 export interface LinhaComVariacao extends LinhaMensal {
+  /**
+   * Preenchido só no mês que ainda não fechou, com o dia de hoje e o total de
+   * dias do mês. Quem mostra o número usa isto para dizer que ele está a
+   * meio caminho.
+   */
+  emCurso: { dias: number; de: number } | null;
   variacao: {
     alcance: number | null;
     views: number | null;
@@ -318,13 +324,39 @@ function variacao(atual: number | null, anterior: number | null): number | null 
   return Math.round(((atual - anterior) / Math.abs(anterior)) * 1000) / 10;
 }
 
-export function comVariacao(linhas: LinhaMensal[]): LinhaComVariacao[] {
+/** O mês `YYYY-MM` de uma data, em UTC — a mesma régua de `janelasMensais`. */
+export function mesDe(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * A variação de cada mês contra o anterior.
+ *
+ * O mês EM CURSO não tem variação. Onze dias corridos contra trinta fechados
+ * só produzem queda: na Fernanda, em 11/11, o alcance do mês aparecia como
+ * −73% em vermelho — número que não existe, porque o mês não acabou. A
+ * alternativa seria comparar os mesmos N dias dos dois meses, e isso custa
+ * uma janela nova na Meta por mês exibido; um traço com "11 de 30 dias" ao
+ * lado informa o mesmo e não mente.
+ */
+export function comVariacao(linhas: LinhaMensal[], hoje = new Date()): LinhaComVariacao[] {
+  const mesDeHoje = mesDe(hoje);
+  const diasDoMes = new Date(
+    Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+
   return linhas.map((l, i) => {
+    const emCurso =
+      l.mes === mesDeHoje ? { dias: hoje.getUTCDate(), de: diasDoMes } : null;
     // Mês sem dado não serve de base nem tem variação: comparar com uma
     // fileira de zeros daria "+100%" em tudo no mês seguinte.
-    const ant = i > 0 && !linhas[i - 1]!.semDados && !l.semDados ? linhas[i - 1] : null;
+    const ant =
+      emCurso === null && i > 0 && !linhas[i - 1]!.semDados && !l.semDados
+        ? linhas[i - 1]
+        : null;
     return {
       ...l,
+      emCurso,
       variacao: {
         alcance: ant ? variacao(l.alcance, ant.alcance) : null,
         views: ant ? variacao(l.views, ant.views) : null,
