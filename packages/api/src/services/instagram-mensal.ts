@@ -216,10 +216,27 @@ function interacoesDoPost(p: PostDoMes): number {
  * fez com quem viu. Um post entregue a meio milhão e ignorado não é o melhor do
  * mês — é o mais distribuído. Sem alcance para dividir, cai nas interações
  * absolutas, que é o melhor palpite disponível.
+ *
+ * Mas taxa sem amostra é ruído, e o outro extremo erra igual: um post entregue
+ * a 32 pessoas com 3 interações marca 9,4% e ganha de um mês inteiro. Como isto
+ * alimenta o "POST DO MÊS" que o social media cola no WhatsApp do cliente, o
+ * estrago é alto.
+ *
+ * O que sustenta a taxa é o número de INTERAÇÕES, não o de alcance: 3 reações
+ * viram 9,4% ou 3,1% conforme uma pessoa a mais tenha curtido, enquanto 900 não
+ * mudam de patamar por uma. Por isso o corte é em interações absolutas, e não
+ * em alcance — um piso de alcance relativo ao mês eliminaria o post de 10 mil
+ * num mês que teve um de 500 mil, e ele não tem nada de ruído.
+ *
+ * O corte cede quando descartaria todo mundo: mês de post único, ou conta nova
+ * em que nenhum post passa de dez reações, continua tendo melhor post.
  */
+const MINIMO_DE_INTERACOES = 10;
+
 export function melhorPostDoMes(posts: PostDoMes[]): LinhaMensal["melhorPost"] {
   if (posts.length === 0) return null;
-  const comTaxa = posts.map((p) => {
+  const sustentados = posts.filter((p) => interacoesDoPost(p) >= MINIMO_DE_INTERACOES);
+  const comTaxa = (sustentados.length > 0 ? sustentados : posts).map((p) => {
     const inter = interacoesDoPost(p);
     const alcance = p.reach ?? 0;
     return { p, inter, alcance, taxa: alcance > 0 ? inter / alcance : null };
