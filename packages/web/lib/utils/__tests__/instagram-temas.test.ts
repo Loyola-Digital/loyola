@@ -69,10 +69,12 @@ describe("leituraDosTemas", () => {
     doTema("Morre", 2),
   ]);
 
-  it("compara o primeiro com o último e avisa que a amostra é pequena", () => {
+  it("compara o primeiro com o último e diz o n dos dois", () => {
     const frase = leituraDosTemas(comTres)!;
     expect(frase).toContain("Espalha se espalha 10,0× mais que Morre");
-    expect(frase).toContain("2 post(s)");
+    // "10× mais" a partir de 2 posts contra 14 não é a mesma afirmação que 14
+    // contra 14.
+    expect(frase).toContain("2 post(s) contra 2");
   });
 
   it("com menos de três temas medidos não conclui nada", () => {

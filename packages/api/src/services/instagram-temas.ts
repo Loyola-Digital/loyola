@@ -18,6 +18,10 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { and, desc, eq, isNull } from "drizzle-orm";
+import type { Database } from "../db/client.js";
+import { instagramPostMetrics } from "../db/schema.js";
+import { salvarTemasSugeridos, temasDaConta } from "./instagram-post-metrics.js";
 
 export interface PostParaEtiquetar {
   id: string;
@@ -156,4 +160,59 @@ export function normalizarSugestoes(
     out.push({ id, tema: jaExiste ?? limpo });
   }
   return out;
+}
+
+/** Quantos posts a IA etiqueta de uma vez. Lote maior custa e demora sem ganhar. */
+export const LOTE_DE_TEMAS = 60;
+
+export interface RodadaDeTemas {
+  sugeridos: number;
+  /** Posts sem tema que sobraram do lote — a tela diz se vale rodar de novo. */
+  restantes: number;
+  temas: string[];
+  mensagem?: string;
+}
+
+/**
+ * Uma rodada de etiquetagem nos posts da conta que ainda não têm tema.
+ *
+ * Existe como função, e não só como rota, porque a sincronização chama a mesma
+ * coisa: a tabela "Por tema" ficava vazia até alguém se lembrar de clicar em
+ * "Sugerir temas", e um bloco que depende de lembrança fica vazio para sempre.
+ *
+ * É barato em regime: depois da primeira passagem quase toda sincronização
+ * acha zero posts sem tema e sai sem chamar o modelo.
+ */
+export async function etiquetarPostsSemTema(
+  db: Database,
+  chave: string,
+  accountId: string,
+): Promise<RodadaDeTemas> {
+  const candidatos = await db
+    .select({
+      mediaId: instagramPostMetrics.mediaId,
+      caption: instagramPostMetrics.caption,
+      postedAt: instagramPostMetrics.postedAt,
+    })
+    .from(instagramPostMetrics)
+    .where(and(eq(instagramPostMetrics.accountId, accountId), isNull(instagramPostMetrics.tema)))
+    .orderBy(desc(instagramPostMetrics.postedAt))
+    .limit(LOTE_DE_TEMAS);
+
+  const comLegenda = candidatos.filter((c) => (c.caption ?? "").trim().length > 0);
+  const temas = await temasDaConta(db, accountId);
+  if (comLegenda.length === 0) {
+    return { sugeridos: 0, restantes: 0, temas, mensagem: "Todos os posts com legenda já têm tema." };
+  }
+
+  const sugestoes = await sugerirTemas(chave, {
+    posts: comLegenda.map((c) => ({ id: c.mediaId, caption: c.caption, postedAt: c.postedAt })),
+    temasQueJaExistem: temas,
+  });
+  const gravados = await salvarTemasSugeridos(db, accountId, sugestoes);
+  return {
+    sugeridos: gravados,
+    restantes: Math.max(0, candidatos.length - comLegenda.length),
+    temas: await temasDaConta(db, accountId),
+  };
 }

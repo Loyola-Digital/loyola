@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, gt, inArray, isNull } from "drizzle-orm";
+import { eq, and, gt, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
 import { instagramAccounts, instagramMetricsCache, instagramAccountProjects } from "../db/schema.js";
 import { encrypt, decrypt } from "../services/encryption.js";
@@ -15,10 +15,8 @@ import {
   postsDoBanco,
   salvarSeguidoresManuais,
   salvarTemaDoPost,
-  salvarTemasSugeridos,
-  temasDaConta,
 } from "../services/instagram-post-metrics.js";
-import { sugerirTemas } from "../services/instagram-temas.js";
+import { etiquetarPostsSemTema } from "../services/instagram-temas.js";
 import {
   analisarPostComIa,
   montarDadosDoPost,
@@ -656,6 +654,34 @@ export default fp(async function instagramRoutes(fastify) {
 
       await fastify.instagramService.invalidateCache(paramResult.data.id);
 
+      // A etiquetagem de tema vai de carona na sincronização, SEM esperar.
+      //
+      // A tabela "Por tema" ficava vazia até alguém se lembrar de clicar em
+      // "Sugerir temas" — e um bloco que depende de lembrança fica vazio para
+      // sempre. Em regime isto não custa nada: depois da primeira passagem,
+      // quase toda sincronização acha zero posts sem tema e sai sem chamar o
+      // modelo.
+      //
+      // Fora da resposta porque a sincronização é um clique que o time espera:
+      // segurá-lo por uma chamada ao modelo transformaria "Atualizar" em dez
+      // segundos de ampulheta. Falhar aqui não pode derrubar o refresh — o
+      // próximo clique tenta de novo.
+      const chaveDaIa = process.env.ANTHROPIC_API_KEY;
+      if (chaveDaIa) {
+        void etiquetarPostsSemTema(fastify.db, chaveDaIa, paramResult.data.id)
+          .then((r) => {
+            if (r.sugeridos > 0) {
+              fastify.log.info(
+                { accountId: paramResult.data.id, sugeridos: r.sugeridos },
+                "[IG] temas etiquetados na sincronização",
+              );
+            }
+          })
+          .catch((err) => {
+            fastify.log.warn({ err }, "[IG] etiquetagem de temas na sincronização falhou");
+          });
+      }
+
       return { message: "Cache invalidado com sucesso" };
     },
   );
@@ -1231,9 +1257,6 @@ export default fp(async function instagramRoutes(fastify) {
     return { tema: body.data.tema?.trim() || null, fonte: body.data.tema?.trim() ? "manual" : null };
   });
 
-  /** Quantos posts a IA etiqueta de uma vez. Lote maior custa e demora sem ganhar. */
-  const LOTE_DE_TEMAS = 60;
-
   fastify.post("/api/instagram/accounts/:id/temas/sugerir", async (request, reply) => {
     const p = idParamSchema.safeParse(request.params);
     if (!p.success) return reply.code(400).send({ error: "ID inválido" });
@@ -1242,39 +1265,8 @@ export default fp(async function instagramRoutes(fastify) {
     const chave = process.env.ANTHROPIC_API_KEY;
     if (!chave) return reply.code(503).send({ error: "IA não configurada no servidor (ANTHROPIC_API_KEY)." });
 
-    const candidatos = await fastify.db
-      .select({
-        mediaId: instagramPostMetrics.mediaId,
-        caption: instagramPostMetrics.caption,
-        postedAt: instagramPostMetrics.postedAt,
-      })
-      .from(instagramPostMetrics)
-      .where(
-        and(
-          eq(instagramPostMetrics.accountId, p.data.id),
-          isNull(instagramPostMetrics.tema),
-        ),
-      )
-      .orderBy(desc(instagramPostMetrics.postedAt))
-      .limit(LOTE_DE_TEMAS);
-
-    const comLegenda = candidatos.filter((c) => (c.caption ?? "").trim().length > 0);
-    if (comLegenda.length === 0) {
-      return { sugeridos: 0, restantes: 0, mensagem: "Todos os posts com legenda já têm tema." };
-    }
-
     try {
-      const sugestoes = await sugerirTemas(chave, {
-        posts: comLegenda.map((c) => ({ id: c.mediaId, caption: c.caption, postedAt: c.postedAt })),
-        temasQueJaExistem: await temasDaConta(fastify.db, p.data.id),
-      });
-      const gravados = await salvarTemasSugeridos(fastify.db, p.data.id, sugestoes);
-      return {
-        sugeridos: gravados,
-        // O que sobrou do lote: a tela diz se vale clicar de novo.
-        restantes: Math.max(0, candidatos.length - comLegenda.length),
-        temas: await temasDaConta(fastify.db, p.data.id),
-      };
+      return await etiquetarPostsSemTema(fastify.db, chave, p.data.id);
     } catch (error) {
       fastify.log.error({ err: error }, "[IG] sugestão de temas falhou");
       return reply.code(502).send({
