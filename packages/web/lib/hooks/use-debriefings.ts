@@ -3,6 +3,7 @@
 import { useAuth } from "@clerk/nextjs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApiClient } from "@/lib/hooks/use-api-client";
+import { baixarHtml, nomeDoArquivoDebriefing } from "@/lib/utils/baixar-debriefing";
 
 // Epic 37 — hooks da aba global Debriefing (Story 37.1).
 // Lista NÃO traz o html (payload leve); detalhe traz. Upload de arquivo usa
@@ -115,6 +116,16 @@ export function useDebriefing(id: string) {
     queryKey: ["debriefing", id],
     queryFn: () => apiClient<DebriefingDetail>(`/api/debriefings/${id}`),
     staleTime: STALE,
+  });
+}
+
+// Baixar o arquivo de um debriefing (subido ou gerado) sem abrir o doc: a
+// lista é leve e não traz o html, então busca o detalhe no clique.
+export function useBaixarDebriefing() {
+  const apiClient = useApiClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient<DebriefingDetail>(`/api/debriefings/${id}`),
+    onSuccess: (d) => baixarHtml(nomeDoArquivoDebriefing(d), d.html),
   });
 }
 
