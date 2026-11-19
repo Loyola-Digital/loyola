@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { FileText, MessageSquare, Plus, Settings2, ArrowDownToLine, Pencil } from "lucide-react";
+import { FileText, MessageSquare, Plus, Settings2, ArrowDownToLine, Download, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import {
   useDebriefings,
   useAssignDebriefingStage,
+  useBaixarDebriefing,
   useUpdateDebriefing,
   type DebriefingListItem,
 } from "@/lib/hooks/use-debriefings";
@@ -47,6 +48,7 @@ function DebriefingCard({ d, from }: { d: DebriefingListItem; from: string }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(d.campaignName);
   const update = useUpdateDebriefing(d.id);
+  const baixar = useBaixarDebriefing();
 
   function startEdit(e: React.MouseEvent) {
     e.preventDefault();
@@ -92,7 +94,7 @@ function DebriefingCard({ d, from }: { d: DebriefingListItem; from: string }) {
             </Button>
           </div>
         ) : (
-          <CardTitle className="text-base truncate pr-7">{d.campaignName}</CardTitle>
+          <CardTitle className="text-base truncate pr-16">{d.campaignName}</CardTitle>
         )}
       </CardHeader>
       <CardContent className="space-y-3">
@@ -126,15 +128,34 @@ function DebriefingCard({ d, from }: { d: DebriefingListItem; from: string }) {
         </Link>
       )}
       {!editing && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="absolute top-2 right-2 h-7 w-7 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground"
-          title="Renomear debriefing"
-          onClick={startEdit}
-        >
-          <Pencil className="h-3.5 w-3.5" />
-        </Button>
+        <div className="absolute top-2 right-2 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+            title="Baixar o arquivo HTML"
+            disabled={baixar.isPending}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              baixar.mutate(d.id, {
+                onError: (err) =>
+                  toast.error(err instanceof Error ? err.message : "Erro ao baixar"),
+              });
+            }}
+          >
+            <Download className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+            title="Renomear debriefing"
+            onClick={startEdit}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       )}
     </div>
   );

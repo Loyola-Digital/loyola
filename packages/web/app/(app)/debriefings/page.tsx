@@ -4,13 +4,14 @@ import { useState } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { AlertCircle, FileText, MessageSquare, Plus } from "lucide-react";
+import { AlertCircle, Download, FileText, MessageSquare, Plus } from "lucide-react";
+import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useUserRole } from "@/lib/hooks/use-user-role";
-import { useDebriefings } from "@/lib/hooks/use-debriefings";
+import { useBaixarDebriefing, useDebriefings } from "@/lib/hooks/use-debriefings";
 import { CreateDebriefingDialog } from "@/components/debriefings/create-debriefing-dialog";
 
 // Story 37.1 — lista de debriefings de campanha (aba global, não-guests).
@@ -29,6 +30,7 @@ export default function DebriefingsPage() {
   const role = useUserRole();
   const [createOpen, setCreateOpen] = useState(false);
   const { data, isLoading } = useDebriefings();
+  const baixar = useBaixarDebriefing();
 
   // Defesa em profundidade — o guest-guard da API já barra com 403.
   if (role === "guest") {
@@ -82,39 +84,58 @@ export default function DebriefingsPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {debriefings.map((d) => (
-            <Link key={d.id} href={`/debriefings/${d.id}`} className="group">
-              <Card className="h-full transition-colors group-hover:border-primary/40">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base truncate">{d.campaignName}</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Avatar className="h-6 w-6">
-                      {d.authorAvatarUrl && (
-                        <AvatarImage src={d.authorAvatarUrl} alt={d.authorName} />
-                      )}
-                      <AvatarFallback className="text-[10px]">
-                        {initials(d.authorName)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="text-xs text-muted-foreground truncate">
-                      {d.authorName} ·{" "}
-                      {format(new Date(d.createdAt), "dd MMM yyyy", { locale: ptBR })}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <MessageSquare className="h-3.5 w-3.5" />
-                    {d.commentCount}{" "}
-                    {d.commentCount === 1 ? "comentário" : "comentários"}
-                    {d.editorName && (
-                      <span className="ml-auto truncate">
-                        editado por {d.editorName}
+            <div key={d.id} className="relative group">
+              <Link href={`/debriefings/${d.id}`} className="block">
+                <Card className="h-full transition-colors group-hover:border-primary/40">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base truncate pr-8">{d.campaignName}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Avatar className="h-6 w-6">
+                        {d.authorAvatarUrl && (
+                          <AvatarImage src={d.authorAvatarUrl} alt={d.authorName} />
+                        )}
+                        <AvatarFallback className="text-[10px]">
+                          {initials(d.authorName)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="text-xs text-muted-foreground truncate">
+                        {d.authorName} ·{" "}
+                        {format(new Date(d.createdAt), "dd MMM yyyy", { locale: ptBR })}
                       </span>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      {d.commentCount}{" "}
+                      {d.commentCount === 1 ? "comentário" : "comentários"}
+                      {d.editorName && (
+                        <span className="ml-auto truncate">
+                          editado por {d.editorName}
+                        </span>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute top-2 right-2 h-7 w-7 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground"
+                title="Baixar o arquivo HTML"
+                disabled={baixar.isPending}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  baixar.mutate(d.id, {
+                    onError: (err) =>
+                      toast.error(err instanceof Error ? err.message : "Erro ao baixar"),
+                  });
+                }}
+              >
+                <Download className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           ))}
         </div>
       )}

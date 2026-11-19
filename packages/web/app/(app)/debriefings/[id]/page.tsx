@@ -8,6 +8,7 @@ import { ptBR } from "date-fns/locale";
 import {
   AlertCircle,
   ArrowLeft,
+  Download,
   ExternalLink,
   MessageSquare,
   MessageSquarePlus,
@@ -54,6 +55,7 @@ import {
   DEBRIEFING_IFRAME_SANDBOX,
   DEBRIEFING_MSG,
 } from "@/lib/debriefing-frame";
+import { baixarHtml, nomeDoArquivoDebriefing } from "@/lib/utils/baixar-debriefing";
 import { EditDebriefingDialog } from "@/components/debriefings/edit-debriefing-dialog";
 import { DebriefingComments } from "@/components/debriefings/debriefing-comments";
 import { DebriefingPinLayer } from "@/components/debriefings/debriefing-pin-layer";
@@ -250,6 +252,19 @@ export default function DebriefingDetailPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          {!editMode && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                baixarHtml(nomeDoArquivoDebriefing(debriefing), debriefing.html)
+              }
+              title="Baixar o arquivo HTML deste debriefing"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Baixar
+            </Button>
+          )}
           {!editMode && (
             <Button
               size="sm"
