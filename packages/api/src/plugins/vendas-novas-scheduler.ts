@@ -71,6 +71,11 @@ export default fp(async function vendasNovasSchedulerPlugin(fastify) {
     if (typeof timer.unref === "function") timer.unref();
   }
 
+  // Igual aos outros agendadores (kiwify-vendas, lead-capi): diz na subida que
+  // está no ar e com que cadência. Sem esta linha não há como confirmar em
+  // produção qual intervalo está valendo — o ciclo só fala quando tem aviso.
+  fastify.log.info({ minutos }, "[vendas-novas] agendador no ar");
+
   // Aquecimento ~90s depois do boot, sem concorrer com o resto da subida. Na
   // PRIMEIRA vez isto marca o histórico de cada etapa sem avisar ninguém.
   timer = setTimeout(async () => {
