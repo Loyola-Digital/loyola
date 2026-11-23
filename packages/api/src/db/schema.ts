@@ -4854,7 +4854,7 @@ export const peopleRecords = pgTable("people_records", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id")
     .notNull()
-    .unique()
+    .unique("people_records_user_id_key")
     .references(() => users.id, { onDelete: "cascade" }),
   nomeCompleto: text("nome_completo"),
   /**
