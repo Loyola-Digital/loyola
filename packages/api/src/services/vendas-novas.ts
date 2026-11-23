@@ -27,8 +27,10 @@
  * ## As travas
  *
  * - Só bucket de receita: reembolso e recusado não viram push.
- * - Estreia da etapa não avisa nada (senão o primeiro ciclo mandaria o
- *   histórico inteiro — são 354 vendas em 30 dias só no DG & CPDF).
+ * - Estreia da etapa avisa só as vendas DE HOJE; o resto do histórico entra
+ *   marcado, em silêncio (senão o primeiro ciclo mandaria 15 mil pushes). Silenciar
+ *   o dia inteiro era pior: a estreia de 23/11 engoliu 8 das 11 vendas da Black
+ *   que já estavam na planilha às 14h08, e foi assim que se descobriu.
  * - Teto por projeto por dia, com um resumo no lugar do excedente: o pico
  *   medido foi 81 vendas num dia (3/nov/2026, DG & CPDF).
  * - Só funil ATIVO: o arquivado ainda recebe cauda de venda, e avisar isso é
@@ -48,6 +50,7 @@ import {
   users,
 } from "../db/schema.js";
 import { readSheetData } from "./google-sheets.js";
+import { hojeSaoPaulo } from "./alertas-de-funil.js";
 import { enviarPush } from "./push.js";
 import { resolveSalesSheetsForStage } from "./sales-daily-sync.js";
 import { classifyRefundStatus, isRevenueBucket } from "./sales-status.js";
@@ -174,20 +177,30 @@ export interface Reparticao {
 /**
  * O que avisar desta etapa, dado o que já foi visto e quanto já saiu hoje.
  *
- * `estreia` devolve tudo como excedente sem avisar: é a diferença entre estrear
- * em silêncio e mandar o histórico inteiro no primeiro ciclo. Parte pura — é
- * daqui que o teste exercita.
+ * Na `estreia`, avisa só o que é **de hoje** e marca o resto em silêncio. Avisar
+ * tudo mandaria o histórico inteiro (15 mil pushes no primeiro ciclo); silenciar
+ * tudo perde as vendas do dia, que é notícia viva — foi o que aconteceu na
+ * estreia de 23/11, que engoliu 8 das 11 vendas da Black já lançadas na planilha.
+ *
+ * Venda sem data reconhecida fica em silêncio na estreia: sem saber o dia, o
+ * mais provável é ser histórico.
+ *
+ * Parte pura — é daqui que o teste exercita.
  */
 export function repartir(
   vendas: VendaDaPlanilha[],
   jaVistas: Set<string>,
   avisadasHoje: number,
   estreia: boolean,
+  hoje: string,
 ): Reparticao {
   const novas = vendas.filter((v) => !jaVistas.has(v.chave));
-  if (estreia) return { avisar: [], excedentes: novas };
   const resto = Math.max(0, TETO_POR_PROJETO_POR_DIA - avisadasHoje);
-  return { avisar: novas.slice(0, resto), excedentes: novas.slice(resto) };
+  if (!estreia) return { avisar: novas.slice(0, resto), excedentes: novas.slice(resto) };
+
+  const doDia = novas.filter((v) => v.dataVenda === hoje);
+  const historico = novas.filter((v) => v.dataVenda !== hoje);
+  return { avisar: doDia.slice(0, resto), excedentes: [...doDia.slice(resto), ...historico] };
 }
 
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -349,6 +362,7 @@ export async function rodarAvisosDeVenda(fastify: FastifyInstance): Promise<Resu
         jaVistas,
         avisadasHoje.get(etapa.projectId) ?? 0,
         estreia,
+        hojeSaoPaulo(),
       );
       if (avisar.length === 0 && excedentes.length === 0) continue;
       if (estreia) resumo.estreias += 1;
