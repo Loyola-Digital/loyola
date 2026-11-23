@@ -31,9 +31,11 @@
  *   histórico inteiro — são 354 vendas em 30 dias só no DG & CPDF).
  * - Teto por projeto por dia, com um resumo no lugar do excedente: o pico
  *   medido foi 81 vendas num dia (3/nov/2026, DG & CPDF).
+ * - Só funil ATIVO: o arquivado ainda recebe cauda de venda, e avisar isso é
+ *   ruído.
  */
 
-import { and, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import {
   funnelSpreadsheets,
@@ -57,15 +59,15 @@ export const TETO_POR_PROJETO_POR_DIA = 30;
 /**
  * Pausa entre etapas, para o ciclo não encostar na cota do Sheets.
  *
- * Medido em 23/11/2026: 38 etapas candidatas que resolvem para **39 pares
- * (planilha, aba) distintos** — 39 leituras por ciclo. A conta de serviço tem 60
- * leituras/min, e a cota é COMPARTILHADA com o painel, que lê as mesmas
- * planilhas quando alguém abre a tela de vendas.
+ * Medido em 23/11/2026, já sem os funis arquivados: 18 etapas que resolvem para
+ * **17 pares (planilha, aba) distintos** — 17 leituras por ciclo. A conta de
+ * serviço tem 60 leituras/min, e a cota é COMPARTILHADA com o painel, que lê as
+ * mesmas planilhas quando alguém abre a tela de vendas.
  *
- * 1,5s por etapa deixa o pico em ~40 leituras/min e o ciclo em ~1 min: com o
- * intervalo de 2 min do agendador, metade do tempo fica com a cota livre. Sem
- * pausa, as 39 sairiam em rajada e passariam de 100/min — 429 na cara, nas duas
- * pontas.
+ * 1,5s por etapa deixa o pico em ~40 leituras/min e o ciclo em ~26s: com o
+ * intervalo de 1 min do agendador, mais da metade do tempo fica com a cota
+ * livre. Sem pausa, as 17 sairiam em rajada e passariam de 100/min — 429 na
+ * cara, nas duas pontas.
  */
 const PAUSA_ENTRE_ETAPAS_MS = 1_500;
 
@@ -252,6 +254,18 @@ async function etapasComVenda(
     .where(
       and(
         inArray(projects.id, projetos),
+        // Funil arquivado não é vigiado: lançamento encerrado ainda recebe
+        // cauda de venda na planilha (downsell, reembolso tardio), e avisar
+        // isso é ruído — quem arquivou já tirou o funil da mesa. Corta mais da
+        // metade do ciclo: 38 etapas viram 18, 39 leituras viram 17 (medido em
+        // 23/11/2026). É o mesmo recorte do GET default de funis, que tem o
+        // índice `idx_funnels_active` para isto.
+        //
+        // Desarquivar um funil não vira enxurrada: as vendas que entraram
+        // enquanto ele esteve fora já estão marcadas em `sale_push_sent` da
+        // estreia; só as posteriores a ela seriam avisadas, e aí o teto por
+        // projeto por dia segura.
+        isNull(funnels.archivedAt),
         sql`(
           exists (select 1 from ${stageSalesSpreadsheets} ss where ss.stage_id = ${funnelStages.id})
           or exists (select 1 from ${funnelSpreadsheets} fs where fs.stage_id = ${funnelStages.id} and fs.type = 'sales')
