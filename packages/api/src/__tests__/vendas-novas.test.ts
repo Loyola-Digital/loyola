@@ -8,11 +8,13 @@ import {
   type VendaDaPlanilha,
 } from "../services/vendas-novas.js";
 
-const venda = (chave: string, valorBruto = 100): VendaDaPlanilha => ({
+const HOJE = "2026-11-23";
+
+const venda = (chave: string, valorBruto = 100, dataVenda = HOJE): VendaDaPlanilha => ({
   chave,
   produto: "Curso",
   valorBruto,
-  dataVenda: "2026-11-23",
+  dataVenda,
 });
 
 describe("chaveDaVenda", () => {
@@ -45,34 +47,67 @@ describe("chaveDaVenda", () => {
 
 describe("repartir", () => {
   it("avisa só o que ainda não foi visto", () => {
-    const r = repartir([venda("a"), venda("b"), venda("c")], new Set(["a", "b"]), 0, false);
+    const r = repartir([venda("a"), venda("b"), venda("c")], new Set(["a", "b"]), 0, false, HOJE);
     expect(r.avisar.map((v) => v.chave)).toEqual(["c"]);
     expect(r.excedentes).toEqual([]);
   });
 
-  // A trava que impede o primeiro ciclo de mandar o histórico inteiro: na
-  // estreia tudo entra marcado, nada é avisado.
-  it("estreia da etapa não avisa nada, mas marca tudo", () => {
-    const r = repartir([venda("a"), venda("b")], new Set(), 0, true);
+  // A trava que impede o primeiro ciclo de mandar o histórico inteiro — mas sem
+  // engolir o dia, que foi o erro da estreia de 23/11 (8 das 11 vendas da Black
+  // já estavam na planilha e nunca viraram aviso).
+  it("estreia avisa as vendas de hoje e cala o histórico", () => {
+    const r = repartir(
+      [venda("hoje-1"), venda("velha", 100, "2026-11-20"), venda("hoje-2")],
+      new Set(),
+      0,
+      true,
+      HOJE,
+    );
+    expect(r.avisar.map((v) => v.chave)).toEqual(["hoje-1", "hoje-2"]);
+    expect(r.excedentes.map((v) => v.chave)).toEqual(["velha"]);
+  });
+
+  it("estreia sem venda de hoje não avisa nada", () => {
+    const r = repartir(
+      [venda("a", 100, "2026-11-01"), venda("b", 100, "2026-11-20")],
+      new Set(),
+      0,
+      true,
+      HOJE,
+    );
     expect(r.avisar).toEqual([]);
-    expect(r.excedentes.map((v) => v.chave)).toEqual(["a", "b"]);
+    expect(r.excedentes).toHaveLength(2);
+  });
+
+  // Sem data reconhecida não há como saber se é do dia; na dúvida, silêncio.
+  it("estreia cala venda sem data", () => {
+    const r = repartir([{ ...venda("sem-data"), dataVenda: null }], new Set(), 0, true, HOJE);
+    expect(r.avisar).toEqual([]);
+    expect(r.excedentes.map((v) => v.chave)).toEqual(["sem-data"]);
+  });
+
+  it("na estreia o teto também vale", () => {
+    const muitas = Array.from({ length: 40 }, (_, i) => venda(`v${i}`));
+    const r = repartir(muitas, new Set(), 0, true, HOJE);
+    expect(r.avisar).toHaveLength(TETO_POR_PROJETO_POR_DIA);
+    expect(r.excedentes).toHaveLength(40 - TETO_POR_PROJETO_POR_DIA);
   });
 
   it("corta no teto do dia e joga o resto no excedente", () => {
     const muitas = Array.from({ length: 40 }, (_, i) => venda(`v${i}`));
-    const r = repartir(muitas, new Set(), 0, false);
+    const r = repartir(muitas, new Set(), 0, false, HOJE);
     expect(r.avisar).toHaveLength(TETO_POR_PROJETO_POR_DIA);
     expect(r.excedentes).toHaveLength(40 - TETO_POR_PROJETO_POR_DIA);
   });
 
   it("desconta o que já saiu hoje naquele projeto", () => {
-    const r = repartir([venda("a"), venda("b"), venda("c")], new Set(), TETO_POR_PROJETO_POR_DIA - 1, false);
+    const r = repartir([venda("a"), venda("b"), venda("c")], new Set(), TETO_POR_PROJETO_POR_DIA - 1, false, HOJE);
     expect(r.avisar.map((v) => v.chave)).toEqual(["a"]);
     expect(r.excedentes.map((v) => v.chave)).toEqual(["b", "c"]);
   });
 
   it("teto já estourado não avisa mais nada no dia", () => {
-    const r = repartir([venda("a")], new Set(), TETO_POR_PROJETO_POR_DIA + 5, false);
+    const r = repartir([venda("a")], new Set(), TETO_POR_PROJETO_POR_DIA + 5, false, HOJE);
     expect(r.avisar).toEqual([]);
     expect(r.excedentes.map((v) => v.chave)).toEqual(["a"]);
   });
