@@ -1800,7 +1800,13 @@ export const funnelGroupsSpreadsheets = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     funnelId: uuid("funnel_id")
       .notNull()
-      .unique()
+      // O NOME importa: no banco a constraint nasceu por SQL (`UNIQUE` na
+      // coluna), e o Postgres a chamou de `..._funnel_id_key`. Sem nomear aqui,
+      // o drizzle a quer como `..._funnel_id_unique`, vê uma constraint
+      // faltando em TODO deploy e abre o diálogo "quer truncar a tabela?" — que
+      // num boot sem terminal travava o `push` inteiro, e com ele qualquer
+      // tabela ou coluna nova do schema (ver `runMigrationsOnBoot`).
+      .unique("funnel_groups_spreadsheets_funnel_id_key")
       .references(() => funnels.id, { onDelete: "cascade" }),
     spreadsheetId: varchar("spreadsheet_id", { length: 255 }).notNull(),
     spreadsheetName: varchar("spreadsheet_name", { length: 255 }).notNull(),
