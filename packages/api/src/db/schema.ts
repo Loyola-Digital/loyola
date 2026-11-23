@@ -1745,11 +1745,12 @@ export const stageOrganicPosts = pgTable(
       .notNull(),
   },
   (table) => [
-    unique("uq_stage_organic_post").on(
-      table.stageId,
-      table.source,
-      table.externalId,
-    ),
+    // `uniqueIndex` e não `unique`: no banco esta regra existe como UNIQUE
+    // INDEX, não como constraint. Declarada como constraint, o drizzle não
+    // achava a dela, queria criar `uq_stage_organic_post` — o nome do índice
+    // que já existe — e abria o diálogo "a tabela tem 3 linhas, quer truncar?"
+    // em TODO deploy, parando o `push` antes de aplicar o resto do schema.
+    uniqueIndex("uq_stage_organic_post").on(table.stageId, table.source, table.externalId),
     index("idx_stage_organic_posts_stage").on(table.stageId),
     index("idx_stage_organic_posts_project_source").on(
       table.projectId,
