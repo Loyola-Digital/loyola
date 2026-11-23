@@ -21,7 +21,11 @@
  * entraram. Então o boot agora só CONFERE, e quem aplica é o runner.
  *
  * Para ligar o push de novo (local, ou depois de alinhar o schema por completo):
- * `AUTO_MIGRATE=true`. Ele avisa no log o que isso significa.
+ * `DRIZZLE_PUSH=eu-sei-o-que-faco`. O nome é esse de propósito — `AUTO_MIGRATE=true`
+ * NÃO serve mais, porque essa variável já está ligada no Coolify desde sempre e
+ * respeitá-la faria o push rodar no primeiro deploy, apagando as 39 garantias de
+ * novo (foi o que aconteceu no deploy do #1084). Uma chave de escape que já está
+ * virada não é chave de escape.
  */
 
 import { spawnSync } from "node:child_process";
@@ -69,11 +73,25 @@ export async function conferirTabelas(databaseUrl: string): Promise<string[]> {
   }
 }
 
-/** O `drizzle-kit push`, só quando pedido de propósito com AUTO_MIGRATE=true. */
+/** Liga o push só com a variável nova e explícita (ver o topo do arquivo). */
+function pushPedido(): boolean {
+  if (process.env.DRIZZLE_PUSH === "eu-sei-o-que-faco") return true;
+  if (process.env.AUTO_MIGRATE === "true") {
+    console.warn(
+      "[migrate] AUTO_MIGRATE=true está no ambiente, mas NÃO liga mais o " +
+        "`drizzle-kit push`: ele apaga do banco o que o schema.ts não declara. " +
+        "Migration se aplica pelo runner `migrate-0NNN.ts`. Para o push mesmo " +
+        "assim: DRIZZLE_PUSH=eu-sei-o-que-faco.",
+    );
+  }
+  return false;
+}
+
+/** O `drizzle-kit push`, só quando pedido de propósito. */
 function rodarPush(): void {
   console.warn(
-    "[migrate] AUTO_MIGRATE=true: rodando `drizzle-kit push --force`. Ele APAGA do " +
-      "banco o que o schema.ts não declara (CHECKs, uniques e índices parciais " +
+    "[migrate] DRIZZLE_PUSH ligado: rodando `drizzle-kit push --force`. Ele APAGA " +
+      "do banco o que o schema.ts não declara (CHECKs, uniques e índices parciais " +
       "criados por migration). Ver o comentário no topo de migracao-no-boot.ts.",
   );
   const res = spawnSync("npx", ["drizzle-kit", "push", "--force"], {
@@ -110,7 +128,7 @@ export async function migracaoNoBoot(): Promise<void> {
     return;
   }
 
-  if (process.env.AUTO_MIGRATE === "true") rodarPush();
+  if (pushPedido()) rodarPush();
 
   try {
     const faltando = await conferirTabelas(url);
