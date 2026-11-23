@@ -22,6 +22,7 @@ import { readSheetData } from "../services/google-sheets.js";
 import { resolveSalesSheetsForStage } from "../services/sales-daily-sync.js";
 import { classifyRefundStatus } from "../services/sales-status.js";
 import { classifyOrigem, classifyTemperatura, classifyCanal, normalizeEmail } from "../utils/lead-origin.js";
+import { parseDateIso, parseNumberBr } from "../utils/planilha-valores.js";
 
 const paramsSchema = z.object({
   projectId: z.string().uuid(),
@@ -32,25 +33,6 @@ export function hashEmail(raw: string): string | null {
   const e = normalizeEmail(raw);
   if (!e) return null;
   return createHash("sha256").update(e).digest("hex");
-}
-
-function parseNumberBr(val: string | undefined): number {
-  if (!val) return 0;
-  const cleaned = val.replace(/[^\d.,]/g, "");
-  if (!cleaned) return 0;
-  const hasComma = cleaned.includes(",");
-  const normalized = hasComma ? cleaned.replace(/\./g, "").replace(",", ".") : cleaned;
-  return parseFloat(normalized) || 0;
-}
-
-function parseDateIso(val: string | undefined): string | null {
-  if (!val) return null;
-  const t = val.trim();
-  const br = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\D|$)/);
-  if (br) return `${br[3]}-${br[2].padStart(2, "0")}-${br[1].padStart(2, "0")}`;
-  const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-  return null;
 }
 
 // Headers curtos do n8n ("s=", "m=", "c=", "co=", "t=") + longos. Exato primeiro
