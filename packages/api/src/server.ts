@@ -40,9 +40,13 @@ function runMigrationsOnBoot(): void {
   });
   if (res.stdout) process.stdout.write(res.stdout);
   if (res.stdout?.includes("You're about to")) {
+    // O Enter acima NÃO resolve: o diálogo lê o teclado em modo cru e, sem
+    // terminal, o drizzle-kit encerra ali — com status 0. Então este aviso é o
+    // único sinal de que o schema NÃO foi aplicado (medido em 23/11/2026).
     console.warn(
-      "[migrate] drizzle-kit pediu confirmação (respondida com 'sem truncar') — " +
-        "o schema.ts divergiu do banco em algo que ele quer recriar; confira o trecho acima.",
+      "[migrate] ATENÇÃO: drizzle-kit abriu um diálogo e PAROU — o schema NÃO foi " +
+        "aplicado. Alinhe o schema.ts ao banco (nome de constraint, unique vs " +
+        "uniqueIndex) e, até lá, aplique a migration pelo runner `migrate-0NNN.ts`.",
     );
   }
   if (res.status === 0) {
