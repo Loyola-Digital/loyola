@@ -135,6 +135,7 @@ import swipeFilesRoutes from "./routes/swipe-files.js";
 import planejamentoRoutes from "./routes/planejamento.js"; // Story 48.1
 import paymentAlertsSchedulerPlugin from "./plugins/payment-alerts-scheduler.js";
 import alertasDeFunilSchedulerPlugin from "./plugins/alertas-de-funil-scheduler.js";
+import vendasNovasSchedulerPlugin from "./plugins/vendas-novas-scheduler.js";
 import sendflowGroupsSchedulerPlugin from "./plugins/sendflow-groups-scheduler.js";
 import revenuecatSnapshotSchedulerPlugin from "./plugins/revenuecat-snapshot-scheduler.js";
 import plannerSyncSchedulerPlugin from "./plugins/planner-sync-scheduler.js";
@@ -211,6 +212,7 @@ export async function buildServer() {
   await app.register(metaActivitiesSchedulerPlugin);
   await app.register(paymentAlertsSchedulerPlugin);
   await app.register(alertasDeFunilSchedulerPlugin);
+  await app.register(vendasNovasSchedulerPlugin);
   // Grupos do SendFlow (substitui a exportação manual pra planilha).
   await app.register(sendflowGroupsSchedulerPlugin);
   // Story 42.10: um ponto por dia das métricas do RevenueCat. A API só devolve

@@ -73,6 +73,10 @@ const envSchema = z.object({
   VAPID_SUBJECT: z.string().optional(),
   /** `false` desliga o agendador dos alertas de funil (sempre desligado em teste). */
   ALERTAS_FUNIL_ENABLED: z.enum(["true", "false"]).optional(),
+  /** `false` desliga o aviso de venda nova (push por venda que cai na planilha). */
+  VENDAS_PUSH_ENABLED: z.enum(["true", "false"]).optional(),
+  /** Intervalo do aviso de venda nova, em minutos (default 10, piso 5). */
+  VENDAS_PUSH_MINUTES: z.coerce.number().int().min(1).max(1440).optional(),
   // API pública de vendas: idade máxima do cache antes de recalcular AO VIVO na
   // requisição (default 120s). O job noturno vira só aquecimento — quem consulta
   // nunca recebe número velho. Subir se a cota do Sheets apertar.

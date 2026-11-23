@@ -6487,3 +6487,42 @@ export const webhookSurveyResponses = pgTable(
   },
   (t) => [index("idx_webhook_survey_responses_survey").on(t.surveyId, t.recebidoEm)],
 );
+
+// ============================================================
+// AVISO DE VENDA NOVA (push por venda que cai na planilha)
+// ============================================================
+
+/**
+ * A venda que já foi avisada por push.
+ *
+ * É a marca d'água do aviso, e precisa existir porque a planilha não tem
+ * gatilho: o ciclo relê a aba inteira a cada rodada e o que distingue "venda
+ * nova" de "venda que eu já vi" é só esta tabela.
+ *
+ * A chave é a MESMA do dedup do dashboard (`txId|produto`), com recuo para
+ * `email|data|valor` quando a planilha não tem coluna de transação — assim uma
+ * venda não é avisada duas vezes por ser contada de dois jeitos. Por etapa, e
+ * não global: a mesma transação pode aparecer na planilha de duas etapas
+ * (upsell herdando a do perpétuo), e cada etapa é um funil diferente na
+ * notificação.
+ *
+ * `avisadoEm` nulo = conhecida mas nunca avisada: é como a etapa estreia (todo
+ * o histórico entra marcado de uma vez, sem disparar nada) e como ficam as
+ * vendas que passaram do teto do dia.
+ */
+export const salePushSent = pgTable(
+  "sale_push_sent",
+  {
+    stageId: uuid("stage_id")
+      .notNull()
+      .references(() => funnelStages.id, { onDelete: "cascade" }),
+    chave: text("chave").notNull(),
+    avisadoEm: timestamp("avisado_em", { withTimezone: true }),
+    vistoEm: timestamp("visto_em", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.stageId, t.chave] }),
+    // "quantos avisei hoje neste projeto" é a consulta do teto diário.
+    index("idx_sale_push_sent_avisado").on(t.avisadoEm),
+  ],
+);

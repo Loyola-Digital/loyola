@@ -17,6 +17,8 @@ import { classifyRefundStatus, isRefundBucket } from "./sales-status.js";
  * backfill/scheduler; o endpoint público só lê o cache.
  */
 
+import { parseDateIso, parseNumberBr } from "../utils/planilha-valores.js";
+
 export const CROSS_LAUNCH_SCOPE = "cross-launch";
 
 function hashEmail(raw: string): string | null {
@@ -25,24 +27,6 @@ function hashEmail(raw: string): string | null {
   return createHash("sha256").update(e).digest("hex");
 }
 
-function parseNumberBr(val: string | undefined): number {
-  if (!val) return 0;
-  const cleaned = val.replace(/[^\d.,]/g, "");
-  if (!cleaned) return 0;
-  const hasComma = cleaned.includes(",");
-  const normalized = hasComma ? cleaned.replace(/\./g, "").replace(",", ".") : cleaned;
-  return parseFloat(normalized) || 0;
-}
-
-function parseDateIso(val: string | undefined): string | null {
-  if (!val) return null;
-  const t = val.trim();
-  const br = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\D|$)/);
-  if (br) return `${br[3]}-${br[2].padStart(2, "0")}-${br[1].padStart(2, "0")}`;
-  const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-  return null;
-}
 
 interface BuyerAgg {
   vendas: number;
