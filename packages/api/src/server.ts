@@ -24,11 +24,27 @@ function runMigrationsOnBoot(): void {
   // dist/server.js -> raiz do pacote api (onde vivem drizzle.config.ts e src/).
   const pkgRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   console.log("[migrate] drizzle-kit push --force ...");
+  // `--force` cobre statement com perda de dado, mas NÃO o diálogo "esta tabela
+  // tem N linhas, quer truncar para criar a constraint?". Sem terminal o
+  // drizzle-kit encerra ali mesmo — com status 0, o que fazia este bloco
+  // anunciar "schema sincronizado" sem ter aplicado NADA, e tabela nova do
+  // schema não chegava ao banco (achado em 23/11/2026 no log do contêiner).
+  // Enter escolhe a opção já destacada, que é a segura: "adicionar a constraint
+  // SEM truncar" — e se ela falhar por dado duplicado, o erro aparece.
   const res = spawnSync("npx", ["drizzle-kit", "push", "--force"], {
     cwd: pkgRoot,
-    stdio: "inherit",
+    input: "\n".repeat(20),
+    stdio: ["pipe", "pipe", "inherit"],
+    encoding: "utf8",
     env: process.env,
   });
+  if (res.stdout) process.stdout.write(res.stdout);
+  if (res.stdout?.includes("You're about to")) {
+    console.warn(
+      "[migrate] drizzle-kit pediu confirmação (respondida com 'sem truncar') — " +
+        "o schema.ts divergiu do banco em algo que ele quer recriar; confira o trecho acima.",
+    );
+  }
   if (res.status === 0) {
     console.log("[migrate] schema sincronizado");
   } else {
