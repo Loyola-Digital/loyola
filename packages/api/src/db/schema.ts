@@ -1,3 +1,24 @@
+/**
+ * ## Unicidade: o NOME e a FORMA têm de bater com o banco
+ *
+ * O boot roda `drizzle-kit push`, que compara este arquivo com o banco. Quando
+ * uma regra de unicidade existe no banco com OUTRO nome, ou como índice onde
+ * aqui está declarada como constraint, o push a considera faltando, tenta
+ * criá-la e — se a tabela tiver linhas — abre o diálogo "quer truncar?". Sem
+ * terminal, ele encerra ali com status 0: nada do schema é aplicado e nem a
+ * tabela nova de outra feature chega ao banco (foi o que aconteceu em
+ * 23/11/2026). Daí as duas regras:
+ *
+ * - **`.unique()` pelado só em coluna cuja constraint o drizzle criou** (nome
+ *   `<tabela>_<coluna>_unique`). O que nasceu por SQL à mão leva o nome do
+ *   Postgres, `<tabela>_<coluna>_key`, e precisa de `.unique("..._key")`.
+ * - **`unique(...)` para constraint, `uniqueIndex(...)` para índice.** São
+ *   coisas diferentes no catálogo, e o push não aceita uma pela outra.
+ *
+ * Para conferir tudo de uma vez: compare `unique("x")`/`uniqueIndex("x")` deste
+ * arquivo com `pg_constraint` (contype='u') e `pg_indexes`.
+ */
+
 import {
   pgTable,
   uuid,
@@ -857,7 +878,7 @@ export const funnelMaps = pgTable("funnel_maps", {
    * por exemplo) sem que um sobrescreva o outro.
    */
   stageId: uuid("stage_id")
-    .unique()
+    .unique("funnel_maps_stage_id_key")
     .references(() => funnelStages.id, { onDelete: "cascade" }),
   /**
    * Nome próprio, para o mapa que não tem etapa.
@@ -1291,7 +1312,7 @@ export const stageLeadScoringSchemas = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     stageId: uuid("stage_id")
       .notNull()
-      .unique()
+      .unique("stage_lead_scoring_schemas_stage_id_key")
       .references(() => funnelStages.id, { onDelete: "cascade" }),
     surveyId: uuid("survey_id").references(() => funnelSurveys.id, {
       onDelete: "set null",
@@ -1334,7 +1355,7 @@ export const stageLeadCapi = pgTable("stage_lead_capi", {
   id: uuid("id").defaultRandom().primaryKey(),
   stageId: uuid("stage_id")
     .notNull()
-    .unique()
+    .unique("stage_lead_capi_stage_id_key")
     .references(() => funnelStages.id, { onDelete: "cascade" }),
   /** O dataset (pixel) que recebe os eventos. */
   datasetId: varchar("dataset_id", { length: 50 }).notNull(),
@@ -1780,7 +1801,7 @@ export const instagramMonthlyReports = pgTable(
       .notNull(),
   },
   (table) => [
-    unique("uq_instagram_monthly_report_project_month").on(
+    uniqueIndex("uq_instagram_monthly_report_project_month").on(
       table.projectId,
       table.month,
     ),
@@ -1908,7 +1929,7 @@ export const projectZoomConnections = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     projectId: uuid("project_id")
       .notNull()
-      .unique()
+      .unique("project_zoom_connections_project_id_key")
       .references(() => projects.id, { onDelete: "cascade" }),
     accountId: varchar("account_id", { length: 255 }).notNull(),
     clientId: varchar("client_id", { length: 255 }).notNull(),
@@ -2194,7 +2215,7 @@ export const applicationStageConfigs = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     stageId: uuid("stage_id")
       .notNull()
-      .unique()
+      .unique("application_stage_configs_stage_id_key")
       .references(() => funnelStages.id, { onDelete: "cascade" }),
     /**
      * Ids de `stage_sales_spreadsheets`, de QUALQUER etapa do mesmo funil.
@@ -2240,7 +2261,7 @@ export const kiwifyStageConfigs = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     stageId: uuid("stage_id")
       .notNull()
-      .unique()
+      .unique("kiwify_stage_configs_stage_id_key")
       .references(() => funnelStages.id, { onDelete: "cascade" }),
     /** Ids de produto da Kiwify. Vazio = nenhum produto escolhido ainda. */
     productIds: jsonb("product_ids").$type<string[]>().notNull().default([]),
@@ -2684,7 +2705,7 @@ export const revenuecatConnections = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     projectId: uuid("project_id")
       .notNull()
-      .unique()
+      .unique("revenuecat_connections_project_id_key")
       .references(() => projects.id, { onDelete: "cascade" }),
     apiKeyEncrypted: text("api_key_encrypted").notNull(),
     apiKeyIv: text("api_key_iv").notNull(),
@@ -2718,7 +2739,7 @@ export const revenuecatStageConfig = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     stageId: uuid("stage_id")
       .notNull()
-      .unique()
+      .unique("revenuecat_stage_config_stage_id_key")
       .references(() => funnelStages.id, { onDelete: "cascade" }),
     projectId: uuid("project_id")
       .notNull()
@@ -2743,7 +2764,7 @@ export const revenuecatStageConfig = pgTable(
       .notNull()
       .default("1.00"),
     /** token secreto embutido na URL do webhook. Gerado sob demanda. NUNCA logar. */
-    webhookToken: text("webhook_token").unique(),
+    webhookToken: text("webhook_token").unique("revenuecat_stage_config_webhook_token_key"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -2952,7 +2973,7 @@ export const revenuecatMetricSnapshots = pgTable(
   },
   (table) => [
     // AC3: rodar duas vezes no mesmo dia atualiza, não duplica.
-    unique("uq_rc_snapshot_stage_date").on(table.stageId, table.snapshotDate),
+    uniqueIndex("uq_rc_snapshot_stage_date").on(table.stageId, table.snapshotDate),
     index("idx_rc_snapshot_stage_date").on(table.stageId, table.snapshotDate),
   ],
 );
@@ -3627,7 +3648,7 @@ export const stageComercialConfig = pgTable("stage_comercial_config", {
   id: uuid("id").defaultRandom().primaryKey(),
   stageId: uuid("stage_id")
     .notNull()
-    .unique()
+    .unique("stage_comercial_config_stage_id_key")
     .references(() => funnelStages.id, { onDelete: "cascade" }),
   /** Etapas do funil de onde puxar os compradores/respondentes. */
   sourceStageIds: jsonb("source_stage_ids")
@@ -3750,7 +3771,7 @@ export const stageEventPaymentAlerts = pgTable("stage_event_payment_alerts", {
   id: uuid("id").defaultRandom().primaryKey(),
   stageId: uuid("stage_id")
     .notNull()
-    .unique()
+    .unique("stage_event_payment_alerts_stage_id_key")
     .references(() => funnelStages.id, { onDelete: "cascade" }),
   enabled: boolean("enabled").notNull().default(true),
   /** Canal de chat do ClickUp (v3) que recebe o aviso. */
@@ -4573,7 +4594,7 @@ export const vturbConnections = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     projectId: uuid("project_id")
       .notNull()
-      .unique()
+      .unique("vturb_connections_project_id_key")
       .references(() => projects.id, { onDelete: "cascade" }),
     apiTokenEncrypted: text("api_token_encrypted").notNull(),
     apiTokenIv: text("api_token_iv").notNull(),
@@ -4718,7 +4739,7 @@ export const plausibleProjectSites = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     projectId: uuid("project_id")
       .notNull()
-      .unique()
+      .unique("plausible_project_sites_project_id_key")
       .references(() => projects.id, { onDelete: "cascade" }),
     /** `site_id` do Plausible — que é o domínio cadastrado lá (ex.: "loja.exemplo.com"). */
     siteId: varchar("site_id", { length: 255 }).notNull(),
@@ -4755,7 +4776,7 @@ export const tallyConnections = pgTable("tally_connections", {
   id: uuid("id").defaultRandom().primaryKey(),
   projectId: uuid("project_id")
     .notNull()
-    .unique()
+    .unique("tally_connections_project_id_key")
     .references(() => projects.id, { onDelete: "cascade" }),
   tokenEncrypted: text("token_encrypted").notNull(),
   tokenIv: varchar("token_iv", { length: 64 }).notNull(),
@@ -5187,7 +5208,7 @@ export const plannerAnnualCells = pgTable(
 export const plannerGoogleCalendars = pgTable("planner_google_calendars", {
   id: uuid("id").defaultRandom().primaryKey(),
   /** O "ID da agenda" que aparece em Configurações → Integrar agenda. */
-  calendarId: text("calendar_id").notNull().unique(),
+  calendarId: text("calendar_id").notNull().unique("planner_google_calendars_calendar_id_key"),
   label: varchar("label", { length: 200 }).notNull(),
   createdBy: uuid("created_by").references(() => users.id, {
     onDelete: "set null",
