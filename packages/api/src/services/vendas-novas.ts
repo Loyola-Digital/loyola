@@ -35,18 +35,18 @@
  *   ruído.
  */
 
-import { and, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, gte, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import {
   funnelSpreadsheets,
   funnelStages,
   funnels,
-  notificationFollows,
   projects,
+  pushSubscriptions,
   salePushSent,
   stageSalesSpreadsheets,
+  users,
 } from "../db/schema.js";
-import { seguidoresDoProjeto } from "./alertas-de-funil.js";
 import { readSheetData } from "./google-sheets.js";
 import { enviarPush } from "./push.js";
 import { resolveSalesSheetsForStage } from "./sales-daily-sync.js";
@@ -215,17 +215,43 @@ export function textoDoExcedente(
   };
 }
 
+/**
+ * Quem recebe aviso de venda: **a equipe interna que instalou o app**.
+ *
+ * Não é `notification_follows` como nos alertas de funil. Venda é notícia que
+ * interessa a todo mundo que trabalha nos funis, e exigir que cada um "siga" o
+ * projeto fazia o aviso não chegar: medido em 23/11/2026, 20 pessoas internas
+ * ativas, só 2 seguiam — e eram as mesmas 2 com aparelho inscrito.
+ *
+ * **Guest fica fora**, e não por capricho: convidado externo vê a etapa dele e
+ * nada mais (é o mesmo motivo do guest-guard na API), e o aviso carrega
+ * faturamento e nome de produto. São 14 guests ativos hoje — mais que a metade
+ * da base. Bloqueado também fica fora.
+ *
+ * A lista sai de quem TEM inscrição de push: quem não instalou o PWA não entra
+ * no envio, e não é erro — é só não ter aparelho registrado.
+ */
+export async function destinatariosDeVenda(db: FastifyInstance["db"]): Promise<string[]> {
+  const linhas = await db
+    .selectDistinct({ userId: pushSubscriptions.userId })
+    .from(pushSubscriptions)
+    .innerJoin(users, eq(users.id, pushSubscriptions.userId))
+    .where(and(eq(users.status, "active"), ne(users.role, "guest")));
+  return linhas.map((l) => l.userId);
+}
+
 export interface ResumoDoCiclo {
   etapasLidas: number;
   avisos: number;
+  /** Aparelhos que o serviço de push aceitou — 0 com aviso > 0 é sinal de problema. */
+  aparelhos: number;
   estreias: number;
   erros: string[];
 }
 
-/** Etapas candidatas: têm planilha de venda e o projeto tem quem siga. */
+/** Etapas candidatas: funil ativo com planilha de venda, em qualquer projeto. */
 async function etapasComVenda(
   db: FastifyInstance["db"],
-  projetos: string[],
 ): Promise<
   Array<{
     stageId: string;
@@ -235,7 +261,6 @@ async function etapasComVenda(
     projectName: string;
   }>
 > {
-  if (projetos.length === 0) return [];
   // A planilha de venda pode estar na etapa (duas tabelas diferentes, por
   // histórico) ou no FUNIL, no caso do perpétuo — e aí quem herda é a etapa de
   // captação. Aqui basta saber que a etapa é candidata; quem resolve de verdade
@@ -253,7 +278,6 @@ async function etapasComVenda(
     .innerJoin(projects, eq(projects.id, funnels.projectId))
     .where(
       and(
-        inArray(projects.id, projetos),
         // Funil arquivado não é vigiado: lançamento encerrado ainda recebe
         // cauda de venda na planilha (downsell, reembolso tardio), e avisar
         // isso é ruído — quem arquivou já tirou o funil da mesa. Corta mais da
@@ -281,20 +305,15 @@ async function etapasComVenda(
  * Nunca lança — planilha fora do ar numa etapa não pode calar as outras.
  */
 export async function rodarAvisosDeVenda(fastify: FastifyInstance): Promise<ResumoDoCiclo> {
-  const resumo: ResumoDoCiclo = { etapasLidas: 0, avisos: 0, estreias: 0, erros: [] };
+  const resumo: ResumoDoCiclo = { etapasLidas: 0, avisos: 0, aparelhos: 0, estreias: 0, erros: [] };
 
-  // Projeto sem ninguém seguindo não é lido: cada etapa custa uma chamada ao
-  // Sheets, e o push não teria destinatário.
-  const comSeguidor = await fastify.db
-    .selectDistinct({ projectId: notificationFollows.projectId })
-    .from(notificationFollows);
-  const etapas = await etapasComVenda(
-    fastify.db,
-    comSeguidor.map((p) => p.projectId),
-  );
+  // Uma lista só para o ciclo inteiro: os destinatários não dependem do projeto
+  // (ver `destinatariosDeVenda`), e sem ninguém com o app instalado não há o que
+  // entregar — mas as vendas novas ainda precisam ser MARCADAS, senão viram
+  // "novidade" quando alguém instalar o app.
+  const destinatarios = await destinatariosDeVenda(fastify.db);
+  const etapas = await etapasComVenda(fastify.db);
   if (etapas.length === 0) return resumo;
-
-  const seguidoresPorProjeto = new Map<string, string[]>();
   // Quantos avisos já saíram hoje em cada projeto — o teto é por projeto.
   const avisadasHoje = new Map<string, number>();
   const inicioDoDia = new Date();
@@ -334,30 +353,24 @@ export async function rodarAvisosDeVenda(fastify: FastifyInstance): Promise<Resu
       if (avisar.length === 0 && excedentes.length === 0) continue;
       if (estreia) resumo.estreias += 1;
 
-      if (!seguidoresPorProjeto.has(etapa.projectId)) {
-        seguidoresPorProjeto.set(
-          etapa.projectId,
-          await seguidoresDoProjeto(fastify.db, etapa.projectId),
-        );
-      }
-      const seguidores = seguidoresPorProjeto.get(etapa.projectId)!;
       const url = `/projects/${etapa.projectId}/funnels/${etapa.funnelId}`;
 
       for (const venda of avisar) {
-        if (seguidores.length > 0) {
-          await enviarPush(fastify, seguidores, {
+        if (destinatarios.length > 0) {
+          const r = await enviarPush(fastify, destinatarios, {
             ...textoDaVenda(venda, etapa.funnelName, etapa.projectName),
             url,
             // Tag por venda: duas vendas seguidas são dois avisos na bandeja. A
             // tag repetida SUBSTITUI, e aí a segunda apagaria a primeira.
             tag: `venda-${etapa.stageId}-${venda.chave}`,
           });
+          resumo.aparelhos += r.enviados;
         }
         resumo.avisos += 1;
       }
-      if (excedentes.length > 0 && !estreia && seguidores.length > 0) {
+      if (excedentes.length > 0 && !estreia && destinatarios.length > 0) {
         const total = excedentes.reduce((s, v) => s + v.valorBruto, 0);
-        await enviarPush(fastify, seguidores, {
+        await enviarPush(fastify, destinatarios, {
           ...textoDoExcedente(excedentes.length, total, etapa.projectName),
           url,
           // Aqui a substituição é desejada: o resumo de agora troca o anterior.
