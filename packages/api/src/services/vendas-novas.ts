@@ -57,13 +57,17 @@ export const TETO_POR_PROJETO_POR_DIA = 30;
 /**
  * Pausa entre etapas, para o ciclo não encostar na cota do Sheets.
  *
- * São 38 etapas candidatas (medido em 23/11/2026), e algumas têm duas fontes:
- * umas 60 leituras por ciclo. Em sequência, sem pausa, isso passa das 60
- * leituras/min que a conta de serviço tem — e a cota é COMPARTILHADA com o
- * painel, que lê as mesmas planilhas quando alguém abre a tela de vendas. Uma
- * leitura por segundo deixa o ciclo em ~40s e sobra cota para o resto.
+ * Medido em 23/11/2026: 38 etapas candidatas que resolvem para **39 pares
+ * (planilha, aba) distintos** — 39 leituras por ciclo. A conta de serviço tem 60
+ * leituras/min, e a cota é COMPARTILHADA com o painel, que lê as mesmas
+ * planilhas quando alguém abre a tela de vendas.
+ *
+ * 1,5s por etapa deixa o pico em ~40 leituras/min e o ciclo em ~1 min: com o
+ * intervalo de 2 min do agendador, metade do tempo fica com a cota livre. Sem
+ * pausa, as 39 sairiam em rajada e passariam de 100/min — 429 na cara, nas duas
+ * pontas.
  */
-const PAUSA_ENTRE_ETAPAS_MS = 1_000;
+const PAUSA_ENTRE_ETAPAS_MS = 1_500;
 
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

@@ -1,6 +1,6 @@
 // Agendador do aviso de venda nova. Molde: alertas-de-funil-scheduler.
 //
-// A cada 10 minutos (VENDAS_PUSH_MINUTES) relê as planilhas de venda das etapas
+// A cada 2 minutos (VENDAS_PUSH_MINUTES) relê as planilhas de venda das etapas
 // e avisa o que entrou. Sem janela de silêncio, ao contrário dos alertas de
 // funil: alerta de ROAS de madrugada é ruído que faz a pessoa desligar tudo,
 // venda é notícia boa e chega a hora que chega. Quem segura o volume é o teto
@@ -14,11 +14,19 @@ import { pushConfigurado } from "../services/push.js";
 import { rodarAvisosDeVenda } from "../services/vendas-novas.js";
 
 /**
- * Dez minutos: é o atraso que a pessoa percebe entre a venda cair na planilha e
- * o celular tocar. Cada rodada custa uma leitura de Sheets por etapa com
- * planilha de venda (15 hoje), bem abaixo da cota.
+ * Dois minutos: é o atraso entre a linha cair na planilha e o celular tocar
+ * (~1 min na média). Não dá para ir muito abaixo lendo planilha: medido em
+ * 23/11/2026, um ciclo são **39 leituras** (20 arquivos, 39 abas distintas), e a
+ * conta de serviço tem 60 leituras/min — cota que o painel também usa quando
+ * alguém abre a tela de vendas. Com a pausa entre etapas, o ciclo leva ~1 min:
+ * em 2 min de intervalo sobra metade do tempo com a cota livre.
+ *
+ * Instantâneo de verdade não se resolve lendo planilha mais vezes, e sim pelo
+ * webhook da Kiwify (`POST /api/webhooks/kiwify/:projectId`), que já grava
+ * `order_approved` com valor e produto — falta a URL estar colada no painel de
+ * cada conta (hoje só PP tem).
  */
-const PADRAO_MINUTOS = 10;
+const PADRAO_MINUTOS = 2;
 
 export default fp(async function vendasNovasSchedulerPlugin(fastify) {
   if (fastify.config.NODE_ENV === "test") return;
@@ -33,7 +41,7 @@ export default fp(async function vendasNovasSchedulerPlugin(fastify) {
     return;
   }
 
-  const minutos = Math.max(5, Number(fastify.config.VENDAS_PUSH_MINUTES ?? PADRAO_MINUTOS));
+  const minutos = Math.max(1, Number(fastify.config.VENDAS_PUSH_MINUTES ?? PADRAO_MINUTOS));
   let rodando = false;
   let timer: NodeJS.Timeout | null = null;
 
