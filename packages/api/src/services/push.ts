@@ -149,9 +149,13 @@ export async function enviarPush(
     ),
   );
 
+  /** Só as que o serviço de push ACEITOU — ver o `lastSuccessAt` abaixo. */
+  const aceitas: string[] = [];
+
   resultados.forEach((r, idx) => {
     if (r.status === "fulfilled") {
       enviados += 1;
+      aceitas.push(inscricoes[idx].id);
       return;
     }
     const status = (r.reason as { statusCode?: number } | undefined)?.statusCode;
@@ -170,12 +174,21 @@ export async function enviarPush(
   if (mortas.length > 0) {
     await fastify.db.delete(pushSubscriptions).where(inArray(pushSubscriptions.id, mortas));
   }
-  if (enviados > 0) {
-    const vivos = inscricoes.filter((i) => !mortas.includes(i.id)).map((i) => i.id);
+  /**
+   * `lastSuccessAt` é por APARELHO, e só de quem aceitou.
+   *
+   * Antes daqui ele era estampado em toda inscrição que não tivesse sido
+   * recusada como morta — bastava UMA aceitar para todas parecerem entregues,
+   * as que falharam com 403 ou erro de rede incluídas. A coluna existe para
+   * mostrar aparelho zumbi, e assim ela mostrava o contrário: afirmava entrega
+   * onde não houve. Foi o que me fez dizer que um iPhone estava recebendo
+   * porque um PC havia recebido.
+   */
+  if (aceitas.length > 0) {
     await fastify.db
       .update(pushSubscriptions)
       .set({ lastSuccessAt: new Date(), updatedAt: new Date() })
-      .where(inArray(pushSubscriptions.id, vivos));
+      .where(inArray(pushSubscriptions.id, aceitas));
   }
 
   return { enviados, removidos: mortas.length, falhas, ...(naoBatem ? { chavesNaoBatem: true } : {}) };
