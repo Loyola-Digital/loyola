@@ -138,3 +138,63 @@ describe("juntarPorComprador", () => {
     expect(r).toHaveLength(4);
   });
 });
+
+/**
+ * Story 41.13 — o caso do `ppl1-bf26`: a mesma pessoa comprou DOIS produtos e o
+ * card mostrava 1 venda com o faturamento das duas. Onde o gestor classificou
+ * os produtos, cada produto que ancora é uma venda; o bump segue colando.
+ */
+describe("juntarPorComprador com produto classificado", () => {
+  const p = (email: string, bruto: number, produto: string, dia = 10) => ({
+    email, bruto, liquido: bruto, produto, lastDate: new Date(2026, 10, dia),
+  });
+  /** `principal` ancora; `bump` não — o papel que as rotas resolvem pelo mapa. */
+  const opcoes = {
+    ancora: (v: { produto: string }) => v.produto !== "bump",
+    produto: (v: { produto: string }) => v.produto,
+  };
+
+  it("dois produtos diferentes da mesma pessoa são DUAS vendas", () => {
+    const r = juntarPorComprador([p("ana@x.com", 1000, "curso a"), p("ana@x.com", 500, "curso b")], opcoes);
+    expect(r).toHaveLength(2);
+    expect(r.map((x) => x.bruto).sort((a, b) => a - b)).toEqual([500, 1000]);
+  });
+
+  it("o order bump continua somando na compra que ancora, sem virar venda", () => {
+    const r = juntarPorComprador([p("ana@x.com", 1000, "curso a"), p("ana@x.com", 97, "bump")], opcoes);
+    expect(r).toHaveLength(1);
+    expect(r[0]!.bruto).toBe(1097);
+    // a atribuição fica com a âncora, não com o bump
+    expect(r[0]!.produto).toBe("curso a");
+  });
+
+  it("com duas âncoras, o bump soma na de maior valor", () => {
+    const r = juntarPorComprador(
+      [p("ana@x.com", 300, "curso b"), p("ana@x.com", 1000, "curso a"), p("ana@x.com", 97, "bump")],
+      opcoes,
+    );
+    expect(r).toHaveLength(2);
+    expect(r.find((x) => x.produto === "curso a")!.bruto).toBe(1097);
+    expect(r.find((x) => x.produto === "curso b")!.bruto).toBe(300);
+  });
+
+  it("comprador SÓ de bump segue sendo uma venda — ele comprou", () => {
+    const r = juntarPorComprador([p("ana@x.com", 97, "bump"), p("ana@x.com", 47, "bump")], opcoes);
+    expect(r).toHaveLength(1);
+    expect(r[0]!.bruto).toBe(144);
+  });
+
+  it("o MESMO produto que ancora duas vezes não conta duas vendas", () => {
+    // Retry do gateway ou a mesma compra em duas planilhas: o dinheiro entra,
+    // a venda não. É a camada 1/2 vista de novo aqui, por segurança.
+    const r = juntarPorComprador([p("ana@x.com", 1000, "curso a"), p("ana@x.com", 1000, "curso a")], opcoes);
+    expect(r).toHaveLength(1);
+    expect(r[0]!.bruto).toBe(2000);
+  });
+
+  it("sem opções, nada ancora e o resultado é o de hoje — 1 por e-mail", () => {
+    const linhas = [p("ana@x.com", 1000, "curso a"), p("ana@x.com", 500, "curso b")];
+    expect(juntarPorComprador(linhas)).toHaveLength(1);
+    expect(juntarPorComprador(linhas)[0]!.bruto).toBe(1500);
+  });
+});

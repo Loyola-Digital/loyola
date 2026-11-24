@@ -395,14 +395,24 @@ describe("AC9(a)(b) — paridade: as pontas de lançamento chegam ao mesmo núme
     expect(g.byDay["2026-05-07"]).toBeCloseTo(99, 6); // Y31 (estorno + recompra)
   });
 
-  it("painel Vendas (etapa sales): fora da regra (R7-4) — o número de antes; vendas = compradores", async () => {
+  it("painel Vendas (etapa sales): fora da regra (R7-4) — o número de antes; vendas por produto que ancora", async () => {
     // Rodada 7 (R7-4): a camada 2 vale só nas etapas de captação. Antes da
     // decisão este teste esperava DEPOIS e 9 removidas na etapa de Vendas.
     preparar(fixturePg02(), { stageType: "sales", subtype: "main_product" });
     const d = await card("main_product");
     expect(d.faturamentoBruto).toBeCloseTo(ANTES.faturamento, 6);
     expect(d.breakdown.spreadsheet.linhas).toBe(ANTES.linhas);
-    expect(d.totalVendas).toBe(COMPRADORES); // 1 por e-mail (juntarPorComprador)
+    /**
+     * Story 41.13 — eram `COMPRADORES` (31), 1 por e-mail. Este fixture TEM
+     * classificação (`orderBumpProducts: [BUMP]`), e com ela cada produto que
+     * ancora conta: 31 ingressos + 2 combos (os e-mails 8 e 10 levaram os
+     * dois) = 33. Os 2 bumps seguem colando no comprador, e o faturamento é o
+     * mesmo — só a CONTAGEM muda.
+     *
+     * Era o defeito do `ppl1-bf26`: duas compras de produtos diferentes viravam
+     * 1 venda com o faturamento das duas.
+     */
+    expect(d.totalVendas).toBe(33);
     expect(d.dedupPessoaProduto).toEqual({
       aplicada: false,
       removidas: { linhas: 0, valor: 0 },

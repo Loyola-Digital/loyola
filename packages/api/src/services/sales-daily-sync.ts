@@ -7,6 +7,12 @@ import { classifyOrigem, classifyCanal, type Origem, type Canal } from "../utils
 import { classifyRefundStatus, isRefundBucket } from "./sales-status.js";
 import { juntarPorComprador } from "../utils/comprador.js";
 import {
+  classificadorDeProdutos,
+  tiposQueAncoram,
+  type LinhaDeVenda,
+  type PlanilhaComClassificacao,
+} from "../utils/order-bump.js";
+import {
   camada2ValeNaEtapa,
   decidirCamada2DasPlanilhas,
   refDaLinha,
@@ -170,7 +176,12 @@ export interface ResolvedSalesSheet {
 export async function resolveSalesSheetsForStage(
   db: Database,
   stageId: string,
-): Promise<{ sheets: ResolvedSalesSheet[]; stageType: string | null }> {
+): Promise<{
+  sheets: ResolvedSalesSheet[];
+  stageType: string | null;
+  /** Story 41.13 — classificação de produto das planilhas da etapa. */
+  classificacao: PlanilhaComClassificacao[];
+}> {
   const [stageRow] = await db
     .select({ stageType: funnelStages.stageType, funnelId: funnelStages.funnelId })
     .from(funnelStages)
@@ -184,6 +195,11 @@ export async function resolveSalesSheetsForStage(
       spreadsheetId: stageSalesSpreadsheets.spreadsheetId,
       sheetName: stageSalesSpreadsheets.sheetName,
       columnMapping: stageSalesSpreadsheets.columnMapping,
+      // Story 41.13 — a classificação de produto da etapa (não entra em
+      // `sheets`: a planilha vinda de `funnel_spreadsheets` não tem esses
+      // campos, e a classificação é da ETAPA, não de uma fonte).
+      orderBumpProducts: stageSalesSpreadsheets.orderBumpProducts,
+      productTypes: stageSalesSpreadsheets.productTypes,
     })
     .from(stageSalesSpreadsheets)
     .where(eq(stageSalesSpreadsheets.stageId, stageId));
@@ -243,14 +259,25 @@ export async function resolveSalesSheetsForStage(
       sheets = [...sheets, { ...perpSheet, subtype: "perpetual_sales" }];
     }
   }
-  return { sheets, stageType: stageRow?.stageType ?? null };
+  return {
+    sheets,
+    stageType: stageRow?.stageType ?? null,
+    classificacao: allSheets.map((sp) => ({
+      orderBumpProducts: sp.orderBumpProducts,
+      productTypes: sp.productTypes,
+    })),
+  };
 }
 
 export async function computeSalesDailyForStage(db: Database, stageId: string): Promise<SalesDailyPayload | null> {
-  const { sheets, stageType } = await resolveSalesSheetsForStage(db, stageId);
+  const { sheets, stageType, classificacao } = await resolveSalesSheetsForStage(db, stageId);
   // Etapa de Vendas conta COMPRADORES — mesma regra do painel
   // (`stage-sales-data.ts`). Ver `juntarPorComprador`.
   const porComprador = stageType === "sales";
+  // Story 41.13 — e onde os produtos estão classificados, cada produto que
+  // ancora conta uma venda. A réplica OBEDECE junto com o card: se só um dos
+  // dois mudasse, o gráfico diário somaria uma venda que o card não mostra.
+  const classificador = classificadorDeProdutos(classificacao, stageType);
 
   // Brief v5 #1: vendas manuais (Evento Presencial / Vendas / captações) —
   // reembolsadas (refundedAt != null) ficam fora, mesma regra do dashboard.
@@ -399,7 +426,20 @@ export async function computeSalesDailyForStage(db: Database, stageId: string): 
    * origem, canal e dia contam compradores na etapa de Vendas.
    */
   const linhas = [...sales.values()];
-  const contadas = porComprador ? juntarPorComprador(linhas) : linhas;
+  const ancoras = classificador.temClassificacao
+    ? tiposQueAncoram(linhas.map((l) => ({ tipo: classificador.tipoDoProduto(l.produto) }) as LinhaDeVenda))
+    : null;
+  const contadas = porComprador
+    ? juntarPorComprador(
+        linhas,
+        ancoras
+          ? {
+              ancora: (v) => ancoras.has(classificador.tipoDoProduto(v.produto)),
+              produto: (v) => v.produto.trim().toLowerCase(),
+            }
+          : undefined,
+      )
+    : linhas;
 
   for (const s of linhas) {
     const pp = porProduto.get(s.produto) ?? { vendas: 0, bruto: 0, liquido: 0 };
