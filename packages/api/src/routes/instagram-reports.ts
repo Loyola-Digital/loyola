@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { eq, and, desc, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
+import { renderInstagramReportHtml } from "../services/instagram-report-html.js";
 import {
   instagramMonthlyReports,
   instagramAccounts,
@@ -687,6 +688,44 @@ export default fp(async function instagramReportsRoutes(fastify) {
         generatedBy: row.generatedBy,
         generatedAt: row.generatedAt,
       };
+    },
+  );
+
+  // ============================================================
+  // GET /api/projects/:projectId/reports/instagram/:reportId/html
+  // ============================================================
+  /**
+   * O relatório como arquivo, para o Social Media baixar e mandar por e-mail ou
+   * anexar no ClickUp. Monta a partir do payload gravado — não busca nada na
+   * Meta, então o arquivo é exatamente o que a tela mostra, inclusive para um
+   * mês fechado cujos insights já venceram.
+   */
+  fastify.get<{ Params: { projectId: string; reportId: string } }>(
+    "/api/projects/:projectId/reports/instagram/:reportId/html",
+    async (request, reply) => {
+      const params = reportParamSchema.safeParse(request.params);
+      if (!params.success) return reply.code(400).send({ error: "Parâmetros inválidos" });
+
+      const project = await getProjectAccess(params.data.projectId, request.userId, request.userRole);
+      if (!project) return reply.code(404).send({ error: "Projeto não encontrado" });
+
+      const [row] = await fastify.db
+        .select()
+        .from(instagramMonthlyReports)
+        .where(
+          and(
+            eq(instagramMonthlyReports.id, params.data.reportId),
+            eq(instagramMonthlyReports.projectId, params.data.projectId),
+          ),
+        )
+        .limit(1);
+      if (!row) return reply.code(404).send({ error: "Relatório não encontrado" });
+
+      const dados = await completarPermalinks(row.data as MonthlyReportData);
+      const html = renderInstagramReportHtml(dados);
+      // text/plain seria baixado como .txt pelo navegador; o front usa o corpo
+      // para montar o arquivo, e o nome vem do mês.
+      return reply.type("text/html; charset=utf-8").send(html);
     },
   );
 
