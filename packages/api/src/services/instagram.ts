@@ -277,11 +277,40 @@ export class InstagramApiError extends Error {
 }
 
 function mapGraphError(err: GraphApiError["error"]): InstagramApiError {
+  // Token que a API nem consegue LER. Não é expiração: quase sempre é token do
+  // Facebook Business / System User, que vale em graph.facebook.com e não neste
+  // host (ver `validateToken`). Dizer "renove o token" aqui manda a pessoa
+  // gerar outro token do mesmo tipo errado — foi o que aconteceu em 24/11/2026.
+  if (err.code === 190 && /cannot parse access token/i.test(err.message)) {
+    return new InstagramApiError(
+      "A Meta não conseguiu LER este token (não é expiração). O painel usa a Instagram API " +
+        "with Instagram Login, que aceita token gerado no app do Instagram — token do " +
+        "Facebook Business / System User é recusado aqui, mesmo estando válido.",
+      400,
+      err.code,
+      err.error_subcode,
+    );
+  }
+
   // Token expired or invalid
   if (err.code === 190) {
     return new InstagramApiError(
       "Token de acesso expirado ou inválido. Renove o token no Meta Business Manager.",
       401,
+      err.code,
+      err.error_subcode,
+    );
+  }
+
+  // Campo que não existe no nó consultado. A Meta manda isto como
+  // OAuthException, e por isso caía em "erro de permissão" — mensagem que
+  // mandava a pessoa conferir permissões de um token que estava correto
+  // (achado em 24/11/2026, na conta da Fernanda Zapparoli).
+  if (err.code === 100 && /nonexisting field/i.test(err.message)) {
+    return new InstagramApiError(
+      `A consulta pediu um campo que não existe neste nó da Meta: ${err.message}. ` +
+        "Não é problema do token nem de permissão.",
+      400,
       err.code,
       err.error_subcode,
     );
@@ -477,6 +506,24 @@ export default fp(async function instagramServicePlugin(fastify) {
 
   // ---- API Methods ----
 
+  /**
+   * Valida o token e devolve a conta que ele representa.
+   *
+   * ⚠️ Este serviço fala com **graph.instagram.com** (Instagram API with
+   * Instagram Login), e esse host só aceita token de Instagram Login — nele o
+   * `/me` já É a conta do Instagram.
+   *
+   * Token do **Facebook Business / System User** (o que se gera no Meta Business
+   * Manager, e que NÃO expira) é recusado aqui com `190 Invalid OAuth access
+   * token - Cannot parse access token`, embora funcione perfeitamente em
+   * graph.facebook.com. Em 24/11/2026 isso custou uma investigação na conta da
+   * Fernanda Zapparoli: o token lia a conta (154 mil seguidores) pelo host do
+   * Facebook, e a tela dizia que a Meta o havia recusado por expiração.
+   *
+   * Aceitar os dois tipos exige guardar o host por conta e rotear todas as
+   * chamadas — insights, mídia, stories —, porque os paths são os mesmos mas o
+   * token não. Está fora deste patch; aqui o erro passa a dizer a verdade.
+   */
   async function validateToken(
     accessToken: string,
   ): Promise<{ id: string; name: string; username: string; profile_picture_url?: string }> {
