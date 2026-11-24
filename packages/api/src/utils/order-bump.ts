@@ -143,6 +143,64 @@ export function tipoPadraoDaEtapa(stageType: string | null | undefined): TipoDeP
   return stageType === "sales" ? "principal" : "ingresso";
 }
 
+/** O que uma planilha da etapa guarda de classificação de produto. */
+export interface PlanilhaComClassificacao {
+  orderBumpProducts?: string[] | null;
+  productTypes?: Record<string, string> | null;
+}
+
+export interface ClassificadorDeProdutos {
+  /**
+   * `true` = alguém classificou os produtos desta etapa (mapa da 18.69 ou a
+   * lista antiga de bumps). É o que autoriza qualquer leitura a CONFIAR no
+   * produto da linha — sem classificação, o nome do produto pode ser qualquer
+   * coisa (na `fz-m3-set-26` a coluna mapeada como produto trazia o PREÇO).
+   */
+  temClassificacao: boolean;
+  /** O papel do produto nesta etapa. Produto fora do mapa cai no default. */
+  tipoDoProduto(produto: string | null | undefined): TipoDeProdutoNaVenda;
+}
+
+/**
+ * A resolução `produto → papel` de uma etapa, num lugar só.
+ *
+ * A regra vivia inline em `stage-sales-data.ts`, e a réplica diária
+ * (`sales-daily-sync.ts`) não tinha nenhuma — então as duas telas nunca
+ * poderiam concordar sobre o que é bump e o que é venda. Aqui é pura: recebe as
+ * planilhas da etapa (só os dois campos de classificação) e o tipo da etapa.
+ *
+ * Precedência, a mesma da 18.69: mapa explícito > lista antiga de bumps >
+ * default da etapa (`tipoPadraoDaEtapa`).
+ */
+export function classificadorDeProdutos(
+  planilhas: readonly PlanilhaComClassificacao[],
+  stageType: string | null | undefined,
+): ClassificadorDeProdutos {
+  const chave = (p: string | null | undefined) => (p ?? "").trim().toLowerCase();
+
+  const bumps = new Set<string>();
+  const mapa = new Map<string, TipoDeProdutoNaVenda>();
+  for (const pl of planilhas) {
+    for (const b of pl.orderBumpProducts ?? []) {
+      const k = chave(b);
+      if (k) bumps.add(k);
+    }
+    for (const [prod, tipo] of Object.entries(pl.productTypes ?? {})) {
+      const k = chave(prod);
+      if (k) mapa.set(k, tipo as TipoDeProdutoNaVenda);
+    }
+  }
+
+  const padrao = tipoPadraoDaEtapa(stageType);
+  return {
+    temClassificacao: mapa.size > 0 || bumps.size > 0,
+    tipoDoProduto(produto) {
+      const k = chave(produto);
+      return mapa.get(k) ?? (bumps.has(k) ? "order_bump" : padrao);
+    },
+  };
+}
+
 /** O mínimo que uma linha de venda precisa expor para entrar na análise. */
 export interface LinhaDeVenda {
   /** Já normalizado (trim + lowercase). Vazio = comprador anônimo. */

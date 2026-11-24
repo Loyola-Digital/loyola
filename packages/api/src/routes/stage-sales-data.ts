@@ -39,7 +39,8 @@ import {
 // que a separação acessório/avulso seja provável sem levantar a rota.
 import {
   resumirOrderBump,
-  tipoPadraoDaEtapa,
+  classificadorDeProdutos,
+  tiposQueAncoram,
   tabelaPorPublico,
   type LinhaDeVenda,
   type TipoDeProdutoNaVenda,
@@ -489,24 +490,20 @@ export default fp(async function stageSalesDataRoutes(fastify) {
        * Reescrever os 20 registros num deploy seria risco sem ganho: a leitura
        * já entrega o resultado.
        */
-      const tiposPorProduto = new Map<string, TipoDeProdutoNaVenda>();
-      for (const sp of spreadsheets) {
-        const mapa = (sp.productTypes as Record<string, TipoDeProdutoNaVenda> | null) ?? {};
-        for (const [prod, tipo] of Object.entries(mapa)) {
-          const k = prod.trim().toLowerCase();
-          if (k) tiposPorProduto.set(k, tipo);
-        }
-      }
-      const tipoDoProdutoNaVenda = (product: string): TipoDeProdutoNaVenda => {
-        const k = (product ?? "").trim().toLowerCase();
-        const doMapa = tiposPorProduto.get(k);
-        if (doMapa) return doMapa;
-        // Story 18.70: o default depende da ETAPA. Numa captação, produto não
-        // listado é o ingresso. Numa etapa de Vendas, `ingresso` fazia as
-        // vendas manuais (grafia fora do mapa) derrubarem a ancoragem de todos
-        // os produtos classificados — ver `tipoPadraoDaEtapa`.
-        return orderBumpSet.has(k) ? "order_bump" : tipoPadraoDaEtapa(stage.stageType);
-      };
+      //
+      // Story 18.70: o default depende da ETAPA. Numa captação, produto não
+      // listado é o ingresso. Numa etapa de Vendas, `ingresso` fazia as vendas
+      // manuais (grafia fora do mapa) derrubarem a ancoragem de todos os
+      // produtos classificados — ver `tipoPadraoDaEtapa`.
+      const classificacao = classificadorDeProdutos(
+        spreadsheets.map((sp) => ({
+          orderBumpProducts: sp.orderBumpProducts as string[] | null,
+          productTypes: sp.productTypes as Record<string, string> | null,
+        })),
+        stage.stageType,
+      );
+      const tipoDoProdutoNaVenda = (product: string): TipoDeProdutoNaVenda =>
+        classificacao.tipoDoProduto(product);
 
       // Reembolso NÃO deduplica: a pessoa compra (linha paid, id X) e ao reembolsar
       // volta como NOVA linha refunded com o MESMO id X. Cada linha refunded/
@@ -776,10 +773,36 @@ export default fp(async function stageSalesDataRoutes(fastify) {
        * proposital e o único já existe à parte (`ingressosUnicos`, 18.51a).
        */
       const porComprador = stage.stageType === "sales";
+      /**
+       * Story 41.13 — onde os produtos da etapa estão CLASSIFICADOS, cada
+       * produto que ancora conta uma venda por comprador.
+       *
+       * Sem classificação não dá para confiar no produto da linha (na
+       * `fz-m3-set-26` a coluna mapeada como produto trazia o preço), e aí a
+       * regra segue sendo 1 venda por e-mail — o que mantém intacta toda etapa
+       * que ninguém classificou. Quais papéis ancoram é a mesma decisão da
+       * 18.68 (`tiposQueAncoram`), que o Debriefing já usa: nada de uma segunda
+       * resposta para "o que é uma venda".
+       */
+      const ancoras = classificacao.temClassificacao
+        ? tiposQueAncoram(
+            linhasQueContam.map(
+              (l) => ({ tipo: tipoDoProdutoNaVenda(l.product) }) as LinhaDeVenda,
+            ),
+          )
+        : null;
       // Story 41.12 — a camada 2 roda ANTES de `juntarPorComprador`: a recompra
       // do mesmo produto sai do dinheiro; o bump (outro produto) segue somando.
       const vendasContadas = porComprador
-        ? juntarPorComprador(linhasQueContam)
+        ? juntarPorComprador(
+            linhasQueContam,
+            ancoras
+              ? {
+                  ancora: (v) => ancoras.has(tipoDoProdutoNaVenda(v.product)),
+                  produto: (v) => v.product.trim().toLowerCase(),
+                }
+              : undefined,
+          )
         : linhasQueContam;
 
       // Story 18.95: o diário soma nos MESMOS pontos que o card (este laço e o
