@@ -294,9 +294,32 @@ function FollowersBalanceCard({
           </p>
         </div>
         <div className="text-right">
-          {followers.endOfMonth != null && (
+          {/*
+            "ao fim do mês" só em mês corrente: a Meta não devolve o total de
+            seguidores de uma data passada, e o número aqui era o de HOJE — o
+            relatório de outubro exibia o total de novembro como se fosse o do
+            fechamento. Em mês fechado o rótulo diz quando foi medido.
+          */}
+          {followers.endOfMonth != null ? (
             <p className="text-xs text-muted-foreground">
-              Total ao fim do mês: <span className="font-semibold text-foreground">{fmtNumber(followers.endOfMonth)}</span>
+              Total ao fim do mês:{" "}
+              <span className="font-semibold text-foreground">{fmtNumber(followers.endOfMonth)}</span>
+            </p>
+          ) : followers.totalMedido != null ? (
+            <p className="text-xs text-muted-foreground">
+              Total medido em{" "}
+              {followers.totalMedidoEm
+                ? new Date(followers.totalMedidoEm).toLocaleDateString("pt-BR")
+                : "—"}
+              : <span className="font-semibold text-foreground">{fmtNumber(followers.totalMedido)}</span>
+            </p>
+          ) : null}
+          {followers.ganhosPorPost != null && (
+            <p className="text-xs text-muted-foreground mt-1">
+              Pelos posts do mês:{" "}
+              <span className="font-semibold text-foreground">
+                +{fmtNumber(followers.ganhosPorPost)}
+              </span>
             </p>
           )}
           {delta && deltaPct != null && (
@@ -458,20 +481,29 @@ function RankingList({
       ) : (
         <div className="space-y-1.5">
           {posts.map((post, i) => {
-            const externalUrl = post.permalink ?? `https://www.instagram.com/p/${post.mediaId}/`;
+            // Sem permalink NÃO monta link: `instagram.com/p/{mediaId}` não abre
+            // (media id não é o shortcode do post), e um link que leva a 404 é
+            // pior que não ter link.
+            const externalUrl = post.permalink ?? null;
             const captionPreview = post.caption ?? "Sem legenda";
             const truncated = captionPreview.length > 70 ? captionPreview.slice(0, 67) + "..." : captionPreview;
             const primaryValue =
               primaryMetric === "engagement"
                 ? `${(post.engagementRate ?? 0).toFixed(2)}%`
                 : fmtNumber(post.reach);
+            // Com link é <a>; sem link é <div> — mesma aparência, sem clique que
+            // leva a lugar nenhum.
+            const Item = externalUrl ? "a" : "div";
+            const propsDoItem = externalUrl
+              ? ({ href: externalUrl, target: "_blank", rel: "noopener noreferrer" } as const)
+              : {};
             return (
-              <a
+              <Item
                 key={post.mediaId}
-                href={externalUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 rounded-md border border-border/20 bg-muted/10 p-2 hover:border-border/50 transition-colors group"
+                {...propsDoItem}
+                className={`flex items-center gap-2 rounded-md border border-border/20 bg-muted/10 p-2 transition-colors group${
+                  externalUrl ? " hover:border-border/50" : ""
+                }`}
               >
                 <span className="w-4 text-center text-xs font-bold text-muted-foreground tabular-nums shrink-0">
                   {i + 1}
@@ -491,8 +523,10 @@ function RankingList({
                 <span className="text-xs font-semibold tabular-nums text-foreground shrink-0">
                   {primaryValue}
                 </span>
-                <ExternalLink className="h-3 w-3 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-              </a>
+                {externalUrl && (
+                  <ExternalLink className="h-3 w-3 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                )}
+              </Item>
             );
           })}
         </div>

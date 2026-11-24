@@ -1,15 +1,17 @@
 import { z } from "zod";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import fp from "fastify-plugin";
 import {
   instagramMonthlyReports,
   instagramAccounts,
   instagramAccountProjects,
+  instagramPostMetrics,
   projects,
   projectMembers,
   users,
 } from "../db/schema.js";
 import type {
+  AccountReportFollowers,
   MonthlyReportData,
   AccountReport,
   PostSummary,
@@ -168,6 +170,9 @@ interface MediaItem {
   media_type: string;
   media_url?: string;
   thumbnail_url?: string;
+  // A consulta de mídia já pedia este campo (`getMediaList`); o tipo local é que
+  // não o declarava, e foi por isso que o relatório saía com `permalink: null`.
+  permalink?: string;
   timestamp: string;
   like_count?: number;
   comments_count?: number;
@@ -175,6 +180,49 @@ interface MediaItem {
   saved?: number | null;
   engagement_rate?: number | null;
   follows?: number | null;
+}
+
+/**
+ * O bloco de seguidores do relatório.
+ *
+ * A Meta devolve o total de seguidores de AGORA — ela não tem o total de uma
+ * data passada. Por isso `endOfMonth` só é verdade no mês corrente; em mês
+ * fechado era o total de hoje, e o relatório de outubro exibia o número de
+ * novembro como "fim do mês" (achado em 24/11/2026, com o time de Social Media).
+ *
+ * `gained`/`lost` vêm do insight do PERÍODO, então são do mês certo. E
+ * `ganhosPorPost` soma o `follows` de cada post: histórico nosso, que sobrevive
+ * ao limite de 2 anos dos insights de conta — em mês antigo é a única leitura
+ * que resta.
+ *
+ * `null` em `ganhosPorPost` é "nenhum post tinha o dado", diferente de 0, que
+ * seria "os posts não trouxeram ninguém".
+ */
+export function montarSeguidores(entrada: {
+  month: string;
+  totalMedido: number | null;
+  gained: number;
+  lost: number;
+  follows: Array<number | null>;
+  agora?: Date;
+}): AccountReportFollowers {
+  const agora = entrada.agora ?? new Date();
+  const mesCorrente = entrada.month === agora.toISOString().slice(0, 7);
+  const net = entrada.gained - entrada.lost;
+  const ganhosPorPost = entrada.follows.reduce<number | null>(
+    (acc, f) => (f == null ? acc : (acc ?? 0) + f),
+    null,
+  );
+  return {
+    startOfMonth: mesCorrente && entrada.totalMedido != null ? entrada.totalMedido - net : null,
+    endOfMonth: mesCorrente ? entrada.totalMedido : null,
+    gained: entrada.gained,
+    lost: entrada.lost,
+    net,
+    totalMedido: entrada.totalMedido,
+    totalMedidoEm: entrada.totalMedido != null ? agora.toISOString() : null,
+    ganhosPorPost,
+  };
 }
 
 function buildPostSummary(post: MediaItem, mediaProductType: string | null): PostSummary {
@@ -189,7 +237,11 @@ function buildPostSummary(post: MediaItem, mediaProductType: string | null): Pos
     mediaProductType,
     timestamp: post.timestamp,
     thumbnailUrl: post.thumbnail_url ?? post.media_url ?? null,
-    permalink: null,
+    // A consulta de mídia já pede `permalink` (ver getMediaList): era `null`
+    // fixo aqui, e a tela caía num fallback `instagram.com/p/{mediaId}` que NÃO
+    // abre — media id não é o shortcode do post. Social Media pediu "o link
+    // prévio" justamente por isso.
+    permalink: post.permalink ?? null,
     caption: captionTrunc,
     reach: post.reach ?? null,
     likes: post.like_count ?? 0,
@@ -369,20 +421,25 @@ export default fp(async function instagramReportsRoutes(fastify) {
       reach: d.reach,
     }));
 
-    // Profile pra followers endOfMonth
-    let endOfMonth: number | null = null;
+    // O total de seguidores que a Meta devolve é o de AGORA — ela não tem o
+    // total de uma data passada. Então `endOfMonth` só é verdade quando o
+    // relatório é do mês corrente; em mês fechado, o que existe é "o total
+    // medido na geração", e é com esse nome que ele sai.
+    let totalMedido: number | null = null;
     try {
       const profile = await fastify.instagramService.getProfile(accountId);
-      endOfMonth = profile.followers_count ?? null;
+      totalMedido = profile.followers_count ?? null;
     } catch { /* ignora */ }
 
-    const followers = {
-      startOfMonth: endOfMonth != null ? endOfMonth - (followsBreak.gained - followsBreak.lost) : null,
-      endOfMonth,
+    const followers = montarSeguidores({
+      month,
+      totalMedido,
       gained: followsBreak.gained,
       lost: followsBreak.lost,
-      net: followsBreak.gained - followsBreak.lost,
-    };
+      // Soma dos `follows` dos posts do mês: é histórico nosso, então sobrevive
+      // ao limite de 2 anos dos insights de conta.
+      follows: summaries.map((p) => p.follows),
+    });
 
     // Demografia
     let demographics: AccountReport["demographics"] = null;
@@ -455,6 +512,49 @@ export default fp(async function instagramReportsRoutes(fastify) {
       interactions: buildDeltaItem(current.totals.interactions, previous.totals.interactions),
       postsPublished: buildDeltaItem(current.totals.postsPublished, previous.totals.postsPublished),
     };
+  }
+
+  /**
+   * Preenche o link dos posts nos relatórios que já estão gravados.
+   *
+   * O payload é um retrato: foi salvo com `permalink: null` enquanto o bug
+   * existia, e regerar o relatório de um mês fechado traria OUTROS números
+   * (seguidores de hoje, insights que já venceram). Então o link é completado na
+   * leitura, a partir do nosso próprio histórico (`instagram_post_metrics`), que
+   * guarda o permalink por media id.
+   *
+   * Só toca no que está faltando: post com link salvo fica como está. Falha de
+   * leitura não derruba o relatório — volta sem link, como antes.
+   */
+  async function completarPermalinks(data: MonthlyReportData): Promise<MonthlyReportData> {
+    try {
+      const semLink = new Set<string>();
+      const listas = (contas: MonthlyReportData["accounts"]) =>
+        contas.flatMap((c) => [
+          ...c.topByEngagement,
+          ...c.bottomByEngagement,
+          ...c.topByReach,
+          ...c.bottomByReach,
+        ]);
+      for (const post of listas(data.accounts ?? [])) {
+        if (!post.permalink && post.mediaId) semLink.add(post.mediaId);
+      }
+      if (semLink.size === 0) return data;
+
+      const linhas = await fastify.db
+        .select({ mediaId: instagramPostMetrics.mediaId, permalink: instagramPostMetrics.permalink })
+        .from(instagramPostMetrics)
+        .where(inArray(instagramPostMetrics.mediaId, [...semLink]));
+      const porId = new Map(linhas.filter((l) => l.permalink).map((l) => [l.mediaId, l.permalink!]));
+      if (porId.size === 0) return data;
+
+      for (const post of listas(data.accounts ?? [])) {
+        if (!post.permalink && post.mediaId) post.permalink = porId.get(post.mediaId) ?? null;
+      }
+      return data;
+    } catch {
+      return data;
+    }
   }
 
   // ============================================================
@@ -583,7 +683,7 @@ export default fp(async function instagramReportsRoutes(fastify) {
         id: row.id,
         projectId: row.projectId,
         month: row.month,
-        data: row.data,
+        data: await completarPermalinks(row.data as MonthlyReportData),
         generatedBy: row.generatedBy,
         generatedAt: row.generatedAt,
       };
