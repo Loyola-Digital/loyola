@@ -129,6 +129,32 @@ describe("enviarPush", () => {
     expect(mockSend).not.toHaveBeenCalled();
   });
 
+  it("o `lastSuccessAt` é carimbado SÓ em quem aceitou", async () => {
+    /**
+     * O defeito que isto impede: o carimbo ia para toda inscrição que não
+     * fosse recusada como morta. Um PC que recebeu fazia um iPhone que falhou
+     * parecer entregue — e a coluna existe justamente para achar aparelho
+     * zumbi. Foi com base nela que eu afirmei entrega onde não houve.
+     */
+    mockSend
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(Object.assign(new Error("forbidden"), { statusCode: 403 }));
+    const { fastify, atualizados, apagados } = fastifyFalso([UMA, OUTRA]);
+
+    const r = await enviarPush(fastify, ["u1"], { titulo: "t", corpo: "c" });
+
+    expect(r).toEqual({ enviados: 1, removidos: 0, falhas: 1, chavesNaoBatem: true });
+    expect(atualizados).toEqual([["i1"]]); // só a que aceitou
+    expect(apagados).toEqual([]); // 403 não é morte: a inscrição fica
+  });
+
+  it("ninguém aceitou: não carimba nada", async () => {
+    mockSend.mockRejectedValueOnce(Object.assign(new Error("boom"), { statusCode: 503 }));
+    const { fastify, atualizados } = fastifyFalso([UMA]);
+    await enviarPush(fastify, ["u1"], { titulo: "t", corpo: "c" });
+    expect(atualizados).toEqual([]);
+  });
+
   it("o corpo vai como JSON — é o que o service worker lê", async () => {
     mockSend.mockResolvedValueOnce(undefined);
     const { fastify } = fastifyFalso([UMA]);
