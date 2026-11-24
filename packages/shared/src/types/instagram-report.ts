@@ -28,11 +28,32 @@ export interface AccountReportTotals {
 }
 
 export interface AccountReportFollowers {
+  /**
+   * Só existe para o mês CORRENTE, derivado do total de agora menos o saldo.
+   * Em mês fechado é `null`: a Meta não devolve o total de seguidores de uma
+   * data passada, e o que estava aqui era o total de HOJE — o relatório de
+   * outubro mostrava o número de novembro como "fim do mês".
+   */
   startOfMonth: number | null;
+  /** Idem: só no mês corrente. Em mês fechado, use `totalMedido`. */
   endOfMonth: number | null;
+  /** Ganhos e perdidos do PERÍODO do relatório — esses a Meta dá certo. */
   gained: number;
   lost: number;
   net: number;
+  /**
+   * O total de seguidores no instante em que o relatório foi gerado, com a data.
+   * Para mês fechado é a única leitura honesta de "total": não é o do fim do
+   * mês, e o rótulo na tela diz isso.
+   */
+  totalMedido: number | null;
+  totalMedidoEm: string | null;
+  /**
+   * Seguidores ganhos pelos POSTS do mês (soma de `follows` por post). Vem do
+   * nosso próprio histórico, então vale para qualquer mês — diferente do
+   * `gained`, que depende do insight de conta e volta zerado em mês antigo.
+   */
+  ganhosPorPost: number | null;
 }
 
 export interface AccountReportMediaDistribution {
