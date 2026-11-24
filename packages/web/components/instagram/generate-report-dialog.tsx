@@ -31,17 +31,37 @@ interface GenerateReportDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-function getLast12Months(): { value: string; label: string }[] {
-  const out: { value: string; label: string }[] = [];
-  const now = new Date();
-  // Inclui mês corrente + últimos 12 anteriores
-  for (let i = 0; i <= 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const label = d.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
-    out.push({ value, label: label.charAt(0).toUpperCase() + label.slice(1) });
-  }
-  return out;
+/**
+ * Quais anos dá para pedir.
+ *
+ * Social Media pediu para escolher mês E ano, não só os últimos 12 meses. O
+ * teto é o ano corrente; o piso são 2 anos atrás, porque é até onde a Meta
+ * devolve insights — oferecer 2023 geraria um relatório de zeros, que parece
+ * defeito do painel e não limite da API.
+ */
+function anosDisponiveis(agora = new Date()): number[] {
+  const atual = agora.getFullYear();
+  return [atual, atual - 1, atual - 2];
+}
+
+const NOMES_DOS_MESES = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+];
+
+/** Meses de um ano, sem os que ainda não aconteceram. */
+function mesesDoAno(ano: number, agora = new Date()): { value: string; label: string }[] {
+  const ultimo = ano === agora.getFullYear() ? agora.getMonth() : 11;
+  return NOMES_DOS_MESES.slice(0, ultimo + 1).map((nome, i) => ({
+    value: `${ano}-${String(i + 1).padStart(2, "0")}`,
+    label: nome,
+  }));
+}
+
+/** O mês passado — o padrão de quem gera relatório mensal. */
+function mesPassado(agora = new Date()): { ano: number; mes: string } {
+  const d = new Date(agora.getFullYear(), agora.getMonth() - 1, 1);
+  return { ano: d.getFullYear(), mes: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` };
 }
 
 export function GenerateReportDialog({
@@ -50,9 +70,21 @@ export function GenerateReportDialog({
   onOpenChange,
 }: GenerateReportDialogProps) {
   const router = useRouter();
-  const months = useMemo(() => getLast12Months(), []);
-  // Default: mês passado
-  const [selectedMonth, setSelectedMonth] = useState<string>(months[1]?.value ?? months[0]?.value ?? "");
+  const padrao = useMemo(() => mesPassado(), []);
+  const anos = useMemo(() => anosDisponiveis(), []);
+  const [selectedYear, setSelectedYear] = useState<number>(padrao.ano);
+  const months = useMemo(() => mesesDoAno(selectedYear), [selectedYear]);
+  const [selectedMonth, setSelectedMonth] = useState<string>(padrao.mes);
+
+  // Trocar de ano pode deixar o mês escolhido fora da lista (dezembro no ano
+  // corrente, por exemplo): cai no último mês disponível daquele ano.
+  function trocarAno(ano: number) {
+    setSelectedYear(ano);
+    const disponiveis = mesesDoAno(ano);
+    if (!disponiveis.some((m) => m.value === selectedMonth)) {
+      setSelectedMonth(disponiveis[disponiveis.length - 1]?.value ?? "");
+    }
+  }
 
   const { data: existingReports } = useInstagramReports(open ? projectId : null);
   const generateMutation = useGenerateInstagramReport(projectId);
@@ -86,22 +118,41 @@ export function GenerateReportDialog({
         </DialogHeader>
 
         <div className="space-y-3">
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Mês
-            </label>
-            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione um mês..." />
-              </SelectTrigger>
-              <SelectContent>
-                {months.map((m) => (
-                  <SelectItem key={m.value} value={m.value}>
-                    {m.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-[1fr_auto] gap-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Mês
+              </label>
+              <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um mês..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {months.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Ano
+              </label>
+              <Select value={String(selectedYear)} onValueChange={(v) => trocarAno(Number(v))}>
+                <SelectTrigger className="w-[104px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {anos.map((a) => (
+                    <SelectItem key={a} value={String(a)}>
+                      {a}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {alreadyExists && (

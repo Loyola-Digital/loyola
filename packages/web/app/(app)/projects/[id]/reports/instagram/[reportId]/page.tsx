@@ -2,9 +2,13 @@
 
 import { use } from "react";
 import Link from "next/link";
-import { ChevronLeft, AlertCircle } from "lucide-react";
+import { ChevronLeft, AlertCircle, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useInstagramReport } from "@/lib/hooks/use-instagram-report";
+import { toast } from "sonner";
+import {
+  useInstagramReport,
+  useBaixarRelatorioEmHtml,
+} from "@/lib/hooks/use-instagram-report";
 import {
   MonthlyReportView,
   MonthlyReportSkeleton,
@@ -17,16 +21,37 @@ interface Props {
 export default function InstagramMonthlyReportPage({ params }: Props) {
   const { id: projectId, reportId } = use(params);
   const { data, isLoading, error } = useInstagramReport(projectId, reportId);
+  const baixar = useBaixarRelatorioEmHtml(projectId);
 
   return (
     <div className="space-y-4">
-      <div className="print:hidden">
+      <div className="print:hidden flex items-center justify-between gap-3">
         <Button variant="ghost" size="sm" asChild>
           <Link href={`/projects/${projectId}/reports/instagram`}>
             <ChevronLeft className="h-3.5 w-3.5" />
             Voltar para histórico
           </Link>
         </Button>
+        {data && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={baixar.isPending}
+            title="Baixar este relatório como arquivo HTML"
+            onClick={() =>
+              baixar.mutate(
+                { reportId, monthLabel: data.data.monthLabel },
+                {
+                  onError: (err) =>
+                    toast.error(err instanceof Error ? err.message : "Erro ao baixar"),
+                },
+              )
+            }
+          >
+            <Download className="h-3.5 w-3.5 mr-2" />
+            {baixar.isPending ? "Gerando..." : "Baixar HTML"}
+          </Button>
+        )}
       </div>
 
       {isLoading ? (
