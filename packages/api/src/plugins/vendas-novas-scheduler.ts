@@ -3,8 +3,8 @@
 // A cada minuto (VENDAS_PUSH_MINUTES) relê as planilhas de venda das etapas
 // e avisa o que entrou. Sem janela de silêncio, ao contrário dos alertas de
 // funil: alerta de ROAS de madrugada é ruído que faz a pessoa desligar tudo,
-// venda é notícia boa e chega a hora que chega. Quem segura o volume é o teto
-// por projeto por dia (ver `vendas-novas.ts`).
+// venda é notícia boa e chega a hora que chega. Nem teto diário tem: cada venda
+// é um aviso (ver `vendas-novas.ts`).
 //
 // Rodar várias vezes é inofensivo — `sale_push_sent` é a marca d'água — o que
 // cobre restart e deploy no meio do dia.

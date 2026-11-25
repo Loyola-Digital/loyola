@@ -6534,9 +6534,8 @@ export const webhookSurveyResponses = pgTable(
  * (upsell herdando a do perpétuo), e cada etapa é um funil diferente na
  * notificação.
  *
- * `avisadoEm` nulo = conhecida mas nunca avisada: é como a etapa estreia (todo
- * o histórico entra marcado de uma vez, sem disparar nada) e como ficam as
- * vendas que passaram do teto do dia.
+ * `avisadoEm` nulo = conhecida mas nunca avisada: é como a etapa estreia — todo
+ * o histórico entra marcado de uma vez, sem disparar nada.
  */
 export const salePushSent = pgTable(
   "sale_push_sent",
@@ -6550,7 +6549,8 @@ export const salePushSent = pgTable(
   },
   (t) => [
     primaryKey({ columns: [t.stageId, t.chave] }),
-    // "quantos avisei hoje neste projeto" é a consulta do teto diário.
+    // Sobrou do teto diário (retirado em 25/11/2026), que consultava "quantos
+    // avisei hoje neste projeto". Fica porque separa avisada de calada.
     index("idx_sale_push_sent_avisado").on(t.avisadoEm),
   ],
 );
