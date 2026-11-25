@@ -31,13 +31,14 @@
  *   marcado, em silêncio (senão o primeiro ciclo mandaria 15 mil pushes). Silenciar
  *   o dia inteiro era pior: a estreia de 23/11 engoliu 8 das 11 vendas da Black
  *   que já estavam na planilha às 14h08, e foi assim que se descobriu.
- * - Teto por projeto por dia, com um resumo no lugar do excedente: o pico
- *   medido foi 81 vendas num dia (3/nov/2026, DG & CPDF).
+ * - Sem teto diário: cada venda vale um aviso. O teto de 30 por projeto existiu
+ *   até 25/11/2026 e foi retirado a pedido — o dia de pico medido tinha 81
+ *   vendas (3/nov/2026, DG & CPDF), e as 51 que sobravam viravam um resumo só.
  * - Só funil ATIVO: o arquivado ainda recebe cauda de venda, e avisar isso é
  *   ruído.
  */
 
-import { and, eq, gte, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import {
   funnelSpreadsheets,
@@ -55,9 +56,6 @@ import { enviarPush } from "./push.js";
 import { resolveSalesSheetsForStage } from "./sales-daily-sync.js";
 import { classifyRefundStatus, isRevenueBucket } from "./sales-status.js";
 import { parseDateIso, parseNumberBr } from "../utils/planilha-valores.js";
-
-/** Teto de pushes por projeto por dia. Acima disto, um resumo substitui o resto. */
-export const TETO_POR_PROJETO_POR_DIA = 30;
 
 /**
  * Pausa entre etapas, para o ciclo não encostar na cota do Sheets.
@@ -170,12 +168,12 @@ export async function lerVendasDaEtapa(
 export interface Reparticao {
   /** Vai virar push, uma por venda. */
   avisar: VendaDaPlanilha[];
-  /** Passou do teto do dia: entra marcada, e sai no resumo. */
+  /** Histórico da estreia: entra marcada, em silêncio. */
   excedentes: VendaDaPlanilha[];
 }
 
 /**
- * O que avisar desta etapa, dado o que já foi visto e quanto já saiu hoje.
+ * O que avisar desta etapa, dado o que já foi visto.
  *
  * Na `estreia`, avisa só o que é **de hoje** e marca o resto em silêncio. Avisar
  * tudo mandaria o histórico inteiro (15 mil pushes no primeiro ciclo); silenciar
@@ -190,17 +188,16 @@ export interface Reparticao {
 export function repartir(
   vendas: VendaDaPlanilha[],
   jaVistas: Set<string>,
-  avisadasHoje: number,
   estreia: boolean,
   hoje: string,
 ): Reparticao {
   const novas = vendas.filter((v) => !jaVistas.has(v.chave));
-  const resto = Math.max(0, TETO_POR_PROJETO_POR_DIA - avisadasHoje);
-  if (!estreia) return { avisar: novas.slice(0, resto), excedentes: novas.slice(resto) };
+  if (!estreia) return { avisar: novas, excedentes: [] };
 
-  const doDia = novas.filter((v) => v.dataVenda === hoje);
-  const historico = novas.filter((v) => v.dataVenda !== hoje);
-  return { avisar: doDia.slice(0, resto), excedentes: [...doDia.slice(resto), ...historico] };
+  return {
+    avisar: novas.filter((v) => v.dataVenda === hoje),
+    excedentes: novas.filter((v) => v.dataVenda !== hoje),
+  };
 }
 
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -214,18 +211,6 @@ export function textoDaVenda(
   const partes = [nomeDoProjeto, BRL.format(venda.valorBruto)];
   if (venda.produto) partes.push(venda.produto);
   return { titulo: `Venda · ${nomeDoFunil}`, corpo: partes.join(" · ") };
-}
-
-/** O resumo que substitui o excedente do teto. */
-export function textoDoExcedente(
-  quantas: number,
-  total: number,
-  nomeDoProjeto: string,
-): { titulo: string; corpo: string } {
-  return {
-    titulo: `+${quantas} ${quantas === 1 ? "venda" : "vendas"} · ${nomeDoProjeto}`,
-    corpo: `${BRL.format(total)} · teto de ${TETO_POR_PROJETO_POR_DIA} avisos do dia atingido`,
-  };
 }
 
 /**
@@ -300,8 +285,7 @@ async function etapasComVenda(
         //
         // Desarquivar um funil não vira enxurrada: as vendas que entraram
         // enquanto ele esteve fora já estão marcadas em `sale_push_sent` da
-        // estreia; só as posteriores a ela seriam avisadas, e aí o teto por
-        // projeto por dia segura.
+        // estreia; só as posteriores a ela seriam avisadas.
         isNull(funnels.archivedAt),
         sql`(
           exists (select 1 from ${stageSalesSpreadsheets} ss where ss.stage_id = ${funnelStages.id})
@@ -327,19 +311,6 @@ export async function rodarAvisosDeVenda(fastify: FastifyInstance): Promise<Resu
   const destinatarios = await destinatariosDeVenda(fastify.db);
   const etapas = await etapasComVenda(fastify.db);
   if (etapas.length === 0) return resumo;
-  // Quantos avisos já saíram hoje em cada projeto — o teto é por projeto.
-  const avisadasHoje = new Map<string, number>();
-  const inicioDoDia = new Date();
-  inicioDoDia.setHours(0, 0, 0, 0);
-  const contagem = await fastify.db
-    .select({ projectId: projects.id, n: sql<number>`count(*)::int` })
-    .from(salePushSent)
-    .innerJoin(funnelStages, eq(funnelStages.id, salePushSent.stageId))
-    .innerJoin(funnels, eq(funnels.id, funnelStages.funnelId))
-    .innerJoin(projects, eq(projects.id, funnels.projectId))
-    .where(and(isNotNull(salePushSent.avisadoEm), gte(salePushSent.avisadoEm, inicioDoDia)))
-    .groupBy(projects.id);
-  for (const c of contagem) avisadasHoje.set(c.projectId, c.n);
 
   let primeira = true;
   for (const etapa of etapas) {
@@ -357,13 +328,7 @@ export async function rodarAvisosDeVenda(fastify: FastifyInstance): Promise<Resu
       resumo.etapasLidas += 1;
 
       const estreia = jaVistas.size === 0;
-      const { avisar, excedentes } = repartir(
-        vendas,
-        jaVistas,
-        avisadasHoje.get(etapa.projectId) ?? 0,
-        estreia,
-        hojeSaoPaulo(),
-      );
+      const { avisar, excedentes } = repartir(vendas, jaVistas, estreia, hojeSaoPaulo());
       if (avisar.length === 0 && excedentes.length === 0) continue;
       if (estreia) resumo.estreias += 1;
 
@@ -382,21 +347,8 @@ export async function rodarAvisosDeVenda(fastify: FastifyInstance): Promise<Resu
         }
         resumo.avisos += 1;
       }
-      if (excedentes.length > 0 && !estreia && destinatarios.length > 0) {
-        const total = excedentes.reduce((s, v) => s + v.valorBruto, 0);
-        await enviarPush(fastify, destinatarios, {
-          ...textoDoExcedente(excedentes.length, total, etapa.projectName),
-          url,
-          // Aqui a substituição é desejada: o resumo de agora troca o anterior.
-          tag: `venda-teto-${etapa.projectId}`,
-        });
-      }
-
-      avisadasHoje.set(etapa.projectId, (avisadasHoje.get(etapa.projectId) ?? 0) + avisar.length);
-
-      // Marca TODAS as chaves novas — avisadas e excedentes. A venda que passou
-      // do teto não volta na rodada seguinte como novidade: ela já saiu no
-      // resumo, e insistir é exatamente o que vira spam.
+      // Marca TODAS as chaves novas — avisadas e o histórico calado na estreia,
+      // que não pode voltar como novidade na rodada seguinte.
       const agora = new Date();
       await fastify.db
         .insert(salePushSent)

@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  TETO_POR_PROJETO_POR_DIA,
   chaveDaVenda,
   repartir,
   textoDaVenda,
-  textoDoExcedente,
   type VendaDaPlanilha,
 } from "../services/vendas-novas.js";
 
@@ -47,7 +45,7 @@ describe("chaveDaVenda", () => {
 
 describe("repartir", () => {
   it("avisa só o que ainda não foi visto", () => {
-    const r = repartir([venda("a"), venda("b"), venda("c")], new Set(["a", "b"]), 0, false, HOJE);
+    const r = repartir([venda("a"), venda("b"), venda("c")], new Set(["a", "b"]), false, HOJE);
     expect(r.avisar.map((v) => v.chave)).toEqual(["c"]);
     expect(r.excedentes).toEqual([]);
   });
@@ -59,7 +57,6 @@ describe("repartir", () => {
     const r = repartir(
       [venda("hoje-1"), venda("velha", 100, "2026-11-20"), venda("hoje-2")],
       new Set(),
-      0,
       true,
       HOJE,
     );
@@ -71,7 +68,6 @@ describe("repartir", () => {
     const r = repartir(
       [venda("a", 100, "2026-11-01"), venda("b", 100, "2026-11-20")],
       new Set(),
-      0,
       true,
       HOJE,
     );
@@ -81,35 +77,29 @@ describe("repartir", () => {
 
   // Sem data reconhecida não há como saber se é do dia; na dúvida, silêncio.
   it("estreia cala venda sem data", () => {
-    const r = repartir([{ ...venda("sem-data"), dataVenda: null }], new Set(), 0, true, HOJE);
+    const r = repartir([{ ...venda("sem-data"), dataVenda: null }], new Set(), true, HOJE);
     expect(r.avisar).toEqual([]);
     expect(r.excedentes.map((v) => v.chave)).toEqual(["sem-data"]);
   });
 
-  it("na estreia o teto também vale", () => {
-    const muitas = Array.from({ length: 40 }, (_, i) => venda(`v${i}`));
-    const r = repartir(muitas, new Set(), 0, true, HOJE);
-    expect(r.avisar).toHaveLength(TETO_POR_PROJETO_POR_DIA);
-    expect(r.excedentes).toHaveLength(40 - TETO_POR_PROJETO_POR_DIA);
+  // O teto de 30 por projeto por dia saiu em 25/11/2026: no dia de pico medido
+  // (81 vendas) as 51 que sobravam viravam um resumo só. Agora cada venda é um
+  // aviso, inclusive acima do antigo teto e inclusive na estreia.
+  it("não há teto: 81 vendas num dia são 81 avisos", () => {
+    const muitas = Array.from({ length: 81 }, (_, i) => venda(`v${i}`));
+    const r = repartir(muitas, new Set(), false, HOJE);
+    expect(r.avisar).toHaveLength(81);
+    expect(r.excedentes).toEqual([]);
   });
 
-  it("corta no teto do dia e joga o resto no excedente", () => {
-    const muitas = Array.from({ length: 40 }, (_, i) => venda(`v${i}`));
-    const r = repartir(muitas, new Set(), 0, false, HOJE);
-    expect(r.avisar).toHaveLength(TETO_POR_PROJETO_POR_DIA);
-    expect(r.excedentes).toHaveLength(40 - TETO_POR_PROJETO_POR_DIA);
-  });
-
-  it("desconta o que já saiu hoje naquele projeto", () => {
-    const r = repartir([venda("a"), venda("b"), venda("c")], new Set(), TETO_POR_PROJETO_POR_DIA - 1, false, HOJE);
-    expect(r.avisar.map((v) => v.chave)).toEqual(["a"]);
-    expect(r.excedentes.map((v) => v.chave)).toEqual(["b", "c"]);
-  });
-
-  it("teto já estourado não avisa mais nada no dia", () => {
-    const r = repartir([venda("a")], new Set(), TETO_POR_PROJETO_POR_DIA + 5, false, HOJE);
-    expect(r.avisar).toEqual([]);
-    expect(r.excedentes.map((v) => v.chave)).toEqual(["a"]);
+  it("na estreia, todas as vendas de hoje saem — só o histórico fica calado", () => {
+    const muitas = [
+      ...Array.from({ length: 40 }, (_, i) => venda(`hoje-${i}`)),
+      venda("velha", 100, "2026-11-20"),
+    ];
+    const r = repartir(muitas, new Set(), true, HOJE);
+    expect(r.avisar).toHaveLength(40);
+    expect(r.excedentes.map((v) => v.chave)).toEqual(["velha"]);
   });
 });
 
@@ -125,10 +115,5 @@ describe("texto", () => {
   it("sem produto mapeado, o corpo não fica com separador solto", () => {
     const t = textoDaVenda({ ...venda("a", 1250.5), produto: null }, "bbe-pr2-out-26", "BBE");
     expect(t.corpo).toBe("BBE · R$ 1.250,50");
-  });
-
-  it("o resumo do excedente soma o que não virou push", () => {
-    expect(textoDoExcedente(51, 15147, "DG & CPDF").titulo).toBe("+51 vendas · DG & CPDF");
-    expect(textoDoExcedente(1, 297, "BBE").titulo).toBe("+1 venda · BBE");
   });
 });
