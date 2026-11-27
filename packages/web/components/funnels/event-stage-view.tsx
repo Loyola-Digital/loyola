@@ -61,6 +61,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DayRangePicker } from "@/components/ui/day-range-picker";
 import { ManualSaleDialog } from "@/components/funnels/manual-sale-dialog";
 import { CampaignLogButton } from "@/components/funnels/campaign-log-link";
+import { LinksButton } from "@/components/funnels/links-link";
 import { EventPaymentAlertCard } from "@/components/funnels/event-payment-alert-card";
 import { OperationalCostsTab } from "@/components/funnels/operational-costs-tab";
 import { SalesPlanTab } from "@/components/funnels/sales-plan-tab";
@@ -293,6 +294,7 @@ export function EventStageView({ projectId, funnelId, funnelName, stage }: Event
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <CampaignLogButton projectId={projectId} funnelId={funnelId} />
+          <LinksButton projectId={projectId} funnelId={funnelId} />
           <DayRangePicker days={days} onDaysChange={setDays} />
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setEditingSale(null); setManualSaleOpen(true); }}>
             <Plus className="h-3.5 w-3.5" /> Lançar venda

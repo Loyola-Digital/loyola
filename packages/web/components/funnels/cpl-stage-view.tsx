@@ -10,6 +10,7 @@ import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
 import { ZoomStageTab } from "./zoom-stage-tab";
 import { StageDeleteSection } from "./stage-delete-section";
 import { CampaignLogButton } from "./campaign-log-link";
+import { LinksButton } from "./links-link";
 import { MauticStageTab } from "./mautic-stage-tab";
 import { toast } from "sonner";
 import type { FunnelStage } from "@loyola-x/shared";
@@ -54,6 +55,7 @@ export function CplStageView({ projectId, funnelId, funnelName, stage }: CplStag
 
         <div className="flex items-center gap-2">
         <CampaignLogButton projectId={projectId} funnelId={funnelId} />
+        <LinksButton projectId={projectId} funnelId={funnelId} />
         <Sheet open={settingsOpen} onOpenChange={(open) => {
           setSettingsOpen(open);
           if (open) setStageName(stage.name);

@@ -50,6 +50,7 @@ import { NpsStageTab } from "@/components/funnels/nps-stage-tab";
 import { AuditStatusBadge } from "@/components/funnels/audit-status-badge";
 import { StageDeleteSection } from "@/components/funnels/stage-delete-section";
 import { CampaignLogButton } from "@/components/funnels/campaign-log-link";
+import { LinksButton } from "@/components/funnels/links-link";
 import { OrphanCampaignsBanner } from "@/components/funnels/orphan-campaigns-banner";
 import { CampaignSelector } from "@/components/funnels/campaign-selector";
 import { useCampaignPicker } from "@/lib/hooks/use-funnels";
@@ -373,6 +374,7 @@ export default function StagePage() {
 
         <div className="flex items-center gap-2">
         <CampaignLogButton projectId={params.id} funnelId={params.funnelId} />
+        <LinksButton projectId={params.id} funnelId={params.funnelId} />
         <Sheet open={settingsOpen} onOpenChange={(open) => {
           setSettingsOpen(open);
           if (open) {

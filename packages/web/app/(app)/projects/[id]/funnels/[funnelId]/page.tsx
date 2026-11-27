@@ -30,7 +30,7 @@ import { CampaignLogCard } from "@/components/funnels/campaign-log-link";
 import { PlanejamentoCard } from "@/components/funnels/planejamento-card"; // Story 48.1
 import { planejamentoHref, temPainelDePlanejamento } from "@/lib/utils/planejamento-entrada"; // Story 48.7
 import { OrphanCampaignsBanner } from "@/components/funnels/orphan-campaigns-banner";
-import { SwitchyFunnelSection } from "@/components/funnels/switchy-funnel-section";
+import { LinksCard } from "@/components/funnels/links-link";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -325,22 +325,13 @@ export default function FunnelPage() {
         />
       )}
 
-      {/* Log de Campanha — entrada FIXA em todo funil (Story 38.1) */}
+      {/* Entradas FIXAS de todo funil: Log de Campanha (Story 38.1) e Links.
+          Nenhuma das duas é etapa — são do funil. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         <CampaignLogCard projectId={params.id} funnelId={params.funnelId} />
+        <LinksCard projectId={params.id} funnelId={params.funnelId} />
         {temPainelDePlanejamento(funnelData.funnelType) && <PlanejamentoCard projectId={params.id} funnelId={params.funnelId} />}
       </div>
-
-      {/* Links da campanha — entrada FIXA em todo funil, como o Log de Campanha.
-          Gerador de UTM (Story 33.7) + histórico + Links Vinculados: a tabela
-          antes só existia na aba Links das etapas de Captação, então campanha
-          sem etapa de captação não tinha onde guardar link nenhum. */}
-      <SwitchyFunnelSection
-        projectId={params.id}
-        funnelId={params.funnelId}
-        funnelName={funnel.name}
-        funnel={funnel}
-      />
 
       {/* Nova etapa — o wizard (nome, tipo, codigo de match, campanhas, planilha) */}
       <StageWizard

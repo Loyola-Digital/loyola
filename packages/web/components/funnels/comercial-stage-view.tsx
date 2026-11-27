@@ -73,6 +73,7 @@ import {
 import { SurveyFunnelTab } from "./survey-funnel-tab";
 import { StageDeleteSection } from "./stage-delete-section";
 import { CampaignLogButton } from "./campaign-log-link";
+import { LinksButton } from "./links-link";
 import type { FunnelStage } from "@loyola-x/shared";
 
 interface ComercialStageViewProps {
@@ -501,6 +502,7 @@ export function ComercialStageView({ projectId, funnelId, funnelName, stage }: C
 
         <div className="flex items-center gap-2">
           <CampaignLogButton projectId={projectId} funnelId={funnelId} />
+          <LinksButton projectId={projectId} funnelId={funnelId} />
           <Button
             size="sm"
             className="gap-1.5"

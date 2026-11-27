@@ -48,6 +48,7 @@ import { useFunnelSurveys, useRemoveFunnelSurvey } from "@/lib/hooks/use-google-
 import { SheetsPickerDialog } from "./survey-funnel-tab";
 import { StageDeleteSection } from "./stage-delete-section";
 import { CampaignLogButton } from "./campaign-log-link";
+import { LinksButton } from "./links-link";
 import { CampaignSelector } from "./campaign-selector";
 import { ApplicationInvestmentSection } from "./application-investment-section";
 import type { FunnelCampaign, FunnelStage } from "@loyola-x/shared";
@@ -531,6 +532,7 @@ export function ApplicationStageView({
 
         <div className="flex items-center gap-2">
           <CampaignLogButton projectId={projectId} funnelId={funnelId} />
+          <LinksButton projectId={projectId} funnelId={funnelId} />
           <Sheet
             open={configOpen}
             onOpenChange={(o) => {

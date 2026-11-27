@@ -24,6 +24,7 @@ import {
 import { CreateDebriefingDialog } from "@/components/debriefings/create-debriefing-dialog";
 import { StageDeleteSection } from "./stage-delete-section";
 import { CampaignLogButton } from "./campaign-log-link";
+import { LinksButton } from "./links-link";
 import { DebriefingGenerateButton } from "./debriefing-generate-button";
 import type { FunnelStage } from "@loyola-x/shared";
 
@@ -217,6 +218,7 @@ export function DebriefingStageView({ projectId, funnelId, funnelName, stage }: 
 
         <div className="flex items-start gap-2">
           <CampaignLogButton projectId={projectId} funnelId={funnelId} />
+          <LinksButton projectId={projectId} funnelId={funnelId} />
           {/* Story 49.6 — gerar a partir da config da etapa (49.1) */}
           <DebriefingGenerateButton projectId={projectId} funnelId={funnelId} stageId={stage.id} from={stagePath} />
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setCreateOpen(true)}>
