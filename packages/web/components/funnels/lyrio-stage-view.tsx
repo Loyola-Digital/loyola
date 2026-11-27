@@ -45,6 +45,7 @@ import { GoogleAdsCampaignSelector } from "./google-ads-campaign-selector";
 import { useGoogleAdsDailyPorCampanha } from "@/lib/hooks/use-google-ads-analytics";
 import { StageDeleteSection } from "./stage-delete-section";
 import { CampaignLogButton } from "./campaign-log-link";
+import { LinksButton } from "./links-link";
 import { useEventosDoDia } from "./eventos-do-dia";
 import { LyrioBlocoDoCanal } from "./lyrio-bloco-do-canal";
 import { contaDoGoogle } from "@/lib/utils/lyrio-google-ads";
@@ -391,6 +392,7 @@ export function LyrioStageView({ projectId, funnelId, funnelName, stage }: Lyrio
 
         <div className="flex items-center gap-2">
           <CampaignLogButton projectId={projectId} funnelId={funnelId} />
+          <LinksButton projectId={projectId} funnelId={funnelId} />
           <DayRangePicker days={days} onDaysChange={setDays} />
 
           <Sheet

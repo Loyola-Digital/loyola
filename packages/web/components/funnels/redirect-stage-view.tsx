@@ -77,6 +77,7 @@ import {
 import { CampaignSelector } from "./campaign-selector";
 import { StageDeleteSection } from "./stage-delete-section";
 import { CampaignLogButton } from "./campaign-log-link";
+import { LinksButton } from "./links-link";
 import type { FunnelCampaign, FunnelStage } from "@loyola-x/shared";
 
 const brl = (v: number | null | undefined) =>
@@ -232,6 +233,7 @@ export function RedirectStageView({
         <div className="flex items-center gap-2">
           <DayRangePicker days={days} onDaysChange={setDays} />
           <CampaignLogButton projectId={projectId} funnelId={funnelId} />
+          <LinksButton projectId={projectId} funnelId={funnelId} />
           <Sheet
             open={settingsOpen}
             onOpenChange={(open) => {
