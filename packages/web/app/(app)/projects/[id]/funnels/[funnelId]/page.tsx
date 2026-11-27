@@ -331,11 +331,15 @@ export default function FunnelPage() {
         {temPainelDePlanejamento(funnelData.funnelType) && <PlanejamentoCard projectId={params.id} funnelId={params.funnelId} />}
       </div>
 
-      {/* Switch — Gerador de Links atrelado ao funil (Story 33.7) */}
+      {/* Links da campanha — entrada FIXA em todo funil, como o Log de Campanha.
+          Gerador de UTM (Story 33.7) + histórico + Links Vinculados: a tabela
+          antes só existia na aba Links das etapas de Captação, então campanha
+          sem etapa de captação não tinha onde guardar link nenhum. */}
       <SwitchyFunnelSection
         projectId={params.id}
         funnelId={params.funnelId}
         funnelName={funnel.name}
+        funnel={funnel}
       />
 
       {/* Nova etapa — o wizard (nome, tipo, codigo de match, campanhas, planilha) */}
