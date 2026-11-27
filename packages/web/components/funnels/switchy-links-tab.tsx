@@ -53,6 +53,7 @@ import {
   type SwitchyFolder,
 } from "@/lib/hooks/use-switchy";
 import { useUpdateStage } from "@/lib/hooks/use-funnel-stages";
+import { useUpdateFunnel } from "@/lib/hooks/use-funnels";
 import type { Funnel } from "@loyola-x/shared";
 
 // ============================================================
@@ -520,7 +521,17 @@ function GroupedRow({
 interface SwitchyLinksTabProps {
   projectId: string;
   funnelId: string;
-  stageId: string;
+  /**
+   * Sem `stageId`, o escopo é o FUNIL: é assim que a página do funil usa.
+   *
+   * Os links do Switchy são da campanha, não de uma etapa — e a aba só existia
+   * nas etapas de Captação, porque as outras nove têm view dedicada que nunca
+   * chega ao `<Tabs>`. Campanha sem etapa de captação ficava sem lugar nenhum
+   * para os links. As colunas `switchy_linked_links` e `switchy_folder_ids` já
+   * existem nas DUAS tabelas (`funnels` e `funnel_stages`), e o PUT do funil já
+   * aceitava as duas — daí não ter migration nenhuma aqui.
+   */
+  stageId?: string;
   funnel: Funnel;
 }
 
@@ -546,7 +557,14 @@ export function SwitchyLinksTab({ projectId, funnelId, stageId, funnel }: Switch
     projectId,
     selectedFolderId,
   );
-  const updateStage = useUpdateStage(projectId, funnelId, stageId);
+  // Os dois hooks sempre são chamados (regra dos hooks); quem dispara é o
+  // escopo. `stageId` vazio nunca vira requisição porque mutation não roda sozinha.
+  const updateStage = useUpdateStage(projectId, funnelId, stageId ?? "");
+  const updateFunnel = useUpdateFunnel(projectId, funnelId);
+  const salvar = (patch: {
+    switchyLinkedLinks?: { uniq: number; id: string; domain: string }[];
+    switchyFolderIds?: { id: number; name: string }[];
+  }) => (stageId ? updateStage.mutate(patch) : updateFunnel.mutate(patch));
 
   const linkedSet = useMemo(() => new Set(savedLinks.map((l) => l.uniq)), [savedLinks]);
 
@@ -612,7 +630,7 @@ export function SwitchyLinksTab({ projectId, funnelId, stageId, funnel }: Switch
       .filter((l) => pickedUniqs.has(l.uniq))
       .map((l) => ({ uniq: l.uniq, id: l.id, domain: l.domain }));
     const existing = savedLinks.filter((l) => !links.some((ll) => ll.uniq === l.uniq));
-    updateStage.mutate({ switchyLinkedLinks: [...existing, ...selected] });
+    salvar({ switchyLinkedLinks: [...existing, ...selected] });
     setSelecting(false);
   }
 
@@ -622,7 +640,7 @@ export function SwitchyLinksTab({ projectId, funnelId, stageId, funnel }: Switch
   }
 
   function handleSaveFolders(folders: { id: number; name: string }[]) {
-    updateStage.mutate({ switchyFolderIds: folders });
+    salvar({ switchyFolderIds: folders });
     if (folders.length > 0 && !folders.some((f) => f.id === selectedFolderId)) {
       setSelectedFolderId(folders[0].id);
     }
